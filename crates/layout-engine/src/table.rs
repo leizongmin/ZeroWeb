@@ -329,7 +329,11 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                 left_s: cell_style.border_left_style.clone(),
             };
 
-            for slot in col_map.iter_mut().take(cell.col_end.min(grid.col_count)).skip(cell.col_start) {
+            for slot in col_map
+                .iter_mut()
+                .take(cell.col_end.min(grid.col_count))
+                .skip(cell.col_start)
+            {
                 *slot = cell_idx;
             }
 
@@ -341,9 +345,11 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
     }
 
     // 阶段 2：解析所有边框冲突，收集需要覆盖的边框值
-    // 格式：((row_idx, cell_idx), side, width)
+    // 格式：((row_idx, cell_idx), side, width, color_override)
     // side: 0=top, 1=right, 2=bottom, 3=left
-    let mut overrides: Vec<((usize, usize), u8, f32)> = Vec::new();
+    // color_override: Some(rgba_u32) 表示使用此颜色替代 cell 原始颜色
+    #[allow(clippy::type_complexity)]
+    let mut overrides: Vec<((usize, usize), u8, f32, Option<u32>)> = Vec::new();
 
     for (row_idx, row) in grid.rows.iter().enumerate() {
         for (cell_idx, cell) in row.cells.iter().enumerate() {
@@ -364,9 +370,10 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                     (cb.top_w, &cb.top_s, BorderSource::Cell),
                 );
                 if winner == BorderSource::Table {
-                    overrides.push(((row_idx, cell_idx), 0, table_bt));
+                    let table_color = color_value_to_u32(&table_style.border_top_color);
+                    overrides.push(((row_idx, cell_idx), 0, table_bt, Some(table_color)));
                 } else if matches!(cb.top_s, BorderStyleValue::Hidden) {
-                    overrides.push(((row_idx, cell_idx), 0, 0.0));
+                    overrides.push(((row_idx, cell_idx), 0, 0.0, None));
                 }
             } else if row_idx > 0 {
                 // 内部边：上一行同列 cell 的 bottom vs 当前 cell 的 top
@@ -375,24 +382,35 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                 let col_to_check = cell.col_start.min(grid.col_count.saturating_sub(1));
                 let prev_cell_idx = prev_col_map[col_to_check];
                 if let Some(Some(prev_cb)) = cell_border_data.get(row_idx - 1).and_then(|b| b.get(prev_cell_idx)) {
-                    // hidden 样式优先
+                    // hidden 样式优先：强制宽度为 0
                     if matches!(cb.top_s, BorderStyleValue::Hidden)
                         || matches!(prev_cb.bottom_s, BorderStyleValue::Hidden)
                     {
-                        overrides.push(((row_idx, cell_idx), 0, 0.0));
+                        overrides.push(((row_idx, cell_idx), 0, 0.0, None));
                     } else {
-                        let _winner = resolve_border(
+                        let winner = resolve_border(
                             (prev_cb.bottom_w, &prev_cb.bottom_s, BorderSource::Cell),
                             (cb.top_w, &cb.top_s, BorderSource::Cell),
                         );
-                        let win_w = if prev_cb.bottom_w >= cb.top_w {
-                            prev_cb.bottom_w
-                        } else {
+                        // 始终应用获胜宽度（之前错误地丢弃了结果）
+                        let win_w = if winner == BorderSource::Cell {
+                            // 当前 cell 的 top 赢
                             cb.top_w
+                        } else {
+                            // 上方 cell 的 bottom 赢
+                            prev_cb.bottom_w
                         };
-                        // 只在需要改变时添加覆盖
-                        if matches!(cb.top_s, BorderStyleValue::None) && !matches!(prev_cb.bottom_s, BorderStyleValue::None) {
-                            overrides.push(((row_idx, cell_idx), 0, win_w));
+                        // 只在宽度不同时覆盖（避免不必要的修改）
+                        if (win_w - cb.top_w).abs() > 0.01 {
+                            // 需要获取获胜方的颜色
+                            let win_color = if winner == BorderSource::Cell {
+                                // 当前 cell 自身赢，不需要颜色覆盖
+                                None
+                            } else {
+                                // 上方 cell 赢，需要使用上方 cell 的颜色
+                                get_cell_border_color(table_box, grid, row_idx - 1, prev_cell_idx, 2, styles)
+                            };
+                            overrides.push(((row_idx, cell_idx), 0, win_w, win_color));
                         }
                     }
                 }
@@ -405,9 +423,10 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                     (cb.bottom_w, &cb.bottom_s, BorderSource::Cell),
                 );
                 if winner == BorderSource::Table {
-                    overrides.push(((row_idx, cell_idx), 2, table_bb));
+                    let table_color = color_value_to_u32(&table_style.border_bottom_color);
+                    overrides.push(((row_idx, cell_idx), 2, table_bb, Some(table_color)));
                 } else if matches!(cb.bottom_s, BorderStyleValue::Hidden) {
-                    overrides.push(((row_idx, cell_idx), 2, 0.0));
+                    overrides.push(((row_idx, cell_idx), 2, 0.0, None));
                 }
             }
 
@@ -418,9 +437,10 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                     (cb.left_w, &cb.left_s, BorderSource::Cell),
                 );
                 if winner == BorderSource::Table {
-                    overrides.push(((row_idx, cell_idx), 3, table_bl));
+                    let table_color = color_value_to_u32(&table_style.border_left_color);
+                    overrides.push(((row_idx, cell_idx), 3, table_bl, Some(table_color)));
                 } else if matches!(cb.left_s, BorderStyleValue::Hidden) {
-                    overrides.push(((row_idx, cell_idx), 3, 0.0));
+                    overrides.push(((row_idx, cell_idx), 3, 0.0, None));
                 }
             } else if cell.col_start > 0 {
                 // 内部边：左侧 cell 的 right vs 当前 cell 的 left
@@ -429,19 +449,25 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                     if matches!(cb.left_s, BorderStyleValue::Hidden)
                         || matches!(left_cb.right_s, BorderStyleValue::Hidden)
                     {
-                        overrides.push(((row_idx, cell_idx), 3, 0.0));
+                        overrides.push(((row_idx, cell_idx), 3, 0.0, None));
                     } else {
-                        let _winner = resolve_border(
+                        let winner = resolve_border(
                             (left_cb.right_w, &left_cb.right_s, BorderSource::Cell),
                             (cb.left_w, &cb.left_s, BorderSource::Cell),
                         );
-                        let win_w = if left_cb.right_w >= cb.left_w {
-                            left_cb.right_w
-                        } else {
+                        // 始终应用获胜宽度（之前错误地丢弃了结果）
+                        let win_w = if winner == BorderSource::Cell {
                             cb.left_w
+                        } else {
+                            left_cb.right_w
                         };
-                        if matches!(cb.left_s, BorderStyleValue::None) && !matches!(left_cb.right_s, BorderStyleValue::None) {
-                            overrides.push(((row_idx, cell_idx), 3, win_w));
+                        if (win_w - cb.left_w).abs() > 0.01 {
+                            let win_color = if winner == BorderSource::Cell {
+                                None
+                            } else {
+                                get_cell_border_color(table_box, grid, row_idx, left_cell_idx, 1, styles)
+                            };
+                            overrides.push(((row_idx, cell_idx), 3, win_w, win_color));
                         }
                     }
                 }
@@ -454,16 +480,17 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                     (cb.right_w, &cb.right_s, BorderSource::Cell),
                 );
                 if winner == BorderSource::Table {
-                    overrides.push(((row_idx, cell_idx), 1, table_br));
+                    let table_color = color_value_to_u32(&table_style.border_right_color);
+                    overrides.push(((row_idx, cell_idx), 1, table_br, Some(table_color)));
                 } else if matches!(cb.right_s, BorderStyleValue::Hidden) {
-                    overrides.push(((row_idx, cell_idx), 1, 0.0));
+                    overrides.push(((row_idx, cell_idx), 1, 0.0, None));
                 }
             }
         }
     }
 
     // 阶段 3：应用所有边框覆盖到 LayoutBox
-    for ((row_idx, cell_idx), side, width) in overrides {
+    for ((row_idx, cell_idx), side, width, color_override) in overrides {
         let row = &grid.rows[row_idx];
         let row_box = match get_row_box_mut(table_box, row) {
             Some(b) => b,
@@ -474,10 +501,30 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
             continue;
         };
         match side {
-            0 => cell_box.border_top = width,
-            1 => cell_box.border_right = width,
-            2 => cell_box.border_bottom = width,
-            3 => cell_box.border_left = width,
+            0 => {
+                cell_box.border_top = width;
+                if let Some(c) = color_override {
+                    cell_box.collapsed_border_color_overrides[0] = Some(c);
+                }
+            }
+            1 => {
+                cell_box.border_right = width;
+                if let Some(c) = color_override {
+                    cell_box.collapsed_border_color_overrides[1] = Some(c);
+                }
+            }
+            2 => {
+                cell_box.border_bottom = width;
+                if let Some(c) = color_override {
+                    cell_box.collapsed_border_color_overrides[2] = Some(c);
+                }
+            }
+            3 => {
+                cell_box.border_left = width;
+                if let Some(c) = color_override {
+                    cell_box.collapsed_border_color_overrides[3] = Some(c);
+                }
+            }
             _ => {}
         }
     }
@@ -521,7 +568,7 @@ fn border_style_priority(style: &BorderStyleValue) -> i32 {
 /// 1. hidden 样式总是胜出
 /// 2. none 样式总是输
 /// 3. 更高的 style 优先级胜出
-/// 4. 同一 style 时，更宽的边框胜出
+/// 4. 同一 style 时，更宽的边框胜出（宽度先 floor 到整数像素再比较）
 /// 5. 同 width 同 style 时，更高来源优先级胜出
 fn resolve_border(
     a: (f32, &BorderStyleValue, BorderSource),
@@ -558,11 +605,13 @@ fn resolve_border(
         return source_b;
     }
 
-    // 同 style 时比 width
-    if width_a > width_b {
+    // 同 style 时比 width（floor 到整数像素再比较，w3c/csswg-drafts#606）
+    let fw_a = width_a.floor();
+    let fw_b = width_b.floor();
+    if fw_a > fw_b {
         return source_a;
     }
-    if width_b > width_a {
+    if fw_b > fw_a {
         return source_b;
     }
 
@@ -596,6 +645,54 @@ fn length_to_px(value: &zero_css_parser::values::LengthValue) -> f32 {
         LengthValue::Rem(v) => *v as f32 * 16.0,
         _ => 0.0,
     }
+}
+
+/// 将 ColorValue 转换为 RGBA u32 格式（0xRRGGBBAA）。
+fn color_value_to_u32(color: &zero_css_parser::values::ColorValue) -> u32 {
+    match color {
+        zero_css_parser::values::ColorValue::Rgba(r, g, b, a) => {
+            ((*r as u32) << 24) | ((*g as u32) << 16) | ((*b as u32) << 8) | (*a as u32)
+        }
+        zero_css_parser::values::ColorValue::Named(name) => {
+            // 常见颜色名称到 RGBA 的映射
+            match name.to_lowercase().as_str() {
+                "green" => 0x008000FF,
+                "red" => 0xFF0000FF,
+                "blue" => 0x0000FFFF,
+                "black" => 0x000000FF,
+                "white" => 0xFFFFFFFF,
+                "orange" => 0xFFA500FF,
+                "yellow" => 0xFFFF00FF,
+                _ => 0x000000FF,
+            }
+        }
+        _ => 0x000000FF,
+    }
+}
+
+/// 获取指定单元格指定边的边框颜色（RGBA u32）。
+/// side: 0=top, 1=right, 2=bottom, 3=left
+fn get_cell_border_color(
+    table_box: &LayoutBox,
+    grid: &TableGrid,
+    row_idx: usize,
+    cell_idx: usize,
+    side: u8,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> Option<u32> {
+    let row = grid.rows.get(row_idx)?;
+    let row_box = get_row_box(table_box, row)?;
+    let cell = row.cells.get(cell_idx)?;
+    let cell_box = row_box.children.get(cell.child_index)?;
+    let cell_style = cell_box.node_id.and_then(|id| styles.get(&id))?;
+    let color = match side {
+        0 => &cell_style.border_top_color,
+        1 => &cell_style.border_right_color,
+        2 => &cell_style.border_bottom_color,
+        3 => &cell_style.border_left_color,
+        _ => return None,
+    };
+    Some(color_value_to_u32(color))
 }
 
 /// 从 table 容器的子元素中构建 grid 结构。
@@ -746,8 +843,7 @@ fn compute_column_widths(table_box: &LayoutBox, grid: &TableGrid, styles: &HashM
                 })
                 .unwrap_or(false);
             let cell_width = if css_width_is_small || cell_box.width < 2.0 {
-                compute_cell_intrinsic_width(cell_box, styles)
-                    .max(cell_box.width)
+                compute_cell_intrinsic_width(cell_box, styles).max(cell_box.width)
             } else {
                 cell_box.width
             };
