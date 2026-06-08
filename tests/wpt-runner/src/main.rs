@@ -38,7 +38,7 @@ Options:
   --wpt-data <dir>  Path to wpt-data directory (for reftest-upstream)
   --width <px>      Viewport width (default: 800)
   --height <px>     Viewport height (default: 600)
-  --jobs <n>        Number of parallel test jobs (default: CPU auto, GPU 1)
+  --jobs <n>        Number of parallel test jobs (default: CPU count - 1, GPU 1)
   --category <cat>  Reftest category filter (layout|text|all)
   --output <path>   Reftest report output path
 ";
@@ -671,7 +671,8 @@ fn default_parallel_jobs() -> usize {
     std::thread::available_parallelism()
         .map(|jobs| jobs.get())
         .unwrap_or(1)
-        .clamp(1, 8)
+        .saturating_sub(1)
+        .max(1)
 }
 
 fn print_usage() {
