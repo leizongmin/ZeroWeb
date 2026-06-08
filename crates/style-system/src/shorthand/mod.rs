@@ -1206,8 +1206,13 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
             }
         }
         2 => {
-            // 双值：第一个为 column-count，第二个为 column-width
-            vec![mk("column-count", parts[0]), mk("column-width", parts[1])]
+            // 双值：CSS 规范允许任意顺序，自动检测哪个是 count（整数）哪个是 width（长度）
+            let (count_val, width_val) = if parts[0].parse::<u32>().is_ok() || parts[0] == "auto" {
+                (parts[0], parts[1])
+            } else {
+                (parts[1], parts[0])
+            };
+            vec![mk("column-count", count_val), mk("column-width", width_val)]
         }
         _ => vec![],
     }
