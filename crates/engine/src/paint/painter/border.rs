@@ -45,6 +45,17 @@ impl super::Painter {
         let collapse = matches!(style.border_collapse, BorderCollapseValue::Collapse);
         let half = |v: f32| if collapse { v / 2.0 } else { v };
 
+        // border-collapse 颜色覆盖：当表格边框胜出时使用表格的颜色
+        let top_color = collapsed_border_color(&box_node.collapsed_border_color_overrides[0], &style.border_top_color);
+        let right_color =
+            collapsed_border_color(&box_node.collapsed_border_color_overrides[1], &style.border_right_color);
+        let bottom_color = collapsed_border_color(
+            &box_node.collapsed_border_color_overrides[2],
+            &style.border_bottom_color,
+        );
+        let left_color =
+            collapsed_border_color(&box_node.collapsed_border_color_overrides[3], &style.border_left_color);
+
         // 上边框
         if box_node.border_top > 0.0
             && style.border_top_style != BorderStyleValue::None
@@ -61,7 +72,7 @@ impl super::Painter {
                     extend_left: false,
                 },
                 &style.border_top_style,
-                &style.border_top_color,
+                &top_color,
             );
         }
 
@@ -81,7 +92,7 @@ impl super::Painter {
                     extend_left: true,
                 },
                 &style.border_right_style,
-                &style.border_right_color,
+                &right_color,
             );
         }
 
@@ -101,7 +112,7 @@ impl super::Painter {
                     extend_left: false,
                 },
                 &style.border_bottom_style,
-                &style.border_bottom_color,
+                &bottom_color,
             );
         }
 
@@ -121,7 +132,7 @@ impl super::Painter {
                     extend_left: false,
                 },
                 &style.border_left_style,
-                &style.border_left_color,
+                &left_color,
             );
         }
     }
@@ -728,4 +739,21 @@ fn darken(color: &Color, amount: f32) -> Color {
         (color.b as f32 * (1.0 - amount)).min(255.0) as u8,
         color.a,
     )
+}
+
+/// 解析 border-collapse 边框颜色覆盖。
+///
+/// 当 LayoutBox 有 collapsed_border_color_overrides 时，使用覆盖颜色（RGBA u32），
+/// 否则回退到 ComputedStyle 中的原始颜色。
+fn collapsed_border_color(override_color: &Option<u32>, original: &ColorValue) -> ColorValue {
+    match override_color {
+        Some(rgba) => {
+            let r = ((rgba >> 24) & 0xFF) as u8;
+            let g = ((rgba >> 16) & 0xFF) as u8;
+            let b = ((rgba >> 8) & 0xFF) as u8;
+            let a = (rgba & 0xFF) as u8;
+            ColorValue::Rgba(r, g, b, a)
+        }
+        None => original.clone(),
+    }
 }

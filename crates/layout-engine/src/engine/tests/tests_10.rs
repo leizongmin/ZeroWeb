@@ -472,3 +472,52 @@ fn test_bfc_float_avoidance_right() {
         fl_box.x
     );
 }
+
+#[test]
+fn test_border_collapse_table_wins() {
+    let html = r#"<html><body style="margin:0"><table style="border: 5px solid green; border-collapse: collapse"><tr><td style="border: 4.95px solid red; width: 50px; height: 50px"></td></tr></table></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // Find the table cell by looking for small boxes with borders
+    fn find_cell(box_node: &crate::types::LayoutBox) -> Option<&crate::types::LayoutBox> {
+        for child in &box_node.children {
+            // Check if this looks like a cell (has border and small size)
+            if child.border_top > 0.0 && child.width < 100.0 && child.width > 10.0 {
+                return Some(child);
+            }
+            if let Some(c) = find_cell(child) {
+                return Some(c);
+            }
+        }
+        None
+    }
+
+    if let Some(cell) = find_cell(&result.root) {
+        // Table border (5px) should win over cell border (4.95px)
+        // After resolve_collapsed_borders, cell border_top should be ~5.0
+        assert!(
+            cell.border_top >= 4.9,
+            "cell border_top should be ~5.0 (table wins), got {}",
+            cell.border_top
+        );
+        // Color override should be set for top edge (green from table)
+        let top_color_override = cell.collapsed_border_color_overrides[0];
+        assert!(
+            top_color_override.is_some(),
+            "top color override should be set (table's green), got None"
+        );
+        // Green = Rgba(0, 128, 0, 255) = 0x008000FF
+        if let Some(c) = top_color_override {
+            assert_eq!(
+                c, 0x008000FF,
+                "top color override should be green (0x008000FF), got {:#010X}",
+                c
+            );
+        }
+    }
+}

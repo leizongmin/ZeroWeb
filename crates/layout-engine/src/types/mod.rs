@@ -100,6 +100,10 @@ pub struct LayoutBox {
     pub is_block_level: bool,
     /// 是否为 position: relative（后处理步骤需保留 relative 偏移）。
     pub is_relative: bool,
+    /// border-collapse: collapse 时各边的边框颜色覆盖（RGBA u32）。
+    /// 侧边索引：0=top, 1=right, 2=bottom, 3=left。
+    /// None 表示无覆盖（使用 ComputedStyle 中的颜色）。
+    pub collapsed_border_color_overrides: [Option<u32>; 4],
 }
 
 impl LayoutBox {
@@ -168,6 +172,7 @@ impl Default for LayoutBox {
             is_flow_root: false,
             is_block_level: false,
             is_relative: false,
+            collapsed_border_color_overrides: [None; 4],
         }
     }
 }

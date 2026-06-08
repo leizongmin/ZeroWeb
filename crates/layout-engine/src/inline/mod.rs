@@ -658,8 +658,8 @@ impl InlineFormattingContext {
                     for (word_idx, word) in words.iter().enumerate() {
                         // 基础宽度 + letter-spacing（每个字符追加）
                         let char_count = word.chars().count();
-                        let mut word_width =
-                            estimate_string_width(word, run.font_size, run.is_ahem_font) + run.letter_spacing * char_count as f32;
+                        let mut word_width = estimate_string_width(word, run.font_size, run.is_ahem_font)
+                            + run.letter_spacing * char_count as f32;
                         // 非首个单词：追加 word-spacing（单词间间距）
                         if word_idx > 0 {
                             word_width += run.word_spacing;
@@ -711,7 +711,8 @@ impl InlineFormattingContext {
                             let mut partial_x = current_x;
 
                             for (ci, ch) in chars.iter().enumerate() {
-                                let ch_width = estimate_char_width(*ch, run.font_size, run.is_ahem_font) + run.letter_spacing;
+                                let ch_width =
+                                    estimate_char_width(*ch, run.font_size, run.is_ahem_font) + run.letter_spacing;
 
                                 let (_, avail) =
                                     self.effective_content_area(current_y, current_line.height.max(fragment_height));
