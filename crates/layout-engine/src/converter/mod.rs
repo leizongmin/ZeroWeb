@@ -35,7 +35,11 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
             x: convert_overflow(&style.overflow_x),
             y: convert_overflow(&style.overflow_y),
         },
-        scrollbar_width: 0.0,
+        scrollbar_width: match style.scrollbar_width {
+            zero_style_system::ScrollbarWidthComputedValue::Auto => 15.0,
+            zero_style_system::ScrollbarWidthComputedValue::Thin => 8.0,
+            zero_style_system::ScrollbarWidthComputedValue::None => 0.0,
+        },
         position: convert_position(&style.position),
         inset: taffy::geometry::Rect {
             left: convert_length_to_lpa(&style.left, false),
