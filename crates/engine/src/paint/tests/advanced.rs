@@ -433,8 +433,8 @@ fn test_paint_radial_gradient_basic() {
         RadialGradient {
             shape: RadialShape::Circle,
             size: RadialSize::FarthestCorner,
-            position_x: LengthValue::Px(100.0),
-            position_y: LengthValue::Px(100.0),
+            position_x: LengthValue::Percentage(50.0),
+            position_y: LengthValue::Percentage(50.0),
             stops: vec![
                 GradientColorStop {
                     color: ColorValue::Rgba(255, 255, 255, 255),
@@ -464,12 +464,11 @@ fn test_paint_radial_gradient_basic() {
             inner_radius,
             outer_radius,
         } => {
-            // cx = rect.left() + length_to_f32(&Px(100)) / 100.0 * w = 0 + 100/100 * 200 = 200
-            // cy = rect.top() + length_to_f32(&Px(100)) / 100.0 * h = 0 + 100/100 * 200 = 200
+            // 50% of 200 = 100 — 中心在容器中心
+            assert!((*cx - 100.0).abs() < 0.1, "cx 应约为 100，实际 {}", cx);
+            assert!((*cy - 100.0).abs() < 0.1, "cy 应约为 100，实际 {}", cy);
             assert_eq!(*inner_radius, 0.0, "inner_radius 应为 0");
             assert!(*outer_radius > 0.0, "outer_radius 应大于 0");
-            // 验证是 Radial 类型即可，cx/cy 由 length_to_f32 计算决定
-            let _ = (cx, cy);
         }
         other => panic!("期望 Radial 类型，实际 {:?}", other),
     }

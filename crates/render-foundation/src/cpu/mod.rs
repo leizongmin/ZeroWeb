@@ -447,14 +447,37 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
     let dst_w = right - left;
     let dst_h = bottom - top;
 
-    // 简单缩放采样（最近邻）
+    // 双线性插值缩放采样
+    let src_w_f = data.width as f32;
+    let src_h_f = data.height as f32;
     for y in 0..dst_h {
-        let src_y = (y as f32 / dst_h as f32 * data.height as f32) as u32;
-        let src_y = src_y.min(data.height - 1);
+        // 映射到源图像坐标（中心对齐）
+        let src_y = (y as f32 + 0.5) / dst_h as f32 * src_h_f - 0.5;
+        let src_y0 = src_y.floor().max(0.0) as u32;
+        let src_y1 = (src_y0 + 1).min(data.height - 1);
+        let fy = src_y - src_y0 as f32;
+
         for x in 0..dst_w {
-            let src_x = (x as f32 / dst_w as f32 * data.width as f32) as u32;
-            let src_x = src_x.min(data.width - 1);
-            let [src_r, src_g, src_b, src_a] = data.get_pixel(src_x, src_y);
+            let src_x = (x as f32 + 0.5) / dst_w as f32 * src_w_f - 0.5;
+            let src_x0 = src_x.floor().max(0.0) as u32;
+            let src_x1 = (src_x0 + 1).min(data.width - 1);
+            let fx = src_x - src_x0 as f32;
+
+            // 双线性插值：4 个邻近像素加权平均
+            let [r00, g00, b00, a00] = data.get_pixel(src_x0, src_y0);
+            let [r10, g10, b10, a10] = data.get_pixel(src_x1, src_y0);
+            let [r01, g01, b01, a01] = data.get_pixel(src_x0, src_y1);
+            let [r11, g11, b11, a11] = data.get_pixel(src_x1, src_y1);
+
+            let w00 = (1.0 - fx) * (1.0 - fy);
+            let w10 = fx * (1.0 - fy);
+            let w01 = (1.0 - fx) * fy;
+            let w11 = fx * fy;
+
+            let src_r = (r00 as f32 * w00 + r10 as f32 * w10 + r01 as f32 * w01 + r11 as f32 * w11) as u8;
+            let src_g = (g00 as f32 * w00 + g10 as f32 * w10 + g01 as f32 * w01 + g11 as f32 * w11) as u8;
+            let src_b = (b00 as f32 * w00 + b10 as f32 * w10 + b01 as f32 * w01 + b11 as f32 * w11) as u8;
+            let src_a = (a00 as f32 * w00 + a10 as f32 * w10 + a01 as f32 * w01 + a11 as f32 * w11) as u8;
 
             let dst_x = left + x;
             let dst_y = top + y;
