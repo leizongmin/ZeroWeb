@@ -18,7 +18,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；XHTML CDATA 清理 ✅(strip_cdata 去除 <![CDATA[...]]> 标记，修复 CSS 解析器因 CDATA 导致 0 规则提取的问题)；490 个上游 reftest 已导入（9 个目录，+1 JS-dependent 跳过）；**真实通过率 65.8% (323/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；css-position 62.5%；CSS2 58.9%；css-flexbox 61.8%；css-multicol 43.9%；css-writing-modes 40.7%；**本轮修复**：CSS font-family 解析 ✅(替换硬编码 FontId(0) 为 CSS font-family 查找；OpenType name 表解析提取字体族名；通用字体族映射 sans-serif/serif/monospace)；CSS border-width zeroing ✅(当 border-style 为 none/hidden 时强制 width=0)；flex-flow 简写展开 ✅(flex-direction || flex-wrap)；font-family 非法字符验证 ✅(含无效字符的未引用字体族名使整个声明无效)；font 简写验证 ✅(缺少 font-size 的 font 简写声明视为无效)；**后续重点**：writing-mode 布局支持（影响 writing-modes 全部 + flexbox 部分）、border-collapse 冲突解决、column breaking、float 布局精度、inline box model |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；XHTML CDATA 清理 ✅(strip_cdata 去除 <![CDATA[...]]> 标记，修复 CSS 解析器因 CDATA 导致 0 规则提取的问题)；490 个上游 reftest 已导入（9 个目录，+1 JS-dependent 跳过）；**真实通过率 66.9% (328/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 70.9%；css-position 62.5%；CSS2 63.6%；css-flexbox 61.8%；css-multicol 45.6%；css-writing-modes 40.7%；**本轮修复**：CSS font-family 解析 ✅(替换硬编码 FontId(0) 为 CSS font-family 查找；OpenType name 表解析提取字体族名；通用字体族映射 sans-serif/serif/monospace)；CSS border-width zeroing ✅(当 border-style 为 none/hidden 时强制 width=0)；flex-flow 简写展开 ✅(flex-direction || flex-wrap)；font-family 非法字符验证 ✅(含无效字符的未引用字体族名使整个声明无效)；font 简写验证 ✅(缺少 font-size 的 font 简写声明视为无效)；float Y 位置修复 ✅(float 元素在含非 float 子元素的容器中尊重 taffy Y 位置，确保不被放到前面内容之上)；clearance 计算修复 ✅(CSS 2.1 §9.5.2 使用 flow_bottom + margin 折叠计算假设位置，替代简单的 float_y_offset 扣除)；inline `<img>` 替换元素 ✅(在 inline formatting context 中识别 img 元素固有尺寸)；**后续重点**：writing-mode 布局支持（影响 writing-modes 35 个测试）、border-collapse 冲突解决、column breaking（影响 multicol 31 个测试）、float 布局精度、inline box model |
 
 ## 当前状态概览
 
@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-08（本轮第五轮）
+**日期**: 2026-06-08（本轮第六轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
-**通过**: 323
-**失败**: 167
-**通过率**: 65.9%
+**通过**: 328
+**失败**: 162
+**通过率**: 66.9%
 
-**说明**：通过率维持 65.9% (323/490)。本轮实现了 CSS 2.1 Appendix E 绘制顺序修复（float 元素在 block 子元素之后绘制）、columns 简写顺序无关解析修复、clearance 计算代码质量改善。这些是规范合规性修复，为后续通过率提升打基础。
+**说明**：通过率从 65.9% 提升到 66.9% (+5 passes)。本轮实现了 float Y 位置修复（float 在含 inflow 子元素的容器中尊重 taffy Y 位置）、clearance 计算修复（CSS 2.1 §9.5.2 使用 flow_bottom + margin 折叠替代简单 offset 扣除）、inline img 替换元素支持。
 
 ### 按目录
 
@@ -301,9 +301,9 @@
 | css-text-decor/ | 39/39 | 100.0% | ✅ |
 | css-fonts/ | 57/60 | 95.0% | ✅ |
 | css-grid/ | 17/20 | 85.0% | ❌ |
-| css-tables/ | 41/55 | 74.5% | ❌ |
+| css-tables/ | 39/55 | 70.9% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
-| CSS2/ | 75/129 | 58.1% | ❌ |
+| CSS2/ | 82/129 | 63.6% | ❌ |
 | css-flexbox/ | 34/55 | 61.8% | ❌ |
 | css-multicol/ | 26/57 | 45.6% | ❌ |
 | css-writing-modes/ | 24/59 | 40.7% | ❌ |
@@ -318,6 +318,9 @@
 | flex-flow 简写展开 | css-flexbox | expand_one 新增 "flex-flow" 分支，解析 flex-direction \|\| flex-wrap 并展开为长属性。修复 flex-flow-002/007 和 flexbox-column-row-gap-003 |
 | font-family 非法字符验证 | CSS2/fonts | parse_font_family() 验证未引用字体族名仅含字母/数字/连字符/下划线/空格，含非法字符时整个声明无效。修复 font-family-invalid-characters-001/008 |
 | font 简写验证 | CSS2/fonts | expand_font() 检查是否找到 size 部分，缺少 font-size 的 font 简写声明视为无效（除系统字体关键字）。更新测试用例匹配 CSS 规范行为 |
+| float Y 位置修复 | CSS2/floats | adjust_float_positions 第一阶段：当容器有非 float 子元素时，float 的最小 Y 设为其 taffy Y 位置（尊重前面的正常流内容）。CSS 2.1 §9.5.1 要求 float 放在其正常流位置或之后 |
+| clearance 计算修复 | CSS2/floats-clear | adjust_float_positions 第二阶段：CSS 2.1 §9.5.2 clearance 假设位置使用 flow_bottom + margin 折叠计算，替代简单的 float_y_offset 扣除。正确处理 float 移除后 margin 折叠方式变化的情况 |
+| inline img 替换元素 | inline layout | InlineFormattingContext 中识别 `<img>` 元素，使用 HTML width/height 属性作为固有尺寸创建 InlineBlock 条目 |
 
 
 ### 发现的关键问题
@@ -506,4 +509,10 @@
 77. ~~M10 — columns 简写顺序无关解析~~ ✅ (双值模式自动检测整数/长度，修复逆序声明如 `columns: 100px 6`)
 78. ~~M10 — clearance 代码质量改善~~ ✅ (澄清零 clearance 阻止 margin 折叠；后处理方式局限：taffy 已应用 margin 折叠)
 79. M10 — 分析 CSS2 border/background 失败根因（6 个 border 测试 + 5 个 background 测试失败，需定位具体渲染差异）
-80. M10 — inline formatting context 改进（影响 CSS2/linebox 5 个测试；空 inline 元素 line-height 贡献、inline 元素 margin 处理）
+80. ~~M10 — float Y 位置修复~~ ✅(float 在含 inflow 子元素容器中尊重 taffy Y)
+81. ~~M10 — clearance 计算修复~~ ✅(flow_bottom + margin 折叠替代简单 offset 扣除)
+82. ~~M10 — inline img 替换元素~~ ✅(InlineFormattingContext 识别 img 固有尺寸)
+83. M10 — inline formatting context 改进（影响 CSS2/linebox ~8 个测试；空 inline 元素 line-height 贡献、inline 元素 margin 处理）
+84. M10 — writing-mode 布局支持（影响 35 个测试：12 个 abs-pos-non-replaced 21.33% + direction 12.49% + float-orthog 3% 等；需实现垂直书写模式下轴交换）
+85. M10 — multicol column breaking（影响 31 个测试；需实现内容跨列拆分）
+86. M10 — CSS2 inline box model 改进（empty-inline-002/003 + inline-box-001/002 + inline-formatting-context-008/009/011 等 ~8 个测试）
