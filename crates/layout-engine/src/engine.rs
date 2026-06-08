@@ -117,6 +117,7 @@ impl LayoutEngine {
             &taffy_to_dom,
             styles,
             &WritingModeValue::HorizontalTb,
+            doc,
         );
 
         // 4. 后处理：将 fixed 元素的坐标调整为视口相对
@@ -231,6 +232,7 @@ impl LayoutEngine {
             &cached.taffy_to_dom,
             styles,
             &WritingModeValue::HorizontalTb,
+            doc,
         );
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
         // margin 折叠由 taffy 0.7 内置处理
@@ -285,12 +287,25 @@ impl LayoutEngine {
         taffy_to_dom: &HashMap<taffy::NodeId, NodeId>,
         styles: &HashMap<NodeId, ComputedStyle>,
         parent_writing_mode: &WritingModeValue,
+        doc: &Document,
     ) -> LayoutBox {
         let layout = taffy.layout(taffy_id).cloned().unwrap_or_default();
         let dom_id = taffy_to_dom.get(&taffy_id).copied();
 
+        // 检测匿名文本项：node_id 指向文本节点（flex/grid 容器中的匿名项）
+        // 文本节点没有 ComputedStyle，使用父元素的样式
+        let is_anonymous_text_item =
+            dom_id.is_some_and(|id| doc.get(id).is_some_and(|n| matches!(&n.kind, NodeKind::Text(_))));
+
         // 获取 ComputedStyle 用于提取定位和溢出信息
-        let computed = dom_id.and_then(|id| styles.get(&id));
+        // 对于匿名文本项，使用父元素的样式（文本节点继承父元素样式）
+        let computed = if is_anonymous_text_item {
+            dom_id
+                .and_then(|id| doc.parent_node(id))
+                .and_then(|pid| styles.get(&pid))
+        } else {
+            dom_id.and_then(|id| styles.get(&id))
+        };
 
         // 获取此元素自身的 writing mode
         let own_writing_mode = computed.map_or(WritingModeValue::HorizontalTb, |s| s.writing_mode.clone());
@@ -392,6 +407,7 @@ impl LayoutEngine {
                 taffy_to_dom,
                 styles,
                 &own_writing_mode,
+                doc,
             ));
         }
 
@@ -433,6 +449,7 @@ impl LayoutEngine {
             is_relative,
             collapsed_border_color_overrides: [None; 4],
             writing_mode: own_writing_mode.clone(),
+            is_anonymous_text_item,
         }
     }
 }
@@ -494,6 +511,33 @@ fn measure_text_content(
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
 ) -> Size<f32> {
+    // 检查是否为文本节点（匿名 flex/grid item）
+    // 在 flex/grid 容器中，文本节点被包装为匿名 taffy 节点参与布局。
+    if let Some(node) = doc.get(dom_id)
+        && let NodeKind::Text(text_data) = &node.kind
+    {
+        let text = text_data.content.trim().to_string();
+        if text.is_empty() {
+            return Size::ZERO;
+        }
+        // 获取父元素的 ComputedStyle 用于字体指标
+        let parent_style = doc.parent_node(dom_id).and_then(|pid| styles.get(&pid));
+        let (font_size, line_height) = crate::inline::resolve_font_metrics(parent_style);
+        let is_ahem = parent_style
+            .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
+            .unwrap_or(false);
+
+        let measured_width: f32 = text
+            .chars()
+            .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
+            .sum();
+
+        return Size {
+            width: known_dimensions.width.unwrap_or(measured_width),
+            height: known_dimensions.height.unwrap_or(line_height),
+        };
+    }
+
     if !has_direct_text(doc, dom_id) {
         return Size::ZERO;
     }
@@ -996,6 +1040,120 @@ mod table_layout_tests {
         // Should not crash, and root should have non-zero size
         assert!(result.root.width > 0.0);
         assert!(result.root.height > 0.0);
+    }
+}
+
+#[cfg(test)]
+mod anonymous_flex_item_tests {
+    use super::*;
+    use zero_css_parser::values::DisplayValue;
+    use zero_style_system::StyleSystem;
+
+    /// 测试 flex 容器中的文本节点生成匿名 flex item。
+    /// CSS Flexbox §4：flex 容器中每个连续文本运行应生成匿名 flex item。
+    #[test]
+    fn test_anonymous_flex_item_created() {
+        let html = r#"<html><body style="margin:0"><div style="display:flex">text node</div></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 找到 flex 容器
+        let mut found_flex = false;
+        let mut found_anonymous_text = false;
+        let mut stack = vec![&result.root];
+        while let Some(box_node) = stack.pop() {
+            // 检查是否为匿名文本项
+            if box_node.is_anonymous_text_item {
+                found_anonymous_text = true;
+                // 匿名文本项应有非零尺寸
+                assert!(box_node.width > 0.0, "anonymous flex item should have width > 0");
+                assert!(box_node.height > 0.0, "anonymous flex item should have height > 0");
+                // node_id 应指向文本节点
+                if let Some(nid) = box_node.node_id {
+                    if let Some(n) = doc.get(nid) {
+                        assert!(
+                            matches!(&n.kind, zero_dom::NodeKind::Text(_)),
+                            "anonymous item node_id should point to a text node"
+                        );
+                    }
+                }
+            }
+            stack.extend(&box_node.children);
+        }
+
+        assert!(
+            found_anonymous_text,
+            "should find at least one anonymous text item in flex container"
+        );
+        let _ = found_flex;
+    }
+
+    /// 测试多个文本节点和元素混合在 flex 容器中。
+    /// "a a" <div>x x</div> "b b" 应生成 3 个 flex items（2 个匿名 + 1 个元素）。
+    #[test]
+    fn test_mixed_text_and_element_flex_items() {
+        let html = r#"<html><body style="margin:0"><div style="display:flex">a a<div>x x</div>b b</div></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 找到 flex 容器（display:flex 的 div）
+        let mut flex_container: Option<&crate::types::LayoutBox> = None;
+        let mut stack = vec![&result.root];
+        while let Some(box_node) = stack.pop() {
+            if let Some(nid) = box_node.node_id {
+                if let Some(style) = styles.get(&nid) {
+                    if matches!(style.display, DisplayValue::Flex | DisplayValue::InlineFlex) {
+                        flex_container = Some(box_node);
+                        break;
+                    }
+                }
+            }
+            stack.extend(&box_node.children);
+        }
+
+        let container = flex_container.expect("should find flex container");
+        // 应有 3 个子项：2 个匿名文本 + 1 个 div 元素
+        assert_eq!(
+            container.children.len(),
+            3,
+            "flex container should have 3 children (2 anonymous text + 1 element)"
+        );
+
+        let anonymous_count = container.children.iter().filter(|c| c.is_anonymous_text_item).count();
+        assert_eq!(anonymous_count, 2, "should have 2 anonymous text items");
+
+        let element_count = container.children.iter().filter(|c| !c.is_anonymous_text_item).count();
+        assert_eq!(element_count, 1, "should have 1 element child");
+    }
+
+    /// 测试非 flex 容器中的文本节点不会生成匿名项。
+    #[test]
+    fn test_no_anonymous_items_in_block_container() {
+        let html = r#"<html><body style="margin:0"><div>text node</div></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 确保整个布局树中没有匿名文本项
+        let mut stack = vec![&result.root];
+        while let Some(box_node) = stack.pop() {
+            assert!(
+                !box_node.is_anonymous_text_item,
+                "block container should not create anonymous text items"
+            );
+            stack.extend(&box_node.children);
+        }
     }
 }
 
