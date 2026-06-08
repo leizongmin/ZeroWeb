@@ -10,7 +10,7 @@ mod text;
 
 use std::collections::{HashMap, HashSet};
 
-use zero_css_parser::values::{ColorValue, VisibilityValue};
+use zero_css_parser::values::{ColorValue, FloatValue, VisibilityValue};
 use zero_dom::{Document, NodeId};
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
@@ -187,8 +187,17 @@ impl Painter {
 
         let counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
+        // CSS 2.1 Appendix E: 非 positioned floats 在 block 级非 positioned 后代之后绘制。
+        // 先绘制非 float 子元素，再绘制 float 子元素，确保 float 视觉上在 block 背景之上。
         for child in &box_node.children {
-            self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect, doc);
+            if matches!(child.float, FloatValue::None) {
+                self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect, doc);
+            }
+        }
+        for child in &box_node.children {
+            if !matches!(child.float, FloatValue::None) {
+                self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect, doc);
+            }
         }
 
         if needs_clip {
@@ -341,8 +350,16 @@ impl Painter {
         // 记录子节点绘制前的图元数量，用于裁剪
         let counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
+        // CSS 2.1 Appendix E: 非 positioned floats 在 block 级非 positioned 后代之后绘制。
         for child in &box_node.children {
-            self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
+            if matches!(child.float, FloatValue::None) {
+                self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
+            }
+        }
+        for child in &box_node.children {
+            if !matches!(child.float, FloatValue::None) {
+                self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
+            }
         }
 
         // 如果需要裁剪，将子节点产生的图元裁剪到内容盒范围内
