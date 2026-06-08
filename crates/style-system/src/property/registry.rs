@@ -339,6 +339,7 @@ impl PropertyRegistry {
                 | "list-style-image"
                 | "empty-cells"
                 | "border-spacing"
+                | "writing-mode"
         )
     }
 
