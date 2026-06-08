@@ -171,6 +171,29 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // ── flex ──
         "flex" => expand_flex(value, important, specificity),
 
+        // ── flex-flow: <flex-direction> || <flex-wrap> ──
+        "flex-flow" => {
+            let mut direction = None;
+            let mut wrap = None;
+            for token in value.split_whitespace() {
+                if direction.is_none() && matches!(token, "row" | "row-reverse" | "column" | "column-reverse") {
+                    direction = Some(token);
+                } else if wrap.is_none() && matches!(token, "nowrap" | "wrap" | "wrap-reverse") {
+                    wrap = Some(token);
+                } else {
+                    // 无法识别的 token，忽略
+                }
+            }
+            let mut result = Vec::new();
+            if let Some(d) = direction {
+                result.push(mk("flex-direction", d));
+            }
+            if let Some(w) = wrap {
+                result.push(mk("flex-wrap", w));
+            }
+            if result.is_empty() { vec![] } else { result }
+        }
+
         // ── inset ──
         "inset" => {
             let Some((t, r, b, l)) = parse_rect_values(value) else {
@@ -1502,6 +1525,25 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
 
     if !family_parts.is_empty() {
         family = family_parts.join(" ");
+    }
+
+    // CSS 规范：font 简写必须至少包含 font-size 和 font-family
+    // 如果没有找到 size 部分，声明无效（除非是系统字体关键字）
+    if !size_found {
+        // 检查是否为系统字体关键字
+        let system_fonts = ["caption", "icon", "menu", "message-box", "small-caption", "status-bar"];
+        if system_fonts.contains(&value.to_ascii_lowercase().as_str()) {
+            // 系统字体关键字：设置所有子属性为 normal
+            return vec![
+                mk("font-style", "normal"),
+                mk("font-weight", "normal"),
+                mk("font-size", "medium"),
+                mk("line-height", "normal"),
+                mk("font-family", value),
+            ];
+        }
+        // 无效的 font 简写声明
+        return vec![];
     }
 
     vec![

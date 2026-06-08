@@ -468,52 +468,28 @@ fn test_font_size_only() {
 #[test]
 /// font 仅 weight
 fn test_font_weight_only() {
+    // CSS 规范：font 简写必须包含 font-size 和 font-family。
+    // "bold" 缺少 font-size，声明无效。
     let result = expand_one("font", "bold", false, (0, 0, 1));
-    assert_eq!(result.len(), 5);
-    assert_eq!(result[0].0, "font-style");
-    assert_eq!(result[0].1, "normal");
-    assert_eq!(result[1].0, "font-weight");
-    assert_eq!(result[1].1, "bold");
-    assert_eq!(result[2].0, "font-size");
-    assert_eq!(result[2].1, "medium");
-    assert_eq!(result[3].0, "line-height");
-    assert_eq!(result[3].1, "normal");
-    assert_eq!(result[4].0, "font-family");
-    assert_eq!(result[4].1, "");
+    assert!(result.is_empty(), "font: bold should be invalid");
 }
 
 #[test]
 /// font 仅 style
 fn test_font_style_only() {
+    // CSS 规范：font 简写必须包含 font-size 和 font-family。
+    // "italic" 缺少 font-size，声明无效。
     let result = expand_one("font", "italic", false, (0, 0, 1));
-    assert_eq!(result.len(), 5);
-    assert_eq!(result[0].0, "font-style");
-    assert_eq!(result[0].1, "italic");
-    assert_eq!(result[1].0, "font-weight");
-    assert_eq!(result[1].1, "normal");
-    assert_eq!(result[2].0, "font-size");
-    assert_eq!(result[2].1, "medium");
-    assert_eq!(result[3].0, "line-height");
-    assert_eq!(result[3].1, "normal");
-    assert_eq!(result[4].0, "font-family");
-    assert_eq!(result[4].1, "");
+    assert!(result.is_empty(), "font: italic should be invalid");
 }
 
 #[test]
 /// font 仅 family - 注意：当前实现不支持只有 family 的情况
 fn test_font_family_only() {
+    // CSS 规范：font 简写必须包含 font-size 和 font-family。
+    // "Arial" 缺少 font-size，声明无效。
     let result = expand_one("font", "Arial", false, (0, 0, 1));
-    assert_eq!(result.len(), 5);
-    assert_eq!(result[0].0, "font-style");
-    assert_eq!(result[0].1, "normal");
-    assert_eq!(result[1].0, "font-weight");
-    assert_eq!(result[1].1, "normal");
-    assert_eq!(result[2].0, "font-size");
-    assert_eq!(result[2].1, "medium");
-    assert_eq!(result[3].0, "line-height");
-    assert_eq!(result[3].1, "normal");
-    assert_eq!(result[4].0, "font-family");
-    assert_eq!(result[4].1, ""); // 当前实现中 family 为空
+    assert!(result.is_empty(), "font: Arial should be invalid");
 }
 
 #[test]
