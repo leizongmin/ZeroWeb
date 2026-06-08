@@ -1019,6 +1019,7 @@ fn position_cells(
 
             // 单元格高度：CSS 2.1 规范中，table cell 的 height 属性被视为最小高度。
             // 单元格必须增长以包含其内容，不能裁剪到明确高度。
+            // CSS 2.1 规定即使设置了 overflow:hidden，表格单元格仍然必须增长以包含内容。
             // 取 max(行高, 单元格内容的最大高度)。
             let cell_content_height = cell_box
                 .children
