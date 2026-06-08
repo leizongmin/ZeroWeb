@@ -678,6 +678,37 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
         }
     }
 
+    // 调整容器高度：当 float 元素占据的垂直空间被移除后，
+    // 容器高度应基于子元素的实际位置重新计算。
+    // 否则容器底部会留有空白间隙。
+    if !float_taffy_y.is_empty() {
+        let content_bottom =
+            box_node
+                .children
+                .iter()
+                .filter(|c| !c.is_absolute && !c.is_fixed)
+                .fold(0.0f32, |max_y, c| {
+                    let bottom = c.y + c.height + c.margin_bottom;
+                    max_y.max(bottom)
+                });
+        let content_top = box_node.content_y;
+        let content_height = (content_bottom - content_top).max(0.0);
+        // 如果内容区域实际高度小于 taffy 计算的高度，收缩容器
+        if content_height < box_node.content_height {
+            box_node.content_height = content_height;
+            // 更新总高度（包含 padding + border）
+            let new_total = content_height
+                + box_node.padding_top
+                + box_node.padding_bottom
+                + box_node.border_top
+                + box_node.border_bottom;
+            // 仅当新高度更小时才更新（不扩大容器）
+            if new_total < box_node.height {
+                box_node.height = new_total;
+            }
+        }
+    }
+
     // 递归处理子容器
     for child in &mut box_node.children {
         adjust_float_positions(child);
