@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use taffy::prelude::*;
 use zero_css_parser::values::{DisplayValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
-use zero_style_system::ComputedStyle;
+use zero_style_system::{ComputedStyle, WritingModeValue};
 
 use crate::converter::{GridAreaMap, computed_style_to_taffy, parse_grid_template_areas};
 
@@ -56,7 +56,15 @@ pub fn build_layout_tree(
     let root = doc.root();
     let first_element = find_first_element(doc, root);
 
-    let root_taffy_id = build_subtree(&mut ctx, doc, styles, first_element, None, false);
+    let root_taffy_id = build_subtree(
+        &mut ctx,
+        doc,
+        styles,
+        first_element,
+        None,
+        false,
+        WritingModeValue::HorizontalTb,
+    );
 
     (ctx.taffy, root_taffy_id, ctx.taffy_to_dom)
 }
@@ -180,6 +188,7 @@ fn build_subtree(
     dom_id: NodeId,
     parent_grid_areas: Option<&GridAreaMap>,
     in_shadow: bool,
+    parent_writing_mode: WritingModeValue,
 ) -> taffy::NodeId {
     // LAY-08: 先检查 display:none 再克隆，避免对隐藏元素做不必要的堆分配
     if styles.get(&dom_id).is_some_and(|s| s.display == DisplayValue::None) {
@@ -208,6 +217,22 @@ fn build_subtree(
     // 替换元素固有尺寸：检测 <img> 元素并注入 HTML 属性中的 width/height
     apply_replaced_element_sizing(&mut taffy_style, &computed, doc, dom_id);
 
+    // 垂直书写模式轴交换
+    // CSS Writing Modes §7.1：在垂直书写模式中，水平/垂直维度互换。
+    // 当父元素（即当前元素的 containing block）具有 vertical writing mode 时，
+    // 交换盒模型属性使 taffy 以「水平=行内」模型计算布局，
+    // 然后在提取结果时交换坐标还原视觉位置。
+    let is_vertical = matches!(
+        parent_writing_mode,
+        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+    );
+    if is_vertical {
+        crate::converter::apply_vertical_writing_mode(&mut taffy_style);
+    }
+
+    // 记录此元素的 writing mode，用于子元素轴交换判断
+    let own_writing_mode = computed.writing_mode.clone();
+
     // 收集需要创建 taffy 节点的子元素
     // 当元素有 ShadowRoot 时，遍历 shadow 树而非 light DOM 子节点；
     // shadow 树中的 <slot> 元素替换为已分配的 light DOM 节点（或回退内容）。
@@ -215,11 +240,27 @@ fn build_subtree(
 
     if let Some(shadow_id) = doc.shadow_root(dom_id) {
         // 有 ShadowRoot → 遍历 shadow 树，slot 解析在任意深度生效
-        collect_shadow_children(ctx, doc, styles, shadow_id, grid_areas.as_ref(), &mut child_taffy_ids);
+        collect_shadow_children(
+            ctx,
+            doc,
+            styles,
+            shadow_id,
+            grid_areas.as_ref(),
+            &mut child_taffy_ids,
+            &own_writing_mode,
+        );
         // 注意：未分配到任何 slot 的 light DOM 子节点不会出现在布局树中
     } else if in_shadow {
         // 在 shadow 树内部，需要检查子元素是否为 <slot> 以进行替换
-        collect_shadow_slot_children(ctx, doc, styles, dom_id, grid_areas.as_ref(), &mut child_taffy_ids);
+        collect_shadow_slot_children(
+            ctx,
+            doc,
+            styles,
+            dom_id,
+            grid_areas.as_ref(),
+            &mut child_taffy_ids,
+            &own_writing_mode,
+        );
     } else {
         // 无 ShadowRoot，不在 shadow 树中 → 正常遍历 light DOM 子节点
         let node_data = doc.get(dom_id);
@@ -241,7 +282,15 @@ fn build_subtree(
         children_with_order.sort_by_key(|(_, order)| *order);
 
         for &(child_dom, _) in &children_with_order {
-            let child_taffy = build_subtree(ctx, doc, styles, child_dom, grid_areas.as_ref(), false);
+            let child_taffy = build_subtree(
+                ctx,
+                doc,
+                styles,
+                child_dom,
+                grid_areas.as_ref(),
+                false,
+                own_writing_mode.clone(),
+            );
             child_taffy_ids.push(child_taffy);
         }
     }
@@ -276,6 +325,7 @@ fn collect_shadow_children(
     shadow_root_id: NodeId,
     parent_grid_areas: Option<&GridAreaMap>,
     output: &mut Vec<taffy::NodeId>,
+    writing_mode: &WritingModeValue,
 ) {
     let children = doc.get(shadow_root_id).map(|n| n.children.clone()).unwrap_or_default();
     for &child_id in &children {
@@ -300,7 +350,15 @@ fn collect_shadow_children(
                         .get(assigned_id)
                         .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
                     {
-                        let taffy_id = build_subtree(ctx, doc, styles, assigned_id, parent_grid_areas, false);
+                        let taffy_id = build_subtree(
+                            ctx,
+                            doc,
+                            styles,
+                            assigned_id,
+                            parent_grid_areas,
+                            false,
+                            writing_mode.clone(),
+                        );
                         output.push(taffy_id);
                     }
                 }
@@ -312,14 +370,30 @@ fn collect_shadow_children(
                         .get(fallback_id)
                         .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
                     {
-                        let taffy_id = build_subtree(ctx, doc, styles, fallback_id, parent_grid_areas, true);
+                        let taffy_id = build_subtree(
+                            ctx,
+                            doc,
+                            styles,
+                            fallback_id,
+                            parent_grid_areas,
+                            true,
+                            writing_mode.clone(),
+                        );
                         output.push(taffy_id);
                     }
                 }
             }
         } else {
             // 非 slot 元素，递归进入 shadow 树子节点（in_shadow=true）
-            let taffy_id = build_subtree(ctx, doc, styles, child_id, parent_grid_areas, true);
+            let taffy_id = build_subtree(
+                ctx,
+                doc,
+                styles,
+                child_id,
+                parent_grid_areas,
+                true,
+                writing_mode.clone(),
+            );
             output.push(taffy_id);
         }
     }
@@ -336,6 +410,7 @@ fn collect_shadow_slot_children(
     parent_id: NodeId,
     parent_grid_areas: Option<&GridAreaMap>,
     output: &mut Vec<taffy::NodeId>,
+    writing_mode: &WritingModeValue,
 ) {
     let children = doc.get(parent_id).map(|n| n.children.clone()).unwrap_or_default();
     for &child_id in &children {
@@ -359,7 +434,15 @@ fn collect_shadow_slot_children(
                         .get(assigned_id)
                         .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
                     {
-                        let taffy_id = build_subtree(ctx, doc, styles, assigned_id, parent_grid_areas, false);
+                        let taffy_id = build_subtree(
+                            ctx,
+                            doc,
+                            styles,
+                            assigned_id,
+                            parent_grid_areas,
+                            false,
+                            writing_mode.clone(),
+                        );
                         output.push(taffy_id);
                     }
                 }
@@ -370,14 +453,30 @@ fn collect_shadow_slot_children(
                         .get(fallback_id)
                         .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
                     {
-                        let taffy_id = build_subtree(ctx, doc, styles, fallback_id, parent_grid_areas, true);
+                        let taffy_id = build_subtree(
+                            ctx,
+                            doc,
+                            styles,
+                            fallback_id,
+                            parent_grid_areas,
+                            true,
+                            writing_mode.clone(),
+                        );
                         output.push(taffy_id);
                     }
                 }
             }
         } else {
             // 非 slot 元素，继续在 shadow 树中递归
-            let taffy_id = build_subtree(ctx, doc, styles, child_id, parent_grid_areas, true);
+            let taffy_id = build_subtree(
+                ctx,
+                doc,
+                styles,
+                child_id,
+                parent_grid_areas,
+                true,
+                writing_mode.clone(),
+            );
             output.push(taffy_id);
         }
     }

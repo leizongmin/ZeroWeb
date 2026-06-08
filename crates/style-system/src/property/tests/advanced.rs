@@ -796,14 +796,15 @@ fn test_apply_writing_mode_vertical_lr() {
 }
 
 #[test]
-/// 测试 writing-mode 默认值为 horizontal-tb
+/// 测试 writing-mode 默认值为 horizontal-tb，且为继承属性（CSS 规范）
 fn test_writing_mode_default_is_horizontal_tb() {
     let style = ComputedStyle::default();
     assert_eq!(style.writing_mode, WritingModeValue::HorizontalTb);
 
     // 验证注册表初始值
     assert!(PropertyRegistry::initial_value("writing-mode").is_some());
-    assert!(!PropertyRegistry::is_inherited("writing-mode"));
+    // writing-mode 是继承属性（CSS Writing Modes 规范）
+    assert!(PropertyRegistry::is_inherited("writing-mode"));
 
     // 验证 known_properties 包含
     let props = PropertyRegistry::known_properties();
@@ -817,10 +818,10 @@ fn test_writing_mode_default_is_horizontal_tb() {
 }
 
 #[test]
-/// 测试 writing-mode 不继承：父元素 vertical-rl，子元素不继承
-fn test_writing_mode_not_inherited() {
-    // writing-mode 不是继承属性
-    assert!(!PropertyRegistry::is_inherited("writing-mode"));
+/// 测试 writing-mode 继承：父元素 vertical-rl，子元素继承
+fn test_writing_mode_inherited() {
+    // writing-mode 是继承属性（CSS 规范）
+    assert!(PropertyRegistry::is_inherited("writing-mode"));
 
     let mut parent = ComputedStyle::default();
     parent.writing_mode = WritingModeValue::VerticalRl;
@@ -828,10 +829,10 @@ fn test_writing_mode_not_inherited() {
     let mut child = ComputedStyle::default();
     assert_eq!(child.writing_mode, WritingModeValue::HorizontalTb);
 
-    // inherit_property 对 writing-mode 应返回 false
-    assert!(!inherit_property(&parent, &mut child, "writing-mode"));
-    // 子元素值不变
-    assert_eq!(child.writing_mode, WritingModeValue::HorizontalTb);
+    // inherit_property 对 writing-mode 应返回 true 并复制父元素值
+    assert!(inherit_property(&parent, &mut child, "writing-mode"));
+    // 子元素继承父元素的 writing-mode
+    assert_eq!(child.writing_mode, WritingModeValue::VerticalRl);
 }
 
 // ═══════════════════════════════════════════════════════════════════

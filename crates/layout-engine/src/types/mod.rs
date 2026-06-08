@@ -6,6 +6,7 @@
 pub use zero_css_parser::values::ClearValue;
 use zero_css_parser::values::FloatValue;
 use zero_dom::NodeId;
+use zero_style_system::WritingModeValue;
 
 /// 溢出处理方式。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -104,6 +105,8 @@ pub struct LayoutBox {
     /// 侧边索引：0=top, 1=right, 2=bottom, 3=left。
     /// None 表示无覆盖（使用 ComputedStyle 中的颜色）。
     pub collapsed_border_color_overrides: [Option<u32>; 4],
+    /// 元素的 writing-mode（用于 paint 阶段旋转文字和后处理轴交换）。
+    pub writing_mode: WritingModeValue,
 }
 
 impl LayoutBox {
@@ -173,6 +176,7 @@ impl Default for LayoutBox {
             is_block_level: false,
             is_relative: false,
             collapsed_border_color_overrides: [None; 4],
+            writing_mode: WritingModeValue::HorizontalTb,
         }
     }
 }

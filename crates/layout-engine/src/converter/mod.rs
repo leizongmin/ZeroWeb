@@ -125,6 +125,47 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
     }
 }
 
+/// 对垂直书写模式下的元素交换 taffy 属性的水平/垂直轴。
+///
+/// CSS Writing Modes §7.1：在垂直书写模式中，水平维度的布局规则应用于垂直维度，反之亦然。
+/// 这意味着对于 taffy 布局：
+/// - width ↔ height（尺寸沿轴互换）
+/// - left ↔ top, right ↔ bottom（inset 互换）
+/// - margin/padding/border 的 left ↔ top, right ↔ bottom
+///
+/// 此函数在 `computed_style_to_taffy` 之后调用，对位于垂直书写模式容器中的元素
+/// 进行轴交换，使 taffy 仍然以「水平=行内，垂直=块」的模型计算布局，
+/// 然后在提取布局结果时通过坐标交换还原正确的视觉位置。
+///
+/// 仅交换盒模型属性（inset、size、margin、padding、border），
+/// 不交换 grid/flex 等布局属性（它们有自己的方向处理）。
+pub fn apply_vertical_writing_mode(style: &mut taffy::Style) {
+    // 交换 inset: left ↔ top, right ↔ bottom
+    std::mem::swap(&mut style.inset.left, &mut style.inset.top);
+    std::mem::swap(&mut style.inset.right, &mut style.inset.bottom);
+
+    // 交换 size: width ↔ height
+    std::mem::swap(&mut style.size.width, &mut style.size.height);
+
+    // 交换 min_size: width ↔ height
+    std::mem::swap(&mut style.min_size.width, &mut style.min_size.height);
+
+    // 交换 max_size: width ↔ height
+    std::mem::swap(&mut style.max_size.width, &mut style.max_size.height);
+
+    // 交换 margin: left ↔ top, right ↔ bottom
+    std::mem::swap(&mut style.margin.left, &mut style.margin.top);
+    std::mem::swap(&mut style.margin.right, &mut style.margin.bottom);
+
+    // 交换 padding: left ↔ top, right ↔ bottom
+    std::mem::swap(&mut style.padding.left, &mut style.padding.top);
+    std::mem::swap(&mut style.padding.right, &mut style.padding.bottom);
+
+    // 交换 border: left ↔ top, right ↔ bottom
+    std::mem::swap(&mut style.border.left, &mut style.border.top);
+    std::mem::swap(&mut style.border.right, &mut style.border.bottom);
+}
+
 /// 转换 display 属性。
 fn convert_display(value: &DisplayValue) -> taffy::style::Display {
     match value {

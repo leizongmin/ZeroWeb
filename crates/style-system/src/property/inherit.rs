@@ -248,6 +248,11 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.padding_left = parent.padding_left.clone();
             true
         }
+        // Writing Mode
+        "writing-mode" => {
+            child.writing_mode = parent.writing_mode.clone();
+            true
+        }
         _ => false,
     }
 }

@@ -17,6 +17,7 @@ use crate::dirty::LayoutDirtyTracker;
 use crate::inline::{FloatExclusion, InlineFormattingContext};
 use crate::tree::build_layout_tree;
 use crate::types::{LayoutBox, LayoutResult, OverflowClip};
+use zero_style_system::WritingModeValue;
 
 /// 缓存的 taffy 布局状态 — 用于增量重算。
 ///
@@ -109,8 +110,14 @@ impl LayoutEngine {
             },
         );
 
-        // 3. 提取 LayoutBox 树
-        let mut root_box = Self::extract_layout(&taffy_tree, root_id, &taffy_to_dom, styles);
+        // 3. 提取 LayoutBox 树（根元素使用 HorizontalTb 作为父级 writing mode）
+        let mut root_box = Self::extract_layout(
+            &taffy_tree,
+            root_id,
+            &taffy_to_dom,
+            styles,
+            &WritingModeValue::HorizontalTb,
+        );
 
         // 4. 后处理：将 fixed 元素的坐标调整为视口相对
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
@@ -218,7 +225,13 @@ impl LayoutEngine {
         );
 
         // 提取布局结果
-        let mut root_box = Self::extract_layout(&cached.taffy, cached.root_id, &cached.taffy_to_dom, styles);
+        let mut root_box = Self::extract_layout(
+            &cached.taffy,
+            cached.root_id,
+            &cached.taffy_to_dom,
+            styles,
+            &WritingModeValue::HorizontalTb,
+        );
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
         // margin 折叠由 taffy 0.7 内置处理
         crate::table::adjust_table_layout(&mut root_box, doc, styles);
@@ -263,17 +276,24 @@ impl LayoutEngine {
     }
 
     /// 从 taffy 布局结果中提取 LayoutBox 树。
+    ///
+    /// 当父元素具有垂直书写模式时，taffy 的布局结果是轴交换后的，
+    /// 需要在提取时交换回来以获得正确的视觉坐标。
     fn extract_layout(
         taffy: &TaffyTree<NodeId>,
         taffy_id: taffy::NodeId,
         taffy_to_dom: &HashMap<taffy::NodeId, NodeId>,
         styles: &HashMap<NodeId, ComputedStyle>,
+        parent_writing_mode: &WritingModeValue,
     ) -> LayoutBox {
         let layout = taffy.layout(taffy_id).cloned().unwrap_or_default();
         let dom_id = taffy_to_dom.get(&taffy_id).copied();
 
         // 获取 ComputedStyle 用于提取定位和溢出信息
         let computed = dom_id.and_then(|id| styles.get(&id));
+
+        // 获取此元素自身的 writing mode
+        let own_writing_mode = computed.map_or(WritingModeValue::HorizontalTb, |s| s.writing_mode.clone());
 
         let is_absolute = computed.is_some_and(|s| matches!(s.position, PositionValue::Absolute));
         let is_fixed = computed.is_some_and(|s| matches!(s.position, PositionValue::Fixed));
@@ -285,11 +305,6 @@ impl LayoutEngine {
         // CSS 2.1 §9.4.1: display:flow-root 和 display:inline-block 都建立 BFC
         let is_flow_root =
             computed.is_some_and(|s| matches!(s.display, DisplayValue::FlowRoot | DisplayValue::InlineBlock));
-        // CSS 2.1 §9.2.2: clear 属性仅适用于块级元素。
-        // 块级元素 = display 为 block, list-item, table 的元素，
-        // 以及 flex/grid 容器。table 内部元素（row-group, row, cell 等）
-        // 不是块级元素，clear 不应生效。
-        // 浮动的 inline/inline-block 元素自动变为块级。
         let is_block_level = computed.is_some_and(|s| {
             matches!(
                 s.display,
@@ -313,48 +328,87 @@ impl LayoutEngine {
             ZIndexValue::Integer(z) => z,
         });
 
-        // 计算内容区域
-        let content_x = layout.location.x + layout.border.left + layout.padding.left;
-        let content_y = layout.location.y + layout.border.top + layout.padding.top;
-        let content_width =
-            (layout.size.width - layout.border.left - layout.border.right - layout.padding.left - layout.padding.right)
-                .max(0.0);
-        let content_height = (layout.size.height
-            - layout.border.top
-            - layout.border.bottom
-            - layout.padding.top
-            - layout.padding.bottom)
-            .max(0.0);
+        // 从 taffy 提取原始值
+        let mut x = layout.location.x;
+        let mut y = layout.location.y;
+        let mut width = layout.size.width;
+        let mut height = layout.size.height;
+        let mut border_top = layout.border.top;
+        let mut border_right = layout.border.right;
+        let mut border_bottom = layout.border.bottom;
+        let mut border_left = layout.border.left;
+        let mut padding_top = layout.padding.top;
+        let mut padding_right = layout.padding.right;
+        let mut padding_bottom = layout.padding.bottom;
+        let mut padding_left = layout.padding.left;
+        let mut margin_top = layout.margin.top;
+        let mut margin_right = layout.margin.right;
+        let mut margin_bottom = layout.margin.bottom;
+        let mut margin_left = layout.margin.left;
 
-        // 递归提取子节点
+        // 当父元素具有垂直书写模式时，taffy 的布局结果是轴交换后的，
+        // 需要交换回正确的视觉坐标。
+        let is_vertical = matches!(
+            parent_writing_mode,
+            WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+        );
+        if is_vertical {
+            // 交换位置
+            std::mem::swap(&mut x, &mut y);
+            // 交换尺寸
+            std::mem::swap(&mut width, &mut height);
+            // 交换边框
+            std::mem::swap(&mut border_top, &mut border_left);
+            std::mem::swap(&mut border_bottom, &mut border_right);
+            // 交换内边距
+            std::mem::swap(&mut padding_top, &mut padding_left);
+            std::mem::swap(&mut padding_bottom, &mut padding_right);
+            // 交换外边距
+            std::mem::swap(&mut margin_top, &mut margin_left);
+            std::mem::swap(&mut margin_bottom, &mut margin_right);
+        }
+
+        // 计算内容区域
+        let content_x = x + border_left + padding_left;
+        let content_y = y + border_top + padding_top;
+        let content_width = (width - border_left - border_right - padding_left - padding_right).max(0.0);
+        let content_height = (height - border_top - border_bottom - padding_top - padding_bottom).max(0.0);
+
+        // 递归提取子节点（使用此元素自身的 writing mode）
         let children_taffy = taffy.children(taffy_id).unwrap_or_default();
         let mut children_boxes = Vec::with_capacity(children_taffy.len());
         for child_taffy in &children_taffy {
-            children_boxes.push(Self::extract_layout(taffy, *child_taffy, taffy_to_dom, styles));
+            children_boxes.push(Self::extract_layout(
+                taffy,
+                *child_taffy,
+                taffy_to_dom,
+                styles,
+                &own_writing_mode,
+            ));
         }
 
         LayoutBox {
             node_id: dom_id,
-            x: layout.location.x,
-            y: layout.location.y,
-            width: layout.size.width,
-            height: layout.size.height,
+            x,
+            y,
+            width,
+            height,
             content_x,
             content_y,
             content_width,
             content_height,
-            border_top: layout.border.top,
-            border_right: layout.border.right,
-            border_bottom: layout.border.bottom,
-            border_left: layout.border.left,
-            padding_top: layout.padding.top,
-            padding_right: layout.padding.right,
-            padding_bottom: layout.padding.bottom,
-            padding_left: layout.padding.left,
-            margin_top: layout.margin.top,
-            margin_right: layout.margin.right,
-            margin_bottom: layout.margin.bottom,
-            margin_left: layout.margin.left,
+            border_top,
+            border_right,
+            border_bottom,
+            border_left,
+            padding_top,
+            padding_right,
+            padding_bottom,
+            padding_left,
+            margin_top,
+            margin_right,
+            margin_bottom,
+            margin_left,
             children: children_boxes,
             is_absolute,
             is_fixed,
@@ -370,6 +424,7 @@ impl LayoutEngine {
             is_block_level,
             is_relative,
             collapsed_border_color_overrides: [None; 4],
+            writing_mode: own_writing_mode.clone(),
         }
     }
 }
@@ -388,7 +443,9 @@ impl LayoutEngine {
 fn apply_relative_offsets(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     // 仅对 position:relative 应用视觉偏移（不含 sticky，sticky 偏移需宿主层滚动驱动）
     let is_rel = root.node_id.is_some_and(|id| {
-        styles.get(&id).is_some_and(|s| matches!(s.position, PositionValue::Relative))
+        styles
+            .get(&id)
+            .is_some_and(|s| matches!(s.position, PositionValue::Relative))
     });
     if is_rel {
         let (dx, dy) = resolve_relative_inset(root, styles);

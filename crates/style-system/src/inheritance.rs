@@ -691,4 +691,26 @@ mod tests {
             "initial 应恢复 color 默认值"
         );
     }
+
+    #[test]
+    /// writing-mode 作为继承属性从父元素隐式继承
+    fn test_writing_mode_implicit_inheritance() {
+        use crate::property::PropertyRegistry;
+        use crate::property::types::WritingModeValue;
+
+        assert!(
+            PropertyRegistry::is_inherited("writing-mode"),
+            "writing-mode must be registered as inherited"
+        );
+
+        let mut parent = ComputedStyle::default();
+        parent.writing_mode = WritingModeValue::VerticalRl;
+        let cascaded = HashMap::new();
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        assert_eq!(
+            style.writing_mode,
+            WritingModeValue::VerticalRl,
+            "writing-mode should be implicitly inherited from parent"
+        );
+    }
 }
