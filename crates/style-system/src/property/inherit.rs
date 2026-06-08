@@ -933,6 +933,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.column_width = default_style.column_width;
             true
         }
+        "column-fill" => {
+            style.column_fill = default_style.column_fill;
+            true
+        }
         // Object Fit / Filter
         "object-fit" => {
             style.object_fit = default_style.object_fit;
