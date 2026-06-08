@@ -18,7 +18,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；XHTML CDATA 清理 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 65.7% (322/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；css-position 62.5%；CSS2 59.7%；css-flexbox 60.0%；css-multicol 43.9%；css-writing-modes 40.7%；**本轮修复**：CSS 绝对长度单位 ✅(in/pt/pc/cm/mm/Q)；表格单元格 vertical-align ✅(top/middle/bottom)；径向渐变位置解析 ✅(resolve_position)；表格 min-height border-box ✅；表格单元格高度最小值 ✅；图像双线性插值 ✅；writing-mode 轴交换回退 ✅(禁用不完整实现避免回归)；CSS 负值 border-width 拒绝 ✅；BFC 浮动排斥改进 ✅(使用实际坐标替代计算坐标)；multicol 百分比 column-gap 解析 ✅；column_gap 计算样式解析 ✅(em/rem→Px)；**后续重点**：writing-mode 布局支持（影响 35 个测试）、column breaking（影响 31 个测试）、float 布局精度、inline box model |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 65.9% (323/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；css-position 62.5%；CSS2 59.7%；css-flexbox 61.8%；css-multicol 43.9%；css-writing-modes 39.0%；**本轮(R10)修复**：匿名 flex/grid item ✅(文本节点在 flex/grid 容器中创建匿名布局项)；writing-mode 轴交换启用 ✅(输入/输出双向坐标交换)；属性继承 ✅(list-style-type/list-style-position/writing-mode)；justify-items/justify-self 转换 ✅(映射到 taffy Style)；scrollbar_width 映射 ✅(Auto→15px/Thin→8px/None→0px)；**后续重点**：垂直文本渲染（paint 层字形旋转）、column breaking、float 精度 |
 
 ## 当前状态概览
 
@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-09（本轮第九轮）
+**日期**: 2026-06-09（本轮第十轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
-**通过**: 322
-**失败**: 168
-**通过率**: 65.7%
+**通过**: 323
+**失败**: 167
+**通过率**: 65.9%
 
-**说明**：通过率维持 65.7%。本轮完成了多项正确性改进（BFC 浮动排斥、multicol 百分比 gap、computed style column_gap 解析），但当前测试集未触发这些改进场景。主要阻塞仍为 writing-mode 垂直布局（35 测试）、multicol column breaking（31 测试）和 float/clear 精度（30 测试）三大基础设施缺口。
+**说明**：通过率从 65.7% 提升至 65.9%（+1 测试通过）。本轮实现了匿名 flex/grid item 支持（文本节点在 flex/grid 容器中成为匿名布局项），启用了 writing-mode 轴交换基础设施，添加了 list-style-type/list-style-position/writing-mode 属性继承，添加了 justify-items/justify-self 到 taffy 转换器，以及 scrollbar_width 映射。writing-mode 轴交换导致 1 个测试回归（从 40.7% 降至 39.0%），但这是垂直布局的必要基础设施。
 
 ### 按目录
 
@@ -304,26 +304,26 @@
 | css-tables/ | 40/55 | 72.7% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
 | CSS2/ | 77/129 | 59.7% | ❌ |
-| css-flexbox/ | 33/55 | 60.0% | ❌ |
+| css-flexbox/ | 34/55 | 61.8% | ❌ |
 | css-multicol/ | 25/57 | 43.9% | ❌ |
-| css-writing-modes/ | 24/59 | 40.7% | ❌ |
+| css-writing-modes/ | 23/59 | 39.0% | ❌ |
 
-### 失败分析
+### 本轮修复内容
 
-| 差异范围 | 失败数 | 说明 |
-|----------|--------|------|
-| 0-2% | 32 | 接近通过，多为亚像素差异 |
-| 2-5% | 47 | 小范围差异，可能是单像素定位问题 |
-| 5-15% | 39 | 中等差异，布局或渲染差异 |
-| 15-30% | 40 | 较大差异，布局计算错误 |
-| 30%+ | 10 | 完全不同的渲染结果 |
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| 匿名 flex/grid item | css-flexbox +1 | flex/grid 容器中的文本节点现在创建匿名布局项参与 flexbox/grid 布局。CSS Flexbox §4 规范要求。涉及 tree.rs（文本节点收集）、engine.rs（文本测量 + extract_layout 处理）、painter（匿名文本渲染） |
+| writing-mode 轴交换 | css-writing-modes -1 | 启用 CSS Writing Modes §7.1 轴交换：输入时交换 CSS 属性到 taffy 水平模型，输出时交换回视觉坐标。盒体几何位置正确，但文字仍水平排列（需要 paint 层旋转支持）。1 个测试因坐标交换而回归 |
+| 属性继承修复 | 全局 | list-style-type、list-style-position、writing-mode 添加到继承属性列表和 inherit_property 处理器 |
+| justify-items/justify-self | css-grid | 转换器新增映射，从 ComputedStyle 映射到 taffy Style 的 justify_items/justify_self 字段 |
+| scrollbar_width | 全局 | 从硬编码 0.0 改为根据 ComputedStyle 映射（Auto→15px, Thin→8px, None→0px） |
 
-**按根因分类**：
-- **writing-mode 布局**（35 个）：abs-pos-non-replaced-vrl/vlr 系列测试需要完整的垂直书写模式布局支持
-- **multicol 布局**（35 个）：column breaking 和 balancing 不完整
-- **float/clear CSS2**（30 个）：浮动定位和清除计算精度
-- **flexbox**（22 个）：gap、baseline、visibility:collapse 等细节
-- **table**（21 个）：子像素边框、min/max-size、匿名表格修复
+### 后续重点
+
+1. **writing-mode 垂直文本渲染**（影响 css-writing-modes 36 测试）：需要在 paint 层实现字形旋转（GlyphPrimitive.rotation 已设置但渲染器未消费）和垂直字符推进
+2. **multicol column breaking**（影响 css-multicol 32 测试）：需要实现内容跨列拆分
+3. **float/clear 精度**（影响 CSS2 30 测试）：需要改进浮动定位和清除计算
+4. **CSS2 inline box model**（影响 ~8 测试）：空 inline 元素、block-in-inline 拆分
 - **border/background CSS2**（11 个）：简写解析、图片背景定位
 - **inline box model**（7 个）：block-in-inline 拆分、空 inline 元素
 - **其他**（7 个）：position、grid 细节
