@@ -130,6 +130,9 @@ impl LayoutEngine {
         // 9. 后处理：对 column-count/column-width 容器执行多列布局
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
 
+        // 10. 后处理：对 position:relative 元素应用视觉偏移
+        apply_relative_offsets(&mut root_box, styles);
+
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
             taffy: taffy_tree,
@@ -220,6 +223,7 @@ impl LayoutEngine {
         // margin 折叠由 taffy 0.7 内置处理
         crate::table::adjust_table_layout(&mut root_box, doc, styles);
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
+        apply_relative_offsets(&mut root_box, styles);
 
         let layout_ms = use_start.elapsed().as_secs_f64() * 1000.0;
 
@@ -367,6 +371,54 @@ impl LayoutEngine {
             is_relative,
             collapsed_border_color_overrides: [None; 4],
         }
+    }
+}
+
+/// 对 position:relative 元素应用视觉偏移。
+///
+/// CSS 2.1 §9.4.3：相对定位的元素在正常流中布局，然后根据 top/left/right/bottom
+/// 值进行偏移。偏移不影响后续元素的布局位置。
+///
+/// 此函数在所有其他后处理（float、table、multicol）之后执行，
+/// 仅修改元素的 x/y 坐标，不改变其布局尺寸或影响其他元素。
+fn apply_relative_offsets(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    if root.is_relative {
+        let (dx, dy) = resolve_relative_inset(root, styles);
+        if dx != 0.0 || dy != 0.0 {
+            apply_offset_recursive(root, dx, dy);
+        }
+    }
+    for child in &mut root.children {
+        apply_relative_offsets(child, styles);
+    }
+}
+
+/// 从 ComputedStyle 中解析 position:relative 的 top/left 偏移量。
+fn resolve_relative_inset(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> (f32, f32) {
+    use zero_css_parser::values::LengthValue;
+    let Some(node_id) = box_node.node_id else {
+        return (0.0, 0.0);
+    };
+    let Some(style) = styles.get(&node_id) else {
+        return (0.0, 0.0);
+    };
+    let dx = match &style.left {
+        LengthValue::Px(v) => *v as f32,
+        _ => 0.0,
+    };
+    let dy = match &style.top {
+        LengthValue::Px(v) => *v as f32,
+        _ => 0.0,
+    };
+    (dx, dy)
+}
+
+/// 递归地将偏移量应用到元素及其所有子元素。
+fn apply_offset_recursive(box_node: &mut LayoutBox, dx: f32, dy: f32) {
+    box_node.x += dx;
+    box_node.y += dy;
+    for child in &mut box_node.children {
+        apply_offset_recursive(child, dx, dy);
     }
 }
 
