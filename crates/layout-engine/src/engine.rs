@@ -141,6 +141,9 @@ impl LayoutEngine {
         // 10. 后处理：对包含 inline-block 子元素的容器，重新定位 inline-block 元素
         adjust_inline_block_positions(&mut root_box, doc, styles);
 
+        // 10.5 后处理：修正垂直书写模式下绝对定位元素的静态位置
+        fix_vertical_mode_abs_pos(&mut root_box, doc, styles);
+
         // 11. 后处理：对 position:relative 元素应用视觉偏移
         apply_relative_offsets(&mut root_box, styles);
 
@@ -513,7 +516,10 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
         root.writing_mode,
         WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
     );
-    let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width).with_vertical(is_vertical);
+    let is_vertical_rtl = matches!(root.writing_mode, WritingModeValue::VerticalRl);
+    let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width)
+        .with_vertical(is_vertical)
+        .with_vertical_rtl(is_vertical_rtl);
     inline_ctx.layout(doc, container_node_id, styles);
 
     // 将 fragment 坐标应用到 inline-block 子元素的 LayoutBox
@@ -531,6 +537,76 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
         {
             child.x = fragment.x;
             child.y = fragment.y;
+        }
+    }
+}
+
+/// 后处理：修正垂直书写模式下绝对定位元素的静态位置。
+///
+/// taffy 在水平模式下计算布局，轴交换后 abs-pos 元素的静态位置可能不正确。
+/// 此函数对垂直书写模式容器中的 abs-pos 元素重新计算静态位置：
+/// 1. 在容器上运行 IFC（垂直模式）获取文本流的坐标
+/// 2. 查找 abs-pos 元素在文本流中的位置
+/// 3. 仅当 taffy 给出的位置明显偏离 IFC 位置时才修正
+fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
+    // 先递归处理子元素
+    for child in &mut root.children {
+        fix_vertical_mode_abs_pos(child, doc, styles);
+    }
+
+    // 仅处理垂直书写模式的容器
+    if !matches!(root.writing_mode, WritingModeValue::VerticalRl | WritingModeValue::VerticalLr) {
+        return;
+    }
+
+    // 查找有 abs-pos 子元素的容器
+    let has_abs_children = root.children.iter().any(|c| c.is_absolute);
+    if !has_abs_children {
+        return;
+    }
+
+    let Some(container_node_id) = root.node_id else {
+        return;
+    };
+
+    // 运行 IFC（垂直模式）获取所有片段坐标
+    let is_vertical = true;
+    let is_vertical_rtl = matches!(root.writing_mode, WritingModeValue::VerticalRl);
+    let container_width = root.content_height; // 垂直模式下 container_height 是"行宽"
+    let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width)
+        .with_vertical(is_vertical)
+        .with_vertical_rtl(is_vertical_rtl);
+    inline_ctx.layout(doc, container_node_id, styles);
+
+    // 将 IFC 片段坐标应用到 abs-pos 子元素
+    let fragments = inline_ctx.all_fragments();
+    for child in &mut root.children {
+        if !child.is_absolute {
+            continue;
+        }
+        let Some(child_node_id) = child.node_id else {
+            continue;
+        };
+
+        // 查找匹配的 fragment（node_id 一致）
+        if let Some(fragment) = fragments.iter().find(|f| f.node_id == child_node_id) {
+            // 仅在所有 inset 为 auto 时才修正静态位置
+            let style = styles.get(&child_node_id);
+            let all_inset_auto = style.is_some_and(|s| {
+                matches!(s.top, zero_css_parser::values::LengthValue::Auto)
+                    && matches!(s.bottom, zero_css_parser::values::LengthValue::Auto)
+            });
+
+            if all_inset_auto {
+                // 仅在 taffy 给出的位置与 IFC 位置差距较大时才修正
+                // （taffy 可能在某些场景下给出正确位置）
+                let dx = (child.x - fragment.x).abs();
+                let dy = (child.y - fragment.y).abs();
+                if dx > 1.0 || dy > 1.0 {
+                    child.x = fragment.x;
+                    child.y = fragment.y;
+                }
+            }
         }
     }
 }
@@ -628,7 +704,13 @@ fn measure_text_content(
                 WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
             )
         });
-    let mut inline_ctx = InlineFormattingContext::new(width).with_vertical(is_vertical);
+    let is_vertical_rtl = doc
+        .parent_node(dom_id)
+        .and_then(|pid| styles.get(&pid))
+        .is_some_and(|s| matches!(s.writing_mode, WritingModeValue::VerticalRl));
+    let mut inline_ctx = InlineFormattingContext::new(width)
+        .with_vertical(is_vertical)
+        .with_vertical_rtl(is_vertical_rtl);
     inline_ctx.layout(doc, dom_id, styles);
 
     let measured_width = inline_ctx
@@ -1055,9 +1137,11 @@ fn remeasure_text_with_float_exclusions(
                 box_node.writing_mode,
                 WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
             );
+            let is_vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
             let mut inline_ctx = InlineFormattingContext::new(container_width)
                 .with_float_exclusions(exclusions)
-                .with_vertical(is_vertical);
+                .with_vertical(is_vertical)
+                .with_vertical_rtl(is_vertical_rtl);
             inline_ctx.layout(doc, dom_id, styles);
 
             // 容器高度需要包含 float 元素占用的空间

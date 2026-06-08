@@ -646,6 +646,10 @@ impl super::Painter {
                 style.writing_mode,
                 zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
             );
+            let is_vertical_rtl = matches!(
+                style.writing_mode,
+                zero_style_system::WritingModeValue::VerticalRl
+            );
             let mut inline_ctx = InlineFormattingContext::new(container_width)
                 .with_text_align(text_align)
                 .with_text_align_last(text_align_last)
@@ -656,7 +660,8 @@ impl super::Painter {
                 .with_text_indent(text_indent_px)
                 .with_float_exclusions(float_exclusions)
                 .with_tab_size(tab_size_px)
-                .with_vertical(is_vertical);
+                .with_vertical(is_vertical)
+                .with_vertical_rtl(is_vertical_rtl);
             inline_ctx.layout(doc, node_id, &HashMap::new());
 
             let fragments = inline_ctx.all_fragments();

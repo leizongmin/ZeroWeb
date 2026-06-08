@@ -336,9 +336,14 @@ pub struct InlineFormattingContext {
     /// 垂直书写模式（vertical-rl 或 vertical-lr）。
     ///
     /// 当为 true 时，字符沿 y 轴向下推进，"行"变为垂直列，
-    /// 列沿 x 轴向右排列。fragment 的坐标系统不变（x=水平，y=垂直），
+    /// 列沿 x 轴排列。fragment 的坐标系统不变（x=水平，y=垂直），
     /// 但"换行"的触发条件和推进方向交换。
     pub vertical: bool,
+    /// 垂直模式下列排列方向：vertical-rl 时列从右到左排列。
+    ///
+    /// 仅当 vertical=true 时有效。当为 true 时，第一列在右侧，
+    /// 后续列向左推进。fragment 的 x 坐标会相应镜像。
+    pub vertical_rtl: bool,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -360,6 +365,7 @@ impl InlineFormattingContext {
             float_exclusions: Vec::new(),
             lines: Vec::new(),
             vertical: false,
+            vertical_rtl: false,
         }
     }
 
@@ -374,6 +380,14 @@ impl InlineFormattingContext {
     /// 启用后，字符沿 y 轴向下推进，"行"变为垂直列。
     pub fn with_vertical(mut self, vertical: bool) -> Self {
         self.vertical = vertical;
+        self
+    }
+
+    /// 设置垂直模式下列排列方向（vertical-rl 时列从右到左）。
+    ///
+    /// 仅当 vertical=true 时有效。
+    pub fn with_vertical_rtl(mut self, rtl: bool) -> Self {
+        self.vertical_rtl = rtl;
         self
     }
 
@@ -1176,14 +1190,29 @@ impl InlineFormattingContext {
 
         // 计算每列的 x 坐标（沿 x 轴排列）
         // 垂直模式中 LineBox.y 表示 x 坐标，LineBox.height 表示列宽
-        let mut x = 0.0;
-        for col in &mut self.lines {
-            col.y = x;
-            x += col.height; // col.height 在垂直模式表示列宽
+        if self.vertical_rtl {
+            // vertical-rl：第一列在右侧，后续列向左排列
+            let mut x = self.container_width; // 从容器右端开始
+            for col in &mut self.lines {
+                x -= col.height; // col.height 在垂直模式表示列宽
+                col.y = x;
 
-            // 修正每个片段的 x 为列起始位置
-            for run in &mut col.runs {
-                run.x = col.y;
+                // 修正每个片段的 x 为列起始位置
+                for run in &mut col.runs {
+                    run.x = col.y;
+                }
+            }
+        } else {
+            // vertical-lr 或默认：列从左到右排列
+            let mut x = 0.0;
+            for col in &mut self.lines {
+                col.y = x;
+                x += col.height; // col.height 在垂直模式表示列宽
+
+                // 修正每个片段的 x 为列起始位置
+                for run in &mut col.runs {
+                    run.x = col.y;
+                }
             }
         }
 
