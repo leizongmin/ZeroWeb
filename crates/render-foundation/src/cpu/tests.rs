@@ -630,7 +630,9 @@ fn image_renders_rgba_data() {
     assert!(top_left[0] > 200, "top-left should be red-ish, got {:?}", top_left);
 
     // 右下象限（对应黄色像素，源图像 [1,1] 是黄色 (255,255,0)）
-    let bottom_right = fb.get_pixel(25, 25);
+    // 注：双线性插值下像素(25,25)约在源图像中心(0.5,0.5)附近，
+    // 四色混合后不纯黄。改用靠近右下角的像素(38,38)确保采样自源(1,1)。
+    let bottom_right = fb.get_pixel(38, 38);
     assert!(
         bottom_right[0] > 200 && bottom_right[1] > 200,
         "bottom-right should be yellow-ish, got {:?}",
