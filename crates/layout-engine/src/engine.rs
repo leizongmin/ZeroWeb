@@ -138,7 +138,10 @@ impl LayoutEngine {
         // 9. 后处理：对 column-count/column-width 容器执行多列布局
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
 
-        // 10. 后处理：对 position:relative 元素应用视觉偏移
+        // 10. 后处理：对包含 inline-block 子元素的容器，重新定位 inline-block 元素
+        adjust_inline_block_positions(&mut root_box, doc, styles);
+
+        // 11. 后处理：对 position:relative 元素应用视觉偏移
         apply_relative_offsets(&mut root_box, styles);
 
         // 缓存 taffy 状态用于后续增量计算
@@ -456,6 +459,77 @@ impl LayoutEngine {
 /// 仅修改元素自身的 x/y 坐标，不改变其布局尺寸或影响其他元素。
 ///
 /// 注意：只偏移元素自身，不递归偏移子元素。因为 LayoutBox 的坐标系是相对的
+/// 后处理：对包含 `display: inline-block` 子元素的容器，重新定位 inline-block 元素。
+///
+/// taffy 将 inline-block 映射为 Block，导致这些子元素垂直堆叠。
+/// 此函数运行 InlineFormattingContext 获取正确的水平并排位置，
+/// 然后将 inline-block 子元素的 LayoutBox 坐标更新为行内格式化结果。
+///
+/// 跳过 flex/grid/inline-flex/inline-grid 容器——它们的子元素由 flex/grid 布局定位。
+fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
+    // 先递归处理子元素
+    for child in &mut root.children {
+        adjust_inline_block_positions(child, doc, styles);
+    }
+
+    let Some(container_node_id) = root.node_id else {
+        return;
+    };
+
+    // 跳过 flex/grid 容器——它们的子元素由 flex/grid 布局定位
+    if let Some(container_style) = styles.get(&container_node_id)
+        && matches!(
+            container_style.display,
+            DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+        )
+    {
+        return;
+    }
+
+    // 收集 inline-block 子元素的索引
+    let ib_indices: Vec<usize> = root
+        .children
+        .iter()
+        .enumerate()
+        .filter(|(_, child)| {
+            child.node_id.is_some_and(|id| {
+                styles
+                    .get(&id)
+                    .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+            })
+        })
+        .map(|(i, _)| i)
+        .collect();
+
+    // 如果没有 inline-block 子元素，无需处理
+    if ib_indices.is_empty() {
+        return;
+    }
+
+    // 运行 InlineFormattingContext 获取行内布局坐标
+    let container_width = root.content_width;
+    let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width);
+    inline_ctx.layout(doc, container_node_id, styles);
+
+    // 将 fragment 坐标应用到 inline-block 子元素的 LayoutBox
+    for idx in &ib_indices {
+        let child = &mut root.children[*idx];
+        let Some(child_node_id) = child.node_id else {
+            continue;
+        };
+
+        // 查找匹配的 fragment（node_id 一致，font_size==0 表示 inline-block）
+        if let Some(fragment) = inline_ctx
+            .all_fragments()
+            .iter()
+            .find(|f| f.node_id == child_node_id && f.font_size == 0.0 && f.width > 0.0)
+        {
+            child.x = fragment.x;
+            child.y = fragment.y;
+        }
+    }
+}
+
 /// （子元素的 x/y 相对于父元素内容区域），paint 系统通过 offset_x + box_node.x
 /// 累加绝对位置，所以偏移父元素后子元素自然跟随移动。
 fn apply_relative_offsets(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
