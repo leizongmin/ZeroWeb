@@ -642,6 +642,10 @@ impl super::Painter {
                 .map(|s| self.collect_float_exclusions_with_styles(box_node, s))
                 .unwrap_or_default();
 
+            let is_vertical = matches!(
+                style.writing_mode,
+                zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
+            );
             let mut inline_ctx = InlineFormattingContext::new(container_width)
                 .with_text_align(text_align)
                 .with_text_align_last(text_align_last)
@@ -651,7 +655,8 @@ impl super::Painter {
                 .with_word_break(word_break_mode)
                 .with_text_indent(text_indent_px)
                 .with_float_exclusions(float_exclusions)
-                .with_tab_size(tab_size_px);
+                .with_tab_size(tab_size_px)
+                .with_vertical(is_vertical);
             inline_ctx.layout(doc, node_id, &HashMap::new());
 
             let fragments = inline_ctx.all_fragments();
@@ -663,27 +668,41 @@ impl super::Painter {
                 let glyphs_before_fragments = self.primitives.glyphs.len();
 
                 // writing-mode: vertical-rl/vertical-lr 时字符旋转 90°
-                let is_vertical = matches!(
-                    style.writing_mode,
-                    zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
-                );
                 let rotation = if is_vertical { std::f32::consts::FRAC_PI_2 } else { 0.0 };
 
                 for fragment in fragments.iter() {
                     self.painted_inline_nodes.insert(fragment.node_id);
 
                     // text-indent 已在 InlineFormattingContext 中处理，fragment.x 包含缩进
-                    let frag_base_x = content_x + fragment.x + tx;
-                    let frag_base_y = content_y + fragment.y + fragment.font_size + ty;
-                    let mut char_x = frag_base_x;
+                    let (frag_base_x, frag_base_y, char_advance_is_y) = if is_vertical {
+                        // 垂直模式：fragment.x 是列位置，fragment.y 是深度位置
+                        // 字符沿 y 轴向下推进
+                        (content_x + fragment.x + tx, content_y + fragment.y + ty, true)
+                    } else {
+                        // 水平模式：fragment.x 是水平位置，fragment.y 是行内位置
+                        (
+                            content_x + fragment.x + tx,
+                            content_y + fragment.y + fragment.font_size + ty,
+                            false,
+                        )
+                    };
+                    let mut char_pos = if char_advance_is_y { frag_base_y } else { frag_base_x };
 
                     let transformed = apply_text_transform(&fragment.text, &style.text_transform);
 
                     for ch in transformed.chars() {
+                        let (glyph_x, glyph_y) = if char_advance_is_y {
+                            // 垂直模式：字符沿 y 轴向下推进，x 固定为列位置
+                            (frag_base_x, char_pos)
+                        } else {
+                            // 水平模式：字符沿 x 轴向右推进，y 固定
+                            (char_pos, frag_base_y)
+                        };
+
                         if has_text_shadow {
                             self.primitives.add_glyph(GlyphPrimitive {
-                                x: char_x + shadow_ox,
-                                y: frag_base_y + shadow_oy,
+                                x: glyph_x + shadow_ox,
+                                y: glyph_y + shadow_oy,
                                 font_size: fragment.font_size,
                                 color: shadow_color,
                                 glyph_id: ch as u32,
@@ -695,8 +714,8 @@ impl super::Painter {
                         }
 
                         self.primitives.add_glyph(GlyphPrimitive {
-                            x: char_x,
-                            y: frag_base_y,
+                            x: glyph_x,
+                            y: glyph_y,
                             font_size: fragment.font_size,
                             color,
                             glyph_id: ch as u32,
@@ -705,11 +724,11 @@ impl super::Painter {
                             bitmap_height: None,
                             rotation,
                         });
-                        char_x += estimate_char_width(ch, fragment.font_size, false);
-                        char_x += letter_spacing;
-                        if ch == ' ' {
-                            char_x += word_spacing;
-                        }
+
+                        let advance = estimate_char_width(ch, fragment.font_size, false)
+                            + letter_spacing
+                            + if ch == ' ' { word_spacing } else { 0.0 };
+                        char_pos += advance;
                     }
 
                     let text_width: f32 = transformed
