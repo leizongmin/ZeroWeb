@@ -713,17 +713,19 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
         let mut last_flow_mb = 0.0f32; // 上一个非 float 流内元素的 margin-bottom
 
         // 收集浮动元素的几何信息，用于 BFC 排斥计算
-        let float_geometries: Vec<(FloatValue, f32, f32, f32, f32)> = box_node
+        // 使用实际坐标（Phase 1 已完成定位），避免重复计算
+        let float_geometries: Vec<(FloatValue, f32, f32, f32, f32, f32)> = box_node
             .children
             .iter()
             .filter(|c| !matches!(c.float, FloatValue::None))
             .map(|c| {
                 (
                     c.float.clone(),
-                    c.x,
+                    c.x, // 边框盒左边（已含 margin_left 偏移）
                     c.y,
-                    c.width + c.margin_left + c.margin_right,
+                    c.width, // 边框盒宽度（不含 margin）
                     c.height + c.margin_top + c.margin_bottom,
+                    c.margin_right, // 右 margin（用于 BFC 排斥计算）
                 )
             })
             .collect();
@@ -802,35 +804,34 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                 let child_top = child.y;
                 let child_bottom = child.y + child.height;
 
-                for (float_dir, float_x, float_y, float_w, float_h) in &float_geometries {
+                for (float_dir, float_x, float_y, float_border_w, float_h, float_margin_r) in &float_geometries {
                     let float_top = *float_y;
                     let float_bottom = *float_y + *float_h;
 
                     // 检查垂直重叠
-                    if child_top < float_bottom && child_bottom > float_top {
-                        match float_dir {
-                            FloatValue::Left => {
-                                // 左浮动：将 BFC 元素推到浮动元素右侧
-                                let avoidance_x = float_x + *float_w;
-                                if avoidance_x > child.x {
-                                    child.x = avoidance_x;
-                                    // 缩小宽度以不超出容器
-                                    let max_width = container_width - child.x;
-                                    if child.width > max_width {
-                                        child.width = max_width.max(0.0);
-                                    }
+                    if !(child_top < float_bottom && child_bottom > float_top) {
+                        continue;
+                    }
+                    match float_dir {
+                        FloatValue::Left => {
+                            // 左浮动：将 BFC 元素推到浮动元素的 margin-box 右侧
+                            // float_x 是边框盒左边，加上边框宽度和右 margin
+                            let avoidance_x = float_x + float_border_w + float_margin_r;
+                            if avoidance_x > child.x {
+                                child.x = avoidance_x;
+                                // 缩小宽度以不超出容器
+                                let max_width = container_width - child.x;
+                                if child.width > max_width {
+                                    child.width = max_width.max(0.0);
                                 }
                             }
-                            FloatValue::Right => {
-                                // 右浮动：缩小 BFC 元素宽度以不重叠
-                                let right_float_left = container_width - *float_w;
-                                if child.x + child.width > right_float_left {
-                                    let new_width = right_float_left - child.x;
-                                    child.width = new_width.max(0.0);
-                                }
-                            }
-                            _ => {}
                         }
+                        FloatValue::Right if child.x + child.width > *float_x => {
+                            // 右浮动：缩小 BFC 元素宽度以不重叠 float 的 margin-box
+                            let new_width = float_x - child.x;
+                            child.width = new_width.max(0.0);
+                        }
+                        _ => {}
                     }
                 }
             }

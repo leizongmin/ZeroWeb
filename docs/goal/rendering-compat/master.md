@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-08（本轮第七轮）
+**日期**: 2026-06-09（本轮第八轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
-**通过**: 329
-**失败**: 161
-**通过率**: 67.1%
+**通过**: 322
+**失败**: 168
+**通过率**: 65.7%
 
-**说明**：通过率从 66.9% 提升到 67.1% (+1 pass)。本轮实现了 CSS 绝对长度单位、表格单元格 vertical-align、径向渐变位置解析、表格 min-height border-box 计算、表格单元格高度作为最小值。
+**说明**：通过率从 67.1% 降至 65.7%。原因：回退了不完整的 writing-mode 轴交换和隐式继承（之前导致部分测试虚假通过，掩盖了真实的渲染差距）。同时修复了 CSS 负值 border-width 的规范合规性（负值应视为无效，回退到初始值 medium）。
 
 ### 按目录
 
@@ -303,21 +303,44 @@
 | css-grid/ | 17/20 | 85.0% | ❌ |
 | css-tables/ | 40/55 | 72.7% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
-| CSS2/ | 82/129 | 63.6% | ❌ |
-| css-flexbox/ | 34/55 | 61.8% | ❌ |
-| css-multicol/ | 26/57 | 45.6% | ❌ |
+| CSS2/ | 77/129 | 59.7% | ❌ |
+| css-flexbox/ | 33/55 | 60.0% | ❌ |
+| css-multicol/ | 25/57 | 43.9% | ❌ |
 | css-writing-modes/ | 24/59 | 40.7% | ❌ |
+
+### 失败分析
+
+| 差异范围 | 失败数 | 说明 |
+|----------|--------|------|
+| 0-2% | 32 | 接近通过，多为亚像素差异 |
+| 2-5% | 47 | 小范围差异，可能是单像素定位问题 |
+| 5-15% | 39 | 中等差异，布局或渲染差异 |
+| 15-30% | 40 | 较大差异，布局计算错误 |
+| 30%+ | 10 | 完全不同的渲染结果 |
+
+**按根因分类**：
+- **writing-mode 布局**（35 个）：abs-pos-non-replaced-vrl/vlr 系列测试需要完整的垂直书写模式布局支持
+- **multicol 布局**（35 个）：column breaking 和 balancing 不完整
+- **float/clear CSS2**（30 个）：浮动定位和清除计算精度
+- **flexbox**（22 个）：gap、baseline、visibility:collapse 等细节
+- **table**（21 个）：子像素边框、min/max-size、匿名表格修复
+- **border/background CSS2**（11 个）：简写解析、图片背景定位
+- **inline box model**（7 个）：block-in-inline 拆分、空 inline 元素
+- **其他**（7 个）：position、grid 细节
 
 ### 本轮修复内容
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
-| CSS 绝对长度单位 | 全局 | parse_length() 新增 in/pt/pc/cm/mm/Q 单位支持（96 DPI）；background 简写分类器新增所有长度后缀识别 |
-| 表格单元格 vertical-align | css-tables | table.rs position_cells 中新增 vertical-align 处理（top/middle/bottom），基于单元格内容高度和分配高度计算偏移 |
-| 径向渐变位置解析修复 | 全局 | gradient_to_primitive 使用 resolve_position() 正确处理 Percentage 和 Px 值，替代旧的 length_to_f32/100 错误逻辑 |
-| 表格 min-height border-box | css-tables | apply_table_size_constraints 正确处理 min-height/max-height 为 border-box 约束，减去 padding+border 后与内容高度比较 |
-| 表格单元格高度作为最小值 | css-tables | CSS 2.1 规范中 table cell 的 height 为最小高度，cell 必须增长以包含内容。改用 max(row_height, cell_content_height) |
-| 图像渲染双线性插值 | 渲染质量 | CPU render_image 从最近邻采样改为双线性插值 |
+| writing-mode 轴交换回退 | 全局 | 禁用不完整的 writing-mode 轴交换和隐式继承，避免回归。之前的轴交换实现过于简化，导致部分测试虚假通过。完整实现需等待垂直布局基础设施就绪 |
+| CSS 负值 border-width 拒绝 | CSS2/borders | CSS 规范要求 border-width 负值视为无效（回退到初始值 medium），在 apply 阶段拒绝负值。修复 border-bottom-width-001.xht |
+| 测试修复 | style-system | 修复 test_writing_mode_explicit_inherit_pending 中的冲突断言 |
+
+### 关键决策
+
+| 决策 | 理由 |
+|------|------|
+| 回退 writing-mode 轴交换 | 之前的轴交换在 tree.rs（build_subtree）和 engine.rs（extract_layout）中实现，但缺少与 paint 系统的协调。禁用后通过率从 67.1% 降至 65.7%（-7），但这些测试之前是通过不完整的实现虚假通过的 |
 
 
 ### 发现的关键问题
@@ -523,3 +546,5 @@
 90. ~~M10 — 表格 min-height border-box~~ ✅(min-height-table 通过)
 91. ~~M10 — 表格单元格高度最小值~~ ✅(cell height = max(row_height, content_height))
 92. ~~M10 — 图像双线性插值~~ ✅(CPU render_image 从最近邻改为双线性插值)
+93. ~~M10 — writing-mode 轴交换回退~~ ✅(禁用不完整的轴交换和隐式继承，避免回归)
+94. ~~M10 — CSS 负值 border-width 拒绝~~ ✅(负值视为无效，回退到初始值 medium；修复 border-bottom-width-001.xht)
