@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-09（本轮第十轮）
+**日期**: 2026-06-09（本轮第十一轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
-**通过**: 323
-**失败**: 167
-**通过率**: 65.9%
+**通过**: 322
+**失败**: 168
+**通过率**: 65.7%
 
-**说明**：通过率从 65.7% 提升至 65.9%（+1 测试通过）。本轮实现了匿名 flex/grid item 支持（文本节点在 flex/grid 容器中成为匿名布局项），启用了 writing-mode 轴交换基础设施，添加了 list-style-type/list-style-position/writing-mode 属性继承，添加了 justify-items/justify-self 到 taffy 转换器，以及 scrollbar_width 映射。writing-mode 轴交换导致 1 个测试回归（从 40.7% 降至 39.0%），但这是垂直布局的必要基础设施。
+**说明**：通过率维持在 65.7%（322/490）。本轮添加了 multicol column breaking 基础设施和 CSS columns 简写验证。通过系统分析失败测试，确认主要瓶颈为：（1）Ahem 字体渲染差异影响大量 CSS2/multicol/writing-modes 测试；（2）multicol column breaking 需要内容碎片化基础设施（影响 32 个测试）；（3）writing-modes 垂直 inline 布局需要 InlineFormattingContext 的垂直模式支持（影响 36 个测试）。
 
 ### 按目录
 
@@ -320,27 +320,28 @@
 
 ### 后续重点
 
-1. **writing-mode 垂直文本渲染**（影响 css-writing-modes 36 测试）：需要在 paint 层实现字形旋转（GlyphPrimitive.rotation 已设置但渲染器未消费）和垂直字符推进
-2. **multicol column breaking**（影响 css-multicol 32 测试）：需要实现内容跨列拆分
-3. **float/clear 精度**（影响 CSS2 30 测试）：需要改进浮动定位和清除计算
-4. **CSS2 inline box model**（影响 ~8 测试）：空 inline 元素、block-in-inline 拆分
-- **border/background CSS2**（11 个）：简写解析、图片背景定位
-- **inline box model**（7 个）：block-in-inline 拆分、空 inline 元素
-- **其他**（7 个）：position、grid 细节
+1. **Ahem 字体渲染精度**（影响 100+ 测试）：fontdue vs Skia 字体渲染差异是最大单一失败根因。需要精确匹配 Ahem 字体的方形字符宽度和渲染位置。影响 CSS2、multicol、writing-modes 大量测试
+2. **multicol column breaking**（影响 css-multicol 32 测试）：需要实现内容碎片化 — 将单个块级元素的内容拆分到多列。当前仅移动整个子元素到下一列
+3. **writing-mode 垂直 inline 布局**（影响 css-writing-modes 36 测试）：需要在 InlineFormattingContext 中实现垂直模式 — 容器高度作为行宽、字符向下推进、"行"变为垂直列
+4. **CSS2 float/clear 精度**（影响 CSS2 30 测试）：需要改进浮动定位和清除计算精度
+5. **CSS2 inline box model**（影响 ~8 测试）：空 inline 元素、block-in-inline 拆分
 
-### 本轮修复内容
+### R11 本轮修复内容
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
-| writing-mode 轴交换回退 | 全局 | 禁用不完整的 writing-mode 轴交换和隐式继承，避免回归。之前的轴交换实现过于简化，导致部分测试虚假通过。完整实现需等待垂直布局基础设施就绪 |
-| CSS 负值 border-width 拒绝 | CSS2/borders | CSS 规范要求 border-width 负值视为无效（回退到初始值 medium），在 apply 阶段拒绝负值。修复 border-bottom-width-001.xht |
-| 测试修复 | style-system | 修复 test_writing_mode_explicit_inherit_pending 中的冲突断言 |
+| multicol column breaking 基础设施 | css-multicol | 新增 assign_children_to_columns_with_breaking，当子元素超出列高限制时移至下一列。基础设施就绪，但真实 breaking 需要内容碎片化 |
+| CSS columns 简写验证 | css-multicol | expand_columns 验证 column-width 值有效性，拒绝 'normal' 等无效值。符合 CSS 规范整个声明无效的语义 |
+| table cell overflow 修复尝试 | css-tables | 调查发现 CSS 2.1 规范要求 table cell height 为最小高度，即使 overflow:hidden 也必须增长以包含内容。已回退 |
 
-### 关键决策
+### 关键发现（R11）
 
-| 决策 | 理由 |
+| 发现 | 说明 |
 |------|------|
-| 回退 writing-mode 轴交换 | 之前的轴交换在 tree.rs（build_subtree）和 engine.rs（extract_layout）中实现，但缺少与 paint 系统的协调。禁用后通过率从 67.1% 降至 65.7%（-7），但这些测试之前是通过不完整的实现虚假通过的 |
+| Ahem 字体是最大瓶颈 | 100+ 测试因 Ahem 字体渲染差异而失败（fontdue vs Skia）。非 Ahem 测试的失败率低得多 |
+| CSS table cell height = 最小高度 | CSS 2.1 明确规定 table cell 的 height 是最小高度，cell 必须增长以包含内容，overflow:hidden 不改变此行为 |
+| Column breaking 需要碎片化 | multicol-breaking-* 测试需要将单个子元素的内容（如文本）拆分到多列，不仅仅是移动整个子元素 |
+| abs-pos-non-replaced 12 个测试全在 21.33% | 这些测试都用 Ahem + background image，相同的差异比例表明是系统性渲染问题 |
 
 
 ### 发现的关键问题
