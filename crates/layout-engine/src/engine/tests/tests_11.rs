@@ -70,8 +70,7 @@ fn test_writing_mode_vertical_rl_parsed() {
 /// TODO: 待垂直布局完整实现后，测试隐式继承和显式 inherit 关键字。
 #[test]
 fn test_writing_mode_explicit_on_child() {
-    let html =
-        r#"<html><body style="margin:0"><div style="writing-mode:vertical-rl">text</div></body></html>"#;
+    let html = r#"<html><body style="margin:0"><div style="writing-mode:vertical-rl">text</div></body></html>"#;
     let doc = zero_dom::parse_html(html);
     let mut sys = StyleSystem::new();
     sys.set_viewport(800.0, 600.0);

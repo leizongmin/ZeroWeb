@@ -206,24 +206,45 @@ pub fn apply_property_value_with_quirks(
         }
         "border-top-width" => {
             if let Some(v) = parse_length_fn(value) {
+                // CSS 规范：border-width 不允许负值，负值视为无效
+                if let LengthValue::Px(px) = v
+                    && px < 0.0
+                {
+                    return false;
+                }
                 style.border_top_width = v;
                 return true;
             }
         }
         "border-right-width" => {
             if let Some(v) = parse_length_fn(value) {
+                if let LengthValue::Px(px) = v
+                    && px < 0.0
+                {
+                    return false;
+                }
                 style.border_right_width = v;
                 return true;
             }
         }
         "border-bottom-width" => {
             if let Some(v) = parse_length_fn(value) {
+                if let LengthValue::Px(px) = v
+                    && px < 0.0
+                {
+                    return false;
+                }
                 style.border_bottom_width = v;
                 return true;
             }
         }
         "border-left-width" => {
             if let Some(v) = parse_length_fn(value) {
+                if let LengthValue::Px(px) = v
+                    && px < 0.0
+                {
+                    return false;
+                }
                 style.border_left_width = v;
                 return true;
             }
