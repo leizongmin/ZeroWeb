@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制平面
 
-**最后更新**: 2026-06-08
+**最后更新**: 2026-06-09
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
 
 ---
@@ -18,7 +18,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；XHTML CDATA 清理 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 67.1% (329/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；css-position 62.5%；CSS2 63.6%；css-flexbox 61.8%；css-multicol 45.6%；css-writing-modes 40.7%；**本轮修复**：CSS 绝对长度单位 ✅(in/pt/pc/cm/mm/Q)；表格单元格 vertical-align ✅(top/middle/bottom)；径向渐变位置解析 ✅(resolve_position)；表格 min-height border-box ✅；表格单元格高度最小值 ✅；图像双线性插值 ✅；**后续重点**：writing-mode 布局支持（影响 35 个测试）、column breaking（影响 31 个测试）、float 布局精度、inline box model |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；XHTML CDATA 清理 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 65.7% (322/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；css-position 62.5%；CSS2 59.7%；css-flexbox 60.0%；css-multicol 43.9%；css-writing-modes 40.7%；**本轮修复**：CSS 绝对长度单位 ✅(in/pt/pc/cm/mm/Q)；表格单元格 vertical-align ✅(top/middle/bottom)；径向渐变位置解析 ✅(resolve_position)；表格 min-height border-box ✅；表格单元格高度最小值 ✅；图像双线性插值 ✅；writing-mode 轴交换回退 ✅(禁用不完整实现避免回归)；CSS 负值 border-width 拒绝 ✅；BFC 浮动排斥改进 ✅(使用实际坐标替代计算坐标)；multicol 百分比 column-gap 解析 ✅；column_gap 计算样式解析 ✅(em/rem→Px)；**后续重点**：writing-mode 布局支持（影响 35 个测试）、column breaking（影响 31 个测试）、float 布局精度、inline box model |
 
 ## 当前状态概览
 
@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-09（本轮第八轮）
+**日期**: 2026-06-09（本轮第九轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
 **通过**: 322
 **失败**: 168
 **通过率**: 65.7%
 
-**说明**：通过率从 67.1% 降至 65.7%。原因：回退了不完整的 writing-mode 轴交换和隐式继承（之前导致部分测试虚假通过，掩盖了真实的渲染差距）。同时修复了 CSS 负值 border-width 的规范合规性（负值应视为无效，回退到初始值 medium）。
+**说明**：通过率维持 65.7%。本轮完成了多项正确性改进（BFC 浮动排斥、multicol 百分比 gap、computed style column_gap 解析），但当前测试集未触发这些改进场景。主要阻塞仍为 writing-mode 垂直布局（35 测试）、multicol column breaking（31 测试）和 float/clear 精度（30 测试）三大基础设施缺口。
 
 ### 按目录
 
