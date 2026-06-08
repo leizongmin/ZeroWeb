@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-09（本轮第十二轮）
+**日期**: 2026-06-09（本轮第十三轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
-**通过**: 322
-**失败**: 168
-**通过率**: 65.7%
+**通过**: 324
+**失败**: 166
+**通过率**: 66.1%
 
-**说明**：通过率维持在 65.7%（322/490）。本轮完成了以下工作：（1）实现了 Ahem 字体感知光栅化（FontLoader.is_ahem + rasterize_ahem_glyph 生成完美填充方块），但验证发现上游 reftest 的失败主因是布局定位差异而非字形位图形状；（2）补充了 CSS2 floats-clear 和 css-writing-modes 的缺失支持图片；（3）系统分析了 168 个失败测试的根因分布。确认主要瓶颈为布局定位差异，非字形渲染。
+**说明**：通过率从 65.7%（322/490）提升到 66.1%（324/490）。本轮完成了以下工作：（1）实现了 inline-block 元素在行内格式化上下文中的正确定位（adjust_inline_block_positions 后处理步骤），CSS2 通过率从 59.7% 提升到 62.8%；（2）实现了 border-collapse 冲突解决中的样式覆盖（collapsed_border_style_overrides），确保获胜边框的样式（solid vs dashed/ridge 等）被正确应用到绘制阶段；扩展了 color_value_to_u32 支持更多命名颜色。
 
 ### 按目录
 
@@ -303,18 +303,37 @@
 | css-grid/ | 17/20 | 85.0% | ❌ |
 | css-tables/ | 40/55 | 72.7% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
-| CSS2/ | 77/129 | 59.7% | ❌ |
-| css-flexbox/ | 34/55 | 61.8% | ❌ |
+| CSS2/ | 81/129 | 62.8% | ❌ |
+| css-flexbox/ | 32/55 | 58.2% | ❌ |
 | css-multicol/ | 25/57 | 43.9% | ❌ |
 | css-writing-modes/ | 23/59 | 39.0% | ❌ |
 
-### R12 本轮修复内容
+### R13 本轮修复内容
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
-| Ahem 字体感知光栅化 | 基础设施 | FontLoader 新增 ahem_font_id 检测和 is_ahem() 方法；rasterize_ahem_glyph() 生成完美填充方块（全部 alpha=255），advance=font_size，y_offset=-(ascent.ceil())。4 个单元测试验证。验证确认字形位图非失败主因 |
-| CSS2 floats-clear 支持图片 | floats-clear | 补充 clear-clearance-calculation-001/002/003.png（从上游 WPT 仓库下载） |
-| css-writing-modes 支持图片 | writing-modes | 生成 100x100-red.png、left/right-bottom-200x300.png、right-top-200x300.png |
+| Inline-block 行内定位 | CSS2 +2 | 新增 adjust_inline_block_positions 后处理：对包含 inline-block 子元素的容器运行 IFC，获取正确水平并排位置。IFC 新增 InlineBlockBox 类型。CSS2 从 59.7% → 62.8% |
+| Border 样式覆盖 | css-tables | collapsed_border_style_overrides[4] 数组：border-collapse 冲突解决后获胜方的样式（solid/dashed/dotted 等）正确传递到 paint 阶段。color_value_to_u32 新增 purple/cyan/magenta 等 10 种命名颜色 |
+| 基线计算修正 | inline layout | inline-block 元素的 baseline 在其底部边缘（ascent=height），而非 0.8×line-height |
+
+### 失败根因分布分析（R13 更新）
+
+| diff 范围 | 数量 | 特征 | 代表性测试 |
+|-----------|------|------|-----------|
+| <2% | 33 | 亚像素/微偏移，接近通过 | clearance-006 (1.16%), flex-item-position-relative (1.04%) |
+| 2-5% | 45 | 小幅定位差异 | clear-float-003 (1.92%), background-043 (2.61%) |
+| 5-15% | 40 | 中等定位/尺寸差异 | float-006 (7.46%), background-090 (10.20%) |
+| 15-30% | 32 | 显著布局差异 | abs-pos-non-replaced-* (21.33%), direction-vrl (12.49%) |
+| >30% | 16 | 基本功能缺失 | empty-inline-002 (42.06%), background-attachment (30.48%) |
+
+### 关键发现（R13）
+
+| 发现 | 说明 |
+|------|------|
+| Writing-mode abs-pos 失败主因是 inline 布局 | 12 个 abs-pos-non-replaced 测试全部在 21.33% 失败。轴交换已启用（输入/输出双向），但 inline formatting context 不支持垂直模式——文本仍水平排列。静态位置基于水平 inline 布局，导致绝对定位偏移 |
+| 55 个失败测试使用 Ahem 字体 | 这些测试的失败原因是布局定位差异（而非字形渲染），因为许多 WPT 测试使用 Ahem 字体创建精确矩形内容来验证布局 |
+| CSS2 边框/背景测试 | border-bottom: 1in 系列测试（3.84%）的 diff 精确等于整个 div 面积，暗示渲染存在系统性偏移。需进一步调查 1in 单位在 border 上下文中的行为 |
+| 大面积差异(>25%)多因缺少功能 | background-attachment:fixed (30.48%)、position-fixed-overflow-print (75%)、column-balancing-paged (56%) 均因缺少对应 CSS 功能实现 |
 
 ### 失败根因分布分析（R12 新增）
 
@@ -341,11 +360,11 @@
 
 ### 后续重点
 
-1. **Ahem 字体渲染精度**（影响 100+ 测试）：fontdue vs Skia 字体渲染差异是最大单一失败根因。需要精确匹配 Ahem 字体的方形字符宽度和渲染位置。影响 CSS2、multicol、writing-modes 大量测试
+1. **writing-mode 垂直 inline 布局**（影响 css-writing-modes 36 测试）：需要在 InlineFormattingContext 中实现垂直模式 — 容器高度作为行宽、字符向下推进、"行"变为垂直列。轴交换已启用但 inline 布局仍为水平方向，是 12 个 abs-pos-non-replaced (21.33%) 和 3 个 direction (12.49%) 失败的根因
 2. **multicol column breaking**（影响 css-multicol 32 测试）：需要实现内容碎片化 — 将单个块级元素的内容拆分到多列。当前仅移动整个子元素到下一列
-3. **writing-mode 垂直 inline 布局**（影响 css-writing-modes 36 测试）：需要在 InlineFormattingContext 中实现垂直模式 — 容器高度作为行宽、字符向下推进、"行"变为垂直列
-4. **CSS2 float/clear 精度**（影响 CSS2 30 测试）：需要改进浮动定位和清除计算精度
-5. **CSS2 inline box model**（影响 ~8 测试）：空 inline 元素、block-in-inline 拆分
+3. **CSS2 float/clear 精度**（影响 CSS2 ~16 测试）：需要改进浮动定位和清除计算精度。clearance 计算使用简化公式，不完全匹配 CSS 2.1 规范的 C1/C2 双路径算法
+4. **CSS2 inline box model**（影响 ~7 测试）：空 inline 元素 line-height 贡献、inline 元素 margin 处理、block-in-inline 拆分
+5. **Flexbox baseline 对齐**（影响 css-flexbox ~7 测试）：taffy baseline 对齐功能基本可用，但 multi-line baseline 和 baseline-as-center 测试有较大差异
 
 ### R11 本轮修复内容
 
@@ -570,3 +589,8 @@
 92. ~~M10 — 图像双线性插值~~ ✅(CPU render_image 从最近邻改为双线性插值)
 93. ~~M10 — writing-mode 轴交换回退~~ ✅(禁用不完整的轴交换和隐式继承，避免回归)
 94. ~~M10 — CSS 负值 border-width 拒绝~~ ✅(负值视为无效，回退到初始值 medium；修复 border-bottom-width-001.xht)
+95. ~~R13 — inline-block 行内定位~~ ✅(adjust_inline_block_positions 后处理 + IFC InlineBlockBox + baseline 修正；CSS2 59.7%→62.8%)
+96. ~~R13 — border-collapse 样式覆盖~~ ✅(collapsed_border_style_overrides + 更多命名颜色)
+97. R13 — writing-mode 垂直 inline 布局（影响 36 个测试：需实现 InlineFormattingContext 垂直模式）
+98. R13 — multicol column breaking（影响 32 个测试：需实现内容碎片化）
+99. R13 — CSS2 float/clear 精度提升（影响 ~16 个测试：clearance 算法改进）

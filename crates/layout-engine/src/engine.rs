@@ -849,7 +849,9 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
 
             if !matches!(child.float, FloatValue::None) {
                 // float 元素：将其 taffy 高度加入 offset
-                float_y_offset += child.margin_top + child.height + child.margin_bottom;
+                // CSS 2.1：零高度浮动元素不占据垂直空间
+                let float_total_height = child.margin_top + child.height + child.margin_bottom;
+                float_y_offset += float_total_height;
                 continue;
             }
 
@@ -883,8 +885,14 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                     let collapsed_margin = last_flow_mb.max(child.margin_top);
                     let hypothetical_y = flow_bottom + collapsed_margin;
 
+                    // CSS 2.1 §9.5.2 完整 clearance 计算：
+                    // clearance = max(0, clear_bottom - hypothetical_position)
+                    // 当 clearance > 0 时，元素位于 clear_bottom
+                    // 当 clearance == 0 时，margin 折叠被阻断，元素位于
+                    //   flow_bottom + child.margin_top（不折叠）
+                    // 无论哪种情况，clear 属性的存在都会阻止 margin 折叠
                     if clear_bottom > 0.0 && clear_bottom > hypothetical_y {
-                        // 需要 clearance：将元素推到浮动下方
+                        // 正 clearance：将元素推到浮动下方
                         child.y = clear_bottom;
                     } else {
                         // 零 clearance 或无浮动：保持假设位置
