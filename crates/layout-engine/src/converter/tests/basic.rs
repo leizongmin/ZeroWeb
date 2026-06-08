@@ -188,10 +188,10 @@ fn test_convert_gap() {
     style.gap = LengthValue::Px(10.0);
     let taffy_style = computed_style_to_taffy(&style, None);
     assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::Length(10.0));
-    // row_gap 默认 Px(0.0)
-    assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(0.0));
+    // row_gap 未设置时回退到 gap 简写（CSS 规范：gap: 10px 等价于 row-gap: 10px column-gap: 10px）
+    assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(10.0));
 
-    // 设置不同的 row-gap
+    // 设置不同的 row-gap 时，使用显式值而非 gap 回退
     style.row_gap = LengthValue::Px(20.0);
     let taffy_style = computed_style_to_taffy(&style, None);
     assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::Length(10.0));
