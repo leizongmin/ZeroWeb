@@ -354,7 +354,7 @@ fn draw_glyph_primitive(
             let color = glyph.color;
             let x = glyph.x * scale;
             let y = glyph.y * scale;
-            blit_glyph_bitmap(fb, cached, x, y, color);
+            blit_glyph_bitmap(fb, cached, x, y, color, glyph.rotation);
         }
         return;
     }
@@ -374,28 +374,68 @@ fn draw_glyph_primitive(
         let color = glyph.color;
         let x = glyph.x * scale;
         let y = glyph.y * scale;
-        blit_glyph_bitmap(fb, &bitmap, x, y, color);
+        blit_glyph_bitmap(fb, &bitmap, x, y, color, glyph.rotation);
     }
 }
 
 /// 将字形位图合成到帧缓冲。
-fn blit_glyph_bitmap(fb: &mut FrameBuffer, bitmap: &crate::font::GlyphBitmap, x: f32, y: f32, color: Color) {
+///
+/// `rotation` 为弧度，0.0 表示不旋转，FRAC_PI_2 表示顺时针 90°。
+/// 对于垂直书写模式，字形需要旋转 90° 使文字从上到下排列。
+fn blit_glyph_bitmap(
+    fb: &mut FrameBuffer,
+    bitmap: &crate::font::GlyphBitmap,
+    x: f32,
+    y: f32,
+    color: Color,
+    rotation: f32,
+) {
     let start_x = x.round() as i32;
     let start_y = y.round() as i32;
 
-    for row in 0..bitmap.height {
-        for col in 0..bitmap.width {
-            let px = start_x + col as i32;
-            let py = start_y + row as i32;
-            if px < 0 || py < 0 || px >= fb.width as i32 || py >= fb.height as i32 {
-                continue;
-            }
+    // 判断是否为 ~90° 旋转（容差 ±0.1 弧度）
+    let is_rotated_90 = (rotation - std::f32::consts::FRAC_PI_2).abs() < 0.1;
 
-            let alpha = bitmap.data[row as usize * bitmap.width as usize + col as usize];
-            if alpha == 0 {
-                continue;
+    if is_rotated_90 {
+        // 顺时针旋转 90°：原始 (col, row) → 旋转后 (row, width - 1 - col)
+        // 旋转后位图尺寸：width × height → height × width
+        let bmp_w = bitmap.width as i32;
+        let bmp_h = bitmap.height as i32;
+        for row in 0..bmp_h {
+            for col in 0..bmp_w {
+                // 顺时针 90° 旋转后的坐标
+                let rotated_col = row;
+                let rotated_row = bmp_w - 1 - col;
+
+                let px = start_x + rotated_col;
+                let py = start_y + rotated_row;
+                if px < 0 || py < 0 || px >= fb.width as i32 || py >= fb.height as i32 {
+                    continue;
+                }
+
+                let alpha = bitmap.data[row as usize * bitmap.width as usize + col as usize];
+                if alpha == 0 {
+                    continue;
+                }
+                blend_pixel(fb, px as u32, py as u32, color, alpha);
             }
-            blend_pixel(fb, px as u32, py as u32, color, alpha);
+        }
+    } else {
+        // 无旋转 — 正常渲染
+        for row in 0..bitmap.height {
+            for col in 0..bitmap.width {
+                let px = start_x + col as i32;
+                let py = start_y + row as i32;
+                if px < 0 || py < 0 || px >= fb.width as i32 || py >= fb.height as i32 {
+                    continue;
+                }
+
+                let alpha = bitmap.data[row as usize * bitmap.width as usize + col as usize];
+                if alpha == 0 {
+                    continue;
+                }
+                blend_pixel(fb, px as u32, py as u32, color, alpha);
+            }
         }
     }
 }

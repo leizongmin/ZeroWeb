@@ -811,3 +811,85 @@ fn rounded_rect_with_all_corners() {
     let corner = fb.get_pixel(12, 12);
     assert_eq!(corner, [255, 255, 255, 255], "corner should be white (outside radius)");
 }
+
+// ─── 垂直书写模式字形旋转测试 ───
+
+/// 测试垂直书写模式下字形 90° 旋转渲染。
+/// GlyphPrimitive.rotation = FRAC_PI_2 时，字形应顺时针旋转 90°。
+#[test]
+fn test_glyph_rotation_90_degrees() {
+    use crate::font::GlyphBitmap;
+    use std::f32::consts::FRAC_PI_2;
+
+    // 创建一个 4x2 的位图（宽 4，高 2），左半部分不透明，右半部分透明
+    // 原始布局（4x2）:
+    //   XX..
+    //   XX..
+    let bitmap = GlyphBitmap {
+        width: 4,
+        height: 2,
+        data: vec![
+            255, 255, 0, 0, // row 0: col 0,1 = opaque; col 2,3 = transparent
+            255, 255, 0, 0, // row 1: same
+        ],
+        x_offset: 0,
+        y_offset: 0,
+        advance: 0.0,
+    };
+
+    // 在 (10, 10) 处渲染旋转 90° 的位图
+    let mut fb = FrameBuffer::new(40, 40);
+    fb.clear(255, 255, 255, 255); // 白色背景
+
+    blit_glyph_bitmap(&mut fb, &bitmap, 10.0, 10.0, Color::BLACK, FRAC_PI_2);
+
+    // 顺时针旋转 90° 后，原始 4x2 变成 2x4：
+    // 原始 (col=0,row=0) → 旋转后 (rotated_col=0, rotated_row=3) → (px=10, py=13)
+    // 原始 (col=0,row=1) → 旋转后 (rotated_col=1, rotated_row=3) → (px=11, py=13)
+    // 原始 (col=1,row=0) → 旋转后 (rotated_col=0, rotated_row=2) → (px=10, py=12)
+    // 原始 (col=1,row=1) → 旋转后 (rotated_col=1, rotated_row=2) → (px=11, py=12)
+
+    // 验证旋转后的像素位置
+    let p1 = fb.get_pixel(10, 13); // (col=0,row=0) → 旋转后
+    assert_eq!(p1, [0, 0, 0, 255], "rotated pixel at (10,13) should be black");
+
+    let p2 = fb.get_pixel(11, 13); // (col=0,row=1) → 旋转后
+    assert_eq!(p2, [0, 0, 0, 255], "rotated pixel at (11,13) should be black");
+
+    let p3 = fb.get_pixel(10, 12); // (col=1,row=0) → 旋转后
+    assert_eq!(p3, [0, 0, 0, 255], "rotated pixel at (10,12) should be black");
+
+    let p4 = fb.get_pixel(11, 12); // (col=1,row=1) → 旋转后
+    assert_eq!(p4, [0, 0, 0, 255], "rotated pixel at (11,12) should be black");
+
+    // 原始位置（未旋转的位置）应保持白色
+    let p5 = fb.get_pixel(10, 10); // 原始 (col=0,row=0) 未旋转时在此
+    assert_eq!(p5, [255, 255, 255, 255], "unrotated position (10,10) should stay white");
+}
+
+/// 测试零旋转时字形正常渲染（无旋转）。
+#[test]
+fn test_glyph_no_rotation() {
+    use crate::font::GlyphBitmap;
+
+    // 创建一个 2x2 的位图
+    let bitmap = GlyphBitmap {
+        width: 2,
+        height: 2,
+        data: vec![255, 255, 255, 255],
+        x_offset: 0,
+        y_offset: 0,
+        advance: 0.0,
+    };
+
+    let mut fb = FrameBuffer::new(20, 20);
+    fb.clear(255, 255, 255, 255);
+
+    blit_glyph_bitmap(&mut fb, &bitmap, 5.0, 5.0, Color::BLACK, 0.0);
+
+    // 无旋转：像素在 (5,5), (6,5), (5,6), (6,6)
+    assert_eq!(fb.get_pixel(5, 5), [0, 0, 0, 255]);
+    assert_eq!(fb.get_pixel(6, 5), [0, 0, 0, 255]);
+    assert_eq!(fb.get_pixel(5, 6), [0, 0, 0, 255]);
+    assert_eq!(fb.get_pixel(6, 6), [0, 0, 0, 255]);
+}
