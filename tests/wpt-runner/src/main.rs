@@ -13,7 +13,8 @@ mod report;
 mod runner;
 mod wpt_file_loader;
 
-use runner::{TestContext, builtin_tests, filter_tests_by_category, filter_tests_by_pattern, run_all};
+use rayon::prelude::*;
+use runner::{TestContext, builtin_tests, filter_tests_by_category, filter_tests_by_pattern};
 
 /// CLI 用法说明。
 const USAGE: &str = "\
@@ -37,6 +38,7 @@ Options:
   --wpt-data <dir>  Path to wpt-data directory (for reftest-upstream)
   --width <px>      Viewport width (default: 800)
   --height <px>     Viewport height (default: 600)
+  --jobs <n>        Number of parallel test jobs (default: CPU auto, GPU 1)
   --category <cat>  Reftest category filter (layout|text|all)
   --output <path>   Reftest report output path
 ";
@@ -55,6 +57,8 @@ struct CliOptions {
     viewport_height: f32,
     /// 使用 GPU 渲染模式。
     use_gpu: bool,
+    /// 并行执行的测试 worker 数。
+    jobs: Option<usize>,
     /// 上游 WPT 数据目录。
     wpt_data: Option<String>,
 }
@@ -85,6 +89,7 @@ fn main() {
         viewport_width: 800.0,
         viewport_height: 600.0,
         use_gpu: false,
+        jobs: None,
         wpt_data: None,
     };
 
@@ -120,6 +125,12 @@ fn main() {
                 }
             }
             "--gpu" => options.use_gpu = true,
+            "--jobs" => {
+                i += 1;
+                if i < args.len() {
+                    options.jobs = args[i].parse::<usize>().ok().filter(|jobs| *jobs > 0);
+                }
+            }
             "--wpt-data" => {
                 i += 1;
                 if i < args.len() {
@@ -178,7 +189,9 @@ fn cmd_run(options: &CliOptions, filter: Option<&str>) {
     };
 
     eprintln!("Running {} tests...", tests.len());
-    let results = run_all(&tests, &ctx);
+    let jobs = effective_jobs(options);
+    eprintln!("Using {jobs} test job(s).");
+    let results = run_wpt_cases(&tests, &ctx, jobs);
     let summary = report::TestSummary::from_results(&results);
 
     // 输出结果
@@ -258,7 +271,9 @@ fn cmd_summary(options: &CliOptions, filter: Option<&str>) {
     };
 
     eprintln!("Running {} tests...", tests.len());
-    let results = run_all(&tests, &ctx);
+    let jobs = effective_jobs(options);
+    eprintln!("Using {jobs} test job(s).");
+    let results = run_wpt_cases(&tests, &ctx, jobs);
     let summary = report::TestSummary::from_results(&results);
 
     report::print_summary(&summary);
@@ -298,25 +313,30 @@ fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
         .collect();
 
     eprintln!("Running {} reftest cases...", filtered.len());
+    let jobs = effective_jobs(options);
+    eprintln!("Using {jobs} test job(s).");
 
-    let mut results: Vec<ReftestResult> = Vec::with_capacity(filtered.len());
-    let mut pass_count = 0usize;
-    let mut fail_count = 0usize;
     let start = std::time::Instant::now();
 
-    for (idx, case) in &filtered {
+    let results: Vec<ReftestResult> = parallel_map(&filtered, jobs, |(idx, case)| {
         let mut config = configs[*idx].clone();
         config.viewport_width = options.viewport_width as u32;
         config.viewport_height = options.viewport_height as u32;
 
-        let result = if options.use_gpu {
+        if options.use_gpu {
             run_reftest_gpu(case, &config)
         } else {
             run_reftest(case, &config)
-        };
+        }
+    });
+
+    let mut pass_count = 0usize;
+    let mut fail_count = 0usize;
+
+    for result in &results {
         let passed = result.passed;
         let status_char = if passed { '✓' } else { '✗' };
-        eprintln!("  {} {} ({:.2}%)", status_char, case.id, result.diff_ratio * 100.0);
+        eprintln!("  {} {} ({:.2}%)", status_char, result.id, result.diff_ratio * 100.0);
 
         if passed {
             pass_count += 1;
@@ -324,8 +344,6 @@ fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
             fail_count += 1;
             eprintln!("    {}", result.message);
         }
-
-        results.push(result);
     }
 
     let duration = start.elapsed();
@@ -401,26 +419,30 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
         .collect();
 
     eprintln!("Running {} upstream reftest cases...", filtered.len());
+    let jobs = effective_jobs(options);
+    eprintln!("Using {jobs} test job(s).");
 
-    let mut results: Vec<ReftestResult> = Vec::with_capacity(filtered.len());
-    let mut pass_count = 0usize;
-    let mut fail_count = 0usize;
     let skip_count = 0usize;
     let start = std::time::Instant::now();
 
-    for case in &filtered {
+    let results: Vec<ReftestResult> = parallel_map(&filtered, jobs, |case| {
         let reftest_case = case.to_reftest_case();
         let config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
         let base_dir = case.base_dir.as_deref();
 
-        let result = if options.use_gpu {
+        if options.use_gpu {
             run_reftest_gpu_with_base(&reftest_case, &config, base_dir)
         } else {
             run_reftest_with_base(&reftest_case, &config, base_dir)
-        };
+        }
+    });
 
+    let mut pass_count = 0usize;
+    let mut fail_count = 0usize;
+
+    for result in &results {
         let status_char = if result.passed { '✓' } else { '✗' };
-        eprintln!("  {} {} ({:.2}%)", status_char, case.id, result.diff_ratio * 100.0);
+        eprintln!("  {} {} ({:.2}%)", status_char, result.id, result.diff_ratio * 100.0);
 
         if result.passed {
             pass_count += 1;
@@ -428,8 +450,6 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
             fail_count += 1;
             eprintln!("    {}", result.message);
         }
-
-        results.push(result);
     }
 
     let duration = start.elapsed();
@@ -610,6 +630,48 @@ fn format_reftest_report_json(
 
     json.push_str("  ]\n}");
     json
+}
+
+fn run_wpt_cases(tests: &[runner::TestCase], ctx: &TestContext, jobs: usize) -> Vec<report::TestResult> {
+    if jobs <= 1 {
+        return runner::run_all(tests, ctx);
+    }
+
+    let expectations = runner::TestExpectations::new();
+    parallel_map(tests, jobs, |case| {
+        runner::run_single_with_expectations(case, ctx, &expectations)
+    })
+}
+
+fn parallel_map<T, R, F>(items: &[T], jobs: usize, f: F) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Sync + Send,
+{
+    if jobs <= 1 || items.len() <= 1 {
+        return items.iter().map(f).collect();
+    }
+
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(jobs)
+        .build()
+        .expect("failed to build WPT runner thread pool");
+
+    pool.install(|| items.par_iter().map(f).collect())
+}
+
+fn effective_jobs(options: &CliOptions) -> usize {
+    options
+        .jobs
+        .unwrap_or_else(|| if options.use_gpu { 1 } else { default_parallel_jobs() })
+}
+
+fn default_parallel_jobs() -> usize {
+    std::thread::available_parallelism()
+        .map(|jobs| jobs.get())
+        .unwrap_or(1)
+        .clamp(1, 8)
 }
 
 fn print_usage() {
