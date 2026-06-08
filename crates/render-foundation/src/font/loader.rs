@@ -195,12 +195,7 @@ impl FontLoader {
     ///
     /// Ahem 是 WPT 标准测试字体，每个字符应渲染为边长 = font_size 的实心方块。
     /// fontdue 的光栅化结果与 Skia（Chrome）存在差异，直接生成方块可确保像素级对齐。
-    fn rasterize_ahem_glyph(
-        &self,
-        font_id: u32,
-        code_point: char,
-        size: f32,
-    ) -> Result<GlyphBitmap, FontError> {
+    fn rasterize_ahem_glyph(&self, font_id: u32, code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
         let font = self
             .fonts
             .get(&font_id)
@@ -1108,10 +1103,7 @@ mod tests {
             );
             // 全部像素应完全不透明
             let all_opaque = bitmap.data.iter().all(|&a| a == 255);
-            assert!(
-                all_opaque,
-                "Ahem 'X' at size={size}: all pixels should be fully opaque"
-            );
+            assert!(all_opaque, "Ahem 'X' at size={size}: all pixels should be fully opaque");
             // advance 应等于 font_size
             assert!(
                 (bitmap.advance - size).abs() < 0.01,

@@ -56,11 +56,22 @@ impl super::Painter {
         let left_color =
             collapsed_border_color(&box_node.collapsed_border_color_overrides[3], &style.border_left_color);
 
+        // border-collapse 样式覆盖：冲突解决后使用获胜方的样式
+        let top_style = box_node.collapsed_border_style_overrides[0]
+            .as_ref()
+            .unwrap_or(&style.border_top_style);
+        let right_style = box_node.collapsed_border_style_overrides[1]
+            .as_ref()
+            .unwrap_or(&style.border_right_style);
+        let bottom_style = box_node.collapsed_border_style_overrides[2]
+            .as_ref()
+            .unwrap_or(&style.border_bottom_style);
+        let left_style = box_node.collapsed_border_style_overrides[3]
+            .as_ref()
+            .unwrap_or(&style.border_left_style);
+
         // 上边框
-        if box_node.border_top > 0.0
-            && style.border_top_style != BorderStyleValue::None
-            && style.border_top_style != BorderStyleValue::Hidden
-        {
+        if box_node.border_top > 0.0 && *top_style != BorderStyleValue::None && *top_style != BorderStyleValue::Hidden {
             self.paint_border_edge(
                 &BorderEdgeSpec {
                     x1: abs_x,
@@ -71,15 +82,15 @@ impl super::Painter {
                     is_horizontal: true,
                     extend_left: false,
                 },
-                &style.border_top_style,
+                top_style,
                 &top_color,
             );
         }
 
         // 右边框
         if box_node.border_right > 0.0
-            && style.border_right_style != BorderStyleValue::None
-            && style.border_right_style != BorderStyleValue::Hidden
+            && *right_style != BorderStyleValue::None
+            && *right_style != BorderStyleValue::Hidden
         {
             self.paint_border_edge(
                 &BorderEdgeSpec {
@@ -91,15 +102,15 @@ impl super::Painter {
                     is_horizontal: false,
                     extend_left: true,
                 },
-                &style.border_right_style,
+                right_style,
                 &right_color,
             );
         }
 
         // 下边框 — y1 在边框盒底边向上 border_bottom 处（边框区域内侧）
         if box_node.border_bottom > 0.0
-            && style.border_bottom_style != BorderStyleValue::None
-            && style.border_bottom_style != BorderStyleValue::Hidden
+            && *bottom_style != BorderStyleValue::None
+            && *bottom_style != BorderStyleValue::Hidden
         {
             self.paint_border_edge(
                 &BorderEdgeSpec {
@@ -111,15 +122,15 @@ impl super::Painter {
                     is_horizontal: true,
                     extend_left: false,
                 },
-                &style.border_bottom_style,
+                bottom_style,
                 &bottom_color,
             );
         }
 
         // 左边框
         if box_node.border_left > 0.0
-            && style.border_left_style != BorderStyleValue::None
-            && style.border_left_style != BorderStyleValue::Hidden
+            && *left_style != BorderStyleValue::None
+            && *left_style != BorderStyleValue::Hidden
         {
             self.paint_border_edge(
                 &BorderEdgeSpec {
@@ -131,7 +142,7 @@ impl super::Painter {
                     is_horizontal: false,
                     extend_left: false,
                 },
-                &style.border_left_style,
+                left_style,
                 &left_color,
             );
         }

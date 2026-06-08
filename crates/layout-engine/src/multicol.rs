@@ -89,10 +89,7 @@ fn length_to_px(value: &LengthValue, container_width: f32) -> f32 {
 /// 从 ComputedStyle 计算多列参数。
 ///
 /// 返回 `None` 表示不需要多列布局（column-count: auto 且 column-width: auto）。
-fn compute_column_info(
-    style: &ComputedStyle,
-    container_width: f32,
-) -> Option<ColumnInfo> {
+fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<ColumnInfo> {
     let gap = length_to_px(&style.column_gap, container_width);
     let sequential_fill = matches!(style.column_fill, ColumnFillComputedValue::Auto);
 
