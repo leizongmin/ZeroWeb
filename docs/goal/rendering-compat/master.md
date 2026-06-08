@@ -18,7 +18,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；XHTML CDATA 清理 ✅(strip_cdata 去除 <![CDATA[...]]> 标记，修复 CSS 解析器因 CDATA 导致 0 规则提取的问题)；491 个上游 reftest 已导入（9 个目录）；**真实通过率 64.8% (318/491)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 73.2%；css-position 62.5%；CSS2 57.4%；css-flexbox 56.4%；css-multicol 43.9%；css-writing-modes 40.7%；**本轮修复**：CSS font-family 解析 ✅(替换硬编码 FontId(0) 为 CSS font-family 查找；OpenType name 表解析提取字体族名；通用字体族映射 sans-serif/serif/monospace)；CSS border-width zeroing ✅(当 border-style 为 none/hidden 时强制 width=0)；**后续重点**：writing-mode 布局支持（影响 writing-modes 全部 + flexbox 部分）、border-collapse 冲突解决、column breaking、float 布局精度、inline box model |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅(PNG 解码+ImageCache+base_dir 路径解析+discover 脚本)；render_full_scene 全量渲染 ✅(13 种图元)；skip_indicators 模式 ✅；UA 默认样式 ✅；XHTML CDATA 清理 ✅(strip_cdata 去除 <![CDATA[...]]> 标记，修复 CSS 解析器因 CDATA 导致 0 规则提取的问题)；490 个上游 reftest 已导入（9 个目录，+1 JS-dependent 跳过）；**真实通过率 65.8% (323/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；css-position 62.5%；CSS2 58.9%；css-flexbox 61.8%；css-multicol 43.9%；css-writing-modes 40.7%；**本轮修复**：CSS font-family 解析 ✅(替换硬编码 FontId(0) 为 CSS font-family 查找；OpenType name 表解析提取字体族名；通用字体族映射 sans-serif/serif/monospace)；CSS border-width zeroing ✅(当 border-style 为 none/hidden 时强制 width=0)；flex-flow 简写展开 ✅(flex-direction || flex-wrap)；font-family 非法字符验证 ✅(含无效字符的未引用字体族名使整个声明无效)；font 简写验证 ✅(缺少 font-size 的 font 简写声明视为无效)；**后续重点**：writing-mode 布局支持（影响 writing-modes 全部 + flexbox 部分）、border-collapse 冲突解决、column breaking、float 布局精度、inline box model |
 
 ## 当前状态概览
 
@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-08（本轮第三轮）
-**总用例**: 491（上游真实 reftest，排除 skip list）
-**通过**: 318
-**失败**: 173
-**通过率**: 64.8%
+**日期**: 2026-06-08（本轮第四轮）
+**总用例**: 490（上游真实 reftest，排除 skip list）
+**通过**: 323
+**失败**: 167
+**通过率**: 65.8%
 
-**说明**：通过率 64.8% (318/491)，相比上轮 65.0% (319/491) 略降 0.2%。Font-family 解析改进使 CSS font-family 正确匹配到实际字体（如 Ahem），但部分测试因字体切换导致渲染结果变化。CSS border-width zeroing 修复了 border-style:none 时 width 不为 0 的规范违反。
+**说明**：通过率从 64.8% (318/491) 提升至 65.8% (323/490)。本轮实现 flex-flow 简写展开（+3 flexbox 测试）、font-family 非法字符验证（+2 CSS2 测试）。+1 个 JS-dependent 测试加入 skip list（collapsed-border-remove-row-group）。
 
 ### 按目录
 
@@ -303,8 +303,8 @@
 | css-grid/ | 17/20 | 85.0% | ❌ |
 | css-tables/ | 41/56 | 73.2% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
-| CSS2/ | 74/129 | 57.4% | ❌ |
-| css-flexbox/ | 31/55 | 56.4% | ❌ |
+| CSS2/ | 76/129 | 58.9% | ❌ |
+| css-flexbox/ | 34/55 | 61.8% | ❌ |
 | css-multicol/ | 25/57 | 43.9% | ❌ |
 | css-writing-modes/ | 24/59 | 40.7% | ❌ |
 
@@ -315,6 +315,9 @@
 | CSS font-family 解析 | 全局 | 替换硬编码 FontId(0) 为 CSS font-family 查找；OpenType name 表解析提取字体族名；通用字体族映射 sans-serif/serif/monospace；Painter/RenderPipeline 传递 font resolver |
 | CSS border-width zeroing | 规范符合 | 当 border-style 为 none/hidden 时强制 border-width=0（CSS Backgrounds and Borders 规范要求） |
 | FontLoader 字体名提取 | 字体系统 | parse_font_family_name() 直接解析 OpenType name 表（nameID=1），替代 fontdue 不暴露的 API |
+| flex-flow 简写展开 | css-flexbox | expand_one 新增 "flex-flow" 分支，解析 flex-direction \|\| flex-wrap 并展开为长属性。修复 flex-flow-002/007 和 flexbox-column-row-gap-003 |
+| font-family 非法字符验证 | CSS2/fonts | parse_font_family() 验证未引用字体族名仅含字母/数字/连字符/下划线/空格，含非法字符时整个声明无效。修复 font-family-invalid-characters-001/008 |
+| font 简写验证 | CSS2/fonts | expand_font() 检查是否找到 size 部分，缺少 font-size 的 font 简写声明视为无效（除系统字体关键字）。更新测试用例匹配 CSS 规范行为 |
 
 
 ### 发现的关键问题
@@ -491,3 +494,8 @@
 68. M10 — writing-mode 布局支持（影响 css-writing-modes 40.7% + css-flexbox 部分测试；需实现 vertical-rl/lr 布局方向）
 69. M10 — float 布局精度提升（CSS2/floats-clear 20/30 失败；根因分析：swatch 图像缩放 20×20→96×96 与 CSS background-color 精确填充的像素差异，非 float 定位错误）
 70. M10 — 失败分布分析：37个<2%、45个2-5%、40个5-15%、40个15-30%、11个>30%；最大改进杠杆为 writing-mode（影响 35 个测试）和 column breaking（影响 32 个测试）
+71. ~~M10 — flex-flow 简写展开~~ ✅ (shorthand/mod.rs 新增 "flex-flow" 分支，解析 flex-direction || flex-wrap；修复 3 个 flexbox 测试)
+72. ~~M10 — font-family 非法字符验证~~ ✅ (parse_font_family 验证未引用名称仅含有效字符，含非法字符时整个声明无效；修复 2 个 CSS2/fonts 测试)
+73. ~~M10 — font 简写验证~~ ✅ (expand_font 检查 size_found，缺少 font-size 的声明无效；更新测试用例匹配 CSS 规范)
+74. M10 — column breaking 实现（影响 css-multicol 43.9%；当前 multicol 仅分配整个子元素到列，不拆分溢出内容；需实现 fragmentation 基础设施）
+75. M10 — 浮动清除算法改进（影响 CSS2/floats-clear 20 个测试；当前 max(normal_y, clear_bottom) 未正确实现 CSS 2.1 clearance 对 margin 折叠的阻断）
