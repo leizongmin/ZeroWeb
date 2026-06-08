@@ -65,7 +65,7 @@ fn test_is_cjk_cyrillic() {
 #[test]
 fn test_estimate_char_width_digit_ratio() {
     let font_size = 16.0;
-    let digit_width = estimate_char_width('5', font_size);
+    let digit_width = estimate_char_width('5', font_size, false);
     let expected = font_size * 0.5;
     assert!(
         (digit_width - expected).abs() < 0.01,
@@ -79,7 +79,7 @@ fn test_estimate_char_width_digit_ratio() {
 #[test]
 fn test_estimate_char_width_tab_character() {
     let font_size = 16.0;
-    let tab_width = estimate_char_width('\t', font_size);
+    let tab_width = estimate_char_width('\t', font_size, false);
     // '\t' 不是 ASCII 空白字符中的空格，但 is_ascii_whitespace 返回 true
     assert!(
         (tab_width - font_size * 0.25).abs() < 0.01,
@@ -93,7 +93,7 @@ fn test_estimate_char_width_tab_character() {
 #[test]
 fn test_estimate_char_width_newline_character() {
     let font_size = 16.0;
-    let nl_width = estimate_char_width('\n', font_size);
+    let nl_width = estimate_char_width('\n', font_size, false);
     // '\n' 是 ASCII 空白字符
     assert!(
         (nl_width - font_size * 0.25).abs() < 0.01,
@@ -106,7 +106,7 @@ fn test_estimate_char_width_newline_character() {
 /// 测试 estimate_char_width：font_size 为负值时的行为。
 #[test]
 fn test_estimate_char_width_negative_font_size() {
-    let width = estimate_char_width('A', -16.0);
+    let width = estimate_char_width('A', -16.0, false);
     // 负 font_size 应产生负宽度，不 panic
     assert!(width < 0.0, "负 font_size 应产生负宽度，实际 {}", width);
 }
@@ -116,7 +116,7 @@ fn test_estimate_char_width_negative_font_size() {
 fn test_estimate_char_width_unicode_non_cjk() {
     let font_size = 16.0;
     // U+00E9 = é，既不是 ASCII 也不是 CJK
-    let width = estimate_char_width('\u{00E9}', font_size);
+    let width = estimate_char_width('\u{00E9}', font_size, false);
     let expected = font_size * 0.5;
     assert!(
         (width - expected).abs() < 0.01,
@@ -133,7 +133,7 @@ fn test_estimate_char_width_unicode_non_cjk() {
 fn test_estimate_string_width_mixed_types() {
     let font_size = 16.0;
     // 'A' (ASCII字母) + ' ' (空格) + '1' (数字) + '.' (标点) + '中' (CJK)
-    let width = estimate_string_width("A 1.中", font_size);
+    let width = estimate_string_width("A 1.中", font_size, false);
     let expected = 16.0 * 0.55 + 16.0 * 0.25 + 16.0 * 0.5 + 16.0 * 0.4 + 16.0;
     assert!(
         (width - expected).abs() < 0.01,
@@ -146,14 +146,14 @@ fn test_estimate_string_width_mixed_types() {
 /// 测试 estimate_string_width：负 font_size 产生负总宽度。
 #[test]
 fn test_estimate_string_width_negative_font_size() {
-    let width = estimate_string_width("ABC", -10.0);
+    let width = estimate_string_width("ABC", -10.0, false);
     assert!(width < 0.0, "负 font_size 应产生负宽度，实际 {}", width);
 }
 
 /// 测试 estimate_string_width：仅包含空格的字符串。
 #[test]
 fn test_estimate_string_width_spaces_only() {
-    let width = estimate_string_width("   ", 16.0);
+    let width = estimate_string_width("   ", 16.0, false);
     let expected = 3.0 * 16.0 * 0.25;
     assert!(
         (width - expected).abs() < 0.01,
@@ -179,6 +179,7 @@ fn test_negative_container_width_no_panic() {
         word_spacing: 0.0,
         margin_left: 0.0,
         margin_right: 0.0,
+                is_ahem_font: false,
     }];
     // 不应 panic
     ctx.break_into_lines(runs);
@@ -200,6 +201,7 @@ fn test_very_narrow_container_single_char_per_line() {
         word_spacing: 0.0,
         margin_left: 0.0,
         margin_right: 0.0,
+                is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     // 极窄容器中每个单词应单独一行
@@ -237,6 +239,7 @@ fn test_zero_width_inline_block() {
             word_spacing: 0.0,
             margin_left: 0.0,
             margin_right: 0.0,
+                is_ahem_font: false,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -261,6 +264,7 @@ fn test_zero_height_inline_block() {
             word_spacing: 0.0,
             margin_left: 0.0,
             margin_right: 0.0,
+                is_ahem_font: false,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
             width: 50.0,
@@ -390,6 +394,7 @@ fn make_run(text: &str) -> TextRun {
         word_spacing: 0.0,
         margin_left: 0.0,
         margin_right: 0.0,
+                is_ahem_font: false,
     }
 }
 

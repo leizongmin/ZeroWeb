@@ -169,18 +169,19 @@ fn layout_table(table_box: &mut LayoutBox, doc: &zero_dom::Document, styles: &Ha
     }
 
     // 2. 计算列宽
-    let col_widths = compute_column_widths(table_box, &grid);
+    let col_widths = compute_column_widths(table_box, &grid, styles);
 
     // 3. 定位单元格
     position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
 
-    // 4. 抑制行组和行的 border/padding/margin
-    // CSS 2.1 规范：在 separated border model 中，
-    // table-row-group / table-row 的 border、padding、margin 无视觉效果
-    suppress_row_group_row_box_model(table_box, styles);
-
-    // 5. border-collapse: collapse 时解析边框冲突
+    // 4. border-collapse: collapse 时解析边框冲突
+    //    必须在 suppress 之前，因为 resolve 从 ComputedStyle 读取边框
     resolve_collapsed_borders(table_box, &grid, styles);
+
+    // 5. 抑制行组和行的 border/padding/margin
+    //    CSS 2.1 规范：在 separated border model 中，
+    //    table-row-group / table-row 的 border、padding、margin 无视觉效果
+    suppress_row_group_row_box_model(table_box, styles);
 }
 
 /// 抑制行组（tbody/thead/tfoot）和行（tr）的 border/padding/margin。
@@ -239,7 +240,9 @@ fn zero_box_model(box_node: &mut LayoutBox) {
 /// 2. border-width：越宽越好
 /// 3. 来源优先级：cell > row > row-group > col > col-group > table
 ///
-/// 当前实现处理最常见的场景：table 边框与 cell 外边框的冲突。
+/// 处理两类冲突：
+/// - 外边缘：table 边框与 cell 边框
+/// - 内部边缘：相邻 cell 之间的边框（包括 hidden/none 样式处理）
 fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles: &HashMap<NodeId, ComputedStyle>) {
     use zero_style_system::BorderCollapseValue;
 
@@ -258,94 +261,224 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
     let table_br = length_to_px(&table_style.border_right_width);
     let table_bb = length_to_px(&table_style.border_bottom_width);
     let table_bl = length_to_px(&table_style.border_left_width);
-    let table_style_t = &table_style.border_top_style;
-    let table_style_r = &table_style.border_right_style;
-    let table_style_b = &table_style.border_bottom_style;
-    let table_style_l = &table_style.border_left_style;
 
-    // 遍历每个单元格，解析其外边缘与 table 边框的冲突
     let row_count = grid.rows.len();
+    if row_count == 0 {
+        return;
+    }
     let last_row = row_count - 1;
+    let last_col = grid.col_count.saturating_sub(1);
 
-    for (row_idx, row) in grid.rows.iter().enumerate() {
-        let cell_count = row.cells.len();
-        if cell_count == 0 {
-            continue;
-        }
+    /// 单元格四边边框信息（宽度 + 样式），从 ComputedStyle 读取
+    #[derive(Clone)]
+    struct CellBorderInfo {
+        top_w: f32,
+        top_s: BorderStyleValue,
+        right_w: f32,
+        right_s: BorderStyleValue,
+        bottom_w: f32,
+        bottom_s: BorderStyleValue,
+        left_w: f32,
+        left_s: BorderStyleValue,
+    }
 
-        // 获取行 box 的可变引用
-        let row_box = match get_row_box_mut(table_box, row) {
+    // 阶段 1：收集所有单元格的边框信息（从 ComputedStyle 读取）
+    // cell_border_data[row_idx][cell_idx] = CellBorderInfo
+    // cell_col_map[row_idx][col] = cell_idx（该列对应的单元格在行内的索引）
+    let mut cell_border_data: Vec<Vec<Option<CellBorderInfo>>> = Vec::with_capacity(row_count);
+    let mut cell_col_map: Vec<Vec<usize>> = Vec::with_capacity(row_count);
+
+    for row in grid.rows.iter() {
+        let mut borders = Vec::with_capacity(row.cells.len());
+        let mut col_map = vec![0usize; grid.col_count];
+
+        let row_box = match get_row_box(table_box, row) {
             Some(b) => b,
-            None => continue,
+            None => {
+                cell_border_data.push(borders);
+                cell_col_map.push(col_map);
+                continue;
+            }
         };
 
-        let last_col = grid.col_count - 1;
-
-        for cell in row.cells.iter() {
-            let cell_box = match row_box.children.get_mut(cell.child_index) {
+        for (cell_idx, cell) in row.cells.iter().enumerate() {
+            let cell_box = match row_box.children.get(cell.child_index) {
                 Some(b) => b,
-                None => continue,
+                None => {
+                    borders.push(None);
+                    continue;
+                }
             };
 
             let cell_style = match cell_box.node_id.and_then(|id| styles.get(&id)) {
                 Some(s) => s,
-                None => continue,
+                None => {
+                    borders.push(None);
+                    continue;
+                }
             };
 
-            // 判断单元格是否位于 table 的各边缘
+            let info = CellBorderInfo {
+                top_w: length_to_px(&cell_style.border_top_width),
+                top_s: cell_style.border_top_style.clone(),
+                right_w: length_to_px(&cell_style.border_right_width),
+                right_s: cell_style.border_right_style.clone(),
+                bottom_w: length_to_px(&cell_style.border_bottom_width),
+                bottom_s: cell_style.border_bottom_style.clone(),
+                left_w: length_to_px(&cell_style.border_left_width),
+                left_s: cell_style.border_left_style.clone(),
+            };
+
+            for slot in col_map.iter_mut().take(cell.col_end.min(grid.col_count)).skip(cell.col_start) {
+                *slot = cell_idx;
+            }
+
+            borders.push(Some(info));
+        }
+
+        cell_border_data.push(borders);
+        cell_col_map.push(col_map);
+    }
+
+    // 阶段 2：解析所有边框冲突，收集需要覆盖的边框值
+    // 格式：((row_idx, cell_idx), side, width)
+    // side: 0=top, 1=right, 2=bottom, 3=left
+    let mut overrides: Vec<((usize, usize), u8, f32)> = Vec::new();
+
+    for (row_idx, row) in grid.rows.iter().enumerate() {
+        for (cell_idx, cell) in row.cells.iter().enumerate() {
+            let Some(Some(cb)) = cell_border_data.get(row_idx).and_then(|b| b.get(cell_idx)) else {
+                continue;
+            };
+
             let is_first_row = row_idx == 0;
             let is_last_row = row_idx == last_row;
             let is_first_col = cell.col_start == 0;
             let is_last_col = cell.col_end > last_col;
 
-            // 获取 cell 的边框样式
-            let cell_bt = length_to_px(&cell_style.border_top_width);
-            let cell_br = length_to_px(&cell_style.border_right_width);
-            let cell_bb = length_to_px(&cell_style.border_bottom_width);
-            let cell_bl = length_to_px(&cell_style.border_left_width);
-
-            // 对每个外边缘：比较 table border vs cell border
-            // 但如果 table border 更宽或 style 更高，则 table 胜出
-
+            // ── Top edge ──
             if is_first_row {
+                // 外边缘：table vs cell
                 let winner = resolve_border(
-                    (table_bt, table_style_t, BorderSource::Table),
-                    (cell_bt, &cell_style.border_top_style, BorderSource::Cell),
+                    (table_bt, &table_style.border_top_style, BorderSource::Table),
+                    (cb.top_w, &cb.top_s, BorderSource::Cell),
                 );
                 if winner == BorderSource::Table {
-                    cell_box.border_top = table_bt;
+                    overrides.push(((row_idx, cell_idx), 0, table_bt));
+                } else if matches!(cb.top_s, BorderStyleValue::Hidden) {
+                    overrides.push(((row_idx, cell_idx), 0, 0.0));
+                }
+            } else if row_idx > 0 {
+                // 内部边：上一行同列 cell 的 bottom vs 当前 cell 的 top
+                let prev_col_map = &cell_col_map[row_idx - 1];
+                // 找到上一行中覆盖当前 cell 第一列的单元格
+                let col_to_check = cell.col_start.min(grid.col_count.saturating_sub(1));
+                let prev_cell_idx = prev_col_map[col_to_check];
+                if let Some(Some(prev_cb)) = cell_border_data.get(row_idx - 1).and_then(|b| b.get(prev_cell_idx)) {
+                    // hidden 样式优先
+                    if matches!(cb.top_s, BorderStyleValue::Hidden)
+                        || matches!(prev_cb.bottom_s, BorderStyleValue::Hidden)
+                    {
+                        overrides.push(((row_idx, cell_idx), 0, 0.0));
+                    } else {
+                        let _winner = resolve_border(
+                            (prev_cb.bottom_w, &prev_cb.bottom_s, BorderSource::Cell),
+                            (cb.top_w, &cb.top_s, BorderSource::Cell),
+                        );
+                        let win_w = if prev_cb.bottom_w >= cb.top_w {
+                            prev_cb.bottom_w
+                        } else {
+                            cb.top_w
+                        };
+                        // 只在需要改变时添加覆盖
+                        if matches!(cb.top_s, BorderStyleValue::None) && !matches!(prev_cb.bottom_s, BorderStyleValue::None) {
+                            overrides.push(((row_idx, cell_idx), 0, win_w));
+                        }
+                    }
                 }
             }
 
+            // ── Bottom edge ──
             if is_last_row {
                 let winner = resolve_border(
-                    (table_bb, table_style_b, BorderSource::Table),
-                    (cell_bb, &cell_style.border_bottom_style, BorderSource::Cell),
+                    (table_bb, &table_style.border_bottom_style, BorderSource::Table),
+                    (cb.bottom_w, &cb.bottom_s, BorderSource::Cell),
                 );
                 if winner == BorderSource::Table {
-                    cell_box.border_bottom = table_bb;
+                    overrides.push(((row_idx, cell_idx), 2, table_bb));
+                } else if matches!(cb.bottom_s, BorderStyleValue::Hidden) {
+                    overrides.push(((row_idx, cell_idx), 2, 0.0));
                 }
             }
 
+            // ── Left edge ──
             if is_first_col {
                 let winner = resolve_border(
-                    (table_bl, table_style_l, BorderSource::Table),
-                    (cell_bl, &cell_style.border_left_style, BorderSource::Cell),
+                    (table_bl, &table_style.border_left_style, BorderSource::Table),
+                    (cb.left_w, &cb.left_s, BorderSource::Cell),
                 );
                 if winner == BorderSource::Table {
-                    cell_box.border_left = table_bl;
+                    overrides.push(((row_idx, cell_idx), 3, table_bl));
+                } else if matches!(cb.left_s, BorderStyleValue::Hidden) {
+                    overrides.push(((row_idx, cell_idx), 3, 0.0));
+                }
+            } else if cell.col_start > 0 {
+                // 内部边：左侧 cell 的 right vs 当前 cell 的 left
+                let left_cell_idx = cell_col_map[row_idx][cell.col_start - 1];
+                if let Some(Some(left_cb)) = cell_border_data.get(row_idx).and_then(|b| b.get(left_cell_idx)) {
+                    if matches!(cb.left_s, BorderStyleValue::Hidden)
+                        || matches!(left_cb.right_s, BorderStyleValue::Hidden)
+                    {
+                        overrides.push(((row_idx, cell_idx), 3, 0.0));
+                    } else {
+                        let _winner = resolve_border(
+                            (left_cb.right_w, &left_cb.right_s, BorderSource::Cell),
+                            (cb.left_w, &cb.left_s, BorderSource::Cell),
+                        );
+                        let win_w = if left_cb.right_w >= cb.left_w {
+                            left_cb.right_w
+                        } else {
+                            cb.left_w
+                        };
+                        if matches!(cb.left_s, BorderStyleValue::None) && !matches!(left_cb.right_s, BorderStyleValue::None) {
+                            overrides.push(((row_idx, cell_idx), 3, win_w));
+                        }
+                    }
                 }
             }
 
+            // ── Right edge ──
             if is_last_col {
                 let winner = resolve_border(
-                    (table_br, table_style_r, BorderSource::Table),
-                    (cell_br, &cell_style.border_right_style, BorderSource::Cell),
+                    (table_br, &table_style.border_right_style, BorderSource::Table),
+                    (cb.right_w, &cb.right_s, BorderSource::Cell),
                 );
                 if winner == BorderSource::Table {
-                    cell_box.border_right = table_br;
+                    overrides.push(((row_idx, cell_idx), 1, table_br));
+                } else if matches!(cb.right_s, BorderStyleValue::Hidden) {
+                    overrides.push(((row_idx, cell_idx), 1, 0.0));
                 }
             }
+        }
+    }
+
+    // 阶段 3：应用所有边框覆盖到 LayoutBox
+    for ((row_idx, cell_idx), side, width) in overrides {
+        let row = &grid.rows[row_idx];
+        let row_box = match get_row_box_mut(table_box, row) {
+            Some(b) => b,
+            None => continue,
+        };
+        let cell = &row.cells[cell_idx];
+        let Some(cell_box) = row_box.children.get_mut(cell.child_index) else {
+            continue;
+        };
+        match side {
+            0 => cell_box.border_top = width,
+            1 => cell_box.border_right = width,
+            2 => cell_box.border_bottom = width,
+            3 => cell_box.border_left = width,
+            _ => {}
         }
     }
 }
@@ -576,7 +709,7 @@ fn build_row(child_idx: usize, row_box: &LayoutBox, doc: &zero_dom::Document) ->
 /// 1. 扫描所有单元格，记录每列的最大内容宽度
 /// 2. 如果所有列宽之和小于容器宽度，按比例分配剩余空间
 /// 3. 如果所有列宽之和大于容器宽度，保持内容宽度不变
-fn compute_column_widths(table_box: &LayoutBox, grid: &TableGrid) -> Vec<f32> {
+fn compute_column_widths(table_box: &LayoutBox, grid: &TableGrid, styles: &HashMap<NodeId, ComputedStyle>) -> Vec<f32> {
     let available_width = table_box.content_width;
     let col_count = grid.col_count;
 
@@ -598,7 +731,26 @@ fn compute_column_widths(table_box: &LayoutBox, grid: &TableGrid) -> Vec<f32> {
             let Some(cell_box) = get_cell_box(row_box, cell) else {
                 continue;
             };
-            let cell_width = cell_box.width;
+
+            // CSS 表格规则：width:0 的单元格应使用固有内容宽度，
+            // 而非 taffy 计算的 0 宽度。检查 CSS width 属性。
+            let css_width_is_small = cell_box
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .map(|s| {
+                    use zero_css_parser::values::LengthValue;
+                    match &s.width {
+                        LengthValue::Px(v) => (*v as f32) < 2.0,
+                        _ => false,
+                    }
+                })
+                .unwrap_or(false);
+            let cell_width = if css_width_is_small || cell_box.width < 2.0 {
+                compute_cell_intrinsic_width(cell_box, styles)
+                    .max(cell_box.width)
+            } else {
+                cell_box.width
+            };
             let colspan = cell.colspan;
 
             if colspan > 1 {
@@ -651,6 +803,34 @@ fn get_row_box<'a>(table_box: &'a LayoutBox, row: &TableRow) -> Option<&'a Layou
 /// 获取单元格盒。
 fn get_cell_box<'a>(row_box: &'a LayoutBox, cell: &TableCell) -> Option<&'a LayoutBox> {
     row_box.children.get(cell.child_index)
+}
+
+/// 估算单元格的固有内容宽度。
+///
+/// 当 CSS width:0 被应用时，taffy 会将单元格布局为 0 宽度。
+/// 但 CSS 表格规范要求 width:0 解析为 min-content 宽度。
+/// 使用字体大小估算单字符宽度作为最小内容宽度。
+fn compute_cell_intrinsic_width(cell_box: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+    // 从 ComputedStyle 读取字体大小作为字符宽度估算
+    let font_size = cell_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .map(|s| {
+            use zero_css_parser::values::LengthValue;
+            match &s.font_size {
+                LengthValue::Px(v) => *v as f32,
+                LengthValue::Em(v) => *v as f32,
+                LengthValue::Rem(v) => *v as f32,
+                _ => 16.0,
+            }
+        })
+        .unwrap_or(16.0);
+
+    // 估算 min-content 宽度：一个字符宽度约为字体大小的 0.6 倍
+    // 加上 padding
+    let char_width = font_size * 0.6;
+    let padding = cell_box.padding_left + cell_box.padding_right;
+    char_width + padding
 }
 
 /// 根据 grid 结构和列宽定位每个单元格。

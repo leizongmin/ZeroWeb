@@ -553,6 +553,16 @@ fn parse_single_track_as_non_repeated(s: &str) -> taffy::style::NonRepeatedTrack
     if s.starts_with("minmax(") && s.ends_with(')') {
         return parse_minmax_as_non_repeated(&s[7..s.len() - 1]);
     }
+    // fit-content() 函数
+    if s.starts_with("fit-content(") && s.ends_with(')') {
+        let inner = &s["fit-content(".len()..s.len() - 1];
+        if let Some(arg) = parse_length_percentage(inner.trim()) {
+            return NonRepeatedTrackSizingFunction {
+                min: taffy::style::MinTrackSizingFunction::Auto,
+                max: taffy::style::MaxTrackSizingFunction::FitContent(arg),
+            };
+        }
+    }
     if s.ends_with("px")
         && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
     {
@@ -664,6 +674,16 @@ fn parse_single_track(s: &str) -> taffy::style::TrackSizingFunction {
     if s.starts_with("minmax(") && s.ends_with(')') {
         return parse_minmax(&s[7..s.len() - 1]);
     }
+    // fit-content() 函数：映射为 taffy 的 FitContent 轨道尺寸
+    if s.starts_with("fit-content(") && s.ends_with(')') {
+        let inner = &s["fit-content(".len()..s.len() - 1];
+        if let Some(arg) = parse_length_percentage(inner.trim()) {
+            return taffy::style::TrackSizingFunction::Single(taffy::geometry::MinMax {
+                min: taffy::style::MinTrackSizingFunction::Auto,
+                max: taffy::style::MaxTrackSizingFunction::FitContent(arg),
+            });
+        }
+    }
     // 默认尝试解析为长度
     if s.ends_with("px")
         && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
@@ -679,6 +699,28 @@ fn parse_single_track(s: &str) -> taffy::style::TrackSizingFunction {
 }
 
 /// 解析 minmax() 函数内部。
+/// 解析长度或百分比为 taffy LengthPercentage。
+///
+/// 支持 px、em、rem、%、纯数字（视为 px）。
+fn parse_length_percentage(s: &str) -> Option<taffy::style::LengthPercentage> {
+    use taffy::style::LengthPercentage;
+    let s = s.trim();
+    if s.ends_with("px")
+        && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
+    {
+        return Some(LengthPercentage::Length(px));
+    }
+    if s.ends_with('%')
+        && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
+    {
+        return Some(LengthPercentage::Percent(pct / 100.0));
+    }
+    if let Ok(px) = s.parse::<f32>() {
+        return Some(LengthPercentage::Length(px));
+    }
+    None
+}
+
 fn parse_minmax(inner: &str) -> taffy::style::TrackSizingFunction {
     let parts: Vec<&str> = inner.split(',').collect();
     if parts.len() != 2 {

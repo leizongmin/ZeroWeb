@@ -46,6 +46,8 @@ pub struct TextRun {
     pub margin_left: f32,
     /// inline 元素的水平 margin（px）。文本节点为 0。
     pub margin_right: f32,
+    /// 是否使用 Ahem 字体（所有字符宽度等于 font_size）。
+    pub is_ahem_font: bool,
 }
 
 impl TextRun {
@@ -69,6 +71,7 @@ impl TextRun {
             word_spacing: 0.0,
             margin_left: 0.0,
             margin_right: 0.0,
+            is_ahem_font: false,
         }
     }
 }
@@ -149,7 +152,13 @@ const DEFAULT_FONT_SIZE: f32 = 16.0;
 /// - 标点符号：约 font_size × 0.4
 /// - 数字：约 font_size × 0.5
 /// - 其他字符（默认）：约 font_size × 0.5
-pub fn estimate_char_width(c: char, font_size: f32) -> f32 {
+///
+/// Ahem 字体特殊处理：所有字符宽度等于 font_size（WPT 标准正方形字体）。
+pub fn estimate_char_width(c: char, font_size: f32, is_ahem: bool) -> f32 {
+    if is_ahem {
+        // Ahem 字体：所有字符（包括空格）宽度等于 font_size
+        return font_size;
+    }
     if c.is_ascii_whitespace() {
         // 空格类字符：较窄
         font_size * 0.25
@@ -212,8 +221,8 @@ fn is_emoji_character(c: char) -> bool {
 }
 
 /// 估算字符串的总宽度，按每个字符逐一计算。
-fn estimate_string_width(text: &str, font_size: f32) -> f32 {
-    text.chars().map(|c| estimate_char_width(c, font_size)).sum()
+fn estimate_string_width(text: &str, font_size: f32, is_ahem: bool) -> f32 {
+    text.chars().map(|c| estimate_char_width(c, font_size, is_ahem)).sum()
 }
 
 /// 默认行高倍数（用于 line-height: normal）。
@@ -466,6 +475,9 @@ impl InlineFormattingContext {
                                     _ => 0.0,
                                 })
                                 .unwrap_or(0.0);
+                            let is_ahem_font = style
+                                .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
+                                .unwrap_or(false);
                             items.push(InlineItem::Text(TextRun {
                                 text,
                                 node_id: child_id,
@@ -476,6 +488,7 @@ impl InlineFormattingContext {
                                 word_spacing,
                                 margin_left: 0.0,
                                 margin_right: 0.0,
+                                is_ahem_font,
                             }));
                         }
                     }
@@ -548,6 +561,9 @@ impl InlineFormattingContext {
                                 _ => 0.0,
                             })
                             .unwrap_or(0.0);
+                        let is_ahem_font = style
+                            .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
+                            .unwrap_or(false);
                         if !trimmed.is_empty() {
                             items.push(InlineItem::Text(TextRun {
                                 text: trimmed,
@@ -559,6 +575,7 @@ impl InlineFormattingContext {
                                 word_spacing,
                                 margin_left,
                                 margin_right,
+                                is_ahem_font,
                             }));
                         } else {
                             // CSS 规范：空 inline 元素仍需通过 line-height 影响行盒高度
@@ -573,6 +590,7 @@ impl InlineFormattingContext {
                                 word_spacing: 0.0,
                                 margin_left,
                                 margin_right,
+                                is_ahem_font,
                             }));
                         }
                     }
@@ -641,7 +659,7 @@ impl InlineFormattingContext {
                         // 基础宽度 + letter-spacing（每个字符追加）
                         let char_count = word.chars().count();
                         let mut word_width =
-                            estimate_string_width(word, run.font_size) + run.letter_spacing * char_count as f32;
+                            estimate_string_width(word, run.font_size, run.is_ahem_font) + run.letter_spacing * char_count as f32;
                         // 非首个单词：追加 word-spacing（单词间间距）
                         if word_idx > 0 {
                             word_width += run.word_spacing;
@@ -693,7 +711,7 @@ impl InlineFormattingContext {
                             let mut partial_x = current_x;
 
                             for (ci, ch) in chars.iter().enumerate() {
-                                let ch_width = estimate_char_width(*ch, run.font_size) + run.letter_spacing;
+                                let ch_width = estimate_char_width(*ch, run.font_size, run.is_ahem_font) + run.letter_spacing;
 
                                 let (_, avail) =
                                     self.effective_content_area(current_y, current_line.height.max(fragment_height));

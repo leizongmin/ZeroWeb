@@ -813,7 +813,12 @@ fn remeasure_text_with_float_exclusions(
 
             // 使用文本和 float 中较大的高度
             let content_height = text_height.max(float_bottom);
-            let _ = content_height; // 保留用于未来高度调整
+            // 更新容器的内容高度：文本环绕 float 后可能需要更大的高度
+            if content_height > box_node.content_height {
+                let diff = content_height - box_node.content_height;
+                box_node.content_height = content_height;
+                box_node.height += diff;
+            }
         }
     }
 
