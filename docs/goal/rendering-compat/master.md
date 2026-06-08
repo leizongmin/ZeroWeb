@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-09（本轮第十一轮）
+**日期**: 2026-06-09（本轮第十二轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
 **通过**: 322
 **失败**: 168
 **通过率**: 65.7%
 
-**说明**：通过率维持在 65.7%（322/490）。本轮添加了 multicol column breaking 基础设施和 CSS columns 简写验证。通过系统分析失败测试，确认主要瓶颈为：（1）Ahem 字体渲染差异影响大量 CSS2/multicol/writing-modes 测试；（2）multicol column breaking 需要内容碎片化基础设施（影响 32 个测试）；（3）writing-modes 垂直 inline 布局需要 InlineFormattingContext 的垂直模式支持（影响 36 个测试）。
+**说明**：通过率维持在 65.7%（322/490）。本轮完成了以下工作：（1）实现了 Ahem 字体感知光栅化（FontLoader.is_ahem + rasterize_ahem_glyph 生成完美填充方块），但验证发现上游 reftest 的失败主因是布局定位差异而非字形位图形状；（2）补充了 CSS2 floats-clear 和 css-writing-modes 的缺失支持图片；（3）系统分析了 168 个失败测试的根因分布。确认主要瓶颈为布局定位差异，非字形渲染。
 
 ### 按目录
 
@@ -308,11 +308,32 @@
 | css-multicol/ | 25/57 | 43.9% | ❌ |
 | css-writing-modes/ | 23/59 | 39.0% | ❌ |
 
-### 本轮修复内容
+### R12 本轮修复内容
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
-| 匿名 flex/grid item | css-flexbox +1 | flex/grid 容器中的文本节点现在创建匿名布局项参与 flexbox/grid 布局。CSS Flexbox §4 规范要求。涉及 tree.rs（文本节点收集）、engine.rs（文本测量 + extract_layout 处理）、painter（匿名文本渲染） |
+| Ahem 字体感知光栅化 | 基础设施 | FontLoader 新增 ahem_font_id 检测和 is_ahem() 方法；rasterize_ahem_glyph() 生成完美填充方块（全部 alpha=255），advance=font_size，y_offset=-(ascent.ceil())。4 个单元测试验证。验证确认字形位图非失败主因 |
+| CSS2 floats-clear 支持图片 | floats-clear | 补充 clear-clearance-calculation-001/002/003.png（从上游 WPT 仓库下载） |
+| css-writing-modes 支持图片 | writing-modes | 生成 100x100-red.png、left/right-bottom-200x300.png、right-top-200x300.png |
+
+### 失败根因分布分析（R12 新增）
+
+| diff 范围 | 数量 | 特征 | 代表性测试 |
+|-----------|------|------|-----------|
+| <2% | 33 | 亚像素/微偏移，接近通过 | clearance-006 (1.16%), grid/child-border-box (1.52%) |
+| 2-5% | 45 | 小幅定位差异 | clear-float-003 (1.92%), background-043 (2.61%) |
+| 5-15% | 40 | 中等定位/尺寸差异 | float-006 (7.46%), background-090 (10.20%) |
+| 15-30% | 40 | 显著布局差异 | clear-applies-to-001 (29.45%), direction-vlr (12.49%) |
+| >30% | 10 | 基本功能缺失 | background-attachment (30.48%) |
+
+### 关键发现（R12）
+
+| 发现 | 说明 |
+|------|------|
+| Ahem 字形位图非主因 | 验证了 Ahem 光栅化代码路径被正确触发（font_id=3），但通过率无变化。说明上游 reftest 失败主要因为布局定位差异，非字形渲染 |
+| 布局定位是核心瓶颈 | 分析 168 个失败测试，绝大多数是元素位置/尺寸与 Chrome 不同。根因分为：float/clear 后处理精度、writing-mode 轴交换、multicol 列拆分、inline box model |
+| Phase 1 float+clear 已实现 | adjust_float_positions Phase 1 已正确处理 float+clear 组合（line 676-703），非 float 元素的 clear 处理在 Phase 2 |
+| 相同 diff 百分比暗示系统性偏移 | 多个测试在相同百分比失败（如 3.83%、7.67%），暗示特定的元素尺寸/偏移量差异 |
 | writing-mode 轴交换 | css-writing-modes -1 | 启用 CSS Writing Modes §7.1 轴交换：输入时交换 CSS 属性到 taffy 水平模型，输出时交换回视觉坐标。盒体几何位置正确，但文字仍水平排列（需要 paint 层旋转支持）。1 个测试因坐标交换而回归 |
 | 属性继承修复 | 全局 | list-style-type、list-style-position、writing-mode 添加到继承属性列表和 inherit_property 处理器 |
 | justify-items/justify-self | css-grid | 转换器新增映射，从 ComputedStyle 映射到 taffy Style 的 justify_items/justify_self 字段 |
@@ -338,7 +359,7 @@
 
 | 发现 | 说明 |
 |------|------|
-| Ahem 字体是最大瓶颈 | 100+ 测试因 Ahem 字体渲染差异而失败（fontdue vs Skia）。非 Ahem 测试的失败率低得多 |
+| Ahem 字体是最大瓶颈 | 100+ 测试因 Ahem 字体渲染差异而失败（fontdue vs Skia）。非 Ahem 测试的失败率低得多。**R12 更新**：Ahem 字形位图差异已修复，但失败主因为布局定位差异而非字形渲染 |
 | CSS table cell height = 最小高度 | CSS 2.1 明确规定 table cell 的 height 是最小高度，cell 必须增长以包含内容，overflow:hidden 不改变此行为 |
 | Column breaking 需要碎片化 | multicol-breaking-* 测试需要将单个子元素的内容（如文本）拆分到多列，不仅仅是移动整个子元素 |
 | abs-pos-non-replaced 12 个测试全在 21.33% | 这些测试都用 Ahem + background image，相同的差异比例表明是系统性渲染问题 |
