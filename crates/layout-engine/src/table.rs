@@ -1118,19 +1118,26 @@ fn apply_table_size_constraints(
     }
 
     // 应用 min-height / max-height
+    // 注意：min-height/max-height 应用到整个 border box（包含 padding + border）
+    let padding_border_h =
+        table_box.padding_top + table_box.padding_bottom + table_box.border_top + table_box.border_bottom;
     let mut final_height = intrinsic_height;
     if let LengthValue::Px(v) = &style.min_height {
-        final_height = final_height.max(*v as f32);
+        // min-height 包含 padding+border，需减去后得到内容高度
+        let min_content = (*v as f32 - padding_border_h).max(0.0);
+        final_height = final_height.max(min_content);
     }
     if let LengthValue::Px(v) = &style.max_height
         && *v != f64::INFINITY
     {
-        final_height = final_height.min(*v as f32);
+        let max_content = (*v as f32 - padding_border_h).max(0.0);
+        final_height = final_height.min(max_content);
     }
 
     // 更新 table 容器尺寸
     table_box.width = final_width;
-    table_box.height = final_height;
+    table_box.content_height = final_height;
+    table_box.height = final_height + padding_border_h;
 }
 
 /// 更新行组的位置，使其包含所有子行。
