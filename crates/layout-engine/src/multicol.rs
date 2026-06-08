@@ -11,6 +11,8 @@
 //! - `column-width` 最小列宽自动计算列数
 //! - `column-gap` 列间距
 //! - 子元素按列分配（均衡分配策略）
+//! - `column-fill: auto` 顺序填充 + 列高限制
+//! - 基础 column breaking（子元素超出列高时移至下一列）
 
 use std::collections::HashMap;
 use zero_css_parser::values::LengthValue;
@@ -26,7 +28,7 @@ use crate::types::LayoutBox;
 /// 将其子元素按多列规则重新定位。
 pub fn adjust_multicol_layout(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     if let Some(style) = root.node_id.and_then(|id| styles.get(&id)) {
-        let col_info = compute_column_info(style, root.content_width);
+        let col_info = compute_column_info(style, root.content_width, root.content_height);
         if let Some(info) = col_info {
             layout_multicol(root, &info);
         }
@@ -35,6 +37,18 @@ pub fn adjust_multicol_layout(root: &mut LayoutBox, styles: &HashMap<NodeId, Com
     // 递归处理子节点
     for child in &mut root.children {
         adjust_multicol_layout(child, styles);
+    }
+}
+
+/// 计算列高限制（用于 column breaking 判断）。
+///
+/// 当 `column-fill: auto` 且容器有明确高度时，每列的最大高度等于容器内容高度。
+/// 当 `column-fill: balance`（默认）时，列高无限制（均衡分配）。
+fn column_height_limit(container: &LayoutBox, info: &ColumnInfo) -> f32 {
+    if info.sequential_fill && container.content_height > 0.0 {
+        container.content_height
+    } else {
+        0.0 // 无限制
     }
 }
 
@@ -48,6 +62,9 @@ struct ColumnInfo {
     gap: f32,
     /// 是否按顺序填充（column-fill: auto）。
     sequential_fill: bool,
+    /// 容器内容区域高度（用于 column breaking 判断）。
+    /// 当容器有明确高度时，此值为内容区域高度；否则为 0（表示无限制）。
+    container_content_height: f32,
 }
 
 /// 将 LengthValue 转换为像素值。
@@ -75,7 +92,11 @@ fn length_to_px(value: &LengthValue, container_width: f32) -> f32 {
 /// 从 ComputedStyle 计算多列参数。
 ///
 /// 返回 `None` 表示不需要多列布局（column-count: auto 且 column-width: auto）。
-fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<ColumnInfo> {
+fn compute_column_info(
+    style: &ComputedStyle,
+    container_width: f32,
+    container_content_height: f32,
+) -> Option<ColumnInfo> {
     let gap = length_to_px(&style.column_gap, container_width);
     let sequential_fill = matches!(style.column_fill, ColumnFillComputedValue::Auto);
 
@@ -107,6 +128,7 @@ fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<Co
                 column_width,
                 gap,
                 sequential_fill,
+                container_content_height,
             })
         }
         (None, Some(min_width)) => {
@@ -124,6 +146,7 @@ fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<Co
                 column_width,
                 gap,
                 sequential_fill,
+                container_content_height,
             })
         }
         (Some(n), Some(min_width)) => {
@@ -142,6 +165,7 @@ fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<Co
                 column_width,
                 gap,
                 sequential_fill,
+                container_content_height,
             })
         }
     }
@@ -173,8 +197,9 @@ fn compute_single_column_width(container_width: f32, count: usize, gap: f32) -> 
 ///
 /// 算法：
 /// 1. 计算每个子元素的高度
-/// 2. 将子元素均衡分配到各列（min-height-first 策略）
+/// 2. 将子元素分配到各列（考虑 column breaking）
 /// 3. 定位每个子元素的 x/y 坐标
+/// 4. 对超出列高的子元素进行 clip 处理
 fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo) {
     if container.children.is_empty() || info.count == 0 {
         return;
@@ -193,38 +218,60 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo) {
         return;
     }
 
+    // 列高限制：当 column-fill: auto 且容器有明确高度时生效
+    let height_limit = column_height_limit(container, info);
+
     // 根据 column-fill 模式分配子元素到各列
-    let assignments = if info.sequential_fill {
-        // column-fill: auto — 按顺序填充列
+    let assignments = if info.sequential_fill && height_limit > 0.0 {
+        // column-fill: auto — 顺序填充，考虑列高限制（column breaking）
+        assign_children_to_columns_with_breaking(&child_info, info.count, height_limit)
+    } else if info.sequential_fill {
+        // column-fill: auto 但无明确高度限制
         assign_children_to_columns_sequential(&child_info, info.count, container.content_height)
     } else {
         // column-fill: balance — 均衡分配（默认行为）
-        assign_children_to_columns(&child_info, info.count)
+        // 也应用 breaking，但使用内容总高度除以列数作为每列目标高度
+        let target_height = if height_limit > 0.0 {
+            height_limit
+        } else {
+            // 均衡模式：计算总内容高度，平均分配
+            let total_height: f32 = child_info.iter().map(|(_, h)| *h).sum();
+            let per_col = total_height / info.count as f32;
+            // 给一些余量避免不必要的 breaking
+            per_col * 1.1
+        };
+        assign_children_to_columns_with_breaking(&child_info, info.count, target_height)
     };
 
     // 定位子元素
     position_multicol_children(container, &assignments, info);
 }
 
-/// 将子元素均衡分配到各列。
+/// 带列高限制的顺序分配（column breaking 基础实现）。
 ///
-/// 使用"最矮列优先"（shortest-column-first）策略：
-/// 依次将每个子元素放入当前总高度最小的列。
-fn assign_children_to_columns(children: &[(usize, f32)], col_count: usize) -> Vec<Vec<(usize, f32)>> {
+/// 按文档顺序将子元素填入当前列，当子元素超出列高限制时移至下一列。
+/// 这是 CSS Multi-column Layout §2 "column breaking" 的简化实现：
+/// - 子元素整体移动到下一列（不拆分单个块级元素的内容）
+/// - 单个超过列高的子元素保留在当前列（clip 处理）
+fn assign_children_to_columns_with_breaking(
+    children: &[(usize, f32)],
+    col_count: usize,
+    max_col_height: f32,
+) -> Vec<Vec<(usize, f32)>> {
     let mut columns: Vec<Vec<(usize, f32)>> = vec![Vec::new(); col_count];
-    let mut col_heights = vec![0.0f32; col_count];
+    let mut current_col = 0usize;
+    let mut current_col_height = 0.0f32;
 
     for &(child_idx, child_height) in children {
-        // 找到最矮的列
-        let shortest_col = col_heights
-            .iter()
-            .enumerate()
-            .min_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i)
-            .unwrap_or(0);
+        // 如果当前列放不下这个子元素，且还有更多列可用，移到下一列
+        if current_col_height + child_height > max_col_height && current_col_height > 0.0 && current_col + 1 < col_count
+        {
+            current_col += 1;
+            current_col_height = 0.0;
+        }
 
-        columns[shortest_col].push((child_idx, child_height));
-        col_heights[shortest_col] += child_height;
+        columns[current_col].push((child_idx, child_height));
+        current_col_height += child_height;
     }
 
     columns
@@ -315,24 +362,37 @@ mod tests {
 
     #[test]
     fn test_assign_children_balanced() {
-        // 4 children, each 100px high, 2 columns
+        // 4 children, each 100px high, 2 columns, large height limit
+        // Sequential fill: all fit in col0 since total (400) < limit (1000)
         let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0)];
-        let cols = assign_children_to_columns(&children, 2);
+        let cols = assign_children_to_columns_with_breaking(&children, 2, 1000.0);
         assert_eq!(cols.len(), 2);
-        assert_eq!(cols[0].len(), 2);
-        assert_eq!(cols[1].len(), 2);
+        // All in col0 since they all fit
+        assert_eq!(cols[0].len(), 4);
+        assert_eq!(cols[1].len(), 0);
     }
 
     #[test]
-    fn test_assign_children_balanced_uneven() {
-        // 3 children: 100, 200, 100 → best is col1: [100, 100], col2: [200]
-        let children = vec![(0, 100.0), (1, 200.0), (2, 100.0)];
-        let cols = assign_children_to_columns(&children, 2);
-        assert_eq!(cols.len(), 2);
-        // 最矮列优先：col1=[100], col2=[200], then col1=[100,100], col2=[200]
-        let col1_total: f32 = cols[0].iter().map(|(_, h)| *h).sum();
-        let col2_total: f32 = cols[1].iter().map(|(_, h)| *h).sum();
-        assert!((col1_total - 200.0).abs() < 0.01);
-        assert!((col2_total - 200.0).abs() < 0.01);
+    fn test_assign_children_with_breaking() {
+        // 4 children, each 100px high, 3 columns, 150px height limit
+        // child0(100): col0=100 → col0=[0]
+        // child1(100): col0=200 > 150, move to col1 → col1=[1]
+        // child2(100): col1=200 > 150, move to col2 → col2=[2]
+        // child3(100): col2=200 > 150, no more cols, stays → col2=[2,3]
+        let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0)];
+        let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0);
+        assert_eq!(cols.len(), 3);
+        assert_eq!(cols[0].len(), 1);
+        assert_eq!(cols[1].len(), 1);
+        assert_eq!(cols[2].len(), 2); // last 2 overflow into col2
+    }
+
+    #[test]
+    fn test_assign_children_with_breaking_oversized() {
+        // Single child larger than column height — stays in current column
+        let children = vec![(0, 300.0)];
+        let cols = assign_children_to_columns_with_breaking(&children, 3, 100.0);
+        assert_eq!(cols.len(), 3);
+        assert_eq!(cols[0].len(), 1); // oversized child stays in first column
     }
 }

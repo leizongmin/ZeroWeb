@@ -1195,14 +1195,27 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
+    /// 检查值是否为有效的 column-count 值（整数或 auto）
+    fn is_valid_column_count(s: &str) -> bool {
+        s == "auto" || s.parse::<u32>().is_ok()
+    }
+
+    /// 检查值是否为有效的 column-width 值（长度或 auto）
+    fn is_valid_column_width(s: &str) -> bool {
+        s == "auto" || looks_like_length(s)
+    }
+
     let parts: Vec<&str> = value.split_whitespace().collect();
     match parts.len() {
         1 => {
             // 单值：判断是整数（column-count）还是长度（column-width）
             if parts[0].parse::<u32>().is_ok() || parts[0] == "auto" {
                 vec![mk("column-count", parts[0]), mk("column-width", "auto")]
-            } else {
+            } else if is_valid_column_width(parts[0]) {
                 vec![mk("column-count", "auto"), mk("column-width", parts[0])]
+            } else {
+                // 无效值 — 整个声明无效
+                vec![]
             }
         }
         2 => {
@@ -1212,7 +1225,13 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
             } else {
                 (parts[1], parts[0])
             };
-            vec![mk("column-count", count_val), mk("column-width", width_val)]
+            // 验证两个值都有效：count 必须是整数/auto，width 必须是长度/auto
+            if is_valid_column_count(count_val) && is_valid_column_width(width_val) {
+                vec![mk("column-count", count_val), mk("column-width", width_val)]
+            } else {
+                // 无效值（如 "8 normal"）— 整个声明无效，不覆盖先前值
+                vec![]
+            }
         }
         _ => vec![],
     }
