@@ -50,19 +50,24 @@ struct ColumnInfo {
     sequential_fill: bool,
 }
 
-/// 将 LengthValue 转换为像素值（简化版，不处理百分比和 auto）。
-fn length_to_px(value: &LengthValue) -> f32 {
+/// 将 LengthValue 转换为像素值。
+///
+/// `container_width` 用于解析百分比单位。
+/// 注意：em/rem/viewport 单位已在 computed style 阶段解析为 Px，
+/// 此处仅处理可能残留的百分比和绝对单位。
+fn length_to_px(value: &LengthValue, container_width: f32) -> f32 {
     match value {
         LengthValue::Px(v) => *v as f32,
-        LengthValue::Em(v) => *v as f32 * 16.0, // 假设基准字号 16px
+        LengthValue::Percentage(p) => *p as f32 / 100.0 * container_width,
+        LengthValue::Em(v) => *v as f32 * 16.0, // 回退：已由 computed.rs 解析
         LengthValue::Rem(v) => *v as f32 * 16.0,
-        LengthValue::Vw(v) => *v as f32 * 8.0, // 简化：假设 800px 视口
-        LengthValue::Vh(v) => *v as f32 * 6.0, // 简化：假设 600px 视口
-        LengthValue::Percentage(_) | LengthValue::Auto | LengthValue::Calc(_) => 0.0,
+        LengthValue::Vw(v) => *v as f32 * 8.0,
+        LengthValue::Vh(v) => *v as f32 * 6.0,
+        LengthValue::Auto | LengthValue::Calc(_) => 0.0,
         LengthValue::Vmin(v) => (*v as f32) * 6.0,
         LengthValue::Vmax(v) => (*v as f32) * 8.0,
-        LengthValue::Ch(v) => *v as f32 * 8.0, // 简化：假设 ch ≈ 8px
-        LengthValue::FitContent(inner) => length_to_px(inner),
+        LengthValue::Ch(v) => *v as f32 * 8.0,
+        LengthValue::FitContent(inner) => length_to_px(inner, container_width),
         LengthValue::MinContent | LengthValue::MaxContent => 0.0,
     }
 }
@@ -71,7 +76,7 @@ fn length_to_px(value: &LengthValue) -> f32 {
 ///
 /// 返回 `None` 表示不需要多列布局（column-count: auto 且 column-width: auto）。
 fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<ColumnInfo> {
-    let gap = length_to_px(&style.column_gap);
+    let gap = length_to_px(&style.column_gap, container_width);
     let sequential_fill = matches!(style.column_fill, ColumnFillComputedValue::Auto);
 
     // CSS Multi-column spec: column-width 是最小列宽（理想宽度）
@@ -85,7 +90,7 @@ fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<Co
 
     let col_width_hint = match &style.column_width {
         ColumnWidthComputedValue::Auto => None,
-        ColumnWidthComputedValue::Length(l) => Some(length_to_px(l)),
+        ColumnWidthComputedValue::Length(l) => Some(length_to_px(l, container_width)),
     };
 
     match (col_count_from_count, col_width_hint) {
