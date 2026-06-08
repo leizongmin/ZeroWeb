@@ -85,7 +85,7 @@ impl super::Painter {
             );
         }
 
-        // 下边框
+        // 下边框 — y1 在边框盒底边向上 border_bottom 处（边框区域内侧）
         if box_node.border_bottom > 0.0
             && style.border_bottom_style != BorderStyleValue::None
             && style.border_bottom_style != BorderStyleValue::Hidden
@@ -93,9 +93,9 @@ impl super::Painter {
             self.paint_border_edge(
                 &BorderEdgeSpec {
                     x1: abs_x,
-                    y1: abs_y + h,
+                    y1: abs_y + h - half(box_node.border_bottom),
                     x2: abs_x + w,
-                    y2: abs_y + h,
+                    y2: abs_y + h - half(box_node.border_bottom),
                     thickness: half(box_node.border_bottom),
                     is_horizontal: true,
                     extend_left: false,
