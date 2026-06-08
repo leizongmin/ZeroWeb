@@ -5997,6 +5997,7 @@ name = "zero-wpt-runner"
 version = "0.1.0"
 dependencies = [
  "png 0.17.16",
+ "rayon",
  "serde",
  "serde_json",
  "zero-css-parser",
