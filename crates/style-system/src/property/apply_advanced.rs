@@ -755,6 +755,21 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // ── ColumnFill 属性 ──
+        "column-fill" => {
+            let v = value.trim().to_ascii_lowercase();
+            match v.as_str() {
+                "balance" | "balance-all" => {
+                    style.column_fill = ColumnFillComputedValue::Balance;
+                    return true;
+                }
+                "auto" => {
+                    style.column_fill = ColumnFillComputedValue::Auto;
+                    return true;
+                }
+                _ => {}
+            }
+        }
         // ── ObjectFit 属性 ──
         "object-fit" => {
             if let Some(v) = values::parse_object_fit(value) {

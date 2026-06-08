@@ -408,6 +408,8 @@ pub struct ComputedStyle {
     pub column_count: ColumnCountComputedValue,
     /// column-width 属性。
     pub column_width: ColumnWidthComputedValue,
+    /// column-fill 属性（balance 或 auto）。
+    pub column_fill: ColumnFillComputedValue,
 
     // ── Object Fit / Filter ──
     /// object-fit 属性。

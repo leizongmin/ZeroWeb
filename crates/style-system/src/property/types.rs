@@ -1331,6 +1331,8 @@ pub enum PropertyValue {
     ColumnCount(ColumnCountComputedValue),
     /// column-width 值。
     ColumnWidth(ColumnWidthComputedValue),
+    /// column-fill 值。
+    ColumnFill(ColumnFillComputedValue),
     /// object-fit 值。
     ObjectFit(ObjectFitComputedValue),
     /// filter 值。
@@ -1439,6 +1441,15 @@ pub enum ColumnWidthComputedValue {
     Auto,
     /// 长度值。
     Length(LengthValue),
+}
+
+/// CSS column-fill 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnFillComputedValue {
+    /// balance — 均衡分配内容到各列（默认值）。
+    Balance,
+    /// auto — 按顺序填充列。
+    Auto,
 }
 
 /// CSS object-fit 属性值。

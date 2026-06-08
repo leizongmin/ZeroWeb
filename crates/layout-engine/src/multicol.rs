@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::LengthValue;
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
-use zero_style_system::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue};
+use zero_style_system::property::types::{ColumnCountComputedValue, ColumnFillComputedValue, ColumnWidthComputedValue};
 
 use crate::types::LayoutBox;
 
@@ -46,6 +46,8 @@ struct ColumnInfo {
     column_width: f32,
     /// 列间距。
     gap: f32,
+    /// 是否按顺序填充（column-fill: auto）。
+    sequential_fill: bool,
 }
 
 /// 将 LengthValue 转换为像素值（简化版，不处理百分比和 auto）。
@@ -70,6 +72,7 @@ fn length_to_px(value: &LengthValue) -> f32 {
 /// 返回 `None` 表示不需要多列布局（column-count: auto 且 column-width: auto）。
 fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<ColumnInfo> {
     let gap = length_to_px(&style.column_gap);
+    let sequential_fill = matches!(style.column_fill, ColumnFillComputedValue::Auto);
 
     // CSS Multi-column spec: column-width 是最小列宽（理想宽度）
     // column-count 是理想列数
@@ -98,6 +101,7 @@ fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<Co
                 count,
                 column_width,
                 gap,
+                sequential_fill,
             })
         }
         (None, Some(min_width)) => {
@@ -114,6 +118,7 @@ fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<Co
                 count,
                 column_width,
                 gap,
+                sequential_fill,
             })
         }
         (Some(n), Some(min_width)) => {
@@ -131,6 +136,7 @@ fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<Co
                 count,
                 column_width,
                 gap,
+                sequential_fill,
             })
         }
     }
@@ -182,8 +188,14 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo) {
         return;
     }
 
-    // 均衡分配子元素到各列
-    let assignments = assign_children_to_columns(&child_info, info.count);
+    // 根据 column-fill 模式分配子元素到各列
+    let assignments = if info.sequential_fill {
+        // column-fill: auto — 按顺序填充列
+        assign_children_to_columns_sequential(&child_info, info.count, container.content_height)
+    } else {
+        // column-fill: balance — 均衡分配（默认行为）
+        assign_children_to_columns(&child_info, info.count)
+    };
 
     // 定位子元素
     position_multicol_children(container, &assignments, info);
@@ -208,6 +220,35 @@ fn assign_children_to_columns(children: &[(usize, f32)], col_count: usize) -> Ve
 
         columns[shortest_col].push((child_idx, child_height));
         col_heights[shortest_col] += child_height;
+    }
+
+    columns
+}
+
+/// 按顺序填充列（column-fill: auto）。
+///
+/// 子元素按文档顺序依次填入当前列，当列高度达到容器高度时移至下一列。
+fn assign_children_to_columns_sequential(
+    children: &[(usize, f32)],
+    col_count: usize,
+    container_height: f32,
+) -> Vec<Vec<(usize, f32)>> {
+    let mut columns: Vec<Vec<(usize, f32)>> = vec![Vec::new(); col_count];
+    let mut current_col = 0usize;
+    let mut current_col_height = 0.0f32;
+
+    for &(child_idx, child_height) in children {
+        // 如果当前列放不下，且还有更多列可用，移到下一列
+        if current_col_height + child_height > container_height
+            && current_col_height > 0.0
+            && current_col + 1 < col_count
+        {
+            current_col += 1;
+            current_col_height = 0.0;
+        }
+
+        columns[current_col].push((child_idx, child_height));
+        current_col_height += child_height;
     }
 
     columns

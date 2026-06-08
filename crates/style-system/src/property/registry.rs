@@ -218,6 +218,7 @@ impl PropertyRegistry {
             "columns" => Some(ColumnCount(ColumnCountComputedValue::Auto)),
             "column-count" => Some(ColumnCount(ColumnCountComputedValue::Auto)),
             "column-width" => Some(ColumnWidth(ColumnWidthComputedValue::Auto)),
+            "column-fill" => Some(ColumnFill(ColumnFillComputedValue::Balance)),
 
             // Object Fit / Filter
             "object-fit" => Some(ObjectFit(ObjectFitComputedValue::Fill)),
@@ -511,6 +512,7 @@ impl PropertyRegistry {
             "columns",
             "column-count",
             "column-width",
+            "column-fill",
             "object-fit",
             "filter",
             "column-rule-color",
