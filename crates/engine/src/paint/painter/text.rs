@@ -892,6 +892,64 @@ impl super::Painter {
             style,
         );
     }
+
+    /// 绘制匿名文本项（flex/grid 容器中的文本节点）。
+    ///
+    /// 与 paint_text 不同，此方法直接渲染 node_id 指向的文本节点内容，
+    /// 而非查找子文本节点。匿名文本项没有独立的 ComputedStyle，
+    /// 使用父元素的样式。
+    pub fn paint_anonymous_text_item(
+        &mut self,
+        _box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        doc: &Document,
+        node_id: NodeId,
+    ) {
+        let font_size: f32 = match style.font_size {
+            LengthValue::Px(s) => s as f32,
+            _ => return,
+        };
+        if font_size <= 0.0 || style.color == ColorValue::CurrentColor {
+            return;
+        }
+
+        let color = color_value_to_render(&style.color);
+        let default_font_id = self.resolve_font_id(&style.font_family);
+        let content_x = abs_x;
+        let content_y = abs_y;
+
+        // 直接从文本节点获取内容
+        let text = match doc.get(node_id) {
+            Some(node) => match &node.kind {
+                NodeKind::Text(data) => data.content.trim().to_string(),
+                _ => return,
+            },
+            None => return,
+        };
+        if text.is_empty() {
+            return;
+        }
+
+        // 渲染文本字符为 glyph primitives
+        let is_ahem = style.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"));
+        let mut char_x = content_x;
+        for ch in text.chars() {
+            self.primitives.add_glyph(GlyphPrimitive {
+                x: char_x,
+                y: content_y + font_size,
+                font_size,
+                color,
+                glyph_id: ch as u32,
+                font_id: default_font_id,
+                bitmap_width: None,
+                bitmap_height: None,
+                rotation: 0.0,
+            });
+            char_x += estimate_char_width(ch, font_size, is_ahem);
+        }
+    }
 }
 
 /// 将数字转换为罗马数字字符串（1-based）。

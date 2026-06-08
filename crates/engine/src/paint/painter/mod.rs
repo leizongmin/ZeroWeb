@@ -145,7 +145,24 @@ impl Painter {
         // 节点与脏区域相交，执行正常绘制
         let needs_clip = box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible;
 
-        let is_hidden = if let Some(node_id) = box_node.node_id
+        let is_hidden = if box_node.is_anonymous_text_item {
+            // 匿名文本项（flex/grid 容器中的文本节点）
+            if let Some(doc) = doc
+                && let Some(node_id) = box_node.node_id
+            {
+                let parent_style = doc
+                    .parent_node(node_id)
+                    .and_then(|pid| styles.get(&pid).cloned())
+                    .unwrap_or_default();
+                if !matches!(
+                    parent_style.visibility,
+                    VisibilityValue::Hidden | VisibilityValue::Collapse
+                ) {
+                    self.paint_anonymous_text_item(box_node, abs_x, abs_y, &parent_style, doc, node_id);
+                }
+            }
+            false
+        } else if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
         {
             let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
@@ -251,7 +268,24 @@ impl Painter {
         // 记录绘制前的图元数量，用于 opacity 应用
         let counts_before = PrimitiveCounts::snapshot(&self.primitives);
 
-        let is_hidden = if let Some(node_id) = box_node.node_id
+        let is_hidden = if box_node.is_anonymous_text_item {
+            // 匿名文本项（flex/grid 容器中的文本节点）
+            if let Some(doc) = doc
+                && let Some(node_id) = box_node.node_id
+            {
+                let parent_style = doc
+                    .parent_node(node_id)
+                    .and_then(|pid| styles.get(&pid).cloned())
+                    .unwrap_or_default();
+                if !matches!(
+                    parent_style.visibility,
+                    VisibilityValue::Hidden | VisibilityValue::Collapse
+                ) {
+                    self.paint_anonymous_text_item(box_node, abs_x, abs_y, &parent_style, doc, node_id);
+                }
+            }
+            false
+        } else if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
         {
             let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);

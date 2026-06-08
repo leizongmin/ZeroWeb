@@ -107,6 +107,12 @@ pub struct LayoutBox {
     pub collapsed_border_color_overrides: [Option<u32>; 4],
     /// 元素的 writing-mode（用于 paint 阶段旋转文字和后处理轴交换）。
     pub writing_mode: WritingModeValue,
+    /// 是否为匿名文本项（flex/grid 容器中的文本节点包装）。
+    ///
+    /// CSS Flexbox §4 规定，flex 容器中的连续文本内容生成匿名 flex item。
+    /// 此标志告诉 paint 系统 node_id 指向的是文本节点本身（而非元素节点），
+    /// paint 应直接渲染该文本节点的内容，而非查找子文本节点。
+    pub is_anonymous_text_item: bool,
 }
 
 impl LayoutBox {
@@ -177,6 +183,7 @@ impl Default for LayoutBox {
             is_relative: false,
             collapsed_border_color_overrides: [None; 4],
             writing_mode: WritingModeValue::HorizontalTb,
+            is_anonymous_text_item: false,
         }
     }
 }

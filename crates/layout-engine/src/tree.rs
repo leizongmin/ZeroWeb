@@ -269,32 +269,96 @@ fn build_subtree(
         let node_data = doc.get(dom_id);
         let children_dom: Vec<NodeId> = node_data.map(|n| n.children.clone()).unwrap_or_default();
 
-        // 收集元素子节点及其 CSS order 值
-        // CSS flex/grid 容器中，order 属性决定子元素的视觉顺序。
-        // 对 block 容器，所有子元素 order 默认为 0，排序无副作用。
-        let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
-        for &child_dom in &children_dom {
-            let child_data = doc.get(child_dom);
-            if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
-                let order = styles.get(&child_dom).map_or(0, |s| s.order);
-                children_with_order.push((child_dom, order));
+        // 检测是否为 flex/grid 容器 — 在这些容器中，文本节点成为匿名 flex/grid 项
+        let is_flex_or_grid = matches!(
+            computed.display,
+            DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+        );
+
+        if is_flex_or_grid {
+            // Flex/Grid 容器：文本节点成为匿名 flex/grid 项参与布局。
+            // CSS Flexbox §4：每个连续的文本运行生成一个匿名 flex item。
+            // 收集所有子节点（元素 + 文本），为文本节点创建匿名 taffy 节点。
+            let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
+
+            for &child_dom in &children_dom {
+                let child_data = doc.get(child_dom);
+                if let Some(data) = child_data {
+                    match &data.kind {
+                        NodeKind::Element(_) => {
+                            let order = styles.get(&child_dom).map_or(0, |s| s.order);
+                            children_with_order.push((child_dom, order));
+                        }
+                        NodeKind::Text(text_data) if !text_data.content.trim().is_empty() => {
+                            // 匿名 flex item 的 order 默认为 0
+                            children_with_order.push((child_dom, 0));
+                        }
+                        _ => {}
+                    }
+                }
             }
-        }
 
-        // 按 order 稳定排序（相同 order 保持 DOM 顺序）
-        children_with_order.sort_by_key(|(_, order)| *order);
+            // 按 order 稳定排序（相同 order 保持 DOM 顺序）
+            children_with_order.sort_by_key(|(_, order)| *order);
 
-        for &(child_dom, _) in &children_with_order {
-            let child_taffy = build_subtree(
-                ctx,
-                doc,
-                styles,
-                child_dom,
-                grid_areas.as_ref(),
-                false,
-                own_writing_mode.clone(),
-            );
-            child_taffy_ids.push(child_taffy);
+            for &(child_dom, _) in &children_with_order {
+                let child_data = doc.get(child_dom);
+                let is_text = child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Text(_)));
+
+                if is_text {
+                    // 文本节点：创建匿名 taffy leaf 节点
+                    // 使用文本 NodeId 作为 context，使测量回调能识别文本内容
+                    let anon_style = taffy::Style {
+                        display: taffy::style::Display::Block,
+                        ..taffy::Style::default()
+                    };
+                    let anon_taffy = ctx
+                        .taffy
+                        .new_leaf_with_context(anon_style, child_dom)
+                        .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
+                    ctx.node_map.insert(child_dom, anon_taffy);
+                    ctx.taffy_to_dom.insert(anon_taffy, child_dom);
+                    child_taffy_ids.push(anon_taffy);
+                } else {
+                    // 元素节点：正常递归构建
+                    let child_taffy = build_subtree(
+                        ctx,
+                        doc,
+                        styles,
+                        child_dom,
+                        grid_areas.as_ref(),
+                        false,
+                        own_writing_mode.clone(),
+                    );
+                    child_taffy_ids.push(child_taffy);
+                }
+            }
+        } else {
+            // 非 flex/grid 容器：仅处理元素子节点（原有行为）
+            let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
+            for &child_dom in &children_dom {
+                let child_data = doc.get(child_dom);
+                if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
+                    let order = styles.get(&child_dom).map_or(0, |s| s.order);
+                    children_with_order.push((child_dom, order));
+                }
+            }
+
+            // 按 order 稳定排序（相同 order 保持 DOM 顺序）
+            children_with_order.sort_by_key(|(_, order)| *order);
+
+            for &(child_dom, _) in &children_with_order {
+                let child_taffy = build_subtree(
+                    ctx,
+                    doc,
+                    styles,
+                    child_dom,
+                    grid_areas.as_ref(),
+                    false,
+                    own_writing_mode.clone(),
+                );
+                child_taffy_ids.push(child_taffy);
+            }
         }
     }
 
