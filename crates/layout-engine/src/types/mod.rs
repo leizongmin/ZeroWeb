@@ -105,6 +105,10 @@ pub struct LayoutBox {
     /// 侧边索引：0=top, 1=right, 2=bottom, 3=left。
     /// None 表示无覆盖（使用 ComputedStyle 中的颜色）。
     pub collapsed_border_color_overrides: [Option<u32>; 4],
+    /// border-collapse: collapse 时各边的边框样式覆盖。
+    /// 侧边索引：0=top, 1=right, 2=bottom, 3=left。
+    /// 当边框冲突解决后获胜方的样式与单元格原始样式不同时设置。
+    pub collapsed_border_style_overrides: [Option<zero_style_system::BorderStyleValue>; 4],
     /// 元素的 writing-mode（用于 paint 阶段旋转文字和后处理轴交换）。
     pub writing_mode: WritingModeValue,
     /// 是否为匿名文本项（flex/grid 容器中的文本节点包装）。
@@ -182,6 +186,7 @@ impl Default for LayoutBox {
             is_block_level: false,
             is_relative: false,
             collapsed_border_color_overrides: [None; 4],
+            collapsed_border_style_overrides: [const { None }; 4],
             writing_mode: WritingModeValue::HorizontalTb,
             is_anonymous_text_item: false,
         }
