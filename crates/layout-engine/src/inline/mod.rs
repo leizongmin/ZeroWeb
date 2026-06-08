@@ -5,7 +5,7 @@
 //! 支持文本对齐方式：left、center、right、justify。
 
 use std::collections::HashMap;
-use zero_css_parser::values::{LengthValue, VerticalAlignValue};
+use zero_css_parser::values::{DisplayValue, LengthValue, VerticalAlignValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, LineHeightValue};
 
@@ -261,6 +261,25 @@ pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
     (font_size, line_height)
 }
 
+/// 从 CSS LengthValue 解析 inline-block 元素的尺寸（宽度或高度）。
+///
+/// 支持 Px、Em、Rem 等绝对长度单位。Auto、Percentage、MinContent 等返回 0.0
+/// （inline-block 在行内格式化上下文测量阶段无法确定这些值，需要 taffy 布局后回填）。
+fn resolve_inline_block_dimension(value: &LengthValue, style: &ComputedStyle, _is_width: bool) -> f32 {
+    match value {
+        LengthValue::Px(v) => *v as f32,
+        LengthValue::Em(v) => {
+            let base = match &style.font_size {
+                LengthValue::Px(fs) => *fs as f32,
+                _ => 16.0,
+            };
+            *v as f32 * base
+        }
+        LengthValue::Rem(v) => *v as f32 * 16.0, // 假设 root em = 16px
+        _ => 0.0,                                // Auto、Percentage、MinContent 等暂不支持
+    }
+}
+
 /// CSS word-break 行为 — 控制单词内的断行规则。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WordBreakMode {
@@ -497,6 +516,30 @@ impl InlineFormattingContext {
                         if elem_data.local_name() == "br" {
                             items.push(InlineItem::Br);
                             continue;
+                        }
+
+                        // 检查该元素是否为 display: inline-block。
+                        // inline-block 元素参与行内格式化上下文，作为不可拆分的原子盒。
+                        // CSS 属性的 width/height 作为尺寸来源。
+                        let style = styles.get(&child_id);
+                        let is_inline_block = style.is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock));
+
+                        if is_inline_block {
+                            let s = style.unwrap();
+                            // 从 CSS 计算样式提取尺寸
+                            let w = resolve_inline_block_dimension(&s.width, s, /* is_width */ true);
+                            let h = resolve_inline_block_dimension(&s.height, s, /* is_width */ false);
+                            if w > 0.0 && h > 0.0 {
+                                let vertical_align = s.vertical_align.clone();
+                                items.push(InlineItem::InlineBlock(InlineBlockBox {
+                                    width: w,
+                                    height: h,
+                                    node_id: child_id,
+                                    vertical_align,
+                                }));
+                                continue;
+                            }
+                            // 无有效尺寸的 inline-block 降级为零宽度 TextRun
                         }
 
                         // `<img>` 替换元素：使用 HTML width/height 属性作为固有尺寸，
@@ -955,8 +998,26 @@ impl InlineFormattingContext {
     fn apply_vertical_alignment(&mut self) {
         for line in &mut self.lines {
             let line_height = line.height;
-            // 基线近似位置：行盒高度的 80% 处（对应大多数拉丁字体的基线位置）
-            let baseline_y = line_height * 0.8;
+
+            // 计算正确的基线位置。
+            // CSS 规范中，行盒的基线由所有 inline 级盒的 ascent 最大值决定。
+            // - 文本/strut 的 ascent ≈ font_size × 0.8（近似）
+            // - inline-block 的 baseline 在其底部边缘，因此 ascent = height
+            // 当行盒只包含 inline-block（如 <img>）时，基线应在最大 inline-block 底部，
+            // 使图片从行盒顶部开始（y=0），而非被错误地向上偏移。
+            let strut_ascent = line_height * 0.8;
+            let mut max_ascent = strut_ascent;
+            for run in &line.runs {
+                if matches!(
+                    run.vertical_align,
+                    VerticalAlignValue::Baseline | VerticalAlignValue::Sub | VerticalAlignValue::Super
+                ) && run.font_size == 0.0
+                {
+                    // Inline-block（font_size==0 标识）的 ascent = height
+                    max_ascent = max_ascent.max(run.height);
+                }
+            }
+            let baseline_y = max_ascent;
 
             for run in &mut line.runs {
                 run.y = match run.vertical_align {
