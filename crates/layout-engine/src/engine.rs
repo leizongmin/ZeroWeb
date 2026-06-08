@@ -380,12 +380,21 @@ impl LayoutEngine {
 /// 值进行偏移。偏移不影响后续元素的布局位置。
 ///
 /// 此函数在所有其他后处理（float、table、multicol）之后执行，
-/// 仅修改元素的 x/y 坐标，不改变其布局尺寸或影响其他元素。
+/// 仅修改元素自身的 x/y 坐标，不改变其布局尺寸或影响其他元素。
+///
+/// 注意：只偏移元素自身，不递归偏移子元素。因为 LayoutBox 的坐标系是相对的
+/// （子元素的 x/y 相对于父元素内容区域），paint 系统通过 offset_x + box_node.x
+/// 累加绝对位置，所以偏移父元素后子元素自然跟随移动。
 fn apply_relative_offsets(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
-    if root.is_relative {
+    // 仅对 position:relative 应用视觉偏移（不含 sticky，sticky 偏移需宿主层滚动驱动）
+    let is_rel = root.node_id.is_some_and(|id| {
+        styles.get(&id).is_some_and(|s| matches!(s.position, PositionValue::Relative))
+    });
+    if is_rel {
         let (dx, dy) = resolve_relative_inset(root, styles);
         if dx != 0.0 || dy != 0.0 {
-            apply_offset_recursive(root, dx, dy);
+            root.x += dx;
+            root.y += dy;
         }
     }
     for child in &mut root.children {
@@ -411,15 +420,6 @@ fn resolve_relative_inset(box_node: &LayoutBox, styles: &HashMap<NodeId, Compute
         _ => 0.0,
     };
     (dx, dy)
-}
-
-/// 递归地将偏移量应用到元素及其所有子元素。
-fn apply_offset_recursive(box_node: &mut LayoutBox, dx: f32, dy: f32) {
-    box_node.x += dx;
-    box_node.y += dy;
-    for child in &mut box_node.children {
-        apply_offset_recursive(child, dx, dy);
-    }
 }
 
 fn measure_text_content(
