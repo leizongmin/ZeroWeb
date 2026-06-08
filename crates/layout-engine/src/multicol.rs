@@ -28,7 +28,7 @@ use crate::types::LayoutBox;
 /// 将其子元素按多列规则重新定位。
 pub fn adjust_multicol_layout(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     if let Some(style) = root.node_id.and_then(|id| styles.get(&id)) {
-        let col_info = compute_column_info(style, root.content_width, root.content_height);
+        let col_info = compute_column_info(style, root.content_width);
         if let Some(info) = col_info {
             layout_multicol(root, &info);
         }
@@ -62,9 +62,6 @@ struct ColumnInfo {
     gap: f32,
     /// 是否按顺序填充（column-fill: auto）。
     sequential_fill: bool,
-    /// 容器内容区域高度（用于 column breaking 判断）。
-    /// 当容器有明确高度时，此值为内容区域高度；否则为 0（表示无限制）。
-    container_content_height: f32,
 }
 
 /// 将 LengthValue 转换为像素值。
@@ -95,7 +92,6 @@ fn length_to_px(value: &LengthValue, container_width: f32) -> f32 {
 fn compute_column_info(
     style: &ComputedStyle,
     container_width: f32,
-    container_content_height: f32,
 ) -> Option<ColumnInfo> {
     let gap = length_to_px(&style.column_gap, container_width);
     let sequential_fill = matches!(style.column_fill, ColumnFillComputedValue::Auto);
@@ -128,7 +124,6 @@ fn compute_column_info(
                 column_width,
                 gap,
                 sequential_fill,
-                container_content_height,
             })
         }
         (None, Some(min_width)) => {
@@ -146,7 +141,6 @@ fn compute_column_info(
                 column_width,
                 gap,
                 sequential_fill,
-                container_content_height,
             })
         }
         (Some(n), Some(min_width)) => {
@@ -165,7 +159,6 @@ fn compute_column_info(
                 column_width,
                 gap,
                 sequential_fill,
-                container_content_height,
             })
         }
     }
