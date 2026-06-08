@@ -1231,3 +1231,77 @@ fn test_decoration_blink_none_no_output() {
         "none 不应生成装饰"
     );
 }
+
+/// 测试 0×0 内容元素的大边框渲染正确 — 底部边框不应超出盒子边界。
+///
+/// 对应 WPT 测试 CSS2/borders/border-005.xht：`border: 1in solid blue`
+/// 在 width:0 height:0 元素上应产生 192×192 蓝色方块。
+/// 修复前底部边框从 y=abs_y+h 开始绘制，超出盒子边界。
+#[test]
+fn test_border_bottom_position_inside_box() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    // 0×0 内容 + 96px 四边 border → 总尺寸 192×192
+    let layout = make_box_with_border(Some(elem), 0.0, 0.0, 192.0, 192.0, 96.0, 96.0, 96.0, 96.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Rgba(0, 0, 0, 0); // 透明背景
+    style.border_top_color = ColorValue::Rgba(0, 0, 255, 255);
+    style.border_right_color = ColorValue::Rgba(0, 0, 255, 255);
+    style.border_bottom_color = ColorValue::Rgba(0, 0, 255, 255);
+    style.border_left_color = ColorValue::Rgba(0, 0, 255, 255);
+    style.border_top_style = BorderStyleValue::Solid;
+    style.border_right_style = BorderStyleValue::Solid;
+    style.border_bottom_style = BorderStyleValue::Solid;
+    style.border_left_style = BorderStyleValue::Solid;
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let fills = painter.primitives().fills.as_slice();
+    // 1 个背景 fill（透明） + 4 个边框 fill = 5
+    assert_eq!(fills.len(), 5, "四边 border + 背景应产生 5 个 fill");
+
+    // 找到蓝色边框 fill（排除透明背景）
+    let border_fills: Vec<_> = fills.iter().filter(|f| f.color.a > 0).collect();
+    assert_eq!(border_fills.len(), 4, "应有 4 个蓝色边框 fill");
+
+    // 找到顶部边框（y 最小且有非零高度的蓝色 fill）
+    let top_fill = border_fills
+        .iter()
+        .filter(|f| f.rect.size.height > 0.0)
+        .min_by(|a, b| a.rect.origin.y.partial_cmp(&b.rect.origin.y).unwrap())
+        .expect("应该有顶部边框");
+    assert!(
+        (top_fill.rect.origin.y).abs() < 0.1,
+        "顶部边框 y 应为 0: got {}",
+        top_fill.rect.origin.y
+    );
+    assert!(
+        (top_fill.rect.size.height - 96.0).abs() < 0.1,
+        "顶部边框高度应为 96px: got {}",
+        top_fill.rect.size.height
+    );
+
+    // 找到底部边框（y 最大的有非零高度的蓝色 fill）
+    let bottom_fill = border_fills
+        .iter()
+        .filter(|f| f.rect.size.height > 0.0)
+        .max_by(|a, b| a.rect.origin.y.partial_cmp(&b.rect.origin.y).unwrap())
+        .expect("应该有底部边框");
+    // 底部边框应从 y=96 开始（abs_y + h - border_bottom = 0 + 192 - 96 = 96）
+    // 而非旧版本的 y=192（超出盒子边界）
+    assert!(
+        (bottom_fill.rect.origin.y - 96.0).abs() < 0.1,
+        "底部边框 y 位置应在盒子内部 (y=96): got {}",
+        bottom_fill.rect.origin.y
+    );
+    assert!(
+        (bottom_fill.rect.size.height - 96.0).abs() < 0.1,
+        "底部边框高度应为 96px: got {}",
+        bottom_fill.rect.size.height
+    );
+}
