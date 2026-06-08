@@ -606,6 +606,15 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                 continue;
             }
 
+            // CSS 2.1 §9.5.2 Clearance 计算
+            // clearance 引入后，margin 折叠被阻止。taffy 的布局已包含 margin 折叠，
+            // 因此 clear 元素的「假设位置」（无 clear 时）需用折叠后的位置。
+            // 但 clearance 本身阻止了 clear 元素与前一兄弟的 margin 折叠，
+            // 所以 uncollapsed 位置 = 前一兄弟底部 + 当前元素 margin-top。
+            // 这里用 taffy_y - float_offset 作为含 margin 折叠的位置，
+            // 并与 clear_bottom 取最大值，确保在浮动下方。
+            // 若 clear_bottom > normal_y，则 clearance = clear_bottom - normal_y，
+            // 等效于将元素推到浮动下方并阻止了 margin 折叠。
             match child.clear {
                 ClearValue::Left | ClearValue::Right | ClearValue::Both => {
                     let clear_bottom = match child.clear {
@@ -613,10 +622,19 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                         ClearValue::Right => right_float_bottom,
                         _ => left_float_bottom.max(right_float_bottom),
                     };
-                    if clear_bottom > 0.0 {
-                        // clear 元素：应在浮动元素下方
-                        let normal_y = original_taffy_y - float_y_offset;
-                        child.y = normal_y.max(clear_bottom);
+                    // 假设位置：无 clear 时元素应在的位置（含 margin 折叠）
+                    let normal_y = original_taffy_y - float_y_offset;
+                    // clearance = max(0, clear_bottom - normal_y)
+                    // 当 clearance > 0 时，margin 折叠被阻止，元素被推到 clear_bottom
+                    // 当 clearance == 0 时（normal_y >= clear_bottom），margin 折叠仍被阻止
+                    // 但元素位置不变（零 clearance 不等于无 clearance）
+                    if clear_bottom > 0.0 && clear_bottom > normal_y {
+                        // 需要 clearance：将元素推到浮动下方
+                        child.y = clear_bottom;
+                    } else {
+                        // 零 clearance 或无浮动：保持正常位置
+                        // 但 CSS 规定即使 clearance 为 0，margin 折叠也被阻止
+                        child.y = normal_y;
                     }
                     // clear 元素消耗 offset：
                     // float_y_offset = original_taffy_y - child.y
