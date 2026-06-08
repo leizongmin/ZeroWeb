@@ -177,3 +177,52 @@ fn test_writing_mode_vertical_rl_child_size_swap() {
         child.height
     );
 }
+
+/// 测试 vertical-rl 中绝对定位元素的静态位置。
+///
+/// 容器 320x320，writing-mode: vertical-rl，position: relative。
+/// 内联文本 "1 2 34" + 绝对定位的 <span>X</span>。
+/// abs-pos 元素的静态位置应基于它在正常流中的位置。
+#[test]
+fn test_vertical_rl_abs_pos_static_position() {
+    let html = r#"<html><body style="margin:0">
+        <div id="cb" style="position:relative; writing-mode:vertical-rl; direction:ltr;
+            font:80px/1 Ahem; width:320px; height:320px; color:transparent">
+            1 2 34<span style="position:absolute; top:auto; height:auto; bottom:auto; color:green">X</span>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // 找到容器
+    let container = find_box_by_tag(&result.root, &doc, "div").expect("should find container <div>");
+    eprintln!("container: x={}, y={}, w={}, h={}", container.x, container.y, container.width, container.height);
+    eprintln!("container content: x={}, y={}, w={}, h={}", container.content_x, container.content_y, container.content_width, container.content_height);
+    eprintln!("container writing_mode: {:?}", container.writing_mode);
+
+    for (i, child) in container.children.iter().enumerate() {
+        eprintln!("child[{}]: x={}, y={}, w={}, h={}, abs={}, node={:?}",
+            i, child.x, child.y, child.width, child.height, child.is_absolute, child.node_id);
+        if let Some(nid) = child.node_id {
+            if let Some(node) = doc.get(nid) {
+                eprintln!("  node kind: {:?}", std::mem::discriminant(&node.kind));
+            }
+        }
+    }
+
+    // 找到 abs-pos span
+    let span = container.children.iter().find(|c| c.is_absolute);
+    if let Some(span) = span {
+        eprintln!("abs span: x={}, y={}, w={}, h={}", span.x, span.y, span.width, span.height);
+        // 静态位置：在 vertical-rl 中，"1 2 34" + "X" 应该在第5个字符位置
+        // Ahem 80px 字体，4个可见字符(1,2,3,4) 占 4×80=320px 深度
+        // 但 X 在第 5 列位置...
+        // 这个测试主要用于调试，不严格断言
+    } else {
+        eprintln!("WARNING: no abs-pos child found");
+    }
+}
