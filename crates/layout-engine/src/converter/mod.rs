@@ -7,7 +7,10 @@ use zero_css_parser::values::{
     AlignmentValue, BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue,
     LengthValue, OverflowValue, PositionValue,
 };
-use zero_style_system::{AlignContentValue, ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLineValue};
+use zero_style_system::{
+    AlignContentValue, ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLineValue, JustifyItemsValue,
+    JustifySelfValue,
+};
 
 use taffy::prelude::*;
 
@@ -75,6 +78,8 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
         align_self: convert_alignment_to_align_self(&style.align_self),
         align_content: convert_align_content(&style.align_content),
         justify_content: convert_alignment_to_justify_content(&style.justify_content),
+        justify_items: convert_justify_items(&style.justify_items),
+        justify_self: convert_justify_self(&style.justify_self),
         gap: taffy::geometry::Size {
             // column-gap 长写属性优先；若未设置（0px），回退到 gap 简写
             width: {
@@ -442,6 +447,38 @@ fn convert_align_content(value: &AlignContentValue) -> Option<taffy::style::Alig
         AlignContentValue::SpaceBetween => Some(taffy::style::AlignContent::SpaceBetween),
         AlignContentValue::SpaceAround => Some(taffy::style::AlignContent::SpaceAround),
         AlignContentValue::SpaceEvenly => Some(taffy::style::AlignContent::SpaceEvenly),
+    }
+}
+
+/// 转换 JustifyItemsValue 到 taffy AlignItems。
+///
+/// taffy 的 justify_items 字段使用 Option<AlignItems> 类型。
+/// Auto/Normal 表示使用默认行为。
+fn convert_justify_items(value: &JustifyItemsValue) -> Option<taffy::style::AlignItems> {
+    match value {
+        JustifyItemsValue::Auto => None,
+        JustifyItemsValue::Normal => None,
+        JustifyItemsValue::Start => Some(taffy::style::AlignItems::Start),
+        JustifyItemsValue::End => Some(taffy::style::AlignItems::End),
+        JustifyItemsValue::Center => Some(taffy::style::AlignItems::Center),
+        JustifyItemsValue::Stretch => Some(taffy::style::AlignItems::Stretch),
+        JustifyItemsValue::Baseline => Some(taffy::style::AlignItems::Baseline),
+    }
+}
+
+/// 转换 JustifySelfValue 到 taffy AlignSelf。
+///
+/// taffy 的 justify_self 字段使用 Option<AlignSelf> 类型。
+/// Auto/Normal 表示使用默认行为。
+fn convert_justify_self(value: &JustifySelfValue) -> Option<taffy::style::AlignSelf> {
+    match value {
+        JustifySelfValue::Auto => None,
+        JustifySelfValue::Normal => None,
+        JustifySelfValue::Start => Some(taffy::style::AlignSelf::Start),
+        JustifySelfValue::End => Some(taffy::style::AlignSelf::End),
+        JustifySelfValue::Center => Some(taffy::style::AlignSelf::Center),
+        JustifySelfValue::Stretch => Some(taffy::style::AlignSelf::Stretch),
+        JustifySelfValue::Baseline => Some(taffy::style::AlignSelf::Baseline),
     }
 }
 
