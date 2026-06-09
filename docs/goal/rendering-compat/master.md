@@ -18,7 +18,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 65.9% (323/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；css-position 62.5%；CSS2 59.7%；css-flexbox 61.8%；css-multicol 43.9%；css-writing-modes 39.0%；**本轮(R10)修复**：匿名 flex/grid item ✅(文本节点在 flex/grid 容器中创建匿名布局项)；writing-mode 轴交换启用 ✅(输入/输出双向坐标交换)；属性继承 ✅(list-style-type/list-style-position/writing-mode)；justify-items/justify-self 转换 ✅(映射到 taffy Style)；scrollbar_width 映射 ✅(Auto→15px/Thin→8px/None→0px)；**后续重点**：垂直文本渲染（paint 层字形旋转）、column breaking、float 精度 |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 66.1% (324/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；css-position 62.5%；CSS2 62.8%(129 tests)；css-flexbox 58.2%；css-multicol 43.9%；css-writing-modes 39.0%；**R15 本轮**：零 clearance 阻止 margin 折叠修复 ✅；inline 元素 padding/border 参与行盒高度 ✅；vertical-rl 列方向 RTL 修复 ✅；垂直 abs-pos 静态位置修复 ✅ |
 
 ## 当前状态概览
 
@@ -286,13 +286,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-09（本轮第十四轮）
+**日期**: 2026-06-09（本轮第十五轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
 **通过**: 324
 **失败**: 166
 **通过率**: 66.1%
 
-**说明**：通过率保持在 66.1%（324/490）。本轮完成了垂直书写模式 IFC 实现和绘制层字形渲染，但 css-writing-modes 测试主要测试块级布局方向（abs-pos-non-replaced 12 个测试全在 21.33% 失败）而非行内文本流，因此通过率未变化。垂直 IFC 基础设施已就绪，后续需解决静态位置计算和轴交换精度问题。
+**说明**：通过率保持在 66.1%（324/490）。R15 完成了零 clearance 阻止 margin 折叠、inline 元素 padding/border 参与行盒高度、vertical-rl 列方向 RTL 修复、垂直 abs-pos 静态位置修复。这些修复在规格层面正确，但因 taffy 已正确处理 inline 元素尺寸（inline→Block 映射），对 reftest 结果无净变化。
 
 ### 按目录
 
@@ -308,21 +308,40 @@
 | css-multicol/ | 25/57 | 43.9% | ❌ |
 | css-writing-modes/ | 23/59 | 39.0% | ❌ |
 
-### R14 本轮修复内容
+### R15 本轮修复内容
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
-| 垂直 IFC break_items_into_columns | css-writing-modes | InlineFormattingContext 新增 break_items_into_columns 方法：字符沿 y 轴向下推进，"列"沿 x 轴排列。支持文本/inline-block/Br，支持 char-break |
-| 垂直模式接入布局引擎 | 全局 | 3 个 IFC 创建点（adjust_inline_block_positions、measure_text_content、remeasure_text_with_float_exclusions）传入 writing-mode 检测，设置 .with_vertical() |
-| 垂直字形渲染 | paint | paint_text 中垂直模式字符沿 y 轴推进（char_pos 累加 y），x 固定为列位置。字形 90° 旋转已启用 |
+| 零 clearance 阻止 margin 折叠 | CSS2/floats-clear | CSS 2.1 §9.5.2：当 clearance=0 时，margin 折叠仍被阻断，元素位于 flow_bottom + child.margin_top（不折叠） |
+| inline 元素 padding/border 参与行盒高度 | CSS2/linebox | TextRun 新增 padding_top/bottom + border_top/bottom 字段，box_height() 方法返回 line-height + padding + border 的完整盒高 |
+| vertical-rl 列方向 RTL | css-writing-modes | IFC 新增 vertical_rtl 标志，vertical-rl 模式下列从右到左排列 |
+| 垂直模式 abs-pos 静态位置修正 | css-writing-modes | 新增 fix_vertical_mode_abs_pos 后处理，对垂直书写模式容器中 abs-pos 元素重新计算静态位置 |
 
-### 关键发现（R14）
+### CSS2 子目录详细通过率（R15 新增）
+
+| 子目录 | 通过/总数 | 通过率 |
+|--------|-----------|--------|
+| floats-clear | 11/30 | 36.7% |
+| linebox | 7/15 | 46.7% |
+| backgrounds | 8/15 | 53.3% |
+| borders | 10/15 | 66.7% |
+| abspos | 3/4 | 75.0% |
+| colors | 4/5 | 80.0% |
+| floats | 12/15 | 80.0% |
+| fonts | 13/15 | 86.7% |
+| box | 1/1 | 100.0% |
+
+### 关键发现（R15）
 
 | 发现 | 说明 |
 |------|------|
-| writing-modes 测试以块级布局为主 | 59 个测试中仅 ~5 个直接测试行内文本流，其余为 abs-pos/float/clearance/border-spacing 等块级布局。12 个 abs-pos-non-replaced 全在 21.33% 失败，根因是静态位置计算依赖轴交换精度 |
-| 垂直 IFC 基础设施就绪 | 行内格式化上下文已支持垂直模式，但 WPT 测试套件中未发现纯垂直行内文本流 reftest 来验证 |
-| 下一优先级：CSS2 块级布局精度 | CSS2 62.8%（81/129）是最大分母，改进 CSS2 的 float/clear/inline-box 精度可提升最多通过率 |
+| taffy inline→Block 映射使 IFC padding/border 无 net reftest 效果 | 所有 display 类型映射为 taffy::Block，taffy 已正确计算 inline 元素尺寸。IFC padding/border 改进是规格正确但 reftest 中性 |
+| CSS2 子目录通过率分化严重 | floats-clear 36.7%（19 失败）是最大瓶颈，box/colors/fonts 已接近 80-100% |
+| 35 个 near-miss (<2% diff) 分布 | CSS2/floats-clear (10), css-writing-modes (10), css-tables (7), css-flexbox (6), css-position (2) |
+| 166 个失败根因分布 | 布局精度问题 (float/clear/margin) 50+ 个、writing-mode 轴交换 36 个、multicol column breaking 32 个、其他 48 个 |
+| 后续最大杠杆 | (1) CSS2 float/clear 精度提升（影响 22 个测试）(2) multicol column breaking（影响 32 个测试）(3) writing-mode 块级布局轴交换（影响 36 个测试） |
+
+### 后续重点
 
 ### R13 本轮修复内容
 
