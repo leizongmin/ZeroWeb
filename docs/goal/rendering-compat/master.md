@@ -19,7 +19,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 73.9% (362/490)**；css-text-decor 100.0% ✅；css-fonts 100.0% ✅(≥95%)；css-grid 85.0%；css-writing-modes 76.3%；css-tables 72.7%；CSS2 69.0%；css-flexbox 63.6%；css-position 62.5%；css-multicol 47.4%；**R21 修复**：font 简写负 line-height 拒绝 ✅；background-position 简写双值捕获修复 ✅(第一个值之后的长度/百分比值被静默丢弃) |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 73.9% (362/490)**；css-text-decor 100.0% ✅；css-fonts 100.0% ✅(≥95%)；css-grid 85.0%；css-writing-modes 76.3%；css-tables 72.7%；CSS2 69.0%；css-flexbox 63.6%；css-position 62.5%；css-multicol 47.4%；**R22 修复**：clearance 零值阻止 margin 折叠（CSS 2.1 §9.5.2 三路分支：正 clearance/零 clearance/无需 clearance）；**R21 修复**：font 简写负 line-height 拒绝 ✅；background-position 简写双值捕获修复 ✅ |
 
 ## 当前状态概览
 
@@ -287,7 +287,7 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-09（本轮第二十一轮）
+**日期**: 2026-06-09（本轮第二十二轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
 **通过**: 362
 **失败**: 128
