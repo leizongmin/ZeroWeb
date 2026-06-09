@@ -1075,12 +1075,13 @@ fn position_cells(
             // 单元格高度：CSS 2.1 规范中，table cell 的 height 属性被视为最小高度。
             // 单元格必须增长以包含其内容，不能裁剪到明确高度。
             // CSS 2.1 规定即使设置了 overflow:hidden，表格单元格仍然必须增长以包含内容。
-            // 取 max(行高, 单元格内容的最大高度)。
-            let cell_content_height = cell_box
+            // 取 max(行高, 单元格内容的累积高度)。
+            // 注意：正常流子元素是垂直堆叠的，应使用 sum 而非 max。
+            let cell_content_height: f32 = cell_box
                 .children
                 .iter()
                 .map(|c| c.height + c.margin_top + c.margin_bottom)
-                .fold(0.0f32, f32::max);
+                .sum();
             let cell_height = row_height.max(cell_content_height);
             cell_box.height = cell_height;
             // 同步更新 content_height，确保 overflow 裁剪使用增长后的高度
@@ -1101,7 +1102,7 @@ fn position_cells(
                     .children
                     .iter()
                     .map(|c| c.height + c.margin_top + c.margin_bottom)
-                    .fold(0.0f32, f32::max);
+                    .sum();
                 let available = cell_box.height - content_height;
                 if available > 0.0 {
                     let dy = match cell_style.vertical_align {

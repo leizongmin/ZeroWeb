@@ -497,14 +497,20 @@ fn test_font_family_only() {
 fn test_font_negative_line_height_invalid() {
     // CSS Fonts §3.7：负 line-height 值非法，整个 font 声明无效。
     let result = expand_one("font", "4em/-2em serif", false, (0, 0, 1));
-    assert!(result.is_empty(), "font: 4em/-2em serif should be invalid (negative line-height)");
+    assert!(
+        result.is_empty(),
+        "font: 4em/-2em serif should be invalid (negative line-height)"
+    );
 }
 
 #[test]
 /// font 简写中负 line-height（px 单位）应使整个声明无效
 fn test_font_negative_line_height_px_invalid() {
     let result = expand_one("font", "16px/-10px sans-serif", false, (0, 0, 1));
-    assert!(result.is_empty(), "font with negative line-height in px should be invalid");
+    assert!(
+        result.is_empty(),
+        "font with negative line-height in px should be invalid"
+    );
 }
 
 #[test]
