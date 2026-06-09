@@ -28,6 +28,8 @@ struct TableCell {
     child_index: usize,
     /// colspan 值（默认 1）。
     colspan: usize,
+    /// rowspan 值（默认 1）。
+    rowspan: usize,
     /// 单元格跨的列范围 [start, end)。
     col_start: usize,
     col_end: usize,
@@ -115,6 +117,18 @@ fn row_group_sort_priority(display: &DisplayValue) -> u8 {
 fn get_colspan(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
     if let Some(node_id) = box_node.node_id {
         doc.get_attribute(node_id, "colspan")
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(1)
+            .max(1)
+    } else {
+        1
+    }
+}
+
+/// 从 DOM 属性中读取 rowspan 值（默认 1）。
+fn get_rowspan(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
+    if let Some(node_id) = box_node.node_id {
+        doc.get_attribute(node_id, "rowspan")
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(1)
             .max(1)
@@ -359,7 +373,7 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
             };
 
             let is_first_row = row_idx == 0;
-            let is_last_row = row_idx == last_row;
+            let _is_last_row = row_idx == last_row;
             let is_first_col = cell.col_start == 0;
             let is_last_col = cell.col_end > last_col;
 
@@ -427,7 +441,12 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
             }
 
             // ── Bottom edge ──
-            if is_last_row {
+            // CSS 2.1 §17.6.2：rowspan 单元格的底边在最后跨越行的底部。
+            let cell_last_row = row_idx + cell.rowspan - 1;
+            let cell_at_table_bottom = cell_last_row >= last_row;
+
+            if cell_at_table_bottom {
+                // 单元格底边在表格底部：与 table border 冲突解决
                 let winner = resolve_border(
                     (table_bb, &table_style.border_bottom_style, BorderSource::Table),
                     (cb.bottom_w, &cb.bottom_s, BorderSource::Cell),
@@ -443,6 +462,42 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                     ));
                 } else if matches!(cb.bottom_s, BorderStyleValue::Hidden) {
                     overrides.push(((row_idx, cell_idx), 2, 0.0, None, None));
+                }
+            }
+
+            // CSS 2.1 §17.6.2.1：行边框参与边框冲突解决。
+            // 检查单元格底边所在行的 border-bottom。
+            if cell_last_row < row_count
+                && let Some(row_at_bottom) = grid.rows.get(cell_last_row)
+            {
+                let row_box_ref = get_row_box(table_box, row_at_bottom);
+                if let Some(rb) = row_box_ref
+                    && let Some(rs) = rb.node_id.and_then(|id| styles.get(&id))
+                {
+                    let row_bb = length_to_px(&rs.border_bottom_width);
+                    if row_bb > 0.0
+                        && !matches!(
+                            rs.border_bottom_style,
+                            BorderStyleValue::None | BorderStyleValue::Hidden
+                        )
+                    {
+                        // 行边框与单元格边框冲突解决
+                        let winner = resolve_border(
+                            (cb.bottom_w, &cb.bottom_s, BorderSource::Cell),
+                            (row_bb, &rs.border_bottom_style, BorderSource::Row),
+                        );
+                        if winner == BorderSource::Row {
+                            // 行边框获胜：使用行的颜色和宽度
+                            let row_color = color_value_to_u32(&rs.border_bottom_color);
+                            overrides.push((
+                                (row_idx, cell_idx),
+                                2,
+                                row_bb,
+                                Some(row_color),
+                                Some(rs.border_bottom_style.clone()),
+                            ));
+                        }
+                    }
                 }
             }
 
@@ -805,9 +860,11 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
             Some(d) if is_table_cell(d) => {
                 // 直接子元素是 table-cell — 生成匿名行
                 let colspan = get_colspan(child, doc);
+                let rowspan = get_rowspan(child, doc);
                 let cell = TableCell {
                     child_index: *child_idx,
                     colspan,
+                    rowspan,
                     col_start: 0,
                     col_end: colspan,
                 };
@@ -837,11 +894,13 @@ fn build_row(child_idx: usize, row_box: &LayoutBox, doc: &zero_dom::Document) ->
 
     for (cell_idx, cell_child) in row_box.children.iter().enumerate() {
         let colspan = get_colspan(cell_child, doc);
+        let rowspan = get_rowspan(cell_child, doc);
         let col_start = col_cursor;
         let col_end = col_start + colspan;
         cells.push(TableCell {
             child_index: cell_idx,
             colspan,
+            rowspan,
             col_start,
             col_end,
         });
