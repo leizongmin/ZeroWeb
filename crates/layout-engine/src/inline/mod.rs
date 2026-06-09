@@ -46,6 +46,16 @@ pub struct TextRun {
     pub margin_left: f32,
     /// inline 元素的水平 margin（px）。文本节点为 0。
     pub margin_right: f32,
+    /// inline 元素的上内边距（px）。文本节点为 0。
+    /// CSS 2.1 规范要求 inline 元素的 padding 参与行盒高度计算。
+    pub padding_top: f32,
+    /// inline 元素的下内边距（px）。文本节点为 0。
+    pub padding_bottom: f32,
+    /// inline 元素的上边框宽度（px）。文本节点为 0。
+    /// CSS 2.1 规范要求 inline 元素的 border 参与行盒高度计算。
+    pub border_top: f32,
+    /// inline 元素的下边框宽度（px）。文本节点为 0。
+    pub border_bottom: f32,
     /// 是否使用 Ahem 字体（所有字符宽度等于 font_size）。
     pub is_ahem_font: bool,
 }
@@ -71,8 +81,21 @@ impl TextRun {
             word_spacing: 0.0,
             margin_left: 0.0,
             margin_right: 0.0,
+            padding_top: 0.0,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
             is_ahem_font: false,
         }
+    }
+
+    /// CSS 2.1 inline 元素对行盒高度的贡献：
+    /// line-height + padding-top + padding-bottom + border-top + border-bottom。
+    ///
+    /// CSS 2.1 §10.8.1: inline 元素的内容区高度由 line-height 决定，
+    /// 但 padding 和 border 会额外增加行盒中该元素占据的垂直空间。
+    pub fn box_height(&self) -> f32 {
+        self.line_height + self.padding_top + self.padding_bottom + self.border_top + self.border_bottom
     }
 }
 
@@ -473,6 +496,30 @@ impl InlineFormattingContext {
         (left_offset, available)
     }
 
+    /// 从 ComputedStyle 提取 inline 元素的垂直 padding 和 border。
+    ///
+    /// 返回 (padding_top, padding_bottom, border_top, border_bottom)。
+    fn extract_inline_box_metrics(
+        style: Option<&zero_style_system::ComputedStyle>,
+    ) -> (f32, f32, f32, f32) {
+        use zero_css_parser::values::LengthValue;
+        let extract = |val: &LengthValue| -> f32 {
+            match val {
+                LengthValue::Px(v) => *v as f32,
+                _ => 0.0,
+            }
+        };
+        match style {
+            Some(s) => (
+                extract(&s.padding_top),
+                extract(&s.padding_bottom),
+                extract(&s.border_top_width),
+                extract(&s.border_bottom_width),
+            ),
+            None => (0.0, 0.0, 0.0, 0.0),
+        }
+    }
+
     /// 对文档中指定节点的行内子内容执行布局。
     ///
     /// 收集文本节点和 inline 元素，从 ComputedStyle 读取 font-size 和 line-height，
@@ -536,6 +583,10 @@ impl InlineFormattingContext {
                                 word_spacing,
                                 margin_left: 0.0,
                                 margin_right: 0.0,
+                                padding_top: 0.0,
+                                padding_bottom: 0.0,
+                                border_top: 0.0,
+                                border_bottom: 0.0,
                                 is_ahem_font,
                             }));
                         }
@@ -636,6 +687,9 @@ impl InlineFormattingContext {
                         let is_ahem_font = style
                             .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
                             .unwrap_or(false);
+                        // CSS 2.1: inline 元素的 padding 和 border 参与行盒高度计算
+                        let (padding_top, padding_bottom, border_top, border_bottom) =
+                            Self::extract_inline_box_metrics(style);
                         if !trimmed.is_empty() {
                             items.push(InlineItem::Text(TextRun {
                                 text: trimmed,
@@ -647,11 +701,15 @@ impl InlineFormattingContext {
                                 word_spacing,
                                 margin_left,
                                 margin_right,
+                                padding_top,
+                                padding_bottom,
+                                border_top,
+                                border_bottom,
                                 is_ahem_font,
                             }));
                         } else {
-                            // CSS 规范：空 inline 元素仍需通过 line-height 影响行盒高度
-                            // 生成零宽度 TextRun，仅贡献 line-height
+                            // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
+                            // 生成零宽度 TextRun，贡献 line-height + padding + border
                             items.push(InlineItem::Text(TextRun {
                                 text: String::new(),
                                 node_id: child_id,
@@ -662,6 +720,10 @@ impl InlineFormattingContext {
                                 word_spacing: 0.0,
                                 margin_left,
                                 margin_right,
+                                padding_top,
+                                padding_bottom,
+                                border_top,
+                                border_bottom,
                                 is_ahem_font,
                             }));
                         }
@@ -715,10 +777,10 @@ impl InlineFormattingContext {
                     // 按字符类别逐字符估算宽度，替代统一 0.6 倍近似
                     let words = self.split_into_words(&visual_text);
 
-                    // 空 inline 元素：文本为空但 line-height 仍需贡献到行盒高度
+                    // 空 inline 元素：文本为空但 line-height + padding + border 仍需贡献到行盒高度
                     if words.is_empty() && run.text.is_empty() {
-                        if run.line_height > current_line.height {
-                            current_line.height = run.line_height;
+                        if run.box_height() > current_line.height {
+                            current_line.height = run.box_height();
                         }
                         // 即使空元素也要消费 margin-left（在行首添加空白）
                         if run.margin_left > 0.0 {
@@ -769,13 +831,13 @@ impl InlineFormattingContext {
                                 runs: Vec::new(),
                             };
                             // 新行重新计算浮动偏移
-                            let (new_left, _) = self.effective_content_area(current_y, run.line_height);
+                            let (new_left, _) = self.effective_content_area(current_y, run.box_height());
                             current_x = new_left;
                         }
 
                         // 计算当前有效宽度（可能在换行后更新）
                         let (_, avail_w) =
-                            self.effective_content_area(current_y, current_line.height.max(run.line_height));
+                            self.effective_content_area(current_y, current_line.height.max(run.box_height()));
 
                         // overflow-wrap: break-word / anywhere 或 word-break: break-all
                         let need_char_break = !self.no_wrap
@@ -792,7 +854,7 @@ impl InlineFormattingContext {
                                     estimate_char_width(*ch, run.font_size, run.is_ahem_font) + run.letter_spacing;
 
                                 let (_, avail) =
-                                    self.effective_content_area(current_y, current_line.height.max(fragment_height));
+                                    self.effective_content_area(current_y, current_line.height.max(run.box_height()));
                                 let line_limit = current_line.runs.first().map_or(partial_x, |r| r.x) + avail;
 
                                 if partial_x + ch_width > line_limit && ci > 0 {
@@ -820,7 +882,8 @@ impl InlineFormattingContext {
                                 });
 
                                 partial_x += ch_width;
-                                current_line.height = current_line.height.max(fragment_height);
+                                // 行盒高度需容纳 inline 元素的完整盒体（含 padding+border）
+                                current_line.height = current_line.height.max(run.box_height());
                             }
                             current_x = partial_x;
                         } else {
@@ -837,7 +900,8 @@ impl InlineFormattingContext {
                             });
 
                             current_x += word_width;
-                            current_line.height = current_line.height.max(fragment_height);
+                            // 行盒高度需容纳 inline 元素的完整盒体（含 padding+border）
+                            current_line.height = current_line.height.max(run.box_height());
                         }
                     }
 
