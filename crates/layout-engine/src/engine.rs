@@ -457,6 +457,7 @@ impl LayoutEngine {
             writing_mode: own_writing_mode.clone(),
             is_anonymous_text_item,
             css_order: computed.as_ref().map(|s| s.order).unwrap_or(0),
+            column_span_offsets: Vec::new(),
         }
     }
 }
@@ -1095,11 +1096,13 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                         child.y = clear_bottom;
                     } else if (clear_bottom - hypothetical_y).abs() < 0.001 {
                         // 零 clearance（hypothetical_y ≈ clear_bottom）：
-                        // CSS 2.1 §9.5.2 + CSSWG resolution：零 clearance 仍阻止
-                        // margin-top 与前一个元素的 margin-bottom 折叠。
-                        // 元素使用不折叠的边距放置。
-                        let uncollapsed_y = flow_bottom + last_flow_mb + child.margin_top;
-                        child.y = uncollapsed_y;
+                        // CSS 2.1 §9.5.2：clearance 引入后，位置 = hypothetical + clearance。
+                        // clearance = max(clear_bottom - P, H - P)，其中 P 为不折叠边距位置。
+                        // 当 H == clear_bottom 时，P + clearance = H = clear_bottom。
+                        // 因此元素位置 = hypothetical_y（使用折叠边距计算的假设位置）。
+                        // 零 clearance 仍阻止 margin 折叠（CSSWG resolution），
+                        // 但视觉位置与假设位置相同。
+                        child.y = hypothetical_y;
                     } else {
                         // hypothetical_y > clear_bottom：元素已过浮动，
                         // 无需 clearance，margin 正常折叠。
