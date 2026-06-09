@@ -874,8 +874,7 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
         // normal flow rules.」float 的垂直位置应按正常流规则计算（含 margin 折叠），
         // 然后才进行水平浮动。因此 float 的最小 Y 应该是 flow_bottom 加上
         // 与前一个正常流元素的折叠 margin，而非仅仅 flow_bottom。
-        let min_float_y = flow_bottom
-            + crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
+        let min_float_y = flow_bottom + crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
         if min_float_y > line_y {
             line_y = min_float_y;
             left_used_width = 0.0;
