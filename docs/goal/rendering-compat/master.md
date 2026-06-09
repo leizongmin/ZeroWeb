@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-06-09
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
-**上游真实 reftest 通过率**: 67.3% (330/490)
+**上游真实 reftest 通过率**: 68.2% (334/490)
 
 ---
 
@@ -19,7 +19,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 67.3% (330/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；CSS2 64.3%(83/129)；css-flexbox 63.6%；css-position 62.5%；css-multicol 45.6%；css-writing-modes 39.0%；**R17 修复**：容器高度坐标系统修正 ✅(content_y 绝对坐标与子元素相对坐标混用)；空 inline 元素 line-height 贡献 ✅(CSS 2.1 §10.8.1)；clearance 算法改进 ✅(零 clearance 时确保不低于 hypothetical_y)；clear-float-001 通过 ✅ |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 68.2% (334/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；CSS2 65.9%；css-flexbox 63.6%；css-position 62.5%；css-multicol 49.1%；css-writing-modes 39.0%；**R18 修复**：BFC 容器高度包含 float 底边 ✅(12 个 writing-modes abs-pos 测试从 21-27% 降至 1.3-6.7%)；multicol 坐标系修正 ✅(content-area-relative coords)；table cell content_height 同步 ✅ |
 
 ## 当前状态概览
 
@@ -306,10 +306,10 @@
 | CSS2/ | 83/129 | 64.3% | ❌ |
 | css-flexbox/ | 35/55 | 63.6% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
-| css-multicol/ | 26/57 | 45.6% | ❌ |
+| css-multicol                  28/57 (49.1%) | ❌ |
 | css-writing-modes/ | 23/59 | 39.0% | ❌ |
 | css-flexbox/ | 35/55 | 63.6% | ❌ |
-| css-multicol/ | 26/57 | 45.6% | ❌ |
+| css-multicol                  28/57 (49.1%) | ❌ |
 | css-writing-modes/ | 23/59 | 39.0% | ❌ |
 
 ### R16 本轮修复内容
@@ -613,7 +613,7 @@
 71. ~~M10 — flex-flow 简写展开~~ ✅ (shorthand/mod.rs 新增 "flex-flow" 分支，解析 flex-direction || flex-wrap；修复 3 个 flexbox 测试)
 72. ~~M10 — font-family 非法字符验证~~ ✅ (parse_font_family 验证未引用名称仅含有效字符，含非法字符时整个声明无效；修复 2 个 CSS2/fonts 测试)
 73. ~~M10 — font 简写验证~~ ✅ (expand_font 检查 size_found，缺少 font-size 的声明无效；更新测试用例匹配 CSS 规范)
-74. M10 — column breaking 实现（影响 css-multicol 45.6%；当前 multicol 仅分配整个子元素到列，不拆分溢出内容；需实现 fragmentation 基础设施）
+74. M10 — column breaking 实现（影响 css-multicol                  28/57 (49.1%)；当前 multicol 仅分配整个子元素到列，不拆分溢出内容；需实现 fragmentation 基础设施）
 75. M10 — 浮动清除算法改进（影响 CSS2/floats-clear 20 个测试；当前 max(normal_y, clear_bottom) 未正确实现 CSS 2.1 clearance 对 margin 折叠的阻断）
 76. ~~M10 — CSS 2.1 Appendix E 绘制顺序~~ ✅ (float 子元素在非 float 子元素之后绘制，paint_node_in_rect 和 paint_node 各分两轮遍历)
 77. ~~M10 — columns 简写顺序无关解析~~ ✅ (双值模式自动检测整数/长度，修复逆序声明如 `columns: 100px 6`)
