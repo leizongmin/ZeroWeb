@@ -646,10 +646,7 @@ impl super::Painter {
                 style.writing_mode,
                 zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
             );
-            let is_vertical_rtl = matches!(
-                style.writing_mode,
-                zero_style_system::WritingModeValue::VerticalRl
-            );
+            let is_vertical_rtl = matches!(style.writing_mode, zero_style_system::WritingModeValue::VerticalRl);
             let mut inline_ctx = InlineFormattingContext::new(container_width)
                 .with_text_align(text_align)
                 .with_text_align_last(text_align_last)

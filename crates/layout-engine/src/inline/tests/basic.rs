@@ -25,10 +25,10 @@ fn test_empty_text_no_lines() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     let fragments: Vec<_> = ctx.all_fragments();
@@ -50,10 +50,10 @@ fn test_single_line() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     assert_eq!(ctx.lines.len(), 1, "短文本应在单行中");
@@ -77,10 +77,10 @@ fn test_line_breaking() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     assert!(ctx.lines.len() > 1, "长文本应产生多行，实际 {} 行", ctx.lines.len());
@@ -101,10 +101,10 @@ fn test_line_y_positions() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     for i in 1..ctx.lines.len() {
@@ -131,10 +131,10 @@ fn test_total_height() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     let expected = ctx.lines.len() as f32 * 24.0;
@@ -161,10 +161,10 @@ fn test_all_fragments() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     let fragments = ctx.all_fragments();
@@ -186,10 +186,10 @@ fn test_fragment_x_positions() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     for line in &ctx.lines {
@@ -218,10 +218,10 @@ fn test_multiple_runs_same_line() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
         TextRun {
             text: "World".to_string(),
@@ -234,10 +234,10 @@ fn test_multiple_runs_same_line() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
     ];
     ctx.break_into_lines(runs);
@@ -321,10 +321,10 @@ fn test_very_long_single_word_overflow() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -387,10 +387,10 @@ fn test_line_height_calculation() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx24.break_into_lines(runs_24);
 
@@ -407,10 +407,10 @@ fn test_line_height_calculation() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx32.break_into_lines(runs_32);
 
@@ -441,10 +441,10 @@ fn test_line_height_accumulation() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -488,10 +488,10 @@ fn test_multiple_font_sizes_same_line() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
         TextRun {
             text: "Large".to_string(),
@@ -504,10 +504,10 @@ fn test_multiple_font_sizes_same_line() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
         TextRun {
             text: "Medium".to_string(),
@@ -520,10 +520,10 @@ fn test_multiple_font_sizes_same_line() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
     ];
     ctx.break_into_lines(runs);
@@ -566,10 +566,10 @@ fn test_font_size_affects_width() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
         TextRun {
             text: "Word".to_string(),
@@ -582,10 +582,10 @@ fn test_font_size_affects_width() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
     ];
     ctx.break_into_lines(runs);
@@ -614,10 +614,10 @@ fn test_multiple_runs_wrap_across_lines() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
         TextRun {
             text: "gamma delta".to_string(),
@@ -630,10 +630,10 @@ fn test_multiple_runs_wrap_across_lines() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
     ];
     ctx.break_into_lines(runs);
@@ -672,10 +672,10 @@ fn test_fragment_node_ids_preserved() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
         TextRun {
             text: "Second".to_string(),
@@ -688,10 +688,10 @@ fn test_fragment_node_ids_preserved() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
     ];
     ctx.break_into_lines(runs);
@@ -719,10 +719,10 @@ fn test_zero_container_width() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -763,10 +763,10 @@ fn test_text_align_center() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -798,10 +798,10 @@ fn test_text_align_right() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -833,10 +833,10 @@ fn test_text_align_left_no_offset() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -865,10 +865,10 @@ fn test_text_align_justify_distributes_space() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -904,10 +904,10 @@ fn test_text_align_justify_last_line_not_stretched() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -939,10 +939,10 @@ fn test_text_align_center_multiline() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -977,10 +977,10 @@ fn test_text_align_right_multiline() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -1013,10 +1013,10 @@ fn test_text_align_justify_single_fragment_line() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     // 不应 panic
@@ -1038,10 +1038,10 @@ fn test_text_align_does_not_affect_total_height() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
 
     let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
@@ -1076,10 +1076,10 @@ fn test_text_align_does_not_change_line_count() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
 
     let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
@@ -1368,10 +1368,10 @@ fn test_mixed_inline_block_content_boundary() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
         TextRun {
             text: "delta epsilon".to_string(),
@@ -1384,10 +1384,10 @@ fn test_mixed_inline_block_content_boundary() {
             margin_left: 0.0,
             margin_right: 0.0,
             padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
         },
     ];
     ctx.break_into_lines(runs);
@@ -1427,10 +1427,10 @@ fn test_text_with_explicit_line_breaks() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -1463,10 +1463,10 @@ fn test_whitespace_nowrap_behavior() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -1505,10 +1505,10 @@ fn test_very_long_word_without_break_opportunity() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -1541,10 +1541,10 @@ fn test_vertical_align_top_in_line() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -1573,10 +1573,10 @@ fn test_vertical_align_bottom_in_line() {
         margin_left: 0.0,
         margin_right: 0.0,
         padding_top: 0.0,
-                                padding_bottom: 0.0,
-                                border_top: 0.0,
-                                border_bottom: 0.0,
-                                is_ahem_font: false,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
 

@@ -812,6 +812,41 @@ pub fn save_framebuffer_png(fb: &FrameBuffer, path: &std::path::Path) -> Result<
 mod tests {
     use super::*;
 
+    /// 验证 position:relative + top 偏移是否正确应用。
+    /// 测试：border-bottom 96px black + height 96px = 空顶 + 黑底
+    /// 参考：background black + height 96px + position:relative; top:96px = 空顶 + 黑底
+    /// 两者应在视觉上相同（black 在下半部分）。
+    #[test]
+    fn test_reftest_relative_top_offset() {
+        // First, verify the test HTML renders correctly: black at bottom half
+        let test_only = ReftestCase {
+            id: "test/border-bottom-only".into(),
+            test_html: "<html><body style=\"margin:0\"><div style=\"border-bottom: 96px solid black; height: 96px; width: 96px;\"></div></body></html>".into(),
+            // Same HTML as ref - should match itself
+            ref_html: "<html><body style=\"margin:0\"><div style=\"border-bottom: 96px solid black; height: 96px; width: 96px;\"></div></body></html>".into(),
+            css: String::new(),
+            is_match: true,
+        };
+        let config = ReftestConfig::default();
+        let result = run_reftest(&test_only, &config);
+        assert!(result.passed, "Self-comparison should always pass: {}", result.message);
+
+        // Now verify the reference renders the same visual: black div offset down
+        let case = ReftestCase {
+            id: "test/relative-top".into(),
+            test_html: "<html><body style=\"margin:0\"><div style=\"border-bottom: 96px solid black; height: 96px; width: 96px;\"></div></body></html>".into(),
+            ref_html: "<html><body style=\"margin:0\"><div style=\"background-color: black; height: 96px; width: 96px; position: relative; top: 96px;\"></div></body></html>".into(),
+            css: String::new(),
+            is_match: true,
+        };
+        let result = run_reftest(&case, &config);
+        assert!(
+            result.passed,
+            "position:relative + top:96px should produce same visual as border-bottom: {}",
+            result.message
+        );
+    }
+
     #[test]
     fn test_reftest_identical_pages() {
         let case = ReftestCase {
