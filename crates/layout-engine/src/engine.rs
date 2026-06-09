@@ -1049,14 +1049,17 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                         // 正 clearance：元素推到 clear_bottom
                         // margin 不折叠
                         child.y = clear_bottom;
-                    } else {
-                        // 零 clearance：clear 仍阻止 margin 折叠
-                        // CSS 2.1 §9.5.2：即使 clearance 为 0，clear 也阻止
+                    } else if (clear_bottom - hypothetical_y).abs() < 0.001 {
+                        // 零 clearance（hypothetical_y ≈ clear_bottom）：
+                        // CSS 2.1 §9.5.2 + CSSWG resolution：零 clearance 仍阻止
                         // margin-top 与前一个元素的 margin-bottom 折叠。
-                        // 元素使用不折叠的 margin_top 放置。
-                        // 但位置不得低于假设位置（hypothetical_y）。
-                        let uncollapsed_y = flow_bottom + child.margin_top;
-                        child.y = uncollapsed_y.max(hypothetical_y);
+                        // 元素使用不折叠的边距放置。
+                        let uncollapsed_y = flow_bottom + last_flow_mb + child.margin_top;
+                        child.y = uncollapsed_y;
+                    } else {
+                        // hypothetical_y > clear_bottom：元素已过浮动，
+                        // 无需 clearance，margin 正常折叠。
+                        child.y = hypothetical_y;
                     }
                     float_y_offset = (original_taffy_y - child.y).max(0.0);
                 }
