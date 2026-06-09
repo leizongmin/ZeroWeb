@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-06-09
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
-**上游真实 reftest 通过率**: 66.3% (325/490)
+**上游真实 reftest 通过率**: 67.1% (329/490)
 
 ---
 
@@ -293,7 +293,7 @@
 **失败**: 165
 **通过率**: 66.3%
 
-**说明**：通过率从 66.1% 提升至 66.3%（+1 个测试）。关键改进：float 定位使用正常流 flow_bottom 追踪替代 taffy Y 作为最小位置，修复了 flex-flow-001（1.56%→0.0%）。其余修复（零 clearance、inline padding/border、vertical-rl RTL、垂直 abs-pos）为规格正确但 reftest 中性。
+**说明**：通过率从 66.3% 提升至 67.1%（+4 个测试）。R16 关键修复：(1) 移除 apply_relative_offsets 双重偏移（taffy 0.7 已内置 position:relative inset），修复了 3 个使用 `position:relative; top:1in` 的参考文件 + 修复了 border-bottom-001/005；(2) float Y 位置调整以尊重正常流内容；(3) clearance 计算使用 collapse_two_margins() 替代 max()。
 
 ### 按目录
 
@@ -304,12 +304,17 @@
 | css-grid/ | 17/20 | 85.0% | ❌ |
 | css-tables/ | 40/55 | 72.7% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
-| CSS2/ | 81/129 | 62.8% | ❌ |
-| css-flexbox/ | 32/55 | 58.2% | ❌ |
-| css-multicol/ | 25/57 | 43.9% | ❌ |
+| CSS2/ | 82/129 | 63.6% | ❌ |
+| css-flexbox/ | 35/55 | 63.6% | ❌ |
+| css-multicol/ | 26/57 | 45.6% | ❌ |
 | css-writing-modes/ | 23/59 | 39.0% | ❌ |
 
-### R15 本轮修复内容
+### R16 本轮修复内容
+
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| 移除 apply_relative_offsets 双重偏移 | +3 tests | taffy 0.7 已在 layout.location 中包含 position:relative 的 inset 偏移。apply_relative_offsets 后处理函数再次添加同一偏移量，导致相对定位元素位移 2x。禁用此函数修复了所有使用 `position:relative; top:1in` 的参考文件 |
+| float Y 位置尊重正常流 | +1 test | Phase 1 定位 float 时不知道 normal flow 的位置
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
