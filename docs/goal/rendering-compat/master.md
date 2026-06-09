@@ -2,6 +2,7 @@
 
 **最后更新**: 2026-06-09
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
+**上游真实 reftest 通过率**: 66.3% (325/490)
 
 ---
 
@@ -18,7 +19,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 66.1% (324/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；css-position 62.5%；CSS2 62.8%(129 tests)；css-flexbox 58.2%；css-multicol 43.9%；css-writing-modes 39.0%；**R15 本轮**：零 clearance 阻止 margin 折叠修复 ✅；inline 元素 padding/border 参与行盒高度 ✅；vertical-rl 列方向 RTL 修复 ✅；垂直 abs-pos 静态位置修复 ✅ |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 66.3% (325/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；css-position 62.5%；CSS2 62.8%(129 tests)；css-flexbox 60.0%；css-multicol 43.9%；css-writing-modes 39.0%；**R15 修复**：零 clearance 阻止 margin 折叠 ✅；inline 元素 padding/border 参与行盒高度 ✅；vertical-rl 列方向 RTL ✅；垂直 abs-pos 静态位置 ✅；**float 定位 flow 追踪修复 ✅(flex-flow-001 1.56%→0.0%)** |
 
 ## 当前状态概览
 
@@ -288,11 +289,11 @@
 
 **日期**: 2026-06-09（本轮第十五轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
-**通过**: 324
-**失败**: 166
-**通过率**: 66.1%
+**通过**: 325
+**失败**: 165
+**通过率**: 66.3%
 
-**说明**：通过率保持在 66.1%（324/490）。R15 完成了零 clearance 阻止 margin 折叠、inline 元素 padding/border 参与行盒高度、vertical-rl 列方向 RTL 修复、垂直 abs-pos 静态位置修复。这些修复在规格层面正确，但因 taffy 已正确处理 inline 元素尺寸（inline→Block 映射），对 reftest 结果无净变化。
+**说明**：通过率从 66.1% 提升至 66.3%（+1 个测试）。关键改进：float 定位使用正常流 flow_bottom 追踪替代 taffy Y 作为最小位置，修复了 flex-flow-001（1.56%→0.0%）。其余修复（零 clearance、inline padding/border、vertical-rl RTL、垂直 abs-pos）为规格正确但 reftest 中性。
 
 ### 按目录
 
@@ -337,7 +338,8 @@
 |------|------|
 | taffy inline→Block 映射使 IFC padding/border 无 net reftest 效果 | 所有 display 类型映射为 taffy::Block，taffy 已正确计算 inline 元素尺寸。IFC padding/border 改进是规格正确但 reftest 中性 |
 | CSS2 子目录通过率分化严重 | floats-clear 36.7%（19 失败）是最大瓶颈，box/colors/fonts 已接近 80-100% |
-| 35 个 near-miss (<2% diff) 分布 | CSS2/floats-clear (10), css-writing-modes (10), css-tables (7), css-flexbox (6), css-position (2) |
+| css-flexbox 从 58.2% 提升至 60.0% | flex-flow-001 修复（float 定位 flow 追踪）→ flex item 正确 shrink |
+| 35 个 near-miss (<2% diff) 分布 | CSS2/floats-clear (10), css-writing-modes (10), css-tables (7), css-flexbox (5), css-position (2) |
 | 166 个失败根因分布 | 布局精度问题 (float/clear/margin) 50+ 个、writing-mode 轴交换 36 个、multicol column breaking 32 个、其他 48 个 |
 | 后续最大杠杆 | (1) CSS2 float/clear 精度提升（影响 22 个测试）(2) multicol column breaking（影响 32 个测试）(3) writing-mode 块级布局轴交换（影响 36 个测试） |
 
