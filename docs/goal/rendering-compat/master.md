@@ -2,32 +2,36 @@
 
 **最后更新**: 2026-06-10
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
-**上游真实 reftest 通过率**: 74.7% (366/490)
+**上游真实 reftest 通过率**: 75.9% (372/490)
 
-### R27 进展
+### R28 进展
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
-| multicol inline 列内 y 偏移修正 | css-multicol 渲染正确性 | paint 层 inline multicol 渲染时，每行的 y 使用 IFC 累积值而非列内相对值。修正为减去列起始 y，使每列内容从顶部开始渲染 |
-| is_multicol 标志 | LayoutBox 基础设施 | LayoutBox 新增 is_multicol 布尔标志，在布局树构建时根据 column-count/column-width 设置。为未来的 BFC 建立和 margin 折叠阻止做准备 |
-| BFC 多列容器调查 | css-multicol 可行性分析 | 调查了 multicol 容器建立 BFC 的行为（CSS §2）。发现 `establishes_bfc()` 添加 multicol 检查会导致 `float-with-line-after-spanner.html` 回归（-1 test），暂未启用 |
+| 表格 shrink-to-fit（CSS 2.1 §17.5.2.2）| css-tables +3, css-multicol +1, css-writing-modes +1 | `width:auto` 的表格不再将列扩展到容器宽度，而是收缩到内容固有宽度。同时保留 `table-layout:fixed` 时的列扩展行为。`apply_table_size_constraints` 同步更新 `content_width` |
+| 孤立 table 内部元素匿名包装 | css-tables/standalone | `display: table-row-group` 等元素缺少父级 table 时，直接对其执行 table 布局（CSS 匿名盒修复） |
+| Row-group 内匿名行收集 | css-tables/anonymous | Row-group 中的直接 cell 和嵌套 row-group 中的 cell 收集到单个匿名行（而非每 cell 一个匿名行）。新增 `is_anonymous` 标志 |
+| get_row_box 匿名行支持 | table.rs 基础设施 | `get_row_box`/`get_row_box_mut` 对匿名行返回 row-group 盒本身，而非错误导航到子元素 |
 
-### R27 尝试但回退的修复
+### R28 按目录通过率变化
 
-| 尝试 | 结果 | 说明 |
-|------|------|------|
-| 非多列路径 line.y 修复 | 回退（-9 tests） | 将非多列 paint 路径从 `all_fragments()` 改为按行遍历并添加 line.y，导致 CSS2 -4 和 multicol -5 回归。现有渲染依赖 `fragment.y=0` 的行为，修改后级联影响所有多行文本渲染 |
-| multicol BFC 建立 | 回退（-1 test） | 在 `establishes_bfc()` 中添加 `is_multicol` 检查阻止 margin 折叠，导致 `float-with-line-after-spanner.html` 回归。需要在 BFC 建立同时处理 float-in-multicol 交互 |
+| 目录 | R27 | R28 | 变化 |
+|------|-----|-----|------|
+| css-tables/ | 74.5% (41/55) | 81.8% (45/55) | +4 tests |
+| css-multicol/ | 52.6% (30/57) | 54.4% (31/57) | +1 test |
+| css-writing-modes/ | 76.3% (45/59) | 78.0% (46/59) | +1 test |
+| CSS2/ | 69.0% (89/129) | 69.0% (89/129) | 无变化，但多个 test diff 显著下降 |
+| css-flexbox/ | 63.6% (35/55) | 63.6% (35/55) | 无变化 |
 
-### R27 失败根因总结
+### R28 失败根因总结
 
-当前 124 个上游 reftest 失败的根因分布：
-- **布局精度问题**（float/clear/margin）~50 个：float clearance 算法精度、margin 折叠边界 case
-- **Writing-mode 轴交换** ~14 个：需要垂直布局模式（vertical-rl/lr）
-- **Multicol column breaking** ~8 个：需要内容碎片化（拆分单个块到多列）
-- **Multicol clip/overflow** ~4 个：内容溢出列边界的裁剪行为
+当前 118 个上游 reftest 失败的根因分布：
+- **布局精度问题**（float/clear/margin）~48 个：float clearance 算法精度、margin 折叠边界 case
+- **功能缺失** ~26 个：column-height、column-wrap、position:fixed 打印、3D transform 等
 - **子像素/精度** ~20 个：border 渲染精度、字体度量差异、背景图像缩放
-- **功能缺失** ~28 个：column-height、column-wrap、position:fixed 打印、3D transform 等
+- **Writing-mode 轴交换** ~14 个：需要垂直布局模式（vertical-rl/lr）
+- **Multicol column breaking** ~6 个：需要内容碎片化（拆分单个块到多列）
+- **CSS2 inline box model** ~8 个：匿名块盒生成、空 inline line-height、inline-block 内在尺寸
 
 ### R25 进展
 
