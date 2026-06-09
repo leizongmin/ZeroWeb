@@ -1,8 +1,16 @@
 # 渲染兼容性目标 — 运行时控制平面
 
-**最后更新**: 2026-06-09
+**最后更新**: 2026-06-10
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
-**上游真实 reftest 通过率**: 73.9% (362/490)
+**上游真实 reftest 通过率**: 74.3% (364/490)
+
+### R24 进展
+
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| multicol column count 伪算法修正 | css-multicol +2 tests | CSS §3.4 伪算法 line 18：当 column-count 和 column-width 同时指定时，使用 min() 而非 max() 计算列数 |
+| multicol 子元素宽度约束 | css-multicol 渲染正确性 | 子元素移入列后递归约束 width 和 content_width 到列宽，确保 paint 层使用正确宽度 |
+| multicol column-width >= container 边界 | css-multicol 边界 case | 当 column-width 大于等于容器宽度时，仅生成 1 列 |
 
 ### R23 进展
 
@@ -25,7 +33,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 73.9% (362/490)**；css-text-decor 100.0% ✅；css-fonts 100.0% ✅(≥95%)；css-grid 85.0%；css-writing-modes 76.3%；css-tables 72.7%；CSS2 69.0%；css-flexbox 63.6%；css-position 62.5%；css-multicol 47.4%；**R22 修复**：clearance 零值阻止 margin 折叠（CSS 2.1 §9.5.2 三路分支：正 clearance/零 clearance/无需 clearance）；**R21 修复**：font 简写负 line-height 拒绝 ✅；background-position 简写双值捕获修复 ✅ |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 74.3% (364/490)**；css-text-decor 100.0% ✅；css-fonts 100.0% ✅(≥95%)；css-grid 85.0%；css-writing-modes 76.3%；css-tables 72.7%；CSS2 69.0%；css-flexbox 63.6%；css-position 62.5%；css-multicol 50.9%；**R24 修复**：multicol column count 伪算法 min() 修正（CSS §3.4 line 18）+ 子元素宽度约束递归更新；**R23 修复**：table cell content height sum 替代 max；**R22 修复**：clearance 零值阻止 margin 折叠（CSS 2.1 §9.5.2 三路分支：正 clearance/零 clearance/无需 clearance）；**R21 修复**：font 简写负 line-height 拒绝 ✅；background-position 简写双值捕获修复 ✅ |
 
 ## 当前状态概览
 
@@ -293,11 +301,11 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-09（本轮第二十二轮）
+**日期**: 2026-06-10（本轮第二十四轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
-**通过**: 362
-**失败**: 128
-**通过率**: 73.9%
+**通过**: 364
+**失败**: 126
+**通过率**: 74.3%
 
 **说明**：通过率从 68.6% 提升至 73.5%（+24 个测试）。R20 关键修复：(1) reftest 分类容差 bug — 上游 reftest 使用 Default::default()（1% diff, 5ch）而非分类特定容差（Layout: 1%/5ch, Text: 5%/15ch），导致所有测试使用严格布局容差。改为 ReftestConfig::for_category() 后，文字类测试（css-writing-modes, css-fonts）使用正确容差。新增 with_viewport() builder 方法。(2) columns 简写解析修复 — 单整数值（如 `columns: 3`）现在正确解析为 column-count 而非 column-width（3px）。(3) 零高度浮动处理 — line_max_height 跳过零高度浮动元素。
 
@@ -313,7 +321,7 @@
 | CSS2/ | 89/129 | 69.0% | ❌ |
 | css-flexbox/ | 35/55 | 63.6% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
-| css-multicol/ | 27/57 | 47.4% | ❌ |
+| css-multicol/ | 29/57 | 50.9% | ❌ |
 
 ### R16 本轮修复内容
 
