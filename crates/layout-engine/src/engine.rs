@@ -1025,9 +1025,14 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
 
             // CSS 2.1 §9.5.2 Clearance 计算
             // 假设位置（hypothetical position）：无 clear 时元素应在的位置，
-            // 基于正常流的 flow_bottom + margin 折叠计算，
-            // 而非简单地从 taffy_y 扣除 float_y_offset（无法正确处理
-            // float 移除后 margin 折叠方式改变的情况）。
+            // 基于正常流的 flow_bottom + margin 折叠计算。
+            //
+            // CSS 2.1 §9.5.2 clearance 算法：
+            // 1. 计算 hypothetical position（假设 clear:none，含 margin 折叠）
+            // 2. 计算 clearance = max(0, clear_bottom - hypothetical_position)
+            // 3. 如果 clearance > 0：元素推到 clear_bottom
+            // 4. 如果 clearance == 0：clear 仍阻止 margin 折叠
+            //    元素放在 flow_bottom + margin_top（不折叠）
             match child.clear {
                 ClearValue::Left | ClearValue::Right | ClearValue::Both => {
                     let clear_bottom = match child.clear {
@@ -1040,21 +1045,16 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                     let collapsed_margin = crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
                     let hypothetical_y = flow_bottom + collapsed_margin;
 
-                    // CSS 2.1 §9.5.2 clearance 算法：
-                    //
-                    // 1. 计算 hypothetical position（假设 clear:none，含 margin 折叠）
-                    // 2. 如果 hypothetical_y < clear_bottom：
-                    //    → clearance > 0，margin 不折叠，元素推到 clear_bottom
-                    // 3. 如果 hypothetical_y >= clear_bottom：
-                    //    → clearance = 0，但 clear 仍阻止 margin 折叠
-                    //    → 使用不折叠的 margin，但需确保不低于 hypothetical_y
-                    //      （若不折叠位置低于 clear_bottom，使用 hypothetical_y）
-                    if clear_bottom > 0.0 && clear_bottom > hypothetical_y {
-                        // 正 clearance：margin 不折叠，元素推到浮动下方
+                    if clear_bottom > hypothetical_y {
+                        // 正 clearance：元素推到 clear_bottom
+                        // margin 不折叠
                         child.y = clear_bottom;
                     } else {
-                        // 零 clearance：clear 阻止 margin 折叠
-                        // 使用不折叠的 margin_top，但确保不低于 hypothetical_y
+                        // 零 clearance：clear 仍阻止 margin 折叠
+                        // CSS 2.1 §9.5.2：即使 clearance 为 0，clear 也阻止
+                        // margin-top 与前一个元素的 margin-bottom 折叠。
+                        // 元素使用不折叠的 margin_top 放置。
+                        // 但位置不得低于假设位置（hypothetical_y）。
                         let uncollapsed_y = flow_bottom + child.margin_top;
                         child.y = uncollapsed_y.max(hypothetical_y);
                     }
