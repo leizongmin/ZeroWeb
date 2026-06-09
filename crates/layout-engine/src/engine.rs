@@ -814,7 +814,10 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     let mut right_float_bottom = 0.0f32;
 
     // 正常流的垂直位置追踪（用于计算 float 的最小 Y）
-    let mut flow_bottom = 0.0f32; // 上一个正常流元素的 border-bottom
+    // 关键：flow_bottom 必须独立于 taffy 的 Y 来计算。
+    // taffy 将 float 当作 block 排列，导致后续正常流元素的 Y 偏移过大。
+    // 我们通过累加正常流元素的高度 + margin 折叠来独立追踪 flow_bottom。
+    let mut flow_bottom = 0.0f32; // 上一个正常流元素的 border-bottom（相对于容器 content area）
     let mut last_flow_mb = 0.0f32; // 上一个正常流元素的 margin-bottom
 
     // 记录每个 float 子元素在 taffy 布局中的 Y 和高度，用于后续偏移修正
@@ -826,18 +829,15 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
             continue;
         }
 
-        // 追踪正常流子元素的垂直位置
-        // 使用 taffy 的 Y（这是最可靠的位置来源）来更新 flow_bottom
+        // 正常流元素：独立更新 flow_bottom
+        // 不使用 taffy 的 Y（包含 float 垂直空间），而是自行累加
         if matches!(child.float, FloatValue::None) && !child.is_absolute && !child.is_fixed {
-            // 正常流元素：更新 flow 追踪
-            // taffy 已正确计算了 margin 折叠后的位置
-            let child_border_bottom = child.y + child.height;
-            if child_border_bottom > flow_bottom || child.margin_bottom > last_flow_mb {
-                // 更新 flow_bottom 为此元素的 border-bottom
-                // （使用 max 以处理 margin 折叠场景）
-                flow_bottom = flow_bottom.max(child_border_bottom);
-                last_flow_mb = child.margin_bottom;
-            }
+            // 独立计算正常流位置：使用 margin 折叠
+            let collapsed_margin = crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
+            let child_y = flow_bottom + collapsed_margin;
+            let child_border_bottom = child_y + child.height;
+            flow_bottom = child_border_bottom;
+            last_flow_mb = child.margin_bottom;
             // 处理非 float 元素的 clear 属性（延迟到第二阶段）
             if matches!(child.float, FloatValue::None) {
                 continue;
