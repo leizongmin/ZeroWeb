@@ -792,6 +792,14 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     let container_width = box_node.content_width;
 
     // 第一阶段：重新定位 float 元素，记录每个 float 在 taffy 布局中占据的垂直空间
+    //
+    // CSS 2.1 §9.5.1 float 定位规则：
+    // 1. Float 必须尽可能高（"as high as possible"）
+    // 2. Float 的 outer top 不得高于前面元素生成的块的 outer top
+    // 3. Float 不参与 margin 折叠
+    //
+    // 关键：min_line_y 必须基于正常流内容的实际位置（考虑 margin 折叠），
+    // 而不是 taffy 的 Y（taffy 将 float 当作 block，包含了前元素的 margin 折叠）。
     let mut line_y = 0.0f32;
     let mut line_max_height = 0.0f32;
     let mut left_used_width = 0.0f32;
@@ -799,13 +807,9 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     let mut left_float_bottom = 0.0f32;
     let mut right_float_bottom = 0.0f32;
 
-    // 检查此容器是否有非 float 的正常流子元素
-    // CSS 2.1 §9.5.1：float 的放置位置由正常流中的位置决定。
-    // 当容器有非 float 子元素时，float 的最小 Y 应尊重前面内容的位置。
-    let has_inflow_children = box_node
-        .children
-        .iter()
-        .any(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None));
+    // 正常流的垂直位置追踪（用于计算 float 的最小 Y）
+    let mut flow_bottom = 0.0f32; // 上一个正常流元素的 border-bottom
+    let mut last_flow_mb = 0.0f32; // 上一个正常流元素的 margin-bottom
 
     // 记录每个 float 子元素在 taffy 布局中的 Y 和高度，用于后续偏移修正
     let mut float_taffy_y: Vec<(usize, f32, f32)> = Vec::new(); // (index, taffy_y, outer_height)
@@ -816,9 +820,22 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
             continue;
         }
 
-        // 处理非 float 元素的 clear 属性（延迟到第二阶段）
-        if matches!(child.float, FloatValue::None) {
-            continue;
+        // 追踪正常流子元素的垂直位置
+        // 使用 taffy 的 Y（这是最可靠的位置来源）来更新 flow_bottom
+        if matches!(child.float, FloatValue::None) && !child.is_absolute && !child.is_fixed {
+            // 正常流元素：更新 flow 追踪
+            // taffy 已正确计算了 margin 折叠后的位置
+            let child_border_bottom = child.y + child.height;
+            if child_border_bottom > flow_bottom || child.margin_bottom > last_flow_mb {
+                // 更新 flow_bottom 为此元素的 border-bottom
+                // （使用 max 以处理 margin 折叠场景）
+                flow_bottom = flow_bottom.max(child_border_bottom);
+                last_flow_mb = child.margin_bottom;
+            }
+            // 处理非 float 元素的 clear 属性（延迟到第二阶段）
+            if matches!(child.float, FloatValue::None) {
+                continue;
+            }
         }
 
         // 记录 float 元素的 taffy Y 位置和高度
@@ -828,18 +845,22 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
         // 计算浮动元素的总占用尺寸（含 margin）
         let child_outer_width = child.margin_left + child.width + child.margin_right;
 
-        // CSS 2.1 §9.5.1：float 必须在正常流中其出现位置或之后放置。
-        // 当容器有非 float 子元素时，taffy 的 Y 已包含前面内容的位置。
-        // 使用 taffy 的原始 Y 作为最小行位置，确保 float 不被放到前面内容之上。
-        // 仅当确实有前面的内容时才生效（避免影响仅包含 float 的容器）。
-        if has_inflow_children {
-            let min_line_y = child.y - child.margin_top;
-            if min_line_y > line_y {
-                line_y = min_line_y;
-                left_used_width = 0.0;
-                right_used_width = 0.0;
-                line_max_height = 0.0;
-            }
+        // CSS 2.1 §9.5.1 float 定位约束：
+        // 1. Float 的 outer top 不得高于前面正常流元素生成的块盒的 outer top
+        // 2. Float 不参与 margin 折叠
+        //
+        // 使用 flow_bottom（正常流的实际位置）来约束 float 的最小 Y。
+        // flow_bottom 是前一个正常流元素的 border-bottom，不含 margin。
+        // float 在正常流中的位置是 flow_bottom + 折叠后的 margin，
+        // 但 float 的 outer top 约束是「不得高于前面块的 outer top」。
+        // 前面块的 outer top 是 flow_bottom - last_flow_mb（margin 不折叠时）
+        // 或更早的位置（折叠时）。
+        // 简化处理：使用 flow_bottom 作为最小 Y（保守但不违反规范）。
+        if flow_bottom > line_y {
+            line_y = flow_bottom;
+            left_used_width = 0.0;
+            right_used_width = 0.0;
+            line_max_height = 0.0;
         }
 
         // 处理 float 元素自身的 clear 属性
