@@ -2,7 +2,14 @@
 
 **最后更新**: 2026-06-10
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
-**上游真实 reftest 通过率**: 74.3% (364/490)
+**上游真实 reftest 通过率**: 74.5% (365/490)
+
+### R25 进展
+
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| table cell overflow 抑制 | css-tables +1 test | CSS 2.1 §17.5：table cell height 为最小高度，overflow:hidden/scroll/clip 在 table cell 上强制为 Visible |
+| table rowspan 基础设施 | css-tables 未来改进 | TableCell 新增 rowspan 字段 + get_rowspan() 辅助函数 + 行边框冲突解决 |
 
 ### R24 进展
 
