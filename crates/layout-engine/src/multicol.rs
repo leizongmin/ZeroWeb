@@ -220,21 +220,41 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo) {
         assign_children_to_columns_sequential(&child_info, info.count, container.content_height)
     } else {
         // column-fill: balance — 均衡分配（默认行为）
-        // 也应用 breaking，但使用内容总高度除以列数作为每列目标高度
-        let target_height = if height_limit > 0.0 {
-            height_limit
-        } else {
-            // 均衡模式：计算总内容高度，平均分配
-            let total_height: f32 = child_info.iter().map(|(_, h)| *h).sum();
-            let per_col = total_height / info.count as f32;
-            // 给一些余量避免不必要的 breaking
-            per_col * 1.1
-        };
-        assign_children_to_columns_with_breaking(&child_info, info.count, target_height)
+        // CSS Multi-column Layout §3.3：内容应均衡分布在各列中。
+        // 使用 shortest-column-first 策略：每个子元素放入当前最短的列。
+        // 这自然实现均衡分布，无需人工设置 target_height。
+        assign_children_to_columns_balanced(&child_info, info.count)
     };
 
     // 定位子元素
     position_multicol_children(container, &assignments, info);
+}
+
+/// 均衡分配子元素到各列（shortest-column-first 策略）。
+///
+/// CSS Multi-column Layout §3.3：在 column-fill: balance（默认）模式下，
+/// 内容应尽可能均衡地分布在各列中。
+///
+/// 策略：依次将每个子元素放入当前总高度最小的列。
+/// 这自然实现均衡分布，无需人工计算 target_height。
+fn assign_children_to_columns_balanced(children: &[(usize, f32)], col_count: usize) -> Vec<Vec<(usize, f32)>> {
+    let mut columns: Vec<Vec<(usize, f32)>> = vec![Vec::new(); col_count];
+    let mut column_heights: Vec<f32> = vec![0.0; col_count];
+
+    for &(child_idx, child_height) in children {
+        // 找到当前最短的列
+        let min_col = column_heights
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+
+        columns[min_col].push((child_idx, child_height));
+        column_heights[min_col] += child_height;
+    }
+
+    columns
 }
 
 /// 带列高限制的顺序分配（column breaking 基础实现）。
@@ -350,15 +370,47 @@ mod tests {
     }
 
     #[test]
+    fn test_assign_children_balanced_shortest_first() {
+        // 5 children, each 100px high, 3 columns
+        // Shortest-column-first:
+        // child0(100): col0=100 (min)
+        // child1(100): col1=100 (min, tie → col1)
+        // child2(100): col2=100 (min, tie → col2)
+        // child3(100): col0=100 is min → col0=200
+        // child4(100): col1=100 is min → col1=200
+        // Result: col0=[0,3], col1=[1,4], col2=[2]
+        let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0), (4, 100.0)];
+        let cols = assign_children_to_columns_balanced(&children, 3);
+        assert_eq!(cols.len(), 3);
+        assert_eq!(cols[0].len(), 2); // child 0, 3
+        assert_eq!(cols[1].len(), 2); // child 1, 4
+        assert_eq!(cols[2].len(), 1); // child 2
+    }
+
+    #[test]
+    fn test_assign_children_balanced_uneven() {
+        // 3 children: 200, 100, 200; 2 columns
+        // child0(200): col0=0 is min → col0=200
+        // child1(100): col1=0 is min → col1=100
+        // child2(200): col1=100 is min → col1=300
+        // Result: col0=[0], col1=[1,2]
+        let children = vec![(0, 200.0), (1, 100.0), (2, 200.0)];
+        let cols = assign_children_to_columns_balanced(&children, 2);
+        assert_eq!(cols.len(), 2);
+        assert_eq!(cols[0].len(), 1);
+        assert_eq!(cols[1].len(), 2);
+    }
+
+    #[test]
     fn test_assign_children_balanced() {
         // 4 children, each 100px high, 2 columns, large height limit
-        // Sequential fill: all fit in col0 since total (400) < limit (1000)
+        // Shortest-column-first: all children placed in the shortest column
         let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0)];
-        let cols = assign_children_to_columns_with_breaking(&children, 2, 1000.0);
+        let cols = assign_children_to_columns_balanced(&children, 2);
         assert_eq!(cols.len(), 2);
-        // All in col0 since they all fit
-        assert_eq!(cols[0].len(), 4);
-        assert_eq!(cols[1].len(), 0);
+        // Balanced: col0=[0,2], col1=[1,3]
+        assert_eq!(cols[0].len(), 2);
+        assert_eq!(cols[1].len(), 2);
     }
 
     #[test]
