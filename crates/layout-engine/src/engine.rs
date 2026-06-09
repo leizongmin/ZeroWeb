@@ -615,8 +615,9 @@ fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, styles: &Hash
     }
 }
 
-/// （子元素的 x/y 相对于父元素内容区域），paint 系统通过 offset_x + box_node.x
-/// 累加绝对位置，所以偏移父元素后子元素自然跟随移动。
+/// 已禁用：taffy 0.7 已在 layout.location 中包含 position:relative 的 inset 偏移，
+/// 不需要额外后处理。保留此函数供参考和潜在的未来使用。
+#[allow(dead_code)]
 fn apply_relative_offsets(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     // 仅对 position:relative 应用视觉偏移（不含 sticky，sticky 偏移需宿主层滚动驱动）
     let is_rel = root.node_id.is_some_and(|id| {
@@ -637,6 +638,7 @@ fn apply_relative_offsets(root: &mut LayoutBox, styles: &HashMap<NodeId, Compute
 }
 
 /// 从 ComputedStyle 中解析 position:relative 的 top/left 偏移量。
+#[allow(dead_code)]
 fn resolve_relative_inset(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> (f32, f32) {
     use zero_css_parser::values::LengthValue;
     let Some(node_id) = box_node.node_id else {
@@ -970,6 +972,18 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
             if !matches!(child.float, FloatValue::None) {
                 // float 元素：将其 taffy 高度加入 offset
                 // CSS 2.1：零高度浮动元素不占据垂直空间
+
+                // CSS 2.1 §9.5.1：float 元素不应高于正常流内容的位置。
+                // Phase 1 定位 float 时不知道 normal flow 的位置，
+                // 这里修正：将 float 的 Y 推到至少与当前流位置齐平。
+                if child.y < flow_bottom {
+                    let shift = flow_bottom - child.y;
+                    child.y = flow_bottom;
+                    // 更新 float_bottom 追踪
+                    left_float_bottom += shift;
+                    right_float_bottom += shift;
+                }
+
                 let float_total_height = child.margin_top + child.height + child.margin_bottom;
                 float_y_offset += float_total_height;
                 continue;
