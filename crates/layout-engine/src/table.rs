@@ -1083,6 +1083,11 @@ fn position_cells(
                 .fold(0.0f32, f32::max);
             let cell_height = row_height.max(cell_content_height);
             cell_box.height = cell_height;
+            // 同步更新 content_height，确保 overflow 裁剪使用增长后的高度
+            let cell_content_h =
+                (cell_height - cell_box.border_top - cell_box.border_bottom - cell_box.padding_top - cell_box.padding_bottom)
+                    .max(0.0);
+            cell_box.content_height = cell_content_h;
 
             // 应用 vertical-align 到单元格内的子元素
             // CSS 2.1 表格单元格内的 vertical-align 控制内容垂直对齐
