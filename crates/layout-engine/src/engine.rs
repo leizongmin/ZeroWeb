@@ -343,6 +343,11 @@ impl LayoutEngine {
         // CSS 2.1 §9.4.1: display:flow-root 和 display:inline-block 都建立 BFC
         let is_flow_root =
             computed.is_some_and(|s| matches!(s.display, DisplayValue::FlowRoot | DisplayValue::InlineBlock));
+        let is_multicol = computed.is_some_and(|s| {
+            use zero_style_system::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue};
+            !matches!(s.column_count, ColumnCountComputedValue::Auto)
+                || !matches!(s.column_width, ColumnWidthComputedValue::Auto)
+        });
         let is_block_level = computed.is_some_and(|s| {
             matches!(
                 s.display,
@@ -461,6 +466,7 @@ impl LayoutEngine {
             scroll_x: 0.0,
             scroll_y: 0.0,
             is_flow_root,
+            is_multicol,
             is_block_level,
             is_relative,
             collapsed_border_color_overrides: [None; 4],
