@@ -95,6 +95,31 @@ pub struct GpuRenderer {
     present_suspended: bool,
 }
 
+enum RenderTarget {
+    Surface {
+        output: wgpu::SurfaceTexture,
+        view: wgpu::TextureView,
+    },
+    Headless {
+        view: wgpu::TextureView,
+    },
+}
+
+impl RenderTarget {
+    fn view(&self) -> &wgpu::TextureView {
+        match self {
+            Self::Surface { view, .. } | Self::Headless { view } => view,
+        }
+    }
+
+    fn present(self, device: &wgpu::Device) {
+        if let Self::Surface { output, .. } = self {
+            output.present();
+            GpuRenderer::poll_after_present(device);
+        }
+    }
+}
+
 impl GpuRenderer {
     /// 创建无头模式的 GPU 渲染器（用于测试和 CPU 回读）
     pub fn new_headless(width: u32, height: u32) -> Result<Self, String> {
@@ -685,10 +710,11 @@ impl GpuRenderer {
         });
 
         // 获取渲染目标
-        let view = match self.get_render_target_view(&device, &queue) {
-            Some(v) => v,
+        let target = match self.acquire_render_target(width, height) {
+            Some(target) => target,
             None => return,
         };
+        let view = target.view();
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Full Scene Encoder"),
@@ -698,7 +724,7 @@ impl GpuRenderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Full Scene Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
@@ -733,6 +759,7 @@ impl GpuRenderer {
         }
 
         queue.submit(std::iter::once(encoder.finish()));
+        target.present(&device);
     }
 
     /// 内部：在 render pass 中使用 fill pipeline 绘制顶点
@@ -1225,15 +1252,24 @@ impl GpuRenderer {
         vertices
     }
 
-    /// 获取渲染目标 view（使用外部提供的 device/queue）
-    #[allow(clippy::too_many_arguments)]
-    fn get_render_target_view(&self, _device: &wgpu::Device, _queue: &wgpu::Queue) -> Option<wgpu::TextureView> {
+    /// 获取当前帧的渲染目标，并在窗口模式下持有 surface frame 直到 present。
+    fn acquire_render_target(&mut self, width: u32, height: u32) -> Option<RenderTarget> {
         match (&self.surface, &self.headless_texture) {
             (Some(surface), _) => {
-                let output = surface.get_current_texture().ok()?;
-                Some(output.texture.create_view(&wgpu::TextureViewDescriptor::default()))
+                let output = match surface.get_current_texture() {
+                    Ok(output) => output,
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        self.configure_surface(width, height);
+                        return None;
+                    }
+                    Err(_) => return None,
+                };
+                let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                Some(RenderTarget::Surface { output, view })
             }
-            (None, Some(tex)) => Some(tex.create_view(&wgpu::TextureViewDescriptor::default())),
+            (None, Some(tex)) => Some(RenderTarget::Headless {
+                view: tex.create_view(&wgpu::TextureViewDescriptor::default()),
+            }),
             _ => None,
         }
     }
