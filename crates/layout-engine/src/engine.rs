@@ -1019,21 +1019,23 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                     let collapsed_margin = crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
                     let hypothetical_y = flow_bottom + collapsed_margin;
 
-                    // CSS 2.1 §9.5.2 完整 clearance 计算：
-                    // clearance = max(0, clear_bottom - hypothetical_position)
-                    // 当 clearance > 0 时，元素位于 clear_bottom
-                    // 当 clearance == 0 时，margin 折叠仍被阻断（CSS 2.1 明确：
-                    //   "Setting clear to an element does not necessarily increase its
-                    //    margin; it just prevents margin collapsing"），元素位于
-                    //   flow_bottom + child.margin_top（不折叠）
+                    // CSS 2.1 §9.5.2 clearance 算法：
+                    //
+                    // 1. 计算 hypothetical position（假设 clear:none，含 margin 折叠）
+                    // 2. 如果 hypothetical_y < clear_bottom：
+                    //    → clearance > 0，margin 不折叠，元素推到 clear_bottom
+                    // 3. 如果 hypothetical_y >= clear_bottom：
+                    //    → clearance = 0，但 clear 仍阻止 margin 折叠
+                    //    → 使用不折叠的 margin，但需确保不低于 hypothetical_y
+                    //      （若不折叠位置低于 clear_bottom，使用 hypothetical_y）
                     if clear_bottom > 0.0 && clear_bottom > hypothetical_y {
-                        // 正 clearance：将元素推到浮动下方
+                        // 正 clearance：margin 不折叠，元素推到浮动下方
                         child.y = clear_bottom;
                     } else {
-                        // 零 clearance：margin 折叠被阻断，使用不折叠的 margin
-                        // 元素位于 flow_bottom + 自身 margin_top（不与上一个
-                        // 元素的 margin_bottom 折叠）
-                        child.y = flow_bottom + child.margin_top;
+                        // 零 clearance：clear 阻止 margin 折叠
+                        // 使用不折叠的 margin_top，但确保不低于 hypothetical_y
+                        let uncollapsed_y = flow_bottom + child.margin_top;
+                        child.y = uncollapsed_y.max(hypothetical_y);
                     }
                     float_y_offset = (original_taffy_y - child.y).max(0.0);
                 }
