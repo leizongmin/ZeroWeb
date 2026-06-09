@@ -71,43 +71,46 @@
 
 ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
 1. 可复用的嵌入式 `ZeroWebView` 库（Rust lib）
-2. 完整的 `ZeroBrowser` 浏览器应用（macOS、Linux、Windows、Android）
+2. 桌面 `ZeroBrowser` 浏览器应用（macOS、Linux、Windows；Android 为后续适配目标）
 
 项目自建浏览器核心：DOM、CSSOM、样式系统、布局、渲染管线、导航、安全/运行时边界。外部 Rust crate 用于底层能力（html5ever、rusty_v8/rquickjs、wasmtime/wasmi、wgpu+winit、taffy）。
 
 - 语言：Rust（edition 2024，MSRV 1.85）
-- 工作区：18 个 crate（16 个库 + 2 个应用）
+- 工作区：21 个 workspace member（16 个库 + 3 个应用 + 2 个测试工具）
 - 许可证：MIT
 
 ## Setup 命令
 
-- 安装依赖：`cargo build`
-- 启动开发：`cargo run --bin zero-browser`
-- 运行测试：`cargo test`
-- 构建：`cargo build`
-- Release 构建：`cargo build --release`
-- 运行基准测试：`cargo bench`
+- Linux/macOS 首次构建前：`make setup-rusty-v8`
+- Windows 首次构建前：设置 `RUSTY_V8_ARCHIVE` 指向 `rusty_v8` release `.lib`
+- 启动浏览器：`cargo run --bin zero-browser`
+- 启动 WebView demo：`cargo run --bin webview-demo`
+- 启动开发（自动处理 V8 下载）：`make browser`
+- 运行测试：`cargo test --workspace`
+- 构建：`cargo build --workspace`
+- Release 构建：`cargo build --release --workspace`
+- 运行 WPT reftest：`cargo run --bin zero-wpt-runner -- reftest`
+- 运行基准测试：`./scripts/run-benchmarks.sh`
 - 检查覆盖率：`./scripts/check-coverage.sh`
-- 运行 clippy：`cargo clippy -- -D warnings`
+- 运行 clippy：`cargo clippy --workspace --all-targets -- -D warnings`
 
 ## 代码风格
 
 - 语言：Rust
 - 格式化工具：`rustfmt`（`cargo fmt`）
-- 代码检查：`clippy`（`cargo clippy -- -D warnings`，CI 强制）
+- 代码检查：`clippy`（`cargo clippy --workspace --all-targets -- -D warnings`，CI 强制）
 - CI：GitHub Actions — 在 ubuntu/macos/windows 上运行 cargo check、clippy（deny warnings）、test、build
 - 文档注释：公共 API 必须有 `///` 文档注释
 - 日志：使用 `tracing` crate，不使用 `println!`
 
 ## 架构指南
 
-<!-- TODO: 请补充项目架构描述，包括目录结构、模块职责和关键设计决策 -->
-
-工作区布局（18 个 crate，分 4 层）：
+工作区布局（21 个 workspace member，分 5 类）：
 
 ```
 apps/
-├── browser/          # zero-browser — 浏览器应用入口
+├── browser/          # zero-browser — 桌面浏览器入口
+├── renderer/         # zero-renderer — 独立渲染进程入口
 └── webview-demo/     # zero-webview-demo — WebView 嵌入示例
 
 crates/
@@ -123,22 +126,44 @@ crates/
 ├── security/         # zero-security — CORS、CSP、同源策略、沙箱
 ├── storage/          # zero-storage — localStorage、IndexedDB、Cache API
 ├── protocol/         # zero-protocol — 多进程 IPC
-├── script-sandbox/   # zero-script-sandbox — JS 引擎（V8/QuickJS feature gate）
+├── script-sandbox/   # zero-script-sandbox — 扩展/用户脚本运行时（V8/QuickJS feature gate）
 ├── wasm-sandbox/     # zero-wasm-sandbox — WASM 运行时（Wasmtime/wasmi）
 ├── webview/          # zero-webview — 稳定的嵌入式 API
 └── browser-shell/    # zero-browser-shell — 浏览器 UI（标签页、书签、地址栏）
+
+tests/
+├── integration/      # zero-integration-tests — 跨 crate 集成测试
+└── wpt-runner/       # zero-wpt-runner — WPT / reftest / 兼容性工具
 ```
+
+关键职责与设计边界：
+
+- `zero-webview` 是稳定嵌入边界。`zero-browser` 也应像外部宿主一样优先通过它接入页面能力，不要随意绕过到更底层 crate。
+- `zero-protocol` + `apps/renderer` 定义多进程边界。涉及导航、输入、存储、网络代理时，先确认消息契约，再同步修改浏览器主进程和渲染进程两端。
+- `zero-engine` 负责把 DOM / CSS / 样式 / 布局 / 绘制串成页面管线；`render-foundation` 负责真正的 GPU/CPU 图元输出，二者不要混写职责。
+- `script-sandbox` 和 `wasm-sandbox` 是隔离执行层。改动脚本或 WASM 集成时，优先保持 feature gate、宿主桥接和错误边界清晰。
+- `tests/integration` 覆盖跨 crate 管线，`tests/wpt-runner` 覆盖规范兼容性和 reftest。行为变化优先补这两层里最贴近的测试。
+
+从请求到像素的大致链路：
+
+1. `net` 获取资源并维护导航上下文。
+2. `dom` 解析 HTML，`css-parser` 解析样式规则。
+3. `style-system` 计算层叠、继承和最终样式。
+4. `layout-engine` 生成布局树与几何结果。
+5. `engine` 产出绘制命令、合成层和脚本桥接。
+6. `render-foundation` 输出 GPU/CPU 图元，`host-runtime` 负责窗口与 surface。
+7. `webview` 把整条链路封装成稳定 API，供 `zero-browser` 或外部应用调用。
 
 ## 测试指引
 
 - 测试框架：Rust 内置（`#[test]`）
-- 运行全部测试：`cargo test`
+- 运行全部测试：`cargo test --workspace`
 - 运行单个测试：`cargo test -p <crate名> --test <测试名>`
 - 运行单个 crate 的测试：`cargo test -p zero-dom`
 - 运行并显示输出：`cargo test -- --nocapture`
 - 覆盖率报告：`./scripts/check-coverage.sh`
 
-**重要**：所有代码变更提交前必须执行 `cargo fmt` 格式化，并通过 `cargo test` 和 `cargo clippy -- -D warnings`。
+**重要**：所有代码变更提交前必须执行 `cargo fmt`，并通过 `cargo test --workspace` 和 `cargo clippy --workspace --all-targets -- -D warnings`。
 
 ## 安全约束
 
