@@ -979,9 +979,12 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                 if child.y < flow_bottom {
                     let shift = flow_bottom - child.y;
                     child.y = flow_bottom;
-                    // 更新 float_bottom 追踪
-                    left_float_bottom += shift;
-                    right_float_bottom += shift;
+                    // 仅更新此 float 所在侧的 float_bottom 追踪
+                    match child.float {
+                        FloatValue::Left => left_float_bottom += shift,
+                        FloatValue::Right => right_float_bottom += shift,
+                        _ => {}
+                    }
                 }
 
                 let float_total_height = child.margin_top + child.height + child.margin_bottom;
@@ -1097,36 +1100,64 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
         }
     }
 
-    // 调整容器高度：当 float 元素占据的垂直空间被移除后，
-    // 容器高度应基于子元素的实际位置重新计算。
-    // 否则容器底部会留有空白间隙。
+    // 调整容器高度：
+    // CSS 2.1 §10.6.7：建立 BFC 的容器必须包含浮动元素的外底边
+    // （margin-box bottom）。非 BFC 容器中，浮动元素不贡献高度，
+    // 因此需要收缩容器以去除 taffy 将 float 当作 block 时多计算的空间。
     //
     // 注意：子元素的 x/y 坐标是相对于父元素 content area 的，
     // 所以 content_bottom 也是相对于 content area 顶部的。
     // 不需要减去 content_y（那是绝对坐标，与子元素相对坐标不在同一坐标系）。
     if !float_taffy_y.is_empty() {
-        let content_bottom =
-            box_node
+        let establishes_bfc = crate::margin_collapse::establishes_bfc(box_node);
+
+        if establishes_bfc {
+            // BFC 容器：浮动元素已包含在高度中（taffy 正确计算了含 float 的 auto height）
+            // 不需要收缩。但需要确保高度至少覆盖到最低浮动元素的外底边。
+            let float_bottom = box_node
                 .children
                 .iter()
-                .filter(|c| !c.is_absolute && !c.is_fixed)
+                .filter(|c| !matches!(c.float, FloatValue::None) && !c.is_absolute && !c.is_fixed)
                 .fold(0.0f32, |max_y, c| {
                     let bottom = c.y + c.height + c.margin_bottom;
                     max_y.max(bottom)
                 });
-        let content_height = content_bottom.max(0.0);
-        // 如果内容区域实际高度小于 taffy 计算的高度，收缩容器
-        if content_height < box_node.content_height {
-            box_node.content_height = content_height;
-            // 更新总高度（包含 padding + border）
-            let new_total = content_height
-                + box_node.padding_top
-                + box_node.padding_bottom
-                + box_node.border_top
-                + box_node.border_bottom;
-            // 仅当新高度更小时才更新（不扩大容器）
-            if new_total < box_node.height {
-                box_node.height = new_total;
+            if float_bottom > box_node.content_height {
+                box_node.content_height = float_bottom;
+                let new_total = float_bottom
+                    + box_node.padding_top
+                    + box_node.padding_bottom
+                    + box_node.border_top
+                    + box_node.border_bottom;
+                if new_total > box_node.height {
+                    box_node.height = new_total;
+                }
+            }
+        } else {
+            // 非 BFC 容器：浮动元素不贡献高度，收缩容器
+            let content_bottom =
+                box_node
+                    .children
+                    .iter()
+                    .filter(|c| !c.is_absolute && !c.is_fixed)
+                    .fold(0.0f32, |max_y, c| {
+                        let bottom = c.y + c.height + c.margin_bottom;
+                        max_y.max(bottom)
+                    });
+            let content_height = content_bottom.max(0.0);
+            // 如果内容区域实际高度小于 taffy 计算的高度，收缩容器
+            if content_height < box_node.content_height {
+                box_node.content_height = content_height;
+                // 更新总高度（包含 padding + border）
+                let new_total = content_height
+                    + box_node.padding_top
+                    + box_node.padding_bottom
+                    + box_node.border_top
+                    + box_node.border_bottom;
+                // 仅当新高度更小时才更新（不扩大容器）
+                if new_total < box_node.height {
+                    box_node.height = new_total;
+                }
             }
         }
     }
