@@ -983,15 +983,18 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                     // CSS 2.1 §9.5.2 完整 clearance 计算：
                     // clearance = max(0, clear_bottom - hypothetical_position)
                     // 当 clearance > 0 时，元素位于 clear_bottom
-                    // 当 clearance == 0 时，margin 折叠被阻断，元素位于
+                    // 当 clearance == 0 时，margin 折叠仍被阻断（CSS 2.1 明确：
+                    //   "Setting clear to an element does not necessarily increase its
+                    //    margin; it just prevents margin collapsing"），元素位于
                     //   flow_bottom + child.margin_top（不折叠）
-                    // 无论哪种情况，clear 属性的存在都会阻止 margin 折叠
                     if clear_bottom > 0.0 && clear_bottom > hypothetical_y {
                         // 正 clearance：将元素推到浮动下方
                         child.y = clear_bottom;
                     } else {
-                        // 零 clearance 或无浮动：保持假设位置
-                        child.y = hypothetical_y;
+                        // 零 clearance：margin 折叠被阻断，使用不折叠的 margin
+                        // 元素位于 flow_bottom + 自身 margin_top（不与上一个
+                        // 元素的 margin_bottom 折叠）
+                        child.y = flow_bottom + child.margin_top;
                     }
                     float_y_offset = (original_taffy_y - child.y).max(0.0);
                 }

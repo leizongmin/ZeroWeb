@@ -179,7 +179,11 @@ fn test_negative_container_width_no_panic() {
         word_spacing: 0.0,
         margin_left: 0.0,
         margin_right: 0.0,
-        is_ahem_font: false,
+        padding_top: 0.0,
+                                padding_bottom: 0.0,
+                                border_top: 0.0,
+                                border_bottom: 0.0,
+                                is_ahem_font: false,
     }];
     // 不应 panic
     ctx.break_into_lines(runs);
@@ -201,7 +205,11 @@ fn test_very_narrow_container_single_char_per_line() {
         word_spacing: 0.0,
         margin_left: 0.0,
         margin_right: 0.0,
-        is_ahem_font: false,
+        padding_top: 0.0,
+                                padding_bottom: 0.0,
+                                border_top: 0.0,
+                                border_bottom: 0.0,
+                                is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     // 极窄容器中每个单词应单独一行
@@ -239,7 +247,11 @@ fn test_zero_width_inline_block() {
             word_spacing: 0.0,
             margin_left: 0.0,
             margin_right: 0.0,
-            is_ahem_font: false,
+            padding_top: 0.0,
+                                padding_bottom: 0.0,
+                                border_top: 0.0,
+                                border_bottom: 0.0,
+                                is_ahem_font: false,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -264,7 +276,11 @@ fn test_zero_height_inline_block() {
             word_spacing: 0.0,
             margin_left: 0.0,
             margin_right: 0.0,
-            is_ahem_font: false,
+            padding_top: 0.0,
+                                padding_bottom: 0.0,
+                                border_top: 0.0,
+                                border_bottom: 0.0,
+                                is_ahem_font: false,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
             width: 50.0,
@@ -394,7 +410,11 @@ fn make_run(text: &str) -> TextRun {
         word_spacing: 0.0,
         margin_left: 0.0,
         margin_right: 0.0,
-        is_ahem_font: false,
+        padding_top: 0.0,
+                                padding_bottom: 0.0,
+                                border_top: 0.0,
+                                border_bottom: 0.0,
+                                is_ahem_font: false,
     }
 }
 
@@ -605,7 +625,11 @@ fn test_vertical_single_column() {
         word_spacing: 0.0,
         margin_left: 0.0,
         margin_right: 0.0,
-        is_ahem_font: false,
+        padding_top: 0.0,
+                                padding_bottom: 0.0,
+                                border_top: 0.0,
+                                border_bottom: 0.0,
+                                is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     // 短文本应在单列中
@@ -643,6 +667,10 @@ fn test_vertical_column_breaking() {
         word_spacing: 0.0,
         margin_left: 0.0,
         margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
         is_ahem_font: true,
     }];
     ctx.break_into_lines(runs);
@@ -664,6 +692,10 @@ fn test_vertical_columns_advance_along_x() {
         word_spacing: 0.0,
         margin_left: 0.0,
         margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
         is_ahem_font: true,
     }];
     ctx.break_into_lines(runs);
@@ -694,7 +726,11 @@ fn test_vertical_fragment_width_is_line_height() {
         word_spacing: 0.0,
         margin_left: 0.0,
         margin_right: 0.0,
-        is_ahem_font: false,
+        padding_top: 0.0,
+                                padding_bottom: 0.0,
+                                border_top: 0.0,
+                                border_bottom: 0.0,
+                                is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     let frags: Vec<_> = ctx.all_fragments();
@@ -722,7 +758,11 @@ fn test_vertical_br_forces_new_column() {
             word_spacing: 0.0,
             margin_left: 0.0,
             margin_right: 0.0,
-            is_ahem_font: false,
+            padding_top: 0.0,
+                                padding_bottom: 0.0,
+                                border_top: 0.0,
+                                border_bottom: 0.0,
+                                is_ahem_font: false,
         }),
         InlineItem::Br,
         InlineItem::Text(TextRun {
@@ -735,7 +775,11 @@ fn test_vertical_br_forces_new_column() {
             word_spacing: 0.0,
             margin_left: 0.0,
             margin_right: 0.0,
-            is_ahem_font: false,
+            padding_top: 0.0,
+                                padding_bottom: 0.0,
+                                border_top: 0.0,
+                                border_bottom: 0.0,
+                                is_ahem_font: false,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -756,7 +800,11 @@ fn test_horizontal_mode_unaffected_by_vertical_impl() {
         word_spacing: 0.0,
         margin_left: 0.0,
         margin_right: 0.0,
-        is_ahem_font: false,
+        padding_top: 0.0,
+                                padding_bottom: 0.0,
+                                border_top: 0.0,
+                                border_bottom: 0.0,
+                                is_ahem_font: false,
     }];
     ctx.break_into_lines(runs);
     assert_eq!(ctx.lines.len(), 1, "水平模式：短文本应在单行中");
