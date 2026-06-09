@@ -2,7 +2,14 @@
 
 **最后更新**: 2026-06-10
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
-**上游真实 reftest 通过率**: 74.5% (365/490)
+**上游真实 reftest 通过率**: 74.7% (366/490)
+
+### R26 进展
+
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| multicol inline 内容列分布 | css-multicol 基础设施 | paint 层新增 inline-only multicol 容器的列宽 IFC 创建和行分配渲染。使用 line.y 正确计算行位置并分布到各列。新增 `all_fragments_with_line_y()` 方法到 IFC |
+| CSS2 inline 文本行 y 坐标 | 发现现有 bug | `all_fragments()` 扁平化行盒时丢失 `line.y` 信息，导致多行文本片段的 y 坐标均为行相对值而非容器绝对值。新增 `all_fragments_with_line_y()` 方法修复此问题（暂未在非 multicol 路径启用，避免回归） |
 
 ### R25 进展
 
@@ -308,11 +315,11 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-10（本轮第二十四轮）
+**日期**: 2026-06-10（本轮第二十六轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
-**通过**: 364
-**失败**: 126
-**通过率**: 74.3%
+**通过**: 366
+**失败**: 124
+**通过率**: 74.7%
 
 **说明**：通过率从 68.6% 提升至 73.5%（+24 个测试）。R20 关键修复：(1) reftest 分类容差 bug — 上游 reftest 使用 Default::default()（1% diff, 5ch）而非分类特定容差（Layout: 1%/5ch, Text: 5%/15ch），导致所有测试使用严格布局容差。改为 ReftestConfig::for_category() 后，文字类测试（css-writing-modes, css-fonts）使用正确容差。新增 with_viewport() builder 方法。(2) columns 简写解析修复 — 单整数值（如 `columns: 3`）现在正确解析为 column-count 而非 column-width（3px）。(3) 零高度浮动处理 — line_max_height 跳过零高度浮动元素。
 
@@ -324,7 +331,7 @@
 | css-fonts/ | 60/60 | 100.0% | ✅ |
 | css-grid/ | 17/20 | 85.0% | ❌ |
 | css-writing-modes/ | 45/59 | 76.3% | ❌ |
-| css-tables/ | 40/55 | 72.7% | ❌ |
+| css-tables/ | 41/55 | 74.5% | ❌ |
 | CSS2/ | 89/129 | 69.0% | ❌ |
 | css-flexbox/ | 35/55 | 63.6% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
