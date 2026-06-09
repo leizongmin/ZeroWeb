@@ -327,8 +327,19 @@ impl LayoutEngine {
         let is_sticky = computed.is_some_and(|s| matches!(s.position, PositionValue::Sticky));
         let float = computed.map_or(FloatValue::None, |s| s.float.clone());
         let clear = computed.map_or(ClearValue::None, |s| s.clear.clone());
-        let overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
-        let overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
+        // CSS 2.1 §17.5：table cell 的 height 为最小高度，cell 始终扩展以包含内容。
+        // 因此 overflow: hidden 在 table cell 上不应产生裁剪效果。
+        let is_table_cell = computed.is_some_and(|s| matches!(s.display, DisplayValue::TableCell));
+        let overflow_x = if is_table_cell {
+            OverflowClip::Visible
+        } else {
+            computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x))
+        };
+        let overflow_y = if is_table_cell {
+            OverflowClip::Visible
+        } else {
+            computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y))
+        };
         // CSS 2.1 §9.4.1: display:flow-root 和 display:inline-block 都建立 BFC
         let is_flow_root =
             computed.is_some_and(|s| matches!(s.display, DisplayValue::FlowRoot | DisplayValue::InlineBlock));
