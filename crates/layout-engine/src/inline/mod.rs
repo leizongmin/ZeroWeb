@@ -979,7 +979,9 @@ impl InlineFormattingContext {
         }
 
         // 添加最后一行（非空时）
-        if !current_line.runs.is_empty() {
+        // CSS 2.1 §10.8.1：空 inline 元素的 line-height 仍贡献到行盒高度，
+        // 即使没有文本片段，行盒高度 > 0 时也需要保留。
+        if !current_line.runs.is_empty() || current_line.height > 0.0 {
             self.lines.push(current_line);
         }
 

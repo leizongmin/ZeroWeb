@@ -1098,6 +1098,10 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     // 调整容器高度：当 float 元素占据的垂直空间被移除后，
     // 容器高度应基于子元素的实际位置重新计算。
     // 否则容器底部会留有空白间隙。
+    //
+    // 注意：子元素的 x/y 坐标是相对于父元素 content area 的，
+    // 所以 content_bottom 也是相对于 content area 顶部的。
+    // 不需要减去 content_y（那是绝对坐标，与子元素相对坐标不在同一坐标系）。
     if !float_taffy_y.is_empty() {
         let content_bottom =
             box_node
@@ -1108,8 +1112,7 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                     let bottom = c.y + c.height + c.margin_bottom;
                     max_y.max(bottom)
                 });
-        let content_top = box_node.content_y;
-        let content_height = (content_bottom - content_top).max(0.0);
+        let content_height = content_bottom.max(0.0);
         // 如果内容区域实际高度小于 taffy 计算的高度，收缩容器
         if content_height < box_node.content_height {
             box_node.content_height = content_height;
