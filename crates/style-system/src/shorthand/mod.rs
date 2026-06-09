@@ -1482,6 +1482,11 @@ fn classify_bg_token_owned(
     {
         if bg_position.is_empty() {
             *bg_position = token.to_string();
+        } else {
+            // CSS 允许双值 background-position（如 "0.5in 0.5in"）
+            // 累积第二个位置值
+            bg_position.push(' ');
+            bg_position.push_str(token);
         }
         return;
     }
