@@ -38,24 +38,25 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 
 | 方向 | 现状 |
 |------|------|
-| `ZeroWebView` | 已有一批核心模块和 API，能跑 demo，也有跨 crate 测试 |
-| 浏览器应用 | `browser-shell` 还在早期阶段，`zero-browser` 仍是占位入口 |
-| 页面 JavaScript | 还没完成，`script-sandbox` 目前是占位 crate |
-| 真实站点兼容性 | 还在往前推，WPT 覆盖和浏览器级加固都不够 |
+| `ZeroWebView` | 已有稳定嵌入 API、可运行 demo，以及跨 crate 和产品层 smoke 测试 |
+| 浏览器应用 | `zero-browser`、`browser-shell` 和 `zero-renderer` 已打通桌面入口、多进程链路与 headless 调试；整体仍处于实验阶段 |
+| 页面 JavaScript | `script-sandbox` 已提供 V8/QuickJS feature gate 与脚本运行时基础能力；完整 Web API 和站点兼容性仍在推进 |
+| 真实站点兼容性 | 已有 WPT runner、reftest 和真实站点 smoke，但离生产级兼容性还有明显距离 |
 | 项目定位 | 适合学习、研究、工程探索，不适合直接当成生产浏览器 |
 
 现在已经有一批能跑起来的模块：
 
 - 核心引擎：`dom`、`css-parser`、`style-system`、`layout-engine`、`engine`、`canvas`
 - 基础设施：`render-foundation`、`host-runtime`、`net`、`security`、`storage`、`protocol`
+- 运行时与隔离：`script-sandbox`、`wasm-sandbox`
 - 对外与产品层：`webview`、`browser-shell`
-- 应用与测试：`apps/browser`、`apps/webview-demo`、`tests/integration`、`tests/wpt-runner`
+- 应用与测试：`apps/browser`、`apps/renderer`、`apps/webview-demo`、`tests/integration`、`tests/wpt-runner`
 
 还没做完的地方也很明确：
 
 - `browser-shell` 还没有进入完整产品形态
-- `script-sandbox` 仍是占位 crate
-- 页面级 JavaScript 执行与 Web API 集成尚未完成
+- 页面级 JavaScript 和 Web API 兼容性仍在持续补齐
+- 浏览器产品层、无头调试和多进程链路还需要更多稳定性验证
 - 真实站点兼容性和 WPT 覆盖率还需要大幅推进
 
 ## 快速开始
@@ -100,16 +101,17 @@ cargo run --bin webview-demo
 cargo run --bin zero-browser
 ```
 
-现在更值得先跑的是 `webview-demo`；`zero-browser` 还只是浏览器应用的占位入口。
+想先验证最短渲染链路，可以先跑 `webview-demo`；想直接看浏览器壳、多进程和 headless 能力，就跑 `zero-browser`。在 Linux 和 macOS 上，`make build` / `make browser` 会先自动处理 `rusty_v8` 下载。
 
 ## 仓库结构
 
-### 应用入口
+### 应用与进程入口
 
 | Path | 用途 |
 |------|------|
-| `apps/browser` | 浏览器应用入口 |
-| `apps/webview-demo` | WebView / 渲染演示程序 |
+| `apps/browser` | 桌面浏览器入口，支持窗口模式和 `--headless` / remote debugging |
+| `apps/renderer` | 独立渲染进程入口，负责多进程 IPC 下的页面渲染与脚本执行 |
+| `apps/webview-demo` | 最小 WebView / 渲染演示程序 |
 
 ### 核心引擎
 
@@ -133,7 +135,7 @@ cargo run --bin zero-browser
 | `crates/storage` | localStorage、sessionStorage、IndexedDB |
 | `crates/protocol` | IPC 与多进程消息模型 |
 | `crates/wasm-sandbox` | WASM 执行与沙箱能力 |
-| `crates/script-sandbox` | 页面脚本 / 扩展脚本运行时占位 |
+| `crates/script-sandbox` | 扩展 / 用户脚本运行时（V8 / QuickJS feature gate） |
 
 ### 产品层与测试
 
@@ -142,7 +144,9 @@ cargo run --bin zero-browser
 | `crates/webview` | 对外暴露的稳定嵌入 API |
 | `crates/browser-shell` | 浏览器产品层 UI |
 | `docs` | 规格、研究、路线图和架构文档 |
-| `tests` | 集成测试、WPT runner、benchmark 结果 |
+| `tests/integration` | 跨 crate 集成测试 |
+| `tests/wpt-runner` | WPT / reftest / 兼容性基础设施 |
+| `tests/benchmarks` | benchmark 结果产物 |
 
 想先了解整体分层，可以看 [docs/architecture.md](docs/architecture.md)。
 
