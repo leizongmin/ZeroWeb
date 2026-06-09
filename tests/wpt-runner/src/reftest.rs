@@ -141,6 +141,13 @@ impl ReftestConfig {
         }
     }
 
+    /// 设置视口尺寸（builder 模式）。
+    pub fn with_viewport(mut self, width: u32, height: u32) -> Self {
+        self.viewport_width = width;
+        self.viewport_height = height;
+        self
+    }
+
     /// 应用 WPT fuzzy 注解覆盖。
     ///
     /// 如果 fuzzy 注解指定了 maxDiff 或 totalPixels，覆盖分类默认值。

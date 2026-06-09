@@ -941,7 +941,12 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
             FloatValue::InlineStart | FloatValue::InlineEnd | FloatValue::None => {}
         }
 
-        line_max_height = line_max_height.max(child_outer_height);
+        // CSS 2.1 §9.5.1：零高度浮动元素（margin-box 高度为 0）不推进 line_y。
+        // 一个没有内容、没有 border、没有 padding 的空浮动元素不应占据垂直空间，
+        // 后续浮动元素应从相同的 line_y 开始。
+        if child_outer_height > 0.0 {
+            line_max_height = line_max_height.max(child_outer_height);
+        }
     }
 
     // 第二阶段：修正非 float 子元素的 Y 位置 + BFC 浮动排斥
