@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-06-09
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
-**上游真实 reftest 通过率**: 68.6% (336/490)
+**上游真实 reftest 通过率**: 73.5% (360/490)
 
 ---
 
@@ -287,27 +287,27 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-09（本轮第十九轮）
+**日期**: 2026-06-09（本轮第二十轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
-**通过**: 336
-**失败**: 154
-**通过率**: 68.6%
+**通过**: 360
+**失败**: 130
+**通过率**: 73.5%
 
-**说明**：通过率从 68.4% 提升至 68.6%（+2 个测试）。R19 关键修复：(1) inset 初始值修正 — top/right/bottom/left 从 Px(0.0) 改为 Auto（CSS 2.1 §9.3.2），使 abs-pos 元素正确使用静态位置算法（影响 CSS2 67.4%）；(2) split_into_words 尾部空格修复 — 最后一个单词不再带尾部空格，避免 IFC 行宽膨胀（影响 writing-modes 静态位置计算）；(3) fix_vertical_mode_abs_pos containing block 过滤 — 仅处理 position!=static 的容器，避免祖先容器错误修正 abs-pos 位置；(4) 移除 unused variable `zero`。
+**说明**：通过率从 68.6% 提升至 73.5%（+24 个测试）。R20 关键修复：(1) reftest 分类容差 bug — 上游 reftest 使用 Default::default()（1% diff, 5ch）而非分类特定容差（Layout: 1%/5ch, Text: 5%/15ch），导致所有测试使用严格布局容差。改为 ReftestConfig::for_category() 后，文字类测试（css-writing-modes, css-fonts）使用正确容差。新增 with_viewport() builder 方法。(2) columns 简写解析修复 — 单整数值（如 `columns: 3`）现在正确解析为 column-count 而非 column-width（3px）。(3) 零高度浮动处理 — line_max_height 跳过零高度浮动元素。
 
 ### 按目录
 
 | 目录 | 通过/总数 | 通过率 | ≥95% 达标 |
 |------|-----------|--------|-----------|
 | css-text-decor/ | 39/39 | 100.0% | ✅ |
-| css-fonts/ | 58/60 | 96.7% | ✅ |
+| css-fonts/ | 60/60 | 100.0% | ✅ |
 | css-grid/ | 17/20 | 85.0% | ❌ |
+| css-writing-modes/ | 45/59 | 76.3% | ❌ |
 | css-tables/ | 40/55 | 72.7% | ❌ |
 | CSS2/ | 87/129 | 67.4% | ❌ |
 | css-flexbox/ | 35/55 | 63.6% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
 | css-multicol/ | 27/57 | 47.4% | ❌ |
-| css-writing-modes/ | 23/59 | 39.0% | ❌ |
 
 ### R16 本轮修复内容
 
@@ -402,11 +402,11 @@
 
 ### 后续重点
 
-1. **writing-mode 垂直块级布局精度**（影响 css-writing-modes 36 测试）：垂直 IFC 已实现，但 12 个 abs-pos-non-replaced (21.33%) 失败主因是静态位置计算中的轴交换精度。需修正 extract_layout 中 writing-mode 轴交换在 abs-pos 场景下的坐标转换
-2. **multicol column breaking**（影响 css-multicol 32 测试）：需要实现内容碎片化 — 将单个块级元素的内容拆分到多列。当前仅移动整个子元素到下一列
-3. **CSS2 float/clear 精度**（影响 CSS2 ~16 测试）：需要改进浮动定位和清除计算精度。clearance 计算使用简化公式，不完全匹配 CSS 2.1 规范的 C1/C2 双路径算法
-4. **CSS2 inline box model**（影响 ~7 测试）：空 inline 元素 line-height 贡献、inline 元素 margin 处理、block-in-inline 拆分
-5. **Flexbox baseline 对齐**（影响 css-flexbox ~7 测试）：taffy baseline 对齐功能基本可用，但 multi-line baseline 和 baseline-as-center 测试有较大差异
+1. **multicol column breaking**（影响 css-multicol ~16 测试）：需要实现内容碎片化 — 将单个块级元素的内容拆分到多列。当前仅移动整个子元素到下一列。multicol-breaking-* 系列测试全部在 16%+ 失败。
+2. **CSS2 float/clear 精度**（影响 CSS2 ~19 测试）：clearance 计算使用简化公式，不完全匹配 CSS 2.1 规范的 C1/C2 双路径算法。参考文件大量使用拉伸 swatch 图片（20x20→96x96），image scaling 差异可能贡献部分 diff。
+3. **CSS2 inline box model**（影响 ~8 测试）：空 inline 元素 line-height 贡献、inline 元素 margin 处理、block-in-inline 拆分。IFC 仅在 float/inline-block/vertical-mode 容器中运行，普通 block 容器中的空 inline 元素 line-height 不被 IFC 处理。
+4. **Flexbox baseline 对齐 + writing-mode**（影响 css-flexbox ~9 测试）：multi-line baseline 测试（47%）、baseline align-self（15-18%）、min/max-content（16-21%）。flex-flow:row + writing-mode:vertical-rl 需要 flex 方向的轴交换支持。
+5. **CSS 表格子像素**（影响 css-tables ~9 测试）：subpixel collapsed borders (1.97%)、table-cell-overflow (1.12%)、border-conflict-resolution (1.55%)。多数是 image scaling 或 border 渲染精度问题。
 
 ### R11 本轮修复内容
 
@@ -513,6 +513,9 @@
 | 2026-06-08 | background-image 固有尺寸基础设施 | Painter 新增 image_sizes HashMap<u64, (f32, f32)>（url hash → intrinsic dimensions）。RenderPipeline.set_image_sizes() 将缓存传递给 Painter。reftest runner 在渲染前构建 ImageCache、提取固有尺寸。修复了 background-size: auto 拉伸到容器大小的问题。 |
 | 2026-06-08 | is_block_level / is_relative 标志 | LayoutBox 新增两个布尔标志。is_block_level 用于 float/clear 后处理（CSS 规范 clear 仅适用于块级元素）。is_relative 用于 table 布局后处理保留 position:relative 的 inset 偏移。 |
 | 2026-06-08 | gap 简写 handler 修复 | gap apply handler 不再设置 column_gap/row_gap（由各自的 longhand handler 通过 shorthand expansion 设置），避免 HashMap 迭代顺序不确定性导致的值覆盖。 |
+| 2026-06-09 | reftest 分类容差 bug 修复 | 上游 reftest FileReftestCase::to_config() 使用 Default::default()（1%/5ch），未调用 ReftestConfig::for_category()。所有测试被以严格布局容差（1%）衡量，导致文字类测试（5% 容差）大量误判失败。修复后通过率 68.6%→73.5%（+24 测试）。新增 ReftestConfig::with_viewport() builder 方法。 |
+| 2026-06-09 | columns 简写解析修复 | `columns: 3`（单整数）被 parse_column_width 先解析为 column-width: 3px，阻止 parse_column_count 执行。CSS 规范要求整数优先解析为 column-count。交换解析顺序后，`columns: N` 正确设置 column-count: N。 |
+| 2026-06-09 | 零高度浮动处理 | adjust_float_positions Phase 1 中 line_max_height 跳过零高度浮动元素（child_outer_height == 0），避免空浮动元素推进后续浮动的 Y 位置。 |
 | 2026-06-08 | table 行组位置更新 | position_cells 后新增 update_row_group_positions 后处理。按视觉顺序（thead→tbody→tfoot）计算行组的 y 位置和高度，含 border-spacing。支持 position:relative inset 从行组传播到子行。修复 out-of-order-elements-collapsed-border（46.32%→通过）。 |
 | 2026-06-08 | CSS 绝对长度单位 | parse_length() 新增 in/pt/pc/cm/mm/Q 单位支持，按 CSS 规范转换为 px（96 DPI）。修复了所有使用 `height: 1in; width: 1in` 的 floats-clear 测试（之前 in 单位被静默忽略，元素折叠为 0 大小）。副作用：CSS2/borders 中使用 1in(=96px) 大边框的测试暴露了布局精度差异。 |
 | 2026-06-08 | CSS inherit 关键字完善 | border/background shorthand 正确广播 CSS-wide keywords（inherit/initial/unset）到所有子属性。inherit_property 扩展支持非继承属性（background-*, border-*, margin-*, padding-*），使 `border-bottom: inherit` 等显式继承生效。 |
@@ -634,6 +637,11 @@
 95. ~~R13 — inline-block 行内定位~~ ✅(adjust_inline_block_positions 后处理 + IFC InlineBlockBox + baseline 修正；CSS2 59.7%→62.8%)
 96. ~~R13 — border-collapse 样式覆盖~~ ✅(collapsed_border_style_overrides + 更多命名颜色)
 97. ~~R14 — writing-mode 垂直 inline 布局~~ ✅(break_items_into_columns + 布局引擎接入 + 绘制层垂直字形渲染；6 个单元测试)
-98. R14 — multicol column breaking（影响 32 个测试：需实现内容碎片化）
-99. R14 — CSS2 float/clear 精度提升（影响 ~16 个测试：clearance 算法改进）
-100. R14 — writing-mode abs-pos 静态位置修正（影响 12 个测试：轴交换精度）
+98. ~~R20 — reftest 分类容差 bug 修复~~ ✅(for_category 替代 Default::default()；+24 测试通过)
+99. ~~R20 — columns 简写解析修复~~ ✅(整数优先 column-count 而非 column-width)
+100. ~~R20 — 零高度浮动处理~~ ✅(line_max_height 跳过零高度浮动)
+101. R20 — multicol column breaking（影响 ~16 个测试：需实现内容碎片化）
+102. R20 — CSS2 float/clear 精度提升（影响 ~19 个测试：clearance 算法 + image scaling）
+103. R20 — CSS2 inline box model（影响 ~8 个测试：空 inline line-height + block-in-inline）
+104. R20 — Flexbox baseline + writing-mode（影响 ~9 个测试：flex 方向轴交换）
+105. R20 — CSS 表格子像素修复（影响 ~9 个测试：border 精度 + image scaling）
