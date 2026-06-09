@@ -335,7 +335,9 @@ fn position_multicol_children(container: &mut LayoutBox, assignments: &[Vec<(usi
 
             y_offset += child_total_height;
 
-            // 限制子元素宽度不超过列宽
+            // CSS Multi-column Layout：子元素宽度限制到列宽。
+            // 这确保文本在列内正确换行。内容的溢出裁剪由
+            // paint 层基于 multicol 容器的 overflow 属性处理。
             if child.width > info.column_width {
                 child.width = info.column_width;
             }

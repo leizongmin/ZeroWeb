@@ -129,12 +129,7 @@ impl FileReftestCase {
 
     /// 生成 ReftestConfig。
     pub fn to_config(&self, viewport_width: u32, viewport_height: u32) -> ReftestConfig {
-        ReftestConfig {
-            category: self.category,
-            viewport_width,
-            viewport_height,
-            ..Default::default()
-        }
+        ReftestConfig::for_category(self.category).with_viewport(viewport_width, viewport_height)
     }
 }
 
