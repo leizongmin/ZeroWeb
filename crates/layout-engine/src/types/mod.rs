@@ -94,6 +94,9 @@ pub struct LayoutBox {
     pub scroll_y: f32,
     /// 是否为 display: flow-root 元素（建立 BFC）。
     pub is_flow_root: bool,
+    /// 是否为多列容器（column-count 或 column-width 非 auto）。
+    /// 多列容器建立 BFC，阻止与子元素的 margin 折叠（CSS §2）。
+    pub is_multicol: bool,
     /// 是否为块级元素（用于 float/clear 后处理判断）。
     ///
     /// CSS 规范中 clear 属性仅适用于块级元素。
@@ -195,6 +198,7 @@ impl Default for LayoutBox {
             scroll_x: 0.0,
             scroll_y: 0.0,
             is_flow_root: false,
+            is_multicol: false,
             is_block_level: false,
             is_relative: false,
             collapsed_border_color_overrides: [None; 4],
