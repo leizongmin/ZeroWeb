@@ -172,6 +172,9 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         "flex" => expand_flex(value, important, specificity),
 
         // ── flex-flow: <flex-direction> || <flex-wrap> ──
+        // CSS Flexbox §5.1: 当 flex-flow 省略一个组件时，缺失组件应设为初始值
+        // (flex-direction: row, flex-wrap: nowrap)。始终同时输出两个子属性，
+        // 确保简写正确覆盖之前的长写属性值。
         "flex-flow" => {
             let mut direction = None;
             let mut wrap = None;
@@ -184,14 +187,10 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
                     // 无法识别的 token，忽略
                 }
             }
-            let mut result = Vec::new();
-            if let Some(d) = direction {
-                result.push(mk("flex-direction", d));
-            }
-            if let Some(w) = wrap {
-                result.push(mk("flex-wrap", w));
-            }
-            if result.is_empty() { vec![] } else { result }
+            vec![
+                mk("flex-direction", direction.unwrap_or("row")),
+                mk("flex-wrap", wrap.unwrap_or("nowrap")),
+            ]
         }
 
         // ── inset ──

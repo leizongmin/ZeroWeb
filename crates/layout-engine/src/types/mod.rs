@@ -117,6 +117,11 @@ pub struct LayoutBox {
     /// 此标志告诉 paint 系统 node_id 指向的是文本节点本身（而非元素节点），
     /// paint 应直接渲染该文本节点的内容，而非查找子文本节点。
     pub is_anonymous_text_item: bool,
+    /// CSS `order` 属性值（默认 0）。
+    ///
+    /// CSS Flexbox §5.4: flex item 的视觉顺序由 order 属性决定。
+    /// taffy 0.7 不支持 order，因此需要在后处理中对 flex 容器的子元素按 order 排序。
+    pub css_order: i32,
 }
 
 impl LayoutBox {
@@ -189,6 +194,7 @@ impl Default for LayoutBox {
             collapsed_border_style_overrides: [const { None }; 4],
             writing_mode: WritingModeValue::HorizontalTb,
             is_anonymous_text_item: false,
+            css_order: 0,
         }
     }
 }
