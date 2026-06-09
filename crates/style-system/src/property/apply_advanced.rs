@@ -716,21 +716,23 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                     }
                 }
             } else if parts.len() == 1 {
-                // 单值：尝试 column-width，再尝试 column-count
-                if let Some(v) = values::parse_column_width(parts[0]) {
-                    style.column_width = match v {
-                        ColumnWidthValue::Auto => ColumnWidthComputedValue::Auto,
-                        ColumnWidthValue::Length(l) => ColumnWidthComputedValue::Length(l),
-                    };
-                    style.column_count = ColumnCountComputedValue::Auto;
-                    return true;
-                }
+                // CSS Multi-column spec: 单值时，正整数优先解析为 column-count，
+                // 长度值解析为 column-width。先尝试 column-count，再尝试 column-width。
+                // 这确保 `columns: 3` 设置 column-count: 3 而非 column-width: 3px。
                 if let Some(v) = values::parse_column_count(parts[0]) {
                     style.column_count = match v {
                         ColumnCountValue::Auto => ColumnCountComputedValue::Auto,
                         ColumnCountValue::Number(n) => ColumnCountComputedValue::Number(n),
                     };
                     style.column_width = ColumnWidthComputedValue::Auto;
+                    return true;
+                }
+                if let Some(v) = values::parse_column_width(parts[0]) {
+                    style.column_width = match v {
+                        ColumnWidthValue::Auto => ColumnWidthComputedValue::Auto,
+                        ColumnWidthValue::Length(l) => ColumnWidthComputedValue::Length(l),
+                    };
+                    style.column_count = ColumnCountComputedValue::Auto;
                     return true;
                 }
             }
