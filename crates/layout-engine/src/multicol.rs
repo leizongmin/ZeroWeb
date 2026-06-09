@@ -141,12 +141,24 @@ fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<Co
             })
         }
         (Some(n), Some(min_width)) => {
-            // 两者都有：取较大列数，但列宽不小于 min_width
+            // CSS Multi-column Layout §3.4 伪算法（line 13-19）：
+            // 当 column-width >= available-width 时，N=1
+            // 否则 N = min(column-count, floor((U + gap) / (W + gap)))
+            // 即取 column-count 和 column-width 限制列数中的较小值。
             if n == 0 || min_width <= 0.0 {
                 return None;
             }
+            if min_width >= container_width {
+                // column-width 大于等于容器宽度 → 仅一列
+                return Some(ColumnInfo {
+                    count: 1,
+                    column_width: container_width,
+                    gap,
+                    sequential_fill,
+                });
+            }
             let count_from_width = compute_column_count(container_width, min_width, gap);
-            let count = n.max(count_from_width);
+            let count = n.min(count_from_width);
             if count == 0 {
                 return None;
             }
@@ -336,12 +348,51 @@ fn position_multicol_children(container: &mut LayoutBox, assignments: &[Vec<(usi
             y_offset += child_total_height;
 
             // CSS Multi-column Layout：子元素宽度限制到列宽。
-            // 这确保文本在列内正确换行。内容的溢出裁剪由
-            // paint 层基于 multicol 容器的 overflow 属性处理。
+            // 同时更新 content_width 以确保 paint 层使用正确的列宽
+            // 进行文本换行和背景渲染。内容的溢出裁剪由 paint 层基于
+            // multicol 容器的 overflow 属性处理。
             if child.width > info.column_width {
+                let _old_width = child.width;
                 child.width = info.column_width;
+                // 同步更新 content_width（减去 padding 和 border）
+                let new_content_w = (info.column_width
+                    - child.border_left
+                    - child.border_right
+                    - child.padding_left
+                    - child.padding_right)
+                    .max(0.0);
+                child.content_width = new_content_w;
+                // 更新 content_x 使内容区域相对于新的边框盒正确定位
+                child.content_x = child.x + child.border_left + child.padding_left;
+                // 如果子元素有文本内容，需要调整其内部布局以适应列宽。
+                // 重新分配子元素的内部子元素宽度（递归约束）
+                constrain_subtree_width(child, new_content_w);
             }
         }
+    }
+}
+
+/// 递归约束子树中所有元素的宽度不超过指定最大值。
+///
+/// 用于 multicol 列宽约束：子元素被 taffy 按容器全宽布局，
+/// 但实际需要约束到列宽。此函数递归更新所有后代的 width
+/// 和 content_width，确保内部布局不会溢出列边界。
+fn constrain_subtree_width(box_node: &mut LayoutBox, max_width: f32) {
+    if box_node.width > max_width {
+        let new_width = max_width;
+        let new_content_w = (new_width
+            - box_node.border_left
+            - box_node.border_right
+            - box_node.padding_left
+            - box_node.padding_right)
+            .max(0.0);
+        box_node.width = new_width;
+        box_node.content_width = new_content_w;
+    }
+    // 递归约束子元素
+    let child_max = box_node.content_width;
+    for child in &mut box_node.children {
+        constrain_subtree_width(child, child_max);
     }
 }
 
