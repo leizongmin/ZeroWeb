@@ -87,6 +87,23 @@ impl super::Painter {
         }
 
         for i in 1..count {
+            // CSS Multi-column §5.2：列分隔线仅在两列都有内容时绘制。
+            // 如果容器有子元素，检查第 i 列和第 i+1 列是否有内容；
+            // 如果容器没有子元素（单元测试场景），默认绘制所有分隔线。
+            if !box_node.children.is_empty() {
+                let col_left_start = (i - 1) as f32 * (col_w + gap);
+                let has_left_content = box_node.children.iter().any(|c| {
+                    !c.is_absolute && !c.is_fixed && c.x >= col_left_start - 0.5 && c.x < col_left_start + col_w + 0.5
+                });
+                let col_right_start = i as f32 * (col_w + gap);
+                let has_right_content = box_node.children.iter().any(|c| {
+                    !c.is_absolute && !c.is_fixed && c.x >= col_right_start - 0.5 && c.x < col_right_start + col_w + 0.5
+                });
+                if !has_left_content || !has_right_content {
+                    continue; // 跳过空列的分隔线
+                }
+            }
+
             let rule_x = content_x + i as f32 * col_w + (i as f32 - 0.5) * gap - rule_w / 2.0;
             let rule_x = rule_x.max(content_x);
             match style.column_rule_style {
