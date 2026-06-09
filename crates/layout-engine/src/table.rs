@@ -46,6 +46,8 @@ struct TableRow {
     row_group_index: Option<usize>,
     /// 行内的单元格列表。
     cells: Vec<TableCell>,
+    /// 是否为匿名行（cells 直接在 row-group 中，无包裹 table-row）。
+    is_anonymous: bool,
 }
 
 /// 解析后的表格网格结构。
@@ -61,16 +63,39 @@ struct TableGrid {
 ///
 /// 遍历所有 `display: table` 或 `display: inline-table` 的容器，
 /// 将其子元素按 table grid 规则重新定位。
+///
+/// 同时处理孤立的 table 内部元素（如 `display: table-row-group`、
+/// `display: table-row`、`display: table-cell`），这些元素缺少
+/// 父级 table 容器，CSS 匿名盒修复会为它们生成匿名 table 包装。
 pub fn adjust_table_layout(root: &mut LayoutBox, doc: &zero_dom::Document, styles: &HashMap<NodeId, ComputedStyle>) {
+    adjust_table_layout_inner(root, doc, styles, false);
+}
+
+fn adjust_table_layout_inner(
+    root: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inside_table: bool,
+) {
     let display = get_display(root, styles);
 
     if display == Some(DisplayValue::Table) || display == Some(DisplayValue::InlineTable) {
         layout_table(root, doc, styles);
-    }
-
-    // 递归处理子节点
-    for child in &mut root.children {
-        adjust_table_layout(child, doc, styles);
+        // 递归处理子节点（标记为在 table 内部）
+        for child in &mut root.children {
+            adjust_table_layout_inner(child, doc, styles, true);
+        }
+    } else if !inside_table && display.as_ref().is_some_and(is_table_internal) {
+        // 孤立的 table 内部元素（无父级 table）：
+        // CSS 匿名盒修复应生成匿名 table 包装，这里直接对其执行 table 布局。
+        layout_table(root, doc, styles);
+        for child in &mut root.children {
+            adjust_table_layout_inner(child, doc, styles, true);
+        }
+    } else {
+        for child in &mut root.children {
+            adjust_table_layout_inner(child, doc, styles, inside_table);
+        }
     }
 }
 
@@ -97,6 +122,21 @@ fn is_row_group(display: &DisplayValue) -> bool {
     matches!(
         display,
         DisplayValue::TableRowGroup | DisplayValue::TableHeaderGroup | DisplayValue::TableFooterGroup
+    )
+}
+
+/// 判断 display 值是否为 table 内部元素（需要匿名 table 包装）。
+fn is_table_internal(display: &DisplayValue) -> bool {
+    matches!(
+        display,
+        DisplayValue::TableRowGroup
+            | DisplayValue::TableHeaderGroup
+            | DisplayValue::TableFooterGroup
+            | DisplayValue::TableRow
+            | DisplayValue::TableCell
+            | DisplayValue::TableColumn
+            | DisplayValue::TableColumnGroup
+            | DisplayValue::TableCaption
     )
 }
 
@@ -728,9 +768,12 @@ fn get_row_box_mut<'a>(table_box: &'a mut LayoutBox, row: &TableRow) -> Option<&
     match row.row_group_index {
         Some(rg_idx) => {
             let rg = table_box.children.get_mut(rg_idx)?;
-            // 行组内的行按 DOM 顺序排列
-            // 行组的 children 中，找到与 row.child_index 对应的行
-            rg.children.get_mut(row.child_index)
+            if row.is_anonymous {
+                // 匿名行：row-group 即为行盒
+                Some(rg)
+            } else {
+                rg.children.get_mut(row.child_index)
+            }
         }
         None => table_box.children.get_mut(row.child_index),
     }
@@ -836,25 +879,122 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                 if !row.cells.is_empty() {
                     rows.push(TableRow {
                         row_group_index: None,
+                        is_anonymous: false,
                         ..row
                     });
                 }
             }
             Some(d) if is_row_group(d) => {
                 // 直接子元素是 table-row-group (tbody/thead/tfoot)
-                // 从 row-group 中提取行
+                // 从 row-group 中提取行，同时处理嵌套 row-group 和直接 cell。
+                // CSS 表格匿名盒修复：row-group 中没有包裹行的 cell
+                // 应收集到同一个匿名行中（而非每个 cell 一个匿名行）。
+                let mut anonymous_cells: Vec<TableCell> = Vec::new();
+                let mut anonymous_row_group_idx: Option<usize> = None;
+                let mut anonymous_first_child_idx: usize = 0;
+                let mut col_cursor = 0usize;
+
                 for (rg_child_idx, rg_child) in child.children.iter().enumerate() {
                     let rg_display = get_display(rg_child, styles);
                     if rg_display.as_ref().is_some_and(is_table_row) {
+                        // 先 flush 之前收集的匿名 cell
+                        if !anonymous_cells.is_empty() {
+                            max_cols = max_cols.max(col_cursor);
+                            rows.push(TableRow {
+                                child_index: anonymous_first_child_idx,
+                                row_group_index: anonymous_row_group_idx.or(Some(*child_idx)),
+                                cells: std::mem::take(&mut anonymous_cells),
+                                is_anonymous: true,
+                            });
+                            col_cursor = 0;
+                        }
                         let row = build_row(rg_child_idx, rg_child, doc);
                         max_cols = max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
                         if !row.cells.is_empty() {
                             rows.push(TableRow {
                                 row_group_index: Some(*child_idx),
+                                is_anonymous: false,
                                 ..row
                             });
                         }
+                    } else if rg_display.as_ref().is_some_and(is_row_group) {
+                        // 嵌套 row-group：递归提取其行/单元格
+                        // CSS 表格匿名盒修复：内部 row-group 的内容视为外部 row-group 的直接内容
+                        // 先 flush 之前收集的匿名 cell
+                        if !anonymous_cells.is_empty() {
+                            max_cols = max_cols.max(col_cursor);
+                            rows.push(TableRow {
+                                child_index: anonymous_first_child_idx,
+                                row_group_index: anonymous_row_group_idx.or(Some(*child_idx)),
+                                cells: std::mem::take(&mut anonymous_cells),
+                                is_anonymous: true,
+                            });
+                            col_cursor = 0;
+                        }
+                        for (nested_idx, nested_child) in rg_child.children.iter().enumerate() {
+                            let nested_display = get_display(nested_child, styles);
+                            if nested_display.as_ref().is_some_and(is_table_row) {
+                                let row = build_row(nested_idx, nested_child, doc);
+                                max_cols =
+                                    max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
+                                if !row.cells.is_empty() {
+                                    rows.push(TableRow {
+                                        row_group_index: Some(*child_idx),
+                                        ..row
+                                    });
+                                }
+                            } else if nested_display.as_ref().is_some_and(is_table_cell) {
+                                // 嵌套 row-group 中的直接 cell：收集到匿名行
+                                let cell_colspan = get_colspan(nested_child, doc);
+                                let cell_rowspan = get_rowspan(nested_child, doc);
+                                let col_start = col_cursor;
+                                let col_end = col_start + cell_colspan;
+                                max_cols = max_cols.max(col_end);
+                                anonymous_cells.push(TableCell {
+                                    child_index: nested_idx,
+                                    colspan: cell_colspan,
+                                    rowspan: cell_rowspan,
+                                    col_start,
+                                    col_end,
+                                });
+                                col_cursor = col_end;
+                                if anonymous_row_group_idx.is_none() {
+                                    anonymous_row_group_idx = Some(*child_idx);
+                                    anonymous_first_child_idx = rg_child_idx;
+                                }
+                            }
+                        }
+                    } else if rg_display.as_ref().is_some_and(is_table_cell) {
+                        // row-group 中的直接 cell（无包裹行）：
+                        // 收集到匿名行（所有相邻 cell 合并到同一行）
+                        let cell_colspan = get_colspan(rg_child, doc);
+                        let cell_rowspan = get_rowspan(rg_child, doc);
+                        let col_start = col_cursor;
+                        let col_end = col_start + cell_colspan;
+                        max_cols = max_cols.max(col_end);
+                        anonymous_cells.push(TableCell {
+                            child_index: rg_child_idx,
+                            colspan: cell_colspan,
+                            rowspan: cell_rowspan,
+                            col_start,
+                            col_end,
+                        });
+                        col_cursor = col_end;
+                        if anonymous_row_group_idx.is_none() {
+                            anonymous_row_group_idx = Some(*child_idx);
+                            anonymous_first_child_idx = rg_child_idx;
+                        }
                     }
+                }
+                // flush 最后的匿名 cell
+                if !anonymous_cells.is_empty() {
+                    max_cols = max_cols.max(col_cursor);
+                    rows.push(TableRow {
+                        child_index: anonymous_first_child_idx,
+                        row_group_index: Some(anonymous_row_group_idx.unwrap_or(*child_idx)),
+                        cells: anonymous_cells,
+                        is_anonymous: true,
+                    });
                 }
             }
             Some(d) if is_table_cell(d) => {
@@ -873,6 +1013,7 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                     child_index: *child_idx, // 匿名行直接引用 cell 的索引
                     row_group_index: None,
                     cells: vec![cell],
+                    is_anonymous: false,
                 });
             }
             _ => {
@@ -911,6 +1052,7 @@ fn build_row(child_idx: usize, row_box: &LayoutBox, doc: &zero_dom::Document) ->
         child_index: child_idx,
         row_group_index: None, // 由调用方设置
         cells,
+        is_anonymous: false,
     }
 }
 
@@ -981,7 +1123,20 @@ fn compute_column_widths(table_box: &LayoutBox, grid: &TableGrid, styles: &HashM
     // 计算总宽度
     let total_width: f32 = col_max_widths.iter().sum();
 
-    if total_width < available_width && total_width > 0.0 {
+    // CSS 表格收缩适应（shrink-to-fit）：
+    // 当 table 的 CSS width 为 auto 且 table-layout 不为 fixed 时，
+    // 表格不应扩展到容器宽度，而是收缩到内容固有宽度。
+    // table-layout: fixed 时，列宽由 <col> 或首行决定，仍需扩展。
+    let table_style = table_box.node_id.and_then(|id| styles.get(&id));
+    let has_explicit_width = table_style.as_ref().is_some_and(|s| {
+        use zero_css_parser::values::LengthValue;
+        !matches!(s.width, LengthValue::Auto)
+    });
+    let is_fixed_layout = table_style.as_ref().is_some_and(|s| {
+        matches!(s.table_layout, zero_style_system::TableLayoutValue::Fixed)
+    });
+
+    if (has_explicit_width || is_fixed_layout) && total_width < available_width && total_width > 0.0 {
         // 按比例扩展到容器宽度
         let ratio = available_width / total_width;
         for w in &mut col_max_widths {
@@ -992,16 +1147,21 @@ fn compute_column_widths(table_box: &LayoutBox, grid: &TableGrid, styles: &HashM
     col_max_widths
 }
 
-/// 获取行盒 — 处理直接 table-row 和 row-group 内的行两种情况。
+/// 获取行盒 — 处理直接 table-row、row-group 内的行和匿名行三种情况。
 ///
-/// 当 `row.row_group_index` 为 Some 时，行在 row-group 的 children[row.child_index] 中。
+/// 当 `row.row_group_index` 为 Some 时，行在 row-group 内。
+/// 当 `row.is_anonymous` 为 true 时，行是匿名行，行盒为 row-group 本身。
 /// 当为 None 时，行是 table 的直接 children[row.child_index]。
 fn get_row_box<'a>(table_box: &'a LayoutBox, row: &TableRow) -> Option<&'a LayoutBox> {
     match row.row_group_index {
         Some(rg_idx) => {
-            // 行在 row-group 内：table_box.children[rg_idx].children[row.child_index]
             let row_group = table_box.children.get(rg_idx)?;
-            row_group.children.get(row.child_index)
+            if row.is_anonymous {
+                // 匿名行：cells 是 row-group 的直接子元素，row-group 即为行盒
+                Some(row_group)
+            } else {
+                row_group.children.get(row.child_index)
+            }
         }
         None => {
             // 直接 table-row：table_box.children[row.child_index]
@@ -1252,7 +1412,12 @@ fn apply_table_size_constraints(
     }
 
     // 更新 table 容器尺寸
-    table_box.width = final_width;
+    // CSS 表格 shrink-to-fit：当 width:auto 时，content_width 应反映
+    // 实际内容宽度（所有列宽之和），而非 taffy 分配的容器宽度
+    let padding_border_w =
+        table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;
+    table_box.content_width = final_width;
+    table_box.width = final_width + padding_border_w;
     table_box.content_height = final_height;
     table_box.height = final_height + padding_border_h;
 }

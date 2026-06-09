@@ -483,15 +483,18 @@ fn test_border_collapse_table_wins() {
     let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
 
-    // Find the table cell by looking for small boxes with borders
+    // Find the table cell by looking for small boxes with borders.
+    // 必须跳过 table 本身（也可能匹配 width < 100 条件），
+    // 只返回最内层（叶子级别）的 cell 盒。
     fn find_cell(box_node: &crate::types::LayoutBox) -> Option<&crate::types::LayoutBox> {
         for child in &box_node.children {
-            // Check if this looks like a cell (has border and small size)
-            if child.border_top > 0.0 && child.width < 100.0 && child.width > 10.0 {
-                return Some(child);
-            }
+            // 先递归搜索子元素，优先返回更深的 cell
             if let Some(c) = find_cell(child) {
                 return Some(c);
+            }
+            // 如果子元素中没有 cell，检查当前 child 是否匹配
+            if child.border_top > 0.0 && child.width < 100.0 && child.width > 10.0 {
+                return Some(child);
             }
         }
         None
