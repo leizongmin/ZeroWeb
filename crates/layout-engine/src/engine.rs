@@ -574,10 +574,13 @@ fn sort_children_by_css_order(root: &mut LayoutBox, styles: &HashMap<NodeId, Com
 
     // 仅对 flex 或 grid 容器排序
     let is_flex_or_grid = root.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
-        matches!(s.display, zero_style_system::property::types::DisplayValue::Flex
-            | zero_style_system::property::types::DisplayValue::InlineFlex
-            | zero_style_system::property::types::DisplayValue::Grid
-            | zero_style_system::property::types::DisplayValue::InlineGrid)
+        matches!(
+            s.display,
+            zero_style_system::property::types::DisplayValue::Flex
+                | zero_style_system::property::types::DisplayValue::InlineFlex
+                | zero_style_system::property::types::DisplayValue::Grid
+                | zero_style_system::property::types::DisplayValue::InlineGrid
+        )
     });
 
     if !is_flex_or_grid {
@@ -592,7 +595,10 @@ fn sort_children_by_css_order(root: &mut LayoutBox, styles: &HashMap<NodeId, Com
 
     // 稳定排序：按 css_order 升序，order 相同时保持原始 DOM 顺序
     // 使用索引作为稳定排序键
-    let mut indexed: Vec<(usize, i32)> = root.children.iter().enumerate()
+    let mut indexed: Vec<(usize, i32)> = root
+        .children
+        .iter()
+        .enumerate()
         .map(|(i, c)| (i, c.css_order))
         .collect();
     indexed.sort_by_key(|&(idx, order)| (order, idx as i32));

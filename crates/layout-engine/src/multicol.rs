@@ -392,12 +392,9 @@ fn position_multicol_children(container: &mut LayoutBox, assignments: &[Vec<(usi
 fn constrain_subtree_width(box_node: &mut LayoutBox, max_width: f32) {
     if box_node.width > max_width {
         let new_width = max_width;
-        let new_content_w = (new_width
-            - box_node.border_left
-            - box_node.border_right
-            - box_node.padding_left
-            - box_node.padding_right)
-            .max(0.0);
+        let new_content_w =
+            (new_width - box_node.border_left - box_node.border_right - box_node.padding_left - box_node.padding_right)
+                .max(0.0);
         box_node.width = new_width;
         box_node.content_width = new_content_w;
     }
