@@ -1582,6 +1582,13 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         return vec![];
     }
 
+    // CSS 规范：font 简写中 line-height 为负值时，整个声明无效
+    // CSS Fonts §3.7: "Values have the same meanings as for their non-shorthand equivalents.
+    // Negative <line-height> values are illegal."
+    if line_height.starts_with('-') {
+        return vec![];
+    }
+
     vec![
         mk("font-style", &style),
         mk("font-weight", &weight),
