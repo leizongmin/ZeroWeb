@@ -573,6 +573,16 @@ fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, styles: &Hash
         return;
     };
 
+    // 仅处理作为 abs-pos 子元素 containing block 的容器。
+    // CSS 2.1 §10.1：containing block 是最近的 position != static 的祖先。
+    // 非 containing block 的祖先不应干预 abs-pos 元素的静态位置计算。
+    let is_containing_block = styles
+        .get(&container_node_id)
+        .is_some_and(|s| !matches!(s.position, PositionValue::Static));
+    if !is_containing_block {
+        return;
+    }
+
     // 运行 IFC（垂直模式）获取所有片段坐标
     let is_vertical = true;
     let is_vertical_rtl = matches!(root.writing_mode, WritingModeValue::VerticalRl);
