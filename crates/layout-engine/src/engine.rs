@@ -617,11 +617,11 @@ fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, styles: &Hash
             });
 
             if all_inset_auto {
-                // 仅在 taffy 给出的位置与 IFC 位置差距较大时才修正
-                // （taffy 可能在某些场景下给出正确位置）
+                // IFC 提供的静态位置比 taffy 的水平模型更准确
+                // 始终使用 IFC 位置（仅在有差异时更新）
                 let dx = (child.x - fragment.x).abs();
                 let dy = (child.y - fragment.y).abs();
-                if dx > 1.0 || dy > 1.0 {
+                if dx > 0.01 || dy > 0.01 {
                     child.x = fragment.x;
                     child.y = fragment.y;
                 }
@@ -870,15 +870,14 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
         // 1. Float 的 outer top 不得高于前面正常流元素生成的块盒的 outer top
         // 2. Float 不参与 margin 折叠
         //
-        // 使用 flow_bottom（正常流的实际位置）来约束 float 的最小 Y。
-        // flow_bottom 是前一个正常流元素的 border-bottom，不含 margin。
-        // float 在正常流中的位置是 flow_bottom + 折叠后的 margin，
-        // 但 float 的 outer top 约束是「不得高于前面块的 outer top」。
-        // 前面块的 outer top 是 flow_bottom - last_flow_mb（margin 不折叠时）
-        // 或更早的位置（折叠时）。
-        // 简化处理：使用 flow_bottom 作为最小 Y（保守但不违反规范）。
-        if flow_bottom > line_y {
-            line_y = flow_bottom;
+        // CSS 2.1 §9.5.1：「A float's margin box is placed according to the
+        // normal flow rules.」float 的垂直位置应按正常流规则计算（含 margin 折叠），
+        // 然后才进行水平浮动。因此 float 的最小 Y 应该是 flow_bottom 加上
+        // 与前一个正常流元素的折叠 margin，而非仅仅 flow_bottom。
+        let min_float_y = flow_bottom
+            + crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
+        if min_float_y > line_y {
+            line_y = min_float_y;
             left_used_width = 0.0;
             right_used_width = 0.0;
             line_max_height = 0.0;
@@ -1058,9 +1057,18 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                     float_y_offset = (original_taffy_y - child.y).max(0.0);
                 }
                 ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd => {
-                    // 非 clear 的普通元素：从 Y 中扣除 float 占据的垂直空间
+                    // 非 clear 的普通元素：使用独立的 flow_bottom 追踪计算正确位置
+                    // 简单的 child.y -= float_y_offset 无法正确处理 margin 折叠，
+                    // 因为 taffy 将 float 当作 block 排列，其 margin 折叠方式
+                    // 与 float 不存在时的折叠方式不同。
                     if float_y_offset > 0.0 {
-                        child.y -= float_y_offset;
+                        // CSS 2.1：非 clear 元素的位置 = 正常流位置（假设 float 不存在）
+                        let collapsed_margin =
+                            crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
+                        let correct_y = flow_bottom + collapsed_margin;
+                        child.y = correct_y;
+                        // 更新 float_y_offset 以反映 taffy Y 与正确 Y 的差异
+                        float_y_offset = (original_taffy_y - child.y).max(0.0);
                     }
                 }
             }
