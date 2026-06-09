@@ -1474,6 +1474,29 @@ impl InlineFormattingContext {
     pub fn all_fragments(&self) -> Vec<&TextFragment> {
         self.lines.iter().flat_map(|line| line.runs.iter()).collect()
     }
+
+    /// 获取所有文本片段，将行的 y 坐标加到每个片段的 y 上。
+    ///
+    /// 与 `all_fragments()` 不同，此方法返回的片段的 y 坐标是相对于容器的，
+    /// 包含了行盒的累积 y 偏移量。
+    pub fn all_fragments_with_line_y(&self) -> Vec<TextFragment> {
+        self.lines
+            .iter()
+            .flat_map(|line| {
+                let line_y = line.y;
+                line.runs.iter().map(move |run| TextFragment {
+                    x: run.x,
+                    y: run.y + line_y,
+                    width: run.width,
+                    height: run.height,
+                    text: run.text.clone(),
+                    node_id: run.node_id,
+                    font_size: run.font_size,
+                    vertical_align: run.vertical_align.clone(),
+                })
+            })
+            .collect()
+    }
 }
 
 /// 对文本进行 BiDi 重排序，返回视觉顺序的字符串。

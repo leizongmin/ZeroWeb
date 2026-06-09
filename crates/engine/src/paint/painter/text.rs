@@ -21,6 +21,87 @@ use zero_style_system::{
 use super::super::color::color_value_to_render;
 use super::super::helpers::apply_text_transform;
 
+/// 多列布局的列信息（用于 inline 内容的列分布）。
+struct MulticolInfo {
+    /// 列数
+    col_count: usize,
+    /// 单列宽度
+    col_width: f32,
+    /// 列间距
+    gap: f32,
+}
+
+/// 从 ComputedStyle 计算多列参数。
+///
+/// 返回 `None` 表示不需要多列布局（column-count: auto 且 column-width: auto）。
+fn compute_multicol_info_for_paint(style: &ComputedStyle, container_width: f32) -> Option<MulticolInfo> {
+    let gap: f32 = match &style.column_gap {
+        LengthValue::Px(g) => *g as f32,
+        _ => 0.0,
+    };
+
+    let col_count_from_count = match &style.column_count {
+        ColumnCountComputedValue::Auto => None,
+        ColumnCountComputedValue::Number(n) => Some(*n as usize),
+    };
+
+    let col_width_hint = match &style.column_width {
+        ColumnWidthComputedValue::Auto => None,
+        ColumnWidthComputedValue::Length(l) => match l {
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        },
+    };
+
+    match (col_count_from_count, col_width_hint) {
+        (None, None) => None,
+        (Some(n), None) => {
+            if n == 0 {
+                return None;
+            }
+            let col_width = if container_width > 0.0 {
+                (container_width - (n - 1) as f32 * gap) / n as f32
+            } else {
+                0.0
+            };
+            Some(MulticolInfo {
+                col_count: n,
+                col_width: col_width.max(0.0),
+                gap,
+            })
+        }
+        (None, Some(min_w)) => {
+            if container_width <= 0.0 || min_w <= 0.0 {
+                return None;
+            }
+            let count = ((container_width + gap) / (min_w + gap)).floor() as usize;
+            let count = count.max(1);
+            let col_width = (container_width - (count - 1) as f32 * gap) / count as f32;
+            Some(MulticolInfo {
+                col_count: count,
+                col_width: col_width.max(0.0),
+                gap,
+            })
+        }
+        (Some(_n), Some(min_w)) => {
+            // 两者都有值：使用 CSS §3.4 伪算法
+            // 取 min(count_from_count, count_from_width)
+            let count_from_width = if container_width > 0.0 && min_w > 0.0 {
+                ((container_width + gap) / (min_w + gap)).floor() as usize
+            } else {
+                return None;
+            };
+            let count = (_n).min(count_from_width).max(1);
+            let col_width = (container_width - (count - 1) as f32 * gap) / count as f32;
+            Some(MulticolInfo {
+                col_count: count,
+                col_width: col_width.max(0.0),
+                gap,
+            })
+        }
+    }
+}
+
 impl super::Painter {
     /// 绘制多列布局的 column-rule（列之间的分隔线）。
     pub(super) fn paint_column_rules(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
@@ -588,6 +669,29 @@ impl super::Painter {
             }
 
             let container_width = box_node.content_width;
+
+            // 检测是否为多列容器（无块级子元素但有 inline 内容）
+            // 如果是，使用列宽创建 IFC，并在渲染时将行分配到各列。
+            // 条件：
+            // 1. 无 inflow 子元素（纯 inline 内容）
+            // 2. column-fill: balance（默认值，非 auto 顺序填充）
+            // 3. 容器无明确 height（避免 column-fill: auto + height 的复杂场景）
+            let has_in_flow_children = box_node.children.iter().any(|c| !c.is_absolute && !c.is_fixed);
+            let is_balance_mode = !matches!(style.column_fill, zero_style_system::ColumnFillComputedValue::Auto);
+            let has_explicit_height = box_node.content_height > 0.0 && matches!(style.height, LengthValue::Px(_));
+            let multicol_info = if !has_in_flow_children && is_balance_mode && !has_explicit_height {
+                compute_multicol_info_for_paint(style, container_width)
+            } else {
+                None
+            };
+
+            // 多列容器使用列宽创建 IFC
+            let ifc_width = if let Some(ref mc) = multicol_info {
+                mc.col_width
+            } else {
+                container_width
+            };
+
             let break_word = matches!(
                 style.overflow_wrap,
                 zero_style_system::OverflowWrapValue::BreakWord | zero_style_system::OverflowWrapValue::Anywhere
@@ -664,7 +768,7 @@ impl super::Painter {
                 zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
             );
             let is_vertical_rtl = matches!(style.writing_mode, zero_style_system::WritingModeValue::VerticalRl);
-            let mut inline_ctx = InlineFormattingContext::new(container_width)
+            let mut inline_ctx = InlineFormattingContext::new(ifc_width)
                 .with_text_align(text_align)
                 .with_text_align_last(text_align_last)
                 .with_break_word(break_word)
@@ -689,83 +793,163 @@ impl super::Painter {
                 // writing-mode: vertical-rl/vertical-lr 时字符旋转 90°
                 let rotation = if is_vertical { std::f32::consts::FRAC_PI_2 } else { 0.0 };
 
-                for fragment in fragments.iter() {
-                    self.painted_inline_nodes.insert(fragment.node_id);
+                if let Some(ref mc) = multicol_info {
+                    // 多列布局：遍历行（带 line.y），将行分配到各列
+                    let total_height: f32 = inline_ctx.lines.iter().map(|l| l.height).sum();
+                    let target_h = total_height / mc.col_count as f32;
 
-                    // text-indent 已在 InlineFormattingContext 中处理，fragment.x 包含缩进
-                    let (frag_base_x, frag_base_y, char_advance_is_y) = if is_vertical {
-                        // 垂直模式：fragment.x 是列位置，fragment.y 是深度位置
-                        // 字符沿 y 轴向下推进
-                        (content_x + fragment.x + tx, content_y + fragment.y + ty, true)
-                    } else {
-                        // 水平模式：fragment.x 是水平位置，fragment.y 是行内位置
-                        (
-                            content_x + fragment.x + tx,
-                            content_y + fragment.y + fragment.font_size + ty,
-                            false,
-                        )
-                    };
-                    let mut char_pos = if char_advance_is_y { frag_base_y } else { frag_base_x };
-
-                    let transformed = apply_text_transform(&fragment.text, &style.text_transform);
-
-                    for ch in transformed.chars() {
-                        let (glyph_x, glyph_y) = if char_advance_is_y {
-                            // 垂直模式：字符沿 y 轴向下推进，x 固定为列位置
-                            (frag_base_x, char_pos)
+                    for line in &inline_ctx.lines {
+                        // 根据行的 y 位置确定所在列
+                        let col_idx = if target_h > 0.0 {
+                            (line.y / target_h).floor() as usize
                         } else {
-                            // 水平模式：字符沿 x 轴向右推进，y 固定
-                            (char_pos, frag_base_y)
+                            0
                         };
+                        let col_idx = col_idx.min(mc.col_count - 1);
+                        let col_x_offset = col_idx as f32 * (mc.col_width + mc.gap);
 
-                        if has_text_shadow {
+                        for fragment in &line.runs {
+                            self.painted_inline_nodes.insert(fragment.node_id);
+
+                            let frag_base_x = content_x + fragment.x + col_x_offset + tx;
+                            let frag_base_y = content_y + line.y + fragment.y + fragment.font_size + ty;
+
+                            let transformed = apply_text_transform(&fragment.text, &style.text_transform);
+                            let mut char_pos = frag_base_x;
+
+                            for ch in transformed.chars() {
+                                let glyph_x = char_pos;
+                                let glyph_y = frag_base_y;
+
+                                if has_text_shadow {
+                                    self.primitives.add_glyph(GlyphPrimitive {
+                                        x: glyph_x + shadow_ox,
+                                        y: glyph_y + shadow_oy,
+                                        font_size: fragment.font_size,
+                                        color: shadow_color,
+                                        glyph_id: ch as u32,
+                                        font_id: default_font_id,
+                                        bitmap_width: None,
+                                        bitmap_height: None,
+                                        rotation,
+                                    });
+                                }
+
+                                self.primitives.add_glyph(GlyphPrimitive {
+                                    x: glyph_x,
+                                    y: glyph_y,
+                                    font_size: fragment.font_size,
+                                    color,
+                                    glyph_id: ch as u32,
+                                    font_id: default_font_id,
+                                    bitmap_width: None,
+                                    bitmap_height: None,
+                                    rotation,
+                                });
+
+                                let advance = estimate_char_width(ch, fragment.font_size, false)
+                                    + letter_spacing
+                                    + if ch == ' ' { word_spacing } else { 0.0 };
+                                char_pos += advance;
+                            }
+
+                            let text_width: f32 = transformed
+                                .chars()
+                                .map(|ch| {
+                                    let w = estimate_char_width(ch, fragment.font_size, false) + letter_spacing;
+                                    if ch == ' ' { w + word_spacing } else { w }
+                                })
+                                .sum();
+                            self.paint_text_decoration_from_style(
+                                frag_base_x,
+                                frag_base_y,
+                                fragment.font_size,
+                                text_width,
+                                color,
+                                style,
+                            );
+                        }
+                    }
+                } else {
+                    // 非多列布局：原有渲染逻辑
+                    for fragment in fragments.iter() {
+                        self.painted_inline_nodes.insert(fragment.node_id);
+
+                        // text-indent 已在 InlineFormattingContext 中处理，fragment.x 包含缩进
+                        let (frag_base_x, frag_base_y, char_advance_is_y) = if is_vertical {
+                            // 垂直模式：fragment.x 是列位置，fragment.y 是深度位置
+                            // 字符沿 y 轴向下推进
+                            (content_x + fragment.x + tx, content_y + fragment.y + ty, true)
+                        } else {
+                            // 水平模式：fragment.x 是水平位置，fragment.y 是行内位置
+                            (
+                                content_x + fragment.x + tx,
+                                content_y + fragment.y + fragment.font_size + ty,
+                                false,
+                            )
+                        };
+                        let mut char_pos = if char_advance_is_y { frag_base_y } else { frag_base_x };
+
+                        let transformed = apply_text_transform(&fragment.text, &style.text_transform);
+
+                        for ch in transformed.chars() {
+                            let (glyph_x, glyph_y) = if char_advance_is_y {
+                                // 垂直模式：字符沿 y 轴向下推进，x 固定为列位置
+                                (frag_base_x, char_pos)
+                            } else {
+                                // 水平模式：字符沿 x 轴向右推进，y 固定
+                                (char_pos, frag_base_y)
+                            };
+
+                            if has_text_shadow {
+                                self.primitives.add_glyph(GlyphPrimitive {
+                                    x: glyph_x + shadow_ox,
+                                    y: glyph_y + shadow_oy,
+                                    font_size: fragment.font_size,
+                                    color: shadow_color,
+                                    glyph_id: ch as u32,
+                                    font_id: default_font_id,
+                                    bitmap_width: None,
+                                    bitmap_height: None,
+                                    rotation,
+                                });
+                            }
+
                             self.primitives.add_glyph(GlyphPrimitive {
-                                x: glyph_x + shadow_ox,
-                                y: glyph_y + shadow_oy,
+                                x: glyph_x,
+                                y: glyph_y,
                                 font_size: fragment.font_size,
-                                color: shadow_color,
+                                color,
                                 glyph_id: ch as u32,
                                 font_id: default_font_id,
                                 bitmap_width: None,
                                 bitmap_height: None,
                                 rotation,
                             });
+
+                            let advance = estimate_char_width(ch, fragment.font_size, false)
+                                + letter_spacing
+                                + if ch == ' ' { word_spacing } else { 0.0 };
+                            char_pos += advance;
                         }
 
-                        self.primitives.add_glyph(GlyphPrimitive {
-                            x: glyph_x,
-                            y: glyph_y,
-                            font_size: fragment.font_size,
+                        let text_width: f32 = transformed
+                            .chars()
+                            .map(|ch| {
+                                let w = estimate_char_width(ch, fragment.font_size, false) + letter_spacing;
+                                if ch == ' ' { w + word_spacing } else { w }
+                            })
+                            .sum();
+                        self.paint_text_decoration_from_style(
+                            frag_base_x,
+                            frag_base_y,
+                            fragment.font_size,
+                            text_width,
                             color,
-                            glyph_id: ch as u32,
-                            font_id: default_font_id,
-                            bitmap_width: None,
-                            bitmap_height: None,
-                            rotation,
-                        });
-
-                        let advance = estimate_char_width(ch, fragment.font_size, false)
-                            + letter_spacing
-                            + if ch == ' ' { word_spacing } else { 0.0 };
-                        char_pos += advance;
+                            style,
+                        );
                     }
-
-                    let text_width: f32 = transformed
-                        .chars()
-                        .map(|ch| {
-                            let w = estimate_char_width(ch, fragment.font_size, false) + letter_spacing;
-                            if ch == ' ' { w + word_spacing } else { w }
-                        })
-                        .sum();
-                    self.paint_text_decoration_from_style(
-                        frag_base_x,
-                        frag_base_y,
-                        fragment.font_size,
-                        text_width,
-                        color,
-                        style,
-                    );
-                }
+                } // end non-multicol else block
 
                 // text-overflow: ellipsis 后处理
                 if needs_ellipsis && container_width > 0.0 {
