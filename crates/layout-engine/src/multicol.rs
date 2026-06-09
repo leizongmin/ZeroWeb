@@ -297,22 +297,21 @@ fn assign_children_to_columns_sequential(
 }
 
 /// 根据列分配结果定位每个子元素。
+///
+/// 子元素坐标相对于容器 content area（与 taffy/float 后处理一致），
+/// 因此列 x 从 0 开始，不需要加 content_x/content_y。
 fn position_multicol_children(container: &mut LayoutBox, assignments: &[Vec<(usize, f32)>], info: &ColumnInfo) {
-    let content_x = container.content_x;
-    let content_y = container.content_y;
-
     for (col_idx, col_children) in assignments.iter().enumerate() {
-        let col_x = content_x + col_idx as f32 * (info.column_width + info.gap);
+        let col_x = col_idx as f32 * (info.column_width + info.gap);
         let mut y_offset = 0.0f32;
 
         for &(child_idx, child_total_height) in col_children {
             let child = &mut container.children[child_idx];
 
-            // 设置子元素的 x 位置为列的 x
-            // y 位置保持原有的流布局基础上，加列内偏移
+            // 设置子元素的 x 位置为列的 x（相对于 content area）
             child.x = col_x + child.margin_left;
-            // y 位置：列内累积
-            child.y = content_y + y_offset + child.margin_top;
+            // y 位置：列内累积（相对于 content area）
+            child.y = y_offset + child.margin_top;
 
             y_offset += child_total_height;
 
