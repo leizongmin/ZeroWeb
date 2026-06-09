@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-06-09
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
-**上游真实 reftest 通过率**: 73.5% (360/490)
+**上游真实 reftest 通过率**: 73.9% (362/490)
 
 ---
 
@@ -19,7 +19,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 68.6% (336/490)**；css-text-decor 100.0% ✅；css-fonts 96.7% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；CSS2 67.4%；css-flexbox 63.6%；css-position 62.5%；css-multicol 47.4%；css-writing-modes 39.0%；**R19 修复**：inset 初始值 Auto ✅(registry)；split_into_words 尾部空格修复 ✅(最后一个单词不带尾部空格)；fix_vertical_mode_abs_pos containing block 过滤 ✅(仅处理 position!=static 的容器)；unused variable 清理 ✅ |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 73.9% (362/490)**；css-text-decor 100.0% ✅；css-fonts 100.0% ✅(≥95%)；css-grid 85.0%；css-writing-modes 76.3%；css-tables 72.7%；CSS2 69.0%；css-flexbox 63.6%；css-position 62.5%；css-multicol 47.4%；**R21 修复**：font 简写负 line-height 拒绝 ✅；background-position 简写双值捕获修复 ✅(第一个值之后的长度/百分比值被静默丢弃) |
 
 ## 当前状态概览
 
@@ -287,11 +287,11 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-09（本轮第二十轮）
+**日期**: 2026-06-09（本轮第二十一轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
-**通过**: 360
-**失败**: 130
-**通过率**: 73.5%
+**通过**: 362
+**失败**: 128
+**通过率**: 73.9%
 
 **说明**：通过率从 68.6% 提升至 73.5%（+24 个测试）。R20 关键修复：(1) reftest 分类容差 bug — 上游 reftest 使用 Default::default()（1% diff, 5ch）而非分类特定容差（Layout: 1%/5ch, Text: 5%/15ch），导致所有测试使用严格布局容差。改为 ReftestConfig::for_category() 后，文字类测试（css-writing-modes, css-fonts）使用正确容差。新增 with_viewport() builder 方法。(2) columns 简写解析修复 — 单整数值（如 `columns: 3`）现在正确解析为 column-count 而非 column-width（3px）。(3) 零高度浮动处理 — line_max_height 跳过零高度浮动元素。
 
@@ -304,7 +304,7 @@
 | css-grid/ | 17/20 | 85.0% | ❌ |
 | css-writing-modes/ | 45/59 | 76.3% | ❌ |
 | css-tables/ | 40/55 | 72.7% | ❌ |
-| CSS2/ | 87/129 | 67.4% | ❌ |
+| CSS2/ | 89/129 | 69.0% | ❌ |
 | css-flexbox/ | 35/55 | 63.6% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
 | css-multicol/ | 27/57 | 47.4% | ❌ |
@@ -640,6 +640,8 @@
 98. ~~R20 — reftest 分类容差 bug 修复~~ ✅(for_category 替代 Default::default()；+24 测试通过)
 99. ~~R20 — columns 简写解析修复~~ ✅(整数优先 column-count 而非 column-width)
 100. ~~R20 — 零高度浮动处理~~ ✅(line_max_height 跳过零高度浮动)
+101. ~~R21 — font 简写负 line-height 拒绝~~ ✅(CSS Fonts §3.7)
+102. ~~R21 — background-position 简写双值捕获~~ ✅(+1 upstream test: background-329.xht)
 101. R20 — multicol column breaking（影响 ~16 个测试：需实现内容碎片化）
 102. R20 — CSS2 float/clear 精度提升（影响 ~19 个测试：clearance 算法 + image scaling）
 103. R20 — CSS2 inline box model（影响 ~8 个测试：空 inline line-height + block-in-inline）
