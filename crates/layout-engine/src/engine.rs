@@ -144,6 +144,10 @@ impl LayoutEngine {
         // 10.5 后处理：修正垂直书写模式下绝对定位元素的静态位置
         fix_vertical_mode_abs_pos(&mut root_box, doc, styles);
 
+        // 10.6 后处理：对 flex/grid 容器的子元素按 CSS order 排序
+        // taffy 0.7 不支持 CSS order 属性，因此需要在后处理中排序。
+        sort_children_by_css_order(&mut root_box, styles);
+
         // 11. 后处理：taffy 已对 position:relative 元素应用 inset 偏移到 layout.location，
         // 因此不再需要额外的后处理步骤（否则会双重偏移）。
         // apply_relative_offsets(&mut root_box, styles);
@@ -245,6 +249,7 @@ impl LayoutEngine {
         // margin 折叠由 taffy 0.7 内置处理
         crate::table::adjust_table_layout(&mut root_box, doc, styles);
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
+        sort_children_by_css_order(&mut root_box, styles);
         // taffy 已在 layout.location 中包含 position:relative 的 inset 偏移，无需额外后处理
 
         let layout_ms = use_start.elapsed().as_secs_f64() * 1000.0;
@@ -451,6 +456,7 @@ impl LayoutEngine {
             collapsed_border_style_overrides: [const { None }; 4],
             writing_mode: own_writing_mode.clone(),
             is_anonymous_text_item,
+            css_order: computed.as_ref().map(|s| s.order).unwrap_or(0),
         }
     }
 }
@@ -542,11 +548,49 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
     }
 }
 
-/// 后处理：修正垂直书写模式下绝对定位元素的静态位置。
+/// 后处理：对 flex/grid 容器的子元素按 CSS `order` 属性排序。
 ///
-/// taffy 在水平模式下计算布局，轴交换后 abs-pos 元素的静态位置可能不正确。
-/// 此函数对垂直书写模式容器中的 abs-pos 元素重新计算静态位置：
-/// 1. 在容器上运行 IFC（垂直模式）获取文本流的坐标
+/// CSS Flexbox §5.4: flex item 可以通过 `order` 属性改变视觉顺序。
+/// taffy 0.7 不支持 CSS `order`，因此在后处理中对 flex/grid 容器的
+/// 直接子元素按 `css_order` 字段排序。order 值小的排在前面。
+/// order 相同时保持原始 DOM 顺序（使用原始索引作为稳定排序键）。
+fn sort_children_by_css_order(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    // 先递归处理子元素
+    for child in &mut root.children {
+        sort_children_by_css_order(child, styles);
+    }
+
+    // 仅对 flex 或 grid 容器排序
+    let is_flex_or_grid = root.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+        matches!(s.display, zero_style_system::property::types::DisplayValue::Flex
+            | zero_style_system::property::types::DisplayValue::InlineFlex
+            | zero_style_system::property::types::DisplayValue::Grid
+            | zero_style_system::property::types::DisplayValue::InlineGrid)
+    });
+
+    if !is_flex_or_grid {
+        return;
+    }
+
+    // 检查是否有任何子元素的 order 不为 0
+    let has_non_zero_order = root.children.iter().any(|c| c.css_order != 0);
+    if !has_non_zero_order {
+        return;
+    }
+
+    // 稳定排序：按 css_order 升序，order 相同时保持原始 DOM 顺序
+    // 使用索引作为稳定排序键
+    let mut indexed: Vec<(usize, i32)> = root.children.iter().enumerate()
+        .map(|(i, c)| (i, c.css_order))
+        .collect();
+    indexed.sort_by_key(|&(idx, order)| (order, idx as i32));
+
+    // 按排序后的顺序重新排列子元素
+    let sorted_indices: Vec<usize> = indexed.iter().map(|&(i, _)| i).collect();
+    let original = std::mem::take(&mut root.children);
+    root.children = sorted_indices.iter().map(|&i| original[i].clone()).collect();
+}
+
 /// 2. 查找 abs-pos 元素在文本流中的位置
 /// 3. 仅当 taffy 给出的位置明显偏离 IFC 位置时才修正
 fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
