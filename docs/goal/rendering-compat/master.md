@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-06-09
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
-**上游真实 reftest 通过率**: 67.1% (329/490)
+**上游真实 reftest 通过率**: 67.3% (330/490)
 
 ---
 
@@ -19,7 +19,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 66.3% (325/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；css-position 62.5%；CSS2 62.8%(129 tests)；css-flexbox 60.0%；css-multicol 43.9%；css-writing-modes 39.0%；**R15 修复**：零 clearance 阻止 margin 折叠 ✅；inline 元素 padding/border 参与行盒高度 ✅；vertical-rl 列方向 RTL ✅；垂直 abs-pos 静态位置 ✅；**float 定位 flow 追踪修复 ✅(flex-flow-001 1.56%→0.0%)** |
+| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 67.3% (330/490)**；css-text-decor 100.0% ✅；css-fonts 95.0% ✅(≥95%)；css-grid 85.0%；css-tables 72.7%；CSS2 64.3%(83/129)；css-flexbox 63.6%；css-position 62.5%；css-multicol 45.6%；css-writing-modes 39.0%；**R17 修复**：容器高度坐标系统修正 ✅(content_y 绝对坐标与子元素相对坐标混用)；空 inline 元素 line-height 贡献 ✅(CSS 2.1 §10.8.1)；clearance 算法改进 ✅(零 clearance 时确保不低于 hypothetical_y)；clear-float-001 通过 ✅ |
 
 ## 当前状态概览
 
@@ -287,13 +287,13 @@
 
 ## 上游真实 WPT Reftest 通过率
 
-**日期**: 2026-06-09（本轮第十五轮）
+**日期**: 2026-06-09（本轮第十七轮）
 **总用例**: 490（上游真实 reftest，排除 skip list）
-**通过**: 325
-**失败**: 165
-**通过率**: 66.3%
+**通过**: 330
+**失败**: 160
+**通过率**: 67.3%
 
-**说明**：通过率从 66.3% 提升至 67.1%（+4 个测试）。R16 关键修复：(1) 移除 apply_relative_offsets 双重偏移（taffy 0.7 已内置 position:relative inset），修复了 3 个使用 `position:relative; top:1in` 的参考文件 + 修复了 border-bottom-001/005；(2) float Y 位置调整以尊重正常流内容；(3) clearance 计算使用 collapse_two_margins() 替代 max()。
+**说明**：通过率从 67.1% 提升至 67.3%（+1 个测试）。R17 关键修复：(1) 容器高度计算坐标系修正 — content_bottom 使用子元素相对坐标（相对 content area），不再错误减去 content_y（绝对坐标）；(2) 空 inline 元素 line-height 贡献 — 行盒无 runs 但 height>0 时仍 push（CSS 2.1 §10.8.1）；(3) clearance 算法改进 — 零 clearance 时使用 max(uncollapsed_y, hypothetical_y) 防止元素浮动到 float 上方。
 
 ### 按目录
 
@@ -303,8 +303,11 @@
 | css-fonts/ | 57/60 | 95.0% | ✅ |
 | css-grid/ | 17/20 | 85.0% | ❌ |
 | css-tables/ | 40/55 | 72.7% | ❌ |
+| CSS2/ | 83/129 | 64.3% | ❌ |
+| css-flexbox/ | 35/55 | 63.6% | ❌ |
 | css-position/ | 10/16 | 62.5% | ❌ |
-| CSS2/ | 82/129 | 63.6% | ❌ |
+| css-multicol/ | 26/57 | 45.6% | ❌ |
+| css-writing-modes/ | 23/59 | 39.0% | ❌ |
 | css-flexbox/ | 35/55 | 63.6% | ❌ |
 | css-multicol/ | 26/57 | 45.6% | ❌ |
 | css-writing-modes/ | 23/59 | 39.0% | ❌ |
