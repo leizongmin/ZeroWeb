@@ -807,12 +807,15 @@ impl super::Painter {
                         };
                         let col_idx = col_idx.min(mc.col_count - 1);
                         let col_x_offset = col_idx as f32 * (mc.col_width + mc.gap);
+                        // CSS multicol：每列从顶部开始，需要将 line.y 转换为列内相对 y
+                        // line.y 是 IFC 中的累积 y，减去列起始 y 得到列内偏移
+                        let col_start_y = col_idx as f32 * target_h;
 
                         for fragment in &line.runs {
                             self.painted_inline_nodes.insert(fragment.node_id);
 
                             let frag_base_x = content_x + fragment.x + col_x_offset + tx;
-                            let frag_base_y = content_y + line.y + fragment.y + fragment.font_size + ty;
+                            let frag_base_y = content_y + (line.y - col_start_y) + fragment.y + fragment.font_size + ty;
 
                             let transformed = apply_text_transform(&fragment.text, &style.text_transform);
                             let mut char_pos = frag_base_x;
