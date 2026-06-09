@@ -107,7 +107,8 @@ impl PropertyRegistry {
             "order" => Some(Integer(0)),
 
             // 定位
-            "top" | "right" | "bottom" | "left" => Some(Length(LengthValue::Px(0.0))),
+            // CSS 2.1 §9.3.2: top/right/bottom/left 的初始值为 auto，不是 0px
+            "top" | "right" | "bottom" | "left" => Some(Length(LengthValue::Auto)),
             "z-index" => Some(ZIndex(ZIndexValue::Auto)),
 
             // Overflow

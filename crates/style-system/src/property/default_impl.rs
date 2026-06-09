@@ -5,7 +5,6 @@ use super::types::*;
 
 impl Default for ComputedStyle {
     fn default() -> Self {
-        let zero = LengthValue::Px(0.0);
         let auto_length = LengthValue::Auto;
         let initial_color = ColorValue::Rgba(0, 0, 0, 255); // black
         let transparent = ColorValue::Transparent;
@@ -129,10 +128,11 @@ impl Default for ComputedStyle {
             grid_template_areas: None,
 
             // 定位
-            top: zero.clone(),
-            right: zero.clone(),
-            bottom: zero.clone(),
-            left: zero,
+            // CSS 2.1 §9.3.2: top/right/bottom/left 初始值为 auto
+            top: auto_length.clone(),
+            right: auto_length.clone(),
+            bottom: auto_length.clone(),
+            left: auto_length,
             z_index: ZIndexValue::Auto,
 
             // Overflow

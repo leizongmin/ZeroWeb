@@ -1447,10 +1447,18 @@ impl InlineFormattingContext {
                         }
                     }
                     if !current_latin.is_empty() {
-                        result.push(format!("{current_latin} "));
+                        result.push(current_latin);
                     }
                 } else {
-                    result.push(format!("{word} "));
+                    result.push(word.to_string());
+                }
+            }
+            // 为非末尾单词添加尾部空格（表示词间距 advance width）
+            // 最后一个单词不加——它后面没有下一个单词，不应有额外间隙
+            let len = result.len();
+            for (i, item) in result.iter_mut().enumerate() {
+                if i < len - 1 && !item.ends_with(' ') {
+                    item.push(' ');
                 }
             }
             result
