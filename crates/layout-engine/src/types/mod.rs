@@ -122,6 +122,13 @@ pub struct LayoutBox {
     /// CSS Flexbox §5.4: flex item 的视觉顺序由 order 属性决定。
     /// taffy 0.7 不支持 order，因此需要在后处理中对 flex 容器的子元素按 order 排序。
     pub css_order: i32,
+    /// 多列布局视觉碎片化偏移列表。
+    ///
+    /// 当一个子元素高度超过列高时，它需要视觉上"跨列"显示。
+    /// 每个元素包含 (column_index, y_offset_in_column, visible_height)。
+    /// 第一个条目是主位置（已存储在 x/y 中），后续条目是额外的列位置。
+    /// paint 系统对每个额外列位置重新绘制子元素（带裁剪）。
+    pub column_span_offsets: Vec<(usize, f32, f32)>,
 }
 
 impl LayoutBox {
@@ -195,6 +202,7 @@ impl Default for LayoutBox {
             writing_mode: WritingModeValue::HorizontalTb,
             is_anonymous_text_item: false,
             css_order: 0,
+            column_span_offsets: Vec::new(),
         }
     }
 }
