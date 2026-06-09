@@ -200,13 +200,21 @@ fn test_vertical_rl_abs_pos_static_position() {
 
     // 找到容器
     let container = find_box_by_tag(&result.root, &doc, "div").expect("should find container <div>");
-    eprintln!("container: x={}, y={}, w={}, h={}", container.x, container.y, container.width, container.height);
-    eprintln!("container content: x={}, y={}, w={}, h={}", container.content_x, container.content_y, container.content_width, container.content_height);
+    eprintln!(
+        "container: x={}, y={}, w={}, h={}",
+        container.x, container.y, container.width, container.height
+    );
+    eprintln!(
+        "container content: x={}, y={}, w={}, h={}",
+        container.content_x, container.content_y, container.content_width, container.content_height
+    );
     eprintln!("container writing_mode: {:?}", container.writing_mode);
 
     for (i, child) in container.children.iter().enumerate() {
-        eprintln!("child[{}]: x={}, y={}, w={}, h={}, abs={}, node={:?}",
-            i, child.x, child.y, child.width, child.height, child.is_absolute, child.node_id);
+        eprintln!(
+            "child[{}]: x={}, y={}, w={}, h={}, abs={}, node={:?}",
+            i, child.x, child.y, child.width, child.height, child.is_absolute, child.node_id
+        );
         if let Some(nid) = child.node_id {
             if let Some(node) = doc.get(nid) {
                 eprintln!("  node kind: {:?}", std::mem::discriminant(&node.kind));
@@ -217,7 +225,10 @@ fn test_vertical_rl_abs_pos_static_position() {
     // 找到 abs-pos span
     let span = container.children.iter().find(|c| c.is_absolute);
     if let Some(span) = span {
-        eprintln!("abs span: x={}, y={}, w={}, h={}", span.x, span.y, span.width, span.height);
+        eprintln!(
+            "abs span: x={}, y={}, w={}, h={}",
+            span.x, span.y, span.width, span.height
+        );
         // 静态位置：在 vertical-rl 中，"1 2 34" + "X" 应该在第5个字符位置
         // Ahem 80px 字体，4个可见字符(1,2,3,4) 占 4×80=320px 深度
         // 但 X 在第 5 列位置...

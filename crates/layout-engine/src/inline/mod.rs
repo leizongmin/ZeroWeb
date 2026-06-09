@@ -499,9 +499,7 @@ impl InlineFormattingContext {
     /// 从 ComputedStyle 提取 inline 元素的垂直 padding 和 border。
     ///
     /// 返回 (padding_top, padding_bottom, border_top, border_bottom)。
-    fn extract_inline_box_metrics(
-        style: Option<&zero_style_system::ComputedStyle>,
-    ) -> (f32, f32, f32, f32) {
+    fn extract_inline_box_metrics(style: Option<&zero_style_system::ComputedStyle>) -> (f32, f32, f32, f32) {
         use zero_css_parser::values::LengthValue;
         let extract = |val: &LengthValue| -> f32 {
             match val {

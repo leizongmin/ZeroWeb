@@ -144,8 +144,9 @@ impl LayoutEngine {
         // 10.5 后处理：修正垂直书写模式下绝对定位元素的静态位置
         fix_vertical_mode_abs_pos(&mut root_box, doc, styles);
 
-        // 11. 后处理：对 position:relative 元素应用视觉偏移
-        apply_relative_offsets(&mut root_box, styles);
+        // 11. 后处理：taffy 已对 position:relative 元素应用 inset 偏移到 layout.location，
+        // 因此不再需要额外的后处理步骤（否则会双重偏移）。
+        // apply_relative_offsets(&mut root_box, styles);
 
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
@@ -244,7 +245,7 @@ impl LayoutEngine {
         // margin 折叠由 taffy 0.7 内置处理
         crate::table::adjust_table_layout(&mut root_box, doc, styles);
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
-        apply_relative_offsets(&mut root_box, styles);
+        // taffy 已在 layout.location 中包含 position:relative 的 inset 偏移，无需额外后处理
 
         let layout_ms = use_start.elapsed().as_secs_f64() * 1000.0;
 
@@ -555,7 +556,10 @@ fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, styles: &Hash
     }
 
     // 仅处理垂直书写模式的容器
-    if !matches!(root.writing_mode, WritingModeValue::VerticalRl | WritingModeValue::VerticalLr) {
+    if !matches!(
+        root.writing_mode,
+        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+    ) {
         return;
     }
 
@@ -998,7 +1002,7 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                     };
                     // 假设位置：基于正常流的 flow_bottom + margin 折叠
                     // CSS 2.1 §9.5.2：「as if 'clear' were 'none'」
-                    let collapsed_margin = last_flow_mb.max(child.margin_top);
+                    let collapsed_margin = crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
                     let hypothetical_y = flow_bottom + collapsed_margin;
 
                     // CSS 2.1 §9.5.2 完整 clearance 计算：
