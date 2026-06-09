@@ -408,7 +408,7 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                             (prev_cb.bottom_w, &prev_cb.bottom_s)
                         };
                         // 需要覆盖：宽度不同，或样式不同
-                        let need_override = (win_w - cb.top_w).abs() > 0.01 || win_style != &cb.top_s;
+                        let need_override = (win_w - cb.top_w).abs() > 0.001 || win_style != &cb.top_s;
                         if need_override {
                             let win_color = if winner == BorderSource::Cell {
                                 None
@@ -482,7 +482,7 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                         } else {
                             (left_cb.right_w, &left_cb.right_s)
                         };
-                        let need_override = (win_w - cb.left_w).abs() > 0.01 || win_style != &cb.left_s;
+                        let need_override = (win_w - cb.left_w).abs() > 0.001 || win_style != &cb.left_s;
                         if need_override {
                             let win_color = if winner == BorderSource::Cell {
                                 None
