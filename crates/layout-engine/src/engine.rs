@@ -576,7 +576,12 @@ fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, styles: &Hash
     // 运行 IFC（垂直模式）获取所有片段坐标
     let is_vertical = true;
     let is_vertical_rtl = matches!(root.writing_mode, WritingModeValue::VerticalRl);
-    let container_width = root.content_height; // 垂直模式下 container_height 是"行宽"
+    // 轴交换后：content_width = 视觉高度（行内方向），content_height = 视觉宽度（块方向）
+    // IFC 的"行宽"是行内方向的可用尺寸 = 视觉高度 = content_width
+    let container_width = root.content_width;
+    if container_width <= 0.0 {
+        return;
+    }
     let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width)
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl);

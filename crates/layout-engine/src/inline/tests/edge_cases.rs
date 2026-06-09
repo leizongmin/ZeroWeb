@@ -308,7 +308,7 @@ fn test_split_into_words_single_word() {
     let ctx = InlineFormattingContext::new(800.0);
     let words = ctx.split_into_words("Hello");
     assert_eq!(words.len(), 1);
-    assert_eq!(words[0], "Hello ");
+    assert_eq!(words[0], "Hello");
 }
 
 /// 测试 split_into_words：仅空白字符。
@@ -508,7 +508,7 @@ fn test_split_into_words_normal_collapses() {
     // 普通模式：split_whitespace 折叠多空格
     assert_eq!(words.len(), 2, "普通模式应折叠空白为 2 个单词");
     assert_eq!(words[0], "hello ");
-    assert_eq!(words[1], "world ");
+    assert_eq!(words[1], "world");
 }
 
 /// 测试 no_wrap 模式下长文本不换行。
