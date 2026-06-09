@@ -4,12 +4,30 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
 **上游真实 reftest 通过率**: 74.7% (366/490)
 
-### R26 进展
+### R27 进展
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
-| multicol inline 内容列分布 | css-multicol 基础设施 | paint 层新增 inline-only multicol 容器的列宽 IFC 创建和行分配渲染。使用 line.y 正确计算行位置并分布到各列。新增 `all_fragments_with_line_y()` 方法到 IFC |
-| CSS2 inline 文本行 y 坐标 | 发现现有 bug | `all_fragments()` 扁平化行盒时丢失 `line.y` 信息，导致多行文本片段的 y 坐标均为行相对值而非容器绝对值。新增 `all_fragments_with_line_y()` 方法修复此问题（暂未在非 multicol 路径启用，避免回归） |
+| multicol inline 列内 y 偏移修正 | css-multicol 渲染正确性 | paint 层 inline multicol 渲染时，每行的 y 使用 IFC 累积值而非列内相对值。修正为减去列起始 y，使每列内容从顶部开始渲染 |
+| is_multicol 标志 | LayoutBox 基础设施 | LayoutBox 新增 is_multicol 布尔标志，在布局树构建时根据 column-count/column-width 设置。为未来的 BFC 建立和 margin 折叠阻止做准备 |
+| BFC 多列容器调查 | css-multicol 可行性分析 | 调查了 multicol 容器建立 BFC 的行为（CSS §2）。发现 `establishes_bfc()` 添加 multicol 检查会导致 `float-with-line-after-spanner.html` 回归（-1 test），暂未启用 |
+
+### R27 尝试但回退的修复
+
+| 尝试 | 结果 | 说明 |
+|------|------|------|
+| 非多列路径 line.y 修复 | 回退（-9 tests） | 将非多列 paint 路径从 `all_fragments()` 改为按行遍历并添加 line.y，导致 CSS2 -4 和 multicol -5 回归。现有渲染依赖 `fragment.y=0` 的行为，修改后级联影响所有多行文本渲染 |
+| multicol BFC 建立 | 回退（-1 test） | 在 `establishes_bfc()` 中添加 `is_multicol` 检查阻止 margin 折叠，导致 `float-with-line-after-spanner.html` 回归。需要在 BFC 建立同时处理 float-in-multicol 交互 |
+
+### R27 失败根因总结
+
+当前 124 个上游 reftest 失败的根因分布：
+- **布局精度问题**（float/clear/margin）~50 个：float clearance 算法精度、margin 折叠边界 case
+- **Writing-mode 轴交换** ~14 个：需要垂直布局模式（vertical-rl/lr）
+- **Multicol column breaking** ~8 个：需要内容碎片化（拆分单个块到多列）
+- **Multicol clip/overflow** ~4 个：内容溢出列边界的裁剪行为
+- **子像素/精度** ~20 个：border 渲染精度、字体度量差异、背景图像缩放
+- **功能缺失** ~28 个：column-height、column-wrap、position:fixed 打印、3D transform 等
 
 ### R25 进展
 
