@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, ListStyleTypeValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::{
-    FloatExclusion, InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode, estimate_char_width,
+    FloatExclusion, InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode,
+    estimate_char_width,
 };
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
@@ -768,26 +769,71 @@ impl super::Painter {
                 zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
             );
             let is_vertical_rtl = matches!(style.writing_mode, zero_style_system::WritingModeValue::VerticalRl);
-            let mut inline_ctx = InlineFormattingContext::new(ifc_width)
-                .with_text_align(text_align)
-                .with_text_align_last(text_align_last)
-                .with_break_word(break_word)
-                .with_no_wrap(no_wrap)
-                .with_preserve_whitespace(preserve_whitespace)
-                .with_word_break(word_break_mode)
-                .with_text_indent(text_indent_px)
-                .with_float_exclusions(float_exclusions)
-                .with_tab_size(tab_size_px)
-                .with_vertical(is_vertical)
-                .with_vertical_rtl(is_vertical_rtl);
-            inline_ctx.layout(doc, node_id, &HashMap::new());
 
-            let fragments = inline_ctx.all_fragments();
+            // 尝试使用布局引擎存储的行内布局结果，避免重新运行 IFC。
+            // 仅在非多列模式下使用存储结果（多列需要列宽 IFC，与完整宽度 IFC 不同）。
+            let use_stored = multicol_info.is_none() && box_node.inline_layout.is_some();
+
+            // 从存储结果创建的扁平化片段列表（用于非多列渲染路径）
+            struct PaintFragment {
+                x: f32,
+                y: f32,
+                font_size: f32,
+                text: String,
+                node_id: NodeId,
+            }
+
+            let stored_fragments: Vec<PaintFragment> = if use_stored {
+                box_node.inline_layout.as_ref().unwrap()
+                    .iter()
+                    .flat_map(|line| {
+                        line.fragments.iter().filter_map(|f| {
+                            f.node_id.map(|nid| PaintFragment {
+                                x: f.x,
+                                y: f.y,
+                                font_size: f.font_size,
+                                text: f.text.clone(),
+                                node_id: nid,
+                            })
+                        })
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
+            // 非存储模式下运行 IFC
+            let inline_ctx = if use_stored {
+                InlineFormattingContext::new(ifc_width)
+            } else {
+                let mut ctx = InlineFormattingContext::new(ifc_width)
+                    .with_text_align(text_align)
+                    .with_text_align_last(text_align_last)
+                    .with_break_word(break_word)
+                    .with_no_wrap(no_wrap)
+                    .with_preserve_whitespace(preserve_whitespace)
+                    .with_word_break(word_break_mode)
+                    .with_text_indent(text_indent_px)
+                    .with_float_exclusions(float_exclusions)
+                    .with_tab_size(tab_size_px)
+                    .with_vertical(is_vertical)
+                    .with_vertical_rtl(is_vertical_rtl);
+                ctx.layout(doc, node_id, &HashMap::new());
+                ctx
+            };
+
+            let fragments: Vec<&zero_layout_engine::TextFragment> = if use_stored {
+                Vec::new()
+            } else {
+                inline_ctx.all_fragments()
+            };
+
+            let has_content = use_stored && !stored_fragments.is_empty() || !fragments.is_empty();
 
             let needs_ellipsis = matches!(style.text_overflow, TextOverflowValue::Ellipsis)
                 && !matches!(style.overflow_x, zero_css_parser::values::OverflowValue::Visible);
 
-            if !fragments.is_empty() {
+            if has_content {
                 let glyphs_before_fragments = self.primitives.glyphs.len();
 
                 // writing-mode: vertical-rl/vertical-lr 时字符旋转 90°
@@ -874,83 +920,90 @@ impl super::Painter {
                         }
                     }
                 } else {
-                    // 非多列布局：原有渲染逻辑
-                    for fragment in fragments.iter() {
-                        self.painted_inline_nodes.insert(fragment.node_id);
+                    // 非多列布局：统一处理存储片段和 IFC 片段
+                    // 宏化渲染逻辑，避免重复代码
+                    macro_rules! render_fragment {
+                        ($frag_x:expr, $frag_y:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr) => {{
+                            self.painted_inline_nodes.insert($frag_nid);
 
-                        // text-indent 已在 InlineFormattingContext 中处理，fragment.x 包含缩进
-                        let (frag_base_x, frag_base_y, char_advance_is_y) = if is_vertical {
-                            // 垂直模式：fragment.x 是列位置，fragment.y 是深度位置
-                            // 字符沿 y 轴向下推进
-                            (content_x + fragment.x + tx, content_y + fragment.y + ty, true)
-                        } else {
-                            // 水平模式：fragment.x 是水平位置，fragment.y 是行内位置
-                            (
-                                content_x + fragment.x + tx,
-                                content_y + fragment.y + fragment.font_size + ty,
-                                false,
-                            )
-                        };
-                        let mut char_pos = if char_advance_is_y { frag_base_y } else { frag_base_x };
-
-                        let transformed = apply_text_transform(&fragment.text, &style.text_transform);
-
-                        for ch in transformed.chars() {
-                            let (glyph_x, glyph_y) = if char_advance_is_y {
-                                // 垂直模式：字符沿 y 轴向下推进，x 固定为列位置
-                                (frag_base_x, char_pos)
+                            let (frag_base_x, frag_base_y, char_advance_is_y) = if is_vertical {
+                                (content_x + $frag_x + tx, content_y + $frag_y + ty, true)
                             } else {
-                                // 水平模式：字符沿 x 轴向右推进，y 固定
-                                (char_pos, frag_base_y)
+                                (
+                                    content_x + $frag_x + tx,
+                                    content_y + $frag_y + $frag_fs + ty,
+                                    false,
+                                )
                             };
+                            let mut char_pos = if char_advance_is_y { frag_base_y } else { frag_base_x };
 
-                            if has_text_shadow {
+                            let transformed = apply_text_transform(&$frag_text, &style.text_transform);
+
+                            for ch in transformed.chars() {
+                                let (glyph_x, glyph_y) = if char_advance_is_y {
+                                    (frag_base_x, char_pos)
+                                } else {
+                                    (char_pos, frag_base_y)
+                                };
+
+                                if has_text_shadow {
+                                    self.primitives.add_glyph(GlyphPrimitive {
+                                        x: glyph_x + shadow_ox,
+                                        y: glyph_y + shadow_oy,
+                                        font_size: $frag_fs,
+                                        color: shadow_color,
+                                        glyph_id: ch as u32,
+                                        font_id: default_font_id,
+                                        bitmap_width: None,
+                                        bitmap_height: None,
+                                        rotation,
+                                    });
+                                }
+
                                 self.primitives.add_glyph(GlyphPrimitive {
-                                    x: glyph_x + shadow_ox,
-                                    y: glyph_y + shadow_oy,
-                                    font_size: fragment.font_size,
-                                    color: shadow_color,
+                                    x: glyph_x,
+                                    y: glyph_y,
+                                    font_size: $frag_fs,
+                                    color,
                                     glyph_id: ch as u32,
                                     font_id: default_font_id,
                                     bitmap_width: None,
                                     bitmap_height: None,
                                     rotation,
                                 });
+
+                                let advance = estimate_char_width(ch, $frag_fs, false)
+                                    + letter_spacing
+                                    + if ch == ' ' { word_spacing } else { 0.0 };
+                                char_pos += advance;
                             }
 
-                            self.primitives.add_glyph(GlyphPrimitive {
-                                x: glyph_x,
-                                y: glyph_y,
-                                font_size: fragment.font_size,
+                            let text_width: f32 = transformed
+                                .chars()
+                                .map(|ch| {
+                                    let w = estimate_char_width(ch, $frag_fs, false) + letter_spacing;
+                                    if ch == ' ' { w + word_spacing } else { w }
+                                })
+                                .sum();
+                            self.paint_text_decoration_from_style(
+                                frag_base_x,
+                                frag_base_y,
+                                $frag_fs,
+                                text_width,
                                 color,
-                                glyph_id: ch as u32,
-                                font_id: default_font_id,
-                                bitmap_width: None,
-                                bitmap_height: None,
-                                rotation,
-                            });
+                                style,
+                            );
+                        }};
+                    }
 
-                            let advance = estimate_char_width(ch, fragment.font_size, false)
-                                + letter_spacing
-                                + if ch == ' ' { word_spacing } else { 0.0 };
-                            char_pos += advance;
+                    if use_stored {
+                        for frag in &stored_fragments {
+                            render_fragment!(frag.x, frag.y, frag.font_size, frag.text, frag.node_id);
                         }
-
-                        let text_width: f32 = transformed
-                            .chars()
-                            .map(|ch| {
-                                let w = estimate_char_width(ch, fragment.font_size, false) + letter_spacing;
-                                if ch == ' ' { w + word_spacing } else { w }
-                            })
-                            .sum();
-                        self.paint_text_decoration_from_style(
-                            frag_base_x,
-                            frag_base_y,
-                            fragment.font_size,
-                            text_width,
-                            color,
-                            style,
-                        );
+                    } else {
+                        for fragment in fragments.iter() {
+                            render_fragment!(fragment.x, fragment.y, fragment.font_size, fragment.text, fragment.node_id);
+                        }
                     }
                 } // end non-multicol else block
 
