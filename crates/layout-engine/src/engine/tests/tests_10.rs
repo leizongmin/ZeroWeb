@@ -202,6 +202,94 @@ fn test_clear_none_no_effect() {
     );
 }
 
+/// 测试 clearance-006 场景：零 clearance / 正 clearance 的 margin 折叠行为
+/// 结构：container > before(mb=40) + float(h=40) + clear(mt=40, h=20)
+/// container: border-top=20, content-height=80, border-bottom=20
+/// 正确行为：float 在 Y=40, clear 在 Y=80（正 clearance）,
+///   clear 溢出到 border-bottom 区域，绿色覆盖红色
+#[test]
+fn test_clearance_with_margin_collapse() {
+    let (mut doc, body) = make_doc_with_body();
+
+    // container
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+
+    // .before (empty, margin-bottom=40)
+    let before = doc.create_element("div");
+    doc.append_child(container, before).unwrap();
+
+    // .float (height=40, no margin)
+    let float_elem = doc.create_element("div");
+    doc.append_child(container, float_elem).unwrap();
+
+    // .clear (clear:both, margin-top=40, height=20)
+    let clear_elem = doc.create_element("div");
+    doc.append_child(container, clear_elem).unwrap();
+
+    let mut styles = HashMap::new();
+
+    // container: width=100, border-top=20, height=80, border-bottom=20
+    let mut ct = ComputedStyle::default();
+    ct.display = DisplayValue::Block;
+    ct.width = LengthValue::Px(100.0);
+    ct.height = LengthValue::Px(80.0);
+    ct.border_top_width = LengthValue::Px(20.0);
+    ct.border_bottom_width = LengthValue::Px(20.0);
+    styles.insert(container, ct);
+
+    // .before: height=0, margin-bottom=40
+    let mut be = ComputedStyle::default();
+    be.display = DisplayValue::Block;
+    be.width = LengthValue::Px(100.0);
+    be.height = LengthValue::Px(0.0);
+    be.margin_bottom = LengthValue::Px(40.0);
+    styles.insert(before, be);
+
+    // .float: float:left, height=40, no margin
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.width = LengthValue::Px(100.0);
+    fl.height = LengthValue::Px(40.0);
+    fl.float = FloatValue::Left;
+    styles.insert(float_elem, fl);
+
+    // .clear: clear:both, margin-top=40, height=20
+    let mut ce = ComputedStyle::default();
+    ce.display = DisplayValue::Block;
+    ce.width = LengthValue::Px(100.0);
+    ce.height = LengthValue::Px(20.0);
+    ce.clear = ClearValue::Both;
+    ce.margin_top = LengthValue::Px(40.0);
+    styles.insert(clear_elem, ce);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let ct_box = find_child_by_node_id(&result.root, container).expect("container found");
+    let _ = find_child_by_node_id(&result.root, before).expect("before found");
+    let fl_box = find_child_by_node_id(&result.root, float_elem).expect("float found");
+    let ce_box = find_child_by_node_id(&result.root, clear_elem).expect("clear found");
+
+    // Expected (content-relative, i.e. child.y - container.content_y):
+    // float at content-Y = 40 (after .before mb=40 collapses with float mt=0)
+    // float bottom = 80
+    // clear at content-Y = 80 (clearance pushes it below float bottom)
+    // clear bottom = 100 (overflows content area 80)
+    let content_y = ct_box.content_y;
+    let float_content_y = fl_box.y - content_y;
+    let clear_content_y = ce_box.y - content_y;
+
+    assert!(
+        (float_content_y - 40.0).abs() < 1.0,
+        "float should be at content-Y=40, got {}", float_content_y
+    );
+    assert!(
+        (clear_content_y - 80.0).abs() < 1.0,
+        "clear should be at content-Y=80 (clearance pushes below float), got {}", clear_content_y
+    );
+}
+
 /// 测试 BFC 检测：overflow:hidden 建立新的格式化上下文。
 #[test]
 fn test_bfc_detection_overflow_hidden() {

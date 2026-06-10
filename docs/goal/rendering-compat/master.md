@@ -2,13 +2,36 @@
 
 **最后更新**: 2026-06-10
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 76.1% (373/490)
+**上游真实 reftest 通过率**: 76.3% (374/490)
+
+### R32 进展
+
+**通过率**：374/490 (76.3%)，+1 test。聚焦于 table 布局坐标系统修正和匿名行单元格查找修复。
+
+#### 修复提交
+
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| 行坐标系统修正 | table.rs position_cells | 行的 y 坐标从绝对定位（相对 table content）改为相对行组定位，避免 paint 链中行组位置 + 行位置双重计数。影响所有多行组表格（tbody+tfoot） |
+| 嵌套匿名行单元格查找 | table.rs build_grid + position_cells | TableCell 新增 parent_rg_idx 字段，孤立行组中嵌套行组的单元格通过 table_box.children[rg_idx].children[idx] 正确查找。修复 table-row-group-nested-anonymous-001 |
+| get_row_box 孤立模式 | table.rs get_row_box/get_row_box_mut | 匿名行 row_group_index=None 时返回 table_box 本身（而非 table_box.children[idx]），支持孤立行组场景 |
+
+#### 按目录通过率变化
+
+| 目录 | R31 | R32 | 变化 |
+|------|-----|-----|------|
+| css-tables/ | 81.8% (45/55) | 83.6% (46/55) | +1 test |
+
+#### R32 分析
+
+1. **position-relative-table-tfoot-top** (1.04%)：行组 position:relative 的背景色在正确位置渲染（由 update_row_group_positions 设置），但差异可能来自字体渲染或 border-collapse 细节。
+2. **clearance/clear 测试**（1.16%-1.95%）：clearance 算法已正确使用 content_y_offset，差异主要来自 Ahem 字体渲染和 swatch 图像缩放。
+3. **writing-mode + flexbox** 测试（1.52%-1.85%）：需要垂直书写模式下轴交换支持，属于功能缺失。
+4. **20 个测试 <2% diff**：其中多数差异来自字体渲染（Ahem vs 默认字体）、swatch 图像缩放精度、或 writing-mode 功能缺失。
 
 ### R31 进展
 
 **通过率不变**：373/490 (76.1%)。本轮聚焦于系统性分析和高质量 bug 修复，为后续改进奠定基础。
-
-#### 修复提交
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
