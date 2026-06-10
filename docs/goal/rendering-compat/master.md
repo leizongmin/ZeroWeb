@@ -4,6 +4,72 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 78.2% (383/490)
 
+### R42 进展
+
+**通过率**：383/490 (78.2%)，与 R41 持平。提交 3 项正确性修复（均未改变通过率）；深入调查 paint IFC 架构、multicol paint 路径和 near-miss 测试根因。
+
+#### R42 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| multicol BFC overflow 修正 | `Overflow::Clip` 改为 `Overflow::Hidden`，使 taffy `is_scroll_container()` 返回 true，阻止多列容器父子 margin 折叠。multicol-collapsing-001 从 2.13% 降至 1.68%（仍超 1% 阈值） |
+| BFC 浮动排斥 double-counting 修复 | `float_geometries` 的 `float_h` 从 `height + margin_top + margin_bottom` 改为 `height + margin_bottom`，因为 `c.y` 已含 margin_top |
+| paint 路径 multicol em/rem 支持 | `compute_multicol_info_for_paint` 新增 Em/Rem 转 px 逻辑，之前静默视为 0。当前测试用例均使用 Px 或 layout 路径，故无通过率影响 |
+
+#### R42 调查与尝试
+
+1. **启用 compute_final_inline_layouts（回退）**：取消注释 step 12 以存储 layout IFC 结果供 paint 复用。导致 6 个回归（107→113 失败），与 R38 结论一致——layout IFC 与 paint IFC 在不同上下文运行（容器宽度、浮动排除区域等），存储的结果与后续 table/multicol 后处理后的实际布局不一致。
+
+2. **CSS order 排序调查**：确认 `sort_children_by_css_order`（engine.rs:670）是冗余的视觉排序——tree.rs:317 已在构建 taffy 树前按 CSS order 排序 flex/grid 子元素。flexbox baseline 近 miss（如 flex-order-wrap-reverse-baseline 1.27%）的根因是 taffy 对 wrap-reverse baseline 的内部计算，非我们的排序问题。
+
+3. **Near-miss 测试系统性分析**（35 个 <3% 失败）：
+   - **CSS2 floats-clear**（9 个 <3%）：多数差异来自 swatch 图像缩放精度（15×15/20×20 PNG → 96×96）与 CSS background-color 精确填充的像素差异，非 float 定位错误
+   - **CSS2 borders/colors/backgrounds**（6 个 <3%）：全部因 Ahem 字体渲染或 swatch 图像缩放，非布局错误
+   - **CSS2 linebox**（1 个 <3%）：inline-box-001/002 的 inline 元素背景由 taffy block 布局定位而非 IFC 位置，需架构级改动
+   - **CSS table**（4 个 <3%）：whitespace 处理 + border conflict resolution 精度
+   - **CSS flexbox**（8 个 <3%）：writing-mode 轴交换精度 + baseline 对齐
+   - **CSS multicol**（2 个 <3%）：BFC margin 折叠 + abspos containing block
+
+4. **paint IFC 架构瓶颈确认**（影响 50+ 测试）：
+   - paint IFC 使用 `&HashMap::new()` 导致所有文本使用 16px 默认字体度量
+   - 启用存储结果方案（compute_final_inline_layouts）因回归风险未合入
+   - 三个先前尝试方案（render_fs、传递 styles、存储结果）均因回归而回退
+   - **唯一可行路径**：在所有后处理完成后的最后阶段运行 IFC 并存储结果，同时传递浮动排除区域——这是最大的系统性改进，但需要较大重构
+
+#### 按目录通过率（不变）
+
+| 目录 | 通过/总数 | 通过率 |
+|------|-----------|--------|
+| css-text-decor/ | 39/39 | 100.0% ✅ |
+| css-fonts/ | 60/60 | 100.0% ✅ |
+| css-grid/ | 17/20 | 85.0% |
+| css-tables/ | 45/55 | 81.8% |
+| css-writing-modes/ | 46/59 | 78.0% |
+| CSS2/ | 93/129 | 72.1% |
+| css-position/ | 12/16 | 75.0% |
+| css-flexbox/ | 35/55 | 63.6% |
+| css-multicol/ | 36/57 | 63.2% |
+
+#### R42 失败根因分布（不变）
+
+与 R41 一致，107 个失败测试的分布：
+- CSS2/floats-clear precision: ~15（多数为 swatch 图像缩放精度）
+- writing-mode vertical: ~13
+- multicol remaining: ~21（breaking 004/005/006 + clip/count/fill）
+- flexbox baseline: ~9
+- CSS2/linebox inline box: ~8
+- table various: ~10
+- CSS2/border+background: ~7
+- 其他: ~24
+
+#### 后续重点（R43+）
+
+1. **paint IFC 架构改进**（影响 50+ 测试，系统性瓶颈）：唯一可行路径是在所有后处理完成后存储完整 layout IFC 结果到 LayoutBox，paint 直接复用。需要：(a) 传递浮动排除区域到最终 IFC；(b) 确保 table/multicol 后处理不改变容器尺寸（或重新运行 IFC）；(c) 解决基线计算一致性（`frag.y + height` vs `frag.y + font_size`）
+2. **writing-mode 垂直布局**（影响 13 测试，所有 >9%）：需要垂直书写模式下完整轴交换 + 垂直字形渲染（旋转文本 90°）
+3. **multicol breaking 004/005/006 修复**（影响 3 测试，diff 5.6-16.6%）：需要更精细的片段分配算法
+4. **swatch 图像渲染精度**（影响 15+ 测试）：CSS2 floats-clear 的主要失败原因是 15×15/20×20 PNG 缩放到 96×96 的像素精度，需考虑 solid-color 检测 + nearest-neighbor 缩放
+5. **table border-conflict-resolution**（1.54%）：hidden border 在表格边缘的交互需要特殊处理——当前代码仅修改 cell 边框，不修改 table 自身边框
+
 ### R41 进展
 
 **通过率**：383/490 (78.2%)，+4 tests（自 R40）。完成 multicol column breaking paint 层渲染；调查 paint IFC font_size_overrides 方案（因行断回归而回退）。
