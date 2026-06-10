@@ -1413,22 +1413,28 @@ impl InlineFormattingContext {
         for line in &mut self.lines {
             let line_height = line.height;
 
-            // 计算正确的基线位置。
-            // CSS 规范中，行盒的基线由所有 inline 级盒的 ascent 最大值决定。
-            // - 文本/strut 的 ascent ≈ font_size × 0.8（近似）
-            // - inline-block 的 baseline 在其底部边缘，因此 ascent = height
-            // 当行盒只包含 inline-block（如 <img>）时，基线应在最大 inline-block 底部，
-            // 使图片从行盒顶部开始（y=0），而非被错误地向上偏移。
+            // CSS 2.1 §10.8.1: 行盒基线由所有 baseline 对齐的 inline 级盒的 ascent 最大值决定。
+            // - 文本运行：ascent ≈ font_size（字体 ascent 的近似）
+            // - inline-block：baseline 在底部边缘，ascent = height
+            // - 空行使用 strut ascent（0.8 × line_height）作为回退
+            //
+            // 修正：从实际内容计算基线，而非仅使用全局 strut 近似。
+            // 这修复了 Ahem 等字体（ascent ≈ font_size）的基线位置问题，
+            // 同时保持对正常字体（ascent ≈ 0.8 × font_size）的兼容性。
             let strut_ascent = line_height * 0.8;
             let mut max_ascent = strut_ascent;
             for run in &line.runs {
                 if matches!(
                     run.vertical_align,
                     VerticalAlignValue::Baseline | VerticalAlignValue::Sub | VerticalAlignValue::Super
-                ) && run.font_size == 0.0
-                {
-                    // Inline-block（font_size==0 标识）的 ascent = height
-                    max_ascent = max_ascent.max(run.height);
+                ) {
+                    if run.font_size > 0.0 {
+                        // 文本运行：ascent = font_size（字体度量的近似值）
+                        max_ascent = max_ascent.max(run.font_size);
+                    } else {
+                        // Inline-block（font_size==0 标识）的 ascent = height
+                        max_ascent = max_ascent.max(run.height);
+                    }
                 }
             }
             let baseline_y = max_ascent;
