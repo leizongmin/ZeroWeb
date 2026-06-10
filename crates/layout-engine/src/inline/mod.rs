@@ -819,10 +819,23 @@ impl InlineFormattingContext {
                     }
 
                     for (word_idx, word) in words.iter().enumerate() {
-                        // 基础宽度 + letter-spacing（每个字符追加）
-                        let char_count = word.chars().count();
-                        let mut word_width = estimate_string_width(word, run.font_size, run.is_ahem_font)
-                            + run.letter_spacing * char_count as f32;
+                        // CSS 2.1 §16.6.1：normal/nowrap 模式下行尾空格不渲染，不计入行宽。
+                        // 将尾部空格从内容宽度中分离，仅作为词间距离使用。
+                        // pre/pre-wrap 模式（preserve_whitespace）空格不可折叠，不剥离。
+                        let (content_word, trailing_space_width) = if !self.preserve_whitespace && word.ends_with(' ') {
+                            let trimmed = word.trim_end_matches(' ');
+                            let space_count = word.len() - trimmed.len();
+                            let space_w =
+                                estimate_char_width(' ', run.font_size, run.is_ahem_font) * space_count as f32;
+                            (trimmed, space_w)
+                        } else {
+                            (word.as_str(), 0.0f32)
+                        };
+
+                        // 基础宽度 + letter-spacing（仅基于内容字符，不含尾部空格）
+                        let content_char_count = content_word.chars().count();
+                        let mut word_width = estimate_string_width(content_word, run.font_size, run.is_ahem_font)
+                            + run.letter_spacing * content_char_count as f32;
                         // 非首个单词：追加 word-spacing（单词间间距）
                         if word_idx > 0 {
                             word_width += run.word_spacing;
@@ -867,10 +880,10 @@ impl InlineFormattingContext {
                         let need_char_break = !self.no_wrap
                             && (self.break_word || self.word_break == WordBreakMode::BreakAll)
                             && current_x + word_width > current_x + avail_w
-                            && !word.is_empty();
+                            && !content_word.is_empty();
                         if need_char_break {
                             let fragment_height = run.line_height;
-                            let chars: Vec<char> = word.chars().collect();
+                            let chars: Vec<char> = content_word.chars().collect();
                             let mut partial_x = current_x;
 
                             for (ci, ch) in chars.iter().enumerate() {
@@ -912,28 +925,20 @@ impl InlineFormattingContext {
                             current_x = partial_x;
                         } else {
                             let fragment_height = run.line_height;
-                            // CSS 2.1 §16.6.1：行尾空白不渲染。
-                            // 尾部空格仅用于计算词间距离（advance width），
-                            // 不应作为可视字形渲染。将尾部空格从片段文本和宽度中移除。
-                            let (vis_text, vis_width) = if word.ends_with(' ') && word.len() > 1 {
-                                let trimmed = word.trim_end_matches(' ');
-                                let space_w: f32 = estimate_char_width(' ', run.font_size, run.is_ahem_font);
-                                (trimmed.to_string(), word_width - space_w)
-                            } else {
-                                (word.clone(), word_width)
-                            };
+                            // word_width 已不含尾部空格（在上方剥离），直接用作可视宽度
+                            // 尾部空格作为词间距离添加到 current_x
                             current_line.runs.push(TextFragment {
                                 x: current_x,
                                 y: 0.0,
-                                width: vis_width,
+                                width: word_width,
                                 height: fragment_height,
-                                text: vis_text,
+                                text: content_word.to_string(),
                                 node_id: run.node_id,
                                 font_size: run.font_size,
                                 vertical_align: run.vertical_align.clone(),
                             });
 
-                            current_x += word_width;
+                            current_x += word_width + trailing_space_width;
                             // 行盒高度需容纳 inline 元素的完整盒体（含 padding+border）
                             current_line.height = current_line.height.max(run.box_height());
                         }
