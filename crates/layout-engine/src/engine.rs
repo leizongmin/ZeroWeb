@@ -498,6 +498,7 @@ impl LayoutEngine {
             css_order: computed.as_ref().map(|s| s.order).unwrap_or(0),
             column_span_offsets: Vec::new(),
             inline_layout: None,
+            text_node_font_sizes: HashMap::new(),
         }
     }
 }
@@ -592,8 +593,8 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
         .with_inline_block_sizes(ib_sizes);
     inline_ctx.layout(doc, container_node_id, styles);
 
-    // TODO: 存储 IFC 片段结果供 paint 系统复用 — 基线计算修复后启用
-    // store_inline_layout_results(&inline_ctx, root);
+    // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
+    store_font_sizes_from_ifc(&inline_ctx, root);
 
     // 将 fragment 坐标应用到 inline-block 子元素的 LayoutBox
     // 使用 all_fragments_with_line_y() 获取包含行盒 Y 偏移的绝对坐标
@@ -644,6 +645,19 @@ fn store_inline_layout_results(inline_ctx: &crate::inline::InlineFormattingConte
             })
             .collect();
         box_node.inline_layout = Some(stored);
+    }
+}
+
+/// 从 IFC 片段中提取各文本节点的 font_size 并存储到 LayoutBox。
+///
+/// paint 系统在运行空 styles IFC 时无法获取正确的 font_size，
+/// 导致基线偏移计算错误。通过此函数存储 layout IFC 的 font_size，
+/// paint 可以在渲染时使用正确的值。
+fn store_font_sizes_from_ifc(inline_ctx: &crate::inline::InlineFormattingContext, box_node: &mut LayoutBox) {
+    for line in &inline_ctx.lines {
+        for frag in &line.runs {
+            box_node.text_node_font_sizes.insert(frag.node_id, frag.font_size);
+        }
     }
 }
 
@@ -747,6 +761,9 @@ fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, styles: &Hash
         .with_vertical_rtl(is_vertical_rtl)
         .with_text_align(container_text_align);
     inline_ctx.layout(doc, container_node_id, styles);
+
+    // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
+    store_font_sizes_from_ifc(&inline_ctx, root);
 
     // 将 IFC 片段坐标应用到 abs-pos 子元素
     let fragments = inline_ctx.all_fragments();
@@ -1615,8 +1632,8 @@ fn remeasure_text_with_float_exclusions(
                 .with_text_align(text_align);
             inline_ctx.layout(doc, dom_id, styles);
 
-            // TODO: 存储 IFC 片段结果供 paint 系统复用 — 基线计算修复后启用
-            // store_inline_layout_results(&inline_ctx, box_node);
+            // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
+            store_font_sizes_from_ifc(&inline_ctx, box_node);
 
             // 容器高度需要包含 float 元素占用的空间
             let text_height = inline_ctx.total_height();
@@ -1680,8 +1697,8 @@ fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, st
             .with_text_align(text_align);
         inline_ctx.layout(doc, dom_id, styles);
 
-        // TODO: 存储 IFC 片段结果供 paint 系统复用 — 基线计算修复后启用
-        // store_inline_layout_results(&inline_ctx, box_node);
+        // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
+        store_font_sizes_from_ifc(&inline_ctx, box_node);
 
         let content_height = inline_ctx.total_height();
         if content_height > box_node.content_height {

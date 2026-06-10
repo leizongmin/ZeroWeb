@@ -3,6 +3,7 @@
 //! 定义 [`LayoutBox`] 和 [`LayoutResult`] 作为布局引擎的输出格式，
 //! 描述元素在页面上的几何位置和大小。
 
+use std::collections::HashMap;
 pub use zero_css_parser::values::ClearValue;
 use zero_css_parser::values::FloatValue;
 use zero_dom::NodeId;
@@ -137,6 +138,11 @@ pub struct LayoutBox {
     /// 当设置时，paint 系统直接复用这些结果渲染文字，不再重新运行 IFC。
     /// 这消除了 paint IFC 字体度量不一致的系统性问题。
     pub inline_layout: Option<Vec<InlineLayoutLine>>,
+    /// 文本节点的 font_size 映射（来自 layout engine 的 IFC 运行）。
+    ///
+    /// paint 系统在运行空 styles IFC 后，使用这些正确的 font_size 值
+    /// 计算基线偏移，避免 16px 默认值导致的字形定位错误。
+    pub text_node_font_sizes: HashMap<NodeId, f32>,
 }
 
 impl LayoutBox {
@@ -213,6 +219,7 @@ impl Default for LayoutBox {
             css_order: 0,
             column_span_offsets: Vec::new(),
             inline_layout: None,
+            text_node_font_sizes: HashMap::new(),
         }
     }
 }
