@@ -1,8 +1,50 @@
 # 渲染兼容性目标 — 运行时控制平面
 
 **最后更新**: 2026-06-10
-**当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
+**当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 76.1% (373/490)
+
+### R31 进展
+
+**通过率不变**：373/490 (76.1%)。本轮聚焦于系统性分析和高质量 bug 修复，为后续改进奠定基础。
+
+#### 修复提交
+
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| Stroke 裁剪逻辑修正 | paint/helpers.rs | 原代码用 `&&` 连接对边判断（不可能同时成立），改为 `||` 连接各边判断。修正后描边线段在超出裁剪区域时可被正确裁剪 |
+| 空 inline 元素 margin-right 修复 | inline/mod.rs | 空 inline 元素仅消费 margin-left，未消费 margin-right。CSS 2.1 §10.2 要求两者均消费 |
+
+#### R31 系统性分析
+
+1. **paint 系统审计**（12 个 bug 识别）：
+   - BUG 1: 边框不遵循 border-radius（paint_borders 生成矩形而非圆角）
+   - BUG 9: Glyph Y 位置用 font_size 作基线偏移（应为实际 ascent）
+   - BUG 11: 基线位置用 0.8 硬编码近似（应为字体度量）
+   - BUG 15: Stroke 裁剪逻辑始终为 false（✅ 已修复）
+   - BUG 18: 渐变 Px 偏移未归一化到 [0,1]（不影响当前上游测试）
+   - 其余 bug 影响范围有限或需要更深层改动
+
+2. **尝试但回退的修复**：
+   - multicol BFC 检测（establishes_bfc 添加 is_multicol 检查）→ 导致 multicol 回归（56.1%→54.4%），原因是影响容器高度计算逻辑，已回退
+   - R30 的两个修复方向（remeasure_inline_only_containers + float clearance border-top 约束）仍因回归风险未合入
+
+3. **失败根因分布更新**（117 个失败）：
+   - 布局精度（float/clear/margin）：~48 个（最大瓶颈）
+   - 功能缺失（column breaking、writing-mode）：~25 个
+   - 子像素/渲染精度：~20 个
+   - CSS2 inline box model：~8 个
+   - 其他：~16 个
+
+4. **关键发现**：相同 diff 百分比的测试共享系统性问题
+   - clear-002 (7.67%) == clear-float-005 (7.67%) — 可能是 swatch 图像渲染或元素定位系统性偏差
+   - clear-003 (3.84%) == clear-float-006 (3.84%) — 同上
+
+#### 后续重点
+
+1. **CSS2/floats-clear 精度提升**（19 个失败，最大失败集群）：需要找到不影响其他测试的 clearance 计算改进
+2. **multicol BFC 集成**：需要更精细的修改，仅影响 margin 折叠行为，不影响容器高度计算
+3. **CSS2/border-radius + border 绘制**（BUG 1）：影响所有圆角元素 + 边框渲染，可能提升多个测试
 
 ### R30 进展
 
