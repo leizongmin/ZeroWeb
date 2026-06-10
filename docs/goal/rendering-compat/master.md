@@ -2,7 +2,39 @@
 
 **最后更新**: 2026-06-10
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 76.7% (376/490)
+**上游真实 reftest 通过率**: 76.9% (377/490)
+
+### R34 进展
+
+**通过率**：377/490 (76.9%)，与 R33 持平但内部质量改善。修复 IFC 空白处理，新增 3 个单元测试验证 inline box model 行为。
+
+#### 修复提交
+
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| IFC 空白保留改进 | whitespace-001 diff 降低 | `collect_inline_items` 中 `trim()` 改为 `collapse_whitespace()`，保留 inline-block 之间的空白文本节点为单个空格。新增行首空格剥离（CSS 2.1 §16.6.1）。css-tables/whitespace-001 diff 从较高值降至 1.05%（接近 1.0% 通过阈值）|
+| inline box model 测试 | 测试覆盖 | 新增 3 个单元测试：空 inline 元素高 line-height 贡献、空白折叠、行首空格剥离 |
+
+#### 按目录通过率变化
+
+| 目录 | R33 | R34 | 变化 |
+|------|-----|-----|------|
+| css-tables/ | 81.8% (45/55) | 81.8% (45/55) | whitespace-001 diff 从 >1.0% 降至 1.05%，未通过但接近 |
+
+#### R34 调查分析
+
+1. **whitespace-001 分析**：`display:table` 容器中两个 `width:50%` inline-block 之间的空白应导致换行。IFC 现在正确保留空白为空格字符，但 diff 仍为 1.05%（阈值 1.0%），可能需要进一步优化 space 宽度计算或 table 容器的 IFC 集成。
+2. **clear-inline-001 分析**（6.04%）：`clear:left` 在 inline 元素上应无效。代码层面已正确跳过（`!is_block_level` 分支），但 inline 元素的背景由 taffy block 布局定位（非 IFC 位置），导致蓝色背景在错误位置。需要 inline 元素背景从 IFC 坐标绘制。
+3. **近通过测试统计**：10 个测试 diff < 2%（包括 whitespace-001、clear-clearance-calculation-002、clearance-006、block-in-inline-align-001 等），这些是下一轮重点攻克目标。
+4. **结构性改进需求**：CSS2/linebox（9 失败）需要 inline 元素背景/border 从 IFC 坐标绘制；css-flexbox baseline（9 失败）需要 baseline alignment 改进。
+
+### 后续重点（R35+）
+
+1. **near-miss 测试攻坚**（10 个 <2% diff）：whitespace-001 (1.05%)、clear-clearance-calculation-002 (1.18%)、clearance-006 (1.16%)、block-in-inline-align-001 (1.41%)、grid max-content (1.52%)、flexbox near-miss 等
+2. **CSS2/floats-clear 精度提升**（17 个失败）：swatch 图像缩放精度、clearance 边界 case
+3. **writing-mode 布局支持**（影响 35+ 测试）：垂直书写模式轴交换
+4. **multicol column breaking**（影响 ~16 测试）：内容碎片化
+5. **CSS2 inline box model**（影响 ~9 测试）：inline 元素背景从 IFC 坐标绘制
 
 ### R33 进展
 
