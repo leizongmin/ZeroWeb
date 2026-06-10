@@ -909,6 +909,11 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     // 容器的内容区域宽度
     let container_width = box_node.content_width;
 
+    // taffy 子元素的 Y 坐标是相对于父元素的 border-box 原点，
+    // 而 flow_bottom / line_y 等追踪变量是相对于 content area 原点。
+    // 当容器有 border-top 或 padding-top 时，需要加上偏移量。
+    let content_y_offset = box_node.border_top + box_node.padding_top;
+
     // 第一阶段：重新定位 float 元素，记录每个 float 在 taffy 布局中占据的垂直空间
     //
     // CSS 2.1 §9.5.1 float 定位规则：
@@ -1021,7 +1026,7 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
         match child.float {
             FloatValue::Left => {
                 child.x = left_used_width + child.margin_left;
-                child.y = line_y + child.margin_top;
+                child.y = content_y_offset + line_y + child.margin_top;
 
                 left_used_width += child_outer_width;
                 let new_bottom = line_y + child_outer_height;
@@ -1030,7 +1035,7 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
             FloatValue::Right => {
                 right_used_width += child_outer_width;
                 child.x = container_width - right_used_width + child.margin_left;
-                child.y = line_y + child.margin_top;
+                child.y = content_y_offset + line_y + child.margin_top;
 
                 let new_bottom = line_y + child_outer_height;
                 right_float_bottom = right_float_bottom.max(new_bottom);
@@ -1091,9 +1096,11 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                 // CSS 2.1 §9.5.1：float 元素不应高于正常流内容的位置。
                 // Phase 1 定位 float 时不知道 normal flow 的位置，
                 // 这里修正：将 float 的 Y 推到至少与当前流位置齐平。
-                if child.y < flow_bottom {
-                    let shift = flow_bottom - child.y;
-                    child.y = flow_bottom;
+                // 注意：flow_bottom 是 content-relative，child.y 是 border-relative
+                let child_content_y = child.y - content_y_offset;
+                if child_content_y < flow_bottom {
+                    let shift = flow_bottom - child_content_y;
+                    child.y = content_y_offset + flow_bottom;
                     // 仅更新此 float 所在侧的 float_bottom 追踪
                     match child.float {
                         FloatValue::Left => left_float_bottom += shift,
@@ -1116,7 +1123,7 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                 if float_y_offset > 0.0 {
                     child.y -= float_y_offset;
                 }
-                flow_bottom = flow_bottom.max(child.y + child.height);
+                flow_bottom = flow_bottom.max(child.y - content_y_offset + child.height);
                 continue;
             }
 
@@ -1150,7 +1157,7 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                         // 最终位置 = max(clear_bottom, flow_bottom + child.margin_top)
                         // 当元素自身 margin-top 足够大时，即使不折叠也已在浮动之下
                         let uncollapsed_pos = flow_bottom + child.margin_top;
-                        child.y = clear_bottom.max(uncollapsed_pos);
+                        child.y = content_y_offset + clear_bottom.max(uncollapsed_pos);
                     } else if (clear_bottom - hypothetical_y).abs() < 0.001 {
                         // 零 clearance（hypothetical_y ≈ clear_bottom）：
                         // CSS 2.1 §9.5.2：clearance 引入后，位置 = hypothetical + clearance。
@@ -1159,11 +1166,11 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                         // 因此元素位置 = hypothetical_y（使用折叠边距计算的假设位置）。
                         // 零 clearance 仍阻止 margin 折叠（CSSWG resolution），
                         // 但视觉位置与假设位置相同。
-                        child.y = hypothetical_y;
+                        child.y = content_y_offset + hypothetical_y;
                     } else {
                         // hypothetical_y > clear_bottom：元素已过浮动，
                         // 无需 clearance，margin 正常折叠。
-                        child.y = hypothetical_y;
+                        child.y = content_y_offset + hypothetical_y;
                     }
                     float_y_offset = (original_taffy_y - child.y).max(0.0);
                 }
@@ -1177,15 +1184,15 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                         let collapsed_margin =
                             crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
                         let correct_y = flow_bottom + collapsed_margin;
-                        child.y = correct_y;
+                        child.y = content_y_offset + correct_y;
                         // 更新 float_y_offset 以反映 taffy Y 与正确 Y 的差异
                         float_y_offset = (original_taffy_y - child.y).max(0.0);
                     }
                 }
             }
 
-            // 更新流内容追踪
-            flow_bottom = child.y + child.height;
+            // 更新流内容追踪（使用 content-relative 坐标）
+            flow_bottom = child.y - content_y_offset + child.height;
             last_flow_mb = child.margin_bottom;
 
             // BFC 浮动排斥（CSS 2.1 §9.5）：
