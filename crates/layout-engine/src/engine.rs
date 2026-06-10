@@ -720,10 +720,20 @@ fn apply_relative_offsets_inline(root: &mut LayoutBox, styles: &HashMap<NodeId, 
     });
 
     if is_rel {
-        // 仅对 inline-level 元素应用偏移
+        // 仅对真正的 inline-level 元素应用偏移
         // block-level 元素的 relative offset 已由 taffy 处理
-        let is_inline = !root.is_block_level;
-        if is_inline {
+        // table 内部元素（row-group/row/cell 等）由 table 布局算法处理
+        let is_inline_level = root.node_id.is_some_and(|id| {
+            styles
+                .get(&id)
+                .is_some_and(|s| {
+                    matches!(
+                        s.display,
+                        DisplayValue::Inline | DisplayValue::InlineBlock
+                    )
+                })
+        });
+        if is_inline_level {
             let (dx, dy) = resolve_relative_inset(root, styles);
             if dx != 0.0 || dy != 0.0 {
                 root.x += dx;
