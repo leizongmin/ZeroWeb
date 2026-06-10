@@ -1,26 +1,32 @@
-# 渲染兼容性目标 — 运行时控制平面
+# 渲染兼容性目标 — 运行时控制面板
 
 **最后更新**: 2026-06-10
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 77.3% (379/490)
 
-### R36 进展
+### R37 进展
 
-**通过率**：379/490 (77.3%)，与 R35 持平。改进 IFC 基线计算和字体度量基础设施。
+**通过率**：379/490 (77.3%)，与 R36 持平。新增垂直书写模式 gap 轴交换；深入调查 paint IFC 字体度量问题。
 
 #### 修复提交
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
-| IFC 基线计算改进 | 正确性 | `apply_vertical_alignment` 改为从实际内容（text runs 的 font_size + inline-block 的 height）计算 max_ascent，而非仅使用全局 strut（0.8 × line_height）。空行仍用 strut 回退。对布局引擎的 IFC 定位更精确 |
-| IFC default_font_metrics 基础设施 | 基础设施 | 新增 `with_default_font_metrics(font_size, line_height)` builder 方法和 `default_font_metrics` 字段。当 styles HashMap 为空且 default_font_metrics 已设置时，文本节点使用提供的字体度量替代硬编码的 16px/19.2px |
+| 垂直书写模式 gap 轴交换 | CSS Writing Modes §7.1 | `apply_vertical_writing_mode` 新增 `gap.width ↔ gap.height` 交换。CSS Writing Modes 规定垂直书写模式中 gap 属性轴随主轴交换。当前不影响上游 reftest（测试不使用 gap+writing-mode 组合） |
 
-#### R36 调查分析
+#### R37 调查分析
 
-1. **paint 系统 IFC 根因确认**：paint 系统 `paint_text()` 创建 IFC 时传入 `HashMap::new()`（空样式），导致所有文本使用默认字体度量（16px/19.2px）而非容器实际字体。行高、字符宽度、基线位置全部基于错误值。这是上游 reftest 通过率的系统性瓶颈。
-2. **default_font_metrics 验证**：尝试在 paint 系统中使用 `with_default_font_metrics(font_size, actual_line_height)` 设置正确度量，inline-formatting-context-008 的 diff 从 8.17% 降至 5.09%（显著改进），但总体通过率下降 4 个测试（379→375）。回归原因：正确的字体度量改变了行断行为，导致部分测试失败。
-3. **关键发现**：paint IFC 的问题分为两个层面：(a) 字符宽度影响行断行为；(b) font_size/line_height 影响垂直定位。仅修复 (b) 而不影响 (a) 需要 IFC 支持独立的「渲染度量」和「布局度量」，这是更深层的架构改进。
-4. **系统性瓶颈优先级**：paint IFC 字体度量 > 浮动排斥 > inline box model > column breaking。
+1. **paint IFC 字体度量 — 方案 A（render_fs）**：尝试在 paint 循环中用容器 `font_size` 替代 `fragment.font_size` 作为基线偏移和字形渲染大小。回归 2 个测试（379→377）：`font-feature-resolution-002` 使用 `font-size: 2em`（32px），IFC 基于 16px 定位但以 32px 渲染导致字形重叠。已回退。
+2. **paint IFC 字体度量 — 方案 B（传递 styles HashMap）**：`paint_text()` 已有 `styles: Option<&HashMap<NodeId, ComputedStyle>>` 参数，但传给 IFC 的是 `&HashMap::new()`。改为传递实际 styles 导致回归 6 个测试（379→373）：paint IFC 与 layout IFC 使用不同上下文（容器宽度、浮动排除区域等）运行，正确样式导致不同行断行为，与 layout IFC 的定位冲突。已回退。
+3. **paint IFC 根因确认**：paint 系统运行的是第二次独立 IFC 布局，无法保证与 layout 引擎的第一次 IFC 一致。根本解决方案是存储 layout IFC 结果并在 paint 中复用，避免重新运行 IFC。这属于架构级改进。
+4. **near-miss 测试分析**（6 个 <1.5% diff）：
+   - `position-relative-table-tfoot-top` (1.04%)：border-collapse 亚像素精度
+   - `whitespace-001` (1.05%)：display:table 容器中 inline-block 空白处理
+   - `clearance-006` (1.16%)：Ahem 字体 em-to-px 精度
+   - `clear-clearance-calculation-002` (1.18%)：swatch 图像缩放精度
+   - `block-in-inline-align-001` (1.42%)：IFC 匿名文本 font metrics
+   - `border-conflict-resolution` (1.54%)：ridge/outset/hidden 边框冲突解决
+5. **flexbox 近 miss 分析**：5 个 <2% diff 测试的根因分类为：(a) inline-flex 基线来自第一个 flex item 而非框底部（taffy Layout 不持久化 first_baselines）；(b) 垂直书写模式 gap 轴交换（已修复但测试未覆盖）；(c) wrap-reverse 基线来自逻辑第一行而非视觉第一行（taffy 上游问题）
 
 #### 按目录通过率（不变）
 
@@ -36,13 +42,14 @@
 | css-flexbox/ | 35/55 | 63.6% |
 | css-multicol/ | 32/57 | 56.1% |
 
-### 后续重点（R37+）
+### 后续重点（R38+）
 
-1. **paint 系统 IFC 字体度量修复**（系统性瓶颈）：需要在不影响行断行为的前提下将正确字体度量传入 paint IFC。可能方案：(a) 仅覆盖 font_size/line_height 而不传递完整样式；(b) 在 paint IFC 中从容器 style 覆盖默认度量
-2. **near-miss 测试攻坚**（10 个 <2% diff）：whitespace-001 (1.05%)、clear-clearance-calculation-002 (1.18%)、clearance-006 (1.16%) 等
-3. **CSS2/floats-clear 精度提升**（17 个失败）：swatch 图像缩放精度、clearance 边界 case
-4. **writing-mode 布局支持**（影响 35+ 测试）：垂直书写模式轴交换
-5. **multicol column breaking**（影响 ~16 测试）：内容碎片化
+1. **paint IFC 架构改进**（系统性瓶颈，影响 50+ 测试）：需要将 layout IFC 的结果存储到 LayoutBox 并在 paint 中复用，避免 paint 重新运行独立 IFC。这是最高优先级的架构改进，但需要较大重构
+2. **inline-flex 基线传递**（影响 ~5 个 flexbox 测试）：taffy 的 first_baselines 在 LayoutOutput 中可用但不持久化到 Layout 结构体。需要在 measure 回调或后处理中捕获基线信息，传递到 IFC 的 InlineBlockBox
+3. **near-miss 测试攻坚**（10 个 <2% diff）：whitespace-001 (1.05%)、clear-clearance-calculation-002 (1.18%)、clearance-006 (1.16%)、border-conflict-resolution (1.54%) 等
+4. **CSS2/floats-clear 精度提升**（17 个失败）：swatch 图像缩放精度、clearance 边界 case
+5. **writing-mode 布局支持**（影响 35+ 测试）：垂直书写模式轴交换
+6. **multicol column breaking**（影响 ~16 测试）：内容碎片化
 
 ### R35 进展
 
