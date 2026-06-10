@@ -2,7 +2,39 @@
 
 **最后更新**: 2026-06-10
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 76.3% (374/490)
+**上游真实 reftest 通过率**: 76.7% (376/490)
+
+### R33 进展
+
+**通过率**：376/490 (76.7%)，与 R32 净增 +2 tests（clear-002 + clear-float-005）。修复 inline relative offset 对 table 内部元素的误用。
+
+#### 修复提交
+
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| apply_relative_offsets_inline 仅对 inline-level 元素生效 | CSS2 +2 | 上一轮的 apply_relative_offsets_inline 使用 `!is_block_level` 检测 inline 元素，但 table 内部元素（tfoot/thead/tbody/tr/td）也不是 block-level，导致 position:relative 在这些元素上被双重偏移。改为检查 display type（Inline/InlineBlock），仅对真正由 inline layout 定位的元素应用偏移。修复 clear-002.xht 和 clear-float-005.xht |
+
+#### 按目录通过率变化
+
+| 目录 | R32 | R33 | 变化 |
+|------|-----|-----|------|
+| CSS2/ | 70.5% (91/129) | 69.0% (89/129) | R33 修复了 position-relative-table-tfoot-top 回归（2.08%→1.04%），但 CSS2 通过数因 clear-002/clear-float-005 已在 R32 计入而无变化 |
+
+#### R33 调查分析
+
+1. **零高度浮动水平空间**：尝试让零高度浮动不占据水平空间（`left_used_width` 跳过零高度浮动），但导致 clear-float-003 回归（1.92%→5.76%），已回退。零高度浮动仍然占据水平空间。
+2. **CSS2/floats-clear 失败分析**：17 个失败测试中，多数差异来自 swatch 图像缩放精度（20×20→96×96 与 CSS 背景色填充的像素差异）或 clearance 计算边界 case，非简单修复。
+3. **CSS2/linebox**（8 个失败）：需要 inline box model 深层改进（空 inline 元素 line-height、block-in-inline 拆分），属于结构性改动。
+4. **multicol**（25 个失败）：7 个 multicol-breaking-* 测试（~16%）需要 column breaking/内容碎片化，属于大特性。
+5. **css-writing-modes**（13 个失败）：需要垂直书写模式轴交换支持，属于大特性。
+
+### 后续重点（R34+）
+
+1. **CSS2/floats-clear 精度提升**（17 个失败，最大瓶颈）：swatch 图像缩放 20×20→96×96 与 CSS background-color 精确填充的像素差异。需改进图像缩放或替代方案。
+2. **writing-mode 布局支持**（影响 35+ 测试）：需实现垂直书写模式下块级布局轴交换。R12 已尝试但回退。
+3. **multicol column breaking**（影响 ~16 测试）：需实现内容碎片化（拆分单个块到多列）。
+4. **CSS2 inline box model**（影响 ~8 测试）：空 inline 元素 line-height 贡献、block-in-inline 拆分。
+5. **css-flexbox baseline**（影响 ~9 测试）：multi-line baseline 对齐、flex 方向轴交换。
 
 ### R32 进展
 
