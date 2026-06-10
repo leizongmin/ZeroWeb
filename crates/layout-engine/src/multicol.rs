@@ -12,7 +12,18 @@
 //! - `column-gap` 列间距
 //! - 子元素按列分配（均衡分配策略）
 //! - `column-fill: auto` 顺序填充 + 列高限制
-//! - 基础 column breaking（子元素超出列高时移至下一列）
+//! - column breaking（子元素超出列高时拆分到多列显示）
+//!
+//! ## Column Breaking 实现原理
+//!
+//! 当一个子元素的高度超过列高限制时，需要将其拆分到多个列中显示。
+//! 拆分不是真正地将 LayoutBox 树枝剪为多个节点，而是通过「垂直窗口」
+//! 机制实现：同一个子元素在多个列中出现，每列显示其不同高度切片。
+//!
+//! 具体做法：
+//! - 分配阶段为超高的子元素创建多个 ColumnFragment（每列一个）
+//! - 定位阶段为每个片段设置 y_offset，使子元素在列内向上平移
+//! - paint 层通过容器的 overflow 裁剪，每列只显示该片段对应的高度范围
 
 use std::collections::HashMap;
 use zero_css_parser::values::LengthValue;
@@ -21,6 +32,23 @@ use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::{ColumnCountComputedValue, ColumnFillComputedValue, ColumnWidthComputedValue};
 
 use crate::types::LayoutBox;
+
+/// 列分配中的一个片段。
+///
+/// 对于普通（未拆分的）子元素，一个子元素对应一个片段。
+/// 对于超高子元素的 column breaking，一个子元素可能出现在多列中，
+/// 每列一个片段，每片显示子元素的不同垂直范围。
+#[derive(Debug, Clone)]
+struct ColumnFragment {
+    /// 子元素在容器 children 中的索引。
+    child_idx: usize,
+    /// 该片段对应子元素内容中可见部分的起始 y 偏移。
+    /// 定位时子元素 y 坐标 = 列内累积高度 - fragment_y_offset，
+    /// 使得只有 fragment_y_offset 到 fragment_y_offset + max_col_height 的内容可见。
+    fragment_y_offset: f32,
+    /// 该片段在列内占用的视觉高度（= min(child_remaining_height, max_col_height)）。
+    visual_height: f32,
+}
 
 /// 对 LayoutBox 树执行 multi-column 布局后处理。
 ///
@@ -254,7 +282,7 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo) {
 ///
 /// 这比 shortest-column-first 更符合规范行为：内容按顺序流过各列，
 /// 而非被任意分配到最短列。
-fn assign_children_to_columns_balanced(children: &[(usize, f32)], col_count: usize) -> Vec<Vec<(usize, f32)>> {
+fn assign_children_to_columns_balanced(children: &[(usize, f32)], col_count: usize) -> Vec<Vec<ColumnFragment>> {
     if children.is_empty() || col_count == 0 {
         return vec![Vec::new(); col_count.max(1)];
     }
@@ -263,7 +291,7 @@ fn assign_children_to_columns_balanced(children: &[(usize, f32)], col_count: usi
     let total_height: f32 = children.iter().map(|&(_, h)| h).sum();
     let target_height = total_height / col_count as f32;
 
-    let mut columns: Vec<Vec<(usize, f32)>> = vec![Vec::new(); col_count];
+    let mut columns: Vec<Vec<ColumnFragment>> = vec![Vec::new(); col_count];
     let mut current_col = 0usize;
     let mut current_col_height = 0.0f32;
 
@@ -274,38 +302,89 @@ fn assign_children_to_columns_balanced(children: &[(usize, f32)], col_count: usi
             current_col_height = 0.0;
         }
 
-        columns[current_col].push((child_idx, child_height));
+        columns[current_col].push(ColumnFragment {
+            child_idx,
+            fragment_y_offset: 0.0,
+            visual_height: child_height,
+        });
         current_col_height += child_height;
     }
 
     columns
 }
 
-/// 带列高限制的顺序分配（column breaking 基础实现）。
+/// 带列高限制的顺序分配（column breaking 实现）。
 ///
-/// 按文档顺序将子元素填入当前列，当子元素超出列高限制时移至下一列。
-/// 这是 CSS Multi-column Layout §2 "column breaking" 的简化实现：
-/// - 子元素整体移动到下一列（不拆分单个块级元素的内容）
-/// - 单个超过列高的子元素保留在当前列（clip 处理）
+/// 按文档顺序将子元素填入当前列，当子元素超出列高限制时：
+/// - 如果子元素可以整体放入下一列，则移动到下一列
+/// - 如果子元素本身超过列高（oversized），则拆分为多个片段，
+///   每个片段放入连续的列中
+///
+/// CSS Multi-column Layout §2 "column breaking"：
+/// 当一个块级子元素高度超过列高时，内容应自动延续到后续列中。
 fn assign_children_to_columns_with_breaking(
     children: &[(usize, f32)],
     col_count: usize,
     max_col_height: f32,
-) -> Vec<Vec<(usize, f32)>> {
-    let mut columns: Vec<Vec<(usize, f32)>> = vec![Vec::new(); col_count];
+) -> Vec<Vec<ColumnFragment>> {
+    let mut columns: Vec<Vec<ColumnFragment>> = vec![Vec::new(); col_count];
     let mut current_col = 0usize;
     let mut current_col_height = 0.0f32;
 
     for &(child_idx, child_height) in children {
-        // 如果当前列放不下这个子元素，且还有更多列可用，移到下一列
-        if current_col_height + child_height > max_col_height && current_col_height > 0.0 && current_col + 1 < col_count
-        {
-            current_col += 1;
-            current_col_height = 0.0;
-        }
+        let available = max_col_height - current_col_height;
 
-        columns[current_col].push((child_idx, child_height));
-        current_col_height += child_height;
+        if child_height <= available {
+            // 子元素完全适应当前列剩余空间
+            columns[current_col].push(ColumnFragment {
+                child_idx,
+                fragment_y_offset: 0.0,
+                visual_height: child_height,
+            });
+            current_col_height += child_height;
+        } else if child_height <= max_col_height {
+            // 子元素可以整体放入下一列（当列剩余不够但列高足够）
+            if current_col + 1 < col_count {
+                current_col += 1;
+                current_col_height = 0.0;
+            }
+            // 如果没有更多列，保留在当前列（clip 处理）
+            columns[current_col].push(ColumnFragment {
+                child_idx,
+                fragment_y_offset: 0.0,
+                visual_height: child_height.min(max_col_height),
+            });
+            current_col_height += child_height.min(max_col_height);
+        } else {
+            // 子元素超高（> max_col_height）— 需要 column breaking
+            // 先消耗当前列剩余空间
+            if available > 0.0 {
+                columns[current_col].push(ColumnFragment {
+                    child_idx,
+                    fragment_y_offset: 0.0,
+                    visual_height: available,
+                });
+                current_col += 1;
+            }
+
+            // 后续片段填满整列
+            let mut offset = available;
+            while offset < child_height && current_col < col_count {
+                let remaining = child_height - offset;
+                let frag_height = remaining.min(max_col_height);
+                columns[current_col].push(ColumnFragment {
+                    child_idx,
+                    fragment_y_offset: offset,
+                    visual_height: frag_height,
+                });
+                offset += max_col_height;
+                current_col_height = frag_height;
+                if frag_height >= max_col_height && current_col + 1 < col_count {
+                    current_col += 1;
+                    current_col_height = 0.0;
+                }
+            }
+        }
     }
 
     columns
@@ -318,8 +397,8 @@ fn assign_children_to_columns_sequential(
     children: &[(usize, f32)],
     col_count: usize,
     container_height: f32,
-) -> Vec<Vec<(usize, f32)>> {
-    let mut columns: Vec<Vec<(usize, f32)>> = vec![Vec::new(); col_count];
+) -> Vec<Vec<ColumnFragment>> {
+    let mut columns: Vec<Vec<ColumnFragment>> = vec![Vec::new(); col_count];
     let mut current_col = 0usize;
     let mut current_col_height = 0.0f32;
 
@@ -333,7 +412,11 @@ fn assign_children_to_columns_sequential(
             current_col_height = 0.0;
         }
 
-        columns[current_col].push((child_idx, child_height));
+        columns[current_col].push(ColumnFragment {
+            child_idx,
+            fragment_y_offset: 0.0,
+            visual_height: child_height,
+        });
         current_col_height += child_height;
     }
 
@@ -344,20 +427,29 @@ fn assign_children_to_columns_sequential(
 ///
 /// 子元素坐标相对于容器 content area（与 taffy/float 后处理一致），
 /// 因此列 x 从 0 开始，不需要加 content_x/content_y。
-fn position_multicol_children(container: &mut LayoutBox, assignments: &[Vec<(usize, f32)>], info: &ColumnInfo) {
-    for (col_idx, col_children) in assignments.iter().enumerate() {
+///
+/// 对于 column breaking 拆分的片段，使用负 y 偏移（fragment_y_offset）
+/// 来显示子元素内容的不同垂直切片。paint 层通过容器的 overflow 裁剪
+/// 确保每列只显示对应片段的内容。
+fn position_multicol_children(container: &mut LayoutBox, assignments: &[Vec<ColumnFragment>], info: &ColumnInfo) {
+    for (col_idx, col_fragments) in assignments.iter().enumerate() {
         let col_x = col_idx as f32 * (info.column_width + info.gap);
         let mut y_offset = 0.0f32;
 
-        for &(child_idx, child_total_height) in col_children {
-            let child = &mut container.children[child_idx];
+        for frag in col_fragments {
+            let child = &mut container.children[frag.child_idx];
 
             // 设置子元素的 x 位置为列的 x（相对于 content area）
             child.x = col_x + child.margin_left;
-            // y 位置：列内累积（相对于 content area）
-            child.y = y_offset + child.margin_top;
 
-            y_offset += child_total_height;
+            // y 位置：列内累积高度减去片段偏移
+            // 对于普通子元素（fragment_y_offset=0），y = y_offset + margin_top
+            // 对于拆分片段，y = y_offset + margin_top - fragment_y_offset
+            // 这样使子元素内容向上平移，只显示 fragment_y_offset 到
+            // fragment_y_offset + visual_height 的部分
+            child.y = y_offset + child.margin_top - frag.fragment_y_offset;
+
+            y_offset += frag.visual_height;
 
             // CSS Multi-column Layout：子元素宽度限制到列宽。
             // 同时更新 content_width 以确保 paint 层使用正确的列宽
