@@ -912,12 +912,22 @@ impl InlineFormattingContext {
                             current_x = partial_x;
                         } else {
                             let fragment_height = run.line_height;
+                            // CSS 2.1 §16.6.1：行尾空白不渲染。
+                            // 尾部空格仅用于计算词间距离（advance width），
+                            // 不应作为可视字形渲染。将尾部空格从片段文本和宽度中移除。
+                            let (vis_text, vis_width) = if word.ends_with(' ') && word.len() > 1 {
+                                let trimmed = word.trim_end_matches(' ');
+                                let space_w: f32 = estimate_char_width(' ', run.font_size, run.is_ahem_font);
+                                (trimmed.to_string(), word_width - space_w)
+                            } else {
+                                (word.clone(), word_width)
+                            };
                             current_line.runs.push(TextFragment {
                                 x: current_x,
                                 y: 0.0,
-                                width: word_width,
+                                width: vis_width,
                                 height: fragment_height,
-                                text: word.clone(),
+                                text: vis_text,
                                 node_id: run.node_id,
                                 font_size: run.font_size,
                                 vertical_align: run.vertical_align.clone(),
