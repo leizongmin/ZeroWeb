@@ -540,6 +540,25 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
         return;
     }
 
+    // 构建 inline-block 子元素的 LayoutBox 尺寸映射
+    // 仅包含 CSS width 或 height 为 Auto 的元素（不包含 Percentage 等其他值）
+    let ib_sizes: HashMap<NodeId, (f32, f32)> = ib_indices
+        .iter()
+        .filter_map(|&idx| {
+            let child = &root.children[idx];
+            let node_id = child.node_id?;
+            let style = styles.get(&node_id)?;
+            // 仅当 CSS width 或 height 为 Auto 时才使用 LayoutBox 回退尺寸
+            // Percentage、MinContent 等其他值不回退——它们有自己的解析逻辑
+            let w_auto = matches!(style.width, LengthValue::Auto);
+            let h_auto = matches!(style.height, LengthValue::Auto);
+            if !w_auto && !h_auto {
+                return None;
+            }
+            Some((node_id, (child.content_width, child.content_height)))
+        })
+        .collect();
+
     // 运行 InlineFormattingContext 获取行内布局坐标
     let container_width = root.content_width;
     let is_vertical = matches!(
@@ -549,7 +568,8 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
     let is_vertical_rtl = matches!(root.writing_mode, WritingModeValue::VerticalRl);
     let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width)
         .with_vertical(is_vertical)
-        .with_vertical_rtl(is_vertical_rtl);
+        .with_vertical_rtl(is_vertical_rtl)
+        .with_inline_block_sizes(ib_sizes);
     inline_ctx.layout(doc, container_node_id, styles);
 
     // 将 fragment 坐标应用到 inline-block 子元素的 LayoutBox
@@ -726,12 +746,7 @@ fn apply_relative_offsets_inline(root: &mut LayoutBox, styles: &HashMap<NodeId, 
         let is_inline_level = root.node_id.is_some_and(|id| {
             styles
                 .get(&id)
-                .is_some_and(|s| {
-                    matches!(
-                        s.display,
-                        DisplayValue::Inline | DisplayValue::InlineBlock
-                    )
-                })
+                .is_some_and(|s| matches!(s.display, DisplayValue::Inline | DisplayValue::InlineBlock))
         });
         if is_inline_level {
             let (dx, dy) = resolve_relative_inset(root, styles);
@@ -1467,11 +1482,33 @@ fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, st
         inline_ctx.layout(doc, dom_id, styles);
 
         let content_height = inline_ctx.total_height();
-        // 如果 IFC 计算的高度大于 taffy 的高度，更新容器高度
         if content_height > box_node.content_height {
+            // 如果 IFC 计算的高度大于 taffy 的高度，更新容器高度
             let diff = content_height - box_node.content_height;
             box_node.content_height = content_height;
             box_node.height += diff;
+        } else if content_height < box_node.content_height {
+            // 纯 inline-level 容器且非特殊布局容器：允许减小高度。
+            // taffy 将 inline 元素映射为 Block，会错误地包含 inline 元素的垂直 margin，
+            // 而 CSS 2.1 规定 inline 元素的 margin-top/margin-bottom 不影响行盒高度。
+            let has_block_children = box_node
+                .children
+                .iter()
+                .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed);
+            let is_layout_container = matches!(
+                style.display,
+                DisplayValue::Flex
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::Grid
+                    | DisplayValue::InlineGrid
+                    | DisplayValue::Table
+                    | DisplayValue::InlineTable
+            );
+            if !has_block_children && !is_layout_container {
+                let diff = content_height - box_node.content_height;
+                box_node.content_height = content_height;
+                box_node.height += diff;
+            }
         }
     }
 
