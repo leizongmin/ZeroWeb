@@ -126,13 +126,23 @@ pub struct LayoutBox {
     /// CSS Flexbox §5.4: flex item 的视觉顺序由 order 属性决定。
     /// taffy 0.7 不支持 order，因此需要在后处理中对 flex 容器的子元素按 order 排序。
     pub css_order: i32,
-    /// 多列布局视觉碎片化偏移列表。
+    /// 多列布局额外列片段信息。
     ///
-    /// 当一个子元素高度超过列高时，它需要视觉上"跨列"显示。
-    /// 每个元素包含 (column_index, y_offset_in_column, visible_height)。
-    /// 第一个条目是主位置（已存储在 x/y 中），后续条目是额外的列位置。
-    /// paint 系统对每个额外列位置重新绘制子元素（带裁剪）。
-    pub column_span_offsets: Vec<(usize, f32, f32)>,
+    /// 当一个子元素高度超过列高时（column breaking），它需要视觉上
+    /// "跨列"显示 — 同一个子元素在多个列中出现，每列显示其不同高度切片。
+    ///
+    /// 子元素的主位置（第一个片段）存储在 `x/y` 中。
+    /// 此字段存储额外的片段信息，每条格式为：
+    /// `(x_in_container, y_in_container, column_x, column_width)`
+    ///
+    /// - `x_in_container`: 片段在容器内容区域中的 x 坐标
+    /// - `y_in_container`: 片段在容器内容区域中的 y 坐标
+    ///   （含负偏移，使子元素内容不同垂直范围可见）
+    /// - `column_x`: 该列在容器内容区域中的起始 x 坐标（用于 paint 层裁剪）
+    /// - `column_width`: 列宽度（用于 paint 层水平裁剪）
+    ///
+    /// paint 系统对每个额外片段重新绘制子元素，并裁剪到对应列的区域。
+    pub column_span_offsets: Vec<(f32, f32, f32, f32)>,
     /// 行内布局结果（来自 layout engine 的 IFC 运行）。
     ///
     /// 当设置时，paint 系统直接复用这些结果渲染文字，不再重新运行 IFC。

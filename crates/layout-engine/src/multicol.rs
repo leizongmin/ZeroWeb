@@ -431,34 +431,51 @@ fn assign_children_to_columns_sequential(
 /// 对于 column breaking 拆分的片段，使用负 y 偏移（fragment_y_offset）
 /// 来显示子元素内容的不同垂直切片。paint 层通过容器的 overflow 裁剪
 /// 确保每列只显示对应片段的内容。
+///
+/// 当一个子元素因 column breaking 出现在多个列中时：
+/// - 第一个片段的位置存储在 child.x/y（主位置）
+/// - 后续片段存储在 child.column_span_offsets
+/// - paint 层对每个额外片段重新绘制子元素，并裁剪到对应列区域
 fn position_multicol_children(container: &mut LayoutBox, assignments: &[Vec<ColumnFragment>], info: &ColumnInfo) {
+    // 跟踪每个子元素已出现的片段数（用于区分主片段和额外片段）
+    let mut child_fragment_count: HashMap<usize, usize> = HashMap::new();
+
     for (col_idx, col_fragments) in assignments.iter().enumerate() {
         let col_x = col_idx as f32 * (info.column_width + info.gap);
         let mut y_offset = 0.0f32;
 
         for frag in col_fragments {
             let child = &mut container.children[frag.child_idx];
+            let frag_idx = *child_fragment_count
+                .entry(frag.child_idx)
+                .and_modify(|c| *c += 1)
+                .or_insert(0);
 
-            // 设置子元素的 x 位置为列的 x（相对于 content area）
-            child.x = col_x + child.margin_left;
+            let child_x = col_x + child.margin_left;
+            let child_y = y_offset + child.margin_top - frag.fragment_y_offset;
 
-            // y 位置：列内累积高度减去片段偏移
-            // 对于普通子元素（fragment_y_offset=0），y = y_offset + margin_top
-            // 对于拆分片段，y = y_offset + margin_top - fragment_y_offset
-            // 这样使子元素内容向上平移，只显示 fragment_y_offset 到
-            // fragment_y_offset + visual_height 的部分
-            child.y = y_offset + child.margin_top - frag.fragment_y_offset;
+            // 所有片段（包括主片段）存储到 column_span_offsets。
+            // paint 层根据 column_span_offsets 的存在跳过正常渲染，
+            // 并对每个片段进行独立的列区域裁剪渲染。
+            // 格式：(x_in_container, y_in_container, column_x, column_width)
+            child
+                .column_span_offsets
+                .push((child_x, child_y, col_x, info.column_width));
+
+            if frag_idx == 0 {
+                // 第一个片段同时设置主位置（用于非 column-breaking 的子元素
+                // 和作为后备渲染位置）
+                child.x = child_x;
+                child.y = child_y;
+            }
 
             y_offset += frag.visual_height;
 
             // CSS Multi-column Layout：子元素宽度限制到列宽。
-            // 同时更新 content_width 以确保 paint 层使用正确的列宽
-            // 进行文本换行和背景渲染。内容的溢出裁剪由 paint 层基于
-            // multicol 容器的 overflow 属性处理。
-            if child.width > info.column_width {
+            // 仅对第一个片段执行宽度约束（避免重复递归）
+            if frag_idx == 0 && child.width > info.column_width {
                 let _old_width = child.width;
                 child.width = info.column_width;
-                // 同步更新 content_width（减去 padding 和 border）
                 let new_content_w = (info.column_width
                     - child.border_left
                     - child.border_right
@@ -466,10 +483,7 @@ fn position_multicol_children(container: &mut LayoutBox, assignments: &[Vec<Colu
                     - child.padding_right)
                     .max(0.0);
                 child.content_width = new_content_w;
-                // 更新 content_x 使内容区域相对于新的边框盒正确定位
                 child.content_x = child.x + child.border_left + child.padding_left;
-                // 如果子元素有文本内容，需要调整其内部布局以适应列宽。
-                // 重新分配子元素的内部子元素宽度（递归约束）
                 constrain_subtree_width(child, new_content_w);
             }
         }

@@ -385,14 +385,52 @@ impl Painter {
         let counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
         // CSS 2.1 Appendix E: 非 positioned floats 在 block 级非 positioned 后代之后绘制。
+        // 对于 column breaking 的子元素（有 column_span_offsets），跳过正常渲染，
+        // 后面会对每个列片段独立渲染并裁剪。
+        let is_multicol = box_node.is_multicol;
         for child in &box_node.children {
             if matches!(child.float, FloatValue::None) {
-                self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
+                // 非 multicol 容器或无 column breaking 的子元素正常渲染
+                if !is_multicol || child.column_span_offsets.is_empty() {
+                    self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
+                }
             }
         }
         for child in &box_node.children {
-            if !matches!(child.float, FloatValue::None) {
+            if !matches!(child.float, FloatValue::None) && (!is_multicol || child.column_span_offsets.is_empty()) {
                 self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
+            }
+        }
+
+        // 多列 column breaking 片段渲染。
+        // 对于有 column_span_offsets 的子元素，对每个列片段独立渲染并裁剪到列区域。
+        // 这确保每个片段只在其对应的列中可见。
+        if is_multicol {
+            let content_x = abs_x + box_node.border_left + box_node.padding_left;
+            let content_y = abs_y + box_node.border_top + box_node.padding_top;
+            for child in &box_node.children {
+                if child.column_span_offsets.is_empty() {
+                    continue;
+                }
+                for &(frag_x, frag_y, col_x, col_w) in &child.column_span_offsets {
+                    // 计算片段在绝对坐标中的位置
+                    let frag_abs_x = content_x + frag_x;
+                    let frag_abs_y = content_y + frag_y;
+
+                    // 裁剪区域：该列在容器内容区域中的范围
+                    let clip_rect = Rect::new(content_x + col_x, content_y, col_w, box_node.content_height);
+
+                    // 记录绘制前的图元数量，用于裁剪
+                    let counts_before_frag = PrimitiveCounts::snapshot(&self.primitives);
+
+                    // 绘制子元素（偏移到片段位置）
+                    let frag_offset_x = frag_abs_x - child.x;
+                    let frag_offset_y = frag_abs_y - child.y;
+                    self.paint_node(child, styles, frag_offset_x, frag_offset_y, doc);
+
+                    // 裁剪该片段产生的图元到列区域
+                    super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_frag, &clip_rect);
+                }
             }
         }
 
