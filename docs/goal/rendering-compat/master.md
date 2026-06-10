@@ -4,6 +4,44 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 77.3% (379/490)
 
+### R36 进展
+
+**通过率**：379/490 (77.3%)，与 R35 持平。修复 IFC 基线计算，提交正确性改进。
+
+#### 修复提交
+
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| IFC 基线计算改进 | 正确性 | `apply_vertical_alignment` 改为从实际内容（text runs 的 font_size + inline-block 的 height）计算 max_ascent，而非仅使用全局 strut（0.8 × line_height）。空行仍用 strut 回退。对布局引擎的 IFC 定位更精确（Ahem 等高 ascent 字体受益），但 paint 系统的 IFC 仍使用默认度量，因此上游 reftest 通过率不变 |
+
+#### R36 调查分析
+
+1. **paint 系统 IFC 根因**：paint 系统 `paint_text()` 创建 IFC 时传入 `HashMap::new()`（空样式），导致所有文本使用默认字体度量（16px/19.2px）而非容器实际字体。这意味着行高、字符宽度、基线位置全部基于错误值。尝试传入容器样式但导致 4 个测试回归（font metrics 变化改变 paint IFC 的行断行为），已回退。
+2. **基线修复影响有限**：`apply_vertical_alignment` 的改进仅影响布局引擎的 IFC（用于容器高度计算和 inline-block 定位），不影响 paint 系统的文本渲染。paint 系统有自己的 IFC 实例，使用独立的（错误的）字体度量。
+3. **系统性限制**：上游 reftest 通过率的最大瓶颈是 paint 系统 IFC 使用错误字体度量。要突破 80%，需要在 paint IFC 中正确处理字体度量，但这需要更精细的实现以避免回归。
+
+#### 按目录通过率（不变）
+
+| 目录 | 通过/总数 | 通过率 |
+|------|-----------|--------|
+| css-text-decor/ | 39/39 | 100.0% ✅ |
+| css-fonts/ | 60/60 | 100.0% ✅ |
+| css-grid/ | 17/20 | 85.0% |
+| css-writing-modes/ | 46/59 | 78.0% |
+| css-tables/ | 45/55 | 81.8% |
+| CSS2/ | 93/129 | 72.1% |
+| css-position/ | 12/16 | 75.0% |
+| css-flexbox/ | 35/55 | 63.6% |
+| css-multicol/ | 32/57 | 56.1% |
+
+### 后续重点（R37+）
+
+1. **paint 系统 IFC 字体度量修复**（系统性瓶颈）：需要在不影响行断行为的前提下将正确字体度量传入 paint IFC。可能方案：(a) 仅覆盖 font_size/line_height 而不传递完整样式；(b) 在 paint IFC 中从容器 style 覆盖默认度量
+2. **near-miss 测试攻坚**（10 个 <2% diff）：whitespace-001 (1.05%)、clear-clearance-calculation-002 (1.18%)、clearance-006 (1.16%) 等
+3. **CSS2/floats-clear 精度提升**（17 个失败）：swatch 图像缩放精度、clearance 边界 case
+4. **writing-mode 布局支持**（影响 35+ 测试）：垂直书写模式轴交换
+5. **multicol column breaking**（影响 ~16 测试）：内容碎片化
+
 ### R35 进展
 
 **通过率**：379/490 (77.3%)，+2 tests（自 R34）。修复 text-align 传播缺失，新增 flex-direction 垂直模式交换。
