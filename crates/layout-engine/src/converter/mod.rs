@@ -191,6 +191,10 @@ pub fn apply_vertical_writing_mode(style: &mut taffy::Style) {
     // 交换 border: left ↔ top, right ↔ bottom
     std::mem::swap(&mut style.border.left, &mut style.border.top);
     std::mem::swap(&mut style.border.right, &mut style.border.bottom);
+
+    // 交换 gap: column-gap ↔ row-gap
+    // CSS Writing Modes §7.1：垂直书写模式中 gap 属性的轴也随主轴交换
+    std::mem::swap(&mut style.gap.width, &mut style.gap.height);
 }
 
 /// 转换 display 属性。
