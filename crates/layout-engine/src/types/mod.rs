@@ -237,10 +237,14 @@ pub struct InlineLayoutFragment {
     /// 片段 x 坐标（在行盒内）。
     pub x: f32,
     /// 片段 y 坐标（在行盒内，经过 vertical-align 后）。
+    /// 对于 baseline 对齐：frag.y = baseline_y - height。
+    /// 基线位置 = frag.y + height（不是 frag.y + font_size）。
     pub y: f32,
     /// 片段宽度。
     pub width: f32,
-    /// 字体大小（用于基线偏移和字形渲染）。
+    /// 片段高度（line-height 盒高度，用于计算基线位置）。
+    pub height: f32,
+    /// 字体大小（用于字形渲染大小）。
     pub font_size: f32,
     /// 文本内容。
     pub text: String,

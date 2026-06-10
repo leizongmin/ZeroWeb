@@ -778,6 +778,7 @@ impl super::Painter {
             struct PaintFragment {
                 x: f32,
                 y: f32,
+                height: f32,
                 font_size: f32,
                 text: String,
                 node_id: NodeId,
@@ -791,6 +792,7 @@ impl super::Painter {
                             f.node_id.map(|nid| PaintFragment {
                                 x: f.x,
                                 y: f.y,
+                                height: f.height,
                                 font_size: f.font_size,
                                 text: f.text.clone(),
                                 node_id: nid,
@@ -923,7 +925,7 @@ impl super::Painter {
                     // 非多列布局：统一处理存储片段和 IFC 片段
                     // 宏化渲染逻辑，避免重复代码
                     macro_rules! render_fragment {
-                        ($frag_x:expr, $frag_y:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr) => {{
+                        ($frag_x:expr, $frag_y:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr) => {{
                             self.painted_inline_nodes.insert($frag_nid);
 
                             let (frag_base_x, frag_base_y, char_advance_is_y) = if is_vertical {
@@ -931,7 +933,7 @@ impl super::Painter {
                             } else {
                                 (
                                     content_x + $frag_x + tx,
-                                    content_y + $frag_y + $frag_fs + ty,
+                                    content_y + $frag_y + $baseline_offset + ty,
                                     false,
                                 )
                             };
@@ -998,11 +1000,15 @@ impl super::Painter {
 
                     if use_stored {
                         for frag in &stored_fragments {
-                            render_fragment!(frag.x, frag.y, frag.font_size, frag.text, frag.node_id);
+                            // 存储结果：frag.y 是片段框顶部（baseline_y - height），
+                            // 基线偏移 = height（line-height 盒高度），font_size 用于字形大小
+                            render_fragment!(frag.x, frag.y, frag.height, frag.font_size, frag.text, frag.node_id);
                         }
                     } else {
                         for fragment in fragments.iter() {
-                            render_fragment!(fragment.x, fragment.y, fragment.font_size, fragment.text, fragment.node_id);
+                            // IFC 片段（空 styles）：frag.y 基于 16px 默认值，
+                            // font_size 作为基线偏移（错误但一致的默认行为）
+                            render_fragment!(fragment.x, fragment.y, fragment.font_size, fragment.font_size, fragment.text, fragment.node_id);
                         }
                     }
                 } // end non-multicol else block
