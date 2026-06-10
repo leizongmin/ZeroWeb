@@ -4,6 +4,51 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 77.3% (379/490)
 
+### R39 进展
+
+**通过率**：379/490 (77.3%)，与 R38 持平。新增多列容器 BFC 建立和图像插值精度修复；全面分析 111 个失败测试的根因分布。
+
+#### R39 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| 多列容器 BFC 建立 | `establishes_bfc()` 新增 `is_multicol` 检查，多列容器正确阻止子元素 margin 折叠（CSS Multi-column §2）。为避免回归，多列容器在浮动包含高度计算中使用非 BFC 路径 |
+| taffy overflow: Clip 设置 | tree.rs 中为多列容器设置 `taffy_style.overflow = Clip`，阻止 taffy 内部父子 margin 折叠。不影响视觉裁剪（paint 层使用 LayoutBox.overflow_x/y） |
+| 图像双线性插值精度修复 | CPU renderer 的 bilinear interpolation 从 truncation（`as u8`）改为 rounding（`+ 0.5 as u8`），提高图像缩放精度 |
+| multicol BFC 单元测试 | margin_collapse.rs 新增 `test_establishes_bfc_multicol` 测试 |
+
+#### R39 失败根因分布分析
+
+对 111 个失败测试进行全面分类：
+
+| 失败类别 | 数量 | 主要根因 | 修复难度 |
+|----------|------|----------|----------|
+| multicol breaking | ~16 | 需内容碎片化（拆分单个块到多列） | 高（大特性） |
+| flexbox baseline | ~9 | taffy first_baselines 未持久化到 Layout | 中 |
+| writing-mode 垂直布局 | ~13 | 垂直书写模式轴交换 + 垂直字形渲染 | 高 |
+| CSS2/floats-clear 精度 | ~15 | swatch 图像缩放精度 + clearance 边界 case | 中 |
+| CSS2/linebox inline box | ~8 | 空 inline line-height + anonymous block 拆分 | 高 |
+| table 各种 | ~10 | border-collapse 精度 + min/max-size + row suppress | 中 |
+| CSS2/border+background | ~7 | Ahem 字体渲染 + 图像 repeat vs stretch | 低-中 |
+| CSS2/fonts | ~2 | font shorthand 验证 + font-family 括号 | 低 |
+| writing-mode abspos | ~4 | 垂直模式 inline 布局 + box-offsets | 高 |
+| 其他 | ~17 | 混合根因 | 混合 |
+
+**near-miss 测试统计**（< 3% diff）：37 个测试差异小于 3%，但多数差异来自：
+1. **Ahem 字体渲染差异**（fontdue vs Skia 光栅化精度）
+2. **Swatch 图像缩放**（20×20 PNG → 96×96 与 CSS background-color 精确填充的像素差异）
+3. **亚像素舍入**（floor/ceil 在元素边界位置差异）
+
+这些系统性精度问题影响几乎所有 < 3% diff 的测试，无法通过单一修复解决。
+
+#### 后续重点（R40+）
+
+1. **multicol column breaking**（影响 ~16 测试）：需要实现内容碎片化基础设施 — 将单个块级元素内容拆分到多列。当前仅移动整个子元素到下一列。这是 css-multicol 通过率从 56.1% 提升到 95% 的最大杠杆。
+2. **writing-mode 垂直布局**（影响 ~13 测试）：需要垂直书写模式下完整轴交换 + 垂直字形渲染（旋转文本 90°）。
+3. **flexbox baseline 对齐**（影响 ~9 测试）：需要从 taffy LayoutOutput 捕获 first_baselines 并传递到 IFC 的 InlineBlockBox。
+4. **CSS2/linebox inline box model**（影响 ~8 测试）：需要实现 anonymous block box splitting（inline 元素包含 block-level 子元素时拆分 inline box）。
+5. **paint IFC 架构改进**（影响 50+ 测试）：需要在所有后处理完成后存储 layout IFC 结果到 LayoutBox，paint 复用该结果。这是最大的系统性改进，但需要较大重构。
+
 ### R38 进展
 
 **通过率**：379/490 (77.3%)，与 R37 持平。深入调查 paint IFC 架构改进的可行性，建立基础设施但发现基线计算兼容性问题。
