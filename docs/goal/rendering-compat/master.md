@@ -1,8 +1,45 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-10
+**最后更新**: 2026-06-11
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 77.3% (379/490)
+
+### R38 进展
+
+**通过率**：379/490 (77.3%)，与 R37 持平。深入调查 paint IFC 架构改进的可行性，建立基础设施但发现基线计算兼容性问题。
+
+#### R38 调查分析
+
+1. **paint IFC 存储结果方案（方案 C）**：在三个现有 IFC 运行点（remeasure_text_with_float_exclusions、remeasure_inline_only_containers、adjust_inline_block_positions）存储片段结果到 LayoutBox.inline_layout。paint 系统通过 `use_stored` 标志复用结果，避免重新运行 IFC。
+
+2. **基线计算双重计数问题**：IFC 片段的 `frag.y` 表示片段框顶部在行盒中的位置（`baseline_y - run.height`）。paint 渲染代码使用 `frag.y + frag.fs`（font_size）作为基线位置。当 IFC 使用空 styles 时，frag.y 和 frag.fs 都基于 16px 默认值，错误相互抵消，视觉结果正确。当使用存储结果（正确 font_size）时，frag.y 已包含正确的基线偏移，加上 frag.fs 导致双重计数，文本位置下移过多。
+
+3. **传递实际 styles 到 paint IFC（方案 B，验证回退）**：再次验证 R37 结论——将 `styles.unwrap_or(&HashMap::new())` 传入 paint IFC 导致 379→373（-6 tests）回归。根因：paint IFC 与 layout IFC 在不同上下文运行（不同容器宽度、不同 float exclusion zones），正确 styles 导致不同的 line-breaking 行为，与 layout 定位冲突。
+
+4. **零 clearance 未折叠边距修复尝试**：尝试在 zero clearance case 中使用 uncollapsed margin（`flow_bottom + last_flow_mb + child.margin_top`），但对 clearance-006 无影响（该测试的 margin 恰好相等，折叠与不折叠结果相同）。已回退。
+
+5. **失败分布更新**：
+   - <2% diff: 17 tests（font metrics/渲染精度）
+   - 2-5% diff: 29 tests（定位差异）
+   - 5-15% diff: 22 tests（布局差异）
+   - 10-20% diff: 30 tests（较大布局差异/缺失功能）
+   - >20% diff: 13 tests（功能缺失）
+
+#### R38 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| `store_inline_layout_results()` 辅助函数 | engine.rs 新增辅助函数，将 IFC 片段结果存储到 LayoutBox.inline_layout。当前被注释掉（等待基线计算修复），作为未来架构改进的基础设施 |
+| clippy 警告修复 | 移除 compute_final_inline_layouts 中未使用的 LineHeightValue import、unreachable pattern（TextAlignValue exhaustive match）、unused mut、unused variable |
+| paint_text 宏重构（保留） | text.rs 中的 render_fragment! 宏统一了存储和 IFC 片段的渲染逻辑，消除代码重复 |
+
+#### 后续重点（R39+）
+
+1. **paint 基线计算修复**（解锁 paint IFC 架构改进）：需要修改 paint 渲染代码，使 `frag.y` 直接表示片段框顶部（不额外加 font_size），或使用 `frag.y + frag.height` 作为基线位置。此修复将使 `store_inline_layout_results` 可用，解决 50+ 测试的字体度量不一致问题。
+2. **near-miss 测试攻坚**（17 个 <2% diff）：多数差异来自 font metrics 或 border/image 渲染精度，难以通过简单修复解决。
+3. **CSS2/floats-clear 精度提升**（17 个失败）：需要 CSS 2.1 clearance 算法的精细调整。
+4. **writing-mode 布局支持**（影响 35+ 测试）：垂直书写模式轴交换。
+5. **multicol column breaking**（影响 ~16 测试）：内容碎片化。
 
 ### R37 进展
 
@@ -27,6 +64,24 @@
    - `block-in-inline-align-001` (1.42%)：IFC 匿名文本 font metrics
    - `border-conflict-resolution` (1.54%)：ridge/outset/hidden 边框冲突解决
 5. **flexbox 近 miss 分析**：5 个 <2% diff 测试的根因分类为：(a) inline-flex 基线来自第一个 flex item 而非框底部（taffy Layout 不持久化 first_baselines）；(b) 垂直书写模式 gap 轴交换（已修复但测试未覆盖）；(c) wrap-reverse 基线来自逻辑第一行而非视觉第一行（taffy 上游问题）
+6. **产品静态页 smoke 缺口确认**：`apps/browser/assets/welcome.html` 在 Chromium 中布局正常，但 ZeroBrowser 输出出现文本重叠、sibling card/link/shortcut 文本串联、`ZeroBrowser` 宽屏标题误拆行、footer/tagline 文本间距错误。该页面无页面级 JS，说明缺口不在动态 Web API，而在基础 layout/paint/glyph 消费链路。
+7. **welcome.html 代码事实**：
+   - 页面集中使用 `display:grid`、`display:flex`、`gap`、inline `span` 拼接标题、`<br>`、中英文混排、`letter-spacing`、`box-shadow`、`border-radius`。
+   - `crates/layout-engine/src/converter/mod.rs` 当前将 `display:inline` / `inline-block` 映射为 taffy `Block`，而 `crates/layout-engine/src/inline/mod.rs` 又通过 `doc.text_content(child_id)` 把 inline 子树文本收集成 IFC run，存在 inline 所有权分裂。
+   - `crates/layout-engine/src/engine.rs` 中 `compute_final_inline_layouts()` 仍被禁用，paint 无法稳定复用 layout 阶段最终 IFC 结果。
+   - `apps/browser/src/app_render.rs` 的 `reflow_webview_glyphs()` 会按 baseline 对 WebView glyph 做整行重排，可能破坏 engine 已计算好的 fragment x 坐标，尤其影响同一 baseline 上的 grid/flex sibling 内容。
+8. **真实静态文章页 smoke 缺口确认**：`https://morning.work/page/2026-02/fedora-macbook-three-finger-drag.html` 在 Chromium 中是正常静态文章页，但 ZeroBrowser 输出出现 nav 缺失/弱化、tag 与阅读时间串联到大块蓝色背景、正文段落压成一行并重叠、inline code 位置漂移、table 退化为普通文本。该页面无页面级动态渲染需求，说明当前缺口已影响普通中文长文、表格和代码块页面。
+9. **morning.work 代码事实**：
+   - 页面依赖 `<link rel="stylesheet" href="/styles/github.css">`、`/JetBrainsMono/JetBrainsMono.css`、`/article.css`，外部 CSS 中包含 `.article`、`table`、`code/pre`、标题边框、列表和颜色变量等核心样式。
+   - `crates/webview/src/webview.rs` 的 `fetch_url()` 在 Service Worker 命中、HTTP cache 命中和普通网络成功三条路径都调用 `load_html(&html, None)`，没有把页面 `<link rel="stylesheet">` 抓取为 CSS 输入。
+   - `crates/engine/src/pipeline.rs` 的 `collect_stylesheets()` 只收调用方传入的 CSS 字符串和文档内 `<style>`，不会解析/抓取外链 stylesheet。
+   - morning.work 的 `<head>` 仍包含 body/title/nav/tag 的内联 CSS，因此外链 CSS 缺失只能解释文章 table/code/pre 等样式退化；正文压缩、inline code 漂移和文本重叠仍指向 inline ownership、layout/paint IFC 双路径和 ZeroBrowser glyph 后处理。
+10. **图片密集静态首页 smoke 缺口确认**：`https://wintertc.org/` 的核心 CSS 是内联 Twind `<style>`，Chrome 中 header logo、nav button、正文和参与方 Logo 网格均正常；ZeroBrowser 输出中 SVG/PNG Logo 大面积缺失并退化成短横/占位 glyph，标题/副标题与 nav 文本串联，正文段落压成一行，说明仅修外链 CSS 不足以覆盖真实静态站点。
+11. **WinterTC 代码事实**：
+   - 页面使用内联 utility CSS，不依赖外链 stylesheet；关键结构包含 `display:flex` header、`display:grid` 四列 nav、`flex-wrap justify-evenly` Logo 网格、`text-align:justify` 正文，以及 `/static/logo.svg`、`/static/logos/*.svg`、`/static/logos/*.png` 图片。
+   - `crates/engine/src/paint/painter/text.rs` 会为 `<img>` 元素生成 `ImagePrimitive`，`render-foundation` CPU/GPU 路径也能从 `ImageCache` 读取像素并绘制图片。
+   - `apps/browser/src/app_platform.rs` 的 CPU/GPU 渲染调用当前都传 `None` 作为 `image_cache`，并标注 `image_cache: 暂不使用`；真实导航也没有把 `<img src>` 子资源抓取、解码并注册到与 `ImagePrimitive.image_key` 对应的 cache。
+   - 因此 WinterTC 的 Logo 缺失是图片子资源/ImageCache/浏览器渲染路径未贯通；正文和 nav 文本串联仍属于 inline ownership、layout/paint IFC 和 glyph 后处理缺口。
 
 #### 按目录通过率（不变）
 
@@ -44,12 +99,19 @@
 
 ### 后续重点（R38+）
 
-1. **paint IFC 架构改进**（系统性瓶颈，影响 50+ 测试）：需要将 layout IFC 的结果存储到 LayoutBox 并在 paint 中复用，避免 paint 重新运行独立 IFC。这是最高优先级的架构改进，但需要较大重构
-2. **inline-flex 基线传递**（影响 ~5 个 flexbox 测试）：taffy 的 first_baselines 在 LayoutOutput 中可用但不持久化到 Layout 结构体。需要在 measure 回调或后处理中捕获基线信息，传递到 IFC 的 InlineBlockBox
-3. **near-miss 测试攻坚**（10 个 <2% diff）：whitespace-001 (1.05%)、clear-clearance-calculation-002 (1.18%)、clearance-006 (1.16%)、border-conflict-resolution (1.54%) 等
-4. **CSS2/floats-clear 精度提升**（17 个失败）：swatch 图像缩放精度、clearance 边界 case
-5. **writing-mode 布局支持**（影响 35+ 测试）：垂直书写模式轴交换
-6. **multicol column breaking**（影响 ~16 测试）：内容碎片化
+1. **产品/真实静态页视觉 smoke 门禁**：新增 `welcome.html`、morning.work 录制静态文章页和 WinterTC 录制图片密集首页的 ZeroBrowser/WebView/Chromium 截图对比，至少覆盖桌面和窄屏 viewport；先让该 smoke 可稳定失败，记录证据到 `docs/goal/rendering-compat/evidence/product-static/`。
+2. **外部 stylesheet 导航加载**：在 WebView/Browser URL 导航层解析 `<link rel="stylesheet">`，按文档 URL / `<base>` 解析相对地址，经过安全检查和 HTTP cache 抓取 CSS，并按 DOM 顺序与内联 `<style>` 一起进入样式计算；render pipeline 继续保持纯输入渲染。
+3. **图片子资源/ImageCache 贯通**：在 WebView/Browser URL 导航层抓取 `<img src>` 和参与渲染的 CSS `url()` 图片，支持 PNG/JPEG/WebP 解码和 SVG 栅格化，使用与 `ImagePrimitive.image_key` 一致的 key 写入 `ImageCache`，并在 ZeroBrowser CPU/GPU 路径传入 renderer。
+4. **Inline formatting 所有权统一**：明确 inline 文本、inline 元素和 inline-block 由 IFC 还是 LayoutBox 负责，避免父容器用 `text_content()` 串联整棵 inline 子树，同时子 inline 盒又递归绘制。
+5. **paint IFC 架构改进**（系统性瓶颈，影响 50+ 测试 + welcome.html + morning.work + WinterTC）：需要将 layout IFC 的结果存储到 LayoutBox 并在 paint 中复用，避免 paint 重新运行独立 IFC。这是最高优先级的架构改进，但需要较大重构。
+6. **ZeroBrowser glyph 后处理收敛**：审视 `reflow_webview_glyphs()`，禁止浏览器层按 baseline 重排 WebView glyph 坐标；字体 fallback、选择命中和可访问性需求必须不改变 engine 输出的 fragment 坐标语义。
+7. **文章页 table/code/pre smoke 补齐**：用 morning.work fixture 验证中文段落流、tag badges、inline code、pre/code 块、table/border-collapse 的基本视觉结构，避免真实静态内容退化成普通文本流。
+8. **图片密集首页 smoke 补齐**：用 WinterTC fixture 验证 SVG/PNG Logo 可见、header flex、nav grid、Logo flex-wrap 网格、text-align:justify 和 footer 图标，不允许图片缺失退化为 alt 文本或短横 glyph。
+9. **inline-flex 基线传递**（影响 ~5 个 flexbox 测试）：taffy 的 first_baselines 在 LayoutOutput 中可用但不持久化到 Layout 结构体。需要在 measure 回调或后处理中捕获基线信息，传递到 IFC 的 InlineBlockBox。
+10. **near-miss 测试攻坚**（10 个 <2% diff）：whitespace-001 (1.05%)、clear-clearance-calculation-002 (1.18%)、clearance-006 (1.16%)、border-conflict-resolution (1.54%) 等。
+11. **CSS2/floats-clear 精度提升**（17 个失败）：swatch 图像缩放精度、clearance 边界 case。
+12. **writing-mode 布局支持**（影响 35+ 测试）：垂直书写模式轴交换。
+13. **multicol column breaking**（影响 ~16 测试）：内容碎片化。
 
 ### R35 进展
 
@@ -297,7 +359,7 @@
 
 | 维度 | 状态 | 说明 |
 |------|------|------|
-| 渲染管线 | ✅ 全链路贯通 | HTML→CSS→Style→Layout→Paint→Composite 完整可用 |
+| 渲染管线 | ⚠️ 全链路贯通但非一致 | HTML→CSS→Style→Layout→Paint→Composite 可运行；但 layout IFC、paint IFC 和 ZeroBrowser glyph 消费仍存在多套坐标/度量路径，`welcome.html` 已暴露用户可见错位 |
 | WPT Runner | ✅ reftest 级 | 1,341 个手写 TestCase + 685 个内联 reftest（13 目录 ≥50） |
 | Reftest Harness | ✅ 可用 | 分类容差、per-test fuzzy 注解、match/mismatch 模式 |
 | Manifest Parser | ✅ 扩展完成 | reftest 条目解析、fuzzy 元数据、HTML 链接提取 |
@@ -312,6 +374,9 @@
 | GPU 渲染器图元 | ✅ 全量 | 全部 13 种图元管线 + 48 个单元测试 + 浏览器 GPU 路径集成 |
 | CI 集成 | ✅ 已接入 | GitHub Actions reftest job（CPU 渲染） |
 | Quirks Mode | ✅ 完成 | CSS parser + style system + layout engine quirks 全部实现 |
+| 外部 stylesheet 加载 | ❌ 缺失 | URL 导航路径未抓取 `<link rel="stylesheet">`；`fetch_url()` 使用 `load_html(&html, None)`，`collect_stylesheets()` 只收调用方 CSS 和内联 `<style>` |
+| 图片子资源/ImageCache | ❌ 缺失 | `<img>` 可生成 `ImagePrimitive`，但 URL 导航未抓取/解码图片子资源，ZeroBrowser CPU/GPU 渲染路径传 `None` image cache；WinterTC 首页 Logo 因此缺失 |
+| 产品/真实静态页面视觉 smoke | ❌ 缺失 | `apps/browser/assets/welcome.html`、morning.work 录制静态文章页和 WinterTC 录制图片密集首页尚未纳入 ZeroBrowser/WebView/Chromium 截图对比门禁；当前 ZeroBrowser 已出现文本重叠、sibling 文本串联、正文压缩、table/code 退化、Logo 缺失 |
 | #[ignore] 测试 | ⚠️ 保留 | 59 个真实网站测试保留 #[ignore]，因本地网络不稳定。其余零 #[ignore] |
 
 ---
@@ -733,6 +798,9 @@
 | CPU 渲染器图元覆盖 | 视觉输出 | ✅ 已完成 | M7 |
 | 浏览器图元消费 | 视觉输出 | ✅ 已完成 | M7 |
 | GPU 渲染器图元覆盖 | GPU 视觉输出 | ✅ 管线已实现 | M7 |
+| 外部 stylesheet 加载 | 真实静态网页 CSS | P1 | M10/R38 |
+| 图片子资源/ImageCache 贯通 | Logo/图片密集静态页 | P1 | M10/R38 |
+| 产品/真实静态页视觉 smoke | 验收有效性 | P1 | M10/R38 |
 
 ---
 

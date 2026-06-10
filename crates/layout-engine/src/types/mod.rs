@@ -132,6 +132,11 @@ pub struct LayoutBox {
     /// 第一个条目是主位置（已存储在 x/y 中），后续条目是额外的列位置。
     /// paint 系统对每个额外列位置重新绘制子元素（带裁剪）。
     pub column_span_offsets: Vec<(usize, f32, f32)>,
+    /// 行内布局结果（来自 layout engine 的 IFC 运行）。
+    ///
+    /// 当设置时，paint 系统直接复用这些结果渲染文字，不再重新运行 IFC。
+    /// 这消除了 paint IFC 字体度量不一致的系统性问题。
+    pub inline_layout: Option<Vec<InlineLayoutLine>>,
 }
 
 impl LayoutBox {
@@ -207,8 +212,40 @@ impl Default for LayoutBox {
             is_anonymous_text_item: false,
             css_order: 0,
             column_span_offsets: Vec::new(),
+            inline_layout: None,
         }
     }
+}
+
+/// 行内布局行盒 — paint 系统复用的 IFC 结果。
+///
+/// 存储在 `LayoutBox.inline_layout` 中，避免 paint 系统重新运行 IFC。
+/// 仅包含 paint 系统渲染文字所需的最小数据。
+#[derive(Debug, Clone)]
+pub struct InlineLayoutLine {
+    /// 行盒 y 坐标（相对于容器内容区域）。
+    pub y: f32,
+    /// 行盒高度。
+    pub height: f32,
+    /// 行盒中的片段列表。
+    pub fragments: Vec<InlineLayoutFragment>,
+}
+
+/// 行内布局片段 — paint 系统使用的文本定位信息。
+#[derive(Debug, Clone)]
+pub struct InlineLayoutFragment {
+    /// 片段 x 坐标（在行盒内）。
+    pub x: f32,
+    /// 片段 y 坐标（在行盒内，经过 vertical-align 后）。
+    pub y: f32,
+    /// 片段宽度。
+    pub width: f32,
+    /// 字体大小（用于基线偏移和字形渲染）。
+    pub font_size: f32,
+    /// 文本内容。
+    pub text: String,
+    /// 对应 DOM 节点 ID（用于去重）。
+    pub node_id: Option<NodeId>,
 }
 
 /// 布局结果 — 整个文档的布局树。

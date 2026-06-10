@@ -49,6 +49,10 @@
 | JS 执行支持 | Reftest harness 在截图前执行页面 JavaScript（通过现有 `script-sandbox` V8 runtime） | 很多 WPT CSS reftest 依赖 JS 动态设置条件 |
 | Quirks mode | CSS parser / style system / layout engine 中实现完整的 quirks mode 调整 | DOM parser 已存储 quirks mode 但下游完全忽略；很多 CSS 2.1 reftest 会触发 quirks mode |
 | CSS 2.1 渲染 | 盒模型、颜色、背景、边框、margin 折叠、inline formatting、BFC、浮动清除、基础定位 | 这是最大的 reftest 覆盖面，优先级最高 |
+| Inline formatting 所有权 | 文本节点、inline 元素、inline-block、`<br>`、混合中英文文本必须在 layout 和 paint 之间只有一个权威行内布局结果 | 防止父容器重新收集整棵 inline 子树文本，同时子 inline 元素又作为独立 LayoutBox 递归绘制，导致 sibling 文本串联、重复或错位 |
+| Layout/Paint IFC 一致性 | Layout engine 必须持久化最终 IFC 片段结果到 `LayoutBox`，paint 必须复用该结果，不允许用不同 style map、float exclusion、container width 再跑第二套 IFC | `apps/browser/assets/welcome.html` 这种简单静态页已经暴露 layout box 与 glyph 输出不同源的问题 |
+| 外部样式表加载 | WebView/Browser URL 导航必须识别 `<link rel="stylesheet">`，按文档 URL / `<base>` 解析相对地址，完成安全检查、HTTP 缓存、CSS 抓取和级联顺序合并后再进入样式计算 | 真实静态页面通常依赖外链 CSS；`https://morning.work/page/2026-02/fedora-macbook-three-finger-drag.html` 依赖 `/article.css`、`/styles/github.css`、字体 CSS |
+| 图片子资源与替换元素 | WebView/Browser URL 导航必须抓取 `<img src>`、CSS `url()`、favicon/metadata 中实际参与渲染的图片资源，支持 PNG/JPEG/WebP 基础解码和 SVG 栅格化，并把解码后的像素数据通过 `ImageCache` 传给 CPU/GPU renderer | `https://wintertc.org/` 主要内容依赖 SVG/PNG Logo；当前 `<img>` 可生成 `ImagePrimitive`，但浏览器渲染路径没有真实 image cache 会导致 Logo 全部缺失 |
 | Flexbox 渲染 | 所有 flex 属性的正确布局和绘制 | 已有 taffy 支撑，主要验证 + 修复边界 case |
 | Grid 渲染 | 所有 grid 属性的正确布局和绘制 | 已有 taffy 支撑，主要验证 + 修复边界 case |
 | Float 布局 | 完整的 float 布局算法，float exclusion、clear、BFC 触发 | 当前仅有 inline context 的 float exclusion zone，无原生 float layout |
@@ -57,6 +61,8 @@
 | 文字排版 | OpenType shaping（liga/kern/features）、BiDi 算法、CJK 排版优化、text-align justify、word-break/overflow-wrap、writing-mode、vertical text | 当前 fontdue 仅做简单 character-to-glyph 映射 |
 | Position 定位 | absolute/relative/fixed/sticky 的精确坐标计算 | fixed/sticky 当前有简化处理 |
 | Reftest 验证 | CPU 软件渲染模式 + GPU 渲染模式的截图对比 | 两种模式都需通过 |
+| 产品静态页面视觉 smoke | `apps/browser/assets/welcome.html` 等内置静态页面、录制的真实静态文章页和图片密集静态站点必须通过 ZeroBrowser/WebView 路径与 Chromium 参考截图对比 | WPT 子集通过不能替代用户可见产品页验收；静态页无 JS 仍错位说明基础排版/绘制链路未达标 |
+| 浏览器层 glyph 保真 | ZeroBrowser 消费 WebView `GlyphPrimitive` 时必须保持 engine 输出坐标、baseline、font size 和 fragment 边界的语义；字体 fallback 或选择功能不得重新排版整行 glyph | 浏览器层后处理不能把不同 grid/flex/card 中同一 baseline 的文本合并为一行 |
 | 范围外 reftest 过滤 | 导入时自动过滤或标记范围外 reftest（SVG、Canvas、WebGL 等），维护 skip list | 防止范围外 case 膨胀分母 |
 | 渲染缺口修复 | 任何导致 reftest 失败的渲染错误 | 由 reftest 结果驱动 |
 | 渲染器图元覆盖 | CPU 渲染器和 GPU 渲染器必须能够渲染所有 `RenderPrimitives` 类型：fills、rounded_rects、gradients、shadows、images、strokes、path_fills、path_strokes、transforms、clips、filters、blend_modes、glyphs | 当前 CPU 渲染器仅支持 fills + rounded_rects + glyphs；GPU 渲染器仅支持 fills + glyphs。**这是渲染效果差的最大根因** |
@@ -88,7 +94,7 @@
 - **性能优化**：本目标关注渲染正确性，不关注渲染性能（由父目标的性能基准体系覆盖）
 - **Chromium 专属行为**：只对齐标准规范行为，不复制 Chromium 的 bug 或非标准行为
 - **新 crate 依赖的大规模引入**：最小化新依赖，仅在必要时引入许可证兼容的 crate
-- **SVG 渲染**：不在本目标范围
+- **SVG 文档/内联 SVG 渲染**：不在本目标范围。作为 `<img>` / CSS `url()` 图片资源参与页面渲染的 SVG 栅格化属于“图片子资源与替换元素”范围，至少要覆盖产品静态 smoke 中的 Logo 场景
 
 ### 依赖约束
 
@@ -281,10 +287,26 @@
 - [ ] **scroll-snap** — 滚动吸附行为
 - [ ] **打印媒体查询** — `@media print` 基础支持（可选，降低优先级）
 
+### DC-13: 产品静态页面视觉 smoke
+
+- [ ] `apps/browser/assets/welcome.html` 通过 ZeroBrowser 窗口/无头路径截图，并与 Chromium 在相同 viewport 下的参考截图对比
+- [ ] `https://morning.work/page/2026-02/fedora-macbook-three-finger-drag.html` 录制为固定 HTML/CSS fixture，并通过 ZeroBrowser/WebView/Chromium 三方截图对比；fixture 必须包含原页面依赖的 `/article.css`、`/styles/github.css`、`/JetBrainsMono/JetBrainsMono.css` 或明确记录不可用资源
+- [ ] `https://wintertc.org/` 录制为固定 HTML/resource fixture，并通过 ZeroBrowser/WebView/Chromium 三方截图对比；fixture 必须包含内联 Twind CSS、`/static/logo.svg`、`/static/logos/*.svg`、`/static/logos/*.png` 等首页可见图片资源
+- [ ] URL 导航路径必须加载并应用 `<link rel="stylesheet">` 外部样式表；外链 CSS 抓取失败应作为可诊断的资源加载错误记录，不得静默退化为仅内联 CSS 渲染
+- [ ] URL 导航路径必须加载 `<img src>` 图片子资源，将解码后的 SVG/PNG/JPEG/WebP 像素数据写入 `ImageCache`，并在 ZeroBrowser CPU/GPU 渲染路径传入 renderer；图片缺失不得被 alt 文本或占位 glyph 静默替代
+- [ ] 同一输入通过 `zero-webview` 直接渲染路径截图，并与 Chromium 参考截图对比，避免产品层和 WebView 层互相掩盖问题
+- [ ] 至少覆盖桌面和窄屏两个 viewport；桌面 viewport 下必须验证 hero 标题、四个 feature card、快捷键区、快速访问区和 footer 的相对位置
+- [ ] welcome.html 自动检查文本不重叠、不同 sibling card/link/shortcut 的文本不串联、`ZeroBrowser` 标题在宽屏下不被错误拆行、`<br>` 后的中英文 tagline 保持两行
+- [ ] morning.work 文章页自动检查 nav/title/date/tag badges/阅读时间不串联，正文段落不被压成同一行，inline code 保持行内位置，table 仍按表格布局绘制，pre/code 块保持独立背景和换行
+- [ ] WinterTC 首页自动检查 header logo 可见、标题/副标题不串联、四个 nav button 分列、正文段落按宽度换行并保持 justify、参与方 Logo 网格中 SVG/PNG Logo 可见且不会退化为短横/alt glyph
+- [ ] ZeroBrowser 不得对 WebView glyph 做会改变布局语义的整行重排；如需字体 fallback 或选择命中，应在不改变原始 glyph 坐标语义的路径上实现
+- [ ] 截图、对比报告和失败根因持久化到 `docs/goal/rendering-compat/evidence/product-static/`
+
 ### 通过率统计口径
 
 - **统计对象**：从上游 WPT 仓库（`https://github.com/web-platform-tests/wpt`）导入的**真实 reftest case**，**不含**现有 1,341 个手写 `TestCase`，也**不含** 685 个手写 inline reftest
 - **现有 1,341 个手写 TestCase + 685 个 inline reftest**：保留为 smoke test 套件，继续全绿运行，但**不计入**本目标的 reftest 通过率统计
+- **产品静态页面视觉 smoke**：不计入 WPT reftest 通过率分子/分母，但属于目标完成门禁；它用于捕获 WPT 子集未覆盖的产品可见排版退化
 - **分母**：上游 WPT 每个目录下**全部**范围内 reftest case（即上游该目录中所有不属于 skip list 的 reftest），**不是**人为挑选的子集。必须从上游 WPT 的 `MANIFEST.json` 自动提取 reftest 列表，不允许手动筛选
 - **分子**：运行后判定为 PASS 的 case 数量
 - **通过率** = 分子 / 分母 × 100%
@@ -329,6 +351,12 @@
 |------|----------|--------|----------|
 | **渲染器图元覆盖** | **所有视觉输出** | **P0-致命** | Paint 生成 13 种图元，CPU 渲染器仅处理 3 种（fills、rounded_rects、glyphs），GPU 渲染器仅处理 2 种（fills、glyphs）。渐变、阴影、图片、线段、路径、变换、裁剪、滤镜、混合模式全部无法渲染 |
 | **浏览器图元消费** | **所有视觉输出** | **P0-致命** | `append_webview_primitives()` 仅传递 fills 和 glyphs 到渲染器，`rounded_rects`、`gradients`、`shadows`、`images`、`strokes`、`path_fills`、`path_strokes`、`transforms`、`clips`、`filters`、`blend_modes` 全部静默丢弃 |
+| **Inline formatting 所有权分裂** | **静态页面基础排版** | **P1-严重** | inline/inline-block 在 taffy 中映射为 block，同时 IFC 又通过 `text_content()` 收集 inline 子树文本；父容器和子 inline 盒可能重复或错位绘制文本。`welcome.html` 中 `ZeroBrowser`、card/link/shortcut 文本串联是该类缺口的产品可见症状 |
+| **Layout/Paint IFC 双路径** | **文本布局与 glyph 输出一致性** | **P1-严重** | layout 阶段和 paint 阶段不是同一份 IFC 结果；paint 二次运行 IFC 时 style map、float exclusion、container width 可能不同，导致 box 背景位置与 glyph 位置不一致 |
+| **外部样式表加载缺失** | **真实静态网页 CSS** | **P1-严重** | URL 导航路径的 `WebView::fetch_url()` 三条成功路径都会调用 `load_html(&html, None)`；`RenderPipeline::collect_stylesheets()` 只收调用方传入 CSS 和文档内 `<style>`，不抓取 `<link rel="stylesheet">`。morning.work 文章页依赖外链 CSS，当前会静默退化为仅内联样式 |
+| **图片子资源/ImageCache 未贯通** | **Logo/图片密集静态页面** | **P1-严重** | `<img>` paint 可生成 `ImagePrimitive`，CPU/GPU renderer 也能从 `ImageCache` 绘制图片；但 ZeroBrowser CPU/GPU 路径当前给 renderer 传 `None` 作为 image cache，且 URL 导航未抓取/解码 `/static/logo.svg`、PNG/SVG Logo 等图片子资源。WinterTC 首页因此暴露 Logo 缺失和图片位置退化为短横/占位 glyph |
+| **浏览器层 glyph 重排** | **ZeroBrowser 产品渲染路径** | **P1-严重** | ZeroBrowser 在消费 WebView 图元前会按 baseline 对 glyph 做后处理重排；该逻辑可能破坏 engine 已经计算好的 fragment x 坐标，尤其影响 grid/flex 中同一 baseline 的不同卡片文本 |
+| **真实静态页面 smoke 缺失** | **验收有效性** | **P1-严重** | 当前没有把 `apps/browser/assets/welcome.html`、morning.work 文章页和 WinterTC 图片密集首页这类无页面 JS 的真实静态页面作为 Chromium 截图对比门禁；因此 WPT 子集或内联 reftest 全绿仍可能漏掉用户第一眼可见的错位、正文重叠、tag 串联、表格退化和 Logo 缺失 |
 | **Margin 折叠** | CSS 2.1 布局正确性 | P1-严重 | 完全未实现，导致块级元素间距与主流浏览器明显不一致 |
 | **BFC** | 布局隔离 | P1-严重 | 无 BFC 概念，overflow: hidden 不隔离浮动、不阻止 margin 折叠 |
 | **替换元素** | 图片/媒体渲染 | P1-严重 | `<img>` 无固有尺寸计算，图片无法正确显示 |
@@ -607,6 +635,7 @@
 | 集成测试 | 跨 crate pipeline 测试 | 每次修改后 |
 | WPT reftest（CPU 模式） | ZeroWeb CPU 渲染 vs Chromium 截图 | 每个 milestone 验证 |
 | WPT reftest（GPU 模式） | ZeroWeb GPU 渲染 vs Chromium 截图 | 每个 milestone 验证 |
+| 产品静态页面视觉 smoke | ZeroBrowser/WebView 渲染内置静态页面、录制真实静态文章页和图片密集静态站点 vs Chromium 截图；重点检查文本重叠、sibling 文本串联、外链 CSS 应用、图片子资源/ImageCache、grid/flex 区块分离、正文段落/table/code 结构 | 每个 milestone 验证 |
 | 全量回归 | `cargo test` + reftest 全量 | 每轮执行结束 |
 
 ### 质量门禁
@@ -764,7 +793,7 @@ evidence/
 
 **同时满足以下所有条件时才允许输出 DONE**：
 
-1. ✅ Done Criteria DC-1 到 DC-12 全部满足
+1. ✅ Done Criteria DC-1 到 DC-13 全部满足
 2. ✅ CPU 渲染器 + GPU 渲染器均支持全部 13 种 `RenderPrimitives` 图元类型
 3. ✅ 浏览器 `append_webview_primitives()` 正确消费并渲染所有图元类型
 4. ✅ 所有四个 WPT 领域（CSS 2.1、Flexbox+Grid、布局模式、文字排版）通过率均 ≥ 95%（基于真实上游 WPT reftest）
@@ -773,7 +802,8 @@ evidence/
 7. ✅ `cargo build` + `cargo test` + `cargo clippy` 全通过
 8. ✅ 有结构化的 reftest 通过率报告作为自动化证据（包含真实 WPT reftest 结果）
 9. ✅ master.md 内部自洽，archive 已建立，进度已归档
-10. ✅ 渲染能力本身达到可验证的 production-ready 质量 — 满足以下所有客观标准：
+10. ✅ 产品静态页面视觉 smoke 通过，至少包含 `apps/browser/assets/welcome.html`、morning.work 录制静态文章页和 WinterTC 录制图片密集首页的 ZeroBrowser/WebView/Chromium 对比证据，且无文本重叠、sibling 文本串联、外链 CSS 缺失、图片缺失、正文段落压缩、table 退化或宽屏标题误拆行
+11. ✅ 渲染能力本身达到可验证的 production-ready 质量 — 满足以下所有客观标准：
     - 加载至少 5 个主流网站（如 github.com、wikipedia.org、twitter.com 等），为每个网站截图
     - 截图必须通过上游 WPT reftest 的同等级像素对比（max_diff_ratio ≤ 1%，因为真实网站涉及文字渲染）
     - 截图证据持久化到 `docs/goal/rendering-compat/evidence/` 目录，包含 ZeroWeb 截图和 Chromium 参考截图
@@ -786,6 +816,8 @@ evidence/
 - ❌ CPU 或 GPU 渲染器不支持全部 13 种图元类型（渐变、阴影、图片、线段等缺失）
 - ❌ GPU 渲染器是 CPU 渲染器的 passthrough 封装（必须使用独立的 GPU 渲染管线：wgpu + WGSL shaders）
 - ❌ `append_webview_primitives()` 丢弃任何图元类型
+- ❌ ZeroBrowser 对 WebView glyph 做会改变布局语义的后处理重排
+- ❌ `apps/browser/assets/welcome.html` 等内置静态页面、morning.work 录制静态文章页或 WinterTC 录制图片密集首页在 Chromium 对比下出现文本重叠、sibling 文本串联、外链 CSS 未加载、图片子资源缺失、宽屏标题误拆行、正文压缩、table 退化或 card/link 区块错位
 - ❌ Margin 折叠未实现或未验证
 - ❌ BFC 未实现或未验证
 - ❌ 只通过了手写 inline reftest，未使用上游 WPT 真实 reftest
