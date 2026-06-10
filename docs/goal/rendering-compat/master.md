@@ -4,6 +4,21 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 导入与验证
 **上游真实 reftest 通过率**: 76.1% (373/490)
 
+### R30 进展
+
+| 修复 | 影响 | 说明 |
+|------|------|------|
+| pre/pre-wrap 模式空白保留修复 | inline layout 正确性 | CSS 2.1 §16.6.1 行尾空白剥离仅适用于 normal/nowrap 模式的可折叠空白；pre/pre-wrap 模式空白不可折叠，不剥离 |
+
+### R30 调查分析
+
+本轮深入分析了 117 个失败测试的根因分布，尝试了以下修复方向（均因回归风险暂未合入）：
+
+1. **remeasure_inline_only_containers 纯 inline 容器覆盖**：为仅含 inline 子元素的容器使用 IFC 权威高度替代 taffy 高度。回归原因：display:table 容器中的 inline-block 子元素依赖原始 IFC remeasure 的"仅增大"行为，强制替换会干扰后续 table layout。
+2. **浮动元素 clear 时 border-top 约束**：CSS 2.1 §9.5.2 要求有 clear 的浮动元素 border-top 不低于 clear_bottom，即使负 margin-top 会拉回。回归原因：`clear-float-002` 等测试依赖 margin 参与浮动定位的现有行为。
+
+**通过率不变**：373/490 (76.1%)。失败分布：CSS2/floats-clear (20)、css-multicol (25)、css-flexbox (20)、css-writing-modes (13)、css-tables (10)、css-position (6)、css-grid (3)。
+
 ### R29 进展
 
 | 修复 | 影响 | 说明 |
