@@ -592,7 +592,7 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
         .with_inline_block_sizes(ib_sizes);
     inline_ctx.layout(doc, container_node_id, styles);
 
-    // TODO: 存储 IFC 片段结果供 paint 系统复用 — 需要修复 paint 基线计算
+    // TODO: 存储 IFC 片段结果供 paint 系统复用 — 基线计算修复后启用
     // store_inline_layout_results(&inline_ctx, root);
 
     // 将 fragment 坐标应用到 inline-block 子元素的 LayoutBox
@@ -618,7 +618,7 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
 /// 将 IFC 片段结果存储到 LayoutBox.inline_layout，供 paint 系统复用。
 ///
 /// 避免在 paint 阶段重新运行 IFC（paint IFC 使用空 styles 导致字体度量不一致）。
-/// TODO: 当前被注释掉 — 需要先修复 paint 基线计算（frag.y + frag.fs 的双重计数问题）
+/// TODO: 当前被注释掉 — 基线计算修复后启用
 #[allow(dead_code)]
 fn store_inline_layout_results(
     inline_ctx: &crate::inline::InlineFormattingContext,
@@ -638,6 +638,7 @@ fn store_inline_layout_results(
                         x: frag.x,
                         y: frag.y,
                         width: frag.width,
+                        height: frag.height,
                         font_size: frag.font_size,
                         text: frag.text.clone(),
                         node_id: Some(frag.node_id),
@@ -939,6 +940,7 @@ fn compute_final_inline_layouts(
                     x: frag.x,
                     y: frag.y,
                     width: frag.width,
+                    height: frag.height,
                     font_size: frag.font_size,
                     text: frag.text.clone(),
                     node_id: Some(frag.node_id),
@@ -1614,7 +1616,7 @@ fn remeasure_text_with_float_exclusions(
                 .with_text_align(text_align);
             inline_ctx.layout(doc, dom_id, styles);
 
-            // TODO: 存储 IFC 片段结果供 paint 系统复用 — 需要修复 paint 基线计算
+            // TODO: 存储 IFC 片段结果供 paint 系统复用 — 基线计算修复后启用
             // store_inline_layout_results(&inline_ctx, box_node);
 
             // 容器高度需要包含 float 元素占用的空间
@@ -1679,7 +1681,7 @@ fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, st
             .with_text_align(text_align);
         inline_ctx.layout(doc, dom_id, styles);
 
-        // TODO: 存储 IFC 片段结果供 paint 系统复用 — 需要修复 paint 基线计算
+        // TODO: 存储 IFC 片段结果供 paint 系统复用 — 基线计算修复后启用
         // store_inline_layout_results(&inline_ctx, box_node);
 
         let content_height = inline_ctx.total_height();
