@@ -288,7 +288,7 @@ pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
 ///
 /// 支持 Px、Em、Rem 等绝对长度单位。Auto、Percentage、MinContent 等返回 0.0
 /// （inline-block 在行内格式化上下文测量阶段无法确定这些值，需要 taffy 布局后回填）。
-fn resolve_inline_block_dimension(value: &LengthValue, style: &ComputedStyle, _is_width: bool) -> f32 {
+pub fn resolve_inline_block_dimension(value: &LengthValue, style: &ComputedStyle, _is_width: bool) -> f32 {
     match value {
         LengthValue::Px(v) => *v as f32,
         LengthValue::Em(v) => {
@@ -367,6 +367,12 @@ pub struct InlineFormattingContext {
     /// 仅当 vertical=true 时有效。当为 true 时，第一列在右侧，
     /// 后续列向左推进。fragment 的 x 坐标会相应镜像。
     pub vertical_rtl: bool,
+    /// inline-block 元素的预计算尺寸（来自 LayoutBox / taffy 布局结果）。
+    ///
+    /// 当 CSS 属性 width/height 为 Auto 时，inline-block 的尺寸由其内容决定，
+    /// 需要在 taffy 布局后才能得知。此字段用于传递 taffy 计算的尺寸，
+    /// 替代 IFC 仅从 CSS 属性获取尺寸的局限。
+    pub inline_block_sizes: HashMap<NodeId, (f32, f32)>,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -389,6 +395,7 @@ impl InlineFormattingContext {
             lines: Vec::new(),
             vertical: false,
             vertical_rtl: false,
+            inline_block_sizes: HashMap::new(),
         }
     }
 
@@ -411,6 +418,12 @@ impl InlineFormattingContext {
     /// 仅当 vertical=true 时有效。
     pub fn with_vertical_rtl(mut self, rtl: bool) -> Self {
         self.vertical_rtl = rtl;
+        self
+    }
+
+    /// 设置 inline-block 元素的预计算尺寸（来自 LayoutBox / taffy 布局结果）。
+    pub fn with_inline_block_sizes(mut self, sizes: HashMap<NodeId, (f32, f32)>) -> Self {
+        self.inline_block_sizes = sizes;
         self
     }
 
@@ -630,9 +643,22 @@ impl InlineFormattingContext {
 
                         if is_inline_block {
                             let s = style.unwrap();
-                            // 从 CSS 计算样式提取尺寸
-                            let w = resolve_inline_block_dimension(&s.width, s, /* is_width */ true);
-                            let h = resolve_inline_block_dimension(&s.height, s, /* is_width */ false);
+                            // 从 CSS 计算样式提取尺寸（仅支持绝对长度单位）
+                            let mut w = resolve_inline_block_dimension(&s.width, s, /* is_width */ true);
+                            let mut h = resolve_inline_block_dimension(&s.height, s, /* is_width */ false);
+                            // 仅当 CSS 属性为 Auto 时，使用 LayoutBox 预计算尺寸回退。
+                            // Percentage、MinContent 等其他值不回退——它们有自己的解析逻辑。
+                            let need_lb = w <= 0.0 || h <= 0.0;
+                            if need_lb
+                                && let Some(&(lw, lh)) = self.inline_block_sizes.get(&child_id)
+                            {
+                                if matches!(s.width, LengthValue::Auto) {
+                                    w = lw;
+                                }
+                                if matches!(s.height, LengthValue::Auto) {
+                                    h = lh;
+                                }
+                            }
                             if w > 0.0 && h > 0.0 {
                                 let vertical_align = s.vertical_align.clone();
                                 items.push(InlineItem::InlineBlock(InlineBlockBox {
