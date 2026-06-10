@@ -552,6 +552,8 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
     inline_ctx.layout(doc, container_node_id, styles);
 
     // 将 fragment 坐标应用到 inline-block 子元素的 LayoutBox
+    // 使用 all_fragments_with_line_y() 获取包含行盒 Y 偏移的绝对坐标
+    let fragments = inline_ctx.all_fragments_with_line_y();
     for idx in &ib_indices {
         let child = &mut root.children[*idx];
         let Some(child_node_id) = child.node_id else {
@@ -559,8 +561,7 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
         };
 
         // 查找匹配的 fragment（node_id 一致，font_size==0 表示 inline-block）
-        if let Some(fragment) = inline_ctx
-            .all_fragments()
+        if let Some(fragment) = fragments
             .iter()
             .find(|f| f.node_id == child_node_id && f.font_size == 0.0 && f.width > 0.0)
         {
