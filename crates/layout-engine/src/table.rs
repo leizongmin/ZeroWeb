@@ -1136,20 +1136,24 @@ fn compute_column_widths(table_box: &LayoutBox, grid: &TableGrid, styles: &HashM
                 continue;
             };
 
-            // CSS 表格规则：width:0 的单元格应使用固有内容宽度，
-            // 而非 taffy 计算的 0 宽度。检查 CSS width 属性。
-            let css_width_is_small = cell_box
+            // CSS 表格 auto layout：根据 CSS width 属性决定列宽。
+            // - width: auto → 使用固有内容宽度（taffy 的 block 宽度是父容器宽度，不可用）
+            // - width: Px(v), v < 2 → CSS 规定使用固有内容宽度
+            // - width: Px(v), v >= 2 → 使用显式指定的宽度
+            // - width: Percentage → 百分比在后续按比例分配时处理
+            let css_width_auto = cell_box
                 .node_id
                 .and_then(|id| styles.get(&id))
                 .map(|s| {
                     use zero_css_parser::values::LengthValue;
                     match &s.width {
+                        LengthValue::Auto => true,
                         LengthValue::Px(v) => (*v as f32) < 2.0,
                         _ => false,
                     }
                 })
-                .unwrap_or(false);
-            let cell_width = if css_width_is_small || cell_box.width < 2.0 {
+                .unwrap_or(true);
+            let cell_width = if css_width_auto || cell_box.width < 2.0 {
                 compute_cell_intrinsic_width(cell_box, styles).max(cell_box.width)
             } else {
                 cell_box.width
@@ -1247,9 +1251,46 @@ fn get_cell_box<'a>(row_box: &'a LayoutBox, cell: &TableCell) -> Option<&'a Layo
 ///
 /// 当 CSS width:0 被应用时，taffy 会将单元格布局为 0 宽度。
 /// 但 CSS 表格规范要求 width:0 解析为 min-content 宽度。
-/// 使用字体大小估算单字符宽度作为最小内容宽度。
+/// 计算单元格的最小内容宽度。
+///
+/// 策略：
+/// 1. 检查子元素是否有显式 CSS width → 使用这些宽度之和
+/// 2. 否则用字体大小估算单字符宽度作为最小宽度
 fn compute_cell_intrinsic_width(cell_box: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
-    // 从 ComputedStyle 读取字体大小作为字符宽度估算
+    let padding = cell_box.padding_left + cell_box.padding_right;
+
+    // 尝试从子元素计算内容宽度
+    let mut content_width = 0.0f32;
+    let mut has_explicit_child = false;
+
+    for child in &cell_box.children {
+        // 检查子元素是否有显式 CSS width
+        let child_has_explicit_width = child
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(|s| {
+                use zero_css_parser::values::LengthValue;
+                !matches!(s.width, LengthValue::Auto)
+            })
+            .unwrap_or(false);
+
+        if child_has_explicit_width {
+            // 有显式 width 的子元素：使用其 outer width
+            content_width = content_width.max(child.width + child.margin_left + child.margin_right);
+            has_explicit_child = true;
+        } else if child.width > 0.0 && child.width < cell_box.width * 0.95 {
+            // 无显式 width 但子元素宽度远小于 cell 宽度：
+            // taffy 可能根据内容正确计算了宽度
+            content_width = content_width.max(child.width + child.margin_left + child.margin_right);
+            has_explicit_child = true;
+        }
+    }
+
+    if has_explicit_child {
+        return content_width + padding;
+    }
+
+    // 回退：使用字体大小估算单字符宽度作为 min-content 宽度
     let font_size = cell_box
         .node_id
         .and_then(|id| styles.get(&id))
@@ -1264,10 +1305,7 @@ fn compute_cell_intrinsic_width(cell_box: &LayoutBox, styles: &HashMap<NodeId, C
         })
         .unwrap_or(16.0);
 
-    // 估算 min-content 宽度：一个字符宽度约为字体大小的 0.6 倍
-    // 加上 padding
     let char_width = font_size * 0.6;
-    let padding = cell_box.padding_left + cell_box.padding_right;
     char_width + padding
 }
 
