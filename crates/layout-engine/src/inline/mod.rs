@@ -806,9 +806,12 @@ impl InlineFormattingContext {
                         if run.box_height() > current_line.height {
                             current_line.height = run.box_height();
                         }
-                        // 即使空元素也要消费 margin-left（在行首添加空白）
+                        // 即使空元素也要消费 margin（CSS 2.1 §10.2：inline 元素的 margin 水平方向有效）
                         if run.margin_left > 0.0 {
                             current_x += run.margin_left;
+                        }
+                        if run.margin_right > 0.0 {
+                            current_x += run.margin_right;
                         }
                         continue;
                     }

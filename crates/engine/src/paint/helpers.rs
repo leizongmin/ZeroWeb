@@ -478,11 +478,16 @@ pub fn clip_all_primitives_to_rect(primitives: &mut RenderPrimitives, from: &Pri
         }
     }
     // 裁剪描边线段：线段两端都在裁剪区域外时标记为不可见
+    // 注意：点在裁剪区域外 = 超出任意一条边（|| 连接各边判断）
     for stroke in primitives.strokes.iter_mut().skip(from.strokes) {
-        let p1_outside = stroke.x1 < clip_rect.left() && stroke.x1 > clip_rect.right()
-            || stroke.y1 < clip_rect.top() && stroke.y1 > clip_rect.bottom();
-        let p2_outside = stroke.x2 < clip_rect.left() && stroke.x2 > clip_rect.right()
-            || stroke.y2 < clip_rect.top() && stroke.y2 > clip_rect.bottom();
+        let p1_outside = stroke.x1 < clip_rect.left()
+            || stroke.x1 > clip_rect.right()
+            || stroke.y1 < clip_rect.top()
+            || stroke.y1 > clip_rect.bottom();
+        let p2_outside = stroke.x2 < clip_rect.left()
+            || stroke.x2 > clip_rect.right()
+            || stroke.y2 < clip_rect.top()
+            || stroke.y2 > clip_rect.bottom();
         if p1_outside && p2_outside {
             stroke.width = 0.0;
         }

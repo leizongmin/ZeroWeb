@@ -813,3 +813,62 @@ fn test_horizontal_mode_unaffected_by_vertical_impl() {
     let frags = ctx.all_fragments();
     assert!(frags[0].x < frags[1].x, "水平模式下片段 x 应递增");
 }
+
+#[test]
+fn test_empty_inline_element_applies_margin_right() {
+    // CSS 2.1: 空 inline 元素的 margin-left 和 margin-right 都应被消费
+    // 验证空元素后，后续元素的 x 坐标应包含空元素的 margin-left + margin-right
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let empty_run = TextRun {
+        text: String::new(), // 空 inline 元素
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 50.0,
+        margin_right: 30.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
+    };
+    let text_run = TextRun {
+        text: "after".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
+    };
+    let items = vec![
+        InlineItem::Text(empty_run),
+        InlineItem::Text(text_run),
+    ];
+    ctx.break_items_into_lines(items);
+
+    // 验证：空元素的 line-height 贡献到行盒高度
+    assert_eq!(ctx.lines.len(), 1, "空元素和文本应在同一行");
+    assert!(ctx.lines[0].height >= 20.0, "行高应包含空元素的 line-height");
+
+    // 验证：后续文本的 x 坐标应包含空元素的 margin-left + margin-right
+    let frags = ctx.all_fragments();
+    assert!(!frags.is_empty(), "应有文本片段");
+    // 空元素消费了 margin-left (50) + margin-right (30) = 80px
+    // 所以后续文本的 x 应至少为 80
+    assert!(
+        frags[0].x >= 80.0,
+        "空元素后文本 x 应包含 margin-left+margin-right (期望>=80, 实际={})",
+        frags[0].x
+    );
+}
