@@ -869,3 +869,94 @@ fn test_empty_inline_element_applies_margin_right() {
         frags[0].x
     );
 }
+
+// ── 空行内元素 line-height 贡献和空白保留测试 ──
+
+/// 测试空 inline 元素的高 line-height 贡献到行盒高度。
+/// CSS 2.1 §10.8.1：空 inline 元素的 line-height 仍贡献到行盒高度。
+#[test]
+fn test_empty_inline_tall_line_height_contribution() {
+    let mut ctx = InlineFormattingContext::new(200.0);
+
+    // 空 inline 元素 line-height = 80px（5 × 16px）
+    let empty_run = TextRun::simple(
+        String::new(),
+        NodeId::default(),
+        16.0, // font_size
+        80.0, // line_height: 5 × font_size
+        VerticalAlignValue::Baseline,
+    );
+
+    // 正常文本 line-height = 16px
+    let text_run = TextRun::simple(
+        "X".to_string(),
+        NodeId::default(),
+        16.0, // font_size
+        16.0, // line_height: 1 × font_size
+        VerticalAlignValue::Baseline,
+    );
+
+    ctx.break_into_lines(vec![empty_run, text_run]);
+
+    // 行盒高度应取 max(80, 16) = 80
+    assert_eq!(ctx.lines.len(), 1, "应生成一行");
+    assert!(
+        (ctx.lines[0].height - 80.0).abs() < 0.01,
+        "行盒高度应为空元素 line-height (期望≈80, 实际={})",
+        ctx.lines[0].height
+    );
+    assert_eq!(ctx.total_height(), 80.0, "总高度应为 80");
+}
+
+/// 测试 collapse_whitespace 函数的基本行为。
+#[test]
+fn test_collapse_whitespace() {
+    // 空输入
+    assert_eq!(collapse_whitespace(""), "");
+
+    // 纯空白 → 折叠为单个空格
+    assert_eq!(collapse_whitespace("   "), " ");
+    assert_eq!(collapse_whitespace("\n\t  "), " ");
+
+    // 无空白
+    assert_eq!(collapse_whitespace("hello"), "hello");
+
+    // 内部多个空白折叠为单个
+    assert_eq!(collapse_whitespace("hello  world"), "hello world");
+    assert_eq!(collapse_whitespace("a\n\tb"), "a b");
+
+    // 首尾空白保留（行级剥离由 IFC 处理）
+    assert_eq!(collapse_whitespace(" hello "), " hello ");
+
+    // 混合空白
+    assert_eq!(collapse_whitespace("  a  b  c  "), " a b c ");
+}
+
+/// 测试 IFC 行首空格剥离。
+/// CSS 2.1 §16.6.1：行首空格不渲染。
+#[test]
+fn test_line_start_space_stripping() {
+    let mut ctx = InlineFormattingContext::new(200.0);
+
+    // 文本以空格开头（模拟 inline-block 之间的空白节点）
+    let run = TextRun::simple(
+        " X".to_string(),
+        NodeId::default(),
+        16.0,
+        16.0,
+        VerticalAlignValue::Baseline,
+    );
+
+    ctx.break_into_lines(vec![run]);
+
+    assert_eq!(ctx.lines.len(), 1, "应生成一行");
+    // 行首空格被剥离，片段文本应为 "X"
+    assert_eq!(ctx.lines[0].runs.len(), 1);
+    assert_eq!(ctx.lines[0].runs[0].text, "X", "行首空格应被剥离");
+    // x 坐标应从 0 开始（无前导空格宽度）
+    assert!(
+        ctx.lines[0].runs[0].x < 1.0,
+        "行首空格剥离后 x 应接近 0 (实际={})",
+        ctx.lines[0].runs[0].x
+    );
+}
