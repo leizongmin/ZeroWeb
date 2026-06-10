@@ -397,9 +397,14 @@ pub struct InlineFormattingContext {
     /// inline-block 元素的预计算尺寸（来自 LayoutBox / taffy 布局结果）。
     ///
     /// 当 CSS 属性 width/height 为 Auto 时，inline-block 的尺寸由其内容决定，
-    /// 需要在 taffy 布局后才能得知。此字段用于传递 taffy 计算的尺寸，
-    /// 替代 IFC 仅从 CSS 属性获取尺寸的局限。
+    /// IFC 无法自行测量，需要外部布局结果提供。
     pub inline_block_sizes: HashMap<NodeId, (f32, f32)>,
+    /// 默认字体度量 — 当 styles HashMap 中找不到元素样式时使用。
+    ///
+    /// 这主要用于 paint 系统的 IFC，因为 paint 系统传入空的 styles HashMap。
+    /// 设置此值后，文本节点在找不到父元素样式时会使用此默认值
+    /// 而非硬编码的 16px/19.2px。
+    pub default_font_metrics: Option<(f32, f32)>,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -423,6 +428,7 @@ impl InlineFormattingContext {
             vertical: false,
             vertical_rtl: false,
             inline_block_sizes: HashMap::new(),
+            default_font_metrics: None,
         }
     }
 
@@ -451,6 +457,15 @@ impl InlineFormattingContext {
     /// 设置 inline-block 元素的预计算尺寸（来自 LayoutBox / taffy 布局结果）。
     pub fn with_inline_block_sizes(mut self, sizes: HashMap<NodeId, (f32, f32)>) -> Self {
         self.inline_block_sizes = sizes;
+        self
+    }
+
+    /// 设置默认字体度量（font_size, line_height）。
+    ///
+    /// 当 styles HashMap 中找不到元素样式时，使用此默认值替代
+    /// 硬编码的 16px/19.2px。主要用于 paint 系统的 IFC。
+    pub fn with_default_font_metrics(mut self, font_size: f32, line_height: f32) -> Self {
+        self.default_font_metrics = Some((font_size, line_height));
         self
     }
 
@@ -595,7 +610,12 @@ impl InlineFormattingContext {
                         if !text.is_empty() {
                             // 文本节点没有自己的 ComputedStyle，查找父元素
                             let style = doc.parent_node(child_id).and_then(|pid| styles.get(&pid));
-                            let (font_size, line_height) = resolve_font_metrics(style);
+                            let (font_size, line_height) = if style.is_some() {
+                                resolve_font_metrics(style)
+                            } else {
+                                self.default_font_metrics
+                                    .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
+                            };
                             let vertical_align = style
                                 .map(|s| s.vertical_align.clone())
                                 .unwrap_or(VerticalAlignValue::Baseline);
@@ -733,7 +753,12 @@ impl InlineFormattingContext {
                         let text = doc.text_content(child_id).unwrap_or_default();
                         let trimmed = collapse_whitespace(&text);
                         let style = styles.get(&child_id);
-                        let (font_size, line_height) = resolve_font_metrics(style);
+                        let (font_size, line_height) = if style.is_some() {
+                            resolve_font_metrics(style)
+                        } else {
+                            self.default_font_metrics
+                                .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
+                        };
                         let vertical_align = style
                             .map(|s| s.vertical_align.clone())
                             .unwrap_or(VerticalAlignValue::Baseline);
