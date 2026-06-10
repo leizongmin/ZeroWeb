@@ -851,10 +851,7 @@ fn test_empty_inline_element_applies_margin_right() {
         border_bottom: 0.0,
         is_ahem_font: false,
     };
-    let items = vec![
-        InlineItem::Text(empty_run),
-        InlineItem::Text(text_run),
-    ];
+    let items = vec![InlineItem::Text(empty_run), InlineItem::Text(text_run)];
     ctx.break_items_into_lines(items);
 
     // 验证：空元素的 line-height 贡献到行盒高度
