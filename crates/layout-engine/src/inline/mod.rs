@@ -405,6 +405,15 @@ pub struct InlineFormattingContext {
     /// 设置此值后，文本节点在找不到父元素样式时会使用此默认值
     /// 而非硬编码的 16px/19.2px。
     pub default_font_metrics: Option<(f32, f32)>,
+    /// 逐文本节点的字体大小覆盖（key = 文本节点的父元素 NodeId）。
+    ///
+    /// paint IFC 传入空的 styles HashMap，导致所有文本使用 16px 默认字体度量，
+    /// 行断计算与 layout IFC 不一致。此字段存储 layout IFC 为每个文本节点
+    /// 计算的实际 font_size，以父元素 ID 为键（因为 collect_inline_items
+    /// 查找的是文本节点的父元素样式）。
+    /// 当 styles 中找不到父元素样式且此映射有对应条目时，使用映射中的
+    /// font_size 而非 16px 默认值，使字符宽度计算更准确。
+    pub font_size_overrides: HashMap<NodeId, f32>,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -429,6 +438,7 @@ impl InlineFormattingContext {
             vertical_rtl: false,
             inline_block_sizes: HashMap::new(),
             default_font_metrics: None,
+            font_size_overrides: HashMap::new(),
         }
     }
 
@@ -466,6 +476,16 @@ impl InlineFormattingContext {
     /// 硬编码的 16px/19.2px。主要用于 paint 系统的 IFC。
     pub fn with_default_font_metrics(mut self, font_size: f32, line_height: f32) -> Self {
         self.default_font_metrics = Some((font_size, line_height));
+        self
+    }
+
+    /// 设置逐文本节点的字体大小覆盖。
+    ///
+    /// key 为文本节点的父元素 NodeId，value 为 layout IFC 计算的 font_size。
+    /// 当 styles HashMap 中找不到父元素样式时，使用此映射中的 font_size
+    /// 替代 16px 默认值，使字符宽度计算更准确。
+    pub fn with_font_size_overrides(mut self, overrides: HashMap<NodeId, f32>) -> Self {
+        self.font_size_overrides = overrides;
         self
     }
 
@@ -609,9 +629,19 @@ impl InlineFormattingContext {
                         let text = collapse_whitespace(&text_data.content);
                         if !text.is_empty() {
                             // 文本节点没有自己的 ComputedStyle，查找父元素
-                            let style = doc.parent_node(child_id).and_then(|pid| styles.get(&pid));
+                            let parent_id = doc.parent_node(child_id);
+                            let style = parent_id.and_then(|pid| styles.get(&pid));
                             let (font_size, line_height) = if style.is_some() {
                                 resolve_font_metrics(style)
+                            } else if let Some(pid) = parent_id {
+                                // paint IFC 传入空 styles：使用 layout IFC 存储的 font_size 覆盖
+                                // 替代 16px 默认值，使字符宽度和行高计算更准确
+                                if let Some(&fs) = self.font_size_overrides.get(&pid) {
+                                    (fs, fs * NORMAL_LINE_HEIGHT_RATIO)
+                                } else {
+                                    self.default_font_metrics
+                                        .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
+                                }
                             } else {
                                 self.default_font_metrics
                                     .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
