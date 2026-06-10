@@ -29,6 +29,14 @@
 3. **writing-mode + flexbox** 测试（1.52%-1.85%）：需要垂直书写模式下轴交换支持，属于功能缺失。
 4. **20 个测试 <2% diff**：其中多数差异来自字体渲染（Ahem vs 默认字体）、swatch 图像缩放精度、或 writing-mode 功能缺失。
 
+### 后续重点（R33+）
+
+1. **CSS2/floats-clear 精度提升**（19 个失败，最大瓶颈）：swatch 图像缩放 20×20→96×96 与 CSS background-color 精确填充的像素差异。需改进图像缩放或替代方案。
+2. **writing-mode 布局支持**（影响 35+ 测试）：需实现垂直书写模式下块级布局轴交换。R12 已尝试但回退。
+3. **multicol column breaking**（影响 ~16 测试）：需实现内容碎片化（拆分单个块到多列）。
+4. **CSS2 inline box model**（影响 ~8 测试）：空 inline 元素 line-height 贡献、block-in-inline 拆分。
+5. **css-flexbox baseline**（影响 ~9 测试）：multi-line baseline 对齐、flex 方向轴交换。
+
 ### R31 进展
 
 **通过率不变**：373/490 (76.1%)。本轮聚焦于系统性分析和高质量 bug 修复，为后续改进奠定基础。
