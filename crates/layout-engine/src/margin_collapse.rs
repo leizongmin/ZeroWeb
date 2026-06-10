@@ -51,6 +51,12 @@ pub fn establishes_bfc(box_node: &LayoutBox) -> bool {
         return true;
     }
 
+    // 多列容器建立 BFC（CSS Multi-column §2）
+    // 阻止子元素 margin 与容器 margin 折叠
+    if box_node.is_multicol {
+        return true;
+    }
+
     false
 }
 
@@ -175,5 +181,12 @@ mod tests {
         let mut bx = LayoutBox::default();
         bx.padding_bottom = 5.0;
         assert!(!is_empty_block(&bx));
+    }
+
+    #[test]
+    fn test_establishes_bfc_multicol() {
+        let mut bx = LayoutBox::default();
+        bx.is_multicol = true;
+        assert!(establishes_bfc(&bx), "multicol container should establish BFC");
     }
 }

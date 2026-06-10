@@ -217,6 +217,20 @@ fn build_subtree(
     // 替换元素固有尺寸：检测 <img> 元素并注入 HTML 属性中的 width/height
     apply_replaced_element_sizing(&mut taffy_style, &computed, doc, dom_id);
 
+    // 多列容器：设置 overflow: Clip 阻止 taffy 内部的父子 margin 折叠。
+    // CSS Multi-column Layout Module §2 规定多列容器建立 BFC。
+    // 此处仅影响 taffy 的 margin 折叠行为，不影响视觉裁剪
+    // （paint 层使用 LayoutBox.overflow_x/y 做裁剪，不依赖 taffy overflow）。
+    {
+        use zero_style_system::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue};
+        let is_multicol = !matches!(computed.column_count, ColumnCountComputedValue::Auto)
+            || !matches!(computed.column_width, ColumnWidthComputedValue::Auto);
+        if is_multicol {
+            taffy_style.overflow.x = taffy::style::Overflow::Clip;
+            taffy_style.overflow.y = taffy::style::Overflow::Clip;
+        }
+    }
+
     // 垂直书写模式轴交换
     // CSS Writing Modes §7.1：在垂直书写模式中，水平/垂直维度互换。
     // 当父元素（即当前元素的 containing block）具有 vertical writing mode 时，
