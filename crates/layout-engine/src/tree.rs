@@ -217,8 +217,9 @@ fn build_subtree(
     // 替换元素固有尺寸：检测 <img> 元素并注入 HTML 属性中的 width/height
     apply_replaced_element_sizing(&mut taffy_style, &computed, doc, dom_id);
 
-    // 多列容器：设置 overflow: Clip 阻止 taffy 内部的父子 margin 折叠。
+    // 多列容器：设置 overflow: Hidden 阻止 taffy 内部的父子 margin 折叠。
     // CSS Multi-column Layout Module §2 规定多列容器建立 BFC。
+    // taffy 的 is_scroll_container() 仅对 Hidden/Scroll 返回 true，Clip 不会阻止折叠。
     // 此处仅影响 taffy 的 margin 折叠行为，不影响视觉裁剪
     // （paint 层使用 LayoutBox.overflow_x/y 做裁剪，不依赖 taffy overflow）。
     {
@@ -226,8 +227,8 @@ fn build_subtree(
         let is_multicol = !matches!(computed.column_count, ColumnCountComputedValue::Auto)
             || !matches!(computed.column_width, ColumnWidthComputedValue::Auto);
         if is_multicol {
-            taffy_style.overflow.x = taffy::style::Overflow::Clip;
-            taffy_style.overflow.y = taffy::style::Overflow::Clip;
+            taffy_style.overflow.x = taffy::style::Overflow::Hidden;
+            taffy_style.overflow.y = taffy::style::Overflow::Hidden;
         }
     }
 
