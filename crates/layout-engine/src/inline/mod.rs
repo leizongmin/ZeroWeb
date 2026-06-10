@@ -248,6 +248,33 @@ fn estimate_string_width(text: &str, font_size: f32, is_ahem: bool) -> f32 {
     text.chars().map(|c| estimate_char_width(c, font_size, is_ahem)).sum()
 }
 
+/// CSS Text §4.1 白空格折叠：将连续空白字符折叠为单个空格。
+///
+/// 与 `trim()` 不同，此函数保留首尾的空格（作为单个空格）。
+/// 仅含空白的输入返回单个空格（用于 inline-block 之间的间隔）。
+/// 空输入返回空字符串。
+///
+/// 行首/行尾空格的剥离由 IFC 的 `break_items_into_lines` 在行级别处理。
+fn collapse_whitespace(text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    let mut result = String::with_capacity(text.len());
+    let mut last_was_space = false;
+    for ch in text.chars() {
+        if ch.is_whitespace() {
+            if !last_was_space {
+                result.push(' ');
+                last_was_space = true;
+            }
+        } else {
+            result.push(ch);
+            last_was_space = false;
+        }
+    }
+    result
+}
+
 /// 默认行高倍数（用于 line-height: normal）。
 const NORMAL_LINE_HEIGHT_RATIO: f32 = 1.2;
 
@@ -561,7 +588,10 @@ impl InlineFormattingContext {
             if let Some(node) = doc.get(child_id) {
                 match &node.kind {
                     NodeKind::Text(text_data) => {
-                        let text = text_data.content.trim().to_string();
+                        // CSS Text §4.1: 白空格折叠 — 将连续空白字符折叠为单个空格，
+                        // 但不在此阶段去除（行首/行尾空格由 IFC break_items_into_lines 处理）。
+                        // 保留仅含空白的文本节点为单个空格（用于 inline-block 之间的间隔）。
+                        let text = collapse_whitespace(&text_data.content);
                         if !text.is_empty() {
                             // 文本节点没有自己的 ComputedStyle，查找父元素
                             let style = doc.parent_node(child_id).and_then(|pid| styles.get(&pid));
@@ -649,9 +679,7 @@ impl InlineFormattingContext {
                             // 仅当 CSS 属性为 Auto 时，使用 LayoutBox 预计算尺寸回退。
                             // Percentage、MinContent 等其他值不回退——它们有自己的解析逻辑。
                             let need_lb = w <= 0.0 || h <= 0.0;
-                            if need_lb
-                                && let Some(&(lw, lh)) = self.inline_block_sizes.get(&child_id)
-                            {
+                            if need_lb && let Some(&(lw, lh)) = self.inline_block_sizes.get(&child_id) {
                                 if matches!(s.width, LengthValue::Auto) {
                                     w = lw;
                                 }
@@ -703,7 +731,7 @@ impl InlineFormattingContext {
 
                         // 其他 inline 元素的文本内容也收集进来
                         let text = doc.text_content(child_id).unwrap_or_default();
-                        let trimmed = text.trim().to_string();
+                        let trimmed = collapse_whitespace(&text);
                         let style = styles.get(&child_id);
                         let (font_size, line_height) = resolve_font_metrics(style);
                         let vertical_align = style
@@ -860,6 +888,21 @@ impl InlineFormattingContext {
                         } else {
                             (word.as_str(), 0.0f32)
                         };
+
+                        // CSS 2.1 §16.6.1：行首空格不渲染。
+                        // 当前行首的第一个词如果以空格开头，去除前导空格。
+                        let content_word = if current_line.runs.is_empty()
+                            && !self.preserve_whitespace
+                            && content_word.starts_with(' ')
+                        {
+                            content_word.trim_start_matches(' ')
+                        } else {
+                            content_word
+                        };
+                        // 全空格词在行首不产生任何渲染
+                        if content_word.is_empty() {
+                            continue;
+                        }
 
                         // 基础宽度 + letter-spacing（仅基于内容字符，不含尾部空格）
                         let content_char_count = content_word.chars().count();
