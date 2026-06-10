@@ -14,10 +14,22 @@ use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, ZIndexValue};
 
 use crate::dirty::LayoutDirtyTracker;
-use crate::inline::{FloatExclusion, InlineFormattingContext};
+use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign};
 use crate::tree::build_layout_tree;
 use crate::types::{LayoutBox, LayoutResult, OverflowClip};
 use zero_style_system::WritingModeValue;
+
+/// 从 ComputedStyle 读取 text-align 并转换为 IFC 的 TextAlign 枚举。
+fn resolve_text_align(style: Option<&ComputedStyle>) -> TextAlign {
+    use zero_style_system::property::TextAlignValue;
+    let align = style.map(|s| &s.text_align).unwrap_or(&TextAlignValue::Start);
+    match align {
+        TextAlignValue::Left | TextAlignValue::Start => TextAlign::Left,
+        TextAlignValue::Right | TextAlignValue::End => TextAlign::Right,
+        TextAlignValue::Center => TextAlign::Center,
+        TextAlignValue::Justify => TextAlign::Justify,
+    }
+}
 
 /// 缓存的 taffy 布局状态 — 用于增量重算。
 ///
@@ -566,9 +578,11 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
         WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
     );
     let is_vertical_rtl = matches!(root.writing_mode, WritingModeValue::VerticalRl);
+    let container_text_align = resolve_text_align(styles.get(&container_node_id));
     let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width)
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl)
+        .with_text_align(container_text_align)
         .with_inline_block_sizes(ib_sizes);
     inline_ctx.layout(doc, container_node_id, styles);
 
@@ -686,9 +700,11 @@ fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, styles: &Hash
     if container_width <= 0.0 {
         return;
     }
+    let container_text_align = resolve_text_align(styles.get(&container_node_id));
     let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width)
         .with_vertical(is_vertical)
-        .with_vertical_rtl(is_vertical_rtl);
+        .with_vertical_rtl(is_vertical_rtl)
+        .with_text_align(container_text_align);
     inline_ctx.layout(doc, container_node_id, styles);
 
     // 将 IFC 片段坐标应用到 abs-pos 子元素
@@ -1415,10 +1431,12 @@ fn remeasure_text_with_float_exclusions(
                 WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
             );
             let is_vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
+            let text_align = resolve_text_align(styles.get(&dom_id));
             let mut inline_ctx = InlineFormattingContext::new(container_width)
                 .with_float_exclusions(exclusions)
                 .with_vertical(is_vertical)
-                .with_vertical_rtl(is_vertical_rtl);
+                .with_vertical_rtl(is_vertical_rtl)
+                .with_text_align(text_align);
             inline_ctx.layout(doc, dom_id, styles);
 
             // 容器高度需要包含 float 元素占用的空间
@@ -1476,9 +1494,11 @@ fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, st
             WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
         );
         let is_vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
+        let text_align = resolve_text_align(styles.get(&dom_id));
         let mut inline_ctx = InlineFormattingContext::new(container_width)
             .with_vertical(is_vertical)
-            .with_vertical_rtl(is_vertical_rtl);
+            .with_vertical_rtl(is_vertical_rtl)
+            .with_text_align(text_align);
         inline_ctx.layout(doc, dom_id, styles);
 
         let content_height = inline_ctx.total_height();
