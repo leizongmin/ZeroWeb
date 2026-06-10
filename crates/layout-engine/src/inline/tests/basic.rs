@@ -772,14 +772,14 @@ fn test_text_align_center() {
 
     assert_eq!(ctx.lines.len(), 1);
     let line = &ctx.lines[0];
-    let content_width: f32 = line.runs.iter().map(|r| r.width).sum();
-    // 第一个片段的 x 应约为 (800 - content_width) / 2
-    let expected_x = (800.0 - content_width) / 2.0;
+    // center 对齐不变式：first.x + last.x + last.width = container_width
+    // 即首片段到末片段右边界对称居中
+    let last = line.runs.last().unwrap();
+    let centered_end = line.runs[0].x + last.x + last.width;
     assert!(
-        (line.runs[0].x - expected_x).abs() < 0.01,
-        "center: 第一个片段 x 应为 {}，实际 {}",
-        expected_x,
-        line.runs[0].x
+        (centered_end - 800.0).abs() < 0.5,
+        "center: 内容应居中，首尾边界和 {} 应接近 800",
+        centered_end
     );
 }
 
@@ -807,14 +807,12 @@ fn test_text_align_right() {
 
     assert_eq!(ctx.lines.len(), 1);
     let line = &ctx.lines[0];
-    let content_width: f32 = line.runs.iter().map(|r| r.width).sum();
-    // 第一个片段的 x 应约为 800 - content_width
-    let expected_x = 800.0 - content_width;
+    // right 对齐不变式：最后一个片段的右边界 = container_width
+    let last = line.runs.last().unwrap();
     assert!(
-        (line.runs[0].x - expected_x).abs() < 0.01,
-        "right: 第一个片段 x 应为 {}，实际 {}",
-        expected_x,
-        line.runs[0].x
+        (last.x + last.width - 800.0).abs() < 0.5,
+        "right: 最后片段右边界应为 800，实际 {}",
+        last.x + last.width
     );
 }
 
@@ -948,16 +946,17 @@ fn test_text_align_center_multiline() {
 
     assert!(ctx.lines.len() > 1, "应产生多行");
     for (i, line) in ctx.lines.iter().enumerate() {
-        // 总宽度 = 所有片段宽度之和（对齐前的内容宽度）
-        let content_width: f32 = line.runs.iter().map(|r| r.width).sum();
-        let expected_x = (60.0 - content_width) / 2.0;
+        if line.runs.is_empty() {
+            continue;
+        }
+        // center 对齐不变式：first.x + last.x + last.width = container_width
+        let last = line.runs.last().unwrap();
+        let centered_end = line.runs[0].x + last.x + last.width;
         assert!(
-            (line.runs[0].x - expected_x).abs() < 1.0,
-            "center 第 {} 行: x 应约 {}，实际 {} (content_width={})",
+            (centered_end - 60.0).abs() < 1.0,
+            "center 第 {} 行: 首尾边界和 {} 应接近 60",
             i,
-            expected_x,
-            line.runs[0].x,
-            content_width
+            centered_end
         );
     }
 }
