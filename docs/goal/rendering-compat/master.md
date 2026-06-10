@@ -35,7 +35,7 @@
 
 #### 后续重点（R39+）
 
-1. **paint 基线计算修复**（解锁 paint IFC 架构改进）：需要修改 paint 渲染代码，使 `frag.y` 直接表示片段框顶部（不额外加 font_size），或使用 `frag.y + frag.height` 作为基线位置。此修复将使 `store_inline_layout_results` 可用，解决 50+ 测试的字体度量不一致问题。
+1. **paint IFC 架构改进**（系统性瓶颈，影响 50+ 测试）：存储 IFC 结果的方案（方案 C）因两个根本问题无法直接启用：(a) paint 基线计算 `frag.y + font_size` 与存储结果的 `frag.y + height` 不一致——前者对空 styles IFC 恰好正确，后者对真实 styles IFC 仍有偏差；(b) 更关键的是，IFC 结果在步骤 6/6.5 捕获，但步骤 8（table layout）和 9（multicol）会改变 LayoutBox 的坐标和尺寸，导致存储结果过期。**真正的解决方案**需要在所有后处理完成后的最后阶段运行 IFC 并存储结果，这需要较大的重构。
 2. **near-miss 测试攻坚**（17 个 <2% diff）：多数差异来自 font metrics 或 border/image 渲染精度，难以通过简单修复解决。
 3. **CSS2/floats-clear 精度提升**（17 个失败）：需要 CSS 2.1 clearance 算法的精细调整。
 4. **writing-mode 布局支持**（影响 35+ 测试）：垂直书写模式轴交换。
