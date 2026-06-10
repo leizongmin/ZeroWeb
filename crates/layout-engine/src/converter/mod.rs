@@ -146,12 +146,30 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
 /// 进行轴交换，使 taffy 仍然以「水平=行内，垂直=块」的模型计算布局，
 /// 然后在提取布局结果时通过坐标交换还原正确的视觉位置。
 ///
-/// 仅交换盒模型属性（inset、size、margin、padding、border），
-/// 不交换 grid/flex 等布局属性（它们有自己的方向处理）。
+/// 交换盒模型属性（inset、size、margin、padding、border）
+/// 以及 flex-direction（在垂直书写模式中，CSS row → taffy column）。
+/// grid 属性不交换（它们有自己的方向处理）。
 pub fn apply_vertical_writing_mode(style: &mut taffy::Style) {
     // 交换 inset: left ↔ top, right ↔ bottom
     std::mem::swap(&mut style.inset.left, &mut style.inset.top);
     std::mem::swap(&mut style.inset.right, &mut style.inset.bottom);
+
+    // 交换 flex-direction：垂直书写模式中 CSS row 的主轴是块轴（垂直）
+    // Row ↔ Column, RowReverse ↔ ColumnReverse
+    match style.flex_direction {
+        taffy::style::FlexDirection::Row => {
+            style.flex_direction = taffy::style::FlexDirection::Column;
+        }
+        taffy::style::FlexDirection::RowReverse => {
+            style.flex_direction = taffy::style::FlexDirection::ColumnReverse;
+        }
+        taffy::style::FlexDirection::Column => {
+            style.flex_direction = taffy::style::FlexDirection::Row;
+        }
+        taffy::style::FlexDirection::ColumnReverse => {
+            style.flex_direction = taffy::style::FlexDirection::RowReverse;
+        }
+    }
 
     // 交换 size: width ↔ height
     std::mem::swap(&mut style.size.width, &mut style.size.height);
