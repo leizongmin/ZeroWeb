@@ -596,6 +596,32 @@ impl InlineFormattingContext {
                             continue;
                         }
 
+                        // CSS 2.1 §9.2.1.1 匿名块盒生成：
+                        // 当 inline 元素包含 block-level 子元素时，inline 元素
+                        // 被拆分为匿名块盒。这里简化处理：如果子元素是 block-level
+                        // display，强制换行（与 <br> 类似），跳过其文本内容。
+                        // block-level 子元素由 taffy 正常布局为独立的块盒。
+                        let style = styles.get(&child_id);
+                        let is_block_level = style.is_some_and(|s| {
+                            matches!(
+                                s.display,
+                                DisplayValue::Block
+                                    | DisplayValue::Flex
+                                    | DisplayValue::InlineFlex
+                                    | DisplayValue::Grid
+                                    | DisplayValue::InlineGrid
+                                    | DisplayValue::Table
+                                    | DisplayValue::InlineTable
+                                    | DisplayValue::ListItem
+                                    | DisplayValue::FlowRoot
+                            )
+                        });
+                        if is_block_level {
+                            // 强制换行：inline 内容在此中断
+                            items.push(InlineItem::Br);
+                            continue;
+                        }
+
                         // 检查该元素是否为 display: inline-block。
                         // inline-block 元素参与行内格式化上下文，作为不可拆分的原子盒。
                         // CSS 属性的 width/height 作为尺寸来源。

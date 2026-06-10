@@ -1114,9 +1114,14 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                     let hypothetical_y = flow_bottom + collapsed_margin;
 
                     if clear_bottom > hypothetical_y {
-                        // 正 clearance：元素推到 clear_bottom
-                        // margin 不折叠
-                        child.y = clear_bottom;
+                        // 正 clearance：margin 不折叠
+                        // CSS 2.1 §9.5.2 C1/C2 双路径算法：
+                        // C1（含 margin 折叠）：clearance = clear_bottom - hypothetical_y
+                        // C2（不含 margin 折叠）：clearance = clear_bottom - (flow_bottom + child.margin_top)
+                        // 最终位置 = max(clear_bottom, flow_bottom + child.margin_top)
+                        // 当元素自身 margin-top 足够大时，即使不折叠也已在浮动之下
+                        let uncollapsed_pos = flow_bottom + child.margin_top;
+                        child.y = clear_bottom.max(uncollapsed_pos);
                     } else if (clear_bottom - hypothetical_y).abs() < 0.001 {
                         // 零 clearance（hypothetical_y ≈ clear_bottom）：
                         // CSS 2.1 §9.5.2：clearance 引入后，位置 = hypothetical + clearance。
