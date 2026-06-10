@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use taffy::prelude::*;
-use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, OverflowValue, PositionValue};
+use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue, OverflowValue, PositionValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, ZIndexValue};
 
@@ -128,6 +128,10 @@ impl LayoutEngine {
 
         // 6. 后处理：为包含 float 元素的容器重新测量文本，使文本环绕 float 排列
         remeasure_text_with_float_exclusions(&mut root_box, doc, styles);
+
+        // 6.5 后处理：为仅包含 inline 子元素的容器重新测量内容高度
+        // 空 inline 元素的 line-height 贡献需要通过 IFC 正确计算
+        remeasure_inline_only_containers(&mut root_box, doc, styles);
 
         // 7. 后处理：CSS margin 折叠 — taffy 0.7 已内置块级 margin 折叠（CollapsibleMarginSet）
         // 不需要额外后处理
@@ -775,7 +779,7 @@ fn measure_text_content(
         };
     }
 
-    if !has_direct_text(doc, dom_id) {
+    if !has_inline_content(doc, styles, dom_id) {
         return Size::ZERO;
     }
 
@@ -820,6 +824,30 @@ fn has_direct_text(doc: &Document, dom_id: NodeId) -> bool {
             doc.get(*child_id).map(|node| &node.kind),
             Some(NodeKind::Text(text)) if !text.content.trim().is_empty()
         )
+    })
+}
+
+/// 检查容器是否包含行内级内容（文本节点或行内级元素）。
+///
+/// CSS 2.1 规范要求空 inline 元素仍通过 line-height + padding + border
+/// 贡献到行盒高度。仅检查文本节点会遗漏仅包含空 inline 元素的容器，
+/// 导致 IFC 不被调用，行盒高度计算不正确。
+fn has_inline_content(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, dom_id: NodeId) -> bool {
+    // 快速路径：有直接文本子节点
+    if has_direct_text(doc, dom_id) {
+        return true;
+    }
+
+    // 检查是否有 inline-level 元素子节点
+    use zero_style_system::property::types::DisplayValue;
+    doc.child_nodes(dom_id).iter().any(|child_id| {
+        if let Some(node) = doc.get(*child_id)
+            && let NodeKind::Element(_elem_data) = &node.kind
+            && let Some(style) = styles.get(child_id)
+        {
+            return matches!(style.display, DisplayValue::Inline | DisplayValue::InlineBlock);
+        }
+        false
     })
 }
 
@@ -1309,10 +1337,10 @@ fn remeasure_text_with_float_exclusions(
             })
             .collect();
 
-        // 如果有排除区域且容器有直接文本内容
+        // 如果有排除区域且容器有行内级内容
         if !exclusions.is_empty()
             && let Some(dom_id) = box_node.node_id
-            && has_direct_text(doc, dom_id)
+            && has_inline_content(doc, styles, dom_id)
         {
             // 重新运行 inline layout with float exclusions
             let container_width = box_node.content_width;
@@ -1350,6 +1378,55 @@ fn remeasure_text_with_float_exclusions(
     // 递归处理子容器
     for child in &mut box_node.children {
         remeasure_text_with_float_exclusions(child, doc, styles);
+    }
+}
+
+/// 为包含行内级子元素但无 float 的容器重新测量内容高度。
+///
+/// 当一个 block 容器只包含 inline 或 inline-block 子元素时（无文本节点），
+/// taffy 将这些元素当作 block 排列，无法正确计算行盒高度。
+/// 此函数检测这类容器，运行 IFC 获取正确的内容高度。
+///
+/// 典型场景：`<div><span style="line-height:5"></span></div>`
+/// 空 span 的 line-height 应贡献到行盒高度，但 taffy 无法处理此情况。
+fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
+    // 检查此容器是否有 inline-level 子元素（is_block_level == false）
+    // 且不包含 float 子元素（float 容器由 remeasure_text_with_float_exclusions 处理）
+    let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
+    let has_inline_children = box_node
+        .children
+        .iter()
+        .any(|c| !c.is_block_level && !c.is_absolute && !c.is_fixed);
+
+    if !has_floats
+        && has_inline_children
+        && let Some(dom_id) = box_node.node_id
+        && let Some(style) = styles.get(&dom_id)
+        && matches!(style.height, LengthValue::Auto)
+    {
+        let container_width = box_node.content_width;
+        let is_vertical = matches!(
+            box_node.writing_mode,
+            WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+        );
+        let is_vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
+        let mut inline_ctx = InlineFormattingContext::new(container_width)
+            .with_vertical(is_vertical)
+            .with_vertical_rtl(is_vertical_rtl);
+        inline_ctx.layout(doc, dom_id, styles);
+
+        let content_height = inline_ctx.total_height();
+        // 如果 IFC 计算的高度大于 taffy 的高度，更新容器高度
+        if content_height > box_node.content_height {
+            let diff = content_height - box_node.content_height;
+            box_node.content_height = content_height;
+            box_node.height += diff;
+        }
+    }
+
+    // 递归处理子容器
+    for child in &mut box_node.children {
+        remeasure_inline_only_containers(child, doc, styles);
     }
 }
 
