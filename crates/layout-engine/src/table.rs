@@ -935,8 +935,7 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                             let nested_display = get_display(nested_child, styles);
                             if nested_display.as_ref().is_some_and(is_table_row) {
                                 let row = build_row(nested_idx, nested_child, doc);
-                                max_cols =
-                                    max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
+                                max_cols = max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
                                 if !row.cells.is_empty() {
                                     rows.push(TableRow {
                                         row_group_index: Some(*child_idx),
@@ -1132,9 +1131,9 @@ fn compute_column_widths(table_box: &LayoutBox, grid: &TableGrid, styles: &HashM
         use zero_css_parser::values::LengthValue;
         !matches!(s.width, LengthValue::Auto)
     });
-    let is_fixed_layout = table_style.as_ref().is_some_and(|s| {
-        matches!(s.table_layout, zero_style_system::TableLayoutValue::Fixed)
-    });
+    let is_fixed_layout = table_style
+        .as_ref()
+        .is_some_and(|s| matches!(s.table_layout, zero_style_system::TableLayoutValue::Fixed));
 
     if (has_explicit_width || is_fixed_layout) && total_width < available_width && total_width > 0.0 {
         // 按比例扩展到容器宽度

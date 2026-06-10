@@ -369,3 +369,54 @@ fn test_layout_box_outer_area() {
     assert_eq!(el_box.margin_top, 10.0);
     assert_eq!(el_box.margin_left, 20.0);
 }
+
+/// 测试空 inline 元素的 line-height 贡献到容器高度。
+/// CSS 2.1 规范要求空 inline 元素的 line-height + padding + border 贡献到行盒高度。
+#[test]
+fn test_empty_inline_line_height_contribution() {
+    let (mut doc, body) = make_doc_with_body();
+
+    // body > div#container > span (empty)
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let span = doc.create_element("span");
+    doc.append_child(container, span).unwrap();
+
+    let mut styles = HashMap::new();
+
+    // Container: auto height, explicit width
+    let mut container_style = ComputedStyle::default();
+    container_style.width = LengthValue::Px(200.0);
+    styles.insert(container, container_style);
+
+    // Span: display inline, line-height: 5 (unitless)
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    span_style.line_height = zero_style_system::property::types::LineHeightValue::Number(5.0);
+    styles.insert(span, span_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let container_box = find_child_by_node_id(&result.root, container).expect("container");
+    eprintln!(
+        "container: height={}, content_height={}, num_children={}",
+        container_box.height,
+        container_box.content_height,
+        container_box.children.len()
+    );
+    for (i, c) in container_box.children.iter().enumerate() {
+        eprintln!(
+            "  child[{}]: is_block_level={}, height={}, content_height={}",
+            i, c.is_block_level, c.height, c.content_height
+        );
+    }
+
+    // Empty span with line-height:5 should contribute to container height
+    // Default font-size = 16px, so line-height = 80px
+    assert!(
+        container_box.content_height > 0.0,
+        "Container should have non-zero height from empty inline's line-height, got {}",
+        container_box.content_height
+    );
+}
