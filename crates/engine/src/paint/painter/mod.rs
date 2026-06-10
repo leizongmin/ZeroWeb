@@ -385,15 +385,12 @@ impl Painter {
         let counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
         // CSS 2.1 Appendix E: 非 positioned floats 在 block 级非 positioned 后代之后绘制。
-        // 对于 column breaking 的子元素（有 column_span_offsets），跳过正常渲染，
-        // 后面会对每个列片段独立渲染并裁剪。
+        // 多列容器的子元素需要按列区域裁剪，防止内容溢出到相邻列。
+        // CSS 规范允许内容延伸到列间隙（column gap），但不允许进入相邻列。
         let is_multicol = box_node.is_multicol;
         for child in &box_node.children {
-            if matches!(child.float, FloatValue::None) {
-                // 非 multicol 容器或无 column breaking 的子元素正常渲染
-                if !is_multicol || child.column_span_offsets.is_empty() {
-                    self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
-                }
+            if matches!(child.float, FloatValue::None) && (!is_multicol || child.column_span_offsets.is_empty()) {
+                self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
             }
         }
         for child in &box_node.children {
@@ -402,33 +399,59 @@ impl Painter {
             }
         }
 
-        // 多列 column breaking 片段渲染。
-        // 对于有 column_span_offsets 的子元素，对每个列片段独立渲染并裁剪到列区域。
-        // 这确保每个片段只在其对应的列中可见。
+        // 多列子元素按列区域渲染。
+        // 每个子元素在分配到的列位置渲染，裁剪到「列宽度 + 右半间隙」范围，
+        // 允许内容延伸到列间隙但不进入相邻列。
+        // 对于 column breaking 的子元素（多个片段），每个片段额外裁剪到列高。
         if is_multicol {
             let content_x = abs_x + box_node.border_left + box_node.padding_left;
             let content_y = abs_y + box_node.border_top + box_node.padding_top;
+
+            // 获取列间距用于扩展裁剪区域
+            // 从 column_span_offsets 的前两个条目推算 gap
+            let gap = box_node
+                .children
+                .iter()
+                .find_map(|c| {
+                    if c.column_span_offsets.len() >= 2 {
+                        let (first_x, _, _, first_w) = c.column_span_offsets[0];
+                        let (second_x, _, _, _) = c.column_span_offsets[1];
+                        Some(second_x - first_x - first_w)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(0.0);
+
             for child in &box_node.children {
                 if child.column_span_offsets.is_empty() {
                     continue;
                 }
+
+                let is_breaking = child.column_span_offsets.len() > 1;
+
                 for &(frag_x, frag_y, col_x, col_w) in &child.column_span_offsets {
-                    // 计算片段在绝对坐标中的位置
                     let frag_abs_x = content_x + frag_x;
                     let frag_abs_y = content_y + frag_y;
 
-                    // 裁剪区域：该列在容器内容区域中的范围
-                    let clip_rect = Rect::new(content_x + col_x, content_y, col_w, box_node.content_height);
+                    // 裁剪区域：列宽 + 右半间隙，允许内容延伸到间隙
+                    // 对于 breaking 子元素，还裁剪到列高度
+                    let clip_w = col_w + gap / 2.0;
+                    let clip_h = if is_breaking {
+                        // breaking 子元素裁剪到列高度，显示对应片段
+                        box_node.content_height
+                    } else {
+                        // 非 breaking 子元素不裁剪高度
+                        box_node.content_height + 1000.0 // 足够大的值
+                    };
+                    let clip_rect = Rect::new(content_x + col_x, content_y, clip_w, clip_h);
 
-                    // 记录绘制前的图元数量，用于裁剪
                     let counts_before_frag = PrimitiveCounts::snapshot(&self.primitives);
 
-                    // 绘制子元素（偏移到片段位置）
                     let frag_offset_x = frag_abs_x - child.x;
                     let frag_offset_y = frag_abs_y - child.y;
                     self.paint_node(child, styles, frag_offset_x, frag_offset_y, doc);
 
-                    // 裁剪该片段产生的图元到列区域
                     super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_frag, &clip_rect);
                 }
             }
