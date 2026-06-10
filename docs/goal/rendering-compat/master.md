@@ -6,19 +6,21 @@
 
 ### R36 进展
 
-**通过率**：379/490 (77.3%)，与 R35 持平。修复 IFC 基线计算，提交正确性改进。
+**通过率**：379/490 (77.3%)，与 R35 持平。改进 IFC 基线计算和字体度量基础设施。
 
 #### 修复提交
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
-| IFC 基线计算改进 | 正确性 | `apply_vertical_alignment` 改为从实际内容（text runs 的 font_size + inline-block 的 height）计算 max_ascent，而非仅使用全局 strut（0.8 × line_height）。空行仍用 strut 回退。对布局引擎的 IFC 定位更精确（Ahem 等高 ascent 字体受益），但 paint 系统的 IFC 仍使用默认度量，因此上游 reftest 通过率不变 |
+| IFC 基线计算改进 | 正确性 | `apply_vertical_alignment` 改为从实际内容（text runs 的 font_size + inline-block 的 height）计算 max_ascent，而非仅使用全局 strut（0.8 × line_height）。空行仍用 strut 回退。对布局引擎的 IFC 定位更精确 |
+| IFC default_font_metrics 基础设施 | 基础设施 | 新增 `with_default_font_metrics(font_size, line_height)` builder 方法和 `default_font_metrics` 字段。当 styles HashMap 为空且 default_font_metrics 已设置时，文本节点使用提供的字体度量替代硬编码的 16px/19.2px |
 
 #### R36 调查分析
 
-1. **paint 系统 IFC 根因**：paint 系统 `paint_text()` 创建 IFC 时传入 `HashMap::new()`（空样式），导致所有文本使用默认字体度量（16px/19.2px）而非容器实际字体。这意味着行高、字符宽度、基线位置全部基于错误值。尝试传入容器样式但导致 4 个测试回归（font metrics 变化改变 paint IFC 的行断行为），已回退。
-2. **基线修复影响有限**：`apply_vertical_alignment` 的改进仅影响布局引擎的 IFC（用于容器高度计算和 inline-block 定位），不影响 paint 系统的文本渲染。paint 系统有自己的 IFC 实例，使用独立的（错误的）字体度量。
-3. **系统性限制**：上游 reftest 通过率的最大瓶颈是 paint 系统 IFC 使用错误字体度量。要突破 80%，需要在 paint IFC 中正确处理字体度量，但这需要更精细的实现以避免回归。
+1. **paint 系统 IFC 根因确认**：paint 系统 `paint_text()` 创建 IFC 时传入 `HashMap::new()`（空样式），导致所有文本使用默认字体度量（16px/19.2px）而非容器实际字体。行高、字符宽度、基线位置全部基于错误值。这是上游 reftest 通过率的系统性瓶颈。
+2. **default_font_metrics 验证**：尝试在 paint 系统中使用 `with_default_font_metrics(font_size, actual_line_height)` 设置正确度量，inline-formatting-context-008 的 diff 从 8.17% 降至 5.09%（显著改进），但总体通过率下降 4 个测试（379→375）。回归原因：正确的字体度量改变了行断行为，导致部分测试失败。
+3. **关键发现**：paint IFC 的问题分为两个层面：(a) 字符宽度影响行断行为；(b) font_size/line_height 影响垂直定位。仅修复 (b) 而不影响 (a) 需要 IFC 支持独立的「渲染度量」和「布局度量」，这是更深层的架构改进。
+4. **系统性瓶颈优先级**：paint IFC 字体度量 > 浮动排斥 > inline box model > column breaking。
 
 #### 按目录通过率（不变）
 
