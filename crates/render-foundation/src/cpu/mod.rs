@@ -514,10 +514,10 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
             let w01 = (1.0 - fx) * fy;
             let w11 = fx * fy;
 
-            let src_r = (r00 as f32 * w00 + r10 as f32 * w10 + r01 as f32 * w01 + r11 as f32 * w11) as u8;
-            let src_g = (g00 as f32 * w00 + g10 as f32 * w10 + g01 as f32 * w01 + g11 as f32 * w11) as u8;
-            let src_b = (b00 as f32 * w00 + b10 as f32 * w10 + b01 as f32 * w01 + b11 as f32 * w11) as u8;
-            let src_a = (a00 as f32 * w00 + a10 as f32 * w10 + a01 as f32 * w01 + a11 as f32 * w11) as u8;
+            let src_r = (r00 as f32 * w00 + r10 as f32 * w10 + r01 as f32 * w01 + r11 as f32 * w11 + 0.5) as u8;
+            let src_g = (g00 as f32 * w00 + g10 as f32 * w10 + g01 as f32 * w01 + g11 as f32 * w11 + 0.5) as u8;
+            let src_b = (b00 as f32 * w00 + b10 as f32 * w10 + b01 as f32 * w01 + b11 as f32 * w11 + 0.5) as u8;
+            let src_a = (a00 as f32 * w00 + a10 as f32 * w10 + a01 as f32 * w01 + a11 as f32 * w11 + 0.5) as u8;
 
             let dst_x = left + x;
             let dst_y = top + y;

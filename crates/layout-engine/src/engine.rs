@@ -1502,8 +1502,12 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     // 不需要减去 content_y（那是绝对坐标，与子元素相对坐标不在同一坐标系）。
     if !float_taffy_y.is_empty() {
         let establishes_bfc = crate::margin_collapse::establishes_bfc(box_node);
+        // 多列容器虽然建立 BFC（阻止 margin 折叠），
+        // 但其内容通过列分布，不应使用 BFC 的浮动包含高度逻辑。
+        // 使用非 BFC 路径按正常流内容高度收缩。
+        let use_bfc_float_containment = establishes_bfc && !box_node.is_multicol;
 
-        if establishes_bfc {
+        if use_bfc_float_containment {
             // BFC 容器：浮动元素已包含在高度中（taffy 正确计算了含 float 的 auto height）
             // 不需要收缩。但需要确保高度至少覆盖到最低浮动元素的外底边。
             let float_bottom = box_node
