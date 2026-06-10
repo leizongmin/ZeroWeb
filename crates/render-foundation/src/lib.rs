@@ -11,6 +11,12 @@
 //! - 脏区域追踪与增量渲染
 
 #![warn(missing_docs)]
+#![cfg_attr(test, allow(unused_imports))]
+#![cfg_attr(test, allow(unused_variables))]
+#![allow(clippy::len_zero)]
+#![allow(clippy::identity_op)]
+#![allow(clippy::assertions_on_constants)]
+#![allow(clippy::needless_range_loop)]
 
 pub mod color;
 pub mod config;

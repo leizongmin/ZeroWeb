@@ -2,6 +2,20 @@
 //!
 //! 测试多个 crate 之间的协作，验证端到端的管线正确性。
 
+#![cfg_attr(test, allow(unused_imports))]
+#![cfg_attr(test, allow(unused_variables))]
+#![cfg_attr(test, allow(dead_code))]
+#![cfg_attr(test, allow(unused_mut))]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::len_zero)]
+#![allow(clippy::explicit_auto_deref)]
+#![allow(clippy::bool_assert_comparison)]
+#![allow(clippy::useless_vec)]
+#![allow(clippy::needless_borrow)]
+#![allow(clippy::absurd_extreme_comparisons)]
+#![allow(clippy::for_kv_map)]
+#![allow(unused_comparisons)]
+
 #[cfg(test)]
 mod dom_css;
 

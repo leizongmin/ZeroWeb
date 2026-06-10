@@ -12,6 +12,9 @@
 //! - [`dirty`] — 布局脏标记追踪器（增量布局）
 
 #![warn(missing_docs)]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::len_zero)]
+#![allow(clippy::collapsible_if)]
 
 pub mod converter;
 pub mod dirty;

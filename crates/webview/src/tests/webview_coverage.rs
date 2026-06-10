@@ -1,6 +1,6 @@
 //! WebView tests for uncovered paths - testing public API.
 
-use zero_webview::{WebView, WebViewConfig, WebViewError, WebViewEvent};
+use zero_webview::{WebView, WebViewConfig, WebViewEvent};
 
 #[test]
 fn test_webview_event_callback_removal() {

@@ -3,6 +3,10 @@
 //! 多进程 IPC 与协议定义。
 
 #![warn(missing_docs)]
+#![cfg_attr(test, allow(unused_imports))]
+#![cfg_attr(test, allow(unused_variables))]
+#![allow(clippy::approx_constant)]
+#![allow(clippy::useless_vec)]
 
 pub mod channel;
 pub mod message;

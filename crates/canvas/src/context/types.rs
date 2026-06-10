@@ -777,7 +777,7 @@ mod tests {
         let t = Transform2D::translate(1.0, 2.0);
         let copied = t; // Copy
         assert_eq!(copied.e, 1.0);
-        let cloned = t.clone();
+        let cloned = t; // Clone (Copy implies Clone)
         assert_eq!(cloned.f, 2.0);
     }
 

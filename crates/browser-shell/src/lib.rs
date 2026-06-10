@@ -6,6 +6,10 @@
 //! 可被任何 UI 框架消费。实际渲染由 render-foundation 完成。
 
 #![warn(missing_docs)]
+#![cfg_attr(test, allow(unused_imports))]
+#![cfg_attr(test, allow(unused_variables))]
+#![allow(clippy::iter_with_drain)]
+#![allow(clippy::manual_contains)]
 
 mod autocomplete;
 mod bookmarks;

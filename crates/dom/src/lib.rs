@@ -20,6 +20,7 @@
 //! ```
 
 #![warn(missing_docs)]
+#![cfg_attr(test, allow(unused_mut))]
 
 mod attributes;
 mod document;

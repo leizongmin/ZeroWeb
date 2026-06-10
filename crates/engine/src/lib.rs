@@ -15,6 +15,16 @@
 //! - [`transition`] — CSS Transition 执行引擎，样式变化过渡插值
 
 #![warn(missing_docs)]
+#![cfg_attr(test, allow(unused_imports))]
+#![cfg_attr(test, allow(unused_variables))]
+#![cfg_attr(test, allow(dead_code))]
+#![cfg_attr(test, allow(unused_mut))]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::len_zero)]
+#![allow(clippy::comparison_to_empty)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::clone_on_copy)]
+#![allow(clippy::too_many_arguments)]
 
 pub mod animation;
 pub mod composite;

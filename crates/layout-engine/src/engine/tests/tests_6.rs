@@ -822,14 +822,14 @@ fn test_overflow_clip_variants() {
 
 #[test]
 fn test_layout_engine_zero_viewport() {
-    let mut engine = LayoutEngine::new(0.0, 0.0);
+    let engine = LayoutEngine::new(0.0, 0.0);
     assert_eq!(engine.viewport_width, 0.0);
     assert_eq!(engine.viewport_height, 0.0);
 }
 
 #[test]
 fn test_layout_engine_very_large_viewport() {
-    let mut engine = LayoutEngine::new(100000.0, 100000.0);
+    let engine = LayoutEngine::new(100000.0, 100000.0);
     assert_eq!(engine.viewport_width, 100000.0);
 }
 

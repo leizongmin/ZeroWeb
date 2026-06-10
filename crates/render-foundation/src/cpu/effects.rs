@@ -347,7 +347,6 @@ pub fn apply_blend_mode(fb: &mut FrameBuffer, blend: &BlendModePrimitive, scale:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::Color;
     use crate::geometry::Rect;
     use crate::primitive::FilterPrimitive;
 

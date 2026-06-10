@@ -9,6 +9,8 @@
 //! 同时启用两者时，使用 wasmtime 后端（JIT 性能更优）。
 
 #![warn(missing_docs)]
+#![allow(clippy::approx_constant)]
+#![allow(clippy::identity_op)]
 
 mod types;
 pub use types::*;

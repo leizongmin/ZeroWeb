@@ -1609,7 +1609,7 @@ fn test_list_style_image_url() {
     let mut doc = zero_dom::Document::new();
     let ul = doc.create_element("ul");
     let li = doc.create_element("li");
-    doc.append_child(ul, li);
+    let _ = doc.append_child(ul, li);
 
     let layout = make_box(Some(li), 0.0, 0.0, 200.0, 30.0);
 
@@ -1635,7 +1635,7 @@ fn test_list_style_image_none() {
     let mut doc = zero_dom::Document::new();
     let ul = doc.create_element("ul");
     let li = doc.create_element("li");
-    doc.append_child(ul, li);
+    let _ = doc.append_child(ul, li);
 
     let layout = make_box(Some(li), 0.0, 0.0, 200.0, 30.0);
 

@@ -3,29 +3,20 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::{
-    ColorValue, ConicGradient, GradientColorStop, GradientDirection, GradientValue, LengthValue, LinearGradient,
-    RadialGradient, RadialShape, RadialSize, VisibilityValue,
+    ColorValue, GradientColorStop, GradientDirection, GradientValue, LengthValue, LinearGradient, VisibilityValue,
 };
-use zero_dom::NodeId;
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::GradientKind;
 use zero_style_system::{
-    BackgroundClipComputedValue, BackgroundImageComputedValue, BackgroundPositionComputedValue,
-    BackgroundSizeComputedValue, BorderCollapseValue, BorderImageOutsetComputedValue, BorderImageRepeatComputedValue,
-    BorderImageSliceComputedValue, BorderImageSourceComputedValue, BorderImageWidthComputedValue, BorderStyleValue,
-    BoxShadowComputedValue, ComputedStyle, ContainComputedValue, FilterComputedValue, MixBlendModeComputedValue,
-    OutlineStyleValue, ResizeValue, TextDecorationLineValue, TextDecorationStyleValue, TextOverflowValue,
-    TextTransformValue,
+    BackgroundImageComputedValue, BorderCollapseValue, BorderStyleValue, BoxShadowComputedValue, ComputedStyle,
+    ContainComputedValue, TextDecorationLineValue, TextDecorationStyleValue, TextTransformValue,
 };
 
-use crate::paint::color::{color_value_to_render, named_color_to_render};
-use crate::paint::helpers::{
-    BorderRadiusSpec, PrimitiveCounts, apply_opacity_to_new_primitives, gradient_to_primitive, length_to_f32,
-    linear_direction_to_kind, simple_hash,
-};
+use crate::paint::color::named_color_to_render;
+use crate::paint::helpers::{gradient_to_primitive, length_to_f32, linear_direction_to_kind, simple_hash};
 use crate::paint::painter::Painter;
 
 use super::advanced::{make_box, make_box_with_border};

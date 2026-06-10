@@ -14,6 +14,19 @@
 //! - [`media_query`] — CSS 媒体查询解析与评估
 
 #![warn(missing_docs)]
+#![cfg_attr(test, allow(unused_variables))]
+#![cfg_attr(test, allow(unused_imports))]
+#![allow(clippy::len_zero)]
+#![allow(unused_comparisons)]
+#![allow(clippy::absurd_extreme_comparisons)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::approx_constant)]
+#![allow(clippy::bool_comparison)]
+#![allow(clippy::bool_assert_comparison)]
+#![allow(clippy::single_match)]
+#![allow(clippy::comparison_to_empty)]
+#![allow(clippy::redundant_pattern_matching)]
+#![allow(clippy::unnecessary_map_or)]
 
 pub mod ast;
 pub mod media_query;

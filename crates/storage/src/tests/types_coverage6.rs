@@ -1,6 +1,7 @@
 //! IndexedDB types.rs 覆盖率提升测试 - 第6批
 //! 专注于测试 rename_object_store 和其他未覆盖的函数路径
 
+use std::hash::Hasher;
 use zero_storage::indexed_db::*;
 
 /// 测试 rename_object_store 的所有路径
@@ -277,10 +278,11 @@ fn test_idb_key_hash_consistency() {
     let mut map = HashMap::new();
 
     // 相同的键应该有相同的哈希
-    assert_eq!(
-        std::hash::Hash::hash(&key1, &mut std::hash::DefaultHasher::new()),
-        std::hash::Hash::hash(&key2, &mut std::hash::DefaultHasher::new())
-    );
+    let mut h1 = std::hash::DefaultHasher::new();
+    std::hash::Hash::hash(&key1, &mut h1);
+    let mut h2 = std::hash::DefaultHasher::new();
+    std::hash::Hash::hash(&key2, &mut h2);
+    assert_eq!(h1.finish(), h2.finish());
 
     // 插入和查找
     map.insert(key1.clone(), "value1");

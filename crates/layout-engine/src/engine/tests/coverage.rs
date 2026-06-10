@@ -128,7 +128,7 @@ fn test_compute_absolute_position() {
     let result = engine.compute(&doc, &styles);
 
     // 找到 absolute 定位的盒子
-    let container_box = find_child_by_node_id(&result.root, container).expect("container");
+    let _container_box = find_child_by_node_id(&result.root, container).expect("container");
     let abs_box = find_child_by_node_id(&result.root, abs_div).expect("abs_div");
     assert!(abs_box.is_absolute);
 }

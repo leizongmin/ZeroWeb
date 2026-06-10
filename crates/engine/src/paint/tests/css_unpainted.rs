@@ -4,13 +4,12 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::ColorValue;
 use zero_dom::NodeId;
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
 use zero_style_system::{
     BackgroundAttachmentComputedValue, ComputedStyle, HyphensComputedValue, LineClampComputedValue,
-    QuotesComputedValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, TextWrapComputedValue,
+    QuotesComputedValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
 };
 
 use super::super::painter::Painter;

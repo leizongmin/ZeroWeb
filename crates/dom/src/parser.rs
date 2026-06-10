@@ -1156,7 +1156,7 @@ mod tests {
         let root = builder.get_document();
 
         let name = builder.elem_name(&root);
-        assert_eq!(&*name.local_name(), "");
+        assert_eq!(name.local_name(), "");
     }
 
     /// 测试 create_pi：创建处理指令节点

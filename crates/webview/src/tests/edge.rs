@@ -97,7 +97,7 @@ fn test_webview_css_persistence_across_render() {
 /// 5. Failed -> Loading（load_url 重试）
 /// 6. Loading -> Loaded（complete_load）
 /// 7. Loaded -> Loading（load_html 不改变 loading 状态）
-/// 验证每个阶段 is_loading、url、last_render 的值正确。
+///   验证每个阶段 is_loading、url、last_render 的值正确。
 #[test]
 fn test_webview_lifecycle_state_transitions() {
     let mut wv = WebView::new(WebViewConfig::default());

@@ -5,7 +5,6 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::ColorValue;
 use zero_dom::NodeId;
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;

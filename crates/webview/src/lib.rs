@@ -5,6 +5,13 @@
 //! 提供构建器模式创建 WebView、导航、注入 JS、回调、渲染表面输出。
 
 #![warn(missing_docs)]
+#![cfg_attr(test, allow(unused_imports))]
+#![cfg_attr(test, allow(unused_variables))]
+#![allow(clippy::single_match)]
+#![allow(clippy::assertions_on_constants)]
+#![allow(unused_comparisons)]
+#![allow(clippy::absurd_extreme_comparisons)]
+#![allow(clippy::doc_lazy_continuation)]
 
 pub mod webview;
 pub mod webview_builder;

@@ -1791,7 +1791,7 @@ mod anonymous_flex_item_tests {
         let result = engine.compute(&doc, &styles);
 
         // 找到 flex 容器
-        let mut found_flex = false;
+        let found_flex = false;
         let mut found_anonymous_text = false;
         let mut stack = vec![&result.root];
         while let Some(box_node) = stack.pop() {

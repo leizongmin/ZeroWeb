@@ -279,7 +279,7 @@ mod tests {
         let mut huge_buf = Vec::new();
         let huge_len: u32 = (MAX_FRAME_SIZE + 1) as u32;
         huge_buf.write_all(&huge_len.to_le_bytes()).unwrap();
-        huge_buf.extend_from_slice(&vec![0u8; 64]); // 不需要真的分配 16MB+
+        huge_buf.extend_from_slice(&[0u8; 64]); // 不需要真的分配 16MB+
 
         let mut transport = PipeTransport::new(&huge_buf[..], io::empty());
         let result = transport.recv();
