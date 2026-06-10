@@ -620,10 +620,7 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
 /// 避免在 paint 阶段重新运行 IFC（paint IFC 使用空 styles 导致字体度量不一致）。
 /// TODO: 当前被注释掉 — 基线计算修复后启用
 #[allow(dead_code)]
-fn store_inline_layout_results(
-    inline_ctx: &crate::inline::InlineFormattingContext,
-    box_node: &mut LayoutBox,
-) {
+fn store_inline_layout_results(inline_ctx: &crate::inline::InlineFormattingContext, box_node: &mut LayoutBox) {
     if !inline_ctx.lines.is_empty() {
         let stored: Vec<crate::types::InlineLayoutLine> = inline_ctx
             .lines
@@ -825,11 +822,7 @@ fn apply_relative_offsets_inline(root: &mut LayoutBox, styles: &HashMap<NodeId, 
 ///
 /// paint 系统复用这些结果渲染文字，避免重新运行 IFC 导致字体度量不一致。
 #[allow(dead_code, unused_variables)]
-fn compute_final_inline_layouts(
-    root: &mut LayoutBox,
-    doc: &Document,
-    styles: &HashMap<NodeId, ComputedStyle>,
-) {
+fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
     // 先递归处理子节点
     for child in &mut root.children {
         compute_final_inline_layouts(child, doc, styles);
@@ -842,28 +835,30 @@ fn compute_final_inline_layouts(
     // 跳过 flex/grid 容器（它们不需要独立的 inline layout）
     let Some(style) = styles.get(&node_id) else { return };
     use zero_css_parser::values::DisplayValue;
-    if matches!(style.display, DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid) {
+    if matches!(
+        style.display,
+        DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+    ) {
         return;
     }
 
     // 检查是否有直接文本子节点
     let has_text_children = root.children.iter().any(|c| c.is_anonymous_text_item)
-        || doc.child_nodes(node_id).iter().any(|child_id| {
-            doc.get(*child_id).is_some_and(|n| matches!(&n.kind, NodeKind::Text(_)))
-        });
+        || doc
+            .child_nodes(node_id)
+            .iter()
+            .any(|child_id| doc.get(*child_id).is_some_and(|n| matches!(&n.kind, NodeKind::Text(_))));
     if !has_text_children {
         return;
     }
 
     // 创建 IFC 并使用完整的 CSS 属性配置
     use crate::inline::InlineFormattingContext;
-    use crate::types::InlineLayoutLine;
-    use crate::types::InlineLayoutFragment;
-    use zero_css_parser::values::LengthValue;
-    use zero_style_system::property::types::{
-        OverflowWrapValue, WhiteSpaceValue, WordBreakValue,
-    };
     use crate::inline::{TextAlign, WordBreakMode};
+    use crate::types::InlineLayoutFragment;
+    use crate::types::InlineLayoutLine;
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::property::types::{OverflowWrapValue, WhiteSpaceValue, WordBreakValue};
 
     let container_width = root.content_width;
     let mut inline_ctx = InlineFormattingContext::new(container_width);
