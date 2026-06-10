@@ -152,9 +152,10 @@ impl LayoutEngine {
         // taffy 0.7 不支持 CSS order 属性，因此需要在后处理中排序。
         sort_children_by_css_order(&mut root_box, styles);
 
-        // 11. 后处理：taffy 已对 position:relative 元素应用 inset 偏移到 layout.location，
-        // 因此不再需要额外的后处理步骤（否则会双重偏移）。
-        // apply_relative_offsets(&mut root_box, styles);
+        // 11. 后处理：taffy 已对 block-level position:relative 元素应用 inset 偏移到 layout.location。
+        // 但 inline-level 元素（如 <img>）由 inline layout 定位，taffy 不会处理其 relative offset。
+        // 仅对 inline-level relative 元素应用偏移，避免 block-level 元素双重偏移。
+        apply_relative_offsets_inline(&mut root_box, styles);
 
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
@@ -705,6 +706,38 @@ fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, styles: &Hash
 
 /// 已禁用：taffy 0.7 已在 layout.location 中包含 position:relative 的 inset 偏移，
 /// 不需要额外后处理。保留此函数供参考和潜在的未来使用。
+#[allow(dead_code)]
+/// 对 inline-level position:relative 元素应用视觉偏移。
+///
+/// taffy 已在 layout.location 中包含 block-level 元素的 relative inset，
+/// 因此只需处理 inline-level 元素（如 <img>、<span> 等由 inline layout 定位的元素）。
+/// 对 block-level 元素跳过，避免双重偏移。
+fn apply_relative_offsets_inline(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    let is_rel = root.node_id.is_some_and(|id| {
+        styles
+            .get(&id)
+            .is_some_and(|s| matches!(s.position, PositionValue::Relative))
+    });
+
+    if is_rel {
+        // 仅对 inline-level 元素应用偏移
+        // block-level 元素的 relative offset 已由 taffy 处理
+        let is_inline = !root.is_block_level;
+        if is_inline {
+            let (dx, dy) = resolve_relative_inset(root, styles);
+            if dx != 0.0 || dy != 0.0 {
+                root.x += dx;
+                root.y += dy;
+            }
+        }
+    }
+    for child in &mut root.children {
+        apply_relative_offsets_inline(child, styles);
+    }
+}
+
+/// 全元素 position:relative 偏移（已弃用 — 会与 taffy block-level 偏移双重计数）。
+/// 保留供参考，新代码使用 apply_relative_offsets_inline。
 #[allow(dead_code)]
 fn apply_relative_offsets(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     // 仅对 position:relative 应用视觉偏移（不含 sticky，sticky 偏移需宿主层滚动驱动）

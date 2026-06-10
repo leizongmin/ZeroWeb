@@ -282,11 +282,13 @@ fn test_clearance_with_margin_collapse() {
 
     assert!(
         (float_content_y - 40.0).abs() < 1.0,
-        "float should be at content-Y=40, got {}", float_content_y
+        "float should be at content-Y=40, got {}",
+        float_content_y
     );
     assert!(
         (clear_content_y - 80.0).abs() < 1.0,
-        "clear should be at content-Y=80 (clearance pushes below float), got {}", clear_content_y
+        "clear should be at content-Y=80 (clearance pushes below float), got {}",
+        clear_content_y
     );
 }
 

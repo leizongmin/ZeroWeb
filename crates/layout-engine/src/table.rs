@@ -631,7 +631,10 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
         };
         let cell = &row.cells[cell_idx];
         let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
-            row_box.children.get_mut(rg_idx).and_then(|rg| rg.children.get_mut(cell.child_index))
+            row_box
+                .children
+                .get_mut(rg_idx)
+                .and_then(|rg| rg.children.get_mut(cell.child_index))
         } else {
             row_box.children.get_mut(cell.child_index)
         };
@@ -877,10 +880,12 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
 
     // 检测孤立行组模式：table_box 本身是行组（无外层 table 容器）
     // 此时 table_box.children 中的嵌套行组和直接子单元格需要特殊处理
-    let is_orphan = table_box
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .is_some_and(|s| matches!(s.display, DisplayValue::TableRowGroup | DisplayValue::TableHeaderGroup | DisplayValue::TableFooterGroup));
+    let is_orphan = table_box.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+        matches!(
+            s.display,
+            DisplayValue::TableRowGroup | DisplayValue::TableHeaderGroup | DisplayValue::TableFooterGroup
+        )
+    });
 
     // 收集行组，按 CSS 规范顺序排列（thead → tbody → tfoot）
     // 先收集所有子元素及其类型，按行组排序优先级重排
@@ -924,7 +929,11 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                         // 先 flush 之前收集的匿名 cell
                         if !anonymous_cells.is_empty() {
                             max_cols = max_cols.max(col_cursor);
-                            let rg_idx = if is_orphan { None } else { anonymous_row_group_idx.or(Some(*child_idx)) };
+                            let rg_idx = if is_orphan {
+                                None
+                            } else {
+                                anonymous_row_group_idx.or(Some(*child_idx))
+                            };
                             rows.push(TableRow {
                                 child_index: anonymous_first_child_idx,
                                 row_group_index: rg_idx,
@@ -948,7 +957,11 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                         // 先 flush 之前收集的匿名 cell
                         if !anonymous_cells.is_empty() {
                             max_cols = max_cols.max(col_cursor);
-                            let rg_idx = if is_orphan { None } else { anonymous_row_group_idx.or(Some(*child_idx)) };
+                            let rg_idx = if is_orphan {
+                                None
+                            } else {
+                                anonymous_row_group_idx.or(Some(*child_idx))
+                            };
                             rows.push(TableRow {
                                 child_index: anonymous_first_child_idx,
                                 row_group_index: rg_idx,
@@ -1020,7 +1033,11 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                     max_cols = max_cols.max(col_cursor);
                     // 孤立模式下：匿名行直接使用 table_box 作为行盒
                     // 混合嵌套行组单元格（parent_rg_idx=Some）和直接子单元格（parent_rg_idx=None）
-                    let rg_idx = if is_orphan { None } else { Some(anonymous_row_group_idx.unwrap_or(*child_idx)) };
+                    let rg_idx = if is_orphan {
+                        None
+                    } else {
+                        Some(anonymous_row_group_idx.unwrap_or(*child_idx))
+                    };
                     rows.push(TableRow {
                         child_index: anonymous_first_child_idx,
                         row_group_index: rg_idx,
@@ -1217,7 +1234,10 @@ fn get_row_box<'a>(table_box: &'a LayoutBox, row: &TableRow) -> Option<&'a Layou
 /// - Some(rg_idx): 在 row_box.children[rg_idx].children 中查找（嵌套行组场景）
 fn get_cell_box<'a>(row_box: &'a LayoutBox, cell: &TableCell) -> Option<&'a LayoutBox> {
     if let Some(rg_idx) = cell.parent_rg_idx {
-        row_box.children.get(rg_idx).and_then(|rg| rg.children.get(cell.child_index))
+        row_box
+            .children
+            .get(rg_idx)
+            .and_then(|rg| rg.children.get(cell.child_index))
     } else {
         row_box.children.get(cell.child_index)
     }
@@ -1297,7 +1317,10 @@ fn position_cells(
         let mut row_height = 0.0f32;
         for cell in &row.cells {
             let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
-                row_box.children.get(rg_idx).and_then(|rg| rg.children.get(cell.child_index))
+                row_box
+                    .children
+                    .get(rg_idx)
+                    .and_then(|rg| rg.children.get(cell.child_index))
             } else {
                 row_box.children.get(cell.child_index)
             };
@@ -1342,7 +1365,10 @@ fn position_cells(
             // 孤立模式下 row_box = table_box，嵌套行组的单元格通过
             // row_box.children[parent_rg_idx].children[child_index] 访问
             let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
-                row_box.children.get_mut(rg_idx).and_then(|rg| rg.children.get_mut(cell.child_index))
+                row_box
+                    .children
+                    .get_mut(rg_idx)
+                    .and_then(|rg| rg.children.get_mut(cell.child_index))
             } else {
                 row_box.children.get_mut(cell.child_index)
             };
