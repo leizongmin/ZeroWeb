@@ -4,6 +4,48 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 77.3% (379/490)
 
+### R40 进展
+
+**通过率**：379/490 (77.3%)，与 R39 持平。提交 multicol column breaking 基础设施；深入调查 paint IFC 架构和 inline 元素背景定位问题，两个修复尝试均因回归而回退。
+
+#### R40 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| multicol column breaking 基础设施 | ColumnFragment 结构体支持超高子元素跨列拆分，paint 层 overflow 裁剪确保每列只显示对应片段。基础设施就绪，但 paint 层 per-column clipping 未完成（需要存储 fragment 信息到 LayoutBox） |
+
+#### R40 调查与尝试
+
+1. **inline 元素 x 偏移修复（回退）**：在 Phase 2 浮动调整中为非块级元素添加 x 偏移到左侧浮动右边缘。仅改善 clear-inline-001 从 6.04% 到 5.99%，对整体通过率无影响，已回退。
+
+2. **paint IFC 传入实际样式（回退）**：对无浮动子元素的容器传入实际 CSS 样式到 paint IFC，使文本获得正确的字体度量。导致 6 个测试回归（379→373），原因：即使无浮动，传入实际样式导致不同断行行为，与 layout IFC 的定位冲突。已回退。
+
+3. **paint IFC 架构问题确认**：paint IFC 使用 `HashMap::new()` 导致所有文本使用 16px 默认字体度量。这是影响 50+ 测试的系统性问题。修复需要存储 layout IFC 结果到 LayoutBox，但受两个根本问题阻塞：
+   - 存储的 IFC 结果在后续后处理（table/multicol）后可能过期
+   - paint 基线计算（`frag.y + font_size`）与存储结果的 `frag.y + height` 不一致
+
+4. **inline 元素背景定位问题**：CSS 2.1 规定 inline 元素的 margin-top/margin-bottom 无效，但 taffy 将 inline 映射为 Block 并包含其垂直 margin。paint 层使用 LayoutBox 位置（来自 taffy/Phase 2）渲染背景，而 IFC 使用正确的行内位置渲染文本，导致 inline 元素背景与文本位置不一致（影响 clear-inline-001、inline-box-001/002、border-padding-bleed-001 等测试）。
+
+#### R40 失败根因分布（不变）
+
+与 R39 一致，111 个失败测试的分布：
+- multicol breaking: ~16
+- writing-mode vertical: ~13
+- flexbox baseline: ~9
+- CSS2/floats-clear precision: ~15（多数为 swatch 图像缩放精度）
+- CSS2/linebox inline box: ~8
+- table various: ~10
+- CSS2/border+background: ~7
+- 其他: ~17
+
+#### 后续重点（R41+）
+
+1. **multicol paint 层 per-column clipping**（影响 ~16 测试）：需要将 fragment 分配信息持久化到 LayoutBox，paint 层根据 fragment 信息对每列应用独立裁剪区域。这是将 css-multicol 通过率从 56.1% 提升的关键。
+
+2. **paint IFC 架构改进**（影响 50+ 测试，系统性瓶颈）：需要在所有后处理完成后的最后阶段运行 IFC 并存储结果。需要解决：(a) 基线计算一致性；(b) 浮动排除区域传递；(c) 后处理步骤不改变容器尺寸的保证。这是最大的系统性改进，但需要较大重构。
+
+3. **inline 元素背景从 IFC 坐标绘制**（影响 ~4 测试）：需要 paint 层对 inline 元素使用 IFC 计算的位置渲染背景和边框，而非 taffy 的 block 位置。这需要存储 IFC inline 盒的位置信息。
+
 ### R39 进展
 
 **通过率**：379/490 (77.3%)，与 R38 持平。新增多列容器 BFC 建立和图像插值精度修复；全面分析 111 个失败测试的根因分布。
