@@ -1331,6 +1331,10 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
 
         // 收集浮动元素的几何信息，用于 BFC 排斥计算
         // 使用实际坐标（Phase 1 已完成定位），避免重复计算
+        // 收集浮动元素的几何信息，用于 BFC 排斥计算
+        // 使用实际坐标（Phase 1 已完成定位），避免重复计算
+        // 注意：c.y 已包含 margin_top（Phase 1 定位：line_y + margin_top），
+        // 因此 float_h 只需 height + margin_bottom，避免 margin_top 双重计数。
         let float_geometries: Vec<(FloatValue, f32, f32, f32, f32, f32)> = box_node
             .children
             .iter()
@@ -1339,9 +1343,9 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                 (
                     c.float.clone(),
                     c.x, // 边框盒左边（已含 margin_left 偏移）
-                    c.y,
+                    c.y, // 边框盒顶部（已含 margin_top 偏移）
                     c.width, // 边框盒宽度（不含 margin）
-                    c.height + c.margin_top + c.margin_bottom,
+                    c.height + c.margin_bottom, // 从边框盒顶部到 margin-box 底部
                     c.margin_right, // 右 margin（用于 BFC 排斥计算）
                 )
             })

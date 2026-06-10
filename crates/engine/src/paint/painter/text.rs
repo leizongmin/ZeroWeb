@@ -34,9 +34,17 @@ struct MulticolInfo {
 /// 从 ComputedStyle 计算多列参数。
 ///
 /// 返回 `None` 表示不需要多列布局（column-count: auto 且 column-width: auto）。
-fn compute_multicol_info_for_paint(style: &ComputedStyle, container_width: f32) -> Option<MulticolInfo> {
+/// `font_size_px` 用于将 em/rem 单位的 gap 和 column-width 转换为像素。
+fn compute_multicol_info_for_paint(
+    style: &ComputedStyle,
+    container_width: f32,
+    font_size_px: f32,
+) -> Option<MulticolInfo> {
     let gap: f32 = match &style.column_gap {
         LengthValue::Px(g) => *g as f32,
+        LengthValue::Em(e) => *e as f32 * font_size_px,
+        LengthValue::Rem(r) => *r as f32 * 16.0_f32, // rem 基于 root font-size
+        LengthValue::Percentage(_) => 0.0, // 百分比 gap 需要容器宽度上下文，暂不支持
         _ => 0.0,
     };
 
@@ -49,6 +57,8 @@ fn compute_multicol_info_for_paint(style: &ComputedStyle, container_width: f32) 
         ColumnWidthComputedValue::Auto => None,
         ColumnWidthComputedValue::Length(l) => match l {
             LengthValue::Px(v) => Some(*v as f32),
+            LengthValue::Em(e) => Some(*e as f32 * font_size_px),
+            LengthValue::Rem(r) => Some(*r as f32 * 16.0_f32),
             _ => None,
         },
     };
@@ -680,7 +690,7 @@ impl super::Painter {
             let is_balance_mode = !matches!(style.column_fill, zero_style_system::ColumnFillComputedValue::Auto);
             let has_explicit_height = box_node.content_height > 0.0 && matches!(style.height, LengthValue::Px(_));
             let multicol_info = if !has_in_flow_children && is_balance_mode && !has_explicit_height {
-                compute_multicol_info_for_paint(style, container_width)
+                compute_multicol_info_for_paint(style, container_width, font_size)
             } else {
                 None
             };
