@@ -36,22 +36,6 @@ pub fn extract_html_title(html: &str) -> Option<String> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn extract_html_title_reads_head_title() {
-        let html = r#"<!doctype html><html><head><title>Example Domain</title></head><body></body></html>"#;
-        assert_eq!(extract_html_title(html).as_deref(), Some("Example Domain"));
-    }
-
-    #[test]
-    fn extract_html_title_returns_none_when_missing() {
-        assert!(extract_html_title("<html><body>Hi</body></html>").is_none());
-    }
-}
-
 /// 生成设置页面 HTML
 pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) -> String {
     use zero_browser_shell::SearchEngine;
@@ -117,4 +101,20 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         bookmarks = if settings.show_bookmarks_bar { "是" } else { "否" },
         zoom = (settings.default_zoom * 100.0) as u32,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_html_title_reads_head_title() {
+        let html = r#"<!doctype html><html><head><title>Example Domain</title></head><body></body></html>"#;
+        assert_eq!(extract_html_title(html).as_deref(), Some("Example Domain"));
+    }
+
+    #[test]
+    fn extract_html_title_returns_none_when_missing() {
+        assert!(extract_html_title("<html><body>Hi</body></html>").is_none());
+    }
 }

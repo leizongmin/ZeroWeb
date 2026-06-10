@@ -1168,7 +1168,7 @@ fn test_ipc_message_unicode_payload() {
 /// 测试连续序列化 3 条消息后逐个反序列化，验证消息顺序保持不变。
 #[test]
 fn test_ipc_message_order_preserved() {
-    let msgs = vec![
+    let msgs = [
         IpcMessage {
             id: 10,
             kind: IpcMessageKind::Navigate(NavigateParams {

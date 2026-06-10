@@ -1,7 +1,5 @@
 //! CSS `content` 属性渲染和 `object-fit` 渲染单元测试。
 
-use std::collections::HashMap;
-
 use zero_css_parser::values::{ColorValue, CounterActionValue, LengthValue};
 use zero_dom::Document;
 use zero_layout_engine::LayoutBox;

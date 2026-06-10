@@ -806,7 +806,7 @@ mod tests {
         assert_eq!(custom.len(), 2);
         assert_eq!(custom.get("--a"), Some(&"1".to_string()));
         assert_eq!(custom.get("--b"), Some(&"2".to_string()));
-        assert!(custom.get("color").is_none());
+        assert!(!custom.contains_key("color"));
     }
 
     #[test]

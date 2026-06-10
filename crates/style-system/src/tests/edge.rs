@@ -708,9 +708,9 @@ fn test_text_nodes_get_no_style_but_siblings_do() {
     let styles = sys.compute_styles(&doc, &stylesheets);
 
     // span 应有样式（默认值）
-    assert!(styles.get(&span).is_some(), "span 应该有计算样式");
+    assert!(styles.contains_key(&span), "span 应该有计算样式");
     // body 应有样式
-    assert!(styles.get(&body).is_some(), "body 应该有计算样式");
+    assert!(styles.contains_key(&body), "body 应该有计算样式");
     // 文本节点不在 styles 中（NodeId 无法直接查，但总样式数应只含元素节点）
     // html, body, span 三个元素节点有样式
     assert!(styles.len() >= 3, "至少 3 个元素节点有样式");

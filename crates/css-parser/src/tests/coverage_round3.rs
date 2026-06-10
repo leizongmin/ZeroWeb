@@ -9,6 +9,7 @@ use crate::values::{
 };
 
 /// Helper: 创建标签选择器。
+#[allow(dead_code)]
 pub(super) fn tag_sel(tag: &str) -> Selector {
     Selector {
         complex: ComplexSelector {

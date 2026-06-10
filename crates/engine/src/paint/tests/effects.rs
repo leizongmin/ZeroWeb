@@ -9,10 +9,7 @@ use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{FontId, GlyphPrimitive};
-use zero_style_system::{
-    BackgroundImageComputedValue, BorderStyleValue, BoxShadowComputedValue, ComputedStyle, OutlineStyleValue,
-    TextShadowComputedValue,
-};
+use zero_style_system::{BorderStyleValue, ComputedStyle, OutlineStyleValue};
 
 use super::super::color::{color_value_to_render, hsla_to_rgba, named_color_to_render};
 use super::super::helpers::{apply_transform_offset, clip_fills, clip_glyphs, length_to_f32};

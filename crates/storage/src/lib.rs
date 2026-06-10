@@ -3,6 +3,13 @@
 //! 存储后端 — localStorage、sessionStorage、IndexedDB、Cache API。
 
 #![warn(missing_docs)]
+#![cfg_attr(test, allow(unused_imports))]
+#![cfg_attr(test, allow(unused_variables))]
+#![cfg_attr(test, allow(unused_mut))]
+#![allow(clippy::bool_assert_comparison)]
+#![allow(clippy::len_zero)]
+#![allow(clippy::useless_vec)]
+#![allow(clippy::unnecessary_mut_passed)]
 
 pub mod cache_api;
 pub mod indexed_db;

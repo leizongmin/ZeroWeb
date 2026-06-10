@@ -878,8 +878,8 @@ mod tests {
             .collect();
 
         // 验证 ID 是连续的
-        for i in 0..10 {
-            assert_eq!(ids[i], i as u32);
+        for (i, &id) in ids.iter().enumerate() {
+            assert_eq!(id, i as u32);
         }
 
         // 验证不重复

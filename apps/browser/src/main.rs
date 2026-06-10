@@ -3,6 +3,12 @@
 //! M11 里程碑：完整浏览器应用，连接 BrowserShell（数据模型）、
 //! WebView（页面渲染）和 HostRuntime（窗口管理）。
 
+#![cfg_attr(test, allow(unused_imports))]
+#![cfg_attr(test, allow(unused_variables))]
+#![allow(unused_comparisons)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::absurd_extreme_comparisons)]
+
 mod app;
 mod clipboard;
 mod colors;

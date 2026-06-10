@@ -433,7 +433,6 @@ pub fn push_path_stroke_mesh(vertices: &mut Vec<f32>, path: &PathStrokePrimitive
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::Rect;
 
     #[test]
     fn test_push_fill_quad_vertex_count() {

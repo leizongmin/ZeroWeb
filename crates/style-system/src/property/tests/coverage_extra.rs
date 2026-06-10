@@ -1,8 +1,6 @@
 // style-system property/parse.rs 覆盖率补充测试。
 use super::super::parse::*;
-#[allow(clippy::field_reassign_with_default)]
 use super::super::*;
-use crate::property::types::*;
 
 #[test]
 fn test_parse_grid_line_named_area_various() {

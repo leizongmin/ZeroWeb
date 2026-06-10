@@ -14,6 +14,14 @@
 //! - [`shorthand`] — CSS 简写属性展开
 
 #![warn(missing_docs)]
+#![cfg_attr(test, allow(unused_imports))]
+#![cfg_attr(test, allow(unused_variables))]
+#![cfg_attr(test, allow(dead_code))]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::assertions_on_constants)]
+#![allow(clippy::unnecessary_get_then_check)]
 
 pub mod cascade;
 pub mod computed;

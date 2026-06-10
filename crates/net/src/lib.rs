@@ -364,7 +364,7 @@ mod tests {
     fn test_websocket_close_from_connecting() {
         let mut ws = WebSocket::new("ws://example.com/socket");
         assert_eq!(ws.state(), &WebSocketState::Connecting);
-        ws.close();
+        let _ = ws.close();
         assert_eq!(ws.state(), &WebSocketState::Closed, "直接关闭应变为 Closed");
         // Closing 状态不会被触发
     }

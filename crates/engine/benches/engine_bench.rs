@@ -112,7 +112,7 @@ fn bench_paint_simple_page(c: &mut Criterion) {
     c.bench_function("paint_simple_page_100_elements", |b| {
         b.iter(|| {
             let mut painter = Painter::new();
-            painter.paint(black_box(&layout), black_box(&styles));
+            painter.paint(black_box(&layout), black_box(&styles), None);
             black_box(painter.into_primitives());
         })
     });
@@ -124,7 +124,7 @@ fn bench_paint_complex_page(c: &mut Criterion) {
     c.bench_function("paint_complex_page_500_elements", |b| {
         b.iter(|| {
             let mut painter = Painter::new();
-            painter.paint(black_box(&layout), black_box(&styles));
+            painter.paint(black_box(&layout), black_box(&styles), None);
             black_box(painter.into_primitives());
         })
     });

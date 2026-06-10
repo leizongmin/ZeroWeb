@@ -13,12 +13,10 @@ use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::GradientKind;
 use zero_style_system::{
-    BackgroundImageComputedValue, BorderCollapseValue, BorderStyleValue, BoxShadowComputedValue, ComputedStyle,
-    ContainComputedValue, TextDecorationLineValue, TextShadowComputedValue, TextTransformValue,
+    BackgroundImageComputedValue, BorderStyleValue, BoxShadowComputedValue, ComputedStyle, TextDecorationLineValue,
+    TextShadowComputedValue,
 };
 
-use super::super::color::named_color_to_render;
-use super::super::helpers::{gradient_to_primitive, length_to_f32, linear_direction_to_kind, simple_hash};
 use super::super::painter::Painter;
 
 /// 辅助函数：创建简单 LayoutBox。

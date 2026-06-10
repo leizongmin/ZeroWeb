@@ -1,7 +1,6 @@
 //! 覆盖率补全第三轮：converter 内部函数覆盖
 
 use super::super::*;
-use zero_css_parser::values::*;
 use zero_style_system::ComputedStyle;
 
 #[test]

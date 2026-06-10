@@ -340,12 +340,13 @@ fn test_ipc_channel_trait_object_stress_50_messages() {
 
     // 通过 trait object 发送全部消息
     for msg in &messages {
-        ch.send(msg.clone()).expect(&format!("发送消息 id={} 应成功", msg.id));
+        ch.send(msg.clone())
+            .unwrap_or_else(|_| panic!("发送消息 id={} 应成功", msg.id));
     }
 
     // 按 FIFO 顺序接收并逐一验证
     for (i, expected) in messages.iter().enumerate() {
-        let received = ch.recv().expect(&format!("接收第 {i} 条消息应成功"));
+        let received = ch.recv().unwrap_or_else(|_| panic!("接收第 {i} 条消息应成功"));
         assert_eq!(
             expected.id, received.id,
             "FIFO 顺序违反：索引 {i}，期望 id={}，实际 id={}",
@@ -732,7 +733,7 @@ fn test_channel_burst_send_then_receive_all() {
 
     // 一次性全部接收，验证 FIFO 顺序
     for i in 0..20u64 {
-        let msg = ch.recv().expect(&format!("接收第 {i} 条应成功"));
+        let msg = ch.recv().unwrap_or_else(|_| panic!("接收第 {i} 条应成功"));
         assert_eq!(i, msg.id, "FIFO 顺序违反：期望 id={i}，实际 id={}", msg.id);
     }
 
@@ -775,7 +776,7 @@ fn test_different_kinds_produce_different_bytes() {
         kind: IpcMessageKind::StopLoading,
     };
 
-    let bytes = vec![
+    let bytes = [
         serialize(&msg_ok).expect("s"),
         serialize(&msg_heartbeat).expect("s"),
         serialize(&msg_load_complete).expect("s"),
@@ -1326,12 +1327,12 @@ fn test_keyboard_event_type_all_variants() {
 #[test]
 fn test_scroll_event_negative_values() {
     let params = ScrollEventParams {
-        delta_x: -3.14,
+        delta_x: -3.1416,
         delta_y: -159.265,
     };
     let bytes = bincode::serialize(&params).expect("serialize");
     let rt: ScrollEventParams = bincode::deserialize(&bytes).expect("deserialize");
-    assert!((rt.delta_x - (-3.14)).abs() < 0.001);
+    assert!((rt.delta_x - (-3.1416)).abs() < 0.001);
     assert!((rt.delta_y - (-159.265)).abs() < 0.001);
 }
 

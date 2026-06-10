@@ -222,49 +222,49 @@ fn test_transform_rotate3d_negative_vector() {
 
 // 测试 translateX 中的负值
 #[test]
-fn test_transform_translateX_negative() {
+fn test_transform_translate_x_negative() {
     let result = parse_transform("translateX(-100px)");
     assert!(result.is_some());
 }
 
 // 测试 translateY 中的零值
 #[test]
-fn test_transform_translateY_zero() {
+fn test_transform_translate_y_zero() {
     let result = parse_transform("translateY(0)");
     assert!(result.is_some());
 }
 
 // 测试 scaleX 中的负值
 #[test]
-fn test_transform_scaleX_negative() {
+fn test_transform_scale_x_negative() {
     let result = parse_transform("scaleX(-1.5)");
     assert!(result.is_some());
 }
 
 // 测试 scaleY 中的零值
 #[test]
-fn test_transform_scaleY_zero() {
+fn test_transform_scale_y_zero() {
     let result = parse_transform("scaleY(0)");
     assert!(result.is_some());
 }
 
 // 测试 rotateX 中的负值
 #[test]
-fn test_transform_rotateX_negative() {
+fn test_transform_rotate_x_negative() {
     let result = parse_transform("rotateX(-90deg)");
     assert!(result.is_some());
 }
 
 // 测试 rotateY 中的零值
 #[test]
-fn test_transform_rotateY_zero() {
+fn test_transform_rotate_y_zero() {
     let result = parse_transform("rotateY(0rad)");
     assert!(result.is_some());
 }
 
 // 测试 rotateZ 中的负值
 #[test]
-fn test_transform_rotateZ_negative() {
+fn test_transform_rotate_z_negative() {
     let result = parse_transform("rotateZ(-45turn)");
     assert!(result.is_some());
 }

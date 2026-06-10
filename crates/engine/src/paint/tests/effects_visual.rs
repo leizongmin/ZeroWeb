@@ -7,8 +7,6 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::{ColorValue, LengthValue, TransformFunction, TransformValue};
-use zero_dom::NodeId;
-use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_style_system::{BackgroundImageComputedValue, BoxShadowComputedValue, ComputedStyle, TextShadowComputedValue};
 

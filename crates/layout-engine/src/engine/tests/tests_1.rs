@@ -5,7 +5,6 @@ use zero_css_parser::values::{
 use zero_dom::Document;
 
 /// 创建带指定 display 和 size 的 ComputedStyle。
-
 /// 测试简单 block 布局。
 #[test]
 fn test_compute_simple_block_layout() {
@@ -570,7 +569,6 @@ fn test_compute_zero_size_element() {
 // ── 几何验证补充测试 ──
 
 /// 查找 body 的第一个子元素在布局树中的位置。
-
 /// 验证 block 布局中子元素的正确尺寸和位置。
 #[test]
 fn test_block_child_exact_geometry() {

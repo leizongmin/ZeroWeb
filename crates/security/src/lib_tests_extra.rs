@@ -257,7 +257,7 @@ fn test_mixed_content_all_optionally_blockable_types() {
 /// - 前导和尾随空格
 /// - 多个连续空格（包括 tab 和换行符）
 /// - 混合空白符分隔
-/// 无效标志在空格处理后仍被过滤。
+///   无效标志在空格处理后仍被过滤。
 #[test]
 fn test_sandbox_parse_whitespace_tolerance() {
     // 前导和尾随空格
@@ -290,7 +290,7 @@ fn test_sandbox_parse_whitespace_tolerance() {
 /// - NoPolicy → 允许（无凭证加载，不发送 cookies）
 /// - SameOrigin → 允许（CORP 头明确允许同源）
 /// - CrossOrigin → 阻止（CORP 头明确拒绝）
-/// 验证三种 CORP 状态在跨源 + 无 CORS 场景下的完整行为矩阵。
+///   验证三种 CORP 状态在跨源 + 无 CORS 场景下的完整行为矩阵。
 #[test]
 fn test_coep_credentialless_corp_status_differentiation() {
     // 跨源 + 无 CORS 场景

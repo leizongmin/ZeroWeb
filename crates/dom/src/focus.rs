@@ -340,8 +340,8 @@ mod tests {
         fm.scan(&doc);
 
         let third = fm.focus_last();
-        let second = fm.focus_previous();
-        let first = fm.focus_previous();
+        let _second = fm.focus_previous();
+        let _first = fm.focus_previous();
         // 循环回最后一个
         let wrap = fm.focus_previous();
         assert_eq!(wrap, third);

@@ -530,7 +530,7 @@ fn test_tree_walker_root_node() {
     let mut doc = Document::new();
     let root = doc.create_element("div");
     doc.append_child(doc.root(), root).unwrap();
-    let mut walker = TreeWalker::new(root, u32::MAX);
+    let walker = TreeWalker::new(root, u32::MAX);
     assert_eq!(walker.root(), root);
     assert_eq!(walker.current_node(), root);
 }
@@ -557,7 +557,7 @@ fn test_tree_walker_next_node_skips_filtered() {
 fn test_node_iterator_is_done() {
     let mut doc = Document::new();
     let elem = doc.create_element("div");
-    let mut iter = NodeIterator::new(elem, u32::MAX);
+    let iter = NodeIterator::new(elem, u32::MAX);
     assert!(!iter.is_done());
 }
 

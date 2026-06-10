@@ -140,7 +140,7 @@ fn bench_block_layout_1000_elements(c: &mut Criterion) {
     let (doc, styles) = make_block_doc(1000);
     c.bench_function("block_layout_1000_elements", |b| {
         b.iter(|| {
-            let engine = LayoutEngine::new(800.0, 600.0);
+            let mut engine = LayoutEngine::new(800.0, 600.0);
             black_box(engine.compute(black_box(&doc), black_box(&styles)));
         })
     });
@@ -151,7 +151,7 @@ fn bench_flex_layout_1000_elements(c: &mut Criterion) {
     let (doc, styles) = make_flex_doc(1000);
     c.bench_function("flex_layout_1000_elements", |b| {
         b.iter(|| {
-            let engine = LayoutEngine::new(8000.0, 600.0);
+            let mut engine = LayoutEngine::new(8000.0, 600.0);
             black_box(engine.compute(black_box(&doc), black_box(&styles)));
         })
     });
@@ -162,7 +162,7 @@ fn bench_grid_layout_100_elements(c: &mut Criterion) {
     let (doc, styles) = make_grid_doc(10, 10);
     c.bench_function("grid_layout_100_elements", |b| {
         b.iter(|| {
-            let engine = LayoutEngine::new(800.0, 800.0);
+            let mut engine = LayoutEngine::new(800.0, 800.0);
             black_box(engine.compute(black_box(&doc), black_box(&styles)));
         })
     });
@@ -173,7 +173,7 @@ fn bench_deep_nesting_50_levels(c: &mut Criterion) {
     let (doc, styles) = make_deep_nesting_doc(50);
     c.bench_function("deep_nesting_50_levels", |b| {
         b.iter(|| {
-            let engine = LayoutEngine::new(800.0, 600.0);
+            let mut engine = LayoutEngine::new(800.0, 600.0);
             black_box(engine.compute(black_box(&doc), black_box(&styles)));
         })
     });
@@ -184,7 +184,7 @@ fn bench_wide_tree_500_children(c: &mut Criterion) {
     let (doc, styles) = make_wide_doc(500);
     c.bench_function("wide_tree_500_children", |b| {
         b.iter(|| {
-            let engine = LayoutEngine::new(800.0, 6000.0);
+            let mut engine = LayoutEngine::new(800.0, 6000.0);
             black_box(engine.compute(black_box(&doc), black_box(&styles)));
         })
     });
@@ -195,7 +195,7 @@ fn bench_incremental_layout(c: &mut Criterion) {
     let (doc, styles) = make_block_doc(500);
     c.bench_function("incremental_layout", |b| {
         b.iter(|| {
-            let engine = LayoutEngine::new(800.0, 600.0);
+            let mut engine = LayoutEngine::new(800.0, 600.0);
             // 第一次布局
             black_box(engine.compute(black_box(&doc), black_box(&styles)));
             // 第二次布局（模拟增量更新）

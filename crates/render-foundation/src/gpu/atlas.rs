@@ -441,7 +441,7 @@ mod tests {
         let layout = GlyphAtlas::row_stride(10);
         assert_eq!(layout.offset, 0);
         assert!(layout.bytes_per_row.unwrap() >= 256);
-        assert!(layout.bytes_per_row.unwrap() % 256 == 0);
+        assert!(layout.bytes_per_row.unwrap().is_multiple_of(256));
     }
 
     #[test]

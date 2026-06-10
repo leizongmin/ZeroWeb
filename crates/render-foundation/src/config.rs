@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn render_mode_clone() {
         let mode = RenderMode::Gpu;
-        let cloned = mode.clone();
+        let cloned = mode; // Copy implies Clone
         assert_eq!(mode, cloned);
     }
 
