@@ -2,24 +2,25 @@
 
 **最后更新**: 2026-06-10
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 76.9% (377/490)
+**上游真实 reftest 通过率**: 77.3% (379/490)
 
-### R34 进展
+### R35 进展
 
-**通过率**：377/490 (76.9%)，与 R33 持平但内部质量改善。修复 IFC 空白处理，新增 3 个单元测试验证 inline box model 行为。
+**通过率**：379/490 (77.3%)，+2 tests（自 R34）。修复 text-align 传播缺失，新增 flex-direction 垂直模式交换。
 
 #### 修复提交
 
 | 修复 | 影响 | 说明 |
 |------|------|------|
-| IFC 空白保留改进 | whitespace-001 diff 降低 | `collect_inline_items` 中 `trim()` 改为 `collapse_whitespace()`，保留 inline-block 之间的空白文本节点为单个空格。新增行首空格剥离（CSS 2.1 §16.6.1）。css-tables/whitespace-001 diff 从较高值降至 1.05%（接近 1.0% 通过阈值）|
-| inline box model 测试 | 测试覆盖 | 新增 3 个单元测试：空 inline 元素高 line-height 贡献、空白折叠、行首空格剥离 |
+| text-align 传播到 IFC | +2 tests | 所有 IFC 创建点（adjust_inline_block_positions、remeasure_with_float_exclusions 等）现在从 ComputedStyle 读取 text-align 并传播到 InlineFormattingContext。修复 block-in-inline-align-justify-001、block-in-inline-align-last-001 |
+| flex-direction 垂直模式交换 | 正确性 | `apply_vertical_writing_mode` 新增 flex-direction 轴交换（Row↔Column），CSS Writing Modes §7.1 合规。当前不影响通过率（flex+writing-mode 测试还需垂直字形渲染） |
+| table 列宽固有宽度改进 | 正确性 | `compute_column_widths` 改为 width:auto 单元格使用固有内容宽度（非 taffy block 宽度）；`compute_cell_intrinsic_width` 优先检查子元素显式宽度 |
 
 #### 按目录通过率变化
 
-| 目录 | R33 | R34 | 变化 |
+| 目录 | R34 | R35 | 变化 |
 |------|-----|-----|------|
-| css-tables/ | 81.8% (45/55) | 81.8% (45/55) | whitespace-001 diff 从 >1.0% 降至 1.05%，未通过但接近 |
+| CSS2/ | 69.0% (89/129) | 70.5% (91/129) | +2 tests（block-in-inline-align-*） |
 
 #### R34 调查分析
 
@@ -28,7 +29,15 @@
 3. **近通过测试统计**：10 个测试 diff < 2%（包括 whitespace-001、clear-clearance-calculation-002、clearance-006、block-in-inline-align-001 等），这些是下一轮重点攻克目标。
 4. **结构性改进需求**：CSS2/linebox（9 失败）需要 inline 元素背景/border 从 IFC 坐标绘制；css-flexbox baseline（9 失败）需要 baseline alignment 改进。
 
-### 后续重点（R35+）
+#### R35 分析
+
+1. **text-align 传播**是系统性缺陷：5 个 IFC 创建点均未传播 text-align，导致所有 center/right/justify 布局使用 Left。修复后 2 个 block-in-inline-align 测试通过。
+2. **flex-direction 垂直交换**正确但不足以修复 flex+writing-mode 测试：还需要垂直字形渲染（旋转文本 90°）。
+3. **table 列宽改进**未改变通过率：width:auto 单元格现在使用子元素宽度估算，但大多数表格测试的失败根因在 swatch 图像缩放或 border 渲染精度。
+4. **失败分布**：18 个 <2% diff、28 个 2-5%、41 个 5-15%、24 个 >15%。最大改进杠杆仍为 CSS2/floats-clear（17 失败）、css-multicol（25 失败）、css-flexbox（20 失败）。
+5. **swatch 图像缩放**影响 CSS2/floats-clear 中 7 个测试：小色块 PNG（15×15/20×20）缩放到 96×96 与 CSS background-color 精确填充存在像素差异。
+
+### 后续重点（R36+）
 
 1. **near-miss 测试攻坚**（10 个 <2% diff）：whitespace-001 (1.05%)、clear-clearance-calculation-002 (1.18%)、clearance-006 (1.16%)、block-in-inline-align-001 (1.41%)、grid max-content (1.52%)、flexbox near-miss 等
 2. **CSS2/floats-clear 精度提升**（17 个失败）：swatch 图像缩放精度、clearance 边界 case
