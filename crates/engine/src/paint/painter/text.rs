@@ -1013,12 +1013,15 @@ impl super::Painter {
                     } else {
                         for fragment in fragments.iter() {
                             // IFC 片段（空 styles）：frag.y 基于 16px 默认值，
-                            // font_size 作为基线偏移（错误但一致的默认行为）
+                            // 使用存储的 font_size（来自 layout IFC）计算基线偏移。
+                            // 如果无存储值，回退到 16px 默认值（保持原有行为）。
+                            let stored_fs = box_node.text_node_font_sizes.get(&fragment.node_id).copied();
+                            let baseline_fs = stored_fs.unwrap_or(fragment.font_size);
                             render_fragment!(
                                 fragment.x,
                                 fragment.y,
-                                fragment.font_size,
-                                fragment.font_size,
+                                baseline_fs,
+                                stored_fs.unwrap_or(fragment.font_size),
                                 fragment.text,
                                 fragment.node_id
                             );
