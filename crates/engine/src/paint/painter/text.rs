@@ -7,8 +7,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, ListStyleTypeValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::{
-    FloatExclusion, InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode,
-    estimate_char_width,
+    FloatExclusion, InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode, estimate_char_width,
 };
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
@@ -785,7 +784,10 @@ impl super::Painter {
             }
 
             let stored_fragments: Vec<PaintFragment> = if use_stored {
-                box_node.inline_layout.as_ref().unwrap()
+                box_node
+                    .inline_layout
+                    .as_ref()
+                    .unwrap()
                     .iter()
                     .flat_map(|line| {
                         line.fragments.iter().filter_map(|f| {
@@ -937,7 +939,11 @@ impl super::Painter {
                                     false,
                                 )
                             };
-                            let mut char_pos = if char_advance_is_y { frag_base_y } else { frag_base_x };
+                            let mut char_pos = if char_advance_is_y {
+                                frag_base_y
+                            } else {
+                                frag_base_x
+                            };
 
                             let transformed = apply_text_transform(&$frag_text, &style.text_transform);
 
@@ -1008,7 +1014,14 @@ impl super::Painter {
                         for fragment in fragments.iter() {
                             // IFC 片段（空 styles）：frag.y 基于 16px 默认值，
                             // font_size 作为基线偏移（错误但一致的默认行为）
-                            render_fragment!(fragment.x, fragment.y, fragment.font_size, fragment.font_size, fragment.text, fragment.node_id);
+                            render_fragment!(
+                                fragment.x,
+                                fragment.y,
+                                fragment.font_size,
+                                fragment.font_size,
+                                fragment.text,
+                                fragment.node_id
+                            );
                         }
                     }
                 } // end non-multicol else block
