@@ -2,7 +2,48 @@
 
 **最后更新**: 2026-06-11
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 77.3% (379/490)
+**上游真实 reftest 通过率**: 78.2% (383/490)
+
+### R41 进展
+
+**通过率**：383/490 (78.2%)，+4 tests（自 R40）。完成 multicol column breaking paint 层渲染；调查 paint IFC font_size_overrides 方案（因行断回归而回退）。
+
+#### R41 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| multicol column breaking paint 层渲染 | layout 层将所有片段（含主片段）存储到 `column_span_offsets`；paint 层对 multicol 容器中有 column breaking 的子元素跳过正常渲染，改为对每个列片段独立渲染并裁剪到列区域。+4 tests（multicol-breaking-000/001/002/003） |
+| IFC font_size_overrides 基础设施 | InlineFormattingContext 新增 `font_size_overrides` 字段和 builder 方法，paint IFC 可按父元素 ID 覆盖字体大小。暂未启用：实测导致 anonymous-inline-inherit-001 回归（0%→1.86%），因正确 font_size 改变行断行为与 layout IFC 定位冲突 |
+
+#### R41 调查与尝试
+
+1. **paint IFC font_size_overrides（回退）**：尝试将 layout IFC 存储的 `text_node_font_sizes` 转换为按父元素 ID 的覆盖映射传入 paint IFC 的 `collect_inline_items`，使字符宽度计算使用正确 font_size 而非 16px 默认值。回归原因：正确 font_size 导致不同的行断行为（字符宽度变化→换行点变化），与 layout IFC 的定位冲突。这再次确认 R37/R38 结论——paint IFC 无法安全使用与 layout IFC 不同的上下文参数。
+
+#### 按目录通过率变化
+
+| 目录 | R40 | R41 | 变化 |
+|------|-----|-----|------|
+| css-multicol/ | 56.1% (32/57) | 63.2% (36/57) | +4 tests |
+
+#### R41 失败根因分布
+
+107 个失败测试的分布：
+- CSS2/floats-clear precision: ~15（多数为 swatch 图像缩放精度）
+- writing-mode vertical: ~13
+- multicol remaining: ~21（breaking 004/005/006 + clip/count/fill）
+- flexbox baseline: ~9
+- CSS2/linebox inline box: ~8
+- table various: ~10
+- CSS2/border+background: ~7
+- 其他: ~24
+
+#### 后续重点（R42+）
+
+1. **multicol breaking 004/005/006 修复**（影响 3 测试，diff 5.6-16.6%）：当前 breaking 基础设施已工作，但这些测试的 column-fill/height 组合可能需要更精细的片段分配。
+2. **multicol clip/collapsing 精度**（影响 5 测试，diff 2-4%）：near-miss 测试可能通过小精度修复通过。
+3. **CSS2 floats-clear near-miss**（影响 5 测试，diff 1.2-2.4%）：多为 swatch 图像缩放精度问题，少数可能为 clearance 计算精度。
+4. **flexbox baseline 对齐**（影响 ~5 near-miss 测试）：需要 baseline 传递改进。
+5. **paint IFC 架构改进**（影响 50+ 测试，系统性瓶颈）：唯一可行路径是在所有后处理完成后存储完整 layout IFC 结果到 LayoutBox，paint 直接复用。
 
 ### R40 进展
 
