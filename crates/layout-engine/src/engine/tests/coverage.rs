@@ -4,7 +4,7 @@
 //! 包括基本布局计算、定位元素、溢出处理和 z-index 提取。
 
 use super::*;
-use zero_css_parser::values::*;
+use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue, OverflowValue, PositionValue};
 use zero_dom::Document;
 use zero_style_system::ComputedStyle;
 

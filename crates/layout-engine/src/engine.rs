@@ -9,7 +9,9 @@
 
 use std::collections::HashMap;
 use taffy::prelude::*;
-use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue, OverflowValue, PositionValue};
+use zero_css_parser::values::{
+    ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, OverflowValue, PositionValue,
+};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, ZIndexValue};
 
@@ -590,6 +592,47 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
         })
         .collect();
 
+    // 为 inline-flex/inline-grid 元素计算基线覆盖
+    // CSS Flexbox §8.5: 容器基线从第一个 flex line 中参与 baseline 对齐的项合成。
+    // 由于无法直接访问 taffy 的 first_baselines，从第一行的子元素布局位置近似。
+    // 仅对水平方向 flex 容器应用（Row/RowReverse），因为垂直方向的基线合成逻辑不同。
+    // 取第一行（共享最小 y 值的子元素）中最大的 (y + content_height) 作为基线。
+    let baseline_overrides: HashMap<NodeId, f32> = ib_indices
+        .iter()
+        .filter_map(|&idx| {
+            let child = &root.children[idx];
+            let node_id = child.node_id?;
+            let style = styles.get(&node_id)?;
+            // 仅对 inline-flex/inline-grid 且水平方向的容器应用
+            let is_horizontal_flex = matches!(style.display, DisplayValue::InlineFlex | DisplayValue::InlineGrid)
+                && matches!(
+                    style.flex_direction,
+                    FlexDirectionValue::Row | FlexDirectionValue::RowReverse
+                );
+            if !is_horizontal_flex {
+                return None;
+            }
+            if child.children.is_empty() {
+                return None;
+            }
+            // 找到第一行：y 值最小的一组子元素
+            let min_y = child.children.iter().map(|c| c.y).fold(f32::MAX, f32::min);
+            // 第一行中所有子元素的最大底边作为容器基线
+            // （近似：假设第一行中最大底边 ≈ baseline-aligned 项的基线）
+            let baseline = child
+                .children
+                .iter()
+                .filter(|c| (c.y - min_y).abs() < 1.0)
+                .map(|c| c.y + c.content_height)
+                .fold(0.0f32, f32::max);
+            if baseline > 0.0 && baseline < child.content_height {
+                Some((node_id, baseline))
+            } else {
+                None
+            }
+        })
+        .collect();
+
     // 运行 InlineFormattingContext 获取行内布局坐标
     let container_width = root.content_width;
     let is_vertical = matches!(
@@ -602,7 +645,8 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl)
         .with_text_align(container_text_align)
-        .with_inline_block_sizes(ib_sizes);
+        .with_inline_block_sizes(ib_sizes)
+        .with_baseline_overrides(baseline_overrides);
     inline_ctx.layout(doc, container_node_id, styles);
 
     // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移

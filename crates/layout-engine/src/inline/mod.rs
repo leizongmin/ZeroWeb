@@ -444,6 +444,12 @@ pub struct InlineFormattingContext {
     /// 导致所有字符使用 0 的默认间距。此覆盖确保 paint IFC 使用正确的
     /// letter-spacing 值进行字符宽度和行断计算。
     pub letter_spacing_overrides: HashMap<NodeId, f32>,
+    /// 行内级盒的基线覆盖（key = 元素 NodeId）。
+    ///
+    /// 用于 inline-flex/inline-grid 等元素，其基线应从第一个子元素的布局位置
+    /// 合成，而非使用简单的 height/2 回退。由 adjust_inline_block_positions
+    /// 从 LayoutBox 子元素位置计算后传入。
+    pub baseline_overrides: HashMap<NodeId, f32>,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -471,6 +477,7 @@ impl InlineFormattingContext {
             font_size_overrides: HashMap::new(),
             is_ahem_overrides: HashMap::new(),
             letter_spacing_overrides: HashMap::new(),
+            baseline_overrides: HashMap::new(),
         }
     }
 
@@ -584,6 +591,15 @@ impl InlineFormattingContext {
     /// 制表符 `\t` 在 pre/pre-wrap 模式下会展开为此宽度的空格。
     pub fn with_tab_size(mut self, tab_size: f32) -> Self {
         self.tab_size = tab_size;
+        self
+    }
+
+    /// 设置行内级盒的基线覆盖。
+    ///
+    /// 用于 inline-flex/inline-grid 等元素，其基线从第一个子元素的布局位置合成，
+    /// 而非使用简单的 height/2 回退。
+    pub fn with_baseline_overrides(mut self, overrides: HashMap<NodeId, f32>) -> Self {
+        self.baseline_overrides = overrides;
         self
     }
 
@@ -797,12 +813,18 @@ impl InlineFormattingContext {
                             }
                             if w > 0.0 && h > 0.0 {
                                 let vertical_align = s.vertical_align.clone();
-                                // 计算基线：inline-block 的基线在底部边缘，
-                                // inline-flex/inline-grid 的基线近似为 height/2
-                                // （理想情况应从 taffy first_baselines 提取）
-                                let baseline = match s.display {
-                                    DisplayValue::InlineFlex | DisplayValue::InlineGrid => h * 0.5,
-                                    _ => h, // inline-block, inline-table: 基线在底部
+                                // 计算基线：
+                                // - inline-block：基线在底部边缘
+                                // - inline-flex/inline-grid：基线从第一个子元素合成
+                                //   优先使用 baseline_overrides（由 adjust_inline_block_positions
+                                //   从 LayoutBox 子元素位置计算），回退到 height/2
+                                let baseline = if let Some(&b) = self.baseline_overrides.get(&child_id) {
+                                    b
+                                } else {
+                                    match s.display {
+                                        DisplayValue::InlineFlex | DisplayValue::InlineGrid => h * 0.5,
+                                        _ => h, // inline-block, inline-table: 基线在底部
+                                    }
                                 };
                                 items.push(InlineItem::InlineBlock(InlineBlockBox {
                                     width: w,
