@@ -2,7 +2,49 @@
 
 **最后更新**: 2026-06-11
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 78.2% (383/490)
+**上游真实 reftest 通过率**: 78.4% (384/490)
+
+### R48 进展
+
+**通过率**：384/490 (78.4%)，+1 test（自 R47）。
+
+#### R48 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| converter 层表格内部元素盒模型抑制 | CSS 2.1 §17.5.3/17.5.4：TableRowGroup/TableHeaderGroup/TableFooterGroup/TableRow 的 border/padding/margin 在 computed_style_to_taffy 中设为零，防止 taffy 将这些属性计入布局计算 |
+| zero_box_model 简化 | 移除 width/height 缩减逻辑（taffy 不再计入 border+padding 贡献，无需缩减） |
+| row-margin-border-padding 通过 | 31.30%→0.00%，行级 border/padding/margin 视觉抑制完全生效 |
+| row-group-margin-border-padding 改善 | 29.96%→1.58%，行组 border/padding/margin 视觉抑制大幅改善，仅 collapsed border 模式下微小差异 |
+
+#### R48 调查与尝试
+
+1. **表格行组 border-collapse 边框冲突解决（回退）**：尝试在 `resolve_collapsed_borders` 中添加行组（tbody/thead/tfoot）边框参与冲突解决。两次实现均导致回归（384→380 和 384→381）。根因：行组边框在四边全面应用后，覆盖了已有的 Table→Cell 和 Row→Cell 冲突解决结果；覆盖应用顺序导致低优先级来源覆盖高优先级。需要重构 resolve_collapsed_borders 为完整的多来源解析链
+2. **near-miss 失败测试系统性分析**：分析 16 个 <3% diff 的失败测试，识别 5 类根因——border-conflict 精度、baseline 计算、multicol 裁剪、flex gap 分布、visibility:collapse 缺失
+3. **border-conflict-resolution 分析**：发现 `BorderSource::RowGroup` 枚举已定义但从未使用——`resolve_collapsed_borders` 从不考虑行组边框。这是 row-group-margin-border-padding 剩余 1.58% 的根因
+
+#### 按目录通过率
+
+| 目录 | 通过/总数 | 通过率 |
+|------|-----------|--------|
+| css-text-decor/ | 39/39 | 100.0% ✅ |
+| css-fonts/ | 60/60 | 100.0% ✅ |
+| css-grid/ | 17/20 | 85.0% |
+| css-tables/ | 46/55 | 83.6% |
+| css-writing-modes/ | 46/59 | 78.0% |
+| CSS2/ | 93/129 | 72.1% |
+| css-position/ | 12/16 | 75.0% |
+| css-flexbox/ | 35/55 | 63.6% |
+| css-multicol/ | 36/57 | 63.2% |
+
+#### 后续重点（R49+）
+
+1. **taffy-IFC 统一方案**（唯一系统性解决方案，影响 50+ tests）：需要重构 taffy 集成层
+   - 基础设施已准备：inline_layout_width、is_ahem 字段已添加
+   - 唯一可行路径：修改 taffy 的 measure callback，在布局计算时直接提供 IFC 高度
+2. **resolve_collapsed_borders 行组边框集成**（影响 2+ tests）：需要重构为多来源解析链，避免覆盖顺序问题
+3. **writing-mode 垂直布局**（影响 13 tests）：需要完整轴交换 + 垂直字形渲染
+4. **CSS2 inline-box 模型**（影响 ~8 tests）：inline 元素背景需要从 IFC 坐标绘制
 
 ### R47 进展
 
