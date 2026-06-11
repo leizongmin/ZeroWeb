@@ -4,10 +4,49 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 79.4% (389/490)
 
-### R57 进展
+### R58 进展
 
-**通过率**：389/490 (79.4%)，与 R56 持平。本轮实验了垂直书写模式 float/clearance 轴交换方案，因回归而回退。
+**通过率**：387-389/490 (79.0-79.4%)，基线因 2-3 个 flaky 测试在阈值边缘波动。
 
+#### R58 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| LayoutBox column_gap 存储 | 新增 `column_gap: f32` 字段，layout 层从 multicol 参数存储，paint 层使用 |
+| block-child multicol 裁剪路径改进 | 优先使用存储的 `column_gap` 而非从 `column_span_offsets` 推算（后者在无 breaking 子元素时回退为 0） |
+| inline multicol per-column 裁剪 | paint-time inline multicol 路径新增按列裁剪，每列独立 clip 到 `col_width + gap/2` |
+
+#### R58 调查与分析
+
+1. **clearance epsilon 实验（回退）**：将零 clearance 判断的 epsilon 从 0.001 放宽到 0.5，导致 CSS2 回归 1 test（388→387）。根因：过大的 epsilon 将实际正 clearance 误判为零 clearance。已回退。
+
+2. **系统性瓶颈确认**（与 R53-R57 一致）：
+   - Paint IFC 使用空 styles 导致 50+ 测试文本定位偏差
+   - taffy Layout 不保留 first_baselines，无法提取真实基线
+   - border-collapse 外边缘精度被 taffy 单元格定位阻塞
+   - writing-mode 垂直 float/clearance 需完整轴交换
+
+3. **多列改进路径评估**：
+   - column_gap 存储：安全的基础设施改进，paint 路径裁剪更准确
+   - inline multicol per-column 裁剪：新增但零净通过率变化（测试未改善也未回归）
+   - 间隙清除 epsilon：放宽不可行，需要减少浮点误差源而非放宽容差
+
+4. **缺失支持图片调查**：发现 `support/` 目录下有 10+ 个图片未在 `KNOWN_IMAGES` 列表中，但这些图片由 `build_image_cache` 从磁盘加载，不依赖硬编码列表。`get_support_image_color` 函数是死代码。
+
+#### R58 关键结论
+
+**通过率 79.4% 后的系统性瓶颈与 R53-R57 一致**：
+- Paint IFC 使用空 styles 导致 50+ 测试文本定位偏差
+- taffy Layout 不保留 first_baselines，无法提取真实基线
+- border-collapse 外边缘精度被 taffy 单元格定位阻塞
+- writing-mode 垂直 float/clearance 需完整轴交换
+
+#### 后续重点（R59+）
+
+1. **精细垂直模式 float 定位**（不交换 float 尺寸）：仅修改 float 元素的 inline 轴定位，不改变 float 的 block 轴 extent
+2. **taffy first_baselines 替代提取**：通过 measure callback 缓存 IFC 结果中提取 baseline 信息
+3. **multicol column breaking 完善**（影响 ~16 测试）：更精细的片段分配算法
+4. **CSS2 逐步改善**（影响 37 个失败）：通过 swatch 图片精度、IFC 行断修正来减少 near-miss
 #### R57 调查与尝试
 
 1. **垂直书写模式轴交换方案（回退）**：在 `adjust_float_positions` 中实现轴交换策略——对垂直书写模式容器临时交换子元素的 (x↔y, width↔height, margin_top↔margin_left, margin_bottom↔margin_right) 和容器属性，运行同一套水平模式算法后再交换回视觉坐标。方案理论上正确（float:left 在垂直模式下正确映射到视觉顶部），但实测回归 1 个测试（clearance-calculations-vrl-008 从 2.08% 通过退化为 14.58% 失败）。
