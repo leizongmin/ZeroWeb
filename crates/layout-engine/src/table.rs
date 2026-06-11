@@ -228,7 +228,7 @@ fn layout_table(table_box: &mut LayoutBox, doc: &zero_dom::Document, styles: &Ha
     }
 
     // 2. 计算列宽
-    let col_widths = compute_column_widths(table_box, &grid, styles);
+    let col_widths = compute_column_widths(table_box, &grid, styles, doc);
 
     // 3. 定位单元格
     position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
@@ -246,10 +246,11 @@ fn layout_table(table_box: &mut LayoutBox, doc: &zero_dom::Document, styles: &Ha
 /// 抑制行组（tbody/thead/tfoot）和行（tr）的 border/padding/margin。
 ///
 /// CSS 2.1 Section 17.5.3 和 17.5.4：
-/// 在 separated border model 中，table-row-group 和 table-row 的
-/// border、padding 和 margin 无视觉效果。
-/// 在 collapsed border model 中，只有 border 有意义（用于冲突解决），
-/// padding 和 margin 仍然无效。
+/// - 在 separated border model 中，table-row-group 和 table-row 的
+///   border、padding 和 margin 无视觉效果。
+/// - 在 collapsed border model 中，border 参与冲突解决（已由
+///   resolve_collapsed_borders 从 ComputedStyle 读取），但渲染由
+///   单元格边框绘制覆盖，因此 LayoutBox 上的 border 仍归零。
 fn suppress_row_group_row_box_model(table_box: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     for child in &mut table_box.children {
         let display = get_display(child, styles);
@@ -1113,7 +1114,12 @@ fn build_row(child_idx: usize, row_box: &LayoutBox, doc: &zero_dom::Document) ->
 /// 1. 扫描所有单元格，记录每列的最大内容宽度
 /// 2. 如果所有列宽之和小于容器宽度，按比例分配剩余空间
 /// 3. 如果所有列宽之和大于容器宽度，保持内容宽度不变
-fn compute_column_widths(table_box: &LayoutBox, grid: &TableGrid, styles: &HashMap<NodeId, ComputedStyle>) -> Vec<f32> {
+fn compute_column_widths(
+    table_box: &LayoutBox,
+    grid: &TableGrid,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) -> Vec<f32> {
     let available_width = table_box.content_width;
     let col_count = grid.col_count;
 
@@ -1154,7 +1160,7 @@ fn compute_column_widths(table_box: &LayoutBox, grid: &TableGrid, styles: &HashM
                 })
                 .unwrap_or(true);
             let cell_width = if css_width_auto || cell_box.width < 2.0 {
-                compute_cell_intrinsic_width(cell_box, styles).max(cell_box.width)
+                compute_cell_intrinsic_width(cell_box, styles, doc).max(cell_box.width)
             } else {
                 cell_box.width
             };
@@ -1255,9 +1261,16 @@ fn get_cell_box<'a>(row_box: &'a LayoutBox, cell: &TableCell) -> Option<&'a Layo
 ///
 /// 策略：
 /// 1. 检查子元素是否有显式 CSS width → 使用这些宽度之和
-/// 2. 否则用字体大小估算单字符宽度作为最小宽度
-fn compute_cell_intrinsic_width(cell_box: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+/// 2. 如果 cell_box.width 接近 0（taffy 将子元素也约束为 0），
+///    从 DOM 文本内容和字体大小估算 min-content 宽度
+/// 3. 否则用字体大小估算单字符宽度作为最小宽度
+fn compute_cell_intrinsic_width(
+    cell_box: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) -> f32 {
     let padding = cell_box.padding_left + cell_box.padding_right;
+    let is_zero_width = cell_box.width < 2.0;
 
     // 尝试从子元素计算内容宽度
     let mut content_width = 0.0f32;
@@ -1278,35 +1291,60 @@ fn compute_cell_intrinsic_width(cell_box: &LayoutBox, styles: &HashMap<NodeId, C
             // 有显式 width 的子元素：使用其 outer width
             content_width = content_width.max(child.width + child.margin_left + child.margin_right);
             has_explicit_child = true;
-        } else if child.width > 0.0 && child.width < cell_box.width * 0.95 {
-            // 无显式 width 但子元素宽度远小于 cell 宽度：
-            // taffy 可能根据内容正确计算了宽度
+        } else if child.width > 0.0 && (!is_zero_width && child.width < cell_box.width * 0.95) {
+            // 非 0 宽度单元格：子元素宽度远小于 cell 宽度时使用
             content_width = content_width.max(child.width + child.margin_left + child.margin_right);
             has_explicit_child = true;
         }
     }
 
-    if has_explicit_child {
+    if has_explicit_child && content_width > 0.0 {
         return content_width + padding;
     }
 
-    // 回退：使用字体大小估算单字符宽度作为 min-content 宽度
-    let font_size = cell_box
+    // 当 cell_box.width 接近 0 时，taffy 将所有子元素也约束为 0，
+    // 无法从 layout 结果获取真实内容宽度。
+    // 从 DOM 文本内容估算 min-content 宽度。
+    let (font_size, is_ahem) = cell_box
         .node_id
         .and_then(|id| styles.get(&id))
         .map(|s| {
             use zero_css_parser::values::LengthValue;
-            match &s.font_size {
+            let fs = match &s.font_size {
                 LengthValue::Px(v) => *v as f32,
                 LengthValue::Em(v) => *v as f32,
                 LengthValue::Rem(v) => *v as f32,
                 _ => 16.0,
-            }
+            };
+            let ahem = s.font_family.contains(&"Ahem".to_string());
+            (fs, ahem)
         })
-        .unwrap_or(16.0);
+        .unwrap_or((16.0, false));
 
-    let char_width = font_size * 0.6;
+    let char_width = if is_ahem { font_size } else { font_size * 0.6 };
+
+    // 收集单元格内的文本内容长度
+    let text_len = collect_text_length(cell_box, doc);
+    if text_len > 0 {
+        return char_width * text_len as f32 + padding;
+    }
+
     char_width + padding
+}
+
+/// 递归收集 LayoutBox 子树中的文本字符数。
+/// 使用 DOM text_content() 方法获取元素的完整文本内容。
+fn collect_text_length(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
+    let mut len = 0;
+    if let Some(node_id) = box_node.node_id {
+        if let Some(text) = doc.text_content(node_id) {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                len += trimmed.len();
+            }
+        }
+    }
+    len
 }
 
 /// 根据 grid 结构和列宽定位每个单元格。
