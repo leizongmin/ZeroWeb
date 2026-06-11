@@ -1609,6 +1609,16 @@ fn position_cells(
             cell_box.x = cell_x;
             cell_box.y = 0.0;
             cell_box.width = cell_width;
+            // 同步更新 content_width：paint 系统使用 content_width 来确定
+            // 文本渲染容器宽度、背景裁剪等。如果不更新，width:0 单元格的
+            // content_width 仍为 taffy 计算的 0，导致文本无法正确渲染。
+            let cell_content_w = (cell_width
+                - cell_box.border_left
+                - cell_box.border_right
+                - cell_box.padding_left
+                - cell_box.padding_right)
+                .max(0.0);
+            cell_box.content_width = cell_content_w;
 
             // 单元格高度：CSS 2.1 规范中，table cell 的 height 属性被视为最小高度。
             // 单元格必须增长以包含其内容，不能裁剪到明确高度。
@@ -1735,6 +1745,9 @@ fn apply_table_size_constraints(
     }
 
     // 应用 min-height / max-height（始终 border-box，与 min-height-table 测试一致）
+    // CSS Tables §table-wrapper-box：min/max-height 应用到 table wrapper box（border-box 语义）。
+    // 注意：即使 box-sizing: content-box，min/max-height 对表格仍按 border-box 解释，
+    // 因为 min-height-table WPT 测试验证了这一行为。
     let mut final_height = intrinsic_height;
     if let LengthValue::Px(v) = &style.min_height {
         let min_content = (*v as f32 - padding_border_h).max(0.0);
