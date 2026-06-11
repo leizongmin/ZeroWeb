@@ -4,9 +4,42 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 78.2% (383/490)
 
-### R43 进展
+### R44 进展
 
-**通过率**：383/490 (78.2%)，与 R42 持平。提交 solid-color 图像检测优化（未改变通过率）；验证 compute_final_inline_layouts + float exclusion 仍导致回归（-6 tests）；调查缺失 support 图片影响。
+**通过率**：383/490 (78.2%)，与 R43 持平。本轮尝试修复 paint IFC is_ahem 字形推进问题，但因回归（-2 tests）而回退；深入调查 border 渲染、CSS 解析器和 font-family 处理路径，确认均无简单可修复的 bug。
+
+#### R44 调查与尝试
+
+1. **paint IFC is_ahem 字形推进修复（回退）**：在 `render_fragment` 宏和 multicol 渲染路径中添加 `is_ahem` 检测，使 Ahem 字体的字形推进使用正确的 1.0×font_size 而非默认的 0.55×font_size。结果 2 个回归（383→381）：`border-padding-bleed-001`（5.75%→8.00%）和 `position-absolute-in-inline-006`（passing→1.04%）。同时新增 `block-formatting-contexts-004` 失败（1.03%）。**根因确认**：glyph advance 修改导致字形位置与 IFC 片段位置不一致——片段位置由 paint IFC（使用错误字符宽度）计算，但字形推进使用正确宽度，两者不匹配。这是 R37-R43 反复确认的根本矛盾。
+
+2. **border 渲染审计**：全面审计 border.rs、border shorthand parser、`border: inherit` 处理和 `in` 单位支持。**结论**：所有路径均正确——border 位置几何、`in` 单位转换、shorthand 解析和 inherit 传播均按 CSS 规范工作。发现的唯一问题：thin `double` border 溢出（2px border 渲染为 3px），但这是已知质量限制，不影响上游 reftest。
+
+3. **font-family 处理审计**：验证 `FontLoader.build_font_resolver()`、Ahem 字体加载和 OpenType name 表解析。**结论**：Ahem 字体正确加载和注册，font-family 解析正确。
+
+4. **table row group position:relative 审计**：检查 `update_row_group_positions` 和 `resolve_length_inset` 函数。**结论**：position:relative 的 `top` 偏移正确应用到行组位置。`position-relative-table-tfoot-top` 的 1.04% diff 不是 position:relative 处理 bug，可能是亚像素精度或 border-collapse 细节。
+
+#### R44 关键结论
+
+**paint IFC 字形推进修改路线已彻底封死**：所有变体（render_fs、传递 styles、存储结果、font_size_overrides、is_ahem glyph advance）均导致回归。根本原因是 paint IFC 的片段位置和字形推进必须一致——修改一方而不修改另一方会导致不一致。唯一出路是统一 IFC 运行上下文，这需要：
+- 让 taffy 块级高度基于真实 IFC 高度（非空样式 IFC）
+- 在所有后处理完成后存储 IFC 结果
+- paint 直接复用存储结果
+
+这是 R43 确认的「taffy-IFC 统一方案」，需要修改 taffy 集成层。
+
+#### 后续重点（R45+）
+
+1. **taffy-IFC 统一方案**（系统性解决方案，影响 50+ tests）：
+   - 修改 `remeasure_text_with_float_exclusions` 和 `remeasure_inline_only_containers`，使 IFC 片段结果存储到 LayoutBox
+   - 用 IFC 计算的高度更新 taffy 块级高度（确保后续元素位置正确）
+   - 在 step 6/6.5 就存储结果，确保 table/multicol 后处理时 LayoutBox 高度已反映真实 IFC 高度
+   - 这是唯一能同时解决片段位置和字形推进一致性的方案
+
+2. **writing-mode 垂直布局**（影响 13 tests）：需要完整轴交换 + 垂直字形渲染
+
+3. **从上游 WPT 仓库下载缺失 support 图片**：需要网络访问获取真实 swatch PNG
+
+4. **CSS2 inline-box 模型**（影响 ~8 tests）：inline 元素背景需要从 IFC 坐标绘制而非 taffy block 坐标
 
 #### R43 代码贡献
 
