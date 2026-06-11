@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use taffy::prelude::*;
 use zero_css_parser::values::{
-    ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, OverflowValue, PositionValue,
+    AlignmentValue, ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, OverflowValue, PositionValue,
 };
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, ZIndexValue};
@@ -596,7 +596,13 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
     // CSS Flexbox §8.5: 容器基线从第一个 flex line 中参与 baseline 对齐的项合成。
     // 由于无法直接访问 taffy 的 first_baselines，从第一行的子元素布局位置近似。
     // 仅对水平方向 flex 容器应用（Row/RowReverse），因为垂直方向的基线合成逻辑不同。
-    // 取第一行（共享最小 y 值的子元素）中最大的 (y + content_height) 作为基线。
+    //
+    // 算法：
+    // 1. 找到第一行（共享最小 y 值的子元素）
+    // 2. 对参与 baseline 对齐的子元素（align-self: baseline 或容器 align-items: baseline），
+    //    使用 font-size 近似文本基线位置（item.y + font_size）
+    // 3. 如果没有 baseline 对齐的子元素，使用第一个子元素的底边作为回退
+    // 4. 容器基线 = max(第一行中所有 baseline 贡献)
     let baseline_overrides: HashMap<NodeId, f32> = ib_indices
         .iter()
         .filter_map(|&idx| {
@@ -617,14 +623,59 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
             }
             // 找到第一行：y 值最小的一组子元素
             let min_y = child.children.iter().map(|c| c.y).fold(f32::MAX, f32::min);
-            // 第一行中所有子元素的最大底边作为容器基线
-            // （近似：假设第一行中最大底边 ≈ baseline-aligned 项的基线）
-            let baseline = child
-                .children
-                .iter()
-                .filter(|c| (c.y - min_y).abs() < 1.0)
-                .map(|c| c.y + c.content_height)
-                .fold(0.0f32, f32::max);
+            let first_row: Vec<_> = child.children.iter().filter(|c| (c.y - min_y).abs() < 1.0).collect();
+
+            // 检查容器是否全局设置 align-items: baseline
+            let container_align_baseline = matches!(style.align_items, AlignmentValue::Baseline);
+
+            // 收集第一行中参与 baseline 对齐的子元素的基线贡献
+            let mut baseline_contributions: Vec<f32> = Vec::new();
+            let mut first_item_bottom = 0.0f32;
+
+            for (i, c) in first_row.iter().enumerate() {
+                // 从子元素的样式获取 font-size 和 align-self
+                let c_font_size: f32 = c
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .map(|s| match &s.font_size {
+                        LengthValue::Px(px) => *px as f32,
+                        LengthValue::Em(em) => (em * 16.0) as f32,
+                        LengthValue::Rem(rem) => (rem * 16.0) as f32,
+                        LengthValue::Percentage(p) => (p * 16.0 / 100.0) as f32,
+                        _ => 16.0,
+                    })
+                    .unwrap_or(c.content_height);
+
+                // 子元素参与 baseline 对齐的条件：
+                // align-self: baseline，或容器 align-items: baseline 且子元素未覆盖
+                let is_baseline_aligned = c
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .map(|s| {
+                        matches!(s.align_self, AlignmentValue::Baseline)
+                            || (container_align_baseline && matches!(s.align_self, AlignmentValue::Stretch))
+                    })
+                    .unwrap_or(false);
+
+                // 记录第一个子元素的底边作为回退
+                if i == 0 {
+                    first_item_bottom = c.y + c.content_height;
+                }
+
+                if is_baseline_aligned {
+                    // 使用 font-size 近似文本基线位置
+                    // 基线 = item.y + font_size（ascent 近似）
+                    baseline_contributions.push(c.y + c_font_size);
+                }
+            }
+
+            // 如果没有 baseline 对齐的子元素，使用第一个子元素的底边作为回退
+            let baseline = if !baseline_contributions.is_empty() {
+                baseline_contributions.into_iter().fold(0.0f32, f32::max)
+            } else {
+                first_item_bottom
+            };
+
             if baseline > 0.0 && baseline < child.content_height {
                 Some((node_id, baseline))
             } else {
