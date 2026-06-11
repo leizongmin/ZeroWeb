@@ -780,8 +780,12 @@ impl super::Painter {
             let is_vertical_rtl = matches!(style.writing_mode, zero_style_system::WritingModeValue::VerticalRl);
 
             // 尝试使用布局引擎存储的行内布局结果，避免重新运行 IFC。
-            // 仅在非多列模式下使用存储结果（多列需要列宽 IFC，与完整宽度 IFC 不同）。
-            let use_stored = multicol_info.is_none() && box_node.inline_layout.is_some();
+            // 条件：(1) 非多列模式 (2) 有存储结果 (3) 容器宽度匹配
+            // 宽度验证确保 table/multicol 后处理改变宽度时回退到 paint IFC。
+            let width_matches = (box_node.inline_layout_width - ifc_width).abs() < 1.0;
+            let use_stored = multicol_info.is_none()
+                && box_node.inline_layout.is_some()
+                && width_matches;
 
             // 从存储结果创建的扁平化片段列表（用于非多列渲染路径）
             struct PaintFragment {
@@ -789,6 +793,7 @@ impl super::Painter {
                 y: f32,
                 height: f32,
                 font_size: f32,
+                is_ahem: bool,
                 text: String,
                 node_id: NodeId,
             }
@@ -806,6 +811,7 @@ impl super::Painter {
                                 y: f.y,
                                 height: f.height,
                                 font_size: f.font_size,
+                                is_ahem: f.is_ahem,
                                 text: f.text.clone(),
                                 node_id: nid,
                             })
@@ -949,6 +955,9 @@ impl super::Painter {
                     // 宏化渲染逻辑，避免重复代码
                     macro_rules! render_fragment {
                         ($frag_x:expr, $frag_y:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr) => {{
+                            render_fragment!($frag_x, $frag_y, $baseline_offset, $frag_fs, $frag_text, $frag_nid, false)
+                        }};
+                        ($frag_x:expr, $frag_y:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr) => {{
                             self.painted_inline_nodes.insert($frag_nid);
 
                             let (frag_base_x, frag_base_y, char_advance_is_y) = if is_vertical {
@@ -1001,7 +1010,7 @@ impl super::Painter {
                                     rotation,
                                 });
 
-                                let advance = estimate_char_width(ch, $frag_fs, false)
+                                let advance = estimate_char_width(ch, $frag_fs, $is_ahem)
                                     + letter_spacing
                                     + if ch == ' ' { word_spacing } else { 0.0 };
                                 char_pos += advance;
@@ -1029,7 +1038,7 @@ impl super::Painter {
                         for frag in &stored_fragments {
                             // 存储结果：frag.y 是片段框顶部（baseline_y - height），
                             // 基线偏移 = height（line-height 盒高度），font_size 用于字形大小
-                            render_fragment!(frag.x, frag.y, frag.height, frag.font_size, frag.text, frag.node_id);
+                            render_fragment!(frag.x, frag.y, frag.height, frag.font_size, frag.text, frag.node_id, frag.is_ahem);
                         }
                     } else {
                         for fragment in fragments.iter() {

@@ -171,10 +171,10 @@ impl LayoutEngine {
 
         // 12. 后处理：为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统直接复用存储的 IFC 结果，避免重新运行 IFC 导致字体度量不一致。
-        // R45 再次验证：启用后仍有 6 个回归（383→377），与 R38/R42 结论一致。
-        // 回归根因：compute_final_inline_layouts 为所有容器运行 IFC，但 table 内部元素
-        // 和 multicol 子元素的 IFC 结果与 paint 时实际容器尺寸/位置不一致。
-        // 需要更精细的选择性存储（仅对非 table/multicol 子容器存储），或完整架构重写。
+        // R47 验证：即使添加 container_width 验证 + is_ahem 支持，仍回归 5 个测试（383→378）。
+        // 根因：存储 IFC 使用真实 styles 导致与 paint IFC（空 styles）不同的行断行为，
+        // 即使宽度匹配，文本位置也不同。需要从 taffy measure callback 层面统一，
+        // 而非在 post-processing 层面存储。
         // compute_final_inline_layouts(&mut root_box, doc, styles);
 
         // 缓存 taffy 状态用于后续增量计算
@@ -501,6 +501,7 @@ impl LayoutEngine {
             css_order: computed.as_ref().map(|s| s.order).unwrap_or(0),
             column_span_offsets: Vec::new(),
             inline_layout: None,
+            inline_layout_width: 0.0,
             text_node_font_sizes: HashMap::new(),
         }
     }
@@ -624,8 +625,9 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
 /// 避免在 paint 阶段重新运行 IFC（paint IFC 使用空 styles 导致字体度量不一致）。
 /// TODO: 当前被注释掉 — 基线计算修复后启用
 #[allow(dead_code)]
-fn store_inline_layout_results(inline_ctx: &crate::inline::InlineFormattingContext, box_node: &mut LayoutBox) {
+fn store_inline_layout_results(inline_ctx: &crate::inline::InlineFormattingContext, box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     if !inline_ctx.lines.is_empty() {
+        let container_width = box_node.content_width;
         let stored: Vec<crate::types::InlineLayoutLine> = inline_ctx
             .lines
             .iter()
@@ -635,19 +637,26 @@ fn store_inline_layout_results(inline_ctx: &crate::inline::InlineFormattingConte
                 fragments: line
                     .runs
                     .iter()
-                    .map(|frag| crate::types::InlineLayoutFragment {
-                        x: frag.x,
-                        y: frag.y,
-                        width: frag.width,
-                        height: frag.height,
-                        font_size: frag.font_size,
-                        text: frag.text.clone(),
-                        node_id: Some(frag.node_id),
+                    .map(|frag| {
+                        let is_ahem = box_node.node_id.is_some_and(|id| {
+                            styles.get(&id).is_some_and(|s| s.font_family.contains(&"Ahem".to_string()))
+                        });
+                        crate::types::InlineLayoutFragment {
+                            x: frag.x,
+                            y: frag.y,
+                            width: frag.width,
+                            height: frag.height,
+                            font_size: frag.font_size,
+                            is_ahem,
+                            text: frag.text.clone(),
+                            node_id: Some(frag.node_id),
+                        }
                     })
                     .collect(),
             })
             .collect();
         box_node.inline_layout = Some(stored);
+        box_node.inline_layout_width = container_width;
     }
 }
 
@@ -965,6 +974,8 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
     inline_ctx.layout(doc, node_id, styles);
 
     // 转换 IFC 结果为 InlineLayoutLine/InlineLayoutFragment
+    let container_width = root.content_width;
+    let styles_ref = styles; // 闭包使用
     let lines: Vec<InlineLayoutLine> = inline_ctx
         .lines
         .iter()
@@ -974,14 +985,23 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
             fragments: line
                 .runs
                 .iter()
-                .map(|frag| InlineLayoutFragment {
-                    x: frag.x,
-                    y: frag.y,
-                    width: frag.width,
-                    height: frag.height,
-                    font_size: frag.font_size,
-                    text: frag.text.clone(),
-                    node_id: Some(frag.node_id),
+                .map(|frag| {
+                    // 检测 Ahem 字体
+                    let is_ahem = root.node_id.is_some_and(|id| {
+                        styles_ref
+                            .get(&id)
+                            .is_some_and(|s| s.font_family.contains(&"Ahem".to_string()))
+                    });
+                    InlineLayoutFragment {
+                        x: frag.x,
+                        y: frag.y,
+                        width: frag.width,
+                        height: frag.height,
+                        font_size: frag.font_size,
+                        is_ahem,
+                        text: frag.text.clone(),
+                        node_id: Some(frag.node_id),
+                    }
                 })
                 .collect(),
         })
@@ -989,6 +1009,7 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
 
     if !lines.is_empty() {
         root.inline_layout = Some(lines);
+        root.inline_layout_width = container_width;
     }
 }
 
