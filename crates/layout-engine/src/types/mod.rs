@@ -148,6 +148,12 @@ pub struct LayoutBox {
     /// 当设置时，paint 系统直接复用这些结果渲染文字，不再重新运行 IFC。
     /// 这消除了 paint IFC 字体度量不一致的系统性问题。
     pub inline_layout: Option<Vec<InlineLayoutLine>>,
+    /// 存储行内布局结果时的容器宽度。
+    ///
+    /// paint 使用前会验证当前 content_width 是否匹配此值。
+    /// 若不匹配（如 table/multicol 后处理改变了宽度），
+    /// paint 回退到重新运行 IFC。
+    pub inline_layout_width: f32,
     /// 文本节点的 font_size 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 后，使用这些正确的 font_size 值
@@ -229,6 +235,7 @@ impl Default for LayoutBox {
             css_order: 0,
             column_span_offsets: Vec::new(),
             inline_layout: None,
+            inline_layout_width: 0.0,
             text_node_font_sizes: HashMap::new(),
         }
     }
@@ -263,6 +270,8 @@ pub struct InlineLayoutFragment {
     pub height: f32,
     /// 字体大小（用于字形渲染大小）。
     pub font_size: f32,
+    /// 是否使用 Ahem 字体（影响字形宽度计算）。
+    pub is_ahem: bool,
     /// 文本内容。
     pub text: String,
     /// 对应 DOM 节点 ID（用于去重）。
