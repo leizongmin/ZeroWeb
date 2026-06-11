@@ -740,6 +740,45 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
             _ => {}
         }
     }
+
+    // 阶段 4：标记外边缘单元格，供 paint 阶段判断是否减半边框厚度
+    // CSS 2.1 §17.6.2：外边缘的边框没有邻居共享，应绘制完整厚度
+    for (row_idx, row) in grid.rows.iter().enumerate() {
+        for cell in &row.cells {
+            let row_box = match get_row_box_mut(table_box, row) {
+                Some(b) => b,
+                None => continue,
+            };
+            let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
+                row_box
+                    .children
+                    .get_mut(rg_idx)
+                    .and_then(|rg| rg.children.get_mut(cell.child_index))
+            } else {
+                row_box.children.get_mut(cell.child_index)
+            };
+            let Some(cell_box) = cell_box else {
+                continue;
+            };
+            let is_first_row = row_idx == 0;
+            let actual_last_row = row_idx + cell.rowspan - 1;
+            let cell_at_bottom = actual_last_row >= last_row;
+            let is_first_col = cell.col_start == 0;
+            let is_last_col = cell.col_end > last_col;
+            if is_first_row {
+                cell_box.collapsed_border_outer_edge[0] = true;
+            }
+            if is_last_col {
+                cell_box.collapsed_border_outer_edge[1] = true;
+            }
+            if cell_at_bottom {
+                cell_box.collapsed_border_outer_edge[2] = true;
+            }
+            if is_first_col {
+                cell_box.collapsed_border_outer_edge[3] = true;
+            }
+        }
+    }
 }
 
 /// 边框来源优先级（CSS 2.1 §17.6.2.1）。

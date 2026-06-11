@@ -113,6 +113,11 @@ pub struct LayoutBox {
     /// 侧边索引：0=top, 1=right, 2=bottom, 3=left。
     /// 当边框冲突解决后获胜方的样式与单元格原始样式不同时设置。
     pub collapsed_border_style_overrides: [Option<zero_style_system::BorderStyleValue>; 4],
+    /// border-collapse: collapse 时标记哪些边是表格外边缘。
+    /// 侧边索引：0=top, 1=right, 2=bottom, 3=left。
+    /// 外边缘的边框不进行厚度减半（因为没有邻居共享），
+    /// 内边缘的边框减半以避免与邻居重叠。
+    pub collapsed_border_outer_edge: [bool; 4],
     /// 元素的 writing-mode（用于 paint 阶段旋转文字和后处理轴交换）。
     pub writing_mode: WritingModeValue,
     /// 是否为匿名文本项（flex/grid 容器中的文本节点包装）。
@@ -230,6 +235,7 @@ impl Default for LayoutBox {
             is_relative: false,
             collapsed_border_color_overrides: [None; 4],
             collapsed_border_style_overrides: [const { None }; 4],
+            collapsed_border_outer_edge: [false; 4],
             writing_mode: WritingModeValue::HorizontalTb,
             is_anonymous_text_item: false,
             css_order: 0,
