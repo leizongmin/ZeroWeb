@@ -2,7 +2,60 @@
 
 **最后更新**: 2026-06-11
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 78.4% (384/490)
+**上游真实 reftest 通过率**: 78.0% (382/490)
+
+### R53 进展
+
+**通过率**：382/490 (78.0%)，与 R50/R51 持平。本轮穷尽了 taffy measure callback IFC 缓存和 outer edge border 两条改进路径，均因回归而回退。
+
+#### R53 调查与尝试
+
+1. **taffy measure callback IFC 缓存（回退）**：在 `measure_text_content` 中缓存 IFC 片段结果（含完整 CSS 属性配置：text-indent、text-align、word-break、preserve-white-space 等），通过 `apply_cached_inline_layouts` 转移到 LayoutBox。导致 5 个回归（382→377）：CSS2 -2、css-fonts -1、css-position -1、其他波动。根因与 R37-R52 一致：measure callback 的 IFC 上下文（可用宽度、调用次数）与 taffy 最终布局位置不完全对应。
+
+2. **外边缘边框不减半（回退）**：`paint_borders` 改为检查 `collapsed_border_outer_edge` 标记，外边缘绘制完整厚度边框。导致 2 个回归（382→380）：`border-applies-to-001`（新失败 1.03%）、`row-group-order`（新失败 1.29%），`row-group-margin-border-padding` 恶化（1.32%→3.67%）。根因与 R49/R50 一致：单元格位置由 taffy 基于原始边框宽度计算，完整厚度边框向外扩展超出元素边界，与相邻内容重叠。
+
+3. **near-miss 测试系统性分析**（38 个 <3% diff）：
+   - 多数根因仍是 paint IFC 架构问题（影响 30+ 测试）
+   - taffy cell positioning 限制了 border-collapse 精度改进（影响 5+ 测试）
+   - writing-mode 垂直布局缺失（影响 13 测试）
+   - flexbox baseline 需 taffy first_baselines 提取（影响 5+ 测试）
+
+#### R53 关键结论
+
+**所有低风险改进路径均已穷尽**（R37-R53 共 17 轮尝试）：
+1. paint IFC 字形推进修改 → 回归
+2. 传递实际 styles 到 paint IFC → 回归
+3. 存储 layout IFC 结果 → 回归（含多种变体）
+4. font_size/letter-spacing/is_ahem 覆盖 → 零改进或回归
+5. taffy measure callback IFC 缓存 → 回归
+6. 外边缘边框完整厚度 → 回归
+
+**通过率从 74.3% 提升到 78.0% 后遇到天花板**，进一步突破需要以下结构性改变之一：
+- taffy 集成层重构（让 IFC 与 taffy 共享完全一致的布局上下文）
+- writing-mode 垂直布局完整实现（影响 13 测试，最大单特性杠杆）
+- multicol column breaking 完善（影响 16 测试）
+- flexbox baseline 从 taffy first_baselines 提取（影响 5+ 测试）
+
+#### 按目录通过率
+
+| 目录 | 通过/总数 | 通过率 |
+|------|-----------|--------|
+| css-text-decor/ | 39/39 | 100.0% ✅ |
+| css-fonts/ | 60/60 | 100.0% ✅ |
+| css-grid/ | 17/20 | 85.0% |
+| css-tables/ | 46/55 | 83.6% |
+| css-writing-modes/ | 46/59 | 78.0% |
+| CSS2/ | 91/129 | 70.5% |
+| css-position/ | 12/16 | 75.0% |
+| css-flexbox/ | 35/55 | 63.6% |
+| css-multicol/ | 36/57 | 63.2% |
+
+#### 后续重点（R54+）
+
+1. **writing-mode 垂直布局**（影响 13 测试，最大单特性杠杆）：需要垂直书写模式下完整轴交换 + 垂直字形渲染
+2. **multicol column breaking 完善**（影响 ~16 测试）：需更精细的片段分配算法
+3. **flexbox baseline 提取**（影响 5+ 测试）：从 taffy Layout.first_baselines 提取基线信息，传递到 inline-block 定位
+4. **taffy 集成层重构**（影响 50+ 测试，系统性突破）：需要修改 taffy 的 measure callback 和布局树构建方式
 
 ### R52 进展
 
