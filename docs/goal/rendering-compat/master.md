@@ -4,6 +4,35 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 79.4% (389/490)
 
+### R57 进展
+
+**通过率**：389/490 (79.4%)，与 R56 持平。本轮实验了垂直书写模式 float/clearance 轴交换方案，因回归而回退。
+
+#### R57 调查与尝试
+
+1. **垂直书写模式轴交换方案（回退）**：在 `adjust_float_positions` 中实现轴交换策略——对垂直书写模式容器临时交换子元素的 (x↔y, width↔height, margin_top↔margin_left, margin_bottom↔margin_right) 和容器属性，运行同一套水平模式算法后再交换回视觉坐标。方案理论上正确（float:left 在垂直模式下正确映射到视觉顶部），但实测回归 1 个测试（clearance-calculations-vrl-008 从 2.08% 通过退化为 14.58% 失败）。
+
+2. **回归根因分析**：vrl-008 测试中 float 元素仅有 CSS width（block 轴尺寸）而无 height（inline 轴尺寸），视觉高度为 0。轴交换后 float 的 block 轴尺寸从 0 变为 50px，改变了 clearance 计算中的 float_extent。原代码中 float 的 block 轴 extent 为 0 使 clearance 计算近似正确（2.08%），轴交换后 50px 的 block extent 使 clearance 计算偏离参考结果。净效果：vrl-002/004/006 各改善 ~1%（但仍失败），vrl-008 从通过变为失败。
+
+3. **taffy first_baselines 不可访问确认**：taffy 0.7.7 的 `LayoutOutput` 结构体有 `first_baselines` 字段，但 `Layout`（公开 API 返回的结构体）没有该字段。baselines 存在于内部 cache 中但无公开访问方法。提取 baselines 需要修改 taffy 或绕过公开 API。
+
+#### R57 关键结论
+
+**垂直模式 float 轴交换路径已封闭**：轴交换方案改变了 float 的 block 轴 extent，对于零高度 float 元素的 clearance 测试产生回归。需要更精细的交换策略（仅交换 float 定位方向，不交换 float 自身尺寸），但这属于结构性改动。
+
+**通过率 79.4% 后的系统性瓶颈与 R53-R56 一致**：
+- Paint IFC 使用空 styles 导致 50+ 测试文本定位偏差
+- taffy Layout 不保留 first_baselines，无法提取真实基线
+- border-collapse 外边缘精度被 taffy 单元格定位阻塞
+- writing-mode 垂直 float/clearance 需完整轴交换（但当前实现回归）
+
+#### 后续重点（R58+）
+
+1. **精细垂直模式 float 定位**（不交换 float 尺寸）：仅修改 float 元素的 inline 轴定位（从 x 改为 y），不改变 float 的 block 轴 extent。可能改善 vrl-002/004/006 而不回归 vrl-008
+2. **taffy first_baselines 替代提取**：通过 measure callback 缓存 IFC 结果中提取 baseline 信息，绕过 taffy 不公开 baselines 的限制
+3. **multicol column breaking 完善**（影响 ~16 测试）：更精细的片段分配算法
+4. **CSS2 逐步改善**（影响 37 个失败）：通过 swatch 图片精度、IFC 行断修正来减少 near-miss
+
 ### R56 进展
 
 **通过率**：389/490 (79.4%)，与 R55 持平。本轮改进了 inline-flex/inline-grid 基线合成算法，系统性调查了各类失败测试的根因。
