@@ -22,6 +22,7 @@ use zero_style_system::{
     ImageRenderingValue, IsolationValue, MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue,
     QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, TouchActionValue, UserSelectValue, WillChangeValue,
 };
+use zero_style_system::property::types::DisplayValue;
 
 use super::color::color_value_to_render;
 use super::helpers::{PrimitiveCounts, apply_opacity_to_new_primitives, circle_to_polygon, ellipse_to_polygon};
@@ -171,7 +172,16 @@ impl Painter {
                 && box_node.children.is_empty()
                 && matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate);
 
-            if !hidden && !skip_empty_cell {
+            // CSS 2.1 §17.5.3/17.5.4：行组和行无视觉盒模型
+            let is_table_internal = matches!(
+                style.display,
+                DisplayValue::TableRowGroup
+                    | DisplayValue::TableHeaderGroup
+                    | DisplayValue::TableFooterGroup
+                    | DisplayValue::TableRow
+            );
+
+            if !hidden && !skip_empty_cell && !is_table_internal {
                 self.paint_box_shadow(box_node, abs_x, abs_y, style);
                 if style.background_color != ColorValue::Transparent {
                     self.paint_background(box_node, abs_x, abs_y, style);
@@ -295,7 +305,19 @@ impl Painter {
                 && box_node.children.is_empty()
                 && matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate);
 
-            if !hidden && !skip_empty_cell {
+            // CSS 2.1 §17.5.3/17.5.4：行组（tbody/thead/tfoot）和行（tr）
+            // 的 border/padding/margin 无视觉效果，仅作为结构容器。
+            // Layout 层 zero_box_model() 已归零 border/padding/margin，
+            // paint 层也需跳过 background/shadow/outline 等视觉渲染。
+            let is_table_internal = matches!(
+                style.display,
+                DisplayValue::TableRowGroup
+                    | DisplayValue::TableHeaderGroup
+                    | DisplayValue::TableFooterGroup
+                    | DisplayValue::TableRow
+            );
+
+            if !hidden && !skip_empty_cell && !is_table_internal {
                 // -1. backdrop-filter（对元素背后内容应用滤镜，在自身绘制之前）
                 self.apply_backdrop_filter(box_node, abs_x, abs_y, style);
 
