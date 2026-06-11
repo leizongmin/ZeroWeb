@@ -161,6 +161,10 @@ pub struct TextFragment {
     pub font_size: f32,
     /// vertical-align 值。
     pub vertical_align: VerticalAlignValue,
+    /// 是否使用 Ahem 字体（影响字形宽度：Ahem 为 1.0×font_size）。
+    pub is_ahem: bool,
+    /// letter-spacing（px），每个字符后追加的额外间距。
+    pub letter_spacing: f32,
 }
 
 /// 默认字体大小（px）。
@@ -414,6 +418,19 @@ pub struct InlineFormattingContext {
     /// 当 styles 中找不到父元素样式且此映射有对应条目时，使用映射中的
     /// font_size 而非 16px 默认值，使字符宽度计算更准确。
     pub font_size_overrides: HashMap<NodeId, f32>,
+    /// 逐文本节点的 Ahem 字体标志覆盖（key = 文本节点的父元素 NodeId）。
+    ///
+    /// paint IFC 传入空的 styles HashMap，无法检测 Ahem 字体，
+    /// 导致所有文本使用 0.55×font_size 的 ASCII 字符宽度估算。
+    /// 当文本实际使用 Ahem 字体时，字符宽度应为 1.0×font_size，
+    /// 此覆盖确保 paint IFC 使用正确的字符宽度。
+    pub is_ahem_overrides: HashMap<NodeId, bool>,
+    /// 逐文本节点的 letter-spacing 覆盖（key = 文本节点的父元素 NodeId）。
+    ///
+    /// paint IFC 传入空的 styles HashMap，无法获取 letter-spacing，
+    /// 导致所有字符使用 0 的默认间距。此覆盖确保 paint IFC 使用正确的
+    /// letter-spacing 值进行字符宽度和行断计算。
+    pub letter_spacing_overrides: HashMap<NodeId, f32>,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -439,6 +456,8 @@ impl InlineFormattingContext {
             inline_block_sizes: HashMap::new(),
             default_font_metrics: None,
             font_size_overrides: HashMap::new(),
+            is_ahem_overrides: HashMap::new(),
+            letter_spacing_overrides: HashMap::new(),
         }
     }
 
@@ -486,6 +505,18 @@ impl InlineFormattingContext {
     /// 替代 16px 默认值，使字符宽度计算更准确。
     pub fn with_font_size_overrides(mut self, overrides: HashMap<NodeId, f32>) -> Self {
         self.font_size_overrides = overrides;
+        self
+    }
+
+    /// 设置 Ahem 字体标志覆盖（paint IFC 使用）。
+    pub fn with_is_ahem_overrides(mut self, overrides: HashMap<NodeId, bool>) -> Self {
+        self.is_ahem_overrides = overrides;
+        self
+    }
+
+    /// 设置 letter-spacing 覆盖（paint IFC 使用）。
+    pub fn with_letter_spacing_overrides(mut self, overrides: HashMap<NodeId, f32>) -> Self {
+        self.letter_spacing_overrides = overrides;
         self
     }
 
@@ -654,7 +685,12 @@ impl InlineFormattingContext {
                                     LengthValue::Px(v) => *v as f32,
                                     _ => 0.0,
                                 })
-                                .unwrap_or(0.0);
+                                .unwrap_or_else(|| {
+                                    // paint IFC（空 styles）：使用覆盖映射获取 letter-spacing
+                                    parent_id
+                                        .and_then(|pid| self.letter_spacing_overrides.get(&pid).copied())
+                                        .unwrap_or(0.0)
+                                });
                             let word_spacing = style
                                 .map(|s| match &s.word_spacing {
                                     LengthValue::Px(v) => *v as f32,
@@ -663,7 +699,12 @@ impl InlineFormattingContext {
                                 .unwrap_or(0.0);
                             let is_ahem_font = style
                                 .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
-                                .unwrap_or(false);
+                                .unwrap_or_else(|| {
+                                    // paint IFC（空 styles）：使用覆盖映射检测 Ahem 字体
+                                    parent_id
+                                        .and_then(|pid| self.is_ahem_overrides.get(&pid).copied())
+                                        .unwrap_or(false)
+                                });
                             items.push(InlineItem::Text(TextRun {
                                 text,
                                 node_id: child_id,
@@ -1043,6 +1084,8 @@ impl InlineFormattingContext {
                                     node_id: run.node_id,
                                     font_size: run.font_size,
                                     vertical_align: run.vertical_align.clone(),
+                                    is_ahem: run.is_ahem_font,
+                                    letter_spacing: run.letter_spacing,
                                 });
 
                                 partial_x += ch_width;
@@ -1063,6 +1106,8 @@ impl InlineFormattingContext {
                                 node_id: run.node_id,
                                 font_size: run.font_size,
                                 vertical_align: run.vertical_align.clone(),
+                                is_ahem: run.is_ahem_font,
+                                letter_spacing: run.letter_spacing,
                             });
 
                             current_x += word_width + trailing_space_width;
@@ -1120,6 +1165,8 @@ impl InlineFormattingContext {
                         node_id: box_info.node_id,
                         font_size: 0.0,
                         vertical_align: box_info.vertical_align.clone(),
+                        is_ahem: false,
+                        letter_spacing: 0.0,
                     });
 
                     current_x += box_width;
@@ -1346,6 +1393,8 @@ impl InlineFormattingContext {
                                     node_id: run.node_id,
                                     font_size: run.font_size,
                                     vertical_align: run.vertical_align.clone(),
+                                    is_ahem: run.is_ahem_font,
+                                    letter_spacing: run.letter_spacing,
                                 });
 
                                 partial_depth += ch_height;
@@ -1363,6 +1412,8 @@ impl InlineFormattingContext {
                                 node_id: run.node_id,
                                 font_size: run.font_size,
                                 vertical_align: run.vertical_align.clone(),
+                                is_ahem: run.is_ahem_font,
+                                letter_spacing: run.letter_spacing,
                             });
 
                             current_depth += word_height;
@@ -1398,6 +1449,8 @@ impl InlineFormattingContext {
                         node_id: box_info.node_id,
                         font_size: 0.0,
                         vertical_align: box_info.vertical_align.clone(),
+                        is_ahem: false,
+                        letter_spacing: 0.0,
                     });
 
                     current_depth += box_depth;
@@ -1667,6 +1720,8 @@ impl InlineFormattingContext {
                     node_id: run.node_id,
                     font_size: run.font_size,
                     vertical_align: run.vertical_align.clone(),
+                    is_ahem: run.is_ahem,
+                    letter_spacing: run.letter_spacing,
                 })
             })
             .collect()

@@ -164,6 +164,17 @@ pub struct LayoutBox {
     /// paint 系统在运行空 styles IFC 后，使用这些正确的 font_size 值
     /// 计算基线偏移，避免 16px 默认值导致的字形定位错误。
     pub text_node_font_sizes: HashMap<NodeId, f32>,
+    /// 文本节点是否使用 Ahem 字体的映射（来自 layout engine 的 IFC 运行）。
+    ///
+    /// paint 系统在运行空 styles IFC 时无法检测 Ahem 字体（无 style 信息），
+    /// 使用此映射正确设置 is_ahem 标志，使字符宽度计算使用 1.0×font_size
+    /// 而非默认的 0.55×font_size。
+    pub text_node_is_ahem: HashMap<NodeId, bool>,
+    /// 文本节点的 letter-spacing 映射（来自 layout engine 的 IFC 运行）。
+    ///
+    /// paint 系统在运行空 styles IFC 时无法获取 letter-spacing（无 style 信息），
+    /// 使用此映射正确设置字符间间距。
+    pub text_node_letter_spacing: HashMap<NodeId, f32>,
 }
 
 impl LayoutBox {
@@ -243,6 +254,8 @@ impl Default for LayoutBox {
             inline_layout: None,
             inline_layout_width: 0.0,
             text_node_font_sizes: HashMap::new(),
+            text_node_is_ahem: HashMap::new(),
+            text_node_letter_spacing: HashMap::new(),
         }
     }
 }
