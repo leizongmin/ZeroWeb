@@ -298,6 +298,9 @@ impl PropertyRegistry {
             // Clip Path
             "clip-path" => Some(ClipPath(ClipPathComputedValue::None)),
 
+            // Clip (deprecated CSS2)
+            "clip" => Some(Clip(ClipRectComputedValue::Auto)),
+
             _ => None,
         }
     }
@@ -545,6 +548,7 @@ impl PropertyRegistry {
             "text-shadow",
             "box-shadow",
             "clip-path",
+            "clip",
         ]
     }
 }

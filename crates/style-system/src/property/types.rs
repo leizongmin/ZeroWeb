@@ -1389,6 +1389,8 @@ pub enum PropertyValue {
     BoxShadow(BoxShadowComputedValue),
     /// clip-path 值。
     ClipPath(ClipPathComputedValue),
+    /// clip 属性值（已弃用的 CSS2 裁剪属性）。
+    Clip(ClipRectComputedValue),
     /// mask-image 值。
     MaskImage(Vec<BackgroundImageComputedValue>),
     /// mask-mode 值。
@@ -1499,6 +1501,11 @@ pub enum FilterComputedValue {
 /// 直接复用 css-parser 的 ClipPathValue 类型，
 /// 因为计算阶段不需要额外转换。
 pub type ClipPathComputedValue = zero_css_parser::values::ClipPathValue;
+
+/// CSS clip 属性计算值。
+///
+/// 直接复用 css-parser 的 ClipRectValue 类型。
+pub type ClipRectComputedValue = zero_css_parser::values::ClipRectValue;
 
 // ── ComputedStyle ─────────────────────────────────────────────────────
 

@@ -604,6 +604,21 @@ impl Painter {
             }
         }
 
+        // CSS clip: rect() — 仅对绝对定位元素生效的矩形裁剪
+        if box_node.is_absolute
+            && let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && let zero_css_parser::values::ClipRectValue::Rect(top, right, bottom, left) = &style.clip
+        {
+            let t = super::helpers::length_to_f32(top);
+            let r = super::helpers::length_to_f32(right);
+            let b = super::helpers::length_to_f32(bottom);
+            let l = super::helpers::length_to_f32(left);
+            // clip: rect() 坐标相对于元素的边框盒
+            let clip_rect = Rect::new(abs_x + l, abs_y + t, r - l, b - t);
+            super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before, &clip_rect);
+        }
+
         // CSS filter — 对元素及其子元素产生的图元应用滤镜效果
         if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)

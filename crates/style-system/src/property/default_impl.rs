@@ -314,6 +314,7 @@ impl Default for ComputedStyle {
                 inset: false,
             },
             clip_path: ClipPathComputedValue::None,
+            clip: ClipRectComputedValue::Auto,
             mask_image: vec![],
             mask_mode: MaskModeComputedValue::MatchSource,
         }

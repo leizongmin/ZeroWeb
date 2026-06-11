@@ -149,6 +149,18 @@ pub enum PositionValue {
     Sticky,
 }
 
+/// CSS clip 属性值（已弃用但仍广泛使用）。
+///
+/// `clip: auto | rect(top, right, bottom, left)`
+/// 仅对绝对定位元素生效。坐标相对于元素的边框盒。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClipRectValue {
+    /// auto — 不裁剪。
+    Auto,
+    /// rect(top, right, bottom, left) — 矩形裁剪区域。
+    Rect(LengthValue, LengthValue, LengthValue, LengthValue),
+}
+
 /// CSS overflow 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum OverflowValue {
