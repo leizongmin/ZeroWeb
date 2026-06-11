@@ -835,6 +835,20 @@ impl super::Painter {
                     .filter_map(|(&text_node_id, &fs)| doc.parent_node(text_node_id).map(|pid| (pid, fs)))
                     .collect();
 
+                // 同样转换 Ahem 字体标志：text_node_id → parent_element_id
+                let parent_is_ahem: HashMap<zero_dom::NodeId, bool> = box_node
+                    .text_node_is_ahem
+                    .iter()
+                    .filter_map(|(&text_node_id, &is_ahem)| doc.parent_node(text_node_id).map(|pid| (pid, is_ahem)))
+                    .collect();
+
+                // 转换 letter-spacing：text_node_id → parent_element_id
+                let parent_letter_spacing: HashMap<zero_dom::NodeId, f32> = box_node
+                    .text_node_letter_spacing
+                    .iter()
+                    .filter_map(|(&text_node_id, &ls)| doc.parent_node(text_node_id).map(|pid| (pid, ls)))
+                    .collect();
+
                 let mut ctx = InlineFormattingContext::new(ifc_width)
                     .with_text_align(text_align)
                     .with_text_align_last(text_align_last)
@@ -847,7 +861,9 @@ impl super::Painter {
                     .with_tab_size(tab_size_px)
                     .with_vertical(is_vertical)
                     .with_vertical_rtl(is_vertical_rtl)
-                    .with_font_size_overrides(parent_font_sizes);
+                    .with_font_size_overrides(parent_font_sizes)
+                    .with_is_ahem_overrides(parent_is_ahem)
+                    .with_letter_spacing_overrides(parent_letter_spacing);
                 ctx.layout(doc, node_id, &HashMap::new());
                 ctx
             };

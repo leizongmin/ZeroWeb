@@ -503,6 +503,8 @@ impl LayoutEngine {
             inline_layout: None,
             inline_layout_width: 0.0,
             text_node_font_sizes: HashMap::new(),
+            text_node_is_ahem: HashMap::new(),
+            text_node_letter_spacing: HashMap::new(),
         }
     }
 }
@@ -666,15 +668,19 @@ fn store_inline_layout_results(
     }
 }
 
-/// 从 IFC 片段中提取各文本节点的 font_size 并存储到 LayoutBox。
+/// 从 IFC 片段中提取各文本节点的 font_size、is_ahem 标志和 letter-spacing 并存储到 LayoutBox。
 ///
-/// paint 系统在运行空 styles IFC 时无法获取正确的 font_size，
-/// 导致基线偏移计算错误。通过此函数存储 layout IFC 的 font_size，
+/// paint 系统在运行空 styles IFC 时无法获取正确的 font_size、字体信息和 letter-spacing，
+/// 导致基线偏移、字符宽度和间距计算错误。通过此函数存储 layout IFC 的相关值，
 /// paint 可以在渲染时使用正确的值。
 fn store_font_sizes_from_ifc(inline_ctx: &crate::inline::InlineFormattingContext, box_node: &mut LayoutBox) {
     for line in &inline_ctx.lines {
         for frag in &line.runs {
             box_node.text_node_font_sizes.insert(frag.node_id, frag.font_size);
+            box_node.text_node_is_ahem.insert(frag.node_id, frag.is_ahem);
+            box_node
+                .text_node_letter_spacing
+                .insert(frag.node_id, frag.letter_spacing);
         }
     }
 }
