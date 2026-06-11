@@ -272,7 +272,10 @@ fn test_border_bottom_inherit() {
 
     // border-bottom-style 应为 Solid
     assert!(
-        matches!(child_style.border_bottom_style, zero_style_system::property::types::BorderStyleValue::Solid),
+        matches!(
+            child_style.border_bottom_style,
+            zero_style_system::property::types::BorderStyleValue::Solid
+        ),
         "Expected border-bottom-style: Solid, got {:?}",
         child_style.border_bottom_style
     );
