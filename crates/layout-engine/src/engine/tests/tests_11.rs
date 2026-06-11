@@ -237,3 +237,43 @@ fn test_vertical_rl_abs_pos_static_position() {
         eprintln!("WARNING: no abs-pos child found");
     }
 }
+
+/// 测试 border-bottom: inherit 正确传播 width/style/color 子属性。
+/// 对应上游 WPT 测试 CSS2/borders/border-bottom-018.xht
+#[test]
+fn test_border_bottom_inherit() {
+    let html = r#"<html><body style="margin:0">
+        <div id="parent" style="border-bottom: 1in solid blue; padding-bottom: 10px">
+            <div id="child" style="border-bottom: inherit; height: 1in"></div>
+        </div>
+    </body></html>"#;
+
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[]);
+
+    // 查找子元素
+    let child_id = doc.query_selector(doc.root(), "#child").expect("child found");
+
+    let child_style = styles.get(&child_id).expect("child has style");
+
+    // 子元素应从父元素继承 border-bottom: 1in solid blue
+    match &child_style.border_bottom_width {
+        LengthValue::Px(v) => {
+            let expected = 96.0_f64; // 1in = 96px
+            assert!(
+                (v - expected).abs() < 0.01,
+                "Expected border-bottom-width 96px (1in), got {}px",
+                v
+            );
+        }
+        other => panic!("Expected Px border-bottom-width, got {:?}", other),
+    }
+
+    // border-bottom-style 应为 Solid
+    assert!(
+        matches!(child_style.border_bottom_style, zero_style_system::property::types::BorderStyleValue::Solid),
+        "Expected border-bottom-style: Solid, got {:?}",
+        child_style.border_bottom_style
+    );
+}
