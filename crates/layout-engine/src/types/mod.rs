@@ -178,6 +178,12 @@ pub struct LayoutBox {
     /// paint 系统在运行空 styles IFC 时无法获取 letter-spacing（无 style 信息），
     /// 使用此映射正确设置字符间间距。
     pub text_node_letter_spacing: HashMap<NodeId, f32>,
+    /// 从 taffy 布局缓存中提取的 first_baseline（y 分量）。
+    ///
+    /// 仅对 flex/inline-flex/grid/inline-grid 容器有值。
+    /// 用于 `adjust_inline_block_positions` 中计算 inline-flex/inline-grid
+    /// 容器在父 IFC 中的基线位置，替代 font_size 近似。
+    pub taffy_baseline: Option<f32>,
 }
 
 impl LayoutBox {
@@ -260,6 +266,7 @@ impl Default for LayoutBox {
             text_node_font_sizes: HashMap::new(),
             text_node_is_ahem: HashMap::new(),
             text_node_letter_spacing: HashMap::new(),
+            taffy_baseline: None,
         }
     }
 }

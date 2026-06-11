@@ -134,6 +134,11 @@ impl LayoutEngine {
             doc,
         );
 
+        // 3.5 从 taffy 缓存中提取 flex/grid 容器的基线信息
+        // taffy 内部计算了 first_baselines 但未通过公开 API 暴露，
+        // 通过 cached_baselines() 补丁访问。
+        LayoutEngine::extract_baselines_recursive(&taffy_tree, root_id, &taffy_to_dom, &mut root_box, 0);
+
         // 4. 后处理：将 fixed 元素的坐标调整为视口相对
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
 
@@ -317,6 +322,42 @@ impl LayoutEngine {
 
     /// 从 taffy 布局结果中提取 LayoutBox 树。
     ///
+    /// 从 taffy 布局缓存中提取 flex/grid 容器的 first_baseline。
+    ///
+    /// taffy 在布局计算时为 flex 和 grid 容器计算 `first_baselines`，
+    /// 但该值在 `LayoutOutput → Layout` 转换中被丢弃。
+    /// 通过 taffy 补丁的 `cached_baselines()` 方法访问缓存中的基线值，
+    /// 存储到 LayoutBox.taffy_baseline 供 `adjust_inline_block_positions` 使用。
+    #[allow(clippy::only_used_in_recursion)]
+    fn extract_baselines_recursive(
+        taffy: &TaffyTree<NodeId>,
+        taffy_id: taffy::NodeId,
+        taffy_to_dom: &HashMap<taffy::NodeId, NodeId>,
+        box_node: &mut LayoutBox,
+        depth: usize,
+    ) {
+        // 尝试从 taffy 缓存提取基线
+        if let Some(baselines) = taffy.cached_baselines(taffy_id) {
+            if let Some(y_baseline) = baselines.y {
+                box_node.taffy_baseline = Some(y_baseline);
+            }
+        }
+
+        // 递归处理子元素
+        let child_taffy_ids = taffy.children(taffy_id).unwrap_or_default();
+        for (i, child_taffy) in child_taffy_ids.iter().enumerate() {
+            if i < box_node.children.len() {
+                Self::extract_baselines_recursive(
+                    taffy,
+                    *child_taffy,
+                    taffy_to_dom,
+                    &mut box_node.children[i],
+                    depth + 1,
+                );
+            }
+        }
+    }
+
     /// 当父元素具有垂直书写模式时，taffy 的布局结果是轴交换后的，
     /// 需要在提取时交换回来以获得正确的视觉坐标。
     fn extract_layout(
@@ -508,6 +549,7 @@ impl LayoutEngine {
             text_node_font_sizes: HashMap::new(),
             text_node_is_ahem: HashMap::new(),
             text_node_letter_spacing: HashMap::new(),
+            taffy_baseline: None,
         }
     }
 }
@@ -595,15 +637,13 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
 
     // 为 inline-flex/inline-grid 元素计算基线覆盖
     // CSS Flexbox §8.5: 容器基线从第一个 flex line 中参与 baseline 对齐的项合成。
-    // 由于无法直接访问 taffy 的 first_baselines，从第一行的子元素布局位置近似。
+    // 优先使用 taffy 计算的 first_baselines（通过 cached_baselines 补丁获取），
+    // 回退到从子元素布局位置近似。
     // 仅对水平方向 flex 容器应用（Row/RowReverse），因为垂直方向的基线合成逻辑不同。
     //
     // 算法：
-    // 1. 找到第一行（共享最小 y 值的子元素）
-    // 2. 对参与 baseline 对齐的子元素（align-self: baseline 或容器 align-items: baseline），
-    //    使用 font-size 近似文本基线位置（item.y + font_size）
-    // 3. 如果没有 baseline 对齐的子元素，使用第一个子元素的底边作为回退
-    // 4. 容器基线 = max(第一行中所有 baseline 贡献)
+    // 1. 优先使用 taffy 计算的 first_baseline（如果可用）
+    // 2. 回退到从第一行子元素布局位置近似
     let baseline_overrides: HashMap<NodeId, f32> = ib_indices
         .iter()
         .filter_map(|&idx| {
@@ -619,6 +659,15 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
             if !is_horizontal_flex {
                 return None;
             }
+
+            // 优先使用 taffy 缓存的基线
+            if let Some(taffy_bl) = child.taffy_baseline {
+                if taffy_bl > 0.0 && taffy_bl < child.content_height {
+                    return Some((node_id, taffy_bl));
+                }
+            }
+
+            // 回退：从子元素布局位置近似
             if child.children.is_empty() {
                 return None;
             }
