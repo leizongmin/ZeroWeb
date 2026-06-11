@@ -99,20 +99,27 @@ impl TextRun {
     }
 }
 
-/// 行内块盒 — inline-block 元素的原子级行内盒。
+/// 行内块盒 — inline-block / inline-flex / inline-grid / inline-table 元素的原子级行内盒。
 ///
-/// inline-block 元素参与行内格式化上下文，但自身作为一个不可分割的整体
+/// 这些元素参与行内格式化上下文，但自身作为一个不可分割的整体
 /// （不能跨行拆分），宽度/高度由其自身的块级布局计算得出。
 #[derive(Debug, Clone)]
 pub struct InlineBlockBox {
-    /// inline-block 的宽度（px），由自身块级布局计算。
+    /// 盒的宽度（px），由自身块级布局计算。
     pub width: f32,
-    /// inline-block 的高度（px），由自身块级布局计算。
+    /// 盒的高度（px），由自身块级布局计算。
     pub height: f32,
     /// 对应的 DOM 节点。
     pub node_id: NodeId,
     /// vertical-align 值。
     pub vertical_align: VerticalAlignValue,
+    /// 基线高度（px）— 从盒顶部到基线的距离。
+    ///
+    /// - inline-block：基线在底部边缘，`baseline = height`
+    /// - inline-flex/inline-grid：基线从第一个 flex/grid item 合成
+    ///   （简化为 `height / 2` 作为回退，理想情况应从 taffy first_baselines 提取）
+    /// - inline-table：基线为第一行单元格的基线
+    pub baseline: f32,
 }
 
 /// 行内级条目 — 行内格式化上下文中的原子单位。
@@ -165,6 +172,12 @@ pub struct TextFragment {
     pub is_ahem: bool,
     /// letter-spacing（px），每个字符后追加的额外间距。
     pub letter_spacing: f32,
+    /// 基线高度（px）— 从片段顶部到基线的距离。
+    ///
+    /// - 文本运行：baseline = font_size（ascent 近似）
+    /// - inline-block：baseline = height（基线在底部边缘）
+    /// - inline-flex/inline-grid：baseline 从第一个 item 合成
+    pub baseline: f32,
 }
 
 /// 默认字体大小（px）。
@@ -784,11 +797,19 @@ impl InlineFormattingContext {
                             }
                             if w > 0.0 && h > 0.0 {
                                 let vertical_align = s.vertical_align.clone();
+                                // 计算基线：inline-block 的基线在底部边缘，
+                                // inline-flex/inline-grid 的基线近似为 height/2
+                                // （理想情况应从 taffy first_baselines 提取）
+                                let baseline = match s.display {
+                                    DisplayValue::InlineFlex | DisplayValue::InlineGrid => h * 0.5,
+                                    _ => h, // inline-block, inline-table: 基线在底部
+                                };
                                 items.push(InlineItem::InlineBlock(InlineBlockBox {
                                     width: w,
                                     height: h,
                                     node_id: child_id,
                                     vertical_align,
+                                    baseline,
                                 }));
                                 continue;
                             }
@@ -813,11 +834,13 @@ impl InlineFormattingContext {
                                     .get(&child_id)
                                     .map(|s| s.vertical_align.clone())
                                     .unwrap_or(VerticalAlignValue::Baseline);
+                                // img 替换元素的基线在底部边缘
                                 items.push(InlineItem::InlineBlock(InlineBlockBox {
                                     width: w,
                                     height: h,
                                     node_id: child_id,
                                     vertical_align,
+                                    baseline: h,
                                 }));
                                 continue;
                             }
@@ -1090,6 +1113,7 @@ impl InlineFormattingContext {
                                     vertical_align: run.vertical_align.clone(),
                                     is_ahem: run.is_ahem_font,
                                     letter_spacing: run.letter_spacing,
+                                    baseline: run.font_size,
                                 });
 
                                 partial_x += ch_width;
@@ -1112,6 +1136,7 @@ impl InlineFormattingContext {
                                 vertical_align: run.vertical_align.clone(),
                                 is_ahem: run.is_ahem_font,
                                 letter_spacing: run.letter_spacing,
+                                baseline: run.font_size,
                             });
 
                             current_x += word_width + trailing_space_width;
@@ -1171,6 +1196,7 @@ impl InlineFormattingContext {
                         vertical_align: box_info.vertical_align.clone(),
                         is_ahem: false,
                         letter_spacing: 0.0,
+                        baseline: box_info.baseline,
                     });
 
                     current_x += box_width;
@@ -1399,6 +1425,7 @@ impl InlineFormattingContext {
                                     vertical_align: run.vertical_align.clone(),
                                     is_ahem: run.is_ahem_font,
                                     letter_spacing: run.letter_spacing,
+                                    baseline: run.font_size,
                                 });
 
                                 partial_depth += ch_height;
@@ -1418,6 +1445,7 @@ impl InlineFormattingContext {
                                 vertical_align: run.vertical_align.clone(),
                                 is_ahem: run.is_ahem_font,
                                 letter_spacing: run.letter_spacing,
+                                baseline: run.font_size,
                             });
 
                             current_depth += word_height;
@@ -1455,6 +1483,7 @@ impl InlineFormattingContext {
                         vertical_align: box_info.vertical_align.clone(),
                         is_ahem: false,
                         letter_spacing: 0.0,
+                        baseline: box_info.baseline,
                     });
 
                     current_depth += box_depth;
@@ -1544,8 +1573,11 @@ impl InlineFormattingContext {
                         // 文本运行：ascent = font_size（字体度量的近似值）
                         max_ascent = max_ascent.max(run.font_size);
                     } else {
-                        // Inline-block（font_size==0 标识）的 ascent = height
-                        max_ascent = max_ascent.max(run.height);
+                        // 原子行内级盒（font_size==0 标识）：
+                        // 使用 baseline 字段决定 ascent
+                        // inline-block: baseline = height（底部边缘）
+                        // inline-flex/inline-grid: baseline 从第一个 item 合成
+                        max_ascent = max_ascent.max(run.baseline);
                     }
                 }
             }
@@ -1554,8 +1586,14 @@ impl InlineFormattingContext {
             for run in &mut line.runs {
                 run.y = match run.vertical_align {
                     VerticalAlignValue::Baseline => {
-                        // 片段底部对齐到基线
-                        baseline_y - run.height
+                        if run.font_size > 0.0 {
+                            // 文本运行：保持原有计算方式（片段底部对齐到基线）
+                            baseline_y - run.height
+                        } else {
+                            // 原子行内级盒：使用 baseline 字段定位
+                            // baseline 表示从顶部到基线的距离
+                            baseline_y - run.baseline
+                        }
                     }
                     VerticalAlignValue::Top | VerticalAlignValue::TextTop => 0.0,
                     VerticalAlignValue::Middle => (line_height - run.height) / 2.0,
@@ -1726,6 +1764,7 @@ impl InlineFormattingContext {
                     vertical_align: run.vertical_align.clone(),
                     is_ahem: run.is_ahem,
                     letter_spacing: run.letter_spacing,
+                    baseline: run.baseline,
                 })
             })
             .collect()

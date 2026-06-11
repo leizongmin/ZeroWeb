@@ -236,6 +236,7 @@ fn test_zero_width_inline_block() {
             height: 30.0,
             node_id: NodeId::default(),
             vertical_align: VerticalAlignValue::Baseline,
+            baseline: 30.0,
         }),
         InlineItem::Text(TextRun {
             text: "After".to_string(),
@@ -287,6 +288,7 @@ fn test_zero_height_inline_block() {
             height: 0.0,
             node_id: NodeId::default(),
             vertical_align: VerticalAlignValue::Baseline,
+            baseline: 0.0,
         }),
     ];
     ctx.break_items_into_lines(items);
