@@ -735,6 +735,7 @@ fn test_inline_block_on_same_line() {
             height: 50.0,
             node_id: NodeId::default(),
             vertical_align: VA::Baseline,
+            baseline: 50.0,
         }),
         InlineItem::Text(TextRun {
             text: "World".to_string(),
@@ -829,6 +830,7 @@ fn test_inline_block_wraps_to_next_line() {
             height: 30.0,
             node_id: NodeId::default(),
             vertical_align: VA::Baseline,
+            baseline: 30.0,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -883,6 +885,7 @@ fn test_inline_block_height_contributes_to_line() {
             height: 60.0,
             node_id: NodeId::default(),
             vertical_align: VA::Baseline,
+            baseline: 60.0,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -910,12 +913,14 @@ fn test_multiple_inline_blocks_on_same_line() {
             height: 40.0,
             node_id: NodeId::default(),
             vertical_align: VA::Baseline,
+            baseline: 40.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
             width: 50.0,
             height: 40.0,
             node_id: NodeId::default(),
             vertical_align: VA::Baseline,
+            baseline: 40.0,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -1352,6 +1357,7 @@ fn test_br_with_inline_blocks() {
             height: 50.0,
             node_id: NodeId::default(),
             vertical_align: VA::Baseline,
+            baseline: 50.0,
         }),
         InlineItem::Br,
         InlineItem::Text(TextRun {
