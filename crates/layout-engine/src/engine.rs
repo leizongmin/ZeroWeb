@@ -493,6 +493,7 @@ impl LayoutEngine {
             scroll_y: 0.0,
             is_flow_root,
             is_multicol,
+            column_gap: 0.0,
             is_block_level,
             is_relative,
             collapsed_border_color_overrides: [None; 4],

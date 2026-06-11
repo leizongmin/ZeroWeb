@@ -19,6 +19,7 @@ use zero_style_system::{
 };
 
 use super::super::color::color_value_to_render;
+use super::super::helpers::PrimitiveCounts;
 use super::super::helpers::apply_text_transform;
 
 /// 多列布局的列信息（用于 inline 内容的列分布）。
@@ -889,6 +890,106 @@ impl super::Painter {
                     // 多列布局：遍历行（带 line.y），将行分配到各列
                     let total_height: f32 = inline_ctx.lines.iter().map(|l| l.height).sum();
                     let target_h = total_height / mc.col_count as f32;
+
+                    // 按列分组渲染：先收集每列的行索引，再按列渲染并裁剪
+                    // 这样可以对每列独立裁剪，防止内容溢出到相邻列
+                    for col_idx in 0..mc.col_count {
+                        let col_x_offset = col_idx as f32 * (mc.col_width + mc.gap);
+                        let col_start_y = col_idx as f32 * target_h;
+
+                        // 裁剪区域：列宽 + 右半间隙，允许内容延伸到间隙
+                        let clip_rect = Rect::new(
+                            content_x + col_x_offset,
+                            content_y,
+                            mc.col_width + mc.gap / 2.0,
+                            box_node.content_height.max(0.0) + 1000.0,
+                        );
+                        let counts_before_col = PrimitiveCounts::snapshot(&self.primitives);
+
+                        for line in &inline_ctx.lines {
+                            // 根据行的 y 位置确定所在列
+                            let line_col = if target_h > 0.0 {
+                                (line.y / target_h).floor() as usize
+                            } else {
+                                0
+                            }
+                            .min(mc.col_count - 1);
+
+                            if line_col != col_idx {
+                                continue;
+                            }
+
+                            for fragment in &line.runs {
+                                self.painted_inline_nodes.insert(fragment.node_id);
+
+                                let frag_base_x = content_x + fragment.x + col_x_offset + tx;
+                                let frag_base_y =
+                                    content_y + (line.y - col_start_y) + fragment.y + fragment.font_size + ty;
+
+                                let transformed = apply_text_transform(&fragment.text, &style.text_transform);
+                                let mut char_pos = frag_base_x;
+
+                                for ch in transformed.chars() {
+                                    let glyph_x = char_pos;
+                                    let glyph_y = frag_base_y;
+
+                                    if has_text_shadow {
+                                        self.primitives.add_glyph(GlyphPrimitive {
+                                            x: glyph_x + shadow_ox,
+                                            y: glyph_y + shadow_oy,
+                                            font_size: fragment.font_size,
+                                            color: shadow_color,
+                                            glyph_id: ch as u32,
+                                            font_id: default_font_id,
+                                            bitmap_width: None,
+                                            bitmap_height: None,
+                                            rotation,
+                                        });
+                                    }
+
+                                    self.primitives.add_glyph(GlyphPrimitive {
+                                        x: glyph_x,
+                                        y: glyph_y,
+                                        font_size: fragment.font_size,
+                                        color,
+                                        glyph_id: ch as u32,
+                                        font_id: default_font_id,
+                                        bitmap_width: None,
+                                        bitmap_height: None,
+                                        rotation,
+                                    });
+
+                                    let advance = estimate_char_width(ch, fragment.font_size, false)
+                                        + letter_spacing
+                                        + if ch == ' ' { word_spacing } else { 0.0 };
+                                    char_pos += advance;
+                                }
+
+                                let text_width: f32 = transformed
+                                    .chars()
+                                    .map(|ch| {
+                                        let w = estimate_char_width(ch, fragment.font_size, false) + letter_spacing;
+                                        if ch == ' ' { w + word_spacing } else { w }
+                                    })
+                                    .sum();
+                                self.paint_text_decoration_from_style(
+                                    frag_base_x,
+                                    frag_base_y,
+                                    fragment.font_size,
+                                    text_width,
+                                    color,
+                                    style,
+                                );
+                            }
+                        }
+
+                        // 对本列的图元应用裁剪
+                        super::super::helpers::clip_all_primitives_to_rect(
+                            &mut self.primitives,
+                            &counts_before_col,
+                            &clip_rect,
+                        );
+                    }
 
                     for line in &inline_ctx.lines {
                         // 根据行的 y 位置确定所在列

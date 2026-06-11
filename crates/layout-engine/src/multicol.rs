@@ -58,6 +58,7 @@ pub fn adjust_multicol_layout(root: &mut LayoutBox, styles: &HashMap<NodeId, Com
     if let Some(style) = root.node_id.and_then(|id| styles.get(&id)) {
         let col_info = compute_column_info(style, root.content_width);
         if let Some(info) = col_info {
+            root.column_gap = info.gap;
             layout_multicol(root, &info);
         }
     }

@@ -444,20 +444,24 @@ impl Painter {
             let content_y = abs_y + box_node.border_top + box_node.padding_top;
 
             // 获取列间距用于扩展裁剪区域
-            // 从 column_span_offsets 的前两个条目推算 gap
-            let gap = box_node
-                .children
-                .iter()
-                .find_map(|c| {
-                    if c.column_span_offsets.len() >= 2 {
-                        let (first_x, _, _, first_w) = c.column_span_offsets[0];
-                        let (second_x, _, _, _) = c.column_span_offsets[1];
-                        Some(second_x - first_x - first_w)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(0.0);
+            // 优先使用 layout 层存储的 column_gap，回退到从 column_span_offsets 推算
+            let gap = if box_node.column_gap > 0.0 {
+                box_node.column_gap
+            } else {
+                box_node
+                    .children
+                    .iter()
+                    .find_map(|c| {
+                        if c.column_span_offsets.len() >= 2 {
+                            let (first_x, _, _, first_w) = c.column_span_offsets[0];
+                            let (second_x, _, _, _) = c.column_span_offsets[1];
+                            Some(second_x - first_x - first_w)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(0.0)
+            };
 
             for child in &box_node.children {
                 if child.column_span_offsets.is_empty() {
