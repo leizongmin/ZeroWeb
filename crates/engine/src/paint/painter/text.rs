@@ -44,7 +44,7 @@ fn compute_multicol_info_for_paint(
         LengthValue::Px(g) => *g as f32,
         LengthValue::Em(e) => *e as f32 * font_size_px,
         LengthValue::Rem(r) => *r as f32 * 16.0_f32, // rem 基于 root font-size
-        LengthValue::Percentage(_) => 0.0, // 百分比 gap 需要容器宽度上下文，暂不支持
+        LengthValue::Percentage(_) => 0.0,           // 百分比 gap 需要容器宽度上下文，暂不支持
         _ => 0.0,
     };
 
@@ -820,6 +820,16 @@ impl super::Painter {
             let inline_ctx = if use_stored {
                 InlineFormattingContext::new(ifc_width)
             } else {
+                // 将 layout IFC 存储的 text_node_id → font_size 映射
+                // 转换为 parent_element_id → font_size，供 paint IFC 使用。
+                // font_size_overrides 机制按父元素 ID 查找（因为文本节点没有自己的样式），
+                // 而 text_node_font_sizes 按文本节点 ID 存储（IFC 片段的 node_id）。
+                let parent_font_sizes: HashMap<zero_dom::NodeId, f32> = box_node
+                    .text_node_font_sizes
+                    .iter()
+                    .filter_map(|(&text_node_id, &fs)| doc.parent_node(text_node_id).map(|pid| (pid, fs)))
+                    .collect();
+
                 let mut ctx = InlineFormattingContext::new(ifc_width)
                     .with_text_align(text_align)
                     .with_text_align_last(text_align_last)
@@ -831,7 +841,8 @@ impl super::Painter {
                     .with_float_exclusions(float_exclusions)
                     .with_tab_size(tab_size_px)
                     .with_vertical(is_vertical)
-                    .with_vertical_rtl(is_vertical_rtl);
+                    .with_vertical_rtl(is_vertical_rtl)
+                    .with_font_size_overrides(parent_font_sizes);
                 ctx.layout(doc, node_id, &HashMap::new());
                 ctx
             };

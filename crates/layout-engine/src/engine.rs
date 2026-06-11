@@ -1366,11 +1366,11 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
             .map(|c| {
                 (
                     c.float.clone(),
-                    c.x, // 边框盒左边（已含 margin_left 偏移）
-                    c.y, // 边框盒顶部（已含 margin_top 偏移）
-                    c.width, // 边框盒宽度（不含 margin）
+                    c.x,                        // 边框盒左边（已含 margin_left 偏移）
+                    c.y,                        // 边框盒顶部（已含 margin_top 偏移）
+                    c.width,                    // 边框盒宽度（不含 margin）
                     c.height + c.margin_bottom, // 从边框盒顶部到 margin-box 底部
-                    c.margin_right, // 右 margin（用于 BFC 排斥计算）
+                    c.margin_right,             // 右 margin（用于 BFC 排斥计算）
                 )
             })
             .collect();

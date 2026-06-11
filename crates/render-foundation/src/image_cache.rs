@@ -49,16 +49,18 @@ impl ImageData {
         let solid_color = if pixels.len() >= 4 {
             let first = [pixels[0], pixels[1], pixels[2], pixels[3]];
             let all_same = pixels.chunks_exact(4).all(|chunk| {
-                chunk[0] == first[0]
-                    && chunk[1] == first[1]
-                    && chunk[2] == first[2]
-                    && chunk[3] == first[3]
+                chunk[0] == first[0] && chunk[1] == first[1] && chunk[2] == first[2] && chunk[3] == first[3]
             });
             if all_same { Some(first) } else { None }
         } else {
             None
         };
-        Ok(Self { pixels, width, height, solid_color })
+        Ok(Self {
+            pixels,
+            width,
+            height,
+            solid_color,
+        })
     }
 
     /// 创建指定尺寸的空（全透明）图片
