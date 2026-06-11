@@ -1702,24 +1702,41 @@ fn apply_table_size_constraints(
     let intrinsic_width = total_col_width + spacing_total_x;
     let intrinsic_height = total_row_height;
 
-    // 应用 min-width / max-width
+    // CSS 表格的 min/max 约束应用：
+    // - min-height/max-height 始终作用于 border-box（CSS Tables §table-wrapper-box）
+    // - min-width/max-width 根据 box-sizing 决定参照盒
+    let is_border_box = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
+    let padding_border_w =
+        table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;
+    let padding_border_h =
+        table_box.padding_top + table_box.padding_bottom + table_box.border_top + table_box.border_bottom;
+
+    // 应用 min-width / max-width（根据 box-sizing）
     let mut final_width = intrinsic_width;
     if let LengthValue::Px(v) = &style.min_width {
-        final_width = final_width.max(*v as f32);
+        let min_w = *v as f32;
+        let min_content = if is_border_box {
+            (min_w - padding_border_w).max(0.0)
+        } else {
+            min_w
+        };
+        final_width = final_width.max(min_content);
     }
     if let LengthValue::Px(v) = &style.max_width
         && *v != f64::INFINITY
     {
-        final_width = final_width.min(*v as f32);
+        let max_w = *v as f32;
+        let max_content = if is_border_box {
+            (max_w - padding_border_w).max(0.0)
+        } else {
+            max_w
+        };
+        final_width = final_width.min(max_content);
     }
 
-    // 应用 min-height / max-height
-    // 注意：min-height/max-height 应用到整个 border box（包含 padding + border）
-    let padding_border_h =
-        table_box.padding_top + table_box.padding_bottom + table_box.border_top + table_box.border_bottom;
+    // 应用 min-height / max-height（始终 border-box，与 min-height-table 测试一致）
     let mut final_height = intrinsic_height;
     if let LengthValue::Px(v) = &style.min_height {
-        // min-height 包含 padding+border，需减去后得到内容高度
         let min_content = (*v as f32 - padding_border_h).max(0.0);
         final_height = final_height.max(min_content);
     }
@@ -1733,8 +1750,6 @@ fn apply_table_size_constraints(
     // 更新 table 容器尺寸
     // CSS 表格 shrink-to-fit：当 width:auto 时，content_width 应反映
     // 实际内容宽度（所有列宽之和），而非 taffy 分配的容器宽度
-    let padding_border_w =
-        table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;
     table_box.content_width = final_width;
     table_box.width = final_width + padding_border_w;
     table_box.content_height = final_height;
