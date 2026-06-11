@@ -4,6 +4,55 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 78.2% (383/490)
 
+### R45 进展
+
+**通过率**：383/490 (78.2%)，与 R44 持平。本轮提交 2 项正确性改进（均未改变通过率）；全面分析 107 个失败测试的根因，确认 paint IFC 统一是唯一系统性突破路径。
+
+#### R45 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| 表格固有宽度估算改进 | `compute_cell_intrinsic_width` 改用 DOM `text_content()` 估算 `width:0` 单元格的最小内容宽度，替代不准确的 `font_size*0.6` 回退。`compute_column_widths` 新增 `doc` 参数以访问 DOM 文本内容 |
+| paint IFC font_size_overrides 启用 | 将 layout IFC 存储的 `text_node_font_sizes`（text_node_id → fs）转换为 parent_element_id → fs 映射，传入 paint IFC 的 `font_size_overrides`。使 paint IFC 使用正确字体大小进行字符宽度和行高计算。零回归（383→383） |
+
+#### R45 调查与分析
+
+1. **row/row-group border-collapse 修复尝试（回退）**：在 `suppress_row_group_row_box_model` 中添加 `border_collapse` 检查，collapse 模式保留 border 仅归零 padding/margin。导致 3 个回归（383→380）：paint 系统将保留的 row/row-group border 作为独立矩形绘制，与 resolve_collapsed_borders 的单元格边框渲染重叠。已回退。**根因**：collapsed border 模式下 row/row-group 的 border 应通过单元格边框冲突解决机制渲染，而非作为独立盒模型边框绘制。
+
+2. **near-miss 测试系统性分析**（107 个失败）：
+   - CSS2/floats-clear（15 个）：swatch 图像缩放精度（15×15/20×20 PNG → 96×96）与 CSS background-color 精确填充的像素差异
+   - CSS2/linebox（7 个）：inline 元素背景需从 IFC 坐标绘制而非 taffy block 坐标
+   - CSS2/borders+backgrounds（7 个）：Ahem 字体渲染差异 + 图像缩放精度
+   - writing-mode（13 个）：需垂直书写模式完整轴交换 + 垂直字形渲染
+   - multicol（21 个）：column breaking 需内容碎片化
+   - flexbox（20 个）：baseline 对齐 + writing-mode 交互
+   - table（10 个）：border-collapse + min/max-size + box-sizing
+   - position（4 个）：form controls + fixed/scroll
+
+3. **paint IFC font_size_overrides 实测**：启用后零回归（383→383），但也零改进。根因：paint IFC 与 layout IFC 的容器宽度、浮动排除区域、letter-spacing/word-spacing 等上下文参数仍不一致，仅修正 font_size 不足以使 line-breaking 完全对齐。
+
+#### R45 关键结论
+
+**paint IFC 的所有局部修改路径已穷尽**（R37-R45 共 9 轮尝试）：
+- 修改字形推进（render_fs）→ 回归
+- 传入实际 styles → 回归
+- 存储 layout IFC 结果 → 回归
+- font_size_overrides → 零改进
+- is_ahem glyph advance → 回归
+
+**唯一可行路径**是 taffy-IFC 统一方案（R43 确认）：
+1. 修改 `remeasure_text_with_float_exclusions` 和 `remeasure_inline_only_containers`，将 IFC 片段结果存储到 LayoutBox
+2. 用 IFC 计算的高度更新 taffy 块级高度
+3. 在 step 6/6.5 就存储结果，确保 table/multicol 后处理时 LayoutBox 高度已反映真实 IFC 高度
+4. paint 直接复用存储结果，不再运行独立 IFC
+
+#### 后续重点（R46+）
+
+1. **taffy-IFC 统一方案**（系统性解决方案，影响 50+ tests）：这是唯一尚未尝试且理论可行的路径。需要修改 taffy 集成层，让 taffy 块级高度基于真实 IFC 高度，而非空样式 IFC 的结果。
+2. **writing-mode 垂直布局**（影响 13 tests）：需要完整轴交换 + 垂直字形渲染
+3. **从上游 WPT 仓库下载缺失 support 图片**：需要网络访问获取真实 swatch PNG
+4. **CSS2 inline-box 模型**（影响 ~8 tests）：inline 元素背景需要从 IFC 坐标绘制
+
 ### R44 进展
 
 **通过率**：383/490 (78.2%)，与 R43 持平。本轮尝试修复 paint IFC is_ahem 字形推进问题，但因回归（-2 tests）而回退；深入调查 border 渲染、CSS 解析器和 font-family 处理路径，确认均无简单可修复的 bug。
