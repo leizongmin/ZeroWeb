@@ -4,6 +4,59 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 78.2% (383/490)
 
+### R50 进展
+
+**通过率**：383/490 (78.2%)，与 R49 持平。本轮系统性确认两条改进路径均被阻塞，并深入分析了 near-miss 测试根因。
+
+#### R50 调查与尝试
+
+1. **外边缘边框向外扩展修复（回退）**：尝试在 paint_borders 中使用 collapsed_border_outer_edge 标记，对外边缘单元格绘制完整厚度边框（以网格线为中心，向外+向内各扩展半宽）。导致 5 个 CSS2 border 测试回归（border-005/006/border-bottom-001/005/border-bottom-color-129 从通过变为失败），border-bottom-018 从 8.67% 恶化到 30.00%。根因：边框向外扩展超出 taffy 计算的元素边界，与相邻元素内容重叠。已回退
+
+2. **IFC 结果存储到 remeasurement 函数（回退）**：在 remeasure_inline_only_containers 和 remeasure_text_with_float_exclusions 中添加 IFC 片段结果存储到 LayoutBox.inline_layout。导致 2 个回归（383→380）：position-absolute-in-inline-005 从 0.63%（通过）退化为 1.01%（失败），border-padding-bleed-001 从 6.13% 恶化到 11.20%。根因：存储的 IFC 使用真实 styles 产生不同的行断行为，与 paint IFC（空 styles）的片段位置不一致，绝对定位元素的静态位置基于容器内文本位置，行断差异导致绝对定位偏移。已回退
+
+3. **near-miss 测试根因系统性分析**：对 108 个失败测试进行根因分类：
+   - 30 个 near-miss（<3% diff）：主要由 paint IFC 字体度量差异、swatch 图像缩放精度、border-collapse 外边缘半宽导致
+   - 外边缘边框问题影响 border-conflict-resolution（1.50%）、row-group-margin-border-padding（1.32%）等
+   - taffy-IFC 统一是唯一系统性解决方案，但需要从 taffy measure callback 层面统一（非 post-processing 存储）
+
+#### R50 关键结论
+
+**两条改进路径均已穷尽**：
+1. 外边缘边框修复被 taffy 单元格定位阻塞（单元格位置基于原始边框宽度，完整厚度边框扩展导致重叠）
+2. IFC 结果存储被行断一致性阻塞（存储 IFC 和 paint IFC 使用不同上下文，行断差异导致位置偏移）
+
+**唯一突破路径**：修改 taffy 的 measure callback，在初始布局计算时直接使用最终 IFC 高度和片段位置。这需要：
+- 将 IFC 片段结果在 measure callback 中直接存储（而非 post-processing）
+- taffy 基于这些结果计算后续元素的位置
+- paint 直接复用存储结果
+
+#### 按目录通过率
+
+| 目录 | 通过/总数 | 通过率 |
+|------|-----------|--------|
+| css-text-decor/ | 39/39 | 100.0% ✅ |
+| css-fonts/ | 60/60 | 100.0% ✅ |
+| css-grid/ | 17/20 | 85.0% |
+| css-tables/ | 46/55 | 83.6% |
+| css-writing-modes/ | 46/59 | 78.0% |
+| CSS2/ | 92/129 | 71.3% |
+| css-position/ | 12/16 | 75.0% |
+| css-flexbox/ | 35/55 | 63.6% |
+| css-multicol/ | 36/57 | 63.2% |
+
+#### 后续重点（R51+）
+
+1. **taffy measure callback 层面 IFC 统一**（唯一系统性解决方案，影响 50+ tests）：
+   - 在 measure_text_content 中存储 IFC 片段结果到线程安全缓存
+   - taffy 完成布局后，将缓存结果转移到 LayoutBox.inline_layout
+   - paint 直接复用，不再运行独立 IFC
+   - 这需要解决 taffy 多次调用 measure callback 的问题（缓存需要支持覆盖）
+2. **外边缘边框定位**（影响 border-conflict-resolution 等多个 tests）：
+   - 需要在 table layout 中调整外边缘单元格位置以匹配解析后的边框宽度
+   - 或者在 taffy converter 中将外边缘边框从单元格 box model 中移除
+3. **writing-mode 垂直布局**（影响 13 tests）：需要完整轴交换 + 垂直字形渲染
+4. **CSS2 inline-box 模型**（影响 ~8 tests）：inline 元素背景需要从 IFC 坐标绘制
+
 ### R49 进展
 
 **通过率**：383/490 (78.2%)，+1 test（自 R48 基线 382）。
