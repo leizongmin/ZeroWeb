@@ -686,11 +686,12 @@ impl super::Painter {
             // 条件：
             // 1. 无 inflow 子元素（纯 inline 内容）
             // 2. column-fill: balance（默认值，非 auto 顺序填充）
-            // 3. 容器无明确 height（避免 column-fill: auto + height 的复杂场景）
+            // 注意：对于纯 inline 内容，有明确高度时 balance 模式仍需分配到各列。
+            // column-fill: auto 的 inline 内容由 layout 层处理（有 height 限制时），
+            // 此处仅处理 balance 模式（无论有无 height）。
             let has_in_flow_children = box_node.children.iter().any(|c| !c.is_absolute && !c.is_fixed);
             let is_balance_mode = !matches!(style.column_fill, zero_style_system::ColumnFillComputedValue::Auto);
-            let has_explicit_height = box_node.content_height > 0.0 && matches!(style.height, LengthValue::Px(_));
-            let multicol_info = if !has_in_flow_children && is_balance_mode && !has_explicit_height {
+            let multicol_info = if !has_in_flow_children && is_balance_mode {
                 compute_multicol_info_for_paint(style, container_width, font_size)
             } else {
                 None
