@@ -789,6 +789,7 @@ impl super::Painter {
             struct PaintFragment {
                 x: f32,
                 y: f32,
+                #[allow(dead_code)]
                 height: f32,
                 font_size: f32,
                 is_ahem: bool,
@@ -1043,11 +1044,13 @@ impl super::Painter {
                     if use_stored {
                         for frag in &stored_fragments {
                             // 存储结果：frag.y 是片段框顶部（baseline_y - height），
-                            // 基线偏移 = height（line-height 盒高度），font_size 用于字形大小
+                            // 基线偏移使用 font_size（与 paint IFC 路径一致），
+                            // 因为 paint IFC 路径用 stored_fs 作为基线偏移。
+                            // 如果用 frag.height（line-height 盒高）会产生不同基线位置导致回归。
                             render_fragment!(
                                 frag.x,
                                 frag.y,
-                                frag.height,
+                                frag.font_size,
                                 frag.font_size,
                                 frag.text,
                                 frag.node_id,
