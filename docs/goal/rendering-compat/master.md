@@ -2,7 +2,47 @@
 
 **最后更新**: 2026-06-12
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 79.4% (389/490)
+**上游真实 reftest 通过率**: 79.2% (388/490)
+
+### R60 进展
+
+**通过率**：388/490 (79.2%)，与 R59 基线持平。
+
+#### R60 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| LayoutBox.text_node_line_heights | 新增 HashMap<NodeId, f32> 字段，存储 IFC 片段的 line-height（= frag.height） |
+| IFC.line_height_overrides | paint IFC 使用真实 line-height 替代 font_size * 1.2 近似 |
+| LayoutBox.inline_element_metrics | 新增 HashMap<NodeId, (f32, f32)> 字段，存储内联元素的 (font_size, line_height) |
+| IFC.inline_element_metrics + with_inline_element_metrics() | 内联元素路径（collect_inline_items line 917）在 style=None 时使用存储的度量 |
+| paint text.rs 传递 line_height_overrides 和 inline_element_metrics | paint 路径从 LayoutBox 提取并传递到 IFC |
+
+#### R60 调查与分析
+
+1. **line-height overrides（保留，零回归）**：line-height 仅影响行盒高度（垂直定位），不影响行断（水平宽度），传递到 paint IFC 安全。实测 388/490 不变——大多数 WPT 测试使用默认 line-height（normal = 1.2），覆盖值与默认值相同。
+
+2. **inline element metrics overrides（保留，零回归）**：内联元素路径从 `inline_element_metrics` 获取 font_size 和 line_height，替代 `default_font_metrics` 回退。实测 388/490 不变——大多数内联元素使用与容器相同的 font-size 和 line-height。
+
+3. **taffy leaf baseline 近似（回退）**：尝试在 `compute_leaf_layout` 中用 `measured_size.height * 0.8` 作为叶节点基线。导致 flexbox 回归 1 test（baseline-multi-line-horiz-001 从 0.97% 退化为 1.22%）。0.8 比率对不同字体不准确（Ahem 字体 ascent = 100%）。已回退。
+
+#### R60 关键结论
+
+**通过率 79.2% 后的系统性瓶颈与 R53-R59 一致**：
+- Paint IFC 使用空 styles 导致 50+ 测试文本定位偏差（R37-R60 共 24 轮穷尽所有局部修复路径）
+- line-height 和 inline element metrics 覆盖机制已就位但大多数测试使用默认值，无法产生可测量的改善
+- taffy 叶节点基线需要精确值而非近似比率
+- writing-mode 垂直 float/clearance 需完整轴交换
+
+#### 后续重点（R61+）
+
+1. **taffy measure callback 精确基线**：修改 taffy API 使 measure callback 返回 `LayoutOutput`（含 first_baselines）而非 `Size<f32>`。需要：
+   - 修改 `compute_leaf_layout` 的 `MeasureFunction` trait bound
+   - `measure_text_content` 计算 font_size 作为基线（而非 height * 0.8）
+   - 这是最精确的方案，但需要改动 taffy-local API
+2. **CSS2 near-miss 精细分析**（17 个 <2% diff 的 CSS2 失败测试）
+3. **multicol column breaking 完善**（影响 ~16 测试）
+4. **writing-mode 垂直布局**（影响 ~10 测试）
 
 ### R59 进展
 
