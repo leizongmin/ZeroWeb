@@ -26,23 +26,27 @@
 
 3. **taffy leaf baseline 近似（回退）**：尝试在 `compute_leaf_layout` 中用 `measured_size.height * 0.8` 作为叶节点基线。导致 flexbox 回归 1 test（baseline-multi-line-horiz-001 从 0.97% 退化为 1.22%）。0.8 比率对不同字体不准确（Ahem 字体 ascent = 100%）。已回退。
 
+4. **taffy LayoutOutput API + font_size 基线（回退）**：完整修改 taffy measure callback 从 `Size<f32>` 到 `LayoutOutput`，传递 font_size 作为精确基线。同样导致 flexbox 回归 1 test（baseline-multi-line-horiz-001 从通过退化为 1.11%）。基线值的变化影响了 flexbox baseline alignment 对所有子元素的交叉对齐。已完全回退 taffy API。
+
+5. **default_font_metrics 传递（回退）**：尝试将容器的 (font_size, line_height) 作为 `default_font_metrics` 传递给 paint IFC。导致 6 个回归（388→382）：font_size 的变化影响了所有未单独覆盖的文本节点的字符宽度，导致行断不一致。已回退。
+
 #### R60 关键结论
 
-**通过率 79.2% 后的系统性瓶颈与 R53-R59 一致**：
-- Paint IFC 使用空 styles 导致 50+ 测试文本定位偏差（R37-R60 共 24 轮穷尽所有局部修复路径）
-- line-height 和 inline element metrics 覆盖机制已就位但大多数测试使用默认值，无法产生可测量的改善
-- taffy 叶节点基线需要精确值而非近似比率
-- writing-mode 垂直 float/clearance 需完整轴交换
+**通过率 79.2% 后的系统性瓶颈已完全穷尽所有增量路径**（R37-R60 共 24 轮）：
+- Paint IFC 使用空 styles 导致 50+ 测试文本定位偏差。所有逐属性覆盖（font_size, is_ahem, letter_spacing, line_height, inline_element_metrics, default_font_metrics）均已尝试——要么零改进，要么因行断不一致而回归
+- taffy 叶节点基线近似（0.8*height 和 font_size）均导致 flexbox 回归
+- taffy LayoutOutput API 完整改装（measure callback 返回基线）同样导致回归
+- 结论：paint IFC 是自洽系统，任何影响字符宽度的修改都会打破行断一致性
+- **唯一可行路径**：修改 taffy 集成层使 layout IFC 和 paint IFC 共享完全相同的上下文（架构级变更）
+- writing-mode 垂直 float/clearance 需完整轴交换（影响 ~10 测试）
+- multicol column breaking 完善（影响 ~16 测试）
 
 #### 后续重点（R61+）
 
-1. **taffy measure callback 精确基线**：修改 taffy API 使 measure callback 返回 `LayoutOutput`（含 first_baselines）而非 `Size<f32>`。需要：
-   - 修改 `compute_leaf_layout` 的 `MeasureFunction` trait bound
-   - `measure_text_content` 计算 font_size 作为基线（而非 height * 0.8）
-   - 这是最精确的方案，但需要改动 taffy-local API
-2. **CSS2 near-miss 精细分析**（17 个 <2% diff 的 CSS2 失败测试）
-3. **multicol column breaking 完善**（影响 ~16 测试）
-4. **writing-mode 垂直布局**（影响 ~10 测试）
+**增量路径已穷尽，需要结构性突破之一**：
+1. **taffy-IFC 架构统一**（影响 50+ 测试，最大杠杆）：在 layout IFC 计算完成后，将完整 IFC 上下文（styles、container width、float exclusions）持久化，paint 直接复用。需要解决 table/multicol 后处理导致的容器宽度变化问题。这是唯一能系统性打破 79% 天花板的路径。
+2. **writing-mode 垂直布局**（影响 ~10 测试，次大单特性杠杆）：垂直模式下完整轴交换 + float/clearance 定位。独立于 paint IFC 问题。
+3. **multicol column breaking 完善**（影响 ~16 测试）：更精细的片段分配算法。独立于 paint IFC 问题。
 
 ### R59 进展
 
