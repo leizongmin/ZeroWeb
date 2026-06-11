@@ -28,6 +28,8 @@ pub struct ImageData {
     pub width: u32,
     /// 高度（像素）
     pub height: u32,
+    /// 纯色检测结果 — 当所有像素相同时缓存该颜色，用于优化渲染
+    solid_color: Option<[u8; 4]>,
 }
 
 impl ImageData {
@@ -43,13 +45,31 @@ impl ImageData {
                 pixels.len()
             ));
         }
-        Ok(Self { pixels, width, height })
+        // 检测纯色图片：所有像素相同时缓存颜色值
+        let solid_color = if pixels.len() >= 4 {
+            let first = [pixels[0], pixels[1], pixels[2], pixels[3]];
+            let all_same = pixels.chunks_exact(4).all(|chunk| {
+                chunk[0] == first[0]
+                    && chunk[1] == first[1]
+                    && chunk[2] == first[2]
+                    && chunk[3] == first[3]
+            });
+            if all_same { Some(first) } else { None }
+        } else {
+            None
+        };
+        Ok(Self { pixels, width, height, solid_color })
     }
 
     /// 创建指定尺寸的空（全透明）图片
     pub fn new_empty(width: u32, height: u32) -> Self {
         let pixels = vec![0u8; (width as usize) * (height as usize) * 4];
-        Self { pixels, width, height }
+        Self {
+            pixels,
+            width,
+            height,
+            solid_color: Some([0, 0, 0, 0]),
+        }
     }
 
     /// 获取指定位置的像素 (R, G, B, A)
@@ -69,6 +89,15 @@ impl ImageData {
     /// 获取图片尺寸
     pub fn size(&self) -> Size {
         Size::new(self.width as f32, self.height as f32)
+    }
+
+    /// 如果图片是纯色（所有像素相同），返回该颜色
+    ///
+    /// 用于渲染优化：纯色图片缩放时不需要双线性插值，直接填充目标矩形即可。
+    /// 这消除了 WPT reftest 中 swatch 图片（如 1x1-green.png、15x15-green.png）
+    /// 缩放到大尺寸时的边缘抗锯齿伪影。
+    pub fn solid_color(&self) -> Option<[u8; 4]> {
+        self.solid_color
     }
 
     /// 字节大小估算

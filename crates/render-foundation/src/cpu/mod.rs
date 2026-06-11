@@ -484,6 +484,29 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
         return;
     }
 
+    // 纯色图片优化：跳过双线性插值，直接填充目标矩形
+    // 消除小尺寸 swatch 图片（如 1x1-green.png）缩放到大尺寸时的边缘伪影
+    if let Some(color) = data.solid_color() {
+        let [sr, sg, sb, sa] = color;
+        if sa == 0 {
+            return; // 全透明，跳过
+        }
+        for y in top..bottom {
+            for x in left..right {
+                if x >= fb.width || y >= fb.height {
+                    continue;
+                }
+                if sa == 255 {
+                    fb.set_pixel(x, y, [sr, sg, sb, 255]);
+                } else {
+                    let c = Color::rgba(sr, sg, sb, sa);
+                    blend_pixel(fb, x, y, c, 255);
+                }
+            }
+        }
+        return;
+    }
+
     let dst_w = right - left;
     let dst_h = bottom - top;
 

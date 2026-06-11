@@ -171,7 +171,8 @@ impl LayoutEngine {
 
         // 12. 后处理：为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统直接复用存储的 IFC 结果，避免重新运行 IFC 导致字体度量不一致。
-        // TODO: 暂时禁用 — 布局 IFC 与 paint IFC 配置不同导致回归，需要更精细的条件判断
+        // TODO: 暂时禁用 — 布局 IFC（真实样式）与 paint IFC（空样式）在不同上下文运行，
+        // 存储结果导致回归。需要统一 IFC 运行上下文后再启用。
         // compute_final_inline_layouts(&mut root_box, doc, styles);
 
         // 缓存 taffy 状态用于后续增量计算
@@ -934,6 +935,29 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
         .with_tab_size(tab_size_px)
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl);
+
+    // 收集容器内的浮动排除区域（与 remeasure_text_with_float_exclusions 相同逻辑）
+    let exclusions: Vec<crate::inline::FloatExclusion> = root
+        .children
+        .iter()
+        .filter(|c| !matches!(c.float, zero_css_parser::values::FloatValue::None))
+        .filter_map(|c| {
+            let rel_y = c.y;
+            if rel_y < 0.0 || c.width <= 0.0 || c.height <= 0.0 {
+                return None;
+            }
+            Some(crate::inline::FloatExclusion {
+                y: rel_y + c.margin_top,
+                height: c.height + c.margin_bottom,
+                width: c.width + c.margin_left + c.margin_right,
+                is_left: matches!(c.float, zero_css_parser::values::FloatValue::Left),
+            })
+        })
+        .collect();
+
+    if !exclusions.is_empty() {
+        inline_ctx = inline_ctx.with_float_exclusions(exclusions);
+    }
 
     // 传入完整样式
     inline_ctx.layout(doc, node_id, styles);
