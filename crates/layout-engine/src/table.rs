@@ -277,19 +277,12 @@ fn suppress_row_group_row_box_model(table_box: &mut LayoutBox, styles: &HashMap<
     }
 }
 
-/// 将 LayoutBox 的 border/padding/margin 全部设为 0，
-/// 同时调整 width/height 以移除 border+padding 的贡献。
+/// 将 LayoutBox 的 border/padding/margin 全部设为 0。
 ///
 /// CSS 2.1 §17.5.3/17.5.4：行组和行的盒模型属性无视觉效果。
-/// taffy 在布局时已将 border+padding 计入 width/height，
-/// 因此归零后需要同步缩减尺寸以保持一致性。
+/// converter 层已在 taffy 布局前将这些属性归零，
+/// 此函数确保 extract_layout 后的 LayoutBox 也保持一致。
 fn zero_box_model(box_node: &mut LayoutBox) {
-    // 记录原始 border+padding 贡献
-    let h_bp = box_node.border_top + box_node.border_bottom
-        + box_node.padding_top + box_node.padding_bottom;
-    let w_bp = box_node.border_left + box_node.border_right
-        + box_node.padding_left + box_node.padding_right;
-
     box_node.border_top = 0.0;
     box_node.border_right = 0.0;
     box_node.border_bottom = 0.0;
@@ -302,10 +295,6 @@ fn zero_box_model(box_node: &mut LayoutBox) {
     box_node.margin_right = 0.0;
     box_node.margin_bottom = 0.0;
     box_node.margin_left = 0.0;
-
-    // 缩减 outer 尺寸以移除 border+padding 贡献
-    box_node.width = (box_node.width - w_bp).max(0.0);
-    box_node.height = (box_node.height - h_bp).max(0.0);
 }
 
 /// border-collapse: collapse 模式下的边框冲突解决。

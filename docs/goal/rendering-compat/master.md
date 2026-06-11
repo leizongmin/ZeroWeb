@@ -38,10 +38,10 @@
 #### 后续重点（R48+）
 
 1. **taffy-IFC 统一方案**（唯一系统性解决方案，影响 50+ tests）：需要重构 taffy 集成层
-   - 在 measure callback 中存储 IFC 片段结果
-   - 将 IFC 高度直接返回给 taffy（而非 taffy 自己计算）
-   - 后处理步骤（table/multicol）后重新运行 IFC 并更新存储结果
-   - paint 完全跳过 IFC 运行，直接使用存储结果
+   - R47 验证：在 post-processing 层面存储 IFC 结果不可行（即使添加 container_width 验证）
+   - 根因：存储 IFC 使用真实 styles → 不同行断行为 → 与 paint IFC（空 styles）位置不一致
+   - 唯一可行路径：修改 taffy 的 measure callback，在布局计算时直接提供 IFC 高度
+   - 基础设施已准备：inline_layout_width、is_ahem 字段已添加
 2. **writing-mode 垂直布局**（影响 13 tests）：需要完整轴交换 + 垂直字形渲染
 3. **CSS2 inline-box 模型**（影响 ~8 tests）：inline 元素背景需要从 IFC 坐标绘制
 
