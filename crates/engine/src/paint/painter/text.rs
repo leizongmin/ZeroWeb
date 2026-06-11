@@ -851,6 +851,19 @@ impl super::Painter {
                     .filter_map(|(&text_node_id, &ls)| doc.parent_node(text_node_id).map(|pid| (pid, ls)))
                     .collect();
 
+                // 转换 line-height：text_node_id → parent_element_id
+                // line-height 仅影响行盒高度（垂直定位），不影响行断（水平宽度），传递是安全的。
+                let parent_line_heights: HashMap<zero_dom::NodeId, f32> = box_node
+                    .text_node_line_heights
+                    .iter()
+                    .filter_map(|(&text_node_id, &lh)| doc.parent_node(text_node_id).map(|pid| (pid, lh)))
+                    .collect();
+
+                // 内联元素 (font_size, line_height) 覆盖：直接使用元素 NodeId 为键。
+                // 与 font_size_overrides 不同（需要 text_node_id → parent_element_id 转换），
+                // 此映射直接以元素 NodeId 为键，供 inline element 路径使用。
+                let inline_metrics = box_node.inline_element_metrics.clone();
+
                 let mut ctx = InlineFormattingContext::new(ifc_width)
                     .with_text_align(text_align)
                     .with_text_align_last(text_align_last)
@@ -865,7 +878,9 @@ impl super::Painter {
                     .with_vertical_rtl(is_vertical_rtl)
                     .with_font_size_overrides(parent_font_sizes)
                     .with_is_ahem_overrides(parent_is_ahem)
-                    .with_letter_spacing_overrides(parent_letter_spacing);
+                    .with_letter_spacing_overrides(parent_letter_spacing)
+                    .with_line_height_overrides(parent_line_heights)
+                    .with_inline_element_metrics(inline_metrics);
                 ctx.layout(doc, node_id, &HashMap::new());
                 ctx
             };

@@ -549,6 +549,8 @@ impl LayoutEngine {
             text_node_font_sizes: HashMap::new(),
             text_node_is_ahem: HashMap::new(),
             text_node_letter_spacing: HashMap::new(),
+            text_node_line_heights: HashMap::new(),
+            inline_element_metrics: HashMap::new(),
             taffy_baseline: None,
         }
     }
@@ -819,10 +821,10 @@ fn store_inline_layout_results(
     }
 }
 
-/// 从 IFC 片段中提取各文本节点的 font_size、is_ahem 标志和 letter-spacing 并存储到 LayoutBox。
+/// 从 IFC 片段中提取各文本节点的 font_size、is_ahem 标志、letter-spacing 和 line-height 并存储到 LayoutBox。
 ///
-/// paint 系统在运行空 styles IFC 时无法获取正确的 font_size、字体信息和 letter-spacing，
-/// 导致基线偏移、字符宽度和间距计算错误。通过此函数存储 layout IFC 的相关值，
+/// paint 系统在运行空 styles IFC 时无法获取正确的 font_size、字体信息、letter-spacing 和 line-height，
+/// 导致基线偏移、字符宽度、间距和行盒高度计算错误。通过此函数存储 layout IFC 的相关值，
 /// paint 可以在渲染时使用正确的值。
 fn store_font_sizes_from_ifc(inline_ctx: &crate::inline::InlineFormattingContext, box_node: &mut LayoutBox) {
     for line in &inline_ctx.lines {
@@ -832,6 +834,16 @@ fn store_font_sizes_from_ifc(inline_ctx: &crate::inline::InlineFormattingContext
             box_node
                 .text_node_letter_spacing
                 .insert(frag.node_id, frag.letter_spacing);
+            // line-height 不影响行断（仅影响垂直定位），传递到 paint IFC 是安全的。
+            // 使用片段的 height 作为行盒高度贡献（已含 line-height + padding + border）。
+            box_node.text_node_line_heights.insert(frag.node_id, frag.height);
+            // 内联元素片段（node_id 是元素 NodeId 而非文本节点 NodeId）：
+            // 存储其 (font_size, line_height) 供 paint IFC 使用。
+            // 内联元素在 paint IFC 中无法获取自己的样式，导致使用默认值。
+            // line_height 近似使用 height（对文本片段来说等于 run.line_height）。
+            box_node
+                .inline_element_metrics
+                .insert(frag.node_id, (frag.font_size, frag.height));
         }
     }
 }
