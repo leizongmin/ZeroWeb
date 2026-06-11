@@ -1,8 +1,63 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-11
+**最后更新**: 2026-06-12
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 79.4% (389/490)
+
+### R55 进展
+
+**通过率**：389/490 (79.4%)，与 R54 持平。本轮添加了基线改进基础设施，探索了多条改进路径但均被系统性瓶颈阻塞。
+
+#### R55 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| IFC baseline_overrides 基础设施 | `InlineFormattingContext` 新增 `baseline_overrides` 字段和 builder 方法，供 `adjust_inline_block_positions` 从子元素布局位置合成基线 |
+| inline-flex/inline-grid 基线近似 | 对水平方向 flex 容器（Row/RowReverse），从第一行子元素最大底边计算基线，替代 `height/2` 回退 |
+| clippy 警告修复 | 修复 `engine/tests/coverage.rs` 中预存的未使用 glob import 警告 |
+
+#### R55 调查与尝试
+
+1. **inline-flex/inline-grid baseline 从子元素合成**（保留）：从第一行子元素（共享最小 y 值）的最大底边近似基线。对 horiz-003/004 有微小改善（48.76%→47.29%），但不影响通过/失败判定。原因：正确基线需从 baseline-aligned 的 flex item 提取（由 taffy first_baselines 提供），而非第一个子元素的底边。
+
+2. **border-collapse 外边缘完整厚度**（回退）：尝试让外边缘单元格绘制完整边框厚度（不与邻居共享）。导致 2 个回归（css-tables 46→45，CSS2 92→91），与 R49/R50 结论一致：taffy 的单元格位置基于原始边框宽度，完整厚度边框扩展超出元素边界。
+
+3. **系统性瓶颈确认**（与 R53-R54 一致）：
+   - Paint IFC 使用空 styles 导致 50+ 测试文本定位偏差
+   - taffy 的 `Layout` 结构不保留 `first_baselines`，无法提取真实基线
+   - border-collapse 外边缘精度被 taffy 单元格定位阻塞
+   - writing-mode 垂直 float/clearance 需完整轴交换
+
+#### 按目录通过率
+
+与 R54 一致：
+
+| 目录 | 通过/总数 | 通过率 |
+|------|-----------|--------|
+| css-text-decor/ | 39/39 | 100.0% ✅ |
+| css-fonts/ | 60/60 | 100.0% ✅ |
+| css-grid/ | 17/20 | 85.0% |
+| css-tables/ | 46/55 | 83.6% |
+| css-writing-modes/ | 49/59 | 83.1% |
+| CSS2/ | 92/129 | 71.3% |
+| css-position/ | 12/16 | 75.0% |
+| css-flexbox/ | 38/55 | 69.1% |
+| css-multicol/ | 36/57 | 63.2% |
+
+#### 失败分布（101 个失败）
+
+| 严重程度 | 数量 | 主要类别 |
+|----------|------|----------|
+| Near-miss (<3%) | 38 | CSS2 floats-clear 精度、flexbox baseline、table border |
+| Medium (3-10%) | 32 | 布局差异、IFC 行断不一致 |
+| Severe (>10%) | 31 | 功能缺失（writing-mode 垂直、column breaking、baseline multi-line） |
+
+#### 后续重点（R56+）
+
+1. **taffy first_baselines 提取**（影响 ~10 tests）：需要修改 taffy 的 `Layout` 结构或缓存访问来保留 baseline 信息
+2. **writing-mode 垂直布局 float/clearance**（影响 6+ 测试）：`adjust_float_positions` 需轴交换
+3. **multicol column breaking 完善**（影响 ~16 测试）：更精细的片段分配算法
+4. **CSS2 逐步改善**（影响 37 个失败）：通过 swatch 图片精度、IFC 行断修正来减少 near-miss
 
 ### R54 进展
 
