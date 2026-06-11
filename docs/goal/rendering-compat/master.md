@@ -4,6 +4,39 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 78.2% (383/490)
 
+### R43 进展
+
+**通过率**：383/490 (78.2%)，与 R42 持平。提交 solid-color 图像检测优化（未改变通过率）；验证 compute_final_inline_layouts + float exclusion 仍导致回归（-6 tests）；调查缺失 support 图片影响。
+
+#### R43 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| solid-color 图像检测 | `ImageData` 新增 `solid_color` 字段，`from_rgba()` 时检测所有像素是否相同。CPU `render_image` 对纯色图片跳过双线性插值，直接填充目标矩形。消除 WPT swatch 图片缩放边缘伪影的基础设施 |
+| compute_final_inline_layouts 浮动排除 | 为 step 12 的最终 IFC 存储函数添加 float exclusion 收集逻辑（仍然禁用，回归验证用） |
+
+#### R43 调查与尝试
+
+1. **启用 compute_final_inline_layouts + 浮动排除（回退）**：在 step 12 添加浮动排除区域收集后启用。结果 6 个回归（383→377），与 R38/R42 结论一致。回归测试：`font-family-013`（3.34%）、`block-formatting-contexts-004`（1.35%）、`font-feature-resolution-002`（8.65%，font-size:2em）、`multicol-fill-auto-001`（1.29%）、`position-absolute-in-inline-005/006`（1.28%/1.26%）。**根因确认**：layout IFC 使用真实样式计算文本位置和行断，但 taffy 的块级布局位置基于空样式 IFC 的结果。两套位置不一致导致回归。
+
+2. **缺失 support 图片调查**：发现 css-multicol 缺少 `swatch-blue.png`、`swatch-orange.png`、`swatch-yellow.png`；CSS2/support 缺少多种 swatch 图片。尝试生成纯色替代图片后导致 3 个回归（reference 文件现在显示图片，但 test 渲染不匹配），已回退。**结论**：缺失图片需要从上游 WPT 仓库下载原始版本，不能用合成替代。
+
+3. **solid-color 图像检测影响验证**：确认现有 support 目录中的 swatch 图片（如 `black15x15.png`、`blue15x15.png`）是纯色 PNG。但当前 CSS2 失败测试多数不使用 swatch 图片（仅 `clear-clearance-calculation-001/002/003` 使用背景图片），solid-color 优化对当前通过率无影响。
+
+4. **paint IFC 架构方案穷尽确认**：
+   - 方案 A（render_fs）：使用容器 font_size 替代 fragment.font_size → font-size:2em 测试回归
+   - 方案 B（传递 styles HashMap）：传递实际样式到 paint IFC → 行断行为改变导致 6 个回归
+   - 方案 C（存储 layout IFC 结果）：即使添加 float exclusion 仍导致 6 个回归
+   - 方案 D（font_size_overrides）：按父元素 ID 覆盖字体大小 → 行断回归
+   - **所有方案的核心矛盾**：paint IFC 必须使用与 taffy 块级布局一致的文本位置。改变 IFC 上下文（字体大小、样式、容器宽度、浮动排除）会改变行断行为，与 taffy 已计算的位置冲突。**唯一出路**是让 taffy 也使用相同的 IFC 结果来计算块级高度和位置，这需要修改 taffy 集成层。
+
+#### 后续重点（R44+）
+
+1. **taffy-IFC 统一方案**（系统性解决方案）：修改 `remeasure_text_with_float_exclusions` 和 `remeasure_inline_only_containers` 使其将 IFC 片段结果存储到 LayoutBox，同时用 IFC 计算的高度更新 taffy 的块级高度。这样 taffy 的位置和 IFC 的位置基于同一份结果。需要在 step 6/6.5 就存储结果，确保后续 table/multicol 后处理时 LayoutBox 高度已反映真实 IFC 高度。
+2. **writing-mode 垂直布局**（影响 13 测试）：需要完整轴交换 + 垂直字形渲染
+3. **从上游 WPT 仓库下载缺失 support 图片**：需要网络访问上游 WPT GitHub 仓库获取真实 swatch/blue15x15 等图片
+4. **CSS2 inline-box 模型**（影响 ~8 测试）：inline 元素背景需要从 IFC 坐标绘制而非 taffy block 坐标
+
 ### R42 进展
 
 **通过率**：383/490 (78.2%)，与 R41 持平。提交 3 项正确性修复（均未改变通过率）；深入调查 paint IFC 架构、multicol paint 路径和 near-miss 测试根因。
