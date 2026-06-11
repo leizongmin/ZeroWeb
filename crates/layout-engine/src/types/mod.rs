@@ -178,6 +178,21 @@ pub struct LayoutBox {
     /// paint 系统在运行空 styles IFC 时无法获取 letter-spacing（无 style 信息），
     /// 使用此映射正确设置字符间间距。
     pub text_node_letter_spacing: HashMap<NodeId, f32>,
+    /// 文本节点的 line-height 映射（来自 layout engine 的 IFC 运行）。
+    ///
+    /// paint 系统在运行空 styles IFC 时无法获取 line-height（无 style 信息），
+    /// 回退为 font_size * 1.2 近似值。对于使用自定义 line-height（如 line-height: 2）
+    /// 的元素，近似值会导致行盒高度与 layout IFC 不一致。
+    /// 使用此映射确保 paint IFC 的行盒高度与 layout IFC 一致。
+    pub text_node_line_heights: HashMap<NodeId, f32>,
+    /// 内联元素的 (font_size, line_height) 映射（来自 layout engine 的 IFC 运行）。
+    ///
+    /// 与 text_node_font_sizes/line_heights 不同，此映射以元素自身的 NodeId 为键，
+    /// 供 paint IFC 在处理内联元素（非文本节点）时使用。
+    /// 内联元素在 paint IFC 中无法获取自己的样式（styles 为空），
+    /// 导致 font_size 和 line_height 回退到默认值。
+    /// 此映射确保 paint IFC 的内联元素使用正确的字体度量和行高。
+    pub inline_element_metrics: HashMap<NodeId, (f32, f32)>,
     /// 从 taffy 布局缓存中提取的 first_baseline（y 分量）。
     ///
     /// 仅对 flex/inline-flex/grid/inline-grid 容器有值。
@@ -266,6 +281,8 @@ impl Default for LayoutBox {
             text_node_font_sizes: HashMap::new(),
             text_node_is_ahem: HashMap::new(),
             text_node_letter_spacing: HashMap::new(),
+            text_node_line_heights: HashMap::new(),
+            inline_element_metrics: HashMap::new(),
             taffy_baseline: None,
         }
     }

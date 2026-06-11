@@ -444,6 +444,21 @@ pub struct InlineFormattingContext {
     /// 导致所有字符使用 0 的默认间距。此覆盖确保 paint IFC 使用正确的
     /// letter-spacing 值进行字符宽度和行断计算。
     pub letter_spacing_overrides: HashMap<NodeId, f32>,
+    /// 逐文本节点的 line-height 覆盖（key = 文本节点的父元素 NodeId）。
+    ///
+    /// paint IFC 传入空的 styles HashMap，无法获取 line-height，
+    /// 回退为 font_size * 1.2 近似值。对于使用自定义 line-height 的元素，
+    /// 近似值导致行盒高度与 layout IFC 不一致，进而影响垂直定位。
+    /// line-height 仅影响垂直定位（行盒高度），不影响行断（水平宽度），
+    /// 因此传递此覆盖不会改变行断行为。
+    pub line_height_overrides: HashMap<NodeId, f32>,
+    /// 内联元素的 (font_size, line_height) 覆盖（key = 元素自身的 NodeId）。
+    ///
+    /// 与 font_size_overrides/line_height_overrides 不同（以文本节点的父元素为键），
+    /// 此映射以内联元素自身的 NodeId 为键。供 collect_inline_items 中
+    /// 处理内联元素（非文本节点）时使用。
+    /// 这些属性仅影响垂直定位（行盒高度），不影响行断（水平宽度）。
+    pub inline_element_metrics: HashMap<NodeId, (f32, f32)>,
     /// 行内级盒的基线覆盖（key = 元素 NodeId）。
     ///
     /// 用于 inline-flex/inline-grid 等元素，其基线应从第一个子元素的布局位置
@@ -477,6 +492,8 @@ impl InlineFormattingContext {
             font_size_overrides: HashMap::new(),
             is_ahem_overrides: HashMap::new(),
             letter_spacing_overrides: HashMap::new(),
+            line_height_overrides: HashMap::new(),
+            inline_element_metrics: HashMap::new(),
             baseline_overrides: HashMap::new(),
         }
     }
@@ -537,6 +554,25 @@ impl InlineFormattingContext {
     /// 设置 letter-spacing 覆盖（paint IFC 使用）。
     pub fn with_letter_spacing_overrides(mut self, overrides: HashMap<NodeId, f32>) -> Self {
         self.letter_spacing_overrides = overrides;
+        self
+    }
+
+    /// 设置逐文本节点的 line-height 覆盖（paint IFC 使用）。
+    ///
+    /// key 为文本节点的父元素 NodeId，value 为 layout IFC 计算的 line-height。
+    /// line-height 仅影响行盒高度（垂直定位），不影响行断（水平宽度），
+    /// 因此传递此覆盖是安全的。
+    pub fn with_line_height_overrides(mut self, overrides: HashMap<NodeId, f32>) -> Self {
+        self.line_height_overrides = overrides;
+        self
+    }
+
+    /// 设置内联元素的 (font_size, line_height) 覆盖（paint IFC 使用）。
+    ///
+    /// key 为内联元素自身的 NodeId，value 为 (font_size, line_height)。
+    /// 这些属性仅影响垂直定位（行盒高度），不影响行断。
+    pub fn with_inline_element_metrics(mut self, metrics: HashMap<NodeId, (f32, f32)>) -> Self {
+        self.inline_element_metrics = metrics;
         self
     }
 
@@ -697,7 +733,15 @@ impl InlineFormattingContext {
                                 // paint IFC 传入空 styles：使用 layout IFC 存储的 font_size 覆盖
                                 // 替代 16px 默认值，使字符宽度和行高计算更准确
                                 if let Some(&fs) = self.font_size_overrides.get(&pid) {
-                                    (fs, fs * NORMAL_LINE_HEIGHT_RATIO)
+                                    // line-height 覆盖：使用 layout IFC 存储的真实 line-height，
+                                    // 而非 font_size * 1.2 近似值。line-height 仅影响行盒高度，
+                                    // 不影响行断行为，因此传递覆盖是安全的。
+                                    let lh = self
+                                        .line_height_overrides
+                                        .get(&pid)
+                                        .copied()
+                                        .unwrap_or(fs * NORMAL_LINE_HEIGHT_RATIO);
+                                    (fs, lh)
                                 } else {
                                     self.default_font_metrics
                                         .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
@@ -875,6 +919,10 @@ impl InlineFormattingContext {
                         let style = styles.get(&child_id);
                         let (font_size, line_height) = if style.is_some() {
                             resolve_font_metrics(style)
+                        } else if let Some(&(fs, lh)) = self.inline_element_metrics.get(&child_id) {
+                            // paint IFC（空 styles）：使用 layout IFC 存储的 (font_size, line_height)
+                            // 这仅影响行盒高度（垂直定位），不影响行断。
+                            (fs, lh)
                         } else {
                             self.default_font_metrics
                                 .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
