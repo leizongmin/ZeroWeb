@@ -4,6 +4,44 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 79.4% (389/490)
 
+### R59 进展
+
+**通过率**：389/490 (79.4%)，与 R58 基线持平。
+
+#### R59 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| taffy 本地补丁 | 从 crates.io 复制 taffy 0.7.7，添加 `Cache::cached_baselines()` 和 `TaffyTree::cached_baselines()` 公开方法 |
+| LayoutBox.taffy_baseline 字段 | 存储 taffy 布局缓存中提取的 first_baseline（y 分量） |
+| extract_baselines_recursive | 在 extract_layout 后递归提取所有节点的基线，存储到 LayoutBox |
+| adjust_inline_block_positions 优先使用 taffy_baseline | inline-flex/inline-grid 基线计算优先使用 taffy 缓存基线，回退到 font-size 近似 |
+
+#### R59 调查与分析
+
+1. **垂直模式 float 重定位（已验证无效）**：实现了 `reposition_floats_for_vertical_writing_mode` 后处理步骤，发现 float-contiguous-vrl/vlr 测试在无修改时已全部通过（0.00%）。这些测试的 float 元素经过 taffy 轴交换 + extract_layout 逆交换后，水平模式 float 定位恰好产生正确的视觉结果。
+
+2. **taffy 基线提取机制调查**：taffy 0.7.7 的 flexbox 算法仅在单个 flex 行中有 **≥2 个 align-self: baseline 的子元素**时才计算子元素基线。大多数 inline-flex 容器（包括失败的测试）的子元素使用默认 `align-self: stretch`，因此 `compute_child_baselines` 被跳过，`child.baseline` 保持默认值 0.0。容器基线计算使用 `child.offset_cross + child.baseline = offset_cross + 0.0`，对大多数场景无实际意义。
+
+3. **solid-color 图像快速路径确认**：CPU renderer 的 `ImageData::solid_color` 检测和快速填充路径已完整连接（在 `render_image` 中），不是 CSS2 floats-clear near-miss 的根因。
+
+4. **empty-inline 测试根因确认**：`empty-inline-002` (35.52%) 和 `empty-inline-003` (13.29%) 的 IFC 正确处理空 inline 元素的 line-height 贡献（`collect_inline_items` 生成零宽度 TextRun，`break_items_into_lines` 贡献 box_height）。失败根因仍是 paint IFC 使用空 styles 导致错误的 font-size/line-height/padding/border 值。
+
+#### R59 关键结论
+
+**通过率 79.4% 后的系统性瓶颈与 R53-R58 一致**：
+- Paint IFC 使用空 styles 导致 50+ 测试文本定位偏差（R37-R58 共 22 轮穷尽所有局部修复路径）
+- taffy Layout 不公开 first_baselines → 已建立本地补丁基础设施但 taffy 仅在多 baseline 子元素时计算
+- border-collapse 外边缘精度被 taffy 单元格定位阻塞
+- writing-mode 垂直 float/clearance 的 float-contiguous 测试已通过，其余 clearance 测试需完整轴交换
+
+#### 后续重点（R60+）
+
+1. **修改 taffy measure callback 返回基线**：让 `measure_text_content` 返回包含 first_baselines 的 LayoutOutput 而非 Size，使 flex 子元素的 baseline 在单 baseline 子元素场景下也能被计算
+2. **CSS2 near-miss 精细分析**：16 个 <3% diff 的 CSS2 失败测试中，部分可能通过 letter-spacing/line-height 精度微调改善
+3. **multicol column breaking 完善**（影响 ~16 测试）
+4. **CSS2 inline-box 模型**（影响 ~8 测试）
+
 ### R58 进展
 
 **通过率**：387-389/490 (79.0-79.4%)，基线因 2-3 个 flaky 测试在阈值边缘波动。
