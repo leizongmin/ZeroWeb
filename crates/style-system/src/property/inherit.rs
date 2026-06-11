@@ -1070,6 +1070,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.clip_path = default_style.clip_path;
             true
         }
+        "clip" => {
+            style.clip = default_style.clip;
+            true
+        }
         "mask-image" => {
             style.mask_image = default_style.mask_image;
             true

@@ -673,3 +673,88 @@ fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
 fn split_comma_or_space(s: &str) -> Vec<&str> {
     s.split_whitespace().collect()
 }
+
+// ── CSS clip 属性解析（已弃用的 CSS2 裁剪属性） ───────────────────────
+
+/// 解析 CSS clip 属性值。
+///
+/// 支持：`auto` | `rect(top, right, bottom, left)`
+/// rect() 参数可以是长度值或 `auto`（等同于 0）。
+pub fn parse_clip(value: &str) -> Option<ClipRectValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("auto") {
+        return Some(ClipRectValue::Auto);
+    }
+    // rect(top, right, bottom, left)
+    if let Some(rest) = v.strip_prefix("rect(") {
+        let inner = rest.strip_suffix(')')?.trim();
+        // rect() 内部参数用逗号分隔
+        let parts: Vec<&str> = inner.split(',').collect();
+        if parts.len() != 4 {
+            return None;
+        }
+        let top = parse_length_or_auto_clip(parts[0].trim())?;
+        let right = parse_length_or_auto_clip(parts[1].trim())?;
+        let bottom = parse_length_or_auto_clip(parts[2].trim())?;
+        let left = parse_length_or_auto_clip(parts[3].trim())?;
+        return Some(ClipRectValue::Rect(top, right, bottom, left));
+    }
+    None
+}
+
+/// 解析长度值或 `auto`（视为 0px）。
+fn parse_length_or_auto_clip(s: &str) -> Option<LengthValue> {
+    let v = s.trim();
+    if v.eq_ignore_ascii_case("auto") {
+        Some(LengthValue::Px(0.0))
+    } else {
+        parse_length(v)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_clip_auto() {
+        assert!(matches!(parse_clip("auto"), Some(ClipRectValue::Auto)));
+        assert!(matches!(parse_clip("AUTO"), Some(ClipRectValue::Auto)));
+    }
+
+    #[test]
+    fn test_parse_clip_rect() {
+        let result = parse_clip("rect(0px, 50px, 50px, 0px)");
+        assert!(matches!(
+            result,
+            Some(ClipRectValue::Rect(
+                LengthValue::Px(0.0),
+                LengthValue::Px(50.0),
+                LengthValue::Px(50.0),
+                LengthValue::Px(0.0),
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_parse_clip_rect_auto_values() {
+        // auto inside rect() is treated as 0px
+        let result = parse_clip("rect(auto, auto, auto, auto)");
+        assert!(matches!(
+            result,
+            Some(ClipRectValue::Rect(
+                LengthValue::Px(0.0),
+                LengthValue::Px(0.0),
+                LengthValue::Px(0.0),
+                LengthValue::Px(0.0),
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_parse_clip_invalid() {
+        assert!(parse_clip("inherit").is_none());
+        assert!(parse_clip("rect(10px)").is_none());
+        assert!(parse_clip("rect(10px, 20px)").is_none());
+    }
+}

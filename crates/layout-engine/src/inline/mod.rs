@@ -741,11 +741,8 @@ impl InlineFormattingContext {
                                 s.display,
                                 DisplayValue::Block
                                     | DisplayValue::Flex
-                                    | DisplayValue::InlineFlex
                                     | DisplayValue::Grid
-                                    | DisplayValue::InlineGrid
                                     | DisplayValue::Table
-                                    | DisplayValue::InlineTable
                                     | DisplayValue::ListItem
                                     | DisplayValue::FlowRoot
                             )
@@ -756,11 +753,18 @@ impl InlineFormattingContext {
                             continue;
                         }
 
-                        // 检查该元素是否为 display: inline-block。
-                        // inline-block 元素参与行内格式化上下文，作为不可拆分的原子盒。
-                        // CSS 属性的 width/height 作为尺寸来源。
+                        // 检查该元素是否为原子行内级盒（inline-block / inline-flex / inline-grid / inline-table）。
+                        // 这些元素参与行内格式化上下文，作为不可拆分的原子盒。
                         let style = styles.get(&child_id);
-                        let is_inline_block = style.is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock));
+                        let is_inline_block = style.is_some_and(|s| {
+                            matches!(
+                                s.display,
+                                DisplayValue::InlineBlock
+                                    | DisplayValue::InlineFlex
+                                    | DisplayValue::InlineGrid
+                                    | DisplayValue::InlineTable
+                            )
+                        });
 
                         if is_inline_block {
                             let s = style.unwrap();

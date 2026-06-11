@@ -545,22 +545,28 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
         return;
     }
 
-    // 收集 inline-block 子元素的索引
+    // 收集原子行内级子元素（inline-block / inline-flex / inline-grid / inline-table）的索引
     let ib_indices: Vec<usize> = root
         .children
         .iter()
         .enumerate()
         .filter(|(_, child)| {
             child.node_id.is_some_and(|id| {
-                styles
-                    .get(&id)
-                    .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+                styles.get(&id).is_some_and(|s| {
+                    matches!(
+                        s.display,
+                        DisplayValue::InlineBlock
+                            | DisplayValue::InlineFlex
+                            | DisplayValue::InlineGrid
+                            | DisplayValue::InlineTable
+                    )
+                })
             })
         })
         .map(|(i, _)| i)
         .collect();
 
-    // 如果没有 inline-block 子元素，无需处理
+    // 如果没有原子行内级子元素，无需处理
     if ib_indices.is_empty() {
         return;
     }
