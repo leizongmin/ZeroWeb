@@ -1,0 +1,2 @@
+# Only track the patched source files, not build artifacts
+target/
