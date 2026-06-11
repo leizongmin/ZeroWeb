@@ -2,7 +2,73 @@
 
 **最后更新**: 2026-06-11
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 78.0% (382/490)
+**上游真实 reftest 通过率**: 79.4% (389/490)
+
+### R54 进展
+
+**通过率**：389/490 (79.4%)，+7 tests（自 R53 基线 382）。
+
+#### R54 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| CSS clip 属性支持 | 解析 `clip: auto / rect()`、样式系统集成、paint 层对绝对定位元素应用矩形裁剪 |
+| 原子行内级元素扩展 | `inline-flex`、`inline-grid`、`inline-table` 现在与 `inline-block` 同等参与 IFC 和 `adjust_inline_block_positions` 后处理 |
+| WPT writing-modes support 图片 | 补充 `pattern-gr-rr-100x100.png` 等 4 张缺失图片 |
+| border-bottom inherit 单元测试 | 验证 `border-bottom: inherit` 正确传播 width/style/color 子属性 |
+
+#### R54 通过率变化
+
+| 目录 | R53 | R54 | 变化 |
+|------|-----|-----|------|
+| css-flexbox/ | 63.6% (35/55) | 69.1% (38/55) | +3 tests |
+| css-writing-modes/ | 78.0% (46/59) | 83.1% (49/59) | +3 tests |
+| 其他 | 不变 | 不变 | 无回归 |
+
+#### R54 分析
+
+1. **原子行内级扩展是最大杠杆**：将 `inline-flex`/`inline-grid`/`inline-table` 纳入 IFC 原子盒处理，使这些元素在行内上下文中正确参与布局，直接修复 6 个测试。
+
+2. **CSS clip 属性对齐规范**：`clip` 是已弃用的 CSS2 裁剪属性（仅对绝对定位元素生效），但许多 WPT 测试仍使用它。当前通过 0 个新测试，但消除了潜在的渲染差异。
+
+3. **系统性瓶颈不变**：
+   - Paint IFC 使用空 styles 导致 50+ 测试文本定位偏差（R37-R53 已穷尽所有低风险改进路径）
+   - writing-mode 垂直布局缺失影响 10 个测试
+   - multicol column breaking 不完整影响 21 个测试
+   - flexbox baseline 需 taffy first_baselines 提取影响 ~10 个测试
+
+#### 按目录通过率
+
+| 目录 | 通过/总数 | 通过率 |
+|------|-----------|--------|
+| css-text-decor/ | 39/39 | 100.0% ✅ |
+| css-fonts/ | 60/60 | 100.0% ✅ |
+| css-grid/ | 17/20 | 85.0% |
+| css-tables/ | 46/55 | 83.6% |
+| css-writing-modes/ | 49/59 | 83.1% |
+| CSS2/ | 92/129 | 71.3% |
+| css-position/ | 12/16 | 75.0% |
+| css-flexbox/ | 38/55 | 69.1% |
+| css-multicol/ | 36/57 | 63.2% |
+
+#### 各目录距 95% 目标差距
+
+| 目录 | 需额外通过 | 最大瓶颈 |
+|------|-----------|----------|
+| css-grid | +2 | max-content + taffy 支持 |
+| css-tables | +6 | border-collapse 精度 + subpixel |
+| css-writing-modes | +7 | 垂直布局 float/clearance/offset |
+| css-position | +4 | position:fixed 打印 + form controls |
+| CSS2 | +31 | paint IFC 系统性问题 |
+| css-flexbox | +14 | baseline 提取 + writing-mode 交互 |
+| css-multicol | +18 | column breaking + balance |
+
+#### 后续重点（R55+）
+
+1. **writing-mode 垂直布局中的 float/clearance**（影响 6+ 测试）：`adjust_float_positions` 需要轴交换支持，让垂直模式下的 float 定位和 clearance 计算正确工作
+2. **taffy-IFC 统一**（影响 50+ tests，系统性突破）：唯一可行路径是修改 taffy 集成层
+3. **multicol column breaking 完善**（影响 ~16 测试）：需要更精细的片段分配算法
+4. **flexbox baseline 提取**（影响 ~10 tests）：从 taffy first_baselines 提取基线信息
 
 ### R53 进展
 
