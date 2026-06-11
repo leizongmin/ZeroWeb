@@ -926,7 +926,7 @@ impl<NodeContext> TaffyTree<NodeContext> {
     /// Returns an instance of LayoutTree representing the TaffyTree
     #[cfg(test)]
     pub(crate) fn as_layout_tree(&mut self) -> impl LayoutPartialTree + CacheTree + '_ {
-        TaffyView { taffy: self, measure_function: |_, _, _, _, _| Size::ZERO }
+        TaffyView { taffy: self, measure_function: |_, _, _, _, _| LayoutOutput::DEFAULT }
     }
 }
 
