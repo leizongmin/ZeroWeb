@@ -2,7 +2,63 @@
 
 **最后更新**: 2026-06-11
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 78.2% (383/490)
+**上游真实 reftest 通过率**: 78.4% (384/490)
+
+### R52 进展
+
+**通过率**：384/490 (78.4%)，+1 test（自 R51 基线 383，可能在阈值边缘波动）。本轮深入调查 near-miss 测试根因，尝试多项改进，确认多数路径仍被 IFC 架构阻塞。
+
+#### R52 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| 表格单元格 content_width 同步更新 | position_cells 设置 cell_box.width 后同步更新 content_width。之前 content_width 保留 taffy 计算值（width:0 单元格为 0），影响 paint 系统的文本容器宽度。正确性修复，实测无通过率变化 |
+| box-sizing 高度约束尝试（回退） | 尝试让 min/max-height 尊重 box-sizing:content-box。改善了 min-max-size-table-content-box（19.76%→15.75%），但回归 min-height-table（PASS→FAIL 2.17%）。CSS Tables 规范对表格 min/max-height 有特殊的 border-box 语义。已回退 |
+
+#### R52 调查与分析
+
+1. **107 个失败测试全面分析**：
+   - Near-miss (<3%): 38 个 — 多数因 paint IFC 字体度量差异、swatch 图像缩放精度、border-collapse 亚像素精度
+   - Medium (3-10%): 32 个 — 布局差异、IFC 行断不一致、缺失 CSS 功能
+   - High (10-25%): 26 个 — 缺失功能（writing-mode 垂直布局、column breaking、baseline 对齐）
+   - Severe (>25%): 9 个 — 大面积功能缺失（position:fixed、column balancing、baseline multi-line）
+
+2. **表格单元格 width:0 问题调查**：table-cell-width-0 (32.12%) 的根因不仅是 content_width 未更新，更根本的是 taffy 将 width:0 单元格的子元素约束为 0 宽度。content_width 修复正确但无法解决子元素布局问题
+
+3. **subpixel-table-cell-width-001 (9.97%)**：taffy 的列宽计算使用 f32（无整数舍入），但 position_cells 中的单元格宽度可能有精度差异
+
+4. **min-max-size-table-content-box (19.76%)**：box-sizing:content-box 对表格 min/max-height 的影响。CSS Tables 规范的 table wrapper box 语义使 min/max-height 始终按 border-box 解释，与 box-sizing 交互存在规范模糊
+
+5. **html-display-table (2.90%)**：`<html display:table>` 的 shrink-to-fit 在 R51 已确认被 taffy 的 inline→Block 映射阻塞
+
+6. **flexbox near-miss 分析**：5 个 <3% 失败测试的根因：
+   - wrap-reverse baseline：taffy 对 wrap-reverse baseline 的内部计算
+   - column-row-gap：百分比 gap 分辨率精度
+   - writing-mode：垂直书写模式轴交换不完整
+   - fieldset-as-item：自定义 scrollbar 指示器与原生 scrollbar 外观差异
+   - css-flexbox-test1：writing-mode:vertical-rl + flex-flow:row
+
+#### 按目录通过率
+
+| 目录 | 通过/总数 | 通过率 |
+|------|-----------|--------|
+| css-text-decor/ | 39/39 | 100.0% ✅ |
+| css-fonts/ | 60/60 | 100.0% ✅ |
+| css-grid/ | 17/20 | 85.0% |
+| css-tables/ | 46/55 | 83.6% |
+| css-writing-modes/ | 47/59 | 79.7% |
+| CSS2/ | 92/129 | 71.3% |
+| css-position/ | 12/16 | 75.0% |
+| css-flexbox/ | 35/55 | 63.6% |
+| css-multicol/ | 36/57 | 63.2% |
+
+#### 后续重点（R53+）
+
+1. **taffy measure callback IFC 统一**（唯一系统性解决方案，影响 50+ tests）
+2. **writing-mode 垂直布局**（影响 13 tests）
+3. **CSS2 inline-box 模型**（影响 ~8 tests）
+4. **flexbox baseline 对齐改进**（影响 ~5 tests）
+5. **产品/真实静态页视觉 smoke 门禁**
 
 ### R51 进展
 
