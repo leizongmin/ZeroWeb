@@ -4,7 +4,60 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 78.2% (383/490)
 
-### R50 进展
+### R51 进展
+
+**通过率**：383/490 (78.2%)，与 R50 持平。本轮完成 paint IFC 覆盖机制扩展，验证了 IFC 存储方案的可行性边界。
+
+#### R51 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| paint IFC is_ahem 覆盖 | LayoutBox 新增 text_node_is_ahem 字段；IFC 新增 is_ahem_overrides；collect_inline_items 在空 styles 时从覆盖映射检测 Ahem 字体 |
+| paint IFC letter-spacing 覆盖 | LayoutBox 新增 text_node_letter_spacing 字段；IFC 新增 letter_spacing_overrides；collect_inline_items 在空 styles 时从覆盖映射获取 letter-spacing |
+| TextFragment 扩展 | 新增 is_ahem 和 letter_spacing 字段，从 TextRun 传播 |
+
+#### R51 调查与尝试
+
+1. **compute_final_inline_layouts + frag.height 基线修复（回退）**：尝试重新启用 step 12 的 IFC 结果存储，同时将 paint stored path 的基线偏移从 frag.font_size 改为 frag.height。导致 5 个回归（379→379，但 CSS2 从 92→91）。根因与 R38-R50 一致：存储 IFC 使用真实 styles 产生不同行断行为。已回退
+
+2. **针对性 IFC 存储（remeasure 函数 + adjust_inline_block_positions）**：仅在 remeasure_text_with_float_exclusions、remeasure_inline_only_containers 和 adjust_inline_block_positions 中存储 IFC 结果。导致 5 个回归。根因相同。已回退
+
+3. **html-display-table shrink-to-fit 尝试（回退）**：尝试在 build_grid 返回空时对 display:table 容器应用 shrink-to-fit 宽度。发现 `<html>` 元素的 inline-block 子元素在 step 8 时仍由 taffy 作为 Block 处理，无法正确计算固有宽度。已回退
+
+4. **paint IFC 覆盖机制扩展（保留）**：is_ahem 和 letter-spacing 覆盖使 paint IFC 的字符宽度计算与 layout IFC 更一致。实测通过率波动 ±1（float-003 在 1.18% 阈值边缘波动），但架构上正确
+
+#### R51 关键结论
+
+**IFC 存储方案的所有变体均已穷尽**：
+- 全局存储（step 12）：行断差异导致回归
+- 选择性存储（remeasure 函数）：行断差异导致回归
+- 基线修复（frag.height）：与行断差异叠加导致更多回归
+
+**唯一可行路径仍然是 taffy measure callback 层面的 IFC 统一**，需要修改 taffy 集成层。
+
+#### 按目录通过率
+
+| 目录 | 通过/总数 | 通过率 |
+|------|-----------|--------|
+| css-text-decor/ | 39/39 | 100.0% ✅ |
+| css-fonts/ | 60/60 | 100.0% ✅ |
+| css-grid/ | 17/20 | 85.0% |
+| css-tables/ | 46/55 | 83.6% |
+| css-writing-modes/ | 46/59 | 78.0% |
+| CSS2/ | 92/129 | 71.3% |
+| css-position/ | 12/16 | 75.0% |
+| css-flexbox/ | 35/55 | 63.6% |
+| css-multicol/ | 36/57 | 63.2% |
+
+#### 后续重点（R52+）
+
+1. **taffy measure callback IFC 统一**（唯一系统性解决方案）：
+   - 修改 measure callback 以在布局时直接使用 IFC 高度
+   - 在所有后处理完成后存储 IFC 结果
+   - paint 直接复用存储结果
+2. **writing-mode 垂直布局**（影响 13 tests）
+3. **CSS2 inline-box 模型**（影响 ~8 tests）
+4. **产品/真实静态页视觉 smoke 门禁**
 
 **通过率**：383/490 (78.2%)，与 R49 持平。本轮系统性确认两条改进路径均被阻塞，并深入分析了 near-miss 测试根因。
 
