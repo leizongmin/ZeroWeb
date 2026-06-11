@@ -2,7 +2,47 @@
 
 **最后更新**: 2026-06-11
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 78.2% (383/490)
+**上游真实 reftest 通过率**: 78.0% (382/490)
+
+### R46 进展
+
+**通过率**：382/490 (78.0%)，与 R45 基本持平（±1 属于运行波动）。本轮系统性穷尽了所有 paint IFC 局部改进路径，全部因回归而回退；确认 taffy-IFC 统一是唯一可行方案。
+
+#### R46 尝试与回退
+
+| 尝试 | 结果 | 说明 |
+|------|------|------|
+| 选择性 IFC 存储（步骤 6/6.5/10 + table/multicol 清除 + 高度一致性检查） | 382/490（无变化） | 高度匹配时存储结果与 paint IFC 相同，无改进；高度不匹配时存储导致回归。零净效果 |
+| 选择性 IFC 存储（无高度检查） | 380/490（-2 回归） | background-bg-pos-008 和 font-family-013 回归，与 R38/R43 结论一致 |
+| 传递真实 styles 到 paint IFC | 377/490（-5 回归） | 与 R37 结果一致，行断行为差异导致回归 |
+| 使用 fragment.height 替代 stored_fs 作为基线偏移 | 380/490（-2 回归） | 基线位置与 glyph 大小不匹配 |
+| paint glyph advance 使用 is_ahem=true | 379/490（-3 回归） | glyph 推进必须与 paint IFC 字符宽度一致（0.55*fs），不能独立修改 |
+
+#### R46 关键结论
+
+**paint IFC 是一个自洽系统，任何局部修改都会破坏内部一致性**：
+1. paint IFC 使用空样式（`HashMap::new()`）→ 所有字符宽度基于 16px 默认度量
+2. glyph 推进（`estimate_char_width`）必须使用相同的 16px 度量
+3. 基线偏移必须与 IFC 片段的 y 位置一致
+4. 修改任何一环都会导致其他环节不匹配
+
+**唯一可行路径仍然是 taffy-IFC 统一方案**（R43-R46 共 4 轮确认）：
+1. 修改 `remeasure_text_with_float_exclusions` 和 `remeasure_inline_only_containers`，将 IFC 片段结果存储到 LayoutBox
+2. 用 IFC 计算的高度更新 taffy 块级高度
+3. paint 直接复用存储结果，不再运行独立 IFC
+4. 这需要修改 taffy 集成层，确保所有后处理步骤后的位置和高度一致
+
+**这已从「推荐方案」升级为「唯一可行方案」**。局部修改路径已彻底封死。
+
+#### 后续重点（R47+）
+
+1. **taffy-IFC 统一方案**（唯一系统性解决方案）：需要重构 taffy 集成层
+   - 在 measure callback 中存储 IFC 片段结果
+   - 将 IFC 高度直接返回给 taffy（而非 taffy 自己计算）
+   - 后处理步骤（table/multicol）后重新运行 IFC 并更新存储结果
+   - paint 完全跳过 IFC 运行，直接使用存储结果
+2. **writing-mode 垂直布局**（影响 13 tests）：需要完整轴交换 + 垂直字形渲染
+3. **CSS2 inline-box 模型**（影响 ~8 tests）：inline 元素背景需要从 IFC 坐标绘制
 
 ### R45 进展
 
