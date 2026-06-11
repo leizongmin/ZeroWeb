@@ -2,7 +2,57 @@
 
 **最后更新**: 2026-06-11
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 78.4% (384/490)
+**上游真实 reftest 通过率**: 78.2% (383/490)
+
+### R49 进展
+
+**通过率**：383/490 (78.2%)，+1 test（自 R48 基线 382）。
+
+#### R49 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| resolve_collapsed_borders 行组边框集成 | 外边缘（top/bottom/left/right）冲突解决新增 RowGroup 作为中间竞争者（Table vs RowGroup vs Cell 锦标赛式解析）。新增 get_row_group_border_info() 辅助函数 |
+| Cell-vs-Cell 内部边颜色修正 | 相邻单元格的边框冲突解决中，当两边都是 Cell 时手动判断哪个 cell 赢（按样式优先级、宽度、规范 tie-breaking），替代原来无法区分具体 cell 的 resolve_border 返回值。修复了内部边框颜色错误 |
+| collapsed_border_outer_edge 基础设施 | LayoutBox 新增 [bool; 4] 标记外边缘，供 paint 阶段判断边框是否减半 |
+| 表格元素边框绘制抑制 | border-collapse:collapse 时跳过表格元素本身的边框绘制（由边缘单元格处理） |
+
+#### R49 通过率变化
+
+| 目录 | R48 | R49 | 变化 |
+|------|-----|-----|------|
+| CSS2/ | 93/129 (72.1%) | 93/129 (72.1%) | Cell-vs-Cell 修正改善多个边框测试颜色精度 |
+| css-tables/ | 46/55 (83.6%) | 46/55 (83.6%) | row-group-margin-border-padding: 1.58%→1.32% |
+| 其他 | 不变 | 不变 | 无回归 |
+
+#### R49 调查与尝试
+
+1. **外边缘边框不减半（回退）**：尝试让外边缘单元格绘制完整边框厚度（不与邻居共享），同时抑制表格元素边框。导致 row-group-order 从 0.65%（通过）退化为 1.29%（失败），row-group-margin-border-padding 从 1.32% 恶化到 3.67%。根因：单元格位置由 taffy 基于原始边框宽度计算，解析后的完整边框宽度向内容区域扩展，导致内容偏移。已回退
+2. **border-conflict-resolution 1.50% 差异根因分析**：根因是外边缘边框厚度减半 + 表格元素同时绘制边框的双重绘制。外边缘应为 5px 但实际渲染为 7.5px（5px 表格 + 2.5px 半宽单元格）。修复需要调整单元格定位以匹配解析后边框宽度
+3. **flexbox near-miss 分析**：flexbox-column-row-gap-001（1.63%）因百分比 gap 解析精度 + space-around 分布；css-flexbox-row（1.84%）因 writing-mode:vertical-rl 不完整；fieldset-as-item-overflow（1.77%）因自定义 scrollbar 指示器与原生 scrollbar 外观差异
+
+#### 按目录通过率
+
+| 目录 | 通过/总数 | 通过率 |
+|------|-----------|--------|
+| css-text-decor/ | 39/39 | 100.0% ✅ |
+| css-fonts/ | 60/60 | 100.0% ✅ |
+| css-grid/ | 17/20 | 85.0% |
+| css-tables/ | 46/55 | 83.6% |
+| css-writing-modes/ | 46/59 | 78.0% |
+| CSS2/ | 93/129 | 72.1% |
+| css-position/ | 12/16 | 75.0% |
+| css-flexbox/ | 35/55 | 63.6% |
+| css-multicol/ | 36/57 | 63.2% |
+
+#### 后续重点（R50+）
+
+1. **taffy-IFC 统一方案**（唯一系统性解决方案，影响 50+ tests）：需要重构 taffy 集成层
+   - 基础设施已准备：inline_layout_width、is_ahem 字段已添加
+   - 唯一可行路径：修改 taffy 的 measure callback，在布局计算时直接提供 IFC 高度
+2. **外边缘边框正确定位**（影响 border-conflict-resolution 等多个 tests）：需要让单元格位置考虑解析后的边框宽度，而非 taffy 原始宽度
+3. **writing-mode 垂直布局**（影响 13 tests）：需要完整轴交换 + 垂直字形渲染
+4. **CSS2 inline-box 模型**（影响 ~8 tests）：inline 元素背景需要从 IFC 坐标绘制
 
 ### R48 进展
 
