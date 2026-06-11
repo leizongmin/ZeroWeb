@@ -19,9 +19,10 @@ use zero_render_foundation::primitive::{RenderPrimitives, RoundedRectPrimitive};
 use zero_style_system::property::types::DisplayValue;
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
-    CaretColorComputedValue, ClipPathComputedValue, ComputedStyle, ContainComputedValue, HyphensComputedValue,
-    ImageRenderingValue, IsolationValue, MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue,
-    QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, TouchActionValue, UserSelectValue, WillChangeValue,
+    BorderCollapseValue, CaretColorComputedValue, ClipPathComputedValue, ComputedStyle, ContainComputedValue,
+    HyphensComputedValue, ImageRenderingValue, IsolationValue, MixBlendModeComputedValue, OverscrollBehaviorValue,
+    PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, TouchActionValue,
+    UserSelectValue, WillChangeValue,
 };
 
 use super::color::color_value_to_render;
@@ -189,10 +190,15 @@ impl Painter {
                     self.paint_background(box_node, abs_x, abs_y, style);
                 }
                 self.paint_background_image(box_node, abs_x, abs_y, style);
-                if box_node.border_top > 0.0
+                // border-collapse: collapse 时，表格外边框由边缘单元格绘制，
+                // 表格元素本身不绘制边框（避免与单元格边框重叠）
+                let is_collapsed_table = matches!(style.display, DisplayValue::Table | DisplayValue::InlineTable)
+                    && matches!(style.border_collapse, BorderCollapseValue::Collapse);
+                if (box_node.border_top > 0.0
                     || box_node.border_right > 0.0
                     || box_node.border_bottom > 0.0
-                    || box_node.border_left > 0.0
+                    || box_node.border_left > 0.0)
+                    && !is_collapsed_table
                 {
                     self.paint_borders(box_node, abs_x, abs_y, style);
                 }

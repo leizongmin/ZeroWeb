@@ -496,6 +496,7 @@ impl LayoutEngine {
             is_relative,
             collapsed_border_color_overrides: [None; 4],
             collapsed_border_style_overrides: [const { None }; 4],
+            collapsed_border_outer_edge: [false; 4],
             writing_mode: own_writing_mode.clone(),
             is_anonymous_text_item,
             css_order: computed.as_ref().map(|s| s.order).unwrap_or(0),
