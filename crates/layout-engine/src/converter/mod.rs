@@ -28,6 +28,17 @@ pub type GridAreaMap = std::collections::HashMap<String, (i16, i16, i16, i16)>;
 pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&GridAreaMap>) -> taffy::Style {
     // CSS 2.1 §10.3.5: 浮动非替换元素的 margin-left/right: auto 解析为 0
     let is_float = matches!(style.float, FloatValue::Left | FloatValue::Right);
+
+    // CSS 2.1 §17.5.3/17.5.4：行组和行的 border/padding/margin 无视觉效果。
+    // 在 taffy 层面归零，防止 taffy 将这些属性计入布局计算。
+    let is_table_internal = matches!(
+        style.display,
+        DisplayValue::TableRowGroup
+            | DisplayValue::TableHeaderGroup
+            | DisplayValue::TableFooterGroup
+            | DisplayValue::TableRow
+    );
+
     taffy::Style {
         display: convert_display(&style.display),
         box_sizing: convert_box_sizing(&style.box_sizing),
@@ -60,23 +71,35 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
             height: convert_max_length_to_dimension(&style.max_height),
         },
         aspect_ratio: style.aspect_ratio,
-        margin: taffy::geometry::Rect {
-            left: convert_length_to_lpa(&style.margin_left, is_float),
-            right: convert_length_to_lpa(&style.margin_right, is_float),
-            top: convert_length_to_lpa(&style.margin_top, false),
-            bottom: convert_length_to_lpa(&style.margin_bottom, false),
+        margin: if is_table_internal {
+            taffy::geometry::Rect::zero()
+        } else {
+            taffy::geometry::Rect {
+                left: convert_length_to_lpa(&style.margin_left, is_float),
+                right: convert_length_to_lpa(&style.margin_right, is_float),
+                top: convert_length_to_lpa(&style.margin_top, false),
+                bottom: convert_length_to_lpa(&style.margin_bottom, false),
+            }
         },
-        padding: taffy::geometry::Rect {
-            left: convert_length_to_lp(&style.padding_left),
-            right: convert_length_to_lp(&style.padding_right),
-            top: convert_length_to_lp(&style.padding_top),
-            bottom: convert_length_to_lp(&style.padding_bottom),
+        padding: if is_table_internal {
+            taffy::geometry::Rect::zero()
+        } else {
+            taffy::geometry::Rect {
+                left: convert_length_to_lp(&style.padding_left),
+                right: convert_length_to_lp(&style.padding_right),
+                top: convert_length_to_lp(&style.padding_top),
+                bottom: convert_length_to_lp(&style.padding_bottom),
+            }
         },
-        border: taffy::geometry::Rect {
-            left: convert_length_to_lp(&style.border_left_width),
-            right: convert_length_to_lp(&style.border_right_width),
-            top: convert_length_to_lp(&style.border_top_width),
-            bottom: convert_length_to_lp(&style.border_bottom_width),
+        border: if is_table_internal {
+            taffy::geometry::Rect::zero()
+        } else {
+            taffy::geometry::Rect {
+                left: convert_length_to_lp(&style.border_left_width),
+                right: convert_length_to_lp(&style.border_right_width),
+                top: convert_length_to_lp(&style.border_top_width),
+                bottom: convert_length_to_lp(&style.border_bottom_width),
+            }
         },
         align_items: convert_alignment_to_align_items(&style.align_items),
         align_self: convert_alignment_to_align_self(&style.align_self),
