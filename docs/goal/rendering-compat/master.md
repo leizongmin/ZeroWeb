@@ -2,7 +2,48 @@
 
 **最后更新**: 2026-06-11
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 78.0% (382/490)
+**上游真实 reftest 通过率**: 78.2% (383/490)
+
+### R47 进展
+
+**通过率**：383/490 (78.2%)，+1 test（自 R46）。
+
+#### R47 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| paint 层表格行组/行视觉渲染抑制 | CSS 2.1 §17.5.3/17.5.4：行组和行的 box-shadow/outline 不渲染（border 已由 zero_box_model 归零），但 background-color/background-image 保留渲染。修复 background-attachment-applies-to-001 回归 |
+| zero_box_model 宽高调整 | 归零 border/padding/margin 后同步缩减 width/height，移除 taffy 计入的 border+padding 贡献 |
+
+#### R47 调查与尝试
+
+1. **表格单元格 width:0 固有宽度估算改进（回退）**：尝试对所有表格单元格始终计算固有宽度并与 CSS width 取 max。导致 2 个回归（383→381），已回退。根因：对有大显式 width 的单元格计算固有宽度时，估算值不准确，导致列宽被错误扩大
+2. **CSS2 background/background-attachment 测试调查**：确认 `background-attachment-applies-to-001` 测试 `display: table-row-group` 的背景渲染。初始版本的 is_table_internal 检查错误地跳过了背景渲染，已修正
+3. **失败根因分布确认**：108 个失败测试中，多数根因与 R46 分析一致——paint IFC 系统性瓶颈、writing-mode 垂直布局、multicol column breaking、flexbox baseline 对齐
+
+#### 按目录通过率
+
+| 目录 | 通过/总数 | 通过率 |
+|------|-----------|--------|
+| css-text-decor/ | 39/39 | 100.0% ✅ |
+| css-fonts/ | 60/60 | 100.0% ✅ |
+| css-grid/ | 17/20 | 85.0% |
+| css-tables/ | 45/55 | 81.8% |
+| css-writing-modes/ | 46/59 | 78.0% |
+| CSS2/ | 93/129 | 72.1% |
+| css-position/ | 12/16 | 75.0% |
+| css-flexbox/ | 35/55 | 63.6% |
+| css-multicol/ | 36/57 | 63.2% |
+
+#### 后续重点（R48+）
+
+1. **taffy-IFC 统一方案**（唯一系统性解决方案，影响 50+ tests）：需要重构 taffy 集成层
+   - 在 measure callback 中存储 IFC 片段结果
+   - 将 IFC 高度直接返回给 taffy（而非 taffy 自己计算）
+   - 后处理步骤（table/multicol）后重新运行 IFC 并更新存储结果
+   - paint 完全跳过 IFC 运行，直接使用存储结果
+2. **writing-mode 垂直布局**（影响 13 tests）：需要完整轴交换 + 垂直字形渲染
+3. **CSS2 inline-box 模型**（影响 ~8 tests）：inline 元素背景需要从 IFC 坐标绘制
 
 ### R46 进展
 
