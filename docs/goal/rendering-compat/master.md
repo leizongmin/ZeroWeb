@@ -4,6 +4,52 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 79.4% (389/490)
 
+### R56 进展
+
+**通过率**：389/490 (79.4%)，与 R55 持平。本轮改进了 inline-flex/inline-grid 基线合成算法，系统性调查了各类失败测试的根因。
+
+#### R56 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| inline-flex/inline-grid 基线合成算法改进 | `adjust_inline_block_positions` 中基线计算从 max(child.y + content_height) 改为基于子元素 align-self 和 font-size 的精确合成。参与 baseline 对齐的子元素使用 font-size 作为文本基线近似，未参与的子元素不贡献基线。无通过率变化但基础设施更正确 |
+
+#### R56 调查与分析
+
+1. **inline-flex/inline-grid 基线合成改进**（保留）：算法改为：(a) 检查容器 align-items: baseline；(b) 对每个第一行子元素检查 align-self；(c) 参与基线对齐的子元素使用 font-size 近似文本基线；(d) 未参与的子元素不贡献基线。实测 389/490 不变。
+
+2. **flexbox-baseline-multi-line-horiz-003/004 (48%+)** 调查：这些测试用 inline-flex + flex-wrap:wrap + align-content:center。48% diff 说明布局完全不对，不仅是基线问题。根因是 inline-flex 容器在父 IFC 中的定位和多行 flex 布局内部的交互。
+
+3. **系统性瓶颈确认**（与 R53-R55 一致）：
+   - Paint IFC 使用空 styles 导致 50+ 测试文本定位偏差
+   - taffy Layout 不保留 first_baselines，无法提取真实基线
+   - border-collapse 外边缘精度被 taffy 单元格定位阻塞
+   - writing-mode 垂直 float/clearance 需完整轴交换
+   - 所有 near-miss (<3%) 路径在 R37-R55 已穷尽
+
+#### 按目录通过率
+
+与 R55 一致：
+
+| 目录 | 通过/总数 | 通过率 |
+|------|-----------|--------|
+| css-text-decor/ | 39/39 | 100.0% ✅ |
+| css-fonts/ | 60/60 | 100.0% ✅ |
+| css-grid/ | 17/20 | 85.0% |
+| css-tables/ | 46/55 | 83.6% |
+| css-writing-modes/ | 49/59 | 83.1% |
+| CSS2/ | 92/129 | 71.3% |
+| css-position/ | 12/16 | 75.0% |
+| css-flexbox/ | 37/55 | 67.3% |
+| css-multicol/ | 36/57 | 63.2% |
+
+#### 后续重点（R57+）
+
+1. **writing-mode 垂直布局 float/clearance**（影响 6+ 测试）：`adjust_float_positions` 需轴交换
+2. **multicol column breaking 完善**（影响 ~16 测试）：更精细的片段分配算法
+3. **CSS2 逐步改善**（影响 37 个失败）：通过 swatch 图片精度、IFC 行断修正来减少 near-miss
+4. **taffy first_baselines 提取**（影响 ~10 tests）：需要修改 taffy 的 Layout 结构或缓存访问
+
 ### R55 进展
 
 **通过率**：389/490 (79.4%)，与 R54 持平。本轮添加了基线改进基础设施，探索了多条改进路径但均被系统性瓶颈阻塞。
