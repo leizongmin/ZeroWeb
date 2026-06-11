@@ -172,7 +172,7 @@ impl Painter {
                 && box_node.children.is_empty()
                 && matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate);
 
-            // CSS 2.1 §17.5.3/17.5.4：行组和行无视觉盒模型
+            // CSS 2.1 §17.5.3/17.5.4：行组和行无 border/padding/margin，但 background 仍应用
             let is_table_internal = matches!(
                 style.display,
                 DisplayValue::TableRowGroup
@@ -181,8 +181,10 @@ impl Painter {
                     | DisplayValue::TableRow
             );
 
-            if !hidden && !skip_empty_cell && !is_table_internal {
-                self.paint_box_shadow(box_node, abs_x, abs_y, style);
+            if !hidden && !skip_empty_cell {
+                if !is_table_internal {
+                    self.paint_box_shadow(box_node, abs_x, abs_y, style);
+                }
                 if style.background_color != ColorValue::Transparent {
                     self.paint_background(box_node, abs_x, abs_y, style);
                 }
@@ -194,7 +196,9 @@ impl Painter {
                 {
                     self.paint_borders(box_node, abs_x, abs_y, style);
                 }
-                self.paint_outline(box_node, abs_x, abs_y, style);
+                if !is_table_internal {
+                    self.paint_outline(box_node, abs_x, abs_y, style);
+                }
             }
 
             if !hidden {
@@ -306,9 +310,9 @@ impl Painter {
                 && matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate);
 
             // CSS 2.1 §17.5.3/17.5.4：行组（tbody/thead/tfoot）和行（tr）
-            // 的 border/padding/margin 无视觉效果，仅作为结构容器。
-            // Layout 层 zero_box_model() 已归零 border/padding/margin，
-            // paint 层也需跳过 background/shadow/outline 等视觉渲染。
+            // 的 border/padding/margin 无视觉效果，但 background 仍然应用。
+            // Layout 层 zero_box_model() 已归零 border/padding/margin（阻止边框绘制），
+            // paint 层需跳过 box-shadow 和 outline 等依赖盒模型的装饰效果。
             let is_table_internal = matches!(
                 style.display,
                 DisplayValue::TableRowGroup
@@ -317,22 +321,26 @@ impl Painter {
                     | DisplayValue::TableRow
             );
 
-            if !hidden && !skip_empty_cell && !is_table_internal {
+            if !hidden && !skip_empty_cell {
                 // -1. backdrop-filter（对元素背后内容应用滤镜，在自身绘制之前）
-                self.apply_backdrop_filter(box_node, abs_x, abs_y, style);
+                if !is_table_internal {
+                    self.apply_backdrop_filter(box_node, abs_x, abs_y, style);
+                }
 
-                // 0. box-shadow（位于背景之下）
-                self.paint_box_shadow(box_node, abs_x, abs_y, style);
+                // 0. box-shadow（位于背景之下，行组/行无盒模型故无阴影）
+                if !is_table_internal {
+                    self.paint_box_shadow(box_node, abs_x, abs_y, style);
+                }
 
-                // 1. 背景色填充（根据 border-radius 生成圆角矩形图元）
+                // 1. 背景色填充（行组/行仍可渲染背景）
                 if style.background_color != ColorValue::Transparent {
                     self.paint_background(box_node, abs_x, abs_y, style);
                 }
 
-                // 1b. 背景图片（在背景色之上）
+                // 1b. 背景图片（行组/行仍可渲染背景图片）
                 self.paint_background_image(box_node, abs_x, abs_y, style);
 
-                // 2. 边框填充（根据 border-radius 生成圆角边框图元）
+                // 2. 边框填充（zero_box_model 已归零，但保留防护检查）
                 if box_node.border_top > 0.0
                     || box_node.border_right > 0.0
                     || box_node.border_bottom > 0.0
