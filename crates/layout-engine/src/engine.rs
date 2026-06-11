@@ -625,7 +625,11 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
 /// 避免在 paint 阶段重新运行 IFC（paint IFC 使用空 styles 导致字体度量不一致）。
 /// TODO: 当前被注释掉 — 基线计算修复后启用
 #[allow(dead_code)]
-fn store_inline_layout_results(inline_ctx: &crate::inline::InlineFormattingContext, box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+fn store_inline_layout_results(
+    inline_ctx: &crate::inline::InlineFormattingContext,
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
     if !inline_ctx.lines.is_empty() {
         let container_width = box_node.content_width;
         let stored: Vec<crate::types::InlineLayoutLine> = inline_ctx
@@ -639,7 +643,9 @@ fn store_inline_layout_results(inline_ctx: &crate::inline::InlineFormattingConte
                     .iter()
                     .map(|frag| {
                         let is_ahem = box_node.node_id.is_some_and(|id| {
-                            styles.get(&id).is_some_and(|s| s.font_family.contains(&"Ahem".to_string()))
+                            styles
+                                .get(&id)
+                                .is_some_and(|s| s.font_family.contains(&"Ahem".to_string()))
                         });
                         crate::types::InlineLayoutFragment {
                             x: frag.x,

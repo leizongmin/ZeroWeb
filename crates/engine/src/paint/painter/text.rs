@@ -783,9 +783,7 @@ impl super::Painter {
             // 条件：(1) 非多列模式 (2) 有存储结果 (3) 容器宽度匹配
             // 宽度验证确保 table/multicol 后处理改变宽度时回退到 paint IFC。
             let width_matches = (box_node.inline_layout_width - ifc_width).abs() < 1.0;
-            let use_stored = multicol_info.is_none()
-                && box_node.inline_layout.is_some()
-                && width_matches;
+            let use_stored = multicol_info.is_none() && box_node.inline_layout.is_some() && width_matches;
 
             // 从存储结果创建的扁平化片段列表（用于非多列渲染路径）
             struct PaintFragment {
@@ -955,7 +953,15 @@ impl super::Painter {
                     // 宏化渲染逻辑，避免重复代码
                     macro_rules! render_fragment {
                         ($frag_x:expr, $frag_y:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr) => {{
-                            render_fragment!($frag_x, $frag_y, $baseline_offset, $frag_fs, $frag_text, $frag_nid, false)
+                            render_fragment!(
+                                $frag_x,
+                                $frag_y,
+                                $baseline_offset,
+                                $frag_fs,
+                                $frag_text,
+                                $frag_nid,
+                                false
+                            )
                         }};
                         ($frag_x:expr, $frag_y:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr) => {{
                             self.painted_inline_nodes.insert($frag_nid);
@@ -1038,7 +1044,15 @@ impl super::Painter {
                         for frag in &stored_fragments {
                             // 存储结果：frag.y 是片段框顶部（baseline_y - height），
                             // 基线偏移 = height（line-height 盒高度），font_size 用于字形大小
-                            render_fragment!(frag.x, frag.y, frag.height, frag.font_size, frag.text, frag.node_id, frag.is_ahem);
+                            render_fragment!(
+                                frag.x,
+                                frag.y,
+                                frag.height,
+                                frag.font_size,
+                                frag.text,
+                                frag.node_id,
+                                frag.is_ahem
+                            );
                         }
                     } else {
                         for fragment in fragments.iter() {

@@ -429,20 +429,30 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
 
             // ── Top edge ──
             if is_first_row {
-                // 外边缘：table vs cell
-                let winner = resolve_border(
-                    (table_bt, &table_style.border_top_style, BorderSource::Table),
-                    (cb.top_w, &cb.top_s, BorderSource::Cell),
-                );
-                if winner == BorderSource::Table {
-                    let table_color = color_value_to_u32(&table_style.border_top_color);
-                    overrides.push((
-                        (row_idx, cell_idx),
-                        0,
-                        table_bt,
-                        Some(table_color),
-                        Some(table_style.border_top_style.clone()),
-                    ));
+                // 外边缘：table vs rowgroup vs cell（CSS 2.1 §17.6.2.1 多来源解析）
+                // 优先级：Cell > Row > RowGroup > Table
+                // 先解析低优先级对，再与高优先级比较
+                let rg_info = get_row_group_border_info(table_box, grid, row_idx, styles, 0);
+                let (mut win_w, mut win_s) = (table_bt, &table_style.border_top_style as &BorderStyleValue);
+                let mut win_color = color_value_to_u32(&table_style.border_top_color);
+                let mut win_src = BorderSource::Table;
+                if let Some((rg_w, rg_s, rg_c)) = rg_info {
+                    let winner = resolve_border((win_w, win_s, win_src), (rg_w, rg_s, BorderSource::RowGroup));
+                    if winner == BorderSource::RowGroup {
+                        win_w = rg_w;
+                        win_s = rg_s;
+                        win_color = rg_c;
+                        win_src = BorderSource::RowGroup;
+                    }
+                }
+                let winner = resolve_border((win_w, win_s, win_src), (cb.top_w, &cb.top_s, BorderSource::Cell));
+                if winner != BorderSource::Cell {
+                    if matches!(cb.top_s, BorderStyleValue::Hidden) {
+                        overrides.push(((row_idx, cell_idx), 0, 0.0, None, None));
+                    } else {
+                        let style_ov = if win_s != &cb.top_s { Some(win_s.clone()) } else { None };
+                        overrides.push(((row_idx, cell_idx), 0, win_w, Some(win_color), style_ov));
+                    }
                 } else if matches!(cb.top_s, BorderStyleValue::Hidden) {
                     overrides.push(((row_idx, cell_idx), 0, 0.0, None, None));
                 }
@@ -459,25 +469,29 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                     {
                         overrides.push(((row_idx, cell_idx), 0, 0.0, None, None));
                     } else {
-                        let winner = resolve_border(
-                            (prev_cb.bottom_w, &prev_cb.bottom_s, BorderSource::Cell),
-                            (cb.top_w, &cb.top_s, BorderSource::Cell),
-                        );
-                        // 始终应用获胜宽度（之前错误地丢弃了结果）
-                        let (win_w, win_style) = if winner == BorderSource::Cell {
-                            // 当前 cell 的 top 赢
-                            (cb.top_w, &cb.top_s)
-                        } else {
-                            // 上方 cell 的 bottom 赢
+                        // Cell-vs-Cell 内部边：手动判断哪个 cell 的边框获胜
+                        // resolve_border 在两边都是 Cell 时无法区分具体哪个 cell 赢
+                        let prev_a_wins = {
+                            let prio_a = border_style_priority(&prev_cb.bottom_s);
+                            let prio_b = border_style_priority(&cb.top_s);
+                            if prio_a != prio_b {
+                                prio_a > prio_b
+                            } else {
+                                prev_cb.bottom_w.floor() > cb.top_w.floor()
+                            }
+                        };
+                        let (win_w, win_style) = if prev_a_wins {
                             (prev_cb.bottom_w, &prev_cb.bottom_s)
+                        } else {
+                            (cb.top_w, &cb.top_s)
                         };
                         // 需要覆盖：宽度不同，或样式不同
                         let need_override = (win_w - cb.top_w).abs() > 0.001 || win_style != &cb.top_s;
                         if need_override {
-                            let win_color = if winner == BorderSource::Cell {
-                                None
-                            } else {
+                            let win_color = if prev_a_wins {
                                 get_cell_border_color(table_box, grid, row_idx - 1, prev_cell_idx, 2, styles)
+                            } else {
+                                None
                             };
                             let style_ov = if win_style != &cb.top_s {
                                 Some(win_style.clone())
@@ -496,20 +510,32 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
             let cell_at_table_bottom = cell_last_row >= last_row;
 
             if cell_at_table_bottom {
-                // 单元格底边在表格底部：与 table border 冲突解决
-                let winner = resolve_border(
-                    (table_bb, &table_style.border_bottom_style, BorderSource::Table),
-                    (cb.bottom_w, &cb.bottom_s, BorderSource::Cell),
-                );
-                if winner == BorderSource::Table {
-                    let table_color = color_value_to_u32(&table_style.border_bottom_color);
-                    overrides.push((
-                        (row_idx, cell_idx),
-                        2,
-                        table_bb,
-                        Some(table_color),
-                        Some(table_style.border_bottom_style.clone()),
-                    ));
+                // 单元格底边在表格底部：table vs rowgroup vs cell 多来源解析
+                let rg_info = get_row_group_border_info(table_box, grid, cell_last_row, styles, 2);
+                let (mut win_w, mut win_s) = (table_bb, &table_style.border_bottom_style as &BorderStyleValue);
+                let mut win_color = color_value_to_u32(&table_style.border_bottom_color);
+                let mut win_src = BorderSource::Table;
+                if let Some((rg_w, rg_s, rg_c)) = rg_info {
+                    let winner = resolve_border((win_w, win_s, win_src), (rg_w, rg_s, BorderSource::RowGroup));
+                    if winner == BorderSource::RowGroup {
+                        win_w = rg_w;
+                        win_s = rg_s;
+                        win_color = rg_c;
+                        win_src = BorderSource::RowGroup;
+                    }
+                }
+                let winner = resolve_border((win_w, win_s, win_src), (cb.bottom_w, &cb.bottom_s, BorderSource::Cell));
+                if winner != BorderSource::Cell {
+                    if matches!(cb.bottom_s, BorderStyleValue::Hidden) {
+                        overrides.push(((row_idx, cell_idx), 2, 0.0, None, None));
+                    } else {
+                        let style_ov = if win_s != &cb.bottom_s {
+                            Some(win_s.clone())
+                        } else {
+                            None
+                        };
+                        overrides.push(((row_idx, cell_idx), 2, win_w, Some(win_color), style_ov));
+                    }
                 } else if matches!(cb.bottom_s, BorderStyleValue::Hidden) {
                     overrides.push(((row_idx, cell_idx), 2, 0.0, None, None));
                 }
@@ -553,19 +579,28 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
 
             // ── Left edge ──
             if is_first_col {
-                let winner = resolve_border(
-                    (table_bl, &table_style.border_left_style, BorderSource::Table),
-                    (cb.left_w, &cb.left_s, BorderSource::Cell),
-                );
-                if winner == BorderSource::Table {
-                    let table_color = color_value_to_u32(&table_style.border_left_color);
-                    overrides.push((
-                        (row_idx, cell_idx),
-                        3,
-                        table_bl,
-                        Some(table_color),
-                        Some(table_style.border_left_style.clone()),
-                    ));
+                // 外边缘：table vs rowgroup vs cell 多来源解析
+                let rg_info = get_row_group_border_info(table_box, grid, row_idx, styles, 3);
+                let (mut win_w, mut win_s) = (table_bl, &table_style.border_left_style as &BorderStyleValue);
+                let mut win_color = color_value_to_u32(&table_style.border_left_color);
+                let mut win_src = BorderSource::Table;
+                if let Some((rg_w, rg_s, rg_c)) = rg_info {
+                    let winner = resolve_border((win_w, win_s, win_src), (rg_w, rg_s, BorderSource::RowGroup));
+                    if winner == BorderSource::RowGroup {
+                        win_w = rg_w;
+                        win_s = rg_s;
+                        win_color = rg_c;
+                        win_src = BorderSource::RowGroup;
+                    }
+                }
+                let winner = resolve_border((win_w, win_s, win_src), (cb.left_w, &cb.left_s, BorderSource::Cell));
+                if winner != BorderSource::Cell {
+                    if matches!(cb.left_s, BorderStyleValue::Hidden) {
+                        overrides.push(((row_idx, cell_idx), 3, 0.0, None, None));
+                    } else {
+                        let style_ov = if win_s != &cb.left_s { Some(win_s.clone()) } else { None };
+                        overrides.push(((row_idx, cell_idx), 3, win_w, Some(win_color), style_ov));
+                    }
                 } else if matches!(cb.left_s, BorderStyleValue::Hidden) {
                     overrides.push(((row_idx, cell_idx), 3, 0.0, None, None));
                 }
@@ -578,21 +613,27 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                     {
                         overrides.push(((row_idx, cell_idx), 3, 0.0, None, None));
                     } else {
-                        let winner = resolve_border(
-                            (left_cb.right_w, &left_cb.right_s, BorderSource::Cell),
-                            (cb.left_w, &cb.left_s, BorderSource::Cell),
-                        );
-                        let (win_w, win_style) = if winner == BorderSource::Cell {
-                            (cb.left_w, &cb.left_s)
-                        } else {
+                        // Cell-vs-Cell 内部边：手动判断哪个 cell 的边框获胜
+                        let left_a_wins = {
+                            let prio_a = border_style_priority(&left_cb.right_s);
+                            let prio_b = border_style_priority(&cb.left_s);
+                            if prio_a != prio_b {
+                                prio_a > prio_b
+                            } else {
+                                left_cb.right_w.floor() > cb.left_w.floor()
+                            }
+                        };
+                        let (win_w, win_style) = if left_a_wins {
                             (left_cb.right_w, &left_cb.right_s)
+                        } else {
+                            (cb.left_w, &cb.left_s)
                         };
                         let need_override = (win_w - cb.left_w).abs() > 0.001 || win_style != &cb.left_s;
                         if need_override {
-                            let win_color = if winner == BorderSource::Cell {
-                                None
-                            } else {
+                            let win_color = if left_a_wins {
                                 get_cell_border_color(table_box, grid, row_idx, left_cell_idx, 1, styles)
+                            } else {
+                                None
                             };
                             let style_ov = if win_style != &cb.left_s {
                                 Some(win_style.clone())
@@ -607,19 +648,32 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
 
             // ── Right edge ──
             if is_last_col {
-                let winner = resolve_border(
-                    (table_br, &table_style.border_right_style, BorderSource::Table),
-                    (cb.right_w, &cb.right_s, BorderSource::Cell),
-                );
-                if winner == BorderSource::Table {
-                    let table_color = color_value_to_u32(&table_style.border_right_color);
-                    overrides.push((
-                        (row_idx, cell_idx),
-                        1,
-                        table_br,
-                        Some(table_color),
-                        Some(table_style.border_right_style.clone()),
-                    ));
+                // 外边缘：table vs rowgroup vs cell 多来源解析
+                let rg_info = get_row_group_border_info(table_box, grid, row_idx, styles, 1);
+                let (mut win_w, mut win_s) = (table_br, &table_style.border_right_style as &BorderStyleValue);
+                let mut win_color = color_value_to_u32(&table_style.border_right_color);
+                let mut win_src = BorderSource::Table;
+                if let Some((rg_w, rg_s, rg_c)) = rg_info {
+                    let winner = resolve_border((win_w, win_s, win_src), (rg_w, rg_s, BorderSource::RowGroup));
+                    if winner == BorderSource::RowGroup {
+                        win_w = rg_w;
+                        win_s = rg_s;
+                        win_color = rg_c;
+                        win_src = BorderSource::RowGroup;
+                    }
+                }
+                let winner = resolve_border((win_w, win_s, win_src), (cb.right_w, &cb.right_s, BorderSource::Cell));
+                if winner != BorderSource::Cell {
+                    if matches!(cb.right_s, BorderStyleValue::Hidden) {
+                        overrides.push(((row_idx, cell_idx), 1, 0.0, None, None));
+                    } else {
+                        let style_ov = if win_s != &cb.right_s {
+                            Some(win_s.clone())
+                        } else {
+                            None
+                        };
+                        overrides.push(((row_idx, cell_idx), 1, win_w, Some(win_color), style_ov));
+                    }
                 } else if matches!(cb.right_s, BorderStyleValue::Hidden) {
                     overrides.push(((row_idx, cell_idx), 1, 0.0, None, None));
                 }
@@ -871,6 +925,50 @@ fn get_cell_border_color(
         _ => return None,
     };
     Some(color_value_to_u32(color))
+}
+
+/// 获取行所在的行组（tbody/thead/tfoot）的边框信息。
+/// 返回 (width, style, color) 用于参与外边缘的边框冲突解决。
+/// 如果行不在行组内或行组没有有效边框，返回 None。
+fn get_row_group_border_info<'a>(
+    table_box: &LayoutBox,
+    grid: &TableGrid,
+    row_idx: usize,
+    styles: &'a HashMap<NodeId, ComputedStyle>,
+    side: u8, // 0=top, 1=right, 2=bottom, 3=left
+) -> Option<(f32, &'a BorderStyleValue, u32)> {
+    let row = grid.rows.get(row_idx)?;
+    let rg_idx = row.row_group_index?;
+    let rg_box = table_box.children.get(rg_idx)?;
+    let rg_style = rg_box.node_id.and_then(|id| styles.get(&id))?;
+    let (width, style, color) = match side {
+        0 => (
+            length_to_px(&rg_style.border_top_width),
+            &rg_style.border_top_style,
+            color_value_to_u32(&rg_style.border_top_color),
+        ),
+        1 => (
+            length_to_px(&rg_style.border_right_width),
+            &rg_style.border_right_style,
+            color_value_to_u32(&rg_style.border_right_color),
+        ),
+        2 => (
+            length_to_px(&rg_style.border_bottom_width),
+            &rg_style.border_bottom_style,
+            color_value_to_u32(&rg_style.border_bottom_color),
+        ),
+        3 => (
+            length_to_px(&rg_style.border_left_width),
+            &rg_style.border_left_style,
+            color_value_to_u32(&rg_style.border_left_color),
+        ),
+        _ => return None,
+    };
+    // none/hidden 样式的边框不参与冲突解决（已由 border-width zeroing 处理）
+    if matches!(style, BorderStyleValue::None) || width <= 0.0 {
+        return None;
+    }
+    Some((width, style, color))
 }
 
 /// 从 table 容器的子元素中构建 grid 结构。
