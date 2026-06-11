@@ -171,8 +171,10 @@ impl LayoutEngine {
 
         // 12. 后处理：为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统直接复用存储的 IFC 结果，避免重新运行 IFC 导致字体度量不一致。
-        // TODO: 暂时禁用 — 布局 IFC（真实样式）与 paint IFC（空样式）在不同上下文运行，
-        // 存储结果导致回归。需要统一 IFC 运行上下文后再启用。
+        // R45 再次验证：启用后仍有 6 个回归（383→377），与 R38/R42 结论一致。
+        // 回归根因：compute_final_inline_layouts 为所有容器运行 IFC，但 table 内部元素
+        // 和 multicol 子元素的 IFC 结果与 paint 时实际容器尺寸/位置不一致。
+        // 需要更精细的选择性存储（仅对非 table/multicol 子容器存储），或完整架构重写。
         // compute_final_inline_layouts(&mut root_box, doc, styles);
 
         // 缓存 taffy 状态用于后续增量计算
