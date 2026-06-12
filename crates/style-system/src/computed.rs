@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::{LengthValue, parse_var};
 
 use crate::property::ComputedStyle;
-use crate::property::types::BorderStyleValue;
+use crate::property::types::{BorderStyleValue, LineHeightValue};
 
 /// 默认根字体大小（px）。
 pub const ROOT_FONT_SIZE: f64 = 16.0;
@@ -189,6 +189,21 @@ pub fn resolve_computed_style(
 
     // 将 font-size 解析为绝对值
     resolved.font_size = LengthValue::Px(font_size_px);
+
+    // 解析 line-height 中的长度值（em/rem 等需要相对于元素自身的 font-size）
+    // CSS 规范：line-height 的 em 单位相对于元素自身的 font-size
+    if let LineHeightValue::Length(ref len) = resolved.line_height {
+        match len {
+            LengthValue::Em(v) => {
+                resolved.line_height = LineHeightValue::Length(LengthValue::Px(v * font_size_px));
+            }
+            LengthValue::Rem(v) => {
+                let rem_px = viewport_width.map(|_| 16.0).unwrap_or(16.0);
+                resolved.line_height = LineHeightValue::Length(LengthValue::Px(v * rem_px));
+            }
+            _ => {}
+        }
+    }
 
     // 解析所有长度属性（使用元素自身的 font-size）
     resolve_length_field(&mut resolved.width, font_size_px, viewport_width, viewport_height);
