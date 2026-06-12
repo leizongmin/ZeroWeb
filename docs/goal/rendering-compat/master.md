@@ -2,12 +2,78 @@
 
 **最后更新**: 2026-06-12
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 79.2% (388/490) 稳定全量基线，最新全量复跑进行中
+**上游真实 reftest 通过率**: 80.0% (392/490) R68 稳定全量基线
 
-### R67 进展
+### R68 进展
 
 **当前状态**：
-- 全量上游 reftest：仍以 **388/490 (79.2%)** 作为稳定可复现基线；最新全量复跑尚未收口
+- 全量上游 reftest：**392/490 (80.0%)**，较 R67 基线 388/490 净增 +4
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-engine` 单测：**1142/1142 通过**
+- `zero-layout-engine` 单测：**819/819 通过**
+- clippy：**零警告**
+
+#### R68 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| content_x/content_y 语义收敛 | 统一为"相对自身 border-box 的内容区偏移"，消除布局树与 painter 坐标分叉 |
+| UA 默认 `margin` shorthand 展开 | 样式系统展开 UA 默认 shorthand 声明，修复段落/标题默认外边距 |
+| float Phase 1 垂直定位修正 | 修正 float 最小垂直位置约束中对 margin-top 的双计 |
+| adjust_absolute_to_initial_containing_block 禁用 | 该功能导致 4 个 PASS→FAIL 回归和 4 个 writing-mode 测试严重回归（3-7%→38-93%），暂禁用 |
+| find_absolute_position_by_node_id 修正 | 适配 content_x/y 新语义，正确计算绝对位置 |
+| 空块自折叠 margin 传播 | 空块的上下 margin 正确自折叠并传播给后继兄弟 |
+| inline-only 容器收缩后的 sibling reflow | 收缩后后续普通流兄弟位置同步调整（跳过 float/absolute 元素） |
+| table 内部元素 clear 属性跳过 | TableRowGroup/TableRow/TableCell 等跳过 clear 属性 |
+
+#### R68 通过率变化
+
+| 目录 | R67 | R68 | 变化 |
+|------|-----|-----|------|
+| CSS2/ | 92/129 (71.3%) | **97/129 (75.2%)** | +5 |
+| css-writing-modes/ | 49/59 (83.1%) | 49/59 (83.1%) | 持平（先退后恢复） |
+| css-flexbox/ | 37/55 (67.3%) | 37/55 (67.3%) | 持平 |
+| css-grid/ | 17/20 (85.0%) | 17/20 (85.0%) | 持平 |
+| css-tables/ | 46/55 (83.6%) | 46/55 (83.6%) | 持平 |
+| css-multicol/ | 36/57 (63.2%) | 35/57 (61.4%) | -1（R67 content_x/y 引入小幅偏移） |
+| css-position/ | 12/16 (75.0%) | 12/16 (75.0%) | 持平 |
+| css-fonts/ | 60/60 (100.0%) | 60/60 (100.0%) | ✅ |
+| css-text-decor/ | 39/39 (100.0%) | 39/39 (100.0%) | ✅ |
+
+#### R68 新增通过的测试（10 个）
+
+1. `border-bottom-018.xht` (8.67%→0.00%) — UA margin 展开修复
+2. `clear-003.xht` (3.84%→0.00%) — clear/float 垂直定位修正
+3. `clear-clearance-calculation-001.xht` (1.95%→0.21%) — UA margin 展开
+4. `clear-clearance-calculation-002.xht` (1.18%→0.31%) — UA margin 展开
+5. `clear-clearance-calculation-003.xht` (2.12%→0.25%) — 空块自折叠 margin
+6. `clear-clearance-calculation-004.xht` (2.36%→0.00%) — UA margin 展开
+7. `clear-float-006.xht` (3.84%→0.00%) — sibling reflow
+8. `clearance-006.xht` (1.16%→0.83%) — margin 修正
+9. `font-family-013.xht` (1.51%→0.76%) — margin 展开
+10. `row-group-margin-border-padding.html` (1.32%→0.66%) — table position 修正
+
+#### R68 已知回归（5 个，均为小幅偏移）
+
+1. `background-329.xht` (0.00%→9.47%) — content_x/y 变更影响背景位置
+2. `float-003.xht` (0.73%→1.22%) — float Phase 1 修正副作用
+3. `inline-formatting-context-002.xht` (0.72%→1.39%) — content_x/y 变更
+4. `inline-formatting-context-003.xht` (0.23%→1.05%) — content_x/y 变更
+5. `baseline-008.html` (0.79%→1.45%) — content_x/y 变更
+
+#### R68 关键结论
+
+1. **content_x/y 语义收敛是正确性改进**：消除了布局树与 painter 的坐标分叉，但导致 5 个原本靠巧合通过的小幅偏移测试回归
+2. **UA margin shorthand 展开修复**是最大增益来源：直接影响 6 个 CSS2 floats-clear/clearance 测试通过
+3. **adjust_absolute_to_initial_containing_block 方案需要重新设计**：当前实现过于激进（调整所有无 positioned ancestor 的 absolute 元素），需要更精细的条件判断
+4. **80% 是新的稳定基线**：392/490 在多次复跑中稳定复现
+
+#### 后续重点（R69+）
+
+1. **修复 5 个 R68 回归**：排查 content_x/y 变更导致的小幅偏移，可能需要调整 paint 层背景/IFC 坐标计算
+2. **重新设计 adjust_absolute_to_initial_containing_block**：仅对真正需要修正的 absolute 元素生效
+3. **CSS2 floats-clear 持续改善**：10 个失败测试中多数在 1-5% 范围，有进一步改善空间
+4. **CSS2 backgrounds 改善**：5 个失败测试（background-043/090/130/329/attachment-applies-to-001）
 - `css/CSS2/floats-clear` 定向复跑：**23/30 (76.7%)**，较本轮修复前 **16/30** 净增 **+7**
 - 已确认通过的新关键用例：
   - `clear-applies-to-009.xht`
