@@ -2,7 +2,47 @@
 
 **最后更新**: 2026-06-12
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 79.0% (387/490)
+**上游真实 reftest 通过率**: 79.2% (388/490)
+
+### R64 进展
+
+**通过率**：
+- 上游真实 reftest 全量复跑：**388/490 (79.2%)**，较 R63 基线 +1
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-engine` 单测：**1142/1142 通过**
+- `zero-layout-engine` 单测：**813/813 通过**（修复了 3 个既有失败）
+
+#### R64 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| measure_text_content 叶节点尺寸修复 | 无行内内容的叶节点（如空 flex/grid 子元素）现在返回 CSS 显式 width/height 而非 Size::ZERO。taffy flexbox 在 measure callback 中将主轴 known_dimensions 设为 None（因主轴尺寸由 flex 布局控制），因此回退到 computed style 获取显式 px 尺寸 |
+| remeasure_inline_only_containers 跳过布局容器 | flex/grid/table 容器现在跳过 IFC 重算。之前，flex 容器的 inline-display 子元素会被 IFC 重算覆盖 taffy 正确计算的 flex item 尺寸为零宽度 IFC 片段 |
+
+#### R64 通过率变化
+
+| 目录 | R63 | R64 | 变化 |
+|------|-----|-----|------|
+| css-flexbox/ | 35/55 (63.6%) | **36/55 (65.5%)** | +1 |
+| 其他 | 不变 | 不变 | 无回归 |
+
+#### R64 修复的单元测试
+
+- `test_flex_basis_auto_vs_zero`：flex-basis:auto 子项现在正确使用 width (100px) 作为基础尺寸
+- `test_nested_grid_container`：内嵌 grid 子元素现在正确定位
+- `test_flex_child_in_grid`：grid 内 flex 子元素现在获得正确尺寸
+
+#### R64 关键结论
+
+1. **叶节点 measure 回调修复**是正确且安全的：taffy 在 flex/grid 布局中会剥离主轴 known_dimensions，通过 computed style 回退获取显式尺寸避免了这一问题
+2. **布局容器 IFC 跳过**是架构上正确的修复：flex/grid/table 容器的子元素不应参与 IFC 重算，它们的尺寸由各自的布局算法决定
+3. **突破了 79.0% 天花板**：虽然只提升了 1 个测试，但验证了 flexbox 布局路径的正确性改进可以突破之前的平台期
+
+#### 后续重点（R65+）
+
+1. **taffy-IFC 架构统一**（最大杠杆，影响 50+ tests）：唯一系统性打破 79% 天花板的路径
+2. **Writing-mode 垂直布局**（影响 10 tests）：完整轴交换 + 垂直字形渲染
+3. **Multicol column breaking 完善**（影响 16 tests）：更精细的片段分配算法
 
 ### R63 进展
 
