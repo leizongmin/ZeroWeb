@@ -195,6 +195,7 @@ impl LayoutEngine {
         // R51 验证：启用后回归 4 个测试（383→379），即使改用 font_size 作基线偏移。
         // 根因：存储 IFC 使用真实 styles 产生不同行断行为（字符宽度不同→换行点不同），
         // 与 paint IFC（空 styles）的片段位置不一致。
+        // R69 实验（2026-06-12）：启用后 393→389（-4），结论与 R37-R63 一致。
         // compute_final_inline_layouts(&mut root_box, doc, styles);
 
         // 缓存 taffy 状态用于后续增量计算
