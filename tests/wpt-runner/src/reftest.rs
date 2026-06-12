@@ -362,26 +362,43 @@ fn extract_img_srcs(html: &str) -> Vec<String> {
     let mut pos = 0;
     while let Some(idx) = html[pos..].find("<img") {
         let tag_start = pos + idx;
-        // 找到标签结束
-        if let Some(end) = html[tag_start..].find('>') {
-            let tag = &html[tag_start..tag_start + end];
-            // 在标签内查找 src 属性
-            if let Some(src_start) = tag.find("src=\"").or_else(|| tag.find("src='")) {
-                let quote = &tag[src_start + 4..src_start + 5];
-                let value_start = src_start + 5;
-                if let Some(value_end) = tag[value_start..].find(quote) {
-                    let src_value = &tag[value_start..value_start + value_end];
-                    if !src_value.is_empty() {
-                        srcs.push(src_value.to_string());
-                    }
+        // 找到标签真正的结束位置（跳过引号内的 >）
+        let Some(tag_end) = find_tag_end(&html[tag_start..]) else {
+            break;
+        };
+        let tag = &html[tag_start..tag_start + tag_end];
+        // 在标签内查找 src 属性
+        if let Some(src_start) = tag.find("src=\"").or_else(|| tag.find("src='")) {
+            let quote = &tag[src_start + 4..src_start + 5];
+            let value_start = src_start + 5;
+            if let Some(value_end) = tag[value_start..].find(quote) {
+                let src_value = &tag[value_start..value_start + value_end];
+                if !src_value.is_empty() {
+                    srcs.push(src_value.to_string());
                 }
             }
-            pos = tag_start + end + 1;
-        } else {
-            break;
         }
+        pos = tag_start + tag_end + 1;
     }
     srcs
+}
+
+/// 找到 HTML 标签的真正结束位置（> 在引号外）。
+/// 返回 > 字符的偏移量（相对于起始位置）。
+fn find_tag_end(html: &str) -> Option<usize> {
+    let mut in_quote: Option<char> = None;
+    for (i, c) in html.char_indices() {
+        match in_quote {
+            Some(q) if q == c => in_quote = None, // 关闭引号
+            Some(_) => {}                         // 引号内，忽略
+            None => match c {
+                '"' | '\'' => in_quote = Some(c), // 进入引号
+                '>' => return Some(i),            // 引号外的 > 是标签结束
+                _ => {}
+            },
+        }
+    }
+    None
 }
 
 /// 已知 WPT 支持图片 URL → 颜色映射。
@@ -480,6 +497,20 @@ fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCache {
 
     for url in &all_urls {
         let key = ImageKey::new(simple_hash(url));
+
+        // 优先处理 data URI（SVG 等）
+        if url.starts_with("data:image/svg+xml")
+            && let Some(data) = generate_svg_data_uri_image(url)
+        {
+            cache.insert_with_key(key, data);
+            continue;
+        }
+
+        // 跳过非文件 URL（如 data: URI 无法从文件系统加载）
+        if url.starts_with("data:") {
+            continue;
+        }
+
         let path = base.join(url);
 
         // 尝试加载 PNG 文件
@@ -511,6 +542,153 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
         .map_err(|e| format!("PNG 读取失败 {}: {e}", path.display()))?;
 
     ImageData::from_rgba(buf, width, height)
+}
+
+/// 从 SVG data URI 生成 ImageData。
+///
+/// 支持简单的单色矩形 SVG（如 `<svg><rect fill='green' width='200' height='100'/></svg>`）。
+/// 对于更复杂的 SVG，返回 None。
+fn generate_svg_data_uri_image(url: &str) -> Option<ImageData> {
+    let comma_pos = url.find(',')?;
+    let svg_content = &url[comma_pos + 1..];
+
+    // URL 解码
+    let decoded = percent_decode_svg(svg_content);
+
+    // 提取 SVG 尺寸
+    let svg_start = decoded.find("<svg")?;
+    let tag_end = decoded[svg_start..].find('>')?;
+    let svg_tag = &decoded[svg_start..svg_start + tag_end];
+    let svg_w = extract_svg_attr_float(svg_tag, "width")? as u32;
+    let svg_h = extract_svg_attr_float(svg_tag, "height")? as u32;
+
+    if svg_w == 0 || svg_h == 0 || svg_w > 4096 || svg_h > 4096 {
+        return None;
+    }
+
+    // 提取第一个 <rect> 的 fill 颜色
+    let rect_fill = extract_first_rect_fill(&decoded[svg_start + tag_end..])?;
+
+    // 生成纯色 ImageData
+    let [r, g, b, a] = rect_fill;
+    let buf_size = (svg_w as usize) * (svg_h as usize) * 4;
+    let mut buf = vec![0u8; buf_size];
+    for pixel in buf.chunks_exact_mut(4) {
+        pixel[0] = r;
+        pixel[1] = g;
+        pixel[2] = b;
+        pixel[3] = a;
+    }
+
+    ImageData::from_rgba(buf, svg_w, svg_h).ok()
+}
+
+/// 简易 percent-decode。
+fn percent_decode_svg(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let hex: String = chars.by_ref().take(2).collect();
+            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                result.push(byte as char);
+            } else {
+                result.push('%');
+                result.push_str(&hex);
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// 从 SVG 标签属性中提取浮点数值。
+fn extract_svg_attr_float(tag: &str, attr: &str) -> Option<f32> {
+    let prefix = format!("{}=", attr);
+    let pos = tag.find(&prefix)?;
+    let rest = &tag[pos + prefix.len()..];
+    let (quote, offset) = if rest.starts_with('"') {
+        ('"', 1)
+    } else if rest.starts_with('\'') {
+        ('\'', 1)
+    } else {
+        return None;
+    };
+    let value_str = &rest[offset..];
+    let end = value_str.find(quote)?;
+    value_str[..end].parse::<f32>().ok()
+}
+
+/// 从 SVG 内容中提取第一个 <rect> 的 fill 颜色。
+/// 支持命名颜色（如 "green", "red", "blue"）和十六进制颜色（如 "#00ff00"）。
+fn extract_first_rect_fill(svg_content: &str) -> Option<[u8; 4]> {
+    let rect_start = svg_content.find("<rect")?;
+    let rect_end = svg_content[rect_start..].find("/>")?;
+    let rect_tag = &svg_content[rect_start..rect_start + rect_end];
+
+    // 查找 fill 属性
+    let fill_prefix = "fill=";
+    let pos = rect_tag.find(fill_prefix)?;
+    let rest = &rect_tag[pos + fill_prefix.len()..];
+    let (quote, offset) = if rest.starts_with('"') {
+        ('"', 1)
+    } else if rest.starts_with('\'') {
+        ('\'', 1)
+    } else {
+        return None;
+    };
+    let value_str = &rest[offset..];
+    let end = value_str.find(quote)?;
+    let color_name = &value_str[..end];
+
+    parse_css_color(color_name)
+}
+
+/// 解析 CSS 颜色名称或十六进制颜色。
+fn parse_css_color(name: &str) -> Option<[u8; 4]> {
+    match name {
+        "green" => Some([0, 128, 0, 255]),
+        "red" => Some([255, 0, 0, 255]),
+        "blue" => Some([0, 0, 255, 255]),
+        "white" => Some([255, 255, 255, 255]),
+        "black" => Some([0, 0, 0, 255]),
+        "yellow" => Some([255, 255, 0, 255]),
+        "orange" => Some([255, 165, 0, 255]),
+        "purple" => Some([128, 0, 128, 255]),
+        "gray" | "grey" => Some([128, 128, 128, 255]),
+        "lime" => Some([0, 255, 0, 255]),
+        "navy" => Some([0, 0, 128, 255]),
+        "cyan" | "aqua" => Some([0, 255, 255, 255]),
+        "magenta" | "fuchsia" => Some([255, 0, 255, 255]),
+        "silver" => Some([192, 192, 192, 255]),
+        "maroon" => Some([128, 0, 0, 255]),
+        "olive" => Some([128, 128, 0, 255]),
+        "teal" => Some([0, 128, 128, 255]),
+        "transparent" => Some([0, 0, 0, 0]),
+        hex if hex.starts_with('#') => parse_hex_color(hex),
+        _ => None,
+    }
+}
+
+/// 解析 #RGB 或 #RRGGBB 十六进制颜色。
+fn parse_hex_color(hex: &str) -> Option<[u8; 4]> {
+    let hex = hex.trim_start_matches('#');
+    match hex.len() {
+        3 => {
+            let r = u8::from_str_radix(&hex[0..1].repeat(2), 16).ok()?;
+            let g = u8::from_str_radix(&hex[1..2].repeat(2), 16).ok()?;
+            let b = u8::from_str_radix(&hex[2..3].repeat(2), 16).ok()?;
+            Some([r, g, b, 255])
+        }
+        6 => {
+            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            Some([r, g, b, 255])
+        }
+        _ => None,
+    }
 }
 
 /// 从 ImageCache 中提取所有图像的固有尺寸。

@@ -133,6 +133,15 @@ fn apply_replaced_element_sizing(
     let attr_w = elem.get_attribute("width").and_then(|v| v.parse::<f32>().ok());
     let attr_h = elem.get_attribute("height").and_then(|v| v.parse::<f32>().ok());
 
+    // 回退到 SVG data URI 内的固有尺寸
+    let (attr_w, attr_h) = match (attr_w, attr_h) {
+        (Some(w), Some(h)) => (Some(w), Some(h)),
+        _ => {
+            let (svg_w, svg_h) = extract_svg_data_uri_size(elem);
+            (attr_w.or(svg_w), attr_h.or(svg_h))
+        }
+    };
+
     match (attr_w, attr_h) {
         (Some(w), Some(h)) if w > 0.0 && h > 0.0 => {
             // 两个属性都有：设置固有尺寸（当 CSS 为 auto 时）
@@ -179,6 +188,85 @@ fn apply_replaced_element_sizing(
             // 无 HTML 属性：不注入尺寸，依赖 CSS 或默认
         }
     }
+}
+
+/// 从 `data:image/svg+xml,...` 数据 URI 中提取 SVG 元素的 width/height 属性。
+/// 仅解析简单的内联 SVG（非 base64 编码），提取 `<svg ... width="..." height="...">` 中的数值。
+fn extract_svg_data_uri_size(elem: &zero_dom::ElementData) -> (Option<f32>, Option<f32>) {
+    let src = match elem.get_attribute("src") {
+        Some(s) if s.starts_with("data:image/svg+xml") => s,
+        _ => return (None, None),
+    };
+
+    // 解码 data URI：去掉 "data:image/svg+xml," 前缀
+    let comma_pos = match src.find(',') {
+        Some(p) => p,
+        None => return (None, None),
+    };
+    let svg_content = &src[comma_pos + 1..];
+
+    // URL 解码（%xx → 字符）
+    let decoded = percent_decode(svg_content);
+
+    // 从 <svg> 开始标签中提取 width/height
+    // 查找 <svg ... > 标签
+    let svg_start = match decoded.find("<svg") {
+        Some(p) => p,
+        None => return (None, None),
+    };
+    let tag_end = match decoded[svg_start..].find('>') {
+        Some(p) => svg_start + p,
+        None => return (None, None),
+    };
+    let tag_content = &decoded[svg_start..tag_end];
+
+    let w = extract_attr_float(tag_content, "width");
+    let h = extract_attr_float(tag_content, "height");
+
+    (w, h)
+}
+
+/// 简易 percent-decode（处理 %xx 转义）。
+fn percent_decode(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let hex: String = chars.by_ref().take(2).collect();
+            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                result.push(byte as char);
+            } else {
+                result.push('%');
+                result.push_str(&hex);
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// 从 XML 标签属性字符串中提取指定属性名对应的浮点数值。
+/// 支持单引号和双引号。
+fn extract_attr_float(tag: &str, attr: &str) -> Option<f32> {
+    // 查找 attr= 模式（前面是空白或标签名）
+    let prefix = format!("{}=", attr);
+    let pos = tag.find(&prefix)?;
+    let value_start = pos + prefix.len();
+    let rest = &tag[value_start..];
+
+    // 跳过引号
+    let (quote, content_start) = if rest.starts_with('"') {
+        ('"', 1)
+    } else if rest.starts_with('\'') {
+        ('\'', 1)
+    } else {
+        return None;
+    };
+
+    let value_str = &rest[content_start..];
+    let end = value_str.find(quote)?;
+    value_str[..end].parse::<f32>().ok().filter(|&v| v > 0.0)
 }
 
 fn build_subtree(
