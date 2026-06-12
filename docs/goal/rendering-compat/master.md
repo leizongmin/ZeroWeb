@@ -1,8 +1,42 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-12
+**最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 80.2% (393/490) R70 分析中
+**上游真实 reftest 通过率**: 80.2% (393/490) R71 基线确认
+
+### R71 进展
+
+**当前状态**：
+- 全量上游 reftest：**393/490 (80.2%)**，与 R70 基线持平（零回归）
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+
+#### R71 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| TextFragment margin 字段 | 为 `TextFragment` 新增 `margin_left` 和 `margin_right` 字段，所有 7 个构造位置已更新 |
+| LayoutBox.inline_element_margins | 新增 `HashMap<NodeId, (f32, f32)>` 字段，从 layout IFC 片段存储 inline 元素的水平 margin |
+| IFC margin_overrides | `InlineFormattingContext` 新增 `margin_overrides` 字段和 `with_margin_overrides()` builder |
+| paint IFC margin 传递 | `text.rs` 从 `box_node.inline_element_margins` 提取并传递到 paint IFC |
+| collect_inline_items margin 查找 | `style` 为 None 时从 `margin_overrides` 查找 inline 元素的 margin |
+
+#### R71 关键发现
+
+1. **margin override 机制对当前 97 个失败测试无直接影响**：`paint_text` 是在包含文本内容的 inline 元素上调用，而非在存储了 `inline_element_margins` 的容器元素上调用。因此 paint IFC 读取的是子元素自身的空 `inline_element_margins`，而非容器的。
+2. **inline-formatting-context-002/003 的根因是背景定位**：inline 元素的背景从 LayoutBox 位置（taffy block 布局）渲染，而文本从 paint IFC 位置渲染。两套位置系统的差异导致 1.05-1.39% 的像素偏差。
+3. **所有 97 个失败测试的根因分类确认**：
+   - **Paint IFC 架构**（~50 tests）：layout IFC 和 paint IFC 使用不同上下文，文本位置不一致
+   - **border-collapse 亚像素精度**（~10 tests）：taffy 单元格定位精度限制
+   - **writing-mode 垂直布局**（~10 tests）：完整轴交换未实现
+   - **multicol column breaking**（~16 tests）：inline 内容无法跨列拆分
+   - **其他**（~11 tests）：CSS 功能缺失、table 匿名盒等
+
+#### R71 系统性瓶颈确认
+
+与 R70 结论一致，所有增量改进路径已穷尽（R37-R71 共 35 轮尝试）：
+- 唯一系统性打破 80% 天花板的路径是 **taffy-IFC 架构统一**
+- 次大杠杆是 **writing-mode 垂直布局完整实现** 和 **multicol inline 内容跨列拆分**
 
 ### R70 上游 reftest 全面分析
 
