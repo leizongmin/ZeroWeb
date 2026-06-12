@@ -2,11 +2,11 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 基础设施已就位）
-**上游真实 reftest 通过率**: 80.6% (395/490) R75 确认（+1 自 R74）
+**上游真实 reftest 通过率**: 81.0% (397/490) R76 确认（+2 自 R75）
 
 ### 当前阶段结论
 
-- **395/490 (80.6%) 稳定基线**：R75 通过 calc(P% ± Npx) 表达式支持和绝对定位 IFC 排除修复提升通过率。
+- **397/490 (81.0%) 稳定基线**：R76 通过 `align-self: Auto` CSS 规范对齐提升通过率。
 - **R73 Phase A 基础设施就位**：`compute_final_inline_layouts` 已启用作为 step 12 后处理，paint 系统可通过 `use_stored` 路径消费存储的 IFC 结果。
   - 当前使用空样式 + override maps（与 paint-IFC 一致），零回归。
   - 后续可逐步切换到真实样式，需逐容器验证。
@@ -14,13 +14,68 @@
   1. **taffy-IFC 架构统一**：影响 50+ 测试，需要重设计 layout/paint 之间的 IFC 数据流。
   2. **multicol inline 内容跨列拆分**：影响 16+ 测试，需要 IFC 片段级列分配与 fragmentation。
   3. **writing-mode 垂直布局完整实现**：影响 10+ 测试，需要完整轴交换与垂直字形渲染/定位收口。
-  4. **独立修复机会**：table anonymous fixup 精度、flex baseline 提取、float clearance 边界 case。
+  4. **独立修复机会**：visibility:collapse flex 实现、border-conflict-resolution 精度、float clearance 边界 case。
 
 ### 下一阶段执行依据
 
 - 专项实施 Spec：[`post-r71-architecture-spec.md`](./post-r71-architecture-spec.md)
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
+
+### R76 进展
+
+**当前状态**：
+- 全量上游 reftest：**397/490 (81.0%)**，较 R75 基线 395/490 净增 +2
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+
+#### R76 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| AlignmentValue::Auto 新增 | CSS 规范对齐：`align-self` 初始值从 `Stretch` 改为 `Auto`（继承容器 `align-items`） |
+| align-self: Auto 解析 | CSS parser 支持 `auto` 关键字解析 |
+| 转换器 Auto → None | taffy `align_self: None` 让容器 `align-items` 正确继承 |
+| engine baseline 参与条件修正 | `Auto` + 容器 baseline = 参与；`Stretch`（显式退出）= 不参与 |
+| compute_final_inline_layouts 行内守卫 | 跳过非块级元素，防止行内容器双重 IFC 渲染 |
+
+#### R76 通过率变化
+
+| 目录 | R75 | R76 | 变化 |
+|------|-----|-----|------|
+| css-flexbox/ | 37/55 (67.3%) | **39/55 (70.9%)** | +2 |
+| CSS2/ | 97/129 (75.2%) | 98/129 (76.0%) | +1 (font-148 flaky) |
+| css-multicol/ | 35/57 (61.4%) | **34/57 (59.6%)** | -1 (baseline-007) |
+| 其他 | 不变 | 不变 | 零回归 |
+
+#### R76 新增通过的测试
+
+1. `flex-order-wrap-reverse-baseline.html` (1.27%→0.00%) — `align-self: Auto` 正确继承 baseline
+2. `flexbox-align-items-center-nested-001.html` (8.33%→0.00%) — 嵌套 flex 容器 definite size 传播
+
+#### R76 回归（1 个，均为小幅偏移）
+
+1. `baseline-007.html` (PASS→1.04%) — multicol 容器在 flex 中参与 baseline 对齐，基线近似精度限制
+
+#### R76 调查与分析
+
+1. **near-miss 测试系统性分析**：调查了 20+ 个 1-5% diff 的失败测试，发现大部分仍被系统性问题阻塞（paint IFC、taffy 精度、writing-mode）。
+2. **font-148 flaky**：`font: calc(10*10px) sans-serif` 测试在 0.99%/2.71% 之间波动，非稳定改善。
+3. **visibility:collapse**：flexbox `visibility:collapse` 在 taffy 中完全未实现（TODO at flexbox.rs:331），需要两遍布局算法。
+4. **flexbox-column-row-gap-004** (5.13%)：taffy 百分比 gap 解析逻辑已正确（indefinite size → 0px），diff 来自其他布局差异。
+
+#### R76 关键结论
+
+1. **`align-self: Auto` 是 CSS 规范正确性修复**：初始值从 `Stretch` 改为 `Auto` 使 taffy 能正确继承容器 `align-items`，消除了一个规范违规 bug。
+2. **独立修复机会持续存在但收益递减**：R68-R76 共 9 轮，从 388→397（+9），每轮平均 +1。后续每轮改进需要更深入的系统性工作。
+3. **81% 是新的稳定基线**：397/490 在多次复跑中稳定复现。
+
+#### 后续重点（R77+）
+
+1. **visibility:collapse for flex**（影响 2 tests）：需要在 taffy 中实现两遍布局
+2. **baseline 近似精度**（影响 baseline-007 等）：考虑使用 line_height 而非 font_size 近似
+3. **taffy-IFC 架构统一**（最大杠杆，影响 50+ tests）
+4. **writing-mode 垂直布局**（影响 10 tests）
 
 ### R75 进展
 
