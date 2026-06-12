@@ -575,7 +575,6 @@ impl InlineFormattingContext {
         self.inline_element_metrics = metrics;
         self
     }
-
     /// 设置末行对齐方式（CSS text-align-last）。
     ///
     /// None 表示末行跟随 text_align 设置（默认行为）。
