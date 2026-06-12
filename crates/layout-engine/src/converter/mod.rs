@@ -320,8 +320,15 @@ fn convert_length_to_dimension(value: &LengthValue) -> taffy::style::Dimension {
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::Dimension::Percent((*v / 100.0) as f32),
         LengthValue::Auto => taffy::style::Dimension::Auto,
-        // Calc 表达式应由 style-system 的 resolve_computed_style 解析为 Px
-        LengthValue::Calc(_) => length(0.0),
+        // Calc 表达式：尝试提取简单的 P% ± Npx 模式，转为百分比。
+        // calc(100% - 6px) → Percent(1.0)。精确的 px 偏移量在布局后处理中处理。
+        LengthValue::Calc(expr) => {
+            if let Some(pct) = extract_calc_percentage(expr) {
+                taffy::style::Dimension::Percent(pct as f32 / 100.0)
+            } else {
+                length(0.0)
+            }
+        }
         // fit-content() 将内部值转换为 dimension
         LengthValue::FitContent(inner) => convert_length_to_dimension(inner),
         // min-content/max-content 映射为 Auto（由 taffy 内部处理内容尺寸）
@@ -1109,6 +1116,36 @@ pub fn resolve_grid_placement(
     let cs = resolve_named_area(&style.grid_column_start, parent_areas, "col-start");
     let ce = resolve_named_area(&style.grid_column_end, parent_areas, "col-end");
     (rs, re, cs, ce)
+}
+
+/// 尝试从 calc 表达式中提取百分比值。
+///
+/// 对于 `calc(100% - 6px)` 这样的简单模式，提取出 `100.0`。
+/// 这使得 taffy 能使用百分比进行布局。
+/// 仅支持 `P% - Npx`、`P% + Npx`、`Npx - P%`、纯 `P%` 模式。
+fn extract_calc_percentage(expr: &zero_css_parser::values::CalcExpr) -> Option<f64> {
+    use zero_css_parser::values::{CalcExpr, CalcOp, LengthValue};
+    match expr {
+        CalcExpr::Length(LengthValue::Percentage(pct)) => Some(*pct),
+        CalcExpr::BinaryOp(left, op, right) => {
+            let left_pct = match left.as_ref() {
+                CalcExpr::Length(LengthValue::Percentage(pct)) => Some(*pct),
+                _ => None,
+            };
+            let right_pct = match right.as_ref() {
+                CalcExpr::Length(LengthValue::Percentage(pct)) => Some(*pct),
+                _ => None,
+            };
+            match (op, left_pct, right_pct) {
+                (CalcOp::Add, Some(lp), None) => Some(lp),
+                (CalcOp::Add, None, Some(rp)) => Some(rp),
+                (CalcOp::Subtract, Some(lp), None) => Some(lp),
+                (CalcOp::Subtract, None, Some(rp)) => Some(-rp),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]

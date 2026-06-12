@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{LengthValue, parse_var};
+use zero_css_parser::values::{CalcExpr, LengthValue, parse_var};
 
 use crate::property::ComputedStyle;
 use crate::property::types::{BorderStyleValue, LineHeightValue};
@@ -360,9 +360,27 @@ fn resolve_length_field(
     match field {
         LengthValue::Px(_) => { /* 已经是绝对值 */ }
         LengthValue::Percentage(_) | LengthValue::Auto => { /* 由布局引擎处理 */ }
+        // 包含百分比的 calc 表达式保留，由布局引擎处理
+        LengthValue::Calc(expr) if calc_contains_percentage(expr) => {}
         _ => {
             let px = resolve_length(field, font_size, viewport_width, viewport_height);
             *field = LengthValue::Px(px);
+        }
+    }
+}
+
+/// 检查 calc 表达式是否包含百分比值。
+///
+/// 包含百分比的 calc 表达式无法在计算值阶段完全解析，
+/// 因为百分比需要相对于包含块的尺寸，这在布局阶段才可知。
+fn calc_contains_percentage(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Number(_) => false,
+        CalcExpr::Length(lv) => matches!(lv, LengthValue::Percentage(_)),
+        CalcExpr::BinaryOp(left, _, right) => calc_contains_percentage(left) || calc_contains_percentage(right),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_contains_percentage),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_contains_percentage(min) || calc_contains_percentage(val) || calc_contains_percentage(max)
         }
     }
 }
