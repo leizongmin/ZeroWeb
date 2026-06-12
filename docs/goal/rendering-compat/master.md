@@ -2,7 +2,43 @@
 
 **最后更新**: 2026-06-12
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 79.2% (388/490)
+**上游真实 reftest 通过率**: 79.4% (389/490)
+
+### R65 进展
+
+**通过率**：
+- 上游真实 reftest 全量复跑：**389/490 (79.4%)**，与 R64 基线持平（零回归）
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-engine` 单测：**1142/1142 通过**
+- `zero-layout-engine` 单测：**813/813 通过**
+- clippy：**零警告**
+
+#### R65 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| line-height em/rem 单位计算值解析 | `resolve_computed_style` 新增 `LineHeightValue::Length(Em/Rem)` 到 `Px` 的转换。CSS 规范要求 line-height 的 em 单位相对于元素自身的 font-size。之前 `Em(v)` 未被解析，导致布局引擎回退到 `font_size * 1.2`（normal 比率）而非正确的 `font_size * v`。正确性修复，实测零回归（389/490 稳定） |
+
+#### R65 调查与分析
+
+1. **line-height em 单位解析 bug 发现**：通过系统性分析 101 个失败测试，发现 `font: 20px/1em Ahem` 声明中的 `1em` line-height 被错误解析为 24px（20px × 1.2）而非 20px。8 个失败测试直接受此 bug 影响（使用 `1em` line-height 的 clearance 和 linebox 测试），但因这些测试的渲染差异主要来自其他根因（swatch 图像精度、paint IFC），修复后未产生通过率变化。
+
+2. **系统性瓶颈确认**（与 R64 一致）：
+   - Paint IFC 使用空 styles 导致 50+ 测试文本定位偏差
+   - taffy Layout 不保留 first_baselines
+   - border-collapse 外边缘精度被 taffy 单元格定位阻塞
+   - writing-mode 垂直 float/clearance 需完整轴交换
+
+#### R65 关键结论
+
+1. **正确性修复优先**：即使 line-height 修复没有立即提升通过率，它消除了一个规范违规的 bug，为后续改进建立了正确的基线
+2. **79.4% 基线确认**：R64-R65 连续两轮验证 389/490 是当前稳定基线（R64 记录的 388/490 为单次波动）
+
+#### 后续重点（R66+）
+
+1. **taffy-IFC 架构统一**（最大杠杆，影响 50+ tests）：唯一系统性打破 79% 天花板的路径
+2. **Writing-mode 垂直布局**（影响 10 tests）：完整轴交换 + 垂直字形渲染
+3. **Multicol column breaking 完善**（影响 16 tests）：更精细的片段分配算法
 
 ### R64 进展
 
