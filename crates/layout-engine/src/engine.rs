@@ -220,7 +220,6 @@ impl LayoutEngine {
         dirty_tracker: &mut LayoutDirtyTracker,
     ) -> (LayoutResult, IncrementalLayoutStats) {
         let use_start = std::time::Instant::now();
-
         // 如果需要全量重算或无缓存，退化为全量计算
         if dirty_tracker.is_full_recalc() || self.cached_state.is_none() {
             let was_full = dirty_tracker.is_full_recalc() || self.cached_state.is_none();
@@ -845,6 +844,102 @@ fn store_font_sizes_from_ifc(inline_ctx: &crate::inline::InlineFormattingContext
                 .inline_element_metrics
                 .insert(frag.node_id, (frag.font_size, frag.height));
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct InlineVisualMetrics {
+    padding_top: f32,
+    padding_right: f32,
+    padding_bottom: f32,
+    padding_left: f32,
+    border_top: f32,
+    border_right: f32,
+    border_bottom: f32,
+    border_left: f32,
+}
+
+fn resolve_px_length(value: &LengthValue) -> f32 {
+    match value {
+        LengthValue::Px(v) => *v as f32,
+        _ => 0.0,
+    }
+}
+
+fn extract_inline_visual_metrics(style: &ComputedStyle) -> InlineVisualMetrics {
+    InlineVisualMetrics {
+        padding_top: resolve_px_length(&style.padding_top),
+        padding_right: resolve_px_length(&style.padding_right),
+        padding_bottom: resolve_px_length(&style.padding_bottom),
+        padding_left: resolve_px_length(&style.padding_left),
+        border_top: resolve_px_length(&style.border_top_width),
+        border_right: resolve_px_length(&style.border_right_width),
+        border_bottom: resolve_px_length(&style.border_bottom_width),
+        border_left: resolve_px_length(&style.border_left_width),
+    }
+}
+
+/// 将 IFC 计算出的直接 inline 子元素几何写回 LayoutBox。
+///
+/// 仅处理「单个 fragment 即可完整表示」的简单 inline 元素：
+/// - `display:inline`
+/// - 非 absolute/fixed
+/// - 在当前 IFC 中恰好对应一个 fragment
+///
+/// 这样可以让 paint 阶段使用更接近真实 inline box 的几何去绘制背景/边框，
+/// 避免 taffy 将 inline 元素当作 block 后得到的零尺寸或错误尺寸。
+fn sync_inline_child_boxes_from_ifc(
+    box_node: &mut LayoutBox,
+    inline_ctx: &InlineFormattingContext,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    let fragments = inline_ctx.all_fragments_with_line_y();
+
+    for child in &mut box_node.children {
+        if child.is_block_level || child.is_absolute || child.is_fixed {
+            continue;
+        }
+
+        let Some(child_id) = child.node_id else {
+            continue;
+        };
+        let Some(style) = styles.get(&child_id) else {
+            continue;
+        };
+        if !matches!(style.display, DisplayValue::Inline) {
+            continue;
+        }
+
+        let mut matching = fragments.iter().filter(|fragment| fragment.node_id == child_id);
+        let Some(fragment) = matching.next() else {
+            continue;
+        };
+        if matching.next().is_some() {
+            continue;
+        }
+        if !fragment.text.is_empty() {
+            continue;
+        }
+
+        let metrics = extract_inline_visual_metrics(style);
+        child.x = fragment.x;
+        child.y = fragment.y - metrics.padding_top - metrics.border_top;
+        child.width =
+            fragment.width + metrics.padding_left + metrics.padding_right + metrics.border_left + metrics.border_right;
+        child.height =
+            fragment.height + metrics.padding_top + metrics.padding_bottom + metrics.border_top + metrics.border_bottom;
+        child.content_x = metrics.border_left + metrics.padding_left;
+        child.content_y = metrics.border_top + metrics.padding_top;
+        child.content_width = fragment.width;
+        child.content_height = fragment.height;
+        child.padding_top = metrics.padding_top;
+        child.padding_right = metrics.padding_right;
+        child.padding_bottom = metrics.padding_bottom;
+        child.padding_left = metrics.padding_left;
+        child.border_top = metrics.border_top;
+        child.border_right = metrics.border_right;
+        child.border_bottom = metrics.border_bottom;
+        child.border_left = metrics.border_left;
     }
 }
 
@@ -1867,6 +1962,7 @@ fn remeasure_text_with_float_exclusions(
 
             // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
             store_font_sizes_from_ifc(&inline_ctx, box_node);
+            sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
 
             // 容器高度需要包含 float 元素占用的空间
             let text_height = inline_ctx.total_height();
@@ -1932,6 +2028,7 @@ fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, st
 
         // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
         store_font_sizes_from_ifc(&inline_ctx, box_node);
+        sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
 
         let content_height = inline_ctx.total_height();
         if content_height > box_node.content_height {

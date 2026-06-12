@@ -863,12 +863,16 @@ fn test_empty_inline_element_applies_margin_right() {
     // 验证：后续文本的 x 坐标应包含空元素的 margin-left + margin-right
     let frags = ctx.all_fragments();
     assert!(!frags.is_empty(), "应有文本片段");
+    let after_frag = frags
+        .iter()
+        .find(|frag| frag.text == "after")
+        .expect("应找到后续文本片段");
     // 空元素消费了 margin-left (50) + margin-right (30) = 80px
     // 所以后续文本的 x 应至少为 80
     assert!(
-        frags[0].x >= 80.0,
+        after_frag.x >= 80.0,
         "空元素后文本 x 应包含 margin-left+margin-right (期望>=80, 实际={})",
-        frags[0].x
+        after_frag.x
     );
 }
 

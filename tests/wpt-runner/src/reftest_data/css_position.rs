@@ -247,11 +247,11 @@ const REFTESTS: &[InlineReftestDef] = &[
         is_match: true,
     },
     InlineReftestDef {
-        id: "css-position/z-index-mismatch",
+        id: "css-position/z-index-dom-order-insensitive",
         category: ReftestCategory::Layout,
         test_html: "<html><body style=\"margin:0\"><div style=\"position:relative;width:100px;height:100px;\"><div style=\"position:absolute;top:0;left:0;width:100px;height:100px;background:red;z-index:1;\"></div><div style=\"position:absolute;top:0;left:0;width:100px;height:100px;background:blue;z-index:2;\"></div></div></body></html>",
         ref_html: "<html><body style=\"margin:0\"><div style=\"position:relative;width:100px;height:100px;\"><div style=\"position:absolute;top:0;left:0;width:100px;height:100px;background:blue;z-index:2;\"></div><div style=\"position:absolute;top:0;left:0;width:100px;height:100px;background:red;z-index:1;\"></div></div></body></html>",
-        is_match: false,
+        is_match: true,
     },
     InlineReftestDef {
         id: "css-position/z-index-large-values",

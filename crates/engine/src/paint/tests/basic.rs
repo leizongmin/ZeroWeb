@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::ColorValue;
-use zero_dom::NodeId;
+use zero_dom::{Document, NodeId};
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::color::Color;
@@ -362,6 +362,129 @@ fn test_painter_absolute_offset() {
     let fill = &painter.primitives().fills[0];
     assert_eq!(fill.rect.origin.x, 50.0);
     assert_eq!(fill.rect.origin.y, 30.0);
+}
+
+#[test]
+fn test_negative_z_index_child_paints_before_in_flow_sibling() {
+    let mut doc = Document::new();
+    let normal_id = doc.create_element("div");
+    let negative_id = doc.create_element("div");
+
+    let normal_child = make_box(Some(normal_id), 0.0, 0.0, 40.0, 40.0);
+    let mut negative_child = make_box(Some(negative_id), 0.0, 0.0, 40.0, 40.0);
+    negative_child.is_absolute = true;
+    negative_child.z_index = -1;
+
+    let parent_box = LayoutBox {
+        node_id: None,
+        x: 0.0,
+        y: 0.0,
+        width: 40.0,
+        height: 40.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 40.0,
+        content_height: 40.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![normal_child, negative_child],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        clear: zero_layout_engine::ClearValue::None,
+        z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+        ..Default::default()
+    };
+
+    let mut styles = HashMap::new();
+    let mut normal_style = ComputedStyle::default();
+    normal_style.background_color = ColorValue::Named("green".to_string());
+    styles.insert(normal_id, normal_style);
+    let mut negative_style = ComputedStyle::default();
+    negative_style.background_color = ColorValue::Named("red".to_string());
+    styles.insert(negative_id, negative_style);
+
+    let mut painter = Painter::new();
+    painter.paint(&parent_box, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].color, Color::rgb(255, 0, 0));
+    assert_eq!(fills[1].color, Color::rgb(0, 128, 0));
+}
+
+#[test]
+fn test_positioned_zero_z_index_child_paints_after_in_flow_sibling() {
+    let mut doc = Document::new();
+    let positioned_id = doc.create_element("div");
+    let normal_id = doc.create_element("div");
+
+    let mut positioned_child = make_box(Some(positioned_id), 0.0, 0.0, 40.0, 40.0);
+    positioned_child.is_absolute = true;
+    let normal_child = make_box(Some(normal_id), 0.0, 0.0, 40.0, 40.0);
+
+    let parent_box = LayoutBox {
+        node_id: None,
+        x: 0.0,
+        y: 0.0,
+        width: 40.0,
+        height: 40.0,
+        content_x: 0.0,
+        content_y: 0.0,
+        content_width: 40.0,
+        content_height: 40.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+        children: vec![positioned_child, normal_child],
+        is_absolute: false,
+        is_fixed: false,
+        is_sticky: false,
+        clear: zero_layout_engine::ClearValue::None,
+        z_index: 0,
+        float: zero_css_parser::values::FloatValue::None,
+        overflow_x: OverflowClip::Visible,
+        overflow_y: OverflowClip::Visible,
+        ..Default::default()
+    };
+
+    let mut styles = HashMap::new();
+    let mut positioned_style = ComputedStyle::default();
+    positioned_style.background_color = ColorValue::Named("blue".to_string());
+    styles.insert(positioned_id, positioned_style);
+    let mut normal_style = ComputedStyle::default();
+    normal_style.background_color = ColorValue::Named("green".to_string());
+    styles.insert(normal_id, normal_style);
+
+    let mut painter = Painter::new();
+    painter.paint(&parent_box, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].color, Color::rgb(0, 128, 0));
+    assert_eq!(fills[1].color, Color::rgb(0, 0, 255));
 }
 
 /// 测试多个子节点都能生成填充图元。

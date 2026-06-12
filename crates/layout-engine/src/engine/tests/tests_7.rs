@@ -2,6 +2,7 @@ use super::*;
 use std::collections::HashMap;
 use zero_css_parser::values::{DisplayValue, LengthValue, PositionValue};
 use zero_style_system::ComputedStyle;
+use zero_style_system::StyleSystem;
 
 // ── 边缘场景补充测试（第九批）──
 
@@ -418,5 +419,162 @@ fn test_empty_inline_line_height_contribution() {
         container_box.content_height > 0.0,
         "Container should have non-zero height from empty inline's line-height, got {}",
         container_box.content_height
+    );
+}
+
+/// 测试空 inline 元素的 border/padding 几何会从 IFC 写回子 LayoutBox。
+#[test]
+fn test_inline_child_box_synced_from_ifc_for_empty_span() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let span = doc.create_element("span");
+    doc.append_child(container, span).unwrap();
+
+    let mut styles = HashMap::new();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.width = LengthValue::Px(500.0);
+    container_style.font_size = LengthValue::Px(100.0);
+    container_style.line_height = zero_style_system::property::types::LineHeightValue::Number(1.0);
+    styles.insert(container, container_style);
+
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    span_style.font_size = LengthValue::Px(100.0);
+    span_style.line_height = zero_style_system::property::types::LineHeightValue::Number(1.0);
+    span_style.padding_top = LengthValue::Px(100.0);
+    span_style.padding_right = LengthValue::Px(100.0);
+    span_style.padding_bottom = LengthValue::Px(100.0);
+    span_style.padding_left = LengthValue::Px(100.0);
+    span_style.border_top_width = LengthValue::Px(25.0);
+    span_style.border_right_width = LengthValue::Px(25.0);
+    span_style.border_bottom_width = LengthValue::Px(25.0);
+    span_style.border_left_width = LengthValue::Px(25.0);
+    styles.insert(span, span_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let container_box = find_child_by_node_id(&result.root, container).expect("container");
+    let span_box = find_child_by_node_id(container_box, span).expect("span");
+
+    assert_eq!(
+        span_box.width, 250.0,
+        "empty inline 的 border-box 宽度应包含左右 padding/border"
+    );
+    assert_eq!(
+        span_box.height, 350.0,
+        "empty inline 的 border-box 高度应包含 line-height + padding + border"
+    );
+    assert_eq!(span_box.content_width, 0.0, "empty inline 无文本时内容宽度应为 0");
+    assert_eq!(span_box.content_height, 100.0, "内容高度应保留原始 line-height");
+    assert_eq!(span_box.padding_left, 100.0);
+    assert_eq!(span_box.border_left, 25.0);
+    assert!(
+        container_box.content_height >= 350.0,
+        "父容器应至少容纳完整 inline box，高度={}",
+        container_box.content_height
+    );
+}
+
+/// 测试 inline 元素的 padding-top/border-top 会把视觉盒子向上扩展。
+#[test]
+fn test_inline_child_box_bleeds_upwards_from_ifc() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let span = doc.create_element("span");
+    doc.append_child(container, span).unwrap();
+
+    let mut styles = HashMap::new();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.width = LengthValue::Px(500.0);
+    container_style.font_size = LengthValue::Px(40.0);
+    container_style.line_height = zero_style_system::property::types::LineHeightValue::Number(1.0);
+    styles.insert(container, container_style);
+
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    span_style.font_size = LengthValue::Px(40.0);
+    span_style.line_height = zero_style_system::property::types::LineHeightValue::Number(1.0);
+    span_style.padding_top = LengthValue::Px(25.0);
+    span_style.border_top_width = LengthValue::Px(15.0);
+    styles.insert(span, span_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let container_box = find_child_by_node_id(&result.root, container).expect("container");
+    let span_box = find_child_by_node_id(container_box, span).expect("span");
+
+    assert_eq!(
+        span_box.height, 80.0,
+        "空 span 的视觉高度应包含 line-height + padding-top + border-top"
+    );
+    assert!(
+        span_box.y < 0.0,
+        "padding-top/border-top 应使 inline 盒子向上 bleed，实际 y={}",
+        span_box.y
+    );
+}
+
+#[test]
+fn test_real_empty_inline_003_layout_height() {
+    let html = r#"
+    <html>
+      <body>
+        <div id="rel-pos-wrapper" style="position: relative;">
+          <div id="test" style="background-color: green; color: white; line-height: 1;">
+            <span id="empty-inline-element" style="line-height: 5;"></span>X
+          </div>
+          <div id="reference-overlapped-red"
+               style="background-color: red; left: 0; line-height: 5; position: absolute; top: 0; width: 100%; z-index: -1;">X</div>
+        </div>
+      </body>
+    </html>
+    "#;
+    let doc = zero_dom::parse_html(html);
+    let mut style_system = StyleSystem::new();
+    style_system.set_viewport(800.0, 600.0);
+    let styles = style_system.compute_styles(&doc, &[]);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let mut test_box = None;
+    let mut empty_span_box = None;
+    let mut stack = vec![&result.root];
+    while let Some(node) = stack.pop() {
+        if let Some(node_id) = node.node_id
+            && let Some(dom_node) = doc.get(node_id)
+            && let zero_dom::NodeKind::Element(elem) = &dom_node.kind
+        {
+            if elem.get_attribute("id").as_deref() == Some("test") {
+                test_box = Some(node);
+            }
+            if elem.get_attribute("id").as_deref() == Some("empty-inline-element") {
+                empty_span_box = Some(node);
+            }
+        }
+        stack.extend(node.children.iter());
+    }
+
+    let test_box = test_box.expect("#test");
+    let empty_span_box = empty_span_box.expect("#empty-inline-element");
+    eprintln!(
+        "#test: width={} height={} content_height={} inline_layout={} span.height={} span.y={}",
+        test_box.width,
+        test_box.height,
+        test_box.content_height,
+        test_box.inline_layout.is_some(),
+        empty_span_box.height,
+        empty_span_box.y
+    );
+    assert!(
+        test_box.content_height >= 80.0,
+        "#test content_height 应体现空 inline 的 line-height:5，实际={}",
+        test_box.content_height
     );
 }
