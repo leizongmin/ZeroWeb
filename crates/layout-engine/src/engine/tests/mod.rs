@@ -52,12 +52,22 @@ fn find_absolute_position_by_node_id_inner(
     parent_abs_y: f32,
 ) -> Option<(f32, f32)> {
     for child in &root.children {
-        let abs_x = parent_abs_x + root.content_x + child.x;
-        let abs_y = parent_abs_y + root.content_y + child.y;
+        // parent_abs_x/y 是 root 的内容区域绝对原点。
+        // child.x/y 是相对于 root border-box 原点的偏移，
+        // content_x/y 也是相对于自身 border-box 原点的偏移。
+        // 因此 child 的绝对位置 = parent_abs + child.x，
+        // child 的内容区域绝对原点 = parent_abs + child.x + child.content_x。
+        let abs_x = parent_abs_x + child.x;
+        let abs_y = parent_abs_y + child.y;
         if child.node_id == Some(target_id) {
             return Some((abs_x, abs_y));
         }
-        if let Some(found) = find_absolute_position_by_node_id_inner(child, target_id, abs_x, abs_y) {
+        // 递归时传递 child 的内容区域绝对原点
+        let child_content_abs_x = abs_x + child.content_x;
+        let child_content_abs_y = abs_y + child.content_y;
+        if let Some(found) =
+            find_absolute_position_by_node_id_inner(child, target_id, child_content_abs_x, child_content_abs_y)
+        {
             return Some(found);
         }
     }

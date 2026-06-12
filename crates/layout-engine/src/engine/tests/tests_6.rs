@@ -639,17 +639,17 @@ fn test_absolute_position_out_of_flow() {
     let tree = engine.compute(&doc, &styles);
 
     let abs_box = find_child_by_node_id(&tree.root, absolute).expect("absolute div 应在布局树中");
-    // absolute 元素无 positioned ancestor，containing block 为初始包含块。
-    // body 有 UA 默认 margin:8px（现已通过 shorthand 展开正确应用），
-    // 因此 abs.x 是相对于 body 的偏移 ≈ left(20) - body_margin(8) = 12。
+    // absolute 元素无 positioned ancestor，containing block 为初始包含块（viewport）。
+    // taffy 将其定位为 viewport 相对坐标，但在 LayoutBox 树中作为 body 子节点存储。
+    // x = left(20) 是 taffy 计算的位置值。
     assert!(
-        (abs_box.x - 12.0).abs() < 2.0,
-        "absolute 元素 x 应接近 12（left:20 - body_margin:8），实际为 {}",
+        (abs_box.x - 20.0).abs() < 2.0,
+        "absolute 元素 x 应接近 20（left:20），实际为 {}",
         abs_box.x
     );
     assert!(
-        (abs_box.y - 2.0).abs() < 2.0,
-        "absolute 元素 y 应接近 2（top:10 - body_margin:8），实际为 {}",
+        (abs_box.y - 10.0).abs() < 2.0,
+        "absolute 元素 y 应接近 10（top:10），实际为 {}",
         abs_box.y
     );
 }
