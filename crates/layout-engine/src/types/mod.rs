@@ -98,6 +98,10 @@ pub struct LayoutBox {
     /// 是否为多列容器（column-count 或 column-width 非 auto）。
     /// 多列容器建立 BFC，阻止与子元素的 margin 折叠（CSS §2）。
     pub is_multicol: bool,
+    /// 是否为布局容器（flex/grid/table）。
+    /// 布局容器建立 BFC（CSS Flexbox §3, CSS Grid §3），
+    /// 其子元素由各自的布局算法定位，不走 IFC。
+    pub is_layout_container: bool,
     /// 多列容器的列间距（column-gap），由 layout 层设置，paint 层用于裁剪。
     /// 非 multicol 容器为 0.0。
     pub column_gap: f32,
@@ -266,6 +270,7 @@ impl Default for LayoutBox {
             scroll_y: 0.0,
             is_flow_root: false,
             is_multicol: false,
+            is_layout_container: false,
             column_gap: 0.0,
             is_block_level: false,
             is_relative: false,
