@@ -38,6 +38,12 @@
 2. **布局容器 IFC 跳过**是架构上正确的修复：flex/grid/table 容器的子元素不应参与 IFC 重算，它们的尺寸由各自的布局算法决定
 3. **突破了 79.0% 天花板**：虽然只提升了 1 个测试，但验证了 flexbox 布局路径的正确性改进可以突破之前的平台期
 
+#### R64 调查与实验
+
+1. **is_layout_container 基础设施**：在 LayoutBox 中新增 `is_layout_container` 字段（extract_layout 时设置），用于识别 Flex/InlineFlex/Grid/InlineGrid/Table/InlineTable 容器。简化了 `remeasure_inline_only_containers` 的布局容器检测代码
+
+2. **establishes_bfc 扩展实验（已回退）**：尝试将 flex/grid/table 容器加入 BFC 检测（CSS Flexbox §3, CSS Grid §3 规定它们建立 BFC）。导致 `font-family-013` 从 0.76% 退化为 1.51%（CSS2 93→92）。根因：BFC 检测影响 `adjust_float_positions` 中的浮动排斥逻辑，对某些布局容器产生了意外的位置偏移。已回退，但 `is_layout_container` 字段保留供后续更精细的 BFC 集成使用
+
 #### 后续重点（R65+）
 
 1. **taffy-IFC 架构统一**（最大杠杆，影响 50+ tests）：唯一系统性打破 79% 天花板的路径
