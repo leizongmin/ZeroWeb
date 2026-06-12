@@ -917,6 +917,11 @@ fn sync_inline_child_boxes_from_ifc(
         if matching.next().is_some() {
             continue;
         }
+        // 跳过含文本内容的 fragment：
+        // 文本 fragment 的位置来自 layout IFC（使用真实样式），
+        // 而 paint 阶段运行独立的 paint IFC（使用空样式），
+        // 两者行断行为不同，直接使用 layout IFC 坐标会导致背景与文字错位。
+        // 仅对空 inline 元素（零宽度 TextRun）应用几何修正。
         if !fragment.text.is_empty() {
             continue;
         }

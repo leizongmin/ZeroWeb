@@ -1475,13 +1475,15 @@ fn compute_cell_intrinsic_width(
 
 /// 递归收集 LayoutBox 子树中的文本字符数。
 /// 使用 DOM text_content() 方法获取元素的完整文本内容。
+/// 注意：使用 .chars().count() 计算字符数而非 .len()（字节数），
+/// 因为多字节 Unicode 字符（如 CJK）的字节数不等于字符数。
 fn collect_text_length(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
     let mut len = 0;
     if let Some(node_id) = box_node.node_id {
         if let Some(text) = doc.text_content(node_id) {
             let trimmed = text.trim();
             if !trimmed.is_empty() {
-                len += trimmed.len();
+                len += trimmed.chars().count();
             }
         }
     }
