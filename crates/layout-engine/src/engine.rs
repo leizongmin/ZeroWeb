@@ -443,10 +443,15 @@ impl LayoutEngine {
         });
         let is_relative =
             computed.is_some_and(|s| matches!(s.position, PositionValue::Relative | PositionValue::Sticky));
+        let is_positioned = is_absolute || is_fixed || is_relative;
         let z_index = computed.map_or(0, |s| match s.z_index {
             ZIndexValue::Auto => 0,
             ZIndexValue::Integer(z) => z,
         });
+        // CSS 2.1：positioned 元素 + z-index 为显式整数时创建堆叠上下文。
+        // z-index: auto 不创建堆叠上下文——其 positioned 后代参与父级堆叠上下文。
+        let creates_stacking_context =
+            is_positioned && computed.is_some_and(|s| matches!(s.z_index, ZIndexValue::Integer(_)));
 
         // 从 taffy 提取原始值
         let mut x = layout.location.x;
@@ -540,6 +545,7 @@ impl LayoutEngine {
             overflow_x,
             overflow_y,
             z_index,
+            creates_stacking_context,
             scroll_x: 0.0,
             scroll_y: 0.0,
             is_flow_root,

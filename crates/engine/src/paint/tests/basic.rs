@@ -434,6 +434,7 @@ fn test_positioned_zero_z_index_child_paints_after_in_flow_sibling() {
 
     let mut positioned_child = make_box(Some(positioned_id), 0.0, 0.0, 40.0, 40.0);
     positioned_child.is_absolute = true;
+    positioned_child.creates_stacking_context = true; // z-index: 0 (explicit) creates stacking context
     let normal_child = make_box(Some(normal_id), 0.0, 0.0, 40.0, 40.0);
 
     let parent_box = LayoutBox {
