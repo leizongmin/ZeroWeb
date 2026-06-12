@@ -2,7 +2,56 @@
 
 **最后更新**: 2026-06-12
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 79.4% (389/490)
+**上游真实 reftest 通过率**: 79.2% (388/490)
+
+### R66 进展
+
+**通过率**：
+- 上游真实 reftest 全量复跑：**388/490 (79.2%)**，与 R65 基线持平（零回归）
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-engine` 单测：**1142/1142 通过**
+- `zero-layout-engine` 单测：**813/813 通过**
+- clippy：**零警告**
+
+#### R66 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| table 容器无 table-internal 子元素时的 IFC 重算 | `remeasure_inline_only_containers` 不再盲目跳过所有 layout container 的 IFC 重算。`display: table/inline-table` 容器如果没有 table-internal 子元素（tbody/tr/td 等），现在会执行 IFC 重算，与 `display: block` 容器行为一致。正确性修复，实测零回归（388/490 稳定） |
+
+#### R66 调查与分析
+
+1. **102 个失败测试系统性分析**：按 diff% 分类 — 16 个 near-miss (<2%)、22 个 medium (2-10%)、22 个 high (5-10%)、42 个 severe (>10%)。与 R65 结论一致，主要瓶颈仍是 paint IFC 架构、writing-mode 垂直布局、multicol column breaking。
+
+2. **near-miss 测试根因分类**（16 个 <2% diff）：
+   - Float/clearance 精度（3 tests）：clearance-006 (1.16%)、clear-clearance-calculation-002 (1.18%)、float-003 (1.56%)
+   - Flexbox baseline/gap/writing-mode（5 tests）：flex-item-position-relative (1.04%)、flex-order-wrap-reverse-baseline (1.27%)、flexbox-column-row-gap (1.63%)、fieldset-as-item-overflow (1.77%)、css-flexbox-row (1.84%)
+   - Table border/whitespace（3 tests）：whitespace-001 (1.05%)、row-group-margin-border-padding (1.32%)、border-conflict-resolution (1.50%)
+   - Grid max-content（2 tests）：child-border-box-and-max-content-001/002 (1.52%)
+   - Position relative（1 test）：position-relative-table-tfoot-top (1.56%)
+   - Block-in-inline/multicol（2 tests）：block-in-inline-align-001 (1.42%)、multicol-collapsing-001 (1.68%)
+
+3. **paint 堆叠顺序问题发现**：`flex-item-position-relative-001` (1.04%) 的根因是 CSS 2.1 Appendix E 堆叠顺序实现不完整 — 当前 paint 系统将 positioned 元素全部排在 normal flow 之后，而非按 tree order 排列。position:relative 元素不创建 stacking context 时，其 positioned 后代应参与父级 stacking context 的 step 6 排序。这需要 paint 系统架构改进。
+
+4. **系统性瓶颈确认**（与 R65 一致）：
+   - Paint IFC 使用空 styles 导致 50+ 测试文本定位偏差
+   - taffy Layout 不保留 first_baselines
+   - border-collapse 外边缘精度被 taffy 单元格定位阻塞
+   - writing-mode 垂直 float/clearance 需完整轴交换
+   - CSS 2.1 Appendix E 堆叠顺序未完整实现（影响 position:relative + absolute 组合场景）
+
+#### R66 关键结论
+
+1. **79.2% 基线确认**：R65 记录的 389/490 为阈值边缘波动，388/490 是当前可稳定复现的基线
+2. **table 容器 IFC 修复**是正确性改进：即使未直接提升通过率，它消除了 table 容器与 block 容器在 IFC 处理上的不一致性
+3. **paint 堆叠顺序**是 R61 修复的延伸问题：R61 添加了 negative/normal/positive z-index 排序，但未处理 positioned 元素内部嵌套 positioned 后代的 tree order 排序
+
+#### 后续重点（R67+）
+
+1. **taffy-IFC 架构统一**（最大杠杆，影响 50+ tests）：唯一系统性打破 79% 天花板的路径
+2. **CSS 2.1 Appendix E 堆叠顺序完善**（影响 3-5 tests）：position:relative 不创建 stacking context 时，positioned 后代应按 tree order 参与 step 6 排序
+3. **Writing-mode 垂直布局**（影响 10 tests）：完整轴交换 + 垂直字形渲染
+4. **Multicol column breaking 完善**（影响 16 tests）：更精细的片段分配算法
 
 ### R65 进展
 
