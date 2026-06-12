@@ -2306,7 +2306,7 @@ fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, st
             && !box_node.children[idx].is_fixed
         {
             for sibling in box_node.children.iter_mut().skip(idx + 1) {
-                if sibling.is_absolute || sibling.is_fixed {
+                if sibling.is_absolute || sibling.is_fixed || !matches!(sibling.float, FloatValue::None) {
                     continue;
                 }
                 sibling.y += shrink_delta;
