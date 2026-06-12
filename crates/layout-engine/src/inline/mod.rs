@@ -881,19 +881,49 @@ impl InlineFormattingContext {
                             // 无有效尺寸的 inline-block 降级为零宽度 TextRun
                         }
 
-                        // `<img>` 替换元素：使用 HTML width/height 属性作为固有尺寸，
-                        // 创建 InlineBlock 条目（原子盒，不可拆分）。
+                        // `<img>` 替换元素：作为原子行内级盒（不可拆分）参与 IFC。
+                        // 尺寸来源优先级：HTML width/height 属性 → CSS computed width/height →
+                        // LayoutBox 预计算尺寸（含百分比解析和固有尺寸回退）。
                         if elem_data.local_name() == "img" {
-                            let w = elem_data
+                            let mut w = elem_data
                                 .get_attribute("width")
                                 .and_then(|v| v.parse::<f32>().ok())
                                 .unwrap_or(0.0)
                                 .max(0.0);
-                            let h = elem_data
+                            let mut h = elem_data
                                 .get_attribute("height")
                                 .and_then(|v| v.parse::<f32>().ok())
                                 .unwrap_or(0.0)
                                 .max(0.0);
+                            // HTML 属性不足时，回退到 CSS computed style
+                            if w <= 0.0 || h <= 0.0 {
+                                if let Some(s) = styles.get(&child_id) {
+                                    if w <= 0.0 {
+                                        let css_w = resolve_inline_block_dimension(&s.width, s, true);
+                                        if css_w > 0.0 {
+                                            w = css_w;
+                                        }
+                                    }
+                                    if h <= 0.0 {
+                                        let css_h = resolve_inline_block_dimension(&s.height, s, false);
+                                        if css_h > 0.0 {
+                                            h = css_h;
+                                        }
+                                    }
+                                }
+                            }
+                            // CSS 属性仍不足时（如 width:100% 是百分比，resolve 返回 0），
+                            // 回退到 LayoutBox 预计算尺寸（由 taffy 从 CSS 百分比 + 固有尺寸计算）。
+                            if w <= 0.0 || h <= 0.0 {
+                                if let Some(&(lw, lh)) = self.inline_block_sizes.get(&child_id) {
+                                    if w <= 0.0 {
+                                        w = lw;
+                                    }
+                                    if h <= 0.0 {
+                                        h = lh;
+                                    }
+                                }
+                            }
                             if w > 0.0 && h > 0.0 {
                                 let vertical_align = styles
                                     .get(&child_id)

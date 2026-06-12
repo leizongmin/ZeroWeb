@@ -638,13 +638,21 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
         return;
     }
 
-    // 收集原子行内级子元素（inline-block / inline-flex / inline-grid / inline-table）的索引
+    // 收集原子行内级子元素（inline-block / inline-flex / inline-grid / inline-table / img）的索引
     let ib_indices: Vec<usize> = root
         .children
         .iter()
         .enumerate()
         .filter(|(_, child)| {
             child.node_id.is_some_and(|id| {
+                // <img> 替换元素始终作为原子行内级盒参与 IFC
+                if let Some(node_data) = doc.get(id) {
+                    if let zero_dom::NodeKind::Element(elem) = &node_data.kind {
+                        if elem.local_name() == "img" {
+                            return true;
+                        }
+                    }
+                }
                 styles.get(&id).is_some_and(|s| {
                     matches!(
                         s.display,

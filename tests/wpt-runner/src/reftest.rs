@@ -826,6 +826,37 @@ pub fn render_to_framebuffer_with_base(
 
     let result = pipeline.render_html(html, &combined_css);
 
+    // DEBUG: dump primitives for diagnostic
+    if std::env::var("REFTEST_DEBUG").is_ok() {
+        eprintln!("=== Primitives for {} ===", html.lines().take(1).next().unwrap_or(""));
+        eprintln!("  fills: {}", result.primitives.fills.len());
+        eprintln!("  images: {}", result.primitives.images.len());
+        eprintln!("  rounded_rects: {}", result.primitives.rounded_rects.len());
+        eprintln!("  glyphs: {}", result.primitives.glyphs.len());
+        eprintln!("  gradients: {}", result.primitives.gradients.len());
+        eprintln!("  strokes: {}", result.primitives.strokes.len());
+        for (i, fill) in result.primitives.fills.iter().enumerate().take(20) {
+            eprintln!(
+                "  fill[{}]: ({:.1},{:.1},{:.1},{:.1}) rgba({},{},{},{})",
+                i,
+                fill.rect.origin.x,
+                fill.rect.origin.y,
+                fill.rect.size.width,
+                fill.rect.size.height,
+                fill.color.r,
+                fill.color.g,
+                fill.color.b,
+                fill.color.a
+            );
+        }
+        for (i, img) in result.primitives.images.iter().enumerate().take(10) {
+            eprintln!(
+                "  image[{}]: ({:.1},{:.1},{:.1},{:.1}) key={:?}",
+                i, img.rect.origin.x, img.rect.origin.y, img.rect.size.width, img.rect.size.height, img.image_key
+            );
+        }
+    }
+
     let mut glyph_cache = GlyphCache::new(1024);
 
     // 使用已构建的图像缓存（包含固有尺寸信息）
