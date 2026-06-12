@@ -53,6 +53,41 @@ pub struct Painter {
     font_resolver: HashMap<String, u32>,
 }
 
+fn is_positioned_child(box_node: &LayoutBox) -> bool {
+    box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky
+}
+
+fn child_paint_sort_key(box_node: &LayoutBox) -> (u8, i32) {
+    if is_positioned_child(box_node) {
+        if box_node.z_index < 0 {
+            (0, box_node.z_index)
+        } else {
+            (3, box_node.z_index)
+        }
+    } else if matches!(box_node.float, FloatValue::None) {
+        (1, 0)
+    } else {
+        (2, 0)
+    }
+}
+
+fn ordered_child_indices<F>(children: &[LayoutBox], mut include: F) -> Vec<usize>
+where
+    F: FnMut(&LayoutBox) -> bool,
+{
+    let mut ordered: Vec<usize> = children
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, child)| include(child).then_some(idx))
+        .collect();
+    ordered.sort_by(|&left, &right| {
+        child_paint_sort_key(&children[left])
+            .cmp(&child_paint_sort_key(&children[right]))
+            .then(left.cmp(&right))
+    });
+    ordered
+}
+
 impl Painter {
     /// 创建新的绘制命令生成器。
     pub fn new() -> Self {
@@ -224,17 +259,13 @@ impl Painter {
 
         let counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
-        // CSS 2.1 Appendix E: 非 positioned floats 在 block 级非 positioned 后代之后绘制。
-        // 先绘制非 float 子元素，再绘制 float 子元素，确保 float 视觉上在 block 背景之上。
-        for child in &box_node.children {
-            if matches!(child.float, FloatValue::None) {
-                self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect, doc);
-            }
-        }
-        for child in &box_node.children {
-            if !matches!(child.float, FloatValue::None) {
-                self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect, doc);
-            }
+        // CSS 2.1 Appendix E:
+        // 负 z-index 的 positioned 后代在常规流内容之后方，
+        // 非 positioned float 在常规流后代之上，
+        // 非负 z-index 的 positioned 后代位于最上层。
+        for child_idx in ordered_child_indices(&box_node.children, |_| true) {
+            let child = &box_node.children[child_idx];
+            self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect, doc);
         }
 
         if needs_clip {
@@ -420,19 +451,14 @@ impl Painter {
         // 记录子节点绘制前的图元数量，用于裁剪
         let counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
-        // CSS 2.1 Appendix E: 非 positioned floats 在 block 级非 positioned 后代之后绘制。
         // 多列容器的子元素需要按列区域裁剪，防止内容溢出到相邻列。
         // CSS 规范允许内容延伸到列间隙（column gap），但不允许进入相邻列。
         let is_multicol = box_node.is_multicol;
-        for child in &box_node.children {
-            if matches!(child.float, FloatValue::None) && (!is_multicol || child.column_span_offsets.is_empty()) {
-                self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
-            }
-        }
-        for child in &box_node.children {
-            if !matches!(child.float, FloatValue::None) && (!is_multicol || child.column_span_offsets.is_empty()) {
-                self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
-            }
+        for child_idx in ordered_child_indices(&box_node.children, |child| {
+            !is_multicol || child.column_span_offsets.is_empty()
+        }) {
+            let child = &box_node.children[child_idx];
+            self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
         }
 
         // 多列子元素按列区域渲染。

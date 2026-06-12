@@ -1057,6 +1057,22 @@ impl InlineFormattingContext {
                         if run.margin_left > 0.0 {
                             current_x += run.margin_left;
                         }
+                        // 为纯空 inline 元素保留一个零宽 fragment。
+                        // 这样 layout/paint 后处理仍可感知其几何，写回真实的 inline box 尺寸，
+                        // 并在需要时绘制 padding/border/background。
+                        current_line.runs.push(TextFragment {
+                            x: current_x,
+                            y: 0.0,
+                            width: 0.0,
+                            height: run.line_height,
+                            text: String::new(),
+                            node_id: run.node_id,
+                            font_size: run.font_size,
+                            vertical_align: run.vertical_align.clone(),
+                            is_ahem: run.is_ahem_font,
+                            letter_spacing: 0.0,
+                            baseline: run.font_size,
+                        });
                         if run.margin_right > 0.0 {
                             current_x += run.margin_right;
                         }

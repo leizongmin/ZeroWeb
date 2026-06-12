@@ -2,7 +2,69 @@
 
 **最后更新**: 2026-06-12
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 79.2% (388/490)
+**上游真实 reftest 通过率**: 79.0% (387/490)
+
+### R61 进展
+
+**通过率**：
+- 上游真实 reftest 全量复跑 2 次：**387/490 (79.0%)**
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-engine` 单测：**1142/1142 通过**
+- `zero-layout-engine` 单测：**810/813 通过**（3 个既有失败未变化：`test_flex_basis_auto_vs_zero`、`test_nested_grid_container`、`test_flex_child_in_grid`）
+
+#### R61 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| empty inline fragment 保留 | `inline/mod.rs` 为纯空 inline 元素保留零宽 fragment，使后处理可感知其真实行盒位置 |
+| IFC → LayoutBox 空 inline 几何同步 | `engine.rs` 新增 `sync_inline_child_boxes_from_ifc`，把空 `display:inline` 子元素的 padding/border 几何从 IFC 写回 `LayoutBox` |
+| paint 子节点堆叠顺序修正 | `paint/painter/mod.rs` 新增 positioned/z-index 排序：负 z-index → 普通流 → floats → 非负 z-index |
+| paint 回归测试 | 新增 `negative z-index` 和 `positioned z-index:0` 两个 painter 单测 |
+| reftest 基线更新 | 内联 reftest `css-position/z-index-mismatch` 改为 match，并重命名为 `z-index-dom-order-insensitive` |
+
+#### R61 调查与分析
+
+1. **R60“唯一可行路径是 taffy-IFC 统一”并不成立于 `empty-inline-003`**：
+   - layout 已正确：`#test.content_height=80`、空 span `height=80`、`y=-16`
+   - 真正错误发生在 paint：直接子元素绘制顺序只区分 float，完全忽略 `position/z-index`
+   - `empty-inline-003` 中红色参考块是 `position:absolute; z-index:-1`，却被错误地绘制到绿色正常流块之上
+
+2. **结构性问题的真实位置在 painter stacking，而不是 taffy measure 层**：
+   - 一旦按 CSS 2.1 Appendix E 的基本层次重新排序，`empty-inline-003` 立即从 **13.29% → 0.03%**
+   - 回归哨兵 `position-absolute-in-inline-005` 仍保持 **0.64%（通过）**
+   - `css-position` 上游分类维持 **12/16**，未出现新的 positioned/z-index 分类退化
+
+3. **layout/paint IFC 分裂仍然是剩余 inline-box 问题的主瓶颈，但不再是唯一结构性问题**：
+   - `empty-inline-002` 仍为 **29.58%**
+   - `border-padding-bleed-001` 仍为 **5.75%**
+   - `inline-box-001/002`、`inline-formatting-context-008/009/011` 仍未被本轮撬动
+   - 这些测试继续指向 paint IFC 使用空 styles 带来的字体度量/行断脱节
+
+4. **“在 measure 阶段缓存 IFC 结果供 paint 复用”的实验再次证伪**：
+   - 该路径会让存储的 fragment 位置与 paint 实际行断脱节
+   - `position-absolute-in-inline-005` 会回归，因此已全部回退
+
+#### R61 定向结果
+
+| 测试 | R60 前 | R61 后 | 结论 |
+|------|--------|--------|------|
+| `empty-inline-003` | 13.29% | **0.03%** | 已修复 |
+| `position-absolute-in-inline-005` | 0.64% | **0.64%** | 无回归 |
+| `empty-inline-002` | 29.58% | 29.58% | 无变化 |
+| `border-padding-bleed-001` | 5.75% | 5.75% | 无变化 |
+
+#### R61 关键结论
+
+- `empty-inline-003` 的结构性根因已确认并修复：**问题不在 layout IFC，而在 paint 阶段缺失 positioned/z-index stacking**
+- R60 关于“必须先做 taffy-IFC 统一，才能继续前进”的结论需要收窄：它仍然适用于大多数剩余 inline-box/text 定位问题，但**不是所有结构性问题的唯一入口**
+- 对剩余 `empty-inline-002 / border-padding-bleed / inline-box-*` 而言，layout/paint IFC 上下文分裂仍是最有杠杆的方向
+- 最新两次上游全量复跑稳定在 **387/490**，未复现历史记录中的 **388/490**；因此后续文档与决策应以 **387/490** 作为当前可复现基线
+
+#### 后续重点（R62+）
+
+1. **继续沿 empty-inline / inline-box 线收缩问题面**：优先分析 `empty-inline-002` 与 `border-padding-bleed-001`，确认是否还存在可独立于 taffy-IFC 统一的 paint 级缺口
+2. **针对剩余 linebox 失败重新评估 taffy-IFC 统一收益**：当前它不再是“唯一结构性问题”的答案，而是“剩余大头问题”的答案
+3. **把 stacking 顺序纳入后续所有 positioned/inline 方案审视清单**：任何涉及 absolute/static-position 的方案都必须先验证 paint 顺序是否自洽
 
 ### R60 进展
 
