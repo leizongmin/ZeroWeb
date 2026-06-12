@@ -2,24 +2,71 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 基础设施已就位）
-**上游真实 reftest 通过率**: 80.2% (393/490) R73 Phase A 基础设施确认
+**上游真实 reftest 通过率**: 80.4% (394/490) R74 确认（+1 自 R73）
 
 ### 当前阶段结论
 
-- **393/490 (80.2%) 阶段性天花板确认**：R37-R72 共 36 轮增量尝试后，R70-R72 连续确认零净提升、零回归。
+- **394/490 (80.4%) 稳定基线**：R74 通过 table 嵌套行组合并修复打破 R73 的 80.2% 天花板。
 - **R73 Phase A 基础设施就位**：`compute_final_inline_layouts` 已启用作为 step 12 后处理，paint 系统可通过 `use_stored` 路径消费存储的 IFC 结果。
   - 当前使用空样式 + override maps（与 paint-IFC 一致），零回归。
   - 后续可逐步切换到真实样式，需逐容器验证。
-- **后续提升只能依赖专项架构改造**，三条候选主路径：
+- **后续提升主要依赖专项架构改造**，但独立修复仍然可行：
   1. **taffy-IFC 架构统一**：影响 50+ 测试，需要重设计 layout/paint 之间的 IFC 数据流。
   2. **multicol inline 内容跨列拆分**：影响 16+ 测试，需要 IFC 片段级列分配与 fragmentation。
   3. **writing-mode 垂直布局完整实现**：影响 10+ 测试，需要完整轴交换与垂直字形渲染/定位收口。
+  4. **独立修复机会**：table anonymous fixup 精度、flex baseline 提取、float clearance 边界 case。
 
 ### 下一阶段执行依据
 
 - 专项实施 Spec：[`post-r71-architecture-spec.md`](./post-r71-architecture-spec.md)
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
+
+### R74 进展
+
+**当前状态**：
+- 全量上游 reftest：**394/490 (80.4%)**，较 R73 基线 393/490 净增 +1
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+
+#### R74 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| table 嵌套行组合并 | `build_grid` 孤立模式下，嵌套 row-group 的单元格合并到外层行组的同一匿名行，而非创建单独的匿名行。修复 CSS 表格匿名盒 fixup 算法 |
+
+#### R74 通过率变化
+
+| 目录 | R73 | R74 | 变化 |
+|------|-----|-----|------|
+| css-tables/ | 46/55 (83.6%) | **47/55 (85.5%)** | +1 (table-row-group-nested-anonymous-001) |
+| 其他 | 不变 | 不变 | 零回归 |
+
+#### R74 新增通过的测试
+
+1. `table-row-group-nested-anonymous-001.html` (1.11%→0.00%) — 嵌套行组单元格合并到同一匿名行
+
+#### R74 分析与发现
+
+1. **独立修复路径仍然存在**：虽然 R37-R73 的 36 轮主要聚焦于 paint IFC override 路径（已穷尽），但表格匿名盒 fixup 这类独立 bug 仍然可以被发现和修复。
+2. **float-003 阈值边缘波动**：该测试 diff 在 0.73%-1.56% 之间波动，有时通过有时失败。属于 flaky near-miss。
+3. **clear-float-003 负 margin + clear 交互**：深入分析了 float clear + 负 margin-top 交互，发现 CSS 2.1 规范对 float 元素 clear 约束是 margin-box 级别的，修复比预期更复杂。暂未修复。
+4. **position-absolute-semi-replaced-stretch**：taffy 正确计算 stretch 尺寸，但 2.68% diff 表明存在渲染层精度问题。
+
+#### R74 调查的根因（未修复）
+
+| 测试 | diff | 根因 | 评估 |
+|------|------|------|------|
+| clear-applies-to-009 | 1.02% | clearance 亚像素精度 | 精度问题 |
+| position-relative-table-tfoot-top | 1.04% | border-collapse 亚像素 | 被阻塞 |
+| inline-formatting-context-003 | 1.05% | paint IFC 架构 | 被阻塞 |
+| whitespace-001 | 1.05% | table content_width for IFC | 可修复 |
+| clear-clearance-calculation-004 | 1.28% | clearance 精度 | 精度问题 |
+| flex-order-wrap-reverse-baseline | 1.27% | wrap-reverse baseline 选择 | 可修复 |
+| multicol-collapsing-001 | 1.68% | BFC margin collapse 已处理，diff 来自列内容 | 精度问题 |
+| clear-float-003 | 3.20% | float clear + 负 margin 交互复杂 | 需要更深入分析 |
+| position-absolute-semi-replaced-stretch-input | 2.68% | taffy 正确，渲染层差异 | 可修复 |
+| position-absolute-semi-replaced-stretch-other | 2.10% | 同上 | 可修复 |
 
 ### R73 进展（Phase A 基础设施）
 
