@@ -1068,7 +1068,55 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                     }
                     continue;
                 }
-                Some(d) if is_table_row(d) || is_row_group(d) => {
+                Some(d) if is_row_group(d) => {
+                    // 嵌套行组：CSS 表格匿名盒修复
+                    // 嵌套行组的单元格应合并到外层行组的同一匿名行
+                    for (rg_child_idx, rg_child) in child.children.iter().enumerate() {
+                        let rg_display = get_display(rg_child, styles);
+                        if rg_display.as_ref().is_some_and(is_table_cell) {
+                            let colspan = get_colspan(rg_child, doc);
+                            let rowspan = get_rowspan(rg_child, doc);
+                            let col_start = orphan_col_cursor;
+                            let col_end = col_start + colspan;
+                            max_cols = max_cols.max(col_end);
+                            orphan_anonymous_cells.push(TableCell {
+                                child_index: rg_child_idx,
+                                colspan,
+                                rowspan,
+                                col_start,
+                                col_end,
+                                parent_rg_idx: Some(*child_idx),
+                            });
+                            orphan_col_cursor = col_end;
+                            if orphan_anonymous_cells.len() == 1 {
+                                orphan_first_child_idx = *child_idx;
+                            }
+                        } else if rg_display.as_ref().is_some_and(is_table_row) {
+                            // 嵌套行组中的行：提取其单元格
+                            for (cell_idx, cell_child) in rg_child.children.iter().enumerate() {
+                                let cell_colspan = get_colspan(cell_child, doc);
+                                let cell_rowspan = get_rowspan(cell_child, doc);
+                                let col_start = orphan_col_cursor;
+                                let col_end = col_start + cell_colspan;
+                                max_cols = max_cols.max(col_end);
+                                orphan_anonymous_cells.push(TableCell {
+                                    child_index: cell_idx,
+                                    colspan: cell_colspan,
+                                    rowspan: cell_rowspan,
+                                    col_start,
+                                    col_end,
+                                    parent_rg_idx: Some(*child_idx),
+                                });
+                                orphan_col_cursor = col_end;
+                                if orphan_anonymous_cells.len() == 1 {
+                                    orphan_first_child_idx = *child_idx;
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
+                Some(d) if is_table_row(d) => {
                     if !orphan_anonymous_cells.is_empty() {
                         rows.push(TableRow {
                             child_index: orphan_first_child_idx,
