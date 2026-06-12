@@ -1200,6 +1200,49 @@ mod tests {
         assert_eq!(hrefs, vec!["/fonts/ahem.css".to_string(), "theme.css".to_string()]);
     }
 
+    #[test]
+    #[ignore]
+    fn debug_clear_applies_to_009_blue_bbox() {
+        fn blue_bbox(fb: &FrameBuffer) -> Option<(u32, u32, u32, u32)> {
+            let mut min_x = fb.width;
+            let mut min_y = fb.height;
+            let mut max_x = 0;
+            let mut max_y = 0;
+            let mut found = false;
+
+            for y in 0..fb.height {
+                for x in 0..fb.width {
+                    let idx = ((y * fb.width + x) * 4) as usize;
+                    let px = &fb.data[idx..idx + 4];
+                    let is_blue = px[0] < 32 && px[1] < 32 && px[2] > 200 && px[3] > 200;
+                    if is_blue {
+                        found = true;
+                        min_x = min_x.min(x);
+                        min_y = min_y.min(y);
+                        max_x = max_x.max(x);
+                        max_y = max_y.max(y);
+                    }
+                }
+            }
+
+            found.then_some((min_x, min_y, max_x, max_y))
+        }
+
+        let wpt_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data");
+        let case_path = wpt_root.join("css/CSS2/floats-clear/clear-applies-to-009.xht");
+        let ref_path = wpt_root.join("css/CSS2/floats-clear/clear-applies-to-009-ref.xht");
+        let test_html = std::fs::read_to_string(&case_path).expect("read test html");
+        let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+        let base_dir = case_path.parent().expect("base dir");
+        let config = ReftestConfig::default();
+
+        let test_fb = render_to_framebuffer_with_base(&test_html, "", &config, Some(base_dir));
+        let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &config, Some(base_dir));
+
+        println!("test blue bbox: {:?}", blue_bbox(&test_fb));
+        println!("ref  blue bbox: {:?}", blue_bbox(&ref_fb));
+    }
+
     // ── 分类容差测试 ──
 
     #[test]

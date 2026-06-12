@@ -41,6 +41,29 @@ pub(super) fn find_child_by_node_id(root: &LayoutBox, target_id: NodeId) -> Opti
     None
 }
 
+pub(super) fn find_absolute_position_by_node_id(root: &LayoutBox, target_id: NodeId) -> Option<(f32, f32)> {
+    find_absolute_position_by_node_id_inner(root, target_id, 0.0, 0.0)
+}
+
+fn find_absolute_position_by_node_id_inner(
+    root: &LayoutBox,
+    target_id: NodeId,
+    parent_abs_x: f32,
+    parent_abs_y: f32,
+) -> Option<(f32, f32)> {
+    for child in &root.children {
+        let abs_x = parent_abs_x + root.content_x + child.x;
+        let abs_y = parent_abs_y + root.content_y + child.y;
+        if child.node_id == Some(target_id) {
+            return Some((abs_x, abs_y));
+        }
+        if let Some(found) = find_absolute_position_by_node_id_inner(child, target_id, abs_x, abs_y) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 mod coverage;
 mod tests_1;
 mod tests_10;
