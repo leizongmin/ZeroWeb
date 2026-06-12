@@ -1243,6 +1243,383 @@ mod tests {
         println!("ref  blue bbox: {:?}", blue_bbox(&ref_fb));
     }
 
+    #[test]
+    #[ignore]
+    fn debug_clear_applies_to_009_layout_snapshot() {
+        let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-applies-to-009.xht");
+        let html = std::fs::read_to_string(&case_path).expect("read test html");
+        let linked_css = load_linked_stylesheets(&html, case_path.parent());
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        pipeline.set_skip_indicators(true);
+        let font_loader = create_font_loader();
+        pipeline.set_font_resolver(font_loader.build_font_resolver());
+        let rendered = pipeline.render_html(&html, &linked_css);
+        println!("{}", rendered.layout.snapshot());
+        for i in 0..8 {
+            if let Some((x, y, w, h)) = rendered.layout.root.nth_box(i) {
+                println!("box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+        for fill in &rendered.primitives.fills {
+            if fill.color.r < 32 && fill.color.g < 32 && fill.color.b > 200 && fill.color.a > 200 {
+                println!(
+                    "blue fill rect=({:.2},{:.2},{:.2},{:.2})",
+                    fill.rect.origin.x, fill.rect.origin.y, fill.rect.size.width, fill.rect.size.height
+                );
+            }
+        }
+        for rr in &rendered.primitives.rounded_rects {
+            if rr.color.r < 32 && rr.color.g < 32 && rr.color.b > 200 && rr.color.a > 200 {
+                println!(
+                    "blue rr rect=({:.2},{:.2},{:.2},{:.2})",
+                    rr.rect.origin.x, rr.rect.origin.y, rr.rect.size.width, rr.rect.size.height
+                );
+            }
+        }
+
+        let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-applies-to-009-ref.xht");
+        let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+        let ref_linked_css = load_linked_stylesheets(&ref_html, ref_path.parent());
+        let mut ref_pipeline = RenderPipeline::new(800.0, 600.0);
+        ref_pipeline.set_skip_indicators(true);
+        let ref_font_loader = create_font_loader();
+        ref_pipeline.set_font_resolver(ref_font_loader.build_font_resolver());
+        let ref_rendered = ref_pipeline.render_html(&ref_html, &ref_linked_css);
+        println!("--- ref ---");
+        println!("{}", ref_rendered.layout.snapshot());
+        for i in 0..8 {
+            if let Some((x, y, w, h)) = ref_rendered.layout.root.nth_box(i) {
+                println!("ref box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn debug_clear_applies_to_001_layout_snapshot() {
+        let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-applies-to-001.xht");
+        let html = std::fs::read_to_string(&case_path).expect("read test html");
+        let linked_css = load_linked_stylesheets(&html, case_path.parent());
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        pipeline.set_skip_indicators(true);
+        let font_loader = create_font_loader();
+        pipeline.set_font_resolver(font_loader.build_font_resolver());
+        let rendered = pipeline.render_html(&html, &linked_css);
+        println!("{}", rendered.layout.snapshot());
+        for i in 0..12 {
+            if let Some((x, y, w, h)) = rendered.layout.root.nth_box(i) {
+                println!("box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+
+        let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-applies-to-001-ref.xht");
+        let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+        let ref_linked_css = load_linked_stylesheets(&ref_html, ref_path.parent());
+        let mut ref_pipeline = RenderPipeline::new(800.0, 600.0);
+        ref_pipeline.set_skip_indicators(true);
+        let ref_font_loader = create_font_loader();
+        ref_pipeline.set_font_resolver(ref_font_loader.build_font_resolver());
+        let ref_rendered = ref_pipeline.render_html(&ref_html, &ref_linked_css);
+        println!("--- ref ---");
+        println!("{}", ref_rendered.layout.snapshot());
+        for i in 0..12 {
+            if let Some((x, y, w, h)) = ref_rendered.layout.root.nth_box(i) {
+                println!("ref box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn debug_clear_clearance_calculation_001_layout_snapshot() {
+        let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-clearance-calculation-001.xht");
+        let html = std::fs::read_to_string(&case_path).expect("read test html");
+        let linked_css = load_linked_stylesheets(&html, case_path.parent());
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        pipeline.set_skip_indicators(true);
+        let font_loader = create_font_loader();
+        pipeline.set_font_resolver(font_loader.build_font_resolver());
+        let rendered = pipeline.render_html(&html, &linked_css);
+        println!("{}", rendered.layout.snapshot());
+        for i in 0..12 {
+            if let Some((x, y, w, h)) = rendered.layout.root.nth_box(i) {
+                println!("box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+
+        let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-clearance-calculation-001-ref.xht");
+        let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+        let ref_linked_css = load_linked_stylesheets(&ref_html, ref_path.parent());
+        let mut ref_pipeline = RenderPipeline::new(800.0, 600.0);
+        ref_pipeline.set_skip_indicators(true);
+        let ref_font_loader = create_font_loader();
+        ref_pipeline.set_font_resolver(ref_font_loader.build_font_resolver());
+        let ref_rendered = ref_pipeline.render_html(&ref_html, &ref_linked_css);
+        println!("--- ref ---");
+        println!("{}", ref_rendered.layout.snapshot());
+        for i in 0..12 {
+            if let Some((x, y, w, h)) = ref_rendered.layout.root.nth_box(i) {
+                println!("ref box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn debug_clear_clearance_calculation_003_layout_snapshot() {
+        let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-clearance-calculation-003.xht");
+        let html = std::fs::read_to_string(&case_path).expect("read test html");
+        let linked_css = load_linked_stylesheets(&html, case_path.parent());
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        pipeline.set_skip_indicators(true);
+        let font_loader = create_font_loader();
+        pipeline.set_font_resolver(font_loader.build_font_resolver());
+        let rendered = pipeline.render_html(&html, &linked_css);
+        println!("{}", rendered.layout.snapshot());
+        for i in 0..14 {
+            if let Some((x, y, w, h)) = rendered.layout.root.nth_box(i) {
+                println!("box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+
+        let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-clearance-calculation-003-ref.xht");
+        let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+        let ref_linked_css = load_linked_stylesheets(&ref_html, ref_path.parent());
+        let mut ref_pipeline = RenderPipeline::new(800.0, 600.0);
+        ref_pipeline.set_skip_indicators(true);
+        let ref_font_loader = create_font_loader();
+        ref_pipeline.set_font_resolver(ref_font_loader.build_font_resolver());
+        let ref_rendered = ref_pipeline.render_html(&ref_html, &ref_linked_css);
+        println!("--- ref ---");
+        println!("{}", ref_rendered.layout.snapshot());
+        for i in 0..14 {
+            if let Some((x, y, w, h)) = ref_rendered.layout.root.nth_box(i) {
+                println!("ref box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn debug_clear_clearance_calculation_004_layout_snapshot() {
+        let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-clearance-calculation-004.xht");
+        let html = std::fs::read_to_string(&case_path).expect("read test html");
+        let linked_css = load_linked_stylesheets(&html, case_path.parent());
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        pipeline.set_skip_indicators(true);
+        let font_loader = create_font_loader();
+        pipeline.set_font_resolver(font_loader.build_font_resolver());
+        let rendered = pipeline.render_html(&html, &linked_css);
+        println!("{}", rendered.layout.snapshot());
+        for i in 0..14 {
+            if let Some((x, y, w, h)) = rendered.layout.root.nth_box(i) {
+                println!("box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+
+        let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-clearance-calculation-004-ref.xht");
+        let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+        let ref_linked_css = load_linked_stylesheets(&ref_html, ref_path.parent());
+        let mut ref_pipeline = RenderPipeline::new(800.0, 600.0);
+        ref_pipeline.set_skip_indicators(true);
+        let ref_font_loader = create_font_loader();
+        ref_pipeline.set_font_resolver(ref_font_loader.build_font_resolver());
+        let ref_rendered = ref_pipeline.render_html(&ref_html, &ref_linked_css);
+        println!("--- ref ---");
+        println!("{}", ref_rendered.layout.snapshot());
+        for i in 0..14 {
+            if let Some((x, y, w, h)) = ref_rendered.layout.root.nth_box(i) {
+                println!("ref box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn debug_clear_clearance_calculation_005_layout_snapshot() {
+        let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-clearance-calculation-005.xht");
+        let html = std::fs::read_to_string(&case_path).expect("read test html");
+        let linked_css = load_linked_stylesheets(&html, case_path.parent());
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        pipeline.set_skip_indicators(true);
+        let font_loader = create_font_loader();
+        pipeline.set_font_resolver(font_loader.build_font_resolver());
+        let rendered = pipeline.render_html(&html, &linked_css);
+        println!("{}", rendered.layout.snapshot());
+        for i in 0..16 {
+            if let Some((x, y, w, h)) = rendered.layout.root.nth_box(i) {
+                println!("box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+        for (i, fill) in rendered.primitives.fills.iter().enumerate().take(16) {
+            println!(
+                "fill[{i}] rect=({:.2},{:.2},{:.2},{:.2}) color=({}, {}, {}, {})",
+                fill.rect.origin.x,
+                fill.rect.origin.y,
+                fill.rect.size.width,
+                fill.rect.size.height,
+                fill.color.r,
+                fill.color.g,
+                fill.color.b,
+                fill.color.a
+            );
+        }
+
+        let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-clearance-calculation-005-ref.xht");
+        let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+        let ref_linked_css = load_linked_stylesheets(&ref_html, ref_path.parent());
+        let mut ref_pipeline = RenderPipeline::new(800.0, 600.0);
+        ref_pipeline.set_skip_indicators(true);
+        let ref_font_loader = create_font_loader();
+        ref_pipeline.set_font_resolver(ref_font_loader.build_font_resolver());
+        let ref_rendered = ref_pipeline.render_html(&ref_html, &ref_linked_css);
+        println!("--- ref ---");
+        println!("{}", ref_rendered.layout.snapshot());
+        for i in 0..16 {
+            if let Some((x, y, w, h)) = ref_rendered.layout.root.nth_box(i) {
+                println!("ref box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn debug_clear_003_layout_snapshot() {
+        let case_path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/CSS2/floats-clear/clear-003.xht");
+        let html = std::fs::read_to_string(&case_path).expect("read test html");
+        let linked_css = load_linked_stylesheets(&html, case_path.parent());
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        pipeline.set_skip_indicators(true);
+        let font_loader = create_font_loader();
+        pipeline.set_font_resolver(font_loader.build_font_resolver());
+        let rendered = pipeline.render_html(&html, &linked_css);
+        println!("{}", rendered.layout.snapshot());
+        for i in 0..12 {
+            if let Some((x, y, w, h)) = rendered.layout.root.nth_box(i) {
+                println!("box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+        for (i, fill) in rendered.primitives.fills.iter().enumerate().take(12) {
+            println!(
+                "fill[{i}] rect=({:.2},{:.2},{:.2},{:.2}) color=({}, {}, {}, {})",
+                fill.rect.origin.x,
+                fill.rect.origin.y,
+                fill.rect.size.width,
+                fill.rect.size.height,
+                fill.color.r,
+                fill.color.g,
+                fill.color.b,
+                fill.color.a
+            );
+        }
+
+        let ref_path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/CSS2/floats-clear/clear-003-ref.xht");
+        let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+        let ref_linked_css = load_linked_stylesheets(&ref_html, ref_path.parent());
+        let mut ref_pipeline = RenderPipeline::new(800.0, 600.0);
+        ref_pipeline.set_skip_indicators(true);
+        let ref_font_loader = create_font_loader();
+        ref_pipeline.set_font_resolver(ref_font_loader.build_font_resolver());
+        let ref_rendered = ref_pipeline.render_html(&ref_html, &ref_linked_css);
+        println!("--- ref ---");
+        println!("{}", ref_rendered.layout.snapshot());
+        for i in 0..12 {
+            if let Some((x, y, w, h)) = ref_rendered.layout.root.nth_box(i) {
+                println!("ref box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+        for (i, fill) in ref_rendered.primitives.fills.iter().enumerate().take(12) {
+            println!(
+                "ref fill[{i}] rect=({:.2},{:.2},{:.2},{:.2}) color=({}, {}, {}, {})",
+                fill.rect.origin.x,
+                fill.rect.origin.y,
+                fill.rect.size.width,
+                fill.rect.size.height,
+                fill.color.r,
+                fill.color.g,
+                fill.color.b,
+                fill.color.a
+            );
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn debug_clear_float_003_layout_snapshot() {
+        let case_path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/CSS2/floats-clear/clear-float-003.xht");
+        let html = std::fs::read_to_string(&case_path).expect("read test html");
+        let linked_css = load_linked_stylesheets(&html, case_path.parent());
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        pipeline.set_skip_indicators(true);
+        let font_loader = create_font_loader();
+        pipeline.set_font_resolver(font_loader.build_font_resolver());
+        let rendered = pipeline.render_html(&html, &linked_css);
+        println!("{}", rendered.layout.snapshot());
+        for i in 0..12 {
+            if let Some((x, y, w, h)) = rendered.layout.root.nth_box(i) {
+                println!("box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+        for (i, fill) in rendered.primitives.fills.iter().enumerate().take(12) {
+            println!(
+                "fill[{i}] rect=({:.2},{:.2},{:.2},{:.2}) color=({}, {}, {}, {})",
+                fill.rect.origin.x,
+                fill.rect.origin.y,
+                fill.rect.size.width,
+                fill.rect.size.height,
+                fill.color.r,
+                fill.color.g,
+                fill.color.b,
+                fill.color.a
+            );
+        }
+
+        let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/floats-clear/clear-float-003-ref.xht");
+        let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+        let ref_linked_css = load_linked_stylesheets(&ref_html, ref_path.parent());
+        let mut ref_pipeline = RenderPipeline::new(800.0, 600.0);
+        ref_pipeline.set_skip_indicators(true);
+        let ref_font_loader = create_font_loader();
+        ref_pipeline.set_font_resolver(ref_font_loader.build_font_resolver());
+        let ref_rendered = ref_pipeline.render_html(&ref_html, &ref_linked_css);
+        println!("--- ref ---");
+        println!("{}", ref_rendered.layout.snapshot());
+        for i in 0..12 {
+            if let Some((x, y, w, h)) = ref_rendered.layout.root.nth_box(i) {
+                println!("ref box[{i}] abs=({x:.2},{y:.2}) size=({w:.2},{h:.2})");
+            }
+        }
+        for (i, fill) in ref_rendered.primitives.fills.iter().enumerate().take(12) {
+            println!(
+                "ref fill[{i}] rect=({:.2},{:.2},{:.2},{:.2}) color=({}, {}, {}, {})",
+                fill.rect.origin.x,
+                fill.rect.origin.y,
+                fill.rect.size.width,
+                fill.rect.size.height,
+                fill.color.r,
+                fill.color.g,
+                fill.color.b,
+                fill.color.a
+            );
+        }
+    }
+
     // ── 分类容差测试 ──
 
     #[test]

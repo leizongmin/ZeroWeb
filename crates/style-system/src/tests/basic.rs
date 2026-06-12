@@ -216,6 +216,26 @@ fn test_default_style_system() {
     assert!(sys.custom_properties.is_empty());
 }
 
+#[test]
+fn test_ua_default_margins_expand_shorthand() {
+    let (doc, _html, body, _div, p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let styles = sys.compute_styles(&doc, &[]);
+    let body_style = styles.get(&body).expect("body should have UA style");
+    let p_style = styles.get(&p).expect("p should have UA style");
+
+    assert_eq!(body_style.margin_top, LengthValue::Px(8.0));
+    assert_eq!(body_style.margin_right, LengthValue::Px(8.0));
+    assert_eq!(body_style.margin_bottom, LengthValue::Px(8.0));
+    assert_eq!(body_style.margin_left, LengthValue::Px(8.0));
+
+    assert_eq!(p_style.margin_top, LengthValue::Px(16.0));
+    assert_eq!(p_style.margin_right, LengthValue::Px(0.0));
+    assert_eq!(p_style.margin_bottom, LengthValue::Px(16.0));
+    assert_eq!(p_style.margin_left, LengthValue::Px(0.0));
+}
+
 // ── 简写属性端到端测试 ──
 
 #[test]

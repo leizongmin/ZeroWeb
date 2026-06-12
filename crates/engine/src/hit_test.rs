@@ -191,6 +191,7 @@ mod tests {
     }
 
     /// 测试点击元素边界（恰好包含）和边界外（恰好不包含）。
+    /// 注意：body 有 UA 默认 margin:8px，因此 <a> 元素从约 (8,8) 开始。
     #[test]
     fn hit_test_exact_boundary() {
         let html = r#"<html><body>
@@ -198,12 +199,15 @@ mod tests {
         </body></html>"#;
         let (doc, layout) = render(html, "");
 
-        // 元素内部（包含左上角）
-        assert!(hit_test_link(&doc, &layout.root, 0.0, 0.0).is_some());
+        // 元素内部（包含左上角，含 body 8px margin 偏移）
+        assert!(hit_test_link(&doc, &layout.root, 8.0, 8.0).is_some());
 
         // 元素内部（接近右下角但不超出）
-        let near_edge = hit_test_link(&doc, &layout.root, 99.0, 49.0);
+        let near_edge = hit_test_link(&doc, &layout.root, 107.0, 57.0);
         assert!(near_edge.is_some());
+
+        // 元素外部（body margin 区域，不应命中链接）
+        assert!(hit_test_link(&doc, &layout.root, 0.0, 0.0).is_none());
     }
 
     /// 测试链接文本包含子元素（如 span）时命中测试仍正确。

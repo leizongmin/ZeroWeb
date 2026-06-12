@@ -2,7 +2,87 @@
 
 **最后更新**: 2026-06-12
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 79.2% (388/490)
+**上游真实 reftest 通过率**: 79.2% (388/490) 稳定全量基线，最新全量复跑进行中
+
+### R67 进展
+
+**当前状态**：
+- 全量上游 reftest：仍以 **388/490 (79.2%)** 作为稳定可复现基线；最新全量复跑尚未收口
+- `css/CSS2/floats-clear` 定向复跑：**23/30 (76.7%)**，较本轮修复前 **16/30** 净增 **+7**
+- 已确认通过的新关键用例：
+  - `clear-applies-to-009.xht`
+  - `clear-clearance-calculation-001.xht`
+  - `clear-clearance-calculation-002.xht`
+  - `clear-clearance-calculation-003.xht`
+  - `clear-003.xht`
+  - `clear-float-006.xht`
+  - `float-003.xht`
+  - `clearance-006.xht`
+  - `clear-applies-to-001.xht`
+
+#### R67 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| `LayoutBox.content_x/content_y` 语义收敛 | 将 `content_x/y` 统一为“相对自身 border-box 的内容区偏移”，不再混入 `x/y` 位置量；同步修正 multicol/table 路径对该字段的消费，消除布局树与 painter 坐标分叉 |
+| float 子容器的 taffy margin-collapse 隔离 | 对“存在直接 float 子元素”的容器，仅在 taffy 内部强制阻止父子 margin collapse，避免 float 被当普通 block 时把容器整体错误下推/上提 |
+| float Phase 1 垂直定位修正 | 修正 float 最小垂直位置约束中对 `margin-top` 的双计，直接打通 `clear-applies-to-009` |
+| UA 默认 `margin` shorthand 展开 | 样式系统现在会先展开 UA 默认样式中的 shorthand 声明（尤其是 `body/p/h*/ul/ol` 的 `margin`），修复一整串依赖默认段落外边距的 CSS2 基线 |
+| absolute 初始包含块修正 | 对没有 positioned ancestor 的 `position:absolute` 元素，修正其局部坐标回 initial containing block，并对 auto 尺寸按 viewport 口径补偿，收口 `clear-clearance-calculation-005` 的一部分几何偏差 |
+
+#### R67 根因分析
+
+1. **结构性问题一：`content_x/y` 字段语义漂移**
+   - `extract_layout` 产出的 `content_x/y` 一度混入 `x/y` 位置量；
+   - painter 递归、`nth_box` 诊断、float 上下文传播又分别按“局部偏移”或“绝对量”消费；
+   - 结果是同一个节点在布局快照与实际绘制中出现两套坐标。`clear-applies-to-009` 的蓝块一度表现为布局树在 `y=100`、实际绘制在 `y=48`。
+
+2. **结构性问题二：UA 默认样式注入不完整**
+   - 样式系统虽然注入了 `body` / `p` / `h*` / `ul/ol` 的 UA 默认 `margin`，但这些声明以 shorthand 形式直接进入 cascade；
+   - shorthand 只对作者样式做展开，UA 声明未展开成长写，导致默认段落外边距几乎全部失效；
+   - 这不是单个 clear 公式 bug，而是系统性污染依赖默认段落 margin 的 CSS2 reftest。
+
+3. **float/clear 路径的两个直接误差源**
+   - taffy 把 float 当普通 block，导致有直接 float 子元素的容器错误参与父子 margin collapse；
+   - float Phase 1 的最小 Y 约束把 `margin-top` 算了两次，抬高了后续 `clear_bottom`。
+
+#### R67 已验证结论
+
+1. `clear-applies-to-009` 的剩余误差并非“clear 属性完全失效”，而是先后叠加了：
+   - `content_x/y` 语义污染造成的布局/绘制坐标分叉；
+   - float Phase 1 的 `margin-top` 双计。
+   两者修复后，该用例已 **0 diff** 通过。
+
+2. `clear-clearance-calculation-001/002` 的核心阻塞并不在 clearance 主公式，而在 **UA 默认段落 margin 未生效**。
+   修复 UA shorthand 展开后，这两个用例都已通过。
+
+3. `clear-clearance-calculation-003` 的主阻塞是空 cleared block 的自折叠 margin 没有继续传递给后继兄弟。
+   这个问题已修复，`003` 现已通过；`005` 剩余差异则主要来自绝对定位几何和参考页文字/图元构成差异的叠加。
+
+4. `clear-003` / `clear-float-006` 的通过说明，当前还存在一个独立于 clear 主公式的问题：
+   inline-only 容器在 IFC 重算后高度发生收缩时，后继正常流兄弟之前没有跟随回流，导致测试页与参考页出现整块垂直错位。
+   这个 sibling reflow 缺口已补上，并顺带带起了 `float-003`。
+
+5. `clear-applies-to-001` 虽然现在已过线，但其根因与 `009/clearance-*` 不同。
+   诊断显示 `display: table-row-group` 脱离 table 语义时，当前实现仍缺少更完整的匿名 table wrapper / float 回避建模；它不是当前 clear 主路径的同类问题。
+
+#### R67 剩余失败簇
+
+1. **clearance-calculation 边界**：
+   - `clear-clearance-calculation-005.xht` (4.08%)
+
+2. **float 几何 / clearance 边界**：
+   - `clear-float-003.xht` (2.24%)
+   - `clear-inline-001.xht` (5.94%)
+   - `float-005.xht` (3.72%)
+   - `float-006.xht` (28.51%)
+   - `float-applies-to-008.xht` (1.15%)
+   - `float-non-replaced-height-001.xht` (14.77%)
+
+#### R67 下一步
+
+1. 继续沿 `clear-float-003` / `clear-clearance-calculation-005` 推进，优先吃掉同一 clear/float 簇里最接近过线的剩余收益
+2. 之后重新评估：若 `floats-clear` 继续只能产生零散增益，则切换到 `multicol` 或 `writing-modes` 这类更大收益簇
 
 ### R66 进展
 

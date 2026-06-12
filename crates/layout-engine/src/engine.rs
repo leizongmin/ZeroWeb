@@ -176,6 +176,17 @@ impl LayoutEngine {
         // 仅对 inline-level relative 元素应用偏移，避免 block-level 元素双重偏移。
         apply_relative_offsets_inline(&mut root_box, styles);
 
+        // 11.5 后处理：修正没有 positioned ancestor 的 absolute 元素，使其相对于初始包含块。
+        adjust_absolute_to_initial_containing_block(
+            &mut root_box,
+            0.0,
+            0.0,
+            self.viewport_width,
+            self.viewport_height,
+            styles,
+            false,
+        );
+
         // 12. 后处理：为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统直接复用存储的 IFC 结果，避免重新运行 IFC 导致字体度量不一致。
         // R51 验证：启用后回归 4 个测试（383→379），即使改用 font_size 作基线偏移。
@@ -392,7 +403,22 @@ impl LayoutEngine {
         let is_fixed = computed.is_some_and(|s| matches!(s.position, PositionValue::Fixed));
         let is_sticky = computed.is_some_and(|s| matches!(s.position, PositionValue::Sticky));
         let float = computed.map_or(FloatValue::None, |s| s.float.clone());
-        let clear = computed.map_or(ClearValue::None, |s| s.clear.clone());
+        let clear = computed.map_or(ClearValue::None, |s| {
+            if matches!(
+                s.display,
+                DisplayValue::TableRowGroup
+                    | DisplayValue::TableHeaderGroup
+                    | DisplayValue::TableFooterGroup
+                    | DisplayValue::TableRow
+                    | DisplayValue::TableCell
+                    | DisplayValue::TableColumn
+                    | DisplayValue::TableColumnGroup
+            ) {
+                ClearValue::None
+            } else {
+                s.clear.clone()
+            }
+        });
         // CSS 2.1 §17.5：table cell 的 height 为最小高度，cell 始终扩展以包含内容。
         // 因此 overflow: hidden 在 table cell 上不应产生裁剪效果。
         let is_table_cell = computed.is_some_and(|s| matches!(s.display, DisplayValue::TableCell));
@@ -495,8 +521,8 @@ impl LayoutEngine {
         }
 
         // 计算内容区域
-        let content_x = x + border_left + padding_left;
-        let content_y = y + border_top + padding_top;
+        let content_x = border_left + padding_left;
+        let content_y = border_top + padding_top;
         let content_width = (width - border_left - border_right - padding_left - padding_right).max(0.0);
         let content_height = (height - border_top - border_bottom - padding_top - padding_bottom).max(0.0);
 
@@ -1518,6 +1544,56 @@ fn adjust_fixed_to_viewport(box_node: &mut LayoutBox, parent_offset_x: f32, pare
     }
 }
 
+/// 将没有 positioned ancestor 的 absolute 元素修正为相对于初始包含块。
+///
+/// 仅对 `position:absolute` 且路径上不存在 `position != static` 祖先的元素生效。
+/// 这避免 body 的外边距或静态祖先的偏移被重复计入 abs-pos 元素坐标。
+fn adjust_absolute_to_initial_containing_block(
+    box_node: &mut LayoutBox,
+    current_content_origin_x: f32,
+    current_content_origin_y: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    has_positioned_ancestor: bool,
+) {
+    let child_has_positioned_ancestor = has_positioned_ancestor
+        || box_node.is_absolute
+        || box_node.is_fixed
+        || box_node.is_relative
+        || box_node.is_sticky;
+
+    for child in &mut box_node.children {
+        // 使用 child_has_positioned_ancestor 而非 has_positioned_ancestor，
+        // 因为当前节点自身（如 position:relative）也是 positioned ancestor。
+        if child.is_absolute && !child_has_positioned_ancestor {
+            child.x -= current_content_origin_x;
+            child.y -= current_content_origin_y;
+
+            if let Some(style) = child.node_id.and_then(|node_id| styles.get(&node_id)) {
+                if matches!(style.width, zero_css_parser::values::LengthValue::Auto) {
+                    child.width += (viewport_width - box_node.content_width).max(0.0);
+                }
+                if matches!(style.height, zero_css_parser::values::LengthValue::Auto) {
+                    child.height += (viewport_height - box_node.content_height).max(0.0);
+                }
+            }
+        }
+
+        let child_content_origin_x = current_content_origin_x + box_node.border_left + box_node.padding_left + child.x;
+        let child_content_origin_y = current_content_origin_y + box_node.border_top + box_node.padding_top + child.y;
+        adjust_absolute_to_initial_containing_block(
+            child,
+            child_content_origin_x,
+            child_content_origin_y,
+            viewport_width,
+            viewport_height,
+            styles,
+            child_has_positioned_ancestor || child.is_absolute,
+        );
+    }
+}
+
 /// 调整 float 元素的位置，并处理 clear 属性。
 ///
 /// taffy 将 float 元素当作普通 block 处理（按正常流排列）。
@@ -1590,11 +1666,17 @@ fn adjust_float_positions_with_context(
         // 不使用 taffy 的 Y（包含 float 垂直空间），而是自行累加
         if matches!(child.float, FloatValue::None) && !child.is_absolute && !child.is_fixed {
             // 独立计算正常流位置：使用 margin 折叠
-            let collapsed_margin = crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
-            let child_y = flow_bottom + collapsed_margin;
-            let child_border_bottom = child_y + child.height;
-            flow_bottom = child_border_bottom;
-            last_flow_mb = child.margin_bottom;
+            if crate::margin_collapse::is_empty_block(child) {
+                let collapsed_self_margin =
+                    crate::margin_collapse::collapse_two_margins(child.margin_top, child.margin_bottom);
+                last_flow_mb = crate::margin_collapse::collapse_two_margins(last_flow_mb, collapsed_self_margin);
+            } else {
+                let collapsed_margin = crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
+                let child_y = flow_bottom + collapsed_margin;
+                let child_border_bottom = child_y + child.height;
+                flow_bottom = child_border_bottom;
+                last_flow_mb = child.margin_bottom;
+            }
             // 处理非 float 元素的 clear 属性（延迟到第二阶段）
             if matches!(child.float, FloatValue::None) {
                 continue;
@@ -1612,11 +1694,11 @@ fn adjust_float_positions_with_context(
         // 1. Float 的 outer top 不得高于前面正常流元素生成的块盒的 outer top
         // 2. Float 不参与 margin 折叠
         //
-        // CSS 2.1 §9.5.1：「A float's margin box is placed according to the
-        // normal flow rules.」float 的垂直位置应按正常流规则计算（含 margin 折叠），
-        // 然后才进行水平浮动。因此 float 的最小 Y 应该是 flow_bottom 加上
-        // 与前一个正常流元素的折叠 margin，而非仅仅 flow_bottom。
-        let min_float_y = flow_bottom + crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
+        // CSS 2.1 §9.5.1：float 的 margin box 顶边按正常流规则确定。
+        // 这里的 `line_y` / `child.y` 都追踪的是 border-box 顶边，因此用于
+        // 约束 float 最小垂直位置时，不能再次把当前元素的 margin-top 加进去，
+        // 否则后续 `child.y = line_y + margin_top` 会双计 margin-top。
+        let min_float_y = flow_bottom + last_flow_mb;
         if min_float_y > line_y {
             line_y = min_float_y;
             left_used_width = 0.0;
@@ -1700,8 +1782,10 @@ fn adjust_float_positions_with_context(
     // BFC 浮动排斥（CSS 2.1 §9.5）：建立 BFC 的块级元素不得与浮动元素重叠。
     // 当一个非 float 块级元素建立 BFC 且与浮动元素垂直重叠时，
     // 需将其水平位置偏移到浮动元素旁边。
-    let has_active_float_context = !float_taffy_y.is_empty() || inherited_left_bottom > 0.0 || inherited_right_bottom > 0.0;
-    let mut child_float_contexts: Vec<(f32, f32)> = vec![(inherited_left_bottom, inherited_right_bottom); box_node.children.len()];
+    let has_active_float_context =
+        !float_taffy_y.is_empty() || inherited_left_bottom > 0.0 || inherited_right_bottom > 0.0;
+    let mut child_float_contexts: Vec<(f32, f32)> =
+        vec![(inherited_left_bottom, inherited_right_bottom); box_node.children.len()];
 
     if has_active_float_context {
         let mut float_y_offset = 0.0f32;
@@ -1847,9 +1931,17 @@ fn adjust_float_positions_with_context(
                 }
             }
 
-            // 更新流内容追踪（使用 content-relative 坐标）
-            flow_bottom = child.y - content_y_offset + child.height;
-            last_flow_mb = child.margin_bottom;
+            // 空块自身的上下 margin 会自折叠，并继续传递给后继兄弟；
+            // 它自身不应把 flow_bottom 往下推进一段“实心高度”。
+            if crate::margin_collapse::is_empty_block(child) {
+                let collapsed_self_margin =
+                    crate::margin_collapse::collapse_two_margins(child.margin_top, child.margin_bottom);
+                last_flow_mb = crate::margin_collapse::collapse_two_margins(last_flow_mb, collapsed_self_margin);
+            } else {
+                // 更新流内容追踪（使用 content-relative 坐标）
+                flow_bottom = child.y - content_y_offset + child.height;
+                last_flow_mb = child.margin_bottom;
+            }
 
             // BFC 浮动排斥（CSS 2.1 §9.5）：
             // 建立 BFC 的块级元素不得与同容器的浮动元素重叠。
@@ -2193,9 +2285,28 @@ fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, st
         }
     }
 
-    // 递归处理子容器
-    for child in &mut box_node.children {
-        remeasure_inline_only_containers(child, doc, styles);
+    // 递归处理子容器，并在 inline-only 容器收缩后把后续普通流兄弟一并上移。
+    let mut idx = 0usize;
+    while idx < box_node.children.len() {
+        let old_height = box_node.children[idx].height;
+        let old_content_height = box_node.children[idx].content_height;
+        remeasure_inline_only_containers(&mut box_node.children[idx], doc, styles);
+        let height_delta = box_node.children[idx].height - old_height;
+        let content_height_delta = box_node.children[idx].content_height - old_content_height;
+        let shrink_delta = height_delta.min(content_height_delta);
+        if shrink_delta < -0.01
+            && matches!(box_node.children[idx].float, FloatValue::None)
+            && !box_node.children[idx].is_absolute
+            && !box_node.children[idx].is_fixed
+        {
+            for sibling in box_node.children.iter_mut().skip(idx + 1) {
+                if sibling.is_absolute || sibling.is_fixed {
+                    continue;
+                }
+                sibling.y += shrink_delta;
+            }
+        }
+        idx += 1;
     }
 }
 

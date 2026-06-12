@@ -1909,13 +1909,7 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
             rel_dy = resolve_length_inset(row_group, styles, false);
         }
 
-        updates.push((
-            *rg_idx,
-            table_box.content_x + rel_dx,
-            table_box.content_y + first_row_y + rel_dy,
-            table_box.content_width,
-            total_h,
-        ));
+        updates.push((*rg_idx, rel_dx, first_row_y + rel_dy, table_box.content_width, total_h));
     }
 
     // 应用更新（可变借用阶段）

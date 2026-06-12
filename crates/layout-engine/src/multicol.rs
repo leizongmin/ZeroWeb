@@ -484,7 +484,7 @@ fn position_multicol_children(container: &mut LayoutBox, assignments: &[Vec<Colu
                     - child.padding_right)
                     .max(0.0);
                 child.content_width = new_content_w;
-                child.content_x = child.x + child.border_left + child.padding_left;
+                child.content_x = child.border_left + child.padding_left;
                 constrain_subtree_width(child, new_content_w);
             }
         }
