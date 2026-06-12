@@ -563,6 +563,134 @@ fn test_bfc_float_avoidance_right() {
     );
 }
 
+/// 测试孤立 table-row-group 作为块级兄弟时仍应布局其匿名行内的 table-cell。
+///
+/// 该场景对应 clear-applies-to-001：`display: table-row-group` 不应触发 clear，
+/// 但其内部匿名行仍必须参与 table 布局，否则单元格会停留在 taffy 的错误位置。
+#[test]
+fn test_orphan_table_row_group_positions_anonymous_cells() {
+    let (mut doc, body) = make_doc_with_body();
+    let float_elem = doc.create_element("div");
+    doc.append_child(body, float_elem).unwrap();
+
+    let row_group = doc.create_element("div");
+    doc.append_child(body, row_group).unwrap();
+
+    let cell_a = doc.create_element("div");
+    doc.append_child(row_group, cell_a).unwrap();
+    let cell_b = doc.create_element("div");
+    doc.append_child(row_group, cell_b).unwrap();
+
+    let mut styles = HashMap::new();
+
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.float = FloatValue::Left;
+    fl.width = LengthValue::Px(320.0);
+    fl.height = LengthValue::Px(96.0);
+    styles.insert(float_elem, fl);
+
+    let mut rg = ComputedStyle::default();
+    rg.display = DisplayValue::TableRowGroup;
+    rg.clear = ClearValue::Both;
+    rg.background_color = zero_css_parser::values::ColorValue::Named("blue".to_string());
+    styles.insert(row_group, rg);
+
+    let mut cell = ComputedStyle::default();
+    cell.display = DisplayValue::TableCell;
+    cell.width = LengthValue::Px(48.0);
+    cell.height = LengthValue::Px(48.0);
+    cell.background_color = zero_css_parser::values::ColorValue::Named("blue".to_string());
+    styles.insert(cell_a, cell.clone());
+    styles.insert(cell_b, cell);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let float_box = find_child_by_node_id(&result.root, float_elem).expect("float found");
+    let row_group_box = find_child_by_node_id(&result.root, row_group).expect("row group found");
+    let cell_a_box = find_child_by_node_id(&result.root, cell_a).expect("cell_a found");
+    let cell_b_box = find_child_by_node_id(&result.root, cell_b).expect("cell_b found");
+
+    assert!(
+        row_group_box.x < float_box.x + float_box.width - 0.5,
+        "table-row-group clear should not apply: rg.x={}, float_right={}",
+        row_group_box.x,
+        float_box.x + float_box.width
+    );
+    assert!(
+        (cell_a_box.x - row_group_box.x).abs() < 1.0,
+        "first anonymous cell should start at row group left edge: cell_a.x={}, rg.x={}",
+        cell_a_box.x,
+        row_group_box.x
+    );
+    assert!(
+        cell_b_box.x >= cell_a_box.x + cell_a_box.width - 0.5,
+        "second anonymous cell should be positioned after the first: cell_b.x={}, cell_a.right={}",
+        cell_b_box.x,
+        cell_a_box.x + cell_a_box.width
+    );
+    assert!(
+        (cell_a_box.y - row_group_box.y).abs() < 1.0 && (cell_b_box.y - row_group_box.y).abs() < 1.0,
+        "anonymous row cells should align to the row group top: cell_a.y={}, cell_b.y={}, rg.y={}",
+        cell_a_box.y,
+        cell_b_box.y,
+        row_group_box.y
+    );
+}
+
+/// 测试嵌套 block 上的 clear:both 仍需清除祖先容器中更早的浮动。
+///
+/// 对应 clear-applies-to-009：float 是 body 的直接子元素，clear:block 在后续 div 内部。
+#[test]
+fn test_nested_block_clear_sees_ancestor_floats() {
+    let (mut doc, body) = make_doc_with_body();
+    let float_elem = doc.create_element("div");
+    doc.append_child(body, float_elem).unwrap();
+
+    let wrapper = doc.create_element("div");
+    doc.append_child(body, wrapper).unwrap();
+
+    let clear_block = doc.create_element("div");
+    doc.append_child(wrapper, clear_block).unwrap();
+
+    let mut styles = HashMap::new();
+
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.float = FloatValue::Left;
+    fl.width = LengthValue::Px(320.0);
+    fl.height = LengthValue::Px(96.0);
+    styles.insert(float_elem, fl);
+
+    let mut wr = ComputedStyle::default();
+    wr.display = DisplayValue::Block;
+    styles.insert(wrapper, wr);
+
+    let mut cb = ComputedStyle::default();
+    cb.display = DisplayValue::Block;
+    cb.clear = ClearValue::Both;
+    cb.width = LengthValue::Px(96.0);
+    cb.height = LengthValue::Px(96.0);
+    styles.insert(clear_block, cb);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let float_box = find_child_by_node_id(&result.root, float_elem).expect("float found");
+    let clear_box = find_child_by_node_id(&result.root, clear_block).expect("clear block found");
+    let (_, float_abs_y) = find_absolute_position_by_node_id(&result.root, float_elem).expect("float abs");
+    let (_, clear_abs_y) = find_absolute_position_by_node_id(&result.root, clear_block).expect("clear abs");
+
+    assert!(
+        clear_abs_y >= float_abs_y + float_box.height - 0.5,
+        "nested clear block should be placed below earlier float: clear_abs_y={}, float_bottom_abs={}",
+        clear_abs_y,
+        float_abs_y + float_box.height
+    );
+    assert!(clear_box.height > 0.0, "clear block should still have its own box");
+}
+
 #[test]
 fn test_border_collapse_table_wins() {
     let html = r#"<html><body style="margin:0"><table style="border: 5px solid green; border-collapse: collapse"><tr><td style="border: 4.95px solid red; width: 50px; height: 50px"></td></tr></table></body></html>"#;

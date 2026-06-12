@@ -1041,7 +1041,59 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
     // 稳定排序保留同优先级内的 DOM 顺序
     children_with_priority.sort_by_key(|(_, _, display)| display.as_ref().map_or(3, row_group_sort_priority));
 
+    let mut orphan_anonymous_cells: Vec<TableCell> = Vec::new();
+    let mut orphan_first_child_idx = 0usize;
+    let mut orphan_col_cursor = 0usize;
+
     for (child_idx, child, child_display) in &children_with_priority {
+        if is_orphan {
+            match child_display {
+                Some(d) if is_table_cell(d) => {
+                    let colspan = get_colspan(child, doc);
+                    let rowspan = get_rowspan(child, doc);
+                    let col_start = orphan_col_cursor;
+                    let col_end = col_start + colspan;
+                    max_cols = max_cols.max(col_end);
+                    orphan_anonymous_cells.push(TableCell {
+                        child_index: *child_idx,
+                        colspan,
+                        rowspan,
+                        col_start,
+                        col_end,
+                        parent_rg_idx: None,
+                    });
+                    orphan_col_cursor = col_end;
+                    if orphan_anonymous_cells.len() == 1 {
+                        orphan_first_child_idx = *child_idx;
+                    }
+                    continue;
+                }
+                Some(d) if is_table_row(d) || is_row_group(d) => {
+                    if !orphan_anonymous_cells.is_empty() {
+                        rows.push(TableRow {
+                            child_index: orphan_first_child_idx,
+                            row_group_index: None,
+                            cells: std::mem::take(&mut orphan_anonymous_cells),
+                            is_anonymous: true,
+                        });
+                        orphan_col_cursor = 0;
+                    }
+                }
+                _ => {
+                    if !orphan_anonymous_cells.is_empty() {
+                        rows.push(TableRow {
+                            child_index: orphan_first_child_idx,
+                            row_group_index: None,
+                            cells: std::mem::take(&mut orphan_anonymous_cells),
+                            is_anonymous: true,
+                        });
+                        orphan_col_cursor = 0;
+                    }
+                    continue;
+                }
+            }
+        }
+
         match child_display {
             Some(d) if is_table_row(d) => {
                 // 直接子元素是 table-row
@@ -1212,6 +1264,15 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                 // 其他类型（caption、column 等）— 跳过
             }
         }
+    }
+
+    if is_orphan && !orphan_anonymous_cells.is_empty() {
+        rows.push(TableRow {
+            child_index: orphan_first_child_idx,
+            row_group_index: None,
+            cells: orphan_anonymous_cells,
+            is_anonymous: true,
+        });
     }
 
     TableGrid {
@@ -1499,6 +1560,7 @@ fn position_cells(
     spacing_y: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
+    let table_content_width = table_box.content_width;
     let mut row_y = 0.0f32;
     // 跟踪每个行组的起始 row_y，用于计算行在行组内的相对位置
     // 避免 paint 链中行组位置 + 行位置导致的双重计数
@@ -1519,15 +1581,7 @@ fn position_cells(
         }
 
         // 根据行是否在 row-group 内，定位到正确的行盒
-        let row_box = match row.row_group_index {
-            Some(rg_idx) => {
-                let Some(row_group) = table_box.children.get_mut(rg_idx) else {
-                    continue;
-                };
-                row_group.children.get_mut(row.child_index)
-            }
-            None => table_box.children.get_mut(row.child_index),
-        };
+        let row_box = get_row_box_mut(table_box, row);
         let Some(row_box) = row_box else {
             continue;
         };
@@ -1574,7 +1628,7 @@ fn position_cells(
 
         row_box.x = row_rel_dx;
         row_box.y = local_y + row_rel_dy;
-        row_box.width = table_box.content_width;
+        row_box.width = table_content_width;
         row_box.height = row_height;
 
         // 定位每个单元格

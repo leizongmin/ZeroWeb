@@ -1531,6 +1531,16 @@ fn adjust_fixed_to_viewport(box_node: &mut LayoutBox, parent_offset_x: f32, pare
 /// - 非 float 块元素的 clear 使用 max(normal_flow_Y, float_bottom)
 /// - 非 float、非 clear 元素的 Y 偏移扣除 float 元素占据的垂直空间
 fn adjust_float_positions(box_node: &mut LayoutBox) {
+    let content_abs_y = box_node.y + box_node.content_y;
+    adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0);
+}
+
+fn adjust_float_positions_with_context(
+    box_node: &mut LayoutBox,
+    box_content_abs_y: f32,
+    inherited_left_bottom_abs: f32,
+    inherited_right_bottom_abs: f32,
+) {
     use zero_css_parser::values::ClearValue;
     use zero_css_parser::values::FloatValue;
 
@@ -1541,6 +1551,8 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     // 而 flow_bottom / line_y 等追踪变量是相对于 content area 原点。
     // 当容器有 border-top 或 padding-top 时，需要加上偏移量。
     let content_y_offset = box_node.border_top + box_node.padding_top;
+    let inherited_left_bottom = (inherited_left_bottom_abs - box_content_abs_y).max(0.0);
+    let inherited_right_bottom = (inherited_right_bottom_abs - box_content_abs_y).max(0.0);
 
     // 第一阶段：重新定位 float 元素，记录每个 float 在 taffy 布局中占据的垂直空间
     //
@@ -1555,8 +1567,8 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     let mut line_max_height = 0.0f32;
     let mut left_used_width = 0.0f32;
     let mut right_used_width = 0.0f32;
-    let mut left_float_bottom = 0.0f32;
-    let mut right_float_bottom = 0.0f32;
+    let mut left_float_bottom = inherited_left_bottom;
+    let mut right_float_bottom = inherited_right_bottom;
 
     // 正常流的垂直位置追踪（用于计算 float 的最小 Y）
     // 关键：flow_bottom 必须独立于 taffy 的 Y 来计算。
@@ -1688,11 +1700,16 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     // BFC 浮动排斥（CSS 2.1 §9.5）：建立 BFC 的块级元素不得与浮动元素重叠。
     // 当一个非 float 块级元素建立 BFC 且与浮动元素垂直重叠时，
     // 需将其水平位置偏移到浮动元素旁边。
-    if !float_taffy_y.is_empty() {
+    let has_active_float_context = !float_taffy_y.is_empty() || inherited_left_bottom > 0.0 || inherited_right_bottom > 0.0;
+    let mut child_float_contexts: Vec<(f32, f32)> = vec![(inherited_left_bottom, inherited_right_bottom); box_node.children.len()];
+
+    if has_active_float_context {
         let mut float_y_offset = 0.0f32;
         // 追踪正常流内容的位置，用于 clearance 假设位置计算
         let mut flow_bottom = 0.0f32; // 上一个非 float 流内元素的 border-bottom
         let mut last_flow_mb = 0.0f32; // 上一个非 float 流内元素的 margin-bottom
+        let mut active_left_float_bottom = inherited_left_bottom;
+        let mut active_right_float_bottom = inherited_right_bottom;
 
         // 收集浮动元素的几何信息，用于 BFC 排斥计算
         // 使用实际坐标（Phase 1 已完成定位），避免重复计算
@@ -1716,7 +1733,8 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
             })
             .collect();
 
-        for child in box_node.children.iter_mut() {
+        for (idx, child) in box_node.children.iter_mut().enumerate() {
+            child_float_contexts[idx] = (active_left_float_bottom, active_right_float_bottom);
             if child.is_absolute || child.is_fixed {
                 continue;
             }
@@ -1735,14 +1753,20 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
                     child.y = content_y_offset + flow_bottom;
                     // 仅更新此 float 所在侧的 float_bottom 追踪
                     match child.float {
-                        FloatValue::Left => left_float_bottom += shift,
-                        FloatValue::Right => right_float_bottom += shift,
+                        FloatValue::Left => active_left_float_bottom += shift,
+                        FloatValue::Right => active_right_float_bottom += shift,
                         _ => {}
                     }
                 }
 
                 let float_total_height = child.margin_top + child.height + child.margin_bottom;
                 float_y_offset += float_total_height;
+                let child_bottom = child.y - content_y_offset + child.height + child.margin_bottom;
+                match child.float {
+                    FloatValue::Left => active_left_float_bottom = active_left_float_bottom.max(child_bottom),
+                    FloatValue::Right => active_right_float_bottom = active_right_float_bottom.max(child_bottom),
+                    _ => {}
+                }
                 continue;
             }
 
@@ -1772,9 +1796,9 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
             match child.clear {
                 ClearValue::Left | ClearValue::Right | ClearValue::Both => {
                     let clear_bottom = match child.clear {
-                        ClearValue::Left => left_float_bottom,
-                        ClearValue::Right => right_float_bottom,
-                        _ => left_float_bottom.max(right_float_bottom),
+                        ClearValue::Left => active_left_float_bottom,
+                        ClearValue::Right => active_right_float_bottom,
+                        _ => active_left_float_bottom.max(active_right_float_bottom),
                     };
                     // 假设位置：基于正常流的 flow_bottom + margin 折叠
                     // CSS 2.1 §9.5.2：「as if 'clear' were 'none'」
@@ -1940,8 +1964,22 @@ fn adjust_float_positions(box_node: &mut LayoutBox) {
     }
 
     // 递归处理子容器
-    for child in &mut box_node.children {
-        adjust_float_positions(child);
+    for (idx, child) in box_node.children.iter_mut().enumerate() {
+        let (left_ctx, right_ctx) = child_float_contexts
+            .get(idx)
+            .copied()
+            .unwrap_or((inherited_left_bottom, inherited_right_bottom));
+        let child_content_abs_y = box_content_abs_y + child.y + child.content_y;
+        if crate::margin_collapse::establishes_bfc(child) {
+            adjust_float_positions_with_context(child, child_content_abs_y, 0.0, 0.0);
+        } else {
+            adjust_float_positions_with_context(
+                child,
+                child_content_abs_y,
+                box_content_abs_y + left_ctx,
+                box_content_abs_y + right_ctx,
+            );
+        }
     }
 }
 
