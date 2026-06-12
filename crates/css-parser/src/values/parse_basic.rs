@@ -223,9 +223,10 @@ pub fn parse_flex_wrap(value: &str) -> Option<FlexWrapValue> {
     }
 }
 
-/// 解析 CSS justify-content / align-items 属性值。
+/// 解析 CSS justify-content / align-items / align-self 属性值。
 pub fn parse_alignment(value: &str) -> Option<AlignmentValue> {
     match value.trim() {
+        "auto" => Some(AlignmentValue::Auto),
         "flex-start" => Some(AlignmentValue::FlexStart),
         "flex-end" => Some(AlignmentValue::FlexEnd),
         "center" => Some(AlignmentValue::Center),

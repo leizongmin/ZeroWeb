@@ -237,6 +237,8 @@ pub enum FlexWrapValue {
 /// CSS justify-content / align-items 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum AlignmentValue {
+    /// auto（align-self 初始值，继承容器 align-items）。
+    Auto,
     /// flex-start。
     FlexStart,
     /// flex-end。
