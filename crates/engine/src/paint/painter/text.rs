@@ -944,6 +944,7 @@ impl super::Painter {
 
                                 let transformed = apply_text_transform(&fragment.text, &style.text_transform);
                                 let mut char_pos = frag_base_x;
+                                let frag_is_ahem = fragment.is_ahem;
 
                                 for ch in transformed.chars() {
                                     let glyph_x = char_pos;
@@ -975,7 +976,7 @@ impl super::Painter {
                                         rotation,
                                     });
 
-                                    let advance = estimate_char_width(ch, fragment.font_size, false)
+                                    let advance = estimate_char_width(ch, fragment.font_size, frag_is_ahem)
                                         + letter_spacing
                                         + if ch == ' ' { word_spacing } else { 0.0 };
                                     char_pos += advance;
@@ -984,7 +985,8 @@ impl super::Painter {
                                 let text_width: f32 = transformed
                                     .chars()
                                     .map(|ch| {
-                                        let w = estimate_char_width(ch, fragment.font_size, false) + letter_spacing;
+                                        let w =
+                                            estimate_char_width(ch, fragment.font_size, frag_is_ahem) + letter_spacing;
                                         if ch == ' ' { w + word_spacing } else { w }
                                     })
                                     .sum();
@@ -1005,82 +1007,6 @@ impl super::Painter {
                             &counts_before_col,
                             &clip_rect,
                         );
-                    }
-
-                    for line in &inline_ctx.lines {
-                        // 根据行的 y 位置确定所在列
-                        let col_idx = if target_h > 0.0 {
-                            (line.y / target_h).floor() as usize
-                        } else {
-                            0
-                        };
-                        let col_idx = col_idx.min(mc.col_count - 1);
-                        let col_x_offset = col_idx as f32 * (mc.col_width + mc.gap);
-                        // CSS multicol：每列从顶部开始，需要将 line.y 转换为列内相对 y
-                        // line.y 是 IFC 中的累积 y，减去列起始 y 得到列内偏移
-                        let col_start_y = col_idx as f32 * target_h;
-
-                        for fragment in &line.runs {
-                            self.painted_inline_nodes.insert(fragment.node_id);
-
-                            let frag_base_x = content_x + fragment.x + col_x_offset + tx;
-                            let frag_base_y = content_y + (line.y - col_start_y) + fragment.y + fragment.font_size + ty;
-
-                            let transformed = apply_text_transform(&fragment.text, &style.text_transform);
-                            let mut char_pos = frag_base_x;
-
-                            for ch in transformed.chars() {
-                                let glyph_x = char_pos;
-                                let glyph_y = frag_base_y;
-
-                                if has_text_shadow {
-                                    self.primitives.add_glyph(GlyphPrimitive {
-                                        x: glyph_x + shadow_ox,
-                                        y: glyph_y + shadow_oy,
-                                        font_size: fragment.font_size,
-                                        color: shadow_color,
-                                        glyph_id: ch as u32,
-                                        font_id: default_font_id,
-                                        bitmap_width: None,
-                                        bitmap_height: None,
-                                        rotation,
-                                    });
-                                }
-
-                                self.primitives.add_glyph(GlyphPrimitive {
-                                    x: glyph_x,
-                                    y: glyph_y,
-                                    font_size: fragment.font_size,
-                                    color,
-                                    glyph_id: ch as u32,
-                                    font_id: default_font_id,
-                                    bitmap_width: None,
-                                    bitmap_height: None,
-                                    rotation,
-                                });
-
-                                let advance = estimate_char_width(ch, fragment.font_size, false)
-                                    + letter_spacing
-                                    + if ch == ' ' { word_spacing } else { 0.0 };
-                                char_pos += advance;
-                            }
-
-                            let text_width: f32 = transformed
-                                .chars()
-                                .map(|ch| {
-                                    let w = estimate_char_width(ch, fragment.font_size, false) + letter_spacing;
-                                    if ch == ' ' { w + word_spacing } else { w }
-                                })
-                                .sum();
-                            self.paint_text_decoration_from_style(
-                                frag_base_x,
-                                frag_base_y,
-                                fragment.font_size,
-                                text_width,
-                                color,
-                                style,
-                            );
-                        }
                     }
                 } else {
                     // 非多列布局：统一处理存储片段和 IFC 片段
@@ -1159,7 +1085,7 @@ impl super::Painter {
                             let text_width: f32 = transformed
                                 .chars()
                                 .map(|ch| {
-                                    let w = estimate_char_width(ch, $frag_fs, false) + letter_spacing;
+                                    let w = estimate_char_width(ch, $frag_fs, $is_ahem) + letter_spacing;
                                     if ch == ' ' { w + word_spacing } else { w }
                                 })
                                 .sum();
@@ -1197,13 +1123,18 @@ impl super::Painter {
                             // 如果无存储值，回退到 16px 默认值（保持原有行为）。
                             let stored_fs = box_node.text_node_font_sizes.get(&fragment.node_id).copied();
                             let baseline_fs = stored_fs.unwrap_or(fragment.font_size);
+                            // R63: 使用 fragment.is_ahem（由 is_ahem_overrides 设置），
+                            // 使字符推进宽度与 paint IFC 的行断计算一致。
+                            // R44 曾尝试但被回退（当时 paint IFC 无 is_ahem_overrides），
+                            // R51 添加 is_ahem_overrides 后此修复安全。
                             render_fragment!(
                                 fragment.x,
                                 fragment.y,
                                 baseline_fs,
                                 stored_fs.unwrap_or(fragment.font_size),
                                 fragment.text,
-                                fragment.node_id
+                                fragment.node_id,
+                                fragment.is_ahem
                             );
                         }
                     }
