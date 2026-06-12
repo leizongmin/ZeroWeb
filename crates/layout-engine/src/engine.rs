@@ -2002,7 +2002,7 @@ fn adjust_float_positions_with_context(
     //
     // 注意：子元素的 x/y 坐标是相对于父元素 content area 的，
     // 所以 content_bottom 也是相对于 content area 顶部的。
-    // 不需要减去 content_y（那是绝对坐标，与子元素相对坐标不在同一坐标系）。
+    // 不需要减去 content_y（那是相对于自身 border-box 的局部偏移，不含位置量）。
     if !float_taffy_y.is_empty() {
         let establishes_bfc = crate::margin_collapse::establishes_bfc(box_node);
         // 多列容器虽然建立 BFC（阻止 margin 折叠），
