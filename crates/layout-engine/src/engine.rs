@@ -426,15 +426,26 @@ impl LayoutEngine {
             }
         });
         // CSS 2.1 §17.5：table cell 的 height 为最小高度，cell 始终扩展以包含内容。
-        // 因此 overflow: hidden 在 table cell 上不应产生裁剪效果。
+        // 但显式设置 overflow: auto/scroll 的 table cell 应创建可滚动容器。
+        // 仅当 overflow 为 hidden/clip 时，table cell 不产生裁剪效果（保持 Visible）。
         let is_table_cell = computed.is_some_and(|s| matches!(s.display, DisplayValue::TableCell));
         let overflow_x = if is_table_cell {
-            OverflowClip::Visible
+            computed.map_or(OverflowClip::Visible, |s| {
+                match convert_overflow_to_clip(&s.overflow_x) {
+                    OverflowClip::Hidden | OverflowClip::Clip => OverflowClip::Visible,
+                    other => other,
+                }
+            })
         } else {
             computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x))
         };
         let overflow_y = if is_table_cell {
-            OverflowClip::Visible
+            computed.map_or(OverflowClip::Visible, |s| {
+                match convert_overflow_to_clip(&s.overflow_y) {
+                    OverflowClip::Hidden | OverflowClip::Clip => OverflowClip::Visible,
+                    other => other,
+                }
+            })
         } else {
             computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y))
         };
