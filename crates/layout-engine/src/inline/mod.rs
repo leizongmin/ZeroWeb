@@ -172,6 +172,10 @@ pub struct TextFragment {
     pub is_ahem: bool,
     /// letter-spacing（px），每个字符后追加的额外间距。
     pub letter_spacing: f32,
+    /// inline 元素的水平 margin（px）。文本节点为 0。
+    pub margin_left: f32,
+    /// inline 元素的水平 margin（px）。文本节点为 0。
+    pub margin_right: f32,
     /// 基线高度（px）— 从片段顶部到基线的距离。
     ///
     /// - 文本运行：baseline = font_size（ascent 近似）
@@ -465,6 +469,12 @@ pub struct InlineFormattingContext {
     /// 合成，而非使用简单的 height/2 回退。由 adjust_inline_block_positions
     /// 从 LayoutBox 子元素位置计算后传入。
     pub baseline_overrides: HashMap<NodeId, f32>,
+    /// 内联元素的 (margin_left, margin_right) 覆盖（key = 元素自身的 NodeId）。
+    ///
+    /// paint IFC 传入空的 styles HashMap，无法获取 inline 元素的水平 margin，
+    /// 导致所有 margin 回退为 0。此覆盖确保 paint IFC 使用正确的 margin 值。
+    /// margin 不影响行断（仅影响水平偏移），因此传递此覆盖不会改变行断行为。
+    pub margin_overrides: HashMap<NodeId, (f32, f32)>,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -495,6 +505,7 @@ impl InlineFormattingContext {
             line_height_overrides: HashMap::new(),
             inline_element_metrics: HashMap::new(),
             baseline_overrides: HashMap::new(),
+            margin_overrides: HashMap::new(),
         }
     }
 
@@ -573,6 +584,14 @@ impl InlineFormattingContext {
     /// 这些属性仅影响垂直定位（行盒高度），不影响行断。
     pub fn with_inline_element_metrics(mut self, metrics: HashMap<NodeId, (f32, f32)>) -> Self {
         self.inline_element_metrics = metrics;
+        self
+    }
+    /// 设置内联元素的 (margin_left, margin_right) 覆盖（paint IFC 使用）。
+    ///
+    /// key 为内联元素自身的 NodeId，value 为 (margin_left, margin_right)。
+    /// margin 不影响行断（仅影响水平偏移），因此传递此覆盖是安全的。
+    pub fn with_margin_overrides(mut self, margins: HashMap<NodeId, (f32, f32)>) -> Self {
+        self.margin_overrides = margins;
         self
     }
     /// 设置末行对齐方式（CSS text-align-last）。
@@ -992,18 +1011,19 @@ impl InlineFormattingContext {
                             })
                             .unwrap_or(0.0);
                         // 提取 inline 元素的水平 margin
+                        // 优先从 style 获取；若无 style（paint IFC），使用 margin_overrides。
                         let margin_left = style
                             .map(|s| match &s.margin_left {
                                 LengthValue::Px(v) => *v as f32,
                                 _ => 0.0,
                             })
-                            .unwrap_or(0.0);
+                            .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(ml, _)| *ml).unwrap_or(0.0));
                         let margin_right = style
                             .map(|s| match &s.margin_right {
                                 LengthValue::Px(v) => *v as f32,
                                 _ => 0.0,
                             })
-                            .unwrap_or(0.0);
+                            .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(_, mr)| *mr).unwrap_or(0.0));
                         let is_ahem_font = style
                             .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
                             .unwrap_or(false);
@@ -1120,6 +1140,8 @@ impl InlineFormattingContext {
                             vertical_align: run.vertical_align.clone(),
                             is_ahem: run.is_ahem_font,
                             letter_spacing: 0.0,
+                            margin_left: run.margin_left,
+                            margin_right: run.margin_right,
                             baseline: run.font_size,
                         });
                         if run.margin_right > 0.0 {
@@ -1248,6 +1270,8 @@ impl InlineFormattingContext {
                                     vertical_align: run.vertical_align.clone(),
                                     is_ahem: run.is_ahem_font,
                                     letter_spacing: run.letter_spacing,
+                                    margin_left: run.margin_left,
+                                    margin_right: run.margin_right,
                                     baseline: run.font_size,
                                 });
 
@@ -1271,6 +1295,8 @@ impl InlineFormattingContext {
                                 vertical_align: run.vertical_align.clone(),
                                 is_ahem: run.is_ahem_font,
                                 letter_spacing: run.letter_spacing,
+                                margin_left: run.margin_left,
+                                margin_right: run.margin_right,
                                 baseline: run.font_size,
                             });
 
@@ -1331,6 +1357,8 @@ impl InlineFormattingContext {
                         vertical_align: box_info.vertical_align.clone(),
                         is_ahem: false,
                         letter_spacing: 0.0,
+                        margin_left: 0.0,
+                        margin_right: 0.0,
                         baseline: box_info.baseline,
                     });
 
@@ -1560,6 +1588,8 @@ impl InlineFormattingContext {
                                     vertical_align: run.vertical_align.clone(),
                                     is_ahem: run.is_ahem_font,
                                     letter_spacing: run.letter_spacing,
+                                    margin_left: run.margin_left,
+                                    margin_right: run.margin_right,
                                     baseline: run.font_size,
                                 });
 
@@ -1580,6 +1610,8 @@ impl InlineFormattingContext {
                                 vertical_align: run.vertical_align.clone(),
                                 is_ahem: run.is_ahem_font,
                                 letter_spacing: run.letter_spacing,
+                                margin_left: run.margin_left,
+                                margin_right: run.margin_right,
                                 baseline: run.font_size,
                             });
 
@@ -1618,6 +1650,8 @@ impl InlineFormattingContext {
                         vertical_align: box_info.vertical_align.clone(),
                         is_ahem: false,
                         letter_spacing: 0.0,
+                        margin_left: 0.0,
+                        margin_right: 0.0,
                         baseline: box_info.baseline,
                     });
 
@@ -1899,6 +1933,8 @@ impl InlineFormattingContext {
                     vertical_align: run.vertical_align.clone(),
                     is_ahem: run.is_ahem,
                     letter_spacing: run.letter_spacing,
+                    margin_left: run.margin_left,
+                    margin_right: run.margin_right,
                     baseline: run.baseline,
                 })
             })

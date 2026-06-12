@@ -598,6 +598,7 @@ impl LayoutEngine {
             text_node_letter_spacing: HashMap::new(),
             text_node_line_heights: HashMap::new(),
             inline_element_metrics: HashMap::new(),
+            inline_element_margins: HashMap::new(),
             taffy_baseline: None,
         }
     }
@@ -898,6 +899,10 @@ fn store_font_sizes_from_ifc(inline_ctx: &crate::inline::InlineFormattingContext
             box_node
                 .inline_element_metrics
                 .insert(frag.node_id, (frag.font_size, frag.height));
+            // 内联元素的水平 margin 不影响行断（仅影响水平偏移），传递到 paint IFC 是安全的。
+            box_node
+                .inline_element_margins
+                .insert(frag.node_id, (frag.margin_left, frag.margin_right));
         }
     }
 }
