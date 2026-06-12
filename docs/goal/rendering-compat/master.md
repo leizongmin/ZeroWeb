@@ -4,6 +4,72 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 79.0% (387/490)
 
+### R63 进展
+
+**通过率**：
+- 上游真实 reftest 全量复跑：**387/490 (79.0%)**，与 R62 基线持平
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-engine` 单测：**1142/1142 通过**
+- `zero-layout-engine` 单测：**810/813 通过**（3 个既有失败未变化）
+
+#### R63 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| paint IFC is_ahem 一致性修复 | `render_fragment` 宏和多列渲染路径传入 `fragment.is_ahem`，使字符推进宽度与 paint IFC 行断计算一致。R51 添加 `is_ahem_overrides` 后此修复安全（R44 曾尝试但因当时无 overrides 而回归）。实测零视觉变化（Ahem 方形字符重叠导致有/无修复视觉等价） |
+| 多列重复渲染循环移除 | 移除 `paint_text` 多列路径中的重复片段渲染循环（第二个循环渲染与第一个相同的内容但无列裁剪）。减少无效渲染，`multicol-containing-002` 从 3.21% 改善到 2.00% |
+| `compute_final_inline_layouts` is_ahem 修复 | 修正从容器节点推断 is_ahem 的 bug，改为使用每个片段自身的 `is_ahem`（由 layout IFC 使用真实样式计算）。函数仍注释禁用，待架构级解决方案 |
+
+#### R63 调查与实验
+
+1. **compute_final_inline_layouts 重启实验（已回退）**：
+   - 启用步骤 12 的 IFC 结果存储（含 is_ahem bug 修复）
+   - 结果：387→383（5 个回归，1 个改善），与 R51 结论一致
+   - 回归：`font-family-013`、`block-formatting-contexts-004`、`font-feature-resolution-002`、`position-absolute-in-inline-005/006` 从通过退化为失败
+   - 改善：`float-003` 从失败变为通过
+   - 根因确认：存储 IFC 使用真实 styles 的片段位置与 paint 系统其他组件（绝对定位静态位置、背景渲染等）不一致
+
+2. **paint IFC 架构分析深化**：
+   - 完整梳理了 layout IFC vs paint IFC 的所有参数差异
+   - 文本节点路径：font_size/line_height/is_ahem/letter_spacing 有 overrides ✓，word_spacing 无 override ✗
+   - 内联元素路径：font_size/line_height 有 inline_element_metrics ✓，letter_spacing/word_spacing/margin/padding/border/is_ahem 全部缺失 ✗
+   - 确认 paint IFC 是自洽系统：任何影响字符宽度的修改（包括 is_ahem）都会影响行断一致性
+
+3. **系统性瓶颈再确认（R37-R63 共 27 轮）**：
+   - 所有覆盖机制扩展路径均已穷尽
+   - compute_final_inline_layouts 所有变体均导致回归
+   - 当前 6 个 override HashMap 是安全覆盖的最大集合
+
+#### R63 关键结论
+
+**R37-R63（27 轮）系统性瓶颈完全确认**：
+
+1. **Paint IFC 架构（影响 50+ tests）**：
+   - 所有增量覆盖路径已穷尽：font_size、is_ahem、letter_spacing、line_height、inline_element_metrics
+   - 不安全路径全部回退：完整 styles、IFC 存储各种变体、default_font_metrics、glyph advance 修改
+   - is_ahem 在 render_fragment 中使用 fragment.is_ahem（R63 新增）使渲染与 IFC 一致，但因 Ahem 字符重叠特性无视觉改善
+
+2. **结构性突破需要的路径**（按杠杆排序，与 R62 结论一致）：
+   - **taffy-IFC 架构统一**（影响 50+ tests）：唯一系统性打破 79% 天花板的路径
+   - **Writing-mode 垂直布局**（影响 10 tests）：完整轴交换 + 垂直字形渲染
+   - **Multicol column breaking 完善**（影响 16 tests）：更精细的片段分配算法
+   - **Flexbox baseline 提取**（影响 10 tests）：需要从 taffy first_baselines 提取基线信息
+
+3. **已验证不可行的路径**（完整列表）：
+   - 所有 paint IFC 样式覆盖变体 → 回归或零改进
+   - 所有 IFC 存储方案变体 → 回归
+   - 所有 glyph advance 修改 → 回归
+   - 外边缘边框完整厚度 → 回归
+   - 垂直模式 float 轴交换 → 回归
+   - taffy LayoutOutput API 修改 → 回归
+   - taffy 叶节点基线近似 → 回归
+
+#### 后续重点（R64+）
+
+1. **taffy-IFC 架构统一**（最大杠杆）：在 taffy measure callback 层面统一 layout 和 paint 的 IFC 上下文，使两者共享完全一致的计算结果
+2. **Writing-mode 垂直布局**（次大单特性杠杆）：完整轴交换 + 垂直字形渲染
+3. **Multicol column breaking 完善**（影响 ~16 tests）：更精细的片段分配算法
+
 ### R62 进展
 
 **通过率**：
