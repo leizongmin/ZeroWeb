@@ -190,10 +190,10 @@ impl LayoutEngine {
         //     false,
         // );
 
-        // 12. 后处理：为含有直接文本子节点的容器计算最终行内布局并存储结果。
-        // R72: 重新启用作为 Final Inline Layout Pass（Phase A）的一部分。
-        // paint 系统将迁移为仅消费存储的 IFC 结果，不再重跑 IFC。
-        // compute_final_inline_layouts(&mut root_box, doc, styles);
+        // 12. 后处理：Final Inline Layout Pass（Phase A）。
+        // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
+        // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
+        compute_final_inline_layouts(&mut root_box, doc, styles);
 
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
@@ -1179,10 +1179,13 @@ fn apply_relative_offsets_inline(root: &mut LayoutBox, styles: &HashMap<NodeId, 
     }
 }
 
-/// 为含有直接文本子节点的容器计算最终行内布局，存储 IFC 片段结果。
+/// Final Inline Layout Pass（Phase A）。
 ///
-/// paint 系统复用这些结果渲染文字，避免重新运行 IFC 导致字体度量不一致。
-#[allow(dead_code, unused_variables)]
+/// 为含有直接文本子节点的容器计算最终行内布局并存储 IFC 片段结果。
+/// paint 系统消费这些结果渲染文字，不再重跑 IFC。
+///
+/// 使用与 paint-IFC 相同的空样式 + override maps 上下文，
+/// 确保存储结果与 paint 路径完全一致，零回归。
 fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
     // 先递归处理子节点
     for child in &mut root.children {
@@ -1191,15 +1194,25 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
 
     // 仅处理有 node_id 且含有直接文本子节点的容器
     let Some(node_id) = root.node_id else { return };
-    let Some(elem) = doc.get(node_id) else { return };
+    let Some(_) = doc.get(node_id) else { return };
 
-    // 跳过 flex/grid 容器（它们不需要独立的 inline layout）
+    // 跳过 flex/grid/table 容器（它们不需要独立的 inline layout）
     let Some(style) = styles.get(&node_id) else { return };
     use zero_css_parser::values::DisplayValue;
     if matches!(
         style.display,
-        DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+        DisplayValue::Flex
+            | DisplayValue::InlineFlex
+            | DisplayValue::Grid
+            | DisplayValue::InlineGrid
+            | DisplayValue::Table
+            | DisplayValue::InlineTable
     ) {
+        return;
+    }
+
+    // 跳过多列容器（多列在 paint 阶段按列分配 IFC 内容，不适合预存储）
+    if root.is_multicol {
         return;
     }
 
@@ -1213,7 +1226,7 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
         return;
     }
 
-    // 创建 IFC 并使用完整的 CSS 属性配置
+    // 创建 IFC 并使用与 paint_text 相同的 CSS 属性配置
     use crate::inline::InlineFormattingContext;
     use crate::inline::{TextAlign, WordBreakMode};
     use crate::types::InlineLayoutFragment;
@@ -1222,7 +1235,6 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
     use zero_style_system::property::types::{OverflowWrapValue, WhiteSpaceValue, WordBreakValue};
 
     let container_width = root.content_width;
-    let mut inline_ctx = InlineFormattingContext::new(container_width);
 
     // 解析 CSS 属性（与 paint_text 相同的配置）
     let break_word = matches!(
@@ -1268,18 +1280,32 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
     );
     let is_vertical_rtl = matches!(root.writing_mode, zero_style_system::WritingModeValue::VerticalRl);
 
-    inline_ctx = inline_ctx
-        .with_text_align(text_align)
-        .with_break_word(break_word)
-        .with_no_wrap(no_wrap)
-        .with_preserve_whitespace(preserve_whitespace)
-        .with_word_break(word_break_mode)
-        .with_text_indent(text_indent_px)
-        .with_tab_size(tab_size_px)
-        .with_vertical(is_vertical)
-        .with_vertical_rtl(is_vertical_rtl);
+    // 构造与 paint-IFC 相同的 override maps
+    let parent_font_sizes: HashMap<NodeId, f32> = root
+        .text_node_font_sizes
+        .iter()
+        .filter_map(|(&text_node_id, &fs)| doc.parent_node(text_node_id).map(|pid| (pid, fs)))
+        .collect();
 
-    // 收集容器内的浮动排除区域（与 remeasure_text_with_float_exclusions 相同逻辑）
+    let parent_is_ahem: HashMap<NodeId, bool> = root
+        .text_node_is_ahem
+        .iter()
+        .filter_map(|(&text_node_id, &is_ahem)| doc.parent_node(text_node_id).map(|pid| (pid, is_ahem)))
+        .collect();
+
+    let parent_letter_spacing: HashMap<NodeId, f32> = root
+        .text_node_letter_spacing
+        .iter()
+        .filter_map(|(&text_node_id, &ls)| doc.parent_node(text_node_id).map(|pid| (pid, ls)))
+        .collect();
+
+    let parent_line_heights: HashMap<NodeId, f32> = root
+        .text_node_line_heights
+        .iter()
+        .filter_map(|(&text_node_id, &lh)| doc.parent_node(text_node_id).map(|pid| (pid, lh)))
+        .collect();
+
+    // 收集容器内的浮动排除区域
     let exclusions: Vec<crate::inline::FloatExclusion> = root
         .children
         .iter()
@@ -1298,16 +1324,32 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
         })
         .collect();
 
+    let mut inline_ctx = InlineFormattingContext::new(container_width)
+        .with_text_align(text_align)
+        .with_break_word(break_word)
+        .with_no_wrap(no_wrap)
+        .with_preserve_whitespace(preserve_whitespace)
+        .with_word_break(word_break_mode)
+        .with_text_indent(text_indent_px)
+        .with_tab_size(tab_size_px)
+        .with_vertical(is_vertical)
+        .with_vertical_rtl(is_vertical_rtl)
+        .with_font_size_overrides(parent_font_sizes)
+        .with_is_ahem_overrides(parent_is_ahem)
+        .with_letter_spacing_overrides(parent_letter_spacing)
+        .with_line_height_overrides(parent_line_heights)
+        .with_inline_element_metrics(root.inline_element_metrics.clone())
+        .with_margin_overrides(root.inline_element_margins.clone());
+
     if !exclusions.is_empty() {
         inline_ctx = inline_ctx.with_float_exclusions(exclusions);
     }
 
-    // 传入完整样式
-    inline_ctx.layout(doc, node_id, styles);
+    // Phase A 关键：使用空样式（与 paint-IFC 一致），
+    // 而非真实样式（会导致行断差异引起回归）。
+    inline_ctx.layout(doc, node_id, &HashMap::new());
 
     // 转换 IFC 结果为 InlineLayoutLine/InlineLayoutFragment
-    let container_width = root.content_width;
-    let styles_ref = styles; // 闭包使用
     let lines: Vec<InlineLayoutLine> = inline_ctx
         .lines
         .iter()
@@ -1317,21 +1359,15 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
             fragments: line
                 .runs
                 .iter()
-                .map(|frag| {
-                    // R63: 使用每个片段的 is_ahem（由 layout IFC 使用真实样式计算），
-                    // 而非从容器节点推断。之前版本从容器 font_family 推断导致
-                    // 同容器内不同字体的片段 is_ahem 标记错误。
-                    let is_ahem = frag.is_ahem;
-                    InlineLayoutFragment {
-                        x: frag.x,
-                        y: frag.y,
-                        width: frag.width,
-                        height: frag.height,
-                        font_size: frag.font_size,
-                        is_ahem,
-                        text: frag.text.clone(),
-                        node_id: Some(frag.node_id),
-                    }
+                .map(|frag| InlineLayoutFragment {
+                    x: frag.x,
+                    y: frag.y,
+                    width: frag.width,
+                    height: frag.height,
+                    font_size: frag.font_size,
+                    is_ahem: frag.is_ahem,
+                    text: frag.text.clone(),
+                    node_id: Some(frag.node_id),
                 })
                 .collect(),
         })
