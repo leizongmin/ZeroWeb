@@ -292,6 +292,72 @@ fn test_clearance_with_margin_collapse() {
     );
 }
 
+/// 测试空 cleared block 只应折叠自身上下外边距，不应把后继兄弟多推一段。
+#[test]
+fn test_empty_cleared_block_collapses_with_next_sibling() {
+    let (mut doc, body) = make_doc_with_body();
+
+    let before = doc.create_element("div");
+    doc.append_child(body, before).unwrap();
+
+    let float_elem = doc.create_element("div");
+    doc.append_child(body, float_elem).unwrap();
+
+    let clear_elem = doc.create_element("div");
+    doc.append_child(body, clear_elem).unwrap();
+
+    let after = doc.create_element("div");
+    doc.append_child(body, after).unwrap();
+
+    let mut styles = HashMap::new();
+
+    let mut be = ComputedStyle::default();
+    be.display = DisplayValue::Block;
+    be.width = LengthValue::Px(100.0);
+    be.height = LengthValue::Px(20.0);
+    be.margin_bottom = LengthValue::Px(20.0);
+    styles.insert(before, be);
+
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.float = FloatValue::Left;
+    fl.width = LengthValue::Px(100.0);
+    fl.height = LengthValue::Px(40.0);
+    styles.insert(float_elem, fl);
+
+    let mut ce = ComputedStyle::default();
+    ce.display = DisplayValue::Block;
+    ce.clear = ClearValue::Both;
+    ce.width = LengthValue::Px(100.0);
+    ce.height = LengthValue::Px(0.0);
+    ce.margin_top = LengthValue::Px(80.0);
+    ce.margin_bottom = LengthValue::Px(100.0);
+    styles.insert(clear_elem, ce);
+
+    let mut af = ComputedStyle::default();
+    af.display = DisplayValue::Block;
+    af.width = LengthValue::Px(100.0);
+    af.height = LengthValue::Px(20.0);
+    styles.insert(after, af);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let clear_box = find_child_by_node_id(&result.root, clear_elem).expect("clear found");
+    let after_box = find_child_by_node_id(&result.root, after).expect("after found");
+
+    assert!(
+        (clear_box.y - 100.0).abs() < 1.0,
+        "empty cleared block should still be placed at the cleared position, got {}",
+        clear_box.y
+    );
+    assert!(
+        (after_box.y - 120.0).abs() < 1.0,
+        "next sibling should see collapsed empty-block margins, got {}",
+        after_box.y
+    );
+}
+
 /// 测试 BFC 检测：overflow:hidden 建立新的格式化上下文。
 #[test]
 fn test_bfc_detection_overflow_hidden() {
@@ -473,6 +539,139 @@ fn test_img_css_overrides_html_attributes() {
         (img_box.height - 150.0).abs() < 1.0,
         "img height should be ~150 (from CSS), got {}",
         img_box.height
+    );
+}
+
+/// 测试 inline-only 容器收缩后，后续普通流兄弟应同步上移。
+#[test]
+fn test_inline_only_container_shrink_reflows_following_sibling() {
+    let (mut doc, body) = make_doc_with_body();
+    let first = doc.create_element("div");
+    doc.append_child(body, first).unwrap();
+    let img1 = doc.create_element("img");
+    let img2 = doc.create_element("img");
+    {
+        let elem = doc.get_mut(img1).unwrap();
+        if let zero_dom::NodeKind::Element(e) = &mut elem.kind {
+            e.set_attribute("width", "96");
+            e.set_attribute("height", "96");
+        }
+    }
+    {
+        let elem = doc.get_mut(img2).unwrap();
+        if let zero_dom::NodeKind::Element(e) = &mut elem.kind {
+            e.set_attribute("width", "96");
+            e.set_attribute("height", "144");
+        }
+    }
+    doc.append_child(first, img1).unwrap();
+    doc.append_child(first, img2).unwrap();
+
+    let second = doc.create_element("div");
+    doc.append_child(body, second).unwrap();
+    let img3 = doc.create_element("img");
+    {
+        let elem = doc.get_mut(img3).unwrap();
+        if let zero_dom::NodeKind::Element(e) = &mut elem.kind {
+            e.set_attribute("width", "96");
+            e.set_attribute("height", "96");
+        }
+    }
+    doc.append_child(second, img3).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut first_style = ComputedStyle::default();
+    first_style.display = DisplayValue::Block;
+    styles.insert(first, first_style);
+
+    let mut second_style = ComputedStyle::default();
+    second_style.display = DisplayValue::Block;
+    styles.insert(second, second_style);
+
+    let mut img_style = ComputedStyle::default();
+    img_style.display = DisplayValue::Inline;
+    styles.insert(img1, img_style.clone());
+    styles.insert(img2, img_style.clone());
+    styles.insert(img3, img_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let first_box = find_child_by_node_id(&result.root, first).expect("first found");
+    let second_box = find_child_by_node_id(&result.root, second).expect("second found");
+
+    assert!(
+        (first_box.height - 144.0).abs() < 1.0,
+        "first inline-only container should shrink to tallest image height, got {}",
+        first_box.height
+    );
+    assert!(
+        (second_box.y - (first_box.y + first_box.height)).abs() < 1.0,
+        "following sibling should be reflowed after shrink: second.y={}, first.bottom={}",
+        second_box.y,
+        first_box.y + first_box.height
+    );
+}
+
+/// 测试 clear-float-003：空普通块的自折叠 margin 不应错误抬高后续 clear:right 浮动。
+#[test]
+fn test_clear_float_003_negative_margin_clear_float_can_overlap_prior_float() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let first_float = doc.create_element("div");
+    doc.append_child(container, first_float).unwrap();
+    let spacer = doc.create_element("div");
+    doc.append_child(container, spacer).unwrap();
+    let cleared_float = doc.create_element("div");
+    doc.append_child(container, cleared_float).unwrap();
+
+    let mut styles = HashMap::new();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.display = DisplayValue::Block;
+    container_style.width = LengthValue::Px(192.0);
+    container_style.height = LengthValue::Px(192.0);
+    styles.insert(container, container_style);
+
+    let mut first_float_style = ComputedStyle::default();
+    first_float_style.display = DisplayValue::Block;
+    first_float_style.float = FloatValue::Right;
+    first_float_style.width = LengthValue::Px(96.0);
+    first_float_style.height = LengthValue::Px(96.0);
+    styles.insert(first_float, first_float_style);
+
+    let mut spacer_style = ComputedStyle::default();
+    spacer_style.display = DisplayValue::Block;
+    spacer_style.height = LengthValue::Px(0.0);
+    spacer_style.margin_top = LengthValue::Px(96.0);
+    spacer_style.margin_bottom = LengthValue::Px(96.0);
+    styles.insert(spacer, spacer_style);
+
+    let mut cleared_float_style = ComputedStyle::default();
+    cleared_float_style.display = DisplayValue::Block;
+    cleared_float_style.float = FloatValue::Right;
+    cleared_float_style.clear = ClearValue::Right;
+    cleared_float_style.width = LengthValue::Px(96.0);
+    cleared_float_style.height = LengthValue::Px(96.0);
+    cleared_float_style.margin_top = LengthValue::Px(-96.0);
+    styles.insert(cleared_float, cleared_float_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let first_box = find_child_by_node_id(&result.root, first_float).expect("first float found");
+    let cleared_box = find_child_by_node_id(&result.root, cleared_float).expect("cleared float found");
+
+    assert!(
+        (first_box.y - 0.0).abs() < 0.5,
+        "first float should stay at top, got y={}",
+        first_box.y
+    );
+    assert!(
+        (cleared_box.y - 0.0).abs() < 0.5,
+        "cleared float should keep the same top as the prior float, got y={}",
+        cleared_box.y
     );
 }
 

@@ -443,6 +443,46 @@ fn test_absolute_in_static_parent() {
     assert!(abs_box.y.is_finite(), "abs y 应为有限值");
 }
 
+/// 测试 body 外边距不会被 absolute 子元素重复计入。
+#[test]
+fn test_absolute_in_body_ignores_body_margin() {
+    let (mut doc, body) = make_doc_with_body();
+    let abs_child = doc.create_element("div");
+    doc.append_child(body, abs_child).unwrap();
+
+    let mut styles = HashMap::new();
+
+    let mut body_style = ComputedStyle::default();
+    body_style.margin_top = LengthValue::Px(8.0);
+    body_style.margin_right = LengthValue::Px(8.0);
+    body_style.margin_bottom = LengthValue::Px(8.0);
+    body_style.margin_left = LengthValue::Px(8.0);
+    styles.insert(body, body_style);
+
+    let mut abs_style = ComputedStyle::default();
+    abs_style.position = PositionValue::Absolute;
+    abs_style.top = LengthValue::Px(118.0);
+    abs_style.left = LengthValue::Px(8.0);
+    abs_style.width = LengthValue::Px(768.0);
+    abs_style.height = LengthValue::Px(100.0);
+    styles.insert(abs_child, abs_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let (abs_x, abs_y) = find_absolute_position_by_node_id(&result.root, abs_child).expect("abs found");
+    assert!(
+        (abs_x - 8.0).abs() < 1.0,
+        "abs x should ignore body margin, got {}",
+        abs_x
+    );
+    assert!(
+        (abs_y - 118.0).abs() < 1.0,
+        "abs y should ignore body margin, got {}",
+        abs_y
+    );
+}
+
 /// 测试无子元素的空 flex 容器。
 ///
 /// 空的 flex 容器尺寸由自身 width/height 决定，

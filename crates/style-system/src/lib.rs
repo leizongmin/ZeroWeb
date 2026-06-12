@@ -265,7 +265,8 @@ impl StyleSystem {
                 None
             }
         });
-        let mut ua_declarations: Vec<CascadedDeclaration> = Vec::new();
+        #[allow(clippy::type_complexity)]
+        let mut ua_decl_inputs: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)> = Vec::new();
         if let Some(ref tag) = tag_name
             && let Some(display) = ua_default_display(tag)
         {
@@ -285,11 +286,7 @@ impl StyleSystem {
                 DisplayValue::None => "none",
                 _ => "inline",
             };
-            ua_declarations.push(CascadedDeclaration {
-                property: "display".to_string(),
-                value: display_str.to_string(),
-                order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
-            });
+            ua_decl_inputs.push(("display".to_string(), display_str.to_string(), false, (0, 0, 0), None));
         }
 
         // UA 默认样式
@@ -297,17 +294,13 @@ impl StyleSystem {
             match tag.as_str() {
                 // body margin: 8px（浏览器默认值）
                 "body" => {
-                    ua_declarations.push(CascadedDeclaration {
-                        property: "margin".to_string(),
-                        value: "8px".to_string(),
-                        order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
-                    });
+                    ua_decl_inputs.push(("margin".to_string(), "8px".to_string(), false, (0, 0, 0), None));
                 }
                 // h1-h6 默认 margin 和 font-weight/font-size
                 "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
-                    ua_declarations.push(CascadedDeclaration {
-                        property: "margin".to_string(),
-                        value: match tag.as_str() {
+                    ua_decl_inputs.push((
+                        "margin".to_string(),
+                        match tag.as_str() {
                             "h1" => "0.67em 0",
                             "h2" => "0.83em 0",
                             "h3" => "1em 0",
@@ -317,36 +310,40 @@ impl StyleSystem {
                             _ => "1em 0",
                         }
                         .to_string(),
-                        order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
-                    });
-                    ua_declarations.push(CascadedDeclaration {
-                        property: "font-weight".to_string(),
-                        value: "bold".to_string(),
-                        order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 1, false),
-                    });
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    ua_decl_inputs.push(("font-weight".to_string(), "bold".to_string(), false, (0, 0, 0), None));
                 }
                 // p 默认 margin
                 "p" => {
-                    ua_declarations.push(CascadedDeclaration {
-                        property: "margin".to_string(),
-                        value: "1em 0".to_string(),
-                        order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
-                    });
+                    ua_decl_inputs.push(("margin".to_string(), "1em 0".to_string(), false, (0, 0, 0), None));
                 }
                 // ul/ol 默认 padding-left 和 margin
                 "ul" | "ol" => {
-                    ua_declarations.push(CascadedDeclaration {
-                        property: "margin".to_string(),
-                        value: "1em 0".to_string(),
-                        order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
-                    });
-                    ua_declarations.push(CascadedDeclaration {
-                        property: "padding-left".to_string(),
-                        value: "40px".to_string(),
-                        order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 1, false),
-                    });
+                    ua_decl_inputs.push(("margin".to_string(), "1em 0".to_string(), false, (0, 0, 0), None));
+                    ua_decl_inputs.push(("padding-left".to_string(), "40px".to_string(), false, (0, 0, 0), None));
                 }
                 _ => {}
+            }
+        }
+
+        let mut ua_declarations: Vec<CascadedDeclaration> = Vec::new();
+        if !ua_decl_inputs.is_empty() {
+            let shorthand_inputs: Vec<(String, String, bool, (u32, u32, u32))> = ua_decl_inputs
+                .iter()
+                .map(|(property, value, important, specificity, _layer_index)| {
+                    (property.clone(), value.clone(), *important, *specificity)
+                })
+                .collect();
+            let expanded = shorthand::expand_shorthands(&shorthand_inputs);
+            for (position, (property, value, important, specificity)) in expanded.into_iter().enumerate() {
+                ua_declarations.push(CascadedDeclaration {
+                    property,
+                    value,
+                    order: CascadeOrder::new(Origin::UserAgent, None, specificity, position, important),
+                });
             }
         }
 

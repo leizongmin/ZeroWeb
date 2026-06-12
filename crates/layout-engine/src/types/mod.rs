@@ -35,9 +35,9 @@ pub struct LayoutBox {
     pub width: f32,
     /// 盒子的尺寸（包含 border）。
     pub height: f32,
-    /// 内容区域偏移（border + padding）。
+    /// 内容区域偏移（相对于自身边框盒原点的 border + padding）。
     pub content_x: f32,
-    /// 内容区域偏移（border + padding）。
+    /// 内容区域偏移（相对于自身边框盒原点的 border + padding）。
     pub content_y: f32,
     /// 内容区域尺寸。
     pub content_width: f32,
