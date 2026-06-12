@@ -444,6 +444,7 @@ fn convert_flex_basis(value: &FlexBasisValue) -> taffy::style::Dimension {
 /// 转换 AlignmentValue 到 taffy AlignItems。
 fn convert_alignment_to_align_items(value: &AlignmentValue) -> Option<taffy::style::AlignItems> {
     match value {
+        AlignmentValue::Auto => None, // align-items 不使用 auto
         AlignmentValue::FlexStart => Some(taffy::style::AlignItems::FlexStart),
         AlignmentValue::FlexEnd => Some(taffy::style::AlignItems::FlexEnd),
         AlignmentValue::Center => Some(taffy::style::AlignItems::Center),
@@ -460,6 +461,7 @@ fn convert_alignment_to_align_items(value: &AlignmentValue) -> Option<taffy::sty
 fn convert_alignment_to_align_self(value: &AlignmentValue) -> Option<taffy::style::AlignSelf> {
     // AlignSelf 是 AlignItems 的 type alias
     match value {
+        AlignmentValue::Auto => None, // 继承容器 align-items
         AlignmentValue::FlexStart => Some(taffy::style::AlignSelf::FlexStart),
         AlignmentValue::FlexEnd => Some(taffy::style::AlignSelf::FlexEnd),
         AlignmentValue::Center => Some(taffy::style::AlignSelf::Center),
@@ -474,6 +476,7 @@ fn convert_alignment_to_align_self(value: &AlignmentValue) -> Option<taffy::styl
 /// 转换 AlignmentValue 到 taffy JustifyContent。
 fn convert_alignment_to_justify_content(value: &AlignmentValue) -> Option<taffy::style::JustifyContent> {
     match value {
+        AlignmentValue::Auto => None, // auto 不适用于 justify-content
         AlignmentValue::FlexStart => Some(taffy::style::JustifyContent::FlexStart),
         AlignmentValue::FlexEnd => Some(taffy::style::JustifyContent::FlexEnd),
         AlignmentValue::Center => Some(taffy::style::JustifyContent::Center),

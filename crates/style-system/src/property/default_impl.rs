@@ -103,7 +103,7 @@ impl Default for ComputedStyle {
             flex_wrap: FlexWrapValue::Nowrap,
             justify_content: AlignmentValue::FlexStart,
             align_items: AlignmentValue::Stretch,
-            align_self: AlignmentValue::Stretch,
+            align_self: AlignmentValue::Auto,
             justify_items: JustifyItemsValue::Normal,
             justify_self: JustifySelfValue::Auto,
             align_content: AlignContentValue::Normal,

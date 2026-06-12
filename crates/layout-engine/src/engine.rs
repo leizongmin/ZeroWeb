@@ -762,13 +762,14 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
                     .unwrap_or(c.content_height);
 
                 // 子元素参与 baseline 对齐的条件：
-                // align-self: baseline，或容器 align-items: baseline 且子元素未覆盖
+                // align-self: baseline（显式），或 align-self: auto + 容器 align-items: baseline
+                // align-self: stretch 是显式退出 baseline 对齐，不参与。
                 let is_baseline_aligned = c
                     .node_id
                     .and_then(|id| styles.get(&id))
                     .map(|s| {
                         matches!(s.align_self, AlignmentValue::Baseline)
-                            || (container_align_baseline && matches!(s.align_self, AlignmentValue::Stretch))
+                            || (container_align_baseline && matches!(s.align_self, AlignmentValue::Auto))
                     })
                     .unwrap_or(false);
 
@@ -1308,6 +1309,17 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
 
     // 跳过多列容器（多列在 paint 阶段按列分配 IFC 内容，不适合预存储）
     if root.is_multicol {
+        return;
+    }
+
+    // 跳过非块级元素（display: inline）：
+    // 这些元素的文本内容已经参与父级 IFC 排列，不需要单独存储。
+    // 如果为它们也存储 inline_layout，paint 系统会双重渲染文本——
+    // 一次从父级 IFC（含 float exclusion），一次从自身 IFC（无 float exclusion），
+    // 导致文本与 float 重叠。
+    // inline-block/inline-flex/inline-grid 虽然也是 inline-level，
+    // 但它们有独立的布局上下文，is_block_level 不会是 false。
+    if !root.is_block_level {
         return;
     }
 
