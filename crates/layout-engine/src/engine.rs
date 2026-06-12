@@ -2035,14 +2035,39 @@ fn remeasure_text_with_float_exclusions(
 /// 典型场景：`<div><span style="line-height:5"></span></div>`
 /// 空 span 的 line-height 应贡献到行盒高度，但 taffy 无法处理此情况。
 fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
-    // flex/grid/table 容器不走 IFC 重算——它们的子元素是 flex/grid item 或 table cell，
-    // 尺寸由 taffy 或 table layout 决定，不应被 IFC 片段覆盖。
+    // flex/grid 容器不走 IFC 重算——它们的子元素是 flex/grid item，
+    // 尺寸由 taffy 决定，不应被 IFC 片段覆盖。
+    // table 容器仅在有 table-internal 子元素时跳过（如 tbody/tr/td）；
+    // 无 table-internal 子元素的 table 容器行为等价于 block，需要 IFC 重算。
     if box_node.is_layout_container {
-        // 仍然递归处理子容器
-        for child in &mut box_node.children {
-            remeasure_inline_only_containers(child, doc, styles);
+        let is_table_without_internals = box_node.node_id.is_some_and(|id| {
+            styles
+                .get(&id)
+                .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable))
+        }) && !box_node.children.iter().any(|c| {
+            c.node_id.is_some_and(|cid| {
+                styles.get(&cid).is_some_and(|s| {
+                    matches!(
+                        s.display,
+                        DisplayValue::TableRowGroup
+                            | DisplayValue::TableHeaderGroup
+                            | DisplayValue::TableFooterGroup
+                            | DisplayValue::TableRow
+                            | DisplayValue::TableCell
+                            | DisplayValue::TableColumn
+                            | DisplayValue::TableColumnGroup
+                            | DisplayValue::TableCaption
+                    )
+                })
+            })
+        });
+        if !is_table_without_internals {
+            // 仍然递归处理子容器
+            for child in &mut box_node.children {
+                remeasure_inline_only_containers(child, doc, styles);
+            }
+            return;
         }
-        return;
     }
 
     // 检查此容器是否有 inline-level 子元素（is_block_level == false）
