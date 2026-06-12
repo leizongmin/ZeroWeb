@@ -414,6 +414,17 @@ impl LayoutEngine {
             !matches!(s.column_count, ColumnCountComputedValue::Auto)
                 || !matches!(s.column_width, ColumnWidthComputedValue::Auto)
         });
+        let is_layout_container = computed.is_some_and(|s| {
+            matches!(
+                s.display,
+                DisplayValue::Flex
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::Grid
+                    | DisplayValue::InlineGrid
+                    | DisplayValue::Table
+                    | DisplayValue::InlineTable
+            )
+        });
         let is_block_level = computed.is_some_and(|s| {
             matches!(
                 s.display,
@@ -533,6 +544,7 @@ impl LayoutEngine {
             scroll_y: 0.0,
             is_flow_root,
             is_multicol,
+            is_layout_container,
             column_gap: 0.0,
             is_block_level,
             is_relative,
@@ -2025,18 +2037,7 @@ fn remeasure_text_with_float_exclusions(
 fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
     // flex/grid/table 容器不走 IFC 重算——它们的子元素是 flex/grid item 或 table cell，
     // 尺寸由 taffy 或 table layout 决定，不应被 IFC 片段覆盖。
-    let is_layout_container = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
-        matches!(
-            s.display,
-            DisplayValue::Flex
-                | DisplayValue::InlineFlex
-                | DisplayValue::Grid
-                | DisplayValue::InlineGrid
-                | DisplayValue::Table
-                | DisplayValue::InlineTable
-        )
-    });
-    if is_layout_container {
+    if box_node.is_layout_container {
         // 仍然递归处理子容器
         for child in &mut box_node.children {
             remeasure_inline_only_containers(child, doc, styles);
