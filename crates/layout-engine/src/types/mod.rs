@@ -202,6 +202,13 @@ pub struct LayoutBox {
     /// 导致 font_size 和 line_height 回退到默认值。
     /// 此映射确保 paint IFC 的内联元素使用正确的字体度量和行高。
     pub inline_element_metrics: HashMap<NodeId, (f32, f32)>,
+    /// 内联元素的 (margin_left, margin_right) 映射（来自 layout engine 的 IFC 运行）。
+    ///
+    /// paint IFC 传入空的 styles HashMap，无法获取 inline 元素的水平 margin，
+    /// 导致所有 margin 回退为 0。此映射以元素自身的 NodeId 为键，
+    /// 供 paint IFC 在处理内联元素时使用正确的 margin 值。
+    /// margin 不影响行断（仅影响水平偏移），因此传递到 paint IFC 是安全的。
+    pub inline_element_margins: HashMap<NodeId, (f32, f32)>,
     /// 从 taffy 布局缓存中提取的 first_baseline（y 分量）。
     ///
     /// 仅对 flex/inline-flex/grid/inline-grid 容器有值。
@@ -294,6 +301,7 @@ impl Default for LayoutBox {
             text_node_letter_spacing: HashMap::new(),
             text_node_line_heights: HashMap::new(),
             inline_element_metrics: HashMap::new(),
+            inline_element_margins: HashMap::new(),
             taffy_baseline: None,
         }
     }

@@ -864,6 +864,10 @@ impl super::Painter {
                 // 此映射直接以元素 NodeId 为键，供 inline element 路径使用。
                 let inline_metrics = box_node.inline_element_metrics.clone();
 
+                // 内联元素 (margin_left, margin_right) 覆盖：直接使用元素 NodeId 为键。
+                // margin 不影响行断（仅影响水平偏移），传递到 paint IFC 是安全的。
+                let margin_overrides = box_node.inline_element_margins.clone();
+
                 let mut ctx = InlineFormattingContext::new(ifc_width)
                     .with_text_align(text_align)
                     .with_text_align_last(text_align_last)
@@ -880,7 +884,8 @@ impl super::Painter {
                     .with_is_ahem_overrides(parent_is_ahem)
                     .with_letter_spacing_overrides(parent_letter_spacing)
                     .with_line_height_overrides(parent_line_heights)
-                    .with_inline_element_metrics(inline_metrics);
+                    .with_inline_element_metrics(inline_metrics)
+                    .with_margin_overrides(margin_overrides);
                 ctx.layout(doc, node_id, &HashMap::new());
                 ctx
             };
