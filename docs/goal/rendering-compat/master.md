@@ -1,24 +1,54 @@
 # 渲染兼容性目标 — 运行时控制面板
 
 **最后更新**: 2026-06-13
-**当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 80.2% (393/490) R72 基线确认
+**当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 基础设施已就位）
+**上游真实 reftest 通过率**: 80.2% (393/490) R73 Phase A 基础设施确认
 
 ### 当前阶段结论
 
-- **393/490 (80.2%) 已确认是当前实现的阶段性天花板**：R37-R72 共 36 轮增量尝试后，R70-R72 连续确认零净提升、零回归。
-- **当前进展处于阻塞态**：所有局部修补、参数微调、paint/layout 局部兜底路径已穷尽；继续做增量修复预期收益接近 0。
+- **393/490 (80.2%) 阶段性天花板确认**：R37-R72 共 36 轮增量尝试后，R70-R72 连续确认零净提升、零回归。
+- **R73 Phase A 基础设施就位**：`compute_final_inline_layouts` 已启用作为 step 12 后处理，paint 系统可通过 `use_stored` 路径消费存储的 IFC 结果。
+  - 当前使用空样式 + override maps（与 paint-IFC 一致），零回归。
+  - 后续可逐步切换到真实样式，需逐容器验证。
 - **后续提升只能依赖专项架构改造**，三条候选主路径：
   1. **taffy-IFC 架构统一**：影响 50+ 测试，需要重设计 layout/paint 之间的 IFC 数据流。
   2. **multicol inline 内容跨列拆分**：影响 16+ 测试，需要 IFC 片段级列分配与 fragmentation。
   3. **writing-mode 垂直布局完整实现**：影响 10+ 测试，需要完整轴交换与垂直字形渲染/定位收口。
-- **R71 的 margin override 基础设施已就位且零回归**：虽然未直接提升当前通过率，但已为未来的 taffy-IFC 统一保留可扩展承载点。
 
 ### 下一阶段执行依据
 
 - 专项实施 Spec：[`post-r71-architecture-spec.md`](./post-r71-architecture-spec.md)
-- **下一阶段不再继续增量试错**，而是严格按照该 Spec 进入 Post-R71 架构改造周期。
-- 之后将交由新的 agent 以本 `master.md` 为入口继续推进，并以该 Spec 作为唯一实施依据。
+- Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
+- Phase B/C 待 Phase A 稳定后推进。
+
+### R73 进展（Phase A 基础设施）
+
+**当前状态**：
+- 全量上游 reftest：**393/490 (80.2%)**，与 R72 基线持平（零回归）
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+
+#### R73 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| `compute_final_inline_layouts` 启用 | 作为 layout step 12 后处理，在所有 post-processing 完成后运行 |
+| 空样式 + override maps 策略 | 使用与 paint-IFC 相同的上下文（font_size_overrides, is_ahem_overrides, letter_spacing_overrides, line_height_overrides, inline_element_metrics, margin_overrides），确保零回归 |
+| 跳过 flex/grid/table/multicol | 这些容器有独立的布局算法，不适合预存储 IFC 结果 |
+| 从 LayoutBox 字段构造 overrides | parent_font_sizes, parent_is_ahem, parent_letter_spacing, parent_line_heights 等 |
+
+#### R73 关键发现
+
+1. **真实样式 IFC 导致 5 个回归**（font-feature-resolution-002, position-absolute-in-inline-005/006, 2 个 CSS2 测试）：行断差异导致文本位置与 taffy LayoutBox 坐标不一致。
+2. **float-exclusion 容器使用真实样式更差**（float-003: 1.15%→1.56%）：float 环绕文本的行断对样式差异更敏感。
+3. **override-based 存储是零回归的安全路径**：确保 paint 不再重跑 IFC，同时保持渲染输出一致。
+
+#### R73 架构意义
+
+Phase A 基础设施的核心价值：
+- **paint 不再重跑 IFC**：当 `use_stored = true` 时，paint 直接消费存储的片段结果。
+- **单一事实来源的框架已建立**：后续只需修改 `compute_final_inline_layouts` 中的样式策略即可渐进改进。
+- **为 Phase B/C 铺路**：multicol fragmentation 和 writing-mode logical axis 可复用该基础设施。
 
 ### R72 进展
 

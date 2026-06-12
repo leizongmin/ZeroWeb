@@ -1345,8 +1345,7 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
         inline_ctx = inline_ctx.with_float_exclusions(exclusions);
     }
 
-    // Phase A 关键：使用空样式（与 paint-IFC 一致），
-    // 而非真实样式（会导致行断差异引起回归）。
+    // Phase A：使用空样式 + overrides（与 paint-IFC 一致，零回归）。
     inline_ctx.layout(doc, node_id, &HashMap::new());
 
     // 转换 IFC 结果为 InlineLayoutLine/InlineLayoutFragment
