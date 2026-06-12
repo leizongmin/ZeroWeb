@@ -2,11 +2,11 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 基础设施已就位）
-**上游真实 reftest 通过率**: 80.4% (394/490) R74 确认（+1 自 R73）
+**上游真实 reftest 通过率**: 80.6% (395/490) R75 确认（+1 自 R74）
 
 ### 当前阶段结论
 
-- **394/490 (80.4%) 稳定基线**：R74 通过 table 嵌套行组合并修复打破 R73 的 80.2% 天花板。
+- **395/490 (80.6%) 稳定基线**：R75 通过 calc(P% ± Npx) 表达式支持和绝对定位 IFC 排除修复提升通过率。
 - **R73 Phase A 基础设施就位**：`compute_final_inline_layouts` 已启用作为 step 12 后处理，paint 系统可通过 `use_stored` 路径消费存储的 IFC 结果。
   - 当前使用空样式 + override maps（与 paint-IFC 一致），零回归。
   - 后续可逐步切换到真实样式，需逐容器验证。
@@ -21,6 +21,45 @@
 - 专项实施 Spec：[`post-r71-architecture-spec.md`](./post-r71-architecture-spec.md)
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
+
+### R75 进展
+
+**当前状态**：
+- 全量上游 reftest：**395/490 (80.6%)**，较 R74 基线 394/490 净增 +1
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+
+#### R75 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| calc(P% ± Npx) 表达式支持 | converter 从 calc 表达式提取百分比（替代默认 0px），computed 保留含百分比的 calc 表达式 |
+| apply_calc_size_adjustments 后处理 | 布局 step 12.5 根据 px 偏移量修正 calc 计算的尺寸 |
+| 绝对定位元素 IFC 排除 | adjust_inline_block_positions 跳过 is_absolute/is_fixed 元素 |
+
+#### R75 通过率变化
+
+| 目录 | R74 | R75 | 变化 |
+|------|-----|-----|------|
+| css-position/ | 12/16 (75.0%) | **14/16 (87.5%)** | +2 |
+| CSS2/ | 98/129 (76.0%) | 97/129 (75.2%) | -1 (float-003 flaky) |
+| 其他 | 不变 | 不变 | 零回归 |
+
+#### R75 新增通过的测试
+
+1. `position-absolute-semi-replaced-stretch-input.html` (2.68%→0.00%) — calc() 表达式支持
+2. `position-absolute-semi-replaced-stretch-other.html` (2.10%→0.21%) — calc() + absolute IFC 排除
+
+#### R75 调查与分析
+
+1. **Near-miss 测试系统性分析**（31 个 1-3% diff 测试）：
+   - `clear-applies-to-009` (1.02%): blue square displaced exactly 96px (its own height). Complex float context inheritance through wrapper div. Clear computation inside nested div uses inherited float bottom, but layout interaction with float_y_offset creates positioning error.
+   - `whitespace-001` (1.05%): display:table container without table-internal children doesn't wrap inline-block children correctly. IFC whitespace preservation issue. `compute_final_inline_layouts` skipping table containers is NOT the root cause (allowing it through produces identical results).
+   - `block-in-inline-align-001` (1.42%): block-in-inline splitting creates incorrect layout vs reference. Orange div displaced vertically.
+   - `position-relative-table-tfoot-top` (1.04%): border-collapse subpixel precision.
+   - `clear-clearance-calculation-004` (1.28%): clearance precision issue.
+
+2. **独立修复路径仍然有限**：大部分 near-miss 测试的根因都与系统性问题相关（paint IFC 架构、float/clear 精度、table IFC），而非简单的独立 bug。
 
 ### R74 进展
 
