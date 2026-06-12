@@ -478,6 +478,68 @@ fn extract_css_urls(html: &str) -> Vec<String> {
     urls
 }
 
+fn extract_stylesheet_hrefs(html: &str) -> Vec<String> {
+    let mut hrefs = Vec::new();
+    let mut pos = 0;
+    while let Some(idx) = html[pos..].find("<link") {
+        let tag_start = pos + idx;
+        let Some(tag_end) = find_tag_end(&html[tag_start..]) else {
+            break;
+        };
+        let tag = &html[tag_start..tag_start + tag_end];
+        let tag_lower = tag.to_ascii_lowercase();
+        if !tag_lower.contains("rel=\"stylesheet\"")
+            && !tag_lower.contains("rel='stylesheet'")
+            && !tag_lower.contains("rel=\"alternate stylesheet\"")
+            && !tag_lower.contains("rel='alternate stylesheet'")
+        {
+            pos = tag_start + tag_end + 1;
+            continue;
+        }
+
+        if let Some(href_start) = tag.find("href=\"").or_else(|| tag.find("href='")) {
+            let quote = &tag[href_start + 5..href_start + 6];
+            let value_start = href_start + 6;
+            if let Some(value_end) = tag[value_start..].find(quote) {
+                let href_value = tag[value_start..value_start + value_end].trim();
+                if !href_value.is_empty() {
+                    hrefs.push(href_value.to_string());
+                }
+            }
+        }
+
+        pos = tag_start + tag_end + 1;
+    }
+    hrefs
+}
+
+fn load_linked_stylesheets(html: &str, base_dir: Option<&Path>) -> String {
+    let Some(base) = base_dir else {
+        return String::new();
+    };
+
+    let mut merged = String::new();
+    for href in extract_stylesheet_hrefs(html) {
+        if href.starts_with("data:") || href.starts_with("http://") || href.starts_with("https://") {
+            continue;
+        }
+
+        let path = if href.starts_with('/') {
+            Path::new("tests/wpt-runner/wpt-data").join(href.trim_start_matches('/'))
+        } else {
+            base.join(&href)
+        };
+
+        if let Ok(css) = std::fs::read_to_string(&path) {
+            if !merged.is_empty() {
+                merged.push('\n');
+            }
+            merged.push_str(&css);
+        }
+    }
+    merged
+}
+
 /// 从基础目录加载图片文件并解码为 RGBA 数据，放入 ImageCache。
 ///
 /// 对于每个 URL，用 `simple_hash(url)` 生成 ImageKey（与 paint 系统一致），
@@ -744,6 +806,15 @@ pub fn render_to_framebuffer_with_base(
     let mut image_cache = build_image_cache(html, base_dir);
     let image_sizes = extract_image_sizes(&mut image_cache, html);
 
+    let linked_css = load_linked_stylesheets(html, base_dir);
+    let combined_css = if css.is_empty() {
+        linked_css
+    } else if linked_css.is_empty() {
+        css.to_string()
+    } else {
+        format!("{linked_css}\n{css}")
+    };
+
     let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
     pipeline.set_skip_indicators(true);
     pipeline.set_image_sizes(image_sizes);
@@ -753,7 +824,7 @@ pub fn render_to_framebuffer_with_base(
     let font_resolver = font_loader.build_font_resolver();
     pipeline.set_font_resolver(font_resolver);
 
-    let result = pipeline.render_html(html, css);
+    let result = pipeline.render_html(html, &combined_css);
 
     let mut glyph_cache = GlyphCache::new(1024);
 
@@ -1114,6 +1185,19 @@ mod tests {
             "Small color diff should match with fuzzy threshold: {}",
             result.message
         );
+    }
+
+    #[test]
+    fn test_extract_stylesheet_hrefs() {
+        let html = r#"
+            <html><head>
+                <link rel="stylesheet" href="/fonts/ahem.css">
+                <link rel='alternate stylesheet' href='theme.css'>
+                <link rel="help" href="spec.html">
+            </head></html>
+        "#;
+        let hrefs = extract_stylesheet_hrefs(html);
+        assert_eq!(hrefs, vec!["/fonts/ahem.css".to_string(), "theme.css".to_string()]);
     }
 
     // ── 分类容差测试 ──

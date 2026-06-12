@@ -752,7 +752,6 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
             }
         })
         .collect();
-
     // 运行 InlineFormattingContext 获取行内布局坐标
     let container_width = root.content_width;
     let is_vertical = matches!(
@@ -1987,6 +1986,23 @@ fn remeasure_text_with_float_exclusions(
             && let Some(dom_id) = box_node.node_id
             && has_inline_content(doc, styles, dom_id)
         {
+            // 收集 inline-block 子元素的 LayoutBox 尺寸
+            let ib_sizes: HashMap<NodeId, (f32, f32)> = box_node
+                .children
+                .iter()
+                .filter(|c| {
+                    c.node_id.is_some_and(|id| {
+                        styles
+                            .get(&id)
+                            .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+                    })
+                })
+                .filter_map(|c| {
+                    let node_id = c.node_id?;
+                    Some((node_id, (c.content_width, c.content_height)))
+                })
+                .collect();
+
             // 重新运行 inline layout with float exclusions
             let container_width = box_node.content_width;
             let is_vertical = matches!(
@@ -1999,7 +2015,8 @@ fn remeasure_text_with_float_exclusions(
                 .with_float_exclusions(exclusions)
                 .with_vertical(is_vertical)
                 .with_vertical_rtl(is_vertical_rtl)
-                .with_text_align(text_align);
+                .with_text_align(text_align)
+                .with_inline_block_sizes(ib_sizes);
             inline_ctx.layout(doc, dom_id, styles);
 
             // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
