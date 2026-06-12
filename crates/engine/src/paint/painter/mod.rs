@@ -60,9 +60,23 @@ fn is_positioned_child(box_node: &LayoutBox) -> bool {
 fn child_paint_sort_key(box_node: &LayoutBox) -> (u8, i32) {
     if is_positioned_child(box_node) {
         if box_node.z_index < 0 {
+            // CSS 2.1 Appendix E step 2: negative z-index painted first
             (0, box_node.z_index)
-        } else {
+        } else if box_node.creates_stacking_context {
+            // CSS 2.1 Appendix E step 6/7: stacking context painted last
             (3, box_node.z_index)
+        } else {
+            // z-index: auto positioned — does NOT create stacking context.
+            // Per CSS 2.1 Appendix E, positioned descendants with z-index: auto
+            // paint in step 6 AFTER normal flow (steps 3-5). However, for
+            // non-stacking-context positioned elements, their positioned descendants
+            // must participate in the PARENT's stacking context, not their own.
+            // To achieve correct tree-order painting for nested positioned elements
+            // (e.g., absolute child inside relative parent), we paint z-index:auto
+            // positioned elements at the same priority as normal flow (step 3 level)
+            // so they interleave in tree order. This is a pragmatic approximation
+            // that fixes stacking order for nested positioned elements.
+            (1, 0)
         }
     } else if matches!(box_node.float, FloatValue::None) {
         (1, 0)

@@ -87,6 +87,11 @@ pub struct LayoutBox {
     /// 仅对 positioned 元素（absolute/relative/fixed/sticky）生效。
     /// 默认为 0，对应 z-index: auto。
     pub z_index: i32,
+    /// 是否创建堆叠上下文（stacking context）。
+    /// CSS 2.1：positioned 元素 + z-index 为整数时创建堆叠上下文。
+    /// z-index: auto 不创建堆叠上下文——其 positioned 后代参与父级堆叠上下文。
+    /// 非 positioned 元素始终为 false。
+    pub creates_stacking_context: bool,
     /// 滚动容器水平滚动偏移（像素，0 表示未滚动）。
     /// 仅当 overflow_x 为 Scroll 时有意义。
     pub scroll_x: f32,
@@ -266,6 +271,7 @@ impl Default for LayoutBox {
             overflow_x: OverflowClip::Visible,
             overflow_y: OverflowClip::Visible,
             z_index: 0,
+            creates_stacking_context: false,
             scroll_x: 0.0,
             scroll_y: 0.0,
             is_flow_root: false,
