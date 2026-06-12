@@ -176,16 +176,19 @@ impl LayoutEngine {
         // 仅对 inline-level relative 元素应用偏移，避免 block-level 元素双重偏移。
         apply_relative_offsets_inline(&mut root_box, styles);
 
-        // 11.5 后处理：修正没有 positioned ancestor 的 absolute 元素，使其相对于初始包含块。
-        adjust_absolute_to_initial_containing_block(
-            &mut root_box,
-            0.0,
-            0.0,
-            self.viewport_width,
-            self.viewport_height,
-            styles,
-            false,
-        );
+        // 11.5 后处理：修正没有 positioned ancestor 的 absolute 元素。
+        // 注意：此功能当前导致多个回归（static-inside-inline-block、background-329、
+        // block-formatting-context-height-003、writing-mode float 等），
+        // 在定位更精确之前暂不启用。
+        // adjust_absolute_to_initial_containing_block(
+        //     &mut root_box,
+        //     0.0,
+        //     0.0,
+        //     self.viewport_width,
+        //     self.viewport_height,
+        //     styles,
+        //     false,
+        // );
 
         // 12. 后处理：为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统直接复用存储的 IFC 结果，避免重新运行 IFC 导致字体度量不一致。
@@ -1548,6 +1551,9 @@ fn adjust_fixed_to_viewport(box_node: &mut LayoutBox, parent_offset_x: f32, pare
 ///
 /// 仅对 `position:absolute` 且路径上不存在 `position != static` 祖先的元素生效。
 /// 这避免 body 的外边距或静态祖先的偏移被重复计入 abs-pos 元素坐标。
+///
+/// 注意：此功能当前导致多个回归，暂不启用。
+#[allow(dead_code)]
 fn adjust_absolute_to_initial_containing_block(
     box_node: &mut LayoutBox,
     current_content_origin_x: f32,
