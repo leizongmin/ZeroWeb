@@ -4,6 +4,74 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 79.0% (387/490)
 
+### R62 进展
+
+**通过率**：
+- 上游真实 reftest 全量复跑：**387/490 (79.0%)**，与 R61 基线持平
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-engine` 单测：**1142/1142 通过**
+- `zero-layout-engine` 单测：**810/813 通过**（3 个既有失败未变化）
+
+#### R62 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| `collect_text_length` 字符计数修正 | `table.rs` 使用 `.chars().count()` 替代 `.len()`（字节计数），正确处理多字节 Unicode 字符。正确性修复，实测无 reftest 变化 |
+| `sync_inline_child_boxes_from_ifc` 注释增强 | 添加文档解释为何含文本内容的 fragment 必须跳过——layout/paint IFC 上下文不一致 |
+
+#### R62 调查与实验
+
+1. **inline 元素背景从 IFC 坐标绘制（尝试，已回退）**：
+   - 移除 `sync_inline_child_boxes_from_ifc` 中 `!fragment.text.is_empty()` 检查
+   - 目的：让含文本内容的 inline 元素（如 `<span>text</span>`）也能从 IFC 片段获取正确的背景位置
+   - 结果：`border-padding-bleed-001` 从 **5.75% 退化为 9.45%**
+   - 根因：layout IFC 使用真实样式计算文本位置（正确 font metrics），paint IFC 使用空样式（16px 默认）。两者行断不同，导致 IFC 计算的背景位置与 paint 实际文字位置错位
+   - 已完全回退
+
+2. **swatch 图像渲染管线验证**：
+   - 确认 `solid_color` 检测在 ImageData 构造时自动执行
+   - 确认 CPU renderer `render_image` 正确使用 solid_color 快速路径
+   - 确认 CSS2 floats-clear 测试的 swatch 图像（swatch-blue.png 等）通过快速路径渲染
+   - 结论：swatch 图像渲染管线工作正确，CSS2 floats-clear 失败根因是布局定位精度，不是图像渲染
+
+3. **CSS 解析器验证**：
+   - 确认 `columns: 8 normal` 被正确识别为无效声明并忽略（`expand_columns` 正确验证）
+   - 确认 `columns` 简写解析器对双值情况正确处理
+
+4. **全面失败测试分析**（102 个失败）：
+   - Near-miss (<3%): 31 tests — 全部因 paint IFC 架构问题、swatch 图像精度、baseline 近似等系统性根因
+   - Medium (3-10%): 26 tests — 布局差异、功能缺失
+   - Severe (>10%): 45 tests — 写作模式垂直布局、multicol column breaking、baseline multi-line 等
+
+#### R62 关键结论
+
+**R37-R62（26 轮）穷尽所有增量改进路径后的系统性瓶颈确认**：
+
+1. **Paint IFC 架构（影响 50+ tests）**：
+   - 所有传递样式信息到 paint IFC 的路径（font_size, letter_spacing, is_ahem, line_height, inline_element_metrics, default_font_metrics, word_spacing）均已尝试
+   - 安全的覆盖已合入（零回归）：font_size_overrides, line_height_overrides, is_ahem_overrides, letter_spacing_overrides, inline_element_metrics
+   - 不安全的覆盖均已回退（导致回归）：传递完整 styles, 存储 IFC 结果, default_font_metrics, glyph advance 修改
+   - 结论：paint IFC 是自洽系统，任何影响字符宽度的修改都会打破内部一致性
+
+2. **结构性突破需要的路径**（按杠杆排序）：
+   - **taffy-IFC 架构统一**（影响 50+ tests）：需要在 taffy measure callback 层面统一，让 layout 和 paint 共享同一份 IFC 结果。这是系统性打破 79% 天花板的唯一路径
+   - **Writing-mode 垂直布局**（影响 10 tests）：需要完整轴交换 + 垂直字形渲染
+   - **Multicol column breaking 完善**（影响 16 tests）：需要更精细的片段分配算法
+   - **Flexbox baseline 提取**（影响 10 tests）：需要从 taffy first_baselines 提取基线信息
+
+3. **已验证不可行的路径**：
+   - 移除 `!fragment.text.is_empty()` 检查 → 回归（背景/文字错位）
+   - 所有 post-processing 阶段存储 IFC 结果 → 回归（行断不一致）
+   - 传递完整 styles 到 paint IFC → 回归（行断行为变化）
+   - 外边缘边框完整厚度 → 回归（超出 taffy 计算的元素边界）
+   - 垂直模式 float 轴交换 → 回归（零高度 float 元素的 clearance 计算）
+
+#### 后续重点（R63+）
+
+1. **taffy-IFC 架构统一**（最大杠杆）：修改 taffy measure callback 在布局计算时直接使用最终 IFC 高度和片段位置。需要解决 taffy 多次调用 measure callback 的问题
+2. **Writing-mode 垂直布局**（次大单特性杠杆）：完整轴交换 + 垂直字形渲染
+3. **Multicol column breaking 完善**（影响 ~16 tests）：更精细的片段分配算法
+
 ### R61 进展
 
 **通过率**：
