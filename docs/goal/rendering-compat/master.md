@@ -4,6 +4,22 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
 **上游真实 reftest 通过率**: 80.2% (393/490) R71 基线确认
 
+### 当前阶段结论
+
+- **393/490 (80.2%) 已确认是当前实现的阶段性天花板**：R37-R71 共 35 轮增量尝试后，R70/R71 连续确认零净提升、零回归。
+- **当前进展处于阻塞态**：所有局部修补、参数微调、paint/layout 局部兜底路径已穷尽；继续做增量修复预期收益接近 0。
+- **后续提升只能依赖专项架构改造**，三条候选主路径：
+  1. **taffy-IFC 架构统一**：影响 50+ 测试，需要重设计 layout/paint 之间的 IFC 数据流。
+  2. **multicol inline 内容跨列拆分**：影响 16+ 测试，需要 IFC 片段级列分配与 fragmentation。
+  3. **writing-mode 垂直布局完整实现**：影响 10+ 测试，需要完整轴交换与垂直字形渲染/定位收口。
+- **R71 的 margin override 基础设施已就位且零回归**：虽然未直接提升当前通过率，但已为未来的 taffy-IFC 统一保留可扩展承载点。
+
+### 下一阶段执行依据
+
+- 专项实施 Spec：[`post-r71-architecture-spec.md`](./post-r71-architecture-spec.md)
+- **下一阶段不再继续增量试错**，而是严格按照该 Spec 进入 Post-R71 架构改造周期。
+- 之后将交由新的 agent 以本 `master.md` 为入口继续推进，并以该 Spec 作为唯一实施依据。
+
 ### R71 进展
 
 **当前状态**：
@@ -1968,7 +1984,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成 | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：全部 13 种图元管线 ✅ + 48 个单元测试 ✅；浏览器消费：全部 13 种图元 ✅；浏览器 GPU 路径集成 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | 🔧 进行中 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；**真实通过率 74.3% (364/490)**；css-text-decor 100.0% ✅；css-fonts 100.0% ✅(≥95%)；css-grid 85.0%；css-writing-modes 76.3%；css-tables 72.7%；CSS2 69.0%；css-flexbox 63.6%；css-position 62.5%；css-multicol 50.9%；**R24 修复**：multicol column count 伪算法 min() 修正（CSS §3.4 line 18）+ 子元素宽度约束递归更新；**R23 修复**：table cell content height sum 替代 max；**R22 修复**：clearance 零值阻止 margin 折叠（CSS 2.1 §9.5.2 三路分支：正 clearance/零 clearance/无需 clearance）；**R21 修复**：font 简写负 line-height 拒绝 ✅；background-position 简写双值捕获修复 ✅ |
+| M10 — 上游 WPT 真实 Reftest 导入 | ⏸ 阶段性封顶 | 基础设施 ✅；490 个上游 reftest 已导入（9 个目录）；当前稳定基线 **393/490 (80.2%)**（R71 确认）；内联 reftest **685/685 (100%)**；R37-R71 共 35 轮已穷尽所有增量改进路径；后续提升需进入专项架构改造周期：**(1) taffy-IFC 架构统一**、**(2) multicol inline 内容跨列拆分**、**(3) writing-mode 垂直布局完整实现**；执行依据：[`post-r71-architecture-spec.md`](./post-r71-architecture-spec.md)；R71 已完成 **margin override** 基础设施铺设，且 **零回归** |
 
 ## 当前状态概览
 
@@ -2399,13 +2415,13 @@
 
 | 缺口 | 影响范围 | 优先级 | 里程碑 |
 |------|----------|--------|--------|
-| **Paint IFC / taffy-IFC 架构分裂** | **~50 个失败测试（51% 剩余失败）** | **P0-致命** | **R69+** |
+| **Paint IFC / taffy-IFC 架构分裂** | **~50 个失败测试（51% 剩余失败）** | **P0-致命 / 需专项架构改造** | **Post-R71 专项规划** |
 | Float 布局算法 | CSS 2.1 核心 | ✅ 已完成 | M4 |
 | Table 布局算法 | 表格渲染 | ✅ 已完成 | M4 |
 | Multi-column 布局算法 | 多列布局 | ✅ 已完成 | M4 |
 | OpenType shaping | 文字排版质量 | ✅ 已完成 | M6 |
 | BiDi 算法 | RTL 文本 | ✅ 已完成 | M6 |
-| Vertical writing-mode | 竖排文本 | M5 | M5 |
+| Vertical writing-mode | 竖排文本 | M5 能力已落地，完整垂直布局仍缺 | Post-R71 专项规划 |
 | CJK normal-mode 换行 | CJK 排版 | ✅ 已完成 | M5 |
 | text-align: justify | 文字排版 | ✅ 已完成 | M5 |
 | Float exclusion 堆叠 | 布局正确性 | ✅ 已完成 | M5 |
@@ -2414,8 +2430,8 @@
 | CPU 渲染器图元覆盖 | 视觉输出 | ✅ 已完成 | M7 |
 | 浏览器图元消费 | 视觉输出 | ✅ 已完成 | M7 |
 | GPU 渲染器图元覆盖 | GPU 视觉输出 | ✅ 管线已实现 | M7 |
-| Multicol column breaking | css-multicol ~22 测试 (61.4%→需+18) | P1 | R69+ |
-| Writing-mode 垂直布局 | css-writing-modes ~10 测试 (83.1%→需+7) | P1 | R69+ |
+| Multicol column breaking | css-multicol ~22 测试 (61.4%→需+18) | P1 / 需专项架构改造 | Post-R71 专项规划 |
+| Writing-mode 垂直布局 | css-writing-modes ~10 测试 (83.1%→需+7) | P1 / 需专项架构改造 | Post-R71 专项规划 |
 | Inline-box 模型 | CSS2 linebox ~8 测试 | P1 | R69+ |
 | 外部 stylesheet 加载 | 真实静态网页 CSS | P1 | M10/R38 |
 | 图片子资源/ImageCache 贯通 | Logo/图片密集静态页 | P1 | M10/R38 |
