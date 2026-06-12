@@ -22,6 +22,24 @@ use zero_render_foundation::surface::FrameBuffer;
 
 use crate::manifest::FuzzyMeta;
 
+/// 将 FrameBuffer 保存为 PNG 文件（用于失败诊断）。
+fn save_fb_as_png(fb: &FrameBuffer, path: &Path) {
+    use std::io::BufWriter;
+    let Ok(file) = std::fs::File::create(path) else {
+        return;
+    };
+    let w = BufWriter::new(file);
+    let mut encoder = png::Encoder::new(w, fb.width, fb.height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let Ok(mut writer) = encoder.write_header() else {
+        return;
+    };
+    // FrameBuffer data is RGBA
+    let _ = writer.write_image_data(&fb.data);
+    let _ = writer.finish();
+}
+
 /// Reftest 分类 — 用于确定默认容差级别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReftestCategory {
@@ -268,6 +286,15 @@ pub fn run_reftest_with_base(case: &ReftestCase, config: &ReftestConfig, base_di
             diff_ratio * 100.0
         )
     };
+
+    // 失败时，如果设置了 REFTEST_DUMP 环境变量，保存 PNG 用于诊断
+    if !passed && std::env::var("REFTEST_DUMP").is_ok() {
+        let dump_dir = std::path::Path::new("target/reftest-dump");
+        let _ = std::fs::create_dir_all(dump_dir);
+        let safe_id = case.id.replace(['/', '\\', '.'], "_");
+        save_fb_as_png(&test_fb, &dump_dir.join(format!("{}-test.png", safe_id)));
+        save_fb_as_png(&ref_fb, &dump_dir.join(format!("{}-ref.png", safe_id)));
+    }
 
     ReftestResult {
         id: case.id.clone(),

@@ -913,6 +913,26 @@ impl InlineFormattingContext {
                                 }
                             }
                             // CSS 属性仍不足时（如 width:100% 是百分比，resolve 返回 0），
+                            // 尝试从 CSS 百分比值 + 容器尺寸解析。
+                            if w <= 0.0 || h <= 0.0 {
+                                if let Some(s) = styles.get(&child_id) {
+                                    if w <= 0.0 {
+                                        if let LengthValue::Percentage(pct) = &s.width {
+                                            let resolved = (*pct as f32 / 100.0) * self.container_width;
+                                            if resolved > 0.0 {
+                                                w = resolved;
+                                            }
+                                        }
+                                    }
+                                    if h <= 0.0 {
+                                        if let LengthValue::Percentage(pct) = &s.height {
+                                            // 百分比高度相对于包含块高度；
+                                            // measure callback 上下文中暂用 0（无法解析）。
+                                            let _ = pct;
+                                        }
+                                    }
+                                }
+                            }
                             // 回退到 LayoutBox 预计算尺寸（由 taffy 从 CSS 百分比 + 固有尺寸计算）。
                             if w <= 0.0 || h <= 0.0 {
                                 if let Some(&(lw, lh)) = self.inline_block_sizes.get(&child_id) {
