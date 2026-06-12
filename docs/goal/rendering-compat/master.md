@@ -2,11 +2,11 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 80.2% (393/490) R71 基线确认
+**上游真实 reftest 通过率**: 80.2% (393/490) R72 基线确认
 
 ### 当前阶段结论
 
-- **393/490 (80.2%) 已确认是当前实现的阶段性天花板**：R37-R71 共 35 轮增量尝试后，R70/R71 连续确认零净提升、零回归。
+- **393/490 (80.2%) 已确认是当前实现的阶段性天花板**：R37-R72 共 36 轮增量尝试后，R70-R72 连续确认零净提升、零回归。
 - **当前进展处于阻塞态**：所有局部修补、参数微调、paint/layout 局部兜底路径已穷尽；继续做增量修复预期收益接近 0。
 - **后续提升只能依赖专项架构改造**，三条候选主路径：
   1. **taffy-IFC 架构统一**：影响 50+ 测试，需要重设计 layout/paint 之间的 IFC 数据流。
@@ -19,6 +19,55 @@
 - 专项实施 Spec：[`post-r71-architecture-spec.md`](./post-r71-architecture-spec.md)
 - **下一阶段不再继续增量试错**，而是严格按照该 Spec 进入 Post-R71 架构改造周期。
 - 之后将交由新的 agent 以本 `master.md` 为入口继续推进，并以该 Spec 作为唯一实施依据。
+
+### R72 进展
+
+**当前状态**：
+- 全量上游 reftest：**393/490 (80.2%)**，与 R71 基线持平（零回归）
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-engine` 单测：**1142/1142 通过**
+- `zero-layout-engine` 单测：**819/819 通过**
+- clippy：**零警告**
+
+#### R72 Phase A 实验记录
+
+按照 `post-r71-architecture-spec.md` 阶段 A（Final Inline Layout Pass），进行了系统性实验：
+
+**实验 1：启用 `compute_final_inline_layouts`**
+- 结果：393→389（-4 回归），与 R69 结论一致
+- 回归：block-formatting-contexts-004, font-feature-resolution-002, position-absolute-in-inline-005/006
+- 改善：float-003（1.22%→0.00%）
+
+**实验 2：paint-IFC 传递真实 styles**
+- 将 `ctx.layout(doc, node_id, &HashMap::new())` 改为 `ctx.layout(doc, node_id, styles_map)`
+- 结果：393→389（-4 回归），与实验 1 完全一致
+- 关键发现：回归来自真实 styles 改变 IFC 行断行为，不是存储路径本身的问题
+
+**实验 3：两者同时启用**
+- `compute_final_inline_layouts` + 真实 styles paint-IFC
+- 结果：389/490，与单独使用真实 styles 完全一致
+
+**R72 关键结论**：
+1. **paint-IFC 使用真实 styles 会产生净 -5 的通过率变化**（4 回归 1 改善）
+2. **`compute_final_inline_layouts` 本身不产生额外影响** — 两种路径（stored vs paint-IFC with real styles）产生相同结果
+3. **Phase A 简单启用方案不可行**：真实 styles 改变行断行为导致 4 个测试回归
+4. **Phase A 需要更精细的实现**：
+   - 不能简单地将所有容器切换到真实 styles
+   - 需要逐容器判断哪些需要真实 styles（改善）、哪些需要保持空 styles + overrides（避免回归）
+   - 或者需要同时修复 4 个回归的根因
+
+#### R72 失败分类（97 个失败，按 diff 比例分布）
+
+| 范围 | 数量 | 说明 |
+|------|------|------|
+| 1.00%-2.00% | 21 | 近 miss，可能通过精度修正通过 |
+| 2.00%-5.00% | 23 | 中等差异，需要特定修复 |
+| 5.00%-10.00% | 22 | 较大差异，需要功能改进 |
+| >10% | 31 | 严重差异，需要系统性改造 |
+
+#### R72 系统性瓶颈确认
+
+与 R71 一致，所有增量改进路径已穷尽（R37-R72 共 36 轮尝试）。
 
 ### R71 进展
 
