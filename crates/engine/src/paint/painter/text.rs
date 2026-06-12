@@ -827,45 +827,35 @@ impl super::Painter {
             let inline_ctx = if use_stored {
                 InlineFormattingContext::new(ifc_width)
             } else {
-                // 将 layout IFC 存储的 text_node_id → font_size 映射
-                // 转换为 parent_element_id → font_size，供 paint IFC 使用。
-                // font_size_overrides 机制按父元素 ID 查找（因为文本节点没有自己的样式），
-                // 而 text_node_font_sizes 按文本节点 ID 存储（IFC 片段的 node_id）。
+                // R72: 恢复 override maps 机制。
+                // 传递真实 styles 会导致 4 个测试回归（BFC-004, font-feature-002,
+                // position-absolute-in-inline-005/006），虽然修复了 float-003。
+                // override maps 方式是经过 R37-R71 验证的安全路径。
                 let parent_font_sizes: HashMap<zero_dom::NodeId, f32> = box_node
                     .text_node_font_sizes
                     .iter()
                     .filter_map(|(&text_node_id, &fs)| doc.parent_node(text_node_id).map(|pid| (pid, fs)))
                     .collect();
 
-                // 同样转换 Ahem 字体标志：text_node_id → parent_element_id
                 let parent_is_ahem: HashMap<zero_dom::NodeId, bool> = box_node
                     .text_node_is_ahem
                     .iter()
                     .filter_map(|(&text_node_id, &is_ahem)| doc.parent_node(text_node_id).map(|pid| (pid, is_ahem)))
                     .collect();
 
-                // 转换 letter-spacing：text_node_id → parent_element_id
                 let parent_letter_spacing: HashMap<zero_dom::NodeId, f32> = box_node
                     .text_node_letter_spacing
                     .iter()
                     .filter_map(|(&text_node_id, &ls)| doc.parent_node(text_node_id).map(|pid| (pid, ls)))
                     .collect();
 
-                // 转换 line-height：text_node_id → parent_element_id
-                // line-height 仅影响行盒高度（垂直定位），不影响行断（水平宽度），传递是安全的。
                 let parent_line_heights: HashMap<zero_dom::NodeId, f32> = box_node
                     .text_node_line_heights
                     .iter()
                     .filter_map(|(&text_node_id, &lh)| doc.parent_node(text_node_id).map(|pid| (pid, lh)))
                     .collect();
 
-                // 内联元素 (font_size, line_height) 覆盖：直接使用元素 NodeId 为键。
-                // 与 font_size_overrides 不同（需要 text_node_id → parent_element_id 转换），
-                // 此映射直接以元素 NodeId 为键，供 inline element 路径使用。
                 let inline_metrics = box_node.inline_element_metrics.clone();
-
-                // 内联元素 (margin_left, margin_right) 覆盖：直接使用元素 NodeId 为键。
-                // margin 不影响行断（仅影响水平偏移），传递到 paint IFC 是安全的。
                 let margin_overrides = box_node.inline_element_margins.clone();
 
                 let mut ctx = InlineFormattingContext::new(ifc_width)
@@ -1128,10 +1118,6 @@ impl super::Painter {
                             // 如果无存储值，回退到 16px 默认值（保持原有行为）。
                             let stored_fs = box_node.text_node_font_sizes.get(&fragment.node_id).copied();
                             let baseline_fs = stored_fs.unwrap_or(fragment.font_size);
-                            // R63: 使用 fragment.is_ahem（由 is_ahem_overrides 设置），
-                            // 使字符推进宽度与 paint IFC 的行断计算一致。
-                            // R44 曾尝试但被回退（当时 paint IFC 无 is_ahem_overrides），
-                            // R51 添加 is_ahem_overrides 后此修复安全。
                             render_fragment!(
                                 fragment.x,
                                 fragment.y,
