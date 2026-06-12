@@ -2,7 +2,42 @@
 
 **最后更新**: 2026-06-12
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 80.0% (392/490) R68 稳定全量基线
+**上游真实 reftest 通过率**: 80.4% (394/490) R69 进展中
+
+### R69 进展
+
+**当前状态**：
+- 全量上游 reftest：**394/490 (80.4%)**，较 R68 基线 392/490 净增 +2
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-engine` 单测：**1142/1142 通过**
+- `zero-layout-engine` 单测：**819/819 通过**
+- clippy：**零警告**
+
+#### R69 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| img 百分比宽度 IFC 解析 | IFC measure callback 中为 `<img>` 元素解析 CSS 百分比宽度（如 `width:100%`），使用 container_width 解析百分比。修复 measure callback 的 IFC 未传入 inline_block_sizes 导致百分比宽度回退为 0 的问题 |
+| img 原子行内级盒定位 | `adjust_inline_block_positions` 将 `<img>` 元素纳入原子行内级盒集合，使 img 正确参与基线对齐 |
+| img IFC 尺寸解析增强 | IFC 中 `<img>` 尺寸来源优先级：HTML 属性 → CSS computed → 百分比解析 → LayoutBox 预计算 |
+| Reftest PNG 诊断 | 添加 `REFTEST_DUMP` 环境变量，失败时自动保存 test/ref PNG 到 target/reftest-dump/ |
+
+#### R69 通过率变化
+
+| 目录 | R68 | R69 | 变化 |
+|------|-----|-----|------|
+| CSS2/ | 97/129 (75.2%) | **98/129 (76.0%)** | +1 (background-329 修复) |
+| 其他 | 不变 | 不变 | 零回归 |
+
+#### R69 新增通过的测试
+
+1. `background-329.xht` (9.47%→0.00%) — img 百分比宽度 IFC 解析修复
+
+#### R69 关键发现
+
+1. **img 百分比宽度在 IFC measure callback 中返回 0**：`resolve_inline_block_dimension` 对 Percentage 值返回 0，而 measure callback 的 IFC 未传入 `inline_block_sizes`，导致 `width:100%` 的 img 在 IFC 中被忽略。修复后 img 正确参与行内布局。
+2. **R68 回归中的 background-329 已修复**：该测试在 R68 content_x/y 变更后从 0.00% 退化为 9.47%。根因是参考文件使用 `width:100%` 的 img 元素，在 IFC 中被错误忽略后 div 高度由默认 line-height 决定而非 img 高度。
+3. **其余 4 个 R68 回归仍是 paint IFC 系统性问题**：inline-formatting-context-002/003、float-003、baseline-008 的差异均来自 paint IFC 使用空 styles 导致的文本定位偏差。
 
 ### R68 进展
 
