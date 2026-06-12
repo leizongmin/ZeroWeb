@@ -195,6 +195,11 @@ impl LayoutEngine {
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
         compute_final_inline_layouts(&mut root_box, doc, styles);
 
+        // 12.5 后处理：修正 calc(P% ± Npx) 尺寸。
+        // taffy 不支持 calc 表达式，convert 层将 calc(100% - 6px) 近似为 Percent(1.0)。
+        // 此步骤根据实际百分比计算值和 px 偏移量修正最终尺寸。
+        apply_calc_size_adjustments(&mut root_box, styles);
+
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
             taffy: taffy_tree,
@@ -638,11 +643,16 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
     }
 
     // 收集原子行内级子元素（inline-block / inline-flex / inline-grid / inline-table / img）的索引
+    // 注意：绝对定位和 fixed 元素脱离正常流，不应由 IFC 重新定位
     let ib_indices: Vec<usize> = root
         .children
         .iter()
         .enumerate()
         .filter(|(_, child)| {
+            // 绝对定位和 fixed 元素脱离正常流，不参与 IFC 布局
+            if child.is_absolute || child.is_fixed {
+                return false;
+            }
             child.node_id.is_some_and(|id| {
                 // <img> 替换元素始终作为原子行内级盒参与 IFC
                 if let Some(node_data) = doc.get(id) {
@@ -1181,6 +1191,91 @@ fn apply_relative_offsets_inline(root: &mut LayoutBox, styles: &HashMap<NodeId, 
 
 /// Final Inline Layout Pass（Phase A）。
 ///
+/// 后处理：修正 `calc(P% ± Npx)` 计算的尺寸。
+///
+/// taffy 不支持 calc 表达式。converter 将 `calc(100% - 6px)` 近似为 `Percent(1.0)`，
+/// taffy 按百分比计算出正确的基准尺寸，但缺少 px 偏移量的修正。
+/// 此函数遍历布局树，对使用了 calc 的 width/height 属性施加 px 偏移量修正。
+fn apply_calc_size_adjustments(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    for child in &mut root.children {
+        apply_calc_size_adjustments(child, styles);
+    }
+
+    let Some(node_id) = root.node_id else { return };
+    let Some(style) = styles.get(&node_id) else { return };
+
+    // 检查 width 是否为 calc(P% ± Npx) 模式
+    if let LengthValue::Calc(expr) = &style.width {
+        if let Some((pct, px_offset)) = extract_calc_percentage_and_offset(expr) {
+            let base_width = pct / 100.0 * root.width as f64;
+            let adjusted = (base_width + px_offset).max(0.0) as f32;
+            if (adjusted - root.width).abs() > 0.01 {
+                let diff = adjusted - root.width;
+                root.width = adjusted;
+                root.content_width = (root.content_width + diff).max(0.0);
+            }
+        }
+    }
+
+    // 检查 height 是否为 calc(P% ± Npx) 模式
+    if let LengthValue::Calc(expr) = &style.height {
+        if let Some((pct, px_offset)) = extract_calc_percentage_and_offset(expr) {
+            let base_height = pct / 100.0 * root.height as f64;
+            let adjusted = (base_height + px_offset).max(0.0) as f32;
+            if (adjusted - root.height).abs() > 0.01 {
+                let diff = adjusted - root.height;
+                root.height = adjusted;
+                root.content_height = (root.content_height + diff).max(0.0);
+            }
+        }
+    }
+}
+
+/// 从 calc 表达式中提取百分比和 px 偏移量。
+///
+/// 对于 `calc(100% - 6px)`，返回 `Some((100.0, -6.0))`。
+/// 对于 `calc(50% + 10px)`，返回 `Some((50.0, 10.0))`。
+/// 仅支持 `P% ± Npx` 和纯 `P%` 模式。
+fn extract_calc_percentage_and_offset(expr: &zero_css_parser::values::CalcExpr) -> Option<(f64, f64)> {
+    use zero_css_parser::values::{CalcExpr, CalcOp, LengthValue};
+    match expr {
+        CalcExpr::Length(LengthValue::Percentage(pct)) => Some((*pct, 0.0)),
+        CalcExpr::BinaryOp(left, op, right) => {
+            let left_pct = match left.as_ref() {
+                CalcExpr::Length(LengthValue::Percentage(pct)) => Some(*pct),
+                _ => None,
+            };
+            let left_px = match left.as_ref() {
+                CalcExpr::Length(LengthValue::Px(v)) => Some(*v),
+                _ => None,
+            };
+            let right_pct = match right.as_ref() {
+                CalcExpr::Length(LengthValue::Percentage(pct)) => Some(*pct),
+                _ => None,
+            };
+            let right_px = match right.as_ref() {
+                CalcExpr::Length(LengthValue::Px(v)) => Some(*v),
+                _ => None,
+            };
+
+            match (op, left_pct, left_px, right_pct, right_px) {
+                // P% - Npx
+                (CalcOp::Subtract, Some(pct), _, None, Some(px)) => Some((pct, -px)),
+                // P% + Npx
+                (CalcOp::Add, Some(pct), _, None, Some(px)) => Some((pct, px)),
+                // Npx - P% (unusual but valid)
+                (CalcOp::Subtract, None, Some(_px), Some(_pct), _) => None,
+                // Npx + P%
+                (CalcOp::Add, None, Some(px), Some(pct), _) => Some((pct, px)),
+                // P% - P% (not handled)
+                (CalcOp::Subtract, Some(_), _, Some(_), _) => None,
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 /// 为含有直接文本子节点的容器计算最终行内布局并存储 IFC 片段结果。
 /// paint 系统消费这些结果渲染文字，不再重跑 IFC。
 ///

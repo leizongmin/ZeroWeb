@@ -1626,3 +1626,87 @@ fn test_inline_block_with_percentage_width() {
         container_box.content_x
     );
 }
+
+/// 测试 inline-block 容器内的绝对定位元素拉伸（模拟 semi-replaced stretch 场景）。
+///
+/// 对应 WPT 测试 position-absolute-semi-replaced-stretch-input.html：
+/// - inline-block + relative 容器，带 3px border
+/// - absolute 子元素（如 input），box-sizing: border-box，四方向 inset=3px
+/// - width/height: auto → 应由 inset 拉伸填满容器 padding box
+#[test]
+fn test_absolute_stretch_in_inline_block_container() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let abs_el = doc.create_element("input");
+    doc.append_child(container, abs_el).unwrap();
+
+    let mut styles = HashMap::new();
+
+    // inline-block + relative 容器：150x100，border 3px
+    let mut container_style = ComputedStyle::default();
+    container_style.display = DisplayValue::InlineBlock;
+    container_style.position = PositionValue::Relative;
+    container_style.width = LengthValue::Px(150.0);
+    container_style.height = LengthValue::Px(100.0);
+    container_style.border_top_width = LengthValue::Px(3.0);
+    container_style.border_right_width = LengthValue::Px(3.0);
+    container_style.border_bottom_width = LengthValue::Px(3.0);
+    container_style.border_left_width = LengthValue::Px(3.0);
+    styles.insert(container, container_style);
+
+    // absolute 子元素：box-sizing: border-box，四方向 3px，auto 尺寸
+    let mut abs_style = ComputedStyle::default();
+    abs_style.display = DisplayValue::InlineBlock;
+    abs_style.position = PositionValue::Absolute;
+    abs_style.box_sizing = zero_css_parser::values::BoxSizingValue::BorderBox;
+    abs_style.top = LengthValue::Px(3.0);
+    abs_style.right = LengthValue::Px(3.0);
+    abs_style.bottom = LengthValue::Px(3.0);
+    abs_style.left = LengthValue::Px(3.0);
+    abs_style.width = LengthValue::Auto;
+    abs_style.height = LengthValue::Auto;
+    abs_style.margin_top = LengthValue::Px(0.0);
+    abs_style.margin_right = LengthValue::Px(0.0);
+    abs_style.margin_bottom = LengthValue::Px(0.0);
+    abs_style.margin_left = LengthValue::Px(0.0);
+    styles.insert(abs_el, abs_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let abs_box = find_child_by_node_id(&result.root, abs_el).expect("absolute 子元素应找到");
+    assert!(abs_box.is_absolute, "应标记为 absolute");
+
+    // 容器信息
+    let container_box = find_child_by_node_id(&result.root, container).expect("container 应找到");
+
+    // 位置应包含容器 border 偏移 + inset 偏移：
+    // taffy location = left(3) + margin_left(0) + area_offset(border_left=3) = 6
+    assert!(
+        (abs_box.x - 6.0).abs() < 1.0,
+        "absolute x 应约 6（border 3 + inset 3），实际 {}",
+        abs_box.x
+    );
+    assert!(
+        (abs_box.y - 6.0).abs() < 1.0,
+        "absolute y 应约 6（border 3 + inset 3），实际 {}",
+        abs_box.y
+    );
+
+    // 预期宽度 = container_content_w - left(3) - right(3) = 150 - 6 = 144
+    // 预期高度 = container_content_h - top(3) - bottom(3) = 100 - 6 = 94
+    assert!(
+        (abs_box.width - 144.0).abs() < 2.0,
+        "absolute 宽度应约 144px（拉伸填满），实际 {}",
+        abs_box.width
+    );
+    assert!(
+        (abs_box.height - 94.0).abs() < 2.0,
+        "absolute 高度应约 94px（拉伸填满），实际 {}",
+        abs_box.height
+    );
+
+    // 确保 adjust_inline_block_positions 不会覆盖绝对定位元素的位置
+    let _ = container_box;
+}
