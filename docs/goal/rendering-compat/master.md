@@ -2,7 +2,66 @@
 
 **最后更新**: 2026-06-12
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升
-**上游真实 reftest 通过率**: 80.4% (394/490) R69 进展中
+**上游真实 reftest 通过率**: 80.2% (393/490) R70 分析中
+
+### R70 上游 reftest 全面分析
+
+**当前状态**：
+- 全量上游 reftest：**393/490 (80.2%)**，与 R69 基线持平
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-engine` 单测：**1142/1142 通过**
+- `zero-layout-engine` 单测：**819/819 通过**
+- clippy：**零警告**
+
+#### R70 失败分类（97 个失败，按 diff 比例分布）
+
+**阈值**: 所有上游 reftest 使用 1.00%/5ch 阈值（布局类严格，文字类同样严格）
+
+**按 diff 范围**：
+| 范围 | 数量 | 代表测试 |
+|------|------|----------|
+| 1.00%-2.00% | 19 | clear-applies-to-009 (1.02%), inline-formatting-context-003 (1.05%), float-003 (1.22%) |
+| 2.00%-5.00% | 20 | border-001 (2.77%), multicol-clip-001 (3.13%), clear-inline-001 (5.94%) |
+| 5.00%-15.00% | 21 | background-090 (8.12%), float-006 (7.47%), subpixel-table-cell-width (9.77%) |
+| 15.00%+ | 37 | empty-inline-002 (29.32%), flexbox-baseline-multi-line (48%), position-fixed-overflow (75%) |
+
+**按目录分类**：
+| 目录 | 通过/总数 | 通过率 | 失败数 |
+|------|-----------|--------|--------|
+| CSS2/ | 98/129 | 76.0% | 31 |
+| css-flexbox/ | 37/55 | 67.3% | 18 |
+| css-multicol/ | 35/57 | 61.4% | 22 |
+| css-writing-modes/ | 49/59 | 83.1% | 10 |
+| css-tables/ | 46/55 | 83.6% | 9 |
+| css-position/ | 12/16 | 75.0% | 4 |
+| css-grid/ | 17/20 | 85.0% | 3 |
+| css-fonts/ | 60/60 | 100% | 0 |
+| css-text-decor/ | 39/39 | 100% | 0 |
+
+#### R70 失败根因分类
+
+| 根因 | 影响测试数 | 说明 |
+|------|------------|------|
+| Paint IFC 空样式 | ~9 | inline-formatting-context-002/003/008/009/011, inline-box-001/002, baseline-008, border-padding-bleed-001 |
+| Float/Clear 定位 | ~11 | clear-applies-to-001/009, clear-clearance-calculation-004/005, clear-float-003, clear-inline-001, float-003/005/006, float-non-replaced-height-001 |
+| 背景图渲染/定位 | ~4 | background-043, 090, 130, attachment-applies-to-001 |
+| Flexbox gap/baseline/collapse | ~18 | gap 测试、baseline 对齐、visibility:collapse |
+| Multicol 布局 | ~22 | 列分布、breaking、fill、containing block |
+| 表格边框/布局 | ~9 | border-conflict-resolution, whitespace, anonymous fixup |
+| Writing-mode | ~10 | 正交 float、clearance、box-offsets |
+| 其他 | ~14 | position, border, color, font, block-in-inline |
+
+#### R70 实验记录
+
+1. **Border collapse 外边减半修复**：尝试在 paint 阶段区分外边缘/内边缘，对外边缘不减半。结果：+2 回归（row-group-margin-border-padding, row-group-order），根因是布局阶段已按全减半计算 cell 位置。结论：当前全减半策略与布局阶段一致，paint 不能单独改。
+2. **Inline margin override 传递**：尝试在 LayoutBox 上存储 inline 元素的 margin-left/margin-right，传递给 paint IFC。结果：零改善，因为 paint IFC 的 text positioning 差异主要来自 font size/baseline 而非 margin。
+
+#### R70 关键结论
+
+1. **近半数失败测试 diff < 5%**：39/97 测试 diff 在 1-5%，理论上微小的定位修正就能修复大量测试
+2. **Paint IFC 是最大系统性问题**：影响约 9 个测试，但修复需要存储完整 IFC 结果（历史实验均导致回归）
+3. **最高收益目标**：Multicol (22 failures, 61.4%) 和 Flexbox (18 failures, 67.3%) 两个类别合计占 41% 的失败
+4. **阈值极严**：1.00% 阈值意味着约 4800 像素就判定失败，对精确度要求极高
 
 ### R69 进展
 
