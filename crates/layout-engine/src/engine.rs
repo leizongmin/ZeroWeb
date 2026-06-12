@@ -1261,12 +1261,10 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
                 .runs
                 .iter()
                 .map(|frag| {
-                    // 检测 Ahem 字体
-                    let is_ahem = root.node_id.is_some_and(|id| {
-                        styles_ref
-                            .get(&id)
-                            .is_some_and(|s| s.font_family.contains(&"Ahem".to_string()))
-                    });
+                    // R63: 使用每个片段的 is_ahem（由 layout IFC 使用真实样式计算），
+                    // 而非从容器节点推断。之前版本从容器 font_family 推断导致
+                    // 同容器内不同字体的片段 is_ahem 标记错误。
+                    let is_ahem = frag.is_ahem;
                     InlineLayoutFragment {
                         x: frag.x,
                         y: frag.y,
