@@ -1371,7 +1371,28 @@ fn measure_text_content(
     }
 
     if !has_inline_content(doc, styles, dom_id) {
-        return Size::ZERO;
+        // 无行内内容的叶节点（如空的 flex/grid 子元素）：
+        // 尺寸来自 known_dimensions（taffy 已知的尺寸），
+        // 回退到 CSS computed style 的显式 width/height。
+        // 注意：taffy flexbox 在 measure callback 中会将主轴 known_dimensions 设为 None
+        // （因为主轴尺寸由 flex 布局控制），所以需要从 computed style 获取。
+        let style = styles.get(&dom_id);
+        let explicit_w = known_dimensions.width.or_else(|| {
+            style.and_then(|s| match &s.width {
+                LengthValue::Px(v) => Some(*v as f32),
+                _ => None,
+            })
+        });
+        let explicit_h = known_dimensions.height.or_else(|| {
+            style.and_then(|s| match &s.height {
+                LengthValue::Px(v) => Some(*v as f32),
+                _ => None,
+            })
+        });
+        return Size {
+            width: explicit_w.unwrap_or(0.0),
+            height: explicit_h.unwrap_or(0.0),
+        };
     }
 
     let width = known_dimensions
@@ -2002,6 +2023,27 @@ fn remeasure_text_with_float_exclusions(
 /// 典型场景：`<div><span style="line-height:5"></span></div>`
 /// 空 span 的 line-height 应贡献到行盒高度，但 taffy 无法处理此情况。
 fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
+    // flex/grid/table 容器不走 IFC 重算——它们的子元素是 flex/grid item 或 table cell，
+    // 尺寸由 taffy 或 table layout 决定，不应被 IFC 片段覆盖。
+    let is_layout_container = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+        matches!(
+            s.display,
+            DisplayValue::Flex
+                | DisplayValue::InlineFlex
+                | DisplayValue::Grid
+                | DisplayValue::InlineGrid
+                | DisplayValue::Table
+                | DisplayValue::InlineTable
+        )
+    });
+    if is_layout_container {
+        // 仍然递归处理子容器
+        for child in &mut box_node.children {
+            remeasure_inline_only_containers(child, doc, styles);
+        }
+        return;
+    }
+
     // 检查此容器是否有 inline-level 子元素（is_block_level == false）
     // 且不包含 float 子元素（float 容器由 remeasure_text_with_float_exclusions 处理）
     let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
