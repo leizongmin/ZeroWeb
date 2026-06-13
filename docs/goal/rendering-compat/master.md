@@ -2,9 +2,55 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 82.0% (401-402/490) R84/R89/R90 突破（较 R80-R83 的 395-398 基线 +4~6）
+**上游真实 reftest 通过率**: 82.7% (405/490) R91 突破（较 R90 的 401-402 基线 +3~4）
 
-### 当前阶段结论
+### R91 进展（✅ 突破：border-collapse 双侧同步 + 表格列折叠 + 视口单位修复，405/490）
+
+**当前状态**：
+- 全量上游 reftest：**404-405/490 (82.4-82.7%)**，较 R90 的 401-402 再 **+3~4**
+- 内联 reftest 全量：**686/686 (100%)**
+- `zero-layout-engine` 单测：822/822；clippy：**零警告**
+
+#### R91 改动 1：border-collapse 双侧边框同步 + auto-width table shrink-to-fit（+2-3）
+
+- **CSS 2.1 §17.6.2.1**：折叠边框冲突解决时，获胜边框必须**同时覆盖两侧单元格**，而非仅覆盖当前单元格。此前只覆盖当前 cell 的边，邻居 cell 保留陈旧的宽度/样式/颜色。
+- **auto-width table shrink-to-fit**：当 `table width:auto` 时，taffy 给单元格的 block-level 宽度（= 父容器宽度）不应作为列宽下限——只用固有内容宽度。
+- **GAIN**：border-conflict-resolution、multicol-columns-invalid-001、position-relative-table-tfoot-top（内联 reftest）。
+
+#### R91 改动 2：表格列 visibility:collapse（CSS Tables §4.1，+1）
+
+- 新增 `detect_collapsed_columns()`：扫描 col/colgroup 的 `visibility:collapse`，标记折叠列。
+- `compute_column_widths`：折叠列宽度为 0；**两遍算法**——非跨列单元格（含显式 width）先设置列宽，跨列单元格只把宽度分配给**未被约束**的非折叠列，避免跨列长内容撑开显式列宽。
+- `position_cells`：折叠列单元格不推进 cell_x；跨越折叠列的单元格设置 `overflow_x:Hidden` 裁剪溢出。
+- **GAIN**：visibility-collapse-colspan-003（1.19%→0.14%✓）。css-tables 47→48。
+- 单测：`test_table_column_visibility_collapse`。
+
+#### R91 改动 3：视口单位 vw/vh/vmin/vmax 解析为 px（正确性修复，0 reftest 增益但真实页面必需）
+
+- **根因**：converter 把 `Vw(v)`/`Vh(v)` 等视口单位当作**原始 px 值**（`100vw → 100px` 而非 `viewport_width`）。
+- **修复**：新增 `resolve_viewport_px()` 辅助函数，将视口单位按 800×600（或实际视口）解析：`1vw = vw/100`、`1vh = vh/100`、`1vmin = min(vw,vh)/100`、`1vmax = max(vw,vh)/100`。视口尺寸从 `computed_style_to_taffy` 透传到所有 `convert_length_*` 函数。
+- **影响**：822 个 layout 单测通过（更新了视口单位断言）。0 个 reftest 直接增益——`position-fixed-overflow-print` 仍 75% 差异，根因是 `position:fixed` 的包含块处理（P2 系统性缺口），非 vw/vh。
+
+#### R91 验证（definitive diff vs R90）
+
+- **GAIN**：border-conflict-resolution、multicol-columns-invalid-001、visibility-collapse-colspan-003。
+- **LOSS**：无稳定回归。float-003（1.21%）为已知 flaky（不使用视口单位，与 R91 改动无关）。
+- 所有门禁通过：inline reftest 686/686，workspace test 全通过，clippy 零警告。
+
+#### R91 关键结论
+
+1. **第四/五个 clean win**：R84（+2）+ R89（+1）+ R90（+1）+ R91（+3）共 +7~8，**405/490**。
+2. **表格布局仍有定点可修空间**：border-collapse 精度、列折叠、shrink-to-fit 是 CSS Tables §17.6 的离散规则，可独立实现。
+3. **vw/vh 是真实正确性修复**：虽然不直接提升 reftest，但 M11 production-ready（加载真实网站）必需。
+4. **position-fixed-overflow-print 剩余 75% 根因 = position:fixed 包含块**：即使 vw/vh 修复后仍 75%，说明 fixed 元素的几何/定位是独立的 P2 缺口。
+
+#### 后续重点（R92+）
+
+1. **position:fixed 包含块**：`#inner { position:fixed; left:50%; width:100vw }` 应相对视口定位，当前可能用了错误的包含块。
+2. 其他 table 边界 case（min-max-size-table-content-box 的 box-sizing、subpixel-table-cell-width）。
+3. Phase A inline-ownership、Phase B multicol、Phase C writing-mode 系统性改造。
+
+### 当前阶段结论（历史）
 
 - **395-397/490 (80.6-81.0%) 稳定基线**：R68-R81 共 13 轮，从 388→397（+9），每轮平均 +0.7。R80/R81 实测为 395-397（float-003、font-148 阈值边缘波动），无突破。
 - **R73 Phase A 基础设施就位**：`compute_final_inline_layouts` 已启用作为 step 12 后处理，paint 系统可通过 `use_stored` 路径消费存储的 IFC 结果。
