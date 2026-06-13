@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 81.4%-81.6% (399-400/490) R84 突破（较 R80-R83 的 395-398 基线 +2~3）
+**上游真实 reftest 通过率**: 81.6%-81.8% (400-401/490) R84/R89 突破（较 R80-R83 的 395-398 基线 +3~5）
 
 ### 当前阶段结论
 
@@ -28,6 +28,40 @@
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
 - **R79/R80 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
+
+### R89 进展（✅ 突破 2：表格行高分配，400-401/490）
+
+**当前状态**：
+- 全量上游 reftest：**400-401/490 (81.6-81.8%)**，CSS2 **102/129**（R84 为 99），较 R84 再 **+1~2**
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-layout-engine` 单测：820/820；clippy：**零警告**
+
+#### R89 改动：表格行高分配（CSS 2.1 §17.5.3）
+
+承接 R81（table height 作为最小高度，但当时改动 invisible——cell 不回流）。本轮完成 R81 缺的**行高分配**：
+
+- 在 `position_cells`（`crates/layout-engine/src/table.rs`）新增预计算：每行内容高度 → table 指定 height（Px，border-box 折减）→ 额外高度 `extra = max(0, target - content_total)` → 按行均分 `extra / num_rows`。
+- 主循环用 `row_height += row_extras[row_idx]`，使行盒、单元格盒按分配量增长；vertical-align 在增长后的 `cell_box.height` 上重新计算，把内容压到分配后位置。
+- `apply_table_size_constraints` 随后用分配后的 `total_row_height` 设置 table 盒高度，table 边框也正确增长。
+
+#### R89 验证（definitive diff，2-run 并集 vs R84）
+
+- **GAIN**：`background-130`（0.62%✓，新通过）。
+- **改善**：`background-043`（1.73%→1.25%，cell 已增长、table 边框对齐，剩余偏差来自 img 元素 paint 路径用旧位置——独立的 img-paint 问题）。
+- **LOSS**：仅 `font-family-013`（flaky font-family 测试，不受 table 布局影响，非真实回归）。
+- CSS2 99→102（+3，含 background-130 + flaky float-003/font-148 稳定化）。
+
+#### R89 关键结论
+
+1. **第二个 clean win**：R84（real-style IFC）+ R89（table 行高分配）共 +3~5，**400-401/490**。
+2. **R81 的「table height」缺口被 R89 补全**：R81 只设了 table 盒高度（invisible），R89 把高度分配到行/单元格，vertical-align 才能在增长后的 cell 上生效。
+3. **background-043 剩余偏差是独立的 img-paint 问题**（img.LayoutBox.y 被 vertical-align 设为 194 但 paint 渲染在旧位置 73），与 table 分配无关，留作后续。
+
+#### 后续重点（R90+）
+
+1. **img 元素在 table cell 中的 paint 位置**（background-043 剩余）：调查为何 paint 不消费 vertical-align 设的 img.y。
+2. 其他 table-height 相关测试（min-height-table 等是否也受益）。
+3. Phase A inline-ownership 仍需协调多件改动（R88 确认）。
 
 ### R88 进展（Phase A leaf-inline 尝试失败，确认 inline-ownership 需协调多件改动）
 
