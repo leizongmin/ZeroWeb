@@ -2,11 +2,11 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 基础设施已就位）
-**上游真实 reftest 通过率**: 80.6%-81.0% (395-397/490) R80 确认（float-003/font-148 阈值边缘波动）
+**上游真实 reftest 通过率**: 80.6%-81.0% (395-397/490) R80/R81 确认（float-003/font-148 阈值边缘波动）
 
 ### 当前阶段结论
 
-- **395-397/490 (80.6-81.0%) 稳定基线**：R68-R80 共 12 轮，从 388→397（+9），每轮平均 +0.75。R80 实测为 395-396（float-003、font-148 阈值边缘波动），与 R79 声称的 397 同一波动带。
+- **395-397/490 (80.6-81.0%) 稳定基线**：R68-R81 共 13 轮，从 388→397（+9），每轮平均 +0.7。R80/R81 实测为 395-397（float-003、font-148 阈值边缘波动），无突破。
 - **R73 Phase A 基础设施就位**：`compute_final_inline_layouts` 已启用作为 step 12 后处理，paint 系统可通过 `use_stored` 路径消费存储的 IFC 结果。
   - 当前使用空样式 + override maps（与 paint-IFC 一致），零回归。
   - 后续可逐步切换到真实样式，需逐容器验证。
@@ -28,6 +28,41 @@
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
 - **R79/R80 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
+
+### R81 进展
+
+**当前状态**：
+- 全量上游 reftest：**395-397/490 (80.6-81.0%)**（与 R80 同一波动带，无突破）
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+- 工作树干净（table-height 实验已回退，零代码变更）
+
+#### R81 table height-as-min-height 实验（已回退）
+
+本轮调查 `background-043`（1.73%）的根因，发现其**参考文件**使用 `<table style="height:206px">`，而我们的表格按内容高度（~15px）渲染，忽略显式 `height`。
+
+- **Spec 依据**：CSS 2.1 §17.5.3 / CSS Tables L3 — `display:table` 的 `height` 属性被视为最小高度，表格高度 = max(指定 height, 行高之和)。
+- **实现**：在 `apply_table_size_constraints` 中把 `style.height`（Px）当作额外的 min-height 下限（与现有 min-height 处理一致，border-box 折减）。
+- **结果**：**不可见（invisible）**。`table_box.height` 内部增长到 206px，但**单元格/行不随之回流**——可见的表格渲染由单元格尺寸驱动，而非 `table_box.height`。实测 background-043 参考文件的黑色边框仍为 62px（非 206px），diff 维持 1.73% 不变；全量在 395-397 波动带内，无回归也无增益。
+- **正确完成需要行高分配（row distribution）**：必须把表格额外高度分配到各行（行增长 → 单元格增长 → `vertical-align:bottom` 把内容压到底部）。但 `position_cells`（行/单元格定位 + vertical-align）在 `apply_table_size_constraints`（计算最终高度）**之前**运行，存在时序约束——分配必须在 vertical-align 之前完成，需把 position_cells 改为两遍（预计算内容行高 → 分配 → 用分配后行高定位），或在 apply_table_size_constraints 中事后重做 vertical-align。两种方案都涉及易错的逻辑重复与较大重构。
+- **已回退**：ROI 不足（仅影响 ~1 个参考文件侧测试）且回归风险真实（css-tables 47/55）。符合「简单至上 / 精准修改」，不保留不完整的修复。
+
+#### R81 其他候选快速排查（均确认非独立可修）
+
+- `color-129`（2.03%）：Ahem "X" 字形填充精度（字体光栅化），非独立可修。
+- 其余 near-miss 仍为 R79/R80 已确认的系统性阻塞（paint-IFC、float timing、border-collapse 精度、multicol fragmentation、writing-mode 轴交换）。
+
+#### R81 关键结论
+
+1. **background-043 根因 = table-height-distribution 缺口**（Phase B 邻接项），不是 background-image 定位问题。修复需要表格行高分配算法，属于专项架构改造，不能独立打补丁。
+2. **13 轮（R68-R81）系统性确认**：所有 M10 near-miss 失败均被四类结构性缺口阻塞——taffy-IFC 所有权分裂（Phase A）、multicol 片段级跨列（Phase B）、writing-mode 逻辑轴（Phase C）、以及表格行高分配（新发现）。增量补丁路径已彻底穷尽。
+3. **唯一前进方向是按 spec 推进 Phase A→B→C 专项架构改造**，不能再期望单测级别的独立修复。
+
+#### 后续重点（R82+）
+
+1. **Phase A：taffy-IFC 架构统一**（最大杠杆，50+ tests）：消除 `display:inline` 元素「同时是父 IFC 参与者 + 独立 taffy block box」的双重计入。第一步可尝试在 build_subtree 中让纯 inline 元素不创建独立 taffy 节点（其文本归父 IFC），但这影响面广，需在隔离分支充分验证。
+2. **表格行高分配**（Phase B 邻接）：把 position_cells 改两遍，支持 `table height` 分配到行。
+3. 配套：Phase A 真实样式渐进切换、taffy API 扩展（MaxContent、visibility:collapse）。
 
 ### R80 进展
 
