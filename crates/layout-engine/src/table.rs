@@ -1609,6 +1609,54 @@ fn position_cells(
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
     let table_content_width = table_box.content_width;
+
+    // R89：表格行高分配（CSS 2.1 §17.5.3 — table 的 height 作为最小高度，
+    // 额外高度按行均分到各行，使单元格增长、vertical-align 把内容压到分配后位置）。
+    // 预计算每行内容高度，再根据 table 指定 height 计算每行的额外分配量。
+    let row_extras: Vec<f32> = {
+        let content_row_heights: Vec<f32> = grid
+            .rows
+            .iter()
+            .map(|row| {
+                let mut h = 0.0f32;
+                if let Some(rb) = get_row_box(table_box, row) {
+                    for cell in &row.cells {
+                        let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
+                            rb.children.get(rg_idx).and_then(|rg| rg.children.get(cell.child_index))
+                        } else {
+                            rb.children.get(cell.child_index)
+                        };
+                        if let Some(cb) = cell_box {
+                            h = h.max(cb.height);
+                        }
+                    }
+                }
+                if h == 0.0 { 20.0 } else { h }
+            })
+            .collect();
+        let num_rows = content_row_heights.len();
+        let target_content_h = table_box
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .and_then(|s| match &s.height {
+                zero_css_parser::values::LengthValue::Px(v) => Some(*v as f32),
+                _ => None,
+            })
+            .map(|h| {
+                let pb =
+                    table_box.padding_top + table_box.padding_bottom + table_box.border_top + table_box.border_bottom;
+                (h - pb).max(0.0)
+            });
+        match (target_content_h, num_rows > 0) {
+            (Some(target), true) => {
+                let content_total: f32 = content_row_heights.iter().sum::<f32>() + (num_rows - 1) as f32 * spacing_y;
+                let extra = (target - content_total).max(0.0);
+                vec![extra / num_rows as f32; num_rows]
+            }
+            _ => vec![0.0; num_rows],
+        }
+    };
+
     let mut row_y = 0.0f32;
     // 跟踪每个行组的起始 row_y，用于计算行在行组内的相对位置
     // 避免 paint 链中行组位置 + 行位置导致的双重计数
@@ -1617,7 +1665,7 @@ fn position_cells(
     // 使用 (row_group_index, start_y) 元组
     let mut rg_start_y: Option<(usize, f32)> = None;
 
-    for row in &grid.rows {
+    for (row_idx, row) in grid.rows.iter().enumerate() {
         // 检测行组切换，记录新行组的起始 row_y
         let rg_key = row.row_group_index;
         if rg_key != rg_start_y.as_ref().map(|(idx, _)| *idx) {
@@ -1652,6 +1700,8 @@ fn position_cells(
         if row_height == 0.0 {
             row_height = 20.0; // 最小行高
         }
+        // R89：应用表格指定 height 的行高分配（额外高度均分到行）
+        row_height += row_extras.get(row_idx).copied().unwrap_or(0.0);
 
         // 设置行盒的位置和尺寸
         // 注意：行组的 position:relative 偏移由 update_row_group_positions 处理，
