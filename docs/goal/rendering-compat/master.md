@@ -8,6 +8,34 @@
 
 **当前状态**：全量上游 reftest **411/490 (83.9%)** 与 R100 持平。本轮通过逐层 instrumentation **definitive 定位**大字号（100px）Ahem 集群根因（R100 调查线 2 的 (a) vs (b) 二选一已决），并验证一条修复路径的净效果（净负，已回滚）。
 
+#### R101b 补充（relax 路径 definitively ruled out：匿名 multicol 内容盒不可检测）
+
+继 R101 relax 实验后，本轮深查 multicol-fill-auto 回归机制，**definitively 排除**「R84 多行存储放宽 + 守卫」路径：
+
+- 多列容器（multicol div）本身 is_multicol=true，在 `compute_final_inline_layouts` line 1328 早退（不被处理）。
+- 但多列分布会生成**匿名内容盒**（multicol-fill-auto-001 中 node 25v1/28v1），它们 `is_multicol=false`、`style.column_count=Auto`、`in_multicol=false`（**不在 multicol div 的 LayoutBox.children 路径上**——多列分布把它们放在树的其他位置），且 `doc.get(node_id)` 返回 Some（有真实 node_id）。
+- 因此 relax（存纯 Ahem 多行）会存这些匿名盒的 inline_layout → multicol paint 路径对它们用 `use_stored=true`（非 multicol_info）→ 直接渲染存储片段而非按列分布 → 2.45% 回归。
+- `in_multicol` 树递归守卫、`style.column_count` 检测、`is_multicol` flag 检测**均无法**识别这些匿名盒为多列相关。
+
+**结论**：R84 放宽路径在当前架构下无法 clean 守卫。大字号集群（008/009/011/font-051/empty-inline-002）的 clean 修复必须改 paint 路径而非存储路径——即让 paint IFC 在 overrides 缺失时用正确 font_size（R72 警告别传完整 styles map，但可考虑仅传 font_size 单值；或让 `store_font_sizes_from_ifc` 覆盖所有 inline 内容盒）。
+
+#### R101c 补充（最深根因：paint-box ≠ storage-box 不匹配）
+
+两条 paint 侧补救路径（populate `text_node_font_sizes` in `compute_final_inline_layouts`、以及 relax 存储）均**净负**（仍 regress multicol-fill-auto，且 008 未改善）。定位到最深原因：
+
+- **008 的 paint_text 在 #div1（外层 div，无直接文本子）上调用**，而 `compute_final_inline_layouts` 处理的是**内层 div**（有直接文本 "XX XX"）。两者是**不同 box**。
+- `compute_final_inline_layouts` 跳过 #div1（`has_text_children=false`，直接子是 block div 不是 text node），故 #div1 的 `inline_layout`/`text_node_font_sizes` 永远空。
+- paint_text(#div1) 的 IFC **下钻收集了内层 block div 的文本** "XX XX" 当作 inline 内容（inline ownership / block-in-inline 架构），但 #div1 自身无存储 → 默认 font_size=16。
+- 在内层 div 上 populate font_size 无用——paint 不在内层 div 上跑，而在 #div1 上跑。
+
+**真正的架构修复**：要么让 painter 在正确的 box（内层 div，有文本的那个）上调用 paint_text，要么让 #div1 的 paint IFC 能从内层 div 的存储/后裔取 font_size。这是 R73-R84 stored/non-stored IFC 架构的核心错位，非单点可修。**本轮搁置大字号集群**，转向其他独立目标。
+
+#### 其他本轮排查（均非 clean，已搁置）
+
+- **html-display-table**（2.90%）：`<html display:table>` 含非表格子（inline-block），无 table grid → `adjust_table_layout` 不计列宽 → taffy block 填满视口。修复需匿名 table 盒生成（非 clean）。
+- **float-collapse（clear-applies-to-009）**：converter 清零 float 的 taffy margin 方案——float margin 同时影响折叠**和**块兄弟垂直空间推进（ZeroWeb float 模型把 float 当 in-flow block），清零会破坏 clear/兄弟定位，entangled。
+- **flexbox-collapsed-item-horiz-002**（1.57%）：visibility:collapse 的 flex strut 行为，complex。
+
 #### 根因 definitive 链路（instrumentation 确认）
 
 通过在 4 处加 eprintln（font/loader.rs rasterize、computed.rs font_size_px、inline/mod.rs run 创建、painter/text.rs use_stored）渲染 inline-formatting-context-008 得到：
