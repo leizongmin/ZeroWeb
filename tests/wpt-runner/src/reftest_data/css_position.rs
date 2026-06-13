@@ -362,6 +362,14 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><div style=\"width:100px;height:100px;background:red;\"></div><div style=\"position:relative;top:0;left:100px;width:100px;height:100px;background:blue;\"></div></body></html>",
         is_match: false,
     },
+    // position:relative top on tfoot — tfoot should visually shift down to cover the red indicator
+    InlineReftestDef {
+        id: "css-position/position-relative-table-tfoot-top",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><div style=\"display:inline-block;position:relative;width:150px;height:200px\"><div><div style=\"position:absolute;background:red;left:0;top:150px;height:50px;width:50px\"></div><table style=\"border-collapse:collapse\"><tbody><tr><td style=\"padding:0\"><div style=\"height:50px;width:50px\"></div></td></tr></tbody><tfoot style=\"position:relative;top:100px;background:green\"><tr><td style=\"padding:0\"><div style=\"height:50px;width:50px\"></div></td></tr></tfoot></table></div></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"display:inline-block;position:relative;width:150px;height:200px\"><div><div style=\"position:absolute;background:green;left:0;top:150px;height:50px;width:50px\"></div></div></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {
