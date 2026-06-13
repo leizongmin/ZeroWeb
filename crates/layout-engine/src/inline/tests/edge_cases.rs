@@ -302,6 +302,107 @@ fn test_zero_height_inline_block() {
     );
 }
 
+/// 辅助：构造一个仅含单个空格（collapse_whitespace 折叠后）的 TextRun。
+fn space_run() -> TextRun {
+    TextRun {
+        text: " ".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 19.2,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
+    }
+}
+
+/// 辅助：构造一个给定宽高的 inline-block 盒。
+fn ib_box(width: f32, height: f32) -> InlineBlockBox {
+    InlineBlockBox {
+        width,
+        height,
+        node_id: NodeId::default(),
+        vertical_align: VerticalAlignValue::Baseline,
+        baseline: height,
+    }
+}
+
+/// 两个宽度之和恰好等于容器宽的 inline-block，之间夹一个空格 run，
+/// 空格宽度应使第二个盒放不下而换行（whitespace-001 场景）。
+#[test]
+fn test_whitespace_between_inline_blocks_wraps() {
+    // 容器 500，两个 250 宽 inline-block 恰好占满；空格使其溢出 → 第二个换行。
+    let mut ctx = InlineFormattingContext::new(500.0);
+    let items = vec![
+        InlineItem::Text(space_run()),
+        InlineItem::InlineBlock(ib_box(250.0, 19.0)),
+        InlineItem::Text(space_run()),
+        InlineItem::InlineBlock(ib_box(250.0, 19.0)),
+        InlineItem::Text(space_run()),
+    ];
+    ctx.break_items_into_lines(items);
+
+    assert_eq!(ctx.lines.len(), 2, "两个恰好占满容器的 inline-block 之间的空格应使第二个换行");
+    // 每行各一个盒，都在行首（行首空格被移除）
+    assert_eq!(ctx.lines[0].runs.len(), 1, "第一行应只有第一个 inline-block");
+    assert_eq!(ctx.lines[1].runs.len(), 1, "第二行应只有第二个 inline-block");
+    assert!((ctx.lines[0].runs[0].x - 0.0).abs() < 0.01, "第一个盒应在行首");
+    assert!((ctx.lines[1].runs[0].x - 0.0).abs() < 0.01, "第二个盒应换到第二行行首");
+}
+
+/// 两个 inline-block 加上空格仍能放进容器时，空格应贡献间距使第二个盒
+/// 紧贴第一个盒之后而非重叠（确认空格宽度被计入 advance）。
+#[test]
+fn test_whitespace_between_inline_blocks_fits() {
+    // 容器 800，两个 250 宽 inline-block + 一个空格远小于 800 → 同一行。
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let items = vec![
+        InlineItem::InlineBlock(ib_box(250.0, 19.0)),
+        InlineItem::Text(space_run()),
+        InlineItem::InlineBlock(ib_box(250.0, 19.0)),
+    ];
+    ctx.break_items_into_lines(items);
+
+    assert_eq!(ctx.lines.len(), 1, "两个 250 宽 inline-block 在 800 宽容器应同行");
+    assert_eq!(ctx.lines[0].runs.len(), 2, "同行应有两个盒");
+    let first_end = ctx.lines[0].runs[0].x + ctx.lines[0].runs[0].width;
+    let second_x = ctx.lines[0].runs[1].x;
+    assert!(
+        second_x > first_end,
+        "空格应使第二个盒在第一个盒之后（second_x={} 应大于 first_end={}），而非紧贴重叠",
+        second_x,
+        first_end
+    );
+}
+
+/// 两个 inline-block 之间夹多个连续空格 run（如被注释节点分隔），
+/// 按 CSS Text §4.1 应折叠为单个空格，只贡献一个空格宽度。
+#[test]
+fn test_consecutive_whitespace_runs_collapse() {
+    // 容器 504：250 + 一个空格(4) + 250 = 504 恰好放得下；两个空格(8) 会溢出换行。
+    // 折叠为单空格时应同行（不换行），验证连续空格 run 被折叠。
+    let mut ctx = InlineFormattingContext::new(504.0);
+    let items = vec![
+        InlineItem::InlineBlock(ib_box(250.0, 19.0)),
+        InlineItem::Text(space_run()),
+        InlineItem::Text(space_run()),
+        InlineItem::InlineBlock(ib_box(250.0, 19.0)),
+    ];
+    ctx.break_items_into_lines(items);
+
+    assert_eq!(
+        ctx.lines.len(),
+        1,
+        "两个连续空格 run 应折叠为单个空格，250+4+250=504 恰好放入 504 宽容器"
+    );
+}
+
 // ── split_into_words 边界条件 ──
 
 /// 测试 split_into_words：单个单词。
