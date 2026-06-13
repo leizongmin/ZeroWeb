@@ -20,6 +20,7 @@ use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::BorderStyleValue;
 
 use crate::types::LayoutBox;
+use crate::types::OverflowClip;
 
 /// 一个表格单元格的信息。
 #[derive(Debug, Clone)]
@@ -62,6 +63,9 @@ struct TableGrid {
     rows: Vec<TableRow>,
     /// 总列数。
     col_count: usize,
+    /// 每列是否被 visibility:collapse 折叠。
+    /// CSS Tables §4.1：visibility:collapse 的列宽度为 0，不参与布局。
+    collapsed_cols: Vec<bool>,
 }
 
 /// 对 LayoutBox 树执行 table 布局后处理。
@@ -1360,9 +1364,122 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
         });
     }
 
+    // 检测 visibility:collapse 的列
+    // CSS Tables §4.1：col/colgroup 上 visibility:collapse 的列宽度为 0
+    let collapsed_cols = detect_collapsed_columns(table_box, max_cols, styles, doc);
+
     TableGrid {
         rows,
         col_count: max_cols,
+        collapsed_cols,
+    }
+}
+
+/// 检测 table 中被 visibility:collapse 折叠的列。
+///
+/// 遍历 table 的 `<col>` 和 `<colgroup>` 子元素，
+/// 检查其 computed style 的 visibility 属性是否为 Collapse。
+/// colgroup 的 span 属性决定其覆盖的列数。
+fn detect_collapsed_columns(
+    table_box: &LayoutBox,
+    col_count: usize,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) -> Vec<bool> {
+    use zero_css_parser::values::VisibilityValue;
+
+    let mut collapsed = vec![false; col_count];
+    let mut col_cursor = 0usize;
+
+    for child in &table_box.children {
+        let child_display = get_display(child, styles);
+        match child_display {
+            Some(DisplayValue::TableColumnGroup) => {
+                // colgroup：检查其 visibility，以及内部 col 的 visibility
+                let rg_span = get_span(child, doc);
+                let rg_vis = child
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .map(|s| s.visibility.clone());
+
+                if rg_vis == Some(VisibilityValue::Collapse) {
+                    // 整个 colgroup 折叠
+                    for i in 0..rg_span {
+                        let col_idx = col_cursor + i;
+                        if col_idx < col_count {
+                            collapsed[col_idx] = true;
+                        }
+                    }
+                } else {
+                    // colgroup 未折叠，检查内部 col
+                    for col_child in &child.children {
+                        let col_display = get_display(col_child, styles);
+                        if col_display == Some(DisplayValue::TableColumn) {
+                            let col_span = get_span(col_child, doc);
+                            let col_vis = col_child
+                                .node_id
+                                .and_then(|id| styles.get(&id))
+                                .map(|s| s.visibility.clone());
+                            if col_vis == Some(VisibilityValue::Collapse) {
+                                for i in 0..col_span {
+                                    let col_idx = col_cursor + i;
+                                    if col_idx < col_count {
+                                        collapsed[col_idx] = true;
+                                    }
+                                }
+                            }
+                            col_cursor += col_span;
+                        }
+                    }
+                    continue; // colgroup 内部已推进 col_cursor
+                }
+                col_cursor += rg_span;
+            }
+            Some(DisplayValue::TableColumn) => {
+                let col_span = get_span(child, doc);
+                let col_vis = child
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .map(|s| s.visibility.clone());
+                if col_vis == Some(VisibilityValue::Collapse) {
+                    for i in 0..col_span {
+                        let col_idx = col_cursor + i;
+                        if col_idx < col_count {
+                            collapsed[col_idx] = true;
+                        }
+                    }
+                }
+                col_cursor += col_span;
+            }
+            _ => {}
+        }
+    }
+
+    let collapsed_indices: Vec<usize> = collapsed
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| **c)
+        .map(|(i, _)| i)
+        .collect();
+    if !collapsed_indices.is_empty() {
+        tracing::debug!(
+            "detect_collapsed_columns: col_count={}, collapsed={:?}",
+            col_count,
+            collapsed_indices
+        );
+    }
+    collapsed
+}
+
+/// 从 DOM 中读取元素的 span 属性值（用于 col/colgroup）。
+fn get_span(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
+    if let Some(node_id) = box_node.node_id {
+        doc.get_attribute(node_id, "span")
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(1)
+            .max(1)
+    } else {
+        1
     }
 }
 
@@ -1422,63 +1539,91 @@ fn compute_column_widths(
         .map(|s| matches!(s.width, zero_css_parser::values::LengthValue::Auto))
         .unwrap_or(true);
 
-    // 收集每列的最大宽度
+    // 收集每列的最大宽度（两遍算法）
+    // CSS Tables §17.5.2.2：列宽首先由非跨列单元格决定（含显式 width），
+    // 跨列单元格只把宽度分配给尚未被非跨列单元格约束的列，
+    // 这样显式列宽不会被跨列单元格的长内容撑开。
     let mut col_max_widths = vec![0.0f32; col_count];
 
+    // 辅助闭包：计算单元格的宽度
+    let cell_used_width = |cell_box: &LayoutBox| -> (f32, bool) {
+        let css_width_auto = cell_box
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(|s| {
+                use zero_css_parser::values::LengthValue;
+                match &s.width {
+                    LengthValue::Auto => true,
+                    LengthValue::Px(v) => (*v as f32) < 2.0,
+                    _ => false,
+                }
+            })
+            .unwrap_or(true);
+        let intrinsic = compute_cell_intrinsic_width(cell_box, styles, doc);
+        let w = if css_width_auto || cell_box.width < 2.0 {
+            if table_width_auto {
+                intrinsic
+            } else {
+                intrinsic.max(cell_box.width)
+            }
+        } else {
+            cell_box.width
+        };
+        (w, css_width_auto)
+    };
+
+    // Pass 1：非跨列单元格设置列宽
     for row in &grid.rows {
-        // 获取行盒：可能是直接子元素（table-row），也可能是 row-group 内的行
-        let row_box = get_row_box(table_box, row);
-        let Some(row_box) = row_box else {
+        let Some(row_box) = get_row_box(table_box, row) else {
             continue;
         };
-
         for cell in &row.cells {
+            if cell.colspan != 1 {
+                continue;
+            }
             let Some(cell_box) = get_cell_box(row_box, cell) else {
                 continue;
             };
+            if cell.col_start >= col_count || grid.collapsed_cols.get(cell.col_start).copied().unwrap_or(false) {
+                continue;
+            }
+            let (w, _) = cell_used_width(cell_box);
+            col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(w);
+        }
+    }
 
-            // CSS 表格 auto layout：根据 CSS width 属性决定列宽。
-            // - width: auto → 使用固有内容宽度（taffy 的 block 宽度是父容器宽度，不可用）
-            // - width: Px(v), v < 2 → CSS 规定使用固有内容宽度
-            // - width: Px(v), v >= 2 → 使用显式指定的宽度
-            // - width: Percentage → 百分比在后续按比例分配时处理
-            let css_width_auto = cell_box
-                .node_id
-                .and_then(|id| styles.get(&id))
-                .map(|s| {
-                    use zero_css_parser::values::LengthValue;
-                    match &s.width {
-                        LengthValue::Auto => true,
-                        LengthValue::Px(v) => (*v as f32) < 2.0,
-                        _ => false,
-                    }
-                })
-                .unwrap_or(true);
-            let intrinsic = compute_cell_intrinsic_width(cell_box, styles, doc);
-            let cell_width = if css_width_auto || cell_box.width < 2.0 {
-                // auto-width table: 仅用固有宽度（taffy block 宽度是父容器宽度，无意义）
-                // 非 auto-width table: 取 max（保持列宽至少为 taffy 已分配的宽度）
-                if table_width_auto {
-                    intrinsic
-                } else {
-                    intrinsic.max(cell_box.width)
-                }
-            } else {
-                cell_box.width
+    // Pass 2：跨列单元格把宽度分配给 span 内**未被 Pass 1 约束**的非折叠列
+    for row in &grid.rows {
+        let Some(row_box) = get_row_box(table_box, row) else {
+            continue;
+        };
+        for cell in &row.cells {
+            if cell.colspan <= 1 {
+                continue;
+            }
+            let Some(cell_box) = get_cell_box(row_box, cell) else {
+                continue;
             };
-            let colspan = cell.colspan;
-
-            if colspan > 1 {
-                let per_col = cell_width / colspan as f32;
-                for w in col_max_widths
-                    .iter_mut()
-                    .take(cell.col_end.min(col_count))
-                    .skip(cell.col_start)
-                {
-                    *w = (*w).max(per_col);
+            let (w, _) = cell_used_width(cell_box);
+            // span 内被 Pass 1 约束的列数（这些列已有显式/固有宽度，不被撑开）
+            let constrained_in_span = (cell.col_start..cell.col_end.min(col_count))
+                .filter(|&c| grid.collapsed_cols.get(c).copied().unwrap_or(false) || col_max_widths[c] > 0.0)
+                .count();
+            let unconstrained_in_span =
+                (cell.col_end.min(col_count).saturating_sub(cell.col_start)).saturating_sub(constrained_in_span);
+            if unconstrained_in_span == 0 {
+                continue;
+            }
+            let per_col = w / unconstrained_in_span as f32;
+            for (i, col_w) in col_max_widths
+                .iter_mut()
+                .enumerate()
+                .take(cell.col_end.min(col_count))
+                .skip(cell.col_start)
+            {
+                if !grid.collapsed_cols.get(i).copied().unwrap_or(false) && *col_w <= 0.0 {
+                    *col_w = (*col_w).max(per_col);
                 }
-            } else if cell.col_start < col_count {
-                col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(cell_width);
             }
         }
     }
@@ -1504,6 +1649,14 @@ fn compute_column_widths(
         let ratio = available_width / total_width;
         for w in &mut col_max_widths {
             *w *= ratio;
+        }
+    }
+
+    // visibility:collapse 的列宽度为 0
+    // CSS Tables §4.1：折叠列不参与布局，其宽度视为 0
+    for (i, w) in col_max_widths.iter_mut().enumerate() {
+        if grid.collapsed_cols.get(i).copied().unwrap_or(false) {
+            *w = 0.0;
         }
     }
 
@@ -1800,21 +1953,39 @@ fn position_cells(
             };
 
             // 计算单元格宽度（跨的所有列宽 + spacing）
+            // visibility:collapse 的列宽度为 0，不计入单元格宽度
             let mut cell_width = 0.0f32;
+            let mut spans_collapsed = false;
+            let mut non_collapsed_count = 0usize;
             for col in cell.col_start..cell.col_end {
                 if col < col_widths.len() {
                     cell_width += col_widths[col];
+                    if grid.collapsed_cols.get(col).copied().unwrap_or(false) {
+                        spans_collapsed = true;
+                    } else {
+                        non_collapsed_count += 1;
+                    }
                 }
             }
-            // 加上 colspan-1 个 spacing
-            if cell.colspan > 1 {
-                cell_width += (cell.colspan - 1) as f32 * spacing_x;
+            // 加上 spacing：仅对相邻的非折叠列之间加 spacing
+            // 折叠列不占空间，其两侧的 spacing 也不计入
+            if non_collapsed_count > 1 {
+                cell_width += (non_collapsed_count - 1) as f32 * spacing_x;
             }
 
             // 设置单元格位置和尺寸
             cell_box.x = cell_x;
             cell_box.y = 0.0;
             cell_box.width = cell_width;
+
+            // CSS Tables §visibility-collapse-cell-rendering：
+            // 跨越折叠列的单元格必须裁剪溢出内容。
+            // 普通表格单元格不裁剪（CSS 2.1 规定即使 overflow:hidden 也要增长以包含内容），
+            // 但跨越折叠列的单元格是例外——它们的内容必须被限制在可见列的宽度内。
+            if spans_collapsed {
+                cell_box.overflow_x = OverflowClip::Hidden;
+            }
+
             // 同步更新 content_width：paint 系统使用 content_width 来确定
             // 文本渲染容器宽度、背景裁剪等。如果不更新，width:0 单元格的
             // content_width 仍为 taffy 计算的 0，导致文本无法正确渲染。
@@ -1873,7 +2044,12 @@ fn position_cells(
                 }
             }
 
-            cell_x += cell_width + spacing_x;
+            // 折叠列的单元格不推进 cell_x（宽度为 0，也不加 spacing）
+            // 非折叠列的单元格正常推进
+            let is_in_collapsed_col = cell.col_start < grid.collapsed_cols.len() && grid.collapsed_cols[cell.col_start];
+            if !is_in_collapsed_col {
+                cell_x += cell_width + spacing_x;
+            }
         }
 
         row_y += row_height + spacing_y;
