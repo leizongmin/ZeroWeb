@@ -47,8 +47,8 @@ impl BuildContext {
 pub fn build_layout_tree(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
-    _viewport_width: f32,
-    _viewport_height: f32,
+    viewport_width: f32,
+    viewport_height: f32,
 ) -> (TaffyTree<NodeId>, taffy::NodeId, HashMap<taffy::NodeId, NodeId>) {
     let mut ctx = BuildContext::new();
 
@@ -64,6 +64,8 @@ pub fn build_layout_tree(
         None,
         false,
         WritingModeValue::HorizontalTb,
+        viewport_width,
+        viewport_height,
     );
 
     (ctx.taffy, root_taffy_id, ctx.taffy_to_dom)
@@ -269,6 +271,7 @@ fn extract_attr_float(tag: &str, attr: &str) -> Option<f32> {
     value_str[..end].parse::<f32>().ok().filter(|&v| v > 0.0)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_subtree(
     ctx: &mut BuildContext,
     doc: &Document,
@@ -277,6 +280,8 @@ fn build_subtree(
     parent_grid_areas: Option<&GridAreaMap>,
     in_shadow: bool,
     parent_writing_mode: WritingModeValue,
+    viewport_w: f32,
+    viewport_h: f32,
 ) -> taffy::NodeId {
     // LAY-08: 先检查 display:none 再克隆，避免对隐藏元素做不必要的堆分配
     if styles.get(&dom_id).is_some_and(|s| s.display == DisplayValue::None) {
@@ -300,7 +305,7 @@ fn build_subtree(
         .map(|s| parse_grid_template_areas(s));
 
     // 转换为 taffy 样式（传入父级区域映射）
-    let mut taffy_style = computed_style_to_taffy(&computed, parent_grid_areas);
+    let mut taffy_style = computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
 
     // 替换元素固有尺寸：检测 <img> 元素并注入 HTML 属性中的 width/height
     apply_replaced_element_sizing(&mut taffy_style, &computed, doc, dom_id);
@@ -354,6 +359,8 @@ fn build_subtree(
             grid_areas.as_ref(),
             &mut child_taffy_ids,
             &own_writing_mode,
+            viewport_w,
+            viewport_h,
         );
         // 注意：未分配到任何 slot 的 light DOM 子节点不会出现在布局树中
     } else if in_shadow {
@@ -366,6 +373,8 @@ fn build_subtree(
             grid_areas.as_ref(),
             &mut child_taffy_ids,
             &own_writing_mode,
+            viewport_w,
+            viewport_h,
         );
     } else {
         // 无 ShadowRoot，不在 shadow 树中 → 正常遍历 light DOM 子节点
@@ -432,6 +441,8 @@ fn build_subtree(
                         grid_areas.as_ref(),
                         false,
                         own_writing_mode.clone(),
+                        viewport_w,
+                        viewport_h,
                     );
                     child_taffy_ids.push(child_taffy);
                 }
@@ -459,6 +470,8 @@ fn build_subtree(
                     grid_areas.as_ref(),
                     false,
                     own_writing_mode.clone(),
+                    viewport_w,
+                    viewport_h,
                 );
                 child_taffy_ids.push(child_taffy);
             }
@@ -488,6 +501,7 @@ fn build_subtree(
 /// - 无已分配节点 → 使用 slot 的回退子元素
 ///
 /// 非 slot 元素正常递归调用 `build_subtree`（该元素自身可能有嵌套 shadow root）。
+#[allow(clippy::too_many_arguments)]
 fn collect_shadow_children(
     ctx: &mut BuildContext,
     doc: &Document,
@@ -496,6 +510,8 @@ fn collect_shadow_children(
     parent_grid_areas: Option<&GridAreaMap>,
     output: &mut Vec<taffy::NodeId>,
     writing_mode: &WritingModeValue,
+    viewport_w: f32,
+    viewport_h: f32,
 ) {
     let children = doc.get(shadow_root_id).map(|n| n.children.clone()).unwrap_or_default();
     for &child_id in &children {
@@ -528,6 +544,8 @@ fn collect_shadow_children(
                             parent_grid_areas,
                             false,
                             writing_mode.clone(),
+                            viewport_w,
+                            viewport_h,
                         );
                         output.push(taffy_id);
                     }
@@ -548,6 +566,8 @@ fn collect_shadow_children(
                             parent_grid_areas,
                             true,
                             writing_mode.clone(),
+                            viewport_w,
+                            viewport_h,
                         );
                         output.push(taffy_id);
                     }
@@ -563,6 +583,8 @@ fn collect_shadow_children(
                 parent_grid_areas,
                 true,
                 writing_mode.clone(),
+                viewport_w,
+                viewport_h,
             );
             output.push(taffy_id);
         }
@@ -573,6 +595,7 @@ fn collect_shadow_children(
 ///
 /// 与 `collect_shadow_children` 类似，但起点是普通元素（非 ShadowRoot）。
 /// 用于 shadow 树内部嵌套元素遍历其子节点时检查是否有 <slot> 需要替换。
+#[allow(clippy::too_many_arguments)]
 fn collect_shadow_slot_children(
     ctx: &mut BuildContext,
     doc: &Document,
@@ -581,6 +604,8 @@ fn collect_shadow_slot_children(
     parent_grid_areas: Option<&GridAreaMap>,
     output: &mut Vec<taffy::NodeId>,
     writing_mode: &WritingModeValue,
+    viewport_w: f32,
+    viewport_h: f32,
 ) {
     let children = doc.get(parent_id).map(|n| n.children.clone()).unwrap_or_default();
     for &child_id in &children {
@@ -612,6 +637,8 @@ fn collect_shadow_slot_children(
                             parent_grid_areas,
                             false,
                             writing_mode.clone(),
+                            viewport_w,
+                            viewport_h,
                         );
                         output.push(taffy_id);
                     }
@@ -631,6 +658,8 @@ fn collect_shadow_slot_children(
                             parent_grid_areas,
                             true,
                             writing_mode.clone(),
+                            viewport_w,
+                            viewport_h,
                         );
                         output.push(taffy_id);
                     }
@@ -646,6 +675,8 @@ fn collect_shadow_slot_children(
                 parent_grid_areas,
                 true,
                 writing_mode.clone(),
+                viewport_w,
+                viewport_h,
             );
             output.push(taffy_id);
         }

@@ -25,7 +25,16 @@ pub type GridAreaMap = std::collections::HashMap<String, (i16, i16, i16, i16)>;
 /// 处理所有 CSS 属性到 taffy 布局属性的映射。
 /// `parent_areas` 为父级 grid 容器的 grid-template-areas 区域映射，
 /// 用于将子元素的 GridLineValue::Name 解析为行号。
-pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&GridAreaMap>) -> taffy::Style {
+/// `viewport_w`/`viewport_h` 用于解析 vw/vh/vmin/vmax 视口相对单位。
+pub fn computed_style_to_taffy(
+    style: &ComputedStyle,
+    parent_areas: Option<&GridAreaMap>,
+    viewport_w: f32,
+    viewport_h: f32,
+) -> taffy::Style {
+    let vw = viewport_w;
+    let vh = viewport_h;
+
     // CSS 2.1 §10.3.5: 浮动非替换元素的 margin-left/right: auto 解析为 0
     let is_float = matches!(style.float, FloatValue::Left | FloatValue::Right);
 
@@ -53,52 +62,52 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
         },
         position: convert_position(&style.position),
         inset: taffy::geometry::Rect {
-            left: convert_length_to_lpa(&style.left, false),
-            right: convert_length_to_lpa(&style.right, false),
-            top: convert_length_to_lpa(&style.top, false),
-            bottom: convert_length_to_lpa(&style.bottom, false),
+            left: convert_length_to_lpa(&style.left, false, vw, vh),
+            right: convert_length_to_lpa(&style.right, false, vw, vh),
+            top: convert_length_to_lpa(&style.top, false, vw, vh),
+            bottom: convert_length_to_lpa(&style.bottom, false, vw, vh),
         },
         size: taffy::geometry::Size {
-            width: convert_length_to_dimension(&style.width),
-            height: convert_length_to_dimension(&style.height),
+            width: convert_length_to_dimension(&style.width, vw, vh),
+            height: convert_length_to_dimension(&style.height, vw, vh),
         },
         min_size: taffy::geometry::Size {
-            width: convert_length_to_dimension(&style.min_width),
-            height: convert_length_to_dimension(&style.min_height),
+            width: convert_length_to_dimension(&style.min_width, vw, vh),
+            height: convert_length_to_dimension(&style.min_height, vw, vh),
         },
         max_size: taffy::geometry::Size {
-            width: convert_max_length_to_dimension(&style.max_width),
-            height: convert_max_length_to_dimension(&style.max_height),
+            width: convert_max_length_to_dimension(&style.max_width, vw, vh),
+            height: convert_max_length_to_dimension(&style.max_height, vw, vh),
         },
         aspect_ratio: style.aspect_ratio,
         margin: if is_table_internal {
             taffy::geometry::Rect::zero()
         } else {
             taffy::geometry::Rect {
-                left: convert_length_to_lpa(&style.margin_left, is_float),
-                right: convert_length_to_lpa(&style.margin_right, is_float),
-                top: convert_length_to_lpa(&style.margin_top, false),
-                bottom: convert_length_to_lpa(&style.margin_bottom, false),
+                left: convert_length_to_lpa(&style.margin_left, is_float, vw, vh),
+                right: convert_length_to_lpa(&style.margin_right, is_float, vw, vh),
+                top: convert_length_to_lpa(&style.margin_top, false, vw, vh),
+                bottom: convert_length_to_lpa(&style.margin_bottom, false, vw, vh),
             }
         },
         padding: if is_table_internal {
             taffy::geometry::Rect::zero()
         } else {
             taffy::geometry::Rect {
-                left: convert_length_to_lp(&style.padding_left),
-                right: convert_length_to_lp(&style.padding_right),
-                top: convert_length_to_lp(&style.padding_top),
-                bottom: convert_length_to_lp(&style.padding_bottom),
+                left: convert_length_to_lp(&style.padding_left, vw, vh),
+                right: convert_length_to_lp(&style.padding_right, vw, vh),
+                top: convert_length_to_lp(&style.padding_top, vw, vh),
+                bottom: convert_length_to_lp(&style.padding_bottom, vw, vh),
             }
         },
         border: if is_table_internal {
             taffy::geometry::Rect::zero()
         } else {
             taffy::geometry::Rect {
-                left: convert_length_to_lp(&style.border_left_width),
-                right: convert_length_to_lp(&style.border_right_width),
-                top: convert_length_to_lp(&style.border_top_width),
-                bottom: convert_length_to_lp(&style.border_bottom_width),
+                left: convert_length_to_lp(&style.border_left_width, vw, vh),
+                right: convert_length_to_lp(&style.border_right_width, vw, vh),
+                top: convert_length_to_lp(&style.border_top_width, vw, vh),
+                bottom: convert_length_to_lp(&style.border_bottom_width, vw, vh),
             }
         },
         align_items: convert_alignment_to_align_items(&style.align_items),
@@ -110,18 +119,18 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
         gap: taffy::geometry::Size {
             // column-gap 长写属性优先；若未设置（0px），回退到 gap 简写
             width: {
-                let col = convert_length_to_lp(&style.column_gap);
+                let col = convert_length_to_lp(&style.column_gap, vw, vh);
                 if col == taffy::style::LengthPercentage::Length(0.0) {
-                    convert_length_to_lp(&style.gap)
+                    convert_length_to_lp(&style.gap, vw, vh)
                 } else {
                     col
                 }
             },
             // row-gap 长写属性优先；若未设置（0px），回退到 gap 简写
             height: {
-                let row = convert_length_to_lp(&style.row_gap);
+                let row = convert_length_to_lp(&style.row_gap, vw, vh);
                 if row == taffy::style::LengthPercentage::Length(0.0) {
-                    convert_length_to_lp(&style.gap)
+                    convert_length_to_lp(&style.gap, vw, vh)
                 } else {
                     row
                 }
@@ -150,7 +159,7 @@ pub fn computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&Grid
         },
         flex_direction: convert_flex_direction(&style.flex_direction),
         flex_wrap: convert_flex_wrap(&style.flex_wrap),
-        flex_basis: convert_flex_basis(&style.flex_basis),
+        flex_basis: convert_flex_basis(&style.flex_basis, vw, vh),
         flex_grow: style.flex_grow as f32,
         flex_shrink: style.flex_shrink as f32,
         ..taffy::Style::default()
@@ -304,19 +313,38 @@ pub fn convert_clear(value: &ClearValue) -> bool {
     !matches!(value, ClearValue::None)
 }
 
+/// 解析视口相对单位（vw/vh/vmin/vmax）为像素值。
+///
+/// - `1vw` = 视口宽度的 1%（`vw / 100 * viewport_w`）
+/// - `1vh` = 视口高度的 1%（`vh / 100 * viewport_h`）
+/// - `1vmin` = min(vw, vh) 的 1%
+/// - `1vmax` = max(vw, vh) 的 1%
+///
+/// 非 viewport 单位返回 None。
+fn resolve_viewport_px(value: &LengthValue, vw: f32, vh: f32) -> Option<f32> {
+    let vmin = vw.min(vh);
+    let vmax = vw.max(vh);
+    match value {
+        LengthValue::Vw(v) => Some(*v as f32 * vw / 100.0),
+        LengthValue::Vh(v) => Some(*v as f32 * vh / 100.0),
+        LengthValue::Vmin(v) => Some(*v as f32 * vmin / 100.0),
+        LengthValue::Vmax(v) => Some(*v as f32 * vmax / 100.0),
+        _ => None,
+    }
+}
+
 /// 将 LengthValue 转换为 taffy 的 Dimension。
 ///
 /// em/rem 单位已由 style-system 解析为 px，所以统一用 Length。
 /// Auto 映射为 Auto，Percentage 映射为 Percent。
-fn convert_length_to_dimension(value: &LengthValue) -> taffy::style::Dimension {
+fn convert_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taffy::style::Dimension {
+    if let Some(px) = resolve_viewport_px(value, vw, vh) {
+        return length(px);
+    }
     match value {
         LengthValue::Px(v) => length(*v as f32),
         LengthValue::Em(v) => length(*v as f32),
         LengthValue::Rem(v) => length(*v as f32),
-        LengthValue::Vh(v) => length(*v as f32),
-        LengthValue::Vw(v) => length(*v as f32),
-        LengthValue::Vmin(v) => length(*v as f32),
-        LengthValue::Vmax(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::Dimension::Percent((*v / 100.0) as f32),
         LengthValue::Auto => taffy::style::Dimension::Auto,
@@ -330,16 +358,21 @@ fn convert_length_to_dimension(value: &LengthValue) -> taffy::style::Dimension {
             }
         }
         // fit-content() 将内部值转换为 dimension
-        LengthValue::FitContent(inner) => convert_length_to_dimension(inner),
+        LengthValue::FitContent(inner) => convert_length_to_dimension(inner, vw, vh),
         // min-content/max-content 映射为 Auto（由 taffy 内部处理内容尺寸）
         LengthValue::MinContent | LengthValue::MaxContent => taffy::style::Dimension::Auto,
+        // viewport 单位已在上方 resolve_viewport_px 处理
+        _ => taffy::style::Dimension::Auto,
     }
 }
 
 /// 将 max-width/max-height 的 LengthValue 转换为 Dimension。
 ///
 /// max-width/max-height 默认值为 INFINITY，映射为 Auto。
-fn convert_max_length_to_dimension(value: &LengthValue) -> taffy::style::Dimension {
+fn convert_max_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taffy::style::Dimension {
+    if let Some(px) = resolve_viewport_px(value, vw, vh) {
+        return length(px);
+    }
     match value {
         LengthValue::Px(v) => {
             let v = *v as f32;
@@ -351,37 +384,34 @@ fn convert_max_length_to_dimension(value: &LengthValue) -> taffy::style::Dimensi
         }
         LengthValue::Em(v) => length(*v as f32),
         LengthValue::Rem(v) => length(*v as f32),
-        LengthValue::Vh(v) => length(*v as f32),
-        LengthValue::Vw(v) => length(*v as f32),
-        LengthValue::Vmin(v) => length(*v as f32),
-        LengthValue::Vmax(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::Dimension::Percent((*v / 100.0) as f32),
         LengthValue::Auto => taffy::style::Dimension::Auto,
         LengthValue::Calc(_) => length(0.0),
-        LengthValue::FitContent(inner) => convert_max_length_to_dimension(inner),
+        LengthValue::FitContent(inner) => convert_max_length_to_dimension(inner, vw, vh),
         LengthValue::MinContent | LengthValue::MaxContent => taffy::style::Dimension::Auto,
+        _ => taffy::style::Dimension::Auto,
     }
 }
 
 /// 将 LengthValue 转换为 taffy 的 LengthPercentage。
 ///
 /// 用于 padding、border、gap 等不接受 auto 的属性。
-fn convert_length_to_lp(value: &LengthValue) -> taffy::style::LengthPercentage {
+fn convert_length_to_lp(value: &LengthValue, vw: f32, vh: f32) -> taffy::style::LengthPercentage {
+    if let Some(px) = resolve_viewport_px(value, vw, vh) {
+        return length(px);
+    }
     match value {
         LengthValue::Px(v) => length(*v as f32),
         LengthValue::Em(v) => length(*v as f32),
         LengthValue::Rem(v) => length(*v as f32),
-        LengthValue::Vh(v) => length(*v as f32),
-        LengthValue::Vw(v) => length(*v as f32),
-        LengthValue::Vmin(v) => length(*v as f32),
-        LengthValue::Vmax(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::LengthPercentage::Percent((*v / 100.0) as f32),
         LengthValue::Auto => length(0.0), // 不接受 auto 的属性，auto 视为 0
         LengthValue::Calc(_) => length(0.0),
-        LengthValue::FitContent(inner) => convert_length_to_lp(inner),
+        LengthValue::FitContent(inner) => convert_length_to_lp(inner, vw, vh),
         LengthValue::MinContent | LengthValue::MaxContent => length(0.0),
+        _ => length(0.0),
     }
 }
 
@@ -389,15 +419,19 @@ fn convert_length_to_lp(value: &LengthValue) -> taffy::style::LengthPercentage {
 ///
 /// 用于 margin、inset 等接受 auto 的属性。
 /// `resolve_auto_as_zero` 为 true 时，将 Auto 解析为 0（用于浮动元素的左右 margin）。
-fn convert_length_to_lpa(value: &LengthValue, resolve_auto_as_zero: bool) -> taffy::style::LengthPercentageAuto {
+fn convert_length_to_lpa(
+    value: &LengthValue,
+    resolve_auto_as_zero: bool,
+    vw: f32,
+    vh: f32,
+) -> taffy::style::LengthPercentageAuto {
+    if let Some(px) = resolve_viewport_px(value, vw, vh) {
+        return length(px);
+    }
     match value {
         LengthValue::Px(v) => length(*v as f32),
         LengthValue::Em(v) => length(*v as f32),
         LengthValue::Rem(v) => length(*v as f32),
-        LengthValue::Vh(v) => length(*v as f32),
-        LengthValue::Vw(v) => length(*v as f32),
-        LengthValue::Vmin(v) => length(*v as f32),
-        LengthValue::Vmax(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::LengthPercentageAuto::Percent((*v / 100.0) as f32),
         LengthValue::Auto => {
@@ -408,8 +442,9 @@ fn convert_length_to_lpa(value: &LengthValue, resolve_auto_as_zero: bool) -> taf
             }
         }
         LengthValue::Calc(_) => length(0.0),
-        LengthValue::FitContent(inner) => convert_length_to_lpa(inner, resolve_auto_as_zero),
+        LengthValue::FitContent(inner) => convert_length_to_lpa(inner, resolve_auto_as_zero, vw, vh),
         LengthValue::MinContent | LengthValue::MaxContent => length(0.0),
+        _ => length(0.0),
     }
 }
 
@@ -433,11 +468,11 @@ fn convert_flex_wrap(value: &FlexWrapValue) -> taffy::style::FlexWrap {
 }
 
 /// 转换 flex-basis 属性。
-fn convert_flex_basis(value: &FlexBasisValue) -> taffy::style::Dimension {
+fn convert_flex_basis(value: &FlexBasisValue, vw: f32, vh: f32) -> taffy::style::Dimension {
     match value {
         FlexBasisValue::Auto => taffy::style::Dimension::Auto,
         FlexBasisValue::Content => taffy::style::Dimension::Auto, // taffy 无 content，映射为 Auto
-        FlexBasisValue::Length(lv) => convert_length_to_dimension(lv),
+        FlexBasisValue::Length(lv) => convert_length_to_dimension(lv, vw, vh),
     }
 }
 
@@ -1168,7 +1203,7 @@ mod inline_tests {
     #[test]
     fn test_computed_style_to_taffy_default() {
         let style = ComputedStyle::default();
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.display, taffy::style::Display::Block);
     }
 
@@ -1176,7 +1211,7 @@ mod inline_tests {
     fn test_computed_style_to_taffy_flex() {
         let mut style = ComputedStyle::default();
         style.display = DisplayValue::Flex;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.display, taffy::style::Display::Flex);
     }
 
@@ -1184,7 +1219,7 @@ mod inline_tests {
     fn test_computed_style_to_taffy_grid() {
         let mut style = ComputedStyle::default();
         style.display = DisplayValue::Grid;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.display, taffy::style::Display::Grid);
     }
 
@@ -1194,7 +1229,7 @@ mod inline_tests {
         style.position = PositionValue::Relative;
         style.top = LengthValue::Px(10.0);
         style.left = LengthValue::Px(20.0);
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.position, taffy::style::Position::Relative);
         assert_eq!(result.inset.top, taffy::style::LengthPercentageAuto::Length(10.0));
         assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::Length(20.0));
@@ -1204,7 +1239,7 @@ mod inline_tests {
     fn test_computed_style_to_taffy_position_absolute() {
         let mut style = ComputedStyle::default();
         style.position = PositionValue::Absolute;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.position, taffy::style::Position::Absolute);
     }
 
@@ -1212,7 +1247,7 @@ mod inline_tests {
     fn test_computed_style_to_taffy_position_fixed() {
         let mut style = ComputedStyle::default();
         style.position = PositionValue::Fixed;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.position, taffy::style::Position::Absolute); // taffy maps fixed to absolute
     }
 
@@ -1223,7 +1258,7 @@ mod inline_tests {
         style.padding_right = LengthValue::Px(20.0);
         style.padding_bottom = LengthValue::Px(30.0);
         style.padding_left = LengthValue::Px(40.0);
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.padding.top, taffy::style::LengthPercentage::Length(10.0));
         assert_eq!(result.padding.right, taffy::style::LengthPercentage::Length(20.0));
         assert_eq!(result.padding.bottom, taffy::style::LengthPercentage::Length(30.0));
@@ -1235,7 +1270,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.margin_left = LengthValue::Auto;
         style.margin_right = LengthValue::Auto;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.margin.left, taffy::style::LengthPercentageAuto::Auto);
         assert_eq!(result.margin.right, taffy::style::LengthPercentageAuto::Auto);
     }
@@ -1245,7 +1280,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.width = LengthValue::Percentage(50.0);
         style.height = LengthValue::Percentage(75.0);
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.size.width, taffy::style::Dimension::Percent(0.5));
         assert_eq!(result.size.height, taffy::style::Dimension::Percent(0.75));
     }
@@ -1255,7 +1290,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.width = LengthValue::Auto;
         style.height = LengthValue::Auto;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.size.width, taffy::style::Dimension::Auto);
         assert_eq!(result.size.height, taffy::style::Dimension::Auto);
     }
@@ -1265,7 +1300,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.min_width = LengthValue::Px(100.0);
         style.max_width = LengthValue::Px(500.0);
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.min_size.width, taffy::style::Dimension::Length(100.0));
         assert_eq!(result.max_size.width, taffy::style::Dimension::Length(500.0));
     }
@@ -1275,7 +1310,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.overflow_x = OverflowValue::Hidden;
         style.overflow_y = OverflowValue::Scroll;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.overflow.x, taffy::style::Overflow::Hidden);
         assert_eq!(result.overflow.y, taffy::style::Overflow::Scroll);
     }
@@ -1285,7 +1320,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.display = DisplayValue::Flex;
         style.flex_direction = FlexDirectionValue::RowReverse;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.flex_direction, taffy::style::FlexDirection::RowReverse);
     }
 
@@ -1294,7 +1329,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.display = DisplayValue::Flex;
         style.flex_wrap = FlexWrapValue::Wrap;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.flex_wrap, taffy::style::FlexWrap::Wrap);
     }
 
@@ -1302,7 +1337,7 @@ mod inline_tests {
     fn test_computed_style_to_taffy_flex_basis_auto() {
         let mut style = ComputedStyle::default();
         style.flex_basis = FlexBasisValue::Auto;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.flex_basis, taffy::style::Dimension::Auto);
     }
 
@@ -1310,7 +1345,7 @@ mod inline_tests {
     fn test_computed_style_to_taffy_flex_basis_length() {
         let mut style = ComputedStyle::default();
         style.flex_basis = FlexBasisValue::Length(LengthValue::Px(200.0));
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.flex_basis, taffy::style::Dimension::Length(200.0));
     }
 
@@ -1318,7 +1353,7 @@ mod inline_tests {
     fn test_computed_style_to_taffy_align_items_center() {
         let mut style = ComputedStyle::default();
         style.align_items = AlignmentValue::Center;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.align_items, Some(taffy::style::AlignItems::Center));
     }
 
@@ -1326,7 +1361,7 @@ mod inline_tests {
     fn test_computed_style_to_taffy_justify_content_space_between() {
         let mut style = ComputedStyle::default();
         style.justify_content = AlignmentValue::SpaceBetween;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.justify_content, Some(taffy::style::JustifyContent::SpaceBetween));
     }
 
@@ -1335,7 +1370,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.gap = LengthValue::Px(20.0); // gap.width = style.gap
         style.row_gap = LengthValue::Px(10.0); // gap.height = style.row_gap
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.gap.width, taffy::style::LengthPercentage::Length(20.0));
         assert_eq!(result.gap.height, taffy::style::LengthPercentage::Length(10.0));
     }
@@ -1344,7 +1379,7 @@ mod inline_tests {
     fn test_computed_style_to_taffy_box_sizing() {
         let mut style = ComputedStyle::default();
         style.box_sizing = BoxSizingValue::BorderBox;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.box_sizing, taffy::style::BoxSizing::BorderBox);
     }
 
@@ -1352,7 +1387,7 @@ mod inline_tests {
     fn test_computed_style_to_taffy_display_none() {
         let mut style = ComputedStyle::default();
         style.display = DisplayValue::None;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.display, taffy::style::Display::None);
     }
 
@@ -1497,7 +1532,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.display = DisplayValue::Grid;
         style.grid_auto_flow = GridAutoFlowValue::ColumnDense;
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.grid_auto_flow, taffy::style::GridAutoFlow::ColumnDense);
     }
 
@@ -1510,7 +1545,7 @@ mod inline_tests {
         style.border_right_width = LengthValue::Px(2.0);
         style.border_bottom_width = LengthValue::Px(3.0);
         style.border_left_width = LengthValue::Px(4.0);
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.border.top, taffy::style::LengthPercentage::Length(1.0));
         assert_eq!(result.border.right, taffy::style::LengthPercentage::Length(2.0));
         assert_eq!(result.border.bottom, taffy::style::LengthPercentage::Length(3.0));
@@ -1523,7 +1558,7 @@ mod inline_tests {
     fn test_computed_style_padding_percentage() {
         let mut style = ComputedStyle::default();
         style.padding_top = LengthValue::Percentage(10.0);
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.padding.top, taffy::style::LengthPercentage::Percent(0.1));
     }
 
@@ -1531,7 +1566,7 @@ mod inline_tests {
     fn test_computed_style_margin_percentage() {
         let mut style = ComputedStyle::default();
         style.margin_bottom = LengthValue::Percentage(25.0);
-        let result = computed_style_to_taffy(&style, None);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.margin.bottom, taffy::style::LengthPercentageAuto::Percent(0.25));
     }
 }

@@ -278,7 +278,7 @@ fn test_parse_single_track_empty_string() {
 fn test_convert_display_inline_block() {
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::InlineBlock;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.display, taffy::style::Display::Block);
 }
 
@@ -287,7 +287,7 @@ fn test_convert_display_inline_block() {
 fn test_convert_display_inline_grid() {
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::InlineGrid;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.display, taffy::style::Display::Grid);
 }
 
@@ -299,7 +299,7 @@ fn test_convert_grid_auto_flow_row() {
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::Grid;
     style.grid_auto_flow = GridAutoFlowValue::Row;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.grid_auto_flow, taffy::style::GridAutoFlow::Row);
 }
 
@@ -382,11 +382,11 @@ fn test_parse_minmax_auto_fr() {
 #[test]
 fn test_convert_length_to_lp_min_max_content() {
     assert_eq!(
-        convert_length_to_lp(&LengthValue::MinContent),
+        convert_length_to_lp(&LengthValue::MinContent, 800.0, 600.0),
         taffy::style::LengthPercentage::Length(0.0)
     );
     assert_eq!(
-        convert_length_to_lp(&LengthValue::MaxContent),
+        convert_length_to_lp(&LengthValue::MaxContent, 800.0, 600.0),
         taffy::style::LengthPercentage::Length(0.0)
     );
 }
@@ -397,11 +397,11 @@ fn test_convert_length_to_lp_min_max_content() {
 #[test]
 fn test_convert_length_to_lpa_min_max_content() {
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::MinContent, false),
+        convert_length_to_lpa(&LengthValue::MinContent, false, 800.0, 600.0),
         taffy::style::LengthPercentageAuto::Length(0.0)
     );
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::MaxContent, false),
+        convert_length_to_lpa(&LengthValue::MaxContent, false, 800.0, 600.0),
         taffy::style::LengthPercentageAuto::Length(0.0)
     );
 }
@@ -411,7 +411,7 @@ fn test_convert_length_to_lpa_min_max_content() {
 /// 测试 FlexBasisValue::Length(LengthValue::Auto) 转换。
 #[test]
 fn test_convert_flex_basis_auto_length() {
-    let result = convert_flex_basis(&FlexBasisValue::Length(LengthValue::Auto));
+    let result = convert_flex_basis(&FlexBasisValue::Length(LengthValue::Auto), 800.0, 600.0);
     assert_eq!(result, taffy::style::Dimension::Auto);
 }
 
@@ -455,52 +455,55 @@ fn test_convert_overflow_clip_and_auto() {
 // ── convert_length_to_dimension 未覆盖的变体测试 ──
 
 /// 测试 convert_length_to_dimension：Vh, Vw, Vmin, Vmax, Ch, FitContent, MinContent, MaxContent, Calc。
+/// viewport 单位以 800×600 视口解析：50vh=300, 25vw=200, 10vmin=60, 20vmax=160。
 #[test]
 fn test_convert_length_to_dimension_uncovered_variants() {
     // Viewport units
     assert_eq!(
-        convert_length_to_dimension(&LengthValue::Vh(50.0)),
-        taffy::style::Dimension::Length(50.0)
+        convert_length_to_dimension(&LengthValue::Vh(50.0), 800.0, 600.0),
+        taffy::style::Dimension::Length(300.0)
     );
     assert_eq!(
-        convert_length_to_dimension(&LengthValue::Vw(25.0)),
-        taffy::style::Dimension::Length(25.0)
+        convert_length_to_dimension(&LengthValue::Vw(25.0), 800.0, 600.0),
+        taffy::style::Dimension::Length(200.0)
     );
     assert_eq!(
-        convert_length_to_dimension(&LengthValue::Vmin(10.0)),
-        taffy::style::Dimension::Length(10.0)
+        convert_length_to_dimension(&LengthValue::Vmin(10.0), 800.0, 600.0),
+        taffy::style::Dimension::Length(60.0)
     );
     assert_eq!(
-        convert_length_to_dimension(&LengthValue::Vmax(20.0)),
-        taffy::style::Dimension::Length(20.0)
+        convert_length_to_dimension(&LengthValue::Vmax(20.0), 800.0, 600.0),
+        taffy::style::Dimension::Length(160.0)
     );
     assert_eq!(
-        convert_length_to_dimension(&LengthValue::Ch(8.0)),
+        convert_length_to_dimension(&LengthValue::Ch(8.0), 800.0, 600.0),
         taffy::style::Dimension::Length(8.0)
     );
 
     // FitContent 内部转换
     let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(100.0)));
     assert_eq!(
-        convert_length_to_dimension(&fit_content),
+        convert_length_to_dimension(&fit_content, 800.0, 600.0),
         taffy::style::Dimension::Length(100.0)
     );
 
     // MinContent/MaxContent 映射为 Auto
     assert_eq!(
-        convert_length_to_dimension(&LengthValue::MinContent),
+        convert_length_to_dimension(&LengthValue::MinContent, 800.0, 600.0),
         taffy::style::Dimension::Auto
     );
     assert_eq!(
-        convert_length_to_dimension(&LengthValue::MaxContent),
+        convert_length_to_dimension(&LengthValue::MaxContent, 800.0, 600.0),
         taffy::style::Dimension::Auto
     );
 
     // Calc 映射为 0
     assert_eq!(
-        convert_length_to_dimension(&LengthValue::Calc(Box::new(zero_css_parser::values::CalcExpr::Number(
-            42.0
-        )))),
+        convert_length_to_dimension(
+            &LengthValue::Calc(Box::new(zero_css_parser::values::CalcExpr::Number(42.0))),
+            800.0,
+            600.0
+        ),
         taffy::style::Dimension::Length(0.0)
     );
 }
@@ -508,110 +511,115 @@ fn test_convert_length_to_dimension_uncovered_variants() {
 // ── convert_max_length_to_dimension 未覆盖的变体测试 ──
 
 /// 测试 convert_max_length_to_dimension：infinity 和各种变体。
+/// viewport 单位以 800×600 视口解析。
 #[test]
 fn test_convert_max_length_to_dimension_uncovered_variants() {
     // Infinity 映射为 Auto
     assert_eq!(
-        convert_max_length_to_dimension(&LengthValue::Px(f64::INFINITY)),
+        convert_max_length_to_dimension(&LengthValue::Px(f64::INFINITY), 800.0, 600.0),
         taffy::style::Dimension::Auto
     );
 
     // Viewport units
     assert_eq!(
-        convert_max_length_to_dimension(&LengthValue::Vh(50.0)),
-        taffy::style::Dimension::Length(50.0)
+        convert_max_length_to_dimension(&LengthValue::Vh(50.0), 800.0, 600.0),
+        taffy::style::Dimension::Length(300.0)
     );
     assert_eq!(
-        convert_max_length_to_dimension(&LengthValue::Vw(25.0)),
-        taffy::style::Dimension::Length(25.0)
+        convert_max_length_to_dimension(&LengthValue::Vw(25.0), 800.0, 600.0),
+        taffy::style::Dimension::Length(200.0)
     );
 
     // FitContent 内部转换
     let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(200.0)));
     assert_eq!(
-        convert_max_length_to_dimension(&fit_content),
+        convert_max_length_to_dimension(&fit_content, 800.0, 600.0),
         taffy::style::Dimension::Length(200.0)
     );
 
     // MinContent/MaxContent 映射为 Auto
     assert_eq!(
-        convert_max_length_to_dimension(&LengthValue::MinContent),
+        convert_max_length_to_dimension(&LengthValue::MinContent, 800.0, 600.0),
         taffy::style::Dimension::Auto
     );
     assert_eq!(
-        convert_max_length_to_dimension(&LengthValue::MaxContent),
+        convert_max_length_to_dimension(&LengthValue::MaxContent, 800.0, 600.0),
         taffy::style::Dimension::Auto
     );
 }
 
 // ── convert_length_to_lp/lpa 未覆盖的变体测试 ──
 
-/// 测试 convert_length_to_lp：Vh, Vw, Vmin, Vmax, Ch, FitContent, MinContent, MaxContent, Calc。
+/// 测试 convert_length_to_lp：Vh, Vw, FitContent, MinContent, MaxContent, Calc。
+/// viewport 单位以 800×600 视口解析。
 #[test]
 fn test_convert_length_to_lp_uncovered_variants() {
     // Viewport units
     assert_eq!(
-        convert_length_to_lp(&LengthValue::Vh(50.0)),
-        taffy::style::LengthPercentage::Length(50.0)
+        convert_length_to_lp(&LengthValue::Vh(50.0), 800.0, 600.0),
+        taffy::style::LengthPercentage::Length(300.0)
     );
     assert_eq!(
-        convert_length_to_lp(&LengthValue::Vw(25.0)),
-        taffy::style::LengthPercentage::Length(25.0)
+        convert_length_to_lp(&LengthValue::Vw(25.0), 800.0, 600.0),
+        taffy::style::LengthPercentage::Length(200.0)
     );
 
     // FitContent 内部转换
     let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(100.0)));
     assert_eq!(
-        convert_length_to_lp(&fit_content),
+        convert_length_to_lp(&fit_content, 800.0, 600.0),
         taffy::style::LengthPercentage::Length(100.0)
     );
 
     // MinContent/MaxContent 映射为 0
     assert_eq!(
-        convert_length_to_lp(&LengthValue::MinContent),
+        convert_length_to_lp(&LengthValue::MinContent, 800.0, 600.0),
         taffy::style::LengthPercentage::Length(0.0)
     );
     assert_eq!(
-        convert_length_to_lp(&LengthValue::MaxContent),
+        convert_length_to_lp(&LengthValue::MaxContent, 800.0, 600.0),
         taffy::style::LengthPercentage::Length(0.0)
     );
 
     // Calc 映射为 0
     assert_eq!(
-        convert_length_to_lp(&LengthValue::Calc(Box::new(zero_css_parser::values::CalcExpr::Number(
-            42.0
-        )))),
+        convert_length_to_lp(
+            &LengthValue::Calc(Box::new(zero_css_parser::values::CalcExpr::Number(42.0))),
+            800.0,
+            600.0
+        ),
         taffy::style::LengthPercentage::Length(0.0)
     );
 }
 
-/// 测试 convert_length_to_lpa：Vh, Vw, Vmin, Vmax, Ch, FitContent, MinContent, MaxContent, Calc。
+/// 测试 convert_length_to_lpa：Vh, Vw, FitContent, MinContent, MaxContent, Calc。
+/// viewport 单位以 800×600 视口解析。
 #[test]
 fn test_convert_length_to_lpa_uncovered_variants() {
     // Viewport units
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::Vh(50.0), false),
-        taffy::style::LengthPercentageAuto::Length(50.0)
+        convert_length_to_lpa(&LengthValue::Vh(50.0), false, 800.0, 600.0),
+        taffy::style::LengthPercentageAuto::Length(300.0)
     );
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::Vw(25.0), false),
-        taffy::style::LengthPercentageAuto::Length(25.0)
+        convert_length_to_lpa(&LengthValue::Vw(25.0), false, 800.0, 600.0),
+        taffy::style::LengthPercentageAuto::Length(200.0)
     );
 
     // FitContent 内部转换
     let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(100.0)));
     assert_eq!(
-        convert_length_to_lpa(&fit_content, false),
+        convert_length_to_lpa(&fit_content, false, 800.0, 600.0),
         taffy::style::LengthPercentageAuto::Length(100.0)
     );
 
     // MinContent/MaxContent 映射为 0
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::MinContent, false),
+        convert_length_to_lpa(&LengthValue::MinContent, false, 800.0, 600.0),
         taffy::style::LengthPercentageAuto::Length(0.0)
     );
     assert_eq!(
-        convert_length_to_lpa(&LengthValue::MaxContent, false),
+        convert_length_to_lpa(&LengthValue::MaxContent, false, 800.0, 600.0),
         taffy::style::LengthPercentageAuto::Length(0.0)
     );
 
@@ -619,7 +627,9 @@ fn test_convert_length_to_lpa_uncovered_variants() {
     assert_eq!(
         convert_length_to_lpa(
             &LengthValue::Calc(Box::new(zero_css_parser::values::CalcExpr::Number(42.0))),
-            false
+            false,
+            800.0,
+            600.0
         ),
         taffy::style::LengthPercentageAuto::Length(0.0)
     );
