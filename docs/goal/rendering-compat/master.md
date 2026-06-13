@@ -4,6 +4,26 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
 **上游真实 reftest 通过率**: 83.9% (411/490) R98（较 R97 的 409 基线 +2，abspos Length inset 视口相对修复）
 
+### R103 调查（multicol-collapsing-001 全路径 debunked：根因是混合 block+inline 内容未分列，未提交代码）
+
+**当前状态**：全量上游 reftest **411/490 (83.9%)** 不变。本轮终结 multicol-collapsing-001 三轮假设排查（margin/折叠/高度均 debunked），定位真正根因。
+
+#### instrumentation 证据
+
+1. **margin containment 正确**（R102）：outer content_height=80 = multicol `mt(20)+h(40)+mb(20)`。
+2. **container 高度正确**（本轮 `layout_multicol` debug）：`container_h=40 == max_col_h=40`（tallest column）。高度协调无问题。
+3. **content 分列缺口**（本轮 `painter/mod.rs` paint debug）：multicol 的直接子中，**只有 h4（node 35，block）被分配 column_span_offsets**（n_frags=1）；inline 文本 "ef gh ij kl mn oq" **未被分配到任何列** → 不渲染。
+
+#### 真正根因
+
+multicol-collapsing-001 的 multicol 含**混合 block(h4) + inline(text)** 内容。`layout_multicol`（multicol.rs:244）的 `child_info` 只处理 LayoutBox 直接子（h4 block），inline 文本不是独立 LayoutBox 子 → 不分列。R96 的 inline 分列（painter/text.rs multicol 分支）仅对**纯 inline** multicol 触发；混合内容中 inline 部分未分列。结果：multicol 黄底盒内只有 h4 一行（且 "ab cd" 应更高），inline 文本缺失 → 1.68% diff。
+
+属 multicol 内容碎片化基础设施缺口（混合 block+inline 列分布）。**非单点修**。R96 已覆盖纯 inline；纯 block（如 multicol-breaking）需 column breaking；混合需两者协调。
+
+#### 后续
+
+multicol-collapsing-001 需混合内容的列分布（block 子按列分配 + inline 内容按列流式分布的协调）。搁置，**勿再查 margin/折叠/高度**（3 轮 debunked）。
+
 ### R102 调查（multicol-collapsing-001 margin 假设 debunked：根因是列内容/高度协调，未提交代码）
 
 **当前状态**：全量上游 reftest **411/490 (83.9%)** 不变。本轮 debunk R97/R100/R101d 的「multicol-collapsing-001 = bottom margin 丢失」假设。
