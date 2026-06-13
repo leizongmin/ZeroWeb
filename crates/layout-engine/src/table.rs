@@ -467,7 +467,9 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                     if matches!(cb.top_s, BorderStyleValue::Hidden)
                         || matches!(prev_cb.bottom_s, BorderStyleValue::Hidden)
                     {
+                        // hidden 强制两侧宽度为 0
                         overrides.push(((row_idx, cell_idx), 0, 0.0, None, None));
+                        overrides.push(((row_idx - 1, prev_cell_idx), 2, 0.0, None, None));
                     } else {
                         // Cell-vs-Cell 内部边：手动判断哪个 cell 的边框获胜
                         // resolve_border 在两边都是 Cell 时无法区分具体哪个 cell 赢
@@ -485,9 +487,9 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                         } else {
                             (cb.top_w, &cb.top_s)
                         };
-                        // 需要覆盖：宽度不同，或样式不同
-                        let need_override = (win_w - cb.top_w).abs() > 0.001 || win_style != &cb.top_s;
-                        if need_override {
+                        // 覆盖当前 cell 的顶边（side=0）
+                        let need_override_cur = (win_w - cb.top_w).abs() > 0.001 || win_style != &cb.top_s;
+                        if need_override_cur {
                             let win_color = if prev_a_wins {
                                 get_cell_border_color(table_box, grid, row_idx - 1, prev_cell_idx, 2, styles)
                             } else {
@@ -499,6 +501,22 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                                 None
                             };
                             overrides.push(((row_idx, cell_idx), 0, win_w, win_color, style_ov));
+                        }
+                        // 覆盖上一行 cell 的底边（side=2）—— CSS 2.1 §17.6.2.1 双侧同步
+                        let need_override_prev =
+                            (win_w - prev_cb.bottom_w).abs() > 0.001 || win_style != &prev_cb.bottom_s;
+                        if need_override_prev {
+                            let win_color = if !prev_a_wins {
+                                get_cell_border_color(table_box, grid, row_idx, cell_idx, 0, styles)
+                            } else {
+                                None
+                            };
+                            let style_ov = if win_style != &prev_cb.bottom_s {
+                                Some(win_style.clone())
+                            } else {
+                                None
+                            };
+                            overrides.push(((row_idx - 1, prev_cell_idx), 2, win_w, win_color, style_ov));
                         }
                     }
                 }
@@ -611,7 +629,9 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                     if matches!(cb.left_s, BorderStyleValue::Hidden)
                         || matches!(left_cb.right_s, BorderStyleValue::Hidden)
                     {
+                        // hidden 强制两侧宽度为 0
                         overrides.push(((row_idx, cell_idx), 3, 0.0, None, None));
+                        overrides.push(((row_idx, left_cell_idx), 1, 0.0, None, None));
                     } else {
                         // Cell-vs-Cell 内部边：手动判断哪个 cell 的边框获胜
                         let left_a_wins = {
@@ -628,8 +648,9 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                         } else {
                             (cb.left_w, &cb.left_s)
                         };
-                        let need_override = (win_w - cb.left_w).abs() > 0.001 || win_style != &cb.left_s;
-                        if need_override {
+                        // 覆盖当前 cell 的左边（side=3）
+                        let need_override_cur = (win_w - cb.left_w).abs() > 0.001 || win_style != &cb.left_s;
+                        if need_override_cur {
                             let win_color = if left_a_wins {
                                 get_cell_border_color(table_box, grid, row_idx, left_cell_idx, 1, styles)
                             } else {
@@ -641,6 +662,22 @@ fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles
                                 None
                             };
                             overrides.push(((row_idx, cell_idx), 3, win_w, win_color, style_ov));
+                        }
+                        // 覆盖左侧 cell 的右边（side=1）—— CSS 2.1 §17.6.2.1 双侧同步
+                        let need_override_left =
+                            (win_w - left_cb.right_w).abs() > 0.001 || win_style != &left_cb.right_s;
+                        if need_override_left {
+                            let win_color = if !left_a_wins {
+                                get_cell_border_color(table_box, grid, row_idx, cell_idx, 3, styles)
+                            } else {
+                                None
+                            };
+                            let style_ov = if win_style != &left_cb.right_s {
+                                Some(win_style.clone())
+                            } else {
+                                None
+                            };
+                            overrides.push(((row_idx, left_cell_idx), 1, win_w, win_color, style_ov));
                         }
                     }
                 }
@@ -1377,6 +1414,14 @@ fn compute_column_widths(
         return Vec::new();
     }
 
+    // CSS 表格 auto layout：当 table 本身 width: auto 时（shrink-to-fit），
+    // taffy 的 block-level cell_box.width 是父容器宽度，无意义，不应作为列宽下限。
+    let table_width_auto = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .map(|s| matches!(s.width, zero_css_parser::values::LengthValue::Auto))
+        .unwrap_or(true);
+
     // 收集每列的最大宽度
     let mut col_max_widths = vec![0.0f32; col_count];
 
@@ -1409,8 +1454,15 @@ fn compute_column_widths(
                     }
                 })
                 .unwrap_or(true);
+            let intrinsic = compute_cell_intrinsic_width(cell_box, styles, doc);
             let cell_width = if css_width_auto || cell_box.width < 2.0 {
-                compute_cell_intrinsic_width(cell_box, styles, doc).max(cell_box.width)
+                // auto-width table: 仅用固有宽度（taffy block 宽度是父容器宽度，无意义）
+                // 非 auto-width table: 取 max（保持列宽至少为 taffy 已分配的宽度）
+                if table_width_auto {
+                    intrinsic
+                } else {
+                    intrinsic.max(cell_box.width)
+                }
             } else {
                 cell_box.width
             };
