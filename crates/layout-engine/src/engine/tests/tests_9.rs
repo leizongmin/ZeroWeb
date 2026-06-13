@@ -514,3 +514,61 @@ fn test_measure_text_content_no_text() {
     assert_eq!(size.width, 0.0, "无文本节点宽度应为 0");
     assert_eq!(size.height, 0.0, "无文本节点高度应为 0");
 }
+
+/// 测试 adjust_absolute_pct_to_viewport：无 positioned ancestor 的 absolute 元素，
+/// `top`/`left` 为长度（Px）时应解析为视口相对坐标（CSS 2.1 §10.1）。
+///
+/// taffy 用静态父作 containing block，会把 top:118px 解析为父相对坐标。
+/// 修复后应转为视口相对：child.y = top_px - current_content_origin_y。
+#[test]
+fn test_adjust_absolute_length_top_to_viewport() {
+    use std::collections::HashMap;
+    use zero_css_parser::values::LengthValue;
+    let (_doc, key_id) = make_doc_with_body();
+
+    let abs_child = LayoutBox {
+        node_id: Some(key_id),
+        x: 8.0,
+        y: 118.0, // taffy 设置的父相对坐标（= top 值）
+        width: 100.0,
+        height: 50.0,
+        is_absolute: true,
+        ..Default::default()
+    };
+    let body = LayoutBox {
+        node_id: None,
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+        children: vec![abs_child],
+        ..Default::default()
+    };
+    let mut root = LayoutBox {
+        children: vec![body],
+        ..Default::default()
+    };
+
+    let mut style = ComputedStyle::default();
+    style.top = LengthValue::Px(118.0);
+    style.left = LengthValue::Px(8.0);
+    let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+    styles.insert(key_id, style);
+
+    // current_content_origin_y = 8（body margin），模拟视口偏移
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 8.0, 800.0, 600.0, &styles, false);
+
+    let abs = &root.children[0].children[0];
+    // 视口相对：top:118px → child.y = 118 - 8(origin) = 110
+    assert!(
+        (abs.y - 110.0).abs() < 0.001,
+        "abs Length top 应为视口相对（118 - origin 8 = 110），实际 y={}",
+        abs.y
+    );
+    // left:8px → child.x = 8 - 0(origin) = 8
+    assert!(
+        (abs.x - 8.0).abs() < 0.001,
+        "abs Length left 应为视口相对，实际 x={}",
+        abs.x
+    );
+}

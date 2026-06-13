@@ -2,7 +2,32 @@
 
 **最后更新**: 2026-06-14
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 83.5% (409/490) R97（与 R96 持平；本轮为根因映射调查）
+**上游真实 reftest 通过率**: 83.9% (411/490) R98（较 R97 的 409 基线 +2，abspos Length inset 视口相对修复）
+
+### R98 进展（✅ abspos Length inset 视口相对修复，411/490，clear-clearance-004/005 通过）
+
+**当前状态**：
+- 全量上游 reftest：**411/490 (83.9%)**，较 R97 的 409 再 **+2**；CSS2 floats-clear 26/30 → **28/30**
+- 内联 reftest 全量：686/686 (100%)；`cargo test --workspace` 全绿；clippy：**零警告**；确定性
+
+#### R98 改动：abspos 无 positioned ancestor 时 Length top/left 解析为视口相对（engine.rs）
+
+**根因**（R97 调查 clear-clearance-calculation-005 时定位）：CSS 2.1 §10.1 规定无 positioned ancestor 的 absolute 元素以初始包含块（视口）为 containing block。但 taffy 用静态父作 containing block，把 `top:118px`/`left:8px` 解析为静态父（body）相对坐标。ZeroWeb 的 `adjust_absolute_pct_to_viewport`（engine.rs:1857）此前**仅校正百分比 inset**（百分比路径已安全），Length inset 未校正 → 偏移一个 body margin。
+
+历史上 `adjust_absolute_to_initial_containing_block`（engine.rs:1799，现已为死代码）曾同时校正 x/y 偏移和 auto 宽高，因 auto 宽高扩张导致回归（static-inside-inline-block、background-329），故拆分为仅百分比的版本，Length 校正被丢弃。
+
+**修复**：在 `adjust_absolute_pct_to_viewport` 中为 Length（Px）`top`/`left` 增加与百分比同机制的校正（`child.y = top_px - current_content_origin_y`），**不调整 auto 宽高**（规避历史回归源）。注释明确说明机制与历史。
+
+**验证**：
+- GAIN：`clear-clearance-calculation-004`（1.28%→0%✓）、`clear-clearance-calculation-005`（1.28%→0%✓）。两测试都用 abspos `#overlapped-red`（top:118 + height:100 + z-index:-1）作"no red"参考，红元素此前偏低 ~7px（body margin）露出红边。
+- LOSS：**无**。全量 490 测试零回归（rigorous set-diff 验证：old 81 failures → new 79，仅 004/005 移除，无新增）。
+- 单元测试：新增 `test_adjust_absolute_length_top_to_viewport`（tests_9.rs），验证 top:118/left:8 在 origin=8 下 → child.y=110/child.x=8。
+- 同步更新 2 个此前断言旧错误值（body-relative）的测试为正确视口相对值：`test_absolute_in_body_ignores_body_margin`、`test_absolute_position_out_of_flow`（两测试注释本就标注"理想值视口相对但 adjust 未启用"）。
+
+#### R98 关键结论
+
+1. abspos Length inset 视口相对是纯 x/y 调整（与已安全的百分比路径同机制），不碰 auto 宽高 → 零回归。
+2. 仍失败的 abspos-related（abspos-containing-block-initial-007 7.12%、multicol-contained-absolute 16.33%、abspos-containing-block-outside-spanner 4.30%）是**不同子问题**（containing block 解析/嵌套/multicol 交互），非本轮 Length inset 范畴。
 
 ### R97 调查（失败全景映射 + intrinsic sizing 共享根因定位，未提交代码）
 
