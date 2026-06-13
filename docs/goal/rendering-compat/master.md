@@ -2,11 +2,11 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 基础设施已就位）
-**上游真实 reftest 通过率**: 81.0% (397/490) R76 确认（+2 自 R75）
+**上游真实 reftest 通过率**: 81.0% (397/490) R77 确认（稳定，与 R76 持平）
 
 ### 当前阶段结论
 
-- **397/490 (81.0%) 稳定基线**：R76 通过 `align-self: Auto` CSS 规范对齐提升通过率。
+- **397/490 (81.0%) 稳定基线**：R77 通过 IFC inline-block 百分比宽度解析改善 float-003 稳定性。
 - **R73 Phase A 基础设施就位**：`compute_final_inline_layouts` 已启用作为 step 12 后处理，paint 系统可通过 `use_stored` 路径消费存储的 IFC 结果。
   - 当前使用空样式 + override maps（与 paint-IFC 一致），零回归。
   - 后续可逐步切换到真实样式，需逐容器验证。
@@ -21,6 +21,59 @@
 - 专项实施 Spec：[`post-r71-architecture-spec.md`](./post-r71-architecture-spec.md)
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
+
+### R77 进展
+
+**当前状态**：
+- 全量上游 reftest：**397/490 (81.0%)**，与 R76 基线持平（+0，float-003 稳定化）
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+
+#### R77 代码贡献
+
+| 变更 | 说明 |
+|------|------|
+| IFC inline-block 百分比宽度解析 | `measure_text_content` 和 `remeasure_inline_only_containers` 收集 inline-block 子元素的百分比宽度（pct×container_width/100），通过 `with_inline_block_sizes` 传递给 IFC |
+| IFC inline-block fallback 扩展 | inline-block 元素在 CSS width/height 为 Percentage 时也使用 `inline_block_sizes` 回退（之前仅 Auto） |
+| adjust_inline_block_positions ib_sizes 扩展 | ib_sizes 收集包含 Percentage 值的元素（之前仅 Auto） |
+
+#### R77 通过率变化
+
+| 目录 | R76 | R77 | 变化 |
+|------|-----|-----|------|
+| CSS2/ | 98/129 (76.0%) | **99/129 (76.7%)** | +1 (float-003 稳定化) |
+| 其他 | 不变 | 不变 | 零回归 |
+
+#### R77 新增稳定通过的测试
+
+1. `float-003.xht` (1.15%→0.73%) — IFC inline-block 百分比宽度解析使 float 容器内容高度计算一致
+
+#### R77 调查与分析
+
+1. **clear-applies-to-009 根因确认** (1.02%)：通过 `REFTEST_DUMP_LAYOUT` 和 `DEBUG_FLOAT_009` 环境变量进行布局树转储和跟踪调试。
+   - **根因**：`adjust_float_positions` 在 `remeasure_inline_only_containers` 之前运行。
+   - `<p>` 元素的 taffy 初始高度是 20px（单行文本），但 remeasure 后扩展为 40px（两行）。
+   - Phase 2 使用 h=20 计算 `active_left_float_bottom = 16+20+16 = 52`。
+   - 后续 remeasure 将 `<p>` 高度改为 40，但 clear 位置已固定在 52。
+   - 蓝色方块绝对位置 = body_content_y(16) + div.y(0) + span.y(52) = 68px，而参考文件在 60px。
+   - **修复路径**：在 remeasure 后重新运行 adjust_float_positions，或延迟 float/clear 定位到最终布局阶段。
+
+2. **near-miss 测试调查**：分析了 1-2% diff 的失败测试，大部分被系统性问题阻塞（paint IFC、float timing、taffy 精度）。
+
+3. **whitespace-001 退化确认** (1.05%→2.09%)：IFC inline-block sizes 传递对 whitespace-001 产生负影响，但测试仍失败。不影响通过率。
+
+#### R77 关键结论
+
+1. **IFC inline-block 百分比宽度解析是正确性修复**：使 IFC 能正确处理百分比宽度的 inline-block 子元素，改善了 float-003 的稳定性。
+2. **float/clear 定位时序问题确认**：`clear-applies-to-009` 的根因是 `adjust_float_positions` 运行太早，使用了未 remeasure 的高度。
+3. **81% 基线持续稳定**：397/490 在多次复跑中稳定复现。
+
+#### 后续重点（R78+）
+
+1. **float/clear 定位时序修复**（影响 clear-applies-to-009 等）：在 remeasure 后重新运行 adjust_float_positions
+2. **visibility:collapse for flex**（影响 2 tests）：需要在 taffy 中实现两遍布局
+3. **baseline 近似精度**（影响 baseline-007 等）：考虑使用 line_height 而非 font_size 近似
+4. **taffy-IFC 架构统一**（最大杠杆，影响 50+ tests）
 
 ### R76 进展
 
