@@ -4,6 +4,19 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
 **上游真实 reftest 通过率**: 83.1% (407/490) R93（较 R92 的 405-406 flaky 基线 +1~2，且全量确定性）
 
+### R94 调查（multicol 系统性根因精确定位，未提交代码改动）
+
+R93 确定性修复后，reftest 信号可靠，遂深入诊断最大失败类 multicol（22 个）。结论：**multicol inline-content 列分配是系统性缺口，需先修复分配算法本身，不能仅靠放开检测条件**。
+
+- **实验**：把 `painter/text.rs:692` 的 `has_in_flow_children` 收紧为 `... && c.is_block_level`，使纯 inline 内容的 multicol 容器（如 `<div style="column-count:3"><span>…</span>…</div>`）进入列分配路径。结果：multicol 35/57 → **29/57（−6 回归）**，已回滚。
+- **根因 1（检测）**：inline 元素（`<span>`）是 LayoutBox 子节点但 `is_block_level=false`，原检测把它们当作 in-flow 子元素 → 跳过列分配。放开检测后列分配被触发。
+- **根因 2（分配算法本身有 bug）**：`painter/text.rs:926+` 的水平 multicol 分配（按 `line.y / target_h` 分列）+ box 高度未更新，产生错误结果。`inline/mod.rs:1498 break_items_into_columns` 仅服务**垂直书写模式**，非水平 multicol。
+- **像素验证**：multicol-clip-001 的 TEST 把内容渲染为**连续全宽块**（无列间隙），REF 为**3 列带间隙**；放开检测后 TEST 出现 3 列但仍 2.85%（box 高度 = layout 短高度，painter 分配的更高内容溢出/被裁错）。
+- **连带发现**：`html-display-table`（2.90%）根因是 `<html display:table>` 应 shrink-to-fit 但填满视口；`adjust_table_layout` 虽处理根但未覆盖根表宽度，属根表尺寸专项缺口（1 测试，中风险）。
+
+**下一轮真正解锁 multicol 的路径**：修复 `painter/text.rs:926+` 水平列分配算法（列分组 + box 高度协调），需让 multicol 容器高度反映分配后的内容高度（layout/paint 协调），并逐个验证不回归现有 35 个 multicol 通过项。不能仅放开检测条件。
+
+
 ### R93 进展（✅ 修复 IFC override map 非确定性 → 消除 flaky reftest，407/490 确定性）
 
 **当前状态**：
