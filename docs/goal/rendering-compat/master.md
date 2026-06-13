@@ -4,6 +4,22 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
 **上游真实 reftest 通过率**: 83.1% (407/490) R93（较 R92 的 405-406 flaky 基线 +1~2，且全量确定性）
 
+### R95 调查（multicol 水平列分配——5 处关联 bug 全部定位，col0 已可像素级对齐，未提交）
+
+R94 之后继续深入 multicol。本轮通过逐 bug 修复 + 像素验证，把 `multicol-clip-001` 的 **col0 渲染到与 REF 像素级一致**（box 边框 107=107、内容 y[28..87] 完全相同），证明修复方向正确，但 painter 多列分支（`painter/text.rs:926+`）有 **5 处关联 bug**，必须**同时**修复才能净增益（仅修部分会导致 multicol 35/57 → 30/57，已回滚）：
+
+1. **检测**（`text.rs:692`）：`has_in_flow_children` 把 inline 元素（`<span>`，`is_block_level=false`）当作 in-flow 块子元素 → 跳过列分配。修复：追加 `&& c.is_block_level`。
+2. **box 高度**（`engine.rs::remeasure_inline_only_containers`）：容器高度 = 全宽 IFC 短高度（如 40px=2 行），分配后应为 tallest column（60px=3 行）。修复：新增 `multicol::balance_column_geometry`（pub(crate)），按列宽单独跑 IFC，高度 = `ceil(num_lines/col_count) × line_height`。已验证 box 边框 87→107 修正。
+3. **定位 v_offset**（`text.rs` 多列分支 `frag_base_y`）：固定 `+font_size` 导致 Ahem 整体下移一字号。修复：行盒顶部 = `(line.y - col_start_y)`，不再 `+fragment.y`；v_offset = 0（Ahem）/ font_size（普通）。
+4. **is_ahem 传播**：多列 IFC 的 `fragment.is_ahem` 不可靠（Ahem 内容报 false）。绕过：用容器 `style.font_family` 判定 `container_is_ahem`。
+5. **颜色**（未修，本轮阻断点）：多列分支用容器 `color`（如 div 蓝）绘制全部片段，但有色 `<span>`（黑）应由 span 自身 paint_text 绘制（inline ownership）。多列分支绕过了 inline ownership → span 颜色错误。`TextFragment` 无 color 字段，颜色来自各 inline 元素自身的 paint_text 调用。
+
+**关键结论**：col0 像素级对齐证明 ①②③④ 修复方向正确；⑤（颜色 + inline ownership）是最后阻断点，需让多列分支尊重 inline ownership（每片段按其所属 inline 元素的 color 绘制），或重构为不重复 span 自身渲染。修完 ⑤ 后预计 multicol 净转正（22 失败中 inline 内容类可大幅通过）。
+
+**下一轮**：实现 ⑤——多列分支按片段的 inline 元素颜色渲染（可从 `fragment.node_id` 的父元素 style 取 color，或复用 inline ownership 路径）。然后一并提交 ①②③④⑤，验证 22 失败 + 不回归 35 通过。
+
+
+
 ### R94 调查（multicol 系统性根因精确定位，未提交代码改动）
 
 R93 确定性修复后，reftest 信号可靠，遂深入诊断最大失败类 multicol（22 个）。结论：**multicol inline-content 列分配是系统性缺口，需先修复分配算法本身，不能仅靠放开检测条件**。
