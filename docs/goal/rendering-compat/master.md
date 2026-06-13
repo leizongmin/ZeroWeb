@@ -29,6 +29,36 @@
 - Phase B/C 待 Phase A 稳定后推进。
 - **R79/R80 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
 
+### R85 进展（real-style 守卫范围确认最大化）
+
+**当前状态**：
+- 全量上游 reftest：**399-400/490 (81.4-81.6%)**，与 R84 持平（R84 突破稳定保持）
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+- 工作树干净（两个放宽实验均回退，零代码变更）
+
+#### R85 守卫放宽实验（均回退）
+
+R84 的守卫是「单行 + 纯 Ahem」。本轮尝试两个方向的放宽，均导致回归：
+
+1. **单行任意字体**（去掉纯 Ahem 限制）：**-2**。LOSS = `font-family-011`、`font-family-013`（多字体列表在真实样式下的 font 解析/fallback 差异），GAIN = 无。
+2. **纯 Ahem 多行**（去掉单行限制）：**-2**。LOSS = `font-family-013`、`multicol-fill-auto-001`（多行 line-breaking / 多行与 is_ahem 定位交互），GAIN = 无。
+
+#### R85 关键结论
+
+1. **「单行 + 纯 Ahem」是 real-style 存储守卫的最大安全范围**：任意放宽（字体或行数）都引入 font-family 解析或 line-breaking 回归，无收益。
+2. **real-style IFC 存储方法已 plateau 在 R84 的 +2**（color-129, float-005 稳定 + float-003/font-148 flaky 稳定化）。此方法的杠杆已用尽。
+3. **后续突破需要换方向**：不能再靠放宽 real-style 守卫。候选：
+   - inline-formatting-context-002/003（inline 元素背景/边框定位）= inline-ownership 架构缺口（R80a 确认 stored-IFC sync 对此 no-op，因 body 不存储 IFC）
+   - multicol 系列（Phase B 片段级跨列）
+   - float/clear 精度（clear-applies-to-009 的 float-bottom 追踪时序，R78 确认完全重跑会回归）
+   - 表格行高分配（R81）
+
+#### 后续重点（R86+）
+
+1. 转向 multicol 或 inline-ownership 的专项架构小步推进（不再放宽 real-style 守卫）。
+2. 维持 R84 的 real-style 守卫（已确认最大化）作为 Phase A 已落地的稳定子集。
+
 ### R84 进展（✅ 突破：real-style IFC 部分解锁，399-400/490）
 
 **当前状态**：
