@@ -1079,6 +1079,12 @@ fn create_font_loader() -> FontLoader {
 pub fn compare_pixels(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u8) -> (usize, u8) {
     let mut diff_pixels = 0usize;
     let mut max_diff = 0u8;
+    // 调试工具：设置 REFTEST_BBOX 环境变量时，打印差异像素的包围盒，
+    // 帮助定位失败用例的差异区域（图像分析工具不可靠时的精确替代）。
+    let track_bbox = std::env::var("REFTEST_BBOX").is_ok();
+    let fw = fb1.width as usize;
+    let (mut min_x, mut min_y) = (usize::MAX, usize::MAX);
+    let (mut max_x, mut max_y) = (0usize, 0usize);
 
     for i in (0..fb1.data.len()).step_by(4) {
         let r1 = fb1.data[i];
@@ -1101,7 +1107,27 @@ pub fn compare_pixels(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u8) -> (u
 
         if channel_max > threshold {
             diff_pixels += 1;
+            if track_bbox {
+                let px = (i / 4) % fw;
+                let py = (i / 4) / fw;
+                if px < min_x {
+                    min_x = px;
+                }
+                if py < min_y {
+                    min_y = py;
+                }
+                if px > max_x {
+                    max_x = px;
+                }
+                if py > max_y {
+                    max_y = py;
+                }
+            }
         }
+    }
+
+    if track_bbox && diff_pixels > 0 {
+        eprintln!("[REFTEST_BBOX] x=[{min_x},{max_x}] y=[{min_y},{max_y}] fb_w={fw}");
     }
 
     (diff_pixels, max_diff)

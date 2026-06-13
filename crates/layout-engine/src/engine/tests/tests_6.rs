@@ -638,8 +638,7 @@ fn test_absolute_position_out_of_flow() {
     let mut engine = LayoutEngine::new(800.0, 600.0);
     let tree = engine.compute(&doc, &styles);
 
-    let (abs_x, abs_y) =
-        find_absolute_position_by_node_id(&tree.root, absolute).expect("absolute div 应在布局树中");
+    let (abs_x, abs_y) = find_absolute_position_by_node_id(&tree.root, absolute).expect("absolute div 应在布局树中");
     // absolute 元素无 positioned ancestor，containing block 为初始包含块（viewport）。
     // left:20/top:10 解析为视口相对坐标（不受 body 默认 margin 偏移影响）。
     assert!(
