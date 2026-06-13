@@ -689,9 +689,16 @@ impl super::Painter {
             // 注意：对于纯 inline 内容，有明确高度时 balance 模式仍需分配到各列。
             // column-fill: auto 的 inline 内容由 layout 层处理（有 height 限制时），
             // 此处仅处理 balance 模式（无论有无 height）。
-            let has_in_flow_children = box_node.children.iter().any(|c| !c.is_absolute && !c.is_fixed);
+            let has_in_flow_children = box_node
+                .children
+                .iter()
+                .any(|c| !c.is_absolute && !c.is_fixed && c.is_block_level);
             let is_balance_mode = !matches!(style.column_fill, zero_style_system::ColumnFillComputedValue::Auto);
-            let multicol_info = if !has_in_flow_children && is_balance_mode {
+            // 仅对 height:auto 的纯行内 multicol 容器做列分配。明确高度的 balance 容器
+            // （常见于嵌套 multicol / column-breaking 测试）涉及 column breaking，
+            // 当前简单均衡分配会回归这类用例，回退到单块渲染。
+            let height_auto = matches!(style.height, LengthValue::Auto);
+            let multicol_info = if !has_in_flow_children && is_balance_mode && height_auto {
                 compute_multicol_info_for_paint(style, container_width, font_size)
             } else {
                 None
@@ -959,9 +966,33 @@ impl super::Painter {
                             for fragment in &line.runs {
                                 self.painted_inline_nodes.insert(fragment.node_id);
 
+                                // 颜色：取片段所属 inline 元素的 color，绕过 inline ownership
+                                // （多列分支统一绘制全部片段）。fragment.node_id 可能是 inline 元素
+                                // 也可能是文本节点——文本节点时取其父元素。同时标记 owner 元素，
+                                // 使 span 自身的 paint_text 跳过（避免在非列位置重绘）。
+                                let owner_id = if doc
+                                    .get(fragment.node_id)
+                                    .is_some_and(|n| matches!(n.kind, NodeKind::Text(_)))
+                                {
+                                    doc.parent_node(fragment.node_id).unwrap_or(fragment.node_id)
+                                } else {
+                                    fragment.node_id
+                                };
+                                self.painted_inline_nodes.insert(owner_id);
+                                let frag_color = styles
+                                    .and_then(|s| s.get(&owner_id))
+                                    .filter(|s| s.color != ColorValue::CurrentColor)
+                                    .map(|s| color_value_to_render(&s.color))
+                                    .unwrap_or(color);
+
                                 let frag_base_x = content_x + fragment.x + col_x_offset + tx;
-                                let frag_base_y =
-                                    content_y + (line.y - col_start_y) + fragment.y + fragment.font_size + ty;
+                                // 行盒顶部 = (line.y - col_start_y)；基线偏移 v_offset
+                                // （Ahem 完美方块顶部对齐 → 0；普通字体 = font_size ≈ ascent）。
+                                // is_ahem 用容器 font-family 判定（多列 IFC 的 fragment.is_ahem 不可靠）。
+                                let container_is_ahem =
+                                    style.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"));
+                                let v_offset = if container_is_ahem { 0.0 } else { fragment.font_size };
+                                let frag_base_y = content_y + (line.y - col_start_y) + v_offset + ty;
 
                                 let transformed = apply_text_transform(&fragment.text, &style.text_transform);
                                 let mut char_pos = frag_base_x;
@@ -989,7 +1020,7 @@ impl super::Painter {
                                         x: glyph_x,
                                         y: glyph_y,
                                         font_size: fragment.font_size,
-                                        color,
+                                        color: frag_color,
                                         glyph_id: ch as u32,
                                         font_id: default_font_id,
                                         bitmap_width: None,
@@ -1016,7 +1047,7 @@ impl super::Painter {
                                     frag_base_y,
                                     fragment.font_size,
                                     text_width,
-                                    color,
+                                    frag_color,
                                     style,
                                 );
                             }

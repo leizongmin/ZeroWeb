@@ -2,7 +2,41 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 83.1% (407/490) R93（较 R92 的 405-406 flaky 基线 +1~2，且全量确定性）
+**上游真实 reftest 通过率**: 83.5% (409/490) R96（较 R93 的 407 基线 +2，multicol-clip 通过）
+
+### R96 进展（✅ multicol 行内内容列分配——5 处关联 bug 一并修复，409/490，multicol-clip-001/002 通过）
+
+**当前状态**：
+- 全量上游 reftest：**409/490 (83.5%)**，较 R93 的 407 再 **+2**；multicol 35/57 → **37/57**
+- 内联 reftest 全量：686/686 (100%)；`cargo test --workspace` 全绿；clippy：**零警告**；确定性
+
+#### R96 改动：multicol balance 行内内容列分配（painter + layout 协同，5 处修复 + 1 处守卫）
+
+R94/R95 定位了 painter 多列分支（`painter/text.rs:926+`）的 5 处关联 bug，本轮一并修复并加守卫，使纯行内内容 multicol 容器正确分列：
+
+1. **检测**（`text.rs:692`）：`has_in_flow_children` 追加 `&& c.is_block_level`，使纯 inline 内容（含 `<span>`）的容器进入列分配。
+2. **守卫**（`text.rs:697`）：仅 `height:auto` 的 balance 容器分配。明确高度的 balance 容器（嵌套 multicol / column-breaking 测试）回退单块渲染——此守卫消除了 5 个 multicol-breaking 回归。
+3. **box 高度**（`engine.rs::remeasure_inline_only_containers`）：新增 `multicol::balance_column_geometry`（pub(crate)），按列宽单独跑 IFC，容器高度 = `ceil(num_lines/col_count) × line_height`（tallest column），替代全宽 IFC 短高度。
+4. **定位**（`text.rs` 多列分支）：行盒顶部 = `(line.y - col_start_y)`，不再 `+fragment.y`；v_offset = 0（Ahem）/ font_size（普通）。
+5. **is_ahem**：用容器 `style.font_family` 判定（多列 IFC 的 `fragment.is_ahem` 不可靠）。
+6. **颜色 / inline ownership**（`text.rs` 多列分支）：每片段按其所属 inline 元素（文本节点取父、元素片段取自身）的 `color` 绘制；并标记 owner 元素到 `painted_inline_nodes`，使 span 自身 paint_text 跳过（避免在非列位置重绘）。这是最后的阻断点。
+
+#### R96 验证（definitive diff vs R93）
+
+- **GAIN**：`multicol-clip-001`（3.13%→0.65%✓）、`multicol-clip-002`（3.13%→通过✓）。multicol 35→37。
+- **LOSS**：无。height:auto 守卫消除了 R95 的 5 个 multicol-breaking 回归（35→30→37）。
+
+#### R96 关键结论
+
+1. col0 像素级对齐（R95 验证）+ ⑤ 颜色修复 + height:auto 守卫 = multicol 行内分配首次净增益。
+2. height:auto 守卫是关键权衡：明确高度的 balance 容器涉及 column breaking（嵌套/分片），当前简单均衡算法无法处理，回退单块比错误分配更接近 Chrome。
+3. 仍失败的 multicol（20 个）多为：column breaking（multicol-breaking-*）、column-fill:auto 顺序填充（multicol-fill-*）、嵌套/abspos——需 column fragmentation 基础设施。
+
+#### 后续重点（R97+）
+
+1. multicol column breaking（multicol-breaking-* / column-fill:auto）——需内容碎片化。
+2. CSS2/linebox block-in-inline / IFC、flexbox baseline + max/min-content、writing-mode 垂直布局。
+
 
 ### R95 调查（multicol 水平列分配——5 处关联 bug 全部定位，col0 已可像素级对齐，未提交）
 

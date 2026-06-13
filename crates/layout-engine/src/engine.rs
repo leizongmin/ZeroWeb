@@ -2576,6 +2576,7 @@ fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, st
                 Some((node_id, (c.content_width, c.content_height)))
             })
             .collect();
+        let ib_sizes_for_mc = ib_sizes.clone();
         let mut inline_ctx = InlineFormattingContext::new(container_width)
             .with_vertical(is_vertical)
             .with_vertical_rtl(is_vertical_rtl)
@@ -2587,7 +2588,28 @@ fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, st
         store_font_sizes_from_ifc(&inline_ctx, box_node);
         sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
 
-        let content_height = inline_ctx.total_height();
+        let full_height = inline_ctx.total_height();
+        // balance 模式多列容器：按列宽单独测量，计算均衡分布后的高度
+        // （tallest column = ceil(num_lines / col_count) 行），使容器高度匹配
+        // 分配后的列内容，而非全宽 IFC 的较短高度。
+        let content_height = if let Some((cw, cols)) = crate::multicol::balance_column_geometry(style, container_width)
+        {
+            let mut col_ctx = InlineFormattingContext::new(cw)
+                .with_vertical(is_vertical)
+                .with_vertical_rtl(is_vertical_rtl)
+                .with_text_align(text_align)
+                .with_inline_block_sizes(ib_sizes_for_mc);
+            col_ctx.layout(doc, dom_id, styles);
+            let total = col_ctx.total_height();
+            let n = col_ctx.lines.len();
+            if n > 0 && cols > 0 {
+                n.div_ceil(cols) as f32 * (total / n as f32)
+            } else {
+                total
+            }
+        } else {
+            full_height
+        };
         if content_height > box_node.content_height {
             // 如果 IFC 计算的高度大于 taffy 的高度，更新容器高度
             let diff = content_height - box_node.content_height;
