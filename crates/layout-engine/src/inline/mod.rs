@@ -1107,6 +1107,10 @@ impl InlineFormattingContext {
         };
         // text-indent 仅作用于首行
         let mut current_x = self.text_indent;
+        // 跟踪当前行内最近一次贡献宽度的内容是否为可折叠空白，
+        // 用于将连续纯空白 run（如 inline-block 之间被注释分隔的两个文本节点）
+        // 按 CSS Text §4.1 折叠为单个空格。
+        let mut last_was_collapsible_ws = false;
 
         for item in items {
             match item {
@@ -1118,6 +1122,8 @@ impl InlineFormattingContext {
 
                     // 空 inline 元素：文本为空但 line-height + padding + border 仍需贡献到行盒高度
                     if words.is_empty() && run.text.is_empty() {
+                        // 空 inline 盒有几何（padding/border），打破可折叠空白连续性
+                        last_was_collapsible_ws = false;
                         if run.box_height() > current_line.height {
                             current_line.height = run.box_height();
                         }
@@ -1148,6 +1154,19 @@ impl InlineFormattingContext {
                         }
                         continue;
                     }
+
+                    // 纯空白文本节点（collapse_whitespace 折叠后的单个空格）：
+                    // 作为行内级盒之间的间距贡献一个空格宽度，使后续盒在放不下时正确换行。
+                    // CSS Text §4.1：行首空白（当前行为空）被移除；
+                    // 连续纯空白 run 折叠为单个空格（last_was_collapsible_ws）。
+                    if words.is_empty() {
+                        if !current_line.runs.is_empty() && !last_was_collapsible_ws {
+                            current_x += estimate_char_width(' ', run.font_size, run.is_ahem_font);
+                            last_was_collapsible_ws = true;
+                        }
+                        continue;
+                    }
+                    last_was_collapsible_ws = false;
 
                     // 在第一个词之前添加 margin-left
                     if run.margin_left > 0.0 {
@@ -1314,6 +1333,8 @@ impl InlineFormattingContext {
                     // inline-block 是原子盒，不可拆分
                     let box_width = box_info.width;
                     let box_height = box_info.height;
+                    // 行内级盒打破了可折叠空白的连续性
+                    last_was_collapsible_ws = false;
 
                     let est_height = if current_line.height > 0.0 {
                         current_line.height
@@ -1367,6 +1388,7 @@ impl InlineFormattingContext {
                 InlineItem::Br => {
                     // 强制换行：将当前行推入结果，开始新行
                     // Br 总是产生一个换行，即使当前行为空
+                    last_was_collapsible_ws = false;
                     let est_height = if current_line.height > 0.0 {
                         current_line.height
                     } else {
