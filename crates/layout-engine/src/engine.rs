@@ -1891,6 +1891,17 @@ fn adjust_absolute_pct_to_viewport(
                 let target_viewport_y = *p as f32 / 100.0 * viewport_height;
                 child.y = target_viewport_y - current_content_origin_y;
             }
+            // left/top 为长度（Px）时：CSS 2.1 §10.1 规定无 positioned ancestor 的
+            // absolute 元素以初始包含块（视口）为 containing block。taffy 用静态父
+            // 作 containing block，导致 top:118px 解析为静态父相对坐标。此处把目标
+            // 视口坐标（= px 值）转回父相对坐标，与百分比路径同机制（不调整 auto
+            // 宽高，避免历史上 auto 宽高扩张导致的回归）。
+            if let LengthValue::Px(px) = &style.left {
+                child.x = (*px as f32) - current_content_origin_x;
+            }
+            if let LengthValue::Px(px) = &style.top {
+                child.y = (*px as f32) - current_content_origin_y;
+            }
             // right/bottom 百分比仅当对应尺寸为 auto 时才影响尺寸/位置；
             // 当前不处理（避免与 width/height 重叠计算引入复杂性与回归）。
         }

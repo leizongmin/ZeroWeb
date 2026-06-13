@@ -471,20 +471,16 @@ fn test_absolute_in_body_ignores_body_margin() {
     let result = engine.compute(&doc, &styles);
 
     let (abs_x, abs_y) = find_absolute_position_by_node_id(&result.root, abs_child).expect("abs found");
-    // 注意：absolute 子元素的 taffy 坐标是相对 viewport 的（无 positioned ancestor），
-    // 但在 LayoutBox 树中作为 body 的子节点存储。
-    // body.x = 8（margin），abs_child.x = 8（left:8，taffy 视口相对坐标），
-    // 累加后 abs_x = 16。理想值为 8（视口相对），
-    // 但 adjust_absolute_to_initial_containing_block 暂未启用。
+    // CSS 2.1 §10.1：无 positioned ancestor 的 absolute 元素以初始包含块（视口）为
+    // containing block。left:8/top:118 解析为视口相对坐标，不受 body margin 偏移影响。
     assert!(
-        (abs_x - 16.0).abs() < 2.0,
-        "abs x = body.margin_left + left, got {}",
+        (abs_x - 8.0).abs() < 2.0,
+        "abs 视口 x 应为 left:8，实际为 {}",
         abs_x
     );
-    // abs_y: body.margin_top(8) + top(118) = 126
     assert!(
-        (abs_y - 126.0).abs() < 2.0,
-        "abs y = body.margin_top + top, got {}",
+        (abs_y - 118.0).abs() < 2.0,
+        "abs 视口 y 应为 top:118，实际为 {}",
         abs_y
     );
 }

@@ -638,19 +638,19 @@ fn test_absolute_position_out_of_flow() {
     let mut engine = LayoutEngine::new(800.0, 600.0);
     let tree = engine.compute(&doc, &styles);
 
-    let abs_box = find_child_by_node_id(&tree.root, absolute).expect("absolute div 应在布局树中");
+    let (abs_x, abs_y) =
+        find_absolute_position_by_node_id(&tree.root, absolute).expect("absolute div 应在布局树中");
     // absolute 元素无 positioned ancestor，containing block 为初始包含块（viewport）。
-    // taffy 将其定位为 viewport 相对坐标，但在 LayoutBox 树中作为 body 子节点存储。
-    // x = left(20) 是 taffy 计算的位置值。
+    // left:20/top:10 解析为视口相对坐标（不受 body 默认 margin 偏移影响）。
     assert!(
-        (abs_box.x - 20.0).abs() < 2.0,
-        "absolute 元素 x 应接近 20（left:20），实际为 {}",
-        abs_box.x
+        (abs_x - 20.0).abs() < 2.0,
+        "absolute 元素视口 x 应为 20（left:20），实际为 {}",
+        abs_x
     );
     assert!(
-        (abs_box.y - 10.0).abs() < 2.0,
-        "absolute 元素 y 应接近 10（top:10），实际为 {}",
-        abs_box.y
+        (abs_y - 10.0).abs() < 2.0,
+        "absolute 元素视口 y 应为 10（top:10），实际为 {}",
+        abs_y
     );
 }
 
