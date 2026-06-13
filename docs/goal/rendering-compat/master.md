@@ -2,7 +2,34 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 82.7% (405/490) R91 突破（较 R90 的 401-402 基线 +3~4）
+**上游真实 reftest 通过率**: 82.9% (406/490) R92（较 R91 的 405 基线 +1）
+
+### R92 进展（✅ absolute 百分比按视口重解析，406/490，position-fixed-overflow-print 通过）
+
+**当前状态**：
+- 全量上游 reftest：**406/490 (82.9%)**，较 R91 的 405 再 **+1**
+- 内联 reftest 全量：**686/686 (100%)**
+- `zero-layout-engine` 单测：821/821；clippy：**零警告**
+
+#### R92 改动：无 positioned ancestor 的 absolute 元素百分比按视口重解析（+1）
+
+- **CSS 2.1 §10.1**：absolute 元素无 positioned ancestor 时，containing block 是初始包含块（视口）。taffy 用静态父作为 containing block，导致 `width:50%`、`left:50%` 等百分比按父宽度解析。
+- **新函数 `adjust_absolute_pct_to_viewport`**（engine.rs step 11.5）：递归遍历，对「无 positioned ancestor 的 absolute 元素」**仅重解析百分比** width/height/left/top 为视口相对值（Length/Auto 不动）。
+- **关键解耦**：旧版 `adjust_absolute_to_initial_containing_block` 同时调整 x/y 偏移与 auto 宽高，导致 static-inside-inline-block、background-329、block-formatting-context-height-003、writing-mode float 回归。新版只处理百分比，**零回归**（definitive diff vs R91：仅 position-fixed-overflow-print 由 75%→0% 通过，无新增失败）。
+- **GAIN**：`position-fixed-overflow-print`（75%→0%✓）。css-position 15→16。
+- **遗留**：`abspos-containing-block-initial-007`（7.12%）使用 `bottom:0`（length，非百分比），本函数按设计不处理 bottom/right；属同类但独立的缺口。
+
+#### R92 关键结论
+
+1. **窄化策略生效**：把「initial containing block 修正」从「x/y + auto 宽高 + 百分比」收窄到「仅百分比」，避开了历史回归。后续若要修 `bottom/right` 长度偏移，需同样窄化（只针对无 positioned ancestor 的 absolute，且不动 auto 尺寸）。
+2. position:fixed 的「相对视口」语义由此类百分比重解析间接覆盖；真正 fixed 元素的包含块仍是已知 P2 缺口。
+
+#### 后续重点（R93+）
+
+1. multicol column breaking（22 个失败，最大类别，系统性）。
+2. writing-mode 垂直布局（10+ 失败，系统性轴交换）。
+3. CSS2/linebox block-in-inline / IFC（inline-formatting-context-002/003/008/009/011、inline-box-001/002、empty-inline-002 等 ~8 个）。
+4. flexbox baseline + max/min-content sizing（flex-container-max/min-content-001、flexbox-baseline-multi-line 等）。
 
 ### R91 进展（✅ 突破：border-collapse 双侧同步 + 表格列折叠 + 视口单位修复，405/490）
 
