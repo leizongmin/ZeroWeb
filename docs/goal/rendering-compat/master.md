@@ -2,7 +2,35 @@
 
 **最后更新**: 2026-06-14
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 83.9% (411/490) R98（较 R97 的 409 基线 +2，abspos Length inset 视口相对修复）
+**上游真实 reftest 通过率**: 84.1% (412/490) R104（较 R98 的 411 基线 +1，remeasure 直接 DOM 文本块）
+
+### R104 进展（✅ remeasure 直接 DOM 文本块，412/490，multicol-containing-001 通过）
+
+**当前状态**：
+- 全量上游 reftest：**412/490 (84.1%)**，较 R98 的 411 再 **+1**；multicol 37/57 → **38/57**
+- 内联 reftest 全量：686/686 (100%)；`cargo test --workspace` 全绿；clippy 零警告；确定性；零回归
+
+#### R104 改动：remeasure 仅含直接 DOM 文本的块（engine.rs `remeasure_inline_only_containers`）
+
+**根因**（R101 系列 + 本轮 instrumentation 定位）：`remeasure_inline_only_containers` 仅处理含 inline-level LayoutBox 子的块。**仅含直接 DOM 文本**（无 inline 元素子）的块 `LayoutBox.children` 为空 → 被跳过 → `store_font_sizes_from_ifc` 不存储其 font_size → paint IFC 默认 16；且 taffy 对非 flex/grid 块无文本节点，高度未测量。
+
+**修复**：扩展 remeasure 条件，也处理含 DOM 文本子（`has_dom_text`）且 taffy 未测量（`content_height < 1.0`）且无 in-flow LayoutBox 子的块。`content_height < 1.0` 守卫避免覆盖 taffy 已正确测量的块（unguarded 版本回归 font-feature/multicol-fill-auto/abspos 共 5 测试）。
+
+**验证**：
+- GAIN：`multicol-containing-001`（2.99%→0.31%✓ 通过）。multicol 37→38。
+- 部分改善：`inline-formatting-context-008`（8.18%→4.17%，未通过，残留 = R83 基线残留）。
+- LOSS：无。全量 490 测试零回归（set-diff 验证）。
+
+#### R104 关键结论
+
+1. R101c「populate 无效」假设需修正：populate 失败的真正原因是 remeasure 根本没处理 inner-div（children 空），不是 paint 不消费。本修复让 remeasure 处理这类块，font_size 正确存储。
+2. 大字号集群（008/009/011/font-051/empty-inline-002）的 font_size 存储缺口已修；008 残留 4.17% = R83 基线残留（stored/non-stored frag.y 在大字号的 +font_size 偏移）。
+
+#### 后续重点（R105+）
+
+1. **R83 基线残留**（008 残留 4.17%）：stored/non-stored frag.y 大字号偏移。与 R104 remeasure 配合可净正解锁 008/009。
+2. 继续大字号集群（011/font-051/empty-inline-002）——检查 R104 是否已改善它们的 font_size 存储。
+3. R100-R103 其他集群（block-in-line/intrinsic/float-collapse/writing-modes）。
 
 ### R103 调查（multicol-collapsing-001 全路径 debunked：根因是混合 block+inline 内容未分列，未提交代码）
 
