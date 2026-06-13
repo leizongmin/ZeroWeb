@@ -701,13 +701,8 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
             let child = &root.children[idx];
             let node_id = child.node_id?;
             let style = styles.get(&node_id)?;
-            let needs_fallback = matches!(
-                style.width,
-                LengthValue::Auto | LengthValue::Percentage(_)
-            ) || matches!(
-                style.height,
-                LengthValue::Auto | LengthValue::Percentage(_)
-            );
+            let needs_fallback = matches!(style.width, LengthValue::Auto | LengthValue::Percentage(_))
+                || matches!(style.height, LengthValue::Auto | LengthValue::Percentage(_));
             if !needs_fallback {
                 return None;
             }
