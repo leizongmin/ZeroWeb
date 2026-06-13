@@ -176,19 +176,21 @@ impl LayoutEngine {
         // 仅对 inline-level relative 元素应用偏移，避免 block-level 元素双重偏移。
         apply_relative_offsets_inline(&mut root_box, styles);
 
-        // 11.5 后处理：修正没有 positioned ancestor 的 absolute 元素。
-        // 注意：此功能当前导致多个回归（static-inside-inline-block、background-329、
-        // block-formatting-context-height-003、writing-mode float 等），
-        // 在定位更精确之前暂不启用。
-        // adjust_absolute_to_initial_containing_block(
-        //     &mut root_box,
-        //     0.0,
-        //     0.0,
-        //     self.viewport_width,
-        //     self.viewport_height,
-        //     styles,
-        //     false,
-        // );
+        // 11.5 后处理：修正没有 positioned ancestor 的 absolute 元素的**百分比**
+        // inset 与尺寸。
+        // CSS 2.1 §10.1：absolute 元素无 positioned ancestor 时，containing block 是
+        // 初始包含块（视口）。taffy 用静态父作为 containing block，导致 width:50% 等百分比
+        // 按父宽度解析。本步骤仅重解析百分比（Length/Auto 不动），避免旧版
+        // adjust_absolute_to_initial_containing_block 同时调整 x/y 与 auto 宽高导致的回归。
+        adjust_absolute_pct_to_viewport(
+            &mut root_box,
+            0.0,
+            0.0,
+            self.viewport_width,
+            self.viewport_height,
+            styles,
+            false,
+        );
 
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
@@ -1805,6 +1807,74 @@ fn adjust_absolute_to_initial_containing_block(
         let child_content_origin_x = current_content_origin_x + box_node.border_left + box_node.padding_left + child.x;
         let child_content_origin_y = current_content_origin_y + box_node.border_top + box_node.padding_top + child.y;
         adjust_absolute_to_initial_containing_block(
+            child,
+            child_content_origin_x,
+            child_content_origin_y,
+            viewport_width,
+            viewport_height,
+            styles,
+            child_has_positioned_ancestor || child.is_absolute,
+        );
+    }
+}
+
+/// 修正无 positioned ancestor 的 absolute 元素的**百分比** inset 与尺寸。
+///
+/// CSS 2.1 §10.1：absolute 元素无 positioned ancestor 时，containing block 是
+/// 初始包含块（视口）。但 taffy 用静态父作为 containing block，导致 `width:50%`、
+/// `left:50%` 等百分比按父宽度（而非视口宽度）解析。
+///
+/// 本函数**只重解析百分比**（Length/Percent::Auto 不动），避免历史上
+/// `adjust_absolute_to_initial_containing_block` 因同时调整 x/y 偏移和 auto 宽高
+/// 导致的回归（static-inside-inline-block、background-329 等）。
+///
+/// 坐标系：LayoutBox.x/y 相对父内容盒原点。paint 链逐层累加得到视口绝对坐标。
+/// `current_content_origin_x/y` 是当前盒内容盒原点的视口绝对坐标。
+fn adjust_absolute_pct_to_viewport(
+    box_node: &mut LayoutBox,
+    current_content_origin_x: f32,
+    current_content_origin_y: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    has_positioned_ancestor: bool,
+) {
+    use zero_css_parser::values::LengthValue;
+    let child_has_positioned_ancestor = has_positioned_ancestor
+        || box_node.is_absolute
+        || box_node.is_fixed
+        || box_node.is_relative
+        || box_node.is_sticky;
+
+    for child in &mut box_node.children {
+        if child.is_absolute
+            && !child_has_positioned_ancestor
+            && let Some(style) = child.node_id.and_then(|node_id| styles.get(&node_id))
+        {
+            // 仅当 width 为百分比时按视口重解析
+            if let LengthValue::Percentage(p) = &style.width {
+                child.width = *p as f32 / 100.0 * viewport_width;
+            }
+            if let LengthValue::Percentage(p) = &style.height {
+                child.height = *p as f32 / 100.0 * viewport_height;
+            }
+            // left/top 百分比：目标视口绝对坐标 = p/100 * viewport，转回父相对坐标
+            if let LengthValue::Percentage(p) = &style.left {
+                let target_viewport_x = *p as f32 / 100.0 * viewport_width;
+                child.x = target_viewport_x - current_content_origin_x;
+            }
+            if let LengthValue::Percentage(p) = &style.top {
+                let target_viewport_y = *p as f32 / 100.0 * viewport_height;
+                child.y = target_viewport_y - current_content_origin_y;
+            }
+            // right/bottom 百分比仅当对应尺寸为 auto 时才影响尺寸/位置；
+            // 当前不处理（避免与 width/height 重叠计算引入复杂性与回归）。
+        }
+
+        // 递归：用（可能已修改的）child 位置计算其内容盒原点
+        let child_content_origin_x = current_content_origin_x + box_node.border_left + box_node.padding_left + child.x;
+        let child_content_origin_y = current_content_origin_y + box_node.border_top + box_node.padding_top + child.y;
+        adjust_absolute_pct_to_viewport(
             child,
             child_content_origin_x,
             child_content_origin_y,
