@@ -29,6 +29,15 @@
 - Phase B/C 待 Phase A 稳定后推进。
 - **R79/R80 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
 
+### R86 进展（multicol 确认为 Phase B，无离散修复）
+
+**当前状态**：399-400/490 持平 R84（无突破），multicol 34/57，工作树干净。
+
+- **multicol 列计数/列宽计算已验证正确**（`compute_column_info`/`compute_column_count`/`compute_single_column_width` 符合 CSS Multi-column §3.4 伪算法；multicol-count-computed-003 的 N=3, W=1em 计算无误）。
+- **multicol 失败根因 = 内容分布**（按行/片段跨列），属 Phase B 架构（paint 端按 `line.y/target_h` 简单分行，layout 端 `assign_children_to_columns_*` 只处理整块子元素，不能按行拆分）。非离散 bug。
+- **multicol paint 路径的 `+font_size` 偏移**（text.rs 多列渲染分支）与 R84 stored 路径同源，但对 multicol 是**中性**（multicol 的偏差来自横向分布，非纵向）；已回退中性改动。
+- **结论**：multicol 目录的提升需要 Phase B（行级跨列 fragmentation），不能再靠列计算或纵向定位微调。
+
 ### R85 进展（real-style 守卫范围确认最大化）
 
 **当前状态**：
