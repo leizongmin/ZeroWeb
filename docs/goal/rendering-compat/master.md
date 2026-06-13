@@ -29,6 +29,18 @@
 - Phase B/C 待 Phase A 稳定后推进。
 - **R79/R80 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
 
+### R88 进展（Phase A leaf-inline 尝试失败，确认 inline-ownership 需协调多件改动）
+
+**当前状态**：399-400/490 持平 R84（无突破），工作树干净。
+
+- **尝试**：在 `build_subtree` 让叶子 inline 元素（`display:inline` 且仅有文本子节点）不创建独立 taffy 节点——其文本由父容器 IFC 排版。这是 inline-ownership 最窄的子集（目标修 font-051）。
+- **结果**：**严重回归 387/490（-12）**，font-051 反而恶化（8.33%）。根因：移除 inline box 后其文本必须由父容器 paint_text 重新渲染，但父容器的 `use_stored`/IFC 并不可靠地接管这些文本——大量测试的 inline 文本丢失/错位。
+- **结论**：inline-ownership 不能拆成「先移 box」单独做——移 box 必须与「父容器 IFC 可靠消费文本 + painted_inline_nodes 防双重渲染 + 背景几何同步」**协调一次性完成**。任何单件改动都打破其他件。这印证了 R80a（stored-IFC sync no-op）、R80b（font 回退 -4）的结论：inline-ownership 是真正的多件耦合架构改动，不能 piecewise 增量推进。
+
+#### 跨轮总结更新（R80-R88）
+
+R84 仍是本阶段唯一 clean win（+2，399-400/490）。R80-R83、R85-R88 共 8 轮（含本轮一次 Phase A 子步实测失败）系统验证：所有 near-miss 失败均被结构性缺口阻塞，且这些缺口（尤其 inline-ownership）是**多件耦合**，不能 piecewise 修复。增量补丁路径彻底穷尽。后续提升必须以协调的专项架构改造（Phase A/B/C）推进，需多轮连续投入而非单轮定点。
+
 ### R87 进展（clear-applies-to-009 确认为字体度量 + float 时序，无离散修复）
 
 **当前状态**：399-400/490 持平 R84（无突破），工作树干净。
