@@ -4,6 +4,44 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
 **上游真实 reftest 通过率**: 83.9% (411/490) R98（较 R97 的 409 基线 +2，abspos Length inset 视口相对修复）
 
+### R100 调查（float 折叠修复路径细化 + 大字号渲染集群定位，未提交代码）
+
+**当前状态**：全量上游 reftest **411/490 (83.9%)** 与 R98 持平（基线重测确认，确定性）。本轮未提交代码改动，推进三条调查线，记录以避免下轮重复推导。
+
+#### 调查线 1：float 折叠修复的「外科式」安全路径（细化 R99）
+
+R99 担心「排除 float 出折叠」会影响所有 float 布局。本轮确认 ZeroWeb 的 float 模型 = **taffy 把 float 当 in-flow 块子布局（后续块兄弟排在 float 下方）+ engine.rs `adjust_float_positions` 重定位 + 仅 inline 内容做 float exclusion**。
+
+因此**不能**让 float 跳过 taffy 的位置推进（否则块兄弟上移与 float 重叠）。但可做**仅排除 margin 折叠、保留位置推进**的外科式改动（`taffy-local/compute/block.rs::perform_final_layout_on_in_flow_children`）：
+
+- float item **仍** `perform_child_layout` 并推进 `committed_y_offset`（保留当前块兄弟排在下方行为）。
+- float item **不**更新 `first_child_top_margin_set`（float 不是父的「首 in-flow 子」，故 body.margin_top 不吸收 float.margin_top → clear-applies-to-009 修复）。
+- float item **不**更新 `active_collapsible_margin_set`（float margin 不与兄弟/父折叠）。
+- 需先给 `BlockItem`（`block.rs:297+`）加 `is_float` 字段，从 `get_block_child_style` 取——但 taffy-local Style **无 float 字段**，需在 `crates/taffy-local/src/style/mod.rs` 加 + `converter/mod.rs:39` 已有 `is_float`（仅用于 margin-left/right）需额外传入。
+
+**风险**：任何「依赖 float margin 错误折叠进父」的当前通过测试会变。确定性 reftest（R93 后）可一轮验证。杠杆：clear-applies-to-009(1.02%) 确定 + clear-applies-to-001/float-006/clear-float-003/clear-inline-001 待验证结构。
+
+#### 调查线 2：大字号（100px）Ahem 渲染集群（5+ 测试潜在共享根因）
+
+失败测试均用 100px/50px Ahem：`font-051`(8.19%)、`inline-formatting-context-008`(8.18%)/`009`(6.11%)/`011`(11.24%)、`empty-inline-002`(29.32%)、`border-padding-bleed-001`(7.73%)。
+
+- **font-051 关键观察**：TEST 在 y≈70 仅 ~42px 黑（"FAIL" 4 字 ≈ 10.5px/字），**不是** 100px 黑块。即 span 渲染成 ~10px 而非继承的 100px。
+- **已排除**：`expand_font("serif")` 正确返回 `vec![]`（`shorthand/mod.rs:1509`，`font:serif` 无效简写被丢弃）→ span 应继承 div 的 100px。R97 实验 `font:inherit` 仍失败也指向非简写问题。
+- **待判定二选一**：(a) font-size 继承断裂（span 实际拿到 ~10px 非 100px）；(b) 100px 大字号 glyph 渲染/度量错误。`inline-formatting-context-008`（`#div1{font:100px/1em Ahem}` + 直接子 `<div>XX XX</div>` 无 span/简写）**也失败** → 若 (a) 继承则 008 不该失败 → 倾向 **(b) 大字号 glyph 度量**，但需 instrument 确认。
+- **GlyphCache 无 size 截断**：`GlyphKey.size_px = round(f32) as u16`（`font/cache.rs:22`），不同 size 分桶缓存，无明显大字号 bug。需进一步查 rasterize/shaper 的大字号路径。
+
+#### 调查线 3：multicol-collapsing-001（1.68%）margin 包含追踪
+
+R97 已排除外层 div border 逻辑（外层 1px border → `own_margins_collapse_with_children.end=false`（`block.rs:177`）→ 外层 content_height 应含内层 multicol 的 bottom margin via `bottom_y_margin_offset=last_child_bottom_margin_set.resolve()`（`block.rs:562`），逻辑看似正确）。
+
+**新线索**：根因可能在内层 multicol 节点的 `margins_can_collapse_through`。`has_styles_preventing_being_collapsed_through`（`block.rs:185`）= `!is_block || overflow || absolute || padding||border|| height>0 || min_height>0`。内层 multicol 无 border/padding/height → 若其全部子节点也可折叠穿透 → 内层 `margins_can_collapse_through=true` → 在外层 loop（`block.rs:547`）走 collapsible-through 分支 → 内层 bottom margin 折叠穿透而非计入外层高度。**taffy-local 不知 multicol 建立 BFC**（CSS Multicol §2：multicol 容器建立 BFC，margin 不与子折叠、自身不折叠穿透）。修复：让 taffy-local 把 multicol 节点视为建立 BFC（`own_margins_collapse_with_children=false` + `has_styles_preventing_being_collapsed_through=true`），需 Style 加 multicol 标志。
+
+#### 后续重点（R101+，按杠杆/风险排序）
+
+1. **multicol-collapsing-001**（调查线 3）：multicol 建 BFC 在 taffy-local，最 scoped，可能解锁多个 multicol margin 测试。优先试。
+2. **大字号 glyph 度量**（调查线 2）：先 instrument 确认 (a) vs (b)，再定修复点。潜在 5+ 测试。
+3. **float 折叠外科式**（调查线 1）：确定性可验证，但需 Style 加 float 字段，风险中。clear-applies-to-009 + 待验 float 测试。
+
 ### R99 调查（clear-applies-to-009 根因定位：taffy 把 float 子元素当普通块子参与 margin 折叠，未提交代码）
 
 **当前状态**：全量上游 reftest **411/490 (83.9%)** 与 R98 持平；本轮为单测试根因定位。
