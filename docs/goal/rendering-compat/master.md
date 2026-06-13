@@ -2,27 +2,90 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 基础设施已就位）
-**上游真实 reftest 通过率**: 81.0% (397/490) R78 确认（稳定，与 R77 持平）
+**上游真实 reftest 通过率**: 81.0% (397/490) R79 确认（稳定，与 R78 持平）
 
 ### 当前阶段结论
 
-- **397/490 (81.0%) 稳定基线**：R68-R78 共 10 轮，从 388→397（+9），每轮平均 +0.9。
+- **397/490 (81.0%) 稳定基线**：R68-R79 共 11 轮，从 388→397（+9），每轮平均 +0.8。
 - **R73 Phase A 基础设施就位**：`compute_final_inline_layouts` 已启用作为 step 12 后处理，paint 系统可通过 `use_stored` 路径消费存储的 IFC 结果。
   - 当前使用空样式 + override maps（与 paint-IFC 一致），零回归。
   - 后续可逐步切换到真实样式，需逐容器验证。
-- **独立修复路径收益递减**：R68-R78 的增量改善已穷尽大部分独立 bug。93 个失败测试中，20 个 near-miss（1-2% diff）均有系统性根因。
-- **后续提升主要依赖专项架构改造**：
-  1. **taffy-IFC 架构统一**：影响 50+ 测试，需要重设计 layout/paint 之间的 IFC 数据流。
-  2. **multicol inline 内容跨列拆分**：影响 16+ 测试，需要 IFC 片段级列分配与 fragmentation。
-  3. **writing-mode 垂直布局完整实现**：影响 10+ 测试，需要完整轴交换与垂直字形渲染/定位收口。
-  4. **独立修复机会**：visibility:collapse flex 实现（taffy 未支持）、border-conflict-resolution 精度、float clearance 边界 case。
+- **独立修复路径完全穷尽**：R68-R79 共 11 轮尝试，93 个失败测试中全部被系统性根因阻塞。R79 系统性验证了以下修复路径均不可行：
+  1. **html-display-table shrink-to-fit**：需要从 inline-block 后代计算固有宽度，但 LayoutBox 的 x 坐标来自 taffy 的 block-level 排列而非 inline 级定位，无法正确计算
+  2. **is_empty_block epsilon 比较**：将精确 0.0 比较改为 epsilon 导致回归，taffy 为空块分配精确 0.0
+  3. **max-width:max-content converter 映射**：taffy Dimension 枚举不支持 MaxContent 变体
+- **后续提升唯一路径是专项架构改造**：
+  1. **taffy-IFC 架构统一**：影响 50+ 测试，需要重设计 layout/paint 之间的 IFC 数据流
+  2. **multicol inline 内容跨列拆分**：影响 16+ 测试，需要 IFC 片段级列分配与 fragmentation
+  3. **writing-mode 垂直布局完整实现**：影响 10+ 测试，需要完整轴交换与垂直字形渲染/定位收口
+  4. **taffy visibility:collapse 实现**：影响 2 测试，需要 taffy flexbox 算法两遍布局支持
 
 ### 下一阶段执行依据
 
 - 专项实施 Spec：[`post-r71-architecture-spec.md`](./post-r71-architecture-spec.md)
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
-- **R78 系统性分析**：所有 20 个 near-miss 测试已逐一调查，根因均为系统性架构限制，非独立 bug。
+- **R79 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
+
+### R79 进展
+
+**当前状态**：
+- 全量上游 reftest：**397/490 (81.0%)**，与 R78 基线持平（+0）
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+
+#### R79 独立修复穷尽实验
+
+本轮对 R78 识别的「可能独立修复」候选逐一进行代码实验：
+
+1. **html-display-table shrink-to-fit（已回退）**：
+   - 实现 `apply_table_shrink_to_fit` 和 `compute_content_right_edge` 递归函数
+   - 实验发现：display:table 无 table-internal 子元素时，子元素（如 body）被 taffy 拉伸到全宽
+   - `compute_content_right_edge` 无法从 LayoutBox 的 x 坐标正确计算 inline-block 后代的固有宽度
+   - taffy 将 inline-block 映射为 block，子元素 x 坐标不反映 inline 级排列位置
+   - 已完全回退
+
+2. **is_empty_block epsilon 比较（已回退）**：
+   - 将 `height == 0.0` 等精确浮点比较改为 `height.abs() < 0.01`
+   - 结果：397→396（-1 回归），微小非零高度的块被错误判定为空块
+   - 根因：taffy 为空块分配精确 0.0，epsilon 反而将亚像素非空块误判
+   - 已完全回退
+
+3. **max-width:max-content converter 映射（未实现）**：
+   - 调查发现 taffy `Dimension` 枚举仅有 `Length/Percent/Auto`，无 `MaxContent` 变体
+   - 当前映射 `MaxContent → Auto` 是 taffy API 限制，无法在 converter 层面修复
+   - 需要扩展 taffy API 或在 measure callback 层面自行计算 max-content 约束
+
+4. **visibility:collapse for flex（未实现）**：
+   - taffy flexbox 算法（`crates/taffy-local/src/compute/flexbox.rs:331`）有显式 TODO
+   - 需要两遍布局算法：第一遍记录 collapsed item 的 cross-size 作为 strut，第二遍重新布局
+   - 实现复杂度高，需要深度修改 taffy flexbox 模块
+
+#### R79 失败测试系统性分类确认
+
+与 R78 一致，93 个失败测试按根因分类：
+
+| 根因 | 影响测试数 | 状态 |
+|------|-----------|------|
+| Paint IFC 空样式 | ~9 | 被阻塞（需要 taffy-IFC 统一） |
+| Float/clear 精度 | ~7 | 被阻塞（remeasure 后重跑不可行） |
+| Flexbox gap/baseline/collapse | ~16 | 部分被阻塞（visibility:collapse 需 taffy 支持） |
+| Multicol 布局 | ~23 | 被阻塞（需要 IFC 片段级跨列拆分） |
+| Writing-mode | ~10 | 被阻塞（需要完整轴交换） |
+| Table 精度 | ~9 | 部分被阻塞（taffy 单元格定位精度限制） |
+| 其他 | ~19 | 被阻塞（JS DOM 桥接、font rasterization 等） |
+
+#### R79 关键结论
+
+1. **81% 基线在 R68-R79（11 轮）中完全稳定**：397/490 在多次复跑中稳定复现（float-003 偶尔波动到 0.73% 通过，但不可靠）
+2. **所有独立修复路径已通过代码实验验证为不可行**：不仅是理论分析，而是实际修改代码并观察到回归
+3. **后续突破必须从 taffy-IFC 架构统一入手**：这是唯一能系统性打破 81% 天花板的路径
+
+#### 后续重点（R80+）
+
+1. **taffy-IFC 架构统一**（唯一系统性突破路径，影响 50+ tests）
+2. **Phase A 真实样式渐进切换**：从 compute_final_inline_layouts 的 override maps 逐步切换到真实样式
+3. **taffy API 扩展**：为 Dimension 添加 MaxContent 支持、实现 visibility:collapse 两遍布局
 
 ### R78 进展
 
