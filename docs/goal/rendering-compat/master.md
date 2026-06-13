@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 基础设施已就位）
-**上游真实 reftest 通过率**: 80.6%-81.2% (395-398/490) R80-R82 确认（float-003/font-148 阈值边缘波动）
+**上游真实 reftest 通过率**: 80.6%-81.2% (395-398/490) R80-R83 确认（float-003/font-148 阈值边缘波动）
 
 ### 当前阶段结论
 
@@ -28,6 +28,47 @@
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
 - **R79/R80 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
+
+### R83 进展（BFC-004 line-height 偏移根因完全定位）
+
+**当前状态**：
+- 全量上游 reftest：**395-398/490 (80.6-81.2%)**（波动带，无突破）
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+- 工作树干净（glyph-position 实验已回退，零代码变更）
+
+#### R83 BFC-004 偏移根因（完全定位）
+
+承接 R82：real-style IFC 唯一阻塞 BFC-004（内容下移 20px = 1 line-height）。本轮定位到**精确代码位置**：
+
+- **根因**：`crates/engine/src/paint/painter/text.rs` 的 `render_fragment!` 宏，水平路径 `frag_base_y = content_y + frag.y + baseline_offset`，其中 `baseline_offset = font_size`（stored 与 non-stored 两个调用点都传 font_size）。
+- **机制**：CPU renderer 的 `draw_glyph_primitive` → `blit_glyph_bitmap` 把 `glyph.y` 当作**字形位图左上角**（无额外偏移）。而 paint 计算的 `glyph_y = content_y + frag.y + font_size` 多加了一个 `font_size`。对 **Ahem 字体**（特殊光栅化为完美 font_size×font_size 实心方块、位图无内部 ascent 留白），这等于把方块从行盒顶部整体下移一个 font_size。
+- **为何通常不暴露**：reftest 的 test 和 ref 都由同一引擎渲染，二者都被 +font_size 下移 → 仍对齐 → text-vs-text 对比通过。只有 **text-vs-non-text**（如 BFC-004 的 Ahem 文字 vs 边框 ref）才暴露偏移。
+
+#### R83 修复实验（移除 +font_size，已回退）
+
+把 stored 与 non-stored 两处 `baseline_offset` 从 `font_size` 改为 `0.0`（字形位图顶部对齐行盒顶部）。
+
+- **glyph-fix 单独（baseline 空样式）**：净 **-1**。精确 diff（vs baseline）：
+  - GAIN：`font-148`（flaky）
+  - LOSS：`rtl-linebreak`（0.91%→1.04%，阈值边缘）、`font-family-013`（flaky 恶化）
+- **glyph-fix + real-style**：净 ~**+1（flaky）**。精确 diff：
+  - GAIN：`block-formatting-contexts-004`(0.00%✓)、`color-129`、`float-005`、`float-003`、`font-148`
+  - LOSS：`rtl-linebreak`（阈值边缘）、`multicol-fill-auto-001`、`font-family-013`
+- **is_ahem 特判（仅对 Ahem 字形 offset=0，普通字体保留 font_size）+ real-style**：也测过。`rtl-linebreak`（普通字体）确实不再退化，但 LOSS 变为 `font-family-011`、`font-family-013`、`multicol-fill-auto-001`——仍是 +4/-3 净 ~+1（flaky），**仍是 trade-off**。
+- **已回退**：非净正——所有变体（全量 glyph-fix、is_ahem 特判）都是 +4/-3 trade-off，违反零回归。
+
+#### R83 关键结论：修复是 trade-off，不是 clean win
+
+1. **`+font_size` baseline_offset 是 load-bearing 启发式**：对**普通字体**（fontdue 位图含内部 ascent 留白，字形坐在 baseline 上），`+font_size` 近似把位图顶部放到 `baseline - ascent` 位置，恰好正确。对 **Ahem**（完美方块、无留白），它多移了一个 font_size。大多数 reftest 用 Ahem 但 test/ref 同源偏移，故通过。
+2. **stored 与 non-stored 路径偏移不一致**：rtl-linebreak 等 text-vs-text 测试中，test 与 ref 走不同渲染路径（一个 stored 一个 non-stored），glyph-fix 改了两处但二者 frag.y 语义不同，导致原本贴线过的（0.91%）退化为贴线失败（1.04%）。
+3. **BFC-004 的 clean fix 需要两件事**：(a) 统一 stored/non-stored 的字形垂直定位语义（frag.y 一致）；(b) 区分 Ahem（无 ascent 留白，位图顶部=行盒顶部）与普通字体（有 ascent 留白，需 ascent 偏移）。这正是 Phase A「单一几何来源」要解决的——不能靠改一个 `+font_size` 常数解决。
+
+#### 后续重点（R84+）
+
+1. **统一字形垂直定位**：让 stored 与 non-stored 路径的 frag.y / baseline_offset 语义一致，消除 rtl-linebreak 类阈值波动。
+2. **Ahem 字体特判定位**：在 glyph 定位时识别 is_ahem，对 Ahem 用「位图顶部=行盒顶部」（不加 ascent），对普通字体加 ascent——这样 BFC-004 (Ahem text vs border) 能正确对齐，且不破坏普通字体测试。
+3. 完成上述后，glyph-fix + real-style 可望成为净正，打通 Phase A 主路径。
 
 ### R82 进展（Phase A real-style IFC 阻塞面收窄）
 
