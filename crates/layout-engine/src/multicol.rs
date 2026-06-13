@@ -115,6 +115,16 @@ fn length_to_px(value: &LengthValue, container_width: f32) -> f32 {
     }
 }
 
+/// 返回 balance 模式多列容器的（列宽, 列数），供 remeasure 按列宽测量行内内容
+/// 并计算分布式高度。仅 `column-fill: balance`（默认）返回 `Some`。
+pub(crate) fn balance_column_geometry(style: &ComputedStyle, container_width: f32) -> Option<(f32, usize)> {
+    let info = compute_column_info(style, container_width)?;
+    if info.sequential_fill || info.count < 2 {
+        return None;
+    }
+    Some((info.column_width, info.count))
+}
+
 /// 从 ComputedStyle 计算多列参数。
 ///
 /// 返回 `None` 表示不需要多列布局（column-count: auto 且 column-width: auto）。
