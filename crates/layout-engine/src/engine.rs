@@ -2557,9 +2557,20 @@ fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, st
         .children
         .iter()
         .any(|c| !c.is_block_level && !c.is_absolute && !c.is_fixed);
+    // R105：仅含直接 DOM 文本（无 inline 元素子，文本不生成独立 LayoutBox 子）且 taffy 未测量
+    // （content_height≈0）的块也需要 remeasure——否则其 font_size 不会被 store_font_sizes_from_ifc
+    // 存储，paint IFC 默认 16，导致大字号（100px）reftest（如 inline-formatting-context-008）渲染成 16px。
+    // content_height≈0 守卫避免覆盖 taffy 已正确测量的块（font-feature/multicol-fill-auto/abspos 回归源）。
+    let has_dom_text = box_node.node_id.is_some_and(|id| {
+        doc.child_nodes(id)
+            .iter()
+            .any(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
+    });
+    let needs_dom_text_remeasure =
+        has_dom_text && box_node.content_height < 1.0 && box_node.children.iter().all(|c| c.is_absolute || c.is_fixed);
 
     if !has_floats
-        && has_inline_children
+        && (has_inline_children || needs_dom_text_remeasure)
         && let Some(dom_id) = box_node.node_id
         && let Some(style) = styles.get(&dom_id)
         && matches!(style.height, LengthValue::Auto)
