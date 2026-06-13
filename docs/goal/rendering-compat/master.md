@@ -2,7 +2,44 @@
 
 **最后更新**: 2026-06-14
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 84.1% (412/490) R104（较 R98 的 411 基线 +1，remeasure 直接 DOM 文本块）
+**上游真实 reftest 通过率**: 84.7% (415/490) R108b（R105 +1 whitespace IFC，R108b +2 inline-fmt float flow_bottom；较 R104 的 412 基线 +3）
+
+### R110 系统化 BBOX 聚类扫描（75 个失败用例全覆盖，三组同 bbox 聚类均确认为结构性）
+
+**当前状态**：全量上游 reftest **415/490 (84.7%)** 不变（本轮为诊断/工具改进 + 根因复核，无代码行为变更）。内联 reftest 686/686 (100%)；clippy 零警告；零回归。
+
+#### 工具改进：REFTEST_BBOX 诊断带测试标签
+
+- 旧实现：`compare_pixels` 在 `parallel_map` 内打印 bbox，结果行在全部完成后才打印，bbox 与测试无法按序对齐（上一轮 R108 扫描受此困扰）。
+- 新增 `compare_pixels_labeled(fb1, fb2, threshold, label)`，把 case id 内嵌进 bbox 行：`[REFTEST_BBOX] <id> x=[..] y=[..]`。`compare_pixels` 保留为空标签包装，对外签名不变。两个调用点（CPU/GPU）改为传 `&case.id`。
+- 效果：`REFTEST_BBOX=1 ... reftest-upstream` 一次跑完全部 490 用例，可直接 grep 任意失败用例的差异几何，无需逐个单跑。
+
+#### R110 系统化扫描结论：75 个失败 bbox 全覆盖，三组「同 bbox 聚类」均确认为结构性/复杂
+
+按 R108b 方法论对所有 75 个失败用例采集 diff bbox，按几何聚类。确认的「同 bbox 聚类」（保证同根因）：
+
+1. **child-border-box-and-max-content-001/002**（grid，+2，bbox 完全一致 x=[50,189] y=[10,79]）— 根因 = 固有尺寸（max-content 关键字解析为 0/Auto，无约束），属 R97/R107 标注的 intrinsic-sizing 结构性集群，非 clean 修复。
+2. **multicol-breaking-004 + nobackground-004**（+2，bbox 完全一致 x=[8,603] y=[8,132]）— 根因 = 嵌套 multicol column-breaking 碎片化，属 R107 列出的结构性缺口。
+3. **float-lft-orthog-vlr/vrl-in-htb-002**（writing-modes，+2，bbox 完全一致 x=[8,799] y=[24,103]）— 根因 = 正交 writing-mode float 的轴交换，属 R109 标注的 R57/R93 axis-swap 架构性 territory（高风险）。
+
+#### html-display-table 两条修复路径均净负（已回滚，根因记录）
+
+`<html display:table>` 直接含块级/行内内容时，table 容器未 shrink-to-fit（绿色边框填满 800×600，ref 为 300×320）。两条修复尝试均回归 ≥2 个 css-tables 用例（whitespace-001、subpixel-table-width-001 / table-cell-overflow-auto），已回滚：
+
+- 路径 A（匿名 table-cell 生成）：`build_grid` 的 `_` 分支为非 table 结构子生成匿名 row+cell。回归根因：匿名 cell 把本应跳过的内容（含 caption/column 之外的混合内容）也包装成 cell，破坏正常表格定位；html-display-table 自身反而变更差（2.90%→10.64%）。
+- 路径 B（空 grid shrink-to-fit）：`layout_table` 空 grid 时按内容右边界收缩 table 宽度。回归根因：空 grid 路径在递归中被正常 table（subpixel-table-width-001、whitespace-001）命中，shrink 错误收缩了它们；且 html-display-table 内容 extent = 全宽（存在 body/包装盒），shrink 未生效。
+
+**结论**：html-display-table 的 clean 修复需要 (a) 正确的 CSS §17.2.1 匿名表格对象生成（区分 inline-level 合并 vs block-level 分行），且 (b) 仅对真正无 table 结构的容器 shrink。两条件均非单点可修，搁置。
+
+#### R110 复核的近失败用例（均确认为复杂多子系统，与 R106/R107 一致）
+
+clear-applies-to-009 (1.02%，test 渲染白色而 ref 有深色文本 = 内容缺失/位移，float timing + font metrics)、baseline-007 (1.04%，flex+multicol+column-span baseline)、multicol-breaking-006 (1.16%，嵌套 multicol breaking)、block-in-inline-align-001 (1.42%，匿名块生成 + text-align)、baseline-008 (1.45%)、flexbox-baseline-align-self (1.48%/3.54%)、multicol-collapsing-001 (1.68%，R102/R103 已三轮 debunked)、multicol-block-no-clip-002 (1.81%，Ahem + 混合 block+inline 列分布)、multicol-count-computed-003/004 (Ahem 列溢出 + column-rule)、border-001/border-bottom-width-006 (inline-block baseline 对齐)、flexbox-column-row-gap-001 (多行 flex + gap% + space-around + auto margin)、html-display-table (见上)、float-lft-orthog (轴交换)。
+
+#### R110 后续重点
+
+1. 三组同 bbox 聚类（grid intrinsic sizing / multicol breaking / writing-mode axis-swap）是最大杠杆但均为结构性，需专项里程碑（非单点修复）。
+2. multicol 集群（19 失败）最大：column-breaking 碎片化基础设施 + column-fill:auto + 混合内容列分布。
+3. 工具已就位（labeled BBOX），后续诊断成本降低。
 
 ### R104 进展（✅ remeasure 直接 DOM 文本块，412/490，multicol-containing-001 通过）
 

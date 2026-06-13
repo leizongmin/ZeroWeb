@@ -249,7 +249,7 @@ pub fn run_reftest_with_base(case: &ReftestCase, config: &ReftestConfig, base_di
 
     let total_pixels = (test_fb.width as usize) * (test_fb.height as usize);
     let eff_channel_diff = config.effective_max_channel_diff();
-    let (diff_pixels, max_channel_diff) = compare_pixels(&test_fb, &ref_fb, eff_channel_diff);
+    let (diff_pixels, max_channel_diff) = compare_pixels_labeled(&test_fb, &ref_fb, eff_channel_diff, &case.id);
     let diff_ratio = if total_pixels > 0 {
         diff_pixels as f64 / total_pixels as f64
     } else {
@@ -336,7 +336,7 @@ pub fn run_reftest_gpu_with_base(case: &ReftestCase, config: &ReftestConfig, bas
 
     let total_pixels = (test_fb.width as usize) * (test_fb.height as usize);
     let eff_channel_diff = config.effective_max_channel_diff();
-    let (diff_pixels, max_channel_diff) = compare_pixels(&test_fb, &ref_fb, eff_channel_diff);
+    let (diff_pixels, max_channel_diff) = compare_pixels_labeled(&test_fb, &ref_fb, eff_channel_diff, &case.id);
     let diff_ratio = if total_pixels > 0 {
         diff_pixels as f64 / total_pixels as f64
     } else {
@@ -1077,6 +1077,11 @@ fn create_font_loader() -> FontLoader {
 ///
 /// 返回 (不同像素数, 最大单通道色差)。
 pub fn compare_pixels(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u8) -> (usize, u8) {
+    compare_pixels_labeled(fb1, fb2, threshold, "")
+}
+
+/// 带标签的像素对比 —— 标签会附加到 REFTEST_BBOX 诊断行，便于定位差异归属。
+pub fn compare_pixels_labeled(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u8, label: &str) -> (usize, u8) {
     let mut diff_pixels = 0usize;
     let mut max_diff = 0u8;
     // 调试工具：设置 REFTEST_BBOX 环境变量时，打印差异像素的包围盒，
@@ -1127,7 +1132,7 @@ pub fn compare_pixels(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u8) -> (u
     }
 
     if track_bbox && diff_pixels > 0 {
-        eprintln!("[REFTEST_BBOX] x=[{min_x},{max_x}] y=[{min_y},{max_y}] fb_w={fw}");
+        eprintln!("[REFTEST_BBOX] {label} x=[{min_x},{max_x}] y=[{min_y},{max_y}] fb_w={fw}");
     }
 
     (diff_pixels, max_diff)
