@@ -473,16 +473,8 @@ fn test_absolute_in_body_ignores_body_margin() {
     let (abs_x, abs_y) = find_absolute_position_by_node_id(&result.root, abs_child).expect("abs found");
     // CSS 2.1 §10.1：无 positioned ancestor 的 absolute 元素以初始包含块（视口）为
     // containing block。left:8/top:118 解析为视口相对坐标，不受 body margin 偏移影响。
-    assert!(
-        (abs_x - 8.0).abs() < 2.0,
-        "abs 视口 x 应为 left:8，实际为 {}",
-        abs_x
-    );
-    assert!(
-        (abs_y - 118.0).abs() < 2.0,
-        "abs 视口 y 应为 top:118，实际为 {}",
-        abs_y
-    );
+    assert!((abs_x - 8.0).abs() < 2.0, "abs 视口 x 应为 left:8，实际为 {}", abs_x);
+    assert!((abs_y - 118.0).abs() < 2.0, "abs 视口 y 应为 top:118，实际为 {}", abs_y);
 }
 
 /// 测试无子元素的空 flex 容器。
