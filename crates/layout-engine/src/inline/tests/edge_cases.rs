@@ -348,7 +348,11 @@ fn test_whitespace_between_inline_blocks_wraps() {
     ];
     ctx.break_items_into_lines(items);
 
-    assert_eq!(ctx.lines.len(), 2, "两个恰好占满容器的 inline-block 之间的空格应使第二个换行");
+    assert_eq!(
+        ctx.lines.len(),
+        2,
+        "两个恰好占满容器的 inline-block 之间的空格应使第二个换行"
+    );
     // 每行各一个盒，都在行首（行首空格被移除）
     assert_eq!(ctx.lines[0].runs.len(), 1, "第一行应只有第一个 inline-block");
     assert_eq!(ctx.lines[1].runs.len(), 1, "第二行应只有第二个 inline-block");
