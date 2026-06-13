@@ -1097,14 +1097,16 @@ impl super::Painter {
 
                     if use_stored {
                         for frag in &stored_fragments {
-                            // 存储结果：frag.y 是片段框顶部（baseline_y - height），
-                            // 基线偏移使用 font_size（与 paint IFC 路径一致），
-                            // 因为 paint IFC 路径用 stored_fs 作为基线偏移。
-                            // 如果用 frag.height（line-height 盒高）会产生不同基线位置导致回归。
+                            // 存储结果：frag.y 是片段框顶部（baseline_y - height）。
+                            // 基线偏移：Ahem 字形位图是完美 font_size 方块（无内部 ascent 留白），
+                            // 位图顶部应与行盒顶部对齐 → offset=0；普通字体保留 font_size（≈ascent）。
+                            // 仅在 stored 路径生效（compute_final 守卫保证 stored 片段为纯 Ahem 或
+                            // 其 is_ahem 可靠），非存储路径不在此处调整（见 else 分支）。
+                            let v_offset = if frag.is_ahem { 0.0 } else { frag.font_size };
                             render_fragment!(
                                 frag.x,
                                 frag.y,
-                                frag.font_size,
+                                v_offset,
                                 frag.font_size,
                                 frag.text,
                                 frag.node_id,

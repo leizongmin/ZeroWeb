@@ -1,8 +1,8 @@
 # 渲染兼容性目标 — 运行时控制面板
 
 **最后更新**: 2026-06-13
-**当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 基础设施已就位）
-**上游真实 reftest 通过率**: 80.6%-81.2% (395-398/490) R80-R83 确认（float-003/font-148 阈值边缘波动）
+**当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
+**上游真实 reftest 通过率**: 81.4%-81.6% (399-400/490) R84 突破（较 R80-R83 的 395-398 基线 +2~3）
 
 ### 当前阶段结论
 
@@ -28,6 +28,47 @@
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
 - **R79/R80 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
+
+### R84 进展（✅ 突破：real-style IFC 部分解锁，399-400/490）
+
+**当前状态**：
+- 全量上游 reftest：**399-400/490 (81.4-81.6%)**，较 R80-R83 的 395-398 基线 **+2~3**，**打破 6 轮天花板**
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-engine` 单测：1142/1142；`zero-layout-engine` 单测：820/820
+- clippy：**零警告**
+
+#### R84 突破：纯 Ahem 单行 real-style 守卫 + stored 路径 is_ahem 字形定位
+
+承接 R82-R83（BFC-004 偏移根因 = `render_fragment` 宏 `+font_size` baseline_offset，对 Ahem 多移一个 font_size）。本轮找到 **clean win** 的组合：
+
+**改动 1 — `compute_final_inline_layouts`（`crates/layout-engine/src/engine.rs`）**：
+- IFC 改用**真实样式**（`inline_ctx.layout(doc, node_id, styles)`）。
+- **守卫**：仅当 IFC 结果为**单行**且容器 `font-family` 恰好为 `["Ahem"]`（纯 Ahem）时才存储结果；否则 `return`（不存储，paint 回退到非存储空样式路径，与 baseline 一致）。
+- 原理：单行文本的 line-breaking 不受样式影响，真实样式只修正 font-size/baseline；纯 Ahem 避免多字体列表（"Courier New, Ahem"）的 font 解析/fallback 差异。
+
+**改动 2 — `render_fragment` stored 调用点（`crates/engine/src/paint/painter/text.rs`）**：
+- stored 路径的 baseline_offset 改为 `if frag.is_ahem { 0.0 } else { frag.font_size }`。
+- Ahem 字形位图是完美 font_size 方块（无内部 ascent 留白），位图顶部应与行盒顶部对齐（offset=0）；普通字体保留 font_size（≈ascent）。
+- **关键**：此 offset 调整**仅在 stored 路径**生效（compute_final 守卫保证 stored 片段为纯 Ahem，is_ahem 可靠）；非存储路径保持 font_size，避免 font-family-fallback 测试（如 font-family-013）的 is_ahem 误判回归。
+
+#### R84 验证（definitive diff，2 次 baseline 并集 vs 2 次 guard 并集）
+
+- **TRUE GAINS（baseline 失败、guard 两次都过）**：`color-129`（2.03%→0%）、`float-005`（2.03%→0.67%）。
+- **flaky 改善**：`float-003`、`font-148` 现在稳定通过（baseline 阈值边缘波动）。
+- **TRUE LOSSES（baseline 两次都过、guard 失败）：无（zero regression）**。
+- BFC-004 维持通过（0.00%，原本 baseline 就过，real-style 守卫不再阻塞它）。
+
+#### R84 关键结论
+
+1. **打破 395-398 天花板到 399-400**：6 轮（R80-R83）的 real-style/glyph 实验都是 trade-off，本轮通过「纯 Ahem + 单行」守卫 + 「stored-only is_ahem 定位」找到 zero-regression 的 clean win。
+2. **解耦关键**：is_ahem 字形定位只在 stored 路径（is_ahem 可靠）调整，非存储路径不动——这避免了对 is_ahem 不可靠场景（Ahem 字体 fallback）的误伤。
+3. **Phase A 部分解锁**：real-style IFC 现在对「纯 Ahem 单行」容器安全可用，paint 可消费其存储结果。这是 Phase A「单一几何来源」的第一个落地子集。
+
+#### 后续重点（R85+）
+
+1. **扩大 real-style 守卫的适用范围**：逐步把守卫从「纯 Ahem 单行」放宽（如：单行任意字体、纯 Ahem 多行），每步验证零回归，渐进扩大 Phase A 覆盖。
+2. **stored 路径 is_ahem 定位推广到非存储路径**：需要先解决非存储路径 is_ahem 对 fallback 字符的可靠性（per-char Ahem 判定）。
+3. 继续推进 inline-formatting-context-002/003 等（inline 背景/边框定位）与 multicol/writing-mode 专项。
 
 ### R83 进展（BFC-004 line-height 偏移根因完全定位）
 
