@@ -2,18 +2,20 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 基础设施已就位）
-**上游真实 reftest 通过率**: 81.0% (397/490) R79 确认（稳定，与 R78 持平）
+**上游真实 reftest 通过率**: 80.6%-81.0% (395-397/490) R80 确认（float-003/font-148 阈值边缘波动）
 
 ### 当前阶段结论
 
-- **397/490 (81.0%) 稳定基线**：R68-R79 共 11 轮，从 388→397（+9），每轮平均 +0.8。
+- **395-397/490 (80.6-81.0%) 稳定基线**：R68-R80 共 12 轮，从 388→397（+9），每轮平均 +0.75。R80 实测为 395-396（float-003、font-148 阈值边缘波动），与 R79 声称的 397 同一波动带。
 - **R73 Phase A 基础设施就位**：`compute_final_inline_layouts` 已启用作为 step 12 后处理，paint 系统可通过 `use_stored` 路径消费存储的 IFC 结果。
   - 当前使用空样式 + override maps（与 paint-IFC 一致），零回归。
   - 后续可逐步切换到真实样式，需逐容器验证。
-- **独立修复路径完全穷尽**：R68-R79 共 11 轮尝试，93 个失败测试中全部被系统性根因阻塞。R79 系统性验证了以下修复路径均不可行：
+- **独立修复路径完全穷尽**：R68-R80 共 12 轮尝试，93 个失败测试中全部被系统性根因阻塞。R79/R80 系统性验证了以下修复路径均不可行：
   1. **html-display-table shrink-to-fit**：需要从 inline-block 后代计算固有宽度，但 LayoutBox 的 x 坐标来自 taffy 的 block-level 排列而非 inline 级定位，无法正确计算
   2. **is_empty_block epsilon 比较**：将精确 0.0 比较改为 epsilon 导致回归，taffy 为空块分配精确 0.0
   3. **max-width:max-content converter 映射**：taffy Dimension 枚举不支持 MaxContent 变体
+  4. **stored-IFC inline box 几何同步（R80a）**：`compute_final_inline_layouts` 仅在「块级 + 直接文本子节点」的容器上存储 IFC；纯嵌套 inline 结构（`div>span>text`）中 span 是 `is_block_level=false`、body 无直接文本子节点，故无容器存储 IFC，sync 永不触发——是 no-op
+  5. **inline span 字体度量回退（R80b）**：为 paint-IFC 补充 box 自身 font-size/line-height/is_ahem 回退，font-size 正确了但触发 -4 净回归（css-position -2、multicol -1、font-051 反而恶化）；paint-IFC 是 font-size 与定位强耦合的自洽系统
 - **后续提升唯一路径是专项架构改造**：
   1. **taffy-IFC 架构统一**：影响 50+ 测试，需要重设计 layout/paint 之间的 IFC 数据流
   2. **multicol inline 内容跨列拆分**：影响 16+ 测试，需要 IFC 片段级列分配与 fragmentation
@@ -25,7 +27,42 @@
 - 专项实施 Spec：[`post-r71-architecture-spec.md`](./post-r71-architecture-spec.md)
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
-- **R79 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
+- **R79/R80 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
+
+### R80 进展
+
+**当前状态**：
+- 全量上游 reftest：**395/490 (80.6%)**（float-003/font-148 阈值边缘波动，与 R79 同一 395-397 波动带）
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+- 工作树干净（两个实验均已回退，零代码变更）
+
+#### R80 两条独立修复路径验证（均回退）
+
+本轮针对「inline 元素背景/文字错位」类失败（inline-formatting-context-002/003/008/009/011、border-padding-bleed-001、font-051 等）做了两条新的代码实验，均确认为系统性阻塞：
+
+1. **stored-IFC inline box 几何同步（R80a，no-op，已删除）**：
+   - 在 `compute_final_inline_layouts` 存储结果后新增 `sync_inline_boxes_from_stored_ifc`，把有背景/边框的 inline 元素 LayoutBox 几何同步到 IFC 片段位置
+   - 实测：inline-formatting-context-002/003 的 diff 与基线**逐字节相同**（1.39%/1.05%），全量 396/490 与无实验的基线**完全一致**——是真正的 no-op
+   - 根因：`compute_final_inline_layouts` 仅在 `is_block_level && has_text_children` 的容器上存储 IFC。inline-formatting-context-002/003 的两个 div 都是 `display:inline`（`is_block_level=false`），body 的直接子节点是 `<p>` 和 `<div>`（非文本节点）——故**没有任何节点存储 IFC**，sync 永不触发
+
+2. **inline span 字体度量回退（R80b，-4 回归，已回退）**：
+   - 定位到 font-051 的真实 bug：`<span>` 在 layout 树中 `children_len=0`，`remeasure_inline_only_containers` 因 `has_inline_children=false` 跳过它，导致 `span.text_node_font_sizes` 为空；paint 时 `paint_text(span)` 运行的 IFC 把 "FAIL" 渲染为默认 16px（实测 span 计算样式 font-size=100px Ahem 正确，但渲染为 42×16px）
+   - 修复：在 `paint_text` 构建 override maps 时，用 box 自身计算样式（font-size/line-height/is_ahem/letter-spacing）作为 `node_id` 键的回退（`or_insert`，不覆盖已有值）
+   - 结果：font-size 正确了（"FAIL" 渲染为 400×100 黑色矩形），但**位置整体下移 100px**（test y=151-250 vs ref y=51-150），font-051 从 8.19% 恶化到 16.67%；全量 **392/490（-4）**：css-position -2、multicol -1、CSS2 font-051 恶化
+   - 根因（架构级）：`div>span>text` 结构中，span 的文本**被双重计入高度**——既由父 div 的 IFC 排版，又作为独立的 block span box 排版，导致 div 高度翻倍、span box 被推到 y=100。这就是目标文档 P1-严重「Inline formatting 所有权分裂」缺口的产品可见症状
+
+#### R80 关键结论
+
+1. **font-051 暴露了 inline-ownership 分裂的精确机制**：`div>span>text` 中 span 同时是父 IFC 的 inline 参与者（remeasure 把 "FAIL" 计入 div 高度）和 layout 树的独立 block box（taffy 映射 inline→block），二者高度叠加。仅修 font-size 会暴露这个双重计入，仅修其中一侧无法对齐
+2. **paint-IFC 是 font-size 与定位强耦合的自洽系统**：R37-R79 已验证「传递真实样式 / 修改 glyph advance / 修改 override maps」均导致回归，R80b 再次验证「补充 font-size 回退」同样回归。任何改变 paint-IFC 字符宽度的修改都会打破内部一致性
+3. **两条新路径加入「已验证不可行」清单**：累计 R37-R80 共 12 轮，paint-IFC 相关的所有增量覆盖路径（font_size / is_ahem / letter_spacing / line_height / inline_element_metrics / margin / stored-IFC sync / box 自身回退）全部验证为回归或 no-op
+
+#### 后续重点（R81+）
+
+1. **taffy-IFC 架构统一**（唯一系统性突破路径，影响 50+ tests）：核心是消除「inline 元素同时存在于父 IFC 和独立 block box」的双重计入，让 layout 和 paint 共享同一份 IFC 结果与单一坐标源
+2. **font-051 / inline-formatting-context-* 的正确修复需要架构改造**：必须在 inline-ownership 层面解决，不能在 paint-IFC override 层面打补丁
+3. Phase A 真实样式渐进切换、taffy API 扩展（MaxContent、visibility:collapse）继续作为配套工作
 
 ### R79 进展
 
