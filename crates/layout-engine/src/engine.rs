@@ -1404,29 +1404,53 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
     );
     let is_vertical_rtl = matches!(root.writing_mode, zero_style_system::WritingModeValue::VerticalRl);
 
-    // 构造与 paint-IFC 相同的 override maps
+    // 构造与 paint-IFC 相同的 override maps。
+    // 仅纳入文本节点片段：text_node_* 混入了内联元素片段（如 <img>，font_size=0、height=96），
+    // 它们与文本片段共享同一父元素；直接 collect 时 last-write-wins，结果随 HashMap 迭代
+    // 顺序（每进程随机）变化 → 渲染非确定性。过滤为纯文本节点后结果确定。
+    let is_text = |tn: NodeId| matches!(doc.get(tn).map(|n| &n.kind), Some(NodeKind::Text(_)));
     let parent_font_sizes: HashMap<NodeId, f32> = root
         .text_node_font_sizes
         .iter()
-        .filter_map(|(&text_node_id, &fs)| doc.parent_node(text_node_id).map(|pid| (pid, fs)))
+        .filter_map(|(&text_node_id, &fs)| {
+            if !is_text(text_node_id) {
+                return None;
+            }
+            doc.parent_node(text_node_id).map(|pid| (pid, fs))
+        })
         .collect();
 
     let parent_is_ahem: HashMap<NodeId, bool> = root
         .text_node_is_ahem
         .iter()
-        .filter_map(|(&text_node_id, &is_ahem)| doc.parent_node(text_node_id).map(|pid| (pid, is_ahem)))
+        .filter_map(|(&text_node_id, &is_ahem)| {
+            if !is_text(text_node_id) {
+                return None;
+            }
+            doc.parent_node(text_node_id).map(|pid| (pid, is_ahem))
+        })
         .collect();
 
     let parent_letter_spacing: HashMap<NodeId, f32> = root
         .text_node_letter_spacing
         .iter()
-        .filter_map(|(&text_node_id, &ls)| doc.parent_node(text_node_id).map(|pid| (pid, ls)))
+        .filter_map(|(&text_node_id, &ls)| {
+            if !is_text(text_node_id) {
+                return None;
+            }
+            doc.parent_node(text_node_id).map(|pid| (pid, ls))
+        })
         .collect();
 
     let parent_line_heights: HashMap<NodeId, f32> = root
         .text_node_line_heights
         .iter()
-        .filter_map(|(&text_node_id, &lh)| doc.parent_node(text_node_id).map(|pid| (pid, lh)))
+        .filter_map(|(&text_node_id, &lh)| {
+            if !is_text(text_node_id) {
+                return None;
+            }
+            doc.parent_node(text_node_id).map(|pid| (pid, lh))
+        })
         .collect();
 
     // 收集容器内的浮动排除区域

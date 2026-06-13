@@ -831,28 +831,54 @@ impl super::Painter {
                 // 传递真实 styles 会导致 4 个测试回归（BFC-004, font-feature-002,
                 // position-absolute-in-inline-005/006），虽然修复了 float-003。
                 // override maps 方式是经过 R37-R71 验证的安全路径。
+                // 仅纳入文本节点片段构建父级映射。
+                // text_node_* 中混入了内联元素片段（如 <img>，其 font_size=0、height=96），
+                // 它们与文本片段共享同一父元素；直接 collect 时 last-write-wins，
+                // 结果随 HashMap 迭代顺序（每进程随机）变化 → 渲染非确定性（flaky reftest）。
+                // 过滤为纯文本节点后，同一父元素的文本节点继承一致的字号/行高，结果确定。
+                let is_text = |tn: zero_dom::NodeId| matches!(doc.get(tn).map(|n| &n.kind), Some(NodeKind::Text(_)));
                 let parent_font_sizes: HashMap<zero_dom::NodeId, f32> = box_node
                     .text_node_font_sizes
                     .iter()
-                    .filter_map(|(&text_node_id, &fs)| doc.parent_node(text_node_id).map(|pid| (pid, fs)))
+                    .filter_map(|(&tn, &fs)| {
+                        if !is_text(tn) {
+                            return None;
+                        }
+                        doc.parent_node(tn).map(|pid| (pid, fs))
+                    })
                     .collect();
 
                 let parent_is_ahem: HashMap<zero_dom::NodeId, bool> = box_node
                     .text_node_is_ahem
                     .iter()
-                    .filter_map(|(&text_node_id, &is_ahem)| doc.parent_node(text_node_id).map(|pid| (pid, is_ahem)))
+                    .filter_map(|(&tn, &is_ahem)| {
+                        if !is_text(tn) {
+                            return None;
+                        }
+                        doc.parent_node(tn).map(|pid| (pid, is_ahem))
+                    })
                     .collect();
 
                 let parent_letter_spacing: HashMap<zero_dom::NodeId, f32> = box_node
                     .text_node_letter_spacing
                     .iter()
-                    .filter_map(|(&text_node_id, &ls)| doc.parent_node(text_node_id).map(|pid| (pid, ls)))
+                    .filter_map(|(&tn, &ls)| {
+                        if !is_text(tn) {
+                            return None;
+                        }
+                        doc.parent_node(tn).map(|pid| (pid, ls))
+                    })
                     .collect();
 
                 let parent_line_heights: HashMap<zero_dom::NodeId, f32> = box_node
                     .text_node_line_heights
                     .iter()
-                    .filter_map(|(&text_node_id, &lh)| doc.parent_node(text_node_id).map(|pid| (pid, lh)))
+                    .filter_map(|(&tn, &lh)| {
+                        if !is_text(tn) {
+                            return None;
+                        }
+                        doc.parent_node(tn).map(|pid| (pid, lh))
+                    })
                     .collect();
 
                 let inline_metrics = box_node.inline_element_metrics.clone();
