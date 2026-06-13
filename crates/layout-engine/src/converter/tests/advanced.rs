@@ -6,7 +6,7 @@ use super::super::*;
 fn test_convert_inline_flex_display() {
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::InlineFlex;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.display, taffy::style::Display::Flex);
 }
 
@@ -15,7 +15,7 @@ fn test_convert_inline_flex_display() {
 fn test_convert_inline_grid_display() {
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::InlineGrid;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.display, taffy::style::Display::Grid);
 }
 
@@ -30,7 +30,7 @@ fn test_convert_flow_variants_display() {
         DisplayValue::Contents,
     ] {
         style.display = value;
-        let taffy_style = computed_style_to_taffy(&style, None);
+        let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(taffy_style.display, taffy::style::Display::Block);
     }
 }
@@ -40,36 +40,36 @@ fn test_convert_flow_variants_display() {
 fn test_convert_length_em_rem_vw_vh() {
     let mut style = ComputedStyle::default();
     style.width = LengthValue::Em(16.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(16.0));
 
     style.width = LengthValue::Rem(12.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(12.0));
 
     style.width = LengthValue::Vw(50.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(50.0));
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(400.0));
 
     style.width = LengthValue::Vh(25.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(25.0));
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(150.0));
 }
 
-/// 测试 Vmin、Vmax、Ch 单位转换为 length(v as f32)。
+/// 测试 Vmin、Vmax、Ch 单位转换：viewport 单位解析为视口相对像素。
 #[test]
 fn test_convert_length_vmin_vmax_ch() {
     let mut style = ComputedStyle::default();
     style.width = LengthValue::Vmin(10.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(10.0));
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(60.0));
 
     style.width = LengthValue::Vmax(20.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(20.0));
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(160.0));
 
     style.width = LengthValue::Ch(8.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(8.0));
 }
 
@@ -80,20 +80,26 @@ fn test_convert_length_calc_fallback() {
     let calc = LengthValue::Calc(Box::new(CalcExpr::Number(42.0)));
 
     // convert_length_to_dimension
-    assert_eq!(convert_length_to_dimension(&calc), taffy::style::Dimension::Length(0.0));
+    assert_eq!(
+        convert_length_to_dimension(&calc, 800.0, 600.0),
+        taffy::style::Dimension::Length(0.0)
+    );
 
     // convert_max_length_to_dimension
     assert_eq!(
-        convert_max_length_to_dimension(&calc),
+        convert_max_length_to_dimension(&calc, 800.0, 600.0),
         taffy::style::Dimension::Length(0.0)
     );
 
     // convert_length_to_lp
-    assert_eq!(convert_length_to_lp(&calc), taffy::style::LengthPercentage::Length(0.0));
+    assert_eq!(
+        convert_length_to_lp(&calc, 800.0, 600.0),
+        taffy::style::LengthPercentage::Length(0.0)
+    );
 
     // convert_length_to_lpa
     assert_eq!(
-        convert_length_to_lpa(&calc, false),
+        convert_length_to_lpa(&calc, false, 800.0, 600.0),
         taffy::style::LengthPercentageAuto::Length(0.0)
     );
 }
@@ -104,7 +110,7 @@ fn test_convert_max_length_infinity() {
     let mut style = ComputedStyle::default();
     style.max_width = LengthValue::Px(f64::INFINITY);
     style.max_height = LengthValue::Px(f64::INFINITY);
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Auto);
     assert_eq!(taffy_style.max_size.height, taffy::style::Dimension::Auto);
 }
@@ -114,11 +120,11 @@ fn test_convert_max_length_infinity() {
 fn test_convert_max_length_px_percentage() {
     let mut style = ComputedStyle::default();
     style.max_width = LengthValue::Px(500.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Length(500.0));
 
     style.max_width = LengthValue::Percentage(80.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Percent(0.8));
 }
 
@@ -127,7 +133,7 @@ fn test_convert_max_length_px_percentage() {
 fn test_convert_flex_wrap_reverse() {
     let mut style = ComputedStyle::default();
     style.flex_wrap = FlexWrapValue::WrapReverse;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.flex_wrap, taffy::style::FlexWrap::WrapReverse);
 }
 
@@ -136,35 +142,35 @@ fn test_convert_flex_wrap_reverse() {
 fn test_convert_flex_basis_content() {
     let mut style = ComputedStyle::default();
     style.flex_basis = FlexBasisValue::Content;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::Auto);
 }
 
 /// 测试 Auto 在 convert_length_to_lp 中映射为 length(0.0)。
 #[test]
 fn test_convert_length_to_lp_auto() {
-    let result = convert_length_to_lp(&LengthValue::Auto);
+    let result = convert_length_to_lp(&LengthValue::Auto, 800.0, 600.0);
     assert_eq!(result, taffy::style::LengthPercentage::Length(0.0));
 }
 
 /// 测试 Percentage 在 convert_length_to_lp 中转换为 Percent。
 #[test]
 fn test_convert_length_to_lp_percentage() {
-    let result = convert_length_to_lp(&LengthValue::Percentage(33.0));
+    let result = convert_length_to_lp(&LengthValue::Percentage(33.0), 800.0, 600.0);
     assert_eq!(result, taffy::style::LengthPercentage::Percent(0.33));
 }
 
 /// 测试 Auto 在 convert_length_to_lpa 中映射为 LengthPercentageAuto::Auto。
 #[test]
 fn test_convert_length_to_lpa_auto() {
-    let result = convert_length_to_lpa(&LengthValue::Auto, false);
+    let result = convert_length_to_lpa(&LengthValue::Auto, false, 800.0, 600.0);
     assert_eq!(result, taffy::style::LengthPercentageAuto::Auto);
 }
 
 /// 测试 Percentage 在 convert_length_to_lpa 中转换为 Percent。
 #[test]
 fn test_convert_length_to_lpa_percentage() {
-    let result = convert_length_to_lpa(&LengthValue::Percentage(60.0), false);
+    let result = convert_length_to_lpa(&LengthValue::Percentage(60.0), false, 800.0, 600.0);
     assert_eq!(result, taffy::style::LengthPercentageAuto::Percent(0.6));
 }
 
@@ -197,7 +203,7 @@ fn test_convert_alignment_align_content() {
     for (value, expected) in cases {
         let mut style = ComputedStyle::default();
         style.align_content = value;
-        let taffy_style = computed_style_to_taffy(&style, None);
+        let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(taffy_style.align_content, expected);
     }
 }
@@ -225,7 +231,7 @@ fn test_convert_alignment_justify_content_variants() {
     for (value, expected) in cases {
         let mut style = ComputedStyle::default();
         style.justify_content = value;
-        let taffy_style = computed_style_to_taffy(&style, None);
+        let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(taffy_style.justify_content, expected);
     }
 }
@@ -244,7 +250,7 @@ fn test_convert_alignment_align_self_variants() {
     for (value, expected) in cases {
         let mut style = ComputedStyle::default();
         style.align_self = value;
-        let taffy_style = computed_style_to_taffy(&style, None);
+        let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(taffy_style.align_self, expected);
     }
 }
@@ -307,7 +313,7 @@ fn test_convert_clear_variants() {
 fn test_overflow_auto_maps_to_scroll() {
     let mut style = ComputedStyle::default();
     style.overflow_x = OverflowValue::Auto;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.overflow.x, taffy::style::Overflow::Scroll);
 }
 
@@ -316,7 +322,7 @@ fn test_overflow_auto_maps_to_scroll() {
 fn test_overflow_clip_maps_to_clip() {
     let mut style = ComputedStyle::default();
     style.overflow_y = OverflowValue::Clip;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.overflow.y, taffy::style::Overflow::Clip);
 }
 
@@ -423,7 +429,7 @@ fn test_parse_grid_tracks_percentage_values() {
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::Grid;
     style.grid_template_columns = Some("25% 50% 25%".to_string());
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(
         taffy_style.grid_template_columns.len(),
         3,
@@ -461,16 +467,16 @@ fn test_resolve_grid_placement_no_parent_areas() {
 fn test_convert_length_dimension_content_keywords() {
     let mut style = ComputedStyle::default();
     style.width = LengthValue::FitContent(Box::new(LengthValue::Px(200.0)));
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     // fit-content 在 convert_length_to_dimension 中映射为特定值，不 panic 即可
     let _ = taffy_style.size.width;
 
     style.width = LengthValue::MinContent;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     let _ = taffy_style.size.width;
 
     style.width = LengthValue::MaxContent;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     let _ = taffy_style.size.width;
 }
 
@@ -479,7 +485,7 @@ fn test_convert_length_dimension_content_keywords() {
 fn test_convert_max_length_dimension_units() {
     let mut style = ComputedStyle::default();
     style.max_width = LengthValue::Em(10.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Length(10.0));
 }
 
@@ -488,7 +494,7 @@ fn test_convert_max_length_dimension_units() {
 fn test_convert_max_height_percentage() {
     let mut style = ComputedStyle::default();
     style.max_height = LengthValue::Percentage(50.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.max_size.height, taffy::style::Dimension::Percent(0.5));
 }
 
@@ -498,7 +504,7 @@ fn test_convert_padding_em_rem() {
     let mut style = ComputedStyle::default();
     style.padding_left = LengthValue::Em(2.0);
     style.padding_right = LengthValue::Rem(1.5);
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.padding.left, taffy::style::LengthPercentage::Length(2.0));
     assert_eq!(taffy_style.padding.right, taffy::style::LengthPercentage::Length(1.5));
 }
@@ -509,11 +515,12 @@ fn test_convert_margin_viewport_units() {
     let mut style = ComputedStyle::default();
     style.margin_top = LengthValue::Vw(5.0);
     style.margin_bottom = LengthValue::Vh(2.5);
-    let taffy_style = computed_style_to_taffy(&style, None);
-    assert_eq!(taffy_style.margin.top, taffy::style::LengthPercentageAuto::Length(5.0));
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    // 5vw = 5 * 800/100 = 40.0; 2.5vh = 2.5 * 600/100 = 15.0
+    assert_eq!(taffy_style.margin.top, taffy::style::LengthPercentageAuto::Length(40.0));
     assert_eq!(
         taffy_style.margin.bottom,
-        taffy::style::LengthPercentageAuto::Length(2.5)
+        taffy::style::LengthPercentageAuto::Length(15.0)
     );
 }
 
@@ -524,8 +531,9 @@ fn test_convert_gap_viewport_units() {
     style.display = DisplayValue::Flex;
     style.row_gap = LengthValue::Vmin(2.0);
     style.column_gap = LengthValue::Vmax(1.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
-    assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(2.0));
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    // 2vmin = 2 * min(800,600)/100 = 12.0
+    assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(12.0));
 }
 
 #[test]
@@ -534,11 +542,11 @@ fn test_convert_flex_direction_reverse() {
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::Flex;
     style.flex_direction = FlexDirectionValue::RowReverse;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.flex_direction, taffy::style::FlexDirection::RowReverse);
 
     style.flex_direction = FlexDirectionValue::ColumnReverse;
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.flex_direction, taffy::style::FlexDirection::ColumnReverse);
 }
 
@@ -548,7 +556,7 @@ fn test_convert_flex_basis_length_em() {
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::Flex;
     style.flex_basis = FlexBasisValue::Length(LengthValue::Em(3.0));
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::Length(3.0));
 }
 
@@ -558,7 +566,7 @@ fn test_parse_single_track_fallback_auto() {
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::Grid;
     style.grid_auto_rows = Some("invalid-value".to_string());
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     // grid_auto_rows 解析失败不应 panic
     let _ = taffy_style.grid_auto_rows;
 }
@@ -569,7 +577,7 @@ fn test_parse_minmax_numeric_fallback() {
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::Grid;
     style.grid_template_rows = Some("minmax(100, 1fr)".to_string());
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     // 不应 panic
     let _ = taffy_style.grid_template_rows;
 }
@@ -580,7 +588,7 @@ fn test_convert_min_max_width_ch_unit() {
     let mut style = ComputedStyle::default();
     style.min_width = LengthValue::Ch(4.0);
     style.max_width = LengthValue::Ch(40.0);
-    let taffy_style = computed_style_to_taffy(&style, None);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.min_size.width, taffy::style::Dimension::Length(4.0));
     assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Length(40.0));
 }

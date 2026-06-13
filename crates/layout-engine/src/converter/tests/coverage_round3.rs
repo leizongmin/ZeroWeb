@@ -9,7 +9,7 @@ fn test_convert_length_ch_unit() {
         width: LengthValue::Ch(2.5),
         ..ComputedStyle::default()
     };
-    let result = computed_style_to_taffy(&style, None);
+    let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(result.size.width, taffy::style::Dimension::Length(2.5));
 }
 
@@ -20,8 +20,9 @@ fn test_convert_length_to_lp_vmax_and_ch() {
         padding_left: LengthValue::Ch(1.5),
         ..ComputedStyle::default()
     };
-    let result = computed_style_to_taffy(&style, None);
-    assert_eq!(result.padding.top, taffy::style::LengthPercentage::Length(5.0));
+    let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    // 5vmax = 5 * max(800,600)/100 = 40.0; ch 单位保持原值
+    assert_eq!(result.padding.top, taffy::style::LengthPercentage::Length(40.0));
     assert_eq!(result.padding.left, taffy::style::LengthPercentage::Length(1.5));
 }
 
@@ -32,9 +33,10 @@ fn test_convert_length_to_lpa_rem_and_vh() {
         right: LengthValue::Vh(10.0),
         ..ComputedStyle::default()
     };
-    let result = computed_style_to_taffy(&style, None);
+    let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::Length(1.5));
-    assert_eq!(result.inset.right, taffy::style::LengthPercentageAuto::Length(10.0));
+    // 10vh = 10 * 600/100 = 60.0
+    assert_eq!(result.inset.right, taffy::style::LengthPercentageAuto::Length(60.0));
 }
 
 #[test]
@@ -45,9 +47,10 @@ fn test_convert_length_to_lpa_vmin_vmax_ch() {
         right: LengthValue::Ch(0.5),
         ..ComputedStyle::default()
     };
-    let result = computed_style_to_taffy(&style, None);
-    assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::Length(3.0));
-    assert_eq!(result.inset.top, taffy::style::LengthPercentageAuto::Length(7.0));
+    let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    // 3vmin = 3 * min(800,600)/100 = 18.0; 7vmax = 7 * 800/100 = 56.0
+    assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::Length(18.0));
+    assert_eq!(result.inset.top, taffy::style::LengthPercentageAuto::Length(56.0));
     assert_eq!(result.inset.right, taffy::style::LengthPercentageAuto::Length(0.5));
 }
 
@@ -79,7 +82,7 @@ fn test_convert_alignment_baseline_for_align_self() {
         align_self: AlignmentValue::Baseline,
         ..ComputedStyle::default()
     };
-    let result = computed_style_to_taffy(&style, None);
+    let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert!(result.align_self.is_some());
 }
 
