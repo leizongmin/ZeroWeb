@@ -42,7 +42,12 @@
 1. **第四/五个 clean win**：R84（+2）+ R89（+1）+ R90（+1）+ R91（+3）共 +7~8，**405/490**。
 2. **表格布局仍有定点可修空间**：border-collapse 精度、列折叠、shrink-to-fit 是 CSS Tables §17.6 的离散规则，可独立实现。
 3. **vw/vh 是真实正确性修复**：虽然不直接提升 reftest，但 M11 production-ready（加载真实网站）必需。
-4. **position-fixed-overflow-print 剩余 75% 根因 = position:fixed 包含块**：即使 vw/vh 修复后仍 75%，说明 fixed 元素的几何/定位是独立的 P2 缺口。
+4. **position-fixed-overflow-print 剩余 75% 根因已精确定位 = position:absolute 包含块错误**：
+   - 测试侧（`position:fixed` + `width:100vw`）渲染**正确**：purple 0-800、blue 400-1200（可见 400-800）。
+   - 参考侧（`position:absolute` + `width:50%`）渲染**错误**：`#inner` 解析为 200×200，而非应有的 400×400。
+   - **根因**：CSS 2.1 §10.1 规定 absolute 元素无 positioned ancestor 时，containing block 是初始包含块（视口 800px）。但 taffy 用静态父 `#outer`（400px）作为 containing block，导致 `left:50%`/`width:50%` 解析为 200px 而非 400px。
+   - **已有但禁用的修复**：`adjust_absolute_to_initial_containing_block`（engine.rs:1773，step 11.5）曾尝试修正，但导致 static-inside-inline-block、background-329、block-formatting-context-height-003、writing-mode float 等回归，已禁用。该函数只处理 x/y 偏移和 auto 宽高，**不处理百分比宽高的重解析**，故即使启用也无法修复本测试。
+   - **正确修复需要**：检测无 positioned ancestor 的 absolute 元素，将其百分比 left/right/top/bottom/width/height **按视口重新解析**。属 P2 系统性定位缺口，风险高（历史回归）。
 
 #### 后续重点（R92+）
 
