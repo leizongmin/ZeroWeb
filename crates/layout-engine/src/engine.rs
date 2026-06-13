@@ -644,10 +644,15 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
     };
 
     // 跳过 flex/grid 容器——它们的子元素由 flex/grid 布局定位
+    // 跳过表格单元格——position_cells 已处理 vertical-align 定位，IFC 重新定位会覆盖
     if let Some(container_style) = styles.get(&container_node_id)
         && matches!(
             container_style.display,
-            DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+            DisplayValue::Flex
+                | DisplayValue::InlineFlex
+                | DisplayValue::Grid
+                | DisplayValue::InlineGrid
+                | DisplayValue::TableCell
         )
     {
         return;
