@@ -29,6 +29,27 @@
 - Phase B/C 待 Phase A 稳定后推进。
 - **R79/R80 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
 
+### R87 进展（clear-applies-to-009 确认为字体度量 + float 时序，无离散修复）
+
+**当前状态**：399-400/490 持平 R84（无突破），工作树干净。
+
+- 调试确认 `clear-applies-to-009`（1.02%）的 `<p>` float 在 `adjust_float_positions` 时 `height=20`（1 行），bottom=52；蓝色方块比参考低 8px（test y=68 vs ref y=60），尺寸一致（96×96）。
+- **根因**：`<p>` 使用**默认字体**（非 Ahem），我们的 `estimate_char_width` 对默认字体的字宽估计比 Chrome 窄，导致 "Test passes..." 文本在我们的渲染器里**只占 1 行**（height=20），而 Chrome 占 2 行（height=40）。float 高度差异 + float/clear 定位时序（adjust 在 remeasure 前）叠加，导致 clear 位置偏差。
+- **非离散修复**：要修正需 (a) 改进默认字体的字宽估计（系统性字体度量，影响所有非 Ahem 文本换行，风险高）或 (b) float/clear 时序架构改造（R78 已确认完全重跑 adjust 会回归）。
+- **结论**：clear-applies-to-009 及同簇 float/clear near-miss 是**默认字体字宽估计 + float 时序**的系统性问题，不能再靠定点 float 修复。
+
+#### 跨轮总结（R80-R87）
+
+R84 是本阶段唯一 clean win（+2，399-400/490）。R80-R83、R85-R87 共 7 轮系统验证了所有 near-miss 失败均被以下系统性缺口阻塞，增量补丁路径已彻底穷尽：
+1. **默认字体字宽估计**（影响 clear-applies-to-009 等非 Ahem 文本换行）— 新发现
+2. taffy-IFC inline-ownership（inline-formatting-context-002/003、font-051）
+3. multicol 行级跨列 fragmentation（Phase B）
+4. writing-mode 逻辑轴（Phase C）
+5. taffy baseline / visibility:collapse / MaxContent 限制
+6. 表格行高分配、float/clear 时序
+
+后续提升必须从这些架构方向推进，不能再期望单测级独立修复。
+
 ### R86 进展（multicol 确认为 Phase B，无离散修复）
 
 **当前状态**：399-400/490 持平 R84（无突破），multicol 34/57，工作树干净。
