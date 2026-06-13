@@ -1979,6 +1979,10 @@ fn adjust_float_positions_with_context(
     // 我们通过累加正常流元素的高度 + margin 折叠来独立追踪 flow_bottom。
     let mut flow_bottom = 0.0f32; // 上一个正常流元素的 border-bottom（相对于容器 content area）
     let mut last_flow_mb = 0.0f32; // 上一个正常流元素的 margin-bottom
+    // 第一个流内子元素的 margin-top 会与无 border-top/padding-top 的父容器折叠
+    //（CSS §8.3.1），此时子元素位于容器 content 原点，其 margin-top 不应计入 flow_bottom，
+    // 否则后续 float 的 min_float_y 会把该 margin-top 双重计入，使 float 偏低。
+    let mut first_in_flow = true;
 
     // 记录每个 float 子元素在 taffy 布局中的 Y 和高度，用于后续偏移修正
     let mut float_taffy_y: Vec<(usize, f32, f32)> = Vec::new(); // (index, taffy_y, outer_height)
@@ -1992,13 +1996,21 @@ fn adjust_float_positions_with_context(
         // 正常流元素：独立更新 flow_bottom
         // 不使用 taffy 的 Y（包含 float 垂直空间），而是自行累加
         if matches!(child.float, FloatValue::None) && !child.is_absolute && !child.is_fixed {
+            // 第一个流内子元素的 margin-top 与无 border-top/padding-top 的父容器折叠：
+            // margin-top 上浮到父容器外，子元素位于 content 原点，不计入 flow_bottom。
+            let parent_collapses_first = first_in_flow && content_y_offset == 0.0;
+            first_in_flow = false;
             // 独立计算正常流位置：使用 margin 折叠
             if crate::margin_collapse::is_empty_block(child) {
                 let collapsed_self_margin =
                     crate::margin_collapse::collapse_two_margins(child.margin_top, child.margin_bottom);
                 last_flow_mb = crate::margin_collapse::collapse_two_margins(last_flow_mb, collapsed_self_margin);
             } else {
-                let collapsed_margin = crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
+                let collapsed_margin = if parent_collapses_first {
+                    0.0
+                } else {
+                    crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top)
+                };
                 let child_y = flow_bottom + collapsed_margin;
                 let child_border_bottom = child_y + child.height;
                 flow_bottom = child_border_bottom;

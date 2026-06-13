@@ -1065,3 +1065,56 @@ fn test_table_column_visibility_collapse() {
         "colspan cell spanning collapsed column must clip overflow"
     );
 }
+
+/// 测试：无 border/padding 的容器中，第一个流内子元素的 margin-top 与父容器折叠后，
+/// 后续 float 的定位不应把该 margin-top 双重计入（CSS §8.3.1 margin 与父折叠）。
+/// 复现 inline-formatting-context-002/003：`<p>`(mt=16) 后跟 float，float 应位于
+/// p.border_bottom + p.margin_bottom，而非额外加上 p.margin_top。
+#[test]
+fn test_float_after_first_child_margin_collapses_with_parent() {
+    let (mut doc, body) = make_doc_with_body();
+    let p = doc.create_element("p");
+    doc.append_child(body, p).unwrap();
+    let float_div = doc.create_element("div");
+    doc.append_child(body, float_div).unwrap();
+
+    let mut styles = HashMap::new();
+    // body：无 border/padding（默认），使首个子元素 margin-top 与之折叠
+    let mut body_style = ComputedStyle::default();
+    body_style.display = DisplayValue::Block;
+    body_style.margin_top = LengthValue::Px(16.0);
+    body_style.margin_bottom = LengthValue::Px(8.0);
+    styles.insert(body, body_style);
+
+    // 第一个流内子元素 <p>：margin-top=16（与 body 折叠），height=19，margin-bottom=16
+    let mut ps = ComputedStyle::default();
+    ps.display = DisplayValue::Block;
+    ps.margin_top = LengthValue::Px(16.0);
+    ps.height = LengthValue::Px(19.0);
+    ps.margin_bottom = LengthValue::Px(16.0);
+    styles.insert(p, ps);
+
+    // float：高度 19.2
+    let mut fs = ComputedStyle::default();
+    fs.display = DisplayValue::Block;
+    fs.float = FloatValue::Left;
+    fs.height = LengthValue::Px(19.2);
+    styles.insert(float_div, fs);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let p_box = find_child_by_node_id(&result.root, p).expect("p found");
+    let f_box = find_child_by_node_id(&result.root, float_div).expect("float found");
+
+    // float 与 p 底边的间距应等于 p.margin_bottom（16），而非 16+16（双重计入 p.margin_top）。
+    let gap = f_box.y - (p_box.y + p_box.height);
+    assert!(
+        (gap - 16.0).abs() < 1.0,
+        "float 应位于 p.border_bottom + p.margin_bottom（间距≈16），实际 gap={}（p.y={} h={} float.y={}）",
+        gap,
+        p_box.y,
+        p_box.height,
+        f_box.y
+    );
+}
