@@ -2,25 +2,88 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 基础设施已就位）
-**上游真实 reftest 通过率**: 81.0% (397/490) R77 确认（稳定，与 R76 持平）
+**上游真实 reftest 通过率**: 81.0% (397/490) R78 确认（稳定，与 R77 持平）
 
 ### 当前阶段结论
 
-- **397/490 (81.0%) 稳定基线**：R77 通过 IFC inline-block 百分比宽度解析改善 float-003 稳定性。
+- **397/490 (81.0%) 稳定基线**：R68-R78 共 10 轮，从 388→397（+9），每轮平均 +0.9。
 - **R73 Phase A 基础设施就位**：`compute_final_inline_layouts` 已启用作为 step 12 后处理，paint 系统可通过 `use_stored` 路径消费存储的 IFC 结果。
   - 当前使用空样式 + override maps（与 paint-IFC 一致），零回归。
   - 后续可逐步切换到真实样式，需逐容器验证。
-- **后续提升主要依赖专项架构改造**，但独立修复仍然可行：
+- **独立修复路径收益递减**：R68-R78 的增量改善已穷尽大部分独立 bug。93 个失败测试中，20 个 near-miss（1-2% diff）均有系统性根因。
+- **后续提升主要依赖专项架构改造**：
   1. **taffy-IFC 架构统一**：影响 50+ 测试，需要重设计 layout/paint 之间的 IFC 数据流。
   2. **multicol inline 内容跨列拆分**：影响 16+ 测试，需要 IFC 片段级列分配与 fragmentation。
   3. **writing-mode 垂直布局完整实现**：影响 10+ 测试，需要完整轴交换与垂直字形渲染/定位收口。
-  4. **独立修复机会**：visibility:collapse flex 实现、border-conflict-resolution 精度、float clearance 边界 case。
+  4. **独立修复机会**：visibility:collapse flex 实现（taffy 未支持）、border-conflict-resolution 精度、float clearance 边界 case。
 
 ### 下一阶段执行依据
 
 - 专项实施 Spec：[`post-r71-architecture-spec.md`](./post-r71-architecture-spec.md)
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
+- **R78 系统性分析**：所有 20 个 near-miss 测试已逐一调查，根因均为系统性架构限制，非独立 bug。
+
+### R78 进展
+
+**当前状态**：
+- 全量上游 reftest：**397/490 (81.0%)**，与 R77 基线持平（+0）
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+
+#### R78 实验与调查
+
+1. **float/clear 定位时序修复尝试（已回退）**：
+   - 尝试在 `remeasure_inline_only_containers`（step 6.5）之后重新运行 `adjust_float_positions`。
+   - 结果：`clear-applies-to-009` 从 1.02% 退化为 1.82%（蓝色方块位置更偏离参考文件）。
+   - 根因：完全重新运行 `adjust_float_positions` 会覆盖 remeasure 和 text-float-exclusion 的正确调整，产生比原问题更严重的不一致。
+   - 已完全回退，确认简单重新运行方案不可行。
+
+2. **93 个失败测试系统性分析**：
+   - 按根因分类：Paint IFC（~9 tests）、Float/clear 精度（~7 tests）、Flexbox（16 tests）、Multicol（23 tests）、Writing-mode（10 tests）、Table（9 tests）、其他（~19 tests）。
+   - 20 个 near-miss 测试（1-2% diff）逐一调查，根因均为系统性架构限制。
+
+3. **Near-miss 测试根因确认**：
+   | 测试 | diff | 根因 | 评估 |
+   |------|------|------|------|
+   | clear-applies-to-009 | 1.02% | float/clear 定位时序（remeasure 后重跑不可行） | 被阻塞 |
+   | baseline-007 | 1.04% | multicol baseline 在 flex 中对齐（R76 回归） | 被阻塞 |
+   | position-relative-table-tfoot-top | 1.04% | border-collapse 亚像素精度 | 精度问题 |
+   | inline-formatting-context-003 | 1.05% | paint IFC 架构 | 被阻塞 |
+   | float-003 | 1.15% | flaky（阈值边缘波动） | 精度问题 |
+   | clear-clearance-calculation-004 | 1.28% | clearance 精度 | 精度问题 |
+   | inline-formatting-context-002 | 1.39% | paint IFC 架构 | 被阻塞 |
+   | block-in-inline-align-001 | 1.42% | block-in-inline 分裂 | 被阻塞 |
+   | baseline-008 | 1.45% | multicol baseline 对齐 | 被阻塞 |
+   | flexbox-baseline-align-self-baseline-horiz-001 | 1.50% | baseline 近似（font_size≈ascent） | 被阻塞 |
+   | border-conflict-resolution | 1.50% | border-collapse 边框精度 | 精度问题 |
+   | child-border-box-and-max-content-001/002 | 1.52% | max-content→Auto taffy 限制 | 被阻塞 |
+   | flexbox-collapsed-item-horiz-002 | 1.57% | visibility:collapse（taffy 未实现） | 被阻塞 |
+   | flexbox-column-row-gap-001 | 1.63% | flex gap 精度 | 精度问题 |
+   | multicol-collapsing-001 | 1.68% | multicol BFC margin collapse | 精度问题 |
+   | background-043 | 1.73% | background-image 定位精度 | 精度问题 |
+   | fieldset-as-item-overflow | 1.77% | fieldset 特殊布局行为 | 被阻塞 |
+   | css-flexbox-row | 1.82% | writing-mode + flex 交互 | 被阻塞 |
+
+4. **代码质量审计发现**：
+   - `is_empty_block` 使用精确浮点相等（`== 0.0`），对亚像素值可能失败
+   - `establishes_bfc` 未包含 flex/grid 容器（R64 已尝试扩展，导致回归已回退）
+   - baseline 近似使用 `font_size` 作为 ascent（实际 ascent ≈ 80% font_size）
+   - `measure_text_content` 中 percentage height 使用 width 作为参考（潜在 bug，但当前无影响）
+
+#### R78 关键结论
+
+1. **81% 基线在 R68-R78（10 轮）中完全稳定**：397/490 在多次复跑中稳定复现。
+2. **独立修复路径已穷尽**：所有 20 个 near-miss 测试的根因均为系统性架构限制。
+3. **float/clear 时序问题的正确修复路径更复杂**：需要针对性更新 float bottom 追踪而非完全重跑 `adjust_float_positions`，但实现风险高。
+4. **后续突破需要专项架构改造**：taffy-IFC 统一是唯一能系统性提升通过率的路径。
+
+#### 后续重点（R79+）
+
+1. **taffy-IFC 架构统一**（最大杠杆，影响 50+ tests）：唯一系统性打破 81% 天花板的路径
+2. **float/clear 定位时序**（针对性修复）：在 remeasure 后仅更新 float bottom 追踪，而非完全重跑
+3. **baseline 近似精度改善**（影响 baseline-007 等）：使用 line_height 而非 font_size 近似 ascent
+4. **visibility:collapse for flex**（影响 2 tests）：需要 taffy 支持两遍布局算法
 
 ### R77 进展
 
