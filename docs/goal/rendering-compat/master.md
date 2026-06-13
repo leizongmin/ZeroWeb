@@ -31,6 +31,20 @@
 3. CSS2/linebox block-in-inline / IFC（inline-formatting-context-002/003/008/009/011、inline-box-001/002、empty-inline-002 等 ~8 个）。
 4. flexbox baseline + max/min-content sizing（flex-container-max/min-content-001、flexbox-baseline-multi-line 等）。
 
+#### R92 调查确认的「已被系统性根因阻塞」清单（避免下轮重复排查）
+
+下列 near-miss 失败用例经 R92 像素级分析确认为系统性根因，非独立 bug，**下轮不要单独尝试**：
+
+- **border-001 / border-bottom-width-006（2.77%/2.81%）**：TEST 侧（真实 border）渲染正确；**REF 侧**用 Ahem 文本 + `word-spacing:3em` 构造空心方块，ZeroWeb 的 word-spacing 换行使中间区域变 175px（应 100px）→ 属 IFC 文本换行系统性缺口，非 border bug。
+- **font-family-invalid-characters-002（15.10%）**：CSS 解析器错误恢复（`test(foo` 不匹配括号吞噬后续规则）；需精确对齐 Chrome 括号匹配/吞噬语义，高风险，非独立。
+- **multicol-collapsing-001（1.68%）/ multicol-count-computed-003/004（2.06%/2.50%）**：列内容分配/平衡/breaking 点位偏移（Ahem 字形在列内 y 位置错），属 multicol 系统性 breaking 缺口（已有 ColumnFragment 基础设施，但分配精度不足）。
+- **table-cell-width-0（28.39%）/ min-max-size-table-content-box（36.60%）**：显式 width 小于 min-content 时需 clamp；但 min-content 估算（`char_width*text_len`）对多词内容会过估，无法像素级对齐，需真实字形度量。
+- **abspos-containing-block-initial-007（7.12%）**：`bottom:0` length 偏移（非百分比），R92 函数按设计不处理；同类 ICB 缺口，需独立窄化修复（仅 bottom/right length，不动 auto 尺寸）。
+- **clear-clearance-calculation-004/005（1.28%）、clear-applies-to-009（1.02%）**：clearance + margin collapse，受 taffy 已折叠 margin 后处理限制。
+- **inline-formatting-context-002/003（1.05%/1.39%）**：block-in-inline 分裂（inline 父 > block 子），inline 背景绘制，属 Phase A IFC 系统性。
+- **baseline-007/008（multicol，1.04%/1.45%）**：flex `align-items:baseline` × multicol × column-span 交互，复杂非独立。
+- **css-flexbox-row/test1（1.82%/2.88%）**：writing-mode:vertical-rl + flex 交互，属 writing-mode 系统性。
+
 ### R91 进展（✅ 突破：border-collapse 双侧同步 + 表格列折叠 + 视口单位修复，405/490）
 
 **当前状态**：
