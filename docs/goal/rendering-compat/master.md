@@ -2,7 +2,33 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 82.9% (406/490) R92（较 R91 的 405 基线 +1）
+**上游真实 reftest 通过率**: 83.1% (407/490) R93（较 R92 的 405-406 flaky 基线 +1~2，且全量确定性）
+
+### R93 进展（✅ 修复 IFC override map 非确定性 → 消除 flaky reftest，407/490 确定性）
+
+**当前状态**：
+- 全量上游 reftest：**407/490 (83.1%)**，连续两次运行**完全一致**（83 失败，零 diff）→ reftest 信号现已确定性
+- 内联 reftest 全量：686/686 (100%)
+- `cargo test --workspace`：全绿（45 个 test binary）；clippy：**零警告**
+
+#### R93 根因：paint-IFC / layout-IFC 的 override map 构建依赖 HashMap 迭代顺序
+
+- `float-003.xht` 与 `font-family-013.xht` 长期 flaky（每次运行在通过/失败间随机翻转，导致总量在 405/406 之间漂移）。
+- **像素级定位**：同一 REF 文件的两次独立进程渲染相差 0.15%，且「Filler Text」字形 baseline 在 y=84.8 与 y=164.8 间跳变（差 80px = img 高度 96 − 字号 16）。
+- **根因**：`store_font_sizes_from_ifc` 把**内联元素片段**（如 `<img>`，font_size=0、height=96）与**文本节点片段**（font_size=16）一起存入 `text_node_font_sizes`。paint-IFC（`painter/text.rs`）与 layout-IFC（`engine.rs::compute_final_inline_layouts`）构建 `parent_font_sizes` 等 override map 时，按 `parent_node` 聚合 → 多片段共享同一父元素时 `last-write-wins`，而 `HashMap` 迭代顺序每进程随机（`std::RandomState` 随机种子）→ 父级字号随机取 0 或 16 → 行盒高度/基线非确定性。
+
+#### R93 修复：override map 仅纳入文本节点片段
+
+- 在两处构建 `parent_font_sizes`/`parent_is_ahem`/`parent_letter_spacing`/`parent_line_heights` 时，过滤掉非 `NodeKind::Text` 的条目（即排除 `<img>` 等内联元素片段）。
+- 同一父元素的文本节点继承一致字号/行高，聚合结果与迭代顺序无关 → **渲染确定性**。
+- **GAIN**：`float-003.xht`（0.73% 稳定通过，原 flaky）、`font-family-013.xht`（0.00% 稳定通过，原 flaky）。
+- **LOSS/回归**：无。两次全量运行失败列表 diff 为空。
+
+#### R93 关键结论
+
+1. **flaky reftest 根因是 HashMap 迭代顺序耦合**，而非并行竞争（`--jobs 1` 仍 flaky 已证实）。此类「按 key 聚合时多源冲突」的非确定性是 Rust 浏览器渲染的隐蔽陷阱，后续 override map / cache 聚合都应确保顺序无关或键唯一。
+2. 确定性是 reftest 作为通过率指标的前提——此前 405/406 漂移使通过率本身不可信；现已修复。
+3. 该修复同时改善了真实正确性：父级字号不再被 `<img>` 片段的 font_size=0 污染。
 
 ### R92 进展（✅ absolute 百分比按视口重解析，406/490，position-fixed-overflow-print 通过）
 
