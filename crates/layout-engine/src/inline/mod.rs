@@ -862,14 +862,13 @@ impl InlineFormattingContext {
                             // 从 CSS 计算样式提取尺寸（仅支持绝对长度单位）
                             let mut w = resolve_inline_block_dimension(&s.width, s, /* is_width */ true);
                             let mut h = resolve_inline_block_dimension(&s.height, s, /* is_width */ false);
-                            // 仅当 CSS 属性为 Auto 时，使用 LayoutBox 预计算尺寸回退。
-                            // Percentage、MinContent 等其他值不回退——它们有自己的解析逻辑。
+                            // Auto/Percentage 值无法在 IFC 中直接解析，使用 LayoutBox 预计算尺寸回退。
                             let need_lb = w <= 0.0 || h <= 0.0;
                             if need_lb && let Some(&(lw, lh)) = self.inline_block_sizes.get(&child_id) {
-                                if matches!(s.width, LengthValue::Auto) {
+                                if matches!(s.width, LengthValue::Auto | LengthValue::Percentage(_)) && w <= 0.0 {
                                     w = lw;
                                 }
-                                if matches!(s.height, LengthValue::Auto) {
+                                if matches!(s.height, LengthValue::Auto | LengthValue::Percentage(_)) && h <= 0.0 {
                                     h = lh;
                                 }
                             }
