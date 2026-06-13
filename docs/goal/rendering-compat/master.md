@@ -1,8 +1,36 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-13
+**最后更新**: 2026-06-14
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 83.5% (409/490) R96（较 R93 的 407 基线 +2，multicol-clip 通过）
+**上游真实 reftest 通过率**: 83.5% (409/490) R97（与 R96 持平；本轮为根因映射调查）
+
+### R97 调查（失败全景映射 + intrinsic sizing 共享根因定位，未提交代码）
+
+**当前状态**：全量上游 reftest **409/490 (83.5%)** 与 R96 持平；内联 686/686；确定性。本轮系统映射 81 个失败、定位一个跨 ≥5 测试的共享根因。
+
+#### 81 个失败按类别分布
+- CSS2 25（linebox 8、floats-clear 8、fonts 2、borders 2、其余 5）、multicol 20、flexbox 16、writing-modes 10、tables 7、grid 3。
+
+#### 关键发现：intrinsic sizing 关键字是 ≥5 失败的共享根因
+ZeroWeb 对 `width`/`height` 的 `fit-content`/`max-content`/`min-content` 关键字支持不完整：
+1. **bare `width: fit-content` 关键字未被解析**（`shorthand`/`css-parser` 只解析 `fit-content(...)` 函数形式）→ 声明被丢弃，块级元素回退为 `auto`（填充容器宽度）。
+2. **`width: max-content`/`min-content` 被映射为 `Dimension::Auto`**（`converter/mod.rs:363`），taffy 收不到 intrinsic sizing 信号。
+
+**确认受影响的失败测试**（差异来源 = REF 用 flex+`width:fit-content`/`width:max-content` 模拟 shrink-to-fit，ZeroWeb 却渲染成全宽）：
+- `css-tables/table-cell-width-0`（28.39%）：REF `.row{display:flex;width:fit-content}` 渲染成全宽（fit-content 被丢），TEST `<table>` shrink-to-fit 小表 → 两者不符。像素验证：TEST 小表 w=24/16/34px 正确，REF 全宽 792px 错误。
+- `css-flexbox/flex-container-max-content-001`（23.45%）、`flex-container-min-content-001`（16.23%）：`.wrap > *{width:max-content}`。
+- `css-grid/child-border-box-and-max-content-001/002`（各 1.52%）：两侧都用 `width:max-content`（差异在 item 级 max-width+box-sizing 残留）。
+
+**实施风险**：wpt-data 中 21 个文件用这些关键字，其中 `flex-item-content-is-min-width-max-content`、`col-definite-max-size-001`、`aspect-ratio-intrinsic-size-012/013`、`grid-item-non-auto-height-stretch-002/003` 等**当前通过**（可能恰好因关键字被丢弃成 auto 而与 REF 巧合匹配）。因此实现必须 opt-in（仅对显式声明的块级盒做 shrink-to-fit 测量）并逐测试回归。
+
+#### 两个失败的非显式根因（已排除快速修复假设，避免下轮重查）
+- **`multicol-collapsing-001`（1.68%）**：multicol 的 bottom margin 未被父容器包含（TEST 比 REF 矮 20px=1em；top margin 已正确包含，bottom 折叠了）。`establishes_bfc()` 已含 `is_multicol`（`margin_collapse.rs:56`），但折叠由 taffy-local 内部完成。审查 `taffy-local/compute/block.rs:170-184`：`own_margins_collapse_with_children.end` 已检查 `border.bottom==0`，外层 div 有 1px border-bottom 应阻止折叠——代码看似正确，故根因不在该处，需进一步追踪 `vertical_margins_are_collapsible` 的传递或 multicol 节点的 margin 是否在 `adjust_multicol_layout` 后丢失（`multicol.rs` 未重设容器 height，保留 taffy 值）。
+- **`font-051`（8.19%）**：**不是** font 简写验证问题。实测把 `span{font:serif}` 改成 `font:inherit` 仍失败 8.19%。"FAIL" 未渲染成 100px Ahem 黑块（TEST 在 y=70 仅有 [8,49]≈42px 黑，REF 为 400×100 黑矩形）。`expand_font("serif")` 正确返回 `vec![]`（已确认 `looks_like_length("serif")=false`）。根因在上游 reftest 路径的 100px Ahem 渲染或 inline span 大字号渲染，待查。
+
+#### 后续重点（R98+）
+1. **intrinsic sizing 关键字**（最高杠杆，≥5 测试）：先解析 bare `fit-content`，再为块级盒加 opt-in shrink-to-fit 后处理测量（复用 IFC 测 max-content 宽度），全量 reftest 回归。
+2. `multicol-collapsing-001` margin 包含：追踪 multicol 节点 margin 在 taffy→ZeroWeb 边界的传递。
+3. `font-051`：定位上游路径 100px Ahem/inline span 渲染缺口。
 
 ### R96 进展（✅ multicol 行内内容列分配——5 处关联 bug 一并修复，409/490，multicol-clip-001/002 通过）
 
