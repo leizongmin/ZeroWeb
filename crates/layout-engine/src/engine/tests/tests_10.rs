@@ -1,5 +1,5 @@
 use super::*;
-use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue};
+use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue, VisibilityValue};
 
 /// 测试 clear:both 将元素推到所有浮动元素下方。
 #[test]
@@ -940,4 +940,128 @@ fn test_border_collapse_table_wins() {
             );
         }
     }
+}
+
+/// 测试 table column 的 visibility:collapse。
+///
+/// 对应 visibility-collapse-colspan-003：中间列被 `visibility:collapse` 折叠，
+/// 其宽度应为 0，且最后一行的 colspan 单元格应只占非折叠列宽度并裁剪溢出内容。
+/// 非折叠列的显式 width 不应被 colspan 单元格的长内容撑开。
+#[test]
+fn test_table_column_visibility_collapse() {
+    use zero_css_parser::values::LengthValue;
+    let (mut doc, body) = make_doc_with_body();
+
+    // <table>
+    let table = doc.create_element("table");
+    doc.append_child(body, table).unwrap();
+
+    // <col> x3, 中间一个 visibility:collapse
+    let col0 = doc.create_element("col");
+    doc.append_child(table, col0).unwrap();
+    let col1 = doc.create_element("col");
+    doc.append_child(table, col1).unwrap();
+    let col2 = doc.create_element("col");
+    doc.append_child(table, col2).unwrap();
+
+    // <tr> with 3 <td>, firstCol=65, thirdCol=160
+    let row = doc.create_element("tr");
+    doc.append_child(table, row).unwrap();
+    let td0 = doc.create_element("td");
+    doc.append_child(row, td0).unwrap();
+    let td1 = doc.create_element("td");
+    doc.append_child(row, td1).unwrap();
+    let td2 = doc.create_element("td");
+    doc.append_child(row, td2).unwrap();
+
+    // <tr> with colspan=3 cell
+    let row2 = doc.create_element("tr");
+    doc.append_child(table, row2).unwrap();
+    let td_span = doc.create_element("td");
+    doc.set_attribute(td_span, "colspan", "3");
+    doc.append_child(row2, td_span).unwrap();
+
+    let mut styles = HashMap::new();
+
+    // col1 visibility:collapse
+    let mut c1 = ComputedStyle::default();
+    c1.display = DisplayValue::TableColumn;
+    c1.visibility = VisibilityValue::Collapse;
+    styles.insert(col1, c1);
+
+    let mut c0 = ComputedStyle::default();
+    c0.display = DisplayValue::TableColumn;
+    styles.insert(col0, c0);
+
+    let mut c2 = ComputedStyle::default();
+    c2.display = DisplayValue::TableColumn;
+    styles.insert(col2, c2);
+
+    // table display
+    let mut tbl = ComputedStyle::default();
+    tbl.display = DisplayValue::Table;
+    styles.insert(table, tbl);
+
+    let mut tr = ComputedStyle::default();
+    tr.display = DisplayValue::TableRow;
+    styles.insert(row, tr.clone());
+    styles.insert(row2, tr);
+
+    let mut cell = ComputedStyle::default();
+    cell.display = DisplayValue::TableCell;
+    styles.insert(td1, cell.clone());
+    styles.insert(td_span, cell.clone());
+
+    // firstCol width:65px
+    let mut first = ComputedStyle::default();
+    first.display = DisplayValue::TableCell;
+    first.width = LengthValue::Px(65.0);
+    styles.insert(td0, first.clone());
+
+    // thirdCol width:160px
+    let mut third = ComputedStyle::default();
+    third.display = DisplayValue::TableCell;
+    third.width = LengthValue::Px(160.0);
+    styles.insert(td2, third);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let td0_box = find_child_by_node_id(&result.root, td0).expect("td0 found");
+    let td2_box = find_child_by_node_id(&result.root, td2).expect("td2 found");
+    let td1_box = find_child_by_node_id(&result.root, td1).expect("td1 found");
+    let td_span_box = find_child_by_node_id(&result.root, td_span).expect("colspan cell found");
+
+    // 折叠列单元格宽度应为 0
+    assert!(
+        td1_box.width.abs() < 0.5,
+        "collapsed column cell width should be 0, got {}",
+        td1_box.width
+    );
+
+    // 非折叠列应保持显式宽度，不被 colspan 长内容撑开
+    assert!(
+        (td0_box.width - 65.0).abs() < 1.5,
+        "firstCol width should be ~65 (explicit, not inflated by colspan), got {}",
+        td0_box.width
+    );
+    assert!(
+        (td2_box.width - 160.0).abs() < 1.5,
+        "thirdCol width should be ~160 (explicit, not inflated by colspan), got {}",
+        td2_box.width
+    );
+
+    // colspan 单元格宽度 = 65 + 0 + 160 = 225（仅非折叠列）
+    assert!(
+        (td_span_box.width - 225.0).abs() < 3.0,
+        "colspan-3 cell spanning collapsed col should be ~225 (sum of non-collapsed cols), got {}",
+        td_span_box.width
+    );
+
+    // colspan 单元格应设置 overflow_x:Hidden 以裁剪溢出内容
+    assert_eq!(
+        td_span_box.overflow_x,
+        crate::types::OverflowClip::Hidden,
+        "colspan cell spanning collapsed column must clip overflow"
+    );
 }
