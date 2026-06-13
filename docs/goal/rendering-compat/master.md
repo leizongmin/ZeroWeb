@@ -30,6 +30,14 @@
 
 **真正的架构修复**：要么让 painter 在正确的 box（内层 div，有文本的那个）上调用 paint_text，要么让 #div1 的 paint IFC 能从内层 div 的存储/后裔取 font_size。这是 R73-R84 stored/non-stored IFC 架构的核心错位，非单点可修。**本轮搁置大字号集群**，转向其他独立目标。
 
+#### R101d 补充（multicol-collapsing-001 BFC 实验 net-neutral，根因在 taffy 下游）
+
+实现 R100 调查线 3：给 taffy-local `Style` 加 `item_is_multicol` 字段 + `CoreStyle::is_multicol()` 方法 + converter 从 `column_count/column_width != Auto` 设置 + block.rs `own_margins_collapse_with_children`/`has_styles_preventing_being_collapsed_through` 把 multicol 视为建立 BFC（不与子折叠、不可折叠穿透）。构建通过。
+
+**结果**：全量 reftest **411/490 不变**（multicol-collapsing-001 仍 1.68%，零回归零修复）→ **net-neutral**。**结论**：multicol-collapsing-001 的 bottom margin 丢失**不在 taffy-local 折叠**（BFC 改动对其无影响），而在 taffy 下游——`adjust_multicol_layout`（multicol.rs）或 taffy→LayoutBox margin 传递边界。R97「multicol.rs 未重设容器 height，保留 taffy 值」线索待续：需查 multicol 节点的 bottom margin 在 `extract_layout` / `adjust_multicol_layout` 后是否被丢弃。改动已回滚（无收益不保留）。
+
+**下轮重点**：multicol-collapsing-001 的 margin 丢失追踪到 `adjust_multicol_layout` 或 taffy→LayoutBox 边界（非折叠）。这是独立于大字号的目标。
+
 #### 其他本轮排查（均非 clean，已搁置）
 
 - **html-display-table**（2.90%）：`<html display:table>` 含非表格子（inline-block），无 table grid → `adjust_table_layout` 不计列宽 → taffy block 填满视口。修复需匿名 table 盒生成（非 clean）。
