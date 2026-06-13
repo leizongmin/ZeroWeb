@@ -4,6 +4,35 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
 **上游真实 reftest 通过率**: 83.9% (411/490) R98（较 R97 的 409 基线 +2，abspos Length inset 视口相对修复）
 
+### R101 调查（大字号渲染根因 definitive 定位：R84 单行存储限制 + 基线残留，未提交代码）
+
+**当前状态**：全量上游 reftest **411/490 (83.9%)** 与 R100 持平。本轮通过逐层 instrumentation **definitive 定位**大字号（100px）Ahem 集群根因（R100 调查线 2 的 (a) vs (b) 二选一已决），并验证一条修复路径的净效果（净负，已回滚）。
+
+#### 根因 definitive 链路（instrumentation 确认）
+
+通过在 4 处加 eprintln（font/loader.rs rasterize、computed.rs font_size_px、inline/mod.rs run 创建、painter/text.rs use_stored）渲染 inline-formatting-context-008 得到：
+
+1. **computed style 正确**：`resolve_computed_style` 对 #div1 和子 div 均算出 `font_size_px=100`（FONTSIZE-DBG 打印 100 两次）。em 解析（`height:2em`=200px）、`expand_font("100px/1em Ahem")`、font-size 继承全部正确。**排除 R100 假设 (a) 继承断裂**。
+2. **layout IFC 正确**：`compute_final_inline_layouts` 跑 IFC 时 run.font_size=100（IFC-RUN-DBG style_some=true）。
+3. **paint IFC 错误**：paint 阶段对同一文本 re-run IFC，font_size=16（style_some=false）。`STORE-DBG` 显示处理该文本的 box `inline_layout_some=false`、`tnfs_len=0`（text_node_font_sizes 空）→ paint IFC 无 overrides → 默认 DEFAULT_FONT_SIZE=16。
+4. **根因 = R84 单行存储限制**（engine.rs `compute_final_inline_layouts` 原约 1496-1505）：`if inline_ctx.lines.len() > 1 || !is_pure_ahem { return; }` —— 仅存「单行 + 纯 Ahem」。008 的 "XX XX" 在 200px 容器里 100px 换 2 行 → 多行 → 不存 → paint 回退空样式 IFC → font_size=16。font-051 同理（"FAIL" 在 span 内，div 无直接文本子 → `has_text_children=false` → 跳过存储）。
+
+#### 修复实验（净负，已回滚）
+
+放宽为「纯 Ahem 即存（含多行）」：008 8.18%→**4.17%**、009 6.11%→**4.17%**（改善但未通过），但 **multicol-fill-auto-001 PASS→FAIL(2.45%)** 回归。加 `in_multicol` 守卫（多列后代保持单行限制）**未能消除**该回归 → 回归是多列 paint 列分布路径与存储 inline_layout 的另一种交互，非单纯多列后代。净 411→410，回滚。
+
+#### 残留 4.17% 与下一步
+
+008/009 即使存了 100px 仍剩 ~4.17% diff = **100px 下 glyph 垂直/基线定位**残留（R83 已刻画：`render_fragment +font_size` vs renderer top-left 的 stored/non-stored frag.y 不一致，是 +4/-3 非 clean trade-off）。故 008/009 clean 修复需**两步**：(1) 放宽 R84 多行存储（本轮验证改善 50%），(2) 修 100px 基线残留（R83 路径）。外加解决 multicol-fill-auto 交互。
+
+**Why 净负**：008/009 改善但未通过（不计入分子），multicol-fill-auto 实掉 1。需先解决基线残留 + multicol 交互才能净正。
+
+#### 后续重点（R102+）
+
+1. **R83 基线残留**（008/009 的 4.17%）：stored/non-stored frag.y 在大字号下的 +font_size 偏移。与 R84 多行存储放宽组合可净正。
+2. **multicol-fill-auto 与存储 inline_layout 交互**：为何 `in_multicol` 守卫无效，需查 multicol paint 列分布如何消费子 box 的 inline_layout。
+3. R100 调查线 1（float 折叠外科式）、调查线 3（multicol-collapsing BFC）仍待实现。
+
 ### R100 调查（float 折叠修复路径细化 + 大字号渲染集群定位，未提交代码）
 
 **当前状态**：全量上游 reftest **411/490 (83.9%)** 与 R98 持平（基线重测确认，确定性）。本轮未提交代码改动，推进三条调查线，记录以避免下轮重复推导。
