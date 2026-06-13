@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 81.6%-81.8% (400-401/490) R84/R89 突破（较 R80-R83 的 395-398 基线 +3~5）
+**上游真实 reftest 通过率**: 82.0% (401-402/490) R84/R89/R90 突破（较 R80-R83 的 395-398 基线 +4~6）
 
 ### 当前阶段结论
 
@@ -28,6 +28,42 @@
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
 - **R79/R80 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
+
+### R90 进展（✅ 突破 3：table cell 内 img paint 位置，401-402/490）
+
+**当前状态**：
+- 全量上游 reftest：**401-402/490 (81.8-82.0%)**，CSS2 **103-104/129**，较 R89 再 **+1~2**
+- 内联 reftest 全量：**685/685 (100%)**
+- `zero-layout-engine` 单测：全部通过；clippy：**零警告**
+
+#### R90 改动：跳过 table cell 内的 IFC 重新定位（保留 vertical-align 偏移）
+
+R89 发现 background-043 的剩余偏差来自独立的 img-paint 问题：`position_cells`（step 8）正确设置 `img.y=194`（vertical-align:bottom），但后续 `adjust_inline_block_positions`（step 10）在 td 上运行 IFC，将 img 当作 inline-block 重新定位，覆盖了 `img.y` 回 0。
+
+**根因诊断过程**：
+1. 在 paint 链加 trace：确认 paint 读取 img.y=0（layout 阶段设的 194 丢失）
+2. 在 layout 各后处理步骤间加 trace：step 8 后 img.y=194 ✅，step 9 后 194 ✅，step 10 后 0 ❌
+3. 确认 `adjust_inline_block_positions` 是罪魁——它对 td 容器运行 IFC，把 img 视为原子行内级盒重新设置 y=0
+
+**修复**：在 `adjust_inline_block_positions` 的容器跳过列表中增加 `DisplayValue::TableCell`。Table cell 的子元素定位（包括 vertical-align）由 `position_cells` 完成，IFC 不应重新处理。
+
+#### R90 验证（definitive diff vs R89）
+
+- **GAIN**：`background-043`（1.25%→0.76%✓，新通过）。CSS2 101→103-104。
+- **LOSS**：无稳定回归。`font-family-013` 仍为 flaky（独立运行 ✗，批量时偶尔 ✓），非本改动影响。
+- 所有门禁通过：inline reftest 685/685，workspace test 全通过，clippy 零警告。
+
+#### R90 关键结论
+
+1. **第三个 clean win**：R84（+2）+ R89（+1）+ R90（+1）共 +4~6，**401-402/490**。
+2. **Table cell 子元素与 IFC 的边界**：table cell 内的 img/inline-block 不应被通用 IFC 重新定位。这是一个后处理步骤间的交互 bug——step 8（table layout）设置位置，step 10（inline-block positioning）意外覆盖。
+3. **类似风险**：其他 table-internal display types（TableRowGroup/TableRow 等）由 `zero_box_model()` 归零 border/padding，且其子元素由 table grid 定位。TableCell 是最关键的跳过项，因为它是实际包含行内内容的容器。
+
+#### 后续重点（R91+）
+
+1. 其他 table-cell 内 inline 元素的定位问题（是否有类似被 IFC 覆盖的情况）
+2. Phase A inline-ownership 仍需协调多件改动（R88 确认）
+3. 其他 table-height 相关测试
 
 ### R89 进展（✅ 突破 2：表格行高分配，400-401/490）
 
@@ -57,9 +93,9 @@
 2. **R81 的「table height」缺口被 R89 补全**：R81 只设了 table 盒高度（invisible），R89 把高度分配到行/单元格，vertical-align 才能在增长后的 cell 上生效。
 3. **background-043 剩余偏差是独立的 img-paint 问题**（img.LayoutBox.y 被 vertical-align 设为 194 但 paint 渲染在旧位置 73），与 table 分配无关，留作后续。
 
-#### 后续重点（R90+）
+#### 后续重点（R91+）
 
-1. **img 元素在 table cell 中的 paint 位置**（background-043 剩余）：调查为何 paint 不消费 vertical-align 设的 img.y。
+1. ~~**img 元素在 table cell 中的 paint 位置**（background-043）~~ → **已修复（R90）**
 2. 其他 table-height 相关测试（min-height-table 等是否也受益）。
 3. Phase A inline-ownership 仍需协调多件改动（R88 确认）。
 
