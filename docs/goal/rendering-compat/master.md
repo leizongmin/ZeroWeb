@@ -4,6 +4,29 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
 **上游真实 reftest 通过率**: 83.9% (411/490) R98（较 R97 的 409 基线 +2，abspos Length inset 视口相对修复）
 
+### R99 调查（clear-applies-to-009 根因定位：taffy 把 float 子元素当普通块子参与 margin 折叠，未提交代码）
+
+**当前状态**：全量上游 reftest **411/490 (83.9%)** 与 R98 持平；本轮为单测试根因定位。
+
+#### clear-applies-to-009（1.02%）根因（definitive）
+
+测试：`body{margin:8px}` + `<p>`（float:left, margin:1em 0=16px）+ `<div><span>`（display:block, clear:both, 96×96 蓝方块）。预期蓝方块在浮动段下方。
+
+**确诊**（engine.rs adjust_float_positions 临时 debug + UA-margin 实验）：
+- float `<p>` 的 child.y=16 **正确**（content_y_offset=0 + line_y=0 + margin_top=16）。
+- 真正偏差：**body 自身定位低 8px**（body y=16、margin_top=16，应 8）。
+- 实验：把 UA `body{margin:8px}` 改 0px，diff 不变（1.02%）→ 排除"UA+作者 margin 叠加"假设。
+- body.margin_top=16 = `<p>`.margin_top(16)。结论：**taffy 把 float `<p>` 当普通 in-flow 块子，与 body 的 margin-top 折叠（max(8,16)=16）**，但 CSS 2.1 §8.3.1 规定 float 不参与 margin 折叠。float 是 out-of-flow，body 的首 in-flow 子应是 `<div>`（无 margin-top）→ body.margin_top 应为 8。
+
+**为何难修**：taffy-local Style 无 float 字段（`crates/taffy-local/src/style/mod.rs`），converter 也不把 float 传给 taffy（`converter/mod.rs:39` 的 `is_float` 仅用于 margin-left/right 转换）。taffy 因此无法区分 float 子元素。`item_is_table` 标志仅影响 width sizing（block.rs:416），不影响折叠。修复需：taffy-local 加 float 标志 + 在 `perform_final_layout_on_in_flow_children`（block.rs:387+）的 CollapsibleMarginSet 折叠逻辑中排除 float 子（找首 in-flow 子时跳过 float）。这是 taffy-local 深度手术，风险高（影响所有 float 布局）。
+
+**杠杆待评估**：clear-applies-to-001(4.32%)、float-006(7.47%)、clear-float-003(3.20%)、clear-inline-001(5.94%) 等其他 float/clear 测试可能共享此根因（父与浮动首/末子折叠），但需逐个验证结构。
+
+#### 后续重点（R100+）
+1. **taffy-local float 不折叠**（clear-applies-to-009 根因）：加 item_is_float + 折叠排除，全量回归。可能解锁多个 float/clear 测试。
+2. R97 intrinsic sizing 共享根因（≥5 测试，opt-in shrink-to-fit）。
+3. multicol cluster（20 失败）低差异项。
+
 ### R98 进展（✅ abspos Length inset 视口相对修复，411/490，clear-clearance-004/005 通过）
 
 **当前状态**：
