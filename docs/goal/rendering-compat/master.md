@@ -4,6 +4,27 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
 **上游真实 reftest 通过率**: 83.9% (411/490) R98（较 R97 的 409 基线 +2，abspos Length inset 视口相对修复）
 
+### R102 调查（multicol-collapsing-001 margin 假设 debunked：根因是列内容/高度协调，未提交代码）
+
+**当前状态**：全量上游 reftest **411/490 (83.9%)** 不变。本轮 debunk R97/R100/R101d 的「multicol-collapsing-001 = bottom margin 丢失」假设。
+
+#### instrumentation 证据（engine.rs extract_layout debug）
+
+渲染 multicol-collapsing-001 全 box dump：
+- **multicol（node 33）**：`margin_top=20 margin_bottom=20 height=40`。
+- **outer div（node 31，1px border）**：`height=82 content_height=80 border_top=1 border_bottom=1`。
+- outer content_height=80 = multicol `margin_top(20) + height(40) + margin_bottom(20)`。
+
+**结论**：outer div 的 content_height **正确包含** multicol 的 bottom margin。R97「TEST 比 REF 矮 20px = bottom margin 未包含」假设 **debunked**——margin containment 在 layout 层**正确**（R101d 的 taffy BFC 改动 net-neutral 也印证：折叠不是问题）。
+
+#### 真正根因（待证）
+
+1.68% diff 来自 **multicol 列内容/高度协调**，非 margin：multicol taffy 测得 height=40，但列均衡后实际列高可能更高（h4+text 内容）；`layout_multicol`（multicol.rs:244）重新分配子元素到列但**未更新 multicol 容器 height**，而 R96 的 `remeasure_inline_only_containers`/`balance_column_geometry` 仅覆盖**纯 inline** multicol——本测试 multicol 含 block 子（h4），不被覆盖 → 容器高度停留在 taffy 的 40 → 内容溢出/裁剪 → 1.68% diff。属 R96 multicol 列分配 territory，非 clean 修复。
+
+#### 后续
+
+multicol-collapsing-001 需 multicol 容器高度按均衡后实际列高重算（含 block 子的 multicol）。搁置，转向其他目标。R101d 已排除折叠路径，R102 排除 margin 路径——下轮勿重复这两条。
+
 ### R101 调查（大字号渲染根因 definitive 定位：R84 单行存储限制 + 基线残留，未提交代码）
 
 **当前状态**：全量上游 reftest **411/490 (83.9%)** 与 R100 持平。本轮通过逐层 instrumentation **definitive 定位**大字号（100px）Ahem 集群根因（R100 调查线 2 的 (a) vs (b) 二选一已决），并验证一条修复路径的净效果（净负，已回滚）。
