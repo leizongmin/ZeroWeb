@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-06-13
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 基础设施已就位）
-**上游真实 reftest 通过率**: 80.6%-81.0% (395-397/490) R80/R81 确认（float-003/font-148 阈值边缘波动）
+**上游真实 reftest 通过率**: 80.6%-81.2% (395-398/490) R80-R82 确认（float-003/font-148 阈值边缘波动）
 
 ### 当前阶段结论
 
@@ -28,6 +28,45 @@
 - Phase A 基础设施已就位（R73），下一步：逐步将特定容器切换到真实样式并修复回归。
 - Phase B/C 待 Phase A 稳定后推进。
 - **R79/R80 独立修复穷尽验证**：所有被认为是「可能独立修复」的 near-miss 测试经过实际代码实验后确认为系统性阻塞。
+
+### R82 进展（Phase A real-style IFC 阻塞面收窄）
+
+**当前状态**：
+- 全量上游 reftest：**395-398/490 (80.6-81.2%)**（与 R80/R81 同一波动带，无突破）
+- 内联 reftest 全量：**685/685 (100%)**
+- clippy：**零警告**
+- 工作树干净（real-style 实验已回退，零代码变更）
+
+#### R82 real-style compute_final 实验（已回退）
+
+复现 R72 的核心实验：把 `compute_final_inline_layouts` 的 IFC 从空样式切换到**真实样式**（`inline_ctx.layout(doc, node_id, styles)`），全量测量回归集。
+
+- **结果（与 R72 显著不同）**：代码经过 R73-R81 演进后，real-style IFC 的回归集从 R72 的 **4 个**收窄到 **1 个**：
+  - `block-formatting-contexts-004`（1.67%）—— **唯一新回归**（基线通过）
+  - R72 的另外 3 个回归（`font-feature-resolution-002`、`position-absolute-in-inline-005`、`position-absolute-in-inline-006`）现在**全部通过**（0.64%-2.90%）
+  - `float-003` 改善保留（0.73% 通过）
+- **净效果**：对**稳定测试**为净负——`BFC-004`（稳定通过→稳定失败）抵消 `float-003`（本就阈值边缘 flaky）。全量落在 395-398 波动带内，无净增益。
+- **已回退**：违反零回归原则（BFC-004 稳定测试退化）。
+
+#### BFC-004 回归根因（精确化）
+
+`block-formatting-contexts-004`：`#div1{font:20px/1em Ahem;height:4em;width:5em} > #div2(margin-bottom:1em,XXXXX) + #div3(margin-top:2em,XXXXX)`。
+
+- 实测 test 与 ref 的**深色像素数完全相同（5123）**，但 test 内容整体**下移 20px**（bbox maxy 150 vs 130）。
+- 20px = 1em = 一个 line-height。即 real-style 存储 IFC 片段的**垂直定位**比 layout 假设偏移了一个 line-height（首行 baseline/top 计算在真实 line-height vs override line-height 间不一致）。
+- 这是 layout/paint IFC line-height 一致性问题，是 Phase A「单一几何来源」要消除的核心症状之一。
+
+#### R82 关键结论
+
+1. **Phase A real-style IFC 阻塞面从 4 收窄到 1**：R73-R81 的演进（override maps、compute_final 守卫、is_ahem 一致性等）使 real-style IFC 接近安全，仅剩 BFC-004 的 line-height 定位偏移。
+2. **下一个可执行的 Phase A 突破口**：修复 BFC-004 的 line-height 偏移（real-style 存储 IFC 的首行垂直定位与 layout 一致），即可让 real-style compute_final 净正（保留 float-003 改善、不退化 BFC-004），并打通 paint 消费真实样式 IFC 的主路径。
+3. **13+1 轮系统性确认**：增量补丁路径穷尽，但 Phase A 的阻塞面已可量化、可定点突破——不再是「整体耦合不可解」，而是「1 个 line-height 定位 bug」。
+
+#### 后续重点（R83+）
+
+1. **定点修复 BFC-004 line-height 偏移**：调查 real-style IFC 首行片段 y 计算 vs override 路径的差异（inline/mod.rs 的 line.y / fragment.y 与 line-height 的关系），使两者一致。
+2. 修复后重新启用 real-style compute_final，验证 float-003 净改善且零回归，打通 Phase A 主路径。
+3. 之后逐步把更多容器切到 real-style stored IFC（paint 不再重跑 IFC），系统性推进 Phase A。
 
 ### R81 进展
 
