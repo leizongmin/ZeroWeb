@@ -693,18 +693,22 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
     }
 
     // 构建 inline-block 子元素的 LayoutBox 尺寸映射
-    // 仅包含 CSS width 或 height 为 Auto 的元素（不包含 Percentage 等其他值）
+    // 包含 CSS width 或 height 为 Auto/Percentage 的元素
+    // （Percentage 无法在 IFC 中直接解析，需要 taffy 布局后的结果回填）
     let ib_sizes: HashMap<NodeId, (f32, f32)> = ib_indices
         .iter()
         .filter_map(|&idx| {
             let child = &root.children[idx];
             let node_id = child.node_id?;
             let style = styles.get(&node_id)?;
-            // 仅当 CSS width 或 height 为 Auto 时才使用 LayoutBox 回退尺寸
-            // Percentage、MinContent 等其他值不回退——它们有自己的解析逻辑
-            let w_auto = matches!(style.width, LengthValue::Auto);
-            let h_auto = matches!(style.height, LengthValue::Auto);
-            if !w_auto && !h_auto {
+            let needs_fallback = matches!(
+                style.width,
+                LengthValue::Auto | LengthValue::Percentage(_)
+            ) || matches!(
+                style.height,
+                LengthValue::Auto | LengthValue::Percentage(_)
+            );
+            if !needs_fallback {
                 return None;
             }
             Some((node_id, (child.content_width, child.content_height)))
@@ -1623,9 +1627,49 @@ fn measure_text_content(
         .parent_node(dom_id)
         .and_then(|pid| styles.get(&pid))
         .is_some_and(|s| matches!(s.writing_mode, WritingModeValue::VerticalRl));
+    // 收集 inline-block 子元素的尺寸，供 IFC 正确计算行盒和换行。
+    // resolve_inline_block_dimension 对 Percentage 值返回 0，
+    // 需要用容器宽度解析百分比后提供给 IFC。
+    let ib_sizes: HashMap<NodeId, (f32, f32)> = doc
+        .child_nodes(dom_id)
+        .iter()
+        .filter_map(|&child_id| {
+            let child_node = doc.get(child_id)?;
+            if !matches!(&child_node.kind, NodeKind::Element(_)) {
+                return None;
+            }
+            let style = styles.get(&child_id)?;
+            if !matches!(style.display, DisplayValue::InlineBlock) {
+                return None;
+            }
+            let w = crate::inline::resolve_inline_block_dimension(&style.width, style, true);
+            let h = crate::inline::resolve_inline_block_dimension(&style.height, style, false);
+            // Percentage 宽度用 container_width 解析
+            let resolved_w = if w > 0.0 {
+                w
+            } else if let LengthValue::Percentage(pct) = &style.width {
+                (*pct as f32 / 100.0) * width
+            } else {
+                0.0
+            };
+            let resolved_h = if h > 0.0 {
+                h
+            } else if let LengthValue::Percentage(pct) = &style.height {
+                (*pct as f32 / 100.0) * width
+            } else {
+                0.0
+            };
+            if resolved_w > 0.0 || resolved_h > 0.0 {
+                Some((child_id, (resolved_w, resolved_h)))
+            } else {
+                None
+            }
+        })
+        .collect();
     let mut inline_ctx = InlineFormattingContext::new(width)
         .with_vertical(is_vertical)
-        .with_vertical_rtl(is_vertical_rtl);
+        .with_vertical_rtl(is_vertical_rtl)
+        .with_inline_block_sizes(ib_sizes);
     inline_ctx.layout(doc, dom_id, styles);
 
     let measured_width = inline_ctx
@@ -2414,10 +2458,27 @@ fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, st
         );
         let is_vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
         let text_align = resolve_text_align(styles.get(&dom_id));
+        // 收集 inline-block 子元素的 LayoutBox 尺寸，供 IFC 解析百分比宽度。
+        let ib_sizes: HashMap<NodeId, (f32, f32)> = box_node
+            .children
+            .iter()
+            .filter(|c| {
+                c.node_id.is_some_and(|id| {
+                    styles
+                        .get(&id)
+                        .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+                })
+            })
+            .filter_map(|c| {
+                let node_id = c.node_id?;
+                Some((node_id, (c.content_width, c.content_height)))
+            })
+            .collect();
         let mut inline_ctx = InlineFormattingContext::new(container_width)
             .with_vertical(is_vertical)
             .with_vertical_rtl(is_vertical_rtl)
-            .with_text_align(text_align);
+            .with_text_align(text_align)
+            .with_inline_block_sizes(ib_sizes);
         inline_ctx.layout(doc, dom_id, styles);
 
         // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
