@@ -2,7 +2,19 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 88.2% (432/490) R134（R134 +6 vertical-rl width:auto 收缩到内容；较 R130 的 426 基线 +6）
+**上游真实 reftest 通过率**: 88.4% (433/490) R137（R137 +1 孤立 table-internal 匿名 table BFC；较 R134 的 432 基线 +1）
+
+### R137 — 孤立 table-internal 匿名 table BFC（+1，零回归）
+
+**变更**：(1) `crates/layout-engine/src/types/mod.rs` LayoutBox 新增 `is_anon_table_root: bool`；(2) `engine.rs` 新增预处理 `mark_anonymous_table_roots`（adjust_float_positions 之前遍历），对「table-internal 且父非 table/table-internal」的元素置 `is_anon_table_root=true` + `is_block_level=true`；(3) `margin_collapse.rs` `establishes_bfc` 新增 `is_anon_table_root` 判定。+1 单测。
+
+**根因**：`clear-applies-to-001` 的 `#test{display:table-row-group; clear:both}` 作为 body 直接子节点（孤立 table-internal），CSS Tables §2.4 应生成匿名 table 包装盒（建立 BFC，排除浮动）。但 table-row-group 既非 `is_layout_container`（仅含 Table/InlineTable）也非 `is_block_level`（adjust_float_positions 的 clear/BFC float-exclusion 要求），故被当普通块 → 不排除左侧 float（x=8 重叠，应 x=328 右侧）。
+
+**修复**：预处理近似匿名 table 包装盒——标记孤立 table-internal 为匿名 table 根（is_block_level + is_anon_table_root → BFC），使 adjust_float_positions 正确排除浮动。关键是**两个标志都要置**：is_anon_table_root 触发 BFC，is_block_level 让 clear/float-exclusion 逻辑处理它（仅置 is_anon_table_root 无效，因 BFC float-exclusion 条件含 is_block_level）。
+
+**零回归**：全量 reftest 432→**433/490**，set-diff 验证**零翻转**（唯一变化 = clear-applies-to-001 FIXED 3.65%→0.00%）。`html-display-table` 未受益——需 build_grid 对 block 子节点生成匿名 row+cell（不同子问题，下轮）。make test 全绿，clippy 零警告。
+
+**方法论**：BFC float-exclusion 条件 `is_block_level && establishes_bfc(child)`——孤立 table-internal 缺 is_block_level 是隐藏前提，首次仅补 is_anon_table_root 无效；PIL + 单步增量定位（先加 BFC 标志→无变化→追踪到 is_block_level 缺失）。见 [[r136-flex-grid-table-bfc]]（is_layout_container BFC，本轮前置）、[[r118-...]]。
 
 ### R136 — flex/grid/table 建立 BFC（DC-11 正确性，reftest 净中性零回归）
 

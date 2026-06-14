@@ -155,6 +155,8 @@ impl LayoutEngine {
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
 
         // 5. 后处理：调整 float 元素位置
+        // 5a. 先标记孤立 table-internal 元素为匿名 table 根（建立 BFC），供 adjust_float_positions 识别
+        mark_anonymous_table_roots(&mut root_box, styles, false);
         adjust_float_positions(&mut root_box);
 
         // 5.5 后处理：垂直书写模式下 width:auto 块级元素收缩到内容块轴跨度
@@ -639,6 +641,7 @@ impl LayoutEngine {
             is_flow_root,
             is_multicol,
             is_layout_container,
+            is_anon_table_root: false,
             column_gap: 0.0,
             is_block_level,
             is_relative,
@@ -2113,6 +2116,48 @@ fn shrink_vertical_blocks_to_content(
     let pw = box_node.writing_mode.clone();
     for child in &mut box_node.children {
         shrink_vertical_blocks_to_content(child, styles, &pw);
+    }
+}
+
+/// 标记孤立 table-internal 元素（CSS Tables §2.4）为匿名 table 根。
+///
+/// 当 `display:table-row-group/table-row/table-cell/...` 出现在非 table 上下文中
+///（父元素非 table/table-internal）时，CSS 规范应为其生成匿名 table 包装盒。
+/// 此预遍历近似该行为：把这类孤立元素的 `is_anon_table_root` 置真，使其在
+/// `establishes_bfc` 中被视为匿名 table（建立 BFC，隔离 margin 折叠 + 包含浮动）。
+/// 在 `adjust_float_positions` 之前运行，确保 float exclusion 识别这些容器。
+fn mark_anonymous_table_roots(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    in_table_context: bool,
+) {
+    let display = box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .map(|s| s.display.clone());
+    let is_table = matches!(display, Some(DisplayValue::Table | DisplayValue::InlineTable));
+    let is_table_internal = matches!(
+        display,
+        Some(
+            DisplayValue::TableRowGroup
+                | DisplayValue::TableHeaderGroup
+                | DisplayValue::TableFooterGroup
+                | DisplayValue::TableRow
+                | DisplayValue::TableCell
+                | DisplayValue::TableCaption
+        )
+    );
+
+    if is_table_internal && !in_table_context {
+        box_node.is_anon_table_root = true;
+        // 孤立 table-internal 充当匿名 table（块级），使其被 adjust_float_positions
+        // 的 clear / BFC float-exclusion 逻辑（要求 is_block_level）正确处理。
+        box_node.is_block_level = true;
+    }
+
+    let child_context = in_table_context || is_table || is_table_internal;
+    for child in &mut box_node.children {
+        mark_anonymous_table_roots(child, styles, child_context);
     }
 }
 
