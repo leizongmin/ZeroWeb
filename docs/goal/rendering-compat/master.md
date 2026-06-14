@@ -2,7 +2,23 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 87.1% (426/490) R130（R130 +1 strut ascent 修复 → flexbox-baseline-align-self-baseline-horiz-001 通过；较 R117 的 419 基线 +7）
+**上游真实 reftest 通过率**: 88.2% (432/490) R134（R134 +6 vertical-rl width:auto 收缩到内容；较 R130 的 426 基线 +6）
+
+### R134 — vertical-rl width:auto 块收缩到内容（+6，零回归，纠正 R133 诊断）
+
+**变更**：`crates/layout-engine/src/engine.rs` 新增后处理 `shrink_vertical_blocks_to_content`（在 `adjust_float_positions` 之后遍历布局树），对「自身垂直书写模式 + 父元素水平 + width:auto + block-level」的块按内容块轴跨度收缩 width，尊重 min/max-width。新增 2 个单测。
+
+**根因**（PIL 扫描 clearance-vrl-002/004/006 test vs ref）：现有轴交换以**父元素**书写模式为键（converter/tree.rs + engine.rs extract_layout）。元素**自身**书写模式决定其 width 是 block-size 还是 inline-size。当元素自身为 vertical-rl 而其父元素为 horizontal-tb 时（典型：body 内一个 `writing-mode:vertical-rl` 的 div），轴交换不触发，taffy 把 width:auto 当作行内填充（填满容器 ~784px），违反 CSS §10.3.3（block-size:auto 应基于内容）。
+
+**纠正 R133**：R133 把 clearance-vrl-002/004/006 失败归因于「float 沿 Y 堆叠」，计划写 300+ 行 vertical float 函数。本轮 PIL 诊断揭示：这些 reftest 的 **ref 是退化的**（`<img src=swatch-green.png>` 在 harness 不渲染 → ref 近全白），故测试通过条件实际是「diff < 5%」。主导 diff 的是 784px 宽红色父背景（**parent-width bug**），不是 float 定位。仅收缩 parent width（不改 float）即让 002/004/006 落入容差。**vertical float 函数（bug 2）对这组退化-ref 测试不再必要**——仅在 harness 修复图片渲染（ref 变非退化）后才需要。
+
+**自限性 = 零回归保证**：仅当内容右缘（最右流内子元素 margin-box 右缘）窄于当前 width 时才收缩。子元素已正确铺满到内容右缘的垂直块为 no-op。实测全量 426→**432/490**，set-diff 验证**零回归零翻转**（comm -13 为空）。836 layout-engine 单测全绿，make test 全绿，clippy 零警告，smoke 686/686。
+
+**bonus**：除 clearance-vrl-002/004/006（+3）外，还修复 baseline-inline-replaced-002（16.17→2.02%）、float-lft-orthog-vlr-in-htb-002（6.10→2.19%）、float-lft-orthog-vrl-in-htb-002（6.11→2.18%）——同为 vertical-rl 块 width:auto 填充问题。
+
+**剩余 writing-modes 失败（4）**：background-position-vrl-018（24.6%）、box-offsets-rel-pos-vlr-005/vrl-004（25%，relpos 偏移）、float-lft-orthog-htb-in-vlr-002（6.7%，正交 float 轴交换 R109 territory）。
+
+**方法论**：长期平台期后，对「已知诊断」做独立 PIL 复核——R133 接受 parent_w=784 为给定前提，未质疑其正确性；本轮质疑后揭示 parent-width 才是真正 blocker。教训：**接收的中间结论（如 trace 里的 content_w=784）需独立验证是否符合规范**。
 
 ### R130 — strut ascent 仅原子行用容器 font-size（+1，flexbox-baseline-align-self-baseline-horiz-001 通过，零回归）
 

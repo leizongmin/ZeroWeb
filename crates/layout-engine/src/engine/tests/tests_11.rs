@@ -280,3 +280,96 @@ fn test_border_bottom_inherit() {
         child_style.border_bottom_style
     );
 }
+
+/// 测试：自身为垂直书写模式、父元素为水平模式的块级元素，width:auto 时应收缩到
+/// 内容块轴跨度（受 min-width 约束），而非填满容器宽度
+/// （CSS §10.3.3 + CSS Writing Modes §7.1）。
+#[test]
+fn test_shrink_vertical_block_width_auto_to_content() {
+    use std::collections::HashMap;
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::ComputedStyle;
+
+    let (_doc, parent_id) = make_doc_with_body();
+
+    // 子元素位于小 x（模拟 float 后处理后的位置），width=20。
+    let child = LayoutBox {
+        x: 8.0,
+        width: 20.0,
+        margin_right: 0.0,
+        ..Default::default()
+    };
+    // 父元素：vertical-rl，width:auto，初始被 taffy 填满到 784（容器宽度）。
+    let parent = LayoutBox {
+        node_id: Some(parent_id),
+        width: 784.0,
+        content_width: 784.0,
+        is_block_level: true,
+        writing_mode: WritingModeValue::VerticalRl,
+        children: vec![child],
+        ..Default::default()
+    };
+    // 根（body，水平）包含 parent。
+    let mut root = LayoutBox {
+        width: 800.0,
+        writing_mode: WritingModeValue::HorizontalTb,
+        children: vec![parent],
+        ..Default::default()
+    };
+
+    let mut style = ComputedStyle::default();
+    style.width = LengthValue::Auto;
+    style.min_width = LengthValue::Px(120.0);
+    let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+    styles.insert(parent_id, style);
+
+    shrink_vertical_blocks_to_content(&mut root, &styles, &WritingModeValue::HorizontalTb);
+
+    let parent = &root.children[0];
+    // 内容跨度 = 8 + 20 + 0 = 28；min-width=120 → 收缩到 120，而非保持 784。
+    assert!(
+        (parent.width - 120.0).abs() < 0.5,
+        "vertical-rl width:auto 块应收缩到 max(内容跨度, min-width)=120，实际 {}",
+        parent.width
+    );
+    assert!(
+        parent.content_width < 784.0,
+        "content_width 应随 width 收缩，实际 {}",
+        parent.content_width
+    );
+}
+
+/// 测试：水平书写模式的块不受 shrink 影响（自限性保证零回归）。
+#[test]
+fn test_shrink_vertical_block_no_op_for_horizontal() {
+    use std::collections::HashMap;
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::ComputedStyle;
+
+    let (_doc, parent_id) = make_doc_with_body();
+
+    let parent = LayoutBox {
+        node_id: Some(parent_id),
+        width: 784.0,
+        is_block_level: true,
+        writing_mode: WritingModeValue::HorizontalTb,
+        children: vec![LayoutBox {
+            x: 8.0,
+            width: 20.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut root = LayoutBox {
+        children: vec![parent],
+        ..Default::default()
+    };
+    let mut style = ComputedStyle::default();
+    style.width = LengthValue::Auto;
+    let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+    styles.insert(parent_id, style);
+
+    shrink_vertical_blocks_to_content(&mut root, &styles, &WritingModeValue::HorizontalTb);
+
+    assert_eq!(root.children[0].width, 784.0, "水平块不应被 shrink 影响");
+}
