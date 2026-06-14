@@ -4,6 +4,16 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
 **上游真实 reftest 通过率**: 88.2% (432/490) R134（R134 +6 vertical-rl width:auto 收缩到内容；较 R130 的 426 基线 +6）
 
+### R136 — flex/grid/table 建立 BFC（DC-11 正确性，reftest 净中性零回归）
+
+**变更**：`crates/layout-engine/src/margin_collapse.rs` `establishes_bfc` 新增 `is_layout_container`（Flex/InlineFlex/Grid/InlineGrid/Table/InlineTable）判定 → 这些容器建立独立格式化上下文。新增 1 个单测（test_bfc_detection_layout_container）。
+
+**根因**：CSS 规范下 flex/grid/table 容器建立 BFC（隔离 margin 折叠 + 包含浮动），但 `establishes_bfc` 仅覆盖 overflow/float/abspos/flow-root/multicol，遗漏这些容器。taffy 内部已按 BFC 布局它们，但 ZeroWeb 的 `adjust_float_positions` 后处理（float exclusion / margin 折叠）未据此识别。
+
+**净中性零回归**：全量 reftest **432/490 持平**，set-diff 验证**零翻转**（当前 490 用例无一依赖 flex/grid/table BFC 隔离——taffy 内部已正确处理，后处理补充判定不改结果）。`make test` 全绿、clippy 零警告、smoke 686/686。
+
+**意义**：DC-11（BFC 完整性）正确性改进，让渲染更符合规范；当前 reftest 不计入收益但为产品页/未来用例提供正确的 BFC 隔离。`clear-applies-to-001`（table-row-group + clear）未受益——需匿名 table 包装盒生成（R118 territory），非单纯 BFC 判定。
+
 ### R135 — reftest harness PNG 加载 bug 诊断（432/490 持平，image 修复已回退，net -5 需打包）
 
 **根因（IMG_DEBUG 插桩 render_image + PIL）**：`tests/wpt-runner/src/reftest.rs` 的 `load_png_file` 用固定 `w*h*4` 缓冲区调 `next_frame` 但未设 `Transformations::EXPAND`。非 RGBA PNG（palette/RGB/grayscale）按原始色型写入 3/1 字节/像素 → 错位 → alpha 读为 0 → `render_image` 的 `solid_color()` 返回 `[0,0,0,0]` → `if sa==0 {return;}` 跳过绘制 → 图片全透明。swatch-green.png(mode=P) 修复前 `solid=[0,0,0,0]`，修复后 `[0,128,0,255]`。

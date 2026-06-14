@@ -51,6 +51,14 @@ pub fn establishes_bfc(box_node: &LayoutBox) -> bool {
         return true;
     }
 
+    // display: flex/inline-flex/grid/inline-grid/table/inline-table → BFC
+    // CSS：这些容器建立独立格式化上下文（隔离 margin 折叠 + 包含浮动）。
+    // taffy 内部已按此布局，但 adjust_float_positions 后处理（float exclusion /
+    // margin 折叠）需据此识别它们为 BFC。
+    if box_node.is_layout_container {
+        return true;
+    }
+
     // 多列容器建立 BFC（CSS Multi-column §2）
     // 阻止子元素 margin 与容器 margin 折叠
     if box_node.is_multicol {
