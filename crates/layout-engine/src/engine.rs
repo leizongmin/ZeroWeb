@@ -133,6 +133,18 @@ impl LayoutEngine {
             &WritingModeValue::HorizontalTb,
             doc,
         );
+        // CSS 2.1 §9.4.3：position:relative 的根元素（如 <html style="position:relative">）
+        // 需应用 top/left inset 偏移。非根 block-level 元素的 relative inset 由 taffy
+        // 应用到 layout.location，但 taffy 0.7 对**根节点**不应用（根总在 0,0）。
+        // 此处手动补上根的 relative 偏移，使根及其 abspos 后代（CB=根 padding box）
+        // 整体偏移到正确视觉位置。
+        if root_box.is_relative {
+            let (dx, dy) = resolve_relative_inset(&root_box, styles);
+            if dx != 0.0 || dy != 0.0 {
+                root_box.x += dx;
+                root_box.y += dy;
+            }
+        }
 
         // 3.5 从 taffy 缓存中提取 flex/grid 容器的基线信息
         // taffy 内部计算了 first_baselines 但未通过公开 API 暴露，
