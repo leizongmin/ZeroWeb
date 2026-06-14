@@ -2,7 +2,19 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 88.6% (434/490) R138（R138 +1 display:table 收缩适应；较 R137 的 433 基线 +1）
+**上游真实 reftest 通过率**: 88.8% (435/490) R139（R139 +1 直接 table-cell 匿名行合并；较 R138 的 434 基线 +1）
+
+### R139 — 直接 table-cell 子元素匿名行合并（+1，零回归）
+
+**变更**：`crates/layout-engine/src/table.rs` 的 `build_grid`：直接 table-cell 子元素（无 table-row 包裹）从「每个 cell 各占一行」改为「连续 cell 合并到同一个匿名 table-row」（CSS §17.2.1）；匿名行用 `is_anonymous=true` 导航（get_row_box 返回 table_box、get_cell_box 返回 table_box.children[idx]）。`position_cells` 增加守卫：`table_is_display_table` 时直接 cell 匿名行跳过 row_box（=table_box）几何更新（避免覆盖 table 的 x/y/width/height）。+1 单测（build_grid 连续 cell → 1 行 2 列）。
+
+**根因**：`subpixel-table-cell-width-001` 的 `<div class=table>` 含 2 个 `<div class=cell style="width:3.6px">` 直接 table-cell 子元素（无 `<tr>`）。旧 `build_grid` 直接 cell 分支把每个 cell 推入独立行（`is_anonymous=false`），且 `get_cell_box` 导航错误（`cell.children[child_idx]` 查找孙节点→None）→ cell 未被测量/定位 → 保持 taffy 块级全宽（784px）并垂直堆叠。应合并为一行 2 列、各 3.6px 水平排列。
+
+**修复**：连续直接 cell 累加（`direct_cells` + `direct_col_cursor`，遇非 cell 或循环结束 flush）为一个 `is_anonymous=true` 匿名行；cell.child_index 指向 table_box.children 索引，使 `get_cell_box(table_box, cell) = table_box.children[idx]` 正确返回 cell。`position_cells` 守卫防止覆盖 table 几何（直接 cell 行的 row_box=table_box；孤立行组 table_box=row-group 仍需设置几何，故用 `table_is_display_table` 区分）。
+
+**零回归**：全量 reftest 434→**435/490**，set-diff 验证唯一翻转 = subpixel-table-cell-width-001 FIXED（9.77%→0.03%），css-tables 50→51/55，零新失败。make test **12173 passed / 0 failed**，clippy 零警告，fmt clean。
+
+**方法论**：先用 COLW_DIAG 插桩发现 `cell_used_width` 从未被调用（cell 未被测量）→ 追溯到直接 cell 分支的导航错误 + 每 cell 独立行。纠正了 R117 的隐含前提——R117 只修了 auto cell 的 cell_box.width 误用，但直接 cell 分支本身的「每 cell 独立行 + 破碎导航」是更早的独立 bug。CSS-REF 分类（12 IMG-REF 退化 / 43 CSS-REF 真实可修）指引定位真实可修失败。见 [[r117-table-auto-cell-column-width]]、[[r138-table-shrink-block-content]]。
 
 ### R138 — display:table 容器收缩适应（+1，零回归）
 
