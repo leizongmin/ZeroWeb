@@ -202,6 +202,13 @@ impl LayoutEngine {
         // 此步骤根据实际百分比计算值和 px 偏移量修正最终尺寸。
         apply_calc_size_adjustments(&mut root_box, styles);
 
+        // 12.6 后处理：百分比 max-height 收紧。
+        // taffy 0.7 对 height:auto 的块盒不会按百分比 max-height 收紧最终高度
+        // （convert 层已传 Percent，但 block 布局未在内容高度计算后再次 clamp）。
+        // CSS §10.7：百分比 max-height 相对包含块高度解析；当包含块高度明确时收紧。
+        // 此步骤自上而下传递「明确高度」，对百分比 max-height 的盒做收紧。
+        clamp_percentage_max_height(&mut root_box, None, styles);
+
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
             taffy: taffy_tree,
@@ -1246,6 +1253,69 @@ fn apply_calc_size_adjustments(root: &mut LayoutBox, styles: &HashMap<NodeId, Co
                 root.content_height = (root.content_height + diff).max(0.0);
             }
         }
+    }
+}
+
+/// 自上而下收紧百分比 max-height。
+///
+/// `cb_content_height` 为父级（包含块）的**明确**内容高度；为 `None` 表示父级高度
+/// 由内容决定（CSS §10.5：此时百分比 height/max-height 视为 auto，不解析）。
+fn clamp_percentage_max_height(
+    box_node: &mut LayoutBox,
+    cb_content_height: Option<f32>,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    use zero_css_parser::values::{BoxSizingValue, LengthValue};
+
+    // absolute 元素的包含块语义不同（由 positioned ancestor / 视口决定），
+    // 不在此处处理，避免与 adjust_absolute_pct_to_viewport 重叠。
+    let style = if box_node.is_absolute {
+        None
+    } else {
+        box_node.node_id.and_then(|id| styles.get(&id))
+    };
+
+    // 1) 收紧：百分比 max-height 相对包含块内容高度解析
+    if let (Some(style), Some(cb_h)) = (style.as_ref(), cb_content_height)
+        && let LengthValue::Percentage(p) = &style.max_height
+    {
+        let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+        let is_border_box = matches!(style.box_sizing, BoxSizingValue::BorderBox);
+        // max-height 按 box-sizing 作用在边框盒或内容盒
+        let max_box_h = *p as f32 / 100.0 * cb_h;
+        let max_content_h = if is_border_box {
+            (max_box_h - pb).max(0.0)
+        } else {
+            max_box_h
+        };
+        if box_node.content_height > max_content_h {
+            let clamped = max_content_h;
+            box_node.content_height = clamped;
+            box_node.height = clamped + pb;
+        }
+    }
+
+    // 2) 计算本盒的「明确内容高度」供子元素百分比解析：
+    //    - height: Px → 明确（按 box-sizing 折算内容高）
+    //    - height: Percentage 且包含块明确 → 解析后明确
+    //    - 其他（auto / 内容决定）→ 不明确，子元素百分比不解析
+    let my_definite_content_height = style.and_then(|s| match &s.height {
+        LengthValue::Px(v) => {
+            let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+            let is_border_box = matches!(s.box_sizing, BoxSizingValue::BorderBox);
+            let content = if is_border_box {
+                (*v as f32 - pb).max(0.0)
+            } else {
+                *v as f32
+            };
+            Some(content)
+        }
+        LengthValue::Percentage(p) => cb_content_height.map(|cb| *p as f32 / 100.0 * cb),
+        _ => None,
+    });
+
+    for child in &mut box_node.children {
+        clamp_percentage_max_height(child, my_definite_content_height, styles);
     }
 }
 
