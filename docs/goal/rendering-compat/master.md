@@ -10,6 +10,20 @@
 
 本轮复核两条历史根因假设，均得出了更精确的结论，为后续结构性修复锁定了下一目标。
 
+### R116b — multicol-fill 第 5 bug（TABLE WIDTH 忽略）+ 战略转向（418/490 不变）
+
+**当前状态**：全量上游 reftest **418/490 (85.3%)** 不变（无代码变更；所有修复 framebuffer 验证后回滚，工作区清洁）。
+
+延续 R116 的四 bug 排查，本轮**修正 bug 4 并发现 bug 5**，确证 multicol-fill-001 是五 bug 互锁的结构性死结，决定**战略转向**。
+
+- **bug 4 修正**：不是 multicol 容器 margin/定位偏移。paint_node debug 实测 div#test 与 ref-table1 的 `abs_y` 均=55（盒位置一致）；20px 差距是 **table cell 内容的 baseline v_offset**——非存储渲染路径（painter/text.rs:1185）对所有片段用 `v_offset=font_size`，但 Ahem 应 `v_offset=0`（完美方块顶部对齐）。存储路径（:1169）和多列路径（:994）已应用 `if is_ahem {0}`，非存储路径是唯一例外。修复 = 加 `container_is_ahem` + `v_offset = if container_is_ahem {0.0} else {baseline_fs}`。framebuffer 验证：bug 1+2+3+4 齐上后，test 与 ref 的方块 Y 完全对齐（y=55 和 y=175，各 3 方块/列），但仍 8.42% 失败——见 bug 5。
+
+- **bug 5（真正阻塞）= TABLE WIDTH 被忽略**：bug 1-4 齐上后唯一剩余差异是 X 位置——div#test（multicol，block）col1 在 x=208（遵守 `width:20em`=400px → 2 列×200px），但所有 table（test table#reference 与 ref table1/table2）col1 在 x=408（table 渲染成 800px = 全视口宽——**`width:20em` 在 `<table>` 上被忽略**）。这是独立的 table-width bug，很可能影响整个 css-tables 失败集群（subpixel-table-cell-width-001、table-cell-width-0、min-max-size-table-content-box 疑似同源）。
+
+- **四修复单独均 net-neutral**（各跑全量 = 418/490，零回归零收益）。multicol-fill-001 需 1+2+3+4+5 全部修复。五 bug 跨 multicol/table-cell/baseline/table-width 子系统 = 深度结构性。
+
+**战略转向**：multicol-fill-001 是低效单测目标（5 个互锁 bug）。table-width bug（bug 5）是更高杠杆的结构性目标——很可能影响整个 css-tables 失败集群（6+ 测试）。**下轮目标：调查 ZeroWeb table 是否遵守显式 width**（从 `table-cell-width-0` 或 `min-max-size-table-content-box` 入手，谨慎逐测试回归）。在 table-width 修好前，不再追 multicol-fill-001（无论 bug 1-4 如何，bug 5 都阻塞它）。
+
 ### R116 — multicol-fill 四 bug 精确定位（418/490 不变，framebuffer 法定位互锁 bug 群）
 
 **当前状态**：全量上游 reftest **418/490 (85.3%)** 不变（无代码变更提交；所有实验性修复均验证后回滚）。本轮用 `REFTEST_DUMP` + PIL 像素扫描精确定位 `multicol-fill-001` 的**四个互锁 bug**，确证属 multicol paint 路径结构性问题（R113b territory），非单点可解。
