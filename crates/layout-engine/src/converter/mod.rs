@@ -38,6 +38,13 @@ pub fn computed_style_to_taffy(
     // CSS 2.1 §10.3.5: 浮动非替换元素的 margin-left/right: auto 解析为 0
     let is_float = matches!(style.float, FloatValue::Left | FloatValue::Right);
 
+    // CSS Flexbox §10.1：visibility:collapse 的 flex item 主尺寸归零（成为
+    // strut），不再占用主轴空间，但其交叉尺寸仍贡献给 flex line 的高度。
+    // 这是 collapse 与 hidden 的关键区别（hidden 仍占满尺寸）。paint 层已对
+    // collapse 跳过绘制，此处仅修正布局尺寸。
+    // flex-basis 在非 flex 容器中被 taffy 忽略，因此对非 flex 折叠元素无副作用。
+    let collapsed = matches!(style.visibility, zero_css_parser::values::VisibilityValue::Collapse);
+
     // CSS 2.1 §17.5.3/17.5.4：行组和行的 border/padding/margin 无视觉效果。
     // 在 taffy 层面归零，防止 taffy 将这些属性计入布局计算。
     let is_table_internal = matches!(
@@ -159,9 +166,14 @@ pub fn computed_style_to_taffy(
         },
         flex_direction: convert_flex_direction(&style.flex_direction),
         flex_wrap: convert_flex_wrap(&style.flex_wrap),
-        flex_basis: convert_flex_basis(&style.flex_basis, vw, vh),
-        flex_grow: style.flex_grow as f32,
-        flex_shrink: style.flex_shrink as f32,
+        flex_basis: if collapsed {
+            // visibility:collapse 的 flex item 主尺寸归零（strut）。
+            taffy::style::Dimension::Length(0.0)
+        } else {
+            convert_flex_basis(&style.flex_basis, vw, vh)
+        },
+        flex_grow: if collapsed { 0.0 } else { style.flex_grow as f32 },
+        flex_shrink: if collapsed { 0.0 } else { style.flex_shrink as f32 },
         ..taffy::Style::default()
     }
 }
@@ -1194,7 +1206,7 @@ mod inline_tests {
     use super::*;
     use zero_css_parser::values::{
         AlignmentValue, BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue,
-        LengthValue, OverflowValue, PositionValue,
+        LengthValue, OverflowValue, PositionValue, VisibilityValue,
     };
     use zero_style_system::{ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLineValue};
 
@@ -1347,6 +1359,33 @@ mod inline_tests {
         style.flex_basis = FlexBasisValue::Length(LengthValue::Px(200.0));
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.flex_basis, taffy::style::Dimension::Length(200.0));
+    }
+
+    #[test]
+    fn test_visibility_collapse_zeros_flex_main_size() {
+        // CSS Flexbox §10.1：visibility:collapse 的 flex item 主尺寸归零（strut），
+        // 即使声明了显式 flex-basis / flex-grow / flex-shrink 也被覆盖。
+        // 对应上游 reftest: flexbox-collapsed-item-horiz-001/002。
+        let mut style = ComputedStyle::default();
+        style.visibility = VisibilityValue::Collapse;
+        style.flex_basis = FlexBasisValue::Length(LengthValue::Px(200.0));
+        style.flex_grow = 1.0;
+        style.flex_shrink = 1.0;
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
+        assert_eq!(result.flex_basis, taffy::style::Dimension::Length(0.0));
+        assert_eq!(result.flex_grow, 0.0);
+        assert_eq!(result.flex_shrink, 0.0);
+    }
+
+    #[test]
+    fn test_visibility_visible_preserves_flex() {
+        // 非 collapse 时 flex 属性正常透传。
+        let mut style = ComputedStyle::default();
+        style.flex_basis = FlexBasisValue::Length(LengthValue::Px(200.0));
+        style.flex_grow = 2.0;
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
+        assert_eq!(result.flex_basis, taffy::style::Dimension::Length(200.0));
+        assert_eq!(result.flex_grow, 2.0);
     }
 
     #[test]
