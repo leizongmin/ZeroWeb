@@ -288,7 +288,9 @@ pub fn run_reftest_with_base(case: &ReftestCase, config: &ReftestConfig, base_di
     };
 
     // 失败时，如果设置了 REFTEST_DUMP 环境变量，保存 PNG 用于诊断
-    if !passed && std::env::var("REFTEST_DUMP").is_ok() {
+    // REFTEST_DUMP_PASS=1 同时保存通过用例，用于诊断通过用例的实际渲染
+    let dump_pass = std::env::var("REFTEST_DUMP_PASS").is_ok();
+    if (!passed || dump_pass) && std::env::var("REFTEST_DUMP").is_ok() {
         let dump_dir = std::path::Path::new("target/reftest-dump");
         let _ = std::fs::create_dir_all(dump_dir);
         let safe_id = case.id.replace(['/', '\\', '.'], "_");
