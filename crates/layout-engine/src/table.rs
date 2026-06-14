@@ -135,7 +135,7 @@ fn is_row_group(display: &DisplayValue) -> bool {
 }
 
 /// 判断 display 值是否为 table 内部元素（需要匿名 table 包装）。
-fn is_table_internal(display: &DisplayValue) -> bool {
+pub(crate) fn is_table_internal(display: &DisplayValue) -> bool {
     matches!(
         display,
         DisplayValue::TableRowGroup
@@ -228,6 +228,11 @@ fn layout_table(table_box: &mut LayoutBox, doc: &zero_dom::Document, styles: &Ha
     let grid = build_grid(table_box, doc, styles);
 
     if grid.rows.is_empty() || grid.col_count == 0 {
+        // 没有正规表格子元素（无 row/cell/row-group），但可能存在 block 级子元素。
+        // CSS Tables §2.4：display:table 容器的 block 子元素应生成匿名 row+cell，
+        // 使 table 收缩适应到 block 内容宽度（而非填满容器）。
+        // 例如 `<html style="display:table">` 应收缩到 body 内容宽度。
+        crate::table_shrink::shrink_table_to_block_content(table_box, styles);
         return;
     }
 
