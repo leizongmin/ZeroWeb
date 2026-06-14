@@ -752,15 +752,37 @@ impl<'a> Parser<'a> {
         // 收集值（直到分号或花括号）
         let mut value_parts = String::new();
         let mut important = false;
+        // 跟踪 () / [] 嵌套：CSS Syntax L3 中，值内的简单块（函数、calc 括号等）
+        // 作为单个 component value 消费，其内部的 ; / } 不应终止声明。
+        // 关键场景：`font-family: test(foo, Ahem` 中未匹配的 `(` 会使后续的
+        // `;` 和 `}` 都属于该 `(` 块，从而吞掉后续规则直到匹配的 `)`。
+        let mut group_depth: i32 = 0;
 
         loop {
             match self.peek() {
-                Token::Semicolon | Token::RBrace | Token::Eof => break,
+                Token::Semicolon | Token::RBrace if group_depth == 0 => break,
+                // Eof 是输入结束，无论嵌套深度都必须终止。否则未闭合的 ()/[] 会让
+                // Eof 落入下方 `_ =>` arm：advance() 越界后 peek() 永远返回 Eof，
+                // 死循环无限 `format!`+`push_str` → OOM（曾反复整垮 tmux session）。
+                Token::Eof => break,
+                // Function token = `ident(`，隐含一个未闭合的 `(`，需要匹配的 `)`。
+                Token::Function(_) | Token::LParen | Token::LBracket => {
+                    group_depth += 1;
+                    let display = format!("{}", self.peek());
+                    value_parts.push_str(&display);
+                    self.advance();
+                }
+                Token::RParen | Token::RBracket => {
+                    group_depth = (group_depth - 1).max(0);
+                    let display = format!("{}", self.peek());
+                    value_parts.push_str(&display);
+                    self.advance();
+                }
                 Token::Whitespace => {
                     value_parts.push(' ');
                     self.advance();
                 }
-                Token::Delim('!') => {
+                Token::Delim('!') if group_depth == 0 => {
                     self.advance();
                     self.skip_whitespace();
                     if let Token::Ident(s) = self.peek().clone()
