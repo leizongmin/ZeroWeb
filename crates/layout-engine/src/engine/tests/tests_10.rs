@@ -393,6 +393,30 @@ fn test_bfc_detection_float_and_position() {
     assert!(establishes_bfc(&bx), "position:fixed should establish BFC");
 }
 
+/// 测试 BFC 检测：display:flex/grid/table（is_layout_container）建立格式化上下文。
+/// CSS：这些容器建立独立格式化上下文（隔离 margin 折叠 + 包含浮动）。
+#[test]
+fn test_bfc_detection_layout_container() {
+    use crate::margin_collapse::establishes_bfc;
+
+    let mut bx = LayoutBox::default();
+    assert!(!establishes_bfc(&bx), "普通 block 不建立 BFC");
+
+    bx.is_flow_root = true;
+    assert!(establishes_bfc(&bx), "display:flow-root 建立 BFC");
+
+    bx.is_flow_root = false;
+    bx.is_layout_container = true;
+    assert!(
+        establishes_bfc(&bx),
+        "display:flex/grid/table（is_layout_container）建立 BFC"
+    );
+
+    bx.is_layout_container = false;
+    bx.is_multicol = true;
+    assert!(establishes_bfc(&bx), "多列容器建立 BFC");
+}
+
 /// 测试多个浮动元素 + clear:both 的复杂布局。
 #[test]
 fn test_multiple_floats_with_clear() {
