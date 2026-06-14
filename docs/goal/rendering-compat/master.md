@@ -2,7 +2,19 @@
 
 **最后更新**: 2026-06-14
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 84.7% (415/490) R108b（R105 +1 whitespace IFC，R108b +2 inline-fmt float flow_bottom；较 R104 的 412 基线 +3）
+**上游真实 reftest 通过率**: 85.3% (418/490) R111（R111 +2 visibility:collapse flex 主尺寸归零；较 R104 的 412 基线 +6）
+
+### R111 — visibility:collapse flex item 主尺寸归零（+2，零回归）
+
+**变更**：`crates/layout-engine/src/converter/mod.rs` 的 `computed_style_to_taffy` 中，当 `style.visibility == Collapse` 时将 `flex_basis` 强制为 `Length(0.0)`、`flex_grow`/`flex_shrink` 为 `0.0`。
+
+**根因**：此前 ZeroWeb 把 `visibility:collapse` 仅当作 `hidden`（paint 跳过，但布局仍占满主尺寸）。CSS Flexbox §10.1 规定折叠的 flex item 是「strut」：**主尺寸归零**（不占主轴空间），**交叉尺寸保留**（仍贡献 flex line 高度），且不绘制。converter 之前对 visibility 无感知，paint 层（painter/mod.rs:210）隐藏了元素但布局仍给满尺寸。
+
+**为何 axis-agnostic 且零副作用**：`flex_basis` 同时是 row（width）和 column（height）方向的主轴来源，且 taffy 对非 flex 元素忽略 `flex_basis` —— 因此对非 flex 折叠元素无害（table 列 collapse 在 table.rs 独立处理，未受影响）；交叉尺寸由另一维的 size 属性保留，天然成为 strut。无需父级 flex-direction 管线。
+
+**验证**：`flexbox-collapsed-item-horiz-001` (6.85%→0.00%)、`-002` (1.57%→0.29%) 转为 PASS；`horiz-003`/`baseline-001`/`visibility-collapse-colspan-003`/`rowspan-005` 均维持 PASS（零回归）。converter 单元测试：`test_visibility_collapse_zeros_flex_main_size`、`test_visibility_visible_preserves_flex`。`make test` 全绿，clippy 零警告。
+
+**方法论**：R109 结论「bbox 聚类已穷尽」之后仍能找到干净 +2，是因为改用**按特性 grep wpt-data**（`visibility:collapse` 共 8 个 case）找聚类 —— 这是 bbox 形状扫描的互补方法。上游 reftest 的 REF（horiz-001 的 `.collapse { flex-basis: 0 }`）直接给出了正确模型。
 
 ### R110 系统化 BBOX 聚类扫描（75 个失败用例全覆盖，三组同 bbox 聚类均确认为结构性）
 
