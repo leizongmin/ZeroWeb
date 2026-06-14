@@ -1,5 +1,5 @@
 use super::*;
-use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue, VisibilityValue};
+use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue, PositionValue, VisibilityValue};
 
 /// 测试 clear:both 将元素推到所有浮动元素下方。
 #[test]
@@ -1258,5 +1258,61 @@ fn test_float_after_first_child_margin_collapses_with_parent() {
         p_box.y,
         p_box.height,
         f_box.y
+    );
+}
+
+/// 测试根元素 <html> 的 position:relative inset 被正确应用。
+///
+/// taffy 0.7 不会对**根节点**应用 position:relative 的 top/left inset（根总在 0,0），
+/// 但会对非根 block-level 元素应用。ZeroWeb 在 extract_layout 后手动补上根的
+/// relative 偏移（CSS 2.1 §9.4.3），使根及其 abspos 后代（CB=根 padding box）
+/// 整体偏移到正确视觉位置。
+#[test]
+fn test_root_relative_position_applies_inset() {
+    let (doc, body) = make_doc_with_body();
+    let html = doc.parent_node(body).expect("html 是 body 的父节点");
+
+    let mut styles = HashMap::new();
+    let mut html_style = ComputedStyle::default();
+    html_style.display = DisplayValue::Block;
+    html_style.position = PositionValue::Relative;
+    html_style.top = LengthValue::Px(100.0);
+    html_style.left = LengthValue::Px(100.0);
+    html_style.height = LengthValue::Px(100.0);
+    styles.insert(html, html_style);
+
+    // body 默认样式
+    let mut body_style = ComputedStyle::default();
+    body_style.display = DisplayValue::Block;
+    styles.insert(body, body_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // 根 html 应被 relative inset 偏移到 (100,100)
+    assert!(
+        (result.root.x - 100.0).abs() < 0.5 && (result.root.y - 100.0).abs() < 0.5,
+        "根 relative 元素应应用 top/left inset：期望 (100,100)，实际 root.x={} root.y={}",
+        result.root.x,
+        result.root.y
+    );
+
+    // 对照：根为 static 时不应偏移
+    let (doc2, body2) = make_doc_with_body();
+    let html2 = doc2.parent_node(body2).expect("html");
+    let mut styles2 = HashMap::new();
+    let mut html2_style = ComputedStyle::default();
+    html2_style.display = DisplayValue::Block;
+    html2_style.height = LengthValue::Px(100.0);
+    styles2.insert(html2, html2_style);
+    let mut body2_style = ComputedStyle::default();
+    body2_style.display = DisplayValue::Block;
+    styles2.insert(body2, body2_style);
+    let result2 = LayoutEngine::new(800.0, 600.0).compute(&doc2, &styles2);
+    assert!(
+        (result2.root.x - 0.0).abs() < 0.5 && (result2.root.y - 0.0).abs() < 0.5,
+        "static 根不应偏移：实际 root.x={} root.y={}",
+        result2.root.x,
+        result2.root.y
     );
 }
