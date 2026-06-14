@@ -998,6 +998,92 @@ fn test_explicit_width_table_auto_cells_distribute() {
     );
 }
 
+/// 测试百分比 max-height 在包含块高度明确时被收紧。
+///
+/// 对应 fieldset-as-item-overflow：父级有明确 height（100px），子级 `max-height: 100%`
+/// 且内容更高（200px）。CSS §10.7 要求按包含块高度解析百分比 max-height，子级应被
+/// 收紧到 ~100px，而非沿用内容高度 200px。taffy 0.7 不会收紧 height:auto 的块盒，
+/// 由 `clamp_percentage_max_height` 后处理补齐。
+#[test]
+fn test_percentage_max_height_clamps_to_definite_cb() {
+    let html = r#"<html><body style="margin:0">
+<div style="height:100px;">
+  <div id="mid" style="max-height:100%;">
+    <div style="height:200px;"></div>
+  </div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    fn find_mid(box_node: &crate::types::LayoutBox) -> Option<&crate::types::LayoutBox> {
+        if (box_node.height - 100.0).abs() < 1.0 && box_node.children.len() == 1 {
+            return Some(box_node);
+        }
+        for child in &box_node.children {
+            if let Some(m) = find_mid(child) {
+                return Some(m);
+            }
+        }
+        None
+    }
+    let mid = find_mid(&result.root).expect("clamped mid div not found");
+    assert!(
+        mid.height <= 101.0,
+        "percentage max-height:100% of 100px CB should clamp to ~100px, got {}",
+        mid.height
+    );
+    assert!(
+        mid.height < 150.0,
+        "mid div must not keep content-driven 200px height (got {})",
+        mid.height
+    );
+}
+
+/// 测试百分比 max-height 在包含块高度不明确（auto）时不收紧。
+///
+/// CSS §10.5：当包含块高度由内容决定时，百分比 height/max-height 视为 auto（不解析）。
+#[test]
+fn test_percentage_max_height_no_clamp_when_cb_indefinite() {
+    let html = r#"<html><body style="margin:0">
+<div>
+  <div id="mid" style="max-height:50%;">
+    <div style="height:200px;"></div>
+  </div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    fn find_mid(box_node: &crate::types::LayoutBox) -> Option<&crate::types::LayoutBox> {
+        // 内容驱动的 mid 盒：有 1 个子且自身高度 > 150（容纳 200px 内容）
+        if box_node.children.len() == 1 && box_node.height > 150.0 && box_node.height < 260.0 {
+            return Some(box_node);
+        }
+        for child in &box_node.children {
+            if let Some(m) = find_mid(child) {
+                return Some(m);
+            }
+        }
+        None
+    }
+    let mid = find_mid(&result.root).expect("content-driven mid div not found");
+    // 父级高度 auto（内容决定）→ max-height:50% 不应解析 → mid 保持 ~200px（内容高）
+    assert!(
+        mid.height >= 195.0,
+        "indefinite CB: percentage max-height must not clamp (got {}), expected ~200px content height",
+        mid.height
+    );
+}
+
 /// 测试 table column 的 visibility:collapse。
 ///
 /// 对应 visibility-collapse-colspan-003：中间列被 `visibility:collapse` 折叠，
