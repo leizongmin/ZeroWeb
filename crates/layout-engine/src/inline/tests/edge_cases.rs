@@ -1071,3 +1071,57 @@ fn test_line_start_space_stripping() {
         ctx.lines[0].runs[0].x
     );
 }
+
+/// strut ascent 必须基于块容器自身的 font-size（CSS 2.1 §10.8.1），而非行盒实测高度。
+///
+/// 当行盒被高大的原子行内盒（inline-block/inline-flex）撑高时，旧行为用
+/// `line_height * 0.8` 算 strut，会把 strut ascent 错误放大。这导致合成 baseline
+/// 偏低的原子盒（baseline < 放大后的 strut）被压到行盒下方，与同容器其它盒错位。
+///
+/// 本测试构造：容器 font-size=20（strut ascent 应=16），一个高 35、baseline=20 的
+/// 原子盒单独成行（行高被撑到 35，旧 strut=28）。baseline 对齐后该盒应位于行顶
+/// （y≈0），而非被旧 strut(28) 压下 8px。
+#[test]
+fn test_strut_ascent_uses_container_font_not_line_height() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.container_font_size = 20.0;
+    let items = vec![InlineItem::InlineBlock(InlineBlockBox {
+        width: 100.0,
+        height: 35.0, // 撑高行盒 → 旧 line_height*0.8 = 28
+        node_id: NodeId::default(),
+        vertical_align: VerticalAlignValue::Baseline,
+        baseline: 20.0, // 合成 baseline：>= 新 strut(16) 但 < 旧 strut(28)
+    })];
+    ctx.break_items_into_lines(items);
+
+    assert_eq!(ctx.lines.len(), 1, "单个原子盒应单独成行");
+    let run = &ctx.lines[0].runs[0];
+    assert!(
+        run.y.abs() < 0.5,
+        "baseline 偏低的原子盒应位于行顶 (y≈0)，实际 y={:.2}（strut 不应基于被撑高的行高）",
+        run.y
+    );
+}
+
+/// 对照测试：当原子盒的 baseline 低于容器 strut（基于 font-size）时，它确实会被
+/// 压到行顶之下——证明 strut 仍在生效，只是基于正确的（容器字体）基准。
+#[test]
+fn test_strut_still_applies_when_baseline_below_container_strut() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.container_font_size = 20.0; // strut ascent = 16
+    let items = vec![InlineItem::InlineBlock(InlineBlockBox {
+        width: 100.0,
+        height: 35.0,
+        node_id: NodeId::default(),
+        vertical_align: VerticalAlignValue::Baseline,
+        baseline: 10.0, // < strut(16) → 应被压下 6px
+    })];
+    ctx.break_items_into_lines(items);
+
+    let run = &ctx.lines[0].runs[0];
+    assert!(
+        (run.y - 6.0).abs() < 0.5,
+        "baseline(10) 低于 strut(16) 的盒应被压下 6px (y≈6)，实际 y={:.2}",
+        run.y
+    );
+}

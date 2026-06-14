@@ -426,6 +426,15 @@ pub struct InlineFormattingContext {
     /// 设置此值后，文本节点在找不到父元素样式时会使用此默认值
     /// 而非硬编码的 16px/19.2px。
     pub default_font_metrics: Option<(f32, f32)>,
+    /// 包含块（行内格式化上下文的宿主块容器）自身的 font-size（px）。
+    ///
+    /// CSS 2.1 §10.8.1：行盒的 strut（隐式行内盒）由块容器自身的
+    /// font-size/line-height 决定，与行内内容无关。strut 的 ascent 用于
+    /// 行盒基线计算的下限。`apply_vertical_alignment` 用此值推导 strut ascent，
+    /// 而非用行盒实测高度（行盒高度会被高大的原子行内盒撑高，导致 strut
+    /// 被错误放大，进而把基线偏低的原子盒压到行盒下方）。
+    /// 默认 16px；`layout()` 从容器样式中读取真实值。
+    pub container_font_size: f32,
     /// 逐文本节点的字体大小覆盖（key = 文本节点的父元素 NodeId）。
     ///
     /// paint IFC 传入空的 styles HashMap，导致所有文本使用 16px 默认字体度量，
@@ -499,6 +508,7 @@ impl InlineFormattingContext {
             vertical_rtl: false,
             inline_block_sizes: HashMap::new(),
             default_font_metrics: None,
+            container_font_size: DEFAULT_FONT_SIZE,
             font_size_overrides: HashMap::new(),
             is_ahem_overrides: HashMap::new(),
             letter_spacing_overrides: HashMap::new(),
@@ -718,6 +728,18 @@ impl InlineFormattingContext {
     /// - `container` — 行内格式化上下文的容器节点
     /// - `styles` — 元素 NodeId → ComputedStyle 映射
     pub fn layout(&mut self, doc: &Document, container: NodeId, styles: &HashMap<NodeId, ComputedStyle>) {
+        // 从容器自身样式读取 font-size，供 apply_vertical_alignment 计算 strut ascent。
+        // CSS 2.1 §10.8.1：strut 由块容器自身的字体度量决定。paint IFC 传入空 styles
+        // 时保持默认 16（仅影响行内文本片段的垂直定位，文本 font_size 通常主导 ascent）。
+        if let Some(style) = styles.get(&container) {
+            self.container_font_size = match &style.font_size {
+                LengthValue::Px(px) => *px as f32,
+                LengthValue::Em(em) => *em as f32 * 16.0,
+                LengthValue::Rem(rem) => *rem as f32 * 16.0,
+                LengthValue::Percentage(p) => *p as f32 * 16.0 / 100.0,
+                _ => DEFAULT_FONT_SIZE,
+            };
+        }
         let items = self.collect_inline_items(doc, container, styles);
         self.break_items_into_lines(items);
     }
@@ -1747,12 +1769,19 @@ impl InlineFormattingContext {
             // CSS 2.1 §10.8.1: 行盒基线由所有 baseline 对齐的 inline 级盒的 ascent 最大值决定。
             // - 文本运行：ascent ≈ font_size（字体 ascent 的近似）
             // - inline-block：baseline 在底部边缘，ascent = height
-            // - 空行使用 strut ascent（0.8 × line_height）作为回退
+            // - strut 由块容器自身的 font-size 决定（而非行盒实测高度）
             //
-            // 修正：从实际内容计算基线，而非仅使用全局 strut 近似。
-            // 这修复了 Ahem 等字体（ascent ≈ font_size）的基线位置问题，
-            // 同时保持对正常字体（ascent ≈ 0.8 × font_size）的兼容性。
-            let strut_ascent = line_height * 0.8;
+            // strut ascent 的来源按行内是否有文本区分：
+            // - 文本行：沿用 line_height*0.8（line_height 来自文本 line-height，含 leading，
+            //   近似 leading 对半分布的基线位置）。
+            // - 仅原子行内盒的行（如 inline-flex 容器被块级化后独占一行）：strut 基于容器
+            //   font-size。否则 line_height 被高大的原子盒撑高，strut ascent 被错误放大，
+            //   把合成 baseline 偏低的原子盒压到行盒下方，与同容器其它盒错位。
+            let strut_ascent = if line.runs.iter().any(|r| r.font_size > 0.0) {
+                line_height * 0.8
+            } else {
+                self.container_font_size * 0.8
+            };
             let mut max_ascent = strut_ascent;
             for run in &line.runs {
                 if matches!(
