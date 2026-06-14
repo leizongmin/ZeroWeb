@@ -10,6 +10,22 @@
 
 本轮复核两条历史根因假设，均得出了更精确的结论，为后续结构性修复锁定了下一目标。
 
+### R116 — multicol-fill 四 bug 精确定位（418/490 不变，framebuffer 法定位互锁 bug 群）
+
+**当前状态**：全量上游 reftest **418/490 (85.3%)** 不变（无代码变更提交；所有实验性修复均验证后回滚）。本轮用 `REFTEST_DUMP` + PIL 像素扫描精确定位 `multicol-fill-001` 的**四个互锁 bug**，确证属 multicol paint 路径结构性问题（R113b territory），非单点可解。
+
+四个 bug（按修复链顺序，均在 framebuffer 上逐个验证）：
+
+1. **font_size 存储（已验证修复）**：显式高度 balance 多列容器的 `text_node_font_sizes` 不被 `remeasure_inline_only_containers` 填充（其 `height:Auto` guard 排除 Px 高度容器，engine.rs:2588）→ paint 以列宽重跑 IFC 时用空 styles 默认 font_size=16 → Ahem 方块渲染成 16px（应 20px）。修复 = 在 remeasure 主块后新增独立块，对显式高度 balance 多列容器只存 font_size 不改高度（守卫 `text_node_font_sizes.is_empty()`）。验证：div#test 方块从 16px→20px。
+
+2. **table cell 多行重叠（已验证修复，但 blanket 修复 -12 回归）**：`TableCell` 不在 `is_block_level` 列表（engine.rs:473）→ `compute_final_inline_layouts` 跳过 td（engine.rs:1339 `!is_block_level`）→ td 无存储 inline_layout → paint 重跑 IFC，`all_fragments()` 返回**行内相对 y**（inline/mod.rs:1933，每个 fragment y=0）→ 渲染用 `frag.y` 直接定位（painter/text.rs render_fragment! 宏）→ 多行全叠在 y=0 → td "G<br>H<br>I" 只渲染成 1 行。修复 = td 用 `all_fragments_with_line_y()`（含 line.y 绝对坐标）。**但 blanket 应用 = -12 回归**（multicol-breaking-001/002/003、nobackground-001/002/003/005、multicol-fill-auto、border-003、rtl-linebreak、float-003）：非存储路径的 y 语义在不同用例间不一致。**surgical（仅 TableCell）= net-neutral**（无回归无收益，因当前无 failing 测试单独依赖它）。
+
+3. **非存储 fragments y 语义不一致（结构性，未修）**：`all_fragments()`（行内相对 y）vs `all_fragments_with_line_y()`（绝对 y）—— 渲染宏期望绝对 y，但不同非存储用例的 IFC fragment.y 语义不统一。multicol-breaking 的 column-span 重绘路径已有绝对 y，table cell 是行内相对 y。统一需逐用例分类，非单点。
+
+4. **multicol 容器 20px 定位偏移（未修）**：fix 1+2(surgical)+nested-guard 三者齐上后，div#test 与 ref table 均渲染 3 方块/列（计数正确），但 div#test 内容在 y=55，ref table 在 y=75——**div#test 比 table 高 20px**（= `margin:1em`）。疑为 multicol 容器的 margin-top 未正确应用或 content_y 偏移，属布局层定位问题。
+
+**结论**：multicol-fill-001 需同时修 4 个互锁 bug，每个单独修都 net-neutral 或回归。属 multicol paint/布局结构性重构（R113b），非单轮可达成。下轮目标：先修 bug 4（20px 定位偏移，可能是简单的 margin/content_y 问题），再整合 bug 1+2+3。
+
 #### multicol-fill-001 根因纠正（非 height_auto guard）
 
 历史假设（R94/b86a3e4）：`multicol-fill-001` 因 `painter/text.rs:701` 的 `height_auto` guard 而无法列分配，故失败。**本轮证伪**：
