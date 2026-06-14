@@ -121,6 +121,11 @@ pub struct LayoutBox {
     /// 布局容器建立 BFC（CSS Flexbox §3, CSS Grid §3），
     /// 其子元素由各自的布局算法定位，不走 IFC。
     pub is_layout_container: bool,
+    /// 是否为「孤立 table-internal 元素」（display:table-row-group/table-row/table-cell 等，
+    /// 且父元素非 table/table-internal）——CSS Tables §2.4 应为其生成匿名 table 包装盒。
+    /// 此标记让该元素在 establishes_bfc 中被视为匿名 table（建立 BFC，隔离 margin 折叠
+    /// + 包含浮动），由 mark_anonymous_table_roots 预处理在 adjust_float_positions 之前设置。
+    pub is_anon_table_root: bool,
     /// 多列容器的列间距（column-gap），由 layout 层设置，paint 层用于裁剪。
     /// 非 multicol 容器为 0.0。
     pub column_gap: f32,
@@ -300,6 +305,7 @@ impl Default for LayoutBox {
             is_flow_root: false,
             is_multicol: false,
             is_layout_container: false,
+            is_anon_table_root: false,
             column_gap: 0.0,
             is_block_level: false,
             is_relative: false,

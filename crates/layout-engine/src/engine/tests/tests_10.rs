@@ -415,6 +415,67 @@ fn test_bfc_detection_layout_container() {
     bx.is_layout_container = false;
     bx.is_multicol = true;
     assert!(establishes_bfc(&bx), "多列容器建立 BFC");
+
+    bx.is_multicol = false;
+    bx.is_anon_table_root = true;
+    assert!(establishes_bfc(&bx), "孤立 table-internal（匿名 table 根）建立 BFC");
+}
+
+/// 测试 mark_anonymous_table_roots：孤立 table-internal 标记为匿名 table 根（建立 BFC）。
+#[test]
+fn test_mark_anonymous_table_roots_orphan() {
+    use crate::engine::mark_anonymous_table_roots;
+    use crate::margin_collapse::establishes_bfc;
+    use std::collections::HashMap;
+    use zero_css_parser::values::DisplayValue;
+    use zero_style_system::ComputedStyle;
+
+    let (_doc, orphan_id) = make_doc_with_body();
+    let (_doc2, table_id) = make_doc_with_body();
+    let (_doc3, nested_id) = make_doc_with_body();
+
+    // 孤立 table-row-group（父为 block，非 table 上下文）
+    let orphan = LayoutBox {
+        node_id: Some(orphan_id),
+        ..Default::default()
+    };
+    // 嵌套 table-row-group（在 table 内部）
+    let nested = LayoutBox {
+        node_id: Some(nested_id),
+        ..Default::default()
+    };
+    let table = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![nested],
+        ..Default::default()
+    };
+    let mut root = LayoutBox {
+        children: vec![orphan, table],
+        ..Default::default()
+    };
+
+    let mut s1 = ComputedStyle::default();
+    s1.display = DisplayValue::TableRowGroup;
+    let mut s2 = ComputedStyle::default();
+    s2.display = DisplayValue::Table;
+    let mut s3 = ComputedStyle::default();
+    s3.display = DisplayValue::TableRowGroup;
+    let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+    styles.insert(orphan_id, s1);
+    styles.insert(table_id, s2);
+    styles.insert(nested_id, s3);
+
+    mark_anonymous_table_roots(&mut root, &styles, false);
+
+    assert!(
+        root.children[0].is_anon_table_root,
+        "孤立 table-row-group 应标记为匿名 table 根"
+    );
+    assert!(establishes_bfc(&root.children[0]), "孤立 table-row-group 应建立 BFC");
+    assert!(
+        !root.children[1].children[0].is_anon_table_root,
+        "table 内部的 table-row-group 不应标记为匿名 table 根"
+    );
 }
 
 /// 测试多个浮动元素 + clear:both 的复杂布局。

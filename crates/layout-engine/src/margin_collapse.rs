@@ -59,6 +59,13 @@ pub fn establishes_bfc(box_node: &LayoutBox) -> bool {
         return true;
     }
 
+    // 孤立 table-internal 元素（无 table 父级）→ CSS Tables §2.4 应生成匿名 table
+    // 包装盒，该匿名 table 建立 BFC。此处近似：标记为 is_anon_table_root 的元素
+    // 视为匿名 table，建立 BFC（隔离 margin 折叠 + 包含浮动）。
+    if box_node.is_anon_table_root {
+        return true;
+    }
+
     // 多列容器建立 BFC（CSS Multi-column §2）
     // 阻止子元素 margin 与容器 margin 折叠
     if box_node.is_multicol {
