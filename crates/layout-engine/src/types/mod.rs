@@ -67,6 +67,14 @@ pub struct LayoutBox {
     pub margin_bottom: f32,
     /// 外边距。
     pub margin_left: f32,
+    /// 计算样式声明的 margin-top（已解析为 px）。
+    ///
+    /// 与 `margin_top` 的区别：`margin_top` 来自 taffy 布局结果，在 margin 折叠后
+    /// 可能被放大（例如容器与首个 float 子元素错误折叠）；`declared_margin_top`
+    /// 保留计算样式原始值，用于检测并修正 taffy 把 float 当作 block 导致的
+    /// 容器 margin 误折叠（CSS §8.3.1：float 的 margin 不折叠）。
+    /// 非 Px 长度（Percent/Auto）或垂直书写模式下回退为 `margin_top`（不触发修正）。
+    pub declared_margin_top: f32,
     /// 子布局盒。
     pub children: Vec<LayoutBox>,
     /// 是否为绝对定位。
@@ -269,6 +277,7 @@ impl Default for LayoutBox {
             margin_right: 0.0,
             margin_bottom: 0.0,
             margin_left: 0.0,
+            declared_margin_top: 0.0,
             children: Vec::new(),
             is_absolute: false,
             is_fixed: false,
