@@ -157,6 +157,9 @@ impl LayoutEngine {
         // 5. 后处理：调整 float 元素位置
         adjust_float_positions(&mut root_box);
 
+        // 5.5 后处理：垂直书写模式下 width:auto 块级元素收缩到内容块轴跨度
+        shrink_vertical_blocks_to_content(&mut root_box, styles, &WritingModeValue::HorizontalTb);
+
         // 6. 后处理：为包含 float 元素的容器重新测量文本，使文本环绕 float 排列
         remeasure_text_with_float_exclusions(&mut root_box, doc, styles);
 
@@ -2039,6 +2042,78 @@ fn adjust_absolute_pct_to_viewport(
 fn adjust_float_positions(box_node: &mut LayoutBox) {
     let content_abs_y = box_node.y + box_node.content_y;
     adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0);
+}
+
+/// 垂直书写模式下 width:auto 块级元素收缩到内容（CSS §10.3.3 + CSS Writing Modes §7.1）。
+///
+/// 规范：垂直书写模式（vertical-rl/lr）中，块级元素的 block-size 为物理 width。
+/// block-size:auto 时应基于内容收缩（同水平模式下的 height:auto），而非填满包含块。
+///
+/// 当前架构的轴交换以**父元素**书写模式为键（converter/tree.rs 与 engine.rs
+/// extract_layout）：仅当父元素为垂直模式时才交换子元素几何，使 taffy 以水平模型布局。
+/// 但元素**自身**书写模式决定其 width 是 block-size 还是 inline-size。当元素自身为垂直
+/// 模式而其父元素为水平模式时（典型场景：body 内一个 `writing-mode: vertical-rl` 的
+/// div），轴交换不触发，taffy 把 width:auto 当作行内填充（填满容器宽度），违反规范。
+///
+/// 此后处理在 float 定位之后遍历布局树，对这类块按内容块轴跨度（最右侧流内子元素
+/// margin-box 右缘）收缩 width，并尊重 min-width/max-width。
+///
+/// **自限性**：仅当内容右缘窄于当前 width 时才收缩，对子元素已正确铺满到内容右缘的
+/// 垂直块为 no-op，从而对正确布局的用例零回归。
+fn shrink_vertical_blocks_to_content(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    parent_writing_mode: &WritingModeValue,
+) {
+    let own_vertical = matches!(
+        box_node.writing_mode,
+        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+    );
+    let parent_horizontal = matches!(parent_writing_mode, WritingModeValue::HorizontalTb);
+
+    if own_vertical && parent_horizontal && box_node.is_block_level && !box_node.is_absolute && !box_node.is_fixed {
+        let width_auto = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.width, LengthValue::Auto));
+        if width_auto {
+            // 内容块轴跨度 = 最右侧流内子元素 margin-box 右缘（相对父 border-box）。
+            let content_extent = box_node
+                .children
+                .iter()
+                .filter(|c| !c.is_absolute && !c.is_fixed)
+                .map(|c| c.x + c.width + c.margin_right)
+                .fold(0.0f32, f32::max);
+            // 解析 min-width/max-width（style 解析阶段 em/rem 等已解析为 Px）。
+            let (min_w, max_w) = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .map(|s| {
+                    let lo = match &s.min_width {
+                        LengthValue::Px(v) => *v as f32,
+                        _ => 0.0,
+                    };
+                    let hi = match &s.max_width {
+                        LengthValue::Px(v) => *v as f32,
+                        _ => f32::MAX,
+                    };
+                    (lo, hi)
+                })
+                .unwrap_or((0.0, f32::MAX));
+            let new_width = content_extent.max(min_w).min(max_w).min(box_node.width);
+            if new_width + 0.5 < box_node.width {
+                let frame =
+                    box_node.border_left + box_node.border_right + box_node.padding_left + box_node.padding_right;
+                box_node.width = new_width;
+                box_node.content_width = (new_width - frame).max(0.0);
+            }
+        }
+    }
+
+    let pw = box_node.writing_mode.clone();
+    for child in &mut box_node.children {
+        shrink_vertical_blocks_to_content(child, styles, &pw);
+    }
 }
 
 fn adjust_float_positions_with_context(
