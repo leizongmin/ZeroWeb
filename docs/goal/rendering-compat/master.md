@@ -1,8 +1,22 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-14
+**最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 85.5% (419/490) R117（R117 +1 table auto-cell 列宽分布修复 → multicol-fill-001 通过；较 R104 的 412 基线 +7）
+**上游真实 reftest 通过率**: 87.1% (426/490) R130（R130 +1 strut ascent 修复 → flexbox-baseline-align-self-baseline-horiz-001 通过；较 R117 的 419 基线 +7）
+
+### R130 — strut ascent 仅原子行用容器 font-size（+1，flexbox-baseline-align-self-baseline-horiz-001 通过，零回归）
+
+**变更**：`crates/layout-engine/src/inline/mod.rs`：(1) InlineFormattingContext 新增 `container_font_size: f32` 字段；(2) `layout()` 从容器自身 ComputedStyle 读 font-size 填充；(3) `apply_vertical_alignment` 的 strut_ascent 按行内是否有文本分支——有文本行沿用 `line_height*0.8`，**仅原子行内盒的行**改用 `container_font_size*0.8`。新增 2 个单测。
+
+**根因**（FB_DEBUG 插桩 adjust_inline_block_positions + apply_vertical_alignment）：`flexbox-baseline-align-self-baseline-horiz-001` 三个结构相同的 inline-flex 容器（仅子元素顺序不同），taffy first_baseline 给出 **30/20/30**（child-order 依赖，不可在 taffy 层修）。容器被块级化为 800px 全宽各占一行。旧行为 strut_ascent = `line_height*0.8`，但 line_height=35（被 35px 容器撑高）→ strut=28。baseline=20 的容器（20<28）被压到行顶下 8px（y=63 而非 55），与兄弟（baseline 30>28，y=20/90）错位。REF 用 inline-block+vertical-align:top 绕过 baseline，三容器均匀 y=20/55/90。
+
+**为何分支设计（非统一替换）**：最初用 `container_font_size*0.8` 统一替换 → 回归 `test_vertical_align_sub/super_in_line`（baseline_y 24→16，丢了文本行 leading 对半分布近似）。改为「文本行不变、仅原子行用容器字体」分支后零回归：文本行里 font_size 主导 max_ascent，strut 本就不起决定作用；strut 仅在「行内无文本、只有高原子盒」时才被错误放大——正好是本 bug 场景。
+
+**零回归论证**：全量 425→426，唯一翻转 = horiz-001（FIXED）。836 个 layout-engine 单测全绿，make test 全绿，clippy 零警告。
+
+**flex baseline 集群剩余（结构性）**：vert-001（5.06%，垂直轴需参数化）、multi-line-horiz-003/004（47%，多行 baseline 合成+行高）。taffy baseline child-order 不一致（30/20/30）无法在 taffy 层修；完整修复需 Phase A IFC 路径统一（layout/paint IFC strut 一致 + 多行 baseline 合成，见 [[R125]]）。
+
+**方法论**：「按行内容类型分支的 strut」= 低风险结构性修复模板——旧启发式对常见情况正确，仅对退化情况（原子行）用更正确的源。诊断 = 在 adjust_inline_block_positions（baseline_overrides+fragment y）和 apply_vertical_alignment（strut_ascent+baseline_y+run.y）两处插桩，对比 test vs ref 的逐行 baseline_y 直接揭示 strut 放大。
 
 ### R117 — table auto-cell 列宽分布修复（+1，multicol-fill-001 通过，零回归）
 
