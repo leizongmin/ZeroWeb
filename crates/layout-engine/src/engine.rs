@@ -558,6 +558,21 @@ impl LayoutEngine {
             std::mem::swap(&mut margin_bottom, &mut margin_right);
         }
 
+        // declared_margin_top: 计算样式声明的 margin-top（仅水平书写模式 + Px 长度时有效）。
+        // 用于检测 taffy 把 float 当作普通 block 导致容器 margin-top 与首个 float
+        // 子元素的 margin 错误折叠（CSS §8.3.1：float 的 margin 不折叠）。
+        // 非 Px 长度（Percent/Auto）或垂直书写模式下回退为布局值，不触发修正。
+        let declared_margin_top = if matches!(parent_writing_mode, WritingModeValue::HorizontalTb) {
+            computed
+                .and_then(|c| match &c.margin_top {
+                    zero_css_parser::values::LengthValue::Px(v) => Some(*v as f32),
+                    _ => None,
+                })
+                .unwrap_or(margin_top)
+        } else {
+            margin_top
+        };
+
         // 计算内容区域
         let content_x = border_left + padding_left;
         let content_y = border_top + padding_top;
@@ -600,6 +615,7 @@ impl LayoutEngine {
             margin_right,
             margin_bottom,
             margin_left,
+            declared_margin_top,
             children: children_boxes,
             is_absolute,
             is_fixed,
@@ -2038,6 +2054,35 @@ fn adjust_float_positions_with_context(
     let content_y_offset = box_node.border_top + box_node.padding_top;
     let inherited_left_bottom = (inherited_left_bottom_abs - box_content_abs_y).max(0.0);
     let inherited_right_bottom = (inherited_right_bottom_abs - box_content_abs_y).max(0.0);
+
+    // CSS §8.3.1 修正：float 的 margin 不与父容器折叠。但 taffy 把 float 当作普通
+    // block 排列，当容器的首个流内子元素是 float 且容器无 border-top/padding-top
+    //（margin 可与子元素折叠）时，容器的 margin-top 会被折叠到该 float 的 margin
+    //（取 max），使容器（及其全部内容）整体偏低。此处把多折叠的量从容器 y 中扣除
+    // 并恢复 margin_top。
+    //
+    // 精确门控（四重条件，确保只修真正的 float-margin 折叠，排除 taffy 把 float 当
+    // block 引起的其它膨胀）：
+    //   1. 容器无 border-top/padding-top（margin 可与首个子元素折叠）
+    //   2. 容器布局 margin_top > 声明值（发生了膨胀）
+    //   3. 容器 margin_top == 首个 float 子元素 margin_top（容器 mt 被折叠到该 float mt）
+    //   4. 该 float 子元素的 margin_top == 其声明值（float 的 mt 自身未被 taffy 膨胀）
+    if content_y_offset == 0.0 && box_node.margin_top > box_node.declared_margin_top + 0.01 {
+        if let Some(fc) = box_node
+            .children
+            .iter()
+            .find(|c| !c.is_absolute && !c.is_fixed)
+            .filter(|c| !matches!(c.float, FloatValue::None))
+        {
+            let container_absorbed_float_mt = (box_node.margin_top - fc.margin_top).abs() < 0.01;
+            let float_mt_is_clean = (fc.margin_top - fc.declared_margin_top).abs() < 0.01;
+            if container_absorbed_float_mt && float_mt_is_clean {
+                let over_collapse = box_node.margin_top - box_node.declared_margin_top;
+                box_node.y -= over_collapse;
+                box_node.margin_top = box_node.declared_margin_top;
+            }
+        }
+    }
 
     // 第一阶段：重新定位 float 元素，记录每个 float 在 taffy 布局中占据的垂直空间
     //

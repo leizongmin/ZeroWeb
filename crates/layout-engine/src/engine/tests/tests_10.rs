@@ -1261,6 +1261,58 @@ fn test_float_after_first_child_margin_collapses_with_parent() {
     );
 }
 
+/// 测试容器 margin-top 不与首个 float 子元素的 margin 错误折叠（CSS §8.3.1）。
+///
+/// taffy 把 float 当作普通 block 排列，当容器的首个流内子元素是 float 且容器无
+/// border-top/padding-top（margin 可与首个子元素折叠）时，容器的 margin-top 会被
+/// 错误折叠到该 float 的 margin（取 max），使容器（及其全部内容）整体偏低。
+/// ZeroWeb 在 float 定位后处理中检测并修正（CSS §8.3.1：float 的 margin 不折叠）：
+/// 仅当容器 margin_top == 首个 float 子元素 margin_top 且该 float margin 自身未被
+/// taffy 膨胀时，把多折叠的量从容器 y 扣除并恢复 margin_top。
+#[test]
+fn test_container_margin_not_collapsed_with_first_float_child() {
+    let (mut doc, body) = make_doc_with_body();
+    // body 的首个流内子元素是 margin-top=16 的 float（大于 body 自身 margin 8）
+    let float_div = doc.create_element("div");
+    doc.append_child(body, float_div).unwrap();
+
+    let mut styles = HashMap::new();
+    // body：margin-top=8，无 border/padding（使 margin 可与首个子元素折叠）
+    let mut body_style = ComputedStyle::default();
+    body_style.display = DisplayValue::Block;
+    body_style.margin_top = LengthValue::Px(8.0);
+    styles.insert(body, body_style);
+
+    // 首个子元素：float:left，margin-top=16
+    let mut fs = ComputedStyle::default();
+    fs.display = DisplayValue::Block;
+    fs.float = FloatValue::Left;
+    fs.margin_top = LengthValue::Px(16.0);
+    fs.height = LengthValue::Px(20.0);
+    styles.insert(float_div, fs);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let body_box = find_child_by_node_id(&result.root, body).expect("body found");
+
+    // 修正后 body.y 应反映 body 自身 margin-top（8），而非与 float margin 折叠后的 16。
+    //（未修正时 taffy 会把 body.margin_top 折叠到 float 的 16，使 body.y=16，整体偏低 8px。）
+    assert!(
+        (body_box.y - 8.0).abs() < 1.0,
+        "body.y 应为自身 margin-top（8），CSS §8.3.1 float margin 不与容器折叠；实际 body.y={}（margin_top={} declared={})",
+        body_box.y,
+        body_box.margin_top,
+        body_box.declared_margin_top
+    );
+    // margin_top 也应恢复为声明值 8（未被折叠放大到 16）
+    assert!(
+        (body_box.margin_top - 8.0).abs() < 0.5,
+        "body.margin_top 应恢复为声明值 8，实际={}",
+        body_box.margin_top
+    );
+}
+
 /// 测试根元素 <html> 的 position:relative inset 被正确应用。
 ///
 /// taffy 0.7 不会对**根节点**应用 position:relative 的 top/left inset（根总在 0,0），
