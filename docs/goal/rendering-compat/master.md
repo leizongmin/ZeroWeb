@@ -6,15 +6,15 @@
 
 ### R135 — reftest harness PNG 加载 bug 诊断（432/490 持平，image 修复已回退，net -5 需打包）
 
-**状态**：全量上游 reftest **432/490** 不变（诊断轮，无代码提交；image 修复实验验证后回退，工作树清洁）。smoke 686/686、clippy 零警告、零回归。
-
 **根因（IMG_DEBUG 插桩 render_image + PIL）**：`tests/wpt-runner/src/reftest.rs` 的 `load_png_file` 用固定 `w*h*4` 缓冲区调 `next_frame` 但未设 `Transformations::EXPAND`。非 RGBA PNG（palette/RGB/grayscale）按原始色型写入 3/1 字节/像素 → 错位 → alpha 读为 0 → `render_image` 的 `solid_color()` 返回 `[0,0,0,0]` → `if sa==0 {return;}` 跳过绘制 → 图片全透明。swatch-green.png(mode=P) 修复前 `solid=[0,0,0,0]`，修复后 `[0,128,0,255]`。
 
 **修复（已验证正确，已回退）**：`decoder.set_transformations(png::Transformations::EXPAND)` + 按 `raw.len()/(w*h)` 算 bpp，3→补 alpha 255、1/2→grayscale 转 RGBA。修复后 swatch 正确渲染。
 
-**为何 net -5 必须回退（432→427）**：很多 reftest 的 **test 侧**用背景 PNG 作「期望图案」（绿块应覆盖），ref 侧纯 CSS 绿块。修前 PNG 不渲染（透明）→ test 未覆盖区也透明 → 与 ref 凑巧容差内通过（**假通过**）。修后 PNG 正确渲染 → 暴露 test 绿块未完美覆盖的 **真实 clearance-calc 精度误差**。回归 5：CSS2 `clear-clearance-calculation-001/002/003`（水平，1.25/1.67/1.62%，strict 1%/5ch）+ writing-modes `clearance-calculations-vrl-004/008`（7.09/6.42%）。**0 个新通过**（当前失败用例无一是 image 不渲染导致）。
+**为何 net -5 必须回退（432→427）**：很多 reftest 的 **test 侧**用背景 PNG 作「期望图案」（绿块应覆盖），ref 侧纯 CSS 绿块。修前 PNG 不渲染（透明）→ test 未覆盖区也透明 → 与 ref 凑巧容差内通过（**假通过**）。修后 PNG 正确渲染 → 暴露第二个 bug：`render_full_scene`（cpu/mod.rs）按**类型分桶**渲染（step2 fills → step5 images），父元素背景 PNG 画在子绿块之后覆盖子内容（违反 CSS painting order，DC-10）。回归 5：CSS2 `clear-clearance-calculation-001/002/003` + writing-modes `clearance-calculations-vrl-004/008`。**0 个新通过**。
 
-**正确做法（下轮打包）**：(1) 重新应用 load_png_file EXPAND 修复；(2) 修 `adjust_float_positions` §9.5.2 clearance-calc 精度（让绿块精确覆盖背景 PNG）。两者一起才 net ≥0。单独修 image = 半成品净负，不单独提交。
+**R135b painting-order 诊断（DC-10，纠正「精度误差」误判）**：REFTEST_DEBUG 确认 clear-clearance-calc-001 的 3 个绿块 fill **生成在正确位置**（y=51/91/151，与 ref 一致）——**layout 完全正确**，无精度误差。实现了 `DrawRecord` 顺序记录（primitive/mod.rs draw_order 字段 + 9 个 add_* 记录 + render_full_scene 按 draw_order 渲染），image+painting 让 CSS2 clearance-calc-001/002/003 真实通过（0.00/0.00/0.38%）。但**仍 net -3**（已全回退）：纯 DOM 顺序对 abspos 不正确（需 stacking-context/z-order，类型分桶更接近）→ regress abs-pos-non-replaced-vrl-002（4.00→5.33%）；vrl-004/008 仍 fail（需 bug 2 vertical float）。
+
+**完整 bundle = 3 部分**：(1) image 加载修复；(2) **stacking-aware** painting-order（DrawRecord 已验证可用，仅需补 abspos/z-index 处理，非纯 DOM 顺序）；(3) bug 2 vertical float 定位。三者同提交才 net ≥0。已验证部分组合净负：image-only -5、painting-only -1、image+painting -3。**当前 432 含多个退化-ref 假通过**；此 bundle 是「真实正确性」工作（让通过用例在真实 ref 下也过），不改当前 pass 数。要涨 pass 数须修当前就失败的非退化用例（multicol/flex-baseline/large-font/intrinsic，均结构性，clean win 穷尽）。
 
 **澄清**：engine 的 image 渲染（DC-8）正常（render_image + solid_color/bilinear 正确）；坏的是 harness 加载链。对称用例（test/ref 同图）不受 image 修复影响；非对称（test 有图 ref 无图）是回归源。
 
