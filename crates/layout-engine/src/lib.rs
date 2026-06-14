@@ -23,6 +23,7 @@ pub mod inline;
 pub mod margin_collapse;
 pub mod multicol;
 pub mod table;
+pub mod table_shrink;
 pub mod tree;
 pub mod types;
 

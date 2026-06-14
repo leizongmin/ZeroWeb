@@ -20,6 +20,7 @@ unicode-bidi = { workspace = true }
 criterion = { workspace = true }
 zero-style-system = { workspace = true }
 zero-css-parser = { workspace = true }
+slotmap = { workspace = true }
 
 [[bench]]
 name = "layout_bench"

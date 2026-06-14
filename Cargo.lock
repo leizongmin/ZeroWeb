@@ -5833,6 +5833,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "serde",
+ "slotmap",
  "taffy",
  "thiserror 2.0.18",
  "tracing",
