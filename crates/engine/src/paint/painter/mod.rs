@@ -465,11 +465,19 @@ impl Painter {
         // 记录子节点绘制前的图元数量，用于裁剪
         let counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
-        // 多列容器的子元素需要按列区域裁剪，防止内容溢出到相邻列。
-        // CSS 规范允许内容延伸到列间隙（column gap），但不允许进入相邻列。
+        // CSS §11.1.1：overflow 仅裁剪 CB 为本元素或其后代的 positioned 后代。
+        // 当 overflow 元素自身**非 positioned** 时，其 abspos 后代的 CB 必为祖先
+        //（或中间有 positioned 后代）。常见情形（overflow 元素非 positioned、
+        // abspos 与 overflow 之间无 positioned 元素）下，abspos 的 CB 在 overflow 之上，
+        // 不应被本 overflow 裁剪。ZeroWeb 原先把 abspos 当普通子元素绘制被误裁。
+        // 此处对「非 positioned 的 overflow 元素」把 abspos/fixed 子元素移到 overflow
+        // 裁剪之后绘制（positioned overflow 元素保持原行为，避免 z-order 回归）。
         let is_multicol = box_node.is_multicol;
+        let self_positioned = box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky;
+        let defer_abspos = needs_clip && !self_positioned && !is_multicol;
         for child_idx in ordered_child_indices(&box_node.children, |child| {
-            !is_multicol || child.column_span_offsets.is_empty()
+            (!is_multicol || child.column_span_offsets.is_empty())
+                && (!defer_abspos || (!child.is_absolute && !child.is_fixed))
         }) {
             let child = &box_node.children[child_idx];
             self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
@@ -546,6 +554,15 @@ impl Painter {
                 box_node.content_height,
             );
             super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_children, &clip_rect);
+        }
+
+        // 非 positioned overflow 元素：abspos/fixed 子元素移到裁剪之后绘制，
+        // 使其 CB 为祖先时不被本 overflow 误裁（CSS §11.1.1）。
+        if defer_abspos {
+            for child_idx in ordered_child_indices(&box_node.children, |child| child.is_absolute || child.is_fixed) {
+                let child = &box_node.children[child_idx];
+                self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
+            }
         }
 
         // clip-path: inset() — 实际裁剪（对元素及其所有子元素的图元应用矩形裁剪）

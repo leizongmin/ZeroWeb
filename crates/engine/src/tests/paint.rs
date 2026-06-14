@@ -1206,3 +1206,89 @@ fn test_paint_gradient_360deg() {
     let result = pipeline.render_html(html, css);
     assert!(result.timings.total_ms >= 0.0, "360deg gradient should not crash");
 }
+
+/// CSS §11.1.1：overflow 仅裁剪 CB 为本元素或其后代的 positioned 后代。
+/// 非 positioned 的 overflow 元素（如 `<div style="overflow:hidden">`），
+/// 其 abspos 后代的 CB 必为祖先，不应被该 overflow 裁剪。
+/// 结构：relative(CB, 100x100) > overflow:hidden(h=0, 非 positioned) > abspos(100x100 green)
+/// 旧实现把 abspos 当普通子元素绘制，被 h=0 的 overflow 裁剪到不可见。
+/// 修复：非 positioned overflow 元素的 abspos/fixed 子元素移到裁剪之后绘制。
+#[test]
+fn test_overflow_nonpositioned_does_not_clip_abspos_with_ancestor_cb() {
+    let mut doc = zero_dom::Document::new();
+    let relative = doc.create_element("div");
+    let overflow_el = doc.create_element("div");
+    let abspos = doc.create_element("div");
+
+    let abspos_box = LayoutBox {
+        node_id: Some(abspos),
+        x: 0.0,
+        y: 0.0,
+        width: 100.0,
+        height: 100.0,
+        content_width: 100.0,
+        content_height: 100.0,
+        is_absolute: true,
+        ..Default::default()
+    };
+    let overflow_box = LayoutBox {
+        node_id: Some(overflow_el),
+        x: 0.0,
+        y: 0.0,
+        width: 100.0,
+        height: 0.0,
+        content_width: 100.0,
+        content_height: 0.0,
+        overflow_x: OverflowClip::Hidden,
+        overflow_y: OverflowClip::Hidden,
+        children: vec![abspos_box],
+        ..Default::default()
+    };
+    let relative_box = LayoutBox {
+        node_id: Some(relative),
+        x: 0.0,
+        y: 0.0,
+        width: 100.0,
+        height: 100.0,
+        content_width: 100.0,
+        content_height: 100.0,
+        is_relative: true,
+        children: vec![overflow_box],
+        ..Default::default()
+    };
+    let root = LayoutBox {
+        width: 800.0,
+        height: 600.0,
+        content_width: 800.0,
+        content_height: 600.0,
+        children: vec![relative_box],
+        ..Default::default()
+    };
+
+    let mut styles = HashMap::new();
+    let mut abspos_style = ComputedStyle::default();
+    abspos_style.background_color = ColorValue::Rgba(0, 128, 0, 255); // green
+    styles.insert(abspos, abspos_style);
+
+    let mut painter = Painter::new();
+    painter.paint(&root, &styles, Some(&doc));
+
+    // abspos 绿色填充应存在且高度 ~100（未被 h=0 的非 positioned overflow 裁剪）
+    let green_heights: Vec<f32> = painter
+        .primitives()
+        .fills
+        .iter()
+        .filter(|f| f.color.r == 0 && f.color.g == 128 && f.color.b == 0)
+        .map(|f| f.rect.size.height)
+        .collect();
+    assert!(
+        !green_heights.is_empty(),
+        "abspos 绿色填充应存在（未被非 positioned overflow 裁剪掉）"
+    );
+    let max_h = green_heights.iter().cloned().fold(0.0f32, f32::max);
+    assert!(
+        max_h > 50.0,
+        "abspos 填充高度应 ~100（未被 overflow:h=0 裁剪），实际 max_h={}",
+        max_h
+    );
+}
