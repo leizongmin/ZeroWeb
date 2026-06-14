@@ -935,11 +935,29 @@ impl super::Painter {
                     let total_height: f32 = inline_ctx.lines.iter().map(|l| l.height).sum();
                     let target_h = total_height / mc.col_count as f32;
 
+                    // 预计算每列首行 y，用于把每列内容 rebase 到列内 y=0。
+                    // 旧实现 col_start_y = col_idx * target_h，当 target_h 不是行高整数倍时
+                    // （如 29 行 / 2 列 → target_h=14.5 行）首行不在 y=0，列内内容整体偏移。
+                    // 取每列实际首行 y 作 col_start_y 可消除该 fractional offset。
+                    let col_first_y: Vec<f32> = (0..mc.col_count)
+                        .map(|col_idx| {
+                            if target_h <= 0.0 {
+                                0.0
+                            } else {
+                                inline_ctx
+                                    .lines
+                                    .iter()
+                                    .find(|l| ((l.y / target_h).floor() as usize).min(mc.col_count - 1) == col_idx)
+                                    .map(|l| l.y)
+                                    .unwrap_or(0.0)
+                            }
+                        })
+                        .collect();
+
                     // 按列分组渲染：先收集每列的行索引，再按列渲染并裁剪
                     // 这样可以对每列独立裁剪，防止内容溢出到相邻列
-                    for col_idx in 0..mc.col_count {
+                    for (col_idx, &col_start_y) in col_first_y.iter().enumerate() {
                         let col_x_offset = col_idx as f32 * (mc.col_width + mc.gap);
-                        let col_start_y = col_idx as f32 * target_h;
 
                         // 裁剪区域：列宽 + 右半间隙，允许内容延伸到间隙
                         let clip_rect = Rect::new(
