@@ -2,7 +2,21 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 88.4% (433/490) R137（R137 +1 孤立 table-internal 匿名 table BFC；较 R134 的 432 基线 +1）
+**上游真实 reftest 通过率**: 88.6% (434/490) R138（R138 +1 display:table 收缩适应；较 R137 的 433 基线 +1）
+
+### R138 — display:table 容器收缩适应（+1，零回归）
+
+**变更**：`crates/layout-engine/src/table.rs` 的 `layout_table` 在 `build_grid` 产出空 grid（无正规表格子元素）时，调用新增的 `crate::table_shrink::shrink_table_to_block_content`；新模块 `table_shrink.rs` 含 `shrink_table_to_block_content` + `block_max_content_width`（+3 单测，拆分为独立文件以控制 table.rs 行数）。
+
+**根因**：`html-display-table` 的 `<html style="display:table">` 内含 `<body>`（display:Block）。CSS Tables §2.4 要求为非正规表格子元素生成匿名 row+cell，使 table 收缩到内容固有宽度。但 `build_grid` 的非 table-internal 分支跳过 block 子元素 → grid 为空 → `layout_table` 提前返回 → html 保持 taffy 的块级填充（800×600 填满视口，应收缩到 280×300 内容 = 300×320 含 border）。
+
+**修复**（近似匿名 row+cell，零坐标风险）：当 grid 为空但有 block 级子元素时，直接计算 block 子元素的 max-content 宽度（行内级子元素水平求和、block 级垂直取最大）与内容高度，收缩 table 及 block 子元素的盒尺寸。**不改变子元素 x/y 位置**——它们已由 taffy 正确定位到 table 内容盒起点（PIL 验证：子元素坐标系下 child.x=border_left，无需重定位）。尊重显式 width / min-width / max-width。
+
+**关键设计**：grid 为空才触发——所有有正规表格结构的 table（49 个已通过 css-tables 用例 + flex fixed-table）都有非空 grid，**此函数对它们零影响**（零回归的结构性保证）。`block_max_content_width` 对行内级子元素求和（200+80=280）而非取 max（旧 `compute_cell_intrinsic_width` 取 max=200 会少算），这是 body 含并列 inline-block 时得到正确 280 宽的关键。
+
+**零回归**：全量 reftest 433→**434/490**，set-diff 验证唯一翻转 = html-display-table FIXED（2.90%→0.00%）；css-tables 49→50/55，其余 5 个 css-tables 失败（baseline-vertical / min-max-size-table-content-box / subpixel-table-cell-width-001 / table-cell-overflow-auto-scrolled / table-cell-width-0）均为已知结构性失败、零翻转。make test **12172 passed / 0 failed**，clippy 零警告，fmt clean。
+
+**方法论**：先 TABLE_DIAG 插桩确认 html 子树结构（body 是 display:Block 直接子元素、其 inline-block 通过 paint-IFC 而非树渲染），再 PIL 扫 green x/y 确认唯一差异是 html 边框（内容 yellow 在 test/ref 已一致）。质疑了「必须走 build_grid 列宽机制」的前提——发现坐标系约定（child.x 相对父 border-box）使重定位 block 子元素高风险，转而用「只收缩尺寸、不重定位」的近似实现，把高风险的匿名盒生成降级为低风险的尺寸后处理。见 [[r117-table-auto-cell-column-width]]（table 收缩适应谱系）、[[r137-orphan-table-internal-bfc]]（前置 table BFC 工作）。
 
 ### R137 — 孤立 table-internal 匿名 table BFC（+1，零回归）
 
