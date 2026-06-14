@@ -1924,3 +1924,68 @@ fn test_split_top_level_function() {
         let _ = result; // 关键是不 panic
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 30. 声明值内的 () / [] 嵌套（CSS Syntax L3 component value 消费）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 声明值中匹配的函数括号不影响值收集（rgba/calc 等保持完整）。
+fn test_value_matched_function_kept_intact() {
+    let css = "div { color: rgba(0, 0, 0, 0.5); }";
+    let stylesheet = crate::Parser::parse_stylesheet(css);
+    assert_eq!(stylesheet.rules.len(), 1);
+    match &stylesheet.rules[0] {
+        Rule::Style(sr) => {
+            assert_eq!(sr.declarations.len(), 1);
+            assert_eq!(sr.declarations[0].property, "color");
+            assert_eq!(sr.declarations[0].value, "rgba(0, 0, 0, 0.5)");
+        }
+        _ => panic!("Expected Style rule"),
+    }
+}
+
+#[test]
+/// 未匹配的 `(` 使后续 `;` / `}` 属于该括号块，吞掉后续规则直到匹配的 `)`。
+/// 对应 WPT font-family-invalid-characters-002：`test(foo, Ahem` 的未匹配 `(` 应
+/// 吞掉 body 规则，使 body 不获得 background: red。
+fn test_value_unmatched_paren_absorbs_following_rules() {
+    let css = "#div2 { font-family: test(foo, Ahem; }\nbody { background: red;}) }\n#div3 { background: transparent; }";
+    let stylesheet = crate::Parser::parse_stylesheet(css);
+    // body 规则被 #div2 的未匹配 `(` 吞掉，只剩 2 条规则
+    assert_eq!(stylesheet.rules.len(), 2);
+    // 不应存在 background: red（body 的声明应被吞掉）
+    let has_red = stylesheet.rules.iter().any(|r| match r {
+        Rule::Style(sr) => sr
+            .declarations
+            .iter()
+            .any(|d| d.property == "background" && d.value.contains("red")),
+        _ => false,
+    });
+    assert!(!has_red, "body background:red must be absorbed by unmatched paren");
+    // #div3 的 background:transparent 应存在
+    let has_transparent = stylesheet.rules.iter().any(|r| match r {
+        Rule::Style(sr) => sr
+            .declarations
+            .iter()
+            .any(|d| d.property == "background" && d.value.contains("transparent")),
+        _ => false,
+    });
+    assert!(has_transparent, "#div3 background:transparent must survive");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 31. 未闭合括号 + EOF：OOM 回归防护
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+/// 未闭合的 `(` / `[` 后直接 EOF 必须终止解析，不能死循环。
+/// 历史 bug：group_depth>0 时 `Eof` 不 break，落入 `_ =>` arm；advance() 越界后
+/// peek() 永远返回 Eof，loop 无限 `format!`+`push_str`，String 无限增长，
+/// 曾反复触发 OOM kill（47GB RSS / 135GB VM），连带整垮 tmux session。
+/// 此测试在受限内存下复现：修复前会 abort/OOM，修复后立即返回。
+fn test_unclosed_group_at_eof_terminates_not_oom() {
+    let _ = crate::Parser::parse_stylesheet("a { b: c(d");
+    let _ = crate::Parser::parse_stylesheet("a { b: [d");
+    let _ = crate::Parser::parse_stylesheet("x { y: calc(");
+}
