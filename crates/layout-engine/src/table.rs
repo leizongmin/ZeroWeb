@@ -1091,6 +1091,15 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
     let mut orphan_first_child_idx = 0usize;
     let mut orphan_col_cursor = 0usize;
 
+    // 直接 table-cell 子元素（无 table-row 包裹）累加器。
+    // CSS §17.2.1：连续的直接 table-cell 子元素应合并到同一个匿名 table-row
+    // （水平排列为多列），而非每个 cell 各占一行。cell.child_index 指向
+    // table_box.children 中的索引，配合 is_anonymous=true 的匿名行使
+    // get_row_box 返回 table_box、get_cell_box 返回 table_box.children[idx]。
+    let mut direct_cells: Vec<TableCell> = Vec::new();
+    let mut direct_first_child_idx = 0usize;
+    let mut direct_col_cursor = 0usize;
+
     for (child_idx, child, child_display) in &children_with_priority {
         if is_orphan {
             match child_display {
@@ -1186,6 +1195,18 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                     continue;
                 }
             }
+        }
+
+        // 遇到非 table-cell 子元素时，flush 已累积的连续直接 table-cell
+        //（CSS §17.2.1：连续 cell 合并为一个匿名行）
+        if !direct_cells.is_empty() && !child_display.as_ref().is_some_and(is_table_cell) {
+            rows.push(TableRow {
+                child_index: direct_first_child_idx,
+                row_group_index: None,
+                cells: std::mem::take(&mut direct_cells),
+                is_anonymous: true,
+            });
+            direct_col_cursor = 0;
         }
 
         match child_display {
@@ -1335,24 +1356,24 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
                 }
             }
             Some(d) if is_table_cell(d) => {
-                // 直接子元素是 table-cell — 生成匿名行
+                // 直接子元素是 table-cell — 累加到当前匿名行（连续 cell 合并为一行）
                 let colspan = get_colspan(child, doc);
                 let rowspan = get_rowspan(child, doc);
-                let cell = TableCell {
+                let col_start = direct_col_cursor;
+                let col_end = col_start + colspan;
+                if direct_cells.is_empty() {
+                    direct_first_child_idx = *child_idx;
+                }
+                direct_cells.push(TableCell {
                     child_index: *child_idx,
                     colspan,
                     rowspan,
-                    col_start: 0,
-                    col_end: colspan,
+                    col_start,
+                    col_end,
                     parent_rg_idx: None,
-                };
-                max_cols = max_cols.max(colspan);
-                rows.push(TableRow {
-                    child_index: *child_idx, // 匿名行直接引用 cell 的索引
-                    row_group_index: None,
-                    cells: vec![cell],
-                    is_anonymous: false,
                 });
+                direct_col_cursor = col_end;
+                max_cols = max_cols.max(col_end);
             }
             _ => {
                 // 其他类型（caption、column 等）— 跳过
@@ -1365,6 +1386,16 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
             child_index: orphan_first_child_idx,
             row_group_index: None,
             cells: orphan_anonymous_cells,
+            is_anonymous: true,
+        });
+    }
+
+    // flush 连续的直接 table-cell 子元素为一个匿名行（CSS §17.2.1）
+    if !direct_cells.is_empty() {
+        rows.push(TableRow {
+            child_index: direct_first_child_idx,
+            row_group_index: None,
+            cells: std::mem::take(&mut direct_cells),
             is_anonymous: true,
         });
     }
@@ -1860,6 +1891,13 @@ fn position_cells(
     };
 
     let mut row_y = 0.0f32;
+    // 判断 table_box 本身是否为 display:table/inline-table（区分「直接 table-cell
+    // 子元素的匿名行」与「孤立行组的匿名行」：前者 row_box=table_box 不应覆盖
+    // table 几何，后者 row_box=table_box（行组）需要设置行组几何）。
+    let table_is_display_table = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable));
     // 跟踪每个行组的起始 row_y，用于计算行在行组内的相对位置
     // 避免 paint 链中行组位置 + 行位置导致的双重计数
     // 跟踪每个行组的起始 row_y，用于计算行在行组内的相对位置
@@ -1926,10 +1964,17 @@ fn position_cells(
             row_y
         };
 
-        row_box.x = row_rel_dx;
-        row_box.y = local_y + row_rel_dy;
-        row_box.width = table_content_width;
-        row_box.height = row_height;
+        // 直接 table-cell 子元素的匿名行：row_box 即 table_box 本身（display:table），
+        // 不覆盖 table 的 x/y（table 由正常流定位）和 width/height（由
+        // apply_table_size_constraints 设置）。孤立行组的匿名行（table_box 是行组）
+        // 仍需设置行组几何。
+        let is_direct_cell_row = row.is_anonymous && row.row_group_index.is_none() && table_is_display_table;
+        if !is_direct_cell_row {
+            row_box.x = row_rel_dx;
+            row_box.y = local_y + row_rel_dy;
+            row_box.width = table_content_width;
+            row_box.height = row_height;
+        }
 
         // 定位每个单元格
         let mut cell_x = 0.0f32;
@@ -2243,5 +2288,70 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
             row_group.width = new_w;
             row_group.height = new_h;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use zero_css_parser::values::DisplayValue;
+    use zero_dom::Document;
+    use zero_style_system::ComputedStyle;
+
+    /// CSS §17.2.1：display:table 的连续直接 table-cell 子元素应合并到同一个
+    /// 匿名 table-row（水平多列），而非每个 cell 各占一行。回归 subpixel-table-cell-width-001。
+    #[test]
+    fn test_build_grid_consecutive_direct_cells_share_one_row() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let table_id = doc.create_element("div");
+        let cell1_id = doc.create_element("div");
+        let cell2_id = doc.create_element("div");
+        let _ = doc.append_child(root, table_id);
+
+        let mut styles = HashMap::new();
+        let mut ts = ComputedStyle::default();
+        ts.display = DisplayValue::Table;
+        styles.insert(table_id, ts);
+        let mut cs = ComputedStyle::default();
+        cs.display = DisplayValue::TableCell;
+        styles.insert(cell1_id, cs.clone());
+        styles.insert(cell2_id, cs);
+
+        let table_box = LayoutBox {
+            node_id: Some(table_id),
+            children: vec![
+                LayoutBox {
+                    node_id: Some(cell1_id),
+                    ..Default::default()
+                },
+                LayoutBox {
+                    node_id: Some(cell2_id),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let grid = build_grid(&table_box, &doc, &styles);
+
+        // 2 个直接 cell → 1 个匿名行（2 列），而非 2 行各 1 列
+        assert_eq!(
+            grid.rows.len(),
+            1,
+            "consecutive direct cells should share one anonymous row"
+        );
+        assert_eq!(grid.col_count, 2, "two cells should produce 2 columns");
+        let row = &grid.rows[0];
+        assert!(row.is_anonymous, "the row wrapping direct cells should be anonymous");
+        assert_eq!(row.cells.len(), 2);
+        assert_eq!(row.cells[0].col_start, 0);
+        assert_eq!(row.cells[0].col_end, 1);
+        assert_eq!(row.cells[1].col_start, 1);
+        assert_eq!(row.cells[1].col_end, 2);
+        // cell.child_index 指向 table_box.children（配合 is_anonymous 导航）
+        assert_eq!(row.cells[0].child_index, 0);
+        assert_eq!(row.cells[1].child_index, 1);
     }
 }
