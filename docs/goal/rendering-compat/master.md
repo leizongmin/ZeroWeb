@@ -4,6 +4,40 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
 **上游真实 reftest 通过率**: 85.3% (418/490) R111（R111 +2 visibility:collapse flex 主尺寸归零；较 R104 的 412 基线 +6）
 
+### R115 — multicol-fill / fieldset 诊断（418/490 不变，纠正两条根因假设）
+
+**当前状态**：全量上游 reftest **418/490 (85.3%)** 不变（本轮为根因诊断，无代码行为变更）。内联 reftest 686/686 (100%)；clippy 零警告；零回归（工作区清洁）。
+
+本轮复核两条历史根因假设，均得出了更精确的结论，为后续结构性修复锁定了下一目标。
+
+#### multicol-fill-001 根因纠正（非 height_auto guard）
+
+历史假设（R94/b86a3e4）：`multicol-fill-001` 因 `painter/text.rs:701` 的 `height_auto` guard 而无法列分配，故失败。**本轮证伪**：
+
+1. instrumentation（`painter/text.rs` multicol_info 检测点 debug）实测 `multicol-fill-001` 的 `div#test`：`nchildren=5 block_children=0 height=Px(100.0) content_h=100.0`。即 `has_in_flow_children=false`，guard 之外的条件均满足。
+2. 移除 `height_auto` guard（`!has_in_flow_children && is_balance_mode`）后，列分配**确实触发**，但 `multicol-fill-001` 反而 8.24%→8.46%（更差）、`multicol-fill-000` 仍 13.89%。**列分配输出本身错误**。
+3. 同时该移除回归 5 个嵌套 multicol 用例：`multicol-breaking-001/002`、`multicol-breaking-nobackground-001/002/005`（418→413）。
+
+**结论**：`height_auto` guard 是正确的（保护嵌套 multicol），`multicol-fill-001` 的真正根因是**显式高度 balance 容器的列分配 paint 路径输出错误**（与 height_auto 无关），属 multicol 结构性主循环集成范畴（R113b）。
+
+#### nested-guard 验证（安全但无效）
+
+设计了更精确的 guard：`(height_auto || column_span_offsets.is_empty())`——仅当容器本身不是上层 multicol 的列片段（`column_span_offsets` 为空）时才分配。实测：避免 5 个嵌套回归（维持 418），但 `multicol-fill-001` 仍因分配输出错误而失败（8.46%）。**该 guard 安全可复用**，待分配输出 bug 修复后即可解锁 multicol-fill 系列。
+
+#### fieldset-as-item-overflow 根因（percentage max-height 解析缺口）
+
+`fieldset-as-item-overflow`（1.77%）instrumentation（`painter/mod.rs:541` clip 分支 debug，对 `overflow_y=Scroll` 元素）实测**两个** scroll 元素：
+
+- `ch=100 cw=100`——**test 侧的 fieldset**，taffy 已正确应用 CSS Flexbox §4.5（`overflow:scroll` flex item 自动最小尺寸为 0 → 可收缩到 100px）。converter 显式 `min_size=0` 修复是**冗余 no-op**（实测无变化，已回滚）。
+- `ch=200 cw=100`——**ref 侧的内层 div**（`<div overflow-y:scroll max-height:100%>`），其 `max-height:100%` **未解析**（应为父容器 100px，实际膨胀到内容 200px）。
+
+**结论**：test 侧正确，失败来自 ref 侧的 **percentage max-height 解析缺口**（DC-11 百分比高度的子问题）。taffy 未解析百分比 max-height；当前仅 abspos 有百分比重解析（`adjust_absolute_pct_to_viewport`）。低杠杆（仅 fieldset ref + 2 用例使用百分比高度），非本轮目标。
+
+#### 后续重点（为下轮锁定）
+
+1. **multicol-fill 显式高度列分配输出 bug**（已锁定为单一 bug，非 guard 问题）：下轮目标。需 dump 显式高度 balance 容器列分配后的实际 framebuffer，对比 ref 定位输出错误位置（疑似 line.y / col_start_y / clip_rect 在显式高度下的交互）。修复后配合已验证安全的 nested-guard，可解锁 multicol-fill-000/001（+2）。
+2. 三组结构性集群（multicol 主循环集成 / float 轴参数化 / flex baseline 合成）仍为多轮里程碑，非单轮可达成。
+
 ### R111 — visibility:collapse flex item 主尺寸归零（+2，零回归）
 
 **变更**：`crates/layout-engine/src/converter/mod.rs` 的 `computed_style_to_taffy` 中，当 `style.visibility == Collapse` 时将 `flex_basis` 强制为 `Length(0.0)`、`flex_grow`/`flex_shrink` 为 `0.0`。
