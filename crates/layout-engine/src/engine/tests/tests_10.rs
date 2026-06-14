@@ -1313,6 +1313,51 @@ fn test_container_margin_not_collapsed_with_first_float_child() {
     );
 }
 
+/// 测试 width:auto 的浮动元素 shrink-to-fit 到块级子元素宽度（CSS §10.3.5）。
+///
+/// taffy 把 float 当作普通 block（width:auto 填满可用宽度），但 CSS §10.3.5 规定
+/// 浮动非替换元素 width:auto 应收缩到内容（max-content）宽度。ZeroWeb 在 float 后
+/// 处理中对 width:auto 且有块级子元素的 float 收缩到子元素最大 border-box 宽度
+///（仅当窄于当前宽度）。纯文本 float 的 shrink-to-fit 需 IFC 测量，留作后续。
+#[test]
+fn test_float_width_auto_shrink_to_fit_block_child() {
+    let (mut doc, body) = make_doc_with_body();
+    let float_div = doc.create_element("div");
+    doc.append_child(body, float_div).unwrap();
+    let inner = doc.create_element("div");
+    doc.append_child(float_div, inner).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut body_style = ComputedStyle::default();
+    body_style.display = DisplayValue::Block;
+    styles.insert(body, body_style);
+
+    // float：width:auto（未显式设置 width，默认 Auto）
+    let mut fs = ComputedStyle::default();
+    fs.display = DisplayValue::Block;
+    fs.float = FloatValue::Left;
+    styles.insert(float_div, fs);
+
+    // 块级子元素：width:96px（1in）
+    let mut inner_style = ComputedStyle::default();
+    inner_style.display = DisplayValue::Block;
+    inner_style.width = LengthValue::Px(96.0);
+    inner_style.height = LengthValue::Px(96.0);
+    styles.insert(inner, inner_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let f_box = find_child_by_node_id(&result.root, float_div).expect("float found");
+
+    // float 应 shrink-to-fit 到子元素宽度 96，而非填满可用宽度（~784）。
+    assert!(
+        (f_box.width - 96.0).abs() < 1.0,
+        "width:auto 的 float 应 shrink-to-fit 到块级子元素宽度（96），实际 width={}",
+        f_box.width
+    );
+}
+
 /// 测试根元素 <html> 的 position:relative inset 被正确应用。
 ///
 /// taffy 0.7 不会对**根节点**应用 position:relative 的 top/left inset（根总在 0,0），

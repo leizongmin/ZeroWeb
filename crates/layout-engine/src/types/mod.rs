@@ -75,6 +75,12 @@ pub struct LayoutBox {
     /// 容器 margin 误折叠（CSS §8.3.1：float 的 margin 不折叠）。
     /// 非 Px 长度（Percent/Auto）或垂直书写模式下回退为 `margin_top`（不触发修正）。
     pub declared_margin_top: f32,
+    /// 计算样式的 width 是否为 auto（用于 float shrink-to-fit 修正）。
+    ///
+    /// taffy 把 float 当作普通 block，width:auto 的 float 会被填满可用宽度，
+    /// 但 CSS §10.3.5 规定浮动非替换元素 width:auto 应 shrink-to-fit 到内容。
+    /// 此标记让 float 后处理识别 width:auto 的 float 并收缩到内容宽度。
+    pub declared_width_auto: bool,
     /// 子布局盒。
     pub children: Vec<LayoutBox>,
     /// 是否为绝对定位。
@@ -278,6 +284,7 @@ impl Default for LayoutBox {
             margin_bottom: 0.0,
             margin_left: 0.0,
             declared_margin_top: 0.0,
+            declared_width_auto: false,
             children: Vec::new(),
             is_absolute: false,
             is_fixed: false,

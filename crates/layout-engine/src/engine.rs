@@ -572,6 +572,10 @@ impl LayoutEngine {
         } else {
             margin_top
         };
+        // CSS §10.3.5：width:auto 的浮动元素应 shrink-to-fit。记录 width:auto 标记
+        //（仅水平书写模式）供 float 后处理收缩宽度。
+        let declared_width_auto = matches!(parent_writing_mode, WritingModeValue::HorizontalTb)
+            && computed.is_some_and(|c| matches!(c.width, zero_css_parser::values::LengthValue::Auto));
 
         // 计算内容区域
         let content_x = border_left + padding_left;
@@ -616,6 +620,7 @@ impl LayoutEngine {
             margin_bottom,
             margin_left,
             declared_margin_top,
+            declared_width_auto,
             children: children_boxes,
             is_absolute,
             is_fixed,
@@ -2152,6 +2157,28 @@ fn adjust_float_positions_with_context(
         // 记录 float 元素的 taffy Y 位置和高度
         let child_outer_height = child.margin_top + child.height + child.margin_bottom;
         float_taffy_y.push((idx, child.y, child_outer_height));
+
+        // CSS §10.3.5：width:auto 的浮动非替换元素应 shrink-to-fit 到内容宽度。
+        // taffy 把 float 当作普通 block（填满可用宽度），此处对 width:auto 且有
+        // 块级子元素的 float 收缩到子元素最大 border-box 宽度（仅当窄于当前宽度）。
+        // 纯文本内容（无块级子元素）的 float 保持 taffy 宽度——其 shrink-to-fit 需
+        // IFC 测量，留作后续。仅当内容确实更窄时才收缩，对内容更宽或显式宽度的 float 为 no-op。
+        if child.declared_width_auto {
+            let content_max_w = child
+                .children
+                .iter()
+                .filter(|c| !c.is_absolute && !c.is_fixed && c.is_block_level)
+                .map(|c| c.width)
+                .fold(0.0f32, f32::max);
+            if content_max_w > 0.0 {
+                let shrink_border_box =
+                    content_max_w + child.padding_left + child.padding_right + child.border_left + child.border_right;
+                if shrink_border_box < child.width {
+                    child.width = shrink_border_box;
+                    child.content_width = content_max_w;
+                }
+            }
+        }
 
         // 计算浮动元素的总占用尺寸（含 margin）
         let child_outer_width = child.margin_left + child.width + child.margin_right;
