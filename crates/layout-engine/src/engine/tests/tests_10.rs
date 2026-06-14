@@ -942,6 +942,62 @@ fn test_border_collapse_table_wins() {
     }
 }
 
+/// 测试显式宽度的 table 中 auto 宽度单元格的列宽分布。
+///
+/// 对应 multicol-fill-001：`<table style="width:400px">` 含两个 auto 宽度单元格，
+/// 每列应约为表宽一半（200px），列宽总和不超过表宽。
+/// 旧实现把 auto 单元格宽度取 `intrinsic.max(cell_box.width)`，而 taffy 给单元格的
+/// block-level 宽度等于表全宽，导致每列都被撑到全宽、列总和溢出表宽。
+#[test]
+fn test_explicit_width_table_auto_cells_distribute() {
+    let html = r#"<html><body style="margin:0"><table style="width: 400px"><tr><td>A</td><td>B</td></tr></table></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // 找 table 盒（宽度应 == 400）
+    fn find_table(box_node: &crate::types::LayoutBox) -> Option<&crate::types::LayoutBox> {
+        if (box_node.width - 400.0).abs() < 1.0 && box_node.content_width > 300.0 {
+            return Some(box_node);
+        }
+        for child in &box_node.children {
+            if let Some(t) = find_table(child) {
+                return Some(t);
+            }
+        }
+        None
+    }
+    let table = find_table(&result.root).expect("table not found");
+    // 表宽应被显式 width:400px 约束
+    assert!(
+        (table.width - 400.0).abs() < 2.0,
+        "table width should be ~400 (explicit), got {}",
+        table.width
+    );
+
+    // 收集 table 子树中所有叶子盒的宽度（td：文本存于 inline_layout，td 本身是叶子）
+    let mut cell_widths: Vec<f32> = Vec::new();
+    fn walk(box_node: &crate::types::LayoutBox, out: &mut Vec<f32>) {
+        if box_node.children.is_empty() && box_node.width > 5.0 && box_node.width < 400.0 {
+            out.push(box_node.width);
+        }
+        for child in &box_node.children {
+            walk(child, out);
+        }
+    }
+    walk(table, &mut cell_widths);
+    // 两个单元格宽度总和不应超过表宽（~400），而非旧 bug 那样每列 = 表全宽（总和 ≈ 800）。
+    let total: f32 = cell_widths.iter().sum();
+    assert!(
+        total <= 410.0,
+        "cell widths total {} should not exceed table width ~400 (old bug gave ~800)",
+        total
+    );
+}
+
 /// 测试 table column 的 visibility:collapse。
 ///
 /// 对应 visibility-collapse-colspan-003：中间列被 `visibility:collapse` 折叠，

@@ -2,7 +2,20 @@
 
 **最后更新**: 2026-06-14
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 85.3% (418/490) R111（R111 +2 visibility:collapse flex 主尺寸归零；较 R104 的 412 基线 +6）
+**上游真实 reftest 通过率**: 85.5% (419/490) R117（R117 +1 table auto-cell 列宽分布修复 → multicol-fill-001 通过；较 R104 的 412 基线 +7）
+
+### R117 — table auto-cell 列宽分布修复（+1，multicol-fill-001 通过，零回归）
+
+**变更**：`crates/layout-engine/src/table.rs` 的 `compute_column_widths` 中 `cell_used_width` 闭包，auto 宽度单元格的列宽从 `intrinsic.max(cell_box.width)` 改为 `intrinsic`（与 table width:auto 路径一致），并移除随之 unused 的 `table_width_auto` 变量。
+
+**根因**：commit 24dd181 已为 `table width:auto` 修正了「taffy 给单元格的 block-level 宽度 = 父全宽，不应作为列宽下限」，但 `table` 显式宽度分支仍用 `intrinsic.max(cell_box.width)`。对显式宽度的 table（如 multicol-fill-001 的 `width:20em`=400px），每个 auto 单元格的 `cell_box.width` = 400（taffy block 全宽），`intrinsic.max(400)` = 400 → 每列 = 400 → 列总和 800 溢出表宽 400 → 第二列被推到 x=408（应为 208）。`compute_column_widths` 的 expand 分支（`total_width < available_width`）因此不触发，列宽停留在溢出值。
+
+**为何零回归**：`cell_box.width`（行/表全宽）从来不是合法的单元格内容宽度下限；显式宽度 table 的 auto 单元格理应取内容固有宽度，再由 expand 分支按比例分配到表宽。REFTEST_DUMP+PIL 验证：修复后两个 table 列各 ~200px（总和 ~400 = 表宽），与 multicol div 的列分布一致。
+
+**验证**：`multicol-fill-001`（8.24%→0.16% ✓ 通过）。`multicol-fill-000` 改善（13.89%→6.54%，仍未通过）。全量 418→**419/490 (85.5%)**，零 pass/fail 回归。`table-cell-width-0` 略变差（28.39%→30.03%，仍失败——其 width:0 单元格本就该取 intrinsic，但测试有其他未修子问题）。converter/engine 单元测试全绿，clippy 零警告。新增单元测试 `test_explicit_width_table_auto_cells_distribute`（验证显式宽度 table 的 auto 单元格列总和不超表宽）。
+
+**方法论**：R116b 锁定的「bug 5 = table width 被忽略」诊断**部分修正**——table 盒宽本身**正确**（content_width=400，taffy 尊重 width:20em），真正 bug 是**列宽分布**用了 cell_box 全宽作下限导致列溢出。REFTEST_DUMP+PIL 的列 x 位置扫描（col1 x=408 vs 预期 208）+ table.rs instrumentation（content_width=400 但 col_widths=[400,400]）精确定位了「盒宽正确、列宽溢出」的不一致。**table-width 调查的回报**：解锁 multicol-fill-001（+1），并为 css-tables 失败集群（subpixel/min-max/table-cell-width-0）的列宽分布问题提供统一根因视角。
+
 
 ### R115 — multicol-fill / fieldset 诊断（418/490 不变，纠正两条根因假设）
 

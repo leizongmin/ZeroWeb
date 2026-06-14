@@ -1531,14 +1531,6 @@ fn compute_column_widths(
         return Vec::new();
     }
 
-    // CSS 表格 auto layout：当 table 本身 width: auto 时（shrink-to-fit），
-    // taffy 的 block-level cell_box.width 是父容器宽度，无意义，不应作为列宽下限。
-    let table_width_auto = table_box
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .map(|s| matches!(s.width, zero_css_parser::values::LengthValue::Auto))
-        .unwrap_or(true);
-
     // 收集每列的最大宽度（两遍算法）
     // CSS Tables §17.5.2.2：列宽首先由非跨列单元格决定（含显式 width），
     // 跨列单元格只把宽度分配给尚未被非跨列单元格约束的列，
@@ -1560,12 +1552,12 @@ fn compute_column_widths(
             })
             .unwrap_or(true);
         let intrinsic = compute_cell_intrinsic_width(cell_box, styles, doc);
+        // auto 宽度的单元格：列宽只取内容固有宽度（intrinsic）。
+        // taffy 把单元格当 block，cell_box.width = 行/表全宽，不能作为列宽下限
+        //（否则每列都撑到全宽，列总和溢出表宽）。无论 table 本身 width 是否 auto，
+        // auto 单元格都不应用 cell_box.width 作为下限。
         let w = if css_width_auto || cell_box.width < 2.0 {
-            if table_width_auto {
-                intrinsic
-            } else {
-                intrinsic.max(cell_box.width)
-            }
+            intrinsic
         } else {
             cell_box.width
         };
