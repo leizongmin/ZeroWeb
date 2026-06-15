@@ -1,12 +1,37 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-15
+**最后更新**: 2026-06-16
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 88.6% (434/490) R163（**PNG 正确 RGBA 转换默认启用=DC-14 anti-false-pass**——修正所有非 RGBA PNG 的 alpha=0 退化（图像类 reftest 假通过根因），从 436→434 真实暴露 vrl-004(7.09%)/008(6.42%) 双阻塞=R114b x 轴 clearance；`ZERO_PNG_EXPAND=0` 逃生舱回退旧 436 baseline）。R161/R162 确证 bundle net -2 + skip-guard net 负（vrl-006 margin-collapse 需现 y 轴逻辑）。R158 large-font 死锁机制精确定位。draw_order 默认启用满足 DC-10。剩余 56 失败（全部结构性多轮：vrl-004/008 + large-font 5 + multicol 17 + flex 10 + 其余）。
+**上游真实 reftest 通过率**: 88.6% (434/490) R164（**434 即诚实 DC-14 基线，无需恢复 436**——R164 经验证否决 vrl-004/008 的 R114b x 轴 clearance 路径：实现正确 vertical-rl CSS（块流改 X 轴）使全部 4 个 vrl 用例**变差**（4/4 FAIL，002/006 从 PASS 翻 FAIL），因同源 REF 是**水平**渲染（绿在左侧），正确 vertical-rl 块起始在**右侧**，二者结构性不可对齐。chromium Oracle 证实同源 REF 比 chromium 更怪异：vrl-004 同源 7.09% vs chromium 仅 5.08%；font-051 同源 8.19% vs chromium 仅 1.62%——这些「同源失败」多为 REF 怪异产物，非真实渲染 bug）。R163 PNG 正确 RGBA 转换默认启用（DC-14 anti-false-pass，旧 436 含 garbled-image 假通过）。R158 large-font 死锁精确定位。draw_order 默认启用满足 DC-10。剩余 56 同源失败（结构性多轮 + REF 怪异产物）。
+
+
 
 **可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **434/490 (88.6%)**（R163 起默认正确图像渲染=DC-14 anti-false-pass，消除 PNG 退化假绿；旧 436 含 garbled-image 假通过）。⚠️ 当前 reference 仍由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错）；治理门禁见 **DC-14 真通过标准**（独立 chromium Oracle 交叉验证基建已就绪 72764a0）。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**。
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
+
+### R164 — 否决 vrl-004/008 R114b x 轴 clearance：正确 CSS 与同源水平 REF 结构性不可对齐（诊断，持平，已回退）
+
+**434/490 持平（无提交，实验代码已回退，工作区清洁）**。本轮以**实验证伪**了 R114b「对 vertical-rl/lr 容器实现 x 轴 float 定位 + clearance」这条接力路径——这是上轮 CONTINUE 指定的下一步，也是「PNG bundle 双阻塞」的理论解。
+
+**实验**：新增 `adjust_float_positions_vertical`（~130 行），对 vertical-rl/lr 容器把块流从 taffy 的 Y 轴重排到物理 X 轴（block-start=右/左），复制 float 定位 + clearance（正/负/零）+ margin 折叠语义；入口按 writing_mode 分流（水平路径字节不变）。在 `adjust_float_positions_with_context` 顶部加守卫调用。
+
+**结果（已回退）**：4 个 vrl clearance 用例**全部变差**——vrl-002 2.72→11.15%、vrl-004 7.09→14.05%、vrl-006 4.38→10.33%、vrl-008 6.42→16.83%（4/4 FAIL，含 002/006 从 PASS 翻 FAIL）。即 **实现正确 vertical-rl CSS 反而使全部用例失败更严重**。
+
+**根因（结构性，非实现 bug）**：这些 reftest 的 **reference 是水平渲染**（`<img>` 绿块在**左侧** X[8,87]）。正确 vertical-rl 的 block-start 在**右侧**（X=高值），块流右→左；当前「错误」的 Y 轴堆叠**恰好**把绿块留在左侧（X[8,87]），偶然对齐水平 REF 的左侧绿。改为正确 X 轴后绿块移到右侧（实测 X[672,791]），与水平 REF 左侧绿结构性背离。
+
+**chromium Oracle 印证同源 REF 比 chromium 更怪异**（DC-14 全量交叉验证 b18b7ae / `evidence/cross-validate-full-2026-06-16.txt`）：
+- vrl-004 同源 7.09% vs **chromium 仅 5.08%**——ZeroWeb 渲染离 chromium 更近，离自己的怪异 REF 更远。
+- vrl-008 同源 6.42% vs chromium 3.15%。
+- **font-051 同源 8.19% vs chromium 仅 1.62%**——ZeroWeb 渲染几乎完美匹配 chromium，但「失败」于自己的怪异同源 REF（large-font 100px 文本，REF 侧 16px 默认值退化）。
+
+**结论**：
+1. **434/490 即诚实 DC-14 基线，无需恢复 436**。436 含 garbled-image 假通过（R163 已证）；vrl-004/008 的「双阻塞」是同源 REF 怪异产物，非真实渲染 bug。修它们 = 匹配怪异 REF，非对齐标准。
+2. **不要再以「正确 vertical-rl CSS」重试 vrl-004/008**（本轮 + R133/R153/R154 共 4 轮一致证伪）。
+3. **同源失败用例中相当部分是 REF 怪异产物**（vrl-004/008、font-051 等），同源通过率不是可信指标（DC-14）。后续应以 **chromium Oracle 交叉验证** 识别真实 bug（POLLUTED=同源通过但 chromium 不一致=隐藏真实 bug）。
+4. **真实最大杠杆**（chromium Oracle 视角）：fontdue vs chromium 字体度量噪声是 46.5% 污染主因（b18b7ae 注）；次为结构性 multicol/table/flex-baseline。均为多轮大改。
+
+**方法论**：对「已知诊断」做独立实验复核——R133/R153/R154 推断「正确 vertical-rl CSS 应改善 vrl-004/008」，但均未实际实现验证；本轮实际实现 ~130 行后实测全负，证伪推断。**架构性推断需实验落地，不能据推断结论接力多轮**。
 
 ### R163 — PNG 正确 RGBA 转换默认启用（DC-14 anti-false-pass，436→434 真实）（已提交）
 
