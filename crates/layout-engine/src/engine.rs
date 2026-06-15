@@ -1211,6 +1211,22 @@ fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, styles: &Hash
                     child.x = fragment.x;
                     child.y = fragment.y;
                 }
+
+                // CSS §10.3.7 + writing-modes §7.1：vertical-rl 下 abspos 的物理
+                // height（= inline 轴跨度）在 height:auto 时应 shrink-to-fit 到内容
+                // inline 跨度，而非填满 CB cross-axis。taffy 把 auto height 当
+                // cross-axis stretch（给 320=CB 高），fragment.width 是 IFC 计算的
+                // 内容 inline 跨度（垂直模式下 = 单行/字形的视觉竖向高度）。
+                // 仅当 style.height 为 auto 时收缩（尊重显式 height）。
+                let height_auto = style.is_some_and(|s| matches!(s.height, zero_css_parser::values::LengthValue::Auto));
+                if height_auto {
+                    let content_h = fragment.width.max(fragment.font_size);
+                    if (child.height - content_h).abs() > 0.01 && content_h > 0.0 {
+                        child.height = content_h;
+                        // content_height 同步（无 border/padding 时 = height）
+                        child.content_height = child.content_height.min(content_h).max(0.0);
+                    }
+                }
             }
         }
     }
@@ -3130,6 +3146,48 @@ mod writing_mode_tests {
         );
         // B（无 float）位置不受影响。
         assert!(b.x < 300.0, "flex item B position sane (b.x={})", b.x);
+    }
+
+    /// 回归：vertical-rl 容器内 abspos 子元素 height:auto 应 shrink-to-fit 到内容
+    /// inline 跨度（CSS §10.3.7 + writing-modes §7.1），而非填满 CB cross-axis。
+    ///
+    /// 复刻 abs-pos-non-replaced-vrl-006 结构。taffy 把 abspos auto height 当
+    /// cross-axis stretch（给 320=CB 高），fix_vertical_mode_abs_pos 应收缩到
+    /// 内容（单 80px 字形的 inline 跨度）。
+    #[test]
+    fn test_abspos_vertical_rl_height_auto_shrink_to_fit() {
+        let html = r#"<html style="writing-mode:vertical-rl"><body>
+          <div id="cb" style="background:red; direction:ltr; font:80px/1 monospace; height:320px; width:320px; position:relative">12<span id="s" style="position:absolute; top:auto; bottom:auto; height:auto; color:green">X</span></div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let zero_dom::NodeKind::Element(elem) = &n.kind
+                && elem.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let s = find("s", &doc, &result.root).expect("span #s");
+        assert!(s.is_absolute, "span should be absolute");
+        // 旧 bug：height=320（填满 CB cross-axis）。修复后应 shrink 到内容（80px 字形）。
+        assert!(
+            s.height < 200.0,
+            "abspos height:auto in vertical-rl should shrink-to-fit to content, not fill CB (got h={})",
+            s.height
+        );
+        assert!(
+            s.height >= 79.0 && s.height <= 81.0,
+            "expected content height ~80px (single 80px glyph), got h={}",
+            s.height
+        );
     }
 }
 
