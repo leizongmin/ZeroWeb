@@ -481,6 +481,9 @@ impl RenderPrimitives {
             filters,
             blend_modes: self.blend_modes.clone(), // blend_modes 保留
             transforms,
+            // cull 重建后 typed Vec 索引已变（剔除丢弃元素），draw_order 失效故清空。
+            // draw_order 仅在原始 paint 路径有意义；cull 是优化旁路。
+            draw_order: Vec::new(),
         };
 
         let culled_count = original_len - result.len();
