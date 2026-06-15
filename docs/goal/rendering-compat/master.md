@@ -2,9 +2,24 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 89.0% (436/490) R145（+1 零回归：css-flexbox-test1 FIXED——CSS Flexbox §4 flex/grid/table 容器的流内子元素 float 应计算为 none，旧浮动后处理按 child.float 把带 float:right 的 flex item 误推到容器右缘；adjust_float_positions_with_context 入口对 is_layout_container 父级直接子元素归零 float。纠正 R144「R109 6 轮不可解」误判——R109 真正入口是浮动后处理而非 paint 路径）。剩余 54 失败。
+**上游真实 reftest 通过率**: 89.0% (436/490) R151（abspos vertical-rl height:auto 收缩修复，净中性零回归；PNG bundle 组件 C' 就位——PNG+abspos 实测 net -5 从 -9 改善，恢复 4 个 abs-pos-non-replaced-vrl 真通过；剩余阻塞=clearance 精度集群 5 个）。draw_order 基础设施(R149)已就位。剩余 54 失败（单会话 clean win 六重确证穷尽）。
 
-### R150 — abspos vertical-rl §10.3.7 height:auto 静态位置 bug 精确定位（诊断，持平，已回退探针，工作区清洁）
+### R151 — abspos vertical-rl height:auto 收缩修复（净中性零回归，已提交，PNG bundle 组件 C' 就位）
+
+**变更（已提交，零回归）**：`fix_vertical_mode_abs_pos`（engine.rs:1205-1224 内）在 `all_inset_auto` 分支新增 height 收缩——对 vertical-rl 容器内 height:auto 的 abspos 子元素，把 `child.height` 从 taffy 给的 cross-axis stretch（320=CB 高）收缩到内容 inline 跨度（`fragment.width.max(fragment.font_size)`，垂直 IFC 下 fragment.width=单行/字形视觉竖向高度）。+1 单测 `test_abspos_vertical_rl_height_auto_shrink_to_fit`（断言 h≈80px 非 320）。
+
+**IFC fragment 语义定位**（探针 ABSDBG）：vertical-rl abspos span fragment=`x=240 y=80 w=80 h=44 fs=80`，child=`x=0 y=0 w=80 h=320`。fragment.width=80 是 inline 跨度（单 80px 字形），fragment.height=44 是水平模式 line-height 残留（垂直模式不用）。故 height 收缩读 fragment.width（非 fragment.height）。
+
+**零回归验证**：全量 reftest **436/490 持平**，set-diff 零翻转。4 个 abs-pos-non-replaced-vrl（006/012/122/130）退化参考测试从 **4.50%→1.83%** 改善（绿 span 现定位正确，仍因退化 ref 非零但远低于阈）。make test **12178 passed/0 failed**（+1 新单测），clippy 零警告，fmt clean，smoke 通过。
+
+**PNG bundle 实测（关键进展）**：临时叠加 PNG EXPAND 修复实测——
+- PNG-only（R149）= 427/490（net -9）
+- **PNG + abspos-vrl 修复 = 431/490（net -5）**——abspos-vrl 修复恢复 4 个 abs-pos-non-replaced-vrl 回归（从假通过→真通过）
+- 剩余 net -5 = clearance 集群（clear-clearance-calculation-001/002/003 [1.25/1.67/1.62%] + clearance-calculations-vrl-004/008 [7.09/6.42%]）修前假通过、修后暴露真实 clearance 像素误差
+
+**结论**：abspos-vrl 修复是 PNG bundle 组件 C' 的**已验证零回归基础**。bundle 推进到 net -5（从 -9），剩余阻塞=clearance 精度（独立可修，CSS2 §8.3.1 + §9.5.2）。下轮修 clearance 后，PNG EXPAND + draw_order + abspos-vrl + clearance 四组件应 net≥0，且 12 个 IMG-REF 退化用例中部分可能真实通过（需实测）。
+
+
 
 **背景**：R149 PIL 分析（PNG fix + draw_order）显示 abs-pos-non-replaced-vrl-006 test 绿 span=0（ref 6400），推断 abspos vertical-rl 静态位置 bug。本轮写探针单测精确定位。
 
