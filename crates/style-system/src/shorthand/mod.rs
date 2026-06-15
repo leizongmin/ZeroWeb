@@ -483,7 +483,8 @@ struct BorderShorthand {
 /// 识别 width（长度值）、style（关键字）和 color 部分，
 /// 未指定的部分使用初始值。
 fn parse_border_shorthand(value: &str) -> BorderShorthand {
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    let toks = zero_css_parser::values::split_paren_aware_tokens(value);
+    let parts: Vec<&str> = toks.iter().map(|s| s.as_str()).collect();
     let mut width = "medium".to_string();
     let mut style = "none".to_string();
     let mut color = "currentcolor".to_string();
@@ -1160,7 +1161,8 @@ fn expand_outline(value: &str, important: bool, specificity: (u32, u32, u32)) ->
         ];
     }
 
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    let toks = zero_css_parser::values::split_paren_aware_tokens(value);
+    let parts: Vec<&str> = toks.iter().map(|s| s.as_str()).collect();
     let mut width = "0px";
     let mut style = "none";
     let mut color = "currentcolor";
@@ -1246,7 +1248,8 @@ fn expand_column_rule(value: &str, important: bool, specificity: (u32, u32, u32)
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
 
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    let toks = zero_css_parser::values::split_paren_aware_tokens(value);
+    let parts: Vec<&str> = toks.iter().map(|s| s.as_str()).collect();
     let mut width = "medium".to_string();
     let mut style = "none".to_string();
     let mut color = "currentcolor".to_string();
@@ -1620,7 +1623,8 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
         ];
     }
 
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    let toks = zero_css_parser::values::split_paren_aware_tokens(value);
+    let parts: Vec<&str> = toks.iter().map(|s| s.as_str()).collect();
     let mut line = "none".to_string();
     let mut dec_style = "solid".to_string();
     let mut color = "currentcolor".to_string();
