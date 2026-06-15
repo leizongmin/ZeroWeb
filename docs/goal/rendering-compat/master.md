@@ -10,6 +10,18 @@
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
+### R171 — border/outline/column-rule/text-decor 简写 rgba 带空格丢颜色（同 R170 class，真实修复，零回归，已提交）
+
+R170 修复 box-shadow/text-shadow 后，排查同类 `split_whitespace()+looks_like_color` 模式，发现 4 个简写解析器有相同 bug：`parse_border_shorthand` / `expand_outline` / `expand_column_rule` / `expand_text_decoration`（style-system shorthand/mod.rs）。它们用 `split_whitespace()` 拆碎标准格式 `rgba(255, 0, 0, 0.3)`（逗号后空格）→ `looks_like_color` 命中碎片或颜色退化 currentcolor（→黑）。
+
+**修复**：把 R170 的 `split_shadow_tokens` 重命名为通用 `split_paren_aware_tokens` 并 `pub`（css-parser parse_transform.rs），4 个简写解析器改用之（括号感知，保留 rgba()/hsl()/var() 为单 token）。
+
+**验证**：border/outline 带空格 rgba 探针（was 黑 911/804）→ 正确半透明红/绿；make test 12185/0（+1 border rgba 测试）；reftest 434/490 持平零回归；clippy/fmt clean。
+
+**意义**：rgba-带空格丢颜色/alpha 的 bug class 现已**全量修复**（`looks_like_color` 模式 6 个解析器：box-shadow/text-shadow/border/outline/column-rule/text-decoration）。影响所有用标准带空格 rgba 的真实页面。welcome.html 不受 border 修复影响（用 box-shadow 非 border 简写），其剩余 50.45% 差距为 cards 区域 Phase A（独立后续）。
+
+**方法论**：R170 用 SHDWDBG 定位 box-shadow 后，本轮按「同 class 模式 grep」(looks_like_color) 一次性找出全部 4 个同源 bug——per-feature grep（区别 bbox 扫描/BISECT）是 cluster-finder，R170+R171 是其产出。
+
 ### R170 — DC-13 box-shadow/text-shadow rgba 带空格丢失 alpha 致实心黑（真实修复，零回归，已提交）
 
 DC-13 welcome.html smoke 定位到产品可见渲染 bug：`parse_box_shadow`/`parse_text_shadow`（parse_transform.rs）用 `split_whitespace()` 分割值，把标准格式 `rgba(0, 0, 0, 0.08)`（逗号后有空格）拆成碎片，颜色解析失败回退默认实心黑（alpha=255）。
