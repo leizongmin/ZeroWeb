@@ -17,9 +17,9 @@ R165 之后继续按 chromium Oracle 真实缺口推进，逐个甄别几个 sel
 - **table_grid_size_col_colspan (chr 52%)**：根因 = build_grid 的 col_count 仅从单元格 colspan 计算，**忽略 `<col>` 元素**（3 个 col 算 1 列）；且 fixed-layout auto-width 错误扩展到容器。实现修复（col_count 计 col + 收集 col_widths + 去除 fixed 扩展）后**内部全部正确**（col_widths=[50,50,50]、table 宽 150、cell w=50），但**渲染仍全宽/重叠**——直接 `<td>`+`<col>`+匿名行+fixed 结构有多个叠加问题（含表格垂直堆叠），非单点修复，已回退。
 - **flexbox-collapsed-item-horiz-001 (chr 20.5%)**：flex visibility:collapse 内部（R111 territory），多 cell 差异，flex 内部复杂。
 - **multicol-breaking-005 (self 21.7%/chr 22.3%)**：嵌套 multicol 平衡（外 3 列 × 内 2 列 balance），最深水区。
-- **float-006 (self 7.5%/chr 8.4%，已定位=paint 层)**：零高度空 float 测试。**探针证实布局盒完全正确**——绿色 abspos `x=0 w=224 h=160`、红色 float `x=288 w=224 h=160` 均正确计算，但**两者都不被绘制**（渲染全空白，chromium 显示绿矩形）。根因在 paint 层：0 高度 `position:relative` 容器（所有子元素脱离流→容器 height:0）的 abspos/float 子元素未被绘制。**painter/mod.rs 无明显 height-skip**，需追 positioned-element 绘制路径。这是已定位的下一步（paint 层，非 layout）。
+- **float-006 (self 7.5%/chr 8.4%，已精确定位=需 2 处协同修复)**：零高度空 float 测试。**实测（修正 R166 初判）**：绿色 abspos `x=0 w=224` **渲染正确**（X[8..231] 与 chromium 一致），红色 float 在 `x=288`（X[296..519] 可见，应被绿覆盖）。需两处协同修复：(1) **layout**：零高度（margin-box）空 float 不应占据水平空间（engine.rs adjust_float_positions_with_context `left_used_width += child_outer_width` 须加 `child_outer_height > 0` 守卫，使红色 float 回到 x=0）；(2) **paint**：z-index:auto 的 abspos 须画在 float 之上（CSS App. E step 6，painter/mod.rs 现按 step 3 画 positioned 即在 float 之前，仅做 (1) 会使红覆盖绿）。(1) 单独 net 中性（红移到 x=0 但被红覆盖），需 (1)+(2) 同修。painter 注释称 step-3 排序是为修嵌套 positioned 堆叠，改 (2) 有回归风险。非单点。
 
-**结论**：除 R165（margin:auto，单点）外，本轮再甄别的真 bug 候选全部结构性/多子系统。最高杠杆的已定位 paint 层缺口 = float-006（0 高度定位容器的子元素不绘制，可能影响多个 abspos/float-in-empty-container 用例）。
+**结论**：除 R165（margin:auto，单点）外，本轮再甄别的真 bug 候选全部结构性/多子系统/需多修复协同。
 
 ### R165 — margin:auto 水平居中修复（html-display-table chromium 33%→2.63%，真实修复，零回归，已提交）
 
