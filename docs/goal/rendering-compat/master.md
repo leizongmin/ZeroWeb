@@ -10,6 +10,18 @@
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
+### R169 — Phase A large-font 死锁实证复核（放宽 R84 多行守卫 net -1，已回退，无提交）
+
+按 Phase A 推进方向（解锁 large-font 集群 ~5 自源失败：font-051/ifc-008/009/011/empty-inline-002），本轮**实证复核**了 R125 记录的死锁——放宽 `compute_final_inline_layouts` 的 R84 单行守卫（engine.rs:1690），允许「多行纯 Ahem」存储 `inline_layout`（保留纯 Ahem 过滤），测全量。
+
+**实测结果（net -1，已回退）**：434→**433/490**。
+- **large-font 集群仍全失败**：font-051 8.19%（持平）、ifc-008 8.18→4.17%（改善但未过阈）、ifc-009 4.17%、ifc-011 11.24%（持平）、empty-inline-002 29.32%（持平）。**仅存 inline_layout 不够**——这些用例还需 `text_node_font_sizes` 存储（store_font_sizes_from_ifc，remeasure 路径），而该存储正是 R125 三路 net-negative 的回归源。
+- **multicol 40→39（-1）**：multicol-fill-auto-001 回归（与 R125 一致——多行 inline_layout 存储改变其 paint use_stored 渲染）。
+
+**结论**：R125/R158 记录的 Phase A large-font 死锁经本轮独立实验**再次确证**——R84 多行守卫是 load-bearing（放宽即 net -1 且不解锁集群）。large-font 修复需同时 (a) 存 inline_layout（多行）+ (b) 存 text_node_font_sizes（real font_size），而 (b) 回归 multicol-fill-auto（依赖 16px 错误默认值才通过）。**不要再单独放宽 R84 守卫或单点补存 font_size 重试**（R125 三路 + R169 共 4 轮证否）。真正解锁需 Phase A paint IFC 三路径（compute_final/remeasure/paint）font_size 解析统一 + multicol-fill-auto 在真实 font_size 下也正确（R125 前置）——属多轮架构。
+
+**方法论**：对「已知死锁」做独立实验复核（放宽守卫→全量测→net 效果），用实测确认而非仅据记忆接力。本轮 net -1 即刻回退，434/490 持平。印证上轮结论：剩余 16 真 bug 候选 + 56 自源失败全部 Phase A 结构性 / 基础设施 / 特性，单会话零回归不可推进。
+
 ### R168 — table height-as-minimum 修复（table-grid-item-dynamic-004 chromium 11%→2.98%，真实修复，零回归，已提交）
 
 d16bb8e 方向（优化 chromium Oracle 一致率）下第二个真实修复。修复 table 的 `height` 属性被完全忽略的真实 bug —— 被「同源假通过」掩盖的缺口（table-grid-item-dynamic-004 同源 0.00% 通过，但 chromium 差 11.12%；18 真 bug 候选之一）。
