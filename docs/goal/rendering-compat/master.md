@@ -4,6 +4,8 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
 **上游真实 reftest 通过率**: 89.0% (436/490) R155（**draw_order 默认启用，满足 DC-10 CSS painting order**——净中性零回归，upstream 436/smoke 686/make test 12178 全绿）。draw_order 此前 env-gated，本轮设为生产默认渲染路径（`ZERO_DRAW_ORDER=0` 逃生舱回退类型分桶）。PNG bundle 4 组件 3 已就位，全量实测 net -2，唯一剩余阻塞=vertical-rl clearance vrl-004/008。剩余 54 失败（单会话 clean win 七重确证穷尽）。
 
+**归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
+
 ### R155 — draw_order 默认启用（满足 DC-10，净中性零回归，已提交）
 
 **变更（已提交，零回归）**：`render_full_scene`（cpu/mod.rs:70-82）把 draw_order 从 env-gated（`ZERO_DRAW_ORDER=1` 启用）改为**生产默认**——draw_order 非空时默认按插入序渲染（满足 CSS painting order），`ZERO_DRAW_ORDER=0` 作为逃生舱回退类型分桶（旧行为，诊断/回归对比）。draw_order 为空（旧代码路径未填充）自动回退。
