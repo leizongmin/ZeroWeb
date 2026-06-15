@@ -26,6 +26,8 @@ d16bb8e 方向（优化 chromium Oracle 一致率）下第二个真实修复。�
 - make test **12182 passed / 0 failed**；clippy 零警告；fmt clean。
 - +2 单测：`test_table_height_as_minimum_px`（engine.compute 验 Px 分支）+ `test_table_percentage_height_resolves_as_minimum`（直接调用 clamp 验百分比分支——engine.compute 路径中 table 匿名包装盒打断直接父子 CB 传递致百分比不触发，故直接测函数；百分比端到端正确性由 004 reftest 覆盖）。
 
+**chromium Oracle 全量交叉验证（DC-14 交替推进 step 2）**：重跑 `cross-validate.py`（`evidence/cross-validate-full-2026-06-16-r168.txt`）+ `analyze-pollution.py`（`evidence/analyze-pollution-2026-06-16-r168.txt`）。污染总数 153→154（基本持平，污染率 46.5%→46.7%——R168 把 004 的 chr 差从 11% 降到 2.98% 但仍 >1% oracle 阈，故污染计数未翻转）。但**真 bug 候选（>5% 布局目录）从 18 降到 16**：R165 移除 html-display-table（33%→<5%），**R168 移除 table-grid-item-dynamic-004（11.12%→2.98%）**，并**把 003 从 29.18% 降到 23.79%**（height 修复部分生效，剩余=宽度 grid-stretch）。印证 R165+R168 是 18 候选中仅有的可单点修复真实缺口，剩余 16 项确认结构性/基础设施/特性（grid-stretch / flex baseline·collapse / multicol-abspos / border-collapse×vrl / dialog·iframe 基础设施 / font-fallback 特性）。
+
 **剩余**：
 - **003（29%）同源通过但 chromium 仍高**——差异主因是 table 作为 grid item 的**宽度 shrink-to-fit vs grid-stretch**（ZW table 327 shrink-to-fit，chromium 800 拉伸到 grid 轨道），与高度修复独立；003 仅 height 修复后 table 仍 327 宽，与 chromium 800 宽差距主导。需 grid-item-table 拉伸单独处理（grid item width:auto 应拉伸到 track，但 table shrink-to-fit 覆盖——类似 R138 但需 grid 感知）。
 - **004 剩余 2.98%** = chromium intrinsic 行高 ~122 vs ZW ~100（cell padding/border-spacing 细节），独立小差异。
