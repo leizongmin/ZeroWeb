@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<base target="_blank">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<link rel="shortcut icon" href="/favicon.ico" type="image/x-icon" >
+<link rel="manifest" href="/manifest.json">
+<title>在 Fedora 上为 MacBook 实现 macOS 风格的三指拖拽 - 早起搬砖 morning.work</title>
+
+
+<style>
+body {
+  -webkit-text-size-adjust: none;
+  -webkit-tap-highlight-color: rgba(200,0,0,0.4);
+}
+body {
+  width: 94%;
+  max-width: 800px;
+  margin: auto;
+  color: rgba(0, 0, 0, 0.9);
+  word-break: break-word;
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: subpixel-antialiased;
+  font-family: Exo,'-apple-system','Open Sans',HelveticaNeue-Light,'Helvetica Neue Light','Helvetica Neue','Hiragino Sans GB','Microsoft YaHei',Helvetica,Arial,sans-serif;
+  font-weight: 350;
+}
+@media (min-width: 900px) {
+  html {
+    background-color: #f9f7f4;
+  }
+  body {
+    /* background-color: #fff; */
+    padding: 0 50px;
+    padding-bottom: 1px;
+  }
+}
+#ds-thread {
+  margin-top: 20px;
+}
+a {
+  color: #607cd2;
+  text-decoration: none;
+}
+a:hover {
+  color: #4c68bb;
+}
+#title {
+  margin-bottom: 0;
+  line-height: 1.2em;
+  margin-top: 2em;
+  font-size: 1.8em;
+  font-weight: 500;
+}
+#date {
+  font-size: 0.875em;
+  margin-top: 1em;
+}
+#remaining-time {
+  font-size: 0.875em;
+  margin-top: 0.5em;
+}
+#nav {
+  border-bottom: 2px solid #d8dce0;
+  font-size: 18px;
+}
+#license, #about {
+  font-size: 14px;
+  padding: 16px;
+}
+#license {
+  font-weight: bold;
+  color: #222;
+}
+.article {
+  min-height: 200px;
+  margin-top: 4em;
+  margin-bottom: 4em;
+}
+.author {
+  display: flex;
+}
+.author .avatar img {
+  width: 100%;
+}
+.author .avatar {
+  flex: 1;
+  min-width: 80px;
+}
+.author .description {
+  flex: 4;
+  margin-left: 1em;
+}
+.qrcode {
+  padding: 5%;
+  font-size: 14px;
+}
+.qrcode img {
+  max-width: 100%;
+}
+#footer {
+  display: flex;
+  background-color: #f9f7f4;
+  margin-bottom: 4em;
+}
+#footer-left {
+  flex: 3;
+}
+#footer-right {
+  flex: 1;
+}
+.item-tag {
+  background-color: #607cd2;
+  color: #fff;
+  border-radius: 3px;
+  padding: 0 6px;
+  font-weight: bold;
+}
+</style>
+<link rel="stylesheet" href="github.css" />
+<!-- <link rel="stylesheet" href="fira_code.css" /> -->
+<link rel="stylesheet" href="JetBrainsMono.css" />
+<link rel="stylesheet" href="article.css" />
+<style>
+.article code, .article pre code {
+  font-family: JetBrainsMono, "Courier New", Courier, monospace;
+  font-size: 14px;
+  line-height: 1.5em;
+  font-feature-settings: "calt" 1;
+  text-rendering: optimizeLegibility;
+  white-space: pre-wrap;
+  word-break: break-all;
+  -webkit-font-smoothing: auto;
+  font-weight: normal;
+}
+</style>
+
+</head>
+<body>
+
+  <nav id="nav">
+    <a href="/" target="_self">早起搬砖 morning.work</a>
+<a href="http://morning.work/rss.xml" target="_blank" title="订阅 早起搬砖 morning.work">
+  <img style="vertical-align:middle;" width="20" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAUzSURBVHjavFdbbFRVFF3nPjoz7dTWTittaW0jUDRAUqaNojyqREnEQKgfUj9MqqAmhqRt/OCD4CuY+Kckoh+aiGKC+gMJbdHoRysJ8dkhhmJLNdDKtJU+6GMK87j3Hs85d2Z6HzNtMYWb3Dn3NWftvfba+5xNYDl+e6Fkj6yqb/oDRbWq14vlPBLRKCITkxf0ROLt+hNjp1PPSRK4kA3vF1dXNRcWlyA2OQU9eos9opAkAiKxD+XkKO6t15aRWO7J/MgmAZU8MEgexgZHMX518Dh72sYMmVKShnxWuWHdHtxKIDIYTgMuDzgfmSOIQkYMpdUF8OY92Hytt4/jvkg47czzU16iQovM3QFwmNck+Yyduu7D6NA0Z6JR4THntFs9V4tWQg6Ui3s6MwKDncsFTnXKLJhDSeUK3AgPtyhccDzmVs999buRt/1Vm4i0od+hX7+MRG87jPGB/w1u8FPj9xEw7McVrnYuOCvtpjTth3J/nTg99c8LRhKhr6D3dTB5R24bXFwbMXBsyZzeoXaycEpJ95TB09AGX/NpqLVNtw8urnVzLvHjFNxiFqRy2OOHuqUVnue+ACkoWzo4O6lGzTmuHq6nPvY2m9rVqjrIK2rMEKxqyG5NPAKt+wjo0LklgfNxJkZMA3KJvqRUk3z5UFY3QH14P0h+WUY79HPvgv7VuSg4ZRGY1YgZgqXmORccF17sy2ehnf9AeO085K2HQFbtXBScj0LcpgF2cN+WV+DZ/LJQu6gD4R7oV7pBJwbSgtMvfiPoVp56DySwxm7EtkMs1WdAB7qzggsDJKQYsHucSkOudrkiCPWR/fA2nYCn8SNIK4NptSMyAu3sAdDRkIsJdfth0LzSrODUoPNZ4KI9SxJI5UHk7D4GdQfz2us31c7CoHMjRkKuDPHseCMrONVhNcDJwMJpKFVvg9L4OaTiNWm1x789KCqkrXhVBiEz0WYCT2nAzQAD1/vaETv1GrRfP4Vx5cfMNcDPwvP0h0DhanPym7OIf/+O67vcJ1/PCJ4KgdzaUP6Wz+dU+5yIL6fV+PsHGAOdwlPpvvUOyeeAVGyCdqkDNB6DPjsBSrnndfOGevOh3RhGItxvA+fX1CtbGFhgYUFkFMZPR6F1HnClHq8HyubWtJexX06CRmdt33hrd7nA7SFY4qoGpnYuOKcRykPPgDCBcsHx9Iv+fNL2PueBehCWUfYQIIMGLOCcOmXDXsh1+yCt35tUPfvzGFuSvzvoinXOxqa02qOhM6733nVP2MAdaej2XN11DPKjLZCD+yBvahGCo7JfTKAN9UD7s8Oe9zUNIhz8fWI8DG2k38WCFdxugANcXrvTVd1IEbuv3Jour7Hzn7jLMBNfKs7R3i67gRVrbeCOEDhinmWhAatsqdquM2XzHZINhK2cqTjHr/XZdVJUbgN3MWAVXKbSyg9jesRW2xP9di+lwrL5ojM3m2H/kG9hwcIA37c71W6wJdW2J2S5nrjYbq/t1AHAhJsKQeyfPvf6IMJgghPJhFZ4x0KlfLFvt22du45Au/A1SOlGc0P672XXwhLtOcM0kTTEMMd0qkVmMNXxMd/tsedUjInr4SQDgOfeXMSiN0FCL5WHah4L1qqYXPJOJlttd+a5M+YpcG5poLYKQ5f+6JJ4r8bbJYP47hq4r7QAs9PjYNhHJd4o8l5taiwuOpa7AS4XKqI/5NjJbTnaWK92nLdLuhQAJayRNMiygXPBeQN+Qbvu0zDc3y+aUzhbkGR73sI7ljvUnndx2q3t+X8CDAD66FtrIL864AAAAABJRU5ErkJggg==">
+</a>
+  </nav>
+
+
+  <h1 id="title">在 Fedora 上为 MacBook 实现 macOS 风格的三指拖拽</h1>
+
+  <div id="date">
+              <a href="http://ucdok.com" title="
+        Web开发者、
+        &lt;a href=&quot;http://nodejs.ucdok.com/&quot;&gt;《Node.js实战》&lt;/a&gt;作者之一&lt;br&gt;
+        个人主页: &lt;a href=&quot;http://ucdok.com&quot;&gt;http://ucdok.com&lt;/a&gt;&lt;br&gt;
+        GitHub: &lt;a href=&quot;https://github.com/leizongmin&quot;&gt;https://github.com/leizongmin&lt;/a&gt;&lt;br&gt;
+      " xmlns:cc="http://creativecommons.org/ns#" property="cc:attributionName" rel="cc:attributionURL">老雷</a>      
+    创作于 2026-02-22            </div>
+  <div id="remaining-time">
+              <span class="item-tag">Fedora</span>
+        <span class="item-tag">MacBook</span>
+        <span class="item-tag">Linux</span>
+        全文约 3109 字，预计阅读时间为 8 分钟
+  </div>
+
+  <article class="article">
+    <h2 id="-">前言</h2>
+<p>从 macOS 切换到 Linux 的 MacBook 用户，最想念的功能之一就是<strong>三指拖拽</strong>——用三根手指轻放在触控板上就能拖动窗口或选中文字，无需按下触控板。这种操作方式一旦习惯了就再也回不去了，就像用惯了 Vim 的人再让他用记事本写代码一样痛苦。</p>
+<p>本文介绍如何在 Fedora 上实现这个功能，让 MacBook 在 Linux 下也能拥有近乎原生的触控板体验。</p>
+<h2 id="-">问题分析</h2>
+<h3 id="-">为什么直接配置不工作？</h3>
+<p>libinput 是现代 Linux 发行版的触控板驱动，它支持 <code>clickfinger</code> 模式：</p>
+<table>
+<thead>
+<tr>
+<th>手指数量</th>
+<th>clickfinger 模式行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 指</td>
+<td>左键</td>
+</tr>
+<tr>
+<td>2 指</td>
+<td>右键</td>
+</tr>
+<tr>
+<td>3 指</td>
+<td><strong>中键</strong>（不是左键！）</td>
+</tr>
+</tbody>
+</table>
+<p>问题就在这里：libinput 的 clickfinger 模式<strong>不支持将三指映射为左键</strong>，所以无法通过简单的配置实现三指拖拽。</p>
+<h3 id="libinput-">libinput 已内置三指拖拽功能</h3>
+<p>好消息是，libinput 从某个版本开始已经内置了三指拖拽功能（<code>LIBINPUT_CONFIG_3FG_DRAG</code>），只是<strong>默认被禁用</strong>。我们需要编译 libinput 并启用这个功能。</p>
+<h2 id="-">解决方案</h2>
+<h3 id="-">环境信息</h3>
+<ul>
+<li><strong>系统</strong>：Fedora 43</li>
+<li><strong>桌面</strong>：KDE Plasma（X11 会话）</li>
+<li><strong>设备</strong>：MacBook Air 2015 (bcm5974 触控板)</li>
+<li><strong>libinput 版本</strong>：1.30.1</li>
+</ul>
+<h3 id="-1-x11-kde-wayland-">步骤 1：安装 X11 会话支持（如果使用 KDE Wayland）</h3>
+<p>Fedora 43 的 KDE 默认只有 Wayland 会话。X11 配置在 Wayland 下不生效，建议切换到 X11：</p>
+<pre><code class="lang-bash">sudo dnf install -y plasma-workspace-x11
+</code></pre>
+<p>安装后，在登录界面选择 <strong>“Plasma (X11)”</strong> 会话。</p>
+<h3 id="-2-">步骤 2：安装编译依赖</h3>
+<pre><code class="lang-bash">sudo dnf install -y --skip-unavailable \
+    git meson gcc gcc-c++ \
+    libevdev-devel libwacom-devel mtdev-devel \
+    systemd-devel check libudev-devel \
+    python3-libevdev python3-pytest gtk4-devel
+</code></pre>
+<h3 id="-3-libinput-">步骤 3：下载 libinput 源码</h3>
+<pre><code class="lang-bash">mkdir -p ~/libinput-build &amp;&amp; <span class="hljs-built_in">cd</span> ~/libinput-build
+
+<span class="hljs-comment"># 下载当前系统对应版本</span>
+wget https://gitlab.freedesktop.org/libinput/libinput/-/archive/1.30.1/libinput-1.30.1.tar.gz
+tar xzf libinput-1.30.1.tar.gz
+<span class="hljs-built_in">cd</span> libinput-1.30.1
+</code></pre>
+<p>说明：</p>
+<ul>
+<li>建议下载与系统已安装版本一致的源码，避免兼容性问题</li>
+<li>可以通过 <code>libinput --version</code> 查看当前版本</li>
+</ul>
+<h3 id="-4-">步骤 4：修改源码启用三指拖拽</h3>
+<p>编辑 <code>src/evdev-mt-touchpad-gestures.c</code>，找到 <code>tp_3fg_drag_default</code> 函数：</p>
+<pre><code class="lang-c"><span class="hljs-comment">// 修改前</span>
+<span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">enum</span> libinput_config_3fg_drag_state
+<span class="hljs-title">tp_3fg_drag_default</span><span class="hljs-params">(struct tp_dispatch *tp)</span>
+</span>{
+    <span class="hljs-keyword">return</span> LIBINPUT_CONFIG_3FG_DRAG_DISABLED;
+}
+
+<span class="hljs-comment">// 修改后</span>
+<span class="hljs-function"><span class="hljs-keyword">static</span> <span class="hljs-keyword">enum</span> libinput_config_3fg_drag_state
+<span class="hljs-title">tp_3fg_drag_default</span><span class="hljs-params">(struct tp_dispatch *tp)</span>
+</span>{
+    <span class="hljs-keyword">return</span> LIBINPUT_CONFIG_3FG_DRAG_ENABLED_3FG;
+}
+</code></pre>
+<p>可以用 sed 一键修改：</p>
+<pre><code class="lang-bash">sed -i <span class="hljs-string">'s/LIBINPUT_CONFIG_3FG_DRAG_DISABLED/LIBINPUT_CONFIG_3FG_DRAG_ENABLED_3FG/'</span> \
+    src/evdev-mt-touchpad-gestures.c
+</code></pre>
+<p>说明：</p>
+<ul>
+<li>只需修改一行代码，将 <code>DISABLED</code> 改为 <code>ENABLED_3FG</code></li>
+<li>libinput 早就实现了这个功能，只是默认关闭了而已</li>
+</ul>
+<h3 id="-5-">步骤 5：编译安装</h3>
+<pre><code class="lang-bash"><span class="hljs-comment"># 配置</span>
+meson setup build --prefix=/usr -Ddocumentation=<span class="hljs-literal">false</span> -Ddebug-gui=<span class="hljs-literal">false</span>
+
+<span class="hljs-comment"># 编译</span>
+meson compile -C build
+
+<span class="hljs-comment"># 备份原版本</span>
+sudo cp /usr/lib64/libinput.so.10.13.0 /usr/lib64/libinput.so.10.13.0.bak
+
+<span class="hljs-comment"># 安装</span>
+sudo meson install -C build
+
+<span class="hljs-comment"># 更新动态链接库缓存</span>
+sudo ldconfig
+</code></pre>
+<p>说明：</p>
+<ul>
+<li>备份原版本是个好习惯，万一出问题可以快速恢复</li>
+<li>如果不确定原库文件路径，可以用 <code>ls /usr/lib64/libinput.so*</code> 查看</li>
+</ul>
+<h3 id="-6-">步骤 6：验证安装</h3>
+<pre><code class="lang-bash">/usr/bin/libinput --version
+<span class="hljs-comment"># 输出: 1.30.1</span>
+</code></pre>
+<h3 id="-7-x11-">步骤 7：配置 X11 触控板选项（可选）</h3>
+<p>创建 <code>/etc/X11/xorg.conf.d/30-touchpad.conf</code>：</p>
+<pre><code class="lang-conf">Section &quot;InputClass&quot;
+    Identifier &quot;touchpad&quot;
+    Driver &quot;libinput&quot;
+    MatchIsTouchpad &quot;on&quot;
+
+    Option &quot;Tapping&quot; &quot;on&quot;              # 开启轻触点击
+    Option &quot;TappingDrag&quot; &quot;false&quot;       # 禁用单指拖动（避免误触）
+    Option &quot;ClickMethod&quot; &quot;clickfinger&quot; # 使用手指数量区分按键
+    Option &quot;NaturalScrolling&quot; &quot;on&quot;     # 自然滚动（可选）
+EndSection
+</code></pre>
+<p>说明：</p>
+<ul>
+<li><code>TappingDrag</code> 设为 <code>false</code> 是为了避免单指拖动与三指拖拽冲突</li>
+<li><code>NaturalScrolling</code> 是 macOS 风格的滚动方向，按需开启</li>
+</ul>
+<h3 id="-8-">步骤 8：重新登录</h3>
+<p>注销并重新登录 X11 会话，三指拖拽功能即可生效。</p>
+<h2 id="-">验证效果</h2>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单指轻触</td>
+<td>左键点击</td>
+</tr>
+<tr>
+<td>三指轻放并移动</td>
+<td>拖拽窗口/选中文字</td>
+</tr>
+</tbody>
+</table>
+<p>现在可以试着用三根手指拖动窗口，感受一下久违的 macOS 体验吧。</p>
+<h2 id="-">故障排除</h2>
+<h3 id="-">功能不生效</h3>
+<p>1、确认使用的是 X11 会话而非 Wayland：</p>
+<pre><code class="lang-bash"><span class="hljs-built_in">echo</span> <span class="hljs-variable">$XDG_SESSION_TYPE</span>  <span class="hljs-comment"># 应输出 x11</span>
+</code></pre>
+<p>2、检查 libinput 库是否正确安装：</p>
+<pre><code class="lang-bash">ls -la /usr/lib64/libinput.so*
+</code></pre>
+<h3 id="-">恢复原版本</h3>
+<p>如果出现问题，可以恢复系统原版 libinput：</p>
+<pre><code class="lang-bash">sudo cp /usr/lib64/libinput.so.10.13.0.bak /usr/lib64/libinput.so.10.13.0
+sudo ldconfig
+</code></pre>
+<h3 id="-">系统更新后失效</h3>
+<p>Fedora 更新 libinput 包时会覆盖补丁版本。如果三指拖拽失效，需要重新编译。建议保留编译目录以便快速重新安装：</p>
+<pre><code class="lang-bash"><span class="hljs-built_in">cd</span> ~/libinput-build/libinput-1.30.1
+sudo meson install -C build
+sudo ldconfig
+</code></pre>
+<h2 id="-">总结</h2>
+<p>虽然 Linux 下没有原生支持 macOS 风格的三指拖拽，但 libinput 已经内置了相关代码，只需<strong>修改一行代码重新编译</strong>即可启用。这个小小的改动能显著提升 MacBook 在 Linux 下的触控板体验。</p>
+<p>唯一的缺点是系统更新 libinput 后需要重新安装，不过考虑到这个功能带来的便利，这点麻烦还是值得的。毕竟，能用三指拖拽的日子，才是好日子。</p>
+<h2 id="-">相关链接</h2>
+<ul>
+<li><a href="https://wayland.freedesktop.org/libinput/doc/latest/">libinput 官方文档</a></li>
+<li><a href="https://aur.archlinux.org/packages/libinput-three-finger-drag">AUR libinput-three-finger-drag</a></li>
+<li><a href="https://emacs-china.org/t/macos/25544">Emacs China 讨论</a></li>
+</ul>
+
+  </article>
+
+
+  <!-- Chinese Version -->
+  <div id="footer">
+    <div id="footer-left">
+      <div id="about">
+        <h3>关于作者</h3>
+        <div class="author">
+          <div class="avatar"><img src="images/logo_lei.jpg"></div>
+          <div class="description">          <a href="http://ucdok.com" title="
+        Web开发者、
+        &lt;a href=&quot;http://nodejs.ucdok.com/&quot;&gt;《Node.js实战》&lt;/a&gt;作者之一&lt;br&gt;
+        个人主页: &lt;a href=&quot;http://ucdok.com&quot;&gt;http://ucdok.com&lt;/a&gt;&lt;br&gt;
+        GitHub: &lt;a href=&quot;https://github.com/leizongmin&quot;&gt;https://github.com/leizongmin&lt;/a&gt;&lt;br&gt;
+      " xmlns:cc="http://creativecommons.org/ns#" property="cc:attributionName" rel="cc:attributionURL">老雷</a>      ：
+        Web开发者、
+        <a href="http://nodejs.ucdok.com/">《Node.js实战》</a>作者之一<br>
+        个人主页: <a href="http://ucdok.com">http://ucdok.com</a><br>
+        GitHub: <a href="https://github.com/leizongmin">https://github.com/leizongmin</a><br>
+      </div>
+        </div>
+      </div>
+      <div id="license">
+        <a rel="license" href="https://creativecommons.org/licenses/by-nc-nd/4.0/deed.zh"><img alt="知识共享许可协议" style="border-width:0" src="images/cc_unavailable.png" /></a><br />本作品由           <a href="http://ucdok.com" title="
+        Web开发者、
+        &lt;a href=&quot;http://nodejs.ucdok.com/&quot;&gt;《Node.js实战》&lt;/a&gt;作者之一&lt;br&gt;
+        个人主页: &lt;a href=&quot;http://ucdok.com&quot;&gt;http://ucdok.com&lt;/a&gt;&lt;br&gt;
+        GitHub: &lt;a href=&quot;https://github.com/leizongmin&quot;&gt;https://github.com/leizongmin&lt;/a&gt;&lt;br&gt;
+      " xmlns:cc="http://creativecommons.org/ns#" property="cc:attributionName" rel="cc:attributionURL">老雷</a>       创作，采用 <a rel="license" href="https://creativecommons.org/licenses/by-nc-nd/4.0/deed.zh">知识共享署名-非商业性使用-禁止演绎 4.0 国际许可协议</a> 进行许可。
+      </div>
+    </div>
+    <div id="footer-right">
+<div class="qrcode">
+  <img src="images/qrcode_for_gh_af8a156b9151_258.jpg">
+  <div><a href="#">使用微信扫描二维码关注公众号【早起搬砖】，获取最新文章更新</a></div>
+</div>    </div>
+  </div>
+
+
+</body>
+</html>
+
+
+<!-- Google Analytics gtag.js -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-26599868-2"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'UA-26599868-2');
+</script>
+<!-- Google Adsense 占位广告 -->
+<!-- <script data-ad-client="ca-pub-6064551105641679" async
+  src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script> -->
+<div id="disqus_thread"></div>
+<script>
+  window.disqus_config = function () {
+    this.page.url = 'http://morning.work/page/2026-02/fedora-macbook-three-finger-drag.html';
+    this.page.identifier = '/2026-02/fedora-macbook-three-finger-drag.html';
+  };
+  function loadDisqus() {
+    var d = document, s = d.createElement('script');
+    s.src = 'https://leizongmin-writings.disqus.com/embed.js';
+    s.async = true;
+    s.setAttribute('data-timestamp', +new Date());
+    s.onerror = function() {
+      console.warn('Disqus failed to load');
+    };
+    (d.head || d.body).appendChild(s);
+  }
+  // 延迟加载 Disqus，避免阻塞首屏渲染
+  if (window.requestIdleCallback) {
+    window.requestIdleCallback(loadDisqus);
+  } else {
+    setTimeout(loadDisqus, 1000);
+  }
+</script>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
