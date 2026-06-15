@@ -10,6 +10,18 @@
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
+### R172 — border-radius 背景在 draw_order 模式被丢弃（paint_background 绕过 add_rounded_rect，真实修复，零回归，已提交）
+
+DC-13 welcome.html cards 区域 50.45% 差距的**第二大主因**（仅次于 R170 box-shadow 实心黑）。`paint_background`（painter/mod.rs:1101）对圆角背景直接 `primitives.rounded_rects.push()`，**绕过 `add_rounded_rect`**（后者才记录 `DrawOp::RoundedRect`）。draw_order 是 R155 起的默认渲染路径，无 DrawOp 的 rounded_rect 被丢弃 → **任何带 border-radius 的元素背景都不绘制**（透显底层背景）。welcome.html 卡片（border-radius:10px）白底消失。
+
+**根因定位过程**：DC-13 cards 区域 y240-480 85-95% diff → no-box-shadow bisect 仍透显 body-bg → 逐变量探针（grid/padding/radius）定位 **border-radius 触发** → block+grid 均复用 → 查 paint_background 圆角路径 → 发现直接 push 绕过 add_rounded_rect（draw_order bypass）。
+
+**修复**：改用 `primitives.add_rounded_rect()` 记录 DrawOp。全仓库仅此一处绕过 add_* 的 push（grep 确认无其他）。
+
+**验证**：border-radius 元素背景探针（was body-bg 透显）→ 正确白底；**welcome.html 差距 50.45%→26.15%**（DC-13 重大进展，本 session 从 51.59%→26.15%）；reftest 434/490 持平零回归（test+ref 同病同愈）；make test 12186/0（+1 rounded_rect draw_order 测试）；clippy/fmt clean。
+
+**意义**：(1) draw_order（R155 基建）的 bypass 类 bug——任何图元若不通过 add_* 方法记录 DrawOp 就会在默认渲染路径丢失；(2) border-radius 是真实页面极常见属性，此 bug 影响面巨大；(3) DC-13 smoke 轴线连续产出 R170/R171/R172 三个真实修复，welcome.html 差距减半——证明产品静态 smoke 能系统捕获 reftest 平台期外的 bug。
+
 ### R171 — border/outline/column-rule/text-decor 简写 rgba 带空格丢颜色（同 R170 class，真实修复，零回归，已提交）
 
 R170 修复 box-shadow/text-shadow 后，排查同类 `split_whitespace()+looks_like_color` 模式，发现 4 个简写解析器有相同 bug：`parse_border_shorthand` / `expand_outline` / `expand_column_rule` / `expand_text_decoration`（style-system shorthand/mod.rs）。它们用 `split_whitespace()` 拆碎标准格式 `rgba(255, 0, 0, 0.3)`（逗号后空格）→ `looks_like_color` 命中碎片或颜色退化 currentcolor（→黑）。

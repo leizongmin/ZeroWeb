@@ -1,7 +1,7 @@
 # DC-13 产品静态页面视觉 smoke — welcome.html 基线证据
 
 **日期**: 2026-06-16
-**状态**: ✅ box-shadow/text-shadow rgba 带空格丢失 alpha 致实心黑——**已修复（R170, 9ade334）**。welcome.html 纯黑 132,793→0。剩余 ~50% 差距为其他渲染差异（cards 区域，Phase A inline-block/IFC ownership）。
+**状态**: ✅ welcome.html 差距 **51.59%→26.15%**（本 session 减半）。三个真实修复：(1) R170 box-shadow/text-shadow rgba 带空格丢 alpha 致实心黑（132k 纯黑→0）；(2) R171 border/outline/column-rule/text-decor 简写同 class；(3) **R172 border-radius 背景在 draw_order 模式被丢弃**（paint_background 绕过 add_rounded_rect，卡片白底消失——50.45%→26.15% 主因）。剩余 26.15% 为其他渲染差异（待继续定位）。
 **渲染模式**: ZeroWeb CPU 软件渲染（`render_full_scene`，800×600）vs headless Chromium（800×600）
 **fixture**: `apps/browser/assets/welcome.html`（自包含：仅 favicon data-URI + anchor href，无外链 CSS/图片）
 
