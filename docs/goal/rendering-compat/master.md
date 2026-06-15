@@ -10,6 +10,18 @@
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
+### R174 — box-shadow blur σ=radius/2 修复（CSS 高斯映射修正，welcome 28.72%→28.08%，零回归，已提交）
+
+DC-13 welcome.html 剩余 ~28% 差距逐带/逐像素定位（throwaway 渲染测试 + layout snapshot + PIL）。**关键结论：welcome.html 剩余差距 96.5% 为 fontdue vs Skia 字体噪声（非 CSS bug）**——色差直方图双峰 delta≈±10（66k 像素，glyph 边缘 AA 差异）+ card-desc 文本换行行数差异致 chromium 卡片高 ~13px。结构布局经 layout snapshot 确认正确（gradient bar y=36、hero/卡片几何、卡片白底（R172 后正确）均正确）。唯一可定位的真实渲染 bug = **box-shadow blur 高斯 σ 映射错误**。
+
+**根因**：CSS 规范 `box-shadow: ox oy blur_radius` 的 blur_radius 对应**高斯标准差 σ = blur_radius / 2**（Chromium 实现）。ZeroWeb 旧实现 `radius = blur_r.ceil()` 直接当三遍 box-blur 半宽 → blur_r=3 时 σ≈3.46（**偏大 2.3 倍**），阴影扩散过远。实测 welcome `.card`（`box-shadow: 0 1px 3px rgba(0,0,0,0.08)`）：chromium 阴影基本不可见（alpha 0.08 经 3px 模糊 <1/255，全白），ZeroWeb 在卡片下方渲染 **12px 可见阴影带**（lum 232-243）。
+
+**修复**（render-foundation/src/cpu/shadow.rs）：`sigma = blur_r*0.5`；连续半宽 `d=(sqrt(4σ²+1)-1)/2`；按 d 小数部分在 3 遍间分配 floor/ceil 半宽（m 遍 ceil、3-m 遍 floor，`m=round((d-r_lo)*3)`）。blur_r=3→σ=1.41（规范 1.5），blur_r=6→σ=3.16（规范 3.0）。
+
+**验证**：welcome.html diff 137,874→134,796（**28.72%→28.08%**，阴影带收紧）；reftest **434/490 持平零回归**（test+ref 同源，blur 修复两侧同变仍匹配；inline 686/686）；make test 全绿；clippy/fmt clean。
+
+**教训**：(1) welcome.html 已无 clean structural CSS bug——剩余差距需升级字体光栅器（fontdue→更接近 Skia）才能显著下降，非单会话范围；**DC-13 杠杆转移至 morning.work（外链 CSS + CJK 真实页）/ wintertc.org（图片子资源）等能暴露未实现 P1 缺口的 fixture**。(2) 像素扫描易误判「垂直偏移」——扫描得「gradient bar y=72」实为蓝色 title 文本，须 layout snapshot 交叉验证。(3) CSS σ=radius/2 同适用于 `filter:blur()`（effects.rs:36-41 仍用 `radius.ceil()` 单遍，σ 偏大）——未修（无测试驱动，遵循精准修改）。(4) 同源 reftest 对保真类修复天然零回归，可用同源 490 验证安全性。
+
 ### R173 — 加载 Noto Sans CJK 字体 + 回退链（CJK 字符可渲染，DC-13 能力，零回归，已提交）
 
 DC-13 welcome.html cards 区域剩余 diff 定位到 **CJK 字符完全不渲染**（探针「中文」dark=0）。根因：`create_font_loader`（reftest.rs:1114）只加载 DejaVu/Ahem，无 CJK 字体；主字体缺 CJK 字形时无回退 → 中/日/韩文本全空白。系统有 `/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc`（chromium 用它渲染 CJK）。
