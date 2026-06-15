@@ -69,6 +69,20 @@ fn test_apply_width_height() {
 }
 
 #[test]
+fn test_apply_inline_block_size_logical() {
+    // CSS Logical Properties：inline-size / block-size 在水平书写模式下等价于
+    // width / height（垂直模式的轴交换由 converter 的 swap_writing_mode_axes 负责）。
+    // 旧实现完全忽略这两个属性（未知属性），导致 firefox-bug-1881495 等用例失效。
+    let (ok, s) = apply("inline-size", "1em");
+    assert!(ok);
+    assert!(matches!(s.width, zero_css_parser::values::LengthValue::Em(1.0)));
+
+    let (ok, s) = apply("block-size", "2em");
+    assert!(ok);
+    assert!(matches!(s.height, zero_css_parser::values::LengthValue::Em(2.0)));
+}
+
+#[test]
 fn test_apply_min_max_dimensions() {
     let (ok, _) = apply("min-width", "10px");
     assert!(ok);

@@ -118,6 +118,22 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        // 逻辑尺寸属性 inline-size / block-size（CSS Logical Properties §1）。
+        // 这里映射到水平书写模式的物理等价（inline-size→width、block-size→height）；
+        // 垂直书写模式的轴交换由 converter 的 swap_writing_mode_axes 负责
+        //（width↔height 互换），故无需在此感知 writing-mode。
+        "inline-size" => {
+            if let Some(v) = parse_length_fn(value) {
+                style.width = v;
+                return true;
+            }
+        }
+        "block-size" => {
+            if let Some(v) = parse_length_fn(value) {
+                style.height = v;
+                return true;
+            }
+        }
         "min-width" => {
             if let Some(v) = parse_length_fn(value) {
                 style.min_width = v;
