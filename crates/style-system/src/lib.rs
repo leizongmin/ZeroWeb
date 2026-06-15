@@ -134,18 +134,20 @@ impl StyleSystem {
 
         // 从文档根开始 DFS
         let root = doc.root();
-        self.compute_styles_recursive(doc, root, stylesheets, None, &mut styles, quirks_mode);
+        self.compute_styles_recursive(doc, root, stylesheets, None, &HashMap::new(), &mut styles, quirks_mode);
 
         styles
     }
 
     /// 递归计算样式。
+    #[allow(clippy::too_many_arguments)]
     fn compute_styles_recursive(
         &mut self,
         doc: &Document,
         node: NodeId,
         stylesheets: &[Stylesheet],
         parent_style: Option<&ComputedStyle>,
+        parent_custom: &HashMap<String, String>,
         styles: &mut HashMap<NodeId, ComputedStyle>,
         quirks_mode: QuirksMode,
     ) {
@@ -159,7 +161,7 @@ impl StyleSystem {
 
         // 只为元素节点计算样式
         if is_element {
-            let computed = self.compute_element_style_internal(doc, node, stylesheets, parent_style, quirks_mode);
+            let computed = self.compute_element_style_internal(doc, node, stylesheets, parent_style, parent_custom, quirks_mode);
             styles.insert(node, computed);
         }
 
@@ -176,8 +178,17 @@ impl StyleSystem {
 
         let parent_ref = current_style.as_ref().or(parent_style);
 
+        // 子元素继承当前元素已解析的自定义属性（自定义属性是继承属性）。
+        // 非元素节点不计算样式，其子节点沿用 parent_custom（隔代继承到最近元素祖先）。
+        // 注意：必须在进入子树前一次性捕获，因为递归会覆写 self.custom_properties。
+        let current_custom = if is_element {
+            self.custom_properties.clone()
+        } else {
+            parent_custom.clone()
+        };
+
         for child in children {
-            self.compute_styles_recursive(doc, child, stylesheets, parent_ref, styles, quirks_mode);
+            self.compute_styles_recursive(doc, child, stylesheets, parent_ref, &current_custom, styles, quirks_mode);
         }
     }
 
@@ -191,7 +202,7 @@ impl StyleSystem {
         stylesheets: &[Stylesheet],
         parent_style: Option<&ComputedStyle>,
     ) -> ComputedStyle {
-        self.compute_element_style_internal(doc, element, stylesheets, parent_style, doc.quirks_mode())
+        self.compute_element_style_internal(doc, element, stylesheets, parent_style, &HashMap::new(), doc.quirks_mode())
     }
 
     /// 内部实现：计算单个元素的样式。
@@ -201,6 +212,7 @@ impl StyleSystem {
         element: NodeId,
         stylesheets: &[Stylesheet],
         parent_style: Option<&ComputedStyle>,
+        parent_custom: &HashMap<String, String>,
         quirks_mode: QuirksMode,
     ) -> ComputedStyle {
         // 0. 构建媒体查询上下文
@@ -361,8 +373,9 @@ impl StyleSystem {
         // 3. 运行级联算法
         let cascaded = cascade::cascade(declarations);
 
-        // 4. 收集自定义属性
-        self.custom_properties = gather_custom_properties(&cascaded);
+        // 4. 收集自定义属性（继承父元素 + 当前元素自身声明覆盖）
+        // CSS 自定义属性是继承属性：`:root { --x }` 定义的变量需对后代可见。
+        self.custom_properties = gather_custom_properties(&cascaded, parent_custom);
 
         // 4.5. 在级联值中解析 var() 引用
         let resolved_cascaded = resolve_var_in_cascaded(&cascaded, &self.custom_properties);
@@ -458,13 +471,16 @@ fn parse_inline_style(style_attr: &str) -> Vec<(String, String, bool)> {
 
 /// 从级联值中收集自定义属性，并解析自定义属性值中的 var() 引用。
 ///
-/// 自定义属性值可以引用其他自定义属性，需要迭代解析直到稳定。
-fn gather_custom_properties(cascaded: &HashMap<String, String>) -> HashMap<String, String> {
-    let mut props: HashMap<String, String> = cascaded
-        .iter()
-        .filter(|(k, _)| k.starts_with("--"))
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
+/// 自定义属性是继承属性：先继承父元素（`inherited`）的自定义属性，再用当前元素
+/// 自身级联声明覆盖（自身优先），最后迭代解析值中的 var() 引用（可引用继承来的属性）。
+fn gather_custom_properties(
+    cascaded: &HashMap<String, String>,
+    inherited: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut props: HashMap<String, String> = inherited.clone();
+    for (k, v) in cascaded.iter().filter(|(k, _)| k.starts_with("--")) {
+        props.insert(k.clone(), v.clone());
+    }
 
     // 迭代解析自定义属性值中的 var() 引用
     let mut changed = true;

@@ -440,6 +440,83 @@ fn test_custom_property_fallback() {
     assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
 }
 
+/// 测试自定义属性继承：祖先（html/:root）上定义的 --var 必须对后代可见。
+///
+/// CSS 自定义属性是继承属性。`div` 自身未声明 `--my-color`，引用 `var(--my-color)`
+/// 时应解析到祖先 `html` 上定义的值（经 body 隔代继承）。
+#[test]
+fn test_custom_property_inheritance() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let stylesheets = vec![Stylesheet {
+        rules: vec![
+            Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("html")],
+                declarations: vec![Declaration {
+                    property: "--my-color".to_string(),
+                    value: "blue".to_string(),
+                    important: false,
+                }],
+            }),
+            Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "color".to_string(),
+                    value: "var(--my-color)".to_string(),
+                    important: false,
+                }],
+            }),
+        ],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    // --my-color 经 html→body→div 继承，div.color 应解析为 blue
+    assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
+}
+
+/// 测试自定义属性自身声明覆盖继承值。
+#[test]
+fn test_custom_property_override_inherited() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let stylesheets = vec![Stylesheet {
+        rules: vec![
+            Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("html")],
+                declarations: vec![Declaration {
+                    property: "--c".to_string(),
+                    value: "red".to_string(),
+                    important: false,
+                }],
+            }),
+            Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "--c".to_string(),
+                    value: "blue".to_string(),
+                    important: false,
+                }],
+            }),
+            Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "color".to_string(),
+                    value: "var(--c)".to_string(),
+                    important: false,
+                }],
+            }),
+        ],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    // div 自身 --c=blue 覆盖继承的 red，color 应为 blue
+    assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
+}
+
 /// 测试无视口时 @media 规则不应用。
 #[test]
 fn test_media_query_no_viewport() {
