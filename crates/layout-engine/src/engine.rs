@@ -146,6 +146,31 @@ impl LayoutEngine {
             }
         }
 
+        // CSS §10.3.3：根元素（如 <html>）margin-left/right 均为 auto 且边框盒宽度小于
+        // 视口时应水平居中。taffy 对**嵌套** block 正确处理 auto margin 居中，但对**根
+        // 节点**不应用（根无父级提供居中上下文，taffy 把根左对齐到 0）。此处补上根居中。
+        //（display:table 的根由 shrink_table_to_block_content 在收缩后单独居中，此处跳过
+        //   避免双重居中；仅水平书写模式，垂直模式块轴为 Y 不在此处理。）
+        if matches!(root_box.writing_mode, WritingModeValue::HorizontalTb) {
+            let root_style = root_box.node_id.and_then(|id| styles.get(&id));
+            let is_table_root = root_style.is_some_and(|s| {
+                matches!(
+                    s.display,
+                    zero_css_parser::values::DisplayValue::Table | zero_css_parser::values::DisplayValue::InlineTable
+                )
+            });
+            let both_auto = root_style.is_some_and(|s| {
+                matches!(s.margin_left, zero_css_parser::values::LengthValue::Auto)
+                    && matches!(s.margin_right, zero_css_parser::values::LengthValue::Auto)
+            });
+            if both_auto && !is_table_root && root_box.width + 0.5 < self.viewport_width {
+                let margin = (self.viewport_width - root_box.width) / 2.0;
+                root_box.x = margin;
+                root_box.margin_left = margin;
+                root_box.margin_right = margin;
+            }
+        }
+
         // 3.5 从 taffy 缓存中提取 flex/grid 容器的基线信息
         // taffy 内部计算了 first_baselines 但未通过公开 API 暴露，
         // 通过 cached_baselines() 补丁访问。
@@ -3187,6 +3212,58 @@ mod writing_mode_tests {
             s.height >= 79.0 && s.height <= 81.0,
             "expected content height ~80px (single 80px glyph), got h={}",
             s.height
+        );
+    }
+
+    /// 回归：CSS §10.3.3 — 根元素 margin-left/right 均为 auto 且边框盒宽度小于视口时，
+    /// 应水平居中。taffy 对嵌套 block 正确处理 auto margin 居中，但对根节点不应用
+    ///（根无父级提供居中上下文）。验证 compute() 的根居中补丁（html-display-table-ref 用例）。
+    #[test]
+    fn test_root_block_margin_auto_centers() {
+        // 根 html 显式窄宽度 + margin:auto → 应居中于 800px 视口（同 html-display-table-ref）。
+        let html = r#"<html style="width:280px;margin:auto"><body style="margin:0">
+          <div id="t" style="width:280px;height:300px;background:yellow"></div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        // html 根边框盒宽度 = 280，居中偏移 = (800-280)/2 = 260。
+        let html_box = &result.root;
+        assert!(
+            (html_box.x - 260.0).abs() < 1.0,
+            "root block with width<viewport + margin:auto should be centered (x≈260, got {})",
+            html_box.x
+        );
+    }
+
+    /// 回归：CSS §17.5.2 — display:table 容器 width:auto 收缩到内容后，margin:auto
+    /// 应居中。验证 shrink_table_to_block_content 的居中补丁（html-display-table 用例）。
+    #[test]
+    fn test_display_table_margin_auto_centers() {
+        // html display:table 内含窄内容（200+80 inline-block），margin:auto → 收缩并居中。
+        let html = r#"<html style="display:table;margin:auto;border:10px solid green"><body style="margin:0">
+          <div style="width:200px;height:50px;display:inline-block"></div><div style="width:80px;height:50px;display:inline-block"></div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let html_box = &result.root;
+        // 内容 ≈ 280 + 20 border = 300；居中偏移 = (800-300)/2 = 250。
+        assert!(
+            html_box.x > 200.0,
+            "display:table with margin:auto should be centered (x>200, got {}) — shrink-to-fit centering missing",
+            html_box.x
+        );
+        assert!(
+            html_box.width < 400.0,
+            "display:table should shrink to content (width<400, got {}) — shrink missing",
+            html_box.width
         );
     }
 }
