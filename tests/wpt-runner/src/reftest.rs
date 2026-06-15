@@ -662,13 +662,16 @@ fn convert_png_buffer_to_rgba(
 fn load_png_file(path: &Path) -> Result<ImageData, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("无法打开 {}: {e}", path.display()))?;
     let mut decoder = png::Decoder::new(file);
-    // ZERO_PNG_EXPAND：诊断模式（默认关闭）。启用后把 palette/grayscale/RGB PNG
-    // 展开为 8-bit RGBA，正确加载非 RGBA 参考图（support/swatch-*.png、pass-cdts 等
-    // 多为 palette/RGB，否则 alpha=0 退化透明→假通过）。默认关闭因启用后暴露
-    // vrl-004/008 等真实布局差异（net -2，需先修 vertical-rl clearance 才能默认启用，
-    // 见 DC-14 anti-false-pass / R135/R149）。设置后 EXPAND|STRIP_16 由 png crate 自动
-    // 把任意 color type/bpp 转为目标 RGBA8，next_frame 直接写入 RGBA 缓冲区。
-    let expand = std::env::var("ZERO_PNG_EXPAND").is_ok();
+    // DC-14 anti-false-pass：正确加载任意 color type 的 PNG（palette/grayscale/RGB/RGBA）。
+    // EXPAND|STRIP_16 把 palette→RGB(A)、grayscale→RGB(A)、低位深→8bit；但输出色型不一定是
+    // RGBA（palette 无 tRNS / RGB 输入 → 输出 RGB=3 字节/像素）。须用 output_buffer_size 分配
+    // 并按 next_frame 返回的 OutputInfo.color_type 转换为 RGBA，否则按 4 字节解释会错位
+    // → alpha=0 退化透明（swatch-green.png 实测 [0,128,0,0]，图像类 reftest 假通过根因）。
+    // 历史上此路径曾 env-gated（ZERO_PNG_EXPAND）默认关闭以保 436 baseline，但 DC-14 要求
+    // 真实测量——正确的图像渲染是 anti-false-pass 的前提。启用后暴露 vrl-004/008 等真实
+    // 布局差异（net -2），这些是须修复的真实失败而非应隐藏的假通过。
+    // ZERO_PNG_EXPAND=0 逃生舱回退到旧的「按 RGBA 直读」路径（诊断/回归对比用）。
+    let expand = !matches!(std::env::var("ZERO_PNG_EXPAND").as_deref(), Ok("0"));
     if expand {
         decoder.set_transformations(
             png::Transformations::EXPAND | png::Transformations::STRIP_16,
@@ -683,10 +686,6 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
     let height = info.height;
 
     if expand {
-        // EXPAND 把 palette→RGB(A)、grayscale→RGB(A)、低位深→8bit；但输出色型不一定是 RGBA
-        //（palette 无 tRNS / RGB 输入 → 输出 RGB=3 字节/像素）。须用 output_buffer_size 分配
-        // 并按 next_frame 返回的 OutputInfo.color_type 转换为 RGBA，否则按 4 字节解释会错位
-        // → alpha=0 退化透明（swatch-green.png 实测 [0,128,0,0]，DC-14 假通过根因）。
         let mut raw = vec![0u8; reader.output_buffer_size()];
         let output_info = reader
             .next_frame(&mut raw)
@@ -695,8 +694,7 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
         return ImageData::from_rgba(rgba, width, height);
     }
 
-    // 默认路径：假设 RGBA8（与历史 baseline 一致）。非 RGBA PNG（palette/RGB）的
-    // 缓冲区会被当作 RGBA 解释，通常得到 alpha=0 的退化图像。
+    // 逃生舱路径（ZERO_PNG_EXPAND=0）：假设 RGBA8 直读（旧 baseline 行为）。
     let buf_size = (width as usize) * (height as usize) * 4;
     let mut buf = vec![0u8; buf_size];
     reader
