@@ -2,7 +2,20 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 89.0% (436/490) R152（cull_invisible 重建 draw_order 修复——关键：R149 的 draw_order 基础设施此前在生产路径被 cull_invisible 清空=从未生效，本轮修复后 draw_order 在生产可用；净中性零回归）。PNG bundle 全量实测（PNG+draw_order ON+abspos+cull-fix）= **net -2**（从 R149 的 -9 改善），剩余阻塞仅 vertical-rl clearance vrl-004/008（2 个，§9.5.2 垂直轴 clearance 精度）。剩余 54 失败（单会话 clean win 六重确证穷尽）。
+**上游真实 reftest 通过率**: 89.0% (436/490) R153（vertical-rl clearance vrl-004 几何探针定位，诊断无提交）。PNG bundle 4 组件 3 已就位（draw_order R149+R152 生产可用、abspos-vrl R151），全量实测 net -2，唯一剩余阻塞=vertical-rl clearance vrl-004/008（R114b 高风险 territory）。剩余 54 失败（单会话 clean win 六重确证穷尽）。
+
+### R153 — vertical-rl clearance vrl-004 几何探针定位（诊断，持平，已回退探针，工作区清洁）
+
+**背景**：R152 PNG bundle 实测 net -2，唯一剩余阻塞=clearance-calculations-vrl-004/008（baseline 假通过 3.33/2.08%，PNG fix 后暴露 7.09/6.42%）。本轮探针精确定位 vertical-rl clearance 几何。
+
+**探针**：复刻 vrl-004 结构（`writing-mode:vertical-rl` 容器 + preceding-sibling[mg-left:4em] + floated-left[float:left,w:2em] + clearing-left[clear:left,mg-right:3em]，均 height:5em=100px），layout tree dump 元素坐标。
+
+**几何发现**：vertical-rl 容器(parent w=160=块轴)内子元素**按 y（inline 轴）堆叠**——prec(x=0,y=0)、float(x=0,y=100)、clear(x=60,y=200)。CSS writing-modes §7.1：vertical-rl 块轴=水平(x)，子块应按 x 从右到左堆叠，clear:left 应在 x 轴 clearance（推到 float 块轴之后）。当前 clearance 代码（engine.rs:2520-2555 `adjust_float_positions_with_context`）**全按 y 轴**计算（hypothetical_y、active_left_float_bottom 等），不感知容器 writing_mode，故 vertical-rl 下 clear/float 在错误轴定位。
+
+**为何不安全推进**：这是 R114b territory（~150 行 clearance 轴参数化），对 59 个通过 floats-clear 测试**高回归风险**——这些测试全是水平书写模式，现有 y 轴 clearance 代码对它们正确；参数化引入 axis 判断分支需逐用例验证。且 vrl-004/008 是退化参考（PNG 双方退化），baseline 假通过（3.33/2.08%<5%），无法独立验证修复正确性（需 PNG fix 后 ref 可见）。单会话强推 net 风险高（可能回归 >2 个 floats-clear 通过用例）。
+
+**fix 入口指引（多会话）**：`adjust_float_positions_with_context`（engine.rs:2180）+ clearance 段（2520-2555）参数化——按 `box_node.writing_mode` 选择块轴（HorizontalTb→y 轴现有逻辑，VerticalRl/Lr→x 轴新逻辑）。R133 已建实现地基（converter 不换 float，物理 left/right→block 方向；需独立 block-方向 clearance 计算）。修后四组件（PNG EXPAND + draw_order ON + abspos-vrl + vertical-rl clearance）同提交应 **net≥0**，可安全启用 PNG fix。
+
 
 ### R152 — cull_invisible 重建 draw_order（draw_order 生产可用，PNG bundle 净效果 -9→-2）（净中性零回归，已提交）
 
