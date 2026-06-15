@@ -613,6 +613,51 @@ fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCache {
     cache
 }
 
+/// 把 png crate 解码（已 EXPAND|STRIP_16）的输出缓冲按其输出色型转换为 RGBA8。
+///
+/// EXPAND 不保证 RGBA：palette 无 tRNS / RGB 输入 → 输出 RGB（3 字节/像素），
+/// grayscale → 1 字节/像素。本函数按 OutputInfo.color_type 统一补齐为 RGBA。
+fn convert_png_buffer_to_rgba(
+    raw: &[u8],
+    color_type: png::ColorType,
+    bit_depth: png::BitDepth,
+) -> Vec<u8> {
+    use png::ColorType::*;
+    // STRIP_16 保证 ≤8bit；EXPAND 保证非 palette/indexed。剩余可能的 16-bit 输入
+    //（如 Rgb16）经 STRIP_16 后变 8-bit。
+    if bit_depth != png::BitDepth::Eight {
+        // 理论上 STRIP_16 已处理；保留兜底以防异常输入。
+        return raw.to_vec();
+    }
+    match color_type {
+        Rgba => raw.to_vec(),
+        Rgb => {
+            let n = raw.len() / 3;
+            let mut out = Vec::with_capacity(n * 4);
+            for px in raw.chunks_exact(3) {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        }
+        Grayscale => {
+            let mut out = Vec::with_capacity(raw.len() * 4);
+            for &g in raw {
+                out.extend_from_slice(&[g, g, g, 255]);
+            }
+            out
+        }
+        GrayscaleAlpha => {
+            let n = raw.len() / 2;
+            let mut out = Vec::with_capacity(n * 4);
+            for px in raw.chunks_exact(2) {
+                out.extend_from_slice(&[px[0], px[0], px[0], px[1]]);
+            }
+            out
+        }
+        _ => raw.to_vec(),
+    }
+}
+
 /// 加载并解码 PNG 文件为 RGBA ImageData。
 fn load_png_file(path: &Path) -> Result<ImageData, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("无法打开 {}: {e}", path.display()))?;
@@ -638,13 +683,16 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
     let height = info.height;
 
     if expand {
-        // EXPAND 保证输出为 RGBA8（palette→RGBA、grayscale→复制到 RGB、RGB→补 alpha=255）。
-        let buf_size = (width as usize) * (height as usize) * 4;
-        let mut buf = vec![0u8; buf_size];
-        reader
-            .next_frame(&mut buf)
+        // EXPAND 把 palette→RGB(A)、grayscale→RGB(A)、低位深→8bit；但输出色型不一定是 RGBA
+        //（palette 无 tRNS / RGB 输入 → 输出 RGB=3 字节/像素）。须用 output_buffer_size 分配
+        // 并按 next_frame 返回的 OutputInfo.color_type 转换为 RGBA，否则按 4 字节解释会错位
+        // → alpha=0 退化透明（swatch-green.png 实测 [0,128,0,0]，DC-14 假通过根因）。
+        let mut raw = vec![0u8; reader.output_buffer_size()];
+        let output_info = reader
+            .next_frame(&mut raw)
             .map_err(|e| format!("PNG 读取失败 {}: {e}", path.display()))?;
-        return ImageData::from_rgba(buf, width, height);
+        let rgba = convert_png_buffer_to_rgba(&raw, output_info.color_type, output_info.bit_depth);
+        return ImageData::from_rgba(rgba, width, height);
     }
 
     // 默认路径：假设 RGBA8（与历史 baseline 一致）。非 RGBA PNG（palette/RGB）的
