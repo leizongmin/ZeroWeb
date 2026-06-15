@@ -17,6 +17,8 @@
 
 **关键约束**：所有验证必须基于从上游 WPT 仓库（`https://github.com/web-platform-tests/wpt`）导入的**真实 reftest**，不允许使用手写 inline reftest 替代或充数。通过率统计的分母是上游 WPT 目录中**所有**属于范围内、不在 skip list 中的 reftest case，不允许人为缩小导入范围。
 
+**⚠️ 优化目标 = chromium Oracle 一致率，非同源通过率（DC-14，2026-06-16 实测确立）**：reftest runner 当前用 ZeroWeb 自渲染 ref 作参考（`reftest.rs:230-232`），同源通过率含 **46.5% 假通过**（全量实测，见 `evidence/cross-validate-full-2026-06-16.txt`）——真实「与 chromium 一致」通过仅 ~37%。**同源通过率（当前 436/489）不再作为优化目标或达标依据**；优化目标改为「chromium Oracle 一致率」，修复优先取 `evidence/analyze-pollution-2026-06-16.txt` 的 18 个真 bug 候选，每项修复用 `scripts/cross-validate.py` 验证（而非仅看同源通过）。
+
 覆盖范围：
 
 1. **渲染器图元覆盖** — CPU 渲染器和 GPU 渲染器必须支持所有 13 种 `RenderPrimitives` 图元类型，浏览器必须正确消费所有图元
@@ -879,8 +881,8 @@ evidence/
 每轮执行的工作模式：
 
 1. **扩展基础设施**：从上游 WPT 仓库导入更多真实 reftest case，扩大覆盖范围
-2. **运行上游真实 reftest**：获取当前通过率，分析失败 case
-3. **修复渲染缺口**：针对上游真实 reftest 失败 case 修复渲染器 / CSS parser / style system / layout engine
+2. **运行上游真实 reftest + chromium Oracle 交叉验证**：同源通过率仅作自一致性参考；**优化目标 = chromium Oracle 一致率**（`scripts/chromium-oracle-shot.mjs` + `scripts/cross-validate.py`），污染分析用 `scripts/analyze-pollution.py`
+3. **修复渲染缺口**：优先修 `evidence/analyze-pollution-2026-06-16.txt` 的真 bug 候选（chromium 大幅不一致但同源「通过」的用例，即被同源假通过掩盖的真实缺口），每项修复**用 chromium Oracle 验证**而非仅看同源通过
 4. **补充测试**：为每个修复添加单元测试
 5. **验证回归**：确保修复不破坏已有通过的 case
 6. **更新文档**：更新 master.md 状态和 evidence
