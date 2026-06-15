@@ -2,7 +2,25 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 89.0% (436/490) R151（abspos vertical-rl height:auto 收缩修复，净中性零回归；PNG bundle 组件 C' 就位——PNG+abspos 实测 net -5 从 -9 改善，恢复 4 个 abs-pos-non-replaced-vrl 真通过；剩余阻塞=clearance 精度集群 5 个）。draw_order 基础设施(R149)已就位。剩余 54 失败（单会话 clean win 六重确证穷尽）。
+**上游真实 reftest 通过率**: 89.0% (436/490) R152（cull_invisible 重建 draw_order 修复——关键：R149 的 draw_order 基础设施此前在生产路径被 cull_invisible 清空=从未生效，本轮修复后 draw_order 在生产可用；净中性零回归）。PNG bundle 全量实测（PNG+draw_order ON+abspos+cull-fix）= **net -2**（从 R149 的 -9 改善），剩余阻塞仅 vertical-rl clearance vrl-004/008（2 个，§9.5.2 垂直轴 clearance 精度）。剩余 54 失败（单会话 clean win 六重确证穷尽）。
+
+### R152 — cull_invisible 重建 draw_order（draw_order 生产可用，PNG bundle 净效果 -9→-2）（净中性零回归，已提交）
+
+**关键发现：R149 draw_order 基础设施此前从未在生产路径生效**。DODBG 探针（render_full_scene 加 eprintln）证实 harness 运行 clearance-001 时 `draw_order.len()=0 use=false`——draw_order 总是空。根因：pipeline.rs:219 `primitives.cull_invisible(viewport)`（每个 HTML 渲染都调用）的旧实现用 `.iter().filter().cloned().collect()` 重建 typed Vec，draw_order 设为空（索引失效）。故 R149 的 env-gated `render_draw_order` 路径在生产中从未被进入，只在直接单测中有效。
+
+**变更（已提交，零回归）**：`cull_invisible`（ops.rs）重写为对每个 typed Vec 用 `enumerate()` 记录保留元素的 `旧索引→新索引` 重映射（`*_remap: Vec<Option<usize>>`），cull 后按重映射重建 draw_order（被剔除的 DrawOp 丢弃，clips/glyphs/blend_modes 全保留索引不变）。
+
+**验证（净中性零回归）**：全量 reftest **436/490 持平**（env off + env ON 双路径均 436，set-diff 零翻转）。make test **12178 passed/0 failed**，clippy 零警告，fmt clean。draw_order 现在生产路径可用（cull 后仍非空）。
+
+**PNG bundle 全量实测进展（关键）**：临时叠加 PNG EXPAND + ZERO_DRAW_ORDER=1 实测——
+- R149 PNG-only = 427 (-9)
+- R151 PNG+abspos = 431 (-5)
+- **R152 PNG+abspos+draw_order ON（cull 修复后 draw_order 真生效）= 434 (-2)**
+- clear-clearance-calculation-001/002/003 三测试从 1.25/1.67/1.62% → 0.00%（draw_order 修复父背景图覆盖子内容的 painting-order 缺陷，真通过）
+- **剩余 net -2 = vertical-rl clearance vrl-004/008**（7.09/6.42%），baseline 假通过（3.33/2.08% < 5%），PNG fix 后暴露 vertical-rl §9.5.2 clearance 垂直轴精度 bug（R114b territory，最难的 clearance 边缘 case）
+
+**结论**：draw_order 生产可用后，PNG bundle 从 net -9 改善到 **net -2**。唯一剩余阻塞=vertical-rl clearance（2 个测试）。下轮修 vrl-004/008 后，PNG EXPAND + draw_order=on + abspos 四组件应 **net≥0**，可安全提交 PNG fix（解锁 12 IMG-REF 退化用例的真实渲染，虽 R149 实测 IMG-REF 无新增真通过，但消除假通过=真实正确性）。
+
 
 ### R151 — abspos vertical-rl height:auto 收缩修复（净中性零回归，已提交，PNG bundle 组件 C' 就位）
 
