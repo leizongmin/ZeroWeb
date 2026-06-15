@@ -1102,7 +1102,9 @@ pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
         });
     }
     // 解析 "2px 2px 4px red" 或 "2px 2px" 或 "2px 2px red"
-    let parts: Vec<&str> = v.split_whitespace().collect();
+    // 用括号感知分割，避免 `rgba(0, 0, 0, 0.5)` 被拆碎（同 parse_box_shadow 的修复）
+    let owned = split_shadow_tokens(v);
+    let parts: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
     if parts.len() < 2 {
         return None;
     }
@@ -1149,6 +1151,44 @@ pub struct BoxShadowValue {
     pub inset: bool,
 }
 
+/// 按空白分割 box-shadow 值，但不在括号内分割——保留 `rgba(0, 0, 0, 0.08)`、
+/// `hsla(...)`、`var(...)` 等含内部空白的函数为单个 token。
+///
+/// 此前用 `split_whitespace()` 会把 `rgba(0, 0, 0, 0.08)` 拆成碎片，导致颜色解析
+/// 失败并回退为默认实心黑（alpha=255），使 welcome.html 等用标准带空格 rgba 的页面
+/// 渲染出大面积实心黑阴影（DC-13 welcome.html 51.59% 差距主因）。
+fn split_shadow_tokens(s: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut cur = String::new();
+    let mut depth = 0i32;
+    for ch in s.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                cur.push(ch);
+            }
+            ')' => {
+                depth -= 1;
+                cur.push(ch);
+            }
+            c if c.is_whitespace() => {
+                if depth == 0 {
+                    if !cur.is_empty() {
+                        tokens.push(std::mem::take(&mut cur));
+                    }
+                } else {
+                    cur.push(c);
+                }
+            }
+            _ => cur.push(ch),
+        }
+    }
+    if !cur.is_empty() {
+        tokens.push(cur);
+    }
+    tokens
+}
+
 /// 解析 CSS box-shadow 值。
 ///
 /// 格式：`"none"` | `"[inset] <offset-x> <offset-y> [<blur>] [<spread>] [<color>]"`。
@@ -1167,7 +1207,8 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
     let lower = v.to_ascii_lowercase();
     let inset = lower.starts_with("inset");
     let rest = if inset { v[5..].trim_start() } else { v };
-    let parts: Vec<&str> = rest.split_whitespace().collect();
+    let owned = split_shadow_tokens(rest);
+    let parts: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
     if parts.len() < 2 {
         return None;
     }

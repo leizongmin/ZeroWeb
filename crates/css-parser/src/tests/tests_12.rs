@@ -220,6 +220,30 @@ fn test_box_shadow_inset_hex() {
     assert!(s.inset);
 }
 
+/// box-shadow 的 rgba 颜色含逗号后空格（标准 CSS 格式 `rgba(0, 0, 0, 0.08)`）
+/// 必须作为单个 token 解析，alpha 不能丢失。
+///
+/// 此前 `parse_box_shadow` 用 `split_whitespace()` 把 `rgba(0, 0, 0, 0.08)` 拆成
+/// 碎片，颜色解析失败回退为实心黑（alpha=255），导致 welcome.html 等页面渲染出
+/// 大面积实心黑阴影（DC-13）。修复后括号内空白不再分割。
+#[test]
+fn test_box_shadow_rgba_with_spaces_keeps_alpha() {
+    // 带空格的标准格式——修复前 alpha 错为 255（实心黑）
+    let s = parse_box_shadow("0 1px 3px rgba(0, 0, 0, 0.08)").unwrap();
+    match s.color {
+        ColorValue::Rgba(r, g, b, a) => {
+            assert_eq!([r, g, b], [0, 0, 0]);
+            assert_eq!(a, 20, "rgba(0,0,0,0.08) alpha 应≈20，不应丢失为 255 实心黑");
+        }
+        other => panic!("expected Rgba, got {:?}", other),
+    }
+    // 无空格格式仍正确
+    let s2 = parse_box_shadow("0 1px 3px rgba(0,0,0,0.08)").unwrap();
+    if let ColorValue::Rgba(_, _, _, a) = s2.color {
+        assert_eq!(a, 20);
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // types.rs — calc 和 length 更多边界情况
 // ═══════════════════════════════════════════════════════════════════════
