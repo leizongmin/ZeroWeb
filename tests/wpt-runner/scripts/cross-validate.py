@@ -22,6 +22,14 @@ import glob
 from PIL import Image, ImageChops
 
 
+def category_of(safe_id):
+    """从 safe_id 推 top-level 目录（css/CSS2 vs css/css-<dir>）。"""
+    parts = safe_id.split('_')
+    if len(parts) >= 2 and parts[0] == 'css':
+        return 'css/CSS2' if parts[1] == 'CSS2' else 'css/' + parts[1]
+    return '(other)'
+
+
 def diff_ratio(path_a, path_b, chan_thresh):
     """差异像素占比 + 最大通道差。像素任一通道差 > chan_thresh 视为差异。返回 (ratio, max_chan) 或 (None,None)（尺寸不符）。"""
     a = Image.open(path_a).convert("RGB")
@@ -59,6 +67,7 @@ def main():
 
     rows = []
     n_self_pass = n_polluted = n_compared = 0
+    per_cat = {}  # cat -> [comp, self_pass, polluted]
     for s, opath in sorted(oracle_ids.items()):
         zt = os.path.join(dump, s + "-test.png")
         zr = os.path.join(dump, s + "-ref.png")
@@ -66,15 +75,17 @@ def main():
             continue
         zr_r, zr_m = diff_ratio(zt, zr, args.chan_thresh)
         zc_r, zc_m = diff_ratio(zt, opath, args.chan_thresh)
+        cat = category_of(s)
+        c = per_cat.setdefault(cat, [0, 0, 0])
         if zr_r is None or zc_r is None:
-            rows.append((s, "SIZE-MISMATCH", None, None)); continue
+            rows.append((s, cat, "SIZE-MISMATCH", None, None)); continue
         self_pass = zr_r < args.pass_ratio
         oracle_disagree = zc_r > args.oracle_ratio
         polluted = self_pass and oracle_disagree
-        n_compared += 1
-        n_self_pass += 1 if self_pass else 0
-        n_polluted += 1 if polluted else 0
-        rows.append((s, "POLLUTED" if polluted else ("self-pass" if self_pass else "self-fail"), zr_r, zc_r))
+        n_compared += 1; c[0] += 1
+        n_self_pass += 1 if self_pass else 0; c[1] += 1 if self_pass else 0
+        n_polluted += 1 if polluted else 0; c[2] += 1 if polluted else 0
+        rows.append((s, cat, "POLLUTED" if polluted else ("self-pass" if self_pass else "self-fail"), zr_r, zc_r))
 
     print(f"# 交叉验证：ZeroWeb 同源 vs chromium Oracle（DC-14）")
     print(f"# dump: {dump}")
@@ -82,7 +93,7 @@ def main():
     print(f"# 阈值: chan>{args.chan_thresh}, 同源通过<{args.pass_ratio*100:.2f}%, Oracle不一致>{args.oracle_ratio*100:.2f}%\n")
     print(f"| safe_id | 判定 | z_vs_ref | z_vs_chr |")
     print(f"|---------|------|----------|----------|")
-    for s, v, zr, zc in rows:
+    for s, cat, v, zr, zc in rows:
         if zr is None:
             print(f"| {s} | {v} | — | — |")
         else:
@@ -94,8 +105,15 @@ def main():
     print(f"- **污染（同源通过但 chromium 不一致）: {n_polluted}**")
     if n_self_pass:
         print(f"- 污染率（占同源通过）: {n_polluted/n_self_pass*100:.1f}%")
+    print(f"\n## 按目录分解")
+    print(f"| 目录 | 对比 | 同源通过 | 污染 | 污染率 |")
+    print(f"|------|------|---------|------|--------|")
+    for cat in sorted(per_cat):
+        comp, sp, pol = per_cat[cat]
+        rate = f"{pol/sp*100:.0f}%" if sp else "—"
+        print(f"| {cat} | {comp} | {sp} | {pol} | {rate} |")
     print(f"\n⚠️ 污染 = 被 ZeroWeb 判为通过、但与 chromium 独立 Oracle 不一致的用例。")
-    print(f"   这是 436/490 同源通过率里水分的上界估计（抽样）。")
+    print(f"   这是同源通过率里水分的上界估计（chan>{args.chan_thresh}, Oracle>{args.oracle_ratio*100:.1f}%）。")
 
 
 if __name__ == "__main__":
