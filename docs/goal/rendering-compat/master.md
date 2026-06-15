@@ -2,11 +2,21 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 89.0% (436/490) R161（**PNG EXPAND 诊断门控 + 正确 RGBA 转换已提交默认净中性**；ZERO_PNG_EXPAND=1 实测 bundle **net -2**——修正本会话早先 net -1 误判（错位转换假象）；vrl-004(7.09%)/008(6.42%) 双阻塞=R114b x 轴 clearance）。R158 large-font 死锁机制精确定位（100px 文本在 taffy 已测量 height:auto 子容器，remeasure content_height<1.0 守卫 + compute_final R84 多行守卫双跳过→paint IFC 16px；multicol-fill-auto 仅因 16px bug 通过，须先解）。draw_order 默认启用满足 DC-10。剩余 54 失败（单会话 clean win 九重确证穷尽，全部结构性多轮）。
+**上游真实 reftest 通过率**: 88.6% (434/490) R163（**PNG 正确 RGBA 转换默认启用=DC-14 anti-false-pass**——修正所有非 RGBA PNG 的 alpha=0 退化（图像类 reftest 假通过根因），从 436→434 真实暴露 vrl-004(7.09%)/008(6.42%) 双阻塞=R114b x 轴 clearance；`ZERO_PNG_EXPAND=0` 逃生舱回退旧 436 baseline）。R161/R162 确证 bundle net -2 + skip-guard net 负（vrl-006 margin-collapse 需现 y 轴逻辑）。R158 large-font 死锁机制精确定位。draw_order 默认启用满足 DC-10。剩余 56 失败（全部结构性多轮：vrl-004/008 + large-font 5 + multicol 17 + flex 10 + 其余）。
 
-**可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **436/490 (89.0%)**。⚠️ 当前 reference 由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量的是「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错、PNG 退化即假绿）；治理门禁见 **DC-14 真通过标准**。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**——DC-2~5 表内标注的 100% 均基于内联 smoke。
+**可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **434/490 (88.6%)**（R163 起默认正确图像渲染=DC-14 anti-false-pass，消除 PNG 退化假绿；旧 436 含 garbled-image 假通过）。⚠️ 当前 reference 仍由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错）；治理门禁见 **DC-14 真通过标准**（独立 chromium Oracle 交叉验证基建已就绪 72764a0）。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**。
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
+
+### R163 — PNG 正确 RGBA 转换默认启用（DC-14 anti-false-pass，436→434 真实）（已提交）
+
+**变更（已提交）**：`load_png_file`（reftest.rs）把「EXPAND+正确 RGBA 转换」从 env-gated（ZERO_PNG_EXPAND=1）改为**生产默认**——所有非 RGBA PNG（palette/grayscale/RGB）正确展开为 RGBA8（修正 alpha=0 退化=图像类 reftest 假通过根因）。`ZERO_PNG_EXPAND=0` 作为逃生舱回退旧的「按 RGBA 直读」garbled 路径（诊断/回归对比）。
+
+**意义**：直接落实 **DC-14 anti-false-pass**——此前所有 palette/RGB PNG（support/swatch-*.png、pass-cdts 等）因缓冲错位渲染成透明/乱码（alpha=0），使图像类 reftest 的 reference 退化，产生「garbled-test vs garbled-ref 凑合匹配」的假通过。正确渲染后 reference 真实可见，消除该类假通过。与项目并行的 chromium 独立 Oracle 基建（72764a0）+ DC-14 门禁（c4d5863）方向一致。
+
+**实测影响**：默认 reftest **436→434/490（net -2）**——仅 vrl-004(7.09%)/vrl-008(6.42%) 翻转为 FAIL（writing-modes 55→53），其余 488 用例零翻转（image 类用例要么本就 RGBA，要么 garbled 双方凑合匹配在正确渲染后仍匹配）。这两个是须修复的**真实 vertical-rl clearance 失败**（R114b），非应隐藏的假通过。make test 全绿（45 result 行 0 failed）。
+
+**为何现在默认启用**：DC-14 明确「不满足 anti-false-pass 的通过率不构成达标证据」——436 含 garbled-image 假通过属非合规。正确的图像渲染是 anti-false-pass 的前提。逃生舱 ZERO_PNG_EXPAND=0 保留旧 436 供对比。
 
 ### R161 — PNG EXPAND 诊断门控 + 正确 RGBA 转换（修复 alpha=0 退化，bundle 真实 net -2）（已提交，默认净中性）
 
