@@ -2,7 +2,22 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 89.0% (436/490) R153（vertical-rl clearance vrl-004 几何探针定位，诊断无提交）。PNG bundle 4 组件 3 已就位（draw_order R149+R152 生产可用、abspos-vrl R151），全量实测 net -2，唯一剩余阻塞=vertical-rl clearance vrl-004/008（R114b 高风险 territory）。剩余 54 失败（单会话 clean win 六重确证穷尽）。
+**上游真实 reftest 通过率**: 89.0% (436/490) R154（vertical-rl clearance skip-guard 实验确认=R114b 多会话，已回退）。PNG bundle 4 组件 3 已就位（draw_order R149+R152 生产可用、abspos-vrl R151），全量实测 net -2，唯一剩余阻塞=vertical-rl clearance vrl-004/008（需真正 x 轴 clearance 实现，简单跳过净 -1）。剩余 54 失败（单会话 clean win 六重确证穷尽）。
+
+### R154 — vertical-rl clearance skip-guard 实验（诊断，持平，已回退，确认 R114b 多会话）
+
+**背景**：R153 探针发现 vertical-rl 容器内 float/clear 子元素被 y 轴后处理移位（简单块堆叠探针证实 taffy 本身正确按 x 堆叠：a/b/c 在 x=0/50/100）。假设：vertical-rl 模式跳过 y 轴 float/clearance 后处理（taffy 已正确按 x 定位）即可修复 vrl-004/008。
+
+**实验**：`adjust_float_positions_with_context` 入口加 `writing_mode` 守卫——VerticalRl/VerticalLr 直接 return（水平模式 HorizontalTb 完全不受影响，59 个 floats-clear 通过用例零风险）。
+
+**结果（已回退）**：436→**435/490（net -1）**。两测试对 clearance 需求**相反**：
+- vrl-004 改善 3.33%→2.08%（仍假通过，但更接近 ref）
+- **vrl-008 恶化 2.08%→14.42%（假通过→真失败）**
+
+**结论**：简单跳过不可行——vrl-004 不需 clearance（跳过=正确），vrl-008 需 clearance（跳过=错误）。两测试结构差异（vrl-008 测试注释明确：「clearance + margin-right of clearing-left = 50px，clearance = 50-75 = -25px」负 clearance 边缘 case）。vertical-rl clearance 需**真正 x 轴实现**（按 writing_mode 选块轴：HorizontalTb→y 现逻辑，VerticalRl/Lr→x 新逻辑，含负 clearance、margin 折叠边缘 case），= R114b territory ~150 行参数化，对 59 个 floats-clear 高回归风险 + vrl 退化参考无法独立验证，**单会话不可安全推进**。已回退，436/490 持平。
+
+**方法论**：write_guard+skip 是验证「bug 是否可受守卫隔离」的标准快速实验——零风险（守卫只影响 vertical 模式，水平模式字节不变），单次 reftest 即可判 net 效果。本轮 net -1 即刻回退，确认需完整实现。
+
 
 ### R153 — vertical-rl clearance vrl-004 几何探针定位（诊断，持平，已回退探针，工作区清洁）
 
