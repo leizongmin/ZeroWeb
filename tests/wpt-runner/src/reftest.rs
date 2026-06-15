@@ -616,7 +616,19 @@ fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCache {
 /// 加载并解码 PNG 文件为 RGBA ImageData。
 fn load_png_file(path: &Path) -> Result<ImageData, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("无法打开 {}: {e}", path.display()))?;
-    let decoder = png::Decoder::new(file);
+    let mut decoder = png::Decoder::new(file);
+    // ZERO_PNG_EXPAND：诊断模式（默认关闭）。启用后把 palette/grayscale/RGB PNG
+    // 展开为 8-bit RGBA，正确加载非 RGBA 参考图（support/swatch-*.png、pass-cdts 等
+    // 多为 palette/RGB，否则 alpha=0 退化透明→假通过）。默认关闭因启用后暴露
+    // vrl-004/008 等真实布局差异（net -2，需先修 vertical-rl clearance 才能默认启用，
+    // 见 DC-14 anti-false-pass / R135/R149）。设置后 EXPAND|STRIP_16 由 png crate 自动
+    // 把任意 color type/bpp 转为目标 RGBA8，next_frame 直接写入 RGBA 缓冲区。
+    let expand = std::env::var("ZERO_PNG_EXPAND").is_ok();
+    if expand {
+        decoder.set_transformations(
+            png::Transformations::EXPAND | png::Transformations::STRIP_16,
+        );
+    }
     let mut reader = decoder
         .read_info()
         .map_err(|e| format!("PNG 解码失败 {}: {e}", path.display()))?;
@@ -625,7 +637,18 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
     let width = info.width;
     let height = info.height;
 
-    // 输出缓冲区
+    if expand {
+        // EXPAND 保证输出为 RGBA8（palette→RGBA、grayscale→复制到 RGB、RGB→补 alpha=255）。
+        let buf_size = (width as usize) * (height as usize) * 4;
+        let mut buf = vec![0u8; buf_size];
+        reader
+            .next_frame(&mut buf)
+            .map_err(|e| format!("PNG 读取失败 {}: {e}", path.display()))?;
+        return ImageData::from_rgba(buf, width, height);
+    }
+
+    // 默认路径：假设 RGBA8（与历史 baseline 一致）。非 RGBA PNG（palette/RGB）的
+    // 缓冲区会被当作 RGBA 解释，通常得到 alpha=0 的退化图像。
     let buf_size = (width as usize) * (height as usize) * 4;
     let mut buf = vec![0u8; buf_size];
     reader
