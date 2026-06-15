@@ -144,6 +144,35 @@ fn gradient_linear_red_to_blue() {
     );
 }
 
+/// 圆角矩形背景必须通过 draw_order 渲染（`add_rounded_rect` 记录 `DrawOp::RoundedRect`）。
+///
+/// 回归测试：`paint_background` 此前直接 `rounded_rects.push()` 绕过 `add_rounded_rect`，
+/// 导致 draw_order（默认渲染路径）丢弃圆角背景——任何带 border-radius 的元素背景都
+/// 不绘制（DC-13 welcome.html 卡片白底消失，welcome 差距 50.45%→26.15% 的主因之一）。
+/// 修复后通过 `add_rounded_rect` 记录 DrawOp，圆角背景在 draw_order 模式下正常渲染。
+#[test]
+fn rounded_rect_renders_via_draw_order() {
+    let mut primitives = RenderPrimitives::new();
+    primitives.add_rounded_rect(RoundedRectPrimitive {
+        rect: Rect::new(0.0, 0.0, 40.0, 40.0),
+        color: Color::RED,
+        top_left_radius: 8.0,
+        top_right_radius: 8.0,
+        bottom_right_radius: 8.0,
+        bottom_left_radius: 8.0,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(40, 40, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    // 中心像素（远离圆角）应为红色——若 draw_order 丢弃 rounded_rect 则为透明/黑
+    let center = fb.get_pixel(20, 20);
+    assert!(
+        center[0] > 200,
+        "rounded_rect center should be red via draw_order, got {:?}",
+        center
+    );
+}
+
 #[test]
 fn gradient_radial_center_to_edge() {
     let mut primitives = RenderPrimitives::new();
