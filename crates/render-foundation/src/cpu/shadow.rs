@@ -61,12 +61,25 @@ pub fn render_shadow(fb: &mut FrameBuffer, shadow: &ShadowPrimitive, scale: f32)
     }
 
     // 步骤 2：三遍 box-blur（近似高斯模糊）
+    // CSS 规范：box-shadow blur_radius 对应高斯标准差 σ = blur_radius / 2（而非
+    // blur_radius 本身）。三遍等半径 box-blur（每遍半宽 r）合成 σ 满足
+    // σ² ≈ ((2r+1)² - 1) / 4。由 σ 反解连续半宽 d = (sqrt(4σ²+1) - 1)/2，再按 d
+    // 的小数部分把 3 遍在 floor/ceil 半宽间分配（m 遍用 ceil、3-m 遍用 floor），
+    // 精确逼近目标 σ。旧实现直接用 radius=blur_r.ceil() 致 σ 偏大约 2.3 倍，
+    // 阴影扩散过远（welcome.html 卡片 box-shadow:0 1px 3px 实测扩散 12px）。
     if blur_r > 0.5 {
-        let radius = blur_r.ceil() as usize;
-        if radius > 0 {
-            box_blur(&mut alpha_mask, area_w, area_h, radius);
-            box_blur(&mut alpha_mask, area_w, area_h, radius);
-            box_blur(&mut alpha_mask, area_w, area_h, radius);
+        let sigma = blur_r * 0.5;
+        let d = ((4.0 * sigma * sigma + 1.0).sqrt() - 1.0) * 0.5;
+        let r_lo = d.floor() as usize;
+        let r_hi = r_lo + 1;
+        let m = ((d - r_lo as f32) * 3.0).round().clamp(0.0, 3.0) as usize;
+        for _ in 0..(3 - m) {
+            if r_lo > 0 {
+                box_blur(&mut alpha_mask, area_w, area_h, r_lo);
+            }
+        }
+        for _ in 0..m {
+            box_blur(&mut alpha_mask, area_w, area_h, r_hi);
         }
     }
 
