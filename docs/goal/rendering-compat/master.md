@@ -10,6 +10,17 @@
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
+### R166 — 真 bug 候选再甄别（table_grid 非单点 + float-006 paint 层，诊断，持平，无提交）
+
+R165 之后继续按 chromium Oracle 真实缺口推进，逐个甄别几个 self+chr 均高（=真 bug 非 REF 产物）的候选：
+
+- **table_grid_size_col_colspan (chr 52%)**：根因 = build_grid 的 col_count 仅从单元格 colspan 计算，**忽略 `<col>` 元素**（3 个 col 算 1 列）；且 fixed-layout auto-width 错误扩展到容器。实现修复（col_count 计 col + 收集 col_widths + 去除 fixed 扩展）后**内部全部正确**（col_widths=[50,50,50]、table 宽 150、cell w=50），但**渲染仍全宽/重叠**——直接 `<td>`+`<col>`+匿名行+fixed 结构有多个叠加问题（含表格垂直堆叠），非单点修复，已回退。
+- **flexbox-collapsed-item-horiz-001 (chr 20.5%)**：flex visibility:collapse 内部（R111 territory），多 cell 差异，flex 内部复杂。
+- **multicol-breaking-005 (self 21.7%/chr 22.3%)**：嵌套 multicol 平衡（外 3 列 × 内 2 列 balance），最深水区。
+- **float-006 (self 7.5%/chr 8.4%，已定位=paint 层)**：零高度空 float 测试。**探针证实布局盒完全正确**——绿色 abspos `x=0 w=224 h=160`、红色 float `x=288 w=224 h=160` 均正确计算，但**两者都不被绘制**（渲染全空白，chromium 显示绿矩形）。根因在 paint 层：0 高度 `position:relative` 容器（所有子元素脱离流→容器 height:0）的 abspos/float 子元素未被绘制。**painter/mod.rs 无明显 height-skip**，需追 positioned-element 绘制路径。这是已定位的下一步（paint 层，非 layout）。
+
+**结论**：除 R165（margin:auto，单点）外，本轮再甄别的真 bug 候选全部结构性/多子系统。最高杠杆的已定位 paint 层缺口 = float-006（0 高度定位容器的子元素不绘制，可能影响多个 abspos/float-in-empty-container 用例）。
+
 ### R165 — margin:auto 水平居中修复（html-display-table chromium 33%→2.63%，真实修复，零回归，已提交）
 
 **d16bb8e 方向（优化 chromium Oracle 一致率）下首个真实修复**。修复 `margin:auto` 水平居中缺失——这是一个被同源假通过「掩盖」的真实渲染 bug（html-display-table 同源 0.00% 通过，但 chromium 差 33.09%）。
