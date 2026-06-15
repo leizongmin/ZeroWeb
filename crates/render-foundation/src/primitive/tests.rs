@@ -21,6 +21,55 @@ fn test_primitives_add_fill() {
 }
 
 #[test]
+fn test_draw_order_records_insertion_order() {
+    // DC-10: draw_order 必须按 add_* 的真实调用顺序记录，使渲染器能按
+    // 插入序（而非类型分桶）渲染，修复父背景图覆盖子内容的 painting-order 缺陷。
+    use crate::image_cache::ImageKey;
+    use crate::primitive::{FontId, GlyphPrimitive, ImagePrimitive, LineCap, LineStyle, StrokePrimitive};
+
+    let mut p = RenderPrimitives::new();
+    p.add_fill(Rect::new(0.0, 0.0, 10.0, 10.0), Color::RED); // parent bg fill
+    p.add_image(ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+        image_key: ImageKey::new(1),
+    }); // parent bg image — must paint BEFORE child fill
+    p.add_fill(Rect::new(2.0, 2.0, 4.0, 4.0), Color::GREEN); // child content fill
+    p.add_stroke(StrokePrimitive {
+        x1: 0.0,
+        y1: 0.0,
+        x2: 10.0,
+        y2: 0.0,
+        width: 1.0,
+        color: Color::BLACK,
+        style: LineStyle::Solid,
+        cap: LineCap::Butt,
+    });
+    p.add_glyph(GlyphPrimitive {
+        x: 3.0,
+        y: 3.0,
+        font_size: 16.0,
+        color: Color::BLACK,
+        glyph_id: 65,
+        font_id: FontId(0),
+        bitmap_width: None,
+        bitmap_height: None,
+        rotation: 0.0,
+    });
+
+    // draw_order 必须与调用顺序一一对应：Fill(0), Image(0), Fill(1), Stroke(0), Glyph(0)。
+    assert_eq!(
+        p.draw_order,
+        vec![
+            DrawOp::Fill(0),
+            DrawOp::Image(0),
+            DrawOp::Fill(1),
+            DrawOp::Stroke(0),
+            DrawOp::Glyph(0),
+        ]
+    );
+}
+
+#[test]
 fn test_primitives_bounding_box() {
     let mut p = RenderPrimitives::new();
     p.add_fill(Rect::new(10.0, 20.0, 100.0, 50.0), Color::BLACK);

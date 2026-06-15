@@ -418,6 +418,47 @@ pub struct RenderPrimitives {
     pub blend_modes: Vec<BlendModePrimitive>,
     /// Transform 列表（2D 仿射变换）
     pub transforms: Vec<TransformPrimitive>,
+    /// 绘制顺序记录 — 按图元被 `add_*` 的真实插入顺序。
+    ///
+    /// 默认渲染（`render_full_scene`）按类型分桶渲染（所有 images 画在所有 fills
+    /// 之后），违反 CSS painting order（父背景图应画在子内容**之下**）。
+    /// 本字段记录插入顺序，供 env-gated `ZERO_DRAW_ORDER` 路径按真实 z 序渲染，
+    /// 修复 DC-10 类型分桶绘制顺序缺陷。默认行为保持字节不变（零回归）。
+    pub draw_order: Vec<DrawOp>,
+}
+
+/// 绘制顺序条目 — 指向某个 typed Vec 中的图元索引。
+///
+/// 与 `RenderPrimitives` 的 typed Vec 并存：clip/opacity 后处理仍读 typed Vec
+/// （`PrimitiveCounts` 快照），`draw_order` 仅用于渲染时的顺序遍历。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrawOp {
+    /// `fills` 中的索引
+    Fill(usize),
+    /// `rounded_rects` 中的索引
+    RoundedRect(usize),
+    /// `path_fills` 中的索引
+    PathFill(usize),
+    /// `path_strokes` 中的索引
+    PathStroke(usize),
+    /// `strokes` 中的索引
+    Stroke(usize),
+    /// `gradients` 中的索引
+    Gradient(usize),
+    /// `shadows` 中的索引
+    Shadow(usize),
+    /// `images` 中的索引
+    Image(usize),
+    /// `glyphs` 中的索引
+    Glyph(usize),
+    /// `filters` 中的索引
+    Filter(usize),
+    /// `blend_modes` 中的索引
+    BlendMode(usize),
+    /// `transforms` 中的索引
+    Transform(usize),
+    /// `clips` 中的索引
+    Clip(usize),
 }
 
 impl RenderPrimitives {
@@ -428,67 +469,91 @@ impl RenderPrimitives {
 
     /// 添加一个填充矩形
     pub fn add_fill(&mut self, rect: Rect, color: Color) {
+        let idx = self.fills.len();
         self.fills.push(FillPrimitive { rect, color });
+        self.draw_order.push(DrawOp::Fill(idx));
     }
 
     /// 添加一个圆角矩形
     pub fn add_rounded_rect(&mut self, rounded: RoundedRectPrimitive) {
+        let idx = self.rounded_rects.len();
         self.rounded_rects.push(rounded);
+        self.draw_order.push(DrawOp::RoundedRect(idx));
     }
 
     /// 添加一个路径填充图元。
     pub fn add_path_fill(&mut self, vertices: Vec<f32>, color: Color) {
+        let idx = self.path_fills.len();
         self.path_fills.push(PathFillPrimitive { vertices, color });
+        self.draw_order.push(DrawOp::PathFill(idx));
     }
 
     /// 添加一个路径描边图元。
     pub fn add_path_stroke(&mut self, vertices: Vec<f32>, color: Color, line_width: f32, closed: bool) {
+        let idx = self.path_strokes.len();
         self.path_strokes.push(PathStrokePrimitive {
             vertices,
             color,
             line_width,
             closed,
         });
+        self.draw_order.push(DrawOp::PathStroke(idx));
     }
 
     /// 添加一个描边线段
     pub fn add_stroke(&mut self, stroke: StrokePrimitive) {
+        let idx = self.strokes.len();
         self.strokes.push(stroke);
+        self.draw_order.push(DrawOp::Stroke(idx));
     }
 
     /// 添加一个裁剪区域
     pub fn add_clip(&mut self, rect: Rect) {
+        let idx = self.clips.len();
         self.clips.push(ClipPrimitive { rect });
+        self.draw_order.push(DrawOp::Clip(idx));
     }
 
     /// 添加一个渐变
     pub fn add_gradient(&mut self, gradient: GradientPrimitive) {
+        let idx = self.gradients.len();
         self.gradients.push(gradient);
+        self.draw_order.push(DrawOp::Gradient(idx));
     }
 
     /// 添加一个阴影
     pub fn add_shadow(&mut self, shadow: ShadowPrimitive) {
+        let idx = self.shadows.len();
         self.shadows.push(shadow);
+        self.draw_order.push(DrawOp::Shadow(idx));
     }
 
     /// 添加一个图片图元
     pub fn add_image(&mut self, image: ImagePrimitive) {
+        let idx = self.images.len();
         self.images.push(image);
+        self.draw_order.push(DrawOp::Image(idx));
     }
 
     /// 添加一个 Glyph
     pub fn add_glyph(&mut self, glyph: GlyphPrimitive) {
+        let idx = self.glyphs.len();
         self.glyphs.push(glyph);
+        self.draw_order.push(DrawOp::Glyph(idx));
     }
 
     /// 添加一个 Filter
     pub fn add_filter(&mut self, filter: FilterPrimitive) {
+        let idx = self.filters.len();
         self.filters.push(filter);
+        self.draw_order.push(DrawOp::Filter(idx));
     }
 
     /// 添加一个混合模式
     pub fn add_blend_mode(&mut self, blend: BlendModePrimitive) {
+        let idx = self.blend_modes.len();
         self.blend_modes.push(blend);
+        self.draw_order.push(DrawOp::BlendMode(idx));
     }
 
     /// 图元总数
@@ -527,7 +592,9 @@ impl RenderPrimitives {
 
     /// 添加变换图元。
     pub fn add_transform(&mut self, transform: TransformPrimitive) {
+        let idx = self.transforms.len();
         self.transforms.push(transform);
+        self.draw_order.push(DrawOp::Transform(idx));
     }
 }
 

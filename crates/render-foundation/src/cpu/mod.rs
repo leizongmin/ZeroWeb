@@ -26,7 +26,7 @@ use crate::font::loader::FontLoader;
 use crate::gpu::renderer::GlyphDraw;
 use crate::image_cache::ImageCache;
 use crate::primitive::{
-    ClipPrimitive, FillPrimitive, ImagePrimitive, RenderPrimitives, RoundedRectPrimitive, TransformPrimitive,
+    ClipPrimitive, DrawOp, FillPrimitive, ImagePrimitive, RenderPrimitives, RoundedRectPrimitive, TransformPrimitive,
 };
 use crate::surface::FrameBuffer;
 
@@ -57,7 +57,7 @@ pub fn render_full_scene(
     primitives: &RenderPrimitives,
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
-    mut image_cache: Option<&mut ImageCache>,
+    image_cache: Option<&mut ImageCache>,
     overlay_fills: &[FillPrimitive],
     overlay_glyphs: &[GlyphDraw],
 ) -> FrameBuffer {
@@ -67,79 +67,18 @@ pub fn render_full_scene(
     let mut fb = FrameBuffer::new(physical_width, physical_height);
     fb.clear(255, 255, 255, 255);
 
-    // 渲染顺序遵循 CSS painting order:
-    // shadows → backgrounds (fills/rounded_rects/gradients) → images →
-    // borders (strokes/path_fills/path_strokes) → content (glyphs) →
-    // overlay → filters → blend_modes
+    // DC-10 诊断开关：`ZERO_DRAW_ORDER=1` 时按图元真实插入顺序（draw_order）
+    // 渲染，而非类型分桶。修复「父背景图画在子内容之上」的 painting-order 缺陷。
+    // 默认关闭（字节不变、零回归）；仅用于诊断与未来 PNG bundle 的组件 (B)。
+    let use_draw_order = std::env::var("ZERO_DRAW_ORDER").as_deref() == Ok("1") && !primitives.draw_order.is_empty();
 
-    // 1. 阴影（绘制在最底层）
-    for shadow in &primitives.shadows {
-        shadow::render_shadow(&mut fb, shadow, scale);
+    if use_draw_order {
+        render_draw_order(&mut fb, primitives, scale, font_loader, glyph_cache, image_cache);
+    } else {
+        render_typed_buckets(&mut fb, primitives, scale, font_loader, glyph_cache, image_cache);
     }
 
-    // 2. 填充矩形（背景色）
-    for fill in &primitives.fills {
-        fill_rect(&mut fb, fill, scale);
-    }
-
-    // 3. 圆角矩形
-    for rr in &primitives.rounded_rects {
-        fill_rounded_rect(&mut fb, rr, scale);
-    }
-
-    // 4. 渐变
-    for gradient in &primitives.gradients {
-        gradient::render_gradient(&mut fb, gradient, scale);
-    }
-
-    // 5. 图片
-    if let Some(ref mut cache) = image_cache {
-        for image in &primitives.images {
-            render_image(&mut fb, image, scale, cache);
-        }
-    }
-
-    // 6. 线段（边框等）
-    for stroke in &primitives.strokes {
-        stroke::render_stroke(&mut fb, stroke, scale);
-    }
-
-    // 7. 路径填充
-    for path_fill in &primitives.path_fills {
-        stroke::render_path_fill(&mut fb, path_fill, scale);
-    }
-
-    // 8. 路径描边
-    for path_stroke in &primitives.path_strokes {
-        stroke::render_path_stroke(&mut fb, path_stroke, scale);
-    }
-
-    // 9. 文字
-    for glyph in &primitives.glyphs {
-        draw_glyph_primitive(&mut fb, glyph, scale, font_loader, glyph_cache);
-    }
-
-    // 10. 裁剪 — 后处理像素级裁剪
-    for clip in &primitives.clips {
-        apply_clip(&mut fb, clip, scale);
-    }
-
-    // 11. 变换 — 后处理像素级变换
-    for transform in &primitives.transforms {
-        apply_transform_post(&mut fb, transform, scale);
-    }
-
-    // 12. 滤镜 — 后处理效果
-    for filter in &primitives.filters {
-        effects::apply_filter(&mut fb, filter, scale);
-    }
-
-    // 13. 混合模式 — 后处理合成
-    for blend in &primitives.blend_modes {
-        effects::apply_blend_mode(&mut fb, blend, scale);
-    }
-
-    // Overlay 层
+    // Overlay 层（始终在最后，独立于主体绘制顺序）
     for fill in overlay_fills {
         fill_rect(&mut fb, fill, scale);
     }
@@ -149,6 +88,179 @@ pub fn render_full_scene(
     }
 
     fb
+}
+
+/// 按类型分桶渲染（原有行为，默认）。
+///
+/// 所有同类型图元连续渲染：fills → rounded_rects → gradients → images →
+/// strokes → ... → glyphs。违反 CSS painting order（父背景图覆盖子内容），
+/// 保留作为默认以保证零回归。
+#[allow(clippy::too_many_arguments)]
+fn render_typed_buckets(
+    fb: &mut FrameBuffer,
+    primitives: &RenderPrimitives,
+    scale: f32,
+    font_loader: &FontLoader,
+    glyph_cache: &mut GlyphCache,
+    mut image_cache: Option<&mut ImageCache>,
+) {
+    // 渲染顺序遵循 CSS painting order:
+    // shadows → backgrounds (fills/rounded_rects/gradients) → images →
+    // borders (strokes/path_fills/path_strokes) → content (glyphs) →
+    // overlay → filters → blend_modes
+
+    // 1. 阴影（绘制在最底层）
+    for shadow in &primitives.shadows {
+        shadow::render_shadow(fb, shadow, scale);
+    }
+
+    // 2. 填充矩形（背景色）
+    for fill in &primitives.fills {
+        fill_rect(fb, fill, scale);
+    }
+
+    // 3. 圆角矩形
+    for rr in &primitives.rounded_rects {
+        fill_rounded_rect(fb, rr, scale);
+    }
+
+    // 4. 渐变
+    for gradient in &primitives.gradients {
+        gradient::render_gradient(fb, gradient, scale);
+    }
+
+    // 5. 图片
+    if let Some(ref mut cache) = image_cache {
+        for image in &primitives.images {
+            render_image(fb, image, scale, cache);
+        }
+    }
+
+    // 6. 线段（边框等）
+    for stroke in &primitives.strokes {
+        stroke::render_stroke(fb, stroke, scale);
+    }
+
+    // 7. 路径填充
+    for path_fill in &primitives.path_fills {
+        stroke::render_path_fill(fb, path_fill, scale);
+    }
+
+    // 8. 路径描边
+    for path_stroke in &primitives.path_strokes {
+        stroke::render_path_stroke(fb, path_stroke, scale);
+    }
+
+    // 9. 文字
+    for glyph in &primitives.glyphs {
+        draw_glyph_primitive(fb, glyph, scale, font_loader, glyph_cache);
+    }
+
+    // 10. 裁剪 — 后处理像素级裁剪
+    for clip in &primitives.clips {
+        apply_clip(fb, clip, scale);
+    }
+
+    // 11. 变换 — 后处理像素级变换
+    for transform in &primitives.transforms {
+        apply_transform_post(fb, transform, scale);
+    }
+
+    // 12. 滤镜 — 后处理效果
+    for filter in &primitives.filters {
+        effects::apply_filter(fb, filter, scale);
+    }
+
+    // 13. 混合模式 — 后处理合成
+    for blend in &primitives.blend_modes {
+        effects::apply_blend_mode(fb, blend, scale);
+    }
+}
+
+/// 按插入顺序渲染（DC-10 实验路径，`ZERO_DRAW_ORDER=1` 启用）。
+///
+/// 按 `draw_order` 记录的真实插入顺序逐个渲染图元。背景、边框、子内容、
+/// 文字按 paint_node 的深度优先序列交错，父背景图正确画在子内容之下。
+#[allow(clippy::too_many_arguments)]
+fn render_draw_order(
+    fb: &mut FrameBuffer,
+    primitives: &RenderPrimitives,
+    scale: f32,
+    font_loader: &FontLoader,
+    glyph_cache: &mut GlyphCache,
+    mut image_cache: Option<&mut ImageCache>,
+) {
+    for op in &primitives.draw_order {
+        match op {
+            DrawOp::Shadow(i) => {
+                if let Some(p) = primitives.shadows.get(*i) {
+                    shadow::render_shadow(fb, p, scale);
+                }
+            }
+            DrawOp::Fill(i) => {
+                if let Some(p) = primitives.fills.get(*i) {
+                    fill_rect(fb, p, scale);
+                }
+            }
+            DrawOp::RoundedRect(i) => {
+                if let Some(p) = primitives.rounded_rects.get(*i) {
+                    fill_rounded_rect(fb, p, scale);
+                }
+            }
+            DrawOp::Gradient(i) => {
+                if let Some(p) = primitives.gradients.get(*i) {
+                    gradient::render_gradient(fb, p, scale);
+                }
+            }
+            DrawOp::Image(i) => {
+                if let Some(p) = primitives.images.get(*i)
+                    && let Some(ref mut cache) = image_cache
+                {
+                    render_image(fb, p, scale, cache);
+                }
+            }
+            DrawOp::Stroke(i) => {
+                if let Some(p) = primitives.strokes.get(*i) {
+                    stroke::render_stroke(fb, p, scale);
+                }
+            }
+            DrawOp::PathFill(i) => {
+                if let Some(p) = primitives.path_fills.get(*i) {
+                    stroke::render_path_fill(fb, p, scale);
+                }
+            }
+            DrawOp::PathStroke(i) => {
+                if let Some(p) = primitives.path_strokes.get(*i) {
+                    stroke::render_path_stroke(fb, p, scale);
+                }
+            }
+            DrawOp::Glyph(i) => {
+                if let Some(p) = primitives.glyphs.get(*i) {
+                    draw_glyph_primitive(fb, p, scale, font_loader, glyph_cache);
+                }
+            }
+            DrawOp::Filter(i) => {
+                if let Some(p) = primitives.filters.get(*i) {
+                    effects::apply_filter(fb, p, scale);
+                }
+            }
+            DrawOp::BlendMode(i) => {
+                if let Some(p) = primitives.blend_modes.get(*i) {
+                    effects::apply_blend_mode(fb, p, scale);
+                }
+            }
+            DrawOp::Transform(i) => {
+                if let Some(p) = primitives.transforms.get(*i) {
+                    apply_transform_post(fb, p, scale);
+                }
+            }
+            DrawOp::Clip(i) => {
+                if let Some(p) = primitives.clips.get(*i) {
+                    apply_clip(fb, p, scale);
+                }
+            }
+        }
+    }
 }
 
 /// 旧版兼容入口 — 仅渲染 fills + rounded_rects + glyphs。
