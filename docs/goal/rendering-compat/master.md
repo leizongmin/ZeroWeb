@@ -2,7 +2,21 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 88.8% (435/490) R139（R139 +1 直接 table-cell 匿名行合并；较 R138 的 434 基线 +1）
+**上游真实 reftest 通过率**: 88.8% (435/490) R142（R142 净中性零回归：修复 writing-mode:vertical-rl 根页面整页空白——remeasure 兄弟位移误用 y 轴；vrl-004 25.24%→12.72%、vlr-005 25.12%→9.34% 内容恢复可见但未过阈，剩余=垂直块流方向 R109 谱系）
+
+### R142 — 垂直书写模式兄弟位移轴修正（净中性零回归，整页空白→可见）
+
+**变更**：`crates/layout-engine/src/engine.rs` 的 `remeasure_inline_only_containers` 末尾「inline-only 容器收缩后上移后续兄弟」逻辑（`sibling.y += shrink_delta`）增加守卫 `matches!(box_node.writing_mode, WritingModeValue::HorizontalTb)`。+1 单测 `test_vertical_rl_block_sibling_not_pushed_offscreen`（复刻 box-offsets-rel-pos-vrl-004 body，断言垂直模式无非流内盒子被推到负 y）。
+
+**根因**：该兄弟位移逻辑只适用于**水平书写模式**（块流方向=y 轴，容器 inline 重测量使高度收缩后，下方块兄弟应上移合拢空隙）。在**垂直书写模式**中块流方向为**水平（x 轴）**，「高度」是 inline 轴跨度——inline 轴收缩**不会**在块轴留空隙，故不应移动按 x 排列的块兄弟。旧代码无条件 `sibling.y += shrink_delta`（负值），把垂直模式的兄弟推到负 y（屏幕外）。典型表现：`writing-mode:vertical-rl` 根页面（box-offsets-rel-pos-vrl-004）整页渲染为 100% 空白——`<p>` inline 重测量收缩 -448px，后续静态盒 + 4 个蓝块全部被推到 y=-448 及以下。
+
+**定位过程**：BISECT 插桩逐后处理步跟踪 300×300 静态盒的 y：adjust_float=0、shrink_vertical=0、remeasure_float=0、**remeasure_inline=-448**（罪魁）。PROBE_FINAL 对比前后树确认静态盒 y 0→-448，恰等于 `<p>` 高度 752→304 的收缩量。
+
+**修复**：仅在父容器 writing_mode 为 HorizontalTb 时执行兄弟 y 位移；垂直模式跳过（块兄弟按 x 排列，inline 轴收缩不影响其块轴位置）。对全部水平用例行为不变（守卫恒真），仅改变垂直模式行为。
+
+**净中性零回归**：全量 reftest **435/490 持平**（vrl-004 25.24%→12.72%、vlr-005 25.12%→9.34% 内容恢复可见但未过阈——剩余差异是 4 个相对定位蓝块按**左→右**堆叠（应右→左），属垂直块流方向 R109 谱系，非本轮范围）。set-diff 验证零 pass/fail 翻转。make test 全绿（含新单测：移除守卫→FAILED「off-screen」、加回→PASS），clippy 零警告，fmt clean，smoke 686/686。
+
+**方法论**：与 R140 gap-fix 实验不同——本轮有**单测可证缺陷**（移除守卫即空白/负 y），且修复的是**用户可见的灾难性缺陷**（整页空白）而非细微规范符合性，并显著改善 2 个失败用例（25%→10%），是垂直书写模式渲染正确性的必要前置。独立穷尽验证了 R140「清洁 surgical 路径耗尽」结论后，转向**按失败聚类重新插桩定位**（非 bbox 扫描）发现此「垂直模式兄弟位移轴」bug——一个被 7 轮 +0 章节遗漏的、独立于 multicol/IFC/flex 结构性聚类的 writing-mode 后处理缺陷。见 [[r142-vertical-rl-sibling-shift-axis]]、[[r140-cleanwins-exhausted-verified]]（前置清洁路径穷尽结论）、[[r109-writing-mode-flex-arch]]（剩余垂直块流方向阻塞）。
 
 ### R139 — 直接 table-cell 子元素匿名行合并（+1，零回归）
 
