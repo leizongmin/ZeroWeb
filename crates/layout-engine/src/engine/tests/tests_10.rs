@@ -1169,6 +1169,99 @@ fn test_percentage_max_height_no_clamp_when_cb_indefinite() {
     );
 }
 
+/// 测试 table 的 height 属性作为内容高度下限（CSS 2.1 §17.5.3）。
+///
+/// ZeroWeb 的 table 后处理（apply_table_size_constraints）此前完全忽略 style.height，
+/// 仅用 intrinsic 行高填表格高度。CSS 规定 table 的 'height' 是内容高度的「下限」
+/// （min 语义）：表格至少这么高，内容更高则增长。本测试用 Px 高度覆盖核心 min 语义。
+/// 对应 chromium Oracle 缺口 table-grid-item-dynamic-004（height:% + padding-top）。
+#[test]
+fn test_table_height_as_minimum_px() {
+    let html = r#"<html><body style="margin:0">
+<div style="height:300px;">
+  <table style="height:200px;">
+    <tr><td>x</td></tr>
+  </table>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // height:200px（content-box，无 padding/border）→ 表格至少 ~200px。
+    // 修复前表格仅 intrinsic 行高（~16px）；300px 的父 div 不在 (180,260) 区间。
+    fn find_table(box_node: &crate::types::LayoutBox) -> Option<&crate::types::LayoutBox> {
+        if box_node.height > 180.0 && box_node.height < 260.0 {
+            return Some(box_node);
+        }
+        for child in &box_node.children {
+            if let Some(t) = find_table(child) {
+                return Some(t);
+            }
+        }
+        None
+    }
+    let table =
+        find_table(&result.root).expect("table with height:200px should grow to ~200px (CSS §17.5.3 min semantics)");
+    assert!(
+        table.height >= 195.0,
+        "table height:200px should make table at least ~200px tall, got {}",
+        table.height
+    );
+}
+
+/// 测试 clamp_percentage_max_height 对 table 百分比 height 的下限解析（直接调用）。
+///
+/// 手工构造 div(明确 content=100px) > table(height:100%, display:table, content=16) 树，
+/// 直接调用后处理函数，验证百分比 height 相对明确 CB 解析为内容高度下限（CSS §17.5.3 + §10.5）。
+/// 注：engine.compute 路径中 table 的匿名包装盒会打断直接父子 CB 传递，故直接测函数；
+/// 百分比路径的端到端正确性由 reftest table-grid-item-dynamic-004 覆盖（chromium 差距 11%→2.98%）。
+#[test]
+fn test_table_percentage_height_resolves_as_minimum() {
+    use zero_css_parser::values::BoxSizingValue;
+    let (mut doc, _body) = make_doc_with_body();
+    let div = doc.create_element("div");
+    let table = doc.create_element("table");
+
+    let mut styles = HashMap::new();
+    let mut div_s = ComputedStyle::default();
+    div_s.display = DisplayValue::Block;
+    div_s.height = LengthValue::Px(100.0);
+    styles.insert(div, div_s);
+    let mut t_s = ComputedStyle::default();
+    t_s.display = DisplayValue::Table;
+    t_s.height = LengthValue::Percentage(100.0);
+    t_s.box_sizing = BoxSizingValue::ContentBox;
+    styles.insert(table, t_s);
+
+    // table 初始 content_height = intrinsic(16)；div content=100（明确 CB）
+    let table_box = LayoutBox {
+        node_id: Some(table),
+        content_height: 16.0,
+        height: 16.0,
+        ..Default::default()
+    };
+    let mut div_box = LayoutBox {
+        node_id: Some(div),
+        content_height: 100.0,
+        height: 100.0,
+        ..Default::default()
+    };
+    div_box.children.push(table_box);
+
+    super::super::clamp_percentage_max_height(&mut div_box, None, &styles);
+
+    let t = &div_box.children[0];
+    assert!(
+        t.content_height >= 99.0,
+        "table height:100% of 100px div should grow content to ~100 (CSS §17.5.3 + §10.5), got {}",
+        t.content_height
+    );
+}
+
 /// 测试 table column 的 visibility:collapse。
 ///
 /// 对应 visibility-collapse-colspan-003：中间列被 `visibility:collapse` 折叠，

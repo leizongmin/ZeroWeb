@@ -1375,6 +1375,43 @@ fn clamp_percentage_max_height(
         }
     }
 
+    // 1.5) Table 高度作为内容高度下限（CSS 2.1 §17.5.3）。
+    // table 后处理（apply_table_size_constraints）此前完全忽略 style.height，仅用
+    // intrinsic 行高填表格高度。CSS 规定 table 的 'height' 是内容高度的「下限」
+    // （min 语义）：表格至少这么高，内容更高则增长。此处把 style.height
+    // （Px 或可解析百分比）解析为内容高度下限，与已计算的 content_height 取 max。
+    // 在此自上而下 pass 中处理以复用 cb_content_height 的「明确高度」语义：
+    // 百分比仅当包含块高度明确时才解析，否则忽略（CSS §10.5）。
+    if let Some(s) = style {
+        let is_table = matches!(
+            s.display,
+            zero_css_parser::values::DisplayValue::Table | zero_css_parser::values::DisplayValue::InlineTable
+        );
+        if is_table {
+            let specified_content_h: Option<f32> = match &s.height {
+                LengthValue::Px(v) => {
+                    let pb =
+                        box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+                    let c = if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
+                        (*v as f32 - pb).max(0.0)
+                    } else {
+                        *v as f32
+                    };
+                    Some(c)
+                }
+                LengthValue::Percentage(p) => cb_content_height.map(|cb| *p as f32 / 100.0 * cb),
+                _ => None,
+            };
+            if let Some(spec) = specified_content_h
+                && box_node.content_height < spec
+            {
+                let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+                box_node.content_height = spec;
+                box_node.height = spec + pb;
+            }
+        }
+    }
+
     // 2) 计算本盒的「明确内容高度」供子元素百分比解析：
     //    - height: Px → 明确（按 box-sizing 折算内容高）
     //    - height: Percentage 且包含块明确 → 解析后明确
