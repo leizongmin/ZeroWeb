@@ -2,7 +2,24 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 89.0% (436/490) R154（vertical-rl clearance skip-guard 实验确认=R114b 多会话，已回退）。PNG bundle 4 组件 3 已就位（draw_order R149+R152 生产可用、abspos-vrl R151），全量实测 net -2，唯一剩余阻塞=vertical-rl clearance vrl-004/008（需真正 x 轴 clearance 实现，简单跳过净 -1）。剩余 54 失败（单会话 clean win 六重确证穷尽）。
+**上游真实 reftest 通过率**: 89.0% (436/490) R155（**draw_order 默认启用，满足 DC-10 CSS painting order**——净中性零回归，upstream 436/smoke 686/make test 12178 全绿）。draw_order 此前 env-gated，本轮设为生产默认渲染路径（`ZERO_DRAW_ORDER=0` 逃生舱回退类型分桶）。PNG bundle 4 组件 3 已就位，全量实测 net -2，唯一剩余阻塞=vertical-rl clearance vrl-004/008。剩余 54 失败（单会话 clean win 七重确证穷尽）。
+
+### R155 — draw_order 默认启用（满足 DC-10，净中性零回归，已提交）
+
+**变更（已提交，零回归）**：`render_full_scene`（cpu/mod.rs:70-82）把 draw_order 从 env-gated（`ZERO_DRAW_ORDER=1` 启用）改为**生产默认**——draw_order 非空时默认按插入序渲染（满足 CSS painting order），`ZERO_DRAW_ORDER=0` 作为逃生舱回退类型分桶（旧行为，诊断/回归对比）。draw_order 为空（旧代码路径未填充）自动回退。
+
+**意义**：直接满足 **DC-10「图元渲染顺序遵循 CSS painting order（background→borders→content→outline）」**。此前的类型分桶（所有 images 画在所有 fills 之后）违反 painting order，导致父背景图覆盖子内容——这是产品页（DC-13，如 WinterTC 首页 Logo、morning.work 文章图）渲染缺陷的根因之一。默认启用 draw_order 后，背景图正确画在子内容之下。
+
+**零回归验证**：
+- upstream reftest **436/490 持平**（draw_order 与类型分桶在该基准下输出一致——reftest 无「父背景图覆盖子内容」case，故不可区分）
+- make reftest smoke **686/686**
+- make test **12178 passed/0 failed**
+- clippy 零警告，fmt clean
+
+**为何 reftest 不区分**：490 上游 reftest 无「父元素 background-image:url() + 子内容需可见」的非退化 case（含此结构的 abs-pos-non-replaced-vrl 系列是退化参考，PNG fix 前背景退化透明=问题不可见）。draw_order 的正确性收益主要体现在产品页（DC-13）和未来含真实背景图的用例。PNG fix 后（vrl-004/008 修复时）draw_order 使 clear-clearance-calc-001/002/003 真通过（R152 已验证）。
+
+**逃生舱**：`ZERO_DRAW_ORDER=0` 回退类型分桶。draw_order 基础设施（R149）+ cull 重建（R152）+ 默认启用（R155）三步完成 DC-10。
+
 
 ### R154 — vertical-rl clearance skip-guard 实验（诊断，持平，已回退，确认 R114b 多会话）
 
