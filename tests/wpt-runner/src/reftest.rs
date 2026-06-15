@@ -2044,4 +2044,39 @@ mod tests {
             "<div style=\"width:200px;height:50px;\"><div style=\"width:100px;height:50px;background:blue;\"></div><div style=\"width:100px;height:50px;background:red;\"></div></div>",
         );
     }
+
+    // DC-13 产品静态 smoke：渲染 morning.work 中文文章 fixture（含外链 CSS + 图片）。
+    // 通过 base_dir 测试 <link> 外链 CSS 与 <img> 子资源加载路径。
+    #[test]
+    #[ignore]
+    fn dump_morning_work_png() {
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/browser/assets/morning-work");
+        let html =
+            std::fs::read_to_string(base.join("article.html")).expect("read article.html");
+        let config = ReftestConfig::default();
+        let fb = render_to_framebuffer_with_base(&html, "", &config, Some(&base));
+        let out = std::path::Path::new("/tmp/mw-zeroweb-cpu.png");
+        save_fb_as_png(&fb, out);
+        // 报告关键区域像素：文章正文区应有 CJK 文本（深色像素），代码块应有背景
+        let px = fb.data;
+        let w = fb.width as usize;
+        let at = |x: usize, y: usize| -> (u8, u8, u8, u8) {
+            let i = (y * w + x) * 4;
+            (px[i], px[i + 1], px[i + 2], px[i + 3])
+        };
+        println!("morning.work samples (CJK 文本应深色，代码块应有灰背景):");
+        for &(x, y) in &[(60, 80), (100, 150), (100, 250), (100, 400)] {
+            println!("  ({},{}) = {:?}", x, y, at(x, y));
+        }
+        // 统计非背景像素（页面 bg #f9f7f4 ≈ (249,247,244)）
+        let mut non_bg = 0usize;
+        for i in (0..px.len()).step_by(4) {
+            let c = (px[i], px[i + 1], px[i + 2]);
+            if !(c.0 > 245 && c.1 > 243 && c.2 > 240) {
+                non_bg += 1;
+            }
+        }
+        println!("non-background pixels: {} (of {})", non_bg, px.len() / 4);
+    }
 }

@@ -10,6 +10,20 @@
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
+### R175 — CSS 自定义属性继承修复（var() 不继承致 :root 变量丢失，morning.work 67.45%→28.72%，零回归，已提交）
+
+录制 morning.work 中文文章 fixture（DC-13 首个真实外链页面 fixture，`apps/browser/assets/morning-work/`，含 4 外链 CSS + 2 图片，经 base_dir 加载），与 chromium 800×600 对比 → 初始 diff **67.45%**（页面背景/代码块背景全白、布局塌）。诊断为 **CSS 自定义属性不继承**。
+
+**根因**：CSS 自定义属性是继承属性，但 `gather_custom_properties`（style-system/src/lib.rs）每元素只取自身级联 `--*` 声明，丢弃祖先（`:root`/`html`/`body`）定义的变量 → 后代 `var(--x)` 解析失败（`--x` 不在自身 map）→ 背景回退默认白/颜色丢失。**任何 `:root{--token}` + 子元素 `var(--token)` 的真实页面全部受影响**（现代 CSS 设计系统标配）。诊断探针证实：`--c` 定义在 `.a` 自身时 `var(--c)` 正确，定义在祖先时失败（白）——继承类 bug 须跨元素 DOM 诊断，单元素探针会漏。
+
+**修复**：`gather_custom_properties(cascaded, inherited)` 先继承父自定义属性再自身覆盖再迭代 resolve var()；`compute_styles_recursive` 递归传 `parent_custom`（进入子树前一次性捕获供 sibling 共享）。`compute_element_style`（pub 单元素）签名不变。
+
+**验证**：morning.work fixture diff **67.45%→28.72%**（-185,898 px，页面背景 #f9f7f4 + 代码块背景 + 设计 token 全部正确应用）；reftest **434/490 持平零回归**（同源两侧同变仍匹配；8 类目全持平）；新增 2 单测（test_custom_property_inheritance + override_inherited）；make test 12188/0；clippy/fmt clean。welcome.html 不用 var() 故未受影响。
+
+**意义**：(1) CSS variables 是现代页面基础特性，此 bug 影响面极大——真实中文页面此前背景/颜色全丢；(2) DC-13 真实页面 fixture 轴线（morning.work）捕获了 reftest 490 平台期 + welcome 都覆盖不到的 bug；(3) fixture 证据持久化 `evidence/product-static/morning-work/`。
+
+**剩余 morning.work 28.72%**：顶部蓝色 nav（~53k px #607cd2）疑似 `@media(min-width:900px)` 桌面规则在 800vw 被错误应用（外链 CSS @media 评估与内联 `<style>` 不一致，待独立诊断）——**下一轮高杠杆目标**；+ fontdue CJK 度量噪声 + hljs 高亮缺失 + @font-face web 字体未加载。
+
 ### R174 — box-shadow blur σ=radius/2 修复（CSS 高斯映射修正，welcome 28.72%→28.08%，零回归，已提交）
 
 DC-13 welcome.html 剩余 ~28% 差距逐带/逐像素定位（throwaway 渲染测试 + layout snapshot + PIL）。**关键结论：welcome.html 剩余差距 96.5% 为 fontdue vs Skia 字体噪声（非 CSS bug）**——色差直方图双峰 delta≈±10（66k 像素，glyph 边缘 AA 差异）+ card-desc 文本换行行数差异致 chromium 卡片高 ~13px。结构布局经 layout snapshot 确认正确（gradient bar y=36、hero/卡片几何、卡片白底（R172 后正确）均正确）。唯一可定位的真实渲染 bug = **box-shadow blur 高斯 σ 映射错误**。
