@@ -22,7 +22,7 @@
 
 **意义**：(1) CSS variables 是现代页面基础特性，此 bug 影响面极大——真实中文页面此前背景/颜色全丢；(2) DC-13 真实页面 fixture 轴线（morning.work）捕获了 reftest 490 平台期 + welcome 都覆盖不到的 bug；(3) fixture 证据持久化 `evidence/product-static/morning-work/`。
 
-**剩余 morning.work 28.72%**：顶部蓝色 nav（~53k px #607cd2）疑似 `@media(min-width:900px)` 桌面规则在 800vw 被错误应用（外链 CSS @media 评估与内联 `<style>` 不一致，待独立诊断）——**下一轮高杠杆目标**；+ fontdue CJK 度量噪声 + hljs 高亮缺失 + @font-face web 字体未加载。
+**剩余 morning.work 28.72%**：最大块=顶部蓝色全宽条（~55k px #607cd2，y=169-241 共 73 行 × 752px 宽）——是 3 个 `.item-tag` `<span>`（Fedora/MacBook/Linux 标签徽章，直接规则非 @media）被**渲染为全宽堆叠块**而非行内小徽章（span UA display=inline 正确，问题在布局层 inline/inline-block 元素被当作 block，属 R109 IFC/inline→block 架构范畴，非单会话修复）；+ fontdue CJK 度量噪声 + hljs 高亮缺失 + @font-face web 字体未加载。**下一轮可独立诊断**：inline `<span>` 带背景的全宽渲染（converter 是否把 inline-block 映射为 block）与 @media min-width 在外链 CSS 的评估一致性。
 
 ### R174 — box-shadow blur σ=radius/2 修复（CSS 高斯映射修正，welcome 28.72%→28.08%，零回归，已提交）
 

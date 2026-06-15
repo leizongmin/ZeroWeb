@@ -35,7 +35,7 @@ morning.work 用 `:root { --color-bg / --color-code-bg / --color-primary ... }` 
 
 ## 剩余 28.72% 差距
 
-- **顶部蓝色 nav 区（~53k px，#607cd2）**：ZeroWeb 渲染了 chromium 不显示的蓝色 nav。疑似 `@media (min-width: 900px)` 桌面规则在 800px viewport 被错误应用（外链 CSS 的 @media 评估与内联 `<style>` 行为不一致，待独立诊断）。**下一轮高杠杆目标**。
+- **顶部蓝色全宽条（~55k px，#607cd2，y=169-241）**：经定位是 3 个 `.item-tag` `<span>`（Fedora/MacBook/Linux 标签徽章，直接规则非 @media）被**渲染为全宽堆叠块**而非行内小徽章。`ua_default_display("span")=None`（inline 正确），故问题在布局层——ZeroWeb 把 inline/inline-block 元素当作 block（属 R109 IFC/inline→block 架构范畴，非单会话修复）。**下一轮独立诊断目标**。
 - fontdue vs Skia 字体度量噪声（CJK 文本行高/字宽差异）。
 - 代码块无语法高亮（highlight.js 需 JS 运行时，sandbox 不完整）。
 - @font-face web 字体未加载（fira_code/JetBrainsMono 回退 monospace）。
