@@ -67,10 +67,13 @@ pub fn render_full_scene(
     let mut fb = FrameBuffer::new(physical_width, physical_height);
     fb.clear(255, 255, 255, 255);
 
-    // DC-10 诊断开关：`ZERO_DRAW_ORDER=1` 时按图元真实插入顺序（draw_order）
-    // 渲染，而非类型分桶。修复「父背景图画在子内容之上」的 painting-order 缺陷。
-    // 默认关闭（字节不变、零回归）；仅用于诊断与未来 PNG bundle 的组件 (B)。
-    let use_draw_order = std::env::var("ZERO_DRAW_ORDER").as_deref() == Ok("1") && !primitives.draw_order.is_empty();
+    // DC-10 CSS painting order：默认按图元真实插入顺序（draw_order）渲染，
+    // 修复「父背景图画在子内容之上」的类型分桶缺陷（render_typed_buckets 把所有
+    // images 画在所有 fills 之后，违反 CSS painting order）。
+    // draw_order 由 cull_invisible 重建保留（见 ops.rs），生产路径可用。
+    // 逃生舱：`ZERO_DRAW_ORDER=0` 回退到类型分桶（旧行为，用于诊断/回归对比）。
+    // draw_order 为空时（旧代码路径未填充）自动回退到类型分桶。
+    let use_draw_order = std::env::var("ZERO_DRAW_ORDER").as_deref() != Ok("0") && !primitives.draw_order.is_empty();
 
     if use_draw_order {
         render_draw_order(&mut fb, primitives, scale, font_loader, glyph_cache, image_cache);
@@ -90,11 +93,11 @@ pub fn render_full_scene(
     fb
 }
 
-/// 按类型分桶渲染（原有行为，默认）。
+/// 按类型分桶渲染（旧行为，`ZERO_DRAW_ORDER=0` 时回退）。
 ///
 /// 所有同类型图元连续渲染：fills → rounded_rects → gradients → images →
 /// strokes → ... → glyphs。违反 CSS painting order（父背景图覆盖子内容），
-/// 保留作为默认以保证零回归。
+/// 保留作为逃生舱用于诊断/回归对比。
 #[allow(clippy::too_many_arguments)]
 fn render_typed_buckets(
     fb: &mut FrameBuffer,
@@ -177,7 +180,7 @@ fn render_typed_buckets(
     }
 }
 
-/// 按插入顺序渲染（DC-10 实验路径，`ZERO_DRAW_ORDER=1` 启用）。
+/// 按插入顺序渲染（DC-10 默认路径，满足 CSS painting order）。
 ///
 /// 按 `draw_order` 记录的真实插入顺序逐个渲染图元。背景、边框、子内容、
 /// 文字按 paint_node 的深度优先序列交错，父背景图正确画在子内容之下。
