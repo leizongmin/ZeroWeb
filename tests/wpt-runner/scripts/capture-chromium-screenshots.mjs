@@ -9,7 +9,8 @@
 //
 // 环境要求：
 //   - Node.js >= 18
-//   - puppeteer 包（npm install puppeteer）
+//   - puppeteer-core 包（npm install puppeteer-core）+ 系统 chromium（默认 /usr/bin/chromium，
+//     可用 PUPPETEER_EXECUTABLE_PATH 覆盖）
 
 import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, resolve, basename, dirname } from 'node:path';
@@ -70,7 +71,8 @@ async function findHtmlFiles(dir, prefix = '') {
     const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       results.push(...await findHtmlFiles(fullPath, relPath));
-    } else if (entry.name.endsWith('.html') || entry.name.endsWith('.htm')) {
+    } else if (entry.name.endsWith('.html') || entry.name.endsWith('.htm') ||
+               entry.name.endsWith('.xht') || entry.name.endsWith('.xhtml')) {
       results.push({ fullPath, relPath });
     }
   }
@@ -105,17 +107,19 @@ async function main() {
   console.log(`  Output:   ${opts.output}`);
   console.log('');
 
-  // 动态导入 puppeteer
+  // 动态导入 puppeteer-core（不自带 chromium，复用系统 /usr/bin/chromium）
   let puppeteer;
   try {
-    puppeteer = await import('puppeteer');
+    puppeteer = await import('puppeteer-core');
   } catch {
-    console.error('Error: puppeteer not installed. Run: npm install puppeteer');
+    console.error('Error: puppeteer-core not installed. Run: npm install puppeteer-core');
     process.exit(1);
   }
 
+  const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium';
   const browser = await puppeteer.launch({
     headless: true,
+    executablePath,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
