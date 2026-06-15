@@ -1097,8 +1097,9 @@ impl Painter {
                 color_value_to_render(&style.background_color),
             );
         } else {
-            // 圆角矩形：生成 RoundedRectPrimitive
-            self.primitives.rounded_rects.push(RoundedRectPrimitive {
+            // 圆角矩形：通过 add_rounded_rect 记录 DrawOp（draw_order 是默认渲染路径，
+            // 直接 push 到 rounded_rects 会绕过 DrawOp 记录导致圆角背景被丢弃）。
+            self.primitives.add_rounded_rect(RoundedRectPrimitive {
                 rect: Rect::new(clip_x, clip_y, clip_w, clip_h),
                 color: color_value_to_render(&style.background_color),
                 top_left_radius: radii.top_left,
