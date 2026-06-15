@@ -10,6 +10,18 @@
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
+### R173 — 加载 Noto Sans CJK 字体 + 回退链（CJK 字符可渲染，DC-13 能力，零回归，已提交）
+
+DC-13 welcome.html cards 区域剩余 diff 定位到 **CJK 字符完全不渲染**（探针「中文」dark=0）。根因：`create_font_loader`（reftest.rs:1114）只加载 DejaVu/Ahem，无 CJK 字体；主字体缺 CJK 字形时无回退 → 中/日/韩文本全空白。系统有 `/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc`（chromium 用它渲染 CJK）。
+
+**修复**：create_font_loader 加载 NotoSansCJK-Regular.ttc（fontdue 支持 .ttc）并 set_fallback_chain。引擎回退逻辑已就绪（主字体缺字形时回退），此前仅缺 CJK 字体加载。CJK 探针「中文」dark 0→91（渲染）。
+
+**验证**：reftest **434/490 持平零回归**（Ahem/ASCII 用例不受影响）；make test 12186/0；clippy/fmt clean。
+
+**权衡**：welcome.html 像素 diff 26.15%→27.10%（+0.95%）——CJK 现可见但带 fontdue vs Skia 字体度量噪声（已知文本差异），比空白更正确；CJK 重度页面（morning.work 中文文章 fixture）从大量空白→可读，是 DC-13 关键能力。剩余 welcome 度量差需 fontdue CJK 度量调优（与 reftest 文字 fontdue/Skia 噪声同源）。
+
+**意义**：CJK 渲染是产品必备能力（中文页面此前全空白）。fontdue .ttc 支持 + 引擎回退链已验证可用。
+
 ### R172 — border-radius 背景在 draw_order 模式被丢弃（paint_background 绕过 add_rounded_rect，真实修复，零回归，已提交）
 
 DC-13 welcome.html cards 区域 50.45% 差距的**第二大主因**（仅次于 R170 box-shadow 实心黑）。`paint_background`（painter/mod.rs:1101）对圆角背景直接 `primitives.rounded_rects.push()`，**绕过 `add_rounded_rect`**（后者才记录 `DrawOp::RoundedRect`）。draw_order 是 R155 起的默认渲染路径，无 DrawOp 的 rounded_rect 被丢弃 → **任何带 border-radius 的元素背景都不绘制**（透显底层背景）。welcome.html 卡片（border-radius:10px）白底消失。
