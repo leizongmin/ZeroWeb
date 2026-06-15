@@ -11,26 +11,44 @@
 | ZeroWeb CPU | **48.41%**（diff **51.59%**）| 208,368 | x[74,799] y[72,599] |
 | Chromium（Oracle）| — | 28,115 | x[40,759] y[36,599] |
 
-**关键发现**：ZeroWeb 着色像素是 chromium 的 **~7.4 倍**（208k vs 28k，占页面 43% vs 6%）。即 ZeroWeb 把大量本应为空白的区域填上了背景/内容色——典型症状是大面积背景填充错位、section 重叠、或 hero 背景渲染成全页。这是 **reftest 通过率平台期（434/490）无法捕获的产品可见缺陷**——welcome.html 不是上游 reftest，其渲染退化不在 56 个失败用例中。
+## 根因定位（box-shadow alpha 丢失 → 实心黑）
+
+逐区域分析 208k 着色像素：**132,793 是纯黑 (0,0,0)**，bbox x[86,793] y[265,582]（连续全宽，非 4 个 card 形块）= `.card`（4 张）+ `.bottom-row` section（4 个）区域，约 96%/行 黑色（文本浮在上面）。
+
+**关键 bisect**：把 welcome.html 的所有 `box-shadow` 声明删除后重渲 → **纯黑从 132,793 降到 0**。即 box-shadow 是 132k 黑像素的唯一来源。
+
+**精确机制（SHDWDBG 插桩 paint_box_shadow）**：welcome.html 的 8 个 card/section 的 box-shadow 计算值 `color=rgba(0,0,0,255)` —— **alpha=255（实心黑）**，而声明是 `box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08)`（alpha 应≈20）。`#dadce0` 等实心色阴影 alpha=255 正确。`render_shadow`（cpu/shadow.rs）逻辑本身正确（用 shadow_alpha 合成），问题在**上游：box-shadow 的 rgba alpha 在 welcome.html 的样式计算中被丢失，算成 255**。
+
+## 触发条件（单变量排除，需 CSS bisect）
+
+以下**单变量探针均正确**（box-shadow alpha=20，无实心黑）：
+- ✅ `display:grid` 的 card（grid item 不丢 alpha）
+- ✅ `rgba(0, 0, 0, 0.08)` 逗号后空格（与无空格同）
+- ✅ `* { box-sizing; margin; padding }` 通用选择器
+- ✅ `@media (prefers-color-scheme: dark)` 不在 light 模式应用（background 验证：dark 规则不泄漏）
+- ✅ base box-shadow + `@media dark { box-shadow: rgba(...,0.4) }` 覆盖（不泄漏/不损坏 base alpha）
+- ✅ 8 个 card 同页（element count 不触发）
+
+**结论**：触发条件在 welcome.html 完整 ~240 行 CSS 级联的组合中，无法用单变量探针复现。需对 welcome.html CSS 做**系统性 bisect**（按规则减半，定位使 card box-shadow alpha 变 255 的具体规则/组合），可能是多规则级联或样式计算的状态/hash 问题。
 
 ## 证据文件
 
-- `welcome-zeroweb-cpu.png` — ZeroWeb CPU 渲染
+- `welcome-zeroweb-cpu.png` — ZeroWeb CPU 渲染（含 132k 实心黑）
 - `welcome-chromium.png` — Chromium 参考截图
 
 ## 方法
 
-1. `node /tmp/capture-welcome.mjs`（puppeteer-core + /usr/bin/chromium，viewport 800×600，networkidle0）→ `welcome-chromium.png`。
-2. welcome.html 临时复制为 wpt-data 自源 reftest（注入 `<link rel="match">`），`REFTEST_DUMP` 渲染 ZeroWeb CPU 输出 → `welcome-zeroweb-cpu.png`，渲染后**删除临时文件**（恢复 490 上游 reftest 基线，未污染统计）。
-3. PIL 逐像素对比（max channel diff > 5 判异）。
+1. `node /tmp/capture-welcome.mjs`（puppeteer-core + /usr/bin/chromium，800×600）→ chromium shot。
+2. welcome.html 临时复制为 wpt-data 自源 reftest（注入 `<link rel="match">`），`REFTEST_DUMP` 渲染 ZeroWeb，**渲染后删除临时文件**（恢复 490 基线）。
+3. PIL 逐像素 + 颜色 + y-band 分析；box-shadow bisect（regex 删除 box-shadow 重渲）；SHDWDBG 插桩 paint_box_shadow 打印 color.alpha。
+4. 单变量探针（grid / `*` / @media / count 等）逐个排除。
 
-## 与 DC-13 验收标准的差距
+## 意义
 
-- ❌ welcome.html 与 Chromium 在相同 viewport 下的参考截图对比：**51.59% 差距**（远未通过）。
-- 待自动检查（DC-13）：文本不重叠、sibling card/link/shortcut 文本不串联、`ZeroBrowser` 标题宽屏不拆行、`<br>` 后 tagline 两行——需进一步逐区域分析（本轮仅总体像素对比）。
+- **reftest 434/490 平台期无法捕获**此缺陷——welcome.html 非上游 reftest，其 box-shadow alpha 丢失是产品可见的渲染 bug。
+- 修复后 welcome.html 差距应大幅下降（132k/208k 着色像素源自此 bug），推进 DC-13。
+- 根因（box-shadow rgba alpha 在多规则页丢失）可能也影响其他含 box-shadow 的真实页面。
 
-## 下一步（DC-13 推进）
+## 下一步
 
-1. 逐区域（hero / feature cards / 快捷键 / 快速访问 / footer）定位 208k 着色像素的来源（大面积背景填充 vs 重叠 vs 布局塌缩）。
-2. welcome.html 是自包含页，差距根因在 ZeroWeb 基础排版/绘制链路（IFC/背景/盒模型），与上游 reftest 的 Phase A 结构性缺口同源。
-3. 建立 welcome.html smoke 为定期门禁（capture-welcome.mjs + ZeroWeb dump + PIL 对比，阈值待定）。
+对 welcome.html `<style>` 做 CSS bisect：保留 `.card` 规则 + `*`，逐块引入其余规则，定位使 card box-shadow alpha 变 255 的规则/组合（候选：某条规则触发样式计算的 alpha 解析路径异常）。找到后修复 css-parser/style-system 的 box-shadow rgba alpha 计算。
