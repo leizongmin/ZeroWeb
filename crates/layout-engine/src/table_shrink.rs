@@ -142,10 +142,28 @@ pub(crate) fn shrink_table_to_block_content(table_box: &mut LayoutBox, styles: &
     }
 
     // 收缩 table 自身尺寸（width:auto 的 table 应收缩到内容，而非 taffy 的块级填充）
+    let old_border_width = table_box.width;
+    let new_border_width = final_content_width + padding_border_w;
     table_box.content_width = final_content_width;
-    table_box.width = final_content_width + padding_border_w;
+    table_box.width = new_border_width;
     table_box.content_height = content_height;
     table_box.height = content_height + padding_border_h;
+
+    // CSS §10.3.3 / §17.5.2：width:auto 的 display:table 收缩到内容后，若
+    // margin-left/right 均为 auto，应水平居中于包含块。taffy 在收缩前（table 仍
+    // 填满包含块）已把 auto margin 解析为 0，收缩后未重新居中（典型：<html
+    // style="display:table;margin:auto">）。这里把 table 平移到居中位置。
+    //（子元素 x 相对于 table 内容盒，paint 累积偏移 offset_x+box.x，故只改 table.x
+    //   即可让整棵 table 子树整体居中，无需逐子元素平移。）
+    let both_margins_auto = table_style
+        .as_ref()
+        .is_some_and(|s| matches!(s.margin_left, LengthValue::Auto) && matches!(s.margin_right, LengthValue::Auto));
+    if both_margins_auto && new_border_width + 0.5 < old_border_width {
+        let margin = (old_border_width - new_border_width) / 2.0;
+        table_box.x += margin;
+        table_box.margin_left = margin;
+        table_box.margin_right = margin;
+    }
 }
 
 /// 估算 block 容器的 max-content（最大内容）宽度。
