@@ -2961,6 +2961,11 @@ fn remeasure_inline_only_containers(box_node: &mut LayoutBox, doc: &Document, st
             && matches!(box_node.children[idx].float, FloatValue::None)
             && !box_node.children[idx].is_absolute
             && !box_node.children[idx].is_fixed
+            // 垂直书写模式下块流方向为水平（x 轴），「高度」是 inline 轴跨度。
+            // inline 轴收缩不会在块轴留下空隙，故不应移动后续块兄弟（它们按 x 排列）。
+            // 旧代码无条件 `sibling.y += shrink_delta` 会把垂直模式的兄弟推到负 y（屏幕外），
+            // 例如 writing-mode:vertical-rl 根页面整页渲染为空白（box-offsets-rel-pos-vrl-004）。
+            && matches!(box_node.writing_mode, WritingModeValue::HorizontalTb)
         {
             for sibling in box_node.children.iter_mut().skip(idx + 1) {
                 if sibling.is_absolute || sibling.is_fixed || !matches!(sibling.float, FloatValue::None) {
@@ -3022,6 +3027,51 @@ mod table_layout_tests {
         // Should not crash, and root should have non-zero size
         assert!(result.root.width > 0.0);
         assert!(result.root.height > 0.0);
+    }
+}
+
+#[cfg(test)]
+mod writing_mode_tests {
+    use super::*;
+    use zero_style_system::StyleSystem;
+
+    /// 回归：`remeasure_inline_only_containers` 在子元素 inline 重测量使「高度」收缩时，
+    /// 无条件地把后续普通流兄弟按收缩量上移 `sibling.y += shrink_delta`。
+    /// 该逻辑仅适用于水平书写模式（块流方向为 y 轴）。在垂直书写模式中块流方向为 x 轴、
+    /// 「高度」是 inline 轴跨度，inline 轴收缩不在块轴留空隙，不应移动块兄弟；
+    /// 旧代码会把兄弟推到负 y（屏幕外），导致 writing-mode:vertical-rl 根页面整页空白
+    ///（如 box-offsets-rel-pos-vrl-004）。
+    #[test]
+    fn test_vertical_rl_block_sibling_not_pushed_offscreen() {
+        // 复刻 box-offsets-rel-pos-vrl-004 的 body 结构（含 4 个相对定位小块兄弟）。
+        // 垂直书写模式下 taffy 把 <p> 的 inline 轴高度赋成接近 body 内容高度，
+        // IFC 重测量后大幅收缩，旧代码会把后续块兄弟按收缩量推到负 y（整页空白）。
+        let html = r#"<html style="writing-mode:vertical-rl"><body>
+          <p><img src="p.png" width="304" height="35" /></p>
+          <div style="width:100px;height:100px;padding:50px;border:50px solid orange;margin-right:8px;position:static"><img src="l.png" width="100" height="100" /></div>
+          <div style="width:25px;height:25px;position:relative;writing-mode:horizontal-tb;left:75px;top:50px">TL</div>
+          <div style="width:25px;height:25px;position:relative;writing-mode:horizontal-tb;left:275px;top:50px">TR</div>
+          <div style="width:25px;height:25px;position:relative;writing-mode:horizontal-tb;left:125px;top:225px">BL</div>
+          <div style="width:25px;height:25px;position:relative;writing-mode:horizontal-tb;left:325px;top:225px">BR</div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 任何普通流盒子都不应被推到视口之上（负 y）。
+        fn any_offscreen_top(b: &LayoutBox) -> bool {
+            if !b.is_absolute && !b.is_fixed && b.y < -0.5 {
+                return true;
+            }
+            b.children.iter().any(any_offscreen_top)
+        }
+        assert!(
+            !any_offscreen_top(&result.root),
+            "vertical-rl page has in-flow boxes pushed off-screen (negative y)"
+        );
     }
 }
 
