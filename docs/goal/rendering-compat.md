@@ -302,6 +302,18 @@
 - [ ] ZeroBrowser 不得对 WebView glyph 做会改变布局语义的整行重排；如需字体 fallback 或选择命中，应在不改变原始 glyph 坐标语义的路径上实现
 - [ ] 截图、对比报告和失败根因持久化到 `docs/goal/rendering-compat/evidence/product-static/`
 
+### DC-14: 真通过标准（anti-false-pass）— 验证可信度门禁
+
+> 本 DC 防止 reftest 通过率被「同源假通过」「宽容差」「子集分母」污染。**DC-2~13 的通过率数字只有在本 DC 同时满足时才可信、才计入达标判定。**
+
+- [ ] **独立 Oracle（reference 不得由被验证者自渲染）**：reftest 的参考基准必须是 **Chromium 渲染 test.html**，不得是 ZeroWeb 自渲染 ref.html。当前 `reftest.rs:230-232` 用 ZeroWeb 渲染 ref，衡量的是「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs 标准」，存在 test/ref 同错即假通过的结构性缺陷。必须接入已存在但闲置的 `capture-chromium-screenshots.mjs`，至少对**抽样** reftest 跑 `ZeroWeb-test vs Chromium-test`，并量化「ZeroWeb-self 通过但 Chromium 不一致」的污染比例
+- [ ] **非平凡性检查**：拒绝 `test == ref` 且接近纯色（或 PNG 退化）的 case 自动判 PASS——必须标记为「可疑/退化」并单独审计，防止 harness PNG 加载 bug 等导致的退化假绿（历史已发生，见 `archive/rounds-r23-r139.md` R135/R149）
+- [ ] **严格容差复跑 + 三态分类**：必须在文档锁定容差（布局 ≤ 0.1% / 文字 ≤ 0.5%，优先 WPT fuzzy 注解）下复跑全量，输出 **真通过 / 近似通过（超锁定容差但更宽松）/ 假通过（退化或同源）** 三态。唯一可信达标指标 = **严格容差真通过率**。当前 vertical-rl clearance 用 5% 容差属近似通过，不计入真通过
+- [ ] **容差锁定不可放宽**：布局类 ≤ 0.1%、文字类 ≤ 0.5% 为硬上限。不允许以「实测校准」「字体差异」为由放宽容差；文字类大面积失败必须修渲染，不得放宽容差
+- [ ] **分母真实性（去子集化）**：分母 = 上游每目录**全部**范围内 reftest（从 `MANIFEST.json` 自动提取），不允许每目录只取约 60 个子集（当前 `import-wpt-reftests.sh` 默认 `COUNT=60` 即子集）。须有对账机制量化 `N_imported / N_full` 覆盖率，分阶段补全到全量（见 `tests/wpt-runner/scripts/audit-reftest-coverage.py`）
+- [ ] **GPU 非 passthrough**：GPU 渲染器每种图元必须有独立 WGSL shader/pipeline，不允许 fallback 到 CPU 后处理（当前 DC-9 多图元标「CPU 后处理对齐」= passthrough，违反 DC-9/M7 硬约束）
+- [ ] **内联 smoke 不计达标**：DC-2~5 的内联 reftest 100% 仅作 smoke，不计入达标判定。master.md DC 进度表中任何「内联 100%」不得标记为该 DC 达标
+
 ### 通过率统计口径
 
 - **统计对象**：从上游 WPT 仓库（`https://github.com/web-platform-tests/wpt`）导入的**真实 reftest case**，**不含**现有 1,341 个手写 `TestCase`，也**不含** 685 个手写 inline reftest
@@ -310,6 +322,7 @@
 - **分母**：上游 WPT 每个目录下**全部**范围内 reftest case（即上游该目录中所有不属于 skip list 的 reftest），**不是**人为挑选的子集。必须从上游 WPT 的 `MANIFEST.json` 自动提取 reftest 列表，不允许手动筛选
 - **分子**：运行后判定为 PASS 的 case 数量
 - **通过率** = 分子 / 分母 × 100%
+- **可信度前提（DC-14）**：上述通过率只有在 reference 独立于被验证者（Chromium 渲染，非 ZeroWeb 自渲染）、严格容差、全量分母时才可信。不满足 DC-14 的通过率（含当前 436/490，reference 为 ZeroWeb 自渲染）只能作「自一致性」参考，**不构成达标证据**
 - **失败 case 约束**：通过率 ≥ 95% 的情况下，仍需对所有失败 case 进行根因分析并记录到 evidence。不允许有「未分析的失败」。失败的根因分类为：CSS parser 错误、样式计算错误、布局算法错误、渲染器错误、JS 执行错误、范围外误入、已知 fontdue/Skia 字体差异（仅文字类）。根因为渲染错误的必须有修复计划
 - **要求**：每个 WPT 目录的分母 = 上游该目录全部 reftest − skip list 中范围外 reftest。分母不允许人为缩减——不允许跳过已知会失败的 case，不允许只挑选简单 case
 - **最低分母要求**：每个目录范围内 reftest 必须 ≥ 50 个（如果上游该目录范围内 reftest 不足 50 个，则导入全部）
@@ -793,10 +806,10 @@ evidence/
 
 **同时满足以下所有条件时才允许输出 DONE**：
 
-1. ✅ Done Criteria DC-1 到 DC-13 全部满足
+1. ✅ Done Criteria DC-1 到 DC-14 全部满足（**DC-14 真通过标准是 DC-2~13 通过率数字的可信度前提**）
 2. ✅ CPU 渲染器 + GPU 渲染器均支持全部 13 种 `RenderPrimitives` 图元类型
 3. ✅ 浏览器 `append_webview_primitives()` 正确消费并渲染所有图元类型
-4. ✅ 所有四个 WPT 领域（CSS 2.1、Flexbox+Grid、布局模式、文字排版）通过率均 ≥ 95%（基于真实上游 WPT reftest）
+4. ✅ 所有四个 WPT 领域（CSS 2.1、Flexbox+Grid、布局模式、文字排版）通过率均 ≥ 95%（基于真实上游 WPT reftest，且为**严格容差真通过率**、reference 为 **Chromium 独立 Oracle**、分母为上游全量——即满足 DC-14）
 5. ✅ Margin 折叠、BFC、Float 布局、滚动容器等核心布局行为与 Chromium 一致
 6. ✅ CPU 软件渲染 + GPU 渲染双模式均达标
 7. ✅ `cargo build` + `cargo test` + `cargo clippy` 全通过
@@ -821,6 +834,11 @@ evidence/
 - ❌ Margin 折叠未实现或未验证
 - ❌ BFC 未实现或未验证
 - ❌ 只通过了手写 inline reftest，未使用上游 WPT 真实 reftest
+- ❌ reftest reference 由 ZeroWeb 自渲染（同源），未接入 Chromium 独立 Oracle（DC-14）——通过率仅证明自一致性，不证明与标准一致
+- ❌ 通过率含同源假通过（test==ref 退化或近纯色）而未做非平凡性检查（DC-14）
+- ❌ 分母为子集（每目录约 60 个），非上游全量，未做覆盖率对账（DC-14）
+- ❌ DC-2~5 以内联 reftest 100% 冒充达标（内联仅 smoke，不计达标，DC-14）
+- ❌ GPU 渲染器图元为 CPU 后处理 passthrough，无独立 WGSL pipeline（违反 DC-9/DC-14）
 - ❌ reftest 容差过宽松（布局类 > 0.5%，文字类 > 2%）
 - ❌ master.md 缺失、必填章节缺失、archive/evidence 为空且无有效里程碑
 - ❌ 无 reftest 证据，或 reftest 存在未分析的失败项
