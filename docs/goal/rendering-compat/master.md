@@ -2,13 +2,35 @@
 
 **最后更新**: 2026-06-16
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 88.6% (434/490) R165（同源持平；**chromium Oracle 真实修复**：R165 margin:auto 水平居中修复 html-display-table chromium 差距 33.09%→2.63%——首个 d16bb8e 方向下的真实 chromium 对齐修复，同源零回归）。**434 即诚实 DC-14 基线，无需恢复 436**（R164 证否 vrl-004/008 R114b 路径：正确 vertical-rl CSS 使 4/4 vrl 变差，因同源 REF 水平渲染 vs 正确 vertical-rl 右侧块起始结构性不可对齐；chromium Oracle 证同源 REF 比 chromium 更怪异：vrl-004 同源 7.09% vs chr 5.08%，font-051 同源 8.19% vs chr 1.62%）。R163 PNG 正确 RGBA 默认启用（DC-14 anti-false-pass）。draw_order 默认启用满足 DC-10。剩余 56 同源失败（结构性多轮 + REF 怪异产物）；**优化目标已转 chromium Oracle 一致率（d16bb8e），18 真 bug 候选见 `evidence/analyze-pollution-2026-06-16.txt`**。
+**上游真实 reftest 通过率**: 88.6% (434/490) R168（同源持平；**chromium Oracle 真实修复 ×2**：R168 table height-as-minimum 修复 table-grid-item-dynamic-004 chromium 差距 11.12%→2.98%——修复 table `height` 属性被完全忽略的真实 bug（CSS §17.5.3），同源零回归；R165 margin:auto 水平居中修复 html-display-table chromium 差距 33.09%→2.63%）。**434 即诚实 DC-14 基线，无需恢复 436**（R164 证否 vrl-004/008 R114b 路径：正确 vertical-rl CSS 使 4/4 vrl 变差，因同源 REF 水平渲染 vs 正确 vertical-rl 右侧块起始结构性不可对齐；chromium Oracle 证同源 REF 比 chromium 更怪异：vrl-004 同源 7.09% vs chr 5.08%，font-051 同源 8.19% vs chr 1.62%）。R163 PNG 正确 RGBA 默认启用（DC-14 anti-false-pass）。draw_order 默认启用满足 DC-10。剩余 56 同源失败（结构性多轮 + REF 怪异产物）；**优化目标已转 chromium Oracle 一致率（d16bb8e），18 真 bug 候选见 `evidence/analyze-pollution-2026-06-16.txt`**。
 
 
 
 **可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **434/490 (88.6%)**（R163 起默认正确图像渲染=DC-14 anti-false-pass，消除 PNG 退化假绿；旧 436 含 garbled-image 假通过）。⚠️ 当前 reference 仍由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错）；治理门禁见 **DC-14 真通过标准**（独立 chromium Oracle 交叉验证基建已就绪 72764a0）。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**。
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
+
+### R168 — table height-as-minimum 修复（table-grid-item-dynamic-004 chromium 11%→2.98%，真实修复，零回归，已提交）
+
+d16bb8e 方向（优化 chromium Oracle 一致率）下第二个真实修复。修复 table 的 `height` 属性被完全忽略的真实 bug —— 被「同源假通过」掩盖的缺口（table-grid-item-dynamic-004 同源 0.00% 通过，但 chromium 差 11.12%；18 真 bug 候选之一）。
+
+**根因**：`apply_table_size_constraints`（table.rs）把表格高度设为 `intrinsic_height`（行内容驱动）+ min/max-height 约束，但**完全忽略 CSS `height` 属性**（Px 和 % 均不读取，只赋值 `final_height = intrinsic_height`）。CSS 2.1 §17.5.3 规定 table 的 `height` 是内容高度的「下限」（min 语义）：表格至少这么高，内容更高则增长。ZeroWeb 此前对任何带 `height`（如 `height:200px`、`height:100%`）的表格都按内容尺寸渲染，与 chromium 大幅不一致。
+
+**修复**：在 `clamp_percentage_max_height`（engine.rs:1378，自上而下 pass，已有 cb_content_height「明确高度」语义）新增 §1.5 段——对 `display:table/inline-table` 盒，把 `style.height`（Px 直接 / 百分比按 cb_content_height 解析）解析为内容高度下限，与已计算 `content_height` 取 max 后回写 `content_height`+`height`（+padding_border）。复用 R119 的 CB 明确性语义：百分比仅当 CB 明确时解析，否则忽略（§10.5）。在此 pass 处理而非 apply_table_size_constraints，是因为后者无 CB 上下文（LayoutBox 无父指针），而本 pass 已自上而下传递明确高度。
+
+**验证（chromium Oracle + 严谨禁用对照）**：
+- table-grid-item-dynamic-004: table 500×116（intrinsic，height 被忽略）→ 500×200（fixed：100 内容 + 100 padding-top），chromium 500×222。chromium 差距 **11.12% → 2.98%**（< 5% 布局阈值 → chromium Oracle 实际通过）。
+- **禁用对照**：临时把增长条件改 `false`，004 回到 116（unfixed）；启用→200。确认修复是 004 改善的**唯一原因**，排除巧合。
+- 同源 upstream reftest **434/490 持平，set-diff 零翻转**（004 同源本就 0.00% 通过=polluted case，修复不改同源通过数，只降 chromium 差距 = DC-14 真实改进）。
+- 18 个含 table `height` 用例**零回归**：min-height-table 0.00%、max-height-table 0.02%、subpixel-table-width-001 0.00%、multicol-fill-001 0.16%、border-spacing-vrl-002 4.17%、min-max-size-table-content-box 36.34%、table-cell-width-0 29.99%、baseline-vertical 16.66%、fixed-table-layout-… 11.20% 全部 diff 持平（min/max-height 语义不变，因取 max 只增不减且多数用例 content≥指定高）。
+- make test **12182 passed / 0 failed**；clippy 零警告；fmt clean。
+- +2 单测：`test_table_height_as_minimum_px`（engine.compute 验 Px 分支）+ `test_table_percentage_height_resolves_as_minimum`（直接调用 clamp 验百分比分支——engine.compute 路径中 table 匿名包装盒打断直接父子 CB 传递致百分比不触发，故直接测函数；百分比端到端正确性由 004 reftest 覆盖）。
+
+**剩余**：
+- **003（29%）同源通过但 chromium 仍高**——差异主因是 table 作为 grid item 的**宽度 shrink-to-fit vs grid-stretch**（ZW table 327 shrink-to-fit，chromium 800 拉伸到 grid 轨道），与高度修复独立；003 仅 height 修复后 table 仍 327 宽，与 chromium 800 宽差距主导。需 grid-item-table 拉伸单独处理（grid item width:auto 应拉伸到 track，但 table shrink-to-fit 覆盖——类似 R138 但需 grid 感知）。
+- **004 剩余 2.98%** = chromium intrinsic 行高 ~122 vs ZW ~100（cell padding/border-spacing 细节），独立小差异。
+
+**方法论**：chromium Oracle 像素对比（REFTEST_DUMP ZeroWeb vs /tmp/oracle-shots-all）定位「同源通过但 chr 不一致」的真 bug → 探针（TBLH_DBG）定位 `style.height` 在 apply_table_size_constraints 被忽略 → 严谨禁用对照（条件改 `false`）确认修复是改善唯一原因。**印证 d16bb8e 转向正确**：18 真 bug 候选中仍有可单点修复的真实缺口（R165 margin:auto、R168 table height），非全部结构性；下一轮最高杠杆=重审 R111/R130/R138/R124 等「同源修但 chr 仍高」用例的分歧点，或 003 的 grid-item-table 拉伸。
 
 ### R166 — 真 bug 候选再甄别（table_grid 非单点 + float-006 paint 层，诊断，持平，无提交）
 
