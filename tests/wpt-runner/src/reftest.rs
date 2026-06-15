@@ -617,11 +617,7 @@ fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCache {
 ///
 /// EXPAND 不保证 RGBA：palette 无 tRNS / RGB 输入 → 输出 RGB（3 字节/像素），
 /// grayscale → 1 字节/像素。本函数按 OutputInfo.color_type 统一补齐为 RGBA。
-fn convert_png_buffer_to_rgba(
-    raw: &[u8],
-    color_type: png::ColorType,
-    bit_depth: png::BitDepth,
-) -> Vec<u8> {
+fn convert_png_buffer_to_rgba(raw: &[u8], color_type: png::ColorType, bit_depth: png::BitDepth) -> Vec<u8> {
     use png::ColorType::*;
     // STRIP_16 保证 ≤8bit；EXPAND 保证非 palette/indexed。剩余可能的 16-bit 输入
     //（如 Rgb16）经 STRIP_16 后变 8-bit。
@@ -673,9 +669,7 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
     // ZERO_PNG_EXPAND=0 逃生舱回退到旧的「按 RGBA 直读」路径（诊断/回归对比用）。
     let expand = !matches!(std::env::var("ZERO_PNG_EXPAND").as_deref(), Ok("0"));
     if expand {
-        decoder.set_transformations(
-            png::Transformations::EXPAND | png::Transformations::STRIP_16,
-        );
+        decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     }
     let mut reader = decoder
         .read_info()
