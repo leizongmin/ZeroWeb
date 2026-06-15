@@ -1103,7 +1103,7 @@ pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
     }
     // 解析 "2px 2px 4px red" 或 "2px 2px" 或 "2px 2px red"
     // 用括号感知分割，避免 `rgba(0, 0, 0, 0.5)` 被拆碎（同 parse_box_shadow 的修复）
-    let owned = split_shadow_tokens(v);
+    let owned = split_paren_aware_tokens(v);
     let parts: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
     if parts.len() < 2 {
         return None;
@@ -1151,13 +1151,15 @@ pub struct BoxShadowValue {
     pub inset: bool,
 }
 
-/// 按空白分割 box-shadow 值，但不在括号内分割——保留 `rgba(0, 0, 0, 0.08)`、
+/// 按空白分割 CSS 值，但不在括号内分割——保留 `rgba(0, 0, 0, 0.08)`、
 /// `hsla(...)`、`var(...)` 等含内部空白的函数为单个 token。
 ///
-/// 此前用 `split_whitespace()` 会把 `rgba(0, 0, 0, 0.08)` 拆成碎片，导致颜色解析
-/// 失败并回退为默认实心黑（alpha=255），使 welcome.html 等用标准带空格 rgba 的页面
-/// 渲染出大面积实心黑阴影（DC-13 welcome.html 51.59% 差距主因）。
-fn split_shadow_tokens(s: &str) -> Vec<String> {
+/// 通用工具：box-shadow / text-shadow（parse_transform.rs）与 border / outline /
+/// column-rule 简写（style-system）共享。此前各处用 `split_whitespace()` 会把
+/// `rgba(0, 0, 0, 0.08)` 拆成碎片，导致颜色解析失败并回退为默认实心黑（alpha=255），
+/// 使 welcome.html 等用标准带空格 rgba 的页面渲染出大面积实心黑阴影/边框
+/// （DC-13 welcome.html 51.59% 差距主因）。
+pub fn split_paren_aware_tokens(s: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut cur = String::new();
     let mut depth = 0i32;
@@ -1207,7 +1209,7 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
     let lower = v.to_ascii_lowercase();
     let inset = lower.starts_with("inset");
     let rest = if inset { v[5..].trim_start() } else { v };
-    let owned = split_shadow_tokens(rest);
+    let owned = split_paren_aware_tokens(rest);
     let parts: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
     if parts.len() < 2 {
         return None;

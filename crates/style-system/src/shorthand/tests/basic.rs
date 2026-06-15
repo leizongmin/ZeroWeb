@@ -128,6 +128,21 @@ fn test_border_all() {
     }
 }
 
+/// border 简写的 rgba 颜色含逗号后空格（标准格式）必须保持完整 token。
+///
+/// 此前 `parse_border_shorthand` 用 `split_whitespace()` 把 `rgba(255, 0, 0, 0.3)`
+/// 拆碎，颜色退化成碎片或 currentcolor（→黑）。修复后括号感知分割保留完整 rgba。
+#[test]
+fn test_border_all_rgba_with_spaces_keeps_color() {
+    let result = expand_one("border", "6px solid rgba(255, 0, 0, 0.3)", false, (0, 0, 1));
+    // border-top-color 应为完整 rgba（非碎片 / 非 currentcolor）
+    assert_eq!(result[2].0, "border-top-color");
+    assert_eq!(
+        result[2].1, "rgba(255, 0, 0, 0.3)",
+        "spaced rgba in border shorthand must stay intact (was fragmented → black)"
+    );
+}
+
 #[test]
 fn test_border_all_only_width() {
     let result = expand_one("border", "2px", false, (0, 0, 1));
