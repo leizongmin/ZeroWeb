@@ -2,23 +2,23 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 89.0% (436/490) R161（**PNG EXPAND 诊断门控已提交默认净中性**；ZERO_PNG_EXPAND=1 实测 bundle net **-1（纠正 R156 的 -2）**——vrl-008 现以 4.06% 通过，仅 vrl-004 (5.43%) 阻塞=R114b x 轴 clearance）。R158 large-font 死锁机制精确定位（100px 文本在 taffy 已测量 height:auto 子容器，remeasure content_height<1.0 守卫 + compute_final R84 多行守卫双跳过→paint IFC 16px；multicol-fill-auto 仅因 16px bug 通过，须先解）。draw_order 默认启用满足 DC-10。剩余 54 失败（单会话 clean win 九重确证穷尽，全部结构性多轮）。
+**上游真实 reftest 通过率**: 89.0% (436/490) R161（**PNG EXPAND 诊断门控 + 正确 RGBA 转换已提交默认净中性**；ZERO_PNG_EXPAND=1 实测 bundle **net -2**——修正本会话早先 net -1 误判（错位转换假象）；vrl-004(7.09%)/008(6.42%) 双阻塞=R114b x 轴 clearance）。R158 large-font 死锁机制精确定位（100px 文本在 taffy 已测量 height:auto 子容器，remeasure content_height<1.0 守卫 + compute_final R84 多行守卫双跳过→paint IFC 16px；multicol-fill-auto 仅因 16px bug 通过，须先解）。draw_order 默认启用满足 DC-10。剩余 54 失败（单会话 clean win 九重确证穷尽，全部结构性多轮）。
 
 **可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **436/490 (89.0%)**。⚠️ 当前 reference 由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量的是「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错、PNG 退化即假绿）；治理门禁见 **DC-14 真通过标准**。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**——DC-2~5 表内标注的 100% 均基于内联 smoke。
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
-### R161 — PNG EXPAND 诊断门控 + bundle 真实测量 net -1（仅 vrl-004 阻塞）（已提交，默认净中性）
+### R161 — PNG EXPAND 诊断门控 + 正确 RGBA 转换（修复 alpha=0 退化，bundle 真实 net -2）（已提交，默认净中性）
 
-**变更（已提交，默认净中性零回归）**：`load_png_file`（reftest.rs:617）新增 `ZERO_PNG_EXPAND` 环境变量门控的诊断模式——启用后 `set_transformations(EXPAND|STRIP_16)` 把 palette/grayscale/RGB PNG 正确展开为 RGBA8（support/swatch-*.png、pass-cdts 等多为 palette/RGB，否则 alpha=0 退化透明→假通过）。默认关闭保持 baseline 436/490 字节不变。
+**变更（已提交，默认净中性零回归）**：`load_png_file`（reftest.rs）新增 `ZERO_PNG_EXPAND` 环境变量门控——启用后 `set_transformations(EXPAND|STRIP_16)` 并用 `output_buffer_size`+`convert_png_buffer_to_rgba` 按 `OutputInfo.color_type` 正确转换为 RGBA8。**关键 bug 修复**：EXPAND 不保证输出 RGBA（palette 无 tRNS / RGB 输入 → 输出 RGB=3 字节/像素），原先按 4 字节解释会错位→ alpha=0 退化透明（swatch-green.png 实测 [0,128,0,0]）。正确转换后 swatch-green → [0,128,0,255]。`convert_png_buffer_to_rgba` 处理 Rgb(补 alpha=255)/Grayscale(复制+255)/GrayscaleAlpha/Rgba(原样)。
 
-**bundle 真实测量（关键更新，纠正 R156 net -2）**：`ZERO_PNG_EXPAND=1` 全量实测 **435/490（net -1，非 R156 测的 -2）**——**vrl-008 现以 4.06% 通过**（< 5% writing-modes 阈值，R156 测的 6.42% 是 R151 abspos/R155 draw_order/R142 守卫之前的旧值），**仅 vrl-004 (5.43%) 翻转为 FAIL**。clear-clearance-calculation-001~005 全 0.00% 通过（draw_order R155 已修）。故 PNG bundle 四组件 (A)EXPAND + (B)draw_order(R155) + (C')abspos-vrl(R151) 三就绪，**唯一阻塞从 vrl-004/008 收窄到仅 vrl-004**。
+**bundle 真实测量（纠正本会话早先 net -1 误判）**：`ZERO_PNG_EXPAND=1` 正确转换后全量实测 **434/490（net -2）**——**vrl-004 (7.09%) 与 vrl-008 (6.42%) 双双 FAIL**（R156 的 net -2 测量正确）。本会话早先用「错位转换」测得的 net -1 / vrl-008 4.06% 通过是 **bug 假象**（错位 buffer 产生的乱码 ref 凑巧接近）。clear-clearance-calc-001~005 全 0.00% 通过。**bundle 唯一阻塞仍是 vrl-004/008 双（R114b x 轴 clearance）**，未收窄。
 
-**vrl-004 精确分析（EXPAND 后）**：REF 是 image-based（2 个 swatch-green.png 60×100+20×100）；TEST 三个 green 块(preceding/floated-left/clearing-left)在 vertical-rl 下因 clearance 代码全 y 轴(engine.rs:2510)被错位→红背景暴露 8875px(占 diff 主导)。bbox x=[8,167] y=[51,509]。**这是 R114b x 轴 clearance 工作**（~150 行参数化 adjust_float_positions_with_context 的块轴：HorizontalTb→y 现逻辑，VerticalRl/Lr→x 新逻辑），对 59 水平 floats-clear 零风险（严格 writing_mode 门控）但高实现复杂度+垂直提取/paint 路径交互(R142/R151)，单会话不可安全完成。
+**vrl-004 精确分析（EXPAND 后）**：REF image-based（2 swatch-green 60×100+20×100）；TEST 三 green 块 vertical-rl 下因 clearance 代码全 y 轴(engine.rs:2510)错位→红背景暴露。**这是 R114b x 轴 clearance 工作**（~150 行参数化块轴），对 59 水平 floats-clear 零风险（严格 writing_mode 门控）但高实现复杂度，单会话不可安全完成。
 
-**解锁路径**：修 vrl-004（R114b x 轴 clearance）→ bundle net 0 → 可默认启用 EXPAND（消除 12 IMG-REF 假通过=DC-14 anti-false-pass，让图像 multicol REF 可见从而可正确评估/修复分布）。当前 EXPAND 默认关闭保 436/490；诊断用 `ZERO_PNG_EXPAND=1`。
+**解锁路径**：修 vrl-004/008（R114b x 轴 clearance）→ bundle net 0 → 可默认启用 EXPAND（消除 IMG-REF 假通过=DC-14 anti-false-pass，让图像 multicol REF 可见从而可正确评估/修复分布）。当前 EXPAND 默认关闭保 436/490；诊断用 `ZERO_PNG_EXPAND=1`（→434 真实）。
 
-### R158 — large-font 死锁机制精确定位 + 失败聚类再分类（诊断，持平，无提交，工作区清洁）
+### R158 — large-font 死锁机制精确定位 + 失败聚类再分类（诊断，持平，工作区清洁）
 
 **436/490 持平（make reftest-upstream 实测确认 436/490=89.0%，54 失败）**。本轮独立复核全 54 失败，重点深挖 large-font 死锁与若干「疑似 discrete bug」候选，全部确认为已知结构性聚类。新/精化的理解（区别既往轮次）：
 
