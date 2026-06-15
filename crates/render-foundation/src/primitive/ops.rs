@@ -347,73 +347,81 @@ impl RenderPrimitives {
     pub fn cull_invisible(&self, viewport: Rect) -> (RenderPrimitives, RenderStats) {
         let original_len = self.len();
 
-        let fills: Vec<FillPrimitive> = self
-            .fills
-            .iter()
-            .filter(|f| viewport.intersects(&f.rect))
-            .cloned()
-            .collect();
+        // 对每个 typed Vec：保留满足视口相交条件的元素，同时记录「旧索引→新索引」
+        // 重映射，供 draw_order 重建使用（draw_order 索引指向旧 typed Vec）。
+        let mut fills = Vec::new();
+        let mut fills_remap = vec![None; self.fills.len()];
+        for (i, f) in self.fills.iter().enumerate() {
+            if viewport.intersects(&f.rect) {
+                fills_remap[i] = Some(fills.len());
+                fills.push(f.clone());
+            }
+        }
 
-        let rounded_rects: Vec<RoundedRectPrimitive> = self
-            .rounded_rects
-            .iter()
-            .filter(|rr| viewport.intersects(&rr.rect))
-            .cloned()
-            .collect();
+        let mut rounded_rects = Vec::new();
+        let mut rounded_remap = vec![None; self.rounded_rects.len()];
+        for (i, rr) in self.rounded_rects.iter().enumerate() {
+            if viewport.intersects(&rr.rect) {
+                rounded_remap[i] = Some(rounded_rects.len());
+                rounded_rects.push(rr.clone());
+            }
+        }
 
-        let strokes: Vec<StrokePrimitive> = self
-            .strokes
-            .iter()
-            .filter(|s| {
-                let half_w = s.width / 2.0;
-                let stroke_rect = Rect::new(
-                    s.x1.min(s.x2) - half_w,
-                    s.y1.min(s.y2) - half_w,
-                    (s.x1.max(s.x2) - s.x1.min(s.x2)) + s.width,
-                    (s.y1.max(s.y2) - s.y1.min(s.y2)) + s.width,
-                );
-                viewport.intersects(&stroke_rect)
-            })
-            .cloned()
-            .collect();
+        let mut strokes = Vec::new();
+        let mut strokes_remap = vec![None; self.strokes.len()];
+        for (i, s) in self.strokes.iter().enumerate() {
+            let half_w = s.width / 2.0;
+            let stroke_rect = Rect::new(
+                s.x1.min(s.x2) - half_w,
+                s.y1.min(s.y2) - half_w,
+                (s.x1.max(s.x2) - s.x1.min(s.x2)) + s.width,
+                (s.y1.max(s.y2) - s.y1.min(s.y2)) + s.width,
+            );
+            if viewport.intersects(&stroke_rect) {
+                strokes_remap[i] = Some(strokes.len());
+                strokes.push(s.clone());
+            }
+        }
 
-        let shadows: Vec<ShadowPrimitive> = self
-            .shadows
-            .iter()
-            .filter(|s| {
-                let shadow_rect = Rect::new(
-                    s.rect.origin.x + s.offset_x - s.spread_radius - s.blur_radius,
-                    s.rect.origin.y + s.offset_y - s.spread_radius - s.blur_radius,
-                    s.rect.size.width + 2.0 * (s.spread_radius + s.blur_radius),
-                    s.rect.size.height + 2.0 * (s.spread_radius + s.blur_radius),
-                );
-                viewport.intersects(&shadow_rect)
-            })
-            .cloned()
-            .collect();
+        let mut shadows = Vec::new();
+        let mut shadows_remap = vec![None; self.shadows.len()];
+        for (i, s) in self.shadows.iter().enumerate() {
+            let shadow_rect = Rect::new(
+                s.rect.origin.x + s.offset_x - s.spread_radius - s.blur_radius,
+                s.rect.origin.y + s.offset_y - s.spread_radius - s.blur_radius,
+                s.rect.size.width + 2.0 * (s.spread_radius + s.blur_radius),
+                s.rect.size.height + 2.0 * (s.spread_radius + s.blur_radius),
+            );
+            if viewport.intersects(&shadow_rect) {
+                shadows_remap[i] = Some(shadows.len());
+                shadows.push(s.clone());
+            }
+        }
 
-        let images: Vec<ImagePrimitive> = self
-            .images
-            .iter()
-            .filter(|img| viewport.intersects(&img.rect))
-            .cloned()
-            .collect();
+        let mut images = Vec::new();
+        let mut images_remap = vec![None; self.images.len()];
+        for (i, img) in self.images.iter().enumerate() {
+            if viewport.intersects(&img.rect) {
+                images_remap[i] = Some(images.len());
+                images.push(img.clone());
+            }
+        }
 
-        let gradients: Vec<GradientPrimitive> = self
-            .gradients
-            .iter()
-            .filter(|g| viewport.intersects(&g.rect))
-            .cloned()
-            .collect();
+        let mut gradients = Vec::new();
+        let mut gradients_remap = vec![None; self.gradients.len()];
+        for (i, g) in self.gradients.iter().enumerate() {
+            if viewport.intersects(&g.rect) {
+                gradients_remap[i] = Some(gradients.len());
+                gradients.push(g.clone());
+            }
+        }
 
-        let path_fills: Vec<PathFillPrimitive> = self
-            .path_fills
-            .iter()
-            .filter(|pf| {
-                // 使用路径顶点计算包围盒
-                if pf.vertices.is_empty() {
-                    return true; // 空路径保留
-                }
+        let mut path_fills = Vec::new();
+        let mut path_fills_remap = vec![None; self.path_fills.len()];
+        for (i, pf) in self.path_fills.iter().enumerate() {
+            let keep = if pf.vertices.is_empty() {
+                true
+            } else {
                 let mut min_x = f32::MAX;
                 let mut min_y = f32::MAX;
                 let mut max_x = f32::MIN;
@@ -426,17 +434,19 @@ impl RenderPrimitives {
                 }
                 let bbox = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
                 viewport.intersects(&bbox)
-            })
-            .cloned()
-            .collect();
+            };
+            if keep {
+                path_fills_remap[i] = Some(path_fills.len());
+                path_fills.push(pf.clone());
+            }
+        }
 
-        let path_strokes: Vec<PathStrokePrimitive> = self
-            .path_strokes
-            .iter()
-            .filter(|ps| {
-                if ps.vertices.is_empty() {
-                    return true;
-                }
+        let mut path_strokes = Vec::new();
+        let mut path_strokes_remap = vec![None; self.path_strokes.len()];
+        for (i, ps) in self.path_strokes.iter().enumerate() {
+            let keep = if ps.vertices.is_empty() {
+                true
+            } else {
                 let mut min_x = f32::MAX;
                 let mut min_y = f32::MAX;
                 let mut max_x = f32::MIN;
@@ -449,22 +459,53 @@ impl RenderPrimitives {
                 }
                 let bbox = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
                 viewport.intersects(&bbox)
+            };
+            if keep {
+                path_strokes_remap[i] = Some(path_strokes.len());
+                path_strokes.push(ps.clone());
+            }
+        }
+
+        let mut filters = Vec::new();
+        let mut filters_remap = vec![None; self.filters.len()];
+        for (i, f) in self.filters.iter().enumerate() {
+            if viewport.intersects(&f.rect) {
+                filters_remap[i] = Some(filters.len());
+                filters.push(f.clone());
+            }
+        }
+
+        let mut transforms = Vec::new();
+        let mut transforms_remap = vec![None; self.transforms.len()];
+        for (i, t) in self.transforms.iter().enumerate() {
+            if viewport.intersects(&t.rect) {
+                transforms_remap[i] = Some(transforms.len());
+                transforms.push(t.clone());
+            }
+        }
+
+        // 重建 draw_order：把每个旧 DrawOp 索引按重映射更新到新 typed Vec 索引；
+        // 被剔除的图元（remap=None）从 draw_order 中移除。clips/glyphs/blend_modes
+        // 全保留（索引不变），其 DrawOp 直接保留。
+        let draw_order: Vec<DrawOp> = self
+            .draw_order
+            .iter()
+            .filter_map(|op| match op {
+                DrawOp::Fill(i) => fills_remap.get(*i).copied().flatten().map(DrawOp::Fill),
+                DrawOp::RoundedRect(i) => rounded_remap.get(*i).copied().flatten().map(DrawOp::RoundedRect),
+                DrawOp::PathFill(i) => path_fills_remap.get(*i).copied().flatten().map(DrawOp::PathFill),
+                DrawOp::PathStroke(i) => path_strokes_remap.get(*i).copied().flatten().map(DrawOp::PathStroke),
+                DrawOp::Stroke(i) => strokes_remap.get(*i).copied().flatten().map(DrawOp::Stroke),
+                DrawOp::Gradient(i) => gradients_remap.get(*i).copied().flatten().map(DrawOp::Gradient),
+                DrawOp::Shadow(i) => shadows_remap.get(*i).copied().flatten().map(DrawOp::Shadow),
+                DrawOp::Image(i) => images_remap.get(*i).copied().flatten().map(DrawOp::Image),
+                DrawOp::Filter(i) => filters_remap.get(*i).copied().flatten().map(DrawOp::Filter),
+                DrawOp::Transform(i) => transforms_remap.get(*i).copied().flatten().map(DrawOp::Transform),
+                // clips/glyphs/blend_modes 全保留，索引不变
+                DrawOp::Glyph(i) => Some(DrawOp::Glyph(*i)),
+                DrawOp::BlendMode(i) => Some(DrawOp::BlendMode(*i)),
+                DrawOp::Clip(i) => Some(DrawOp::Clip(*i)),
             })
-            .cloned()
-            .collect();
-
-        let filters: Vec<super::FilterPrimitive> = self
-            .filters
-            .iter()
-            .filter(|f| viewport.intersects(&f.rect))
-            .cloned()
-            .collect();
-
-        let transforms: Vec<super::TransformPrimitive> = self
-            .transforms
-            .iter()
-            .filter(|t| viewport.intersects(&t.rect))
-            .cloned()
             .collect();
 
         let result = RenderPrimitives {
@@ -481,9 +522,7 @@ impl RenderPrimitives {
             filters,
             blend_modes: self.blend_modes.clone(), // blend_modes 保留
             transforms,
-            // cull 重建后 typed Vec 索引已变（剔除丢弃元素），draw_order 失效故清空。
-            // draw_order 仅在原始 paint 路径有意义；cull 是优化旁路。
-            draw_order: Vec::new(),
+            draw_order,
         };
 
         let culled_count = original_len - result.len();
