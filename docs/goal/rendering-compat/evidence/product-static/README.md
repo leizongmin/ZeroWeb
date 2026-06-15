@@ -1,6 +1,7 @@
 # DC-13 产品静态页面视觉 smoke — welcome.html 基线证据
 
 **日期**: 2026-06-16
+**状态**: ✅ box-shadow/text-shadow rgba 带空格丢失 alpha 致实心黑——**已修复（R170, 9ade334）**。welcome.html 纯黑 132,793→0。剩余 ~50% 差距为其他渲染差异（cards 区域，Phase A inline-block/IFC ownership）。
 **渲染模式**: ZeroWeb CPU 软件渲染（`render_full_scene`，800×600）vs headless Chromium（800×600）
 **fixture**: `apps/browser/assets/welcome.html`（自包含：仅 favicon data-URI + anchor href，无外链 CSS/图片）
 

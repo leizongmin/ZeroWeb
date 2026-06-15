@@ -10,6 +10,23 @@
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
+### R170 — DC-13 box-shadow/text-shadow rgba 带空格丢失 alpha 致实心黑（真实修复，零回归，已提交）
+
+DC-13 welcome.html smoke 定位到产品可见渲染 bug：`parse_box_shadow`/`parse_text_shadow`（parse_transform.rs）用 `split_whitespace()` 分割值，把标准格式 `rgba(0, 0, 0, 0.08)`（逗号后有空格）拆成碎片，颜色解析失败回退默认实心黑（alpha=255）。
+
+**根因定位过程**：welcome.html 51.59% 差距中 132,793 纯黑像素——bisect 删 box-shadow 后纯黑→0；SHDWDBG 插桩 paint_box_shadow 证 8 个 card/section 阴影 color=rgba(0,0,0,255)（应≈20）；单变量探针排除 grid/`*`/@media/rgba-spaces(count)/count 后，**最终用 SHDWDBG alpha 对比 `.a rgba(0,0,0,0.08)`(alpha 20) vs `.b rgba(0, 0, 0, 0.08)`(alpha 255) 定位到空格触发**——split_whitespace 拆碎 rgba。
+
+**修复**：新增括号感知分割 `split_shadow_tokens`（不在 `()` 内分割，保留 `rgba()/hsl()/var()` 为单 token），box-shadow + 同 class 的 text-shadow 均改用之。
+
+**验证**：
+- welcome.html 纯黑 **132793→0**（DC-13 实心黑主因消除）。
+- 同源上游 reftest **434/490 持平零回归**（0 用例用 box-shadow rgba）。
+- make test **12184/0**（+2 单测：box_shadow/text_shadow rgba-spaces 保 alpha）。
+- clippy/fmt clean。
+- 注：welcome.html 整体 diff 仅 51.59%→50.45%——box-shadow 实心黑消除后暴露**其他**渲染差异（cards 区域，Phase A inline-block/IFC ownership 同源），独立后续。
+
+**意义**：(1) DC-13 首个真实修复，产品可见渲染 bug；(2) box-shadow/text-shadow 用标准带空格 rgba 在**任何真实页面**都会触发实心黑——影响面远超 welcome.html；(3) 印证 DC-13 轴线（产品静态 smoke）能捕获 reftest 平台期无法暴露的 bug——welcome.html 非 reftest，其 box-shadow 解析退化不在 56 失败用例中。
+
 ### R169 — Phase A large-font 死锁实证复核（放宽 R84 多行守卫 net -1，已回退，无提交）
 
 按 Phase A 推进方向（解锁 large-font 集群 ~5 自源失败：font-051/ifc-008/009/011/empty-inline-002），本轮**实证复核**了 R125 记录的死锁——放宽 `compute_final_inline_layouts` 的 R84 单行守卫（engine.rs:1690），允许「多行纯 Ahem」存储 `inline_layout`（保留纯 Ahem 过滤），测全量。
