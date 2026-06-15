@@ -10,6 +10,20 @@
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
+### R164b — 18 真 bug 候选逐项甄别：5 项已查全部结构性（诊断，持平，无提交）
+
+按 d16bb8e 方向（优化目标=chromium Oracle 一致率）逐项甄别 `evidence/analyze-pollution-2026-06-16.txt` 的 18 真 bug 候选。用 `REFTEST_DUMP` ZeroWeb 渲染 + `/tmp/oracle-shots-all` chromium Oracle 像素对比定位差异。**已查 5 项全部确认为结构性多轮**（非单会话 clean win），逐项根因：
+
+1. **backdrop-inherit-rendered (47.5%)**：需 `<dialog>` + `::backdrop` + `showModal()` JS + CSS 变量继承 + `inset` 基础设施，ZeroWeb 无 dialog/modal/backdrop 渲染管线——基础设施级，非渲染 bug。
+2. **baseline-block-with-overflow-001 (45%)**：`inline-block` + `overflow:hidden` 基线=底边（CSS §10.8.1）+ 5 section 复合，inline-block 基线×overflow 交互，影响面广。
+3. **multicol-contained-absolute (16%, R124 同源「修」但 chr 仍 16%)**：ZeroWeb 渲染 abspos 绿块**仅 1 列** X[8,399]，chromium **2 列** X[8,391]+[408,791]——multicol+abspos containing-block 语义（abspos 是否跨列/分列碎片化），CSS multicol 规范深水区，非 R124 的 overflow 裁剪层面。
+4. **collapsed-border-vertical-rtl-overflow (6.1%)** ×3：`border-collapse` 冲突解析 × vertical-rl × direction:rtl × will-change overflow，三重复合，border-collapse 冲突已是 CSS 最难区之一。
+5. **position-absolute-semi-replaced-stretch-input (23%)**：测试名暗示 abspos stretch，**实测 ZeroWeb 已正确 stretch**（窄 CB 绿框 147px、宽 347px 与 chromium 一致）。真实差异=**inline-block CB 的行距/基线/空白**：ZeroWeb 行距 ~100px、框间 gap ~7px，chromium 行距 ~116px、gap ~23px——inline formatting 基线×line-height×whitespace 子问题（非 abspos）。
+
+**模式印证**（与 419c5a8 一致）：rally 曾「修」的用例同源通过但 chr 仍高——R124(multicol-contained-absolute)、R130(flexbox-baseline-align-self-baseline-horiz=17.65%)、R138(html-display-table=33%)、R111(flexbox-collapsed-item-horiz=20.5%)——证实「刷同源通过率」跑偏，这些「修」匹配了怪异同源 REF 而非 chromium。
+
+**剩余 13 候选**（未查，按可修性排序）：position-absolute-semi-replaced-stretch-other(15%,同 #5 inline-block)、table-grid-item-dynamic-003/004(29/11%,grid+table)、table_grid_size_col_colspan(52%,table colspan)、stretch-grid-item-button-overflow(8%,grid+button)、font-family-013(6.65%,字体噪声嫌疑)、iframe-in-block-in-inline/wrapped-span(9.75%,iframe infra)、flexbox-collapsed-item-horiz-001(20.5%,R111 重审)、flexbox-baseline-align-self-baseline-horiz-001(17.65%,R130 重审)。**最高杠杆=重审 R111/R130/R138/R124 的「同源修」为何不匹配 chromium**（代码位置已知，只需找分歧点）。
+
 ### R164 — 否决 vrl-004/008 R114b x 轴 clearance：正确 CSS 与同源水平 REF 结构性不可对齐（诊断，持平，已回退）
 
 **434/490 持平（无提交，实验代码已回退，工作区清洁）**。本轮以**实验证伪**了 R114b「对 vertical-rl/lr 容器实现 x 轴 float 定位 + clearance」这条接力路径——这是上轮 CONTINUE 指定的下一步，也是「PNG bundle 双阻塞」的理论解。
