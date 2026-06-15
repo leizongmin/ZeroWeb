@@ -1113,6 +1113,7 @@ fn extract_script_content(html: &str) -> Vec<String> {
 /// 2. Ahem 测试字体（WPT 标准测试字体，每个字符渲染为实心方块）
 fn create_font_loader() -> FontLoader {
     let mut loader = FontLoader::new();
+    let mut fallback_ids: Vec<u32> = Vec::new();
 
     // 系统字体路径（Linux 常见路径）
     let system_font_paths = [
@@ -1129,10 +1130,30 @@ fn create_font_loader() -> FontLoader {
         }
     }
 
+    // 加载 CJK 字体（Noto Sans CJK）并加入回退链——主字体缺 CJK 字形时回退到此，
+    // 使中文/日文/韩文字符可渲染（DC-13 welcome.html 等含 CJK 文本的真实页面）。
+    let cjk_font_paths = [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    ];
+    for path in &cjk_font_paths {
+        if let Ok(data) = std::fs::read(path) {
+            if let Ok(id) = loader.load_font(&data) {
+                fallback_ids.push(id);
+            }
+            break;
+        }
+    }
+
     // 加载 Ahem 测试字体（WPT reftest 标准字体）
     let ahem_path = "tests/wpt-runner/fonts/Ahem.ttf";
     if let Ok(data) = std::fs::read(ahem_path) {
         let _ = loader.load_font(&data);
+    }
+
+    if !fallback_ids.is_empty() {
+        loader.set_fallback_chain(fallback_ids);
     }
 
     loader
