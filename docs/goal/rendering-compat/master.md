@@ -2,7 +2,19 @@
 
 **最后更新**: 2026-06-15
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 88.8% (435/490) R142（R142 净中性零回归：修复 writing-mode:vertical-rl 根页面整页空白——remeasure 兄弟位移误用 y 轴；vrl-004 25.24%→12.72%、vlr-005 25.12%→9.34% 内容恢复可见但未过阈，剩余=垂直块流方向 R109 谱系）
+**上游真实 reftest 通过率**: 88.8% (435/490) R143（R143 净中性零回归：实现缺失的 CSS 逻辑尺寸属性 inline-size/block-size——旧实现完全忽略；firefox-bug-1881495 7.28%→1.74% 大幅改善，7 个 inline-size 用例零影响；剩余=taffy grid 定宽 inline-grid 轨道不约束子元素换行）
+
+### R143 — 实现 inline-size / block-size 逻辑尺寸属性（净中性零回归，缺失 CSS 属性补全）
+
+**变更**：`crates/style-system/src/property/apply.rs` 新增 `inline-size`→`width`、`block-size`→`height` 映射分支（CSS Logical Properties §1）。+1 单测 `test_apply_inline_block_size_logical`（apply_coverage.rs，断言 inline-size→width、block-size→height）。
+
+**根因**：`inline-size` / `block-size` 在 apply.rs 中**完全没有 match 分支**——作为未知属性被静默忽略。`firefox-bug-1881495` 用 `inline-size:1em/2em/3em` 控制 6 个 inline-grid 的内联尺寸（1em 时 2 个 Ahem X 不应放入→换行），属性被忽略→所有 grid 退化为内容尺寸（~60px）→ 1em/2em 用例布局错。
+
+**修复**：inline-size→width、block-size→height（水平书写模式物理等价）。垂直书写模式的轴正确性由 converter 已有的 `swap_writing_mode_axes`（width↔height 互换）自动保证，无需在 apply 层感知 writing-mode。margin-inline-end 等逻辑边距/内边距**已**映射到水平物理等价（apply_advanced.rs），同样经 swap 自动修正垂直轴——本轮无需改。
+
+**净中性零回归**：全量 reftest **435/490 持平**，set-diff 验证零 pass/fail 翻转。8 个 inline-size 用例：7 个原本通过仍通过（dynamic-isize-change-001 / position-absolute-in-inline-005/006 / table-cell-inline-size-box-sizing-quirks / abs-pos-border-offset-001/002/003——其中 005/006 因现应用声明尺寸 diff 微增 0.64→0.76 / 0.76→0.81 但仍远低于阈），firefox-bug-1881495 **7.28%→1.74%**（剩余 1.74% = taffy grid 对定宽 inline-grid 的 auto 轨道按内容尺寸而非 grid 宽约束子元素，导致 1em grid 的 "X X" 不换行——taffy grid 内部，非 ZeroWeb 侧可修）。make test 全绿（含新单测），clippy 零警告，fmt clean，smoke 686/686。
+
+**为何保留 +0**：与 R140 回退的 gap-fix 不同——本轮实现的是一个**命名的、规范定义的缺失 CSS 属性**（CSS Logical Properties），属目标范围内「CSS 属性解析」核心能力，非推测性规范符合；有单测覆盖；零 pass-count 回归；并将 firefox-bug 推至过阈边缘（1.74%，剩余为独立 taffy grid 子问题）。方法论：从「失败用例反查其依赖的 CSS 属性是否被实现」发现整类属性缺失（grep wpt-data 命中 19 文件用 inline-size），而非逐像素 BISECT。见 [[r142-vertical-rl-sibling-shift-axis]]、[[r97-intrinsic-sizing-rootcause]]（同类「实现缺失 CSS 关键字/属性」模式，但 intrinsic sizing 4win/13regress 风险远高于本轮 inline-size 的零回归）。
 
 ### R142 — 垂直书写模式兄弟位移轴修正（净中性零回归，整页空白→可见）
 
