@@ -2173,6 +2173,17 @@ fn adjust_float_positions_with_context(
     // 容器的内容区域宽度
     let container_width = box_node.content_width;
 
+    // CSS Flexbox §4 / Grid §4 / Tables §2.4：flex/grid/table 容器的流内子元素
+    //（即布局项）其 `float` 与 `clear` 不产生浮动或清除效果——`float` 计算为 `none`。
+    // taffy 内部已据此布局，但 ZeroWeb 的浮动后处理（本函数）按 `child.float` 重新
+    // 定位，会把带 `float:right` 的 flex item 误推到容器右缘。此处对布局容器父级的
+    // 直接子元素将 `float` 归零，使后处理（含 paint 的 float 排斥/绘制）一致忽略它。
+    if box_node.is_layout_container {
+        for child in &mut box_node.children {
+            child.float = FloatValue::None;
+        }
+    }
+
     // taffy 子元素的 Y 坐标是相对于父元素的 border-box 原点，
     // 而 flow_bottom / line_y 等追踪变量是相对于 content area 原点。
     // 当容器有 border-top 或 padding-top 时，需要加上偏移量。
@@ -3072,6 +3083,53 @@ mod writing_mode_tests {
             !any_offscreen_top(&result.root),
             "vertical-rl page has in-flow boxes pushed off-screen (negative y)"
         );
+    }
+
+    /// 回归：CSS Flexbox §4 / Grid §4 / Tables §2.4 规定，flex/grid/table 容器的
+    /// 流内子元素（布局项）其 `float` 不产生浮动效果——`float` 计算为 `none`。
+    /// 旧代码的浮动后处理按 `child.float` 重新定位，把带 `float:right` 的 flex item
+    /// 误推到容器右缘（css-flexbox-test1 / css-flexbox-row）。布局容器父级的直接子元素
+    /// 的 `float` 应被归零，使后处理（含 paint 的 float 排斥/绘制）一致忽略它。
+    #[test]
+    fn test_flex_item_float_is_ignored() {
+        // 复刻 css-flexbox-test1 结构：flex 容器 + 带 float:right 的子元素。
+        // float:right 在非 flex 容器中会把元素推到右缘；在 flex 容器中应被忽略。
+        let html = r#"<html><body style="margin:0">
+          <div style="display:flex; width:600px; height:100px">
+            <div id="a" style="width:100px; height:50px; float:right; background:orange">A</div>
+            <div id="b" style="width:100px; height:50px; background:blue">B</div>
+          </div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 定位 flex 容器（display:flex → is_layout_container=true）的两个子元素。
+        fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let zero_dom::NodeKind::Element(elem) = &n.kind
+                && elem.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let a = find("a", &doc, &result.root).expect("flex item #a");
+        let b = find("b", &doc, &result.root).expect("flex item #b");
+
+        // float:right 被忽略：A 不应被推到容器右缘（~600）而与 B 相邻排列在左侧。
+        // 若 float 仍生效，A.x 会接近容器宽度（500+）。
+        assert!(
+            a.x < 200.0,
+            "flex item with float:right should not be floated to right edge (a.x={})",
+            a.x
+        );
+        // B（无 float）位置不受影响。
+        assert!(b.x < 300.0, "flex item B position sane (b.x={})", b.x);
     }
 }
 
