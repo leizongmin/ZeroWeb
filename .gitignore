@@ -55,3 +55,6 @@ coverage.html/
 # Coverage report
 coverage_report/
 *.profraw
+
+# Node (chromium screenshot Oracle tooling, DC-14)
+node_modules/
