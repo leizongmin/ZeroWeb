@@ -5,7 +5,9 @@
 //! - parse_css_number 的边界情况
 //! - 各种错误路径
 
-use crate::values::{parse_box_shadow, parse_gradient, parse_grid_area, parse_text_shadow, parse_transform};
+use crate::values::{
+    ColorValue, parse_box_shadow, parse_gradient, parse_grid_area, parse_text_shadow, parse_transform,
+};
 
 // ═══════════════════════════════════════════════════════════════════════
 // parse_transform_args 的边界情况测试（通过 public API）
@@ -123,6 +125,17 @@ fn test_grid_area_empty_before_slash() {
 fn test_text_shadow_invalid_args_count() {
     let result = parse_text_shadow("2px");
     assert!(result.is_none());
+}
+
+/// text-shadow 的 rgba 颜色含逗号后空格（标准格式）必须保持 alpha。
+/// 同 box-shadow 修复前：`split_whitespace()` 会拆碎 `rgba(0, 0, 0, 0.5)` → 颜色
+/// 解析失败回退实心黑。
+#[test]
+fn test_text_shadow_rgba_with_spaces_keeps_alpha() {
+    let s = parse_text_shadow("2px 2px 4px rgba(0, 0, 0, 0.5)").unwrap();
+    if let ColorValue::Rgba(_, _, _, a) = s.color {
+        assert_eq!(a, 128, "rgba(0,0,0,0.5) alpha 应≈128，不应丢失为 255");
+    }
 }
 
 // 测试 box-shadow 的错误参数数量
