@@ -2,13 +2,35 @@
 
 **最后更新**: 2026-06-16
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 88.6% (434/490) R164（**434 即诚实 DC-14 基线，无需恢复 436**——R164 经验证否决 vrl-004/008 的 R114b x 轴 clearance 路径：实现正确 vertical-rl CSS（块流改 X 轴）使全部 4 个 vrl 用例**变差**（4/4 FAIL，002/006 从 PASS 翻 FAIL），因同源 REF 是**水平**渲染（绿在左侧），正确 vertical-rl 块起始在**右侧**，二者结构性不可对齐。chromium Oracle 证实同源 REF 比 chromium 更怪异：vrl-004 同源 7.09% vs chromium 仅 5.08%；font-051 同源 8.19% vs chromium 仅 1.62%——这些「同源失败」多为 REF 怪异产物，非真实渲染 bug）。R163 PNG 正确 RGBA 转换默认启用（DC-14 anti-false-pass，旧 436 含 garbled-image 假通过）。R158 large-font 死锁精确定位。draw_order 默认启用满足 DC-10。剩余 56 同源失败（结构性多轮 + REF 怪异产物）。
+**上游真实 reftest 通过率**: 88.6% (434/490) R165（同源持平；**chromium Oracle 真实修复**：R165 margin:auto 水平居中修复 html-display-table chromium 差距 33.09%→2.63%——首个 d16bb8e 方向下的真实 chromium 对齐修复，同源零回归）。**434 即诚实 DC-14 基线，无需恢复 436**（R164 证否 vrl-004/008 R114b 路径：正确 vertical-rl CSS 使 4/4 vrl 变差，因同源 REF 水平渲染 vs 正确 vertical-rl 右侧块起始结构性不可对齐；chromium Oracle 证同源 REF 比 chromium 更怪异：vrl-004 同源 7.09% vs chr 5.08%，font-051 同源 8.19% vs chr 1.62%）。R163 PNG 正确 RGBA 默认启用（DC-14 anti-false-pass）。draw_order 默认启用满足 DC-10。剩余 56 同源失败（结构性多轮 + REF 怪异产物）；**优化目标已转 chromium Oracle 一致率（d16bb8e），18 真 bug 候选见 `evidence/analyze-pollution-2026-06-16.txt`**。
 
 
 
 **可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **434/490 (88.6%)**（R163 起默认正确图像渲染=DC-14 anti-false-pass，消除 PNG 退化假绿；旧 436 含 garbled-image 假通过）。⚠️ 当前 reference 仍由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错）；治理门禁见 **DC-14 真通过标准**（独立 chromium Oracle 交叉验证基建已就绪 72764a0）。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**。
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
+
+### R165 — margin:auto 水平居中修复（html-display-table chromium 33%→2.63%，真实修复，零回归，已提交）
+
+**d16bb8e 方向（优化 chromium Oracle 一致率）下首个真实修复**。修复 `margin:auto` 水平居中缺失——这是一个被同源假通过「掩盖」的真实渲染 bug（html-display-table 同源 0.00% 通过，但 chromium 差 33.09%）。
+
+**根因（两处）**：
+1. **根元素**（如 `<html style="width:280px;margin:auto">`）：CSS §10.3.3 规定 width<视口 + margin-left/right 均 auto 应水平居中。taffy 对**嵌套** block 正确居中（实测 nested div margin:auto → x=260 ✓），但对**根节点**不应用（根无父级提供居中上下文，左对齐 0）。实测 root_x=0（应 260）。
+2. **display:table 容器**（width:auto 收缩后）：R138 的 `shrink_table_to_block_content` 收缩了宽度但未重新居中——taffy 在收缩前（table 填满 CB）已把 auto margin 解析为 0，收缩后未补。
+
+**修复（两处补丁）**：
+1. `compute()`（engine.rs）根居中补丁：水平书写模式下，若根 margin-left/right 均 auto 且边框盒宽度 < 视口，把 root.x 居中（跳过 display:table 避免双重居中）。
+2. `shrink_table_to_block_content`（table_shrink.rs）收缩后补居中：若 margin-left/right 均 auto 且新宽度 < 旧宽度，table.x 居中（子元素 x 相对 table 内容盒，paint 累积偏移 offset_x+box.x，改 table.x 即整树居中，无需逐子元素平移）。
+
+**验证（chromium Oracle /tmp/oracle-shots-all + cross-validate.py）**：
+- html-display-table: chromium 差距 **33.09% → 2.63%**（同源 0.00% 持续通过，test 与 ref 均居中）。
+- 同源 upstream reftest **434/490 持平，set-diff 零翻转**（stash 前后 56 失败完全一致）。
+- make test **12180 passed/0 failed**（59 ignored = 真实网站）；smoke reftest 686/686；clippy 零警告；fmt clean。
+- +2 单测 `test_root_block_margin_auto_centers` / `test_display_table_margin_auto_centers`。
+
+**方法论**：用 chromium Oracle 像素对比（`REFTEST_DUMP` ZeroWeb 渲染 vs `/tmp/oracle-shots-all`）定位「同源通过但 chromium 不一致」的真实缺口；用根 vs 嵌套 margin:auto 探针界定 taffy 行为（嵌套正确/根缺失），把修复精准限制在 taffy 缺口（根 + 收缩后 table），避免触碰 taffy 已正确的嵌套 block 居中路径（零回归保证）。
+
+**意义**：印证 d16bb8e 转向的正确性——html-display-table 是 R138「同源修」但 chromium 仍差 33% 的典型案例；本修复根因（margin:auto 居中缺失）使其真正对齐 chromium，而非匹配怪异同源 REF。剩余 18 候选中 R124/R130/R138/R111 等「同源修但 chr 仍高」的用例是下一轮最高杠杆（代码位置已知，只需找与 chromium 的分歧点）。
 
 ### R164b — 18 真 bug 候选逐项甄别：5 项已查全部结构性（诊断，持平，无提交）
 
