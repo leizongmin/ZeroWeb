@@ -1400,6 +1400,18 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
         });
     }
 
+    // CSS Tables §4（dimensioning the row/column grid）：`<col>`/`<colgroup>`
+    // 元素定义网格列。列数 = max(单元格导出列数, col 元素导出列数)。
+    // 仅对 separated border model 生效——collapsed border model 的列宽语义不同
+    // （列宽 = border 中心间距），当前列宽读取不覆盖，避免回归 colspan 等用例。
+    let is_collapsed_border = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Collapse));
+    if !is_collapsed_border {
+        max_cols = max_cols.max(count_col_elements(table_box, styles, doc));
+    }
+
     // 检测 visibility:collapse 的列
     // CSS Tables §4.1：col/colgroup 上 visibility:collapse 的列宽度为 0
     let collapsed_cols = detect_collapsed_columns(table_box, max_cols, styles, doc);
@@ -1409,6 +1421,42 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
         col_count: max_cols,
         collapsed_cols,
     }
+}
+
+/// 统计 `<col>`/`<colgroup>` 子元素定义的网格列数。
+///
+/// CSS Tables §4：colgroup 的 span 属性（默认 1）决定其覆盖的列数；
+/// 若 colgroup 内含 `<col>` 子元素，则按内部 col 的 span 之和计算
+/// （与 `detect_collapsed_columns` 的 col_cursor 推进逻辑保持一致）。
+fn count_col_elements(
+    table_box: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) -> usize {
+    let mut total = 0usize;
+    for child in &table_box.children {
+        let child_display = get_display(child, styles);
+        match child_display {
+            Some(DisplayValue::TableColumnGroup) => {
+                let inner: usize = child
+                    .children
+                    .iter()
+                    .filter(|c| get_display(c, styles) == Some(DisplayValue::TableColumn))
+                    .map(|c| get_span(c, doc))
+                    .sum();
+                if inner > 0 {
+                    total += inner;
+                } else {
+                    total += get_span(child, doc);
+                }
+            }
+            Some(DisplayValue::TableColumn) => {
+                total += get_span(child, doc);
+            }
+            _ => {}
+        }
+    }
+    total
 }
 
 /// 检测 table 中被 visibility:collapse 折叠的列。
@@ -1599,6 +1647,82 @@ fn compute_column_widths(
         };
         (w, css_width_auto)
     };
+
+    // Pass 0：`<col>`/`<colgroup>` 的显式 width 设置列宽（CSS Tables §17.5.2.1/§17.5.2.2）。
+    // 仅 separated border model。colgroup width 作用于其覆盖的全部列（无内部 col 时）。
+    let is_collapsed_border = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Collapse));
+    if !is_collapsed_border {
+        let resolve_col_width = |s: &ComputedStyle| -> Option<f32> {
+            use zero_css_parser::values::LengthValue;
+            match &s.width {
+                // 仅读取绝对像素宽度。百分比在 width:auto（shrink-to-fit）表上解析语义
+                // 不明确（参照盒不定），calc/em 等同理——跳过以保持当前同源匹配。
+                LengthValue::Px(v) => Some(*v as f32),
+                _ => None,
+            }
+        };
+        let mut col_cursor = 0usize;
+        for child in &table_box.children {
+            let child_display = get_display(child, styles);
+            match child_display {
+                Some(DisplayValue::TableColumnGroup) => {
+                    let inner_cols: Vec<&LayoutBox> = child
+                        .children
+                        .iter()
+                        .filter(|c| get_display(c, styles) == Some(DisplayValue::TableColumn))
+                        .collect();
+                    if inner_cols.is_empty() {
+                        // colgroup span 覆盖的列共用 colgroup width
+                        let span = get_span(child, doc);
+                        let gw = child.node_id.and_then(|id| styles.get(&id)).and_then(resolve_col_width);
+                        if let Some(w) = gw {
+                            for i in 0..span {
+                                let idx = col_cursor + i;
+                                if idx < col_count {
+                                    col_max_widths[idx] = col_max_widths[idx].max(w);
+                                }
+                            }
+                        }
+                        col_cursor += span;
+                    } else {
+                        for col_child in inner_cols {
+                            let span = get_span(col_child, doc);
+                            let cw = col_child
+                                .node_id
+                                .and_then(|id| styles.get(&id))
+                                .and_then(resolve_col_width);
+                            if let Some(w) = cw {
+                                for i in 0..span {
+                                    let idx = col_cursor + i;
+                                    if idx < col_count {
+                                        col_max_widths[idx] = col_max_widths[idx].max(w);
+                                    }
+                                }
+                            }
+                            col_cursor += span;
+                        }
+                    }
+                }
+                Some(DisplayValue::TableColumn) => {
+                    let span = get_span(child, doc);
+                    let cw = child.node_id.and_then(|id| styles.get(&id)).and_then(resolve_col_width);
+                    if let Some(w) = cw {
+                        for i in 0..span {
+                            let idx = col_cursor + i;
+                            if idx < col_count {
+                                col_max_widths[idx] = col_max_widths[idx].max(w);
+                            }
+                        }
+                    }
+                    col_cursor += span;
+                }
+                _ => {}
+            }
+        }
+    }
 
     // Pass 1：非跨列单元格设置列宽
     for row in &grid.rows {
@@ -2353,5 +2477,73 @@ mod tests {
         // cell.child_index 指向 table_box.children（配合 is_anonymous 导航）
         assert_eq!(row.cells[0].child_index, 0);
         assert_eq!(row.cells[1].child_index, 1);
+    }
+
+    /// CSS Tables §4：`<col>`/`<colgroup>` 元素定义网格列。
+    /// count_col_elements 应统计 colgroup 内 col 的 span 之和，
+    /// 以及无内部 col 时 colgroup 自身的 span。
+    #[test]
+    fn test_count_col_elements() {
+        let mut doc = Document::new();
+        let mut styles = HashMap::new();
+
+        // 场景 1：colgroup（作为 table 子元素）内含 4 个 col（各 span=1）
+        let mut cg1 = make_box(&mut doc, &mut styles, DisplayValue::TableColumnGroup);
+        let c1 = make_box(&mut doc, &mut styles, DisplayValue::TableColumn);
+        let c2 = make_box(&mut doc, &mut styles, DisplayValue::TableColumn);
+        let c3 = make_box(&mut doc, &mut styles, DisplayValue::TableColumn);
+        let c4 = make_box(&mut doc, &mut styles, DisplayValue::TableColumn);
+        cg1.children = vec![c1, c2, c3, c4];
+        let table1 = LayoutBox {
+            children: vec![cg1],
+            ..Default::default()
+        };
+        assert_eq!(
+            count_col_elements(&table1, &styles, &doc),
+            4,
+            "colgroup with 4 inner cols"
+        );
+
+        // 场景 2：直接 col 子元素（span=2）
+        let d1 = make_box(&mut doc, &mut styles, DisplayValue::TableColumn);
+        doc.set_attribute(d1.node_id.unwrap(), "span", "2");
+        let table2 = LayoutBox {
+            children: vec![d1.clone()],
+            ..Default::default()
+        };
+        assert_eq!(count_col_elements(&table2, &styles, &doc), 2, "direct col with span=2");
+
+        // 场景 3：colgroup 无内部 col，自身 span=3
+        let cg3 = make_box(&mut doc, &mut styles, DisplayValue::TableColumnGroup);
+        doc.set_attribute(cg3.node_id.unwrap(), "span", "3");
+        let table3 = LayoutBox {
+            children: vec![cg3.clone()],
+            ..Default::default()
+        };
+        assert_eq!(
+            count_col_elements(&table3, &styles, &doc),
+            3,
+            "colgroup span=3, no inner col"
+        );
+
+        // 场景 4：无 col 元素（仅 cell）→ 0
+        let cell = make_box(&mut doc, &mut styles, DisplayValue::TableCell);
+        let table4 = LayoutBox {
+            children: vec![cell],
+            ..Default::default()
+        };
+        assert_eq!(count_col_elements(&table4, &styles, &doc), 0, "no col elements");
+    }
+
+    /// 创建一个 display 为 d 的元素，注册 computed style，返回对应 LayoutBox。
+    fn make_box(doc: &mut Document, styles: &mut HashMap<NodeId, ComputedStyle>, d: DisplayValue) -> LayoutBox {
+        let id = doc.create_element("div");
+        let mut s = ComputedStyle::default();
+        s.display = d;
+        styles.insert(id, s);
+        LayoutBox {
+            node_id: Some(id),
+            ..Default::default()
+        }
     }
 }
