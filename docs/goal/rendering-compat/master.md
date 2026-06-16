@@ -4,6 +4,24 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
 **上游真实 reftest 通过率**: 88.8% (435/490) R181d（flex/grid 两趟 Round B 落地，**+1 零回归**：`width:max-content` grid 经两趟 intrinsic 测量塌缩 40→182px ≈ chromium 180，`child-border-box-and-max-content-001` 1.52%→**PASS 0.03%**；R97 两通过用例 min-width:max-content/min-height:min-content 经实测仍 0.00% 持平）。前轮 R180（chromium Oracle 真实修复 ×4：R180 inline-block width:auto shrink-to-fit baseline-block-with-overflow-001 chromium **45.09%→1.25%**；R178 `<col>` px 宽度 18→400px；R168 table height-as-minimum 11.12%→2.98%；R165 margin:auto 居中 33.09%→2.63%）。**434/435 即诚实 DC-14 基线，无需恢复 436**（R164 证否 vrl-004/008 R114b 路径：正确 vertical-rl CSS 使 4/4 vrl 变差，因同源 REF 水平渲染 vs 正确 vertical-rl 右侧块起始结构性不可对齐；chromium Oracle 证同源 REF 比 chromium 更怪异：vrl-004 同源 7.09% vs chr 5.08%，font-051 同源 8.19% vs chr 1.62%）。R163 PNG 正确 RGBA 默认启用（DC-14 anti-false-pass）。draw_order 默认启用满足 DC-10。剩余 55 同源失败（结构性多轮 + REF 怪异产物）；**优化目标已转 chromium Oracle 一致率（d16bb8e），18 真 bug 候选见 `evidence/analyze-pollution-2026-06-16.txt`**。
 
+### ⚠️ M7 状态核实（goal doc 陈旧纠正，2026-06-16）— 渲染器图元覆盖已基本完成
+
+**目标文档 `rendering-compat.md` 的核心声称严重过时**：它把 M7（渲染器图元覆盖 + 浏览器消费）标为「Single Active Milestone / P0-致命 / CPU 仅 3/13 / GPU 仅 2/13 / 浏览器仅 2/13」。**经本轮代码核实，三层均已基本实现 + 像素验证 + 接线，M7 实质已完成**。下轮不要再重新实现已存在的图元（本轮差点重复实现 GradientPrimitive）。
+
+**DC-8（CPU 渲染器 100%）= 已完成**：`crates/render-foundation/src/cpu/mod.rs` 的 `render_scene` 全量分支 dispatch 全部 13 种图元（shadows/fills/rounded_rects/gradients/images/strokes/path_fills/path_strokes/glyphs/clips/transforms/filters/blend_modes，116-178）；真实实现文件齐全（`cpu/gradient.rs` 线性/径向/锥形/重复 + alpha 混合完整、`cpu/shadow.rs`、`cpu/stroke.rs` 实/虚/点线、`cpu/effects.rs` 滤镜）；`cpu/tests.rs` 有逐图元像素验证（gradient_linear_red_to_blue:83、shadow_renders_blur_around_rect:328、stroke_solid/dashed/dotted:368-468、path_fill_triangle:469、clip_removes_pixels_outside:539、transform_translate_shifts:575、image_renders_rgba:618、filter_blur_softens:677）。make test 全绿证实现存。
+
+**DC-9（GPU 渲染器 100%）= 实质完成（独立 WGSL 管线，非 passthrough）**：`gpu/renderer/mod.rs:651 render_full_scene_gpu`（浏览器 GPU 路径 `apps/browser/src/app_platform.rs` 实际调用）逐图元 collect 顶点 + 独立 draw pass：shadow/fill/rounded_rect/stroke/path_fill/path_stroke/glyph 经 `draw_fill_pass`、**gradient 经独立 `draw_gradient_pass`+`gradient_stops_to_texture`、image 经独立 `image_pipeline`+`draw_image_pass`**（740-758、draw_gradient_pass/draw_image_pass 各有独立 WGSL pipeline，满足 DC-14「GPU 非 passthrough」）。`gpu/renderer/tests.rs:607-774` 有全量路径像素验证（gradient red→blue 端点、shadow 非白、stroke 中线黑、rounded_rect 圆角外白）。**残余**：transform/clip/filter/blend_mode 在 GPU 全量路径的独立处理待逐项核实（transform 或经顶点变换、clip 或经 scissor——非「仅 fills+glyphs」级别缺口）。
+
+**DC-10（浏览器图元消费）= 已完成**：`apps/browser/src/app_render.rs` 的 `append_webview_primitives` 消费全部 13 字段（shadows:1955/fills:1969/rounded_rects:1998/gradients:2012/images:2041/strokes:2051/path_fills:2062/path_strokes:2074/glyphs:2087/clips:2112/transforms:2122/+filters/blend）。DC-13 产品 smoke（R172 border-radius draw_order bypass、R174 box-shadow σ）亦实证 rounded_rects/shadows 经浏览器路径实际渲染。
+
+**重新定位的真实剩余目标**（M7 既已完成，杠杆转移）：
+1. **DC-2~5 通过率 88.8%→95%**（当前最大未达标项；55 同源失败结构性 plateau——multicol 碎片化 R113/R131、writing-mode 轴 R114/R164（4 轮证否）、flex 基线 R130、IFC ownership R109、fontdue 度量噪声 R174；clean win 在同源侧已穷尽，chromium Oracle 一致率是真实指标）。
+2. **DC-13 产品 smoke**：wintertc.org 图片密集 fixture 待录制 + DONE#11「5 真实网站截图像素对比」（当前 0/5）。
+3. **GPU transform/clip/filter/blend 逐项验证**（DC-9 收尾，低优先——GPU 非reftest load-bearing）。
+4. 各 DC 项的 spot-verification（DC-1 chromium Oracle/fuzzy、DC-6 quirks、DC-11 布局、DC-12 高级效果的实际覆盖度核对）。
+
+**对 goal entry doc 的处置**：`rendering-compat.md` 的 Mission/Support Envelope/DC-8/9/10/M7 节、「已知关键缺口」表的「渲染器图元覆盖 P0-致命 CPU 3/13」等条目**事实错误**，按治理原则须纠正；但 entry doc 治理要求「仅目标变化时改」。本轮先在 master.md（唯一运行时控制面板）权威记录纠正；entry doc 的逐条订正留作专项（避免本轮重写入口文档）。
+
 ### R180 — inline-block width:auto shrink-to-fit（CSS §10.3.9，baseline-block-with-overflow-001 chromium 45.09%→1.25%，同源零回归，已提交）
 
 修复 18 真 bug 候选第 3 名 `baseline-block-with-overflow-001`（CSS2/linebox，同源 0% 假通过但 chromium 45.09%）。**根因**：`width:auto` 的 `display:inline-block` 被 taffy 0.7 拉伸到可用宽度（如同 block），违反 CSS §10.3.9 inline-block 应 shrink-to-fit 到 max-content。实测（IBSHRINK_DBG 探针）`.outer`（inline-block, width:auto）最终 `w=784 content_w=784`，其 block 子元素 `.inner`（width:30px）已正确 30px——故仅收缩 inline-block 盒尺寸本身即可，无需重排子元素。chromium Oracle 几何：chromium `.outer`=30px（橙色 bbox x 至 37），ZeroWeb `.outer`=784px（橙色 bbox x 至 791）；主差异=橙色全宽 774px×5 section。
