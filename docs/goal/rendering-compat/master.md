@@ -139,6 +139,16 @@ DC-13 wintertc 诊断产出：`<img>` 仅设 CSS width（height:auto）或仅设
 
 **意义**：(1) #1 结构性里程碑（flex/grid 两趟固有宽度）Round B 落地，测量基础（R181/A.2）现产出真实修复；(2) child-border-box 是 18 真 bug 候选外的真实渲染缺口（chromium 40 vs 180），现 align chromium；(3) R181c 的「net -5」根因精确定位并解决（converter Auto→length(0) 中性塌缩 + 不可测回退）；(4) 两趟 set_style+mark_dirty+重跑模式为后续 flex intrinsic sizing（collapsed-item-horiz 等 flex 容器 shrink-to-fit）奠基。**下轮**：002 的 fit-content() track 内在尺寸建模，或 collapsed-item-horiz flex 容器两趟（需 IFC 文本测量解锁纯文本 item 测量）。
 
+### R188 — clear-inline-001 归因 R109（inline img→block 致 span 换行堆叠）+ DC-13 advance-fix 架构阻塞（layout IFC 用 estimate_char_width 粗估非真实 advance），诊断轮无代码提交
+
+两项目标用例根因，均确认非单点 clean win。
+
+**clear-inline-001（5.86%）= R109（inline→block 映射）**：测试侧（float orange + inline span clear:left）ZeroWeb **正确**渲染——clear 对 inline 被忽略，蓝文本在 float 右侧顶部（blue bbox x[104,791] y[51,69]，orange float x[8,103] y[51,146]）。**REF 侧失败**：REF 用 `<img 96x96 vertical-align:top><span>Filler Text</span>`（inline img + inline span）。ZeroWeb 把 inline img 经 converter `Inline→taffy::Block`（R109 映射）当 block，span 亦然 → taffy 垂直堆叠：img 行 1（y=51-146）、span 行 2（blue bbox y[147,165]，紧贴 img 底）。正确应 img+span 同行（img 仅 96px 宽，span 容得下）。**又一个 R109 manifestation**（inline→block 破坏 img+text 流），非 clear bug。加入 block-in-inline（R182）/ morning.work blue-nav（R177）同列。
+
+**DC-13 font advance-fix 架构阻塞（R187 后续）**：layout-engine IFC 行换行（break_into_lines, inline/mod.rs:1186/1283）与 taffy measure（engine.rs:1919）**统一用 `estimate_char_width`**（非 Ahem 字符按类别粗估：字母 0.55×font_size、数字 0.5、标点 0.4），**非字体真实 advance** → 'W'/'i' 同宽致换行与 chromium（FreeType 真实 advance）不一致（R174「换行」成分）。修法 = 把 fontdue 真实 advance 接入 layout IFC，但 **layout-engine 虽依赖 render-foundation（fontdue 可达）却不持 FontLoader**（字体在 engine/paint 层加载），IFC 用 estimate_char_width 正为避此。plumbing FontLoader/advance-source 跨 engine→layout-engine 边界 = 显著架构改动，DC-13-only，收益不确定（换行成分占比未量化）。非单会话。
+
+**最高杠杆多轮里程碑 = R109（inline→block + IFC ownership）**：影响 block-in-inline-001/002 + block-in-inline-align-001 + clear-inline-001 + morning.work blue-nav（.item-tag span 全宽堆叠）等多用例与产品 smoke。单会话不可解（R182 已证 3 子系统：tree 拆分 + IFC 片段 + inline 级 fragment border），但**单里程碑解锁最多用例**。基线 435/490 持平。
+
 ### R187 — fontdue→swash rasterizer swap 实证排除（welcome fontdue 26.95% ≈ swash 26.96% vs chromium，并列非更近 Skia），DC-13 字体噪声非 rasterizer 算法问题，已回退无代码提交
 
 承接 R186 swash swap 可行性方向，**实测排除**（原型 + chromium Oracle 像素对比）。
