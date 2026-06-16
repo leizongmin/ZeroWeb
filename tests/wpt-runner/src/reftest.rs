@@ -604,8 +604,10 @@ fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCache {
 
         let path = base.join(url);
 
-        // 尝试加载 PNG 文件
+        // 尝试加载 PNG 文件，失败再尝试 JPEG（真实页面 logo/照片多为 JPEG）
         if let Ok(data) = load_png_file(&path) {
+            cache.insert_with_key(key, data);
+        } else if let Ok(data) = load_jpeg_file(&path) {
             cache.insert_with_key(key, data);
         }
     }
@@ -696,6 +698,66 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
         .map_err(|e| format!("PNG 读取失败 {}: {e}", path.display()))?;
 
     ImageData::from_rgba(buf, width, height)
+}
+
+/// 加载并解码 JPEG 文件为 RGBA ImageData。
+///
+/// 真实页面 logo/照片多为 JPEG；旧 `build_image_cache` 仅支持 PNG，导致 `<img>`
+/// 引用的 JPEG 子资源无法加载（DC-13 图片子资源缺口）。
+fn load_jpeg_file(path: &Path) -> Result<ImageData, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("无法打开 {}: {e}", path.display()))?;
+    let mut decoder = jpeg_decoder::Decoder::new(&bytes[..]);
+    decoder
+        .read_info()
+        .map_err(|e| format!("JPEG 解析失败 {}: {e}", path.display()))?;
+    let info = decoder
+        .info()
+        .ok_or_else(|| format!("JPEG 无图像信息 {}", path.display()))?;
+    let pixels = decoder
+        .decode()
+        .map_err(|e| format!("JPEG 解码失败 {}: {e}", path.display()))?;
+    let width = info.width as u32;
+    let height = info.height as u32;
+    // 按 pixel_format 转换为 RGBA8
+    let rgba = match info.pixel_format {
+        jpeg_decoder::PixelFormat::RGB24 => {
+            let mut out = Vec::with_capacity(pixels.len() / 3 * 4);
+            for px in pixels.chunks_exact(3) {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        }
+        jpeg_decoder::PixelFormat::L8 => {
+            let mut out = Vec::with_capacity(pixels.len() * 4);
+            for &g in &pixels {
+                out.extend_from_slice(&[g, g, g, 255]);
+            }
+            out
+        }
+        jpeg_decoder::PixelFormat::CMYK32 => {
+            // CMYK（JPEG 常见 inverted），转 RGBA 近似
+            let mut out = Vec::with_capacity(pixels.len() / 4 * 4);
+            for px in pixels.chunks_exact(4) {
+                let (c, m, y, k) = (px[0], px[1], px[2], px[3]);
+                let k = 255 - k;
+                let r = (c as u16 * k as u16 / 255) as u8;
+                let g = (m as u16 * k as u16 / 255) as u8;
+                let b = (y as u16 * k as u16 / 255) as u8;
+                out.extend_from_slice(&[r, g, b, 255]);
+            }
+            out
+        }
+        jpeg_decoder::PixelFormat::L16 => {
+            // 16-bit 灰度（降为 8-bit）
+            let mut out = Vec::with_capacity(pixels.len() / 2 * 4);
+            for px in pixels.chunks_exact(2) {
+                let v = ((px[0] as u16) | ((px[1] as u16) << 8) >> 8) as u8;
+                out.extend_from_slice(&[v, v, v, 255]);
+            }
+            out
+        }
+    };
+    ImageData::from_rgba(rgba, width, height)
 }
 
 /// 从 SVG data URI 生成 ImageData。
@@ -2050,10 +2112,8 @@ mod tests {
     #[test]
     #[ignore]
     fn dump_morning_work_png() {
-        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../apps/browser/assets/morning-work");
-        let html =
-            std::fs::read_to_string(base.join("article.html")).expect("read article.html");
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/browser/assets/morning-work");
+        let html = std::fs::read_to_string(base.join("article.html")).expect("read article.html");
         let config = ReftestConfig::default();
         let fb = render_to_framebuffer_with_base(&html, "", &config, Some(&base));
         let out = std::path::Path::new("/tmp/mw-zeroweb-cpu.png");

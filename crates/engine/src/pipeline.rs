@@ -120,6 +120,24 @@ impl RenderPipeline {
         self.image_sizes = sizes;
     }
 
+    /// 从 `self.image_sizes`（按 URL hash 索引）解析出 `<img>` 元素的解码固有尺寸，
+    /// 按 DOM NodeId 索引返回，供布局引擎对无 width/height 属性的 `<img>` 注入固有尺寸。
+    ///
+    /// hash 解析在 engine 层完成（simple_hash 定义于本 crate），避免把 hash 函数
+    /// 泄漏到 layout-engine（layout-engine 依赖 render-foundation 但不依赖 engine）。
+    fn build_img_intrinsic_sizes(&self, doc: &Document) -> HashMap<NodeId, (f32, f32)> {
+        let mut map = HashMap::new();
+        for img_id in doc.get_elements_by_tag_name("img") {
+            if let Some(src) = doc.get_attribute(img_id, "src") {
+                let key = crate::paint::simple_hash(&src);
+                if let Some(&size) = self.image_sizes.get(&key) {
+                    map.insert(img_id, size);
+                }
+            }
+        }
+        map
+    }
+
     /// 设置 CSS font-family 查找表。
     ///
     /// 由调用方从 `FontLoader::build_font_resolver()` 构建并传入。
@@ -204,7 +222,8 @@ impl RenderPipeline {
 
         // 6. 计算布局
         let layout_start = Instant::now();
-        let layout_result = self.layout_engine.compute(&doc, &styles);
+        let img_sizes = self.build_img_intrinsic_sizes(&doc);
+        let layout_result = self.layout_engine.compute_with_img_sizes(&doc, &styles, img_sizes);
         let layout_ms = layout_start.elapsed().as_secs_f64() * 1000.0;
 
         // 7. 生成绘制命令
@@ -280,7 +299,8 @@ impl RenderPipeline {
 
         // 4. 计算布局
         let layout_start = Instant::now();
-        let layout_result = self.layout_engine.compute(&doc, &styles);
+        let img_sizes = self.build_img_intrinsic_sizes(&doc);
+        let layout_result = self.layout_engine.compute_with_img_sizes(&doc, &styles, img_sizes);
         let layout_ms = layout_start.elapsed().as_secs_f64() * 1000.0;
 
         // 5. 生成绘制命令
@@ -339,7 +359,8 @@ impl RenderPipeline {
         let styles = self.style_system.compute_styles(doc, stylesheets);
 
         // 计算布局
-        let layout_result = self.layout_engine.compute(doc, &styles);
+        let img_sizes = self.build_img_intrinsic_sizes(doc);
+        let layout_result = self.layout_engine.compute_with_img_sizes(doc, &styles, img_sizes);
 
         // 生成绘制命令
         let mut painter = Painter::new();
@@ -411,7 +432,8 @@ impl RenderPipeline {
         let styles = self.style_system.compute_styles(doc, stylesheets);
 
         // 计算布局
-        let layout_result = self.layout_engine.compute(doc, &styles);
+        let img_sizes = self.build_img_intrinsic_sizes(doc);
+        let layout_result = self.layout_engine.compute_with_img_sizes(doc, &styles, img_sizes);
         self.cached_layout = Some(LayoutResult {
             root: layout_result.root.clone(),
             viewport_width: layout_result.viewport_width,

@@ -99,9 +99,25 @@ impl LayoutEngine {
     /// - `doc` — DOM 文档
     /// - `styles` — 元素 NodeId → ComputedStyle 映射
     pub fn compute(&mut self, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> LayoutResult {
+        self.compute_with_img_sizes(doc, styles, HashMap::new())
+    }
+
+    /// 与 `compute` 相同，但额外注入 `<img>` 的解码固有尺寸（按 DOM NodeId 索引），
+    /// 供无 width/height 属性的替换元素回退到固有尺寸（DC-11）。
+    pub fn compute_with_img_sizes(
+        &mut self,
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
+    ) -> LayoutResult {
         // 1. 构建 taffy 树
-        let (mut taffy_tree, root_id, taffy_to_dom) =
-            build_layout_tree(doc, styles, self.viewport_width, self.viewport_height);
+        let (mut taffy_tree, root_id, taffy_to_dom) = build_layout_tree(
+            doc,
+            styles,
+            self.viewport_width,
+            self.viewport_height,
+            img_intrinsic_sizes,
+        );
 
         // 构建 dom→taffy 反向映射
         let dom_to_taffy: HashMap<NodeId, taffy::NodeId> =
@@ -3116,6 +3132,42 @@ mod table_layout_tests {
         // Should not crash, and root should have non-zero size
         assert!(result.root.width > 0.0);
         assert!(result.root.height > 0.0);
+    }
+
+    /// `<img>` 无 width/height 属性时应使用解码固有尺寸（DC-11 替换元素固有尺寸）。
+    #[test]
+    fn test_img_intrinsic_size_from_decoded() {
+        let html = r#"<html><body style="margin:0"><img src="logo.jpg"></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+
+        // 模拟解码后的固有尺寸
+        let img_id = doc
+            .get_elements_by_tag_name("img")
+            .into_iter()
+            .next()
+            .expect("img element exists");
+        let mut img_sizes = HashMap::new();
+        img_sizes.insert(img_id, (120.0, 90.0));
+
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+
+        // 在布局树中找到 img 盒，断言其尺寸 ≈ 解码固有尺寸
+        let mut found = None;
+        let mut stack = vec![&result.root];
+        while let Some(b) = stack.pop() {
+            if b.node_id == Some(img_id) {
+                found = Some((b.width, b.height));
+                break;
+            }
+            stack.extend(b.children.iter());
+        }
+        let (w, h) = found.expect("img box found in layout tree");
+        assert!((w - 120.0).abs() < 1.0, "img width should use intrinsic 120, got {w}");
+        assert!((h - 90.0).abs() < 1.0, "img height should use intrinsic 90, got {h}");
     }
 }
 

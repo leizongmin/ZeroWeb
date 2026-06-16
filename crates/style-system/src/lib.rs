@@ -161,7 +161,8 @@ impl StyleSystem {
 
         // 只为元素节点计算样式
         if is_element {
-            let computed = self.compute_element_style_internal(doc, node, stylesheets, parent_style, parent_custom, quirks_mode);
+            let computed =
+                self.compute_element_style_internal(doc, node, stylesheets, parent_style, parent_custom, quirks_mode);
             styles.insert(node, computed);
         }
 
@@ -188,7 +189,15 @@ impl StyleSystem {
         };
 
         for child in children {
-            self.compute_styles_recursive(doc, child, stylesheets, parent_ref, &current_custom, styles, quirks_mode);
+            self.compute_styles_recursive(
+                doc,
+                child,
+                stylesheets,
+                parent_ref,
+                &current_custom,
+                styles,
+                quirks_mode,
+            );
         }
     }
 
@@ -202,7 +211,14 @@ impl StyleSystem {
         stylesheets: &[Stylesheet],
         parent_style: Option<&ComputedStyle>,
     ) -> ComputedStyle {
-        self.compute_element_style_internal(doc, element, stylesheets, parent_style, &HashMap::new(), doc.quirks_mode())
+        self.compute_element_style_internal(
+            doc,
+            element,
+            stylesheets,
+            parent_style,
+            &HashMap::new(),
+            doc.quirks_mode(),
+        )
     }
 
     /// 内部实现：计算单个元素的样式。

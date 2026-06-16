@@ -10,6 +10,22 @@
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
+### R176 — `<img>` 解码固有尺寸注入布局 + reftest harness JPEG 解码（DC-11 替换元素 + DC-13 图片子资源能力，零回归，已提交）
+
+补齐 DC-11「替换元素固有尺寸」与 DC-13「图片子资源」的关键缺口：`<img>` 无 width/height 属性时此前依赖 CSS 或默认尺寸（DC-11 标记 P1 未实现），导致图片密集真实页面（WinterTC 首页 Logo 等）的 `<img>` 布局塌缩。
+
+**修复（layout-engine + engine + reftest harness 三层）**：
+1. `RenderPipeline::build_img_intrinsic_sizes`（pipeline.rs）——从 `self.image_sizes`（URL hash 索引，由调用方从解码后 ImageCache 预解析）按 DOM NodeId 解析 `<img>` 固有尺寸。hash 在 engine 层解析（`simple_hash` 定义于 engine crate），避免把 hash 函数泄漏到不依赖 engine 的 layout-engine。所有 4 处布局入口（`render_html`/headless/缓存路径）改调 `compute_with_img_sizes`。
+2. `LayoutEngine::compute_with_img_sizes`（engine.rs）——新增 pub 方法，透传 `img_intrinsic_sizes: HashMap<NodeId,(f32,f32)>` 到 `build_layout_tree`；`compute` 保持不变（传空 map）。
+3. `apply_replaced_element_sizing`（tree.rs）——在「无 HTML 属性」分支回退到解码固有尺寸：仅在 `width:auto`/`height:auto` 时注入，`aspect_ratio` 未显式设置时按固有尺寸比补设（与有 HTML 属性分支对称）。
+4. reftest harness JPEG 解码（reftest.rs `load_jpeg_file`）——`build_image_cache` 旧仅支持 PNG，真实页面 logo/照片多为 JPEG；新增 jpeg-decoder 解码（RGB24/L8/CMYK32/L16 → RGBA8），PNG 失败再尝试 JPEG。
+
+**验证**：上游 reftest **434/490 持平零回归**（set-diff 零翻转——upstream 用例的 `<img>` 多带显式 width/height，无属性且 base_dir 有图的少数用例尺寸变化两侧 test/ref 同源仍匹配）；inline 686/686；make test **12189/0**（+1 单测 `test_img_intrinsic_size_from_decoded` 验无属性 `<img>` 用解码固有尺寸）；clippy/fmt clean。
+
+**意义**：(1) DC-11 替换元素固有尺寸从「未实现」到「解码驱动」，与 DC-13 图片子资源/ImageCache 贯通闭环——为 WinterTC 等图片密集 fixture 的 `<img>` 正确布局奠基（此前无尺寸 img 被 taffy 当 0 尺寸块）；(2) `<img>` 固有尺寸与 DC-13 morning.work/wintertc 真实页面衔接，下一轮可量化 WinterTC Logo 布局改善；(3) hash 解析留在 engine 层是依赖边界正确选择（layout-engine 不依赖 engine）。
+
+**剩余**：JPEG/SVG 栅格化渲染本身（DC-8 CPU ImagePrimitive 图元已能从 ImageCache 绘制，本轮只补布局侧尺寸）； WinterTC fixture 的产品 smoke 量化为下一轮目标。
+
 ### R175 — CSS 自定义属性继承修复（var() 不继承致 :root 变量丢失，morning.work 67.45%→28.72%，零回归，已提交）
 
 录制 morning.work 中文文章 fixture（DC-13 首个真实外链页面 fixture，`apps/browser/assets/morning-work/`，含 4 外链 CSS + 2 图片，经 base_dir 加载），与 chromium 800×600 对比 → 初始 diff **67.45%**（页面背景/代码块背景全白、布局塌）。诊断为 **CSS 自定义属性不继承**。
