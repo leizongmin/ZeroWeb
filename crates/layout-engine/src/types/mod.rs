@@ -247,6 +247,12 @@ pub struct LayoutBox {
     /// 子盒（带 fragment_node_ids）渲染。仅 env `R109_WIRE=1` 时由 build_subtree
     /// 标记的 inline 父盒为 true。
     pub is_r109_split: bool,
+    /// R109 §9.2.1.1：此匿名块片段是其 split inline 片段序列的**首** Inline 片段。
+    /// fragment border 边选择：首片段开放右分裂边（shrink 步骤置 border_right=0）。
+    pub r109_first_fragment: bool,
+    /// R109 §9.2.1.1：此匿名块片段是其 split inline 片段序列的**末** Inline 片段。
+    /// fragment border 边选择：末片段开放左分裂边（shrink 步骤置 border_left=0）。
+    pub r109_last_fragment: bool,
 }
 
 impl LayoutBox {
@@ -340,6 +346,8 @@ impl Default for LayoutBox {
             taffy_baseline: None,
             fragment_node_ids: None,
             is_r109_split: false,
+            r109_first_fragment: false,
+            r109_last_fragment: false,
         }
     }
 }

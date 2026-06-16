@@ -109,6 +109,31 @@ fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &HashMap<Node
         .sum()
 }
 
+/// R109 §9.2.1.1：测量 split inline 的一个匿名块片段的 inline 内容 max-content 宽度。
+///
+/// 片段内的 DOM 子节点（文本节点 + inline-level 元素）按 inline 级求和（max-content
+/// 假设不换行），字体度量取自 split inline 自身（片段继承其 font-family/size）。
+/// 用于匿名块收缩到文本宽，使 inline 的 border/background 落在文本宽而非全宽
+/// （inline-box-001 等 §9.2.1.1 用例）。返回 0 = 不可测（无文本）。
+pub(crate) fn fragment_inline_max_width(
+    inline_style: &ComputedStyle,
+    fragment_node_ids: &[NodeId],
+    doc: &Document,
+) -> f32 {
+    let (font_size, _line_height) = crate::inline::resolve_font_metrics(Some(inline_style));
+    let is_ahem = inline_style.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"));
+    let mut total = 0.0f32;
+    for nid in fragment_node_ids {
+        let text = doc.text_content(*nid).unwrap_or_default();
+        let collapsed = crate::inline::collapse_whitespace(&text);
+        total += collapsed
+            .chars()
+            .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
+            .sum::<f32>();
+    }
+    total
+}
+
 /// 计算 flex item 的主轴 base size（CSS Flexbox §9.2 flex base size）。
 ///
 /// 优先级：`flex-basis` 显式长度 > `width` 显式长度 > 内容 max-content。

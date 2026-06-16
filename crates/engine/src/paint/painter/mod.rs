@@ -373,35 +373,45 @@ impl Painter {
             );
 
             if !hidden && !skip_empty_cell {
+                // R109 §9.2.1.1：被拆分的 inline 父盒自身不绘制盒装饰（背景/边框/阴影）——
+                // 其 border/background 已下放到匿名块片段（带 fragment_node_ids），由片段
+                // 收缩到文本宽后绘制。父盒只作为结构包裹，绘制装饰会画全宽（错）。
+                let skip_split_inline_deco = box_node.is_r109_split && box_node.fragment_node_ids.is_none();
+
                 // -1. backdrop-filter（对元素背后内容应用滤镜，在自身绘制之前）
                 if !is_table_internal {
                     self.apply_backdrop_filter(box_node, abs_x, abs_y, style);
                 }
 
                 // 0. box-shadow（位于背景之下，行组/行无盒模型故无阴影）
-                if !is_table_internal {
+                if !is_table_internal && !skip_split_inline_deco {
                     self.paint_box_shadow(box_node, abs_x, abs_y, style);
                 }
 
                 // 1. 背景色填充（行组/行仍可渲染背景）
-                if style.background_color != ColorValue::Transparent {
+                if style.background_color != ColorValue::Transparent && !skip_split_inline_deco {
                     self.paint_background(box_node, abs_x, abs_y, style);
                 }
 
                 // 1b. 背景图片（行组/行仍可渲染背景图片）
-                self.paint_background_image(box_node, abs_x, abs_y, style);
+                if !skip_split_inline_deco {
+                    self.paint_background_image(box_node, abs_x, abs_y, style);
+                }
 
                 // 2. 边框填充（zero_box_model 已归零，但保留防护检查）
-                if box_node.border_top > 0.0
-                    || box_node.border_right > 0.0
-                    || box_node.border_bottom > 0.0
-                    || box_node.border_left > 0.0
+                if !skip_split_inline_deco
+                    && (box_node.border_top > 0.0
+                        || box_node.border_right > 0.0
+                        || box_node.border_bottom > 0.0
+                        || box_node.border_left > 0.0)
                 {
                     self.paint_borders(box_node, abs_x, abs_y, style);
                 }
 
                 // 2b. Border-image 绘制（替换或覆盖常规边框）
-                self.paint_border_image(box_node, abs_x, abs_y, style);
+                if !skip_split_inline_deco {
+                    self.paint_border_image(box_node, abs_x, abs_y, style);
+                }
 
                 // 2c. Column-rule 绘制（多列之间的分隔线）
                 self.paint_column_rules(box_node, abs_x, abs_y, style);

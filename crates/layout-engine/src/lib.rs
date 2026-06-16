@@ -24,6 +24,7 @@ pub mod inline_block_split;
 pub mod intrinsic_sizing;
 pub mod margin_collapse;
 pub mod multicol;
+pub mod r109;
 pub mod table;
 pub mod table_shrink;
 pub mod tree;

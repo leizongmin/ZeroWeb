@@ -241,6 +241,12 @@ impl LayoutEngine {
         // 5.6 后处理：width:auto 的 inline-block 收缩到内容宽度（shrink-to-fit，§10.3.9）
         shrink_inline_blocks_to_content(&mut root_box, styles);
 
+        // 5.7 后处理（R109 §9.2.1.1）：split inline 的匿名块片段收缩到文本宽 +
+        // fragment border 边选择（首片段开放右、末片段开放左），使 inline 的
+        // border/background 落在文本宽而非全宽（inline-box-001 等用例）。
+        // R109 默认启用；未生成匿名块片段时 fragment_node_ids 恒 None，此步为 no-op。
+        crate::r109::shrink_r109_anon_blocks(&mut root_box, doc, styles);
+
         // 6. 后处理：为包含 float 元素的容器重新测量文本，使文本环绕 float 排列
         remeasure_text_with_float_exclusions(&mut root_box, doc, styles);
 
@@ -574,6 +580,8 @@ impl LayoutEngine {
         let fragment_node_ids = r109.fragment_registry.get(&taffy_id).cloned();
         let is_anon_fragment = fragment_node_ids.is_some();
         let is_r109_split = dom_id.is_some_and(|id| r109.split_parents.contains(&id));
+        let r109_first_fragment = r109.first_inline_fragments.contains(&taffy_id);
+        let r109_last_fragment = r109.last_inline_fragments.contains(&taffy_id);
 
         // 检测匿名文本项：node_id 指向文本节点（flex/grid 容器中的匿名项）
         // 文本节点没有 ComputedStyle，使用父元素的样式
@@ -826,6 +834,8 @@ impl LayoutEngine {
             taffy_baseline: None,
             fragment_node_ids,
             is_r109_split,
+            r109_first_fragment,
+            r109_last_fragment,
         }
     }
 }
