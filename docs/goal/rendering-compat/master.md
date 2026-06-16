@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-06-17
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 88.8% (435/490) R182（block-in-inline R109 攻坚确证架构性多轮 defer，clean win 同源+chr 双侧穷尽复核确认；基线持平）→ R181d（flex/grid 两趟 Round B 落地，**+1 零回归**：`width:max-content` grid 经两趟 intrinsic 测量塌缩 40→182px ≈ chromium 180，`child-border-box-and-max-content-001` 1.52%→**PASS 0.03%**；R97 两通过用例 min-width:max-content/min-height:min-content 经实测仍 0.00% 持平）。前轮 R180（chromium Oracle 真实修复 ×4：R180 inline-block width:auto shrink-to-fit baseline-block-with-overflow-001 chromium **45.09%→1.25%**；R178 `<col>` px 宽度 18→400px；R168 table height-as-minimum 11.12%→2.98%；R165 margin:auto 居中 33.09%→2.63%）。**434/435 即诚实 DC-14 基线，无需恢复 436**（R164 证否 vrl-004/008 R114b 路径：正确 vertical-rl CSS 使 4/4 vrl 变差，因同源 REF 水平渲染 vs 正确 vertical-rl 右侧块起始结构性不可对齐；chromium Oracle 证同源 REF 比 chromium 更怪异：vrl-004 同源 7.09% vs chr 5.08%，font-051 同源 8.19% vs chr 1.62%）。R163 PNG 正确 RGBA 默认启用（DC-14 anti-false-pass）。draw_order 默认启用满足 DC-10。剩余 55 同源失败（结构性多轮 + REF 怪异产物）；**优化目标已转 chromium Oracle 一致率（d16bb8e），18 真 bug 候选见 `evidence/analyze-pollution-2026-06-16.txt`**。
+**上游真实 reftest 通过率**: 88.8% (435/490) R183（flex/grid 两趟 Round C IFC 文本内容宽度测量基础落地，零回归；flex-container-max/min-content 经 INTRINSIC_DBG 证实 delta=0 已正确尺寸，其 18%/13% 差距系 grid+float 结构非 flex 宽，Round C 不修此两用例）→ R182（block-in-inline R109 攻坚确证架构性多轮 defer，clean win 同源+chr 双侧穷尽复核确认）→ R181d（flex/grid 两趟 Round B 落地，**+1 零回归**：`width:max-content` grid 经两趟 intrinsic 测量塌缩 40→182px ≈ chromium 180，`child-border-box-and-max-content-001` 1.52%→**PASS 0.03%**；R97 两通过用例 min-width:max-content/min-height:min-content 经实测仍 0.00% 持平）。前轮 R180（chromium Oracle 真实修复 ×4：R180 inline-block width:auto shrink-to-fit baseline-block-with-overflow-001 chromium **45.09%→1.25%**；R178 `<col>` px 宽度 18→400px；R168 table height-as-minimum 11.12%→2.98%；R165 margin:auto 居中 33.09%→2.63%）。**434/435 即诚实 DC-14 基线，无需恢复 436**（R164 证否 vrl-004/008 R114b 路径：正确 vertical-rl CSS 使 4/4 vrl 变差，因同源 REF 水平渲染 vs 正确 vertical-rl 右侧块起始结构性不可对齐；chromium Oracle 证同源 REF 比 chromium 更怪异：vrl-004 同源 7.09% vs chr 5.08%，font-051 同源 8.19% vs chr 1.62%）。R163 PNG 正确 RGBA 默认启用（DC-14 anti-false-pass）。draw_order 默认启用满足 DC-10。剩余 55 同源失败（结构性多轮 + REF 怪异产物）；**优化目标已转 chromium Oracle 一致率（d16bb8e），18 真 bug 候选见 `evidence/analyze-pollution-2026-06-16.txt`**。
 
 ### ⚠️ M7 状态核实（goal doc 陈旧纠正，2026-06-16）— 渲染器图元覆盖已基本完成
 
@@ -138,6 +138,21 @@ DC-13 wintertc 诊断产出：`<img>` 仅设 CSS width（height:auto）或仅设
 **验证**：上游同源 **434→435/490**（child-border-box-001 FAIL→PASS 0.03%；002 1.52→1.36% 改善但仍未过——其用 `grid-template-columns: fit-content(...)` 显式 track，当前 `grid_intrinsic_width` 只建模 column-flow 求和/row 取最大，未建模 fit-content() track 内在尺寸=独立子问题 defer）；flex-container-max/min-content-001（18.08%/12.80%）不变（纯文本 flex item 需 IFC 文本测量=Round C）；make test **12201 passed/0 failed**（+2 单测 `test_grid_width_max_content_sized_to_intrinsic` + `test_unmeasurable_max_content_does_not_fill` 验证可测提升与不可测回退）；converter edge_cases 单测更新（MaxContent→Length(0.0)）；clippy 零警告；fmt clean。
 
 **意义**：(1) #1 结构性里程碑（flex/grid 两趟固有宽度）Round B 落地，测量基础（R181/A.2）现产出真实修复；(2) child-border-box 是 18 真 bug 候选外的真实渲染缺口（chromium 40 vs 180），现 align chromium；(3) R181c 的「net -5」根因精确定位并解决（converter Auto→length(0) 中性塌缩 + 不可测回退）；(4) 两趟 set_style+mark_dirty+重跑模式为后续 flex intrinsic sizing（collapsed-item-horiz 等 flex 容器 shrink-to-fit）奠基。**下轮**：002 的 fit-content() track 内在尺寸建模，或 collapsed-item-horiz flex 容器两趟（需 IFC 文本测量解锁纯文本 item 测量）。
+
+### R183 — flex/grid 两趟 Round C：IFC 文本内容 max-content 宽度测量（基础，零回归，已提交）
+
+推进 #1 结构性里程碑（flex/grid 两趟固有宽度）的 Round C（设计文档与 R181 系列预定步骤）。此前 `box_content_max_width`（intrinsic_sizing.rs）对**纯文本 flex/grid item** 返回 0——文本在 DOM 中（文本节点非 LayoutBox 子元素），而该函数只遍历 LayoutBox 子元素 + 叶显式宽回退。致纯文本 item 的容器 intrinsic 塌缩，阻塞 float:flex shrink-to-fit（collapsed-item-horiz）。
+
+**修复（layout-engine）**：
+1. 新增 `text_content_max_width(node_id, doc, styles)`——遍历 DOM 后代收集文本（`Document::text_content`），CSS 白空格折叠后用元素 font 度量逐字符累加宽（复用 IFC 的 `estimate_char_width`：Ahem 等宽=font_size，其它字体按字符近似宽）。仅 max-content（不换行）；min-content（最宽词）独立子问题未实现。
+2. `box_content_max_width` 叶盒分支（无 LayoutBox 子元素）增加文本宽：`max(显式宽, 文本内容宽)`。含 LayoutBox 子元素的盒不变（避免混合内容过计）。
+3. 把 `doc: &Document` 贯穿 `box_content_max_width`/`flex_item_base_size`/`flex_row_intrinsic_width`/`grid_intrinsic_width`/`debug_dump_shrink_candidates`/`apply_intrinsic_content_sizing` 及 engine.rs 两处调用点。`inline::collapse_whitespace` 提为 `pub(crate)` 复用。
+
+**验证**：上游同源 **435/490 持平零回归**（失败集 IDENTICAL）；layout-engine 单测 12 全绿（+1 `test_text_only_item_measured_round_c`：5 字符 Ahem 10px item → 50px）；make test 全绿；clippy 零警告；fmt clean。
+
+**对 flex-container-max/min-content-001 无改善（关键发现）**：两目标用例 18.08%/12.80% **不变**。INTRINSIC_DBG 实证 float:left + width:max-content 的 flex 容器 **current_w 已 == intrinsic_w（delta=0，如 50/22/40/20px）**——taffy 的 flex 布局已把 float flex 容器尺寸到内容（converter MaxContent→length(0) 后 taffy flex 仍按 item 内容定宽），故文本测量不改变其宽度（resize 条件 `b.width < intrinsic` 不满足）。两用例的 18%/13% 差距来自**其它结构**：`body{display:grid;grid-template-columns:repeat(auto-fill,66px 66px 66px)}` + `.wrap>*{float:left}` 的 grid auto-fill + float 布局，非 flex 宽度。**故 Round C 不修此两用例**。
+
+**意义与范围限定**：Round C 是 flex/grid 两趟的测量基础（同 R181/R181b 测量先行的既定方法学），为 collapsed-item-horiz（float:flex width:auto shrink-to-fit，chr 20.5%，同源 0%）的文本 item 测量解锁——该用例的 flex item 增长循环（R180 诊断：taffy 800px 布局→flex:1 item 增长→R129 float-shrink 读增长值不收缩）需两趟在 taffy 增长前测 intrinsic，文本测量是其文本 item 部分。当前不接线 collapsed-item-horiz（需独立 float:flex shrink 接线 + 两趟前置测量，结构性多轮）。**下轮**：collapsed-item-horiz flex 容器两趟（接线文本测量 + float:flex width:auto shrink），或其它结构性目标。
 
 ### R182 — block-in-inline 匿名块盒生成攻坚（R109，CSS2 §9.2.1.1）：确证架构性多轮，无单会话 clean win，defer，无代码提交
 

@@ -154,7 +154,7 @@ impl LayoutEngine {
         // 宽度，对可测且大于当前宽度的容器，把对应 taffy 节点宽度设为 intrinsic 并
         // mark_dirty 后重跑布局，再重新提取（其子元素按新宽度重新布局）。
         // 仅水平书写模式起步；intrinsic 不可测（如纯文本 item）的容器保持塌缩（中性）。
-        if Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles) {
+        if Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc) {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
             let available_space = taffy::geometry::Size {
                 width: AvailableSpace::Definite(self.viewport_width),
@@ -306,7 +306,7 @@ impl LayoutEngine {
         // 测得的固有宽度 vs 当前宽度，供 flex-grid 两趟布局（见 intrinsic_sizing / 设计草图）
         // 验证测量正确性。Round A：仅测量+打印，零布局副作用。
         if std::env::var("INTRINSIC_DBG").is_ok() {
-            crate::intrinsic_sizing::debug_dump_shrink_candidates(&root_box, styles);
+            crate::intrinsic_sizing::debug_dump_shrink_candidates(&root_box, doc, styles);
         }
 
         // 缓存 taffy 状态用于后续增量计算
@@ -503,6 +503,7 @@ impl LayoutEngine {
         root: &LayoutBox,
         dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
         styles: &HashMap<NodeId, ComputedStyle>,
+        doc: &Document,
     ) -> bool {
         let mut changed = false;
         let mut stack: Vec<&LayoutBox> = vec![root];
@@ -522,9 +523,9 @@ impl LayoutEngine {
                 continue;
             }
             let intrinsic = if matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid) {
-                crate::intrinsic_sizing::grid_intrinsic_width(b, styles)
+                crate::intrinsic_sizing::grid_intrinsic_width(b, doc, styles)
             } else {
-                crate::intrinsic_sizing::flex_row_intrinsic_width(b, styles)
+                crate::intrinsic_sizing::flex_row_intrinsic_width(b, doc, styles)
             };
             let Some(intrinsic) = intrinsic else { continue };
             // intrinsic 不可测或容器已足够宽 → 跳过（保持塌缩/当前行为，中性）

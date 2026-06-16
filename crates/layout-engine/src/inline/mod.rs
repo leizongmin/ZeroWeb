@@ -276,7 +276,7 @@ fn estimate_string_width(text: &str, font_size: f32, is_ahem: bool) -> f32 {
 /// 空输入返回空字符串。
 ///
 /// 行首/行尾空格的剥离由 IFC 的 `break_items_into_lines` 在行级别处理。
-fn collapse_whitespace(text: &str) -> String {
+pub(crate) fn collapse_whitespace(text: &str) -> String {
     if text.is_empty() {
         return String::new();
     }
