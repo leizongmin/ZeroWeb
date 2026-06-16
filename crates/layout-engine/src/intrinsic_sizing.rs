@@ -195,12 +195,56 @@ pub(crate) fn grid_intrinsic_width(box_node: &LayoutBox, styles: &HashMap<NodeId
         return None;
     }
     let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
-    let inner = if is_column_flow {
+    // 显式 grid-template-columns 时，每个 item 落入一个独立列，grid 的 max-content
+    // 宽度 = 各列 max-content 之和（而非默认 row flow 单列取最大）。
+    // 保守守卫：仅当显式 track 数 >= item 数时求和（每 item 独占一列），避免 item
+    // 跨行换列导致过计。fit-content(L)/固定长度 track 的 L 钳制未建模（item 的
+    // min-content 地板通常已 >= L，故不缩窄；残余边界由 reftest 验证）。
+    let multi_column = is_column_flow
+        || style
+            .and_then(count_explicit_grid_columns)
+            .is_some_and(|n| n >= count);
+    let inner = if multi_column {
         sum + gap * (count - 1) as f32
     } else {
         max_w
     };
     Some(inner + frame)
+}
+
+/// 统计显式 `grid-template-columns` 定义的 track 数（用于 grid 内在宽度测量）。
+///
+/// 括号感知按空白分割：`fit-content(30px)`、`minmax(a,b)`、`repeat(n, ...)` 各算 1 个
+/// token（`repeat` 展开计数复杂，保守按 1 计——只会少计 track 数，不会误判为多列）。
+/// 返回 `None` 表示无显式列定义（默认 None 或 `none`）。
+fn count_explicit_grid_columns(s: &ComputedStyle) -> Option<usize> {
+    let cols = s.grid_template_columns.as_deref()?.trim();
+    if cols.is_empty() || cols.eq_ignore_ascii_case("none") {
+        return None;
+    }
+    let mut count = 0usize;
+    let mut depth = 0i32;
+    let mut in_token = false;
+    for ch in cols.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                in_token = true;
+            }
+            ')' => depth -= 1,
+            c if c.is_whitespace() && depth == 0 => {
+                if in_token {
+                    count += 1;
+                    in_token = false;
+                }
+            }
+            _ => in_token = true,
+        }
+    }
+    if in_token {
+        count += 1;
+    }
+    (count > 0).then_some(count)
 }
 
 /// 判断一个盒是否是 flex/grid 行容器（display:flex/inline-flex/grid/inline-grid）。
@@ -336,6 +380,43 @@ mod tests {
         </body></html>"#;
         let w = compute_grid_intrinsic(html, "g").expect("grid intrinsic");
         assert!((w - 50.0).abs() < 1.0, "expected ~50px (max item), got {}", w);
+    }
+
+    #[test]
+    fn test_grid_explicit_columns_sum_items() {
+        // child-border-box-and-max-content-002 结构：显式 grid-template-columns
+        // 2 个 fit-content track，2 item 各占一列 → grid 固有 = 各 item 求和（180），
+        // 而非默认 row flow 的取最大（90）。item = .content(50) + padding 20×2 = 90。
+        let html = r#"<html><body style="margin:0">
+          <div id="g" style="display:grid;grid-template-columns:fit-content(30px) fit-content(80px)">
+            <div style="padding:0 20px"><div style="width:50px"></div></div>
+            <div style="padding:0 20px"><div style="width:50px"></div></div>
+          </div>
+        </body></html>"#;
+        let w = compute_grid_intrinsic(html, "g").expect("grid intrinsic");
+        assert!(
+            (w - 180.0).abs() < 2.0,
+            "expected ~180px (2×90, explicit columns sum), got {}",
+            w
+        );
+    }
+
+    #[test]
+    fn test_grid_explicit_columns_fewer_tracks_takes_max() {
+        // 显式 1 个 track，2 个 item → item 会换行到第 2 行复用同一列；
+        // 保守取最大 item 宽度（不冒险过计），而非求和。
+        let html = r#"<html><body style="margin:0">
+          <div id="g" style="display:grid;grid-template-columns:100px">
+            <div style="width:30px"></div>
+            <div style="width:50px"></div>
+          </div>
+        </body></html>"#;
+        let w = compute_grid_intrinsic(html, "g").expect("grid intrinsic");
+        assert!(
+            (w - 50.0).abs() < 1.0,
+            "expected ~50px (max item, fewer tracks than items), got {}",
+            w
+        );
     }
 
     #[test]

@@ -81,6 +81,18 @@
 
 **意义**：(1) #1 结构性里程碑（flex/grid 两趟固有宽度）Round B 落地，测量基础（R181/A.2）现产出真实修复；(2) child-border-box 是 18 真 bug 候选外的真实渲染缺口（chromium 40 vs 180），现 align chromium；(3) R181c 的「net -5」根因精确定位并解决（converter Auto→length(0) 中性塌缩 + 不可测回退）；(4) 两趟 set_style+mark_dirty+重跑模式为后续 flex intrinsic sizing（collapsed-item-horiz 等 flex 容器 shrink-to-fit）奠基。**下轮**：002 的 fit-content() track 内在尺寸建模，或 collapsed-item-horiz flex 容器两趟（需 IFC 文本测量解锁纯文本 item 测量）。
 
+### R181e — grid 显式列 intrinsic 求和（002 1.36→1.01% 近似，零回归，已提交）
+
+R181d 下轮目标的首个推进：`grid_intrinsic_width` 此前对非 column-flow（含显式 `grid-template-columns`）一律取 item 最大宽度，但 child-border-box-002 用显式 `grid-template-columns: fit-content(30px) fit-content(80px)`（2 item 各占一列），grid max-content 应是各列**求和**（90+90=180）非取最大（90）。
+
+**修复**（intrinsic_sizing.rs）：新增 `count_explicit_grid_columns`（括号感知按空白统计 `grid-template-columns` track 数，`fit-content()`/`minmax()`/`repeat()` 各算 1 token）；`grid_intrinsic_width` 选择求和的条件从 `is_column_flow` 扩展为 `is_column_flow || (显式 track 数 >= item 数)`——保守守卫「track 数 >= item 数」确保每 item 独占一列才求和，避免 item 跨行换列过计（track 少于 item 时退回取最大=安全欠计）。fit-content(L)/固定长度的 L 钳制未建模（item min-content 地板通常已 >= L 不缩窄）。
+
+**验证**：上游同源 **435/490 持平零回归**（失败集与 R181d 完全 IDENTICAL，逐行 diff 仅 002 的 diff 数值变；其余 54 失败 + 全部 grid 用例零翻转）；**child-border-box-002 1.36→1.01%**（grid 现测得 180≈ref，但仍未过阈——残余 ~1% 疑 taffy 对 fit-content track 在定宽下的尺寸分配细节或子像素，defer）；child-border-box-001 仍 PASS 0.03%；layout-engine 单测 864→866（+3：`test_grid_explicit_columns_sum_items`/`test_grid_explicit_columns_fewer_tracks_takes_max`/既有覆盖）；clippy 零警告；fmt clean。
+
+**范围限定**：仅 max-content/min-content 容器的 intrinsic 测量改进；不改 converter、不改两趟接线。002 残余 1% 非测量问题（已 180≈ref），属 taffy fit-content track 在 definite grid width 下的内部尺寸分配，需 grid intrinsic track sizing 全量算法（CSS Grid §12.4-12.6）或 taffy 升级，defer。**下轮**：collapsed-item-horiz flex 容器两趟（需 Round C IFC 文本测量），或转 M7 渲染器图元覆盖（P0 最大缺口）。
+
+
+
 
 
 **可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **435/490 (88.8%)**（R163 起默认正确图像渲染=DC-14 anti-false-pass，消除 PNG 退化假绿；旧 436 含 garbled-image 假通过）。⚠️ 当前 reference 仍由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错）；治理门禁见 **DC-14 真通过标准**（独立 chromium Oracle 交叉验证基建已就绪 72764a0）。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**。
