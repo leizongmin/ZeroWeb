@@ -6,6 +6,8 @@
 
 **🔤 字体攻坚结论（2026-06-17 AA 基准，证伪字体归因）**：fontdue 光栅化 vs chromium 实测 **W 0.1% / i 3.0%**（`evidence/aa-baseline-2026-06-17.txt`）——**fontdue 不是渲染差异来源**。advance plumbing（真实 advance 替代 estimate_char_width）实测 Oracle 污染 48.6%→48.5% 无效，已回滚。welcome 26% / 污染大头是**布局/度量（line-height / R109 inline→block / 多行结构）非字体**。纠正 R174/R187「字体噪声」误诊；**字体攻坚停止，转布局/度量**。
 
+**🎯 当前最高优先级（2026-06-17，字体排除后统一定向，全部布局/度量）**：① **R109 生产端接线**（tree.rs `build_subtree` 把 inline+block 子元素展开为匿名块 taffy 节点 + 建 fragment 注册表；extract_layout 设 `LayoutBox.fragment_node_ids`；匿名块 shrink-to-fit；env-gated 零回归——R189/R190/R191 基础件已就绪，见下方"R109 剩余接线"）→ 影响 block-in-inline-001/002、clear-inline-001、morning.work blue-nav；② **line-height/字体度量对齐**（行高/ascent/descent 致卡片高度差，welcome/wintertc 文本块主因）。两者均用 chromium Oracle（`cross-validate.py`）验证，非同源通过率。
+
 ### ⚠️ M7 状态核实（goal doc 陈旧纠正，2026-06-16）— 渲染器图元覆盖已基本完成
 
 **目标文档 `rendering-compat.md` 的核心声称严重过时**：它把 M7（渲染器图元覆盖 + 浏览器消费）标为「Single Active Milestone / P0-致命 / CPU 仅 3/13 / GPU 仅 2/13 / 浏览器仅 2/13」。**经本轮代码核实，三层均已基本实现 + 像素验证 + 接线，M7 实质已完成**。下轮不要再重新实现已存在的图元（本轮差点重复实现 GradientPrimitive）。
@@ -34,7 +36,7 @@
 3. **wintertc fixture**（`apps/browser/assets/wintertc/`）：index.html（capture-wintertc.mjs 经 chromium 录制的已解析 DOM，含 Twind 生成的 `<style>`）+ static/ 下 14 个 logo（logo.svg + 13 参与方 logo）。
 4. **基线 22.42%**（800×600，107,604/480,000 px vs chromium）。
 
-**诊断**（REFTEST_DEBUG + 分区域像素分析 + 计算样式探针，CSS 加载后）：wintertc **布局层经核实基本正确**——universal `*{margin:0}` 生效（UA margin 被 reset）、Twind utility 类生效（text-4xl→36px、flex/grid/mt-8/gap 等结构正确）、hero/nav 位置合理。`images:1`(800×600)/`2`(800×2000) 证 SVG 栅格化生效；14 参与 logo 中多数仍未布局（疑 `flex flex-wrap justify-evenly` 多 item 精度，待独立诊断，非图片加载问题）。**22.42% 主差异 = 顶部文本区 fontdue vs Skia 字体度量噪声**（与 morning.work/welcome 同源 plateau，R174 已结论需字体光栅器升级）+ logo 多在折叠线下。**结论：wintertc 布局无 clean bug，勿再以「Twind 布局缺失」重查**。证据持久化 `evidence/product-static/wintertc/`。
+**诊断**（REFTEST_DEBUG + 分区域像素分析 + 计算样式探针，CSS 加载后）：wintertc **布局层经核实基本正确**——universal `*{margin:0}` 生效（UA margin 被 reset）、Twind utility 类生效（text-4xl→36px、flex/grid/mt-8/gap 等结构正确）、hero/nav 位置合理。`images:1`(800×600)/`2`(800×2000) 证 SVG 栅格化生效；14 参与 logo 中多数仍未布局（疑 `flex flex-wrap justify-evenly` 多 item 精度，待独立诊断，非图片加载问题）。**22.42% 主差异 = 顶部文本区布局/度量**（行高/ascent 等度量致文本块高度差）。⚠️ R174「fontdue 字体度量噪声」归因已被 2026-06-17 AA 基准证伪——fontdue 光栅化 vs chromium 单 glyph 实测 W 0.1% / i 3.0%，差异在**布局/度量非字体光栅化**（见 `evidence/aa-baseline-2026-06-17.txt`）。+ logo 多在折叠线下。**结论：wintertc 布局无 clean bug，勿再以「Twind 布局缺失」重查**。证据持久化 `evidence/product-static/wintertc/`。
 
 **验证**：make test 12203 passed/0 failed；上游 reftest **435/490 持平零回归**（SVG 分支仅 `.svg` 扩展名触发，不影响 PNG 用例）；clippy/fmt clean。
 
@@ -48,7 +50,7 @@ DC-13 wintertc 深挖产出：`build_image_cache`（reftest.rs）用 `base.join(
 
 **验证**：wintertc 图片图元数 2→**14**（全加载）；make test 12205 passed/0；上游 reftest **435/490 持平零回归**；clippy/fmt clean。
 
-**wintertc diff 诚实上升 22.42%→25.11%**：修复前参与方 logo 全缺失致 diff 人为偏低（假低）；修复后 14 logo 加载并渲染到 800×600 可见区。**经复核（探针 dump 参与 `<a>` flex item 位置）：参与 `flex flex-wrap justify-evenly` 布局正确**——13 个 `<a>` item 正确分布在 3 个换行行（x=16/193/305/481/656 行1、y≈80-102 行2、y≈184-191 行3），logo 尺寸 aspect 正确。故 25% diff **非布局 bug，而是渲染噪声**：resvg SVG 栅格化 vs chromium SVG 渲染器的像素差异 + fontdue 字体度量噪声（与 morning.work/welcome 同 plateau）。DC-14 anti-false-pass：诚实测量优先于假低。**wintertc 布局已确认无 clean bug，剩余纯渲染噪声，勿再追布局**。
+**wintertc diff 诚实上升 22.42%→25.11%**：修复前参与方 logo 全缺失致 diff 人为偏低（假低）；修复后 14 logo 加载并渲染到 800×600 可见区。**经复核（探针 dump 参与 `<a>` flex item 位置）：参与 `flex flex-wrap justify-evenly` 布局正确**——13 个 `<a>` item 正确分布在 3 个换行行（x=16/193/305/481/656 行1、y≈80-102 行2、y≈184-191 行3），logo 尺寸 aspect 正确。故 25% diff **非布局 bug，而是渲染噪声**：resvg SVG 栅格化 vs chromium SVG 渲染器的像素差异 + 文本块布局/度量差异。⚠️「fontdue 字体度量噪声」归因已被 AA 基准证伪（fontdue 光栅化 = chromium 0.1-3%，见 `evidence/aa-baseline-2026-06-17.txt`），差异在布局/度量非字体。DC-14 anti-false-pass：诚实测量优先于假低。**wintertc 布局已确认无 clean bug，剩余纯渲染噪声，勿再追布局**。
 
 **意义**：(1) 真实 bug——`base.join(absolute)` 替换 base 是 Rust Path 陷阱，影响所有绝对路径图片 fixture；(2) DONE#11「5 真实网站」必备（真实站点全用绝对路径 `/static/...`，不修则图片全缺失）；(3) 暴露并定位了参与 flex 布局 bug（下轮目标）。
 
