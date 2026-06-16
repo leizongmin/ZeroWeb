@@ -5,6 +5,8 @@
 //! - `list` — 列出所有可用的测试用例
 //! - `summary` — 执行测试并仅输出汇总信息
 //! - `reftest` — 运行 WPT reftest（渲染对比测试）
+//! - `reftest-upstream` — 运行上游 WPT reftest（wpt-data/）
+//! - `product-smoke <html>` — 渲染产品静态 fixture 到 CPU PNG，可与 chromium Oracle PNG 像素对比（DC-13）
 
 mod manifest;
 mod reftest;
@@ -29,6 +31,8 @@ Commands:
   summary           Run tests and print summary only
   reftest           Run WPT reftest suite (rendering comparison tests)
   reftest-upstream  Run upstream WPT reftest files from wpt-data/
+  product-smoke <html>  Render a product static fixture to CPU PNG (DC-13)
+                       (--base-dir, --oracle <png>, --out <png>)
 
 Options:
   --json            Output results in JSON format
@@ -82,6 +86,13 @@ fn main() {
     }
 
     let command = &args[1];
+
+    // product-smoke 有独立参数（--base-dir/--oracle/--out），提前分支避免污染通用选项解析。
+    if command == "product-smoke" {
+        cmd_product_smoke(&args[2..]);
+        return;
+    }
+
     let mut options = CliOptions {
         format: OutputFormat::Text,
         junit_path: None,
@@ -159,6 +170,140 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+/// `product-smoke` 子命令 — 渲染产品静态 fixture 到 CPU PNG（DC-13）。
+///
+/// 用途：把 `apps/browser/assets/` 下的产品 fixture（welcome/morning-work/wintertc 等）
+/// 经 ZeroWeb CPU 软件渲染（800×600，base_dir 加载外链 CSS/图片）输出为 PNG，
+/// 并可选与 chromium Oracle PNG 做像素对比，量化产品可见渲染差距。
+///
+/// 用法：
+///   zero-wpt-runner product-smoke <html-path> [--base-dir <dir>] [--oracle <png>] [--out <png>] [--width N] [--height N]
+fn cmd_product_smoke(args: &[String]) {
+    let mut html_path: Option<String> = None;
+    let mut base_dir: Option<String> = None;
+    let mut oracle: Option<String> = None;
+    let mut out: Option<String> = None;
+    let mut width: u32 = 800;
+    let mut height: u32 = 600;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--base-dir" => {
+                i += 1;
+                if i < args.len() {
+                    base_dir = Some(args[i].clone());
+                }
+            }
+            "--oracle" => {
+                i += 1;
+                if i < args.len() {
+                    oracle = Some(args[i].clone());
+                }
+            }
+            "--out" => {
+                i += 1;
+                if i < args.len() {
+                    out = Some(args[i].clone());
+                }
+            }
+            "--width" => {
+                i += 1;
+                if i < args.len() {
+                    width = args[i].parse().unwrap_or(800);
+                }
+            }
+            "--height" => {
+                i += 1;
+                if i < args.len() {
+                    height = args[i].parse().unwrap_or(600);
+                }
+            }
+            s if !s.starts_with('-') && html_path.is_none() => {
+                html_path = Some(s.to_string());
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    let Some(html_path) = html_path else {
+        eprintln!("Error: product-smoke requires an <html-path> argument");
+        eprintln!("Usage: product-smoke <html-path> [--base-dir <dir>] [--oracle <png>] [--out <png>]");
+        std::process::exit(1);
+    };
+
+    let html = match std::fs::read_to_string(&html_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading {html_path}: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let config = reftest::ReftestConfig {
+        viewport_width: width,
+        viewport_height: height,
+        ..Default::default()
+    };
+    let base = base_dir.as_deref().map(std::path::Path::new);
+
+    eprintln!(
+        "product-smoke: rendering {html_path} ({}x{}, base_dir={:?})",
+        width, height, base
+    );
+    let fb = reftest::render_to_framebuffer_with_base(&html, "", &config, base);
+
+    let out_path = out.as_deref().unwrap_or("product-smoke-cpu.png");
+    reftest::save_fb_as_png(&fb, std::path::Path::new(out_path));
+    eprintln!("wrote ZeroWeb CPU PNG: {out_path} ({}x{})", fb.width, fb.height);
+
+    if let Some(oracle_path) = oracle {
+        match load_png_to_framebuffer(&oracle_path) {
+            Ok(oracle_fb) => {
+                if oracle_fb.width != fb.width || oracle_fb.height != fb.height {
+                    eprintln!(
+                        "Warning: size mismatch ZeroWeb={}x{} vs oracle={}x{}; clamping comparison to min",
+                        fb.width, fb.height, oracle_fb.width, oracle_fb.height
+                    );
+                }
+                let (diff_px, _max_diff) = reftest::compare_pixels(&fb, &oracle_fb, 0);
+                let w = fb.width.min(oracle_fb.width) as usize;
+                let h = fb.height.min(oracle_fb.height) as usize;
+                let total = w * h;
+                let pct = if total > 0 {
+                    100.0 * diff_px as f64 / total as f64
+                } else {
+                    0.0
+                };
+                println!(
+                    "product-smoke diff vs chromium {}: {diff_px}/{total} px ({:.2}%)",
+                    oracle_path, pct
+                );
+            }
+            Err(e) => {
+                eprintln!("Error loading oracle {oracle_path}: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+/// 把 PNG 文件解码为 FrameBuffer（RGBA8），供与 ZeroWeb 渲染结果像素对比。
+fn load_png_to_framebuffer(path: &str) -> Result<zero_render_foundation::surface::FrameBuffer, String> {
+    let file = std::fs::File::open(path).map_err(|e| format!("open {path}: {e}"))?;
+    let mut decoder = png::Decoder::new(file);
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder.read_info().map_err(|e| format!("read_info: {e}"))?;
+    let (w, h) = (reader.info().width, reader.info().height);
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let frame = reader.next_frame(&mut buf).map_err(|e| format!("next_frame: {e}"))?;
+    let rgba = reftest::convert_png_buffer_to_rgba(&buf[..frame.buffer_size()], frame.color_type, frame.bit_depth);
+    let mut fb = zero_render_foundation::surface::FrameBuffer::new(w, h);
+    fb.data = rgba;
+    Ok(fb)
 }
 
 /// `run` 子命令 — 执行测试并报告详细结果。
