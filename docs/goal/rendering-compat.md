@@ -308,6 +308,8 @@
 
 > 本 DC 防止 reftest 通过率被「同源假通过」「宽容差」「子集分母」污染。**DC-2~13 的通过率数字只有在本 DC 同时满足时才可信、才计入达标判定。**
 
+> **字体光栅化非渲染差异来源（2026-06-17 AA 基准实测）**：fontdue 与 chromium 对同一 glyph 光栅化几乎完全一致（W 0.1% / i 3.0%，见 `evidence/aa-baseline-2026-06-17.txt`）。welcome 26% / Oracle 污染 48.6% 的大头是**布局/度量（line-height / R109 inline→block / 多行结构）**，非字体光栅化。**勿再以「fontdue AA 噪声」为渲染差异归因**（纠正 R174/R187 误诊）；字体攻坚应停止，转向布局/度量。fontdue 无需替换。
+
 - [ ] **独立 Oracle（reference 不得由被验证者自渲染）**：reftest 的参考基准必须是 **Chromium 渲染 test.html**，不得是 ZeroWeb 自渲染 ref.html。当前 `reftest.rs:230-232` 用 ZeroWeb 渲染 ref，衡量的是「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs 标准」，存在 test/ref 同错即假通过的结构性缺陷。必须接入已存在但闲置的 `capture-chromium-screenshots.mjs`，至少对**抽样** reftest 跑 `ZeroWeb-test vs Chromium-test`，并量化「ZeroWeb-self 通过但 Chromium 不一致」的污染比例
 - [ ] **非平凡性检查**：拒绝 `test == ref` 且接近纯色（或 PNG 退化）的 case 自动判 PASS——必须标记为「可疑/退化」并单独审计，防止 harness PNG 加载 bug 等导致的退化假绿（历史已发生，见 `archive/rounds-r23-r139.md` R135/R149）
 - [ ] **严格容差复跑 + 三态分类**：必须在文档锁定容差（布局 ≤ 0.1% / 文字 ≤ 0.5%，优先 WPT fuzzy 注解）下复跑全量，输出 **真通过 / 近似通过（超锁定容差但更宽松）/ 假通过（退化或同源）** 三态。唯一可信达标指标 = **严格容差真通过率**。当前 vertical-rl clearance 用 5% 容差属近似通过，不计入真通过
