@@ -139,6 +139,17 @@ DC-13 wintertc 诊断产出：`<img>` 仅设 CSS width（height:auto）或仅设
 
 **意义**：(1) #1 结构性里程碑（flex/grid 两趟固有宽度）Round B 落地，测量基础（R181/A.2）现产出真实修复；(2) child-border-box 是 18 真 bug 候选外的真实渲染缺口（chromium 40 vs 180），现 align chromium；(3) R181c 的「net -5」根因精确定位并解决（converter Auto→length(0) 中性塌缩 + 不可测回退）；(4) 两趟 set_style+mark_dirty+重跑模式为后续 flex intrinsic sizing（collapsed-item-horiz 等 flex 容器 shrink-to-fit）奠基。**下轮**：002 的 fit-content() track 内在尺寸建模，或 collapsed-item-horiz flex 容器两趟（需 IFC 文本测量解锁纯文本 item 测量）。
 
+### R184 — collapsed-item-horiz float:flex 两趟 shrink 实验（net -2 同源，已回退到 R183 基线）
+
+消费 Round C 文本测量，尝试修 top chr 候选 collapsed-item-horiz-001（chr 20.5%，同源 0% 假通过）。扩展 `apply_intrinsic_content_sizing`（engine.rs）触发条件从「width:max/min-content」增加「float + width:auto 的 flex/grid 容器」，resize 方向：sizing keyword 增长（b.width<intrinsic），float:auto **收缩**（b.width>intrinsic，设宽=intrinsic 后重排使 flex item 在新窄宽下重新布局修 R180 flex 增长循环）；并给 R129 float 后处理（engine.rs:2564）加守卫跳过 flex/grid float 容器（其用「子元素最大宽」对多 item flex 会过收缩，应 sum 非 max）。
+
+**实测全量 net -2：435→433**：
+- collapsed-item-horiz-001 **0%→1.66%（同源翻 FAIL）**——确为破同源假通过（修了 shrink-to-fit），但 **1.66% > 1% 阈未过同源**，且该用例本就同源通过=纯 chr 收益不补同源损失。残余 1.66% 疑 visibility:collapse strut 跨轴高 / margin 未精确计入。
+- **flexbox-column-row-gap-001（真回归）**：原同源通过 → 1.63% FAIL。该用例是 **column flex + row-gap**，`flex_row_intrinsic_width` 只测 **row 主轴**（水平），对 column flex（垂直主轴）的宽度（=cross 轴 shrink）给出错误值致过/欠收缩。
+- flex-container-max/min-content-001（18%/13%）：本就失败，diff 仅噪声波动，非真改变。
+
+**结论（已回退 engine.rs 到 R183/afe386a，435/490 恢复）**：float:flex width:auto 两趟 shrink **net-negative 同源**——row 主轴测量对 column flex 误伤（flexbox-column-row-gap-001 真回归），且 collapsed-item-horiz 即便修了 shrink 仍 1.66% 不过阈（同源无补，仅 chr）。要安全落地需：(a) column-flex 守卫（仅 row flex 触发，避免 column-gap 用例）；(b) collapsed-item-horiz strut/margin 精确化使 ≤1%；(c) 即使全做对，收益仅 chr Oracle（同源 0% 假通过），不推 435/490。**勿再以「float:flex 两趟 shrink」单会话推进**，除非先解决 row-vs-column 主轴测量分离。
+
 ### R183 — flex/grid 两趟 Round C：IFC 文本内容 max-content 宽度测量（基础，零回归，已提交）
 
 推进 #1 结构性里程碑（flex/grid 两趟固有宽度）的 Round C（设计文档与 R181 系列预定步骤）。此前 `box_content_max_width`（intrinsic_sizing.rs）对**纯文本 flex/grid item** 返回 0——文本在 DOM 中（文本节点非 LayoutBox 子元素），而该函数只遍历 LayoutBox 子元素 + 叶显式宽回退。致纯文本 item 的容器 intrinsic 塌缩，阻塞 float:flex shrink-to-fit（collapsed-item-horiz）。
