@@ -22,6 +22,22 @@
 
 **对 goal entry doc 的处置**：`rendering-compat.md` 的 Mission/Support Envelope/DC-8/9/10/M7 节、「已知关键缺口」表的「渲染器图元覆盖 P0-致命 CPU 3/13」等条目**事实错误**，按治理原则须纠正；但 entry doc 治理要求「仅目标变化时改」。本轮先在 master.md（唯一运行时控制面板）权威记录纠正；entry doc 的逐条订正留作专项（避免本轮重写入口文档）。
 
+### DC-13 WinterTC 首页 fixture + product-smoke 工具 + SVG 栅格化（已提交）
+
+录制 WinterTC 图片密集首页（`https://wintertc.org/`）为 DC-13 fixture，端到端验证现已确认完成的图元渲染在真实图片页的表现。
+
+**交付**：
+1. **`product-smoke` 子命令**（tests/wpt-runner/src/main.rs）——通用 DC-13 产品 fixture 渲染+对比工具：`zero-wpt-runner product-smoke <html> --base-dir <dir> --oracle <png> --out <png>`，输出 ZeroWeb CPU PNG 并与 chromium Oracle 像素 diff。welcome/morning-work/wintertc 及任意 fixture 均可复用（补齐此前 morning-work 截图靠 ad-hoc 脚本的缺口）。
+2. **SVG 文件栅格化**（reftest.rs `load_svg_file`）——resvg + tiny-skia 把 `<img src="*.svg">` 栅格化为 RGBA，补 `build_image_cache` 此前仅 PNG/JPEG 的缺口（WinterTC 14 logo 中 11 个为 SVG；resvg 是 workspace 已声明但此前未接线的依赖）。
+3. **wintertc fixture**（`apps/browser/assets/wintertc/`）：index.html（capture-wintertc.mjs 经 chromium 录制的已解析 DOM，含 Twind 生成的 `<style>`）+ static/ 下 14 个 logo（logo.svg + 13 参与方 logo）。
+4. **基线 22.42%**（800×600，107,604/480,000 px vs chromium）。
+
+**诊断**（REFTEST_DEBUG）：800×600 `images:1`、800×2000 `images:2`——SVG 栅格化已生效（视口增高图元数增加）。但 14 logo 中绝大多数仍未渲染，**根因非图片加载**（PNG/JPEG/SVG 三类均能在 build_image_cache 加载），而是 **Twind 驱动的 logo 网格布局**未被完整布局（Tailwind utility class flex/grid/gap），多数 `<img>` 未被布局到可见区→不产生 ImagePrimitive。800×600 下 logo grid 多在折叠线下，主要差异来自顶部 hero/nav/title 文本区（Twind 布局 + fontdue 字体度量噪声，与 morning.work/welcome 同源）。证据持久化 `evidence/product-static/wintertc/`。
+
+**验证**：make test 12203 passed/0 failed；上游 reftest **435/490 持平零回归**（SVG 分支仅 `.svg` 扩展名触发，不影响 PNG 用例）；clippy/fmt clean。
+
+**剩余（下轮）**：① Twind utility 布局诊断（logo grid 的 flex/grid/gap 具体缺哪个）；② 真实 ZeroBrowser/webview 层 ImageCache 的 SVG 支持同步（本轮仅 harness 侧）。
+
 ### R180 — inline-block width:auto shrink-to-fit（CSS §10.3.9，baseline-block-with-overflow-001 chromium 45.09%→1.25%，同源零回归，已提交）
 
 修复 18 真 bug 候选第 3 名 `baseline-block-with-overflow-001`（CSS2/linebox，同源 0% 假通过但 chromium 45.09%）。**根因**：`width:auto` 的 `display:inline-block` 被 taffy 0.7 拉伸到可用宽度（如同 block），违反 CSS §10.3.9 inline-block 应 shrink-to-fit 到 max-content。实测（IBSHRINK_DBG 探针）`.outer`（inline-block, width:auto）最终 `w=784 content_w=784`，其 block 子元素 `.inner`（width:30px）已正确 30px——故仅收缩 inline-block 盒尺寸本身即可，无需重排子元素。chromium Oracle 几何：chromium `.outer`=30px（橙色 bbox x 至 37），ZeroWeb `.outer`=784px（橙色 bbox x 至 791）；主差异=橙色全宽 774px×5 section。

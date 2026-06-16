@@ -23,7 +23,7 @@ use zero_render_foundation::surface::FrameBuffer;
 use crate::manifest::FuzzyMeta;
 
 /// 将 FrameBuffer 保存为 PNG 文件（用于失败诊断）。
-fn save_fb_as_png(fb: &FrameBuffer, path: &Path) {
+pub fn save_fb_as_png(fb: &FrameBuffer, path: &Path) {
     use std::io::BufWriter;
     let Ok(file) = std::fs::File::create(path) else {
         return;
@@ -604,10 +604,14 @@ fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCache {
 
         let path = base.join(url);
 
-        // 尝试加载 PNG 文件，失败再尝试 JPEG（真实页面 logo/照片多为 JPEG）
+        // 尝试加载 PNG 文件，失败再尝试 JPEG（真实页面 logo/照片多为 JPEG），再尝试 SVG
         if let Ok(data) = load_png_file(&path) {
             cache.insert_with_key(key, data);
         } else if let Ok(data) = load_jpeg_file(&path) {
+            cache.insert_with_key(key, data);
+        } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"))
+            && let Ok(data) = load_svg_file(&path)
+        {
             cache.insert_with_key(key, data);
         }
     }
@@ -619,7 +623,7 @@ fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCache {
 ///
 /// EXPAND 不保证 RGBA：palette 无 tRNS / RGB 输入 → 输出 RGB（3 字节/像素），
 /// grayscale → 1 字节/像素。本函数按 OutputInfo.color_type 统一补齐为 RGBA。
-fn convert_png_buffer_to_rgba(raw: &[u8], color_type: png::ColorType, bit_depth: png::BitDepth) -> Vec<u8> {
+pub fn convert_png_buffer_to_rgba(raw: &[u8], color_type: png::ColorType, bit_depth: png::BitDepth) -> Vec<u8> {
     use png::ColorType::*;
     // STRIP_16 保证 ≤8bit；EXPAND 保证非 palette/indexed。剩余可能的 16-bit 输入
     //（如 Rgb16）经 STRIP_16 后变 8-bit。
@@ -760,7 +764,28 @@ fn load_jpeg_file(path: &Path) -> Result<ImageData, String> {
     ImageData::from_rgba(rgba, width, height)
 }
 
-/// 从 SVG data URI 生成 ImageData。
+/// 加载并栅格化 SVG 文件为 RGBA ImageData。
+///
+/// 真实页面 logo 多为 SVG（wintertc.org 14 个 logo 中 11 个为 .svg）；旧
+/// `build_image_cache` 仅支持 PNG/JPEG，SVG logo 全部缺失（DC-13 图片子资源缺口）。
+/// 用 resvg + tiny-skia 按 SVG 内在尺寸栅格化。字体走默认空 fontdb（logo 一般无文本）。
+fn load_svg_file(path: &Path) -> Result<ImageData, String> {
+    let data = std::fs::read(path).map_err(|e| format!("无法读取 SVG {}: {e}", path.display()))?;
+    let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default())
+        .map_err(|e| format!("SVG 解析失败 {}: {e}", path.display()))?;
+    let size = tree.size();
+    // usvg Size 的 width()/height() 返回 f32（SVG 内在尺寸）
+    let w = size.width().ceil() as u32;
+    let h = size.height().ceil() as u32;
+    if w == 0 || h == 0 {
+        return Err(format!("SVG 零尺寸 {}", path.display()));
+    }
+    let mut pixmap = tiny_skia::Pixmap::new(w, h).ok_or_else(|| format!("pixmap 分配失败 {w}x{h}"))?;
+    resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+    let rgba = pixmap.take();
+    ImageData::from_rgba(rgba, w, h)
+}
+
 ///
 /// 支持简单的单色矩形 SVG（如 `<svg><rect fill='green' width='200' height='100'/></svg>`）。
 /// 对于更复杂的 SVG，返回 None。

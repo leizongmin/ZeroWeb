@@ -200,10 +200,7 @@ pub(crate) fn grid_intrinsic_width(box_node: &LayoutBox, styles: &HashMap<NodeId
     // 保守守卫：仅当显式 track 数 >= item 数时求和（每 item 独占一列），避免 item
     // 跨行换列导致过计。fit-content(L)/固定长度 track 的 L 钳制未建模（item 的
     // min-content 地板通常已 >= L，故不缩窄；残余边界由 reftest 验证）。
-    let multi_column = is_column_flow
-        || style
-            .and_then(count_explicit_grid_columns)
-            .is_some_and(|n| n >= count);
+    let multi_column = is_column_flow || style.and_then(count_explicit_grid_columns).is_some_and(|n| n >= count);
     let inner = if multi_column {
         sum + gap * (count - 1) as f32
     } else {
