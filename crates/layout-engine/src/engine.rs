@@ -811,6 +811,7 @@ impl LayoutEngine {
             inline_element_metrics: HashMap::new(),
             inline_element_margins: HashMap::new(),
             taffy_baseline: None,
+            fragment_node_ids: None,
         }
     }
 }

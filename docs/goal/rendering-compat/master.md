@@ -139,6 +139,20 @@ DC-13 wintertc 诊断产出：`<img>` 仅设 CSS width（height:auto）或仅设
 
 **意义**：(1) #1 结构性里程碑（flex/grid 两趟固有宽度）Round B 落地，测量基础（R181/A.2）现产出真实修复；(2) child-border-box 是 18 真 bug 候选外的真实渲染缺口（chromium 40 vs 180），现 align chromium；(3) R181c 的「net -5」根因精确定位并解决（converter Auto→length(0) 中性塌缩 + 不可测回退）；(4) 两趟 set_style+mark_dirty+重跑模式为后续 flex intrinsic sizing（collapsed-item-horiz 等 flex 容器 shrink-to-fit）奠基。**下轮**：002 的 fit-content() track 内在尺寸建模，或 collapsed-item-horiz flex 容器两趟（需 IFC 文本测量解锁纯文本 item 测量）。
 
+### R191 — R109 数据流消费端接线（LayoutBox.fragment_node_ids 字段 + paint 读取，零回归，已提交）
+
+R109 多轮里程碑的第 3 个基础件（继 R189 split 分析、R190 IFC 片段支持）。补齐数据流**消费端**——把 LayoutBox 片段信息接到 paint IFC。
+
+**实现**：
+- `LayoutBox.fragment_node_ids: Option<Vec<NodeId>>`（types/mod.rs，默认 None）——匿名块片段的 DOM 子节点。Default + extract_layout 构造器初始化 None。
+- paint IFC 构造（painter/text.rs:911）：`if let Some(ref frag) = box_node.fragment_node_ids { ctx.set_fragment_node_ids(frag.clone()); }`——匿名块盒的 IFC 只收集其片段内容（接 R190 set_fragment_node_ids/collect_inline_items 片段分支）。
+
+**数据流状态**：消费端完整（`LayoutBox.fragment_node_ids → paint 读取 → IFC.set_fragment_node_ids → collect_inline_items 片段分支`）。**生产端待接**：tree.rs build_subtree 把 inline+block 子元素展开为匿名块 taffy 节点 + fragment 注册表（taffy_node→片段 NodeId），extract_layout 读注册表写 LayoutBox.fragment_node_ids。
+
+**验证**：上游同源 **435/490 持平零回归**（fragment_node_ids 默认 None，paint 读取为 no-op）；make test 全绿；workspace clippy 零警告（字段被 paint 读取，非 dead）；fmt clean。
+
+**剩余 R109 接线（生产端，多轮）**：(1) tree.rs build_subtree 在父级子元素循环中，遇 inline 含 block 子元素（inline_has_block_child）时用 compute_inline_block_split 展开为匿名块 taffy Block 节点序列（context = inline 的 NodeId 以承其 border 样式）+ 建 `HashMap<taffy::NodeId, Vec<NodeId>>` fragment 注册表；(2) extract_layout 接收注册表，对在注册表中的 taffy 节点设 LayoutBox.fragment_node_ids；(3) 匿名块 shrink-to-fit（使 border 文本宽非全宽，R182 已证全宽 border 大差，需复用 R180 inline-block shrink 机制）；(4) tree 生成 env-gated（R109_WIRE=1）保零回归，measure inline-box-001 变化。生产端是 R109 最 intricate 部分（build_subtree 结构重构），单会话需谨慎。
+
 ### R190 — R109 IFC 片段收集支持基础（InlineFormattingContext.fragment_node_ids，零回归，已提交）
 
 R109 多轮里程碑的第 2 个基础件（继 R189 inline_block_split 拆分分析）。补齐 IFC 半边——匿名块盒需只收集其片段的 inline 内容而非 inline 元素的全部 DOM 子节点。

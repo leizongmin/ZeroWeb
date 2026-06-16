@@ -909,6 +909,11 @@ impl super::Painter {
                     .with_line_height_overrides(parent_line_heights)
                     .with_inline_element_metrics(inline_metrics)
                     .with_margin_overrides(margin_overrides);
+                // R109 §9.2.1.1：匿名块盒片段——若此盒是 inline 被 block 子元素拆分后的
+                // 匿名块片段，只收集该片段的 inline 内容（而非 inline 元素的全部子节点）。
+                if let Some(ref frag) = box_node.fragment_node_ids {
+                    ctx.set_fragment_node_ids(frag.clone());
+                }
                 ctx.layout(doc, node_id, &HashMap::new());
                 ctx
             };
