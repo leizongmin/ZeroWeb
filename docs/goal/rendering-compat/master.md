@@ -139,6 +139,20 @@ DC-13 wintertc 诊断产出：`<img>` 仅设 CSS width（height:auto）或仅设
 
 **意义**：(1) #1 结构性里程碑（flex/grid 两趟固有宽度）Round B 落地，测量基础（R181/A.2）现产出真实修复；(2) child-border-box 是 18 真 bug 候选外的真实渲染缺口（chromium 40 vs 180），现 align chromium；(3) R181c 的「net -5」根因精确定位并解决（converter Auto→length(0) 中性塌缩 + 不可测回退）；(4) 两趟 set_style+mark_dirty+重跑模式为后续 flex intrinsic sizing（collapsed-item-horiz 等 flex 容器 shrink-to-fit）奠基。**下轮**：002 的 fit-content() track 内在尺寸建模，或 collapsed-item-horiz flex 容器两趟（需 IFC 文本测量解锁纯文本 item 测量）。
 
+### R189 — R109 §9.2.1.1 匿名块拆分结构基础模块落地（inline_block_split.rs，零回归，已提交）
+
+启动 #1 最高杠杆多轮里程碑 R109（inline→block + IFC ownership，影响 block-in-inline-001/002 + block-in-inline-align-001 + clear-inline-001 + morning.work blue-nav）的首个零风险基础步。新增 `crates/layout-engine/src/inline_block_split.rs` 模块（同 R181「分析先行」方法学，**不接线、零布局副作用**）：
+
+- `InlineBlockSegment` 枚举：`Inline{item_node_ids}`（连续 inline 内容归一个匿名块）/ `Block{node_id}`（block-level 子元素独立块）。
+- `is_block_level_display`：判定 block-level（Block/Flex/Grid/Table/ListItem/FlowRoot；inline-flex/grid/table 是 inline-level 原子盒不触发拆分）。
+- `inline_has_block_child(doc,styles,id)`：R109 触发条件（inline 元素 + ≥1 block-level 子元素）。
+- `compute_inline_block_split(doc,styles,id) -> Option<Vec<InlineBlockSegment>>`：遍历 DOM 子节点按 block-level 切分，连续 inline 累入 Inline 片段，block 子元素发 Block 片段（非空才发 Inline，不产生空匿名块）。返回 None = 无需拆分。
+- `debug_dump_inline_block_splits`（env `R109_DBG=1`）：遍历布局树打印触发元素的拆分片段，接入 engine.rs compute()（与 INTRINSIC_DBG 并列）。
+
+**验证**：layout-engine 单测 4 全绿（`test_single_block_child_splits_three_ways` 三向拆分 / `test_pure_inline_no_split` / `test_block_container_not_triggered` / `test_leading_block_no_empty_inline`）；R109_DBG 实测 inline-box-001 #div1 拆分 = `[Inline(1), Block(node=32), Inline(1)]`（First line / block / Last line，与 §9.2.1.1 一致）；上游同源 **435/490 持平零回归**；make test 全绿；clippy 零警告；fmt clean。
+
+**范围限定（为何不接线）**：完整 R109 修复需 3 子系统协同（R182 已证）——(1) tree.rs build_subtree 用本 split 生成匿名块 taffy 节点 + fragment-range 注册表；(2) IFC collect_inline_items 按片段范围收集文本（当前按 container NodeId 走全部子节点，匿名块无 NodeId）；(3) painter inline 级 fragment border（首/末片段开放边）。本模块是 (1)(2) 的共享结构分析基础，单独不改变布局。**下轮**：接线 tree.rs 匿名块生成（用 split 结果构造匿名块序列），验证 clear-inline-001 REF 的 inline img+span 不再被当 block 堆叠——这是 R109 的第一个可验证里程碑（不含 border 片段的简单 inline-flow 情形）。
+
 ### R188 — clear-inline-001 归因 R109（inline img→block 致 span 换行堆叠）+ DC-13 advance-fix 架构阻塞（layout IFC 用 estimate_char_width 粗估非真实 advance），诊断轮无代码提交
 
 两项目标用例根因，均确认非单点 clean win。

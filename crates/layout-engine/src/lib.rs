@@ -20,6 +20,7 @@ pub mod converter;
 pub mod dirty;
 pub mod engine;
 pub mod inline;
+pub mod inline_block_split;
 pub mod intrinsic_sizing;
 pub mod margin_collapse;
 pub mod multicol;
