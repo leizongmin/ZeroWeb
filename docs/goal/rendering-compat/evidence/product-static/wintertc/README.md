@@ -21,11 +21,15 @@
 |------|-----------|
 | 800×600 | **22.42%**（107,604 / 480,000 px） |
 
-## 诊断（REFTEST_DEBUG primitive dump）
+## 诊断（REFTEST_DEBUG primitive dump + 分区域像素分析 + 计算样式探针）
 
-- `images: 1`（800×600）、`images: 2`（800×2000）—— 图元数随视口增高略增，证明 **SVG 栅格化已生效**（logo.svg hero + 个别被布局的 logo 现渲染）。
-- 但 14 个 logo 中绝大多数仍未渲染——根因**非图片加载**（PNG/JPEG/SVG 三类均能在 build_image_cache 加载），而是 **Twind 驱动的 logo 网格布局**未被 ZeroWeb 完整布局（flex/grid 工具类 + gap 等），多数 `<img>` 元素未被布局到可见区域 → 不产生 ImagePrimitive。
-- 800×600 视口下参与方 logo grid 多在折叠线以下，主要差异来自**顶部 hero/nav/title 文本区**（Twind 工具类布局 + fontdue vs Skia 字体度量噪声，与 morning.work/welcome 同源）。
+**布局经核实基本正确**（CSS 已加载后探针）：universal 选择器 `*,::before,::after{margin:0}` 生效（body/h1/p/ul margin 均被 reset 为 0，UA 默认 margin 正确覆盖）；Twind utility 类生效（`text-4xl`→h1 font=36px、`text-xl`→p font=20px、`flex`/`grid`/`mt-8`/`gap-*` 等结构正确）；hero `<section>`（logo 96×96 + 标题）、nav `<ul class="mt-8 grid-cols-4">`（y≈160）位置合理。
+
+- `images: 1`（800×600）、`images: 2`（800×2000）—— 图元数随视口增高略增，证明 **SVG 栅格化已生效**（logo.svg hero + 个别被布局的 logo 渲染）。
+- 但 14 个参与方 logo 中多数在 800×2000 仍未产生 ImagePrimitive——参与方容器 `flex gap-4 flex-wrap justify-evenly` 仅布局出个别 logo（疑 flex-wrap/justify-evenly 在多 item 时的布局精度，**待独立诊断**，非图片加载问题：PNG/JPEG/SVG 三类均能加载）。
+- 800×600 下参与方 logo grid 在折叠线以下；22.42% 主差异来自**顶部 hero/nav/正文文本区**的 fontdue vs Skia 字体度量噪声（行高/字宽/AA 差异，与 morning.work/welcome 同源，非 clean 单点修——R174 已结论此类需字体光栅器升级）。
+
+**结论**：wintertc 布局层无 clean bug（universal 选择器、Twind 类、img aspect 均正确）；22.42% 与 morning.work/welcome 同属 fontdue 字体噪声 plateau + 参与 flex-wrap 精度小问题。**勿再以「Twind 布局缺失」重查**（已实证布局正确）。
 
 ## 本轮交付
 
@@ -36,6 +40,7 @@
 
 ## 剩余差距（下轮）
 
-- **Twind 工具类布局**（logo grid 的 flex/grid/gap 不完整）——ZeroWeb 对 Tailwind utility class 驱动的布局支持不足，致多数 logo 未被布局。需诊断具体缺哪个布局特性（同 R109 IFC/inline→block 谱系，或 flex/grid gap）。
-- 顶部文本区 fontdue vs Skia 度量噪声（与 morning.work/welcome 同源，非单点修）。
+- **参与方 `flex flex-wrap justify-evenly` 多 logo 未布局**（800×2000 仅 2 个 ImagePrimitive）——疑 flex-wrap/justify-evenly 在多 item 场景的布局精度，独立子问题（待诊断是否 clean）。
+- 顶部文本区 fontdue vs Skia 度量噪声（与 morning.work/welcome 同源，非单点修——需字体光栅器升级，结构性 plateau）。
 - 真实 ZeroBrowser 路径（非 wpt-runner harness）的 SVG/图片加载——本轮仅 harness 侧（build_image_cache）；浏览器/webview 层 ImageCache 的 SVG 支持待同步。
+- **HTML width/height 单属性 aspect 推导**（`<img width=N>` 无 height）尝试修复后致 background-001/003/328/329 回归 -4（已回退）；该分支 aspect 推导与某类 background 用例交互未明，需先厘清再重试。
