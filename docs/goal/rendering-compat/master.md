@@ -52,6 +52,18 @@
 
 **验证**：layout-engine 单测 862 全绿（+2 grid 单测）；clippy/fmt clean；上游 reftest **434/490 零回归**（仍不接线）。下轮 Round B：先验证 R97 的 8 用例是否依赖 max-content→0 行为，再修 computed.rs:68 保留信号 + 接线两趟。
 
+### R181c — Round B 实验回退：信号保留单独 net -5（converter MaxContent→auto-fill），已回退无提交
+
+**R97 风险量化（本轮）**：全量扫描 25 个 sizing-keyword 文件，上游 manifest 实际只导入运行 6 个（R97「8」已过时）。状态：4 FAIL（child-border-box-001/002 1.52%、flex-container-max-content-001 18%、flex-container-min-content-001 12.8%）+ 2 PASS（flex-item-content-is-min-width-max-content 用 `min-width:max-content`、flex-item-min-height-min-content-overflow 用 `min-height:min-content`——**均非 width**，故 width-scoped 修复对它们安全）。
+
+**信号丢失精确定位**：`computed.rs:354 resolve_length_field` 的 `_` 分支调 `resolve_length`（computed.rs:68 MaxContent/MinContent→0.0）后写回 `*field = LengthValue::Px(0.0)`——apply.rs:111 虽存原始 MaxContent，但此 compute-value 解析趟把它转成 Px(0)。实验：加 `MinContent|MaxContent => {}`（保留信号）。
+
+**实验结果（已回退）**：信号保留后 INTRINSIC_DBG 确证 `width=MaxContent`（不再是 Px(0)），grid 被识别为 shrink 候选 ✓——但**全量 reftest 434→429（net -5）**！根因=**converter 把 MaxContent 当 auto-fill**（grid 从塌缩 2px 变填满 784px，均非正确 182）。即信号保留改变了布局：max-content 容器从「塌缩 0」变「填满 784」，二者皆错，且填满致 5 用例回归。
+
+**Round B 必须原子化（关键教训）**：信号保留 + 两趟接线**必须一起做**，不可单独。且两趟对**内容不可测**的 max-content 容器（纯文本 item→intrinsic=0→跳过）无法修正，这些会停留在填满 784（回归态）——故 Round B 还需**不可测 max-content 的回退策略**（如退回塌缩 0 或保持当前行为）。已回退 computed.rs，434/490 恢复。
+
+**Round B 完整方案（下轮）**：(1) computed.rs:354 保留 MaxContent/MinContent 信号；(2) compute() 首趟后检测 max-content flex/grid 容器（s.width==MaxContent，intrinsic 可测且 < current），set taffy node 宽度=intrinsic + mark_dirty + 重跑 compute_layout_with_measure + 重新 extract；(3) 对 intrinsic=0（不可测）的 max-content 容器：**不设宽度**但需阻止 converter 的 auto-fill——可能需 converter 把 MaxContent→Size::MIN_CONTENT 或显式 0（恢复塌缩）而非 auto。此 (3) 是 net -5 的真正解，须先定位 converter 的 MaxContent→fill 分支。
+
 
 
 **可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **434/490 (88.6%)**（R163 起默认正确图像渲染=DC-14 anti-false-pass，消除 PNG 退化假绿；旧 436 含 garbled-image 假通过）。⚠️ 当前 reference 仍由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错）；治理门禁见 **DC-14 真通过标准**（独立 chromium Oracle 交叉验证基建已就绪 72764a0）。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**。
