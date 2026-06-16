@@ -1,13 +1,29 @@
 # 设计草图：multicol 列感知 IFC 碎片化（column-aware fragmentation）
 
-**版本**：v0.1（设计草案，待实施）
+**版本**：v0.2（**R200 重大纠正**：列分配已正确，原 balance 方向错误）
 **日期**：2026-06-17
-**状态**：设计完成，待分轮实施
-**关联**：rendering-compat master.md R113/R122/R128/R131/R157；目标解锁 css-multicol 17/57 失败（70.2%→目标 95%），唯一直接推 438/490 头条的最大同源聚类
+**状态**：分析完成；**列分配（balance）方向已证伪关闭**（R200）
+**关联**：rendering-compat master.md R113/R122/R128/R131/R157/R199/R200；css-multicol 17/57 失败
 
 ---
 
-## 0. 执行摘要
+## ⚠️ R200 纠正（2026-06-17）
+
+**原 R199 假设**：multicol 失败因列分配算法（shortest-column round-robin balance 替代均高）。
+**实证推翻**：multicol-columns-001（11 行/6 列）接入 round-robin balance 后 **4.88→4.92%（略差）**。
+
+**根因**：chromium multicol §8 是**顺序填充**（先填 col0 到平衡高度 H=T/N，再 col1），**非 round-robin**。而旧代码 `line.y/target_h`（`target_h=total/col_count`）**本就是顺序填充 + 平衡高度**——已正确！我的 round-robin balance 反而破坏了顺序（col0=line0,6 vs 正确 col0=line0,1）。
+
+**结论**：**multicol 列分配已正确**（旧 even-split sequential-fill）。类 A 低 diff 用例（columns-001 4.88%/fill-000 6.54%/count-computed-003 2.06%/004 2.50%）的 diff **不是列分配问题**，而是：
+- 列宽精度 / column-gap 子像素；
+- 列内 glyph x 位置（estimate_char_width vs 真实 advance，同 DC-13 R188）；
+- 平衡高度 H 的精确值（chromium 的平衡二分搜索 vs 我们的 T/N 近似）。
+
+**R199 的 multicol_fragment.rs（round-robin）已移除**（错误算法）。本设计文档保留分析价值（§1 现状、§1.2 四类失败），但 **Round 1-2 balance 方向关闭**。
+
+---
+
+## 0. 执行摘要（已纠正）
 
 - **一句话目标**：让 multicol 容器（`column-count`/`column-width`）把行内流内容**按列高碎片化分配到各列**（CSS Multicol §8 balance + §6 fragmentation），而非当前的 paint 阶段近似均分。
 - **核心问题**：当前 multicol 列分配**仅在 paint 阶段**（`painter/text.rs:948`）对 `!has_in_flow_children && balance && height:auto` 的纯行内容器做 `target_h = total_height / col_count` **均高分配**——这是简化近似，非 CSS 规范的 balance 算法，且：
