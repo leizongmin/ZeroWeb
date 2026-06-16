@@ -487,14 +487,14 @@ fn test_convert_length_to_dimension_uncovered_variants() {
         taffy::style::Dimension::Length(100.0)
     );
 
-    // MinContent/MaxContent 映射为 Auto
+    // MinContent/MaxContent 塌缩为 0（信号保留到 layout-engine 两趟测量解析）
     assert_eq!(
         convert_length_to_dimension(&LengthValue::MinContent, 800.0, 600.0),
-        taffy::style::Dimension::Auto
+        taffy::style::Dimension::Length(0.0)
     );
     assert_eq!(
         convert_length_to_dimension(&LengthValue::MaxContent, 800.0, 600.0),
-        taffy::style::Dimension::Auto
+        taffy::style::Dimension::Length(0.0)
     );
 
     // Calc 映射为 0

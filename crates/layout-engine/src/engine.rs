@@ -149,6 +149,37 @@ impl LayoutEngine {
             &WritingModeValue::HorizontalTb,
             doc,
         );
+        // 3.1 两趟固有宽度布局：width:max-content/min-content 的 flex/grid 容器
+        // 在第一趟已塌缩为 ~0（converter MaxContent→length(0)）。此处测量其 intrinsic
+        // 宽度，对可测且大于当前宽度的容器，把对应 taffy 节点宽度设为 intrinsic 并
+        // mark_dirty 后重跑布局，再重新提取（其子元素按新宽度重新布局）。
+        // 仅水平书写模式起步；intrinsic 不可测（如纯文本 item）的容器保持塌缩（中性）。
+        if Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles) {
+            // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
+            let available_space = taffy::geometry::Size {
+                width: AvailableSpace::Definite(self.viewport_width),
+                height: AvailableSpace::Definite(self.viewport_height),
+            };
+            let _ = taffy_tree.compute_layout_with_measure(
+                root_id,
+                available_space,
+                |known_dimensions, available_space, _node_id, context, _style| {
+                    let dom_id = match context {
+                        Some(id) => *id,
+                        None => return Size::ZERO,
+                    };
+                    measure_text_content(doc, styles, dom_id, known_dimensions, available_space)
+                },
+            );
+            root_box = Self::extract_layout(
+                &taffy_tree,
+                root_id,
+                &taffy_to_dom,
+                styles,
+                &WritingModeValue::HorizontalTb,
+                doc,
+            );
+        }
         // CSS 2.1 §9.4.3：position:relative 的根元素（如 <html style="position:relative">）
         // 需应用 top/left inset 偏移。非根 block-level 元素的 relative inset 由 taffy
         // 应用到 layout.location，但 taffy 0.7 对**根节点**不应用（根总在 0,0）。
@@ -450,6 +481,67 @@ impl LayoutEngine {
                 );
             }
         }
+    }
+
+    /// 两趟固有宽度布局的第一趟修正：对 `width:max-content`/`min-content` 的
+    /// flex/grid 容器提升宽度到测得的 intrinsic。
+    ///
+    /// 这些容器在第一趟布局中塌缩为 ~0（converter 把 MaxContent/MinContent 映射为
+    /// `length(0)`，与旧「resolve 为 Px(0)」行为中性）。`intrinsic_sizing` 模块基于
+    /// **显式宽度**测量其 max-content 宽度（不依赖塌缩后的布局宽度），若可测
+    /// （>0）且大于当前宽度，则把对应 taffy 节点的 size.width 设为 intrinsic 并
+    /// `mark_dirty`。调用方随后重跑 `compute_layout_with_measure` 并重新提取，
+    /// 该容器及其子元素即按 intrinsic 宽度重新布局（grid track / flex item 重新分配）。
+    ///
+    /// 安全性：仅「可测且确实更宽」时才改动（0→intrinsic 纯改善，非破坏）；
+    /// intrinsic 不可测（如纯文本 item，Round C IFC 文本测量未就绪）的容器保持塌缩。
+    /// 仅水平书写模式、width 为 MaxContent/MinContent 的 flex/grid 容器。
+    ///
+    /// 返回是否有节点被修改。
+    fn apply_intrinsic_content_sizing(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) -> bool {
+        let mut changed = false;
+        let mut stack: Vec<&LayoutBox> = vec![root];
+        while let Some(b) = stack.pop() {
+            stack.extend(b.children.iter());
+            let Some(id) = b.node_id else { continue };
+            let Some(s) = styles.get(&id) else { continue };
+            // 仅水平书写模式的 flex/grid 容器，且 width 为 max-content/min-content
+            let is_container = matches!(
+                s.display,
+                DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+            );
+            if !is_container || !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+                continue;
+            }
+            if !matches!(s.width, LengthValue::MaxContent | LengthValue::MinContent) {
+                continue;
+            }
+            let intrinsic = if matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid) {
+                crate::intrinsic_sizing::grid_intrinsic_width(b, styles)
+            } else {
+                crate::intrinsic_sizing::flex_row_intrinsic_width(b, styles)
+            };
+            let Some(intrinsic) = intrinsic else { continue };
+            // intrinsic 不可测或容器已足够宽 → 跳过（保持塌缩/当前行为，中性）
+            if intrinsic <= 1.0 || b.width >= intrinsic + 1.0 {
+                continue;
+            }
+            let Some(&taffy_id) = dom_to_taffy.get(&id) else {
+                continue;
+            };
+            if let Ok(mut style) = taffy_tree.style(taffy_id).cloned() {
+                style.size.width = taffy::style::Dimension::Length(intrinsic);
+                let _ = taffy_tree.set_style(taffy_id, style);
+                let _ = taffy_tree.mark_dirty(taffy_id);
+                changed = true;
+            }
+        }
+        changed
     }
 
     /// 当父元素具有垂直书写模式时，taffy 的布局结果是轴交换后的，
@@ -3575,6 +3667,93 @@ mod anonymous_flex_item_tests {
             (o.width - 38.0).abs() < 1.0,
             "expected inline-block width ~38px (30 content + 8 padding), got w={}",
             o.width
+        );
+    }
+}
+
+#[cfg(test)]
+mod intrinsic_two_pass_tests {
+    use super::*;
+    use zero_style_system::StyleSystem;
+
+    /// 辅助：按 id 在布局树中查找 LayoutBox。
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+
+    /// 回归：CSS intrinsic sizing — `width:max-content` 的 grid 容器应收缩到其
+    /// max-content 宽度（2 item × (50 content + 40 padding) = 180），而非塌缩为 ~0
+    /// （converter MaxContent→length(0)）或填满视口（旧 Auto→fill）。
+    /// 验证两趟固有宽度布局（apply_intrinsic_content_sizing）把 grid 提升到 intrinsic。
+    #[test]
+    fn test_grid_width_max_content_sized_to_intrinsic() {
+        // 复刻 child-border-box-and-max-content-001 结构：
+        // grid(width:max-content, grid-auto-columns:1fr, column flow) > 2 item >
+        // .content(width:50px)。grid intrinsic = 2×(50+40 padding) + 2 border ≈ 182。
+        let html = r#"<html><body style="margin:0">
+          <div id="g" style="display:grid;grid-auto-columns:1fr;grid-auto-flow:column;border:1px solid red;width:max-content">
+            <div style="max-width:max-content;box-sizing:border-box;padding:10px 20px">
+              <div style="width:50px;height:50px"></div>
+            </div>
+            <div style="max-width:max-content;box-sizing:border-box;padding:10px 20px">
+              <div style="width:50px;height:50px"></div>
+            </div>
+          </div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let g = find("g", &doc, &result.root).expect("grid #g");
+        // 不应塌缩（~2px）也不应填满（~784），应在 ~180px。
+        assert!(
+            g.width > 100.0,
+            "width:max-content grid should be sized to intrinsic (~182px), not collapsed (got w={})",
+            g.width
+        );
+        assert!(
+            g.width < 400.0,
+            "width:max-content grid should shrink-to-fit (~182px), not fill viewport (got w={})",
+            g.width
+        );
+        assert!(
+            (g.width - 182.0).abs() < 5.0,
+            "expected grid width ~182px (2×(50+40)+border), got w={}",
+            g.width
+        );
+    }
+
+    /// 回归：intrinsic 不可测的 max-content 容器（纯文本 item）保持塌缩，
+    /// 不应被填满（验证不可测回退不会引入旧 Auto→fill 的 net -5 回归）。
+    #[test]
+    fn test_unmeasurable_max_content_does_not_fill() {
+        // 纯文本 flex item 无显式宽度 → intrinsic 测量返回 None（Round C IFC 文本测量未就绪）
+        // → 容器应保持塌缩（length(0)），而非填满视口。
+        let html = r#"<html><body style="margin:0">
+          <div id="f" style="display:flex;width:max-content"><div>text</div></div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let f = find("f", &doc, &result.root).expect("flex #f");
+        // 不应填满视口（<700），证明不可测容器未被 auto-fill。
+        assert!(
+            f.width < 700.0,
+            "unmeasurable width:max-content flex must not fill viewport (got w={}); \
+             would regress 5 cases like R181c",
+            f.width
         );
     }
 }

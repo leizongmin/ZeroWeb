@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-06-16
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 88.6% (434/490) R180（同源持平零回归；**chromium Oracle 真实修复 ×4**：R180 inline-block width:auto shrink-to-fit 修复 baseline-block-with-overflow-001 chromium 差距 **45.09%→1.25%**（CSS §10.3.9，taffy 拉伸 width:auto inline-block 到可用宽度，后处理收缩到 max-content）；R178 `<col>` px 宽度读取修复 col-definite-size/max-size（18px→400px 4×100px 列，CSS Tables §4/§17.5.2，separated border）；R168 table height-as-minimum 修复 table-grid-item-dynamic-004 chromium 差距 11.12%→2.98%；R165 margin:auto 水平居中修复 html-display-table chromium 差距 33.09%→2.63%）。**434 即诚实 DC-14 基线，无需恢复 436**（R164 证否 vrl-004/008 R114b 路径：正确 vertical-rl CSS 使 4/4 vrl 变差，因同源 REF 水平渲染 vs 正确 vertical-rl 右侧块起始结构性不可对齐；chromium Oracle 证同源 REF 比 chromium 更怪异：vrl-004 同源 7.09% vs chr 5.08%，font-051 同源 8.19% vs chr 1.62%）。R163 PNG 正确 RGBA 默认启用（DC-14 anti-false-pass）。draw_order 默认启用满足 DC-10。剩余 56 同源失败（结构性多轮 + REF 怪异产物）；**优化目标已转 chromium Oracle 一致率（d16bb8e），18 真 bug 候选见 `evidence/analyze-pollution-2026-06-16.txt`**。
+**上游真实 reftest 通过率**: 88.8% (435/490) R181d（flex/grid 两趟 Round B 落地，**+1 零回归**：`width:max-content` grid 经两趟 intrinsic 测量塌缩 40→182px ≈ chromium 180，`child-border-box-and-max-content-001` 1.52%→**PASS 0.03%**；R97 两通过用例 min-width:max-content/min-height:min-content 经实测仍 0.00% 持平）。前轮 R180（chromium Oracle 真实修复 ×4：R180 inline-block width:auto shrink-to-fit baseline-block-with-overflow-001 chromium **45.09%→1.25%**；R178 `<col>` px 宽度 18→400px；R168 table height-as-minimum 11.12%→2.98%；R165 margin:auto 居中 33.09%→2.63%）。**434/435 即诚实 DC-14 基线，无需恢复 436**（R164 证否 vrl-004/008 R114b 路径：正确 vertical-rl CSS 使 4/4 vrl 变差，因同源 REF 水平渲染 vs 正确 vertical-rl 右侧块起始结构性不可对齐；chromium Oracle 证同源 REF 比 chromium 更怪异：vrl-004 同源 7.09% vs chr 5.08%，font-051 同源 8.19% vs chr 1.62%）。R163 PNG 正确 RGBA 默认启用（DC-14 anti-false-pass）。draw_order 默认启用满足 DC-10。剩余 55 同源失败（结构性多轮 + REF 怪异产物）；**优化目标已转 chromium Oracle 一致率（d16bb8e），18 真 bug 候选见 `evidence/analyze-pollution-2026-06-16.txt`**。
 
 ### R180 — inline-block width:auto shrink-to-fit（CSS §10.3.9，baseline-block-with-overflow-001 chromium 45.09%→1.25%，同源零回归，已提交）
 
@@ -64,9 +64,26 @@
 
 **Round B 完整方案（下轮）**：(1) computed.rs:354 保留 MaxContent/MinContent 信号；(2) compute() 首趟后检测 max-content flex/grid 容器（s.width==MaxContent，intrinsic 可测且 < current），set taffy node 宽度=intrinsic + mark_dirty + 重跑 compute_layout_with_measure + 重新 extract；(3) 对 intrinsic=0（不可测）的 max-content 容器：**不设宽度**但需阻止 converter 的 auto-fill——可能需 converter 把 MaxContent→Size::MIN_CONTENT 或显式 0（恢复塌缩）而非 auto。此 (3) 是 net -5 的真正解，须先定位 converter 的 MaxContent→fill 分支。
 
+### R181d — Round B 原子落地：信号保留 + converter 中性塌缩 + 两趟 intrinsic 提升（+1 零回归，child-border-box-001 PASS，已提交）
+
+按 R181c 完整方案原子实施 #1 结构性里程碑（flex/grid 两趟固有宽度）的 Round B。**净效果：434→435/490（+1 零回归），`child-border-box-and-max-content-001` 1.52%→PASS 0.03%**（grid 塌缩 40px → intrinsic 182px ≈ chromium 180px；chromium Oracle 一致率亦大幅改善）。
+
+**根因再确认（R181c net -5 的真正解）**：converter `convert_length_to_dimension`（converter/mod.rs:374）把 `MaxContent/MinContent => Dimension::Auto`——taffy 把 width:auto 的块级容器**拉伸填满**可用宽度（784px），即 R181c 的 net -5 根因。但该分支在**信号保留前是不可达死代码**（computed.rs resolve_length_field 先把 MaxContent 解析为 Px(0.0)，converter 只见 Px(0.0)→length(0.0) 塌缩）。R181c 保留信号后该死代码激活→填满→回归。
+
+**修复（三处原子协同，缺一即 net -5 或失效）**：
+1. **computed.rs:354 `resolve_length_field`**——新增 `MinContent | MaxContent => {}` 分支保留信号（不解析为 Px(0)），使 layout-engine 能识别「此容器是 max-content」。
+2. **converter/mod.rs:374 `convert_length_to_dimension`**——`MaxContent/MinContent => length(0.0)`（塌缩），**不再 Auto**（Auto 触发 taffy 填满）。**关键**：length(0.0) 与旧「MaxContent→Px(0.0)→Px 分支 length(0.0)」输出**字节相同**→信号保留对 width/height 行为中性的塌缩，不回归。（`convert_max_length_to_dimension` 已是 Auto=∞，对 max-width:max-content 是正确过近似，保留不动——这也修正了 item `max-width:max-content` 被旧 Px(0) 钳制为 0 的 bug。）
+3. **engine.rs `apply_intrinsic_content_sizing`**（compute_with_img_sizes 步骤 3.1）——首趟 extract 后遍历布局树，对水平书写模式、`width:MaxContent/MinContent` 的 flex/grid 容器，用 `intrinsic_sizing` 模块（R181/R181b 落地的 `grid_intrinsic_width`/`flex_row_intrinsic_width`，基于**显式宽度**测量，不依赖塌缩布局宽）测 intrinsic；可测（>1.0）且大于当前宽时，`set_style(size.width=Length(intrinsic)) + mark_dirty`，重跑 `compute_layout_with_measure` 后重新 extract——其子元素（grid track / flex item）即按新宽度重新分配。**intrinsic 不可测（纯文本 item，Round C IFC 未就绪）的容器跳过→保持塌缩（中性，正是 R181c 缺失的「不可测回退」）。**
+
+**安全性核验（R97 风险量化复核）**：R97「8 通过用例风险」经 R181c 重新量化为上游实际导入运行 6 个（4 FAIL + 2 PASS）。两 PASS 用例 `flex-item-content-is-min-width-max-content`（min-width:max-content）与 `flex-item-min-height-min-content-overflow`（min-height:min-content）均**非 width**，且 min/min-length 的 MaxContent 仍走中性 length(0)/默认 0 分支——本轮实测两者仍 **0.00% 持平**，零翻转。证明「保留信号 + converter width 塌缩」对 min-width/min-height max-content 安全。
+
+**验证**：上游同源 **434→435/490**（child-border-box-001 FAIL→PASS 0.03%；002 1.52→1.36% 改善但仍未过——其用 `grid-template-columns: fit-content(...)` 显式 track，当前 `grid_intrinsic_width` 只建模 column-flow 求和/row 取最大，未建模 fit-content() track 内在尺寸=独立子问题 defer）；flex-container-max/min-content-001（18.08%/12.80%）不变（纯文本 flex item 需 IFC 文本测量=Round C）；make test **12201 passed/0 failed**（+2 单测 `test_grid_width_max_content_sized_to_intrinsic` + `test_unmeasurable_max_content_does_not_fill` 验证可测提升与不可测回退）；converter edge_cases 单测更新（MaxContent→Length(0.0)）；clippy 零警告；fmt clean。
+
+**意义**：(1) #1 结构性里程碑（flex/grid 两趟固有宽度）Round B 落地，测量基础（R181/A.2）现产出真实修复；(2) child-border-box 是 18 真 bug 候选外的真实渲染缺口（chromium 40 vs 180），现 align chromium；(3) R181c 的「net -5」根因精确定位并解决（converter Auto→length(0) 中性塌缩 + 不可测回退）；(4) 两趟 set_style+mark_dirty+重跑模式为后续 flex intrinsic sizing（collapsed-item-horiz 等 flex 容器 shrink-to-fit）奠基。**下轮**：002 的 fit-content() track 内在尺寸建模，或 collapsed-item-horiz flex 容器两趟（需 IFC 文本测量解锁纯文本 item 测量）。
 
 
-**可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **434/490 (88.6%)**（R163 起默认正确图像渲染=DC-14 anti-false-pass，消除 PNG 退化假绿；旧 436 含 garbled-image 假通过）。⚠️ 当前 reference 仍由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错）；治理门禁见 **DC-14 真通过标准**（独立 chromium Oracle 交叉验证基建已就绪 72764a0）。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**。
+
+**可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **435/490 (88.8%)**（R163 起默认正确图像渲染=DC-14 anti-false-pass，消除 PNG 退化假绿；旧 436 含 garbled-image 假通过）。⚠️ 当前 reference 仍由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错）；治理门禁见 **DC-14 真通过标准**（独立 chromium Oracle 交叉验证基建已就绪 72764a0）。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**。
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
