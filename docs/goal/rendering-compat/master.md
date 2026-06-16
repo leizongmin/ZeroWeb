@@ -26,6 +26,20 @@
 
 **child-border-box-and-max-content-001/002（1.52%，max-content sizing，结构性 defer）**：`width:max-content`（grid）+ `max-width:max-content`（item）。**具体 bug 定位**=style-system `computed.rs:68` 把 `LengthValue::MinContent | MaxContent => 0.0`（解析阶段就把 max-content 解析成 0）→ grid width=0 塌缩到 40px（仅 padding，content 50 被 clip，且只渲染 1 个 item）而非 chromium 的 180×70（2 item × (50content+40padding)）。css-parser 已正确解析 MaxContent 变体（parse_basic.rs:30/types.rs:1003），但 computed.rs:68 丢失信号解析为 0。**正确修复需**：(a) 保留 max-content 信号到布局（非解析为 0）+ (b) layout shrink-to-fit 在 max-content 时触发（复用 R180 谱系）——但 grid 上的 max-content 收缩受 **taffy grid 不 shrink-to-fit**（同 table-grid-item-003，width:auto grid 填满 800 而非收缩）阻塞，故仍结构性。R97 记录此为 8 通过用例风险的 opt-in 特性。defer（max-content on block/inline-block 或可独立做，grid/flex 需容器 shrink-to-fit 先行）。
 
+### R181 — flex/grid 两趟固有宽度布局 Round A：测量工具落地（零风险，不接线，已提交）
+
+启动 #1 结构性里程碑（见 `docs/goal/rendering-compat/flex-grid-two-pass-design.md`）的首个零风险子步。新增 `crates/layout-engine/src/intrinsic_sizing.rs` 模块（不参与布局，仅纯计算 + 单测 + env-gated 诊断）：
+- `box_content_max_width`：盒内容 max-content 宽度（inline 求和 + block 取最大 + **叶盒显式 Px width 回退**——关键差异于 R138 `block_max_content_width` 对叶显式宽返回 0）。
+- `flex_item_base_size`：flex item 主轴 base size（`flex-basis` 显式长度 > `width` 显式 > 内容 max-content，CSS Flexbox §9.2）。
+- `flex_row_intrinsic_width`：水平 flex 行容器固有宽度 = Σ base + margins + gaps + frame。
+- `debug_dump_shrink_candidates`（`INTRINSIC_DBG=1`）：遍历树对 shrink 候选容器（inline-flex/inline-grid/float:flex/grid 的 width:auto 或 max-content/min-content）打印 `current_w vs intrinsic_w`，验证测量。
+
+**实测验证（INTRINSIC_DBG）**：collapsed-item-horiz-001 的 float:flex 容器 `current_w=774 intrinsic_w=22/2 (delta +752/+772)`——确证 shrink-to-fit gap 真实可测；baseline-align-self inline-flex `intrinsic_w=0`（文本 item 无显式宽，需 IFC 文本测量，已知 Round C 限制）。
+
+**已知限制（后续 Round 补）**：(1) `visibility:collapse` 未当 flex_basis:0 strut 处理（读 `width:20px` 致 collapsed-item 测 22 非 0）；(2) 纯文本 flex item 内容宽=0（需接 IFC 文本测量）。
+
+**验证**：layout-engine 单测 860 全绿（+6 新单测覆盖叶显式宽回退/双 item 求和/flex-basis 优先/padding 累加/grid-like 嵌套/空容器 None）；clippy/fmt clean；上游 reftest **434/490 零回归**（诊断不改变布局）。Round B 下轮：`identify_shrink_candidates` + 接入 compute() 两趟（设 taffy node 宽度 + mark_dirty + 重跑 compute_layout_with_measure），仅 inline-flex/inline-grid 起步，434/490 零回退门禁。
+
 
 
 **可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **434/490 (88.6%)**（R163 起默认正确图像渲染=DC-14 anti-false-pass，消除 PNG 退化假绿；旧 436 含 garbled-image 假通过）。⚠️ 当前 reference 仍由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错）；治理门禁见 **DC-14 真通过标准**（独立 chromium Oracle 交叉验证基建已就绪 72764a0）。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**。
