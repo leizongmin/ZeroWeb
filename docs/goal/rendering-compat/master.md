@@ -139,6 +139,19 @@ DC-13 wintertc 诊断产出：`<img>` 仅设 CSS width（height:auto）或仅设
 
 **意义**：(1) #1 结构性里程碑（flex/grid 两趟固有宽度）Round B 落地，测量基础（R181/A.2）现产出真实修复；(2) child-border-box 是 18 真 bug 候选外的真实渲染缺口（chromium 40 vs 180），现 align chromium；(3) R181c 的「net -5」根因精确定位并解决（converter Auto→length(0) 中性塌缩 + 不可测回退）；(4) 两趟 set_style+mark_dirty+重跑模式为后续 flex intrinsic sizing（collapsed-item-horiz 等 flex 容器 shrink-to-fit）奠基。**下轮**：002 的 fit-content() track 内在尺寸建模，或 collapsed-item-horiz flex 容器两趟（需 IFC 文本测量解锁纯文本 item 测量）。
 
+### R190 — R109 IFC 片段收集支持基础（InlineFormattingContext.fragment_node_ids，零回归，已提交）
+
+R109 多轮里程碑的第 2 个基础件（继 R189 inline_block_split 拆分分析）。补齐 IFC 半边——匿名块盒需只收集其片段的 inline 内容而非 inline 元素的全部 DOM 子节点。
+
+**实现（layout-engine/inline/mod.rs）**：
+- `InlineFormattingContext.fragment_node_ids: Option<Vec<NodeId>>`（默认 None）。
+- `set_fragment_node_ids(&mut self, ids)`：设置片段节点覆盖。
+- `collect_inline_items`：`children = match &self.fragment_node_ids { Some(ids)=>ids.clone(), None=>doc.child_nodes(container) }`——设值时只遍历片段节点，否则原行为。
+
+**验证**：整合测试 `test_fragment_node_ids_restricts_inline_collection`（inline `<div id=i>aaa<div>bbb</div>ccc</div>`：compute_inline_block_split 取首 Inline 片段 → set_fragment_node_ids → collect_inline_items 收集数 < 不设片段的全收集数，且非空），整合 R189 split + 本 IFC 片段两个基础件；上游同源 **435/490 持平零回归**（默认 None 不改行为）；clippy 零警告；fmt clean。
+
+**范围（为何不接线）**：默认 None 零回归，无调用方设值（tree.rs 匿名块生成未接）。R109 完整接线仍需 3 层 plumbing 协同（R189/R188 已 scoped）：(1) tree.rs build_subtree 用 inline_block_split 把 inline+block 子元素展开为匿名块 taffy 节点序列 + 建 fragment 注册表（taffy_node→片段 NodeId）；(2) extract_layout 读注册表设 LayoutBox.fragment_node_ids（需 LayoutBox 新字段）+ 拷 inline 的 border 样式；(3) IFC 用本 fragment_node_ids 收集片段文本；外加 (4) 匿名块 shrink-to-fit（使 border 文本宽非全宽，否则 R182 已证全宽 border 大差）。本 R189+R190 完成「分析双半」（拆分结构 + IFC 片段收集），下轮接 tree+extract+wiring。
+
 ### R189 — R109 §9.2.1.1 匿名块拆分结构基础模块落地（inline_block_split.rs，零回归，已提交）
 
 启动 #1 最高杠杆多轮里程碑 R109（inline→block + IFC ownership，影响 block-in-inline-001/002 + block-in-inline-align-001 + clear-inline-001 + morning.work blue-nav）的首个零风险基础步。新增 `crates/layout-engine/src/inline_block_split.rs` 模块（同 R181「分析先行」方法学，**不接线、零布局副作用**）：

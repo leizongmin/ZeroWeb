@@ -1590,3 +1590,53 @@ fn test_vertical_align_bottom_in_line() {
         fragment.y
     );
 }
+
+/// R109 §9.2.1.1：验证 IFC fragment_node_ids 限制 collect_inline_items 只收集指定片段。
+/// 整合 inline_block_split（拆分）+ IFC（片段收集）两个基础件。
+#[test]
+fn test_fragment_node_ids_restricts_inline_collection() {
+    let html = r#"<html><body><div id="i" style="display:inline">aaa<div>bbb</div>ccc</div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    fn find(id: &str, doc: &zero_dom::Document, node: zero_dom::NodeId) -> Option<zero_dom::NodeId> {
+        if let Some(n) = doc.get(node)
+            && let zero_dom::NodeKind::Element(e) = &n.kind
+            && e.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(node);
+        }
+        for &c in &doc.get(node).map(|n| n.children.clone()).unwrap_or_default() {
+            if let Some(f) = find(id, doc, c) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let i_id = find("i", &doc, doc.root()).expect("find #i");
+    // 计算拆分，取第一个 Inline 片段
+    let segs = crate::inline_block_split::compute_inline_block_split(&doc, &styles, i_id)
+        .expect("inline with block child should split");
+    let first_frag: Vec<zero_dom::NodeId> = segs
+        .iter()
+        .find_map(|s| match s {
+            crate::inline_block_split::InlineBlockSegment::Inline { item_node_ids } => Some(item_node_ids.clone()),
+            _ => None,
+        })
+        .expect("first Inline segment");
+    // 不设 fragment：收集 #i 全部子节点（aaa + ccc 文本，block 子元素被简化跳过）
+    let ctx_all = InlineFormattingContext::new(800.0);
+    let all_items = ctx_all.collect_inline_items(&doc, i_id, &styles);
+    // 设 fragment：只收集第一个片段（aaa）
+    let mut ctx_frag = InlineFormattingContext::new(800.0);
+    ctx_frag.set_fragment_node_ids(first_frag);
+    let frag_items = ctx_frag.collect_inline_items(&doc, i_id, &styles);
+    assert!(
+        frag_items.len() < all_items.len(),
+        "fragment should collect fewer items: frag={} all={}",
+        frag_items.len(),
+        all_items.len()
+    );
+    assert!(!frag_items.is_empty(), "fragment should collect its text item");
+}
