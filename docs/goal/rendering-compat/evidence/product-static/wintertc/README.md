@@ -31,6 +31,8 @@
 
 **结论**：wintertc 布局层无 clean bug（universal 选择器、Twind 类、img aspect 均正确）；22.42% 与 morning.work/welcome 同属 fontdue 字体噪声 plateau + 参与 flex-wrap 精度小问题。**勿再以「Twind 布局缺失」重查**（已实证布局正确）。
 
+**组件级复核（隔离复现）**：flex-wrap（4 box 正确换行 3+1）、justify-evenly（同）、img aspect（w-28/h-12 + sm: 变体均生效，6 logo 全布局）——**组件特性均工作**。故全页 2/13 logo（仅 hero + 1 个 704×24 拉伸图）非组件 bug，而是**全页交互**（祖先约束 / Twind `sm\:` 转义类匹配 / CSS 级联在多祖先嵌套下的差异），隔离复现不出，**defer**（非 clean win，勿再单点追）。
+
 ## 本轮交付
 
 1. **`product-smoke` 子命令**（tests/wpt-runner/src/main.rs）：通用 DC-13 产品 fixture 渲染+对比工具，输出 ZeroWeb CPU PNG 并与 chromium Oracle PNG 像素 diff。后续 welcome/morning-work/wintertc 及任意 fixture 均可复用。
