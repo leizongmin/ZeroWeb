@@ -241,6 +241,12 @@ pub struct LayoutBox {
     /// 据此只收集该片段的 inline 内容（IFC.fragment_node_ids），而非 inline
     /// 元素的全部子节点。`None` = 正常盒（非匿名块片段）。
     pub fragment_node_ids: Option<Vec<NodeId>>,
+    /// R109 §9.2.1.1：此 inline 盒被 in-flow block-level 子元素拆分（生产端接线标记）。
+    ///
+    /// 当为 true 时，此盒自身的 paint IFC 应跳过——其直接文本已由其匿名块片段
+    /// 子盒（带 fragment_node_ids）渲染。仅 env `R109_WIRE=1` 时由 build_subtree
+    /// 标记的 inline 父盒为 true。
+    pub is_r109_split: bool,
 }
 
 impl LayoutBox {
@@ -333,6 +339,7 @@ impl Default for LayoutBox {
             inline_element_margins: HashMap::new(),
             taffy_baseline: None,
             fragment_node_ids: None,
+            is_r109_split: false,
         }
     }
 }

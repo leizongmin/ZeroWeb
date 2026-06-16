@@ -17,7 +17,7 @@ use zero_style_system::{ComputedStyle, ZIndexValue};
 
 use crate::dirty::LayoutDirtyTracker;
 use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign};
-use crate::tree::build_layout_tree;
+use crate::tree::{R109Wiring, build_layout_tree_with_r109};
 use crate::types::{LayoutBox, LayoutResult, OverflowClip};
 use zero_style_system::WritingModeValue;
 
@@ -45,6 +45,8 @@ pub struct CachedLayoutState {
     dom_to_taffy: HashMap<NodeId, taffy::NodeId>,
     /// taffy NodeId → DOM NodeId 反向映射。
     taffy_to_dom: HashMap<taffy::NodeId, NodeId>,
+    /// R109 接线产物（仅 R109_WIRE=1 时非空），供增量 extract 复用。
+    r109: R109Wiring,
 }
 
 /// 增量布局结果 — 包含布局输出和增量计算统计。
@@ -110,8 +112,8 @@ impl LayoutEngine {
         styles: &HashMap<NodeId, ComputedStyle>,
         img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
     ) -> LayoutResult {
-        // 1. 构建 taffy 树
-        let (mut taffy_tree, root_id, taffy_to_dom) = build_layout_tree(
+        // 1. 构建 taffy 树（含 R109 接线产物，仅 R109_WIRE=1 时非空）
+        let (mut taffy_tree, root_id, taffy_to_dom, r109) = build_layout_tree_with_r109(
             doc,
             styles,
             self.viewport_width,
@@ -148,6 +150,7 @@ impl LayoutEngine {
             styles,
             &WritingModeValue::HorizontalTb,
             doc,
+            &r109,
         );
         // 3.1 两趟固有宽度布局：width:max-content/min-content 的 flex/grid 容器
         // 在第一趟已塌缩为 ~0（converter MaxContent→length(0)）。此处测量其 intrinsic
@@ -178,6 +181,7 @@ impl LayoutEngine {
                 styles,
                 &WritingModeValue::HorizontalTb,
                 doc,
+                &r109,
             );
         }
         // CSS 2.1 §9.4.3：position:relative 的根元素（如 <html style="position:relative">）
@@ -320,6 +324,7 @@ impl LayoutEngine {
             root_id,
             dom_to_taffy,
             taffy_to_dom,
+            r109,
         });
 
         LayoutResult {
@@ -405,6 +410,7 @@ impl LayoutEngine {
             styles,
             &WritingModeValue::HorizontalTb,
             doc,
+            &cached.r109,
         );
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
         // margin 折叠由 taffy 0.7 内置处理
@@ -559,9 +565,15 @@ impl LayoutEngine {
         styles: &HashMap<NodeId, ComputedStyle>,
         parent_writing_mode: &WritingModeValue,
         doc: &Document,
+        r109: &R109Wiring,
     ) -> LayoutBox {
         let layout = taffy.layout(taffy_id).cloned().unwrap_or_default();
         let dom_id = taffy_to_dom.get(&taffy_id).copied();
+        // R109：匿名块片段（在 fragment_registry 中的 taffy 节点）→ 写片段节点覆盖；
+        // 其 node_id=inline（tree.rs 已映射），故 is_block_level 由下面强制为 true。
+        let fragment_node_ids = r109.fragment_registry.get(&taffy_id).cloned();
+        let is_anon_fragment = fragment_node_ids.is_some();
+        let is_r109_split = dom_id.is_some_and(|id| r109.split_parents.contains(&id));
 
         // 检测匿名文本项：node_id 指向文本节点（flex/grid 容器中的匿名项）
         // 文本节点没有 ComputedStyle，使用父元素的样式
@@ -659,7 +671,7 @@ impl LayoutEngine {
                     | DisplayValue::TableCaption
             ) || !matches!(s.float, FloatValue::None)
                 && matches!(s.display, DisplayValue::Inline | DisplayValue::InlineBlock)
-        });
+        }) || is_anon_fragment;
         let is_relative =
             computed.is_some_and(|s| matches!(s.position, PositionValue::Relative | PositionValue::Sticky));
         let is_positioned = is_absolute || is_fixed || is_relative;
@@ -749,6 +761,7 @@ impl LayoutEngine {
                 styles,
                 &own_writing_mode,
                 doc,
+                r109,
             ));
         }
 
@@ -811,7 +824,8 @@ impl LayoutEngine {
             inline_element_metrics: HashMap::new(),
             inline_element_margins: HashMap::new(),
             taffy_baseline: None,
-            fragment_node_ids: None,
+            fragment_node_ids,
+            is_r109_split,
         }
     }
 }
@@ -1804,6 +1818,12 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
 
     if !exclusions.is_empty() {
         inline_ctx = inline_ctx.with_float_exclusions(exclusions);
+    }
+
+    // R109 §9.2.1.1：匿名块片段只收集其片段的 inline 内容（fragment_node_ids），
+    // 而非 inline 元素的全部 DOM 子节点。
+    if let Some(frag) = root.fragment_node_ids.clone() {
+        inline_ctx.set_fragment_node_ids(frag);
     }
 
     // R84：用真实样式跑 IFC。仅当结果为**单行**且容器为**纯 Ahem 字体**时存储：

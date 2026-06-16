@@ -3,13 +3,31 @@
 //! 提供将 DOM 元素节点与 taffy 节点关联的功能，
 //! 跳过文本节点、注释节点和 display:none 的元素。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use taffy::prelude::*;
 use zero_css_parser::values::{DisplayValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, WritingModeValue};
 
 use crate::converter::{GridAreaMap, computed_style_to_taffy, parse_grid_template_areas};
+use crate::inline_block_split::{InlineBlockSegment, compute_inline_block_split, inline_has_block_child};
+
+/// env `R109_WIRE=1` 启用 R109 生产端接线（匿名块生成）。默认关闭=零回归。
+fn r109_wired() -> bool {
+    std::env::var("R109_WIRE").ok().as_deref() == Some("1")
+}
+
+/// R109 §9.2.1.1 生产端接线产物（仅 env `R109_WIRE=1` 时非空）。
+///
+/// - `fragment_registry`：匿名块片段 taffy 节点 → 该片段包含的 DOM 子节点，
+///   供 extract_layout 写入 LayoutBox.fragment_node_ids。
+/// - `split_parents`：被拆分的 inline 元素 DOM NodeId 集合，
+///   供 extract_layout 标记 LayoutBox.is_r109_split（抑制其自身 paint IFC）。
+#[derive(Default)]
+pub(crate) struct R109Wiring {
+    pub fragment_registry: HashMap<taffy::NodeId, Vec<NodeId>>,
+    pub split_parents: HashSet<NodeId>,
+}
 
 /// 构建上下文 — 跟踪 DOM 节点与 taffy 节点的映射。
 struct BuildContext {
@@ -23,6 +41,8 @@ struct BuildContext {
     /// 由调用方（engine pipeline，持有 image_sizes + simple_hash）从解码后的
     /// ImageCache 预解析得到；当 `<img>` 无 width/height 属性时作为固有尺寸回退。
     img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
+    /// R109 接线产物（仅 R109_WIRE=1 时填充）。
+    r109: R109Wiring,
 }
 
 impl BuildContext {
@@ -33,6 +53,7 @@ impl BuildContext {
             node_map: HashMap::new(),
             taffy_to_dom: HashMap::new(),
             img_intrinsic_sizes: HashMap::new(),
+            r109: R109Wiring::default(),
         }
     }
 }
@@ -56,6 +77,25 @@ pub fn build_layout_tree(
     viewport_height: f32,
     img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
 ) -> (TaffyTree<NodeId>, taffy::NodeId, HashMap<taffy::NodeId, NodeId>) {
+    let (taffy, root_id, taffy_to_dom, _r109) =
+        build_layout_tree_with_r109(doc, styles, viewport_width, viewport_height, img_intrinsic_sizes);
+    (taffy, root_id, taffy_to_dom)
+}
+
+/// 与 `build_layout_tree` 相同，但额外返回 R109 接线产物（fragment 注册表 +
+/// split 父集合），供 extract_layout 写入 LayoutBox.fragment_node_ids / is_r109_split。
+pub(crate) fn build_layout_tree_with_r109(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    viewport_width: f32,
+    viewport_height: f32,
+    img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
+) -> (
+    TaffyTree<NodeId>,
+    taffy::NodeId,
+    HashMap<taffy::NodeId, NodeId>,
+    R109Wiring,
+) {
     let mut ctx = BuildContext::new();
     ctx.img_intrinsic_sizes = img_intrinsic_sizes;
 
@@ -75,7 +115,7 @@ pub fn build_layout_tree(
         viewport_height,
     );
 
-    (ctx.taffy, root_taffy_id, ctx.taffy_to_dom)
+    (ctx.taffy, root_taffy_id, ctx.taffy_to_dom, ctx.r109)
 }
 
 /// 查找指定节点子树中的第一个元素节点。
@@ -488,32 +528,87 @@ fn build_subtree(
                 }
             }
         } else {
-            // 非 flex/grid 容器：仅处理元素子节点（原有行为）
-            let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
-            for &child_dom in &children_dom {
-                let child_data = doc.get(child_dom);
-                if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
-                    let order = styles.get(&child_dom).map_or(0, |s| s.order);
-                    children_with_order.push((child_dom, order));
+            // 非 flex/grid 容器
+            // R109 §9.2.1.1（env R109_WIRE=1）：inline 元素含 in-flow block-level
+            // 子元素时，按 CSS 规范拆分为匿名块盒序列——连续 inline 内容（文本 +
+            // inline 元素）→ 匿名块，block-level 子元素 → 独立块。匿名块以 inline
+            // 的 NodeId 为 context（承其样式 + 使 extract 给出 node_id=inline），
+            // 其片段 DOM 子节点记入 fragment_registry，供 extract_layout 写
+            // LayoutBox.fragment_node_ids（IFC 只收集该片段文本）。
+            let r109_segments = if r109_wired() && inline_has_block_child(doc, styles, dom_id) {
+                ctx.r109.split_parents.insert(dom_id);
+                compute_inline_block_split(doc, styles, dom_id)
+            } else {
+                None
+            };
+
+            if let Some(segments) = r109_segments {
+                for seg in segments {
+                    match seg {
+                        InlineBlockSegment::Inline { item_node_ids } => {
+                            // 取片段首个文本节点作为 measure context（单文本片段精确；
+                            // 多节点片段仅按首节点近似尺寸，已知限制）。
+                            let ctx_node = item_node_ids
+                                .iter()
+                                .copied()
+                                .find(|&nid| doc.get(nid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
+                                .unwrap_or(dom_id);
+                            let anon_style = taffy::Style {
+                                display: taffy::style::Display::Block,
+                                ..taffy::Style::default()
+                            };
+                            let anon_taffy = ctx
+                                .taffy
+                                .new_leaf_with_context(anon_style, ctx_node)
+                                .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
+                            ctx.taffy_to_dom.insert(anon_taffy, dom_id);
+                            ctx.r109.fragment_registry.insert(anon_taffy, item_node_ids);
+                            child_taffy_ids.push(anon_taffy);
+                        }
+                        InlineBlockSegment::Block { node_id } => {
+                            let child_taffy = build_subtree(
+                                ctx,
+                                doc,
+                                styles,
+                                node_id,
+                                grid_areas.as_ref(),
+                                false,
+                                own_writing_mode.clone(),
+                                viewport_w,
+                                viewport_h,
+                            );
+                            child_taffy_ids.push(child_taffy);
+                        }
+                    }
                 }
-            }
+            } else {
+                // 非 flex/grid 容器：仅处理元素子节点（原有行为）
+                let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
+                for &child_dom in &children_dom {
+                    let child_data = doc.get(child_dom);
+                    if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
+                        let order = styles.get(&child_dom).map_or(0, |s| s.order);
+                        children_with_order.push((child_dom, order));
+                    }
+                }
 
-            // 按 order 稳定排序（相同 order 保持 DOM 顺序）
-            children_with_order.sort_by_key(|(_, order)| *order);
+                // 按 order 稳定排序（相同 order 保持 DOM 顺序）
+                children_with_order.sort_by_key(|(_, order)| *order);
 
-            for &(child_dom, _) in &children_with_order {
-                let child_taffy = build_subtree(
-                    ctx,
-                    doc,
-                    styles,
-                    child_dom,
-                    grid_areas.as_ref(),
-                    false,
-                    own_writing_mode.clone(),
-                    viewport_w,
-                    viewport_h,
-                );
-                child_taffy_ids.push(child_taffy);
+                for &(child_dom, _) in &children_with_order {
+                    let child_taffy = build_subtree(
+                        ctx,
+                        doc,
+                        styles,
+                        child_dom,
+                        grid_areas.as_ref(),
+                        false,
+                        own_writing_mode.clone(),
+                        viewport_w,
+                        viewport_h,
+                    );
+                    child_taffy_ids.push(child_taffy);
+                }
             }
         }
     }

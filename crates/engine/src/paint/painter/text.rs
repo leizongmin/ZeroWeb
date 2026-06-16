@@ -675,7 +675,17 @@ impl super::Painter {
         let default_font_id = self.resolve_font_id(&style.font_family);
 
         if let (Some(doc), Some(node_id)) = (doc, box_node.node_id) {
-            if self.painted_inline_nodes.contains(&node_id) || !has_direct_paintable_text(doc, node_id) {
+            // R109 §9.2.1.1：被 in-flow block 子元素拆分的 inline 父盒自身不渲染文本——
+            // 其直接文本已由匿名块片段子盒（带 fragment_node_ids）渲染。避免与片段重叠。
+            if box_node.is_r109_split && box_node.fragment_node_ids.is_none() {
+                return;
+            }
+            if !has_direct_paintable_text(doc, node_id) {
+                return;
+            }
+            // R109：匿名块片段跳过 painted_inline_nodes 去重——多个片段共享 inline 的
+            // node_id，首个片段渲染后会标记该 id，须放行后续片段各自渲染其片段文本。
+            if box_node.fragment_node_ids.is_none() && self.painted_inline_nodes.contains(&node_id) {
                 return;
             }
 
