@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::{DisplayValue, LengthValue};
-use zero_dom::NodeId;
+use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::FlexBasisValue;
 
@@ -24,9 +24,12 @@ use crate::types::LayoutBox;
 /// - block 级子元素 → 取最大者的内容宽度
 /// - **叶盒（无有效子元素贡献）且有显式 Px width → 回退到自身显式 width**
 ///   （这是与 `table_shrink::block_max_content_width` 的关键差异）
+/// - **叶盒的文本内容**（Round C）：纯文本 item 此前测 0 致 flex/grid 容器 intrinsic
+///   塌缩；此处按元素 font 度量逐字符累加文本宽度（Ahem 等宽=font_size）。
+///   仅 max-content（不换行）；min-content（最宽词）独立子问题暂不实现。
 ///
 /// 返回值含 box 自身的水平 padding+border（border-box 贡献）。
-fn box_content_max_width(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+fn box_content_max_width(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
     let mut inline_sum = 0.0f32;
     let mut block_max = 0.0f32;
     let mut has_in_flow_child = false;
@@ -54,7 +57,7 @@ fn box_content_max_width(box_node: &LayoutBox, styles: &HashMap<NodeId, Computed
         if is_inline_level {
             inline_sum += outer_w.max(0.0);
         } else {
-            block_max = block_max.max(box_content_max_width(child, styles));
+            block_max = block_max.max(box_content_max_width(child, doc, styles));
         }
     }
 
@@ -70,13 +73,40 @@ fn box_content_max_width(box_node: &LayoutBox, styles: &HashMap<NodeId, Computed
             _ => None,
         })
         .unwrap_or(0.0);
-    let inner = if !has_in_flow_child || children_inner < own_explicit {
+    let inner = if !has_in_flow_child {
+        // 叶盒：显式宽或文本内容宽（Round C）。纯文本 item（无 LayoutBox 子元素）
+        // 之前测 0，现按 DOM 文本内容度量。取 max 避免显式宽被文本低估。
+        let text_w = box_node
+            .node_id
+            .map_or(0.0, |id| text_content_max_width(id, doc, styles));
+        own_explicit.max(text_w)
+    } else if children_inner < own_explicit {
         own_explicit
     } else {
         children_inner
     };
 
     inner + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right
+}
+
+/// 测量一个 DOM 元素的文本内容 max-content 宽度（Round C：纯文本 flex/grid item 测量）。
+///
+/// 遍历 DOM 后代收集全部文本（`Document::text_content`），按 CSS 白空格折叠规则折叠后，
+/// 用元素 font 度量逐字符累加宽度（复用 IFC 的 `estimate_char_width`：Ahem 等宽=font_size，
+/// 其它字体按字符近似宽）。仅 max-content（假设不换行）；min-content（最宽词）独立子问题。
+fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+    let text = doc.text_content(node_id).unwrap_or_default();
+    let collapsed = crate::inline::collapse_whitespace(&text);
+    if collapsed.is_empty() {
+        return 0.0;
+    }
+    let style = styles.get(&node_id);
+    let (font_size, _line_height) = crate::inline::resolve_font_metrics(style);
+    let is_ahem = style.is_some_and(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")));
+    collapsed
+        .chars()
+        .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
+        .sum()
 }
 
 /// 计算 flex item 的主轴 base size（CSS Flexbox §9.2 flex base size）。
@@ -86,7 +116,7 @@ fn box_content_max_width(box_node: &LayoutBox, styles: &HashMap<NodeId, Computed
 /// - 无法确定（无显式值且内容为 0）→ 返回 0.0（调用方应作 no-op 处理）
 ///
 /// 返回 border-box 贡献（含 item 自身 padding+border，不含 margin——margin 由容器求和时加）。
-fn flex_item_base_size(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+fn flex_item_base_size(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
     let style = box_node.node_id.and_then(|id| styles.get(&id));
     // 1. flex-basis 显式长度优先
     if let Some(s) = style
@@ -104,8 +134,8 @@ fn flex_item_base_size(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedSt
         let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
         return (*v as f32) + frame;
     }
-    // 3. 内容 max-content
-    box_content_max_width(box_node, styles)
+    // 3. 内容 max-content（Round C：含纯文本 item 的文本宽度）
+    box_content_max_width(box_node, doc, styles)
 }
 
 /// 计算一个**水平 flex 行容器**的固有宽度（max-content 主尺寸）。
@@ -113,7 +143,11 @@ fn flex_item_base_size(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedSt
 /// = Σ flex item base size + item margins + gaps + 容器水平 padding/border。
 /// 仅对 `display:flex`/`inline-flex` 且主轴为水平（flex-direction: row/row-reverse）的容器有意义。
 /// 返回 None 表示无法确定（如无流内 item）。
-pub(crate) fn flex_row_intrinsic_width(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> Option<f32> {
+pub(crate) fn flex_row_intrinsic_width(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> Option<f32> {
     let mut sum = 0.0f32;
     let mut count = 0usize;
     for child in &box_node.children {
@@ -128,7 +162,7 @@ pub(crate) fn flex_row_intrinsic_width(box_node: &LayoutBox, styles: &HashMap<No
             .unwrap_or(true);
         if is_item && child.is_block_level {
             count += 1;
-            sum += flex_item_base_size(child, styles) + child.margin_left + child.margin_right;
+            sum += flex_item_base_size(child, doc, styles) + child.margin_left + child.margin_right;
         }
     }
     if count == 0 {
@@ -154,7 +188,11 @@ pub(crate) fn flex_row_intrinsic_width(box_node: &LayoutBox, styles: &HashMap<No
 ///
 /// 其中 item base size = `box_content_max_width`（含叶显式宽回退，故 `.item > .content(50px)`
 /// 会测为 50+frame）。返回 None 表示无流内 item。
-pub(crate) fn grid_intrinsic_width(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> Option<f32> {
+pub(crate) fn grid_intrinsic_width(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> Option<f32> {
     let style = box_node.node_id.and_then(|id| styles.get(&id));
     let is_column_flow = style
         .map(|s| {
@@ -186,7 +224,7 @@ pub(crate) fn grid_intrinsic_width(box_node: &LayoutBox, styles: &HashMap<NodeId
             .unwrap_or(true);
         if is_item && child.is_block_level {
             count += 1;
-            let base = box_content_max_width(child, styles) + child.margin_left + child.margin_right;
+            let base = box_content_max_width(child, doc, styles) + child.margin_left + child.margin_right;
             sum += base;
             max_w = max_w.max(base);
         }
@@ -256,17 +294,17 @@ fn is_flex_grid_container(s: &ComputedStyle) -> bool {
 ///
 /// 候选 = flex/grid 容器且（width 为 auto/max-content/min-content，或容器本身是 inline-level
 /// 或 float——这些应 shrink-to-fit 而非填满）。**仅 eprintln，不改变任何布局状态**（Round A）。
-pub(crate) fn debug_dump_shrink_candidates(root: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
-    fn walk(b: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+pub(crate) fn debug_dump_shrink_candidates(root: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
+    fn walk(b: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
         let Some(id) = b.node_id else {
             for c in &b.children {
-                walk(c, styles);
+                walk(c, doc, styles);
             }
             return;
         };
         let Some(s) = styles.get(&id) else {
             for c in &b.children {
-                walk(c, styles);
+                walk(c, doc, styles);
             }
             return;
         };
@@ -279,9 +317,9 @@ pub(crate) fn debug_dump_shrink_candidates(root: &LayoutBox, styles: &HashMap<No
             let is_float = !matches!(b.float, zero_css_parser::values::FloatValue::None);
             if width_indefinite || is_inline || is_float {
                 let intrinsic = if matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid) {
-                    grid_intrinsic_width(b, styles)
+                    grid_intrinsic_width(b, doc, styles)
                 } else {
-                    flex_row_intrinsic_width(b, styles)
+                    flex_row_intrinsic_width(b, doc, styles)
                 };
                 if let Some(intrinsic) = intrinsic {
                     eprintln!(
@@ -297,10 +335,10 @@ pub(crate) fn debug_dump_shrink_candidates(root: &LayoutBox, styles: &HashMap<No
             }
         }
         for c in &b.children {
-            walk(c, styles);
+            walk(c, doc, styles);
         }
     }
-    walk(root, styles);
+    walk(root, doc, styles);
 }
 
 #[cfg(test)]
@@ -327,7 +365,7 @@ mod tests {
             b.children.iter().find_map(|c| find(id, doc, c))
         }
         let target = find(target_id, &doc, &result.root)?;
-        flex_row_intrinsic_width(target, &styles)
+        flex_row_intrinsic_width(target, &doc, &styles)
     }
 
     /// 用 DOM 解析真实 HTML 计算样式，验证 grid 固有宽度测量（column flow 求和）。
@@ -349,7 +387,7 @@ mod tests {
             b.children.iter().find_map(|c| find(id, doc, c))
         }
         let target = find(target_id, &doc, &result.root)?;
-        grid_intrinsic_width(target, &styles)
+        grid_intrinsic_width(target, &doc, &styles)
     }
 
     #[test]
@@ -469,6 +507,23 @@ mod tests {
         </body></html>"#;
         let w = compute_intrinsic(html, "c").expect("flex row intrinsic");
         assert!((w - 70.0).abs() < 1.0, "expected ~70 (50+20 padding), got {}", w);
+    }
+
+    #[test]
+    fn test_text_only_item_measured_round_c() {
+        // Round C：纯文本 flex item（Ahem 10px 等宽）此前测 0，现按文本内容度量。
+        // 5 字符 "XXXXX" × 10px = 50px（item 无 padding/border/margin）。
+        let html = r#"<html><body style="margin:0">
+          <div id="c" style="display:flex;font:10px/1 Ahem">
+            <div>XXXXX</div>
+          </div>
+        </body></html>"#;
+        let w = compute_intrinsic(html, "c").expect("flex row intrinsic");
+        assert!(
+            (w - 50.0).abs() < 1.0,
+            "expected ~50px (5×10px Ahem text, Round C), got {}",
+            w
+        );
     }
 
     #[test]
