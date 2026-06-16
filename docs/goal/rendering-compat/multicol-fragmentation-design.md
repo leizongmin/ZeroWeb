@@ -1,9 +1,53 @@
 # 设计草图：multicol 列感知 IFC 碎片化（column-aware fragmentation）
 
-**版本**：v0.2（**R200 重大纠正**：列分配已正确，原 balance 方向错误）
+**版本**：v0.3（**R201 dump 实测纠正**：multicol-breaking 真实阻塞点是「inline 内容碎片化 wiring 缺失」非「两趟循环依赖」，列分配/balance/碎片化算法均已存在）
 **日期**：2026-06-17
-**状态**：分析完成；**列分配（balance）方向已证伪关闭**（R200）
-**关联**：rendering-compat master.md R113/R122/R128/R131/R157/R199/R200；css-multicol 17/57 失败
+**状态**：分析完成；**列分配（balance）方向已证伪关闭**（R200）；**multicol-breaking 真实机制 dump 实测定性**（R201，本节）
+**关联**：rendering-compat master.md R113/R122/R128/R131/R157/R199/R200/R201；css-multicol 17/57 失败
+
+---
+
+## ⚠️ R201 dump 实测定性（2026-06-17）— multicol-breaking 真实阻塞点
+
+承接 R200（balance 方向关闭）。本轮对 multicol-breaking-004/005/006/nobackground-004（css-multicol 唯一剩余的「嵌套列碎片化」失败聚类）做 **REFTEST_DUMP + REFTEST_BBOX + 逐行像素扫描** 实测，**纠正 R113/R132 的「内层 multicol 高度依赖外层列宽→两趟循环依赖」假设**——真实阻塞点更具体、更靠 paint 侧，且**碎片化算法本身已存在**。
+
+### 实测证据（multicol-breaking-004，5.60%）
+
+- 结构：`.outer`(height:125px, column-count:4, column-fill:auto, column-rule:4px blue) > `.inner`(column-count:2, height:300px, border-bottom:25px green, box-decoration-break:clone) 内含 17 行文本。
+- **REF**（期望）：3 列可见内容，每列含 2 个子列（col0=AAAAA-EEEEE+FFFFF-JJJJJ，col1=KKKKK-NNNNN+OOOOO-QQQQQ，col2=空+绿 border），列间蓝色 column-rule。
+- **ZeroWeb 实测**：inner 文本**仅在 col0 渲染**（x≈8-55，单子列），col1/col2 **完全无文本**（仅洋红背景）；**蓝色 column-rule 全部漏画**；绿 border 位置错误（col2 y≈60-80 而非 3 列 y=100-125）。
+- BBox：x=[8,603] y=[8,132]（diff 止于 col2 末尾，col3 空=匹配）。
+
+### 3 个真实阻塞点（非 R113「循环依赖」）
+
+| # | 阻塞点 | 位置 | 性质 |
+|---|--------|------|------|
+| **A** | **paint multicol 门控 `height_auto`**：inner 有明确高度（300px）→ `height_auto=false` → `compute_multicol_info_for_paint` 返回 None → inner 的 2 子列布局**从未计算** | `painter/text.rs:710-715` | wiring 缺失 |
+| **B** | **`column_span_offsets` paint 路径不渲染碎片化 inline 内容**：outer 的 column breaking 把 inner 碎片化到 col0/1/2（写 column_span_offsets），但该 paint 路径**不重绘 inner 的 IFC 文本到非主位置列** → inner 文本只在 col0 | `painter/mod.rs`（column_span_offsets 消费）+ R131 同源 | wiring 缺失（核心） |
+| **C** | **column-rule §5.2 内容检测只查 `child.x` 主位置**：被碎片化的唯一子元素只在 col0 有 c.x，其余列仅存于 column_span_offsets → 误判「无内容」漏画 rule | `painter/text.rs:185-197` | 已实测**不可单点安全修**（见下） |
+
+### 关键纠正：碎片化算法**已存在**，缺口是 wiring
+
+`multicol.rs` 已实现 **`assign_children_to_columns_sequential`（顺序填充+列高预算）和 `assign_children_to_columns_with_breaking`（带 column breaking 的块级子元素碎片化）**——这正是 CSS Multicol §6 fragmentation 所需的顺序填充算法。R113 设想的「内层 multicol 两趟测量」**算法层面已具备**，只是**未接线到 inline 内容的 paint 路径**。
+
+**因此：勿再建「行内流行盒碎片化」measure-first 工具**——它会是 `assign_children_to_columns_sequential` 的重复实现（同 R199 balance 工具被 R200 证伪移除的命运）。真实工作 = 让 paint 侧把 inner 的 IFC 内容按 outer 列高预算碎片化重绘到各列（接 B），并放宽门控（接 A）。
+
+### column-rule 修复（C）实测回归，已回退
+
+本轮实现 C 的修复（`in_range` 闭包额外查 `column_span_offsets` 的列 x），实测：
+- multicol-breaking-004 5.60→**5.39%**、006 1.20→**1.12%**（蓝色 rule 正确补画，改善）。
+- **但 `column-rule-002` 0.00→1.25%（PASS→FAIL，回归）**。
+- 根因：column-rule-002（`columns:3; column-fill:auto` + 单个 height:250px 子元素被碎片化到 3 列）的 REF **恰好匹配旧的 c.x-主位置 检测行为**；旧 §5.2 启发式虽对嵌套 multicol-breaking 不完美，但对 column-rule-002 这类用例**正确**。
+- **结论：C 非安全单点修复**（不可简单加 column_span_offsets 感知）。已回退，git diff clean，baseline 438/490 恢复。未来若修 C 须区分 column_span_offsets 的来源（column breaking vs column-span:all）并精确实现 §5.2 语义。
+
+### 对实施计划的影响（Round 4 重新定向）
+
+原 Round 4（column breaking / 两趟循环依赖）的**算法前提不成立**——碎片化算法已存在。真实 Round 4 应改为：
+
+- **Round 4'（wiring）**：让 `column_span_offsets` paint 路径对被碎片化的 IFC 容器子元素，按列高预算（来自 outer column breaking 的 fragment 切片）重绘其 inline 内容到每个非主位置列 + 列裁剪。这是 R131「paint IFC 与 multicol block 分配协调」的具体落地，**paint 侧多轮子系统**（非 layout 两趟）。
+- 前置：放宽 text.rs:711 门控（A），让有明确高度的 inner 也能触发 paint 列分配（但须守 multicol-fill-auto-001 不回归，同 R198 font_size 死锁交互）。
+
+**预期**：Round 4' 解锁 multicol-breaking-004/006/nobackground-004（3 用例，005 因 balance+balance 嵌套更难独立）。仍是多轮 paint 子系统，非单会话。
 
 ---
 
@@ -31,7 +75,7 @@
   2. **paint IFC 与 multicol.rs block 分配不协调**——`target_h` 不扣 col1 已被 block 子元素占据的高度（R157 标记的核心缺口）。
   3. **明确高度 + column-fill:auto**（嵌套/breaking 用例）涉及 column breaking（§6），当前完全不支持（R113 两趟循环依赖）。
 - **推荐方案**：**列感知 IFC**——让 IFC 在生成行盒时知道「当前列的可用高度」，按列高把行盒碎片化到各列（R131），协调 block 子元素已占空间。分轮渐进：先纯行内 balance 精确化（最大子集），再混合内容门控放宽，再 breaking。
-- **首个落地步骤**：实现 `column_heights` 测量工具（从 multicol 容器几何 + block 子元素已占高度计算每列可用高度）+ 单元测试，**不接线**（先证明测量正确，同 flex-grid-two-pass 的「测量先行」方法学）。
+- **首个落地步骤**：⚠️ 经 R201 dump 实测纠正——碎片化算法（`assign_children_to_columns_sequential`/`_with_breaking`）**已存在**，**勿再建 measure-first 工具**（会重复 R199→R200 证伪命运）。真实首步 = Round 4' wiring：放宽 text.rs:711 门控 + 让 `column_span_offsets` paint 路径重绘碎片化 IFC 内容到各列。详见上方「R201 dump 实测定性」。
 
 ---
 
