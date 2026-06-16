@@ -234,6 +234,13 @@ pub struct LayoutBox {
     /// 用于 `adjust_inline_block_positions` 中计算 inline-flex/inline-grid
     /// 容器在父 IFC 中的基线位置，替代 font_size 近似。
     pub taffy_baseline: Option<f32>,
+    /// R109 §9.2.1.1 匿名块盒的片段文本节点覆盖。
+    ///
+    /// 当此 LayoutBox 是 inline 元素被 block 子元素拆分后的一个匿名块盒时，
+    /// 设为其片段包含的 DOM 子节点（文本 + inline 元素）。paint/layout IFC
+    /// 据此只收集该片段的 inline 内容（IFC.fragment_node_ids），而非 inline
+    /// 元素的全部子节点。`None` = 正常盒（非匿名块片段）。
+    pub fragment_node_ids: Option<Vec<NodeId>>,
 }
 
 impl LayoutBox {
@@ -325,6 +332,7 @@ impl Default for LayoutBox {
             inline_element_metrics: HashMap::new(),
             inline_element_margins: HashMap::new(),
             taffy_baseline: None,
+            fragment_node_ids: None,
         }
     }
 }
