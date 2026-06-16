@@ -371,8 +371,11 @@ fn convert_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taffy::
         }
         // fit-content() 将内部值转换为 dimension
         LengthValue::FitContent(inner) => convert_length_to_dimension(inner, vw, vh),
-        // min-content/max-content 映射为 Auto（由 taffy 内部处理内容尺寸）
-        LengthValue::MinContent | LengthValue::MaxContent => taffy::style::Dimension::Auto,
+        // min-content/max-content：塌缩为 0（与旧「resolve 为 Px(0)」行为中性），
+        // 由 layout-engine 两趟固有宽度测量在可测时把容器宽度提升到 intrinsic。
+        // 不能映射为 Auto——taffy 会把 width:auto 的块级容器拉伸到可用宽度（填充），
+        // 违反 max-content/min-content 的 shrink-to-fit 语义（R181c 实测 net -5）。
+        LengthValue::MinContent | LengthValue::MaxContent => length(0.0),
         // viewport 单位已在上方 resolve_viewport_px 处理
         _ => taffy::style::Dimension::Auto,
     }

@@ -360,6 +360,11 @@ fn resolve_length_field(
     match field {
         LengthValue::Px(_) => { /* 已经是绝对值 */ }
         LengthValue::Percentage(_) | LengthValue::Auto => { /* 由布局引擎处理 */ }
+        // min-content/max-content 关键字需内容信息，此处无法解析；
+        // 保留信号到布局引擎，由两趟固有宽度测量（layout-engine）解析。
+        // converter 把 width/height 的 MaxContent 映射为塌缩（length(0)），
+        // 保持与旧「解析为 Px(0)」行为中性，避免 taffy 把 width:auto 容器拉伸填充。
+        LengthValue::MinContent | LengthValue::MaxContent => {}
         // 包含百分比的 calc 表达式保留，由布局引擎处理
         LengthValue::Calc(expr) if calc_contains_percentage(expr) => {}
         _ => {
