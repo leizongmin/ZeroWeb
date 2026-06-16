@@ -308,6 +308,11 @@ impl LayoutEngine {
         if std::env::var("INTRINSIC_DBG").is_ok() {
             crate::intrinsic_sizing::debug_dump_shrink_candidates(&root_box, doc, styles);
         }
+        // R109（CSS2 §9.2.1.1）诊断：对 inline 含 block 子元素的元素打印其匿名块拆分片段。
+        // 仅 eprintln，零布局副作用。env R109_DBG=1 启用，为后续匿名块生成接线验证结构。
+        if std::env::var("R109_DBG").is_ok() {
+            crate::inline_block_split::debug_dump_inline_block_splits(&root_box, doc, styles);
+        }
 
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
