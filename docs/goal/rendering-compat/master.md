@@ -1,8 +1,8 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-16
+**最后更新**: 2026-06-17
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率提升（Phase A 部分解锁）
-**上游真实 reftest 通过率**: 88.8% (435/490) R181d（flex/grid 两趟 Round B 落地，**+1 零回归**：`width:max-content` grid 经两趟 intrinsic 测量塌缩 40→182px ≈ chromium 180，`child-border-box-and-max-content-001` 1.52%→**PASS 0.03%**；R97 两通过用例 min-width:max-content/min-height:min-content 经实测仍 0.00% 持平）。前轮 R180（chromium Oracle 真实修复 ×4：R180 inline-block width:auto shrink-to-fit baseline-block-with-overflow-001 chromium **45.09%→1.25%**；R178 `<col>` px 宽度 18→400px；R168 table height-as-minimum 11.12%→2.98%；R165 margin:auto 居中 33.09%→2.63%）。**434/435 即诚实 DC-14 基线，无需恢复 436**（R164 证否 vrl-004/008 R114b 路径：正确 vertical-rl CSS 使 4/4 vrl 变差，因同源 REF 水平渲染 vs 正确 vertical-rl 右侧块起始结构性不可对齐；chromium Oracle 证同源 REF 比 chromium 更怪异：vrl-004 同源 7.09% vs chr 5.08%，font-051 同源 8.19% vs chr 1.62%）。R163 PNG 正确 RGBA 默认启用（DC-14 anti-false-pass）。draw_order 默认启用满足 DC-10。剩余 55 同源失败（结构性多轮 + REF 怪异产物）；**优化目标已转 chromium Oracle 一致率（d16bb8e），18 真 bug 候选见 `evidence/analyze-pollution-2026-06-16.txt`**。
+**上游真实 reftest 通过率**: 88.8% (435/490) R182（block-in-inline R109 攻坚确证架构性多轮 defer，clean win 同源+chr 双侧穷尽复核确认；基线持平）→ R181d（flex/grid 两趟 Round B 落地，**+1 零回归**：`width:max-content` grid 经两趟 intrinsic 测量塌缩 40→182px ≈ chromium 180，`child-border-box-and-max-content-001` 1.52%→**PASS 0.03%**；R97 两通过用例 min-width:max-content/min-height:min-content 经实测仍 0.00% 持平）。前轮 R180（chromium Oracle 真实修复 ×4：R180 inline-block width:auto shrink-to-fit baseline-block-with-overflow-001 chromium **45.09%→1.25%**；R178 `<col>` px 宽度 18→400px；R168 table height-as-minimum 11.12%→2.98%；R165 margin:auto 居中 33.09%→2.63%）。**434/435 即诚实 DC-14 基线，无需恢复 436**（R164 证否 vrl-004/008 R114b 路径：正确 vertical-rl CSS 使 4/4 vrl 变差，因同源 REF 水平渲染 vs 正确 vertical-rl 右侧块起始结构性不可对齐；chromium Oracle 证同源 REF 比 chromium 更怪异：vrl-004 同源 7.09% vs chr 5.08%，font-051 同源 8.19% vs chr 1.62%）。R163 PNG 正确 RGBA 默认启用（DC-14 anti-false-pass）。draw_order 默认启用满足 DC-10。剩余 55 同源失败（结构性多轮 + REF 怪异产物）；**优化目标已转 chromium Oracle 一致率（d16bb8e），18 真 bug 候选见 `evidence/analyze-pollution-2026-06-16.txt`**。
 
 ### ⚠️ M7 状态核实（goal doc 陈旧纠正，2026-06-16）— 渲染器图元覆盖已基本完成
 
@@ -138,6 +138,22 @@ DC-13 wintertc 诊断产出：`<img>` 仅设 CSS width（height:auto）或仅设
 **验证**：上游同源 **434→435/490**（child-border-box-001 FAIL→PASS 0.03%；002 1.52→1.36% 改善但仍未过——其用 `grid-template-columns: fit-content(...)` 显式 track，当前 `grid_intrinsic_width` 只建模 column-flow 求和/row 取最大，未建模 fit-content() track 内在尺寸=独立子问题 defer）；flex-container-max/min-content-001（18.08%/12.80%）不变（纯文本 flex item 需 IFC 文本测量=Round C）；make test **12201 passed/0 failed**（+2 单测 `test_grid_width_max_content_sized_to_intrinsic` + `test_unmeasurable_max_content_does_not_fill` 验证可测提升与不可测回退）；converter edge_cases 单测更新（MaxContent→Length(0.0)）；clippy 零警告；fmt clean。
 
 **意义**：(1) #1 结构性里程碑（flex/grid 两趟固有宽度）Round B 落地，测量基础（R181/A.2）现产出真实修复；(2) child-border-box 是 18 真 bug 候选外的真实渲染缺口（chromium 40 vs 180），现 align chromium；(3) R181c 的「net -5」根因精确定位并解决（converter Auto→length(0) 中性塌缩 + 不可测回退）；(4) 两趟 set_style+mark_dirty+重跑模式为后续 flex intrinsic sizing（collapsed-item-horiz 等 flex 容器 shrink-to-fit）奠基。**下轮**：002 的 fit-content() track 内在尺寸建模，或 collapsed-item-horiz flex 容器两趟（需 IFC 文本测量解锁纯文本 item 测量）。
+
+### R182 — block-in-inline 匿名块盒生成攻坚（R109，CSS2 §9.2.1.1）：确证架构性多轮，无单会话 clean win，defer，无代码提交
+
+上轮 CONTINUE 指定的目标。本轮对 inline-box-001（2.31%）做可视化 + 代码级根因，**确证为 R109 架构性里程碑**，非单会话 clean win。
+
+**重叠机制精确定位**：`<div #div1 display:inline> "First line" <div orange> "Last line" </div>` 经 converter `DisplayValue::Inline => taffy::Block`（converter/mod.rs:265）变 taffy Block 盒。它**同时**——(1) `has_inline_content`（engine.rs:2041）因有直接文本子节点返回 true → #div1 对自身直接文本跑 IFC（collect_inline_items 把 block 子元素经简化处理 inline/mod.rs:846 替换为 `Br`，故 IFC 产 "First line"/"Last line" 两行）；(2) 把 orange `<div>` 作为 taffy block 子元素布局在 #div1 内容区**顶部**。两套系统不协调 → orange 盒（rows 94-112）与 IFC 文本在同一内容区重叠，"Filler Text" 文本落在 113-117 无橙底。即 IFC（DOM 文本收集）与 taffy（block 子元素布局）双轨，是 R109 IFC ownership 的具体表现。
+
+**关键新结论（修正上轮「可做简单情形」预期）——border 是 inline 级片段 border，非 block border**：REF 用 `<span id="top">First line</span>`（inline span，border 仅包裹文本宽度 ~70px，top/left/bottom）+ 192px orange div + `<span id="bottom">Last line</span>`。§9.2.1.1 生成的匿名块盒是 **block 级（全宽 784px）**，但被拆分 inline 的 **border/background 仍在 inline 级绘制（包裹每片段内的文本）**，且首片段画 top/start+两 block 轴边、末片段画 top/end+两 block 轴边（fragment border）。故「把 inline border 复制到匿名块作 block border」不可行——全宽 block border（784px）vs 文本宽 inline border（~70px）= **大差（非可忽略）**，且无法表达片段开放边。本结论推翻「border 仅增加 ~80px 可忽略 diff」的初步乐观判断。
+
+**完整修复 = 3 子系统多轮**：(1) tree.rs 构建期把 inline+block 子元素拆为匿名块序列（text-before → 匿名块、block 子元素原样、text-after → 匿名块），需 fragment-range 注册表让每匿名块 IFC 只收集对应文本片段（当前 collect_inline_items 按 container NodeId 走全部子节点，匿名块无 NodeId）；(2) inline/mod.rs IFC 按片段范围收集文本；(3) painter inline 级片段 border 绘制（首/末/中片段开放边）。≈300-400 行跨 3 子系统 + 片段 border 语义微妙。
+
+**安全性论证（为何不强行单会话）**：触发条件可精确限定为 `display:Inline + ≥1 block-level 子元素`，故对 435 通过用例爆炸半径低（含此模式的用例多为已在失败集的 block-in-inline 用例）；但即便多轮投入，**无片段 border 则 inline-box-001 不可能 PASS**（全宽 vs 文本宽 border 大差），单会话投入 EV 低。遵 code-guidelines（精准修改/简单至上/先思考再编码），不强行高风险多系统改动威胁 435/490 基线。
+
+**clean win 穷尽复核（本轮）**：全 55 同源失败逐一映射已知结构性领域（multicol 碎片化 R113/R122/R131 17 个、writing-mode 轴 R114/R142/R164 已 4 轮证伪、flex 基线 R130、Phase A large-font/IFC R125/R158/R169 死锁、R97 intrinsic、R109 block-in-inline）；16 chromium Oracle 真 bug 候选 R177/R180 已全部分级结构/infra/字体。**filter:blur σ=radius/2 同 R174 class bug 仍未修（effects.rs:38 `(radius*scale).ceil()` 单遍），但 0 reftest + 0 产品 fixture 驱动，遵 R174「无驱动不修」决策不动**。确证同源侧 + chromium Oracle 侧 clean win 均已穷尽。
+
+**defer block-in-inline**。下一最高杠杆结构性里程碑 = flex/grid 两趟 Round C（IFC 文本内容测量），改善 collapsed-item-horiz-001 chromium Oracle（20.5%，同源 0% 通过）——但**不推动同源 435/490 头条**（该用例同源本就通过）；要推 435→436+ 需攻克某一同源结构性失败（均多轮）。本轮基线复核 435/490（88.8%）持平。
 
 ### R181e — grid 显式列 intrinsic 求和（002 1.36→1.01% 近似，零回归，已提交）
 
