@@ -32,11 +32,11 @@
 3. **wintertc fixture**（`apps/browser/assets/wintertc/`）：index.html（capture-wintertc.mjs 经 chromium 录制的已解析 DOM，含 Twind 生成的 `<style>`）+ static/ 下 14 个 logo（logo.svg + 13 参与方 logo）。
 4. **基线 22.42%**（800×600，107,604/480,000 px vs chromium）。
 
-**诊断**（REFTEST_DEBUG）：800×600 `images:1`、800×2000 `images:2`——SVG 栅格化已生效（视口增高图元数增加）。但 14 logo 中绝大多数仍未渲染，**根因非图片加载**（PNG/JPEG/SVG 三类均能在 build_image_cache 加载），而是 **Twind 驱动的 logo 网格布局**未被完整布局（Tailwind utility class flex/grid/gap），多数 `<img>` 未被布局到可见区→不产生 ImagePrimitive。800×600 下 logo grid 多在折叠线下，主要差异来自顶部 hero/nav/title 文本区（Twind 布局 + fontdue 字体度量噪声，与 morning.work/welcome 同源）。证据持久化 `evidence/product-static/wintertc/`。
+**诊断**（REFTEST_DEBUG + 分区域像素分析 + 计算样式探针，CSS 加载后）：wintertc **布局层经核实基本正确**——universal `*{margin:0}` 生效（UA margin 被 reset）、Twind utility 类生效（text-4xl→36px、flex/grid/mt-8/gap 等结构正确）、hero/nav 位置合理。`images:1`(800×600)/`2`(800×2000) 证 SVG 栅格化生效；14 参与 logo 中多数仍未布局（疑 `flex flex-wrap justify-evenly` 多 item 精度，待独立诊断，非图片加载问题）。**22.42% 主差异 = 顶部文本区 fontdue vs Skia 字体度量噪声**（与 morning.work/welcome 同源 plateau，R174 已结论需字体光栅器升级）+ logo 多在折叠线下。**结论：wintertc 布局无 clean bug，勿再以「Twind 布局缺失」重查**。证据持久化 `evidence/product-static/wintertc/`。
 
 **验证**：make test 12203 passed/0 failed；上游 reftest **435/490 持平零回归**（SVG 分支仅 `.svg` 扩展名触发，不影响 PNG 用例）；clippy/fmt clean。
 
-**剩余（下轮）**：① Twind utility 布局诊断（logo grid 的 flex/grid/gap 具体缺哪个）；② 真实 ZeroBrowser/webview 层 ImageCache 的 SVG 支持同步（本轮仅 harness 侧）。
+**剩余（下轮）**：① 参与 `flex flex-wrap justify-evenly` 多 logo 未布局（独立子问题，待诊断是否 clean）；② 真实 ZeroBrowser/webview 层 ImageCache 的 SVG 支持同步（本轮仅 harness 侧）；③ HTML width/height 单属性 aspect 推导尝试后致 background-001/003/328/329 回归 -4（已回退，交互未明需先厘清）。
 
 ### DC-13 img 替换元素 aspect-ratio 保留修复（真实 bug，零回归，已提交）
 
