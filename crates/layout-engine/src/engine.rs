@@ -270,6 +270,14 @@ impl LayoutEngine {
         // 此步骤自上而下传递「明确高度」，对百分比 max-height 的盒做收紧。
         clamp_percentage_max_height(&mut root_box, None, styles);
 
+        // 诊断（不改变布局）：对 shrink-to-fit 候选容器（inline-flex/inline-grid/float:flex/
+        // float:grid 的 width:auto，或任意 flex/grid 的 width:max-content/min-content）打印
+        // 测得的固有宽度 vs 当前宽度，供 flex-grid 两趟布局（见 intrinsic_sizing / 设计草图）
+        // 验证测量正确性。Round A：仅测量+打印，零布局副作用。
+        if std::env::var("INTRINSIC_DBG").is_ok() {
+            crate::intrinsic_sizing::debug_dump_shrink_candidates(&root_box, styles);
+        }
+
         // 缓存 taffy 状态用于后续增量计算
         self.cached_state = Some(CachedLayoutState {
             taffy: taffy_tree,
