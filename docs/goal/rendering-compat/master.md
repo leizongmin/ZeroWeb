@@ -10,6 +10,18 @@
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
+### R179 — colspan 主体修复攻坚实证（(e) 扩展变更净 -1 + 空列裁剪语义不一致，阻塞，无代码提交）
+
+本轮攻坚 colspan #1 目标（52% chr）的 5 部件主体，实证确认**不可安全单点/部分推进**：
+
+**(e) 扩展变更单独测试（net -1，已回退）**：把 `compute_column_widths` line 1799 的 `(has_explicit_width || is_fixed_layout)` 改为 `has_explicit_width`（CSS §17.5.2.1：width:auto 表格应收缩到列宽之和而非填满容器）。全量 490 实测 **434→433**，**唯一新增失败 = colspan 本身**（test 空 cell 收缩到 11.6px vs ref width:40px td 收缩到 40px → 同源从 0% 变 FAIL）。关键结论：**(e) 的爆炸半径仅 colspan**（其余 55 失败不变）——即 colspan 是唯一 width:auto + table-layout:fixed + test≠ref 的用例。已回退，434/490 恢复。
+
+**chromium colspan 实测几何（黄色=cell bg 重新精确测量）**：t1-t5 cell 内容宽 = 40/90/140/40/40 px = **钳制后 colspan × 50px − 10(border)**。t3 colspan=4→钳制 3 列=140px（确证 colspan 钳制）。每表 = cell extent + border（60/110/160/60/60px）。**chromium 裁剪了空列**（t1 有 3 个 `<col width:50px>` 但只渲染 1 列=cell extent，空列 1,2 不渲染）。
+
+**致命阻塞——空列裁剪语义不一致**：colspan（table-layout:**fixed**）chromium **裁剪**空列（3 col 定义→1 col 渲染）；col-definite-size-001（table-layout:**auto**）chromium **保留**空列（4 col × 100px=400px 即使只有 2 cell）。区分规则疑似 auto-vs-fixed，但 CSS2 §17.5.2.1 fixed 布局条文（col width/首行 cell/remainder）不提裁剪，**spec 模糊**，且 col-definite-size 用 `<colgroup><col>` 而 colspan 用裸 `<col>`+裸 `<td>`（匿名盒生成差异）——无法可靠区分。强行实现空列裁剪要么回归 col-definite-size（-1），要么不修 colspan。
+
+**完整 colspan 修复仍需的耦合部件**（全做才不破坏同源）：(a) build_grid 去 border-collapse 守卫让 `<col>` 计入列数；(b) colspan 钳制到 grid；(c) Pass 0 读 col width 去 border-collapse 守卫；(d) 空列裁剪（**阻塞于上述语义不一致**）；(e) width:auto fixed 收缩（爆炸半径仅 colspan，已验证）；(f) border-collapse 下 `<td width:Npx>` content-box→列宽=N+cell-borders（ref 侧，影响所有 border-collapse 显式宽 cell，风险未量化）。**前置**：先用浏览器 devtools 或更多 WPT 用例厘清 chromium「空列何时裁剪」的精确规则，否则 (d) 无法正确实现。
+
 ### R178 — `<col>` 元素 px 宽度读取（CSS Tables §4/§17.5.2，separated border 模型，col-definite-size/max-size chromium 一致，零同源回归，已提交）
 
 补齐 R177 钉死的 colspan 5 部件中**安全可独立起步的 (a)+(c)**：让 `<col>`/`<colgroup>` 定义网格列数并读取其显式 px width。此前 `<col>` 在 `build_grid`（table.rs）`_ =>` 分支完全跳过，列数只来自单元格 colspan，列宽从不读取——含 `<col style="width:Npx">` 的 separated-border 表格（如 col-definite-size-001 的 4×100px）被收缩到文本固有宽度（18px）而非 spec/Chromium 的 400px。
