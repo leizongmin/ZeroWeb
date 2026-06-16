@@ -23,6 +23,8 @@
 
 **验证**：上游同源 **434/490 持平**（失败集与基线 `diff` 完全 IDENTICAL，零翻转零回归）；col-definite-size-001/max-size 渲染从 18px→400px（4×100px 列，Chromium 一致，chromium Oracle 改善；同源仍 0.00%/0.07%）；make test **12190/0**（+1 单测 `test_count_col_elements` 覆盖 colgroup 内 col / 直接 col span / colgroup span / 无 col 四场景）；clippy/fmt clean。col-definite-size 未在 chromium Oracle 抽样中故未进污染榜，但实属真实渲染缺口（现代表格 `<col width>` 极常见）。
 
+**chromium Oracle 实测复核（本轮）**：col-definite-size-001 ZW-test vs chromium-test **0.66%**（修复前 18px vs 400px 巨差→现 4 表均 400px 对齐；剩余 0.66% 均匀分布于 4 表 = fontdue vs Chromium 字形「1」「2」AA 噪声，非 CSS bug，与 R174 welcome 字体噪声同源不可单点修）。col-definite-max-size-001 chromium 差距更大（~1.7%）——其 col 同时有 `width:100px` + `max-width`（0/min-width:100px/10%/calc），ZW 只读 width 不读 max-width 故过宽；需 Pass 0 扩展 col max-width/min-width 钳制，但其 10 表 test/ref 结构复杂且 max-width:0→min-content 钳制与同源匹配交互未验证，**defer**。`width:auto` 表上 % col 解析为 auto（chromium 行为）→ ZW 跳过 % 反而正确，无需支持。
+
 **遗留**：table.rs 现 2549 行（超 2000，本就 2357 超限，本轮 +192 行均内聚于 col 宽度处理）；colspan 主体（border-collapse + 空列裁剪）= 下轮结构性目标；col-definite-size-001 表 2(calc)/3(%)/4(width:0) 因 %/calc 跳过仍 18px（chromium 仍不一致，需后续支持 % 在 shrink-to-fit 的解析）。
 
 ### R177 — top 候选根因实证确认（colspan 5 部件机制 + morning.work blue-nav = inline→block 背景结构性，诊断轮，无代码提交）
