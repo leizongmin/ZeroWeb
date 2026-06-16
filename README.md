@@ -85,9 +85,13 @@ sudo apt-get install -y \
 
 ```bash
 cargo build --workspace
-cargo test --workspace
+make test                                  # = cargo test --workspace（经 test-guard 包裹）
+make reftest                               # = WPT reftest（同样经 test-guard 包裹）
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+> [!NOTE]
+> 跑测试和 WPT reftest 请用 `make test` / `make reftest`，不要裸跑 `cargo test` 或 `cargo run --bin zero-wpt-runner -- reftest`。这两个 target 由 `scripts/test-guard.rs` 包裹，在单进程 RSS 或全树内存超限时杀掉整棵进程树，避免内存型 bug（如 CSS parser 未闭合括号死循环）触发系统级 OOM 连累整台机器。
 
 在 Linux 和 macOS 上，构建前需先下载 `rusty_v8` 预构建产物：`make setup-rusty-v8`（缓存到 `${XDG_CACHE_HOME:-$HOME/.cache}/zero-web/rusty_v8`）。推荐用 `make build` 或 `make browser`，会自动执行该步骤。Windows 需在本地环境里设置 `RUSTY_V8_ARCHIVE` 为 release `.lib` 的 URL。
 
@@ -161,6 +165,7 @@ cargo run --bin zero-browser
 | [docs/releases/v0.1.0-alpha.0.md](docs/releases/v0.1.0-alpha.0.md) | 首个预发布版本的 release 文案草稿 |
 | [docs/specs/zero-web-spec-rfc.md](docs/specs/zero-web-spec-rfc.md) | 主规格与技术 RFC |
 | [docs/goal/zero-web/master.md](docs/goal/zero-web/master.md) | 当前实现状态与里程碑控制面 |
+| [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md) | 渲染兼容性（reftest / WPT 兼容性）执行控制面与进展记录 |
 | [docs/research/rust-cross-platform-browser-research.md](docs/research/rust-cross-platform-browser-research.md) | 早期技术路线与许可证调研 |
 | `crates/*/README.md` | 各子系统的细节说明 |
 
