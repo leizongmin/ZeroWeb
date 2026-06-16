@@ -19,6 +19,10 @@ struct BuildContext {
     node_map: HashMap<NodeId, taffy::NodeId>,
     /// taffy NodeId → DOM NodeId 反向映射。
     taffy_to_dom: HashMap<taffy::NodeId, NodeId>,
+    /// `<img>` 元素的解码固有尺寸（DOM NodeId → (width, height)）。
+    /// 由调用方（engine pipeline，持有 image_sizes + simple_hash）从解码后的
+    /// ImageCache 预解析得到；当 `<img>` 无 width/height 属性时作为固有尺寸回退。
+    img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
 }
 
 impl BuildContext {
@@ -28,6 +32,7 @@ impl BuildContext {
             taffy: TaffyTree::new(),
             node_map: HashMap::new(),
             taffy_to_dom: HashMap::new(),
+            img_intrinsic_sizes: HashMap::new(),
         }
     }
 }
@@ -49,8 +54,10 @@ pub fn build_layout_tree(
     styles: &HashMap<NodeId, ComputedStyle>,
     viewport_width: f32,
     viewport_height: f32,
+    img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
 ) -> (TaffyTree<NodeId>, taffy::NodeId, HashMap<taffy::NodeId, NodeId>) {
     let mut ctx = BuildContext::new();
+    ctx.img_intrinsic_sizes = img_intrinsic_sizes;
 
     // 找到第一个元素节点作为根（通常是 document > html）
     let root = doc.root();
@@ -112,6 +119,7 @@ fn apply_replaced_element_sizing(
     computed: &ComputedStyle,
     doc: &Document,
     dom_id: NodeId,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
 ) {
     // 仅处理有 DOM 关联的元素
     let node_data = match doc.get(dom_id) {
@@ -187,7 +195,21 @@ fn apply_replaced_element_sizing(
             }
         }
         _ => {
-            // 无 HTML 属性：不注入尺寸，依赖 CSS 或默认
+            // 无 HTML 属性：回退到解码后的固有尺寸（img_intrinsic_sizes）。
+            // CSS 规范：替换元素无显式尺寸时使用固有尺寸（intrinsic size）。
+            if let Some(&(w, h)) = img_intrinsic_sizes.get(&dom_id) {
+                let w = w.max(1.0);
+                let h = h.max(1.0);
+                if computed.aspect_ratio.is_none() {
+                    taffy_style.aspect_ratio = Some(w / h);
+                }
+                if matches!(computed.width, LengthValue::Auto) {
+                    taffy_style.size.width = taffy::style::Dimension::Length(w);
+                }
+                if matches!(computed.height, LengthValue::Auto) {
+                    taffy_style.size.height = taffy::style::Dimension::Length(h);
+                }
+            }
         }
     }
 }
@@ -307,8 +329,9 @@ fn build_subtree(
     // 转换为 taffy 样式（传入父级区域映射）
     let mut taffy_style = computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
 
-    // 替换元素固有尺寸：检测 <img> 元素并注入 HTML 属性中的 width/height
-    apply_replaced_element_sizing(&mut taffy_style, &computed, doc, dom_id);
+    // 替换元素固有尺寸：检测 <img> 元素并注入 HTML 属性中的 width/height，
+    // 无属性时回退到解码后的固有尺寸（img_intrinsic_sizes）
+    apply_replaced_element_sizing(&mut taffy_style, &computed, doc, dom_id, &ctx.img_intrinsic_sizes);
 
     // 多列容器：设置 overflow: Hidden 阻止 taffy 内部的父子 margin 折叠。
     // CSS Multi-column Layout Module §2 规定多列容器建立 BFC。
@@ -721,7 +744,8 @@ mod tests {
     fn test_build_simple_tree() {
         let (doc, html, _body, _div) = make_simple_doc();
         let styles = HashMap::new();
-        let (_taffy_tree, root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         assert!(taffy_to_dom.contains_key(&root_id));
         // html 节点应该在映射中
         assert_eq!(taffy_to_dom.get(&root_id), Some(&html));
@@ -744,7 +768,8 @@ mod tests {
         doc.append_child(div2, div3).unwrap();
 
         let styles = HashMap::new();
-        let (taffy_tree, root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         let children = taffy_tree.children(root_id).unwrap();
         assert!(!children.is_empty());
         // 应该有 html, body, div, div, span 的映射
@@ -770,7 +795,8 @@ mod tests {
         hidden_style.display = DisplayValue::None;
         styles.insert(hidden, hidden_style);
 
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         // visible 应该在映射中
         assert!(taffy_to_dom.values().any(|id| *id == visible));
     }
@@ -790,7 +816,8 @@ mod tests {
         doc.append_child(body, div).unwrap();
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         // 文本节点不应在 taffy 映射中
         assert!(!taffy_to_dom.values().any(|id| *id == text));
         // div 应该存在
@@ -817,7 +844,8 @@ mod tests {
         container_style.flex_direction = FlexDirectionValue::Row;
         styles.insert(flex_container, container_style);
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         let container_taffy = find_taffy_for_dom(&taffy_to_dom, flex_container);
         let style = taffy_tree.style(container_taffy).unwrap();
         assert_eq!(style.display, taffy::style::Display::Flex);
@@ -840,7 +868,8 @@ mod tests {
         container_style.display = DisplayValue::Grid;
         styles.insert(grid_container, container_style);
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         let container_taffy = find_taffy_for_dom(&taffy_to_dom, grid_container);
         let style = taffy_tree.style(container_taffy).unwrap();
         assert_eq!(style.display, taffy::style::Display::Grid);
@@ -875,7 +904,8 @@ mod tests {
         grid_style.display = DisplayValue::Grid;
         styles.insert(grid, grid_style);
 
-        let (_taffy_tree, _root_id, _taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, _taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         // 树应该成功构建
     }
 
@@ -898,7 +928,8 @@ mod tests {
         abs_style.left = LengthValue::Px(20.0);
         styles.insert(abs_child, abs_style);
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         let abs_taffy = find_taffy_for_dom(&taffy_to_dom, abs_child);
         let style = taffy_tree.style(abs_taffy).unwrap();
         assert_eq!(style.position, taffy::style::Position::Absolute);
@@ -916,7 +947,8 @@ mod tests {
 
         // 默认 margin 是 Px(0.0)，不是 auto
         let styles = HashMap::new();
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
         let style = taffy_tree.style(div_taffy).unwrap();
         // 默认 margin 是 Px(0.0)，转换为 Length(0.0)
@@ -942,7 +974,8 @@ mod tests {
         let mut styles = HashMap::new();
         styles.insert(div, style);
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
         let style = taffy_tree.style(div_taffy).unwrap();
         assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::Auto);
@@ -967,7 +1000,8 @@ mod tests {
         let mut styles = HashMap::new();
         styles.insert(div, style);
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
         let style = taffy_tree.style(div_taffy).unwrap();
         assert_eq!(style.size.width, taffy::style::Dimension::Percent(0.5));
@@ -978,7 +1012,8 @@ mod tests {
     fn test_build_empty_document() {
         let doc = Document::new();
         let styles = HashMap::new();
-        let (taffy_tree, root_id, _taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, root_id, _taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         // 空文档没有元素节点，但 taffy 树仍然会创建一个根节点。
         // 布局不 panic 即为通过。
         let _ = taffy_tree;
@@ -1002,7 +1037,8 @@ mod tests {
         }
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         // 应该有 1 (html) + 50 (divs) = 51 个映射
         assert_eq!(taffy_to_dom.len(), 51);
     }
@@ -1023,7 +1059,8 @@ mod tests {
         }
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         // html + body + 100 divs = 102
         assert_eq!(taffy_to_dom.len(), 102);
     }
@@ -1046,7 +1083,8 @@ mod tests {
         flex_style.gap = LengthValue::Px(10.0);
         styles.insert(flex, flex_style);
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         let flex_taffy = find_taffy_for_dom(&taffy_to_dom, flex);
         let style = taffy_tree.style(flex_taffy).unwrap();
         assert_eq!(style.gap.width, taffy::style::LengthPercentage::Length(10.0));
@@ -1069,7 +1107,8 @@ mod tests {
         div_style.margin_top = LengthValue::Px(5.0);
         styles.insert(div, div_style);
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
         let style = taffy_tree.style(div_taffy).unwrap();
         assert_eq!(style.padding.top, taffy::style::LengthPercentage::Length(10.0));
@@ -1093,7 +1132,8 @@ mod tests {
         div_style.max_width = LengthValue::Px(500.0);
         styles.insert(div, div_style);
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
         let style = taffy_tree.style(div_taffy).unwrap();
         assert_eq!(style.min_size.width, taffy::style::Dimension::Length(50.0));
@@ -1126,7 +1166,8 @@ mod tests {
         styles.insert(div2, hidden_style.clone());
         styles.insert(div3, hidden_style);
 
-        let (taffy_tree, _root_id, _taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, _taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         // body 的子元素都是 display:none，body 在 taffy 中不应有可见子节点
         // html 和 body 应在映射中
         let _ = taffy_tree; // 布局不 panic 即通过
@@ -1161,7 +1202,8 @@ mod tests {
         item_style.grid_column_end = GridLineValue::Name("a".to_string());
         styles.insert(item, item_style);
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         // item 应在映射中
         assert!(taffy_to_dom.values().any(|id| *id == item));
         let grid_taffy = find_taffy_for_dom(&taffy_to_dom, grid);
@@ -1198,7 +1240,8 @@ mod tests {
 
         styles.insert(block, ComputedStyle::default());
 
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         // grid + flex + block = 3 个映射
         assert!(taffy_to_dom.len() >= 3, "应有至少 3 个节点映射");
     }
@@ -1222,7 +1265,8 @@ mod tests {
         div_style.max_height = LengthValue::Px(300.0);
         styles.insert(div, div_style);
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
         let style = taffy_tree.style(div_taffy).unwrap();
         assert_eq!(style.min_size.width, taffy::style::Dimension::Length(50.0));
@@ -1254,7 +1298,8 @@ mod tests {
         doc.append_child(body, span).unwrap();
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
 
         // 注释节点不应出现在 taffy 映射中
         assert!(
@@ -1289,7 +1334,8 @@ mod tests {
         doc.append_child(body, div).unwrap();
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
 
         // ProcessingInstruction 不应出现在 taffy 映射中
         assert!(
@@ -1321,7 +1367,8 @@ mod tests {
         }
 
         let styles = HashMap::new();
-        let (taffy_tree, root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
 
         // 映射数量：html + 25 层 div = 26
         assert_eq!(taffy_to_dom.len(), depth + 1);
@@ -1373,7 +1420,8 @@ mod tests {
         styles.insert(hidden1, hidden_style.clone());
         styles.insert(hidden2, hidden_style);
 
-        let (taffy_tree, root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
 
         // 可见元素应在映射中
         assert!(taffy_to_dom.values().any(|id| *id == vis1), "vis1 应在布局树中");
@@ -1481,7 +1529,8 @@ mod tests {
         // footer 使用默认 auto 放置
         styles.insert(footer, ComputedStyle::default());
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
 
         // 所有元素都应在映射中
         assert!(taffy_to_dom.values().any(|id| *id == grid));
@@ -1582,7 +1631,8 @@ mod tests {
         doc.resolve_slots(host);
 
         let styles = HashMap::new();
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
 
         // host 应在映射中
         assert!(taffy_to_dom.values().any(|id| *id == host), "宿主元素应在布局树中");
@@ -1648,7 +1698,8 @@ mod tests {
         doc.resolve_slots(host);
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
 
         // 两个 light DOM 子元素都应出现在布局树中（通过默认 slot）
         assert!(
@@ -1696,7 +1747,8 @@ mod tests {
         doc.resolve_slots(host);
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
 
         // 回退 div 应在布局树中
         assert!(
@@ -1741,7 +1793,8 @@ mod tests {
         doc.resolve_slots(host);
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
 
         // 已分配的 h1 应在布局树中
         assert!(
@@ -1783,7 +1836,8 @@ mod tests {
         flex_style.row_gap = LengthValue::Px(15.0);
         styles.insert(flex, flex_style);
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         let flex_taffy = find_taffy_for_dom(&taffy_to_dom, flex);
         let style = taffy_tree.style(flex_taffy).unwrap();
         // gap.width（column-gap）应为默认 0.0
@@ -1835,7 +1889,8 @@ mod tests {
         item2_style.grid_row_end = GridLineValue::Line(3);
         styles.insert(item2, item2_style);
 
-        let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
 
         // 两个 item 都应在映射中
         assert!(taffy_to_dom.values().any(|id| *id == item1), "item1 应在布局树中");
@@ -1868,7 +1923,8 @@ mod tests {
         doc.append_child(body, text2).unwrap();
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         assert!(taffy_to_dom.values().any(|id| *id == div));
         assert!(!taffy_to_dom.values().any(|id| *id == text1));
         assert!(!taffy_to_dom.values().any(|id| *id == text2));
@@ -1908,7 +1964,8 @@ mod tests {
         doc.assign_slot(slot, "default", light_child);
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         // light_child 应该通过 slot 替换出现在布局树中
         assert!(
             taffy_to_dom.values().any(|id| *id == light_child),
@@ -1943,7 +2000,8 @@ mod tests {
         doc.append_child(slot, fallback).unwrap();
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         // fallback span should be in the layout tree
         assert!(
             taffy_to_dom.values().any(|id| *id == fallback),
@@ -1971,7 +2029,8 @@ mod tests {
         doc.append_child(shadow_root, shadow_div).unwrap();
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         assert!(
             taffy_to_dom.values().any(|id| *id == shadow_div),
             "shadow div should be in layout tree"
@@ -2009,7 +2068,8 @@ mod tests {
         doc.assign_slot(inner_slot, "", light_div);
 
         let styles = HashMap::new();
-        let (_taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(&doc, &styles, 800.0, 600.0);
+        let (_taffy_tree, _root_id, taffy_to_dom) =
+            build_layout_tree(&doc, &styles, 800.0, 600.0, std::collections::HashMap::new());
         // wrapper should definitely be in the tree
         assert!(
             taffy_to_dom.values().any(|id| *id == wrapper),
