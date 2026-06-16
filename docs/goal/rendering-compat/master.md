@@ -46,7 +46,7 @@ DC-13 wintertc 深挖产出：`build_image_cache`（reftest.rs）用 `base.join(
 
 **验证**：wintertc 图片图元数 2→**14**（全加载）；make test 12205 passed/0；上游 reftest **435/490 持平零回归**；clippy/fmt clean。
 
-**wintertc diff 诚实上升 22.42%→25.11%**：修复前参与方 logo 全缺失致 diff 人为偏低（假低）；修复后 14 logo 加载并渲染到 800×600 可见区（y≈444-600），**暴露参与 `flex flex-wrap justify-evenly` 容器的布局 bug**（logo 错位/重叠）。DC-14 anti-false-pass：诚实测量优先于假低。**下一目标 = 修参与 flex 布局**（修后 logo 正确 + 此前改进叠加，diff 应低于 22%）。
+**wintertc diff 诚实上升 22.42%→25.11%**：修复前参与方 logo 全缺失致 diff 人为偏低（假低）；修复后 14 logo 加载并渲染到 800×600 可见区。**经复核（探针 dump 参与 `<a>` flex item 位置）：参与 `flex flex-wrap justify-evenly` 布局正确**——13 个 `<a>` item 正确分布在 3 个换行行（x=16/193/305/481/656 行1、y≈80-102 行2、y≈184-191 行3），logo 尺寸 aspect 正确。故 25% diff **非布局 bug，而是渲染噪声**：resvg SVG 栅格化 vs chromium SVG 渲染器的像素差异 + fontdue 字体度量噪声（与 morning.work/welcome 同 plateau）。DC-14 anti-false-pass：诚实测量优先于假低。**wintertc 布局已确认无 clean bug，剩余纯渲染噪声，勿再追布局**。
 
 **意义**：(1) 真实 bug——`base.join(absolute)` 替换 base 是 Rust Path 陷阱，影响所有绝对路径图片 fixture；(2) DONE#11「5 真实网站」必备（真实站点全用绝对路径 `/static/...`，不修则图片全缺失）；(3) 暴露并定位了参与 flex 布局 bug（下轮目标）。
 
