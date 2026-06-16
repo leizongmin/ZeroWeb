@@ -139,6 +139,22 @@ DC-13 wintertc 诊断产出：`<img>` 仅设 CSS width（height:auto）或仅设
 
 **意义**：(1) #1 结构性里程碑（flex/grid 两趟固有宽度）Round B 落地，测量基础（R181/A.2）现产出真实修复；(2) child-border-box 是 18 真 bug 候选外的真实渲染缺口（chromium 40 vs 180），现 align chromium；(3) R181c 的「net -5」根因精确定位并解决（converter Auto→length(0) 中性塌缩 + 不可测回退）；(4) 两趟 set_style+mark_dirty+重跑模式为后续 flex intrinsic sizing（collapsed-item-horiz 等 flex 容器 shrink-to-fit）奠基。**下轮**：002 的 fit-content() track 内在尺寸建模，或 collapsed-item-horiz flex 容器两趟（需 IFC 文本测量解锁纯文本 item 测量）。
 
+### R187 — fontdue→swash rasterizer swap 实证排除（welcome fontdue 26.95% ≈ swash 26.96% vs chromium，并列非更近 Skia），DC-13 字体噪声非 rasterizer 算法问题，已回退无代码提交
+
+承接 R186 swash swap 可行性方向，**实测排除**（原型 + chromium Oracle 像素对比）。
+
+**实验**：env-gated `rasterize_glyph_swash`（font/loader.rs，ZERO_FONT_SWASH=1）用 swash `ScaleContext + Render(Outline,Format::Alpha)` 对非 Ahem 字形光栅化，fontdue 路径默认不变（零回归）。坐标映射 y_offset = placement.top - height（推导与 fontdue ymin 同语义）。DBG 插桩确认 swash 实际命中（159 次，glyph_id 非 0，render Some 如 'W' 16×16）——**确实在光栅化**。
+
+**实测结果（welcome.html vs welcome-chromium.png，PIL 直比 >5 阈）**：
+- **fontdue vs chromium：129380 px (26.95%)**
+- **swash vs chromium：129426 px (26.96%)**
+- swash vs fontdue（互相）：17900 px diff（max channel 24，AA 边缘差异）
+- **判定：fontdue 微近 46 px（统计并列 tie）**——swash 系统性**不**比 fontdue 更接近 Skia。
+
+**结论（已回退 loader.rs 到 R186/4e34fb4）**：fontdue→swash rasterizer swap **对 DC-13 产品 smoke 无收益**（welcome 持平 26.95%）。DC-13 字体噪声平台期**非 rasterizer 算法问题**——swash 与 fontdue 用不同算法但离 Skia 等距。残余 ~27% 主因疑似 **font 度量**（advance width / line-height 致 chromium 换行与字形定位差异）或 **Rust 光栅化器普遍不匹配 Skia AA**（固有）。**勿再以 rasterizer swap（swash/ab_glyph/cosmic-text）追 DC-13**。
+
+**杠杆穷尽定性（本会话 7 轮）**：reftest 435/490 同源 clean win 穷尽（全结构）；DC-13 字体噪声 rasterizer swap 实证排除；剩余真实推进 = 多轮结构里程碑（multicol 碎片化 17 / block-in-inline R109 / Phase A large-font）或 DC-13 font 度量校准（advance/line-height 对齐 chromium，独立方向待评估）。基线 435/490 持平。
+
 ### R186 — fontdue rasterizer 杠杆精确化：Ahem 已 special-case 完美方块（reftest 残差=结构非光栅化），rasterizer swap 仅助 DC-13 产品 smoke（非 reftest），诊断轮无代码提交
 
 承接 R185 fontdue swap deep-research 方向，代码级核实 fontdue 杠杆范围。
