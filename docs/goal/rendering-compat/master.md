@@ -38,6 +38,18 @@
 
 **剩余（下轮）**：① 参与 `flex flex-wrap justify-evenly` 多 logo 未布局（独立子问题，待诊断是否 clean）；② 真实 ZeroBrowser/webview 层 ImageCache 的 SVG 支持同步（本轮仅 harness 侧）；③ HTML width/height 单属性 aspect 推导尝试后致 background-001/003/328/329 回归 -4（已回退，交互未明需先厘清）。
 
+### DC-13 build_image_cache 站点根相对 URL 解析修复（真实 bug，零 reftest 回归，wintertc 诚实 diff 上升，已提交）
+
+DC-13 wintertc 深挖产出：`build_image_cache`（reftest.rs）用 `base.join(url)` 解析图片路径——但 `PathBuf::join(absolute)` 会**替换** base，故站点根相对 URL（如 `/static/logos/x.svg`）解析为文件系统根 `/static/...` → 加载失败。wintertc 14 logo（全用 `/static/` 绝对路径）仅 2 个加载（疑经其他路径），12 个缺失。
+
+**修复**：`base.join(url.trim_start_matches('/'))`——剥离前导 `/`，使 `/static/x` 解析到 `base_dir/static/x`（fixture 的站点根）。WPT reftest 多用相对路径（无前导 `/`），trim 不影响。
+
+**验证**：wintertc 图片图元数 2→**14**（全加载）；make test 12205 passed/0；上游 reftest **435/490 持平零回归**；clippy/fmt clean。
+
+**wintertc diff 诚实上升 22.42%→25.11%**：修复前参与方 logo 全缺失致 diff 人为偏低（假低）；修复后 14 logo 加载并渲染到 800×600 可见区（y≈444-600），**暴露参与 `flex flex-wrap justify-evenly` 容器的布局 bug**（logo 错位/重叠）。DC-14 anti-false-pass：诚实测量优先于假低。**下一目标 = 修参与 flex 布局**（修后 logo 正确 + 此前改进叠加，diff 应低于 22%）。
+
+**意义**：(1) 真实 bug——`base.join(absolute)` 替换 base 是 Rust Path 陷阱，影响所有绝对路径图片 fixture；(2) DONE#11「5 真实网站」必备（真实站点全用绝对路径 `/static/...`，不修则图片全缺失）；(3) 暴露并定位了参与 flex 布局 bug（下轮目标）。
+
 ### DC-13 img 替换元素 aspect-ratio 保留修复（真实 bug，零回归，已提交）
 
 DC-13 wintertc 诊断产出：`<img>` 仅设 CSS width（height:auto）或仅设 height（width:auto）时，**另一维应按固有宽高比推导**，旧实现却用固有绝对值。复现：正方形 SVG（intrinsic 441×441）+ `width:80px` 渲染成 **80×441**（巨高），应 80×80。
