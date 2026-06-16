@@ -139,6 +139,16 @@ DC-13 wintertc 诊断产出：`<img>` 仅设 CSS width（height:auto）或仅设
 
 **意义**：(1) #1 结构性里程碑（flex/grid 两趟固有宽度）Round B 落地，测量基础（R181/A.2）现产出真实修复；(2) child-border-box 是 18 真 bug 候选外的真实渲染缺口（chromium 40 vs 180），现 align chromium；(3) R181c 的「net -5」根因精确定位并解决（converter Auto→length(0) 中性塌缩 + 不可测回退）；(4) 两趟 set_style+mark_dirty+重跑模式为后续 flex intrinsic sizing（collapsed-item-horiz 等 flex 容器 shrink-to-fit）奠基。**下轮**：002 的 fit-content() track 内在尺寸建模，或 collapsed-item-horiz flex 容器两趟（需 IFC 文本测量解锁纯文本 item 测量）。
 
+### R185 — 平台期再确认：multicol 低 diff 聚类根因（碎片化，列宽公式已验证正确）+ fontdue AA 为主导残差（rasterizer swap = 重大里程碑），诊断轮无代码提交
+
+对 multicol 低 diff 聚类（multicol-count-computed-003 2.06% 等）做可视化 + 代码级根因，**再确认结构性碎片化**。
+
+**multicol-count-computed-003 根因（精确）**：测试断言 (a) 相邻列其中之一为空时不画该列间 column-rule（CSS multicol §?）；(b) 溢入 column-gap 的行内内容不裁剪；(c) column-count/gap/width 公式。**代码核实**：`compute_single_column_width`（multicol.rs:229）公式 `W=(container-(count-1)*gap)/count` **正确**（测试 13em/3col/5em-gap → 1em 与 spec 一致）。**像素可视化**：差异区 rows 28-76，TEST 与 REF 的**文本内容跨列分布 + column-rule 位置**不同（TEST 文本带偏左/偏宽，REF 规则带在特定列间且空列间无规则）——即内容**碎片化分布**差异，非列宽公式 bug。属 R113/R122/R131/R157 碎片化结构性领域（R112 已证 column-rule 单点修回归 column-rule-002）。无 clean win。
+
+**fontdue AA 主导残差表征（新）**：字体栈 = fontdue（rasterize_glyph_with_fallback，CPU mod.rs:483/GPU renderer）+ swash（shaping, shaper.rs）。welcome/morning.work/wintertc 产品 smoke ~25-28% + ~111 个 <3% reftest 失败的主导成分 = **fontdue 光栅化 AA 算法 vs Skia**（R174 已结论 welcome 96.5% 残差为字体噪声：glyph 边缘 AA 双峰 ±10 + 换行高度差）。**修法 = rasterizer swap/升级**（swash rasterizer / ab_glyph+hinting / cosmic-text 系），是**重大多轮架构里程碑**（替换核心字体依赖 + 重验证全量），非单会话，需 deep-research 评估可行性。
+
+**平台期定性（4 轮本会话确认）**：同源 clean win **穷尽**（55 失败全结构性：multicol 碎片化 17、writing-mode 轴 R114/R142/R164 已 4 轮证伪、flex 基线 R130、Phase A large-font R125/R158/R169 死锁、R97 intrinsic、R109 block-in-inline 架构、fontdue AA 噪声 ~111）。剩余推进 = 多轮结构里程碑：①fontdue rasterizer swap（最高总杠杆，~111 reftest + 3 产品 smoke）②multicol 碎片化 R131 column-aware IFC（17 reftest，最大同源聚类，bounded 子系统）③block-in-inline R109（3 reftest + morning.work blue-nav，3 子系统架构）④Phase A IFC font_size 统一（5 reftest，死锁）。基线 435/490 持平。
+
 ### R184 — collapsed-item-horiz float:flex 两趟 shrink 实验（net -2 同源，已回退到 R183 基线）
 
 消费 Round C 文本测量，尝试修 top chr 候选 collapsed-item-horiz-001（chr 20.5%，同源 0% 假通过）。扩展 `apply_intrinsic_content_sizing`（engine.rs）触发条件从「width:max/min-content」增加「float + width:auto 的 flex/grid 容器」，resize 方向：sizing keyword 增长（b.width<intrinsic），float:auto **收缩**（b.width>intrinsic，设宽=intrinsic 后重排使 flex item 在新窄宽下重新布局修 R180 flex 增长循环）；并给 R129 float 后处理（engine.rs:2564）加守卫跳过 flex/grid float 容器（其用「子元素最大宽」对多 item flex 会过收缩，应 sum 非 max）。
