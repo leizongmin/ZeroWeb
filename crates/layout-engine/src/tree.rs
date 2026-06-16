@@ -12,9 +12,11 @@ use zero_style_system::{ComputedStyle, WritingModeValue};
 use crate::converter::{GridAreaMap, computed_style_to_taffy, parse_grid_template_areas};
 use crate::inline_block_split::{InlineBlockSegment, compute_inline_block_split, inline_has_block_child};
 
-/// env `R109_WIRE=1` 启用 R109 生产端接线（匿名块生成）。默认关闭=零回归。
+/// R109 §9.2.1.1 生产端接线（匿名块生成 + fragment border）默认**启用**——经全量
+/// reftest（+2 零回归：inline-box-001 / block-in-inline-align-001）+ 全量 make test
+/// 验证。设 `R109_WIRE=0` 可关闭（回退到旧 inline→block 行为，仅用于对比/调试）。
 fn r109_wired() -> bool {
-    std::env::var("R109_WIRE").ok().as_deref() == Some("1")
+    std::env::var("R109_WIRE").ok().as_deref() != Some("0")
 }
 
 /// R109 §9.2.1.1 生产端接线产物（仅 env `R109_WIRE=1` 时非空）。
@@ -23,10 +25,16 @@ fn r109_wired() -> bool {
 ///   供 extract_layout 写入 LayoutBox.fragment_node_ids。
 /// - `split_parents`：被拆分的 inline 元素 DOM NodeId 集合，
 ///   供 extract_layout 标记 LayoutBox.is_r109_split（抑制其自身 paint IFC）。
+/// - `first_inline_fragments` / `last_inline_fragments`：每个 split inline 的
+///   匿名块片段序列中，首/末 **Inline** 片段的 anon taffy 节点。供 extract_layout
+///   标记 LayoutBox.r109_first/last_fragment——fragment border 边选择（首片段开放
+///   右分裂边 border_right=0，末片段开放左边 border_left=0）。
 #[derive(Default)]
 pub(crate) struct R109Wiring {
     pub fragment_registry: HashMap<taffy::NodeId, Vec<NodeId>>,
     pub split_parents: HashSet<NodeId>,
+    pub first_inline_fragments: HashSet<taffy::NodeId>,
+    pub last_inline_fragments: HashSet<taffy::NodeId>,
 }
 
 /// 构建上下文 — 跟踪 DOM 节点与 taffy 节点的映射。
@@ -543,6 +551,9 @@ fn build_subtree(
             };
 
             if let Some(segments) = r109_segments {
+                // 收集本 split inline 的 Inline 片段 anon taffy ID（按片段顺序），
+                // 循环后标记首/末，供 fragment border 边选择。
+                let mut inline_anon_ids: Vec<taffy::NodeId> = Vec::new();
                 for seg in segments {
                     match seg {
                         InlineBlockSegment::Inline { item_node_ids } => {
@@ -553,16 +564,20 @@ fn build_subtree(
                                 .copied()
                                 .find(|&nid| doc.get(nid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
                                 .unwrap_or(dom_id);
-                            let anon_style = taffy::Style {
-                                display: taffy::style::Display::Block,
-                                ..taffy::Style::default()
-                            };
+                            // 匿名块继承 split inline 的盒模型（border/padding/background），
+                            // 使其 border/background 经 shrink 落在文本宽（§9.2.1.1：被拆分
+                            // inline 的 border/background 在 inline 级=各匿名块绘制）。
+                            // 用 converter 从 inline 的 computed 构建，强制 display:Block。
+                            let mut anon_style =
+                                computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
+                            anon_style.display = taffy::style::Display::Block;
                             let anon_taffy = ctx
                                 .taffy
                                 .new_leaf_with_context(anon_style, ctx_node)
                                 .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
                             ctx.taffy_to_dom.insert(anon_taffy, dom_id);
                             ctx.r109.fragment_registry.insert(anon_taffy, item_node_ids);
+                            inline_anon_ids.push(anon_taffy);
                             child_taffy_ids.push(anon_taffy);
                         }
                         InlineBlockSegment::Block { node_id } => {
@@ -579,6 +594,15 @@ fn build_subtree(
                             );
                             child_taffy_ids.push(child_taffy);
                         }
+                    }
+                }
+                // 标记首/末 Inline 片段（fragment border 边选择）。
+                if let Some(&first) = inline_anon_ids.first() {
+                    ctx.r109.first_inline_fragments.insert(first);
+                }
+                if inline_anon_ids.len() > 1 {
+                    if let Some(&last) = inline_anon_ids.last() {
+                        ctx.r109.last_inline_fragments.insert(last);
                     }
                 }
             } else {
