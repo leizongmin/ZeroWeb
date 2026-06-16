@@ -38,6 +38,18 @@
 
 **剩余（下轮）**：① Twind utility 布局诊断（logo grid 的 flex/grid/gap 具体缺哪个）；② 真实 ZeroBrowser/webview 层 ImageCache 的 SVG 支持同步（本轮仅 harness 侧）。
 
+### DC-13 img 替换元素 aspect-ratio 保留修复（真实 bug，零回归，已提交）
+
+DC-13 wintertc 诊断产出：`<img>` 仅设 CSS width（height:auto）或仅设 height（width:auto）时，**另一维应按固有宽高比推导**，旧实现却用固有绝对值。复现：正方形 SVG（intrinsic 441×441）+ `width:80px` 渲染成 **80×441**（巨高），应 80×80。
+
+**根因**：`apply_replaced_element_sizing`（tree.rs）的「无 HTML 属性→img_intrinsic_sizes 回退」分支无条件把 auto 侧设为固有绝对高度（`size.height = Length(intr_h)`），与设的 aspect_ratio 冲突——taffy 用固定高度忽略比例。
+
+**修复**：该分支改为按 CSS §10.3/§10.6 推导——两侧 auto 用固有 w×h；仅 width 显式时 `height = cw * intr_h/intr_w`；仅 height 显式时 `width = ch * intr_w/intr_h`。不依赖 taffy aspect_ratio 推导（显式算出）。
+
+**验证**：复现实测 deno 80×441→**80×80**、cloudflare 80×394→80×36、fastly 80×735→80×34（比例正确）；+2 单测（width-set/height-set 双向）；make test 12205 passed/0；上游 reftest **435/490 持平零回归**；clippy/fmt clean。
+
+**意义**：影响面大——真实页面 `<img>` 极常见仅设 width 或 height（响应式 logo/缩略图/头像），此前全部变形。wintertc 800×600 基线 22.42% 不变（参与方 logo 在折叠线下，主差异为 hero/nav 文本+字体噪声），但 logo 在更高视口现比例正确。HTML width/height 单属性分支（(Some,None)/(None,Some)）有同源 bug，本轮未改（wintertc 走 intrinsic 分支），留作后续。
+
 ### R180 — inline-block width:auto shrink-to-fit（CSS §10.3.9，baseline-block-with-overflow-001 chromium 45.09%→1.25%，同源零回归，已提交）
 
 修复 18 真 bug 候选第 3 名 `baseline-block-with-overflow-001`（CSS2/linebox，同源 0% 假通过但 chromium 45.09%）。**根因**：`width:auto` 的 `display:inline-block` 被 taffy 0.7 拉伸到可用宽度（如同 block），违反 CSS §10.3.9 inline-block 应 shrink-to-fit 到 max-content。实测（IBSHRINK_DBG 探针）`.outer`（inline-block, width:auto）最终 `w=784 content_w=784`，其 block 子元素 `.inner`（width:30px）已正确 30px——故仅收缩 inline-block 盒尺寸本身即可，无需重排子元素。chromium Oracle 几何：chromium `.outer`=30px（橙色 bbox x 至 37），ZeroWeb `.outer`=784px（橙色 bbox x 至 791）；主差异=橙色全宽 774px×5 section。
