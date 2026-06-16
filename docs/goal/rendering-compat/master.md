@@ -40,6 +40,18 @@
 
 **验证**：layout-engine 单测 860 全绿（+6 新单测覆盖叶显式宽回退/双 item 求和/flex-basis 优先/padding 累加/grid-like 嵌套/空容器 None）；clippy/fmt clean；上游 reftest **434/490 零回归**（诊断不改变布局）。Round B 下轮：`identify_shrink_candidates` + 接入 compute() 两趟（设 taffy node 宽度 + mark_dirty + 重跑 compute_layout_with_measure），仅 inline-flex/inline-grid 起步，434/490 零回退门禁。
 
+### R181b — Round A 扩展 grid 测量 + Round B 接线阻塞定位（零风险，不接线，已提交）
+
+扩展 `intrinsic_sizing.rs` 新增 `grid_intrinsic_width`：grid-auto-flow:column → Σ item base size + gaps；row flow → max item base size（item base = `box_content_max_width`，含叶显式宽回退）。+2 单测（column flow 求和 180、row flow 取最大 50）。
+
+**测量经两目标 reftest 实证正确**：(1) child-border-box-and-max-content-001 的 grid（2 item ×(50content+40padding)）测得 **intrinsic_w=182**（≈chromium 180，✓ 正确）；(2) collapsed-item float:flex intrinsic=22（R181 已证）。**测量基础现对 flex+grid 双侧目标均验证正确**。
+
+**Round B 接线阻塞定位（关键）**：child-border-box 的 `width:max-content` 在到达布局时已被 `computed.rs:68`（resolve_length）解析为 `Px(0.0)`——**信号丢失**（INTRINSIC_DBG 实证 `s.width == Px(0.0)`，故 width_indefinite 检测 `MaxContent` 变体失效，grid 不被识别为 shrink 候选）。table-grid-item-003 的 table item 经 `box_content_max_width` 返回 0（table 内容非 block LayoutBox 子，table 固有宽需 table auto-layout，独立子问题）。
+
+**Round B 接线的前置**（按风险升序）：(1) **修 computed.rs:68 保留 max-content/min-content 信号**（不解析为 0；R97 标 8 通过用例风险，须先验证）；(2) 接线两趟（set taffy node 宽度=intrinsic + mark_dirty + 重跑 compute_layout_with_measure，taffy 增量仅重算 dirty 子树故低风险）。**低风险策略**：仅对当前已塌缩（resolved width≈0）的 max-content/min-content 容器接线（0→intrinsic 纯改善，非破坏），inline-flex/auto 容器留后续。
+
+**验证**：layout-engine 单测 862 全绿（+2 grid 单测）；clippy/fmt clean；上游 reftest **434/490 零回归**（仍不接线）。下轮 Round B：先验证 R97 的 8 用例是否依赖 max-content→0 行为，再修 computed.rs:68 保留信号 + 接线两趟。
+
 
 
 **可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **434/490 (88.6%)**（R163 起默认正确图像渲染=DC-14 anti-false-pass，消除 PNG 退化假绿；旧 436 含 garbled-image 假通过）。⚠️ 当前 reference 仍由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错）；治理门禁见 **DC-14 真通过标准**（独立 chromium Oracle 交叉验证基建已就绪 72764a0）。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**。

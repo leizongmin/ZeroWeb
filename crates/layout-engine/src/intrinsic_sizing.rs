@@ -146,6 +146,63 @@ pub(crate) fn flex_row_intrinsic_width(box_node: &LayoutBox, styles: &HashMap<No
     Some(sum + gap * (count - 1) as f32 + frame)
 }
 
+/// 计算一个 **grid 容器**的固有宽度（max-content 主尺寸）。
+///
+/// 近似实现（taffy 0.7 无原生 grid auto-track 扩展，此处用 item base size 估算）：
+/// - `grid-auto-flow: column`（item 水平排列）→ Σ item base size + gaps
+/// - 其它（默认 row，item 垂直堆叠）→ max item base size
+///
+/// 其中 item base size = `box_content_max_width`（含叶显式宽回退，故 `.item > .content(50px)`
+/// 会测为 50+frame）。返回 None 表示无流内 item。
+pub(crate) fn grid_intrinsic_width(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> Option<f32> {
+    let style = box_node.node_id.and_then(|id| styles.get(&id));
+    let is_column_flow = style
+        .map(|s| {
+            // grid-auto-flow 含 "column" → item 水平排列
+            matches!(
+                s.grid_auto_flow,
+                zero_style_system::property::types::GridAutoFlowValue::Column
+                    | zero_style_system::property::types::GridAutoFlowValue::ColumnDense
+            )
+        })
+        .unwrap_or(false);
+    let gap = style
+        .and_then(|s| match &s.column_gap {
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        })
+        .unwrap_or(0.0);
+    let mut sum = 0.0f32;
+    let mut max_w = 0.0f32;
+    let mut count = 0usize;
+    for child in &box_node.children {
+        if child.is_absolute || child.is_fixed {
+            continue;
+        }
+        let is_item = child
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(|s| !matches!(s.display, DisplayValue::None | DisplayValue::Contents))
+            .unwrap_or(true);
+        if is_item && child.is_block_level {
+            count += 1;
+            let base = box_content_max_width(child, styles) + child.margin_left + child.margin_right;
+            sum += base;
+            max_w = max_w.max(base);
+        }
+    }
+    if count == 0 {
+        return None;
+    }
+    let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+    let inner = if is_column_flow {
+        sum + gap * (count - 1) as f32
+    } else {
+        max_w
+    };
+    Some(inner + frame)
+}
+
 /// 判断一个盒是否是 flex/grid 行容器（display:flex/inline-flex/grid/inline-grid）。
 fn is_flex_grid_container(s: &ComputedStyle) -> bool {
     matches!(
@@ -180,7 +237,12 @@ pub(crate) fn debug_dump_shrink_candidates(root: &LayoutBox, styles: &HashMap<No
             let is_inline = matches!(s.display, DisplayValue::InlineFlex | DisplayValue::InlineGrid);
             let is_float = !matches!(b.float, zero_css_parser::values::FloatValue::None);
             if width_indefinite || is_inline || is_float {
-                if let Some(intrinsic) = flex_row_intrinsic_width(b, styles) {
+                let intrinsic = if matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid) {
+                    grid_intrinsic_width(b, styles)
+                } else {
+                    flex_row_intrinsic_width(b, styles)
+                };
+                if let Some(intrinsic) = intrinsic {
                     eprintln!(
                         "INTRINSIC_DBG: {:?} width={:?} float={:?} current_w={} intrinsic_w={} (delta={:.1})",
                         s.display,
@@ -225,6 +287,55 @@ mod tests {
         }
         let target = find(target_id, &doc, &result.root)?;
         flex_row_intrinsic_width(target, &styles)
+    }
+
+    /// 用 DOM 解析真实 HTML 计算样式，验证 grid 固有宽度测量（column flow 求和）。
+    fn compute_grid_intrinsic(html: &str, target_id: &str) -> Option<f32> {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let target = find(target_id, &doc, &result.root)?;
+        grid_intrinsic_width(target, &styles)
+    }
+
+    #[test]
+    fn test_grid_column_flow_sums_items() {
+        // child-border-box-and-max-content 结构：grid-auto-flow:column，2 item，
+        // 每个 item = .content(50) + padding 20×2 = 90 → grid 固有 = 180。
+        let html = r#"<html><body style="margin:0">
+          <div id="g" style="display:grid;grid-auto-columns:1fr;grid-auto-flow:column">
+            <div style="padding:0 20px"><div style="width:50px"></div></div>
+            <div style="padding:0 20px"><div style="width:50px"></div></div>
+          </div>
+        </body></html>"#;
+        let w = compute_grid_intrinsic(html, "g").expect("grid intrinsic");
+        assert!((w - 180.0).abs() < 2.0, "expected ~180px (2×(50+40)), got {}", w);
+    }
+
+    #[test]
+    fn test_grid_row_flow_takes_max() {
+        // 默认 grid-auto-flow:row → item 垂直堆叠 → 取最大 item 宽度（50）。
+        let html = r#"<html><body style="margin:0">
+          <div id="g" style="display:grid">
+            <div style="width:30px"></div>
+            <div style="width:50px"></div>
+          </div>
+        </body></html>"#;
+        let w = compute_grid_intrinsic(html, "g").expect("grid intrinsic");
+        assert!((w - 50.0).abs() < 1.0, "expected ~50px (max item), got {}", w);
     }
 
     #[test]
