@@ -10,6 +10,20 @@
 
 **归档策略（约每 20 轮一次）**：约每 20 轮做一次 archive——本文件保留最近 10 轮，更早的约 10 轮移入 `archive/` 目录下的归档文档，避免随轮次无限增长。当前已归档 R139 及更早（91 轮）至 `archive/rounds-r23-r139.md`；下次归档窗口约在再增 10 轮后（届时 R155~R146 移入归档，本文件仅留最新 10 轮）。
 
+### R177 — top 候选根因实证确认（colspan 5 部件机制 + morning.work blue-nav = inline→block 背景结构性，诊断轮，无代码提交）
+
+本轮对 `evidence/analyze-pollution-2026-06-16-r168.txt` 18 真 bug 候选逐一实证复核，**再次确证 R118/R140「clean win 已穷尽，剩余全结构性」结论**。上游同源基线 **434/490 (88.6%) 持平**（无代码变更）。把最高价值候选（colspan 52% chr）的**精确可执行机制**钉死，供下轮直接施工，避免重复 40+ 步实证。
+
+**colspan 实证机制（ZW_TABLE_DEBUG 插桩 + 像素逐表分析确认）**：`table_grid_size_col_colspan`（同源 0% 但 chromium 52%）真实根因 = `<col>` 元素在 `build_grid`（table.rs:1065）被 `_ =>` 分支**完全跳过**，导致：(1) **col_count 只来自单元格 colspan**——`<table><col>×3><td colspan=1>` 的 col_count=1（非 3），`<td colspan=4>` 的 col_count=4（**未钳制到 3 列**，违反「colspan 不超出 grid」断言）；(2) `<col>` 的 `width:50px` **从不读取**（仅 detect_collapsed_columns 读 visibility）；(3) `width:auto` 表格 `apply_table_size_constraints` 设 `content_width=intrinsic` 想收缩，但 `compute_column_widths` 的 `cell_used_width` 对空单元格返回 `compute_cell_intrinsic_width=char_width+padding≈11.6`，再被 line 1675 的 `(has_explicit_width || is_fixed_layout)` 扩展条件**撑到容器 784px**。chromium 实测：每表收缩到「单 cell 跨的列数 × 50px + 边框」（60/110/160/60/60px），空列（无 cell 的 `<col>`）被裁剪。
+
+**colspan 修复 = 5 个相互耦合部件（不可单点）**：(a) build_grid 让 `<col>`/`<colgroup>` 计入 col_count；(b) colspan 钳制到 grid 列数；(c) compute_column_widths Pass 0 读 `<col>` width；(d) 裁剪无 cell 的空列；(e) width:auto 表格收缩到 grid（改 line 1675 扩展条件）。**风险分级**：实测 6 个含 `<col>` 用例中，`col-definite-size-001`/`col-definite-max-size-001`（同源 0%）test 与 ref **结构相同**（同 4×`<col width>`）→ 加 col-width 读取两侧同变仍匹配 = **安全**；`insert-after-colgroup`（动态插入）/`visibility-collapse-colspan-003`（collapse 交互）/`border-collapse-dynamic-col-001`（动态+border-collapse）/`table_grid_size_col_colspan`（需空列裁剪）= **风险**，须配套 (b)(d) 且逐用例验证。`cell_used_width` 对显式 width 单元格用 `cell_box.width`（taffy 拉伸的 784）而非 CSS 显式值——独立子 bug，但单独修会打破 colspan 同源（test 空 cell 11.6 vs ref width:40px），需与 col-width 打包。
+
+**morning.work blue-nav（剩余 28.72% 最大块 ~55k px）= inline→block 背景结构性**：article.html 的 3 个 `.item-tag <span>`（display:inline UA，`background:#607cd2`）经 converter `DisplayValue::Inline → taffy::Block`（converter/mod.rs:265）变全宽块，**文本+背景均纵向堆叠**（3 条全宽蓝条 y=169-241），非行内小徽章。chromium 渲染为行内 badge。属 R109 IFC ownership / inline→block 架构（goal P1），非单会话。chromium 逐表宽度已量化备用。
+
+**其余候选复核结论**：`backdrop-inherit-rendered`(47%) 需 `dialog::backdrop`+showModal JS = 范围外/过重；`baseline-block-with-overflow-001`(45%) = overflow:hidden inline-block 基线=底边（CSS2 §10.8.1）结构性；`flexbox-collapsed-item-horiz-001`(20%) = float flex 容器 shrink-to-fit（R129 仅覆盖 block 子元素）结构性；`flex-abspos-inset-nested`(18%)/`fixed-table-layout-percentage-in-flex-item`(11%) = flex item 含 table 的 definite size 结构性；writing-mode 系（box-offsets-rel-pos-vrl 等 22-25%）= R114/R142/R164 已 4 轮证伪的轴交换；multicol 17 失败 = R113/R122/R131 碎片化结构性；min-max-size-table(36%)/table-cell-width-0(30%) = R97 内在尺寸 cluster；近阈值（baseline-007 1.04%/css-flexbox-row 1.23%/block-in-inline 1.37%/child-border-box-max-content 1.52%）均经查为 flex/multicol 基线 + taffy grid 限制结构性非 clean。
+
+**下轮最高杠杆**：colspan 5 部件修复（(a)+(c) 安全起步可独立提交保 col-definite-size/max-size chromium 一致；(b)+(d) 需含 colspan/visibility-collapse/dynamic-col 4 用例逐验证；(e) 收缩改条件须全 css-tables 51 用例回归）。或转 DC-13 WinterTC fixture 量化（R176 已备 img 固有尺寸+JPEG 解码，需录制 wintertc.org 静态 fixture）。
+
 ### R176 — `<img>` 解码固有尺寸注入布局 + reftest harness JPEG 解码（DC-11 替换元素 + DC-13 图片子资源能力，零回归，已提交）
 
 补齐 DC-11「替换元素固有尺寸」与 DC-13「图片子资源」的关键缺口：`<img>` 无 width/height 属性时此前依赖 CSS 或默认尺寸（DC-11 标记 P1 未实现），导致图片密集真实页面（WinterTC 首页 Logo 等）的 `<img>` 布局塌缩。
