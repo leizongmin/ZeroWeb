@@ -16,6 +16,8 @@
 
 **范围限定**：仅 `DisplayValue::InlineBlock`（未扩展到 inline-flex/inline-grid/inline-table）——collapsed-item-horiz-001（float:flex, chr 20.5%）经 R180 同期诊断确认为**结构性多轮**（flex item 增长循环依赖：taffy 在 800px 布局 flex 容器→flex:1 item 增长到 772→R129 float-shrink 读增长值不收缩；FLEXSHRINK 探针实证 `child.width=774 child_w=[0,772]`）。post-hoc 收缩无法 re-layout 已增长的 flex item，需两趟固有宽度 flex 布局，非单会话 clean win，defer。inline-flex 同理会触发同样循环故不纳入（守卫保证内容≈宽时为 no-op，安全但无收益）。下轮候选：剩余 16 真 bug 中 `baseline-block-with-overflow` 残余 1.25% 基线 / position-absolute-semi-replaced-stretch（23/15%, inline-block ownership）/ iframe-in-block-in-inline（9.75%, iframe infra）。
 
+**同期诊断 table-grid-item-dynamic-003（chr 29%，结构性，defer）**：grid 容器（div, 800px, height:100px）含 table（height:100%, padding-top:100px, content-box）。chromium table=800×222（**拉伸填满 grid track**），ZW table=278×200（shrink-to-fit 到文本 278px；表高 200 正确=100%+padding）。TBLW_DBG 探针实证 `table box.width=278 content_width=278 parent_display=Grid`。converter 把 `DisplayValue::Table => taffy::Block`（mod.rs:254），故 table 是 grid 内 taffy Block item，应被 justify-items:stretch 拉伸，但 taffy 给了 max-content(278) 非 800。根因=**taffy 0.7 auto grid track 不吸收剩余空间扩展**（CSS Grid §12.6/12.7：auto track 应增长填满容器，单 auto 列应从 278 扩到 800）。chromium gridprobe（block grid item）确证拉伸到 800。属 taffy-grid 级，post-hoc 拉伸 table grid item 对多列/显式 track 网格不安全，defer。同 R168 表高修复互补（004 表高已修，003 表宽=grid track 扩展）。
+
 
 
 **可信指标口径（唯一达标判定依据）**：上游真实 reftest 通过率 **434/490 (88.6%)**（R163 起默认正确图像渲染=DC-14 anti-false-pass，消除 PNG 退化假绿；旧 436 含 garbled-image 假通过）。⚠️ 当前 reference 仍由 **ZeroWeb 自渲染 ref.html**（`reftest.rs:230-232`），衡量「ZeroWeb-test vs ZeroWeb-ref」一致性而非「ZeroWeb vs Chromium/标准」，存在**同源假通过**风险（test 与 ref 同错）；治理门禁见 **DC-14 真通过标准**（独立 chromium Oracle 交叉验证基建已就绪 72764a0）。内联 reftest 685/685 (100%) 为 smoke，**不计达标判定**。
