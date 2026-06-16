@@ -484,6 +484,13 @@ pub struct InlineFormattingContext {
     /// 导致所有 margin 回退为 0。此覆盖确保 paint IFC 使用正确的 margin 值。
     /// margin 不影响行断（仅影响水平偏移），因此传递此覆盖不会改变行断行为。
     pub margin_overrides: HashMap<NodeId, (f32, f32)>,
+    /// R109 §9.2.1.1 匿名块盒的片段文本节点覆盖。
+    ///
+    /// 当此 IFC 为匿名块盒（inline 元素被 block 子元素拆分后的一个片段）服务时，
+    /// 设置此字段使 `collect_inline_items` 只收集这些节点（该片段的 inline 内容），
+    /// 而非遍历 container 的全部 DOM 子节点。`None` = 正常遍历 container 子节点。
+    /// 为 tree.rs 匿名块生成接线奠基（当前无调用方设值，默认 None 零回归）。
+    pub fragment_node_ids: Option<Vec<NodeId>>,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -516,7 +523,16 @@ impl InlineFormattingContext {
             inline_element_metrics: HashMap::new(),
             baseline_overrides: HashMap::new(),
             margin_overrides: HashMap::new(),
+            fragment_node_ids: None,
         }
+    }
+
+    /// 设置匿名块盒片段的文本节点覆盖（R109 §9.2.1.1）。
+    ///
+    /// 使本 IFC 只收集 `node_ids`（拆分后某片段的 inline 内容），而非遍历 container
+    /// 的全部 DOM 子节点。供匿名块盒（inline 被 block 子元素拆分）的 IFC 使用。
+    pub fn set_fragment_node_ids(&mut self, node_ids: Vec<NodeId>) {
+        self.fragment_node_ids = Some(node_ids);
     }
 
     /// 设置文本对齐方式。
@@ -753,7 +769,12 @@ impl InlineFormattingContext {
         styles: &HashMap<NodeId, ComputedStyle>,
     ) -> Vec<InlineItem> {
         let mut items = Vec::new();
-        let children = doc.child_nodes(container);
+        // R109 §9.2.1.1：匿名块盒片段只收集该片段的 inline 内容（fragment_node_ids），
+        // 而非 container 的全部 DOM 子节点。None = 正常遍历 container 子节点。
+        let children: Vec<NodeId> = match &self.fragment_node_ids {
+            Some(ids) => ids.clone(),
+            None => doc.child_nodes(container),
+        };
 
         for &child_id in &children {
             if let Some(node) = doc.get(child_id) {
