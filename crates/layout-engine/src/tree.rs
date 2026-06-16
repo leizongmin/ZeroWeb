@@ -200,15 +200,32 @@ fn apply_replaced_element_sizing(
             if let Some(&(w, h)) = img_intrinsic_sizes.get(&dom_id) {
                 let w = w.max(1.0);
                 let h = h.max(1.0);
+                let width_auto = matches!(computed.width, LengthValue::Auto);
+                let height_auto = matches!(computed.height, LengthValue::Auto);
                 if computed.aspect_ratio.is_none() {
                     taffy_style.aspect_ratio = Some(w / h);
                 }
-                if matches!(computed.width, LengthValue::Auto) {
+                // CSS §10.3/§10.6 替换元素：一侧显式、另一侧 auto 时，auto 侧按
+                // 固有宽高比从显式侧推导（而非用固有绝对值）。旧实现把 auto 侧直接设为
+                // 固有绝对值（如 width:80px 的正方形 SVG 渲染成 80×441 而非 80×80），
+                // 致真实页面 logo（仅设 width 或 height）严重变形（wintertc logo 巨高）。
+                if width_auto && height_auto {
                     taffy_style.size.width = taffy::style::Dimension::Length(w);
-                }
-                if matches!(computed.height, LengthValue::Auto) {
                     taffy_style.size.height = taffy::style::Dimension::Length(h);
+                } else if !width_auto
+                    && height_auto
+                    && let LengthValue::Px(cw) = &computed.width
+                {
+                    // width 显式，height auto：height = cw * h / w
+                    taffy_style.size.height = taffy::style::Dimension::Length(((*cw as f32) * h / w).max(0.5));
+                } else if width_auto
+                    && !height_auto
+                    && let LengthValue::Px(ch) = &computed.height
+                {
+                    // height 显式，width auto：width = ch * w / h
+                    taffy_style.size.width = taffy::style::Dimension::Length(((*ch as f32) * w / h).max(0.5));
                 }
+                // 两侧都显式：由 converter 从 CSS 处理，不干预
             }
         }
     }

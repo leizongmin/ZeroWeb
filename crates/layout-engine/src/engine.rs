@@ -3326,6 +3326,69 @@ mod table_layout_tests {
         assert!((w - 120.0).abs() < 1.0, "img width should use intrinsic 120, got {w}");
         assert!((h - 90.0).abs() < 1.0, "img height should use intrinsic 90, got {h}");
     }
+
+    /// 回归：CSS §10.3/§10.6 替换元素——`<img>` 仅设 CSS width（height auto）时，
+    /// height 应按固有宽高比从 width 推导，而非用固有绝对高度。
+    /// 旧 bug：正方形 SVG（intrinsic 441×441）+ width:80px 渲染成 80×441（巨高），
+    /// 致真实页面 logo（仅设 width 或 height）严重变形（wintertc logo）。
+    #[test]
+    fn test_img_width_set_height_auto_preserves_aspect() {
+        let html = r#"<html><body style="margin:0"><img src="logo.svg" style="width:80px"></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+        let mut img_sizes = HashMap::new();
+        img_sizes.insert(img_id, (441.0, 441.0)); // 正方形固有尺寸
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+        let mut found = None;
+        let mut stack = vec![&result.root];
+        while let Some(b) = stack.pop() {
+            if b.node_id == Some(img_id) {
+                found = Some((b.width, b.height));
+                break;
+            }
+            stack.extend(b.children.iter());
+        }
+        let (w, h) = found.expect("img box found");
+        assert!((w - 80.0).abs() < 1.0, "img width should be 80 (CSS), got {w}");
+        assert!(
+            (h - 80.0).abs() < 1.5,
+            "img height should be aspect-preserved ~80 (square @ width 80), got {h}"
+        );
+    }
+
+    /// 对称：仅设 CSS height（width auto）时，width 按固有比例推导。
+    #[test]
+    fn test_img_height_set_width_auto_preserves_aspect() {
+        let html = r#"<html><body style="margin:0"><img src="logo.svg" style="height:48px"></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+        let mut img_sizes = HashMap::new();
+        img_sizes.insert(img_id, (200.0, 100.0)); // 2:1 宽图
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+        let mut found = None;
+        let mut stack = vec![&result.root];
+        while let Some(b) = stack.pop() {
+            if b.node_id == Some(img_id) {
+                found = Some((b.width, b.height));
+                break;
+            }
+            stack.extend(b.children.iter());
+        }
+        let (w, h) = found.expect("img box found");
+        assert!((h - 48.0).abs() < 1.0, "img height should be 48 (CSS), got {h}");
+        assert!(
+            (w - 96.0).abs() < 1.5,
+            "img width should be aspect-preserved ~96 (2:1 @ height 48), got {w}"
+        );
+    }
 }
 
 #[cfg(test)]
