@@ -203,6 +203,9 @@ impl LayoutEngine {
         // 5.5 后处理：垂直书写模式下 width:auto 块级元素收缩到内容块轴跨度
         shrink_vertical_blocks_to_content(&mut root_box, styles, &WritingModeValue::HorizontalTb);
 
+        // 5.6 后处理：width:auto 的 inline-block 收缩到内容宽度（shrink-to-fit，§10.3.9）
+        shrink_inline_blocks_to_content(&mut root_box, styles);
+
         // 6. 后处理：为包含 float 元素的容器重新测量文本，使文本环绕 float 排列
         remeasure_text_with_float_exclusions(&mut root_box, doc, styles);
 
@@ -2213,6 +2216,60 @@ fn shrink_vertical_blocks_to_content(
     }
 }
 
+/// 后处理：`width:auto` 的 inline-block 收缩到内容宽度（CSS §10.3.9 shrink-to-fit）。
+///
+/// taffy 0.7 把 width:auto 的 inline-block 拉伸到可用宽度（如同 block），违反
+/// inline-block 应 shrink-to-fit 到 max-content 的规范。此处读取流内 block 级子元素
+/// 已布局的宽度（margin-box），取最大值作为内容宽度，仅在内容确实更窄时收缩
+/// （内容更宽或显式宽度时为 no-op）。与 R129 float-shrink / R138 table-shrink 同谱系，
+/// 但作用对象是 inline-block——其子元素已是正确尺寸（如显式 width 的 block），
+/// 故仅收缩盒尺寸本身，不重排子元素。
+fn shrink_inline_blocks_to_content(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    let own_horizontal = matches!(box_node.writing_mode, WritingModeValue::HorizontalTb);
+    if own_horizontal && !box_node.is_absolute && !box_node.is_fixed {
+        let is_inline_block = box_node.node_id.is_some_and(|id| {
+            styles
+                .get(&id)
+                .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+        });
+        let width_auto = box_node
+            .node_id
+            .is_some_and(|id| styles.get(&id).is_some_and(|s| matches!(s.width, LengthValue::Auto)));
+        if is_inline_block && width_auto {
+            // 内容最大宽度（max-content）：inline 级子元素水平求和（假设不换行），
+            // block 级子元素垂直堆叠取最大；取两者较大值。子元素宽度已是 taffy
+            // 正确布局结果（如显式 width 的 block / inline-block）。
+            let mut inline_sum = 0.0f32;
+            let mut block_max = 0.0f32;
+            for c in &box_node.children {
+                if c.is_absolute || c.is_fixed {
+                    continue;
+                }
+                let outer_w = c.width + c.margin_left + c.margin_right;
+                if c.is_block_level {
+                    block_max = block_max.max(outer_w);
+                } else {
+                    inline_sum += outer_w.max(0.0);
+                }
+            }
+            let content_max_w = inline_sum.max(block_max);
+            if content_max_w > 0.0 {
+                let frame =
+                    box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+                let shrink_border_box = content_max_w + frame;
+                if shrink_border_box + 0.5 < box_node.width {
+                    box_node.width = shrink_border_box;
+                    box_node.content_width = content_max_w;
+                }
+            }
+        }
+    }
+
+    for child in &mut box_node.children {
+        shrink_inline_blocks_to_content(child, styles);
+    }
+}
+
 /// 标记孤立 table-internal 元素（CSS Tables §2.4）为匿名 table 根。
 ///
 /// 当 `display:table-row-group/table-row/table-cell/...` 出现在非 table 上下文中
@@ -3468,6 +3525,49 @@ mod anonymous_flex_item_tests {
             );
             stack.extend(&box_node.children);
         }
+    }
+
+    /// 回归：CSS §10.3.9 — width:auto 的 inline-block 应 shrink-to-fit 到内容最大宽度。
+    /// 旧 bug：taffy 把 width:auto 的 inline-block 拉伸到可用宽度（如同 block），
+    /// 含显式宽度 block 子元素的 inline-block 被错误填满 784px 而非收缩到子元素宽度。
+    /// 验证 shrink_inline_blocks_to_content 后处理（baseline-block-with-overflow-001 用例）。
+    #[test]
+    fn test_inline_block_width_auto_shrink_to_fit() {
+        // inline-block `.outer`（width:auto）含一个显式 width:30px 的 block 子元素，
+        // 应收缩到 ~30px，而非填满 800px 视口。
+        let html = r#"<html><body style="margin:0">
+          <div class="outer" id="o" style="display:inline-block;background:orange;padding:4px">
+            <div class="inner" id="i" style="width:30px;height:30px;background:blue"></div>
+          </div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let zero_dom::NodeKind::Element(elem) = &n.kind
+                && elem.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let o = find("o", &doc, &result.root).expect("inline-block #o");
+        // 收缩后 border-box = 30(内容) + 4+4(左右 padding) = 38，远小于 784。
+        assert!(
+            o.width < 100.0,
+            "width:auto inline-block should shrink-to-fit to content (~38px), not fill available (got w={})",
+            o.width
+        );
+        assert!(
+            (o.width - 38.0).abs() < 1.0,
+            "expected inline-block width ~38px (30 content + 8 padding), got w={}",
+            o.width
+        );
     }
 }
 
