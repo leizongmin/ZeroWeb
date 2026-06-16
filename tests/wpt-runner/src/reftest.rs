@@ -602,7 +602,10 @@ fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCache {
             continue;
         }
 
-        let path = base.join(url);
+        // 站点根相对 URL（如 "/static/x.svg"）应解析到 base_dir 下（fixture 的站点根），
+        // 而非 `base.join(absolute)`（会替换 base → 文件系统根 → 加载失败）。
+        // WPT reftest 多用相对路径（无前导 /），trim 不影响；绝对路径此前全失败，此处修复。
+        let path = base.join(url.trim_start_matches('/'));
 
         // 尝试加载 PNG 文件，失败再尝试 JPEG（真实页面 logo/照片多为 JPEG），再尝试 SVG
         if let Ok(data) = load_png_file(&path) {
