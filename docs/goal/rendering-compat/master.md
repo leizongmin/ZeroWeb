@@ -139,6 +139,20 @@ DC-13 wintertc 诊断产出：`<img>` 仅设 CSS width（height:auto）或仅设
 
 **意义**：(1) #1 结构性里程碑（flex/grid 两趟固有宽度）Round B 落地，测量基础（R181/A.2）现产出真实修复；(2) child-border-box 是 18 真 bug 候选外的真实渲染缺口（chromium 40 vs 180），现 align chromium；(3) R181c 的「net -5」根因精确定位并解决（converter Auto→length(0) 中性塌缩 + 不可测回退）；(4) 两趟 set_style+mark_dirty+重跑模式为后续 flex intrinsic sizing（collapsed-item-horiz 等 flex 容器 shrink-to-fit）奠基。**下轮**：002 的 fit-content() track 内在尺寸建模，或 collapsed-item-horiz flex 容器两趟（需 IFC 文本测量解锁纯文本 item 测量）。
 
+### R186 — fontdue rasterizer 杠杆精确化：Ahem 已 special-case 完美方块（reftest 残差=结构非光栅化），rasterizer swap 仅助 DC-13 产品 smoke（非 reftest），诊断轮无代码提交
+
+承接 R185 fontdue swap deep-research 方向，代码级核实 fontdue 杠杆范围。
+
+**关键发现**：`FontLoader::rasterize_glyph`（font/loader.rs:171）对 **Ahem 字体 special-case**——`rasterize_ahem_glyph`（:198）生成边长=font_size 的**完美填充方块**（注释明言「fontdue 光栅化与 Skia 差异，直接生成方块确保像素对齐」）。`font.rasterize(code_point, size)` API **无任何 quality/AA 设置**（仅字符+尺寸）。
+
+**杠杆范围精确化（修正 R185「fontdue AA 主导 ~111 reftest」的过度归纳）**：
+- **WPT reftest（多用 Ahem）**：glyph 已是完美方块 + 布局 advance 精确（`estimate_char_width` 对 Ahem 返回 font_size，inline/mod.rs:201）+ paint 按 layout 精确位置放置（不用 GlyphBitmap.advance 定位）→ **Ahem 渲染本应像素精确**，残差是**结构/布局**（换行、列分布、margin、line-height 度量）**非光栅化**。故 **rasterizer swap 对 reftest 指标基本无收益**。
+- **DC-13 产品 smoke（welcome/morning.work/wintertc，用 DejaVu/Noto CJK 非 Ahem）**：走原始 fontdue `rasterize` → AA 双峰 ±10 噪声（R174）→ **rasterizer swap 是 DC-13 产品 smoke 杠杆**（~25-28% 平台期主因），非 reftest 杠杆。
+
+**结论**：①reftest 435/490 平台期残差**确证为结构/布局**（非字体光栅化），clean win 穷尽仍成立——rasterizer swap 不解 reftest。②fontdue rasterizer swap（swash/ab_glyph+hinting/cosmic-text）若做，**目标应锁定 DC-13 产品 smoke**（welcome/morning.work/wintertc 字体噪声），是 DC-13 重大多轮里程碑，不影响 reftest 通过率。③reftest 推进仍需多轮结构里程碑（multicol 碎片化 17 / block-in-inline R109 / Phase A），单会话 clean win 无。
+
+**fontdue swap 可行性初判**：fontdue 在 workspace 已声明且 shaper.rs 也用其取 advance。swap 需替换 rasterize_glyph 调用点（CPU mod.rs:483/GPU renderer）+ 保留 Ahem special-case + shaper.rs advance 来源。swash 已在 workspace（shaper.rs:4 提及 swash shaping），其 rasterizer 是最低集成成本候选。完整可行性需 deep-research（AA 算法对齐 Skia 程度、CJK 支持、性能），留作 DC-13 专项。
+
 ### R185 — 平台期再确认：multicol 低 diff 聚类根因（碎片化，列宽公式已验证正确）+ fontdue AA 为主导残差（rasterizer swap = 重大里程碑），诊断轮无代码提交
 
 对 multicol 低 diff 聚类（multicol-count-computed-003 2.06% 等）做可视化 + 代码级根因，**再确认结构性碎片化**。
