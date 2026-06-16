@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::DisplayValue;
+use zero_css_parser::values::{DisplayValue, FloatValue, PositionValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
@@ -40,6 +40,16 @@ fn is_block_level_display(display: &DisplayValue) -> bool {
     )
 }
 
+/// 判断元素是否 out-of-flow（`position:absolute/fixed` 或 `float≠none`）。
+///
+/// CSS2 §9.2.1.1 匿名块盒生成只针对 **in-flow** block-level box；out-of-flow
+/// 元素被移出流（由 converter 的 abspos/float 定位路径处理），不参与 inline 拆分。
+/// 否则 `<span>text<div style="position:absolute">abs</div></span>` 这类「inline
+/// 仅含 abspos『block』子元素」会被误拆分，破坏 `position-absolute-in-inline-*`。
+fn is_out_of_flow(style: &ComputedStyle) -> bool {
+    matches!(style.position, PositionValue::Absolute | PositionValue::Fixed) || !matches!(style.float, FloatValue::None)
+}
+
 /// 判断指定 DOM 元素是否为 inline 元素且含至少一个 in-flow block-level 子元素（R109 触发条件）。
 pub(crate) fn inline_has_block_child(
     doc: &Document,
@@ -52,9 +62,11 @@ pub(crate) fn inline_has_block_child(
     if !is_inline {
         return false;
     }
-    doc.child_nodes(inline_id)
-        .iter()
-        .any(|child| styles.get(child).is_some_and(|s| is_block_level_display(&s.display)))
+    doc.child_nodes(inline_id).iter().any(|child| {
+        styles
+            .get(child)
+            .is_some_and(|s| is_block_level_display(&s.display) && !is_out_of_flow(s))
+    })
 }
 
 /// 计算 inline 元素的匿名块拆分片段序列（CSS2 §9.2.1.1）。
@@ -90,19 +102,20 @@ pub(crate) fn compute_inline_block_split(
         match &node.kind {
             NodeKind::Text(_) => current_inline.push(child),
             NodeKind::Element(_) => {
-                let display = styles.get(&child).map(|s| &s.display);
+                let style = styles.get(&child);
                 // display:none / 不在 styles 的元素跳过（不参与流）
-                let Some(display) = display else {
+                let Some(style) = style else {
                     continue;
                 };
-                if matches!(display, DisplayValue::None | DisplayValue::Contents) {
+                if matches!(style.display, DisplayValue::None | DisplayValue::Contents) {
                     continue;
                 }
-                if is_block_level_display(display) {
+                // in-flow block-level 子元素触发拆分；out-of-flow（abspos/fixed/float）
+                // 不触发——归入当前 inline 片段（保留为子节点，由 converter 定位路径处理）。
+                if is_block_level_display(&style.display) && !is_out_of_flow(style) {
                     flush(&mut current_inline, &mut segments);
                     segments.push(InlineBlockSegment::Block { node_id: child });
                 } else {
-                    // inline-level 元素（inline/inline-block/inline-flex 等）归入当前 inline 片段
                     current_inline.push(child);
                 }
             }
@@ -253,5 +266,46 @@ mod tests {
             segs.first()
         );
         assert_eq!(segs.len(), 2, "expected Block + trailing Inline, got {:?}", segs);
+    }
+
+    #[test]
+    fn test_out_of_flow_child_does_not_trigger_split() {
+        // CSS2 §9.2.1.1：out-of-flow（abspos/fixed/float）子元素不触发 inline 拆分。
+        // <span>text<div abs>abs</div>more</span> 不应被拆分（修复 position-absolute-in-inline 回归）。
+        let html = r#"<html><body>
+          <div id="s" style="display:inline">
+            before
+            <div style="position:absolute">abs</div>
+            <div style="float:left">flt</div>
+            after
+          </div>
+        </body></html>"#;
+        assert!(
+            split_for(html, "s").is_none(),
+            "out-of-flow-only children must not trigger R109 split"
+        );
+    }
+
+    #[test]
+    fn test_in_flow_block_alongside_out_of_flow_still_splits() {
+        // 混合：in-flow block + abspos。in-flow block 触发拆分；abspos 归入 inline 片段。
+        let html = r#"<html><body>
+          <div id="s" style="display:inline">
+            text
+            <div>in-flow block</div>
+            <div style="position:absolute">abs</div>
+          </div>
+        </body></html>"#;
+        let segs = split_for(html, "s").expect("in-flow block should trigger split");
+        let block_count = segs
+            .iter()
+            .filter(|s| matches!(s, InlineBlockSegment::Block { .. }))
+            .count();
+        // 只 in-flow block 发出 Block 片段；abspos 不发（归入 Inline 片段）
+        assert_eq!(
+            block_count, 1,
+            "only in-flow block should emit Block segment, got {:?}",
+            segs
+        );
     }
 }

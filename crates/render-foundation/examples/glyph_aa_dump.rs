@@ -1,7 +1,7 @@
 //! 诊断 example：直接用 fontdue 光栅化单字符 → PGM，供与 chromium 同字号同字符对比，
 //! 量化纯 AA + glyph 轮廓差异（DC-14 字体攻坚 AA 基准）。不经 HTML/CSS/布局。
-use zero_render_foundation::font::FontLoader;
 use std::io::Write;
+use zero_render_foundation::font::FontLoader;
 
 fn main() {
     let mut loader = FontLoader::new();
@@ -10,7 +10,8 @@ fn main() {
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
     ];
-    let font_id = paths.iter()
+    let font_id = paths
+        .iter()
         .find_map(|p| std::fs::read(p).ok().and_then(|d| loader.load_font(&d).ok()))
         .expect("DejaVuSans.ttf not found on system");
 
