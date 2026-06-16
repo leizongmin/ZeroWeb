@@ -1432,10 +1432,17 @@ fn apply_relative_offsets_inline(root: &mut LayoutBox, styles: &HashMap<NodeId, 
                 .is_some_and(|s| matches!(s.display, DisplayValue::Inline | DisplayValue::InlineBlock))
         });
         if is_inline_level {
-            let (dx, dy) = resolve_relative_inset(root, styles);
-            if dx != 0.0 || dy != 0.0 {
-                root.x += dx;
-                root.y += dy;
+            // R109 §9.2.1.1：split inline（display:inline，converter 映射为 taffy Block）
+            // 及其匿名块片段共享 inline 的 node_id。taffy 已按 block 单次施加 relative
+            // offset；此处再按 computed-Inline 施加会双重计数（inline-box-002 的
+            // position:relative;top:2in 致片段偏低 2×192px 出视口）。is_r109_split 对
+            // 父盒与片段均为 true，整体跳过让 taffy 单次处理。
+            if !root.is_r109_split {
+                let (dx, dy) = resolve_relative_inset(root, styles);
+                if dx != 0.0 || dy != 0.0 {
+                    root.x += dx;
+                    root.y += dy;
+                }
             }
         }
     }

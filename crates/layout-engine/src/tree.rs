@@ -571,6 +571,16 @@ fn build_subtree(
                             let mut anon_style =
                                 computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
                             anon_style.display = taffy::style::Display::Block;
+                            // 清零 inset：匿名块片段不应继承 split inline 的 position 偏移
+                            //（top/left 等）。相对偏移由 split inline 父盒单次施加，片段作为
+                            // 子盒随之移动；若片段也带 inset，taffy 会重复偏移（inline-box-002
+                            // 的 position:relative;top:2in 致片段偏低 2×192px 出视口）。
+                            anon_style.inset = taffy::geometry::Rect {
+                                left: taffy::style::LengthPercentageAuto::AUTO,
+                                right: taffy::style::LengthPercentageAuto::AUTO,
+                                top: taffy::style::LengthPercentageAuto::AUTO,
+                                bottom: taffy::style::LengthPercentageAuto::AUTO,
+                            };
                             let anon_taffy = ctx
                                 .taffy
                                 .new_leaf_with_context(anon_style, ctx_node)
