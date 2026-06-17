@@ -13,11 +13,12 @@ use crate::gpu::atlas::{GlyphAtlas, GlyphAtlasKey};
 use crate::gpu::mesh::{color_to_f32, push_fill_quad, push_path_fill_mesh, push_path_stroke_mesh, push_stroke_mesh};
 use crate::gpu::pipeline::{
     FILL_FLOATS_PER_VERTEX, GRADIENT_FLOATS_PER_VERTEX, ROUNDED_RECT_FLOATS_PER_VERTEX, create_atlas_bind_group_layout,
-    create_blur_pipeline, create_gradient_pipeline, create_image_pipeline, create_render_pipeline,
-    create_rounded_rect_pipeline, create_texture_bind_group_layout, create_uniform_bind_group_layout,
+    create_blur_pipeline, create_gradient_pipeline, create_image_pipeline, create_opacity_pipeline,
+    create_render_pipeline, create_rounded_rect_pipeline, create_texture_bind_group_layout,
+    create_uniform_bind_group_layout,
 };
 use crate::image_cache::ImageCache;
-use crate::primitive::{FillPrimitive, GradientKind, RenderPrimitives};
+use crate::primitive::{FillPrimitive, FilterKind, GradientKind, RenderPrimitives};
 
 /// GPU 渲染器创建互斥锁 — 防止并发 wgpu 实例初始化导致 SIGSEGV
 ///
@@ -61,6 +62,9 @@ pub struct GpuRenderer {
     /// Blur 后处理管线
     #[allow(dead_code)]
     blur_pipeline: wgpu::RenderPipeline,
+    /// filter:opacity 后处理管线（DC-9）
+    #[allow(dead_code)]
+    opacity_pipeline: wgpu::RenderPipeline,
     /// Uniform 绑定组布局
     uniform_bgl: wgpu::BindGroupLayout,
     /// Atlas 绑定组布局（保留用于 atlas 重建时重新创建绑定组）
@@ -91,6 +95,8 @@ pub struct GpuRenderer {
     surface_format: wgpu::TextureFormat,
     /// 无头渲染目标纹理
     headless_texture: Option<wgpu::Texture>,
+    /// 无头 ping-pong 第二纹理（DC-9 后处理：filter:opacity 等区域读+写需双纹理）
+    headless_texture_b: Option<wgpu::Texture>,
     /// 是否暂停向窗口 surface present（Wayland 失焦时使用）
     present_suspended: bool,
 }
@@ -220,6 +226,8 @@ impl GpuRenderer {
         let gradient_pipeline = create_gradient_pipeline(&device, format, &uniform_bgl, &gradient_bgl);
         let image_pipeline = create_image_pipeline(&device, format, &uniform_bgl, &image_bgl);
         let blur_pipeline = create_blur_pipeline(&device, format, &uniform_bgl, &blur_bgl);
+        // DC-9 filter:opacity 后处理管线（复用 blur_bgl 源纹理布局）
+        let opacity_pipeline = create_opacity_pipeline(&device, format, &uniform_bgl, &blur_bgl);
 
         let atlas = GlyphAtlas::new();
         let (atlas_texture, _atlas_view, _atlas_sampler, atlas_bind_group) =
@@ -240,6 +248,7 @@ impl GpuRenderer {
             gradient_pipeline,
             image_pipeline,
             blur_pipeline,
+            opacity_pipeline,
             uniform_bgl,
             atlas_bgl,
             gradient_bgl,
@@ -254,6 +263,7 @@ impl GpuRenderer {
             surface,
             surface_format: format,
             headless_texture,
+            headless_texture_b: None,
             present_suspended: false,
         })
     }
@@ -759,7 +769,174 @@ impl GpuRenderer {
         }
 
         queue.submit(std::iter::once(encoder.finish()));
+
+        // DC-9 filter:opacity 后处理（仅 headless）。
+        //
+        // 无 filter 时不触发（零默认回归：438 CPU reftest 与无 filter 的 GPU case 全不受影响）。
+        // 对每个 Opacity filter 做 ping-pong 区域 RGB 乘（匹配 CPU apply_filter），结果写回
+        // headless_texture(A) 供后续 read_pixels 读取。
+        let opacity_filters = collect_opacity_filters(&primitives.filters);
+        if !opacity_filters.is_empty() && self.headless_texture.is_some() {
+            self.apply_opacity_filters_headless(width, height, &opacity_filters, scale);
+        }
+
         target.present(&device);
+    }
+
+    /// DC-9 filter:opacity 区域后处理（仅 headless）。
+    ///
+    /// 对每个 Opacity(amount, rect)：copy A→B（B 获得完整场景基底）→ scissor pass 采样 A
+    /// 写 B（rect 内 RGB *= amount）→ copy B→A（结果回 A 供 read_pixels）。多 filter 逐个
+    /// ping-pong，最终结果在 headless_texture(A)。匹配 CPU `apply_filter` 的 Opacity 语义。
+    fn apply_opacity_filters_headless(&mut self, width: u32, height: u32, filters: &[(Rect, f32)], scale: f32) {
+        use wgpu::util::DeviceExt;
+
+        let Some(tex_a) = self.headless_texture.as_ref() else {
+            return;
+        };
+        // 确保 ping-pong 纹理 B 存在且尺寸匹配
+        let need_recreate = self
+            .headless_texture_b
+            .as_ref()
+            .map(|t| t.size().width != width || t.size().height != height)
+            .unwrap_or(true);
+        if need_recreate {
+            self.headless_texture_b = Some(create_headless_texture(
+                &self.device,
+                width,
+                height,
+                self.surface_format,
+            ));
+        }
+        let Some(tex_b) = self.headless_texture_b.as_ref() else {
+            return;
+        };
+
+        let extent = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+        // 共享源采样器（ClampToEdge + Linear）
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Opacity Src Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        for &(rect, amount) in filters {
+            // scissor 钳制到 [0, width]×[0, height]（wgpu 要求非零且在界内）
+            let sx = ((rect.left() * scale).floor().max(0.0) as u32).min(width);
+            let sy = ((rect.top() * scale).floor().max(0.0) as u32).min(height);
+            let sw = ((rect.right() - rect.left()).max(0.0) * scale).ceil() as u32;
+            let sh = ((rect.bottom() - rect.top()).max(0.0) * scale).ceil() as u32;
+            let sw = sw.min(width.saturating_sub(sx));
+            let sh = sh.min(height.saturating_sub(sy));
+            if sw == 0 || sh == 0 {
+                continue; // 退化 rect，跳过（避免 wgpu 零尺寸 scissor 错误）
+            }
+
+            let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Opacity Filter Encoder"),
+            });
+
+            // 1. copy A→B（B 获得完整场景内容作为基底，保 rect 外像素不变）
+            encoder.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex_a,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex_b,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                extent,
+            );
+
+            // 2. uniform buffer [width, height, amount, 0]（OpacityUniforms，16 字节匹配 UNIFORM_SIZE）
+            let uniform_data: [f32; 4] = [width as f32, height as f32, amount, 0.0];
+            let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Opacity Uniform Buffer"),
+                contents: bytemuck::cast_slice(&uniform_data),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+            let uniform_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Opacity Uniform BG"),
+                layout: &self.uniform_bgl,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                }],
+            });
+            let src_view = tex_a.create_view(&wgpu::TextureViewDescriptor::default());
+            let src_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Opacity Src BG"),
+                layout: &self.blur_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&src_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+            });
+
+            // 3. scissor pass: 采样 A → 写 B（rect 内 RGB *= amount；rect 外保留 copy 的 A 内容）
+            let view_b = tex_b.create_view(&wgpu::TextureViewDescriptor::default());
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Opacity Filter Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view_b,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pass.set_scissor_rect(sx, sy, sw, sh);
+                pass.set_pipeline(&self.opacity_pipeline);
+                pass.set_bind_group(0, &uniform_bg, &[]);
+                pass.set_bind_group(1, &src_bg, &[]);
+                pass.draw(0..3, 0..1);
+            }
+
+            // 4. copy B→A（结果回 A，read_pixels 读 A）
+            encoder.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex_b,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex_a,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                extent,
+            );
+
+            self.queue.submit(std::iter::once(encoder.finish()));
+        }
     }
 
     /// 内部：在 render pass 中使用 fill pipeline 绘制顶点
@@ -1545,6 +1722,22 @@ impl GpuRenderer {
     }
 }
 
+/// 收集 FilterPrimitive 中的 Opacity 变体 → `(rect, amount)`（DC-9 GPU 后处理输入）。
+///
+/// `FilterPrimitive.filters` 是按顺序应用的滤镜函数列表；提取所有 Opacity 条目，
+/// 其他滤镜（blur/brightness/...）GPU 暂未实现，此处跳过。
+fn collect_opacity_filters(filters: &[crate::primitive::FilterPrimitive]) -> Vec<(Rect, f32)> {
+    filters
+        .iter()
+        .flat_map(|f| {
+            f.filters.iter().filter_map(|k| match k {
+                FilterKind::Opacity(amount) => Some((f.rect, *amount)),
+                _ => None,
+            })
+        })
+        .collect()
+}
+
 /// 创建无头渲染目标纹理
 fn create_headless_texture(
     device: &wgpu::Device,
@@ -1565,6 +1758,7 @@ fn create_headless_texture(
         format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::COPY_DST
             | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     })
