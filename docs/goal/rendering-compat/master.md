@@ -2487,6 +2487,16 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **结论**：R236 spec 对当前代码**完全准确**（c53a541→HEAD 无相关变更），**最高 contained reftest 杠杆**（R235 确立 8 例 ~1.1% 系统性偏移，结构性最 tractable，bounded feature）。实现 agent「最大化 reftest 进展」路径可直接起手 R236（字段/extract/consume 就绪，仅需 multicol.rs 填充），成功标准=baseline-000~008 类 ~1.1% 偏移消除（reftest 438/490 上升 +8 潜力，须 zero-regression 全量验证）。与 P1 DC-9（contained+硬DC，≈0 reftest 杠杆）并列：DC-9 零回归地基可先落，R236 攻 reftest 分数。详见 evidence/r253-r236-multicol-baseline-export-verification-2026-06-18.txt。无代码变更，基线 438/490 持平。
 
+### R254 — R238 WM-1 abspos-vertical spec 对当前代码实证核实：准确，第二 reftest 杠杆就绪（完成三部曲）（2026-06-18，read-only，converter/engine.rs abspos 区域无碰撞）
+
+完成 reftest 杠杆验证三部曲（R251 R244 alpha ✓ / R253 R236 multicol baseline ✓ / 本轮 R238 WM-1）。核实 R238 spec（写于 5dff3c4）对当前 HEAD(000a462) 代码仍准确。读 converter/mod.rs + engine.rs（工作树干净，无碰撞）。
+
+**逐条核实——全部确认**：① `apply_vertical_writing_mode`(converter/mod.rs:196，tree.rs:429 调用)=css-writing-modes §7.1 dimension-swap 已落地 ✅；② engine.rs:1394-1426 abspos static-position fix 守 `all_inset_auto`(1396 top+bottom auto，1401 用 IFC fragment 位置修正) ✅；③ **§10.3.7 处理在但仅 height shrink-to-fit**(1411-1425，height:auto 时 child.height 收缩到 fragment.width 内容 inline 跨度)，**无 direction(rtl/lr) 分支**——静态位置修正直接用 fragment.x/y 不按书写方向调整 → **R238 residual B「缺 §10.3.7 direction 分支→rtl 5.03%=4×ltr」=当前最清晰修复信号 confirmed**。
+
+**结论**：R238 spec 对当前代码**完全准确**（5dff3c4→HEAD 无相关变更）。WM-1 abspos-vertical=**第二 reftest 杠杆**（14 例 css-writing-modes abspos vrl/vlr），修复=给 static-position 修正加 direction 分支（contained to engine.rs:1394-1426，无 converter/taffy/paint 改）。⚠️ **R164 教训适用**：per-case diff 混合 positioning+Ahem 噪声，**勿未实验就声称 clean +14**（R238 本身已带此告诫）——实现 agent 须先跑当前 per-case diff 确认 residual B 仍在 + 实验加 direction 分支后消除且无回归方可声称。
+
+**reftest 杠杆验证三部曲完结**：R251 R244 DC-9 alpha（P1 contained+硬DC，≈0 reftest 杠杆）/ R253 R236 multicol baseline（P1' 最高 contained reftest 杠杆 +8）/ R254 R238 WM-1（P2 第二 reftest 杠杆 14 例）——三条路径全 spec+验证就绪，实现 agent 可按「contained 优先(DC-9)/reftest 分数优先(R236→R238)」选择，无需再调研。详见 evidence/r254-r238-wm1-abspos-vertical-verification-2026-06-18.txt。无代码变更，基线 438/490 持平。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
