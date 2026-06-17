@@ -2331,6 +2331,27 @@ IFC WIP）精确定位 GPU alpha 通道缺口——**CPU R228b 的 GPU 同源类
   每新 WGSL 配像素断言单测。不与 R220/R228b 冲突（细化/补 GPU 同源层）。详见
   evidence/r244-dc9-gpu-alpha-groundwork-spec-2026-06-18.txt。
 
+### R245 — morning-work 压缩根因实证确认：pre-wrap 换行符保留缺失（2026-06-18，read-only）
+
+**闭合 R242→R243→R245 调研链**。读并行 agent 未提交 IFC WIP（inline/mod.rs break_into_lines + painter/text.rs）
+实证回答 R243 的 LAYOUT-vs-PAINT 判别：**= a-LAYOUT 主因**，且比 R243 推测更精确：
+- **CSS Text §3.1 换行符保留缺失**：`break_into_lines` 收集文本**无条件**调 `collapse_whitespace`，把 `\n`
+  折叠成普通空格；但 `white-space: pre/pre-wrap/break-spaces` 应原样保留 `\n` 作强制断行（CSS Text §3.1）。
+  morning-work `.article pre{white-space:pre-wrap}` + 代码块源码显式 `\n`（C 代码~12 行）→ 被折成单行 →
+  **12 个多行 `<pre>` 全塌缩单行** → 正文高度≈1/预期 → 内容压缩进 y=150-300、y=300-525 空白（R228b 观测）。
+- 次要（同 a-LAYOUT）：即便 `\n` 作空字符串标记保留，旧 break_into_lines 对空词 `continue` 静默丢弃强制换行标记。
+- 互补（a-PAINT）：painter/text.rs 非存储路径改用 `all_fragments_with_line_y()` 把每行 line.y 加到片段 y。
+- **澄清非 Phase A 存储 guard**：R84 多行守卫（engine.rs:1909）影响 paint 存储路径，但**根因在 break_into_lines
+  换行符处理**——即便走存储路径，collapse_whitespace 也先折成单行。故换行符修复是前置必要条件，与 Phase A 存储
+  统一（R82/R101/R125）正交；换行符修好后多行 pre 行盒度量才正确，Phase A 讨论才有意义。
+
+**验证配方（修复落地后）**：① product-smoke morning-work 区域 diff，暗内容应从 y=150-300 扩展到 y=150-600 均匀，
+整体 67% 显著降；② LAYOUT_DUMP 12 个 `<pre>` content_height ≈ 行数×24.5px+padding（非单行~24.5px）；③ reftest
+438/490 不回归 + clippy/fmt；④ 边界：仅 pre/pre-wrap/break-spaces（preserve_whitespace=true）保留空白，normal/nowrap
+仍 collapse（验证 normal 文本不受影响）。
+**协调**：并行 agent WIP（未提交）正修此根因；本调研不接手，仅实证根因 + 验证配方。详见
+evidence/r245-morning-work-rootcause-validated-2026-06-18.txt。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
