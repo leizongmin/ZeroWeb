@@ -1157,4 +1157,64 @@ mod tests {
             );
         }
     }
+
+    /// 诊断：量化 layout-engine `estimate_char_width` 启发式（字母 0.55×fs、数字 0.5、
+    /// 标点 0.4、空格 0.25）与真实系统字体 advance（measure_advance）的系统性误差。
+    ///
+    /// 目的：为 advance-width plumbing（R221 识别的 183-case 系统性噪声桶）提供数据依据。
+    /// 仅打印（--nocapture），不断言——反映真实字体度量分布。
+    #[test]
+    fn diag_advance_vs_estimate_systematic_error() {
+        let font_data = match load_system_font_data() {
+            Some(d) => d,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+        let mut loader = FontLoader::new();
+        let font_id = match loader.load_font(&font_data) {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("skipping: font load failed: {e}");
+                return;
+            }
+        };
+        let size = 16.0f32;
+        // (字符, estimate 启发式倍数)
+        let samples: &[(char, f32)] = &[
+            ('W', 0.55),
+            ('i', 0.55),
+            ('m', 0.55),
+            ('l', 0.55),
+            ('A', 0.55),
+            ('5', 0.5),
+            ('0', 0.5),
+            ('.', 0.4),
+            (',', 0.4),
+            (' ', 0.25),
+            ('t', 0.55),
+            ('f', 0.55),
+            ('H', 0.55),
+        ];
+        eprintln!("\n=== advance (real vs estimate) at {size}px, font_id={font_id} ===");
+        eprintln!("char | real_adv | real_ratio | est_ratio | err%");
+        let mut sum_real = 0.0f32;
+        let mut sum_est = 0.0f32;
+        for &(ch, est_ratio) in samples {
+            let real = loader.measure_advance(font_id, ch, size);
+            let real_ratio = real / size;
+            let est = size * est_ratio;
+            let err = if real > 0.0 { 100.0 * (est - real) / real } else { 0.0 };
+            eprintln!("  {ch}  | {real:7.2} | {real_ratio:.3}      | {est_ratio:.3}     | {err:+6.1}%");
+            sum_real += real;
+            sum_est += est;
+        }
+        let total_err = if sum_real > 0.0 {
+            100.0 * (sum_est - sum_real) / sum_real
+        } else {
+            0.0
+        };
+        eprintln!("sum: real={sum_real:.2} est={sum_est:.2} total_err={total_err:+.1}%");
+    }
 }
