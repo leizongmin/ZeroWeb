@@ -2555,3 +2555,21 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **方法学教训（印证 R164/R203/R241）**：R255 据 curated 6 行摘要 + 算术巧合推断机制、未读生成路径源码即下结论；R256 读 build_subtree 推翻。**单点/摘要推断须源码实证，不能据 curated 输出 + 算术巧合接力**。后续 morning-work 调查从原始递归 dump 重起。**本轮 read-only 无代码/reftest 变更，基线 438/490 持平。** 详见 `evidence/r256-morning-work-phantom-box-mechanism-refuted-2026-06-18.txt`。
 
+### R257 — morning-work 4× 真根因【确认 + 纠正 R256】：article 缺 ua_default_display→inline→R109 幻影匿名块（read-only，2026-06-18，基线 438/490 持平）
+
+**承接 + 关键转折**：读并行代码 agent 未提交 WIP（style-system/src/lib.rs），其回归测试注释明确揭示 morning-work 4× 高度**真根因**。结合源码核实——**R255 的机制+算术正确，R256 的「反驳」错误**（前提「article=block」假）。本 R257 取代 R256 定性，收口 morning-work 4× 调查（历经 R228b/R247/R252/R253/R255/R256/R257 共 6+ 轮）。
+
+**真根因链（全源码闭合）**：
+1. **触发源**：committed `ua_default_display`（style-system/src/lib.rs）block 列表**不含 `article`**（亦缺 `aside`/`details`/`hgroup`/`menu`/`search`）→ 函数返 `None` → 元素回落 CSS 初始 `display:inline`。
+2. **R109 触发**：article 计算为 inline + 含块级子（h2/p）→ `inline_has_block_child`（inline_block_split.rs:59-61 查 `display==Inline`）**返 true** → tree.rs:546 `r109_segments=Some` → 进 559-591 匿名块生成。
+3. **盒模型泄漏**：tree.rs:386 `computed`=**article 计算样式**（含 `.article{min-height:200;margin:4em}`）；tree.rs:571-572 每个 R109 匿名块用 `computed_style_to_taffy(&computed)` 构建（强制 display:Block）→ **匿名块继承 article 的 min-height:200+margin:4em** → h≥200+margin64/64=**328px/对**。
+4. **4× 高**：每对 block 兄弟间插 328px 幻影盒，累积 ~4.2×（ZW body 25301 vs CHR 5981）。R253 dump 的 328/328/328/328 间隙 + 「幻影嵌套 article h=200 w=4」（带 article node_id 的 R109 匿名块，dump 标签 `b.node_id→DOM labels`）全部吻合。
+
+**纠正 R256**：R256 读 build_subtree 后断言「article 是 Block→R109 不触发→build_subtree 不生成幻影盒→R255 机制否定」。**代码路径阅读本身正确，但前提「article=block」错误**（article 实为 inline）。故 `inline_has_block_child(article)=true`，R109 **确实触发**，R255 的「.article 盒属性泄漏到幻影匿名盒（R109 谱系）」+ 328=200+64+64 算术**全部正确**。R256 降级为「基于错误前提的部分分析」——其「converter 映射无误 / build_subtree 对*真正 block 容器*不生成幻影盒」的代码事实成立但对 morning-work 不适用（article 非 block）；其「勿改 build_subtree/converter/R109」的*操作结论*仍成立（缺陷在 ua_default_display），但「R255 机制否定」的*定性结论*错误，本 R257 取代。
+
+**与并行 agent WIP 对齐（非我改动）**：并行 agent WIP（未提交）style-system/src/lib.rs 把 `article`/`aside`/`details`/`hgroup`/`menu`/`search` 加入 ua_default_display block 列表 + 新增 `ua_display_tests` 回归（注释引用「R253 morning-work 4× 根因」）。修复后 article 计算 block→`inline_has_block_child`=false→R109 不触发→无幻影匿名块→正常 block 布局。**从源头消除触发，正确最小**。inline/mod.rs 仅 rustfmt（3 行无逻辑）；新增 capture-fullpage.mjs（puppeteer fullpage 截图，服务 morning-work tall-viewport 验证）。
+
+**预期 + 验证（交付代码 agent，勿未验先声称，R164 教训）**：修复后 morning-work 4×→~1× 是**预期**（根因链源码闭合），但须实证：① agent 提交后 product-smoke A/B（800×12000 + capture-fullpage.mjs）量化 chr-diff 降幅（应从 ~89% 大降）；② wpt-data 自源 reftest 438/490 中性回归——⚠️ ua_default_display 改动使 article/aside/details 等从 inline→block，**可能影响其他用这些元素的 reftest**，须全量验证 + 逐例确认修复非回归。
+
+**方法学教训**：推理代码路径前须**核实元素实际计算值**（此处 display），UA 默认值是隐藏假设；R256 据「article 应是 block」常识假设而非实测 computed 下结论被推翻。morning-work 4× 根因 = 最朴素的 UA 默认 display 缺失，历经多轮才定位。**本轮 read-only（仅读并行 agent WIP + 源码核实），无代码/reftest 变更，基线 438/490 持平。** 详见 `evidence/r257-morning-work-rootcause-confirmed-ua-display-2026-06-18.txt`。
+
