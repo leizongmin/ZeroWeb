@@ -719,24 +719,12 @@ fn load_jpeg_file(path: &Path) -> Result<ImageData, String> {
 
 /// 加载并栅格化 SVG 文件为 RGBA ImageData。
 ///
-/// 真实页面 logo 多为 SVG（wintertc.org 14 个 logo 中 11 个为 .svg）；旧
-/// `build_image_cache` 仅支持 PNG/JPEG，SVG logo 全部缺失（DC-13 图片子资源缺口）。
-/// 用 resvg + tiny-skia 按 SVG 内在尺寸栅格化。字体走默认空 fontdb（logo 一般无文本）。
+/// 真实页面 logo 多为 SVG（wintertc.org 14 个 logo 中 11 个为 .svg）。委托给
+/// render-foundation 的 `decode_svg_bytes`（R218），与 webview/browser URL 导航路径
+/// 共用同一 resvg 栅格化实现。
 fn load_svg_file(path: &Path) -> Result<ImageData, String> {
     let data = std::fs::read(path).map_err(|e| format!("无法读取 SVG {}: {e}", path.display()))?;
-    let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default())
-        .map_err(|e| format!("SVG 解析失败 {}: {e}", path.display()))?;
-    let size = tree.size();
-    // usvg Size 的 width()/height() 返回 f32（SVG 内在尺寸）
-    let w = size.width().ceil() as u32;
-    let h = size.height().ceil() as u32;
-    if w == 0 || h == 0 {
-        return Err(format!("SVG 零尺寸 {}", path.display()));
-    }
-    let mut pixmap = tiny_skia::Pixmap::new(w, h).ok_or_else(|| format!("pixmap 分配失败 {w}x{h}"))?;
-    resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
-    let rgba = pixmap.take();
-    ImageData::from_rgba(rgba, w, h)
+    zero_render_foundation::image_cache::decode_svg_bytes(&data)
 }
 
 ///

@@ -264,12 +264,13 @@ impl Default for ImageCache {
     }
 }
 
-// ─── 图片解码（PNG / JPEG）────────────────────────────────────────────
+// ─── 图片解码（PNG / JPEG / SVG）──────────────────────────────────────
 //
 // 供 URL 导航路径（webview fetch_url）抓取 `<img src>` 子资源后解码为 ImageData。
 // render-foundation 拥有 ImageData 结构，故解码逻辑置此，供 webview / reftest 等复用。
-// 当前支持 PNG（最常见）与 JPEG（goal doc DC-13「PNG/JPEG 基础解码」）；
-// `decode_image_bytes` 按魔数字节分发格式；SVG 栅格化同模式后续追加。
+// 支持格式：PNG（最常见）/ JPEG（goal doc DC-13「PNG/JPEG 基础解码」）/ SVG 栅格化
+// （resvg + tiny-skia，goal doc DC-13「SVG 栅格化」）。`decode_image_bytes` 按
+// 魔数字节（PNG/JPEG）或文本内容嗅探（SVG）分发格式。
 
 /// 将 PNG 字节流解码为 RGBA `ImageData`。
 ///
@@ -359,22 +360,56 @@ fn convert_jpeg_pixels_to_rgba(raw: &[u8], pixel_format: jpeg_decoder::PixelForm
     }
 }
 
-/// 按魔数字节嗅探图片格式并解码（PNG / JPEG）。
+/// 按魔数字节嗅探图片格式并解码（PNG / JPEG / SVG）。
 ///
-/// 比 URL 扩展名更可靠（URL 可能无扩展名或扩展名错误）。
-/// PNG 文件以 `\x89PNG` 开头；JPEG 文件以 `\xFF\xD8\xFF` 开头。
+/// 比 URL 扩展名更可靠（URL 可能无扩展名或扩展名错误）。PNG 文件以 `\x89PNG` 开头；
+/// JPEG 文件以 `\xFF\xD8\xFF` 开头；SVG 为文本，嗅探 UTF-8 内容起始 `<svg` / `<?xml`。
 /// 未知格式返回错误，调用方可记录日志并降级（不阻断页面加载）。
 pub fn decode_image_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     if bytes.starts_with(b"\x89PNG") {
         decode_png_bytes(bytes)
     } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
         decode_jpeg_bytes(bytes)
+    } else if looks_like_svg(bytes) {
+        decode_svg_bytes(bytes)
     } else {
         Err(format!(
-            "unsupported image format (magic bytes: {:?}); only PNG/JPEG supported",
+            "unsupported image format (magic bytes: {:?}); only PNG/JPEG/SVG supported",
             bytes.get(..4).unwrap_or(&[])
         ))
     }
+}
+
+/// 嗅探字节是否为 SVG（文本，跳过 UTF-8 BOM 与前导空白后以 `<svg` 或 `<?xml` 开头）。
+///
+/// `<?xml` 声明不一定是 SVG，但在图片加载上下文中非 PNG/JPEG 的 XML 应尝试 SVG
+/// 解码（resvg 对非 SVG XML 会解析失败并返回错误，降级安全）。
+fn looks_like_svg(bytes: &[u8]) -> bool {
+    let Ok(s) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let trimmed = s.trim_start_matches('\u{feff}').trim_start();
+    trimmed.starts_with("<svg") || trimmed.starts_with("<?xml")
+}
+
+/// 把 SVG 字节栅格化为 RGBA `ImageData`（goal doc DC-13「SVG 栅格化」）。
+///
+/// 用 resvg + tiny-skia 按 SVG 内在尺寸（width/height 属性或 viewBox）栅格化。
+/// 字体走默认空 fontdb（logo 一般无文本）；过大尺寸由 pixmap 分配失败自然兜底。
+pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
+    let tree = resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default())
+        .map_err(|e| format!("SVG 解析失败: {e}"))?;
+    let size = tree.size();
+    // usvg Size 的 width()/height() 返回 f32（SVG 内在尺寸）
+    let w = size.width().ceil() as u32;
+    let h = size.height().ceil() as u32;
+    if w == 0 || h == 0 {
+        return Err("SVG 零尺寸".to_string());
+    }
+    let mut pixmap = tiny_skia::Pixmap::new(w, h).ok_or_else(|| format!("SVG pixmap 分配失败 {w}x{h}"))?;
+    resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+    let rgba = pixmap.take();
+    ImageData::from_rgba(rgba, w, h)
 }
 
 /// 把 PNG 解码后的原始缓冲（经 EXPAND 后的 RGB/RGBA/Grayscale/GrayscaleAlpha 8-bit）
@@ -490,7 +525,7 @@ mod decode_tests {
         assert!(result.is_err());
     }
 
-    /// 分发器：按魔数字节正确路由 PNG / JPEG / 未知格式。
+    /// 分发器：按魔数字节/内容正确路由 PNG / JPEG / SVG / 未知格式。
     #[test]
     fn decode_image_bytes_dispatches_by_magic() {
         // PNG → 成功
@@ -503,6 +538,13 @@ mod decode_tests {
         let img = decode_image_bytes(jpeg).expect("JPEG should dispatch and decode");
         assert_eq!(img.width, 4);
 
+        // SVG → 成功（文本内容嗅探路由）
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"3\">\
+                   <rect width=\"4\" height=\"3\" fill=\"rgb(0,255,0)\"/></svg>";
+        let img = decode_image_bytes(svg).expect("SVG should dispatch and rasterize");
+        assert_eq!(img.width, 4);
+        assert_eq!(img.height, 3);
+
         // 未知魔数 → 错误（unsupported）
         let result = decode_image_bytes(b"GIF89a rest of gif");
         assert!(result.is_err());
@@ -510,6 +552,27 @@ mod decode_tests {
             result.unwrap_err().contains("unsupported"),
             "should report unsupported format"
         );
+    }
+
+    /// 4×3 纯绿 SVG（含 `<?xml` 声明）栅格化往返：断言绿色主导 + alpha=255。
+    #[test]
+    fn decode_svg_bytes_green_4x3() {
+        let svg = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+                   <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"3\">\
+                   <rect width=\"4\" height=\"3\" fill=\"rgb(0,255,0)\"/></svg>";
+        let img = decode_svg_bytes(svg.as_bytes()).expect("SVG rasterize should succeed");
+        assert_eq!(img.width, 4);
+        assert_eq!(img.height, 3);
+        let px = img.get_pixel(1, 1);
+        assert!(px[1] > 200, "green channel should be high, got {}", px[1]);
+        assert!(px[3] == 255, "alpha should be fully opaque, got {}", px[3]);
+    }
+
+    #[test]
+    fn decode_svg_bytes_invalid_returns_err() {
+        // 非 SVG XML → resvg 解析失败
+        let result = decode_svg_bytes(b"<not-a-svg></not-a-svg>");
+        assert!(result.is_err());
     }
 }
 
