@@ -2681,3 +2681,13 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **验证协议（R164 教训勿未验先声称）**：① 先跑当前 per-case diff 确认 residual B(~5.03%)/A(~1.28%) 仍在；② 实现 mirror(探针实证式)+可选 residual A 拆分；③ 重跑 14 例逐例确认 rtl residual 消除且 ltr 不退化（勿据总数声称 clean +14，per-case 混 positioning+Ahem 噪声）；④ zero-regression 全量 438/490（direction 分支仅影响 vertical-mode abspos all-inset-auto；residual A 拆分可能波及 left/right 指定 abspos 须复核）；⑤ 单测构造已知 vertical-rl abspos all-inset-auto 断言 child.x=chromium 预期（block-start 在右）。**R238 现为半 turnkey spec，代码 agent 起手须先跑探针定 mirror 公式（不能跳过）。** 详见 `evidence/r262-r238-wm1-abspos-vertical-turnkey-spec-2026-06-18.txt`。
 
+### R263 — R236/R238 spec 对 a2b169e 仍有效验证 + 并行代码 agent stall 协调观察（read-only，2026-06-18，基线 438/490 持平）
+
+**承接**：R236（R260 turnkey）/R238（R262 半 turnkey）spec 写于 a2b169e（ua_default_display 补 article/aside/details/hgroup/menu/search → inline→block）之后。本轮只读验证最大近期代码改动 a2b169e 是否 shift 了这两条 spec 的 reftest 用例 baseline。grep R236 的 8 baseline-export 用例 + R238 的 14 WM-1 用例搜 `<(article|aside|details|hgroup|menu|search)[ />]`——**命中 0 文件**。
+
+**结论：a2b169e 对 R236/R238 用例零影响**（两 spec 用例不用受影响标签）→ R260/R262 spec 的 baseline 对当前 HEAD 代码**仍准确有效**，代码 agent 可直接起手实现，**无需因 a2b169e 重新 baseline**。去除了「最大近期代码改动是否使 spec 失效」的风险。
+
+**协调观察（控制面板状态）**：git log 核实——并行代码 agent 自 `a2b169e`（R255 morning-work 修复）后，唯一提交是 `7d062e5 R229b`（font-weight bold overshoot **实验已回退**，docs-only 无净代码）+ 本 docs agent 的 R258-R263。**即 reftest 438/490 代码侧自 a2b169e 起 ~7 轮无推进**。并行 agent 工作树持续有 `inline/mod.rs` + `edge_cases.rs` 未提交（跨 ~7 轮），疑攻 item-tag span→block（R109 IFC 架构，R229b 重定性的残余主因），但 R109 是 goal doc P1 硬架构（R141b「6 轮单会话不可解」），可能未收敛。
+
+**对优先级队列的影响**：① **R236（+8）/R238（+14）spec 就绪等代码 agent 实现**，且 multicol.rs / engine.rs abspos 区域**与并行 agent inline/mod.rs IFC WIP 不冲突**，可作为代码 agent 的并行/替代方向（若 IFC item-tag 攻坚卡住，R236/R238 是 contained reftest 杠杆，更易落地）。② docs 侧高价值非撞车只读调查已饱和（morning-work 4× 闭环 / UA 审计 / font-weight 死路记录 / R236·R238 spec / header 自洽 / 本轮 spec 有效性验证）。③ 若并行 agent IFC WIP 持续不提交，后续轮可考虑 lark 通知本人核对代码 agent 状态（本轮仅记录不通知——非本 docs agent 阻塞，且可能系正常硬架构攻坚）。**本轮 read-only 无代码/reftest 变更，基线 438/490 持平。** 详见 `evidence/r263-r236-r238-spec-valid-vs-a2b169e-2026-06-18.txt`。
+
