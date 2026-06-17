@@ -49,7 +49,7 @@
 | WPT fuzzy 注解支持 | 解析上游 WPT MANIFEST.json 中每个 reftest 的 `fuzzy()` 元数据，并应用到像素对比 | 上游 reftest 自带容差声明，必须遵守 |
 | Viewport 对齐 | ZeroWeb 和 Chromium 截图必须在相同 viewport 尺寸下捕获（默认 800×600，可配置） | viewport 不同则对比无意义 |
 | JS 执行支持 | Reftest harness 在截图前执行页面 JavaScript（通过现有 `script-sandbox` V8 runtime） | 很多 WPT CSS reftest 依赖 JS 动态设置条件 |
-| Quirks mode | CSS parser / style system / layout engine 中实现完整的 quirks mode 调整 | DOM parser 已存储 quirks mode 但下游完全忽略；很多 CSS 2.1 reftest 会触发 quirks mode |
+| Quirks mode | CSS parser / style system / layout engine 中实现完整的 quirks mode 调整 | ⚠️ 状态以 R248 实证为准：DOM 已存储 + style-system/css-parser 已消费（3 quirks 预烘焙 + mode-gated，生产接线）；下游「完全忽略」过时。layout-engine 无独立 quirks 层（由 style-system 预烘焙覆盖）。wpt-data 仅 ~3 quirks 用例全过（z_vs_chr≤0.13%），非缺口、非 reftest 杠杆 |
 | CSS 2.1 渲染 | 盒模型、颜色、背景、边框、margin 折叠、inline formatting、BFC、浮动清除、基础定位 | 这是最大的 reftest 覆盖面，优先级最高 |
 | Inline formatting 所有权 | 文本节点、inline 元素、inline-block、`<br>`、混合中英文文本必须在 layout 和 paint 之间只有一个权威行内布局结果 | 防止父容器重新收集整棵 inline 子树文本，同时子 inline 元素又作为独立 LayoutBox 递归绘制，导致 sibling 文本串联、重复或错位 |
 | Layout/Paint IFC 一致性 | Layout engine 必须持久化最终 IFC 片段结果到 `LayoutBox`，paint 必须复用该结果，不允许用不同 style map、float exclusion、container width 再跑第二套 IFC | `apps/browser/assets/welcome.html` 这种简单静态页已经暴露 layout box 与 glyph 输出不同源的问题 |
@@ -352,7 +352,7 @@
 | Block/Inline 布局 | ✅ 基础可用 | Block via taffy, Inline via 自建 InlineFormattingContext |
 | Table 布局 | ✅ 已实现 | 表格网格构建、auto table layout、colspan、border-spacing、匿名表格盒 |
 | Multi-column 布局 | ✅ 已实现 | column-count/column-width、column-gap、shortest-column-first 分布策略 |
-| Quirks mode | ✅ 已实现 | CSS parser + style system + layout engine 三层 quirks mode 调整 |
+| Quirks mode | ✅ 已实现（实质） | CSS parser（mode-gated）+ style system（3 quirks 预烘焙）两层活跃；layout-engine 无独立 quirks 层（由 style-system 预烘焙覆盖，架构合理）。wpt-data quirks 用例全过（R248 实证） |
 | 文字排版 | ✅ 已集成 | rustybuzz OpenType shaping + unicode-bidi BiDi 算法 + CJK line-breaking |
 | Paint 系统 | ✅ 13 种图元 | 填充、圆角矩形、路径、线段、渐变、阴影、图片、文字、滤镜、混合模式、变换、裁剪 |
 | CPU 软件渲染 | ⚠️ 部分 | 仅支持 FillPrimitive + RoundedRectPrimitive + GlyphPrimitive |
