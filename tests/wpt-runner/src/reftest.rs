@@ -946,6 +946,12 @@ pub fn render_to_framebuffer_with_base(
 
     let result = pipeline.render_html(html, &combined_css);
 
+    // DEBUG: dump layout box tree geometry (absolute y / margin-top / padding-top)
+    // 用途：诊断产品 smoke 垂直偏移（如 welcome 36px 顶部偏移）。
+    if std::env::var("LAYOUT_DUMP").is_ok() {
+        dump_layout_tree(&result.layout.root, html);
+    }
+
     // DEBUG: dump primitives for diagnostic
     if std::env::var("REFTEST_DEBUG").is_ok() {
         eprintln!("=== Primitives for {} ===", html.lines().take(1).next().unwrap_or(""));
@@ -991,6 +997,74 @@ pub fn render_to_framebuffer_with_base(
         &[],
         &[],
     )
+}
+
+/// 诊断：转储布局盒树几何（绝对 y / margin-top / padding-top / height）。
+///
+/// 重新解析 HTML 以建立 `NodeId → (tag, class)` 映射，然后递归遍历 `LayoutBox`，
+/// 累加父级内容区偏移得到绝对坐标，打印每个盒子的 margin-top、padding-top、
+/// 绝对 y 与高度。用于定位产品 smoke 的垂直偏移来源（如 welcome 36px）。
+fn dump_layout_tree(root: &zero_layout_engine::types::LayoutBox, html: &str) {
+    use std::collections::HashMap;
+    use zero_dom::{NodeId, NodeKind, parse_html};
+
+    let doc = parse_html(html);
+    let mut id_label: HashMap<NodeId, String> = HashMap::new();
+    // BFS 遍历 DOM 收集每个元素的 tag.class 标签。
+    let mut queue = vec![doc.root()];
+    while let Some(id) = queue.pop() {
+        if let Some(node) = doc.get(id) {
+            if let NodeKind::Element(elem) = &node.kind {
+                let label = if elem.class_list.is_empty() {
+                    elem.local_name().to_string()
+                } else {
+                    format!("{}.{}", elem.local_name(), elem.class_list.join("."))
+                };
+                id_label.insert(id, label);
+            }
+            let mut child = doc.first_child(id);
+            while let Some(c) = child {
+                queue.push(c);
+                child = doc.next_sibling(c);
+            }
+        }
+    }
+
+    eprintln!("=== LAYOUT_DUMP (abs_y / height / margin-top / padding-top) ===");
+    fn walk(
+        b: &zero_layout_engine::types::LayoutBox,
+        off_x: f32,
+        off_y: f32,
+        depth: usize,
+        labels: &HashMap<NodeId, String>,
+    ) {
+        let abs_x = off_x + b.x;
+        let abs_y = off_y + b.y;
+        let label = b
+            .node_id
+            .and_then(|id| labels.get(&id))
+            .cloned()
+            .unwrap_or_else(|| "(anon)".to_string());
+        eprintln!(
+            "{:indent$}{:24} abs_y={:7.1} h={:6.1} mt={:5.1} pt={:5.1} x={:6.1} w={:6.1} dmt={:5.1}",
+            "",
+            label,
+            abs_y,
+            b.height,
+            b.margin_top,
+            b.padding_top,
+            abs_x,
+            b.width,
+            b.declared_margin_top,
+            indent = depth * 2
+        );
+        let child_off_x = abs_x + b.padding_left + b.border_left;
+        let child_off_y = abs_y + b.padding_top + b.border_top;
+        for child in &b.children {
+            walk(child, child_off_x, child_off_y, depth + 1, labels);
+        }
+    }
+    walk(root, 0.0, 0.0, 0, &id_label);
 }
 
 /// 将单个 ImagePrimitive 渲染到帧缓冲。

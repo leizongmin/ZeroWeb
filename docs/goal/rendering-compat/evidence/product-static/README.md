@@ -1,5 +1,7 @@
 # DC-13 产品静态页面视觉 smoke — welcome.html 基线证据
 
+> **R227 更新（2026-06-17）**：welcome diff **28.08% → 17.06%**。下方「剩余 28.08% = fontdue 字体噪声、结构布局正确」的结论已被**证伪**——R226/R227 定位到真实布局 bug：taffy `Layout::location`（border-box 相对，已含父 padding+border）被 painter 当作内容盒相对再次叠加 padding+border → **padding 双计**，致 hero-accent 渲染于 y=72（应 36，整页下移 36px 级联）。修复（`extract_layout` 把块级子节点换算为内容盒相对）后 hero-accent 回到 y=36。**剩余 17% 仍含 fontdue 字体噪声，但原 28% 的大头是此布局 bug，非字体**。详见 `evidence/r227-welcome-padding-doublecount-fix-2026-06-17.txt`。下文为 R174 时点的历史记录。
+
 **日期**: 2026-06-16
 **状态**: welcome.html 差距演化 **51.59%→26.15%（R170/R171/R172）→ 28.72%（R173 CJK 文本可渲染，fontdue 度量噪声推高）→ 28.08%（R174 box-shadow blur σ 修复）**。本 session 累计 5 修复 + 1 能力：(1) R170 box-shadow rgba 带空格丢 alpha 致实心黑（132k 纯黑→0）；(2) R171 border/outline/column-rule/text-decor 简写同 class；(3) **R172 border-radius 背景在 draw_order 模式被丢弃**（卡片白底消失，50.45%→26.15% 主因）；(4) R173 加载 Noto Sans CJK 字体（中/日/韩可渲染）；(5) **R174 box-shadow blur σ=radius/2 修复**（旧实现 σ≈radius 偏大 2.3 倍，卡片阴影扩散 12px→收紧）。
 **渲染模式**: ZeroWeb CPU 软件渲染（`render_full_scene`，800×600）vs headless Chromium（800×600）
