@@ -2210,6 +2210,33 @@ dc14-truebug-candidates-reaudit-2026-06-18.txt）**：
 此 3 例是 vertical+collapsed border 正交问题）；R236 multicol baseline-export（8 例系统性 1.1%，最
 tractable 结构性）；WM-1 abspos-vertical（R238，14 例长线）。
 
+### R240 — semi-replaced-stretch 精确机制深挖 + 通用 abspos 拉伸消歧（2026-06-18，read-only）
+
+**家族画像**：R239 首选目标 #6/#10 实为 **3 例 POLLUTED**（同源 test≈ref 但 chromium 不一致）：
+`position-absolute-semi-replaced-stretch-input`(23.03%) / `-other`(15.27%) / `-button`(3.55%)，合计
+41.58%。同源 self≈0 = ZeroWeb test/ref 同批 input 同样无 UA sizing 互匹配，chromium 真拉伸→Oracle 不一致。
+
+**关键消歧（R164 教训：实证非推断）**：先排除「通用 abspos-stretch 路径坏」。cross-validate 同目录
+css-position 实证通用 abspos **全 WORKS**——`position-absolute-large-negative-inset` 0.00%/0.00%、
+`-under-non-containing-stacking` 0.00%、`hypothetical-box-scroll-*` ~0.1%、`position-change` 0.00%。
+⇒ 通用 abspos inset 解析 + 拉伸（box-sizing:border-box、大负 inset、positioned-CB）正常，失败**仅限
+form control（input/button）** → **form-control-specific contained 缺口**，爆炸半径小（不碰通用 abspos）。
+
+**精确机制**：① tree.rs:186 `apply_replaced_element_sizing` 仅 <img>，form control 零替换 sizing；
+② 全仓无 form control UA 默认尺寸（仅 `appearance` 值解析）→ input 既非替换又无 UA 尺寸；③ abspos
+form control 走非替换通用路径本应拉伸（§10.3.7），但未拉到 calc(100%-6px)——疑 taffy 对无内容/无
+固有尺寸 leaf 的 abspos width:auto+两 inset 未填满（给 0 或 content-based shrink）。
+
+**修复面 contained（两路线）**：路线 A（surgical，先做）= engine.rs abspos 后处理对 form control
+（tag∈{input,button,textarea,select}）+ 两轴显式 inset + auto size → 填满 CB-insets；路线 B（更规范）
+= 给 form control 加 UA 默认尺寸 + 列为半替换（扩展 apply_replaced_element_sizing）。详见
+evidence/r240-semi-replaced-stretch-deep-spec-2026-06-18.txt。
+
+**实现轮起手**：① LAYOUT_DUMP=1 跑 input 用例 dump abspos input width/height vs CB-insets(144×94)
+确认非拉伸；② 路线 A 施加 §10.3.7/§10.6.4 拉伸；③ chromium Oracle A/B（3 例各看 z_vs_chr，同源
+test==ref 天然不变须独立 Oracle）+ make reftest 同源不回归；④ A 不足再转 B。R164 教训：23%/15%/3.55%
+可能含 form-control UA 外观（按钮边框/字号/outline）差异，A/B 后残差记录为 paint 层子问题勿强求 +3。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
