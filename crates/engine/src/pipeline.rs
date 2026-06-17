@@ -508,6 +508,36 @@ fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> {
     stylesheets
 }
 
+/// 提取 HTML 中所有 `<link rel="stylesheet" href="...">` 的 href 原始值。
+///
+/// 用于 URL 导航路径下外链样式表的加载（goal doc P1 缺口「外部样式表加载缺失」）：
+/// `collect_stylesheets` 仅收集调用方传入 CSS 与文档内 `<style>`，不抓取 `<link>`。
+/// 本函数复用 `zero_dom` 解析（DOM 精确，区别于脆弱的正则扫描），返回原始 href
+/// 字符串（可能是相对路径）；URL 解析与网络抓取由调用方（webview 层，持有 base URL
+/// 与 http client）负责，保持 engine 不直接耦合网络。
+///
+/// - `rel` 以空白拆分后任一 token 等于 `stylesheet`（大小写不敏感）即匹配，
+///   覆盖 `rel="stylesheet"` 与 `rel="stylesheet preload"` 等写法。
+/// - 空 href 与 `rel` 不含 stylesheet 的 link（如 icon / preload 非 stylesheet）被忽略。
+pub fn extract_stylesheet_hrefs(html: &str) -> Vec<String> {
+    let doc = zero_dom::parse_html(html);
+    let mut hrefs = Vec::new();
+    for link_id in doc.get_elements_by_tag_name("link") {
+        let rel = doc.get_attribute(link_id, "rel").unwrap_or_default();
+        let is_stylesheet = rel.split_whitespace().any(|t| t.eq_ignore_ascii_case("stylesheet"));
+        if !is_stylesheet {
+            continue;
+        }
+        if let Some(href) = doc.get_attribute(link_id, "href") {
+            let href = href.trim();
+            if !href.is_empty() {
+                hrefs.push(href.to_string());
+            }
+        }
+    }
+    hrefs
+}
+
 /// 去除 XHTML CDATA 包装（`<![CDATA[...]]>`）。
 ///
 /// html5ever 仅支持 HTML 模式解析，会将 `<style>` 中的 CDATA 标记
