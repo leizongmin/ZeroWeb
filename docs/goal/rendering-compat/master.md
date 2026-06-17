@@ -2310,6 +2310,27 @@ R164 教训：候选非断言，须 LAYOUT_DUMP 实证。详见 evidence/r242-mo
   新尝试；本调研不接手，仅记 LAYOUT-vs-PAINT 判别 + LAYOUT_DUMP 探针供验证。详见
   evidence/r243-morning-work-mechanism-a-refine-2026-06-18.txt。R164 教训：否定简单子假设、未断言根因。
 
+### R244 — DC-9 GPU alpha groundwork 精确 spec（2026-06-18，read-only，独立于 IFC WIP）
+
+DC-9（GPU 13 图元独立 WGSL pipeline，禁 CPU passthrough）为硬 Done Criterion。本轮独立调研（不动并行 agent
+IFC WIP）精确定位 GPU alpha 通道缺口——**CPU R228b 的 GPU 同源类比**：
+- **缺口实证**：mesh.rs:11 `color_to_f32` 只返 RGB 丢 alpha；顶点色 `vec3f`；pipeline.rs:54 fragment
+  `return vec4f(in.color, alpha)`——`.a` 槽填的是 **coverage alpha**（纹理/圆角检测/1.0）**非 CSS 色彩 alpha**。
+  各 pipeline 已配 `BlendState::ALPHA_BLENDING`（pipeline.rs:462/540/617/676）但**源 alpha≡1.0** →
+  `rgba(255,0,0,0.5)` 渲染成实色红。**所有 GPU 图元不透明**（半透明 fill/rounded_rect/gradient/shadow 全失真），
+  影响面远超 DC-9 三项，是基础渲染保真缺口。
+- **Groundwork 修复（contained 先做，zero-regression）**：(a) mesh.rs `color_to_f32`→RGBA + push_* 推 8 float；
+  (b) pipeline.rs 顶点布局 color `vec3f`→`vec4f`（array_stride+1）；(c) WGSL fragment 合成**色彩 alpha×coverage**
+  不再硬填 1.0；(d) Blend 已 ALPHA_BLENDING ✓（premultiplied 则配 PREMULTIPLIED）。范围仅 mesh.rs+pipeline.rs，
+  不动 renderer 单 pass 流。zero 行为变化（CSS alpha 默认 1.0）。验证：framebuffer 像素断言 rgba(…,0.5)=blend 非实色。
+- **超出 alpha 的 DC-9 三项（transform/filter/blend）= ping-pong 结构项**：render_full_scene_gpu（renderer/mod.rs:651）
+  单 pass 直合成无中间纹理回读；wgpu 不能同 pass 读写同纹理，filter/transform/blend 需「渲染元素到 offscreen A→
+  后处理 pass 读 A 写 B」。R220 记 headless_texture 就绪**差第 2 纹理+post-process pipeline**。最小首步 filter:opacity/blur。
+  属结构多轮项（DC-9 真正大头）。
+- **推荐顺序**：① alpha groundwork（contained，修 GPU-R228b-analog，为 blend 铺路）→ ② ping-pong 地基（filter 先）→
+  每新 WGSL 配像素断言单测。不与 R220/R228b 冲突（细化/补 GPU 同源层）。详见
+  evidence/r244-dc9-gpu-alpha-groundwork-spec-2026-06-18.txt。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
