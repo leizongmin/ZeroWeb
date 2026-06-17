@@ -841,6 +841,49 @@ fn rounded_rect_with_all_corners() {
     assert_eq!(corner, [255, 255, 255, 255], "corner should be white (outside radius)");
 }
 
+/// 半透明圆角矩形背景必须按 alpha 与底色合成，不能硬编码 alpha=255 渲染为实色。
+///
+/// 回归用例：旧 `fill_rounded_rect` 用 `set_pixel([r,g,b,255])` 直接覆盖，
+/// 把 `rgba()` 半透明圆角背景（如 morning.work `.item-tag` 的
+/// `var(--color-primary-alpha-05)` = `rgba(96,124,210,0.05)`）渲染成实色蓝。
+/// 修复后应与 `fill_rect` 一致：半透明 → `blend_pixel` 与白色底合成。
+#[test]
+fn rounded_rect_translucent_alpha_blends() {
+    let mut primitives = RenderPrimitives::new();
+    // 蓝色 alpha=13（≈0.05）圆角矩形，铺满 60×60 framebuffer
+    primitives.rounded_rects.push(RoundedRectPrimitive {
+        rect: Rect::new(0.0, 0.0, 60.0, 60.0),
+        color: Color {
+            r: 96,
+            g: 124,
+            b: 210,
+            a: 13,
+        },
+        top_left_radius: 0.0,
+        top_right_radius: 0.0,
+        bottom_right_radius: 0.0,
+        bottom_left_radius: 0.0,
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(60, 60, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+
+    // alpha=13/255≈0.051 在白底上：dst*(1-a)+src*a = 255*0.949 + 96*0.051 ≈ 247
+    let px = fb.get_pixel(30, 30);
+    assert!(
+        px[0] > 235 && px[0] < 255 && px[2] > 235,
+        "translucent rounded rect should blend to a light tint, got {:?}",
+        px
+    );
+    // 关键：绝不能是实色蓝 (96,124,210)
+    assert!(
+        !(px[0] < 130 && px[2] > 180),
+        "must not render as solid color {:?} (alpha dropped)",
+        px
+    );
+}
+
 // ─── 垂直书写模式字形旋转测试 ───
 
 /// 测试垂直书写模式下字形 90° 旋转渲染。
