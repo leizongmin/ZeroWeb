@@ -813,7 +813,17 @@ impl InlineFormattingContext {
                         // CSS Text §4.1: 白空格折叠 — 将连续空白字符折叠为单个空格，
                         // 但不在此阶段去除（行首/行尾空格由 IFC break_items_into_lines 处理）。
                         // 保留仅含空白的文本节点为单个空格（用于 inline-block 之间的间隔）。
-                        let text = collapse_whitespace(&text_data.content);
+                        //
+                        // CSS Text §3.1：white-space: pre / pre-wrap / break-spaces 模式下
+                        // **不折叠空白**，原始文本（含换行符 `\n`、连续空格、制表符）原样保留——
+                        // `\n` 在 break_into_lines 中作为强制换行机会（见 split_into_words）。
+                        // 旧实现无条件 collapse_whitespace，把 `\n` 折叠为普通空格 → 多行
+                        // `<pre>` 内容塌缩为一行（如 morning-work 文章代码块垂直压缩）。
+                        let text = if self.preserve_whitespace {
+                            text_data.content.clone()
+                        } else {
+                            collapse_whitespace(&text_data.content)
+                        };
                         if !text.is_empty() {
                             // 文本节点没有自己的 ComputedStyle，查找父元素
                             let parent_id = doc.parent_node(child_id);
@@ -1270,6 +1280,29 @@ impl InlineFormattingContext {
                         } else {
                             content_word
                         };
+                        // CSS Text §3.1：pre/pre-wrap 模式下，换行符 `\n` 是强制断行机会。
+                        // split_into_words（preserve_whitespace 模式）为每个 `\n` 推入空字符串
+                        // 作为强制换行标记——此处消费它：把当前行推入结果并开始新行（同 <br>）。
+                        // 旧实现在此只对空词 continue，静默丢弃标记 → 多行 <pre> 塌缩为一行。
+                        if self.preserve_whitespace && content_word.is_empty() {
+                            last_was_collapsible_ws = false;
+                            let est_height = if current_line.height > 0.0 {
+                                current_line.height
+                            } else {
+                                default_line_height
+                            };
+                            self.lines.push(current_line);
+                            current_y += est_height;
+                            current_line = LineBox {
+                                y: 0.0,
+                                height: 0.0,
+                                runs: Vec::new(),
+                            };
+                            let (new_left, _) =
+                                self.effective_content_area(current_y, default_line_height);
+                            current_x = new_left;
+                            continue;
+                        }
                         // 全空格词在行首不产生任何渲染
                         if content_word.is_empty() {
                             continue;

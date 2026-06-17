@@ -583,6 +583,44 @@ fn test_white_space_pre_wrap_preserves_and_wraps() {
     assert!(all_text.contains("  "), "pre-wrap 模式应保留多空格");
 }
 
+/// 测试 white-space: pre / pre-wrap 下显式换行符 `\n` 强制换行。
+///
+/// 回归用例：`split_into_words` 在 preserve_whitespace 模式下为每个 `\n`
+/// 推入空字符串作为强制换行标记，但单词循环旧实现对空字符串只 `continue`
+/// 静默丢弃换行标记 → 多行 `<pre>` 内容塌缩为一行（morning-work 文章代码块
+/// 整体垂直压缩的根因）。修复后每个 `\n` 应产生一个新行盒（CSS Text §3.1：
+/// pre/pre-wrap 下换行符是强制断行机会）。
+#[test]
+fn test_white_space_pre_newline_forces_break() {
+    let mut ctx = InlineFormattingContext::new(800.0).with_preserve_whitespace(true);
+    ctx.break_into_lines(vec![make_run("line one\nline two\nline three")]);
+    assert_eq!(
+        ctx.lines.len(),
+        3,
+        "pre-wrap 模式下 3 个 \\n 分隔的行应产生 3 行，实际 {} 行",
+        ctx.lines.len()
+    );
+    // 每行应包含对应文本（片段可能因词间距拆分，故用 contains 判定）
+    let texts: Vec<String> = ctx
+        .lines
+        .iter()
+        .map(|l| l.runs.iter().map(|r| r.text.clone()).collect::<String>())
+        .collect();
+    assert!(texts[0].contains("line") && texts[0].contains("one"), "第 1 行 {:?}", texts[0]);
+    assert!(texts[1].contains("line") && texts[1].contains("two"), "第 2 行 {:?}", texts[1]);
+    assert!(texts[2].contains("line") && texts[2].contains("three"), "第 3 行 {:?}", texts[2]);
+}
+
+/// pre（no_wrap + preserve）模式下 `\n` 同样应强制换行。
+#[test]
+fn test_white_space_pre_newline_forces_break_no_wrap() {
+    let mut ctx = InlineFormattingContext::new(50.0)
+        .with_no_wrap(true)
+        .with_preserve_whitespace(true);
+    ctx.break_into_lines(vec![make_run("aaaa\nbbbb")]);
+    assert_eq!(ctx.lines.len(), 2, "pre 模式下 \\n 仍应强制换行");
+}
+
 /// 测试 no_wrap=false + preserve_whitespace=false = normal 行为。
 #[test]
 fn test_white_space_default_equals_normal() {
