@@ -1402,15 +1402,10 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
 
     // CSS Tables §4（dimensioning the row/column grid）：`<col>`/`<colgroup>`
     // 元素定义网格列。列数 = max(单元格导出列数, col 元素导出列数)。
-    // 仅对 separated border model 生效——collapsed border model 的列宽语义不同
-    // （列宽 = border 中心间距），当前列宽读取不覆盖，避免回归 colspan 等用例。
-    let is_collapsed_border = table_box
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Collapse));
-    if !is_collapsed_border {
-        max_cols = max_cols.max(count_col_elements(table_box, styles, doc));
-    }
+    // 对 separated 和 collapsed border model 均生效——collapsed 模式下列宽
+    // 语义（border 中心间距）由 compute_column_widths 的 cell-width-as-content
+    // 处理，此处只负责网格列数。
+    max_cols = max_cols.max(count_col_elements(table_box, styles, doc));
 
     // 检测 visibility:collapse 的列
     // CSS Tables §4.1：col/colgroup 上 visibility:collapse 的列宽度为 0
@@ -1615,26 +1610,26 @@ fn compute_column_widths(
         return Vec::new();
     }
 
+    // border-collapse 模式标志（cell-width-as-content 与 fixed 空列裁剪共用）。
+    let is_collapsed_border = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Collapse));
     // 收集每列的最大宽度（两遍算法）
     // CSS Tables §17.5.2.2：列宽首先由非跨列单元格决定（含显式 width），
     // 跨列单元格只把宽度分配给尚未被非跨列单元格约束的列，
     // 这样显式列宽不会被跨列单元格的长内容撑开。
     let mut col_max_widths = vec![0.0f32; col_count];
 
-    // 辅助闭包：计算单元格的宽度
+    // 辅助闭包：计算单元格对其所在列的宽度贡献
     let cell_used_width = |cell_box: &LayoutBox| -> (f32, bool) {
-        let css_width_auto = cell_box
-            .node_id
-            .and_then(|id| styles.get(&id))
-            .map(|s| {
-                use zero_css_parser::values::LengthValue;
-                match &s.width {
-                    LengthValue::Auto => true,
-                    LengthValue::Px(v) => (*v as f32) < 2.0,
-                    _ => false,
-                }
-            })
-            .unwrap_or(true);
+        let cell_style_width = cell_box.node_id.and_then(|id| styles.get(&id)).map(|s| s.width.clone());
+        let css_width_auto = match &cell_style_width {
+            Some(zero_css_parser::values::LengthValue::Px(v)) => (*v as f32) < 2.0,
+            None => true,
+            Some(zero_css_parser::values::LengthValue::Auto) => true,
+            Some(_) => false,
+        };
         let intrinsic = compute_cell_intrinsic_width(cell_box, styles, doc);
         // auto 宽度的单元格：列宽只取内容固有宽度（intrinsic）。
         // taffy 把单元格当 block，cell_box.width = 行/表全宽，不能作为列宽下限
@@ -1643,73 +1638,51 @@ fn compute_column_widths(
         let w = if css_width_auto || cell_box.width < 2.0 {
             intrinsic
         } else {
-            cell_box.width
+            // 显式 width 单元格。border-collapse 模式下 td 的 width 是 content-box，
+            // 而列宽是 border 中心间距语义 → 列宽 = content + 水平 borders 的一半
+            // （CSS2 §17.6.2：列宽从左 border 中心到右 border 中心）。
+            // 这样 `<col width:50px>` 与 `<td style="width:40px>`（border 10px）产生
+            // 相同的列宽 50，使 colspan 类用例 test/ref 一致。
+            let explicit = match &cell_style_width {
+                Some(zero_css_parser::values::LengthValue::Px(v)) => *v as f32,
+                _ => cell_box.width,
+            };
+            if is_collapsed_border {
+                explicit + (cell_box.border_left + cell_box.border_right) / 2.0
+            } else {
+                cell_box.width
+            }
         };
         (w, css_width_auto)
     };
 
     // Pass 0：`<col>`/`<colgroup>` 的显式 width 设置列宽（CSS Tables §17.5.2.1/§17.5.2.2）。
-    // 仅 separated border model。colgroup width 作用于其覆盖的全部列（无内部 col 时）。
-    let is_collapsed_border = table_box
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Collapse));
-    if !is_collapsed_border {
-        let resolve_col_width = |s: &ComputedStyle| -> Option<f32> {
-            use zero_css_parser::values::LengthValue;
-            match &s.width {
-                // 仅读取绝对像素宽度。百分比在 width:auto（shrink-to-fit）表上解析语义
-                // 不明确（参照盒不定），calc/em 等同理——跳过以保持当前同源匹配。
-                LengthValue::Px(v) => Some(*v as f32),
-                _ => None,
-            }
-        };
-        let mut col_cursor = 0usize;
-        for child in &table_box.children {
-            let child_display = get_display(child, styles);
-            match child_display {
-                Some(DisplayValue::TableColumnGroup) => {
-                    let inner_cols: Vec<&LayoutBox> = child
-                        .children
-                        .iter()
-                        .filter(|c| get_display(c, styles) == Some(DisplayValue::TableColumn))
-                        .collect();
-                    if inner_cols.is_empty() {
-                        // colgroup span 覆盖的列共用 colgroup width
-                        let span = get_span(child, doc);
-                        let gw = child.node_id.and_then(|id| styles.get(&id)).and_then(resolve_col_width);
-                        if let Some(w) = gw {
-                            for i in 0..span {
-                                let idx = col_cursor + i;
-                                if idx < col_count {
-                                    col_max_widths[idx] = col_max_widths[idx].max(w);
-                                }
-                            }
-                        }
-                        col_cursor += span;
-                    } else {
-                        for col_child in inner_cols {
-                            let span = get_span(col_child, doc);
-                            let cw = col_child
-                                .node_id
-                                .and_then(|id| styles.get(&id))
-                                .and_then(resolve_col_width);
-                            if let Some(w) = cw {
-                                for i in 0..span {
-                                    let idx = col_cursor + i;
-                                    if idx < col_count {
-                                        col_max_widths[idx] = col_max_widths[idx].max(w);
-                                    }
-                                }
-                            }
-                            col_cursor += span;
-                        }
-                    }
-                }
-                Some(DisplayValue::TableColumn) => {
+    // 对 separated 和 collapsed border model 均生效。colgroup width 作用于其覆盖
+    // 的全部列（无内部 col 时）。
+    let resolve_col_width = |s: &ComputedStyle| -> Option<f32> {
+        use zero_css_parser::values::LengthValue;
+        match &s.width {
+            // 仅读取绝对像素宽度。百分比在 width:auto（shrink-to-fit）表上解析语义
+            // 不明确（参照盒不定），calc/em 等同理——跳过以保持当前同源匹配。
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        }
+    };
+    let mut col_cursor = 0usize;
+    for child in &table_box.children {
+        let child_display = get_display(child, styles);
+        match child_display {
+            Some(DisplayValue::TableColumnGroup) => {
+                let inner_cols: Vec<&LayoutBox> = child
+                    .children
+                    .iter()
+                    .filter(|c| get_display(c, styles) == Some(DisplayValue::TableColumn))
+                    .collect();
+                if inner_cols.is_empty() {
+                    // colgroup span 覆盖的列共用 colgroup width
                     let span = get_span(child, doc);
-                    let cw = child.node_id.and_then(|id| styles.get(&id)).and_then(resolve_col_width);
-                    if let Some(w) = cw {
+                    let gw = child.node_id.and_then(|id| styles.get(&id)).and_then(resolve_col_width);
+                    if let Some(w) = gw {
                         for i in 0..span {
                             let idx = col_cursor + i;
                             if idx < col_count {
@@ -1718,9 +1691,39 @@ fn compute_column_widths(
                         }
                     }
                     col_cursor += span;
+                } else {
+                    for col_child in inner_cols {
+                        let span = get_span(col_child, doc);
+                        let cw = col_child
+                            .node_id
+                            .and_then(|id| styles.get(&id))
+                            .and_then(resolve_col_width);
+                        if let Some(w) = cw {
+                            for i in 0..span {
+                                let idx = col_cursor + i;
+                                if idx < col_count {
+                                    col_max_widths[idx] = col_max_widths[idx].max(w);
+                                }
+                            }
+                        }
+                        col_cursor += span;
+                    }
                 }
-                _ => {}
             }
+            Some(DisplayValue::TableColumn) => {
+                let span = get_span(child, doc);
+                let cw = child.node_id.and_then(|id| styles.get(&id)).and_then(resolve_col_width);
+                if let Some(w) = cw {
+                    for i in 0..span {
+                        let idx = col_cursor + i;
+                        if idx < col_count {
+                            col_max_widths[idx] = col_max_widths[idx].max(w);
+                        }
+                    }
+                }
+                col_cursor += span;
+            }
+            _ => {}
         }
     }
 
@@ -1780,13 +1783,6 @@ fn compute_column_widths(
         }
     }
 
-    // 计算总宽度
-    let total_width: f32 = col_max_widths.iter().sum();
-
-    // CSS 表格收缩适应（shrink-to-fit）：
-    // 当 table 的 CSS width 为 auto 且 table-layout 不为 fixed 时，
-    // 表格不应扩展到容器宽度，而是收缩到内容固有宽度。
-    // table-layout: fixed 时，列宽由 <col> 或首行决定，仍需扩展。
     let table_style = table_box.node_id.and_then(|id| styles.get(&id));
     let has_explicit_width = table_style.as_ref().is_some_and(|s| {
         use zero_css_parser::values::LengthValue;
@@ -1796,7 +1792,42 @@ fn compute_column_widths(
         .as_ref()
         .is_some_and(|s| matches!(s.table_layout, zero_style_system::TableLayoutValue::Fixed));
 
-    if (has_explicit_width || is_fixed_layout) && total_width < available_width && total_width > 0.0 {
+    // CSS Tables §17.5.2.1 fixed 布局空列裁剪：table-layout:fixed 时，无任何单元格
+    // 跨越的列不参与渲染（chromium 行为：colspan 用例收缩到 cell extent）。
+    // auto 布局保留空列（col-definite-size 等用例保留 `<col>` 定义的空列宽度）。
+    // 仅 fixed 布局裁剪 → 爆炸半径限于 colspan 类用例（auto 用例不受影响）。
+    if is_fixed_layout {
+        let mut cols_with_cells = vec![false; col_count];
+        for row in &grid.rows {
+            for cell in &row.cells {
+                for slot in cols_with_cells
+                    .iter_mut()
+                    .take(cell.col_end.min(col_count))
+                    .skip(cell.col_start)
+                {
+                    *slot = true;
+                }
+            }
+        }
+        for (i, w) in col_max_widths.iter_mut().enumerate() {
+            if !cols_with_cells[i] {
+                *w = 0.0;
+            }
+        }
+    }
+
+    // 计算总宽度
+    let total_width: f32 = col_max_widths.iter().sum();
+
+    // CSS 表格收缩适应（shrink-to-fit）：
+    // 表格仅在 width 为明确值（Px/% 等）时扩展填满容器。
+    // width:auto 的表格（无论 table-layout 是否 fixed）都应收缩到列宽之和，
+    // 而非填满容器——CSS Tables §17.5.2.1：fixed 布局下表格宽度 = max(width 属性, 列宽之和)，
+    // width:auto 即取列宽之和。table-layout:fixed 仅决定列宽来源（<col>/首行），
+    // 不意味着填满容器。（e）扩展条件已从 `has_explicit_width || is_fixed_layout`
+    // 收紧为 `has_explicit_width`——fixed 空列裁剪保证 colspan 等用例 test==ref。
+
+    if has_explicit_width && total_width < available_width && total_width > 0.0 {
         // 按比例扩展到容器宽度
         let ratio = available_width / total_width;
         for w in &mut col_max_widths {
