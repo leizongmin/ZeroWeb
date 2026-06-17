@@ -2518,3 +2518,22 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 - 不要再做属性实现完整性审计——R144 已穷尽（197 注册属性全有 apply 分支）。
 - 单会话若需推进，唯一现实路径是启动上述 3 条结构性多轮项目之一的**第一个安全子步骤**（如 R109 的「定位 inline-block 背景 fill 实际绘制入口」插桩诊断，不改逻辑、零回归），并明确标注为多轮项目的第 N 步。
 
+### R255 — morning-work 4× 高度幻影间隙触发因子定位：`.article{min-height:200;margin:4em}` 算术恒等式（328=200+64+64），read-only（2026-06-18，基线 438/490 持平）
+
+**承接**：上一 docs 轮 d8f18d3（标号误用 R253，与 000a462 R236 multicol 的 R253 冲突）写了 morning-work 4× 高度调查 evidence（`evidence/r253-morning-work-4x-height-phantom-gaps-2026-06-18.txt`）但**未写 master.md section**，且其"下一轮隔离根因"开放问题未答。本轮 read-only 文本核对（article.html + article.css + R253 dump 算术）**回答该开放问题**，并把 morning-work 调查正式补进 master.md（用 R255 避开 R253 标号冲突）。零源码/零渲染。
+
+**决定性恒等式**：R253 dump 的 article 子元素间隙 5 个中 **4 个 = 328px**（h2→p/p→p/p→h2/h2→h3/h3→p 全 328，与元素类型无关），1 个 272px。328px 恰为 `.article` 盒属性之和——
+
+```
+.article { min-height: 200px; margin-top: 4em; margin-bottom: 4em; }   /* article.html 内联 <style> 77-81 行 */
+  min-height 200 + margin-top 64(4em×16) + margin-bottom 64 = 328px    /* .article font-size:16px(article.css) 确认 4em=64 */
+```
+
+**幻影盒非 HTML 字面重复**：article.html **全文仅 1 个** `<article class="article">`（168–352 行），故 R253 dump 里 `h=200 w=4` 的幻影嵌套 article **是 ZeroWeb 生成**（h=200 又精确=min-height）→ 与 328 恒等式同源：ZeroWeb 正按 `.article` 盒模型生成幻影盒，~328px/对插在每个 block 兄弟边界。`min-height`/`margin` 为 CSS 非继承属性，匿名盒本不该继承 → 指向**选择器过匹配 / 幻影盒被赋予 `.article` 身份 / inter-block 空白文本节点被包成匿名块且错误套用 `.article` 规则**，属 R109 谱系（匿名块/inline→block/IFC 边界）相邻缺陷。
+
+**纠正 R253 最小复现失败根因**：R253 用 h2+p+pre 复现 328px gap 失败，因复现**缺 `.article{min-height:200;margin:4em}` 容器**——触发因子不是 h2/p/pre 标签或 line-height/word-break，而是「带 `{min-height:200;margin:4em}` 的 `.article` 容器 + 多个 block 子元素」组合。**修正最小复现**：`.article` 容器(min-height:200;margin:4em)+h2/p/h2/p → 预期 ZW 间隙≈328px（chromium ≈16/52）。
+
+**下一步（合规运行时验证，交付实现/运行时轮）**：① 修正最小复现经**合规路径**（临时 wpt-data 自源 reftest + `<link rel="match">` + `make reftest` + `LAYOUT_DUMP=1`，**禁裸 cargo test**，测后删临时文件恢复 490 基线）渲染确认 328px；② 单变量 BISECT（删 min-height / 删 margin:4em / 删 .article class）锁 328 各分量来源 → 定位 ZeroWeb 哪条路径把 `.article` 盒属性套到幻影/匿名盒；③ 修复后 morning-work 4×→~1× 高，product-smoke A/B 量化 chr-diff 降幅（应远超 R252 的 0 改善）；④ wpt-data 自源 reftest 438/490 中性回归。w=4 细节次要未释（h=200 才是信号）；272 离群≈328−56 疑边界 margin 折叠，主信号 328 不受影响。
+
+**与既往诊断关系**：不动 R253 主结论（4×高=布局层幻影垂直间隙，非字体噪声/非 pre 堆叠/非内容压缩），仅精化"疑似匿名块"→"`.article` 盒属性泄漏到幻影盒，328=200+64+64 可证"；与 R247/R252 pre 多行（已修，独立）正交；与 reftest 杠杆三部曲（R251/R253/R254）正交——本轮是 **DC-13 product-smoke 杠杆**（morning-work 89%），非 reftest 438/490 杠杆。**本轮 read-only 无代码/reftest 变更，基线 438/490 持平。** 详见 `evidence/r255-morning-work-phantom-gap-arithmetic-identity-2026-06-18.txt`。
+
