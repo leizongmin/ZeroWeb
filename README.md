@@ -136,7 +136,7 @@ cargo run --bin zero-browser
 | `crates/host-runtime` | 窗口、事件循环、平台宿主能力 |
 | `crates/net` | HTTP/HTTPS、导航、Cookie |
 | `crates/security` | 同源策略、CORS、CSP |
-| `crates/storage` | localStorage、sessionStorage、IndexedDB |
+| `crates/storage` | localStorage、sessionStorage、IndexedDB、Cache API |
 | `crates/protocol` | IPC 与多进程消息模型 |
 | `crates/wasm-sandbox` | WASM 执行与沙箱能力 |
 | `crates/script-sandbox` | 扩展 / 用户脚本运行时（V8 / QuickJS feature gate） |
