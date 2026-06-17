@@ -2415,6 +2415,20 @@ CSS2 -3）——回归用例（multicol-breaking-*/column-height-009/column-bala
 
 **对优先级队列的影响**：**quirks mode 从 DC-6 候选中排除**（已实现 + 非杠杆）。实现 agent 优先级队列不变：P0 morning-work pre-wrap 已由并行 agent R247 落地（缺陷 1+2，438/490 持平零回归）→ 缺陷 3 paint-multiline 堆叠（R247 实证 Phase-A 死锁 net -11 已回退，多轮架构项，与 R125/R198/R205 同墙）→ P1 R244 DC-9 GPU alpha groundwork → P2 R236 multicol baseline-export → P3 R238 WM-1 abspos-vertical → 长线 DC-9 ping-pong / DC-14 结构聚类。**无 open 阻塞**。详见 evidence/r248-quirks-mode-fullchain-audit-2026-06-18.txt。无代码变更，基线 438/490 持平。
 
+### R249 — DC-9 GPU ping-pong 地基精确 spec + 纠正 R220/R244「post-process pipeline 缺失」误判（2026-06-18，read-only，GPU 区域与并行 agent text.rs/paint WIP 无冲突）
+
+承接 R248 后下一独立 read-only 线（DC-9 ping-pong 第 2 纹理 + 后处理接线点深挖）。读 gpu/renderer/mod.rs + gpu/pipeline.rs + primitive/mod.rs + engine/paint/{effects,helpers}.rs（零源码改动，不碰并行 agent 的 text.rs WIP）。
+
+**核心纠正（R220/R244 误判）**：R220 记「ping-pong 差第 2 纹理 + **post-process pipeline**」，R244 沿用。本轮实证——**post-process pipeline 实际已构建，仅 dead-coded**：`pipeline.rs:703 create_blur_pipeline`（`vs_fullscreen` 全屏三角顶点 + `fs_blur` 高斯模糊片元，采样 src_texture）+ `renderer/mod.rs:63 blur_pipeline`（标 `#[allow(dead_code)]`）+ `mod.rs:216 blur_bgl`。**grep 证实 blur_pipeline 创建后从未 set_pipeline/draw（纯死代码）**。故 DC-9 ping-pong 地基比预想 contained：✅ 已就绪 post-process pipeline + 通用 src 纹理 BGL（`create_texture_bind_group_layout` pipeline.rs:807）+ headless_texture 已带 TEXTURE_BINDING（可作 src）；❌ 真正缺：① 第 2 offscreen 纹理 B（仅 headless 一张）；② 接线（draw_post_process_pass helper + 专用 uniform——fs_blur 期望 blur_radius/direction，但 render_full_scene_gpu 的 uniform 仅 `[f32;4]` 不匹配）；③ 消费者（filter/transform/blend 在 gpu/ 零引用，静默丢弃）。
+
+**单 pass 直合成实证（为何 ping-pong 必须）**：render_full_scene_gpu（mod.rs:651-763）Phase1 收集各图元顶点→Vec → Phase2 开【单个】render pass 按绘制顺序把所有图元 draw 进同一 view → submit。无中间纹理/readback/后处理 pass。**三图元均 rect-scoped group 操作**（实证 paint 侧：FilterPrimitive effects.rs:266 / TransformPrimitive helpers.rs:182 / BlendModePrimitive effects.rs:313，均 `{rect, ...}` 对区域内所有图元应用）→ 即便 Transform 含 a/b/c/d 旋转/倾斜也需 render 区域→offscreen→矩阵采样→main，全三图元需 ping-pong。FilterKind 11 变体（primitive/mod.rs:232），Opacity 最简（alpha 乘法）。
+
+**最小 contained 地基 spec（零行为变更，详见 evidence/r249-...）**：prereq=R244 alpha groundwork。Step1 地基：① 加 `offscreen_texture_b`（复用 create_headless_texture 同参）；② 专用后处理 uniform buffer（补 blur_radius/direction 或扩展 struct）；③ `draw_post_process_pass` helper（开 pass 写 dst + 绑 src_bg + set blur_pipeline + draw 0..3 全屏三角）+ 移除 `#[allow(dead_code)]`；④ 单测：render fill→A→blur A→B→read_pixels(B) 断言边缘模糊（证明 ping-pong 端到端 + un-dead-code，生产不接线=零行为变更）。Step2 首个消费者 filter:opacity（新增 fs_opacity 复用 vs_fullscreen，最简 alpha 乘法）。
+
+**架构 caveat（明确 defer）**：真实 CSS 语义=rect-scoped 区域隔离（空间查询 flat 图元 + 从主 pass 排除该区域 + 处理重叠/部分落入/绘制顺序）=多轮架构项。地基阶段用「全屏后处理」或「scissor 限到 filter.rect」证明机制 + 满足 DC-9 单测即可；区域隔离后续多轮。不改 R244/R220「ping-pong 是 DC-9 真正大头/结构多轮」定性，仅纠正「pipeline 缺失」误判 + 锐化首步到 contained 的 un-dead-code + 2nd texture。
+
+**对优先级队列的影响**：DC-9 ping-pong 地基比预想 contained（pipeline 已 dead-coded 存在）。建议实现 agent（P1 起手）：R244 alpha groundwork → R249 Step1 ping-pong 地基（2nd texture + un-dead-code + 单测，零行为变更）→ Step2 filter:opacity 消费者 → filter:blur（复用 fs_blur）/brightness/contrast → transform/blend（区域隔离多轮）。其余不变：P0 morning-work R247 已落地 → 缺陷3 paint-multiline Phase-A 死锁（多轮）→ P1 R244→R249 → P2 R236 multicol baseline → P3 R238 WM-1。**无 open 阻塞**。详见 evidence/r249-dc9-gpu-pingpong-groundwork-spec-2026-06-18.txt。无代码变更，基线 438/490 持平。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
