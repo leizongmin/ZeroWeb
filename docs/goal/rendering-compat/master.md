@@ -2701,3 +2701,13 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **对优先级队列的影响**：① **R236（+8）/R238（+14）spec 就绪等代码 agent 实现**，且 multicol.rs / engine.rs abspos 区域**与并行 agent inline/mod.rs IFC WIP 不冲突**，可作为代码 agent 的并行/替代方向（若 IFC item-tag 攻坚卡住，R236/R238 是 contained reftest 杠杆，更易落地）。② docs 侧高价值非撞车只读调查已饱和（morning-work 4× 闭环 / UA 审计 / font-weight 死路记录 / R236·R238 spec / header 自洽 / 本轮 spec 有效性验证）。③ 若并行 agent IFC WIP 持续不提交，后续轮可考虑 lark 通知本人核对代码 agent 状态（本轮仅记录不通知——非本 docs agent 阻塞，且可能系正常硬架构攻坚）。**本轮 read-only 无代码/reftest 变更，基线 438/490 持平。** 详见 `evidence/r263-r236-r238-spec-valid-vs-a2b169e-2026-06-18.txt`。
 
+### R265 — welcome.html 不受 a2b169e 影响，DC-13 三 fixture 跨益处审计补全（welcome baseline 持，read-only，2026-06-18，基线 438/490 持平）
+
+**承接**：R264（并行 agent）复测 WinterTC 25.11%→13.59% 并标注 R255（a2b169e）对 WinterTC「次要（section/footer 本已 block）」。本轮核查第三个 fixture welcome.html 是否受 a2b169e 影响（其 baseline 17.06%@R227 是 pre-a2b169e），补全审计。read-only grep 语义标签。
+
+**welcome.html 不受 a2b169e 影响（baseline 持）✅**：welcome.html 语义标签 = `<footer>`×1/`<header>`×1/`<section>`×3，**全部 a2b169e 前已在 block 列表**，**不用** article/aside/details/hgroup/menu/search（a2b169e 新增 6 标签）→ **a2b169e 对 welcome 零影响**，R227 baseline（17.06%）**仍准确有效无需重测**（welcome-zeroweb-cpu.png 虽 pre-a2b169e 但因不受影响仍反映当前渲染）。
+
+**三 fixture 跨益处审计（补全）**：a2b169e 仅对「使用 article/aside/details/hgroup/menu/search 的页面」有益处——**morning-work** 用 `<article>` = 唯一大益处（曾 inline→R109 幻影盒→4× 高，89.14%→48.65%）；**wintertc** 仅 section/footer（本已 block）= **次要**（R264 明确），改善主要 R227（25.11%→13.59%）；**welcome** footer/header/section（本已 block）= **零影响**（17.06% R227 持）。
+
+**结论**：welcome baseline 17.06% 确认仍有效（与 R264 重测 WinterTC 对照——WinterTC/morning-work 因可能受 a2b169e 影响故重测，welcome 不受影响故 baseline 持）。DC-13 三 fixture 当前态（与 R264 一致）：morning-work 48.65%/welcome 17.06%/wintertc 13.59%，残余全结构性（font/item-tag R109/hljs/flex 精度）无单会话 contained win。**方法学**：评估「UA display 改动是否影响某产品页」须核该页是否用受影响标签——welcome 的 footer/header/section 本已 block 故免疫 a2b169e。**本轮 read-only 无代码/reftest 变更，基线 438/490 持平。** 详见 `evidence/r265-welcome-unaffected-by-a2b169e-2026-06-18.txt`。
+
