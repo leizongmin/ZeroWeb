@@ -2497,6 +2497,18 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **reftest 杠杆验证三部曲完结**：R251 R244 DC-9 alpha（P1 contained+硬DC，≈0 reftest 杠杆）/ R253 R236 multicol baseline（P1' 最高 contained reftest 杠杆 +8）/ R254 R238 WM-1（P2 第二 reftest 杠杆 14 例）——三条路径全 spec+验证就绪，实现 agent 可按「contained 优先(DC-9)/reftest 分数优先(R236→R238)」选择，无需再调研。详见 evidence/r254-r238-wm1-abspos-vertical-verification-2026-06-18.txt。无代码变更，基线 438/490 持平。
 
+### R229b — font-weight 落地实测：bold 选择机制正确但 fontdue 粗体过墨 ~15% → net-negative 死路（已回退）（2026-06-18）
+
+承接 R229（font-weight 未落地精确方案）/ R230（资源前提实证）。本轮**完整落地** R229 两部分方案后实测——**纠正 R229「welcome 17% 主因=font-weight」假设**，回退。
+
+**实现（已回退）**：B 接线——`FontLoader.load_font` 解析 OS/2 usWeightClass 存 `font_weights`，`find()` 按 CSS §5.2 最近字重选变体，新增 `FontResolveEntry`+`pick(target)`，`build_font_resolver()` 返回字重感知结构；`resolve_font_id(font_family, font_weight)`（6 处 paint 调用点传 `style.font_weight`）；workspace build 干净。A 资源——`app_platform.rs`+`reftest.rs` 加载 `DejaVuSans-Bold`/`NotoSans-Bold`/`LiberationSans-Bold`/`NotoSansCJK-Bold`（系统已装）。
+
+**实测：机制正确但渲染过墨 → net-negative**。粗体**确被选择并渲染**（welcome card h3 区 ink-mass old-ZW 2095 → new 2713，**+29%**，证明接线生效），但 fontdue 光栅化的 `DejaVuSans-Bold` 比 chromium 的 bold **过墨 ~15%**（title 区 new 1559 vs chr 1363 = +14%；card h3 new 2713 vs chr 2318 = +17%）→ welcome product-smoke **17.06%→17.55%（+0.49pp 回归）**；morning-work 48.65% 不变（其 h1-h6 显式 weight:400 仅 `<strong>/<b>` weight:600）。按零回归标准 net-negative，**已 git checkout 回退全部代码**。
+
+**死路定性**：font-weight 接线**正确且自源中性**（reftest 438 不变，Ahem 无 weight），但加载粗体资源后 fontdue 粗体光栅化过墨 + bold advance width 级联换行偏移 → 产品 smoke net-negative。**同 advance-width(R225)/AA(R174) 谱系的 fontdue-vs-chromium 渲染差异**，非「字重未选」单点可修。**勿再以「加载 DejaVuSans-Bold 接线」重试 R229**（重现过墨回归）；保留接线须搭配 fontdue 渲染校准或 chromium 同字体选择，非单会话。
+
+**残余 welcome 17% / morning-work 48.65% 真因重定性**：font-weight 非主因后=**item-tag span→block 全宽堆叠（R109 IFC 架构）**+ **fontdue vs chromium 字体度量噪声（CJK line-height/advance，非 weight）**+ morning-work hljs（需 JS）/body ~300px 高差，均独立子问题。证据 `evidence/r229b-fontweight-bold-overshoot-deadend-2026-06-18.txt`。无代码变更，基线 438/490 持平。
+
 ### R255 — morning-work 4× 高度幻影间隙修复落地（ua_default_display 缺 article/aside/details 等，零回归，DC-13 真杠杆）（2026-06-18）
 
 承接 R253（morning-work 89% diff 真主因定位为元素间幻影垂直间隙，最小复现「未重现」留 BISECT）。本轮系统 BISECT + 落地修复，**首个打破 morning-work plateau 的真实修复**。
