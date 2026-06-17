@@ -227,6 +227,30 @@ pub fn estimate_char_width(c: char, font_size: f32, is_ahem: bool) -> f32 {
     }
 }
 
+/// 字符 advance 宽度源（依赖反转，解耦 layout-engine 与字体光栅化层）。
+///
+/// 默认实现 [`EstimateAdvance`] 回退到 `estimate_char_width` 启发式（零行为变更）；
+/// `zero-engine` 可注入 FontLoader-backed 实现提供真实 advance（见
+/// `docs/goal/rendering-compat/advance-width-plumbing-design.md`），以降低 R222 实测的
+/// 逐字符 ±44-98% 估计误差（DC-2~5 chromium 一致率系统性噪声根因）。
+pub trait AdvanceSource {
+    /// 测量单字符 advance 宽度。
+    ///
+    /// - `font_id`：CSS font-family 解析结果（R3 起由 TextRun 携带）；None = 未知，
+    ///   实现应回退到 estimate。
+    /// - `is_ahem`：Ahem 测试字体（advance = font_size）。
+    fn measure(&self, ch: char, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32;
+}
+
+/// 默认 advance 源：委托 `estimate_char_width` 启发式（保持当前行为，零回归）。
+pub struct EstimateAdvance;
+
+impl AdvanceSource for EstimateAdvance {
+    fn measure(&self, ch: char, _font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
+        estimate_char_width(ch, font_size, is_ahem)
+    }
+}
+
 /// 判断字符是否属于 CJK（中日韩）范围。
 ///
 /// 覆盖常见 CJK Unicode 区块：
