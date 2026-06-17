@@ -270,3 +270,37 @@ fn test_fetch_url_loads_image_subresource() {
     assert_eq!(img.height, 2, "decoded image height");
     assert_eq!(img.get_pixel(0, 0), [0, 255, 0, 255], "top-left pixel pure green");
 }
+
+/// R218：URL 导航路径下 `<img src>` 的 SVG 子资源必须被抓取、栅格化并写入 ImageCache。
+///
+/// page.html 含 `<img src="/logo.svg">`，logo.svg 是 4×3 纯绿 SVG。fetch_url 后
+/// webview 的 image_cache 应含该图（经 `decode_image_bytes` 内容嗅探路由到
+/// `decode_svg_bytes`），尺寸 4×3——证明 SVG 栅格化贯通 URL 导航路径（DC-13）。
+#[test]
+fn test_fetch_url_loads_svg_image_subresource() {
+    let page = "<!DOCTYPE html><html><head></head><body>\
+                <img src=\"/logo.svg\"></body></html>";
+    let svg = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+               <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"3\">\
+               <rect width=\"4\" height=\"3\" fill=\"rgb(0,255,0)\"/></svg>";
+    let mut files = HashMap::new();
+    files.insert("/page.html".to_string(), page.as_bytes().to_vec());
+    files.insert("/logo.svg".to_string(), svg.as_bytes().to_vec());
+    let server = MiniServer::start(files);
+
+    let mut webview = WebView::new(WebViewConfig::default());
+    let url = format!("{}/page.html", server.base);
+    webview.fetch_url(&url).expect("fetch_url should succeed");
+
+    use zero_render_foundation::image_cache::ImageKey;
+    let abs = format!("{}/logo.svg", server.base);
+    let key = ImageKey::new(zero_engine::simple_hash(&abs));
+    let img = webview.image_cache().get(&key);
+    assert!(img.is_some(), "SVG subresource not decoded/cached");
+    let img = img.unwrap();
+    assert_eq!(img.width, 4, "rasterized SVG width");
+    assert_eq!(img.height, 3, "rasterized SVG height");
+    let px = img.get_pixel(1, 1);
+    assert!(px[1] > 200, "SVG green channel should be high, got {}", px[1]);
+    assert_eq!(px[3], 255, "SVG alpha should be fully opaque");
+}
