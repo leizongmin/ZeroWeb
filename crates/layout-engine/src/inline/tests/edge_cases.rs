@@ -1125,3 +1125,29 @@ fn test_strut_still_applies_when_baseline_below_container_strut() {
         run.y
     );
 }
+
+// ── AdvanceSource 抽象 seam（R223 plumbing R1）──
+
+/// EstimateAdvance 默认实现必须与 estimate_char_width 完全等价（零行为变更），
+/// 保证 advance-width plumbing 的 seam 不改变现有 IFC 度量结果。
+#[test]
+fn test_estimate_advance_matches_estimate_char_width() {
+    use crate::inline::{AdvanceSource, EstimateAdvance};
+    let src = EstimateAdvance;
+    let font_size = 16.0f32;
+    // font_id 为 None 时（R1 默认），EstimateAdvance 必须回退到 estimate_char_width
+    for ch in ['W', 'i', 'm', '5', '.', ' ', '中', 'A', 't'] {
+        for &is_ahem in &[false, true] {
+            let via_trait = src.measure(ch, None, font_size, is_ahem);
+            let direct = estimate_char_width(ch, font_size, is_ahem);
+            assert!(
+                (via_trait - direct).abs() < 1e-6,
+                "EstimateAdvance.measure({ch}, ahem={is_ahem}) = {via_trait} != estimate_char_width {direct}"
+            );
+        }
+    }
+    // font_id 非 None 时，默认实现忽略它（仍等价 estimate）——R3 注入真实实现才用 font_id
+    let with_id = src.measure('W', Some(42), font_size, false);
+    let no_id = src.measure('W', None, font_size, false);
+    assert!((with_id - no_id).abs() < 1e-6, "EstimateAdvance 应忽略 font_id");
+}
