@@ -2477,6 +2477,16 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 `evidence/r252-prewrap-paint-multiline-scoped-2026-06-18.txt`。R247 缺陷 1+2（IFC 多行计算）+
 本修复（paint 多行渲染）配套闭合 pre 块多行正确性；auto-wrap 多行堆叠仍是 Phase-A 死锁（多轮）。
 
+### R253 — R236 multicol baseline-export spec 对当前代码实证核实：plumbing-gap 确认，最高 contained reftest 杠杆就绪（2026-06-18，read-only，engine.rs/multicol.rs 区域无碰撞）
+
+承接 R250 战略含义（R236/R238 是真实 reftest 杠杆）。核实 R236 multicol baseline-export spec（写于 c53a541）对当前 HEAD 代码仍准确，为「最大化 reftest 进展」路径去风险。读 engine.rs + types/mod.rs + multicol.rs（不碰并行 agent text.rs/R252 WIP）。
+
+**逐条核实——R236 plumbing-gap pattern 全部确认**：① `taffy_baseline` 字段在 types/mod.rs:236，`extract_baselines_recursive`(engine.rs:474-484) 从 `taffy.cached_baselines().y` 写入 `box_node.taffy_baseline` ✅；② flex/grid 消费 `child.taffy_baseline`(engine.rs:988，§8.5 容器基线合成) ✅；③ **multicol.rs `grep baseline`=0——完全无 baseline 处理** ✅（自建 column post-pass 从不计算/存储 baseline → multicol 导出 baseline 回退 taffy 通用 block baseline，非 §baseline-export 列导出值 → 8 例 ~1.1% 系统性偏移）。
+
+**可行性核实（修复路径成立）**：taffy 视 multicol 为 plain block，cached_baselines 返通用值（错误来源）；multicol.rs 已做 column post-pass，可在列布局后算 §baseline-export（各列首行 baseline 取最高=first，末列末行=last，IFC 已 track line baselines）写入 LayoutBox.taffy_baseline 覆盖。字段/extract/consume 路径全在，仅缺 multicol.rs 填充=标准 plumbing-gap（同构 R229 font-weight / R234 font-kerning）。
+
+**结论**：R236 spec 对当前代码**完全准确**（c53a541→HEAD 无相关变更），**最高 contained reftest 杠杆**（R235 确立 8 例 ~1.1% 系统性偏移，结构性最 tractable，bounded feature）。实现 agent「最大化 reftest 进展」路径可直接起手 R236（字段/extract/consume 就绪，仅需 multicol.rs 填充），成功标准=baseline-000~008 类 ~1.1% 偏移消除（reftest 438/490 上升 +8 潜力，须 zero-regression 全量验证）。与 P1 DC-9（contained+硬DC，≈0 reftest 杠杆）并列：DC-9 零回归地基可先落，R236 攻 reftest 分数。详见 evidence/r253-r236-multicol-baseline-export-verification-2026-06-18.txt。无代码变更，基线 438/490 持平。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
