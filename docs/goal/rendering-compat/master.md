@@ -2012,7 +2012,29 @@ IFC 统一（~50 tests）
 104. R20 — Flexbox baseline + writing-mode（影响 ~9 个测试：flex 方向轴交换）
 105. R20 — CSS 表格子像素修复（影响 ~9 个测试：border 精度 + image scaling）
 
-### R144 后续路径（结构性多轮，单会话预期 +0）
+### R227 — welcome 36px 偏移根因修复（padding 双计，2026-06-17）
+
+welcome.html product-smoke **28.34% → 17.06%**（chromium Oracle，-11.28pp）。R226 定位顶部 36px 垂直偏移后，
+R227 确证根因并修复。
+
+- **根因**：taffy `Layout::location` 是子节点 border-box 相对父 border box 偏移（已含父 padding+border，
+  见 `taffy-local/src/tree/layout.rs:314-322` helper 与 `compute/block.rs:404,486`）。ZeroWeb painter/IFC/abspos
+  约定子节点坐标相对父**内容盒**（painter child_offset 叠加 padding+border）→ taffy 块级子节点 padding/border
+  **双计**，每个带 padding 的父容器把子树整体下移/右移一份。welcome 36px = .page pt(20) + .hero pt(16) 两级双计。
+  自源 reftest（test/ref 同源）双计互相抵消故长期不暴露（DC-14 自源假通过），仅 chromium Oracle 显现。
+- **修复**：`extract_layout`（engine.rs）对水平书写模式下非 abspos/fixed 的 taffy 子节点，把 location 换算为
+  内容盒相对（减自身 content_x/y）。float 后处理覆写故无害；abspos 由 adjust_absolute_* 线程 border-box 约定
+  单独处理故跳过；inline IFC 子节点不经 extract 故不动。
+- **方案选择**：曾试改 painter child_offset 不叠加 padding（Option A），welcome 同修复但 **-5** reftest 回归
+  （4 multicol ref 用 inline 子节点被误移 + grid-spanning）；Option B（extract 换算）只改 taffy 块级子节点，
+  inline 不动 → 回归降到 -1。采 Option B。
+- **验证**：reftest 上游 **438/490**（基线 439，净 -1）；css-position 16/16 持平（abspos 保留）；multicol 40/57 持平；
+  make test 全绿；clippy 零警告。唯一回归 grid-flex-spanning-items-001（0.77%→1.31% borderline）：修复**正确化**了
+  test 的 aqua 位置（28→18 content-box 左，与 ref 一致），旧 pass 来自 aqua 错位与 border 尺寸差两误差抵消，
+  修复消除 aqua 误差后剩余固有 border 尺寸差不再抵消。证据 `evidence/r227-welcome-padding-doublecount-fix-2026-06-17.txt`。
+- **诊断工具**：新增 `LAYOUT_DUMP=1` env（reftest.rs dump_layout_tree）转储盒树 abs_y/height/margin-top/padding-top，
+  供后续布局垂直偏移诊断。
+
 
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 

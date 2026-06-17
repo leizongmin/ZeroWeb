@@ -773,6 +773,27 @@ impl LayoutEngine {
             ));
         }
 
+        // taffy 的 `Layout::location` 是子节点 border box 相对**父 border box** 的偏移，
+        // 已包含父 padding+border（见 taffy `Layout::content_box_y = location.y + border +
+        // padding`）。但本引擎的绘制层与后处理（inline IFC 子节点、abspos 线程）一致采用
+        // 「子节点坐标相对父**内容盒**」的约定（painter 在 child_offset 上叠加 padding+border）。
+        // 因此对 taffy 定位的块级/inline-block 子节点，需把其 border-box 相对坐标换算为
+        // 内容盒相对坐标（减去自身 content_x/y），否则父级每有 padding/border 就把子树整体
+        // 下移/右移一份（重复计入），如 welcome.html 顶部 36px 垂直偏移。
+        // 仅水平书写模式应用（垂直模式轴交换路径另算，避免回归）。
+        // 注意：float 后处理会覆写浮动子节点的位置，此处换算对它们无害；
+        // abspos/fixed 子节点由 adjust_absolute_* 线程按 border-box 相对约定单独处理
+        //（其坐标语义与绘制层双计补偿自洽），此处跳过以保持其既有行为。
+        if matches!(own_writing_mode, WritingModeValue::HorizontalTb) {
+            for child in &mut children_boxes {
+                if child.is_absolute || child.is_fixed {
+                    continue;
+                }
+                child.x -= content_x;
+                child.y -= content_y;
+            }
+        }
+
         LayoutBox {
             node_id: dom_id,
             x,
