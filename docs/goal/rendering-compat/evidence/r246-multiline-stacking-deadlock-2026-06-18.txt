@@ -53,6 +53,23 @@ Phase-A 死锁（同 R125 三路 / R198 ancestry 墙 / R205 font_size 单字段�
 > 用例，净回归。需架构性统一：paint 完全不重跑 IFC（用 compute_final 存储的正确
 > 多行 line boxes），但 R84 单行+Ahem 守卫使非 Ahem 多行不存储 → 死锁。
 
+## gated 修复尝试（排除 multicol 容器）——再次证伪
+
+缺陷 3 的「正确但回归」性质经 gated 实验再次确认：尝试仅对**非 multicol 容器**
+（column-count/width 均为 Auto）应用 with_line_y，multicol 容器保持旧行内相对行为。
+预期消除 8 个 multicol 回归。**实测仍净 -11（438→427，multicol 32/57、CSS2 114/129
+不变）**——gating 无效。
+
+根因：11 个回归用例（multicol-breaking-*/column-height-009 等）的 **test/ref 都是
+multicol 容器，但其内部的文本块是非 multicol 子容器**，走非多列 fragments 路径。
+gating 在**容器级**判 column-count/width，但被正确修复的文本块是**子容器**（非
+multicol）→ 仍走 with_line_y → 正确换行 → 但 ref 的子块仍堆叠 → 同源 FAIL。
+
+**结论**：缺陷 3 = 系统性 Phase-A 死锁，**无法通过任何容器级/属性级 gating 规避**。
+任何「让 paint 渲染正确多行」的改动都破坏自源 test==ref（ref 同样堆叠）。需架构性
+统一（paint 用 compute_final 存储的正确多行行盒，破 R84 单行+Ahem 守卫），多轮。
+已彻底回退（gated 与 ungated 两版）。**勿再以 with_line_y 或任何 gating 重试**。
+
 ## 本轮落地
 
 - inline/mod.rs：缺陷 1（collapse_whitespace preserve 守卫）+ 缺陷 2（空字符串
