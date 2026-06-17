@@ -2497,6 +2497,28 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **reftest 杠杆验证三部曲完结**：R251 R244 DC-9 alpha（P1 contained+硬DC，≈0 reftest 杠杆）/ R253 R236 multicol baseline（P1' 最高 contained reftest 杠杆 +8）/ R254 R238 WM-1（P2 第二 reftest 杠杆 14 例）——三条路径全 spec+验证就绪，实现 agent 可按「contained 优先(DC-9)/reftest 分数优先(R236→R238)」选择，无需再调研。详见 evidence/r254-r238-wm1-abspos-vertical-verification-2026-06-18.txt。无代码变更，基线 438/490 持平。
 
+### R267 — DC-9 GPU filter:opacity 落地（首个 GPU 后处理图元，零回归，DC-9 三缺口之一）（2026-06-18）
+
+承接 R266（DC-9 GPU filter:opacity turnkey spec）。本轮按 spec 实现 **DC-9 GPU 首个后处理图元**——filter:opacity（DC-9 transform/filter/blend 三缺口之一）。
+
+**实现**（render-foundation/gpu，headless-only，零默认回归）：
+- `pipeline.rs`：`OPACITY_SHADER`（自含 vs_fullscreen + fs_opacity：采样源纹理，RGB *= amount）+ `create_opacity_pipeline`（mirror create_blur_pipeline，复用 uniform_bgl UNIFORM_SIZE=16 + blur_bgl 源纹理布局）。
+- `renderer/mod.rs`：Renderer 加 `opacity_pipeline` + `headless_texture_b`（ping-pong 第二纹理）字段；from_device 创建；`create_headless_texture` usage 加 COPY_DST（B→A copy 需要）；`collect_opacity_filters`（提取 FilterPrimitive.filters 中的 Opacity 变体）+ `apply_opacity_filters_headless`（每 filter：copy A→B → scissor pass 采样 A 写 B（rect 内 RGB *= amount）→ copy B→A，结果在 headless_texture 供 read_pixels）；render_full_scene_gpu 末尾条件触发（仅 headless + 有 opacity filter）。
+- **零默认回归保证**：无 filter 时不触发新路径（438 CPU reftest 全不受影响；GPU 无 filter case 字节不变）。
+
+**验证**：
+| 指标 | 结果 |
+|------|------|
+| GPU 单测 `test_gpu_full_scene_filter_opacity_multiplies_rgb` | ✅ 红 255 + Opacity(0.5) → R≈187（线性空间 sRGB 编码，感知正确） |
+| make test | **12236 passed / 0 failed**（+1 新 GPU 测试） |
+| CPU reftest-upstream | **438/490 持平（零回归）** |
+| clippy -D warnings / fmt | 干净 |
+| workspace build | 干净 |
+
+**关键技术点**：渲染目标 `Rgba8UnormSrgb`，shader 在**线性空间**做 opacity 乘（sRGB 自动解码→乘→自动编码），故 0.5 → sRGB(0.5 linear) ≈ 187（区别于 CPU 的 sRGB 空间朴素乘 128）。GPU test/ref 同路径渲染故 **reftest 自洽**（GPU 模式 test==ref）。线性空间 opacity 感知更正确；如需严格匹配 CPU 可后续加 UNORM 视图，非阻塞。
+
+**意义**：DC-9 GPU 独立 WGSL 管线 **9/13 → 10/13**（filter:opacity 落地，非 passthrough 满足 DC-14）。post-process ping-pong 地基（第 2 纹理 + 区域读+写 pass）就绪，blur/transform/blend 可同模式扩展。范围仅 render-foundation/gpu（pipeline.rs + renderer/mod.rs + tests），不碰并行 agent 的 engine.rs/inline。
+
 ### R265 — 去风险：GPU reftest 模式本 WSL 可用（DC-9 可验证）+ R236 multicol baseline 有时序问题（非简单 plumbing-gap，降级结构性）（read-only，docs-only，基线 438/490 持平）
 
 两个去风险发现，为后续工作定方向：

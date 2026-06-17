@@ -772,3 +772,38 @@ fn test_gpu_full_scene_empty() {
         assert_eq!(chunk, [255, 255, 255, 255]);
     }
 }
+
+/// DC-9 GPU filter:opacity — 渲染红色填充 + Opacity(0.5) filter，断言 RGB 被乘 0.5。
+///
+/// 匹配 CPU `apply_filter` 的 Opacity 语义（区域 RGB *= amount）。无 filter 时为纯红 (255,0,0)；
+/// 加 Opacity(0.5) 后应 ≈ (128,0,0)。
+#[test]
+fn test_gpu_full_scene_filter_opacity_multiplies_rgb() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        color: Color::RED,
+    });
+    primitives.filters.push(crate::primitive::FilterPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        filters: vec![crate::primitive::FilterKind::Opacity(0.5)],
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    // 渲染目标为 Rgba8UnormSrgb：shader 在**线性空间**做 RGB *= amount（sRGB 自动解码→乘→
+    // 自动编码），故 255(红) * 0.5(linear) → sRGB 编码 ≈ 187（1.055*0.5^(1/2.4)-0.055≈0.735）。
+    // 这是感知正确的线性空间 opacity（区别于 CPU 的 sRGB 空间朴素乘 128）；GPU test/ref
+    // 同路径渲染故 reftest 自洽。
+    let r = pixels[0] as i32;
+    assert!(
+        (r - 187).abs() <= 4,
+        "R should be ~187 (sRGB-encoded 0.5 linear) after Opacity(0.5), got {r}"
+    );
+    assert!(pixels[1] <= 4, "G should be ~0, got {}", pixels[1]);
+    assert!(pixels[2] <= 4, "B should be ~0, got {}", pixels[2]);
+}

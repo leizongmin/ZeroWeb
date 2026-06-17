@@ -375,6 +375,57 @@ fn fs_blur(in: VertexOutput) -> @location(0) vec4f {
 }
 "#;
 
+/// WGSL 着色器 — DC-9 filter:opacity 后处理（区域 RGB 乘）。
+///
+/// 与 CPU `apply_filter` 的 `Opacity(amount)` 对齐：采样源纹理，RGB *= amount
+///（framebuffer alpha 恒 255）。区域由 render pass 的 scissor rect 限定（仅影响
+/// filter.rect 内像素）。独立 WGSL 模块，自含 vs_fullscreen + VertexOutput。
+pub const OPACITY_SHADER: &str = r#"
+struct Uniforms {
+    screen_width: f32,
+    screen_height: f32,
+    amount: f32,
+    _pad: f32,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(1) @binding(0) var src_texture: texture_2d<f32>;
+@group(1) @binding(1) var src_sampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+};
+
+@vertex
+fn vs_fullscreen(
+    @builtin(vertex_index) vertex_index: u32,
+) -> VertexOutput {
+    // 全屏三角形：3 个顶点覆盖整个 NDC 空间
+    var pos = array<vec2f, 3>(
+        vec2f(-1.0, -1.0),
+        vec2f(3.0, -1.0),
+        vec2f(-1.0, 3.0),
+    );
+    var uv = array<vec2f, 3>(
+        vec2f(0.0, 1.0),
+        vec2f(2.0, 1.0),
+        vec2f(0.0, -1.0),
+    );
+    var out: VertexOutput;
+    out.position = vec4f(pos[vertex_index], 0.0, 1.0);
+    out.uv = uv[vertex_index];
+    return out;
+}
+
+@fragment
+fn fs_opacity(in: VertexOutput) -> @location(0) vec4f {
+    let c = textureSample(src_texture, src_sampler, in.uv);
+    let a = max(0.0, min(1.0, uniforms.amount));
+    return vec4f(c.r * a, c.g * a, c.b * a, 1.0);
+}
+"#;
+
 // ─── 通用常量 ──────────────────────────────────────────────────
 
 /// Fill/Glyph 顶点步幅（字节）
@@ -729,6 +780,70 @@ pub fn create_blur_pipeline(
         fragment: Some(wgpu::FragmentState {
             module: &shader_module,
             entry_point: Some("fs_blur"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent::REPLACE,
+                    alpha: wgpu::BlendComponent::REPLACE,
+                }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview: None,
+        cache: None,
+    })
+}
+
+/// 创建 filter:opacity 后处理管线（DC-9）。
+///
+/// 结构同 `create_blur_pipeline`：group 0 = uniform（UNIFORM_SIZE=16，4 f32），
+/// group 1 = 源纹理+采样器（`create_texture_bind_group_layout`）。entry_point =
+/// `fs_opacity`（区域 RGB 乘，区域由 pass scissor 限定）。
+pub fn create_opacity_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    uniform_bgl: &wgpu::BindGroupLayout,
+    src_bgl: &wgpu::BindGroupLayout,
+) -> wgpu::RenderPipeline {
+    let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Opacity Filter Shader"),
+        source: wgpu::ShaderSource::Wgsl(OPACITY_SHADER.into()),
+    });
+
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Opacity Pipeline Layout"),
+        bind_group_layouts: &[uniform_bgl, src_bgl],
+        push_constant_ranges: &[],
+    });
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Opacity Pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader_module,
+            entry_point: Some("vs_fullscreen"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader_module,
+            entry_point: Some("fs_opacity"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format,
