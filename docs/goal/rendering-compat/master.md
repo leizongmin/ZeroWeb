@@ -2195,6 +2195,9 @@ STRUCTURAL #12/#13 iframe-in-block-in-inline（R109 block-in-inline，defer）�
 
 **首选 contained 下一目标：#6+#10 position-absolute-semi-replaced-stretch（详见 evidence/r239-
 dc14-truebug-candidates-reaudit-2026-06-18.txt）**：
+> ⚠️ **此「contained 修复」推断已被 R241 实证推翻**（product-smoke A/B：ZWt-vs-ZWr=0.00%，几何已正确
+> 拉伸，23% chromium 差异 100% 在原生控件绘制层）→ #6/#10/#14 实为 **form-control feature gap**，
+> defer，**非 contained 修复**。本节以下机制描述保留为历史，正确归类见 R241。
 - 规范：abspos 半替换元素（form control）+ 两轴显式 inset + auto size → 应拉伸填满 CB-insets
   （CSS2 §10.3.7/§10.6.4 abspos 非替换 stretch）。测试 .abs{position:absolute;4 边 inset:3px;
   width/height:auto}，元素=<input button/submit/reset/color/text>。
