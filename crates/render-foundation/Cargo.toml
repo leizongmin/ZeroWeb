@@ -11,6 +11,7 @@ fontdue = { workspace = true }
 swash = { workspace = true }
 rustybuzz = { workspace = true }
 png = "0.17"
+jpeg-decoder = "0.3"
 bytemuck = { workspace = true, features = ["derive"] }
 hashbrown = { workspace = true }
 thiserror = { workspace = true }

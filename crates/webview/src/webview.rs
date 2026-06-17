@@ -8,7 +8,7 @@ use zero_engine::{
     PipelineTimings, PrefersColorSchemeValue, RenderPipeline, extract_img_srcs, extract_stylesheet_hrefs, simple_hash,
 };
 use zero_net::{HttpCache, HttpClient, NetError};
-use zero_render_foundation::image_cache::{ImageCache, ImageKey, decode_png_bytes};
+use zero_render_foundation::image_cache::{ImageCache, ImageKey, decode_image_bytes};
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
 use zero_security::{ResourceCheckResult, SecurityContext};
@@ -256,8 +256,9 @@ impl WebView {
     /// 抓取并解码 HTML 中所有 `<img src>` 引用的图片子资源。
     ///
     /// goal doc P1 缺口「图片子资源 / ImageCache 未贯通」修复：按 base URL 解析每个
-    /// `<img src>`，逐个 HTTP 抓取，解码为 `ImageData`（当前 PNG；JPEG/SVG 同模式后续），
-    /// 写入 `self.image_cache`（键 = `simple_hash(abs_url)`，与 pipeline 的 image_sizes
+    /// `<img src>`，逐个 HTTP 抓取，解码为 `ImageData`（按魔数字节分发 PNG/JPEG；
+    /// SVG 栅格化同模式后续），写入 `self.image_cache`（键 = `simple_hash(abs_url)`，
+    /// 与 pipeline 的 image_sizes
     /// 及渲染器查找一致），并返回 `image_sizes`（url hash → (w,h)）供 pipeline 对无
     /// width/height 属性的 `<img>` 注入固有尺寸（DC-11 替换元素固有尺寸）。
     /// `data:` URI 暂不支持（跳过）；抓取/解码失败仅 warn 不阻断（宽松降级）。
@@ -284,10 +285,10 @@ impl WebView {
                     continue;
                 }
             };
-            let img = match decode_png_bytes(&bytes) {
+            let img = match decode_image_bytes(&bytes) {
                 Ok(img) => img,
                 Err(e) => {
-                    tracing::warn!("image {abs} decode failed (PNG only yet): {e}");
+                    tracing::warn!("image {abs} decode failed (PNG/JPEG): {e}");
                     continue;
                 }
             };
