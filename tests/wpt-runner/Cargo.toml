@@ -15,7 +15,6 @@ zero-layout-engine = { workspace = true }
 zero-render-foundation = { workspace = true }
 zero-script-sandbox = { workspace = true }
 png = "0.17"
-jpeg-decoder = "0.3"
 resvg = { workspace = true }
 tiny-skia = "0.11"
 rayon = "1"

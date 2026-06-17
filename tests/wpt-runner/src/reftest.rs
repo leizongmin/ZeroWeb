@@ -709,62 +709,12 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
 
 /// 加载并解码 JPEG 文件为 RGBA ImageData。
 ///
-/// 真实页面 logo/照片多为 JPEG；旧 `build_image_cache` 仅支持 PNG，导致 `<img>`
-/// 引用的 JPEG 子资源无法加载（DC-13 图片子资源缺口）。
+/// 真实页面 logo/照片多为 JPEG。委托给 render-foundation 的 `decode_jpeg_bytes`
+/// （R216），与 webview/browser URL 导航路径共用同一解码器，避免 PixelFormat→RGBA
+/// 转换逻辑重复（L8/L16/RGB24/CMYK32 全格式在 render-foundation 单点实现并测试）。
 fn load_jpeg_file(path: &Path) -> Result<ImageData, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("无法打开 {}: {e}", path.display()))?;
-    let mut decoder = jpeg_decoder::Decoder::new(&bytes[..]);
-    decoder
-        .read_info()
-        .map_err(|e| format!("JPEG 解析失败 {}: {e}", path.display()))?;
-    let info = decoder
-        .info()
-        .ok_or_else(|| format!("JPEG 无图像信息 {}", path.display()))?;
-    let pixels = decoder
-        .decode()
-        .map_err(|e| format!("JPEG 解码失败 {}: {e}", path.display()))?;
-    let width = info.width as u32;
-    let height = info.height as u32;
-    // 按 pixel_format 转换为 RGBA8
-    let rgba = match info.pixel_format {
-        jpeg_decoder::PixelFormat::RGB24 => {
-            let mut out = Vec::with_capacity(pixels.len() / 3 * 4);
-            for px in pixels.chunks_exact(3) {
-                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
-            }
-            out
-        }
-        jpeg_decoder::PixelFormat::L8 => {
-            let mut out = Vec::with_capacity(pixels.len() * 4);
-            for &g in &pixels {
-                out.extend_from_slice(&[g, g, g, 255]);
-            }
-            out
-        }
-        jpeg_decoder::PixelFormat::CMYK32 => {
-            // CMYK（JPEG 常见 inverted），转 RGBA 近似
-            let mut out = Vec::with_capacity(pixels.len() / 4 * 4);
-            for px in pixels.chunks_exact(4) {
-                let (c, m, y, k) = (px[0], px[1], px[2], px[3]);
-                let k = 255 - k;
-                let r = (c as u16 * k as u16 / 255) as u8;
-                let g = (m as u16 * k as u16 / 255) as u8;
-                let b = (y as u16 * k as u16 / 255) as u8;
-                out.extend_from_slice(&[r, g, b, 255]);
-            }
-            out
-        }
-        jpeg_decoder::PixelFormat::L16 => {
-            // 16-bit 灰度（降为 8-bit）
-            let mut out = Vec::with_capacity(pixels.len() / 2 * 4);
-            for px in pixels.chunks_exact(2) {
-                let v = ((px[0] as u16) | ((px[1] as u16) << 8) >> 8) as u8;
-                out.extend_from_slice(&[v, v, v, 255]);
-            }
-            out
-        }
-    };
-    ImageData::from_rgba(rgba, width, height)
+    zero_render_foundation::image_cache::decode_jpeg_bytes(&bytes)
 }
 
 /// 加载并栅格化 SVG 文件为 RGBA ImageData。
