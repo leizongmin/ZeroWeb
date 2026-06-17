@@ -356,7 +356,10 @@ fn fill_rounded_rect(fb: &mut FrameBuffer, rr: &RoundedRectPrimitive, scale: f32
     let x1 = rr.rect.right() * scale;
     let y1 = rr.rect.bottom() * scale;
 
-    let color = [rr.color.r, rr.color.g, rr.color.b, 255];
+    // 与 fill_rect 一致的 alpha 处理：不透明直接 set_pixel，半透明 blend_pixel
+    // 与背景合成。旧实现硬编码 alpha=255 + set_pixel，致 rgba() 半透明圆角背景
+    //（如 morning.work .item-tag 的 var(--color-primary-alpha-05)）被渲染为实色。
+    let src_a = rr.color.a as f32 / 255.0;
 
     for y in top..bottom {
         let fy = y as f32 + 0.5;
@@ -367,7 +370,11 @@ fn fill_rounded_rect(fb: &mut FrameBuffer, rr: &RoundedRectPrimitive, scale: f32
                 continue;
             }
 
-            fb.set_pixel(x, y, color);
+            if src_a >= 1.0 {
+                fb.set_pixel(x, y, [rr.color.r, rr.color.g, rr.color.b, 255]);
+            } else if src_a > 0.0 {
+                blend_pixel(fb, x, y, rr.color, 255);
+            }
         }
     }
 }
