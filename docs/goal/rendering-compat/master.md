@@ -2537,3 +2537,21 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **与既往诊断关系**：不动 R253 主结论（4×高=布局层幻影垂直间隙，非字体噪声/非 pre 堆叠/非内容压缩），仅精化"疑似匿名块"→"`.article` 盒属性泄漏到幻影盒，328=200+64+64 可证"；与 R247/R252 pre 多行（已修，独立）正交；与 reftest 杠杆三部曲（R251/R253/R254）正交——本轮是 **DC-13 product-smoke 杠杆**（morning-work 89%），非 reftest 438/490 杠杆。**本轮 read-only 无代码/reftest 变更，基线 438/490 持平。** 详见 `evidence/r255-morning-work-phantom-gap-arithmetic-identity-2026-06-18.txt`。
 
+### R256 — 【自我纠正 R255】幻影盒机制被代码路径否定：build_subtree 对 block 容器不生成幻影/匿名盒（read-only，2026-06-18，基线 438/490 持平）
+
+**承接**：R255 据 R253 dump 摘要 + 算术巧合（328=200+64+64）推断 morning-work 4× 高度机制=「`.article{min-height:200;margin:4em}` 盒属性泄漏到 block 兄弟间幻影/匿名盒（R109 谱系）」。本轮 read-only 读 build_subtree（tree.rs:362-664）全路径 + inline_block_split.rs + converter/mod.rs 核实该机制——**结论：机制被否定**。
+
+**决定性代码事实（build_subtree 对 `<article>` block 容器）**：
+- **R109 匿名块拆分不触发**（tree.rs:546）：`r109_segments` 仅当 `inline_has_block_child(...)` 为真才算；该函数（inline_block_split.rs:59-61）首条要求 `display==Inline`——article 是 Block → false → r109_segments=None → 走 tree.rs:618 else，不进 559-591 匿名块生成。
+- **非 flex/grid 容器只收 Element 子**（tree.rs:618-627）：623 行 `matches!(&n.kind, NodeKind::Element(_))` **显式跳过文本/空白节点**（正确 CSS：block 容器 block 兄弟间空白不生成盒）。
+- **每 element 子一个 taffy 节点**（632-644），article 自己一个（654）+ node_map 一对一（660）。**无第二个带 article.node_id 的盒**。
+- **converter 映射正确**（converter/mod.rs:81-88）：min_size.height←min_height、margin←margin，只作用于 article 一个节点，不泄漏到子/幻影。
+
+→ R255 三个因果子机制（inter-block 空白→匿名块 / 幻影盒被赋 .article 身份 / 选择器过匹配）**在 build_subtree 里都不成立**。dump 标签语义（reftest.rs:1043-1047 `b.node_id→DOM labels`，缺才 `(anon)`）+ build_subtree 一对一映射 → R253「幻影嵌套 article w=4 h=200」**不应存在**，疑人为筛选摘要伪影。
+
+**R255 降级**：328=200+64+64 算术**相关性真实但无因果机制**，且依赖 R253「人为筛选 6 行摘要」（非原始递归 dump）。**勿据 R255 改 build_subtree/converter/R109（无对应缺陷）**。观察层（ZW body 25301 vs CHR 5981=4.2× 高；tall-viewport 内容下移）是 product-smoke A/B 实测，仍可靠、仍需解释，但机制不是盒泄漏。
+
+**强制性下一步（须原始递归 dump + clean tree）**：只有原始递归 LAYOUT_DUMP（reftest.rs:1033 带深度缩进全量打印）能区分「真幻影盒→定位生成它的 post-pass」vs「摘要伪影/跨层 abs_y 误读」。**须在 clean tree 跑**——当前并行 agent 未提交 `style-system/src/lib.rs`，脏树 dump 会编译进其 WIP 致证据不可靠。合规命令：`./target/test-guard -- cargo run --bin zero-wpt-runner -- reftest <filter> --wpt-data <path>` + `LAYOUT_DUMP=1`（test-guard 包裹=非裸跑；`make reftest` 无 filter 跑全量，单测用 test-guard 直 prefix）。步骤：① 树干净后渲染 morning-work/最小复现；② 读**完整递归 dump** 核对 h2↔p 间到底有哪些盒（node_id/abs_y/h/mt/dmt），判断 328px 是真间隙还是跨层差；③ 若有带 article.node_id 第二盒→grep extract_layout/engine.rs compute() post-pass（build_subtree 已排除）；若无→R253/R255 间隙观察是伪影，须重做 morning-work 89% 根因。
+
+**方法学教训（印证 R164/R203/R241）**：R255 据 curated 6 行摘要 + 算术巧合推断机制、未读生成路径源码即下结论；R256 读 build_subtree 推翻。**单点/摘要推断须源码实证，不能据 curated 输出 + 算术巧合接力**。后续 morning-work 调查从原始递归 dump 重起。**本轮 read-only 无代码/reftest 变更，基线 438/490 持平。** 详见 `evidence/r256-morning-work-phantom-box-mechanism-refuted-2026-06-18.txt`。
+
