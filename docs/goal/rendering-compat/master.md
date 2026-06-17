@@ -2617,3 +2617,15 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **结论**：a2b169e 已闭合 morning-work 类 UA display 缺口；剩余缺口 footprint ≤2 或 =0，**非 reftest/产品 smoke 杠杆**（meter/progress 即便补 inline-block 也无 gauge 渲染）。唯一广泛真实页面影响项=`li`→ListItem+list marker（更大 feature，defer 待 IFC 稳定）。**本轮价值**=把「是否还有 morning-work 同类 UA bug」从开放问题变为**已审计确认无重大缺口**，避免后续重复排查同类；钉死次要缺口清单+footprint 量级供代码 agent 低优先级参考。**本轮 read-only 无代码/reftest 变更，基线 438/490 持平。** 详见 `evidence/r258-ua-default-display-completeness-audit-2026-06-18.txt`。
 
+### R259 — 并行 agent font WIP = R229 font-weight 选择（与 fontdue 光栅化结论正交，非矛盾，read-only，2026-06-18，基线 438/490 持平）
+
+**承接**：master.md header line 7「🔤 fontdue 光栅化 ≈ chromium…字体攻坚停止」与并行 agent **正在改 font stack**（font/loader.rs + font/mod.rs）表面矛盾。本轮 read-only 读并行 agent font WIP 核实是否 contradicts fontdue 结论——**结论：无矛盾**。
+
+**并行 agent font WIP = R229 CSS Fonts §5.2 font-weight 选择**（读 WIP diff 确认）：font/loader.rs 加 `font_weights: HashMap<font_id,u16>`（OS/2 usWeightClass）+ `parse_font_weight(data)`；`find(desc)` 从 `ids.first()` 改 `pick_weight_variant(ids, desc.weight, …)`；`build_font_resolver()` 返回 `HashMap<String, FontResolveEntry>`（字重感知变体列表，原返单 id）。font/mod.rs 新增 `FontResolveEntry{variants, pick(target_weight)}`（CSS §5.2 font-matching，并列时 target≥500 偏重）。pipeline.rs + painter/mod.rs（亦 dirty）= paint 侧按 `ComputedStyle.font_weight` 选变体（R229「接线 B」）。正是 header line 9 标的最高优先级 R229 的端到端实现（资源+接线），spec 见 `evidence/r229-fontweight-plumbing-spec-2026-06-17.txt`。
+
+**澄清矛盾（正交）**：line 7 结论（R186/R187/AA-baseline）= fontdue **光栅化**（给定 glyph→像素）≈ chromium，无需替换——**仍成立**。R229 缺口 = ZeroWeb `find()` 一直忽略 weight（总挑 Regular）→ `font-weight:600/700` 按 Regular 渲染（欠墨）。**两者正交**：fontdue 把任何变体光栅化得与 chromium 一致；问题是挑错变体（总 Regular）。修 font-weight 选择后 Bold 文本用 Bold 变体 + fontdue 正确光栅化。**无矛盾**——line 7「字体攻坚停止」应理解为「**fontdue 光栅化替换**停止」（R186/R187 证伪 fontdue→swash swap），**非**「所有字体工作停止」；font-weight 选择（R229）是另一条线，并行 agent 现正推进。
+
+**预期（交付并行 agent，勿未验先声称）**：R229 成功标准 = welcome/morning-work 600/700 粗体 ink-mass 回升 ~100% CH；reftest 438/490 自源中性（Ahem 无 weight）但 DC-14 chromium-oracle 改善。WIP 未提交未验证，待其提交后 product-smoke + reftest 全量验证。资源前提（系统装 -Bold，R230 已确认）满足。
+
+**对优先级队列的影响**：① **R229 font-weight 并行 agent in-flight**（font/loader+mod + pipeline + painter WIP）——其他 agent 勿碰 font stack + paint font-weight 消费路径。② morning-work 残余 48.65% 中 font-weight 子项将随 R229 消除；其余残余（item-tag R109 / hljs 缺 JS / fontdue CJK 度量 / body ~300px 差）独立。③ reftest 杠杆 R236（multicol baseline +8）/ R238（WM-1 +14）仍待代码 agent 实现，与当前 font/paint/IFC WIP 无碰撞。**本轮 read-only 无代码/reftest 变更，基线 438/490 持平。** 详见 `evidence/r259-parallel-font-wip-is-r229-fontweight-2026-06-18.txt`。
+
