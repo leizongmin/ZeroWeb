@@ -807,3 +807,52 @@ fn test_gpu_full_scene_filter_opacity_multiplies_rgb() {
     assert!(pixels[1] <= 4, "G should be ~0, got {}", pixels[1]);
     assert!(pixels[2] <= 4, "B should be ~0, got {}", pixels[2]);
 }
+
+/// DC-9 GPU filter:brightness — 红色填充 + Brightness(0.5)，断言 RGB *= 0.5（线性空间 sRGB 编码）。
+#[test]
+fn test_gpu_full_scene_filter_brightness() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        color: Color::RED,
+    });
+    primitives.filters.push(crate::primitive::FilterPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        filters: vec![crate::primitive::FilterKind::Brightness(0.5)],
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    // brightness(0.5) 与 opacity 同数学（RGB *= 0.5，线性空间）→ sRGB 编码 ≈ 187
+    let r = pixels[0] as i32;
+    assert!((r - 187).abs() <= 4, "R should be ~187 after Brightness(0.5), got {r}");
+    assert!(pixels[1] <= 4, "G should be ~0, got {}", pixels[1]);
+}
+
+/// DC-9 GPU filter:contrast — 深灰填充 (64,64,64) + Contrast(2.0)，断言对比度增强使其更暗。
+#[test]
+fn test_gpu_full_scene_filter_contrast() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        color: Color::rgba(64, 64, 64, 255),
+    });
+    primitives.filters.push(crate::primitive::FilterPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        filters: vec![crate::primitive::FilterKind::Contrast(2.0)],
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    // contrast(2): (linear - 0.5)*2 + 0.5。64/255=0.251 linear → (0.251-0.5)*2+0.5=0.002 → sRGB ≈ 7
+    // 无 filter 时 G=64；加 Contrast(2) 后应显著变暗（< 30），证明 contrast 路径生效。
+    let g = pixels[1] as i32;
+    assert!(g < 30, "G should be much darker than 64 after Contrast(2.0), got {g}");
+    assert!(g >= 0, "G should be non-negative, got {g}");
+}
