@@ -48,10 +48,11 @@ use zero_dom::{Document, NodeId, NodeKind, QuirksMode};
 /// 未列出的元素默认为 CSS 初始值 `inline`。
 pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
     Some(match tag {
-        // 块级元素
-        "html" | "address" | "blockquote" | "body" | "dd" | "div" | "dl" | "dt" | "fieldset" | "figcaption"
-        | "figure" | "footer" | "form" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "header" | "hr" | "legend"
-        | "li" | "main" | "nav" | "ol" | "p" | "pre" | "section" | "summary" | "ul" => DisplayValue::Block,
+        // 块级元素（对齐 HTML Living Standard UA 样式表的 display:block 列表）
+        "html" | "address" | "article" | "aside" | "blockquote" | "body" | "dd" | "details" | "div" | "dl" | "dt"
+        | "fieldset" | "figcaption" | "figure" | "footer" | "form" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+        | "header" | "hgroup" | "hr" | "legend" | "li" | "main" | "menu" | "nav" | "ol" | "p" | "pre" | "search"
+        | "section" | "summary" | "ul" => DisplayValue::Block,
 
         // 表格元素
         "table" => DisplayValue::Table,
@@ -695,6 +696,85 @@ mod quirks_tests {
             LengthValue::Auto,
             "Table with auto height should remain auto"
         );
+    }
+}
+
+#[cfg(test)]
+mod ua_display_tests {
+    use super::*;
+
+    /// 回归测试：HTML 区块型元素必须默认 `display: block`。
+    ///
+    /// 历史缺陷（R253 morning-work 4× 高度根因）：`article`/`aside`/`details` 等标签缺失于
+    /// `ua_default_display` 的 block 列表，回落到 CSS 初始值 `inline`。当此类「inline」元素含
+    /// 块级子元素（h2/p）时，触发 R109（CSS2 §9.2.1.1）匿名块拆分，在每对块级子元素之间插入
+    /// 包裹空白文本的幻影匿名块盒（继承父 node_id），把页面内容整体推开数倍高度
+    ///（morning-work body 25301px ≈ chromium 5981px 的 4.2×）。
+    ///
+    /// 此测试钉死 HTML Living Standard UA 样式表中应为 `display:block` 的「分组/分节」元素，
+    /// 防止再次遗漏导致同类幻影盒回归。
+    #[test]
+    fn test_html_block_level_sectioning_elements_default_to_block() {
+        // R253 实证触发幻影盒的三个标签（修复前缺失）
+        for tag in ["article", "aside", "details"] {
+            assert_eq!(
+                ua_default_display(tag),
+                Some(DisplayValue::Block),
+                "<{tag}> must default to display:block (was inline → R109 phantom anon blocks)"
+            );
+        }
+        // 其余按 HTML Living Standard 应为 block 的分节/分组元素（防御性钉死）
+        for tag in [
+            "address",
+            "blockquote",
+            "dd",
+            "div",
+            "dl",
+            "dt",
+            "fieldset",
+            "figcaption",
+            "figure",
+            "footer",
+            "form",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "header",
+            "hgroup",
+            "hr",
+            "li",
+            "main",
+            "menu",
+            "nav",
+            "ol",
+            "p",
+            "pre",
+            "search",
+            "section",
+            "summary",
+            "ul",
+        ] {
+            assert_eq!(
+                ua_default_display(tag),
+                Some(DisplayValue::Block),
+                "<{tag}> should default to display:block per HTML UA stylesheet"
+            );
+        }
+    }
+
+    /// 内联元素（span/a/code 等）不得被错误标记为 block，否则破坏行内排版。
+    #[test]
+    fn test_inline_elements_remain_unset() {
+        for tag in ["span", "a", "code", "em", "strong", "b", "i"] {
+            assert_eq!(
+                ua_default_display(tag),
+                None,
+                "<{tag}> should fall back to CSS initial inline (None), not block"
+            );
+        }
     }
 }
 
