@@ -145,12 +145,20 @@ impl BrowserApp {
             let mut scene_primitives = webview_extras;
             scene_primitives.fills = [fills, scene_primitives.fills].concat();
 
+            // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
+            // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
+            // self.shell / self.webviews / self.font_loader / self.glyph_cache 为不相交字段借用
+            let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
+                Some(id) => self.webviews.get_mut(&id).map(|wv| wv.image_cache()),
+                None => None,
+            };
+
             // 使用全量 GPU 渲染管线
             renderer.render_full_scene_gpu(
                 &scene_primitives,
                 &self.font_loader,
                 &mut self.glyph_cache,
-                None, // image_cache: 暂不使用
+                image_cache,
                 &overlay_fills,
                 &overlay_glyphs.iter().chain(glyphs.iter()).cloned().collect::<Vec<_>>(),
                 1.0, // scale_factor: GPU 渲染器内部已通过 surface 尺寸处理
@@ -184,6 +192,14 @@ impl BrowserApp {
         // 所以只需把 chrome fills 放入 scene_primitives.fills 的前面
         scene_primitives.fills = [fills, scene_primitives.fills].concat();
 
+        // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
+        // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
+        // self.shell / self.webviews / self.font_loader / self.glyph_cache 为不相交字段借用
+        let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
+            Some(id) => self.webviews.get_mut(&id).map(|wv| wv.image_cache()),
+            None => None,
+        };
+
         let fb = render_full_scene(
             width,
             height,
@@ -191,7 +207,7 @@ impl BrowserApp {
             &scene_primitives,
             &self.font_loader,
             &mut self.glyph_cache,
-            None,
+            image_cache,
             // overlay_fills: chrome overlay（上下文菜单背景、圆角遮罩等）
             &overlay_fills,
             // overlay_glyphs: chrome overlay 文字 + 所有 GlyphDraw 文字
@@ -201,6 +217,45 @@ impl BrowserApp {
             &overlay_glyphs.iter().chain(glyphs.iter()).cloned().collect::<Vec<_>>(),
         );
         present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data);
+    }
+
+    /// 测试用：与 `render_cpu` 相同的场景装配（chrome + WebView 图元 + 活跃标签页
+    /// WebView 的 ImageCache），但返回 FrameBuffer 而非 present 到 softbuffer 表面。
+    ///
+    /// 用于验证浏览器渲染路径消费 webview ImageCache 绘制 `<img>` 图元
+    /// （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）。
+    #[cfg(test)]
+    pub fn render_full_scene_with_webview_for_test(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> zero_render_foundation::surface::FrameBuffer {
+        let (fills, glyphs, overlay_fills, overlay_glyphs) = self.build_scene(width, height);
+        let webview_extras = self.get_webview_extra_primitives();
+        let mut scene_primitives = webview_extras;
+        scene_primitives.fills = [fills, scene_primitives.fills].concat();
+
+        // 与 render_cpu / render_frame 完全一致的 ImageCache 装配（不相交字段借用）
+        let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
+            Some(id) => self.webviews.get_mut(&id).map(|wv| wv.image_cache()),
+            None => None,
+        };
+
+        render_full_scene(
+            width,
+            height,
+            1.0,
+            &scene_primitives,
+            &self.font_loader,
+            &mut self.glyph_cache,
+            image_cache,
+            &overlay_fills,
+            &overlay_glyphs
+                .iter()
+                .chain(glyphs.iter())
+                .cloned()
+                .collect::<Vec<_>>(),
+        )
     }
 }
 
@@ -480,5 +535,70 @@ mod tests {
     fn parse_gnome_color_scheme_unrecognized_returns_none() {
         assert_eq!(parse_gnome_color_scheme_stdout(""), None);
         assert_eq!(parse_gnome_color_scheme_stdout("invalid\n"), None);
+    }
+
+    /// 验证浏览器渲染路径消费活跃标签页 WebView 的 ImageCache 绘制 `<img>` 图元
+    /// （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）。
+    ///
+    /// 差异法：基线（ImageCache 为空）→ 图片颜色应为 0；填充缓存（键与 engine 生成的
+    /// `simple_hash(src)` 一致）后 → 图片颜色应出现 > 0。证明 webview ImageCache 经
+    /// 浏览器 render 路径传入渲染器并被消费。
+    #[test]
+    fn render_path_consumes_webview_image_cache() {
+        use zero_render_foundation::image_cache::{ImageData, ImageKey};
+        use zero_engine::simple_hash;
+
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.new_tab(None);
+        let tab_id = app.shell.active_tab_id().expect("active tab");
+
+        // 页面含一个 40x40 的 <img>；engine 用 simple_hash(src) 生成 image_key
+        let src = "r215-wiring.png";
+        let html = format!(
+            "<img src=\"{src}\" style=\"display:block;width:40px;height:40px\">"
+        );
+        app.load_webview_html(tab_id, &html, None);
+
+        // 区别于 chrome UI 与白色背景的鲜明颜色
+        let (pr, pg, pb, pa) = (220u8, 30, 180, 255);
+        let pixels = [pr, pg, pb, pa].repeat(40 * 40);
+        let img = ImageData::from_rgba(pixels, 40, 40).unwrap();
+
+        // 基线：ImageCache 为空 → 缓存 miss → 图片不被绘制 → 该颜色计数为 0
+        let fb0 = app.render_full_scene_with_webview_for_test(800, 600);
+        let count0 = count_color(&fb0, pr, pg, pb, pa);
+        assert_eq!(count0, 0, "baseline: image color must be absent when cache empty");
+
+        // 填充活跃标签页 WebView 的 ImageCache（键 = simple_hash(src)，与 engine 一致）
+        app.webviews
+            .get_mut(&tab_id)
+            .expect("webview present")
+            .image_cache()
+            .insert_with_key(ImageKey::new(simple_hash(src)), img);
+
+        // 装配后渲染：image_cache 经浏览器渲染路径传入渲染器 → 图片颜色应出现
+        let fb1 = app.render_full_scene_with_webview_for_test(800, 600);
+        let count1 = count_color(&fb1, pr, pg, pb, pa);
+        assert!(
+            count1 > 0,
+            "after populating cache, image color must be drawn (got 0 pixels)"
+        );
+    }
+
+    /// 统计 FrameBuffer 中精确匹配某 RGBA 颜色的像素数。
+    fn count_color(
+        fb: &zero_render_foundation::surface::FrameBuffer,
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+    ) -> usize {
+        (0..fb.height)
+            .flat_map(|y| (0..fb.width).map(move |x| (x, y)))
+            .filter(|(x, y)| {
+                let p = fb.get_pixel(*x, *y);
+                p[0] == r && p[1] == g && p[2] == b && p[3] == a
+            })
+            .count()
     }
 }

@@ -15,6 +15,7 @@ use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::gpu::renderer::{GlyphDraw, GpuRenderer};
+use zero_render_foundation::image_cache::ImageCache;
 use zero_render_foundation::primitive::{FillPrimitive, GlyphPrimitive, GradientKind, RenderPrimitives};
 use zero_webview::WebViewBuilder;
 
