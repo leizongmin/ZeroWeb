@@ -5886,6 +5886,7 @@ dependencies = [
  "fontdue",
  "hashbrown 0.15.5",
  "parking_lot",
+ "png 0.17.16",
  "pollster",
  "rustybuzz 0.20.1",
  "serde",
@@ -5972,6 +5973,7 @@ name = "zero-webview"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "png 0.17.16",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

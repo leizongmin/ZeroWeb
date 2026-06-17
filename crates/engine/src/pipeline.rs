@@ -538,6 +538,26 @@ pub fn extract_stylesheet_hrefs(html: &str) -> Vec<String> {
     hrefs
 }
 
+/// 提取 HTML 中所有 `<img src="...">` 的 src 原始值。
+///
+/// 用于 URL 导航路径下图片子资源的加载（goal doc P1 缺口「图片子资源 / ImageCache
+/// 未贯通」）。与 `extract_stylesheet_hrefs` 同模式：复用 `zero_dom` 解析（DOM 精确），
+/// 返回原始 src 字符串（可能相对）；URL 解析、抓取与解码由调用方（webview 层）负责。
+/// 空 src 过滤；`data:` URI 原样返回（由调用方识别处理）。
+pub fn extract_img_srcs(html: &str) -> Vec<String> {
+    let doc = zero_dom::parse_html(html);
+    let mut srcs = Vec::new();
+    for img_id in doc.get_elements_by_tag_name("img") {
+        if let Some(src) = doc.get_attribute(img_id, "src") {
+            let src = src.trim();
+            if !src.is_empty() {
+                srcs.push(src.to_string());
+            }
+        }
+    }
+    srcs
+}
+
 /// 去除 XHTML CDATA 包装（`<![CDATA[...]]>`）。
 ///
 /// html5ever 仅支持 HTML 模式解析，会将 `<style>` 中的 CDATA 标记
