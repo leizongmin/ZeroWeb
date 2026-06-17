@@ -2497,6 +2497,16 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **reftest 杠杆验证三部曲完结**：R251 R244 DC-9 alpha（P1 contained+硬DC，≈0 reftest 杠杆）/ R253 R236 multicol baseline（P1' 最高 contained reftest 杠杆 +8）/ R254 R238 WM-1（P2 第二 reftest 杠杆 14 例）——三条路径全 spec+验证就绪，实现 agent 可按「contained 优先(DC-9)/reftest 分数优先(R236→R238)」选择，无需再调研。详见 evidence/r254-r238-wm1-abspos-vertical-verification-2026-06-18.txt。无代码变更，基线 438/490 持平。
 
+### R265 — 去风险：GPU reftest 模式本 WSL 可用（DC-9 可验证）+ R236 multicol baseline 有时序问题（非简单 plumbing-gap，降级结构性）（read-only，docs-only，基线 438/490 持平）
+
+两个去风险发现，为后续工作定方向：
+
+**① GPU reftest 模式本环境可用**：实测 `zero-wpt-runner reftest-upstream --gpu baseline-000` 通过（wgpu adapter 成功初始化，无 Vulkan/GL 错误无 panic）。命令格式：`--gpu` 是 args[2..] 全局选项须在子命令后。**含义**：DC-9 GPU transform/filter/blend 工作**本环境可验证**（headless wgpu 可用），移除 R249 隐含的「GPU 验证环境不确定」风险。后续 DC-9 可用 `--gpu` 跑 reftest 验证零回归 + GPU 单测断言 framebuffer。
+
+**② R236 multicol baseline-export 有时序问题**：R253 称「字段/extract/consume 全在仅缺 multicol.rs 填充」。本轮读 engine.rs flex baseline 路径纠正——baseline-000~008 是 `flex align-items:baseline` 含 multicol 子项，flex baseline 对齐发生在 **taffy 布局期间**，而 multicol 列布局是 **taffy 后的 post-pass**；故 post-hoc 填 `LayoutBox.taffy_baseline` **不改变已定位的 flex 项**→不修复 007/008。baseline-000~006 PASS 系 taffy 通用 block baseline 偶然 ≈ 首行 baseline。真实修复需 pre-pass 估测喂 taffy 或 post-alignment 回溯调整，均**多轮 + 对 000~006 回归风险**。**R236 降级结构性多轮**，勿以「填字段」单点重试。
+
+**对优先级影响**：DC-9 GPU（现确认可验证，硬门禁+非碰撞，post-process pipeline dead-coded 就绪，缺第 2 纹理+draw helper+消费接线）= 下一轮主攻方向（filter:opacity 起步）；R236 降级结构性；R238 并行 agent 持有让出。详见 evidence/r265-gpu-viable-r236-timing-derisk-2026-06-18.txt。无代码变更，基线 438/490 持平。
+
 ### R264 — wintertc DC-13 产品 smoke 复测：25.11%→13.59%（受益 R227/R255），核心子验收满足，残余结构性（read-only，docs-only，基线 438/490 持平）
 
 复测 wintertc 首页（DC-13 图片密集产品 smoke）。2026-06-16 录制时 25.11%，本轮（R227 padding 内容盒修复 + R255 ua_default_display 之后）实测 **13.59%（65,233/480,000 px）**，**降 11.5pp**——**无 wintertc 专项修复**，纯受益全局修复：R227 修复多层 padding 容器整体下移（hero/nav/section 对齐），R255 次要（section/footer 本已 block）。
