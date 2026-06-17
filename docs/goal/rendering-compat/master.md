@@ -2373,6 +2373,30 @@ alpha groundwork → P2 R236 multicol baseline-export → P3 R238 WM-1 abspos-ve
 DC-14 结构聚类。**无 open 阻塞**；调研侧主要候选已 spec 完，下一进展依赖并行 agent 提交（解锁验证）或实现轮
 起手 P1/P2/P3。详见 evidence/r246-status-consolidation-prewrap-footprint-2026-06-18.txt。
 
+### R247 — pre-wrap 换行符修复落地 + 多行堆叠 Phase-A 死锁实证（2026-06-18）
+
+**落地 2 处 IFC 安全修复**（zero-regression，单测覆盖，默认启用）：
+- **缺陷 1**（inline/mod.rs:822）：`collect_inline_items` 旧实现对文本节点**无条件**调
+  `collapse_whitespace` 把 `\n` 折成普通空格。修复：`preserve_whitespace`（pre/pre-wrap/
+  break-spaces）时保留原始内容。CSS Text §3.1。
+- **缺陷 2**（inline/mod.rs:1274）：`split_into_words`（preserve 模式）为每个 `\n` 推入空字符串
+  作强制换行标记，但单词循环旧实现对空词 `continue` 静默丢弃 → 即便 `\n` 保留也不换行。
+  修复：`preserve_whitespace && content_word.is_empty()` 时 flush 当前行 + 开新行（同 `Br`）。
+- 单测 `test_white_space_pre_newline_forces_break` / `_no_wrap`；reftest 438/490 持平零回归；
+  layout lib 880 测试全过；clippy/fmt 干净。
+
+**paint 侧多行堆叠缺陷（缺陷 3）实证 Phase-A 死锁**：painter/text.rs 非多列路径用
+`all_fragments()`（片段 y 行内相对，恒 0），多行块所有行渲染在同一 y → **垂直堆叠**
+（auto-wrap `<div>` 实测 ZW h=17 vs CHR h=107；morning-work 67% 压缩主因）。改用
+`all_fragments_with_line_y()`（片段 y += line.y）实证**净 -11 回归**（438→427，multicol -8 /
+CSS2 -3）——回归用例（multicol-breaking-*/column-height-009/column-balancing-paged）的 test/ref
+此前都堆叠渲染（test==ref 同错）故同源通过；正确修复使它们「正确」但 ref 仍堆叠 → 同源 FAIL。
+**已回退**（with_line_y）。与 R125/R198/R205 Phase-A 死锁同类：paint 多行 line.y 应用破坏
+自源 test==ref 匹配，需架构性统一（paint 不重跑 IFC，用 compute_final 存储的正确多行行盒，
+但 R84 单行+Ahem 守卫使非 Ahem 多行不存储 → 死锁）。缺陷 1+2 是缺陷 3 的前置（IFC 先能正确算
+多行），落地后缺陷 3 成下一明确目标（破 Phase-A 死锁，多轮）。证据
+`evidence/r246-multiline-stacking-deadlock-2026-06-18.txt`。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
