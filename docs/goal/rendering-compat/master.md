@@ -2288,6 +2288,28 @@ will-change:transform，与 R114 axis-swap 族相关，低 ROI 高风险）；�
 R164 教训：候选非断言，须 LAYOUT_DUMP 实证。详见 evidence/r242-morning-work-compression-narrowing-2026-06-18.txt。
 为并行 agent R228b「下一轮排查」锐化方向（排除 footer-img，在 pre IFC 高度/overflow-x 裁剪/pre-wrap 换行间区分）。
 
+### R243 — morning-work 机制(a) 精化：LAYOUT vs PAINT 判别（2026-06-18，read-only）
+
+读 committed 代码（避开并行 agent inline/mod.rs WIP）验证 R242 候选机制(a)「pre IFC 多行高度欠计算」，得
+**否定+精化结论**：
+- **R84 多行守卫确跳过 `<pre>` 存储**（engine.rs:1909 `if inline_ctx.lines.len()>1 || !is_pure_ahem
+  {return;}`）——多行非 Ahem 的 `<pre>` 不存 inline_layout，paint 回退非存储路径。此步 R242 推测正确。
+- **否定简单子假设**：paint 空样式路径**已恢复** font_size/line_height（inline/mod.rs:1066 从
+  `inline_element_metrics` 取 layout IFC 存下的度量，注释「仅影响行盒高度，不影响行断」）。故「空样式→
+  font-size 错→pre 更短」**弱化/排除**；行断（line count）才是不被恢复部分。
+- **关键判别（LAYOUT vs PAINT）**：盒高度是 LAYOUT 属性，paint 重跑只影响已定尺寸盒内 glyph 位置。故压缩
+  两种互斥可能，R228b「暗内容（深色像素）分布」**无法区分**：
+  (a-LAYOUT) 布局阶段 `<pre>` content_height 欠算（IFC 多行 line-count/total_height 未反馈到 pre 盒→盒矮
+    →文档压缩；真因在 LAYOUT-time IFC，非 R84 守卫）；
+  (a-PAINT) 布局盒高正确但 paint 只在盒顶画 glyph（空样式 line-break 与 layout 不一致→字堆顶→深色像素
+    集中 y=150-300，盒下半浅背景看似空白）。
+- **判别探针**：LAYOUT_DUMP 12 个 `<pre>` 盒 content_height——≪预期(行数×24.5px+padding)→a-LAYOUT；
+  ≈预期但 glyph 只在顶→a-PAINT。两子情形都归 **Phase A IFC 三路径统一**（R82/R101/R125 deferred 结构项）；
+  R101/R125/R210 实证放宽守卫存多行 net-negative，非 quick win。
+- **并行 agent 正编辑 inline/mod.rs + edge_cases.rs**（工作区 WIP 未提交），高度疑似 Phase A stored-multi-line
+  新尝试；本调研不接手，仅记 LAYOUT-vs-PAINT 判别 + LAYOUT_DUMP 探针供验证。详见
+  evidence/r243-morning-work-mechanism-a-refine-2026-06-18.txt。R164 教训：否定简单子假设、未断言根因。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
