@@ -2815,3 +2815,25 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **局限（诚实）**：未读 apply_box_blur/apply_transform_post 全部边界细节（仅核语义+调用点+stub 性质）；未跑 blend reftest 确认「CPU blend no-op」视觉后果（mix-blend-mode 用例当前 ZeroWeb 不渲染，可能 reftest 已暴露或同源抵消，非本轮范围）。本轮 read-only 无代码/reftest 变更，基线 438/490 持平。详见 `evidence/r269-dc9-blend-transform-samepattern-premise-2026-06-18.txt`。
 
+### R270 — DC-8 CPU 图元覆盖保真度审计：13 中 12 已实现（9 真实+3 近似），仅 blend stub；goal doc「CPU 仅 3 图元」严重 stale（read-only，docs-only，基线 438/490 持平）
+
+**承接**：R269 附带发现 goal doc「CPU 仅 fills+rounded+glyphs」stale（cpu/mod.rs:112-180 实 loops 全 13 图元）。本轮系统审计每图元真实保真度，给 DC-8 准确图景。
+
+**审计（逐个读 render 函数体，判真实/近似/stub）**：
+- **9 真实** ✓：fills（fill_rect）、rounded_rects（fill_rounded_rect）、gradients（gradient::render_gradient 逐像素插值）、shadows（shadow::render_shadow 模糊+alpha 合成）、images（render_image 双线性插值+纯色优化+alpha 合成，gated image_cache）、strokes（render_stroke solid/dashed/dotted+LineCap）、path_fills（render_path_fill 扫描线）、path_strokes（render_path_stroke）、glyphs（draw_glyph_primitive）。
+- **3 近似** ≈：clips（apply_clip 清裁剪区**外**为**白**非透明，framebuffer 无 alpha）、transforms（apply_transform_post 逆采样+暴露区填白+rect 裁剪+整数采样，R269 已核）、filters（apply_filter：blur/brightness/contrast/grayscale/invert/saturate/sepia/hue-rotate 真实，**opacity=RGB 变暗近似** framebuffer 无 alpha，R268 已核；drop-shadow 简化）。
+- **1 stub** ✗：blend_modes（apply_blend_mode no-op，R269 已核）。
+
+**汇总**：**12/13 已实现**（9 真实+3 近似，仅 blend stub）。
+
+**关键结论**：
+1. **goal doc「CPU 仅 3 图元」严重 stale**——「已知缺口」表 + DC-8 13 项 checkbox 记「CPU 仅 fills+rounded+glyphs」，**实际 12/13**（M7 CPU 扩展后未同步）。DC-8 checkbox 多数实已 loop+真实/近似实现。
+2. **DC-8 真实状态远比 goal doc 所示接近完成**：9 真实达标 + 3 近似（覆盖满足但保真度待提，根因 framebuffer 无 alpha）+ 1 stub（blend，DC-8 唯一真未覆盖）。**DC-8 真实剩余 = blend 实现（stub→真，大特性，需 source+dest 双图层 R269）+ 3 近似提保真（依赖 framebuffer-alpha 架构）**。
+3. **对 DC-9 GPU 对照**：GPU 现状 9/13 独立 WGSL（header line 5），CPU 12/13。GPU「对齐 CPU」剩余 = filters（opacity 已落 f6fed44，blur 同模式 R269 sound）/ clips+transforms（CPU 近似参考可 ping-pong 复刻须对齐 quirk）/ **blend（CPU stub→GPU 无参考，须 CPU+GPU 双端从零，最实质缺口）**。
+
+**对 goal doc 建议（本轮不改，mission-level 谨慎 + 并行 agent 活跃）**：DC-8 checkbox + 「已知缺口」表须更新为真实状态（9✅ / clips·transforms·filters⚠️近似 / blend❌stub；「CPU 仅 3 种」→「12/13，仅 blend stub」）。本轮仅在 master.md 标记 + 给准确状态，供后续 mission-level 修正或并行 agent 参考。
+
+**对优先级队列的影响**：不改变「DC-9 是当前 active forward motion」结论，但**校正 DC-8 真实进度**（12/13 而非 3/13），消除 goal doc 误导；进一步印证 R269「blend 是 DC-8/DC-9 共同最实质缺口」（CPU+GPU 双端 stub）。
+
+**局限（诚实）**：仅核各 render 函数是否写像素 + 大致语义，未逐像素验证正确性（gradient 插值/shadow 模糊核/stroke dash 间距精度）——「真实」指「有真实实现写像素」非「与 chromium 像素一致」（后者属 reftest 验证范畴）。未跑 CPU reftest 量化保真度差异。本轮 read-only 无代码/reftest 变更，基线 438/490 持平。详见 `evidence/r270-dc8-cpu-primitive-fidelity-audit-2026-06-18.txt`。
+
