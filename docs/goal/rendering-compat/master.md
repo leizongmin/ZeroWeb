@@ -2665,3 +2665,19 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **意义**：header 控制面板反映 R229b 后真实状态，防后续 agent/读者据陈旧 line 9 重试 font-weight 死路或误判优先级。本轮 read-only 无代码/reftest 变更，基线 438/490 持平。
 
+### R262 — R238 WM-1 abspos-vertical 半 turnkey spec（位置+hook+镜像原理+探针+验证，read-only，2026-06-18，基线 438/490 持平）
+
+**承接**：第二条 reftest 杠杆 R238 WM-1 abspos-vertical（14 例，R254 确证 gap + R164 告诫）从「R254 spec」升级为半 turnkey 实现 spec。读 engine.rs:1355-1429（abspos-vertical static-position 函数全貌），补 R254 留空的行级细节。engine.rs abspos 区干净（并行 agent WIP 在 inline/mod.rs，不含此函数）。
+
+**精确位置 + 书写模式 hook（R254 未给行级）✅**：函数 engine.rs:1355-1429——**书写模式 hook 已就位**：line 1364-1365 `is_vertical_rtl = matches!(root.writing_mode, VerticalRl)`，并已传 IFC（1375 `.with_vertical_rtl`）。direction 分支可**直接 key on `is_vertical_rtl`**，无需新增查询。**bug 精确行**：line 1404-1409 `if all_inset_auto { child.x = fragment.x; child.y = fragment.y; }`——`fragment.x` 直接赋 `child.x`，**未按 is_vertical_rtl 镜像**（= residual B rtl 5.03% vs ltr 1.28% 的代码点）。**可用 CB 几何**：line 1368 `container_width = root.content_width`（注释 1366-1367：轴交换后 content_width=视觉高度/行内方向，content_height=视觉宽度/块方向）。
+
+**镜像原理**：CSS writing-modes——vertical-rl 块流向右→左（block-start=视觉**右**），vertical-lr 左→右（block-start=视觉**左**）。abspos all-inset-auto 静态位置=block-start 边，故 rl 的静态视觉 x 应是 lr 的镜像（`x_rl ≈ CB视觉宽 − 元素视觉宽 − x_lr`）。当前两者都用 fragment.x（疑 lr 模型值≈0）→ lr 对(1.28%)/rl 错(5.03%)。修复原理：`if is_vertical_rtl { child.x = mirror(fragment.x) }`。
+
+**镜像公式不能纯只读确定（诚实局限）⚠️**：mirror 精确式取决于三个纯只读无法定的坐标语义——① fragment.x/child.x 是轴交换(swapped)还是视觉(unswapped)坐标；② CB 块方向视觉宽 = `root.content_height` 还是其他；③ 元素视觉宽 = `child.height`(轴交换后)还是 `child.width`。故本 spec 为**半 turnkey**：位置+hook+原理确定，公式须代码 agent 探针实证（避免 R255→R256「推断被实证推翻」教训）。
+
+**代码 agent 须跑的探针（定 mirror 公式，强制前置）**：取一 residual B 用例（vertical-rl abspos all-inset-auto，css-writing-modes vrl-xxx），`LAYOUT_DUMP=1`/REFTEST_DUMP 渲染打印 root.writing_mode、root.content_width/height、abspos child 的 child.x/y/width/height、匹配 fragment.x/y/width、chromium 目标视觉 x；对照 chromium 反推 `x_rl = ? − ? − fragment.x` 三候选字段哪个成立；据实证式实现 line 1404-1409 内 `if is_vertical_rtl` 镜像 child.x。⚠️ fragment 坐标语义依赖 IFC（dirty），**建议并行 agent IFC WIP 提交后再实证**避免脏树干扰。
+
+**次要 residual A（all_inset_auto 未查 left/right）**：line 1396-1399 仅查 top+bottom auto，**未查 left/right**。CSS：静态位置仅在该轴 insets 全 auto 时用；left/right 指定时元素由其定位非静态。当前对「top/bottom auto 但 left/right 指定」也强行 child.x=fragment.x 覆盖 → residual A（ltr 1.28%）可能部分源于此。修复（独立于 mirror，可分步）：all_inset_auto 拆 `_y_auto`(top+bottom)/`_x_auto`(left+right)，仅对应轴全 auto 才用 fragment 修正该轴；但改现有 vrl/vlr 行为须全量验证。
+
+**验证协议（R164 教训勿未验先声称）**：① 先跑当前 per-case diff 确认 residual B(~5.03%)/A(~1.28%) 仍在；② 实现 mirror(探针实证式)+可选 residual A 拆分；③ 重跑 14 例逐例确认 rtl residual 消除且 ltr 不退化（勿据总数声称 clean +14，per-case 混 positioning+Ahem 噪声）；④ zero-regression 全量 438/490（direction 分支仅影响 vertical-mode abspos all-inset-auto；residual A 拆分可能波及 left/right 指定 abspos 须复核）；⑤ 单测构造已知 vertical-rl abspos all-inset-auto 断言 child.x=chromium 预期（block-start 在右）。**R238 现为半 turnkey spec，代码 agent 起手须先跑探针定 mirror 公式（不能跳过）。** 详见 `evidence/r262-r238-wm1-abspos-vertical-turnkey-spec-2026-06-18.txt`。
+
