@@ -48,3 +48,27 @@
 - 顶部文本区 fontdue vs Skia 度量噪声（与 morning.work/welcome 同源，非单点修——需字体光栅器升级，结构性 plateau）。
 - 真实 ZeroBrowser 路径（非 wpt-runner harness）的 SVG/图片加载——本轮仅 harness 侧（build_image_cache）；浏览器/webview 层 ImageCache 的 SVG 支持待同步。
 - **HTML width/height 单属性 aspect 推导**（`<img width=N>` 无 height）尝试修复后致 background-001/003/328/329 回归 -4（已回退）；该分支 aspect 推导与某类 background 用例交互未明，需先厘清再重试。
+
+## 复测（2026-06-18，R227 welcome padding 修复 + R255 ua_default_display 之后）
+
+| 视口 | 像素 diff | 变化 |
+|------|-----------|------|
+| 800×600 | **13.59%**（65,233 / 480,000 px） | 较 2026-06-16 的 25.11% **降 11.5pp** |
+
+**改善来源（无 wintertc 专项修复，受益于全局修复）**：
+- R227 padding 内容盒换算（painter 对 block 子节点 padding 双计修复）——wintertc hero/nav/section 多层 padding 容器此前整体下移，修复后对齐。
+- R255 ua_default_display 补 article/aside/details 等——`<section>`/`<footer>` 等本已 block（未触发幻影盒），次要受益。
+
+**DC-13 子验收核实（逐条）**：
+- header logo 可见：✓（hero `img.w-24.h-24` 渲染 96×96，images primitive=9）
+- 四个 nav button 分列：✓（`ul.grid-cols-4` 4 个 li，x=32/220/408/596 w=172）
+- 参与方 Logo 可见且不退化为短横/alt glyph：✓（9 个 logo 作 image 渲染，非 glyph）
+- 橙色 button `bg-orange-500` 正确：✓（ZW/CHR 主导色均为 (7,3,0) 橙色 bin，几乎相同）
+
+**残余 13.59% = 结构性，非 contained fix**：
+- fontdue vs chromium 文字 anti-aliasing（ZW 渲染更多黑色 AA 像素，链接区 ZW black=7267 vs CHR=3386，但**色彩正确**非 bug——orange text 在两者均无纯橙 bin，色相一致）
+- participant logo `flex flex-wrap justify-evenly` 定位精度（taffy flex-wrap 行内间距 vs chromium，logo 覆盖区 ZW 略多于 CHR）
+- 部分 logo（y=628-745）在 600 视口下方（内容溢出，chromium 同样裁剪）
+- 均 DC-14 容忍范围（产品 smoke 核心标准=logo 可见/不串联/不退化，已满足）
+
+**结论**：wintertc DC-13 产品 smoke 达**可用状态**（13.59%，核心子验收满足），无 contained fix 空间，残余属 font/flex 精度（结构性多轮或 DC-14 容忍）。无 wintertc 专项代码变更，本次为复测记录。

@@ -2497,6 +2497,16 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **reftest 杠杆验证三部曲完结**：R251 R244 DC-9 alpha（P1 contained+硬DC，≈0 reftest 杠杆）/ R253 R236 multicol baseline（P1' 最高 contained reftest 杠杆 +8）/ R254 R238 WM-1（P2 第二 reftest 杠杆 14 例）——三条路径全 spec+验证就绪，实现 agent 可按「contained 优先(DC-9)/reftest 分数优先(R236→R238)」选择，无需再调研。详见 evidence/r254-r238-wm1-abspos-vertical-verification-2026-06-18.txt。无代码变更，基线 438/490 持平。
 
+### R264 — wintertc DC-13 产品 smoke 复测：25.11%→13.59%（受益 R227/R255），核心子验收满足，残余结构性（read-only，docs-only，基线 438/490 持平）
+
+复测 wintertc 首页（DC-13 图片密集产品 smoke）。2026-06-16 录制时 25.11%，本轮（R227 padding 内容盒修复 + R255 ua_default_display 之后）实测 **13.59%（65,233/480,000 px）**，**降 11.5pp**——**无 wintertc 专项修复**，纯受益全局修复：R227 修复多层 padding 容器整体下移（hero/nav/section 对齐），R255 次要（section/footer 本已 block）。
+
+**DC-13 子验收逐条核实（LAYOUT_DUMP + 区域主色分析）**：header logo 可见 ✓（hero img 96×96，images primitive=9）；四个 nav button 分列 ✓（`ul.grid-cols-4` 4 li x=32/220/408/596 w=172）；参与方 Logo 可见且不退化为短横/alt glyph ✓（9 logo 作 image 渲染非 glyph）；橙色 `bg-orange-500` button 色彩正确 ✓（ZW/CHR 主色均 (7,3,0) 橙色 bin 几乎相同）。
+
+**残余 13.59% = 结构性，无 contained fix 空间**：① fontdue vs chromium 文字 anti-aliasing（链接区 ZW black=7267 vs CHR=3386，但**色彩正确非 bug**——orange text 两者均无纯橙 bin，色相一致）；② participant logo `flex flex-wrap justify-evenly` 定位精度（taffy flex-wrap vs chromium）；③ 部分 logo（y=628-745）在 600 视口下方（内容溢出，chromium 同裁剪）。均 DC-14 容忍范围（产品 smoke 核心=logo 可见/不串联/不退化，已满足）。
+
+**结论**：wintertc DC-13 达**可用状态**（13.59%，核心子验收满足），无 contained fix。**三个产品 smoke 页当前态**：morning-work 48.65%（R255 修 4× 高度后，残余 font/item-tag/hljs）、welcome 17.06%（font-weight R229b 死路 + item-tag R109）、wintertc 13.59%（font/flex 精度）。三者残余**全结构性**，无单会话 contained win——印证 R100-R254 clean-win 穷尽结论。证据 evidence/product-static/wintertc/README.md（复测追加）。无代码变更，基线 438/490 持平。
+
 ### R229b — font-weight 落地实测：bold 选择机制正确但 fontdue 粗体过墨 ~15% → net-negative 死路（已回退）（2026-06-18）
 
 承接 R229（font-weight 未落地精确方案）/ R230（资源前提实证）。本轮**完整落地** R229 两部分方案后实测——**纠正 R229「welcome 17% 主因=font-weight」假设**，回退。
