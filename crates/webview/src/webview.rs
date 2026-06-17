@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use zero_engine::{PipelineTimings, PrefersColorSchemeValue, RenderPipeline};
+use zero_engine::{PipelineTimings, PrefersColorSchemeValue, RenderPipeline, extract_stylesheet_hrefs};
 use zero_net::{HttpCache, HttpClient, NetError};
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
@@ -209,6 +209,49 @@ impl WebView {
     /// 通过 zero-net 发起 HTTP 请求，获取 HTML 并渲染。
     /// 整个过程是同步阻塞的。
     /// 如果请求失败，加载状态会被重置，并返回错误。
+    /// 抓取 HTML 中所有外链 `<link rel="stylesheet">` 引用的 CSS 并合并。
+    ///
+    /// goal doc P1 缺口「外部样式表加载缺失」修复：URL 导航路径下，按 base URL
+    /// 解析每个外链 href，逐个抓取，合并为单个 CSS 字符串（随后随 `load_html`
+    /// 注入级联）。href 解析与抓取由 webview 层（持有 base URL 与 http client）
+    /// 负责，DOM 内 link 提取由 `zero_engine::extract_stylesheet_hrefs` 负责，
+    /// 保持 engine 不直接耦合网络。任一链接抓取失败仅记录日志、不阻断页面加载
+    ///（与浏览器宽松行为一致）。
+    fn resolve_external_css(&self, html: &str, base_url: &str) -> String {
+        let hrefs = extract_stylesheet_hrefs(html);
+        if hrefs.is_empty() {
+            return String::new();
+        }
+        let base = url::Url::parse(base_url).ok();
+        let mut combined = String::new();
+        for href in &hrefs {
+            let abs = match base.as_ref().and_then(|b| b.join(href).ok()) {
+                Some(u) => u.to_string(),
+                None => href.clone(),
+            };
+            match self.http_client.get(&abs) {
+                Ok(resp) => match resp.text() {
+                    Ok(css) => {
+                        combined.push_str(&css);
+                        combined.push('\n');
+                    }
+                    Err(e) => tracing::warn!("external stylesheet {abs} decode failed: {e}"),
+                },
+                Err(e) => tracing::warn!("external stylesheet {abs} fetch failed: {e}"),
+            }
+        }
+        combined
+    }
+
+    /// 加载 URL（同步 HTTP GET）。
+    ///
+    /// 通过 zero-net 发起 HTTP 请求，获取 HTML 并渲染。
+    /// 整个过程是同步阻塞的。
+    /// 如果请求失败，加载状态会被重置，并返回错误。
+    ///
+    /// 外链样式表：抓取 HTML 中 `<link rel="stylesheet">` 引用的 CSS（按 base URL
+    /// 解析、逐个 HTTP 抓取、合并），随页面 HTML 一并注入级联（见
+    /// `resolve_external_css`）。外链抓取失败仅记录日志、不阻断页面加载。
     pub fn fetch_url(&mut self, url: &str) -> Result<WebViewRenderResult, WebViewError> {
         tracing::info!("Fetching URL: {url}");
 
@@ -254,7 +297,8 @@ impl WebView {
                         ));
                         WebViewError::Navigation(format!("SW response body is not valid UTF-8: {e}"))
                     })?;
-                    let render_result = self.load_html(&html, None);
+                    let external_css = self.resolve_external_css(&html, &effective_url);
+                    let render_result = self.load_html(&html, Some(&external_css));
                     self.loading = false;
                     self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
                     return Ok(render_result);
@@ -276,7 +320,8 @@ impl WebView {
                 ));
                 WebViewError::Navigation(format!("Cached response body is not valid UTF-8: {e}"))
             })?;
-            let render_result = self.load_html(&html, None);
+            let external_css = self.resolve_external_css(&html, &effective_url);
+            let render_result = self.load_html(&html, Some(&external_css));
             self.loading = false;
             self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
             return Ok(render_result);
@@ -299,8 +344,11 @@ impl WebView {
 
                 tracing::info!("Fetched {} bytes from {effective_url}", html.len());
 
+                // 抓取外链样式表（`<link rel="stylesheet">`），合并后注入级联。
+                let external_css = self.resolve_external_css(&html, &effective_url);
+
                 // 渲染 HTML
-                let render_result = self.load_html(&html, None);
+                let render_result = self.load_html(&html, Some(&external_css));
                 self.loading = false;
                 self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
                 Ok(render_result)
