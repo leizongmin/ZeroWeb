@@ -2603,3 +2603,17 @@ chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是*
 
 **方法学教训**：推理代码路径前须**核实元素实际计算值**（此处 display），UA 默认值是隐藏假设；R256 据「article 应是 block」常识假设而非实测 computed 下结论被推翻。morning-work 4× 根因 = 最朴素的 UA 默认 display 缺失，历经多轮才定位。**本轮 read-only（仅读并行 agent WIP + 源码核实），无代码/reftest 变更，基线 438/490 持平。** 详见 `evidence/r257-morning-work-rootcause-confirmed-ua-display-2026-06-18.txt`。
 
+### R258 — ua_default_display 完整性审计：a2b169e 后基本完整，无更多 morning-work 类危险缺口（read-only，2026-06-18，基线 438/490 持平）
+
+**承接**：morning-work 4× 根因 = `<article>` 缺 `ua_default_display` block 条目→inline→R109 幻影盒。a2b169e 补 6 标签（article/aside/details/hgroup/menu/search）。本轮**系统性审计** committed `ua_default_display`（style-system/src/lib.rs）对 HTML Living Standard UA 样式表 §13.1.1 的完整性，排查是否还有同类「应为 X 却回落 inline」危险缺口。read-only 源码核对 + wpt-data footprint grep，不改源码、不跑渲染、不碰并行 agent IFC WIP（inline/mod.rs）。
+
+**审计结论：a2b169e 后 ua_default_display 基本完整，无更多 morning-work 类危险缺口**。committed 现状——Block(35,含 article 等)/Table 系(10)/InlineBlock(11: img/media/form 控件)/None(10: script/style/link/meta/head/title/base/noscript/template/dialog)，其余 `_=>None`(回落 CSS 初始 inline)。DisplayValue 枚举变体齐全（Block/Inline/InlineBlock/Flex/Grid/None/Contents/Flow/FlowRoot/ListItem/Table/…），所有 UA 默认值可表达。
+
+**morning-work 类危险缺口排查（应为 block 容器却 inline + 含 block 子 → R109 幻影盒级联）**：对照 HTML UA §13.1.1 block 列表，ZeroWeb **仅缺 `center`**（legacy 居中元素），wpt-data footprint=**0 文件**。其余 block 容器全覆盖 → **无更多 article 式危险缺口**。
+
+**`<br>` 落 inline 无害**：不在任何分支→inline，但 IFC 专门拦截（`inline/mod.rs:902 if local_name()=="br"` line-break 处理）→ 换行正确性不受影响。`<wbr>` 未专门处理（仅断行建议，低影响）。
+
+**次要完整性缺口（低 footprint / 低影响，非近期杠杆）**：`meter`/`progress`→应 InlineBlock 现行内（各 2 reftest 文件，但无 gauge paint，inline vs inline-block 仅影响盒尺寸）；`center`→应 block 现 inline（0 footprint，legacy）；`source`/`track`/`param`/`area`→应 none 现 inline（均 0 footprint，空 inline 盒不可见）；**`li`→应 ListItem 现为 Block**（list-item markers 项目符号/编号未通过 display 应用——已知简化，影响所有 `<ul>/<ol>` marker 渲染，但 marker 是更大 feature「marker box 生成+paint」非单点 display 改，且涉 IFC/paint 与并行 agent WIP 潜在交叠，defer）。
+
+**结论**：a2b169e 已闭合 morning-work 类 UA display 缺口；剩余缺口 footprint ≤2 或 =0，**非 reftest/产品 smoke 杠杆**（meter/progress 即便补 inline-block 也无 gauge 渲染）。唯一广泛真实页面影响项=`li`→ListItem+list marker（更大 feature，defer 待 IFC 稳定）。**本轮价值**=把「是否还有 morning-work 同类 UA bug」从开放问题变为**已审计确认无重大缺口**，避免后续重复排查同类；钉死次要缺口清单+footprint 量级供代码 agent 低优先级参考。**本轮 read-only 无代码/reftest 变更，基线 438/490 持平。** 详见 `evidence/r258-ua-default-display-completeness-audit-2026-06-18.txt`。
+
