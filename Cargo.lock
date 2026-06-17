@@ -6007,7 +6007,6 @@ dependencies = [
 name = "zero-wpt-runner"
 version = "0.1.0"
 dependencies = [
- "jpeg-decoder",
  "png 0.17.16",
  "rayon",
  "resvg",
