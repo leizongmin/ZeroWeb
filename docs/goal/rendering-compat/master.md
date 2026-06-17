@@ -8,6 +8,18 @@
 
 **🎯 当前最高优先级（2026-06-17，R229 font-weight 精确方案核实后）**：**welcome 布局结构已对齐，剩余 17% 主因 = font-weight 未落地（已细化为「资源+接线」两部分）**。R227 padding 双计修复 28.34%→17.06%；R228 证伪第二处布局 bug（盒几何正确）；R229 用 CSS-weight × ink-mass 交叉验证加固（全部 600/700 文本 .version/.title/.section-title/.card h3 欠墨 10-66%，normal 过墨；`.version` 11px ink 10% 排除 size-forcing/Phase A 假设）并核实根因两部分：**A 资源**——`app_platform.rs:391 load_system_fonts` 仅加载 `-Regular`（主+CJK 回退全无 -Bold）；**B 接线**——`FontDesc.weight` 字段已存在但 `find()` 忽略 weight、`build_font_resolver()` 返单 id、`engine/paint/` 零 FontDesc。**下一步 R229 实现**（见 `evidence/r229-fontweight-plumbing-spec-2026-06-17.txt`）：① 接线（自源中性可先做）`find()`/`family_map` 加 weight 维度按 CSS §5.2 选最近 + paint 取 ComputedStyle.font_weight；② 资源补同族 -Bold（先 `fc-list` 确认系统已装）；成功标准 welcome 粗体文本 ink-mass 回升 ~100% CH，reftest 438 不变但提 DC-14（R221 188/475=39.6%）。⚠️ **并行 agent 正在 `table.rs`(colspan/`<col>` border-collapse) + `cpu/mod.rs`(rounded_rect alpha blend)——本方向（render-foundation/font + engine/paint/text + app_platform 字体路径）不碰二者无冲突**。⚠️ 持续 ruled out：advance-width（R225）/ multicol paint 切片（R203）/ multicol balance 两趟（R200）/ chromium 高 diff 候选（R202）/ DC-12（R197 全实现）/ R228 像素 cap-height 噪声结论（以 R229 CSS×ink 为准）。⚠️ 仍开放多轮硬架构（非单会话）：multicol-breaking layout 侧 column-aware IFC（R131）；DC-9 GPU transform/filter/blend（R220 clip 空谈，ping-pong 双纹理，reftest 低频）；DC-14 chromium-oracle 严格容差默认接线。
 
+### R231 — DC-14 的 183 case 1-3% 聚类刻画：碎片化无单一根因，font-weight 确非 reftest 杠杆（Ahem 无 weight），text-emphasis(15) 为新候选子聚类（read-only，docs-only，基线 438/490 持平）
+
+承接 R230（font-weight 限定 welcome 专有）。本轮刻画 DC-14 真正的达标杠杆——R221 标的 183 case 1-3% chromium-diff 聚类（advance-width R225 已证伪）——按目录+判定+直方图（数据源 `evidence/cross-validate-full-2026-06-17.txt`，475 case）。
+
+**按目录分布（183 case）**：css-multicol 31（已知结构性 R131）、css-writing-modes 26（轴 R114）、css-text-decor **21（15=text-emphasis-* CJK 强调点 + 4 underline-offset/decoration-thickness）**、css-fonts+CSS2/fonts 28（font-family 边界/font-kerning/font-051/@font-face——**Ahem 度量/解析，非 font-weight**）、CSS2/floats-clear 13、css-flexbox 11、css-tables 11。判定 117 POLLUTED（自源通过但 chromium 不一致=假通过）+ 66 self-fail。
+
+**直方图（0.1% bin）右偏扁平**：mode 1.1%(25)→平滑递减至 3%，median 1.59%，tight 1.0-1.3 带 60/183=33%——**非单一共享系统偏移**（单一偏移会有尖峰），而是大量小独立误差叠加。
+
+**结论**：① **183 聚类碎片化，无单一高杠杆根因**——advance-width/font-weight 均排除；② **~38%(70) 是已知结构性多轮**（multicol/writing-modes/floats-clear），非新杠杆，达标须经这些多轮子系统；③ **~15%(28) 是 Ahem 字体度量/解析**（非 font-weight，疑 line-height/kerning/解析边界）；④ **新候选 = text-emphasis 15 case（CJK 强调点 1.0-1.3%，内聚且此前未单独标记）**，可能比 multicol-breaking 更 contained（但 CJK 标记度量亦可能难），建议作 R229 之后、结构性多轮之外的**独立候选**探查；⑤ **DC-14 39.6%→95% 路径 = 结构性多轮 + 碎片化小修，无捷径**，font-weight(R229) 仅 welcome 产品 smoke + 非 Ahem 含 weight 用例，对 reftest 达标贡献有限。
+
+证据 `evidence/r231-dc14-183-cluster-fragmented-2026-06-17.txt`。无代码变更，基线 438/490 持平。
+
 ### R230 — R229 资源前提实证（系统已装 Bold 变体）+ font-weight 杠杆范围界定（welcome 专有，非跨页 DC-14 通用杠杆）（read-only，docs-only，基线 438/490 持平）
 
 承接 R229（font-weight 精确方案，留两个待核：① 系统是否已装 bold 资源；② 杠杆是否跨页泛化）。本轮 read-only 实证两点。
