@@ -13,7 +13,7 @@ use crate::gpu::atlas::{GlyphAtlas, GlyphAtlasKey};
 use crate::gpu::mesh::{color_to_f32, push_fill_quad, push_path_fill_mesh, push_path_stroke_mesh, push_stroke_mesh};
 use crate::gpu::pipeline::{
     FILL_FLOATS_PER_VERTEX, GRADIENT_FLOATS_PER_VERTEX, ROUNDED_RECT_FLOATS_PER_VERTEX, create_atlas_bind_group_layout,
-    create_blur_pipeline, create_gradient_pipeline, create_image_pipeline, create_opacity_pipeline,
+    create_blur_pipeline, create_color_filter_pipeline, create_gradient_pipeline, create_image_pipeline,
     create_render_pipeline, create_rounded_rect_pipeline, create_texture_bind_group_layout,
     create_uniform_bind_group_layout,
 };
@@ -62,9 +62,9 @@ pub struct GpuRenderer {
     /// Blur 后处理管线
     #[allow(dead_code)]
     blur_pipeline: wgpu::RenderPipeline,
-    /// filter:opacity 后处理管线（DC-9）
+    /// 单通道颜色滤镜后处理管线（DC-9：opacity/brightness/contrast）
     #[allow(dead_code)]
-    opacity_pipeline: wgpu::RenderPipeline,
+    color_filter_pipeline: wgpu::RenderPipeline,
     /// Uniform 绑定组布局
     uniform_bgl: wgpu::BindGroupLayout,
     /// Atlas 绑定组布局（保留用于 atlas 重建时重新创建绑定组）
@@ -227,7 +227,7 @@ impl GpuRenderer {
         let image_pipeline = create_image_pipeline(&device, format, &uniform_bgl, &image_bgl);
         let blur_pipeline = create_blur_pipeline(&device, format, &uniform_bgl, &blur_bgl);
         // DC-9 filter:opacity 后处理管线（复用 blur_bgl 源纹理布局）
-        let opacity_pipeline = create_opacity_pipeline(&device, format, &uniform_bgl, &blur_bgl);
+        let color_filter_pipeline = create_color_filter_pipeline(&device, format, &uniform_bgl, &blur_bgl);
 
         let atlas = GlyphAtlas::new();
         let (atlas_texture, _atlas_view, _atlas_sampler, atlas_bind_group) =
@@ -248,7 +248,7 @@ impl GpuRenderer {
             gradient_pipeline,
             image_pipeline,
             blur_pipeline,
-            opacity_pipeline,
+            color_filter_pipeline,
             uniform_bgl,
             atlas_bgl,
             gradient_bgl,
@@ -773,22 +773,22 @@ impl GpuRenderer {
         // DC-9 filter:opacity 后处理（仅 headless）。
         //
         // 无 filter 时不触发（零默认回归：438 CPU reftest 与无 filter 的 GPU case 全不受影响）。
-        // 对每个 Opacity filter 做 ping-pong 区域 RGB 乘（匹配 CPU apply_filter），结果写回
-        // headless_texture(A) 供后续 read_pixels 读取。
-        let opacity_filters = collect_opacity_filters(&primitives.filters);
-        if !opacity_filters.is_empty() && self.headless_texture.is_some() {
-            self.apply_opacity_filters_headless(width, height, &opacity_filters, scale);
+        // 对每个单通道颜色滤镜（opacity/brightness/contrast）做 ping-pong 区域后处理
+        //（匹配 CPU apply_filter），结果写回 headless_texture(A) 供后续 read_pixels 读取。
+        let color_filters = collect_color_filters(&primitives.filters);
+        if !color_filters.is_empty() && self.headless_texture.is_some() {
+            self.apply_color_filters_headless(width, height, &color_filters, scale);
         }
 
         target.present(&device);
     }
 
-    /// DC-9 filter:opacity 区域后处理（仅 headless）。
+    /// DC-9 单通道颜色滤镜区域后处理（opacity/brightness/contrast，仅 headless）。
     ///
-    /// 对每个 Opacity(amount, rect)：copy A→B（B 获得完整场景基底）→ scissor pass 采样 A
-    /// 写 B（rect 内 RGB *= amount）→ copy B→A（结果回 A 供 read_pixels）。多 filter 逐个
-    /// ping-pong，最终结果在 headless_texture(A)。匹配 CPU `apply_filter` 的 Opacity 语义。
-    fn apply_opacity_filters_headless(&mut self, width: u32, height: u32, filters: &[(Rect, f32)], scale: f32) {
+    /// 对每个 `(rect, mode, param)`：copy A→B（B 获得完整场景基底）→ scissor pass 采样 A
+    /// 写 B（rect 内按 mode 应用滤镜）→ copy B→A（结果回 A 供 read_pixels）。多滤镜逐个
+    /// ping-pong，最终结果在 headless_texture(A)。匹配 CPU `apply_filter` 语义。
+    fn apply_color_filters_headless(&mut self, width: u32, height: u32, filters: &[(Rect, f32, f32)], scale: f32) {
         use wgpu::util::DeviceExt;
 
         let Some(tex_a) = self.headless_texture.as_ref() else {
@@ -820,7 +820,7 @@ impl GpuRenderer {
 
         // 共享源采样器（ClampToEdge + Linear）
         let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Opacity Src Sampler"),
+            label: Some("Color Filter Src Sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -830,7 +830,7 @@ impl GpuRenderer {
             ..Default::default()
         });
 
-        for &(rect, amount) in filters {
+        for &(rect, mode, param) in filters {
             // scissor 钳制到 [0, width]×[0, height]（wgpu 要求非零且在界内）
             let sx = ((rect.left() * scale).floor().max(0.0) as u32).min(width);
             let sy = ((rect.top() * scale).floor().max(0.0) as u32).min(height);
@@ -843,7 +843,7 @@ impl GpuRenderer {
             }
 
             let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Opacity Filter Encoder"),
+                label: Some("Color Filter Encoder"),
             });
 
             // 1. copy A→B（B 获得完整场景内容作为基底，保 rect 外像素不变）
@@ -863,15 +863,15 @@ impl GpuRenderer {
                 extent,
             );
 
-            // 2. uniform buffer [width, height, amount, 0]（OpacityUniforms，16 字节匹配 UNIFORM_SIZE）
-            let uniform_data: [f32; 4] = [width as f32, height as f32, amount, 0.0];
+            // 2. uniform buffer [width, height, mode, param]（16 字节匹配 UNIFORM_SIZE）
+            let uniform_data: [f32; 4] = [width as f32, height as f32, mode, param];
             let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Opacity Uniform Buffer"),
+                label: Some("Color Filter Uniform Buffer"),
                 contents: bytemuck::cast_slice(&uniform_data),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
             let uniform_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Opacity Uniform BG"),
+                label: Some("Color Filter Uniform BG"),
                 layout: &self.uniform_bgl,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
@@ -880,7 +880,7 @@ impl GpuRenderer {
             });
             let src_view = tex_a.create_view(&wgpu::TextureViewDescriptor::default());
             let src_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Opacity Src BG"),
+                label: Some("Color Filter Src BG"),
                 layout: &self.blur_bgl,
                 entries: &[
                     wgpu::BindGroupEntry {
@@ -898,7 +898,7 @@ impl GpuRenderer {
             let view_b = tex_b.create_view(&wgpu::TextureViewDescriptor::default());
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Opacity Filter Pass"),
+                    label: Some("Color Filter Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view_b,
                         resolve_target: None,
@@ -912,7 +912,7 @@ impl GpuRenderer {
                     occlusion_query_set: None,
                 });
                 pass.set_scissor_rect(sx, sy, sw, sh);
-                pass.set_pipeline(&self.opacity_pipeline);
+                pass.set_pipeline(&self.color_filter_pipeline);
                 pass.set_bind_group(0, &uniform_bg, &[]);
                 pass.set_bind_group(1, &src_bg, &[]);
                 pass.draw(0..3, 0..1);
@@ -1726,12 +1726,18 @@ impl GpuRenderer {
 ///
 /// `FilterPrimitive.filters` 是按顺序应用的滤镜函数列表；提取所有 Opacity 条目，
 /// 其他滤镜（blur/brightness/...）GPU 暂未实现，此处跳过。
-fn collect_opacity_filters(filters: &[crate::primitive::FilterPrimitive]) -> Vec<(Rect, f32)> {
+/// 收集 FilterPrimitive 中的单通道颜色滤镜 → `(rect, mode, param)`（DC-9 GPU 后处理输入）。
+///
+/// `mode`：0=opacity, 1=brightness, 2=contrast（与 COLOR_FILTER_SHADER 对应）。其他滤镜
+///（blur/hue-rotate/drop-shadow 等）GPU 暂未实现，跳过。
+fn collect_color_filters(filters: &[crate::primitive::FilterPrimitive]) -> Vec<(Rect, f32, f32)> {
     filters
         .iter()
         .flat_map(|f| {
             f.filters.iter().filter_map(|k| match k {
-                FilterKind::Opacity(amount) => Some((f.rect, *amount)),
+                FilterKind::Opacity(amount) => Some((f.rect, 0.0, *amount)),
+                FilterKind::Brightness(amount) => Some((f.rect, 1.0, *amount)),
+                FilterKind::Contrast(amount) => Some((f.rect, 2.0, *amount)),
                 _ => None,
             })
         })

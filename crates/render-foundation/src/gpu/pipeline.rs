@@ -375,17 +375,21 @@ fn fs_blur(in: VertexOutput) -> @location(0) vec4f {
 }
 "#;
 
-/// WGSL 着色器 — DC-9 filter:opacity 后处理（区域 RGB 乘）。
+/// WGSL 着色器 — DC-9 单通道颜色滤镜后处理（opacity / brightness / contrast）。
 ///
-/// 与 CPU `apply_filter` 的 `Opacity(amount)` 对齐：采样源纹理，RGB *= amount
-///（framebuffer alpha 恒 255）。区域由 render pass 的 scissor rect 限定（仅影响
-/// filter.rect 内像素）。独立 WGSL 模块，自含 vs_fullscreen + VertexOutput。
-pub const OPACITY_SHADER: &str = r#"
+/// 采样源纹理，按 `mode` 应用滤镜（线性空间，sRGB 自动解码→计算→编码）：
+/// - mode 0 = opacity(amount)：RGB *= clamp(amount, 0, 1)
+/// - mode 1 = brightness(amount)：RGB *= amount（>1 可超过 1，写入时钳制）
+/// - mode 2 = contrast(amount)：(RGB - 0.5) * amount + 0.5
+///
+/// 与 CPU `apply_filter` 对齐（区域后处理，rect 由 render pass scissor 限定）。
+/// 独立 WGSL 模块，自含 vs_fullscreen + VertexOutput。
+pub const COLOR_FILTER_SHADER: &str = r#"
 struct Uniforms {
     screen_width: f32,
     screen_height: f32,
-    amount: f32,
-    _pad: f32,
+    mode: f32,
+    param: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -419,10 +423,20 @@ fn vs_fullscreen(
 }
 
 @fragment
-fn fs_opacity(in: VertexOutput) -> @location(0) vec4f {
+fn fs_color_filter(in: VertexOutput) -> @location(0) vec4f {
     let c = textureSample(src_texture, src_sampler, in.uv);
-    let a = max(0.0, min(1.0, uniforms.amount));
-    return vec4f(c.r * a, c.g * a, c.b * a, 1.0);
+    let p = uniforms.param;
+    if (uniforms.mode < 0.5) {
+        // opacity
+        let a = max(0.0, min(1.0, p));
+        return vec4f(c.r * a, c.g * a, c.b * a, 1.0);
+    } else if (uniforms.mode < 1.5) {
+        // brightness
+        return vec4f(c.r * p, c.g * p, c.b * p, 1.0);
+    } else {
+        // contrast
+        return vec4f((c.r - 0.5) * p + 0.5, (c.g - 0.5) * p + 0.5, (c.b - 0.5) * p + 0.5, 1.0);
+    }
 }
 "#;
 
@@ -810,30 +824,30 @@ pub fn create_blur_pipeline(
     })
 }
 
-/// 创建 filter:opacity 后处理管线（DC-9）。
+/// 创建颜色滤镜后处理管线（DC-9：opacity / brightness / contrast）。
 ///
-/// 结构同 `create_blur_pipeline`：group 0 = uniform（UNIFORM_SIZE=16，4 f32），
-/// group 1 = 源纹理+采样器（`create_texture_bind_group_layout`）。entry_point =
-/// `fs_opacity`（区域 RGB 乘，区域由 pass scissor 限定）。
-pub fn create_opacity_pipeline(
+/// 结构同 `create_blur_pipeline`：group 0 = uniform（UNIFORM_SIZE=16，4 f32 =
+/// {screen_w, screen_h, mode, param}），group 1 = 源纹理+采样器（`create_texture_bind_group_layout`）。
+/// entry_point = `fs_color_filter`，按 uniform.mode 分派滤镜；区域由 pass scissor 限定。
+pub fn create_color_filter_pipeline(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
     uniform_bgl: &wgpu::BindGroupLayout,
     src_bgl: &wgpu::BindGroupLayout,
 ) -> wgpu::RenderPipeline {
     let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Opacity Filter Shader"),
-        source: wgpu::ShaderSource::Wgsl(OPACITY_SHADER.into()),
+        label: Some("Color Filter Shader"),
+        source: wgpu::ShaderSource::Wgsl(COLOR_FILTER_SHADER.into()),
     });
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("Opacity Pipeline Layout"),
+        label: Some("Color Filter Pipeline Layout"),
         bind_group_layouts: &[uniform_bgl, src_bgl],
         push_constant_ranges: &[],
     });
 
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("Opacity Pipeline"),
+        label: Some("Color Filter Pipeline"),
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
             module: &shader_module,
@@ -843,7 +857,7 @@ pub fn create_opacity_pipeline(
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader_module,
-            entry_point: Some("fs_opacity"),
+            entry_point: Some("fs_color_filter"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format,
