@@ -2237,6 +2237,32 @@ evidence/r240-semi-replaced-stretch-deep-spec-2026-06-18.txt。
 test==ref 天然不变须独立 Oracle）+ make reftest 同源不回归；④ A 不足再转 B。R164 教训：23%/15%/3.55%
 可能含 form-control UA 外观（按钮边框/字号/outline）差异，A/B 后残差记录为 paint 层子问题勿强求 +3。
 
+### R241 — R240 实证推翻 + master.md 自洽纠正（2026-06-18，read-only）
+
+**⚠️ 纠正 R240 结论**：R240 据 tree.rs:186 推断「form control 不被当替换元素 → abspos 半替换拉伸缺失 →
+#6 家族 contained 修复目标」。**实证推翻**（r239 §2 product-smoke + puppeteer A/B，2026-06-18）：
+`position-absolute-semi-replaced-stretch-input` **ZWt-vs-ZWr=0.00%** 但 ZWt-vs-CHR=23.03% / ZWr-vs-CHR=23.03%。
+即 ZeroWeb 把 test（auto-stretch）与 ref（显式 calc(100%-6px)）渲染成**同一几何**——input 已正确拉伸
+填满 CB-insets，**几何完全正确**，tree.rs:186 不影响此场景。23% chromium 差异 **100% 在控件绘制层**
+（chromium 画原生 input widget，ZeroWeb 画 styled box + lime outline）。
+
+⇒ **#6/#10/#14 是原生表单控件外观 feature gap，非布局 bug**；改 apply_replaced_element_sizing 对
+chromium-diff **零改善**。R164/R203 教训再次印证：单点修复推断须实证，不能据代码推断。R240 段保留为
+历史记录，本段向前纠正。
+
+**18 候选最终归类（contained clean win 穷尽）**：已修 8（#1/#3/#4/#7/#8/#9/#11）；FEATURE-GAP defer
+#2(::backdrop+dialog)/#6/#10/#14（原生表单控件外观）；STRUCTURAL defer #5（JS 动态 relayout）/#12/#13
+（R109 block-in-inline）/#15/#17/#18（vertical-rl/sideways+rtl+collapsed border，4.7%，test/ref 唯一差
+will-change:transform，与 R114 axis-swap 族相关，低 ROI 高风险）；字体域 #16。**证实 R144/R204 plateau**。
+
+**下一方向（reftest/pollution contained 单点穷尽后）**：
+  (a) **DC-13 产品 smoke morning-work 67%**（最高 ROI）——R228b 证据定位真因=内容纵向压缩（ZW 暗内容
+      集中 y=150-300、y=300-525 空白；CH 均匀 y=150-600），疑 `<img>` 固有尺寸塌缩或 `pre code{min-width}`
+      溢出致内容堆顶，DC-11 替换元素/块格式化，product-smoke 可量化。
+  (b) 原生表单控件渲染（系统性消 #6/#10/#14 + form-control pollution，大特性）。
+  (c) DC-9 GPU ping-pong 地基（filter:opacity 先行，R220）。
+  WM-1 abspos-vertical（R238，14 例）长线结构候选。详见 evidence/r241-r240-refutation-reconciliation-2026-06-18.txt。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
