@@ -2429,6 +2429,20 @@ CSS2 -3）——回归用例（multicol-breaking-*/column-height-009/column-bala
 
 **对优先级队列的影响**：DC-9 ping-pong 地基比预想 contained（pipeline 已 dead-coded 存在）。建议实现 agent（P1 起手）：R244 alpha groundwork → R249 Step1 ping-pong 地基（2nd texture + un-dead-code + 单测，零行为变更）→ Step2 filter:opacity 消费者 → filter:blur（复用 fs_blur）/brightness/contrast → transform/blend（区域隔离多轮）。其余不变：P0 morning-work R247 已落地 → 缺陷3 paint-multiline Phase-A 死锁（多轮）→ P1 R244→R249 → P2 R236 multicol baseline → P3 R238 WM-1。**无 open 阻塞**。详见 evidence/r249-dc9-gpu-pingpong-groundwork-spec-2026-06-18.txt。无代码变更，基线 438/490 持平。
 
+### R250 — DC-9 reftest+product-smoke footprint 量化：≈ 0，DC-9 非 reftest/产品杠杆（2026-06-18，read-only，grep 无碰撞）
+
+承接 R249（DC-9 ping-pong 地基 spec）后的 footprint 量化，类比 R246 pre-wrap / R248 quirks。先核对前提：transform/filter/blend **是真缺口非 clip 式 no-op**——R220 证 ClipPrimitive 生产从不生成，但本轮 grep 实证 apply_filter(mod.rs:697)/apply_transform(mod.rs:705)/apply_blend_mode(mod.rs:730)/apply_backdrop_filter(mod.rs:383) 均在 paint_node 生产调用 → 三图元由 paint 生成、GPU 静默丢弃 = 真缺口（R249 前提成立）。注：Transform 的 translation 经 apply_transform_offset 烘焙进坐标，但旋转/缩放/倾斜靠 TransformPrimitive，GPU 丢弃。
+
+**reftest footprint（wpt-data 665 html 实测）**：`transform:`=1（css-position incidental）、`filter:`=**0**、`mix-blend-mode`=3（css-position z-index-blend incidental）、`backdrop-filter`=0、`will-change`=10（仅 hint）。→ DC-9 三真缺口 reftest footprint **≤ 4 且全 incidental**，即使完美 GPU 支持也只动 ≤4 用例（490 的 <1%），与 R246/R248 同类≈0。
+
+**关键：DC-9 专属目录未导入**——已导入 css 目录为 CSS2/flexbox/fonts/grid/multicol/position/tables/text-decor/writing-modes；**css-transforms / filter-effects / compositing 均未导入**。故 footprint≈0 主因是专属目录尚未导入（goal Phase 1-3 范围未含）→ DC-9 仅在 future M10 扩展导入这些目录后才 reftest-load-bearing。
+
+**product-smoke footprint（实测，纠正 substring 误匹配）**：welcome.html 2 命中**均为 `text-transform:uppercase`（文本大小写属性，非 2D transform）**→ 真实 DC-9 使用 0；morning-work 0；wintertc 1（疑同类 text-transform 误匹配，~0）。→ 产品页基本不用 2D transform/filter/blend，DC-9 无产品 smoke 杠杆。
+
+**结论：DC-9 价值定位**：(a) DC-9 Done Criterion 本身（图元覆盖单测=硬门禁，与 reftest 分数无关）；(b) future-proofing（M10 扩展导入专属目录后做准备）；(c) **非** 近期 reftest 杠杆（≤4 incidental）；(d) **非** 产品 smoke 杠杆（≈0）。**期望管理**：DC-9 工作不应期待 reftest 438/490 上升或 product-smoke diff 下降，验证聚焦 DC-9 图元覆盖单测（framebuffer 像素断言）。
+
+**对优先级队列的战略含义**：DC-9（P1）footprint≈0 reftest 杠杆；而 P2 R236 multicol baseline-export（8 例 1.1%）、P3 R238 WM-1（14 例）均在 490 自源集=**真实 reftest 杠杆**。DC-9 P1 理由不变（contained 零回归地基 + 硬 Done Criterion，非 reftest 杠杆）；若实现 agent 目标是**最大化 reftest/DC-14 进展**，R236/R238（结构多轮但真实 reftest 杠杆）可上调与 DC-9 并列或之前；若目标**低风险 contained 进展**，DC-9（R244→R249）仍优先。二者非互斥：DC-9 地基零回归可先落再并行攻 R236/R238。详见 evidence/r250-dc9-reftest-footprint-2026-06-18.txt。无代码变更，基线 438/490 持平。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
