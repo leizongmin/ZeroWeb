@@ -8,6 +8,18 @@
 
 **🎯 当前最高优先级（2026-06-17，R229 font-weight 精确方案核实后）**：**welcome 布局结构已对齐，剩余 17% 主因 = font-weight 未落地（已细化为「资源+接线」两部分）**。R227 padding 双计修复 28.34%→17.06%；R228 证伪第二处布局 bug（盒几何正确）；R229 用 CSS-weight × ink-mass 交叉验证加固（全部 600/700 文本 .version/.title/.section-title/.card h3 欠墨 10-66%，normal 过墨；`.version` 11px ink 10% 排除 size-forcing/Phase A 假设）并核实根因两部分：**A 资源**——`app_platform.rs:391 load_system_fonts` 仅加载 `-Regular`（主+CJK 回退全无 -Bold）；**B 接线**——`FontDesc.weight` 字段已存在但 `find()` 忽略 weight、`build_font_resolver()` 返单 id、`engine/paint/` 零 FontDesc。**下一步 R229 实现**（见 `evidence/r229-fontweight-plumbing-spec-2026-06-17.txt`）：① 接线（自源中性可先做）`find()`/`family_map` 加 weight 维度按 CSS §5.2 选最近 + paint 取 ComputedStyle.font_weight；② 资源补同族 -Bold（先 `fc-list` 确认系统已装）；成功标准 welcome 粗体文本 ink-mass 回升 ~100% CH，reftest 438 不变但提 DC-14（R221 188/475=39.6%）。⚠️ **并行 agent 正在 `table.rs`(colspan/`<col>` border-collapse) + `cpu/mod.rs`(rounded_rect alpha blend)——本方向（render-foundation/font + engine/paint/text + app_platform 字体路径）不碰二者无冲突**。⚠️ 持续 ruled out：advance-width（R225）/ multicol paint 切片（R203）/ multicol balance 两趟（R200）/ chromium 高 diff 候选（R202）/ DC-12（R197 全实现）/ R228 像素 cap-height 噪声结论（以 R229 CSS×ink 为准）。⚠️ 仍开放多轮硬架构（非单会话）：multicol-breaking layout 侧 column-aware IFC（R131）；DC-9 GPU transform/filter/blend（R220 clip 空谈，ping-pong 双纹理，reftest 低频）；DC-14 chromium-oracle 严格容差默认接线。
 
+### R232 — text-emphasis 完全未实现（非 clean win，低 diff 系标记小所致）+ DC-14 1-3% 簇的「字体/文本属性 plumbing 缺口」统一模式（R229 为模板）（read-only，docs-only，基线 438/490 持平）
+
+承接 R231（text-emphasis 15 标为「可能 contained 候选」）。本轮核实——**降级该判断**。
+
+**text-emphasis = 完全未实现**：全仓库 grep `emphasis` 在 css-parser/style-system/engine **零命中**，`text-emphasis-{position,style,color}` 静默丢弃，强调点根本不渲染。15 case 的 1.0-1.3% chromium-diff **非位置略偏**，而是标记缺席但 CJK 强调点本身小（像素占比 ~1%）→ **低 diff 误导**。修复=从零实现特性（parse + paint），feature implementation 非 contained fix。**勿当 quick win**。
+
+**更广模式（统一 R231 的「碎片」印象）**：DC-14 1-3% 簇含一个内聚子类——**字体/文本属性 plumbing 缺口**（已 parse 或可 parse，但未 wire 到 ComputedStyle→shaper/paint，因效果细微产欺骗性小 diff）：font-weight（R229，FontDesc.weight 字段存在但 find/paint 不用）、font-kerning（matcher:897 parse 但 ComputedStyle/paint/shaper 不消费，rustybuzz 默认 shaping 含 kerning 但 CSS 属性未控制）、text-emphasis（未实现）、text-underline-offset/decoration-thickness（未实现）、@font-face/font-051(large-font=Phase A 死锁)。占簇 ~15-25%。
+
+**统一洞察**：这非碎片噪声，而是**共享修复模式**（把已 parse 字体属性 wire 到 ComputedStyle→fontdue/rustybuzz）。**R229（font-weight）是模板**，可系统化推广到 font-kerning（已 parse 只差 wire，比 text-emphasis 从零实现更轻，宜次之）→ text-emphasis → underline-offset。每个 plumbing 修复 per-case 收益小（属性效果细微，diff 本就 ~1%）但累加提 DC-14 chromium 一致率，自源中性。
+
+**细化 R231 结论**：DC-14 183 簇 = **结构性多轮(38%: multicol/writing-modes/floats-clear) + 字体/文本属性 plumbing 缺口(~15-25%，内聚模式，R229 先行作模板) + 真碎片**。无单一 clean win，但字体属性 plumbing 是可系统推进的方向（区别于 multicol 结构性多轮）。证据 `evidence/r232-text-emphasis-unimplemented-font-plumbing-pattern-2026-06-17.txt`。无代码变更，基线 438/490 持平。
+
 ### R231 — DC-14 的 183 case 1-3% 聚类刻画：碎片化无单一根因，font-weight 确非 reftest 杠杆（Ahem 无 weight），text-emphasis(15) 为新候选子聚类（read-only，docs-only，基线 438/490 持平）
 
 承接 R230（font-weight 限定 welcome 专有）。本轮刻画 DC-14 真正的达标杠杆——R221 标的 183 case 1-3% chromium-diff 聚类（advance-width R225 已证伪）——按目录+判定+直方图（数据源 `evidence/cross-validate-full-2026-06-17.txt`，475 case）。
