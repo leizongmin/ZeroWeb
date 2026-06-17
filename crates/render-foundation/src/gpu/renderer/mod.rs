@@ -59,8 +59,7 @@ pub struct GpuRenderer {
     gradient_pipeline: wgpu::RenderPipeline,
     /// Image 渲染管线
     image_pipeline: wgpu::RenderPipeline,
-    /// Blur 后处理管线
-    #[allow(dead_code)]
+    /// Blur 后处理管线（DC-9 filter:blur 2-pass）
     blur_pipeline: wgpu::RenderPipeline,
     /// 单通道颜色滤镜后处理管线（DC-9：opacity/brightness/contrast）
     #[allow(dead_code)]
@@ -779,6 +778,11 @@ impl GpuRenderer {
         if !color_filters.is_empty() && self.headless_texture.is_some() {
             self.apply_color_filters_headless(width, height, &color_filters, scale);
         }
+        // filter:blur（2-pass H+V 高斯，复用 blur_pipeline），同样 ping-pong 区域后处理。
+        let blur_filters = collect_blur_filters(&primitives.filters);
+        if !blur_filters.is_empty() && self.headless_texture.is_some() {
+            self.apply_blur_filters_headless(width, height, &blur_filters, scale);
+        }
 
         target.present(&device);
     }
@@ -936,6 +940,106 @@ impl GpuRenderer {
             );
 
             self.queue.submit(std::iter::once(encoder.finish()));
+        }
+    }
+
+    /// DC-9 filter:blur 区域后处理（2-pass H+V 高斯，仅 headless）。
+    ///
+    /// 对每个 `(rect, radius)`：可分离高斯 = 水平 1D + 垂直 1D 两趟。每趟用 blur_pipeline
+    /// ping-pong：copy src→dst（保 rect 外像素）→ scissor pass 采样 src、按方向 blur 写 dst
+    ///（rect 内）→ 进入下一趟时 dst 变 src。最终结果在 headless_texture(A)。
+    /// uniform = `{screen_w, screen_h, blur_radius, direction}`（direction 0=H, 1=V，与
+    /// BLUR_SHADER 对齐）。
+    fn apply_blur_filters_headless(&mut self, width: u32, height: u32, filters: &[(Rect, f32)], scale: f32) {
+        let Some(tex_a) = self.headless_texture.as_ref() else {
+            return;
+        };
+        let need_recreate = self
+            .headless_texture_b
+            .as_ref()
+            .map(|t| t.size().width != width || t.size().height != height)
+            .unwrap_or(true);
+        if need_recreate {
+            self.headless_texture_b = Some(create_headless_texture(
+                &self.device,
+                width,
+                height,
+                self.surface_format,
+            ));
+        }
+        let Some(tex_b) = self.headless_texture_b.as_ref() else {
+            return;
+        };
+
+        let extent = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        // 克隆 Arc 设备/队列，避免在循环中调用 run_blur_pass（自由函数，借用域分离）时
+        // 与 tex_a/tex_b（borrow self.headless_texture/_b）冲突。
+        let device = self.device.clone();
+        let queue = self.queue.clone();
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Blur Src Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        for &(rect, radius) in filters {
+            if radius < 1.0 {
+                continue; // 零半径模糊 = no-op
+            }
+            let sx = ((rect.left() * scale).floor().max(0.0) as u32).min(width);
+            let sy = ((rect.top() * scale).floor().max(0.0) as u32).min(height);
+            let sw = ((rect.right() - rect.left()).max(0.0) * scale).ceil() as u32;
+            let sh = ((rect.bottom() - rect.top()).max(0.0) * scale).ceil() as u32;
+            let sw = sw.min(width.saturating_sub(sx));
+            let sh = sh.min(height.saturating_sub(sy));
+            if sw == 0 || sh == 0 {
+                continue;
+            }
+            let scissor = (sx, sy, sw, sh);
+
+            // Pass 1 水平：copy A→B，blur_pipeline 采样 A（direction=0）写 B（rect 内）。
+            // B = H-blurred(rect) + original(outside)。
+            run_blur_pass(
+                &device,
+                &queue,
+                &self.blur_pipeline,
+                &self.uniform_bgl,
+                &self.blur_bgl,
+                tex_a,
+                tex_b,
+                extent,
+                &sampler,
+                radius,
+                0.0,
+                scissor,
+                "Blur H",
+            );
+            // Pass 2 垂直：copy B→A，blur_pipeline 采样 B（direction=1）写 A（rect 内）。
+            // A = V-blur(H-blurred)(rect) + original(outside) = 2D blur。
+            run_blur_pass(
+                &device,
+                &queue,
+                &self.blur_pipeline,
+                &self.uniform_bgl,
+                &self.blur_bgl,
+                tex_b,
+                tex_a,
+                extent,
+                &sampler,
+                radius,
+                1.0,
+                scissor,
+                "Blur V",
+            );
         }
     }
 
@@ -1742,6 +1846,117 @@ fn collect_color_filters(filters: &[crate::primitive::FilterPrimitive]) -> Vec<(
             })
         })
         .collect()
+}
+
+/// 收集 FilterPrimitive 中的 Blur 变体 → `(rect, radius_px)`（DC-9 GPU 后处理输入）。
+fn collect_blur_filters(filters: &[crate::primitive::FilterPrimitive]) -> Vec<(Rect, f32)> {
+    filters
+        .iter()
+        .flat_map(|f| {
+            f.filters.iter().filter_map(|k| match k {
+                FilterKind::Blur(radius) => Some((f.rect, *radius)),
+                _ => None,
+            })
+        })
+        .collect()
+}
+
+/// 单趟 blur（自由函数，避免与 headless_texture 借用冲突）：copy src→dst（保 dst 的
+/// rect 外像素）→ scissor pass 用 blur_pipeline 采样 src、按 `direction`（0=H,1=V）以
+/// `radius` blur 写 dst（rect 内）。
+#[allow(clippy::too_many_arguments)]
+fn run_blur_pass(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    pipeline: &wgpu::RenderPipeline,
+    uniform_bgl: &wgpu::BindGroupLayout,
+    blur_bgl: &wgpu::BindGroupLayout,
+    src: &wgpu::Texture,
+    dst: &wgpu::Texture,
+    extent: wgpu::Extent3d,
+    sampler: &wgpu::Sampler,
+    radius: f32,
+    direction: f32,
+    scissor: (u32, u32, u32, u32),
+    label: &str,
+) {
+    use wgpu::util::DeviceExt;
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("Blur Filter Encoder"),
+    });
+    // 1. copy src→dst（dst 获得 src 内容作为基底，保 rect 外像素）
+    encoder.copy_texture_to_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: src,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyTextureInfo {
+            texture: dst,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        extent,
+    );
+    // 2. uniform {screen_w, screen_h, blur_radius, direction}（与 BLUR_SHADER Uniforms 对齐）
+    let (w, h) = (extent.width, extent.height);
+    let uniform_data: [f32; 4] = [w as f32, h as f32, radius, direction];
+    let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Blur Uniform Buffer"),
+        contents: bytemuck::cast_slice(&uniform_data),
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
+    let uniform_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Blur Uniform BG"),
+        layout: uniform_bgl,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: uniform_buffer.as_entire_binding(),
+        }],
+    });
+    let src_view = src.create_view(&wgpu::TextureViewDescriptor::default());
+    let src_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Blur Src BG"),
+        layout: blur_bgl,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&src_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    });
+    // 3. scissor pass：采样 src、blur 写 dst（rect 内）
+    let dst_view = dst.create_view(&wgpu::TextureViewDescriptor::default());
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some(label),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &dst_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        let (sx, sy, sw, sh) = scissor;
+        pass.set_scissor_rect(sx, sy, sw, sh);
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, &uniform_bg, &[]);
+        pass.set_bind_group(1, &src_bg, &[]);
+        pass.draw(0..3, 0..1);
+    }
+    queue.submit(std::iter::once(encoder.finish()));
 }
 
 /// 创建无头渲染目标纹理

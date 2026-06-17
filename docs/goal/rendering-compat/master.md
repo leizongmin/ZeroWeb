@@ -2830,3 +2830,20 @@ GPU 按 `uniforms.mode` 分派：
 
 **局限（诚实）**：未逐像素验证 GPU 输出 == CPU（gradient 插值/rounded_rect 抗锯齿/shadow 模糊核精度）——「sound」=机制完整 + 语义对齐（非 stub/passthrough/简化），非像素一致（后者须 `make reftest --gpu`）。未读各 mesh 函数全部边界细节（仅核 style 分派 + 非 stub）。本轮 read-only 无代码/reftest 变更，基线 438/490 持平。详见 `evidence/r275-gpu-primitive-fidelity-audit-2026-06-18.txt`。
 
+### R276 — DC-10 浏览器图元消费审计：消费全 13（双路径），非「仅 fills+glyphs 丢弃 11」（goal doc stale，如 DC-8 CPU）；「断桥」叙事 largely resolved（read-only，docs-only，基线 438/490 持平）
+
+**承接**：R270 证 goal doc「CPU 仅 3/13」stale（实 12/13）。本轮核 goal doc 另一 P0 缺口——「浏览器 append_webview_primitives 仅消费 fills+glyphs 丢弃 11」。核实——**结论：浏览器消费全 13（双路径），goal doc 该声称 stale**。
+
+**审计（apps/browser app_render.rs + app_platform.rs）**：
+1. **append_webview_primitives 字面仅 fills+glyphs**（app_render.rs:1851-1944，loop fills :1865 + glyphs :1899）——goal doc 字面 true，但**忽略并行 extras 路径**。
+2. **get_webview_extra_primitives（:143）+ transform_webview_primitives 消费另 11 种**：取 webview `last_render().primitives`（全 13）→ transform_webview_primitives（:174，对全 13 应用 offset/scale/clip，body :1945-2152 逐类型 loop+push 变换 clone）→ 清 fills/glyphs（:183-184，已在 chrome 层）→ 返 11 extras。
+3. **CPU + GPU 双 render 路径都取 extras 拼 scene_primitives 传 renderer**：render_cpu（app_platform.rs:187 `webview_extras=get_webview_extra_primitives()` → :190 scene_primitives=extras → :193 fills 前置 → :203 `render_full_scene(&scene_primitives,...)`）；render_frame GPU（:142→:145→:146→:157 `render_full_scene_gpu(&scene_primitives,...)`）。→ **CPU+GPU renderer 都收 fills + 11 extras + glyphs**。
+
+**关键结论**：① **浏览器消费全 13**（fills+glyphs 经 append→chrome 层；11 extras 经 get_webview_extra_primitives→transform_webview_primitives→scene_primitives）——**双路径设计，非静默丢弃 11**。② goal doc「P0 仅 fills+glyphs 丢弃 11」**stale**（如 DC-8 CPU）。**DC-10 实质满足**。③ scale_factor+offset+clip 全应用（transform_webview_primitives 全 13）。④ CSS painting order 由 renderer 按字段序 loop 保证。
+
+**重大 reframe：rendering-compat 覆盖「断桥」叙事 largely RESOLVED**：goal doc 描「Paint 13 → CPU 仅 3/GPU 仅 2/浏览器仅 2（丢 11）」。R270+R275+R276 证 **CPU 12/13（仅 blend stub）+ GPU 9 类型经 6 管线（剩 clips/transforms/blend）+ 浏览器消费全 13**。→ **断桥 largely resolved**，真实剩余缺口收窄为：GPU clips/transforms/blend（R269/R275）+ blend CPU+GPU 双端 stub（R269/R270）+ filter opacity 近似（R272）+ filter 子类 grayscale/invert/saturate/sepia/hue-rotate（color_filter 可扩 R273）。**非 goal doc「11 种全丢」广泛断桥**。
+
+**对 goal doc 建议（本轮不改，mission 级）**：DC-10 + 「已知缺口」表「浏览器仅 fills+glyphs 丢弃 11」须更新为「消费全 13 双路径，DC-10 实质满足」。与 DC-8 CPU stale（R270）合并一次 mission 级 goal doc 覆盖更新。
+
+**局限（诚实）**：未逐字段验证 transform_webview_primitives 对每类型的变换公式正确（offset/scale/clip 数学），仅核「全 13 loop+push 变换 clone」（机制存在）。未跑 browser 路径 reftest 量化「全 13 实渲染」（CPU reftest 438/490 经 render_full_scene 已含 extras）。本轮 read-only 无代码/reftest 变更，基线 438/490 持平。详见 `evidence/r276-dc10-browser-primitive-consumption-audit-2026-06-18.txt`。
+
