@@ -8,6 +8,16 @@
 
 **🎯 当前最高优先级（2026-06-17，R229 font-weight 精确方案核实后）**：**welcome 布局结构已对齐，剩余 17% 主因 = font-weight 未落地（已细化为「资源+接线」两部分）**。R227 padding 双计修复 28.34%→17.06%；R228 证伪第二处布局 bug（盒几何正确）；R229 用 CSS-weight × ink-mass 交叉验证加固（全部 600/700 文本 .version/.title/.section-title/.card h3 欠墨 10-66%，normal 过墨；`.version` 11px ink 10% 排除 size-forcing/Phase A 假设）并核实根因两部分：**A 资源**——`app_platform.rs:391 load_system_fonts` 仅加载 `-Regular`（主+CJK 回退全无 -Bold）；**B 接线**——`FontDesc.weight` 字段已存在但 `find()` 忽略 weight、`build_font_resolver()` 返单 id、`engine/paint/` 零 FontDesc。**下一步 R229 实现**（见 `evidence/r229-fontweight-plumbing-spec-2026-06-17.txt`）：① 接线（自源中性可先做）`find()`/`family_map` 加 weight 维度按 CSS §5.2 选最近 + paint 取 ComputedStyle.font_weight；② 资源补同族 -Bold（先 `fc-list` 确认系统已装）；成功标准 welcome 粗体文本 ink-mass 回升 ~100% CH，reftest 438 不变但提 DC-14（R221 188/475=39.6%）。⚠️ **并行 agent 正在 `table.rs`(colspan/`<col>` border-collapse) + `cpu/mod.rs`(rounded_rect alpha blend)——本方向（render-foundation/font + engine/paint/text + app_platform 字体路径）不碰二者无冲突**。⚠️ 持续 ruled out：advance-width（R225）/ multicol paint 切片（R203）/ multicol balance 两趟（R200）/ chromium 高 diff 候选（R202）/ DC-12（R197 全实现）/ R228 像素 cap-height 噪声结论（以 R229 CSS×ink 为准）。⚠️ 仍开放多轮硬架构（非单会话）：multicol-breaking layout 侧 column-aware IFC（R131）；DC-9 GPU transform/filter/blend（R220 clip 空谈，ping-pong 双纹理，reftest 低频）；DC-14 chromium-oracle 严格容差默认接线。
 
+### R230 — R229 资源前提实证（系统已装 Bold 变体）+ font-weight 杠杆范围界定（welcome 专有，非跨页 DC-14 通用杠杆）（read-only，docs-only，基线 438/490 持平）
+
+承接 R229（font-weight 精确方案，留两个待核：① 系统是否已装 bold 资源；② 杠杆是否跨页泛化）。本轮 read-only 实证两点。
+
+**① R229 资源前提 = 实证可用（移除不确定性）**：`fc-list` 确认本机已装全部所需粗体变体——`DejaVuSans-Bold.ttf`、`NotoSans-Bold.ttf`、`NotoSansCJK-Bold.ttc`（SC/TC/JP/HK/KR 全）、`Liberation*-Bold.ttf`。故 R229 资源修复 = **仅向 `load_system_fonts` 路径表追加已存在的 `-Bold` 路径**，无需 fetch/打包字体资产。**关键细节**：DejaVu/Noto 仅有 Regular(400)+Bold(700)，**无独立 Medium(500)/SemiBold(600)**，故 CSS weight 500/600 须按 §5.2 fallback 落到 Bold(700) 或 Regular(400)（实现须遵循 §5.2 font-matching，否则 600 仍落 Regular）。
+
+**② font-weight 杠杆范围 = welcome 专有，非跨页 DC-14 通用杠杆（纠正潜在过度泛化）**：测 wintertc PNG（24.25% diff）的 ink-mass——其 diff 主导是**橙色/彩色内容**（top-area 橙色 ink 仅 CH 的 26%、band[180,240] 橙色调不同 122%），**非** welcome 那种干净的 bold-vs-normal ink 分裂。即 wintertc 的 24% 主要是橙色按钮/块（`.bg-orange-500`/`.text-orange-500`）+ 可能的图片/logo 渲染缺口，**不是 font-weight**。⚠️ 但 wintertc PNG（06-16 23:15）**早于 R227 + 图片管线 R214-R218**，stale，无法干净区分 font-weight vs 布局/图片；且当前重渲染会被并行 agent 未提交的 `cpu/mod.rs` alpha-blend WIP 污染→**wintertc 须待并行 agent 提交后用干净 build 重渲染再诊断**（独立 bug 类：橙色/彩色 + 图片，非 font-weight）。
+
+**对 R229 优先级的影响**：font-weight 修复仍是对 **welcome 17%** 的干净单点杠杆（welcome 是文本主导页），且很可能覆盖 R221 的 183 case 1-3% chromium-diff 聚类中**含 font-weight 的 reftest 用例**；但**不是**能拉起所有产品页的通用杠杆（wintertc 需独立调查橙色/图片）。R229 接线（自源中性）+ 追加 Bold 路径仍是当前最高性价比的 welcome/DC-14 杠杆，无前置阻塞。证据 `evidence/r229-fontweight-plumbing-spec-2026-06-17.txt`（资源前提补实证）。无代码变更，基线 438/490 持平。
+
 ### R229 — font-weight 未落地精确方案：资源（仅 -Regular）+ 接线（weight 维度全程忽略）两部分核实（read-only 调研，docs-only，基线 438/490 持平）
 
 承接 R228（welcome 17% = font-weight 未落地）。本轮 read-only 把 R229 从假设细化为「资源 + 接线」两部分精确方案。
