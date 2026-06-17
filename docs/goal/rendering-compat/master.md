@@ -2352,6 +2352,27 @@ IFC WIP）精确定位 GPU alpha 通道缺口——**CPU R228b 的 GPU 同源类
 **协调**：并行 agent WIP（未提交）正修此根因；本调研不接手，仅实证根因 + 验证配方。详见
 evidence/r245-morning-work-rootcause-validated-2026-06-18.txt。
 
+### R246 — 阶段状态收口 + pre-wrap 修复 reftest bonus footprint（2026-06-18，read-only）
+
+**新发现：R245 pre-wrap 修复 reftest bonus ≈ 0**——全 wpt-data 用 `white-space:pre/pre-wrap/break-spaces`
+的文件仅 **4 个**，css/css-text **0 个**。故该修复价值**集中在 DC-13 morning-work 产品 smoke（67% 压缩主因）**，
+非 reftest-multiplier。实现轮验证应聚焦 morning-work 区域 diff，**勿期待 reftest 438/490 显著上升**
+（同源 test==ref 对称 + bonus 仅 4 文件）。修后 morning-work 剩余残差来自独立问题（font-weight R229、
+img 固有尺寸 R233、.item-tag 已 R228b 修）。
+
+**R236-R245 调研链收口**：
+- **实现就绪**：R236 multicol baseline-export（8 例 1.1%，结构性最 tractable）、R244 DC-9 GPU alpha groundwork
+  （GPU-R228b-analog，contained zero-regression）、R238 WM-1 abspos-vertical（14 例，direction 分支）。
+- **阻塞于并行 agent 提交**：R242/R243/R245 morning-work 压缩（根因=pre-wrap 换行符；并行 agent WIP 已 4 轮
+  未提交；验证配方就绪；本轮仍不跑 make reftest——WIP 未提交会污染测量）。
+- **deferred 结构多轮**（R241 plateau 确证）：DC-14 剩余 writing-mode/multicol-breaking/block-in-inline/
+  table-grid-dynamic-003/feature-gap(#2/#6/#10/#14)/vertical-table-border；DC-9 ping-pong。
+
+**优先级队列（实现 agent）**：P0 morning-work pre-wrap（进行中，提交后验 DC-13 67% 降）→ P1 R244 DC-9 GPU
+alpha groundwork → P2 R236 multicol baseline-export → P3 R238 WM-1 abspos-vertical → 长线 DC-9 ping-pong /
+DC-14 结构聚类。**无 open 阻塞**；调研侧主要候选已 spec 完，下一进展依赖并行 agent 提交（解锁验证）或实现轮
+起手 P1/P2/P3。详见 evidence/r246-status-consolidation-prewrap-footprint-2026-06-18.txt。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
