@@ -2177,6 +2177,39 @@ mechanism-2026-06-18.txt）**：
 - 与既有结论不冲突：≠R164 clearance（不同子问题，REF 为 swatch 图片可对齐）；≠R109/R133（独立代码面
   engine.rs:1394）；同 R98/R123 谱系（abspos inset/CB taffy-vs-spec gap，补 vertical direction 分支）。
 
+### R239 — DC-14 真 bug 18 候选复审计 + 下一目标定位（2026-06-18，read-only）
+
+**背景**：并行 agent 本轮落地 R177b（#1 table-colspan **52.27%→1.70%**，reftest 438/490 零回归，
+chromium A/B 实证；已提交 c2d9663，含 table.rs + r177b 证据 + master.md R177b 段）+ R228b（cpu 圆角
+alpha，已提交 a1a24f1）。DC-14 anti-false-pass 核心策略 = 修 analyze-pollution-2026-06-16.txt 的 18
+真 bug 候选。#1 闭合后复审计。
+
+**18 候选现状（已修 8/18）**：✅ #1 table-colspan(R177b) #3 baseline-overflow(R180 45→1.25%)
+#4 html-display-table(R165 33→2.63%) #7 flexbox-collapsed-item(R111) #8 flexbox-baseline(R130)
+#9 multicol-contained-absolute(R124) #11 table-grid-item-dynamic-004(R168 11→2.98%)。
+**剩 10 项分类**：FEATURE-GAP #2 backdrop-inherit（::backdrop 伪元素+<dialog>，非 backdrop-filter
+属性，defer）；DYNAMIC #5 table-grid-item-003（JS getBoundingClientRect×2 relayout 不增长，defer）；
+STRUCTURAL #12/#13 iframe-in-block-in-inline（R109 block-in-inline，defer）；字体域 #16（低 ROI）；
+**CONTAINED 可推进**：#6+#10 position-absolute-semi-replaced-stretch（23%+15%，2 例同族）、
+#15+#17+#18 collapsed-border-vertical（6.10–6.73%，3 例同簇）、#14 stretch-grid-item-button-overflow(8.15%)。
+
+**首选 contained 下一目标：#6+#10 position-absolute-semi-replaced-stretch（详见 evidence/r239-
+dc14-truebug-candidates-reaudit-2026-06-18.txt）**：
+- 规范：abspos 半替换元素（form control）+ 两轴显式 inset + auto size → 应拉伸填满 CB-insets
+  （CSS2 §10.3.7/§10.6.4 abspos 非替换 stretch）。测试 .abs{position:absolute;4 边 inset:3px;
+  width/height:auto}，元素=<input button/submit/reset/color/text>。
+- 精确机制（实证）：tree.rs:165 `apply_replaced_element_sizing` 读 `img_intrinsic_sizes`（仅 <img>），
+  line 186 `if tag != "img" { return; }` → **所有 form control 零替换 sizing**，被当普通非替换 block，
+  abspos 拉伸语义缺失。
+- 修复面 contained：扩展半替换识别（input/button/textarea/select）+ abspos stretch 覆盖，不动
+  converter/taffy 核心。**R177b 之后最高杠杆 contained 候选**（2 例合计 38%）。
+- R164 教训：diff 23%/15% 可能含 form-control UA 默认样式差异，实现轮须 chromium Oracle A/B 量化
+  翻转数（同源 test==ref 天然不变），勿据推断算 clean +2。
+
+**次选**：#15+#17+#18 collapsed-border-vertical（vertical table collapsed border，R177b table 代码热但
+此 3 例是 vertical+collapsed border 正交问题）；R236 multicol baseline-export（8 例系统性 1.1%，最
+tractable 结构性）；WM-1 abspos-vertical（R238，14 例长线）。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）

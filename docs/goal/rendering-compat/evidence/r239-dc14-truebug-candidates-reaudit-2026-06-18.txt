@@ -1,0 +1,101 @@
+R239 — DC-14 真 bug 18 候选复审计（R177b 修掉 #1 后的下一目标定位）（read-only，无代码提交）
+=========================================================================================
+日期：2026-06-18
+角色：rendering-compat 调研与文档维护（本角色不改源码）
+来源：evidence/analyze-pollution-2026-06-16.txt（DC-14 真 bug 候选 18 项）+ memory/commits
+
+【背景】DC-14 anti-false-pass 的核心策略 = 修 evidence/analyze-pollution-2026-06-16.txt 的 18 个
+真 bug 候选（布局目录、chromium 大幅不一致、却被同源判「通过」的用例）。本轮并行 agent 落地
+R177b（#1 table-colspan 52.27%→1.70%，reftest 438/490 零回归，chromium A/B 实证），#1 已闭合。
+故复审计 18 候选现状，定位下一批 contained 高杠杆目标，供实现轮起手。
+
+────────────────────────────────────────────────────────────────────
+1. 18 候选现状（按原 z_vs_chr 降序；✅=已修，▶=未修）
+────────────────────────────────────────────────────────────────────
+ #  | safe_id                                        | z_vs_chr | 现状
+----|------------------------------------------------|----------|----------------------------------
+ 1  | table_grid_size_col_colspan                   | 52.27%   | ✅ R177b 52→1.70%（本轮，未提交）
+ 2  | backdrop-inherit-rendered                     | 47.54%   | ▶ FEATURE-GAP（::backdrop 伪元素
+    |                                                |          |   + <dialog>，非 backdrop-filter；
+    |                                                |          |   backdrop-filter 代码在 effects.rs
+    |                                                |          |   但属性不同；伪元素生成=多部件）
+ 3  | linebox_baseline-block-with-overflow-001      | 45.09%   | ✅ R180 chr45→1.25%
+ 4  | html-display-table                            | 33.09%   | ✅ R165 chr33→2.63%
+ 5  | table-grid-item-dynamic-003                   | 29.18%   | ▶ DYNAMIC（JS getBoundingClientRect
+    |                                                |          |   ×2 增量 relayout 不增长；grid+
+    |                                                |          |   table+box-sizing 动态边案）
+ 6  | position-absolute-semi-replaced-stretch-input | 23.03%   | ▶ CONTAINED（abspos 半替换拉伸）
+ 7  | flexbox-collapsed-item-horiz-001              | 20.53%   | ✅ R111
+ 8  | flexbox-baseline-align-self-baseline-horiz-001| 17.65%   | ✅ R130
+ 9  | multicol-contained-absolute                   | 16.33%   | ✅ R124
+10  | position-absolute-semi-replaced-stretch-other | 15.27%   | ▶ CONTAINED（同 #6 家族）
+11  | table-grid-item-dynamic-004                   | 11.12%   | ✅ R168 chr11→2.98%
+12  | linebox_iframe-in-block-in-inline             |  9.75%   | ▶ STRUCTURAL（R109 block-in-inline）
+13  | linebox_iframe-in-wrapped-span                |  9.75%   | ▶ STRUCTURAL（R109）
+14  | stretch-grid-item-button-overflow             |  8.15%   | ▶ grid auto-min-size（overflow!=
+    |                                                |          |   visible 滚动容器；与 #6 form
+    |                                                |          |   control stretch 弱相关）
+15  | collapsed-border-vertical-lr-rtl-overflow     |  6.73%   | ▶ 写作模式+table collapsed 边框
+16  | fonts_font-family-013                         |  6.65%   | ▶ 字体 fallback（字体域）
+17  | collapsed-border-sideways-rl-rtl-overflow     |  6.10%   | ▶ 同 #15 簇
+18  | collapsed-border-vertical-rtl-overflow        |  6.10%   | ▶ 同 #15 簇
+
+已修 8/18（#1/#3/#4/#7/#8/#9/#11 = 7 项 + 本轮 R177b）。剩 10 项，其中：
+  - FEATURE-GAP：#2（::backdrop 伪元素）— defer
+  - DYNAMIC：#5（JS relayout）— defer
+  - STRUCTURAL：#12/#13（R109 block-in-inline）— defer（多轮）
+  - 字体域：#16 — 低 ROI
+  - **CONTAINED 可推进：#6+#10（半替换拉伸，2 例 38% 合计）、#15+#17+#18（垂直 table 边框 3 例）、#14（grid min-size 1 例）**
+
+────────────────────────────────────────────────────────────────────
+2. 首选 contained 目标：#6+#10 position-absolute-semi-replaced-stretch（23%+15%）
+────────────────────────────────────────────────────────────────────
+测试规范（position-absolute-semi-replaced-stretch-input/-other）：
+  "Semi-replaced elements should stretch with an auto main size, and explicit insets in
+   that direction." CB relative;width:350px;height:100px。子 .abs{position:absolute;
+   top/right/bottom/left:3px; width:auto; height:auto}。元素=<input type=button/submit/
+   reset/color/text>（#6）+ 其他半替换（#10）。期望=半替换元素 abspos + 两轴显式 inset + auto
+   size → 拉伸填满 CB-insets（CSS2 §10.3.7/§10.6.4 abspos 非替换 stretch 规则）。
+
+精确机制（实证）：
+  - crates/layout-engine/src/tree.rs:165 `apply_replaced_element_sizing` 读取
+    `img_intrinsic_sizes`（HashMap<NodeId>，tree.rs:51），**仅 <img>**。line 186 `if tag !=
+    "img" { return; }` 硬退出 → **所有 form control（input/button/textarea/select）零替换
+    sizing**，被当普通非替换 block 处理。
+  - 后果：abspos form control 的「半替换拉伸」语义缺失。input button 应在 abspos + 两轴 inset +
+    auto size 时拉伸到 CB-insets；ZeroWeb 要么不拉伸（保留 intrinsic/默认宽）、要么拉伸路径未覆盖
+    form control。
+  - 修复面 contained：扩展 apply_replaced_element_sizing 或 abspos sizing 把 form control 列为
+    「半替换」（CSS2 §10.3.8 替换元素的 abspos sizing 特例 + form-control 默认尺寸），让 abspos
+    stretch 覆盖。不动 converter/taffy 核心。
+
+R164 教训保留：diff 23%/15% 可能含 form-control UA 默认样式差异（按钮边框/内边距/字号），实现
+轮须 chromium Oracle A/B 量化翻转数，勿据推断算 clean +2。但 #6+#10 同族、机制单一、代码面
+contained → 是 R177b 之后**最高杠杆 contained 候选**。
+
+────────────────────────────────────────────────────────────────────
+3. 次选 contained 目标
+────────────────────────────────────────────────────────────────────
+#15+#17+#18 collapsed-border-vertical-{lr-rl,sideways-rl,rtl}-overflow（6.10–6.73%，3 例同簇）：
+  写作模式（vertical-rl/sideways）下 table collapsed border + overflow。R177b 本轮动了 table.rs 的
+  build_grid/compute_column_widths，table 代码热，但此 3 例是 vertical + collapsed border 正交问题
+  （border 中心间距在 vertical 轴），非 colspan。机制待验证（疑 collapsed border 在 vertical 模式
+  border 间距未轴交换）。中杠杆（3 例）。
+
+#14 stretch-grid-item-button-overflow（8.15%）：grid auto-min-size + overflow!=visible 滚动容器
+  min-content 收缩（css-grid §min-size-auto）。与 #6 form-control 弱相关但独立 grid 机制。
+
+────────────────────────────────────────────────────────────────────
+4. 推荐执行顺序（实现轮，read-only 建议）
+────────────────────────────────────────────────────────────────────
+  1. #6+#10 position-absolute-semi-replaced-stretch（首选，2 例 38% 合计，contained）。
+     起手：插桩 abspos form-control 的最终 width/height vs CB-insets，确认不拉伸；扩展半替换识别。
+     验证：chromium Oracle A/B（同源 test==ref 天然不变，须独立 Oracle）。
+  2. #15+#17+#18 collapsed-border-vertical（次选，3 例，table 代码热）。
+  3. R236 multicol baseline-export（非 18 候选但 R236 标「最 tractable 结构性」8 例系统性 1.1%）。
+  WM-1 abspos-vertical（R238，14 例）继续为长线实现候选。
+
+【与并行 agent 协调】
+  - 并行 agent 本轮已提交：R228b（cpu 圆角 alpha，a1a24f1）+ R177b（table colspan/col-width，
+    c2d9663，含 table.rs + r177b 证据 + master.md R177b 段）。工作区除调研 agent 的 R239 文档外已清洁。
+  - 调研 agent 全程未碰源码；本文件 read-only，未跑 reftest（无代码改动可验）。
