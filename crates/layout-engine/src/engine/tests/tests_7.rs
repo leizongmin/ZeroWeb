@@ -578,3 +578,54 @@ fn test_real_empty_inline_003_layout_height() {
         test_box.content_height
     );
 }
+
+/// R207 stored-line-boxes 路径回归守护（font-051 类）。
+///
+/// `div > span > 文本`（inline-level 叶子子元素容器，无 block 子，inline 子无元素子）
+/// 应由 compute_final 存储 inline_layout（用真实 styles），使 paint use_stored 渲染正确
+/// 度量——修复 font-051 等 large-font（100px 文本被 paint 重跑渲染成 16px）的 bug。
+/// 窄条件排除混合 inline+block / block-in-inline（R206/R207 收敛）。
+#[test]
+fn test_r207_stored_inline_layout_for_inline_child_container() {
+    let html = "<html><body><div id=\"c\" style=\"font: 100px/1 Ahem;\"><span style=\"font: serif;\">FAIL</span></div></body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut style_system = StyleSystem::new();
+    style_system.set_viewport(800.0, 600.0);
+    let styles = style_system.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // 定位 #c 的 LayoutBox
+    let mut c_box = None;
+    let mut stack = vec![&result.root];
+    while let Some(node) = stack.pop() {
+        if let Some(nid) = node.node_id
+            && let Some(dn) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(el) = &dn.kind
+            && el.get_attribute("id").as_deref() == Some("c")
+        {
+            c_box = Some(node);
+        }
+        stack.extend(node.children.iter());
+    }
+    let c_box = c_box.expect("#c div");
+
+    // R207：inline-level 叶子子元素容器应存储 inline_layout。
+    assert!(
+        c_box.inline_layout.is_some(),
+        "#c (div>span>text) 应存储 inline_layout (R207 stored-line-boxes 路径)"
+    );
+    // 存储片段 font_size 应为真实 100px（compute_final 用真实 styles，非 paint 重跑的 16px 默认）。
+    let frag_fs = c_box
+        .inline_layout
+        .as_ref()
+        .and_then(|lines| lines.first())
+        .and_then(|l| l.fragments.first())
+        .map(|f| f.font_size);
+    assert_eq!(
+        frag_fs,
+        Some(100.0),
+        "存储片段 font_size 应为 100px（真实 styles），实际={:?}",
+        frag_fs
+    );
+}
