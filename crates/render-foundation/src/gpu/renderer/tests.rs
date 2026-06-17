@@ -856,3 +856,43 @@ fn test_gpu_full_scene_filter_contrast() {
     assert!(g < 30, "G should be much darker than 64 after Contrast(2.0), got {g}");
     assert!(g >= 0, "G should be non-negative, got {g}");
 }
+
+/// DC-9 GPU filter:blur — 渲染一个边缘锐利的色块 + Blur(3)，断言边缘像素被模糊（不再纯色）。
+#[test]
+fn test_gpu_full_scene_filter_blur_softens_edges() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    // 中央 16x16 红块，四周白
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        color: Color::WHITE,
+    });
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(8.0, 8.0, 24.0, 24.0),
+        color: Color::RED,
+    });
+    primitives.filters.push(crate::primitive::FilterPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        filters: vec![crate::primitive::FilterKind::Blur(3.0)],
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    // 模糊前：红块边缘 (x=8,y=8) 是纯红 (255,0,0)，邻近 (x<8) 是白 (255,255,255)。
+    // 模糊(3) 后，边缘 G 通道应因白色渗入而上升（白 G=255，红 G=0）。
+    // 白/红边界处 R 通道两侧均为 255（白=255, 红=255），不区分；用 G 通道判定：
+    // 边缘像素 (8,8) 模糊前 G=0（纯红），模糊后邻近白色（G=255）渗入 → G 显著上升。
+    let edge_g = pixels[((8 * 32) + 8) * 4 + 1] as i32;
+    // 红块中心 (16,16) 远离边界，邻域全红，模糊后 G 仍接近 0。
+    let center_g = pixels[((16 * 32) + 16) * 4 + 1] as i32;
+    assert!(
+        center_g < 60,
+        "blur center G should stay low (deep red), got {center_g}"
+    );
+    assert!(
+        edge_g > 30,
+        "edge pixel G should rise (white bleed-in) after blur, got {edge_g}"
+    );
+}
