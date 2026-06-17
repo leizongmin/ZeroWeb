@@ -101,19 +101,18 @@ struct MiniServer {
 }
 
 impl MiniServer {
-    fn start(files: HashMap<&'static str, &'static str>) -> Self {
+    /// 启动服务器，服务 `path -> body bytes` 映射（支持二进制内容如 PNG）。
+    fn start(files: HashMap<String, Vec<u8>>) -> Self {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         listener.set_nonblocking(true).unwrap();
         let shutdown = Arc::new(AtomicBool::new(false));
         let shutdown_clone = shutdown.clone();
-        // 拷贝映射到 owned 以便 move 进线程。
-        let owned: HashMap<String, String> = files.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
         thread::spawn(move || {
             while !shutdown_clone.load(Ordering::Relaxed) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
-                        let owned = owned.clone();
+                        let owned = files.clone();
                         thread::spawn(move || Self::handle(&mut stream, &owned));
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -129,7 +128,7 @@ impl MiniServer {
         }
     }
 
-    fn handle(stream: &mut TcpStream, files: &HashMap<String, String>) {
+    fn handle(stream: &mut TcpStream, files: &HashMap<String, Vec<u8>>) {
         let mut buf = [0u8; 1024];
         let n = stream.read(&mut buf).unwrap_or(0);
         let req = String::from_utf8_lossy(&buf[..n]);
@@ -144,18 +143,25 @@ impl MiniServer {
             "text/css"
         } else if path.ends_with(".html") {
             "text/html"
+        } else if path.ends_with(".png") {
+            "image/png"
         } else {
             "application/octet-stream"
         };
-        let body = files.get(path).map(|s| s.as_str());
-        let resp = match body {
-            Some(b) => format!(
-                "HTTP/1.0 200 OK\r\nContent-Type: {ct}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{b}",
-                b.len()
-            ),
-            None => "HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
-        };
-        let _ = stream.write_all(resp.as_bytes());
+        // header 与 body 分开写：body 可能是二进制（PNG），不能用 format! 嵌入。
+        match files.get(path) {
+            Some(body) => {
+                let head = format!(
+                    "HTTP/1.0 200 OK\r\nContent-Type: {ct}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(body);
+            }
+            None => {
+                let _ = stream.write_all(b"HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            }
+        }
         let _ = stream.flush();
     }
 }
@@ -179,8 +185,8 @@ fn test_fetch_url_loads_external_stylesheet() {
                 </head><body><div id=\"x\">Hi</div></body></html>";
     let css = "#x { background-color: rgb(255,0,0); width: 100px; height: 100px; }";
     let mut files = HashMap::new();
-    files.insert("/page.html", page);
-    files.insert("/style.css", css);
+    files.insert("/page.html".to_string(), page.as_bytes().to_vec());
+    files.insert("/style.css".to_string(), css.as_bytes().to_vec());
     let server = MiniServer::start(files);
 
     let mut webview = WebView::new(WebViewConfig::default());
@@ -207,11 +213,60 @@ fn test_fetch_url_external_stylesheet_missing_does_not_break() {
                 <link rel=\"stylesheet\" href=\"/missing.css\">\
                 </head><body><p>Hello</p></body></html>";
     let mut files = HashMap::new();
-    files.insert("/page.html", page);
+    files.insert("/page.html".to_string(), page.as_bytes().to_vec());
     let server = MiniServer::start(files);
 
     let mut webview = WebView::new(WebViewConfig::default());
     let url = format!("{}/page.html", server.base);
     let result = webview.fetch_url(&url);
     assert!(result.is_ok(), "missing external CSS must not break navigation");
+}
+
+/// 构造一张 3×2 纯绿 RGBA PNG 的字节（用 png 编码器）。
+fn green_3x2_png() -> Vec<u8> {
+    use png::{BitDepth, ColorType, Encoder};
+    let mut buf = Vec::new();
+    {
+        let mut encoder = Encoder::new(&mut buf, 3, 2);
+        encoder.set_color(ColorType::Rgba);
+        encoder.set_depth(BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        // 3×2×4 = 24 字节原始像素，全纯绿 (0,255,0,255)。
+        let data: Vec<u8> = [0, 255, 0, 255].repeat(6);
+        writer.write_image_data(&data).unwrap();
+    }
+    buf
+}
+
+/// R214：URL 导航路径下 `<img src>` 图片子资源必须被抓取、解码并写入 ImageCache。
+///
+/// page.html 含 `<img src="/pic.png">`，pic.png 是 3×2 纯绿 PNG。fetch_url 后
+/// webview 的 image_cache 应含该图（按 abs url hash 键），且尺寸为 3×2——证明
+/// 图片子资源抓取 + 解码 + 缓存贯通。
+#[test]
+fn test_fetch_url_loads_image_subresource() {
+    let page = "<!DOCTYPE html><html><head></head><body>\
+                <img src=\"/pic.png\"></body></html>";
+    let png = green_3x2_png();
+    let mut files = HashMap::new();
+    files.insert("/page.html".to_string(), page.as_bytes().to_vec());
+    files.insert("/pic.png".to_string(), png);
+    let server = MiniServer::start(files);
+
+    let mut webview = WebView::new(WebViewConfig::default());
+    let url = format!("{}/page.html", server.base);
+    let result = webview.fetch_url(&url).expect("fetch_url should succeed");
+    // 触发 image_cache 使用（fetch_url 已填充）。
+    let _ = result;
+
+    // image_cache 应含 pic.png 解码结果。键 = simple_hash(abs url)。
+    use zero_render_foundation::image_cache::ImageKey;
+    let abs = format!("{}/pic.png", server.base);
+    let key = ImageKey::new(zero_engine::simple_hash(&abs));
+    let img = webview.image_cache().get(&key);
+    assert!(img.is_some(), "image subresource not decoded/cached");
+    let img = img.unwrap();
+    assert_eq!(img.width, 3, "decoded image width");
+    assert_eq!(img.height, 2, "decoded image height");
+    assert_eq!(img.get_pixel(0, 0), [0, 255, 0, 255], "top-left pixel pure green");
 }

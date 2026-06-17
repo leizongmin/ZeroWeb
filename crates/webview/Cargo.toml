@@ -22,6 +22,7 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+png = "0.17"
 
 [[bench]]
 name = "webview_bench"

@@ -264,6 +264,111 @@ impl Default for ImageCache {
     }
 }
 
+// ─── 图片解码（PNG）─────────────────────────────────────────────────
+//
+// 供 URL 导航路径（webview fetch_url）抓取 `<img src>` 子资源后解码为 ImageData。
+// render-foundation 拥有 ImageData 结构，故解码逻辑置此，供 webview / reftest 等复用。
+// 当前仅 PNG（最常见）；JPEG/SVG 同模式后续追加（见 R214 后续）。
+
+/// 将 PNG 字节流解码为 RGBA `ImageData`。
+///
+/// 正确处理任意 PNG color type（palette / grayscale / RGB / RGBA）与位深：
+/// `EXPAND | STRIP_16` 变换把 palette→RGB(A)、grayscale→RGB(A)、16bit→8bit，
+/// 再按 `OutputInfo.color_type` 转换为 RGBA。直接按 4 字节直读会导致非 RGBA 输入
+/// 错位（alpha=0 退化透明）。
+///
+/// # Errors
+/// 解码失败时返回描述性错误字符串（调用方决定降级策略）。
+pub fn decode_png_bytes(bytes: &[u8]) -> Result<ImageData, String> {
+    use png::Transformations;
+    let mut decoder = png::Decoder::new(bytes);
+    decoder.set_transformations(Transformations::EXPAND | Transformations::STRIP_16);
+    let mut reader = decoder.read_info().map_err(|e| format!("PNG 解码失败: {e}"))?;
+
+    let info = reader.info().clone();
+    let width = info.width;
+    let height = info.height;
+
+    let mut raw = vec![0u8; reader.output_buffer_size()];
+    let output_info = reader.next_frame(&mut raw).map_err(|e| format!("PNG 读取失败: {e}"))?;
+    let rgba = convert_png_buffer_to_rgba(&raw, output_info.color_type, output_info.bit_depth);
+    ImageData::from_rgba(rgba, width, height)
+}
+
+/// 把 PNG 解码后的原始缓冲（经 EXPAND 后的 RGB/RGBA/Grayscale/GrayscaleAlpha 8-bit）
+/// 转换为 RGBA。
+fn convert_png_buffer_to_rgba(raw: &[u8], color_type: png::ColorType, bit_depth: png::BitDepth) -> Vec<u8> {
+    use png::ColorType::*;
+    if bit_depth != png::BitDepth::Eight {
+        return raw.to_vec();
+    }
+    match color_type {
+        Rgba => raw.to_vec(),
+        Rgb => {
+            let n = raw.len() / 3;
+            let mut out = Vec::with_capacity(n * 4);
+            for px in raw.chunks_exact(3) {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        }
+        Grayscale => {
+            let mut out = Vec::with_capacity(raw.len() * 4);
+            for &g in raw {
+                out.extend_from_slice(&[g, g, g, 255]);
+            }
+            out
+        }
+        GrayscaleAlpha => {
+            let n = raw.len() / 2;
+            let mut out = Vec::with_capacity(n * 4);
+            for px in raw.chunks_exact(2) {
+                out.extend_from_slice(&[px[0], px[0], px[0], px[1]]);
+            }
+            out
+        }
+        _ => raw.to_vec(),
+    }
+}
+
+#[cfg(test)]
+mod decode_tests {
+    use super::*;
+
+    /// 2×2 纯红 RGBA PNG（手工构造的合法 PNG 字节）。
+    fn red_2x2_png() -> Vec<u8> {
+        use png::{BitDepth, ColorType, Encoder};
+        let mut buf = Vec::new();
+        {
+            let mut encoder = Encoder::new(&mut buf, 2, 2);
+            encoder.set_color(ColorType::Rgba);
+            encoder.set_depth(BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            // write_image_data 接收原始像素（无行过滤字节，编码器自加）：
+            // 2×2×4 = 16 字节，4 个纯红像素。
+            let data: Vec<u8> = [255, 0, 0, 255].repeat(4);
+            writer.write_image_data(&data).unwrap();
+        }
+        buf
+    }
+
+    #[test]
+    fn decode_png_bytes_rgba_2x2() {
+        let png = red_2x2_png();
+        let img = decode_png_bytes(&png).expect("decode should succeed");
+        assert_eq!(img.width, 2);
+        assert_eq!(img.height, 2);
+        // 左上像素应为纯红
+        assert_eq!(img.get_pixel(0, 0), [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn decode_png_bytes_invalid_returns_err() {
+        let result = decode_png_bytes(b"not a png");
+        assert!(result.is_err());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

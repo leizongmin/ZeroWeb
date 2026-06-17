@@ -4,8 +4,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use zero_engine::{PipelineTimings, PrefersColorSchemeValue, RenderPipeline, extract_stylesheet_hrefs};
+use zero_engine::{
+    PipelineTimings, PrefersColorSchemeValue, RenderPipeline, extract_img_srcs, extract_stylesheet_hrefs, simple_hash,
+};
 use zero_net::{HttpCache, HttpClient, NetError};
+use zero_render_foundation::image_cache::{ImageCache, ImageKey, decode_png_bytes};
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
 use zero_security::{ResourceCheckResult, SecurityContext};
@@ -105,6 +108,12 @@ pub struct WebView {
     wasm_instances: HashMap<u64, WasmInstance>,
     /// HTTP 响应缓存。
     http_cache: HttpCache,
+    /// 已解码图片子资源缓存（`<img src>` 等）。
+    ///
+    /// 由 `fetch_url` 在导航时抓取 + 解码填充（见 `fetch_image_subresources`），
+    /// 供下游渲染器（browser 的 render_cpu/render_gpu）绘制时消费——`<img>` 才能
+    /// 显示真实像素而非占位（goal doc DC-13 P1「图片子资源 / ImageCache 未贯通」）。
+    image_cache: ImageCache,
     /// 用户颜色方案偏好。
     prefers_color_scheme: PrefersColorSchemeValue,
     /// 安全上下文（HSTS + 混合内容 + CSP）。
@@ -140,6 +149,7 @@ impl WebView {
             next_worker_id: 1,
             wasm_instances: HashMap::new(),
             http_cache: HttpCache::new(),
+            image_cache: ImageCache::default(),
             prefers_color_scheme: PrefersColorSchemeValue::Light,
             security_context: SecurityContext::new(),
         }
@@ -243,15 +253,73 @@ impl WebView {
         combined
     }
 
+    /// 抓取并解码 HTML 中所有 `<img src>` 引用的图片子资源。
+    ///
+    /// goal doc P1 缺口「图片子资源 / ImageCache 未贯通」修复：按 base URL 解析每个
+    /// `<img src>`，逐个 HTTP 抓取，解码为 `ImageData`（当前 PNG；JPEG/SVG 同模式后续），
+    /// 写入 `self.image_cache`（键 = `simple_hash(abs_url)`，与 pipeline 的 image_sizes
+    /// 及渲染器查找一致），并返回 `image_sizes`（url hash → (w,h)）供 pipeline 对无
+    /// width/height 属性的 `<img>` 注入固有尺寸（DC-11 替换元素固有尺寸）。
+    /// `data:` URI 暂不支持（跳过）；抓取/解码失败仅 warn 不阻断（宽松降级）。
+    fn fetch_image_subresources(&mut self, html: &str, base_url: &str) -> HashMap<u64, (f32, f32)> {
+        let srcs = extract_img_srcs(html);
+        let mut image_sizes = HashMap::new();
+        if srcs.is_empty() {
+            return image_sizes;
+        }
+        let base = url::Url::parse(base_url).ok();
+        for src in &srcs {
+            // data: URI 暂不支持解码（后续可扩展）。
+            if src.starts_with("data:") {
+                continue;
+            }
+            let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
+                Some(u) => u.to_string(),
+                None => src.clone(),
+            };
+            let bytes = match self.http_client.get(&abs) {
+                Ok(resp) => resp.body,
+                Err(e) => {
+                    tracing::warn!("image {abs} fetch failed: {e}");
+                    continue;
+                }
+            };
+            let img = match decode_png_bytes(&bytes) {
+                Ok(img) => img,
+                Err(e) => {
+                    tracing::warn!("image {abs} decode failed (PNG only yet): {e}");
+                    continue;
+                }
+            };
+            let key = ImageKey::new(simple_hash(&abs));
+            let (w, h) = (img.width as f32, img.height as f32);
+            image_sizes.insert(simple_hash(&abs), (w, h));
+            self.image_cache.insert_with_key(key, img);
+        }
+        image_sizes
+    }
+
+    /// 获取已解码图片子资源缓存的可变引用，供下游渲染器绘制时消费。
+    ///
+    /// browser 的 render_cpu / render_gpu 应在绘制帧时传入 `Some(&mut webview.image_cache())`
+    /// 而非 `None`，使 `<img>` 渲染真实像素。
+    pub fn image_cache(&mut self) -> &mut ImageCache {
+        &mut self.image_cache
+    }
+
     /// 加载 URL（同步 HTTP GET）。
     ///
     /// 通过 zero-net 发起 HTTP 请求，获取 HTML 并渲染。
     /// 整个过程是同步阻塞的。
     /// 如果请求失败，加载状态会被重置，并返回错误。
     ///
-    /// 外链样式表：抓取 HTML 中 `<link rel="stylesheet">` 引用的 CSS（按 base URL
-    /// 解析、逐个 HTTP 抓取、合并），随页面 HTML 一并注入级联（见
-    /// `resolve_external_css`）。外链抓取失败仅记录日志、不阻断页面加载。
+    /// 子资源加载（goal doc DC-13）：
+    /// - 外链样式表：抓取 `<link rel="stylesheet">` 引用的 CSS（按 base URL 解析、
+    ///   逐个 HTTP 抓取、合并），随页面 HTML 一并注入级联（见 `resolve_external_css`）。
+    /// - 图片子资源：抓取并解码 `<img src>` 引用的图片（见 `fetch_image_subresources`），
+    ///   填充 `image_cache` 供下游渲染器绘制，并设 `image_sizes` 供 `<img>` 固有尺寸布局。
+    ///
+    /// 任一子资源抓取/解码失败仅记录日志、不阻断页面加载（宽松降级）。
     pub fn fetch_url(&mut self, url: &str) -> Result<WebViewRenderResult, WebViewError> {
         tracing::info!("Fetching URL: {url}");
 
@@ -298,6 +366,8 @@ impl WebView {
                         WebViewError::Navigation(format!("SW response body is not valid UTF-8: {e}"))
                     })?;
                     let external_css = self.resolve_external_css(&html, &effective_url);
+                    let image_sizes = self.fetch_image_subresources(&html, &effective_url);
+                    self.pipeline.set_image_sizes(image_sizes);
                     let render_result = self.load_html(&html, Some(&external_css));
                     self.loading = false;
                     self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
@@ -321,6 +391,8 @@ impl WebView {
                 WebViewError::Navigation(format!("Cached response body is not valid UTF-8: {e}"))
             })?;
             let external_css = self.resolve_external_css(&html, &effective_url);
+            let image_sizes = self.fetch_image_subresources(&html, &effective_url);
+            self.pipeline.set_image_sizes(image_sizes);
             let render_result = self.load_html(&html, Some(&external_css));
             self.loading = false;
             self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
@@ -346,6 +418,9 @@ impl WebView {
 
                 // 抓取外链样式表（`<link rel="stylesheet">`），合并后注入级联。
                 let external_css = self.resolve_external_css(&html, &effective_url);
+                // 抓取并解码图片子资源（`<img src>`），填充 image_cache + image_sizes。
+                let image_sizes = self.fetch_image_subresources(&html, &effective_url);
+                self.pipeline.set_image_sizes(image_sizes);
 
                 // 渲染 HTML
                 let render_result = self.load_html(&html, Some(&external_css));
