@@ -2266,6 +2266,28 @@ will-change:transform，与 R114 axis-swap 族相关，低 ROI 高风险）；�
   (c) DC-9 GPU ping-pong 地基（filter:opacity 先行，R220）。
   WM-1 abspos-vertical（R238，14 例）长线结构候选。详见 evidence/r241-r240-refutation-reconciliation-2026-06-18.txt。
 
+### R242 — DC-13 morning-work 67% 内容压缩 root-region 收窄（2026-06-18，read-only）
+
+**收窄 R228b 开放项**（morning-work 67% 真因=内容纵向压缩，疑 img 塌缩 或 pre-code 溢出）。本轮 read-only
+二分 fixture 结构（apps/browser/assets/morning-work/article.html）：
+- **决定性排除 footer-img 假设**：article.html 4 张 img 中，3 张无 width/height（logo_lei.jpg /
+  cc_unavailable.png / qrcode jpg）**全在 footer（line 361-386），位于全部正文之后**。R228b 观测的压缩区
+  是 **body 正文 y=150-300**，footer 在 y>500 → **footer img 塌缩无法解释 body 压缩**（即便有 img 布局应用
+  bug，影响域限 footer）。排除 R228b 假设①。R233 已排除「图片未加载」。
+- **收窄到 body `<pre><code>` 块**：正文 7 h2 + 多 h3 + 22 p + **12 个 `<pre><code>`**（line 210-338，步骤命令
+  /C 代码）。CSS `.article pre{line-height:1.75;white-space:pre-wrap;overflow-x:scroll}` + `.article pre
+  code{display:block;min-width:700px}`。代码块**确为多行**（源码显式 \n，C 代码 ~12 行）→ chromium 中撑起
+  正文 y=150-600；ZW 压缩进 y=150-300 = **`<pre>` 高度严重欠计算**。
+- **候选机制（待实证）**：(a) pre IFC 多行高度欠计算（连接 large-font/IFC-storage 谱系 R84/R101/R125/R210，
+  PreWrap preserve_newlines=true 已支持但多行高度累积可能 off）— 最可能；(b) code{display:block;
+  min-width:700px}+pre{overflow-x:scroll} 裁剪交互 — 次要；(c) pre-wrap 换行点差异 — 次要。
+- **探针配方**：① LAYOUT_DUMP=1 渲染 article.html，定位 12 pre 节点 dump height vs 行数×1.75×14px，
+  若≪预期→机制(a)；② 查 pre width 是否被 code min-width 撑>860 → 机制(b)；③ 对比单 pre ZW vs CH 行数 →
+  机制(c)。每步 product-smoke 区域 diff（r228 ink-mass 方法）量化。
+
+R164 教训：候选非断言，须 LAYOUT_DUMP 实证。详见 evidence/r242-morning-work-compression-narrowing-2026-06-18.txt。
+为并行 agent R228b「下一轮排查」锐化方向（排除 footer-img，在 pre IFC 高度/overflow-x 裁剪/pre-wrap 换行间区分）。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
