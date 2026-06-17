@@ -86,3 +86,4 @@ R125 确证 paint IFC / remeasure IFC / compute_final IFC 三路径 font_size �
 - 不改 fontdue 光栅化（AA 基准已证 ≈ chromium）。
 - 不改 rustybuzz shaping（paint glyph 定位用 IFC 的 x，非独立 shaping）。
 - 不引入新 crate（FontLoader::measure_advance 已存在）。
+- **不走「单点改 estimate_char_width 实测表」捷径**（R224 实验已证否）：曾用 DejaVu Sans 实测 advance 表替换固定倍数，全量 reftest 439→436 净 -3 回归。estimate 并非纯自源中性（test/ref 文本结构不同时换行点敏感度不同），单点扰动破坏同源对齐。必须完整接入 FontLoader（R2-R5，三处同源替换）。
