@@ -1685,11 +1685,46 @@ fn compute_final_inline_layouts(root: &mut LayoutBox, doc: &Document, styles: &H
     }
 
     // 检查是否有直接文本子节点
-    let has_text_children = root.children.iter().any(|c| c.is_anonymous_text_item)
+    let mut has_text_children = root.children.iter().any(|c| c.is_anonymous_text_item)
         || doc
             .child_nodes(node_id)
             .iter()
             .any(|child_id| doc.get(*child_id).is_some_and(|n| matches!(&n.kind, NodeKind::Text(_))));
+    // PHASEA stored-line-boxes 路径（默认启用；env PHASEA_STORE_EXT=0 关闭）：也覆盖含 **inline-level** 元素子节点且**无 block-level
+    // 元素子节点**的容器（纯 inline 内容，如 div>span 间接文本）。compute_final 传真实 styles 给
+    // IFC（line 1851），存储行盒度量正确，paint use_stored 渲染解 Phase A font_size（font-051 实证）。
+    // **排除混合 inline+block 内容**（如 block-in-inline R109 inline-box-001、span+h4 multicol-
+    // block-no-clip-001）：此类容器的存储路径与现 paint 重跑在匿名块/碎片化上分歧致回归。
+    if !has_text_children && std::env::var("PHASEA_STORE_EXT").as_deref() != Ok("0") {
+        use zero_css_parser::values::DisplayValue;
+        let is_inline_display = |d: &DisplayValue| {
+            matches!(
+                d,
+                DisplayValue::Inline
+                    | DisplayValue::InlineBlock
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::InlineGrid
+                    | DisplayValue::InlineTable
+            )
+        };
+        let child_ids: Vec<NodeId> = doc.child_nodes(node_id);
+        let child_displays: Vec<Option<&DisplayValue>> =
+            child_ids.iter().map(|c| styles.get(c).map(|s| &s.display)).collect();
+        let has_inline_elem = child_displays.iter().any(|d| d.is_some_and(is_inline_display));
+        let has_block_elem = child_displays
+            .iter()
+            .any(|d| d.is_some_and(|dd| !is_inline_display(dd)));
+        // 进一步要求 inline-level 子元素为**叶文本容器**（无元素子节点）：排除 block-in-inline
+        //（inline 子元素含 block 后代，如 inline-box-002 的 div2>div3，R109 碎片化存储路径无法处理）。
+        let inline_children_have_elem = child_ids.iter().any(|c| {
+            styles.get(c).is_some_and(|s| is_inline_display(&s.display))
+                && doc
+                    .child_nodes(*c)
+                    .iter()
+                    .any(|gc| doc.get(*gc).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))))
+        });
+        has_text_children = has_inline_elem && !has_block_elem && !inline_children_have_elem;
+    }
     if !has_text_children {
         return;
     }
