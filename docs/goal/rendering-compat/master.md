@@ -2397,6 +2397,24 @@ CSS2 -3）——回归用例（multicol-breaking-*/column-height-009/column-bala
 多行），落地后缺陷 3 成下一明确目标（破 Phase-A 死锁，多轮）。证据
 `evidence/r246-multiline-stacking-deadlock-2026-06-18.txt`。
 
+### R248 — DC-6 quirks mode 全链路实证 + goal doc 矛盾纠正：已实现且非 reftest 杠杆（2026-06-18，read-only，独立于并行 agent R247 IFC 修复）
+
+承接 R246 优先级队列外三条独立 read-only 线之一（DC-6 quirks 覆盖核查）。**起因**：goal doc 内部矛盾——Support Envelope 表（rendering-compat.md line 52）称「DOM parser 已存储 quirks mode 但**下游完全忽略**」，而 Current Proven Baseline 表（line 356）称「Quirks mode ✅ 已实现 CSS parser + style system + **layout engine 三层**」。治理规则要求「发现矛盾须先纠正文档」。本轮 read-only 全链路实证（仅读 dom/css-parser/style-system/layout-engine，零源码改动，不碰并行 agent R247 改的 inline/mod.rs + edge_cases.rs）。
+
+**实证结论：quirks mode 已实质实现，下游并未「完全忽略」（line 52 过时错误）**：
+- **DOM 层 ✅**：`node.rs:60` 存 `quirks_mode: QuirksMode`，`parser.rs` 经 html5ever 按 DOCTYPE 设置，`doc.quirks_mode()` 访问器；dom tests 验三态（NoQuirks/Quirks/LimitedQuirks）。
+- **CSS parser 层 ✅（mode-gated，生产接线，非死代码）**：`parse_color_quirks`(color.rs:53)/`parse_length_quirks`(types.rs:1056)；`apply_property_value_with_quirks`(apply.rs:43-61) 按 `quirks_mode: bool` 切换 quirks/标准解析器；生产链 `doc.quirks_mode()`(lib.rs:133) → compute_styles_recursive → `inheritance.rs:94 apply_property_value_with_quirks(..., quirks_mode==QuirksMode::Quirks)` 完整贯通。
+- **Style-system 层 ✅（3 quirks，layout 前 pre-bake）**：`apply_quirks_mode_adjustments`(lib.rs:526) 实现 ① 百分比高度 quirks（父 height:auto→子 percentage→auto）② table height→min-height(CSS2.1 §17.5.2) ③ inline width/height 保留；lib.rs:421 `if quirks_mode==QuirksMode::Quirks` 门控；**值转换在 layout 前 pre-bake 进 ComputedStyle**。
+- **Layout-engine 层 ⚠️（零 quirks 字样，但非真缺口）**：layout-engine 全 crate 零 quirks 引用。**架构合理**——style-system 已把值转换类 quirks（①②）pre-bake 进 ComputedStyle，layout-engine 作用于已纠正的值，无需独立 quirks 层；百分比高度定高判定由 `engine.rs:1521 clamp_percentage_max_height`（R119 谱系）承担。故 line 356「layout engine 三层 quirks 调整」**技术性夸大**（layout-engine 实际不做 quirks 调整），但 ✅ 实质正确（quirks 工作正常）。
+
+**reftest 杠杆评估 = 非杠杆（关键结论）**：wpt-data 仅 **6/665** html 缺 DOCTYPE（quirks），去重为 **~3 个测试对**（table-cell-inline-size-box-sizing-quirks / flexbox-definite-cross-size-constrained-percentage / float-table-align-left-quirk）= 490 的 0.6%。06-17 cross-validate 实证可采样的 2 用例**全部 self-pass 且 z_vs_chr≤0.13%**（float-table-align-left-quirk self 0.06%/chr 0.13%、table-cell-inline-size-box-sizing-quirks self 0.00%/chr 0.10%，远低于 1% 严格容差）——**quirks mode 现有实现已使这些用例干净通过与 chromium 一致**。注：float-table-align-left-quirk 标题「Check that the old IE quirk for `<table align=left>` is NOT implemented」=验证某 quirk *不*实现，ZW 正确通过。**即使完美 quirks 实现也只动 ≤3 用例（0.6%）且已全过 → quirks mode 非 reftest 进展杠杆，非 DC-14 达标路径**。
+
+**文档矛盾纠正**（governance「发现矛盾须先纠正」，本轮已改 goal doc 两处表 cell）：① line 52「下游完全忽略」=过时错误（下游 style-system + css-parser 完整消费），已纠正为真实状态；② line 356「layout engine 三层 quirks 调整」=技术性夸大（layout-engine 零 quirks，由 style-system 预烘焙覆盖），已纠正为「两层活跃 + layout 预烘焙覆盖」；③ DC-6 四 checkbox 未勾但**实质已基本达成**（DOM 传递 + css-parser mode-gated + style-system 3 quirks；layout 层无独立实现属架构选择非缺口），DC-6 非阻塞。
+
+**次要 spec 精度 nuance（非杠杆，仅记录）**：style-system quirk ①百分比高度仅查**直接父** `parent_style.height`（单层），CSS 规范（quirks.spec.whatwg.org）要求沿**包含块链**向上查定高祖先——深层嵌套百分比高度在 quirks mode 下理论精度不足，但现有 ~3 个 quirks 用例全过，纯理论 nuance 非实测缺口。
+
+**对优先级队列的影响**：**quirks mode 从 DC-6 候选中排除**（已实现 + 非杠杆）。实现 agent 优先级队列不变：P0 morning-work pre-wrap 已由并行 agent R247 落地（缺陷 1+2，438/490 持平零回归）→ 缺陷 3 paint-multiline 堆叠（R247 实证 Phase-A 死锁 net -11 已回退，多轮架构项，与 R125/R198/R205 同墙）→ P1 R244 DC-9 GPU alpha groundwork → P2 R236 multicol baseline-export → P3 R238 WM-1 abspos-vertical → 长线 DC-9 ping-pong / DC-14 结构聚类。**无 open 阻塞**。详见 evidence/r248-quirks-mode-fullchain-audit-2026-06-18.txt。无代码变更，基线 438/490 持平。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
