@@ -2443,6 +2443,18 @@ CSS2 -3）——回归用例（multicol-breaking-*/column-height-009/column-bala
 
 **对优先级队列的战略含义**：DC-9（P1）footprint≈0 reftest 杠杆；而 P2 R236 multicol baseline-export（8 例 1.1%）、P3 R238 WM-1（14 例）均在 490 自源集=**真实 reftest 杠杆**。DC-9 P1 理由不变（contained 零回归地基 + 硬 Done Criterion，非 reftest 杠杆）；若实现 agent 目标是**最大化 reftest/DC-14 进展**，R236/R238（结构多轮但真实 reftest 杠杆）可上调与 DC-9 并列或之前；若目标**低风险 contained 进展**，DC-9（R244→R249）仍优先。二者非互斥：DC-9 地基零回归可先落再并行攻 R236/R238。详见 evidence/r250-dc9-reftest-footprint-2026-06-18.txt。无代码变更，基线 438/490 持平。
 
+### R251 — R244 DC-9 alpha groundwork spec 对当前代码实证核实：准确，P1 首步就绪（2026-06-18，read-only，GPU 顶点/着色器区域无碰撞）
+
+承接 R250 后去风险 P1 实现首步。R244 alpha groundwork spec 写于 1aea7c2（数轮前），本轮核实其对当前 HEAD(45ebb42) 代码仍准确（代码可能已变）。读 gpu/mesh.rs + gpu/pipeline.rs（不碰并行 agent text.rs/run-rules.md WIP）。
+
+**逐条核实——全部确认，spec 完全准确**：① `color_to_f32`(mesh.rs:11) 返回 `(f32,f32,f32)` 仅 RGB，**color.a 完全未用** ✅；② `push_fill_quad`(mesh.rs:16-27) 每顶点 `[x,y,u,v,r,g,b]`=**7 floats**（color vec3f），所有 push_* 同 ✅；③ `FILL_VERTEX_ATTRIBUTES[:3]`(pipeline.rs:414) color 为 vec3f（ROUNDED_RECT/GRADIENT 同）✅；④ fragment `vec4f(in.color, alpha)`(pipeline.rs:61, coverage) + `vec4f(in.color,1.0)`(pipeline.rs:170)=.a 槽硬填 coverage 非 CSS alpha ✅；⑤ BlendState 5 处含 ALPHA_BLENDING 已配 ✅。
+
+**R244 修复范围精确化（P1 首步可直接起手）**：(a) mesh.rs color_to_f32→4-tuple + push_* 7→8 floats/顶点；(b) pipeline.rs FILL/ROUNDED_RECT/GRADIENT color 属性 vec3f→vec4f + array_stride+1；(c) WGSL VertexOutput.color vec3f→vec4f + fragment `vec4f(in.color.rgb, in.color.a*coverage)`；(d) Blend 已 ALPHA_BLENDING ✓。
+
+**零回归主张核实成立**：opaque CSS 颜色（a=1.0）改后 =1.0*coverage=coverage（与现状一致→零变化）；仅半透明（a<1.0）从「错误实色」变「正确半透明」=修复非回归（R228b CPU 侧 translucent alpha 的 GPU 同源修复）。故「零回归」=opaque 零变化+半透明修正。
+
+**结论**：R244 spec 对当前代码**完全准确**（1aea7c2→45ebb42 无相关变更），P1 实现首步就绪，范围=mesh.rs+pipeline.rs（color vec3f→vec4f）机械跨切 contained、opaque 零回归+半透明修正、验证=framebuffer 像素断言 rgba(...,0.5)=blend 非实色。实现 agent 可直接起手 R244 无需再调研。R244→R249 ping-pong 地基顺序不变。详见 evidence/r251-r244-alpha-groundwork-verification-2026-06-18.txt。无代码变更，基线 438/490 持平。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
