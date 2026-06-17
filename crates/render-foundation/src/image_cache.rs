@@ -264,11 +264,12 @@ impl Default for ImageCache {
     }
 }
 
-// ─── 图片解码（PNG）─────────────────────────────────────────────────
+// ─── 图片解码（PNG / JPEG）────────────────────────────────────────────
 //
 // 供 URL 导航路径（webview fetch_url）抓取 `<img src>` 子资源后解码为 ImageData。
 // render-foundation 拥有 ImageData 结构，故解码逻辑置此，供 webview / reftest 等复用。
-// 当前仅 PNG（最常见）；JPEG/SVG 同模式后续追加（见 R214 后续）。
+// 当前支持 PNG（最常见）与 JPEG（goal doc DC-13「PNG/JPEG 基础解码」）；
+// `decode_image_bytes` 按魔数字节分发格式；SVG 栅格化同模式后续追加。
 
 /// 将 PNG 字节流解码为 RGBA `ImageData`。
 ///
@@ -293,6 +294,87 @@ pub fn decode_png_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     let output_info = reader.next_frame(&mut raw).map_err(|e| format!("PNG 读取失败: {e}"))?;
     let rgba = convert_png_buffer_to_rgba(&raw, output_info.color_type, output_info.bit_depth);
     ImageData::from_rgba(rgba, width, height)
+}
+
+/// 解码 JPEG 字节为 `ImageData`（RGBA）。
+///
+/// goal doc DC-13「图片子资源 / ImageCache」要求 PNG/JPEG 基础解码。
+/// 使用 `jpeg-decoder`（纯 Rust，MIT/Apache-2.0），输出统一转 RGBA。
+pub fn decode_jpeg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
+    use jpeg_decoder::Decoder;
+    let mut decoder = Decoder::new(bytes);
+    let pixels = decoder.decode().map_err(|e| format!("JPEG 解码失败: {e}"))?;
+    let info = decoder.info().ok_or_else(|| "JPEG 无图像元数据".to_string())?;
+    let width = info.width as u32;
+    let height = info.height as u32;
+    let rgba = convert_jpeg_pixels_to_rgba(&pixels, info.pixel_format);
+    ImageData::from_rgba(rgba, width, height)
+}
+
+/// 把 `jpeg-decoder` 输出的像素（RGB24/L8/L16/CMYK32）转换为 RGBA。
+///
+/// JPEG 不含 alpha 通道，故统一补 alpha=255。CMYK 按 JPEG 惯例（Adobe 倒置 K）
+/// 用「255 - value」近似转 RGB。
+fn convert_jpeg_pixels_to_rgba(raw: &[u8], pixel_format: jpeg_decoder::PixelFormat) -> Vec<u8> {
+    use jpeg_decoder::PixelFormat;
+    match pixel_format {
+        PixelFormat::RGB24 => {
+            let mut out = Vec::with_capacity(raw.len() / 3 * 4);
+            for px in raw.chunks_exact(3) {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        }
+        PixelFormat::L8 => {
+            let mut out = Vec::with_capacity(raw.len() * 4);
+            for &g in raw {
+                out.extend_from_slice(&[g, g, g, 255]);
+            }
+            out
+        }
+        PixelFormat::L16 => {
+            // 16-bit grayscale（big-endian u16），降级为 8-bit RGBA（取高字节）。
+            let mut out = Vec::with_capacity(raw.len() / 2 * 4);
+            for px in raw.chunks_exact(2) {
+                let hi = px[0];
+                out.extend_from_slice(&[hi, hi, hi, 255]);
+            }
+            out
+        }
+        PixelFormat::CMYK32 => {
+            // CMYK → RGB（Adobe JPEG 惯例：K 倒置，C/M/Y 取 255-value）
+            let mut out = Vec::with_capacity(raw.len() / 4 * 4);
+            for px in raw.chunks_exact(4) {
+                let c = 255 - px[0];
+                let m = 255 - px[1];
+                let y = 255 - px[2];
+                let k = px[3] as u32;
+                let r = (c as u32 * k / 255).min(255) as u8;
+                let g = (m as u32 * k / 255).min(255) as u8;
+                let b = (y as u32 * k / 255).min(255) as u8;
+                out.extend_from_slice(&[r, g, b, 255]);
+            }
+            out
+        }
+    }
+}
+
+/// 按魔数字节嗅探图片格式并解码（PNG / JPEG）。
+///
+/// 比 URL 扩展名更可靠（URL 可能无扩展名或扩展名错误）。
+/// PNG 文件以 `\x89PNG` 开头；JPEG 文件以 `\xFF\xD8\xFF` 开头。
+/// 未知格式返回错误，调用方可记录日志并降级（不阻断页面加载）。
+pub fn decode_image_bytes(bytes: &[u8]) -> Result<ImageData, String> {
+    if bytes.starts_with(b"\x89PNG") {
+        decode_png_bytes(bytes)
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        decode_jpeg_bytes(bytes)
+    } else {
+        Err(format!(
+            "unsupported image format (magic bytes: {:?}); only PNG/JPEG supported",
+            bytes.get(..4).unwrap_or(&[])
+        ))
+    }
 }
 
 /// 把 PNG 解码后的原始缓冲（经 EXPAND 后的 RGB/RGBA/Grayscale/GrayscaleAlpha 8-bit）
@@ -366,6 +448,68 @@ mod decode_tests {
     fn decode_png_bytes_invalid_returns_err() {
         let result = decode_png_bytes(b"not a png");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn convert_jpeg_pixels_to_rgba_rgb() {
+        use jpeg_decoder::PixelFormat;
+        // 2 个 RGB 像素：红、绿
+        let raw = [255, 0, 0, 0, 255, 0];
+        let rgba = convert_jpeg_pixels_to_rgba(&raw, PixelFormat::RGB24);
+        assert_eq!(rgba, [255, 0, 0, 255, 0, 255, 0, 255]);
+    }
+
+    #[test]
+    fn convert_jpeg_pixels_to_rgba_grayscale() {
+        use jpeg_decoder::PixelFormat;
+        // 2 个灰度像素：128、64
+        let raw = [128, 64];
+        let rgba = convert_jpeg_pixels_to_rgba(&raw, PixelFormat::L8);
+        assert_eq!(rgba, [128, 128, 128, 255, 64, 64, 64, 255]);
+    }
+
+    /// 解码真实的 4×3 纯绿 JPEG fixture（quality 95，DCT 在纯色块上近无损）。
+    #[test]
+    fn decode_jpeg_bytes_green_4x3() {
+        let bytes = include_bytes!("testdata/green_4x3.jpg");
+        let img = decode_jpeg_bytes(bytes).expect("JPEG decode should succeed");
+        assert_eq!(img.width, 4);
+        assert_eq!(img.height, 3);
+        // JPEG 有损：断言绿色主导（G 高、R/B 低）而非精确 (0,255,0)。
+        let px = img.get_pixel(1, 1);
+        assert!(px[1] > 200, "green channel should be high, got {}", px[1]);
+        assert!(px[0] < 50, "red channel should be low, got {}", px[0]);
+        assert!(px[2] < 50, "blue channel should be low, got {}", px[2]);
+        assert_eq!(px[3], 255, "alpha should be fully opaque");
+    }
+
+    #[test]
+    fn decode_jpeg_bytes_invalid_returns_err() {
+        // JPEG 魔数 + 无效正文 → 库解码失败
+        let result = decode_jpeg_bytes(&[0xFF, 0xD8, 0xFF, 0x00, 0x00]);
+        assert!(result.is_err());
+    }
+
+    /// 分发器：按魔数字节正确路由 PNG / JPEG / 未知格式。
+    #[test]
+    fn decode_image_bytes_dispatches_by_magic() {
+        // PNG → 成功
+        let png = red_2x2_png();
+        let img = decode_image_bytes(&png).expect("PNG should dispatch and decode");
+        assert_eq!(img.width, 2);
+
+        // JPEG → 成功
+        let jpeg = include_bytes!("testdata/green_4x3.jpg");
+        let img = decode_image_bytes(jpeg).expect("JPEG should dispatch and decode");
+        assert_eq!(img.width, 4);
+
+        // 未知魔数 → 错误（unsupported）
+        let result = decode_image_bytes(b"GIF89a rest of gif");
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("unsupported"),
+            "should report unsupported format"
+        );
     }
 }
 
