@@ -198,6 +198,12 @@ const DEFAULT_FONT_SIZE: f32 = 16.0;
 /// - 其他字符（默认）：约 font_size × 0.5
 ///
 /// Ahem 字体特殊处理：所有字符宽度等于 font_size（WPT 标准正方形字体）。
+///
+/// ⚠️ R224 实验回退：曾用 DejaVu Sans 实测 advance 表（W=0.99/i=0.28 等）替换此启发式，
+/// 但全量 reftest 实测 **439→436 净 -3 回归**（非 Ahem 用例换行点翻转）。教训：estimate
+/// 并非纯自源中性——test/ref 文本结构不同时换行点敏感度不同，单独扰动 estimate 会破
+/// 同源对齐。真实修复须完整接入 FontLoader（R223 plumbing R2-R5，layout+paint+intrinsic
+/// 三处同源替换 + font_id 解析），而非单点改 estimate_char_width。证据见 master.md R224。
 pub fn estimate_char_width(c: char, font_size: f32, is_ahem: bool) -> f32 {
     if is_ahem {
         // Ahem 字体：所有字符（包括空格）宽度等于 font_size
