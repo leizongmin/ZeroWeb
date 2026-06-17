@@ -680,7 +680,7 @@ impl super::Painter {
             if box_node.is_r109_split && box_node.fragment_node_ids.is_none() {
                 return;
             }
-            if !has_direct_paintable_text(doc, node_id) {
+            if !has_direct_paintable_text(doc, node_id, styles) {
                 return;
             }
             // R109：匿名块片段跳过 painted_inline_nodes 去重——多个片段共享 inline 的
@@ -1476,13 +1476,53 @@ fn to_roman(mut num: usize) -> String {
     result
 }
 
-fn has_direct_paintable_text(doc: &Document, node_id: NodeId) -> bool {
-    doc.child_nodes(node_id).iter().any(|child_id| {
+fn has_direct_paintable_text(doc: &Document, node_id: NodeId, styles: Option<&HashMap<NodeId, ComputedStyle>>) -> bool {
+    let direct = doc.child_nodes(node_id).iter().any(|child_id| {
         matches!(
             doc.get(*child_id).map(|node| &node.kind),
             Some(NodeKind::Text(text)) if !text.content.trim().is_empty()
         )
-    })
+    });
+    if direct {
+        return true;
+    }
+    // PHASEA stored-line-boxes 路径（默认启用；env PHASEA_STORE_EXT=0 关闭，与 compute_final 存储扩展配套）：仅对
+    // **纯 inline 内容**容器（有 inline-level 元素子节点且**无 block-level 元素子节点**）返回
+    // true。排除 block 子节点（独立渲染）与混合 inline+block 内容（block-in-inline / span+h4
+    // 等存储路径与重跑分歧致回归：inline-box-001/002、multicol-block-no-clip-001）。
+    if std::env::var("PHASEA_STORE_EXT").as_deref() != Ok("0")
+        && let Some(styles) = styles
+    {
+        use zero_css_parser::values::DisplayValue;
+        let is_inline_display = |d: &DisplayValue| {
+            matches!(
+                d,
+                DisplayValue::Inline
+                    | DisplayValue::InlineBlock
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::InlineGrid
+                    | DisplayValue::InlineTable
+            )
+        };
+        let child_ids: Vec<zero_dom::NodeId> = doc.child_nodes(node_id);
+        let child_displays: Vec<Option<&DisplayValue>> =
+            child_ids.iter().map(|c| styles.get(c).map(|s| &s.display)).collect();
+        let has_inline_elem = child_displays.iter().any(|d| d.is_some_and(is_inline_display));
+        let has_block_elem = child_displays
+            .iter()
+            .any(|d| d.is_some_and(|dd| !is_inline_display(dd)));
+        // inline-level 子元素须为叶文本容器（无元素子节点），排除 block-in-inline（R109 碎片化）。
+        let inline_children_have_elem = child_ids.iter().any(|c| {
+            styles.get(c).is_some_and(|s| is_inline_display(&s.display))
+                && doc
+                    .child_nodes(*c)
+                    .iter()
+                    .any(|gc| doc.get(*gc).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))))
+        });
+        has_inline_elem && !has_block_elem && !inline_children_have_elem
+    } else {
+        false
+    }
 }
 
 /// 将计数器值格式化为字母序列（a/b/.../z/aa/ab/...）。
