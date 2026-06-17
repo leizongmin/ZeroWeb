@@ -2455,6 +2455,28 @@ CSS2 -3）——回归用例（multicol-breaking-*/column-height-009/column-bala
 
 **结论**：R244 spec 对当前代码**完全准确**（1aea7c2→45ebb42 无相关变更），P1 实现首步就绪，范围=mesh.rs+pipeline.rs（color vec3f→vec4f）机械跨切 contained、opaque 零回归+半透明修正、验证=framebuffer 像素断言 rgba(...,0.5)=blend 非实色。实现 agent 可直接起手 R244 无需再调研。R244→R249 ping-pong 地基顺序不变。详见 evidence/r251-r244-alpha-groundwork-verification-2026-06-18.txt。无代码变更，基线 438/490 持平。
 
+### R252 — pre/pre-wrap paint 多行渲染 scoped 修复落地（零回归，几何正确，非 chr-diff lever）（2026-06-18）
+
+承接 R247 缺陷 3（paint 多行堆叠 Phase-A 死锁）。R246 实证 ungated / gated(容器级) `with_line_y`
+均净 -11 回归。本轮尝试第 3 种 scope：**仅 preserve_whitespace（pre/pre-wrap/break-spaces）**。
+修复 `painter/text.rs:940`：`use_stored`→空；`preserve_whitespace`→`all_fragments_with_line_y()`
+（行 y 偏移正确）；否则 `all_fragments()`（旧行为，auto-wrap 不触碰）。判据：pre 族多行来自显式
+`\n`（R247 缺陷 1+2 已让 IFC 正确产出多行），auto-wrap 的 test/ref 堆叠同错故不触碰（R246 净 -11 来源）。
+
+**验证**：reftest-upstream **438/490 零回归**（pre 族 wpt-data 仅 4 文件用，auto-wrap 未触碰）；
+isolated `<pre>` 3 行几何正确（h=51 旧 h=13 堆叠）；LAYOUT_DUMP morning-work pre 块 ifc_lines
+正确（3/5/6/9/14 行）；tall-viewport（9000px）product-smoke A/B（R247-only vs scoped）diff 0.22%
+（16133 px）集中在 y=7500/8250 的 pre 块区域；make test 12233/0；clippy/fmt 干净。
+
+**诚实结论（非 morning-work 67% lever）**：isolated pre ZW(多行) vs CHR = **23.24%**（旧堆叠
+24.37%）——几何从 1 行→3 行正确，但 chr diff 几乎不变。真因：23% 主由 `#eee` 背景 + fontdue vs
+chromium 等宽字体度量噪声构成，**非堆叠几何**。故本修复是**正确的几何 bug 修复**（pre 不再塌缩，
+零回归，单测可证），但 morning-work 67% 主因在字体度量/背景/独立问题（font-weight R229、img
+固有尺寸 R233），pre 堆叠仅其几何表现之一。**价值定位**：正确性修复 + 未来含 pre 页面正确渲染；
+非 reftest-multiplier（4 文件）+ 非 morning-work chr-diff lever。证据
+`evidence/r252-prewrap-paint-multiline-scoped-2026-06-18.txt`。R247 缺陷 1+2（IFC 多行计算）+
+本修复（paint 多行渲染）配套闭合 pre 块多行正确性；auto-wrap 多行堆叠仍是 Phase-A 死锁（多轮）。
+
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
 1. **R109 inline-block ownership 架构项目**（多轮，高风险，潜力 +2 集群 css-flexbox-row/test1 + flexbox-column-row-gap-004）
