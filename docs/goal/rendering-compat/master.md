@@ -2108,6 +2108,63 @@ R227 确证根因并修复。
 - **诊断工具**：新增 `LAYOUT_DUMP=1` env（reftest.rs dump_layout_tree）转储盒树 abs_y/height/margin-top/padding-top，
   供后续布局垂直偏移诊断。
 
+### R228b — 半透明圆角矩形背景 alpha 丢失修复（2026-06-18）
+
+CPU 渲染器 `fill_rounded_rect`（render-foundation/src/cpu/mod.rs）硬编码 `alpha=255` + `set_pixel` 直接覆盖，
+丢弃 `rr.color.a`，致**任何半透明圆角背景渲染成实色**（矩形 `fill_rect` 正确 blend，圆角 `fill_rounded_rect` 不正确）。
+R227 后复扫 morning-work 67% 时定位：`.item-tag { background-color: var(--color-primary-alpha-05); border-radius:3px }`
+渲染成实色蓝 (96,124,210)。逐步二分锁定唯一触发条件 = `border-radius` + rgba/半透明背景（var/literal 均触发；
+var/longhand/inline-block/color 均非因）。修复=fill_rounded_rect 改用与 fill_rect 一致的 alpha 分支（不透明
+set_pixel / 半透明 blend_pixel）。新增单元测试 `rounded_rect_translucent_alpha_blends`。reftest 438/490 持平零
+回归；smoke 686/686；make test 全绿；clippy 干净。顺带修 table.rs:1803 clippy needless_range_loop（Rust 1.95 新
+lint 阻塞 CI）。
+**morning-work 整体仍 67%（未降）**——真因是独立的**内容纵向压缩**（ZW 暗内容集中 y=150-300，y=300-525 空白；
+CH 均匀分布 y=150-600），疑 `<img>` 固有尺寸塌缩或 pre code min-width:700px 溢出致内容堆顶，属 DC-11 替换元素
+独立问题，下一轮排查。GPU 渲染器 `color_to_f32`（gpu/mesh.rs:11）全局丢弃 alpha（fill/圆角均无法半透明），属
+DC-9 子项记录未修。证据 `evidence/r228-rounded-rect-alpha-blend-fix-2026-06-18.txt`。
+（注：本段为并行 agent 的 R228b，其源码 cpu/mod.rs + cpu/tests.rs + table.rs 仍处工作区未提交；
+调研 agent 本轮解 master.md 阻塞时一并带入此 WT-accurate doc 段，无法 partial-stage。）
+
+### R238 — master.md 解阻塞 + writing-modes 聚类拆分 + WM-1 abspos-vertical 精确机制（2026-06-18，read-only）
+
+**解阻塞说明**：master.md 自 R233 起被并行 agent 未提交的 R228b 阻塞 5+ 轮（R233–R237 全部
+evidence-only 落盘，未动 master.md）。本轮并行 agent 已停滞（mtimes 00:06–00:09，已 30+ min 无
+活动，reflog 零并行提交），调研 agent 解阻塞：R228b doc 段随本轮 master.md 提交带入（见上注），
+R233–R237 的 evidence-only 结论合并如下，并给出**下一实现方向 = WM-1 abspos-vertical**。
+
+**R233–R237 evidence-only 结论合并**（详情见各 evidence 文件）：
+- **R229/R230 font-weight**：welcome 剩余 17% 真因 = `font-weight` 未生效（资源 Regular-only +
+  plumbing 中 weight 维度未消费），welcome 限定，非跨页；R230 确认 fc-list bold 资源前提。
+- **R234 font-kerning**：rustybuzz 默认已 kern，gap narrow，低优先。
+- **R235/R236 multicol baseline-export**：`taffy_baseline` 字段 + flex 消费路径（engine.rs:474/
+  1003-1040）已存在，但 multicol.rs 全文零 baseline → multicol 容器导出退回 taffy 通用 block 基线
+  （非列派生）→ 6 例恒 1.1% POLLUTED。修复 = multicol.rs 列布局后按 §baseline-export 计算 first/last
+  基线写入 taffy_baseline。**结构性 DC-14 中最 tractable 切入点（有界特性，8 例系统性偏移）**。
+- **R237 writing-modes 拆分**：css-writing-modes 59 case 拆 8 子聚类（WM-1..WM-8），11 clean-oracle +
+  8 POLLUTED + ~40 self-fail。WM-5 clearance-vrl=R114b/R164 四轮证伪已 defer；WM-6/7 vertical float
+  =R133 结构多轮。**WM-1 abs-pos-non-replaced vrl/vlr（14 case）= 首选实现候选**。
+
+**新方向：WM-1 abspos-vertical 精确机制（R238 核心，详见 evidence/r238-abspos-vertical-precise-
+mechanism-2026-06-18.txt）**：
+- §7.1 维度交换**已存在但 INCOMPLETE**，非完全缺失：
+  (a) `converter/mod.rs:196 apply_vertical_writing_mode` 已交换 inset(left↔top,right↔bottom)/
+      size/flex-direction → taffy 收到轴交换后 abspos 数据 ✓
+  (b) `engine.rs:1394-1426` 静态位置修正（注释明引 "§10.3.7 + writing-modes §7.1"），守卫
+      `all_inset_auto`(top:auto&&bottom:auto)→用 IFC fragment 静态位置；`height_auto`→shrink-to-fit
+      child.height=fragment.width ✓
+- **两个系统性残差**（精确缺口）：
+  - 缺口 B（direction 分支缺失，rtl ~5.03% = ltr 4×）：§10.3.7 ltr→left 置静态 / rtl→right 置静态
+    （镜像）；现 line 1396-1399 静态修正**不读 direction** → vrl-012/122/130(rtl) 5.03% vs vrl-002(ltr)
+    1.28%。**最清晰修复信号**（残差最大、机制最确定）。
+  - 缺口 A（ltr all-auto 残差 ~1.28%）：vrl-002/vlr-003 走的就是已实现 all_inset_auto+height_auto 路径
+    仍失败 1.28% → 该路径本身有 fine error（IFC fragment 静态位置/shrink-to-fit width 在 vertical
+    偏移）。跨用例一致 → 系统性可定位。
+- **修复面 contained**：engine.rs:1394-1426 一处 + 新增 direction 分支，不动 converter/taffy/paint。
+  杠杆=14 case，但 per-case diff=定位残差+Ahem 噪声混合（R164 教训：勿据推断算 clean +14）。
+- **实现轮起手**：① 插桩 abs-pos-non-replaced-vrl-012(rtl 5.03%) dump child vs fragment + direction；
+  ② 补 direction 镜像分支；③ 复查 ltr 1.28% 残差来源；每步 make reftest + cross-validate 双看。
+- 与既有结论不冲突：≠R164 clearance（不同子问题，REF 为 swatch 图片可对齐）；≠R109/R133（独立代码面
+  engine.rs:1394）；同 R98/R123 谱系（abspos inset/CB taffy-vs-spec gap，补 vertical direction 分支）。
 
 经 R140（独立穷尽验证）+ R141b（R109 6 轮不可解）+ R144（属性审计穷尽）三重确证，**435/490 为单会话零回归平台期**。剩余 55 失败全属结构性多轮里程碑，按预期收益/风险排序的候选路径：
 
