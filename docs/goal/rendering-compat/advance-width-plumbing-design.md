@@ -1,9 +1,27 @@
 # RFC: advance-width 真实度量接入（layout-engine IFC）
 
-**状态**: Draft（待渐进实施）
+**状态**: ⚠️ DEPRIORITIZED（R225 双实验证伪 advance-width 是噪声根因）
 **日期**: 2026-06-17
 **背景**: R221（DC-14 可信通过率 39.6%）+ R222（advance 估计误差 ±44-98%）
 **目标 DC**: DC-2~5（chromium 一致率），瞄准 183-case 1-3% 系统性噪声桶
+
+## ⚠️ R225 证伪结论（2026-06-17）
+
+R221/R222 假设 advance-width estimate 误差是 183-case chromium 噪声的根因。R225 双实验
+**证伪**此假设：
+
+1. **reftest-oracle**（26 共享 case）：DejaVu advance 表替换后，strict true-pass 11 vs 11、
+   median z_vs_chr 1.06% vs 1.07%、0 case 改善/恶化。Ahem 用例 is_ahem 特例故无影响。
+2. **product-smoke（非 Ahem，advance 表真正起作用的场景）**：welcome 28.34%→28.31%（Δ-0.03%）、
+   wintertc 25.11%→25.14%（Δ+0.03%）——**零实质变化**。
+
+**机制推断**（待证实）：paint glyph x 定位走真实 fontdue shaping 而非 estimate
+（estimate 仅影响 layout 换行决策，glyph 位置视觉主项由 paint fontdue 决定）。
+故改 estimate 不影响 chromium diff。
+
+**结论**：advance-width plumbing（R1 trait seam 留存无害）是死路，**勿再投入**。
+28% 产品 smoke diff 真因在别处（line-height/baseline、box 定位、或 paint fontdue-vs-chromium
+光栅化差异），须另行定位。下方原设计保留作历史记录。
 
 ## 问题
 
