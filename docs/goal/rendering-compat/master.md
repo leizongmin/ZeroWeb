@@ -3678,3 +3678,22 @@ let font_size_px = match &style.font_size {
 **代码状态**：实验代码**已 100% 回退**（`git checkout text.rs`，`git diff --stat` 空）；`cargo check -p zero-engine` 干净。零代码变更落地，基线 loose 438/490 持平。
 
 **综合（R316+R317 两轮真实实现）**：本会话以**两次真实 code attempt**（非推断）排除了 baseline-export flex 后处理（R316）与 multicol paint 门控放宽（R317）两条最具体的单会话候选，均净负回退。连同 R305-R315 的 6 条搜索路径，reftest 单会话 clean win 经 **6 路径搜索 + 2 实现证伪**穷尽确认。剩余唯一 forward motion = multicol **layout 侧** column-aware IFC（R131，major 多会话架构）或 Phase A IFC 统一，均需 spec-rfc 多轮承诺，非单会话。本轮价值 = 实证关闭 multicol paint 侧 wiring 这条 R201 标的未测候选，纠正设计文档 Round 4' 方向。
+
+### R318 — DC-13 图片加载端到端实测：已贯通（纠正 goal doc 过时缺口）+ 产品 smoke 文本度量结构性确认（read-only 实测 + goal doc 纠正，基线持平）
+
+**承接**：R316/R317 排除 reftest 单会话候选后，转向 DC-13 产品 smoke（welcome/morning/wintertc）寻找**非 reftest 轴**的可落地进展。先核查 memory 中「ZeroBrowser 给 renderer 传 None as image cache，URL 导航未抓取图片子资源」（DC-13 P1 缺口）是否仍成立。
+
+**核查（代码 + 端到端实测，证 memory 过时）**：
+- **代码已全贯通**：`webview.rs:265 fetch_image_subresources` 在 `fetch_url` 导航三条成功路径（line 370/395/423）抓取 + 解码 `<img src>`；`decode_image_bytes`（image_cache.rs:368）按魔数字节分发 PNG/JPEG/SVG（resvg+tiny-skia）；`app_platform.rs` render_cpu/render_gpu/render_frame 三处传 `Some(&mut webview.image_cache())`（非 None）；并有 `render_path_consumes_webview_image_cache` 测试。
+- **端到端实测**（product-smoke wintertc，base-dir 本地服务）：vision 核验 header logo（橙色圆形雪花/gear）+ 13 个参与方 SVG/PNG logo（alibaba/bytedance/cloudflare/deno/fastly/igalia/netlify/nodejs/shopify/suborbital/vercel/azion/matrix）**全部正确渲染**（非占位 glyph/短横）。**memory「传 None / Logo 缺失」过时**。
+- **残余缺口**（准确）：WebP 解码未接入（decode 仅 PNG/JPEG/SVG）；CSS `url()` 背景图未抓取（fetch_image_subresources 仅 `<img src>`）。
+
+**产品 smoke 实测（800×600 viewport）**：welcome 17.06% / wintertc 13.70% / morning-work 28.72%。
+- wintertc diff 带分析（repeating ~15px 32-34% 带）+ LAYOUT_DUMP 核验：h1「WinterTC」单行正确（w=583px，未折行；vision 报「Wnt er TC」系低分辨率误读）。diff 残余 = system-ui 字体度量/line-height（结构域 Phase A 谱系），**非图片/布局缺口**。
+- 产品 smoke 与 reftest 同源——文本度量结构性，非单会话 clean win。
+
+**goal doc 纠正（文档治理 §1 自洽）**：已知缺口表「图片子资源/ImageCache 未贯通 P1-严重」+ 支持包络「Logo 全部缺失」**更新为已贯通**（R318 实测），消除文档与代码现实的矛盾。
+
+**对优先级队列影响**：DC-13 图片加载子项从缺口清单移除（已落地）。DC-13 残余确认为：① 文本度量（welcome/wintertc/morning 共性，Phase A 结构域）；② morning .item-tag R109 inline→block 堆叠（结构域）；③ WebP 解码 + CSS url() 背景图（可落地特性，低 ROI——wintertc/morning 不用 WebP/背景图）。reftest + 产品 smoke **双轴 plateau 确认**：单会话 clean win 经 reftest 6 路径+2 实现、产品 smoke 实测，均指向文本度量/列碎片化/IFC 结构域多会话工作。
+
+**本轮 read-only 实测 + goal doc 纠正**：零代码变更（`git diff -- '*.rs'` 空）；goal doc 2 处过时缺口纠正。基线 loose 438/490 持平。next = multicol layout 侧 column-aware IFC spec-rfc 设计（唯一未 ruled-out 的 forward motion），或接受 plateau 待用户多会话决策。
