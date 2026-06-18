@@ -14,8 +14,8 @@ use crate::gpu::mesh::{color_to_f32, push_fill_quad, push_path_fill_mesh, push_p
 use crate::gpu::pipeline::{
     FILL_FLOATS_PER_VERTEX, GRADIENT_FLOATS_PER_VERTEX, ROUNDED_RECT_FLOATS_PER_VERTEX, create_atlas_bind_group_layout,
     create_blur_pipeline, create_color_filter_pipeline, create_gradient_pipeline, create_image_pipeline,
-    create_render_pipeline, create_rounded_rect_pipeline, create_texture_bind_group_layout,
-    create_uniform_bind_group_layout,
+    create_render_pipeline, create_rounded_rect_pipeline, create_texture_bind_group_layout, create_transform_pipeline,
+    create_transform_uniform_bgl, create_uniform_bind_group_layout,
 };
 use crate::image_cache::ImageCache;
 use crate::primitive::{FillPrimitive, FilterKind, GradientKind, RenderPrimitives};
@@ -64,6 +64,11 @@ pub struct GpuRenderer {
     /// 单通道颜色滤镜后处理管线（DC-9：opacity/brightness/contrast）
     #[allow(dead_code)]
     color_filter_pipeline: wgpu::RenderPipeline,
+    /// Transform 后处理管线（DC-9：2D 仿射变换逆矩阵重采样）
+    #[allow(dead_code)]
+    transform_pipeline: wgpu::RenderPipeline,
+    /// Transform uniform 绑定组布局（group 0，64 字节）
+    transform_uniform_bgl: wgpu::BindGroupLayout,
     /// Uniform 绑定组布局
     uniform_bgl: wgpu::BindGroupLayout,
     /// Atlas 绑定组布局（保留用于 atlas 重建时重新创建绑定组）
@@ -227,6 +232,9 @@ impl GpuRenderer {
         let blur_pipeline = create_blur_pipeline(&device, format, &uniform_bgl, &blur_bgl);
         // DC-9 filter:opacity 后处理管线（复用 blur_bgl 源纹理布局）
         let color_filter_pipeline = create_color_filter_pipeline(&device, format, &uniform_bgl, &blur_bgl);
+        // DC-9 transform 后处理管线（独立 uniform bgl + 复用 blur_bgl 源纹理布局）
+        let transform_uniform_bgl = create_transform_uniform_bgl(&device);
+        let transform_pipeline = create_transform_pipeline(&device, format, &transform_uniform_bgl, &blur_bgl);
 
         let atlas = GlyphAtlas::new();
         let (atlas_texture, _atlas_view, _atlas_sampler, atlas_bind_group) =
@@ -248,7 +256,9 @@ impl GpuRenderer {
             image_pipeline,
             blur_pipeline,
             color_filter_pipeline,
+            transform_pipeline,
             uniform_bgl,
+            transform_uniform_bgl,
             atlas_bgl,
             gradient_bgl,
             image_bgl,
@@ -783,6 +793,12 @@ impl GpuRenderer {
         if !blur_filters.is_empty() && self.headless_texture.is_some() {
             self.apply_blur_filters_headless(width, height, &blur_filters, scale);
         }
+        // CSS transform（2D 仿射逆矩阵重采样，匹配 CPU apply_transform_post）。
+        // 无 transform 时不触发（零默认回归；transform reftest footprint ≈0，仅满足 DC-9 覆盖）。
+        let transforms = collect_transforms(&primitives.transforms);
+        if !transforms.is_empty() && self.headless_texture.is_some() {
+            self.apply_transform_filters_headless(width, height, &transforms, scale);
+        }
 
         target.present(&device);
     }
@@ -917,6 +933,182 @@ impl GpuRenderer {
                 });
                 pass.set_scissor_rect(sx, sy, sw, sh);
                 pass.set_pipeline(&self.color_filter_pipeline);
+                pass.set_bind_group(0, &uniform_bg, &[]);
+                pass.set_bind_group(1, &src_bg, &[]);
+                pass.draw(0..3, 0..1);
+            }
+
+            // 4. copy B→A（结果回 A，read_pixels 读 A）
+            encoder.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex_b,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex_a,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                extent,
+            );
+
+            self.queue.submit(std::iter::once(encoder.finish()));
+        }
+    }
+
+    /// DC-9 transform 区域后处理（2D 仿射逆矩阵重采样，仅 headless）。
+    ///
+    /// 对每个 `TransformPost`：copy A→B（B 获得完整场景基底，保 rect 外像素）→ scissor pass
+    /// 用 transform_pipeline 采样 A、按预计算逆矩阵把目标像素映射回源位置写 B（rect 内）→
+    /// copy B→A（结果回 A 供 read_pixels）。逆映射落在 rect 外的像素写白（匹配 CPU clear-to-white）。
+    /// uniform = 16 个 f32（64 字节，与 `TRANSFORM_SHADER` 的 `TransformUniforms` 对齐）。
+    fn apply_transform_filters_headless(&mut self, width: u32, height: u32, transforms: &[TransformPost], scale: f32) {
+        use wgpu::util::DeviceExt;
+
+        let Some(tex_a) = self.headless_texture.as_ref() else {
+            return;
+        };
+        let need_recreate = self
+            .headless_texture_b
+            .as_ref()
+            .map(|t| t.size().width != width || t.size().height != height)
+            .unwrap_or(true);
+        if need_recreate {
+            self.headless_texture_b = Some(create_headless_texture(
+                &self.device,
+                width,
+                height,
+                self.surface_format,
+            ));
+        }
+        let Some(tex_b) = self.headless_texture_b.as_ref() else {
+            return;
+        };
+
+        let extent = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+        // 源采样器：Nearest 匹配 CPU apply_transform_post 的 `.round()` 整数采样
+        //（Linear 会做双线性插值，与 CPU 逐字逐句的最近邻语义不一致）。
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Transform Src Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        for t in transforms {
+            // scissor 钳制到 [0, width]×[0, height]（wgpu 要求非零且在界内）
+            let sx = ((t.rect.left() * scale).floor().max(0.0) as u32).min(width);
+            let sy = ((t.rect.top() * scale).floor().max(0.0) as u32).min(height);
+            let sw = ((t.rect.right() - t.rect.left()).max(0.0) * scale).ceil() as u32;
+            let sh = ((t.rect.bottom() - t.rect.top()).max(0.0) * scale).ceil() as u32;
+            let sw = sw.min(width.saturating_sub(sx));
+            let sh = sh.min(height.saturating_sub(sy));
+            if sw == 0 || sh == 0 {
+                continue; // 退化 rect，跳过
+            }
+
+            let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Transform Filter Encoder"),
+            });
+
+            // 1. copy A→B（B 获得完整场景内容，保 rect 外像素不变）
+            encoder.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex_a,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex_b,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                extent,
+            );
+
+            // 2. uniform（64 字节 = 16 f32，布局对齐 TransformUniforms）
+            let ox = t.origin_x * scale;
+            let oy = t.origin_y * scale;
+            let uniform_data: [f32; 16] = [
+                width as f32,
+                height as f32,
+                ox,
+                oy,
+                t.inv_a,
+                t.inv_b,
+                t.inv_c,
+                t.inv_d,
+                t.inv_tx,
+                t.inv_ty,
+                t.rect.left() * scale,
+                t.rect.top() * scale,
+                t.rect.right() * scale,
+                t.rect.bottom() * scale,
+                0.0,
+                0.0,
+            ];
+            let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Transform Uniform Buffer"),
+                contents: bytemuck::cast_slice(&uniform_data),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+            let uniform_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Transform Uniform BG"),
+                layout: &self.transform_uniform_bgl,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                }],
+            });
+            let src_view = tex_a.create_view(&wgpu::TextureViewDescriptor::default());
+            let src_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Transform Src BG"),
+                layout: &self.blur_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&src_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+            });
+
+            // 3. scissor pass: 采样 A → 写 B（rect 内逆映射采样；rect 外白）
+            let view_b = tex_b.create_view(&wgpu::TextureViewDescriptor::default());
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Transform Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view_b,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pass.set_scissor_rect(sx, sy, sw, sh);
+                pass.set_pipeline(&self.transform_pipeline);
                 pass.set_bind_group(0, &uniform_bg, &[]);
                 pass.set_bind_group(1, &src_bg, &[]);
                 pass.draw(0..3, 0..1);
@@ -1856,6 +2048,47 @@ fn collect_blur_filters(filters: &[crate::primitive::FilterPrimitive]) -> Vec<(R
             f.filters.iter().filter_map(|k| match k {
                 FilterKind::Blur(radius) => Some((f.rect, *radius)),
                 _ => None,
+            })
+        })
+        .collect()
+}
+
+/// 一个 TransformPrimitive 经 CPU 侧预计算逆矩阵后的后处理输入（DC-9 GPU）。
+///
+/// `inv_*` 与 `apply_transform_post`（cpu/mod.rs）公式逐字一致：
+/// `src = inv_a*px + inv_c*py + inv_tx + ox` 等（px=x-ox）。奇异矩阵（|det|<1e-10）被丢弃。
+struct TransformPost {
+    rect: Rect,
+    origin_x: f32,
+    origin_y: f32,
+    inv_a: f32,
+    inv_b: f32,
+    inv_c: f32,
+    inv_d: f32,
+    inv_tx: f32,
+    inv_ty: f32,
+}
+
+/// 收集 `TransformPrimitive` 列表 → 预计算逆矩阵的 `TransformPost`（DC-9 GPU 后处理输入）。
+fn collect_transforms(transforms: &[crate::primitive::TransformPrimitive]) -> Vec<TransformPost> {
+    transforms
+        .iter()
+        .filter_map(|t| {
+            let det = t.a * t.d - t.b * t.c;
+            if det.abs() < 1e-10 {
+                return None; // 奇异矩阵，跳过（匹配 CPU apply_transform_post 早退）
+            }
+            let inv_det = 1.0 / det;
+            Some(TransformPost {
+                rect: t.rect,
+                origin_x: t.origin_x,
+                origin_y: t.origin_y,
+                inv_a: t.d * inv_det,
+                inv_b: -t.b * inv_det,
+                inv_c: -t.c * inv_det,
+                inv_d: t.a * inv_det,
+                inv_tx: (t.c * t.ty - t.d * t.tx) * inv_det,
+                inv_ty: (t.b * t.tx - t.a * t.ty) * inv_det,
             })
         })
         .collect()

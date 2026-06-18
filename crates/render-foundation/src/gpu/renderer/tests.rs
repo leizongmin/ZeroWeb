@@ -3,6 +3,7 @@
 use super::*;
 use crate::gpu::atlas::GlyphAtlasKey;
 use crate::gpu::mesh::{color_to_f32, push_fill_quad};
+use crate::primitive::TransformPrimitive;
 
 #[test]
 fn test_push_fill_quad() {
@@ -855,6 +856,65 @@ fn test_gpu_full_scene_filter_contrast() {
     let g = pixels[1] as i32;
     assert!(g < 30, "G should be much darker than 64 after Contrast(2.0), got {g}");
     assert!(g >= 0, "G should be non-negative, got {g}");
+}
+
+/// DC-9 GPU transform — 左半红 / 右半蓝填充 + 平移 tx=8 变换，断言逆矩阵重采样产出
+/// 白/红/蓝三带（匹配 CPU `apply_transform_post` 的逆变换 + clear-to-white 语义）。
+///
+/// 平移 a=1,b=0,c=0,d=1,tx=8：逆映射 src_x = dst_x - 8。
+/// dst x∈[0,8) → src∈[-8,0) 落 rect 外 → 白；x∈[8,24) → src∈[0,16) 采样红；x∈[24,32) → src∈[16,24) 采样蓝。
+#[test]
+fn test_gpu_full_scene_transform_translation() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    // 左半红（x∈[0,16)）、右半蓝（x∈[16,32)）
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 16.0, 32.0),
+        color: Color::RED,
+    });
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(16.0, 0.0, 16.0, 32.0),
+        color: Color::BLUE,
+    });
+    // 平移变换：把整张图右移 8px（tx=8），原点取 rect 中心（纯平移与原点无关，此处仅为覆盖路径）
+    primitives.transforms.push(TransformPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        origin_x: 16.0,
+        origin_y: 16.0,
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        tx: 8.0,
+        ty: 0.0,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    let px = |x: usize, y: usize| -> [u8; 4] {
+        let i = (y * 32 + x) * 4;
+        [pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]]
+    };
+    // y=16 中线采样三带
+    let white_band = px(4, 16);
+    assert_eq!(
+        white_band,
+        [255, 255, 255, 255],
+        "x=4 应为白（clear-to-white），got {white_band:?}"
+    );
+    let red_band = px(16, 16);
+    assert!(
+        red_band[0] > 200 && red_band[1] < 30 && red_band[2] < 30,
+        "x=16 应为红，got {red_band:?}"
+    );
+    let blue_band = px(28, 16);
+    assert!(
+        blue_band[2] > 200 && blue_band[0] < 30 && blue_band[1] < 30,
+        "x=28 应为蓝，got {blue_band:?}"
+    );
 }
 
 /// DC-9 GPU filter:blur — 渲染一个边缘锐利的色块 + Blur(3)，断言边缘像素被模糊（不再纯色）。
