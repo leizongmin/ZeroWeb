@@ -3160,6 +3160,23 @@ child.y += dy;
 
 **对优先级队列影响**：R287 near-pass pipeline 首次产出真实 strict 增量（+1）。证明 near-pass CSS2 中**确有可修的真实 bug**（非全 AA 噪声），valign 参考盒类 bug 是一个可复制的模式（子元素坐标系 vs 参考盒边界）。下一步=继续 near-pass 候选（如 td valign:middle 同源、或 background-attachment/float-clearance 类），用 STRICT 度量增量；或回到结构性死锁（multicol/Phase A）。无回退，默认实测 loose 438/490 / strict 294/490。
 
+### R290 — near-pass clean win 后续调查：R289 后基本穷尽（read-only，基线 loose 438/490 / strict 294/490 持平）
+
+**承接**：R289（valign 参考盒修复，background-043 转 true-pass）后，继续 near-pass pipeline 找下一个 clean win。本轮刷新 near-pass 清单 + 抽样诊断剩余候选。
+
+**刷新**：near-pass **145→144**（R289 −1 确认）。剩余 144 个最近真通过候选 strict diff 0.10-0.14% 居多（噪声底）。
+
+**抽样分类（全部 ruled out 为非 clean win）**：
+1. **AA/亚像素噪声（多数，0.10-0.14%）**：color-applies-to-001/005（R288 已证 table-vs-div AA）、inline-formatting-context-001、baseline-000/003/004/005、hypothetical-box-scroll-*、flexbox-baseline-align-self-*。差异在字形/亚像素边缘，非 bug。
+2. **JS 动态（不可静态诊断）**：collapsed-border-partial-invalidation-003（0.10%，含 `<script>` 测 invalidation 重绘）。
+3. **复杂多子系统（高风险）**：clear-clearance-calculation-003（0.38%，Ahem + float + margin collapse + clear 四子系统交互）、clearance-006（0.83%）、float-003/float-nowrap-3。clearance = CSS §8.3.1+§9.5 硬骨头。
+4. **delicate table 几何（R177b 相邻）**：subpixel-collapsed-borders-001（0.24%，`td border:4.95px` collapse，绿带垂直位移 8px≈2×border）。PIL 定位为 collapsed-border 表几何位移，非 R289 式 border-box/content-box 单点，需运行时探针 + 触及 R177b 刚落地的 collapsed-border 代码（回归风险）。
+
+**结论**：near-pass clean win 在 R289 后**基本穷尽**（R289 是孤立例外）——印证 master.md「clean win 穷尽」总评估。剩余 144 个：噪声底（0.10-0.14%）+ 复杂多子系统 + delicate table，无单会话安全修复。
+
+**对优先级队列影响**：near-pass 单点攻坚的边际收益已降至接近零。下一步应转向**更高杠杆方向**：①结构性死锁（multicol-breaking R131 column-aware IFC / Phase A IFC 三路径 R125/R198 font_size / writing-mode R114b）——解锁即 +多案例；②或回到 DC-13 产品 smoke（welcome/morning.work 残余）端到端证据；③或 collapsed-border table 几何作为专项（subpixel-collapsed-borders 系列，需运行时探针 + 全量 table 回归，多轮）。read-only，无代码/reftest 变更，基线 loose 438/490 / strict 294/490 持平。
+
+
 
 
 
