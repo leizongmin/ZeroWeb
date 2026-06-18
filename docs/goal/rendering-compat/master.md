@@ -3805,3 +3805,25 @@ let font_size_px = match &style.font_size {
 **结论**：rendering-compat 目标**所有可单会话推进的子项均已穷尽核查/实现**，无遗留单会话 lever 或基础设施缺口。剩余 forward motion **唯一**是**多会话架构承诺**（IFC 度量统一 Phase A / Phase 2 嵌套 multicol fragmentation / taffy 升级 R304 DEFER）或**接受 plateau**（loose 438/490=89.4%、strict 295/490、chromium-Oracle ~36%）。**rally 单会话迭代已无推进路径**——这是 10 轮（R313-R322）一致收敛的结论，非单轮判断。
 
 **本轮 read-only 实测 + 核查**：零代码变更（wrapping minimal test / reqwest 源码核查 / proxy env 核查）。基线 loose 438/490 持平。next = 待用户对「多会话架构承诺 vs 接受 plateau」的明确决策；继续 rally 单会话层面将重复 plateau 确认，无新进展。
+
+### R323 — DC-11 margin 折叠实测全过 + BFC margin 隔离实测：纠正 goal doc「未实现」过时声明（read-only 探针 + goal doc 纠正，基线持平）
+
+**承接**：R322 收尾后转 DC-11（布局正确性）轴——goal doc 多处把「Margin 折叠 ❌ 未实现」「BFC ❌ 未实现」列为 P1 缺口，但 compute() 注释称「taffy 0.7 已内置块级 margin 折叠（CollapsibleMarginSet）」。此**文档矛盾**（goal 治理 §1 须纠正）此前未实证。
+
+**margin 折叠探针（6 case，全过）**：minimal HTML + LAYOUT_DUMP abs_y 实测——
+| case | CSS 规则 | ZeroWeb 结果 | 裁决 |
+|------|---------|-------------|------|
+| 相邻兄弟 mb:30 + mt:20 | max→30 间距 | gap=30 | ✅ |
+| 父子 mt:40 + mt:25（无 border） | 折叠到 max=40 | parent/child 同 y | ✅ |
+| 父 border-top:1px + child mt:25 | border 阻断，child mt=25 保留 | gap=1+25 | ✅ |
+| 相邻 mb:30 + mt:-10 | 正负 30+(-10)=20 | gap=20 | ✅ |
+| 祖父 mt:40 > mid mt:0 > 孙 mt:35 | 跨层折叠 max(40,0,35)=40 | 三者同 y | ✅ |
+| BFC `overflow:hidden` 父 mt:60 + 子 mt:30 | BFC 子不与父折叠 | 子 mt=30 保留 | ✅ |
+
+**reftest 实证**：`reftest-upstream margin` 子集 5/5 全绿（`block-in-inline-...-margin-collapse` 0.00%、`empty-flex-box-and-margin-collapsing` 0.00%、grid/table margin 用例 0.00-0.03%）。
+
+**裁决**：**DC-11 margin 折叠已实现**（taffy 0.7 CollapsibleMarginSet；6 探针 + 5 reftest 全过）。BFC **margin 隔离**部分亦工作（overflow:hidden 子不折叠）。goal doc「Margin 折叠 ❌ 未实现 P1-严重」「BFC ❌ 未实现」**过时**——R323 纠正 goal doc 4 处：支持包络（line 80/81）、Current Proven Baseline（361/362）、已知缺口表（377）、DC-11 checklist（269）。margin 折叠项标记为已实现，DC-11 实际完成度高于 goal doc 旧声明。
+
+**对 DC-11 影响**：DC-11「布局正确性」清单 10 项中，margin 折叠（R323 ✅）+ Float 布局/clear（R108b/R127/R129 已落地）+ 部分 BFC（R323 margin 隔离）+ auto margin 居中（R165）+ 百分比 max-height（R119）+ min/max 约束（已实现）均done；剩余 fixed/sticky/滚动容器/object-fit 部分项。**DC-11 实际完成度远高于 goal doc 旧 P1 缺口表所示**。
+
+**本轮 read-only 探针 + goal doc 纠正**：零代码变更（margin 探针 minimal test + reftest margin 子集 + goal doc 4 处过时声明纠正）。基线 loose 438/490 持平。next = 续查 DC-11 其他项（BFC float containment / position:fixed-sticky / 滚动容器 / object-fit）是否如 goal doc 声称的「未实现」——若同样过时可逐项纠正 goal doc 自洽；或转多会话架构承诺。

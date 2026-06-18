@@ -77,8 +77,8 @@
 | 裁剪渲染 | `overflow: hidden/clip` 的矩形裁剪，`border-radius` 的圆角裁剪 | `ClipPrimitive` 已定义但渲染器未实现；当前裁剪仅在浏览器层做像素级处理，不在渲染器层 |
 | 滤镜渲染 | CSS filter（blur、brightness、contrast、grayscale、hue-rotate、invert、opacity、saturate、sepia、drop-shadow） | `FilterPrimitive` 已定义但渲染器未实现 |
 | 混合模式渲染 | `mix-blend-mode` 的 16 种混合模式（normal、multiply、screen、overlay、darken、lighten 等） | `BlendModePrimitive` 已定义但渲染器未实现 |
-| Margin 折叠 | 相邻块级元素 margin-top/margin-bottom 的正确折叠算法 | 当前完全未实现，导致块级元素间距与主流浏览器不一致 |
-| BFC（Block Formatting Context） | `overflow: hidden/auto/scroll`、`display: flow-root`、浮动等正确创建 BFC，隔离浮动和 margin 折叠 | 当前未实现 BFC 概念，浮动隔离和 margin 折叠无法正确工作 |
+| Margin 折叠 | 相邻块级元素 margin-top/margin-bottom 的正确折叠算法 | ✅ **已实现（R323 实测）**：taffy 0.7 `CollapsibleMarginSet` 内置块级 margin 折叠；R323 探针实测 6 case 全过（相邻兄弟 max 折叠 / 父子折叠 / border 阻断 / 负 margin 30+(-10)=20 / 祖父嵌套 max(40,0,35)=40 / BFC `overflow:hidden` 子不折叠），margin reftest 5/5 全绿（`block-in-inline-...-margin-collapse` 0.00%） |
+| BFC（Block Formatting Context） | `overflow: hidden/auto/scroll`、`display: flow-root`、浮动等正确创建 BFC，隔离浮动和 margin 折叠 | 部分实现：BFC **margin 隔离**已工作（R323 实测 `overflow:hidden` 子元素 margin 不与父折叠）；`display:flow-root`/`is_layout_container` 标志已落地（R127 float-container margin-uncollapse 修复）。浮动包含（float containment）部分由 taffy + R129 float shrink-to-fit 覆盖 |
 | 替换元素布局 | `<img>`、`<video>`、`<iframe>`、`<canvas>` 的固有尺寸计算和 `object-fit` | 当前替换元素无固有尺寸，`object-fit` 在 paint 阶段处理但无实际图片数据 |
 | 滚动容器 | `overflow: scroll/auto` 的可滚动容器，滚动偏移的正确应用 | 当前滚动偏移仅在浏览器层通过 `scroll_y` 手动偏移，无真正的滚动容器 |
 | text-shadow | 文字阴影（offset + blur + color） | paint 阶段未生成 text-shadow 图元 |
@@ -266,7 +266,7 @@
 
 ### DC-11: 布局正确性
 
-- [ ] **Margin 折叠** — 相邻块级元素的 margin-top/margin-bottom 按规范折叠（正 margin 取最大、负 margin 取最负、正负抵消）
+- [x] **Margin 折叠** — 相邻块级元素的 margin-top/margin-bottom 按规范折叠（正 margin 取最大、负 margin 取最负、正负抵消）— ✅ **R323 实测通过**（taffy 0.7 CollapsibleMarginSet；6 探针 case + 5 reftest 全过）
 - [ ] **BFC 创建** — `overflow: hidden/auto/scroll`、`display: flow-root`、浮动元素、`position: absolute/fixed` 正确创建 BFC，隔离浮动和 margin 折叠
 - [ ] **Float 布局** — 完整的 float 定位（float: left/right）、clear（clear: left/right/both）、float containment（BFC 包含浮动）
 - [ ] **Position: fixed** — 相对 viewport 定位（当前错误地映射为 absolute）
@@ -358,8 +358,8 @@
 | CPU 软件渲染 | ⚠️ 部分 | 仅支持 FillPrimitive + RoundedRectPrimitive + GlyphPrimitive |
 | GPU 渲染 | ⚠️ 部分 | 仅支持 FillPrimitive + GlyphPrimitive |
 | 浏览器图元消费 | ❌ 严重不足 | `append_webview_primitives()` 仅消费 fills + glyphs，丢弃其余 11 种图元 |
-| Margin 折叠 | ❌ 未实现 | 块级元素间距与主流浏览器不一致 |
-| BFC | ❌ 未实现 | 浮动隔离和 margin 折叠无法正确工作 |
+| Margin 折叠 | ✅ 已实现（taffy 0.7 CollapsibleMarginSet；R323 实测 6 探针 case + 5 reftest 全过） | 块级元素间距与主流浏览器一致 |
+| BFC（margin 隔离部分） | ✅ 已实现（overflow:hidden/flex/grid 等 BFC 的子元素 margin 不与父折叠；R323 实测） | margin 折叠隔离正确；浮动包含（float containment）部分未单独验证 |
 | 滚动容器 | ⚠️ 简化处理 | 无真正滚动容器，浏览器层手动偏移 |
 
 ### 已知关键缺口
@@ -374,7 +374,7 @@
 | ~~**图片子资源/ImageCache 未贯通**~~ | **Logo/图片密集静态页面** | ✅ **已贯通（R318 实测）** | `<img>` paint 生成 `ImagePrimitive`；`WebView::fetch_image_subresources`（webview.rs:265）在 `fetch_url` 导航三条路径（line 370/395/423）抓取 + 解码 `<img src>`（PNG/JPEG 魔数 + SVG via resvg/tiny-skia），写入 `image_cache`；`app_platform.rs` render_cpu/render_gpu/render_frame 三处传 `Some(&mut webview.image_cache())`（非 None）。**R318 实测**：WinterTC 首页 header logo + 13 个参与方 SVG/PNG logo（alibaba/bytedance/cloudflare/deno/fastly/igalia/netlify/nodejs/shopify/suborbital/vercel/azion/matrix）全部正确渲染（非占位 glyph），产品 smoke diff=13.70%（残余为 system-ui 字体度量/line-height，非图片缺口）。原「传 None / Logo 缺失」描述已过时 |
 | **浏览器层 glyph 重排** | **ZeroBrowser 产品渲染路径** | **P1-严重** | ZeroBrowser 在消费 WebView 图元前会按 baseline 对 glyph 做后处理重排；该逻辑可能破坏 engine 已经计算好的 fragment x 坐标，尤其影响 grid/flex 中同一 baseline 的不同卡片文本 |
 | **真实静态页面 smoke 缺失** | **验收有效性** | **P1-严重** | 当前没有把 `apps/browser/assets/welcome.html`、morning.work 文章页和 WinterTC 图片密集首页这类无页面 JS 的真实静态页面作为 Chromium 截图对比门禁；因此 WPT 子集或内联 reftest 全绿仍可能漏掉用户第一眼可见的错位、正文重叠、tag 串联、表格退化和 Logo 缺失 |
-| **Margin 折叠** | CSS 2.1 布局正确性 | P1-严重 | 完全未实现，导致块级元素间距与主流浏览器明显不一致 |
+| ~~**Margin 折叠**~~ | CSS 2.1 布局正确性 | ✅ **已实现（R323 实测）** | taffy 0.7 `CollapsibleMarginSet` 内置；R323 探针 6 case（相邻/父子/border 阻断/负 margin/祖父嵌套/BFC 子不折叠）全过 + margin reftest 5/5 全绿。原「完全未实现」描述过时 |
 | **BFC** | 布局隔离 | P1-严重 | 无 BFC 概念，overflow: hidden 不隔离浮动、不阻止 margin 折叠 |
 | **替换元素** | 图片/媒体渲染 | P1-严重 | `<img>` 无固有尺寸计算，图片无法正确显示 |
 | **滚动容器** | 页面滚动 | P1-严重 | overflow: scroll/auto 无真正滚动，长页面无法正确浏览 |
