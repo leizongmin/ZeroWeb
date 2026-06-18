@@ -1,9 +1,11 @@
 # Phase A — IFC 三路径统一设计（Spec + RFC）
 
-**版本**：v1.0
-**日期**：2026-06-18（R305）
+**版本**：v1.2
+**日期**：2026-06-19（R306 Phase 0 探针实证后）
 **状态**：草稿（read-only 调研产出，未落地代码）
-**关联**：`docs/goal/rendering-compat/master.md` R125 / R198 / R205 / R207 / R208 / R209 / R213；DC-13 产品 smoke 文本保真；DC-14 真实一致率
+**关联**：`docs/goal/rendering-compat/master.md` R125 / R198 / R205 / R207 / R208 / R209 / R213 / **R306**；DC-13 产品 smoke 文本保真；DC-14 真实一致率
+
+> **⚠️ v1.2 重大修订（R306 Phase 0 探针）**：原 §0/§6.1/§7.1 推荐的「baseline-resolved 单一权威行盒（baseline_y = 几何基线 frag.y+height）」方案经 env-gated A/B 实证**证伪**——font-051 用 `v_offset=frag.height` 渲染 **16.67% FAIL**，默认 `v_offset=is_ahem?0:font_size` **0.00% PASS**（详见 §6.3B）。geometric baseline ≠ fontdue render baseline。原 Phase 1（加 baseline_y=几何基线）作废；Phase 1 重定向为 **Gate 2 放宽（offset 校准不动）**。offset 语义非 Phase A 阻塞点；真硬阻塞 = 墙② multicol + 换行精度。下文 §0/§6.1/§7.1 的「baseline_y」措辞应据此修订理解。
 
 ---
 
@@ -244,6 +246,27 @@ pub struct InlineLayoutFragment {
 
 **结论**：frag.y / offset / glyph.y 三者构成**经验性自洽耦合**（单行 Ahem 子集成立），无法仅靠读码推导多行非-Ahem 的正确 offset。**原 Phase 1「加 baseline_y 死字段」改为 Phase 0「实测探针」**——在确证「frag.y+height == 实际 glyph 基线」前不引入字段，避免在错误前提上叠加。这把原 P1 推后，P2-P5 顺延，但保证不在 shaky 前提上编码（code-guidelines「先思考再编码，不假设」）。
 
+### 6.3B Phase 0 探针实证裁决（R306，证伪 §6.3A 假设）
+
+R306 执行 Phase 0 探针（env `PHASEA_BL=1` 把 stored Path A 的 `v_offset` 从 `is_ahem?0:font_size` 改为文档化 `frag.height`，对 font-051 A/B 实测）：
+
+| 模式 | font-051 | 裁决 |
+|------|----------|------|
+| 默认 `v_offset = is_ahem?0:font_size` | **0.00% PASS** | 当前 offset load-bearing 正确 |
+| 探针 `v_offset = frag.height` | **16.67% FAIL**（80000/480000 px，max ch 255） | 「frag.y+height」**渲染错误** |
+
+**裁决：§6.3A 假设「geometric baseline（frag.y+height）可作 render baseline」证伪。**
+
+- types/mod.rs:387「基线 = frag.y + height」是 IFC 的**几何基线**（apply_vertical_alignment `run.y = baseline_y - run.height` 推导成立），但 fontdue 光栅化时 `GlyphPrimitive.y`（被 cpu/mod.rs:33 当 baseline）+ fontdue glyph 度量的组合，使 **offset=0（非几何 height）** 产出与 chromium 一致的位图。geometric baseline ≠ fontdue render baseline，差一个 fontdue-metric-dependent 常量。
+- **stored Path A 的 `else { frag.font_size }` 分支是死代码**：Gate 2（engine.rs:1910 `is_pure_ahem`）保证 stored 片段 `is_ahem` 恒 true → `v_offset` 恒 0。
+- 若 `baseline_y` 字段存几何基线（frag.y+height），paint 直接用会**重演 16.67% 错误**（破坏 R207 子集 font-051 等）。
+
+**对实施计划的影响（§0/§7.1 Phase 1 重定向）**：
+- 原 Phase 1「paint Path A 改用 frag.y+height / 加 baseline_y=几何基线」**作废**。
+- 真正杠杆 = **Gate 2 放宽覆盖多行/非纯-Ahem**（让更多容器进 stored，offset 校准 is_ahem?0:font_size 不动），即 R209（PHASEA_MULTILINE）已试方向，被墙②（multicol）+ 换行精度阻塞。
+- offset 语义**不是** Phase A 阻塞点（Path A offset 对 stored Ahem 已正确）。Phase A 硬阻塞 = 墙② multicol + 换行精度，与本设计原「offset/baseline 统一」重心不同。
+- 可行统一方向（替代 baseline_y 字段）：(A) 存「render glyph_y」（compute_final 用同款 offset 校准算出，paint 直接消费，绕过语义分歧）；或 (B) 保留 paint 端 offset 校准，统一靠 Gate 2 放宽。两方向均不引入「几何 baseline_y 作 render y」。
+
 ### 6.4 multicol 处理（解墙 ②）
 
 两种方案，Phase 3 探针后定：
@@ -347,5 +370,6 @@ pub struct InlineLayoutFragment {
 |------|------|------|
 | v1.0 | 2026-06-18 | R305 初始 read-only 设计产出 |
 | v1.1 | 2026-06-18 | R305 执行期补充 §6.3A：确证 GlyphPrimitive.y=基线，frag.y/offset/glyph.y 经验性耦合，原 Phase 1「加 baseline_y 字段」改为 Phase 0 实测探针前置；Phase 计划由 5 改 6（插入 Phase 0，顺延） |
+| v1.2 | 2026-06-19 | R306 Phase 0 探针实证（§6.3B）：font-051 A/B 证伪「geometric baseline 可作 render baseline」（frag.height offset → 16.67% FAIL，默认 offset=0 → 0.00% PASS）。原 Phase 1（baseline_y=几何基线）作废；Phase 1 重定向为 Gate 2 放宽（offset 校准不动）。offset 语义非阻塞点；真硬阻塞 = 墙② multicol + 换行精度 |
 
 
