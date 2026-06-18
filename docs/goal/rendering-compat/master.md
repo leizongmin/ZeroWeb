@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-19（R327：Phase A Gate 2 多行放宽**控制实验净 -1 证伪**——env-gated 实测 multicol-fill-auto-001 pass→fail（墙② resolved：ref 侧 float 切 Path A vs test multicol 留 Path B，layout 不可守），ifc-008/009 改善 8→4%/6→4% 但未过（墙③残余），ifc-011 不变；**纠正设计 doc 墙①「唯一阻塞=多行限制」错误**。env-gate 已回退，基线 438/490 零漂移。Phase A 真 unblock = 墙③+墙②一次性架构，非 Gate 2 调参）
+**最后更新**: 2026-06-19（R328：单会话 lever 穷尽再确认——border-001/background-attachment 两 self-fail 低 diff 案实证结构性；DC-9 仅 blend_mode+drop-shadow 剩余（均需 paint-isolation）；multicol 全路径证伪唯余 layout 侧 column-aware IFC 硬里程碑。**POLLUTED vein（R308 font-size% 真实 win）仍可逐项 probe**，下一轮 R329 继续。基线 438/490 read-only 持平）
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
@@ -12,12 +12,12 @@
 
 **字体攻坚结论（2026-06-17 AA 基准）**：fontdue **Regular** 与 chromium 光栅化基本一致（W 0.1% / i 3.0%），**非渲染差异来源**；welcome 26% / Oracle 污染大头是**布局/度量**（line-height / R109 inline→block / 多行结构）。fontdue **Bold** 变体比 chromium 过墨 ~15%（R229b net-negative 已回退）。**字体攻坚停止，转布局/度量**——advance-width(R225/R320)、font-weight -Bold(R229b)、AA 噪声(R174) 三谱系均实证为死路，勿再投入。
 
-> **结构化 plateau 结论见下方「综合裁决」节**（R305–R323 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R308–R327）；更早轮次已归档：R307 → [`archive/rounds-r307.md`](./archive/rounds-r307.md)、R305–R306 → [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 → [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 → [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
+> **结构化 plateau 结论见下方「综合裁决」节**（R305–R323 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R308–R328）；更早轮次已归档：R307 → [`archive/rounds-r307.md`](./archive/rounds-r307.md)、R305–R306 → [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 → [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 → [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
 
 
 ## 综合裁决：结构性 plateau（R305–R323，≥10 轮一致收敛）
 
-> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R308–R327）与归档 [`archive/rounds-r307.md`](./archive/rounds-r307.md)（R307）、[`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)（R305–R306）、[`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)（R304）、[`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)（R303）、[`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
+> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R308–R328）与归档 [`archive/rounds-r307.md`](./archive/rounds-r307.md)（R307）、[`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)（R305–R306）、[`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)（R304）、[`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)（R303）、[`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
 
 **核心结论**：rendering-compat 的**所有单会话 / 中会话 forward-motion 杠杆均已 ruled out 或 refuted**——这是 R313–R323（≥10 轮）一致收敛的结论，非单轮判断。rally 单会话迭代已无法提升真实通过率。
 
@@ -55,6 +55,8 @@
 4. **接受 plateau** — 当前 self-source 89.4% / strict 60.2% / Oracle ~36% 作为诚实基线。
 
 **裁决**：需用户对「投入多会话架构承诺」vs「接受 plateau」决策。继续 rally 单会话迭代将重复 plateau 确认，无新进展。R314 已通过飞书通知用户此卡点。
+
+> **分支审计（2026-06-19 doc-maintenance read-only）**：未合并分支 `fix/rendering-compat-stacking`（8959ddb，2026-06-12，自称 R61 / 基线 387/490）经核查**冗余**——其核心改动（painter positioned/z-index 堆叠排序 CSS 2.1 App. E + `sync_inline_child_boxes_from_ifc`）**均已在 main**（`crates/engine/src/paint/painter/mod.rs:56-78`、`crates/layout-engine/src/engine.rs:1219`），且 main 版本更完整（额外处理 stacking-context 创建 + z-index:auto tree-order）。该分支**非**未合并 plateau 杠杆，亦非活跃并行开发（06-12 后无后续 commit）；doc-maintenance 续以 main HEAD 为准，不并入未合并分支内容。
 
 ---
 ## 里程碑完成状态
@@ -773,7 +775,7 @@ near-pass(R307) / POLLUTED hunt(R299–R309) / fresh-xval(R311) / Phase A 4 路 
 
 ---
 
-## 最近轮次详细记录（R308–R327；R307 已归档至 [`archive/rounds-r307.md`](./archive/rounds-r307.md)、R305–R306 已归档至 [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 已归档至 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)）
+## 最近轮次详细记录（R308–R328；R307 已归档至 [`archive/rounds-r307.md`](./archive/rounds-r307.md)、R305–R306 已归档至 [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 已归档至 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)）
 
 ### R308 — font-size 百分比解析修复（code change，DC-14 真实一致性修复，loose 438/490 持平 / strict 296→295 一处 revealed false-pass）
 
@@ -1207,6 +1209,24 @@ let font_size_px = match &style.font_size {
 **方法论**：env-gated 控制实验 = 零 baseline 风险下取**精确净计数 + 逐用例 diff**（R209 仅记「ifc-008/009 改善但 multicol 回归」无精确数）。本轮补全精确数据（净 -1 + 逐 case diff%）并 resolve 墙②疑点，使后续多会话 Phase 2 有确定起点。
 
 **代码变更**：零（env-gate 实验已回退）。`docs/goal/rendering-compat/master.md`（本 R327 条目）+ `docs/goal/rendering-compat/phase-a-IFC-unification-design.md`（墙①纠正 + 墙② resolved）。基线 loose 438/490 恢复零漂移。
+
+### R328 — 单会话 lever 穷尽再确认（read-only 实证：剩余低 diff 案 + DC-9/multicol 路径审计，基线 438/490 持平）
+
+**承接**：R327 决定性证伪 Phase A Gate 2 后，本轮对**未调查的剩余低 diff 失败案**（R148 全量再核未覆盖）+ DC-9/multicol 剩余路径做 read-only 实证，确认单会话 lever 确已穷尽，防未来会话重查。
+
+**剩余低 diff 案实证**（REFTEST_DUMP + PIL 像素对比）：
+- `border-001` (2.77%)：TEST=`border:25px solid` 100×100 实心边框；REF=`font:25px Ahem + word-spacing:3em`「1 2 3 4 5 6 7 8」折行模拟空 square 边。2.77% diff = Ahem 字 + word-spacing 折行精度（**IFC 墙③ 谱系**，非 border 渲染 bug）。test 渲染正确（hollow square），ref 的 fragile 字模模拟像素不对齐。
+- `background-attachment-applies-to-001` (2.40%)：`display:table-row-group` + `background-attachment:fixed` + `repeat-x` + table 嵌套（cell 2in×1in）——table 背景 + viewport-fixed bg + repeat 多特性复合，非单点 bg-attachment bug（css-parser 已解析 background-attachment，paint 侧复合交互结构性）。
+- 裁定：本轮核查的 border-001 / background-attachment 两案均落 IFC 折行精度 / table+bg 复合结构性（非单点 bug）。⚠️ 区别于 R308（anonymous-inline-inherit 经 POLLUTED 逐项 probe 发现 font-size% 真实单点 bug）——**self-fail 低 diff 案多结构性，但 POLLUTED（self-pass / chr-disagree）逐项 probe 仍可能出真实 bug**（R308 已证），勿因 self-fail 结构性结论放弃 POLLUTED vein。
+
+**DC-9 路径审计**（核 committed HEAD 36875cb 后状态）：transform（R285）+ 5 color-matrix 滤镜（R286）已落，**唯一剩余 GPU 真实缺口 = blend_mode**（R278 实证单 framebuffer post-process 不可行，需 paint-isolation offscreen 子树+source/dest 双纹理，multi-round defer）+ **drop-shadow**（CPU+GPU 均 stub，同需 alpha-shape offscreen 架构）。二者均**非单会话可解**，同 paint-isolation 架构依赖。
+
+**multicol 路径审计**（multicol-fragmentation-design.md）：balance（R200）、paint 门控（R157/R198/R203/R317）、baseline-export（R310/R312/R313/R316）、advance-width（R225）、column-aware IFC Phase 1 纯 inline 迁移（R319）**全证伪**；唯一未证伪路径 = **layout 侧 column-aware IFC（Round 2' 嵌套/混合内容碎片化）= 硬里程碑**，R319 标「Phase 1 零增益，真价值在嵌套/混合内容」，多会话。
+
+**综合裁决**：rendering-compat 单会话 forward-motion lever 经本轮（未调查低 diff 案 + DC-9 + multicol 全路径）**最后一轮实证后确已穷尽**。reftest 主指标（438/490 loose / 295/490 strict / ~36% Oracle）剩余提升 + DC-9 blend/drop-shadow + multicol 硬里程碑**全部需多会话架构承诺**（Phase 2 column-aware IFC / paint-isolation / taffy baseline_overrides），或接受 plateau。基线 loose 438/490 持平（read-only，零代码变更）。
+
+**代码变更**：零（read-only 实证 + 审计）。本 R328 条目沉淀结论防重查。
+
 
 
 
