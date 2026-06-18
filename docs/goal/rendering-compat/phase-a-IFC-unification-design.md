@@ -95,11 +95,15 @@ R207 证明**存储架构本身正确**（pure-inline 叶文本容器 +1），�
 
 ### 2.3 三处墙（broad 应用阻塞点）
 
-**墙 ① — Gate 2 多行限制（large-font 簇根因）**
-ifc-008 = `div1 > inner-div(block) > "XX XX" 100px Ahem`，200px 宽换 2 行。inner-div 是 block + 直接文本 → 过 Gate 1（line 1710 直接 `has_text_children=true`，不走 R207 扩展）。但 Gate 2 `lines.len() > 1` → 不存 → paint 走 Path B → 16px。R209 已用干净单趟探针确认 node 被访问、block=true、direct_text=true，**唯一阻塞 = 多行限制**。
+**墙 ① — Gate 2 多行限制（~~large-font 簇根因~~，R327 实测纠正）**
+> ⚠️ **R327 env-gated 控制实验纠正**：原断言「唯一阻塞 = 多行限制」**错误**。R327 加 env `PHASEA_AHEM_MULTILINE=1`（比 R209 更窄——保留 is_pure_ahem，仅去 `lines.len()<=1`）实测：放宽多行后 ifc-008/009/011 **仍不过**（ifc-008 8.18%→4.17%、ifc-009 6.11%→4.17% 改善但有墙③残余；ifc-011 11.27% 不变未触及 stored 路径）。真阻塞 = 墙③（Path A multi-line 垂直定位）+ 墙②（multicol 一致性），**非** Gate 2 调参。
 
-**墙 ② — multicol 反向依赖（R198/R209/R213）**
-multicol 容器 paint 永远走 Path B（`use_stored = multicol_info.is_none()`，text.rs:807；multicol_info 在 `!has_in_flow_children && is_balance_mode && height_auto` 时计算，text.rs:713）。放宽 Gate 2 让 multicol 的**内层内容容器**存 inline_layout 后，multicol-fill-auto-001 从 0.63%→9.15% 回归。机制疑点：multicol paint 重跑的 font_size 来自 `text_node_font_sizes` map，而该 map 已不受 Gate 2 限制广泛建立——故回归可能**不是** font_size map 变化，而是被存 inline_layout 的容器改变了某条 paint 分支选择或几何（需 Phase 2 探针实证，见 §6.4）。R213 的 `!in_multicol` 守卫无效是因为 multicol-fill-auto 的 ref 用 float（非 multicol）模拟列，`is_multicol=false`，守卫触及不到。
+ifc-008 = `div1 > inner-div(block) > "XX XX" 100px Ahem`，200px 宽换 2 行。inner-div 是 block + 直接文本 → 过 Gate 1（line 1710 直接 `has_text_children=true`，不走 R207 扩展）。但 Gate 2 `lines.len() > 1` → 不存 → paint 走 Path B → 16px。R209 已用干净单趟探针确认 node 被访问、block=true、direct_text=true，原判「唯一阻塞 = 多行限制」。~~但 R327 实测放宽后仍不过（见上方纠正）~~。
+
+**墙 ② — multicol 反向依赖（R198/R209/R213/R327 resolved）**
+multicol 容器 paint 永远走 Path B（`use_stored = multicol_info.is_none()`，text.rs:807；multicol_info 在 `!has_in_flow_children && is_balance_mode && height_auto` 时计算，text.rs:713）。放宽 Gate 2 让 multicol 的**内层内容容器**存 inline_layout 后，multicol-fill-auto-001 从 0.63%→9.15% 回归。
+
+> ✅ **R327 resolved 机制**（原「疑点，需 Phase 2 探针实证」）：multicol-fill-auto-001 的 **TEST** = 真 multicol（column-count:3，纯 Ahem），paint 走 `use_stored = multicol_info.is_none()` = **false → Path B 不变**；其 **REF** = float 模拟列（非 multicol），放宽后这些 float 容器（纯 Ahem 多行）切 **Path A** → test(Path B) vs ref(Path A) 分歧 → 破。R327 实测 multicol-fill-auto-001 当前**通过**（不在 52 失败集），放宽后 pass→fail（精确 -1）。**layout 无法区分「ref 上下文」故该墙不可守**（R213 `!in_multicol` 失败同因：守 TEST 侧 multicol 无用，破在 REF 侧 float）。真解 = Phase 2 让 multicol 也走 Path A（column-aware），使 test/ref 一致。原「回归可能不是 font_size map 变化」推测**证实**——是 ref 侧 float 容器切 Path A 的几何变化。
 
 **墙 ③ — v_offset / baseline 语义分歧**
 Path A 用 `v_offset = is_ahem ? 0 : font_size`（text.rs:1208），Path B 用 `baseline_fs = stored or 16`（text.rs:1225）。两者对「fragment.y 相对行的垂直锚定」假设不同。对多行非-Ahem 内容，stored 的 `frag.y`（真实 font_size 下的行顶）+ Path A v_offset 与 Path B 的 16px 行顶 + baseline_fs 不一致——这是 R206 broad 应用导致 ifc-001/002/003 翻 FAIL 的直接原因。**只要 Path B 还存在，两套语义就必须手工保持一致，而这已被 5 轮证明不可单点维护。**
