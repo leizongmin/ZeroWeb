@@ -181,9 +181,15 @@ pub fn resolve_computed_style(
     viewport_height: Option<f64>,
     parent_font_size: Option<f64>,
 ) -> ComputedStyle {
-    // font-size 属性本身：em 相对于父元素的 font-size
+    // font-size 属性本身：em/百分比 都相对于父元素的 font-size。
+    // 注意：font-size 的百分比语义特殊（= 父 font-size 的百分比，CSS §10.1），
+    // 与 width/height 等的百分比（容器尺寸）不同——故不沿用 resolve_length 的
+    // Percentage 分支（那里返回原始数值交由布局引擎按容器解析），在此就地解析。
     let font_size_context = parent_font_size.unwrap_or(ROOT_FONT_SIZE);
-    let font_size_px = resolve_length(&style.font_size, font_size_context, viewport_width, viewport_height);
+    let font_size_px = match &style.font_size {
+        LengthValue::Percentage(v) => v / 100.0 * font_size_context,
+        other => resolve_length(other, font_size_context, viewport_width, viewport_height),
+    };
 
     let mut resolved = style.clone();
 
@@ -744,6 +750,30 @@ mod tests {
         // 即使父元素 font-size 为 32px，rem 仍使用 root 16px
         let resolved = resolve_computed_style(&style, &custom, None, None, Some(32.0));
         assert_eq!(resolved.font_size, LengthValue::Px(32.0)); // 2 * 16 = 32
+    }
+
+    #[test]
+    /// font-size 的百分比应解析为父元素 font-size 的百分比（CSS §10.1），
+    /// 而非返回原始数值（区别于 width/height 等的容器相对百分比）。
+    /// 回归守卫：R308 修复 `font-size: 500%` 曾被错误解析为 500px 的 bug。
+    fn test_font_size_percentage_uses_parent() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Percentage(500.0); // 500%
+
+        let custom = HashMap::new();
+        // 父元素 font-size 为 16px，500% 应 = 80px（旧 bug 返回 500.0）
+        let resolved = resolve_computed_style(&style, &custom, None, None, Some(16.0));
+        assert_eq!(resolved.font_size, LengthValue::Px(80.0));
+
+        // 父元素 font-size 为 20px，150% 应 = 30px
+        style.font_size = LengthValue::Percentage(150.0);
+        let resolved = resolve_computed_style(&style, &custom, None, None, Some(20.0));
+        assert_eq!(resolved.font_size, LengthValue::Px(30.0));
+
+        // 根元素（parent_font_size=None）使用 ROOT_FONT_SIZE(16)，100% 应 = 16px
+        style.font_size = LengthValue::Percentage(100.0);
+        let resolved = resolve_computed_style(&style, &custom, None, None, None);
+        assert_eq!(resolved.font_size, LengthValue::Px(16.0));
     }
 
     // ═══════════════════════════════════════════════════════════════════
