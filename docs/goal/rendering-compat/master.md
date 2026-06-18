@@ -8,6 +8,26 @@
 
 **🎯 当前最高优先级（2026-06-18 更新，R229b font-weight 死路后）**：font-weight 已证为 **net-negative 死路**——R229b/7d062e5 完整落地 R229（选择机制正确+生效，welcome card h3 ink-mass +29% 证接线对），但 **fontdue 光栅化 Bold 变体比 chromium 过墨 ~15%**（title +14%/card h3 +17%）→ welcome product-smoke 17.06%→17.55%（+0.49pp 回归）→ 全 git checkout 回退；fontdue Bold 过墨同 advance-width(R225)/AA(R174) 谱系 fontdue-vs-chromium 渲染差异，**非单点可修，勿再以「加载 -Bold 接线」重试 R229**。morning-work 4× 高度已**闭环**（R255→R260 + a2b169e：ua_default_display 补 article/aside/details 等；body 25301→5677px≈0.95×chr，fullpage chr-diff 89.14%→48.65%，reftest 438/490 零回归）。**当前真实优先级（R267 更新：R236/R238 两条 billed turnkey reftest 杠杆 premise 双双被源码证伪，无 quick win）**：⚠️ **R238 WM-1 abspos-vertical（+14）的 R262「mirror-at-1407」半 turnkey 诊断已被 R267 证伪**——IFC vertical_rtl 分支（inline/mod.rs:1806-1817）已把 run.x 镜像到右侧（vertical-rl 首列 x=container_width−列宽），`all_fragments()` 返回 fragment.x=run.x，故 engine.rs:1407 `child.x=fragment.x` 对 vertical-rl **已正确**，R262 的 `if is_vertical_rtl{mirror}` 会**双重镜像**把元素推回左侧→净负；**勿实现 mirror-at-1407**。R238 rtl 残余 5.03% 真因非「缺镜像」，需重新诊断（候选=IFC 列 x 基址轴语义错配：container_width=行内轴(视觉高) 被用于块轴(视觉宽)排列 inline/mod.rs:1808，或 border/offset 边处理；探针须问「fragment.x 是否已镜像」而非 R262 假设的「需镜像」）。**DC-9 GPU = 当前唯一 active forward motion**（filter:opacity+brightness+contrast 已落——f6fed44 opacity + fc86937 color-filter pipeline [brightness/contrast]，R268/R273 核实 sound（brightness/contrast 是正确 CSS 语义非 opacity 近似），blur 亦落（3a3530f fs_blur 三角核 2-pass；R277 核实非 ==CPU——三角核 separable vs CPU 多遍 box，parity 分歧但覆盖达标）；剩 transform（并行 agent WIP 接线 fs_transform）+ blend（CPU stub+GPU 丢弃，**post-process 单 framebuffer 架构上不可行、需 paint-isolation 架构，R278 defer**）+ 5 color-matrix 滤镜（grayscale/invert/saturate/sepia/hue-rotate，CPU 全实现但 GPU collect 丢弃，**R279 code-ready spec 就绪**——fs_color_filter 机械扩 mode 3-7）；硬门禁+非碰撞+本 WSL `--gpu` 可验证）；⚠️ **R236 multicol baseline-export（曾标 +8 turnkey R260）已被 R266 源码证伪降级**——baseline-export 用例全 block flex（`display:flex`），唯一 `LayoutBox.taffy_baseline` 消费者 engine.rs:988 guard 仅 `InlineFlex|InlineGrid` 不覆盖 `display:flex`，且 flex 项 taffy 内部已对齐、post-pass 覆写副本不动 taffy 内部缓存，故 **field-fill 净 0**，**勿以「填 taffy_baseline」重试 R236**（真实修复=pre-pass 估测或 post-align 重对齐，结构性多轮，见 R266）；② **welcome 17%/morning-work 48.65% 残余** 重定性（R229b）= item-tag span→block（R109 IFC 架构；**并行 agent inline/mod.rs 工作树本轮核实仅 fmt 残留，item-tag 攻坚疑已回退/搁置，跨 ~8 轮未提交**）+ fontdue CJK 度量噪声（line-height/advance，**非 weight**）+ hljs（需 JS）+ body ~300px 差，font-weight **不再是主因**；③ DC-9 GPU filter:opacity 前提经 R268 只读核实 **sound**（GPU fs_opacity 区域 RGB*=amount/alpha=1.0 == CPU apply_filter Opacity 语义；ping-pong A→B→scissor→B→A 正确；**R249 标的缺的第二纹理 headless_texture_b 已在并行 agent 未提交 WIP 落地**；headless-only 零默认回归）→ 提交后应满足 DC-9 对 opacity 覆盖（GPU 独立 WGSL 非 passthrough）+ CPU/GPU 对齐，是 R267 后实质 forward motion（**R269 核实**后续：blur=sound 同模式 apply_box_blur 真实参考；transform=真实近似 apply_transform_post 须对齐 quirk（白填暴露区/rect 裁剪/整数采样）；**blend≠同模式**——CPU apply_blend_mode 是 NO-OP STUB 无参考，需 source+dest 双图层新机制，GPU 真实现会与 CPU no-op 分歧破坏对齐，是比 opacity 大的独立特性，勿据「同模式」乐观低估）；前序 evidence 实测 `--gpu` 本 WSL 可用 → DC-9 可验证+非碰撞+硬门禁（caveat：CPU+GPU 均以 RGB 变暗近似 opacity（**R271 纠正：framebuffer 实有 alpha（RGBA×4 + blend_pixel 真合成），「无 alpha」前提 false；opacity 近似真因=post-process 无法恢复背景（非格式限制）；**R272 refine**：reftest compare 用 alpha（4 通道）+ ref 不透明→须 alpha=255，clip 白填=parity-correct+死代码（无生产 ClipPrimitive），transform 白填低 footprint 可议**）——DC-9 覆盖满足，opacity 近似正确性是更深独立问题，低 reftest 杠杆 R250）；④ UA display 审计完成（R258，a2b169e 后无更多 morning-work 类危险缺口）。⚠️ ruled out（勿重试）：font-weight -Bold 接线（R229b）、advance-width（R225）、multicol paint 切片（R203）、multicol balance 两趟（R200）、chromium 高 diff 候选（R202）、DC-12（R197 全实现）、**R238 mirror-at-1407（R267 证伪 R262 半turnkey 诊断；IFC vertical_rtl 已镜像 fragment.x，mirror 会双重镜像净负）**。⚠️ 仍开放多轮硬架构（非单会话）：multicol-breaking layout 侧 column-aware IFC（R131）、**R236 multicol baseline-export（R266 证伪 turnkey，field-fill 净 0；真实修复=pre-pass 估测或 post-align 重对齐，同 R131 谱系）**、Phase A IFC 三路径统一（R125/R198 font_size 死锁）、**DC-14 chromium-oracle 严格容差默认接线（R280 量化：默认 1%/5% 是硬上限 0.1%/0.5% 的 10×，是 89.4% vs 39.6% 落差根因之一；reftest.rs 非并行 agent 碰撞，推荐 phased strict toggle 先测 blast radius 再翻默认）**。
 
+### R283 — DC-2~5 进度表「内联 100% 冒充达标」自洽违规修正（docs-only 治理，基线 438/490 持平）
+
+延续 master.md 自洽复核（R277 修 DC-9、R280 修/补 DC-14、R281 同步 DC-13）。本轮复核 DC-2~5（核心通过率 DC）进度表，发现**最严重的自洽违规**——比 DC-9/M7 更核心。
+
+**违规**：DC-2~5 进度表（原 line 1383-1425）全部标「通过率 ≥95% **✅ 100.0%**」（DC-2 179/179、DC-3 Flexbox/Grid 51/51、DC-4 各项 100%、DC-5 各目录 100%），但这些数字基于**内联 685 reftest**。直接违反：
+- **goal line 319**（DC-14）：「DC-2~5 的内联 reftest 100% 仅作 smoke，**不计入达标判定**。master.md DC 进度表中任何「内联 100%」**不得标记为该 DC 达标**」。
+- **goal line 844**（DONE 禁止清单）：「DC-2~5 以内联 reftest 100% 冒充达标（内联仅 smoke，不计达标，DC-14）」= **DONE 阻断项**。
+- **goal line 178/186/194/204**：各 DC 的 ≥95% 明确要求「**上游真实 WPT reftest**」「**不允许**用 inline 手写 reftest 替代或充数」。
+
+**真实状态**（DC-14 口径）：DC-2~5 达标须 ≥95%（上游全量真实 reftest + chromium Oracle + 严格容差 0.1%/0.5%）。当前诚实数：
+- **39.6% strict**（188/475，evidence/cross-validate-full-2026-06-17.txt，z_vs_chr<1%）
+- 89.4% self-source-loose（438/490 @ 10× 过松容差 1%/5%，R280）
+- **均 <95%，DC-2~5 全部未达标**。且 DC-4 multicol/table、DC-5 writing-modes 含已知结构性死锁（multicol-breaking R131、table colspan R177b 部分修、vertical-rl clearance R114/R164 4 轮证否、text-emphasis R232 未实现），真实 sub-领域通过率更低。
+
+**修正（本轮产出）**：DC-2/3/4/5 四表全部重写——每表加「达标口径纠正（R283）」blockquote 引 goal line 319/844 + 真实 39.6% strict 数字；通过率/CPU/GPU 行从 ✅ 100.0% → **❌ 未达标**（附真实指标说明）；reftest 子集行保留 ✅ 但标「（smoke，不计达标分母）」。内联 reftest 仍作 DC-7 全绿基线（保留），但不冒充 DC-2~5 达标。
+
+**意义**：DC-2~5 是目标的**核心通过率 DC**（Mission = 95%+ WPT reftest）。此前标 ✅ 100% 是**最严重的虚假达标**——掩盖了 39.6% strict 的真实差距，比 DC-9/M7（工具/能力 DC）的过时标记更核心。修正后 master.md 的 DC 进度与 goal DC-14 口径、header 39.6%、evidence cross-validate 三方一致。这是继 R277（DC-9）、R280（DC-14）、R281（DC-13）后第 4 处自洽修复，master.md 控制→证据链可信度显著提升。
+
+**本轮为 docs-only 治理**：未改代码/reftest，未跑 make reftest（并行 agent transform/inline 源码 WIP 仍在工作树未提交会污染编译/结果；438/490 基线已文档化，本轮纯表格口径纠正无需复跑）。master.md 提交经 stash 隔离（同 R281/R282：`git stash push -- master.md` 暂存并行 agent 的 R278-transform 文档，clean 上写 R283 + DC-2~5 修正，提交后 pop 恢复）。**doc 杠杆至此全面穷尽**：DC-2~5（本轮）、DC-8（R270）、DC-9（R277/278/279/282）、DC-13（R281）、DC-14（R280）全部对齐 DC-14 口径；剩余 forward motion 全转代码层（并行 agent transform 提交 / color-matrix 实现 R279 / strict toggle 实现 R280 / 结构性 reftest 死锁多轮）。基线 438/490（自源，1%/5% 松容差）持平。
+
 ### R282 — 并行 agent DC-9 GPU transform 接线 sound 只读审计（未提交 WIP）：逆矩阵逐位对齐 CPU，pipeline 接线完整，零默认回归（read-only 审计，docs-only，基线 438/490 持平）
 
 承接 R281（记录并行 agent 未提交 R278-transform 文档 + 源码 WIP，R278 轮号碰撞）。本轮对并行 agent **未提交的 transform 接线源码**做独立只读审计（read-only，无代码改动），核其 sound 性——目标是在其提交前 catch 潜在 wiring bug（DC-9 GPU 是当前唯一 forward motion，transform 是其收尾项之一）。
@@ -1382,47 +1402,55 @@ R165 之后继续按 chromium Oracle 真实缺口推进，逐个甄别几个 sel
 
 ### DC-2: CSS 2.1 核心通过率 ≥ 95%
 
+> ⚠️ **达标口径纠正（R283，2026-06-18）**：下表原「通过率 ≥95% ✅ 100.0%」基于**内联 685 reftest**，直接违反 DC-14（goal line 319「内联 reftest 100% 仅作 smoke，不计达标」+ line 844「禁止 DC-2~5 以内联 100% 冒充达标」= DONE 阻断项）。**真实达标**须 ≥95%（上游全量真实 reftest + chromium Oracle + 严格容差 0.1%/0.5%），当前诚实数 = **39.6% strict**（188/475，evidence/cross-validate-full-2026-06-17.txt）/ 89.4% self-source-loose（438/490 @ 1%/5%），**均 <95%，DC-2 未达标**。内联 100% 仅 smoke（DC-7 全绿基线）。
+
 | 条目 | 状态 | 说明 |
 |------|------|------|
-| 导入 reftest 子集 ≥ 50 | ✅ | 179 个内联 CSS 2.1 核心 reftest |
-| 通过率 ≥ 95% | ✅ | 100.0% (179/179) |
-| CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
-| GPU 模式达标 | ✅ | GpuRenderer headless 可用（GPU fills/glyphs + CPU rounded rects） |
+| 导入 reftest 子集 ≥ 50 | ✅（smoke） | 179 个内联 CSS 2.1 核心 reftest（**不计达标分母**，DC-14 line 323） |
+| 通过率 ≥ 95% | ❌ 未达标 | 内联 smoke 100%（179/179）不计达标；真实上游全量+chromium Oracle+严格容差 = 39.6% strict，未达 95% |
+| CPU 模式达标 | ❌ 未达标 | 同上（reftest harness 走 CPU 路径，容差 10× 过松 R280，reference 同源自渲染） |
+| GPU 模式达标 | ❌ 未达标 | GpuRenderer headless 可用（机制就绪），但真实通过率未达标 + 容差过松 |
 
 ### DC-3: Flexbox + Grid 通过率 ≥ 95%
 
+> ⚠️ **达标口径纠正（R283）**：原「Flexbox/Grid 通过率 ✅ 100.0%」基于内联 reftest，违反 DC-14（line 319/844，内联不计达标）。真实达标须 ≥95%（上游全量真实 reftest + chromium Oracle + 严格容差），当前 39.6% strict 未达。内联 100% 仅 smoke。详见 DC-2 纠正说明。
+
 | 条目 | 状态 | 说明 |
 |------|------|------|
-| Flexbox reftest 子集 | ✅ | 51 个内联 Flexbox reftest（基础+进阶+边界+M6 扩展） |
-| Flexbox 通过率 | ✅ | 100.0% (51/51) |
-| Grid reftest 子集 | ✅ | 51 个内联 Grid reftest（基础+进阶+边界+M6 扩展） |
-| Grid 通过率 | ✅ | 100.0% (51/51) |
-| CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
+| Flexbox reftest 子集 | ✅（smoke） | 51 个内联 Flexbox reftest（基础+进阶+边界+M6 扩展，**不计达标分母**） |
+| Flexbox 通过率 | ❌ 未达标 | 内联 smoke 100%（51/51）不计达标；真实上游全量+chromium Oracle+严格容差未达 95% |
+| Grid reftest 子集 | ✅（smoke） | 51 个内联 Grid reftest（基础+进阶+边界+M6 扩展，**不计达标分母**） |
+| Grid 通过率 | ❌ 未达标 | 同 Flexbox，内联 smoke 不计达标，真实未达 95% |
+| CPU 模式达标 | ❌ 未达标 | 容差 10× 过松 R280 + 同源 reference，真实通过率未达标 |
 
 ### DC-4: Positioning + Float + Table + Multicol 通过率 ≥ 95%
 
+> ⚠️ **达标口径纠正（R283）**：原「各项通过率 ✅ 全部 100.0%」基于内联 reftest，违反 DC-14（line 319/844，内联不计达标）。真实达标须 ≥95%（上游全量真实 reftest + chromium Oracle + 严格容差），当前 39.6% strict 未达；且 multicol/table 含已知结构性死锁（multicol-breaking R131、table colspan R177b 部分修），真实 sub-领域通过率更低。内联 100% 仅 smoke。详见 DC-2 纠正说明。
+
 | 条目 | 状态 | 说明 |
 |------|------|------|
-| Positioning reftest | ✅ | 50 个定位 reftest（基础+进阶+M6 扩展） |
-| Float reftest | ✅ | 50 个 float 布局 reftest（M6 扩展） |
-| Table reftest | ✅ | 50 个 table 布局 reftest（M6 扩展） |
-| Multicol reftest | ✅ | 50 个 multicol 布局 reftest（M6 扩展） |
-| 各项通过率 | ✅ | 全部 100.0% |
-| CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
+| Positioning reftest | ✅（smoke） | 50 个定位 reftest（基础+进阶+M6 扩展，**不计达标分母**） |
+| Float reftest | ✅（smoke） | 50 个 float 布局 reftest（M6 扩展，**不计达标分母**） |
+| Table reftest | ✅（smoke） | 50 个 table 布局 reftest（M6 扩展，**不计达标分母**） |
+| Multicol reftest | ✅（smoke） | 50 个 multicol 布局 reftest（M6 扩展，**不计达标分母**） |
+| 各项通过率 | ❌ 未达标 | 内联 smoke 100% 不计达标；真实上游全量+chromium Oracle+严格容差未达 95%（multicol/table 结构性死锁更低） |
+| CPU 模式达标 | ❌ 未达标 | 容差 10× 过松 R280 + 同源 reference，真实通过率未达标 |
 
 ### DC-5: 文字排版通过率 ≥ 95%
 
+> ⚠️ **达标口径纠正（R283）**：原各目录「通过率 ✅ 100.0%」基于内联 reftest，违反 DC-14（line 319/844，内联不计达标）。真实达标须 ≥95%（上游全量真实 reftest + chromium Oracle + 严格容差），当前 39.6% strict 未达；且文字类容差 5%（R280）更过松，fontdue CJK 度量/line-height 噪声（R174/R187/R229b）是文字类残余 diff 大头。内联 100% 仅 smoke。详见 DC-2 纠正说明。
+
 | 条目 | 状态 | 说明 |
 |------|------|------|
-| css-text/ reftest ≥ 50 | ✅ | 51 个 |
-| css-text/ 通过率 | ✅ | 100.0% |
-| css-fonts/ reftest ≥ 50 | ✅ | 50 个 |
-| css-fonts/ 通过率 | ✅ | 100.0% |
-| css-text-decor/ reftest ≥ 50 | ✅ | 50 个 |
-| css-text-decor/ 通过率 | ✅ | 100.0% |
-| css-writing-modes/ reftest ≥ 50 | ✅ | 50 个 |
-| css-writing-modes/ 通过率 | ✅ | 100.0% |
-| CPU 模式达标 | ✅ | 全部通过 CPU 软件渲染 |
+| css-text/ reftest ≥ 50 | ✅（smoke） | 51 个（**不计达标分母**） |
+| css-text/ 通过率 | ❌ 未达标 | 内联 smoke 100% 不计达标；真实上游全量+chromium Oracle+严格容差未达 95% |
+| css-fonts/ reftest ≥ 50 | ✅（smoke） | 50 个（**不计达标分母**） |
+| css-fonts/ 通过率 | ❌ 未达标 | 同上（fontdue 度量噪声是残余 diff 大头） |
+| css-text-decor/ reftest ≥ 50 | ✅（smoke） | 50 个（**不计达标分母**） |
+| css-text-decor/ 通过率 | ❌ 未达标 | 同上（text-emphasis 等未实现 R232） |
+| css-writing-modes/ reftest ≥ 50 | ✅（smoke） | 50 个（**不计达标分母**） |
+| css-writing-modes/ 通过率 | ❌ 未达标 | 同上（vertical-rl clearance R114/R164 死锁） |
+| CPU 模式达标 | ❌ 未达标 | 容差 10× 过松 R280（文字类 5%）+ 同源 reference，真实通过率未达标 |
 
 ### DC-6: Quirks Mode
 
