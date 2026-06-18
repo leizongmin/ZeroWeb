@@ -98,7 +98,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 ### 3. 运行本地入口
 
 ```bash
-# WebView / rendering demo
+# rendering pipeline demo (render-foundation + host-runtime)
 cargo run --bin webview-demo
 
 # Browser app entrypoint
@@ -115,7 +115,7 @@ cargo run --bin zero-browser
 |------|------|
 | `apps/browser` | 桌面浏览器入口，支持窗口模式和 `--headless` / remote debugging |
 | `apps/renderer` | 独立渲染进程入口，负责多进程 IPC 下的页面渲染与脚本执行 |
-| `apps/webview-demo` | 最小 WebView / 渲染演示程序 |
+| `apps/webview-demo` | 最小渲染管线演示程序（wgpu/CPU 渲染静态文本，演示 render-foundation 与 host-runtime 集成） |
 
 ### 核心引擎
 
@@ -139,14 +139,14 @@ cargo run --bin zero-browser
 | `crates/storage` | localStorage、sessionStorage、IndexedDB、Cache API |
 | `crates/protocol` | IPC 与多进程消息模型 |
 | `crates/wasm-sandbox` | WASM 执行与沙箱能力 |
-| `crates/script-sandbox` | 扩展 / 用户脚本运行时（V8 / QuickJS feature gate） |
+| `crates/script-sandbox` | 页面 JavaScript 与扩展 / 用户脚本运行时（V8 / QuickJS feature gate） |
 
 ### 产品层与测试
 
 | Path | 用途 |
 |------|------|
 | `crates/webview` | 对外暴露的稳定嵌入 API |
-| `crates/browser-shell` | 浏览器产品层 UI |
+| `crates/browser-shell` | 浏览器产品层数据模型（标签页、书签、历史、设置，UI-agnostic） |
 | `docs` | 规格、研究、路线图和架构文档 |
 | `tests/integration` | 跨 crate 集成测试 |
 | `tests/wpt-runner` | WPT / reftest / 兼容性基础设施 |
