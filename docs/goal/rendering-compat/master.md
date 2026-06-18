@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-19（R326：position:sticky 偏移行为实测纠正 R323 审计误判——converter 把 sticky 映射为 taffy Relative，block-level 偏移**已被 taffy 应用**（新单测 delta==inset 实证），旧注「偏移未应用」源于死代码注释；缺的是 scrollport 钳制（架构性）。DC-11 单会话 code-win 轴 R323→R324→R325→R326 至此真正穷尽，剩余全为多会话架构承诺。make test 12257 全绿零回归）
+**最后更新**: 2026-06-19（R327：Phase A Gate 2 多行放宽**控制实验净 -1 证伪**——env-gated 实测 multicol-fill-auto-001 pass→fail（墙② resolved：ref 侧 float 切 Path A vs test multicol 留 Path B，layout 不可守），ifc-008/009 改善 8→4%/6→4% 但未过（墙③残余），ifc-011 不变；**纠正设计 doc 墙①「唯一阻塞=多行限制」错误**。env-gate 已回退，基线 438/490 零漂移。Phase A 真 unblock = 墙③+墙②一次性架构，非 Gate 2 调参）
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
@@ -12,12 +12,12 @@
 
 **字体攻坚结论（2026-06-17 AA 基准）**：fontdue **Regular** 与 chromium 光栅化基本一致（W 0.1% / i 3.0%），**非渲染差异来源**；welcome 26% / Oracle 污染大头是**布局/度量**（line-height / R109 inline→block / 多行结构）。fontdue **Bold** 变体比 chromium 过墨 ~15%（R229b net-negative 已回退）。**字体攻坚停止，转布局/度量**——advance-width(R225/R320)、font-weight -Bold(R229b)、AA 噪声(R174) 三谱系均实证为死路，勿再投入。
 
-> **结构化 plateau 结论见下方「综合裁决」节**（R305–R323 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R307–R326）；更早轮次已归档：R305–R306 → [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 → [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 → [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
+> **结构化 plateau 结论见下方「综合裁决」节**（R305–R323 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R307–R327）；更早轮次已归档：R305–R306 → [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 → [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 → [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
 
 
 ## 综合裁决：结构性 plateau（R305–R323，≥10 轮一致收敛）
 
-> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R307–R326）与归档 [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)（R305–R306）、[`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)（R304）、[`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)（R303）、[`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
+> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R307–R327）与归档 [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)（R305–R306）、[`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)（R304）、[`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)（R303）、[`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
 
 **核心结论**：rendering-compat 的**所有单会话 / 中会话 forward-motion 杠杆均已 ruled out 或 refuted**——这是 R313–R323（≥10 轮）一致收敛的结论，非单轮判断。rally 单会话迭代已无法提升真实通过率。
 
@@ -773,7 +773,7 @@ near-pass(R307) / POLLUTED hunt(R299–R309) / fresh-xval(R311) / Phase A 4 路 
 
 ---
 
-## 最近轮次详细记录（R307–R326；R305–R306 已归档至 [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 已归档至 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)）
+## 最近轮次详细记录（R307–R327；R305–R306 已归档至 [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 已归档至 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)）
 
 ### R307 — DC-14 strict 全量 near-pass frontier 实证：clean-win 杠杆关闭（read-only 实证 + evidence，基线 loose 438/490 / strict 296/490 持平）
 
@@ -1208,5 +1208,29 @@ let font_size_px = match &style.font_size {
 **意义**：纠正 R323 审计 sticky 误判（「偏移未应用」→「已应用、缺 scrollport 钳制」），避免未来会话据错误审计「补」一个 taffy 已施加的偏移致**双重计数**。同时把 sticky 当前近似行为（== relative）以单测锁死作回归守卫。DC-11 单会话 code-win 轴（R323→R324→R325）至此**真正穷尽**——剩余 sticky scrollport 钳制、Phase A IFC 统一、multicol fragmentation、baseline-export 全为多会话架构承诺（见顶部「综合裁决」）。
 
 **代码变更**：`crates/layout-engine/src/engine/tests/coverage.rs`（1 新单测 + 纠正注释）、`docs/goal/rendering-compat/master.md`（审计 sticky 行 + known-gaps sticky 行 + R325 sticky 提及，3 处纠正）。零 reftest 计数变化。
+
+### R327 — Phase A Gate 2 多行放宽控制实验：净 -1 证伪 + 纠正设计 doc 墙①（env-gated 实验 + doc，基线 438/490 恢复零漂移）
+
+**承接**：续 Phase A IFC 统一（最大结构性 lever）。设计 doc 墙①（phase-a-IFC-unification-design.md §2.3）称 ifc-008/009/011「唯一阻塞 = Gate 2 多行限制」。本轮用 **env-gated 控制实验**精确测量该断言，并 resolve 设计 doc 标为「疑点...需实证」的墙②回归机制。
+
+**实验**：engine.rs:1910 Gate 2 加 env `PHASEA_AHEM_MULTILINE=1`（默认关，零 baseline 影响）：开启时放宽「单行」限制，允许纯 Ahem 多行容器存 inline_layout。比 R209（PHASEA_MULTILINE）**更窄**——保留 `is_pure_ahem` 要求，仅去 `lines.len()<=1`。
+
+**实测结果**（reftest-upstream 全量 490，env ON）：
+- 通过 **437/490 (-1)** vs 基线 438/490。
+- **回归 1**：`multicol-fill-auto-001.xht` pass→fail（**精确证伪**：该用例**当前通过**，不在 52 失败集；放宽后被破）。
+- **改善但未过**：`ifc-008` 8.18%→4.17%、`ifc-009` 6.11%→4.17%（stored Path A 部分生效，残余 4.17% = 墙③ multi-line 垂直定位/baseline）。
+- **不变**：`ifc-011` 11.27%（未触及 stored 路径——疑 width mismatch 或未过 Gate 1）。
+- **净 pass 计数 = -1**（ifc 改善未跨过阈值，multicol 倒退 1）。
+
+**墙②机制 resolved**（设计 doc 原「疑点，需 Phase 2 探针实证」）：multicol-fill-auto-001 的 **TEST** = 真 multicol（column-count:3），paint 走 `use_stored = multicol_info.is_none()` = false → Path B（不变）；其 **REF** = float 模拟列（非 multicol），放宽后 float 容器（纯 Ahem 多行）切 Path A → test(Path B) vs ref(Path A) 分歧 → 破。**layout 无法区分「ref 上下文」故不可守**（R213 `!in_multicol` 失败的同因）。
+
+**纠正设计 doc 墙①**：原断言「ifc-008/009/011 唯一阻塞 = 多行限制」**错误**——实验证明放宽多行后三者**仍不过**（ifc-008/009 残余 4.17% 墙③，ifc-011 未触及）。真阻塞 = 墙③（Path A multi-line 垂直定位）+ 墙②（multicol 一致性），非单点 Gate 2。
+
+**裁决**：Phase A narrow slice（Gate 2 放宽多行 Ahem）**净 -1 证伪**，比 R209 更窄仍无效——ifc 收益不跨阈值、multicol 必倒退。**Phase A 真正 unblock = 墙③（Path A multi-line 正确）+ 墙②（multicol 也走 Path A 即 Phase 2 column-aware）一次性架构**，非 Gate 2 调参。已回退 env-gate（代码零变更，git diff 空），基线 438/490 恢复确认。
+
+**方法论**：env-gated 控制实验 = 零 baseline 风险下取**精确净计数 + 逐用例 diff**（R209 仅记「ifc-008/009 改善但 multicol 回归」无精确数）。本轮补全精确数据（净 -1 + 逐 case diff%）并 resolve 墙②疑点，使后续多会话 Phase 2 有确定起点。
+
+**代码变更**：零（env-gate 实验已回退）。`docs/goal/rendering-compat/master.md`（本 R327 条目）+ `docs/goal/rendering-compat/phase-a-IFC-unification-design.md`（墙①纠正 + 墙② resolved）。基线 loose 438/490 恢复零漂移。
+
 
 
