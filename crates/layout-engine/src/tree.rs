@@ -206,8 +206,11 @@ fn apply_replaced_element_sizing(
             let w = w.max(1.0);
             let h = h.max(1.0);
 
-            // 设置 aspect_ratio（如果 CSS 没有显式设置）
-            if computed.aspect_ratio.is_none() {
+            // 设置 aspect_ratio（如果 CSS 没有显式设置）。R325：仅当至少一侧 CSS 尺寸为
+            // auto 时才设（两侧都显式时 taffy 会强制比例覆盖显式 height，见 _ 分支注释）。
+            let css_w_auto = matches!(computed.width, LengthValue::Auto);
+            let css_h_auto = matches!(computed.height, LengthValue::Auto);
+            if computed.aspect_ratio.is_none() && (css_w_auto || css_h_auto) {
                 taffy_style.aspect_ratio = Some(w / h);
             }
 
@@ -250,7 +253,11 @@ fn apply_replaced_element_sizing(
                 let h = h.max(1.0);
                 let width_auto = matches!(computed.width, LengthValue::Auto);
                 let height_auto = matches!(computed.height, LengthValue::Auto);
-                if computed.aspect_ratio.is_none() {
+                // R325：CSS §10 替换元素——仅当至少一侧为 auto 时才用固有宽高比推导另一侧。
+                // 两侧都显式时【不得】设 aspect_ratio，否则 taffy 会强制比例，把显式 height
+                // 拉到 width 比例（如 <img style="width:200px;height:50px"> 渲染成 200×200
+                // 而非 200×50）。object-fit 控制内容如何填充 box，box 尺寸由两侧显式值决定。
+                if computed.aspect_ratio.is_none() && (width_auto || height_auto) {
                     taffy_style.aspect_ratio = Some(w / h);
                 }
                 // CSS §10.3/§10.6 替换元素：一侧显式、另一侧 auto 时，auto 侧按
