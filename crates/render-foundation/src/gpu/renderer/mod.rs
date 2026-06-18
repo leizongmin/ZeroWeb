@@ -2024,8 +2024,10 @@ impl GpuRenderer {
 /// 其他滤镜（blur/brightness/...）GPU 暂未实现，此处跳过。
 /// 收集 FilterPrimitive 中的单通道颜色滤镜 → `(rect, mode, param)`（DC-9 GPU 后处理输入）。
 ///
-/// `mode`：0=opacity, 1=brightness, 2=contrast（与 COLOR_FILTER_SHADER 对应）。其他滤镜
-///（blur/hue-rotate/drop-shadow 等）GPU 暂未实现，跳过。
+/// `mode` 与 COLOR_FILTER_SHADER 对应：0=opacity, 1=brightness, 2=contrast,
+/// 3=grayscale, 4=hue-rotate(degrees), 5=invert, 6=saturate, 7=sepia（R285 扩展 3-7，
+/// 公式对齐 CPU apply_filter）。blur/drop-shadow 不在此收集（blur 走独立 blur pipeline，
+/// drop-shadow CPU 亦 stub）。
 fn collect_color_filters(filters: &[crate::primitive::FilterPrimitive]) -> Vec<(Rect, f32, f32)> {
     filters
         .iter()
@@ -2034,6 +2036,11 @@ fn collect_color_filters(filters: &[crate::primitive::FilterPrimitive]) -> Vec<(
                 FilterKind::Opacity(amount) => Some((f.rect, 0.0, *amount)),
                 FilterKind::Brightness(amount) => Some((f.rect, 1.0, *amount)),
                 FilterKind::Contrast(amount) => Some((f.rect, 2.0, *amount)),
+                FilterKind::Grayscale(amount) => Some((f.rect, 3.0, *amount)),
+                FilterKind::HueRotate(degrees) => Some((f.rect, 4.0, *degrees)),
+                FilterKind::Invert(amount) => Some((f.rect, 5.0, *amount)),
+                FilterKind::Saturate(amount) => Some((f.rect, 6.0, *amount)),
+                FilterKind::Sepia(amount) => Some((f.rect, 7.0, *amount)),
                 _ => None,
             })
         })
