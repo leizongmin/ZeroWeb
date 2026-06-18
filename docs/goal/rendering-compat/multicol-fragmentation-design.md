@@ -49,6 +49,18 @@
 
 **预期**：Round 4' 解锁 multicol-breaking-004/006/nobackground-004（3 用例，005 因 balance+balance 嵌套更难独立）。仍是多轮 paint 子系统，非单会话。
 
+### ⚠️ R317 更新（2026-06-19）— Round 4' paint 侧方向实证证伪
+
+R201 Round 4' 的前置「放宽 text.rs:713 `height_auto` 门控（阻塞点 A）」**经 R317 单点实现 + 实验证伪**。把 `!has_in_flow_children && is_balance_mode && height_auto` 放宽为去掉 `height_auto` 后实测 multicol 子集 **40/57→35/57（净 -5 回归）**：multicol-breaking-001/002、nobackground-001/002/005 翻 FAIL，且目标 multicol-breaking-004 **反而恶化** 5.60→6.17%。
+
+**根因**：paint 侧 `compute_multicol_info_for_paint` 的列分布用 `total_height/col_count` 均衡分配，对**明确高度 + 嵌套**用例结构性错误（比单块回退更差）。multicol-fill-auto-* 不受影响（column-fill:auto → is_balance_mode=false），假设验证正确，但 balance 侧大面积回归。
+
+**裁决**：阻塞点 A 的「放宽门控」paint 侧方向**关闭**。这是 R203「paint 侧协调不可解」的第 N 次实证（R157/R198/R203/R122/R317）。Round 4'「paint 侧多轮子系统」整条方向 **ruled out**。
+
+**重定向（与 R203/R131 一致）**：真修复须 **layout 侧 column-aware IFC**——在 layout 阶段（非 paint）计算 multicol 容器的 IFC 行盒，按列高预算（balance = `total/count` 顺序填充到平衡高度；auto/fill = 列高限制顺序填充 + breaking）把**行盒**碎片化到各列，结果存 `LayoutBox`（如复用 `inline_layout` 或新增 `inline_column_lines`），paint 直接消费存储结果（**不再走 text.rs:713 paint 门控重算**）。这与 multicol.rs 已有的 **block** 子元素碎片化（`assign_children_to_columns_*`）互补——前者管 inline 行盒，后者管 block 子元素，**非重复**（纠正 §0「勿再建 measure-first 工具」对 inline 行盒场景的误套：该警告针对 block 子元素测量，不适用于 inline 行盒列分布）。
+
+**下一步（多会话 spec-rfc）**：设计 layout 侧 IFC 行盒→列碎片化的接口（`InlineFormattingContext` 接受 `ColumnFragmentationContext`，输出 `Vec<Vec<InlineLine>>` 每列行盒），Phase 1 = 死字段 + 测量基线（净 0），守 multicol-fill-auto-001 sentinel。**勿再以 paint 侧门控放宽/协调重试**（R157/R198/R203/R317 共 4 轮证伪）。
+
 ---
 
 ## ⚠️ R200 纠正（2026-06-17）
