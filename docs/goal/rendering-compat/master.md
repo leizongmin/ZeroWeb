@@ -3123,6 +3123,8 @@ GPU 按 `uniforms.mode` 分派：
 
 ### R288 — near-pass CSS2 攻坚诊断（验证 R287 pipeline + 定位 td-border bug，read-only，基线 438/490 持平）
 
+> ⚠️ **R288b 纠正（2026-06-18）**：R288 §2「background-043 = td 仅渲染顶边框、底/左/右缺失」是**误诊**——PIL 竖直扫描从 x=60 起漏了 x=8/211-214 的左右边框，底边框被溢出的蓝 img 覆盖。精确重扫证实 **td 四边框齐全（border-box 206×206 几何正确）**。真实 bug = **img（td vertical-align:bottom 内容）定位偏低 6px**（img 底 278 vs 应 content 底 272，溢出 content 6px、越过 border-box 3px；疑 valign 参考用了 border-box 高而非 content 高）。即 bug 在 img/replaced-element 的 vertical-align:bottom 定位（更易隔离，**非 border 绘制，无需动 table border 子系统**）。R288 §1（near-pass 多为 AA 噪声）+ §2 根因收窄（converter 正确/zero_box_model 仅 row/collapse 不运行）仍成立。详见 `evidence/r288b-td-border-misdiagnosis-correction-2026-06-18.txt`。下一步=定位 valign:bottom 计算入口确认参考盒 + STRICT 度量增量。
+
 **承接**：R287 推荐「攻 near-pass CSS2 clean win 候选用 STRICT env 度量增量」。本轮对前 20 个 strict-diff<1% 候选抽样诊断（REFTEST_DUMP + STRICT + PIL 像素级），**验证 master.md「clean win 穷尽」+ 修正 R287「前 20 是 clean win」的乐观假设**。
 
 **抽样结论（两类分布）**：
