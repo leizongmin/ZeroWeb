@@ -2269,7 +2269,7 @@ fn position_cells(
 /// 在 position_cells 之后调用，根据 CSS 尺寸约束调整表格的实际尺寸。
 fn apply_table_size_constraints(
     table_box: &mut LayoutBox,
-    _grid: &TableGrid,
+    grid: &TableGrid,
     total_row_height: f32,
     col_widths: &[f32],
     _spacing_y: f32,
@@ -2346,10 +2346,67 @@ fn apply_table_size_constraints(
     // 更新 table 容器尺寸
     // CSS 表格 shrink-to-fit：当 width:auto 时，content_width 应反映
     // 实际内容宽度（所有列宽之和），而非 taffy 分配的容器宽度
-    table_box.content_width = final_width;
-    table_box.width = final_width + padding_border_w;
-    table_box.content_height = final_height;
-    table_box.height = final_height + padding_border_h;
+    //
+    // border-collapse 修正（R291/R292）：collapse 模式下，compute_column_widths
+    // 用「border-center 到 border-center」列宽（含半 cell border），position_cells
+    // 的行高含整 cell border；而表四边缘的 cell border 与 table border 折叠——
+    // table border 胜出（更宽）时覆盖 cell border，后者不应再叠加进表尺寸。
+    // 旧实现两者都计入 → 表尺寸偏大（subpixel-collapsed-borders-001 偏 5px）。
+    // 扣除外边缘被覆盖的 cell border：宽扣 (左 cell.bl + 右 cell.br)/2，
+    // 高扣 (顶 cell.bt + 底 cell.bb)——分别匹配列宽半 border / 行高整 border 的算法。
+    let mut edge_w = 0.0_f32;
+    let mut edge_h = 0.0_f32;
+    if matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Collapse) && !grid.rows.is_empty() {
+        let last_col = grid.col_count;
+        // 左/右边缘 cell（col_start==0 / col_end==col_count）的 border_left/right
+        for row in &grid.rows {
+            let Some(rb) = get_row_box(table_box, row) else {
+                continue;
+            };
+            for cell in &row.cells {
+                let is_left = cell.col_start == 0;
+                let is_right = cell.col_end >= last_col;
+                if !is_left && !is_right {
+                    continue;
+                }
+                let Some(cb) = get_cell_box(rb, cell) else { continue };
+                // table border 胜出（>=）时 cell border 被覆盖，才扣；否则 cell 胜出保留
+                if is_left && table_box.border_left >= cb.border_left {
+                    edge_w += cb.border_left;
+                }
+                if is_right && table_box.border_right >= cb.border_right {
+                    edge_w += cb.border_right;
+                }
+            }
+        }
+        // 顶/底边缘行（首/末行）的 border_top/bottom
+        for (row_idx, row) in grid.rows.iter().enumerate() {
+            let is_top = row_idx == 0;
+            let is_bottom = row_idx + 1 == grid.rows.len();
+            if !is_top && !is_bottom {
+                continue;
+            }
+            let Some(rb) = get_row_box(table_box, row) else {
+                continue;
+            };
+            for cell in &row.cells {
+                let Some(cb) = get_cell_box(rb, cell) else { continue };
+                if is_top && table_box.border_top >= cb.border_top {
+                    edge_h += cb.border_top;
+                }
+                if is_bottom && table_box.border_bottom >= cb.border_bottom {
+                    edge_h += cb.border_bottom;
+                }
+            }
+        }
+    }
+    let width_correct = (edge_w / 2.0).min(final_width.max(0.0));
+    let height_correct = edge_h.min(final_height.max(0.0));
+
+    table_box.content_width = (final_width - width_correct).max(0.0);
+    table_box.width = table_box.content_width + padding_border_w;
+    table_box.content_height = (final_height - height_correct).max(0.0);
+    table_box.height = table_box.content_height + padding_border_h;
 }
 
 /// 更新行组的位置，使其包含所有子行。
@@ -2662,6 +2719,100 @@ mod tests {
             "content bottom ({content_bottom}) must not reach border-box height ({}) \
              (would mean valign used border-box instead of content-box)",
             cell.height
+        );
+    }
+
+    /// R292：`border-collapse: collapse` 时，表四边缘的 cell border 与 table border
+    /// 折叠——table border 胜出（更宽）时覆盖 cell border，后者不应再叠加进表尺寸。
+    /// 旧实现把「列宽含半 cell border（border-center 语义）」+「表 border 整圈」两者
+    /// 都计入 → 表尺寸偏大（subpixel-collapsed-borders-001 宽多 5px、高多 ~10px）。
+    ///
+    /// 本用例镜像 subpixel-collapsed-borders-001 几何：1×1 表，table border 5px，
+    /// cell border 4.95px。期望表 content 宽被扣除外边缘被覆盖的 cell border，
+    /// 接近 CSS2 §17.6.2 折叠语义的几何（而非旧的双重计入）。
+    #[test]
+    fn test_collapse_table_size_deducts_covered_edge_cell_border() {
+        use zero_css_parser::values::LengthValue;
+        use zero_style_system::property::types::{BorderCollapseValue, BorderStyleValue};
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let table_id = doc.create_element("div");
+        let cell_id = doc.create_element("div");
+        let _ = doc.append_child(root, table_id);
+
+        let mut styles = HashMap::new();
+        // table: border-collapse collapse + 四边 5px border
+        let mut ts = ComputedStyle::default();
+        ts.display = DisplayValue::Table;
+        ts.border_collapse = BorderCollapseValue::Collapse;
+        styles.insert(table_id, ts);
+        // cell: 四边 4.95px border（table border 5 胜出，覆盖 cell 边缘 border）
+        let mut cs = ComputedStyle::default();
+        cs.display = DisplayValue::TableCell;
+        cs.border_top_width = LengthValue::Px(4.95);
+        cs.border_right_width = LengthValue::Px(4.95);
+        cs.border_bottom_width = LengthValue::Px(4.95);
+        cs.border_left_width = LengthValue::Px(4.95);
+        cs.border_top_style = BorderStyleValue::Solid;
+        cs.border_right_style = BorderStyleValue::Solid;
+        cs.border_bottom_style = BorderStyleValue::Solid;
+        cs.border_left_style = BorderStyleValue::Solid;
+        styles.insert(cell_id, cs);
+
+        // cell LayoutBox：border 由 extract_layout 从 taffy 回读，测试直接设 4.95
+        let cell_box = LayoutBox {
+            node_id: Some(cell_id),
+            border_top: 4.95,
+            border_right: 4.95,
+            border_bottom: 4.95,
+            border_left: 4.95,
+            ..Default::default()
+        };
+        let mut table_box = LayoutBox {
+            node_id: Some(table_id),
+            // table border 5px（extract_layout 回读）
+            border_top: 5.0,
+            border_right: 5.0,
+            border_bottom: 5.0,
+            border_left: 5.0,
+            children: vec![cell_box],
+            ..Default::default()
+        };
+
+        let grid = build_grid(&table_box, &doc, &styles);
+        assert!(!grid.rows.is_empty(), "grid should have at least one row");
+
+        // 模拟 compute_column_widths 的 collapse 列宽：content(50) + (bl+br)/2 = 54.95
+        let col_width = 50.0_f32 + (4.95 + 4.95) / 2.0; // 54.95
+        // 行高含整 cell border top+bottom
+        let total_row_height = 50.0_f32 + 4.95 + 4.95; // 59.9
+
+        apply_table_size_constraints(&mut table_box, &grid, total_row_height, &[col_width], 0.0, &styles);
+
+        // 期望：左+右边缘 cell border 被 table border 覆盖 → 扣 (bl+br)/2 = 4.95
+        // content_width = col_width(54.95) - 4.95 = 50.0（旧 bug 会留 54.95，多算 ~5px）
+        let expected_content_width = 50.0_f32;
+        assert!(
+            (table_box.content_width - expected_content_width).abs() < 0.5,
+            "collapse table content_width ({}) should deduct covered edge cell border to ≈{} \
+             (col_width={}); old double-count bug left it at {}",
+            table_box.content_width,
+            expected_content_width,
+            col_width,
+            col_width,
+        );
+        // 期望：顶+底边缘 cell border 被覆盖 → 扣 bt+bb = 9.9
+        // content_height = row_height(59.9) - 9.9 = 50.0（旧 bug 会留 59.9，多算 ~10px）
+        let expected_content_height = 50.0_f32;
+        assert!(
+            (table_box.content_height - expected_content_height).abs() < 0.5,
+            "collapse table content_height ({}) should deduct covered top+bottom cell border to ≈{} \
+             (row_height={}); old double-count bug left it at {}",
+            table_box.content_height,
+            expected_content_height,
+            total_row_height,
+            total_row_height,
         );
     }
 }
