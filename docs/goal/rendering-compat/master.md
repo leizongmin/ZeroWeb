@@ -3582,3 +3582,19 @@ let font_size_px = match &style.font_size {
 **裁决**：baseline-export（baseline-000~008 + flexbox-baseline-* 聚类，~10+ 案）确认为**结构性多轮**，需 CSS-align baseline-export 的 spec-rfc 实施（block/multicol first-baseline 计算 + flex 对齐注入路径）。双侧探针已精确定位根因（multicol=None / inline-flex=错值），区别并超越 R266「field-fill 净 0」结论。这是 css-multicol + css-flexbox baseline 近-pass聚类的统一解锁钥匙，但非单会话 clean win。
 
 **本轮 read-only 探针**：env-gated 探针（engine.rs:989 IBBL_PROBE）**已 100% 回退**（`git diff -- '*.rs'` 空）；rebuild 干净。零代码变更，基线持平。next = baseline-export spec-rfc（block/multicol first-baseline 计算来源 + flex 对齐注入路径设计），或转 @font-face 字体加载特性（css-fonts 24 案聚类，但 fontdue-vs-chromium 度量噪声限制收益）。
+
+### R313 — baseline-overrides 杠杆证伪：inline-flex 位置不受 baseline_overrides 控制（read-only 实验，基线持平）
+
+**承接**：R312 探针发现 inline-flex 容器导出基线用 taffy_baseline（30/20/30，错值），暗示「baseline_overrides 改用 ZeroWeb 自有计算」可能是 lever。本轮 env-gated 实证该假设。
+
+**实验（env IBBL_PREFER_COMPUTED=1，已 100% 回退）**：在 baseline_overrides 闭包跳过 step-3（taffy_baseline 优先），强制走 step-4（ZeroWeb 首行近似 `item.y + item.font_size`）。对 flexbox-baseline-align-self-baseline-horiz-001 A/B 实测：
+- 默认（taffy 优先）：chromium-Oracle **17.64%**
+- 探针（computed 优先）：chromium-Oracle **17.64%（完全相同）**，bbox=(0,0,800,126) 一致
+
+**裁决：R312 的暗示证伪**——baseline_overrides（step-3 vs step-4）**不影响** flexbox-baseline-align-self 的渲染。inline-flex 的垂直位置由 **taffy 的 inline-level-box 布局**（inline-flex 作为 body 行内级盒，taffy 在 body 的 IFC 里定位它，用 taffy 自算的 inline-flex 基线）决定，**ZeroWeb 的 baseline_overrides 后处理对该用例不生效**（post-pass 重跑 IFC 未覆盖 taffy 的行内级盒定位，或该路径对此结构不触发）。
+
+**意义**：纠正 R312「baseline_overrides 是 inline-flex 基线 lever」的暗示——**不是**。inline-flex 基线导出的真根因在 **taffy 对 inline-level flex 盒的基线合成 + body IFC 定位**，非 ZeroWeb baseline_overrides 后处理可触及。这把 baseline-export 的修复路径从「改 baseline_overrides」排除，指向「taffy inline-level-box 基线」或「ZeroWeb 重跑 body IFC 时覆盖 inline-flex 定位」（更结构性）。
+
+**附发现（latent bug，0 reftest 覆盖，defer）**：`line-height: <percentage>` 在 computed.rs:195-206 未解析（Percentage 落 `_=>{}`），同 R308 font-size% 谱系。但 grep wpt-data **0 个 reftest 用 line-height %** → 零测试覆盖，按 code-guidelines「不实现需求之外的功能」defer（非当前目标驱动）。
+
+**本轮 read-only 实验**：env-gated 实验（engine.rs:989 IBBL_PREFER_COMPUTED）**已 100% 回退**（`git diff -- '*.rs'` 空）；rebuild + 复测 self 0.14% 不变。零代码变更，基线 loose 438/490 / strict 295/490 持平。next = baseline-export 真路径需触及 taffy inline-level-box 基线（深，结构性），或 pivot 到 multicol breaking wiring（R131）/ DC-9 blend_mode（独立特性）—— baseline-export 经 R310/R312/R313 三轮探针确认非单会话可解。
