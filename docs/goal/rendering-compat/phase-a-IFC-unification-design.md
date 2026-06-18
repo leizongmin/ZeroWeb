@@ -14,7 +14,7 @@
 - **明确排除**：multicol-breaking 的 column-aware IFC 碎片化模型（独立 RFC，见 `multicol-fragmentation-design.md`）；writing-mode 轴（R114/R164 4 轮证否）；intrinsic sizing（R97/R301，taffy-blocked per R304）。
 - **核心约束**：① 任何阶段**零 count 回归**（项目硬标准）；② 单文件 ≤2000 行（`engine.rs` 现 3969 行，本设计触及处须同步拆分）；③ paint 不得以「改变布局语义」的方式重排 glyph（goal DC-13）。
 - **推荐方案**：**baseline-resolved 单一权威行盒**——compute_final 存储每行盒的 `(line_top, baseline_y, line_height, fragments[])`，每个 fragment 存**已解析的绝对基线 y**；paint 永远从该结果渲染，删除 Path B（空 styles 重跑）。用「font_size 一致性不变量」取代 Gate 2 的 single-line+pure-Ahem 启发式。
-- **首个落地步骤**：Phase 1 = 在 `InlineLayoutFragment` 增加 `baseline_y` 字段，compute_final 对所有通过 Gate 1 的容器**计算并存储** baseline_y（仍只对 single-line pure-Ahem 实际启用 paint use_stored），先用增量字段建立测量基线，**不改渲染**，跑全量 reftest 确认净 0。
+- **首个落地步骤**：Phase 0（read-only 实测探针）= 用 `LAYOUT_DUMP=1` + 临时 glyph 位置插桩，确证 `frag.y + height == 实际 glyph 基线` 是否普适（R305 执行期发现 GlyphPrimitive.y 即基线、doc 注释亦声明 frag.y+height=基线，但 Path A 的 is_ahem?0:font_size offset 与之耦合须经实证），据此决定 Phase 1 用现有字段还是新增字段。详见 §6.3A / §7.1。
 
 ---
 
@@ -231,6 +231,19 @@ pub struct InlineLayoutFragment {
 - **Gate 2**（删除）：移除 `lines.len()<=1 && is_pure_ahem` 启发式，所有过 Gate 1 容器都存。
 - **paint use_stored**：移除 `multicol_info.is_none()` 例外（multicol 改用 §6.4）。
 
+### 6.3A 关键发现（R305 执行期补充）：glyph.y 是基线 + frag.y/offset 耦合
+
+执行 R305 期间精读耦合链发现**原 Phase 1「加 baseline_y 字段」前提不稳**，须先实证：
+
+1. **`GlyphPrimitive.y` = 基线 y**（非 bitmap 顶部）。证据：`glyph_top_left(x, baseline_y, x_offset, y_offset, height) = (x+x_offset, baseline_y - y_offset - height)`（cpu/mod.rs:33-34）——渲染器把 `glyph.y` 当 baseline，bitmap top = baseline − y_offset − height。
+2. paint 计算 `glyph_y = content_y + frag.y + offset`（text.rs:1132），故 **`frag.y + offset = 基线`**。
+3. types/mod.rs 文档注释声明 **`基线 = frag.y + height`**（InlineLayoutFragment.y 注释）。
+4. 但 Path A 用 `offset = is_ahem ? 0 : font_size`（text.rs:1208），Path B 用 `offset = baseline_fs`（=font_size）。
+
+**矛盾**：若基线 = frag.y + height 成立，则 offset 应恒为 `height`；但 Path A Ahem 用 0、Path A/B 普通用 font_size。font-051（单行 100px Ahem）Path A offset=0 仍 PASS，证明 stored Ahem 的 `frag.y` 已被 IFC 定位到「offset=0 即基线」的位置——即 stored frag.y 语义随 is_ahem / 路径 CO-DESIGN，非单一「fragment-box-top」。
+
+**结论**：frag.y / offset / glyph.y 三者构成**经验性自洽耦合**（单行 Ahem 子集成立），无法仅靠读码推导多行非-Ahem 的正确 offset。**原 Phase 1「加 baseline_y 死字段」改为 Phase 0「实测探针」**——在确证「frag.y+height == 实际 glyph 基线」前不引入字段，避免在错误前提上叠加。这把原 P1 推后，P2-P5 顺延，但保证不在 shaky 前提上编码（code-guidelines「先思考再编码，不假设」）。
+
 ### 6.4 multicol 处理（解墙 ②）
 
 两种方案，Phase 3 探针后定：
@@ -254,13 +267,14 @@ pub struct InlineLayoutFragment {
 
 ## 7. 实施交接
 
-### 7.1 推荐修改顺序（5 个 Phase，每 Phase 独立可合并）
+### 7.1 推荐修改顺序（6 个 Phase，每 Phase 独立可合并）
 
-1. **Phase 1（测量基线，零渲染变化）**：加 `baseline_y` 字段，compute_final 计算+存储（仍只对 single-line pure-Ahem 启用 use_stored），paint 暂不消费新字段。→ 验证：全量 reftest 净 0（字段是死的，不改变渲染）。
-2. **Phase 2（baseline-resolved 渲染，Gate 2 不变）**：paint Path A 改用 `baseline_y` 渲染（替代 v_offset 启发式），Gate 2 仍 single-line pure-Ahem。→ 验证：font-051 等 R207 子集仍 PASS（A3 验证 baseline_y 对单行 Ahem 退化正确）。
-3. **Phase 3（探针 multicol 墙 ②）**：read-only 探针实证 A2（multicol-fill-auto 回归机制），定 M1/M2。→ 验证：产出探针报告，无代码变更。
-4. **Phase 4（删除 Gate 2 多行限制）**：放宽 Gate 2 到所有过 Gate 1 容器 + multicol 按 Phase 3 方案。→ 验证：ifc-008/009/011 改善，multicol 类目不退，large-font 簇 chromium-Oracle 下降。
-5. **Phase 5（收尾清理）**：删除 Path B 中已无消费者的空 styles 重跑代码（仅 flex/grid/table 保留），engine.rs 拆分。→ 验证：全量三态不退 + clippy/fmt 干净。
+0. **Phase 0（实测 glyph 基线耦合探针，read-only）**【R305 执行期新增，前置】：用 `LAYOUT_DUMP=1` + 临时 glyph 位置插桩，对 (a) 单行 Ahem（font-051）、(b) 多行 Ahem（ifc-008）、(c) 多行非-Ahem 三个用例实测 `frag.y`、`frag.height`、`frag.font_size`、实际 `glyph.y`（基线），确证「`frag.y + height == glyph.y`」是否普适成立，以及 Path A 的 `is_ahem?0:font_size` offset 在哪种 frag.y 语义下自洽。→ 验证：产出探针报告，无代码变更，决定 Phase 2 用「现有 frag.y+height」还是需新增字段。
+1. **Phase 1（baseline-resolved 渲染，Gate 2 不变）**：据 Phase 0 结论，paint Path A 改用正确基线（`frag.y + height` 或新增 baseline_y），Gate 2 仍 single-line pure-Ahem。→ 验证：font-051 等 R207 子集仍 PASS（A3 验证退化正确）。
+2. **Phase 2（探针 multicol 墙 ②）**：read-only 探针实证 A2（multicol-fill-auto 回归机制），定 M1/M2。→ 验证：产出探针报告，无代码变更。
+3. **Phase 3（删除 Gate 2 多行限制）**：放宽 Gate 2 到所有过 Gate 1 容器 + multicol 按 Phase 2 方案。→ 验证：ifc-008/009/011 改善，multicol 类目不退，large-font 簇 chromium-Oracle 下降。
+4. **Phase 4（收尾清理）**：删除 Path B 中已无消费者的空 styles 重跑代码（仅 flex/grid/table 保留）。→ 验证：全量三态不退 + clippy/fmt 干净。
+5. **Phase 5（文件拆分）**：engine.rs 拆分（3969 行 → 抽 inline_finalization.rs）。→ 验证：纯移动不改逻辑，全量三态不退。
 
 ### 7.2 文件拆分（2000 行约束）
 
@@ -270,7 +284,8 @@ pub struct InlineLayoutFragment {
 
 | 批次 | 范围 | 预期结果 | 验证 |
 |------|------|----------|------|
-| Phase 1 | types +2 字段、compute_final 计算 baseline_y | reftest 净 0（死字段） | `make reftest` loose 438/490 |
+| Phase 0 | LAYOUT_DUMP + glyph 位置插桩探针 | 探针报告（无代码落地） | 三用例实测 frag.y/height/glyph.y |
+| Phase 1 | paint Path A 改用 `frag.y+height` 基线 | R207 子集仍 PASS | `make reftest` loose 438/490 |
 
 ---
 
@@ -305,7 +320,7 @@ pub struct InlineLayoutFragment {
 | 测试绑定 | ✅ Pass | 每场景绑 `make reftest`/单测函数名 |
 | TBD 清零 | ⚠️ Warning | A1/A2 待 Phase 2/3 探针验证（非阻塞，已降级为假设） |
 | 实施交接 | ✅ Pass | §7 含文件清单、修改顺序、首批提交 |
-| 首步可执行性 | ✅ Pass | §7.1 Phase 1 + §7.3 首批 |
+| 首步可执行性 | ✅ Pass | §7.1 Phase 0（read-only 探针）+ §7.3 首批 |
 
 ### 语言精确性
 | 规则 | 裁决 | 说明 |
@@ -331,5 +346,6 @@ pub struct InlineLayoutFragment {
 | 版本 | 日期 | 变更 |
 |------|------|------|
 | v1.0 | 2026-06-18 | R305 初始 read-only 设计产出 |
+| v1.1 | 2026-06-18 | R305 执行期补充 §6.3A：确证 GlyphPrimitive.y=基线，frag.y/offset/glyph.y 经验性耦合，原 Phase 1「加 baseline_y 字段」改为 Phase 0 实测探针前置；Phase 计划由 5 改 6（插入 Phase 0，顺延） |
 
 
