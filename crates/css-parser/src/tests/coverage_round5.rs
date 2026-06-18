@@ -1231,11 +1231,12 @@ fn test_parse_declaration_no_colon() {
 
 #[test]
 fn test_parse_at_rule_with_block() {
-    let css = "@font-face { font-family: test; }";
+    // 用 @page 测通用 @rule 块路径（@font-face 有专用解析器，不再走 Rule::At）
+    let css = "@page { margin: 1cm; }";
     let stylesheet = Parser::parse_stylesheet(css);
     match &stylesheet.rules[0] {
         Rule::At(at) => {
-            assert_eq!(at.name, "font-face");
+            assert_eq!(at.name, "page");
         }
         _ => panic!("Expected At"),
     }
@@ -1565,7 +1566,8 @@ fn test_parse_multiple_declarations() {
 
 #[test]
 fn test_parse_at_rule_with_nested_style_rules() {
-    let css = "@font-face { div { color: red; } p { color: blue; } }";
+    // 用 @page 测通用 @rule 嵌套样式规则（@font-face 有专用解析器）
+    let css = "@page { div { color: red; } p { color: blue; } }";
     let stylesheet = Parser::parse_stylesheet(css);
     match &stylesheet.rules[0] {
         Rule::At(at) => {

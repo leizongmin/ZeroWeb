@@ -96,6 +96,10 @@ impl<'a> Parser<'a> {
                 if name.eq_ignore_ascii_case("container") {
                     return self.consume_container_rule().map(Rule::Container);
                 }
+                // 对 @font-face 使用专用解析器（body 是声明块，非嵌套规则）
+                if name.eq_ignore_ascii_case("font-face") {
+                    return self.consume_font_face_rule().map(Rule::FontFace);
+                }
                 Some(Rule::At(self.consume_at_rule(name)))
             }
             _ => {
@@ -869,6 +873,52 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// 消耗 @font-face 规则。
+    ///
+    /// 格式：`@font-face { font-family: "X"; src: url("X.woff") format("woff"); }`
+    /// body 是声明块（非嵌套样式规则），用 `consume_declaration_block` 解析，
+    /// 提取 `font-family`（族名，去引号）与 `src`（所有 url()，按出现顺序）。
+    fn consume_font_face_rule(&mut self) -> Option<FontFaceRule> {
+        self.skip_whitespace();
+        // @font-face 无 prelude，必须直接是 `{`
+        if !matches!(self.peek(), Token::LBrace) {
+            // 非 `{`：跳到 `;` 或 `}`，返回 None 让上层丢弃
+            while !matches!(self.peek(), Token::Semicolon | Token::Eof) {
+                self.advance();
+            }
+            if matches!(self.peek(), Token::Semicolon) {
+                self.advance();
+            }
+            return None;
+        }
+        self.advance(); // {
+
+        let declarations = self.consume_declaration_block();
+
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
+        }
+
+        let mut family = String::new();
+        let mut sources: Vec<String> = Vec::new();
+        for decl in &declarations {
+            if decl.property.eq_ignore_ascii_case("font-family") {
+                family = strip_css_quotes(decl.value.trim());
+            } else if decl.property.eq_ignore_ascii_case("src") {
+                for url in extract_urls_from_src(&decl.value) {
+                    sources.push(url);
+                }
+            }
+        }
+
+        if family.is_empty() || sources.is_empty() {
+            return None;
+        }
+
+        Some(FontFaceRule { family, sources })
+    }
+
     /// 消耗 @keyframes 规则。
     ///
     /// 格式：`@keyframes name { from { ... } 50% { ... } to { ... } }`
@@ -1349,4 +1399,45 @@ fn parse_size_condition(text: &str) -> Option<ContainerSizeCondition> {
     }
 
     None
+}
+
+/// 去掉 CSS 字符串值两端的引号（单引号或双引号）。
+fn strip_css_quotes(s: &str) -> String {
+    let s = s.trim();
+    let bytes = s.as_bytes();
+    if bytes.len() >= 2 && (bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
+        || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\'')
+    {
+        s[1..s.len() - 1].to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+/// 从 `src` 描述符值中提取所有 `url(...)` 内的 URL（按出现顺序，去引号）。
+///
+/// 支持 `url("X.woff")`、`url(X.woff)`、`url('X.woff')`，忽略 `format(...)` 等其他部分。
+fn extract_urls_from_src(src: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    let lower = src.to_ascii_lowercase();
+    let mut search_from = 0;
+    while let Some(rel_idx) = lower[search_from..].find("url(") {
+        let open_paren = search_from + rel_idx + 3; // 指向 '('
+        // 找匹配的 ')'
+        let after = &src[open_paren + 1..];
+        let close_rel = match after.find(')') {
+            Some(r) => r,
+            None => break,
+        };
+        let inner = after[..close_rel].trim();
+        let url = strip_css_quotes(inner);
+        if !url.is_empty() {
+            urls.push(url);
+        }
+        search_from = open_paren + 1 + close_rel + 1;
+        if search_from >= src.len() {
+            break;
+        }
+    }
+    urls
 }

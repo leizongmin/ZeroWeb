@@ -26,6 +26,8 @@ pub enum Rule {
     Supports(SupportsRule),
     /// @container 规则。
     Container(ContainerRule),
+    /// @font-face 规则。
+    FontFace(FontFaceRule),
 }
 
 /// CSS @import 规则。
@@ -66,6 +68,19 @@ pub enum AtRuleBody {
     Block(Vec<Rule>),
     /// 以分号结束的语句（如 `@import`）。
     Statement,
+}
+
+/// CSS @font-face 规则。
+///
+/// 格式：`@font-face { font-family: "X"; src: url("X.woff") format("woff"); }`
+/// 仅提取字体族名与 src 中的 URL 列表（权重/样式等描述符当前忽略，
+/// 由调用方按 family 注册到 FontLoader）。
+#[derive(Debug, Clone)]
+pub struct FontFaceRule {
+    /// 字体族名（`font-family` 描述符的值，已去引号）。
+    pub family: String,
+    /// `src` 描述符中解析出的 URL 列表（按出现顺序，已去 url() 包裹与引号）。
+    pub sources: Vec<String>,
 }
 
 /// @keyframes 规则。

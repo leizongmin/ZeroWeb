@@ -1074,6 +1074,10 @@ fn collect_from_rules(
                     );
                 }
             }
+            zero_css_parser::ast::Rule::FontFace(_) => {
+                // @font-face 规则不参与样式匹配（自定义字体加载由 reftest/webview
+                // 调用方在渲染前从 CSS 提取并注入 FontLoader），跳过。
+            }
         }
     }
 }

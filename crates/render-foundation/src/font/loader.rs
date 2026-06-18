@@ -88,6 +88,15 @@ impl FontLoader {
         Ok(id)
     }
 
+    /// 注册字体族别名（`@font-face` 的 `font-family` 描述符 → 已加载字体 ID）。
+    ///
+    /// `load_font` 按字体内部 name 表注册族名；但 CSS `@font-face` 创建的族名是
+    /// 声明值（可能与字体内部名不同）。此方法把声明族名映射到已加载的 font_id，
+    /// 使 `build_font_resolver` 能按 `@font-face` 声明族名匹配。
+    pub fn register_family_alias(&mut self, alias: &str, font_id: u32) {
+        self.family_map.entry(alias.to_string()).or_default().push(font_id);
+    }
+
     /// 根据 ID 获取字体
     pub fn get(&self, id: u32) -> Option<&fontdue::Font> {
         self.fonts.get(&id)
