@@ -379,7 +379,19 @@
 | 产品 smoke 文本度量残余 | welcome 17% / wintertc 14% / morning 49% | P1（与 Phase A 同源） | Phase A IFC 统一（item-tag R109 inline→block + system-ui 字体度量，非图片/CSS 缺口） |
 | WebP 解码 + CSS `url()` 背景图抓取 | 图片子资源残余（wintertc/morning 不用，低 ROI） | P3 | `decode_image_bytes` 扩 WebP + `fetch_image_subresources` 扩 `url()` |
 
----
+### DC-11 doc 复核（2026-06-19，read-only 代码核查；无代码/reftest 变更）
+
+承接 R323 margin 折叠探针（纠正 goal doc「未实现」）与 R324 position:fixed 修复（commit 5b11fc2）后，本轮 read-only 核查 DC-11「布局正确性」其余项是否如 goal doc 声称的「未实现」。逐项代码核查 + 生产接线验证：
+
+| 项 | goal doc 旧声明 | 代码实证 | 裁决 |
+|----|----------------|---------|------|
+| BFC | 「无 BFC 概念，overflow:hidden 不隔离浮动/不阻止 margin 折叠」 | `establishes_bfc`（margin_collapse.rs:33-76）全条件（overflow/float/abspos/flow-root/flex/grid/table/multicol）**接线生产**（engine.rs:2940/2988/3052）；`use_bfc_float_containment`（engine.rs:2992）落地 float containment；margin 隔离 R323 实测 6 探针全过 | **过时**（待 goal doc 纠正；并行 agent R324 note 标 BFC float containment 为下一调查项） |
+| `<img>` intrinsic + object-fit | 「无固有尺寸，object-fit 在 paint 阶段处理但无实际图片数据」 | `apply_replaced_element_sizing`（tree.rs:165，HTML width/height 属性 + SVG data URI + 解码固有尺寸）+ `compute_object_fit_rect` 全 5 值（Fill/Contain/Cover/None/ScaleDown，text.rs:1582，img paint site text.rs:614 调用）+ R318 图片数据端到端贯通 | **过时**（待 goal doc 纠正；并行 agent R324 note 标 object-fit 为下一调查项） |
+| 滚动容器 | 「无真正滚动容器，浏览器层手动偏移」 | `scroll_x/scroll_y` 字段 + paint 偏移（painter/mod.rs:465-471）+ overflow 裁剪（needs_clip/clip_all_primitives_to_rect，mod.rs:197/298）；app 层 scroll_offset per tab + wheel 路由 | **基本准确**（paint 偏移+裁剪已落地，非 layout 级真滚动容器；master.md 已如实标「简化处理」）→ 不改 |
+| position: sticky | 「需宿主层动态调整」 | `is_sticky` 标记落地（engine.rs:606），但 engine.rs:1948 明示「sticky 偏移需宿主层滚动驱动」——**偏移未应用** | **准确** → 不改 |
+| position: fixed | 「当前错误地映射为 absolute」 | `adjust_fixed_to_viewport`（engine.rs:2176）存在且调用；**R324（commit 5b11fc2）已修 fixed-inside-positioned-ancestor over-correction（`+=`→`-=`）** | R324 已处理（goal doc 纠正见并行 agent 提交） |
+
+**结论**：goal doc DC-11 的 BFC + object-fit 两项「未实现」声明与代码现实矛盾（governance §1 自洽）。本轮将核查结论沉淀于本表（避免与并行 agent 活跃编辑 rendering-compat.md 冲突）；goal doc prose 纠正交由并行 agent 在其 R325+ DC-11 调查中按 R323/R324 先例处理，或后续 doc 会话在其非活跃时补。scroll/sticky 声明准确不改。本轮零代码变更（仅 read-only 核查）。
 
 ## IFC 统一技术参考
 
