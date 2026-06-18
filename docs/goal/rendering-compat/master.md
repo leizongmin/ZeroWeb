@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-19（R325：DC-11「替换元素」CSS §10 真实修复——`<img>` 两侧显式尺寸不再被固有宽高比强制，旧 `<img style="width:200px;height:50px">` 被拉成 200×200；+1 新单测、make test 12256 全绿零回归、loose 438/490 持平（latent）；goal doc 4 处过时声明纠正。续 R323→R324→R325 DC-11 轴 code win 谱系）
+**最后更新**: 2026-06-19（R326：position:sticky 偏移行为实测纠正 R323 审计误判——converter 把 sticky 映射为 taffy Relative，block-level 偏移**已被 taffy 应用**（新单测 delta==inset 实证），旧注「偏移未应用」源于死代码注释；缺的是 scrollport 钳制（架构性）。DC-11 单会话 code-win 轴 R323→R324→R325→R326 至此真正穷尽，剩余全为多会话架构承诺。make test 12257 全绿零回归）
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
@@ -12,12 +12,12 @@
 
 **字体攻坚结论（2026-06-17 AA 基准）**：fontdue **Regular** 与 chromium 光栅化基本一致（W 0.1% / i 3.0%），**非渲染差异来源**；welcome 26% / Oracle 污染大头是**布局/度量**（line-height / R109 inline→block / 多行结构）。fontdue **Bold** 变体比 chromium 过墨 ~15%（R229b net-negative 已回退）。**字体攻坚停止，转布局/度量**——advance-width(R225/R320)、font-weight -Bold(R229b)、AA 噪声(R174) 三谱系均实证为死路，勿再投入。
 
-> **结构化 plateau 结论见下方「综合裁决」节**（R305–R323 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R305–R325）；更早轮次已归档：R304 → [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 → [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
+> **结构化 plateau 结论见下方「综合裁决」节**（R305–R323 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R305–R326）；更早轮次已归档：R304 → [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 → [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
 
 
 ## 综合裁决：结构性 plateau（R305–R323，≥10 轮一致收敛）
 
-> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R305–R325）与归档 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)（R304）、[`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)（R303）、[`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
+> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R305–R326）与归档 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)（R304）、[`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)（R303）、[`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
 
 **核心结论**：rendering-compat 的**所有单会话 / 中会话 forward-motion 杠杆均已 ruled out 或 refuted**——这是 R313–R323（≥10 轮）一致收敛的结论，非单轮判断。rally 单会话迭代已无法提升真实通过率。
 
@@ -375,7 +375,7 @@
 | Writing-mode 垂直布局 | css-writing-modes 垂直 float/clearance 轴 | P1 | 精细轴交换（R57/R114/R164 谱系，clearance vertical-axis） |
 | Inline-box 模型 | CSS2 linebox（vertical-align/行盒高度） | P1 | 与 Phase A IFC 统一耦合（v_offset/baseline 语义分歧） |
 | DC-9 blend_mode（mix-blend-mode） | GPU backdrop 合成（~2-4 reftest 案，近零覆盖） | P2 | paint-isolation 架构（offscreen 子树渲染 + source/dest 双纹理 blend pass，R278 defer） |
-| position: sticky | 滚动吸附（需宿主层输入路由） | P2 | host-runtime 层 sticky 偏移驱动（`is_sticky` 标记已落地，engine.rs:1948 明示偏移需宿主层滚动驱动，未应用） |
+| position: sticky | 滚动吸附（需宿主层输入路由） | P2 | host-runtime 层 sticky 偏移驱动；**R326 实测**：converter 把 sticky 映射为 taffy Relative，block-level 偏移已被 taffy 应用（scroll-0 应吸附场景 delta==inset）。缺的是 scrollport 相对钳制（normal 位满足 inset 时应 == static，当前 == relative），属架构性 |
 | 产品 smoke 文本度量残余 | welcome 17% / wintertc 14% / morning 49% | P1（与 Phase A 同源） | Phase A IFC 统一（item-tag R109 inline→block + system-ui 字体度量，非图片/CSS 缺口） |
 | WebP 解码 + CSS `url()` 背景图抓取 | 图片子资源残余（wintertc/morning 不用，低 ROI） | P3 | `decode_image_bytes` 扩 WebP + `fetch_image_subresources` 扩 `url()` |
 
@@ -388,7 +388,7 @@
 | BFC | 「无 BFC 概念，overflow:hidden 不隔离浮动/不阻止 margin 折叠」 | `establishes_bfc`（margin_collapse.rs:33-76）全条件（overflow/float/abspos/flow-root/flex/grid/table/multicol）**接线生产**（engine.rs:2940/2988/3052）；`use_bfc_float_containment`（engine.rs:2992）落地 float containment；margin 隔离 R323 实测 6 探针全过 | **过时**（待 goal doc 纠正；并行 agent R324 note 标 BFC float containment 为下一调查项） |
 | `<img>` intrinsic + object-fit | 「无固有尺寸，object-fit 在 paint 阶段处理但无实际图片数据」 | `apply_replaced_element_sizing`（tree.rs:165，HTML width/height 属性 + SVG data URI + 解码固有尺寸）+ `compute_object_fit_rect` 全 5 值（Fill/Contain/Cover/None/ScaleDown，text.rs:1582，img paint site text.rs:614 调用）+ R318 图片数据端到端贯通 | **过时**（待 goal doc 纠正；并行 agent R324 note 标 object-fit 为下一调查项） |
 | 滚动容器 | 「无真正滚动容器，浏览器层手动偏移」 | `scroll_x/scroll_y` 字段 + paint 偏移（painter/mod.rs:465-471）+ overflow 裁剪（needs_clip/clip_all_primitives_to_rect，mod.rs:197/298）；app 层 scroll_offset per tab + wheel 路由 | **基本准确**（paint 偏移+裁剪已落地，非 layout 级真滚动容器；master.md 已如实标「简化处理」）→ 不改 |
-| position: sticky | 「需宿主层动态调整」 | `is_sticky` 标记落地（engine.rs:606），但 engine.rs:1948 明示「sticky 偏移需宿主层滚动驱动」——**偏移未应用** | **准确** → 不改 |
+| position: sticky | 「需宿主层动态调整」 | `is_sticky` 标记落地（engine.rs:606）。**R326 实测纠正**：converter（converter/mod.rs:286）把 `Sticky` 映射为 taffy `Position::Relative`，故 block-level sticky 偏移**已被 taffy 应用**（scroll-0 应吸附场景 delta==inset，新单测 `test_sticky_applies_inset_like_relative_at_scroll_zero` 实证）。旧注「偏移未应用」源于 `engine.rs:1948` 死代码（`#[allow(dead_code)]` 的 `apply_relative_offsets`）注释，非生产路径。缺的是 **scrollport 相对钳制**（normal 位满足 inset 时应 == static，当前渲染 == relative）——属架构性，非单点修复 | **部分过时**（R326 已纠正「偏移未应用」为「已应用、缺 scrollport 钳制」） |
 | position: fixed | 「当前错误地映射为 absolute」 | `adjust_fixed_to_viewport`（engine.rs:2176）存在且调用；**R324（commit 5b11fc2）已修 fixed-inside-positioned-ancestor over-correction（`+=`→`-=`）** | R324 已处理（goal doc 纠正见并行 agent 提交） |
 
 **结论**：goal doc DC-11 的 BFC + object-fit 两项「未实现」声明与代码现实矛盾（governance §1 自洽）。本轮将核查结论沉淀于本表（避免与并行 agent 活跃编辑 rendering-compat.md 冲突）；goal doc prose 纠正**已由 R325 执行**（BFC known-gaps line 378 + 替换元素 DC-11/support-envelope/known-gaps 三处，按 R323/R324 先例）。scroll/sticky 声明准确不改。本轮零代码变更（仅 read-only 核查）。
@@ -771,7 +771,7 @@ near-pass(R307) / POLLUTED hunt(R299–R309) / fresh-xval(R311) / Phase A 4 路 
 
 ---
 
-## 最近轮次详细记录（R305–R325；R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R304 已归档至 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)）
+## 最近轮次详细记录（R305–R326；R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R304 已归档至 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)）
 
 ### R305 — Phase A IFC 统一 spec-rfc 设计文档产出（read-only 设计，基线 loose 438/490 / strict 296/490 持平）
 
@@ -1237,7 +1237,24 @@ let font_size_px = match &style.font_size {
 
 **意义**：DC-11「替换元素」项**真实修复 + goal doc 纠正落地**。延续 R323（margin 探针）→ R324（fixed 修复）→ R325（img 修复）DC-11 轴「具体 bug 声明逐项 probe = 真实 code win」谱系（区别于 reftest 计数 plateau）。本轮同时纠正 goal doc 三处过时声明（DC-11 替换元素 line 275 + known-gaps 替换元素 line 379 + support-envelope 替换元素 line 82）+ BFC known-gaps line 378（R323 审计确立、原 deferred 到本轮）。
 
-**DC-11 剩余项**：position:sticky（偏移未应用，需宿主层 scroll driver，architectural）+ 滚动容器（paint 偏移+裁剪已落地，master.md 已如实标「简化处理」）+ 百分比高度/auto margin/min-max（已实现）。DC-11 实际完成度远高于 goal doc 旧 P1 缺口表所示；剩余 sticky 为多会话架构项。
+**DC-11 剩余项**：position:sticky（偏移**已被 taffy 应用** via converter sticky→Relative 映射，R326 实测；缺 scrollport 钳制属 architectural）+ 滚动容器（paint 偏移+裁剪已落地，master.md 已如实标「简化处理」）+ 百分比高度/auto margin/min-max（已实现）。DC-11 实际完成度远高于 goal doc 旧 P1 缺口表所示；剩余 sticky scrollport 钳制为多会话架构项。
 
 **代码变更**：`crates/layout-engine/src/tree.rs`（apply_replaced_element_sizing 两处守卫）、`crates/layout-engine/src/engine.rs`（1 新单测）、`docs/goal/rendering-compat.md`（4 处过时声明纠正）。基线 loose 438/490 持平（latent，零计数变化）；DC-11 替换元素项标记 done。
+
+### R326 — position:sticky 偏移行为实测 + 审计纠正（test + doc，DC-11 调查，loose 438/490 零回归）
+
+**承接**：R324→R325 DC-11 轴续查最后一项 position:sticky。R323 read-only 审计标 sticky「偏移未应用」，依据是 `engine.rs:1948` 注释「sticky 偏移需宿主层滚动驱动」。本轮核查该注释所在函数 = `apply_relative_offsets`，**`#[allow(dead_code)]` 死代码**（非生产路径），故审计结论存疑。
+
+**核查生产路径**：`converter/mod.rs:286` `convert_position` 把 `Sticky | Relative | Static` **统一映射为 taffy `Position::Relative`**。taffy `Position::Relative` 对 block-level 元素施加 top/left inset——即 sticky 偏移**已被 taffy 应用**（== relative 行为）。审计旧注「偏移未应用」错误。
+
+**实证**：新增单测 `test_sticky_applies_inset_like_relative_at_scroll_zero`（coverage.rs）——同结构两渲染：static 基线 vs `position:sticky;top:10px`，断言 sticky delta == 10（scroll-0 应吸附场景，偏移如 relative 下移 10）。**测试通过**（delta==10），确证偏移已应用。
+
+**sticky 真实缺口**：缺的是 **scrollport 相对钳制**——CSS sticky 语义：当元素 normal-flow 位**满足** inset 约束时（如 top:20 且 normal y=100，距 scrollport 顶 ≥20），应 == static（无偏移）；仅当滚动致违反时才「吸附」施加偏移。当前实现（== relative）**总是**施加 inset，故 normal 位满足 inset 的用例**过度偏移**。完整正确性需 scrollport 几何 + 滚动驱动 → **架构性**（需 host 层 scroll driver 协同），非单会话单点修复。scroll-0 + normal 位违反 inset 的「应吸附」用例（最常见 sticky reftest 场景）当前**恰好正确**（== relative）。
+
+**验证**：make test **12257 passed / 0 failed / 72 ignored**（R325 基线 12256 → +1 新单测）；clippy + fmt 干净；基线 loose 438/490 持平（latent）。
+
+**意义**：纠正 R323 审计 sticky 误判（「偏移未应用」→「已应用、缺 scrollport 钳制」），避免未来会话据错误审计「补」一个 taffy 已施加的偏移致**双重计数**。同时把 sticky 当前近似行为（== relative）以单测锁死作回归守卫。DC-11 单会话 code-win 轴（R323→R324→R325）至此**真正穷尽**——剩余 sticky scrollport 钳制、Phase A IFC 统一、multicol fragmentation、baseline-export 全为多会话架构承诺（见顶部「综合裁决」）。
+
+**代码变更**：`crates/layout-engine/src/engine/tests/coverage.rs`（1 新单测 + 纠正注释）、`docs/goal/rendering-compat/master.md`（审计 sticky 行 + known-gaps sticky 行 + R325 sticky 提及，3 处纠正）。零 reftest 计数变化。
+
 
