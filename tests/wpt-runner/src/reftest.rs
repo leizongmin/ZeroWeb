@@ -90,6 +90,30 @@ impl ReftestCategory {
             Self::Unknown => 8,
         }
     }
+
+    /// DC-14 锁定的严格容差——最大差异率（硬上限，不可放宽）。
+    ///
+    /// 来源：goal doc DC-14 line 162-163/315-316「布局类 ≤ 0.1%、文字类 ≤ 0.5%」。
+    /// 默认容差（`default_max_diff_ratio`）是其 10×（R280 量化），含同源假通过；
+    /// 严格容差是唯一可信达标指标（DC-14）。经 env `ZERO_REFTEST_STRICT` 启用。
+    pub fn strict_max_diff_ratio(&self) -> f64 {
+        match self {
+            Self::Layout => 0.001,  // 0.1%
+            Self::Text => 0.005,    // 0.5%
+            Self::Unknown => 0.001, // 0.1%（未知分类按最严格处理）
+        }
+    }
+
+    /// DC-14 锁定的严格容差——最大单通道色差（硬上限，不可放宽）。
+    ///
+    /// 来源：goal doc DC-14「布局类 channel ≤ 2、文字类 ≤ 5」。
+    pub fn strict_max_channel_diff(&self) -> u8 {
+        match self {
+            Self::Layout => 2,
+            Self::Text => 5,
+            Self::Unknown => 2,
+        }
+    }
 }
 
 /// Reftest 比较结果。
@@ -149,11 +173,22 @@ impl Default for ReftestConfig {
 }
 
 impl ReftestConfig {
-    /// 根据分类创建配置（使用分类默认容差）。
+    /// 根据分类创建配置。
+    ///
+    /// 容差源：若环境变量 `ZERO_REFTEST_STRICT` 已设置则用 **DC-14 锁定严格容差**
+    /// （Layout 0.1%/2、Text 0.5%/5，唯一可信达标指标），否则用分类默认松容差
+    /// （当前为其 10×，含同源假通过，R280 量化）。strict 同时切换计数阈值
+    /// （`compare_pixels_labeled` 的 threshold）与通过阈值，二者须一致才反映真实差异。
     pub fn for_category(category: ReftestCategory) -> Self {
+        let strict = std::env::var("ZERO_REFTEST_STRICT").is_ok();
+        let (max_diff_ratio, max_channel_diff) = if strict {
+            (category.strict_max_diff_ratio(), category.strict_max_channel_diff())
+        } else {
+            (category.default_max_diff_ratio(), category.default_max_channel_diff())
+        };
         Self {
-            max_diff_ratio: category.default_max_diff_ratio(),
-            max_channel_diff: category.default_max_channel_diff(),
+            max_diff_ratio,
+            max_channel_diff,
             category,
             ..Default::default()
         }
@@ -1936,6 +1971,37 @@ mod tests {
         let config = ReftestConfig::for_category(ReftestCategory::Text);
         assert!((config.max_diff_ratio - 0.05).abs() < f64::EPSILON);
         assert_eq!(config.max_channel_diff, 15);
+    }
+
+    /// DC-14 锁定严格容差不变量：Layout 0.1%/2、Text 0.5%/5、Unknown 0.1%/2。
+    /// 严格容差是默认松容差（Layout 1%/5、Text 5%/15）的 1/10（R280 量化），
+    /// 是唯一可信达标指标（goal DC-14 line 162-163/315-316，不可放宽）。
+    #[test]
+    fn test_strict_tolerance_dc14_locked() {
+        // Layout: 默认 1% / 5 → 严格 0.1% / 2
+        assert!((ReftestCategory::Layout.strict_max_diff_ratio() - 0.001).abs() < f64::EPSILON);
+        assert_eq!(ReftestCategory::Layout.strict_max_channel_diff(), 2);
+        assert!((ReftestCategory::Layout.default_max_diff_ratio() - 0.01).abs() < f64::EPSILON);
+        assert_eq!(ReftestCategory::Layout.default_max_channel_diff(), 5);
+
+        // Text: 默认 5% / 15 → 严格 0.5% / 5
+        assert!((ReftestCategory::Text.strict_max_diff_ratio() - 0.005).abs() < f64::EPSILON);
+        assert_eq!(ReftestCategory::Text.strict_max_channel_diff(), 5);
+        assert!((ReftestCategory::Text.default_max_diff_ratio() - 0.05).abs() < f64::EPSILON);
+        assert_eq!(ReftestCategory::Text.default_max_channel_diff(), 15);
+
+        // Unknown: 默认 2% / 8 → 严格 0.1% / 2（未知分类按最严格处理）
+        assert!((ReftestCategory::Unknown.strict_max_diff_ratio() - 0.001).abs() < f64::EPSILON);
+        assert_eq!(ReftestCategory::Unknown.strict_max_channel_diff(), 2);
+
+        // 严格恒为默认的 1/10（10× 松 → 严格，R280 量化）
+        for cat in [ReftestCategory::Layout, ReftestCategory::Text] {
+            let ratio_factor = cat.default_max_diff_ratio() / cat.strict_max_diff_ratio();
+            assert!(
+                (ratio_factor - 10.0).abs() < 1e-9,
+                "strict ratio should be 1/10 of default"
+            );
+        }
     }
 
     #[test]
