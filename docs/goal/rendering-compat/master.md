@@ -3721,3 +3721,29 @@ let font_size_px = match &style.font_size {
 **对全局优先级队列影响**：**rendering-compat 所有「单会话/中等会话 forward motion lever」现已全部 ruled out 或 refuted**——reftest（6 搜索路径 + R316 flex-baseline + R317 multicol gate + R319 column-aware IFC Phase 1）、产品 smoke（R318 文本度量结构域）、baseline-export（R266/R313/R316 三机制）、multicol paint 侧（R157/R198/R203/R122/R317 五轮）、column-aware IFC Phase 1（R319 A1 probe）。剩余均需**多会话架构承诺**（fontdue glyph advance 接入 / Phase 2 嵌套 fragmentation / Phase A IFC 统一 / taffy 升级 R304 DEFER）或**接受 plateau**。本会话产出的 spec-rfc 文档 + A1 refutation 防止后续轮重投 column-aware IFC Phase 1。
 
 **本轮 read-only spec + probe**：零代码变更（`git diff -- '*.rs'` 空）；新增 `column-aware-IFC-spec.md`（含 A1 refuted 记录）。基线 loose 438/490 持平。next = 待用户对「多会话架构承诺 vs 接受 plateau」的决策；若继续 rally 且要 code 进展，唯一未深探的大件 = fontdue glyph advance 接入 paint 换行（影响 advance-width 谱系整簇 + multicol 列宽精度，但 R225 标其「死路」，需重新评估是否真死路或当时探针不充分）。
+
+### R320 — advance-width 死路重评（multicol-columns-001 Ahem 实证）：R225 结论成立，fontdue-glyph-advance lever 对 multicol 同样无效（read-only 实证，基线持平）
+
+**承接**：R319 收尾遗留「fontdue glyph advance 接入 paint 换行」是唯一未深探的大件（R225 双实验标「死路」但疑探针不充分）。R319 又把 multicol class-A（columns-001 4.88%）diff 归因为「列宽/glyph 精度 = advance-width 谱系」。本轮以 multicol-columns-001 为标本 ground-truth 重评 R225。
+
+**实证（columns-001 结构 + 双 PNG 对比）**：
+- columns-001 用 `font: 1.25em/1 Ahem` + `meta flags=ahem`——**is_ahem=true，字符 advance = font_size 精确值**（`estimate_char_width` 的 0.55 启发式对 Ahem 不生效，inline/mod.rs:207 Ahem 分支返回 font_size）。故 **advance-width 在此用例完全不参与**——R225 的 estimate 启发式与本用例零相关。
+- LAYOUT_DUMP：test 与 ref 的 multicol div 均 h=160 w=600（**几何完全一致**），故 diff 非列宽/容器尺寸。
+- 逐列 ink 行剖面对比（test vs ref PNG）：ZeroWeb 每列渲染 4 行 ink（22 ink-rows 总），ref 每列渲染 ~1-2 行（ref 是单 div 两行手工排布，视觉模拟 6 列）。**diff 来自 multicol balance 把 11 行源文本分配到 6 列的结果与 ref 手工 2-wide-line 布局不一致**——是 **balance 分布/wrapping 正确性问题**（R199/R200 谱系），**非 advance-width**。
+
+**裁决**：R319 把 class-A 归因为「advance-width 谱系」**对本用例错误**——columns-001 是 Ahem（精确 advance），其 4.88% diff 来自 balance 分布，与 advance-width 无关。**R225「advance-width 死路」结论经 R320 fresh 角度（Ahem 观察）确认成立**：即使实现 fontdue glyph advance 接入 paint 换行，对 multicol class-A（Ahem 用例）**零改善**（advance 本就精确）。
+
+**对 fontdue-glyph-advance lever 的最终裁决**：该 lever 对 multicol（Ahem 主导）无效；对非 Ahem 用例 R225 双实验已证 26 case 零变化 + 产品 smoke ±0.03%。**fontdue-glyph-advance 从「唯一未深探大件」降级为「已 ruled out 死路」**（R225 + R320 双证）。
+
+**全局终局裁决（R314-R320 七轮收敛）**：rendering-compat **所有** forward motion lever 现已 ruled out/refuted，含上轮遗留的 fontdue-glyph-advance（R320）：
+- reftest 单会话：6 搜索路径 + R316/R317/R319 三实现证伪
+- advance-width：R225 双实验 + R320 Ahem 重评 双证死路
+- baseline-export：R266/R313/R316 三机制
+- multicol paint 侧：R157/R198/R203/R122/R317 五轮
+- column-aware IFC Phase 1：R319 A1 probe
+- 产品 smoke：R318 文本度量结构域
+- 图片加载：R318 实测已贯通（非缺口）
+
+剩余 forward motion **全部**需多会话架构承诺：① Phase 2 嵌套 multicol fragmentation；② Phase A IFC 统一（墙②③）；③ taffy 升级（R304 DEFER prohibitive）；④ balance 分布算法精确化（chromium 二分搜索 vs T/N，R199/R200 已探 round-robin 更差，二分搜索未试但属 R200 谱系）。**或接受 plateau**。单会话 rally 迭代已无法推进 reftest 通过率。
+
+**本轮 read-only 实证**：零代码变更；columns-001 dump + 双 PNG 逐列 ink 剖面对比。基线 loose 438/490 持平。next = 待用户决策（多会话架构承诺 vs 接受 plateau）；rally 单会话层面已无未探 lever。
