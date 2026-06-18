@@ -3747,3 +3747,32 @@ let font_size_px = match &style.font_size {
 剩余 forward motion **全部**需多会话架构承诺：① Phase 2 嵌套 multicol fragmentation；② Phase A IFC 统一（墙②③）；③ taffy 升级（R304 DEFER prohibitive）；④ balance 分布算法精确化（chromium 二分搜索 vs T/N，R199/R200 已探 round-robin 更差，二分搜索未试但属 R200 谱系）。**或接受 plateau**。单会话 rally 迭代已无法推进 reftest 通过率。
 
 **本轮 read-only 实证**：零代码变更；columns-001 dump + 双 PNG 逐列 ink 剖面对比。基线 loose 438/490 持平。next = 待用户决策（多会话架构承诺 vs 接受 plateau）；rally 单会话层面已无未探 lever。
+
+### R321 — multicol balance binary-search lever 证伪：T/N = binary-search（等高行），columns-001 diff 实为 wrapping 精度（read-only 算法分析，基线持平）
+
+**承接**：R320 收尾遗留「balance binary-search（chromium 二分搜索找最短列高）vs ZeroWeb T/N」是唯一未试的 contained 算法 lever（R199 只试 round-robin 更差，R200 称 T/N 正确但未试二分搜索）。本轮算法层证伪。
+
+**算法分析（text.rs:962-1010 paint 侧行分配）**：当前分配 = `target_h = total_height/col_count`，行按 `(line.y/target_h).floor()` 归列。这是「按单列 layout 的 line.y 几何切分到 N 列」。
+- **关键数学事实**：对**等高行**（columns-001 全 20px Ahem 行），T/N 几何切分与 binary-search（找最短列高使 N 列容纳）**结果恒等**——两者都把 `total_lines` 均分到 N 列。binary-search 仅对**非等高行**（混合行高）产生不同于 T/N 的列边界。
+- columns-001 是等高 Ahem 行 → **binary-search 对它零改善**。
+- R200 称 chromium 用 T/N 顺序填充 → 非等高场景 binary-search 也不匹配 chromium。
+
+**columns-001 真实 diff 源（wrapping 精度，非 balance）**：test 165 非空格字符 vs ref 199（内容相当，非 mismatch）；ref 用 `&nbsp;` 构造特定不可断序列编码期望视觉。ZeroWeb 把 "x xx xxx xxxx xxxxx"（19 字符）在 100px（5 Ahem 单位）列内 wrapping 的断点与 chromium/ref 期望不一致——这是 **IFC wrapping 算法精度**（词边界/空格处理/orphans-widows），**非 balance 列高**。
+
+**裁决**：balance binary-search lever **证伪**——对等高行（multicol class-A 主力）与 T/N 恒等零改善；对非等高行 R200 证 chromium 亦用 T/N。columns-001 diff 属 IFC wrapping 精度（独立子域，非 balance）。
+
+**multicol lever 全谱终局穷尽（R199/R200/R157/R198/R203/R122/R310/R312/R313/R316/R317/R319/R320/R321）**：
+| lever | 裁决轮 |
+|-------|--------|
+| balance round-robin | R199（更差）|
+| balance T/N 正确性 | R200（证正确）|
+| balance binary-search | **R321（= T/N for 等高行，证伪）**|
+| paint 门控放宽 | R157/R198/R203/R122/R317（5 轮 net-negative）|
+| column-aware IFC Phase 1 | R319（A1 refuted）|
+| baseline-export | R266/R313/R316（3 机制）|
+| advance-width | R225/R320（Ahem 双证）|
+| 剩余 = IFC wrapping 精度 + Phase 2 嵌套 fragmentation | 独立子域/多会话 |
+
+**全局终局**：rendering-compat reftest **所有 contained/single-session lever 经 14 轮（R199-R321 中相关轮）穷尽 ruled out/refuted**。剩余 forward motion **全部**需多会话架构承诺：① IFC wrapping 精度（词边界/空格/orphans-widows 对齐 chromium，独立大件，影响整条 IFC）；② Phase 2 嵌套 multicol fragmentation；③ Phase A IFC 统一；④ taffy 升级（R304 DEFER）。**rally 单会话层面 reftest 通过率已无推进路径**。
+
+**本轮 read-only 算法分析**：零代码变更。基线 loose 438/490 持平。next = 待用户对「多会话架构承诺 vs 接受 plateau」决策；单会话 rally 已无法推进 reftest。
