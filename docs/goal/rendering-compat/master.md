@@ -3176,6 +3176,25 @@ child.y += dy;
 
 **对优先级队列影响**：near-pass 单点攻坚的边际收益已降至接近零。下一步应转向**更高杠杆方向**：①结构性死锁（multicol-breaking R131 column-aware IFC / Phase A IFC 三路径 R125/R198 font_size / writing-mode R114b）——解锁即 +多案例；②或回到 DC-13 产品 smoke（welcome/morning.work 残余）端到端证据；③或 collapsed-border table 几何作为专项（subpixel-collapsed-borders 系列，需运行时探针 + 全量 table 回归，多轮）。read-only，无代码/reftest 变更，基线 loose 438/490 / strict 294/490 持平。
 
+### R291 — collapsed-border 表尺寸双重计入诊断（subpixel-collapsed-borders-001，spec 级根因，read-only）
+
+**承接**：R290 列 subpixel-collapsed-borders-001（0.24%）为 delicate table 候选。本轮 PIL 精测 + 源码追踪定位 spec 级根因。
+
+**用例**：1×1 表 `table border:5 green collapse` + `td width:50 height:50 border:4.95 red`（test）vs `td border:1 red`（ref）。断言「表 border(5) 宽于 cell(4.95/1) 时表 border 胜→td border 不应影响表尺寸」，期望两者同 60×60。
+
+**实测几何**（绿框=表 border-box）：
+- TEST(td 4.95)：65×70；REF(td 1)：61×62。差 8px，非对称（宽 +1×td_border，高 +2×td_border）。
+
+**spec 级根因（双重计入边缘 border）**：
+1. `compute_column_widths`（table.rs:1650-1651）collapse 模式用 CSS2 §17.6.2「border-center 到 border-center」列宽语义：`col_width = content(50) + (border_left+border_right)/2` = 54.95（test）/ 51（ref）。**此列宽计算本身 spec 正确**（R177b 落地）。
+2. `apply_table_size_constraints`（table.rs:2350）`table.width = col_width + table_border(10)` = 64.95（test）/ 61（ref）。**双重计入**：col_width 已含半 cell border（border-center 语义），table_border 又整圈加；但边缘 cell border 与 table border **折叠**（table 胜，resolve_collapsed_borders 已判定），应**替换**非叠加 → 表尺寸多算了边缘的折叠 border。
+3. 高度同理（position_cells row_height 含 cell border top+bottom，+2×border）；宽度因 col_width 只加 (left+right)/2 故 +1×border → 解释非对称。
+
+**为什么 defer（特性级非快速修复）**：修需要把 `resolve_collapsed_borders`（border 冲突解决，已判定各边缘胜者）的**结果**反馈到表/列尺寸计算——胜出的边缘 border 计入、败者（被折叠覆盖的 cell border）从尺寸扣除。当前 resolve_collapsed_borders 只设 cell_box.border_*（绘制用），不回传尺寸。集成两者 = collapsed-border 表尺寸模型重构，触及 R177b 刚落地的 compute_column_widths + apply_table_size_constraints，高风险回归。需专项设计（per-edge border-center + winner 几何）+ 全量 table 回归，多轮。
+
+**对优先级队列影响**：subpixel-collapsed-borders 系列（001/002/003 + 可能其他 collapsed-border 表 near-pass）共享此根因——若专项修复可批量转化（css-tables 14 near-pass 的一部分）。但属特性级多轮，非单会话。下一步建议：①先做 collapsed-border 表尺寸专项设计（spec-rfc），或 ②转向结构性死锁（multicol/Phase A）更高杠杆。read-only，无代码/reftest 变更，基线 loose 438/490 / strict 294/490 持平。
+
+
 
 
 
