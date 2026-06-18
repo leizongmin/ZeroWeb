@@ -111,16 +111,17 @@ fn test_adjust_fixed_to_viewport_nested() {
 
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
 
-    // fixed 子元素应加上父级偏移：x = 10 + 50 = 60, y = 20 + 60 = 80
+    // R324：fixed 子元素须视口相对——扣除父级累积偏移：x = 10 - 50 = -40, y = 20 - 60 = -40
+    // （field 为父相对值；painter 累积后绝对坐标 = 50+(-40)=10 / 60+(-40)=20 = CSS left/top 视口相对）
     let child = &root.children[0];
     assert!(
-        (child.x - 60.0).abs() < 0.001,
-        "fixed 子元素 x 应为 60.0，实际 {}",
+        (child.x - (-40.0)).abs() < 0.001,
+        "fixed 子元素 x 应为 -40.0，实际 {}",
         child.x
     );
     assert!(
-        (child.y - 80.0).abs() < 0.001,
-        "fixed 子元素 y 应为 80.0，实际 {}",
+        (child.y - (-40.0)).abs() < 0.001,
+        "fixed 子元素 y 应为 -40.0，实际 {}",
         child.y
     );
 }
@@ -164,15 +165,15 @@ fn test_adjust_fixed_to_viewport_at_root() {
 
     adjust_fixed_to_viewport(&mut root, 100.0, 200.0);
 
-    // fixed 根节点：x = 10 + 100 = 110, y = 20 + 200 = 220
+    // R324：fixed 根节点扣除传入偏移（视口相对）：x = 10 - 100 = -90, y = 20 - 200 = -180
     assert!(
-        (root.x - 110.0).abs() < 0.001,
-        "fixed 根节点 x 应为 110.0，实际 {}",
+        (root.x - (-90.0)).abs() < 0.001,
+        "fixed 根节点 x 应为 -90.0，实际 {}",
         root.x
     );
     assert!(
-        (root.y - 220.0).abs() < 0.001,
-        "fixed 根节点 y 应为 220.0，实际 {}",
+        (root.y - (-180.0)).abs() < 0.001,
+        "fixed 根节点 y 应为 -180.0，实际 {}",
         root.y
     );
 }
@@ -326,16 +327,17 @@ fn test_adjust_fixed_to_viewport_deeply_nested() {
 
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
 
-    // fixed leaf 偏移 = root.x(100) + mid.x(30) + leaf.x(5) = 135
+    // R324：fixed leaf 扣除累积祖先偏移（视口相对）：x = 5 - (100+30) = -125, y = 5 - (200+40) = -235
+    // （painter 累积后绝对坐标 = 130+(-125)=5 / 240+(-235)=5 = CSS left/top 视口相对）
     let leaf = &root.children[0].children[0];
     assert!(
-        (leaf.x - 135.0).abs() < 0.001,
-        "深层 fixed x 应为 135.0，实际 {}",
+        (leaf.x - (-125.0)).abs() < 0.001,
+        "深层 fixed x 应为 -125.0，实际 {}",
         leaf.x
     );
     assert!(
-        (leaf.y - 245.0).abs() < 0.001,
-        "深层 fixed y 应为 245.0，实际 {}",
+        (leaf.y - (-235.0)).abs() < 0.001,
+        "深层 fixed y 应为 -235.0，实际 {}",
         leaf.y
     );
 }
@@ -445,10 +447,10 @@ fn test_adjust_fixed_to_viewport_fixed_resets_offset() {
 
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
 
-    // fixed parent: x = 10 + 100 = 110, y = 20 + 200 = 220
+    // R324：fixed parent 扣除累积祖先偏移（视口相对）：x = 10 - 100 = -90, y = 20 - 200 = -180
     let fp = &root.children[0];
-    assert!((fp.x - 110.0).abs() < 0.001, "fixed parent x 应为 110");
-    assert!((fp.y - 220.0).abs() < 0.001, "fixed parent y 应为 220");
+    assert!((fp.x - (-90.0)).abs() < 0.001, "fixed parent x 应为 -90");
+    assert!((fp.y - (-180.0)).abs() < 0.001, "fixed parent y 应为 -180");
 
     // fixed 元素的子元素 offset 归零，所以 normal_child 不被偏移
     let child = &root.children[0].children[0];

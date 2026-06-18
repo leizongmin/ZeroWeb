@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-19（doc-maintenance 轮：归档 R11–R20 早期上游 reftest 调查至 archive，压缩 header 中与 archive/「综合裁决」重复的逐轮叙事，保持控制面板简洁）
+**最后更新**: 2026-06-19（doc-maintenance 轮续：read-only DC-11 代码核查纠正 goal doc 过时声明——BFC 检测/float-containment/margin 隔离（R323）+ `<img>` intrinsic sizing + object-fit 全 5 值均已接线生产路径；known-gaps 表清理为仅活跃缺口（自洽）；R303 归档至 archive 保持最近 ≤20 轮。详见下方「DC-11 doc 复核」）
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
@@ -12,12 +12,12 @@
 
 **字体攻坚结论（2026-06-17 AA 基准）**：fontdue **Regular** 与 chromium 光栅化基本一致（W 0.1% / i 3.0%），**非渲染差异来源**；welcome 26% / Oracle 污染大头是**布局/度量**（line-height / R109 inline→block / 多行结构）。fontdue **Bold** 变体比 chromium 过墨 ~15%（R229b net-negative 已回退）。**字体攻坚停止，转布局/度量**——advance-width(R225/R320)、font-weight -Bold(R229b)、AA 噪声(R174) 三谱系均实证为死路，勿再投入。
 
-> **结构化 plateau 结论见下方「综合裁决」节**（R305–R323 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R303–R323）；更早轮次已归档：R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
+> **结构化 plateau 结论见下方「综合裁决」节**（R305–R323 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R304–R323）；更早轮次已归档：R303 → [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
 
 
 ## 综合裁决：结构性 plateau（R305–R323，≥10 轮一致收敛）
 
-> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R303–R323）与归档 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
+> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R304–R323）与归档 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)（R303）、[`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
 
 **核心结论**：rendering-compat 的**所有单会话 / 中会话 forward-motion 杠杆均已 ruled out 或 refuted**——这是 R313–R323（≥10 轮）一致收敛的结论，非单轮判断。rally 单会话迭代已无法提升真实通过率。
 
@@ -363,31 +363,21 @@
 
 ---
 
-## 已知关键缺口
+## 已知关键缺口（当前活跃）
 
-| 缺口 | 影响范围 | 优先级 | 里程碑 |
-|------|----------|--------|--------|
-| **Paint IFC / taffy-IFC 架构分裂** | **~50 个失败测试（51% 剩余失败）** | **P0-致命 / 需专项架构改造** | **Post-R71 专项规划** |
-| Float 布局算法 | CSS 2.1 核心 | ✅ 已完成 | M4 |
-| Table 布局算法 | 表格渲染 | ✅ 已完成 | M4 |
-| Multi-column 布局算法 | 多列布局 | ✅ 已完成 | M4 |
-| OpenType shaping | 文字排版质量 | ✅ 已完成 | M6 |
-| BiDi 算法 | RTL 文本 | ✅ 已完成 | M6 |
-| Vertical writing-mode | 竖排文本 | M5 能力已落地，完整垂直布局仍缺 | Post-R71 专项规划 |
-| CJK normal-mode 换行 | CJK 排版 | ✅ 已完成 | M5 |
-| text-align: justify | 文字排版 | ✅ 已完成 | M5 |
-| Float exclusion 堆叠 | 布局正确性 | ✅ 已完成 | M5 |
-| Quirks mode | CSS 2.1 兼容性 | ✅ 已完成 | M2 |
-| 上游 WPT 真实 reftest 导入 | 覆盖范围 | M6 | M6 |
-| CPU 渲染器图元覆盖 | 视觉输出 | ✅ 已完成 | M7 |
-| 浏览器图元消费 | 视觉输出 | ✅ 已完成 | M7 |
-| GPU 渲染器图元覆盖 | GPU 视觉输出 | ✅ 管线已实现 | M7 |
-| Multicol column breaking | css-multicol ~22 测试 (61.4%→需+18) | P1 / 需专项架构改造 | Post-R71 专项规划 |
-| Writing-mode 垂直布局 | css-writing-modes ~10 测试 (83.1%→需+7) | P1 / 需专项架构改造 | Post-R71 专项规划 |
-| Inline-box 模型 | CSS2 linebox ~8 测试 | P1 | R69+ |
-| 外部 stylesheet 加载 | 真实静态网页 CSS | P1 | M10/R38 |
-| 图片子资源/ImageCache 贯通 | Logo/图片密集静态页 | P1 | M10/R38 |
-| 产品/真实静态页视觉 smoke | 验收有效性 | P1 | M10/R38 |
+> 下表仅列**尚未解决**的缺口，与 R305–R323 plateau 框架对齐（剩余 forward motion 全部需多会话架构承诺，见顶部「综合裁决」）。**已完成项**（Float/Table/Multicol 布局算法、OpenType shaping、BiDi、CJK 换行、justify、quirks mode、CPU/GPU/浏览器图元覆盖、外部 stylesheet、图片子资源/ImageCache、margin 折叠、BFC 检测+margin 隔离、`<img>` intrinsic sizing + object-fit）见「里程碑完成状态」「当前状态概览」，不再在此重复列。
+
+| 缺口 | 影响范围 | 优先级 | 解锁路径（均为多会话架构） |
+|------|----------|--------|------|
+| **Paint IFC / taffy-IFC 架构分裂** | large-font（ifc-008/009/011）+ welcome/morning 文本度量残余（self-source 失败主因） | **P0** | Phase A IFC 统一：baseline-resolved 单一权威行盒（[`phase-a-IFC-unification-design.md`](./phase-a-IFC-unification-design.md)；墙②③ R125–R213 六轮死锁 + R306 几何基线证伪） |
+| Multicol column breaking / 嵌套碎片化 | css-multicol 失败聚类（结构性） | P1 | Phase 2 嵌套 multicol fragmentation（layout 侧 column-aware IFC；paint 侧 R157/R198/R203/R122/R317 五轮证 net-negative 死路） |
+| Multicol / flexbox baseline-export | baseline-000~008 + flexbox-baseline（~10+ 案） | P1 | taffy 0.8+ `baseline_overrides`（R304 DEFER 升级）或自建 inline-level-box baseline 合成（R266/R313/R316 三机制穷尽，须 layout 侧注入） |
+| Writing-mode 垂直布局 | css-writing-modes 垂直 float/clearance 轴 | P1 | 精细轴交换（R57/R114/R164 谱系，clearance vertical-axis） |
+| Inline-box 模型 | CSS2 linebox（vertical-align/行盒高度） | P1 | 与 Phase A IFC 统一耦合（v_offset/baseline 语义分歧） |
+| DC-9 blend_mode（mix-blend-mode） | GPU backdrop 合成（~2-4 reftest 案，近零覆盖） | P2 | paint-isolation 架构（offscreen 子树渲染 + source/dest 双纹理 blend pass，R278 defer） |
+| position: sticky | 滚动吸附（需宿主层输入路由） | P2 | host-runtime 层 sticky 偏移驱动（`is_sticky` 标记已落地，engine.rs:1948 明示偏移需宿主层滚动驱动，未应用） |
+| 产品 smoke 文本度量残余 | welcome 17% / wintertc 14% / morning 49% | P1（与 Phase A 同源） | Phase A IFC 统一（item-tag R109 inline→block + system-ui 字体度量，非图片/CSS 缺口） |
+| WebP 解码 + CSS `url()` 背景图抓取 | 图片子资源残余（wintertc/morning 不用，低 ROI） | P3 | `decode_image_bytes` 扩 WebP + `fetch_image_subresources` 扩 `url()` |
 
 ---
 
@@ -769,22 +759,7 @@ near-pass(R307) / POLLUTED hunt(R299–R309) / fresh-xval(R311) / Phase A 4 路 
 
 ---
 
-## 最近轮次详细记录（R303–R323；R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)）
-
-### R303 — DC-9 GPU 图元覆盖审计：filter 已全实现（纠正 R220 过时记忆），唯一缺口 = blend_mode（read-only 审计，基线 loose 438/490 / strict 296/490 持平）
-
-**承接**：R302 clean-win 穷尽后转向 DC-9 独立能力缺口（GPU filter:opacity）。代码审计发现 **R220「DC-9 真实缺口仅 transform/filter/blend 三项」已过时**——这三项中 transform + filter 已实现，仅 blend_mode 仍缺。
-
-**审计（gpu/renderer/mod.rs 逐字段引用计数 + headless ping-pong 实证）**：
-- **GPU 已渲染 11/13 图元类型**（独立 WGSL 管线）：fills / rounded_rects / gradients / shadows / images / glyphs / strokes / path_fills / path_strokes / transforms / **filters**。
-- **filters 已全实现**（headless ping-pong，line 787-800）：`collect_color_filters`（Opacity/Brightness/Contrast/Grayscale/HueRotate/Invert/Saturate/Sepia 共 8 种，mode 0=opacity）+ `collect_blur_filters`（Blur 2-pass H+V 高斯）+ `collect_transforms`（CSS transform 2D 仿射逆矩阵）。`apply_color_filters_headless`/`apply_blur_filters_headless`/`apply_transform_filters_headless` 实证为真实 ping-pong A→B→A（scissor pass 采样+滤镜+回写），匹配 CPU `apply_filter`，**非 stub**。
-- **clips（0 GPU 引用）= 合法 no-op**：engine 生产路径从不生成 ClipPrimitive（R220 已证，overflow 裁剪预烘焙进图元几何）。
-- **blend_modes（0 GPU 引用）= 唯一真实 DC-9 GPU 缺口**：engine 生产**生成**（effects.rs:314，CSS `mix-blend-mode`），但 GPU 静默丢弃。实现需 **backdrop 采样**（元素内容与背后已渲染内容按 blend 方程合成）= 元素需渲到独立层再与 backdrop 合成，复用现有 ping-pong 但需 per-element-layer 渲染顺序改动，**复杂**且 **mix-blend-mode 在上游 reftest 中近乎零覆盖**。
-- **DropShadow filter = 双路径一致 no-op**（CPU effects.rs:192 `_` + GPU 不收集），罕见，非 DC-9 阻塞。
-
-**结论**：DC-9 GPU 覆盖 **≈92% 满足**（11 图元 + 全 filter 子类型独立管线，非 CPU passthrough 满足 DC-14）。唯一缺口 blend_mode 复杂（backdrop 采样）且无 reftest 验证，非单会话可验证落地目标。**纠正 R220/R302 计划**：filter:opacity 无需实现（已 done），下一步勿再以「DC-9 GPU filter」为 lever。
-
-**对优先级队列影响**：DC-9 实质接近完成（仅 blend_mode + DropShadow 残留，均复杂/罕见/无验证）。clean-win 穷尽 + DC-9 接近完成 → 渲染兼容性目标的**剩余真实缺口集中**在：① 结构性（Phase A IFC 文本度量 / intrinsic sizing / multicol 碎片化 / writing-mode 轴）；② 特性缺口（blend_mode backdrop / iframe 子文档加载 / 原生表单控件 / dialog JS）；③ taffy 限制（grid auto-track growth / flex intrinsic sizing）。这些均非单会话 clean win，需多轮架构（spec-rfc）或上游升级（taffy）。read-only 审计，无代码/reftest 变更，基线持平。
+## 最近轮次详细记录（R304–R323；R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)）
 
 ### R304 — taffy 升级评估：DEFER（read-only 深度调研，基线 loose 438/490 / strict 296/490 持平）
 
@@ -1231,3 +1206,25 @@ let font_size_px = match &style.font_size {
 **对 DC-11 影响**：DC-11「布局正确性」清单 10 项中，margin 折叠（R323 ✅）+ Float 布局/clear（R108b/R127/R129 已落地）+ 部分 BFC（R323 margin 隔离）+ auto margin 居中（R165）+ 百分比 max-height（R119）+ min/max 约束（已实现）均done；剩余 fixed/sticky/滚动容器/object-fit 部分项。**DC-11 实际完成度远高于 goal doc 旧 P1 缺口表所示**。
 
 **本轮 read-only 探针 + goal doc 纠正**：零代码变更（margin 探针 minimal test + reftest margin 子集 + goal doc 4 处过时声明纠正）。基线 loose 438/490 持平。next = 续查 DC-11 其他项（BFC float containment / position:fixed-sticky / 滚动容器 / object-fit）是否如 goal doc 声称的「未实现」——若同样过时可逐项纠正 goal doc 自洽；或转多会话架构承诺。
+
+### R324 — position:fixed 视口相对修复（code change，DC-11 真实 correctness 修复，loose 438/490 零回归）
+
+**承接**：R323 纠正 DC-11 margin 折叠过时声明后，续查 DC-11 剩余项的具体 bug 声明。goal doc 称「Position: fixed ... 错误映射为 absolute」。minimal 探针（`position:relative` 祖先 margin 50/100 内放 `position:fixed; top:20; left:20` + absolute 兄弟）+ LAYOUT_DUMP 实测：absolute 正确在 (70,120)（祖先相对），但 **fixed 错误在 (120,220) 而非视口 (20,20)**——goal doc bug 声明成立。
+
+**根因（engine.rs `adjust_fixed_to_viewport`）**：taffy 0.7 把 `position:fixed` 当 absolute 处理（containing block = 最近 positioned 祖先），故 fixed 的 left/top 被解析为相对该祖先。后处理 `adjust_fixed_to_viewport` 须把累积祖先偏移**扣除**使其视口相对，但旧实现**加上**（`box.x += parent_offset`）——仅在 `parent_offset==0`（fixed 在无偏移祖先/根附近）时碰巧正确，对有偏移 positioned 祖先的 fixed **over-correct**。**关键佐证**：仓库既有 R98 `adjust_absolute_to_initial_containing_block`（tests_9.rs:562 `118 - 8 = 110`）已用**扣除**约定转视口相对——旧 fixed 的「加上」与之**不一致**，本修复对齐。
+
+**修复（engine.rs:2179-2180）**：`box.x -= parent_offset_x; box.y -= parent_offset_y;`（加→扣）。offset 传播逻辑不变（fixed 子元素 offset 仍归 0）。
+
+**验证**：
+- **探针**：fixed 现 (20,20) 视口相对（旧 120,220），absolute 兄弟不变 (70,120)。✓
+- **全量 reftest**：loose **438/490 零回归**（fixed 用例 parent_offset 多为 0，加=扣），css-position **16/16 (100%)**。
+- **make test**：**12255 passed / 0 failed**（10 ignored = real_website_compat）。
+- **clippy --workspace --all-targets -D warnings**：干净；**cargo fmt**：干净。
+- **新单测** `test_fixed_is_viewport_relative_inside_offset_positioned_ancestor`（断言 fixed 视口相对 (20,20) + absolute 祖先相对 (70,120)）。
+- **8 旧单测更新**（tests_3/8/9）：旧测断言「加上」契约（fixed field = orig+offset），改为「扣除」契约（orig−offset），并修正 1 集成测（tests_3 `fixed.y >= 50` field 检查 → 绝对坐标 ≈ top 视口相对检查）。
+
+**意义**：DC-11「Position: fixed」**真实修复落地**（code change，非 docs）。这是 R308（font-size%）以来首个真实代码修复（中间 R309-R323 多为 docs/探针）。区别于 reftest 计数 lever（plateau），这是**产品可见 correctness**——fixed-in-offset-ancestor 是真实页面模式（sticky header/footer in positioned container），旧 bug 会错位。零 reftest 计数变化（latent bug，reftest 未覆盖此结构）但**真实世界正确性提升**。
+
+**方法论复用**：R323（margin 折叠实测）→ R324（fixed 实测）证明 DC-11 轴的「具体 bug 声明」逐项 probe 是真实 code win 来源（区别于 reftest 计数 plateau）。续查 DC-11 剩余项（sticky→relative 映射、滚动容器 scroll offset、object-fit、BFC float containment）可能还有可单点修的真实 bug。
+
+**代码变更**：`crates/layout-engine/src/engine.rs`（adjust_fixed_to_viewport 修复 + 1 新单测）、`tests_8.rs`/`tests_9.rs`/`tests_3.rs`（8 旧单测更新）。基线 loose 438/490 持平（latent，零计数变化）；DC-11 fixed 项标记 done。

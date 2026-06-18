@@ -1389,10 +1389,9 @@ fn test_deeply_nested_fixed_position() {
     let fixed_box = find_child_by_node_id(&result.root, fixed_el).expect("fixed_el found");
     assert!(fixed_box.is_fixed, "应标记为 fixed");
 
-    // fixed 元素的坐标应由 adjust_fixed_to_viewport 调整为视口相对。
-    // top=50, left=50 是 taffy 初始坐标。
-    // 经过 adjust_fixed_to_viewport，祖先偏移应被加回，
-    // 因此 fixed_box 的坐标应反映其视口绝对位置（包含祖先累积偏移）。
+    // R324：fixed 元素经 adjust_fixed_to_viewport 调整为视口相对。taffy 0.7 把 fixed
+    // 当 absolute（containing block = 祖先），故 fixed_box 的 field（父相对 y）= top -
+    // 累积祖先偏移；其【绝对坐标】（painter 累积后）= top（视口相对）。
     // 验证坐标不为 NaN 或无穷
     assert!(fixed_box.x.is_finite(), "fixed x 应为有限值，实际 {}", fixed_box.x);
     assert!(fixed_box.y.is_finite(), "fixed y 应为有限值，实际 {}", fixed_box.y);
@@ -1401,8 +1400,37 @@ fn test_deeply_nested_fixed_position() {
     assert_eq!(fixed_box.width, 100.0, "fixed 元素宽度应为 100");
     assert_eq!(fixed_box.height, 100.0, "fixed 元素高度应为 100");
 
-    // fixed 元素应在视口坐标系中：y 应 >= top=50（调整后不会小于原始 top）
-    assert!(fixed_box.y >= 50.0, "fixed y 应 >= top(50)，实际 {}", fixed_box.y);
+    // fixed 元素应在视口坐标系中：其【绝对坐标】（与 painter 一致，自根累积）应 = top=50，
+    // 与 5 层 margin:10 祖先的累积偏移无关（视口相对）。field 值本身是父相对，不直接比较。
+    fn abs_pos_by_node(root: &crate::types::LayoutBox, id: zero_dom::NodeId) -> Option<(f32, f32)> {
+        fn walk(b: &crate::types::LayoutBox, ox: f32, oy: f32, id: zero_dom::NodeId) -> Option<(f32, f32)> {
+            let ax = ox + b.x;
+            let ay = oy + b.y;
+            if b.node_id == Some(id) {
+                return Some((ax, ay));
+            }
+            let cox = ax + b.padding_left + b.border_left;
+            let coy = ay + b.padding_top + b.border_top;
+            for c in &b.children {
+                if let Some(p) = walk(c, cox, coy, id) {
+                    return Some(p);
+                }
+            }
+            None
+        }
+        walk(root, 0.0, 0.0, id)
+    }
+    let (abs_x, abs_y) = abs_pos_by_node(&result.root, fixed_el).expect("应能定位 fixed 元素的绝对坐标");
+    assert!(
+        (abs_x - 50.0).abs() < 1.0,
+        "fixed 绝对 x 应为视口相对 ~50（left=50），实际 {}",
+        abs_x
+    );
+    assert!(
+        (abs_y - 50.0).abs() < 1.0,
+        "fixed 绝对 y 应为视口相对 ~50（top=50），实际 {}",
+        abs_y
+    );
 }
 
 // ── 边缘场景补充测试（第四批）──

@@ -269,7 +269,7 @@
 - [x] **Margin 折叠** — 相邻块级元素的 margin-top/margin-bottom 按规范折叠（正 margin 取最大、负 margin 取最负、正负抵消）— ✅ **R323 实测通过**（taffy 0.7 CollapsibleMarginSet；6 探针 case + 5 reftest 全过）
 - [ ] **BFC 创建** — `overflow: hidden/auto/scroll`、`display: flow-root`、浮动元素、`position: absolute/fixed` 正确创建 BFC，隔离浮动和 margin 折叠
 - [ ] **Float 布局** — 完整的 float 定位（float: left/right）、clear（clear: left/right/both）、float containment（BFC 包含浮动）
-- [ ] **Position: fixed** — 相对 viewport 定位（当前错误地映射为 absolute）
+- [x] **Position: fixed** — 相对 viewport 定位（当前错误地映射为 absolute）— ✅ **R324 修复**（`adjust_fixed_to_viewport` 改为扣除祖先偏移；fixed 在有偏移 positioned 祖先内也视口相对，与 R98 absolute-viewport 约定一致；新单测 + 8 旧单测更新 + 全量 reftest 438/490 零回归）
 - [ ] **Position: sticky** — 滚动时正确固定在指定偏移范围内
 - [ ] **Overflow: scroll/auto** — 可滚动容器功能，scroll 偏移正确应用到子元素布局
 - [ ] **替换元素** — `<img>` 的固有尺寸（intrinsic size）正确计算，`object-fit`（fill/contain/cover/none/scale-down）正确应用
@@ -379,7 +379,7 @@
 | **替换元素** | 图片/媒体渲染 | P1-严重 | `<img>` 无固有尺寸计算，图片无法正确显示 |
 | **滚动容器** | 页面滚动 | P1-严重 | overflow: scroll/auto 无真正滚动，长页面无法正确浏览 |
 | Float 布局 | CSS 2.1 核心功能 | P2-中等 | 仅有 inline context 的 float exclusion zone，clear 和 float containment 不完整 |
-| Position: fixed | 视口定位 | P2-中等 | 错误映射为 absolute，非 viewport 相对定位 |
+| ~~Position: fixed~~ | 视口定位 | ✅ **R324 已修复** | `adjust_fixed_to_viewport` 改为扣除累积祖先偏移（旧「加上」仅 parent_offset=0 时正确）；fixed 在有偏移 positioned 祖先内也视口相对，与 R98 absolute-viewport 约定一致。新单测 + 8 旧单测更新 + 全量 reftest 零回归 |
 | Position: sticky | 滚动吸附 | P2-中等 | 需 host layer 动态调整，未完整实现 |
 | text-shadow | 文字效果 | P2-中等 | paint 阶段未生成 text-shadow 图元 |
 | 多背景图层 | 视觉丰富度 | P2-中等 | 仅渲染第一个背景图层 |
