@@ -12,6 +12,8 @@
 use std::char;
 use std::path::Path;
 
+use zero_css_parser::ast::Rule as CssRule;
+use zero_css_parser::parser::Parser as CssParser;
 use zero_engine::RenderPipeline;
 use zero_engine::paint::simple_hash;
 use zero_render_foundation::cpu::render_full_scene;
@@ -975,7 +977,9 @@ pub fn render_to_framebuffer_with_base(
     pipeline.set_image_sizes(image_sizes);
 
     // 构建字体查找表（在 render_html 之前，以便 Painter 解析 CSS font-family）
-    let font_loader = create_font_loader();
+    let mut font_loader = create_font_loader();
+    // 加载 CSS @font-face 声明的自定义字体（按 base_dir 解析 src 到本地文件）
+    load_font_faces_into(&mut font_loader, base_dir, &combined_css);
     let font_resolver = font_loader.build_font_resolver();
     pipeline.set_font_resolver(font_resolver);
 
@@ -1296,6 +1300,65 @@ fn create_font_loader() -> FontLoader {
     loader
 }
 
+/// 从 CSS 文本中提取所有 `@font-face` 规则的 `(family, sources)` 列表。
+///
+/// 用 `zero_css_parser` 解析样式表，收集 `Rule::FontFace`。解析失败或无规则时返回空。
+fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>)> {
+    let stylesheet = CssParser::parse_stylesheet(css);
+    stylesheet
+        .rules
+        .iter()
+        .filter_map(|rule| match rule {
+            CssRule::FontFace(ff) => Some((ff.family.clone(), ff.sources.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 解析 `@font-face` 的 src URL 到本地文件路径（与 `load_linked_stylesheets` 同约定）。
+///
+/// - `/abs` → `tests/wpt-runner/wpt-data/<abs>`
+/// - 相对路径 → `base_dir.join(rel)`
+/// - `data:`/`http(s):` → None（本地不可读）
+fn resolve_font_src(href: &str, base_dir: Option<&Path>) -> Option<std::path::PathBuf> {
+    if href.starts_with("data:") || href.starts_with("http://") || href.starts_with("https://") {
+        return None;
+    }
+    let path = if href.starts_with('/') {
+        Path::new("tests/wpt-runner/wpt-data").join(href.trim_start_matches('/'))
+    } else {
+        base_dir?.join(href)
+    };
+    Some(path)
+}
+
+/// 把 CSS 中 `@font-face` 声明的自定义字体加载进 FontLoader。
+///
+/// 对每个 face，按 src 顺序尝试解析到本地文件并 `load_font`；首个成功加载的源即注册
+/// （fontdue 解码 .ttf/.otf；.woff 需解压，当前 fontdue 不支持 woff 容器，会静默失败并
+/// 跳到下一个 src）。加载后 `build_font_resolver` 即可按 family 匹配到该字体。
+fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Path>, css: &str) {
+    for (family, sources) in extract_font_faces(css) {
+        // Ahem 由 FontLoader 特殊处理（按 family 名合成方块），无需加载文件
+        if family.eq_ignore_ascii_case("Ahem") {
+            continue;
+        }
+        for src in &sources {
+            let Some(path) = resolve_font_src(src, base_dir) else {
+                continue;
+            };
+            if let Ok(data) = std::fs::read(&path)
+                && let Ok(id) = loader.load_font(&data)
+            {
+                // 把 @font-face 声明族名注册为该字体的别名（族名可能与字体
+                // 内部 name 表不同，CSS 按声明族名匹配）。
+                loader.register_family_alias(&family, id);
+                break;
+            }
+        }
+    }
+}
+
 /// 比较两个帧缓冲的像素。
 ///
 /// 返回 (不同像素数, 最大单通道色差)。
@@ -1379,6 +1442,46 @@ pub fn save_framebuffer_png(fb: &FrameBuffer, path: &std::path::Path) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R329：`@font-face` 自定义字体加载端到端验证。
+    ///
+    /// CSS 声明 `@font-face { font-family: "R329Alias"; src: url("Ahem.ttf"); }`，
+    /// 基目录指向 `tests/wpt-runner/fonts/`（含真实 Ahem.ttf）。`load_font_faces_into`
+    /// 应解析 src、加载字体、并把**声明族名** "R329Alias" 注册为别名（与字体内部名
+    /// "Ahem" 不同）。`build_font_resolver` 须含 "R329Alias" → font_id。
+    #[test]
+    fn test_font_face_loads_custom_family_alias() {
+        let fonts_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fonts");
+        let ahem = fonts_dir.join("Ahem.ttf");
+        if !ahem.exists() {
+            // 无 Ahem.ttf 的环境（如 CI 缺字体）跳过，不计失败
+            eprintln!("[R329] Ahem.ttf missing, skipping @font-face load test");
+            return;
+        }
+        let css = r#"@font-face { font-family: "R329Alias"; src: url("Ahem.ttf"); }"#;
+        let mut loader = create_font_loader();
+        load_font_faces_into(&mut loader, Some(&fonts_dir), css);
+        let resolver = loader.build_font_resolver();
+        assert!(
+            resolver.contains_key("R329Alias"),
+            "@font-face declared family 'R329Alias' must resolve to a loaded font_id; \
+             resolver keys: {:?}",
+            resolver.keys().collect::<Vec<_>>()
+        );
+    }
+
+    /// R329：`@font-face` 解析 + 跳过 data:/http: 源（不可本地加载）。
+    #[test]
+    fn test_font_face_resolves_local_and_skips_remote() {
+        let css = r#"@font-face { font-family: "Remote"; src: url("https://example.com/x.woff"); }"#;
+        let faces = extract_font_faces(css);
+        assert_eq!(faces.len(), 1);
+        // 远程源无法解析到本地路径
+        assert!(resolve_font_src("https://example.com/x.woff", None).is_none());
+        assert!(resolve_font_src("data:application/font-woff;base64,AAAA", None).is_none());
+        // 相对路径需 base_dir
+        assert!(resolve_font_src("rel.woff", None).is_none());
+    }
 
     /// 验证 position:relative + top 偏移是否正确应用。
     /// 测试：border-bottom 96px black + height 96px = 空顶 + 黑底

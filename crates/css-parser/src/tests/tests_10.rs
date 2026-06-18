@@ -345,3 +345,77 @@ fn test_eval_calc_basic() {
         assert!(result.is_some());
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// parser.rs — @font-face 规则解析
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_font_face_basic_url_quoted_family() {
+    let css = r#"@font-face { font-family: "TestFont"; src: url("test.woff"); }"#;
+    let ws = Parser::parse_stylesheet(css);
+    assert_eq!(ws.rules.len(), 1, "should parse one @font-face rule");
+    match &ws.rules[0] {
+        Rule::FontFace(ff) => {
+            assert_eq!(ff.family, "TestFont", "family quotes stripped");
+            assert_eq!(ff.sources, vec!["test.woff".to_string()], "src url extracted");
+        }
+        other => panic!("expected Rule::FontFace, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_font_face_unquoted_family_and_bare_url() {
+    let css = r#"@font-face{font-family:MyFont;src:url(MyFont.ttf)}"#;
+    let ws = Parser::parse_stylesheet(css);
+    match &ws.rules[0] {
+        Rule::FontFace(ff) => {
+            assert_eq!(ff.family, "MyFont");
+            assert_eq!(ff.sources, vec!["MyFont.ttf".to_string()]);
+        }
+        other => panic!("expected Rule::FontFace, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_font_face_multiple_sources_with_format_ignored() {
+    // 多个 src（含 format() 描述符），format 部分应被忽略，仅提取 url()
+    let css = r#"@font-face {
+        font-family: 'Multi';
+        src: url(a.woff) format("woff"), url(b.ttf) format("truetype");
+    }"#;
+    let ws = Parser::parse_stylesheet(css);
+    match &ws.rules[0] {
+        Rule::FontFace(ff) => {
+            assert_eq!(ff.family, "Multi");
+            assert_eq!(
+                ff.sources,
+                vec!["a.woff".to_string(), "b.ttf".to_string()],
+                "both urls extracted in order, format() ignored"
+            );
+        }
+        other => panic!("expected Rule::FontFace, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_font_face_does_not_break_surrounding_rules() {
+    let css = r#"
+        p { color: red; }
+        @font-face { font-family: "F"; src: url("f.woff"); }
+        div { color: blue; }
+    "#;
+    let ws = Parser::parse_stylesheet(css);
+    assert_eq!(ws.rules.len(), 3, "3 rules preserved");
+    assert!(matches!(ws.rules[0], Rule::Style(_)), "first is style");
+    assert!(matches!(ws.rules[1], Rule::FontFace(_)), "second is font-face");
+    assert!(matches!(ws.rules[2], Rule::Style(_)), "third is style");
+}
+
+#[test]
+fn test_font_face_missing_family_or_src_dropped() {
+    // 缺 src → 规则被丢弃（返回 None），不进入样式表
+    let css = r#"@font-face { font-family: "NoSrc"; }"#;
+    let ws = Parser::parse_stylesheet(css);
+    assert_eq!(ws.rules.len(), 0, "font-face without src is dropped");
+}

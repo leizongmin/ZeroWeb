@@ -220,11 +220,15 @@ fn test_declaration_value_only_whitespace() {
 // ── 12. @at-rule 的 prelude 收集 ────────────────────────────────────────
 
 #[test]
-/// 测试 @font-face 规则
+/// 测试 @font-face 规则（专用解析器：必须有 family + src 才保留，否则丢弃）
 fn test_at_rule_font_face() {
-    let css = "@font-face { font-family: Arial; }";
-    let ss = Parser::parse_stylesheet(css);
+    // 缺 src → 无效 @font-face，丢弃
+    let ss = Parser::parse_stylesheet("@font-face { font-family: Arial; }");
+    assert_eq!(ss.rules.len(), 0, "font-face without src is dropped");
+    // 有效 @font-face → Rule::FontFace
+    let ss = Parser::parse_stylesheet(r#"@font-face { font-family: "Arial"; src: url("a.woff"); }"#);
     assert_eq!(ss.rules.len(), 1);
+    assert!(matches!(ss.rules[0], Rule::FontFace(_)));
 }
 
 // ── 13. 通用选择器的边界情况 ─────────────────────────────────────────────
