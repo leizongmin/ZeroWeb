@@ -79,7 +79,7 @@
 | 混合模式渲染 | `mix-blend-mode` 的 16 种混合模式（normal、multiply、screen、overlay、darken、lighten 等） | `BlendModePrimitive` 已定义但渲染器未实现 |
 | Margin 折叠 | 相邻块级元素 margin-top/margin-bottom 的正确折叠算法 | ✅ **已实现（R323 实测）**：taffy 0.7 `CollapsibleMarginSet` 内置块级 margin 折叠；R323 探针实测 6 case 全过（相邻兄弟 max 折叠 / 父子折叠 / border 阻断 / 负 margin 30+(-10)=20 / 祖父嵌套 max(40,0,35)=40 / BFC `overflow:hidden` 子不折叠），margin reftest 5/5 全绿（`block-in-inline-...-margin-collapse` 0.00%） |
 | BFC（Block Formatting Context） | `overflow: hidden/auto/scroll`、`display: flow-root`、浮动等正确创建 BFC，隔离浮动和 margin 折叠 | 部分实现：BFC **margin 隔离**已工作（R323 实测 `overflow:hidden` 子元素 margin 不与父折叠）；`display:flow-root`/`is_layout_container` 标志已落地（R127 float-container margin-uncollapse 修复）。浮动包含（float containment）部分由 taffy + R129 float shrink-to-fit 覆盖 |
-| 替换元素布局 | `<img>`、`<video>`、`<iframe>`、`<canvas>` 的固有尺寸计算和 `object-fit` | 当前替换元素无固有尺寸，`object-fit` 在 paint 阶段处理但无实际图片数据 |
+| 替换元素布局 | `<img>`、`<video>`、`<iframe>`、`<canvas>` 的固有尺寸计算和 `object-fit` | ✅ **已实现**（`apply_replaced_element_sizing` 三来源：HTML `width`/`height` 属性、SVG data URI、解码固有尺寸；R325 修 CSS §10 两侧显式尺寸不强制固有宽高比；`compute_object_fit_rect` 全 5 值；R318 图片数据端到端贯通）。`<video>`/`<iframe>`/`<canvas>` 固有尺寸仍按默认，非 reftest 杠杆 |
 | 滚动容器 | `overflow: scroll/auto` 的可滚动容器，滚动偏移的正确应用 | 当前滚动偏移仅在浏览器层通过 `scroll_y` 手动偏移，无真正的滚动容器 |
 | text-shadow | 文字阴影（offset + blur + color） | paint 阶段未生成 text-shadow 图元 |
 | 多背景图层 | `background-image` 多层叠加渲染 | paint 阶段仅渲染第一个背景图层 |
@@ -272,7 +272,7 @@
 - [x] **Position: fixed** — 相对 viewport 定位（当前错误地映射为 absolute）— ✅ **R324 修复**（`adjust_fixed_to_viewport` 改为扣除祖先偏移；fixed 在有偏移 positioned 祖先内也视口相对，与 R98 absolute-viewport 约定一致；新单测 + 8 旧单测更新 + 全量 reftest 438/490 零回归）
 - [ ] **Position: sticky** — 滚动时正确固定在指定偏移范围内
 - [ ] **Overflow: scroll/auto** — 可滚动容器功能，scroll 偏移正确应用到子元素布局
-- [ ] **替换元素** — `<img>` 的固有尺寸（intrinsic size）正确计算，`object-fit`（fill/contain/cover/none/scale-down）正确应用
+- [x] **替换元素** — `<img>` 的固有尺寸（intrinsic size）正确计算，`object-fit`（fill/contain/cover/none/scale-down）正确应用 — ✅ **R323 代码核查 + R325 修复**（`apply_replaced_element_sizing`：HTML `width`/`height` 属性 + SVG data URI + 解码固有尺寸三来源；CSS §10「两侧尺寸都显式时不强制固有宽高比」R325 修复，旧实现 `<img style="width:200px;height:50px">` 被 taffy 拉成 200×200；`compute_object_fit_rect` 全 5 值；R318 图片数据端到端贯通）
 - [ ] **百分比高度** — containing block 有明确高度时百分比高度正确解析；无明确高度时 height: auto
 - [ ] **Auto margin 居中** — `margin: auto` 在 block/flex/grid 中正确居中
 - [ ] **min/max-width/height** — 约束正确应用到最终尺寸
@@ -375,8 +375,8 @@
 | **浏览器层 glyph 重排** | **ZeroBrowser 产品渲染路径** | **P1-严重** | ZeroBrowser 在消费 WebView 图元前会按 baseline 对 glyph 做后处理重排；该逻辑可能破坏 engine 已经计算好的 fragment x 坐标，尤其影响 grid/flex 中同一 baseline 的不同卡片文本 |
 | **真实静态页面 smoke 缺失** | **验收有效性** | **P1-严重** | 当前没有把 `apps/browser/assets/welcome.html`、morning.work 文章页和 WinterTC 图片密集首页这类无页面 JS 的真实静态页面作为 Chromium 截图对比门禁；因此 WPT 子集或内联 reftest 全绿仍可能漏掉用户第一眼可见的错位、正文重叠、tag 串联、表格退化和 Logo 缺失 |
 | ~~**Margin 折叠**~~ | CSS 2.1 布局正确性 | ✅ **已实现（R323 实测）** | taffy 0.7 `CollapsibleMarginSet` 内置；R323 探针 6 case（相邻/父子/border 阻断/负 margin/祖父嵌套/BFC 子不折叠）全过 + margin reftest 5/5 全绿。原「完全未实现」描述过时 |
-| **BFC** | 布局隔离 | P1-严重 | 无 BFC 概念，overflow: hidden 不隔离浮动、不阻止 margin 折叠 |
-| **替换元素** | 图片/媒体渲染 | P1-严重 | `<img>` 无固有尺寸计算，图片无法正确显示 |
+| ~~**BFC**~~ | 布局隔离 | ✅ **已实现** | `establishes_bfc`（全条件：overflow/float/abspos/flow-root/flex/grid/table/multicol）接线生产；margin 隔离 R323 实测 6 探针全过；`use_bfc_float_containment` 落地 float containment。原「无 BFC 概念，overflow: hidden 不隔离浮动、不阻止 margin 折叠」描述过时 |
+| ~~**替换元素**~~ | 图片/媒体渲染 | ✅ **已实现** | `<img>` 固有尺寸（HTML 属性 + SVG data URI + 解码固有尺寸三来源）已实现；R325 修 CSS §10 两侧显式尺寸不强制固有宽高比（旧 `<img style="width:200px;height:50px">` 被拉成 200×200）；`compute_object_fit_rect` 全 5 值；R318 图片数据端到端贯通。原「无固有尺寸计算，图片无法正确显示」描述过时 |
 | **滚动容器** | 页面滚动 | P1-严重 | overflow: scroll/auto 无真正滚动，长页面无法正确浏览 |
 | Float 布局 | CSS 2.1 核心功能 | P2-中等 | 仅有 inline context 的 float exclusion zone，clear 和 float containment 不完整 |
 | ~~Position: fixed~~ | 视口定位 | ✅ **R324 已修复** | `adjust_fixed_to_viewport` 改为扣除累积祖先偏移（旧「加上」仅 parent_offset=0 时正确）；fixed 在有偏移 positioned 祖先内也视口相对，与 R98 absolute-viewport 约定一致。新单测 + 8 旧单测更新 + 全量 reftest 零回归 |

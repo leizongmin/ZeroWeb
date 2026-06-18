@@ -3502,6 +3502,38 @@ mod table_layout_tests {
         );
     }
 
+    /// R325：CSS §10 替换元素——`<img>` 同时显式设置 width 与 height 时，两者都必须生效，
+    /// 不得用固有宽高比强制（否则 taffy 会把 height 拉到 width 比例，忽略显式 height）。
+    /// 旧实现 `<img style="width:200px;height:50px">` 渲染成 200×200（height 被忽略）。
+    #[test]
+    fn test_img_both_width_height_set_no_aspect_enforcement() {
+        let html = r#"<html><body style="margin:0"><img src="red.png" style="width:200px;height:50px"></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+        let mut img_sizes = HashMap::new();
+        img_sizes.insert(img_id, (100.0, 100.0)); // 正方形 intrinsic（ratio 1:1）
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+        let mut found = None;
+        let mut stack = vec![&result.root];
+        while let Some(b) = stack.pop() {
+            if b.node_id == Some(img_id) {
+                found = Some((b.width, b.height));
+                break;
+            }
+            stack.extend(b.children.iter());
+        }
+        let (w, h) = found.expect("img box found");
+        assert!((w - 200.0).abs() < 1.0, "img width should be 200 (CSS), got {w}");
+        assert!(
+            (h - 50.0).abs() < 1.0,
+            "img height should be 50 (CSS, not aspect-forced 200), got {h}"
+        );
+    }
+
     /// width:auto 的浮动元素，块级子元素全 0 宽（如 visibility:collapse 的 flex item
     /// 主尺寸归零，或空内容块）时，应 shrink-to-fit 收缩到 padding+border，
     /// 而非撑满容器全宽。旧实现 `content_max_w > 0.0` 条件在此跳过收缩（R300/R301）。

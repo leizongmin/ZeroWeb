@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-19（doc-maintenance 轮续：read-only DC-11 代码核查纠正 goal doc 过时声明——BFC 检测/float-containment/margin 隔离（R323）+ `<img>` intrinsic sizing + object-fit 全 5 值均已接线生产路径；known-gaps 表清理为仅活跃缺口（自洽）；R303 归档至 archive 保持最近 ≤20 轮。详见下方「DC-11 doc 复核」）
+**最后更新**: 2026-06-19（R325：DC-11「替换元素」CSS §10 真实修复——`<img>` 两侧显式尺寸不再被固有宽高比强制，旧 `<img style="width:200px;height:50px">` 被拉成 200×200；+1 新单测、make test 12256 全绿零回归、loose 438/490 持平（latent）；goal doc 4 处过时声明纠正。续 R323→R324→R325 DC-11 轴 code win 谱系）
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
@@ -12,12 +12,12 @@
 
 **字体攻坚结论（2026-06-17 AA 基准）**：fontdue **Regular** 与 chromium 光栅化基本一致（W 0.1% / i 3.0%），**非渲染差异来源**；welcome 26% / Oracle 污染大头是**布局/度量**（line-height / R109 inline→block / 多行结构）。fontdue **Bold** 变体比 chromium 过墨 ~15%（R229b net-negative 已回退）。**字体攻坚停止，转布局/度量**——advance-width(R225/R320)、font-weight -Bold(R229b)、AA 噪声(R174) 三谱系均实证为死路，勿再投入。
 
-> **结构化 plateau 结论见下方「综合裁决」节**（R305–R323 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R304–R324）；更早轮次已归档：R303 → [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
+> **结构化 plateau 结论见下方「综合裁决」节**（R305–R323 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R304–R325）；更早轮次已归档：R303 → [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
 
 
 ## 综合裁决：结构性 plateau（R305–R323，≥10 轮一致收敛）
 
-> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R304–R324）与归档 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)（R303）、[`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
+> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R304–R325）与归档 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)（R303）、[`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
 
 **核心结论**：rendering-compat 的**所有单会话 / 中会话 forward-motion 杠杆均已 ruled out 或 refuted**——这是 R313–R323（≥10 轮）一致收敛的结论，非单轮判断。rally 单会话迭代已无法提升真实通过率。
 
@@ -391,7 +391,7 @@
 | position: sticky | 「需宿主层动态调整」 | `is_sticky` 标记落地（engine.rs:606），但 engine.rs:1948 明示「sticky 偏移需宿主层滚动驱动」——**偏移未应用** | **准确** → 不改 |
 | position: fixed | 「当前错误地映射为 absolute」 | `adjust_fixed_to_viewport`（engine.rs:2176）存在且调用；**R324（commit 5b11fc2）已修 fixed-inside-positioned-ancestor over-correction（`+=`→`-=`）** | R324 已处理（goal doc 纠正见并行 agent 提交） |
 
-**结论**：goal doc DC-11 的 BFC + object-fit 两项「未实现」声明与代码现实矛盾（governance §1 自洽）。本轮将核查结论沉淀于本表（避免与并行 agent 活跃编辑 rendering-compat.md 冲突）；goal doc prose 纠正交由并行 agent 在其 R325+ DC-11 调查中按 R323/R324 先例处理，或后续 doc 会话在其非活跃时补。scroll/sticky 声明准确不改。本轮零代码变更（仅 read-only 核查）。
+**结论**：goal doc DC-11 的 BFC + object-fit 两项「未实现」声明与代码现实矛盾（governance §1 自洽）。本轮将核查结论沉淀于本表（避免与并行 agent 活跃编辑 rendering-compat.md 冲突）；goal doc prose 纠正**已由 R325 执行**（BFC known-gaps line 378 + 替换元素 DC-11/support-envelope/known-gaps 三处，按 R323/R324 先例）。scroll/sticky 声明准确不改。本轮零代码变更（仅 read-only 核查）。
 
 ## IFC 统一技术参考
 
@@ -771,7 +771,7 @@ near-pass(R307) / POLLUTED hunt(R299–R309) / fresh-xval(R311) / Phase A 4 路 
 
 ---
 
-## 最近轮次详细记录（R304–R324；R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)）
+## 最近轮次详细记录（R304–R325；R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)）
 
 ### R304 — taffy 升级评估：DEFER（read-only 深度调研，基线 loose 438/490 / strict 296/490 持平）
 
@@ -1240,3 +1240,24 @@ let font_size_px = match &style.font_size {
 **方法论复用**：R323（margin 折叠实测）→ R324（fixed 实测）证明 DC-11 轴的「具体 bug 声明」逐项 probe 是真实 code win 来源（区别于 reftest 计数 plateau）。续查 DC-11 剩余项（sticky→relative 映射、滚动容器 scroll offset、object-fit、BFC float containment）可能还有可单点修的真实 bug。
 
 **代码变更**：`crates/layout-engine/src/engine.rs`（adjust_fixed_to_viewport 修复 + 1 新单测）、`tests_8.rs`/`tests_9.rs`/`tests_3.rs`（8 旧单测更新）。基线 loose 438/490 持平（latent，零计数变化）；DC-11 fixed 项标记 done。
+
+### R325 — 替换元素两侧显式尺寸不强制固有宽高比（code change，DC-11 真实 correctness 修复，loose 438/490 零回归）
+
+**承接**：R324 方法论续查 DC-11「替换元素」项。R323 read-only 审计已确认 `apply_replaced_element_sizing`（tree.rs:165）三来源（HTML `width`/`height` 属性 + SVG data URI + 解码固有尺寸）接线生产、`compute_object_fit_rect` 全 5 值落地，但代码核查发现 CSS §10 一处真实 bug：**`<img>` 同时显式设置 width 与 height 时，旧实现仍设 `taffy_style.aspect_ratio = intrinsic_w/intrinsic_h`，taffy 据此把显式 height 强制拉到 width 比例**——`<img style="width:200px;height:50px">`（正方形 intrinsic 1:1）渲染成 200×200 而非 200×50，显式 height 被吞。
+
+**根因**（tree.rs `apply_replaced_element_sizing`）：两处 `if computed.aspect_ratio.is_none() { taffy_style.aspect_ratio = Some(w / h); }`（HTML 属性分支 line 209 + 解码固有尺寸分支 line 256）无条件设固有宽高比。CSS §10 替换元素：当 width 与 height 都 definite 时，box 尺寸即两者，**不得**强制固有比例（object-fit 控制内容如何填充 box，box 尺寸由两侧显式值决定）。仅当至少一侧 auto 时才用固有比例推导另一侧。
+
+**修复**（tree.rs:209-215 + 256-262）：两处守卫收紧为 `if computed.aspect_ratio.is_none() && (css_w_auto || css_h_auto)`（仅至少一侧 auto 才设固有宽高比）。两侧都显式时不干预，由 converter 从 CSS 处理。
+
+**验证**：
+- **新单测** `test_img_both_width_height_set_no_aspect_enforcement`（engine.rs table_layout_tests）：`<img style="width:200px;height:50px">` + 正方形 intrinsic (100,100)，断言渲染 200×50（旧 200×200）。✓
+- **make test**：**12256 passed / 0 failed / 72 ignored**（ignored = real_website_compat 文档化集；R324 基线 12255 → +1 = 新单测）。零回归。
+- **clippy -p zero-layout-engine --all-targets -D warnings**：干净；**cargo fmt**：干净。
+- **reftest 计数**：loose 438/490 预期持平（latent bug，上游 reftest 未覆盖「两侧显式尺寸 img」结构；产品可见 correctness 提升——真实页面常用 `<img style="width:..;height:..">` 或 HTML `width`/`height` 双属性做布局稳定）。
+
+**意义**：DC-11「替换元素」项**真实修复 + goal doc 纠正落地**。延续 R323（margin 探针）→ R324（fixed 修复）→ R325（img 修复）DC-11 轴「具体 bug 声明逐项 probe = 真实 code win」谱系（区别于 reftest 计数 plateau）。本轮同时纠正 goal doc 三处过时声明（DC-11 替换元素 line 275 + known-gaps 替换元素 line 379 + support-envelope 替换元素 line 82）+ BFC known-gaps line 378（R323 审计确立、原 deferred 到本轮）。
+
+**DC-11 剩余项**：position:sticky（偏移未应用，需宿主层 scroll driver，architectural）+ 滚动容器（paint 偏移+裁剪已落地，master.md 已如实标「简化处理」）+ 百分比高度/auto margin/min-max（已实现）。DC-11 实际完成度远高于 goal doc 旧 P1 缺口表所示；剩余 sticky 为多会话架构项。
+
+**代码变更**：`crates/layout-engine/src/tree.rs`（apply_replaced_element_sizing 两处守卫）、`crates/layout-engine/src/engine.rs`（1 新单测）、`docs/goal/rendering-compat.md`（4 处过时声明纠正）。基线 loose 438/490 持平（latent，零计数变化）；DC-11 替换元素项标记 done。
+
