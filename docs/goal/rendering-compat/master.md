@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-19（R328：单会话 lever 穷尽再确认——border-001/background-attachment 两 self-fail 低 diff 案实证结构性；DC-9 仅 blend_mode+drop-shadow 剩余（均需 paint-isolation）；multicol 全路径证伪唯余 layout 侧 column-aware IFC 硬里程碑。**POLLUTED vein（R308 font-size% 真实 win）仍可逐项 probe**，下一轮 R329 继续。基线 438/490 read-only 持平）
+**最后更新**: 2026-06-19（R329：POLLUTED clean-win vein 三趟复核确认穷尽——R298 清单逐项(R309) + fresh 475 例 cross-validate top-30(R311) + 长尾 spot-check（`text-underline-offset` 静态核查为未解析属性特性缺口，同 R232 text-emphasis）均仅 R308 font-size% 一处真实 clean win。**纠正 R328 header「R329 继续 POLLUTED probe」为已穷尽**，与综合裁决表/next-steps 自洽（governance §1）。DC-9 仅 blend_mode+drop-shadow 剩余（均需 paint-isolation）；multicol 全路径证伪唯余 layout 侧 column-aware IFC 硬里程碑。基线 438/490 read-only 持平）
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
@@ -12,12 +12,12 @@
 
 **字体攻坚结论（2026-06-17 AA 基准）**：fontdue **Regular** 与 chromium 光栅化基本一致（W 0.1% / i 3.0%），**非渲染差异来源**；welcome 26% / Oracle 污染大头是**布局/度量**（line-height / R109 inline→block / 多行结构）。fontdue **Bold** 变体比 chromium 过墨 ~15%（R229b net-negative 已回退）。**字体攻坚停止，转布局/度量**——advance-width(R225/R320)、font-weight -Bold(R229b)、AA 噪声(R174) 三谱系均实证为死路，勿再投入。
 
-> **结构化 plateau 结论见下方「综合裁决」节**（R305–R323 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R309–R328）；更早轮次已归档：R308 → [`archive/rounds-r308.md`](./archive/rounds-r308.md)、R307 → [`archive/rounds-r307.md`](./archive/rounds-r307.md)、R305–R306 → [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 → [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 → [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
+> **结构化 plateau 结论见下方「综合裁决」节**（R305–R323 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R310–R329）；更早轮次已归档：R309 → [`archive/rounds-r309.md`](./archive/rounds-r309.md)、R308 → [`archive/rounds-r308.md`](./archive/rounds-r308.md)、R307 → [`archive/rounds-r307.md`](./archive/rounds-r307.md)、R305–R306 → [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 → [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 → [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
 
 
 ## 综合裁决：结构性 plateau（R305–R323，≥10 轮一致收敛）
 
-> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R309–R328）与归档 [`archive/rounds-r308.md`](./archive/rounds-r308.md)（R308）、[`archive/rounds-r307.md`](./archive/rounds-r307.md)（R307）、[`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)（R305–R306）、[`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)（R304）、[`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)（R303）、[`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
+> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R310–R329）与归档 [`archive/rounds-r309.md`](./archive/rounds-r309.md)（R309）、[`archive/rounds-r308.md`](./archive/rounds-r308.md)（R308）、[`archive/rounds-r307.md`](./archive/rounds-r307.md)（R307）、[`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)（R305–R306）、[`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)（R304）、[`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)（R303）、[`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
 
 **核心结论**：rendering-compat 的**所有单会话 / 中会话 forward-motion 杠杆均已 ruled out 或 refuted**——这是 R313–R323（≥10 轮）一致收敛的结论，非单轮判断。rally 单会话迭代已无法提升真实通过率。
 
@@ -35,7 +35,7 @@
 | 杠杆 | 裁决轮 | 结论 |
 |------|--------|------|
 | near-pass clean-win frontier | R307 | 26 个 <0.2% 案全落结构性墙 / 字体噪声，零 clean win |
-| POLLUTED 候选逐项 hunt | R299/R300/R302/R309 | 多轮候选全结构性，exhausted |
+| POLLUTED 候选逐项 hunt | R299/R300/R302/R309/R311/R329 | 三趟复核（R298 清单逐项 + fresh 475 例 top-30 + 长尾 spot-check）全结构性/特性缺口，exhausted；唯 R308 font-size% 一处真实 clean win |
 | fresh chromium-Oracle cross-validate | R311 | 4 新候选 ruled out，plateau 再确认 |
 | Phase A IFC font_size 解锁（4 路） | R125/R198/R205/R206 | paint IFC vs layout IFC 两趟，font_size/line-height/换行耦合死锁；R207 narrow 精修仅获 font-051 +1 |
 | multicol breaking paint 侧 | R157/R198/R203/R317 | 5 次实证全 net-negative，paint 侧死路 |
@@ -766,7 +766,7 @@ IFC 统一（~50 tests）
 
 ### 已 ruled out（勿以单会话重试）
 
-near-pass(R307) / POLLUTED hunt(R299–R309) / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / baseline-export 3 机制(R266–R316) / advance-width(R225–R320) / blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304)。
+near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / baseline-export 3 机制(R266–R316) / advance-width(R225–R320) / blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304)。
 
 ### 已完成里程碑（参考，非当前活跃）
 
@@ -775,21 +775,7 @@ near-pass(R307) / POLLUTED hunt(R299–R309) / fresh-xval(R311) / Phase A 4 路 
 
 ---
 
-## 最近轮次详细记录（R309–R328；R308 已归档至 [`archive/rounds-r308.md`](./archive/rounds-r308.md)、R307 已归档至 [`archive/rounds-r307.md`](./archive/rounds-r307.md)、R305–R306 已归档至 [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 已归档至 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)）
-
-### R309 — POLLUTED clean-win 杠杆收尾：3 候选实证 ruled out（read-only 实证，基线 loose 438/490 / strict 295/490 持平）
-
-**承接**：R308 font-size 百分比修复证明「逐项 probe 未调查 POLLUTED 候选」仍能发现真实单点 bug（anonymous-inline-inherit = R298 POLLUTED 清单最后一处非结构性聚类）。本轮继续逐项 probe R298 清单剩余未调查项，3 候选全部 ruled out。
-
-**候选 1 — `table-grid-item-dynamic-003`（self 0% / chr 10.51%[R308 后]）RULED OUT（JS 动态）**：测试 `display:grid;height:100px` > `table;height:100%;padding-top:100px;box-sizing:content-box`，`onload` JS 触发增量 relayout（getBoundingClientRect + body width 变更）。测试名「don't grow on incremental relayout」= **JS 驱动的动态 relayout 行为验证**。ZeroWeb reftest 不执行/不应用 onload 触发的 relayout → 渲染静态初态；chromium 执行 JS → 渲染 post-relayout 态；二者本质不同（10.51%）。**非静态 CSS 单点 bug**（即使 ZeroWeb 静态 table h=200[=100%×100+padding100] 已计算正确），是 JS 执行 + 增量 relayout 特性缺口（需 reftest harness 执行 onload + 触发 re-layout）。defer 至 JS/动态布局特性。
-
-**候选 2 — `font-family-name-025`（self 0% / chr 7.13%）RULED OUT（缺测试字体）**：测试 `font-family: CSSTestBasic-Bold` 不应匹配 PostScript 名——**显式要求安装 CSSTest 测试字体**（页面文字「Test fonts must be installed for this test: FAIL」）。ZeroWeb 与 chromium oracle 环境均无 CSSTest 字体 → 双方回退字体渲染，7.13% = fontdue vs chromium 回退字体度量噪声（R174/R187 AA 谱系），**非 ZeroWeb 可修 bug**（缺字体资源，非渲染缺陷）。
-
-**候选 3 — `whitespace-001`（css-tables，self 0% / chr 2.09%[R308 后]）RULED OUT（结构性 table-cell+% 宽+空白 fit）**：`.outer{display:table;width:500px;border:1px}` > 两个 `.half{display:inline-block;width:50%}` 中间有空白。PIL 实测：**ZW 渲染两 block 换行**（blue rows 9-27 line1 / yellow rows 28-46 line2），**chromium 渲染同一行**（blue+yELLOW rows 9-26）。REF 用 `display:block`（余同），ZW 渲染 test==ref 均「换行」（self 0%）。差异 = display:table 匿名 cell 内 50%+50%+空白空间是否触发换行：ZW 计 50%+50%+空白宽 > cell 宽 → 换行；chromium 不换行（50%+50% 恰填满 cell，空白空间在 fit 边界被吸收）。根因耦合 **table-cell 百分比宽基址（R177b table-width 谱系）+ R105 inter-inline-block 空白宽计入 fit 判定**——修任一会动 R105/R177b 已绿用例，**非安全单点**。defer。
-
-**裁决：POLLUTED clean-win 杠杆经 R308+R309 收尾关闭**。R298 全量 POLLUTED 清单逐项归类：backdrop-inherit-rendered(R202 dialog JS)/abs-pos-border-offset-002(writing-mode)/table-grid-item-dynamic-003(本轮 JS)/semi-replaced-stretch-input(R202 表单)/flexbox-collapsed-item(R301 intrinsic)/font-051(Phase A)/collapsed-border-vertical-*(writing-mode)/float-no-content-beside(R300)/font-family-name-025(本轮 缺字体)/whitespace-001(本轮 结构性)/anonymous-inline-inherit(R308 ✅fixed)/grid-calc-margin+iframe+float-non-replaced(R302)。**唯一 clean win = R308 font-size%**；其余全结构性/特性缺口/字体噪声。与 R307（near-pass frontier 关闭）互补：**两条 clean-win 搜索策略（near-pass 聚类 + POLLUTED 逐项）均已穷尽**，剩余 forward motion 全为结构性多轮里程碑（Phase A 墙②③ / multicol column-aware IFC R131 / DC-9 blend_mode / DC-13 残余 / writing-mode 轴）或特性实现（JS 动态 relayout / 原生表单控件 / dialog）。
-
-**本轮 read-only 实证**：零代码变更；PIL+LAYOUT_DUMP 逐候选实证（table-grid-item LAYOUT_DUMP table h=200 正确 + JS 缺口定性；font-family-name 缺字体；whitespace-001 display:table vs block 换行差异 + R105/R177b 耦合）。基线 loose 438/490 / strict 295/490 / chromium-Oracle 持平。next = 转结构性里程碑（multicol column-aware IFC spec-rfc 实施 R131，最大失败聚类）或 DC-9 blend_mode 独立特性。
+## 最近轮次详细记录（R310–R329；R309 已归档至 [`archive/rounds-r309.md`](./archive/rounds-r309.md)、R308 已归档至 [`archive/rounds-r308.md`](./archive/rounds-r308.md)、R307 已归档至 [`archive/rounds-r307.md`](./archive/rounds-r307.md)、R305–R306 已归档至 [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 已归档至 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)）
 
 ### R310 — multicol 设计文档自洽修订（v0.3→v0.4）+ baseline-export 探针实证确认（read-only 设计+探针，基线 loose 438/490 / strict 295/490 持平）
 
@@ -1198,6 +1184,23 @@ near-pass(R307) / POLLUTED hunt(R299–R309) / fresh-xval(R311) / Phase A 4 路 
 **综合裁决**：rendering-compat 单会话 forward-motion lever 经本轮（未调查低 diff 案 + DC-9 + multicol 全路径）**最后一轮实证后确已穷尽**。reftest 主指标（438/490 loose / 295/490 strict / ~36% Oracle）剩余提升 + DC-9 blend/drop-shadow + multicol 硬里程碑**全部需多会话架构承诺**（Phase 2 column-aware IFC / paint-isolation / taffy baseline_overrides），或接受 plateau。基线 loose 438/490 持平（read-only，零代码变更）。
 
 **代码变更**：零（read-only 实证 + 审计）。本 R328 条目沉淀结论防重查。
+
+### R329 — POLLUTED clean-win vein 三趟复核确认穷尽 + header 自洽纠正（read-only committed-evidence 复核，基线 438/490 持平）
+
+**承接**：R328 header 标「POLLUTED vein（R308 font-size% 真实 win）仍可逐项 probe，下一轮 R329 继续」，但 R328 正文 caveat（勿因 self-fail 结构性结论放弃 POLLUTED vein）与「综合裁决」表（POLLUTED hunt exhausted）/ R309（clean-win 杠杆收尾关闭）/ next-steps ruled-out 存在 governance §1 自洽张力。本轮独立复核 committed evidence 以裁决。
+
+**三趟复核（均 read-only，基于 committed HEAD c322bdc 的 evidence，未跑动态 reftest——见下方约束）**：
+1. **R298 全量清单逐项（R309，已归档 [`archive/rounds-r309.md`](./archive/rounds-r309.md)）**：12 项候选全归类，唯 R308 `anonymous-inline-inherit`（font-size%）= 真实 clean win；余全结构性/特性缺口/字体噪声。
+2. **fresh 475 例 cross-validate top-30（[`evidence/r311-cross-validate-fresh-2026-06-19.txt`](./evidence/r311-cross-validate-fresh-2026-06-19.txt)）**：post-R308 重跑，污染率 48.2%（vs R298 的 48.6%，R308 仅边际改善）。top-30 chr-diff POLLUTED 全 ruled out——`downloadable-font-scoped-to-document`(20%)/`alternates-order`(14%)/`font-family-013`(6.65%)/`font-default-02/03`(3.46%)=@font-face 自定义字体未加载→回退度量噪声；`iframe-in-block-in-inline`/`iframe-in-wrapped-span`(9.75% 同机制)=R302 已 defer 的 iframe infra；`flexbox-baseline-align-self-baseline-horiz`(17.65%)=R295 structural；`rules-groups`(3.39%)=legacy HTML4 `rules=groups` 属性未解析；`move-with-text-after-paint`(4.02%)=JS。R311 原 VERDICT: no new contained CSS bugs surfaced。
+3. **长尾 spot-check（本轮静态代码核查）**：`text-underline-offset-calc`(1.47%)/`text-underline-offset-percentage`(1.53%) 两 POLLUTED 同机制——grep `underline_offset|UnderlineOffset|underline-offset` 于 css-parser/style-system/engine **零命中** = 未解析属性（同 R232 text-emphasis 特性缺口），**非** R308 式单点解析 bug。余长尾（`background-*`/`block-formatting-contexts-*`/`float-*`/`clear-*` @ 1-2%）= fontdue 度量 + 低 diff 结构性（R307 near-pass frontier 已关闭 <0.2% 案）。
+
+**裁决**：POLLUTED clean-win vein **三趟复核确认穷尽**——R308 font-size% 是唯一真实 clean win，top-30 + 长尾 spot-check 无第二处。R328 header「R329 继续 probe」**纠正为已穷尽**（re-cross-validate 仅在导入新 reftest 时复跑，非每轮主动 probe）。R308 方法论教训保留（POLLUTED self-pass/chr-disagree 原则上仍可能出新 bug），但**当前无已识别未 probe 目标**——继续每轮 probe 同批已归类用例只会重复 plateau 确认（同 R314 三策略穷尽判）。
+
+**自洽纠正（governance §1）**：header(line 3)「R329 继续 POLLUTED」→「三趟复核确认穷尽」；综合裁决表 POLLUTED 行补 R311/R329 轮次；next-steps ruled-out POLLUTED 行扩 R311+R329。
+
+**约束说明**：本轮并行 agent 正编辑 reftest 影响代码（css-parser ast/parser/tests_10、font/loader、style-system matcher、reftest.rs 共 6 文件未提交），故**基于 committed evidence 复核而非动态跑 reftest**——避免 WIP 与 committed 基线（438/490）混淆；任何动态复跑须待并行 agent 提交后基于新 HEAD 重测。零代码变更，基线 loose 438/490 / strict 295/490 持平。
+
+**归档**：R309（POLLUTED clean-win 杠杆收尾）作为第 21 轮迁出至 [`archive/rounds-r309.md`](./archive/rounds-r309.md)，最近窗口收窄为 R310–R329（≤20）。
 
 
 
