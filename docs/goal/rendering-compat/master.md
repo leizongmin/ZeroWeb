@@ -3401,3 +3401,22 @@ child.y += dy;
 **决策：DEFER 升级**。两个具名结构性缺口均为 ZeroWeb 侧架构问题（engine.rs shrink-to-fit post-processing / Phase A IFC 统一），非 taffy 版本问题；升级对它们零收益，而迁移+回归成本 prohibitive 且 native-float 冲突风险高。**纠正 R302「③ 评估 taffy 升级」lever 期望**——升级非 clean unlock，应从优先级队列移除。
 
 **对优先级队列影响**：taffy 升级评估完成 = ruled out（具名缺口零收益 + 成本 prohibitive）。剩余真实 lever 收敛为**纯 ZeroWeb 侧架构工作**：① Phase A IFC 统一（stored/paint 三路径 baseline 墙，spec-rfc 多轮）；② engine.rs 浮动/intrinsic-sizing post-processing 完整化（min-content floor，R97/R181 硬域）；③ 独立能力缺口（DC-13 产品 smoke 端到端证据 / DC-9 blend_mode backdrop）。next = 启动 Phase A IFC 统一的 spec-rfc 设计（最大结构性 lever，影响 large-font/multicol/IFC 度量整簇），或先做 DC-13 产品 smoke 端到端（非 taffy 阻塞、有明确验收）。read-only 调研，无代码/reftest 变更，基线 loose 438/490 / strict 296/490 / chromium-Oracle ~35.6% 持平。
+
+### R305 — Phase A IFC 统一 spec-rfc 设计文档产出（read-only 设计，基线 loose 438/490 / strict 296/490 持平）
+
+**承接**：R304 DEFER taffy 升级后，转向最大结构性 lever Phase A IFC 统一。本轮按 spec-rfc 工作流产出**设计文档**（不落地代码）。
+
+**产出**：`docs/goal/rendering-compat/phase-a-IFC-unification-design.md`（335 行，11 章，Spec Lint 14 Pass / 1 Warning / 0 Fail）。
+
+**read-only 精读结论——三处墙精确定位（代码行号实证）**：
+- **三条 IFC 路径**：compute_final（engine.rs:1668 真实 styles IFC）→ Gate 2（engine.rs:1910）→ paint use_stored（text.rs:807）Path A 渲染 vs Path B 空 styles 重跑（text.rs:846）。
+- **两个 Gate**：Gate 1（R207 narrow，engine.rs:1720-1749）决定哪些容器进 IFC；Gate 2（R84 安全子集，engine.rs:1910 `lines.len()<=1 && is_pure_ahem`）决定哪些容器**存** inline_layout。**关键事实**：`store_font_sizes_from_ifc`（engine.rs:1152）不受 Gate 2 限制广泛建立 per-node font_size map，Gate 2 只限完整行盒存储。
+- **墙①**（large-font 簇根因）= Gate 2 多行限制：ifc-008 inner-div 2 行→不存→Path B 16px。
+- **墙②**（multicol 反向依赖 R198/R209/R213）= multicol 永远走 Path B（use_stored=!multicol_info，text.rs:807），放宽 Gate 2 让内层容器存行盒后 multicol-fill-auto 0.63→9.15 回归；机制疑点（font_size map 不受 Gate 2 限→回归非 map 变化，疑 paint 分支/几何变化）降级为假设 A2 待 Phase 3 探针。
+- **墙③**（v_offset/baseline 语义分歧）= Path A 用 `is_ahem?0:font_size`（text.rs:1208）vs Path B 用 `baseline_fs`（text.rs:1225），多行非-Ahem 不一致——**架构性**，只要 Path B 存在两套语义就不可收敛（R206 broad 翻 FAIL 直接原因）。
+
+**推荐方案**：**baseline-resolved 单一权威行盒**——InlineLayoutLine/Fragment 加 `baseline_y` 字段，compute_final 对所有过 Gate 1 容器存行盒，paint 永远消费 stored（消灭 Path B，仅 flex/grid/table 保留重跑），删除 Gate 2 启发式改用「font_size 同源」不变量。multicol 经 Phase 3 探针定 M1（消费 stored 做列分配）/M2（保守 fallback）。
+
+**5-Phase 实施计划**（每 Phase 独立可合并、零 count 回归硬门禁）：P1 加死字段 baseline_y 建测量基线（净 0 验证）；P2 paint Path A 改用 baseline_y（R207 子集仍 PASS 验证 A3）；P3 read-only 探针 multicol 墙②；P4 删 Gate 2 多行限制 + multicol 方案；P5 删 Path B 死代码 + engine.rs 拆分（3969→抽 inline_finalization.rs ~400 行）。
+
+**对优先级队列影响**：Phase A 有了可执行的架构蓝图 + 分阶段回归门禁（区别于 R125/R198/R205/R209/R213 五轮单点死锁——它们都在试图**单点**修 font_size 而 Path B 仍在）。设计文档落盘供后续多轮接力。next = R306 执行 Phase 1（加 baseline_y 死字段 + compute_final 计算，净 0 验证，零渲染变化）。read-only 设计，无代码/reftest 变更，基线持平。
