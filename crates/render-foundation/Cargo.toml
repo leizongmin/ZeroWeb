@@ -25,6 +25,7 @@ winit = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+serial_test = { workspace = true }
 
 [[bench]]
 name = "render_bench"

@@ -90,6 +90,9 @@ wasmi = "0.40"
 # 基准测试
 criterion = "0.5"
 
+# 测试工具
+serial_test = "3"
+
 # 工具
 bytemuck = "1"
 hashbrown = "0.15"

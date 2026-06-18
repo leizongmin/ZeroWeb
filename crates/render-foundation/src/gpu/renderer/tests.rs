@@ -5,6 +5,13 @@ use crate::gpu::atlas::GlyphAtlasKey;
 use crate::gpu::mesh::{color_to_f32, push_fill_quad};
 use crate::primitive::TransformPrimitive;
 
+// GPU 测试共享 software wgpu 后端（非线程安全：并发 device.poll + map_async 跨多 fallback
+// adapter 触发 SIGSEGV，R285 记录、R286 新增 ping-pong 滤镜测试后稳定复现）。用 serial_test
+// 序列化本文件全部测试，消除并发竞争。覆盖范围=本文件 58 测试（含纯逻辑测试，过度序列化代价
+// 可忽略；其他 crate/文件测试仍并行）。
+use serial_test::serial;
+
+#[serial]
 #[test]
 fn test_push_fill_quad() {
     let mut vertices = Vec::new();
@@ -15,6 +22,7 @@ fn test_push_fill_quad() {
     assert_eq!(vertices[3], -1.0); // v
 }
 
+#[serial]
 #[test]
 fn test_color_to_f32() {
     let (r, g, b) = color_to_f32(Color::rgba(128, 64, 255, 255));
@@ -23,6 +31,7 @@ fn test_color_to_f32() {
     assert!(b.abs() > 0.99);
 }
 
+#[serial]
 #[test]
 fn test_push_multiple_fills() {
     let mut vertices = Vec::new();
@@ -40,6 +49,7 @@ fn test_push_multiple_fills() {
     assert_eq!(vertices.len(), 210);
 }
 
+#[serial]
 #[test]
 fn test_scale_rect_scales_origin_and_size() {
     let rect = scale_rect(Rect::new(2.0, 3.0, 10.0, 20.0), 2.0);
@@ -50,6 +60,7 @@ fn test_scale_rect_scales_origin_and_size() {
 }
 
 /// 测试无头模式 GPU 渲染器创建
+#[serial]
 #[test]
 fn test_gpu_renderer_headless_creation() {
     let renderer = GpuRenderer::new_headless(64, 64);
@@ -61,6 +72,7 @@ fn test_gpu_renderer_headless_creation() {
 }
 
 /// 测试渲染红色填充并回读像素验证
+#[serial]
 #[test]
 fn test_gpu_renderer_render_and_read_pixels() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -86,6 +98,7 @@ fn test_gpu_renderer_render_and_read_pixels() {
 }
 
 /// 测试渲染绿色填充并回读像素
+#[serial]
 #[test]
 fn test_gpu_renderer_green_fill_readback() {
     let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
@@ -107,6 +120,7 @@ fn test_gpu_renderer_green_fill_readback() {
 }
 
 /// 测试无填充时回读像素应为白色（clear color）
+#[serial]
 #[test]
 fn test_gpu_renderer_empty_scene_white_pixels() {
     let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
@@ -124,6 +138,7 @@ fn test_gpu_renderer_empty_scene_white_pixels() {
 }
 
 /// 测试 configure_surface 更新无头纹理尺寸
+#[serial]
 #[test]
 fn test_gpu_renderer_configure_surface_resize() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -134,6 +149,7 @@ fn test_gpu_renderer_configure_surface_resize() {
 }
 
 /// 测试 read_pixels 在窗口模式下返回 None
+#[serial]
 #[test]
 fn test_gpu_renderer_read_pixels_window_mode_none() {
     let renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
@@ -142,6 +158,7 @@ fn test_gpu_renderer_read_pixels_window_mode_none() {
 }
 
 /// 测试裁剪区域限制渲染范围
+#[serial]
 #[test]
 fn test_gpu_renderer_clip_rect_limits_rendering() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -167,6 +184,7 @@ fn test_gpu_renderer_clip_rect_limits_rendering() {
 }
 
 /// 测试 atlas 初始状态
+#[serial]
 #[test]
 fn test_gpu_renderer_atlas_initial_state() {
     let renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
@@ -175,6 +193,7 @@ fn test_gpu_renderer_atlas_initial_state() {
 }
 
 /// 测试蓝色填充回读
+#[serial]
 #[test]
 fn test_gpu_renderer_blue_fill_readback() {
     let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
@@ -193,6 +212,7 @@ fn test_gpu_renderer_blue_fill_readback() {
 }
 
 /// 测试黑色填充回读
+#[serial]
 #[test]
 fn test_gpu_renderer_black_fill_readback() {
     let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
@@ -211,6 +231,7 @@ fn test_gpu_renderer_black_fill_readback() {
 }
 
 /// 测试 glyph_draw 结构体
+#[serial]
 #[test]
 fn test_glyph_draw_fields() {
     let gd = GlyphDraw {
@@ -227,6 +248,7 @@ fn test_glyph_draw_fields() {
 }
 
 /// 测试 configure_surface 最小尺寸
+#[serial]
 #[test]
 fn test_gpu_renderer_configure_surface_min_size() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -235,6 +257,7 @@ fn test_gpu_renderer_configure_surface_min_size() {
 }
 
 /// 测试多次渲染不会 panic
+#[serial]
 #[test]
 fn test_gpu_renderer_multiple_renders() {
     let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
@@ -252,6 +275,7 @@ fn test_gpu_renderer_multiple_renders() {
     assert_eq!(pixels.len(), 16 * 16 * 4);
 }
 
+#[serial]
 #[test]
 fn test_gpu_renderer_zero_sized_glyph_does_not_enter_atlas() {
     let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
@@ -261,6 +285,7 @@ fn test_gpu_renderer_zero_sized_glyph_does_not_enter_atlas() {
 }
 
 /// 测试 GlyphDraw Clone 派生
+#[serial]
 #[test]
 fn test_glyph_draw_clone() {
     let gd = GlyphDraw {
@@ -280,6 +305,7 @@ fn test_glyph_draw_clone() {
 }
 
 /// 测试 render_scene 使用空填充和空 glyph 列表
+#[serial]
 #[test]
 fn test_render_scene_both_empty_inputs() {
     let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
@@ -294,6 +320,7 @@ fn test_render_scene_both_empty_inputs() {
 }
 
 /// 测试 normalize_scale_factor 对各种边界输入的处理
+#[serial]
 #[test]
 fn test_normalize_scale_factor_edge_cases() {
     assert_eq!(normalize_scale_factor(0.0), 1.0);
@@ -306,6 +333,7 @@ fn test_normalize_scale_factor_edge_cases() {
 }
 
 /// 测试上传不同尺寸的 glyph
+#[serial]
 #[test]
 fn test_upload_glyph_to_atlas_various_sizes() {
     let mut renderer = GpuRenderer::new_headless(64, 64).expect("headless renderer");
@@ -319,6 +347,7 @@ fn test_upload_glyph_to_atlas_various_sizes() {
 }
 
 /// 测试 render_scene_scaled 应用缩放
+#[serial]
 #[test]
 fn test_render_scene_scaled_applies_scale() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -336,6 +365,7 @@ fn test_render_scene_scaled_applies_scale() {
 }
 
 /// 测试 render_scene_with_clip_scaled 结合裁剪和缩放
+#[serial]
 #[test]
 fn test_render_scene_with_clip_scaled() {
     let mut renderer = GpuRenderer::new_headless(64, 64).expect("headless renderer");
@@ -354,6 +384,7 @@ fn test_render_scene_with_clip_scaled() {
 }
 
 /// 测试渲染混合颜色（半透明）
+#[serial]
 #[test]
 fn test_render_scene_with_alpha_blending() {
     let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
@@ -370,6 +401,7 @@ fn test_render_scene_with_alpha_blending() {
 }
 
 /// 测试 surface_format 返回正确格式
+#[serial]
 #[test]
 fn test_surface_format_returns_expected() {
     let renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -378,6 +410,7 @@ fn test_surface_format_returns_expected() {
 }
 
 /// 测试窗口模式下的 atlas state
+#[serial]
 #[test]
 fn test_window_mode_atlas_state() {
     let renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -385,6 +418,7 @@ fn test_window_mode_atlas_state() {
 }
 
 /// 测试 read_pixels 返回正确尺寸的缓冲区
+#[serial]
 #[test]
 fn test_read_pixels_returns_correct_buffer_size() {
     let mut renderer = GpuRenderer::new_headless(10, 20).expect("headless renderer");
@@ -396,6 +430,7 @@ fn test_read_pixels_returns_correct_buffer_size() {
 }
 
 /// 测试极端缩放值
+#[serial]
 #[test]
 fn test_extreme_scale_factors() {
     let mut renderer = GpuRenderer::new_headless(4, 4).expect("headless renderer");
@@ -411,6 +446,7 @@ fn test_extreme_scale_factors() {
 }
 
 /// 测试 glyph 在图像边界上的处理
+#[serial]
 #[test]
 fn test_glyph_at_image_edge() {
     let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
@@ -430,6 +466,7 @@ fn test_glyph_at_image_edge() {
 }
 
 /// 测试完全透明的 glyph
+#[serial]
 #[test]
 fn test_glyph_alpha_zero() {
     let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
@@ -451,6 +488,7 @@ fn test_glyph_alpha_zero() {
 }
 
 /// 测试渲染到不同尺寸的表面
+#[serial]
 #[test]
 fn test_render_to_different_surface_sizes() {
     for size in [(8, 8), (64, 64), (256, 128)] {
@@ -462,6 +500,7 @@ fn test_render_to_different_surface_sizes() {
 }
 
 /// 测试 suspend_present 阻止 render_vertices 执行
+#[serial]
 #[test]
 fn test_suspend_present_skips_render_vertices() {
     let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
@@ -471,6 +510,7 @@ fn test_suspend_present_skips_render_vertices() {
 }
 
 /// 测试 render_vertices 在没有顶点数据时的处理
+#[serial]
 #[test]
 fn test_render_vertices_empty_vertex_data() {
     let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
@@ -479,6 +519,7 @@ fn test_render_vertices_empty_vertex_data() {
 }
 
 /// 测试缩放因子为 1.0 时的特殊处理
+#[serial]
 #[test]
 fn test_scale_factor_one_point_zero() {
     let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
@@ -496,6 +537,7 @@ fn test_scale_factor_one_point_zero() {
 }
 
 /// 测试 run_render_pass 中的裁剪区域边界情况
+#[serial]
 #[test]
 fn test_render_pass_clip_rect_boundary_cases() {
     let mut renderer = GpuRenderer::new_headless(64, 64).expect("headless renderer");
@@ -507,6 +549,7 @@ fn test_render_pass_clip_rect_boundary_cases() {
 }
 
 /// 测试 upload_glyph_to_atlas 中 atlas 满了重建的逻辑
+#[serial]
 #[test]
 fn test_upload_glyph_atlas_rebuild_on_full() {
     let mut renderer = GpuRenderer::new_headless(128, 128).expect("headless renderer");
@@ -525,6 +568,7 @@ fn test_upload_glyph_atlas_rebuild_on_full() {
 }
 
 /// 测试 read_pixels 中的错误处理
+#[serial]
 #[test]
 fn test_read_pixels_error_handling() {
     let renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
@@ -533,6 +577,7 @@ fn test_read_pixels_error_handling() {
 }
 
 /// 测试 render_vertices 处理空顶点数据
+#[serial]
 #[test]
 fn test_render_vertices_empty_vertex_buffer() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -541,6 +586,7 @@ fn test_render_vertices_empty_vertex_buffer() {
 }
 
 /// 测试配置表面时尺寸为 1x1 的边界情况
+#[serial]
 #[test]
 fn test_configure_surface_one_pixel() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -558,6 +604,7 @@ fn test_configure_surface_one_pixel() {
 }
 
 /// 测试多个 glyph 使用相同字体 ID 和字符
+#[serial]
 #[test]
 fn test_multiple_glyphs_same_font_char() {
     let mut renderer = GpuRenderer::new_headless(64, 64).expect("headless renderer");
@@ -587,6 +634,7 @@ fn test_multiple_glyphs_same_font_char() {
 }
 
 /// 测试 glyph 在边界上的渲染
+#[serial]
 #[test]
 fn test_glyph_at_bottom_edge() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -608,6 +656,7 @@ fn test_glyph_at_bottom_edge() {
 // ─── GPU 全量图元渲染测试（render_full_scene_gpu） ──────────────────
 
 /// 测试 render_full_scene_gpu 渲染填充矩形并回读像素
+#[serial]
 #[test]
 fn test_gpu_full_scene_fills() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -630,6 +679,7 @@ fn test_gpu_full_scene_fills() {
 }
 
 /// 测试 render_full_scene_gpu 渲染圆角矩形
+#[serial]
 #[test]
 fn test_gpu_full_scene_rounded_rect() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -657,6 +707,7 @@ fn test_gpu_full_scene_rounded_rect() {
 }
 
 /// 测试 render_full_scene_gpu 渲染线性渐变
+#[serial]
 #[test]
 fn test_gpu_full_scene_gradient() {
     let mut renderer = GpuRenderer::new_headless(64, 16).expect("headless renderer");
@@ -705,6 +756,7 @@ fn test_gpu_full_scene_gradient() {
 }
 
 /// 测试 render_full_scene_gpu 渲染阴影
+#[serial]
 #[test]
 fn test_gpu_full_scene_shadow() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -733,6 +785,7 @@ fn test_gpu_full_scene_shadow() {
 }
 
 /// 测试 render_full_scene_gpu 渲染线段
+#[serial]
 #[test]
 fn test_gpu_full_scene_stroke() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -759,6 +812,7 @@ fn test_gpu_full_scene_stroke() {
 }
 
 /// 测试 render_full_scene_gpu 空场景
+#[serial]
 #[test]
 fn test_gpu_full_scene_empty() {
     let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
@@ -778,6 +832,7 @@ fn test_gpu_full_scene_empty() {
 ///
 /// 匹配 CPU `apply_filter` 的 Opacity 语义（区域 RGB *= amount）。无 filter 时为纯红 (255,0,0)；
 /// 加 Opacity(0.5) 后应 ≈ (128,0,0)。
+#[serial]
 #[test]
 fn test_gpu_full_scene_filter_opacity_multiplies_rgb() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -810,6 +865,7 @@ fn test_gpu_full_scene_filter_opacity_multiplies_rgb() {
 }
 
 /// DC-9 GPU filter:brightness — 红色填充 + Brightness(0.5)，断言 RGB *= 0.5（线性空间 sRGB 编码）。
+#[serial]
 #[test]
 fn test_gpu_full_scene_filter_brightness() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -834,6 +890,7 @@ fn test_gpu_full_scene_filter_brightness() {
 }
 
 /// DC-9 GPU filter:contrast — 深灰填充 (64,64,64) + Contrast(2.0)，断言对比度增强使其更暗。
+#[serial]
 #[test]
 fn test_gpu_full_scene_filter_contrast() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -860,6 +917,7 @@ fn test_gpu_full_scene_filter_contrast() {
 
 /// DC-9 GPU filter:grayscale — 红色填充 + Grayscale(1.0)，断言三通道收敛为灰
 ///（mode 3 路径：lerp 向 Rec601 luma，red 0.299 luma ≈ sRGB-encoded 148）。
+#[serial]
 #[test]
 fn test_gpu_full_scene_filter_grayscale() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -886,6 +944,7 @@ fn test_gpu_full_scene_filter_grayscale() {
 
 /// DC-9 GPU filter:hue-rotate — 红色填充 + HueRotate(120)，断言 120° 旋转将红映射为绿
 ///（mode 4 路径：CSS hue-rotate 循环矩阵，120° 时 ma=mb=0,mc=1 → red→green）。
+#[serial]
 #[test]
 fn test_gpu_full_scene_filter_hue_rotate() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -912,6 +971,7 @@ fn test_gpu_full_scene_filter_hue_rotate() {
 
 /// DC-9 GPU filter:invert — 红色填充 + Invert(1.0)，断言完全反相为青
 ///（mode 5 路径：mix(c, 1-c, 1.0)，red (255,0,0) → cyan (0,255,255)）。
+#[serial]
 #[test]
 fn test_gpu_full_scene_filter_invert() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -938,6 +998,7 @@ fn test_gpu_full_scene_filter_invert() {
 
 /// DC-9 GPU filter:saturate — 红色填充 + Saturate(0.0)，断言去饱和为灰
 ///（mode 6 路径：mix(gray, c, 0.0)=gray，与 grayscale(1.0) 同数值但走 mode 6 分支）。
+#[serial]
 #[test]
 fn test_gpu_full_scene_filter_saturate() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -964,6 +1025,7 @@ fn test_gpu_full_scene_filter_saturate() {
 
 /// DC-9 GPU filter:sepia — 红色填充 + Sepia(1.0)，断言转换为暖棕调
 ///（mode 7 路径：sepia 矩阵 + lerp，red → (0.393,0.349,0.272) sRGB≈(168,159,142)）。
+#[serial]
 #[test]
 fn test_gpu_full_scene_filter_sepia() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -993,6 +1055,7 @@ fn test_gpu_full_scene_filter_sepia() {
 ///
 /// 平移 a=1,b=0,c=0,d=1,tx=8：逆映射 src_x = dst_x - 8。
 /// dst x∈[0,8) → src∈[-8,0) 落 rect 外 → 白；x∈[8,24) → src∈[0,16) 采样红；x∈[24,32) → src∈[16,24) 采样蓝。
+#[serial]
 #[test]
 fn test_gpu_full_scene_transform_translation() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
@@ -1048,6 +1111,7 @@ fn test_gpu_full_scene_transform_translation() {
 }
 
 /// DC-9 GPU filter:blur — 渲染一个边缘锐利的色块 + Blur(3)，断言边缘像素被模糊（不再纯色）。
+#[serial]
 #[test]
 fn test_gpu_full_scene_filter_blur_softens_edges() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
