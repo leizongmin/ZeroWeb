@@ -3137,6 +3137,30 @@ GPU 按 `uniforms.mode` 分派：
 
 **本轮产出**：① 验证 R287 near-pass pipeline 可用（双跑 comm 三态 + STRICT dump + PIL 像素诊断完整链路）；② 确认 near-pass CSS2 <1% 多为 AA 噪声，**避免后续在噪声上浪费**（修正 R287 乐观假设）；③ 定位 background-043 td-border bug + 排除法收窄到 taffy table 布局对 cell border-box 的处理，为专项 table 坚攻坚备好精确入口（下一步=运行时探针 td LayoutBox 几何）。read-only，无代码/reftest 变更，基线 438/490（self-source-loose）/ strict 293/490 持平。详见 `evidence/r288-nearpass-css2-diagnostic-2026-06-18.txt`。
 
+### R289 — td vertical-align 参考盒修复（border-box→content-box），background-043 STRICT 通过（code change，零回归，loose 438/490 / strict 293→294）
+
+**承接**：R288b 纠正 background-043 真实 bug = td `vertical-align:bottom` 的 cell 内容（img）定位偏低 6px（border 之和），疑 valign 参考用了 border-box 高而非 content 高。本轮定位入口并修复。
+
+**根因（源码定位）**：`position_cells`（table.rs:1991）在 cell 定位末尾（2218-2241）对 cell 子元素应用 td vertical-align：
+```rust
+let content_height = children.iter().map(|c| c.height + margin).sum();  // 子元素总高
+let available = cell_box.height - content_height;  // ❌ cell_box.height = border-box 高
+let dy = match valign { Bottom|TextBottom => available, Middle => available/2, _ => 0 };
+child.y += dy;
+```
+子元素 `child.y` 相对 cell **content box** 度量，但 `available` 用了 `cell_box.height`（**border-box**，含 border+padding），多算 border+padding → valign:bottom/middle 把内容推出 content 区（background-043 的 img 底 = content顶+border-box高，越出 content 区 ~border 之和 6px）。
+
+**修复（单行）**：`let available = cell_box.content_height - content_height;`（用 content 区高，与 child.y 的坐标系一致）。`cell_box.content_height` 已在上方 2210-2216 由 `cell_height - border - padding` 算好。
+
+**验证**：
+- `ZERO_REFTEST_STRICT=1 reftest-upstream background-043`：0.50% → **0.00% PASS**（首个 near-pass→true-pass 转换，R287 pipeline 端到端验证成功）。
+- loose 全量 **438/490 持平零回归**；strict 全量 **293→294（+1）**，**仅 background-043 新增通过、无任何其他案例受影响**（comm 对比确认）——干净隔离修复。
+- 新增单测 `test_table_cell_valign_bottom_stays_in_content_box`（table.rs tests）：构造 table(height:206)>cell(border:3, valign:bottom)>content(height:15)，断言 valign:bottom 后 content 底 ≤ cell.content_height（不溢出到 border）。**临时回退修复验证测试有牙齿**：回退后 content 底=206（border-box）触发 FAIL（清晰报错「content bottom (206) should stay within content_height (200)」），恢复后 PASS。
+- fmt 干净、clippy --workspace --all-targets -D warnings 干净、make test **exit 0（45 crate 全绿）**。
+
+**对优先级队列影响**：R287 near-pass pipeline 首次产出真实 strict 增量（+1）。证明 near-pass CSS2 中**确有可修的真实 bug**（非全 AA 噪声），valign 参考盒类 bug 是一个可复制的模式（子元素坐标系 vs 参考盒边界）。下一步=继续 near-pass 候选（如 td valign:middle 同源、或 background-attachment/float-clearance 类），用 STRICT 度量增量；或回到结构性死锁（multicol/Phase A）。无回退，默认实测 loose 438/490 / strict 294/490。
+
+
 
 
 

@@ -2225,7 +2225,11 @@ fn position_cells(
                     .iter()
                     .map(|c| c.height + c.margin_top + c.margin_bottom)
                     .sum();
-                let available = cell_box.height - content_height;
+                // 子元素 y 是相对单元格 content box 度量的，故可用对齐空间应基于
+                // content_height（content 区高）而非 height（border-box 高）。
+                // 旧实现用 cell_box.height 会多算 border+padding，把 valign:bottom/middle
+                // 内容压到 content 区之外（如 background-043 的 img 偏低约 border 之和）。
+                let available = cell_box.content_height - content_height;
                 if available > 0.0 {
                     let dy = match cell_style.vertical_align {
                         zero_css_parser::values::VerticalAlignValue::Middle => available / 2.0,
@@ -2576,5 +2580,88 @@ mod tests {
             node_id: Some(id),
             ..Default::default()
         }
+    }
+
+    /// R289：表格单元格 vertical-align:bottom 应把内容压到 **content 区** 底部，
+    /// 不溢出到 border 区。回归 background-043（img 偏低 6px = border 之和）。
+    ///
+    /// 旧实现 `available = cell_box.height - content_height` 用了 border-box 高，
+    /// 子元素 y 又相对 content box 度量，导致 valign:bottom/middle 把内容推出 content 区
+    /// （多算 border+padding）。修复后用 `cell_box.content_height`。
+    #[test]
+    fn test_table_cell_valign_bottom_stays_in_content_box() {
+        use zero_css_parser::values::{LengthValue, VerticalAlignValue};
+        use zero_style_system::property::types::BorderStyleValue;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let table_id = doc.create_element("div");
+        let cell_id = doc.create_element("div");
+        let _ = doc.append_child(root, table_id);
+
+        let mut styles = HashMap::new();
+        // table: height 206px（R89 行高分配会把单元格撑到 ~206 border-box）
+        let mut ts = ComputedStyle::default();
+        ts.display = DisplayValue::Table;
+        ts.height = LengthValue::Px(206.0);
+        styles.insert(table_id, ts);
+        // cell: border 3px 四边 + vertical-align:bottom
+        let mut cs = ComputedStyle::default();
+        cs.display = DisplayValue::TableCell;
+        cs.border_top_width = LengthValue::Px(3.0);
+        cs.border_right_width = LengthValue::Px(3.0);
+        cs.border_bottom_width = LengthValue::Px(3.0);
+        cs.border_left_width = LengthValue::Px(3.0);
+        cs.border_top_style = BorderStyleValue::Solid;
+        cs.border_right_style = BorderStyleValue::Solid;
+        cs.border_bottom_style = BorderStyleValue::Solid;
+        cs.border_left_style = BorderStyleValue::Solid;
+        cs.vertical_align = VerticalAlignValue::Bottom;
+        styles.insert(cell_id, cs);
+
+        // 单元格内一个 15px 高的内容（模拟 background-043 的 <img height=15>）
+        let content_box = LayoutBox {
+            height: 15.0,
+            width: 100.0,
+            ..Default::default()
+        };
+        // cell LayoutBox：border 由 extract_layout 从 taffy 回读，测试直接设
+        let cell_box = LayoutBox {
+            node_id: Some(cell_id),
+            border_top: 3.0,
+            border_right: 3.0,
+            border_bottom: 3.0,
+            border_left: 3.0,
+            children: vec![content_box],
+            ..Default::default()
+        };
+        let mut table_box = LayoutBox {
+            node_id: Some(table_id),
+            content_width: 200.0,
+            children: vec![cell_box],
+            ..Default::default()
+        };
+
+        let grid = build_grid(&table_box, &doc, &styles);
+        position_cells(&mut table_box, &grid, &[200.0], 0.0, 0.0, &styles);
+
+        let cell = &table_box.children[0];
+        let content = &cell.children[0];
+        // 内容底 = content.y + content.height，应 ≤ cell.content_height（不溢出 content 区到 border）
+        let content_bottom = content.y + content.height;
+        assert!(
+            content_bottom <= cell.content_height + 0.5,
+            "valign:bottom content bottom ({content_bottom}) should stay within content_height ({}) \
+             (border-box height={}); old bug pushed it ~border past content area",
+            cell.content_height,
+            cell.height
+        );
+        // 旧 bug 会把 content_bottom 推到 cell.height（border-box）——明确断言未发生
+        assert!(
+            content_bottom < cell.height,
+            "content bottom ({content_bottom}) must not reach border-box height ({}) \
+             (would mean valign used border-box instead of content-box)",
+            cell.height
+        );
     }
 }
