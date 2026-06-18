@@ -3121,5 +3121,20 @@ GPU 按 `uniforms.mode` 分派：
 
 **对优先级队列影响**（已同步 header line 9）：DC-14 容差维度从「待接线」→「能力就绪 + blast radius 已测」。下一步最高杠杆 = **near-pass CSS2 clean win 候选**（color-applies-to/colors-007/background-043/font-146 等前 20 个，strict diff <1%，用 `ZERO_REFTEST_STRICT=1` 度量每项 strict 增量），区别于 fail 52 个的结构性死锁（multicol/writing-mode/Phase A）。
 
+### R288 — near-pass CSS2 攻坚诊断（验证 R287 pipeline + 定位 td-border bug，read-only，基线 438/490 持平）
+
+**承接**：R287 推荐「攻 near-pass CSS2 clean win 候选用 STRICT env 度量增量」。本轮对前 20 个 strict-diff<1% 候选抽样诊断（REFTEST_DUMP + STRICT + PIL 像素级），**验证 master.md「clean win 穷尽」+ 修正 R287「前 20 是 clean win」的乐观假设**。
+
+**抽样结论（两类分布）**：
+1. **AA/定位噪声（多数）**——colors-007 (0.49%)、color-applies-to-001 (0.12%)：test/ref 同为 ZeroWeb 渲染，颜色/布局本身正确（colors-007 的 4 个 `<p>` 全绿含 `color: g\re\45n` 转义；color-applies-to 的 table-row-group color 正确应用），差异在字形 AA 边缘（self-source 自不一致）。**非 bug，不可单点修**。
+2. **table 布局 bug（1 个高价值）**——background-043 (0.50%)：REF 的 `<td border:3>` **仅渲染顶边框**（y=70-72，206px 宽），**底/左/右边框全缺失**；蓝条 y[264,278] 比 test div 低 6px。TEST 的 `<div border:3>` 四边齐全几何正确。
+
+**td-border bug 根因收窄（排除法）**：① 非 `zero_box_model`（table.rs:294-307 仅对 row/row-group，不对 cell）；② 非 collapse 解析（默认 Separate，resolve_collapsed_borders table.rs:329-331 早退）；③ **converter 正确**（converter/mod.rs:110-117 对非 table-internal 含 TableCell 设四边 border，test 1584-1594 证实）；④ extract_layout（engine.rs:700-703）读 taffy 四边 border 入 LayoutBox。➡️ **根因在 taffy 0.7 的 table 布局对 cell `layout.border`/border-box 高度的处理**（img 溢出 td border-box「应有」位置，几何数字与简单假设不一致），需运行时探针（env-gated 打印 td cell 的 LayoutBox.border_* + border-box x/y/w/h）定根。
+
+**defer 理由**：table 子系统经 R117/R168/R177b 多轮精细调校，border/height/cell-width 高耦合，单点改动高风险回归；且 background-043 的 td-border-only-top 可能配置特异（显式 table height + valign:bottom img 触发），需先探针确认通用性 + 根因字段再修 + 全量 table 回归。
+
+**本轮产出**：① 验证 R287 near-pass pipeline 可用（双跑 comm 三态 + STRICT dump + PIL 像素诊断完整链路）；② 确认 near-pass CSS2 <1% 多为 AA 噪声，**避免后续在噪声上浪费**（修正 R287 乐观假设）；③ 定位 background-043 td-border bug + 排除法收窄到 taffy table 布局对 cell border-box 的处理，为专项 table 坚攻坚备好精确入口（下一步=运行时探针 td LayoutBox 几何）。read-only，无代码/reftest 变更，基线 438/490（self-source-loose）/ strict 293/490 持平。详见 `evidence/r288-nearpass-css2-diagnostic-2026-06-18.txt`。
+
+
 
 
