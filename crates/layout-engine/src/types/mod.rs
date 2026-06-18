@@ -253,6 +253,16 @@ pub struct LayoutBox {
     /// R109 §9.2.1.1：此匿名块片段是其 split inline 片段序列的**末** Inline 片段。
     /// fragment border 边选择：末片段开放左分裂边（shrink 步骤置 border_left=0）。
     pub r109_last_fragment: bool,
+    /// 表格列背景绘制信息（CSS Tables §17.5.3 列背景）。
+    ///
+    /// `<col>`/`<colgroup>` 元素不生成常规流盒，其 `background-color` 须由表格
+    /// 绘制算法特殊处理：在单元格背景**之下**、按列跨满表格高度绘制。
+    /// 每项 = `(node_id, x_offset, width)`：x_offset/width 相对表格 content box，
+    /// node_id 指向 `<col>` 或 `<colgroup>` 元素（painter 据此取 background-color）。
+    /// 仅含 background-color 非透明且宽度 > 0 的列元素；顺序为 colgroup 在前、
+    /// col 在后（colgroup 背景在下层）。由 `collect_table_col_backgrounds` 在
+    /// position_cells 后填充（彼时 col_widths + col→column 映射已知）。
+    pub table_col_backgrounds: Vec<(NodeId, f32, f32)>,
 }
 
 impl LayoutBox {
@@ -348,6 +358,7 @@ impl Default for LayoutBox {
             is_r109_split: false,
             r109_first_fragment: false,
             r109_last_fragment: false,
+            table_col_backgrounds: Vec::new(),
         }
     }
 }
