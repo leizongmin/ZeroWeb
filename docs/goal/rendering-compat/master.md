@@ -3659,3 +3659,22 @@ let font_size_px = match &style.font_size {
 **代码状态**：env-gated 探针 + 实现代码**已 100% 回退**（`git checkout engine.rs`，`git diff --stat` 空）；`cargo check -p zero-layout-engine` 干净；`make reftest` 内置 686/686 全绿（DC-7 卫生确认，回退 byte-identical HEAD）。零代码变更落地，基线 loose 438/490 持平。
 
 **对优先级队列影响**：baseline-export（baseline-000~008 + flexbox-baseline）经三轮探针 + 本轮实现共四轮，**从 ZeroWeb 后处理侧彻底 ruled out**——真修复须 taffy inline-level-box 基线合成或升级 taffy（0.8+ baseline_overrides，R304 DEFER prohibitive）。剩余 forward motion 确认为：① multicol layout 侧 column-aware IFC（R131，major 架构）；② Phase A IFC 统一（墙②③）；③ DC-9 blend_mode backdrop（0 reftest 覆盖）；④ DC-13 残余。均非单会话 clean win。本轮价值 = 以真实实现（非推断）排除 flex 后处理这条未测路径，防止后续轮重试。
+
+### R317 — multicol breaking paint 门控放宽：实现 + 实验证伪（code attempt + revert，基线 loose 438/490 持平）
+
+**承接**：R316 排除 baseline-export 后，转向 multicol column-aware IFC（R131，最大失败聚类）的最具体 paint 侧 wiring 候选——text.rs:713 `height_auto` 门控。设计文档 R201 Round 4' 把 multicol-breaking 的阻塞点 A 定为「paint 门控 `height_auto` 挡住有明确高度 inner 的列分布」，但 R203 称 paint 侧协调 net-negative。两者矛盾**未经单点实验裁决**——本轮实现并实验。
+
+**实现（text.rs:713，已 100% 回退）**：把 `if !has_in_flow_children && is_balance_mode && height_auto` 放宽为 `if !has_in_flow_children && is_balance_mode`（去掉 height_auto，允许明确高度的 balance 容器走 paint 列分布）。假设：multicol-fill-auto-* 不受影响（其 column-fill:auto → is_balance_mode=false → 本就不进此分支）。
+
+**实证（multicol 子集）**：**净 -5 回归**（40/57 → 35/57）：
+- multicol-breaking-001 0.66→1.30%、002 0.98→1.58%、nobackground-001 0.50→1.13%、002 0.82→1.42%、005 0.82→2.71%（5 案翻 FAIL）。
+- 目标用例 multicol-breaking-004 **反而恶化** 5.60→6.17%（paint 侧 `total/col_count` 均衡分配对明确高度嵌套用例比单块渲染更差）。
+- multicol-fill-auto-001 不变（0.63%，证假设「auto-fill 不受影响」正确，但 balance 侧大面积回归）。
+
+**裁决**：paint 门控 `height_auto` **load-bearing**，放宽净负。这**第 N 次实证 R203「paint 侧协调不可解」**（R157 净中性 / R198 font_size 死锁 / R203 净负 / R122 守卫净中性 / **R317 净 -5**）——paint 侧 `compute_multicol_info_for_paint` 的 `total/col_count` 均衡分配对明确高度/嵌套用例结构性错误，单块回退反而是当前最优。真修复须 **layout 侧 column-aware IFC**（R131）：在 layout 阶段计算 IFC 行盒后按列高预算碎片化，存结果供 paint 直接消费（绕过 paint 门控与重算）。
+
+**对设计文档影响**：multicol-fragmentation-design.md Round 4'（paint 侧 wiring）**经 R317 实证证伪**，须重定向为 layout 侧（与 R203/R131 一致）。设计文档 §0/§3 Round 4' 的「paint 侧多轮子系统」方向关闭。
+
+**代码状态**：实验代码**已 100% 回退**（`git checkout text.rs`，`git diff --stat` 空）；`cargo check -p zero-engine` 干净。零代码变更落地，基线 loose 438/490 持平。
+
+**综合（R316+R317 两轮真实实现）**：本会话以**两次真实 code attempt**（非推断）排除了 baseline-export flex 后处理（R316）与 multicol paint 门控放宽（R317）两条最具体的单会话候选，均净负回退。连同 R305-R315 的 6 条搜索路径，reftest 单会话 clean win 经 **6 路径搜索 + 2 实现证伪**穷尽确认。剩余唯一 forward motion = multicol **layout 侧** column-aware IFC（R131，major 多会话架构）或 Phase A IFC 统一，均需 spec-rfc 多轮承诺，非单会话。本轮价值 = 实证关闭 multicol paint 侧 wiring 这条 R201 标的未测候选，纠正设计文档 Round 4' 方向。
