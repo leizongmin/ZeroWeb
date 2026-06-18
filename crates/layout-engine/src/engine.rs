@@ -2647,13 +2647,20 @@ fn adjust_float_positions_with_context(
         // 纯文本内容（无块级子元素）的 float 保持 taffy 宽度——其 shrink-to-fit 需
         // IFC 测量，留作后续。仅当内容确实更窄时才收缩，对内容更宽或显式宽度的 float 为 no-op。
         if child.declared_width_auto {
-            let content_max_w = child
+            let block_child_widths: Vec<f32> = child
                 .children
                 .iter()
                 .filter(|c| !c.is_absolute && !c.is_fixed && c.is_block_level)
                 .map(|c| c.width)
-                .fold(0.0f32, f32::max);
-            if content_max_w > 0.0 {
+                .collect();
+            let content_max_w = block_child_widths.iter().copied().fold(0.0f32, f32::max);
+            // 有块级子元素时收缩到内容宽度（content_max_w + padding + border）。
+            // **content_max_w 可能为 0**（如 visibility:collapse 的 flex item 主尺寸归零，
+            // 或空内容块）——旧条件 `content_max_w > 0.0` 在此跳过收缩致 float 撑满全宽
+            //（flexbox-collapsed-item-horiz-001 根因，R300）。改为「有块级子元素即收缩」：
+            // 空内容 float 收缩到 padding+border（最小盒），仍比全宽更接近 shrink-to-fit 语义。
+            // 无块级子元素（纯文本 float）保持 taffy 宽度——其 shrink-to-fit 需 IFC 测量，留后续。
+            if !block_child_widths.is_empty() {
                 let shrink_border_box =
                     content_max_w + child.padding_left + child.padding_right + child.border_left + child.border_right;
                 if shrink_border_box < child.width {
@@ -3488,6 +3495,42 @@ mod table_layout_tests {
         assert!(
             (w - 96.0).abs() < 1.5,
             "img width should be aspect-preserved ~96 (2:1 @ height 48), got {w}"
+        );
+    }
+
+    /// width:auto 的浮动元素，块级子元素全 0 宽（如 visibility:collapse 的 flex item
+    /// 主尺寸归零，或空内容块）时，应 shrink-to-fit 收缩到 padding+border，
+    /// 而非撑满容器全宽。旧实现 `content_max_w > 0.0` 条件在此跳过收缩（R300/R301）。
+    #[test]
+    fn test_float_with_zero_width_block_child_shrinks() {
+        use zero_css_parser::values::FloatValue;
+        let html = r#"<html><body style="margin:0"><div style="float:left"><div style="width:0px;height:10px"></div></div></body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        // 找到 float div（float != None，含 width:0 块级子元素）
+        let mut float_w = None;
+        fn walk(b: &LayoutBox, out: &mut Option<f32>) {
+            if out.is_some() {
+                return;
+            }
+            if b.float != FloatValue::None && b.children.iter().any(|c| c.is_block_level) {
+                *out = Some(b.width);
+                return;
+            }
+            for c in &b.children {
+                walk(c, out);
+            }
+        }
+        walk(&result.root, &mut float_w);
+        let w = float_w.expect("should find a float with block-level children");
+        assert!(
+            w < 50.0,
+            "width:auto float with 0-width block child should shrink (<<800), got {w} (old bug left it full-width)"
         );
     }
 }
