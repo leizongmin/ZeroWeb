@@ -426,17 +426,56 @@ fn vs_fullscreen(
 fn fs_color_filter(in: VertexOutput) -> @location(0) vec4f {
     let c = textureSample(src_texture, src_sampler, in.uv);
     let p = uniforms.param;
-    if (uniforms.mode < 0.5) {
-        // opacity
-        let a = max(0.0, min(1.0, p));
-        return vec4f(c.r * a, c.g * a, c.b * a, 1.0);
-    } else if (uniforms.mode < 1.5) {
-        // brightness
-        return vec4f(c.r * p, c.g * p, c.b * p, 1.0);
+    let m = uniforms.mode;
+    // 在线性空间计算（render target 为 sRGB，textureSample 自动解码）。
+    // 各 mode 公式与 CPU apply_filter（[0,255] 空间）等价，仅空间不同 →
+    // 覆盖达标，非像素精确（同 opacity/brightness/contrast 的 sRGB parity caveat，R279）。
+    var out: vec3f;
+    if (m < 0.5) {
+        // 0 = opacity
+        let a = clamp(p, 0.0, 1.0);
+        out = c.rgb * a;
+    } else if (m < 1.5) {
+        // 1 = brightness
+        out = c.rgb * p;
+    } else if (m < 2.5) {
+        // 2 = contrast
+        out = (c.rgb - vec3(0.5)) * p + vec3(0.5);
+    } else if (m < 3.5) {
+        // 3 = grayscale(p)：lerp 向 Rec601 luma（CPU: c + (gray-c)*amt）
+        let gray = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+        out = mix(c.rgb, vec3(gray), p);
+    } else if (m < 4.5) {
+        // 4 = hue-rotate(p degrees)：CSS 色相旋转循环矩阵（CPU hue_rotate 同矩阵）
+        let angle = radians(p);
+        let cos_a = cos(angle);
+        let sin_a = sin(angle);
+        let sq3 = sqrt(3.0);
+        let inv3 = 1.0 / 3.0;
+        let ma = cos_a + (1.0 - cos_a) * inv3;
+        let mb = (1.0 - cos_a) * inv3 - sq3 * sin_a * inv3;
+        let mc = (1.0 - cos_a) * inv3 + sq3 * sin_a * inv3;
+        out = vec3(
+            ma * c.r + mb * c.g + mc * c.b,
+            mc * c.r + ma * c.g + mb * c.b,
+            mb * c.r + mc * c.g + ma * c.b,
+        );
+    } else if (m < 5.5) {
+        // 5 = invert(p)：CPU c + (255-2c)*amt ≡ mix(c, 1-c, p)
+        out = mix(c.rgb, vec3(1.0) - c.rgb, p);
+    } else if (m < 6.5) {
+        // 6 = saturate(p)：lerp 从 luma 向原色（CPU gray + (c-gray)*amt ≡ mix(gray, c, p)）
+        let gray = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+        out = mix(vec3(gray), c.rgb, p);
     } else {
-        // contrast
-        return vec4f((c.r - 0.5) * p + 0.5, (c.g - 0.5) * p + 0.5, (c.b - 0.5) * p + 0.5, 1.0);
+        // 7 = sepia(p)：sepia 矩阵后 lerp（CPU c + (s-c)*amt，s 经 .min(255) 钳制）
+        let sr = min(0.393 * c.r + 0.769 * c.g + 0.189 * c.b, 1.0);
+        let sg = min(0.349 * c.r + 0.686 * c.g + 0.168 * c.b, 1.0);
+        let sb = min(0.272 * c.r + 0.534 * c.g + 0.131 * c.b, 1.0);
+        out = mix(c.rgb, vec3(sr, sg, sb), p);
     }
+    out = clamp(out, vec3(0.0), vec3(1.0));
+    return vec4f(out, 1.0);
 }
 "#;
 

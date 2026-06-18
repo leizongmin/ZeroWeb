@@ -858,6 +858,136 @@ fn test_gpu_full_scene_filter_contrast() {
     assert!(g >= 0, "G should be non-negative, got {g}");
 }
 
+/// DC-9 GPU filter:grayscale — 红色填充 + Grayscale(1.0)，断言三通道收敛为灰
+///（mode 3 路径：lerp 向 Rec601 luma，red 0.299 luma ≈ sRGB-encoded 148）。
+#[test]
+fn test_gpu_full_scene_filter_grayscale() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        color: Color::RED,
+    });
+    primitives.filters.push(crate::primitive::FilterPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        filters: vec![crate::primitive::FilterKind::Grayscale(1.0)],
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
+    // grayscale(1.0)：三通道相等（灰），值在中灰区间（red 线性 1.0 luma=0.299 → sRGB≈148）。
+    assert!((r - g).abs() <= 8, "R≈G after Grayscale(1.0), got r={r} g={g}");
+    assert!((g - b).abs() <= 8, "G≈B after Grayscale(1.0), got g={g} b={b}");
+    assert!((100..=200).contains(&r), "gray value mid-range, got r={r}");
+}
+
+/// DC-9 GPU filter:hue-rotate — 红色填充 + HueRotate(120)，断言 120° 旋转将红映射为绿
+///（mode 4 路径：CSS hue-rotate 循环矩阵，120° 时 ma=mb=0,mc=1 → red→green）。
+#[test]
+fn test_gpu_full_scene_filter_hue_rotate() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        color: Color::RED,
+    });
+    primitives.filters.push(crate::primitive::FilterPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        filters: vec![crate::primitive::FilterKind::HueRotate(120.0)],
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
+    // hue-rotate(120°) 把红 (255,0,0) 旋转到绿 (0,255,0)。
+    assert!(g > 200, "G should be ~255 (red→green) after HueRotate(120), got g={g}");
+    assert!(r < 30, "R should be ~0 after HueRotate(120), got r={r}");
+    assert!(b < 30, "B should be ~0 after HueRotate(120), got b={b}");
+}
+
+/// DC-9 GPU filter:invert — 红色填充 + Invert(1.0)，断言完全反相为青
+///（mode 5 路径：mix(c, 1-c, 1.0)，red (255,0,0) → cyan (0,255,255)）。
+#[test]
+fn test_gpu_full_scene_filter_invert() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        color: Color::RED,
+    });
+    primitives.filters.push(crate::primitive::FilterPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        filters: vec![crate::primitive::FilterKind::Invert(1.0)],
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
+    // invert(1.0)：red (255,0,0) → cyan (0,255,255)。
+    assert!(r < 30, "R should be ~0 after Invert(1.0), got r={r}");
+    assert!(g > 200, "G should be ~255 after Invert(1.0), got g={g}");
+    assert!(b > 200, "B should be ~255 after Invert(1.0), got b={b}");
+}
+
+/// DC-9 GPU filter:saturate — 红色填充 + Saturate(0.0)，断言去饱和为灰
+///（mode 6 路径：mix(gray, c, 0.0)=gray，与 grayscale(1.0) 同数值但走 mode 6 分支）。
+#[test]
+fn test_gpu_full_scene_filter_saturate() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        color: Color::RED,
+    });
+    primitives.filters.push(crate::primitive::FilterPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        filters: vec![crate::primitive::FilterKind::Saturate(0.0)],
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
+    // saturate(0.0)：三通道收敛为 luma 灰（red luma=0.299 → sRGB≈148）。
+    assert!((r - g).abs() <= 8, "R≈G after Saturate(0.0), got r={r} g={g}");
+    assert!((g - b).abs() <= 8, "G≈B after Saturate(0.0), got g={g} b={b}");
+    assert!((100..=200).contains(&r), "gray value mid-range, got r={r}");
+}
+
+/// DC-9 GPU filter:sepia — 红色填充 + Sepia(1.0)，断言转换为暖棕调
+///（mode 7 路径：sepia 矩阵 + lerp，red → (0.393,0.349,0.272) sRGB≈(168,159,142)）。
+#[test]
+fn test_gpu_full_scene_filter_sepia() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        color: Color::RED,
+    });
+    primitives.filters.push(crate::primitive::FilterPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        filters: vec![crate::primitive::FilterKind::Sepia(1.0)],
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
+    // sepia(1.0)：red → 暖棕，三通道均升高（原 B=0 → ~142），且 R>G>B（暖调）。
+    assert!(b > 100, "B should rise from 0 to ~142 (sepia warm tone), got b={b}");
+    assert!(r >= g, "R>=G (warm sepia), got r={r} g={g}");
+    assert!(g >= b, "G>=B (warm sepia), got g={g} b={b}");
+}
+
 /// DC-9 GPU transform — 左半红 / 右半蓝填充 + 平移 tx=8 变换，断言逆矩阵重采样产出
 /// 白/红/蓝三带（匹配 CPU `apply_transform_post` 的逆变换 + clear-to-white 语义）。
 ///
