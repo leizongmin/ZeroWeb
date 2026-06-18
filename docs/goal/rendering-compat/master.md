@@ -3697,3 +3697,27 @@ let font_size_px = match &style.font_size {
 **对优先级队列影响**：DC-13 图片加载子项从缺口清单移除（已落地）。DC-13 残余确认为：① 文本度量（welcome/wintertc/morning 共性，Phase A 结构域）；② morning .item-tag R109 inline→block 堆叠（结构域）；③ WebP 解码 + CSS url() 背景图（可落地特性，低 ROI——wintertc/morning 不用 WebP/背景图）。reftest + 产品 smoke **双轴 plateau 确认**：单会话 clean win 经 reftest 6 路径+2 实现、产品 smoke 实测，均指向文本度量/列碎片化/IFC 结构域多会话工作。
 
 **本轮 read-only 实测 + goal doc 纠正**：零代码变更（`git diff -- '*.rs'` 空）；goal doc 2 处过时缺口纠正。基线 loose 438/490 持平。next = multicol layout 侧 column-aware IFC spec-rfc 设计（唯一未 ruled-out 的 forward motion），或接受 plateau 待用户多会话决策。
+
+### R319 — column-aware IFC spec-rfc 设计 + A1 probe：Phase 1 价值 REFUTED（read-only spec + probe，基线持平）
+
+**承接**：R318 确认双轴 plateau 后，按上一轮 CONTINUE 启动 multicol layout 侧 column-aware IFC（R131，长期被视为最大未 ruled-out forward motion）的 spec-rfc 设计。用 spec-rfc 完整模式自主产出（rally 协议不向用户提问，假设显式标记）。
+
+**产出**：`docs/goal/rendering-compat/column-aware-IFC-spec.md`（431 行，§0-11，Spec Lint 28 Pass / 1 Warning / 0 Fail）。设计：新增 `LayoutBox.inline_multicol_columns: Option<Vec<Vec<InlineLayoutLine>>>`，layout 侧 `assign_lines_to_columns_balanced`（行盒版，照搬 block 侧 `assign_children_to_columns_balanced`），paint 短路消费（None 回退，**不放宽** text.rs:713 门控）。
+
+**A1 probe（spec §7 首步，实证 Phase 1 价值）**：grep 6 个非嵌套 css-multicol 失败用例结构：
+| 用例 | 结构 | Phase 1 匹配？ |
+|------|------|----------------|
+| multicol-fill-000 / count-002 / columns-001 | height:**auto** + balance + inline | ❌ paint 侧**已处理**（同算法迁移零改善）；diff 是列宽/glyph 精度（advance-width R225 死路） |
+| column-height-009 | multicol-2 `column-height` 简写 | ❌ 非 balance+height 组合 |
+| multicol-containing-002 | 含 `<img>` | ❌ 非纯 inline |
+| multicol-block-no-clip-002 | 含 `<h4>` block | ❌ 非纯 inline |
+
+**裁决：Phase 1（单层 balance 明确高度纯 inline）目标结构在失败集中近乎不存在**。关键洞察：**大多数 multicol 失败是 height:auto+balance+inline——paint 侧已用同款 `total/col_count` 算法处理，迁移到 layout 侧结果不变**（不是列分布问题，是列宽/glyph 精度 + 嵌套 fragmentation）。故 column-aware IFC layout 侧迁移对 reftest **零改善**。
+
+**对长期假设的纠正**：R131/R201 长期把「column-aware IFC」标为 multicol 最大未 ruled-out lever。R319 spec-rfc + A1 probe **实证 refuted**——该 lever 的 Phase 1 无目标用例，Phase 2（嵌套 fragmentation）才是硬结构域。**column-aware IFC 从「最大 forward motion」降级为「低 ROI，Phase 1 不实施」**。
+
+**multicol 真实 forward motion 收敛（R319 后）**：① 列宽/glyph 精度 = advance-width 谱系（R225 双实验证伪独立死路；真修复须 fontdue glyph advance 接入 paint 换行决策，独立大件）；② Phase 2 嵌套 multicol fragmentation（multicol-breaking-004/005/006，硬结构性多会话）；③ 接受 multicol plateau。
+
+**对全局优先级队列影响**：**rendering-compat 所有「单会话/中等会话 forward motion lever」现已全部 ruled out 或 refuted**——reftest（6 搜索路径 + R316 flex-baseline + R317 multicol gate + R319 column-aware IFC Phase 1）、产品 smoke（R318 文本度量结构域）、baseline-export（R266/R313/R316 三机制）、multicol paint 侧（R157/R198/R203/R122/R317 五轮）、column-aware IFC Phase 1（R319 A1 probe）。剩余均需**多会话架构承诺**（fontdue glyph advance 接入 / Phase 2 嵌套 fragmentation / Phase A IFC 统一 / taffy 升级 R304 DEFER）或**接受 plateau**。本会话产出的 spec-rfc 文档 + A1 refutation 防止后续轮重投 column-aware IFC Phase 1。
+
+**本轮 read-only spec + probe**：零代码变更（`git diff -- '*.rs'` 空）；新增 `column-aware-IFC-spec.md`（含 A1 refuted 记录）。基线 loose 438/490 持平。next = 待用户对「多会话架构承诺 vs 接受 plateau」的决策；若继续 rally 且要 code 进展，唯一未深探的大件 = fontdue glyph advance 接入 paint 换行（影响 advance-width 谱系整簇 + multicol 列宽精度，但 R225 标其「死路」，需重新评估是否真死路或当时探针不充分）。
