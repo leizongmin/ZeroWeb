@@ -318,6 +318,7 @@ impl super::Painter {
                 self.primitives.add_image(ImagePrimitive {
                     rect: Rect::new(marker_x, marker_y, img_size, img_size),
                     image_key: ImageKey::new(super::super::helpers::simple_hash(url)),
+                    clip: None,
                 });
                 return;
             }
@@ -623,6 +624,7 @@ impl super::Painter {
         self.primitives.add_image(ImagePrimitive {
             rect: Rect::new(img_x, img_y, img_w, img_h),
             image_key,
+            clip: None,
         });
     }
 

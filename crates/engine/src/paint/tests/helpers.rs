@@ -9,8 +9,8 @@ use zero_style_system::{ComputedStyle, TextTransformValue};
 
 use super::super::helpers::{
     BorderRadiusSpec, PrimitiveCounts, apply_opacity_to_new_primitives, apply_text_transform, apply_transform_offset,
-    clip_fills, clip_glyphs, convert_color_stops, gradient_to_primitive, length_to_f32, linear_direction_to_kind,
-    simple_hash,
+    clip_all_primitives_to_rect, clip_fills, clip_glyphs, convert_color_stops, gradient_to_primitive, length_to_f32,
+    linear_direction_to_kind, simple_hash,
 };
 
 /// 测试 apply_transform_offset 的各种 transform 情况
@@ -212,6 +212,60 @@ fn test_clip_glyphs_completely_outside() {
     assert_eq!(glyphs[0].font_size, 0.0);
     assert_eq!(glyphs[1].glyph_id, 0);
     assert_eq!(glyphs[1].font_size, 0.0);
+}
+
+/// 测试 clip_all_primitives_to_rect 对图片图元的**裁剪（crop）非重缩放（rescale）**语义。
+///
+/// 关键不变量：clip 只收窄可见窗口（写入 img.clip），**不修改 img.rect** —— source 始终
+/// 映射到完整 rect（保持原始分辨率）。旧实现把 rect 缩到交集区会导致 renderer 把整张
+/// source 重映射进缩小区（rescale，clip:rect/overflow:hidden 语义错误，R294）。
+#[test]
+fn test_clip_image_crops_without_rescaling() {
+    use zero_render_foundation::primitive::{ImagePrimitive, RenderPrimitives};
+
+    let mut prims = RenderPrimitives::new();
+    let from = PrimitiveCounts::snapshot(&prims); // 快照在添加图元前，使 clip 处理新图元
+    let original_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+    prims.add_image(ImagePrimitive {
+        rect: original_rect,
+        image_key: zero_render_foundation::image_cache::ImageKey::new(0),
+        clip: None,
+    });
+    let clip_rect = Rect::new(25.0, 25.0, 50.0, 50.0); // 交集 = (25,25)-(75,75)
+    clip_all_primitives_to_rect(&mut prims, &from, &clip_rect);
+
+    // rect 必须保持不变（crop，非 rescale 缩小）
+    assert_eq!(
+        prims.images[0].rect, original_rect,
+        "img.rect 必须不变（crop 保持原始分辨率）"
+    );
+    // clip 窗口 = 交集
+    assert_eq!(
+        prims.images[0].clip,
+        Some(Rect::new(25.0, 25.0, 50.0, 50.0)),
+        "img.clip 应为交集窗口"
+    );
+}
+
+/// 测试 clip_all_primitives_to_rect 对完全在裁剪区外的图片图元：零尺寸 clip 窗口。
+#[test]
+fn test_clip_image_completely_outside() {
+    use zero_render_foundation::primitive::{ImagePrimitive, RenderPrimitives};
+
+    let mut prims = RenderPrimitives::new();
+    let from = PrimitiveCounts::snapshot(&prims); // 快照在添加图元前
+    prims.add_image(ImagePrimitive {
+        rect: Rect::new(200.0, 200.0, 50.0, 50.0), // 完全在 clip 区外
+        image_key: zero_render_foundation::image_cache::ImageKey::new(0),
+        clip: None,
+    });
+    let clip_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+    clip_all_primitives_to_rect(&mut prims, &from, &clip_rect);
+
+    // 完全在外：clip 窗口零尺寸（render_image 见空交集跳过绘制）
+    let clip = prims.images[0].clip.expect("完全在外应设零尺寸 clip");
+    assert_eq!(clip.size.width, 0.0);
+    assert_eq!(clip.size.height, 0.0);
 }
 
 /// 测试 length_to_f32 的各种输入
@@ -949,6 +1003,7 @@ fn test_apply_opacity_all_primitive_types() {
     prims.images.push(zero_render_foundation::primitive::ImagePrimitive {
         rect: Rect::new(0.0, 0.0, 50.0, 50.0),
         image_key: zero_render_foundation::image_cache::ImageKey::new(0),
+        clip: None,
     });
 
     apply_opacity_to_new_primitives(&mut prims, &before, 0.5);

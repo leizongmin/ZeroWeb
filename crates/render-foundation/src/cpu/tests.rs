@@ -637,6 +637,7 @@ fn image_renders_rgba_data() {
     primitives.images.push(ImagePrimitive {
         rect: Rect::new(10.0, 10.0, 30.0, 30.0),
         image_key: key,
+        clip: None,
     });
 
     let font_loader = FontLoader::new();
@@ -671,6 +672,81 @@ fn image_renders_rgba_data() {
     // 图片外应该是白色
     let outside = fb.get_pixel(5, 5);
     assert_eq!(outside, [255, 255, 255, 255], "outside image should be white");
+}
+
+#[test]
+fn image_clip_crops_not_rescales() {
+    // 验证裁剪语义 = **裁剪（crop）非重缩放（rescale）**。
+    //
+    // 关键区分点：对**非均匀**图像施加 clip 窗口后，可见区应保持 source 原始分辨率
+    // （source 仍按完整 rect 映射，clip 仅收窄绘制窗口）。旧实现把 rect 缩到 clip 窗口
+    // 后把**整张 source** 重映射进缩小区 → 把 source 挤压进窗口（rescale）。
+    //
+    // 源 4×4：左上 2×2 红、其余蓝。映射到 40×40 rect（每源像素 = 10×10 块），
+    // 故 source 红块覆盖 rect 左上 (0,0)-(20,20)。clip 仅留左上 20×20：
+    //   - crop（正确）：(10,10) 落在 source 红块内 → 红（原分辨率）；
+    //   - rescale（旧 bug）：source 被挤进 20×20 → (10,10) 映射到 source(1.6,1.6)
+    //     （红块边界外、蓝区）→ 蓝。
+    // 另断言 clip 窗口外（(30,30)）不绘制（白色）。
+    use crate::image_cache::{ImageCache, ImageData};
+
+    let red = [255u8, 0, 0, 255];
+    let blue = [0u8, 0, 255, 255];
+    // 行优先：y=0/1 为「红 红 蓝 蓝」，y=2/3 全蓝
+    let rows: [[[u8; 4]; 4]; 4] = [
+        [red, red, blue, blue],
+        [red, red, blue, blue],
+        [blue, blue, blue, blue],
+        [blue, blue, blue, blue],
+    ];
+    let mut buf = Vec::with_capacity(4 * 4 * 4);
+    for row in &rows {
+        for px in row {
+            buf.extend_from_slice(px);
+        }
+    }
+
+    let mut image_cache = ImageCache::new(10, 1024 * 1024);
+    let key = image_cache.insert(ImageData::from_rgba(buf, 4, 4).unwrap());
+
+    let mut primitives = RenderPrimitives::new();
+    primitives.images.push(ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 40.0, 40.0),
+        image_key: key,
+        clip: Some(Rect::new(0.0, 0.0, 20.0, 20.0)),
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let mut cache = image_cache;
+    let fb = render_full_scene(
+        40,
+        40,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut cache),
+        &[],
+        &[],
+    );
+
+    // clip 窗口内深处 (10,10)：crop→红（落在 source 红块）；rescale→蓝（source 被挤进窗口）
+    let inside_clip = fb.get_pixel(10, 10);
+    assert!(
+        inside_clip[0] > 200 && inside_clip[2] < 60,
+        "clip 窗口内应为红色（crop 保持原分辨率，非 rescale 把蓝挤进来），got {:?}",
+        inside_clip
+    );
+
+    // clip 窗口外 (30,30)：rect 内但被裁掉，不绘制，白色
+    let outside_clip = fb.get_pixel(30, 30);
+    assert_eq!(
+        outside_clip,
+        [255, 255, 255, 255],
+        "clip 窗口外不应绘制，got {:?}",
+        outside_clip
+    );
 }
 
 #[test]

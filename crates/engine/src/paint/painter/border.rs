@@ -177,6 +177,7 @@ impl super::Painter {
         let make_img = |rect: Rect| ImagePrimitive {
             rect,
             image_key: ImageKey::new(key),
+            clip: None,
         };
 
         // 边框区域的坐标

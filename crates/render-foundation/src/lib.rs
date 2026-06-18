@@ -426,6 +426,7 @@ mod tests {
         p.add_image(ImagePrimitive {
             rect: Rect::new(500.0, 500.0, 100.0, 100.0),
             image_key: ImageKey::new(1),
+            clip: None,
         });
 
         let bb = p.bounding_box().expect("应有包围盒");

@@ -132,6 +132,7 @@ impl super::Painter {
                                 self.primitives.add_image(ImagePrimitive {
                                     rect: Rect::new(cx, cy, cw, ch),
                                     image_key: ImageKey::new(key),
+                                    clip: None,
                                 });
                             }
                             x += tile_w;
