@@ -172,6 +172,48 @@ fn test_compute_sticky_position() {
     assert!(sticky_box.is_sticky);
 }
 
+/// R326：position:sticky 在 scroll-0「应吸附」场景下，偏移须如 relative 应用。
+/// converter（converter/mod.rs:286）把 `Sticky` 映射为 taffy `Position::Relative`，
+/// 故 taffy 对 block-level sticky 施加 top/left inset（== relative 行为）。本测实证
+/// 该偏移确实生效——纠正 R323 read-only 审计旧注「sticky 偏移未应用」（实为 taffy 已
+/// 应用，缺的是 scrollport 相对钳制）。sticky 完整正确性需 scrollport 钳制（normal 位
+/// 满足 inset 时应 == static，当前渲染 == relative），属架构性缺口，非单点修复。
+#[test]
+fn test_sticky_applies_inset_like_relative_at_scroll_zero() {
+    // 基线：static，无偏移
+    let (mut doc1, _, body1) = make_doc();
+    let d1 = doc1.create_element("div");
+    doc1.append_child(body1, d1).unwrap();
+    let mut s1 = block_style(100.0, 50.0);
+    s1.position = PositionValue::Static;
+    let mut styles1 = std::collections::HashMap::new();
+    styles1.insert(d1, s1);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let r1 = engine.compute(&doc1, &styles1);
+    let b1 = find_child_by_node_id(&r1.root, d1).expect("static div");
+    let baseline_y = b1.y;
+
+    // sticky + top:10：scroll-0 应吸附场景，偏移应如 relative 下移 10
+    let (mut doc2, _, body2) = make_doc();
+    let d2 = doc2.create_element("div");
+    doc2.append_child(body2, d2).unwrap();
+    let mut s2 = block_style(100.0, 50.0);
+    s2.position = PositionValue::Sticky;
+    s2.top = LengthValue::Px(10.0);
+    let mut styles2 = std::collections::HashMap::new();
+    styles2.insert(d2, s2);
+    let mut engine2 = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let r2 = engine2.compute(&doc2, &styles2);
+    let b2 = find_child_by_node_id(&r2.root, d2).expect("sticky div");
+    assert!(b2.is_sticky);
+    let delta = b2.y - baseline_y;
+    assert!(
+        (delta - 10.0).abs() < 0.5,
+        "sticky top:10 should offset +10 like relative at scroll-0; baseline y={baseline_y}, sticky y={}, delta={delta}",
+        b2.y
+    );
+}
+
 // ---- 溢出处理测试 ----
 
 #[test]
