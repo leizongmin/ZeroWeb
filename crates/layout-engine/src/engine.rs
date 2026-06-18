@@ -857,6 +857,7 @@ impl LayoutEngine {
             is_r109_split,
             r109_first_fragment,
             r109_last_fragment,
+            table_col_backgrounds: Vec::new(),
         }
     }
 }

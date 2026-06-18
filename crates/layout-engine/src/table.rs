@@ -242,6 +242,10 @@ fn layout_table(table_box: &mut LayoutBox, doc: &zero_dom::Document, styles: &Ha
     // 3. 定位单元格
     position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
 
+    // 3.5 收集 <col>/<colgroup> 列背景（CSS Tables §17.5.3）
+    //     列背景在单元格之下绘制，须在 paint 前把列元素几何写入 table_col_backgrounds。
+    collect_table_col_backgrounds(table_box, &grid, &col_widths, spacing_x, styles, doc);
+
     // 4. border-collapse: collapse 时解析边框冲突
     //    必须在 suppress 之前，因为 resolve 从 ComputedStyle 读取边框
     resolve_collapsed_borders(table_box, &grid, styles);
@@ -1550,6 +1554,185 @@ fn detect_collapsed_columns(
     collapsed
 }
 
+/// 收集 `<col>`/`<colgroup>` 的列背景几何，写入 `table_box.table_col_backgrounds`。
+///
+/// CSS Tables §17.5.3：`<col>`/`<colgroup>` 不生成常规流盒，其 `background-color`
+/// 须由表格绘制算法在单元格背景**之下**、按列跨满表格高度绘制。本函数在 position_cells
+/// 后运行（col_widths + col→column 映射已知），为每个有非透明背景、非全折叠的列元素
+/// 记录 `(node_id, x_offset, width)`（相对表格 content box）。
+///
+/// 列几何（含 border-spacing）与 position_cells 的单元格定位保持一致：相邻非折叠列
+/// 之间加 spacing_x，折叠列宽度 0 且不引入 spacing。colgroup 在前（下层）、col 在后
+/// （上层），匹配 CSS 列背景堆叠顺序。
+fn collect_table_col_backgrounds(
+    table_box: &mut LayoutBox,
+    grid: &TableGrid,
+    col_widths: &[f32],
+    spacing_x: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) {
+    use zero_style_system::ColorValue;
+
+    // 预计算每列 (left, width) —— 镜像 position_cells 的 spacing 累积
+    let col_count = grid.col_count;
+    let mut col_geo: Vec<(f32, f32)> = vec![(0.0, 0.0); col_count];
+    {
+        let mut x = 0.0f32;
+        let mut nc_count = 0usize; // 已放置的非折叠列数
+        for (i, geo) in col_geo.iter_mut().enumerate() {
+            let collapsed = grid.collapsed_cols.get(i).copied().unwrap_or(false);
+            let w = col_widths.get(i).copied().unwrap_or(0.0);
+            if collapsed {
+                *geo = (x, 0.0);
+            } else {
+                if nc_count > 0 {
+                    x += spacing_x;
+                }
+                *geo = (x, w);
+                x += w;
+                nc_count += 1;
+            }
+        }
+    }
+
+    /// 计算列元素 [col_start, col_end) 跨度的 (left, width)；全折叠返回 None。
+    fn span_rect(col_geo: &[(f32, f32)], grid: &TableGrid, col_start: usize, col_end: usize) -> Option<(f32, f32)> {
+        let end = col_end.min(col_geo.len());
+        if col_start >= end {
+            return None;
+        }
+        let left = col_geo[col_start].0;
+        let last = end - 1;
+        let right = col_geo[last].0 + col_geo[last].1;
+        if right <= left {
+            return None;
+        }
+        // 全折叠（宽度 0）跳过
+        let any_visible = (col_start..end).any(|i| !grid.collapsed_cols.get(i).copied().unwrap_or(false));
+        if !any_visible {
+            return None;
+        }
+        Some((left, right - left))
+    }
+
+    let mut entries: Vec<(NodeId, f32, f32)> = Vec::new();
+    let mut col_cursor = 0usize;
+
+    // Pass 1：colgroup（下层先入）
+    for child in &table_box.children {
+        let child_display = get_display(child, styles);
+        if child_display != Some(DisplayValue::TableColumnGroup) {
+            continue;
+        }
+        let rg_span = get_span(child, doc);
+        let col_start = col_cursor.min(col_count);
+        let col_end = (col_cursor + rg_span).min(col_count);
+        let rg_collapsed = child
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.visibility, zero_css_parser::values::VisibilityValue::Collapse));
+        let rg_has_bg = child
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| !matches!(s.background_color, ColorValue::Transparent));
+        if !rg_collapsed && rg_has_bg {
+            if let Some((l, w)) = span_rect(&col_geo, grid, col_start, col_end) {
+                if let Some(nid) = child.node_id {
+                    entries.push((nid, l, w));
+                }
+            }
+        }
+        // col_cursor 推进：colgroup 内含 col 时按内部 col 推进，否则按 rg_span
+        let has_inner_cols = child
+            .children
+            .iter()
+            .any(|c| get_display(c, styles) == Some(DisplayValue::TableColumn));
+        if has_inner_cols {
+            for col_child in &child.children {
+                if get_display(col_child, styles) == Some(DisplayValue::TableColumn) {
+                    col_cursor += get_span(col_child, doc);
+                }
+            }
+        } else {
+            col_cursor += rg_span;
+        }
+    }
+
+    // Pass 2：col（上层后入）—— 顶层 col + colgroup 内部 col
+    let mut col_cursor = 0usize;
+    for child in &table_box.children {
+        let child_display = get_display(child, styles);
+        match child_display {
+            Some(DisplayValue::TableColumnGroup) => {
+                let rg_span = get_span(child, doc);
+                let rg_collapsed = child
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .is_some_and(|s| matches!(s.visibility, zero_css_parser::values::VisibilityValue::Collapse));
+                if rg_collapsed {
+                    col_cursor += rg_span;
+                    continue;
+                }
+                let has_inner_cols = child
+                    .children
+                    .iter()
+                    .any(|c| get_display(c, styles) == Some(DisplayValue::TableColumn));
+                if has_inner_cols {
+                    for col_child in &child.children {
+                        if get_display(col_child, styles) == Some(DisplayValue::TableColumn) {
+                            let col_span = get_span(col_child, doc);
+                            let col_start = col_cursor.min(col_count);
+                            let col_end = (col_cursor + col_span).min(col_count);
+                            let col_collapsed = col_child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                                matches!(s.visibility, zero_css_parser::values::VisibilityValue::Collapse)
+                            });
+                            let col_has_bg = col_child
+                                .node_id
+                                .and_then(|id| styles.get(&id))
+                                .is_some_and(|s| !matches!(s.background_color, ColorValue::Transparent));
+                            if !col_collapsed && col_has_bg {
+                                if let Some((l, w)) = span_rect(&col_geo, grid, col_start, col_end) {
+                                    if let Some(nid) = col_child.node_id {
+                                        entries.push((nid, l, w));
+                                    }
+                                }
+                            }
+                            col_cursor += col_span;
+                        }
+                    }
+                } else {
+                    col_cursor += rg_span;
+                }
+            }
+            Some(DisplayValue::TableColumn) => {
+                let col_span = get_span(child, doc);
+                let col_start = col_cursor.min(col_count);
+                let col_end = (col_cursor + col_span).min(col_count);
+                let col_collapsed = child
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .is_some_and(|s| matches!(s.visibility, zero_css_parser::values::VisibilityValue::Collapse));
+                let col_has_bg = child
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .is_some_and(|s| !matches!(s.background_color, ColorValue::Transparent));
+                if !col_collapsed && col_has_bg {
+                    if let Some((l, w)) = span_rect(&col_geo, grid, col_start, col_end) {
+                        if let Some(nid) = child.node_id {
+                            entries.push((nid, l, w));
+                        }
+                    }
+                }
+                col_cursor += col_span;
+            }
+            _ => {}
+        }
+    }
+
+    table_box.table_col_backgrounds = entries;
+}
+
 /// 从 DOM 中读取元素的 span 属性值（用于 col/colgroup）。
 fn get_span(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
     if let Some(node_id) = box_node.node_id {
@@ -2813,6 +2996,92 @@ mod tests {
             expected_content_height,
             total_row_height,
             total_row_height,
+        );
+    }
+
+    /// `<col>`/`<colgroup>` 的 background-color 应被收集为列背景（CSS Tables §17.5.3）。
+    /// visibility:collapse 的列跳过，非透明背景列记录 (node_id, x, width)。
+    #[test]
+    fn test_collect_table_col_backgrounds() {
+        use zero_css_parser::values::{ColorValue, VisibilityValue};
+        use zero_style_system::property::types::DisplayValue;
+
+        let mut doc = Document::new();
+        let root = doc.root();
+        let table_id = doc.create_element("table");
+        let col1_id = doc.create_element("col"); // red
+        let col2_id = doc.create_element("col"); // blue, visibility:collapse
+        let col3_id = doc.create_element("col"); // green
+        let _ = doc.append_child(root, table_id);
+
+        let mut styles = HashMap::new();
+        let mut ts = ComputedStyle::default();
+        ts.display = DisplayValue::Table;
+        styles.insert(table_id, ts);
+        let mk_col_style = |bg: ColorValue, vis: VisibilityValue| {
+            let mut s = ComputedStyle::default();
+            s.display = DisplayValue::TableColumn;
+            s.background_color = bg;
+            s.visibility = vis;
+            s
+        };
+        styles.insert(
+            col1_id,
+            mk_col_style(ColorValue::Rgba(255, 0, 0, 255), VisibilityValue::Visible),
+        );
+        styles.insert(
+            col2_id,
+            mk_col_style(ColorValue::Rgba(0, 0, 255, 255), VisibilityValue::Collapse),
+        );
+        styles.insert(
+            col3_id,
+            mk_col_style(ColorValue::Rgba(0, 128, 0, 255), VisibilityValue::Visible),
+        );
+
+        let mut table_box = LayoutBox {
+            node_id: Some(table_id),
+            children: vec![
+                LayoutBox {
+                    node_id: Some(col1_id),
+                    ..Default::default()
+                },
+                LayoutBox {
+                    node_id: Some(col2_id),
+                    ..Default::default()
+                },
+                LayoutBox {
+                    node_id: Some(col3_id),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        // 3 列，col2 折叠；col_widths = [65, 0, 160]（折叠列宽 0）
+        let grid = TableGrid {
+            rows: Vec::new(),
+            col_count: 3,
+            collapsed_cols: vec![false, true, false],
+        };
+        let col_widths = [65.0f32, 0.0, 160.0];
+
+        collect_table_col_backgrounds(&mut table_box, &grid, &col_widths, 0.0, &styles, &doc);
+
+        // 仅 col1(red) 和 col3(green)；col2(blue) 折叠跳过；x/width 镜像单元格定位
+        let entries = &table_box.table_col_backgrounds;
+        assert_eq!(entries.len(), 2, "collapsed col should be skipped");
+        assert_eq!(entries[0].0, col1_id, "first entry = col1 (red)");
+        assert!(
+            (entries[0].1 - 0.0).abs() < 0.01 && (entries[0].2 - 65.0).abs() < 0.01,
+            "col1 x=0 w=65"
+        );
+        assert_eq!(entries[1].0, col3_id, "second entry = col3 (green)");
+        // col2 折叠不引入 spacing/位移 → col3 从 x=65 起
+        assert!(
+            (entries[1].1 - 65.0).abs() < 0.01 && (entries[1].2 - 160.0).abs() < 0.01,
+            "col3 x=65 w=160 (collapsed col2 contributes no offset), got x={} w={}",
+            entries[1].1,
+            entries[1].2
         );
     }
 }

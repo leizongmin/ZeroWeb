@@ -268,6 +268,12 @@ impl Painter {
             false
         };
 
+        // CSS Tables §17.5.3 列背景：<col>/<colgroup> 的 background-color 在单元格之下、
+        // 按列跨满表格高度绘制（几何由 layout 层 collect_table_col_backgrounds 写入）。
+        if !is_hidden {
+            self.paint_table_col_backgrounds(box_node, abs_x, abs_y, styles);
+        }
+
         let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
         let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
 
@@ -470,6 +476,12 @@ impl Painter {
             && let Some(style) = styles.get(&node_id)
         {
             self.update_counters(style);
+        }
+
+        // CSS Tables §17.5.3 列背景：<col>/<colgroup> 的 background-color 在单元格之下、
+        // 按列跨满表格高度绘制（几何由 layout 层 collect_table_col_backgrounds 写入）。
+        if !is_hidden {
+            self.paint_table_col_backgrounds(box_node, abs_x, abs_y, styles);
         }
 
         // 记录子节点绘制前的图元数量，用于裁剪
@@ -1066,6 +1078,43 @@ impl Painter {
     /// 获取指定计数器的当前值。
     pub fn get_counter(&self, name: &str) -> Option<i32> {
         self.counters.get(name).copied()
+    }
+
+    /// 绘制表格列背景（CSS Tables §17.5.3）。
+    ///
+    /// `<col>`/`<colgroup>` 不生成常规流盒，其 `background-color` 须按列跨满表格
+    /// content 高度绘制，位于单元格背景之下。几何 `(node_id, x_offset, width)` 相对
+    /// 表格 content box（由 layout 层 `collect_table_col_backgrounds` 写入）。
+    /// 仅绘制 background-color（col 上 background-image 极罕见，暂不支持）。
+    fn paint_table_col_backgrounds(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) {
+        if box_node.table_col_backgrounds.is_empty() {
+            return;
+        }
+        let content_x = abs_x + box_node.padding_left + box_node.border_left;
+        let content_y = abs_y + box_node.padding_top + box_node.border_top;
+        let h = box_node.content_height;
+        if h <= 0.0 {
+            return;
+        }
+        for (node_id, x_off, w) in &box_node.table_col_backgrounds {
+            let Some(style) = styles.get(node_id) else { continue };
+            if matches!(style.background_color, ColorValue::Transparent) {
+                continue;
+            }
+            if *w <= 0.0 {
+                continue;
+            }
+            self.primitives.add_fill(
+                Rect::new(content_x + *x_off, content_y, *w, h),
+                color_value_to_render(&style.background_color),
+            );
+        }
     }
 
     /// 绘制背景（考虑 border-radius）。
