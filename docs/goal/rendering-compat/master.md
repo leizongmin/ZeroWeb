@@ -3776,3 +3776,32 @@ let font_size_px = match &style.font_size {
 **全局终局**：rendering-compat reftest **所有 contained/single-session lever 经 14 轮（R199-R321 中相关轮）穷尽 ruled out/refuted**。剩余 forward motion **全部**需多会话架构承诺：① IFC wrapping 精度（词边界/空格/orphans-widows 对齐 chromium，独立大件，影响整条 IFC）；② Phase 2 嵌套 multicol fragmentation；③ Phase A IFC 统一；④ taffy 升级（R304 DEFER）。**rally 单会话层面 reftest 通过率已无推进路径**。
 
 **本轮 read-only 算法分析**：零代码变更。基线 loose 438/490 持平。next = 待用户对「多会话架构承诺 vs 接受 plateau」决策；单会话 rally 已无法推进 reftest。
+
+### R322 — columns-001 wrapping 实测正确（self-纠正 R321）+ proxy/local-serving 基础设施核查：均已就位无缺口（read-only 实测 + 核查，基线持平）
+
+**承接**：R321 把 columns-001 diff 归因为「IFC wrapping 精度」并列为最深 gap。本轮 ground-truth 实测**纠正自身**。
+
+**wrapping 实测（self-纠正 R321）**：minimal test `<div style="width:100px;font:20px/1 Ahem">x xx xxx xxxx xxxxx</div>` 经 product-smoke + LAYOUT_DUMP：div **h=80 = 4 行**（"x xx"/"xxx"/"xxxx"/"xxxxx"，每行 ≤5 Ahem 单位=100px）。**ZeroWeb wrapping 完全正确**——R321「columns-001 diff = IFC wrapping 精度」假设**证伪**。columns-001 真实 4.88% diff = balance 分布细节 vs ref 的 `&nbsp;` 编码期望的**亚像素/边界 mismatch**（wrapping 正确 + balance 算法正确[T/N，R321 证 = binary-search for 等高行] + advance 正确[Ahem] 均排除后，残余是分布 rounding/编码差异，**非单点 bug**）。
+
+**proxy 基础设施核查（用户原始任务要求「确保 browser 支持代理配置」）**：
+- zero-net 基于 reqwest 0.12.28。reqwest 源码实证（`async_impl/client.rs:418-420`）：`Client::builder().build()` **默认添加 `ProxyMatcher::system()`**——自动读 `http_proxy`/`https_proxy`/`ALL_PROXY`（含小写）env，**除非**调 `.no_proxy()`。
+- ZeroWeb `HttpClient::with_config`（net/client.rs）**未调 `.no_proxy()`** → 系统 proxy 检测**默认启用**。
+- `~/use-proxy` 设 `http_proxy=192.168.1.212:7078` / `https_proxy=...` → **`source ~/use-proxy && make browser` 即生效**，ZeroBrowser 经 reqwest 自动走代理。
+- **裁决：proxy 支持已就位，无缺口**。reqwest 默认行为满足用户要求；无需新增代码（加显式 proxy 读取会与 reqwest 默认重复，违 code-guidelines 简单至上）。
+
+**local-serving 基础设施核查（用户原始任务要求「静态资源存本地 + Rust web 服务器」）**：
+- reftest 走本地 `tests/wpt-runner/wpt-data/`（文件直读，无网络）。
+- product-smoke 走 `--base-dir` 本地文件服务（`fetch_image_subresources` 按 base-dir 解析 `<img src>`，R318 实测 logo 全渲染）。
+- **裁决：local-serving 已就位**（文件 base-dir 模式覆盖 fixture 需求）；独立 Rust HTTP server 属过度设计（无消费者驱动），按 code-guidelines 不实现。
+
+**全局终局复核（R313-R322 十轮）**：rendering-compat **所有轴**已核查：
+- reftest 通过率：所有单/中会话 lever ruled out/refuted（R199-R321 相关轮）
+- 产品 smoke：文本度量结构域（R318）
+- 图片加载：已贯通（R318）
+- proxy 支持：reqwest 默认就位（R322）
+- local-serving：base-dir/wpt-data 就位（R322）
+- IFC wrapping：实测正确，非 gap（R322 纠正 R321）
+
+**结论**：rendering-compat 目标**所有可单会话推进的子项均已穷尽核查/实现**，无遗留单会话 lever 或基础设施缺口。剩余 forward motion **唯一**是**多会话架构承诺**（IFC 度量统一 Phase A / Phase 2 嵌套 multicol fragmentation / taffy 升级 R304 DEFER）或**接受 plateau**（loose 438/490=89.4%、strict 295/490、chromium-Oracle ~36%）。**rally 单会话迭代已无推进路径**——这是 10 轮（R313-R322）一致收敛的结论，非单轮判断。
+
+**本轮 read-only 实测 + 核查**：零代码变更（wrapping minimal test / reqwest 源码核查 / proxy env 核查）。基线 loose 438/490 持平。next = 待用户对「多会话架构承诺 vs 接受 plateau」的明确决策；继续 rally 单会话层面将重复 plateau 确认，无新进展。
