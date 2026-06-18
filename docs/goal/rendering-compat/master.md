@@ -4,9 +4,9 @@
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
-**基线（R323 复验，零漂移）**：
+**基线（R323 复验；strict post-R326 再复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)）**：
 - self-source loose **438/490 (89.4%)** @ 默认 1%/5% 容差
-- self-source strict **295/490 (60.4%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
+- self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 真一致率 **~35.6%**（self-source 含 48.6% 假通过，DC-14 anti-false-pass）
 - 产品 smoke：welcome 17.06% / wintertc ~13.6% / morning-work fullpage 48.65%（全文本度量结构性，非图片/CSS 缺口——图片加载 R318 已端到端贯通）
 
@@ -21,12 +21,14 @@
 
 **核心结论**：rendering-compat 的**所有单会话 / 中会话 forward-motion 杠杆均已 ruled out 或 refuted**——这是 R313–R323（≥10 轮）一致收敛的结论，非单轮判断。rally 单会话迭代已无法提升真实通过率。
 
-**基线（R323 复验，零漂移）**：
+**基线（R323 复验；strict post-R326 再复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)）**：
 
 - self-source loose：**438/490 (89.4%)** @ 默认 1%/5% 容差
-- self-source strict：**295/490 (60.4%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
+- self-source strict：**295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 真一致率：**~35.6%**（169/475；self-source 含 48.6% 假通过，DC-14 anti-false-pass）
 - 产品 smoke：welcome 17.06% / wintertc 13.70% / morning-work 28.72%（全文本度量结构性，非图片/CSS 缺口——图片加载 R318 已端到端贯通）
+
+> **post-R326 strict 再复验（2026-06-19 doc-maintenance read-only，test-guard 包裹 `ZERO_REFTEST_STRICT=1 ... reftest-upstream`）**：strict 仍 **295/490 (60.2%) / 195 fail**（zero drift vs R323）——确认 plateau 在 DC-14 诚实指标上成立：R324（position:fixed）/R325（img aspect）/R326（sticky）三处 DC-11 correctness 修复**均未**把任一 strict-fail 翻成 strict-pass（loose 亦经三 commit 各自复验 438/490 零回归）。详见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)。**顺带纠正**：旧文「295/490 (60.4%)」百分比过时（60.4% 为 R308 前 296/490 值；R308 font-size% 修复使 strict 296→295 后未同步百分比，295/490=60.2%）。
 
 **已穷尽 / 证伪的杠杆（勿再以单会话重试）**：
 
@@ -50,7 +52,7 @@
 1. **Phase A IFC 三路径统一** — paint 不重跑 IFC，直接渲染 layout 存储的行盒（R205/R207 viable slice 已证 font-051 可行；broad 应用需多轮 narrow 精修 + 守 multicol-fill-auto 反向依赖墙）。设计文档 [`phase-a-IFC-unification-design.md`](./phase-a-IFC-unification-design.md)。
 2. **Phase 2 嵌套 multicol fragmentation** — layout 侧 column-aware IFC + 嵌套列碎片化（R131/R201；R319 证纯 inline 迁移零增益，真实价值在嵌套 / 混合内容）。设计文档 [`multicol-fragmentation-design.md`](./multicol-fragmentation-design.md)、[`column-aware-IFC-spec.md`](./column-aware-IFC-spec.md)。
 3. **baseline-export 真修复** — taffy 0.8+ baseline_overrides（需先解 R304 升级冲突）或自建 inline-level-box baseline 合成；解 flexbox-baseline / multicol-baseline 聚类（~10+ 案）。
-4. **接受 plateau** — 当前 self-source 89.4% / strict 60.4% / Oracle ~36% 作为诚实基线。
+4. **接受 plateau** — 当前 self-source 89.4% / strict 60.2% / Oracle ~36% 作为诚实基线。
 
 **裁决**：需用户对「投入多会话架构承诺」vs「接受 plateau」决策。继续 rally 单会话迭代将重复 plateau 确认，无新进展。R314 已通过飞书通知用户此卡点。
 
@@ -68,7 +70,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成（管线层）⚠️ | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：13 种图元**管线**已建（48 单元测试 ✅），**但浏览器全量 GPU 路径 `render_full_scene_gpu` 实际消费以 DC-9 表为准**——transform=并行 agent WIP 接线、blend=CPU no-op stub+GPU 丢弃、5 color-matrix 滤镜（grayscale/invert/saturate/sepia/hue-rotate）GPU collect 丢弃、clip=no-op（engine 从不生成）；filter:opacity/brightness/contrast/blur 已落（f6fed44/fc86937/3a3530f）；浏览器消费：全部 13 种图元 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | ⏸ plateau（R323） | 基础设施 ✅；490 上游 reftest 已导入（9 目录）；self-source loose **438/490 (89.4%)** / strict **295/490 (60.4%)** / chromium-Oracle ~35.6%；R305–R323 全单会话杠杆穷尽，达标需多会话架构（见「综合裁决」） |
+| M10 — 上游 WPT 真实 Reftest 导入 | ⏸ plateau（R323） | 基础设施 ✅；490 上游 reftest 已导入（9 目录）；self-source loose **438/490 (89.4%)** / strict **295/490 (60.2%)** / chromium-Oracle ~35.6%；R305–R323 全单会话杠杆穷尽，达标需多会话架构（见「综合裁决」） |
 
 ## 当前状态概览
 
@@ -353,10 +355,10 @@
 
 > 早期上游 reftest 调查（R11–R20，2026-06-09/10，self-source 基线 74.7%）已归档至 [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
 
-**当前基线（R323 复验，零漂移）**：
+**当前基线（R323 复验；strict post-R326 再复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)）**：
 
 - self-source loose **438/490 (89.4%)** @ 默认 1%/5% 容差
-- self-source strict **295/490 (60.4%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
+- self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 真一致率 **~35.6%**（self-source 含 48.6% 假通过）
 
 完整 plateau 分析、已穷尽杠杆表、4 条多会话路径见顶部「综合裁决」节；逐目录 chromium-Oracle 污染分布见 `evidence/cross-validate-full-2026-06-18.txt`（flexbox 26% 污染最诚实，writing-modes 73% 最高）。达标需多会话架构，单会话杠杆已穷尽。
