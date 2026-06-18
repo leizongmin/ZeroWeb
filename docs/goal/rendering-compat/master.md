@@ -3598,3 +3598,24 @@ let font_size_px = match &style.font_size {
 **附发现（latent bug，0 reftest 覆盖，defer）**：`line-height: <percentage>` 在 computed.rs:195-206 未解析（Percentage 落 `_=>{}`），同 R308 font-size% 谱系。但 grep wpt-data **0 个 reftest 用 line-height %** → 零测试覆盖，按 code-guidelines「不实现需求之外的功能」defer（非当前目标驱动）。
 
 **本轮 read-only 实验**：env-gated 实验（engine.rs:989 IBBL_PREFER_COMPUTED）**已 100% 回退**（`git diff -- '*.rs'` 空）；rebuild + 复测 self 0.14% 不变。零代码变更，基线 loose 438/490 / strict 295/490 持平。next = baseline-export 真路径需触及 taffy inline-level-box 基线（深，结构性），或 pivot 到 multicol breaking wiring（R131）/ DC-9 blend_mode（独立特性）—— baseline-export 经 R310/R312/R313 三轮探针确认非单会话可解。
+
+### R314 — 综合 plateau 确认 + 全量基线复验 + latent line-height% defer（read-only 核查，基线 loose 438/490 / strict 295/490 持平；已飞书通知卡点）
+
+**承接**：R313 baseline-overrides lever 证伪后，本轮做「单会话 clean win 是否真枯竭」的最终核查 + 全量基线复验。
+
+**核查 1 — 全量 reftest 基线复验**：`make reftest`（test-guard 包裹）全量 490 → **438/490 (89.4%)**，与 R308 后基线一致，R309-R313 docs-only 提交**零漂移**（DC-7 卫生确认，代码状态 = R308 verified-green）。
+
+**核查 2 — multicol gate 放宽是否可重试**：text.rs:709-711 代码注释**明示**「明确高度 balance 容器涉及 column-breaking，简单均衡分配会回归→回退单块」。R157（净中性）+ R203（净负）+ 本注释三重确认：paint 侧 gate 放宽/协调**已知回归**，重试必重复失败。真修复 = layout 侧 column-aware IFC（R131，major multi-session 架构）。
+
+**核查 3 — DC-9 blend_mode 杠杆**：grep wpt-data **仅 3 文件**用 mix-blend-mode/isolation（R303「近零覆盖」确认）。实现 blend_mode（需 paint-isolation 架构，R278 defer）= **零 reftest 影响 + 高成本**，非 reftest 杠杆。
+
+**核查 4 — latent `line-height: <percentage>` bug（R313 附发现）defer 确认**：computed.rs:195-206 未解析 line-height Percentage（同 R308 font-size% 谱系）。grep **0 个 reftest + 0 个产品 fixture（apps/）** 用 line-height % → 零覆盖零消费者，按 code-guidelines「不实现需求之外的功能」**defer**（与 R308 不同——R308 有 anonymous-inline-inherit 驱动，line-height% 无）。
+
+**综合裁决（R305-R313 九轮收敛）**：
+- **三条 clean-win 搜索策略全穷尽**：near-pass 聚类（R307，26 案全结构性/字体噪声）、POLLUTED 逐项（R309，唯一 win=R308 font-size%）、fresh chromium-Oracle cross-validate（R311，4 新候选全 ruled out）。
+- **四条结构轨均证非单会话可解**：Phase A IFC 统一（墙②③，R125/R198/R205/R206/R209/R213 六轮死锁 + R306 几何基线证伪）、multicol column-aware IFC（R131，paint 侧 R157/R203 + 本轮注释三重证回归，layout 侧 major 架构）、baseline-export（R310 multicol=None / R312 inline-flex=错值 / R313 baseline_overrides=无效，三轮探针）、DC-9 blend_mode（0 覆盖）。
+- **单会话 clean win 真枯竭**——剩余 forward motion 需**多会话架构承诺**一条轨。
+
+**飞书通知**：已按 run-rules 以应用机器人身份向本人发送卡点告知（message_id om_x100b6c7...），说明 plateau 现状 + loose 438/strict 295/chr~36% + 建议多会话攻坚或接受现状。通知仅为告知，不阻塞后续。
+
+**本轮 read-only 核查**：零代码变更。基线 loose 438/490 / strict 295/490 / chromium-Oracle ~48.2% 污染持平。next = 待用户对多会话结构攻坚的决策；若继续 rally，最高杠杆轨 = multicol layout 侧 column-aware IFC（R131，17+ 失败聚类），但需 multi-session spec-rfc + 实施承诺，非单会话。
