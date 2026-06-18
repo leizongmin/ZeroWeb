@@ -597,10 +597,31 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
         return;
     };
 
-    let left = (image.rect.left() * scale).floor().max(0.0) as u32;
-    let top = (image.rect.top() * scale).floor().max(0.0) as u32;
-    let right = (image.rect.right() * scale).ceil().min(fb.width as f32) as u32;
-    let bottom = (image.rect.bottom() * scale).ceil().min(fb.height as f32) as u32;
+    // source 映射基 = **完整 image.rect**（保持原始分辨率，不因裁剪缩放）。
+    // crop 语义（R294）：clip 窗口只收窄绘制区域，source 仍按完整 rect 映射。
+    let rect_left = image.rect.left() * scale;
+    let rect_top = image.rect.top() * scale;
+    let rect_w = (image.rect.right() - image.rect.left()) * scale;
+    let rect_h = (image.rect.bottom() - image.rect.top()) * scale;
+    if rect_w <= 0.0 || rect_h <= 0.0 {
+        return;
+    }
+
+    // 实际绘制区域 = rect ∩ clip（None 时 = rect），再裁到 framebuffer 边界
+    let mut draw_left = rect_left;
+    let mut draw_top = rect_top;
+    let mut draw_right = rect_left + rect_w;
+    let mut draw_bottom = rect_top + rect_h;
+    if let Some(clip) = &image.clip {
+        draw_left = draw_left.max(clip.left() * scale);
+        draw_top = draw_top.max(clip.top() * scale);
+        draw_right = draw_right.min(clip.right() * scale);
+        draw_bottom = draw_bottom.min(clip.bottom() * scale);
+    }
+    let left = draw_left.floor().max(0.0) as u32;
+    let top = draw_top.floor().max(0.0) as u32;
+    let right = draw_right.ceil().min(fb.width as f32) as u32;
+    let bottom = draw_bottom.ceil().min(fb.height as f32) as u32;
 
     if left >= right || top >= bottom {
         return;
@@ -629,21 +650,18 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
         return;
     }
 
-    let dst_w = right - left;
-    let dst_h = bottom - top;
-
-    // 双线性插值缩放采样
+    // 双线性插值缩放采样：source 映射到完整 rect，仅绘制 [left,right)×[top,bottom)
     let src_w_f = data.width as f32;
     let src_h_f = data.height as f32;
-    for y in 0..dst_h {
-        // 映射到源图像坐标（中心对齐）
-        let src_y = (y as f32 + 0.5) / dst_h as f32 * src_h_f - 0.5;
+    for py in top..bottom {
+        // 映射到源图像坐标（中心对齐，相对完整 rect）
+        let src_y = ((py as f32 + 0.5 - rect_top) / rect_h) * src_h_f - 0.5;
         let src_y0 = src_y.floor().max(0.0) as u32;
         let src_y1 = (src_y0 + 1).min(data.height - 1);
         let fy = src_y - src_y0 as f32;
 
-        for x in 0..dst_w {
-            let src_x = (x as f32 + 0.5) / dst_w as f32 * src_w_f - 0.5;
+        for px in left..right {
+            let src_x = ((px as f32 + 0.5 - rect_left) / rect_w) * src_w_f - 0.5;
             let src_x0 = src_x.floor().max(0.0) as u32;
             let src_x1 = (src_x0 + 1).min(data.width - 1);
             let fx = src_x - src_x0 as f32;
@@ -664,18 +682,15 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
             let src_b = (b00 as f32 * w00 + b10 as f32 * w10 + b01 as f32 * w01 + b11 as f32 * w11 + 0.5) as u8;
             let src_a = (a00 as f32 * w00 + a10 as f32 * w10 + a01 as f32 * w01 + a11 as f32 * w11 + 0.5) as u8;
 
-            let dst_x = left + x;
-            let dst_y = top + y;
-
-            if dst_x >= fb.width || dst_y >= fb.height {
+            if px >= fb.width || py >= fb.height {
                 continue;
             }
 
             if src_a == 255 {
-                fb.set_pixel(dst_x, dst_y, [src_r, src_g, src_b, 255]);
+                fb.set_pixel(px, py, [src_r, src_g, src_b, 255]);
             } else if src_a > 0 {
                 let color = Color::rgba(src_r, src_g, src_b, src_a);
-                blend_pixel(fb, dst_x, dst_y, color, 255);
+                blend_pixel(fb, px, py, color, 255);
             }
         }
     }

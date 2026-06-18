@@ -460,21 +460,24 @@ pub fn clip_all_primitives_to_rect(primitives: &mut RenderPrimitives, from: &Pri
             r.size.height = bottom - top;
         }
     }
-    // 裁剪图片
+    // 裁剪图片：**crop 语义（非 rescale）**。
+    // 关键：保持 img.rect 不变（source 始终映射到完整 rect，保持原始分辨率），
+    // 仅把可见窗口 img.clip 收窄为「当前有效区域 ∩ clip_rect」。
+    // render_image 据此窗口裁剪绘制；旧实现 shrink rect 会导致 renderer 把整张
+    // source 重映射进缩小后的 rect（rescale），破坏 clip:rect / overflow:hidden
+    // 的「裁剪=遮罩」语义（clip-rect-vrl 三联根因，R294）。
     for img in primitives.images.iter_mut().skip(from.images) {
-        let r = &mut img.rect;
-        let left = r.left().max(clip_rect.left());
-        let top = r.top().max(clip_rect.top());
-        let right = r.right().min(clip_rect.right());
-        let bottom = r.bottom().min(clip_rect.bottom());
+        let rect = img.rect;
+        let cur = img.clip.unwrap_or(rect);
+        let left = cur.left().max(clip_rect.left());
+        let top = cur.top().max(clip_rect.top());
+        let right = cur.right().min(clip_rect.right());
+        let bottom = cur.bottom().min(clip_rect.bottom());
         if right <= left || bottom <= top {
-            r.size.width = 0.0;
-            r.size.height = 0.0;
+            // 完全在裁剪区外：零尺寸 clip 窗口（render_image 见空交集跳过）
+            img.clip = Some(Rect::new(left, top, 0.0, 0.0));
         } else {
-            r.origin.x = left;
-            r.origin.y = top;
-            r.size.width = right - left;
-            r.size.height = bottom - top;
+            img.clip = Some(Rect::new(left, top, right - left, bottom - top));
         }
     }
     // 裁剪描边线段：线段两端都在裁剪区域外时标记为不可见

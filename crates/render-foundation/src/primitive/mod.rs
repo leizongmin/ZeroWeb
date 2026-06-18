@@ -197,10 +197,16 @@ pub struct ShadowPrimitive {
 /// 图片图元
 #[derive(Debug, Clone)]
 pub struct ImagePrimitive {
-    /// 图片绘制区域
+    /// 图片绘制区域（原始、未裁剪；source 始终映射到整个 rect）
     pub rect: Rect,
     /// 图片缓存键
     pub image_key: ImageKey,
+    /// 可选裁剪窗口（CSS clip:rect / overflow:hidden / clip-path inset）。
+    ///
+    /// 裁剪语义 = **裁剪（crop）非重缩放**：仅绘制 rect 与此窗口的交集区域，
+    /// 但 source 仍按完整 rect 映射（保持原始分辨率，不因裁剪而缩放）。
+    /// None = 无裁剪，绘制整个 rect。
+    pub clip: Option<Rect>,
 }
 
 /// Glyph 图元 — 单个字符的渲染指令

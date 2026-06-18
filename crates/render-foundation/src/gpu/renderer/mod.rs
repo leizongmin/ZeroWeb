@@ -1574,14 +1574,45 @@ impl GpuRenderer {
                 ],
             });
 
-            let r = &img.rect;
-            let l = r.left() * scale;
-            let t = r.top() * scale;
-            let right = r.right() * scale;
-            let b = r.bottom() * scale;
+            // crop 语义（R294）：source 始终映射到完整 img.rect（保持原始分辨率）。
+            // 绘制区域 = rect ∩ clip（None 时 = rect）；UV 取 clip 窗口在 rect 内的归一化
+            // 位置，使裁剪=遮罩而非缩放（clip:rect / overflow:hidden / clip-path inset）。
+            let r = img.rect;
+            let rect_l = r.left();
+            let rect_t = r.top();
+            let rect_w = (r.right() - r.left()).max(1e-6);
+            let rect_h = (r.bottom() - r.top()).max(1e-6);
+            let (l, t, right, b, u0, v0, u1, v1) = match &img.clip {
+                Some(clip) => {
+                    let cl = clip.left();
+                    let ct = clip.top();
+                    let cr = clip.right();
+                    let cb = clip.bottom();
+                    (
+                        cl * scale,
+                        ct * scale,
+                        cr * scale,
+                        cb * scale,
+                        ((cl - rect_l) / rect_w).clamp(0.0, 1.0),
+                        ((ct - rect_t) / rect_h).clamp(0.0, 1.0),
+                        ((cr - rect_l) / rect_w).clamp(0.0, 1.0),
+                        ((cb - rect_t) / rect_h).clamp(0.0, 1.0),
+                    )
+                }
+                None => (
+                    rect_l * scale,
+                    rect_t * scale,
+                    r.right() * scale,
+                    r.bottom() * scale,
+                    0.0,
+                    0.0,
+                    1.0,
+                    1.0,
+                ),
+            };
             let verts: Vec<f32> = vec![
-                l, t, 0.0, 0.0, 1.0, 1.0, 1.0, right, t, 1.0, 0.0, 1.0, 1.0, 1.0, l, b, 0.0, 1.0, 1.0, 1.0, 1.0, right,
-                t, 1.0, 0.0, 1.0, 1.0, 1.0, right, b, 1.0, 1.0, 1.0, 1.0, 1.0, l, b, 0.0, 1.0, 1.0, 1.0, 1.0,
+                l, t, u0, v0, 1.0, 1.0, 1.0, right, t, u1, v0, 1.0, 1.0, 1.0, l, b, u0, v1, 1.0, 1.0, 1.0, right, t,
+                u1, v0, 1.0, 1.0, 1.0, right, b, u1, v1, 1.0, 1.0, 1.0, l, b, u0, v1, 1.0, 1.0, 1.0,
             ];
             resources.push((bg, verts));
         }
