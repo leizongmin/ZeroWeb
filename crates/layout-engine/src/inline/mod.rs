@@ -1298,8 +1298,7 @@ impl InlineFormattingContext {
                                 height: 0.0,
                                 runs: Vec::new(),
                             };
-                            let (new_left, _) =
-                                self.effective_content_area(current_y, default_line_height);
+                            let (new_left, _) = self.effective_content_area(current_y, default_line_height);
                             current_x = new_left;
                             continue;
                         }

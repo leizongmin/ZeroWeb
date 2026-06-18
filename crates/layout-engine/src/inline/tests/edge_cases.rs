@@ -606,9 +606,21 @@ fn test_white_space_pre_newline_forces_break() {
         .iter()
         .map(|l| l.runs.iter().map(|r| r.text.clone()).collect::<String>())
         .collect();
-    assert!(texts[0].contains("line") && texts[0].contains("one"), "第 1 行 {:?}", texts[0]);
-    assert!(texts[1].contains("line") && texts[1].contains("two"), "第 2 行 {:?}", texts[1]);
-    assert!(texts[2].contains("line") && texts[2].contains("three"), "第 3 行 {:?}", texts[2]);
+    assert!(
+        texts[0].contains("line") && texts[0].contains("one"),
+        "第 1 行 {:?}",
+        texts[0]
+    );
+    assert!(
+        texts[1].contains("line") && texts[1].contains("two"),
+        "第 2 行 {:?}",
+        texts[1]
+    );
+    assert!(
+        texts[2].contains("line") && texts[2].contains("three"),
+        "第 3 行 {:?}",
+        texts[2]
+    );
 }
 
 /// pre（no_wrap + preserve）模式下 `\n` 同样应强制换行。

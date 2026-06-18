@@ -451,6 +451,76 @@ pub const FILL_FLOATS_PER_VERTEX: usize = 7;
 /// Uniform 缓冲区大小（16 字节 = 4 个 f32）
 pub const UNIFORM_SIZE: u64 = 16;
 
+/// Transform uniform 缓冲区大小（64 字节 = 16 个 f32，16 字节对齐）。
+///
+/// 布局（WGSL std140，与 `TRANSFORM_SHADER` 的 `TransformUniforms` 对齐）：
+/// screen(vec2) + origin(vec2) + inv_row0(vec4) + inv_row1(vec2) + rect_min(vec2) +
+/// rect_max(vec2) + pad(vec2) = 8+8+16+8+8+8+8 = 64。
+pub const TRANSFORM_UNIFORM_SIZE: u64 = 64;
+
+/// WGSL 着色器 — DC-9 filter/transform 区域后处理（逆变换重采样）。
+///
+/// 与 CPU `apply_transform_post` 对齐：对 rect 内每个目标像素，用**预计算逆矩阵**把目标
+/// 位置映射回源位置，采样源纹理；逆映射落在 rect 外的位置输出白色（匹配 CPU 的 clear-to-white）。
+/// 逆矩阵在 CPU 侧计算后传入（避免 shader 内做 det/除法）。独立 WGSL 模块。
+pub const TRANSFORM_SHADER: &str = r#"
+struct TransformUniforms {
+    screen: vec2f,
+    origin: vec2f,
+    inv_row0: vec4f,
+    inv_row1: vec2f,
+    rect_min: vec2f,
+    rect_max: vec2f,
+    _pad: vec2f,
+};
+
+@group(0) @binding(0) var<uniform> u: TransformUniforms;
+@group(1) @binding(0) var src_texture: texture_2d<f32>;
+@group(1) @binding(1) var src_sampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+};
+
+@vertex
+fn vs_fullscreen(
+    @builtin(vertex_index) vertex_index: u32,
+) -> VertexOutput {
+    var pos = array<vec2f, 3>(
+        vec2f(-1.0, -1.0),
+        vec2f(3.0, -1.0),
+        vec2f(-1.0, 3.0),
+    );
+    var uv = array<vec2f, 3>(
+        vec2f(0.0, 1.0),
+        vec2f(2.0, 1.0),
+        vec2f(0.0, -1.0),
+    );
+    var out: VertexOutput;
+    out.position = vec4f(pos[vertex_index], 0.0, 1.0);
+    out.uv = uv[vertex_index];
+    return out;
+}
+
+@fragment
+fn fs_transform(in: VertexOutput) -> @location(0) vec4f {
+    // 目标像素坐标（uv * screen）
+    let dst_px = vec2f(in.uv.x * u.screen.x, in.uv.y * u.screen.y);
+    let rel = dst_px - u.origin;
+    // 逆变换：src = inv_row0(a,b,c,d) ⊗ rel + inv_row1(tx,ty) + origin
+    let src_x = u.inv_row0.x * rel.x + u.inv_row0.z * rel.y + u.inv_row1.x + u.origin.x;
+    let src_y = u.inv_row0.y * rel.x + u.inv_row0.w * rel.y + u.inv_row1.y + u.origin.y;
+    // textureSample 必须在 uniform control flow 中调用，故无条件采样后用 select
+    //（匹配 CPU apply_transform_post：逆映射落在 rect 内取源像素，否则 clear-to-white）。
+    let src_uv = vec2f(src_x / u.screen.x, src_y / u.screen.y);
+    let sampled = textureSample(src_texture, src_sampler, src_uv);
+    let inside = src_x >= u.rect_min.x && src_x < u.rect_max.x
+                 && src_y >= u.rect_min.y && src_y < u.rect_max.y;
+    return select(vec4f(1.0, 1.0, 1.0, 1.0), sampled, inside);
+}
+"#;
+
 /// RoundedRect 顶点步幅（字节）— 15 个 float
 pub const ROUNDED_RECT_VERTEX_STRIDE: u64 = 60;
 
@@ -858,6 +928,85 @@ pub fn create_color_filter_pipeline(
         fragment: Some(wgpu::FragmentState {
             module: &shader_module,
             entry_point: Some("fs_color_filter"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent::REPLACE,
+                    alpha: wgpu::BlendComponent::REPLACE,
+                }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview: None,
+        cache: None,
+    })
+}
+
+/// 创建 transform uniform 绑定组布局（group 0，64 字节 uniform，DC-9 transform）。
+pub fn create_transform_uniform_bgl(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Transform Uniform BGL"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: Some(NonZeroU64::new(TRANSFORM_UNIFORM_SIZE).unwrap()),
+            },
+            count: None,
+        }],
+    })
+}
+
+/// 创建 transform 后处理管线（DC-9）。
+///
+/// group 0 = transform uniform（TRANSFORM_UNIFORM_SIZE=64，预计算逆矩阵+origin+rect 边界），
+/// group 1 = 源纹理+采样器（`create_texture_bind_group_layout`）。entry_point = `fs_transform`，
+/// 逆变换重采样，区域由 pass scissor 限定。
+pub fn create_transform_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    transform_uniform_bgl: &wgpu::BindGroupLayout,
+    src_bgl: &wgpu::BindGroupLayout,
+) -> wgpu::RenderPipeline {
+    let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Transform Shader"),
+        source: wgpu::ShaderSource::Wgsl(TRANSFORM_SHADER.into()),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Transform Pipeline Layout"),
+        bind_group_layouts: &[transform_uniform_bgl, src_bgl],
+        push_constant_ranges: &[],
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Transform Pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader_module,
+            entry_point: Some("vs_fullscreen"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader_module,
+            entry_point: Some("fs_transform"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format,
