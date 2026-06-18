@@ -3619,3 +3619,43 @@ let font_size_px = match &style.font_size {
 **飞书通知**：已按 run-rules 以应用机器人身份向本人发送卡点告知（message_id om_x100b6c7...），说明 plateau 现状 + loose 438/strict 295/chr~36% + 建议多会话攻坚或接受现状。通知仅为告知，不阻塞后续。
 
 **本轮 read-only 核查**：零代码变更。基线 loose 438/490 / strict 295/490 / chromium-Oracle ~48.2% 污染持平。next = 待用户对多会话结构攻坚的决策；若继续 rally，最高杠杆轨 = multicol layout 侧 column-aware IFC（R131，17+ 失败聚类），但需 multi-session spec-rfc + 实施承诺，非单会话。
+
+### R315 — self-fail 集第 4 条搜索路径：plateau 再确认（read-only 实证，基线 loose 438/490 / strict 295/490 持平）
+
+**承接**：R314 综合 plateau 确认后，本轮取**全新角度**——52 个 SELF-FAIL 用例（loose 失败、真实 +1 reftest 计数目标，区别于此前 strict near-pass 与 POLLUTED 候选）。逐个 probe 5 个非已知聚类候选，全部确认为结构性/特性缺口：
+- `child-border-box-and-max-content-002`（1.22%）= taffy grid intrinsic-sizing（fit-content 轨道 + box-sizing:border-box，R304 DEFER taffy 升级）。
+- `border-padding-bleed-001`（2.40%）= inline line-box 绘制顺序（结构性）。
+- `border-bottom-width-006`（2.86%）= height:0+border 的 inline-block 基线（R180/R266 结构域）。
+- `multicol-clip-001`（0.56%）= multicol 溢出裁剪 + Ahem（结构性聚类）。
+- `float-nowrap-hyphen-rewind-1`（2.92%）= `hyphens:auto` 特性缺口（需语言级连字算法）。
+
+**裁决**：self-fail 集成为第 4 条 clean-win 搜索路径（near-pass R307 / POLLUTED R309 / fresh-xval R311 / self-fail R315）穷尽确认枯竭。零代码变更，基线持平。
+
+### R316 — baseline-export flex-baseline 后处理：实现 + 实验证伪（code attempt + revert，基线 loose 438/490 持平）
+
+**承接**：R310/R312/R313 探针把 baseline-export（baseline-000~008 + flexbox-baseline 聚类）根因定位为「flex 项缺 first baseline」，但仅测了 inline-flex（R313 证 baseline_overrides 无效）与 field-fill（R266 证净 0）。**block-flex + multicol 项的后处理路径此前未实测**——本轮实现并实验裁决。
+
+**前置核查（证 R304 DEFER 正确 + line-height% defer 正确）**：
+- taffy 0.7.7 vendored `Style` 结构**无 `baseline_overrides` 字段**（0.8+ 才有）→ 「设 baseline_override + 重 layout」两趟路径不可用，ZeroWeb 后处理是唯一路径。
+- `line-height: <percentage>` 在 computed.rs 未解析（同 R308 font-size% 谱系）；grep 实测 **0 reftest + 0 产品 fixture** 用 line-height% → 零覆盖零消费者，R314 defer 正确。
+
+**实现（engine.rs，已 100% 回退）**：新增三函数 + compute() step 10.7 调用——
+- `resolve_font_size_px`：ComputedStyle.font_size→px（em/rem 按 16px root）。
+- `synthesize_first_baseline(box, styles)`：递归合成盒 first baseline（相对自身 border-box 顶）：优先 taffy 缓存基线；否则递归首个 in-flow 子元素（child.y 已是该盒 border-box 相对，累加）；基情形叶盒用 font-size 近似 ascent（content 顶部 + font-size）。坐标系与 painter 累积（`offset_y + box.y`）一致。
+- `adjust_flex_baseline_alignment`：对 `display:flex|inline-flex` + `align-items:baseline` 容器，对 `taffy_baseline=None` 的流内项，按 `desired_y = target - local_b` 重定位（**只改 item.y，子树经 painter 累积自动跟随**）。
+
+**FLEXBL_PROBE 实测 baseline-003（flex > "PA" 文本 + columns:3 multicol > "SS"）**：
+- 容器 node 17v1 taffy_baseline=**Some(19.2)**；item[0] "PA"(18v1) 与 item[1] multicol(19v1) **均 y=0 h=19 taffy_baseline=None**；multicol synth=Some(16.0)，"PA" synth=None（匿名文本项无 style/无 LayoutBox 子）。
+- 关键：**两 item 已被 taffy 基线对齐**（同 y=0/h=19，内容同字号）。1.1% chromium diff 不在基线对齐，在别处（multicol 列结构/font）。
+
+**两种 target 源均失败（决定性证伪）**：
+| target 源 | 结果 |
+|-----------|------|
+| 兄弟项派生（`max(sibling.y+sibling.taffy_baseline)`） | baseline-003 两 item 均 None→target=None→**no-op**（z_vs_chr 1.118% 不变，证 R310 的 1.058% 即未修状态） |
+| 容器 taffy_baseline（19.2） | 触发但**回归**：multicol 子集 40/57→**38/57**（baseline-001 0.52→3.15%、baseline-002 0.00→3.50% 翻 FAIL），因把已对齐项错误下移 3.2px |
+
+**裁决：baseline-export 经 flex-baseline 后处理不可解**——block-flex 项已被 taffy 正确对齐（fallback 对 baseline-001/002 足够），强行重定位破坏已绿用例。这是 baseline-export 杠杆的**第 3 种独立机制证伪**（R266 field-fill 净 0 / R313 baseline_overrides 对 inline-flex 无效 / **R316 flex 后处理对 block-flex 回归**）。三种机制覆盖 field-fill、inline-flex 后处理、block-flex 后处理全谱，baseline-export 从 ZeroWeb 后处理侧穷尽。
+
+**代码状态**：env-gated 探针 + 实现代码**已 100% 回退**（`git checkout engine.rs`，`git diff --stat` 空）；`cargo check -p zero-layout-engine` 干净；`make reftest` 内置 686/686 全绿（DC-7 卫生确认，回退 byte-identical HEAD）。零代码变更落地，基线 loose 438/490 持平。
+
+**对优先级队列影响**：baseline-export（baseline-000~008 + flexbox-baseline）经三轮探针 + 本轮实现共四轮，**从 ZeroWeb 后处理侧彻底 ruled out**——真修复须 taffy inline-level-box 基线合成或升级 taffy（0.8+ baseline_overrides，R304 DEFER prohibitive）。剩余 forward motion 确认为：① multicol layout 侧 column-aware IFC（R131，major 架构）；② Phase A IFC 统一（墙②③）；③ DC-9 blend_mode backdrop（0 reftest 覆盖）；④ DC-13 残余。均非单会话 clean win。本轮价值 = 以真实实现（非推断）排除 flex 后处理这条未测路径，防止后续轮重试。

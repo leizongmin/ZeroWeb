@@ -144,7 +144,9 @@ IFC 输出 `Vec<ColumnContent>`，每列含其行盒 + 行盒在列内的 y。pa
 
 > **⚠️ v0.4 修订（R310）**：原 Round 1-2（balance 测量工具 + shortest-column 接线）经 **R200 证伪**——multicol 列分配（顺序填充 + 平衡高度 `total/col_count`）**本就正确**，类 A 低 diff 用例（columns-001/fill-000/count-computed-003/004）的 diff 不是列分配问题，是列宽精度 / glyph x 位置 / 平衡高度精确值。**Round 1-2 已废弃，勿再建 balance 工具**（R199 建过 `multicol_fragment.rs`，R200 移除）。R201 进一步证实碎片化算法（`assign_children_to_columns_sequential`/`_with_breaking`）**已存在**，缺口是接线。下述计划据 R200/R201/R307/R309 重定向。
 
-### Round 1'：baseline-export pre-pass（类 D 子集，最大 near-pass 聚类）
+### Round 1'：baseline-export pre-pass（类 D 子集，最大 near-pass 聚类）— ⚠️ R316 证伪（ZeroWeb 后处理侧穷尽）
+
+> **R316 更新（2026-06-19）**：baseline-export 经 **4 轮**（R310 探针 / R312 双侧探针 / R313 baseline_overrides 证伪 / **R316 flex 后处理实现+证伪**）从 **ZeroWeb 后处理侧彻底 ruled out**。R316 实测 baseline-003：两 flex 项（"PA" 文本 + multicol）**均已被 taffy 基线对齐**（同 y=0/h=19）；flex-baseline 后处理（`adjust_flex_baseline_alignment`）用兄弟项派生 target→no-op（两 item 均 taffy_baseline=None），用容器 taffy_baseline(19.2) 作 target→**回归 baseline-001/002**（把已对齐项错误下移）。三种机制覆盖 field-fill（R266 净 0）/ inline-flex 后处理（R313 无效）/ block-flex 后处理（R316 回归）全谱。**真修复须 taffy inline-level-box 基线合成或升级 taffy（0.8+ baseline_overrides，R304 DEFER prohibitive）**。下方原始 Round 1' 计划保留作历史，但**勿再以 ZeroWeb 后处理方式重试**。
 
 - **目标用例**：baseline-000/003/004/005/006（self 0.12-0.14%，5 案）+ baseline-001/007/008。结构 = `display:flex; align-items:baseline` 含 multicol flex 项（如 baseline-003 = flex > "PA" 文本 + `columns:3` multicol > `column-span:all` "SS"）。
 - **根因（区别于 R266）**：R266 查 `LayoutBox.taffy_baseline` field-fill 净 0（消费 guard 仅 InlineFlex|InlineGrid）；但 baseline-003 是 **flex 项（multicol）的 first baseline 须传给 taffy 供 `align-items:baseline`**——taffy 内部对 multicol block 项无正确 first baseline（multicol 内首列首行 baseline 未在 layout 侧计算/暴露），故 flex 基线对齐用错值。
