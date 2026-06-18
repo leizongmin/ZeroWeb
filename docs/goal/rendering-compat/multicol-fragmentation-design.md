@@ -1,8 +1,8 @@
 # 设计草图：multicol 列感知 IFC 碎片化（column-aware fragmentation）
 
-**版本**：v0.3（**R201 dump 实测纠正**：multicol-breaking 真实阻塞点是「inline 内容碎片化 wiring 缺失」非「两趟循环依赖」，列分配/balance/碎片化算法均已存在）
-**日期**：2026-06-17
-**状态**：分析完成；**列分配（balance）方向已证伪关闭**（R200）；**multicol-breaking 真实机制 dump 实测定性**（R201，本节）
+**版本**：v0.4（**R310 §3/§5 重定向**：Round 1-2 balance 工具方向废弃——R200 证列分配本就正确；最大 near-pass 聚类改为 Round 1' baseline-export probe，根因疑为 flex×multicol first-baseline wiring；Round 2' = breaking wiring[R201]）
+**日期**：2026-06-19
+**状态**：分析完成；**列分配（balance）方向已证伪关闭**（R200）；**multicol-breaking 真实机制 dump 实测定性**（R201）；**near-pass 聚类重定向 baseline-export**（R307/R310）
 **关联**：rendering-compat master.md R113/R122/R128/R131/R157/R199/R200/R201；css-multicol 17/57 失败
 
 ---
@@ -142,52 +142,42 @@ IFC 输出 `Vec<ColumnContent>`，每列含其行盒 + 行盒在列内的 y。pa
 
 ## 3. 分轮实施计划（渐进，每轮零回归门禁）
 
-### Round 1：列高测量工具（不接线，零风险）
+> **⚠️ v0.4 修订（R310）**：原 Round 1-2（balance 测量工具 + shortest-column 接线）经 **R200 证伪**——multicol 列分配（顺序填充 + 平衡高度 `total/col_count`）**本就正确**，类 A 低 diff 用例（columns-001/fill-000/count-computed-003/004）的 diff 不是列分配问题，是列宽精度 / glyph x 位置 / 平衡高度精确值。**Round 1-2 已废弃，勿再建 balance 工具**（R199 建过 `multicol_fragment.rs`，R200 移除）。R201 进一步证实碎片化算法（`assign_children_to_columns_sequential`/`_with_breaking`）**已存在**，缺口是接线。下述计划据 R200/R201/R307/R309 重定向。
 
-- 新增 `crates/layout-engine/src/multicol_fragment.rs`（同 `intrinsic_sizing.rs` 模式）：
-  - `compute_column_heights(container, col_count, block_filled) -> Vec<f32>`：纯计算每列可用高度。
-  - `balance_lines_to_columns(lines, col_count, col_filled) -> Vec<Vec<line_idx>>`：shortest-column 分配。
-- 单元测试：4 行/2 列均匀、11 行/6 列（2,2,2,2,2,1）、含 block 已占（col1 已占 30px）。
-- **门禁**：不接入 compute/paint，上游 reftest 438/490 持平。
+### Round 1'：baseline-export pre-pass（类 D 子集，最大 near-pass 聚类）
 
-### Round 2：纯行内 balance 精确化（类 A 用例，接线 paint）
+- **目标用例**：baseline-000/003/004/005/006（self 0.12-0.14%，5 案）+ baseline-001/007/008。结构 = `display:flex; align-items:baseline` 含 multicol flex 项（如 baseline-003 = flex > "PA" 文本 + `columns:3` multicol > `column-span:all` "SS"）。
+- **根因（区别于 R266）**：R266 查 `LayoutBox.taffy_baseline` field-fill 净 0（消费 guard 仅 InlineFlex|InlineGrid）；但 baseline-003 是 **flex 项（multicol）的 first baseline 须传给 taffy 供 `align-items:baseline`**——taffy 内部对 multicol block 项无正确 first baseline（multicol 内首列首行 baseline 未在 layout 侧计算/暴露），故 flex 基线对齐用错值。
+- **修复方向**：在 multicol layout（`multicol.rs`）计算首列首行 baseline，写入 `LayoutBox`（新字段或复用 `taffy_baseline`），converter/extract 把它作为该 block 项的 first baseline 喂给 taffy 的 baseline 合成。
+- **门禁**：baseline-003/004/005/006 改善且全量 loose 438/490 / strict 不退；chromium-Oracle z_vs_chr 下降。**前置实证**：先 probe 确认 multicol 项当前传给 taffy 的 first baseline 值（疑为 0 或 box bottom）。
 
-- `painter/text.rs:948` 的均高分配改为调 `balance_lines_to_columns`（shortest-column）。
-- 移除 `col_first_y` fractional rebase（balance 算法天然每列首行 y=0）。
-- **门禁**：multicol-columns-001/fill-000/count-computed-003/004 改善且全量零回归（paint-only 改动，layout 不动）。
+### Round 2'：breaking wiring（类 C，R201 Round 4' 重定向）
 
-### Round 3：混合内容门控放宽 + 协调（类 B 用例）
+- **目标用例**：multicol-breaking-004/005/006/nobackground-000/001/003/004（self 0.17-1.21%）。
+- **根因（R201）**：碎片化算法已存在，缺口 = ① paint 门控 `height_auto`（text.rs:711）挡住有明确高度 inner 的子列布局；② `column_span_offsets` paint 路径不重绘碎片化 IFC 内容到非主位置列。
+- **风险**：R198/R209 证 multicol-fill-auto-001 经 font_size 存储/列分配耦合易回归（0.63→9.15）；放宽门控须守此用例。R203 证 paint 侧简单协调全 net-negative，须 layout 侧 column-aware IFC（R131）。
+- **门禁**：逐用例 set-diff，multicol-fill-auto-001 不回归。
 
-- 放宽 text.rs:711 门控：`!has_in_flow_children` → 允许有 block 子元素，但用 `col_filled_height`（block 已占）初始化 balance。
-- `col_filled_height` 从 layout 提取：multicol 容器内每列的 block 子元素累积高度。
-- **门禁**：multicol-containing-002/block-no-clip-002 改善；逐用例 set-diff 确认协调正确（R157 标记的「target_h 未扣 col1 block」）。
+### Round 3'：column-rule + 精度收尾（类 A 残余 + C 子项）
 
-### Round 4：column breaking（类 C，结构性里程碑）
-
-- 明确高度 + column-fill:auto 的碎片化（§6）：内容按列高断行到下一列，含 column-span:all 中断。
-- 嵌套 multicol 两趟（R113）：内层 balance 高度依赖外层列宽——首趟用外层列宽测内层高度，二趟分配。
-- **门禁**：multicol-breaking-004/005/006/nobackground-004；column-balancing-paged。此轮最重，可能需多子轮。
-
-### Round 5：baseline + column-span（类 D，多子系统）
-
-- multicol baseline 导出（§css-align baseline-export）、column-span:all 作为 spanner、abspos CB。
-- 依赖 Round 3-4 的列结构。
-- **门禁**：baseline-007/008/abspos-containing-block-outside-spanner/column-height-009。
+- column-rule §5.2 内容检测（R201 标 C，但 column-rule-002 回归须区分 column_span_offsets 来源）。
+- 类 A 残余（列宽精度 / glyph x）属 advance-width 谱系（R225 证伪独立死路），非 multicol 专属。
 
 ---
 
 ## 4. 关键约束与风险
 
-1. **paint-only Round 1-2 安全**：改 paint 列分配不动 layout 几何，同源 reftest 自源中性风险低（multicol 用例 test/ref 同分配逻辑）。
-2. **Round 3 协调是核心难点**：`col_filled_height` 需从 layout 的 block 子元素几何提取，跨 layout→paint 边界传递（类似 R109 fragment 注册表）。
-3. **Round 4 breaking 是结构里程碑**：column breaking 涉及行盒跨列断裂（一行可能 split 到两列），需 IFC 支持 fragment-aware line breaking（非整行分配）。R113 的嵌套循环依赖是已知硬点。
-4. **font_size Phase A 交互**：multicol 容器被 Phase A font_size 死锁反向依赖（R158 multicol-fill-auto 仅因 16px bug 通过）。Round 2-3 改 multicol 列分配时须验证 multicol-fill-auto 不回归（其 0.63% 余量小）。
+1. **R200 纠正**：列分配（balance）方向**已关闭**——旧 `total/col_count` 顺序填充正确，类 A 残余是精度非算法。
+2. **R201 纠正**：碎片化算法**已存在**，缺口是 wiring（paint 门控 + column_span_offsets 重绘），非新建 measure-first 工具。
+3. **Round 1' baseline 是 flex×multicol 跨子系统**：须厘清 taffy 如何消费 block 项 first baseline（cached_baselines 补丁路径，engine.rs:482），可能需 converter 侧改动。
+4. **Round 2' breaking 是结构里程碑**：column breaking 涉及行盒跨列断裂，须 layout 侧 column-aware IFC（R131）；R203 证 paint 侧不可解。
+5. **font_size Phase A 交互**：multicol 容器被 Phase A font_size 死锁反向依赖（R158/R198/R209）。任何改 multicol 列分配/存储的轮次须验证 multicol-fill-auto-001 不回归（余量 0.63% 小）。
 
-## 5. 预期收益
+## 5. 预期收益（v0.4 修订）
 
-- Round 1-2（纯行内 balance）：预计解锁 multicol-columns-001/fill-000/count-computed-003/004（~4 用例），438→~442。
-- Round 3（混合内容）：~2 用例。
-- Round 4-5（breaking/baseline）：~8 用例（结构性，多轮）。
-- 全部完成：css-multicol 40/57 → ~55/57（≥95%），438→~453/490（92%）。
+- **Round 1' baseline-export**：baseline-000/003/004/005/006 + 001/007/008（~8 用例），strict +5~8，最大 near-pass 聚类。**前置 probe 验证假设**（multicol 项 first baseline 是否传错）。
+- **Round 2' breaking wiring**：multicol-breaking-004/005/006/nobackground-*（~6 用例），结构性多轮。
+- **Round 3' column-rule + 精度**：零散，低收益。
+- 全部完成：css-multicol 当前 strict 失败 ~20 → ~5（≥95%），但 Round 2' 是硬里程碑。
 
-**首步（下轮）= Round 1 测量工具**：纯计算 + 单测，零风险不接线，证明 balance 算法正确。
+**首步（下轮）= Round 1' baseline-export probe**：先 read-only probe 确认 multicol flex 项传给 taffy 的 first baseline 值（baseline-003），验证「multicol first baseline 未正确导出」假设，再决定修复路径（layout 侧计算首列首行 baseline 喂 taffy）。这是当前最大 near-pass 聚类且根因疑为 flex×multicol 跨子系统 wiring（区别于 R266 的 field-fill 净 0 结论），值得先 probe。
