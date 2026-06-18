@@ -142,16 +142,17 @@ fn test_adjust_fixed_negative_parent_offset() {
     };
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
 
-    // fixed child: x = 10 + (-100) = -90, y = 10 + (-200) = -190
+    // R324：fixed child 扣除负父级偏移（视口相对）：x = 10 - (-100) = 110, y = 10 - (-200) = 210
+    // （painter 累积后绝对 = -100+110=10 / -200+210=10 = CSS left/top 视口相对）
     let child = &root.children[0];
     assert!(
-        (child.x - (-90.0)).abs() < 0.001,
-        "fixed child x 应为 -90，实际 {}",
+        (child.x - 110.0).abs() < 0.001,
+        "fixed child x 应为 110，实际 {}",
         child.x
     );
     assert!(
-        (child.y - (-190.0)).abs() < 0.001,
-        "fixed child y 应为 -190，实际 {}",
+        (child.y - 210.0).abs() < 0.001,
+        "fixed child y 应为 210，实际 {}",
         child.y
     );
 }
@@ -260,15 +261,15 @@ fn test_adjust_fixed_sibling_fixed_elements() {
     };
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
 
-    // fixed1: x = 5 + 50 = 55, y = 5 + 50 = 55
+    // R324：fixed1 扣除父级偏移（视口相对）：x = 5 - 50 = -45, y = 5 - 50 = -45
     let c1 = &root.children[0];
-    assert!((c1.x - 55.0).abs() < 0.001, "fixed1 x 应为 55，实际 {}", c1.x);
-    assert!((c1.y - 55.0).abs() < 0.001, "fixed1 y 应为 55，实际 {}", c1.y);
+    assert!((c1.x - (-45.0)).abs() < 0.001, "fixed1 x 应为 -45，实际 {}", c1.x);
+    assert!((c1.y - (-45.0)).abs() < 0.001, "fixed1 y 应为 -45，实际 {}", c1.y);
 
-    // fixed2: x = 100 + 50 = 150, y = 200 + 50 = 250
+    // R324：fixed2 扣除父级偏移（视口相对）：x = 100 - 50 = 50, y = 200 - 50 = 150
     let c2 = &root.children[1];
-    assert!((c2.x - 150.0).abs() < 0.001, "fixed2 x 应为 150，实际 {}", c2.x);
-    assert!((c2.y - 250.0).abs() < 0.001, "fixed2 y 应为 250，实际 {}", c2.y);
+    assert!((c2.x - 50.0).abs() < 0.001, "fixed2 x 应为 50，实际 {}", c2.x);
+    assert!((c2.y - 150.0).abs() < 0.001, "fixed2 y 应为 150，实际 {}", c2.y);
 }
 
 /// 测试 adjust_fixed_to_viewport：fixed 元素包含 absolute 子元素。
@@ -378,10 +379,10 @@ fn test_adjust_fixed_with_absolute_child() {
     };
     adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
 
-    // fixed parent: x = 10 + 100 = 110, y = 20 + 200 = 220
+    // R324：fixed parent 扣除累积祖先偏移（视口相对）：x = 10 - 100 = -90, y = 20 - 200 = -180
     let fp = &root.children[0];
-    assert!((fp.x - 110.0).abs() < 0.001, "fixed parent x 应为 110");
-    assert!((fp.y - 220.0).abs() < 0.001, "fixed parent y 应为 220");
+    assert!((fp.x - (-90.0)).abs() < 0.001, "fixed parent x 应为 -90");
+    assert!((fp.y - (-180.0)).abs() < 0.001, "fixed parent y 应为 -180");
 
     // absolute grandchild: offset 从 fixed 归零后重新累加
     // 由于 fixed parent offset 归零，absolute child 以 0 为基，
