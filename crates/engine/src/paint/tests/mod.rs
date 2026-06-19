@@ -17,3 +17,4 @@ mod interaction_indicators;
 mod ui_indicators;
 mod visual;
 mod visual_inline;
+mod visual_resize_scroll;
