@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-19（R331：评估 rustybuzz shaping 接入生产的可行性——确认是**4 子任务多会话**非单会话 bounded probe：① FontLoader→Painter plumbing ②【新发现】光栅化须按 glyph-index（cpu/mod.rs:485 `char::from_u32(glyph_id)` 会误读 shaped 字体内部索引，须加 is_glyph_index 标志+按索引光栅化分支，跨 render-foundation）③ TextShaper 26.6 定点单位修复（offset/advance 现 64× 错）④ IFC paint gate（高风险 R125-R213 死锁区）。plumbing(1) 已实验验证可编译+基线不变但回退避免死代码。旁证 advance-width paint 单侧 = R225 死路（layout+paint 双侧 estimate_char_width 一致）。详见 [`evidence/r331-shaping-wiring-plan-2026-06-19.txt`](./evidence/r331-shaping-wiring-plan-2026-06-19.txt)。基线 438/490 持平）
+**最后更新**: 2026-06-19（R332：实现 rustybuzz shaping 接入全 4 子任务（high-bit 哨兵法避免 GlyphPrimitive 55 处构造点改动）+ SHAPE_PAINT 环境门控实测——self-source 438/490 持平；chromium-Oracle pollution 48.0%→48.3%（+2），零 case 改善。**paint-only shaping 净负向**：layout 仍用 estimate_char_width 断行，paint 单侧 shaping 致 layout/paint 不一致，须 layout+paint 同源（Phase A IFC 统一子集）。**保留 TextShaper advance/offset bug 修复**（真实修复，ligature advance 取首 cluster 字符宽度过窄→metrics_indexed 按 glyph 索引；offset raw 字体单位→×font_size/upem）；回退 probe 其余（plumbing/哨兵/gate）。详见 [`evidence/r332-shape-paint-probe-2026-06-19.txt`](./evidence/r332-shape-paint-probe-2026-06-19.txt)。基线 438/490 持平）
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
@@ -47,7 +47,7 @@
 | font-weight -Bold 接线 | R229b | fontdue Bold 过墨 ~15%，net-negative |
 | @font-face 自定义字体加载（css-fonts 聚类解锁假设） | R330 | 17 字体导入激活后实测：self-source 438/490 持平；chromium-Oracle 净负向（alternates-order +7.53 / font-features-across-space +0.95，余 54 不变，污染仍 ~46%）。根因 = rustybuzz TextShaper 未接入生产路径（生产逐字符 glyph_id=ch as u32），加载特性字体不应用特性更远离 chromium。fontdue/simple-shaping 第四条死路（同 R225/R229b/R174） |
 | advance-width paint 单侧 fontdue | R225/R331 | layout(paint?) 双侧均用 estimate_char_width 一致（self-source 抵消）；paint 单侧改 fontdue 致与 layout 不一致 intra-fragment 错位；双侧改 = R225「三处同源」已证 oracle 26 案零变化。死路 |
-| rustybuzz shaping 接入生产（单会话 bounded probe） | R331 | 探针不可单会话 bounded：shaped glyph_id 是字体内部索引，cpu/mod.rs:485 `char::from_u32(glyph_id)` 会误读 → 必须同时改光栅化按 glyph-index（跨 render-foundation）+ TextShaper 26.6 定点单位修复 + plumbing + IFC gate = 4 子任务多会话（见 evidence/r331-shaping-wiring-plan） |
+| rustybuzz shaping 接入生产（单会话 bounded probe） | R331/R332 | R331 定位 4 子任务多会话；R332 实现全 4 子任务（high-bit 哨兵法避免 GlyphPrimitive 55 处构造点改动）+ SHAPE_PAINT 门控实测：self-source 438/490 持平；chromium-Oracle pollution 48.0%→48.3%（+2），零 case 改善。**paint-only shaping 净负向**——layout 仍用 estimate 断行，paint 单侧 shaping 致 layout/paint 不一致。须 layout+paint 同源（Phase A IFC 统一子集）。保留 TextShaper advance/offset bug 修复（真实修复），回退 probe 其余 |
 | taffy 0.11 升级 | R304 | DEFER（541 ref + 108 alignment + native float 冲突，具名缺口零收益） |
 
 **剩余 forward motion = 多会话架构承诺（非单会话），或接受 plateau**：
@@ -778,30 +778,11 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 
 ---
 
-## 最近轮次详细记录（R312–R331；R311 已归档至 [`archive/rounds-r311.md`](./archive/rounds-r311.md)、R310 已归档至 [`archive/rounds-r310.md`](./archive/rounds-r310.md)、R309 已归档至 [`archive/rounds-r309.md`](./archive/rounds-r309.md)、R308 已归档至 [`archive/rounds-r308.md`](./archive/rounds-r308.md)、R307 已归档至 [`archive/rounds-r307.md`](./archive/rounds-r307.md)、R305–R306 已归档至 [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 已归档至 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)）
+## 最近轮次详细记录（R313–R332；R312 已归档至 [`archive/rounds-r312.md`](./archive/rounds-r312.md)、R311 已归档至 [`archive/rounds-r311.md`](./archive/rounds-r311.md)、R310 已归档至 [`archive/rounds-r310.md`](./archive/rounds-r310.md)、R309 已归档至 [`archive/rounds-r309.md`](./archive/rounds-r309.md)、R308 已归档至 [`archive/rounds-r308.md`](./archive/rounds-r308.md)、R307 已归档至 [`archive/rounds-r307.md`](./archive/rounds-r307.md)、R305–R306 已归档至 [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 已归档至 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)）
 
 ### R312 — baseline-export 双侧探针精确定位：inline-flex 容器 taffy_baseline 错值 + multicol 项 None（read-only 探针，基线 loose 438/490 / strict 295/490 持平）
 
-**承接**：R310 探针确认 multicol flex 项 `taffy_baseline=None`；R311 fresh cross-validate 标 `flexbox-baseline-align-self-baseline-horiz-001`（17.64% chr，inline-flex 容器基线导出）为未深查的 baseline-export 变体。本轮探针精确定位 inline-flex 容器侧的根因，与 R310 multicol 侧合拢为统一 baseline-export 图景。
-
-**探针（env IBBL_PROBE=1，已 100% 回退）**：在 `adjust_inline_block_positions` 的 baseline_overrides 闭包（engine.rs:988-993，优先用 taffy_baseline 分支）加 eprintln。对 flexbox-baseline-align-self-baseline-horiz-001 实测：
-- 3 个 inline-flex 容器（NodeId 25v1/37v1/49v1，均 child_h=35）导出 **taffy_baseline = 30.0 / 20.0 / 30.0**。
-- 这些值经 `with_baseline_overrides` 喂入父 IFC 决定 inline-flex 在 body 行内的垂直位置 → 17.64% chr diff（inline-flex 整体垂直错位）。
-- **关键**：baseline_overrides 的 step-3（taffy_baseline 优先，line 989-992）**总是命中**（taffy 为 flex 容器算 first_baseline），step-4（ZeroWeb 自有首行近似，line 995+）被旁路。故 inline-flex 基线 = taffy 的合成值，**该值对「混合 font-size flex 项」错**（R295 wrap-reverse/混合项基线合成结构性聚类）。
-
-**双侧合拢（baseline-export 统一图景）**：
-| 侧 | 用例 | taffy_baseline | 根因 |
-|----|------|----------------|------|
-| **multicol flex 项**（R310） | baseline-003 | **None** | taffy 仅 flex/grid 容器算 first_baseline，block/multicol 项无 → flex `align-items:baseline` fallback 错位 |
-| **inline-flex 容器**（R312） | flexbox-baseline-align-self | **错值**（30/20/30） | taffy 算了 first_baseline 但对混合 font-size 项合成错 |
-
-两侧共同缺口 = **ZeroWeb 缺「为 flex/multicol 项计算正确 first baseline」的能力**（CSS-align baseline-export）。修复须 layout 侧：
-- multicol 项：计算首列首行 baseline（block first-baseline 递归：直接文本取首 IFC 行基线，block 子元素取首子首基线，空取 strut）。
-- inline-flex 容器：合成正确 first baseline（取 baseline-aligned 项的 max 基线，而非依赖 taffy 错值）—— 但须在 taffy layout 期间或经 measure-func 注入，post-layout 填字段无法修正 taffy 已完成的 flex 对齐（R310 约束）。
-
-**裁决**：baseline-export（baseline-000~008 + flexbox-baseline-* 聚类，~10+ 案）确认为**结构性多轮**，需 CSS-align baseline-export 的 spec-rfc 实施（block/multicol first-baseline 计算 + flex 对齐注入路径）。双侧探针已精确定位根因（multicol=None / inline-flex=错值），区别并超越 R266「field-fill 净 0」结论。这是 css-multicol + css-flexbox baseline 近-pass聚类的统一解锁钥匙，但非单会话 clean win。
-
-**本轮 read-only 探针**：env-gated 探针（engine.rs:989 IBBL_PROBE）**已 100% 回退**（`git diff -- '*.rs'` 空）；rebuild 干净。零代码变更，基线持平。next = baseline-export spec-rfc（block/multicol first-baseline 计算来源 + flex 对齐注入路径设计），或转 @font-face 字体加载特性（css-fonts 24 案聚类，但 fontdue-vs-chromium 度量噪声限制收益）。
+（R312 已归档至 [`archive/rounds-r312.md`](./archive/rounds-r312.md)——baseline-export 双侧探针：inline-flex 容器 taffy_baseline 错值 + multicol 项 None，确认 baseline-export 结构性多轮。）
 
 ### R313 — baseline-overrides 杠杆证伪：inline-flex 位置不受 baseline_overrides 控制（read-only 实验，基线持平）
 
@@ -1202,6 +1183,27 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 **裁决**：rustybuzz shaping 接入生产 = **4 子任务多会话架构**（(2) 跨 render-foundation 是 R330 未识别的隐藏深度），单会话不可 bounded probe。本轮价值 = 精确定位全部子任务（esp. 光栅化按 glyph-index）+ 排除 advance-width 单侧变体（R225），为后续多会话工作提供可执行起点。零代码变更（plumbing 实验已回退，git diff '*.rs' 空），基线 self-source 438/490 / strict 295/490 / chromium-Oracle ~35.6% 持平。
 
 **归档**：R311（R308 后 fresh cross-validate plateau 再确认）作为第 21 轮迁出至 [`archive/rounds-r311.md`](./archive/rounds-r311.md)，最近窗口收窄为 R312–R331（≤20）。
+
+### R332 — SHAPE_PAINT 门控探针：paint-only shaping 净负向（须 layout+paint 同源）+ TextShaper bug 修复保留（code change + 探针回退，基线 438/490 持平）
+
+**承接**：R331 定位 shaping 接入 4 子任务并判定多会话，标 paint gate(④) 为高风险单点。本轮实现全 4 子任务做 R327 式 env-gated 实证，裁决 paint-only shaping 是否可单会话先行落地。
+
+**实现（high-bit 哨兵法）**：为避免 GlyphPrimitive 加字段触发 55 处构造点改动，用 glyph_id 高位（`0x8000_0000`）作「字体内部 glyph 索引」哨兵——生产 codepoint < 0x110_000 永不置位，零行为变更。全 4 子任务：(1) FontLoader→Painter plumbing（set_font_loader + Arc）；(2) `FontLoader::rasterize_glyph_index`（fontdue rasterize_indexed）+ cpu/mod.rs draw_glyph_primitive 高位哨兵分支；(3) TextShaper 修复（advance 用 fontdue metrics_indexed 按 glyph 索引，ligature-correct；offset × font_size/upem）；(4) text.rs:1047 SHAPE_PAINT 门控（shape 产 glyph 置高位 + shaped advance + offset，skip Ahem）。
+
+**实证（test-guard 包裹，chromium-Oracle cross-validate，[`evidence/r332-shape-paint-probe-2026-06-19.txt`](./evidence/r332-shape-paint-probe-2026-06-19.txt)）**：
+- self-source reftest-upstream（SHAPE_PAINT=1）= **438/490 持平**，逐目录完全一致（test/ref 同向抵消）。
+- chromium-Oracle（475 可比）：pollution **OFF 157 (48.0%) → ON 159 (48.3%)**（+2 略恶化）；逐 case chr-diff 变化 >0.3pp = **0**（零改善、无显著退化）。
+- **paint-only shaping 净中性偏负**。
+
+**根因**：IFC **layout**（inline/mod.rs:1366/1694）仍用 estimate_char_width 断行；shaping 只改 **paint** glyph 位置/索引 → layout/paint 不一致（glyph 溢出/不足行盒）→ 不接近 chromium（chromium layout+paint 同源 shaping）。与 advance-width「三处同源」同构，作用于 shaping：**须 layout+paint 同源**，paint 单侧无增益。
+
+**裁决**：paint gate(④) **不能独立先行**——净负向，须与 layout shaping 同步（Phase A IFC 统一子集）。R331「4 子任务多会话」精确化：④非独立可先行子任务。
+
+**保留 (3) TextShaper 修复**（shaper.rs，+11/-5）：真实 bug 修复（ligature advance 取首 cluster 字符宽度过窄→metrics_indexed 按 glyph 索引正确；offset raw 字体单位未缩放→×font_size/upem）。fontdue metrics_indexed/units_per_em 已验证；27 单测全过；未来 layout+paint shaping 同源接入即正确无需重做。**回退 (1)(2)(4)**（pipeline/painter/reftest/loader/cpu/text git checkout HEAD）：paint-only 净负向 + gate 关闭即死代码（code-guidelines §3）。
+
+**代码变更**：`crates/render-foundation/src/font/shaper.rs`（shape_with_rustybuzz advance/offset 修复，保留）；6 个 probe 文件回退至 HEAD（`git diff -- '*.rs'` 仅 shaper.rs）。零 reftest 计数变化（TextShaper 生产无调用方）。基线 self-source 438/490 / strict 295/490 / chromium-Oracle ~35.6% 持平。
+
+**归档**：R312（baseline-export 双侧探针）作为第 21 轮迁出至 [`archive/rounds-r312.md`](./archive/rounds-r312.md)，最近窗口收窄为 R313–R332（≤20）。
 
 
 
