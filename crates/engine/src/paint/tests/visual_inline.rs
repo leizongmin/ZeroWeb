@@ -393,6 +393,46 @@ fn test_paint_text_with_inline_formatting_context() {
 }
 
 #[test]
+fn test_paint_per_fragment_color_for_spans() {
+    // R358：非多列路径 per-fragment color（带 abs-pos guard）。
+    // 容器内不同 color 的 span，其文本 glyph 应取各 span 自身 color，而非容器 color。
+    let doc = zero_dom::parse_html("<div><span>A</span><span>B</span></div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let div = doc.first_child(body).unwrap();
+    let span1 = doc.first_child(div).unwrap();
+    let span2 = doc.last_child(div).unwrap();
+
+    let layout = make_box(Some(div), 0.0, 0.0, 200.0, 30.0);
+    let mut styles = HashMap::new();
+    let mut div_style = ComputedStyle::default();
+    div_style.color = ColorValue::Rgba(0, 0, 0, 255); // 容器黑色
+    div_style.font_size = LengthValue::Px(16.0);
+    styles.insert(div, div_style);
+    let mut s1 = ComputedStyle::default();
+    s1.color = ColorValue::Rgba(255, 0, 0, 255); // 红
+    s1.font_size = LengthValue::Px(16.0);
+    styles.insert(span1, s1);
+    let mut s2 = ComputedStyle::default();
+    s2.color = ColorValue::Rgba(0, 0, 255, 255); // 蓝
+    s2.font_size = LengthValue::Px(16.0);
+    styles.insert(span2, s2);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let glyphs = &painter.primitives().glyphs;
+    let has_red = glyphs
+        .iter()
+        .any(|g| g.glyph_id == 'A' as u32 && g.color == zero_render_foundation::color::Color::rgb(255, 0, 0));
+    let has_blue = glyphs
+        .iter()
+        .any(|g| g.glyph_id == 'B' as u32 && g.color == zero_render_foundation::color::Color::rgb(0, 0, 255));
+    assert!(has_red, "span1 的 'A' glyph 应为红色（per-fragment color）");
+    assert!(has_blue, "span2 的 'B' glyph 应为蓝色（per-fragment color）");
+}
+
+#[test]
 fn test_paint_text_without_doc_fallback() {
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("p");
