@@ -75,6 +75,7 @@ fn find_absolute_position_by_node_id_inner(
 }
 
 mod coverage;
+mod intrinsic_two_pass_tests;
 mod tests_1;
 mod tests_10;
 mod tests_11;
