@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-19（R335：承接 R334 WM-1 真阻塞定位（green "X" 未绘制），探查 paint-IFC per-fragment 颜色修复——镜像 multicol 分支 text.rs:1028 把非多列 `render_fragment!` 改为按 fragment 所属 inline 元素取 color。**实证 net-negative**：loose 子集 14/14→12/14（净 -2），多数 case diff 上升 1-1.5pp（vrl-002 1.33→2.67、vrl-130 5.03→6.33）。根因 = green X 现由 div 的 **paint IFC** 在 **paint-IFC 位置**（normal-flow）绘制，≠ ref 期望的 abspos 静态位置（layout IFC，R334 实证 y=80 正确）= **Layout/Paint IFC 双路径**（gap #4）。per-fragment 颜色虽隔离正确，激活了错误路径绘制→离 ref 更远。已 100% 回退，**WM-1 从 positioning(R334)+color(R335) 两角度均收敛至 Phase A**，单会话 lever 彻底穷尽。详见 [`evidence/r335-per-fragment-color-probe-net-negative-2026-06-19.txt`](./evidence/r335-per-fragment-color-probe-net-negative-2026-06-19.txt)）
+**最后更新**: 2026-06-19（R336：承接 R334/R335 WM-1 真阻塞（green "X" 未绘制），换第三角度——abspos 文本抑制机制——做实现轮。**精确定位**：collect_inline_items（inline/mod.rs:1066）不检查 position，把 abspos span 的 "X" 收入容器 IFC，render_fragment!（text.rs:1125）标记 span painted → text.rs:690 守卫抑制 span 自身 paint_text → green "X" 不可见。实现 refined skip（容器跳过 abspos 后代文本，owner≠self）探针：抑制解除（painted_contains 翻 false），但 span 自身 paint-IFC 因空 styles 产出 **fs=16**（非 80）= Layout/Paint IFC double-path（Phase A）→ green X 仍错。**skip net-neutral**（loose 14/14 + 全量 438/490 持平、strict 0/14 持平），已回退。**WM-1 Phase A 第三角度确认**（positioning R334 / color R335 / suppression R336）。详见 [`evidence/r336-abspos-text-suppression-probe-2026-06-19.txt`](./evidence/r336-abspos-text-suppression-probe-2026-06-19.txt)）
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
@@ -51,7 +51,7 @@
 | taffy 0.11 升级 | R304 | DEFER（541 ref + 108 alignment + native float 冲突，具名缺口零收益） |
 | clear+margin-collapse（clear-float-003 等） | R333 | ZeroWeb 把 `clear` 仅 convert_clear→bool 传 taffy 0.7，无 ZeroWeb 侧 clearance 后处理 → clear+margin 折叠交互 = taffy-0.7-bound（R323 探针覆盖基本折叠不含 clearance）。须 taffy 升级或自建 clearance 后处理（与 taffy margin 折叠耦合，高风险） |
 | CSS2/multicol 剩余失败（border-bottom-width-006 / border-padding-bleed / multicol-count-computed-003/004 等） | R333 | 新鲜审视 5 未深查用例全结构性：inline-box 模型（vertical-align/行盒绘制，与 Phase A 耦合）；multicol 列几何计算 spec-正确（divergence 在内容分布/规则定位，multicol 结构死锁）。DC-11 correctness 轴（R323-R326）确已穷尽 |
-| WM-1 abs-pos-non-replaced-vrl/vlr（R237/R238「首选候选」从未执行） | R334/R335 | R334 实证 positioning 假设部分证伪（ltr 本就正确，rtl 仅 direction 忽略；落地 direction-rtl 镜像修复 spec-correct，0 clean win，latent 保留）。R335 探查 per-fragment 颜色（镜像 multicol text.rs:1028 到非多列路径）= **net-negative**（loose 14/14→12/14，green X 由 paint IFC 绘在 normal-flow 位置 ≠ abspos 静态位置）。**两角度均收敛至 Layout/Paint IFC 双路径（gap #4 = Phase A）**，WM-1 单会话 lever 彻底穷尽 |
+| WM-1 abs-pos-non-replaced-vrl/vlr（R237/R238「首选候选」从未执行） | R334/R335/R336 | R334 positioning（direction-rtl 镜像修复 spec-correct，0 clean win，latent 保留）→ R335 color（per-fragment 颜色 net-negative，paint-IFC 位置错）→ R336 suppression（精确定位：collect_inline_items 不检查 position 收 abspos 文本 + render_fragment! 标记 painted 抑制 abspos 自身 paint_text；refined skip 解抑制但 span 自身 paint-IFC 空 styles 产出 fs=16 = double-path，net-neutral 回退）。**三角度均收敛 Layout/Paint IFC 双路径（gap #4 = Phase A）**，WM-1 单会话 lever 彻底穷尽 |
 
 **剩余 forward motion = 多会话架构承诺（非单会话），或接受 plateau**：
 
@@ -1221,6 +1221,22 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 **裁决**：① per-fragment 颜色探针 **net-negative，已 100% 回退**（git checkout text.rs，子集复测 14/14 loose 恢复），avenue 关闭。② **WM-1 真阻塞 = Phase A 双路径**——R334（positioning）+ R335（color）两角度均收敛至此。per-fragment 颜色须先统一 layout/paint IFC（paint 复用 layout 存储行盒/abspos 位置）才能安全应用。③ WM-1 单会话 lever 彻底穷尽，剩余 forward motion = Phase A IFC 统一（多会话硬里程碑）。
 
 **Phase A 设计补充**：paint IFC 把 abspos 后代的 inline 文本当正常流绘制（位置错）+ 抑制 abspos span 自身 paint_text 的 green 输出 = Phase A 须解决的具体机制之一（区别于 large-font 的 font_size 存储、welcome 的度量分歧）。建议 Phase A 设计文档补此表现。
+
+**代码变更**：零（探针已回退，`git diff -- '*.rs'` 空）。基线 loose 438/490 / strict 295/490 持平。
+
+### R336 — abspos 文本抑制机制精确定位 + refined skip 探针 net-neutral：WM-1 Phase A 第三角度确认（探针已回退，基线持平）
+
+**承接**：R335 收尾 CONTINUE 指 per-fragment 颜色（R335 已证伪）。Phase A 设计文档 v1.2（R306）已证伪 baseline-alignment Wall ③ 为阻塞点，故本轮**不 pursuing baseline**，换第三角度——abspos 文本抑制机制——做实现轮。R334/R335 已定位 WM-1 green "X" 未绘制，本轮精确定位抑制源 + 测 refined skip。
+
+**抑制机制精确定位（探针 PROBE_ABSPOS，env-gated）**：插桩 abspos span paint_text（text.rs:679）实证——span 的 paint_text **被调用**（fs=80、color=green、content_w=80、has_direct_text=true 全正确），但 **painted_contains=TRUE** → text.rs:690 守卫 `fragment_node_ids.is_none() && painted_inline_nodes.contains(&node_id)` return → **span 自身绘制被抑制**。探针 div IFC fragments：node_id=34(span) text="X"。**collect_inline_items（inline/mod.rs:1066）对 inline 元素用 `doc.text_content(child_id)` 收集文本，node_id=child_id=span，不检查 position**——abspos span 的 "X" 被收入 div IFC，render_fragment!（text.rs:1125）insert span 进 painted_inline_nodes → 抑制 span 自身 paint。CSS §9.8：abspos out-of-flow，文本不应参与父容器 inline 流——当前违反。
+
+**refined skip 探针（已回退）**：非多列 fragment 循环加 skip——owner 为 abspos/fixed **且 owner≠self**（abspos 元素自身绘制时不跳过）的后代文本跳过。探针实证：div(box 32) 绘 "X"(owner=span≠div) → skip=true（正确）；span(box 34) 绘自身 "X"(owner=span=self) → skip=false（正确）；span painted_contains 翻 **false**（抑制解除）。**但 span IFC fragment fs=16**（paint-IFC 空 styles 默认，非 80）= Layout/Paint IFC double-path（gap #4）。
+
+**净效应**：子集 loose 14/14 持平（vrl-002 1.33→1.28 微变）、strict 0/14 持平、全量 loose **438/490 持平** = skip **net-neutral**。即便抑制解除，span 自身 paint-IFC 因空 styles 产出 fs=16，green "X" 仍错——suppression 修复须**同时**解 double-path 才生效 = Phase A 整体。
+
+**裁决**：① refined skip **net-neutral，已 100% 回退**（git checkout text.rs，基线恢复）。② collect_inline_items 不排除 abspos 是**有意为之**——layout 侧 fix_vertical_mode_abs_pos 依赖 IFC fragment 算 abspos 静态位置，故不能 collect 层排除；paint 层 skip 又受 double-path 阻塞。③ **WM-1 Phase A 第三角度确认**：R334 positioning → R335 color → R336 suppression，三角度一致指向 Layout/Paint IFC 双路径。WM-1 单会话 lever 彻底穷尽（三角度闭环）。
+
+**Phase A 设计补充（v1.2 之上）**：WM-1 精确表现 = (a) paint IFC 把 abspos 后代 inline 文本当正常流绘制（位置错）+ 标记 painted_inline_nodes 抑制 abspos 自身 paint_text；(b) 即便解除抑制，abspos 自身 paint-IFC 空 styles 产出错误 font_size。Phase A 须同时：paint 复用 layout 存储的 abspos 位置/font_size + 容器不绘 abspos 后代文本。两者均非单点。
 
 **代码变更**：零（探针已回退，`git diff -- '*.rs'` 空）。基线 loose 438/490 / strict 295/490 持平。
 
