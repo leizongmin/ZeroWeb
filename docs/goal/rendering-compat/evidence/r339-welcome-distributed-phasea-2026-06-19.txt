@@ -37,3 +37,32 @@ welcome 残余 17% = Phase A 非-Ahem font ascent（分布式、line-height 计�
 rendering-compat 全部 bounded 单会话渲染 lever + 产品 smoke 局部 bug 均穷尽。唯一 forward motion = 多会话 Phase A。
 
 代码变更：零（read-only 实证）。基线持平。
+
+────────────────────────────────────────────────────────────────
+追加（同日）：font-ascent 前提实证确认（探针 probe_ascent_vs_font_size）
+────────────────────────────────────────────────────────────────
+fontdue horizontal_line_metrics（FontLoader::line_metrics）对**系统 sans-serif 字体**
+（welcome 用的字体族）实测：
+
+    PROBE ascent@16:  ascent=14.852 (92.8% of size) descent=-3.773
+    PROBE ascent@32:  ascent=29.703 (92.8% of size) descent=-7.547
+    PROBE ascent@80:  ascent=74.258 (92.8% of size) descent=-18.867
+
+= sans-serif 实际 ascent = **92.8% × font_size**（非 100%）。ZeroWeb paint v_offset 用 font_size
+（100%）当 ascent → sans-serif 文本基线每行偏低 7.2% × font_size → welcome 分布式垂直 diff。
+Ahem（方框 em-square 字体）ascent ≈ 100% × font_size（设计如此）→ v_offset 改为 actual_ascent 对
+Ahem WPT 测试为 no-op（**低风险**）。
+
+**这是未测试过的 fresh 角度**：R306 证伪的是 `v_offset = frag.height`（行盒几何基线，错误指标）；
+actual_ascent（字体真实 hhea ascent，fontdue 已暴露于 loader.rs:291 line_metrics）是**理论上正确的
+基线度量**（baseline = line_top + ascent），与 frag.height 不同。
+
+下一步实验（sound，待实现）
+---------------------------
+1. FontLoader→Painter plumbing（R331 子任务 1，paint 路径需查 ascent）。
+2. Path B v_offset/baseline_fs 非-Ahem 用 actual_ascent（font_loader.line_metrics(font_id, size)）替代 font_size。
+3. 测 welcome smoke（chromium-Oracle 应改善）+ 全量 reftest（Ahem 不变→self-source 无回归；非-Ahem
+   self-source test/ref 同移→计数中性，chromium-Oracle 改善）。
+
+风险：v_offset load-bearing（R306），但 actual_ascent 是正确指标 + 非-Ahem 门控 + Ahem≈100% no-op，
+理论低风险。须 make reftest 验 438/490 不退。
