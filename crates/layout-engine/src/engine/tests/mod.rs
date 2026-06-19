@@ -74,8 +74,10 @@ fn find_absolute_position_by_node_id_inner(
     None
 }
 
+mod anonymous_flex_item_tests;
 mod coverage;
 mod intrinsic_two_pass_tests;
+mod table_layout_tests;
 mod tests_1;
 mod tests_10;
 mod tests_11;
@@ -87,3 +89,4 @@ mod tests_6;
 mod tests_7;
 mod tests_8;
 mod tests_9;
+mod writing_mode_tests;
