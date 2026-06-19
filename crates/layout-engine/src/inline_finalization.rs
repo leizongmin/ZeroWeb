@@ -1,0 +1,958 @@
+//! 行内格式化（IFC）终化逻辑。
+//!
+//! 从 `engine.rs` 抽出（R342，2000 行规则 + Phase A IFC 统一 Phase 5 准备）。
+//! 包含：compute_final_inline_layouts（存储权威行盒）、font-size/ascent 度量存储、
+//! 文本测量（measure_text_content）、float 排斥下的重新测量。Phase A 的目标代码集中于此模块。
+
+use std::collections::HashMap;
+use taffy::prelude::*;
+use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue};
+use zero_dom::{Document, NodeId, NodeKind};
+use zero_style_system::ComputedStyle;
+
+use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign};
+use crate::types::LayoutBox;
+use zero_style_system::WritingModeValue;
+
+/// 从 ComputedStyle 读取 text-align 并转换为 IFC 的 TextAlign 枚举。
+pub(crate) fn resolve_text_align(style: Option<&ComputedStyle>) -> TextAlign {
+    use zero_style_system::property::TextAlignValue;
+    let align = style.map(|s| &s.text_align).unwrap_or(&TextAlignValue::Start);
+    match align {
+        TextAlignValue::Left | TextAlignValue::Start => TextAlign::Left,
+        TextAlignValue::Right | TextAlignValue::End => TextAlign::Right,
+        TextAlignValue::Center => TextAlign::Center,
+        TextAlignValue::Justify => TextAlign::Justify,
+    }
+}
+
+/// 将 IFC 片段结果存储到 LayoutBox.inline_layout，供 paint 系统复用。
+///
+/// 避免在 paint 阶段重新运行 IFC（paint IFC 使用空 styles 导致字体度量不一致）。
+/// TODO: 当前被注释掉 — 基线计算修复后启用
+#[allow(dead_code)]
+pub(crate) fn store_inline_layout_results(
+    inline_ctx: &crate::inline::InlineFormattingContext,
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    if !inline_ctx.lines.is_empty() {
+        let container_width = box_node.content_width;
+        let stored: Vec<crate::types::InlineLayoutLine> = inline_ctx
+            .lines
+            .iter()
+            .map(|line| crate::types::InlineLayoutLine {
+                y: line.y,
+                height: line.height,
+                fragments: line
+                    .runs
+                    .iter()
+                    .map(|frag| {
+                        let is_ahem = box_node.node_id.is_some_and(|id| {
+                            styles
+                                .get(&id)
+                                .is_some_and(|s| s.font_family.contains(&"Ahem".to_string()))
+                        });
+                        crate::types::InlineLayoutFragment {
+                            x: frag.x,
+                            y: frag.y,
+                            width: frag.width,
+                            height: frag.height,
+                            font_size: frag.font_size,
+                            is_ahem,
+                            text: frag.text.clone(),
+                            node_id: Some(frag.node_id),
+                        }
+                    })
+                    .collect(),
+            })
+            .collect();
+        box_node.inline_layout = Some(stored);
+        box_node.inline_layout_width = container_width;
+    }
+}
+
+/// 从 IFC 片段中提取各文本节点的 font_size、is_ahem 标志、letter-spacing 和 line-height 并存储到 LayoutBox。
+///
+/// paint 系统在运行空 styles IFC 时无法获取正确的 font_size、字体信息、letter-spacing 和 line-height，
+/// 导致基线偏移、字符宽度、间距和行盒高度计算错误。通过此函数存储 layout IFC 的相关值，
+/// paint 可以在渲染时使用正确的值。
+pub(crate) fn store_font_sizes_from_ifc(inline_ctx: &crate::inline::InlineFormattingContext, box_node: &mut LayoutBox) {
+    for line in &inline_ctx.lines {
+        for frag in &line.runs {
+            box_node.text_node_font_sizes.insert(frag.node_id, frag.font_size);
+            box_node.text_node_is_ahem.insert(frag.node_id, frag.is_ahem);
+            box_node
+                .text_node_letter_spacing
+                .insert(frag.node_id, frag.letter_spacing);
+            // line-height 不影响行断（仅影响垂直定位），传递到 paint IFC 是安全的。
+            // 使用片段的 height 作为行盒高度贡献（已含 line-height + padding + border）。
+            box_node.text_node_line_heights.insert(frag.node_id, frag.height);
+            // 内联元素片段（node_id 是元素 NodeId 而非文本节点 NodeId）：
+            // 存储其 (font_size, line_height) 供 paint IFC 使用。
+            // 内联元素在 paint IFC 中无法获取自己的样式，导致使用默认值。
+            // line_height 近似使用 height（对文本片段来说等于 run.line_height）。
+            box_node
+                .inline_element_metrics
+                .insert(frag.node_id, (frag.font_size, frag.height));
+            // 内联元素的水平 margin 不影响行断（仅影响水平偏移），传递到 paint IFC 是安全的。
+            box_node
+                .inline_element_margins
+                .insert(frag.node_id, (frag.margin_left, frag.margin_right));
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct InlineVisualMetrics {
+    padding_top: f32,
+    padding_right: f32,
+    padding_bottom: f32,
+    padding_left: f32,
+    border_top: f32,
+    border_right: f32,
+    border_bottom: f32,
+    border_left: f32,
+}
+
+pub(crate) fn resolve_px_length(value: &LengthValue) -> f32 {
+    match value {
+        LengthValue::Px(v) => *v as f32,
+        _ => 0.0,
+    }
+}
+
+pub(crate) fn extract_inline_visual_metrics(style: &ComputedStyle) -> InlineVisualMetrics {
+    InlineVisualMetrics {
+        padding_top: resolve_px_length(&style.padding_top),
+        padding_right: resolve_px_length(&style.padding_right),
+        padding_bottom: resolve_px_length(&style.padding_bottom),
+        padding_left: resolve_px_length(&style.padding_left),
+        border_top: resolve_px_length(&style.border_top_width),
+        border_right: resolve_px_length(&style.border_right_width),
+        border_bottom: resolve_px_length(&style.border_bottom_width),
+        border_left: resolve_px_length(&style.border_left_width),
+    }
+}
+
+/// 将 IFC 计算出的直接 inline 子元素几何写回 LayoutBox。
+///
+/// 仅处理「单个 fragment 即可完整表示」的简单 inline 元素：
+/// - `display:inline`
+/// - 非 absolute/fixed
+/// - 在当前 IFC 中恰好对应一个 fragment
+///
+/// 这样可以让 paint 阶段使用更接近真实 inline box 的几何去绘制背景/边框，
+/// 避免 taffy 将 inline 元素当作 block 后得到的零尺寸或错误尺寸。
+pub(crate) fn sync_inline_child_boxes_from_ifc(
+    box_node: &mut LayoutBox,
+    inline_ctx: &InlineFormattingContext,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    let fragments = inline_ctx.all_fragments_with_line_y();
+
+    for child in &mut box_node.children {
+        if child.is_block_level || child.is_absolute || child.is_fixed {
+            continue;
+        }
+
+        let Some(child_id) = child.node_id else {
+            continue;
+        };
+        let Some(style) = styles.get(&child_id) else {
+            continue;
+        };
+        if !matches!(style.display, DisplayValue::Inline) {
+            continue;
+        }
+
+        let mut matching = fragments.iter().filter(|fragment| fragment.node_id == child_id);
+        let Some(fragment) = matching.next() else {
+            continue;
+        };
+        if matching.next().is_some() {
+            continue;
+        }
+        // 跳过含文本内容的 fragment：
+        // 文本 fragment 的位置来自 layout IFC（使用真实样式），
+        // 而 paint 阶段运行独立的 paint IFC（使用空样式），
+        // 两者行断行为不同，直接使用 layout IFC 坐标会导致背景与文字错位。
+        // 仅对空 inline 元素（零宽度 TextRun）应用几何修正。
+        if !fragment.text.is_empty() {
+            continue;
+        }
+
+        let metrics = extract_inline_visual_metrics(style);
+        child.x = fragment.x;
+        child.y = fragment.y - metrics.padding_top - metrics.border_top;
+        child.width =
+            fragment.width + metrics.padding_left + metrics.padding_right + metrics.border_left + metrics.border_right;
+        child.height =
+            fragment.height + metrics.padding_top + metrics.padding_bottom + metrics.border_top + metrics.border_bottom;
+        child.content_x = metrics.border_left + metrics.padding_left;
+        child.content_y = metrics.border_top + metrics.padding_top;
+        child.content_width = fragment.width;
+        child.content_height = fragment.height;
+        child.padding_top = metrics.padding_top;
+        child.padding_right = metrics.padding_right;
+        child.padding_bottom = metrics.padding_bottom;
+        child.padding_left = metrics.padding_left;
+        child.border_top = metrics.border_top;
+        child.border_right = metrics.border_right;
+        child.border_bottom = metrics.border_bottom;
+        child.border_left = metrics.border_left;
+    }
+}
+
+/// 为含有直接文本子节点的容器计算最终行内布局并存储 IFC 片段结果。
+/// paint 系统消费这些结果渲染文字，不再重跑 IFC。
+///
+/// 使用与 paint-IFC 相同的空样式 + override maps 上下文，
+/// 确保存储结果与 paint 路径完全一致，零回归。
+pub(crate) fn compute_final_inline_layouts(
+    root: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    // 先递归处理子节点
+    for child in &mut root.children {
+        compute_final_inline_layouts(child, doc, styles);
+    }
+
+    // 仅处理有 node_id 且含有直接文本子节点的容器
+    let Some(node_id) = root.node_id else { return };
+    let Some(_) = doc.get(node_id) else { return };
+
+    // 跳过 flex/grid/table 容器（它们不需要独立的 inline layout）
+    let Some(style) = styles.get(&node_id) else { return };
+    use zero_css_parser::values::DisplayValue;
+    if matches!(
+        style.display,
+        DisplayValue::Flex
+            | DisplayValue::InlineFlex
+            | DisplayValue::Grid
+            | DisplayValue::InlineGrid
+            | DisplayValue::Table
+            | DisplayValue::InlineTable
+    ) {
+        return;
+    }
+
+    // 跳过多列容器（多列在 paint 阶段按列分配 IFC 内容，不适合预存储）
+    if root.is_multicol {
+        return;
+    }
+
+    // 跳过非块级元素（display: inline）：
+    // 这些元素的文本内容已经参与父级 IFC 排列，不需要单独存储。
+    // 如果为它们也存储 inline_layout，paint 系统会双重渲染文本——
+    // 一次从父级 IFC（含 float exclusion），一次从自身 IFC（无 float exclusion），
+    // 导致文本与 float 重叠。
+    // inline-block/inline-flex/inline-grid 虽然也是 inline-level，
+    // 但它们有独立的布局上下文，is_block_level 不会是 false。
+    if !root.is_block_level {
+        return;
+    }
+
+    // 检查是否有直接文本子节点
+    let mut has_text_children = root.children.iter().any(|c| c.is_anonymous_text_item)
+        || doc
+            .child_nodes(node_id)
+            .iter()
+            .any(|child_id| doc.get(*child_id).is_some_and(|n| matches!(&n.kind, NodeKind::Text(_))));
+    // PHASEA stored-line-boxes 路径（默认启用；env PHASEA_STORE_EXT=0 关闭）：也覆盖含 **inline-level** 元素子节点且**无 block-level
+    // 元素子节点**的容器（纯 inline 内容，如 div>span 间接文本）。compute_final 传真实 styles 给
+    // IFC（line 1851），存储行盒度量正确，paint use_stored 渲染解 Phase A font_size（font-051 实证）。
+    // **排除混合 inline+block 内容**（如 block-in-inline R109 inline-box-001、span+h4 multicol-
+    // block-no-clip-001）：此类容器的存储路径与现 paint 重跑在匿名块/碎片化上分歧致回归。
+    if !has_text_children && std::env::var("PHASEA_STORE_EXT").as_deref() != Ok("0") {
+        use zero_css_parser::values::DisplayValue;
+        let is_inline_display = |d: &DisplayValue| {
+            matches!(
+                d,
+                DisplayValue::Inline
+                    | DisplayValue::InlineBlock
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::InlineGrid
+                    | DisplayValue::InlineTable
+            )
+        };
+        let child_ids: Vec<NodeId> = doc.child_nodes(node_id);
+        let child_displays: Vec<Option<&DisplayValue>> =
+            child_ids.iter().map(|c| styles.get(c).map(|s| &s.display)).collect();
+        let has_inline_elem = child_displays.iter().any(|d| d.is_some_and(is_inline_display));
+        let has_block_elem = child_displays
+            .iter()
+            .any(|d| d.is_some_and(|dd| !is_inline_display(dd)));
+        // 进一步要求 inline-level 子元素为**叶文本容器**（无元素子节点）：排除 block-in-inline
+        //（inline 子元素含 block 后代，如 inline-box-002 的 div2>div3，R109 碎片化存储路径无法处理）。
+        let inline_children_have_elem = child_ids.iter().any(|c| {
+            styles.get(c).is_some_and(|s| is_inline_display(&s.display))
+                && doc
+                    .child_nodes(*c)
+                    .iter()
+                    .any(|gc| doc.get(*gc).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))))
+        });
+        has_text_children = has_inline_elem && !has_block_elem && !inline_children_have_elem;
+    }
+    if !has_text_children {
+        return;
+    }
+
+    // 创建 IFC 并使用与 paint_text 相同的 CSS 属性配置
+    use crate::inline::InlineFormattingContext;
+    use crate::inline::{TextAlign, WordBreakMode};
+    use crate::types::InlineLayoutFragment;
+    use crate::types::InlineLayoutLine;
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::property::types::{OverflowWrapValue, WhiteSpaceValue, WordBreakValue};
+
+    let container_width = root.content_width;
+
+    // 解析 CSS 属性（与 paint_text 相同的配置）
+    let break_word = matches!(
+        style.overflow_wrap,
+        OverflowWrapValue::BreakWord | OverflowWrapValue::Anywhere
+    );
+    let (no_wrap, preserve_whitespace) = match &style.white_space {
+        WhiteSpaceValue::Pre => (true, true),
+        WhiteSpaceValue::PreWrap => (false, true),
+        WhiteSpaceValue::PreLine => (false, false),
+        WhiteSpaceValue::Nowrap => (true, false),
+        _ => (false, false),
+    };
+    let break_word = break_word
+        || !no_wrap
+            && matches!(
+                style.overflow_wrap,
+                OverflowWrapValue::BreakWord | OverflowWrapValue::Anywhere
+            );
+    let word_break_mode = match &style.word_break {
+        WordBreakValue::BreakAll => WordBreakMode::BreakAll,
+        WordBreakValue::KeepAll => WordBreakMode::KeepAll,
+        _ => WordBreakMode::Normal,
+    };
+    let text_align = match &style.text_align {
+        zero_style_system::TextAlignValue::Left | zero_style_system::TextAlignValue::Start => TextAlign::Left,
+        zero_style_system::TextAlignValue::Right | zero_style_system::TextAlignValue::End => TextAlign::Right,
+        zero_style_system::TextAlignValue::Center => TextAlign::Center,
+        zero_style_system::TextAlignValue::Justify => TextAlign::Justify,
+    };
+    let text_indent_px = match &style.text_indent {
+        LengthValue::Px(v) => *v as f32,
+        _ => 0.0,
+    };
+    let tab_size_px = match &style.tab_size {
+        zero_style_system::TabSizeValue::Number(n) => *n as f32 * 8.0,
+        zero_style_system::TabSizeValue::Length(LengthValue::Px(v)) => *v as f32,
+        _ => 8.0,
+    };
+    let is_vertical = matches!(
+        root.writing_mode,
+        zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
+    );
+    let is_vertical_rtl = matches!(root.writing_mode, zero_style_system::WritingModeValue::VerticalRl);
+
+    // 构造与 paint-IFC 相同的 override maps。
+    // 仅纳入文本节点片段：text_node_* 混入了内联元素片段（如 <img>，font_size=0、height=96），
+    // 它们与文本片段共享同一父元素；直接 collect 时 last-write-wins，结果随 HashMap 迭代
+    // 顺序（每进程随机）变化 → 渲染非确定性。过滤为纯文本节点后结果确定。
+    let is_text = |tn: NodeId| matches!(doc.get(tn).map(|n| &n.kind), Some(NodeKind::Text(_)));
+    let parent_font_sizes: HashMap<NodeId, f32> = root
+        .text_node_font_sizes
+        .iter()
+        .filter_map(|(&text_node_id, &fs)| {
+            if !is_text(text_node_id) {
+                return None;
+            }
+            doc.parent_node(text_node_id).map(|pid| (pid, fs))
+        })
+        .collect();
+
+    let parent_is_ahem: HashMap<NodeId, bool> = root
+        .text_node_is_ahem
+        .iter()
+        .filter_map(|(&text_node_id, &is_ahem)| {
+            if !is_text(text_node_id) {
+                return None;
+            }
+            doc.parent_node(text_node_id).map(|pid| (pid, is_ahem))
+        })
+        .collect();
+
+    let parent_letter_spacing: HashMap<NodeId, f32> = root
+        .text_node_letter_spacing
+        .iter()
+        .filter_map(|(&text_node_id, &ls)| {
+            if !is_text(text_node_id) {
+                return None;
+            }
+            doc.parent_node(text_node_id).map(|pid| (pid, ls))
+        })
+        .collect();
+
+    let parent_line_heights: HashMap<NodeId, f32> = root
+        .text_node_line_heights
+        .iter()
+        .filter_map(|(&text_node_id, &lh)| {
+            if !is_text(text_node_id) {
+                return None;
+            }
+            doc.parent_node(text_node_id).map(|pid| (pid, lh))
+        })
+        .collect();
+
+    // 收集容器内的浮动排除区域
+    let exclusions: Vec<crate::inline::FloatExclusion> = root
+        .children
+        .iter()
+        .filter(|c| !matches!(c.float, zero_css_parser::values::FloatValue::None))
+        .filter_map(|c| {
+            let rel_y = c.y;
+            if rel_y < 0.0 || c.width <= 0.0 || c.height <= 0.0 {
+                return None;
+            }
+            Some(crate::inline::FloatExclusion {
+                y: rel_y + c.margin_top,
+                height: c.height + c.margin_bottom,
+                width: c.width + c.margin_left + c.margin_right,
+                is_left: matches!(c.float, zero_css_parser::values::FloatValue::Left),
+            })
+        })
+        .collect();
+
+    let mut inline_ctx = InlineFormattingContext::new(container_width)
+        .with_text_align(text_align)
+        .with_break_word(break_word)
+        .with_no_wrap(no_wrap)
+        .with_preserve_whitespace(preserve_whitespace)
+        .with_word_break(word_break_mode)
+        .with_text_indent(text_indent_px)
+        .with_tab_size(tab_size_px)
+        .with_vertical(is_vertical)
+        .with_vertical_rtl(is_vertical_rtl)
+        .with_font_size_overrides(parent_font_sizes)
+        .with_is_ahem_overrides(parent_is_ahem)
+        .with_letter_spacing_overrides(parent_letter_spacing)
+        .with_line_height_overrides(parent_line_heights)
+        .with_inline_element_metrics(root.inline_element_metrics.clone())
+        .with_margin_overrides(root.inline_element_margins.clone());
+
+    if !exclusions.is_empty() {
+        inline_ctx = inline_ctx.with_float_exclusions(exclusions);
+    }
+
+    // R109 §9.2.1.1：匿名块片段只收集其片段的 inline 内容（fragment_node_ids），
+    // 而非 inline 元素的全部 DOM 子节点。
+    if let Some(frag) = root.fragment_node_ids.clone() {
+        inline_ctx.set_fragment_node_ids(frag);
+    }
+
+    // R84：用真实样式跑 IFC。仅当结果为**单行**且容器为**纯 Ahem 字体**时存储：
+    // - 单行：line-breaking 不受样式影响，真实样式只修正 font-size/baseline，安全。
+    // - 纯 Ahem（font-family 恰好为 ["Ahem"]）：避免多字体列表（如 "Courier New, Ahem"）
+    //   在真实样式下的 font 解析/fallback 差异导致回归。
+    // 其余情况不存储——paint 回退到非存储路径（空样式），保持与 baseline 一致，避免回归。
+    inline_ctx.layout(doc, node_id, styles);
+    let is_pure_ahem = style.font_family.len() == 1 && style.font_family[0].eq_ignore_ascii_case("Ahem");
+    if inline_ctx.lines.len() > 1 || !is_pure_ahem {
+        return;
+    }
+
+    // 转换 IFC 结果为 InlineLayoutLine/InlineLayoutFragment
+    let lines: Vec<InlineLayoutLine> = inline_ctx
+        .lines
+        .iter()
+        .map(|line| InlineLayoutLine {
+            y: line.y,
+            height: line.height,
+            fragments: line
+                .runs
+                .iter()
+                .map(|frag| InlineLayoutFragment {
+                    x: frag.x,
+                    y: frag.y,
+                    width: frag.width,
+                    height: frag.height,
+                    font_size: frag.font_size,
+                    is_ahem: frag.is_ahem,
+                    text: frag.text.clone(),
+                    node_id: Some(frag.node_id),
+                })
+                .collect(),
+        })
+        .collect();
+
+    if !lines.is_empty() {
+        root.inline_layout = Some(lines);
+        root.inline_layout_width = container_width;
+    }
+}
+
+pub(crate) fn measure_text_content(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    dom_id: NodeId,
+    known_dimensions: Size<Option<f32>>,
+    available_space: Size<AvailableSpace>,
+) -> Size<f32> {
+    // 检查是否为文本节点（匿名 flex/grid item）
+    // 在 flex/grid 容器中，文本节点被包装为匿名 taffy 节点参与布局。
+    if let Some(node) = doc.get(dom_id)
+        && let NodeKind::Text(text_data) = &node.kind
+    {
+        let text = text_data.content.trim().to_string();
+        if text.is_empty() {
+            return Size::ZERO;
+        }
+        // 获取父元素的 ComputedStyle 用于字体指标
+        let parent_style = doc.parent_node(dom_id).and_then(|pid| styles.get(&pid));
+        let (font_size, line_height) = crate::inline::resolve_font_metrics(parent_style);
+        let is_ahem = parent_style
+            .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
+            .unwrap_or(false);
+
+        // 包含 letter-spacing：CSS 规范中 letter-spacing 适用于每个字符
+        let letter_spacing: f32 = parent_style
+            .map(|s| match &s.letter_spacing {
+                zero_style_system::property::types::LengthValue::Px(v) => *v as f32,
+                _ => 0.0,
+            })
+            .unwrap_or(0.0);
+        let measured_width: f32 = text
+            .chars()
+            .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem) + letter_spacing)
+            .sum();
+
+        return Size {
+            width: known_dimensions.width.unwrap_or(measured_width),
+            height: known_dimensions.height.unwrap_or(line_height),
+        };
+    }
+
+    if !has_inline_content(doc, styles, dom_id) {
+        // 无行内内容的叶节点（如空的 flex/grid 子元素）：
+        // 尺寸来自 known_dimensions（taffy 已知的尺寸），
+        // 回退到 CSS computed style 的显式 width/height。
+        // 注意：taffy flexbox 在 measure callback 中会将主轴 known_dimensions 设为 None
+        // （因为主轴尺寸由 flex 布局控制），所以需要从 computed style 获取。
+        let style = styles.get(&dom_id);
+        let explicit_w = known_dimensions.width.or_else(|| {
+            style.and_then(|s| match &s.width {
+                LengthValue::Px(v) => Some(*v as f32),
+                _ => None,
+            })
+        });
+        let explicit_h = known_dimensions.height.or_else(|| {
+            style.and_then(|s| match &s.height {
+                LengthValue::Px(v) => Some(*v as f32),
+                _ => None,
+            })
+        });
+        return Size {
+            width: explicit_w.unwrap_or(0.0),
+            height: explicit_h.unwrap_or(0.0),
+        };
+    }
+
+    let width = known_dimensions
+        .width
+        .or(available_space.width.into_option())
+        .unwrap_or(f32::INFINITY)
+        .max(0.0);
+    let is_vertical = doc
+        .parent_node(dom_id)
+        .and_then(|pid| styles.get(&pid))
+        .is_some_and(|s| {
+            matches!(
+                s.writing_mode,
+                WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+            )
+        });
+    let is_vertical_rtl = doc
+        .parent_node(dom_id)
+        .and_then(|pid| styles.get(&pid))
+        .is_some_and(|s| matches!(s.writing_mode, WritingModeValue::VerticalRl));
+    // 收集 inline-block 子元素的尺寸，供 IFC 正确计算行盒和换行。
+    // resolve_inline_block_dimension 对 Percentage 值返回 0，
+    // 需要用容器宽度解析百分比后提供给 IFC。
+    let ib_sizes: HashMap<NodeId, (f32, f32)> = doc
+        .child_nodes(dom_id)
+        .iter()
+        .filter_map(|&child_id| {
+            let child_node = doc.get(child_id)?;
+            if !matches!(&child_node.kind, NodeKind::Element(_)) {
+                return None;
+            }
+            let style = styles.get(&child_id)?;
+            if !matches!(style.display, DisplayValue::InlineBlock) {
+                return None;
+            }
+            let w = crate::inline::resolve_inline_block_dimension(&style.width, style, true);
+            let h = crate::inline::resolve_inline_block_dimension(&style.height, style, false);
+            // Percentage 宽度用 container_width 解析
+            let resolved_w = if w > 0.0 {
+                w
+            } else if let LengthValue::Percentage(pct) = &style.width {
+                (*pct as f32 / 100.0) * width
+            } else {
+                0.0
+            };
+            let resolved_h = if h > 0.0 {
+                h
+            } else if let LengthValue::Percentage(pct) = &style.height {
+                (*pct as f32 / 100.0) * width
+            } else {
+                0.0
+            };
+            if resolved_w > 0.0 || resolved_h > 0.0 {
+                Some((child_id, (resolved_w, resolved_h)))
+            } else {
+                None
+            }
+        })
+        .collect();
+    let mut inline_ctx = InlineFormattingContext::new(width)
+        .with_vertical(is_vertical)
+        .with_vertical_rtl(is_vertical_rtl)
+        .with_inline_block_sizes(ib_sizes);
+    inline_ctx.layout(doc, dom_id, styles);
+
+    let measured_width = inline_ctx
+        .all_fragments()
+        .iter()
+        .map(|fragment| fragment.x + fragment.width)
+        .fold(0.0_f32, f32::max);
+
+    Size {
+        width: known_dimensions.width.unwrap_or(measured_width),
+        height: known_dimensions.height.unwrap_or(inline_ctx.total_height()),
+    }
+}
+
+pub(crate) fn has_direct_text(doc: &Document, dom_id: NodeId) -> bool {
+    doc.child_nodes(dom_id).iter().any(|child_id| {
+        matches!(
+            doc.get(*child_id).map(|node| &node.kind),
+            Some(NodeKind::Text(text)) if !text.content.trim().is_empty()
+        )
+    })
+}
+
+/// 检查容器是否包含行内级内容（文本节点或行内级元素）。
+///
+/// CSS 2.1 规范要求空 inline 元素仍通过 line-height + padding + border
+/// 贡献到行盒高度。仅检查文本节点会遗漏仅包含空 inline 元素的容器，
+/// 导致 IFC 不被调用，行盒高度计算不正确。
+pub(crate) fn has_inline_content(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, dom_id: NodeId) -> bool {
+    // 快速路径：有直接文本子节点
+    if has_direct_text(doc, dom_id) {
+        return true;
+    }
+
+    // 检查是否有 inline-level 元素子节点
+    use zero_style_system::property::types::DisplayValue;
+    doc.child_nodes(dom_id).iter().any(|child_id| {
+        if let Some(node) = doc.get(*child_id)
+            && let NodeKind::Element(_elem_data) = &node.kind
+            && let Some(style) = styles.get(child_id)
+        {
+            return matches!(style.display, DisplayValue::Inline | DisplayValue::InlineBlock);
+        }
+        false
+    })
+}
+
+/// 为包含 float 元素的容器重新测量行内文本，使文本环绕 float 排列。
+///
+/// 工作原理：
+/// 1. 遍历 LayoutBox 树，找到同时包含 float 子元素和直接文本内容的容器
+/// 2. 收集容器内的 float 元素的几何信息，构建 FloatExclusion 列表
+/// 3. 使用 float exclusions 重新运行 InlineFormattingContext 排列文本
+/// 4. 用重新排列后的行盒更新容器的内部布局信息
+pub(crate) fn remeasure_text_with_float_exclusions(
+    box_node: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    // 收集此容器的 float 排除区域
+    let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
+
+    if has_floats {
+        // 构建 float 排除区域列表
+        let exclusions: Vec<FloatExclusion> = box_node
+            .children
+            .iter()
+            .filter(|c| !matches!(c.float, FloatValue::None))
+            .filter_map(|c| {
+                // c.y 现在是相对于父级内容区域的坐标（与 taffy 一致）
+                let rel_y = c.y;
+                if rel_y < 0.0 || c.width <= 0.0 || c.height <= 0.0 {
+                    return None;
+                }
+                Some(FloatExclusion {
+                    y: rel_y + c.margin_top,
+                    height: c.height + c.margin_bottom,
+                    width: c.width + c.margin_left + c.margin_right,
+                    is_left: matches!(c.float, FloatValue::Left),
+                })
+            })
+            .collect();
+
+        // 如果有排除区域且容器有行内级内容
+        if !exclusions.is_empty()
+            && let Some(dom_id) = box_node.node_id
+            && has_inline_content(doc, styles, dom_id)
+        {
+            // 收集 inline-block 子元素的 LayoutBox 尺寸
+            let ib_sizes: HashMap<NodeId, (f32, f32)> = box_node
+                .children
+                .iter()
+                .filter(|c| {
+                    c.node_id.is_some_and(|id| {
+                        styles
+                            .get(&id)
+                            .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+                    })
+                })
+                .filter_map(|c| {
+                    let node_id = c.node_id?;
+                    Some((node_id, (c.content_width, c.content_height)))
+                })
+                .collect();
+
+            // 重新运行 inline layout with float exclusions
+            let container_width = box_node.content_width;
+            let is_vertical = matches!(
+                box_node.writing_mode,
+                WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+            );
+            let is_vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
+            let text_align = resolve_text_align(styles.get(&dom_id));
+            let mut inline_ctx = InlineFormattingContext::new(container_width)
+                .with_float_exclusions(exclusions)
+                .with_vertical(is_vertical)
+                .with_vertical_rtl(is_vertical_rtl)
+                .with_text_align(text_align)
+                .with_inline_block_sizes(ib_sizes);
+            inline_ctx.layout(doc, dom_id, styles);
+
+            // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
+            store_font_sizes_from_ifc(&inline_ctx, box_node);
+            sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
+
+            // 容器高度需要包含 float 元素占用的空间
+            let text_height = inline_ctx.total_height();
+            let float_bottom = box_node
+                .children
+                .iter()
+                .filter(|c| !matches!(c.float, FloatValue::None))
+                .map(|c| c.y + c.height + c.margin_bottom)
+                .fold(0.0_f32, f32::max);
+
+            // 使用文本和 float 中较大的高度
+            let content_height = text_height.max(float_bottom);
+            // 更新容器的内容高度：文本环绕 float 后可能需要更大的高度
+            if content_height > box_node.content_height {
+                let diff = content_height - box_node.content_height;
+                box_node.content_height = content_height;
+                box_node.height += diff;
+            }
+        }
+    }
+
+    // 递归处理子容器
+    for child in &mut box_node.children {
+        remeasure_text_with_float_exclusions(child, doc, styles);
+    }
+}
+
+/// 为包含行内级子元素但无 float 的容器重新测量内容高度。
+///
+/// 当一个 block 容器只包含 inline 或 inline-block 子元素时（无文本节点），
+/// taffy 将这些元素当作 block 排列，无法正确计算行盒高度。
+/// 此函数检测这类容器，运行 IFC 获取正确的内容高度。
+///
+/// 典型场景：`<div><span style="line-height:5"></span></div>`
+/// 空 span 的 line-height 应贡献到行盒高度，但 taffy 无法处理此情况。
+pub(crate) fn remeasure_inline_only_containers(
+    box_node: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    // flex/grid 容器不走 IFC 重算——它们的子元素是 flex/grid item，
+    // 尺寸由 taffy 决定，不应被 IFC 片段覆盖。
+    // table 容器仅在有 table-internal 子元素时跳过（如 tbody/tr/td）；
+    // 无 table-internal 子元素的 table 容器行为等价于 block，需要 IFC 重算。
+    if box_node.is_layout_container {
+        let is_table_without_internals = box_node.node_id.is_some_and(|id| {
+            styles
+                .get(&id)
+                .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable))
+        }) && !box_node.children.iter().any(|c| {
+            c.node_id.is_some_and(|cid| {
+                styles.get(&cid).is_some_and(|s| {
+                    matches!(
+                        s.display,
+                        DisplayValue::TableRowGroup
+                            | DisplayValue::TableHeaderGroup
+                            | DisplayValue::TableFooterGroup
+                            | DisplayValue::TableRow
+                            | DisplayValue::TableCell
+                            | DisplayValue::TableColumn
+                            | DisplayValue::TableColumnGroup
+                            | DisplayValue::TableCaption
+                    )
+                })
+            })
+        });
+        if !is_table_without_internals {
+            // 仍然递归处理子容器
+            for child in &mut box_node.children {
+                remeasure_inline_only_containers(child, doc, styles);
+            }
+            return;
+        }
+    }
+
+    // 检查此容器是否有 inline-level 子元素（is_block_level == false）
+    // 且不包含 float 子元素（float 容器由 remeasure_text_with_float_exclusions 处理）
+    let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
+    let has_inline_children = box_node
+        .children
+        .iter()
+        .any(|c| !c.is_block_level && !c.is_absolute && !c.is_fixed);
+    // R105：仅含直接 DOM 文本（无 inline 元素子，文本不生成独立 LayoutBox 子）且 taffy 未测量
+    // （content_height≈0）的块也需要 remeasure——否则其 font_size 不会被 store_font_sizes_from_ifc
+    // 存储，paint IFC 默认 16，导致大字号（100px）reftest（如 inline-formatting-context-008）渲染成 16px。
+    // content_height≈0 守卫避免覆盖 taffy 已正确测量的块（font-feature/multicol-fill-auto/abspos 回归源）。
+    let has_dom_text = box_node.node_id.is_some_and(|id| {
+        doc.child_nodes(id)
+            .iter()
+            .any(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
+    });
+    let needs_dom_text_remeasure =
+        has_dom_text && box_node.content_height < 1.0 && box_node.children.iter().all(|c| c.is_absolute || c.is_fixed);
+
+    if !has_floats
+        && (has_inline_children || needs_dom_text_remeasure)
+        && let Some(dom_id) = box_node.node_id
+        && let Some(style) = styles.get(&dom_id)
+        && matches!(style.height, LengthValue::Auto)
+    {
+        let container_width = box_node.content_width;
+        let is_vertical = matches!(
+            box_node.writing_mode,
+            WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+        );
+        let is_vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
+        let text_align = resolve_text_align(styles.get(&dom_id));
+        // 收集 inline-block 子元素的 LayoutBox 尺寸，供 IFC 解析百分比宽度。
+        let ib_sizes: HashMap<NodeId, (f32, f32)> = box_node
+            .children
+            .iter()
+            .filter(|c| {
+                c.node_id.is_some_and(|id| {
+                    styles
+                        .get(&id)
+                        .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+                })
+            })
+            .filter_map(|c| {
+                let node_id = c.node_id?;
+                Some((node_id, (c.content_width, c.content_height)))
+            })
+            .collect();
+        let ib_sizes_for_mc = ib_sizes.clone();
+        let mut inline_ctx = InlineFormattingContext::new(container_width)
+            .with_vertical(is_vertical)
+            .with_vertical_rtl(is_vertical_rtl)
+            .with_text_align(text_align)
+            .with_inline_block_sizes(ib_sizes);
+        inline_ctx.layout(doc, dom_id, styles);
+
+        // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
+        store_font_sizes_from_ifc(&inline_ctx, box_node);
+        sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
+
+        let full_height = inline_ctx.total_height();
+        // balance 模式多列容器：按列宽单独测量，计算均衡分布后的高度
+        // （tallest column = ceil(num_lines / col_count) 行），使容器高度匹配
+        // 分配后的列内容，而非全宽 IFC 的较短高度。
+        let content_height = if let Some((cw, cols)) = crate::multicol::balance_column_geometry(style, container_width)
+        {
+            let mut col_ctx = InlineFormattingContext::new(cw)
+                .with_vertical(is_vertical)
+                .with_vertical_rtl(is_vertical_rtl)
+                .with_text_align(text_align)
+                .with_inline_block_sizes(ib_sizes_for_mc);
+            col_ctx.layout(doc, dom_id, styles);
+            let total = col_ctx.total_height();
+            let n = col_ctx.lines.len();
+            if n > 0 && cols > 0 {
+                n.div_ceil(cols) as f32 * (total / n as f32)
+            } else {
+                total
+            }
+        } else {
+            full_height
+        };
+        if content_height > box_node.content_height {
+            // 如果 IFC 计算的高度大于 taffy 的高度，更新容器高度
+            let diff = content_height - box_node.content_height;
+            box_node.content_height = content_height;
+            box_node.height += diff;
+        } else if content_height < box_node.content_height {
+            // 纯 inline-level 容器且非特殊布局容器：允许减小高度。
+            // taffy 将 inline 元素映射为 Block，会错误地包含 inline 元素的垂直 margin，
+            // 而 CSS 2.1 规定 inline 元素的 margin-top/margin-bottom 不影响行盒高度。
+            let has_block_children = box_node
+                .children
+                .iter()
+                .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed);
+            let is_layout_container = matches!(
+                style.display,
+                DisplayValue::Flex
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::Grid
+                    | DisplayValue::InlineGrid
+                    | DisplayValue::Table
+                    | DisplayValue::InlineTable
+            );
+            if !has_block_children && !is_layout_container {
+                let diff = content_height - box_node.content_height;
+                box_node.content_height = content_height;
+                box_node.height += diff;
+            }
+        }
+    }
+
+    // 递归处理子容器，并在 inline-only 容器收缩后把后续普通流兄弟一并上移。
+    let mut idx = 0usize;
+    while idx < box_node.children.len() {
+        let old_height = box_node.children[idx].height;
+        let old_content_height = box_node.children[idx].content_height;
+        remeasure_inline_only_containers(&mut box_node.children[idx], doc, styles);
+        let height_delta = box_node.children[idx].height - old_height;
+        let content_height_delta = box_node.children[idx].content_height - old_content_height;
+        let shrink_delta = height_delta.min(content_height_delta);
+        if shrink_delta < -0.01
+            && matches!(box_node.children[idx].float, FloatValue::None)
+            && !box_node.children[idx].is_absolute
+            && !box_node.children[idx].is_fixed
+            // 垂直书写模式下块流方向为水平（x 轴），「高度」是 inline 轴跨度。
+            // inline 轴收缩不会在块轴留下空隙，故不应移动后续块兄弟（它们按 x 排列）。
+            // 旧代码无条件 `sibling.y += shrink_delta` 会把垂直模式的兄弟推到负 y（屏幕外），
+            // 例如 writing-mode:vertical-rl 根页面整页渲染为空白（box-offsets-rel-pos-vrl-004）。
+            && matches!(box_node.writing_mode, WritingModeValue::HorizontalTb)
+        {
+            for sibling in box_node.children.iter_mut().skip(idx + 1) {
+                if sibling.is_absolute || sibling.is_fixed || !matches!(sibling.float, FloatValue::None) {
+                    continue;
+                }
+                sibling.y += shrink_delta;
+            }
+        }
+        idx += 1;
+    }
+}
