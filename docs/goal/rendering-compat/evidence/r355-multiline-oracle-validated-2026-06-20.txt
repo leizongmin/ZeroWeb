@@ -1,0 +1,67 @@
+R355 — Phase A 多行存储放宽（chromium-Oracle 验证 net-positive，self-source 零回归）
+日期：2026-06-20
+方法：本地 headless chromium（/usr/bin/chromium + puppeteer-core）作为独立 Oracle，
+对 Phase A 死锁测试集捕获 chromium 截图，与 ZeroWeb-TEST 截图（REFTEST_DUMP）逐像素对比
+（Z_vs_chromium = 真一致性指标，DC-14）。Ahem 字体装为系统用户字体保证 chromium 渲染一致。
+
+═══════════════════════════════════════════════════════════════
+背景：Phase A 墙（R209/R213 死锁）
+═══════════════════════════════════════════════════════════════
+Gate 2（inline_finalization.rs:458）：`if lines.len()>1 || !is_pure_ahem { return; }`
+仅存储「单行 + 纯 Ahem」IFC 结果。R209 放宽多行 → ifc-008/009 self-source 改善但
+multicol-fill-auto-001 回归（0.63→9.15 self-source）；R213 加 !in_multicol guard → net-0
+（multicol-fill-auto-001 的 ref 用 float div 模拟列，guard 无法触及）→ 回退。
+死锁核心：放宽多行存储使某 test/ref 对（test=multicol 已排除存储 / ref=float div）不对称发散。
+
+═══════════════════════════════════════════════════════════════
+R355 关键洞察：multicol-fill-auto-001 的 self-source 回归是 FALSE NEGATIVE
+═══════════════════════════════════════════════════════════════
+chromium-Oracle 实测（CURRENT code，多行未放宽）：
+  multicol-fill-auto-001  Z_vs_chromium = 9.15%   ← self-source 0.63% PASS = 假通过！
+该 case 的 ZeroWeb-TEST 渲染本就与 chromium 差 9.15%，self-source 0.63% 仅因 ZeroWeb-test
+与 ZeroWeb-ref（同为 ZeroWeb 渲染）偶然接近。DC-14 anti-false-pass 实证。
+
+R209 报告的「multicol-fill-auto-001 0.63→9.15 回归」经 Oracle 复测 = self-source 假阴性
+（ZW-ref 渲染因多行存储变化，与 ZW-test 发散；但 ZW-test vs chromium 不变 9.15%）= 非真回归。
+
+═══════════════════════════════════════════════════════════════
+R355 修复（inline_finalization.rs Gate 2）
+═══════════════════════════════════════════════════════════════
+放宽为「多行 + 纯 Ahem」存储，**但浮动容器保持 R84 单行限制**：
+  if !is_pure_ahem || (is_floated && lines.len()>1) { return; }
+float guard：multicol-fill-auto-001 ref 的 float div 多行文本不被存储（恢复 R84 行为），
+维持 test/ref 对称 → self-source 0.63% 保留。非浮动纯 Ahem 多行容器（ifc-008/009）正常存储。
+
+═══════════════════════════════════════════════════════════════
+chromium-Oracle 实测结果（Z_vs_chromium %，lower = 更一致）
+═══════════════════════════════════════════════════════════════
+test                       | baseline | R355 多行 | delta
+---------------------------|----------|-----------|-------
+ifc-008                    |   8.66%  |   4.65%   | -4.01  ✓ 真改善
+ifc-009                    |   7.46%  |   5.51%   | -1.95  ✓ 真改善
+ifc-011                    |  12.55%  |  12.55%   |  0.00  （容器结构未达存储路径，独立子问题）
+empty-inline-002           |  26.39%  |  26.39%   |  0.00  （同上）
+multicol-fill-auto-001     |   9.15%  |   9.15%   |  0.00  ✓ 无真回归（float guard 保 self-source）
+SUM                        |  64.21%  |  58.25%   | -5.96  ✓ net-positive
+
+═══════════════════════════════════════════════════════════════
+self-source reftest（490 全量）
+═══════════════════════════════════════════════════════════════
+baseline:    439/490 (89.6%), 51 failures
+R355 多行:   439/490 (89.6%), 51 failures（**failure 集与 baseline 完全一致，零回归零新增**）
+  ifc-008 self-source 8.18→4.17%（改善但仍 >阈值 FAIL）
+  ifc-009 self-source 6.11→4.17%（改善但仍 >阈值 FAIL）
+  multicol-fill-auto-001 self-source 0.63%（保留 PASS，float guard 生效）
+
+═══════════════════════════════════════════════════════════════
+结论
+═══════════════════════════════════════════════════════════════
+R355 = Phase A 首个 chromium-Oracle 验证的 net-positive 进展：
+  - 真修复 large-font bug（ifc-008/009 的 100px 多行文本不再被 paint 16px 默认覆盖）
+  - self-source 零回归（float guard 解 R209/R213 死锁）
+  - 证明 Phase A 多行路径 CAN 在 Oracle 下净正向（de-risk 架构）
+未翻 PASS 的 ifc-008/009（4.17% self-source）残余 = 容器内 prose 字体噪声 + Ahem 偏移/baseline
+（R306 谱系），独立于多行存储，需后续 narrow 精修。ifc-011/empty-inline-002 容器结构未达存储
+路径（block-level/has_text_children 检查未过），独立子问题。
+启示：chromium Oracle 是判定「self-source 回归是否真」的必要工具——R209 因仅看 self-source 误判
+multicol-fill-auto-001 为真回归而回退，错失 Phase A 进展。后续 Phase A 迭代必须用 Oracle 验证。

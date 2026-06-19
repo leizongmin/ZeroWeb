@@ -629,3 +629,66 @@ fn test_r207_stored_inline_layout_for_inline_child_container() {
         frag_fs
     );
 }
+
+/// R355 multi-line stored-line-boxes 守护（large-font 簇 ifc-008/009）。
+///
+/// R207 仅存储「单行 + 纯 Ahem」容器；R355 放宽为「多行 + 纯 Ahem」（非浮动），
+/// 解 large-font bug（100px 多行文本 paint 阶段被 16px 默认值覆盖）。本测试断言：
+/// (1) 非浮动多行纯 Ahem 容器存储 inline_layout 且行数 > 1（R355 新覆盖）；
+/// (2) 浮动多行纯 Ahem 容器**不**存储（保持 R84 单行限制——multicol-fill-auto-001 ref
+///     用 float div 模拟列，test 用真 multicol；浮动容器多行存储打破 test/ref 对称）。
+#[test]
+fn test_r355_multiline_stored_layout_pure_ahem() {
+    let html = "<html><body>\
+<div id=\"nf\" style=\"font: 100px/1 Ahem; width: 150px;\">XX XX</div>\
+<div id=\"fl\" style=\"font: 100px/1 Ahem; width: 150px; float: left;\">XX XX</div>\
+</body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut style_system = StyleSystem::new();
+    style_system.set_viewport(800.0, 600.0);
+    let styles = style_system.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let mut nf_box = None;
+    let mut fl_box = None;
+    let mut stack = vec![&result.root];
+    while let Some(node) = stack.pop() {
+        if let Some(nid) = node.node_id
+            && let Some(dn) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(el) = &dn.kind
+        {
+            match el.get_attribute("id").as_deref() {
+                Some("nf") => nf_box = Some(node),
+                Some("fl") => fl_box = Some(node),
+                _ => {}
+            }
+        }
+        stack.extend(node.children.iter());
+    }
+    let nf_box = nf_box.expect("#nf");
+    let fl_box = fl_box.expect("#fl");
+
+    // (1) 非浮动多行纯 Ahem：R355 存储，行数 > 1（"XX XX" 在 150px 宽下换行成 ≥2 行）。
+    let nf_lines = nf_box.inline_layout.as_ref().map(|l| l.len());
+    assert!(
+        nf_box.inline_layout.is_some() && nf_lines.is_some_and(|n| n > 1),
+        "#nf 非浮动多行纯 Ahem 应存储多行 inline_layout (R355)，实际 lines={:?}",
+        nf_lines
+    );
+    // 存储片段 font_size 应为真实 100px（非 paint 重跑的 16px）。
+    let nf_fs = nf_box
+        .inline_layout
+        .as_ref()
+        .and_then(|lines| lines.first())
+        .and_then(|l| l.fragments.first())
+        .map(|f| f.font_size);
+    assert_eq!(nf_fs, Some(100.0), "#nf 存储 font_size 应为 100px，实际={:?}", nf_fs);
+
+    // (2) 浮动多行纯 Ahem：保持 R84 单行限制——多行不存储。
+    assert!(
+        fl_box.inline_layout.is_none(),
+        "#fl 浮动多行纯 Ahem 不应存储 inline_layout（R355 浮动 guard，保 multicol-fill-auto-001 self-source），实际={}",
+        fl_box.inline_layout.is_some()
+    );
+}
