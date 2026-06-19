@@ -110,6 +110,18 @@ cargo run --bin zero-browser -- --headless --remote-debugging-port=9222
 
 想先验证最短渲染链路，可以先跑 `webview-demo`；想直接看浏览器壳、多进程和 headless 能力，就跑 `zero-browser`。`zero-browser` 还支持 `--renderer=<mode>`（切换渲染后端）、`--scale=<factor>`（HiDPI）等参数，`--help` 可看完整列表。在 Linux 和 macOS 上，`make build` / `make browser` 会先自动处理 `rusty_v8` 下载。
 
+### 4. 打包为可分发产物
+
+需要把 `zero-browser` 打成各平台安装包时，可以用仓库里的打包脚本（产物输出到 `target/packages/`）：
+
+```bash
+./scripts/package-linux.sh                                              # Linux：.AppImage / .deb（--appimage|--deb|--all）
+./scripts/package-macos.sh                                              # macOS：ZeroBrowser.app（需在 macOS 上运行）
+powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1    # Windows：.zip（-Installer 生成 NSIS 安装器）
+```
+
+推送 `v*` tag 时，`.github/workflows/release.yml` 会在 Linux、macOS、Windows 上自动构建并附带产物。项目仍在实验阶段，这些产物仅供本地测试与体验，不代表正式发布。
+
 ## 仓库结构
 
 ### 应用与进程入口
