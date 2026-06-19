@@ -1129,6 +1129,34 @@ impl super::Painter {
                         ($frag_x:expr, $frag_y:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr) => {{
                             self.painted_inline_nodes.insert($frag_nid);
 
+                            // R358：per-fragment color（带 abs-pos guard）。
+                            // 非多列路径此前所有片段用容器 color（丢失 span 自身 color，
+                            // 如 multicol-count-computed-004 彩色 span 被渲成容器黑色）。
+                            // 现解析每个片段所属元素的 color，**但 abs-pos/fixed 片段保留容器 color**——
+                            // R335 实证 per-fragment color 作用于 abspos 文本会使绿色 X 更显眼地绘在
+                            // 错误的 paint-IFC（正常流）位置 → abs-pos-non-replaced-vrl/vlr 4 case 回归。
+                            // abspos 文本位置修复需 Phase A（R336 double-path），guard 维持当前行为。
+                            let owner_id = if doc
+                                .get($frag_nid)
+                                .is_some_and(|n| matches!(n.kind, NodeKind::Text(_)))
+                            {
+                                doc.parent_node($frag_nid).unwrap_or($frag_nid)
+                            } else {
+                                $frag_nid
+                            };
+                            let frag_color = styles
+                                .and_then(|s| s.get(&owner_id))
+                                .filter(|s| {
+                                    s.color != ColorValue::CurrentColor
+                                        && !matches!(
+                                            s.position,
+                                            zero_css_parser::values::PositionValue::Absolute
+                                                | zero_css_parser::values::PositionValue::Fixed
+                                        )
+                                })
+                                .map(|s| color_value_to_render(&s.color))
+                                .unwrap_or(color);
+
                             let (frag_base_x, frag_base_y, char_advance_is_y) = if is_vertical {
                                 (content_x + $frag_x + tx, content_y + $frag_y + ty, true)
                             } else {
@@ -1171,7 +1199,7 @@ impl super::Painter {
                                     x: glyph_x,
                                     y: glyph_y,
                                     font_size: $frag_fs,
-                                    color,
+                                    color: frag_color,
                                     glyph_id: ch as u32,
                                     font_id: default_font_id,
                                     bitmap_width: None,
@@ -1197,7 +1225,7 @@ impl super::Painter {
                                 frag_base_y,
                                 $frag_fs,
                                 text_width,
-                                color,
+                                frag_color,
                                 style,
                             );
                         }};
