@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-19（R334：回溯执行 R237/R238 标「首选候选」但从未实施的 WM-1 abs-pos-non-replaced-vrl/vlr（14 case）——实证**positioning 假设部分证伪**：ltr 定位本就正确（vrl-002 span y=160 ✓），rtl 仅因 direction 被忽略而错。落地 **direction-rtl 镜像修复**（engine.rs fix_vertical_mode_abs_pos，spec-correct，vrl-012 现 y=80 = worked example）。**但 0 clean win**：cluster 真阻塞 = 绿色 "X" glyph 完全未绘制（paint-IFC 用容器 `color:transparent` 绘制全部 inline 文本，per-fragment 颜色覆盖仅 multicol 分支）= **inline-ownership/Phase A IFC 双路径死锁**，非 positioning。镜像保留为 spec-correct latent fix（loose 438/490 零回归，vrl-012 strict 5.03→3.67）。WM-1 作为 positioning lever 关闭。详见 [`evidence/r334-wm1-abspos-vertical-exam-2026-06-19.txt`](./evidence/r334-wm1-abspos-vertical-exam-2026-06-19.txt)）
+**最后更新**: 2026-06-19（R335：承接 R334 WM-1 真阻塞定位（green "X" 未绘制），探查 paint-IFC per-fragment 颜色修复——镜像 multicol 分支 text.rs:1028 把非多列 `render_fragment!` 改为按 fragment 所属 inline 元素取 color。**实证 net-negative**：loose 子集 14/14→12/14（净 -2），多数 case diff 上升 1-1.5pp（vrl-002 1.33→2.67、vrl-130 5.03→6.33）。根因 = green X 现由 div 的 **paint IFC** 在 **paint-IFC 位置**（normal-flow）绘制，≠ ref 期望的 abspos 静态位置（layout IFC，R334 实证 y=80 正确）= **Layout/Paint IFC 双路径**（gap #4）。per-fragment 颜色虽隔离正确，激活了错误路径绘制→离 ref 更远。已 100% 回退，**WM-1 从 positioning(R334)+color(R335) 两角度均收敛至 Phase A**，单会话 lever 彻底穷尽。详见 [`evidence/r335-per-fragment-color-probe-net-negative-2026-06-19.txt`](./evidence/r335-per-fragment-color-probe-net-negative-2026-06-19.txt)）
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
@@ -51,7 +51,7 @@
 | taffy 0.11 升级 | R304 | DEFER（541 ref + 108 alignment + native float 冲突，具名缺口零收益） |
 | clear+margin-collapse（clear-float-003 等） | R333 | ZeroWeb 把 `clear` 仅 convert_clear→bool 传 taffy 0.7，无 ZeroWeb 侧 clearance 后处理 → clear+margin 折叠交互 = taffy-0.7-bound（R323 探针覆盖基本折叠不含 clearance）。须 taffy 升级或自建 clearance 后处理（与 taffy margin 折叠耦合，高风险） |
 | CSS2/multicol 剩余失败（border-bottom-width-006 / border-padding-bleed / multicol-count-computed-003/004 等） | R333 | 新鲜审视 5 未深查用例全结构性：inline-box 模型（vertical-align/行盒绘制，与 Phase A 耦合）；multicol 列几何计算 spec-正确（divergence 在内容分布/规则定位，multicol 结构死锁）。DC-11 correctness 轴（R323-R326）确已穷尽 |
-| WM-1 abs-pos-non-replaced-vrl/vlr（R237/R238「首选候选」从未执行） | R334 | 实证**positioning 假设部分证伪**：ltr 定位本就正确（vrl-002 y=160），rtl 仅因 direction 忽略而错；落地 direction-rtl 镜像修复（spec-correct，vrl-012 现 y=80 ✓）。**0 clean win**——cluster 真阻塞 = 绿色 "X" glyph 未绘制（paint-IFC 用容器 `color:transparent` 绘全部 inline 文本，per-fragment 颜色仅 multicol 分支）= inline-ownership/Phase A 死锁，非 positioning。镜像保留（latent，loose 438/490 零回归），WM-1 作 positioning lever 关闭 |
+| WM-1 abs-pos-non-replaced-vrl/vlr（R237/R238「首选候选」从未执行） | R334/R335 | R334 实证 positioning 假设部分证伪（ltr 本就正确，rtl 仅 direction 忽略；落地 direction-rtl 镜像修复 spec-correct，0 clean win，latent 保留）。R335 探查 per-fragment 颜色（镜像 multicol text.rs:1028 到非多列路径）= **net-negative**（loose 14/14→12/14，green X 由 paint IFC 绘在 normal-flow 位置 ≠ abspos 静态位置）。**两角度均收敛至 Layout/Paint IFC 双路径（gap #4 = Phase A）**，WM-1 单会话 lever 彻底穷尽 |
 
 **剩余 forward motion = 多会话架构承诺（非单会话），或接受 plateau**：
 
@@ -1207,6 +1207,22 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 **全局影响**：WM-1 是 R237/R238 后唯一「推荐但未执行」的 writing-modes contained 候选。本轮实证关闭它，进一步收敛「单会话 lever 已穷尽」。剩余 writing-modes 失败（WM-2 clip-rect 同 paint-IFC 颜色+swatch 噪声 / WM-5 clearance-vrl R114b/R164 四轮证伪 / WM-6/7 vertical-orthogonal float R133 结构多轮）全结构性/Phase A 耦合。
 
 **代码变更**：`crates/layout-engine/src/engine.rs`（fix_vertical_mode_abs_pos +direction-rtl 镜像 + 1 回归单测）。loose 438/490 零回归；strict 总数 295 不变（vrl-012 改善 5.03→3.67 未跨 0.5% 阈）。clippy --workspace --all-targets 干净；cargo fmt 干净；layout-engine 888 测试全过。
+
+### R335 — paint-IFC per-fragment 颜色探针 net-negative：WM-1 真阻塞 = Phase A 双路径终局确认（探针已回退，基线持平）
+
+**承接**：R334 收尾 CONTINUE 指向探查 paint-IFC per-fragment 颜色修复可行性。R334 定位 WM-1 cluster（abs-pos-non-replaced-vrl/vlr）真阻塞 = 绿色 "X" glyph 完全未绘制（paint-IFC 用容器 `color:transparent` 绘全部 inline 子树，per-fragment 颜色覆盖仅 multicol 分支 text.rs:1028）。本轮实证该修复是否可 bounded 落地。
+
+**探针实现（已 100% 回退）**：非多列 `render_fragment!` 宏（text.rs:1124，覆盖 use_stored + 非存储两 fragment 循环）镜像 multicol 分支（text.rs:1019-1032）——解析 fragment 所属 inline 元素（文本节点取父元素）的 color，fallback 容器 color；glyph add 改用 frag_color。生产 caller（mod.rs:263/452）传 `Some(styles)`，per-fragment 解析可生效。
+
+**实证（abs-pos-non-replaced 子集 loose，探针 ON）**：**loose 14/14 → 12/14 净 -2**，多数 case diff 上升 1-1.5pp（vrl-002 1.33→2.67、vrl-012 3.67→5.00、vrl-130 5.03→6.33 新 loose FAIL、vlr-163 5.40 新 loose FAIL）。
+
+**根因（Phase A 双路径，R334 推断实证确认）**：green X 现被 div 的 **paint IFC** 在 **paint-IFC 位置**（normal-flow，"X" 紧跟 "1 2 34"）绘制，≠ ref 期望的 **abspos 静态位置**（fix_vertical_mode_abs_pos 计算，R334 实证 vrl-012 y=80 正确）= goal doc gap #4 **Layout/Paint IFC 双路径**。per-fragment 颜色虽隔离正确，激活了**错误路径**（paint-IFC）绘制→离 ref 更远→diff 上升。
+
+**裁决**：① per-fragment 颜色探针 **net-negative，已 100% 回退**（git checkout text.rs，子集复测 14/14 loose 恢复），avenue 关闭。② **WM-1 真阻塞 = Phase A 双路径**——R334（positioning）+ R335（color）两角度均收敛至此。per-fragment 颜色须先统一 layout/paint IFC（paint 复用 layout 存储行盒/abspos 位置）才能安全应用。③ WM-1 单会话 lever 彻底穷尽，剩余 forward motion = Phase A IFC 统一（多会话硬里程碑）。
+
+**Phase A 设计补充**：paint IFC 把 abspos 后代的 inline 文本当正常流绘制（位置错）+ 抑制 abspos span 自身 paint_text 的 green 输出 = Phase A 须解决的具体机制之一（区别于 large-font 的 font_size 存储、welcome 的度量分歧）。建议 Phase A 设计文档补此表现。
+
+**代码变更**：零（探针已回退，`git diff -- '*.rs'` 空）。基线 loose 438/490 / strict 295/490 持平。
 
 
 
