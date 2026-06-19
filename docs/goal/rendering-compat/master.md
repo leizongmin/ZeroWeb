@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-19（R332：实现 rustybuzz shaping 接入全 4 子任务（high-bit 哨兵法避免 GlyphPrimitive 55 处构造点改动）+ SHAPE_PAINT 环境门控实测——self-source 438/490 持平；chromium-Oracle pollution 48.0%→48.3%（+2），零 case 改善。**paint-only shaping 净负向**：layout 仍用 estimate_char_width 断行，paint 单侧 shaping 致 layout/paint 不一致，须 layout+paint 同源（Phase A IFC 统一子集）。**保留 TextShaper advance/offset bug 修复**（真实修复，ligature advance 取首 cluster 字符宽度过窄→metrics_indexed 按 glyph 索引；offset raw 字体单位→×font_size/upem）；回退 probe 其余（plumbing/哨兵/gate）。详见 [`evidence/r332-shape-paint-probe-2026-06-19.txt`](./evidence/r332-shape-paint-probe-2026-06-19.txt)。基线 438/490 持平）
+**最后更新**: 2026-06-19（R333：新鲜审视 5 个未深查 CSS2/multicol 失败用例（border-bottom-width-006 / border-padding-bleed / clear-float-003 / multicol-count-computed-003/004）——全结构性：inline-box 模型（与 Phase A 耦合）+ **clear=taffy-0.7-bound 新发现**（ZeroWeb 无 clearance 后处理，clear+margin 折叠属 taffy 0.7）+ multicol 列几何 spec-正确（divergence 在内容分布/规则定位）。DC-11 correctness 轴（R323-R326）确已穷尽，无可单点修的真实 bug。基线 438/490 持平，零代码变更。详见 [`evidence/r333-css2-multicol-failure-exam-2026-06-19.txt`](./evidence/r333-css2-multicol-failure-exam-2026-06-19.txt)。下一步 = Phase 2 multicol column-aware IFC（同时解锁 Phase A + css-multicol 16 失败聚类，唯一 forward motion，硬里程碑））
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
@@ -49,6 +49,8 @@
 | advance-width paint 单侧 fontdue | R225/R331 | layout(paint?) 双侧均用 estimate_char_width 一致（self-source 抵消）；paint 单侧改 fontdue 致与 layout 不一致 intra-fragment 错位；双侧改 = R225「三处同源」已证 oracle 26 案零变化。死路 |
 | rustybuzz shaping 接入生产（单会话 bounded probe） | R331/R332 | R331 定位 4 子任务多会话；R332 实现全 4 子任务（high-bit 哨兵法避免 GlyphPrimitive 55 处构造点改动）+ SHAPE_PAINT 门控实测：self-source 438/490 持平；chromium-Oracle pollution 48.0%→48.3%（+2），零 case 改善。**paint-only shaping 净负向**——layout 仍用 estimate 断行，paint 单侧 shaping 致 layout/paint 不一致。须 layout+paint 同源（Phase A IFC 统一子集）。保留 TextShaper advance/offset bug 修复（真实修复），回退 probe 其余 |
 | taffy 0.11 升级 | R304 | DEFER（541 ref + 108 alignment + native float 冲突，具名缺口零收益） |
+| clear+margin-collapse（clear-float-003 等） | R333 | ZeroWeb 把 `clear` 仅 convert_clear→bool 传 taffy 0.7，无 ZeroWeb 侧 clearance 后处理 → clear+margin 折叠交互 = taffy-0.7-bound（R323 探针覆盖基本折叠不含 clearance）。须 taffy 升级或自建 clearance 后处理（与 taffy margin 折叠耦合，高风险） |
+| CSS2/multicol 剩余失败（border-bottom-width-006 / border-padding-bleed / multicol-count-computed-003/004 等） | R333 | 新鲜审视 5 未深查用例全结构性：inline-box 模型（vertical-align/行盒绘制，与 Phase A 耦合）；multicol 列几何计算 spec-正确（divergence 在内容分布/规则定位，multicol 结构死锁）。DC-11 correctness 轴（R323-R326）确已穷尽 |
 
 **剩余 forward motion = 多会话架构承诺（非单会话），或接受 plateau**：
 
@@ -783,22 +785,6 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 ### R312 — baseline-export 双侧探针精确定位：inline-flex 容器 taffy_baseline 错值 + multicol 项 None（read-only 探针，基线 loose 438/490 / strict 295/490 持平）
 
 （R312 已归档至 [`archive/rounds-r312.md`](./archive/rounds-r312.md)——baseline-export 双侧探针：inline-flex 容器 taffy_baseline 错值 + multicol 项 None，确认 baseline-export 结构性多轮。）
-
-### R313 — baseline-overrides 杠杆证伪：inline-flex 位置不受 baseline_overrides 控制（read-only 实验，基线持平）
-
-**承接**：R312 探针发现 inline-flex 容器导出基线用 taffy_baseline（30/20/30，错值），暗示「baseline_overrides 改用 ZeroWeb 自有计算」可能是 lever。本轮 env-gated 实证该假设。
-
-**实验（env IBBL_PREFER_COMPUTED=1，已 100% 回退）**：在 baseline_overrides 闭包跳过 step-3（taffy_baseline 优先），强制走 step-4（ZeroWeb 首行近似 `item.y + item.font_size`）。对 flexbox-baseline-align-self-baseline-horiz-001 A/B 实测：
-- 默认（taffy 优先）：chromium-Oracle **17.64%**
-- 探针（computed 优先）：chromium-Oracle **17.64%（完全相同）**，bbox=(0,0,800,126) 一致
-
-**裁决：R312 的暗示证伪**——baseline_overrides（step-3 vs step-4）**不影响** flexbox-baseline-align-self 的渲染。inline-flex 的垂直位置由 **taffy 的 inline-level-box 布局**（inline-flex 作为 body 行内级盒，taffy 在 body 的 IFC 里定位它，用 taffy 自算的 inline-flex 基线）决定，**ZeroWeb 的 baseline_overrides 后处理对该用例不生效**（post-pass 重跑 IFC 未覆盖 taffy 的行内级盒定位，或该路径对此结构不触发）。
-
-**意义**：纠正 R312「baseline_overrides 是 inline-flex 基线 lever」的暗示——**不是**。inline-flex 基线导出的真根因在 **taffy 对 inline-level flex 盒的基线合成 + body IFC 定位**，非 ZeroWeb baseline_overrides 后处理可触及。这把 baseline-export 的修复路径从「改 baseline_overrides」排除，指向「taffy inline-level-box 基线」或「ZeroWeb 重跑 body IFC 时覆盖 inline-flex 定位」（更结构性）。
-
-**附发现（latent bug，0 reftest 覆盖，defer）**：`line-height: <percentage>` 在 computed.rs:195-206 未解析（Percentage 落 `_=>{}`），同 R308 font-size% 谱系。但 grep wpt-data **0 个 reftest 用 line-height %** → 零测试覆盖，按 code-guidelines「不实现需求之外的功能」defer（非当前目标驱动）。
-
-**本轮 read-only 实验**：env-gated 实验（engine.rs:989 IBBL_PREFER_COMPUTED）**已 100% 回退**（`git diff -- '*.rs'` 空）；rebuild + 复测 self 0.14% 不变。零代码变更，基线 loose 438/490 / strict 295/490 持平。next = baseline-export 真路径需触及 taffy inline-level-box 基线（深，结构性），或 pivot 到 multicol breaking wiring（R131）/ DC-9 blend_mode（独立特性）—— baseline-export 经 R310/R312/R313 三轮探针确认非单会话可解。
 
 ### R314 — 综合 plateau 确认 + 全量基线复验 + latent line-height% defer（read-only 核查，基线 loose 438/490 / strict 295/490 持平；已飞书通知卡点）
 
