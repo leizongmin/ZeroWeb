@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-19（R329：POLLUTED clean-win vein 三趟复核确认穷尽——R298 清单逐项(R309) + fresh 475 例 cross-validate top-30(R311) + 长尾 spot-check（`text-underline-offset` 静态核查为未解析属性特性缺口，同 R232 text-emphasis）均仅 R308 font-size% 一处真实 clean win。**纠正 R328 header「R329 继续 POLLUTED probe」为已穷尽**，与综合裁决表/next-steps 自洽（governance §1）。DC-9 仅 blend_mode+drop-shadow 剩余（均需 paint-isolation）；multicol 全路径证伪唯余 layout 侧 column-aware IFC 硬里程碑。基线 438/490 read-only 持平）
+**最后更新**: 2026-06-19（R330：导入 17 上游 WPT css-fonts 字体激活 R329 @font-face 加载并实测影响——self-source 438/490 持平；chromium-Oracle 净负向（alternates-order +7.53 / font-features-across-space +0.95，余 54 案不变）。**关键根因发现**：rustybuzz TextShaper（GSUB/GPOS）已实现+单测但**未接入生产 paint/layout 路径**（生产 text.rs:1057 逐字符 `glyph_id=ch as u32`），故全引擎无 OpenType shaping → 加载特性字体不应用特性更远离 chromium。纠正 M6 line 71「rustybuzz 已集成」过时声明（governance §1）。@font-face 假设证伪 = fontdue/simple-shaping 第四条死路（R225/R229b/R174 同源）。保留 @font-face 开（正确能力，DC-13 产品 smoke 需要；2 退化案不可单点修复）。真实多会话杠杆 = 接 TextShaper 入生产路径。基线 438/490 持平）
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
@@ -45,6 +45,7 @@
 | advance-width plumbing | R225/R320 | 双角证伪（reftest-oracle 零变化 + Ahem advance 精确），死路 |
 | DC-9 blend_mode | R278 | 单 framebuffer post-process 架构不可行，需 paint-isolation |
 | font-weight -Bold 接线 | R229b | fontdue Bold 过墨 ~15%，net-negative |
+| @font-face 自定义字体加载（css-fonts 聚类解锁假设） | R330 | 17 字体导入激活后实测：self-source 438/490 持平；chromium-Oracle 净负向（alternates-order +7.53 / font-features-across-space +0.95，余 54 不变，污染仍 ~46%）。根因 = rustybuzz TextShaper 未接入生产路径（生产逐字符 glyph_id=ch as u32），加载特性字体不应用特性更远离 chromium。fontdue/simple-shaping 第四条死路（同 R225/R229b/R174） |
 | taffy 0.11 升级 | R304 | DEFER（541 ref + 108 alignment + native float 冲突，具名缺口零收益） |
 
 **剩余 forward motion = 多会话架构承诺（非单会话），或接受 plateau**：
@@ -68,7 +69,7 @@
 | M3 — Flexbox + Grid | ✅ 完成 | 179 个 reftest, 100.0% pass rate；Flexbox/Grid 无渲染缺口 |
 | M4 — Float + Table + Multicol | ✅ 完成 | float + table + multicol 布局算法已实现；219 个 reftest, 100.0% pass |
 | M5 — 文字排版 | ✅ 完成 | CJK 换行 + justify 修复 + float 堆叠修复 + 51 个 Text reftest |
-| M6 — 全量扩展 | ✅ 完成 | 685 reftest, 13 目录全部 ≥50, 100.0% pass；rustybuzz + unicode-bidi 已集成 |
+| M6 — 全量扩展 | ✅ 完成 | 685 reftest, 13 目录全部 ≥50, 100.0% pass；unicode-bidi + CJK 换行已接入生产。⚠️ **rustybuzz TextShaper（GSUB/GPOS）已实现+单元测试，但未接入生产 paint/layout 路径**（R330 代码核查实证：生产 text.rs:1057 仍逐字符 `glyph_id=ch as u32`，TextShaper 仅 lib.rs 单测调用）→ ligature/kerning/alternates 生产未生效 |
 | M7 — 渲染器图元覆盖 | ✅ 完成（管线层）⚠️ | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：13 种图元**管线**已建（48 单元测试 ✅），**但浏览器全量 GPU 路径 `render_full_scene_gpu` 实际消费以 DC-9 表为准**——transform=✅ R285/ee8373a 已接入（`collect_transforms`+`apply_transform_filters_headless`）、blend=CPU no-op stub+GPU 丢弃（**唯一剩余 GPU 真实缺口**）、5 color-matrix 滤镜（grayscale/invert/saturate/sepia/hue-rotate）=✅ R286/94c773a 已落（`collect_color_filters` mode 3-7 全处理，parity CPU）、clip=no-op（engine 从不生成）；filter:opacity/brightness/contrast/blur 已落（f6fed44/fc86937/3a3530f）；浏览器消费：全部 13 种图元 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
@@ -775,28 +776,7 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 
 ---
 
-## 最近轮次详细记录（R310–R329；R309 已归档至 [`archive/rounds-r309.md`](./archive/rounds-r309.md)、R308 已归档至 [`archive/rounds-r308.md`](./archive/rounds-r308.md)、R307 已归档至 [`archive/rounds-r307.md`](./archive/rounds-r307.md)、R305–R306 已归档至 [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 已归档至 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)）
-
-### R310 — multicol 设计文档自洽修订（v0.3→v0.4）+ baseline-export 探针实证确认（read-only 设计+探针，基线 loose 438/490 / strict 295/490 持平）
-
-**承接**：R309 关闭 POLLUTED 杠杆后转最大失败聚类 css-multicol。`multicol-fragmentation-design.md` 存在**自洽违规**——顶部 R200/R201 纠正（balance 方向证伪、碎片化算法已存在）与底部 §3 Round 1-2（balance 测量工具）+ §5（首步=Round 1 测量工具）**矛盾**，会误导后续轮重复 R199→R200 证伪命运。本轮修订文档自洽 + 探针验证新方向。
-
-**文档修订（v0.4）**：
-- §3/§5 重写：Round 1-2 balance 工具方向**废弃**（R200 证列分配 `total/col_count` 顺序填充本就正确，类 A 残余是精度非算法）。
-- 重定向为 **Round 1' baseline-export**（最大 near-pass 聚类 baseline-000/003/004/005/006）+ **Round 2' breaking wiring**（R201 Round 4'）+ Round 3' column-rule/精度收尾。
-- §4 风险更新（R200/R201 纠正 + Phase A font_size 交互）。
-
-**Round 1' baseline-export 探针实证（env MCBL_PROBE=1，已回退）**：在 `extract_baselines_recursive`（engine.rs:482）加临时 eprintln 打印每节点 `taffy_baseline`。对 baseline-003（`display:flex;align-items:baseline` > "PA" 文本 + `columns:3` multicol > `column-span:all` "SS"）实测：
-- **multicol 项（node 19v1, is_multicol=true）`taffy_baseline=None`** ✓
-- 其子 spanner（node 21v1 "SS"）也 `None`
-- 仅 node 17v1 有 `Some(19.2)`
-- **裁决：假设确认**——taffy **仅为 flex/grid 容器计算 first_baselines**（cached_baselines 补丁路径），普通 block（含 multicol）无 first baseline → 父 flex `align-items:baseline` 对 multicol 项用 fallback（box bottom/margin）对齐 → "PA" 与 "SS" 基线错位（chromium-Oracle 1.058%）。
-
-**关键约束发现（区别于 R266）**：R266 查 `LayoutBox.taffy_baseline` **field-fill 净 0**（消费 guard 仅 InlineFlex|InlineGrid）；本轮探针发现真因更根本——**taffy 在 layout 期间已完成 flex `align-items:baseline`**，post-layout 填 `taffy_baseline`（extract_baselines_recursive 在 taffy layout 后跑）**无法回溯修正已发生的 flex 对齐**。故修复须 **layout 侧**：① 计算 multicol/block 的 first baseline（首列首行 / column-span:all 内容基线），② **在 taffy layout 前或期间**喂给 taffy（measure-func 或两趟），或 ③ ZeroWeb flex-baseline post-pass 重对齐（类 `adjust_inline_block_positions` 但针对 flex items）。三者均结构性多轮，非单点。
-
-**意义**：① multicol 设计文档自洽（消除 R199→R200 重复陷阱）；② Round 1' baseline-export 方向经探针**实证确认**（multicol 项 taffy_baseline=None 是根因），区别并精确化 R266 的 field-fill 结论——真阻塞是 taffy baseline 计算范围（仅 flex/grid）+ flex 对齐时机（layout 期间）。这把 baseline-export 从「需 pre-pass 估测」精确为「需 block/multicol first-baseline 计算 + 喂 taffy/flex post-pass」。下轮可据此设计 baseline 计算的 spec-rfc。
-
-**本轮 read-only 设计 + 探针**：env-gated 探针（engine.rs:482 MCBL_PROBE）**已 100% 回退**（`git diff -- '*.rs'` 空）；rebuild + baseline-003 复测 0.12% 不变。零代码变更，基线 loose 438/490 / strict 295/490 / chromium-Oracle 持平。next = Round 1' baseline 计算的 spec-rfc 设计（block/multicol first-baseline 来源 + flex 对齐注入路径），或转 DC-9 blend_mode 独立特性。
+## 最近轮次详细记录（R311–R330；R310 已归档至 [`archive/rounds-r310.md`](./archive/rounds-r310.md)、R309 已归档至 [`archive/rounds-r309.md`](./archive/rounds-r309.md)、R308 已归档至 [`archive/rounds-r308.md`](./archive/rounds-r308.md)、R307 已归档至 [`archive/rounds-r307.md`](./archive/rounds-r307.md)、R305–R306 已归档至 [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 已归档至 [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 已归档至 [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 已归档至 [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)）
 
 ### R311 — R308 后 fresh chromium-Oracle cross-validate：plateau 再确认 + 4 新候选 ruled out（read-only 实证 + evidence，基线 loose 438/490 / strict 295/490 持平）
 
@@ -1201,6 +1181,30 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 **约束说明**：本轮并行 agent 正编辑 reftest 影响代码（css-parser ast/parser/tests_10、font/loader、style-system matcher、reftest.rs 共 6 文件未提交），故**基于 committed evidence 复核而非动态跑 reftest**——避免 WIP 与 committed 基线（438/490）混淆；任何动态复跑须待并行 agent 提交后基于新 HEAD 重测。零代码变更，基线 loose 438/490 / strict 295/490 持平。
 
 **归档**：R309（POLLUTED clean-win 杠杆收尾）作为第 21 轮迁出至 [`archive/rounds-r309.md`](./archive/rounds-r309.md)，最近窗口收窄为 R310–R329（≤20）。
+
+### R330 — 导入上游 WPT css-fonts 字体激活 @font-face + 影响实测：净负向 + rustybuzz 未接入生产根因发现（字体资产 + evidence + doc，self-source 438/490 持平）
+
+**承接**：R329（commit 557bc96）实现 @font-face 解析+加载但 wpt-data 零字体文件→@font-face src 静默跳过，reftest 438/490 不变（feature latent）。R311 曾建议「@font-face 字体加载是 css-fonts polluted 聚类（24 案）解锁钥匙」（待 fontdue 度量噪声限制）。本轮导入字体激活 feature 并实测，裁决该假设。
+
+**R329 后追加修复（commit 4fc4caf）**：`extract_font_faces` 原只扫 combined_css（传入+外链 `<link>`），漏内联 `<style>`（@font-face 常声明于此）。新增 `extract_inline_style_css(html)`（zero_dom::parse_html 提取所有 `<style>` 文本，去 XHTML CDATA 包裹）追加字体扫描 CSS。
+
+**字体导入**：proxy fetch 上游 WPT（raw.githubusercontent.com/web-platform-tests/wpt）17 字体（全 HTTP 200）——`/fonts/`(6: Ahem/AD/Lato-Medium×2/Revalia/GentiumPlus-R) + `css/css-fonts/support/fonts/`(6: FontWithFancyFeatures/RobotoExtremo-VF/LinLibertine/LigatureSymbols/Inter-VF/Rochester) + `css/css-fonts/resources/`(5: COLR-palettes×2/markA/markB/colorization_SVG_COLR)。
+
+**加载生效实证**：font-default-02（@font-face "fwf"→FontWithFancyFeatures.otf）WITH-fonts vs WITHOUT-fonts 渲染差 = **0.353% 像素**→字体确实加载并影响渲染。
+
+**self-source**：全量 reftest-upstream **438/490 (89.4%) 持平**（css-fonts 60/60）。
+
+**chromium-Oracle**（cross-validate.py，css-fonts 56 可比 case，见 [`evidence/r330-font-face-impact-2026-06-19.txt`](./evidence/r330-font-face-impact-2026-06-19.txt)）：54 案不变；2 案退化（均 font-feature 依赖）——`alternates-order` 6.28%→13.81%(+7.53)、`font-features-across-space-1` 2.68%→3.63%(+0.95)；污染率仍 ~46%。**净轻微负向**。
+
+**根因（代码追踪，关键发现）**：@font-face 字体到达**光栅化**（fontdue），但生产路径**完全绕过 OpenType shaping**——rustybuzz `TextShaper`（`render-foundation/src/font/shaper.rs`，GSUB/GPOS 实现）**仅单元测试调用**（`render-foundation/src/lib.rs:1032-1052`），生产 paint 路径（`engine/src/paint/painter/text.rs:1057-1075`）逐字符 `glyph_id = ch as u32`，无 ligature/kerning/alternates。故加载特性字体不应用特性→渲染「基础字形」比 chromium（应用特性）更远（alternates-order 退化即此）。纯度量字体 fontdue 度量差 ≈ fallback 度量差→中性。WOFF（6 字体）fontdue 不可解析→静默回退（不变）；据 OTF 实证即使加 WOFF 解码也预期中性，本轮未加（code-guidelines §2 避免推测工作）。
+
+**裁决**：@font-face 加载**正确实现且字体加载生效**，但 self-source 零影响、chromium-Oracle 净负向。**保留 @font-face 开**：① 正确浏览器能力，DC-13 产品 smoke 需要；② 2 退化案不可单点修（需完整 shaping），结构性；③ 关闭/gate 会掩盖 fontdue shaping 缺口违反 DC-14 诚实；④ 退化反映真实状态（加载自定义字体未 shaping），比旧 fallback 假一致更诚实。**R311「@font-face 解锁 css-fonts 聚类」假设证伪**——fontdue/simple-shaping 第四条死路（同 R225 advance-width / R229b font-weight-Bold / R174 AA）。真实多会话杠杆 = 把 TextShaper 接入生产 paint/layout 路径（高风险：IFC/paint 文本路径 = R125-R213 P0 死锁区，须多轮 narrow 收敛）。
+
+**自洽纠正（governance §1）**：header(line 3)+M6 line 71「rustybuzz 已集成」→「TextShaper 已实现+单测，生产路径未接入」；综合裁决表新增 @font-face 杠杆行（R330 证伪）。
+
+**代码变更**：字体资产 17 个 + `evidence/r330-font-face-impact-2026-06-19.txt` + 本 R330 条目 + header/M6/裁决表纠正。零 `.rs` 变更（@font-face feature 代码 R329/4fc4caf 已落）。基线 loose 438/490 / strict 295/490 / chromium-Oracle ~35.6% 持平（css-fonts chromium-Oracle 微负向 2 案，非主指标计数）。
+
+**归档**：R310（multicol 设计文档自洽修订 + baseline-export 探针）作为第 21 轮迁出至 [`archive/rounds-r310.md`](./archive/rounds-r310.md)，最近窗口收窄为 R311–R330（≤20）。
 
 
 
