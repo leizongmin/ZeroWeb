@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-19（R333：新鲜审视 5 个未深查 CSS2/multicol 失败用例（border-bottom-width-006 / border-padding-bleed / clear-float-003 / multicol-count-computed-003/004）——全结构性：inline-box 模型（与 Phase A 耦合）+ **clear=taffy-0.7-bound 新发现**（ZeroWeb 无 clearance 后处理，clear+margin 折叠属 taffy 0.7）+ multicol 列几何 spec-正确（divergence 在内容分布/规则定位）。DC-11 correctness 轴（R323-R326）确已穷尽，无可单点修的真实 bug。基线 438/490 持平，零代码变更。详见 [`evidence/r333-css2-multicol-failure-exam-2026-06-19.txt`](./evidence/r333-css2-multicol-failure-exam-2026-06-19.txt)。下一步 = Phase 2 multicol column-aware IFC（同时解锁 Phase A + css-multicol 16 失败聚类，唯一 forward motion，硬里程碑））
+**最后更新**: 2026-06-19（R334：回溯执行 R237/R238 标「首选候选」但从未实施的 WM-1 abs-pos-non-replaced-vrl/vlr（14 case）——实证**positioning 假设部分证伪**：ltr 定位本就正确（vrl-002 span y=160 ✓），rtl 仅因 direction 被忽略而错。落地 **direction-rtl 镜像修复**（engine.rs fix_vertical_mode_abs_pos，spec-correct，vrl-012 现 y=80 = worked example）。**但 0 clean win**：cluster 真阻塞 = 绿色 "X" glyph 完全未绘制（paint-IFC 用容器 `color:transparent` 绘制全部 inline 文本，per-fragment 颜色覆盖仅 multicol 分支）= **inline-ownership/Phase A IFC 双路径死锁**，非 positioning。镜像保留为 spec-correct latent fix（loose 438/490 零回归，vrl-012 strict 5.03→3.67）。WM-1 作为 positioning lever 关闭。详见 [`evidence/r334-wm1-abspos-vertical-exam-2026-06-19.txt`](./evidence/r334-wm1-abspos-vertical-exam-2026-06-19.txt)）
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
@@ -51,6 +51,7 @@
 | taffy 0.11 升级 | R304 | DEFER（541 ref + 108 alignment + native float 冲突，具名缺口零收益） |
 | clear+margin-collapse（clear-float-003 等） | R333 | ZeroWeb 把 `clear` 仅 convert_clear→bool 传 taffy 0.7，无 ZeroWeb 侧 clearance 后处理 → clear+margin 折叠交互 = taffy-0.7-bound（R323 探针覆盖基本折叠不含 clearance）。须 taffy 升级或自建 clearance 后处理（与 taffy margin 折叠耦合，高风险） |
 | CSS2/multicol 剩余失败（border-bottom-width-006 / border-padding-bleed / multicol-count-computed-003/004 等） | R333 | 新鲜审视 5 未深查用例全结构性：inline-box 模型（vertical-align/行盒绘制，与 Phase A 耦合）；multicol 列几何计算 spec-正确（divergence 在内容分布/规则定位，multicol 结构死锁）。DC-11 correctness 轴（R323-R326）确已穷尽 |
+| WM-1 abs-pos-non-replaced-vrl/vlr（R237/R238「首选候选」从未执行） | R334 | 实证**positioning 假设部分证伪**：ltr 定位本就正确（vrl-002 y=160），rtl 仅因 direction 忽略而错；落地 direction-rtl 镜像修复（spec-correct，vrl-012 现 y=80 ✓）。**0 clean win**——cluster 真阻塞 = 绿色 "X" glyph 未绘制（paint-IFC 用容器 `color:transparent` 绘全部 inline 文本，per-fragment 颜色仅 multicol 分支）= inline-ownership/Phase A 死锁，非 positioning。镜像保留（latent，loose 438/490 零回归），WM-1 作 positioning lever 关闭 |
 
 **剩余 forward motion = 多会话架构承诺（非单会话），或接受 plateau**：
 
@@ -1190,6 +1191,22 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 **代码变更**：`crates/render-foundation/src/font/shaper.rs`（shape_with_rustybuzz advance/offset 修复，保留）；6 个 probe 文件回退至 HEAD（`git diff -- '*.rs'` 仅 shaper.rs）。零 reftest 计数变化（TextShaper 生产无调用方）。基线 self-source 438/490 / strict 295/490 / chromium-Oracle ~35.6% 持平。
 
 **归档**：R312（baseline-export 双侧探针）作为第 21 轮迁出至 [`archive/rounds-r312.md`](./archive/rounds-r312.md)，最近窗口收窄为 R313–R332（≤20）。
+
+### R334 — WM-1 abs-pos-non-replaced-vrl/vlr 实证：positioning 假设证伪 + direction-rtl 镜像修复（spec-correct latent，0 clean win，真阻塞 = paint-IFC 颜色 = Phase A）
+
+**承接**：R333 收尾指 Phase 2 multicol 为唯一 forward motion（硬里程碑）。本轮回溯 R237/R238 标「首选实现候选」但**从未执行**的 WM-1 abs-pos-non-replaced vrl/vlr（14 case，全 self-fail，单一代码面 engine.rs abspos inset/CB，无图片噪声，z_vs_ref ≈ z_vs_chr），做实现轮实证。R238 曾定位两缺口：缺口 B（direction 分支缺失，rtl 5.03% vs ltr 1.28%）+ 缺口 A（ltr all-auto 残差 1.28%）。
+
+**实证 1（direction 被完全忽略）**：诊断单测复刻 vrl-002(ltr)/vrl-012(rtl) 结构 dump span 几何——ltr 与 rtl 渲染**完全相同**（均 x=240,y=200），证实 R238 缺口 B。
+
+**实证 2（direction-rtl 镜像修复 spec-correct）**：§10.3.7 + writing-modes §7.1 推导——all-three-auto 时 ltr 置 inline-start 边静态、rtl 置 inline-end 边静态，两者盒位沿 inline 轴镜像：`rtl_top = CB_inline_extent - ltr_top - height`（worked example 双证：vrl-002 ltr top=160；vrl-012 rtl top=80=320-160-80）。实现（engine.rs fix_vertical_mode_abs_pos all_inset_auto 块末尾 +10 行）：rtl 时 `child.y = (container_width - child.y - child.height).max(0)`。LAYOUT_DUMP（Ahem）验证：vrl-012 修复后 span 相对 CB y=80 x=160（col 2），**= worked example top=80 ✓✓**；vrl-002 不变 y=160 ✓。镜像机制 spec-correct。
+
+**实证 3（0 clean win —— 真阻塞 = paint-IFC 颜色，非 positioning）**：修复后 abs-pos-non-replaced 子集 strict——vrl-012 5.03%→3.67%（改善仍 fail），vrl-002 1.33%（不变 fail），全 14 case 0 strict pass。positioning 已 spec-correct 为何仍 fail？PNG 像素分析：vrl-002 test span 区域（abs [168,247]×[228,307]）= **100% red（6400px），零 green**；整张图零 pure-green。→ 绿色 "X" glyph **完全未绘制**。根因（代码追踪）：div(CB) `color:transparent`（隐藏 "1 2 34"），span `color:green`；paint_text（text.rs:654）用**容器** style.color 绘制其 IFC 收集的全部 inline 文本 "1 2 34 X" → "X" 被 transparent 绘制不可见。per-fragment 颜色覆盖（text.rs:1028 frag_color）**仅在 multicol 分支**（line 1012）；非 multicol vertical-rl CB 不触发 → span green 不生效。= goal doc 已知缺口 #3（inline ownership）+ #4（Layout/Paint IFC 双路径）= **Phase A IFC 统一 P0 死锁区（R125-R213）**。WM-1 真阻塞是 paint-IFC 颜色，**非 R238 推断的 positioning**。
+
+**裁决**：① direction-rtl 镜像**保留**（spec-correct latent correctness fix，同 R324/R325 谱系）——修真实 spec 违规（rtl 渲染与 ltr 完全相同），vrl-012 strict 5.03→3.67，loose 全量 **438/490 零回归**，新增回归单测 `test_abspos_vertical_rl_direction_rtl_mirrors_inline_position`（断言镜像不变式 ltr_y+rtl_y+h==CB_inline_extent）。② **WM-1 作 positioning lever 关闭**（防未来重查）——R237/R238「最大最干净候选」推断实证部分证伪，真阻塞 = Phase A，与 plateau P0 缺口同源，非独立单会话 lever。③ vrl-122/130（block-axis left/right/width §10.6.4）不同子计算，mirror 不触及（正确）。
+
+**全局影响**：WM-1 是 R237/R238 后唯一「推荐但未执行」的 writing-modes contained 候选。本轮实证关闭它，进一步收敛「单会话 lever 已穷尽」。剩余 writing-modes 失败（WM-2 clip-rect 同 paint-IFC 颜色+swatch 噪声 / WM-5 clearance-vrl R114b/R164 四轮证伪 / WM-6/7 vertical-orthogonal float R133 结构多轮）全结构性/Phase A 耦合。
+
+**代码变更**：`crates/layout-engine/src/engine.rs`（fix_vertical_mode_abs_pos +direction-rtl 镜像 + 1 回归单测）。loose 438/490 零回归；strict 总数 295 不变（vrl-012 改善 5.03→3.67 未跨 0.5% 阈）。clippy --workspace --all-targets 干净；cargo fmt 干净；layout-engine 888 测试全过。
 
 
 

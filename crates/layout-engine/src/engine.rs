@@ -1424,6 +1424,21 @@ fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, styles: &Hash
                         child.content_height = child.content_height.min(content_h).max(0.0);
                     }
                 }
+
+                // CSS §10.3.7 + writing-modes §7.1：direction:rtl 下 abspos 静态位置镜像。
+                // all-three-auto（top/bottom 即 left/right 均为 auto）时，ltr 把 inline-start
+                // 边（=top 角色）置静态位置、内容自 inline-start 向 end 排；rtl 把 inline-end
+                // 边（=bottom 角色）置静态位置、内容反向排。两者最终盒位沿 inline 轴镜像：
+                //   rtl_top = CB_inline_extent - ltr_top - height
+                // container_width 在垂直模式 = CB 视觉高度（inline 可用尺寸，见上方注释）。
+                // 旧实现在 rtl 下与 ltr 渲染完全相同（诊断实证），致 abs-pos-non-replaced-vrl
+                // 的 rtl 子集（012/122/130 ~5%）远高于 ltr（002 ~1.3%）。
+                let cb_direction_rtl = styles
+                    .get(&container_node_id)
+                    .is_some_and(|s| matches!(s.direction, zero_style_system::property::types::DirectionValue::Rtl));
+                if cb_direction_rtl {
+                    child.y = (container_width - child.y - child.height).max(0.0);
+                }
             }
         }
     }
@@ -3701,6 +3716,59 @@ mod writing_mode_tests {
             s.height >= 79.0 && s.height <= 81.0,
             "expected content height ~80px (single 80px glyph), got h={}",
             s.height
+        );
+    }
+
+    /// 回归：vertical-rl + direction:rtl 下 abspos 静态位置沿 inline 轴镜像（R334）。
+    ///
+    /// 复刻 abs-pos-non-replaced-vrl-002(ltr)/vrl-012(rtl) 结构。CSS §10.3.7 + writing-modes §7.1：
+    /// all-three-auto（top/bottom 即映射后的 left/right 均 auto）下，ltr 把 inline-start 边置
+    /// 静态位置、rtl 把 inline-end 边置静态位置，两者最终盒位沿 inline 轴镜像：
+    ///   rtl_top + ltr_top + height == CB_inline_extent
+    /// 旧实现 rtl 与 ltr 渲染完全相同（direction 被忽略）。
+    #[test]
+    fn test_abspos_vertical_rl_direction_rtl_mirrors_inline_position() {
+        fn span_y(direction: &str) -> (f32, f32) {
+            let html = format!(
+                r#"<html style="writing-mode:vertical-rl"><body>
+          <div id="cb" style="background:red; direction:{dir}; font:80px/1 monospace; height:320px; width:320px; position:relative">1 2 34<span id="s" style="position:absolute; top:auto; bottom:auto; height:auto; color:green">X</span></div>
+        </body></html>"#,
+                dir = direction
+            );
+            let doc = zero_dom::parse_html(&html);
+            let mut sys = StyleSystem::new();
+            sys.set_viewport(800.0, 600.0);
+            let styles = sys.compute_styles(&doc, &[]);
+            let mut engine = LayoutEngine::new(800.0, 600.0);
+            let result = engine.compute(&doc, &styles);
+            fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+                if let Some(nid) = b.node_id
+                    && let Some(n) = doc.get(nid)
+                    && let zero_dom::NodeKind::Element(elem) = &n.kind
+                    && elem.get_attribute("id").as_deref() == Some(id)
+                {
+                    return Some(b);
+                }
+                b.children.iter().find_map(|c| find(id, doc, c))
+            }
+            let cb = find("cb", &doc, &result.root).expect("cb");
+            let s = find("s", &doc, &result.root).expect("span #s");
+            // span 相对 CB 的 inline 轴（视觉 y）位置与高度
+            (s.y - cb.y, s.height)
+        }
+        let (ltr_y, h) = span_y("ltr");
+        let (rtl_y, _) = span_y("rtl");
+        // CB inline extent（视觉高度）= 320px（CB height，无 padding/border）。
+        let cb_inline_extent = 320.0;
+        // ltr 与 rtl 必须不同（direction 必须生效）。
+        assert_ne!(
+            ltr_y, rtl_y,
+            "direction:rtl must change abspos static position (ltr_y={ltr_y}, rtl_y={rtl_y})"
+        );
+        // 镜像不变式：rtl_top + ltr_top + height == CB inline extent。
+        assert!(
+            (ltr_y + rtl_y + h - cb_inline_extent).abs() < 0.5,
+            "rtl must mirror ltr along inline axis: ltr_y({ltr_y}) + rtl_y({rtl_y}) + h({h}) should == {cb_inline_extent}"
         );
     }
 
