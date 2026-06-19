@@ -1,0 +1,742 @@
+//! 浮动定位与收缩后处理。
+//!
+//! 从 `engine.rs` 抽出（R342，2000 行规则 + Phase A Phase 5 准备）。
+//! 包含：float 元素重新定位（CSS 2.1 §9.5）、clear clearance、BFC 浮动排斥、
+//! 垂直书写模式块收缩、inline-block shrink-to-fit、匿名 table 根标记。
+
+use std::collections::HashMap;
+use zero_css_parser::values::{DisplayValue, LengthValue};
+use zero_dom::NodeId;
+use zero_style_system::{ComputedStyle, WritingModeValue};
+
+use crate::types::LayoutBox;
+
+/// 调整 float 元素的位置，并处理 clear 属性。
+///
+/// taffy 将 float 元素当作普通 block 处理（按正常流排列）。
+/// 此后处理步骤将 float 元素重新定位到容器的左侧或右侧，
+/// 支持水平并排放置、clear 属性（含 float 元素自身的 clear）。
+///
+/// ## 实现要点
+///
+/// - 同侧 float 水平并排放置（CSS 2.1 §9.5.1），空间不足时换行
+/// - float 元素的 clear 属性正确生效
+/// - 非 float 块元素的 clear 使用 max(normal_flow_Y, float_bottom)
+/// - 非 float、非 clear 元素的 Y 偏移扣除 float 元素占据的垂直空间
+pub(crate) fn adjust_float_positions(box_node: &mut LayoutBox) {
+    let content_abs_y = box_node.y + box_node.content_y;
+    adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0);
+}
+
+/// 垂直书写模式下 width:auto 块级元素收缩到内容（CSS §10.3.3 + CSS Writing Modes §7.1）。
+///
+/// 规范：垂直书写模式（vertical-rl/lr）中，块级元素的 block-size 为物理 width。
+/// block-size:auto 时应基于内容收缩（同水平模式下的 height:auto），而非填满包含块。
+///
+/// 当前架构的轴交换以**父元素**书写模式为键（converter/tree.rs 与 engine.rs
+/// extract_layout）：仅当父元素为垂直模式时才交换子元素几何，使 taffy 以水平模型布局。
+/// 但元素**自身**书写模式决定其 width 是 block-size 还是 inline-size。当元素自身为垂直
+/// 模式而其父元素为水平模式时（典型场景：body 内一个 `writing-mode: vertical-rl` 的
+/// div），轴交换不触发，taffy 把 width:auto 当作行内填充（填满容器宽度），违反规范。
+///
+/// 此后处理在 float 定位之后遍历布局树，对这类块按内容块轴跨度（最右侧流内子元素
+/// margin-box 右缘）收缩 width，并尊重 min-width/max-width。
+///
+/// **自限性**：仅当内容右缘窄于当前 width 时才收缩，对子元素已正确铺满到内容右缘的
+/// 垂直块为 no-op，从而对正确布局的用例零回归。
+pub(crate) fn shrink_vertical_blocks_to_content(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    parent_writing_mode: &WritingModeValue,
+) {
+    let own_vertical = matches!(
+        box_node.writing_mode,
+        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+    );
+    let parent_horizontal = matches!(parent_writing_mode, WritingModeValue::HorizontalTb);
+
+    if own_vertical && parent_horizontal && box_node.is_block_level && !box_node.is_absolute && !box_node.is_fixed {
+        let width_auto = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.width, LengthValue::Auto));
+        if width_auto {
+            // 内容块轴跨度 = 最右侧流内子元素 margin-box 右缘（相对父 border-box）。
+            let content_extent = box_node
+                .children
+                .iter()
+                .filter(|c| !c.is_absolute && !c.is_fixed)
+                .map(|c| c.x + c.width + c.margin_right)
+                .fold(0.0f32, f32::max);
+            // 解析 min-width/max-width（style 解析阶段 em/rem 等已解析为 Px）。
+            let (min_w, max_w) = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .map(|s| {
+                    let lo = match &s.min_width {
+                        LengthValue::Px(v) => *v as f32,
+                        _ => 0.0,
+                    };
+                    let hi = match &s.max_width {
+                        LengthValue::Px(v) => *v as f32,
+                        _ => f32::MAX,
+                    };
+                    (lo, hi)
+                })
+                .unwrap_or((0.0, f32::MAX));
+            let new_width = content_extent.max(min_w).min(max_w).min(box_node.width);
+            if new_width + 0.5 < box_node.width {
+                let frame =
+                    box_node.border_left + box_node.border_right + box_node.padding_left + box_node.padding_right;
+                box_node.width = new_width;
+                box_node.content_width = (new_width - frame).max(0.0);
+            }
+        }
+    }
+
+    let pw = box_node.writing_mode.clone();
+    for child in &mut box_node.children {
+        shrink_vertical_blocks_to_content(child, styles, &pw);
+    }
+}
+
+/// 后处理：`width:auto` 的 inline-block 收缩到内容宽度（CSS §10.3.9 shrink-to-fit）。
+///
+/// taffy 0.7 把 width:auto 的 inline-block 拉伸到可用宽度（如同 block），违反
+/// inline-block 应 shrink-to-fit 到 max-content 的规范。此处读取流内 block 级子元素
+/// 已布局的宽度（margin-box），取最大值作为内容宽度，仅在内容确实更窄时收缩
+/// （内容更宽或显式宽度时为 no-op）。与 R129 float-shrink / R138 table-shrink 同谱系，
+/// 但作用对象是 inline-block——其子元素已是正确尺寸（如显式 width 的 block），
+/// 故仅收缩盒尺寸本身，不重排子元素。
+pub(crate) fn shrink_inline_blocks_to_content(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    let own_horizontal = matches!(box_node.writing_mode, WritingModeValue::HorizontalTb);
+    if own_horizontal && !box_node.is_absolute && !box_node.is_fixed {
+        let is_inline_block = box_node.node_id.is_some_and(|id| {
+            styles
+                .get(&id)
+                .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+        });
+        let width_auto = box_node
+            .node_id
+            .is_some_and(|id| styles.get(&id).is_some_and(|s| matches!(s.width, LengthValue::Auto)));
+        if is_inline_block && width_auto {
+            // 内容最大宽度（max-content）：inline 级子元素水平求和（假设不换行），
+            // block 级子元素垂直堆叠取最大；取两者较大值。子元素宽度已是 taffy
+            // 正确布局结果（如显式 width 的 block / inline-block）。
+            let mut inline_sum = 0.0f32;
+            let mut block_max = 0.0f32;
+            for c in &box_node.children {
+                if c.is_absolute || c.is_fixed {
+                    continue;
+                }
+                let outer_w = c.width + c.margin_left + c.margin_right;
+                if c.is_block_level {
+                    block_max = block_max.max(outer_w);
+                } else {
+                    inline_sum += outer_w.max(0.0);
+                }
+            }
+            let content_max_w = inline_sum.max(block_max);
+            if content_max_w > 0.0 {
+                let frame =
+                    box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+                let shrink_border_box = content_max_w + frame;
+                if shrink_border_box + 0.5 < box_node.width {
+                    box_node.width = shrink_border_box;
+                    box_node.content_width = content_max_w;
+                }
+            }
+        }
+    }
+
+    for child in &mut box_node.children {
+        shrink_inline_blocks_to_content(child, styles);
+    }
+}
+
+/// 标记孤立 table-internal 元素（CSS Tables §2.4）为匿名 table 根。
+///
+/// 当 `display:table-row-group/table-row/table-cell/...` 出现在非 table 上下文中
+///（父元素非 table/table-internal）时，CSS 规范应为其生成匿名 table 包装盒。
+/// 此预遍历近似该行为：把这类孤立元素的 `is_anon_table_root` 置真，使其在
+/// `establishes_bfc` 中被视为匿名 table（建立 BFC，隔离 margin 折叠 + 包含浮动）。
+/// 在 `adjust_float_positions` 之前运行，确保 float exclusion 识别这些容器。
+pub(crate) fn mark_anonymous_table_roots(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    in_table_context: bool,
+) {
+    let display = box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .map(|s| s.display.clone());
+    let is_table = matches!(display, Some(DisplayValue::Table | DisplayValue::InlineTable));
+    let is_table_internal = matches!(
+        display,
+        Some(
+            DisplayValue::TableRowGroup
+                | DisplayValue::TableHeaderGroup
+                | DisplayValue::TableFooterGroup
+                | DisplayValue::TableRow
+                | DisplayValue::TableCell
+                | DisplayValue::TableCaption
+        )
+    );
+
+    if is_table_internal && !in_table_context {
+        box_node.is_anon_table_root = true;
+        // 孤立 table-internal 充当匿名 table（块级），使其被 adjust_float_positions
+        // 的 clear / BFC float-exclusion 逻辑（要求 is_block_level）正确处理。
+        box_node.is_block_level = true;
+    }
+
+    let child_context = in_table_context || is_table || is_table_internal;
+    for child in &mut box_node.children {
+        mark_anonymous_table_roots(child, styles, child_context);
+    }
+}
+
+pub(crate) fn adjust_float_positions_with_context(
+    box_node: &mut LayoutBox,
+    box_content_abs_y: f32,
+    inherited_left_bottom_abs: f32,
+    inherited_right_bottom_abs: f32,
+) {
+    use zero_css_parser::values::ClearValue;
+    use zero_css_parser::values::FloatValue;
+
+    // 容器的内容区域宽度
+    let container_width = box_node.content_width;
+
+    // CSS Flexbox §4 / Grid §4 / Tables §2.4：flex/grid/table 容器的流内子元素
+    //（即布局项）其 `float` 与 `clear` 不产生浮动或清除效果——`float` 计算为 `none`。
+    // taffy 内部已据此布局，但 ZeroWeb 的浮动后处理（本函数）按 `child.float` 重新
+    // 定位，会把带 `float:right` 的 flex item 误推到容器右缘。此处对布局容器父级的
+    // 直接子元素将 `float` 归零，使后处理（含 paint 的 float 排斥/绘制）一致忽略它。
+    if box_node.is_layout_container {
+        for child in &mut box_node.children {
+            child.float = FloatValue::None;
+        }
+    }
+
+    // taffy 子元素的 Y 坐标是相对于父元素的 border-box 原点，
+    // 而 flow_bottom / line_y 等追踪变量是相对于 content area 原点。
+    // 当容器有 border-top 或 padding-top 时，需要加上偏移量。
+    let content_y_offset = box_node.border_top + box_node.padding_top;
+    let inherited_left_bottom = (inherited_left_bottom_abs - box_content_abs_y).max(0.0);
+    let inherited_right_bottom = (inherited_right_bottom_abs - box_content_abs_y).max(0.0);
+
+    // CSS §8.3.1 修正：float 的 margin 不与父容器折叠。但 taffy 把 float 当作普通
+    // block 排列，当容器的首个流内子元素是 float 且容器无 border-top/padding-top
+    //（margin 可与子元素折叠）时，容器的 margin-top 会被折叠到该 float 的 margin
+    //（取 max），使容器（及其全部内容）整体偏低。此处把多折叠的量从容器 y 中扣除
+    // 并恢复 margin_top。
+    //
+    // 精确门控（四重条件，确保只修真正的 float-margin 折叠，排除 taffy 把 float 当
+    // block 引起的其它膨胀）：
+    //   1. 容器无 border-top/padding-top（margin 可与首个子元素折叠）
+    //   2. 容器布局 margin_top > 声明值（发生了膨胀）
+    //   3. 容器 margin_top == 首个 float 子元素 margin_top（容器 mt 被折叠到该 float mt）
+    //   4. 该 float 子元素的 margin_top == 其声明值（float 的 mt 自身未被 taffy 膨胀）
+    if content_y_offset == 0.0 && box_node.margin_top > box_node.declared_margin_top + 0.01 {
+        if let Some(fc) = box_node
+            .children
+            .iter()
+            .find(|c| !c.is_absolute && !c.is_fixed)
+            .filter(|c| !matches!(c.float, FloatValue::None))
+        {
+            let container_absorbed_float_mt = (box_node.margin_top - fc.margin_top).abs() < 0.01;
+            let float_mt_is_clean = (fc.margin_top - fc.declared_margin_top).abs() < 0.01;
+            if container_absorbed_float_mt && float_mt_is_clean {
+                let over_collapse = box_node.margin_top - box_node.declared_margin_top;
+                box_node.y -= over_collapse;
+                box_node.margin_top = box_node.declared_margin_top;
+            }
+        }
+    }
+
+    // 第一阶段：重新定位 float 元素，记录每个 float 在 taffy 布局中占据的垂直空间
+    //
+    // CSS 2.1 §9.5.1 float 定位规则：
+    // 1. Float 必须尽可能高（"as high as possible"）
+    // 2. Float 的 outer top 不得高于前面元素生成的块的 outer top
+    // 3. Float 不参与 margin 折叠
+    //
+    // 关键：min_line_y 必须基于正常流内容的实际位置（考虑 margin 折叠），
+    // 而不是 taffy 的 Y（taffy 将 float 当作 block，包含了前元素的 margin 折叠）。
+    let mut line_y = 0.0f32;
+    let mut line_max_height = 0.0f32;
+    let mut left_used_width = 0.0f32;
+    let mut right_used_width = 0.0f32;
+    let mut left_float_bottom = inherited_left_bottom;
+    let mut right_float_bottom = inherited_right_bottom;
+
+    // 正常流的垂直位置追踪（用于计算 float 的最小 Y）
+    // 关键：flow_bottom 必须独立于 taffy 的 Y 来计算。
+    // taffy 将 float 当作 block 排列，导致后续正常流元素的 Y 偏移过大。
+    // 我们通过累加正常流元素的高度 + margin 折叠来独立追踪 flow_bottom。
+    let mut flow_bottom = 0.0f32; // 上一个正常流元素的 border-bottom（相对于容器 content area）
+    let mut last_flow_mb = 0.0f32; // 上一个正常流元素的 margin-bottom
+    // 第一个流内子元素的 margin-top 会与无 border-top/padding-top 的父容器折叠
+    //（CSS §8.3.1），此时子元素位于容器 content 原点，其 margin-top 不应计入 flow_bottom，
+    // 否则后续 float 的 min_float_y 会把该 margin-top 双重计入，使 float 偏低。
+    let mut first_in_flow = true;
+
+    // 记录每个 float 子元素在 taffy 布局中的 Y 和高度，用于后续偏移修正
+    let mut float_taffy_y: Vec<(usize, f32, f32)> = Vec::new(); // (index, taffy_y, outer_height)
+
+    for (idx, child) in box_node.children.iter_mut().enumerate() {
+        // 跳过绝对定位和 fixed 元素
+        if child.is_absolute || child.is_fixed {
+            continue;
+        }
+
+        // 正常流元素：独立更新 flow_bottom
+        // 不使用 taffy 的 Y（包含 float 垂直空间），而是自行累加
+        if matches!(child.float, FloatValue::None) && !child.is_absolute && !child.is_fixed {
+            // 第一个流内子元素的 margin-top 与无 border-top/padding-top 的父容器折叠：
+            // margin-top 上浮到父容器外，子元素位于 content 原点，不计入 flow_bottom。
+            let parent_collapses_first = first_in_flow && content_y_offset == 0.0;
+            first_in_flow = false;
+            // 独立计算正常流位置：使用 margin 折叠
+            if crate::margin_collapse::is_empty_block(child) {
+                let collapsed_self_margin =
+                    crate::margin_collapse::collapse_two_margins(child.margin_top, child.margin_bottom);
+                last_flow_mb = crate::margin_collapse::collapse_two_margins(last_flow_mb, collapsed_self_margin);
+            } else {
+                let collapsed_margin = if parent_collapses_first {
+                    0.0
+                } else {
+                    crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top)
+                };
+                let child_y = flow_bottom + collapsed_margin;
+                let child_border_bottom = child_y + child.height;
+                flow_bottom = child_border_bottom;
+                last_flow_mb = child.margin_bottom;
+            }
+            // 处理非 float 元素的 clear 属性（延迟到第二阶段）
+            if matches!(child.float, FloatValue::None) {
+                continue;
+            }
+        }
+
+        // 记录 float 元素的 taffy Y 位置和高度
+        let child_outer_height = child.margin_top + child.height + child.margin_bottom;
+        float_taffy_y.push((idx, child.y, child_outer_height));
+
+        // CSS §10.3.5：width:auto 的浮动非替换元素应 shrink-to-fit 到内容宽度。
+        // taffy 把 float 当作普通 block（填满可用宽度），此处对 width:auto 且有
+        // 块级子元素的 float 收缩到子元素最大 border-box 宽度（仅当窄于当前宽度）。
+        // 纯文本内容（无块级子元素）的 float 保持 taffy 宽度——其 shrink-to-fit 需
+        // IFC 测量，留作后续。仅当内容确实更窄时才收缩，对内容更宽或显式宽度的 float 为 no-op。
+        if child.declared_width_auto {
+            let block_child_widths: Vec<f32> = child
+                .children
+                .iter()
+                .filter(|c| !c.is_absolute && !c.is_fixed && c.is_block_level)
+                .map(|c| c.width)
+                .collect();
+            let content_max_w = block_child_widths.iter().copied().fold(0.0f32, f32::max);
+            // 有块级子元素时收缩到内容宽度（content_max_w + padding + border）。
+            // **content_max_w 可能为 0**（如 visibility:collapse 的 flex item 主尺寸归零，
+            // 或空内容块）——旧条件 `content_max_w > 0.0` 在此跳过收缩致 float 撑满全宽
+            //（flexbox-collapsed-item-horiz-001 根因，R300）。改为「有块级子元素即收缩」：
+            // 空内容 float 收缩到 padding+border（最小盒），仍比全宽更接近 shrink-to-fit 语义。
+            // 无块级子元素（纯文本 float）保持 taffy 宽度——其 shrink-to-fit 需 IFC 测量，留后续。
+            if !block_child_widths.is_empty() {
+                let shrink_border_box =
+                    content_max_w + child.padding_left + child.padding_right + child.border_left + child.border_right;
+                if shrink_border_box < child.width {
+                    child.width = shrink_border_box;
+                    child.content_width = content_max_w;
+                }
+            }
+        }
+
+        // 计算浮动元素的总占用尺寸（含 margin）
+        let child_outer_width = child.margin_left + child.width + child.margin_right;
+
+        // CSS 2.1 §9.5.1 float 定位约束：
+        // 1. Float 的 outer top 不得高于前面正常流元素生成的块盒的 outer top
+        // 2. Float 不参与 margin 折叠
+        //
+        // CSS 2.1 §9.5.1：float 的 margin box 顶边按正常流规则确定。
+        // 这里的 `line_y` / `child.y` 都追踪的是 border-box 顶边，因此用于
+        // 约束 float 最小垂直位置时，不能再次把当前元素的 margin-top 加进去，
+        // 否则后续 `child.y = line_y + margin_top` 会双计 margin-top。
+        let min_float_y = flow_bottom + last_flow_mb;
+        if min_float_y > line_y {
+            line_y = min_float_y;
+            left_used_width = 0.0;
+            right_used_width = 0.0;
+            line_max_height = 0.0;
+        }
+
+        // 处理 float 元素自身的 clear 属性
+        match child.clear {
+            ClearValue::Left => {
+                if left_float_bottom > line_y {
+                    line_y = left_float_bottom;
+                    left_used_width = 0.0;
+                    right_used_width = 0.0;
+                    line_max_height = 0.0;
+                }
+            }
+            ClearValue::Right => {
+                if right_float_bottom > line_y {
+                    line_y = right_float_bottom;
+                    left_used_width = 0.0;
+                    right_used_width = 0.0;
+                    line_max_height = 0.0;
+                }
+            }
+            ClearValue::Both => {
+                let clear_y = left_float_bottom.max(right_float_bottom);
+                if clear_y > line_y {
+                    line_y = clear_y;
+                    left_used_width = 0.0;
+                    right_used_width = 0.0;
+                    line_max_height = 0.0;
+                }
+            }
+            ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd => {}
+        }
+
+        // 检查当前行是否有足够空间放置此浮动元素
+        let available_width = container_width - left_used_width - right_used_width;
+        if child_outer_width > available_width && line_max_height > 0.0 {
+            line_y += line_max_height;
+            left_used_width = 0.0;
+            right_used_width = 0.0;
+            line_max_height = 0.0;
+        }
+
+        match child.float {
+            FloatValue::Left => {
+                child.x = left_used_width + child.margin_left;
+                child.y = content_y_offset + line_y + child.margin_top;
+
+                left_used_width += child_outer_width;
+                let new_bottom = line_y + child_outer_height;
+                left_float_bottom = left_float_bottom.max(new_bottom);
+            }
+            FloatValue::Right => {
+                right_used_width += child_outer_width;
+                child.x = container_width - right_used_width + child.margin_left;
+                child.y = content_y_offset + line_y + child.margin_top;
+
+                let new_bottom = line_y + child_outer_height;
+                right_float_bottom = right_float_bottom.max(new_bottom);
+            }
+            FloatValue::InlineStart | FloatValue::InlineEnd | FloatValue::None => {}
+        }
+
+        // CSS 2.1 §9.5.1：零高度浮动元素（margin-box 高度为 0）不推进 line_y。
+        // 一个没有内容、没有 border、没有 padding 的空浮动元素不应占据垂直空间，
+        // 后续浮动元素应从相同的 line_y 开始。
+        if child_outer_height > 0.0 {
+            line_max_height = line_max_height.max(child_outer_height);
+        }
+    }
+
+    // 第二阶段：修正非 float 子元素的 Y 位置 + BFC 浮动排斥
+    // CSS 规范中 float 元素脱离正常流，不应占据垂直空间。
+    // taffy 将 float 当作正常 block 排列，导致后续非 float 元素的 Y 偏移过大。
+    // 策略：维护一个 float_y_offset（累积 float 在 taffy 中占据的垂直空间），
+    // 对每个非 float 子元素从 Y 中扣除 offset；clear 元素消耗 offset。
+    //
+    // BFC 浮动排斥（CSS 2.1 §9.5）：建立 BFC 的块级元素不得与浮动元素重叠。
+    // 当一个非 float 块级元素建立 BFC 且与浮动元素垂直重叠时，
+    // 需将其水平位置偏移到浮动元素旁边。
+    let has_active_float_context =
+        !float_taffy_y.is_empty() || inherited_left_bottom > 0.0 || inherited_right_bottom > 0.0;
+    let mut child_float_contexts: Vec<(f32, f32)> =
+        vec![(inherited_left_bottom, inherited_right_bottom); box_node.children.len()];
+
+    if has_active_float_context {
+        let mut float_y_offset = 0.0f32;
+        // 追踪正常流内容的位置，用于 clearance 假设位置计算
+        let mut flow_bottom = 0.0f32; // 上一个非 float 流内元素的 border-bottom
+        let mut last_flow_mb = 0.0f32; // 上一个非 float 流内元素的 margin-bottom
+        let mut active_left_float_bottom = inherited_left_bottom;
+        let mut active_right_float_bottom = inherited_right_bottom;
+
+        // 收集浮动元素的几何信息，用于 BFC 排斥计算
+        // 使用实际坐标（Phase 1 已完成定位），避免重复计算
+        // 收集浮动元素的几何信息，用于 BFC 排斥计算
+        // 使用实际坐标（Phase 1 已完成定位），避免重复计算
+        // 注意：c.y 已包含 margin_top（Phase 1 定位：line_y + margin_top），
+        // 因此 float_h 只需 height + margin_bottom，避免 margin_top 双重计数。
+        let float_geometries: Vec<(FloatValue, f32, f32, f32, f32, f32)> = box_node
+            .children
+            .iter()
+            .filter(|c| !matches!(c.float, FloatValue::None))
+            .map(|c| {
+                (
+                    c.float.clone(),
+                    c.x,                        // 边框盒左边（已含 margin_left 偏移）
+                    c.y,                        // 边框盒顶部（已含 margin_top 偏移）
+                    c.width,                    // 边框盒宽度（不含 margin）
+                    c.height + c.margin_bottom, // 从边框盒顶部到 margin-box 底部
+                    c.margin_right,             // 右 margin（用于 BFC 排斥计算）
+                )
+            })
+            .collect();
+
+        for (idx, child) in box_node.children.iter_mut().enumerate() {
+            child_float_contexts[idx] = (active_left_float_bottom, active_right_float_bottom);
+            if child.is_absolute || child.is_fixed {
+                continue;
+            }
+
+            if !matches!(child.float, FloatValue::None) {
+                // float 元素：将其 taffy 高度加入 offset
+                // CSS 2.1：零高度浮动元素不占据垂直空间
+
+                // CSS 2.1 §9.5.1：float 元素不应高于正常流内容的位置。
+                // Phase 1 定位 float 时不知道 normal flow 的位置，
+                // 这里修正：将 float 的 Y 推到至少与当前流位置齐平。
+                // 注意：flow_bottom 是 content-relative，child.y 是 border-relative
+                let child_content_y = child.y - content_y_offset;
+                if child_content_y < flow_bottom {
+                    let shift = flow_bottom - child_content_y;
+                    child.y = content_y_offset + flow_bottom;
+                    // 仅更新此 float 所在侧的 float_bottom 追踪
+                    match child.float {
+                        FloatValue::Left => active_left_float_bottom += shift,
+                        FloatValue::Right => active_right_float_bottom += shift,
+                        _ => {}
+                    }
+                }
+
+                let float_total_height = child.margin_top + child.height + child.margin_bottom;
+                float_y_offset += float_total_height;
+                let child_bottom = child.y - content_y_offset + child.height + child.margin_bottom;
+                match child.float {
+                    FloatValue::Left => active_left_float_bottom = active_left_float_bottom.max(child_bottom),
+                    FloatValue::Right => active_right_float_bottom = active_right_float_bottom.max(child_bottom),
+                    _ => {}
+                }
+                continue;
+            }
+
+            // 保存 taffy 的原始 Y（调整前）
+            let original_taffy_y = child.y;
+
+            // CSS 规范：clear 属性仅适用于块级元素（CSS 2.1 §13.5）
+            if !child.is_block_level {
+                // 非块级元素（如 inline）：扣除 float offset，不处理 clear
+                if float_y_offset > 0.0 {
+                    child.y -= float_y_offset;
+                }
+                flow_bottom = flow_bottom.max(child.y - content_y_offset + child.height);
+                continue;
+            }
+
+            // CSS 2.1 §9.5.2 Clearance 计算
+            // 假设位置（hypothetical position）：无 clear 时元素应在的位置，
+            // 基于正常流的 flow_bottom + margin 折叠计算。
+            //
+            // CSS 2.1 §9.5.2 clearance 算法：
+            // 1. 计算 hypothetical position（假设 clear:none，含 margin 折叠）
+            // 2. 计算 clearance = max(0, clear_bottom - hypothetical_position)
+            // 3. 如果 clearance > 0：元素推到 clear_bottom
+            // 4. 如果 clearance == 0：clear 仍阻止 margin 折叠
+            //    元素放在 flow_bottom + margin_top（不折叠）
+            match child.clear {
+                ClearValue::Left | ClearValue::Right | ClearValue::Both => {
+                    let clear_bottom = match child.clear {
+                        ClearValue::Left => active_left_float_bottom,
+                        ClearValue::Right => active_right_float_bottom,
+                        _ => active_left_float_bottom.max(active_right_float_bottom),
+                    };
+                    // 假设位置：基于正常流的 flow_bottom + margin 折叠
+                    // CSS 2.1 §9.5.2：「as if 'clear' were 'none'」
+                    let collapsed_margin = crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
+                    let hypothetical_y = flow_bottom + collapsed_margin;
+
+                    if clear_bottom > hypothetical_y {
+                        // 正 clearance：margin 不折叠
+                        // CSS 2.1 §9.5.2 C1/C2 双路径算法：
+                        // C1（含 margin 折叠）：clearance = clear_bottom - hypothetical_y
+                        // C2（不含 margin 折叠）：clearance = clear_bottom - (flow_bottom + child.margin_top)
+                        // 最终位置 = max(clear_bottom, flow_bottom + child.margin_top)
+                        // 当元素自身 margin-top 足够大时，即使不折叠也已在浮动之下
+                        let uncollapsed_pos = flow_bottom + child.margin_top;
+                        child.y = content_y_offset + clear_bottom.max(uncollapsed_pos);
+                    } else if (clear_bottom - hypothetical_y).abs() < 0.001 {
+                        // 零 clearance（hypothetical_y ≈ clear_bottom）：
+                        // CSS 2.1 §9.5.2：clearance 引入后，位置 = hypothetical + clearance。
+                        // clearance = max(clear_bottom - P, H - P)，其中 P 为不折叠边距位置。
+                        // 当 H == clear_bottom 时，P + clearance = H = clear_bottom。
+                        // 因此元素位置 = hypothetical_y（使用折叠边距计算的假设位置）。
+                        // 零 clearance 仍阻止 margin 折叠（CSSWG resolution），
+                        // 但视觉位置与假设位置相同。
+                        child.y = content_y_offset + hypothetical_y;
+                    } else {
+                        // hypothetical_y > clear_bottom：元素已过浮动，
+                        // 无需 clearance，margin 正常折叠。
+                        child.y = content_y_offset + hypothetical_y;
+                    }
+                    float_y_offset = (original_taffy_y - child.y).max(0.0);
+                }
+                ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd => {
+                    // 非 clear 的普通元素：使用独立的 flow_bottom 追踪计算正确位置
+                    // 简单的 child.y -= float_y_offset 无法正确处理 margin 折叠，
+                    // 因为 taffy 将 float 当作 block 排列，其 margin 折叠方式
+                    // 与 float 不存在时的折叠方式不同。
+                    if float_y_offset > 0.0 {
+                        // CSS 2.1：非 clear 元素的位置 = 正常流位置（假设 float 不存在）
+                        let collapsed_margin =
+                            crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
+                        let correct_y = flow_bottom + collapsed_margin;
+                        child.y = content_y_offset + correct_y;
+                        // 更新 float_y_offset 以反映 taffy Y 与正确 Y 的差异
+                        float_y_offset = (original_taffy_y - child.y).max(0.0);
+                    }
+                }
+            }
+
+            // 空块自身的上下 margin 会自折叠，并继续传递给后继兄弟；
+            // 它自身不应把 flow_bottom 往下推进一段“实心高度”。
+            if crate::margin_collapse::is_empty_block(child) {
+                let collapsed_self_margin =
+                    crate::margin_collapse::collapse_two_margins(child.margin_top, child.margin_bottom);
+                last_flow_mb = crate::margin_collapse::collapse_two_margins(last_flow_mb, collapsed_self_margin);
+            } else {
+                // 更新流内容追踪（使用 content-relative 坐标）
+                flow_bottom = child.y - content_y_offset + child.height;
+                last_flow_mb = child.margin_bottom;
+            }
+
+            // BFC 浮动排斥（CSS 2.1 §9.5）：
+            // 建立 BFC 的块级元素不得与同容器的浮动元素重叠。
+            // 当 BFC 元素的垂直范围与浮动元素重叠时，水平偏移以避开浮动。
+            if child.is_block_level
+                && !child.is_absolute
+                && !child.is_fixed
+                && matches!(child.float, FloatValue::None)
+                && crate::margin_collapse::establishes_bfc(child)
+            {
+                let child_top = child.y;
+                let child_bottom = child.y + child.height;
+
+                for (float_dir, float_x, float_y, float_border_w, float_h, float_margin_r) in &float_geometries {
+                    let float_top = *float_y;
+                    let float_bottom = *float_y + *float_h;
+
+                    // 检查垂直重叠
+                    if !(child_top < float_bottom && child_bottom > float_top) {
+                        continue;
+                    }
+                    match float_dir {
+                        FloatValue::Left => {
+                            // 左浮动：将 BFC 元素推到浮动元素的 margin-box 右侧
+                            // float_x 是边框盒左边，加上边框宽度和右 margin
+                            let avoidance_x = float_x + float_border_w + float_margin_r;
+                            if avoidance_x > child.x {
+                                child.x = avoidance_x;
+                                // 缩小宽度以不超出容器
+                                let max_width = container_width - child.x;
+                                if child.width > max_width {
+                                    child.width = max_width.max(0.0);
+                                }
+                            }
+                        }
+                        FloatValue::Right if child.x + child.width > *float_x => {
+                            // 右浮动：缩小 BFC 元素宽度以不重叠 float 的 margin-box
+                            let new_width = float_x - child.x;
+                            child.width = new_width.max(0.0);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    // 调整容器高度：
+    // CSS 2.1 §10.6.7：建立 BFC 的容器必须包含浮动元素的外底边
+    // （margin-box bottom）。非 BFC 容器中，浮动元素不贡献高度，
+    // 因此需要收缩容器以去除 taffy 将 float 当作 block 时多计算的空间。
+    //
+    // 注意：子元素的 x/y 坐标是相对于父元素 content area 的，
+    // 所以 content_bottom 也是相对于 content area 顶部的。
+    // 不需要减去 content_y（那是相对于自身 border-box 的局部偏移，不含位置量）。
+    if !float_taffy_y.is_empty() {
+        let establishes_bfc = crate::margin_collapse::establishes_bfc(box_node);
+        // 多列容器虽然建立 BFC（阻止 margin 折叠），
+        // 但其内容通过列分布，不应使用 BFC 的浮动包含高度逻辑。
+        // 使用非 BFC 路径按正常流内容高度收缩。
+        let use_bfc_float_containment = establishes_bfc && !box_node.is_multicol;
+
+        if use_bfc_float_containment {
+            // BFC 容器：浮动元素已包含在高度中（taffy 正确计算了含 float 的 auto height）
+            // 不需要收缩。但需要确保高度至少覆盖到最低浮动元素的外底边。
+            let float_bottom = box_node
+                .children
+                .iter()
+                .filter(|c| !matches!(c.float, FloatValue::None) && !c.is_absolute && !c.is_fixed)
+                .fold(0.0f32, |max_y, c| {
+                    let bottom = c.y + c.height + c.margin_bottom;
+                    max_y.max(bottom)
+                });
+            if float_bottom > box_node.content_height {
+                box_node.content_height = float_bottom;
+                let new_total = float_bottom
+                    + box_node.padding_top
+                    + box_node.padding_bottom
+                    + box_node.border_top
+                    + box_node.border_bottom;
+                if new_total > box_node.height {
+                    box_node.height = new_total;
+                }
+            }
+        } else {
+            // 非 BFC 容器：浮动元素不贡献高度，收缩容器
+            let content_bottom =
+                box_node
+                    .children
+                    .iter()
+                    .filter(|c| !c.is_absolute && !c.is_fixed)
+                    .fold(0.0f32, |max_y, c| {
+                        let bottom = c.y + c.height + c.margin_bottom;
+                        max_y.max(bottom)
+                    });
+            let content_height = content_bottom.max(0.0);
+            // 如果内容区域实际高度小于 taffy 计算的高度，收缩容器
+            if content_height < box_node.content_height {
+                box_node.content_height = content_height;
+                // 更新总高度（包含 padding + border）
+                let new_total = content_height
+                    + box_node.padding_top
+                    + box_node.padding_bottom
+                    + box_node.border_top
+                    + box_node.border_bottom;
+                // 仅当新高度更小时才更新（不扩大容器）
+                if new_total < box_node.height {
+                    box_node.height = new_total;
+                }
+            }
+        }
+    }
+
+    // 递归处理子容器
+    for (idx, child) in box_node.children.iter_mut().enumerate() {
+        let (left_ctx, right_ctx) = child_float_contexts
+            .get(idx)
+            .copied()
+            .unwrap_or((inherited_left_bottom, inherited_right_bottom));
+        let child_content_abs_y = box_content_abs_y + child.y + child.content_y;
+        if crate::margin_collapse::establishes_bfc(child) {
+            adjust_float_positions_with_context(child, child_content_abs_y, 0.0, 0.0);
+        } else {
+            adjust_float_positions_with_context(
+                child,
+                child_content_abs_y,
+                box_content_abs_y + left_ctx,
+                box_content_abs_y + right_ctx,
+            );
+        }
+    }
+}
