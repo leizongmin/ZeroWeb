@@ -32,19 +32,19 @@ use crate::types::OverflowClip;
 #[derive(Debug, Clone)]
 pub(crate) struct TableCell {
     /// 在行 LayoutBox children 中的索引。
-    pub(crate)     child_index: usize,
+    pub(crate) child_index: usize,
     /// colspan 值（默认 1）。
-    pub(crate)     colspan: usize,
+    pub(crate) colspan: usize,
     /// rowspan 值（默认 1）。
-    pub(crate)     rowspan: usize,
+    pub(crate) rowspan: usize,
     /// 单元格跨的列范围 [start, end)。
-    pub(crate)     col_start: usize,
-    pub(crate)     col_end: usize,
+    pub(crate) col_start: usize,
+    pub(crate) col_end: usize,
     /// 嵌套行组中的单元格：指向 table_box.children 中的行组索引。
     /// None 表示单元格在 row_box.children[child_index] 中查找（默认）。
     /// Some(rg_idx) 表示单元格在 table_box.children[rg_idx].children[child_index] 中查找。
     /// 用于孤立行组（table_box 本身是行组）中混合嵌套行组和直接子单元格的匿名行。
-    pub(crate)     parent_rg_idx: Option<usize>,
+    pub(crate) parent_rg_idx: Option<usize>,
 }
 
 /// 一个表格行的信息。
@@ -52,26 +52,26 @@ pub(crate) struct TableCell {
 pub(crate) struct TableRow {
     /// 在 table LayoutBox children 中的索引。
     /// 当行是直接子 table-row 时，这是 table_box.children 中的索引。
-    pub(crate)     child_index: usize,
+    pub(crate) child_index: usize,
     /// 行所在的行组（tbody/thead/tfoot）在 table LayoutBox children 中的索引。
     /// None 表示行是 table 的直接 table-row 子元素。
-    pub(crate)     row_group_index: Option<usize>,
+    pub(crate) row_group_index: Option<usize>,
     /// 行内的单元格列表。
-    pub(crate)     cells: Vec<TableCell>,
+    pub(crate) cells: Vec<TableCell>,
     /// 是否为匿名行（cells 直接在 row-group 中，无包裹 table-row）。
-    pub(crate)     is_anonymous: bool,
+    pub(crate) is_anonymous: bool,
 }
 
 /// 解析后的表格网格结构。
 #[derive(Debug)]
 pub(crate) struct TableGrid {
     /// 行列表。
-    pub(crate)     rows: Vec<TableRow>,
+    pub(crate) rows: Vec<TableRow>,
     /// 总列数。
-    pub(crate)     col_count: usize,
+    pub(crate) col_count: usize,
     /// 每列是否被 visibility:collapse 折叠。
     /// CSS Tables §4.1：visibility:collapse 的列宽度为 0，不参与布局。
-    pub(crate)     collapsed_cols: Vec<bool>,
+    pub(crate) collapsed_cols: Vec<bool>,
 }
 
 /// 对 LayoutBox 树执行 table 布局后处理。

@@ -9,7 +9,7 @@ use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::BorderStyleValue;
 
-use crate::table::{TableGrid, get_row_box, get_cell_box, get_row_box_mut};
+use crate::table::{TableGrid, get_cell_box, get_row_box, get_row_box_mut};
 use crate::types::LayoutBox;
 
 /// border-collapse: collapse 模式下的边框冲突解决。
@@ -22,7 +22,11 @@ use crate::types::LayoutBox;
 /// 处理两类冲突：
 /// - 外边缘：table 边框与 cell 边框
 /// - 内部边缘：相邻 cell 之间的边框（包括 hidden/none 样式处理）
-pub(crate) fn resolve_collapsed_borders(table_box: &mut LayoutBox, grid: &TableGrid, styles: &HashMap<NodeId, ComputedStyle>) {
+pub(crate) fn resolve_collapsed_borders(
+    table_box: &mut LayoutBox,
+    grid: &TableGrid,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
     use zero_style_system::BorderCollapseValue;
 
     let table_style = match table_box.node_id.and_then(|id| styles.get(&id)) {
