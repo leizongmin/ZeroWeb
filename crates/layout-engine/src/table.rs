@@ -1253,6 +1253,21 @@ fn compute_column_widths(
     let is_fixed_layout = table_style
         .as_ref()
         .is_some_and(|s| matches!(s.table_layout, zero_style_system::TableLayoutValue::Fixed));
+    // CSS Tables §17.5.2.1：table-layout:fixed 时表格宽度由 width 属性决定，列宽来自
+    // <col>/首行而非内容。若内容列宽和 > 显式 width，应收缩列到 width（内容溢出 cell，
+    // 由 cell 的 overflow 裁剪），而非让内容撑宽表格（当前 bug：fixed 表渲染成内容宽）。
+    let fixed_explicit_px = if is_fixed_layout {
+        table_style.as_ref().and_then(|s| {
+            use zero_css_parser::values::LengthValue;
+            if let LengthValue::Px(v) = s.width {
+                Some(v as f32)
+            } else {
+                None
+            }
+        })
+    } else {
+        None
+    };
 
     // CSS Tables §17.5.2.1 fixed 布局空列裁剪：table-layout:fixed 时，无任何单元格
     // 跨越的列不参与渲染（chromium 行为：colspan 用例收缩到 cell extent）。
@@ -1281,6 +1296,20 @@ fn compute_column_widths(
     // 计算总宽度
     let total_width: f32 = col_max_widths.iter().sum();
 
+    // table-layout:fixed + 显式 width：内容列宽和超出 width 时按比例收缩到 width
+    //（CSS Tables §17.5.2.1：fixed 布局列宽不由内容决定；内容溢出由 cell overflow 处理）。
+    let mut fixed_capped = false;
+    if let Some(ew) = fixed_explicit_px
+        && ew > 0.0
+        && total_width > ew
+    {
+        let ratio = ew / total_width;
+        for w in &mut col_max_widths {
+            *w *= ratio;
+        }
+        fixed_capped = true;
+    }
+
     // CSS 表格收缩适应（shrink-to-fit）：
     // 表格仅在 width 为明确值（Px/% 等）时扩展填满容器。
     // width:auto 的表格（无论 table-layout 是否 fixed）都应收缩到列宽之和，
@@ -1288,8 +1317,10 @@ fn compute_column_widths(
     // width:auto 即取列宽之和。table-layout:fixed 仅决定列宽来源（<col>/首行），
     // 不意味着填满容器。（e）扩展条件已从 `has_explicit_width || is_fixed_layout`
     // 收紧为 `has_explicit_width`——fixed 空列裁剪保证 colspan 等用例 test==ref。
+    // 仅当 fixed 布局被上面收缩到 width（fixed_capped）时跳过填满扩展——否则会把
+    // 收缩后的列再撑回内容宽；未收缩的 fixed 表（内容 fits width）仍正常扩展填满。
 
-    if has_explicit_width && total_width < available_width && total_width > 0.0 {
+    if has_explicit_width && !fixed_capped && total_width < available_width && total_width > 0.0 {
         // 按比例扩展到容器宽度
         let ratio = available_width / total_width;
         for w in &mut col_max_widths {

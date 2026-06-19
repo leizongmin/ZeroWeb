@@ -392,3 +392,56 @@ fn test_collect_table_col_backgrounds() {
         entries[1].2
     );
 }
+
+/// CSS Tables §17.5.2.1：table-layout:fixed + 显式 width 时，内容列宽和若超出 width，
+/// 应按比例收缩列到 width（内容溢出 cell 由 cell 的 overflow 裁剪），而非让内容撑宽表格。
+/// 回归 table-cell-overflow-auto-scrolled（fixed 表 width:100px 含 200px 内容 div）。
+#[test]
+fn test_fixed_layout_caps_columns_at_explicit_width_when_content_wider() {
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::TableLayoutValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    ts.table_layout = TableLayoutValue::Fixed;
+    ts.width = LengthValue::Px(100.0);
+    styles.insert(table_id, ts);
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCell;
+    styles.insert(cell_id, cs);
+
+    // cell 内 200px 宽内容（比 table width 100px 更宽 → 应溢出而非撑宽表）
+    let content = LayoutBox {
+        width: 200.0,
+        ..Default::default()
+    };
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        children: vec![content],
+        ..Default::default()
+    };
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        content_width: 100.0,
+        children: vec![cell_box],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc);
+
+    // 修复前：内容 200px 撑宽列到 ~200；修复后：fixed + width:100px 收缩列到 ~100
+    let total: f32 = col_widths.iter().sum();
+    assert!(
+        (total - 100.0).abs() < 2.0,
+        "fixed-layout table (width:100px) with 200px content should cap column sum at ~100, got {}",
+        total
+    );
+}
