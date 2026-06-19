@@ -103,9 +103,12 @@ cargo run --bin webview-demo
 
 # Browser app entrypoint
 cargo run --bin zero-browser
+
+# Headless mode: WebSocket remote debugging protocol (default port 9222)
+cargo run --bin zero-browser -- --headless --remote-debugging-port=9222
 ```
 
-想先验证最短渲染链路，可以先跑 `webview-demo`；想直接看浏览器壳、多进程和 headless 能力，就跑 `zero-browser`。在 Linux 和 macOS 上，`make build` / `make browser` 会先自动处理 `rusty_v8` 下载。
+想先验证最短渲染链路，可以先跑 `webview-demo`；想直接看浏览器壳、多进程和 headless 能力，就跑 `zero-browser`。`zero-browser` 还支持 `--renderer=<mode>`（切换渲染后端）、`--scale=<factor>`（HiDPI）等参数，`--help` 可看完整列表。在 Linux 和 macOS 上，`make build` / `make browser` 会先自动处理 `rusty_v8` 下载。
 
 ## 仓库结构
 
