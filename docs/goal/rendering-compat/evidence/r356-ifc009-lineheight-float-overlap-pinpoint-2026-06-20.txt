@@ -1,0 +1,78 @@
+R356 — ifc-009 (inline-formatting-context-009, 2.08%) 残余根因精确定位（read-only 诊断，未修复）
+日期：2026-06-20
+方法：REFTEST_DUMP 像素对比 + env-gated 临时探针（effective_content_area，已 100% 回退）
+
+═══════════════════════════════════════════════════════════════
+背景：R355 paint 侧 line.y 修复后 ifc-008 → 0.00% PASS，但 ifc-009 仍 2.08% FAIL
+═══════════════════════════════════════════════════════════════
+ifc-008（无 float，"XX XX" 两行）与 ifc-009（含 float:right 100×100，"X X X"）结构同源，
+R355 后 ifc-008 达完美 0.00%，ifc-009 仍 2.08%。差异唯一变量 = float 排除。
+
+═══════════════════════════════════════════════════════════════
+像素根因：float 排除区被错误应用到 float 下方的行
+═══════════════════════════════════════════════════════════════
+diff = 10000 px = 单个 100×100 块，位于 div1 右下角 x[208,307] y[151,250]
+（TEST=orange / REF=blue）。即 div1 底部右 100px 应是蓝色文本（"X X X" 的第 3 个 X
+在 line 2 满宽 300px 时延伸到 x 200-300），但 TEST 中该区域是 div1 橙色背景 = line 2
+文本未到达 = line 2 宽度被错误缩减 → 第 3 个 X 被挤到 line 3。
+
+预期（REF 3 列 table，全高 [blue 0-100][orange 100-200][blue 200-300]）：
+  line 1（紧邻 float，可用 200px）: "X"（blue x0-100）+ orange 100-200 + blue float 200-300
+  line 2（float 下方，可用 300px）: "X X"（blue 满宽 x0-300）
+TEST 实际：line 2 也被 float 排除 → 宽度 200px → "X X"=300>200 换行 → line 2 仅 "X"，
+line 3 "X"。底部右 100px（x200-300）无文本 = orange。
+
+═══════════════════════════════════════════════════════════════
+探针实测（effective_content_area，cw=300 / float w=100 h=100 right 的 ifc-009 签名）
+═══════════════════════════════════════════════════════════════
+  line_y=20 line_h=20 excl y=0 h=100 ... overlap=TRUE   ← line 1（应排除）✓
+  line_y=40 line_h=40 excl y=0 h=100 ... overlap=TRUE   ← line 2（不应排除）✗
+
+**关键**：传给 effective_content_area 的 line_height = 20（default_line_height），非 100px。
+break_items_into_lines 中 current_y 每行 += est_height；est_height = run.line_height.max(20)。
+若 run.line_height 正确=100，则 line 1 后 current_y=100，line 2（y=100）与 float（y[0,100]）
+excl_bottom(100) > line_y(100) = FALSE → 不排除（正确）。但实测 line_h=20 → current_y 每行
+仅 +20 → line 2/3/4/5（y=20/40/60/80）全落 float[0,100] 内 → 全部错误排除。
+
+═══════════════════════════════════════════════════════════════
+根因机制：text run 的 line_height 未取到真实值（100px），回落 default 20
+═══════════════════════════════════════════════════════════════
+collect_inline_items（inline/mod.rs:675）对文本节点解析 line_height：
+  parent_id = text 节点的 DOM 父（inner-div）
+  style = styles.get(parent_id)  → inner-div 的 ComputedStyle
+  if style.is_some() { resolve_font_metrics(style) }  → 应得 (100, 100)
+
+ifc-009 文本 "X X X" 在 inner-div（display:block，div1 的子），inner-div 继承 div1 的
+`font:100px/1em Ahem` → line-height 应 100px。但探针实测 run.line_height ≤ 20（est_height
+回落 default 20），说明 resolve_font_metrics 或 style 查找在此结构下未取到 100px line-height。
+
+ifc-008 同结构（inner-div 文本被收入 div1 IFC）但无 float——其换行（XX|XX，每行 200px）
+**不依赖 line_height**，故 line_height=20 的缺陷不显化 → 0.00% PASS。ifc-009 因 float
+排除**依赖 line_height 做 y 重叠判定**，缺陷暴露。
+
+═══════════════════════════════════════════════════════════════
+为何不在本轮修复（裁决：Phase A font-metric 耦合，多会话）
+═══════════════════════════════════════════════════════════════
+此 line_height 传播缺陷属于 Phase A「Layout/Paint IFC font_size/line_height 耦合」同一
+谱系——R125/R198/R205/R206 六轮死锁正是 font_size/line_height 在存储/paint 路径间的耦合：
+修复 line_height 传播会改变行断行为（line_height 既影响行盒高度又通过 est_height 影响
+current_y 推进 / float 重叠），与 R84/R355 的多行存储守卫、multicol-fill-auto-001 的
+float guard 反向依赖墙耦合。单会话修复有高回归风险（489 passing case 中任何依赖当前
+line_height=20 行为的会翻），需 Phase A IFC 统一（baseline-resolved 单一权威行盒 + 统一
+font-metric 传递）框架内多轮 set-diff 收敛。
+
+═══════════════════════════════════════════════════════════════
+对 Phase A 设计的补充（精确化 gap #4 表现）
+═══════════════════════════════════════════════════════════════
+Phase A IFC 统一须解决的具体机制之三（前两见 R335/R336）：
+  (c) **跨 block 边界收入父 IFC 的文本 run 的 line_height/font_size 度量传播**——
+      inner-div 文本被 div1 IFC 收集时，run.line_height 应取 inner-div 真实计算值（100），
+      当前回落 default 20；此值同时驱动 (1) 行盒高度 (2) current_y 推进 (3) float 排除 y 重叠。
+      统一后 paint 复用 layout 存储行盒即天然正确（line_height 已在存储行盒高度中）。
+
+═══════════════════════════════════════════════════════════════
+代码变更：零（探针已 100% 回退，git diff -- '*.rs' 空）
+═══════════════════════════════════════════════════════════════
+本轮价值：把 ifc-009 残余从「Phase A 文本度量结构性（笼统）」精确化为
+「跨 block 边界收入父 IFC 的文本 run line_height 回落 default 20，驱动 float 排除 y 重叠
+误判」——为 Phase A 第三个具体机制定位，缩小未来修复面。
