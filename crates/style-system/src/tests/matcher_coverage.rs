@@ -30,6 +30,59 @@ fn test_tag_selector_matches_and_applies() {
 }
 
 #[test]
+/// R359 诊断：border-bottom-width longhand 在完整级联（选择器匹配 + 级联 + apply）中是否应用。
+/// 直接 apply_property_value 已证 longhand 工作（coverage_round3）；此测试验证完整级联。
+fn test_border_bottom_width_longhand_full_cascade() {
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let test_div = doc.create_element("div");
+    doc.set_attribute(test_div, "id", "test");
+    doc.append_child(body, test_div).unwrap();
+
+    let id_selector = Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::Id("test".to_string())],
+                },
+                None,
+            )],
+        },
+    };
+    let stylesheets = vec![zero_css_parser::Stylesheet {
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![id_selector],
+            declarations: vec![
+                Declaration {
+                    property: "border-bottom-style".to_string(),
+                    value: "solid".to_string(),
+                    important: false,
+                },
+                Declaration {
+                    property: "border-bottom-width".to_string(),
+                    value: "96px".to_string(),
+                    important: false,
+                },
+            ],
+        })],
+    }];
+
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let s = styles.get(&test_div).expect("#test should have computed style");
+    assert_eq!(
+        s.border_bottom_width,
+        LengthValue::Px(96.0),
+        "border-bottom-width:96px longhand must apply via full cascade"
+    );
+}
+
+#[test]
 /// @container 条件使用无效长度值应返回 false
 fn test_container_condition_invalid_length() {
     let (doc, _html, _body, div, _p) = make_test_dom();
