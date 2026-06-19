@@ -1019,9 +1019,13 @@ impl BrowserApp {
 // 拆分到独立文件以控制 app.rs 体积
 include!("app_input.rs");
 
-// 渲染方法（build_scene 及所有 render_*）和渲染工具函数
+// 渲染方法（build_scene 及所有 render_*）
 // 拆分到独立文件以控制 app.rs 体积
 include!("app_render.rs");
+
+// 渲染工具函数（圆角矩形/圆形/几何裁剪等图元构造）
+// 从 app_render.rs 进一步拆分以控制单文件体积
+include!("app_render_geometry.rs");
 
 // 平台相关独立函数（is_wayland、字体加载、颜色方案检测等）
 // 拆分到独立文件以控制 app.rs 体积
