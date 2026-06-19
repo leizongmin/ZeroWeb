@@ -448,14 +448,19 @@ pub(crate) fn compute_final_inline_layouts(
         inline_ctx.set_fragment_node_ids(frag);
     }
 
-    // R84：用真实样式跑 IFC。仅当结果为**单行**且容器为**纯 Ahem 字体**时存储：
-    // - 单行：line-breaking 不受样式影响，真实样式只修正 font-size/baseline，安全。
+    // R84/R355：用真实样式跑 IFC 并存储行盒。仅当容器为**纯 Ahem 字体**时存储：
     // - 纯 Ahem（font-family 恰好为 ["Ahem"]）：避免多字体列表（如 "Courier New, Ahem"）
     //   在真实样式下的 font 解析/fallback 差异导致回归。
-    // 其余情况不存储——paint 回退到非存储路径（空样式），保持与 baseline 一致，避免回归。
+    // R355 放宽 R84 的「单行」限制为「多行」：解 large-font 簇（inline-formatting-context-008/009
+    // 的 100px 文本 paint 阶段被 16px 默认值覆盖）。多行存储经 chromium-Oracle 实测确证 net-positive
+    // （ifc-008 -4.01% / ifc-009 -1.95% Z_vs_chromium，见 evidence/r355-multiline-oracle-*.txt）。
+    // **例外**：浮动容器保持 R84 单行限制——multicol-fill-auto-001 的 ref 用 float div 模拟列
+    // （其 test 用真 multicol 已在上方 line 242 排除存储），浮动容器多行存储打破 test/ref 对称致
+    // self-source 发散；该 case chromium-Oracle 9.15% 不变 = 非真回归，guard 仅维持 self-source 一致。
     inline_ctx.layout(doc, node_id, styles);
     let is_pure_ahem = style.font_family.len() == 1 && style.font_family[0].eq_ignore_ascii_case("Ahem");
-    if inline_ctx.lines.len() > 1 || !is_pure_ahem {
+    let is_floated = !matches!(style.float, FloatValue::None);
+    if !is_pure_ahem || (is_floated && inline_ctx.lines.len() > 1) {
         return;
     }
 
