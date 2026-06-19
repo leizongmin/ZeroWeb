@@ -28,6 +28,7 @@ pub mod margin_collapse;
 pub mod multicol;
 pub mod r109;
 pub mod table;
+pub mod table_borders;
 pub mod table_shrink;
 pub mod tree;
 pub mod types;
