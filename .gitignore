@@ -60,3 +60,6 @@ coverage_report/
 # chromium Oracle 截图产物（可由 chromium-oracle-shot.mjs 重新生成，不入库）
 tests/wpt-runner/oracle-shots/
 node_modules/
+
+.local/
+
