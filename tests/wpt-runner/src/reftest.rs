@@ -978,8 +978,10 @@ pub fn render_to_framebuffer_with_base(
 
     // 构建字体查找表（在 render_html 之前，以便 Painter 解析 CSS font-family）
     let mut font_loader = create_font_loader();
-    // 加载 CSS @font-face 声明的自定义字体（按 base_dir 解析 src 到本地文件）
-    load_font_faces_into(&mut font_loader, base_dir, &combined_css);
+    // 加载 CSS @font-face 声明的自定义字体：扫描外链/传入 CSS + 文档内联 <style>
+    //（@font-face 常在内联 <style>），按 base_dir 解析 src 到本地文件。
+    let font_scan_css = format!("{combined_css}\n{}", extract_inline_style_css(html));
+    load_font_faces_into(&mut font_loader, base_dir, &font_scan_css);
     let font_resolver = font_loader.build_font_resolver();
     pipeline.set_font_resolver(font_resolver);
 
@@ -1313,6 +1315,32 @@ fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>)> {
             _ => None,
         })
         .collect()
+}
+
+/// 提取 HTML 中所有 `<style>` 元素的文本内容（与 engine `collect_stylesheets` 同源）。
+///
+/// `@font-face` 常声明在文档内联 `<style>`（非外链 CSS），须一并扫描才能加载。
+fn extract_inline_style_css(html: &str) -> String {
+    let doc = zero_dom::parse_html(html);
+    let mut css = String::new();
+    for style_id in doc.get_elements_by_tag_name("style") {
+        if let Some(text) = doc.text_content(style_id) {
+            let text = text.trim();
+            // 去 CDATA 包裹（XHTML 惯例 `<![CDATA[ ... ]]>`）
+            let text = text
+                .strip_prefix("<![CDATA[")
+                .and_then(|t| t.strip_suffix("]]>"))
+                .map(|t| t.trim())
+                .unwrap_or(text);
+            if !text.is_empty() {
+                if !css.is_empty() {
+                    css.push('\n');
+                }
+                css.push_str(text);
+            }
+        }
+    }
+    css
 }
 
 /// 解析 `@font-face` 的 src URL 到本地文件路径（与 `load_linked_stylesheets` 同约定）。
