@@ -86,8 +86,12 @@ impl<'a> TextShaper<'a> {
         let glyph_infos = glyph_buffer.glyph_infos();
         let glyph_positions = glyph_buffer.glyph_positions();
 
-        // fontdue 字体用于获取 advance width（像素单位）
+        // fontdue 字体用于获取像素级 advance width（按 glyph 索引，ligature-correct）
         let fd_font = self.font_loader.get(font_id.0)?;
+        // rustybuzz 的 glyph_position 字段为字体设计单位（UPM 刻度），
+        // 转换为像素须乘 font_size / units_per_em。
+        let upem = fd_font.units_per_em();
+        let px_per_unit = if upem > 0.0 { font_size / upem } else { 0.0 };
 
         // 建立 cluster → code_point 映射
         let chars: Vec<char> = text.chars().collect();
@@ -103,19 +107,23 @@ impl<'a> TextShaper<'a> {
                 '\u{FFFD}'
             };
 
-            // 使用 fontdue 获取像素级 advance width
+            // advance width：用 fontdue 按 glyph 索引取像素 advance——对 ligature 合并
+            // 的 glyph 也正确（取该 glyph 的真实宽度），旧实现按首 cluster 字符宽度过窄。
+            // glyph_id == 0 表示 .notdef（字体缺字），回退估算宽。
             let advance_x = if info.glyph_id == 0 {
                 font_size * 0.6
             } else {
-                fd_font.metrics(code_point, font_size).advance_width
+                fd_font
+                    .metrics_indexed(info.glyph_id.min(u16::MAX as u32) as u16, font_size)
+                    .advance_width
             };
 
             glyphs.push(ShapedGlyph {
                 glyph_id: info.glyph_id,
                 font_id,
                 advance_x,
-                x_offset: pos.x_offset as f32,
-                y_offset: pos.y_offset as f32,
+                x_offset: pos.x_offset as f32 * px_per_unit,
+                y_offset: pos.y_offset as f32 * px_per_unit,
                 code_point,
             });
         }
