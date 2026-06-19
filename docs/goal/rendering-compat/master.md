@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-20（R355：**Phase A 首个 chromium-Oracle 验证的 net-positive 进展**——放宽 Gate 2 多行存储（解 large-font 簇），float guard 解 R209/R213 死锁。chromium-Oracle 实测 ifc-008 -4.01% / ifc-009 -1.95% Z_vs_chromium（真一致性提升），multicol-fill-auto-001 9.15% 不变=非真回归（self-source 0.63% PASS 经 float guard 保留）；**self-source reftest 439/490 零回归**（failure 集与 baseline 完全一致）。关键洞察：R209 报告的 multicol-fill-auto-001「0.63→9.15 回归」经 Oracle 复测是 **self-source 假阴性**（ZW-ref 因多行存储变化发散，但 ZW-test vs chromium 不变）——R209 因仅看 self-source 误判为真回归而回退，错失 Phase A 进展。详见 [`evidence/r355-multiline-oracle-validated-2026-06-20.txt`](./evidence/r355-multiline-oracle-validated-2026-06-20.txt)。前轮 R354：fresh baseline 439/490 零漂移再确认 + 8 失败案独立 pixel-dump 根因——**每案均落 4 条多会话架构路径之一**，clean-win 单点修复面确已穷尽。详见 [`evidence/r354-plateau-revalidation-2026-06-20.txt`](./evidence/r354-plateau-revalidation-2026-06-20.txt)。前轮 R351：**plateau 首破——self-source 438→439/490（89.6%）**，首个 pass-rate 进展（R305 以来）。修复 `table-layout:fixed` 不尊重显式 width：CSS Tables §17.5.2.1 fixed 表 width 应由 width 属性决定，但 ZeroWeb 的 `compute_column_widths` 对所有表用内容固有列宽（col_max_widths），导致 fixed 表 `width:100px`+200px 内容渲染成 200px（内容撑宽）而非 100px（内容溢出 cell 由 overflow 裁剪）。根因 `table-cell-overflow-auto-scrolled`（2.17% FAIL）：cell 被撑到 200px，其 overflow:auto 无物可裁 → 与 100px div-ref 发散。**修复**（compute_column_widths）：fixed + 显式 Px width + 内容列宽和 > width 时按比例收缩列到 width（`fixed_capped` 标志），且仅当收缩实际触发时跳过「填满容器」扩展（未收缩的 fixed 表仍正常扩展——保 multicol-fill-001 reference 表）。验证：`table-cell-overflow-auto-scrolled` FAIL→PASS（0.00%）；**upstream reftest 438→439/490 零回归**（multicol-fill-001 + calc-percent-plus-0px-fixed + table_grid_size_col_colspan 三 fixed-layout 案全保）；make test 12265/0/72、clippy/fmt 干净、+1 单测 `test_fixed_layout_caps_columns_at_explicit_width_when_content_wider`。**启示**：plateau 并非绝对——逐案深查 self-source FAILURE（非 polluted）的近 misses 仍可发现单点 CSS 解析/布局 bug；table-layout:fixed width 尊重是 R305-R350 漏网的 clean win（仅 3 个 fixed-layout 案、爆炸半径小）。下一步：继续逐案审 self-source failure 近 misses（baseline-007/multicol-breaking-006/child-border-box-max-content 等 <1.5% 案）。
+**最后更新**: 2026-06-20（R355：**Phase A 首个 chromium-Oracle 验证的 net-positive 进展**——放宽 Gate 2 多行存储（解 large-font 簇），float guard 解 R209/R213 死锁；**paint 侧 line.y 偏移补全**（text.rs:832，Gate 2 提交 ca14d05 的 load-bearing 配套）使 ifc-008 达 0.00% 完美匹配。chromium-Oracle 实测 ifc-008 -4.01% / ifc-009 -1.95% Z_vs_chromium（真一致性提升），multicol-fill-auto-001 9.15% 不变=非真回归（self-source 0.63% PASS 经 float guard 保留）；**self-source reftest 439→440/490 净 +1 零回归**（ifc-008 FAIL→PASS，stash 对照证 paint fix load-bearing：HEAD Gate-2-only ifc-008 4.17% FAIL → +fix 0.00% PASS）。关键洞察：R209 报告的 multicol-fill-auto-001「0.63→9.15 回归」经 Oracle 复测是 **self-source 假阴性**（ZW-ref 因多行存储变化发散，但 ZW-test vs chromium 不变）——R209 因仅看 self-source 误判为真回归而回退，错失 Phase A 进展。详见 [`evidence/r355-multiline-oracle-validated-2026-06-20.txt`](./evidence/r355-multiline-oracle-validated-2026-06-20.txt)。前轮 R354：fresh baseline 439/490 零漂移再确认 + 8 失败案独立 pixel-dump 根因——**每案均落 4 条多会话架构路径之一**，clean-win 单点修复面确已穷尽。详见 [`evidence/r354-plateau-revalidation-2026-06-20.txt`](./evidence/r354-plateau-revalidation-2026-06-20.txt)。前轮 R351：**plateau 首破——self-source 438→439/490（89.6%）**，首个 pass-rate 进展（R305 以来）。修复 `table-layout:fixed` 不尊重显式 width：CSS Tables §17.5.2.1 fixed 表 width 应由 width 属性决定，但 ZeroWeb 的 `compute_column_widths` 对所有表用内容固有列宽（col_max_widths），导致 fixed 表 `width:100px`+200px 内容渲染成 200px（内容撑宽）而非 100px（内容溢出 cell 由 overflow 裁剪）。根因 `table-cell-overflow-auto-scrolled`（2.17% FAIL）：cell 被撑到 200px，其 overflow:auto 无物可裁 → 与 100px div-ref 发散。**修复**（compute_column_widths）：fixed + 显式 Px width + 内容列宽和 > width 时按比例收缩列到 width（`fixed_capped` 标志），且仅当收缩实际触发时跳过「填满容器」扩展（未收缩的 fixed 表仍正常扩展——保 multicol-fill-001 reference 表）。验证：`table-cell-overflow-auto-scrolled` FAIL→PASS（0.00%）；**upstream reftest 438→439/490 零回归**（multicol-fill-001 + calc-percent-plus-0px-fixed + table_grid_size_col_colspan 三 fixed-layout 案全保）；make test 12265/0/72、clippy/fmt 干净、+1 单测 `test_fixed_layout_caps_columns_at_explicit_width_when_content_wider`。**启示**：plateau 并非绝对——逐案深查 self-source FAILURE（非 polluted）的近 misses 仍可发现单点 CSS 解析/布局 bug；table-layout:fixed width 尊重是 R305-R350 漏网的 clean win（仅 3 个 fixed-layout 案、爆炸半径小）。下一步：继续逐案审 self-source failure 近 misses（baseline-007/multicol-breaking-006/child-border-box-max-content 等 <1.5% 案）。
 
 **doc-maintenance（2026-06-20 verify 轮）**：plateau 结论 read-only 复核成立（R354 fresh baseline 439/490 零漂移、clean-win 面 R351 后穷尽），无需新调整方向——现有「综合裁决 + 下一步」即当前结论。文档治理两项：① 将「技术决策记录」表中 **R118–R227 逐轮历史条目**（50 行，2026-06-14~17，远超最近 20 轮窗口，主体已在 rounds-r23-r139 / rounds-r142-r302 归档）迁出至 [`archive/tech-decisions-r118-r227.md`](./archive/tech-decisions-r118-r227.md)（50 行 → 1 指针行，master.md 833→786 行）；② 纠正「最近轮次详细记录」窗口标注（R335–R336 为最后两轮全文详记，R337–R354 为 plateau 复核/治理轮，精简结论见上方「综合裁决」表）。本轮零代码变更（并行 agent 正在 layout-engine 开发，未触碰）。
 
@@ -13,7 +13,7 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
 **基线（R323 复验；strict post-R326 再复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)）**：
-- self-source loose **439/490 (89.6%)** @ 默认 1%/5% 容差
+- self-source loose **440/490 (89.8%)** @ 默认 1%/5% 容差
 - self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 真一致率 **~35.6%**（self-source 含 48.6% 假通过，DC-14 anti-false-pass）
 - 产品 smoke：welcome 17.06% / wintertc ~13.6% / morning-work fullpage 48.65%（全文本度量结构性，非图片/CSS 缺口——图片加载 R318 已端到端贯通）
@@ -31,7 +31,7 @@
 
 **基线（R323 复验；strict post-R326 再复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)）**：
 
-- self-source loose：**439/490 (89.6%)** @ 默认 1%/5% 容差
+- self-source loose：**440/490 (89.8%)** @ 默认 1%/5% 容差
 - self-source strict：**295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 真一致率：**~35.6%**（169/475；self-source 含 48.6% 假通过，DC-14 anti-false-pass）
 - 产品 smoke：welcome 17.06% / wintertc 13.70% / morning-work 28.72%（全文本度量结构性，非图片/CSS 缺口——图片加载 R318 已端到端贯通）
@@ -45,7 +45,7 @@
 | near-pass clean-win frontier | R307 | 26 个 <0.2% 案全落结构性墙 / 字体噪声，零 clean win |
 | POLLUTED 候选逐项 hunt | R299/R300/R302/R309/R311/R329 | 三趟复核（R298 清单逐项 + fresh 475 例 top-30 + 长尾 spot-check）全结构性/特性缺口，exhausted；唯 R308 font-size% 一处真实 clean win |
 | fresh chromium-Oracle cross-validate | R311 | 4 新候选 ruled out，plateau 再确认 |
-| Phase A IFC font_size 解锁（多行存储） | R125/R198/R205/R206/R209/R213 | R209 放宽多行→multicol-fill-auto-001 self-source 回归（误判回退）；**R355 用 chromium-Oracle 复测证该回归=假阴性**（multicol-fill-auto-001 Z_vs_chr 9.15% 不变，self-source 0.63% 本是假通过），加 **float guard**（浮动容器保 R84 单行限制）解死锁：ifc-008/009 Oracle -4.01/-1.95%、self-source 439/490 零回归。**Phase A 多行路径首次 Oracle-net-positive**（R207 单行 +1 后再进）；R125/R198/R205 font_size/line-height 耦合单点仍死锁，但多行存储 + float guard 是可行 narrow 扩展 |
+| Phase A IFC font_size 解锁（多行存储） | R125/R198/R205/R206/R209/R213 | R209 放宽多行→multicol-fill-auto-001 self-source 回归（误判回退）；**R355 用 chromium-Oracle 复测证该回归=假阴性**（multicol-fill-auto-001 Z_vs_chr 9.15% 不变，self-source 0.63% 本是假通过），加 **float guard**（浮动容器保 R84 单行限制）解死锁：ifc-008/009 Oracle -4.01/-1.95%；paint 侧 line.y 偏移补全（text.rs:832，Gate 2 ca14d05 的 load-bearing 配套）使 ifc-008 self-source 4.17%→**0.00% PASS**，self-source **439→440/490 净 +1 零回归**。**Phase A 多行路径首次 Oracle-net-positive**（R207 单行 +1 后再进）；R125/R198/R205 font_size/line-height 耦合单点仍死锁，但多行存储 + float guard + paint line.y 是可行 narrow 扩展 |
 | multicol breaking paint 侧 | R157/R198/R203/R317 | 5 次实证全 net-negative，paint 侧死路 |
 | multicol balance 二分搜索 | R199/R200/R321/R322 | T/N ≡ binary-search（等高行）；columns-001 diff 实为 wrapping 精度，非 balance |
 | multicol column-aware IFC（layout 侧） | R319 | spec-rfc 产出 + A1 probe REFUTES Phase 1（目标结构在失败集几乎不存在，迁移零增益） |
@@ -71,7 +71,7 @@
 1. **Phase A IFC 三路径统一** — paint 不重跑 IFC，直接渲染 layout 存储的行盒（R205/R207 viable slice 已证 font-051 可行；broad 应用需多轮 narrow 精修 + 守 multicol-fill-auto 反向依赖墙）。设计文档 [`phase-a-IFC-unification-design.md`](./phase-a-IFC-unification-design.md)。
 2. **Phase 2 嵌套 multicol fragmentation** — layout 侧 column-aware IFC + 嵌套列碎片化（R131/R201；R319 证纯 inline 迁移零增益，真实价值在嵌套 / 混合内容）。设计文档 [`multicol-fragmentation-design.md`](./multicol-fragmentation-design.md)、[`column-aware-IFC-spec.md`](./column-aware-IFC-spec.md)。
 3. **baseline-export 真修复** — taffy 0.8+ baseline_overrides（需先解 R304 升级冲突）或自建 inline-level-box baseline 合成；解 flexbox-baseline / multicol-baseline 聚类（~10+ 案）。
-4. **接受 plateau** — 当前 self-source 89.6% / strict 60.2% / Oracle ~36% 作为诚实基线。
+4. **接受 plateau** — 当前 self-source 89.8% / strict 60.2% / Oracle ~36% 作为诚实基线。
 
 **裁决**：需用户对「投入多会话架构承诺」vs「接受 plateau」决策。继续 rally 单会话迭代将重复 plateau 确认，无新进展。R314 已通过飞书通知用户此卡点。
 
@@ -91,7 +91,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成（管线层）⚠️ | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：13 种图元**管线**已建（48 单元测试 ✅），**但浏览器全量 GPU 路径 `render_full_scene_gpu` 实际消费以 DC-9 表为准**——transform=✅ R285/ee8373a 已接入（`collect_transforms`+`apply_transform_filters_headless`）、blend=CPU no-op stub+GPU 丢弃（**唯一剩余 GPU 真实缺口**）、5 color-matrix 滤镜（grayscale/invert/saturate/sepia/hue-rotate）=✅ R286/94c773a 已落（`collect_color_filters` mode 3-7 全处理，parity CPU）、clip=no-op（engine 从不生成）；filter:opacity/brightness/contrast/blur 已落（f6fed44/fc86937/3a3530f）；浏览器消费：全部 13 种图元 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | ⏸ plateau（R323） | 基础设施 ✅；490 上游 reftest 已导入（9 目录）；self-source loose **439/490 (89.6%)** / strict **295/490 (60.2%)** / chromium-Oracle ~35.6%；R305–R323 全单会话杠杆穷尽，达标需多会话架构（见「综合裁决」） |
+| M10 — 上游 WPT 真实 Reftest 导入 | ⏸ plateau（R323） | 基础设施 ✅；490 上游 reftest 已导入（9 目录）；self-source loose **440/490 (89.8%)** / strict **295/490 (60.2%)** / chromium-Oracle ~35.6%；R305–R323 全单会话杠杆穷尽（R351 table-layout:fixed + R355 Phase A 多行存储为两次 plateau 突破），达标需多会话架构（见「综合裁决」） |
 
 ## 当前状态概览
 
@@ -140,7 +140,7 @@
 
 ### DC-2: CSS 2.1 核心通过率 ≥ 95%
 
-> ⚠️ **达标口径纠正（R283，2026-06-18）**：下表原「通过率 ≥95% ✅ 100.0%」基于**内联 685 reftest**，直接违反 DC-14（goal line 319「内联 reftest 100% 仅作 smoke，不计达标」+ line 844「禁止 DC-2~5 以内联 100% 冒充达标」= DONE 阻断项）。**真实达标**须 ≥95%（上游全量真实 reftest + chromium Oracle + 严格容差 0.1%/0.5%），当前诚实数 = **39.6% strict**（188/475，evidence/cross-validate-full-2026-06-17.txt）/ 89.6% self-source-loose（439/490 @ 1%/5%），**均 <95%，DC-2 未达标**。内联 100% 仅 smoke（DC-7 全绿基线）。
+> ⚠️ **达标口径纠正（R283，2026-06-18）**：下表原「通过率 ≥95% ✅ 100.0%」基于**内联 685 reftest**，直接违反 DC-14（goal line 319「内联 reftest 100% 仅作 smoke，不计达标」+ line 844「禁止 DC-2~5 以内联 100% 冒充达标」= DONE 阻断项）。**真实达标**须 ≥95%（上游全量真实 reftest + chromium Oracle + 严格容差 0.1%/0.5%），当前诚实数 = **39.6% strict**（188/475，evidence/cross-validate-full-2026-06-17.txt）/ 89.8% self-source-loose（440/490 @ 1%/5%），**均 <95%，DC-2 未达标**。内联 100% 仅 smoke（DC-7 全绿基线）。
 
 | 条目 | 状态 | 说明 |
 |------|------|------|
@@ -378,7 +378,7 @@
 
 **当前基线（R323 复验；strict post-R326 再复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)）**：
 
-- self-source loose **439/490 (89.6%)** @ 默认 1%/5% 容差
+- self-source loose **440/490 (89.8%)** @ 默认 1%/5% 容差
 - self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 真一致率 **~35.6%**（self-source 含 48.6% 假通过）
 
@@ -725,7 +725,7 @@ IFC 统一（~50 tests）
 
 ### 需用户决策（卡点）
 
-- [ ] **多会话架构承诺 vs 接受 plateau**：439/490 loose / 295/490 strict / ~36% Oracle 是诚实基线。剩余提升需 Phase A IFC 统一 / Phase 2 嵌套 multicol / baseline 合成 或 taffy 升级，均为多会话工程。R314 已飞书通知。
+- [ ] **多会话架构承诺 vs 接受 plateau**：440/490 loose / 295/490 strict / ~36% Oracle 是诚实基线。剩余提升需 Phase A IFC 统一 / Phase 2 嵌套 multicol / baseline 合成 或 taffy 升级，均为多会话工程。R314 已飞书通知。
 
 ### 若推进多会话架构（按依赖序）
 
@@ -741,7 +741,7 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 ### 已完成里程碑（参考，非当前活跃）
 
 - M1–M9 基础设施 + 渲染器图元覆盖 + 浏览器消费 + 布局正确性 + 高级视觉效果：**已完成**（见下方「里程碑完成状态」「Done Criteria 进度」）。
-- M10 上游 WPT reftest：基础设施完成，通过率 plateau（439/490 loose），达标需上述多会话架构。
+- M10 上游 WPT reftest：基础设施完成，通过率 plateau（440/490 loose），达标需上述多会话架构。
 
 ---
 

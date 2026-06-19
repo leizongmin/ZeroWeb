@@ -825,10 +825,15 @@ impl super::Painter {
                     .unwrap()
                     .iter()
                     .flat_map(|line| {
-                        line.fragments.iter().filter_map(|f| {
+                        // R355：多行存储需把行盒垂直偏移（line.y）加到片段 y 上——
+                        // 存储片段 f.y 是行内相对（恒为 0），line.y 才是行盒在容器内的位置。
+                        // R207 单行存储时 line.y==0 故无影响；R355 多行若不加 line.y，
+                        // 所有行渲染在容器顶部 y=0 互相覆盖（ifc-008 底半红露白）。
+                        let line_y = line.y;
+                        line.fragments.iter().filter_map(move |f| {
                             f.node_id.map(|nid| PaintFragment {
                                 x: f.x,
-                                y: f.y,
+                                y: line_y + f.y,
                                 height: f.height,
                                 font_size: f.font_size,
                                 is_ahem: f.is_ahem,
