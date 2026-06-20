@@ -1,0 +1,32 @@
+R366 — inline vertical-margin-zero 实验（net-neutral，已回退，关闭 inline surface-fix 微路径）
+Date: 2026-06-20 (R366) | baseline 复验 self-source 442/490 零漂移
+
+================================================================
+实验
+================================================================
+CSS 2.1 §8.3/§10.2：display:inline 元素的 margin-top/bottom 无视觉效果（仅 left/right
+生效）。ZeroWeb 把 inline 映射为 block（taffy），故 vertical margin 被错误应用
+（empty-inline-002 的 <span style="margin:100px"> 实测 mt=100 被应用）。
+
+修复（converter/mod.rs）：加 is_pure_inline = display==Inline（不含 inline-block/
+inline-flex 等原子行内级盒），在 taffy margin 块把 top/bottom 归零。
+
+================================================================
+验证（已 100% 回退）
+================================================================
+- empty-inline-002：self 25.78% → 25.26%（仅微移），**TEST vs chromium-Oracle = 23.20%
+  修复前后完全不变**（red 区域仅位移非缩小）→ 修复对该案 oracle 零改善。
+- 全量 self-source：**442/490 净中性，零翻转**（48 失败列表 diff 为空）。
+- 裁决：CSS 正确但**两个指标均零杠杆**——empty-inline-002 发散由 block-mapping +
+  padding/border 作为 block 盒（非 inline line-box）主导，vertical margin 非主因。
+  按 code-guidelines「不做零价值/推测性修改」**回退**（git checkout converter/mod.rs）。
+
+================================================================
+结论（关闭 inline surface-fix 微路径）
+================================================================
+继 R365「3/3 clean-fix avenue 穷尽」后，R366 实证 **inline 表面修复（vertical margin
+归零）亦 net-neutral**——block-mapping 主导致任何 inline 单点修正无效。empty-inline-002
+/ border-padding-bleed-001 簇的唯一解锁路径是 **Phase A inline→block 映射重写本身**
+（把 inline 元素从 taffy block-mapping 剥离、改为纯 IFC 行内盒），即多会话架构。
+forward motion 唯余此架构承诺，surface patch 已证穷尽。
+================================================================
