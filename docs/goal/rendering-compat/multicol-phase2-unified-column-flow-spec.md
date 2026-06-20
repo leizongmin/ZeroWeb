@@ -10,6 +10,8 @@
 
 ## 0. 执行摘要
 
+> **⚠️ v1.0-R383 重大纠正：混合内容目标案前置依赖 Phase A，本 spec 非独立可实施。** R383 LAYOUT_DUMP 深度诊断 multicol-block-no-clip-002 发现：5 个 `<span>`（inline）经 **R109（inline→block converter）被转成 block-level LayoutBox**，multicol 按原子 block 分配到列（非 IFC 流动）；ref 期望 inline 作单一 IFC 跨列流动（span 跨列分裂）。**根因 = R109 entanglement**，非「inline 未分配」。故本 spec 的统一 column-flow **即使实现也修不了混合内容案**（spans 已是 block 盒）——真修复须 **先 Phase A（inline 内容作流动 IFC / R109 解转换）再 multicol 列碎片化**。**两多会话 lever 依赖：Phase A → multicol**。下方 Phase 2 设计保留作 Phase A 完成后的实施基础；**勿在 Phase A 前以混合内容为目标实现统一流**（会重复 R382 spec 的浪费）。R109-independent 的 multicol 失败（嵌套 breaking，Phase 3，真 block 子）可独立推进。
+
 - **一句话目标**：把 multicol 容器的 **block + inline 子元素按文档序统一逐列流动**（CSS Multicol §6 fragmentation + §8 balance），取代当前「taffy 块堆叠 → `assign_children_to_columns_*` 重分配 block 子 → IFC 单独跑 inline（paint 侧仅 pure-inline 分配）」的三段分离模型——该模型**结构性无法表达 block/inline 交错的列流动**，是 css-multicol 16 失败（混合内容 balance / 嵌套 breaking）的根因。
 - **本期范围（Phase 2）**：实现 layout 侧「统一 column-flow」——单层、非嵌套 multicol 容器，`column-fill: balance`（默认）+ `height: auto`，含**混合 block + inline 子元素**（即 paint 侧 `text.rs:713` 门控 `!has_in_flow_children` 为 false 被跳过、当前整块堆叠错渲染的案）。目标案：multicol-block-no-clip-002（1.81%）、multicol-containing-002（3.92%）、multicol-count-computed-003（1.78%）、multicol-collapsing-001（1.68%）等混合内容 balance 案（~6-8 案）。
 - **明确排除（本期）**：① **嵌套 multicol / column-fill:auto + 明确高度的 breaking**（multicol-breaking-004/005/006/nobackground-004，outer 把 inner 碎片化）= Phase 3（真嵌套碎片化，循环依赖硬核）；② **inline 内容跨列断裂**（单段长文本跨多列）= Phase 2c（行级 fragmentation，依赖 Phase 2b 的统一流基础设施）；③ Phase 1（pure-inline balance 明确高度）**已 A1 gate 证伪关闭**（0/16 失败案匹配，见 column-aware-IFC-spec.md §10），勿再做。
@@ -209,7 +211,7 @@
 - 单 `.rs` ≤2000 行（multicol.rs 当前 628，统一流逻辑若使超限则抽 `multicol_unified_flow.rs`）。
 
 ### 6.5 假设（rally 自主模式，待实施第一步 probe 验证）
-- **A1（目标案 diff 根因）**：混合内容 balance 案的 diff **全部来自 inline 未分配**（block 子位置经 `assign_children_to_columns_balanced` 已正确）——**R382 probe 部分确认**：multicol-block-no-clip-002 像素分析显示 ZW-test 内容挤在左上角（h4 黑块 x=28-106 y=48-66、blue span x=28-72、orange span x=108-232 溢出 div 宽 200），**未跨 3 列分布**（ref 应跨 3 列）。确认「列分布失败」范围成立；但 block h4 似也未正确分到列（挤在 col1），**精确 block-vs-inline 归因需更深 probe**（统一流可能须同时修 block 路径）。状态：部分确认，范围成立。
+- **A1（目标案 diff 根因）**——**R383 LAYOUT_DUMP 深度诊断重大纠正**：原假设「inline 未分配」**不成立**。multicol-block-no-clip-002 的 5 个 `<span>`（display:inline）经 R109（inline→block converter）**被转成 block-level LayoutBox**，与 h4 共 6 个 block 子，multicol 把它们按原子 block 分配到 3 列（blue+h4→col1、orange+pink→col2、yellow→col3，各列顶 y=28/48）。但 ref 期望 **inline 内容作单一 IFC 跨列流动**（blue 4 行+h4+orange 1 行填 col1 至 balance 高 → orange 余+pink 溢 col2 → pink 余+yellow 填 col3，**span 跨列分裂**）。**根因 = R109 entanglement**：spans 已是 block 盒，统一 column-flow 即使实现仍按 block 分配，**修不了这些案**。**真修复须先 Phase A（inline 内容作流动 IFC，R109 解转换）再 multicol 列碎片化——两多会话 lever 依赖（Phase A → multicol）**。状态：根因已定位，**本 spec 的混合内容目标案前置依赖 Phase A，非独立可实施**。
 - **A2（balance 高度可复用）**：统一流的 balance 高度 = 现有 `total_content_height / col_count`（pure-inline paint 侧同公式），对混合内容（block+inline 总高）同样适用。**待 probe**：目标案 chromium 的 balance 高度是否 = 总高/列数。若 chromium 用迭代二分搜索（R199/R321/R322 证 pure-inline 非此），混合内容可能不同。状态：待验证。
 - **A3（IFC 可按列预算跑）**——**R382 probe 已解决（无需扩展 IFC）**：原假设「IFC 须加 height-budget 入参」**不成立**。重读 §8.4 `flush_inline_run`：IFC 产出**宽度换行的全部行盒**（现有 `break_items_into_lines` 能力），统一流再按 balance 高度切片到列——**列切片逻辑在统一流，非 IFC**，故 IFC 接口不变。注：`inline/mod.rs:1462 break_items_into_columns` 是**垂直书写模式**换行（line 1463「垂直模式 container_width=向下推进最大高度」），**非 multicol 列能力**（命名碰撞），与本 spec 无关。状态：已解决，简化实施。
 
@@ -414,3 +416,4 @@ env `MULTICOL_UNIFIED_FLOW=0`（默认）即完全回退；任一 Commit 净负�
 |------|------|----------|
 | v1.0 | 2026-06-20 | 初始版本（R382，spec-rfc 标准模式，承接 R381 Phase 1 gate 关闭后的 Phase 2 路由） |
 | v1.0-probe | 2026-06-20 | R382 probe：A3 已解决（IFC 无需扩展，列切片在统一流；`break_items_into_columns` 是垂直模式无关）；A1 部分 probe（multicol-block-no-clip-002 内容挤左上角未跨列，范围成立，block-vs-inline 精确归因待深 probe）；A2 待 Commit 2 前验证 |
+| v1.0-R383 | 2026-06-20 | **R383 LAYOUT_DUMP 深度诊断重大纠正**：A1 根因 = **R109 entanglement**（inline spans 被转 block 盒按原子分配到列，非 IFC 流动）。混合内容目标案前置依赖 Phase A（inline→IFC），本 spec 统一流非独立可实施。两 lever 依赖：Phase A → multicol。R109-independent 的嵌套 breaking（Phase 3）可独立推进 |
