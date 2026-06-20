@@ -25,4 +25,30 @@ fn main() {
         f.write_all(&pixels).unwrap();
         eprintln!("{ch}: {}x{} advance={:.1} -> {path}", bm.width, bm.height, bm.advance);
     }
+
+    // R387 诊断：Ahem（reftest 字体）多字号光栅化度量——R174 仅测 DejaVu 48px，
+    // 未覆盖 100px 大字号 Ahem（ifc-008 等大字体簇）。Ahem 每 glyph 应 ≈1em×1em（advance≈font_size）。
+    let ahem_paths = [
+        "tests/wpt-runner/fonts/Ahem.ttf",
+        "tests/wpt-runner/wpt-data/fonts/Ahem.ttf",
+    ];
+    let ahem_id = ahem_paths
+        .iter()
+        .find_map(|p| std::fs::read(p).ok().and_then(|d| loader.load_font(&d).ok()));
+    if let Some(aid) = ahem_id {
+        eprintln!("--- Ahem (expect width≈height≈advance≈font_size, 1em square) ---");
+        for &fs in &[16.0f32, 48.0, 100.0] {
+            for &ch in &['X', 'x', ' '] {
+                match loader.rasterize_glyph(aid, ch, fs) {
+                    Ok(bm) => eprintln!(
+                        "Ahem fs={fs} '{ch}': width={} height={} advance={:.1} (w/fs={:.3} adv/fs={:.3})",
+                        bm.width, bm.height, bm.advance, bm.width as f32 / fs, bm.advance / fs
+                    ),
+                    Err(e) => eprintln!("Ahem fs={fs} '{ch}' ERR {e}"),
+                }
+            }
+        }
+    } else {
+        eprintln!("Ahem.ttf not found");
+    }
 }
