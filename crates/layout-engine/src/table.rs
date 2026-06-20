@@ -1082,6 +1082,10 @@ fn compute_column_widths(
     // 跨列单元格只把宽度分配给尚未被非跨列单元格约束的列，
     // 这样显式列宽不会被跨列单元格的长内容撑开。
     let mut col_max_widths = vec![0.0f32; col_count];
+    // R364：记录哪些列含「显式 width 属性」单元格（值非 auto，含 0/2px 等小于 min-content 的值）。
+    // 扩展填满容器时这些列冻结（不吸收剩余空间），仅 auto 列吸收——chromium auto 表行为
+    //（table-cell-width-0：width:0/2px/20px 列保持其宽，width:auto 的 .normal 列填满剩余）。
+    let mut col_explicit = vec![false; col_count];
 
     // 辅助闭包：计算单元格对其所在列的宽度贡献
     let cell_used_width = |cell_box: &LayoutBox| -> (f32, bool) {
@@ -1109,11 +1113,14 @@ fn compute_column_widths(
                 Some(zero_css_parser::values::LengthValue::Px(v)) => *v as f32,
                 _ => cell_box.width,
             };
-            if is_collapsed_border {
+            let base = if is_collapsed_border {
                 explicit + (cell_box.border_left + cell_box.border_right) / 2.0
             } else {
                 cell_box.width
-            }
+            };
+            // R364b：显式 width 不小于单元格 min-content（CSS 表格：列宽下限 = 内容
+            // min-content；width:2px 但内容 "1" 需 9.6px → 列宽 9.6，内容不溢出列）。
+            base.max(intrinsic)
         };
         (w, css_width_auto)
     };
@@ -1206,6 +1213,14 @@ fn compute_column_widths(
             }
             let (w, _) = cell_used_width(cell_box);
             col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(w);
+            // R364：记录该列是否有显式 width 属性（用于扩展填满时冻结）。
+            if cell_box
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| !matches!(s.width, zero_css_parser::values::LengthValue::Auto))
+            {
+                col_explicit[cell.col_start] = true;
+            }
         }
     }
 
@@ -1321,10 +1336,32 @@ fn compute_column_widths(
     // 收缩后的列再撑回内容宽；未收缩的 fixed 表（内容 fits width）仍正常扩展填满。
 
     if has_explicit_width && !fixed_capped && total_width < available_width && total_width > 0.0 {
-        // 按比例扩展到容器宽度
-        let ratio = available_width / total_width;
-        for w in &mut col_max_widths {
-            *w *= ratio;
+        // R364：显式 width 列冻结（保持其宽），仅 auto 列吸收剩余空间。CSS Tables auto 布局：
+        // 显式 width 单元格的列不增长，剩余空间分给 auto 列（按其当前宽度比例）。全部列均显式
+        // width 时回退按比例扩展（避免剩余空间留白）。
+        let extra = available_width - total_width;
+        let auto_idx: Vec<usize> = (0..col_count)
+            .filter(|&i| {
+                col_max_widths[i] > 0.0 && !col_explicit[i] && !grid.collapsed_cols.get(i).copied().unwrap_or(false)
+            })
+            .collect();
+        if auto_idx.is_empty() {
+            let ratio = available_width / total_width;
+            for w in &mut col_max_widths {
+                *w *= ratio;
+            }
+        } else {
+            let auto_total: f32 = auto_idx.iter().map(|&i| col_max_widths[i]).sum();
+            if auto_total > 0.0 {
+                for &i in &auto_idx {
+                    col_max_widths[i] += extra * (col_max_widths[i] / auto_total);
+                }
+            } else {
+                let per = extra / auto_idx.len() as f32;
+                for &i in &auto_idx {
+                    col_max_widths[i] = per;
+                }
+            }
         }
     }
 

@@ -445,3 +445,112 @@ fn test_fixed_layout_caps_columns_at_explicit_width_when_content_wider() {
         total
     );
 }
+
+/// R364：显式 width 列在扩展填满容器时冻结，仅 auto 列吸收剩余空间。
+/// CSS Tables auto 布局：显式 width 单元格的列不增长（chromium 行为）。
+/// definite-width 表（width:200px）含 width:20px cell + auto cell：20px 列保持 20，
+/// auto 列吸收剩余 ~180。修复前按比例扩展会把 20px 列撑到 ~133。
+#[test]
+fn test_r364_explicit_width_column_frozen_during_expansion() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let cell_a = doc.create_element("div"); // width:20px（显式）
+    let cell_b = doc.create_element("div"); // width:auto
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    ts.width = LengthValue::Px(200.0); // definite table width → 扩展填满触发
+    styles.insert(table_id, ts);
+    let mut ca = ComputedStyle::default();
+    ca.display = DisplayValue::TableCell;
+    ca.width = LengthValue::Px(20.0); // 显式 width
+    styles.insert(cell_a, ca);
+    let mut cb = ComputedStyle::default();
+    cb.display = DisplayValue::TableCell; // width:auto
+    styles.insert(cell_b, cb);
+
+    let cell_a_box = LayoutBox {
+        node_id: Some(cell_a),
+        width: 20.0,
+        content_width: 20.0,
+        ..Default::default()
+    };
+    let cell_b_box = LayoutBox {
+        node_id: Some(cell_b),
+        width: 10.0,
+        content_width: 10.0,
+        ..Default::default()
+    };
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        content_width: 200.0,
+        children: vec![cell_a_box, cell_b_box],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc);
+    assert_eq!(col_widths.len(), 2, "应有 2 列");
+    // 显式 20px 列冻结（不吸收剩余空间），保持 ~20 而非被比例撑大
+    assert!(
+        (col_widths[0] - 20.0).abs() < 3.0,
+        "显式 width:20px 列应冻结在 ~20，got {}",
+        col_widths[0]
+    );
+    // auto 列吸收剩余空间 → ~180（200 - 20）
+    assert!(
+        (col_widths[1] - 180.0).abs() < 5.0,
+        "auto 列应吸收剩余 ~180，got {}",
+        col_widths[1]
+    );
+}
+
+/// R364b：显式 width 小于单元格 min-content 时，列宽取 max(explicit, min-content)。
+/// 显式 3px cell（min-content ~9.6px 来自 compute_cell_intrinsic_width）→ 列宽 ~9.6 而非 3
+///（修复前 cell_used_width 显式分支直接返回 explicit，不 floor 到 min-content）。
+#[test]
+fn test_r364b_explicit_width_floored_at_min_content() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    styles.insert(table_id, ts);
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCell;
+    cs.width = LengthValue::Px(3.0); // 显式 3px（>= 2.0 阈值 → 走 explicit 分支）< min-content
+    styles.insert(cell_id, cs);
+
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        width: 3.0,
+        content_width: 3.0,
+        ..Default::default()
+    };
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        content_width: 200.0,
+        children: vec![cell_box],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc);
+    // 列宽应 floor 到 min-content（~9.6），远大于显式 3px（修复前会返回 3）
+    assert!(
+        col_widths[0] >= 8.0,
+        "显式 width:3px < min-content 时列宽应 floor 到 ~9.6，got {}",
+        col_widths[0]
+    );
+}
