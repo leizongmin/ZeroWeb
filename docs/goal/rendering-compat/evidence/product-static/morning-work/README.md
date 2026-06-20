@@ -1,5 +1,7 @@
 # DC-13 产品静态 smoke — morning.work 中文文章 fixture
 
+> **R372 复测（2026-06-20，post-R355~R368，800×600 视口）**：morning article `z_vs_chr` = **28.72%**（product-smoke 子命令重渲染 vs article-chromium.png），与 R175 的 28.72% 完全持平——**R355~R368 零 DC-13 收益**。原因：morning 残余大头是 3 个 `.item-tag` `<span>`（Fedora/MacBook/Linux 标签徽章）被渲染为**全宽堆叠块**而非行内小徽章——这些是**纯 inline `<span>`**（非 inline-block），R368 的 inline-block shrink-to-fit **不适用**（R368 只修 `display:inline-block`，inline span 的 block-mapping 是 R109 §9.2.1.1 匿名块盒生成范畴，多会话）。故 morning 28.72% 经 fresh 复测确认 plateau。注：master.md 的「morning fullpage 48.65%」是**全页（更高视口）**测量（R255 ua_default_display 修 4× 高度幻影盒），与本 800×600 视口的 28.72% 是两个不同口径（前者捕获全文含 .item-tag 堆叠累积，后者只顶部）。article-zeroweb-cpu.png 已更新为当前渲染。
+
 **日期**: 2026-06-16
 **源页面**: `https://morning.work/page/2026-02/fedora-macbook-three-finger-drag.html`（在 Fedora 上为 MacBook 实现 macOS 风格的三指拖拽）
 **fixture**: `apps/browser/assets/morning-work/`（article.html + 4 个外链 CSS + 2 张图片）

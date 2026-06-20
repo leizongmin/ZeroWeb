@@ -1,5 +1,7 @@
 # DC-13 产品静态 smoke — WinterTC 首页 fixture（图片密集）
 
+> **R372 复测（2026-06-20，post-R355~R368）**：wintertc `z_vs_chr` = **13.72%**（product-smoke 子命令重渲染 vs wintertc-chromium.png），与 R318 的 13.70% / R227 的 13.59% 基本持平（±0.13pp 测量噪声）——**R355~R368 未带来可测 DC-13 收益**。原因：wintertc 残余 = fontdue 字体 AA 噪声 + 参与 `flex flex-wrap justify-evenly` logo 布局精度（Twind 类），**不含 width:auto inline-block**（R368 inline-block shrink 不适用）；multiline-storage/per-fragment-color/float-intrusion 等亦非 wintertc 触发面。wintertc-zeroweb-cpu.png 已更新为当前渲染。**结论**：wintertc DC-13 经 fresh 复测确认 plateau（与 welcome 不同——welcome 因用 inline-block 被 R368 改善 17.06→14.68%）。
+
 **日期**: 2026-06-16
 **源页面**: `https://wintertc.org/`（Ecma WinterTC 技术委员会首页）
 **fixture**: `apps/browser/assets/wintertc/`（index.html = chromium 已解析 DOM 含内联 Twind `<style>` + static/ 下 14 个 logo 资源）
