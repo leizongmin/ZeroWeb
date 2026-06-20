@@ -1,6 +1,8 @@
 # DC-13 产品静态 smoke — morning.work 中文文章 fixture
 
-> **R372 复测（2026-06-20，post-R355~R368，800×600 视口）**：morning article `z_vs_chr` = **28.72%**（product-smoke 子命令重渲染 vs article-chromium.png），与 R175 的 28.72% 完全持平——**R355~R368 零 DC-13 收益**。原因：morning 残余大头是 3 个 `.item-tag` `<span>`（Fedora/MacBook/Linux 标签徽章）被渲染为**全宽堆叠块**而非行内小徽章——这些是**纯 inline `<span>`**（非 inline-block），R368 的 inline-block shrink-to-fit **不适用**（R368 只修 `display:inline-block`，inline span 的 block-mapping 是 R109 §9.2.1.1 匿名块盒生成范畴，多会话）。故 morning 28.72% 经 fresh 复测确认 plateau。注：master.md 的「morning fullpage 48.65%」是**全页（更高视口）**测量（R255 ua_default_display 修 4× 高度幻影盒），与本 800×600 视口的 28.72% 是两个不同口径（前者捕获全文含 .item-tag 堆叠累积，后者只顶部）。article-zeroweb-cpu.png 已更新为当前渲染。
+> **R373 突破（2026-06-20）**：morning article `z_vs_chr`（800×600）= **28.72% → 16.41%（-12.3pp 真 chromium 改善）**。根因：morning 主残余是 3 个 `.item-tag` `<span>`（`display:inline` + background-color + padding 的标签徽章）被 ZeroWeb 映射为 Block 拉到满宽色条（~55k px）。修复 `shrink_inline_blocks_to_content` 扩 `display:inline && background_color != Transparent` 也按 intrinsic 内容宽收缩（R368 只覆盖 InlineBlock，未覆盖 inline；R372 复测时误判为 plateau，实为未试机制）。元素仍 block 堆叠（完整 inline-box 模型属 Phase A），但 width 收缩后蓝色面积大幅减少 → 真 chr 一致率提升 12.3pp。附带 reftest `clear-inline-001` FAIL→PASS（z_vs_chr 3.61→1.26%），self-source 442→443/490 零回归。article-zeroweb-cpu.png 已更新为 R373 后渲染。
+
+> **R372 复测（2026-06-20，post-R355~R368，800×600 视口，R373 前）**：~~morning article `z_vs_chr` = 28.72%~~（已被 R373 的 16.41% 取代）。R372 时误判 plateau，因未识别 inline+bg 是未试机制。
 
 **日期**: 2026-06-16
 **源页面**: `https://morning.work/page/2026-02/fedora-macbook-three-finger-drag.html`（在 Fedora 上为 MacBook 实现 macOS 风格的三指拖拽）
