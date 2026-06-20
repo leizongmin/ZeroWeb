@@ -13,7 +13,7 @@
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率（结构性 plateau，单会话杠杆已穷尽）/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
 **基线（R323 复验；strict post-R326 再复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)）**：
-- self-source loose **441/490 (90.0%)** @ 默认 1%/5% 容差
+- self-source loose **442/490 (90.2%)** @ 默认 1%/5% 容差
 - self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 真一致率 **~35.6%**（self-source 含 48.6% 假通过，DC-14 anti-false-pass）
 - 产品 smoke：welcome 17.06% / wintertc ~13.6% / morning-work fullpage 48.65%（全文本度量结构性，非图片/CSS 缺口——图片加载 R318 已端到端贯通）
@@ -31,7 +31,7 @@
 
 **基线（R323 复验；strict post-R326 再复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)）**：
 
-- self-source loose：**441/490 (90.0%)** @ 默认 1%/5% 容差
+- self-source loose：**442/490 (90.2%)** @ 默认 1%/5% 容差
 - self-source strict：**295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 真一致率：**~35.6%**（169/475；self-source 含 48.6% 假通过，DC-14 anti-false-pass）
 - 产品 smoke：welcome 17.06% / wintertc 13.70% / morning-work 28.72%（全文本度量结构性，非图片/CSS 缺口——图片加载 R318 已端到端贯通）
@@ -69,13 +69,14 @@
 | 低 diff 失败第三处 Phase A 簇确认（multicol-count-computed-004 存储丢色） | R357 | 像素级根因（无代码变更）：multicol-count-computed-004（2.00%）换行正确，唯一 diff=color——存储 IFC 片段（InlineLayoutFragment）**不携带 color 字段**，paint 存储路径所有片段用容器 color（black），REF 期望各 span 自身 color（粉/橙/紫/灰）。auto+auto 非多列（compute_column_info 正确返 None）。R357 当时判「per-fragment color 修复不安全（耦合 R335 abspos 回归）」**已被 R358 推翻**（加 abs-pos guard 即解）。三处独立诊断共享根因=paint 阶段丢/错 layout 的 per-fragment 语义。详见 [`evidence/r357-stored-ifc-color-loss-phase-a-cluster-2026-06-20.txt`](./evidence/r357-stored-ifc-color-loss-phase-a-cluster-2026-06-20.txt) |
 | **R358 per-fragment color + abs-pos guard（plateau 第三次突破，+1 clean win）** | R358 | **纠正 R357「per-fragment color 不安全」结论**——加 **abs-pos guard**（abs-pos/fixed 片段保留容器 color）即解 R335 回归：`render_fragment!` 宏（text.rs 非多列路径）解析每个片段所属元素 color，position:Absolute/Fixed 者用容器 color（维持当前行为，不激活 R335 的 abspos 绿 X 错位显眼化），其余用自身 color（镜像多列路径 line 1033 frag_color）。验证：**multicol-count-computed-004 FAIL→PASS（2.00%→1.00%）**；self-source **440→441/490 (90.0%) 净 +1 零回归**（abs-pos-non-replaced-vrl/vlr 簇不变，writing-modes 53/59 持平；唯一他例 float-lft-orthog-htb-in-vlr-002 6.68%→6.53% 仍 FAIL=微改善非回归）；engine 1146/0（+1 单测 test_paint_per_fragment_color_for_spans）、clippy/fmt 干净。**启示**：R335 net-negative 是因无 guard 全量应用 per-fragment color；scoped guard（abs-pos 例外）把「Phase A 耦合」降为「单点 clean win」。abspos 文本错位（R336）仍 Phase A，但 per-fragment color 本身非阻塞 |
 | border-bottom-width-006（2.86%）=匿名块盒生成缺失（R109 谱系），非 clean win | R359/R360/R361 | 三轮诊断收敛：① R359 误判渲染管线合成；② R360 纠正=两个 fill 均正确渲染（#test border (8,51,96,96) black、#reference bg (12,16,96,96) black，像素 (50,100) 确认黑），真根因是 #reference 定位到 (12,16) 而非紧邻 #test；③ R361 LAYOUT_DUMP + 代码追踪精确定位：body 含混合内容 `<p>`(block) + #test/#reference(inline-block)，**CSS §9.2.1.1 要求 inline-blocks 被匿名块盒包裹**（独立 IFC 容器），ZeroWeb 不生成此匿名 wrapper——inline-blocks 作为 body 直接子，`adjust_inline_block_positions`（engine.rs:880）对 body 跑 IFC 覆盖 taffy 位置，但 IFC 不感知 `<p>` block 兄弟 → #reference 落 line1(y=16 body 顶)、#test 落 line2(y=51)，顺序反转。taffy 块堆叠 / IFC 误定位**均错**，正解需匿名块盒生成（R109 匿名块级联谱系）。style/layout-box/paint 全正确。属匿名块盒生成架构（与 R255 ua_default_display 同 R109 谱系），单会话高风险。**结论**：clean-win 面经连续多轮（R359-R361）确认穷尽，forward motion = 多会话 Phase A / 匿名块盒生成 |
+| **R362 跨 block float 侵入传播（plateau 第四次突破，+1 clean win）** | R362 | Phase A 第四个 narrow viable-slice：CSS float 侵入——祖先 BFC 内的 float 应侵入未建 BFC 的后代 block 的 line box。`compute_final_inline_layouts` 加 `ancestor_floats: &[FloatExclusion]` 参数，递归时把（祖先 float + 本容器直接 float）按 `f.y - child.y` 平移到子节点 box 坐标系传播（FloatExclusion 无 x 字段，IFC 仅按 left/right+width 缩减行盒）；**排除子节点自身**（float 不在自身 IFC 排除自己——float-005 回归实证后修正）。验证：**ifc-009 FAIL→PASS（2.08%→0.00%）**；self-source **441→442/490 (90.2%) 净 +1 零回归**（首轮 float-005 因 float 自排除缺失回归，加 self-exclusion 后恢复；全量无其它回归）；layout-engine 891/0（+1 单测 `test_r362_float_intrusion_propagates_to_sibling_block_ifc`）、engine 1146/0、clippy/fmt 干净。**启示**：Phase A 谱系（R355 多行存储 / R358 per-fragment color / R362 float 侵入）连续三个 narrow viable-slice 成功——paint/layout IFC 语义丢失可逐项 scoped 修复，非全有或全无；剩余 Phase A 项（abspos 文本错位 R336）同谱系可继续 |
 
 **剩余 forward motion = 多会话架构承诺（非单会话），或接受 plateau**：
 
 1. **Phase A IFC 三路径统一** — paint 不重跑 IFC，直接渲染 layout 存储的行盒（R205/R207 viable slice 已证 font-051 可行；broad 应用需多轮 narrow 精修 + 守 multicol-fill-auto 反向依赖墙）。设计文档 [`phase-a-IFC-unification-design.md`](./phase-a-IFC-unification-design.md)。
 2. **Phase 2 嵌套 multicol fragmentation** — layout 侧 column-aware IFC + 嵌套列碎片化（R131/R201；R319 证纯 inline 迁移零增益，真实价值在嵌套 / 混合内容）。设计文档 [`multicol-fragmentation-design.md`](./multicol-fragmentation-design.md)、[`column-aware-IFC-spec.md`](./column-aware-IFC-spec.md)。
 3. **baseline-export 真修复** — taffy 0.8+ baseline_overrides（需先解 R304 升级冲突）或自建 inline-level-box baseline 合成；解 flexbox-baseline / multicol-baseline 聚类（~10+ 案）。
-4. **接受 plateau** — 当前 self-source 90.0% / strict 60.2% / Oracle ~36% 作为诚实基线。
+4. **接受 plateau** — 当前 self-source 90.2% / strict 60.2% / Oracle ~36% 作为诚实基线。
 
 **裁决**：需用户对「投入多会话架构承诺」vs「接受 plateau」决策。继续 rally 单会话迭代将重复 plateau 确认，无新进展。R314 已通过飞书通知用户此卡点。
 
@@ -95,7 +96,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成（管线层）⚠️ | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：13 种图元**管线**已建（48 单元测试 ✅），**但浏览器全量 GPU 路径 `render_full_scene_gpu` 实际消费以 DC-9 表为准**——transform=✅ R285/ee8373a 已接入（`collect_transforms`+`apply_transform_filters_headless`）、blend=CPU no-op stub+GPU 丢弃（**唯一剩余 GPU 真实缺口**）、5 color-matrix 滤镜（grayscale/invert/saturate/sepia/hue-rotate）=✅ R286/94c773a 已落（`collect_color_filters` mode 3-7 全处理，parity CPU）、clip=no-op（engine 从不生成）；filter:opacity/brightness/contrast/blur 已落（f6fed44/fc86937/3a3530f）；浏览器消费：全部 13 种图元 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | ⏸ plateau（R323） | 基础设施 ✅；490 上游 reftest 已导入（9 目录）；self-source loose **441/490 (90.0%)** / strict **295/490 (60.2%)** / chromium-Oracle ~35.6%；R305–R323 全单会话杠杆穷尽（R351 table-layout:fixed + R355 Phase A 多行存储 + R358 per-fragment color(abs-pos guard) 为三次 plateau 突破），达标需多会话架构（见「综合裁决」） |
+| M10 — 上游 WPT 真实 Reftest 导入 | ⏸ plateau（R323） | 基础设施 ✅；490 上游 reftest 已导入（9 目录）；self-source loose **442/490 (90.2%)** / strict **295/490 (60.2%)** / chromium-Oracle ~35.6%；R305–R323 全单会话杠杆穷尽（R351 table-layout:fixed + R355 Phase A 多行存储 + R358 per-fragment color(abs-pos guard) 为三次 plateau 突破），达标需多会话架构（见「综合裁决」） |
 
 ## 当前状态概览
 
@@ -144,7 +145,7 @@
 
 ### DC-2: CSS 2.1 核心通过率 ≥ 95%
 
-> ⚠️ **达标口径纠正（R283，2026-06-18）**：下表原「通过率 ≥95% ✅ 100.0%」基于**内联 685 reftest**，直接违反 DC-14（goal line 319「内联 reftest 100% 仅作 smoke，不计达标」+ line 844「禁止 DC-2~5 以内联 100% 冒充达标」= DONE 阻断项）。**真实达标**须 ≥95%（上游全量真实 reftest + chromium Oracle + 严格容差 0.1%/0.5%），当前诚实数 = **39.6% strict**（188/475，evidence/cross-validate-full-2026-06-17.txt）/ 90.0% self-source-loose（441/490 @ 1%/5%），**均 <95%，DC-2 未达标**。内联 100% 仅 smoke（DC-7 全绿基线）。
+> ⚠️ **达标口径纠正（R283，2026-06-18）**：下表原「通过率 ≥95% ✅ 100.0%」基于**内联 685 reftest**，直接违反 DC-14（goal line 319「内联 reftest 100% 仅作 smoke，不计达标」+ line 844「禁止 DC-2~5 以内联 100% 冒充达标」= DONE 阻断项）。**真实达标**须 ≥95%（上游全量真实 reftest + chromium Oracle + 严格容差 0.1%/0.5%），当前诚实数 = **39.6% strict**（188/475，evidence/cross-validate-full-2026-06-17.txt）/ 90.2% self-source-loose（442/490 @ 1%/5%），**均 <95%，DC-2 未达标**。内联 100% 仅 smoke（DC-7 全绿基线）。
 
 | 条目 | 状态 | 说明 |
 |------|------|------|
@@ -382,7 +383,7 @@
 
 **当前基线（R323 复验；strict post-R326 再复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)）**：
 
-- self-source loose **441/490 (90.0%)** @ 默认 1%/5% 容差
+- self-source loose **442/490 (90.2%)** @ 默认 1%/5% 容差
 - self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 真一致率 **~35.6%**（self-source 含 48.6% 假通过）
 
@@ -729,7 +730,7 @@ IFC 统一（~50 tests）
 
 ### 需用户决策（卡点）
 
-- [ ] **多会话架构承诺 vs 接受 plateau**：441/490 loose / 295/490 strict / ~36% Oracle 是诚实基线。剩余提升需 Phase A IFC 统一 / Phase 2 嵌套 multicol / baseline 合成 或 taffy 升级，均为多会话工程。R314 已飞书通知。
+- [ ] **多会话架构承诺 vs 接受 plateau**：442/490 loose / 295/490 strict / ~36% Oracle 是诚实基线。剩余提升需 Phase A IFC 统一 / Phase 2 嵌套 multicol / baseline 合成 或 taffy 升级，均为多会话工程。R314 已飞书通知。
 
 ### 若推进多会话架构（按依赖序）
 
@@ -745,7 +746,7 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 ### 已完成里程碑（参考，非当前活跃）
 
 - M1–M9 基础设施 + 渲染器图元覆盖 + 浏览器消费 + 布局正确性 + 高级视觉效果：**已完成**（见下方「里程碑完成状态」「Done Criteria 进度」）。
-- M10 上游 WPT reftest：基础设施完成，通过率 plateau（441/490 loose），达标需上述多会话架构。
+- M10 上游 WPT reftest：基础设施完成，通过率 plateau（442/490 loose），达标需上述多会话架构。
 
 ---
 

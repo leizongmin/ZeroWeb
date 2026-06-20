@@ -213,10 +213,52 @@ pub(crate) fn compute_final_inline_layouts(
     root: &mut LayoutBox,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
+    ancestor_floats: &[crate::inline::FloatExclusion],
 ) {
-    // 先递归处理子节点
+    // R362：先收集本容器直接 float 子（既用于自身 IFC 排除，也向后代传播）。
+    // 坐标系：c.y 是 float 子相对 root box 顶部的位置，与 IFC 行 y（0=root box 顶）一致。
+    // 携带 node_id 以便递归时排除子节点自身（float 不应在自身 IFC 中排除自己）。
+    let own_floats: Vec<(zero_dom::NodeId, crate::inline::FloatExclusion)> = root
+        .children
+        .iter()
+        .filter(|c| !matches!(c.float, zero_css_parser::values::FloatValue::None))
+        .filter_map(|c| {
+            let rel_y = c.y;
+            if rel_y < 0.0 || c.width <= 0.0 || c.height <= 0.0 {
+                return None;
+            }
+            let id = c.node_id?;
+            Some((
+                id,
+                crate::inline::FloatExclusion {
+                    y: rel_y + c.margin_top,
+                    height: c.height + c.margin_bottom,
+                    width: c.width + c.margin_left + c.margin_right,
+                    is_left: matches!(c.float, zero_css_parser::values::FloatValue::Left),
+                },
+            ))
+        })
+        .collect();
+
+    // 递归子节点。CSS float 侵入：祖先 BFC 内的 float 会侵入未建 BFC 的后代 block 的 line box，
+    // 故把（祖先 float + 本容器直接 float）换算到每个子节点 box 坐标系后向其传播。
+    // **排除子节点自身**：float 不应在自身 IFC 中排除自己（float-005 回归实证）。
+    // FloatExclusion 无 x 字段（IFC 仅按 left/right + width 缩减行盒可用宽），故只需平移 y。
+    let transform = |f: &crate::inline::FloatExclusion, child: &LayoutBox| crate::inline::FloatExclusion {
+        y: f.y - child.y,
+        height: f.height,
+        width: f.width,
+        is_left: f.is_left,
+    };
     for child in &mut root.children {
-        compute_final_inline_layouts(child, doc, styles);
+        let child_ancestor: Vec<crate::inline::FloatExclusion> = own_floats
+            .iter()
+            .filter(|(id, _)| Some(*id) != child.node_id) // 排除子节点自身
+            .map(|(_, f)| transform(f, child))
+            .chain(ancestor_floats.iter().map(|f| transform(f, child)))
+            .filter(|f| f.y + f.height > 0.0) // 裁掉完全在子节点上方的 float
+            .collect();
+        compute_final_inline_layouts(child, doc, styles, &child_ancestor);
     }
 
     // 仅处理有 node_id 且含有直接文本子节点的容器
@@ -402,23 +444,11 @@ pub(crate) fn compute_final_inline_layouts(
         })
         .collect();
 
-    // 收集容器内的浮动排除区域
-    let exclusions: Vec<crate::inline::FloatExclusion> = root
-        .children
+    // 收集浮动排除区域 = 本容器直接 float 子 + 祖先传播下来的 float（均已在 root box 坐标系）
+    let exclusions: Vec<crate::inline::FloatExclusion> = own_floats
         .iter()
-        .filter(|c| !matches!(c.float, zero_css_parser::values::FloatValue::None))
-        .filter_map(|c| {
-            let rel_y = c.y;
-            if rel_y < 0.0 || c.width <= 0.0 || c.height <= 0.0 {
-                return None;
-            }
-            Some(crate::inline::FloatExclusion {
-                y: rel_y + c.margin_top,
-                height: c.height + c.margin_bottom,
-                width: c.width + c.margin_left + c.margin_right,
-                is_left: matches!(c.float, zero_css_parser::values::FloatValue::Left),
-            })
-        })
+        .map(|(_, f)| f.clone())
+        .chain(ancestor_floats.iter().cloned())
         .collect();
 
     let mut inline_ctx = InlineFormattingContext::new(container_width)
