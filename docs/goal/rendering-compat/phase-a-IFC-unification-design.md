@@ -13,7 +13,7 @@
 >
 > **实际失败分布（47 案）→ 真实剩余 lever**（按计数）：multicol 碎片化 13（Phase 2，paint 侧 R157/R198/R203/R317/R122 五轮死路，须 layout 侧 column-aware IFC）/ flex-baseline 3 + flex-abspos 2（baseline-export / abspos §10.3.7 shrink-to-fit）/ writing-modes 5（轴交换）/ taffy-blocked（max/min-content, table-cell-width-0 REF 的 fit-content-on-flex）/ large-font 2（empty-inline-002 25.78% + ifc-011 1.23%）。
 >
-> **empty-inline-002 诊断（R376 会话，未解，留待后续）**：空 `<span>`（display:inline，font:100px Ahem，bg/border/padding/margin green）的 box 几何**正确**（LAYOUT_DUMP: h=350 = 100 line-height + 200 padding + 50 border，abs_y=215，w=250）；paint `skip_split_inline_deco = is_r109_split && fragment_node_ids.is_none()`（painter/mod.rs:385）对该空 span = **false**（非 R109-split，无 block 子）故 bg/border **应**绘制，但实测绿色仅在 span 底部 y=550-575 x=133-383 渲染，y=215-550 的 span 绿色填充**缺失**（白）。根因未定位（疑似 span 未达 paint_node，或 paint 时几何/可见性被折叠）——非 clean slice，需 paint-traversal 插桩跟进。
+> **empty-inline-002 诊断（R378 纠正 R376/R377 误判）**：~~R377 据 band 分析误判「span 绿色填充缺失 = paint bug」~~。R378 用 PAINTDBG 插桩（`paint_node` 入口打印 node/display/abs/w/h/border/padding/bg/r109_split/frag_ids）+ 逐像素采样**确证**：空 `<span>`（display:Inline）**被 paint_node 访问且几何正确**（abs=(133,215) w=250 h=350 bt/bb/bl/br=25 pt/pb=100 bg=green，`skip_split_inline_deco=false`），像素 (250,220)/(250,300)/(250,400) 实测全绿 (0,128,0)——**span 渲染正确，非 paint bug**。真 25.78% diff = test 与 ref **结构性形状失配**：test 用 div1 `margin-top:100` + div3 `position:relative;top:-150;z-index:-1` + div3>div `top:-125` 嵌套定位产出绿色形状（内容起 y=135），ref 用更简结构（绿色起 y=35）；relative offset 实测已应用（div3 box.y=250 含 -150）。属 large-font/嵌套定位结构性簇（R125），**非 clean slice，勿再以 paint bug 重查**。
 
 ---
 
