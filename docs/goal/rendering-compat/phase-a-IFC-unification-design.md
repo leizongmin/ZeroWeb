@@ -7,6 +7,14 @@
 
 > **⚠️ v1.2 重大修订（R306 Phase 0 探针）**：原 §0/§6.1/§7.1 推荐的「baseline-resolved 单一权威行盒（baseline_y = 几何基线 frag.y+height）」方案经 env-gated A/B 实证**证伪**——font-051 用 `v_offset=frag.height` 渲染 **16.67% FAIL**，默认 `v_offset=is_ahem?0:font_size` **0.00% PASS**（详见 §6.3B）。geometric baseline ≠ fontdue render baseline。原 Phase 1（加 baseline_y=几何基线）作废；Phase 1 重定向为 **Gate 2 放宽（offset 校准不动）**。offset 语义非 Phase A 阻塞点；真硬阻塞 = 墙② multicol + 换行精度。下文 §0/§6.1/§7.1 的「baseline_y」措辞应据此修订理解。
 
+> **v1.3 勘误（R376 会话，post-R355~R373 实证，2026-06-20）**：本设计 v1.2 描述的 Gate 2（`lines.len()<=1 && is_pure_ahem`）已**过时**。R207 `PHASEA_STORE_EXT` + R355 多行放宽后，实际存储条件（`crates/layout-engine/src/inline_finalization.rs:300-339`）已覆盖：① 有直接文本子节点的 block 容器；② 纯 inline-level 叶文本子容器（无 block 子、inline 子无元素后代），仅显式排除混合 inline+block 内容（line 308）。§2.2/§6.3/§7.1 基于旧 Gate 2 的措辞应据此重读。
+>
+> **墙 ③（混合内容存储）非当前 lever**：`inline_finalization.rs:308` 显式排除混合 inline+block 内容容器，但**当前 47 个 self-source 失败案无一依赖该排除被移除**——border-bottom-width-006 是匿名块盒*生成*缺失（R361，R109 谱系，非存储），余皆 multicol/baseline/writing-modes/taffy/large-font 簇。移除该排除只会重演 R206 回归（ifc-001/002/003），无 upside。**勿再以「放宽混合内容存储 / Wall ③」为单会话杠杆**（纠正本会话前一轮 CONTINUE 误指）。
+>
+> **实际失败分布（47 案）→ 真实剩余 lever**（按计数）：multicol 碎片化 13（Phase 2，paint 侧 R157/R198/R203/R317/R122 五轮死路，须 layout 侧 column-aware IFC）/ flex-baseline 3 + flex-abspos 2（baseline-export / abspos §10.3.7 shrink-to-fit）/ writing-modes 5（轴交换）/ taffy-blocked（max/min-content, table-cell-width-0 REF 的 fit-content-on-flex）/ large-font 2（empty-inline-002 25.78% + ifc-011 1.23%）。
+>
+> **empty-inline-002 诊断（R376 会话，未解，留待后续）**：空 `<span>`（display:inline，font:100px Ahem，bg/border/padding/margin green）的 box 几何**正确**（LAYOUT_DUMP: h=350 = 100 line-height + 200 padding + 50 border，abs_y=215，w=250）；paint `skip_split_inline_deco = is_r109_split && fragment_node_ids.is_none()`（painter/mod.rs:385）对该空 span = **false**（非 R109-split，无 block 子）故 bg/border **应**绘制，但实测绿色仅在 span 底部 y=550-575 x=133-383 渲染，y=215-550 的 span 绿色填充**缺失**（白）。根因未定位（疑似 span 未达 paint_node，或 paint 时几何/可见性被折叠）——非 clean slice，需 paint-traversal 插桩跟进。
+
 ---
 
 ## 0. 执行摘要
