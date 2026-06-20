@@ -50,3 +50,13 @@ forward motion 须多会话架构（Phase A IFC 统一 / multicol 碎片化 / ba
 R364（table 显式列冻结）证明「net-neutral-self-source + chromium-Oracle 改善」仍可做，
 但需服务真指标（DC-14）且零回归才可提交。
 ================================================================
+
+追加（同轮）：TEST-side 修复 avenue 亦穷尽——R348 cross-validate 数据中 chr%==self%
+（ref 匹配 chromium、仅 TEST 错 = 可修 TEST 侧 bug）的最佳候选 background-position-vrl-018
+（chr 24.64 = self 24.64）经 REFTEST_DEBUG+PIL 诊断为 **vertical-rl 块流方向结构性 bug**：
+ZeroWeb 把 vertical-rl 的块（html width:373）左对齐到 x=0，abspos green(right:273) 到 x[-8,92]；
+chromium 块流从右边缘起（html x[427,800]，red bg 在 html 左缘=427 被 green x[427,527] 覆盖）。
+vertical-rl 处理散布 engine.rs/inline_finalization.rs/float_positioning.rs/inline/mod.rs（R57/R114/R164
+结构性聚类，历史多次回归）。**结论**：chr==self 候选亦全结构性 → TEST-side clean-fix avenue
+与 self-source / REF-side 三条路全穷尽，forward motion 唯余多会话架构。
+================================================================
