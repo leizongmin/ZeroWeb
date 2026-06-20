@@ -16,7 +16,7 @@
 - self-source loose **442/490 (90.2%)** @ 默认 1%/5% 容差
 - self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 真一致率 **~35.6%**（self-source 含 48.6% 假通过，DC-14 anti-false-pass）
-- 产品 smoke：welcome **14.68%**（R371 post-R368 复测，R227 的 17.06%→14.68%）/ wintertc ~13.6% / morning-work 800×600 **16.41%**（R373 inline+bg shrink 后，R175 的 28.72%→16.41%；fullpage 48.65% 是更高视口口径）
+- 产品 smoke：welcome **16.98%**（product-smoke 阈值0，与 morning/wintertc 同口径；R371 的 14.68% 是 cross-validate chan>5 的宽松口径，不可比，已纠正）/ wintertc ~13.6% / morning-work 800×600 **16.41%**（R373 inline+bg shrink 后，R175 的 28.72%→16.41%；fullpage 48.65% 是更高视口口径）
 
 **字体攻坚结论（2026-06-17 AA 基准）**：fontdue **Regular** 与 chromium 光栅化基本一致（W 0.1% / i 3.0%），**非渲染差异来源**；welcome 26% / Oracle 污染大头是**布局/度量**（line-height / R109 inline→block / 多行结构）。fontdue **Bold** 变体比 chromium 过墨 ~15%（R229b net-negative 已回退）。**字体攻坚停止，转布局/度量**——advance-width(R225/R320)、font-weight -Bold(R229b)、AA 噪声(R174) 三谱系均实证为死路，勿再投入。
 
@@ -34,7 +34,7 @@
 - self-source loose：**442/490 (90.2%)** @ 默认 1%/5% 容差
 - self-source strict：**295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 真一致率：**~35.6%**（169/475；self-source 含 48.6% 假通过，DC-14 anti-false-pass）
-- 产品 smoke：welcome **14.68%**（R371 post-R368）/ wintertc 13.70% / morning-work 800×600 **16.41%**（R373 后）/ fullpage 48.65%（全文本度量结构性，非图片/CSS 缺口）
+- 产品 smoke：welcome **16.98%**（product-smoke）/ wintertc 13.70% / morning-work 800×600 **16.41%**（R373 后）/ fullpage 48.65%（全文本度量结构性，非图片/CSS 缺口）
 
 > **post-R326 strict 再复验（2026-06-19 doc-maintenance read-only，test-guard 包裹 `ZERO_REFTEST_STRICT=1 ... reftest-upstream`）**：strict 仍 **295/490 (60.2%) / 195 fail**（zero drift vs R323）——确认 plateau 在 DC-14 诚实指标上成立：R324（position:fixed）/R325（img aspect）/R326（sticky）三处 DC-11 correctness 修复**均未**把任一 strict-fail 翻成 strict-pass（loose 亦经三 commit 各自复验 438/490 零回归）。详见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)。**顺带纠正**：旧文「295/490 (60.4%)」百分比过时（60.4% 为 R308 前 296/490 值；R308 font-size% 修复使 strict 296→295 后未同步百分比，295/490=60.2%）。
 
@@ -124,7 +124,7 @@
 | Quirks Mode | ✅ 完成 | CSS parser + style system + layout engine quirks 全部实现 |
 | 外部 stylesheet 加载 | ✅ 已贯通 | R213 落地：URL 导航路径 `fetch_url()` 现抓取 `<link rel="stylesheet">`（extract_stylesheet_hrefs → base URL 解析 → http_client 抓取 → 合并级联），三条 fetch_url 分支注入；离线 fixture HTTP server（R212）支撑测试 |
 | 图片子资源/ImageCache | ✅ 已贯通 | R214（PNG 抓取+解码+image_cache）→ R215（浏览器 render_cpu/render_frame 消费 webview ImageCache，最后消费 hop）→ R216（JPEG）→ R218（SVG 栅格化统一到 render-foundation decode_image_bytes）。`<img>` 经 URL 导航全链路 fetch→decode→image_cache→browser render→真像素贯通（DC-13 P1 闭环） |
-| 产品/真实静态页面视觉 smoke | 🔧 证据已持久化·持续修复 | welcome/morning.work/wintertc fixture + product-smoke + chromium Oracle 工具链就绪；**证据已持久化 `evidence/product-static/`**（3 fixture × {ZeroWeb-CPU/chromium PNG + README 含 diff%/根因}，满足 DC-13 line 305，R281 审计）；当前 diff：welcome **14.68%**（R371 post-R368 复测，R227 padding 双计 28→17→R368 inline-block shrink 14.68）、wintertc 13.59%（R227+R255 后 2026-06-18 复测 25→13.59）、morning-work fullpage 48.65%（R255 ua_default_display 修 4× 高度幻影盒 89.14%→48.65%）；残余 diff = item-tag span→block R109 IFC（结构性）+ fontdue CJK 度量 + hljs（需 JS），非证据缺口 |
+| 产品/真实静态页面视觉 smoke | 🔧 证据已持久化·持续修复 | welcome/morning.work/wintertc fixture + product-smoke + chromium Oracle 工具链就绪；**证据已持久化 `evidence/product-static/`**（3 fixture × {ZeroWeb-CPU/chromium PNG + README 含 diff%/根因}，满足 DC-13 line 305，R281 审计）；当前 diff（product-smoke 阈值0，与 morning/wintertc 同口径）：welcome **16.98%**（R371 的 14.68% 是 cross-validate chan>5 宽松口径，已纠正——ZeroWeb 渲染字节相同，仅 diff 阈值不同；R368 对 welcome 效果经一致口径复测为 17.01→16.98 可忽略，welcome 真实改善来自 R373 的 morning）、wintertc 13.59%（R227+R255 后 2026-06-18 复测 25→13.59）、morning-work fullpage 48.65%（R255 ua_default_display 修 4× 高度幻影盒 89.14%→48.65%）；残余 diff = item-tag span→block R109 IFC（结构性）+ fontdue CJK 度量 + hljs（需 JS），非证据缺口 |
 | #[ignore] 测试 | ⚠️ 保留 | 59 个真实网站测试保留 #[ignore]，因本地网络不稳定。其余零 #[ignore] |
 
 ---
