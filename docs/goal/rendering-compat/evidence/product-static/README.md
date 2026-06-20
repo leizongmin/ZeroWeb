@@ -1,5 +1,7 @@
 # DC-13 产品静态页面视觉 smoke — welcome.html 基线证据
 
+> **R370 复测（2026-06-20，post-R368）**：welcome `z_vs_chr`（ZeroWeb CPU vs chromium Oracle，DC-14 口径）= **14.68%**，较 R227 的 17.06% 改善 ~2.4pp。归因：R368（commit 8db89df，inline-block 文本内容 shrink-to-fit 经 intrinsic 测量）修正了 welcome 的两处 `display:inline-block; width:auto` 含文本元素——`.version` 徽章（`<head>` CSS line 53）与 `.shortcut kbd`（line 149）——此前被 taffy 当 Block 拉伸到容器满宽（满宽灰条），现收缩到文本宽，与 chromium 一致。welcome-zeroweb-cpu.png 已更新为当前渲染。**残余 14.68% 仍为 fontdue 字体 AA 噪声 + item-tag span→block R109 IFC（结构性，Phase A）**，非 inline-block 缺口。复测方法：临时把 welcome.html 包成 reftest（注入 match link）+ REFTEST_DUMP + cross-validate.py vs welcome-chromium.png（已清理临时文件）。
+
 > **R227 更新（2026-06-17）**：welcome diff **28.08% → 17.06%**。下方「剩余 28.08% = fontdue 字体噪声、结构布局正确」的结论已被**证伪**——R226/R227 定位到真实布局 bug：taffy `Layout::location`（border-box 相对，已含父 padding+border）被 painter 当作内容盒相对再次叠加 padding+border → **padding 双计**，致 hero-accent 渲染于 y=72（应 36，整页下移 36px 级联）。修复（`extract_layout` 把块级子节点换算为内容盒相对）后 hero-accent 回到 y=36。**剩余 17% 仍含 fontdue 字体噪声，但原 28% 的大头是此布局 bug，非字体**。详见 `evidence/r227-welcome-padding-doublecount-fix-2026-06-17.txt`。下文为 R174 时点的历史记录。
 
 **日期**: 2026-06-16
