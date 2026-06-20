@@ -1,8 +1,15 @@
-# R412 — DC-14 Phase 2：css-text-decor 全量（4/9 目录）
+# R412 — DC-14 Phase 2：css-text-decor 全量实测（4/9 目录，首个文字类目录）
 
 **日期**：2026-06-22
-**承接**：R401（grid）、R404（position）、R408（tables）。本轮 css-text-decor 全量，第 4 个
-完整 DC-14 目录（首个文字类目录）。
+**承接**：R401（grid）、R404（position）、R408（tables）；导入 commit `f2bacb2`，master.md
+折回由 doc-maintenance R417 完成。本轮 css-text-decor 全量**实测**，第 4 个完整 DC-14 目录
+（首个文字类目录），用真值终结 R409-R416 在途预测链。
+
+> **R413-R416「停滞 246/356」误报纠正**：上游 css-text-decor 共 356 个候选测试**文件**，但其中
+> **110 个非 reftest**（65 `-manual.html` + 45 无 `link rel=match`）—— discover-authoritative 既定
+> 方法论（R404/R408，按 `link rel=match` 计权威对）正确排除它们。**0 个**缺失文件是「非 manual
+> 且有 match link」，故 **246 就是完整权威集**，导入从未停滞。doc-maintenance 的「356」分母含
+> 110 manual/非 reftest，R413-R416「停滞 69%」与两次飞书告警均为**误报**。
 
 ## 方法
 
