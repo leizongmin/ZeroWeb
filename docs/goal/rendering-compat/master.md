@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-22（**R400** read-only 特性杠杆扫描：承 R396 扫新导入 css-grid 特性类用例（`grid-calc-margin` / `grid-item-percentage-quirk-001` / `min-size-auto-overflow-clip`）→ **3 候选 0 R351 clean win**（calc-margin 已有损处理、quirks-百分比已实现、min-size:auto=taffy 结构性）；**新发现 calc() 解析跨属性不一致**（margin/inset 有损提取 P%±Npx vs 3 个 converter calc→0 丢弃），lossy 提取是 latent bug 但无失败测试驱动（grid-calc-margin 用 -0px）。详见 [`evidence/r400-grid-feature-lever-scan-2026-06-22.txt`](./evidence/r400-grid-feature-lever-scan-2026-06-22.txt)。零代码变更（read-only；并行 agent 仍 mid-work 未提交，HEAD `eec0487` 无新 commit）。｜**R395–R399 摘要**：R395 锁定前向方向=DC-14 分母去子集化（N_imported 仅上游 ~5-6%，子集口径非达标证据，详 [`evidence/r394-dc14-denominator-gap-2026-06-22.txt`](./evidence/r394-dc14-denominator-gap-2026-06-22.txt)；并行 agent 已建 `discover-reftests-authoritative.py` + 导入 css-grid 全量执行中）；R396 抽样 2 grid 缺口簇→ruled-out 架构族；**R397–R399 归档 4 块 R68 stale 节（master.md 803→508，−295 行），归档职责完成**。结构化结论见下方「综合裁决」表，R381–R393 verbose 详记见 [`archive/rounds-r381-r393-header.md`](./archive/rounds-r381-r393-header.md)。）
+**最后更新**: 2026-06-22（**R402** doc-maintenance 自洽性修复：稽核发现 chromium-Oracle 数在 3 处仍用 pre-R391 stale 值（M10 里程碑 / 上游真实通过率 / 下一步 的 `~35.6%`/`~36%`/`48.6%`），统一纠正为 R391 诚实基线 **42.1% (broad, 200/475) / 37.3% (strict, 177/475) / 46.5% 污染**（governance §1 各章节自洽；pre-R388 35.8% 被损坏 Ahem oracle 压低已修）；同时把 self-source 基线更新为 R401 grid 全量后的 **456/518 (88.0%)**（grid 真通过率 62.5% vs 子集 ~100%；混合口径=grid 全量 + 8 目录仍 60-子集）。R401（commit d593f9c）= 权威发现工具 `discover-reftests-authoritative.py` + css-grid 全量导入 + 实测，已提交。零代码变更（本轮 read-only 文档自洽）。｜**R395–R400 摘要**：R395 前向=DC-14 分母去子集化（N_imported 仅上游 ~5-6%，详 [`evidence/r394-dc14-denominator-gap-2026-06-22.txt`](./evidence/r394-dc14-denominator-gap-2026-06-22.txt)；R401 落地 `discover-reftests-authoritative.py` + css-grid 全量）；R396/R400 grid 缺口簇+特性杠杆扫描→0 R351 clean win；R397–R399 归档 4 块 R68 stale 节。结构化结论见下方「综合裁决」表，R381–R393 verbose 详记见 [`archive/rounds-r381-r393-header.md`](./archive/rounds-r381-r393-header.md)。）
 
 **doc-maintenance（2026-06-20 verify 轮）**：plateau 结论 read-only 复核成立（R354 fresh baseline 439/490 零漂移、clean-win 面 R351 后穷尽），无需新调整方向——现有「综合裁决 + 下一步」即当前结论。文档治理两项：① 将「技术决策记录」表中 **R118–R227 逐轮历史条目**（50 行，2026-06-14~17，远超最近 20 轮窗口，主体已在 rounds-r23-r139 / rounds-r142-r302 归档）迁出至 [`archive/tech-decisions-r118-r227.md`](./archive/tech-decisions-r118-r227.md)（50 行 → 1 指针行，master.md 833→786 行）；② 纠正「最近轮次详细记录」窗口标注（R335–R336 为最后两轮全文详记，R337–R354 为 plateau 复核/治理轮，精简结论见上方「综合裁决」表）。本轮零代码变更（并行 agent 正在 layout-engine 开发，未触碰）。
 
@@ -12,9 +12,9 @@
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率。**渲染侧**：结构性 plateau（单会话杠杆已穷尽，子集范围内）。**分母侧（DC-14 门禁，R394 发现）**：当前 N_imported 仅上游 ~5-6%，去子集化是当前最高 ROI 前向路径（并行 agent 正执行 Phase 2：css-grid 全量导入 in-flight + `discover-reftests-authoritative.py`）。/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
-**基线（R323 复验；strict post-R326 再复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)；R388 oracle 修复后 chromium-Oracle 上修）**：
-- self-source loose **443/490 (90.4%)** @ 默认 1%/5% 容差
-- self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
+**基线（R395 css-grid 扩到全量权威集后 self-source 下修）**：
+- self-source loose **456/518 (88.0%)** @ 默认 1%/5% 容差（R395：grid 18→48 全量权威集，揭示 grid 真通过率 30/48=62.5% vs 子集 ~100%，整体 90.4%→88.0%；**混合口径=grid 全量 + 8 目录仍 60-子集**，非全量真通过率）
+- self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径，pre-grid-expand）
 - chromium-Oracle 广义一致 **200/475 (42.1%)** @ chr<1%（R391 锁定诚实基线：R388 报的 205/43.2% 含 R389 才暴露的 5 假一致 flexbox blank-blank，已纠正）；严格 self-pass&chr<1% **177/475 (37.3%)**；污染率 46.5%。**R388/R389/R390 后度量可信**（pre-R388 ~35.8% 被 108 损坏 Ahem oracle 系统性压低，已修）。**⚠️ R394 关键：所有这些数字基于 ~5-6% 子集分母（503/上游~8000-10000），非全量真通过率，不构成 DC-14 达标证据**
 - 产品 smoke：welcome **16.98%**（product-smoke 阈值0，与 morning/wintertc 同口径；R371 的 14.68% 是 cross-validate chan>5 的宽松口径，不可比，已纠正）/ wintertc ~13.6% / morning-work 800×600 **16.41%**（R373 inline+bg shrink 后，R175 的 28.72%→16.41%；fullpage 48.65% 是更高视口口径）
 
@@ -339,7 +339,7 @@
 
 - self-source loose **443/490 (90.4%)** @ 默认 1%/5% 容差
 - self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
-- chromium-Oracle 真一致率 **~35.6%**（self-source 含 48.6% 假通过）
+- chromium-Oracle 真一致率 **~42.1% (broad, 200/475) / 37.3% (strict self-pass&chr<1%, 177/475)**（self-source 含 46.5% 假通过；R391 锁定诚实基线，pre-R388 ~35.8% 被 108 损坏 Ahem oracle 压低已修；⚠️ 全部基于 ~5-6% 子集分母 503/上游~8000-10000，非全量真通过率，不构成 DC-14 达标证据）
 
 完整 plateau 分析、已穷尽杠杆表、4 条多会话路径见顶部「综合裁决」节；逐目录 chromium-Oracle 污染分布见 `evidence/cross-validate-full-2026-06-18.txt`（flexbox 26% 污染最诚实，writing-modes 73% 最高）。达标需多会话架构，单会话杠杆已穷尽。
 
