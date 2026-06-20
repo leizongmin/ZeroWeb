@@ -52,3 +52,19 @@ forward motion 唯余此架构承诺，surface patch 已证穷尽。
 （IFC 生成 inline 盒范围 → paint 消费 → 从 taffy block 树剥离 inline）。surface patch
 （R366）与 clean-win（R352-R365）双穷尽后，此为唯一路径但非单会话可成。
 ================================================================
+
+================================================================
+追加：R367 inline-block border-box 尺寸实验（net-negative，已回退）
+================================================================
+假设：adjust_inline_block_positions 传 inline_block_sizes 用 content_height（ifc-011
+span1 border:20px → content_height=50）而非 border-box（90），致 IFC 行盒过短（div h=60
+应 90）+ span2 vertical-align:top 错位。
+实验（engine.rs ib_sizes：content_{w,h} → child.{w,h} 即 border-box）：
+- ifc-011：11.27% → **13.73%（更差）**，span2 101→141（更错位），div h=60 不变。
+- 裁决：**net-negative 回退**。div h=60 是 taffy 主布局的行盒高度（不由 adjust_inline_block_
+  positions IFC 决定）——inline-block 的 line-box 高度须在 taffy 层容纳，IFC sizing 改不动，
+  仅重新定位 inline-block 致更错。证实 ifc-011 的 inline-block baseline/line-box 簇是
+  **taffy-level 结构性**（须 baseline 合成多会话架构，非 IFC 表面修复）。
+结论：R366（margin 归零 net-neutral）+ R367（border-box net-negative）双实验关闭 inline/
+inline-block IFC 表面修复微路径——此簇唯 taffy-level baseline/line-box 重写可解。
+================================================================
