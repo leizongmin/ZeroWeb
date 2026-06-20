@@ -29,7 +29,11 @@ use crate::types::LayoutBox;
 ///   仅 max-content（不换行）；min-content（最宽词）独立子问题暂不实现。
 ///
 /// 返回值含 box 自身的水平 padding+border（border-box 贡献）。
-fn box_content_max_width(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+pub(crate) fn box_content_max_width(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> f32 {
     let mut inline_sum = 0.0f32;
     let mut block_max = 0.0f32;
     let mut has_in_flow_child = false;

@@ -108,7 +108,11 @@ pub(crate) fn shrink_vertical_blocks_to_content(
 /// （内容更宽或显式宽度时为 no-op）。与 R129 float-shrink / R138 table-shrink 同谱系，
 /// 但作用对象是 inline-block——其子元素已是正确尺寸（如显式 width 的 block），
 /// 故仅收缩盒尺寸本身，不重排子元素。
-pub(crate) fn shrink_inline_blocks_to_content(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+pub(crate) fn shrink_inline_blocks_to_content(
+    box_node: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
     let own_horizontal = matches!(box_node.writing_mode, WritingModeValue::HorizontalTb);
     if own_horizontal && !box_node.is_absolute && !box_node.is_fixed {
         let is_inline_block = box_node.node_id.is_some_and(|id| {
@@ -120,26 +124,15 @@ pub(crate) fn shrink_inline_blocks_to_content(box_node: &mut LayoutBox, styles: 
             .node_id
             .is_some_and(|id| styles.get(&id).is_some_and(|s| matches!(s.width, LengthValue::Auto)));
         if is_inline_block && width_auto {
-            // 内容最大宽度（max-content）：inline 级子元素水平求和（假设不换行），
-            // block 级子元素垂直堆叠取最大；取两者较大值。子元素宽度已是 taffy
-            // 正确布局结果（如显式 width 的 block / inline-block）。
-            let mut inline_sum = 0.0f32;
-            let mut block_max = 0.0f32;
-            for c in &box_node.children {
-                if c.is_absolute || c.is_fixed {
-                    continue;
-                }
-                let outer_w = c.width + c.margin_left + c.margin_right;
-                if c.is_block_level {
-                    block_max = block_max.max(outer_w);
-                } else {
-                    inline_sum += outer_w.max(0.0);
-                }
-            }
-            let content_max_w = inline_sum.max(block_max);
+            // 内容最大宽度（max-content）：用 intrinsic_sizing 的统一测量（box_content_max_width）。
+            // 该函数对 inline 级子元素水平求和、block 级子元素递归取最大、且对**无 LayoutBox 子元素
+            // 的纯文本内容**（文本经 measure callback 不产生子盒）按 DOM text_content + 字体度量
+            // 累加（R368：ifc-011 span 的 "X" 文本此前因 children 为空→content_max_w=0→不收缩→
+            // inline-block 被拉伸到容器满宽 784，IFC 误判换行）。返回 border-box（含 frame）。
+            let intrinsic_border_box = crate::intrinsic_sizing::box_content_max_width(box_node, doc, styles);
+            let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+            let content_max_w = (intrinsic_border_box - frame).max(0.0);
             if content_max_w > 0.0 {
-                let frame =
-                    box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
                 let shrink_border_box = content_max_w + frame;
                 if shrink_border_box + 0.5 < box_node.width {
                     box_node.width = shrink_border_box;
@@ -150,7 +143,7 @@ pub(crate) fn shrink_inline_blocks_to_content(box_node: &mut LayoutBox, styles: 
     }
 
     for child in &mut box_node.children {
-        shrink_inline_blocks_to_content(child, styles);
+        shrink_inline_blocks_to_content(child, doc, styles);
     }
 }
 
