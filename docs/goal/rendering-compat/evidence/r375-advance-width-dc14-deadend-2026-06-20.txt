@@ -95,3 +95,29 @@ font context（AdvanceSource 接线，R223 R2-R5 Phase A）。故 fontdue-actual
 勿以 R375 为「彻底关闭」依据拒绝未来 Phase A 的 fontdue-actual 测试；亦勿在 Phase A 就绪前
 以单会话重试（静态表/hand-crafted 已证不奏效）。
 ================================================================
+
+================================================================
+R375b definitive：fontdue-actual advance 亦退步 → advance-width 终局关闭
+================================================================
+为消除上面「hand-crafted 表不准确→inconclusive」的疑虑，做 fontdue-actual definitive test：
+临时给 layout-engine 加 fontdue dep，在 text_metrics.rs 加 default_fontdue_font()（OnceLock
+缓存，读 /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf = ZeroWeb 实际加载的字体），estimate_char_width
+对 ASCII 用 font.metrics(c, font_size).advance_width（raw metric，无 rasterize，cheap）。
+
+  morning z_vs_chr：R375b（fontdue-actual DejaVuSans advance）= **19.08%**
+  对比 R375（hand-crafted 表）= 19.14%，R373（0.55 启发式）= 16.41%
+
+fontdue-actual（19.08%）≈ hand-crafted（19.14%）≈ 均比 16.41% 退步 ~2.7pp。**R375 hand-crafted
+表是准确的**（与 fontdue-actual 一致），上面「inconclusive」更正**过度谨慎**——R375 结论成立。
+
+【definitive 裁决】advance-width bilateral 改善（无论 hand-crafted 表 / fontdue 真实 advance）
+在 DC-14 上**均使 morning 退步**（~+2.7pp）。机制：accurate DejaVuSans advance 使 ZeroWeb 换行
+偏离 chromium——chromium 的 system-ui 字体 ≠ DejaVuSans（尽管 AA 基准 glyph 形似），或 chromium
+换行算法不同；crude 0.55「所有字母等宽」启发式**碰巧更接近 chromium 的换行**。故 advance-width
+**非** morning cascade 根因，cascade 是 line-height / glyph-rendering / 字体不匹配（chromium 实际
+system-ui 字体层）。
+
+advance-width lever **definitive 终局关闭**（R375b fontdue-actual 是最后未测变体，亦证伪）。
+勿再以任何变体（hand-crafted 表 / fontdue-actual / FontLoader 接线 / shaper）重试 advance-width。
+R375b 已回退（移除 fontdue dep + text_metrics 还原，morning 恢复 16.41%）。
+================================================================
