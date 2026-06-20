@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-22（**R396** doc-maintenance read-only：承 R395 CONTINUE 核查「更大分母重开 clean-win 面」——HEAD 仍 `f2c9fae` 无新 commit；并行 agent mid-work **未提交**（css-grid ~70 顶层文件≈40+ 真测试过 63 目标 + `discover-reftests-authoritative.py` 落地 + quirks/ 起步）。**2 缺口簇测试 read-only 抽样**（grid-container-baseline-synthesized-001=baseline-export 簇 / replaced-element-percentage-height-in-grid-nested-in-flex-001=flex-grid definite-size 簇）**均映射到已 ruled-out 多会话架构族，非单会话 clean win**——更大分母新失败是同族更多实例，轨道 1 去子集化方向不变。无法量化（未提交 + reftest 冲突/OOM）。详见 [`evidence/r396-grid-gapcluster-sampling-2026-06-22.txt`](./evidence/r396-grid-gapcluster-sampling-2026-06-22.txt) + 综合裁决表 R396 行。｜**R395** doc-maintenance：**header 治理瘦身 + 锁定 DC-14 分母去子集化为当前前向方向**。R394（前轮）实测 DC-14 分母真实性 gap——N_imported 仅上游 ~5-6%（503/~8000-10000，import-wpt-reftests.sh 默认 COUNT=60），self-source 443/490 与 chromium-Oracle 42.1% 均**子集口径，非全量真通过率，不构成 DC-14 达标证据**（goal line 329/843）。本轮独立复核 COUNT=60 上限 + 各目录实测对账（grid 21/position 24/text-decor 39 等被 manifest 进一步压缩）确认 R394 结论。**新调整方向 = DC-14 分母去子集化（Phase 2 小目录全量导入）**：① DC-14 硬门禁（达标判定前提）；② 比渲染架构更可操作（grid 63/position 149/tables 203 ≈415 案可达 100% 覆盖）；③ 揭示全量真通过率以校准渲染投入 ROI。**该方向已落地执行**：并行 agent 新增 `discover-reftests-authoritative.py`（按 `<link rel=match>` 权威解析 test→ref 对，替代文件名启发式）+ 正在导入 css-grid 全量（18→39 进行中→63）。**关键纠正**：R384「单会话 clean-win 穷尽」结论是**子集范围（490 案）**——全量 ~8000-10000 集合含未检新失败模式，clean-win 面在更大分母下可能重开，不可外推为全局穷尽。渲染侧 plateau（R384 47/47 + R389/R390/R392/R393 line-box 5 轮）仅在当前子集内成立。header 治理：原 18902 字符（R386-R394 逐轮追加膨胀，违反「header 不允许无限增长」）瘦身至 ~2000 字符，R381-R393 verbose 详记迁出 [`archive/rounds-r381-r393-header.md`](./archive/rounds-r381-r393-header.md)；结构化结论保留下方「综合裁决」表。详见 [`evidence/r394-dc14-denominator-gap-2026-06-22.txt`](./evidence/r394-dc14-denominator-gap-2026-06-22.txt)。本轮零代码变更（read-only 验证 + 文档治理，未触碰并行 agent 的 reftest 数据/脚本）。）
+**最后更新**: 2026-06-22（**R397** doc-maintenance 治理：归档 R335/R336 全文详记（超出最近 20 轮窗口 R377–R396）→ [`archive/rounds-r335-r336.md`](./archive/rounds-r335-r336.md)，master.md 803→773 行（−5.4KB）；「最近轮次详细记录」节改为纯归档指针；标记 `初始 Reftest 通过率数据` / `IFC 技术参考+卡点#2-9` 为下轮待归档候选（R68 时代、自包含、无入站引用）。零代码变更（read-only；并行 agent 仍 mid-work 未提交）。｜**R396** doc-maintenance read-only：承 R395 CONTINUE 核查「更大分母重开 clean-win 面」——HEAD 仍 `f2c9fae` 无新 commit；并行 agent mid-work **未提交**（css-grid ~70 顶层文件≈40+ 真测试过 63 目标 + `discover-reftests-authoritative.py` 落地 + quirks/ 起步）。**2 缺口簇测试 read-only 抽样**（grid-container-baseline-synthesized-001=baseline-export 簇 / replaced-element-percentage-height-in-grid-nested-in-flex-001=flex-grid definite-size 簇）**均映射到已 ruled-out 多会话架构族，非单会话 clean win**——更大分母新失败是同族更多实例，轨道 1 去子集化方向不变。无法量化（未提交 + reftest 冲突/OOM）。详见 [`evidence/r396-grid-gapcluster-sampling-2026-06-22.txt`](./evidence/r396-grid-gapcluster-sampling-2026-06-22.txt) + 综合裁决表 R396 行。｜**R395** doc-maintenance：**header 治理瘦身 + 锁定 DC-14 分母去子集化为当前前向方向**。R394（前轮）实测 DC-14 分母真实性 gap——N_imported 仅上游 ~5-6%（503/~8000-10000，import-wpt-reftests.sh 默认 COUNT=60），self-source 443/490 与 chromium-Oracle 42.1% 均**子集口径，非全量真通过率，不构成 DC-14 达标证据**（goal line 329/843）。本轮独立复核 COUNT=60 上限 + 各目录实测对账（grid 21/position 24/text-decor 39 等被 manifest 进一步压缩）确认 R394 结论。**新调整方向 = DC-14 分母去子集化（Phase 2 小目录全量导入）**：① DC-14 硬门禁（达标判定前提）；② 比渲染架构更可操作（grid 63/position 149/tables 203 ≈415 案可达 100% 覆盖）；③ 揭示全量真通过率以校准渲染投入 ROI。**该方向已落地执行**：并行 agent 新增 `discover-reftests-authoritative.py`（按 `<link rel=match>` 权威解析 test→ref 对，替代文件名启发式）+ 正在导入 css-grid 全量（18→39 进行中→63）。**关键纠正**：R384「单会话 clean-win 穷尽」结论是**子集范围（490 案）**——全量 ~8000-10000 集合含未检新失败模式，clean-win 面在更大分母下可能重开，不可外推为全局穷尽。渲染侧 plateau（R384 47/47 + R389/R390/R392/R393 line-box 5 轮）仅在当前子集内成立。header 治理：原 18902 字符（R386-R394 逐轮追加膨胀，违反「header 不允许无限增长」）瘦身至 ~2000 字符，R381-R393 verbose 详记迁出 [`archive/rounds-r381-r393-header.md`](./archive/rounds-r381-r393-header.md)；结构化结论保留下方「综合裁决」表。详见 [`evidence/r394-dc14-denominator-gap-2026-06-22.txt`](./evidence/r394-dc14-denominator-gap-2026-06-22.txt)。本轮零代码变更（read-only 验证 + 文档治理，未触碰并行 agent 的 reftest 数据/脚本）。）
 
 **doc-maintenance（2026-06-20 verify 轮）**：plateau 结论 read-only 复核成立（R354 fresh baseline 439/490 零漂移、clean-win 面 R351 后穷尽），无需新调整方向——现有「综合裁决 + 下一步」即当前结论。文档治理两项：① 将「技术决策记录」表中 **R118–R227 逐轮历史条目**（50 行，2026-06-14~17，远超最近 20 轮窗口，主体已在 rounds-r23-r139 / rounds-r142-r302 归档）迁出至 [`archive/tech-decisions-r118-r227.md`](./archive/tech-decisions-r118-r227.md)（50 行 → 1 指针行，master.md 833→786 行）；② 纠正「最近轮次详细记录」窗口标注（R335–R336 为最后两轮全文详记，R337–R354 为 plateau 复核/治理轮，精简结论见上方「综合裁决」表）。本轮零代码变更（并行 agent 正在 layout-engine 开发，未触碰）。
 
@@ -762,41 +762,11 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 
 ---
 
-## 最近轮次详细记录（R335–R336 全文详记；R337–R354 为 plateau 复核/治理轮，精简结论见上方「综合裁决」表）
+## 最近轮次详细记录
 
-> 更早轮次已归档：R314–R334 → [`archive/rounds-r314-r334.md`](./archive/rounds-r314-r334.md)；R307–R313 → 各单轮归档（[`rounds-r307.md`](./archive/rounds-r307.md) … [`rounds-r313.md`](./archive/rounds-r313.md)）；R305–R306 → [`rounds-r305-r306.md`](./archive/rounds-r305-r306.md)；R304 → [`r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)；R303 → [`r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)；R142–R302 → [`rounds-r142-r302.md`](./archive/rounds-r142-r302.md)；R23–R139 → [`rounds-r23-r139.md`](./archive/rounds-r23-r139.md)；R11–R20 → [`rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)；R118–R227 技术决策表 → [`tech-decisions-r118-r227.md`](./archive/tech-decisions-r118-r227.md)。逐轮结论摘要见顶部「综合裁决」表。
+> 全部逐轮详记已归档（master.md 仅保留顶部「综合裁决」表的结构化结论，避免无限增长）：R335–R336 → [`archive/rounds-r335-r336.md`](./archive/rounds-r335-r336.md)；R314–R334 → [`archive/rounds-r314-r334.md`](./archive/rounds-r314-r334.md)；R307–R313 → 各单轮归档（[`rounds-r307.md`](./archive/rounds-r307.md) … [`rounds-r313.md`](./archive/rounds-r313.md)）；R305–R306 → [`rounds-r305-r306.md`](./archive/rounds-r305-r306.md)；R304 → [`r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)；R303 → [`r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)；R142–R302 → [`rounds-r142-r302.md`](./archive/rounds-r142-r302.md)；R23–R139 → [`rounds-r23-r139.md`](./archive/rounds-r23-r139.md)；R11–R20 → [`rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)；R118–R227 技术决策表 → [`tech-decisions-r118-r227.md`](./archive/tech-decisions-r118-r227.md)。逐轮结论摘要见顶部「综合裁决」表。
 
-### R335 — paint-IFC per-fragment 颜色探针 net-negative：WM-1 真阻塞 = Phase A 双路径终局确认（探针已回退，基线持平）
-
-**承接**：R334 收尾 CONTINUE 指向探查 paint-IFC per-fragment 颜色修复可行性。R334 定位 WM-1 cluster（abs-pos-non-replaced-vrl/vlr）真阻塞 = 绿色 "X" glyph 完全未绘制（paint-IFC 用容器 `color:transparent` 绘全部 inline 子树，per-fragment 颜色覆盖仅 multicol 分支 text.rs:1028）。本轮实证该修复是否可 bounded 落地。
-
-**探针实现（已 100% 回退）**：非多列 `render_fragment!` 宏（text.rs:1124，覆盖 use_stored + 非存储两 fragment 循环）镜像 multicol 分支（text.rs:1019-1032）——解析 fragment 所属 inline 元素（文本节点取父元素）的 color，fallback 容器 color；glyph add 改用 frag_color。生产 caller（mod.rs:263/452）传 `Some(styles)`，per-fragment 解析可生效。
-
-**实证（abs-pos-non-replaced 子集 loose，探针 ON）**：**loose 14/14 → 12/14 净 -2**，多数 case diff 上升 1-1.5pp（vrl-002 1.33→2.67、vrl-012 3.67→5.00、vrl-130 5.03→6.33 新 loose FAIL、vlr-163 5.40 新 loose FAIL）。
-
-**根因（Phase A 双路径，R334 推断实证确认）**：green X 现被 div 的 **paint IFC** 在 **paint-IFC 位置**（normal-flow，"X" 紧跟 "1 2 34"）绘制，≠ ref 期望的 **abspos 静态位置**（fix_vertical_mode_abs_pos 计算，R334 实证 vrl-012 y=80 正确）= goal doc gap #4 **Layout/Paint IFC 双路径**。per-fragment 颜色虽隔离正确，激活了**错误路径**（paint-IFC）绘制→离 ref 更远→diff 上升。
-
-**裁决**：① per-fragment 颜色探针 **net-negative，已 100% 回退**（git checkout text.rs，子集复测 14/14 loose 恢复），avenue 关闭。② **WM-1 真阻塞 = Phase A 双路径**——R334（positioning）+ R335（color）两角度均收敛至此。per-fragment 颜色须先统一 layout/paint IFC（paint 复用 layout 存储行盒/abspos 位置）才能安全应用。③ WM-1 单会话 lever 彻底穷尽，剩余 forward motion = Phase A IFC 统一（多会话硬里程碑）。
-
-**Phase A 设计补充**：paint IFC 把 abspos 后代的 inline 文本当正常流绘制（位置错）+ 抑制 abspos span 自身 paint_text 的 green 输出 = Phase A 须解决的具体机制之一（区别于 large-font 的 font_size 存储、welcome 的度量分歧）。建议 Phase A 设计文档补此表现。
-
-**代码变更**：零（探针已回退，`git diff -- '*.rs'` 空）。基线 loose 438/490 / strict 295/490 持平。
-
-### R336 — abspos 文本抑制机制精确定位 + refined skip 探针 net-neutral：WM-1 Phase A 第三角度确认（探针已回退，基线持平）
-
-**承接**：R335 收尾 CONTINUE 指 per-fragment 颜色（R335 已证伪）。Phase A 设计文档 v1.2（R306）已证伪 baseline-alignment Wall ③ 为阻塞点，故本轮**不 pursuing baseline**，换第三角度——abspos 文本抑制机制——做实现轮。R334/R335 已定位 WM-1 green "X" 未绘制，本轮精确定位抑制源 + 测 refined skip。
-
-**抑制机制精确定位（探针 PROBE_ABSPOS，env-gated）**：插桩 abspos span paint_text（text.rs:679）实证——span 的 paint_text **被调用**（fs=80、color=green、content_w=80、has_direct_text=true 全正确），但 **painted_contains=TRUE** → text.rs:690 守卫 `fragment_node_ids.is_none() && painted_inline_nodes.contains(&node_id)` return → **span 自身绘制被抑制**。探针 div IFC fragments：node_id=34(span) text="X"。**collect_inline_items（inline/mod.rs:1066）对 inline 元素用 `doc.text_content(child_id)` 收集文本，node_id=child_id=span，不检查 position**——abspos span 的 "X" 被收入 div IFC，render_fragment!（text.rs:1125）insert span 进 painted_inline_nodes → 抑制 span 自身 paint。CSS §9.8：abspos out-of-flow，文本不应参与父容器 inline 流——当前违反。
-
-**refined skip 探针（已回退）**：非多列 fragment 循环加 skip——owner 为 abspos/fixed **且 owner≠self**（abspos 元素自身绘制时不跳过）的后代文本跳过。探针实证：div(box 32) 绘 "X"(owner=span≠div) → skip=true（正确）；span(box 34) 绘自身 "X"(owner=span=self) → skip=false（正确）；span painted_contains 翻 **false**（抑制解除）。**但 span IFC fragment fs=16**（paint-IFC 空 styles 默认，非 80）= Layout/Paint IFC double-path（gap #4）。
-
-**净效应**：子集 loose 14/14 持平（vrl-002 1.33→1.28 微变）、strict 0/14 持平、全量 loose **438/490 持平** = skip **net-neutral**。即便抑制解除，span 自身 paint-IFC 因空 styles 产出 fs=16，green "X" 仍错——suppression 修复须**同时**解 double-path 才生效 = Phase A 整体。
-
-**裁决**：① refined skip **net-neutral，已 100% 回退**（git checkout text.rs，基线恢复）。② collect_inline_items 不排除 abspos 是**有意为之**——layout 侧 fix_vertical_mode_abs_pos 依赖 IFC fragment 算 abspos 静态位置，故不能 collect 层排除；paint 层 skip 又受 double-path 阻塞。③ **WM-1 Phase A 第三角度确认**：R334 positioning → R335 color → R336 suppression，三角度一致指向 Layout/Paint IFC 双路径。WM-1 单会话 lever 彻底穷尽（三角度闭环）。
-
-**Phase A 设计补充（v1.2 之上）**：WM-1 精确表现 = (a) paint IFC 把 abspos 后代 inline 文本当正常流绘制（位置错）+ 标记 painted_inline_nodes 抑制 abspos 自身 paint_text；(b) 即便解除抑制，abspos 自身 paint-IFC 空 styles 产出错误 font_size。Phase A 须同时：paint 复用 layout 存储的 abspos 位置/font_size + 容器不绘 abspos 后代文本。两者均非单点。
-
-**代码变更**：零（探针已回退，`git diff -- '*.rs'` 空）。基线 loose 438/490 / strict 295/490 持平。
+> **待归档候选（后续治理轮）**：`## 初始 Reftest 通过率数据`（M6/2026-06-07 inline 100% 明细，已标「不计达标」）、`## IFC 统一技术参考` + `## IFC 之外的其他卡点`（卡点 #2–#9，R68 时代前置 plateau 框架，已被顶部「综合裁决」表 + 「已知关键缺口」表取代）——均为 R305 plateau 前的历史分析，自包含、无入站引用，后续轮次可安全迁出。
 
 
 
