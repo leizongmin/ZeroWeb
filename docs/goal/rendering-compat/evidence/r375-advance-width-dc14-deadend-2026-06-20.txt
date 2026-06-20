@@ -72,3 +72,26 @@ Skia）或 **glyph 渲染**（fontdue AA/度量≠Skia，DC-14 line 311 说 AA �
 可能差）。二者均 fontdue vs Skia 字体层差异，非布局 bug，须字体光栅器升级（多会话/架构）。
 **勿再以 morning cascade 为单会话 layout 杠杆**——已证非 advance-width，剩余是字体层。
 ================================================================
+
+================================================================
+更正（同轮，重要）：R375 hand-crafted 表是**不准确代理**，结论应降为 inconclusive
+================================================================
+后续核查发现：① ZeroWeb fontdue 加载系统字体 /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+（loader.rs:467），即 fontdue 用 DejaVuSans；② R375 的 latin_advance_ratio 表是我**手写近似**
+（i=0.279/W=0.939 等是我估的 DejaVu 比率，非从 DejaVuSans.ttf 实测），与 DejaVuSans 真实
+advance 有偏差。故 R375 morning +2.7pp 退步**可能来自表不准确**（非 advance-width 真死），
+结论应从「终局关闭」**降为 inconclusive**。
+
+fontdue **实际 advance** 测试（用 measure_advance / font.metrics 的真实 DejaVuSans 值）才是
+definitive test，但本轮未做——障碍：① measure_advance 调 rasterize_glyph_with_fallback 会
+**rasterize**（paint 导向，layout 热循环太慢）；② fontdue 非 layout-engine 直接依赖（须加 dep
+或用 render-foundation FontLoader 穿引用）；③ estimate_char_width 是无状态自由函数，须穿
+font context（AdvanceSource 接线，R223 R2-R5 Phase A）。故 fontdue-actual 变体**未 definitive
+证伪**。
+
+【诚实裁决】advance-width lever 的**preponderance of evidence**（R224 实测表 -3 / R225 oracle
+26案零变化 / R320 双侧 estimate 一致 / R331 paint-only net-neg / R375 hand-crafted 表退步）
+指向**非 clean win**，但**非 definitive 关闭**——fontdue-actual（Phase A 接线）是唯一未测变体。
+勿以 R375 为「彻底关闭」依据拒绝未来 Phase A 的 fontdue-actual 测试；亦勿在 Phase A 就绪前
+以单会话重试（静态表/hand-crafted 已证不奏效）。
+================================================================
