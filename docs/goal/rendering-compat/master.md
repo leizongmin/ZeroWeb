@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-22（**R397** doc-maintenance 治理：归档 R335/R336 全文详记（超出最近 20 轮窗口 R377–R396）→ [`archive/rounds-r335-r336.md`](./archive/rounds-r335-r336.md)，master.md 803→773 行（−5.4KB）；「最近轮次详细记录」节改为纯归档指针；标记 `初始 Reftest 通过率数据` / `IFC 技术参考+卡点#2-9` 为下轮待归档候选（R68 时代、自包含、无入站引用）。零代码变更（read-only；并行 agent 仍 mid-work 未提交）。｜**R396** doc-maintenance read-only：承 R395 CONTINUE 核查「更大分母重开 clean-win 面」——HEAD 仍 `f2c9fae` 无新 commit；并行 agent mid-work **未提交**（css-grid ~70 顶层文件≈40+ 真测试过 63 目标 + `discover-reftests-authoritative.py` 落地 + quirks/ 起步）。**2 缺口簇测试 read-only 抽样**（grid-container-baseline-synthesized-001=baseline-export 簇 / replaced-element-percentage-height-in-grid-nested-in-flex-001=flex-grid definite-size 簇）**均映射到已 ruled-out 多会话架构族，非单会话 clean win**——更大分母新失败是同族更多实例，轨道 1 去子集化方向不变。无法量化（未提交 + reftest 冲突/OOM）。详见 [`evidence/r396-grid-gapcluster-sampling-2026-06-22.txt`](./evidence/r396-grid-gapcluster-sampling-2026-06-22.txt) + 综合裁决表 R396 行。｜**R395** doc-maintenance：**header 治理瘦身 + 锁定 DC-14 分母去子集化为当前前向方向**。R394（前轮）实测 DC-14 分母真实性 gap——N_imported 仅上游 ~5-6%（503/~8000-10000，import-wpt-reftests.sh 默认 COUNT=60），self-source 443/490 与 chromium-Oracle 42.1% 均**子集口径，非全量真通过率，不构成 DC-14 达标证据**（goal line 329/843）。本轮独立复核 COUNT=60 上限 + 各目录实测对账（grid 21/position 24/text-decor 39 等被 manifest 进一步压缩）确认 R394 结论。**新调整方向 = DC-14 分母去子集化（Phase 2 小目录全量导入）**：① DC-14 硬门禁（达标判定前提）；② 比渲染架构更可操作（grid 63/position 149/tables 203 ≈415 案可达 100% 覆盖）；③ 揭示全量真通过率以校准渲染投入 ROI。**该方向已落地执行**：并行 agent 新增 `discover-reftests-authoritative.py`（按 `<link rel=match>` 权威解析 test→ref 对，替代文件名启发式）+ 正在导入 css-grid 全量（18→39 进行中→63）。**关键纠正**：R384「单会话 clean-win 穷尽」结论是**子集范围（490 案）**——全量 ~8000-10000 集合含未检新失败模式，clean-win 面在更大分母下可能重开，不可外推为全局穷尽。渲染侧 plateau（R384 47/47 + R389/R390/R392/R393 line-box 5 轮）仅在当前子集内成立。header 治理：原 18902 字符（R386-R394 逐轮追加膨胀，违反「header 不允许无限增长」）瘦身至 ~2000 字符，R381-R393 verbose 详记迁出 [`archive/rounds-r381-r393-header.md`](./archive/rounds-r381-r393-header.md)；结构化结论保留下方「综合裁决」表。详见 [`evidence/r394-dc14-denominator-gap-2026-06-22.txt`](./evidence/r394-dc14-denominator-gap-2026-06-22.txt)。本轮零代码变更（read-only 验证 + 文档治理，未触碰并行 agent 的 reftest 数据/脚本）。）
+**最后更新**: 2026-06-22（**R398** doc-maintenance 治理：归档 2 块 R68 时代 stale 节——`初始 Reftest 通过率数据`（M6 inline 100% 明细，不计达标）+ `IFC 统一技术参考`（R69+ 代码级上下文，归档前核查无入站引用）→ [`archive/m6-inline-reftest-baseline-2026-06-07.md`](./archive/m6-inline-reftest-baseline-2026-06-07.md) / [`archive/r69-ifc-unification-technical-reference.md`](./archive/r69-ifc-unification-technical-reference.md)，master.md 773→634 行（−9KB）。仅剩 `IFC 之外的其他卡点` 框架待归档（⚠️ 有 live 入站引用 `multicol-phase2-unified-column-flow-spec.md`，须留 section 锚点 stub 或同步更新该 spec 引用）。零代码变更（read-only；并行 agent 仍 mid-work 未提交，HEAD `ef72a45` 无新 commit）。｜**R395–R397 摘要**：R395 锁定前向方向=DC-14 分母去子集化（当前 N_imported 仅上游 ~5-6%，子集口径非达标证据，详 [`evidence/r394-dc14-denominator-gap-2026-06-22.txt`](./evidence/r394-dc14-denominator-gap-2026-06-22.txt)；并行 agent 已建 `discover-reftests-authoritative.py` + 导入 css-grid 全量执行中）；R396 抽样 2 grid 缺口簇→均映射 ruled-out 多会话架构族，非单会话 clean win（「子集穷尽不可外推」caveat 在「更大分母含真实缺口簇」方向成立，但新失败是同族更多实例）；R397 归档 R335/R336 全文。结构化结论见下方「综合裁决」表，R381–R393 verbose 详记见 [`archive/rounds-r381-r393-header.md`](./archive/rounds-r381-r393-header.md)。）
 
 **doc-maintenance（2026-06-20 verify 轮）**：plateau 结论 read-only 复核成立（R354 fresh baseline 439/490 零漂移、clean-win 面 R351 后穷尽），无需新调整方向——现有「综合裁决 + 下一步」即当前结论。文档治理两项：① 将「技术决策记录」表中 **R118–R227 逐轮历史条目**（50 行，2026-06-14~17，远超最近 20 轮窗口，主体已在 rounds-r23-r139 / rounds-r142-r302 归档）迁出至 [`archive/tech-decisions-r118-r227.md`](./archive/tech-decisions-r118-r227.md)（50 行 → 1 指针行，master.md 833→786 行）；② 纠正「最近轮次详细记录」窗口标注（R335–R336 为最后两轮全文详记，R337–R354 为 plateau 复核/治理轮，精简结论见上方「综合裁决」表）。本轮零代码变更（并行 agent 正在 layout-engine 开发，未触碰）。
 
@@ -324,68 +324,9 @@
 
 ---
 
-## 初始 Reftest 通过率数据
+## 初始 Reftest 通过率数据（M6 inline，不计达标 — 已归档）
 
-**日期**: 2026-06-07（M6 DC-5 全目录达标）
-**总用例**: 685（内联 reftest）
-**运行用例**: 685
-**通过**: 685
-**失败**: 0
-**通过率**: 100.0%
-**渲染模式**: CPU 软件渲染
-**视口**: 800×600
-
-### 按分类
-
-| 分类 | 通过/总数 | 通过率 |
-|------|-----------|--------|
-| Layout | 484/484 | 100.0% |
-| Text | 201/201 | 100.0% |
-
-### 按 WPT 目录
-
-| 目录 | 数量 | 通过率 | ≥50 达标 |
-|------|------|--------|----------|
-| css21/ | 78 | 100.0% | ✅ |
-| css-box/ | 54 | 100.0% | ✅ |
-| css-text/ | 51 | 100.0% | ✅ |
-| css-grid/ | 51 | 100.0% | ✅ |
-| css-flexbox/ | 51 | 100.0% | ✅ |
-| css-fonts/ | 50 | 100.0% | ✅ |
-| css-position/ | 50 | 100.0% | ✅ |
-| css-display/ | 50 | 100.0% | ✅ |
-| css-text-decor/ | 50 | 100.0% | ✅ |
-| css-writing-modes/ | 50 | 100.0% | ✅ |
-| css-multicol/ | 50 | 100.0% | ✅ |
-| css-float/ | 50 | 100.0% | ✅ |
-| css-table/ | 50 | 100.0% | ✅ |
-
-### 覆盖范围
-
-- 颜色 (5): 命名色 vs hex, 命名色 vs rgb, 不同颜色 mismatch
-- 背景 (5): 多色背景, 百分比尺寸, 不同背景 mismatch
-- 边框 (10): 等价边框声明, 不同边框颜色 mismatch, 边框方向, solid 等价, 不同边宽度, padding+border, box-sizing
-- 盒模型基础 (5): margin, padding, 等价盒模型, 不同 padding mismatch
-- 定位基础 (5): absolute, relative, 不同定位 mismatch, bottom/right
-- 显示基础 (5): display:none, display:block, visibility, 显示隐藏 mismatch
-- 尺寸 (5): 固定尺寸, 百分比尺寸, 不同尺寸 mismatch
-- Flexbox 基础 (10): row, column, row-vs-block, grow, wrap, justify, align, gap, nested, basis
-- Flexbox 进阶 (10): grow-proportional, grow-with-base, wrap-multi-line, align-center, justify-space-between, shrink-overflow, column-direction, gap-between-items, order-reorder, basis-0-grow
-- Flexbox 边界 case (10): align-self-flex-end, flex-basis-auto-with-width, nowrap-overflow, justify-flex-end, justify-center, wrap-reverse, shrink-ratio, min-width-constraint, max-width-constraint, nested-flex-wrap
-- Grid 基础 (10): 固定列, fr, 2x2, gap, auto-rows, mixed-fr-px, vs-block, 三列, row/col gap, nested
-- Grid 进阶 (11): fr-unit-proportional, mixed-fr-px-proportional, auto-placement-3x2, gap-rows-columns, nested-grid-in-flex, minmax-column, repeat-auto-fill, grid-in-grid, justify-items-stretch, flex-in-grid-item, shorthand-gap
-- Grid 边界 case (10): auto-rows-minmax, justify-content-center, align-content-center, implicit-rows, place-items-center, grid-auto-columns, named-grid-area-simple, fr-with-percentage, empty-tracks, percentage-track-sizing
-- 定位进阶 (15): absolute-top-left, shift-mismatch, relative-offset, vs-no-position, in-flow, bottom-right, stacking, z-index, overlap-mismatch, multiple-relatives, absolute-in-relative, absolute-right-bottom, relative-offset-no-layout, z-index-stacking-order, absolute-overlaps-static
-- 文本排版 (10): 颜色, align, whitespace, line-height, letter-spacing, word-spacing, text-indent, transform, flex-container, vs-background
-- 盒模型进阶 (10): margin-collapse, box-sizing, border-colors, overflow-hidden, overflow-visible, max-width, min-height, percentage-width, auto-margin-center, negative-margin
-- 显示进阶 (10): none-removes-layout, inline-block, visibility-hidden, nested-inline-block, none-vs-visible, flex-item-none, grid-item-none, nested-flex-grid, block-100pct, body-background
-- 嵌套/复杂 (5): 三层嵌套, 不同内部尺寸 mismatch, 兄弟排序, float 布局
-- Overflow (5): hidden clips, visible no-clip, hidden vs visible mismatch, nested overflow, overflow with margin child
-- Margin 折叠 (5): sibling collapse, parent-child collapse, BFC no-collapse, auto center, body reset
-- Quirks mode (5): hashless color, numeric color, unitless width, unitless padding, table height as min-height
-- Table 布局 (9): basic-2col, basic-3col, multi-row, with-tbody, auto-width-equal-cols, row-tallest-cell, thead-tbody-tfoot, th-td-mixed, single-column
-- Multi-column 布局 (10): column-count-2, column-count-3, column-width-auto, column-gap, columns-shorthand, balanced-4-children, uneven-heights, with-column-rule, mismatch-column-count, no-columns
-- 文字排版 (51): text-align (justify/center/right/multiline), word-spacing (normal/large), text-decoration (underline/overline/line-through/dashed), text-transform (uppercase/lowercase/capitalize/none), white-space (pre/pre-wrap/pre-line/nowrap), line-height (double/tight/mismatch), font-size (large/mismatch), text-color (green), text-indent (50px/percent), letter-spacing (4px/2px), word-break (break-all/keep-all), overflow-wrap (break-word/long-url), CJK (line-break/mixed-wrap), tab-size, text-in-flex, text-in-grid, vertical-align (top/middle), 颜色/align/whitespace/line-height/letter-spacing/word-spacing/text-indent/transform/flex-container/vs-background (15 个 css21 基础)
+> 2026-06-07 M6 基线：685 内联 reftest 100% 通过（CPU 软件渲染，800×600）。该 685 内联 reftest 自 DC-14 起明确**不计达标分母**（goal line 323/844；DC-2~5 各节均标「内联 smoke 100% 不计达标」），100% 仅作 smoke。逐目录/覆盖范围明细已迁出至 [`archive/m6-inline-reftest-baseline-2026-06-07.md`](./archive/m6-inline-reftest-baseline-2026-06-07.md)。**达标口径真基线见下节「上游真实 WPT Reftest 通过率」**（self-source 443/490 / chromium-Oracle ~42%）。
 
 ---
 
@@ -433,89 +374,9 @@
 
 **结论**：goal doc DC-11 的 BFC + object-fit 两项「未实现」声明与代码现实矛盾（governance §1 自洽）。本轮将核查结论沉淀于本表（避免与并行 agent 活跃编辑 rendering-compat.md 冲突）；goal doc prose 纠正**已由 R325 执行**（BFC known-gaps line 378 + 替换元素 DC-11/support-envelope/known-gaps 三处，按 R323/R324 先例）。scroll/sticky 声明准确不改。本轮零代码变更（仅 read-only 核查）。
 
-## IFC 统一技术参考
+## IFC 统一技术参考（R69+ 代码级上下文 — 已归档）
 
-> 本节为 R69+ 执行 agent 提供精确的代码级上下文，避免重复探索。
-
-### 三套 IFC 运行路径
-
-当前系统在三个不同时机运行 IFC，使用不同的上下文参数：
-
-| # | 函数 | 文件:行 | styles | 时机 | 作用 |
-|---|------|---------|--------|------|------|
-| ① | `measure_text_content` | `engine.rs:1462` | 真实 `styles` | taffy 布局中（measure callback） | 返回 `Size{width, height}`，taffy 据此计算块级位置 |
-| ② | `remeasure_text_with_float_exclusions` | `engine.rs:2150` | 真实 `styles` | taffy 布局后（step 6） | 重新 IFC + float exclusion，存储 5 个 override map，更新容器高度（shrink） |
-| ③ | `paint_text` → IFC | `text.rs:884` | **空 `HashMap::new()`** | paint 阶段 | 生成 glyph 图元，依赖 5 个 override map 回退字体度量 |
-
-**当前 use_stored 路径**：`text.rs:788` 检查 `box_node.inline_layout.is_some()` 且宽度匹配时直接复用存储的 IFC 片段位置，不运行 IFC ③。此路径代码就绪但 `inline_layout` 当前始终为 `None`（因为 `compute_final_inline_layouts` 在 `engine.rs:198` 被注释禁用）。
-
-### Paint IFC override 覆盖缺口
-
-`collect_inline_items`（`inline/mod.rs:708`）在 styles 为空时通过以下 override 回退。**粗体**标记影响行断（字符宽度）的属性：
-
-| 属性 | 覆盖机制 | 覆盖状态 | 影响 |
-|------|---------|---------|------|
-| **`font_size`** | `font_size_overrides[parent_id]` → 16px | ✅ 已覆盖 | **宽度 + 行高** |
-| `line_height` | `line_height_overrides[parent_id]` → fs×1.2 | ✅ 已覆盖 | 仅行高 |
-| **`letter_spacing`** | `letter_spacing_overrides[parent_id]` → 0 | ✅ 已覆盖 | **宽度** |
-| **`word_spacing`** | 无覆盖机制 | ❌ 始终为 0 | **宽度** |
-| **`is_ahem_font`** | `is_ahem_overrides[parent_id]` → false | ✅ 已覆盖 | **宽度** (0.55fs vs 1.0fs) |
-| `vertical_align` | 无覆盖机制 | ❌ 始终为 Baseline | 行盒对齐 |
-| **`margin_left/right`** (inline 元素) | 无覆盖机制 | ❌ 始终为 0 | **宽度** |
-| `padding/border` (inline 元素) | 无覆盖机制 | ❌ 始终为 0 | 行高 |
-
-### 已穷尽的不可行路径（R37-R68 共 32 轮）
-
-以下所有路径均已尝试并回退，**R69+ 不需要重试**：
-
-| 路径 | 结果 | 根因 |
-|------|------|------|
-| 修改 glyph advance (render_fs) | 回归 | 字形推进与 IFC 片段位置不一致 |
-| 传递完整 styles 到 paint IFC | 回归 -5~-6 | 行断行为改变 |
-| 存储 layout IFC 结果（所有变体） | 回归 -4~-6 | 存储 IFC 上下文与 paint 时不同 |
-| font_size_overrides 启用 | 零改进（R45）/ 可能回归 | 行断变化 |
-| is_ahem glyph advance 修改 | 回归 -2~-3 | 字形推进与 IFC 行断不一致 |
-| letter_spacing_overrides 启用 | 零改进 | — |
-| line_height_overrides 启用 | 零改进 | 仅影响垂直，不影响水平 |
-| inline_element_metrics 启用 | 零改进 | 仅影响垂直 |
-| default_font_metrics 传递 | 回归 -6 | font_size 变化导致行断不一致 |
-| taffy measure callback IFC 缓存 | 回归 -5 | 多次 measure 调用的 available_space 不同 |
-| 外边缘边框完整厚度 | 回归 -2 | taffy 单元格定位冲突 |
-
-### 存储 IFC vs Paint IFC 基线计算差异
-
-存储 IFC 的 fragment 基线位置计算与 paint IFC 的 glyph 基线位置不同：
-
-```
-存储 IFC：baseline_y = frag.y + frag.height     （line-height 盒底边）
-paint IFC：baseline_y = frag.y + font_size      （当前 paint 使用）
-差值 = (line_height - font_size) / 2            （半行距）
-```
-
-启用 `use_stored` 路径时，需要统一基线计算。推荐以存储 IFC 的 `frag.y + frag.height` 为准（CSS 规范中 line-height 半行距分布在文字上下）。
-
-### IFC 统一完成度检查清单
-
-```
-✅ LayoutBox.inline_layout: Option<Vec<InlineLayoutLine>>    (engine.rs:167)
-✅ LayoutBox.inline_layout_width: f32                          (验证容器宽度匹配)
-✅ compute_final_inline_layouts() 函数实现                    (engine.rs:1175)
-✅ paint 侧 use_stored 路径                                   (text.rs:788)
-✅ store_font_sizes_from_ifc() 5 个 override map              (engine.rs:874)
-✅ remeasure 高度收缩 → sibling reflow (shrink)               (R68)
-❌ compute_final_inline_layouts 启用                          (engine.rs:198 被注释)
-❌ remeasure 高度增长 → sibling reflow (grow)                  (仅处理 shrink)
-❌ table/multicol 后处理后重新运行 IFC                         (宽度可能改变)
-❌ 存储 IFC vs paint 基线计算对齐                             (frag.height vs font_size)
-```
-
-### Taffy Fork 状态
-
-项目已 fork taffy 0.7.7 到 `crates/taffy-local/`（~16,400 行），通过 workspace `[patch.crates-io]` 替换 crates.io 版本。当前仅有一个自定义补丁：
-
-- `cached_baselines()` 访问器（`cache.rs:187`, `taffy_tree.rs:853`）— 暴露 taffy 内部缓存的 `first_baselines`，供 inline-flex/inline-grid 基线提取
-
-**结论**：不需要深度修改 taffy。IFC 统一通过在 remeasure 后处理阶段（taffy 布局完成后）存储完整 IFC 结果并传播高度变化来实现，不涉及 taffy 内部算法变更。
+> 三套 IFC 运行路径（measure / remeasure / paint）、paint-IFC override 覆盖缺口、R37–R68 已穷尽不可行路径表、存储 vs paint 基线差异、完成度清单、Taffy Fork 状态等代码级细节已迁出至 [`archive/r69-ifc-unification-technical-reference.md`](./archive/r69-ifc-unification-technical-reference.md)（无入站引用，归档前核查）。现代 Phase A 规划见 [`phase-a-IFC-unification-design.md`](./phase-a-IFC-unification-design.md)；当前 plateau 结论见顶部「综合裁决」表。
 
 ---
 
@@ -766,7 +627,7 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 
 > 全部逐轮详记已归档（master.md 仅保留顶部「综合裁决」表的结构化结论，避免无限增长）：R335–R336 → [`archive/rounds-r335-r336.md`](./archive/rounds-r335-r336.md)；R314–R334 → [`archive/rounds-r314-r334.md`](./archive/rounds-r314-r334.md)；R307–R313 → 各单轮归档（[`rounds-r307.md`](./archive/rounds-r307.md) … [`rounds-r313.md`](./archive/rounds-r313.md)）；R305–R306 → [`rounds-r305-r306.md`](./archive/rounds-r305-r306.md)；R304 → [`r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)；R303 → [`r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)；R142–R302 → [`rounds-r142-r302.md`](./archive/rounds-r142-r302.md)；R23–R139 → [`rounds-r23-r139.md`](./archive/rounds-r23-r139.md)；R11–R20 → [`rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)；R118–R227 技术决策表 → [`tech-decisions-r118-r227.md`](./archive/tech-decisions-r118-r227.md)。逐轮结论摘要见顶部「综合裁决」表。
 
-> **待归档候选（后续治理轮）**：`## 初始 Reftest 通过率数据`（M6/2026-06-07 inline 100% 明细，已标「不计达标」）、`## IFC 统一技术参考` + `## IFC 之外的其他卡点`（卡点 #2–#9，R68 时代前置 plateau 框架，已被顶部「综合裁决」表 + 「已知关键缺口」表取代）——均为 R305 plateau 前的历史分析，自包含、无入站引用，后续轮次可安全迁出。
+> **待归档候选（后续治理轮）**：`## IFC 之外的其他卡点`（卡点 #2–#9，R68 时代前置 plateau 框架，已被顶部「综合裁决」表 + 「已知关键缺口」表取代）。⚠️ **有 live 入站引用**——`multicol-phase2-unified-column-flow-spec.md`（line 28/48）以「master.md『IFC 之外的其他卡点 #2/#4』」为权威引用，归档须保留 section 锚点 stub（逐卡点一行摘要 + 指向 archive）或同步更新该 spec 的 2 处引用，否则产生 dangling pointer。
 
 
 
