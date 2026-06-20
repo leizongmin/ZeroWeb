@@ -198,3 +198,38 @@ fn test_inline_block_text_content_shrink_to_fit() {
         s.width
     );
 }
+
+/// 回归（R372）：`display:inline` 且带非默认 background 的元素（如 morning.work
+/// `.item-tag` 徽章 span）也应 shrink-to-fit。旧 bug：ZeroWeb 把 inline 映射为 taffy
+/// Block，拉到容器满宽（满宽色条）；此处按 intrinsic 内容宽收缩（仅 width 维度，
+/// 完整 inline-box 模型属 Phase A）。纯文本 inline span（无 background）不受影响。
+#[test]
+fn test_inline_element_with_background_shrink_to_fit() {
+    // inline span `.tag`（display:inline 默认 + background-color）含文本 "Fedora"，
+    // 应收缩到 ~文本宽+padding，而非填满 800px 视口。
+    let html = r#"<html><body style="margin:0">
+      <span class="tag" id="t" style="background-color:#607cd2;color:#fff;padding:0 6px">Fedora</span>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+    let t = find("t", &doc, &result.root).expect("inline span #t");
+    assert!(
+        t.width < 200.0,
+        "inline+background span should shrink-to-fit to content, not fill available (got w={})",
+        t.width
+    );
+}

@@ -5,7 +5,7 @@
 //! 垂直书写模式块收缩、inline-block shrink-to-fit、匿名 table 根标记。
 
 use std::collections::HashMap;
-use zero_css_parser::values::{DisplayValue, LengthValue};
+use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue};
 use zero_dom::NodeId;
 use zero_style_system::{ComputedStyle, WritingModeValue};
 
@@ -115,15 +115,23 @@ pub(crate) fn shrink_inline_blocks_to_content(
 ) {
     let own_horizontal = matches!(box_node.writing_mode, WritingModeValue::HorizontalTb);
     if own_horizontal && !box_node.is_absolute && !box_node.is_fixed {
-        let is_inline_block = box_node.node_id.is_some_and(|id| {
-            styles
-                .get(&id)
-                .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+        // R372：除 inline-block 外，**带非默认 background 的 inline 元素**（如 morning.work
+        // `.item-tag` 徽章 span：display:inline + background-color + padding）也应 shrink-to-fit。
+        // ZeroWeb 把 inline 映射为 Block 拉到满宽（满宽色条），此处按 intrinsic 内容宽收缩
+        // （仅 width 维度；元素仍是 block 堆叠——完整 inline-box 模型属 Phase A 多会话）。
+        // 仅对有 background 的 inline 触发，避免影响纯文本 inline span（其文本经 IFC 收集，
+        // 无盒装饰，收缩无意义且可能干扰）。
+        let is_shrinkable = box_node.node_id.is_some_and(|id| {
+            styles.get(&id).is_some_and(|s| match s.display {
+                DisplayValue::InlineBlock => true,
+                DisplayValue::Inline => s.background_color != ColorValue::Transparent,
+                _ => false,
+            })
         });
         let width_auto = box_node
             .node_id
             .is_some_and(|id| styles.get(&id).is_some_and(|s| matches!(s.width, LengthValue::Auto)));
-        if is_inline_block && width_auto {
+        if is_shrinkable && width_auto {
             // 内容最大宽度（max-content）：用 intrinsic_sizing 的统一测量（box_content_max_width）。
             // 该函数对 inline 级子元素水平求和、block 级子元素递归取最大、且对**无 LayoutBox 子元素
             // 的纯文本内容**（文本经 measure callback 不产生子盒）按 DOM text_content + 字体度量
