@@ -9,8 +9,26 @@
 //   node chromium-oracle-shot.mjs [--per-dir N] [--all] [--out DIR]
 //
 // 依赖：puppeteer-core（npm install）+ 系统 chromium（/usr/bin/chromium）。
+//
+// **R388 oracle-invalidation 修复**：原实现用 `file://` 加载 test 文件，
+// 但上游 WPT reftest 的样式表与字体用**绝对路径**引用（如
+// `<link href="/fonts/ahem.css">`、ahem.css 内 `url("../../fonts/Ahem.ttf")`）。
+// `file://` 把 `/fonts/...` 解析为文件系统根（不存在）→ Ahem.css / 字体加载失败
+// → chromium 退回 fallback 字体 → Ahem 方块字形（应为实心 1em 方块）变成细 X
+// → 几何崩溃、底色大面积外露（ifc-008 oracle 实测 85% 红底 vs 正确 0% 红）。
+// 后果：108 个 Ahem 依赖 reftest 的 oracle 全部损坏，cross-validate 把
+// ZeroWeb 的正确渲染误判为「chromium 不一致」（ifc-008 Z_vs_chr 7.93% 是假发散，
+// 正确 oracle 下仅 0.52%）。
+//
+// 修复：脚本内嵌一个 root=DATA_ROOT 的本地静态 HTTP server，用 `http://localhost`
+// 加载 test。此时 `/fonts/ahem.css` → DATA_ROOT/fonts/ahem.css、
+// `../../fonts/Ahem.ttf`（相对 /fonts/ahem.css）→ /fonts/Ahem.ttf =
+// DATA_ROOT/fonts/Ahem.ttf，均存在 → @font-face 正常加载 Ahem → oracle 正确。
+// 此方案自包含、不依赖系统是否安装 Ahem，避免 oracle 静默损坏复发。
 import { readFile, mkdir } from 'node:fs/promises';
-import { join, dirname, basename } from 'node:path';
+import { createReadStream, statSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { join, dirname, basename, extname, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -38,6 +56,51 @@ const categoryOf = (p) => {
   const i = parts.indexOf('css');
   return i >= 0 && parts[i + 1] ? 'css/' + parts[i + 1] : '(other)';
 };
+
+// 内嵌静态 HTTP server（root=DATA_ROOT）。R388：用 http:// 取代 file://，
+// 让上游 reftest 的绝对路径 `/fonts/ahem.css` 与相对 `../../fonts/Ahem.ttf`
+// 都解析到 DATA_ROOT 下的真实文件（见文件头注释）。返回 { url, close }。
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.htm': 'text/html; charset=utf-8',
+  '.xht': 'application/xhtml+xml; charset=utf-8',
+  '.xhtml': 'application/xhtml+xml; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+};
+async function startStaticServer(rootDir) {
+  const root = resolve(rootDir);
+  const server = createServer((req, res) => {
+    // 解码 + 规范化，禁止路径逃逸到 root 之外
+    const decoded = decodeURIComponent((req.url || '/').split('?')[0]);
+    const filePath = normalize(join(root, decoded));
+    if (!filePath.startsWith(root)) {
+      res.writeHead(403); res.end('403'); return;
+    }
+    statSafe(filePath).then(([ok, isFile]) => {
+      if (!ok || !isFile) { res.writeHead(404); res.end('404'); return; }
+      res.writeHead(200, { 'Content-Type': MIME[extname(filePath).toLowerCase()] || 'application/octet-stream' });
+      createReadStream(filePath).pipe(res);
+    }).catch(() => { res.writeHead(404); res.end('404'); });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const { port } = server.address();
+  return { url: `http://127.0.0.1:${port}`, close: () => new Promise((r) => server.close(r)) };
+}
+// stat 包裹（避免 throw；返回 [exists, isFile]）
+async function statSafe(p) {
+  try { const s = statSync(p); return [true, s.isFile()]; } catch { return [false, false]; }
+}
 
 async function main() {
   const opts = parseArgs();
@@ -69,12 +132,15 @@ async function main() {
   });
   await mkdir(opts.out, { recursive: true });
 
+  // R388：启动本地静态 server（root=DATA_ROOT），用 http:// 加载 test。
+  const server = await startStaticServer(DATA_ROOT);
+
   let ok = 0, fail = 0;
   for (const e of sample) {
     const page = await browser.newPage();
     await page.setViewport({ width: 800, height: 600 });
     try {
-      const url = 'file://' + join(DATA_ROOT, e.test);
+      const url = `${server.url}/${e.test}`;
       await page.goto(url, { waitUntil: 'networkidle0', timeout: 8000 });
       await new Promise(r => setTimeout(r, 80));
       await page.screenshot({ path: join(opts.out, safeId(e.test) + '.png'), type: 'png' });
@@ -87,6 +153,7 @@ async function main() {
     }
   }
   await browser.close();
+  await server.close();
   console.log(`Done: ${ok} captured, ${fail} failed -> ${opts.out}`);
 }
 
