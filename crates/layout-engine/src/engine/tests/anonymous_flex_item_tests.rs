@@ -155,3 +155,46 @@ fn test_inline_block_width_auto_shrink_to_fit() {
         o.width
     );
 }
+
+/// 回归（R368）：width:auto 且仅含**文本内容**（无 block/inline 子元素）的 inline-block
+/// 也必须 shrink-to-fit。旧 `shrink_inline_blocks_to_content` 仅遍历 LayoutBox 子元素求宽，
+/// 而文本经 measure callback 不产生子盒 → content_max_w=0 → 不收缩 → inline-block 被拉到
+/// 容器满宽。ifc-011 的 `<span style="display:inline-block;border:20px solid blue;font:50px Ahem">X</span>`
+/// 即此情形：应收缩到 ~90（50 文本 + 40 border）而非 784。修复改用 intrinsic_sizing 的
+/// `box_content_max_width`（按 DOM text_content + 字体度量累加）。
+#[test]
+fn test_inline_block_text_content_shrink_to_fit() {
+    // inline-block `.s`（width:auto）仅含文本 "XX"，Ahem 等宽 50px → 文本宽 100，
+    // + border 20×2 = 140，应收缩到 ~140 而非填满 800px 视口。
+    let html = r#"<html><body style="margin:0">
+      <span class="s" id="s" style="display:inline-block;border:20px solid blue;font:50px/1 Ahem">XX</span>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+    let s = find("s", &doc, &result.root).expect("inline-block #s");
+    assert!(
+        s.width < 200.0,
+        "width:auto inline-block with text content should shrink-to-fit (~140px), not fill available (got w={})",
+        s.width
+    );
+    // 文本 "XX" Ahem 50px = 100 + 左右 border 各 20 = 140。
+    assert!(
+        (s.width - 140.0).abs() < 1.5,
+        "expected inline-block width ~140px (100 text + 40 border), got w={}",
+        s.width
+    );
+}

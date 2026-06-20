@@ -238,7 +238,7 @@ impl LayoutEngine {
         shrink_vertical_blocks_to_content(&mut root_box, styles, &WritingModeValue::HorizontalTb);
 
         // 5.6 后处理：width:auto 的 inline-block 收缩到内容宽度（shrink-to-fit，§10.3.9）
-        shrink_inline_blocks_to_content(&mut root_box, styles);
+        shrink_inline_blocks_to_content(&mut root_box, doc, styles);
 
         // 5.7 后处理（R109 §9.2.1.1）：split inline 的匿名块片段收缩到文本宽 +
         // fragment border 边选择（首片段开放右、末片段开放左），使 inline 的
