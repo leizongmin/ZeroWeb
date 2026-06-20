@@ -11,8 +11,10 @@
 
 ## 0. 执行摘要
 
+> **⚠️ v1.0-gate（R381，2026-06-20）：Phase 1 紧急停止——§10 假设 A1 验证为 FALSE**。扫描全 16 个 css-multicol 失败案结构，**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）。每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套。**Phase 1（pure-inline balance）无目标案、零杠杆**；真实 multicol 失败全需 **Phase 2（嵌套/breaking/混合碎片化，多会话硬核）**。spec 自身 §10 协议「A1 不存在→紧急停止转 Phase 2」已生效。下方 Phase 1 设计保留作参考与 Phase 2 的算法基础，**勿再以 Phase 1（pure-inline balance）为单会话 lever 重试**。
+
 - **一句话目标**：把 multicol 容器（`column-count`/`column-width`）的**行内流（inline）内容**在 **layout 阶段**按列高预算碎片化到各列并存储，paint 直接消费存储结果——取代当前 paint 侧 `text.rs:713` 门控重算（已由 R157/R198/R203/R317 四轮实证 net-negative）。
-- **本期范围（Phase 1）**：仅**单层、非嵌套** multicol 容器，`column-fill: balance`（默认）+ **明确高度**（height ≠ auto）+ 纯 inline 内容（无 block 子元素）。该子集当前因 `text.rs:713` 的 `height_auto` 门控**回退为单块渲染（错误）**，layout 侧填充新字段可纯改善。
+- **本期范围（Phase 1）**：仅**单层、非嵌套** multicol 容器，`column-fill: balance`（默认）+ **明确高度**（height ≠ auto）+ 纯 inline 内容（无 block 子元素）。该子集当前因 `text.rs:713` 的 `height_auto` 门控**回退为单块渲染（错误）**，layout 侧填充新字段可纯改善。**⚠️ v1.0-gate：该范围在失败集中 0 匹配，Phase 1 停止。**
 - **明确排除（本期）**：① 嵌套 multicol（outer column-fill:auto 把 inner 碎片化，multicol-breaking-004/005/006）= Phase 2（真 fragmentation）；② `column-fill: auto` 顺序填充的 inline 内容（由 multicol.rs block 侧 + paint 协调，独立子问题）；③ block 子元素碎片化（multicol.rs `assign_children_to_columns_*` 已实现，**不重复**）。
 - **核心约束**：① 零 reftest 回归（loose 438/490 不退）；② 不改 height:auto 现有路径（paint 侧门控保持 load-bearing，R317）；③ 单 `.rs` 文件 ≤2000 行；④ 测试用 `make test`/`make reftest`（test-guard 包裹）。
 - **推荐方案**：新增 `LayoutBox.inline_multicol_columns: Option<Vec<Vec<InlineLayoutLine>>>`（每列行盒），layout 侧 `assign_lines_to_columns_balanced`（行盒版，与 block 侧 `assign_children_to_columns_balanced` 同族但作用于 `InlineLayoutLine`），paint 侧优先消费该字段（None 时回退现有逻辑）。
@@ -419,7 +421,7 @@ return cols
 
 | ID | 项目 | 优先级 | 缺失信息 | 下一步 |
 |----|------|--------|----------|--------|
-| A1 | 「单层 balance 明确高度纯 inline」multicol 失败用例是否存在、diff 是否来自未列分布 | 重要（决定 Phase 1 价值） | 未 probe wpt-data | 实施第一步：grep + REFTEST_DUMP；若不存在 → 紧急停止，转 Phase 2 设计 |
+| A1 | 「单层 balance 明确高度纯 inline」multicol 失败用例是否存在、diff 是否来自未列分布 | 重要（决定 Phase 1 价值） | ~~未 probe wpt-data~~ **已验证（R381，2026-06-20）= FALSE** | **gate 结果：A1 FALSE → Phase 1 紧急停止，转 Phase 2**。扫描全 16 个 css-multicol 失败案结构（height / column-fill / 列数 / block 子元素数）：**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline/blockchildren=0）。每个失败案要么有 block 子元素（baseline-007/008、multicol-collapsing/count-computed/block-no-clip/containing/count-002、column-height-009、abspos-spanner 7+ blockchildren）、要么 height:auto（multicol-columns-001、multicol-fill-000）、要么 column-fill:auto（multicol-fill-auto-001 sentinel、breaking-004/005/006/nobackground-004）。与 R319（纯 inline 迁移零增益）+ R317（放宽 height_auto 门控回归 -5）一致。**结论：Phase 1（pure-inline balance）无目标案，零杠杆；真实 multicol 失败全需 Phase 2（嵌套/breaking/混合碎片化）= 多会话硬核** |
 | A2 | 行盒平衡高度分布对明确高度容器是否与 chromium 一致 | 重要 | 未单用例验证 | Phase 1 实施时逐用例 z_vs_chr 验证 |
 
 ---
@@ -429,3 +431,4 @@ return cols
 | 版本 | 日期 | 变更内容 |
 |------|------|----------|
 | v1.0 | 2026-06-19 | 初始版本（R319，spec-rfc 完整模式，自主产出） |
+| v1.0-gate | 2026-06-20 | **R381 gate 验证：§10 A1 = FALSE（0/16 失败案匹配 Phase-1 目标结构）→ Phase 1 紧急停止，转 Phase 2 设计**。扫描全 16 css-multicol 失败案（height/column-fill/blockchildren）：全有 block 子元素或 height:auto 或 column-fill:auto 或 breaking/嵌套。Phase 1（pure-inline balance）零杠杆；真实 lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）。spec 自身 §10 协议「A1 不存在→紧急停止转 Phase 2」生效 |
