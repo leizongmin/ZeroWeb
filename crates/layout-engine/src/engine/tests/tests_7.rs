@@ -692,3 +692,52 @@ fn test_r355_multiline_stored_layout_pure_ahem() {
         fl_box.inline_layout.is_some()
     );
 }
+
+/// R362：CSS float 侵入——祖先 BFC 内的 float 应侵入未建 BFC 的后代 block 的 line box。
+/// d1 含 float 子 d2（右浮 100x100）+ 兄弟 block inner（文本 "X X X"，100px Ahem，300px 容器）。
+/// inner 的 IFC 应见 d2 排除：line 1（紧邻 float，可用 200px）只容 "X"，line 2（float 下方 300px）容 "X X"。
+/// 修复前 inner 的 IFC 不感知 d2 → line 1 容 "X X"（满宽 300px），与本断言冲突。
+#[test]
+fn test_r362_float_intrusion_propagates_to_sibling_block_ifc() {
+    let html = "<html><body>\
+<div id=\"d1\" style=\"font: 100px/1 Ahem; width: 300px; height: 200px;\">\
+<div id=\"d2\" style=\"float: right; width: 100px; height: 100px;\"></div>\
+<div id=\"inner\">X X X</div>\
+</div></body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut style_system = StyleSystem::new();
+    style_system.set_viewport(800.0, 600.0);
+    let styles = style_system.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let mut inner_box = None;
+    let mut stack = vec![&result.root];
+    while let Some(node) = stack.pop() {
+        if let Some(nid) = node.node_id
+            && let Some(dn) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(el) = &dn.kind
+            && el.get_attribute("id").as_deref() == Some("inner")
+        {
+            inner_box = Some(node);
+        }
+        stack.extend(node.children.iter());
+    }
+    let inner_box = inner_box.expect("#inner");
+
+    let lines = inner_box
+        .inline_layout
+        .as_ref()
+        .expect("#inner 应存储 inline_layout（纯 Ahem 非浮动）");
+    let line1_text: String = lines
+        .first()
+        .map(|l| l.fragments.iter().map(|f| f.text.as_str()).collect())
+        .unwrap_or_default();
+    let line1_x_count = line1_text.matches('X').count();
+    assert!(
+        lines.len() >= 2 && line1_x_count == 1,
+        "R362 float 侵入：line 1 应只含 1 个 X（绕开 float，200px 可用），实际 lines={} line1_text={:?}",
+        lines.len(),
+        line1_text
+    );
+}

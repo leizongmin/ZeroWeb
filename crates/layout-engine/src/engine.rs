@@ -296,7 +296,7 @@ impl LayoutEngine {
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
-        compute_final_inline_layouts(&mut root_box, doc, styles);
+        compute_final_inline_layouts(&mut root_box, doc, styles, &[]);
 
         // 12.5 后处理：修正 calc(P% ± Npx) 尺寸。
         // taffy 不支持 calc 表达式，convert 层将 calc(100% - 6px) 近似为 Percent(1.0)。
