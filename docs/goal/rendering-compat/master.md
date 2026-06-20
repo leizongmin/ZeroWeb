@@ -1,6 +1,6 @@
 # 渲染兼容性目标 — 运行时控制面板
 
-**最后更新**: 2026-06-22（**R402** doc-maintenance 自洽性修复：稽核发现 chromium-Oracle 数在 3 处仍用 pre-R391 stale 值（M10 里程碑 / 上游真实通过率 / 下一步 的 `~35.6%`/`~36%`/`48.6%`），统一纠正为 R391 诚实基线 **42.1% (broad, 200/475) / 37.3% (strict, 177/475) / 46.5% 污染**（governance §1 各章节自洽；pre-R388 35.8% 被损坏 Ahem oracle 压低已修）；同时把 self-source 基线更新为 R401 grid 全量后的 **456/518 (88.0%)**（grid 真通过率 62.5% vs 子集 ~100%；混合口径=grid 全量 + 8 目录仍 60-子集）。R401（commit d593f9c）= 权威发现工具 `discover-reftests-authoritative.py` + css-grid 全量导入 + 实测，已提交。零代码变更（本轮 read-only 文档自洽）。｜**R395–R400 摘要**：R395 前向=DC-14 分母去子集化（N_imported 仅上游 ~5-6%，详 [`evidence/r394-dc14-denominator-gap-2026-06-22.txt`](./evidence/r394-dc14-denominator-gap-2026-06-22.txt)；R401 落地 `discover-reftests-authoritative.py` + css-grid 全量）；R396/R400 grid 缺口簇+特性杠杆扫描→0 R351 clean win；R397–R399 归档 4 块 R68 stale 节。结构化结论见下方「综合裁决」表，R381–R393 verbose 详记见 [`archive/rounds-r381-r393-header.md`](./archive/rounds-r381-r393-header.md)。）
+**最后更新**: 2026-06-22（**R403** doc-maintenance：完成 R402 自洽性修复的**传播收尾**——R402（commit 0bed15f）只更新了 header + 综合裁决 header + line 342，遗留 7 处 stale（M10 里程碑 / 上游通过率 loose / 下一步 / 初始通过率指针 / R395→R401 归因 / 轨道 1 grid 状态），本轮全部统一到 R401 grid 全量后基线 **self-source 456/518 (88.0%) / grid 真通过率 30/48=62.5% / chromium-Oracle 42.1% (broad)** + 轨道 1 标记 grid 已完成（下批 position/tables）。零代码变更（read-only 文档自洽；并行 agent 已提交 R401 数据 d593f9c + R402 首批 fold-in 0bed15f）。｜**R395–R402 摘要**：R401（d593f9c）权威发现工具 + css-grid 全量（48 对），揭示 grid 真通过率 62.5% vs 子集 ~100%（子集高估 ~37pp），self-source 90.4%→88.0%；R396/R400 grid 缺口簇+特性扫描→0 clean win；R397–R399 归档 4 块 R68 stale 节。结构化结论见下方「综合裁决」表，R381–R393 verbose 详记见 [`archive/rounds-r381-r393-header.md`](./archive/rounds-r381-r393-header.md)。）
 
 **doc-maintenance（2026-06-20 verify 轮）**：plateau 结论 read-only 复核成立（R354 fresh baseline 439/490 零漂移、clean-win 面 R351 后穷尽），无需新调整方向——现有「综合裁决 + 下一步」即当前结论。文档治理两项：① 将「技术决策记录」表中 **R118–R227 逐轮历史条目**（50 行，2026-06-14~17，远超最近 20 轮窗口，主体已在 rounds-r23-r139 / rounds-r142-r302 归档）迁出至 [`archive/tech-decisions-r118-r227.md`](./archive/tech-decisions-r118-r227.md)（50 行 → 1 指针行，master.md 833→786 行）；② 纠正「最近轮次详细记录」窗口标注（R335–R336 为最后两轮全文详记，R337–R354 为 plateau 复核/治理轮，精简结论见上方「综合裁决」表）。本轮零代码变更（并行 agent 正在 layout-engine 开发，未触碰）。
 
@@ -86,7 +86,7 @@
 
 > **⚠️ 子集范围警示（R395）**：下述「渲染架构」轨道（2-4）的目标都是子集分母下的失败聚类。R394 实测当前导入仅上游 **~5-6%**（503/~8000-10000），R384「单会话 clean-win 47/47 穷尽」、R351-R393 的聚类归因**全部基于此子集**。全量集合含未检失败模式，clean-win 面与各架构轨道的真实 ROI 都须在去子集化后重新评估——**不可把子集结论外推为全局穷尽**。
 
-1. **【优先·已落地】DC-14 分母去子集化** — gating DC-14 硬门禁（goal line 317/843）：达标判定前必须用上游每目录**全量** reftest。最可操作的多会话增量 = Phase 2 小目录全量导入（grid 63 / position 149 / tables 203，合计 ~415 案可达 100% 覆盖）→ 再扩大目录（flexbox 586 / writing-modes 855 / multicol 537 / text-decor 356 / fonts 391）→ 最后 CSS2（~5000-7000）。每批 reftest + chromium-Oracle 复测，监控真通过率。**状态**：并行 agent 已建 `discover-reftests-authoritative.py`（按 `<link rel=match>` 权威解析 test→ref 对，替代文件名启发式）+ 正在导入 css-grid 全量（18→39→63 进行中）。详见 [`evidence/r394-dc14-denominator-gap-2026-06-22.txt`](./evidence/r394-dc14-denominator-gap-2026-06-22.txt)。
+1. **【优先·grid 已完成】DC-14 分母去子集化** — gating DC-14 硬门禁（goal line 317/843）：达标判定前必须用上游每目录**全量** reftest。最可操作的多会话增量 = Phase 2 小目录全量导入（grid ✅ / position 149 / tables 203）→ 再扩大目录（flexbox 586 / writing-modes 855 / multicol 537 / text-decor 356 / fonts 391）→ 最后 CSS2（~5000-7000）。每批 reftest + chromium-Oracle 复测，监控真通过率。**状态**：R401（commit d593f9c）**已完成 css-grid 全量导入**（48 权威对，真通过率 30/48=62.5% vs 子集 ~100%，self-source 整体 90.4%→88.0%）+ `discover-reftests-authoritative.py` 工具可复用于其余 8 目录。下批：position(149)/tables(203)。详见 [`evidence/r401-dc14-grid-full-authoritative-2026-06-22.txt`](./evidence/r401-dc14-grid-full-authoritative-2026-06-22.txt) + [`evidence/r394-dc14-denominator-gap-2026-06-22.txt`](./evidence/r394-dc14-denominator-gap-2026-06-22.txt)。
 2. **【渲染架构·子集范围内穷尽】Phase A IFC 三路径统一** — paint 不重跑 IFC，直接渲染 layout 存储的行盒（R205/R207 viable slice 已证 font-051 可行；R355 多行存储 / R358 per-fragment color / R362 float 侵入 三个 narrow viable-slice 已成；broad 应用需多轮 narrow 精修 + 守 multicol-fill-auto 反向依赖墙）。设计文档 [`phase-a-IFC-unification-design.md`](./phase-a-IFC-unification-design.md)。
 3. **【渲染架构·子集范围内穷尽】Phase 2 嵌套 multicol fragmentation** — layout 侧 column-aware IFC + 嵌套列碎片化（R131/R201；R319 证纯 inline 迁移零增益，真实价值在嵌套 / 混合内容；R383 证混合内容修复前置依赖 Phase A / R109 解转换）。设计文档 [`multicol-fragmentation-design.md`](./multicol-fragmentation-design.md)、[`column-aware-IFC-spec.md`](./column-aware-IFC-spec.md)。
 4. **【渲染架构·子集范围内穷尽】baseline-export 真修复** — taffy 0.8+ baseline_overrides（需先解 R304 升级冲突）或自建 inline-level-box baseline 合成；解 flexbox-baseline / multicol-baseline 聚类（~10+ 案）。
@@ -494,7 +494,7 @@ near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-x
 ### 已完成里程碑（参考，非当前活跃）
 
 - M1–M9 基础设施 + 渲染器图元覆盖 + 浏览器消费 + 布局正确性 + 高级视觉效果：**已完成**（见下方「里程碑完成状态」「Done Criteria 进度」）。
-- M10 上游 WPT reftest：基础设施完成，通过率 plateau（443/490 loose），达标需上述多会话架构。
+- M10 上游 WPT reftest：基础设施完成，通过率 plateau（456/518 loose，grid R401 扩到全量后），达标需 DC-14 全量去子集化 + 上述多会话架构。
 
 ---
 
