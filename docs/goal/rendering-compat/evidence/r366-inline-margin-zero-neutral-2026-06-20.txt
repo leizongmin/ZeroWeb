@@ -30,3 +30,25 @@ inline-flex 等原子行内级盒），在 taffy margin 块把 top/bottom 归零
 （把 inline 元素从 taffy block-mapping 剥离、改为纯 IFC 行内盒），即多会话架构。
 forward motion 唯余此架构承诺，surface patch 已证穷尽。
 ================================================================
+
+================================================================
+追加（同轮）：Phase A inline→block 重写只读探针——锚定入口 + 证伪 safe-staging
+================================================================
+探针目的：为多会话 inline→block 映射重写定位安全分阶段迁移切片。
+发现：
+1. **映射入口**：converter/mod.rs convert_display() 第 43 行
+   `DisplayValue::Inline | InlineBlock | Flow | FlowRoot | ListItem | Contents => Block`。
+   纯 Inline 元素被 taffy 当 block 子布局，获 block 几何（mt/mb/w/h）。
+2. **paint 消费**：painter/mod.rs:398-415 用 box_node（taffy block 几何）绘制
+   background/border，包括 inline 元素——故 inline 的盒装饰按 block 盒画（错）。
+3. **IFC 不追踪 inline 盒范围**：IFC（collect_inline_items / fragments）只处理文本，
+   不产出 inline 元素的盒装饰范围（用于 paint bg/border/padding）。故无现成 inline-box
+   几何可供 paint 消费——重写须先在 IFC 侧生成 inline 元素盒范围。
+4. **无 safe-staging 切片**：纯文本 inline（无盒装饰）现行 block-mapping 已无害
+  （空 block 盒不可见，文本由 IFC 定位）；有盒装饰的 inline（empty-inline-002 的 span）
+   需完整 inline-box 模型（margin/padding/border 按 line-box 绘制）。两类之间无安全中间档
+   ——重写对盒装饰 case 是 all-or-nothing。
+结论：Phase A inline→block 重写**无 safe single-session staging**，须多会话整体推进
+（IFC 生成 inline 盒范围 → paint 消费 → 从 taffy block 树剥离 inline）。surface patch
+（R366）与 clean-win（R352-R365）双穷尽后，此为唯一路径但非单会话可成。
+================================================================
