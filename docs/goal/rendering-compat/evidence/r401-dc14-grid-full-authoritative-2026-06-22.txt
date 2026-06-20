@@ -54,3 +54,30 @@ css-writing-modes (855)，每批 reftest 复测 + oracle 补抓，监控各目�
 - 新增 `tests/wpt-runner/scripts/discover-reftests-authoritative.py`（权威发现工具，~90 行）。
 - 新增 `tests/wpt-runner/wpt-data/css/css-grid/` 32 个 test/ref + `css/reference/` 共享 ref。
 - 零 Rust 变更（runner 已支持权威发现，无需改）。零回归（grid 扩量是新数据，非渲染变更）。
+
+## 补充：grid chromium-Oracle 全量测量（R401 续，捕获 50 oracle 后）
+
+为新 grid 案补抓 oracle（HTTP server root=wpt-data，50/50 成功），测 grid 在全量 48 上的
+chromium-Oracle 一致性：
+
+```
+grid chromium-Oracle (full 48):  chr<1% 一致 = 19 (39.6%), 1-5% = 23, >5% = 6
+```
+
+**grid 完整 DC-14 全景（full authoritative 48 案）**：
+
+| 指标 | 子集 (18) | 全量 (48) | delta |
+|------|----------|----------|-------|
+| self-source 通过率 | ~100% | **62.5%** (30/48) | −37pp |
+| chromium-Oracle chr<1% 一致 | ~53% (9/17) | **39.6%** (19/48) | −13pp |
+
+**结论**：子集在 self-source（高估 37pp）和 chromium-Oracle（高估 13pp）两口径都系统性
+高估 grid 正确性。grid 全量真通过率 self 62.5% / chr-一致 39.6%。这是 DC-14 分母去子集化
+的有力实证——单目录 grid 的全量即把两口径各拉低 13–37pp，9 目录全量后整体真通过率会比
+当前子集口径（self 88.0% / chr 42.1%）显著更低。
+
+## 工具复用
+
+`discover-reftests-authoritative.py`（R401 新增）+ `chromium-oracle-shot.mjs`（R388 修复的
+HTTP server）组合，可对任一目录做：权威发现 → 全量导入 → 全量 oracle → self-source +
+chromium-Oracle 双口径真通过率测量。grid 是首个完整样板；其余 8 目录待逐目录复用。

@@ -12,8 +12,8 @@
 
 **当前活跃里程碑**: M10 — 上游 WPT 真实 Reftest 通过率。**渲染侧**：结构性 plateau（单会话杠杆已穷尽，子集范围内）。**分母侧（DC-14 门禁，R394 发现）**：当前 N_imported 仅上游 ~5-6%，去子集化是当前最高 ROI 前向路径（并行 agent 正执行 Phase 2：css-grid 全量导入 in-flight + `discover-reftests-authoritative.py`）。/ DC-13 产品 smoke（证据已持久化 `evidence/product-static/`，残余为文本度量结构性）
 
-**基线（R395 css-grid 扩到全量权威集后 self-source 下修）**：
-- self-source loose **456/518 (88.0%)** @ 默认 1%/5% 容差（R395：grid 18→48 全量权威集，揭示 grid 真通过率 30/48=62.5% vs 子集 ~100%，整体 90.4%→88.0%；**混合口径=grid 全量 + 8 目录仍 60-子集**，非全量真通过率）
+**基线（R401 css-grid 扩到全量权威集后 self-source 下修，DC-14 Phase 2 首步）**：
+- self-source loose **456/518 (88.0%)** @ 默认 1%/5% 容差（R401/commit d593f9c：grid 18→48 全量权威集，揭示 grid 真通过率 30/48=62.5% vs 子集 ~100%，整体 90.4%→88.0%——子集高估 grid 正确性 ~37pp；**混合口径=grid 全量 + 8 目录仍 60-子集**，非全量真通过率）
 - self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径，pre-grid-expand）
 - chromium-Oracle 广义一致 **200/475 (42.1%)** @ chr<1%（R391 锁定诚实基线：R388 报的 205/43.2% 含 R389 才暴露的 5 假一致 flexbox blank-blank，已纠正）；严格 self-pass&chr<1% **177/475 (37.3%)**；污染率 46.5%。**R388/R389/R390 后度量可信**（pre-R388 ~35.8% 被 108 损坏 Ahem oracle 系统性压低，已修）。**⚠️ R394 关键：所有这些数字基于 ~5-6% 子集分母（503/上游~8000-10000），非全量真通过率，不构成 DC-14 达标证据**
 - 产品 smoke：welcome **16.98%**（product-smoke 阈值0，与 morning/wintertc 同口径；R371 的 14.68% 是 cross-validate chan>5 的宽松口径，不可比，已纠正）/ wintertc ~13.6% / morning-work 800×600 **16.41%**（R373 inline+bg shrink 后，R175 的 28.72%→16.41%；fullpage 48.65% 是更高视口口径）
@@ -29,9 +29,9 @@
 
 **核心结论**：rendering-compat 的**所有单会话 / 中会话 forward-motion 杠杆均已 ruled out 或 refuted**——这是 R313–R323（≥10 轮）一致收敛的结论，非单轮判断。rally 单会话迭代已无法提升真实通过率。
 
-**基线（R323 复验；strict post-R326 再复验仍零漂移；**R388 修复 108 损坏 Ahem oracle 后 chromium-Oracle 上修**）**：
+**基线（R401 css-grid 扩到全量权威集后 self-source 下修；strict/oracle 仍 pre-grid-expand）**：
 
-- self-source loose：**443/490 (90.4%)** @ 默认 1%/5% 容差
+- self-source loose：**456/518 (88.0%)** @ 默认 1%/5% 容差（R401/commit d593f9c：grid 18→48 全量权威集，揭示 grid 真通过率 30/48=62.5% vs 子集 ~100%；**混合口径=grid 全量 + 8 目录仍 60-子集**，非全量真通过率）
 - self-source strict：**295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 广义一致：**200/475 (42.1%)** @ chr<1%（R391 锁定诚实基线）；严格 self-pass&chr<1% **177/475 (37.3%)**；污染 46.5%。**⚠️ R388 报的 43.2% 含 R389 暴露的 5 假一致（flexbox blank-blank），已纠正为 42.1%；pre-R388 35.8% 被 108 损坏 Ahem oracle 压低已修**
 - 产品 smoke：welcome **16.98%**（product-smoke）/ wintertc 13.70% / morning-work 800×600 **16.41%**（R373 后）/ fullpage 48.65%（全文本度量结构性，非图片/CSS 缺口）
@@ -109,7 +109,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成（管线层）⚠️ | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：13 种图元**管线**已建（48 单元测试 ✅），**但浏览器全量 GPU 路径 `render_full_scene_gpu` 实际消费以 DC-9 表为准**——transform=✅ R285/ee8373a 已接入（`collect_transforms`+`apply_transform_filters_headless`）、blend=CPU no-op stub+GPU 丢弃（**唯一剩余 GPU 真实缺口**）、5 color-matrix 滤镜（grayscale/invert/saturate/sepia/hue-rotate）=✅ R286/94c773a 已落（`collect_color_filters` mode 3-7 全处理，parity CPU）、clip=no-op（engine 从不生成）；filter:opacity/brightness/contrast/blur 已落（f6fed44/fc86937/3a3530f）；浏览器消费：全部 13 种图元 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | ⏸ plateau（R323） | 基础设施 ✅；490 上游 reftest 已导入（9 目录）；self-source loose **443/490 (90.4%)** / strict **295/490 (60.2%)** / chromium-Oracle ~35.6%；R305–R323 全单会话杠杆穷尽（R351 table-layout:fixed + R355 Phase A 多行存储 + R358 per-fragment color(abs-pos guard) 为三次 plateau 突破），达标需多会话架构（见「综合裁决」） |
+| M10 — 上游 WPT 真实 Reftest 导入 | ⏸ plateau + DC-14 Phase 2 启动 | 基础设施 ✅；518 上游 reftest 已导入（9 目录，**grid R401 扩到全量 48**）；self-source loose **456/518 (88.0%)**（grid 真通过率 30/48=62.5%）/ strict **295/490 (60.2%, pre-grid-expand)** / chromium-Oracle ~42.1% (broad, pre-grid-expand)；R305–R400 单会话杠杆穷尽（R351/R355/R358/R362 四次 plateau 突破），达标需 DC-14 全量去子集化 + 多会话架构（见「综合裁决」） |
 
 ## 当前状态概览
 
@@ -327,7 +327,7 @@
 
 ## 初始 Reftest 通过率数据（M6 inline，不计达标 — 已归档）
 
-> 2026-06-07 M6 基线：685 内联 reftest 100% 通过（CPU 软件渲染，800×600）。该 685 内联 reftest 自 DC-14 起明确**不计达标分母**（goal line 323/844；DC-2~5 各节均标「内联 smoke 100% 不计达标」），100% 仅作 smoke。逐目录/覆盖范围明细已迁出至 [`archive/m6-inline-reftest-baseline-2026-06-07.md`](./archive/m6-inline-reftest-baseline-2026-06-07.md)。**达标口径真基线见下节「上游真实 WPT Reftest 通过率」**（self-source 443/490 / chromium-Oracle ~42%）。
+> 2026-06-07 M6 基线：685 内联 reftest 100% 通过（CPU 软件渲染，800×600）。该 685 内联 reftest 自 DC-14 起明确**不计达标分母**（goal line 323/844；DC-2~5 各节均标「内联 smoke 100% 不计达标」），100% 仅作 smoke。逐目录/覆盖范围明细已迁出至 [`archive/m6-inline-reftest-baseline-2026-06-07.md`](./archive/m6-inline-reftest-baseline-2026-06-07.md)。**达标口径真基线见下节「上游真实 WPT Reftest 通过率」**（self-source 456/518 / chromium-Oracle ~42%）。
 
 ---
 
@@ -335,9 +335,9 @@
 
 > 早期上游 reftest 调查（R11–R20，2026-06-09/10，self-source 基线 74.7%）已归档至 [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
 
-**当前基线（R323 复验；strict post-R326 再复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)）**：
+**当前基线（R401 css-grid 扩到全量权威集后 self-source 下修；strict post-R326 复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)；R401 evidence [`r401-dc14-grid-full-authoritative-2026-06-22.txt`](./evidence/r401-dc14-grid-full-authoritative-2026-06-22.txt)）**：
 
-- self-source loose **443/490 (90.4%)** @ 默认 1%/5% 容差
+- self-source loose **456/518 (88.0%)** @ 默认 1%/5% 容差（grid 全量后；混合口径=grid 全量 + 8 目录仍 60-子集，非全量真通过率）
 - self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 真一致率 **~42.1% (broad, 200/475) / 37.3% (strict self-pass&chr<1%, 177/475)**（self-source 含 46.5% 假通过；R391 锁定诚实基线，pre-R388 ~35.8% 被 108 损坏 Ahem oracle 压低已修；⚠️ 全部基于 ~5-6% 子集分母 503/上游~8000-10000，非全量真通过率，不构成 DC-14 达标证据）
 
@@ -478,7 +478,7 @@
 
 ### 需用户决策（卡点）
 
-- [ ] **多会话架构承诺 vs 接受 plateau**：443/490 loose / 295/490 strict / ~36% Oracle 是诚实基线。剩余提升需 Phase A IFC 统一 / Phase 2 嵌套 multicol / baseline 合成 或 taffy 升级，均为多会话工程。R314 已飞书通知。
+- [ ] **多会话架构承诺 vs 接受 plateau**：456/518 loose（grid 全量后）/ 295/490 strict（pre-grid-expand）/ ~42% Oracle（broad, pre-grid-expand）是诚实基线。剩余提升需 DC-14 全量去子集化（R401 已完成 grid，8 目录待扩）+ Phase A IFC 统一 / Phase 2 嵌套 multicol / baseline 合成 或 taffy 升级，均为多会话工程。R314 已飞书通知。
 
 ### 若推进多会话架构（按依赖序）
 
