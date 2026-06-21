@@ -8,7 +8,7 @@
 //   node capture-oracle-per-dir.mjs --category css/css-position [--category css/css-tables ...]
 //
 // 依赖：puppeteer-core + 系统 chromium；经 ~/use-proxy 代理（chromium 抓上游无关，本地 HTTP）。
-import { join, dirname, extname, normalize, resolve } from 'node:path';
+import { join, dirname, extname, normalize, relative, resolve } from 'node:path';
 import { createReadStream, statSync, readdirSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,23 @@ for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i] === '--category') categories.push(process.argv[++i]);
 }
 if (categories.length === 0) { console.error('Usage: capture-oracle-per-dir.mjs --category <dir> [...]'); process.exit(1); }
+
+// 递归收集 category 目录下所有 test 文件（相对 category 的路径）。
+// css-text / CSS2 的 test 散落在子目录（white-space/、box/...），顶层 readdirSync 会漏掉。
+// 扁平目录（grid/flex/...）退化为仅文件名，行为不变。
+function collectTests(dir, base = dir) {
+  const out = [];
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) {
+      out.push(...collectTests(full, base));
+    } else if ((name.endsWith('.html') || name.endsWith('.xht'))
+               && !name.includes('-ref') && !name.includes('notref') && !name.includes('reference')) {
+      out.push(relative(base, full));
+    }
+  }
+  return out;
+}
 
 const root = resolve(DATA);
 const srv = createServer((req, res) => {
@@ -55,7 +72,7 @@ let totalOk = 0, totalFail = 0;
 for (const cat of categories) {
   const dir = join(DATA, cat);
   let tests;
-  try { tests = readdirSync(dir).filter(f => (f.endsWith('.html') || f.endsWith('.xht')) && !f.includes('-ref') && !f.includes('notref') && !f.includes('reference')); }
+  try { tests = collectTests(dir); }
   catch { console.error(`dir not found: ${cat}`); continue; }
   let ok = 0, fail = 0;
   for (const t of tests) {
