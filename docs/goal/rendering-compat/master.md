@@ -20,7 +20,7 @@
 
 **基线（css-multicol 扩到全量后——7/9 目录全量完成·5 布局类+2 文字类，DC-14 Phase 2）**：
 - self-source 全量目录：**css-grid 31/48=64.6%** + **css-position 61/95=64.2%** + **css-tables 75/112=67.0%** + **css-flexbox 260/496=52.4%** + **css-multicol 195/451=43.2%**（布局类，runner 容差可直接比；multicol 最低=结构性缺口最多）+ **css-text-decor 244/246=99.2%**（@0.5% strict 185/242=76.4%）+ **css-fonts 282/284=99.3%**（@0.5% strict 249/282=88.3%）（文字类容差口径，与布局类不直接可比）（R401 grid / R404 position / R408 tables / R425 flexbox / R427 multicol / R417 text-decor / R422 fonts；子集 self 高估）。**7 目录聚合 self-source 1148/2032=56.5%**（文字容差抬升；strict 口径更低）；**混合口径（7 全量 + 2 仍 60-子集），非全量真通过率**
-- **7 目录全量 chromium-Oracle 真一致 36.4%**（R456 probe 后 flexbox +7 oracle）：css-grid 19/48=39.6% / css-position 36/95=37.9% / **css-tables 49/112=43.8%** / **css-flexbox 251/496=50.6%（最高，R456 probe +7 oracle）** / **css-multicol 106/451=23.5%（最低）** / **css-text-decor 70/242=28.9%** / **css-fonts 98/282=34.8%**（chr<1%，聚合 629/1726=36.4%，multicol 下拉自 6-dir 40.6%）。布局类 5 目录聚合 461/1202=38.4%（multicol 拖低）/ 文字类 2 目录 168/524=32.1%；multicol chr<1% 23.5% 低于文字类 text-decor 28.9%=迄今最大缺口目录，全簇 self-fail 74-90% 印证 plateau「multicol 最大失败聚类」
+- **7 目录全量 chromium-Oracle 真一致 36.4%**（R456 probe 后 flexbox +7 oracle）：css-grid 19/48=39.6% / css-position 36/95=37.9% / **css-tables 49/112=43.8%** / **css-flexbox 251/496=50.6%（最高，R456 probe +7 oracle）** / **css-multicol 106/451=23.5%（最低）** / **css-text-decor 70/242=28.9%** / **css-fonts 98/282=34.8%**（chr<1%，聚合 629/1726=36.4%，multicol 下拉自 6-dir 41.0%）。布局类 5 目录聚合 461/1202=38.4%（multicol 拖低）/ 文字类 2 目录 168/524=32.1%；multicol chr<1% 23.5% 低于文字类 text-decor 28.9%=迄今最大缺口目录，全簇 self-fail 74-90% 印证 plateau「multicol 最大失败聚类」
 - self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径，pre-grid-expand）
 - chromium-Oracle 广义一致 **200/475 (42.1%)** @ chr<1%（R391 锁定诚实基线：R388 报的 205/43.2% 含 R389 才暴露的 5 假一致 flexbox blank-blank，已纠正）；严格 self-pass&chr<1% **177/475 (37.3%)**；污染率 46.5%。**R388/R389/R390 后度量可信**（pre-R388 ~35.8% 被 108 损坏 Ahem oracle 系统性压低，已修）。**⚠️ R394 关键：所有这些数字基于 ~5-6% 子集分母（503/上游~8000-10000），非全量真通过率，不构成 DC-14 达标证据**
 - 产品 smoke：welcome **16.98%**（product-smoke 阈值0，与 morning/wintertc 同口径；R371 的 14.68% 是 cross-validate chan>5 的宽松口径，不可比，已纠正）/ wintertc ~13.6% / morning-work 800×600 **16.41%**（R373 inline+bg shrink 后，R175 的 28.72%→16.41%；fullpage 48.65% 是更高视口口径）
@@ -36,10 +36,10 @@
 
 **核心结论**：rendering-compat 的**所有单会话 / 中会话 forward-motion 杠杆均已 ruled out 或 refuted**——这是 R313–R323（≥10 轮）一致收敛的结论，非单轮判断。rally 单会话迭代已无法提升真实通过率。
 
-**基线（R427 css-multicol 扩到全量后——7/9 目录全量完成·5 布局类+2 文字类；strict/oracle broad 仍 pre-grid-expand 子集口径；7 目录聚合 oracle 622/1726=36.0% 见顶部主基线）**：
+**基线（R427 css-multicol 扩到全量后——7/9 目录全量完成·5 布局类+2 文字类；strict/oracle broad 仍 pre-grid-expand 子集口径；7 目录聚合 oracle 629/1726=36.4% 见顶部主基线）**：
 
 - self-source 全量目录：css-grid **31/48=64.6%** + css-position **61/95=64.2%** + **css-tables 75/112=67.0%** + css-flexbox 260/496=52.4% + **css-multicol 195/451=43.2%** + **css-text-decor 244/246=99.2%**（strict 76.4%）+ **css-fonts 282/284=99.3%**（strict 88.3%）。**7 目录聚合 self-source 1148/2032=56.5%**（文字容差抬升，strict 口径更低）；**混合口径（7 全量 + 2 子集），非全量真通过率**
-- **7 目录全量 chromium-Oracle 真一致 36.0%**：grid 19/48=39.6% / position 36/95=37.9% / tables 49/112=43.8% / flexbox 244/496=49.2% / **text-decor 70/242=28.9%** / fonts 98/282=34.8% / **multicol 106/451=23.5%（最低）**（chr<1%，聚合 622/1726=36.0%，multicol 下拽自 6-dir 40.5%）；布局类 5 目录 454/1202=37.8% vs 文字类 2 目录 168/524=32.1%；子集 42.1% 广义口径对 self-source 严重高估（下条 200/475 为 pre-grid-expand 子集口径）
+- **7 目录全量 chromium-Oracle 真一致 36.4%**（R456 probe 后 flexbox +7 oracle）：grid 19/48=39.6% / position 36/95=37.9% / tables 49/112=43.8% / flexbox 251/496=50.6% / **text-decor 70/242=28.9%** / fonts 98/282=34.8% / **multicol 106/451=23.5%（最低）**（chr<1%，聚合 629/1726=36.4%，multicol 下拽自 6-dir 41.0%）；布局类 5 目录 461/1202=38.4% vs 文字类 2 目录 168/524=32.1%；子集 42.1% 广义口径对 self-source 严重高估（下条 200/475 为 pre-grid-expand 子集口径）
 - self-source strict：**295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
 - chromium-Oracle 广义一致：**200/475 (42.1%)** @ chr<1%（R391 锁定诚实基线）；严格 self-pass&chr<1% **177/475 (37.3%)**；污染 46.5%。**⚠️ R388 报的 43.2% 含 R389 暴露的 5 假一致（flexbox blank-blank），已纠正为 42.1%；pre-R388 35.8% 被 108 损坏 Ahem oracle 压低已修**
 - 产品 smoke：welcome **16.98%**（product-smoke）/ wintertc 13.70% / morning-work 800×600 **16.41%**（R373 后）/ fullpage 48.65%（全文本度量结构性，非图片/CSS 缺口）
@@ -129,7 +129,7 @@
 | M7 — 渲染器图元覆盖 | ✅ 完成（管线层）⚠️ | CPU 渲染器：全部 13 种图元 ✅；GPU 渲染器：13 种图元**管线**已建（48 单元测试 ✅），**但浏览器全量 GPU 路径 `render_full_scene_gpu` 实际消费以 DC-9 表为准**——transform=✅ R285/ee8373a 已接入（`collect_transforms`+`apply_transform_filters_headless`）、blend=CPU no-op stub+GPU 丢弃（**唯一剩余 GPU 真实缺口**）、5 color-matrix 滤镜（grayscale/invert/saturate/sepia/hue-rotate）=✅ R286/94c773a 已落（`collect_color_filters` mode 3-7 全处理，parity CPU）、clip=no-op（engine 从不生成）；filter:opacity/brightness/contrast/blur 已落（f6fed44/fc86937/3a3530f）；浏览器消费：全部 13 种图元 ✅ |
 | M8 — 布局正确性 | ✅ 完成 | BFC 检测 ✅；float clear ✅；margin 折叠(taffy 0.7 内置) ✅；<img> 固有尺寸 ✅；position:fixed ✅(adjust_fixed_to_viewport)；position:sticky 需宿主层（已标记 is_sticky，后续集成）；percentage height/auto margin/min-max-width 已有测试验证 |
 | M9 — 高级视觉效果 | 🔧 进行中 | 重复渐变 ✅；多图层背景 ✅；clip-path 全形状裁剪 ✅(inset+circle+ellipse+polygon)；border-image ✅；text-shadow ✅；backdrop-filter ✅；CSS mask ✅(渐变蒙版裁剪+alpha衰减)；overflow 全图元裁剪 ✅；滚动容器 paint 偏移 ✅(scroll_x/scroll_y 字段 + paint 时子元素坐标偏移 + 3 个单元测试)；剩余：scroll-snap 行为（需宿主层输入路由）、滚动输入路由（需浏览器 app 集成） |
-| M10 — 上游 WPT 真实 Reftest 导入 | ⏸ plateau + DC-14 Phase 2（7/9 目录全量·5 布局类+2 文字类） | 基础设施 ✅；**grid+position+tables+flexbox+multicol+text-decor+fonts 已扩到全量**（48/95/112/496/451/246/284）+ 2 目录仍 60-子集；全量目录 self grid 64.6%/position 64.2%/tables 67.0%/flexbox 52.4%（probe landed R435）/**multicol 43.2%（布局类最低）**/text-decor 99.2%/fonts 99.3%（文字容差，strict 76.4%/88.3%），**chromium-Oracle 真一致 36.0%**（grid 39.6% / position 37.9% / tables 43.8% / flexbox 49.2% 最高 / **multicol 23.5% 最低** / text-decor 28.9% / fonts 34.8%，聚合 622/1726=36.0%；multicol 下拉自 6-dir 40.5%）/ strict 295/490 (60.2%, pre-grid-expand)；R305–R400 单会话杠杆穷尽（R351/R355/R358/R362 四次 plateau 突破），**flexbox 暴露潜在 clean-win 面**（min-size:auto=ZeroWeb-side R428 ✅ LANDED R435 / aspect-ratio=taffy-blocked），multicol 全簇 self-fail 74-90%=结构性需 Phase 2，达标需 DC-14 全量去子集化（余 2 目录）+ 多会话架构（见「综合裁决」） |
+| M10 — 上游 WPT 真实 Reftest 导入 | ⏸ plateau + DC-14 Phase 2（7/9 目录全量·5 布局类+2 文字类） | 基础设施 ✅；**grid+position+tables+flexbox+multicol+text-decor+fonts 已扩到全量**（48/95/112/496/451/246/284）+ 2 目录仍 60-子集；全量目录 self grid 64.6%/position 64.2%/tables 67.0%/flexbox 52.4%（probe landed R435）/**multicol 43.2%（布局类最低）**/text-decor 99.2%/fonts 99.3%（文字容差，strict 76.4%/88.3%），**chromium-Oracle 真一致 36.4%**（grid 39.6% / position 37.9% / tables 43.8% / flexbox 50.6% 最高 / **multicol 23.5% 最低** / text-decor 28.9% / fonts 34.8%，聚合 629/1726=36.4%；multicol 下拉自 6-dir 41.0%）/ strict 295/490 (60.2%, pre-grid-expand)；R305–R400 单会话杠杆穷尽（R351/R355/R358/R362 四次 plateau 突破），**flexbox 暴露潜在 clean-win 面**（min-size:auto=ZeroWeb-side R428 ✅ LANDED R435 / aspect-ratio=taffy-blocked），multicol 全簇 self-fail 74-90%=结构性需 Phase 2，达标需 DC-14 全量去子集化（余 2 目录）+ 多会话架构（见「综合裁决」） |
 
 ## 当前状态概览
 
@@ -194,7 +194,7 @@
 | 条目 | 状态 | 说明 |
 |------|------|------|
 | Flexbox reftest 子集 | ✅（全量已导入） | **502 权威对**（R425/R426 全量；runner 运行 496；**不计达标分子**，DC-14 line 323） |
-| Flexbox 通过率 | ❌ 未达标 | 全量 self 52.4%（probe landed R435；布局类容差；multicol 43.2% 更低）/ strict 42.1% / **chromium-Oracle chr<1% 49.2%（7 目录最高）**（主拖 aspect-ratio transferred size 49 例 90% self-fail + flex min-size:auto 57 例 79% + shorthand 152 例 65%），未达 95% |
+| Flexbox 通过率 | ❌ 未达标 | 全量 self 52.4%（probe landed R435；布局类容差；multicol 43.2% 更低）/ strict 42.1% / **chromium-Oracle chr<1% 50.6%（7 目录最高）**（主拖 aspect-ratio transferred size 49 例 90% self-fail + flex min-size:auto 57 例 79% + shorthand 152 例 65%），未达 95% |
 | Grid reftest 子集 | ✅（smoke） | 51 个内联 Grid reftest（基础+进阶+边界+M6 扩展，**不计达标分母**） |
 | Grid 通过率 | ❌ 未达标 | 同 Flexbox，内联 smoke 不计达标，真实未达 95% |
 | CPU 模式达标 | ❌ 未达标 | 容差 10× 过松 R280 + 同源 reference，真实通过率未达标 |
@@ -355,11 +355,11 @@
 
 > 早期上游 reftest 调查（R11–R20，2026-06-09/10，self-source 基线 74.7%）已归档至 [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
 
-**当前基线（R427 css-multicol 扩到全量后——7/9 目录全量·5 布局类+2 文字类；strict post-R326 复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)；7 目录聚合 oracle 622/1726=36.0%（布局类 37.8% / 文字类 32.1%）见顶部主基线；evidence [`r427-cssmulticol-full-2026-06-22.txt`](./evidence/r427-cssmulticol-full-2026-06-22.txt) + [`r425-cssflexbox-full-2026-06-22.txt`](./evidence/r425-cssflexbox-full-2026-06-22.txt) + [`r421-cssfonts-full-2026-06-22.txt`](./evidence/r421-cssfonts-full-2026-06-22.txt) + [`r412-csstextdecor-full-2026-06-22.txt`](./evidence/r412-csstextdecor-full-2026-06-22.txt) + [`r405-dc14-three-dirs-complete-2026-06-22.txt`](./evidence/r405-dc14-three-dirs-complete-2026-06-22.txt) + R404 [`r404-dc14-position-full-2026-06-22.txt`](./evidence/r404-dc14-position-full-2026-06-22.txt) + R401 [`r401-dc14-grid-full-authoritative-2026-06-22.txt`](./evidence/r401-dc14-grid-full-authoritative-2026-06-22.txt)）**：
+**当前基线（R427 css-multicol 扩到全量后——7/9 目录全量·5 布局类+2 文字类；strict post-R326 复验仍零漂移，见 [`evidence/strict-baseline-reverify-post-r326-2026-06-19.txt`](./evidence/strict-baseline-reverify-post-r326-2026-06-19.txt)；7 目录聚合 oracle 629/1726=36.4%（布局类 38.4% / 文字类 32.1%）见顶部主基线；evidence [`r427-cssmulticol-full-2026-06-22.txt`](./evidence/r427-cssmulticol-full-2026-06-22.txt) + [`r425-cssflexbox-full-2026-06-22.txt`](./evidence/r425-cssflexbox-full-2026-06-22.txt) + [`r421-cssfonts-full-2026-06-22.txt`](./evidence/r421-cssfonts-full-2026-06-22.txt) + [`r412-csstextdecor-full-2026-06-22.txt`](./evidence/r412-csstextdecor-full-2026-06-22.txt) + [`r405-dc14-three-dirs-complete-2026-06-22.txt`](./evidence/r405-dc14-three-dirs-complete-2026-06-22.txt) + R404 [`r404-dc14-position-full-2026-06-22.txt`](./evidence/r404-dc14-position-full-2026-06-22.txt) + R401 [`r401-dc14-grid-full-authoritative-2026-06-22.txt`](./evidence/r401-dc14-grid-full-authoritative-2026-06-22.txt)）**：
 
 - self-source 全量目录：css-grid **31/48=64.6%** + css-position **61/95=64.2%** + **css-tables 75/112=67.0%** + css-flexbox 260/496=52.4% + css-multicol 195/451=43.2% + **css-text-decor 244/246=99.2%** + **css-fonts 282/284=99.3%**（文字容差）；**7 目录聚合 self 1148/2032=56.5%**；聚合（7 全量 + 2 子集）；**混合口径，非全量真通过率**
 - self-source strict **295/490 (60.2%)** @ 锁定 0.1%/0.5%（DC-14 真通过口径）
-- chromium-Oracle 真一致率 **~42.1% (broad, 200/475) / 37.3% (strict self-pass&chr<1%, 177/475)**（self-source 含 46.5% 假通过；R391 锁定诚实基线，pre-R388 ~35.8% 被 108 损坏 Ahem oracle 压低已修；⚠️ 全部基于 ~5-6% 子集分母 503/上游~8000-10000，非全量真通过率，不构成 DC-14 达标证据）。**7-目录全量口径更诚实**：oracle 622/1726=36.0%（grid 39.6% / position 37.9% / tables 43.8% / flexbox 49.2% / text-decor 28.9% / fonts 34.8% / **multicol 23.5% 最低**）
+- chromium-Oracle 真一致率 **~42.1% (broad, 200/475) / 37.3% (strict self-pass&chr<1%, 177/475)**（self-source 含 46.5% 假通过；R391 锁定诚实基线，pre-R388 ~35.8% 被 108 损坏 Ahem oracle 压低已修；⚠️ 全部基于 ~5-6% 子集分母 503/上游~8000-10000，非全量真通过率，不构成 DC-14 达标证据）。**7-目录全量口径更诚实**：oracle 629/1726=36.4%（grid 39.6% / position 37.9% / tables 43.8% / flexbox 50.6% / text-decor 28.9% / fonts 34.8% / **multicol 23.5% 最低**）
 
 完整 plateau 分析、已穷尽杠杆表、4 条多会话路径见顶部「综合裁决」节；逐目录 chromium-Oracle 污染分布见 `evidence/cross-validate-full-2026-06-18.txt`（flexbox 26% 污染最诚实，writing-modes 73% 最高）。达标需多会话架构，单会话杠杆已穷尽。
 
@@ -498,7 +498,7 @@
 
 ### 需用户决策（卡点）
 
-- [ ] **多会话架构承诺 vs 接受 plateau**：7-目录全量 self 1148/2032=56.5% / oracle 622/1726=36.0%（grid/position/tables/flexbox/multicol/text-decor/fonts）+ 456/518 loose（含子集）/ 295/490 strict（pre-grid-expand）/ ~42% Oracle（broad, pre-grid-expand）是诚实基线。剩余提升需 DC-14 全量去子集化（R401/R404/R408/R425/R427/R417/R422 已完成 grid/position/tables/flexbox/multicol/text-decor/fonts 7 目录，2 目录待扩：writing-modes/css-text/CSS2）+ Phase A IFC 统一 / Phase 2 嵌套 multicol / baseline 合成 或 taffy 升级，均为多会话工程。R314 已飞书通知。
+- [ ] **多会话架构承诺 vs 接受 plateau**：7-目录全量 self 1148/2032=56.5% / oracle 629/1726=36.4%（grid/position/tables/flexbox/multicol/text-decor/fonts）+ 456/518 loose（含子集）/ 295/490 strict（pre-grid-expand）/ ~42% Oracle（broad, pre-grid-expand）是诚实基线。剩余提升需 DC-14 全量去子集化（R401/R404/R408/R425/R427/R417/R422 已完成 grid/position/tables/flexbox/multicol/text-decor/fonts 7 目录，2 目录待扩：writing-modes/css-text/CSS2）+ Phase A IFC 统一 / Phase 2 嵌套 multicol / baseline 合成 或 taffy 升级，均为多会话工程。R314 已飞书通知。
 
 ### 若推进多会话架构（按依赖序）
 
