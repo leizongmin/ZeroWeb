@@ -149,6 +149,35 @@ fix 的 Percentage 分支普适（所有 fixed+% 相对视口重算）是最大�
        no-op 仍 PASS；仅「wrong-CB 恰匹配 oracle」罕见边态会被 fix 改变。code agent 全量 sweep 即闸。
      - 净评估：net +1 (2671→2673) 回归风险 = 低（3 可见案不可回归 + 5 缺-dump 案多属 no-op）。
 
+================================================================================
+8. 全量 blast radius 完整图（% 分支 + auto-inset 分支·跨全 wpt-data·05:23）+ 净值精确界定
+================================================================================
+% 分支（fixed+%，全 wpt-data 5 个 reftest）：
+  - CSS2/positioning/abspos-containing-block-003：target，FLIP→PASS（improve）
+  - CSS2/visuren/{right,left}-offset-position-fixed-001：pre-fix FAIL（不可回归计数）
+  - CSS2/normal-flow/blocks-025：pre-fix FAIL（不可回归计数）
+  - css-position/position-fixed-dynamic-transformed-sibling：JS 依赖（<script> 动态 toggle display）
+    → runner 跳过（reftest-upstream filter 返回 Total:0）→ 不计数 → 零风险
+auto-inset 分支（fixed + 全四 Px inset + auto size，全 wpt-data 4 个 reftest）：
+  - CSS2/positioning/abspos-containing-block-001：target，FLIP→PASS（improve）
+  - css-position/fixed-z-index-blend：pre-fix crossval（cross-validate-full-2026-06-21@02:16，R491 前）
+    = POLLUTED self-pass 0.00% / **chr 2.08% FAIL** → pre-fix 已 FAIL（不可回归）+ JS=2
+  - css-position/position-fixed-root-element-{grid,flex}：post-fix 实测 **self 1.85% / chr 3.04% FAIL**
+    （near-miss）；**pre-fix 状态不可定**（无 pre-fix oracle/dump；revert fix 取 pre-fix 被禁=code agent
+    未提交工作）→ 唯一残余不确定性。
+
+★ 净值精确界定（纠正早期「net +1 确认/零风险」过乐观，4d9bd1de 基于 CSS2-only 分析）：
+  - CSS2 chr<1%：2671→2673（+2，001/003 翻）**确认**（CSS2 blast-radius 全 benign）。
+  - css-position chr<1%：36→[34..36]（root-element-grid/flex 若 pre-fix PASS 则 −2，若 pre-fix FAIL 则 0）。
+  - 全量净值 vs R484：**[−1..+1]**——worst case root-element 双 regress → net −1（streak 不破）；
+    likely case（root-element pre-fix FAIL，同 001 bug 类 + code agent 05:03 css-position sweep 未 revert 印证）
+    → net +1（streak 破）。
+  - **硬下界**：fix 不可能让 chr<1% 差于 R491 baseline（所有 blast-radius 案要么 improve 要么 pre-fix FAIL
+    要么不计数，唯一未知 2 案 worst-case 抵消 001/003 的 +2 → 净 0 vs R491）。
+  - **残余验证点（精准）**：code agent 须确认 css-position/position-fixed-root-element-{grid,flex} 两案
+    pre-fix 是否 PASS（其 05:03 已 sweep css-position/ 含 fix 未 revert = 间接证据无回归）。
+
+
 
 
 
