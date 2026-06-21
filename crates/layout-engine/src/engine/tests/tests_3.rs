@@ -806,8 +806,11 @@ fn test_flex_shrink_behavior() {
     styles.insert(container, container_style);
 
     // item1: 200px, shrink=1
+    // min_width:0 显式覆盖默认 auto——否则 CSS §4.5 自动最小尺寸取 specified size(200px)
+    // 为下限，flex item 不收缩（经典 flexbox 陷阱：min-width:0 才允许收缩到内容以下）。
     let mut s1 = ComputedStyle::default();
     s1.width = LengthValue::Px(200.0);
+    s1.min_width = LengthValue::Px(0.0);
     s1.height = LengthValue::Px(50.0);
     s1.flex_shrink = 1.0;
     styles.insert(item1, s1);
@@ -815,6 +818,7 @@ fn test_flex_shrink_behavior() {
     // item2: 200px, shrink=1
     let mut s2 = ComputedStyle::default();
     s2.width = LengthValue::Px(200.0);
+    s2.min_width = LengthValue::Px(0.0);
     s2.height = LengthValue::Px(50.0);
     s2.flex_shrink = 2.0;
     styles.insert(item2, s2);
