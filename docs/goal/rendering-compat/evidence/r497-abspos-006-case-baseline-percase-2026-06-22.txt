@@ -123,4 +123,21 @@ size-only 不触 R493 旧 x/y 回归）。004 残余(right:0)/005/006(CB=html) �
        adjust_absolute_pct_to_viewport 的 absolute-viewport-CB 分支补 auto-inset w+h stretch ~8 行
        即翻 002（position 已设好，size-only 不触 R493 x/y 回归）。spec 经验 grounded。
 
+================================================================================
+7. fix 的 % 分支 blast radius（read-only grep，05:14；界定 net +1 回归风险）
+================================================================================
+fix 的 Percentage 分支普适（所有 fixed+% 相对视口重算）是最大回归风险源。grep 实测 CSS2：
+  - 58 文件用 position:fixed；其中 **11 文件** 同时含 % width/height（fixed+% blast radius）：
+    positioning/{position-fixed-005, abspos-containing-block-003, position-fixed-004}
+    visuren/{right-offset-position-fixed-001, left-offset-position-fixed-001}
+    backgrounds/background-alpha-002 / normal-flow/blocks-025 / visufx/overflow-009
+    abspos/abspos-in-block-in-inline-in-relpos-inline
+    + 2 floats/crashtests（float-rewind-parallel-flow-2/3-crash，crashtest 无像素 reftest）
+  - 像素相关 ~9 案。code agent 回归扫描（positioning/ ✓ + css-position/ + box-display/ + 须覆盖
+    visuren/backgrounds/normal-flow/visufx/abspos）即覆盖这 ~9 案。
+  - 风险评估：fixed CB=视口是 spec 正确（CSS §10.1），WPT reftest 多期望 spec 行为 → fix 应
+    改善或保持，非回归；但 003 本是 fixed+% 翻 PASS 的目标，其余 8 案须 sweep 实证零回归。
+  - 结论：net +1 回归风险 bounded 且小（~9 案），全量 sweep 通过即坐实 2671→2673。
+
+
 
