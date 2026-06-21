@@ -382,9 +382,11 @@ fn assign_children_to_columns_with_breaking(
                 }
             }
 
-            // 后续片段填满整列
+            // 后续片段填满整列。
+            // max_col_height > 0.0 守卫：若列高为 0（height:0 multicol 或计算得 0），
+            // offset += max_col_height(0) 永不前进会无限循环——此时无法细分，clip 跳出。
             let mut offset = available;
-            while offset < child_height && current_col < col_count {
+            while offset < child_height && current_col < col_count && max_col_height > 0.0 {
                 let remaining = child_height - offset;
                 let frag_height = remaining.min(max_col_height);
                 columns[current_col].push(ColumnFragment {
