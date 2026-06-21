@@ -23,7 +23,7 @@
 ## 2. 可能解释（R495 像素 19.2 的真因候选）
 
 1. **pixel test 跑在 override 未编译进的 build**（最可能）：code agent 可能 revert 了 engine.rs 后才跑像素（或跑了旧 binary）→ 像素反映 pre-override 状态（19.2），但 LAYOUT_DUMP 来自 override 生效的 build → 二者 build 不一致致「诊断」错觉。
-2. override 作用在**与 paint 不同的 tree 实例**（copy/late pass）——但 LAYOUT_DUMP 读 `result.layout.root`、paint 读 `layout_result.root`，render_html 返回同一 layout，理论上同树；需 code agent 确认 override pass 修改的是 `layout_result` 本体非副本。
+2. ~~override 作用在与 paint 不同的 tree 实例~~ **❌ RULED OUT（本轮 call-site 核查 2026-06-22）**：`adjust_fixed_to_viewport`（`engine.rs:230`）+ `adjust_absolute_pct_to_viewport`（`engine.rs:286`）均在 `compute_with_img_sizes` 内对 `root_box` **原地修改**（`&mut root_box`）；`pipeline.rs:226 layout_result = compute_with_img_sizes(...)` 返回该 `root_box` → `pipeline.rs:237 painter.paint(&layout_result.root)`。**post-process（含 R495 override 若置于 `adjust_absolute_pct_to_viewport` 后，同 `root_box`）修改的就是 paint 读的同一 `root_box → layout_result` 树** → override 必达 paint，「不同 tree 实例」假设排除。剩 (a) pixel test 用未编译 override 的旧 binary，或 (c) 未发现的 paint 路径（主 bg rect 753 + bg-clip 1165 + deferred fixed 620-625 均已查用 `box_node.height`，c 不太可能）。
 3. 存在未发现的 paint 路径读 content_height/taffy——本轮核查主 bg rect (753)、bg-clip (1165)、deferred fixed path (620-625) 均用 `box_node.height`，未发现；但 painter 大，不排除遗漏。
 
 ## 3. 建议（给 code agent）
