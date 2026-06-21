@@ -607,6 +607,18 @@ impl LayoutEngine {
 
         let is_absolute = computed.is_some_and(|s| matches!(s.position, PositionValue::Absolute));
         let is_fixed = computed.is_some_and(|s| matches!(s.position, PositionValue::Fixed));
+        // 替换元素（有固有尺寸）：img/video/iframe/embed/object/svg/canvas。
+        // CSS §10.3.8/§10.6.6 对其 auto 尺寸按固有尺寸解析，不走 §10.3.18/§10.6.4
+        // 全-inset stretch。标记供 abspos stretch 后处理跳过（避免覆写固有尺寸）。
+        let is_replaced = dom_id.is_some_and(|id| {
+            doc.get(id).is_some_and(|n| match &n.kind {
+                zero_dom::NodeKind::Element(elem) => matches!(
+                    elem.local_name(),
+                    "img" | "video" | "iframe" | "embed" | "object" | "svg" | "canvas"
+                ),
+                _ => false,
+            })
+        });
         let is_sticky = computed.is_some_and(|s| matches!(s.position, PositionValue::Sticky));
         let float = computed.map_or(FloatValue::None, |s| s.float.clone());
         let clear = computed.map_or(ClearValue::None, |s| {
@@ -824,6 +836,7 @@ impl LayoutEngine {
             declared_width_auto,
             children: children_boxes,
             is_absolute,
+            is_replaced,
             is_fixed,
             is_sticky,
             float,
@@ -1670,6 +1683,7 @@ fn adjust_absolute_pct_to_viewport(
     for child in &mut box_node.children {
         if child.is_absolute
             && !child_has_positioned_ancestor
+            && !child.is_replaced
             && let Some(style) = child.node_id.and_then(|node_id| styles.get(&node_id))
         {
             // 仅当 width 为百分比时按视口重解析
@@ -1678,6 +1692,22 @@ fn adjust_absolute_pct_to_viewport(
             }
             if let LengthValue::Percentage(p) = &style.height {
                 child.height = *p as f32 / 100.0 * viewport_height;
+            }
+            // auto 尺寸 + 全长度 inset → stretch（CSS §10.3.18 / §10.6.4）。
+            // 仅当 left+right（或 top+bottom）均为长度且尺寸为 auto 时按视口 CB
+            // stretch；与历史 adjust_absolute_to_initial_containing_block 的「无条件
+            // 扩张 auto 宽高」（width += viewport - content，致 static-inside-inline-block
+            // / background-329 回归）不同——本分支严格匹配 spec 的「双 inset 才 stretch」，
+            // 不动 x/y（位置已由下方 Px left/top 块设好）。
+            if matches!(style.width, LengthValue::Auto)
+                && let (LengthValue::Px(left), LengthValue::Px(right)) = (&style.left, &style.right)
+            {
+                child.width = (viewport_width - (*left as f32) - (*right as f32)).max(0.0);
+            }
+            if matches!(style.height, LengthValue::Auto)
+                && let (LengthValue::Px(top), LengthValue::Px(bottom)) = (&style.top, &style.bottom)
+            {
+                child.height = (viewport_height - (*top as f32) - (*bottom as f32)).max(0.0);
             }
             // left/top 百分比：目标视口绝对坐标 = p/100 * viewport，转回父相对坐标
             if let LengthValue::Percentage(p) = &style.left {

@@ -85,6 +85,12 @@ pub struct LayoutBox {
     pub children: Vec<LayoutBox>,
     /// 是否为绝对定位。
     pub is_absolute: bool,
+    /// 是否为替换元素（img/video/iframe/embed/object/svg/canvas 等有固有尺寸）。
+    ///
+    /// CSS §10.3.8/§10.6.6：替换元素的 auto 尺寸按固有尺寸 + 宽高比解析，**不**按
+    /// §10.3.18/§10.6.4（非替换）的全-inset stretch。abspos 全-inset stretch 后处理
+    /// 须据此跳过替换元素，避免把 img 固有尺寸覆写为视口 stretch（abspos-025/026）。
+    pub is_replaced: bool,
     /// 是否为 fixed 定位（需宿主层处理）。
     pub is_fixed: bool,
     /// 是否为 sticky 定位（需宿主层在滚动时动态调整偏移）。
@@ -321,6 +327,7 @@ impl Default for LayoutBox {
             declared_width_auto: false,
             children: Vec::new(),
             is_absolute: false,
+            is_replaced: false,
             is_fixed: false,
             is_sticky: false,
             float: FloatValue::None,
