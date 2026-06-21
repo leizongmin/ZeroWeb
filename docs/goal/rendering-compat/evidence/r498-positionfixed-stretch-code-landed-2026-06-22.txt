@@ -43,7 +43,9 @@ R496 推断（option b：post-layout override 有效，R495 误诊）**实证确
 
 **scope 纪律**：仅 fixed（CB=视口无条件已知，位置已由步 4 `adjust_fixed_to_viewport` R324 修正）。**不动 absolute** —— 历史 `adjust_absolute_to_initial_containing_block`（engine.rs:1596）因同调 x/y + auto 宽高致多回归（static-inside-inline-block / background-329）已 `#[allow(dead_code)]` 禁用；本函数 size-only 不触 x/y。002/004（absolute，R496c 证实 viewport CB）是下一 lever（见 §5）。
 
-## 3. +3 翻转实证（chr<1% PASS / self-source PASS 双口径）
+## 3. 翻转实证（001/003：chr<1% + self-source 双翻；009e：仅 self-source——test 侧 absolute 不动故 chr<1% 不变）
+
+> **口径更正（doc agent 复核，2026-06-22）**：原标题「chr<1% PASS / self-source PASS 双口径」对 009e 过claim。chr<1% = ZW-test vs chromium-test（cross-validate 口径）；009e 的 **test 侧 `position:absolute`** 被 is_fixed-only fix 不触 → ZW-test PNG 不变 → chr<1% 不变（仍 FAIL）。009e 的 0.00% 是 **self-source**（ZW-test vs ZW-ref，ref 侧 fixed 元素被 fix 后 test==ref）。故 chr<1% 净 **+2**（001/003），self-source 净 +3（含 009e）。与 master.md R498 header 一致。
 
 | case | 类型 | baseline | fix 后 | 机制 |
 |------|------|----------|--------|------|
@@ -70,7 +72,7 @@ position:fixed 仅出现在 16 目录 92 文件；本函数**仅 mutate fixed �
 | CSS2/visuren | 20/14 | 20/14 | 0 |
 | **合计** | **744/553** | **747/550** | **+3 / 0 回归** |
 
-**R497 contingent 解除**：css-position `position-fixed-root-element-{grid,flex}`（R497 唯一残余不确定性）实测 **61→61 不变** → **不回归**（其 fixed 元素 post-fix 仍 near-miss FAIL，pre-fix 亦 FAIL，self-pass 口径不变）。R497「net +1 contingent」→ 实测 **net +3**（001 + 003 + 009e），全量 chr<1% 2671→**2674**（+3，非 R497 估的 +2/2673；009e ref-fixed 为 R497 blast-radius 未列第 3 案）。
+**R497 contingent 解除**：css-position `position-fixed-root-element-{grid,flex}`（R497 唯一残余不确定性）实测 **61→61 不变** → **不回归**（其 fixed 元素 post-fix 仍 near-miss FAIL，pre-fix 亦 FAIL，self-pass 口径不变）。R497「net +1 contingent」→ 实测 **chr<1% +2**（001 + 003，全量 chr<1% 2671→**2673**；R497 估 +2/2673 部分吻合——R497 已含 001/003，009e 不计入 chr<1%）/ **self-source +3**（含 009e ref-fixed；009e test 侧 absolute 不动 → chr<1% 不变，仅 self-source 翻，见 §3 口径更正）。（原文「全量 chr<1% 2671→2674 +3」误把 self-source 的 009e 计入 chr<1%，已更正为 +2/2673；master.md R498 header 一直为 +2，此处对齐。）
 
 ## 5. 验证
 
