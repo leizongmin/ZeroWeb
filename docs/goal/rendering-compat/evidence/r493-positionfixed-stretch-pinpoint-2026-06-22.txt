@@ -74,3 +74,22 @@ if matches!(style.height, LengthValue::Auto) { child.height += (viewport_height 
 - **ZeroWeb-side**（非 taffy-blocked）：水平 stretch 已工作证 taffy 能做 inset stretch；垂直失败是 CB height 解析 + 缺 post-process，可在 ZeroWeb 后处理补（fixed CB 无歧义=视口，低风险）。
 - 属 **R98/R124 abspos-CB/inset 谱系**（master.md plateau 已标 taffy-bound，但本轮细化=垂直子问题可 scoped 修，非全谱系阻塞）。
 - R491（canvas 传播）**spec 正确**，此 6 回归是 R491 暴露的 latent 缺口，修复后 R491 净正。
+
+## 6. ⚠️ R493b scope-split 细化（converter vs post-layout）— 纠正 §4「触发条件/预期收益」过乐观
+
+**实证（converter 签名）**：`computed_style_to_taffy(style: &ComputedStyle, parent_areas: Option<&GridAreaMap>, viewport_w, viewport_h, …)`——**只取元素自身 style + viewport**（`parent_areas` 仅 grid 用，非 ancestor 定位上下文）。**converter 在 convert 时无 ancestor tree**，故：
+
+- **无法识别「abspos 无 positioned 祖先」**（需遍历祖先链 → layout 期才知）。
+- **唯一无条件可识别 = `position:Fixed`**（CB=viewport，恒定）。
+
+**因此 §4「触发条件: is_fixed（或 abspos 无 positioned 祖先）」+「预期收益 001-004 翻回 +5~7」过乐观，纠正为**：
+
+| 子集 | 可修位置 | 覆盖 case | 单步增益 |
+|------|---------|-----------|---------|
+| **fixed**（CB=viewport 无条件已知） | converter-level（convert 时派生 size=viewport−insets） | 001, 003 | R491 净 ~**+1**（−1→+1，2 案翻回） |
+| **absolute**（CB=positioned 祖先，layout 后才知） | **post-layout only**（converter 不可达）→ scoped 重启用禁用的 `adjust_absolute_to_initial_containing_block`(engine.rs:1591)，仅 height 分支 + CB=视口 guarded | 002, 004（无 positioned 祖先→CB=视口）；005, 006（relative 祖先，CB=该祖先，需其 height 定） | +3~5（须另起 post-layout 修复） |
+
+**结论**：fixed-only converter 修复 → R491 净 ~+1（破 R484 后 net-positive streak！但仅 +1）。全 +5-7 须**另补 absolute post-layout 修复**（独立工作项，scope 更大，触及旧 `adjust_absolute_to_initial_containing_block` 禁用回归根源 static-inside-inline-block/background-329，须 height-only scoped 重启用验证）。
+
+**给代码 agent**：fixed converter 修 land 后，absolute 4 案（002/004/005/006）是下一独立 lever——post-layout height stretch，CB 解析依赖布局结果，非 converter 可解。
+
