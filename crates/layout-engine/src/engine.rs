@@ -1683,7 +1683,6 @@ fn adjust_absolute_pct_to_viewport(
     for child in &mut box_node.children {
         if child.is_absolute
             && !child_has_positioned_ancestor
-            && !child.is_replaced
             && let Some(style) = child.node_id.and_then(|node_id| styles.get(&node_id))
         {
             // 仅当 width 为百分比时按视口重解析
@@ -1693,18 +1692,23 @@ fn adjust_absolute_pct_to_viewport(
             if let LengthValue::Percentage(p) = &style.height {
                 child.height = *p as f32 / 100.0 * viewport_height;
             }
-            // auto 尺寸 + 全长度 inset → stretch（CSS §10.3.18 / §10.6.4）。
+            // auto 尺寸 + 全长度 inset → stretch（CSS §10.3.18 / §10.6.4，仅非替换）。
             // 仅当 left+right（或 top+bottom）均为长度且尺寸为 auto 时按视口 CB
             // stretch；与历史 adjust_absolute_to_initial_containing_block 的「无条件
             // 扩张 auto 宽高」（width += viewport - content，致 static-inside-inline-block
-            // / background-329 回归）不同——本分支严格匹配 spec 的「双 inset 才 stretch」，
-            // 不动 x/y（位置已由下方 Px left/top 块设好）。
+            // / background-329 回归）不同——本块严格匹配 spec 的「双 inset 才 stretch」，
+            // 不动 x/y（位置已由下方 Px left/top 块设好）。`!is_replaced` 仅守卫本块：
+            // §10.3.8 替换元素 auto 尺寸按固有尺寸解析（非 stretch），但 §10.1.4 的
+            // viewport-CB 定位与百分比尺寸对替换/非替换同等适用，故守卫不扩到整分支
+            // （避免误关 R98 位置/百分比尺寸解析，致替换 abspos 定位回退）。
             if matches!(style.width, LengthValue::Auto)
+                && !child.is_replaced
                 && let (LengthValue::Px(left), LengthValue::Px(right)) = (&style.left, &style.right)
             {
                 child.width = (viewport_width - (*left as f32) - (*right as f32)).max(0.0);
             }
             if matches!(style.height, LengthValue::Auto)
+                && !child.is_replaced
                 && let (LengthValue::Px(top), LengthValue::Px(bottom)) = (&style.top, &style.bottom)
             {
                 child.height = (viewport_height - (*top as f32) - (*bottom as f32)).max(0.0);

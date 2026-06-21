@@ -89,6 +89,20 @@ positioning + normal-flow **per-case set diff**（`comm`）确认新回归集 = 
 
 chr<1% 累计 **+4**（001/003/002/007）；全量 chr<1% 2671→**2675**（自 R491 baseline）。self-source 累计 +5（含 009e ref-fixed，R498）。**零回归**（R498 7 dir + R499 6 dir per-case set diff 双确认）。
 
+## 6b. R499c scoped-guard 收窄（doc-agent d9882528 review 采纳）
+
+doc-agent d9882528 review 发现：§2 的 `!child.is_replaced` 在 `adjust_absolute_pct_to_viewport` **外层** guard（line 1686），gating 整分支——连带跳过 pre-existing R98 Px/% left/top 位置解析（engine.rs:1712-1731）。但 CSS §10.1.4 viewport-CB 定位对 replaced/non-replaced **同等适用**（仅 sizing 区分 §10.3.8/§10.6.6 vs §10.3.18/§10.6.4）→ replaced abspos 仍须视口相对定位。
+
+**收窄**：移除外层 `!child.is_replaced`，仅加到两个 auto-inset size-stretch `if` 块（§10.3.8 替换 auto 用固有尺寸非 stretch 才需守卫）；位置解析（Px/% left/top）+ 百分比尺寸解析恢复对 replaced active。
+
+**A-B 实证 behavior-preserving（narrowed vs broad-guard f5737018，per-case set diff）**：
+- 025/026 `<img>`：`left:4em`=**Em**（非 Px/%）→ R98 位置块 `LengthValue::Px`/`Percentage` pattern 本不命中 → 收窄前后位置同 → 仍 PASS（0.07%/0.03%），img 仍 intrinsic 15×15（size-stretch 块守卫保留）。
+- 002/007 `<div>`：non-replaced → size-stretch 仍生效 → 仍 PASS（0.00%）。
+- positioning + normal-flow per-case `comm`：**0 新翻 / 0 新回归**（identical pass sets）。
+- `cargo test --workspace` **12286/0**。
+
+**净值**：chr<1% 净不变（+2 持，002/007），但代码更 CSS-correct（替换 abspos 的 Px/% 位置 + 百分比尺寸解析恢复 active，符合 §10.1.4）。零行为变化（current 素无 replaced abspos+Px/% inset 案触发）。
+
 ## 7. 下一 lever
 
 - **004（+1，risk 中）**：补 right/bottom Px 位置解析（`child.x = viewport_w − right − width − origin_x`），x/y 改动须全 abspos 回归闸。
