@@ -139,5 +139,16 @@ fix 的 Percentage 分支普适（所有 fixed+% 相对视口重算）是最大�
     改善或保持，非回归；但 003 本是 fixed+% 翻 PASS 的目标，其余 8 案须 sweep 实证零回归。
   - 结论：net +1 回归风险 bounded 且小（~9 案），全量 sweep 通过即坐实 2671→2673。
 
+7.1  blast-radius 3 可见案 self-source 复核（05:19；pre-fix dump vs ZW-ref）
+     - visuren/right-offset-position-fixed-001：self 2.08% FAIL + chr 2.71% FAIL（pre-fix 双 FAIL）
+     - visuren/left-offset-position-fixed-001 ：self 2.08% FAIL + chr 2.71% FAIL（pre-fix 双 FAIL）
+     - normal-flow/blocks-025                ：self 3.38% FAIL + chr 2.56% FAIL（pre-fix 双 FAIL）
+     - → 这 3 案 pre-fix 已 FAIL（不在 chr<1% 计数内），fix **不可能回归计数**（只能 improve 或不变）。
+     - 残余回归风险仅限 5 缺-dump 案（position-fixed-004/005、background-alpha-002、overflow-009、
+       abspos-in-block-in-inline-in-relpos-inline）：若它们当前 self+chr PASS 且 ZW 已做视口 CB→fix 为
+       no-op 仍 PASS；仅「wrong-CB 恰匹配 oracle」罕见边态会被 fix 改变。code agent 全量 sweep 即闸。
+     - 净评估：net +1 (2671→2673) 回归风险 = 低（3 可见案不可回归 + 5 缺-dump 案多属 no-op）。
+
+
 
 
