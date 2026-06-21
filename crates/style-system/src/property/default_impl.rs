@@ -323,6 +323,8 @@ impl Default for ComputedStyle {
             clip: ClipRectComputedValue::Auto,
             mask_image: vec![],
             mask_mode: MaskModeComputedValue::MatchSource,
+            before_pseudo: None,
+            after_pseudo: None,
         }
     }
 }

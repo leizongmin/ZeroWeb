@@ -284,7 +284,7 @@ impl RenderPipeline {
 
         // 1. 解析 HTML → DOM
         let parse_start = Instant::now();
-        let doc = zero_dom::parse_html(html);
+        let mut doc = zero_dom::parse_html(html);
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
 
         // 2. 解析 CSS → Stylesheets（外部 CSS + HTML 内 `<style>`）
@@ -294,8 +294,12 @@ impl RenderPipeline {
         let style_start = Instant::now();
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let styles = self.style_system.compute_styles(&doc, &stylesheets);
+        let mut styles = self.style_system.compute_styles(&doc, &stylesheets);
         let style_ms = style_start.elapsed().as_secs_f64() * 1000.0;
+
+        // 3.5 把 ::before/::after 伪元素的 content 文本注入为合成文本子节点（doc 每帧
+        // 重建，合成节点无累积、JS 不可见）。build_subtree 随后按普通文本子节点测量/绘制。
+        inject_pseudo_text_nodes(&mut doc, &mut styles);
 
         // 4. 计算布局
         let layout_start = Instant::now();
@@ -490,6 +494,55 @@ fn layout_extent_y(b: &zero_layout_engine::LayoutBox, offset_y: f32) -> f32 {
     max_y
 }
 
+/// 把 `::before`/`::after` 伪元素的 `content` 文本注入为元素的合成文本子节点。
+///
+/// 在 `compute_styles` 之后、布局之前调用。`Document` 每次渲染由 `parse_html` 重建，
+/// 故合成节点天然无累积、对 JS 不可见。`before` 经 `insert_before` 插为首个子节点
+/// （保证渲染在元素内容之前），`after` 经 `append_child` 追加为末子节点。伪元素的
+/// `ComputedStyle` 写入 `styles`，使测量/绘制按该样式渲染（颜色、字号等）。
+///
+/// 复用全部既有机制（文本测量、匿名盒包裹、绘制）——伪元素合成节点即普通文本子节点。
+fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<NodeId, ComputedStyle>) {
+    use zero_style_system::property::types::ContentComputedValue;
+
+    // 先收集待注入项，避免在遍历 styles 时变更它。
+    // (parent, is_before, text, pseudo_style)
+    let mut pending: Vec<(NodeId, bool, String, ComputedStyle)> = Vec::new();
+    for (&nid, st) in styles.iter() {
+        if let Some(b) = st.before_pseudo.as_ref()
+            && let ContentComputedValue::String(t) = &b.content
+        {
+            pending.push((nid, true, t.clone(), (**b).clone()));
+        }
+        if let Some(a) = st.after_pseudo.as_ref()
+            && let ContentComputedValue::String(t) = &a.content
+        {
+            pending.push((nid, false, t.clone(), (**a).clone()));
+        }
+    }
+
+    for (parent, is_before, text, mut pseudo_style) in pending {
+        // content 字段对文本节点测量无意义（测量读 doc 文本）；清为 Normal 防止下游
+        // 把合成文本节点误当伪元素再处理。
+        pseudo_style.content = ContentComputedValue::Normal;
+        let text_id = doc.create_text_node(&text);
+        styles.insert(text_id, pseudo_style);
+        let inserted = if is_before {
+            // before：插为首个子节点（content 渲染在元素内容之前）。
+            match doc.get(parent).and_then(|n| n.children.first().copied()) {
+                Some(fc) => doc.insert_before(parent, text_id, fc).is_ok(),
+                None => doc.append_child(parent, text_id).is_ok(),
+            }
+        } else {
+            doc.append_child(parent, text_id).is_ok()
+        };
+        if !inserted {
+            // 插入失败（如 parent 不存在）则回滚 styles 条目，避免悬空引用。
+            styles.remove(&text_id);
+        }
+    }
+}
+
 /// 收集样式表：外部 CSS 字符串 + 文档内 `<style>` 元素文本。
 fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> {
     let mut stylesheets = Vec::new();
@@ -607,6 +660,93 @@ fn apply_animation_overrides(
             if let Some(style) = styles.get_mut(&node_id) {
                 AnimationClock::apply_to_computed_style(&props, style);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod pseudo_tests {
+    use super::*;
+    use zero_style_system::property::types::ContentComputedValue;
+
+    /// 递归查找首个标签名为 `tag` 的元素 NodeId。
+    fn find_element(doc: &Document, id: NodeId, tag: &str) -> Option<NodeId> {
+        if let Some(n) = doc.get(id) {
+            if let zero_dom::NodeKind::Element(e) = &n.kind {
+                if e.local_name().eq_ignore_ascii_case(tag) {
+                    return Some(id);
+                }
+            }
+            for child in doc.child_nodes(id) {
+                if let Some(found) = find_element(doc, child, tag) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+
+    /// `inject_pseudo_text_nodes`：::before content 注入为元素的首个文本子节点，
+    /// 且其 ComputedStyle 进入 styles 供测量/绘制按伪元素样式渲染。
+    #[test]
+    fn inject_before_pseudo_as_first_text_child() {
+        let html = r#"<html><body><div>X</div></body></html>"#;
+        let mut doc = zero_dom::parse_html(html);
+        // 找到 div
+        let div = find_element(&doc, doc.root(), "div").expect("div 存在");
+        let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+        let mut div_style = ComputedStyle::default();
+        div_style.before_pseudo = Some(Box::new(ComputedStyle {
+            content: ContentComputedValue::String("Y".to_string()),
+            ..ComputedStyle::default()
+        }));
+        styles.insert(div, div_style);
+
+        inject_pseudo_text_nodes(&mut doc, &mut styles);
+
+        // div 的首个子节点应为注入的文本节点 "Y"
+        let first_child = doc.get(div).and_then(|n| n.children.first().copied()).expect("有子节点");
+        match &doc.get(first_child).unwrap().kind {
+            zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "Y"),
+            other => panic!("首个子节点应为文本节点，实际 {other:?}"),
+        }
+        // 注入节点的样式已进入 styles（content 被清为 Normal）
+        let inj_style = styles.get(&first_child).expect("注入节点有样式");
+        assert!(matches!(inj_style.content, ContentComputedValue::Normal));
+        // 原 "X" 文本节点仍是 div 的第二个子节点
+        let second = doc.get(div).unwrap().children.get(1).copied();
+        assert!(matches!(doc.get(second.unwrap()).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(_))));
+    }
+
+    /// `inject_pseudo_text_nodes`：::after 追加为末子节点；content:none 不注入。
+    #[test]
+    fn inject_after_pseudo_and_skip_none() {
+        let html = r#"<html><body><div>X</div></body></html>"#;
+        let mut doc = zero_dom::parse_html(html);
+        let div = find_element(&doc, doc.root(), "div").unwrap();
+        let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+        let mut div_style = ComputedStyle::default();
+        // after = String("Z"); before = None（content:none 不应触发——这里直接测 after）
+        div_style.after_pseudo = Some(Box::new(ComputedStyle {
+            content: ContentComputedValue::String("Z".to_string()),
+            ..ComputedStyle::default()
+        }));
+        styles.insert(div, div_style);
+
+        inject_pseudo_text_nodes(&mut doc, &mut styles);
+
+        let children = &doc.get(div).unwrap().children;
+        // 末子节点应为 "Z"
+        let last = *children.last().unwrap();
+        match &doc.get(last).unwrap().kind {
+            zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "Z"),
+            other => panic!("末子节点应为文本节点，实际 {other:?}"),
+        }
+        // 首子节点仍是原 "X"
+        let first = *children.first().unwrap();
+        match &doc.get(first).unwrap().kind {
+            zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "X"),
+            _ => panic!("首子节点应仍是原文本 X"),
         }
     }
 }

@@ -110,3 +110,48 @@ fn test_gap_shorthand_double_value() {
     assert_eq!(s.row_gap, LengthValue::Px(10.0));
     assert_eq!(s.column_gap, LengthValue::Px(20.0));
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// 伪元素 ::before/::after 计算样式（R487：compute 阶段）
+// ═══════════════════════════════════════════════════════════════════
+
+/// 通过 CSS 文本构建样式表并计算，返回指定元素的计算样式。
+fn compute_style_from_css(doc: &zero_dom::Document, css: &str, element: zero_dom::NodeId) -> ComputedStyle {
+    let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+    let stylesheets = vec![stylesheet];
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(doc, &stylesheets);
+    styles.get(&element).cloned().unwrap_or_default()
+}
+
+#[test]
+fn test_before_pseudo_computed_from_content() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let css = r#"div:before { content: "X"; color: red; }"#;
+    let s = compute_style_from_css(&doc, css, div);
+    let before = s.before_pseudo.expect("div 应有 before 伪元素样式");
+    match &before.content {
+        crate::property::types::ContentComputedValue::String(t) => {
+            assert!(t.contains('X'), "before content 文本: {t}");
+        }
+        other => panic!("before content 应为 String，实际 {other:?}"),
+    }
+    // 元素本体不应被伪元素规则污染（content 仍为 Normal）
+    assert!(matches!(
+        s.content,
+        crate::property::types::ContentComputedValue::Normal
+    ));
+    // 无 ::after 规则 → after_pseudo 为 None
+    assert!(s.after_pseudo.is_none(), "无 ::after 规则时 after_pseudo 应为 None");
+}
+
+#[test]
+fn test_after_pseudo_and_content_none_no_box() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    // content: none 不应生成盒 → after_pseudo 不设置（content 非 String）
+    let css = r#"div:after { content: none; }"#;
+    let s = compute_style_from_css(&doc, css, div);
+    assert!(s.after_pseudo.is_none(), "content:none 不应设置 after_pseudo");
+    // before 无规则 → None
+    assert!(s.before_pseudo.is_none());
+}
