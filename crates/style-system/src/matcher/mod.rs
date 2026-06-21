@@ -944,10 +944,77 @@ pub fn collect_matching_declarations_with_media(
             container_ctx,
             None,
             &mut layer_counter,
+            None,
         );
     }
 
     results
+}
+
+/// 从样式表中收集匹配元素指定伪元素（`::before`/`::after`）的声明。
+///
+/// 与 [`collect_matching_declarations_with_media`] 相同，但只收集选择器尾部
+/// 伪元素等于 `pseudo_name` 的规则，且元素需匹配「去除尾部伪元素后的选择器主体」。
+/// 特异性使用原选择器（含伪元素贡献）。用于伪元素级联（生成 `content` 文本等）。
+pub fn collect_pseudo_declarations_with_media(
+    doc: &Document,
+    element: NodeId,
+    stylesheets: &[zero_css_parser::Stylesheet],
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+    container_ctx: Option<&ContainerContext>,
+    pseudo_name: &str,
+) -> Vec<MatchingDecl> {
+    let mut results = Vec::new();
+    let mut layer_counter: usize = 0;
+
+    for stylesheet in stylesheets {
+        collect_from_rules(
+            doc,
+            element,
+            &stylesheet.rules,
+            &mut results,
+            media_ctx,
+            container_ctx,
+            None,
+            &mut layer_counter,
+            Some(pseudo_name),
+        );
+    }
+
+    results
+}
+
+/// 返回选择器的尾部伪元素名（如 `"before"`/`"after"`），若无则 `None`。
+///
+/// 按 CSS 语法，伪元素总是最后一个复合选择器的最后一个子类选择器。
+pub fn selector_pseudo_element(selector: &Selector) -> Option<&str> {
+    use zero_css_parser::ast::PseudoElementSelector;
+    let (compound, _) = selector.complex.parts.last()?;
+    match compound.subclass_selectors.last()? {
+        SubclassSelector::PseudoElement(PseudoElementSelector::Standard(name)) => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+/// 检查元素是否匹配「以指定伪元素结尾」的选择器：尾部伪元素必须等于 `pseudo_name`，
+/// 且元素匹配去除该尾部伪元素后的选择器主体。
+fn matches_selector_for_pseudo(
+    doc: &Document,
+    element: NodeId,
+    selector: &Selector,
+    pseudo_name: &str,
+) -> bool {
+    if selector_pseudo_element(selector) != Some(pseudo_name) {
+        return false;
+    }
+    // 克隆并移除尾部伪元素子类，得到「主体」选择器，复用常规匹配。
+    let mut stripped = selector.clone();
+    let last_compound = match stripped.complex.parts.last_mut() {
+        Some(c) => c,
+        None => return false,
+    };
+    last_compound.0.subclass_selectors.pop();
+    matches_selector(doc, element, &stripped)
 }
 
 /// 递归从规则中收集匹配的声明。
@@ -964,13 +1031,20 @@ fn collect_from_rules(
     container_ctx: Option<&ContainerContext>,
     current_layer: Option<usize>,
     layer_counter: &mut usize,
+    pseudo: Option<&str>,
 ) {
     for rule in rules {
         match rule {
             zero_css_parser::ast::Rule::Style(style_rule) => {
                 // 检查选择器列表中是否有匹配的选择器
                 for selector in &style_rule.selectors {
-                    if matches_selector(doc, element, selector) {
+                    // pseudo=None: 常规元素匹配；
+                    // pseudo=Some(name): 仅收集尾部伪元素 == name 的选择器（伪元素声明）。
+                    let matched = match pseudo {
+                        None => matches_selector(doc, element, selector),
+                        Some(name) => matches_selector_for_pseudo(doc, element, selector, name),
+                    };
+                    if matched {
                         let spec = zero_css_parser::selector::specificity(selector);
                         for decl in &style_rule.declarations {
                             results.push((
@@ -1005,6 +1079,7 @@ fn collect_from_rules(
                                 container_ctx,
                                 current_layer,
                                 layer_counter,
+                                pseudo,
                             );
                         }
                         // 没有 media_ctx 时，@media 规则不应用（安全默认值）
@@ -1019,6 +1094,7 @@ fn collect_from_rules(
                             container_ctx,
                             current_layer,
                             layer_counter,
+                            pseudo,
                         );
                     }
                 }
@@ -1039,6 +1115,7 @@ fn collect_from_rules(
                     container_ctx,
                     Some(layer_idx),
                     layer_counter,
+                    pseudo,
                 );
             }
             zero_css_parser::ast::Rule::Import(_) => {
@@ -1056,6 +1133,7 @@ fn collect_from_rules(
                         container_ctx,
                         current_layer,
                         layer_counter,
+                        pseudo,
                     );
                 }
             }
@@ -1071,6 +1149,7 @@ fn collect_from_rules(
                         container_ctx,
                         current_layer,
                         layer_counter,
+                        pseudo,
                     );
                 }
             }

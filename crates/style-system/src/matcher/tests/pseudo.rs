@@ -510,3 +510,72 @@ fn test_has_no_match() {
         "div without .absent descendant should not match :has(.absent)"
     );
 }
+
+// ===== 伪元素声明路由（R486：:before/:after generated-content 基础）=====
+
+/// 端到端验证：CSS2 单冒号 `:before` 经解析器归为伪元素，matcher 把
+/// `div:before { content: "X"; color: red }` 的声明路由到 div 的 before 伪元素槽，
+/// 且不会落到 div 元素自身的样式上。
+#[test]
+fn test_pseudo_element_declaration_routing() {
+    let (_doc, _html, _body, div, _p) = make_test_dom();
+    let css = r#"div:before { content: "X"; color: red; }"#;
+    let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+
+    // 1. 解析器：:before 归为伪元素（尾部伪元素名 == "before"）
+    use zero_css_parser::ast::Rule;
+    let style_rule = match &stylesheet.rules[0] {
+        Rule::Style(sr) => sr,
+        _ => panic!("expected style rule"),
+    };
+    assert_eq!(selector_pseudo_element(&style_rule.selectors[0]), Some("before"));
+
+    let stylesheets = [stylesheet];
+
+    // 2. 伪元素声明收集：div 的 before 应收到 content + color
+    let pseudo_decls =
+        collect_pseudo_declarations_with_media(&_doc, div, &stylesheets, None, None, "before");
+    let mut got_content = false;
+    let mut got_color = false;
+    for (prop, val, _, _, _) in &pseudo_decls {
+        if prop == "content" {
+            assert!(val.contains('X'), "content value: {val}");
+            got_content = true;
+        }
+        if prop == "color" {
+            got_color = true;
+        }
+    }
+    assert!(got_content, "before 伪元素应收到 content 声明");
+    assert!(got_color, "before 伪元素应收到 color 声明");
+
+    // 3. 元素自身不应收到这些声明（伪元素规则不作用于元素本体）
+    let own_decls = collect_matching_declarations_with_media(&_doc, div, &stylesheets, None, None);
+    for (prop, _, _, _, _) in &own_decls {
+        assert!(prop != "content", "元素本体不应收到伪元素的 content 声明");
+    }
+
+    // 4. after 槽不应收到 before 的声明
+    let after_decls =
+        collect_pseudo_declarations_with_media(&_doc, div, &stylesheets, None, None, "after");
+    assert!(after_decls.is_empty(), "after 槽应为空（规则只匹配 before）");
+}
+
+/// 双冒号 `::before` 与单冒号等价，且特异性含伪元素贡献。
+#[test]
+fn test_double_colon_pseudo_element_routing() {
+    let (_doc, _html, _body, div, _p) = make_test_dom();
+    let css = r#"div::after { content: "Z"; }"#;
+    let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+    use zero_css_parser::ast::Rule;
+    let style_rule = match &stylesheet.rules[0] {
+        Rule::Style(sr) => sr,
+        _ => panic!("expected style rule"),
+    };
+    assert_eq!(selector_pseudo_element(&style_rule.selectors[0]), Some("after"));
+    let stylesheets = [stylesheet];
+    let after_decls =
+        collect_pseudo_declarations_with_media(&_doc, div, &stylesheets, None, None, "after");
+    assert_eq!(after_decls.len(), 1);
+    assert_eq!(after_decls[0].0, "content");
+}
