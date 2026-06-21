@@ -9,7 +9,7 @@
 //
 // 依赖：puppeteer-core + 系统 chromium；经 ~/use-proxy 代理（chromium 抓上游无关，本地 HTTP）。
 import { join, dirname, extname, normalize, relative, resolve } from 'node:path';
-import { createReadStream, statSync, readdirSync } from 'node:fs';
+import { createReadStream, statSync, readdirSync, existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 
@@ -25,10 +25,12 @@ const MIME = {
 };
 
 const categories = [];
+let skipExisting = false;
 for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i] === '--category') categories.push(process.argv[++i]);
+  else if (process.argv[i] === '--skip-existing') skipExisting = true;
 }
-if (categories.length === 0) { console.error('Usage: capture-oracle-per-dir.mjs --category <dir> [...]'); process.exit(1); }
+if (categories.length === 0) { console.error('Usage: capture-oracle-per-dir.mjs --category <dir> [...] [--skip-existing]'); process.exit(1); }
 
 // 递归收集 category 目录下所有 test 文件（相对 category 的路径）。
 // css-text / CSS2 的 test 散落在子目录（white-space/、box/...），顶层 readdirSync 会漏掉。
@@ -76,13 +78,16 @@ for (const cat of categories) {
   catch { console.error(`dir not found: ${cat}`); continue; }
   let ok = 0, fail = 0;
   for (const t of tests) {
+    const safe = cat.replace(/[\\/]/g, '_') + '_' + t.replace(/[\\/.]/g, '_');
+    const outPath = join(OUT, safe + '.png');
+    // 断点续传：--skip-existing 时跳过已存在的 PNG（chromium 渲染确定性，跨会话恢复安全）。
+    if (skipExisting && existsSync(outPath)) { ok++; continue; }
     const page = await browser.newPage();
     await page.setViewport({ width: 800, height: 600 });
     try {
       await page.goto(`${base}/${cat}/${t}`, { waitUntil: 'networkidle0', timeout: 8000 });
       await new Promise(r => setTimeout(r, 80));
-      const safe = cat.replace(/[\\/]/g, '_') + '_' + t.replace(/[\\/.]/g, '_');
-      await page.screenshot({ path: join(OUT, safe + '.png'), type: 'png' });
+      await page.screenshot({ path: outPath, type: 'png' });
       ok++;
     } catch { fail++; }
     await page.close();
