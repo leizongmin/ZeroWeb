@@ -327,7 +327,18 @@ impl<'a> Parser<'a> {
                             };
                             subclass_selectors.push(SubclassSelector::PseudoClass(pseudo));
                         } else {
-                            subclass_selectors.push(SubclassSelector::PseudoClass(PseudoClassSelector::Simple(name)));
+                            // CSS2 允许单冒号伪元素语法：:before/:after/:first-letter/:first-line
+                            // 等价于 CSS3 的 ::before 等（选择器规范 §7）。归为伪元素而非伪类。
+                            match name.as_str() {
+                                "before" | "after" | "first-letter" | "first-line" => {
+                                    subclass_selectors
+                                        .push(SubclassSelector::PseudoElement(PseudoElementSelector::Standard(name)));
+                                }
+                                _ => {
+                                    subclass_selectors
+                                        .push(SubclassSelector::PseudoClass(PseudoClassSelector::Simple(name)));
+                                }
+                            }
                         }
                     } else if let Token::Function(name) = self.peek().clone() {
                         // 函数伪类（Function token 形式，tokenizer 直接产生 Function）
