@@ -232,6 +232,8 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.viewport_w = self.viewport_width;
+        painter.viewport_h = self.viewport_height;
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
         let viewport = Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
@@ -313,6 +315,8 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.viewport_w = self.viewport_width;
+        painter.viewport_h = self.viewport_height;
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
         // 视口剔除 — 移除视口外的图元
@@ -370,6 +374,8 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.viewport_w = self.viewport_width;
+        painter.viewport_h = self.viewport_height;
         painter.paint(&layout_result.root, &styles, Some(doc));
         let primitives = painter.into_primitives();
 
@@ -449,6 +455,8 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.viewport_w = self.viewport_width;
+        painter.viewport_h = self.viewport_height;
         painter.paint_in_rect(&layout_result.root, &styles, &dirty_rect, Some(doc));
         Some(painter.into_primitives())
     }

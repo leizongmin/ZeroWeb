@@ -51,6 +51,12 @@ pub struct Painter {
     /// 由调用方从 FontLoader.build_font_resolver() 构建并传入。
     /// 用于将 CSS font-family 列表解析为具体的 FontId。
     font_resolver: HashMap<String, u32>,
+    /// 视口宽度（像素）。用于 CSS §14.2 画布背景传播——根元素（html）的背景
+    /// 覆盖整个画布；若根背景透明且 body 有背景，则 body 背景传播到画布。
+    /// 由调用方（pipeline）在 paint 前设置；测试默认 0.0（不绘制画布背景）。
+    pub viewport_w: f32,
+    /// 视口高度（像素）。语义同 `viewport_w`。
+    pub viewport_h: f32,
 }
 
 fn is_positioned_child(box_node: &LayoutBox) -> bool {
@@ -112,6 +118,8 @@ impl Painter {
             skip_indicators: false,
             image_sizes: HashMap::new(),
             font_resolver: HashMap::new(),
+            viewport_w: 0.0,
+            viewport_h: 0.0,
         }
     }
 
@@ -152,6 +160,35 @@ impl Painter {
     /// 遍历 LayoutBox 树，为每个有样式的节点生成背景和边框填充图元。
     /// 传入 `doc` 以启用行内格式化上下文的文本换行布局。
     pub fn paint(&mut self, layout: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: Option<&Document>) {
+        // CSS §14.2 画布背景传播：根元素（html）的背景色覆盖整个画布；若根背景透明
+        // 且 body 有背景色，则 body 背景色传播到画布。在绘制树之前先填充画布背景，
+        // 使整个视口（含 body margin / 超出根盒的区域）呈现该背景色。根/body 自身
+        // 背景仍照常绘制（同色叠加，无可见重绘）。
+        if self.viewport_w > 0.0 && self.viewport_h > 0.0
+            && let Some(doc) = doc
+        {
+            let mut canvas_color: Option<zero_style_system::property::types::ColorValue> = None;
+            // 根元素 html 的背景色优先；透明则取 body 背景色。
+            let html_id = doc.get_elements_by_tag_name("html").into_iter().next();
+            if let Some(hid) = html_id
+                && let Some(hs) = styles.get(&hid)
+                && hs.background_color != zero_style_system::property::types::ColorValue::Transparent
+            {
+                canvas_color = Some(hs.background_color.clone());
+            }
+            if canvas_color.is_none() {
+                if let Some(bid) = doc.get_elements_by_tag_name("body").into_iter().next()
+                    && let Some(bs) = styles.get(&bid)
+                    && bs.background_color != zero_style_system::property::types::ColorValue::Transparent
+                {
+                    canvas_color = Some(bs.background_color.clone());
+                }
+            }
+            if let Some(c) = canvas_color {
+                self.primitives
+                    .add_fill(Rect::new(0.0, 0.0, self.viewport_w, self.viewport_h), color_value_to_render(&c));
+            }
+        }
         self.paint_node(layout, styles, 0.0, 0.0, doc);
     }
 
