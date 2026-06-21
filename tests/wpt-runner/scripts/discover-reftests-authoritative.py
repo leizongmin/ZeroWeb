@@ -10,7 +10,8 @@
 不带 --import：仅输出发现的 test→ref 对（dry-run）。
 带 --import：下载 test+ref 文件到 wpt-data/ 并更新 manifest。
 
-依赖：curl（经 ~/use-proxy 代理）。GitHub raw 不限速；目录列表用 API（限速，单目录 1 调用）。
+依赖：curl（经 ~/use-proxy 代理）。GitHub raw 不限速；子目录枚举用 git/trees?recursive=1
+（每目录 2 调用：contents(parent) 取 tree SHA + 递归取整棵子树），绕开 60/hr 限速。
 """
 import argparse, json, os, re, subprocess, sys, urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -24,7 +25,7 @@ LINK_RE = re.compile(r'<link[^>]*\brel\s*=\s*["\']match["\'][^>]*\bhref\s*=\s*["
 LINK_RE2 = re.compile(r'<link[^>]*\bhref\s*=\s*["\']([^"\']+)["\'][^>]*\brel\s*=\s*["\']match["\']', re.I)
 
 def gh_api(path):
-    """GitHub API 目录列表（单调用）。可选 GITHUB_TOKEN 环境变量提升限速（60→5000/hr，CSS2 全量需）。"""
+    """GitHub API 目录列表（单调用）。可选 GITHUB_TOKEN 环境变量提升限速（60→5000/hr）。"""
     import urllib.request as u
     headers = {"User-Agent": "zw-discover"}
     token = os.environ.get("GITHUB_TOKEN")
@@ -33,6 +34,33 @@ def gh_api(path):
     req = u.Request(f"{WPT_API}/{path}?ref=master", headers=headers)
     with u.urlopen(req, timeout=30) as r:
         return json.load(r)
+
+def gh_tree(tree_sha):
+    """Git Trees API recursive=1：单次调用返回整棵子树（含所有子目录 blob）。
+
+    比逐子目录 gh_api(contents) 递归（css-text ~30 subdir / CSS2 ~43 subdir 各需 1 调用）
+    省 30-75× 调用，绕开 60/hr 限速——这是 css-text / CSS2 全量导入能不靠 token 完成的关键。
+    """
+    import urllib.request as u
+    headers = {"User-Agent": "zw-discover"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"token {token}"
+    url = f"https://api.github.com/repos/web-platform-tests/wpt/git/trees/{tree_sha}?recursive=1"
+    req = u.Request(url, headers=headers)
+    with u.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+def get_tree_sha(category):
+    """取 category 目录自身的 git tree SHA（contents(parent) 中找 leaf 条目的 sha）。"""
+    if "/" in category:
+        parent, leaf = category.rsplit("/", 1)
+    else:
+        parent, leaf = "", category
+    for e in gh_api(parent):
+        if e["name"] == leaf and e["type"] == "dir":
+            return e["sha"]
+    raise RuntimeError(f"{category} 目录未在 {parent or '(root)'} 下找到")
 
 def fetch_raw(path):
     """raw.githubusercontent 文件内容（不限速）。"""
@@ -61,22 +89,19 @@ def is_test_file(name):
             and "-ref" not in name and "notref" not in name and "reference" not in name)
 
 def collect_test_paths(category):
-    """递归收集 category 下所有 test 文件全路径（含子目录）。
+    """收集 category 下所有 test 文件全路径（递归子目录，单次 git/trees 调用）。
 
-    css-text / CSS2 等 test 散落在子目录（white-space/、segment-break/、box/...），
-    顶层 gh_api 只返回顶层条目，须递归进每个 type=dir 子目录。
-    每个 subdir 一次 gh_api 调用（受 60/hr 限速；CSS2 全量 ~75 调用需 GITHUB_TOKEN）。
+    css-text / CSS2 等 test 散落在子目录（white-space/、box/...），git/trees?recursive=1
+    一次性返回整棵子树。截断时（WPT 任一 css 目录子树 <100k 条目不会发生）立即报错，
+    拒绝静默取部分以保 DC-14 分母完整性。
     """
-    entries = gh_api(category)
+    tree = gh_tree(get_tree_sha(category))
+    if tree.get("truncated"):
+        raise RuntimeError(f"{category} 子树被截断（>100k 条目）——分母不完整，拒绝")
     paths = []
-    subdirs = []
-    for e in entries:
-        if e["type"] == "file" and is_test_file(e["name"]):
-            paths.append(f"{category}/{e['name']}")
-        elif e["type"] == "dir":
-            subdirs.append(f"{category}/{e['name']}")
-    for sub in subdirs:
-        paths.extend(collect_test_paths(sub))
+    for e in tree["tree"]:
+        if e["type"] == "blob" and is_test_file(os.path.basename(e["path"])):
+            paths.append(f"{category}/{e['path']}")
     return paths
 
 def discover(category, max_n=None):

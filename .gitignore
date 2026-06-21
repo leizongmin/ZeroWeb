@@ -63,3 +63,7 @@ node_modules/
 
 .local/
 
+
+# Python bytecode cache (discover/cross-validate scripts)
+__pycache__/
+*.pyc
