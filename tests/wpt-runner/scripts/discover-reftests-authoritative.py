@@ -13,6 +13,7 @@
 依赖：curl（经 ~/use-proxy 代理）。GitHub raw 不限速；目录列表用 API（限速，单目录 1 调用）。
 """
 import argparse, json, os, re, subprocess, sys, urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 WPT_API = "https://api.github.com/repos/web-platform-tests/wpt/contents"
 WPT_RAW = "https://raw.githubusercontent.com/web-platform-tests/wpt/master"
@@ -39,6 +40,18 @@ def fetch_raw(path):
     except Exception:
         return None
 
+# raw.githubusercontent 不限速，瓶颈是网络 RTT × 文件数。并发抓取把大目录
+# （css-writing-modes ~400 test / css-text / CSS2）的发现+导入从顺序超时降到可接受。
+# ThreadPoolExecutor.map 保持输入顺序，结果与 paths 对齐。
+MAX_FETCH_WORKERS = 16
+
+def fetch_raw_many(paths):
+    """并行抓取多个 raw 文件。返回与 paths 同序的 [content|None]。"""
+    if not paths:
+        return []
+    with ThreadPoolExecutor(max_workers=MAX_FETCH_WORKERS) as ex:
+        return list(ex.map(fetch_raw, paths))
+
 def discover(category, max_n=None):
     """返回 [(test_path, ref_path), ...] 权威对。"""
     entries = gh_api(category)
@@ -47,10 +60,10 @@ def discover(category, max_n=None):
                   and "-ref" not in e["name"] and "notref" not in e["name"] and "reference" not in e["name"]]
     if max_n:
         test_files = test_files[:max_n]
+    test_paths = [f"{category}/{name}" for name in test_files]
+    contents = fetch_raw_many(test_paths)
     pairs = []
-    for name in test_files:
-        test_path = f"{category}/{name}"
-        content = fetch_raw(test_path)
+    for test_path, content in zip(test_paths, contents):
         if content is None:
             continue
         m = LINK_RE.search(content) or LINK_RE2.search(content)
@@ -81,22 +94,31 @@ def main():
             print(f"  ... ({len(pairs)} total)")
         return
 
-    # 导入：下载 test+ref
-    imported = 0
+    # 导入：收集所有需下载的唯一路径（跳过已存在），并行抓取后写入。
+    paths_to_fetch = []
+    seen = set()
     for test_path, ref_path in pairs:
         for p in (test_path, ref_path):
-            dst = os.path.join(DATA, p)
-            if os.path.exists(dst):
+            if p in seen:
                 continue
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            content = fetch_raw(p)
-            if content is None:
-                print(f"  SKIP (fetch fail): {p}")
-                continue
-            with open(dst, "w", encoding="utf-8") as f:
-                f.write(content)
-        imported += 1
-    print(f"导入 {imported} 对到 {DATA}")
+            seen.add(p)
+            if not os.path.exists(os.path.join(DATA, p)):
+                paths_to_fetch.append(p)
+    fetched = fetch_raw_many(paths_to_fetch)
+    for p, content in zip(paths_to_fetch, fetched):
+        if content is None:
+            print(f"  SKIP (fetch fail): {p}")
+            continue
+        dst = os.path.join(DATA, p)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        with open(dst, "w", encoding="utf-8") as f:
+            f.write(content)
+    # 计数两端均已落盘（本次或之前）的 test→ref 对
+    imported = sum(
+        1 for t, r in pairs
+        if os.path.exists(os.path.join(DATA, t)) and os.path.exists(os.path.join(DATA, r))
+    )
+    print(f"导入 {imported} 对到 {DATA}（{len(paths_to_fetch)} 文件新下载）")
 
 if __name__ == "__main__":
     main()
