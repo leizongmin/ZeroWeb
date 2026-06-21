@@ -162,8 +162,28 @@ impl StyleSystem {
 
         // 只为元素节点计算样式
         if is_element {
-            let computed =
-                self.compute_element_style_internal(doc, node, stylesheets, parent_style, parent_custom, quirks_mode);
+            let mut computed = self.compute_element_style_internal(
+                doc, node, stylesheets, parent_style, parent_custom, quirks_mode, None,
+            );
+            // 计算伪元素（::before/::after）：继承自本元素的计算样式。save/restore
+            // custom_properties 以防伪元素规则定义的 var 污染后续子元素继承。
+            // compute_element_style_internal 在无匹配规则时早返默认（content:Normal），
+            // 故无伪元素规则的元素仅多 2 次（廉价的）声明收集。
+            let saved_custom = self.custom_properties.clone();
+            let elem_style = computed.clone();
+            let before = self.compute_element_style_internal(
+                doc, node, stylesheets, Some(&elem_style), &saved_custom, quirks_mode, Some("before"),
+            );
+            let after = self.compute_element_style_internal(
+                doc, node, stylesheets, Some(&elem_style), &saved_custom, quirks_mode, Some("after"),
+            );
+            self.custom_properties = saved_custom;
+            if matches!(before.content, property::types::ContentComputedValue::String(_)) {
+                computed.before_pseudo = Some(Box::new(before));
+            }
+            if matches!(after.content, property::types::ContentComputedValue::String(_)) {
+                computed.after_pseudo = Some(Box::new(after));
+            }
             styles.insert(node, computed);
         }
 
@@ -219,10 +239,15 @@ impl StyleSystem {
             parent_style,
             &HashMap::new(),
             doc.quirks_mode(),
+            None,
         )
     }
 
     /// 内部实现：计算单个元素的样式。
+    ///
+    /// `pseudo` 为 `Some(name)` 时计算指定伪元素（`::before`/`::after`）的样式：
+    /// 仅收集该伪元素的声明，跳过内联样式与 UA 默认值（伪元素无 style 属性、无标签），
+    /// 继承自 `parent_style`（伪元素的 originating 元素）。
     fn compute_element_style_internal(
         &mut self,
         doc: &Document,
@@ -231,6 +256,7 @@ impl StyleSystem {
         parent_style: Option<&ComputedStyle>,
         parent_custom: &HashMap<String, String>,
         quirks_mode: QuirksMode,
+        pseudo: Option<&str>,
     ) -> ComputedStyle {
         // 0. 构建媒体查询上下文
         let media_ctx = match (self.viewport_width, self.viewport_height) {
@@ -249,13 +275,30 @@ impl StyleSystem {
         };
 
         // 1. 收集匹配的声明（带媒体查询和容器查询评估）
-        let matching = matcher::collect_matching_declarations_with_media(
-            doc,
-            element,
-            stylesheets,
-            media_ctx.as_ref(),
-            container_ctx.as_ref(),
-        );
+        //    pseudo=Some(name) 时收集该伪元素的声明（::before/::after 路由）。
+        let matching = match pseudo {
+            None => matcher::collect_matching_declarations_with_media(
+                doc,
+                element,
+                stylesheets,
+                media_ctx.as_ref(),
+                container_ctx.as_ref(),
+            ),
+            Some(name) => matcher::collect_pseudo_declarations_with_media(
+                doc,
+                element,
+                stylesheets,
+                media_ctx.as_ref(),
+                container_ctx.as_ref(),
+                name,
+            ),
+        };
+
+        // 伪元素无匹配规则时直接返回默认值（content: Normal），跳过整条级联/继承/计算
+        // 管线——避免对无伪元素规则的元素产生 2× 额外开销。调用方据 content 判定是否合成盒。
+        if pseudo.is_some() && matching.is_empty() {
+            return ComputedStyle::default();
+        }
 
         // 1.5. 展开简写属性（保留层索引）
         #[allow(clippy::type_complexity)]
@@ -269,8 +312,11 @@ impl StyleSystem {
         }
 
         // 1.6. 解析内联样式（style 属性）
-        // 内联样式的优先级高于任何选择器，使用 (1, 0, 0) 特异性
-        if let Some(style_attr) = doc.get_attribute(element, "style") {
+        // 内联样式的优先级高于任何选择器，使用 (1, 0, 0) 特异性。
+        // 伪元素无 style 属性，跳过。
+        if pseudo.is_none()
+            && let Some(style_attr) = doc.get_attribute(element, "style")
+        {
             let inline_decls = parse_inline_style(&style_attr);
             if !inline_decls.is_empty() {
                 #[allow(clippy::type_complexity)]
@@ -287,13 +333,19 @@ impl StyleSystem {
         }
 
         // 1.7. 注入 UA 默认声明（最低优先级，可被作者样式覆盖）
-        let tag_name = doc.get(element).and_then(|n| {
-            if let NodeKind::Element(elem) = &n.kind {
-                Some(elem.local_name().to_lowercase())
-            } else {
-                None
-            }
-        });
+        // 伪元素无标签、无 UA 默认值（::before/::after 默认 display:inline 由 ComputedStyle::default 提供）；
+        // 置 tag_name=None 同时跳过下方 UA 推送与步骤 7 的 tag-based quirks。
+        let tag_name = if pseudo.is_none() {
+            doc.get(element).and_then(|n| {
+                if let NodeKind::Element(elem) = &n.kind {
+                    Some(elem.local_name().to_lowercase())
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        };
         #[allow(clippy::type_complexity)]
         let mut ua_decl_inputs: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)> = Vec::new();
         if let Some(ref tag) = tag_name

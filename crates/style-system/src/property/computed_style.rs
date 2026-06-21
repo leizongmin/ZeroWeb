@@ -478,4 +478,9 @@ pub struct ComputedStyle {
     pub mask_image: Vec<BackgroundImageComputedValue>,
     /// mask-mode 属性（alpha/luminance/match-source）。
     pub mask_mode: MaskModeComputedValue,
+    /// `::before` 伪元素的计算样式（无匹配规则时为 None；由 style-system 计算，
+    /// layout 据此在元素内容前合成生成盒）。伪元素不参与继承传播（继承构造全新 default）。
+    pub before_pseudo: Option<Box<ComputedStyle>>,
+    /// `::after` 伪元素的计算样式（语义同 `before_pseudo`，合成在元素内容后）。
+    pub after_pseudo: Option<Box<ComputedStyle>>,
 }
