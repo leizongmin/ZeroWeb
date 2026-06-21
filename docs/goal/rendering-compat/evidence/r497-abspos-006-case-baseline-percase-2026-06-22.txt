@@ -106,3 +106,21 @@ PIL（post-fix ZW-test vs chromium oracle；阈值 ±5 RGB）：
 （auto height + Px top+bottom → child.height=vh-top-bottom；width 同理）即翻 002（位置已由现有 Px 分支设好，
 size-only 不触 R493 旧 x/y 回归）。004 残余(right:0)/005/006(CB=html) 需另路，更重。
 
+================================================================================
+6. 残余分类 + 002 +1-lever 实证（本会话 PIL，05:11；零 build 非冲突）
+================================================================================
+6.1  001/003 残余 = 纯 fontdue 文本噪声（clean pass，非 near-miss）
+     - red_ZW=0, red_ORC=0 → 白 div 完全覆盖红画布，零红泄漏，fix 结构完整。
+     - 2012 diff px 全在文本 bbox x[0,233] y[2,26]（绿文本 "Test passes if there is no red."），
+       颜色为绿字 glyph 位置/AA 差异（ZW (64,160,64) 绿 vs ORC (255,255,255) 白底，或反）。
+     - 001 与 003 diff 模式逐像素相同（同结构）。= 已知 fontdue 度量/AA 噪声底（R174/R229 谱系）。
+     - 结论：001/003 是结构正确的 clean pass（0.42% 远低 1% 阈值），非侥幸 near-miss。
+
+6.2  002 +1-lever 实证（白 div 定位 PIL）：div 在 (0,0)（视口原点）但 size=600×20
+     - 位置 (0,0) → top:0/left:0 已由 adjust_absolute_pct_to_viewport 的 Px 分支正确解析到视口 ✓。
+     - width=600（=body content 宽，taffy 用 static body 作 CB，非视口 800）✗；height=20（固有单行）✗。
+     - → +1 fix 须同时 stretch width(600→800) + height(20→600)（size 双轴，非仅 height）。
+       adjust_absolute_pct_to_viewport 的 absolute-viewport-CB 分支补 auto-inset w+h stretch ~8 行
+       即翻 002（position 已设好，size-only 不触 R493 x/y 回归）。spec 经验 grounded。
+
+
