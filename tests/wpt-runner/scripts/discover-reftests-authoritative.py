@@ -24,9 +24,13 @@ LINK_RE = re.compile(r'<link[^>]*\brel\s*=\s*["\']match["\'][^>]*\bhref\s*=\s*["
 LINK_RE2 = re.compile(r'<link[^>]*\bhref\s*=\s*["\']([^"\']+)["\'][^>]*\brel\s*=\s*["\']match["\']', re.I)
 
 def gh_api(path):
-    """GitHub API 目录列表（单调用）。"""
+    """GitHub API 目录列表（单调用）。可选 GITHUB_TOKEN 环境变量提升限速（60→5000/hr，CSS2 全量需）。"""
     import urllib.request as u
-    req = u.Request(f"{WPT_API}/{path}?ref=master", headers={"User-Agent": "zw-discover"})
+    headers = {"User-Agent": "zw-discover"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"token {token}"
+    req = u.Request(f"{WPT_API}/{path}?ref=master", headers=headers)
     with u.urlopen(req, timeout=30) as r:
         return json.load(r)
 
@@ -52,15 +56,34 @@ def fetch_raw_many(paths):
     with ThreadPoolExecutor(max_workers=MAX_FETCH_WORKERS) as ex:
         return list(ex.map(fetch_raw, paths))
 
-def discover(category, max_n=None):
-    """返回 [(test_path, ref_path), ...] 权威对。"""
+def is_test_file(name):
+    return (name.endswith((".html", ".xht"))
+            and "-ref" not in name and "notref" not in name and "reference" not in name)
+
+def collect_test_paths(category):
+    """递归收集 category 下所有 test 文件全路径（含子目录）。
+
+    css-text / CSS2 等 test 散落在子目录（white-space/、segment-break/、box/...），
+    顶层 gh_api 只返回顶层条目，须递归进每个 type=dir 子目录。
+    每个 subdir 一次 gh_api 调用（受 60/hr 限速；CSS2 全量 ~75 调用需 GITHUB_TOKEN）。
+    """
     entries = gh_api(category)
-    test_files = [e["name"] for e in entries
-                  if e["type"] == "file" and e["name"].endswith((".html", ".xht"))
-                  and "-ref" not in e["name"] and "notref" not in e["name"] and "reference" not in e["name"]]
+    paths = []
+    subdirs = []
+    for e in entries:
+        if e["type"] == "file" and is_test_file(e["name"]):
+            paths.append(f"{category}/{e['name']}")
+        elif e["type"] == "dir":
+            subdirs.append(f"{category}/{e['name']}")
+    for sub in subdirs:
+        paths.extend(collect_test_paths(sub))
+    return paths
+
+def discover(category, max_n=None):
+    """返回 [(test_path, ref_path), ...] 权威对（递归子目录）。"""
+    test_paths = collect_test_paths(category)
     if max_n:
-        test_files = test_files[:max_n]
-    test_paths = [f"{category}/{name}" for name in test_files]
+        test_paths = test_paths[:max_n]
     contents = fetch_raw_many(test_paths)
     pairs = []
     for test_path, content in zip(test_paths, contents):
@@ -70,11 +93,12 @@ def discover(category, max_n=None):
         if not m:
             continue
         ref_href = m.group(1)
-        # 解析 ref 路径：`/foo` = 仓库根相对；其余 = test 文件目录相对
+        # 解析 ref 路径：`/foo` = 仓库根相对；其余 = test 文件所在目录相对（子目录 test 关键）
         if ref_href.startswith("/"):
             ref_path = ref_href.lstrip("/").lstrip("\\")
         else:
-            ref_path = os.path.normpath(os.path.join(category, ref_href)).replace("\\", "/")
+            test_dir = os.path.dirname(test_path)
+            ref_path = os.path.normpath(os.path.join(test_dir, ref_href)).replace("\\", "/")
         pairs.append((test_path, ref_path))
     return pairs
 
