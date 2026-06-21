@@ -1,0 +1,13 @@
+# R439–R442：multicol inf-loop 追踪 saga（逐轮原文归档）
+
+> 归档自 master.md header（R443 压缩治理轮）。本文件为 R439–R442 四轮 read-only 复核的 verbatim 原文，保留调研演进过程；当前结论以 master.md 顶部压缩 summary 为准（本 saga 已收敛：multicol inf-loop 修复为防御性加固、生产不可达、revert 非紧急；flex min-size:auto probe 为未 apply 高价值项）。
+
+---
+
+**R439（read-only 状态复核）**：R438 后无新 commit（HEAD 仍 8bd9f22）。工作树新增 multicol.rs 未提交改动=**无限循环修复**（与 4d2e93d panic 同族 multicol breaking 崩溃）：`assign_children_to_columns_with_breaking` 当 `max_col_height=0`（height:0 multicol / 列高计算得 0）+ 超高子元素时，while `offset += max_col_height(0)` 永不前进→无限循环（test-guard 杀进程=整批挂起）；修复=加 `max_col_height > 0.0` 守卫使循环不执行（clip 跳出）+ 回归测试。**逐行追踪确认是真实 bug、修复最小正确**（旧路径必挂起故无依赖、守卫不引入回归）。probe（flex min-size:auto，见上 R428–R437）仍 temp-reverted（default_impl.rs clean）**待 commit**——并行 agent 似已从 probe 转向 multicol 修复，下轮须确认 probe 未被丢弃。doc 侧零代码变更。
+
+**R440（read-only 多轮停滞复核 + multicol 崩溃面审计）**：R439 后状态不变（HEAD 仍 1b3160e；multicol.rs 无限循环修复 diff 逐字节未变，第 2 轮未提交；probe 仍未提交，自 R432 起累计 8 轮 temp-reverted）。**审计 multicol.rs 全部迭代/除法点**：唯一 while 循环即 line 389（并行 agent 已加 `max_col_height>0.0` 守卫）；其余迭代皆有限 for；除法点（104/218/224/234/303）全 float 除（`compute_column_count` 签名 f32；`col_count as f32`；`compute_single_column_width` 与 `assign_..._balanced` 对 count==0 有早返守卫，`compute_column_count` 返 `.max(1)`）→ 产出 inf/NaN 非 panic/挂起。**结论=并行 agent 守卫修复关闭 multicol 内唯一挂起路径，无第二个隐藏 multicol hang 阻断 make reftest 验证**；故多轮 commit 停滞是会话/验证循环级问题非隐藏崩溃，probe（已验证 +14/+1/0 clean win）与 multicol 修复均独立可直接 commit。doc 侧零代码变更。
+
+**R441（read-only 纠正：multicol 修复被 revert，bug 复活 + 路径订正）**：R440 提交后工作树变 clean——**multicol.rs 无限循环修复已被并行 agent 完全 revert**（line 389 `max_col_height>0.0` 守卫 + 回归测试均移除）。R440「diff 逐字节未变，第 2 轮未提交」据此纠正为「第 2 轮后被丢弃」。**该 inf-loop bug 现重新 LIVE**（height:0 multicol + 超高子→make reftest 整批挂起）；R440 审计结论仍成立（守卫=multicol 唯一挂起路径、修复最小正确）→可直接重新 apply + commit。revert 符合 R437 记录的「clean baseline re-measure」循环模式（疑重测基线后回滚），有 context-reset 孤儿化风险——下轮须确认该修复未被永久丢弃。**路径订正**：probe 目标=`crates/style-system/src/property/default_impl.rs:24-25`（`min_width/min_height: Px(0.0)`），R439/R440 简写「default_impl.rs」在此补全。probe 仍未重新 apply。doc 侧零代码变更。
+
+**R442（read-only 纠正 R441：multicol inf-loop 生产不可达，非 LIVE）**：追踪 call site 发现 `assign_children_to_columns_with_breaking`（multicol.rs:268）**仅在 `info.sequential_fill && height_limit > 0.0` 时被调用**——即生产路径从不传 `max_col_height=0`；其余调用者仅单元测试（619/630/642 用非零值；655 那个 0.0 测试随修复一并 revert 已移除）。**故 R441「该 inf-loop bug 现重新 LIVE → make reftest 整批挂起」系高估**：revert 后无任何调用者传 0，bug 生产与测试均不可达，`make reftest` 不会因此挂起。revert 的修复实为**防御性加固**（直接调用健壮性），非生产 crash 修复——这也解释了并行 agent 为何 revert 它（非 load-bearing）。R440「守卫=multicol 唯一挂起路径」技术成立但该路径生产不可达→实际 crash-surface 风险≈0。**校正优先级**：multicol revert 非紧急（无 live hang）；flex min-size:auto probe（验证 +14/+1/0 clean win）仍为更高价值的未 apply 项。doc 侧零代码变更。
