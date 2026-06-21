@@ -361,6 +361,60 @@ fn test_expand_flex_preserves_important() {
     assert!(result.iter().all(|(_, _, imp, _)| *imp));
 }
 
+// 从展开结果中取出 (grow, shrink, basis)。
+fn flex_parts(value: &str) -> (String, String, String) {
+    let result = expand_one("flex", value, false, (0, 0, 1));
+    let get = |prop: &str| -> String {
+        result
+            .iter()
+            .find(|(p, _, _, _)| p == prop)
+            .map(|(_, v, _, _)| v.clone())
+            .unwrap_or_default()
+    };
+    (get("flex-grow"), get("flex-shrink"), get("flex-basis"))
+}
+
+#[test]
+fn test_expand_flex_single_number_is_grow() {
+    // 纯数字单值 → grow（CSS §7.1）
+    assert_eq!(flex_parts("1"), ("1".to_string(), "1".to_string(), "0".to_string()));
+    assert_eq!(flex_parts("2.5"), ("2.5".to_string(), "1".to_string(), "0".to_string()));
+}
+
+#[test]
+fn test_expand_flex_single_width_is_basis() {
+    // 非数字单值 → basis（纠正旧位置式把宽度当 grow 的 bug）
+    assert_eq!(flex_parts("50%"), ("0".to_string(), "1".to_string(), "50%".to_string()));
+    assert_eq!(flex_parts("100px"), ("0".to_string(), "1".to_string(), "100px".to_string()));
+    assert_eq!(flex_parts("10em"), ("0".to_string(), "1".to_string(), "10em".to_string()));
+}
+
+#[test]
+fn test_expand_flex_two_numbers_are_grow_shrink() {
+    assert_eq!(flex_parts("1 2"), ("1".to_string(), "2".to_string(), "0".to_string()));
+    assert_eq!(flex_parts("0 0"), ("0".to_string(), "0".to_string(), "0".to_string()));
+}
+
+#[test]
+fn test_expand_flex_number_then_width_is_grow_basis() {
+    // 双值中次值非数字 → basis，shrink 默认 1（纠正旧位置式把宽度当 shrink 的 bug）
+    assert_eq!(flex_parts("1 100px"), ("1".to_string(), "1".to_string(), "100px".to_string()));
+    assert_eq!(flex_parts("0 auto"), ("0".to_string(), "1".to_string(), "auto".to_string()));
+    assert_eq!(flex_parts("1 auto"), ("1".to_string(), "1".to_string(), "auto".to_string()));
+}
+
+#[test]
+fn test_expand_flex_three_values() {
+    assert_eq!(
+        flex_parts("2 1 100px"),
+        ("2".to_string(), "1".to_string(), "100px".to_string())
+    );
+    assert_eq!(
+        flex_parts("0 0 auto"),
+        ("0".to_string(), "0".to_string(), "auto".to_string())
+    );
+}
+
 // ── 辅助函数测试 ──
 
 #[test]

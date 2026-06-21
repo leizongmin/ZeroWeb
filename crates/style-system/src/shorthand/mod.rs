@@ -650,16 +650,28 @@ fn expand_border_radius(value: &str, important: bool, specificity: (u32, u32, u3
     ]
 }
 
-/// 展开 flex 简写。
+/// 展开 flex 简写（CSS Flexbox §7.1）。
 ///
+/// 语法：`none | auto | initial | [ <'flex-grow'> <'flex-shrink'>? || <'flex-basis'> ]`
+///
+/// 解析是 **type-based**（非位置式）：裸 `<number>` 计入 grow/shrink，任何
+/// `<width>`/百分比/关键字（auto/content 等）计入 basis。因此：
 /// - `none` → grow: 0, shrink: 0, basis: auto
 /// - `auto` → grow: 1, shrink: 1, basis: auto
-/// - 单值：grow
-/// - 双值：grow, shrink
-/// - 三值：grow, shrink, basis
+/// - `initial` → grow: 0, shrink: 1, basis: auto
+/// - 单值 `<number>`（如 `flex:1`）→ grow, shrink: 1, basis: 0
+/// - 单值 `<width>`（如 `flex:50%`）→ grow: 0, shrink: 1, basis: <width>
+/// - 双值（如 `flex:1 2`）→ grow, shrink, basis: 0
+/// - 双值（如 `flex:1 100px` / `flex:0 auto`）→ grow, shrink: 1, basis: <width>
+/// - 三值 → grow, shrink, basis
 fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    // 判定一个 token 是否为裸 `<number>`（可作 flex-grow/shrink）。
+    // `f64::parse` 拒绝带单位的长度/百分比（"100px"/"50%"），但接受 "inf"/"nan"，
+    // 故用 `is_finite()` 排除这两个非有效 CSS 数字的边界。
+    let is_number = |s: &str| s.parse::<f64>().map(|n| n.is_finite()).unwrap_or(false);
 
     if value == "none" {
         return vec![mk("flex-grow", "0"), mk("flex-shrink", "0"), mk("flex-basis", "auto")];
@@ -673,12 +685,24 @@ fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
 
     let parts: Vec<&str> = value.split_whitespace().collect();
     match parts.len() {
-        1 => vec![mk("flex-grow", parts[0]), mk("flex-shrink", "1"), mk("flex-basis", "0")],
-        2 => vec![
-            mk("flex-grow", parts[0]),
-            mk("flex-shrink", parts[1]),
-            mk("flex-basis", "0"),
-        ],
+        // 单值：<number> → grow；否则（<width>/关键字）→ basis
+        1 => {
+            if is_number(parts[0]) {
+                vec![mk("flex-grow", parts[0]), mk("flex-shrink", "1"), mk("flex-basis", "0")]
+            } else {
+                vec![mk("flex-grow", "0"), mk("flex-shrink", "1"), mk("flex-basis", parts[0])]
+            }
+        }
+        // 双值：首值=grow；次值 <number> → shrink，否则 → basis（shrink 默认 1）
+        2 => {
+            let (grow, second) = (parts[0], parts[1]);
+            if is_number(second) {
+                vec![mk("flex-grow", grow), mk("flex-shrink", second), mk("flex-basis", "0")]
+            } else {
+                vec![mk("flex-grow", grow), mk("flex-shrink", "1"), mk("flex-basis", second)]
+            }
+        }
+        // 三值：grow, shrink, basis
         3 => vec![
             mk("flex-grow", parts[0]),
             mk("flex-shrink", parts[1]),
