@@ -75,3 +75,34 @@ applied stretch_fixed_to_viewport_size（engine.rs step 11.6 post-pass）guard =
   落定 R497 正式逐案 post-fix 数 + chr<1% 净值。
 - 风险：fixed percentage 普适重算（不限于全-inset）可能改变其他 fixed+% 测试的 size；
   全量 reftest 是唯一可靠回归闸。
+
+================================================================================
+5. post-fix 实证（本会话 scoped re-dump + PIL，05:03；engine.rs hash dd2853… 前后不变=无并发编辑）
+================================================================================
+方法：REFTEST_DUMP=1 REFTEST_DUMP_PASS=1 test-guard 包裹 `reftest-upstream abspos-containing-block-00`
+（filter 命中 001-009，9 案，15.77s；binary = 当前 working-tree engine.rs 含 fix，cargo 无 rebuild）。
+self-source reftest：**2/9 PASS = 001 + 003**（001/003 翻 PASS；002/004-009 FAIL）。
+PIL（post-fix ZW-test vs chromium oracle；阈值 ±5 RGB）：
+
+  case  type                    pre-fix chr   post-fix chr     Δ        verdict
+  001   fixed auto-inset          97.00%         0.42%      -96.58%   FLIP→PASS (<1%)
+  002   absolute auto-inset       97.84%        97.84%       +0.00%   still FAIL
+  003   fixed percentage         100.00%         0.42%      -99.58%   FLIP→PASS (<1%)
+  004   absolute percentage       12.82%        12.82%       +0.00%   still FAIL
+  005   abs-in-rel pct           100.00%       100.00%       +0.00%   still FAIL
+  006   abs-in-rel inset          98.16%        98.16%       +0.00%   still FAIL
+
+★ R497 预测全确认：is_fixed-only guard → 仅 001/003 翻（0.42% 残余=fontdue 绿文本度量噪声）；
+  002/004/005/006（is_absolute）纹丝不动。self-source 与 vs-oracle 双口径一致。
+
+净值：001/003 翻回 = R492 的 6 positioning 回归修复 2/6 → R491 由 R492 实测 net −1 → **net +1**
+（+8 improved − 7 regressed；原 9 regressed 减 2）。= **R484 后首个 net-positive chr<1%**（破 plateau streak）。
+⚠ 净 +1 / 全量 2671→2673 contingent on code agent 全量回归扫描（positioning/ 已跑、css-position/ 在跑、
+其他 fixed-用例目录）确认 universal fixed+% post-pass 零新回归——本 scoped 仅覆盖 001-009。
+
+下一 lever（+1，002）：adjust_absolute_pct_to_viewport（engine.rs:1649）已线程化 has_positioned_ancestor
++ 已对 is_absolute&&!positioned-ancestor 解析 Px left/top 位置（视口 CB）+ Percentage size——
+仅缺 auto-inset size stretch。在该函数的 absolute-viewport-CB 分支补 ~8 行
+（auto height + Px top+bottom → child.height=vh-top-bottom；width 同理）即翻 002（位置已由现有 Px 分支设好，
+size-only 不触 R493 旧 x/y 回归）。004 残余(right:0)/005/006(CB=html) 需另路，更重。
+
