@@ -21,8 +21,14 @@ impl Default for ComputedStyle {
             writing_mode: WritingModeValue::HorizontalTb,
             width: auto_length.clone(),
             height: auto_length.clone(),
-            min_width: LengthValue::Px(0.0),
-            min_height: LengthValue::Px(0.0),
+            // CSS 规范：min-width/min-height 的 initial value 是 `auto`（非 0）。
+            // 对 flex/grid item，`auto` 表示「基于内容的自动最小尺寸」(§4.5/§6.6)，
+            // 经 converter→Dimension::Auto 让 taffy 计算 min-content floor。
+            // 旧默认 `Px(0.0)`→`Some(0.0)` 会短路 taffy 的内容下限，使 flex item 可缩至 0
+            // (R428-R437 验证：css-flexbox +14/496、css-grid +1/48、css-multicol 不变、0 净回归)。
+            // 对 block 元素，taffy 把 min-size:Auto 视作 0，行为不变。
+            min_width: LengthValue::Auto,
+            min_height: LengthValue::Auto,
             max_width: LengthValue::Px(f64::INFINITY),
             max_height: LengthValue::Px(f64::INFINITY),
             margin_top: LengthValue::Px(0.0),
