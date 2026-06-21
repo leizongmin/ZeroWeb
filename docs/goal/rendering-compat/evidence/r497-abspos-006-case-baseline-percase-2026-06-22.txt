@@ -1,0 +1,77 @@
+R497 — abspos-containing-block 001-006 逐案基线（pre-fix / post-R491）
+日期：2026-06-22（git ground-truth；header 旧标 06-22 实 +0800 即当日）
+性质：read-only PIL 实测（零代码变更、零 build；复用 R484 dump @ 03:54 = post-R491 + pre-stretch-fix
+      + chromium oracle @ 06-21 20:09，二者均独立于本会话）。为 code agent 当前 re-applied
+      stretch_fixed_to_viewport_size（engine.rs step 11.6，is_fixed-only guard）的 post-fix
+      delta 提供逐案测量基线。
+
+================================================================================
+1. 6 案 CB 分类（读 6 个 test 源文件 + ref + CSS §10.1.4 复核）
+================================================================================
+共享 ref（abspos-containing-block-001-ref.xht）：body{margin:0} + 无背景 div + 绿文本
+  → ref 画布白、无红。test 通过条件 = 「无红」= 白 div 必须覆盖整画布。
+
+  001  body{bg:red;margin:100} + div{position:FIXED;    top/right/bottom/left:0}        auto-size
+  002  body{bg:red;margin:100} + div{position:ABSOLUTE; top/right/bottom/left:0}        auto-size
+  003  body{bg:red;margin:100} + div{position:FIXED;    top/right:0;height:100%;width:100%}
+  004  body{bg:red;margin:100} + div{position:ABSOLUTE; top/right:0;height:100%;width:100%}
+  005  html{pos:relative;w/h:100%} + body{bg:red;margin:100 20%} + div{pos:ABSOLUTE;top/right:0;w/h:100%}
+  006  html{pos:relative;w/h:100%} + body{bg:red;margin:100 20%} + div{pos:ABSOLUTE;top/right/bottom/left:0}
+
+CB 分类（§10.1.4）：
+  - 001/003 fixed → CB=视口（无条件）。
+  - 002/004 absolute，body+html 均 static → 无 positioned 祖先 → CB=初始包含块=视口
+        （sizing 等价 fixed，但 is_absolute 而非 is_fixed）。
+  - 005/006 absolute，html{position:relative} → CB=html（positioned 祖先，w/h:100%→800×600）。
+→ 印证 R496c 的 CB 分类；纠正点见下（as-applied 覆盖面）。
+
+================================================================================
+2. pre-fix 逐案 PIL diff（ZW-test vs ZW-ref = self；ZW-test vs oracle = chr）
+   阈值 ±5 RGB（与 cross-validate.py 一致）。全 800×600 无 SIZE-MISMATCH。
+================================================================================
+  001  self 96.65%   chr 97.00%    fixed auto-inset
+  002  self 97.49%   chr 97.84%    absolute auto-inset（viewport CB）
+  003  self 99.97%   chr 100.00%   fixed percentage
+  004  self 12.81%   chr 12.82%    absolute percentage（残余小，≈ right:0 位置泄漏，见 R496c）
+  005  self 100.0%   chr 100.00%   absolute-in-relative percentage（CB=html）
+  006  self 98.16%   chr 98.16%    absolute-in-relative auto-inset（CB=html）
+
+解读：
+  - 001/002/003/005/006 ~97-100% diff = ZW 渲染「小红 div 在红画布」（div 塌缩未 stretch）
+    vs chromium「大白 div 覆盖红画布」→ 几乎全像素红 vs 白。
+  - 004 仅 12.82% = adjust_absolute_pct_to_viewport（engine.rs:1649，对 absolute Percentage 活跃）
+    已把 size 大致设对（800×600），残余 ~12.8% = right:0 位置未处理致右侧红边泄漏（R496c 记）。
+
+================================================================================
+3. as-applied fix 覆盖面 + post-fix 预测（code agent 当前 working-tree 未提交版本）
+================================================================================
+applied stretch_fixed_to_viewport_size（engine.rs step 11.6 post-pass）guard = `child.is_fixed`：
+  - height:Auto + 全 Px top+bottom → child.height = vh - top - bottom
+  - width:Auto  + 全 Px left+right  → child.width  = vw - left - right
+  - Percentage height/width → 相对视口重算（fixed CB=视口 §10.1）
+
+逐案覆盖（按 is_fixed guard）：
+  001 fixed auto-inset      → 覆盖（height=600-0-0=600, width=800）→ 预测 ~0% FLIP PASS
+  003 fixed percentage      → 覆盖（h=100%·600=600, w=100%·800=800）→ 预测 ~0% FLIP PASS
+  002 absolute auto-inset   → 未覆盖（is_absolute 非 is_fixed）→ 维持 97.84% FAIL
+  004 absolute percentage   → 未覆盖 → 维持 12.82% FAIL
+  005 absolute-in-rel pct   → 未覆盖 → 维持 100% FAIL
+  006 absolute-in-rel inset → 未覆盖 → 维持 98.16% FAIL
+
+★ 关键纠正 R496c：R496c 标「R491 潜在净值上修至 +3~+5」「001-004 全翻净 +3」是建立在
+  「guard 扩为 is_fixed || (is_absolute && no_positioned_ancestor)」的【建议】上。
+  code agent 实际 as-applied 只取 is_fixed（保守，避 R493 旧 x/y 回归）→ 仅 001/003 翻。
+  → as-applied post-fix chr<1% 净 = +2（001/003 翻回），R491 由 R492 实测 net −1 → net +1，
+    破 R484 后 plateau streak。R496c 的 +3~+5 需 code agent 进一步扩 guard 到 absolute
+    （002 viewport-CB 等价，~5 行；005/006 CB=html 须 tree-resolution post-layout，更重）。
+
+================================================================================
+4. 待实证（code agent 拥有；本侧 read-only 不 build）
+================================================================================
+- code agent PID 45919 全量 reftest-upstream（--time-limit 3600，04:55 起，~05:55 完/杀）
+  验证 self-source 001/003 翻 PASS + 全套件零回归（fixed+percentage/auto-inset 普适 post-pass
+  须确认不伤其他 fixed 用例）。
+- 实证后本侧跑 scoped re-dump（positioning/abspos-containing-block-00[1-6]）+ 本文 PIL 复算，
+  落定 R497 正式逐案 post-fix 数 + chr<1% 净值。
+- 风险：fixed percentage 普适重算（不限于全-inset）可能改变其他 fixed+% 测试的 size；
+  全量 reftest 是唯一可靠回归闸。
