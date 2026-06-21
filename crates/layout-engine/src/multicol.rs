@@ -375,7 +375,11 @@ fn assign_children_to_columns_with_breaking(
                     fragment_y_offset: 0.0,
                     visual_height: available,
                 });
-                current_col += 1;
+                // 仅当还有更多列时才推进；单列或末列时保留在当前列（clip 处理），
+                // 否则 current_col 越界使后续子元素 columns[current_col].push panic。
+                if current_col + 1 < col_count {
+                    current_col += 1;
+                }
             }
 
             // 后续片段填满整列
@@ -624,5 +628,19 @@ mod tests {
         let cols = assign_children_to_columns_with_breaking(&children, 3, 100.0);
         assert_eq!(cols.len(), 3);
         assert_eq!(cols[0].len(), 1); // oversized child stays in first column
+    }
+
+    #[test]
+    fn test_assign_children_with_breaking_single_col_oversized_no_panic() {
+        // 回归：col_count=1（column-count:1 或计算为单列）+ column-fill:auto + 明确高度 +
+        // oversized 子元素后跟另一个子元素。修复前 line 378 无守卫 current_col+=1 越界，
+        // 使后续子元素 columns[current_col].push 在 line 350 panic（index OOB, len 1 idx 1）。
+        // 修复后：单列时 oversized 内容 clip 到唯一列，后续子元素也落入唯一列，无 panic。
+        let children = vec![(0, 300.0), (1, 50.0)];
+        let cols = assign_children_to_columns_with_breaking(&children, 1, 100.0);
+        assert_eq!(cols.len(), 1);
+        // 两子元素都分配到唯一列（clip），不应 panic
+        assert!(cols[0].iter().any(|f| f.child_idx == 0));
+        assert!(cols[0].iter().any(|f| f.child_idx == 1));
     }
 }
