@@ -293,6 +293,11 @@ impl LayoutEngine {
             false,
         );
 
+        // 11.6 后处理：position:fixed 全-inset stretch 尺寸（CSS §10.3.18 / §10.6.4）。
+        // fixed 元素 CB=视口；taffy 按 positioned 祖先 stretch 致尺寸不足。仅修 fixed
+        // （位置已由 4. adjust_fixed_to_viewport 修正），不动 absolute 避旧回归。
+        stretch_fixed_to_viewport_size(&mut root_box, self.viewport_width, self.viewport_height, styles);
+
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
@@ -1710,6 +1715,53 @@ fn adjust_absolute_pct_to_viewport(
             styles,
             child_has_positioned_ancestor || child.is_absolute,
         );
+    }
+}
+
+/// 对 position:fixed 元素的全-inset stretch 尺寸后处理（CSS §10.3.18 / §10.6.4）。
+///
+/// fixed 元素的 containing block 是视口。当 top+bottom 均为长度且 height:auto 时，
+/// height = viewport_h - top - bottom；left+right 均为长度且 width:auto 时，
+/// width = viewport_w - left - right。taffy 0.7 把 fixed 当 absolute 处理
+/// （CB=最近 positioned 祖先），尺寸按该祖先而非视口 stretch，导致全-inset fixed
+/// 元素尺寸不足（典型：全 0 inset 应覆盖视口却塌缩为内容固有尺寸）。
+///
+/// 仅处理 fixed（CB=视口无条件已知，零位置风险——位置已由 adjust_fixed_to_viewport
+/// 修正）。不处理 absolute（CB=positioned 祖先，layout 后方知；历史
+/// adjust_absolute_to_initial_containing_block 同调 auto 宽高致多回归故禁用）。
+fn stretch_fixed_to_viewport_size(
+    box_node: &mut LayoutBox,
+    viewport_width: f32,
+    viewport_height: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    use zero_css_parser::values::LengthValue;
+    for child in &mut box_node.children {
+        if child.is_fixed
+            && let Some(style) = child.node_id.and_then(|nid| styles.get(&nid))
+        {
+            // height: auto + 全长度 top+bottom → stretch
+            if matches!(style.height, LengthValue::Auto)
+                && let (LengthValue::Px(top), LengthValue::Px(bottom)) = (&style.top, &style.bottom)
+            {
+                child.height = (viewport_height - (*top as f32) - (*bottom as f32)).max(0.0);
+            }
+            // width: auto + 全长度 left+right → stretch
+            if matches!(style.width, LengthValue::Auto)
+                && let (LengthValue::Px(left), LengthValue::Px(right)) = (&style.left, &style.right)
+            {
+                child.width = (viewport_width - (*left as f32) - (*right as f32)).max(0.0);
+            }
+            // 百分比尺寸：fixed 的 CB 恒为视口（CSS §10.1），百分比相对视口解析。
+            // taffy 按 positioned 祖先解析（如 body CB），此处按视口重算。
+            if let LengthValue::Percentage(p) = &style.height {
+                child.height = (*p as f32 / 100.0) * viewport_height;
+            }
+            if let LengthValue::Percentage(p) = &style.width {
+                child.width = (*p as f32 / 100.0) * viewport_width;
+            }
+        }
+        stretch_fixed_to_viewport_size(child, viewport_width, viewport_height, styles);
     }
 }
 
