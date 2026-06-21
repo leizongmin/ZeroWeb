@@ -1,10 +1,16 @@
-# 归档：R456 / R458-R465 css-text 导入 + oracle 工具 saga（2026-06-21）
+# 归档：R456 / R458-R470 css-text 导入 + oracle 工具 + in-flight 观测 saga（2026-06-21）
 
-> 从 master.md 顶部压缩归档（R466 doc-maintenance 轮）。这些轮次是 css-text 第 9 目录的**导入工具链修复 + self/oracle in-flight 观测 saga**。核心数据（self 89.2% R463 / import cluster map R461 / writing-modes 全量 R457 / 当前 oracle in-flight R465）仍保留在 master.md 顶部；本档存被移出的工具 saga / in-flight / pre-confirm 原文。逐轮原文按时间倒序（master.md 原顺序）。
+> 从 master.md 顶部压缩归档（R466 doc-maintenance 轮建档；R474 doc-maintenance 轮追加 R465+R466-R470 in-flight 观测史，css-text 已由 R471 闭合）。这些轮次是 css-text 第 9 目录的**导入工具链修复 + self/oracle in-flight 观测 saga**。核心数据仍保留在 master.md 顶部（self 89.2% R463 / import cluster map R461 / writing-modes 全量 R457 / **css-text 最终 oracle 18.8% R471**）；本档存被移出的工具 saga / in-flight / pre-confirm 原文。逐轮原文按时间倒序（master.md 原顺序）。
 
 ## Saga 时间线指针（一句话）
 
-- **R465**（留顶）: oracle 全量捕获 in-flight（collectTests 修复生效验证，~51min）
+- **R470**（归档·in-flight 观测）: cross-validate 预检去险 — naming 对齐（`cross-validate.py` `sid()` 拼接正确），1572 `-test`+1572 `-ref`→1570 matched pairs（2 缺 -ref 跳过）
+- **R469**（归档·in-flight 观测）: self dump DONE 1402/1572=89.2%（1570 ZW-test PNG = cross-validate input ① ready；duration 1229s）
+- **R468**（归档·in-flight 观测·**可复用方法论教训**）: oracle 捕获**早段速率不可外推到整批**——R467 早段 0.77s/PNG（简单子目录 animations/parsing）进入 shaping/bidi 复杂脚本区回落 ~1.2s/PNG(~50/min)，ETA 17:50→18:06（+16min）。**勿以「过早段 ETA 仍在跑」误判 stall**（R458/R459/R464 三度误诊前车；R468 是第 4 次校正）。稳态 ~50/min 是 oracle 长批次基准（当前 CSS2 oracle ~50/min 印证）
+- **R467**（归档·in-flight 观测·已被 R468 修正）: oracle 早段速率 0.77s/PNG 乐观 ETA 17:50（仅对早段成立，未外推整批，见 R468）
+- **R466**（归档·doc-maintenance）: 归档压缩顶部 css-text saga（本档创建轮）
+- **R465**（归档·原留顶，R471 闭合后移出）: oracle 全量捕获 in-flight（collectTests 修复生效验证，~51min；最终 oracle 18:04 完成，结果见 master.md R471）
+- **R464**（归档）: oracle 缺失根因 = 捕获脚本 `capture-oracle-per-dir.mjs` 顶层 `readdirSync` bug（8/1914，同 R458/R459 discover 谱系）→ collectTests 递归修复
 - **R464**（归档）: oracle 缺失根因 = 捕获脚本 `capture-oracle-per-dir.mjs` 顶层 `readdirSync` bug（8/1914，同 R458/R459 discover 谱系）→ collectTests 递归修复
 - **R463**（留顶）: css-text self 折回 89.2%（1402/1572，聚类反转 white-space/text-align 真失败 vs i18n 假通过）
 - **R462**（归档）: self reftest in-flight + 分母修正（1822 runner cases）+ JS 依赖量化（24.5%）
