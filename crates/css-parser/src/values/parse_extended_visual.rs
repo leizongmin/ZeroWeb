@@ -635,7 +635,16 @@ pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue>
     if parts.len() == 2 {
         let first = parse_position_component(parts[0])?;
         let second = parse_position_component(parts[1])?;
-        return Some(BackgroundPositionValue::TwoValue(Box::new(first), Box::new(second)));
+        // CSS background-position 两值语法（CSS Backgrounds §3.6）：第一值默认水平、
+        // 第二值垂直；但若第一值是垂直专属关键字（top/bottom），需交换轴向——
+        // "top center" 应为 horizontal=center / vertical=top。否则 resolve 把 Top 当 x
+        // 解析为 0（左边），致 background-position 图像水平错位（R508）。
+        let (x, y) = if matches!(first, BackgroundPositionValue::Top | BackgroundPositionValue::Bottom) {
+            (second, first)
+        } else {
+            (first, second)
+        };
+        return Some(BackgroundPositionValue::TwoValue(Box::new(x), Box::new(y)));
     }
 
     // 单个关键字
