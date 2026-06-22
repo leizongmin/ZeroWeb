@@ -73,19 +73,110 @@ fn child_paint_sort_key(box_node: &LayoutBox) -> (u8, i32) {
             (4, box_node.z_index)
         } else {
             // z-index: auto positioned (abspos/relative/fixed/sticky, 不建 SC)。
-            // CSS 2.1 Appendix E step 6：positioned descendants with z-index:auto
-            // paint AFTER normal flow (steps 3-5) 与 floats (step 4)，彼此按 tree order。
-            // 旧值 (1,0)（与 in-flow 并列）致 abspos 先于 in-flow 兄弟绘制被覆盖
-            // （absolute-replaced-width-006：img 被 div div 橙色背景覆写）。
-            // 升到 (3,0)（在 in-flow (1) 与 float (2) 之后、SC (4) 之前）修正之，
-            // 同时保留 abspos/relative 间的 tree order（top-019：#div2 红 abspos 先、
-            // #div3 relative border 后覆盖→无红）。
+            // CSS 2.1 Appendix E step 6：主循环（paint_node 步 3/4/5）经 is_positioned_child
+            // 过滤**排除**此类子元素，改由其所属 scope（positioned 祖先或根）的
+            // collect_positioned_descendants 按 tree order 收集，于 normal flow 之后、正 z-index
+            // SC 之前统一 flush（详见 paint_node 步 2/6/7）。此 (3,0) 不再驱动主循环排序，
+            // 但仍参与 defer_abspos 等子循环的排序（auto-positioned 排在 real-SC (4,z) 之前）。
             (3, 0)
         }
     } else if matches!(box_node.float, FloatValue::None) {
         (1, 0)
     } else {
         (2, 0)
+    }
+}
+
+/// 一个被延迟到所属 scope 的 step 6（normal flow 之后）绘制的 positioned descendant。
+///
+/// 收集时记录**已累积的绝对坐标**，flush 时以 `offset = abs - node.xy` 调用 paint，
+/// 使 paint_node 内部 `offset + node.xy = abs` 还原到正确位置。
+struct DeferredPositioned<'a> {
+    node: &'a LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+}
+
+/// 子节点的 content-box origin（父 abs + padding + border，扣除 scroll 偏移）。
+///
+/// paint_node 与 collect_positioned_auto_descendants 共用此函数，确保两者
+/// 的偏移累积**完全一致**（避免独立维护两套 offset 逻辑导致发散）。
+fn child_content_origin(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> (f32, f32) {
+    let mut cx = abs_x + box_node.padding_left + box_node.border_left;
+    let mut cy = abs_y + box_node.padding_top + box_node.border_top;
+    if matches!(box_node.overflow_x, OverflowClip::Scroll) {
+        cx -= box_node.scroll_x;
+    }
+    if matches!(box_node.overflow_y, OverflowClip::Scroll) {
+        cy -= box_node.scroll_y;
+    }
+    (cx, cy)
+}
+
+/// 判断节点是否需要对子内容裁剪（overflow 或 contain:paint/strict/content 触发）。
+///
+/// 从 paint_node 抽出，供 collect_positioned_auto_descendants 镜像 defer_abspos 条件，
+/// 避免 scan 与 paint 对「该节点是否 defer_abspos」判定发散（致 double-paint 或漏绘）。
+fn compute_needs_clip(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    if let Some(node_id) = box_node.node_id
+        && let Some(style) = styles.get(&node_id)
+    {
+        box_node.overflow_x != OverflowClip::Visible
+            || box_node.overflow_y != OverflowClip::Visible
+            || matches!(
+                style.contain,
+                ContainComputedValue::Paint
+                    | ContainComputedValue::Strict
+                    | ContainComputedValue::Content
+                    | ContainComputedValue::Custom(_)
+            )
+    } else {
+        box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible
+    }
+}
+
+/// 收集 scope 根子树中所有 positioned descendants（z-index:auto pseudo-SC + real-SC，含嵌套），
+/// 按 **tree order**（pre-order DFS）。
+///
+/// 遇任何 positioned 元素（自成 scope，不论 z-index）**不下钻**，直接收集；遇 in-flow/float
+/// 下钻以找嵌套 positioned。镜像 paint_node 的 defer_abspos 排除（非 positioned overflow 的
+/// 直接 abspos/fixed 子元素由 defer_abspos 循环绘制，不纳入 flush）与 multicol column-span
+/// 跳过（由 multicol 循环处理）。flush 时按 z_index 分 step 2(<0)/6(==0)/7(>0) 绘制。
+fn collect_positioned_descendants<'a>(
+    box_node: &'a LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    out: &mut Vec<DeferredPositioned<'a>>,
+) {
+    let (cx, cy) = child_content_origin(box_node, abs_x, abs_y);
+    let needs_clip = compute_needs_clip(box_node, styles);
+    let self_positioned = is_positioned_child(box_node);
+    let is_multicol = box_node.is_multicol;
+    let defer_abspos = needs_clip && !self_positioned && !is_multicol;
+    for child in &box_node.children {
+        // 多列 column-span 子元素由 multicol 循环处理
+        if is_multicol && !child.column_span_offsets.is_empty() {
+            continue;
+        }
+        let child_abs_x = cx + child.x;
+        let child_abs_y = cy + child.y;
+        if is_positioned_child(child) {
+            // defer_abspos 处理的直接 abspos/fixed 子元素由其循环绘制，跳过避免 double-paint
+            if defer_abspos && (child.is_absolute || child.is_fixed) {
+                continue;
+            }
+            // 所有 positioned（z-index:auto pseudo-SC + real-SC）收集到所属 scope，
+            // 不下钻（positioned 自成 scope），flush 时按 z_index 分 step 2/6/7。
+            out.push(DeferredPositioned {
+                node: child,
+                abs_x: child_abs_x,
+                abs_y: child_abs_y,
+            });
+        } else {
+            // in-flow/float：下钻找嵌套 positioned
+            collect_positioned_descendants(child, child_abs_x, child_abs_y, styles, out);
+        }
     }
 }
 
@@ -189,7 +280,7 @@ impl Painter {
                 );
             }
         }
-        self.paint_node(layout, styles, 0.0, 0.0, doc);
+        self.paint_node(layout, styles, 0.0, 0.0, doc, true);
     }
 
     /// 仅绘制与脏区域相交的节点（增量绘制）。
@@ -351,26 +442,13 @@ impl Painter {
         offset_x: f32,
         offset_y: f32,
         doc: Option<&Document>,
+        is_root_scope: bool,
     ) {
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
 
         // 判断是否需要裁剪子内容（overflow 或 contain:paint 触发）
-        let needs_clip = if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-        {
-            box_node.overflow_x != OverflowClip::Visible
-                || box_node.overflow_y != OverflowClip::Visible
-                || matches!(
-                    style.contain,
-                    ContainComputedValue::Paint
-                        | ContainComputedValue::Strict
-                        | ContainComputedValue::Content
-                        | ContainComputedValue::Custom(_)
-                )
-        } else {
-            box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible
-        };
+        let needs_clip = compute_needs_clip(box_node, styles);
 
         // 获取该节点对应的计算样式
         // 记录绘制前的图元数量，用于 opacity 应用
@@ -494,19 +572,9 @@ impl Painter {
             false
         };
 
-        // 6. 递归绘制子节点（子节点偏移 = 父 padding + border）
+        // 6. 递归绘制子节点（子节点偏移 = 父 padding + border，扣除 scroll）
         // visibility: hidden 不阻止子节点绘制，子节点可以覆盖为 visible
-        let mut child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
-        let mut child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
-
-        // 滚动容器：将子元素向上/左偏移 scroll_x/scroll_y
-        // scroll_y > 0 表示内容已向下滚动，因此子元素需要向上移动
-        if matches!(box_node.overflow_x, OverflowClip::Scroll) {
-            child_offset_x -= box_node.scroll_x;
-        }
-        if matches!(box_node.overflow_y, OverflowClip::Scroll) {
-            child_offset_y -= box_node.scroll_y;
-        }
+        let (child_offset_x, child_offset_y) = child_content_origin(box_node, abs_x, abs_y);
 
         // 5b. CSS 计数器处理（在子节点绘制前，按 reset → set → increment 顺序）
         if let Some(node_id) = box_node.node_id
@@ -534,12 +602,64 @@ impl Painter {
         let is_multicol = box_node.is_multicol;
         let self_positioned = box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky;
         let defer_abspos = needs_clip && !self_positioned && !is_multicol;
+
+        // CSS 2.1 Appendix E 全局 positioned-descendant 延迟（step 2/6/7）：
+        // scope 根（positioned 元素或根 html）收集其子树中**所有** positioned 后代
+        //（z-index:auto pseudo-SC + real-SC，含嵌套，经 collect_positioned_descendants 按
+        // tree order），按 z_index 分三段绘制：step 2（z<0，normal flow 之前，最负优先）→
+        // steps 3-5（in-flow/float）→ step 6（z==0，即 z-index:auto/0，tree order）→
+        // step 7（z>0，最正优先）。非 scope 节点不收集/flush，但其主循环只绘制 in-flow/float
+        //（positioned 子元素一律由最近 scope 祖先收集）。per-node 排序无法实现全局 tree-order
+        //（R503 (3,0) 在 abspos-016 与 static-inside-inline/z-index-abspos-004 间不可兼得），
+        // 故显式收集。详见 appendix-e-step6-global-deferral-design.md。
+        let is_scope = self_positioned || is_root_scope;
+        let mut collected_positioned: Vec<DeferredPositioned> = Vec::new();
+        if is_scope {
+            collect_positioned_descendants(box_node, abs_x, abs_y, styles, &mut collected_positioned);
+        }
+
+        // step 2：负 z-index SC（normal flow 之前；collected 已 tree-order，按 z_index 升序稳定排序）
+        if is_scope {
+            let mut neg_z: Vec<&DeferredPositioned> =
+                collected_positioned.iter().filter(|i| i.node.z_index < 0).collect();
+            neg_z.sort_by_key(|i| i.node.z_index);
+            for item in &neg_z {
+                let off_x = item.abs_x - item.node.x;
+                let off_y = item.abs_y - item.node.y;
+                self.paint_node(item.node, styles, off_x, off_y, doc, false);
+            }
+        }
+
+        // steps 3/4/5：in-flow / float（仅非 positioned 子元素；positioned 由 scope flush 处理）
         for child_idx in ordered_child_indices(&box_node.children, |child| {
             (!is_multicol || child.column_span_offsets.is_empty())
                 && (!defer_abspos || (!child.is_absolute && !child.is_fixed))
+                && !is_positioned_child(child)
         }) {
             let child = &box_node.children[child_idx];
-            self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
+            self.paint_node(child, styles, child_offset_x, child_offset_y, doc, false);
+        }
+
+        // step 6：z-index:auto/0（positioned-auto + z:0 SC），tree order（z_index==0，无需排序）
+        if is_scope {
+            for item in collected_positioned.iter().filter(|i| i.node.z_index == 0) {
+                let off_x = item.abs_x - item.node.x;
+                let off_y = item.abs_y - item.node.y;
+                self.paint_node(item.node, styles, off_x, off_y, doc, false);
+            }
+        }
+
+        // step 7：正 z-index SC（z_index 升序：低 z 先绘、高 z 后绘居上；等 z 保 tree order）。
+        // 与 R503 per-node `(key, z_index)` 升序一致；CSS Appendix E step 7 高 z 居上 = 后绘。
+        if is_scope {
+            let mut pos_z: Vec<&DeferredPositioned> =
+                collected_positioned.iter().filter(|i| i.node.z_index > 0).collect();
+            pos_z.sort_by_key(|i| i.node.z_index);
+            for item in &pos_z {
+                let off_x = item.abs_x - item.node.x;
+                let off_y = item.abs_y - item.node.y;
+                self.paint_node(item.node, styles, off_x, off_y, doc, false);
+            }
         }
 
         // 多列子元素按列区域渲染。
@@ -597,7 +717,7 @@ impl Painter {
 
                     let frag_offset_x = frag_abs_x - child.x;
                     let frag_offset_y = frag_abs_y - child.y;
-                    self.paint_node(child, styles, frag_offset_x, frag_offset_y, doc);
+                    self.paint_node(child, styles, frag_offset_x, frag_offset_y, doc, false);
 
                     super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_frag, &clip_rect);
                 }
@@ -620,7 +740,7 @@ impl Painter {
         if defer_abspos {
             for child_idx in ordered_child_indices(&box_node.children, |child| child.is_absolute || child.is_fixed) {
                 let child = &box_node.children[child_idx];
-                self.paint_node(child, styles, child_offset_x, child_offset_y, doc);
+                self.paint_node(child, styles, child_offset_x, child_offset_y, doc, false);
             }
         }
 
