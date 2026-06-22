@@ -1,9 +1,11 @@
 # Appendix E step 6 — 全局 positioned-descendant 延迟设计
 
-**状态**: 设计稿（spec），待实现
+**状态**: ✅ 已实现（R504 LANDED，commit 见 master.md；net +7 / 0 回归）
 **日期**: 2026-06-22
 **承接**: R503（commit 270c410f，painter `child_paint_sort_key` z-index:auto positioned (1,0)→(3,0)）
 **目标**: 恢复 R503 的 2 个回归（`abspos/static-inside-inline-001/003`）并完整实现 CSS 2.1 Appendix E step 6 的全局 tree-order 语义
+
+> **R504 实现笔记**：本设计的「两趟 pre-order 收集」落地为 `collect_positioned_descendants`（收集**所有** positioned 非 auto-only——见 §4.6 修订），3 段 flush（step 2/6/7）。**关键修订**：step 7 排序方向 = **升序**（低 z 先绘、高 z 居上），与 R503 per-node `(key,z_index)` 升序一致；初版误用降序致 z-index-009/010/011 回归。`is_root_scope` 参数线程化（入口 true）。详见 `evidence/r504-appendix-e-global-deferral-landed-2026-06-22.txt`。
 
 ---
 
