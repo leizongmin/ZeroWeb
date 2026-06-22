@@ -93,11 +93,29 @@
 > **结构化 plateau 结论见下方「综合裁决」节**（R305–R354 杠杆穷尽表 + 4 条多会话路径 + 需用户决策卡点）。逐轮详细记录见文末「最近轮次详细记录」（R335–R336 全文；R337–R354 见「综合裁决」）；更早轮次已归档：R314–R334 → [`archive/rounds-r314-r334.md`](./archive/rounds-r314-r334.md)、R307–R313 → 各单轮归档（[`rounds-r307.md`](./archive/rounds-r307.md) … [`rounds-r313.md`](./archive/rounds-r313.md)）、R305–R306 → [`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)、R304 → [`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)、R303 → [`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)、R142–R302 → [`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)、R23–R139 → [`archive/rounds-r23-r139.md`](./archive/rounds-r23-r139.md)、R11–R20 → [`archive/rounds-r11-r20-reftest-investigation.md`](./archive/rounds-r11-r20-reftest-investigation.md)。
 
 
-## 综合裁决：结构性 plateau（R305–R323，≥10 轮一致收敛）
+## 综合裁决：两阶段 plateau 演进
 
-> 本节为 doc-maintenance 轮（2026-06-19）对最近 ~20 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见文末「最近轮次详细记录」（R335–R336 全文；R337–R354 见「综合裁决」）与归档 [`archive/rounds-r314-r334.md`](./archive/rounds-r314-r334.md)（R314–R334）、[`archive/rounds-r309.md`](./archive/rounds-r309.md)（R309）、[`archive/rounds-r308.md`](./archive/rounds-r308.md)（R308）、[`archive/rounds-r307.md`](./archive/rounds-r307.md)（R307）、[`archive/rounds-r305-r306.md`](./archive/rounds-r305-r306.md)（R305–R306）、[`archive/r304-taffy-upgrade-deferred.md`](./archive/r304-taffy-upgrade-deferred.md)（R304）、[`archive/r303-dc9-gpu-primitive-audit.md`](./archive/r303-dc9-gpu-primitive-audit.md)（R303）、[`archive/rounds-r142-r302.md`](./archive/rounds-r142-r302.md)（R142–R302）。
+> 本节为 doc-maintenance 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见顶部 round-detail（R491–R511）与文末「最近轮次详细记录」指针；更早轮次归档见 [`archive/`](./archive/)（R484–R490 伪元素线、R342c–R480 DC-14 导入 era、R314–R334、R307–R313、R305–R306、R304、R303、R142–R302、R23–R139、R11–R20）。
 
-**核心结论**：rendering-compat 的**所有单会话 / 中会话 forward-motion 杠杆均已 ruled out 或 refuted**——这是 R313–R323（≥10 轮）一致收敛的结论，非单轮判断。rally 单会话迭代已无法提升真实通过率。
+**核心结论（2026-06-23 更新，分两阶段）**：
+
+1. **旧 plateau（R305–R323 / R384，≥10 轮一致收敛）**：在「子集分母 + 旧 lever 族」语境下，**near-pass clean-win frontier / POLLUTED 候选逐项 hunt / fontdue 度量（advance-width / AA / Bold）/ multicol paint 侧与 balance 二分 / baseline-export 3 机制 / column-aware IFC 纯 inline / Phase A font_size 单点** 等 lever 族均 ruled out 或 refuted。下表「已穷尽 / 证伪的杠杆」记录的就是**这一阶段**的结论。**该结论的范围限定**：它覆盖的是 *font/metric 精度类* 与 *POLLUTED-hunt 类* lever，**不**覆盖 R491 之后发现的 CSS-correctness 单点 lever 族（见下）。
+
+2. **★ R491–R511 CSS-correctness lever era（旧 plateau 的反例，现已 CSS2 趋尽）**：R491（画布背景传播 §14.2）打破旧 plateau，此后 ~20 轮产出**一串连续 clean win**，来自一个**未被旧 plateau「ruled out」清单覆盖**的全新 lever 族——**CSS 规范正确性单点修复**：
+   - R491 画布背景传播 §14.2（gross failure 修 8 案）
+   - R498–R500 abspos sizing（fixed/absolute 全-inset stretch + right/bottom Px 位置；self-source +33、chr<1% +10）
+   - R503/R504 CSS Appendix E paint-order（step 6 z-index:auto + 全局 positioned-descendant 延迟；+7/0）
+   - R505 opacity<1 建立堆叠上下文（修 R504 回归）
+   - R508 background-position 两值轴向（+4/0）
+   - R509 `content: attr()` 生成内容解析（+3/0）
+   - R510 border 简写重复组件值拒绝（+1/0）
+   - R511 CSS §9.7 table-internal+float → block（0 self-flip 但 DC-14 diff 降 70%）
+   - （另：R428 flex min-size:auto LANDED；R429 flex shorthand type-awareness LANDED commit `88e11d2b`）
+   - 反例/refutation：R502 presentational hints（实现正确但 zero-yield，已 revert）
+
+   **R511 扫描结论**：**clean 单点 lever 在全 CSS2 目录已趋尽**（lists/colors 100%；box-display/borders/generated-content = IFC Phase-A；floats-clear = §9.7/margin-collapse/float-sizing/BFC 多结构性；visuren/text = fontdue+IFC）。即 CSS-correctness lever 族在 CSS2 内也走到了尽头。
+
+3. **当前真实状态（R511 后）**：两阶段 lever（font/metric 精度类 + CSS2 CSS-correctness 类）均已在 CSS2/子集范围内穷尽。剩余 forward-motion 选项见文末「下一步」——(a) 把 §9.7 式 CSS-correctness 扫描**外推到非-CSS2 全量目录**（css-tables/css-position/css-writing-modes 等，bounded 单会话探索），或 (b) 承诺**多会话架构**（Phase A IFC 统一 ≈ 释放 ~2200 fontdue/IFC near-threshold 案 + welcome/morning 文本度量残余，迄今最大 lever）。
 
 **基线（R427 css-multicol 扩到全量后——7/9 目录全量完成·5 布局类+2 文字类；strict/oracle broad 仍 pre-grid-expand 子集口径；7 目录聚合 oracle 629/1726=36.4% 见顶部主基线）**：
 
@@ -580,6 +598,8 @@
 ### 已 ruled out（勿以单会话重试）
 
 near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / **column-aware IFC Phase 1（pure-inline balance 明确高度）(R381)**：执行 column-aware-IFC-spec.md §10 gate「假设 A1」，扫描全 16 css-multicol 失败案结构（height/column-fill/blockchildren），**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）——每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套；spec 自身协议「A1 不存在→紧急停止转 Phase 2」生效，Phase 1 零杠杆关闭，真实 multicol lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）/ baseline-export 3 机制(R266–R316) / **advance-width(R225–R375b) definitive 关闭**：R375 hand-crafted DejaVu 表 morning 16.41→19.14% + R375b fontdue-actual advance（临时加 fontdue dep+缓存 Font+metrics.advance_width）16.41→19.08%，双 variant 均退步；fontdue-actual（最后未测变体）亦证伪。根因：accurate DejaVuSans advance 使换行偏离 chromium（system-ui≠DejaVuSans 或换行算法不同），0.55 启发式碰巧更近。advance-width 非 morning cascade 根因/ blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304) / inline-flex·inline-grid width:auto shrink-to-fit（R370：probe 实证 inline-flex width:auto 同 inline-block 拉伸到满宽 800，是真 bug，但**零杠杆**——全 48 失败案 + product-smoke fixture 均不用 inline-flex/inline-grid width:auto；fix 需 flex_row_intrinsic_width（非 box_content_max_width，flex row 须求和 block 子元素非取 max），复杂且无 reftest/smoke 收益，按 code-guidelines「不做零价值修改」不修，勿再以单会话重试）。
+
+> **R512（2026-06-23，read-only 再验证）**：全目录 self 通过率再核实与基线一致（tables 77/112、text-decor 244/250、grid 31/48、fonts 282/284、backgrounds ~82%、box-display ~50%、box ~48%、cascade ~97.4%、values 65.4%）。新增两条 ruled-out 机制：① **负值拒绝（numbers-units-006）须 cascade-level 校验**——`cascade.rs:140` max_by_key 选单一 winner，`height:1in;height:-1px` 中 -1px 后声明 order 高 → winner=-1px，1in 被整体丢弃；apply-time 拒绝只回退到 initial（Auto→0）而非恢复 1in，与应用 -1px（taffy 钳 0）对无内容 div 同给 0 高故 diff 不变（实验已回退）。CSS 合法性须在选 winner 时判定，apply-time 校验对「先合法后非法」多声明无效。② **ex 单位（units-002/003/004）须 font metric**——parse_basic.rs 无 `ex` 分支（声明被丢），但 units-004 需 Ahem 实际 x-height（0.8em）；style-system resolve_length 无字体访问，0.5em fallback 永久不过 units-004，勿以 0.5em 投。另确认上轮 Phase-A 方向 = R506 已裁定的 R247 deadlock 同墙，勿以单会话重试。详见 [`evidence/r512-plateau-verification-2026-06-23.txt`](./evidence/r512-plateau-verification-2026-06-23.txt)。
 
 ### 已完成里程碑（参考，非当前活跃）
 
