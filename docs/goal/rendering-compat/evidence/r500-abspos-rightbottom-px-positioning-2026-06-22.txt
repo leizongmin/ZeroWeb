@@ -1,0 +1,86 @@
+R500 — abspos right/bottom Px 位置解析（004 lever landing）
+日期: 2026-06-22 ｜ 轮次: R500 ｜ 类型: doc-side 独立 A/B 实证（read-only，零代码变更）
+前置: R499 header「下一 lever：004」+ 验证覆盖 flag（normal-flow/ scan 不含 positioning/）
+
+================================================================================
+1. 代码变更（code agent，engine.rs 未提交，本 doc-agent 未触）
+================================================================================
+函数: crates/layout-engine/src/engine.rs `adjust_absolute_pct_to_viewport`（~line 1736-1756）
+新增两块（对称）：
+  - left:Auto + right:Px → child.x = (viewport_width - right - child.width) - content_origin_x
+  - top:Auto  + bottom:Px → child.y = (viewport_height - bottom - child.height) - content_origin_y
+关键点（doc-agent 预复核正确）：
+  - 用「已解析的 child.width/height」→ 正确处理 width-interaction
+    （004 案 right:0 + width:100%：先 % 块设 width=viewport_w，再 right 块算 x=vw-0-vw=0）
+  - left:Auto 守卫 → over-constrained 双 Px（left+right 均 Px）不触本块（left:Px 块处理、right 忽略，§10.3.7 LTR）
+  - 在 %/auto-stretch 块之后执行（child.width/height 已定）
+  - % right/bottom 暂不处理（已注）
+
+================================================================================
+2. doc-agent 独立 A/B 实证（self-source reftest positioning/）
+================================================================================
+源文件（code agent 跑，test-guard 包裹，PASS-list 格式 = 通过的 self-source 用例）:
+  /tmp/r500-base-CSS2positioning.txt  (355 行, 08:08, 无 004 fix)
+  /tmp/r500-with-CSS2positioning.txt  (387 行, 07:55, 含 004 fix)
+
+set diff（comm）:
+  base-only（修复后变 fail = 回归）= 0   ← 零回归
+  with-only（修复后新 pass = 新翻）   = 32
+  common                            = 355
+
+R499 已翻案保持（非回归）: abspos-containing-block-001/002/007 在 base 与 with 均在（PASS 保持）。
+
+================================================================================
+3. 32 新翻清单（with-only）+ 机制核查
+================================================================================
+[目标]
+  abspos-containing-block-004   top:0;right:0;width:100%;height:100%  (body bg:red)
+[同族 bonus — right/bottom + 100% 尺寸]
+  abspos-containing-block-008   top:0;right:0;width:100%;height:100%  (html border:red)
+  abspos-containing-block-009   bottom:0;left:0;width:100%;height:100% (bottom/top 块)
+[abspos-overflow bonus]
+  abspos-overflow-002 / 005 / 008
+[right/bottom/position-applies-to 系列 — 测属性是否「适用」，用 right/bottom:0 + abspos]
+  bottom-applies-to-  001 002 003 005 006 007 009 012 013 014 015   (11)
+  position-applies-to-001 002 003 005 006 007 009 012 013 014 015   (11)
+  right-applies-to-   001 002 003 007                                (4)
+                                                                    (共 26)
+
+机制确认（test-file 直接核查）:
+  - 008 = <top:0;right:0;width:100%>  → right 块解析
+  - 009 = <bottom:0;left:0;height:100%> → bottom/top 块解析（left:0 由既有 left:Px 块）
+  - right-applies-to-007 = #cell{right:0;position:absolute;width:1in} → right 块解析
+  全部 right/bottom 位置族，与 R500 改动机制一致。
+
+false-pass 风险评估（self-source test==ref 同树）:
+  *-applies-to-* 系列用 static-position reference（属性「适用」= abspos 绿块落在
+  与静态 ref 相同位置）。R500 让 abspos 渲染落在 spec-correct 位置 = 匹配 static ref
+  = 真翻，非「test 与 ref 双双同错」。false-pass 风险低。
+
+================================================================================
+4. blast-radius（其他目录，self-source A/B）
+================================================================================
+已对比（base+with 均在）:
+  positioning/  +32 / 0 回归   (见上)
+  abspos/        0 / 0         (15→15, clean)
+  normal-flow/   0 / 0         (584→584, clean)
+baseline pending（仅 with 文件，base 待跑；multicol in-flight 08:20）:
+  css-multicol / CSS2box-display / CSS2visuren / CSS2visufx / css-position
+  → code agent 序列扫描中；doc-agent 未跑（避免与 in-flight scan 争资源）
+
+================================================================================
+5. caveat（关键度量口径）
+================================================================================
+- 本轮 +32/0 为 **self-source** 口径（test==ref 同树）。
+- **chr<1%（目标 36.2%）需 chromium oracle cross-validate**——尚未做。
+- 推断（非证实）: abspos 位置 spec-correct ≈ chromium，32 新翻大概率多数亦翻 chr<1%
+  （远超 R499 header 预测的「+1 chr<1%」），但须 code agent 提交后 oracle 实证。
+- blast-radius 剩余 5 目录 baseline pending；若有回归会削减净值。
+
+================================================================================
+6. 结论
+================================================================================
+R500（004 lever）self-source positioning/ **+32 新翻 / 0 回归** 已由 doc-agent 独立
+A/B 实证确认（PASS-list set diff + test-file 机制核查）。机制正确，false-pass 风险低。
+chr<1%（目标口径）影响待 oracle；blast-radius 剩余目录待 baseline。code agent 代码
+未提交（engine.rs 19 ins），scan 仍在跑（multicol）。
