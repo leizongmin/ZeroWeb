@@ -97,6 +97,46 @@ caveat / 诚实声明
   positioned 祖先，与本簇（CB=非根 #div1 或 viewport + sizing/margin）正交，落地不冲突。
 
 ================================================================================
+★ 深化（追加 dump 029/036）：intrinsic-96 子组 = R490-blocked（非 clean lever）
+================================================================================
+对 006 簇子组 B（intrinsic-96，无 width 属性）再 dump 029/036（连 022 共 3/7）：
+  - 022/029/036 全部：img **size 96×96 正确 + 水平 x 正确**（022/029 x=104，036 x=56，均 ==ref），
+    唯一失败 = 垂直 #div1 abs_y 偏移（test #div1 mt=96 → 被推下，ref mt=0）。模式完全一致。
+  - 子组 B 共 7 案（022/029/036/043/050/057/064），全 `blue96x96.png` + `#div1{border:solid black}`
+    + `div div{margin-top:96px}`，结构同构 → 推断全 7 案同机制（dump 3/7 证实）。
+
+★ §10.3.8 auto-margin→0 在 ZW **已工作**（推翻 R500d「缺失」前提）：
+  test-file `<meta name="assert">` 原文：
+    「Computed value of 'auto' for 'margin-left' or margin-right' on absolutely positioned
+     inline replaced element becomes a used value of '0'.」
+  022/029/036 水平 x == ref → auto-margin→0 已正确解析（img 水平定位对）。
+  → R500d 把 auto-margin→0 当「缺失的 lever」是错的：它已实现且工作；test 失败不在该维度。
+
+★ intrinsic-96 子组失败根因 = R490（border-width:medium=0）阻塞：
+  #div1 用 `border: solid black`（无显式 width → CSS §8.5.1 initial = medium 3px）。
+  LAYOUT_DUMP：#div1 pt=0（无 padding-top）+ 内层 div div 的 margin-top:96px **穿透 #div1
+  冒泡**（#div1 自身被记 mt=96，被推下 96px）。CSS §8.3.1：父 border-top 应阻断子 margin
+  collapse；冒泡发生 = #div1 **无 border-top**。
+  → 与 **R490**（border-width:medium 派生缺失，ZeroWeb 默认 0，已实证 net -3 回退为死路）
+    完全一致：`border:solid black` 在 ZW 渲染 0-width → 无 top border → 子 margin 冒泡。
+  → intrinsic-96 子组 7 案 = **R490-entangled**（border-width 死路阻塞），**非 clean lever**。
+  caveat：border-width=0 为「最一致」推断（R490 已立 medium=0 事实），但未直接 dump border
+    像素确证（LAYOUT_DUMP 无 border 列）；若欲 100% 坐实，须 border-width probe 或 PNG 看
+    「hollow black rectangle」是否可见（不可见=无 border=R490）。
+
+================================================================================
+R500d 40 self-fail 最终分拆（doc-side 结论）
+================================================================================
+  (A) HTML presentational width/height 属性（006 子组 A，~9 案）  → R494 §1 gap（DC-2 feature）
+  (B) SVG intrinsic sizing（002/004/023 svg 簇）                 → SVG 盒模型 gap
+  (C) R490-entangled margin-collapse（006 子组 B，~7 案）        → R490 死路阻塞（非 clean）
+  → 三独立 gap，无一为「单会话 §10.3.8 auto-margin」单一入口；auto-margin→0 已工作（修 0 案）。
+  → R500d「迄今最大 actionable 单簇 +20~+40」**最终纠正为**：3 个更小独立 gap 的几何聚合，
+    其中 (C) 还被 R490 死路阻塞。R500d 作为「lever」基本不成立；唯一可独立推进的是 (A)
+    presentational hints（DC-2 正式 feature，但 R494 已估 reftest 杠杆低，须重核 <img width=>
+    覆盖）与 (B) SVG intrinsic（SVG 专属 effort）。
+
+================================================================================
 命令（可复现）
 ================================================================================
   cd /home/lei/work/ZeroWeb
