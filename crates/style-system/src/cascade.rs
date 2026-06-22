@@ -176,16 +176,15 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>) -> HashMap<String, String
 
     for (property, decls) in by_property {
         // CSS 规范：非法声明（如盒模型尺寸属性的负长度）在级联时即按未声明处理，
-        // 故较低优先级的合法声明可胜出。优先选最高优先级的合法声明；若该属性无任何合法
-        // 声明（全为负值等），回退到最高优先级声明以保持现状（零回归——不改变仅有负值
-        // 声明时的旧行为）。
-        let valid_best = decls
+        // 故较低优先级的合法声明可胜出。仅选最高优先级的合法声明；若该属性全部声明
+        // 均非法（全为负值等），属性不进入级联结果，回退到初始值（width/height→auto、
+        // max-*→none 等，由 default_impl 提供，均为 CSS 规范初始值）。
+        let winner = decls
             .iter()
             .filter(|d| !is_invalid_negative_length(&property, &d.value))
             .max_by_key(|d| d.order.clone());
-        let overall_best = decls.iter().max_by_key(|d| d.order.clone());
-        if let Some(winner) = valid_best.or(overall_best) {
-            result.insert(property, winner.value.clone());
+        if let Some(w) = winner {
+            result.insert(property, w.value.clone());
         }
     }
 
@@ -322,8 +321,8 @@ mod tests {
     }
 
     #[test]
-    fn test_cascade_keeps_sole_negative_no_regression() {
-        // 仅有负值声明时无合法回退，保持旧行为（零回归）。
+    fn test_cascade_sole_negative_rejected_to_initial() {
+        // 仅有负值声明时全为非法 → 属性不进入级联结果（回退到初始值 width→auto）。
         let decls = vec![CascadedDeclaration {
             property: "width".to_string(),
             value: "-5px".to_string(),
@@ -331,7 +330,7 @@ mod tests {
         }];
 
         let result = cascade(decls);
-        assert_eq!(result.get("width"), Some(&"-5px".to_string()));
+        assert!(result.get("width").is_none());
     }
 
     #[test]
