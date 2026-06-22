@@ -437,6 +437,9 @@ fn expand_border_all(value: &str, important: bool, specificity: (u32, u32, u32))
     }
 
     let parsed = parse_border_shorthand(value);
+    let Some(parsed) = parsed else {
+        return vec![];
+    };
 
     let mut result = Vec::with_capacity(12);
     for side in &["top", "right", "bottom", "left"] {
@@ -464,6 +467,9 @@ fn expand_border_side(
     }
 
     let parsed = parse_border_shorthand(value);
+    let Some(parsed) = parsed else {
+        return vec![];
+    };
     vec![
         mk(width_prop, &parsed.width),
         mk(style_prop, &parsed.style),
@@ -482,24 +488,41 @@ struct BorderShorthand {
 ///
 /// 识别 width（长度值）、style（关键字）和 color 部分，
 /// 未指定的部分使用初始值。
-fn parse_border_shorthand(value: &str) -> BorderShorthand {
+fn parse_border_shorthand(value: &str) -> Option<BorderShorthand> {
     let toks = zero_css_parser::values::split_paren_aware_tokens(value);
     let parts: Vec<&str> = toks.iter().map(|s| s.as_str()).collect();
     let mut width = "medium".to_string();
     let mut style = "none".to_string();
     let mut color = "currentcolor".to_string();
+    // CSS 规范：border 简写的 width/style/color 各至多一个；重复组件值（如
+    // `border: red solid 16px red` 的两个 color）使整个声明非法，必须忽略。
+    let mut seen_width = false;
+    let mut seen_style = false;
+    let mut seen_color = false;
 
     for part in parts {
         if is_border_style_keyword(part) {
+            if seen_style {
+                return None;
+            }
+            seen_style = true;
             style = part.to_string();
         } else if looks_like_length(part) {
+            if seen_width {
+                return None;
+            }
+            seen_width = true;
             width = part.to_string();
         } else if looks_like_color(part) {
+            if seen_color {
+                return None;
+            }
+            seen_color = true;
             color = part.to_string();
         }
     }
 
-    BorderShorthand { width, style, color }
+    Some(BorderShorthand { width, style, color })
 }
 
 /// 检查字符串是否为 border-style 关键字。
