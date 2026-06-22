@@ -680,10 +680,10 @@ mod pseudo_tests {
     /// 递归查找首个标签名为 `tag` 的元素 NodeId。
     fn find_element(doc: &Document, id: NodeId, tag: &str) -> Option<NodeId> {
         if let Some(n) = doc.get(id) {
-            if let zero_dom::NodeKind::Element(e) = &n.kind {
-                if e.local_name().eq_ignore_ascii_case(tag) {
-                    return Some(id);
-                }
+            if let zero_dom::NodeKind::Element(e) = &n.kind
+                && e.local_name().eq_ignore_ascii_case(tag)
+            {
+                return Some(id);
             }
             for child in doc.child_nodes(id) {
                 if let Some(found) = find_element(doc, child, tag) {
@@ -713,7 +713,10 @@ mod pseudo_tests {
         inject_pseudo_text_nodes(&mut doc, &mut styles);
 
         // div 的首个子节点应为注入的文本节点 "Y"
-        let first_child = doc.get(div).and_then(|n| n.children.first().copied()).expect("有子节点");
+        let first_child = doc
+            .get(div)
+            .and_then(|n| n.children.first().copied())
+            .expect("有子节点");
         match &doc.get(first_child).unwrap().kind {
             zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "Y"),
             other => panic!("首个子节点应为文本节点，实际 {other:?}"),
@@ -723,7 +726,10 @@ mod pseudo_tests {
         assert!(matches!(inj_style.content, ContentComputedValue::Normal));
         // 原 "X" 文本节点仍是 div 的第二个子节点
         let second = doc.get(div).unwrap().children.get(1).copied();
-        assert!(matches!(doc.get(second.unwrap()).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(_))));
+        assert!(matches!(
+            doc.get(second.unwrap()).map(|n| &n.kind),
+            Some(zero_dom::NodeKind::Text(_))
+        ));
     }
 
     /// `inject_pseudo_text_nodes`：::after 追加为末子节点；content:none 不注入。

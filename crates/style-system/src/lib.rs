@@ -163,7 +163,13 @@ impl StyleSystem {
         // 只为元素节点计算样式
         if is_element {
             let mut computed = self.compute_element_style_internal(
-                doc, node, stylesheets, parent_style, parent_custom, quirks_mode, None,
+                doc,
+                node,
+                stylesheets,
+                parent_style,
+                parent_custom,
+                quirks_mode,
+                None,
             );
             // 计算伪元素（::before/::after）：继承自本元素的计算样式。save/restore
             // custom_properties 以防伪元素规则定义的 var 污染后续子元素继承。
@@ -172,10 +178,22 @@ impl StyleSystem {
             let saved_custom = self.custom_properties.clone();
             let elem_style = computed.clone();
             let before = self.compute_element_style_internal(
-                doc, node, stylesheets, Some(&elem_style), &saved_custom, quirks_mode, Some("before"),
+                doc,
+                node,
+                stylesheets,
+                Some(&elem_style),
+                &saved_custom,
+                quirks_mode,
+                Some("before"),
             );
             let after = self.compute_element_style_internal(
-                doc, node, stylesheets, Some(&elem_style), &saved_custom, quirks_mode, Some("after"),
+                doc,
+                node,
+                stylesheets,
+                Some(&elem_style),
+                &saved_custom,
+                quirks_mode,
+                Some("after"),
             );
             self.custom_properties = saved_custom;
             if matches!(before.content, property::types::ContentComputedValue::String(_)) {
@@ -248,6 +266,7 @@ impl StyleSystem {
     /// `pseudo` 为 `Some(name)` 时计算指定伪元素（`::before`/`::after`）的样式：
     /// 仅收集该伪元素的声明，跳过内联样式与 UA 默认值（伪元素无 style 属性、无标签），
     /// 继承自 `parent_style`（伪元素的 originating 元素）。
+    #[allow(clippy::too_many_arguments)]
     fn compute_element_style_internal(
         &mut self,
         doc: &Document,

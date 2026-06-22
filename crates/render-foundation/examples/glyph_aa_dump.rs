@@ -42,7 +42,11 @@ fn main() {
                 match loader.rasterize_glyph(aid, ch, fs) {
                     Ok(bm) => eprintln!(
                         "Ahem fs={fs} '{ch}': width={} height={} advance={:.1} (w/fs={:.3} adv/fs={:.3})",
-                        bm.width, bm.height, bm.advance, bm.width as f32 / fs, bm.advance / fs
+                        bm.width,
+                        bm.height,
+                        bm.advance,
+                        bm.width as f32 / fs,
+                        bm.advance / fs
                     ),
                     Err(e) => eprintln!("Ahem fs={fs} '{ch}' ERR {e}"),
                 }
