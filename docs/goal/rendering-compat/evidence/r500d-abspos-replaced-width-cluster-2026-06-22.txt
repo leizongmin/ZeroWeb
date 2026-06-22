@@ -140,3 +140,15 @@ caveat
 
 caveat（附录）：syntax 31 案未逐案核（或含 parser 边界小 bug，未扫）；本附录仅 z 值分布聚类，
 未逐案 PIL 区分 fontdue-noise vs engine-bug（同 R500b 限制）。
+
+================================================================================
+附录 2：positioning/ 内部 2-5% 细扫（确认 R500d 是唯一大簇）
+================================================================================
+positioning/ self-fail@2-5% 合计 95 案：abspos-sizing 族（R500d）≈ 49，**其余 46 案细扫**：
+  - 5@3.84%（离散同值）= left-113 / position-relative-010 / position-relative-038 / right-091 /
+    right-092 = relpos/左右 inset 偏移小簇（R123 root-relative-inset 同谱系，非根边界，minor）
+  - relpos-calcs 4 案（2.20-3.00%）= relative-position calc 解析小簇
+  - 余皆 singleton（abspos-inline/abspos-overflow/abspos-width/position-fixed-001/dynamic-top-change
+    /right-offset-004/abspos-016 各 1-2）
+★ 结论：positioning/ 2-5% band 内 **R500d（abspos-sizing 49）是唯一 clean 大簇**；其余 46 散/小簇
+（5@3.84% relpos + 4 relpos-calcs = 唯二可点簇，各 <5 案 minor）。positioning/ 2-5% 扫描穷尽。
