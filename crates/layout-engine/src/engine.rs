@@ -1733,8 +1733,25 @@ fn adjust_absolute_pct_to_viewport(
             if let LengthValue::Px(px) = &style.top {
                 child.y = (*px as f32) - current_content_origin_y;
             }
-            // right/bottom 百分比仅当对应尺寸为 auto 时才影响尺寸/位置；
-            // 当前不处理（避免与 width/height 重叠计算引入复杂性与回归）。
+            // right/bottom 为长度且 left/top 为 auto 时：CSS 2.1 §10.1 无 positioned
+            // ancestor 的 absolute 元素 CB=视口。left:auto + right:Px → 右边对齐视口
+            // 右缘，由已解析的 width 反解 left（§10.3.18 rule 2）：
+            // target_x = viewport_w - right - width。须在 width/height 解析后执行
+            // （上方百分比/auto-stretch 块已设好 child.width/height）。left/top 已为
+            // Px 时由上方块处理；双 inset 全 Px 的 over-constrained（LTR）忽略 right。
+            // right/bottom 百分比仅当对应尺寸为 auto 时才影响位置，当前不处理。
+            if matches!(style.left, LengthValue::Auto)
+                && let LengthValue::Px(right) = &style.right
+            {
+                let target_viewport_x = viewport_width - (*right as f32) - child.width;
+                child.x = target_viewport_x - current_content_origin_x;
+            }
+            if matches!(style.top, LengthValue::Auto)
+                && let LengthValue::Px(bottom) = &style.bottom
+            {
+                let target_viewport_y = viewport_height - (*bottom as f32) - child.height;
+                child.y = target_viewport_y - current_content_origin_y;
+            }
         }
 
         // 递归：用（可能已修改的）child 位置计算其内容盒原点
