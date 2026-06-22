@@ -728,10 +728,17 @@ impl LayoutEngine {
             ZIndexValue::Auto => 0,
             ZIndexValue::Integer(z) => z,
         });
-        // CSS 2.1：positioned 元素 + z-index 为显式整数时创建堆叠上下文。
-        // z-index: auto 不创建堆叠上下文——其 positioned 后代参与父级堆叠上下文。
-        let creates_stacking_context =
-            is_positioned && computed.is_some_and(|s| matches!(s.z_index, ZIndexValue::Integer(_)));
+        // CSS 堆叠上下文触发器：
+        // (1) CSS 2.1：positioned 元素 + z-index 显式整数（z-index: auto 不建 SC，
+        //     其 positioned 后代参与父级 SC）。
+        // (2) opacity < 1（CSS3）：opacity<1 建立堆叠上下文。R504 的全局 positioned-
+        //     descendant 延迟会把 positioned 后代上提到最近 scope 祖先；若 opacity 元素
+        //     非 scope，其 positioned 后代被上提到祖先的图元范围之外，paint_node 末尾
+        //     对 [counts_before, now] 应用的 opacity（painter/mod.rs）会漏掉它们——
+        //     opacity:0 不隐藏内容的回归（R505）。故 opacity<1 元素必须为 scope。
+        let creates_stacking_context = (is_positioned
+            && computed.is_some_and(|s| matches!(s.z_index, ZIndexValue::Integer(_))))
+            || computed.is_some_and(|s| s.opacity < 1.0);
 
         // 从 taffy 提取原始值
         let mut x = layout.location.x;
