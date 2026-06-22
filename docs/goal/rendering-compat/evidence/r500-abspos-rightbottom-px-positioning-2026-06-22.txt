@@ -61,12 +61,15 @@ false-pass 风险评估（self-source test==ref 同树）:
 4. blast-radius（其他目录，self-source A/B）
 ================================================================================
 已对比（base+with 均在）:
-  positioning/  +32 / 0 回归   (见上)
-  abspos/        0 / 0         (15→15, clean)
-  normal-flow/   0 / 0         (584→584, clean)
-baseline pending（仅 with 文件，base 待跑；multicol in-flight 08:20）:
-  css-multicol / CSS2box-display / CSS2visuren / CSS2visufx / css-position
-  → code agent 序列扫描中；doc-agent 未跑（避免与 in-flight scan 争资源）
+  positioning/     +32 / 0 回归   (见上)
+  box-display/     +1  / 0        (60→61; containing-block-023 #div3 bottom:0 abspos)
+  abspos/           0 / 0         (15→15, clean)
+  normal-flow/      0 / 0         (584→584, clean)
+  visuren/          0 / 0         (20→20, clean)
+  css-position/     0 / 0         (61→61, clean)
+  → 6 目录全 clean，0 回归 / +33 累计新翻
+baseline pending（仅 with 或 base 未齐）:
+  CSS2visufx / css-multicol → code agent 序列扫描中
 
 ================================================================================
 5. caveat（关键度量口径）
@@ -80,7 +83,15 @@ baseline pending（仅 with 文件，base 待跑；multicol in-flight 08:20）:
 ================================================================================
 6. 结论
 ================================================================================
-R500（004 lever）self-source positioning/ **+32 新翻 / 0 回归** 已由 doc-agent 独立
-A/B 实证确认（PASS-list set diff + test-file 机制核查）。机制正确，false-pass 风险低。
-chr<1%（目标口径）影响待 oracle；blast-radius 剩余目录待 baseline。code agent 代码
-未提交（engine.rs 19 ins），scan 仍在跑（multicol）。
+R500（004 lever）self-source **+33 新翻 / 0 回归**（positioning +32 + box-display +1，
+6 目录全 clean）已由 doc-agent 独立 A/B 实证确认（PASS-list set diff + test-file 机制
+核查）。机制正确，false-pass 风险低。chr<1%（目标口径）影响待 oracle；blast-radius
+剩 visufx/multicol 2 目录待 baseline。code agent 代码未提交（engine.rs，当前为 A/B
+baseline 采集期临时 revert），scan 仍在序列跑。
+
+================================================================================
+7. 下一 lever（小尾，forward-look）
+================================================================================
+R500 仅处理 right/bottom 的 **Px** 值；**% right/bottom** 未处理。
+quantify（read-only grep positioning/）：仅 **3** abspos 文件用 `% right/bottom`
+（远小于 Px 族的 32 翻）→ 小尾非大 lever，可作 R500 收尾后的低优先 follow-up。
