@@ -90,6 +90,41 @@ R500（004 lever）self-source **+33 新翻 / 0 回归**（positioning +32 + box
 baseline 采集期临时 revert），scan 仍在序列跑。
 
 ================================================================================
+8. code agent 收尾（LANDED + COMMITTED，完整 8 目录 scan）
+================================================================================
+**code agent 实现 = doc-agent 预复核描述**（`left:Auto + right:Px → x = vw − right − width`，
+对称 top/bottom 块，+17 行 engine.rs）。
+
+**完整 8 目录 blast-radius per-case set diff（code agent test-guard 包裹）**：
+| 目录 | 新翻 | 新回归 |
+|------|------|--------|
+| CSS2/positioning | +32 | 0 |
+| CSS2/normal-flow | 0 | 0 |
+| CSS2/abspos | 0 | 0 |
+| css-position | 0 | 0 |
+| CSS2/visuren | 0 | 0 |
+| CSS2/box-display | +1 | 0 |
+| CSS2/visufx | 0 | 0 |
+| css-multicol | 0 | 0 |
+| **合计** | **+33** | **0** |
+
+（doc-agent 原记 6 目录 clean、visufx/multicol pending → code agent 补完，8 目录全 clean，零回归。）
+
+**clean pass 验证**（diff% 抽查，非 borderline）：abspos-containing-block-004/008 = 0.00%、
+abspos-overflow-002 = 0.01%、bottom/position/right-applies-to-001 = 0.00% —— 全远低于 1% 阈值。
+
+**`cargo test --workspace` = 12286 passed / 0 failed**（test-guard 包裹）。
+**fmt**：engine.rs fmt-clean（仅本轮新增）。
+
+**口径更正（采纳 doc-agent line-3 image-fidelity RESOLVED）**：025/026 swatch PNG **实加载+绘制**
+（025 test 214 red px / ref 0 red → 0.07% diff = painted swatch），先前 R499「PNG 未加载→
+image-masking」诊断 **runtime REFUTED**。025/026 = 容差-pass（painted swatch 小 diff 在阈值内），
+非 image-masking false-pass。R500 right/bottom fix 不动 025/026（其 left:4em=Em 非 Auto）。
+
+**chr<1% oracle 待验证**：+33 self-source 新翻中，abspos 位置 spec-correct≈chromium，大概率多数
+亦翻 chr<1%（远超 R499 预测 +1），但本轮未跑 chromium oracle（留后续 cross-validate）。
+
+================================================================================
 7. 下一 lever（小尾，forward-look）
 ================================================================================
 R500 仅处理 right/bottom 的 **Px** 值；**% right/bottom** 未处理。
