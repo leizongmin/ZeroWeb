@@ -60,10 +60,13 @@ impl super::Painter {
         abs_y: f32,
         style: &ComputedStyle,
     ) {
-        use zero_render_foundation::image_cache::ImageKey;
-        use zero_render_foundation::primitive::ImagePrimitive;
-
         if style.background_image.is_empty() {
+            return;
+        }
+        // CSS §14.2：背景已传播到画布的元素（html/body）不在自身盒上绘制背景图像——
+        // 画布已以视口 (0,0) 为 origin 平铺该图像；若此处再按元素 padding-box origin
+        // 绘制，两者相位错位会产生可见的错位重影（R507）。
+        if box_node.node_id.is_some_and(|id| self.canvas_propagated_node == Some(id)) {
             return;
         }
 
@@ -83,6 +86,28 @@ impl super::Painter {
                 box_node.content_height,
             ),
         };
+
+        self.paint_bg_image_in_origin(origin_x, origin_y, origin_w, origin_h, style);
+    }
+
+    /// 在指定 origin 矩形内绘制 background-image（含多图层逆序、size/position/repeat 解析、
+    /// 平铺裁剪）。元素背景由 `paint_background_image` 计算 origin（按 background-origin）
+    /// 后调用本函数；画布背景传播（CSS §14.2：body/html 背景传播到画布）直接以视口
+    /// (0,0,vw,vh) 为 origin 调用本函数，使背景图像平铺整个画布。
+    pub(super) fn paint_bg_image_in_origin(
+        &mut self,
+        origin_x: f32,
+        origin_y: f32,
+        origin_w: f32,
+        origin_h: f32,
+        style: &ComputedStyle,
+    ) {
+        use zero_render_foundation::image_cache::ImageKey;
+        use zero_render_foundation::primitive::ImagePrimitive;
+
+        if style.background_image.is_empty() {
+            return;
+        }
 
         // 解析背景图像固有尺寸（从 image_sizes 缓存查找）。
         // background-size: auto 时使用图像的原始像素尺寸，而非容器尺寸。

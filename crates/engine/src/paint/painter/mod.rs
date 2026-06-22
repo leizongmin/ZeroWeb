@@ -57,6 +57,11 @@ pub struct Painter {
     pub viewport_w: f32,
     /// 视口高度（像素）。语义同 `viewport_w`。
     pub viewport_h: f32,
+    /// CSS §14.2 画布背景传播：背景传播到画布的元素 NodeId（html 或 body）。
+    /// 该元素的背景（color + image）由 `paint()` 在画布上统一绘制；`paint_background_image`
+    /// 跳过该元素自身的图像绘制，避免其 padding-box 起始的图像与画布 (0,0) 起始的图像
+    /// 相位错位 double-paint（R507：扩展 R491 的 color-only 传播到含 image）。
+    pub(crate) canvas_propagated_node: Option<NodeId>,
 }
 
 fn is_positioned_child(box_node: &LayoutBox) -> bool {
@@ -215,6 +220,7 @@ impl Painter {
             font_resolver: HashMap::new(),
             viewport_w: 0.0,
             viewport_h: 0.0,
+            canvas_propagated_node: None,
         }
     }
 
@@ -255,35 +261,42 @@ impl Painter {
     /// 遍历 LayoutBox 树，为每个有样式的节点生成背景和边框填充图元。
     /// 传入 `doc` 以启用行内格式化上下文的文本换行布局。
     pub fn paint(&mut self, layout: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: Option<&Document>) {
-        // CSS §14.2 画布背景传播：根元素（html）的背景色覆盖整个画布；若根背景透明
-        // 且 body 有背景色，则 body 背景色传播到画布。在绘制树之前先填充画布背景，
-        // 使整个视口（含 body margin / 超出根盒的区域）呈现该背景色。根/body 自身
-        // 背景仍照常绘制（同色叠加，无可见重绘）。
+        // CSS §14.2 画布背景传播：根元素 html 的背景（color 或 image）覆盖整个画布；
+        // 若 html 背景透明（color 透明 + image none）且 body 有背景，则 body 背景传播
+        // 到画布。传播包含 color + image（R491 仅 color；R507 扩展 image 平铺整个画布）。
+        // 传播元素的背景由画布统一绘制，paint_background_image 跳过该元素自身图像绘制
+        //（避免 padding-box 起始图像与画布 (0,0) 起始图像相位错位 double-paint）。
         if self.viewport_w > 0.0
             && self.viewport_h > 0.0
             && let Some(doc) = doc
         {
-            let mut canvas_color: Option<zero_style_system::property::types::ColorValue> = None;
-            // 根元素 html 的背景色优先；透明则取 body 背景色。
+            use zero_style_system::property::types::ColorValue;
             let html_id = doc.get_elements_by_tag_name("html").into_iter().next();
-            if let Some(hid) = html_id
-                && let Some(hs) = styles.get(&hid)
-                && hs.background_color != zero_style_system::property::types::ColorValue::Transparent
+            let body_id = doc.get_elements_by_tag_name("body").into_iter().next();
+            let html_style = html_id.and_then(|id| styles.get(&id));
+            let body_style = body_id.and_then(|id| styles.get(&id));
+            // html 有任意背景（color 非透明 或 image 非空）→ html 传播；否则 body。
+            let html_has_bg = html_style.is_some_and(|hs| {
+                hs.background_color != ColorValue::Transparent || !hs.background_image.is_empty()
+            });
+            let (prop_node, prop_style) = if html_has_bg {
+                (html_id, html_style)
+            } else {
+                (body_id, body_style)
+            };
+            self.canvas_propagated_node = prop_node;
+            if let Some(ps) = prop_style
+                && (ps.background_color != ColorValue::Transparent || !ps.background_image.is_empty())
             {
-                canvas_color = Some(hs.background_color.clone());
-            }
-            if canvas_color.is_none()
-                && let Some(bid) = doc.get_elements_by_tag_name("body").into_iter().next()
-                && let Some(bs) = styles.get(&bid)
-                && bs.background_color != zero_style_system::property::types::ColorValue::Transparent
-            {
-                canvas_color = Some(bs.background_color.clone());
-            }
-            if let Some(c) = canvas_color {
-                self.primitives.add_fill(
-                    Rect::new(0.0, 0.0, self.viewport_w, self.viewport_h),
-                    color_value_to_render(&c),
-                );
+                if ps.background_color != ColorValue::Transparent {
+                    self.primitives.add_fill(
+                        Rect::new(0.0, 0.0, self.viewport_w, self.viewport_h),
+                        color_value_to_render(&ps.background_color),
+                    );
+                }
+                // 画布背景图像：以视口 (0,0,vw,vh) 为 origin 平铺（CSS §14.2：传播的
+                // 背景图像 anchored 相对根元素盒 = 画布）。
+                self.paint_bg_image_in_origin(0.0, 0.0, self.viewport_w, self.viewport_h, ps);
             }
         }
         self.paint_node(layout, styles, 0.0, 0.0, doc, true);
