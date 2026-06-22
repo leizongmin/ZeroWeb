@@ -173,8 +173,14 @@ fn collect_positioned_descendants<'a>(
                 abs_x: child_abs_x,
                 abs_y: child_abs_y,
             });
+        } else if child.creates_stacking_context {
+            // in-flow 但建立堆叠上下文（opacity<1/transform/filter 等 CSS3 SC 触发器）：
+            // 自成 scope，其 positioned 后代由它自己的 collect/flush 收集。不下钻避免
+            // double-collect（否则本 scope 会把其后代也收进来，与子 scope 重复绘制）。
+            // 子元素本身仍在主循环 in-flow 绘制（SC 不改变自身 paint 位置，只隔离后代堆叠）。
+            continue;
         } else {
-            // in-flow/float：下钻找嵌套 positioned
+            // in-flow/float 非 scope：下钻找嵌套 positioned
             collect_positioned_descendants(child, child_abs_x, child_abs_y, styles, out);
         }
     }
@@ -604,15 +610,19 @@ impl Painter {
         let defer_abspos = needs_clip && !self_positioned && !is_multicol;
 
         // CSS 2.1 Appendix E 全局 positioned-descendant 延迟（step 2/6/7）：
-        // scope 根（positioned 元素或根 html）收集其子树中**所有** positioned 后代
-        //（z-index:auto pseudo-SC + real-SC，含嵌套，经 collect_positioned_descendants 按
-        // tree order），按 z_index 分三段绘制：step 2（z<0，normal flow 之前，最负优先）→
-        // steps 3-5（in-flow/float）→ step 6（z==0，即 z-index:auto/0，tree order）→
-        // step 7（z>0，最正优先）。非 scope 节点不收集/flush，但其主循环只绘制 in-flow/float
-        //（positioned 子元素一律由最近 scope 祖先收集）。per-node 排序无法实现全局 tree-order
-        //（R503 (3,0) 在 abspos-016 与 static-inside-inline/z-index-abspos-004 间不可兼得），
-        // 故显式收集。详见 appendix-e-step6-global-deferral-design.md。
-        let is_scope = self_positioned || is_root_scope;
+        // scope 根（positioned 元素、根 html、或任何建立堆叠上下文的元素）收集其子树中
+        // **所有** positioned 后代（z-index:auto pseudo-SC + real-SC，含嵌套，经
+        // collect_positioned_descendants 按 tree order），按 z_index 分三段绘制：step 2
+        //（z<0，normal flow 之前，最负优先）→ steps 3-5（in-flow/float）→ step 6
+        //（z==0，即 z-index:auto/0，tree order）→ step 7（z>0，最正优先）。非 scope 节点
+        // 不收集/flush，但其主循环只绘制 in-flow/float（positioned 子元素一律由最近 scope
+        // 祖先收集）。per-node 排序无法实现全局 tree-order（R503 (3,0) 在 abspos-016 与
+        // static-inside-inline/z-index-abspos-004 间不可兼得），故显式收集。
+        // ★ creates_stacking_context 含 opacity<1 等 CSS3 SC 触发器（见 engine.rs）：
+        // 这些元素的 per-node 效果（opacity/filter/transform/...，paint_node 末尾对
+        // [counts_before, now] 应用）必须覆盖其 positioned 后代；若它们非 scope，后代会被
+        // 上提到祖先而漏掉效果（opacity:0 不隐藏内容的 R505 回归）。详见 R505。
+        let is_scope = self_positioned || box_node.creates_stacking_context || is_root_scope;
         let mut collected_positioned: Vec<DeferredPositioned> = Vec::new();
         if is_scope {
             collect_positioned_descendants(box_node, abs_x, abs_y, styles, &mut collected_positioned);
