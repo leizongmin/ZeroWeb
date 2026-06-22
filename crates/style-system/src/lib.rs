@@ -499,24 +499,29 @@ impl StyleSystem {
             apply_quirks_mode_adjustments(&mut resolved, parent_style, tag_name.as_deref());
         }
 
-        // 8. CSS 2.1 §9.7：float 不适用于 table-internal display。float!=none 时
-        //    table-row-group / table-header-group / table-footer-group / table-row /
-        //    table-column / table-column-group / table-cell 的计算 display 变为 block
-        //   （元素脱离表格结构成为浮动块）。修复 float-applies-to-* 测试（如 table-row-group
-        //    + float:right 应渲染为右侧浮动块，而非填满表格的 row-group）。
-        if !matches!(resolved.float, zero_css_parser::values::FloatValue::None)
-            && matches!(
-                resolved.display,
-                zero_css_parser::values::DisplayValue::TableRowGroup
-                    | zero_css_parser::values::DisplayValue::TableHeaderGroup
-                    | zero_css_parser::values::DisplayValue::TableFooterGroup
-                    | zero_css_parser::values::DisplayValue::TableRow
-                    | zero_css_parser::values::DisplayValue::TableColumn
-                    | zero_css_parser::values::DisplayValue::TableColumnGroup
-                    | zero_css_parser::values::DisplayValue::TableCell
-            )
-        {
-            resolved.display = zero_css_parser::values::DisplayValue::Block;
+        // 8. CSS 2.1 §9.7：float 不为 none 时的计算 display 调整。
+        //    (a) table-internal（table-row-group / header-group / footer-group / row /
+        //        column / column-group / cell）→ block：元素脱离表格结构成为浮动块。
+        //    (b) inline-level（inline / inline-block / inline-table / inline-flex /
+        //        inline-grid）→ 对应 block-level（block / table / flex / grid），即「块化」
+        //        （§9.7 row 2-3：浮动元素必须是 block-level）。修复 float-applies-to-012
+        //        （inline-block + float:right 应块化为 block 后右侧浮动）等。
+        if !matches!(resolved.float, zero_css_parser::values::FloatValue::None) {
+            use zero_css_parser::values::DisplayValue as Dv;
+            match resolved.display {
+                Dv::TableRowGroup
+                | Dv::TableHeaderGroup
+                | Dv::TableFooterGroup
+                | Dv::TableRow
+                | Dv::TableColumn
+                | Dv::TableColumnGroup
+                | Dv::TableCell => resolved.display = Dv::Block,
+                Dv::Inline | Dv::InlineBlock => resolved.display = Dv::Block,
+                Dv::InlineTable => resolved.display = Dv::Table,
+                Dv::InlineFlex => resolved.display = Dv::Flex,
+                Dv::InlineGrid => resolved.display = Dv::Grid,
+                _ => {}
+            }
         }
 
         resolved
