@@ -149,7 +149,7 @@ scope 在第一趟（nested 上提）与第二趟（直接子追加）两阶段�
 
 - **overflow `defer_abspos`（mod.rs:535）**：语义正交（裁剪 vs 顺序）。`defer_abspos` 决定 abspos 直接子是否被本 overflow 裁剪；本设计决定 positioned 后代何时绘制。实现时：`defer_abspos` 的排除/追加逻辑保留，本设计的 scope 收集在其之上叠加。需 A/B 验证 `abspos-overflow-*` 不回归。
 - **multicol（mod.rs:549-605）**：列片段内的 positioned 后代——理想应在该片段所属 scope 的 step 6 绘制（含列位移）。MVP 可先让 multicol 路径沿用旧行为（不参与全局延迟），A/B 看 multicol 是否回归；若回归再细化。`css-multicol` 当前 chr<1% 23.5% 本就结构性低，paint-order 不是主因。
-- **R109 block-in-inline（static-inside-inline 的关键路径）**：`#abspos` 在 `<span id=inline>` 内，inline 被 §9.2.1.1 拆成匿名块片段（`is_r109_split`、`fragment_node_ids`）。本设计的预扫描/递归须能**穿透匿名片段**到达 `#abspos`。这是恢复 static-inside-inline 的**必要条件**，也是本设计最不确定处——须 LAYOUT_DUMP + 代码核查确认 `#abspos` 在 LayoutBox 树中的位置（是 `#inline` 的 child 还是匿名片段的 child），以及当前 painter 如何绘制它（主子循环 vs IFC 文本路径）。**若 `#abspos` 经 IFC 路径绘制（非主子循环），则本设计的主子循环改造触不到它，需另在 IFC 路径接线**——这是本设计能否回收 static-inside-inline 的决定性未知，实现第一步必须查清。
+- **R109 block-in-inline（static-inside-inline 的关键路径）**：~~`#abspos` 在 `<span id=inline>` 内，inline 被 §9.2.1.1 拆成匿名块片段~~ **★ LAYOUT_DUMP 实证（2026-06-22）已推翻此担忧**：`#abspos` 为 `position:absolute`（out-of-flow），按 §9.2.1.1 **不拆分** 包裹的 inline——LayoutBox 树为 `body > div(#red abspos) / div(#wrapper) > span(#inline) > div(#abspos)`，`#abspos` 作为 `span` 的**普通结构子节点**出现（无匿名片段包裹、无 `is_r109_split`）。painter 主子循环（`paint_node` 无条件遍历 `box_node.children`）经 `body>wrapper>span>abspos` 递归**可达** `#abspos`。**故本设计的 scope-list 线程化能回收 static-inside-inline**——R109/IFC 路径**非**阻塞，原「实现第一步决定性未知」已 RESOLVED（ favorable）。附带正确性收益：`#abspos` 的 CB=viewport（无 positioned 祖先），本不应被 `#wrapper{overflow:hidden}` 裁剪；将其从 `#wrapper` 递归中上提到 body step 6，恰好使它脱离 `#wrapper` 的 clip 包裹——比现状更正确。
 - **paint_node_in_rect（dirty-rect 路径，mod.rs:210）**：MVP 可暂不改造（保留旧行为），仅改 `paint_node`；A/B（reftest 走 `paint_node` 主路径）验通过后再同步 `paint_node_in_rect`。
 
 ### 4.6 step 6 与 R503 (3,0) 的关系
@@ -188,7 +188,7 @@ scope 在第一趟（nested 上提）与第二趟（直接子追加）两阶段�
 
 ## 7. 风险与回退
 
-- **主要风险**：R109/IFC 路径不可达（4.5）——若 `#abspos` 经 IFC 绘制，主子循环改造无效，static-inside-inline 不恢复。**缓解**：实现第一步 LAYOUT_DUMP + 代码核查确认 `#abspos` 绘制路径；若不可达，本设计降级为「仅回收 block-nested positioned 案」（仍有 metric 价值，须 A/B 量化），static-inside-inline 留作 IFC 接线的后续。
+- **主要风险**：~~R109/IFC 路径不可达~~ **已 RESOLVED**（LAYOUT_DUMP 证 `#abspos` 经主子循环可达，见 4.5）。**现主要风险**转为：tree-order 收集正确性（4.4，须 pre-order 扫描或稳定 tree-order 索引，collection-order 因 sort 重排会错）+ overflow/multicol 交互（4.5）+ paint_node_in_rect 同步。**缓解**：A/B set diff 逐案核 + 回退纪律。
 - **次要风险**：step 6/7 顺序、overflow/multicol 交互回归。**缓解**：A/B set diff 逐案核，回退纪律。
 - **回退**：单 commit，`git revert` 即恢复 R503 (3,0) 态，零残留。
 
