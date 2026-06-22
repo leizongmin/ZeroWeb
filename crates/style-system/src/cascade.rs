@@ -147,15 +147,22 @@ const NEGATIVE_ILLEGAL_PROPS: &[&str] = &[
     "border-left-width",
 ];
 
-/// 判定一条声明是否为「盒模型尺寸属性的负 px 长度」（级联时应按未声明处理）。
+/// 判定一条声明是否为「盒模型尺寸属性的负长度」（级联时应按未声明处理）。
 ///
-/// 仅检测 px（与 `apply.rs` border-*-width 一致）；em/%/calc 等负值由下游解析处理，
-/// 此处不涉及。非盒模型尺寸属性恒返回 false。
+/// 覆盖所有可解析为负值的长度单位：px（含 cm/in/mm/pt/pc/Q 等解析时转 px 的绝对单位）、
+/// em/rem/ch、%。calc() 负值需另行求值，此处不涉及。非盒模型尺寸属性恒返回 false。
 fn is_invalid_negative_length(property: &str, value: &str) -> bool {
     if !NEGATIVE_ILLEGAL_PROPS.contains(&property) {
         return false;
     }
-    matches!(parse_length(value), Some(LengthValue::Px(p)) if p < 0.0)
+    match parse_length(value) {
+        Some(LengthValue::Px(p)) if p < 0.0 => true,
+        Some(LengthValue::Em(e)) if e < 0.0 => true,
+        Some(LengthValue::Rem(r)) if r < 0.0 => true,
+        Some(LengthValue::Ch(c)) if c < 0.0 => true,
+        Some(LengthValue::Percentage(p)) if p < 0.0 => true,
+        _ => false,
+    }
 }
 
 /// 级联算法。
@@ -331,6 +338,27 @@ mod tests {
 
         let result = cascade(decls);
         assert!(result.get("width").is_none());
+    }
+
+    #[test]
+    fn test_cascade_negative_em_percent_rejected() {
+        // em/%/ch 负长度同样非法（height-089 / max-width-089 / max-height-067 等）。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "max-width".to_string(),
+                value: "-10%".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "padding-top".to_string(),
+                value: "-2em".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+
+        let result = cascade(decls);
+        assert!(result.get("max-width").is_none());
+        assert!(result.get("padding-top").is_none());
     }
 
     #[test]
