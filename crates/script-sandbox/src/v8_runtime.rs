@@ -2,9 +2,43 @@
 //!
 //! 封装rusty_v8，提供安全的JavaScript脚本执行沙箱。
 
-use std::sync::Once;
+use std::cell::RefCell;
+use std::sync::{Arc, Once};
 
 use crate::{SandboxConfig, ScriptError, ScriptResult};
+
+/// 宿主注入的扁平字符串回调类型（JS-DOM-bridge：JS shim 经 __zw_* 回调操作宿主状态）。
+///
+/// 回调接收 JS 传入参数的字符串数组，返回字符串结果（写入 V8 ReturnValue）。
+/// `Send + Sync + 'static` 以便能跨 V8 调用边界存于线程局部注册表。
+pub type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync + 'static>;
+
+// 宿主回调注册表（线程局部）。rusty_v8 0.32 的 FunctionTemplate 回调须为 `Copy`
+//（MapFnTo<FunctionCallback>），无法捕获 Arc 状态；故回调闭包存于此注册表，
+// FunctionTemplate 经 builder().data(idx) 携带索引，fn 回调按 idx 查表调用。
+thread_local! {
+    static HOST_CALLBACKS: RefCell<Vec<HostCallback>> = RefCell::new(Vec::new());
+}
+
+/// rusty_v8 FunctionTemplate 回调：按 args.data() 的索引查 HOST_CALLBACKS 调用。
+fn host_callback_invoke(
+    scope: &mut rusty_v8::HandleScope,
+    args: rusty_v8::FunctionCallbackArguments,
+    mut rv: rusty_v8::ReturnValue,
+) {
+    let idx = args.data().and_then(|d| d.integer_value(scope)).unwrap_or(-1);
+    if idx < 0 {
+        return;
+    }
+    let n = args.length();
+    let strs: Vec<String> = (0..n)
+        .filter_map(|i| args.get(i).to_string(scope).map(|s| s.to_rust_string_lossy(scope)))
+        .collect();
+    let result = HOST_CALLBACKS.with(|cbs| cbs.borrow().get(idx as usize).map(|cb| cb(&strs)).unwrap_or_default());
+    if let Some(s) = rusty_v8::String::new(scope, &result) {
+        rv.set(s.into());
+    }
+}
 
 /// V8平台初始化守卫（全局只初始化一次）。
 static V8_INIT: Once = Once::new();
@@ -47,6 +81,8 @@ pub struct V8Sandbox {
     config: SandboxConfig,
     /// 缓存的 V8 Context（当 persistent_context 启用时复用）。
     cached_context: Option<rusty_v8::Global<rusty_v8::Context>>,
+    /// 宿主注入的回调名 + 线程局部注册表索引（register_callback 注册），execute 时挂到全局对象。
+    callbacks: Vec<(String, usize)>,
 }
 
 impl V8Sandbox {
@@ -73,7 +109,26 @@ impl V8Sandbox {
             isolate: Some(isolate),
             config,
             cached_context: None,
+            callbacks: Vec::new(),
         })
+    }
+
+    /// 注册宿主回调，挂为全局函数 `name`（JS-DOM-bridge：JS shim 调 `name(...)` 触发）。
+    ///
+    /// 回调闭包存入线程局部注册表（返回索引），`execute` 时按索引挂到当前 Context 的
+    /// 全局对象。参数按字符串数组传入，返回字符串写入 JS 调用结果。
+    /// 无 `register_callback` 调用时行为完全同今（零回归）。须在 `execute` 之前调用。
+    pub fn register_callback<F>(&mut self, name: &str, callback: F)
+    where
+        F: Fn(&[String]) -> String + Send + Sync + 'static,
+    {
+        let idx = HOST_CALLBACKS.with(|cbs| {
+            let mut cbs = cbs.borrow_mut();
+            let idx = cbs.len();
+            cbs.push(Arc::new(callback));
+            idx
+        });
+        self.callbacks.push((name.to_string(), idx));
     }
 
     /// 在沙箱中执行JavaScript脚本。
@@ -123,6 +178,25 @@ impl V8Sandbox {
         // HandleScope 的借用仅涉及 isolate，不会修改 cached_context。
         let context = unsafe { resolve_context(persistent, cached_ptr, scope) };
         let scope = &mut rusty_v8::ContextScope::new(scope, context);
+
+        // 把宿主回调（register_callback 注册）挂到全局对象。无注册时为 no-op（零回归）。
+        // rusty_v8 0.32 FunctionTemplate 回调须为 Copy fn，状态经 builder().data(idx)
+        // 携带，fn 回调按 idx 查线程局部 HOST_CALLBACKS。
+        if !self.callbacks.is_empty() {
+            let global = context.global(scope);
+            for (name, idx) in &self.callbacks {
+                let data = rusty_v8::Integer::new(scope, *idx as i32);
+                let tmpl = rusty_v8::FunctionTemplate::builder(host_callback_invoke)
+                    .data(data.into())
+                    .build(scope);
+                let Some(function) = tmpl.get_function(scope) else {
+                    continue;
+                };
+                if let Some(key) = rusty_v8::String::new(scope, name) {
+                    let _ = global.set(scope, key.into(), function.into());
+                }
+            }
+        }
 
         // 编译脚本
         let code_str = rusty_v8::String::new(scope, code)
@@ -420,6 +494,41 @@ mod tests {
     fn test_execute_variable_declaration() {
         let mut sandbox = V8Sandbox::new().unwrap();
         let result = sandbox.execute("var x = 42; x").unwrap();
+        assert_eq!(result.value, "42");
+    }
+
+    // ── 宿主回调（register_callback，JS-DOM-bridge Phase 0）──
+
+    #[test]
+    fn test_register_callback_invoked_from_js() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        sandbox.register_callback("__zw_test", |args| format!("echo:{}:{}", args.len(), args.join("|")));
+        // JS 调用宿主回调，返回值成为脚本结果。
+        let result = sandbox.execute("__zw_test('a', 'bb')").unwrap();
+        assert_eq!(result.value, "echo:2:a|bb");
+    }
+
+    #[test]
+    fn test_register_callback_persistent_context() {
+        // persistent_context=true 时回调仍须在缓存的 Context 上生效。
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+        sandbox.register_callback("__zw_greet", |args| format!("hi {}", args[0]));
+        let r1 = sandbox.execute("__zw_greet('world')").unwrap();
+        assert_eq!(r1.value, "hi world");
+        // 第二次 execute 复用缓存 Context，回调仍可用。
+        let r2 = sandbox.execute("__zw_greet('again')").unwrap();
+        assert_eq!(r2.value, "hi again");
+    }
+
+    #[test]
+    fn test_no_callback_zero_impact() {
+        // 无 register_callback 时 execute 行为完全同今（零回归）。
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let result = sandbox.execute("6 * 7").unwrap();
         assert_eq!(result.value, "42");
     }
 
