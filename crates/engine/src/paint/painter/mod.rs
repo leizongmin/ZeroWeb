@@ -70,19 +70,17 @@ fn child_paint_sort_key(box_node: &LayoutBox) -> (u8, i32) {
             (0, box_node.z_index)
         } else if box_node.creates_stacking_context {
             // CSS 2.1 Appendix E step 6/7: stacking context painted last
-            (3, box_node.z_index)
+            (4, box_node.z_index)
         } else {
-            // z-index: auto positioned — does NOT create stacking context.
-            // Per CSS 2.1 Appendix E, positioned descendants with z-index: auto
-            // paint in step 6 AFTER normal flow (steps 3-5). However, for
-            // non-stacking-context positioned elements, their positioned descendants
-            // must participate in the PARENT's stacking context, not their own.
-            // To achieve correct tree-order painting for nested positioned elements
-            // (e.g., absolute child inside relative parent), we paint z-index:auto
-            // positioned elements at the same priority as normal flow (step 3 level)
-            // so they interleave in tree order. This is a pragmatic approximation
-            // that fixes stacking order for nested positioned elements.
-            (1, 0)
+            // z-index: auto positioned (abspos/relative/fixed/sticky, 不建 SC)。
+            // CSS 2.1 Appendix E step 6：positioned descendants with z-index:auto
+            // paint AFTER normal flow (steps 3-5) 与 floats (step 4)，彼此按 tree order。
+            // 旧值 (1,0)（与 in-flow 并列）致 abspos 先于 in-flow 兄弟绘制被覆盖
+            // （absolute-replaced-width-006：img 被 div div 橙色背景覆写）。
+            // 升到 (3,0)（在 in-flow (1) 与 float (2) 之后、SC (4) 之前）修正之，
+            // 同时保留 abspos/relative 间的 tree order（top-019：#div2 红 abspos 先、
+            // #div3 relative border 后覆盖→无红）。
+            (3, 0)
         }
     } else if matches!(box_node.float, FloatValue::None) {
         (1, 0)
