@@ -298,6 +298,31 @@ impl LayoutEngine {
         // （位置已由 4. adjust_fixed_to_viewport 修正），不动 absolute 避旧回归。
         stretch_fixed_to_viewport_size(&mut root_box, self.viewport_width, self.viewport_height, styles);
 
+        // 11.7 后处理：containing block = 根（positioned root）的 abspos 按根 padding-box
+        // 重解析（CSS §10.1.2/§10.3.18/§10.6.4）。taffy 0.7 root quirk：根作 positioned
+        // 祖先时不作 CB，误用静态父（abspos-containing-block-005/006）；R123 同谱系。
+        // 仅根 positioned 时介入；非根 positioned 祖先 taffy 已正确（递归置 false 不触）。
+        let root_is_positioned =
+            root_box.is_absolute || root_box.is_fixed || root_box.is_relative || root_box.is_sticky;
+        if root_is_positioned {
+            // 先拷贝根几何到局部（避免与下方 &mut root_box 借用冲突）
+            let (root_x, root_y) = (root_box.x, root_box.y);
+            let (cb_origin_x, cb_origin_y) = (root_x + root_box.border_left, root_y + root_box.border_top);
+            let cb_width = root_box.width - root_box.border_left - root_box.border_right;
+            let cb_height = root_box.height - root_box.border_top - root_box.border_bottom;
+            resolve_abspos_against_root_cb(
+                &mut root_box,
+                root_x,
+                root_y,
+                cb_origin_x,
+                cb_origin_y,
+                cb_width,
+                cb_height,
+                styles,
+                true,
+            );
+        }
+
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
@@ -1813,6 +1838,112 @@ fn stretch_fixed_to_viewport_size(
             }
         }
         stretch_fixed_to_viewport_size(child, viewport_width, viewport_height, styles);
+    }
+}
+
+/// 对「containing block = 根元素（positioned root）」的 abspos 元素按根 padding-box
+/// 重解析百分比尺寸与 Px/百分比 inset 位置（CSS §10.1.2/§10.3.18/§10.6.4）。
+///
+/// taffy 0.7 的 root quirk：当根元素（如 `<html style="position:relative">`）是 abspos
+/// 后代的最近 positioned 祖先时，taffy 不把根当作 CB，而是误用静态父（如 body），
+/// 致 abspos 百分比尺寸按父宽度解析、位置偏移（abspos-containing-block-005/006 实证，
+/// 对照 bottom-offset-percentage-001 的**非根** positioned 祖先 `#div1` taffy 正确）。
+/// 与 R123（根 relative inset 不应用）同属 taffy root quirk 谱系。本 pass 在 extract 后
+/// 按根 padding-box 补解析。
+///
+/// 仅处理「最近 positioned 祖先 = 根」的 abspos（`nearest_pos_ancestor_is_root`）：
+/// 非根 positioned 祖先（如 `#div1`）由 taffy 正确处理，本 pass 通过递归把
+/// `nearest_pos_ancestor_is_root` 在遇到任何非根 positioned 元素时置 false，不介入。
+#[allow(clippy::too_many_arguments)]
+fn resolve_abspos_against_root_cb(
+    box_node: &mut LayoutBox,
+    current_box_origin_x: f32,
+    current_box_origin_y: f32,
+    cb_origin_x: f32,
+    cb_origin_y: f32,
+    cb_width: f32,
+    cb_height: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    nearest_pos_ancestor_is_root: bool,
+) {
+    use zero_css_parser::values::LengthValue;
+    for child in &mut box_node.children {
+        if child.is_absolute
+            && nearest_pos_ancestor_is_root
+            && let Some(style) = child.node_id.and_then(|nid| styles.get(&nid))
+        {
+            // 百分比尺寸：相对根 padding-box（CB）
+            if let LengthValue::Percentage(p) = &style.width {
+                child.width = *p as f32 / 100.0 * cb_width;
+            }
+            if let LengthValue::Percentage(p) = &style.height {
+                child.height = *p as f32 / 100.0 * cb_height;
+            }
+            // auto 尺寸 + 全长度 inset → stretch（§10.3.18/§10.6.4，仅非替换）
+            if matches!(style.width, LengthValue::Auto)
+                && !child.is_replaced
+                && let (LengthValue::Px(left), LengthValue::Px(right)) = (&style.left, &style.right)
+            {
+                child.width = (cb_width - (*left as f32) - (*right as f32)).max(0.0);
+            }
+            if matches!(style.height, LengthValue::Auto)
+                && !child.is_replaced
+                && let (LengthValue::Px(top), LengthValue::Px(bottom)) = (&style.top, &style.bottom)
+            {
+                child.height = (cb_height - (*top as f32) - (*bottom as f32)).max(0.0);
+            }
+            // left/top 百分比：目标视口绝对坐标 = cb_origin + p% * cb，转回父相对坐标
+            if let LengthValue::Percentage(p) = &style.left {
+                let target_x = cb_origin_x + *p as f32 / 100.0 * cb_width;
+                child.x = target_x - current_box_origin_x - box_node.border_left - box_node.padding_left;
+            }
+            if let LengthValue::Percentage(p) = &style.top {
+                let target_y = cb_origin_y + *p as f32 / 100.0 * cb_height;
+                child.y = target_y - current_box_origin_y - box_node.border_top - box_node.padding_top;
+            }
+            // left/top Px：目标视口绝对坐标 = cb_origin + px
+            if let LengthValue::Px(px) = &style.left {
+                child.x =
+                    cb_origin_x + (*px as f32) - current_box_origin_x - box_node.border_left - box_node.padding_left;
+            }
+            if let LengthValue::Px(px) = &style.top {
+                child.y =
+                    cb_origin_y + (*px as f32) - current_box_origin_y - box_node.border_top - box_node.padding_top;
+            }
+            // right/bottom Px 且 left/top 为 auto：右/下边对齐 CB 右/下缘（§10.3.18 rule 2）
+            if matches!(style.left, LengthValue::Auto)
+                && let LengthValue::Px(right) = &style.right
+            {
+                let target_x = cb_origin_x + cb_width - (*right as f32) - child.width;
+                child.x = target_x - current_box_origin_x - box_node.border_left - box_node.padding_left;
+            }
+            if matches!(style.top, LengthValue::Auto)
+                && let LengthValue::Px(bottom) = &style.bottom
+            {
+                let target_y = cb_origin_y + cb_height - (*bottom as f32) - child.height;
+                child.y = target_y - current_box_origin_y - box_node.border_top - box_node.padding_top;
+            }
+        }
+
+        // 递归：遇到非根 positioned 元素时，其后代的最近 positioned 祖先不再是根 → false
+        let child_nearest_is_root = if child.is_absolute || child.is_fixed || child.is_relative || child.is_sticky {
+            false
+        } else {
+            nearest_pos_ancestor_is_root
+        };
+        let child_box_origin_x = current_box_origin_x + box_node.border_left + box_node.padding_left + child.x;
+        let child_box_origin_y = current_box_origin_y + box_node.border_top + box_node.padding_top + child.y;
+        resolve_abspos_against_root_cb(
+            child,
+            child_box_origin_x,
+            child_box_origin_y,
+            cb_origin_x,
+            cb_origin_y,
+            cb_width,
+            cb_height,
+            styles,
+            child_nearest_is_root,
+        );
     }
 }
 
