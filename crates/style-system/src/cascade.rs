@@ -5,6 +5,8 @@
 
 use std::collections::HashMap;
 
+use zero_css_parser::values::{LengthValue, parse_length};
+
 /// CSS 声明来源。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Origin {
@@ -119,6 +121,43 @@ pub struct CascadedDeclaration {
     pub order: CascadeOrder,
 }
 
+/// 不允许负长度值的盒模型尺寸属性。
+///
+/// CSS 2.1 §8.3/§8.4（padding）、§10.2/§10.5（width/height）、§10.4（min-/max-）
+/// 以及 §8.5.1（border-width）规定这些属性的负长度值非法，整条声明按未声明处理。
+/// 与 `apply.rs` 的 border-*-width 负值拒绝同源；此处补全 width/height/min-/max-/padding，
+/// 并在级联阶段处理——apply 阶段太晚（cascade 已丢弃较低优先级的合法回退声明，
+/// 见 R512 numbers-units-006 机制分析）。
+const NEGATIVE_ILLEGAL_PROPS: &[&str] = &[
+    "width",
+    "height",
+    "inline-size",
+    "block-size",
+    "min-width",
+    "min-height",
+    "max-width",
+    "max-height",
+    "padding-top",
+    "padding-right",
+    "padding-bottom",
+    "padding-left",
+    "border-top-width",
+    "border-right-width",
+    "border-bottom-width",
+    "border-left-width",
+];
+
+/// 判定一条声明是否为「盒模型尺寸属性的负 px 长度」（级联时应按未声明处理）。
+///
+/// 仅检测 px（与 `apply.rs` border-*-width 一致）；em/%/calc 等负值由下游解析处理，
+/// 此处不涉及。非盒模型尺寸属性恒返回 false。
+fn is_invalid_negative_length(property: &str, value: &str) -> bool {
+    if !NEGATIVE_ILLEGAL_PROPS.contains(&property) {
+        return false;
+    }
+    matches!(parse_length(value), Some(LengthValue::Px(p)) if p < 0.0)
+}
+
 /// 级联算法。
 ///
 /// 接收一组级联声明，按属性名分组后，为每个属性选择优先级最高的声明。
@@ -136,9 +175,17 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>) -> HashMap<String, String
     let mut result = HashMap::new();
 
     for (property, decls) in by_property {
-        // 选择优先级最高的声明
-        if let Some(winner) = decls.into_iter().max_by_key(|d| d.order.clone()) {
-            result.insert(property, winner.value);
+        // CSS 规范：非法声明（如盒模型尺寸属性的负长度）在级联时即按未声明处理，
+        // 故较低优先级的合法声明可胜出。优先选最高优先级的合法声明；若该属性无任何合法
+        // 声明（全为负值等），回退到最高优先级声明以保持现状（零回归——不改变仅有负值
+        // 声明时的旧行为）。
+        let valid_best = decls
+            .iter()
+            .filter(|d| !is_invalid_negative_length(&property, &d.value))
+            .max_by_key(|d| d.order.clone());
+        let overall_best = decls.iter().max_by_key(|d| d.order.clone());
+        if let Some(winner) = valid_best.or(overall_best) {
+            result.insert(property, winner.value.clone());
         }
     }
 
@@ -251,6 +298,53 @@ mod tests {
 
         let result = cascade(decls);
         assert_eq!(result.get("color"), Some(&"blue".to_string()));
+    }
+
+    #[test]
+    fn test_cascade_skips_invalid_negative_with_valid_fallback() {
+        // CSS §10.5：height 负值非法。height:1in; height:-1px 中 -1px 优先级更高但非法，
+        // 应回退到合法的 1in（numbers-units-006 场景）。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "height".to_string(),
+                value: "1in".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+            CascadedDeclaration {
+                property: "height".to_string(),
+                value: "-1px".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 2, false),
+            },
+        ];
+
+        let result = cascade(decls);
+        assert_eq!(result.get("height"), Some(&"1in".to_string()));
+    }
+
+    #[test]
+    fn test_cascade_keeps_sole_negative_no_regression() {
+        // 仅有负值声明时无合法回退，保持旧行为（零回归）。
+        let decls = vec![CascadedDeclaration {
+            property: "width".to_string(),
+            value: "-5px".to_string(),
+            order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+        }];
+
+        let result = cascade(decls);
+        assert_eq!(result.get("width"), Some(&"-5px".to_string()));
+    }
+
+    #[test]
+    fn test_cascade_negative_check_only_box_model() {
+        // 非盒模型尺寸属性（如 margin-top 允许负值）不受影响。
+        let decls = vec![CascadedDeclaration {
+            property: "margin-top".to_string(),
+            value: "-5px".to_string(),
+            order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+        }];
+
+        let result = cascade(decls);
+        assert_eq!(result.get("margin-top"), Some(&"-5px".to_string()));
     }
 
     #[test]
