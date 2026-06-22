@@ -499,6 +499,26 @@ impl StyleSystem {
             apply_quirks_mode_adjustments(&mut resolved, parent_style, tag_name.as_deref());
         }
 
+        // 8. CSS 2.1 §9.7：float 不适用于 table-internal display。float!=none 时
+        //    table-row-group / table-header-group / table-footer-group / table-row /
+        //    table-column / table-column-group / table-cell 的计算 display 变为 block
+        //   （元素脱离表格结构成为浮动块）。修复 float-applies-to-* 测试（如 table-row-group
+        //    + float:right 应渲染为右侧浮动块，而非填满表格的 row-group）。
+        if !matches!(resolved.float, zero_css_parser::values::FloatValue::None)
+            && matches!(
+                resolved.display,
+                zero_css_parser::values::DisplayValue::TableRowGroup
+                    | zero_css_parser::values::DisplayValue::TableHeaderGroup
+                    | zero_css_parser::values::DisplayValue::TableFooterGroup
+                    | zero_css_parser::values::DisplayValue::TableRow
+                    | zero_css_parser::values::DisplayValue::TableColumn
+                    | zero_css_parser::values::DisplayValue::TableColumnGroup
+                    | zero_css_parser::values::DisplayValue::TableCell
+            )
+        {
+            resolved.display = zero_css_parser::values::DisplayValue::Block;
+        }
+
         resolved
     }
 }
