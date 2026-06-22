@@ -124,6 +124,8 @@ powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1    # Window
 
 ## 仓库结构
 
+整个工作区共 21 个 workspace member：16 个库 crate、3 个应用入口（`apps/`）和 2 个测试工具（`tests/`）。下文按「应用与进程入口 / 核心引擎 / 基础设施 / 产品层与测试」分组列出。
+
 ### 应用与进程入口
 
 | Path | 用途 |
