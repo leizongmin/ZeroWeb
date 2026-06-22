@@ -196,10 +196,16 @@ impl StyleSystem {
                 Some("after"),
             );
             self.custom_properties = saved_custom;
-            if matches!(before.content, property::types::ContentComputedValue::String(_)) {
+            if matches!(
+                before.content,
+                property::types::ContentComputedValue::String(_) | property::types::ContentComputedValue::Attr(_)
+            ) {
                 computed.before_pseudo = Some(Box::new(before));
             }
-            if matches!(after.content, property::types::ContentComputedValue::String(_)) {
+            if matches!(
+                after.content,
+                property::types::ContentComputedValue::String(_) | property::types::ContentComputedValue::Attr(_)
+            ) {
                 computed.after_pseudo = Some(Box::new(after));
             }
             styles.insert(node, computed);

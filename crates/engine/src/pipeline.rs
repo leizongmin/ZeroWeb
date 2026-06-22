@@ -517,15 +517,28 @@ fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<NodeId, Com
     // (parent, is_before, text, pseudo_style)
     let mut pending: Vec<(NodeId, bool, String, ComputedStyle)> = Vec::new();
     for (&nid, st) in styles.iter() {
+        // 解析伪元素 content 的文本：String 直接用；attr(name) 读宿主元素（nid）的
+        // 属性值（CSS generated content 的 attr() 函数，如 `content: attr(bgcolor)`
+        // 显示属性值）。Counter 由 paint_content 渲染，此处跳过。
+        let resolve_text = |content: &ContentComputedValue| -> Option<String> {
+            match content {
+                ContentComputedValue::String(s) => Some(s.clone()),
+                ContentComputedValue::Attr(name) => doc.get(nid).and_then(|n| match &n.kind {
+                    zero_dom::NodeKind::Element(elem) => elem.get_attribute(name).as_deref().map(str::to_string),
+                    _ => None,
+                }),
+                _ => None,
+            }
+        };
         if let Some(b) = st.before_pseudo.as_ref()
-            && let ContentComputedValue::String(t) = &b.content
+            && let Some(t) = resolve_text(&b.content)
         {
-            pending.push((nid, true, t.clone(), (**b).clone()));
+            pending.push((nid, true, t, (**b).clone()));
         }
         if let Some(a) = st.after_pseudo.as_ref()
-            && let ContentComputedValue::String(t) = &a.content
+            && let Some(t) = resolve_text(&a.content)
         {
-            pending.push((nid, false, t.clone(), (**a).clone()));
+            pending.push((nid, false, t, (**a).clone()));
         }
     }
 
