@@ -164,7 +164,8 @@ impl Painter {
         // 且 body 有背景色，则 body 背景色传播到画布。在绘制树之前先填充画布背景，
         // 使整个视口（含 body margin / 超出根盒的区域）呈现该背景色。根/body 自身
         // 背景仍照常绘制（同色叠加，无可见重绘）。
-        if self.viewport_w > 0.0 && self.viewport_h > 0.0
+        if self.viewport_w > 0.0
+            && self.viewport_h > 0.0
             && let Some(doc) = doc
         {
             let mut canvas_color: Option<zero_style_system::property::types::ColorValue> = None;
@@ -176,17 +177,18 @@ impl Painter {
             {
                 canvas_color = Some(hs.background_color.clone());
             }
-            if canvas_color.is_none() {
-                if let Some(bid) = doc.get_elements_by_tag_name("body").into_iter().next()
-                    && let Some(bs) = styles.get(&bid)
-                    && bs.background_color != zero_style_system::property::types::ColorValue::Transparent
-                {
-                    canvas_color = Some(bs.background_color.clone());
-                }
+            if canvas_color.is_none()
+                && let Some(bid) = doc.get_elements_by_tag_name("body").into_iter().next()
+                && let Some(bs) = styles.get(&bid)
+                && bs.background_color != zero_style_system::property::types::ColorValue::Transparent
+            {
+                canvas_color = Some(bs.background_color.clone());
             }
             if let Some(c) = canvas_color {
-                self.primitives
-                    .add_fill(Rect::new(0.0, 0.0, self.viewport_w, self.viewport_h), color_value_to_render(&c));
+                self.primitives.add_fill(
+                    Rect::new(0.0, 0.0, self.viewport_w, self.viewport_h),
+                    color_value_to_render(&c),
+                );
             }
         }
         self.paint_node(layout, styles, 0.0, 0.0, doc);

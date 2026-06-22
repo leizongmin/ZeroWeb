@@ -533,8 +533,7 @@ fn test_pseudo_element_declaration_routing() {
     let stylesheets = [stylesheet];
 
     // 2. 伪元素声明收集：div 的 before 应收到 content + color
-    let pseudo_decls =
-        collect_pseudo_declarations_with_media(&_doc, div, &stylesheets, None, None, "before");
+    let pseudo_decls = collect_pseudo_declarations_with_media(&_doc, div, &stylesheets, None, None, "before");
     let mut got_content = false;
     let mut got_color = false;
     for (prop, val, _, _, _) in &pseudo_decls {
@@ -556,8 +555,7 @@ fn test_pseudo_element_declaration_routing() {
     }
 
     // 4. after 槽不应收到 before 的声明
-    let after_decls =
-        collect_pseudo_declarations_with_media(&_doc, div, &stylesheets, None, None, "after");
+    let after_decls = collect_pseudo_declarations_with_media(&_doc, div, &stylesheets, None, None, "after");
     assert!(after_decls.is_empty(), "after 槽应为空（规则只匹配 before）");
 }
 
@@ -574,8 +572,7 @@ fn test_double_colon_pseudo_element_routing() {
     };
     assert_eq!(selector_pseudo_element(&style_rule.selectors[0]), Some("after"));
     let stylesheets = [stylesheet];
-    let after_decls =
-        collect_pseudo_declarations_with_media(&_doc, div, &stylesheets, None, None, "after");
+    let after_decls = collect_pseudo_declarations_with_media(&_doc, div, &stylesheets, None, None, "after");
     assert_eq!(after_decls.len(), 1);
     assert_eq!(after_decls[0].0, "content");
 }

@@ -385,8 +385,14 @@ fn test_expand_flex_single_number_is_grow() {
 fn test_expand_flex_single_width_is_basis() {
     // 非数字单值 → basis（纠正旧位置式把宽度当 grow 的 bug）
     assert_eq!(flex_parts("50%"), ("0".to_string(), "1".to_string(), "50%".to_string()));
-    assert_eq!(flex_parts("100px"), ("0".to_string(), "1".to_string(), "100px".to_string()));
-    assert_eq!(flex_parts("10em"), ("0".to_string(), "1".to_string(), "10em".to_string()));
+    assert_eq!(
+        flex_parts("100px"),
+        ("0".to_string(), "1".to_string(), "100px".to_string())
+    );
+    assert_eq!(
+        flex_parts("10em"),
+        ("0".to_string(), "1".to_string(), "10em".to_string())
+    );
 }
 
 #[test]
@@ -398,9 +404,18 @@ fn test_expand_flex_two_numbers_are_grow_shrink() {
 #[test]
 fn test_expand_flex_number_then_width_is_grow_basis() {
     // 双值中次值非数字 → basis，shrink 默认 1（纠正旧位置式把宽度当 shrink 的 bug）
-    assert_eq!(flex_parts("1 100px"), ("1".to_string(), "1".to_string(), "100px".to_string()));
-    assert_eq!(flex_parts("0 auto"), ("0".to_string(), "1".to_string(), "auto".to_string()));
-    assert_eq!(flex_parts("1 auto"), ("1".to_string(), "1".to_string(), "auto".to_string()));
+    assert_eq!(
+        flex_parts("1 100px"),
+        ("1".to_string(), "1".to_string(), "100px".to_string())
+    );
+    assert_eq!(
+        flex_parts("0 auto"),
+        ("0".to_string(), "1".to_string(), "auto".to_string())
+    );
+    assert_eq!(
+        flex_parts("1 auto"),
+        ("1".to_string(), "1".to_string(), "auto".to_string())
+    );
 }
 
 #[test]

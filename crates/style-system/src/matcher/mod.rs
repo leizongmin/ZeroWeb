@@ -998,12 +998,7 @@ pub fn selector_pseudo_element(selector: &Selector) -> Option<&str> {
 
 /// 检查元素是否匹配「以指定伪元素结尾」的选择器：尾部伪元素必须等于 `pseudo_name`，
 /// 且元素匹配去除该尾部伪元素后的选择器主体。
-fn matches_selector_for_pseudo(
-    doc: &Document,
-    element: NodeId,
-    selector: &Selector,
-    pseudo_name: &str,
-) -> bool {
+fn matches_selector_for_pseudo(doc: &Document, element: NodeId, selector: &Selector, pseudo_name: &str) -> bool {
     if selector_pseudo_element(selector) != Some(pseudo_name) {
         return false;
     }
