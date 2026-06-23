@@ -328,6 +328,22 @@ impl StyleSystem {
         // 1.5. 展开简写属性（保留层索引）
         #[allow(clippy::type_complexity)]
         let mut expanded_with_layer: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)> = Vec::new();
+        // 1.5a. CSS2 Appendix D 表现提示（img 的 width/height 属性 → 作者样式）。
+        // Author origin + specificity (0,0,0) + 最早位置（cascade 按 origin/layer/specificity/
+        // position 排序，(0,0,0) 低于任意真实选择器 ≥(0,0,1) 与 inline (1,0,0)，高于 UA 默认）。
+        if pseudo.is_none() {
+            let hints = collect_presentational_hints(doc, element);
+            if !hints.is_empty() {
+                #[allow(clippy::type_complexity)]
+                let input: Vec<(String, String, bool, (u32, u32, u32))> = hints
+                    .iter()
+                    .map(|(p, v)| (p.clone(), v.clone(), false, (0, 0, 0)))
+                    .collect();
+                for (prop, val, imp, spec) in shorthand::expand_shorthands(&input) {
+                    expanded_with_layer.push((prop, val, imp, spec, None));
+                }
+            }
+        }
         for (property, value, important, specificity, layer_index) in &matching {
             let input = (property.clone(), value.clone(), *important, *specificity);
             let expanded = shorthand::expand_shorthands(&[input]);
@@ -557,6 +573,32 @@ impl Default for StyleSystem {
 ///
 /// 将 `"background-color: red; width: 200px"` 格式的字符串解析为
 /// `(property, value, important)` 三元组列表。
+/// CSS2 Appendix D 表现提示：把 HTML 表现属性映射为作者样式声明（property, value）。
+/// 仅 `<img>` 的 width/height；裸数字→px，`%`/长度原样透传。specificity 由调用方设为 (0,0,0)。
+fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String, String)> {
+    let Some(n) = doc.get(element) else {
+        return Vec::new();
+    };
+    let is_img = matches!(&n.kind, NodeKind::Element(elem) if elem.local_name().eq_ignore_ascii_case("img"));
+    if !is_img {
+        return Vec::new();
+    }
+    let mut hints = Vec::new();
+    for attr in ["width", "height"] {
+        if let Some(v) = doc.get_attribute(element, attr) {
+            let v = v.trim();
+            if v.is_empty() {
+                continue;
+            }
+            // 裸数字（如 width="50"）按 CSS2 App D 解析为 px；含单位或 % 原样透传
+            let is_bare_number = v.chars().all(|c| c.is_ascii_digit() || c == '.');
+            let val = if is_bare_number { format!("{v}px") } else { v.to_string() };
+            hints.push((attr.to_string(), val));
+        }
+    }
+    hints
+}
+
 fn parse_inline_style(style_attr: &str) -> Vec<(String, String, bool)> {
     let mut declarations = Vec::new();
     // 按分号分割声明
