@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 build browser browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest
+.PHONY: setup-rusty-v8 build browser browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest product-smoke
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -45,3 +45,14 @@ test: target/test-guard
 # WPT reftest（同样被 test-guard 包裹）。
 reftest: target/test-guard
 	./target/test-guard -- cargo run --bin zero-wpt-runner -- reftest
+
+# 产品静态页 product-smoke 回归门禁（DC-13）：渲染 welcome.html vs chromium Oracle，
+# diff > 阈值则失败（退出 2）。捕获产品可见回归——如 R428 min-size:auto 致
+# welcome +7.65pp（24.63%），此前因 product-smoke 不在每轮验证而藏了 14 轮。
+# 阈值 20% > 17% baseline（残余为字体/line-height 噪声 + R109 结构性，非回归）。
+# 用法：make product-smoke        调整阈值：make product-smoke MAX_DIFF=22
+WELCOME_HTML := apps/browser/assets/welcome.html
+WELCOME_ORACLE := docs/goal/rendering-compat/evidence/product-static/welcome-chromium.png
+product-smoke: target/test-guard
+	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke $(WELCOME_HTML) --oracle $(WELCOME_ORACLE) --max-diff $(or $(MAX_DIFF),20)
+

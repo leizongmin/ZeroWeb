@@ -2,6 +2,8 @@
 有阶段性进展时应该及时在当前的分支提交代码并推送到远端，也要及时拉取远端的更新并rebase。
 单个代码文件一般不要超过2000行，如果超过了应该考虑合理拆分成多个文件。
 跑测试或 WPT reftest 时必须用 `make test` / `make reftest`（由 scripts/test-guard.rs 包裹），禁止裸跑 `cargo test` 或 `cargo run --bin zero-wpt-runner -- reftest`：内存型 bug（如无限循环 realloc）只会被杀掉测试进程树，不会触发系统 OOM 连累整个 tmux session / rally 流程。阈值/兜底见 docs/rally/oom-guard.md。
+涉及渲染/布局变更时建议额外跑 `make product-smoke`（DC-13 welcome.html vs chromium Oracle 回归门禁，diff>20% 退出 2）：`make test` + scoped reftest 不覆盖产品 fixture，曾致 R428 min-size:auto 的 welcome +7.65pp 回归藏了 14 轮未被发现（R541）。阈值可调：`make product-smoke MAX_DIFF=22`。
+
 取得重大进展或遇到卡点（如需用户决策、长时间阻塞、无法继续推进）时，应及时通过飞书 CLI 以应用机器人身份通知本人，消息需说明具体的进展或卡点信息。此通知仅为告知，不要因此阻塞或改变后续工作流程。命令：`SELF=$(lark-cli auth list | python3 -c "import sys,json;print(json.load(sys.stdin)[0]['userOpenId'])") && lark-cli im +messages-send --user-id "$SELF" --text "<具体内容>" --as bot`。
 
 
