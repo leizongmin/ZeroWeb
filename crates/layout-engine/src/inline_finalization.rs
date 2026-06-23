@@ -606,11 +606,20 @@ pub(crate) fn measure_text_content(
         };
     }
 
-    let width = known_dimensions
-        .width
-        .or(available_space.width.into_option())
-        .unwrap_or(f32::INFINITY)
-        .max(0.0);
+    let width = if matches!(available_space.width, AvailableSpace::MinContent) {
+        // MinContent 测量：用 0 宽强制每个不可拆单元（单词/原子行内盒）独占一行，
+        // 则最宽行 = 最宽不可拆单元 = min-content 宽度。
+        // 旧实现 MinContent 也落入 INFINITY → 全部单词一行 → measured_width = max-content
+        // （错误偏大）。R428 min-size:auto 默认后，grid/flex item 的 min-width 被这个偏大值
+        // floor → 卡片过宽（welcome.html +7.65pp 回归，R541 实证 min-width:0 可恢复）。
+        0.0
+    } else {
+        known_dimensions
+            .width
+            .or(available_space.width.into_option())
+            .unwrap_or(f32::INFINITY)
+            .max(0.0)
+    };
     let is_vertical = doc
         .parent_node(dom_id)
         .and_then(|pid| styles.get(&pid))

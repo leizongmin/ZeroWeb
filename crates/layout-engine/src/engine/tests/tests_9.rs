@@ -516,6 +516,76 @@ fn test_measure_text_content_no_text() {
     assert_eq!(size.height, 0.0, "无文本节点高度应为 0");
 }
 
+/// 测试 measure_text_content：MinContent 宽度应为最宽不可拆单元（单词），
+/// 而非整行 max-content。R542 修复：此前 inline-content 分支对 MinContent 也用
+/// INFINITY 宽 → 全部单词排一行 → measured_width = max-content（偏大）。R428
+/// min-size:auto 默认后，grid/flex item 的 min-width 被这个偏大值 floor →
+/// 卡片过宽（welcome.html +7.65pp 回归，R541 实证 min-width:0 可恢复）。
+#[test]
+fn test_measure_text_content_min_content_is_widest_word() {
+    use zero_css_parser::values::LengthValue;
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+    // "XX YYYY"：Ahem 10px 等宽（每字符=font_size）→ "XX"=20px, "YYYY"=40px。
+    let text = doc.create_text_node("XX YYYY");
+    doc.append_child(div, text).unwrap();
+
+    let mut style = ComputedStyle::default();
+    style.font_family = vec!["Ahem".to_string()];
+    style.font_size = LengthValue::Px(10.0);
+    let mut styles = HashMap::new();
+    styles.insert(div, style);
+
+    let none_size = taffy::geometry::Size {
+        width: None,
+        height: None,
+    };
+    let min_size = measure_text_content(
+        &doc,
+        &styles,
+        div,
+        none_size,
+        taffy::geometry::Size {
+            width: taffy::style::AvailableSpace::MinContent,
+            height: taffy::style::AvailableSpace::Definite(600.0),
+        },
+    );
+    // MinContent ≈ 最宽词 "YYYY"(40px)，远小于整行 max-content(~70px)。
+    assert!(
+        min_size.width < 55.0,
+        "MinContent 应为最宽词(~40px) 而非整行 max-content，实际 {}",
+        min_size.width
+    );
+    let max_size = measure_text_content(
+        &doc,
+        &styles,
+        div,
+        none_size,
+        taffy::geometry::Size {
+            width: taffy::style::AvailableSpace::MaxContent,
+            height: taffy::style::AvailableSpace::Definite(600.0),
+        },
+    );
+    // MaxContent ≈ 整行 "XX YYYY"(~70px)。
+    assert!(
+        max_size.width > 60.0,
+        "MaxContent 应为整行(~70px)，实际 {}",
+        max_size.width
+    );
+    assert!(
+        min_size.width < max_size.width,
+        "MinContent({}) 应严格小于 MaxContent({})（修复前两者相等=max-content）",
+        min_size.width,
+        max_size.width
+    );
+}
+
 /// 测试 adjust_absolute_pct_to_viewport：无 positioned ancestor 的 absolute 元素，
 /// `top`/`left` 为长度（Px）时应解析为视口相对坐标（CSS 2.1 §10.1）。
 ///
