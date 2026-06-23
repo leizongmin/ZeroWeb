@@ -260,6 +260,33 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.writing_mode = parent.writing_mode.clone();
             true
         }
+        // 盒模型尺寸（非继承属性，但 `inherit` 关键字显式要求从父元素复制计算值）。
+        // 此前遗漏致 `max-width:inherit` 等静默失败（CSS2 max-width-104/max-height-104/
+        // height-inherit-001 等 FAIL）。margin/padding 已在上文，补齐尺寸六属性。
+        "width" => {
+            child.width = parent.width.clone();
+            true
+        }
+        "height" => {
+            child.height = parent.height.clone();
+            true
+        }
+        "min-width" => {
+            child.min_width = parent.min_width.clone();
+            true
+        }
+        "min-height" => {
+            child.min_height = parent.min_height.clone();
+            true
+        }
+        "max-width" => {
+            child.max_width = parent.max_width.clone();
+            true
+        }
+        "max-height" => {
+            child.max_height = parent.max_height.clone();
+            true
+        }
         _ => false,
     }
 }
