@@ -493,7 +493,22 @@ fn build_subtree(
                 if let Some(data) = child_data {
                     match &data.kind {
                         NodeKind::Element(_) => {
-                            let order = styles.get(&child_dom).map_or(0, |s| s.order);
+                            let order = styles.get(&child_dom).map_or(0, |s| {
+                                // CSS Flexbox §8.1：`order` 只重排 in-flow flex item。
+                                // abspos（position:absolute/fixed）不是 flex item，其
+                                // 绘制顺序遵循 DOM 顺序（CSS Appendix E step 6），不受
+                                // `order` 影响（flexbox-paint-ordering-003）。用 0 作排序键
+                                // → stable sort 保持 abspos 的 DOM 相对顺序。
+                                if matches!(
+                                    s.position,
+                                    zero_style_system::property::types::PositionValue::Absolute
+                                        | zero_style_system::property::types::PositionValue::Fixed
+                                ) {
+                                    0
+                                } else {
+                                    s.order
+                                }
+                            });
                             children_with_order.push((child_dom, order));
                         }
                         NodeKind::Text(text_data) if !text_data.content.trim().is_empty() => {
