@@ -261,6 +261,18 @@ impl RenderPrimitives {
             return self.clone();
         }
 
+        // draw_order 是默认渲染路径（R155，CPU render_draw_order）：按 paint_node
+        // 的真实 DFS 顺序逐个渲染图元。本函数的颜色分组会把 fills 重排为
+        // [所有同色 A, 所有同色 B, ...]，但 draw_order 仍指向**旧**索引 → 渲染时
+        // Fill(i) 取到重排后的错误 fill，破坏 CSS painting order（例：position:relative
+        // 的 #cover 本应绘于前置 in-flow flex items 之上，同色分组把它提前到其下
+        // → flex-grow-003 red 可见）。draw_order 路径下颜色批无收益（render_draw_order
+        // 逐个 fill_rect 无颜色状态批），故直接跳过；合并对不透明 fill 视觉中性，
+        // 仅 render_typed_buckets 回退路径（draw_order 为空）保留 batching 优化。
+        if !self.draw_order.is_empty() {
+            return self.clone();
+        }
+
         // 按颜色分组，保持首次出现的顺序
         let mut color_order: Vec<[u8; 4]> = Vec::new();
         let mut color_seen: std::collections::HashSet<[u8; 4]> = std::collections::HashSet::new();
