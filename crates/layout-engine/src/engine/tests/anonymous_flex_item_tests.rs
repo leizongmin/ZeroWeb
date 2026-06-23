@@ -288,8 +288,14 @@ fn test_abspos_flex_children_not_reordered_by_order() {
         .collect();
 
     // in-flow 子元素须按 order 重排：b(order:1) 在 a(order:3) 之前。
-    let pos_b = order.iter().position(|x| x.as_str() == "b").expect("in-flow #b present");
-    let pos_a = order.iter().position(|x| x.as_str() == "a").expect("in-flow #a present");
+    let pos_b = order
+        .iter()
+        .position(|x| x.as_str() == "b")
+        .expect("in-flow #b present");
+    let pos_a = order
+        .iter()
+        .position(|x| x.as_str() == "a")
+        .expect("in-flow #a present");
     assert!(
         pos_b < pos_a,
         "in-flow flex items must be reordered by `order` (b@order:1 before a@order:3), got {:?}",
