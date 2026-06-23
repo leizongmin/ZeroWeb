@@ -1701,8 +1701,20 @@ fn position_cells(
             }
 
             // 设置单元格位置和尺寸
-            cell_box.x = cell_x;
-            cell_box.y = 0.0;
+            // CSS-position-3：table-cell (td) 可 position:relative，其 inset 偏移自身。
+            // table-cell 由 table.rs 定位，不经 taffy 正常流的 relative-inset 应用
+            // （taffy 的 layout.location 仅对正常流 block 生效），故此处须显式应用
+            // 单元格自身的 relative inset（镜像行/行组的 row_rel_dx/dy 处理）。
+            let (cell_rel_dx, cell_rel_dy) = if cell_box.is_relative {
+                (
+                    resolve_length_inset(cell_box, styles, true),
+                    resolve_length_inset(cell_box, styles, false),
+                )
+            } else {
+                (0.0, 0.0)
+            };
+            cell_box.x = cell_x + cell_rel_dx;
+            cell_box.y = cell_rel_dy;
             cell_box.width = cell_width;
 
             // CSS Tables §visibility-collapse-cell-rendering：

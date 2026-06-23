@@ -51,6 +51,80 @@ fn test_table_layout_runs() {
     assert!(result.root.height > 0.0);
 }
 
+/// `position:relative` 的 table-cell (td) 须应用 inset 偏移自身（CSS-position-3）。
+///
+/// table-cell 由 table.rs 定位，不经 taffy 正常流的 relative-inset 应用，故须在
+/// 单元格定位处显式加 relative inset（镜像行/行组的 row_rel_dx/dy）。
+/// 此前 td.relative 的 top/left 完全未应用（position-relative-table-td-{top,left} FAIL）。
+#[test]
+fn test_table_cell_relative_inset_applied() {
+    use zero_dom::{NodeId, NodeKind};
+    // 两张表：表 A 的 td 有 position:relative top:60px left:30px；表 B 的 td 正常。
+    // 两表结构相同（单格 50x50），A 的 td 相对其正常单元格位置应偏移 (30, 60)。
+    let html = r#"<html><body style="margin:0">
+      <table id="a" style="border-collapse:collapse"><tr><td id="ra" style="position:relative;top:60px;left:30px;width:50px;height:50px"></td></tr></table>
+      <table id="b" style="border-collapse:collapse"><tr><td id="rb" style="width:50px;height:50px"></td></tr></table>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // DOM 中按 id 找两个 td 的 NodeId
+    let find_id = |tag_id: &str| -> Option<NodeId> {
+        let mut stack = vec![doc.root()];
+        while let Some(nid) = stack.pop() {
+            if let Some(n) = doc.get(nid) {
+                if let NodeKind::Element(e) = &n.kind {
+                    if e.id.as_deref() == Some(tag_id) {
+                        return Some(nid);
+                    }
+                }
+                stack.extend(n.children.iter().copied());
+            }
+        }
+        None
+    };
+    let ra = find_id("ra").expect("td#ra found");
+    let rb = find_id("rb").expect("td#rb found");
+
+    // 在 layout 树中按 node_id 找 box（相对各自 table content 的 x/y）
+    fn find_box(b: &LayoutBox, id: NodeId) -> Option<&LayoutBox> {
+        if b.node_id == Some(id) {
+            return Some(b);
+        }
+        for c in &b.children {
+            if let Some(found) = find_box(c, id) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    let box_a = find_box(&result.root, ra).expect("layout box for td#ra");
+    let box_b = find_box(&result.root, rb).expect("layout box for td#rb");
+
+    // 两个 td 正常单元格位置都是各自 table content 原点 (0,0)。
+    // relative td 应偏移 (left:30, top:60)；normal td 为 (0,0)。
+    assert!(
+        (box_a.x - 30.0).abs() < 1.0,
+        "relative td 的 x 应含 left:30 inset（≈30），实际 {}",
+        box_a.x
+    );
+    assert!(
+        (box_a.y - 60.0).abs() < 1.0,
+        "relative td 的 y 应含 top:60 inset（≈60），实际 {}",
+        box_a.y
+    );
+    assert!(
+        (box_b.x - 0.0).abs() < 1.0 && (box_b.y - 0.0).abs() < 1.0,
+        "normal td 应在原点 (0,0)，实际 ({},{})",
+        box_b.x,
+        box_b.y
+    );
+}
+
 /// `<img>` 无 width/height 属性时应使用解码固有尺寸（DC-11 替换元素固有尺寸）。
 #[test]
 fn test_img_intrinsic_size_from_decoded() {
