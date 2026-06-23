@@ -1383,6 +1383,16 @@ fn test_parse_length_quirks_standard_still_works() {
 }
 
 #[test]
+fn test_parse_length_ex_unit_to_em_half() {
+    // CSS ex 单位 = 字体 x-height，无字体度量时规范允许用 0.5em 近似（与 ch 同策略）。
+    // ex 相对元素自身 font-size（同 em），故解析为 Em(num*0.5) 复用 em 路径。
+    // 此前 ex 未支持致 `max-width:0ex` 等解析失败被丢弃（CSS2 max-width-079~084 等 FAIL）。
+    assert_eq!(parse_length("1ex"), Some(LengthValue::Em(0.5)));
+    assert_eq!(parse_length("6ex"), Some(LengthValue::Em(3.0)));
+    assert_eq!(parse_length("0ex"), Some(LengthValue::Em(0.0)));
+}
+
+#[test]
 fn test_parse_length_quirks_unitless_number() {
     // 裸数字在 quirks mode 下视为 px
     assert_eq!(parse_length_quirks("100"), Some(LengthValue::Px(100.0)));
