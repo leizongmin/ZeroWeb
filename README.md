@@ -41,7 +41,7 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 | `ZeroWebView` | 已有稳定嵌入 API、可运行 demo，以及跨 crate 和产品层 smoke 测试 |
 | 浏览器应用 | `zero-browser`、`browser-shell` 和 `zero-renderer` 已打通桌面入口、多进程链路与 headless 调试；整体仍处于实验阶段 |
 | 页面 JavaScript | `script-sandbox` 已提供 V8/QuickJS feature gate，以及 Web Worker、ES Modules 等脚本运行时能力；完整 Web API 和站点兼容性仍在推进 |
-| 真实站点兼容性 | 已有 WPT runner、reftest 和真实站点 smoke，但离生产级兼容性还有明显距离 |
+| 渲染兼容性（当前主线 M12） | 以 WPT/CSSWG reftest 对齐 Chromium 为验证标准；已有 WPT runner、reftest、真实静态页截图对比和真实站点 smoke，CSS2 / Flexbox / Grid / 布局等渲染缺口在持续修复中，距生产级兼容仍有明显距离 |
 | 项目定位 | 适合学习、研究、工程探索，不适合直接当成生产浏览器 |
 
 现在已经有一批能跑起来的模块：
