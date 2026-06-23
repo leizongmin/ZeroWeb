@@ -233,3 +233,81 @@ fn test_inline_element_with_background_shrink_to_fit() {
         t.width
     );
 }
+
+/// 回归（R526）：abspos（position:absolute/fixed）的 flex 子元素**不**受 `order`
+/// 属性重排，其绘制顺序遵循 DOM 顺序（CSS Flexbox §8.1 + CSS Appendix E step 6；
+/// flexbox-paint-ordering-003）。旧实现把 abspos 也纳入 `order` 排序 → abspos 按
+/// order 值重排 → 破坏 tree-order 绘制顺序。修复：tree.rs 建树 + engine.rs
+/// sort_children_by_css_order 两站点对 abspos 用 0 作排序键（stable sort 保持 DOM 顺序）。
+///
+/// 本测试断言 in-flow 子元素被 `order` 正确重排（#a order:3 排在 #b order:1 之后），
+/// 而 abspos 子元素保持 DOM 顺序（#abs1 在 DOM 第 1 → 仍在 #abs2 之前），与 order 值无关。
+#[test]
+fn test_abspos_flex_children_not_reordered_by_order() {
+    // flex 容器含 4 个子元素：abspos #abs1(order:9)、in-flow #a(order:3)、
+    // in-flow #b(order:1)、abspos #abs2(order:7)。DOM 顺序 = abs1, a, b, abs2。
+    let html = r#"<html><body style="margin:0">
+      <div id="container" style="display:flex;width:400px">
+        <div id="abs1" style="position:absolute;order:9"></div>
+        <div id="a" style="order:3"></div>
+        <div id="b" style="order:1"></div>
+        <div id="abs2" style="position:absolute;order:7"></div>
+      </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+
+    let container = find("container", &doc, &result.root).expect("flex container");
+    // 收集子元素在 LayoutBox 中的出现顺序（按 node_id 对应元素的 id 属性）。
+    let order: Vec<String> = container
+        .children
+        .iter()
+        .filter_map(|c| {
+            let nid = c.node_id?;
+            let n = doc.get(nid)?;
+            match &n.kind {
+                zero_dom::NodeKind::Element(elem) => elem.get_attribute("id"),
+                _ => None,
+            }
+        })
+        .collect();
+
+    // in-flow 子元素须按 order 重排：b(order:1) 在 a(order:3) 之前。
+    let pos_b = order.iter().position(|x| x.as_str() == "b").expect("in-flow #b present");
+    let pos_a = order.iter().position(|x| x.as_str() == "a").expect("in-flow #a present");
+    assert!(
+        pos_b < pos_a,
+        "in-flow flex items must be reordered by `order` (b@order:1 before a@order:3), got {:?}",
+        order
+    );
+    // abspos 子元素须保持 DOM 顺序：abs1（DOM 第 1）在 abs2（DOM 第 4）之前，
+    // 不受 order 值（9 vs 7）影响。
+    let pos_abs1 = order
+        .iter()
+        .position(|x| x.as_str() == "abs1")
+        .expect("abspos #abs1 present");
+    let pos_abs2 = order
+        .iter()
+        .position(|x| x.as_str() == "abs2")
+        .expect("abspos #abs2 present");
+    assert!(
+        pos_abs1 < pos_abs2,
+        "abspos flex children must NOT be reordered by `order`; keep DOM order (abs1 before abs2), got {:?}",
+        order
+    );
+}

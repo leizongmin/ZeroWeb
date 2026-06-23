@@ -1174,19 +1174,24 @@ fn sort_children_by_css_order(root: &mut LayoutBox, styles: &HashMap<NodeId, Com
         return;
     }
 
-    // 检查是否有任何子元素的 order 不为 0
-    let has_non_zero_order = root.children.iter().any(|c| c.css_order != 0);
+    // 检查是否有任何 in-flow 子元素的 order 不为 0
+    // （abspos 不受 `order` 重排，见 tree.rs 同源注释，不应触发排序）
+    let has_non_zero_order = root
+        .children
+        .iter()
+        .any(|c| !c.is_absolute && c.css_order != 0);
     if !has_non_zero_order {
         return;
     }
 
     // 稳定排序：按 css_order 升序，order 相同时保持原始 DOM 顺序
-    // 使用索引作为稳定排序键
+    // 使用索引作为稳定排序键。abspos（is_absolute）强制 order=0 → stable sort
+    // 保持其 DOM 相对顺序（CSS Flexbox §8.1：`order` 不重排 abspos，flexbox-paint-ordering-003）
     let mut indexed: Vec<(usize, i32)> = root
         .children
         .iter()
         .enumerate()
-        .map(|(i, c)| (i, c.css_order))
+        .map(|(i, c)| (i, if c.is_absolute { 0 } else { c.css_order }))
         .collect();
     indexed.sort_by_key(|&(idx, order)| (order, idx as i32));
 
