@@ -574,15 +574,21 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        // CSS Flexbox §7.3.1/§7.3.2：flex-grow/flex-shrink 负值非法，按未声明处理
+        // （回退到初始值：flex-grow=0、flex-shrink=1，见 default_impl）。
         "flex-grow" => {
             if let Ok(v) = value.parse::<f64>() {
-                style.flex_grow = v;
+                if v >= 0.0 {
+                    style.flex_grow = v;
+                }
                 return true;
             }
         }
         "flex-shrink" => {
             if let Ok(v) = value.parse::<f64>() {
-                style.flex_shrink = v;
+                if v >= 0.0 {
+                    style.flex_shrink = v;
+                }
                 return true;
             }
         }

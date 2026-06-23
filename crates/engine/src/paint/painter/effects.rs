@@ -66,7 +66,10 @@ impl super::Painter {
         // CSS §14.2：背景已传播到画布的元素（html/body）不在自身盒上绘制背景图像——
         // 画布已以视口 (0,0) 为 origin 平铺该图像；若此处再按元素 padding-box origin
         // 绘制，两者相位错位会产生可见的错位重影（R507）。
-        if box_node.node_id.is_some_and(|id| self.canvas_propagated_node == Some(id)) {
+        if box_node
+            .node_id
+            .is_some_and(|id| self.canvas_propagated_node == Some(id))
+        {
             return;
         }
 

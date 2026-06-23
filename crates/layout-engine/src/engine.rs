@@ -1176,10 +1176,7 @@ fn sort_children_by_css_order(root: &mut LayoutBox, styles: &HashMap<NodeId, Com
 
     // 检查是否有任何 in-flow 子元素的 order 不为 0
     // （abspos 不受 `order` 重排，见 tree.rs 同源注释，不应触发排序）
-    let has_non_zero_order = root
-        .children
-        .iter()
-        .any(|c| !c.is_absolute && c.css_order != 0);
+    let has_non_zero_order = root.children.iter().any(|c| !c.is_absolute && c.css_order != 0);
     if !has_non_zero_order {
         return;
     }

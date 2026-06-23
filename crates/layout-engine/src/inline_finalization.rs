@@ -571,14 +571,30 @@ pub(crate) fn measure_text_content(
         // 回退到 CSS computed style 的显式 width/height。
         // 注意：taffy flexbox 在 measure callback 中会将主轴 known_dimensions 设为 None
         // （因为主轴尺寸由 flex 布局控制），所以需要从 computed style 获取。
+        // 但当 available_space 指示「内容测量」（MinContent/MaxContent，用于 CSS Flexbox
+        // §4.5 min-size:auto 的 content size suggestion，或 grid 轨道 intrinsic sizing）时，
+        // taffy 传 None 主轴是为了测量「忽略显式尺寸的纯内容尺寸」——空叶节点的内容为 0。
+        // 此处不能再回退到显式 width/height（否则空 flex item 的 min-size:auto = 显式宽，
+        // flex-shrink 永不收缩，flex-shrink-001/002/003/006/007/008 FAIL）。显式尺寸已由
+        // converter 写入 taffy style.size，由 taffy 自行应用，measure 仅汇报内容。
         let style = styles.get(&dom_id);
+        let measuring_content_w = matches!(available_space.width, AvailableSpace::MinContent)
+            || matches!(available_space.width, AvailableSpace::MaxContent);
+        let measuring_content_h = matches!(available_space.height, AvailableSpace::MinContent)
+            || matches!(available_space.height, AvailableSpace::MaxContent);
         let explicit_w = known_dimensions.width.or_else(|| {
+            if measuring_content_w {
+                return None;
+            }
             style.and_then(|s| match &s.width {
                 LengthValue::Px(v) => Some(*v as f32),
                 _ => None,
             })
         });
         let explicit_h = known_dimensions.height.or_else(|| {
+            if measuring_content_h {
+                return None;
+            }
             style.and_then(|s| match &s.height {
                 LengthValue::Px(v) => Some(*v as f32),
                 _ => None,

@@ -694,6 +694,35 @@ fn apply_flex_shrink() {
 }
 
 #[test]
+/// 负值 flex-shrink 非法（CSS Flexbox §7.3.2），apply 拒绝并保留初始值 1.0。
+///
+/// 负值透传 taffy 会使 scaled shrink factor 为负、`sum > 0` 门控跳过收缩分布，item 不收缩
+/// （flex-shrink-002 FAIL）。拒绝负值 → 保留 default_impl 初始值 1.0 → item 正常收缩。
+fn apply_flex_shrink_negative_rejected() {
+    let mut style = ComputedStyle::default();
+    assert_eq!(style.flex_shrink, 1.0, "初始值应为 1.0");
+    assert!(crate::property::apply::apply_property_value(
+        &mut style,
+        "flex-shrink",
+        "-3"
+    ));
+    assert_eq!(style.flex_shrink, 1.0, "负值应被拒绝，保留初始值 1.0");
+}
+
+#[test]
+/// 负值 flex-grow 非法（CSS Flexbox §7.3.1），apply 拒绝并保留初始值 0.0。
+fn apply_flex_grow_negative_rejected() {
+    let mut style = ComputedStyle::default();
+    assert_eq!(style.flex_grow, 0.0);
+    assert!(crate::property::apply::apply_property_value(
+        &mut style,
+        "flex-grow",
+        "-2"
+    ));
+    assert_eq!(style.flex_grow, 0.0, "负值应被拒绝，保留初始值 0.0");
+}
+
+#[test]
 /// 应用 flex-basis
 fn apply_flex_basis() {
     let mut style = ComputedStyle::default();

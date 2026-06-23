@@ -138,6 +138,60 @@ fn test_flex_transferred_size_suggestion() {
     );
 }
 
+/// 测试带显式宽度的空 flex item 在负 free space 下正确收缩（CSS Flexbox §7.3.2 + §4.5）。
+///
+/// 两个 width:100px 的空 flex item 放在 width:100px 的 flex 容器中（free space = -100px），
+/// flex-shrink:1 的 item 应各收缩到 50px。此前 ZeroWeb 的 `measure_text_content` 在
+/// 内容测量（MinContent/MaxContent）时回退到显式 CSS width，使空 item 的 min-size:auto = 100px，
+/// 阻止收缩（flex-shrink-001/002/003/006/007/008 FAIL）。修复后空叶节点的内容测量返回 0。
+#[test]
+fn test_flex_shrink_explicit_width_items() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let item1 = doc.create_element("div");
+    let item2 = doc.create_element("div");
+    doc.append_child(container, item1).unwrap();
+    doc.append_child(container, item2).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut container_style = ComputedStyle::default();
+    container_style.display = DisplayValue::Flex;
+    container_style.width = LengthValue::Px(100.0);
+    container_style.height = LengthValue::Px(100.0);
+    styles.insert(container, container_style);
+
+    let mk_item = |flex_shrink: f64| {
+        let mut s = ComputedStyle::default();
+        s.width = LengthValue::Px(100.0);
+        s.height = LengthValue::Px(100.0);
+        s.flex_shrink = flex_shrink;
+        s
+    };
+    styles.insert(item1, mk_item(1.0));
+    styles.insert(item2, mk_item(1.0));
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let b1 = find_child_by_node_id(&result.root, item1).expect("item1 found");
+    let b2 = find_child_by_node_id(&result.root, item2).expect("item2 found");
+    // 两个 100px item 在 100px 容器中，flex-shrink:1 各收缩 50px → 各 50px
+    assert!(
+        (b1.width - 50.0).abs() < 1.0,
+        "item1 应收缩到 50px（min-size:auto 不再被显式 width 阻塞），实际 {}",
+        b1.width
+    );
+    assert!((b2.width - 50.0).abs() < 1.0, "item2 应收缩到 50px，实际 {}", b2.width);
+    // item2 紧跟 item1（水平排列，无溢出过容器右缘 100px）
+    assert!(
+        (b1.x + b1.width - b2.x).abs() < 1.0,
+        "item2 应紧跟 item1，item1 右缘={} item2.x={}",
+        b1.x + b1.width,
+        b2.x
+    );
+}
+
 /// 测试相对定位元素 top/left 偏移后仍占据原始空间。
 ///
 /// 三个 block 元素：div1 正常，div2 position:relative + top:20px + left:10px，div3 正常。

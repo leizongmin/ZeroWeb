@@ -276,9 +276,8 @@ impl Painter {
             let html_style = html_id.and_then(|id| styles.get(&id));
             let body_style = body_id.and_then(|id| styles.get(&id));
             // html 有任意背景（color 非透明 或 image 非空）→ html 传播；否则 body。
-            let html_has_bg = html_style.is_some_and(|hs| {
-                hs.background_color != ColorValue::Transparent || !hs.background_image.is_empty()
-            });
+            let html_has_bg = html_style
+                .is_some_and(|hs| hs.background_color != ColorValue::Transparent || !hs.background_image.is_empty());
             let (prop_node, prop_style) = if html_has_bg {
                 (html_id, html_style)
             } else {
