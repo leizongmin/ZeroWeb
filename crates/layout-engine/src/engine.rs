@@ -25,7 +25,7 @@ use crate::tree::{R109Wiring, build_layout_tree_with_r109};
 
 use crate::types::{LayoutBox, LayoutResult, OverflowClip};
 
-use zero_style_system::WritingModeValue;
+use zero_style_system::{WhiteSpaceValue, WritingModeValue};
 
 // R342：float 定位/收缩与 IFC 终化逻辑抽到独立模块（2000 行规则 + Phase A 准备）。
 // 通过 glob 引入保持 engine.rs 内调用点不变。
@@ -1116,12 +1116,20 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
     );
     let is_vertical_rtl = matches!(root.writing_mode, WritingModeValue::VerticalRl);
     let container_text_align = resolve_text_align(styles.get(&container_node_id));
+    // white-space: nowrap/pre 禁止换行——inline-block 超出容器宽度时应溢出而非换行。
+    // 此前未把容器的 white_space 传给 IFC（no_wrap 恒 false），致 nowrap 容器内的
+    // inline-block 被错误换行（flexbox_flex-*-shrink REF：div nowrap 内 4 个 inline-block
+    // 总宽>容器，第 4 个被换到第二行 → 与 flex test 单行溢出不一致）。
+    let no_wrap = styles
+        .get(&container_node_id)
+        .is_some_and(|s| matches!(s.white_space, WhiteSpaceValue::Pre | WhiteSpaceValue::Nowrap));
     let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width)
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl)
         .with_text_align(container_text_align)
         .with_inline_block_sizes(ib_sizes)
-        .with_baseline_overrides(baseline_overrides);
+        .with_baseline_overrides(baseline_overrides)
+        .with_no_wrap(no_wrap);
     inline_ctx.layout(doc, container_node_id, styles);
 
     // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
