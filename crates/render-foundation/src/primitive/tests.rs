@@ -1106,6 +1106,10 @@ fn test_batch_fills_merge_adjacent_same_color() {
     let mut p = RenderPrimitives::new();
     p.add_fill(Rect::new(0.0, 0.0, 100.0, 50.0), Color::RED);
     p.add_fill(Rect::new(0.0, 50.0, 100.0, 50.0), Color::RED);
+    // 合并优化仅服务于 render_typed_buckets 回退路径（draw_order 为空）。
+    // draw_order 非空时（生产 render_draw_order 默认路径）batch_fills 直接跳过——
+    // 颜色分组会破坏 draw_order 的真实绘制顺序（见 batch_fills 注释）。
+    p.draw_order.clear();
     let batched = p.batch_fills();
     assert_eq!(batched.fills.len(), 1);
     let merged = &batched.fills[0];
@@ -1138,9 +1142,28 @@ fn test_batch_fills_preserves_other_primitives() {
         bitmap_height: None,
         rotation: 0.0,
     });
+    // 合并优化仅服务于 render_typed_buckets 回退路径（draw_order 为空）；见 batch_fills 注释。
+    p.draw_order.clear();
     let batched = p.batch_fills();
     assert_eq!(batched.fills.len(), 1);
     assert_eq!(batched.glyphs.len(), 1);
+}
+
+#[test]
+fn test_batch_fills_skips_when_draw_order_present() {
+    // 生产默认走 render_draw_order 路径（draw_order 非空）。batch_fills 的颜色分组
+    // 会重排 fills 但不更新 draw_order 索引，破坏 CSS painting order（如 flex-grow-003：
+    // position:relative 的 cover 被同色分组提前到 in-flow flex items 之下）。
+    // 故 draw_order 非空时 batch_fills 须直接跳过，保持 fills 与 draw_order 的一致性。
+    let mut p = RenderPrimitives::new();
+    p.add_fill(Rect::new(0.0, 0.0, 100.0, 50.0), Color::RED);
+    p.add_fill(Rect::new(0.0, 50.0, 100.0, 50.0), Color::RED);
+    let n_draw_order = p.draw_order.len();
+    assert!(n_draw_order > 0, "add_fill 应填充 draw_order");
+    let batched = p.batch_fills();
+    // 跳过：fills 数量不变（未合并）、draw_order 不变
+    assert_eq!(batched.fills.len(), 2);
+    assert_eq!(batched.draw_order.len(), n_draw_order);
 }
 
 #[test]
