@@ -112,11 +112,13 @@ fn test_url_with_bad_string() {
 
 #[test]
 fn test_hash_followed_by_non_ident() {
-    // `#1` → Hash("") (empty name after #)
+    // CSS hash token 的 name 允许首字符为数字（name code point），故 `#1` → Hash("1")。
+    // （旧实现误用 consume_ident 排除数字首字符返回 Hash("")，已修复——见
+    //  test_hash_color_leading_digit_preserved 与 tokenizer `consume_hash_name`。）
     let toks = tokens("#1");
     match &toks[0] {
-        Token::Hash(s) => assert_eq!(s, ""),
-        other => panic!("Expected Hash(\"\"), got {:?}", other),
+        Token::Hash(s) => assert_eq!(s, "1"),
+        other => panic!("Expected Hash(\"1\"), got {:?}", other),
     }
 }
 
