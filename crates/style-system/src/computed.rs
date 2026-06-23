@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::{CalcExpr, LengthValue, parse_var};
 
 use crate::property::ComputedStyle;
-use crate::property::types::{BorderStyleValue, LineHeightValue};
+use crate::property::types::{BorderStyleValue, FlexBasisValue, LineHeightValue};
 
 /// 默认根字体大小（px）。
 pub const ROOT_FONT_SIZE: f64 = 16.0;
@@ -278,6 +278,13 @@ pub fn resolve_computed_style(
         viewport_width,
         viewport_height,
     );
+
+    // flex-basis 的 em/rem/ch 需解析为 Px（与 width/height 等同一 chokepoint）。
+    // FlexBasisValue 包装 LengthValue，此前未入 resolve 列表 → `flex:0 0 4em` 的
+    // flex-basis em 在 converter 当裸数字（4em→4px 而非 64），flex base size 错误。
+    if let FlexBasisValue::Length(ref mut lv) = resolved.flex_basis {
+        resolve_length_field(lv, font_size_px, viewport_width, viewport_height);
+    }
 
     // CSS 规范：当 border-style 为 none 或 hidden 时，border-width 必须为 0
     // https://drafts.csswg.org/css-backgrounds/#border-style
@@ -612,6 +619,30 @@ mod tests {
         let resolved = resolve_computed_style(&style, &custom, None, None, None);
         assert_eq!(resolved.width, LengthValue::Percentage(50.0));
         assert_eq!(resolved.margin_top, LengthValue::Percentage(10.0));
+    }
+
+    #[test]
+    fn test_resolve_computed_style_flex_basis_em_to_px() {
+        // flex-basis 的 em 应解析为 px（4em * 16px = 64px）。
+        // 此前 flex_basis 未入 resolve 列表 → `flex:0 0 4em` 在 converter 当裸数字 4em→4px。
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.flex_basis = FlexBasisValue::Length(LengthValue::Em(4.0));
+
+        let custom = HashMap::new();
+        let resolved = resolve_computed_style(&style, &custom, None, None, Some(16.0));
+        assert_eq!(resolved.flex_basis, FlexBasisValue::Length(LengthValue::Px(64.0)));
+    }
+
+    #[test]
+    fn test_resolve_computed_style_flex_basis_preserves_non_length() {
+        // flex-basis 的 auto/content 不应被长度解析改写。
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(16.0);
+        style.flex_basis = FlexBasisValue::Auto;
+        let custom = HashMap::new();
+        let resolved = resolve_computed_style(&style, &custom, None, None, Some(16.0));
+        assert_eq!(resolved.flex_basis, FlexBasisValue::Auto);
     }
 
     #[test]

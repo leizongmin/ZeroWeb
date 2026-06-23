@@ -237,6 +237,10 @@ fn test_zero_width_inline_block() {
             node_id: NodeId::default(),
             vertical_align: VerticalAlignValue::Baseline,
             baseline: 30.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
         }),
         InlineItem::Text(TextRun {
             text: "After".to_string(),
@@ -289,6 +293,10 @@ fn test_zero_height_inline_block() {
             node_id: NodeId::default(),
             vertical_align: VerticalAlignValue::Baseline,
             baseline: 0.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -298,6 +306,41 @@ fn test_zero_height_inline_block() {
     assert!(
         (ctx.lines[0].height - 20.0).abs() < 0.01,
         "行盒高度应取 max(文本行高20, inline-block高度0) = 20，实际 {}",
+        ctx.lines[0].height
+    );
+}
+
+/// inline-block 的 margin_top 应把盒内容下移（Bug 2：此前 margin_top 被记录进
+/// InlineBlockBox 但 apply_vertical_alignment 不据此偏移 run.y，致 inline-block
+/// 垂直 margin 失效——flexbox_flex REF 的 span margin:1em 不偏移）。
+#[test]
+fn test_inline_block_margin_top_offsets_box_y() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let items = vec![InlineItem::InlineBlock(InlineBlockBox {
+        width: 50.0,
+        height: 30.0,
+        node_id: NodeId::default(),
+        vertical_align: VerticalAlignValue::Baseline,
+        baseline: 30.0,
+        margin_top: 16.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
+    })];
+    ctx.break_items_into_lines(items);
+
+    assert_eq!(ctx.lines.len(), 1);
+    let run = &ctx.lines[0].runs[0];
+    // margin_top:16 把盒下移：run.y 应 == 16.0（此前为 0.0，margin 失效）。
+    assert!(
+        (run.y - 16.0).abs() < 0.01,
+        "inline-block margin_top 应把盒下移 16px，实际 run.y = {}",
+        run.y
+    );
+    // 行盒高度应含 margin box（box 30 + margin_top 16 = 46）。
+    assert!(
+        ctx.lines[0].height >= 46.0,
+        "行盒高度应含 margin_top，实际 {}",
         ctx.lines[0].height
     );
 }
@@ -330,6 +373,10 @@ fn ib_box(width: f32, height: f32) -> InlineBlockBox {
         node_id: NodeId::default(),
         vertical_align: VerticalAlignValue::Baseline,
         baseline: height,
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
     }
 }
 
@@ -1141,6 +1188,10 @@ fn test_strut_ascent_uses_container_font_not_line_height() {
         node_id: NodeId::default(),
         vertical_align: VerticalAlignValue::Baseline,
         baseline: 20.0, // 合成 baseline：>= 新 strut(16) 但 < 旧 strut(28)
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
     })];
     ctx.break_items_into_lines(items);
 
@@ -1165,6 +1216,10 @@ fn test_strut_still_applies_when_baseline_below_container_strut() {
         node_id: NodeId::default(),
         vertical_align: VerticalAlignValue::Baseline,
         baseline: 10.0, // < strut(16) → 应被压下 6px
+        margin_top: 0.0,
+        margin_right: 0.0,
+        margin_bottom: 0.0,
+        margin_left: 0.0,
     })];
     ctx.break_items_into_lines(items);
 

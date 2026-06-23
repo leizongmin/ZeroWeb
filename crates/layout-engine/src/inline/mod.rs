@@ -16,6 +16,15 @@ use zero_dom::{Document, NodeId, NodeKind};
 
 use zero_style_system::ComputedStyle;
 
+/// 读取已解析的 LengthValue（Px）为 f32，非 Px（Auto/Percentage/Calc…）返回 0。
+/// 用于 inline-block margin 读取（margin 已在 compute_style 解析为 Px）。
+fn length_px(lv: &LengthValue) -> f32 {
+    match lv {
+        LengthValue::Px(v) => *v as f32,
+        _ => 0.0,
+    }
+}
+
 /// 文本对齐方式 — 控制行内内容在行盒中的水平排列。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TextAlign {
@@ -127,6 +136,16 @@ pub struct InlineBlockBox {
     ///   （简化为 `height / 2` 作为回退，理想情况应从 taffy first_baselines 提取）
     /// - inline-table：基线为第一行单元格的基线
     pub baseline: f32,
+    /// 外边距上侧（px）。inline-block margin box 参与行内格式化：margin_top 把盒
+    /// 内容下移（apply_vertical_alignment 据此偏移盒 Y）；此前完全忽略致 margin 失效
+    /// （flexbox_flex REF 的 span margin:1em 不偏移 → 与 flex test 不一致）。
+    pub margin_top: f32,
+    /// 外边距右侧（px）——推进水平位置。
+    pub margin_right: f32,
+    /// 外边距下侧（px）——计入行盒高度。
+    pub margin_bottom: f32,
+    /// 外边距左侧（px）——推进水平位置。
+    pub margin_left: f32,
 }
 
 /// 行内级条目 — 行内格式化上下文中的原子单位。
@@ -183,6 +202,10 @@ pub struct TextFragment {
     pub margin_left: f32,
     /// inline 元素的水平 margin（px）。文本节点为 0。
     pub margin_right: f32,
+    /// inline-block 的上 margin（px）—— apply_vertical_alignment 据此偏移盒的 Y
+    /// （CSS：inline-block margin box 参与行盒，margin_top 把盒内容下移）。
+    /// 文本/inline 元素为 0。
+    pub margin_top: f32,
     /// 基线高度（px）— 从片段顶部到基线的距离。
     ///
     /// - 文本运行：baseline = font_size（ascent 近似）
@@ -813,6 +836,10 @@ impl InlineFormattingContext {
                                     node_id: child_id,
                                     vertical_align,
                                     baseline,
+                                    margin_top: length_px(&s.margin_top),
+                                    margin_right: length_px(&s.margin_right),
+                                    margin_bottom: length_px(&s.margin_bottom),
+                                    margin_left: length_px(&s.margin_left),
                                 }));
                                 continue;
                             }
@@ -883,8 +910,8 @@ impl InlineFormattingContext {
                                 }
                             }
                             if w > 0.0 && h > 0.0 {
-                                let vertical_align = styles
-                                    .get(&child_id)
+                                let img_style = styles.get(&child_id);
+                                let vertical_align = img_style
                                     .map(|s| s.vertical_align.clone())
                                     .unwrap_or(VerticalAlignValue::Baseline);
                                 // img 替换元素的基线在底部边缘
@@ -894,6 +921,10 @@ impl InlineFormattingContext {
                                     node_id: child_id,
                                     vertical_align,
                                     baseline: h,
+                                    margin_top: img_style.map(|s| length_px(&s.margin_top)).unwrap_or(0.0),
+                                    margin_right: img_style.map(|s| length_px(&s.margin_right)).unwrap_or(0.0),
+                                    margin_bottom: img_style.map(|s| length_px(&s.margin_bottom)).unwrap_or(0.0),
+                                    margin_left: img_style.map(|s| length_px(&s.margin_left)).unwrap_or(0.0),
                                 }));
                                 continue;
                             }
@@ -1067,6 +1098,7 @@ impl InlineFormattingContext {
                             letter_spacing: 0.0,
                             margin_left: run.margin_left,
                             margin_right: run.margin_right,
+                            margin_top: 0.0,
                             baseline: run.font_size,
                         });
                         if run.margin_right > 0.0 {
@@ -1232,6 +1264,7 @@ impl InlineFormattingContext {
                                     letter_spacing: run.letter_spacing,
                                     margin_left: run.margin_left,
                                     margin_right: run.margin_right,
+                                    margin_top: 0.0,
                                     baseline: run.font_size,
                                 });
 
@@ -1257,6 +1290,7 @@ impl InlineFormattingContext {
                                 letter_spacing: run.letter_spacing,
                                 margin_left: run.margin_left,
                                 margin_right: run.margin_right,
+                                margin_top: 0.0,
                                 baseline: run.font_size,
                             });
 
@@ -1308,6 +1342,15 @@ impl InlineFormattingContext {
                     }
 
                     // inline-block 片段不使用 font_size，设为 0
+                    // CSS：inline-block 的 margin box 参与行内格式化——margin_left/right
+                    // 推进水平位置，margin_top/bottom 计入行盒高度，margin_top 偏移盒 Y。
+                    let (m_left, m_right, m_top, m_bot) = (
+                        box_info.margin_left,
+                        box_info.margin_right,
+                        box_info.margin_top,
+                        box_info.margin_bottom,
+                    );
+                    current_x += m_left;
                     current_line.runs.push(TextFragment {
                         x: current_x,
                         y: 0.0,
@@ -1319,13 +1362,14 @@ impl InlineFormattingContext {
                         vertical_align: box_info.vertical_align.clone(),
                         is_ahem: false,
                         letter_spacing: 0.0,
-                        margin_left: 0.0,
-                        margin_right: 0.0,
+                        margin_left: m_left,
+                        margin_right: m_right,
+                        margin_top: m_top,
                         baseline: box_info.baseline,
                     });
 
-                    current_x += box_width;
-                    current_line.height = current_line.height.max(box_height);
+                    current_x += box_width + m_right;
+                    current_line.height = current_line.height.max(box_height + m_top + m_bot);
                 }
                 InlineItem::Br => {
                     // 强制换行：将当前行推入结果，开始新行
@@ -1553,6 +1597,7 @@ impl InlineFormattingContext {
                                     letter_spacing: run.letter_spacing,
                                     margin_left: run.margin_left,
                                     margin_right: run.margin_right,
+                                    margin_top: 0.0,
                                     baseline: run.font_size,
                                 });
 
@@ -1575,6 +1620,7 @@ impl InlineFormattingContext {
                                 letter_spacing: run.letter_spacing,
                                 margin_left: run.margin_left,
                                 margin_right: run.margin_right,
+                                margin_top: 0.0,
                                 baseline: run.font_size,
                             });
 
@@ -1615,11 +1661,16 @@ impl InlineFormattingContext {
                         letter_spacing: 0.0,
                         margin_left: 0.0,
                         margin_right: 0.0,
+                        margin_top: 0.0,
                         baseline: box_info.baseline,
                     });
 
-                    current_depth += box_depth;
-                    current_column.height = current_column.height.max(box_col_width);
+                    // 垂直模式：margin_top/bottom 沿 inline（depth）方向推进，
+                    // margin_left/right 沿 block（列宽）方向计入列宽。
+                    current_depth += box_depth + box_info.margin_top + box_info.margin_bottom;
+                    current_column.height = current_column
+                        .height
+                        .max(box_col_width + box_info.margin_left + box_info.margin_right);
                 }
                 InlineItem::Br => {
                     self.lines.push(current_column);
@@ -1748,6 +1799,9 @@ impl InlineFormattingContext {
                         baseline_y - run.height - offset
                     }
                 };
+                // inline-block 的 margin_top 把盒内容下移（文本运行 margin_top=0，无影响）。
+                // 行盒高度已含 margin box（layout_inline 时 +margin_top+bottom），故偏移后盒仍在行盒内。
+                run.y += run.margin_top;
             }
         }
     }
@@ -1905,6 +1959,7 @@ impl InlineFormattingContext {
                     letter_spacing: run.letter_spacing,
                     margin_left: run.margin_left,
                     margin_right: run.margin_right,
+                    margin_top: run.margin_top,
                     baseline: run.baseline,
                 })
             })

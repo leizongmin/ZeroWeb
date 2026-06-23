@@ -736,6 +736,10 @@ fn test_inline_block_on_same_line() {
             node_id: NodeId::default(),
             vertical_align: VA::Baseline,
             baseline: 50.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
         }),
         InlineItem::Text(TextRun {
             text: "World".to_string(),
@@ -831,6 +835,10 @@ fn test_inline_block_wraps_to_next_line() {
             node_id: NodeId::default(),
             vertical_align: VA::Baseline,
             baseline: 30.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -886,6 +894,10 @@ fn test_inline_block_height_contributes_to_line() {
             node_id: NodeId::default(),
             vertical_align: VA::Baseline,
             baseline: 60.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -914,6 +926,10 @@ fn test_multiple_inline_blocks_on_same_line() {
             node_id: NodeId::default(),
             vertical_align: VA::Baseline,
             baseline: 40.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
             width: 50.0,
@@ -921,6 +937,10 @@ fn test_multiple_inline_blocks_on_same_line() {
             node_id: NodeId::default(),
             vertical_align: VA::Baseline,
             baseline: 40.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -1358,6 +1378,10 @@ fn test_br_with_inline_blocks() {
             node_id: NodeId::default(),
             vertical_align: VA::Baseline,
             baseline: 50.0,
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
         }),
         InlineItem::Br,
         InlineItem::Text(TextRun {
