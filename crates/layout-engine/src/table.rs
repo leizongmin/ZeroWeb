@@ -1137,6 +1137,22 @@ fn compute_column_widths(
             _ => None,
         }
     };
+    // col/colgroup 的 min-width/max-width 约束列宽下限/上限（CSS Tables §17.5 + CSS §10）。
+    // 仅读 Px（同 width），gated on 属性设置 → 仅影响显式声明 min/max-width 的列。
+    let resolve_col_min = |s: &ComputedStyle| -> Option<f32> {
+        use zero_css_parser::values::LengthValue;
+        match &s.min_width {
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        }
+    };
+    let resolve_col_max = |s: &ComputedStyle| -> Option<f32> {
+        use zero_css_parser::values::LengthValue;
+        match &s.max_width {
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        }
+    };
     let mut col_cursor = 0usize;
     for child in &table_box.children {
         let child_display = get_display(child, styles);
@@ -1148,14 +1164,23 @@ fn compute_column_widths(
                     .filter(|c| get_display(c, styles) == Some(DisplayValue::TableColumn))
                     .collect();
                 if inner_cols.is_empty() {
-                    // colgroup span 覆盖的列共用 colgroup width
+                    // colgroup span 覆盖的列共用 colgroup width/min-width/max-width
                     let span = get_span(child, doc);
-                    let gw = child.node_id.and_then(|id| styles.get(&id)).and_then(resolve_col_width);
-                    if let Some(w) = gw {
-                        for i in 0..span {
-                            let idx = col_cursor + i;
-                            if idx < col_count {
+                    let gs = child.node_id.and_then(|id| styles.get(&id));
+                    let gw = gs.and_then(resolve_col_width);
+                    let gmin = gs.and_then(resolve_col_min);
+                    let gmax = gs.and_then(resolve_col_max);
+                    for i in 0..span {
+                        let idx = col_cursor + i;
+                        if idx < col_count {
+                            if let Some(w) = gw {
                                 col_max_widths[idx] = col_max_widths[idx].max(w);
+                            }
+                            if let Some(mn) = gmin {
+                                col_max_widths[idx] = col_max_widths[idx].max(mn);
+                            }
+                            if let Some(mx) = gmax {
+                                col_max_widths[idx] = col_max_widths[idx].min(mx);
                             }
                         }
                     }
@@ -1163,15 +1188,21 @@ fn compute_column_widths(
                 } else {
                     for col_child in inner_cols {
                         let span = get_span(col_child, doc);
-                        let cw = col_child
-                            .node_id
-                            .and_then(|id| styles.get(&id))
-                            .and_then(resolve_col_width);
-                        if let Some(w) = cw {
-                            for i in 0..span {
-                                let idx = col_cursor + i;
-                                if idx < col_count {
+                        let cs = col_child.node_id.and_then(|id| styles.get(&id));
+                        let cw = cs.and_then(resolve_col_width);
+                        let cmin = cs.and_then(resolve_col_min);
+                        let cmax = cs.and_then(resolve_col_max);
+                        for i in 0..span {
+                            let idx = col_cursor + i;
+                            if idx < col_count {
+                                if let Some(w) = cw {
                                     col_max_widths[idx] = col_max_widths[idx].max(w);
+                                }
+                                if let Some(mn) = cmin {
+                                    col_max_widths[idx] = col_max_widths[idx].max(mn);
+                                }
+                                if let Some(mx) = cmax {
+                                    col_max_widths[idx] = col_max_widths[idx].min(mx);
                                 }
                             }
                         }
@@ -1181,12 +1212,21 @@ fn compute_column_widths(
             }
             Some(DisplayValue::TableColumn) => {
                 let span = get_span(child, doc);
-                let cw = child.node_id.and_then(|id| styles.get(&id)).and_then(resolve_col_width);
-                if let Some(w) = cw {
-                    for i in 0..span {
-                        let idx = col_cursor + i;
-                        if idx < col_count {
+                let cs = child.node_id.and_then(|id| styles.get(&id));
+                let cw = cs.and_then(resolve_col_width);
+                let cmin = cs.and_then(resolve_col_min);
+                let cmax = cs.and_then(resolve_col_max);
+                for i in 0..span {
+                    let idx = col_cursor + i;
+                    if idx < col_count {
+                        if let Some(w) = cw {
                             col_max_widths[idx] = col_max_widths[idx].max(w);
+                        }
+                        if let Some(mn) = cmin {
+                            col_max_widths[idx] = col_max_widths[idx].max(mn);
+                        }
+                        if let Some(mx) = cmax {
+                            col_max_widths[idx] = col_max_widths[idx].min(mx);
                         }
                     }
                 }
