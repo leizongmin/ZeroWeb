@@ -507,3 +507,29 @@ fn test_spanned_offset() {
     // 'b' at 2
     assert_eq!(spanned[2].offset, 2);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Hash token（CSS 颜色 #RRGGBB）—— name 允许首字符为数字
+// ═══════════════════════════════════════════════════════════════════════
+
+/// CSS hash token 的 name 允许首字符为数字（如 hex 颜色 #00FFFF / #4169E1）。
+/// 此前 `#` 后用 consume_ident（要求 ident_start，排除数字），导致 #00FFFF 被误读为
+/// Hash("")+Number：#4169E1 → "4169E1" 按科学计数法解析为 41690（"#41690"），
+/// #00FFFF → "00" 去前导零为 0（"#0FFFF"），破坏 hex 颜色。
+#[test]
+fn test_hash_color_leading_digit_preserved() {
+    // 颜色值作为 declaration value 出现时，整段 #xxxxxx 须保持为单个 Hash token。
+    let tok = tokens("#00FFFF");
+    assert_eq!(tok, vec![Token::Hash("00FFFF".to_string())]);
+
+    let tok = tokens("#4169E1");
+    assert_eq!(tok, vec![Token::Hash("4169E1".to_string())]);
+
+    // 字母开头的不受影响（回归保护）
+    let tok = tokens("#7FFF00");
+    assert_eq!(tok, vec![Token::Hash("7FFF00".to_string())]);
+
+    // 纯数字 hash（如 #123）
+    let tok = tokens("#123456");
+    assert_eq!(tok, vec![Token::Hash("123456".to_string())]);
+}

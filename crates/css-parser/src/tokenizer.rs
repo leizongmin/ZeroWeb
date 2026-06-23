@@ -332,6 +332,30 @@ impl Tokenizer {
     }
 
     /// 消耗标识符。
+    /// 读取 hash token 的 name（CSS hash 允许首字符为数字，如颜色 #00FFFF）。
+    ///
+    /// 与 `consume_ident`（标识符不可数字开头）不同，hash name 读取所有 ident_char
+    /// 与转义序列，首字符可为数字。
+    fn consume_hash_name(&mut self) -> String {
+        let mut name = String::new();
+        loop {
+            match self.peek() {
+                Some('\\') => {
+                    if let Some(escaped) = self.consume_escape() {
+                        name.push(escaped);
+                    } else {
+                        break;
+                    }
+                }
+                Some(c) if Self::is_ident_char(c) => {
+                    name.push(self.consume().unwrap());
+                }
+                _ => break,
+            }
+        }
+        name
+    }
+
     fn consume_ident(&mut self) -> String {
         let mut ident = String::new();
 
@@ -648,8 +672,13 @@ impl Iterator for Tokenizer {
                 self.consume();
                 if let Some(next) = self.peek() {
                     if Self::is_ident_char(next) || next == '\\' {
-                        let ident = self.consume_ident();
-                        Token::Hash(ident)
+                        // CSS hash token（如颜色 #00FFFF / #4169E1）的 name 允许首字符为
+                        // 数字，与标识符（不可数字开头）不同。consume_ident 要求 ident_start
+                        // （排除数字），用于 # 会把 #00FFFF 误读为 Hash("")+Number(0)+Ident，
+                        // 数字部分被当 Number 解析（#4169E1→#41690 科学计数法、#00FFFF→#0FFFF
+                        // 去前导零），破坏 hex 颜色。此处用允许数字开头的 hash name 读取。
+                        let name = self.consume_hash_name();
+                        Token::Hash(name)
                     } else {
                         Token::Error("Unexpected '#'".to_string())
                     }
