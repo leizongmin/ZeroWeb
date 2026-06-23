@@ -32,7 +32,7 @@ Commands:
   reftest           Run WPT reftest suite (rendering comparison tests)
   reftest-upstream  Run upstream WPT reftest files from wpt-data/
   product-smoke <html>  Render a product static fixture to CPU PNG (DC-13)
-                       (--base-dir, --oracle <png>, --out <png>)
+                       (--base-dir, --oracle <png>, --out <png>, --max-diff <pct>)
 
 Options:
   --json            Output results in JSON format
@@ -187,6 +187,9 @@ fn cmd_product_smoke(args: &[String]) {
     let mut out: Option<String> = None;
     let mut width: u32 = 800;
     let mut height: u32 = 600;
+    // DC-13 回归门禁阈值（%）：diff 超过则非零退出。用于每轮 product-smoke 检查
+    // 捕获产品可见回归（如 R428 min-size:auto 致 welcome +7.65pp，此前藏了 14 轮）。
+    let mut max_diff: Option<f64> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -219,6 +222,12 @@ fn cmd_product_smoke(args: &[String]) {
                 i += 1;
                 if i < args.len() {
                     height = args[i].parse().unwrap_or(600);
+                }
+            }
+            "--max-diff" => {
+                i += 1;
+                if i < args.len() {
+                    max_diff = args[i].parse().ok();
                 }
             }
             s if !s.starts_with('-') && html_path.is_none() => {
@@ -282,6 +291,17 @@ fn cmd_product_smoke(args: &[String]) {
                     "product-smoke diff vs chromium {}: {diff_px}/{total} px ({:.2}%)",
                     oracle_path, pct
                 );
+                // DC-13 回归门禁：diff 超阈值则非零退出（退出码 2，区别于参数错误 1）。
+                if let Some(threshold) = max_diff
+                    && pct > threshold
+                {
+                    eprintln!(
+                        "REGRESSION: product-smoke diff {:.2}% exceeds threshold {:.2}% \
+                         (baseline ~17%; investigate or raise --max-diff if baseline shifted)",
+                        pct, threshold
+                    );
+                    std::process::exit(2);
+                }
             }
             Err(e) => {
                 eprintln!("Error loading oracle {oracle_path}: {e}");
