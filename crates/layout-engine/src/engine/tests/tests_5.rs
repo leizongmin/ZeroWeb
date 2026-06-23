@@ -101,6 +101,43 @@ fn test_flex_grow_coexists_with_fixed_item() {
     assert!((total - 400.0).abs() < 1.0, "两项总宽度应约 400px，实际 {}", total);
 }
 
+/// 测试 CSS Flexbox §4.5 transferred size suggestion：替换元素（`<img>`）有 intrinsic aspect
+/// ratio 且 cross 尺寸确定时，主轴 `min-size:auto` 至少为 cross 经 ratio 推导的尺寸。
+/// 否则 flex item 在窄容器（`width:0`）中越过内容测量值塌缩为 0（flex-minimum-width-flex-items-011）。
+#[test]
+fn test_flex_transferred_size_suggestion() {
+    let (mut doc, body) = make_doc_with_body();
+    // flex 容器 width:0（迫使 item 收缩到 min-size:auto）
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    // img：无 width，height:50px（cross 确定），intrinsic 300×150（aspect 300/150 = 2）
+    let img = doc.create_element("img");
+    doc.append_child(container, img).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut container_style = ComputedStyle::default();
+    container_style.display = DisplayValue::Flex;
+    container_style.width = LengthValue::Px(0.0);
+    styles.insert(container, container_style);
+
+    let mut img_style = ComputedStyle::default();
+    img_style.height = LengthValue::Px(50.0);
+    styles.insert(img, img_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let mut img_sizes = HashMap::new();
+    img_sizes.insert(img, (300.0_f32, 150.0_f32));
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+
+    let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+    // transferred = cross(50) × aspect(2) = 100；item 不应塌缩到 0
+    assert!(
+        (img_box.width - 100.0).abs() < 1.0,
+        "img 宽度应为 transferred size 100px（50 × aspect 2），实际 {}",
+        img_box.width
+    );
+}
+
 /// 测试相对定位元素 top/left 偏移后仍占据原始空间。
 ///
 /// 三个 block 元素：div1 正常，div2 position:relative + top:20px + left:10px，div3 正常。
