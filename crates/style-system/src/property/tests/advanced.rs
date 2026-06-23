@@ -404,7 +404,7 @@ fn test_inherit_property_returns_false_for_non_inheritable() {
     let parent = ComputedStyle::default();
     let mut child = ComputedStyle::default();
     assert!(!inherit_property(&parent, &mut child, "display"));
-    assert!(!inherit_property(&parent, &mut child, "width"));
+    // width/height/min-*/max-* 现支持显式 inherit（R545），不再返回 false
     assert!(!inherit_property(&parent, &mut child, "unknown-prop"));
 }
 
@@ -1068,9 +1068,12 @@ fn test_inherit_non_inherited_explicit() {
     assert!(!inherit_property(&parent, &mut child, "display"));
     assert_eq!(child.display, DisplayValue::Inline); // 保持默认值
 
-    // width 不可继承
-    assert!(!inherit_property(&parent, &mut child, "width"));
-    assert_eq!(child.width, ComputedStyle::default().width);
+    // R545：width 现支持显式 inherit（CSS `inherit` 对任意属性生效），复制父元素计算值
+    let mut parent_w = ComputedStyle::default();
+    parent_w.width = LengthValue::Px(123.0);
+    let mut child_w = ComputedStyle::default();
+    assert!(inherit_property(&parent_w, &mut child_w, "width"));
+    assert_eq!(child_w.width, LengthValue::Px(123.0));
 
     // 即使父元素 display 被修改，子元素也不会继承
     let mut parent_modified = ComputedStyle::default();
