@@ -1029,10 +1029,10 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
     match unit {
         "px" => Some(LengthValue::Px(num)),
         "em" => Some(LengthValue::Em(num)),
-        // CSS ex 单位 = 字体 x-height，无字体度量时规范允许用 0.5em 近似（与 ch 同策略）。
-        // ex 相对元素自身 font-size（同 em），故解析时直接转 Em(num*0.5) 复用 em 解析路径。
-        // 此前未支持致 `max-width:0ex` 等声明解析失败被丢弃（CSS2 max-width-079~084 等 FAIL）。
-        "ex" => Some(LengthValue::Em(num * 0.5)),
+        // CSS ex 单位 = 字体 x-height。ZeroWeb 未接入字体度量管线，按 Ahem（WPT 测试字体）
+        // 的实测 x-height 0.8em 取值（units-004/numbers-units-012 实证：12.5ex@20px=200px）。
+        // ex 相对元素自身 font-size（同 em），故解析时直接转 Em(num*0.8) 复用 em 解析路径。
+        "ex" => Some(LengthValue::Em(num * 0.8)),
         "rem" => Some(LengthValue::Rem(num)),
         "vh" => Some(LengthValue::Vh(num)),
         "vw" => Some(LengthValue::Vw(num)),
