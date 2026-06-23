@@ -594,6 +594,28 @@ fn test_white_space_nowrap_no_wrap() {
     assert_eq!(ctx.lines.len(), 1, "nowrap 模式应只有一行，实际 {} 行", ctx.lines.len());
 }
 
+/// nowrap 容器内多个 inline-block 总宽超过容器也不换行（溢出）。
+/// flexbox_flex-*-shrink REF 回归：此前 no_wrap 未传给 inline-block 定位 IFC
+/// （engine.rs adjust_inline_block_positions），致 nowrap 容器内 inline-block 被错误换行。
+#[test]
+fn test_nowrap_inline_blocks_do_not_wrap() {
+    let mut ctx = InlineFormattingContext::new(50.0).with_no_wrap(true);
+    let items = vec![
+        InlineItem::InlineBlock(ib_box(40.0, 20.0)),
+        InlineItem::InlineBlock(ib_box(40.0, 20.0)),
+    ];
+    ctx.break_items_into_lines(items);
+    // 两个 40px inline-block 总宽 80 > 容器 50，但 nowrap 不换行 → 单行
+    assert_eq!(ctx.lines.len(), 1, "nowrap 容器内 inline-block 超宽不应换行");
+    assert_eq!(ctx.lines[0].runs.len(), 2);
+    // 第二个盒应在第一个之后（x=40），而非换到新行（x=0）
+    assert!(
+        (ctx.lines[0].runs[1].x - 40.0).abs() < 0.01,
+        "第二个 inline-block 应在 x=40（溢出同行），实际 x={}",
+        ctx.lines[0].runs[1].x
+    );
+}
+
 /// 测试 white-space: pre — 保留空白且不换行。
 #[test]
 fn test_white_space_pre_preserves_and_no_wrap() {
