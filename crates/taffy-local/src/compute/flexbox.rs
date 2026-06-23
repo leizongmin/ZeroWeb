@@ -44,6 +44,14 @@ struct FlexItem {
     flex_shrink: f32,
     /// The flex grow style of the item
     flex_grow: f32,
+    /// The intrinsic aspect ratio (width / height) of the item, if any.
+    /// CSS Flexbox §4.5 transferred size suggestion uses this for min-size:auto.
+    aspect_ratio: Option<f32>,
+    /// Whether the item's cross size was explicitly specified (CSS size) before aspect
+    /// resolution. The §4.5 transferred size suggestion needs a definite cross size to
+    /// resolve the aspect ratio against; a cross size that is itself aspect-derived (from
+    /// an explicit main size) must not be used (it would double-apply the aspect ratio).
+    cross_size_definite: bool,
 
     /// The minimum size of the item. This differs from min_size above because it also
     /// takes into account content based automatic minimum sizes
@@ -506,6 +514,12 @@ fn generate_anonymous_flex_items(
             let pb_sum = (padding + border).sum_axes();
             let box_sizing_adjustment =
                 if child_style.box_sizing() == BoxSizing::ContentBox { pb_sum } else { Size::ZERO };
+            // CSS Flexbox §4.5：主轴尺寸是否显式指定（CSS width/height 解析为确定值）。
+            // 决定 transferred size suggestion 是否 floor min-size:auto（显式主轴时 specified
+            // size suggestion 主导，transferred 被忽略）。须在 maybe_apply_aspect_ratio 之前判定，
+            // 否则 aspect 会把 auto 主轴填成确定值导致误判。
+            let cross_size_definite =
+                child_style.size().maybe_resolve(constants.node_inner_size).cross(constants.dir).is_some();
             FlexItem {
                 node: child,
                 order: index as u32,
@@ -535,6 +549,8 @@ fn generate_anonymous_flex_items(
                 scrollbar_width: child_style.scrollbar_width(),
                 flex_grow: child_style.flex_grow(),
                 flex_shrink: child_style.flex_shrink(),
+                aspect_ratio,
+                cross_size_definite,
                 flex_basis: 0.0,
                 inner_flex_basis: 0.0,
                 violation: 0.0,
@@ -791,7 +807,26 @@ fn determine_flex_base_size(
             // https://www.w3.org/TR/css-flexbox-1/#min-size-auto
             let clamped_min_content_size =
                 min_content_main_size.maybe_min(child.size.main(dir)).maybe_min(child.max_size.main(dir));
-            clamped_min_content_size.maybe_max(padding_border_axes_sums.main(dir))
+            let min_size = clamped_min_content_size.maybe_max(padding_border_axes_sums.main(dir));
+
+            // 4.5 transferred size suggestion: 替换元素（如 <img>）有 intrinsic aspect ratio、
+            // cross 尺寸确定、且主轴非显式（auto/content）时，主轴 automatic minimum size 至少为
+            // cross 经 ratio 推导的尺寸（row: cross × ratio；column: cross / ratio）。cross 须经
+            // cross 轴 min/max clamp（如 height:2000 max-height:50 用 50）。否则 flex item 在窄容器
+            // 中越过内容测量值塌缩（flex-minimum-{width,height}-flex-items-011/012/020）。
+            // 主轴显式时（width:999）specified size suggestion 主导，transferred 忽略（width-013）。
+            let transferred = match (child.aspect_ratio, child.cross_size_definite) {
+                (Some(ar), true) => child
+                    .size
+                    .cross(dir)
+                    .maybe_min(child.max_size.cross(dir))
+                    .maybe_max(child.min_size.cross(dir))
+                    .map(|c| if dir.is_row() { c * ar } else { c / ar }),
+                _ => None,
+            };
+            // §4.5：automatic minimum size 须经 max main size 钳制（transferred 可能超过 max-main，
+            // 如 max-width:100% 容器内 transferred=200 须钳到 100，否则与 max-width 冲突）。
+            min_size.maybe_max(transferred).maybe_min(child.max_size.main(dir))
         });
 
         let hypothetical_inner_min_main =
