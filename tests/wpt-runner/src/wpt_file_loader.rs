@@ -140,7 +140,13 @@ impl FileReftestCase {
 ///   根查找，导致已存在的 `/css/reference/...` ref 报「No such file」并把测试误排除出
 ///   分母（DC-14 分母真实性缺口，R546 / R551 谱系）。
 /// - 相对路径（如 `ref.html`、`../reference/foo.xht`）：相对测试文件父目录解析。
+///
+/// 先对 ref_path 做 `trim()`：上游 WPT 偶有 href 值带尾随空白（如
+/// `border-collapse-005-ref.html `），浏览器按 URL 解析语义会 strip 掉，ZeroWeb 加载器
+/// 须一致处理，否则 `Path::join` 拼出带空格的文件名报「No such file」并把测试误排除出
+/// 分母（R552，R551 谱系）。
 pub(super) fn resolve_ref_path(wpt_data_dir: &Path, test_path: &Path, ref_path: &str) -> PathBuf {
+    let ref_path = ref_path.trim();
     if ref_path.starts_with('/') {
         wpt_data_dir.join(ref_path.trim_start_matches('/'))
     } else {
