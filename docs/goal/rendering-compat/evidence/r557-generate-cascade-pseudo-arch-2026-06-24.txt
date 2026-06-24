@@ -37,6 +37,31 @@ generated content 是**跨 generated-content / backgrounds（table-internal）/ 
 的架构缺口。
 
 ================================================================================
+★ R557b 修正（INJDBG 插桩实证，2026-06-24 续）：content-047 真根因 = R109 匿名块盒
+================================================================================
+
+对 inject_pseudo_text_nodes 临时插桩（INJDBG/INJDBG2）实证：
+  [INJDBG]  before nid=NodeId(23v1)=body content=Attr("background") text="PASS PASS"
+  [INJDBG2] parent=NodeId(23v1) text_id=NodeId(28v1) **inserted=true**
+
+→ inject **成功**为 body:before 注入文本节点 28（"PASS PASS"）到 body（insert_before
+首个子 p）。inject 无缺陷。
+
+但 LAYOUT_DUMP：TEST body h=19 **只 <p>，注入节点 28 不在 layout 树**。body 现含
+**[inline text "PASS PASS" (注入)] + [p block]** = 混合 inline+block 内容。CSS §9.2.1.1
+要求 inline 内容被**匿名块盒**包裹。ZeroWeb **不生成匿名块盒**（R109 谱系，同
+border-bottom-width-006 R361）→ 注入的 inline text 被忽略，不进 layout 树。
+
+REF 侧：body > div.test（显式 block，"PASS PASS"）+ p（block）—— 无混合内容，正常。
+
+★ **修正 R557 初判**：content-047 **不是**伪元素 inject 缺口（inject 工作），真根因 =
+**R109 匿名块盒生成缺失**（block 容器内 inline+block 混合内容不包裹 inline）。R554
+content:counter/list 仍是伪元素缺口（inject 跳过 counter/list）。两者不同缺口，勿混淆。
+
+R109 匿名块盒生成是 master 已记录的多 session 架构（R361 border-bottom-width-006，
+R255 ua_default_display 谱系），单会话高风险。content-047 落 R109，非单点。
+
+================================================================================
 裁决：generate near-miss 落伪元素架构（R554 谱系），0 独立单点
 ================================================================================
 
