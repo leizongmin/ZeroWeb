@@ -1431,6 +1431,43 @@ fn compute_column_widths(
         }
     }
 
+    // R584：table 元素 min-width 下限（CSS Tables §17.5.2 + §10 min-width）。
+    // apply_table_size_conditions 已把 table box 宽度 floor 到 min-width，但列宽未同步
+    // → 单元格仍按原列宽渲染。min-width-applies-to-013（empty cell + table min-width:1in）
+    // 无 96px 黑方。此处当列宽总和 < min-width 时把列按比例放大到 min-width
+    // （box-sizing 一致于 apply_table_size_conditions）。仅当所有非折叠列均为 auto（无显式
+    // width）时整体放大，避免触碰有显式 width 列的 auto-column 分布语义（须单独按 auto 列分配）。
+    let table_min_content = table_style.as_ref().and_then(|s| {
+        use zero_css_parser::values::LengthValue;
+        if let LengthValue::Px(v) = &s.min_width {
+            let mw = *v as f32;
+            if matches!(s.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox) {
+                let pb =
+                    table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;
+                Some((mw - pb).max(0.0))
+            } else {
+                Some(mw)
+            }
+        } else {
+            None
+        }
+    });
+    if let Some(min_cw) = table_min_content {
+        let live: Vec<usize> = (0..col_count)
+            .filter(|&i| !grid.collapsed_cols.get(i).copied().unwrap_or(false))
+            .collect();
+        let cur_total: f32 = live.iter().map(|&i| col_max_widths[i]).sum();
+        // 仅当所有非折叠列均为 auto（无显式 width）时整体按比例放大到 min-width，
+        // 避免触碰有显式 width 列的 auto-column 分布语义（那须单独按 auto 列分配）。
+        let all_auto = live.iter().all(|&i| !col_explicit[i]);
+        if min_cw > cur_total && cur_total > 0.0 && all_auto && !live.is_empty() {
+            let ratio = min_cw / cur_total;
+            for &i in &live {
+                col_max_widths[i] *= ratio;
+            }
+        }
+    }
+
     col_max_widths
 }
 
