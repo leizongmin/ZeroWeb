@@ -56,6 +56,14 @@ impl super::Painter {
         let left_color =
             collapsed_border_color(&box_node.collapsed_border_color_overrides[3], &style.border_left_color);
 
+        // currentColor 解析为元素自身计算 `color`（CSS-Color §resolving）。border-color 初始值
+        // 为 currentColor 关键字，经层叠/继承保留，paint 时替换为元素 color 的使用值。
+        let current = &style.color;
+        let top_color = resolve_border_current_color(top_color, current);
+        let right_color = resolve_border_current_color(right_color, current);
+        let bottom_color = resolve_border_current_color(bottom_color, current);
+        let left_color = resolve_border_current_color(left_color, current);
+
         // border-collapse 样式覆盖：冲突解决后使用获胜方的样式
         let top_style = box_node.collapsed_border_style_overrides[0]
             .as_ref()
@@ -767,5 +775,31 @@ fn collapsed_border_color(override_color: &Option<u32>, original: &ColorValue) -
             ColorValue::Rgba(r, g, b, a)
         }
         None => original.clone(),
+    }
+}
+
+/// 把边框颜色的 `currentColor` 关键字解析为元素自身计算 `color`（CSS-Color §resolving）。
+/// 非 currentColor 颜色原样返回。border-color 初始值为 currentColor，故无显式颜色的
+/// `border: solid` 会使用元素文本色（与 Chromium 一致）。
+fn resolve_border_current_color(color: ColorValue, current: &ColorValue) -> ColorValue {
+    if color == ColorValue::CurrentColor {
+        current.clone()
+    } else {
+        color
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_border_current_color_substitutes_keyword() {
+        // currentColor 解析为元素计算 color
+        let green = ColorValue::Named("green".to_string());
+        assert_eq!(resolve_border_current_color(ColorValue::CurrentColor, &green), green);
+        // 非 currentColor 颜色原样返回，不受影响
+        let red = ColorValue::Rgba(255, 0, 0, 255);
+        assert_eq!(resolve_border_current_color(red.clone(), &green), red);
     }
 }

@@ -35,8 +35,9 @@ impl PropertyRegistry {
             "border-top-width" | "border-right-width" | "border-bottom-width" | "border-left-width" => {
                 Some(Length(LengthValue::Px(3.0)))
             }
+            // border-color 初始值 = currentColor（CSS §8.5.1），paint 时解析为元素计算 color。
             "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
-                Some(Color(ColorValue::Rgba(0, 0, 0, 255)))
+                Some(Color(ColorValue::CurrentColor))
             }
             "border-top-style" | "border-right-style" | "border-bottom-style" | "border-left-style" => {
                 Some(BorderStyle(BorderStyleValue::None))

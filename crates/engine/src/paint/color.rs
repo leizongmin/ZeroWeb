@@ -4,6 +4,10 @@ use zero_css_parser::values::ColorValue;
 use zero_render_foundation::color::Color;
 
 /// 将 ComputedStyle 的 ColorValue 转换为 render-foundation 的 Color。
+///
+/// 注意：`ColorValue::CurrentColor` 在此无元素上下文，回落为黑色。需要正确解析
+/// currentColor 的调用点（如边框绘制）须在传入前先把 currentColor 替换为元素
+/// 自身计算 `color`（CSS-Color §resolving）。
 pub fn color_value_to_render(color: &ColorValue) -> Color {
     match color {
         ColorValue::Rgba(r, g, b, a) => Color::rgba(*r, *g, *b, *a),
