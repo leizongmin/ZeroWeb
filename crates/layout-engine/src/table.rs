@@ -1648,29 +1648,41 @@ fn position_cells(
             })
             .collect();
         let num_rows = content_row_heights.len();
-        // R585：行高分配目标 = max(指定 height, min-height)——min-height 也作为行高下限
-        // （CSS Tables §17.5.3 + §10），使 table min-height 展开行 → 单元格填充
-        // （min-height-applies-to-013：empty cell + table min-height:1in → 96px 黑方；
-        // apply_table_size_conditions 已 floor table box，但行高须同步分配，否则单元格
-        // 按行内容高而非 min-height 渲染）。
+        // R585/R586：行高分配目标 = table 的 used content height（CSS §10.4 clamp）。
+        // 显式 height 受 min/max 约束（max cap、min floor，min 优先于 max）；
+        // height:auto 时仅 min-height 作下限分配（max-height 只 cap box 不展开行）。
+        // R585：min-height 展开（min-height-applies-to-013）；R586：max-height cap
+        //（max-height-applies-to-013：height:3in + max-height:1in → 行展开到 96 而非 288，
+        // 避免溢出被 apply_table_size_conditions cap 到 96 的 table box）。
         let target_content_h = table_box.node_id.and_then(|id| styles.get(&id)).and_then(|s| {
             use zero_css_parser::values::LengthValue;
             let h_px = match &s.height {
                 LengthValue::Px(v) => Some(*v as f32),
                 _ => None,
             };
-            let mh_px = match &s.min_height {
+            let mn_px = match &s.min_height {
                 LengthValue::Px(v) => Some(*v as f32),
                 _ => None,
             };
-            let target = match (h_px, mh_px) {
-                (Some(h), Some(mh)) => h.max(mh),
-                (Some(h), None) => h,
-                (None, Some(mh)) => mh,
-                (None, None) => return None,
+            let mx_px = match &s.max_height {
+                LengthValue::Px(v) if *v != f64::INFINITY => Some(*v as f32),
+                _ => None,
+            };
+            let target = match h_px {
+                Some(h) => {
+                    let mut t = h;
+                    if let Some(mx) = mx_px {
+                        t = t.min(mx);
+                    }
+                    if let Some(mn) = mn_px {
+                        t = t.max(mn);
+                    }
+                    Some(t)
+                }
+                None => mn_px,
             };
             let pb = table_box.padding_top + table_box.padding_bottom + table_box.border_top + table_box.border_bottom;
-            Some((target - pb).max(0.0))
+            target.map(|t| (t - pb).max(0.0))
         });
         match (target_content_h, num_rows > 0) {
             (Some(target), true) => {
