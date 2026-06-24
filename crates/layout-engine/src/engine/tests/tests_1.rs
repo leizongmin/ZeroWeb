@@ -636,6 +636,10 @@ fn test_border_values_in_layout() {
     div_style.border_bottom_width = LengthValue::Px(5.0);
     div_style.border_left_width = LengthValue::Px(10.0);
     div_style.border_right_width = LengthValue::Px(10.0);
+    div_style.border_top_style = zero_style_system::BorderStyleValue::Solid;
+    div_style.border_bottom_style = zero_style_system::BorderStyleValue::Solid;
+    div_style.border_left_style = zero_style_system::BorderStyleValue::Solid;
+    div_style.border_right_style = zero_style_system::BorderStyleValue::Solid;
     styles.insert(div, div_style);
 
     let mut engine = LayoutEngine::new(800.0, 600.0);

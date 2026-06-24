@@ -127,12 +127,14 @@ fn test_computed_style_default_padding_zero() {
 }
 
 #[test]
-fn test_computed_style_default_border_width_zero() {
+fn test_computed_style_default_border_width_medium() {
+    // border-width 初始值 = medium（CSS §8.5.1，ZeroWeb 取 3px）。实际无布局边框，
+    // 因为 border-style 初始 = none，converter 在 style=none 时把 width 抑制为 0。
     let style = ComputedStyle::default();
-    assert!(matches!(style.border_top_width, LengthValue::Px(0.0)));
-    assert!(matches!(style.border_right_width, LengthValue::Px(0.0)));
-    assert!(matches!(style.border_bottom_width, LengthValue::Px(0.0)));
-    assert!(matches!(style.border_left_width, LengthValue::Px(0.0)));
+    assert!(matches!(style.border_top_width, LengthValue::Px(3.0)));
+    assert!(matches!(style.border_right_width, LengthValue::Px(3.0)));
+    assert!(matches!(style.border_bottom_width, LengthValue::Px(3.0)));
+    assert!(matches!(style.border_left_width, LengthValue::Px(3.0)));
 }
 
 #[test]

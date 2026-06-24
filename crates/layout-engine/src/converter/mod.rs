@@ -8,8 +8,8 @@ use zero_css_parser::values::{
     LengthValue, OverflowValue, PositionValue,
 };
 use zero_style_system::{
-    AlignContentValue, ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLineValue, JustifyItemsValue,
-    JustifySelfValue,
+    AlignContentValue, BorderStyleValue, ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLineValue,
+    JustifyItemsValue, JustifySelfValue,
 };
 
 use taffy::prelude::*;
@@ -110,11 +110,20 @@ pub fn computed_style_to_taffy(
         border: if is_table_internal {
             taffy::geometry::Rect::zero()
         } else {
+            // CSS §8.5.3：border-style 为 none/hidden 时 border-width 计算为 0（不进布局盒）。
+            // 否则 `border: none` 的隐含 medium 宽度会错误撑大盒模型。
+            let border_lp = |w: &LengthValue, s: &BorderStyleValue| -> taffy::style::LengthPercentage {
+                if matches!(s, BorderStyleValue::None | BorderStyleValue::Hidden) {
+                    convert_length_to_lp(&LengthValue::Px(0.0), vw, vh)
+                } else {
+                    convert_length_to_lp(w, vw, vh)
+                }
+            };
             taffy::geometry::Rect {
-                left: convert_length_to_lp(&style.border_left_width, vw, vh),
-                right: convert_length_to_lp(&style.border_right_width, vw, vh),
-                top: convert_length_to_lp(&style.border_top_width, vw, vh),
-                bottom: convert_length_to_lp(&style.border_bottom_width, vw, vh),
+                left: border_lp(&style.border_left_width, &style.border_left_style),
+                right: border_lp(&style.border_right_width, &style.border_right_style),
+                top: border_lp(&style.border_top_width, &style.border_top_style),
+                bottom: border_lp(&style.border_bottom_width, &style.border_bottom_style),
             }
         },
         align_items: convert_alignment_to_align_items(&style.align_items),
@@ -1587,6 +1596,11 @@ mod inline_tests {
         style.border_right_width = LengthValue::Px(2.0);
         style.border_bottom_width = LengthValue::Px(3.0);
         style.border_left_width = LengthValue::Px(4.0);
+        // border-style=Solid 方能使 border-width 进入布局盒（CSS §8.5.3：style=none→width=0）
+        style.border_top_style = BorderStyleValue::Solid;
+        style.border_right_style = BorderStyleValue::Solid;
+        style.border_bottom_style = BorderStyleValue::Solid;
+        style.border_left_style = BorderStyleValue::Solid;
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.border.top, taffy::style::LengthPercentage::Length(1.0));
         assert_eq!(result.border.right, taffy::style::LengthPercentage::Length(2.0));

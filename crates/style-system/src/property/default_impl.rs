@@ -41,11 +41,13 @@ impl Default for ComputedStyle {
             padding_left: LengthValue::Px(0.0),
             box_sizing: BoxSizingValue::ContentBox,
 
-            // 边框
-            border_top_width: LengthValue::Px(0.0),
-            border_right_width: LengthValue::Px(0.0),
-            border_bottom_width: LengthValue::Px(0.0),
-            border_left_width: LengthValue::Px(0.0),
+            // 边框 — border-width 初始值 = medium（CSS §8.5.1），ZeroWeb 取 3px。
+            // 默认无边框：border-style 初始 = none，converter 在 style=none/hidden 时
+            // 把 border-width 抑制为 0（不进布局盒），故默认元素无布局边框。
+            border_top_width: LengthValue::Px(3.0),
+            border_right_width: LengthValue::Px(3.0),
+            border_bottom_width: LengthValue::Px(3.0),
+            border_left_width: LengthValue::Px(3.0),
             border_top_color: initial_color.clone(),
             border_right_color: initial_color.clone(),
             border_bottom_color: initial_color.clone(),

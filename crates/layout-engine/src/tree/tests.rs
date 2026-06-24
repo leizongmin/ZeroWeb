@@ -396,6 +396,8 @@ fn test_build_with_padding_border_margin() {
     let mut div_style = ComputedStyle::default();
     div_style.padding_top = LengthValue::Px(10.0);
     div_style.border_top_width = LengthValue::Px(2.0);
+    // border-style=Solid 方能使 border-width 进入布局盒（CSS §8.5.3：style=none→width=0）
+    div_style.border_top_style = zero_style_system::BorderStyleValue::Solid;
     div_style.margin_top = LengthValue::Px(5.0);
     styles.insert(div, div_style);
 

@@ -1732,6 +1732,12 @@ fn test_absolute_stretch_in_inline_block_container() {
     container_style.border_right_width = LengthValue::Px(3.0);
     container_style.border_bottom_width = LengthValue::Px(3.0);
     container_style.border_left_width = LengthValue::Px(3.0);
+    // border-style=Solid 方能使 border-width 进入布局盒（CSS §8.5.3：style=none→width=0），
+    // 容器 border 才会偏移 absolute 子元素位置（border 3 + inset 3 = 6）
+    container_style.border_top_style = zero_style_system::BorderStyleValue::Solid;
+    container_style.border_right_style = zero_style_system::BorderStyleValue::Solid;
+    container_style.border_bottom_style = zero_style_system::BorderStyleValue::Solid;
+    container_style.border_left_style = zero_style_system::BorderStyleValue::Solid;
     styles.insert(container, container_style);
 
     // absolute 子元素：box-sizing: border-box，四方向 3px，auto 尺寸
