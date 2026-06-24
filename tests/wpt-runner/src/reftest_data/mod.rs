@@ -39,6 +39,7 @@ pub fn css21_reftest_cases() -> Vec<ReftestCase> {
             ref_html: def.ref_html.to_string(),
             css: String::new(),
             is_match: def.is_match,
+            ref_base_dir: None,
         })
         .collect()
 }

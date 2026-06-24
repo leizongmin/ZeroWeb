@@ -258,6 +258,12 @@ pub struct ReftestCase {
     pub css: String,
     /// 比较模式：true=match（应相同），false=mismatch（应不同）。
     pub is_match: bool,
+    /// 参考文件所在目录（用于解析参考页相对图片路径）。
+    ///
+    /// 渲染参考页时，其相对图片 URL（如 `../support/swatch-orange.png`）必须相对参考文件
+    /// 自身目录解析，而非测试文件目录——否则参考文件位于不同目录（如 `reference/` 子目录）
+    /// 时图片加载失败。内联 reftest 无文件基，保持 `None`（回落到 base_dir）。
+    pub ref_base_dir: Option<std::path::PathBuf>,
 }
 
 /// 运行单个 reftest 用例。
@@ -269,8 +275,9 @@ pub fn run_reftest(case: &ReftestCase, config: &ReftestConfig) -> ReftestResult 
 pub fn run_reftest_with_base(case: &ReftestCase, config: &ReftestConfig, base_dir: Option<&Path>) -> ReftestResult {
     // 渲染测试页面
     let test_fb = render_to_framebuffer_with_base(&case.test_html, &case.css, config, base_dir);
-    // 渲染参考页面
-    let ref_fb = render_to_framebuffer_with_base(&case.ref_html, &case.css, config, base_dir);
+    // 渲染参考页面（图片相对参考文件目录解析，缺失时回落到测试目录）
+    let ref_base = case.ref_base_dir.as_deref().or(base_dir);
+    let ref_fb = render_to_framebuffer_with_base(&case.ref_html, &case.css, config, ref_base);
 
     // 尺寸必须一致
     if test_fb.width != ref_fb.width || test_fb.height != ref_fb.height {
@@ -357,9 +364,10 @@ pub fn run_reftest_gpu(case: &ReftestCase, config: &ReftestConfig) -> ReftestRes
 
 /// 使用 GPU 无头渲染运行 reftest（支持基于 base_dir 的图片加载）。
 pub fn run_reftest_gpu_with_base(case: &ReftestCase, config: &ReftestConfig, base_dir: Option<&Path>) -> ReftestResult {
-    // 渲染测试页面和参考页面
+    // 渲染测试页面和参考页面（参考页图片相对参考文件目录解析，缺失时回落到测试目录）
     let test_fb = render_to_framebuffer_gpu_with_base(&case.test_html, &case.css, config, base_dir);
-    let ref_fb = render_to_framebuffer_gpu_with_base(&case.ref_html, &case.css, config, base_dir);
+    let ref_base = case.ref_base_dir.as_deref().or(base_dir);
+    let ref_fb = render_to_framebuffer_gpu_with_base(&case.ref_html, &case.css, config, ref_base);
 
     // 尺寸必须一致
     if test_fb.width != ref_fb.width || test_fb.height != ref_fb.height {
@@ -1017,6 +1025,7 @@ mod tests {
             ref_html: "<html><body style=\"margin:0\"><div style=\"border-bottom: 96px solid black; height: 96px; width: 96px;\"></div></body></html>".into(),
             css: String::new(),
             is_match: true,
+            ref_base_dir: None,
         };
         let config = ReftestConfig::default();
         let result = run_reftest(&test_only, &config);
@@ -1029,6 +1038,7 @@ mod tests {
             ref_html: "<html><body style=\"margin:0\"><div style=\"background-color: black; height: 96px; width: 96px; position: relative; top: 96px;\"></div></body></html>".into(),
             css: String::new(),
             is_match: true,
+            ref_base_dir: None,
         };
         let result = run_reftest(&case, &config);
         assert!(
@@ -1047,6 +1057,7 @@ mod tests {
             ref_html: "<html><body><div style=\"width:100px;height:50px;background:red;\">A</div></body></html>".into(),
             css: String::new(),
             is_match: true,
+            ref_base_dir: None,
         };
         let config = ReftestConfig::default();
         let result = run_reftest(&case, &config);
@@ -1063,6 +1074,7 @@ mod tests {
                 .into(),
             css: String::new(),
             is_match: true,
+            ref_base_dir: None,
         };
         let config = ReftestConfig::default();
         let result = run_reftest(&case, &config);
@@ -1077,6 +1089,7 @@ mod tests {
             ref_html: "<html><body style=\"margin:0\"><div style=\"width:100%;height:100%;background:blue;\">Blue</div></body></html>".into(),
             css: String::new(),
             is_match: false,
+            ref_base_dir: None,
         };
         let config = ReftestConfig::default();
         let result = run_reftest(&case, &config);
@@ -1108,6 +1121,7 @@ mod tests {
                     .into(),
             css: String::new(),
             is_match: true,
+            ref_base_dir: None,
         };
         let config = ReftestConfig {
             max_diff_ratio: 0.1,
@@ -1650,6 +1664,7 @@ mod tests {
             ref_html: ref_html.into(),
             css: String::new(),
             is_match: true,
+            ref_base_dir: None,
         };
         let config = ReftestConfig {
             viewport_width: 200,
@@ -1668,6 +1683,7 @@ mod tests {
             ref_html: ref_html.into(),
             css: String::new(),
             is_match: false,
+            ref_base_dir: None,
         };
         let config = ReftestConfig {
             viewport_width: 200,
