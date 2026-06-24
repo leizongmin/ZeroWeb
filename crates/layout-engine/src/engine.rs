@@ -1477,12 +1477,19 @@ fn clamp_percentage_max_height(
                 LengthValue::Percentage(p) => cb_content_height.map(|cb| *p as f32 / 100.0 * cb),
                 _ => None,
             };
-            if let Some(spec) = specified_content_h
-                && box_node.content_height < spec
-            {
+            if let Some(spec) = specified_content_h {
                 let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
-                box_node.content_height = spec;
-                box_node.height = spec + pb;
+                // R586：table height 下限受 max-height 约束（CSS §10.4：max-height cap 优先于
+                // height）。否则 height:3in + max-height:1in 经此 floor 拉回 288，覆盖
+                // apply_table_size_constraints 已应用的 max-height cap（max-height-applies-to-013）。
+                let spec = match &s.max_height {
+                    LengthValue::Px(v) if *v != f64::INFINITY => spec.min((*v as f32 - pb).max(0.0)),
+                    _ => spec,
+                };
+                if box_node.content_height < spec {
+                    box_node.content_height = spec;
+                    box_node.height = spec + pb;
+                }
             }
         }
     }
