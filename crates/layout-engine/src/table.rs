@@ -1122,6 +1122,24 @@ fn compute_column_widths(
             // min-content；width:2px 但内容 "1" 需 9.6px → 列宽 9.6，内容不溢出列）。
             base.max(intrinsic)
         };
+        // R583：cell min-width/max-width 约束其对列的宽度贡献（CSS Tables §17.5.3：
+        // 单元格 min-width 贡献列 min-content 下限；§10 max-width 上限，min 优先于 max）。
+        // empty cell + min-width:1in → 96px 列（min-width-applies-to-007）。
+        // gated on Px（同 resolve_col_min/max）→ 仅影响显式声明 min/max-width 的单元格。
+        let cs = cell_box.node_id.and_then(|id| styles.get(&id));
+        let cell_max = cs.and_then(|s| match &s.max_width {
+            zero_css_parser::values::LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        });
+        let cell_min = cs.and_then(|s| match &s.min_width {
+            zero_css_parser::values::LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        });
+        let w = match cell_max {
+            Some(mx) => w.min(mx),
+            None => w,
+        };
+        let w = w.max(cell_min.unwrap_or(0.0));
         (w, css_width_auto)
     };
 
