@@ -12,6 +12,23 @@
 
 ---
 
+## ⚠️ R582 更新（2026-06-24）— 假设 H2 经 probe 证伪：Phase 2a 非安全首切片
+
+R581 handoff §6 假设 **H2**（col_ctx 真实-styles IFC 行盒结构 == paint 空-styles+overrides 行盒，首版可保证 byte-identical）经本轮 probe **证伪**：
+
+- `inline_finalization.rs:944-948` 的 `col_ctx` 仅设 `.with_vertical/.with_text_align/.with_inline_block_sizes`，**不设 white-space/word-break/overflow-wrap/float_exclusions/text_indent/tab_size**。
+- `inline/mod.rs:collect_inline_items`（line 691-741）从**真实 styles** 读 per-element font_size/line_height/letter_spacing/word_spacing/is_ahem（故 col_ctx 字体度量正确），但 **white-space/word-break/overflow-wrap 是 config 级**（`self.preserve_whitespace`/`self.word_break`/`self.no_wrap`，默认 = normal）。
+- 结论：**H2 仅对 white-space:normal + word-break:normal + overflow-wrap:normal + 无 float/无 text-indent 的 multicol 成立**——而该子集 paint 空-styles+overrides **本就正确**（overrides 由 `store_font_sizes_from_ifc` 完整填充，无 R84 缺口），故 Phase 2a 对该子集**净 0**（无 font 一致性 yield，纠正 §1 发现 2 的乐观推断）。
+- 对 pre/pre-wrap/nowrap/break-word/break-all multicol，col_ctx 用 normal 配置换行 != paint 正确换行 → **blanket store+consume 回归**（须 gate）。
+
+**进一步：col_ctx 的 minimal config 不可复用于 Phase 2b**（混合内容须 rich config 的 IFC 行盒，非 minimal col_ctx）。故 R581「复用已算 col_ctx」成本节省前提 **不成立**——Phase 2a 退化为净 0 speculative scaffolding，且其 foundation（2b）被 Phase A R109 阻塞。
+
+**裁决（按 R581 §6 协议「违反 H 即回滚，不强行推进」+ code-guidelines §2 不投机）**：**Phase 2a 当前 spec 不实施**。勿以「capture col_ctx + blanket/gated consume」单会话重试。真重启 Phase 2a 须满足二选一前置：① 发现一个具体 multicol 失败案经诊断确属「paint 空-styles 重跑 font 度量错误」（有驱动 yield）；② Phase A（inline 流动 IFC / R109 解 block 化）先行解锁，使 Phase 2b 可实施（届时 2b 须用 rich-config IFC 重算行盒，非复用 col_ctx）。
+
+本轮另查 R549 next-lever 队列 `blocks-017`（margin-collapse-with-border）= **结构性**（详见 master.md R582：兄弟间距 40/27/40 跨 table↔p 不一致 + table/p 高度 15/19px 不一致 + ref 为 table 基布局）。clean 单会话 lever 第 8 次确证穷尽。
+
+---
+
 ## 0. 本文档相对两个 R381 spec 的定位
 
 存在两份 R381（2026-06-19/20）spec，本文档**不重复**其 FR/NFR/IF 正式内容，只做两件事：
