@@ -60,13 +60,21 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
 
             // 为每个 reference 创建一个 reftest case
             for (ref_idx, reference) in references.iter().enumerate() {
-                let ref_path = resolve_ref_path(wpt_data_dir, &test_path, &reference.ref_path);
+                let raw_ref = reference.ref_path.trim();
 
-                let ref_html = match std::fs::read_to_string(&ref_path) {
-                    Ok(html) => html,
-                    Err(e) => {
-                        errors.push(format!("{} ref {}: {}", relative_str, reference.ref_path, e));
-                        continue;
+                // about:blank 是 WPT reftest 的特殊参考（空白文档，常用于 match「应渲染为空白」
+                // 的用例）。它不是文件路径，不读磁盘——直接当空 HTML。否则 read_to_string 会
+                // 报 No such file 并把测试误排除出分母（DC-14 分母真实性，R551/R552 谱系）。
+                let ref_html = if raw_ref == "about:blank" {
+                    String::from("<!DOCTYPE html><html><head></head><body></body></html>")
+                } else {
+                    let ref_path = resolve_ref_path(wpt_data_dir, &test_path, raw_ref);
+                    match std::fs::read_to_string(&ref_path) {
+                        Ok(html) => html,
+                        Err(e) => {
+                            errors.push(format!("{} ref {}: {}", relative_str, reference.ref_path, e));
+                            continue;
+                        }
                     }
                 };
 
