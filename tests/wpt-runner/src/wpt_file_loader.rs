@@ -60,7 +60,7 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
 
             // 为每个 reference 创建一个 reftest case
             for (ref_idx, reference) in references.iter().enumerate() {
-                let ref_path = test_path.parent().unwrap_or(Path::new(".")).join(&reference.ref_path);
+                let ref_path = resolve_ref_path(wpt_data_dir, &test_path, &reference.ref_path);
 
                 let ref_html = match std::fs::read_to_string(&ref_path) {
                     Ok(html) => html,
@@ -130,6 +130,21 @@ impl FileReftestCase {
     /// 生成 ReftestConfig。
     pub fn to_config(&self, viewport_width: u32, viewport_height: u32) -> ReftestConfig {
         ReftestConfig::for_category(self.category).with_viewport(viewport_width, viewport_height)
+    }
+}
+
+/// 解析 reftest 参考文件路径。
+///
+/// - 绝对 WPT 路径（以 `/` 开头，如 `/css/reference/foo.xht`）：相对 wpt-data 根解析。
+///   注意不能用 `Path::join`：当 join 的参数是绝对路径时，Rust 会丢弃 base、从文件系统
+///   根查找，导致已存在的 `/css/reference/...` ref 报「No such file」并把测试误排除出
+///   分母（DC-14 分母真实性缺口，R546 / R551 谱系）。
+/// - 相对路径（如 `ref.html`、`../reference/foo.xht`）：相对测试文件父目录解析。
+pub(super) fn resolve_ref_path(wpt_data_dir: &Path, test_path: &Path, ref_path: &str) -> PathBuf {
+    if ref_path.starts_with('/') {
+        wpt_data_dir.join(ref_path.trim_start_matches('/'))
+    } else {
+        test_path.parent().unwrap_or(Path::new(".")).join(ref_path)
     }
 }
 
