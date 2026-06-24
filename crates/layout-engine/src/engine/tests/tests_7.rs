@@ -501,6 +501,9 @@ fn test_inline_child_box_bleeds_upwards_from_ifc() {
     span_style.line_height = zero_style_system::property::types::LineHeightValue::Number(1.0);
     span_style.padding_top = LengthValue::Px(25.0);
     span_style.border_top_width = LengthValue::Px(15.0);
+    // 显式置 0：本用例只验证 border-top/padding-top 向上扩展；border-bottom 默认值
+    // 自 R549 起为 medium(3px)（CSS §8.5.1），IFC 按宽度直接计入盒高，会干扰 80px 期望。
+    span_style.border_bottom_width = LengthValue::Px(0.0);
     styles.insert(span, span_style);
 
     let mut engine = LayoutEngine::new(800.0, 600.0);

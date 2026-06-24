@@ -31,9 +31,9 @@ impl PropertyRegistry {
             "padding-top" | "padding-right" | "padding-bottom" | "padding-left" => Some(Length(LengthValue::Px(0.0))),
             "box-sizing" => Some(BoxSizing(BoxSizingValue::ContentBox)),
 
-            // 边框
+            // 边框 — border-width 初始值 = medium（CSS §8.5.1），ZeroWeb 取 3px。
             "border-top-width" | "border-right-width" | "border-bottom-width" | "border-left-width" => {
-                Some(Length(LengthValue::Px(0.0)))
+                Some(Length(LengthValue::Px(3.0)))
             }
             "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
                 Some(Color(ColorValue::Rgba(0, 0, 0, 255)))

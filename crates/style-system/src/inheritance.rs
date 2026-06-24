@@ -417,8 +417,8 @@ mod tests {
         let cascaded = HashMap::new();
         let style = compute_inherited_style(Some(&parent), &cascaded);
 
-        // 这些属性不继承，子元素使用初始值
-        assert_eq!(style.border_top_width, LengthValue::Px(0.0));
+        // 这些属性不继承，子元素使用初始值（border-width 初始 = medium=3px，CSS §8.5.1）
+        assert_eq!(style.border_top_width, LengthValue::Px(3.0));
         assert_eq!(style.margin_top, LengthValue::Px(0.0));
         assert_eq!(style.padding_top, LengthValue::Px(0.0));
     }
@@ -596,7 +596,8 @@ mod tests {
         assert_eq!(style.width, LengthValue::Auto);
         assert_eq!(style.margin_top, LengthValue::Px(0.0));
         assert_eq!(style.padding_left, LengthValue::Px(0.0));
-        assert_eq!(style.border_top_width, LengthValue::Px(0.0));
+        // border-width 初始 = medium=3px（CSS §8.5.1）
+        assert_eq!(style.border_top_width, LengthValue::Px(3.0));
         assert_eq!(style.display, DisplayValue::Inline);
     }
 

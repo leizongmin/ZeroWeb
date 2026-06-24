@@ -996,6 +996,19 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         return Some(LengthValue::Auto);
     }
 
+    // 处理 border-width 关键字（CSS 2.1 §8.5.1）：thin=1px / medium=3px / thick=5px。
+    // border 简写缺省宽度时展开为 medium；死代码 parse_basic.rs 有此处理但 types.rs（活）
+    // 遗漏（R544 死代码陷阱同谱系）→ `border: solid` 解析为 width:0（无边框 + 不阻断 margin 折叠）。
+    if value.eq_ignore_ascii_case("thin") {
+        return Some(LengthValue::Px(1.0));
+    }
+    if value.eq_ignore_ascii_case("medium") {
+        return Some(LengthValue::Px(3.0));
+    }
+    if value.eq_ignore_ascii_case("thick") {
+        return Some(LengthValue::Px(5.0));
+    }
+
     // 处理 min-content/max-content 关键字
     if value.eq_ignore_ascii_case("min-content") {
         return Some(LengthValue::MinContent);

@@ -839,6 +839,10 @@ fn test_border_and_padding_effect_on_content_size() {
     div_style.border_bottom_width = LengthValue::Px(5.0);
     div_style.border_left_width = LengthValue::Px(10.0);
     div_style.border_right_width = LengthValue::Px(10.0);
+    div_style.border_top_style = zero_style_system::BorderStyleValue::Solid;
+    div_style.border_bottom_style = zero_style_system::BorderStyleValue::Solid;
+    div_style.border_left_style = zero_style_system::BorderStyleValue::Solid;
+    div_style.border_right_style = zero_style_system::BorderStyleValue::Solid;
     div_style.padding_top = LengthValue::Px(8.0);
     div_style.padding_bottom = LengthValue::Px(8.0);
     div_style.padding_left = LengthValue::Px(12.0);
@@ -1647,6 +1651,11 @@ fn test_box_sizing_content_box_with_padding() {
     child_style.border_bottom_width = LengthValue::Px(5.0);
     child_style.border_left_width = LengthValue::Px(5.0);
     child_style.border_right_width = LengthValue::Px(5.0);
+    // border-style=Solid 方能使 border-width 进入布局盒（CSS §8.5.3：style=none→width=0）
+    child_style.border_top_style = zero_style_system::BorderStyleValue::Solid;
+    child_style.border_bottom_style = zero_style_system::BorderStyleValue::Solid;
+    child_style.border_left_style = zero_style_system::BorderStyleValue::Solid;
+    child_style.border_right_style = zero_style_system::BorderStyleValue::Solid;
     styles.insert(child, child_style);
 
     let mut engine = LayoutEngine::new(800.0, 600.0);

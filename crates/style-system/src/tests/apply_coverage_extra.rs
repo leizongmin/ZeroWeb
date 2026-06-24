@@ -71,8 +71,7 @@ fn test_apply_invalid_margin_padding() {
 
 #[test]
 fn test_apply_invalid_border_properties() {
-    let (ok, _) = apply("border-top-width", "thick");
-    assert!(!ok);
+    // 注：thin/medium/thick 是合法 border-width 关键字（CSS §8.5.1），不再作为非法值。
     let (ok, _) = apply("border-top-color", "not-a-color");
     assert!(!ok);
     let (ok, _) = apply("border-top-style", "dotted-solid");

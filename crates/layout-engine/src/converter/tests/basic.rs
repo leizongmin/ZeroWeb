@@ -140,6 +140,11 @@ fn test_convert_margin_padding_border() {
     style.border_right_width = LengthValue::Px(2.0);
     style.border_bottom_width = LengthValue::Px(1.0);
     style.border_left_width = LengthValue::Px(2.0);
+    // border-style=Solid 方能使 border-width 进入布局盒（CSS §8.5.3：style=none→width=0）
+    style.border_top_style = zero_style_system::BorderStyleValue::Solid;
+    style.border_right_style = zero_style_system::BorderStyleValue::Solid;
+    style.border_bottom_style = zero_style_system::BorderStyleValue::Solid;
+    style.border_left_style = zero_style_system::BorderStyleValue::Solid;
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.margin.top, taffy::style::LengthPercentageAuto::Length(10.0));
     assert_eq!(

@@ -825,7 +825,9 @@ mod tests {
         assert_eq!(style.font_size, LengthValue::Px(16.0));
         assert_eq!(style.margin_top, LengthValue::Px(0.0));
         assert_eq!(style.padding_top, LengthValue::Px(0.0));
-        assert_eq!(style.border_top_width, LengthValue::Px(0.0));
+        // border-width 初始值 = medium（CSS §8.5.1，ZeroWeb 取 3px）；实际无布局边框，
+        // 因为 border-style 初始 = none，converter 在 style=none 时把 width 抑制为 0。
+        assert_eq!(style.border_top_width, LengthValue::Px(3.0));
     }
 
     #[test]
