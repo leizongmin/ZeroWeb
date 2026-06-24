@@ -1648,18 +1648,30 @@ fn position_cells(
             })
             .collect();
         let num_rows = content_row_heights.len();
-        let target_content_h = table_box
-            .node_id
-            .and_then(|id| styles.get(&id))
-            .and_then(|s| match &s.height {
-                zero_css_parser::values::LengthValue::Px(v) => Some(*v as f32),
+        // R585：行高分配目标 = max(指定 height, min-height)——min-height 也作为行高下限
+        // （CSS Tables §17.5.3 + §10），使 table min-height 展开行 → 单元格填充
+        // （min-height-applies-to-013：empty cell + table min-height:1in → 96px 黑方；
+        // apply_table_size_conditions 已 floor table box，但行高须同步分配，否则单元格
+        // 按行内容高而非 min-height 渲染）。
+        let target_content_h = table_box.node_id.and_then(|id| styles.get(&id)).and_then(|s| {
+            use zero_css_parser::values::LengthValue;
+            let h_px = match &s.height {
+                LengthValue::Px(v) => Some(*v as f32),
                 _ => None,
-            })
-            .map(|h| {
-                let pb =
-                    table_box.padding_top + table_box.padding_bottom + table_box.border_top + table_box.border_bottom;
-                (h - pb).max(0.0)
-            });
+            };
+            let mh_px = match &s.min_height {
+                LengthValue::Px(v) => Some(*v as f32),
+                _ => None,
+            };
+            let target = match (h_px, mh_px) {
+                (Some(h), Some(mh)) => h.max(mh),
+                (Some(h), None) => h,
+                (None, Some(mh)) => mh,
+                (None, None) => return None,
+            };
+            let pb = table_box.padding_top + table_box.padding_bottom + table_box.border_top + table_box.border_bottom;
+            Some((target - pb).max(0.0))
+        });
         match (target_content_h, num_rows > 0) {
             (Some(target), true) => {
                 let content_total: f32 = content_row_heights.iter().sum::<f32>() + (num_rows - 1) as f32 * spacing_y;
