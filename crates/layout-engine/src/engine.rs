@@ -1450,6 +1450,27 @@ fn clamp_percentage_max_height(
         }
     }
 
+    // 1a) R587：百分比 min-height 相对包含块内容高度解析（与 1) max-height 对称）。
+    // min-height:100% on child of definite-height parent → 解析为 cb_h 的百分比作内容高度下限。
+    // min-height-094/095：div2 min-height:100%（父 div1 height:1in 明确）→ 96px。
+    // 置于 max-height 之后使 min 优先于 max（§10.4）。
+    if let (Some(style), Some(cb_h)) = (style.as_ref(), cb_content_height)
+        && let LengthValue::Percentage(p) = &style.min_height
+    {
+        let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+        let is_border_box = matches!(style.box_sizing, BoxSizingValue::BorderBox);
+        let min_box_h = *p as f32 / 100.0 * cb_h;
+        let min_content_h = if is_border_box {
+            (min_box_h - pb).max(0.0)
+        } else {
+            min_box_h
+        };
+        if box_node.content_height < min_content_h {
+            box_node.content_height = min_content_h;
+            box_node.height = min_content_h + pb;
+        }
+    }
+
     // 1.5) Table 高度作为内容高度下限（CSS 2.1 §17.5.3）。
     // table 后处理（apply_table_size_constraints）此前完全忽略 style.height，仅用
     // intrinsic 行高填表格高度。CSS 规定 table 的 'height' 是内容高度的「下限」
