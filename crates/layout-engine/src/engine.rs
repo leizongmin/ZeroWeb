@@ -338,7 +338,11 @@ impl LayoutEngine {
         // （convert 层已传 Percent，但 block 布局未在内容高度计算后再次 clamp）。
         // CSS §10.7：百分比 max-height 相对包含块高度解析；当包含块高度明确时收紧。
         // 此步骤自上而下传递「明确高度」，对百分比 max-height 的盒做收紧。
-        clamp_percentage_max_height(&mut root_box, None, styles);
+        // R588：根元素的百分比 height/min-height/max-height 相对 ICB（视口）解析。
+        // 旧 cb=None 使根（如 <html>）的 height:100% 不解析 → html/body/p 百分比高度
+        // 链断裂（min-height-percentage-003）。CSS §10：根元素百分比高度相对 ICB。
+        // 仅根传视口高度作包含块；后代经 my_definite_content_height 链传播。
+        clamp_percentage_max_height(&mut root_box, Some(self.viewport_height), styles);
 
         // 诊断（不改变布局）：对 shrink-to-fit 候选容器（inline-flex/inline-grid/float:flex/
         // float:grid 的 width:auto，或任意 flex/grid 的 width:max-content/min-content）打印
