@@ -48,10 +48,13 @@ impl Default for ComputedStyle {
             border_right_width: LengthValue::Px(3.0),
             border_bottom_width: LengthValue::Px(3.0),
             border_left_width: LengthValue::Px(3.0),
-            border_top_color: initial_color.clone(),
-            border_right_color: initial_color.clone(),
-            border_bottom_color: initial_color.clone(),
-            border_left_color: initial_color.clone(),
+            // border-color 初始值 = currentColor（CSS §8.5.1）。currentColor 作为关键字
+            // 经层叠/继承保留（CSS-Color §resolving），paint 时解析为元素自身计算 `color`。
+            // 默认元素无边框（border-style=none），故不影响默认渲染。
+            border_top_color: ColorValue::CurrentColor,
+            border_right_color: ColorValue::CurrentColor,
+            border_bottom_color: ColorValue::CurrentColor,
+            border_left_color: ColorValue::CurrentColor,
             border_top_style: BorderStyleValue::None,
             border_right_style: BorderStyleValue::None,
             border_bottom_style: BorderStyleValue::None,
