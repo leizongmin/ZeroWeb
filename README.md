@@ -84,7 +84,7 @@ sudo apt-get install -y \
 ### 2. 构建与测试
 
 ```bash
-cargo build --workspace
+cargo build --workspace                    # Linux/macOS 首次构建前需先 make setup-rusty-v8（或直接用 make build）
 make test                                  # = cargo test --workspace（经 test-guard 包裹）
 make reftest                               # = WPT reftest（同样经 test-guard 包裹）
 make product-smoke                         # 产品静态页（welcome.html）vs Chromium Oracle 像素回归门禁
