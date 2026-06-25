@@ -418,6 +418,30 @@ pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
     tracing::info!("Chrome UI primary font: {loaded_path} (id={primary})");
 
     #[cfg(target_os = "macos")]
+    let bold_paths = [
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+    ];
+    #[cfg(target_os = "windows")]
+    let bold_paths = [
+        "C:\\Windows\\Fonts\\arialbd.ttf",
+        "C:\\Windows\\Fonts\\segoeuib.ttf",
+    ];
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let bold_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    ];
+    if let Some((bold_id, bold_path)) = bold_paths.iter().find_map(|path| {
+        let data = std::fs::read(path).ok()?;
+        let id = font_loader.load_font(&data).ok()?;
+        Some((id, *path))
+    }) {
+        tracing::info!("Bold UI font: {bold_path} (id={bold_id})");
+    }
+
+    #[cfg(target_os = "macos")]
     let fallback_paths = [
         "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/STHeiti Light.ttc",

@@ -418,8 +418,24 @@ impl StyleSystem {
                 "body" => {
                     ua_decl_inputs.push(("margin".to_string(), "8px".to_string(), false, (0, 0, 0), None));
                 }
-                // h1-h6 默认 margin 和 font-weight/font-size
+                // h1-h6 默认 margin、font-size 和 font-weight（HTML 渲染规范 UA 样式表）
                 "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                    ua_decl_inputs.push((
+                        "font-size".to_string(),
+                        match tag.as_str() {
+                            "h1" => "2em",
+                            "h2" => "1.5em",
+                            "h3" => "1.17em",
+                            "h4" => "1em",
+                            "h5" => "0.83em",
+                            "h6" => "0.67em",
+                            _ => "1em",
+                        }
+                        .to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
                     ua_decl_inputs.push((
                         "margin".to_string(),
                         match tag.as_str() {
@@ -1193,6 +1209,23 @@ mod presentational_hint_tests {
         let style = styles.get(&b_id).expect("b styled");
         assert!(matches!(
             style.font_weight,
+            zero_css_parser::values::FontWeightValue::Bold
+        ));
+    }
+
+    #[test]
+    fn heading_gets_ua_font_size_and_weight() {
+        let doc = parse_html("<body><h1>Title</h1><h2>Section</h2></body>");
+        let mut system = StyleSystem::new();
+        let styles = system.compute_styles(&doc, &[]);
+        let h1_id = doc.get_elements_by_tag_name("h1")[0];
+        let h2_id = doc.get_elements_by_tag_name("h2")[0];
+        let h1 = styles.get(&h1_id).expect("h1 styled");
+        let h2 = styles.get(&h2_id).expect("h2 styled");
+        assert_eq!(h1.font_size, zero_css_parser::values::LengthValue::Px(32.0));
+        assert_eq!(h2.font_size, zero_css_parser::values::LengthValue::Px(24.0));
+        assert!(matches!(
+            h1.font_weight,
             zero_css_parser::values::FontWeightValue::Bold
         ));
     }

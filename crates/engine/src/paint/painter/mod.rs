@@ -246,27 +246,45 @@ impl Painter {
         self.font_resolver = resolver;
     }
 
-    /// 根据 CSS font-family 列表解析 FontId。
+    /// 根据 CSS font-family 与 font-weight 解析 FontId。
     ///
     /// 遍历 font-family 列表，返回第一个匹配的 FontId。
-    /// 支持：
-    /// - 具体字体族名（如 "Ahem", "DejaVu Sans"）
-    /// - 通用字体族名（如 "sans-serif", "serif", "monospace"）
-    /// - 回退到 FontId(0)（第一个加载的字体）
-    pub(crate) fn resolve_font_id(&self, font_family: &[String]) -> zero_render_foundation::primitive::FontId {
+    /// `font-weight >= 600` 时优先查找 `{family}:700` 粗体 face。
+    pub(crate) fn resolve_font_id(
+        &self,
+        font_family: &[String],
+        font_weight: &zero_css_parser::values::FontWeightValue,
+    ) -> zero_render_foundation::primitive::FontId {
+        use zero_css_parser::values::FontWeightValue;
         use zero_render_foundation::primitive::FontId;
+
+        let want_bold = matches!(font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
+            || matches!(font_weight, FontWeightValue::Absolute(w) if *w >= 600);
+
         for family in font_family {
-            // 去除引号
             let name = family.trim_matches('"').trim_matches('\'');
+            if want_bold {
+                let bold_key = format!("{name}:700");
+                if let Some(&id) = self.font_resolver.get(&bold_key) {
+                    return FontId(id);
+                }
+                for (key, &id) in &self.font_resolver {
+                    if key.eq_ignore_ascii_case(&bold_key) {
+                        return FontId(id);
+                    }
+                }
+            }
             if let Some(&id) = self.font_resolver.get(name) {
                 return FontId(id);
             }
-            // 大小写不敏感匹配（CSS font-family 不区分大小写）
             for (key, &id) in &self.font_resolver {
                 if key.eq_ignore_ascii_case(name) {
                     return FontId(id);
                 }
             }
+        }
+        if want_bold && let Some(&id) = self.font_resolver.get("sans-serif:700") {
+            return FontId(id);
         }
         FontId(0)
     }
