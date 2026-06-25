@@ -1224,10 +1224,7 @@ mod presentational_hint_tests {
         let h2 = styles.get(&h2_id).expect("h2 styled");
         assert_eq!(h1.font_size, zero_css_parser::values::LengthValue::Px(32.0));
         assert_eq!(h2.font_size, zero_css_parser::values::LengthValue::Px(24.0));
-        assert!(matches!(
-            h1.font_weight,
-            zero_css_parser::values::FontWeightValue::Bold
-        ));
+        assert!(matches!(h1.font_weight, zero_css_parser::values::FontWeightValue::Bold));
     }
 }
 
