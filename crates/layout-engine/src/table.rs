@@ -18,11 +18,11 @@ use crate::table_borders::resolve_collapsed_borders;
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::DisplayValue;
+use zero_css_parser::values::{DisplayValue, FloatValue};
 
 use zero_dom::NodeId;
 
-use zero_style_system::ComputedStyle;
+use zero_style_system::{ComputedStyle, WritingModeValue};
 
 use crate::types::LayoutBox;
 
@@ -108,10 +108,49 @@ fn adjust_table_layout_inner(
             adjust_table_layout_inner(child, doc, styles, true);
         }
     } else {
-        for child in &mut root.children {
-            adjust_table_layout_inner(child, doc, styles, inside_table);
+        let mut idx = 0usize;
+        while idx < root.children.len() {
+            let child_is_table = {
+                let child = &root.children[idx];
+                let child_display = get_display(child, styles);
+                child_display == Some(DisplayValue::Table)
+                    || child_display == Some(DisplayValue::InlineTable)
+                    || (!inside_table && child_display.as_ref().is_some_and(is_table_internal))
+            };
+            if child_is_table {
+                let old_height = root.children[idx].height;
+                layout_table(&mut root.children[idx], doc, styles);
+                reflow_siblings_after_table_height_change(root, idx, old_height);
+                for child in &mut root.children[idx].children {
+                    adjust_table_layout_inner(child, doc, styles, true);
+                }
+            } else {
+                adjust_table_layout_inner(&mut root.children[idx], doc, styles, inside_table);
+            }
+            idx += 1;
         }
     }
+}
+
+/// taffy 将 table 映射为 block，高度常大于 table 后处理算出的真实高度。
+/// 收缩 table 后需把后续普通流兄弟上移（与 inline_finalization 的 shrink 重排同谱系）。
+fn reflow_siblings_after_table_height_change(parent: &mut LayoutBox, table_idx: usize, old_table_height: f32) {
+    if !matches!(parent.writing_mode, WritingModeValue::HorizontalTb) {
+        return;
+    }
+    let height_delta = parent.children[table_idx].height - old_table_height;
+    if height_delta.abs() <= 0.01 {
+        return;
+    }
+    for sibling in parent.children.iter_mut().skip(table_idx + 1) {
+        if sibling.is_absolute || sibling.is_fixed || !matches!(sibling.float, FloatValue::None) {
+            continue;
+        }
+        sibling.y += height_delta;
+    }
+    parent.height += height_delta;
+    let padding_border = parent.padding_top + parent.padding_bottom + parent.border_top + parent.border_bottom;
+    parent.content_height = (parent.height - padding_border).max(0.0);
 }
 
 /// 获取 LayoutBox 对应的 display 值。

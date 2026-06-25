@@ -327,3 +327,41 @@ fn test_fetch_url_loads_svg_image_subresource() {
     assert!(px[1] > 200, "SVG green channel should be high, got {}", px[1]);
     assert_eq!(px[3], 255, "SVG alpha should be fully opaque");
 }
+
+/// 根相对链接命中后应返回基于当前页面 URL 解析的绝对地址。
+#[test]
+fn test_hit_test_link_resolves_root_relative_href() {
+    let page = "<!DOCTYPE html><html><body>\
+                <a href=\"/aaa\" style=\"display:block;width:200px;height:40px;padding:10px\">Link</a>\
+                </body></html>";
+    let mut files = HashMap::new();
+    files.insert("/page.html".to_string(), page.as_bytes().to_vec());
+    let server = MiniServer::start(files);
+
+    let mut webview = WebView::new(WebViewConfig::default());
+    let url = format!("{}/page.html", server.base);
+    webview.fetch_url(&url).expect("fetch_url should succeed");
+
+    let href = webview.hit_test_link(50.0, 20.0).expect("link should be hit");
+    assert_eq!(href, format!("{}/aaa", server.base));
+}
+
+/// `file://` 本地 HTML 应能通过 fetch_url 加载并渲染。
+#[test]
+fn test_fetch_url_loads_local_file() {
+    let dir = std::env::temp_dir();
+    let file = dir.join("zero_webview_file_url_test.html");
+    std::fs::write(
+        &file,
+        b"<!DOCTYPE html><html><head><title>Local</title></head>\
+          <body><p id=\"x\">Hello file</p></body></html>",
+    )
+    .unwrap();
+
+    let url = url::Url::from_file_path(&file).unwrap().to_string();
+    let mut webview = WebView::new(WebViewConfig::default());
+    let result = webview.fetch_url(&url).expect("file:// fetch_url should succeed");
+    assert!(!result.primitives.glyphs.is_empty(), "local HTML should produce glyphs");
+
+    let _ = std::fs::remove_file(file);
+}

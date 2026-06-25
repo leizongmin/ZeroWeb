@@ -606,9 +606,38 @@ pub fn simple_hash(s: &str) -> u64 {
     hash
 }
 
+/// 判断 `href` 是否应原样使用（已有 scheme、片段锚点等），不参与相对 base 解析。
+fn is_non_relative_href(href: &str) -> bool {
+    if href.starts_with('#') {
+        return true;
+    }
+    if href.starts_with("data:")
+        || href.starts_with("http://")
+        || href.starts_with("https://")
+        || href.starts_with("zero://")
+        || href.starts_with("file://")
+        || href.starts_with("ftp://")
+    {
+        return true;
+    }
+    if let Some(colon) = href.find(':') {
+        let scheme = &href[..colon];
+        if !scheme.is_empty()
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphabetic() || c.is_ascii_digit() || matches!(c, '+' | '-' | '.'))
+            && scheme.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        {
+            return true;
+        }
+    }
+    false
+}
+
 /// 将相对 URL 解析为绝对 URL（解析失败时原样返回 `href`）。
 pub fn resolve_document_url(base_url: &str, href: &str) -> String {
-    if href.starts_with("data:") || href.starts_with("http://") || href.starts_with("https://") {
+    let href = href.trim();
+    if href.is_empty() || is_non_relative_href(href) {
         return href.to_string();
     }
     match url::Url::parse(base_url).and_then(|base| base.join(href)) {
@@ -1593,5 +1622,33 @@ mod tests {
         let result = convert_color_stops(&stops);
         assert_eq!(result.len(), 1);
         assert!((result[0].offset - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn resolve_document_url_root_relative_path() {
+        assert_eq!(
+            resolve_document_url("https://example.com/page", "/aaa"),
+            "https://example.com/aaa"
+        );
+    }
+
+    #[test]
+    fn resolve_document_url_relative_path() {
+        assert_eq!(
+            resolve_document_url("https://example.com/dir/page", "other.html"),
+            "https://example.com/dir/other.html"
+        );
+    }
+
+    #[test]
+    fn resolve_document_url_preserves_special_schemes() {
+        assert_eq!(
+            resolve_document_url("https://example.com", "mailto:test@example.com"),
+            "mailto:test@example.com"
+        );
+        assert_eq!(
+            resolve_document_url("https://example.com", "javascript:void(0)"),
+            "javascript:void(0)"
+        );
     }
 }

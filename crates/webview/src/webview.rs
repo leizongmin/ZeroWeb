@@ -6,9 +6,9 @@ use std::rc::Rc;
 
 use zero_engine::{
     PipelineTimings, PrefersColorSchemeValue, RenderPipeline, extract_img_srcs, extract_stylesheet_hrefs,
-    image_resource_key,
+    image_resource_key, resolve_document_url,
 };
-use zero_net::{HttpCache, HttpClient, NetError};
+use zero_net::{HttpCache, HttpClient, NetError, is_file_url};
 use zero_render_foundation::image_cache::{ImageCache, ImageKey, decode_image_bytes};
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
@@ -402,8 +402,10 @@ impl WebView {
             }
         }
 
-        // 检查 HTTP 缓存
-        if let Some(cached) = self.http_cache.get(&effective_url) {
+        // 检查 HTTP 缓存（本地 file: 页面不缓存，避免磁盘变更后读到旧内容）
+        if !is_file_url(&effective_url)
+            && let Some(cached) = self.http_cache.get(&effective_url)
+        {
             tracing::info!("HTTP cache hit for {effective_url}");
             let html = String::from_utf8(cached.body).map_err(|e| {
                 self.loading = false;
@@ -423,8 +425,10 @@ impl WebView {
         // 发起 HTTP 请求
         match self.http_client.get(&effective_url) {
             Ok(response) => {
-                // 尝试将响应存入 HTTP 缓存
-                let _ = self.http_cache.put(&effective_url, &response);
+                if !is_file_url(&effective_url) {
+                    // 尝试将响应存入 HTTP 缓存
+                    let _ = self.http_cache.put(&effective_url, &response);
+                }
 
                 let html = response.text().map_err(|e| {
                     self.loading = false;
@@ -577,8 +581,14 @@ impl WebView {
     }
 
     /// 命中测试链接，坐标为 WebView 视口内的 CSS 逻辑像素。
+    ///
+    /// 若存在当前页面 URL，会将相对 `href` 解析为绝对 URL 后再返回。
     pub fn hit_test_link(&self, x: f32, y: f32) -> Option<String> {
-        self.pipeline.hit_test_link(x, y)
+        let href = self.pipeline.hit_test_link(x, y)?;
+        Some(match self.current_url.as_deref() {
+            Some(base) => resolve_document_url(base, &href),
+            None => href,
+        })
     }
 
     /// 文档布局高度（CSS 逻辑像素）。
