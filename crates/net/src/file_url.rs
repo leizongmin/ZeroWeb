@@ -46,7 +46,8 @@ fn guess_content_type(path: &Path) -> &'static str {
 /// 读取 `file:` URL 指向的本地文件，返回类似 HTTP 200 的响应。
 pub fn read_file_url(url: &str) -> Result<HttpResponse, NetError> {
     let path = file_url_to_path(url)?;
-    let body = std::fs::read(&path).map_err(|e| NetError::Network(format!("failed to read {}: {e}", path.display())))?;
+    let body =
+        std::fs::read(&path).map_err(|e| NetError::Network(format!("failed to read {}: {e}", path.display())))?;
     let content_type = guess_content_type(&path);
     Ok(HttpResponse {
         status_code: 200,

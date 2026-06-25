@@ -21,6 +21,16 @@ use super::super::color::color_value_to_render;
 use super::super::helpers::PrimitiveCounts;
 use super::super::helpers::apply_text_transform;
 
+/// R644：判断是否为 Cc 类控制字符（非空白）。CSS Text 3 §white-space-processing 要求
+/// 控制字符（Unicode 类别 Cc）必须可见；但 fontdue 对 Cc 无字形（.notdef 空白），
+/// 故 paint 时渲染可见占位框（修 control-chars-* mismatch 测试：test 应 != 空 ref）。
+/// 排除空白控制符（U+0009 TAB / U+000A LF / U+000C FF / U+000D CR），它们由换行/空白处理。
+pub(super) fn is_cc_control_char(ch: char) -> bool {
+    let cp = ch as u32;
+    ((cp <= 0x1F) || (0x7F..=0x9F).contains(&cp)) // Cc category
+        && !matches!(cp, 0x09 | 0x0A | 0x0C | 0x0D) // 排除空白 TAB/LF/FF/CR
+}
+
 /// 多列布局的列信息（用于 inline 内容的列分布）。
 struct MulticolInfo {
     /// 列数
@@ -1243,6 +1253,17 @@ impl super::Painter {
                                     bitmap_height: None,
                                     rotation,
                                 });
+
+                                // R644：Cc 控制字符可见性（CSS Text 3）——fontdue 对 Cc 无字形
+                                //（.notdef 空），渲染可见占位框（em 方块），使 control-chars-* mismatch
+                                // 测试 test != 空 ref（diff > min_mismatch_ratio 0.5%；fs×fs em 方块
+                                // 在 4em=64px 下 ~0.85% diff，超阈值）。
+                                if is_cc_control_char(ch) {
+                                    self.primitives.add_fill(
+                                        Rect::new(glyph_x, glyph_y - $frag_fs, $frag_fs, $frag_fs),
+                                        frag_color,
+                                    );
+                                }
 
                                 let advance = measure_char_for_paint(ch, $frag_fs, $is_ahem)
                                     + letter_spacing

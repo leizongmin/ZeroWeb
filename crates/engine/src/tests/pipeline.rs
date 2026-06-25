@@ -165,6 +165,33 @@ fn test_r639_multiline_inline_bg_painted_per_fragment() {
         "多行 inline span 背景应按行片段绘制（per-fragment），实际 blue fill 数 = {blue_fills}"
     );
 }
+/// R644：Cc 控制字符可见性（CSS Text 3 §white-space-processing）——fontdue 对 Cc 类控制
+/// 字符无字形（.notdef 空），paint 时渲染可见占位 em 方块。此测试守护 Cc 控制字符产生可见
+/// fill（修 control-chars-* mismatch 测试：test 应 != 空 ref）。
+#[test]
+fn test_r644_cc_control_char_visible_placeholder() {
+    let mut pipeline = RenderPipeline::new(200.0, 200.0);
+    // ::after content 注入 Cc 控制字符 U+0001（CSS 转义，避免 HTML 解析器吞掉）
+    let html =
+        r#"<html><body><style>p { font-size: 40px; } p::after { content: "\0001"; }</style><p>x</p></body></html>"#;
+    let result = pipeline.render_html(html, "");
+    // R644: Cc 控制字符应产生可见占位 fill（em 方块 font_size×font_size = 40×40），
+    // 而非 fontdue .notdef 空。断言存在一个 >= 30px 的 fill（占位框）。
+    assert!(
+        result
+            .primitives
+            .fills
+            .iter()
+            .any(|f| f.rect.size.width >= 30.0 && f.rect.size.height >= 30.0),
+        "Cc 控制字符应产生可见占位 fill（>=30px em 方块），实际 fills = {:?}",
+        result
+            .primitives
+            .fills
+            .iter()
+            .map(|f| (f.rect.size.width, f.rect.size.height))
+            .collect::<Vec<_>>()
+    );
+}
 /// 空字符串与空 HTML 文档不同，它不是有效的 HTML 结构。
 /// 验证管线能容错处理并返回零或最小的渲染输出。
 #[test]
@@ -1290,8 +1317,8 @@ fn test_render_retains_below_viewport_image_primitive() {
 fn test_testpage_table_to_image_section_gap() {
     use std::collections::HashMap;
 
-    use zero_dom::NodeId;
     use crate::image_resource_key;
+    use zero_dom::NodeId;
 
     let html = r##"<HTML><BODY BGCOLOR="#FFFFCC">
 <H1>Internet Explorer 1.x (Mosaic) -- Running!</H1>
