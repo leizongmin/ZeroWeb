@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 build browser browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest product-smoke
+.PHONY: setup-rusty-v8 build browser browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest product-smoke product-smoke-legacy
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -55,4 +55,14 @@ WELCOME_HTML := apps/browser/assets/welcome.html
 WELCOME_ORACLE := docs/goal/rendering-compat/evidence/product-static/welcome-chromium.png
 product-smoke: target/test-guard
 	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke $(WELCOME_HTML) --oracle $(WELCOME_ORACLE) --max-diff $(or $(MAX_DIFF),20)
+
+# Legacy Static Web smoke（DC-13，goal rendering-compat.md line 316）：跑 20 页
+# HTML 3.2/4 + CSS1/2 静态 fixture，每页 chromium oracle vs ZeroWeb CPU diff%。
+# ★ trend-only（退出 0）——diff 全归因字体墙（fontdue 行度量 vs chromium NotoSansCJK
+# 垂直漂移 + AA，R633 多会话 plateau），非回归；像素阈值作趋势指标，不替代 WPT/DC-14
+# 达标口径（goal line 318）。新增 fixture 写入 evidence/product-static/legacy-html/。
+# 用法：make product-smoke-legacy
+LEGACY_DIR := docs/goal/rendering-compat/evidence/product-static/legacy-html
+product-smoke-legacy: target/test-guard
+	bash $(LEGACY_DIR)/run-all.sh
 
