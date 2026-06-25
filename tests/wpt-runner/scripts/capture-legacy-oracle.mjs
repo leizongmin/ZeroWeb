@@ -2,16 +2,21 @@
 // R656: 截取本地 legacy-html fixture 的 chromium Oracle PNG（DC-13 legacy-html smoke）。
 // 依赖：tests/wpt-runner/scripts/node_modules/puppeteer-core + 系统 /usr/bin/chromium。
 // 用法：node capture-legacy-oracle.mjs <input.html> <output.png>
+//   环境变量 VW/VH 覆盖 viewport 尺寸（默认 800×600，DC-13 line 322 窄屏验收用 375×667）。
 import puppeteer from 'puppeteer-core';
 import { resolve } from 'node:path';
 
 const [, , input, output] = process.argv;
 if (!input || !output) {
-  console.error('usage: node capture-legacy-oracle.mjs <input.html> <output.png>');
+  console.error('usage: node capture-legacy-oracle.mjs <input.html> <output.png>  [env VW=375 VH=667]');
   process.exit(1);
 }
 
-const VIEWPORT = { width: 800, height: 600, deviceScaleFactor: 1 };
+const VIEWPORT = {
+  width: Number(process.env.VW) || 800,
+  height: Number(process.env.VH) || 600,
+  deviceScaleFactor: 1,
+};
 
 const browser = await puppeteer.launch({
   headless: 'new',
