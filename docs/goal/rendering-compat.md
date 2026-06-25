@@ -313,9 +313,9 @@
 - [ ] `apps/browser/assets/welcome.html` 通过 ZeroBrowser 窗口/无头路径截图，并与 Chromium 在相同 viewport 下的参考截图对比
 - [ ] `https://morning.work/page/2026-02/fedora-macbook-three-finger-drag.html` 录制为固定 HTML/CSS fixture，并通过 ZeroBrowser/WebView/Chromium 三方截图对比；fixture 必须包含原页面依赖的 `/article.css`、`/styles/github.css`、`/JetBrainsMono/JetBrainsMono.css` 或明确记录不可用资源
 - [ ] `https://wintertc.org/` 录制为固定 HTML/resource fixture，并通过 ZeroBrowser/WebView/Chromium 三方截图对比；fixture 必须包含内联 Twind CSS、`/static/logo.svg`、`/static/logos/*.svg`、`/static/logos/*.png` 等首页可见图片资源
-- [ ] **Legacy Static Web smoke（HTML 3.2/4 + CSS1/2）**：建立固定 fixture 集并纳入 product-smoke 路径，首批至少 20 页，覆盖无 CSS 老式文档、HTML presentational attributes、表格布局、图片与文本环绕、列表/链接/标题、`font` 标签、`hr`、基础 CSS1/2 外链样式。每页必须有 Chromium oracle 截图和 ZeroWeb CPU 输出截图，失败时持久化 diff 与资源清单
-- [ ] Legacy fixture 中必须包含类似 `testpage.htm` 的最小代表页：`BODY BGCOLOR/TEXT/LINK/VLINK`、`TABLE BORDER/CELLPADDING`、`TR BGCOLOR`、`IMG ALIGN=TOP`、`FONT SIZE`、`UL/LI`、`A href`。该页用于防止“WPT 分目录推进但老式静态页仍不可读”的回归
-- [ ] Legacy Static Web smoke 的短期验收口径是“可读且结构不崩”：正文不重叠、不串行；表格单元格边框/内边距可见；图片按替换元素参与 inline 布局；链接颜色/下划线可见；`font size/color` 影响文本；body 背景和文本色生效。像素阈值可先作为趋势指标记录，不得用它替代 WPT/DC-14 达标口径
+- [x] ✅(R658) **Legacy Static Web smoke（HTML 3.2/4 + CSS1/2）**：建立固定 fixture 集并纳入 product-smoke 路径，首批至少 20 页，覆盖无 CSS 老式文档、HTML presentational attributes、表格布局、图片与文本环绕、列表/链接/标题、`font` 标签、`hr`、基础 CSS1/2 外链样式。每页必须有 Chromium oracle 截图和 ZeroWeb CPU 输出截图，失败时持久化 diff 与资源清单
+- [x] ✅(R658, fixture 020) Legacy fixture 中必须包含类似 `testpage.htm` 的最小代表页：`BODY BGCOLOR/TEXT/LINK/VLINK`、`TABLE BORDER/CELLPADDING`、`TR BGCOLOR`、`IMG ALIGN=TOP`、`FONT SIZE`、`UL/LI`、`A href`。该页用于防止“WPT 分目录推进但老式静态页仍不可读”的回归
+- [x] ✅(R658 逐项体检通过) Legacy Static Web smoke 的短期验收口径是“可读且结构不崩”：正文不重叠、不串行；表格单元格边框/内边距可见；图片按替换元素参与 inline 布局；链接颜色/下划线可见；`font size/color` 影响文本；body 背景和文本色生效。像素阈值可先作为趋势指标记录，不得用它替代 WPT/DC-14 达标口径
 - [ ] URL 导航路径必须加载并应用 `<link rel="stylesheet">` 外部样式表；外链 CSS 抓取失败应作为可诊断的资源加载错误记录，不得静默退化为仅内联 CSS 渲染
 - [ ] URL 导航路径必须加载 `<img src>` 图片子资源，将解码后的 SVG/PNG/JPEG/WebP 像素数据写入 `ImageCache`，并在 ZeroBrowser CPU/GPU 渲染路径传入 renderer；图片缺失不得被 alt 文本或占位 glyph 静默替代
 - [ ] 同一输入通过 `zero-webview` 直接渲染路径截图，并与 Chromium 参考截图对比，避免产品层和 WebView 层互相掩盖问题
