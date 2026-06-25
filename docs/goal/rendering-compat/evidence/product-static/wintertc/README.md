@@ -1,5 +1,7 @@
 # DC-13 产品静态 smoke — WinterTC 首页 fixture（图片密集）
 
+> **R659 复测+纠正（2026-06-26，800×2000 全页 + 窄屏 375×667）**：**纠正下方「参与方 flex-wrap 仅布局个别 logo / 800×2000 仅 2 个 ImagePrimitive」过时结论**（R318 image-load-fix 前数据）。当前实测：800×2000 全页 diff = **6.43%**（thick_core 15.2% = font-wall）；逐带彩色像素统计 ZW **多于** CHR（y400-480 带 ZW 4001 vs CHR 1747 colored-px）——**12 个参与方 logo 全部渲染**（非仅 2 个），flex-wrap 多行换行布局工作（残余为行分布精度 + font-wall，非 logo 缺失）。窄屏 375×667 diff = 25.74%（hero/nav 区窄屏 reflow + font-wall 放大，结构完整）。即 wintertc **比本文下方历史结论健康得多**——历史 plateau 数（13.59%）是 800×600 可视窗 font-wall 压缩所致，全页实际仅 6.43%。下方为历史记录（R318/R372），保留作演化轨迹。
+
 > **R372 复测（2026-06-20，post-R355~R368）**：wintertc `z_vs_chr` = **13.72%**（product-smoke 子命令重渲染 vs wintertc-chromium.png），与 R318 的 13.70% / R227 的 13.59% 基本持平（±0.13pp 测量噪声）——**R355~R368 未带来可测 DC-13 收益**。原因：wintertc 残余 = fontdue 字体 AA 噪声 + 参与 `flex flex-wrap justify-evenly` logo 布局精度（Twind 类），**不含 width:auto inline-block**（R368 inline-block shrink 不适用）；multiline-storage/per-fragment-color/float-intrusion 等亦非 wintertc 触发面。wintertc-zeroweb-cpu.png 已更新为当前渲染。**结论**：wintertc DC-13 经 fresh 复测确认 plateau（与 welcome 不同——welcome 因用 inline-block 被 R368 改善 17.06→14.68%）。
 
 **日期**: 2026-06-16
