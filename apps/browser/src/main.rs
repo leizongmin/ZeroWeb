@@ -20,6 +20,7 @@ mod pages;
 mod tab_chrome;
 mod tab_favicon;
 mod text_input;
+mod text_metrics;
 mod ui_icons;
 
 use std::sync::Arc;

@@ -34,6 +34,7 @@ pub mod hit_test;
 pub mod paint;
 pub mod pipeline;
 pub mod preload;
+pub mod text_metrics;
 pub mod transition;
 
 pub use animation::*;
@@ -44,6 +45,7 @@ pub use hit_test::*;
 pub use paint::*;
 pub use pipeline::*;
 pub use preload::*;
+pub use text_metrics::{layout_estimate_char_width, measure_char_for_paint, set_char_measure_fn};
 pub use transition::*;
 pub use zero_css_parser::media_query::PrefersColorSchemeValue;
 

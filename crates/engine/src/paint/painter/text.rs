@@ -4,11 +4,10 @@
 
 use std::collections::HashMap;
 
+use crate::measure_char_for_paint;
 use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, ListStyleTypeValue};
 use zero_dom::{Document, NodeId, NodeKind};
-use zero_layout_engine::{
-    FloatExclusion, InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode, estimate_char_width,
-};
+use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode};
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, LineCap, StrokePrimitive};
@@ -408,7 +407,7 @@ impl super::Painter {
                         bitmap_height: None,
                         rotation: 0.0,
                     });
-                    char_x += estimate_char_width(ch, font_size * 0.85, false);
+                    char_x += measure_char_for_paint(ch, font_size * 0.85, false);
                 }
             }
             ListStyleTypeValue::LowerAlpha | ListStyleTypeValue::UpperAlpha => {
@@ -441,7 +440,7 @@ impl super::Painter {
                         bitmap_height: None,
                         rotation: 0.0,
                     });
-                    char_x += estimate_char_width(ch, font_size * 0.85, false);
+                    char_x += measure_char_for_paint(ch, font_size * 0.85, false);
                 }
             }
             ListStyleTypeValue::LowerRoman | ListStyleTypeValue::UpperRoman => {
@@ -469,7 +468,7 @@ impl super::Painter {
                         bitmap_height: None,
                         rotation: 0.0,
                     });
-                    char_x += estimate_char_width(ch, font_size * 0.85, false);
+                    char_x += measure_char_for_paint(ch, font_size * 0.85, false);
                 }
             }
             ListStyleTypeValue::None => {}
@@ -556,7 +555,7 @@ impl super::Painter {
                 bitmap_height: None,
                 rotation: 0.0,
             });
-            char_x += estimate_char_width(ch, font_size, false);
+            char_x += measure_char_for_paint(ch, font_size, false);
         }
     }
 
@@ -1081,7 +1080,7 @@ impl super::Painter {
                                         rotation,
                                     });
 
-                                    let advance = estimate_char_width(ch, fragment.font_size, frag_is_ahem)
+                                    let advance = measure_char_for_paint(ch, fragment.font_size, frag_is_ahem)
                                         + letter_spacing
                                         + if ch == ' ' { word_spacing } else { 0.0 };
                                     char_pos += advance;
@@ -1090,8 +1089,8 @@ impl super::Painter {
                                 let text_width: f32 = transformed
                                     .chars()
                                     .map(|ch| {
-                                        let w =
-                                            estimate_char_width(ch, fragment.font_size, frag_is_ahem) + letter_spacing;
+                                        let w = measure_char_for_paint(ch, fragment.font_size, frag_is_ahem)
+                                            + letter_spacing;
                                         if ch == ' ' { w + word_spacing } else { w }
                                     })
                                     .sum();
@@ -1180,7 +1179,7 @@ impl super::Painter {
                             let text_width: f32 = transformed
                                 .chars()
                                 .map(|ch| {
-                                    let w = estimate_char_width(ch, $frag_fs, $is_ahem) + letter_spacing;
+                                    let w = measure_char_for_paint(ch, $frag_fs, $is_ahem) + letter_spacing;
                                     if ch == ' ' { w + word_spacing } else { w }
                                 })
                                 .sum();
@@ -1245,7 +1244,7 @@ impl super::Painter {
                                     rotation,
                                 });
 
-                                let advance = estimate_char_width(ch, $frag_fs, $is_ahem)
+                                let advance = measure_char_for_paint(ch, $frag_fs, $is_ahem)
                                     + letter_spacing
                                     + if ch == ' ' { word_spacing } else { 0.0 };
                                 char_pos += advance;
@@ -1323,7 +1322,7 @@ impl super::Painter {
                     }
 
                     if has_overflow {
-                        let ellipsis_char_width = estimate_char_width('.', font_size, false);
+                        let ellipsis_char_width = measure_char_for_paint('.', font_size, false);
                         let total_ellipsis_width = ellipsis_char_width * 3.0 + letter_spacing * 2.0;
                         let ellipsis_end_x = content_right;
                         let ellipsis_start_x = ellipsis_end_x - total_ellipsis_width;
@@ -1402,7 +1401,7 @@ impl super::Painter {
                             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
                             .unwrap_or(content_x + tx);
 
-                        let ellipsis_width = estimate_char_width('.', font_size, false);
+                        let ellipsis_width = measure_char_for_paint('.', font_size, false);
                         let default_font_id = self.resolve_font_id(&style.font_family);
                         for i in 0..3 {
                             self.primitives.add_glyph(GlyphPrimitive {
@@ -1458,7 +1457,7 @@ impl super::Painter {
             glyph_x,
             glyph_y + font_size,
             font_size,
-            estimate_char_width('A', font_size, false),
+            measure_char_for_paint('A', font_size, false),
             color,
             style,
         );
@@ -1518,7 +1517,7 @@ impl super::Painter {
                 bitmap_height: None,
                 rotation: 0.0,
             });
-            char_x += estimate_char_width(ch, font_size, is_ahem);
+            char_x += measure_char_for_paint(ch, font_size, is_ahem);
         }
     }
 }

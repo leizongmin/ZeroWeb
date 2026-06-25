@@ -250,7 +250,7 @@ impl RenderPipeline {
         painter.viewport_h = self.viewport_height;
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
-        let viewport = Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
+        let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
         let (primitives, stats) = primitives.cull_invisible(viewport);
         let primitives = primitives.batch_fills();
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
@@ -334,8 +334,8 @@ impl RenderPipeline {
         painter.viewport_h = self.viewport_height;
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let primitives = painter.into_primitives();
-        // 视口剔除 — 移除视口外的图元
-        let viewport = Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
+        // 视口剔除 — 移除视口外的图元（高度取文档布局范围，供浏览器滚动消费）
+        let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
         let (primitives, stats) = primitives.cull_invisible(viewport);
         // 对填充图元进行批处理优化
         let primitives = primitives.batch_fills();
@@ -517,6 +517,12 @@ fn layout_extent_y(b: &zero_layout_engine::LayoutBox, offset_y: f32) -> f32 {
         max_y = max_y.max(layout_extent_y(child, offset_y + b.y));
     }
     max_y
+}
+
+/// 绘制阶段剔除矩形：宽度仍限视口，高度扩展到完整文档，避免浏览器滚动时丢失页内图元。
+fn paint_cull_viewport(viewport_w: f32, viewport_h: f32, layout_root: &zero_layout_engine::LayoutBox) -> Rect {
+    let doc_h = layout_extent_y(layout_root, 0.0);
+    Rect::new(0.0, 0.0, viewport_w, doc_h.max(viewport_h))
 }
 
 /// 把 `::before`/`::after` 伪元素的 `content` 文本注入为元素的合成文本子节点。
