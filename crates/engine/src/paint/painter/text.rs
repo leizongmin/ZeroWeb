@@ -939,17 +939,16 @@ impl super::Painter {
             // `all_fragments()` 返回行内相对 y（恒 0），`all_fragments_with_line_y()`
             // 把 line.y 加到片段 y。
             //
-            // **作用域限定 preserve_whitespace（pre/pre-wrap/break-spaces）**：此模式的
-            // 多行来自显式 `\n` 强制换行（如 morning-work `<pre>` 代码块）。auto-wrap
-            //（white-space normal/nowrap）的多行块的 test/ref 此前都堆叠同错，正确修复
-            // 反致同源 FAIL（R246 实证净 -11 回归）。故仅对 pre 族应用 with_line_y——
-            // 修 morning-work 代码块塌缩，不触碰 auto-wrap（保持同源匹配）。
+            // **统一使用 with_line_y（R246 限制解除，2026-06-25）**：R246 曾把此修复限定在
+            // preserve_whitespace（pre 族），因 auto-wrap 多行块的 test/ref 此前都堆叠同错，
+            // 修后反致同源 reftest 净 -11 回归。但实测确认 auto-wrap 多行堆叠是真实 bug
+            //（layout 算对多行 h，paint 把多行画在同一 y）——用户可见的"文字堆叠看不清"。
+            // 同源 -11 是「test/ref 同错用例的诚实化暴露」（DC-14 视角为进步），非真退步；
+            // product-smoke（真实网站）维度此修复为正收益。故统一对所有 Path B 应用 with_line_y。
             let fragments: Vec<zero_layout_engine::TextFragment> = if use_stored {
                 Vec::new()
-            } else if preserve_whitespace {
-                inline_ctx.all_fragments_with_line_y()
             } else {
-                inline_ctx.all_fragments().into_iter().cloned().collect()
+                inline_ctx.all_fragments_with_line_y()
             };
 
             let has_content = use_stored && !stored_fragments.is_empty() || !fragments.is_empty();
