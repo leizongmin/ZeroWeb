@@ -35,6 +35,25 @@
 
 参考基准：**Chromium（Chrome/Edge）** 的渲染输出作为 reftest 的参考截图来源。
 
+### 优先级修订：Legacy Static Web（HTML 3.2/4 + CSS1/2）
+
+**背景记录（2026-06-26）**：用户反馈 `http://172.27.46.54:8000/testpage.htm` 一类老式静态页面渲染效果差。该页面不是 IE1 专属兼容目标，而是典型的 HTML 3.2/4 + CSS1/2 静态网页模式：`BODY BGCOLOR/TEXT/LINK/VLINK`、`TABLE BORDER/CELLPADDING`、`TR BGCOLOR`、`IMG ALIGN=TOP`、`FONT SIZE`、标题/段落/列表/链接等基础结构。当前 `rendering-compat` 主线以 WPT reftest + Chromium oracle 为核心，虽已覆盖部分 CSS2/presentational hints，但没有把这类老式静态网页作为独立产品验收面。
+
+**裁决**：在不降低 WPT/DC-14 最终目标的前提下，将 **HTML 3.2/4 常见静态文档 + CSS1/2 常见布局** 提升为短期高优先级推进面。理由是：
+
+- 这类页面大量依赖 UA stylesheet、HTML presentational attributes、基础 block/inline、表格、图片、列表和链接颜色，修复通常比 multicol/writing-modes/font-feature 等现代或结构性子域更局部。
+- 用户可见收益更直接：静态文档、内网页、说明页、老式工具页不需要 JS/现代 CSS，也能暴露基础排版/绘制链路问题。
+- 该方向不是完整 CSS2 达标的替代品；完整 CSS2 `chr<1%` 仍是长期目标，但短期应优先让 legacy static pages “可读、布局不崩、核心语义可见”。
+
+**Legacy Static Web Tier 1 范围**：
+
+- HTML presentational hints：`body bgcolor/text/link/vlink/alink`、`table border/cellpadding/cellspacing/width/height`、`tr/td/th bgcolor/align/valign/width/height`、`img width/height/align`、`font size/color/face`、`hr` 基础属性。
+- UA stylesheet 基线：`h1`-`h6`、`p`、`ul/ol/li`、`b/strong`、`i/em`、`a`、`table/tr/td/th`、`font`、`hr` 的默认 display、margin、font-size、font-weight、font-style、text-decoration、border/padding 语义。
+- CSS1/2 常见模式：颜色/背景、字体大小与继承、普通流、inline formatting 基础、表格基础布局、替换元素尺寸与 baseline/vertical-align、margin/padding/border、float/clear 基础。
+- 明确暂不扩展到 IE 专属行为或浏览器 bug 兼容；quirks mode 只按标准/Chromium 可解释行为推进。
+
+**验收方式**：新增 `legacy-html` 产品 smoke fixture 集，至少包含 20 个 HTML 3.2/4 + CSS1/2 静态页面（真实录制 + 合成最小页各占一部分），使用 Chromium 参考截图做 oracle，并在 ZeroWeb CPU 路径输出截图后做像素对比。该 fixture 集不替代 WPT 通过率，但作为短期修复优先级和回归门禁；每次修复必须同时说明它对应的 WPT/CSS 规范点或 legacy fixture。
+
 ---
 
 ## Support Envelope
@@ -294,6 +313,9 @@
 - [ ] `apps/browser/assets/welcome.html` 通过 ZeroBrowser 窗口/无头路径截图，并与 Chromium 在相同 viewport 下的参考截图对比
 - [ ] `https://morning.work/page/2026-02/fedora-macbook-three-finger-drag.html` 录制为固定 HTML/CSS fixture，并通过 ZeroBrowser/WebView/Chromium 三方截图对比；fixture 必须包含原页面依赖的 `/article.css`、`/styles/github.css`、`/JetBrainsMono/JetBrainsMono.css` 或明确记录不可用资源
 - [ ] `https://wintertc.org/` 录制为固定 HTML/resource fixture，并通过 ZeroBrowser/WebView/Chromium 三方截图对比；fixture 必须包含内联 Twind CSS、`/static/logo.svg`、`/static/logos/*.svg`、`/static/logos/*.png` 等首页可见图片资源
+- [ ] **Legacy Static Web smoke（HTML 3.2/4 + CSS1/2）**：建立固定 fixture 集并纳入 product-smoke 路径，首批至少 20 页，覆盖无 CSS 老式文档、HTML presentational attributes、表格布局、图片与文本环绕、列表/链接/标题、`font` 标签、`hr`、基础 CSS1/2 外链样式。每页必须有 Chromium oracle 截图和 ZeroWeb CPU 输出截图，失败时持久化 diff 与资源清单
+- [ ] Legacy fixture 中必须包含类似 `testpage.htm` 的最小代表页：`BODY BGCOLOR/TEXT/LINK/VLINK`、`TABLE BORDER/CELLPADDING`、`TR BGCOLOR`、`IMG ALIGN=TOP`、`FONT SIZE`、`UL/LI`、`A href`。该页用于防止“WPT 分目录推进但老式静态页仍不可读”的回归
+- [ ] Legacy Static Web smoke 的短期验收口径是“可读且结构不崩”：正文不重叠、不串行；表格单元格边框/内边距可见；图片按替换元素参与 inline 布局；链接颜色/下划线可见；`font size/color` 影响文本；body 背景和文本色生效。像素阈值可先作为趋势指标记录，不得用它替代 WPT/DC-14 达标口径
 - [ ] URL 导航路径必须加载并应用 `<link rel="stylesheet">` 外部样式表；外链 CSS 抓取失败应作为可诊断的资源加载错误记录，不得静默退化为仅内联 CSS 渲染
 - [ ] URL 导航路径必须加载 `<img src>` 图片子资源，将解码后的 SVG/PNG/JPEG/WebP 像素数据写入 `ImageCache`，并在 ZeroBrowser CPU/GPU 渲染路径传入 renderer；图片缺失不得被 alt 文本或占位 glyph 静默替代
 - [ ] 同一输入通过 `zero-webview` 直接渲染路径截图，并与 Chromium 参考截图对比，避免产品层和 WebView 层互相掩盖问题
