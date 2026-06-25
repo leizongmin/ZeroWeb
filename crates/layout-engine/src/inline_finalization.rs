@@ -488,6 +488,13 @@ pub(crate) fn compute_final_inline_layouts(
     // （其 test 用真 multicol 已在上方 line 242 排除存储），浮动容器多行存储打破 test/ref 对称致
     // self-source 发散；该 case chromium-Oracle 9.15% 不变 = 非真回归，guard 仅维持 self-source 一致。
     inline_ctx.layout(doc, node_id, styles);
+    // R632：存 font_size/line_height/is_ahem/letter_spacing overrides 供 paint Path B 重跑 IFC 用。
+    // compute_final 此前不存（仅 remeasure 路径 line 801/935 存），致走 Path B 的容器（非 pure-Ahem，
+    // 含 wrap/auto-wrap 多行块）paint IFC override 全空 → line_height fallback 19.2 (16×1.2) 而非
+    // CSS line-height，行间距度量错误（R630 修了多行 y 分行，本修复补 line_height 度量）。
+    // line_height 不影响行断（mod.rs 注释），但 font_size override 命中会影响 paint IFC
+    // char-width 行断——R627 曾 net -15（pre-wrap），R630 后重试（with_line_y 可能吸收）。
+    store_font_sizes_from_ifc(&inline_ctx, root);
     let is_pure_ahem = style.font_family.len() == 1 && style.font_family[0].eq_ignore_ascii_case("Ahem");
     let is_floated = !matches!(style.float, FloatValue::None);
     if !is_pure_ahem || (is_floated && inline_ctx.lines.len() > 1) {
