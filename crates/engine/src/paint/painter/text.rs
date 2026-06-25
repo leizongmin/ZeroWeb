@@ -1173,6 +1173,42 @@ impl super::Painter {
 
                             let transformed = apply_text_transform(&$frag_text, &style.text_transform);
 
+                            // R639：text_width 先算（glyph loop 之前），支持 inline bg 在 glyph 下绘制。
+                            let text_width: f32 = transformed
+                                .chars()
+                                .map(|ch| {
+                                    let w = estimate_char_width(ch, $frag_fs, $is_ahem) + letter_spacing;
+                                    if ch == ' ' { w + word_spacing } else { w }
+                                })
+                                .sum();
+
+                            // R639 Phase A slice：per-line-fragment inline background，仅对跨多行
+                            // 的 inline 生效。关键修复（R638 锁定 blocker）：宏的 box_node 是 **IFC
+                            // owner**（文本所在容器）非 inline 本身，故多行门控用 **owner inline 自身
+                            // height**（self.inline_heights 按 owner_id 查），而非 box_node.height
+                            //（IFC owner 的）——后者在 inline 文本处于父 IFC 时与 paint_node 抑制
+                            //（inline 自身 box 上）分歧致 bg 消失。两处现均用 inline 自身 height → 一致。
+                            // frag_base_x 已含 text-indent（IFC 首行 current_x=text_indent），首行从缩进后起。
+                            let owner_h = self.inline_heights.get(&owner_id).copied().unwrap_or(0.0);
+                            if !is_vertical
+                                && !box_node.is_absolute
+                                && !box_node.is_fixed
+                                && owner_h > $frag_fs * 1.5
+                                && let Some(owner_style) = styles.and_then(|s| s.get(&owner_id))
+                                && matches!(owner_style.display, zero_css_parser::values::DisplayValue::Inline)
+                                && owner_style.background_color != ColorValue::Transparent
+                            {
+                                let line_h = box_node
+                                    .text_node_line_heights
+                                    .get(&$frag_nid)
+                                    .copied()
+                                    .unwrap_or($frag_fs * 1.2);
+                                self.primitives.add_fill(
+                                    Rect::new(frag_base_x, content_y + $frag_y + ty, text_width, line_h),
+                                    color_value_to_render(&owner_style.background_color),
+                                );
+                            }
+
                             for ch in transformed.chars() {
                                 let (glyph_x, glyph_y) = if char_advance_is_y {
                                     (frag_base_x, char_pos)
@@ -1212,13 +1248,6 @@ impl super::Painter {
                                 char_pos += advance;
                             }
 
-                            let text_width: f32 = transformed
-                                .chars()
-                                .map(|ch| {
-                                    let w = estimate_char_width(ch, $frag_fs, $is_ahem) + letter_spacing;
-                                    if ch == ' ' { w + word_spacing } else { w }
-                                })
-                                .sum();
                             self.paint_text_decoration_from_style(
                                 frag_base_x,
                                 frag_base_y,
@@ -1521,7 +1550,11 @@ fn to_roman(mut num: usize) -> String {
     result
 }
 
-fn has_direct_paintable_text(doc: &Document, node_id: NodeId, styles: Option<&HashMap<NodeId, ComputedStyle>>) -> bool {
+pub(super) fn has_direct_paintable_text(
+    doc: &Document,
+    node_id: NodeId,
+    styles: Option<&HashMap<NodeId, ComputedStyle>>,
+) -> bool {
     let direct = doc.child_nodes(node_id).iter().any(|child_id| {
         matches!(
             doc.get(*child_id).map(|node| &node.kind),
