@@ -621,7 +621,7 @@
 
 ### 若推进多会话架构（按依赖序）
 
-1. **Phase A IFC 统一**（[`phase-a-IFC-unification-design.md`](./phase-a-IFC-unification-design.md)）— 解 large-font（ifc-008/009/011）+ welcome/morning.work 文本度量残余。R207 narrow 已证 font-051 +1 可行；需多轮 set-diff 收敛 broad 应用 + 守 multicol-fill-auto 反向依赖（R198 墙）。
+1. **Phase A IFC 统一**（[`phase-a-IFC-unification-design.md`](./phase-a-IFC-unification-design.md)）— 解 large-font（ifc-008/009/011）+ welcome/morning.work 文本度量残余。R207 narrow 已证 font-051 +1 可行；需多轮 set-diff 收敛 broad 应用 + 守 multicol-fill-auto 反向依赖（R198 墙）。 **★ R639 de-risking（首步可 incrementally 承诺，非 big-bang）**：`Painter.inline_heights`（NodeId→box.height 预扫描）是通用 Phase A 桥接机制，per-fragment inline-bg R639 已 LANDED（+13）+ per-fragment color R358 + 跨 block float 侵入 R362 各 LANDED——实证 Phase A **非「全有或全无」**，可按 narrow slice 逐项提交（每项独立 A/B 守回归、零回归即留），降低首步承诺风险；剩余 owner-height 桥下一用途 = 真实 font 度量（IFC↔FontLoader 接口）。
 2. **Phase 2 嵌套 multicol fragmentation**（[`multicol-fragmentation-design.md`](./multicol-fragmentation-design.md)、[`column-aware-IFC-spec.md`](./column-aware-IFC-spec.md)）— 解 multicol-breaking（css-multicol 最大失败聚类）。R319 证纯 inline 迁移零增益，真实价值在嵌套 / 混合内容碎片化。
 3. **baseline-export 真修复** — taffy 0.8+ baseline_overrides（R304 DEFER 升级）或自建 inline-level-box baseline 合成；解 flexbox-baseline / multicol-baseline 聚类。
 4. **DC-9 blend_mode** — paint-isolation 架构（offscreen 子树渲染 + source/dest 双纹理 blend pass），低 reftest footprint（~2-4 案）。
