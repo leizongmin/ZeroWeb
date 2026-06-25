@@ -86,11 +86,11 @@
 | 浏览器层 glyph 保真 | ZeroBrowser 消费 WebView `GlyphPrimitive` 时必须保持 engine 输出坐标、baseline、font size 和 fragment 边界的语义；字体 fallback 或选择功能不得重新排版整行 glyph | 浏览器层后处理不能把不同 grid/flex/card 中同一 baseline 的文本合并为一行 |
 | 范围外 reftest 过滤 | 导入时自动过滤或标记范围外 reftest（SVG、Canvas、WebGL 等），维护 skip list | 防止范围外 case 膨胀分母 |
 | 渲染缺口修复 | 任何导致 reftest 失败的渲染错误 | 由 reftest 结果驱动 |
-| 渲染器图元覆盖 | CPU 渲染器和 GPU 渲染器必须能够渲染所有 `RenderPrimitives` 类型：fills、rounded_rects、gradients、shadows、images、strokes、path_fills、path_strokes、transforms、clips、filters、blend_modes、glyphs | 当前 CPU 渲染器仅支持 fills + rounded_rects + glyphs；GPU 渲染器仅支持 fills + glyphs。**这是渲染效果差的最大根因** |
-| 浏览器图元消费 | `append_webview_primitives()` 必须将所有 `RenderPrimitives` 类型传递到渲染器，不能静默丢弃 | 当前仅消费 fills + glyphs，其余 11 种图元类型全部丢弃 |
-| 渐变渲染 | 线性渐变、径向渐变、锥形渐变、重复渐变的 CPU + GPU 渲染 | `GradientPrimitive` 已定义但两个渲染器均未实现渲染 |
-| 阴影渲染 | `box-shadow` 的高斯模糊阴影渲染（offset + blur + spread + color） | `ShadowPrimitive` 已定义但两个渲染器均未实现渲染 |
-| 图片渲染 | 背景图片（`background-image`）、`<img>` 元素、`list-style-image` 的图片解码和渲染 | `ImagePrimitive` 已定义但两个渲染器均未实现渲染 |
+| 渲染器图元覆盖 | CPU 渲染器和 GPU 渲染器必须能够渲染所有 `RenderPrimitives` 类型：fills、rounded_rects、gradients、shadows、images、strokes、path_fills、path_strokes、transforms、clips、filters、blend_modes、glyphs | ✅ **已实现（M7）**：CPU（crates/render-foundation/src/cpu/ 下 gradient.rs/shadow.rs/image/stroke.rs/effects.rs）+ GPU（gpu/renderer/mod.rs draw_gradient/image/rounded_rect_pass + collect_*_vertices + gpu/mesh.rs）均已实现全 13 种图元渲染并附单测；原 pre-M7「仅 3/2 种」描述已过时（详见 master.md R660） |
+| 浏览器图元消费 | `append_webview_primitives()` 必须将所有 `RenderPrimitives` 类型传递到渲染器，不能静默丢弃 | ✅ **已实现（M7）**：`append_webview_primitives()`（app_render.rs:1512）遍历全 13 字段无丢弃（见 DC-10） |
+| 渐变渲染 | 线性渐变、径向渐变、锥形渐变、重复渐变的 CPU + GPU 渲染 | ✅ **已实现（M7）**：CPU `render_gradient`（逐像素插值，cpu/gradient.rs）+ GPU `draw_gradient_pass` + `test_gpu_full_scene_gradient` |
+| 阴影渲染 | `box-shadow` 的高斯模糊阴影渲染（offset + blur + spread + color） | ✅ **已实现（M7）**：CPU `render_shadow`（cpu/shadow.rs）+ GPU `collect_shadow_vertices` + `test_gpu_full_scene_shadow` |
+| 图片渲染 | 背景图片（`background-image`）、`<img>` 元素、`list-style-image` 的图片解码和渲染 | ✅ **已实现（M7）**：CPU `render_image`（cpu/mod.rs）+ GPU `draw_image_pass`（纹理采样） |
 | 线段/路径渲染 | `StrokePrimitive`（线段）、`PathFillPrimitive`（路径填充）、`PathStrokePrimitive`（路径描边）的渲染 | 用于虚线/点线边框、装饰线、clip-path 等；已定义但渲染器未实现 |
 | 变换渲染 | CSS 2D transform（translate、rotate、scale、skew、matrix）的正确应用 | `TransformPrimitive` 已定义但渲染器未实现；3D transform 降级为 2D |
 | 裁剪渲染 | `overflow: hidden/clip` 的矩形裁剪，`border-radius` 的圆角裁剪 | `ClipPrimitive` 已定义但渲染器未实现；当前裁剪仅在浏览器层做像素级处理，不在渲染器层 |
@@ -130,8 +130,8 @@
 - **已有可复用基础设施**（M1 必须**扩展**而非重写）：
   - `tests/wpt-runner/src/reftest.rs`：像素对比引擎（`ReftestConfig`：`max_diff_ratio`, `max_channel_diff`）、`run_reftest()`、`compare_pixels()`、16 个内建 reftest case
   - `tests/wpt-runner/src/manifest.rs`：WPT MANIFEST.json 解析器、`filter_by_type()`、`filter_by_path_prefix()`
-  - `crates/render-foundation/src/cpu.rs`：`render_scene_to_framebuffer()` — CPU 软件渲染截图（⚠️ 仅支持 fills + rounded_rects + glyphs）
-  - `crates/render-foundation/src/gpu/`：GPU 渲染器 + WGSL shaders（⚠️ 仅支持 fills + glyphs）
+  - `crates/render-foundation/src/cpu.rs`：`render_scene_to_framebuffer()` — CPU 软件渲染截图（✅ M7 已支持全 13 种图元：gradient/shadow/image/stroke/path_fill/path_stroke/filter/blend 等）
+  - `crates/render-foundation/src/gpu/`：GPU 渲染器 + WGSL shaders（✅ M7 已支持 rounded_rect/gradient/image/shadow/stroke/path 等 wgpu+mesh 管线）
   - `crates/render-foundation/src/primitive/mod.rs`：13 种图元类型定义（✅ 完整，Paint 系统已能全部生成）
   - `crates/engine/src/paint/`：Paint 系统（✅ 完整，能生成所有 13 种图元类型）
   - `crates/script-sandbox/`：V8 runtime — 用于 reftest harness 中执行 JS
@@ -278,7 +278,7 @@
 
 ### DC-10: 浏览器图元消费完整性
 
-- [ ] `append_webview_primitives()` 处理 `RenderPrimitives` 的所有 13 个字段（fills、rounded_rects、path_fills、path_strokes、strokes、gradients、shadows、images、glyphs、filters、blend_modes、transforms、clips）
+- [x] ✅(M7) `append_webview_primitives()` 处理 `RenderPrimitives` 的所有 13 个字段（fills、rounded_rects、path_fills、path_strokes、strokes、gradients、shadows、images、glyphs、filters、blend_modes、transforms、clips）— app_render.rs:1512 遍历全 13 字段（1526-1840）无丢弃
 - [ ] 所有图元类型正确应用 `scale_factor` 和 `offset`
 - [ ] 所有图元类型正确应用视口裁剪（`clip_y` + `clip_rounded`）
 - [ ] 图元渲染顺序遵循 CSS painting order（background → borders → content → outline）
@@ -383,9 +383,9 @@
 | Quirks mode | ✅ 已实现（实质） | CSS parser（mode-gated）+ style system（3 quirks 预烘焙）两层活跃；layout-engine 无独立 quirks 层（由 style-system 预烘焙覆盖，架构合理）。wpt-data quirks 用例全过（R248 实证） |
 | 文字排版 | ✅ 已集成 | rustybuzz OpenType shaping + unicode-bidi BiDi 算法 + CJK line-breaking |
 | Paint 系统 | ✅ 13 种图元 | 填充、圆角矩形、路径、线段、渐变、阴影、图片、文字、滤镜、混合模式、变换、裁剪 |
-| CPU 软件渲染 | ⚠️ 部分 | 仅支持 FillPrimitive + RoundedRectPrimitive + GlyphPrimitive |
-| GPU 渲染 | ⚠️ 部分 | 仅支持 FillPrimitive + GlyphPrimitive |
-| 浏览器图元消费 | ❌ 严重不足 | `append_webview_primitives()` 仅消费 fills + glyphs，丢弃其余 11 种图元 |
+| CPU 软件渲染 | ✅ **已实现（M7）** | fills/rounded/glyphs + gradient/shadow/image/stroke/path_fill/path_stroke/filter/blend（cpu/ 下各模块，附单测） |
+| GPU 渲染 | ✅ **已实现（M7）** | wgpu+WGSL `draw_*_pass` + `collect_*_vertices` + mesh 管线（rounded/gradient/image/shadow/stroke/path/filter），非 CPU passthrough，附 `test_gpu_full_scene_*` |
+| 浏览器图元消费 | ✅ **已实现（M7）** | `append_webview_primitives()`（app_render.rs:1512）遍历全 13 字段无丢弃 |
 | Margin 折叠 | ✅ 已实现（taffy 0.7 CollapsibleMarginSet；R323 实测 6 探针 case + 5 reftest 全过） | 块级元素间距与主流浏览器一致 |
 | BFC（margin 隔离部分） | ✅ 已实现（overflow:hidden/flex/grid 等 BFC 的子元素 margin 不与父折叠；R323 实测） | margin 折叠隔离正确；浮动包含（float containment）部分未单独验证 |
 | 滚动容器 | ⚠️ 简化处理 | 无真正滚动容器，浏览器层手动偏移 |
@@ -394,8 +394,8 @@
 
 | 缺口 | 影响范围 | 严重性 | 当前状态 |
 |------|----------|--------|----------|
-| **渲染器图元覆盖** | **所有视觉输出** | **P0-致命** | Paint 生成 13 种图元，CPU 渲染器仅处理 3 种（fills、rounded_rects、glyphs），GPU 渲染器仅处理 2 种（fills、glyphs）。渐变、阴影、图片、线段、路径、变换、裁剪、滤镜、混合模式全部无法渲染 |
-| **浏览器图元消费** | **所有视觉输出** | **P0-致命** | `append_webview_primitives()` 仅传递 fills 和 glyphs 到渲染器，`rounded_rects`、`gradients`、`shadows`、`images`、`strokes`、`path_fills`、`path_strokes`、`transforms`、`clips`、`filters`、`blend_modes` 全部静默丢弃 |
+| **渲染器图元覆盖** | **所有视觉输出** | ✅ **已实现（M7）** | CPU（cpu/gradient.rs+shadow.rs+image+stroke.rs+effects.rs filter/blend）+ GPU（gpu/renderer/mod.rs draw_gradient/image/rounded_rect_pass + collect_shadow/stroke/path_fill/path_stroke/color_filter/blur_filter + mesh）均已实现全 13 种图元，附单测（test_gpu_full_scene_gradient/shadow/stroke 等）。**注**：granular DC-8/9 各项的 framebuffer 像素断言 rigor 仍待逐项复核。原「CPU 仅 3 种 / GPU 仅 2 种 / 全部无法渲染」描述已过时（pre-M7） |
+| **浏览器图元消费** | **所有视觉输出** | ✅ **已实现（M7）** | `append_webview_primitives()`（app_render.rs:1512）遍历 `RenderPrimitives` 全 13 字段（line 1526-1840）无静默丢弃。原「仅 fills+glyphs，11 种丢弃」描述已过时（pre-M7） |
 | **Inline formatting 所有权分裂** | **静态页面基础排版** | **P1-严重** | inline/inline-block 在 taffy 中映射为 block，同时 IFC 又通过 `text_content()` 收集 inline 子树文本；父容器和子 inline 盒可能重复或错位绘制文本。`welcome.html` 中 `ZeroBrowser`、card/link/shortcut 文本串联是该类缺口的产品可见症状 |
 | **Layout/Paint IFC 双路径** | **文本布局与 glyph 输出一致性** | **P1-严重** | layout 阶段和 paint 阶段不是同一份 IFC 结果；paint 二次运行 IFC 时 style map、float exclusion、container width 可能不同，导致 box 背景位置与 glyph 位置不一致 |
 | ~~**外部样式表加载缺失**~~ | **真实静态网页 CSS** | ✅ **已贯通（R213）** | ✅ **已修复**：fetch_url 三条成功路径（SW 拦截 line 396 / HTTP 缓存命中 421 / 正常 fetch 448）现均 `load_html(&html, Some(&external_css))`（非 None）；prepare_page_subresources → resolve_external_css（webview.rs:256）经 extract_stylesheet_hrefs 提取 `<link rel="stylesheet">` + base URL 解析 + 逐个 HTTP 抓取 + 合并注入级联，抓取/解码失败记 `tracing::warn!`（274-276）不阻断（宽松降级）；R213 测试 test_fetch_url_loads_external_stylesheet + ..._missing_does_not_break 覆盖。~~原（已过时）~~： `WebView::fetch_url()` 三条成功路径都会调用 `load_html(&html, None)`；`RenderPipeline::collect_stylesheets()` 只收调用方传入 CSS 和文档内 `<style>`，不抓取 `<link rel="stylesheet">`。morning.work 文章页依赖外链 CSS，当前会静默退化为仅内联样式 |
@@ -423,7 +423,7 @@
 - 总测试数：~12,001，全绿
 - Coverage：95.46% line, 96.94% function, 94.88% region
 - Inline reftest：685 个，100% 通过（⚠️ 手写简单场景，容差过宽松，**不计入本目标通过率统计**。本目标的通过率必须基于上游真实 WPT reftest）
-- **关键事实**：当前 WPT runner 是 smoke test，不证明渲染正确性。本目标的核心挑战是从"不崩溃"升级到"渲染正确"。更关键的是，当前渲染器仅支持 3/13 种图元类型，即使 reftest 通过也无法反映真实的渲染质量。
+- **关键事实**：当前 WPT runner 是 smoke test，不证明渲染正确性。本目标的核心挑战是从"不崩溃"升级到"渲染正确"。（历史：M7 前渲染器仅支持 3/13 种图元；**M7 后 CPU/GPU 均已支持全 13 种图元**——见 Current Proven Baseline 表。当前 reftest 通过率受字体度量 / 布局结构性 plateau 限制，非图元覆盖限制。）
 
 ---
 
@@ -733,6 +733,8 @@ evidence/
 审计发现根本原因：
 
 ### 审计发现（2026-06-07）
+
+> ⚠️ **历史快照**（2026-06-07 时点审计）——下列发现曾驱动 M7-M11 里程碑立项。截至当前多数已解决：**渲染器图元覆盖 / 浏览器图元消费 P0 已由 M7 解决**（见 Support Envelope / Current Proven Baseline / 已知关键缺口表 ✅）；**Margin 折叠 / BFC 已由 R323 解决**；**验证体系已由 R484 全量导入上游真实 WPT reftest + DC-14 chromium Oracle 改善**。当前真实状态以 master.md + 上方各表为准，本表保留作历史记录。
 
 | 问题 | 严重性 | 详情 |
 |------|--------|------|
