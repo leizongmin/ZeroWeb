@@ -334,6 +334,25 @@ pub(crate) fn present_rgba_to_softbuffer(
     }
 }
 
+/// 将以 `/` 开头的根相对路径解析到当前标签页 URL（无可用 base 时原样返回）。
+pub fn resolve_path_relative_url(input: &str, shell: &BrowserShell) -> String {
+    let input = input.trim();
+    if !(input.starts_with('/') && !input.starts_with("//")) {
+        return input.to_string();
+    }
+    let Some(base) = shell.active_tab().and_then(|tab| {
+        let url = tab.url()?;
+        if url.starts_with("zero://") {
+            None
+        } else {
+            Some(url)
+        }
+    }) else {
+        return input.to_string();
+    };
+    zero_engine::resolve_document_url(base, input)
+}
+
 /// URL 规范化 — 支持 URL 和搜索引擎回退
 pub fn normalize_url(input: &str, shell: &BrowserShell) -> String {
     if input.starts_with("http://") || input.starts_with("https://") {

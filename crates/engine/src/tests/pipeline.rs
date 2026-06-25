@@ -1284,3 +1284,66 @@ fn test_render_retains_below_viewport_image_primitive() {
         result.primitives.images.len()
     );
 }
+
+/// 诊断 testpage.htm：表格与「3. An image」之间不应有异常大空隙。
+#[test]
+fn test_testpage_table_to_image_section_gap() {
+    use std::collections::HashMap;
+
+    use zero_dom::NodeId;
+    use crate::image_resource_key;
+
+    let html = r##"<HTML><BODY BGCOLOR="#FFFFCC">
+<H1>Internet Explorer 1.x (Mosaic) -- Running!</H1>
+<HR>
+<H2>1. Plain text &amp; formatting</H2>
+<P>This page is served from a <B>local HTML file</B> and rendered by the browser.</P>
+<H2>2. A table</H2>
+<TABLE BORDER=1 CELLPADDING=6>
+<TR BGCOLOR="#C0C0C0"><TH>Layer</TH><TH>Source dir</TH><TH>Status</TH></TR>
+<TR><TD>Kernel/HTML core</TD><TD>generic\shared</TD><TD>OK</TD></TR>
+</TABLE>
+<H2>3. An image (JPEG)</H2>
+<P><IMG SRC="testpage.jpg" ALT="astronaut" ALIGN=TOP>
+This JPEG is decoded by the built-in libjpeg.</P>
+</BODY></HTML>"##;
+
+    let doc = zero_dom::parse_html(html);
+    let table_id = doc.get_elements_by_tag_name("table")[0];
+    let h2_id = doc.get_elements_by_tag_name("h2")[2];
+
+    let page_url = "http://172.27.46.54:8000/testpage.htm";
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.set_document_url(Some(page_url));
+    pipeline.set_image_sizes(HashMap::from([(
+        image_resource_key("testpage.jpg", Some(page_url)),
+        (512.0_f32, 384.0_f32),
+    )]));
+
+    pipeline.render_html(html, "");
+    let layout = pipeline.layout().expect("layout");
+
+    fn find_box(b: &zero_layout_engine::LayoutBox, target: NodeId, off_y: f32) -> Option<(f32, f32)> {
+        let y = off_y + b.y;
+        if b.node_id == Some(target) {
+            return Some((y, b.height));
+        }
+        for c in &b.children {
+            if let Some(found) = find_box(c, target, y) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    let (table_y, table_h) = find_box(&layout.root, table_id, 0.0).expect("table box");
+    let (h2_y, _) = find_box(&layout.root, h2_id, 0.0).expect("h2 box");
+    let table_bottom = table_y + table_h;
+    let gap = h2_y - table_bottom;
+
+    assert!(
+        gap < 80.0,
+        "table bottom={table_bottom:.1}, h2 top={h2_y:.1}, gap={gap:.1}, doc_h={:?}",
+        pipeline.document_height()
+    );
+}

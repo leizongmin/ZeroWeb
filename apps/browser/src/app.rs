@@ -840,7 +840,7 @@ impl BrowserApp {
 
     /// 导航到指定 URL
     pub fn navigate_to(&mut self, url: &str) {
-        let url = normalize_url(url, &self.shell);
+        let url = normalize_url(&resolve_path_relative_url(url, &self.shell), &self.shell);
         tracing::info!("Navigating to: {url}");
 
         self.shell.navigate(&url);

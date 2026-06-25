@@ -181,6 +181,9 @@ impl HttpClient {
 
     /// GET 请求。
     pub fn get(&self, url: &str) -> Result<HttpResponse, NetError> {
+        if crate::is_file_url(url) {
+            return crate::read_file_url(url);
+        }
         self.send(HttpRequest::get(url))
     }
 
