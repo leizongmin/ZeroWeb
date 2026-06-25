@@ -10,6 +10,40 @@ fn test_split_into_words() {
     assert_eq!(words[0], "Hello ");
 }
 
+/// R645：SEA 词典分词文字（Thai/Lao/Myanmar/Khmer）分类正确。
+#[test]
+fn test_r645_sea_word_script_classification() {
+    // Thai / Lao / Myanmar / Khmer 各取代表字符
+    assert!(is_sea_word_script('\u{0E01}')); // Thai ก
+    assert!(is_sea_word_script('\u{0E81}')); // Lao ກ
+    assert!(is_sea_word_script('\u{1000}')); // Myanmar ႀ
+    assert!(is_sea_word_script('\u{1780}')); // Khmer ក
+    // 非 SEA：ASCII / CJK / 其他文字
+    assert!(!is_sea_word_script('a'));
+    assert!(!is_sea_word_script(' '));
+    assert!(!is_sea_word_script('\u{4E00}')); // CJK
+    // 组合判定：CJK 与 SEA 都允许 per-char 断行
+    assert!(is_per_char_break_script('\u{4E00}')); // CJK
+    assert!(is_per_char_break_script('\u{0E01}')); // SEA
+    assert!(!is_per_char_break_script('a')); // 拉丁字符不 per-char 断行
+}
+
+/// R645：SEA 文字在 normal 模式下按字符断行（fallback line breaking）。
+/// CSS Text 3 §line-break-details：无空格分词的 SEA 文字须 fallback 断行（不允许溢出）。
+/// 验证：连续 Thai 文本被拆成单字符"单词"，从而允许在任意字符间断行。
+#[test]
+fn test_r645_sea_text_per_char_break() {
+    let ctx = InlineFormattingContext::new(96.0); // 6em 容器
+    // 3 个 Thai 字符（无空格）——normal 模式应拆成 3 个独立单词（每个 1 字符）
+    let words = ctx.split_into_words("\u{0E21}\u{0E19}\u{0E38}");
+    assert_eq!(words.len(), 3, "SEA 文本应按字符拆为独立断行点");
+    for w in &words {
+        // 每个单词恰好 1 个非空白字符（末尾可能带词间距空格，同 test_split_into_words）
+        let non_ws: Vec<char> = w.chars().filter(|c| !c.is_whitespace()).collect();
+        assert_eq!(non_ws.len(), 1, "每个 SEA 单词为单字符：{w:?}");
+    }
+}
+
 /// 测试空文本不产生行盒。
 #[test]
 fn test_empty_text_no_lines() {

@@ -1867,8 +1867,8 @@ impl InlineFormattingContext {
                         }
                         // 空格也作为独立片段以保留空白
                         result.push(" ".to_string());
-                    } else if is_cjk_character(ch) {
-                        // CJK 字符单独作为一个单词
+                    } else if is_per_char_break_script(ch) {
+                        // CJK / R645 SEA 词典分词文字单独作为一个单词
                         if !current_word.is_empty() {
                             result.push(format!("{current_word} "));
                             current_word.clear();
@@ -1890,19 +1890,19 @@ impl InlineFormattingContext {
             // 标准 normal 模式：按空白分割，CJK 字符每个单独作为"单词"
             let mut result = Vec::new();
             for word in text.split_whitespace() {
-                // 检查单词中是否包含 CJK 字符
-                let has_cjk = word.chars().any(is_cjk_character);
+                // 检查单词中是否包含 CJK / R645 SEA 词典分词文字
+                let has_cjk = word.chars().any(is_per_char_break_script);
                 if has_cjk && self.word_break != WordBreakMode::KeepAll {
-                    // 将单词拆分为：连续非 CJK + 单个 CJK 交替
+                    // 将单词拆分为：连续非 CJK + 单个 CJK/SEA 交替
                     let mut current_latin = String::new();
                     for ch in word.chars() {
-                        if is_cjk_character(ch) {
+                        if is_per_char_break_script(ch) {
                             // 先推入累积的拉丁字符
                             if !current_latin.is_empty() {
                                 result.push(format!("{current_latin} "));
                                 current_latin.clear();
                             }
-                            // CJK 字符单独作为"单词"（不带尾部空格，不需要词间距）
+                            // CJK / R645 SEA 字符单独作为"单词"（不带尾部空格，不需要词间距）
                             result.push(ch.to_string());
                         } else {
                             current_latin.push(ch);

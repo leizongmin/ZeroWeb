@@ -110,6 +110,31 @@ pub(crate) fn is_cjk_character(c: char) -> bool {
     )
 }
 
+/// R645：判断字符是否属于「需要字典分词」的东南亚复杂文字（Thai/Lao/Myanmar/Khmer）。
+///
+/// 这些文字不在单词间使用空格，词边界须字典查找（如 libthai/ICU）。CSS Text 3
+/// §line-break-details 要求：UA 若无此类字典分词能力，**必须**做某种 fallback 断行
+/// （不允许溢出）。ZeroWeb 无 SEA 词典，按字符断行作为 fallback。
+///
+/// 仅用于 [`split_into_words`](super::InlineFormattingContext::split_into_words) 的
+/// 断行点判定（与 CJK 同样按字符单独成词）；**不**影响 advance 宽度估计——SEA 字符
+/// 非全角，[`estimate_char_width`] 仍走「其他 Unicode」0.5× 分支。
+pub(crate) fn is_sea_word_script(c: char) -> bool {
+    matches!(
+        c,
+        '\u{0E00}'..='\u{0E7F}'   // Thai（泰文）
+        | '\u{0E80}'..='\u{0EFF}' // Lao（老挝文）
+        | '\u{1000}'..='\u{109F}' // Myanmar（缅甸文）
+        | '\u{1780}'..='\u{17FF}' // Khmer（高棉文）
+    )
+}
+
+/// R645：CJK 或 SEA 词典分词文字 → 在 `split_into_words` 中按字符断行（fallback）。
+/// 集中此判定避免 3 处调用点重复 `is_cjk_character(ch) || is_sea_word_script(ch)`。
+pub(crate) fn is_per_char_break_script(c: char) -> bool {
+    is_cjk_character(c) || is_sea_word_script(c)
+}
+
 /// 判断字符是否为 emoji 或常见符号（非 CJK）。
 pub(crate) fn is_emoji_character(c: char) -> bool {
     let cp = c as u32;

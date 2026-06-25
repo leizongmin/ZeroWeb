@@ -26,6 +26,26 @@ pub(crate) fn resolve_text_align(style: Option<&ComputedStyle>) -> TextAlign {
     }
 }
 
+/// R645：从 ComputedStyle 读取 white-space，返回 IFC 测量所需的 `no_wrap`。
+///
+/// `measure_text_content` / `remeasure_*` 测量函数此前构造 IFC 时未传 white-space（no_wrap 恒
+/// false），致 pre/nowrap 容器在**测量高度**时被错误换行（box content_height 偏大）。该 bug
+/// 长期被「单 token 无法换行」掩盖；R645 SEA 词典分词文字的 per-char fallback breaking 使每个
+/// 字符成为独立断行点，暴露了 pre 容器被测成多行（line-breaking-024/026/027 mismatch test/ref
+/// 同错→0.00%）。
+///
+/// **仅传 `no_wrap`，不传 `preserve_whitespace`**：preserve 会改变 pre-wrap 空白折叠行为，实测致
+/// letter-spacing-201（pre-wrap + 多空格）测量行断变化而回归。no_wrap 是修 pre/nowrap 容器「测量
+/// 时不换行」的最小充分条件；preserve 仅影响空白折叠，对 box 高度测量非必要，故测量路径保持
+/// preserve=false（与历史行为一致），空白保真由 paint 路径（text.rs:744）负责。
+pub(crate) fn resolve_no_wrap_for_ifc_measure(style: Option<&ComputedStyle>) -> bool {
+    use zero_style_system::property::types::WhiteSpaceValue;
+    matches!(
+        style.map(|s| &s.white_space).unwrap_or(&WhiteSpaceValue::Normal),
+        WhiteSpaceValue::Pre | WhiteSpaceValue::Nowrap
+    )
+}
+
 /// 将 IFC 片段结果存储到 LayoutBox.inline_layout，供 paint 系统复用。
 ///
 /// 避免在 paint 阶段重新运行 IFC（paint IFC 使用空 styles 导致字体度量不一致）。
@@ -679,9 +699,13 @@ pub(crate) fn measure_text_content(
             }
         })
         .collect();
+    // R645：white-space 影响 taffy 测量的内容高度——pre/nowrap 容器不应在测量时换行
+    //（否则 box content_height 偏大，暴露于 SEA 词典分词文字 per-char fallback breaking）。
+    let no_wrap = resolve_no_wrap_for_ifc_measure(styles.get(&dom_id));
     let mut inline_ctx = InlineFormattingContext::new(width)
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl)
+        .with_no_wrap(no_wrap)
         .with_inline_block_sizes(ib_sizes);
     inline_ctx.layout(doc, dom_id, styles);
 
@@ -796,11 +820,13 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             );
             let is_vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
             let text_align = resolve_text_align(styles.get(&dom_id));
+            let no_wrap = resolve_no_wrap_for_ifc_measure(styles.get(&dom_id));
             let mut inline_ctx = InlineFormattingContext::new(container_width)
                 .with_float_exclusions(exclusions)
                 .with_vertical(is_vertical)
                 .with_vertical_rtl(is_vertical_rtl)
                 .with_text_align(text_align)
+                .with_no_wrap(no_wrap)
                 .with_inline_block_sizes(ib_sizes);
             inline_ctx.layout(doc, dom_id, styles);
 
@@ -914,6 +940,7 @@ pub(crate) fn remeasure_inline_only_containers(
         );
         let is_vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
         let text_align = resolve_text_align(styles.get(&dom_id));
+        let no_wrap = resolve_no_wrap_for_ifc_measure(styles.get(&dom_id));
         // 收集 inline-block 子元素的 LayoutBox 尺寸，供 IFC 解析百分比宽度。
         let ib_sizes: HashMap<NodeId, (f32, f32)> = box_node
             .children
@@ -935,6 +962,7 @@ pub(crate) fn remeasure_inline_only_containers(
             .with_vertical(is_vertical)
             .with_vertical_rtl(is_vertical_rtl)
             .with_text_align(text_align)
+            .with_no_wrap(no_wrap)
             .with_inline_block_sizes(ib_sizes);
         inline_ctx.layout(doc, dom_id, styles);
 
@@ -952,6 +980,7 @@ pub(crate) fn remeasure_inline_only_containers(
                 .with_vertical(is_vertical)
                 .with_vertical_rtl(is_vertical_rtl)
                 .with_text_align(text_align)
+                .with_no_wrap(no_wrap)
                 .with_inline_block_sizes(ib_sizes_for_mc);
             col_ctx.layout(doc, dom_id, styles);
             let total = col_ctx.total_height();
