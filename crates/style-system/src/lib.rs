@@ -450,6 +450,10 @@ impl StyleSystem {
                 "b" | "strong" => {
                     ua_decl_inputs.push(("font-weight".to_string(), "bold".to_string(), false, (0, 0, 0), None));
                 }
+                "th" => {
+                    ua_decl_inputs.push(("font-weight".to_string(), "bold".to_string(), false, (0, 0, 0), None));
+                    ua_decl_inputs.push(("text-align".to_string(), "center".to_string(), false, (0, 0, 0), None));
+                }
                 "i" | "em" => {
                     ua_decl_inputs.push(("font-style".to_string(), "italic".to_string(), false, (0, 0, 0), None));
                 }
@@ -602,15 +606,15 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
     let tag = elem.local_name().to_ascii_lowercase();
     let mut hints = Vec::new();
 
-    if let Some(bg) = elem_attr(elem, "bgcolor") {
-        hints.push(("background-color".to_string(), normalize_html_color(&bg)));
-    }
     if let Some(text) = elem_attr(elem, "text") {
         hints.push(("color".to_string(), normalize_html_color(&text)));
     }
 
     match tag.as_str() {
         "img" => {
+            if let Some(bg) = elem_attr(elem, "bgcolor") {
+                hints.push(("background-color".to_string(), normalize_html_color(&bg)));
+            }
             for attr in ["width", "height"] {
                 if let Some(v) = elem_attr(elem, attr) {
                     if let Some(val) = html_length_attr(&v) {
@@ -625,6 +629,9 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
             }
         }
         "table" => {
+            if let Some(bg) = elem_attr(elem, "bgcolor") {
+                hints.push(("background-color".to_string(), normalize_html_color(&bg)));
+            }
             let w = table_border_width_attr(elem);
             if w > 0 {
                 hints.push(("border".to_string(), format!("{w}px solid")));
@@ -642,6 +649,12 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
             }
         }
         "td" | "th" => {
+            if let Some(bg) = parent_tr_bgcolor(doc, element) {
+                hints.push(("background-color".to_string(), bg));
+            }
+            if let Some(bg) = elem_attr(elem, "bgcolor") {
+                hints.push(("background-color".to_string(), normalize_html_color(&bg)));
+            }
             if let Some(table_id) = ancestor_table(doc, element) {
                 if table_border_width_attr_from_doc(doc, table_id) > 0 {
                     hints.push(("border".to_string(), "1px solid".to_string()));
@@ -665,14 +678,17 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
             }
         }
         "tr" => {
-            // bgcolor handled above; inherit table border model for row cells via td/th
             if let Some(table_id) = ancestor_table(doc, element) {
                 if table_border_width_attr_from_doc(doc, table_id) > 0 {
                     hints.push(("border".to_string(), "1px solid".to_string()));
                 }
             }
         }
-        _ => {}
+        _ => {
+            if let Some(bg) = elem_attr(elem, "bgcolor") {
+                hints.push(("background-color".to_string(), normalize_html_color(&bg)));
+            }
+        }
     }
 
     hints
@@ -725,6 +741,18 @@ fn table_border_width_attr_from_doc(doc: &Document, table_id: NodeId) -> u32 {
             _ => None,
         })
         .unwrap_or(0)
+}
+
+fn parent_tr_bgcolor(doc: &Document, element: NodeId) -> Option<String> {
+    let parent = doc.parent_node(element)?;
+    let n = doc.get(parent)?;
+    let NodeKind::Element(tr) = &n.kind else {
+        return None;
+    };
+    if !tr.local_name().eq_ignore_ascii_case("tr") {
+        return None;
+    }
+    elem_attr(tr, "bgcolor").map(|bg| normalize_html_color(&bg))
 }
 
 fn ancestor_table(doc: &Document, mut node: NodeId) -> Option<NodeId> {
@@ -1136,6 +1164,23 @@ mod presentational_hint_tests {
             matches!(&style.color, zero_css_parser::values::ColorValue::Rgba(0, 0, 238, _)),
             "link color {:?}",
             style.color
+        );
+    }
+
+    #[test]
+    fn tr_bgcolor_applies_to_cells_not_row() {
+        let doc = parse_html("<table><tr bgcolor=\"#CCCCCC\"><th>Layer</th><td>x</td></tr></table>");
+        let tr = doc.get_elements_by_tag_name("tr")[0];
+        let th = doc.get_elements_by_tag_name("th")[0];
+        let tr_hints = collect_presentational_hints(&doc, tr);
+        assert!(
+            !tr_hints.iter().any(|(p, _)| p == "background-color"),
+            "tr should not get row-wide bgcolor: {tr_hints:?}"
+        );
+        let th_hints = collect_presentational_hints(&doc, th);
+        assert!(
+            th_hints.iter().any(|(p, v)| p == "background-color" && v == "#CCCCCC"),
+            "th hints: {th_hints:?}"
         );
     }
 

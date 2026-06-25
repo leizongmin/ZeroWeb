@@ -928,10 +928,7 @@ impl BrowserApp {
             None => return false,
         };
 
-        let mut page_primitives = primitives.clone();
-        if let Some(primary) = self.font_id {
-            reflow_webview_glyphs(&mut page_primitives.glyphs, &self.font_loader, primary);
-        }
+        let page_primitives = primitives.clone();
 
         let find_offset = if self.shell.find_state().is_active() {
             layout::FIND_BAR_HEIGHT * self.scale_factor
@@ -1701,13 +1698,46 @@ pub fn transform_webview_primitives(
         out.gradients.push(g_clone);
     }
 
-    // 5. 图片
+    // 5. 图片（裁剪须用 `clip` 字段，不可缩小 `rect`，否则会拉伸纹理）
     for image in &primitives.images {
+        let x = image.rect.origin.x * s + x_offset;
+        let y = image.rect.origin.y * s + y_offset;
+        let w = image.rect.size.width * s;
+        let h = image.rect.size.height * s;
+        let full_rect = Rect::new(x, y, w, h);
+
+        if let Some((clip_top, clip_bottom)) = clip_y {
+            if full_rect.bottom() <= clip_top || full_rect.top() >= clip_bottom {
+                continue;
+            }
+        }
+
         let mut i_clone = image.clone();
-        i_clone.rect.origin.x = i_clone.rect.origin.x * s + x_offset;
-        i_clone.rect.origin.y = i_clone.rect.origin.y * s + y_offset;
-        i_clone.rect.size.width *= s;
-        i_clone.rect.size.height *= s;
+        i_clone.rect = full_rect;
+        if let Some(clip) = &image.clip {
+            i_clone.clip = Some(Rect::new(
+                clip.origin.x * s + x_offset,
+                clip.origin.y * s + y_offset,
+                clip.size.width * s,
+                clip.size.height * s,
+            ));
+        } else {
+            i_clone.clip = None;
+        }
+
+        if let Some((clip_top, clip_bottom)) = clip_y {
+            let band = Rect::new(full_rect.left(), clip_top, full_rect.size.width, clip_bottom - clip_top);
+            if let Some(window) = full_rect.intersection(&band) {
+                i_clone.clip = match i_clone.clip {
+                    Some(existing) => existing.intersection(&window),
+                    None => Some(window),
+                };
+            }
+            if i_clone.clip.is_none() {
+                continue;
+            }
+        }
+
         out.images.push(i_clone);
     }
 

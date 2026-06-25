@@ -933,14 +933,10 @@ impl BrowserApp {
         Some((tab_id, (x_f - content_x) / s, (y_f - page_top + scroll_y) / s))
     }
 
-    /// 与渲染一致的页面 glyph 列表（含字体 reflow）。
+    /// 与渲染一致的页面 glyph 列表。
     fn page_glyphs(&self, tab_id: TabId) -> Option<Vec<zero_render_foundation::primitive::GlyphPrimitive>> {
         let wv = self.webviews.get(&tab_id)?;
-        let mut glyphs = wv.last_render()?.primitives.glyphs.clone();
-        if let Some(primary) = self.font_id {
-            reflow_webview_glyphs(&mut glyphs, &self.font_loader, primary);
-        }
-        Some(glyphs)
+        Some(wv.last_render()?.primitives.glyphs.clone())
     }
 
     fn address_bar_layout(&self) -> (f32, f32, f32, f32) {

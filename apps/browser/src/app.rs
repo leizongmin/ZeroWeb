@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use zero_browser_shell::{BrowserShell, ContextMenu, ContextType, SuggestionSource, TabId};
 use zero_engine::PrefersColorSchemeValue;
+use zero_engine::set_char_measure_fn;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::config::RenderMode;
 use zero_render_foundation::cpu::render_full_scene;
@@ -25,6 +26,7 @@ use crate::layout;
 use crate::page_selection::{GlyphSelection, hit_test_glyph};
 use crate::pages;
 use crate::text_input::TextInput;
+use crate::text_metrics;
 
 const TAB_BAR_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(450);
 
@@ -214,6 +216,8 @@ impl BrowserApp {
         } else {
             tracing::warn!("No system font found, text rendering will be limited");
         }
+
+        set_char_measure_fn(text_metrics::measure_char);
 
         let color_scheme = detect_system_color_scheme();
 
@@ -562,10 +566,14 @@ impl BrowserApp {
 
     /// 调整所有 WebView 视口尺寸，并在已有页面内容时按新尺寸重新布局
     pub fn resize_all_webviews(&mut self, w: u32, h: u32) {
+        let loader = &self.font_loader;
+        let font_id = self.font_id;
         for wv in self.webviews.values_mut() {
             wv.resize(w, h);
             if wv.last_render().is_some() {
-                wv.render();
+                text_metrics::with_measure_ctx_opt(loader, font_id, || {
+                    wv.render();
+                });
             }
         }
     }
@@ -615,8 +623,12 @@ impl BrowserApp {
     /// 测试用：向指定标签的 WebView 加载 HTML
     #[cfg(test)]
     pub fn load_webview_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>) {
+        let loader = &self.font_loader;
+        let font_id = self.font_id;
         if let Some(wv) = self.webviews.get_mut(&tab_id) {
-            wv.load_html(html, css);
+            text_metrics::with_measure_ctx_opt(loader, font_id, || {
+                wv.load_html(html, css);
+            });
         }
     }
 
@@ -748,8 +760,10 @@ impl BrowserApp {
             return;
         }
 
+        let loader = &self.font_loader;
+        let font_id = self.font_id;
         let result = match self.webviews.get_mut(&tab_id) {
-            Some(wv) => wv.fetch_url(url),
+            Some(wv) => text_metrics::with_measure_ctx_opt(loader, font_id, || wv.fetch_url(url)),
             None => return,
         };
 
@@ -760,7 +774,9 @@ impl BrowserApp {
                 let error = e.to_string();
                 let error_page = pages::generate_error_page(url, &error);
                 if let Some(wv) = self.webviews.get_mut(&tab_id) {
-                    wv.load_html(&error_page, None);
+                    text_metrics::with_measure_ctx_opt(loader, font_id, || {
+                        wv.load_html(&error_page, None);
+                    });
                 }
                 self.shell.on_page_error(&error);
             }
@@ -785,9 +801,13 @@ impl BrowserApp {
         let title = pages::extract_html_title(html)
             .filter(|t| !t.is_empty())
             .unwrap_or_else(|| url.to_string());
+        let loader = &self.font_loader;
+        let font_id = self.font_id;
         if let Some(wv) = self.webviews.get_mut(&tab_id) {
             wv.set_prefers_color_scheme(self.color_scheme);
-            wv.complete_fetched_page(html, url);
+            text_metrics::with_measure_ctx_opt(loader, font_id, || {
+                wv.complete_fetched_page(html, url);
+            });
             wv.set_title(&title);
         }
         self.shell.on_page_loaded(&title);
@@ -797,9 +817,13 @@ impl BrowserApp {
     fn apply_fetch_error(&mut self, tab_id: TabId, url: &str, error: &str) {
         tracing::warn!("Failed to fetch URL: {error}, loading error page");
         let error_page = pages::generate_error_page(url, error);
+        let loader = &self.font_loader;
+        let font_id = self.font_id;
         if let Some(wv) = self.webviews.get_mut(&tab_id) {
             wv.set_prefers_color_scheme(self.color_scheme);
-            wv.load_html(&error_page, None);
+            text_metrics::with_measure_ctx_opt(loader, font_id, || {
+                wv.load_html(&error_page, None);
+            });
         }
         self.shell.on_page_error(error);
     }
@@ -838,9 +862,13 @@ impl BrowserApp {
     }
 
     fn load_welcome_page(&mut self, tab_id: TabId) {
+        let loader = &self.font_loader;
+        let font_id = self.font_id;
         if let Some(wv) = self.webviews.get_mut(&tab_id) {
             wv.set_prefers_color_scheme(self.color_scheme);
-            wv.load_html(pages::WELCOME_HTML, None);
+            text_metrics::with_measure_ctx_opt(loader, font_id, || {
+                wv.load_html(pages::WELCOME_HTML, None);
+            });
         }
         self.refresh_tab_favicon(tab_id, "zero://newtab");
         self.shell.on_page_loaded("ZeroBrowser");
@@ -1005,9 +1033,13 @@ impl BrowserApp {
             None => return,
         };
         self.ensure_webview(tab_id);
+        let loader = &self.font_loader;
+        let font_id = self.font_id;
         if let Some(wv) = self.webviews.get_mut(&tab_id) {
             wv.set_prefers_color_scheme(self.color_scheme);
-            wv.load_html(&html, None);
+            text_metrics::with_measure_ctx_opt(loader, font_id, || {
+                wv.load_html(&html, None);
+            });
         }
         self.shell.on_page_loaded("设置");
         self.address_bar.set_text("zero://settings".to_string());

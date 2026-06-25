@@ -270,6 +270,31 @@ fn test_fetch_url_loads_image_subresource() {
     assert_eq!(img.get_pixel(0, 0), [0, 255, 0, 255], "top-left pixel pure green");
 }
 
+/// resize + render 后 `<img>` 图元不应消失（pipeline 重建时须保留 image_sizes）。
+#[test]
+fn test_resize_render_keeps_img_primitives() {
+    let page = "<!DOCTYPE html><html><head></head><body>\
+                <img src=\"/pic.png\" width=\"40\" height=\"30\"></body></html>";
+    let png = green_3x2_png();
+    let mut files = HashMap::new();
+    files.insert("/page.html".to_string(), page.as_bytes().to_vec());
+    files.insert("/pic.png".to_string(), png);
+    let server = MiniServer::start(files);
+
+    let mut webview = WebView::new(WebViewConfig::default());
+    let url = format!("{}/page.html", server.base);
+    webview.fetch_url(&url).expect("fetch_url should succeed");
+    let images_before = webview.last_render().unwrap().primitives.images.len();
+    assert!(images_before > 0, "expected img primitive before resize");
+
+    webview.resize(1024, 768);
+    let result = webview.render();
+    assert!(
+        !result.primitives.images.is_empty(),
+        "img primitives lost after resize+render (before={images_before})"
+    );
+}
+
 /// R218：URL 导航路径下 `<img src>` 的 SVG 子资源必须被抓取、栅格化并写入 ImageCache。
 ///
 /// page.html 含 `<img src="/logo.svg">`，logo.svg 是 4×3 纯绿 SVG。fetch_url 后

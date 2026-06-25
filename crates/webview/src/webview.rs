@@ -115,6 +115,8 @@ pub struct WebView {
     /// 供下游渲染器（browser 的 render_cpu/render_gpu）绘制时消费——`<img>` 才能
     /// 显示真实像素而非占位（goal doc DC-13 P1「图片子资源 / ImageCache 未贯通」）。
     image_cache: ImageCache,
+    /// 已抓取图片的固有尺寸（url hash → (w,h)），resize/render 时回填 pipeline。
+    cached_image_sizes: HashMap<u64, (f32, f32)>,
     /// 用户颜色方案偏好。
     prefers_color_scheme: PrefersColorSchemeValue,
     /// 安全上下文（HSTS + 混合内容 + CSP）。
@@ -151,6 +153,7 @@ impl WebView {
             wasm_instances: HashMap::new(),
             http_cache: HttpCache::new(),
             image_cache: ImageCache::default(),
+            cached_image_sizes: HashMap::new(),
             prefers_color_scheme: PrefersColorSchemeValue::Light,
             security_context: SecurityContext::new(),
         }
@@ -198,8 +201,17 @@ impl WebView {
         self.pipeline.set_document_url(Some(page_url));
         let external_css = self.resolve_external_css(html, page_url);
         let image_sizes = self.fetch_image_subresources(html, page_url);
+        self.cached_image_sizes = image_sizes.clone();
         self.pipeline.set_image_sizes(image_sizes);
         external_css
+    }
+
+    /// resize / render 前把文档 URL 与图片固有尺寸同步回 pipeline。
+    fn sync_pipeline_page_state(&mut self) {
+        self.pipeline.set_document_url(self.current_url.as_deref());
+        if !self.cached_image_sizes.is_empty() {
+            self.pipeline.set_image_sizes(self.cached_image_sizes.clone());
+        }
     }
 
     /// 加载 HTML 内容。
@@ -207,6 +219,7 @@ impl WebView {
         self.cached_html = html.to_string();
         let css_str = css.unwrap_or("");
         self.cached_css = css_str.to_string();
+        self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         let result = self.pipeline.render_html(html, css_str);
         let render_result = WebViewRenderResult {
@@ -302,9 +315,10 @@ impl WebView {
                     continue;
                 }
             };
-            let key = ImageKey::new(image_resource_key(src, Some(base_url)));
             let (w, h) = (img.width as f32, img.height as f32);
-            image_sizes.insert(image_resource_key(src, Some(base_url)), (w, h));
+            let key_hash = image_resource_key(&abs, None);
+            let key = ImageKey::new(key_hash);
+            image_sizes.insert(key_hash, (w, h));
             self.image_cache.insert_with_key(key, img);
         }
         image_sizes
@@ -495,6 +509,7 @@ impl WebView {
 
     /// 重新渲染（用于 resize 等场景）。
     pub fn render(&mut self) -> WebViewRenderResult {
+        self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         let result = self.pipeline.render_html(&self.cached_html, &self.cached_css);
         let render_result = WebViewRenderResult {
@@ -544,11 +559,15 @@ impl WebView {
     /// 调整大小。
     pub fn resize(&mut self, width: u32, height: u32) {
         let doc_url = self.current_url.clone();
+        let image_sizes = self.cached_image_sizes.clone();
         self.config.width = width;
         self.config.height = height;
         self.pipeline = RenderPipeline::new(width as f32, height as f32);
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_document_url(doc_url.as_deref());
+        if !image_sizes.is_empty() {
+            self.pipeline.set_image_sizes(image_sizes);
+        }
     }
 
     /// 设置用户颜色方案偏好（影响 `prefers-color-scheme` 媒体查询）。
@@ -615,16 +634,16 @@ impl WebView {
 
     /// 注入 CSS（重新渲染）。
     pub fn inject_css(&mut self, css: &str) -> WebViewRenderResult {
+        if !self.cached_css.is_empty() {
+            self.cached_css.push('\n');
+        }
+        self.cached_css.push_str(css);
+        self.sync_pipeline_page_state();
         let html = if self.cached_html.is_empty() {
             "<html><body></body></html>"
         } else {
             &self.cached_html
         };
-        // 追加到缓存的 CSS，而不是替换
-        if !self.cached_css.is_empty() {
-            self.cached_css.push('\n');
-        }
-        self.cached_css.push_str(css);
         let result = self.pipeline.render_html(html, &self.cached_css);
         let render_result = WebViewRenderResult {
             primitives: result.primitives,

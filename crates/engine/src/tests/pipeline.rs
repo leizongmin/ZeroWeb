@@ -1271,3 +1271,16 @@ fn test_pipeline_timings_breakdown() {
     // 总时间应 > 0（除非极快完成）
     assert!(t.total_ms >= 0.0, "总时间应 >= 0");
 }
+
+/// 文档高度超出视口时，视口下方的 `<img>` 图元须保留（由宿主滚动显示）。
+#[test]
+fn test_render_retains_below_viewport_image_primitive() {
+    let mut pipeline = RenderPipeline::new(800.0, 400.0);
+    let html = r#"<html><body><div style="height:800px"></div><img src="t.png" width="50" height="40"></body></html>"#;
+    let result = pipeline.render_html(html, "");
+    assert!(
+        !result.primitives.images.is_empty(),
+        "below-viewport img must not be culled (got {} images)",
+        result.primitives.images.len()
+    );
+}
