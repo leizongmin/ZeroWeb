@@ -10,7 +10,7 @@ mod text;
 
 use std::collections::{HashMap, HashSet};
 
-use zero_css_parser::values::{ColorValue, FloatValue, VisibilityValue};
+use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, VisibilityValue};
 use zero_dom::{Document, NodeId};
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
@@ -62,6 +62,12 @@ pub struct Painter {
     /// 跳过该元素自身的图像绘制，避免其 padding-box 起始的图像与画布 (0,0) 起始的图像
     /// 相位错位 double-paint（R507：扩展 R491 的 color-only 传播到含 image）。
     pub(crate) canvas_propagated_node: Option<NodeId>,
+    /// R639：NodeId → LayoutBox.height 索引（paint() 开头预扫描布局树填充）。
+    /// render_fragment 宏处理某 inline 片段时，box_node 是 **IFC owner**（其文本所在
+    /// 容器）而非 inline 本身；为使 per-fragment bg 门控与 paint_node 抑制（在 inline 自身
+    /// box 上）一致，宏须用 inline 元素自身 height（经此索引查 owner_id），而非 IFC owner
+    /// 的 box_node.height（R638 锁定的 inline-ownership split 修复）。
+    pub(crate) inline_heights: HashMap<NodeId, f32>,
 }
 
 fn is_positioned_child(box_node: &LayoutBox) -> bool {
@@ -221,6 +227,7 @@ impl Painter {
             viewport_w: 0.0,
             viewport_h: 0.0,
             canvas_propagated_node: None,
+            inline_heights: HashMap::new(),
         }
     }
 
@@ -298,7 +305,23 @@ impl Painter {
                 self.paint_bg_image_in_origin(0.0, 0.0, self.viewport_w, self.viewport_h, ps);
             }
         }
+        // R639：预扫描布局树填充 NodeId→height 索引，供 render_fragment 宏查 owner inline
+        // 自身 height（box_node 是 IFC owner 非 inline 本身）。
+        self.inline_heights.clear();
+        Self::collect_box_heights(layout, &mut self.inline_heights);
         self.paint_node(layout, styles, 0.0, 0.0, doc, true);
+    }
+
+    /// R639：递归遍历布局树，收集每个有 node_id 的盒的 height 到索引。
+    /// 用于 render_fragment 宏按 owner_id（inline 元素）查其自身 box height，
+    /// 而非 IFC owner 的 box_node.height（消除 inline-ownership split 致抑制/per-fragment 分歧）。
+    fn collect_box_heights(box_node: &LayoutBox, map: &mut HashMap<NodeId, f32>) {
+        if let Some(node_id) = box_node.node_id {
+            map.insert(node_id, box_node.height);
+        }
+        for child in &box_node.children {
+            Self::collect_box_heights(child, map);
+        }
     }
 
     /// 仅绘制与脏区域相交的节点（增量绘制）。
@@ -381,7 +404,19 @@ impl Painter {
                 if !is_table_internal {
                     self.paint_box_shadow(box_node, abs_x, abs_y, style);
                 }
-                if style.background_color != ColorValue::Transparent {
+                // R639：仅跨多行 inline 的 background 改由 paint_text 按行片段绘制，box-level 抑制
+                //（与 paint_node 同步；单行/空/定位 inline 保留 box-level）。
+                let inline_fs_px = match style.font_size {
+                    LengthValue::Px(s) => s as f32,
+                    _ => 16.0,
+                };
+                let skip_inline_box_bg = matches!(style.display, DisplayValue::Inline)
+                    && style.background_color != ColorValue::Transparent
+                    && !box_node.is_absolute
+                    && !box_node.is_fixed
+                    && box_node.height > inline_fs_px * 1.5
+                    && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
+                if style.background_color != ColorValue::Transparent && !skip_inline_box_bg {
                     self.paint_background(box_node, abs_x, abs_y, style);
                 }
                 self.paint_background_image(box_node, abs_x, abs_y, style);
@@ -528,7 +563,19 @@ impl Painter {
                 }
 
                 // 1. 背景色填充（行组/行仍可渲染背景）
-                if style.background_color != ColorValue::Transparent && !skip_split_inline_deco {
+                // R639：仅跨多行 inline（height>1.5×fs）+ 有文本 + 非定位 的 background 改由
+                // paint_text 按行片段绘制，box-level 抑制。单行/空/定位 inline 保留 box-level。
+                let inline_fs_px = match style.font_size {
+                    LengthValue::Px(s) => s as f32,
+                    _ => 16.0,
+                };
+                let skip_inline_box_bg = matches!(style.display, DisplayValue::Inline)
+                    && style.background_color != ColorValue::Transparent
+                    && !box_node.is_absolute
+                    && !box_node.is_fixed
+                    && box_node.height > inline_fs_px * 1.5
+                    && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
+                if style.background_color != ColorValue::Transparent && !skip_split_inline_deco && !skip_inline_box_bg {
                     self.paint_background(box_node, abs_x, abs_y, style);
                 }
 

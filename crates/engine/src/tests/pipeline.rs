@@ -146,6 +146,25 @@ fn test_pipeline_consecutive_different_renders() {
     let cached = pipeline.layout().unwrap();
     assert_eq!(cached.viewport_width, 800.0);
 }
+
+/// R639：跨多行的 inline span 背景应按行片段（per-fragment）绘制，而非单一 bounding-box
+/// rect。窄视口强制 span 文本换行；若按 box-level 仅 1 个 blue fill，按 per-fragment 则
+/// 行数个。此测试守护 R639 per-fragment inline bg 行为不退化为 box-level（同时验证
+/// owner-height 索引使 per-fragment 在父 IFC 绘制 inline 文本时仍触发）。
+#[test]
+fn test_r639_multiline_inline_bg_painted_per_fragment() {
+    use zero_render_foundation::color::Color;
+    let mut pipeline = RenderPipeline::new(100.0, 600.0); // 窄视口强制换行
+    let html = r#"<html><body><p><span style="background-color:rgb(0,0,255)">word word word word word word word word word</span></p></body></html>"#;
+    let result = pipeline.render_html(html, "");
+    let blue = Color::rgba(0, 0, 255, 255);
+    let blue_fills = result.primitives.fills.iter().filter(|f| f.color == blue).count();
+    // 跨多行 span：per-fragment 绘制 → blue fill 数 == 行数（>= 2）；旧 box-level 仅 1。
+    assert!(
+        blue_fills >= 2,
+        "多行 inline span 背景应按行片段绘制（per-fragment），实际 blue fill 数 = {blue_fills}"
+    );
+}
 /// 空字符串与空 HTML 文档不同，它不是有效的 HTML 结构。
 /// 验证管线能容错处理并返回零或最小的渲染输出。
 #[test]
