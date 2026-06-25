@@ -324,7 +324,7 @@
 - [ ] morning.work 文章页自动检查 nav/title/date/tag badges/阅读时间不串联，正文段落不被压成同一行，inline code 保持行内位置，table 仍按表格布局绘制，pre/code 块保持独立背景和换行
 - [ ] WinterTC 首页自动检查 header logo 可见、标题/副标题不串联、四个 nav button 分列、正文段落按宽度换行并保持 justify、参与方 Logo 网格中 SVG/PNG Logo 可见且不会退化为短横/alt glyph
 - [ ] ZeroBrowser 不得对 WebView glyph 做会改变布局语义的整行重排；如需字体 fallback 或选择命中，应在不改变原始 glyph 坐标语义的路径上实现
-- [ ] 截图、对比报告和失败根因持久化到 `docs/goal/rendering-compat/evidence/product-static/`
+- [x] ✅ 截图、对比报告和失败根因持久化到 `docs/goal/rendering-compat/evidence/product-static/`（welcome PNG + `legacy-html/` 20 fixture+diff-summary + `morning-work/` + `wintertc/` + `narrow/` + README + 各轮 rXXX evidence 根因分析）
 
 ### DC-14: 真通过标准（anti-false-pass）— 验证可信度门禁
 
