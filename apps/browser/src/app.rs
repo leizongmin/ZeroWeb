@@ -736,6 +736,7 @@ impl BrowserApp {
         let (w, h) = self.content_logical_size();
         let mut wv = WebViewBuilder::new().width(w).height(h).build();
         wv.set_prefers_color_scheme(self.color_scheme);
+        wv.set_font_resolver(self.font_loader.build_font_resolver());
         wv
     }
 

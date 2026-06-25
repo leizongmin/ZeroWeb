@@ -337,7 +337,7 @@ impl super::Painter {
         }
 
         let color = color_value_to_render(&style.color);
-        let default_font_id = self.resolve_font_id(&style.font_family);
+        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
         let marker_size = font_size * 0.4;
         let marker_x = abs_x + box_node.border_left;
         let marker_y = abs_y + box_node.border_top + box_node.padding_top;
@@ -537,7 +537,7 @@ impl super::Painter {
         }
 
         let color = super::super::color::color_value_to_render(&style.color);
-        let default_font_id = self.resolve_font_id(&style.font_family);
+        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
 
@@ -676,7 +676,7 @@ impl super::Painter {
 
         let (tx, ty) = super::super::helpers::apply_transform_offset(style, abs_x, abs_y);
 
-        let default_font_id = self.resolve_font_id(&style.font_family);
+        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
 
         if let (Some(doc), Some(node_id)) = (doc, box_node.node_id) {
             // R109 §9.2.1.1：被 in-flow block 子元素拆分的 inline 父盒自身不渲染文本——
@@ -1402,7 +1402,7 @@ impl super::Painter {
                             .unwrap_or(content_x + tx);
 
                         let ellipsis_width = measure_char_for_paint('.', font_size, false);
-                        let default_font_id = self.resolve_font_id(&style.font_family);
+                        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
                         for i in 0..3 {
                             self.primitives.add_glyph(GlyphPrimitive {
                                 x: last_glyph_x + ellipsis_width * (i as f32 + 1.0),
@@ -1486,7 +1486,7 @@ impl super::Painter {
         }
 
         let color = color_value_to_render(&style.color);
-        let default_font_id = self.resolve_font_id(&style.font_family);
+        let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
         let content_x = abs_x;
         let content_y = abs_y;
 

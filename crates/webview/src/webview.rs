@@ -117,6 +117,8 @@ pub struct WebView {
     image_cache: ImageCache,
     /// 已抓取图片的固有尺寸（url hash → (w,h)），resize/render 时回填 pipeline。
     cached_image_sizes: HashMap<u64, (f32, f32)>,
+    /// CSS font-family → font_id，供 paint 解析 font-weight 粗体 face。
+    font_resolver: std::collections::HashMap<String, u32>,
     /// 用户颜色方案偏好。
     prefers_color_scheme: PrefersColorSchemeValue,
     /// 安全上下文（HSTS + 混合内容 + CSP）。
@@ -154,6 +156,7 @@ impl WebView {
             http_cache: HttpCache::new(),
             image_cache: ImageCache::default(),
             cached_image_sizes: HashMap::new(),
+            font_resolver: HashMap::new(),
             prefers_color_scheme: PrefersColorSchemeValue::Light,
             security_context: SecurityContext::new(),
         }
@@ -572,6 +575,13 @@ impl WebView {
         if !image_sizes.is_empty() {
             self.pipeline.set_image_sizes(image_sizes);
         }
+        self.pipeline.set_font_resolver(self.font_resolver.clone());
+    }
+
+    /// 设置 CSS font-family 查找表（由宿主从 `FontLoader::build_font_resolver()` 构建）。
+    pub fn set_font_resolver(&mut self, resolver: std::collections::HashMap<String, u32>) {
+        self.font_resolver = resolver;
+        self.pipeline.set_font_resolver(self.font_resolver.clone());
     }
 
     /// 设置用户颜色方案偏好（影响 `prefers-color-scheme` 媒体查询）。

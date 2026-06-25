@@ -119,10 +119,17 @@ impl FontLoader {
     pub fn build_font_resolver(&self) -> std::collections::HashMap<String, u32> {
         let mut resolver = std::collections::HashMap::new();
 
-        // 已知字体族名 → ID
+        // 已知字体族名 → ID（Regular face）
         for (name, ids) in &self.family_map {
             if let Some(&id) = ids.first() {
                 resolver.insert(name.clone(), id);
+            }
+        }
+
+        // 同一族名的第二个 face 视为 Bold（如 Arial + Arial Bold）
+        for (name, ids) in &self.family_map {
+            if let Some(&bold_id) = ids.get(1) {
+                resolver.insert(format!("{name}:700"), bold_id);
             }
         }
 
@@ -149,6 +156,13 @@ impl FontLoader {
         // sans-serif
         let sans_id = self.resolve_generic_family(&sans_names).unwrap_or(default_id);
         resolver.insert("sans-serif".to_string(), sans_id);
+        let sans_bold_id = self
+            .family_map
+            .get("Arial")
+            .and_then(|ids| ids.get(1).copied())
+            .or_else(|| self.family_map.values().find_map(|ids| ids.get(1).copied()))
+            .unwrap_or(sans_id);
+        resolver.insert("sans-serif:700".to_string(), sans_bold_id);
 
         // serif
         let serif_id = self.resolve_generic_family(&serif_names).unwrap_or(default_id);
