@@ -592,7 +592,11 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
             }
             // 裸数字（如 width="50"）按 CSS2 App D 解析为 px；含单位或 % 原样透传
             let is_bare_number = v.chars().all(|c| c.is_ascii_digit() || c == '.');
-            let val = if is_bare_number { format!("{v}px") } else { v.to_string() };
+            let val = if is_bare_number {
+                format!("{v}px")
+            } else {
+                v.to_string()
+            };
             hints.push((attr.to_string(), val));
         }
     }
