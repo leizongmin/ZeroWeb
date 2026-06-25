@@ -36,7 +36,8 @@ bg 自动从缩进后起（修 text-indent-wrap-001/002）。
   normal-flow:    102→102，0 回归（case-name diff 空）
   block-in-inline: 35→35，0 回归
   floats-clear:   88→88，0 回归
-  => 真实 WPT +3 / 0 回归
+  css-text 全量: 1409/1576（vs R632 基线 1399 = +10；R632→R639 间唯一代码变更为 R639）
+  => 真实 WPT 合计 ≈ +13 self-source / 0 回归（2 CSS2/text + 1 generated-content + 10 css-text）
 
 [make test] 全 workspace 绿（含 R638 失败的 test_pipeline_consecutive_different_renders
   现 pass；+新单测 test_r639_multiline_inline_bg_painted_per_fragment 验证多行 span
