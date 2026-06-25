@@ -447,6 +447,23 @@ impl StyleSystem {
                     ua_decl_inputs.push(("margin".to_string(), "1em 0".to_string(), false, (0, 0, 0), None));
                     ua_decl_inputs.push(("padding-left".to_string(), "40px".to_string(), false, (0, 0, 0), None));
                 }
+                "b" | "strong" => {
+                    ua_decl_inputs.push(("font-weight".to_string(), "bold".to_string(), false, (0, 0, 0), None));
+                }
+                "i" | "em" => {
+                    ua_decl_inputs.push(("font-style".to_string(), "italic".to_string(), false, (0, 0, 0), None));
+                }
+                "a" => {
+                    let link_color = html_body_link_color(doc).unwrap_or_else(|| "#0000ee".to_string());
+                    ua_decl_inputs.push(("color".to_string(), link_color, false, (0, 0, 0), None));
+                    ua_decl_inputs.push((
+                        "text-decoration".to_string(),
+                        "underline".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                }
                 _ => {}
             }
         }
@@ -574,33 +591,178 @@ impl Default for StyleSystem {
 /// 将 `"background-color: red; width: 200px"` 格式的字符串解析为
 /// `(property, value, important)` 三元组列表。
 /// CSS2 Appendix D 表现提示：把 HTML 表现属性映射为作者样式声明（property, value）。
-/// 仅 `<img>` 的 width/height；裸数字→px，`%`/长度原样透传。specificity 由调用方设为 (0,0,0)。
+/// specificity 由调用方设为 (0,0,0)。
 fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String, String)> {
     let Some(n) = doc.get(element) else {
         return Vec::new();
     };
-    let is_img = matches!(&n.kind, NodeKind::Element(elem) if elem.local_name().eq_ignore_ascii_case("img"));
-    if !is_img {
+    let NodeKind::Element(elem) = &n.kind else {
         return Vec::new();
-    }
+    };
+    let tag = elem.local_name().to_ascii_lowercase();
     let mut hints = Vec::new();
-    for attr in ["width", "height"] {
-        if let Some(v) = doc.get_attribute(element, attr) {
-            let v = v.trim();
-            if v.is_empty() {
-                continue;
-            }
-            // 裸数字（如 width="50"）按 CSS2 App D 解析为 px；含单位或 % 原样透传
-            let is_bare_number = v.chars().all(|c| c.is_ascii_digit() || c == '.');
-            let val = if is_bare_number {
-                format!("{v}px")
-            } else {
-                v.to_string()
-            };
-            hints.push((attr.to_string(), val));
-        }
+
+    if let Some(bg) = elem_attr(elem, "bgcolor") {
+        hints.push(("background-color".to_string(), normalize_html_color(&bg)));
     }
+    if let Some(text) = elem_attr(elem, "text") {
+        hints.push(("color".to_string(), normalize_html_color(&text)));
+    }
+
+    match tag.as_str() {
+        "img" => {
+            for attr in ["width", "height"] {
+                if let Some(v) = elem_attr(elem, attr) {
+                    if let Some(val) = html_length_attr(&v) {
+                        hints.push((attr.to_string(), val));
+                    }
+                }
+            }
+            if let Some(align) = elem_attr(elem, "align") {
+                if let Some(va) = html_align_to_vertical_align(&align) {
+                    hints.push(("vertical-align".to_string(), va));
+                }
+            }
+        }
+        "table" => {
+            let w = table_border_width_attr(elem);
+            if w > 0 {
+                hints.push(("border".to_string(), format!("{w}px solid")));
+            }
+            if elem_attr(elem, "cellpadding").is_some() {
+                hints.push(("border-collapse".to_string(), "separate".to_string()));
+            }
+            if let Some(cs) = elem_attr(elem, "cellspacing").and_then(|v| parse_html_px(&v)) {
+                hints.push(("border-spacing".to_string(), format!("{cs}px")));
+            }
+            for attr in ["width", "height"] {
+                if let Some(v) = elem_attr(elem, attr).and_then(|v| html_length_attr(&v)) {
+                    hints.push((attr.to_string(), v));
+                }
+            }
+        }
+        "td" | "th" => {
+            if let Some(table_id) = ancestor_table(doc, element) {
+                if table_border_width_attr_from_doc(doc, table_id) > 0 {
+                    hints.push(("border".to_string(), "1px solid".to_string()));
+                }
+                if let Some(cp) = doc
+                    .get_attribute(table_id, "cellpadding")
+                    .and_then(|v| parse_html_px(&v))
+                {
+                    hints.push(("padding".to_string(), format!("{cp}px")));
+                }
+            }
+            if let Some(align) = elem_attr(elem, "align") {
+                if let Some(ta) = html_align_to_text_align(&align) {
+                    hints.push(("text-align".to_string(), ta));
+                }
+            }
+            for attr in ["width", "height"] {
+                if let Some(v) = elem_attr(elem, attr).and_then(|v| html_length_attr(&v)) {
+                    hints.push((attr.to_string(), v));
+                }
+            }
+        }
+        "tr" => {
+            // bgcolor handled above; inherit table border model for row cells via td/th
+            if let Some(table_id) = ancestor_table(doc, element) {
+                if table_border_width_attr_from_doc(doc, table_id) > 0 {
+                    hints.push(("border".to_string(), "1px solid".to_string()));
+                }
+            }
+        }
+        _ => {}
+    }
+
     hints
+}
+
+fn elem_attr(elem: &zero_dom::ElementData, name: &str) -> Option<String> {
+    elem.get_attribute(name)
+}
+
+fn normalize_html_color(value: &str) -> String {
+    value.trim().to_string()
+}
+
+fn parse_html_px(value: &str) -> Option<f32> {
+    let v = value.trim();
+    if v.is_empty() {
+        return None;
+    }
+    if let Ok(n) = v.parse::<f32>() {
+        return Some(n);
+    }
+    v.strip_suffix("px").and_then(|n| n.parse().ok())
+}
+
+fn html_length_attr(value: &str) -> Option<String> {
+    let v = value.trim();
+    if v.is_empty() {
+        return None;
+    }
+    let is_bare_number = v.chars().all(|c| c.is_ascii_digit() || c == '.');
+    Some(if is_bare_number {
+        format!("{v}px")
+    } else {
+        v.to_string()
+    })
+}
+
+fn table_border_width_attr(elem: &zero_dom::ElementData) -> u32 {
+    match elem_attr(elem, "border") {
+        None => 0,
+        Some(v) if v.trim().is_empty() => 1,
+        Some(v) => v.trim().parse::<u32>().unwrap_or(1),
+    }
+}
+
+fn table_border_width_attr_from_doc(doc: &Document, table_id: NodeId) -> u32 {
+    doc.get(table_id)
+        .and_then(|n| match &n.kind {
+            NodeKind::Element(e) => Some(table_border_width_attr(e)),
+            _ => None,
+        })
+        .unwrap_or(0)
+}
+
+fn ancestor_table(doc: &Document, mut node: NodeId) -> Option<NodeId> {
+    loop {
+        if let Some(n) = doc.get(node)
+            && let NodeKind::Element(e) = &n.kind
+            && e.local_name().eq_ignore_ascii_case("table")
+        {
+            return Some(node);
+        }
+        node = doc.parent_node(node)?;
+    }
+}
+
+fn html_align_to_text_align(align: &str) -> Option<String> {
+    match align.trim().to_ascii_lowercase().as_str() {
+        "left" => Some("left".to_string()),
+        "center" | "middle" => Some("center".to_string()),
+        "right" => Some("right".to_string()),
+        _ => None,
+    }
+}
+
+fn html_align_to_vertical_align(align: &str) -> Option<String> {
+    match align.trim().to_ascii_lowercase().as_str() {
+        "top" => Some("top".to_string()),
+        "middle" | "center" => Some("middle".to_string()),
+        "bottom" => Some("bottom".to_string()),
+        _ => None,
+    }
+}
+
+fn html_body_link_color(doc: &Document) -> Option<String> {
+    doc.get_elements_by_tag_name("body")
+        .into_iter()
+        .next()
+        .and_then(|body| doc.get_attribute(body, "link"))
+        .map(|c| normalize_html_color(&c))
 }
 
 fn parse_inline_style(style_attr: &str) -> Vec<(String, String, bool)> {
@@ -923,6 +1085,71 @@ mod ua_display_tests {
                 "<{tag}> should fall back to CSS initial inline (None), not block"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod presentational_hint_tests {
+    use super::*;
+    use zero_dom::parse_html;
+
+    #[test]
+    fn body_bgcolor_maps_to_background_color() {
+        let doc = parse_html("<body bgcolor=\"#FFFFCC\"><p>x</p></body>");
+        let body = doc.get_elements_by_tag_name("body")[0];
+        let hints = collect_presentational_hints(&doc, body);
+        assert!(
+            hints.iter().any(|(p, v)| p == "background-color" && v == "#FFFFCC"),
+            "hints: {hints:?}"
+        );
+    }
+
+    #[test]
+    fn table_border_and_cell_padding_map_to_css() {
+        let doc = parse_html("<table border=\"1\" cellpadding=\"6\"><tr><td>Layer</td></tr></table>");
+        let table = doc.get_elements_by_tag_name("table")[0];
+        let td = doc.get_elements_by_tag_name("td")[0];
+        let table_hints = collect_presentational_hints(&doc, table);
+        assert!(
+            table_hints.iter().any(|(p, v)| p == "border" && v.contains("1px")),
+            "table hints: {table_hints:?}"
+        );
+        let td_hints = collect_presentational_hints(&doc, td);
+        assert!(
+            td_hints.iter().any(|(p, v)| p == "padding" && v == "6px"),
+            "td hints: {td_hints:?}"
+        );
+        assert!(
+            td_hints.iter().any(|(p, _)| p == "border"),
+            "td should inherit table border hint"
+        );
+    }
+
+    #[test]
+    fn anchor_ua_uses_body_link_color() {
+        let doc = parse_html("<body LINK=\"#0000EE\"><a href=\"#\">x</a></body>");
+        let mut system = StyleSystem::new();
+        let styles = system.compute_styles(&doc, &[]);
+        let a_id = doc.get_elements_by_tag_name("a")[0];
+        let style = styles.get(&a_id).expect("anchor styled");
+        assert!(
+            matches!(&style.color, zero_css_parser::values::ColorValue::Rgba(0, 0, 238, _)),
+            "link color {:?}",
+            style.color
+        );
+    }
+
+    #[test]
+    fn bold_tag_gets_font_weight_from_ua() {
+        let doc = parse_html("<p><b>bold</b></p>");
+        let mut system = StyleSystem::new();
+        let styles = system.compute_styles(&doc, &[]);
+        let b_id = doc.get_elements_by_tag_name("b")[0];
+        let style = styles.get(&b_id).expect("b styled");
+        assert!(matches!(
+            style.font_weight,
+            zero_css_parser::values::FontWeightValue::Bold
+        ));
     }
 }
 

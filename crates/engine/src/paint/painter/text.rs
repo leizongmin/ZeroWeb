@@ -609,7 +609,10 @@ impl super::Painter {
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
 
-        let image_key = ImageKey::new(super::super::helpers::simple_hash(&src));
+        let image_key = ImageKey::new(super::super::helpers::image_resource_key(
+            &src,
+            self.document_url.as_deref(),
+        ));
 
         let (img_x, img_y, img_w, img_h) = compute_object_fit_rect(
             &style.object_fit,

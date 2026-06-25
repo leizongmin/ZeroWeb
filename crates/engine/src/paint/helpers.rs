@@ -606,6 +606,25 @@ pub fn simple_hash(s: &str) -> u64 {
     hash
 }
 
+/// 将相对 URL 解析为绝对 URL（解析失败时原样返回 `href`）。
+pub fn resolve_document_url(base_url: &str, href: &str) -> String {
+    if href.starts_with("data:") || href.starts_with("http://") || href.starts_with("https://") {
+        return href.to_string();
+    }
+    match url::Url::parse(base_url).and_then(|base| base.join(href)) {
+        Ok(abs) => abs.to_string(),
+        Err(_) => href.to_string(),
+    }
+}
+
+/// 图像子资源 lookup key：始终对**解析后的绝对 URL** 哈希，与 webview 抓取路径一致。
+pub fn image_resource_key(src: &str, document_url: Option<&str>) -> u64 {
+    let resolved = document_url
+        .map(|base| resolve_document_url(base, src))
+        .unwrap_or_else(|| src.to_string());
+    simple_hash(&resolved)
+}
+
 /// 将 CSS GradientValue 转换为 GradientPrimitive。
 ///
 /// 目前支持 linear-gradient 和 radial-gradient。

@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use zero_engine::{
-    PipelineTimings, PrefersColorSchemeValue, RenderPipeline, extract_img_srcs, extract_stylesheet_hrefs, simple_hash,
+    PipelineTimings, PrefersColorSchemeValue, RenderPipeline, extract_img_srcs, extract_stylesheet_hrefs,
+    image_resource_key,
 };
 use zero_net::{HttpCache, HttpClient, NetError};
 use zero_render_foundation::image_cache::{ImageCache, ImageKey, decode_image_bytes};
@@ -192,6 +193,15 @@ impl WebView {
         }
     }
 
+    /// 抓取外链 CSS 与 `<img>` 子资源，并设置 pipeline 文档 URL。
+    fn prepare_page_subresources(&mut self, html: &str, page_url: &str) -> String {
+        self.pipeline.set_document_url(Some(page_url));
+        let external_css = self.resolve_external_css(html, page_url);
+        let image_sizes = self.fetch_image_subresources(html, page_url);
+        self.pipeline.set_image_sizes(image_sizes);
+        external_css
+    }
+
     /// 加载 HTML 内容。
     pub fn load_html(&mut self, html: &str, css: Option<&str>) -> WebViewRenderResult {
         self.cached_html = html.to_string();
@@ -292,9 +302,9 @@ impl WebView {
                     continue;
                 }
             };
-            let key = ImageKey::new(simple_hash(&abs));
+            let key = ImageKey::new(image_resource_key(src, Some(base_url)));
             let (w, h) = (img.width as f32, img.height as f32);
-            image_sizes.insert(simple_hash(&abs), (w, h));
+            image_sizes.insert(image_resource_key(src, Some(base_url)), (w, h));
             self.image_cache.insert_with_key(key, img);
         }
         image_sizes
@@ -366,9 +376,7 @@ impl WebView {
                         ));
                         WebViewError::Navigation(format!("SW response body is not valid UTF-8: {e}"))
                     })?;
-                    let external_css = self.resolve_external_css(&html, &effective_url);
-                    let image_sizes = self.fetch_image_subresources(&html, &effective_url);
-                    self.pipeline.set_image_sizes(image_sizes);
+                    let external_css = self.prepare_page_subresources(&html, &effective_url);
                     let render_result = self.load_html(&html, Some(&external_css));
                     self.loading = false;
                     self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
@@ -391,9 +399,7 @@ impl WebView {
                 ));
                 WebViewError::Navigation(format!("Cached response body is not valid UTF-8: {e}"))
             })?;
-            let external_css = self.resolve_external_css(&html, &effective_url);
-            let image_sizes = self.fetch_image_subresources(&html, &effective_url);
-            self.pipeline.set_image_sizes(image_sizes);
+            let external_css = self.prepare_page_subresources(&html, &effective_url);
             let render_result = self.load_html(&html, Some(&external_css));
             self.loading = false;
             self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
@@ -418,10 +424,7 @@ impl WebView {
                 tracing::info!("Fetched {} bytes from {effective_url}", html.len());
 
                 // 抓取外链样式表（`<link rel="stylesheet">`），合并后注入级联。
-                let external_css = self.resolve_external_css(&html, &effective_url);
-                // 抓取并解码图片子资源（`<img src>`），填充 image_cache + image_sizes。
-                let image_sizes = self.fetch_image_subresources(&html, &effective_url);
-                self.pipeline.set_image_sizes(image_sizes);
+                let external_css = self.prepare_page_subresources(&html, &effective_url);
 
                 // 渲染 HTML
                 let render_result = self.load_html(&html, Some(&external_css));
@@ -457,6 +460,18 @@ impl WebView {
         if old_url.as_deref() != Some(url) {
             self.emit_event(&WebViewEvent::UrlChanged(url.to_string()));
         }
+    }
+
+    /// 外部已获取 HTML 后完成加载（抓取 CSS/图片子资源并渲染）。
+    ///
+    /// 供浏览器异步 HTTP fetch 路径使用，行为与 [`Self::fetch_url`] 的子资源处理一致。
+    pub fn complete_fetched_page(&mut self, html: &str, page_url: &str) -> WebViewRenderResult {
+        self.current_url = Some(page_url.to_string());
+        let external_css = self.prepare_page_subresources(html, page_url);
+        let result = self.load_html(html, Some(&external_css));
+        self.loading = false;
+        self.emit_event(&WebViewEvent::LoadEnd(page_url.to_string()));
+        result
     }
 
     /// 完成加载（手动标记加载结束并渲染 HTML）。
@@ -528,10 +543,12 @@ impl WebView {
 
     /// 调整大小。
     pub fn resize(&mut self, width: u32, height: u32) {
+        let doc_url = self.current_url.clone();
         self.config.width = width;
         self.config.height = height;
         self.pipeline = RenderPipeline::new(width as f32, height as f32);
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
+        self.pipeline.set_document_url(doc_url.as_deref());
     }
 
     /// 设置用户颜色方案偏好（影响 `prefers-color-scheme` 媒体查询）。
