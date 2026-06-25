@@ -272,7 +272,7 @@ fn push_circle_fill(fills: &mut Vec<FillPrimitive>, cx: f32, cy: f32, diameter: 
     }
 }
 
-/// 按真实字体 advance 重新排列 WebView 文本 glyph（与 UI 文本一致）
+/// 按真实字体 advance 重新排列 WebView 文本 glyph，并保留布局阶段预留的词间距。
 pub(crate) fn reflow_webview_glyphs(
     glyphs: &mut [zero_render_foundation::primitive::GlyphPrimitive],
     font_loader: &FontLoader,
@@ -308,28 +308,29 @@ pub(crate) fn reflow_webview_glyphs(
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let mut cursor_x = glyphs[indices[0]].x;
-        let mut i = 0;
-        while i < indices.len() {
-            let cluster_x = glyphs[indices[i]].x;
-            let font_size = glyphs[indices[i]].font_size;
-            let Some(ch) = char::from_u32(glyphs[indices[i]].glyph_id) else {
-                i += 1;
-                continue;
-            };
+        if indices.is_empty() {
+            continue;
+        }
 
-            let mut j = i + 1;
-            while j < indices.len() && (glyphs[indices[j]].x - cluster_x).abs() < 1.0 {
-                j += 1;
+        let orig_x: Vec<f32> = indices.iter().map(|&i| glyphs[i].x).collect();
+        let mut cursor_x = orig_x[0];
+
+        for (pos, &idx) in indices.iter().enumerate() {
+            if pos > 0 {
+                let orig_gap = orig_x[pos] - orig_x[pos - 1];
+                let prev_idx = indices[pos - 1];
+                let prev_ch = char::from_u32(glyphs[prev_idx].glyph_id).unwrap_or('\0');
+                let expected =
+                    font_loader.measure_advance(primary_id, prev_ch, glyphs[prev_idx].font_size);
+                if orig_gap > expected + 0.5 {
+                    cursor_x += orig_gap - expected;
+                }
             }
 
-            for idx in &indices[i..j] {
-                let offset = glyphs[*idx].x - cluster_x;
-                glyphs[*idx].x = cursor_x + offset;
-            }
+            glyphs[idx].x = cursor_x;
 
-            cursor_x += font_loader.measure_advance(primary_id, ch, font_size);
-            i = j;
+            let ch = char::from_u32(glyphs[idx].glyph_id).unwrap_or('\0');
+            cursor_x += font_loader.measure_advance(primary_id, ch, glyphs[idx].font_size);
         }
     }
 }

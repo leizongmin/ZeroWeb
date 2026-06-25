@@ -787,7 +787,7 @@ impl BrowserApp {
             .unwrap_or_else(|| url.to_string());
         if let Some(wv) = self.webviews.get_mut(&tab_id) {
             wv.set_prefers_color_scheme(self.color_scheme);
-            wv.complete_load(html, None);
+            wv.complete_fetched_page(html, url);
             wv.set_title(&title);
         }
         self.shell.on_page_loaded(&title);

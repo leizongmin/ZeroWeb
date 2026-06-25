@@ -68,6 +68,8 @@ pub struct Painter {
     /// box 上）一致，宏须用 inline 元素自身 height（经此索引查 owner_id），而非 IFC owner
     /// 的 box_node.height（R638 锁定的 inline-ownership split 修复）。
     pub(crate) inline_heights: HashMap<NodeId, f32>,
+    /// 当前文档 URL（解析相对 `<img src>`）。
+    pub(crate) document_url: Option<String>,
 }
 
 fn is_positioned_child(box_node: &LayoutBox) -> bool {
@@ -228,7 +230,13 @@ impl Painter {
             viewport_h: 0.0,
             canvas_propagated_node: None,
             inline_heights: HashMap::new(),
+            document_url: None,
         }
+    }
+
+    /// 设置当前文档 URL。
+    pub fn set_document_url(&mut self, url: Option<&str>) {
+        self.document_url = url.map(str::to_string);
     }
 
     /// 设置 CSS font-family 查找表。

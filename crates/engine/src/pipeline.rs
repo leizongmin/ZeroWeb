@@ -46,6 +46,8 @@ pub struct RenderPipeline {
     image_sizes: HashMap<u64, (f32, f32)>,
     /// CSS font-family 查找表（字体族名 → FontId）。
     font_resolver: HashMap<String, u32>,
+    /// 当前文档 URL（用于解析相对 `<img src>` 与 image_sizes 键）。
+    document_url: Option<String>,
     /// 缓存的布局结果。
     cached_layout: Option<LayoutResult>,
     /// 缓存的 DOM（用于命中测试）。
@@ -101,7 +103,18 @@ impl RenderPipeline {
             skip_indicators: false,
             image_sizes: HashMap::new(),
             font_resolver: HashMap::new(),
+            document_url: None,
         }
+    }
+
+    /// 设置当前文档 URL（导航时由 webview 传入，供相对路径子资源解析）。
+    pub fn set_document_url(&mut self, url: Option<&str>) {
+        self.document_url = url.map(str::to_string);
+    }
+
+    /// 当前文档 URL。
+    pub fn document_url(&self) -> Option<&str> {
+        self.document_url.as_deref()
     }
 
     /// 设置是否跳过属性指示器。
@@ -129,7 +142,7 @@ impl RenderPipeline {
         let mut map = HashMap::new();
         for img_id in doc.get_elements_by_tag_name("img") {
             if let Some(src) = doc.get_attribute(img_id, "src") {
-                let key = crate::paint::simple_hash(&src);
+                let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
                 if let Some(&size) = self.image_sizes.get(&key) {
                     map.insert(img_id, size);
                 }
@@ -232,6 +245,7 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint(&layout_result.root, &styles, Some(&doc));
@@ -315,6 +329,7 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint(&layout_result.root, &styles, Some(&doc));
@@ -374,6 +389,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint(&layout_result.root, &styles, Some(doc));
@@ -455,6 +471,7 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint_in_rect(&layout_result.root, &styles, &dirty_rect, Some(doc));

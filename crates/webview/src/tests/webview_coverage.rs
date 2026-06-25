@@ -259,10 +259,9 @@ fn test_fetch_url_loads_image_subresource() {
     // 触发 image_cache 使用（fetch_url 已填充）。
     let _ = result;
 
-    // image_cache 应含 pic.png 解码结果。键 = simple_hash(abs url)。
+    // image_cache 应含 pic.png 解码结果。
     use zero_render_foundation::image_cache::ImageKey;
-    let abs = format!("{}/pic.png", server.base);
-    let key = ImageKey::new(zero_engine::simple_hash(&abs));
+    let key = ImageKey::new(zero_engine::image_resource_key("/pic.png", Some(&url)));
     let img = webview.image_cache().get(&key);
     assert!(img.is_some(), "image subresource not decoded/cached");
     let img = img.unwrap();
@@ -293,8 +292,7 @@ fn test_fetch_url_loads_svg_image_subresource() {
     webview.fetch_url(&url).expect("fetch_url should succeed");
 
     use zero_render_foundation::image_cache::ImageKey;
-    let abs = format!("{}/logo.svg", server.base);
-    let key = ImageKey::new(zero_engine::simple_hash(&abs));
+    let key = ImageKey::new(zero_engine::image_resource_key("/logo.svg", Some(&url)));
     let img = webview.image_cache().get(&key);
     assert!(img.is_some(), "SVG subresource not decoded/cached");
     let img = img.unwrap();
