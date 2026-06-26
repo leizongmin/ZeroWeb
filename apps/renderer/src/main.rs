@@ -73,6 +73,9 @@ struct RendererRuntime {
     inbound_thread: Option<JoinHandle<()>>,
     /// 渲染管线。
     pipeline: RenderPipeline,
+    /// 页面运行时（B3 迁移中：将逐步接管 pipeline / page_scripts / text_metrics；当前 None 未启用）。
+    #[allow(dead_code)]
+    webview: Option<zero_webview::WebView>,
     /// 字体加载器：为 paint 阶段提供真实字符 advance。
     font_loader: FontLoader,
     /// 当前主字体 id。
@@ -116,6 +119,7 @@ impl RendererRuntime {
             inbound_rx,
             inbound_thread: Some(inbound_thread),
             pipeline,
+            webview: None,
             font_loader,
             font_id,
             current_url: None,
