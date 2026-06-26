@@ -429,7 +429,7 @@
 
 ## Single Active Milestone
 
-**当前活跃里程碑**：✅ **M7 已完成**（渲染器图元覆盖 + 浏览器图元消费）—— DC-8 CPU 13/13 + DC-9 GPU 13/13 + DC-10 浏览器消费全 13 字段，均附 framebuffer 像素断言测试（见 master.md R660-R666）。**当前实际活跃工作**：M10（上游 WPT 真实 reftest 通过率）+ DC-13 产品 smoke + 真 incomplete 特性（Float/sticky/scroll + clip-path/backdrop-filter/mask 渲染）+ Phase A 字体度量 plateau（须用户多会话决策）。
+**当前活跃里程碑**：✅ **M7 已完成**（渲染器图元覆盖 + 浏览器图元消费）—— DC-8 CPU 13/13 + DC-9 GPU 13/13 + DC-10 浏览器消费全 13 字段，均附 framebuffer 像素断言测试（见 master.md R660-R666）。**当前实际活跃工作**：M10（上游 WPT 真实 reftest 通过率）+ DC-13 产品 smoke + 真 incomplete 特性（Float/sticky/scroll + clip-path/backdrop-filter/mask 渲染）+ Phase A 字体度量 plateau（按 rally 跨会话续跑协议推进）。
 
 ### M7 目标
 
