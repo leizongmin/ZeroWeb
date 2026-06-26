@@ -1,7 +1,146 @@
 //! 布局树命中测试 — 用于链接点击等交互。
 
+use std::collections::HashMap;
+
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
+
+/// 主线程只读命中测试快照（由 tab worker 在推送快照时构建）。
+#[derive(Debug, Clone)]
+pub struct HitTestCache {
+    layout_root: LayoutBox,
+    doc_root: NodeId,
+    nodes: HashMap<NodeId, HitTestNodeMeta>,
+    parents: HashMap<NodeId, NodeId>,
+}
+
+#[derive(Debug, Clone)]
+struct HitTestNodeMeta {
+    tag_name: String,
+    id: Option<String>,
+    class_name: Option<String>,
+    href: Option<String>,
+}
+
+impl HitTestCache {
+    /// 从管线缓存的 DOM 与布局树构建命中测试快照。
+    pub fn from_document(doc: &Document, layout_root: &LayoutBox) -> Self {
+        let mut nodes = HashMap::new();
+        let mut parents = HashMap::new();
+        collect_hit_test_nodes(layout_root, doc, &mut nodes, &mut parents);
+        Self {
+            layout_root: layout_root.clone(),
+            doc_root: doc.root(),
+            nodes,
+            parents,
+        }
+    }
+
+    /// 命中测试链接，返回 `href`（若存在）。
+    pub fn hit_test_link(&self, x: f32, y: f32) -> Option<String> {
+        let mut best = (0, self.doc_root);
+        deepest_node_at(&self.layout_root, 0.0, 0.0, x, y, 0, &mut best);
+        find_link_href_cached(best.1, &self.nodes, &self.parents)
+    }
+
+    /// 命中测试元素，返回最深元素及其布局盒。
+    pub fn hit_test_element(&self, x: f32, y: f32) -> Option<ElementHit> {
+        let mut best = (0, self.doc_root);
+        deepest_node_at(&self.layout_root, 0.0, 0.0, x, y, 0, &mut best);
+        element_hit_from_cache(&self.layout_root, best.1, &self.nodes, &self.parents)
+    }
+}
+
+fn collect_hit_test_nodes(
+    layout: &LayoutBox,
+    doc: &Document,
+    nodes: &mut HashMap<NodeId, HitTestNodeMeta>,
+    parents: &mut HashMap<NodeId, NodeId>,
+) {
+    if let Some(node_id) = layout.node_id {
+        if let Some(data) = doc.get(node_id) {
+            if let NodeKind::Element(elem) = &data.kind {
+                let tag = elem.local_name().to_ascii_lowercase();
+                let href = if tag == "a" {
+                    doc.get_attribute(node_id, "href")
+                } else {
+                    None
+                };
+                nodes.insert(
+                    node_id,
+                    HitTestNodeMeta {
+                        tag_name: tag,
+                        id: doc.get_attribute(node_id, "id"),
+                        class_name: doc.get_attribute(node_id, "class"),
+                        href,
+                    },
+                );
+            }
+            if let Some(parent) = doc.parent_node(node_id) {
+                parents.insert(node_id, parent);
+            }
+        }
+    }
+    for child in &layout.children {
+        collect_hit_test_nodes(child, doc, nodes, parents);
+    }
+}
+
+fn find_link_href_cached(
+    mut node: NodeId,
+    nodes: &HashMap<NodeId, HitTestNodeMeta>,
+    parents: &HashMap<NodeId, NodeId>,
+) -> Option<String> {
+    loop {
+        if let Some(meta) = nodes.get(&node) {
+            if meta.tag_name == "a" {
+                if let Some(href) = &meta.href {
+                    let href = href.trim();
+                    if !href.is_empty() && href != "#" {
+                        return Some(href.to_string());
+                    }
+                }
+            }
+        }
+        node = parents.get(&node).copied()?;
+    }
+}
+
+fn nearest_element_cached(
+    mut node: NodeId,
+    nodes: &HashMap<NodeId, HitTestNodeMeta>,
+    parents: &HashMap<NodeId, NodeId>,
+) -> NodeId {
+    loop {
+        if nodes.contains_key(&node) {
+            return node;
+        }
+        node = match parents.get(&node) {
+            Some(p) => *p,
+            None => return node,
+        };
+    }
+}
+
+fn element_hit_from_cache(
+    layout: &LayoutBox,
+    node: NodeId,
+    nodes: &HashMap<NodeId, HitTestNodeMeta>,
+    parents: &HashMap<NodeId, NodeId>,
+) -> Option<ElementHit> {
+    let element = nearest_element_cached(node, nodes, parents);
+    let meta = nodes.get(&element)?;
+    let (x, y, width, height) = layout_box_for_node(layout, element, 0.0, 0.0)?;
+    Some(ElementHit {
+        tag_name: meta.tag_name.clone(),
+        id: meta.id.clone(),
+        class_name: meta.class_name.clone(),
+        x,
+        y,
+        width,
+        height,
+    })
+}
 
 /// 在布局树中查找点击位置对应的最深 DOM 节点。
 fn deepest_node_at(

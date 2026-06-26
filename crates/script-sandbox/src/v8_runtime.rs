@@ -7,6 +7,32 @@ use std::sync::{Arc, Once};
 
 use crate::{SandboxConfig, ScriptError, ScriptResult};
 
+/// 从 TryCatch 提取异常消息与堆栈（须在调用点展开以匹配具体 scope 类型）。
+macro_rules! v8_try_catch_message {
+    ($try_catch:expr) => {{
+        let try_catch = $try_catch;
+        if try_catch.has_caught() {
+            if let Some(exception) = try_catch.exception() {
+                let mut out = exception
+                    .to_string(try_catch)
+                    .map(|s| s.to_rust_string_lossy(try_catch))
+                    .unwrap_or_else(|| "exception".to_string());
+                if let Some(stack) = try_catch.stack_trace() {
+                    if let Some(stack_s) = stack.to_string(try_catch) {
+                        out.push('\n');
+                        out.push_str(&stack_s.to_rust_string_lossy(try_catch));
+                    }
+                }
+                out
+            } else {
+                "unknown error".to_string()
+            }
+        } else {
+            "unknown error".to_string()
+        }
+    }};
+}
+
 /// 宿主注入的扁平字符串回调类型（JS-DOM-bridge：JS shim 经 __zw_* 回调操作宿主状态）。
 ///
 /// 回调接收 JS 传入参数的字符串数组，返回字符串结果（写入 V8 ReturnValue）。
@@ -131,6 +157,11 @@ impl V8Sandbox {
         self.callbacks.push((name.to_string(), idx));
     }
 
+    /// 设置脚本执行超时（毫秒）；0 表示无超时。
+    pub fn set_timeout_ms(&mut self, timeout_ms: u64) {
+        self.config.timeout_ms = timeout_ms;
+    }
+
     /// 在沙箱中执行JavaScript脚本。
     ///
     /// # 参数
@@ -173,56 +204,63 @@ impl V8Sandbox {
                 None
             };
 
-        let scope = &mut rusty_v8::HandleScope::new(isolate);
+        let mut hs = rusty_v8::HandleScope::new(isolate);
         // SAFETY: cached_ptr 指向 self.cached_context，与 self.isolate 不重叠。
         // HandleScope 的借用仅涉及 isolate，不会修改 cached_context。
-        let context = unsafe { resolve_context(persistent, cached_ptr, scope) };
-        let scope = &mut rusty_v8::ContextScope::new(scope, context);
+        let context = unsafe { resolve_context(persistent, cached_ptr, &mut hs) };
+        let mut ctx_scope = rusty_v8::ContextScope::new(&mut hs, context);
+        let try_catch = &mut rusty_v8::TryCatch::new(&mut ctx_scope);
 
         // 把宿主回调（register_callback 注册）挂到全局对象。无注册时为 no-op（零回归）。
-        // rusty_v8 0.32 FunctionTemplate 回调须为 Copy fn，状态经 builder().data(idx)
-        // 携带，fn 回调按 idx 查线程局部 HOST_CALLBACKS。
         if !self.callbacks.is_empty() {
-            let global = context.global(scope);
+            let global = context.global(try_catch);
             for (name, idx) in &self.callbacks {
-                let data = rusty_v8::Integer::new(scope, *idx as i32);
+                let data = rusty_v8::Integer::new(try_catch, *idx as i32);
                 let tmpl = rusty_v8::FunctionTemplate::builder(host_callback_invoke)
                     .data(data.into())
-                    .build(scope);
-                let Some(function) = tmpl.get_function(scope) else {
+                    .build(try_catch);
+                let Some(function) = tmpl.get_function(try_catch) else {
                     continue;
                 };
-                if let Some(key) = rusty_v8::String::new(scope, name) {
-                    let _ = global.set(scope, key.into(), function.into());
+                if let Some(key) = rusty_v8::String::new(try_catch, name) {
+                    let _ = global.set(try_catch, key.into(), function.into());
                 }
             }
         }
 
         // 编译脚本
-        let code_str = rusty_v8::String::new(scope, code)
+        let code_str = rusty_v8::String::new(try_catch, code)
             .ok_or_else(|| ScriptError::InvalidInput("failed to create V8 string".into()))?;
 
-        let script = rusty_v8::Script::compile(scope, code_str, None).ok_or_else(|| {
-            let msg = Self::extract_exception(scope);
-            ScriptError::CompileError(msg)
-        })?;
+        let script = rusty_v8::Script::compile(try_catch, code_str, None);
+        if try_catch.has_caught() || script.is_none() {
+            let msg = v8_try_catch_message!(try_catch);
+            return Err(ScriptError::CompileError(msg));
+        }
+        let script = script.unwrap();
 
         // 执行脚本
-        let result = script.run(scope).ok_or_else(|| {
-            // 检查是否因超时被终止
-            if scope.is_execution_terminating() {
-                // 取消终止状态以恢复 isolate
-                scope.cancel_terminate_execution();
-                return ScriptError::Timeout(format!("{}ms", self.config.timeout_ms));
+        let result = script.run(try_catch);
+        if try_catch.has_caught() || result.is_none() {
+            if result.is_none() && !try_catch.has_caught() {
+                try_catch.cancel_terminate_execution();
+                return Err(ScriptError::Timeout(format!("{}ms", self.config.timeout_ms)));
             }
-            let msg = Self::extract_exception(scope);
-            ScriptError::RuntimeError(msg)
-        })?;
+            let msg = v8_try_catch_message!(try_catch);
+            return Err(ScriptError::RuntimeError(msg));
+        }
+        let result = result.unwrap();
+
+        try_catch.perform_microtask_checkpoint();
+        if try_catch.has_caught() {
+            let msg = v8_try_catch_message!(try_catch);
+            return Err(ScriptError::RuntimeError(msg));
+        }
 
         // 转换结果为字符串
         let result_str = result
-            .to_string(scope)
-            .map(|s| s.to_rust_string_lossy(scope))
+            .to_string(try_catch)
+            .map(|s| s.to_rust_string_lossy(try_catch))
             .unwrap_or_default();
 
         let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
@@ -253,25 +291,36 @@ impl V8Sandbox {
 
         let start = std::time::Instant::now();
 
-        let scope = &mut rusty_v8::HandleScope::new(isolate);
-        let context = unsafe { resolve_context(persistent, cached_ptr, scope) };
-        let scope = &mut rusty_v8::ContextScope::new(scope, context);
+        let mut hs = rusty_v8::HandleScope::new(isolate);
+        let context = unsafe { resolve_context(persistent, cached_ptr, &mut hs) };
+        let mut ctx_scope = rusty_v8::ContextScope::new(&mut hs, context);
+        let try_catch = &mut rusty_v8::TryCatch::new(&mut ctx_scope);
 
-        let code_str = rusty_v8::String::new(scope, code)
+        let code_str = rusty_v8::String::new(try_catch, code)
             .ok_or_else(|| ScriptError::InvalidInput("failed to create V8 string".into()))?;
 
-        let script = rusty_v8::Script::compile(scope, code_str, None).ok_or_else(|| {
-            let msg = Self::extract_exception(scope);
-            ScriptError::CompileError(msg)
-        })?;
+        let script = rusty_v8::Script::compile(try_catch, code_str, None);
+        if try_catch.has_caught() || script.is_none() {
+            let msg = v8_try_catch_message!(try_catch);
+            return Err(ScriptError::CompileError(msg));
+        }
+        let script = script.unwrap();
 
-        let result = script.run(scope).ok_or_else(|| {
-            let msg = Self::extract_exception(scope);
-            ScriptError::RuntimeError(msg)
-        })?;
+        let result = script.run(try_catch);
+        if try_catch.has_caught() || result.is_none() {
+            let msg = v8_try_catch_message!(try_catch);
+            return Err(ScriptError::RuntimeError(msg));
+        }
+        let result = result.unwrap();
+
+        try_catch.perform_microtask_checkpoint();
+        if try_catch.has_caught() {
+            let msg = v8_try_catch_message!(try_catch);
+            return Err(ScriptError::RuntimeError(msg));
+        }
 
         // 尝试JSON.stringify
-        let json_str = Self::value_to_json_string(scope, result);
+        let json_str = Self::value_to_json_string(try_catch, result);
 
         let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
 
@@ -324,18 +373,6 @@ impl V8Sandbox {
     pub fn v8_version() -> &'static str {
         ensure_v8_initialized();
         rusty_v8::V8::get_version()
-    }
-
-    /// 从当前scope中提取异常消息。
-    fn extract_exception(scope: &mut rusty_v8::HandleScope) -> String {
-        let try_catch = &mut rusty_v8::TryCatch::new(scope);
-        if let Some(exception) = try_catch.exception() {
-            // TryCatch 实现了 AsMut<HandleScope>，可以直接用 scope
-            if let Some(msg) = exception.to_string(try_catch) {
-                return msg.to_rust_string_lossy(try_catch);
-            }
-        }
-        "unknown error".to_string()
     }
 
     /// 将V8值转换为JSON字符串。

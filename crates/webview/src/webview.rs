@@ -724,6 +724,11 @@ impl WebView {
         self.pipeline.hit_test_element(x, y)
     }
 
+    /// 构建主线程命中测试快照（与最近一次渲染一致）。
+    pub fn build_hit_test_cache(&self) -> Option<zero_engine::HitTestCache> {
+        self.pipeline.build_hit_test_cache()
+    }
+
     /// 抓取 URL 文本资源（用于外链脚本等）。
     pub fn fetch_text_at(&self, url: &str) -> Result<String, WebViewError> {
         let resp = self

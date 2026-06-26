@@ -570,6 +570,17 @@ mod tests {
     }
 
     #[test]
+    fn test_shim_includes_runtime_stubs() {
+        let shim = generate_js_dom_shim();
+        assert!(shim.contains("globalThis.setTimeout"));
+        assert!(shim.contains("globalThis.navigator"));
+        assert!(shim.contains("attachEvent"));
+        assert!(shim.contains("__zw_get_page_url"));
+        assert!(shim.contains("globalThis.screen"));
+        assert!(shim.contains("parentNode"));
+    }
+
+    #[test]
     fn test_merge_style_property() {
         let merged = merge_style_property("color: blue", "width", "10px");
         assert!(merged.contains("color: blue"));

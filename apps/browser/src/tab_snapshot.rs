@@ -1,5 +1,6 @@
 //! 标签页渲染快照 — UI 线程只读合成，不触碰 WebView 内部状态。
 
+use zero_engine::HitTestCache;
 use zero_render_foundation::image_cache::ImageCache;
 use zero_webview::WebViewRenderResult;
 
@@ -19,6 +20,8 @@ pub struct TabSnapshot {
     pub url: Option<String>,
     /// 最近一次渲染使用的 HTML 源码。
     pub html_source: Option<String>,
+    /// 主线程命中测试数据（与 `last_render` 同帧）。
+    pub hit_test: Option<HitTestCache>,
 }
 
 impl Default for TabSnapshot {
@@ -31,6 +34,7 @@ impl Default for TabSnapshot {
             title: None,
             url: None,
             html_source: None,
+            hit_test: None,
         }
     }
 }
@@ -47,6 +51,7 @@ impl TabSnapshot {
             title: wv.title().map(str::to_string),
             url: wv.url().map(str::to_string),
             html_source: if html.is_empty() { None } else { Some(html.to_string()) },
+            hit_test: wv.build_hit_test_cache(),
         }
     }
 }

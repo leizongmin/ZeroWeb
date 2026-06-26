@@ -17,6 +17,9 @@ use zero_script_sandbox::{
     extract_module_import_specifiers, ModuleRegistry, SandboxConfig, V8Sandbox,
 };
 
+const TAB_JS_EXEC_TIMEOUT_MS: u64 = 15_000;
+const TAB_JS_CHANNEL_TIMEOUT: Duration = Duration::from_millis(TAB_JS_EXEC_TIMEOUT_MS + 5_000);
+
 type ScriptFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 type ModuleFn = Arc<dyn Fn(&str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
 
@@ -33,6 +36,7 @@ enum JsWorkerCommand {
     },
     SetDomSnapshot {
         html: String,
+        url: String,
     },
     Shutdown,
 }
@@ -69,7 +73,7 @@ impl RendererJsWorker {
                 })
                 .map_err(|e| e.to_string())?;
             reply_rx
-                .recv_timeout(Duration::from_secs(30))
+                .recv_timeout(TAB_JS_CHANNEL_TIMEOUT)
                 .map_err(|e| e.to_string())?
         });
 
@@ -84,7 +88,7 @@ impl RendererJsWorker {
                 })
                 .map_err(|e| e.to_string())?;
             reply_rx
-                .recv_timeout(Duration::from_secs(30))
+                .recv_timeout(TAB_JS_CHANNEL_TIMEOUT)
                 .map_err(|e| e.to_string())?
         });
 
@@ -112,10 +116,11 @@ impl RendererJsWorker {
         (self.executor)(script)
     }
 
-    /// 脚本执行前更新 DOM HTML 快照（供 querySelector 等只读回调）。
-    pub fn set_dom_snapshot(&self, html: &str) {
+    /// 脚本执行前更新 DOM HTML 快照与页面 URL。
+    pub fn set_dom_snapshot(&self, html: &str, url: &str) {
         let _ = self.cmd_tx.send(JsWorkerCommand::SetDomSnapshot {
             html: html.to_string(),
+            url: url.to_string(),
         });
     }
 
@@ -142,11 +147,13 @@ impl Drop for RendererJsWorker {
 fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>) {
     let js_config = SandboxConfig {
         persistent_context: true,
+        timeout_ms: TAB_JS_EXEC_TIMEOUT_MS,
         ..Default::default()
     };
     let mut sandbox = V8Sandbox::with_config(js_config).expect("V8 sandbox init");
     let dom_html: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html);
+    let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
     register_module_compile_callback(&mut sandbox);
     let shim = generate_js_dom_shim();
     if let Err(e) = sandbox.execute(shim) {
@@ -156,7 +163,8 @@ fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::M
     while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
             JsWorkerCommand::Execute { script, reply } => {
-                let result = sandbox.execute(&script).map(|r| r.value).map_err(|e| e.to_string());
+                let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
+                let result = sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string());
                 let _ = reply.send(result);
             }
             JsWorkerCommand::ExecuteModule {
@@ -168,9 +176,12 @@ fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::M
                 let result = execute_module_in_sandbox(&mut sandbox, &source, &url, &deps);
                 let _ = reply.send(result);
             }
-            JsWorkerCommand::SetDomSnapshot { html } => {
+            JsWorkerCommand::SetDomSnapshot { html, url } => {
                 if let Ok(mut snap) = dom_html.lock() {
                     *snap = html;
+                }
+                if let Ok(mut u) = page_url.lock() {
+                    *u = url;
                 }
             }
             JsWorkerCommand::Shutdown => break,
@@ -198,8 +209,14 @@ fn register_dom_callbacks(
     sandbox: &mut V8Sandbox,
     mutations: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
     dom_html: &Arc<std::sync::Mutex<String>>,
+    page_url: &Arc<std::sync::Mutex<String>>,
 ) {
     let counter = Arc::new(AtomicU64::new(0));
+
+    let url = Arc::clone(page_url);
+    sandbox.register_callback("__zw_get_page_url", move |_args| {
+        url.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    });
 
     let html = Arc::clone(dom_html);
     sandbox.register_callback("__zw_query_match", move |args| {

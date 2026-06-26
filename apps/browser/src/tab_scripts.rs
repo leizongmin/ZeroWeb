@@ -20,59 +20,131 @@ pub struct DomDispatchResult {
     pub html_changed: bool,
 }
 
-/// 按文档顺序执行页面脚本（内联 + 外链 `src`），将 DOM 变更同步回文档并重渲染。
-pub fn run_page_scripts(wv: &mut WebView, javascript_enabled: bool, js_worker: Option<&TabJsWorkerHandle>) {
-    if !javascript_enabled {
-        return;
-    }
-    let mut html = wv.html_content().to_string();
-    if html.is_empty() {
-        return;
-    }
-    if !should_run_scripts_for_url(wv.url()) {
-        return;
-    }
-    let base = wv.url().unwrap_or("about:blank").to_string();
-    let original_html = html.clone();
+/// 分片执行页面脚本，避免在 tab worker 循环内一次性跑完所有 `<script>` 阻塞 UI。
+pub struct PageScriptRunner {
+    scripts: Vec<PageScript>,
+    index: usize,
+    base: String,
+    html: String,
+    original_html: String,
+}
 
-    for script in extract_page_scripts(&html) {
+impl PageScriptRunner {
+    /// 从当前文档抽取脚本队列；无脚本或不应执行时返回 `None`。
+    pub fn start(wv: &WebView, javascript_enabled: bool) -> Option<Self> {
+        if !javascript_enabled {
+            return None;
+        }
+        let html = wv.html_content().to_string();
+        if html.is_empty() || !should_run_scripts_for_url(wv.url()) {
+            return None;
+        }
+        let scripts = extract_page_scripts(&html);
+        if scripts.is_empty() {
+            return None;
+        }
+        let base = wv.url().unwrap_or("about:blank").to_string();
+        let original_html = html.clone();
+        Some(Self {
+            scripts,
+            index: 0,
+            base,
+            html,
+            original_html,
+        })
+    }
+
+    /// 是否还有待执行脚本。
+    pub fn is_active(&self) -> bool {
+        self.index < self.scripts.len()
+    }
+
+    /// 执行下一个 `<script>`；返回是否建议推送快照。
+    pub fn tick(
+        &mut self,
+        wv: &mut WebView,
+        js_worker: Option<&TabJsWorkerHandle>,
+    ) -> PageScriptTickResult {
+        if !self.is_active() {
+            return PageScriptTickResult::Idle;
+        }
+
+        let script = &self.scripts[self.index];
+        let label = page_script_label(script);
         let is_module = matches!(
-            &script,
+            script,
             PageScript::InlineModule(_) | PageScript::ExternalModule(_)
         );
-        let module_url = match &script {
-            PageScript::ExternalModule(src) => resolve_document_url(&base, src),
-            PageScript::InlineModule(_) => base.clone(),
+        let module_url = match script {
+            PageScript::ExternalModule(src) => resolve_document_url(&self.base, src),
+            PageScript::InlineModule(_) => self.base.clone(),
             _ => String::new(),
         };
 
         let code = match script {
-            PageScript::Inline(code) | PageScript::InlineModule(code) => code,
+            PageScript::Inline(code) | PageScript::InlineModule(code) => code.clone(),
             PageScript::External(src) | PageScript::ExternalModule(src) => {
-                let abs = resolve_document_url(&base, &src);
+                let abs = resolve_document_url(&self.base, src);
                 match wv.fetch_text_at(&abs) {
                     Ok(code) => code,
                     Err(e) => {
                         warn!("external script fetch {abs}: {e}");
-                        continue;
+                        self.index += 1;
+                        return PageScriptTickResult::Continue;
                     }
                 }
             }
         };
 
-        if let Err(e) = execute_script_chunk(wv, js_worker, &html, is_module, &module_url, &code) {
-            warn!("page script error: {e}");
-            continue;
+        if let Err(e) = execute_script_chunk(
+            wv,
+            js_worker,
+            &self.html,
+            is_module,
+            &module_url,
+            &code,
+            true,
+        ) {
+            warn!("page script error ({}): {e}", label);
         }
 
-        if let Some(new_html) = apply_recorded_mutations(wv, js_worker, &html) {
-            html = new_html;
+        if let Some(new_html) = apply_recorded_mutations(wv, js_worker, &self.html) {
+            self.html = new_html;
         }
+
+        self.index += 1;
+        PageScriptTickResult::Continue
     }
 
-    if html != original_html {
-        wv.reload_html_after_script(&html);
+    /// 全部脚本跑完后，若 DOM 有变更则一次性重载 HTML。
+    pub fn finish(&mut self, wv: &mut WebView) {
+        if self.html != self.original_html {
+            wv.reload_html_after_script(&self.html);
+        }
     }
+}
+
+/// 分片执行单步结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageScriptTickResult {
+    /// 无待执行脚本。
+    Idle,
+    /// 已执行一步（或跳过一步），可继续 tick。
+    Continue,
+}
+
+/// 按文档顺序执行页面脚本（内联 + 外链 `src`），将 DOM 变更同步回文档并重渲染。
+///
+/// 测试与简单页面仍可用；生产路径请用 [`PageScriptRunner`] 分片执行。
+pub fn run_page_scripts(wv: &mut WebView, javascript_enabled: bool, js_worker: Option<&TabJsWorkerHandle>) {
+    let mut runner = match PageScriptRunner::start(wv, javascript_enabled) {
+        Some(r) => r,
+        None => return,
+    };
+    while runner.is_active() {
+        runner.tick(wv, js_worker);
+    }
+    runner.finish(wv);
 }
 
 /// 向页面元素派发 DOM 事件（宿主输入 → JS 监听器 → DOM 变更 → 重渲染）。
@@ -93,7 +165,8 @@ pub fn dispatch_dom_event(
     }
     let script = script_dispatch_dom_event(selector, event_type, detail);
     let result_str = if let Some(worker) = js_worker {
-        worker.set_dom_snapshot(html);
+        let page_url = wv.url().unwrap_or("about:blank");
+        worker.set_dom_snapshot(html, page_url);
         worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).clear();
         match worker.execute_script_direct(&script) {
             Ok(r) => r,
@@ -132,9 +205,11 @@ fn execute_script_chunk(
     is_module: bool,
     module_url: &str,
     code: &str,
+    page_script: bool,
 ) -> Result<(), String> {
+    let page_url = wv.url().unwrap_or("about:blank");
     if let Some(worker) = js_worker {
-        worker.set_dom_snapshot(html);
+        worker.set_dom_snapshot(html, page_url);
         worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
     if is_module {
@@ -144,6 +219,12 @@ fn execute_script_chunk(
         collect_module_deps(&fetch, module_url, code, &mut registry)?;
         let deps: Vec<(String, String)> = registry.into_iter().collect();
         worker.execute_module(code, module_url, &deps)?;
+    } else if let Some(worker) = js_worker {
+        if page_script {
+            worker.execute_page_script(code).map_err(|e| e.to_string())?;
+        } else {
+            worker.execute_script_direct(code).map_err(|e| e.to_string())?;
+        }
     } else {
         wv.execute_script(code).map_err(|e| e.to_string())?;
     }
@@ -177,5 +258,22 @@ fn should_run_scripts_for_url(url: Option<&str>) -> bool {
     match url {
         Some(u) if u.starts_with("view-source:") => false,
         _ => true,
+    }
+}
+
+fn page_script_label(script: &PageScript) -> String {
+    match script {
+        PageScript::Inline(code) => {
+            let line = code.lines().next().unwrap_or("").trim();
+            let preview: String = line.chars().take(72).collect();
+            format!("inline: {preview}")
+        }
+        PageScript::InlineModule(code) => {
+            let line = code.lines().next().unwrap_or("").trim();
+            let preview: String = line.chars().take(72).collect();
+            format!("inline module: {preview}")
+        }
+        PageScript::External(src) => format!("external: {src}"),
+        PageScript::ExternalModule(src) => format!("external module: {src}"),
     }
 }

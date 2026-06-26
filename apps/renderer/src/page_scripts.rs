@@ -103,7 +103,7 @@ pub fn dispatch_dom_event(
         };
     }
     let script = script_dispatch_dom_event(selector, event_type, detail);
-    ctx.js_worker.set_dom_snapshot(ctx.html);
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).clear();
     let result_str = match ctx.js_worker.execute_script_direct(&script) {
         Ok(r) => r,
@@ -132,7 +132,7 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     code: &str,
     fetch_text: &F,
 ) -> Result<(), String> {
-    ctx.js_worker.set_dom_snapshot(html);
+    ctx.js_worker.set_dom_snapshot(html, ctx.url);
     ctx.js_worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).clear();
     if is_module {
         let mut registry: HashMap<String, String> = HashMap::new();
