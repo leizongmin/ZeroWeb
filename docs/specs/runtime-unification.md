@@ -78,3 +78,28 @@
 - **2026-06-26 R2（续）lint 清理**：用户指示「发现的 lint 都顺手修」。L1 zero-engine 12 处（`collapsible_if`→let-chains + 去 `u64` 冗余 cast）✓ commit `00ed921e`；zero-protocol（box `ViewPainted` 大变体 + `loop`→`while let`，serde 透明、IPC 线格式不变）✓ `56d91d6f`；zero-webview 6 处（`ExternalScriptExecutor` 类型别名 + `BytesFetchRx` + match guard + 去冗余闭包）✓ `7e83fcc3`。renderer 8 处 defer 到 **T2**（6 处在 async_load.rs 待删）+ **T5**（`publish_render_with_layout` `too_many_arguments`）。分支 `feat/runtime-unification`，每 firing commit+push。
 - **2026-06-26 R3 T2 完成**：renderer 改用 `zero_page_runtime::PageLoadHost` 共享 trait，删除 async_load.rs 本地 trait 副本（`IpcLoadBridge` 实现共享 trait）——三路径统一 spine 的首个消费方落地。顺带清 renderer 8 处既有 clippy（删 `Failed` 死变体 + 3 个未用 accessor + 2 处 collapsible_if；`inbound_thread`/`too_many_arguments`/`executor()` 三处 `#[allow]`；`paint_export` 删 `fetch_image_payloads` 死包装）→ `cargo clippy -p zero-renderer --all-targets -- -D warnings` 全绿，`cargo test -p zero-renderer` 1 passed。commit `19cd58c3`。**注**：`async_load.rs` 文件未整体删（仍含 `RendererPageLoad` 加载器），其算法去重并入 **T3**（共享分阶段算法就绪后 renderer 改调共享 loader）。下一 firing → **T3**。
 - **2026-06-26 R4 T3a 完成**：webview `AsyncPageLoad` 参数化 `AsyncFetchHost`（trait 进 `zero-page-runtime`），**消除 `net_pool` 硬编码**——`InProcessFetchHost` 封装原 net_pool 行为，`start(url)`/`from_html` 默认用它（签名不变→tab_worker 零改动），新增 `start_with_host`/`from_html_with_host` 供 renderer 复用。两端 tick/轮询模型本就一致，I/O 通道差异收敛到 host。验证：webview `clippy --all-targets` 绿、`test` 17 passed、`cargo check -p zero-browser` 通过。commit `51093457`。**剩余**：**T3b** 抽象 `PageSurface` 状态 owner（WebView vs 裸 pipeline——`image_cache` 像素缓存是难点：webview `insert_with_key`+`set_image_sizes`，renderer 只 `set_image_sizes`、pixels 经 IPC `paint_export` 单走）；**T3c** renderer 丢弃 `RendererPageLoad`、经 `PageSurface`+`IpcFetchHost` 改用 webview 的 `AsyncPageLoad`，删 `apps/renderer/src/async_load.rs` 整文件。另：browser 8 处 dead-code（`tab_scripts::run_page_scripts` 等）随 **T4** 脚本统一解决（归 L2）。
+- **2026-06-26 R5**：全量 clippy 扫描结论——除 `apps/browser`（25 处，多耦合 T4/T5）外**其余 14 个 crate 全清**；browser 修 3 处机械 lint（commit `331bb359`），余随 T4/T5。深入分析 T3 后发现真正 blocker，**重塑 T3 路径**（见 §9）。
+
+## 9. T3 架构分支与决议（2026-06-26 R5）
+
+深入分析后，renderer 复用 webview `AsyncPageLoad` 有**两个真 blocker**（不是上轮以为的单纯「状态 owner 抽象」）：
+
+1. **host 存储**：webview `AsyncPageLoad` 存 `Box<dyn AsyncFetchHost>`；renderer 的 IPC host 须借用 `RendererRuntime` 的 IPC 状态（`outbound`/`inbound_rx`/`ids`/`deferred`）→ 无法被存进 `AsyncPageLoad`（borrow 冲突）。
+2. **I/O 模型**：webview 轮询后台 `Receiver`（net_pool 后台线程抓取）；renderer 的 IPC fetch 必须**主线程阻塞**——`inbound_rx` 是单消费者，无法后台化（后台化需独立路由线程，属大改）。renderer 无头 → 阻塞抓取本身可接受，但要适配 host 契约。
+
+加上状态 owner 差异（WebView 丰富 vs 裸 `RenderPipeline`）。
+
+**两条路径**：
+
+- **Path A（`PageSurface` trait）**：抽象状态 owner，让裸 pipeline 也能 host webview loader。问题：WebView 状态丰富（`image_cache` 像素、`title`、`security`），pipeline-wrapper 无法忠实实现全部 → 抽象漏水；且 blocker 1 未解。**否决**。
+- **Path B（renderer adopts WebView）** ⭐**推荐**：renderer 内部持有一个 `WebView`，用 `IpcFetchHost`（per-tick）驱动其 `AsyncPageLoad`，经 WebView 渲染产出 → IPC frame。一举消灭 renderer 的 `page_scripts` / `text_metrics` / `RendererPageLoad` / `paint_export` 平行副本，对齐用户「RendererRuntime 只管 IPC 与进程生命周期，页面逻辑委托共享运行时」的愿景（WebView 作过渡 PageSession）。
+
+**Path B 前置（T3b 重塑为 B1/B2/B3）**：
+
+- **B1**：`AsyncPageLoad` 改 **per-tick host**——去掉存储的 `Box<dyn>`，`tick(&mut self, webview, host: &mut dyn AsyncFetchHost, budget)`，主文档抓取从 `start` 移到首 tick。解 blocker 1，低风险，可独立验证（webview + tab_worker）。撤销 T3a 的存储式 host（迭代收敛）。
+- **B2**：renderer 新增 `IpcFetchHost`（blocking 适配：`fetch_bytes` 内同步走 IPC，结果包 one-shot `Receiver` 返回；renderer 无头，加载期阻塞可接受）。
+- **B3**：`RendererRuntime` 重写——持 `WebView` + `AsyncPageLoad` + `IpcFetchHost`，frame 经 WebView 渲染 → 发布 IPC；删 `page_scripts.rs` / `text_metrics.rs` / `async_load.rs`（`RendererPageLoad`）、精简 `paint_export.rs`。**这才是三路径真正共享同一 loader**。
+
+**决议**：取 **Path B**。属大改（跨多 firing）。下次 firing 从 **B1**（per-tick host 重构）起步。
+
+**待用户确认的风险**：Path B 把 webview 重依赖（V8 / wasm / security / storage）拉进 renderer 进程。renderer 已含 script-sandbox(V8) + storage，增量可控，但需确认渲染进程体积/启动开销可接受；若不可接受，退回 Path A 的浅契约共享（仅 `PageLoadHost` 契约 + 同算法规范 + T7 一致性门，不强行同 loader 函数）。
