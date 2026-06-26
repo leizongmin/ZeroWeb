@@ -51,7 +51,14 @@ fn renderer_binary_filename() -> &'static str {
     }
 }
 
-/// 解析 `zero-renderer` 可执行文件路径（环境变量 / 同目录 / target / PATH）。
+/// 解析 `zero-renderer` 可执行文件路径。
+///
+/// 与 Chromium 类似，发布布局要求 **`zero-renderer` 与 `zero-browser` 同目录**。
+/// 查找顺序：
+/// 1. `ZERO_RENDERER_PATH` 环境变量
+/// 2. `std::env::current_exe()` 所在目录（主路径）
+/// 3. `cargo run` 时 exe 在 `target/*/deps/` 则再试上一级 `target/debug|release`
+/// 4. `PATH`（最后兜底，例如系统级安装）
 fn resolve_renderer_binary() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("ZERO_RENDERER_PATH") {
         let candidate = PathBuf::from(path);
@@ -64,32 +71,31 @@ fn resolve_renderer_binary() -> Option<PathBuf> {
         );
     }
 
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let sibling = dir.join(renderer_binary_filename());
-            if sibling.is_file() {
-                return Some(sibling);
-            }
-            // `cargo run` 有时将二进制放在 `target/debug/deps/` 下。
-            if dir.file_name().is_some_and(|n| n == "deps")
-                && let Some(debug_dir) = dir.parent()
-            {
-                let in_debug = debug_dir.join(renderer_binary_filename());
-                if in_debug.is_file() {
-                    return Some(in_debug);
-                }
-            }
-        }
-    }
-
-    for rel in ["target/debug", "target/release"] {
-        let candidate = PathBuf::from(rel).join(renderer_binary_filename());
-        if candidate.is_file() {
-            return Some(candidate);
-        }
+    if let Some(sibling) = renderer_binary_beside_current_exe() {
+        return Some(sibling);
     }
 
     find_renderer_in_path()
+}
+
+/// 在 **当前进程可执行文件** 所在目录（及 `deps` 上一级）查找 `zero-renderer`。
+fn renderer_binary_beside_current_exe() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let sibling = dir.join(renderer_binary_filename());
+    if sibling.is_file() {
+        return Some(sibling);
+    }
+    // `cargo run` 有时将二进制放在 `target/debug/deps/` 或 `target/release/deps/`。
+    if dir.file_name().is_some_and(|n| n == "deps")
+        && let Some(profile_dir) = dir.parent()
+    {
+        let beside_profile = profile_dir.join(renderer_binary_filename());
+        if beside_profile.is_file() {
+            return Some(beside_profile);
+        }
+    }
+    None
 }
 
 fn find_renderer_in_path() -> Option<PathBuf> {
@@ -120,9 +126,12 @@ impl ProcessTabBackend {
             PathBuf::from(renderer_binary_filename())
         });
         if !renderer_bin.is_file() {
+            let beside = renderer_binary_beside_current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| format!("{} (同 zero-browser.exe 目录)", renderer_binary_filename()));
             tracing::warn!(
-                "未找到 zero-renderer（尝试过 ZERO_RENDERER_PATH、浏览器同目录、target/debug、PATH）。\
-                 将使用进程内 tab worker。请先 `cargo build --bin zero-renderer`，或设置 ZERO_RENDERER_PATH，或使用 --single-process。"
+                "未找到 zero-renderer（应在 zero-browser 可执行文件同目录: {beside}）。\
+                 将使用进程内 tab worker。请与 zero-browser 一并编译安装，或设置 ZERO_RENDERER_PATH，或使用 --single-process。"
             );
             return None;
         }
