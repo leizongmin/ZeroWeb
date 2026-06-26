@@ -122,7 +122,160 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
-    /// 垂直位移超过阈值后，将页面区指针拖拽从选区切换为滚动（物理像素）
+    fn scrollbar_hit_at(&self, x: f32, y: f32) -> Option<(zero_browser_shell::TabId, page_scroll::ScrollbarHit)> {
+        let tab_id = self.shell.active_tab_id()?;
+        let (cx, cy, cw, ch) = self.page_content_rect();
+        let layout = self.page_scroll_layout(tab_id);
+        if !layout.show_vertical && !layout.show_horizontal {
+            return None;
+        }
+        let scroll = self.tab_scroll_state(tab_id);
+        let geometry =
+            page_scroll::scrollbar_geometry(&layout, scroll, cx, cy, cw, ch, self.scale_factor);
+        page_scroll::hit_test_scrollbar(x, y, &geometry)
+            .map(|hit| (tab_id, hit))
+    }
+
+    fn start_scrollbar_interaction(
+        &mut self,
+        tab_id: zero_browser_shell::TabId,
+        hit: page_scroll::ScrollbarHit,
+        x: f32,
+        y: f32,
+    ) {
+        let (cx, cy, cw, ch) = self.page_content_rect();
+        let layout = self.page_scroll_layout(tab_id);
+        let scroll = self.tab_scroll_state(tab_id);
+        let geometry = page_scroll::scrollbar_geometry(
+            &layout,
+            scroll,
+            cx,
+            cy,
+            cw,
+            ch,
+            self.scale_factor,
+        );
+
+        match hit {
+            page_scroll::ScrollbarHit::VerticalThumb => {
+                let (_, thumb_y, _, _) = geometry.vertical_thumb.expect("vertical thumb");
+                let grab_offset = y - thumb_y;
+                let new_y = page_scroll::scroll_y_from_pointer(
+                    &layout,
+                    cy,
+                    ch,
+                    self.scale_factor,
+                    y,
+                    grab_offset,
+                );
+                self.scroll.entry(tab_id).or_default().y = new_y;
+                self.scrollbar_drag = Some(ScrollbarDrag {
+                    tab_id,
+                    axis: page_scroll::ScrollbarAxis::Vertical,
+                    grab_offset,
+                });
+            }
+            page_scroll::ScrollbarHit::VerticalTrack => {
+                let thumb_h = page_scroll::vertical_thumb_len(
+                    &layout,
+                    page_scroll::vertical_track_len(&layout, ch),
+                    self.scale_factor,
+                );
+                let grab_offset = thumb_h * 0.5;
+                let new_y = page_scroll::scroll_y_from_pointer(
+                    &layout,
+                    cy,
+                    ch,
+                    self.scale_factor,
+                    y,
+                    grab_offset,
+                );
+                self.scroll.entry(tab_id).or_default().y = new_y;
+                self.scrollbar_drag = Some(ScrollbarDrag {
+                    tab_id,
+                    axis: page_scroll::ScrollbarAxis::Vertical,
+                    grab_offset,
+                });
+            }
+            page_scroll::ScrollbarHit::HorizontalThumb => {
+                let (thumb_x, _, _, _) = geometry.horizontal_thumb.expect("horizontal thumb");
+                let grab_offset = x - thumb_x;
+                let new_x = page_scroll::scroll_x_from_pointer(
+                    &layout,
+                    cx,
+                    cw,
+                    self.scale_factor,
+                    x,
+                    grab_offset,
+                );
+                self.scroll.entry(tab_id).or_default().x = new_x;
+                self.scrollbar_drag = Some(ScrollbarDrag {
+                    tab_id,
+                    axis: page_scroll::ScrollbarAxis::Horizontal,
+                    grab_offset,
+                });
+            }
+            page_scroll::ScrollbarHit::HorizontalTrack => {
+                let thumb_w = page_scroll::horizontal_thumb_len(
+                    &layout,
+                    page_scroll::horizontal_track_len(&layout, cw),
+                    self.scale_factor,
+                );
+                let grab_offset = thumb_w * 0.5;
+                let new_x = page_scroll::scroll_x_from_pointer(
+                    &layout,
+                    cx,
+                    cw,
+                    self.scale_factor,
+                    x,
+                    grab_offset,
+                );
+                self.scroll.entry(tab_id).or_default().x = new_x;
+                self.scrollbar_drag = Some(ScrollbarDrag {
+                    tab_id,
+                    axis: page_scroll::ScrollbarAxis::Horizontal,
+                    grab_offset,
+                });
+            }
+        }
+
+        self.page_selection_drag = false;
+        self.content_pointer_drag = None;
+        self.needs_redraw = true;
+    }
+
+    fn update_scrollbar_drag(&mut self, x: f32, y: f32) {
+        let Some(drag) = self.scrollbar_drag else {
+            return;
+        };
+        let tab_id = drag.tab_id;
+        let (cx, cy, cw, ch) = self.page_content_rect();
+        let layout = self.page_scroll_layout(tab_id);
+        let entry = self.scroll.entry(tab_id).or_default();
+        match drag.axis {
+            page_scroll::ScrollbarAxis::Vertical => {
+                entry.y = page_scroll::scroll_y_from_pointer(
+                    &layout,
+                    cy,
+                    ch,
+                    self.scale_factor,
+                    y,
+                    drag.grab_offset,
+                );
+            }
+            page_scroll::ScrollbarAxis::Horizontal => {
+                entry.x = page_scroll::scroll_x_from_pointer(
+                    &layout,
+                    cx,
+                    cw,
+                    self.scale_factor,
+                    x,
+                    drag.grab_offset,
+                );
+            }
+        }
+        self.needs_redraw = true;
+    }
     fn content_scroll_drag_threshold(&self) -> f64 {
         8.0 * self.scale_factor as f64
     }
@@ -580,11 +733,16 @@ impl BrowserApp {
         }
 
         if self.left_button_down {
-            self.update_content_pointer_drag(x, y);
+            if self.scrollbar_drag.is_some() {
+                self.update_scrollbar_drag(x as f32, y as f32);
+            } else {
+                self.update_content_pointer_drag(x, y);
+            }
         }
 
         if self.page_selection_drag
             && self.left_button_down
+            && self.scrollbar_drag.is_none()
             && self.content_pointer_drag.as_ref().is_none_or(|d| !d.scrolling)
             && let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32)
             && let Some(glyphs) = self.page_glyphs(tab_id)
@@ -605,6 +763,8 @@ impl BrowserApp {
                 self.left_button_down = true;
             } else {
                 self.left_button_down = false;
+                let was_scrollbar_drag = self.scrollbar_drag.is_some();
+                self.scrollbar_drag = None;
                 let was_scroll_drag = self
                     .content_pointer_drag
                     .as_ref()
@@ -612,7 +772,7 @@ impl BrowserApp {
                 self.content_pointer_drag = None;
                 self.tab_bar_drag_press = None;
                 self.address_bar_drag = false;
-                if was_scroll_drag {
+                if was_scrollbar_drag || was_scroll_drag {
                     self.page_selection_drag = false;
                     return;
                 }
@@ -813,10 +973,14 @@ impl BrowserApp {
             && x_f < content_x + content_w
             && y_f >= page_top
         {
-            if button == "Left"
-                && let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
-                && let Some(glyphs) = self.page_glyphs(tab_id)
-            {
+            if button == "Left" {
+                if let Some((tab_id, hit)) = self.scrollbar_hit_at(x_f, y_f) {
+                    self.start_scrollbar_interaction(tab_id, hit, x_f, y_f);
+                    return;
+                }
+                if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
+                    && let Some(glyphs) = self.page_glyphs(tab_id)
+                {
                 self.content_pointer_drag = Some(ContentPointerDrag {
                     start_x: x,
                     start_y: y,
@@ -835,6 +999,7 @@ impl BrowserApp {
                 }
                 self.page_selection_drag = true;
                 self.needs_redraw = true;
+                }
             }
 
             if self.address_bar_focused {

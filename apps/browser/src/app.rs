@@ -38,6 +38,14 @@ struct ContentPointerDrag {
     scrolling: bool,
 }
 
+/// 滚动条滑块拖拽。
+#[derive(Clone, Copy)]
+struct ScrollbarDrag {
+    tab_id: TabId,
+    axis: page_scroll::ScrollbarAxis,
+    grab_offset: f32,
+}
+
 /// 标签页 URL 加载状态（先绘制 loading，再发起 worker 加载）。
 enum TabFetchState {
     None,
@@ -198,6 +206,8 @@ pub struct BrowserApp {
     touch_scroll: Option<(u64, f64)>,
     /// 鼠标左键在页面内容区的拖拽（远程桌面触摸模拟）
     content_pointer_drag: Option<ContentPointerDrag>,
+    /// 滚动条滑块拖拽。
+    scrollbar_drag: Option<ScrollbarDrag>,
 }
 
 impl BrowserApp {
@@ -260,6 +270,7 @@ impl BrowserApp {
             hovered_link_url: None,
             touch_scroll: None,
             content_pointer_drag: None,
+            scrollbar_drag: None,
         }
     }
 
