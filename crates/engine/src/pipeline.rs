@@ -25,13 +25,13 @@ use crate::transition::TransitionClock;
 /// 提供完整的端到端渲染能力。
 pub struct RenderPipeline {
     /// 视口宽度。
-    viewport_width: f32,
+    pub(crate) viewport_width: f32,
     /// 视口高度。
-    viewport_height: f32,
+    pub(crate) viewport_height: f32,
     /// 样式系统。
-    style_system: StyleSystem,
+    pub(crate) style_system: StyleSystem,
     /// 布局引擎。
-    layout_engine: LayoutEngine,
+    pub(crate) layout_engine: LayoutEngine,
     /// 脏区域追踪器。
     dirty_tracker: DirtyTracker,
     /// CSS 动画时钟。
@@ -41,17 +41,17 @@ pub struct RenderPipeline {
     /// 缓存的基础样式（用于过渡检测，存储覆盖前的原始计算样式）。
     cached_styles: HashMap<NodeId, ComputedStyle>,
     /// 是否跳过属性指示器（用于 reftest 精确像素对比）。
-    skip_indicators: bool,
+    pub(crate) skip_indicators: bool,
     /// 图像固有尺寸缓存（image_key hash → (width, height)）。
-    image_sizes: HashMap<u64, (f32, f32)>,
+    pub(crate) image_sizes: HashMap<u64, (f32, f32)>,
     /// CSS font-family 查找表（字体族名 → FontId）。
-    font_resolver: HashMap<String, u32>,
+    pub(crate) font_resolver: HashMap<String, u32>,
     /// 当前文档 URL（用于解析相对 `<img src>` 与 image_sizes 键）。
-    document_url: Option<String>,
+    pub(crate) document_url: Option<String>,
     /// 缓存的布局结果。
-    cached_layout: Option<LayoutResult>,
+    pub(crate) cached_layout: Option<LayoutResult>,
     /// 缓存的 DOM（用于命中测试）。
-    cached_doc: Option<Document>,
+    pub(crate) cached_doc: Option<Document>,
 }
 
 /// 管线阶段耗时。
@@ -138,7 +138,7 @@ impl RenderPipeline {
     ///
     /// hash 解析在 engine 层完成（simple_hash 定义于本 crate），避免把 hash 函数
     /// 泄漏到 layout-engine（layout-engine 依赖 render-foundation 但不依赖 engine）。
-    fn build_img_intrinsic_sizes(&self, doc: &Document) -> HashMap<NodeId, (f32, f32)> {
+    pub(crate) fn build_img_intrinsic_sizes(&self, doc: &Document) -> HashMap<NodeId, (f32, f32)> {
         let mut map = HashMap::new();
         for img_id in doc.get_elements_by_tag_name("img") {
             if let Some(src) = doc.get_attribute(img_id, "src") {
@@ -520,7 +520,11 @@ fn layout_extent_y(b: &zero_layout_engine::LayoutBox, offset_y: f32) -> f32 {
 }
 
 /// 绘制阶段剔除矩形：宽度仍限视口，高度扩展到完整文档，避免浏览器滚动时丢失页内图元。
-fn paint_cull_viewport(viewport_w: f32, viewport_h: f32, layout_root: &zero_layout_engine::LayoutBox) -> Rect {
+pub(crate) fn paint_cull_viewport(
+    viewport_w: f32,
+    viewport_h: f32,
+    layout_root: &zero_layout_engine::LayoutBox,
+) -> Rect {
     let doc_h = layout_extent_y(layout_root, 0.0);
     Rect::new(0.0, 0.0, viewport_w, doc_h.max(viewport_h))
 }
@@ -533,7 +537,7 @@ fn paint_cull_viewport(viewport_w: f32, viewport_h: f32, layout_root: &zero_layo
 /// `ComputedStyle` 写入 `styles`，使测量/绘制按该样式渲染（颜色、字号等）。
 ///
 /// 复用全部既有机制（文本测量、匿名盒包裹、绘制）——伪元素合成节点即普通文本子节点。
-fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<NodeId, ComputedStyle>) {
+pub(crate) fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<NodeId, ComputedStyle>) {
     use zero_style_system::property::types::ContentComputedValue;
 
     // 先收集待注入项，避免在遍历 styles 时变更它。
@@ -588,7 +592,7 @@ fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<NodeId, Com
 }
 
 /// 收集样式表：外部 CSS 字符串 + 文档内 `<style>` 元素文本。
-fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> {
+pub(crate) fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> {
     let mut stylesheets = Vec::new();
     if !css.is_empty() {
         stylesheets.push(zero_css_parser::Parser::parse_stylesheet(css));

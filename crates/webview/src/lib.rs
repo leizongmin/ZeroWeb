@@ -13,9 +13,13 @@
 #![allow(clippy::absurd_extreme_comparisons)]
 #![allow(clippy::doc_lazy_continuation)]
 
+mod async_load;
+mod net_pool;
 pub mod webview;
 pub mod webview_builder;
 
+pub use async_load::{AsyncPageLoad, PageLoadStage};
+pub use net_pool::{fetch_bytes_async, fetch_text_async};
 pub use webview::*;
 pub use webview_builder::*;
 

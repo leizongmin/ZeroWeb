@@ -5765,6 +5765,7 @@ dependencies = [
  "zero-browser-shell",
  "zero-engine",
  "zero-host-runtime",
+ "zero-protocol",
  "zero-render-foundation",
  "zero-webview",
 ]
@@ -6014,6 +6015,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "png 0.17.16",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

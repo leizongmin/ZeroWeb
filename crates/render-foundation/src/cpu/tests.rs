@@ -6,9 +6,8 @@ use crate::geometry::Rect;
 use crate::gpu::renderer::GlyphDraw;
 use crate::primitive::{
     BlendMode, BlendModePrimitive, ClipPrimitive, FillPrimitive, FilterKind, FilterPrimitive, GradientKind,
-    GradientPrimitive, GradientStop, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive,
-    PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive,
-    TransformPrimitive,
+    GradientPrimitive, GradientStop, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
+    RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
 
 // ─── 旧版兼容测试 ───
@@ -1052,8 +1051,7 @@ fn test_glyph_no_rotation() {
 fn cpu_full_scene_image_solid_red() {
     let mut primitives = RenderPrimitives::new();
     // 1×1 纯红 RGBA 图片（放大到 16×16 rect）
-    let img = crate::image_cache::ImageData::from_rgba(vec![255, 0, 0, 255], 1, 1)
-        .expect("red image");
+    let img = crate::image_cache::ImageData::from_rgba(vec![255, 0, 0, 255], 1, 1).expect("red image");
     let mut image_cache = crate::image_cache::ImageCache::new(16, 1 << 20);
     let key = image_cache.insert(img);
     primitives.add_image(ImagePrimitive {
@@ -1092,10 +1090,20 @@ fn cpu_full_scene_path_fill_black_rect() {
     let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
     // 中心 (16,16) 黑
     let center = fb.get_pixel(16, 16);
-    assert_eq!(center, [0, 0, 0, 255], "path-fill center should be black, got {:?}", center);
+    assert_eq!(
+        center,
+        [0, 0, 0, 255],
+        "path-fill center should be black, got {:?}",
+        center
+    );
     // 角 (1,1) 白（framebuffer 默认白底）
     let corner = fb.get_pixel(1, 1);
-    assert_eq!(corner, [255, 255, 255, 255], "path-fill corner should be white, got {:?}", corner);
+    assert_eq!(
+        corner,
+        [255, 255, 255, 255],
+        "path-fill corner should be white, got {:?}",
+        corner
+    );
 }
 
 /// DC-8 CPU PathStrokePrimitive — 闭合矩形描边，断言内部白、顶边带黑像素。
@@ -1114,7 +1122,12 @@ fn cpu_full_scene_path_stroke_closed_rect() {
     let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
     // 内部 (16,16) 白（未被描边覆盖）
     let center = fb.get_pixel(16, 16);
-    assert_eq!(center, [255, 255, 255, 255], "path-stroke interior should be white, got {:?}", center);
+    assert_eq!(
+        center,
+        [255, 255, 255, 255],
+        "path-stroke interior should be white, got {:?}",
+        center
+    );
     // 顶边带 y=8 行 x∈[8,24] 至少一黑像素
     let top_edge_black = (8..=24).any(|x| fb.get_pixel(x, 8) == [0, 0, 0, 255]);
     assert!(top_edge_black, "path-stroke top edge should contain black pixels");
@@ -1143,7 +1156,12 @@ fn cpu_full_scene_stroke_horizontal_line() {
     assert_eq!(mid, [0, 0, 0, 255], "stroke center should be black, got {:?}", mid);
     // 线段上方 (16,4) 白
     let above = fb.get_pixel(16, 4);
-    assert_eq!(above, [255, 255, 255, 255], "above stroke should be white, got {:?}", above);
+    assert_eq!(
+        above,
+        [255, 255, 255, 255],
+        "above stroke should be white, got {:?}",
+        above
+    );
 }
 
 /// DC-8 CPU ClipPrimitive — 黑色全屏 fill 后应用 clip rect，断言 clip 区内保留黑、区外清白。
@@ -1165,9 +1183,17 @@ fn cpu_full_scene_clip_rect_clears_outside() {
     // clip 内 (16,16) 保留黑
     assert_eq!(fb.get_pixel(16, 16), [0, 0, 0, 255], "clip interior should stay black");
     // clip 外 (2,2) 被清白
-    assert_eq!(fb.get_pixel(2, 2), [255, 255, 255, 255], "clip outside should be cleared white");
+    assert_eq!(
+        fb.get_pixel(2, 2),
+        [255, 255, 255, 255],
+        "clip outside should be cleared white"
+    );
     // clip 边界外 (6,16) 清白（在 clip 矩形左外）
-    assert_eq!(fb.get_pixel(6, 16), [255, 255, 255, 255], "left of clip rect should be white");
+    assert_eq!(
+        fb.get_pixel(6, 16),
+        [255, 255, 255, 255],
+        "left of clip rect should be white"
+    );
 }
 
 /// DC-8 CPU TransformPrimitive — 左半屏黑色 fill 后应用平移 tx=8，断言内容右移。
@@ -1195,7 +1221,15 @@ fn cpu_full_scene_transform_translates_content() {
     let mut glyph_cache = GlyphCache::new(64);
     let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
     // 变换前 (20,16) 是白（右半屏）；平移右移 8 后 (20,16) 应为黑（src=12 在原黑色区）
-    assert_eq!(fb.get_pixel(20, 16), [0, 0, 0, 255], "after tx=8, (20,16) should be black (content shifted right)");
+    assert_eq!(
+        fb.get_pixel(20, 16),
+        [0, 0, 0, 255],
+        "after tx=8, (20,16) should be black (content shifted right)"
+    );
     // (4,16) 原 black 区左缘；平移后 src=-4 越界 → 清白
-    assert_eq!(fb.get_pixel(4, 16), [255, 255, 255, 255], "after tx=8, (4,16) should be white (cleared, src out of bounds)");
+    assert_eq!(
+        fb.get_pixel(4, 16),
+        [255, 255, 255, 255],
+        "after tx=8, (4,16) should be white (cleared, src out of bounds)"
+    );
 }

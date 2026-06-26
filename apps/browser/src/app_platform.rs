@@ -149,7 +149,7 @@ impl BrowserApp {
             // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
             // self.shell / self.webviews / self.font_loader / self.glyph_cache 为不相交字段借用
             let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
-                Some(id) => self.webviews.get_mut(&id).map(|wv| wv.image_cache()),
+                Some(id) => self.tabs.image_cache_mut(id),
                 None => None,
             };
 
@@ -196,7 +196,7 @@ impl BrowserApp {
         // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
         // self.shell / self.webviews / self.font_loader / self.glyph_cache 为不相交字段借用
         let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
-            Some(id) => self.webviews.get_mut(&id).map(|wv| wv.image_cache()),
+            Some(id) => self.tabs.image_cache_mut(id),
             None => None,
         };
 
@@ -237,7 +237,7 @@ impl BrowserApp {
 
         // 与 render_cpu / render_frame 完全一致的 ImageCache 装配（不相交字段借用）
         let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
-            Some(id) => self.webviews.get_mut(&id).map(|wv| wv.image_cache()),
+            Some(id) => self.tabs.image_cache_mut(id),
             None => None,
         };
 
@@ -613,10 +613,9 @@ mod tests {
         assert_eq!(count0, 0, "baseline: image color must be absent when cache empty");
 
         // 填充活跃标签页 WebView 的 ImageCache（键 = simple_hash(src)，与 engine 一致）
-        app.webviews
-            .get_mut(&tab_id)
-            .expect("webview present")
-            .image_cache()
+        app.tabs
+            .image_cache_mut(tab_id)
+            .expect("tab snapshot")
             .insert_with_key(ImageKey::new(simple_hash(src)), img);
 
         // 装配后渲染：image_cache 经浏览器渲染路径传入渲染器 → 图片颜色应出现

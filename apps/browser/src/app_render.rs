@@ -147,9 +147,8 @@ impl BrowserApp {
         };
 
         let primitives = match self
-            .webviews
-            .get(&tab_id)
-            .and_then(|wv| wv.last_render())
+            .tabs
+            .last_render(tab_id)
             .map(|render| &render.primitives)
         {
             Some(p) => p,
@@ -918,12 +917,7 @@ impl BrowserApp {
             None => return false,
         };
 
-        let primitives = match self
-            .webviews
-            .get(&tab_id)
-            .and_then(|wv| wv.last_render())
-            .map(|render| &render.primitives)
-        {
+        let primitives = match self.tabs.last_render(tab_id).map(|render| &render.primitives) {
             Some(primitives) => primitives,
             None => return false,
         };

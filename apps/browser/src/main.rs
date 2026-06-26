@@ -17,8 +17,12 @@ mod input_keys;
 mod layout;
 mod page_selection;
 mod pages;
+mod process_backend;
 mod tab_chrome;
 mod tab_favicon;
+mod tab_manager;
+mod tab_snapshot;
+mod tab_worker;
 mod text_input;
 mod text_metrics;
 mod ui_icons;
@@ -31,6 +35,7 @@ use zero_render_foundation::config::RenderMode;
 
 use app::BrowserApp;
 use app::WindowChromeAction;
+use process_backend::set_multiprocess_enabled;
 
 // --- CLI 参数 ---
 
@@ -41,6 +46,7 @@ struct CliArgs {
     remote_debugging_port: u16,
     viewport_width: f32,
     viewport_height: f32,
+    multi_process: bool,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -51,6 +57,7 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut remote_debugging_port = 0u16;
     let mut viewport_width = 800.0f32;
     let mut viewport_height = 600.0f32;
+    let mut multi_process = false;
 
     while let Some(arg) = args.next() {
         if arg == "--help" || arg == "-h" {
@@ -93,6 +100,10 @@ fn parse_args() -> Result<CliArgs, String> {
             remote_debugging_port = value.parse::<u16>().map_err(|_| format!("invalid port: {value}"))?;
         }
 
+        if arg == "--multi-process" {
+            multi_process = true;
+        }
+
         if let Some(value) = arg.strip_prefix("--viewport-width=") {
             viewport_width = value.parse::<f32>().map_err(|_| format!("invalid width: {value}"))?;
         }
@@ -110,6 +121,7 @@ fn parse_args() -> Result<CliArgs, String> {
         remote_debugging_port,
         viewport_width,
         viewport_height,
+        multi_process,
     })
 }
 
@@ -124,6 +136,7 @@ Options:
   --remote-debugging-port=<port> WebSocket port for remote debugging (default: 9222)
   --viewport-width=<px>          Headless viewport width (default: 800)
   --viewport-height=<px>         Headless viewport height (default: 600)
+  --multi-process                Use zero-renderer child processes per tab
   --help, -h                     Show this help
 
 Environment: {}={}",
@@ -1150,6 +1163,10 @@ fn main() {
             std::process::exit(2);
         }
     };
+    if cli.multi_process {
+        set_multiprocess_enabled(true);
+        tracing::info!("Multi-process mode enabled");
+    }
     tracing::info!("Renderer mode: {}", cli.render_mode);
 
     if cli.headless {

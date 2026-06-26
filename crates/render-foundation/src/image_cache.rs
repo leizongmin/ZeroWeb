@@ -256,6 +256,23 @@ impl ImageCache {
         self.entries.clear();
         self.current_gen += 1;
     }
+
+    /// 复制当前缓存内容供 UI 线程快照使用（不共享可变状态）。
+    pub fn duplicate_for_snapshot(&self) -> Self {
+        let mut out = Self::new(self.max_entries, self.max_bytes);
+        out.next_key = self.next_key;
+        for (key, entry) in &self.entries {
+            out.entries.insert(
+                key.clone(),
+                CacheEntry {
+                    data: entry.data.clone(),
+                    ref_count: 1,
+                    last_access_gen: 0,
+                },
+            );
+        }
+        out
+    }
 }
 
 impl Default for ImageCache {

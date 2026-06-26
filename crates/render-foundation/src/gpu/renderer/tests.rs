@@ -820,8 +820,7 @@ fn test_gpu_full_scene_stroke() {
 fn test_gpu_full_scene_image() {
     let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
     // 1×1 纯红 RGBA 图片（放大到 16×16 rect，solid_color 检测缓存，仍走 draw_image_pass）
-    let img =
-        crate::image_cache::ImageData::from_rgba(vec![255, 0, 0, 255], 1, 1).expect("red image");
+    let img = crate::image_cache::ImageData::from_rgba(vec![255, 0, 0, 255], 1, 1).expect("red image");
     let mut image_cache = crate::image_cache::ImageCache::new(16, 1 << 20);
     let key = image_cache.insert(img);
     let mut primitives = RenderPrimitives::default();
@@ -849,7 +848,11 @@ fn test_gpu_full_scene_image() {
     assert!(pixels[c] >= 250, "image center R should be ~255, got {}", pixels[c]);
     assert!(pixels[c + 1] <= 5, "image center G should be ~0, got {}", pixels[c + 1]);
     assert!(pixels[c + 2] <= 5, "image center B should be ~0, got {}", pixels[c + 2]);
-    assert!(pixels[c + 3] >= 250, "image center A should be ~255, got {}", pixels[c + 3]);
+    assert!(
+        pixels[c + 3] >= 250,
+        "image center A should be ~255, got {}",
+        pixels[c + 3]
+    );
 }
 
 /// DC-9 GPU PathFillPrimitive — 渲染矩形多边形填充（黑），断言中心黑、外部白。
@@ -873,7 +876,11 @@ fn test_gpu_full_scene_path_fill() {
     let pixels = renderer.read_pixels().expect("read_pixels");
     // 中心 (16,16) 在多边形内 → 黑（深内部，实色无 AA）
     let c = (16 * 32 + 16) * 4;
-    assert_eq!(pixels[c], 0, "path-fill center R should be 0 (black), got {}", pixels[c]);
+    assert_eq!(
+        pixels[c], 0,
+        "path-fill center R should be 0 (black), got {}",
+        pixels[c]
+    );
     assert_eq!(pixels[c + 2], 0, "path-fill center B should be 0");
     // 角 (1,1) 在多边形外 → 白（clear color）
     let corner = (1 * 32 + 1) * 4;

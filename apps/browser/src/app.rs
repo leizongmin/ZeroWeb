@@ -1,7 +1,6 @@
 //! 浏览器应用核心状态和事件处理
 
 use std::collections::HashMap;
-use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use zero_browser_shell::{BrowserShell, ContextMenu, ContextType, SuggestionSource, TabId};
@@ -18,13 +17,13 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::gpu::renderer::{GlyphDraw, GpuRenderer};
 use zero_render_foundation::image_cache::ImageCache;
 use zero_render_foundation::primitive::{FillPrimitive, GlyphPrimitive, GradientKind, RenderPrimitives};
-use zero_webview::WebViewBuilder;
 
 use crate::colors;
 use crate::input_keys::key_matches;
 use crate::layout;
 use crate::page_selection::{GlyphSelection, hit_test_glyph};
 use crate::pages;
+use crate::tab_manager::TabManager;
 use crate::text_input::TextInput;
 use crate::text_metrics;
 
@@ -38,15 +37,10 @@ struct ContentPointerDrag {
     scrolling: bool,
 }
 
-/// 标签页 URL 加载状态（先绘制 loading，再发起请求）。
+/// 标签页 URL 加载状态（先绘制 loading，再发起 worker 加载）。
 enum TabFetchState {
     None,
     WaitingPaint(TabId, String),
-    HttpInFlight {
-        tab_id: TabId,
-        url: String,
-        rx: mpsc::Receiver<Result<String, String>>,
-    },
 }
 
 /// 自定义窗口控制按钮动作（Wayland 无系统装饰时使用）
@@ -119,8 +113,8 @@ impl ContextMenuState {
 pub struct BrowserApp {
     /// 浏览器 Shell（标签页、书签、历史）
     pub shell: BrowserShell,
-    /// 每个标签页对应的 WebView
-    webviews: HashMap<TabId, zero_webview::WebView>,
+    /// 标签页运行时（每 Tab 独立 worker 或渲染进程）
+    tabs: TabManager,
     /// GPU 渲染器
     gpu_renderer: Option<GpuRenderer>,
     /// 渲染模式
@@ -223,7 +217,7 @@ impl BrowserApp {
 
         Self {
             shell: BrowserShell::new(),
-            webviews: HashMap::new(),
+            tabs: TabManager::new((800, 600), color_scheme),
             gpu_renderer: None,
             render_mode,
             font_loader,
@@ -283,7 +277,7 @@ impl BrowserApp {
 
     fn update_hovered_link_at(&mut self, x: f64, y: f64) {
         let href = if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32) {
-            self.webviews.get(&tab_id).and_then(|wv| wv.hit_test_link(doc_x, doc_y))
+            self.tabs.hit_test_link(tab_id, doc_x, doc_y)
         } else {
             None
         };
@@ -295,47 +289,44 @@ impl BrowserApp {
         !matches!(self.tab_fetch, TabFetchState::None)
     }
 
-    /// 轮询后台 HTTP fetch 结果。
+    /// 轮询 Tab worker / IPC 并处理页面事件。
     pub fn poll_tab_fetch(&mut self) {
-        let TabFetchState::HttpInFlight { tab_id, url, rx } = &self.tab_fetch else {
-            return;
-        };
-        let Ok(result) = rx.try_recv() else {
-            return;
-        };
-        let tab_id = *tab_id;
-        let url = url.clone();
-        self.tab_fetch = TabFetchState::None;
-        match result {
-            Ok(html) => self.apply_fetched_html(tab_id, &url, &html),
-            Err(error) => self.apply_fetch_error(tab_id, &url, &error),
+        if self.tabs.poll() {
+            self.needs_redraw = true;
         }
-        self.needs_redraw = true;
+        for (tab_id, title, url) in self.tabs.take_page_loaded_events() {
+            self.shell.on_page_loaded(&title);
+            self.refresh_tab_favicon(tab_id, &url);
+            if self.shell.active_tab_id() == Some(tab_id)
+                && let Some(tab) = self.shell.active_tab_mut()
+            {
+                tab.set_loading(false);
+            }
+        }
+        for (tab_id, error) in self.tabs.take_page_error_events() {
+            self.shell.on_page_error(&error);
+            if self.shell.active_tab_id() == Some(tab_id)
+                && let Some(tab) = self.shell.active_tab_mut()
+            {
+                tab.set_loading(false);
+            }
+        }
     }
 
-    /// 在绘制 loading 帧之后启动 fetch。
+    /// 在绘制 loading 帧之后启动 Tab worker 加载。
     pub fn begin_tab_fetch_after_paint(&mut self) {
         let state = std::mem::replace(&mut self.tab_fetch, TabFetchState::None);
         let TabFetchState::WaitingPaint(tab_id, url) = state else {
             self.tab_fetch = state;
             return;
         };
-        if url.starts_with("http://") || url.starts_with("https://") {
-            let (tx, rx) = mpsc::channel();
-            let fetch_url = url.clone();
-            std::thread::spawn(move || {
-                let result = reqwest::blocking::Client::builder()
-                    .timeout(Duration::from_secs(30))
-                    .user_agent("ZeroBrowser/1.0")
-                    .build()
-                    .and_then(|client| client.get(&fetch_url).send())
-                    .and_then(|response| response.text())
-                    .map_err(|e| e.to_string());
-                let _ = tx.send(result);
-            });
-            self.tab_fetch = TabFetchState::HttpInFlight { tab_id, url, rx };
+        self.tabs.ensure_tab(tab_id);
+        if url == "zero://settings" {
+            self.open_settings_page();
+        } else if url.starts_with("http://") || url.starts_with("https://") {
+            self.tabs.navigate(tab_id, url);
         } else {
-            self.fetch_tab_url_sync(tab_id, &url);
+            self.load_local_tab_url(tab_id, &url);
         }
         self.needs_redraw = true;
     }
@@ -346,9 +337,7 @@ impl BrowserApp {
         }
         self.color_scheme = scheme;
         self.chrome_palette = colors::ChromePalette::for_scheme(scheme);
-        for wv in self.webviews.values_mut() {
-            wv.set_prefers_color_scheme(scheme);
-        }
+        self.tabs.set_color_scheme(scheme);
         self.needs_redraw = true;
     }
 
@@ -564,26 +553,16 @@ impl BrowserApp {
         self.render_mode
     }
 
-    /// 调整所有 WebView 视口尺寸，并在已有页面内容时按新尺寸重新布局
+    /// 调整所有 Tab 视口尺寸
     pub fn resize_all_webviews(&mut self, w: u32, h: u32) {
-        let loader = &self.font_loader;
-        let font_id = self.font_id;
-        for wv in self.webviews.values_mut() {
-            wv.resize(w, h);
-            if wv.last_render().is_some() {
-                text_metrics::with_measure_ctx_opt(loader, font_id, || {
-                    wv.render();
-                });
-            }
-        }
+        self.tabs.set_viewport(w, h);
+        self.tabs.resize_all(w, h);
     }
 
     /// 测试用：获取标签 WebView 的逻辑视口尺寸
     #[cfg(test)]
-    pub fn webview_logical_size_for_tab(&self, tab_id: zero_browser_shell::TabId) -> Option<(u32, u32)> {
-        self.webviews
-            .get(&tab_id)
-            .map(|wv| (wv.config().width, wv.config().height))
+    pub fn webview_logical_size_for_tab(&self, _tab_id: zero_browser_shell::TabId) -> Option<(u32, u32)> {
+        Some(self.tabs.logical_viewport())
     }
 
     /// 测试用：构建场景（暴露私有方法给测试模块）
@@ -623,12 +602,19 @@ impl BrowserApp {
     /// 测试用：向指定标签的 WebView 加载 HTML
     #[cfg(test)]
     pub fn load_webview_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>) {
-        let loader = &self.font_loader;
-        let font_id = self.font_id;
-        if let Some(wv) = self.webviews.get_mut(&tab_id) {
-            text_metrics::with_measure_ctx_opt(loader, font_id, || {
-                wv.load_html(html, css);
-            });
+        self.tabs.ensure_tab(tab_id);
+        self.sync_webview_viewport();
+        self.tabs.load_html(tab_id, html, css, None);
+        for _ in 0..500 {
+            self.tabs.poll();
+            if self
+                .tabs
+                .last_render(tab_id)
+                .is_some_and(|r| !r.primitives.fills.is_empty() || !r.primitives.glyphs.is_empty())
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
 
@@ -731,102 +717,30 @@ impl BrowserApp {
         self.page_content_rect_for(self.physical_size.0, self.physical_size.1)
     }
 
-    /// 创建指定视口尺寸的 WebView
-    fn create_webview(&self) -> zero_webview::WebView {
-        let (w, h) = self.content_logical_size();
-        let mut wv = WebViewBuilder::new().width(w).height(h).build();
-        wv.set_prefers_color_scheme(self.color_scheme);
-        wv.set_font_resolver(self.font_loader.build_font_resolver());
-        wv
-    }
-
-    /// 按当前窗口尺寸同步所有 WebView 的逻辑视口
+    /// 按当前窗口尺寸同步所有 Tab 的逻辑视口
     pub fn sync_webview_viewport(&mut self) {
         let (w, h) = self.content_logical_size();
         self.resize_all_webviews(w, h);
     }
 
-    /// 获取或创建活跃标签页的 WebView
+    /// 获取或创建活跃标签页 runtime
     pub fn ensure_webview(&mut self, tab_id: TabId) {
-        if !self.webviews.contains_key(&tab_id) {
-            let wv = self.create_webview();
-            self.webviews.insert(tab_id, wv);
-        }
+        self.tabs.ensure_tab(tab_id);
     }
 
-    /// 通过 WebView 加载指定标签页 URL（同步，用于 zero:// 等）
-    fn fetch_tab_url_sync(&mut self, tab_id: TabId, url: &str) {
-        if url == "zero://settings" {
-            self.open_settings_page();
+    fn load_local_tab_url(&mut self, tab_id: TabId, url: &str) {
+        if url.starts_with("zero://") {
+            if url != "zero://settings" {
+                self.load_welcome_page(tab_id);
+            }
             return;
         }
-
-        let loader = &self.font_loader;
-        let font_id = self.font_id;
-        let result = match self.webviews.get_mut(&tab_id) {
-            Some(wv) => text_metrics::with_measure_ctx_opt(loader, font_id, || wv.fetch_url(url)),
-            None => return,
-        };
-
-        match result {
-            Ok(_) => self.finish_tab_load(tab_id, url),
-            Err(e) => {
-                tracing::warn!("Failed to fetch URL: {e}, loading error page");
-                let error = e.to_string();
-                let error_page = pages::generate_error_page(url, &error);
-                if let Some(wv) = self.webviews.get_mut(&tab_id) {
-                    text_metrics::with_measure_ctx_opt(loader, font_id, || {
-                        wv.load_html(&error_page, None);
-                    });
-                }
-                self.shell.on_page_error(&error);
-            }
-        }
+        self.tabs.navigate(tab_id, url.to_string());
     }
 
-    fn finish_tab_load(&mut self, tab_id: TabId, url: &str) {
-        let title = self
-            .webviews
-            .get(&tab_id)
-            .and_then(|wv| pages::extract_html_title(wv.html_content()))
-            .filter(|t| !t.is_empty())
-            .unwrap_or_else(|| url.to_string());
-        if let Some(wv) = self.webviews.get_mut(&tab_id) {
-            wv.set_title(&title);
-        }
-        self.shell.on_page_loaded(&title);
+    fn finish_tab_load(&mut self, tab_id: TabId, url: &str, title: &str) {
+        self.shell.on_page_loaded(title);
         self.refresh_tab_favicon(tab_id, url);
-    }
-
-    fn apply_fetched_html(&mut self, tab_id: TabId, url: &str, html: &str) {
-        let title = pages::extract_html_title(html)
-            .filter(|t| !t.is_empty())
-            .unwrap_or_else(|| url.to_string());
-        let loader = &self.font_loader;
-        let font_id = self.font_id;
-        if let Some(wv) = self.webviews.get_mut(&tab_id) {
-            wv.set_prefers_color_scheme(self.color_scheme);
-            text_metrics::with_measure_ctx_opt(loader, font_id, || {
-                wv.complete_fetched_page(html, url);
-            });
-            wv.set_title(&title);
-        }
-        self.shell.on_page_loaded(&title);
-        self.refresh_tab_favicon(tab_id, url);
-    }
-
-    fn apply_fetch_error(&mut self, tab_id: TabId, url: &str, error: &str) {
-        tracing::warn!("Failed to fetch URL: {error}, loading error page");
-        let error_page = pages::generate_error_page(url, error);
-        let loader = &self.font_loader;
-        let font_id = self.font_id;
-        if let Some(wv) = self.webviews.get_mut(&tab_id) {
-            wv.set_prefers_color_scheme(self.color_scheme);
-            text_metrics::with_measure_ctx_opt(loader, font_id, || {
-                wv.load_html(&error_page, None);
-            });
-        }
-        self.shell.on_page_error(error);
     }
 
     fn schedule_tab_fetch(&mut self, tab_id: TabId, url: String) {
@@ -863,16 +777,10 @@ impl BrowserApp {
     }
 
     fn load_welcome_page(&mut self, tab_id: TabId) {
-        let loader = &self.font_loader;
-        let font_id = self.font_id;
-        if let Some(wv) = self.webviews.get_mut(&tab_id) {
-            wv.set_prefers_color_scheme(self.color_scheme);
-            text_metrics::with_measure_ctx_opt(loader, font_id, || {
-                wv.load_html(pages::WELCOME_HTML, None);
-            });
-        }
-        self.refresh_tab_favicon(tab_id, "zero://newtab");
-        self.shell.on_page_loaded("ZeroBrowser");
+        self.tabs.ensure_tab(tab_id);
+        self.tabs
+            .load_html(tab_id, pages::WELCOME_HTML, None, Some("zero://newtab"));
+        self.finish_tab_load(tab_id, "zero://newtab", "ZeroBrowser");
     }
 
     fn clear_tab_favicon(&mut self, tab_id: TabId) {
@@ -887,7 +795,7 @@ impl BrowserApp {
     }
 
     pub fn any_tab_loading(&self) -> bool {
-        self.shell.tabs().any(|tab| tab.is_loading())
+        self.shell.tabs().any(|tab| tab.is_loading()) || self.tabs.any_loading()
     }
 
     fn tab_html_hint(page_url: Option<&str>) -> Option<&'static str> {
@@ -903,7 +811,7 @@ impl BrowserApp {
         let Some(tab_id) = self.shell.active_tab_id() else {
             return;
         };
-        if self.webviews.contains_key(&tab_id) {
+        if self.tabs.has_tab(tab_id) {
             return;
         }
         self.init_default_tab();
@@ -925,8 +833,7 @@ impl BrowserApp {
     /// 创建新标签页
     pub fn new_tab(&mut self, url: Option<&str>) {
         let tab_id = self.shell.new_tab(url);
-        let webview = self.create_webview();
-        self.webviews.insert(tab_id, webview);
+        self.tabs.ensure_tab(tab_id);
 
         if let Some(url) = url {
             self.address_bar.set_text(url.to_string());
@@ -942,7 +849,7 @@ impl BrowserApp {
     /// 关闭活跃标签页
     pub fn close_active_tab(&mut self) {
         if let Some(tab_id) = self.shell.active_tab_id() {
-            self.webviews.remove(&tab_id);
+            self.tabs.remove_tab(tab_id);
             self.scroll_offset.remove(&tab_id);
             self.shell.close_tab(tab_id);
 
@@ -957,7 +864,7 @@ impl BrowserApp {
 
     /// 关闭指定 ID 的标签页
     fn close_tab_by_id(&mut self, id: TabId) {
-        self.webviews.remove(&id);
+        self.tabs.remove_tab(id);
         self.scroll_offset.remove(&id);
         self.shell.close_tab(id);
 
@@ -978,11 +885,7 @@ impl BrowserApp {
             None => return,
         };
 
-        let url = match self
-            .webviews
-            .get(&tab_id)
-            .and_then(|wv| wv.url().map(|s| s.to_string()))
-        {
+        let url = match self.shell.active_tab().and_then(|t| t.url().map(|s| s.to_string())) {
             Some(u) => u,
             None => return,
         };
@@ -1033,15 +936,8 @@ impl BrowserApp {
             Some(id) => id,
             None => return,
         };
-        self.ensure_webview(tab_id);
-        let loader = &self.font_loader;
-        let font_id = self.font_id;
-        if let Some(wv) = self.webviews.get_mut(&tab_id) {
-            wv.set_prefers_color_scheme(self.color_scheme);
-            text_metrics::with_measure_ctx_opt(loader, font_id, || {
-                wv.load_html(&html, None);
-            });
-        }
+        self.tabs.ensure_tab(tab_id);
+        self.tabs.load_html(tab_id, &html, None, Some("zero://settings"));
         self.shell.on_page_loaded("设置");
         self.address_bar.set_text("zero://settings".to_string());
         self.needs_redraw = true;

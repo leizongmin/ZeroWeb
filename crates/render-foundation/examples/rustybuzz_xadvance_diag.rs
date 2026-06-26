@@ -70,10 +70,7 @@ fn main() {
     let fd_lines;
     if let Ok(fid) = loader.load_font(&font_data) {
         let fd_font = loader.get(fid).expect("get fontdue font");
-        let fd_advances: Vec<f32> = text
-            .chars()
-            .map(|c| fd_font.metrics(c, 16.0).advance_width)
-            .collect();
+        let fd_advances: Vec<f32> = text.chars().map(|c| fd_font.metrics(c, 16.0).advance_width).collect();
         fd_total = fd_advances.iter().sum();
         fd_lines = count_lines_heuristic(&text, &fd_advances);
     } else {
@@ -113,16 +110,16 @@ fn main() {
     );
     eprintln!(
         "→ Phase A rustybuzz same-source 完全匹配 CHR? {}",
-        if rb_lines == 6 { "YES" } else { "NO（rustybuzz 也不完全匹配 chromium）" }
+        if rb_lines == 6 {
+            "YES"
+        } else {
+            "NO（rustybuzz 也不完全匹配 chromium）"
+        }
     );
 }
 
 /// rustybuzz greedy line-count：按 glyph cluster 回溯到 char，空格处可断行。
-fn count_lines_rustybuzz(
-    text: &str,
-    infos: &[rustybuzz::GlyphInfo],
-    advances: &[f32],
-) -> usize {
+fn count_lines_rustybuzz(text: &str, infos: &[rustybuzz::GlyphInfo], advances: &[f32]) -> usize {
     let line_w_full = 784.0_f32;
     let line_w_first = 784.0 - 100.0; // text-indent 100px
     let chars: Vec<char> = text.chars().collect();
