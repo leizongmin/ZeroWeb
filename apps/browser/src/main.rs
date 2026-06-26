@@ -15,6 +15,7 @@ mod colors;
 mod headless;
 mod input_keys;
 mod layout;
+mod page_scroll;
 mod page_selection;
 mod pages;
 mod paint_ipc;

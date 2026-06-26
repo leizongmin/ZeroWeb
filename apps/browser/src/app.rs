@@ -21,6 +21,7 @@ use zero_render_foundation::primitive::{FillPrimitive, GlyphPrimitive, GradientK
 use crate::colors;
 use crate::input_keys::key_matches;
 use crate::layout;
+use crate::page_scroll::{self, TabScrollState};
 use crate::page_selection::{GlyphSelection, hit_test_glyph};
 use crate::pages;
 use crate::tab_manager::TabManager;
@@ -164,7 +165,7 @@ pub struct BrowserApp {
     /// 右键上下文菜单状态
     context_menu: ContextMenuState,
     /// 页面滚动偏移（物理像素）
-    scroll_offset: HashMap<TabId, f32>,
+    scroll: HashMap<TabId, TabScrollState>,
     /// 页面文本选区（glyph 索引）
     page_selection: HashMap<TabId, GlyphSelection>,
     /// 页面选区拖拽中
@@ -242,7 +243,7 @@ impl BrowserApp {
             find_input: String::new(),
             tab_layout: Vec::new(),
             context_menu: ContextMenuState::new(),
-            scroll_offset: HashMap::new(),
+            scroll: HashMap::new(),
             page_selection: HashMap::new(),
             page_selection_drag: false,
             left_button_down: false,
@@ -293,6 +294,9 @@ impl BrowserApp {
     pub fn poll_tab_fetch(&mut self) {
         if self.tabs.poll(self.shell.active_tab_id()) {
             self.needs_redraw = true;
+        }
+        if let Some(id) = self.shell.active_tab_id() {
+            self.clamp_tab_scroll(id);
         }
         for (tab_id, title, url) in self.tabs.take_page_loaded_events() {
             self.shell.on_page_loaded(&title);
@@ -672,14 +676,61 @@ impl BrowserApp {
         self.address_bar.text()
     }
 
-    /// 测试用：获取标签页滚动偏移（物理像素）
+    /// 测试用：获取标签页垂直滚动偏移（物理像素）
     #[cfg(test)]
     pub fn scroll_offset_for_tab(&self, tab_id: TabId) -> f32 {
-        self.scroll_offset.get(&tab_id).copied().unwrap_or(0.0)
+        self.scroll.get(&tab_id).map(|s| s.y).unwrap_or(0.0)
+    }
+
+    /// 当前标签页滚动状态。
+    pub fn tab_scroll_state(&self, tab_id: TabId) -> TabScrollState {
+        self.scroll.get(&tab_id).copied().unwrap_or_default()
+    }
+
+    /// 文档内容尺寸（物理像素）。
+    fn document_size_physical(&self, tab_id: TabId) -> (f32, f32) {
+        let s = self.scale_factor;
+        let logical_h = self
+            .tabs
+            .document_height(tab_id)
+            .or_else(|| {
+                self.tabs
+                    .last_render(tab_id)
+                    .map(|r| page_scroll::primitives_content_height(&r.primitives))
+            })
+            .unwrap_or(0.0);
+        let logical_w = self
+            .tabs
+            .last_render(tab_id)
+            .map(|r| page_scroll::primitives_content_width(&r.primitives))
+            .unwrap_or(0.0);
+        (logical_w * s, logical_h * s)
+    }
+
+    /// 按窗口尺寸计算标签页视口与滚动条布局。
+    pub fn page_scroll_layout_for(&self, tab_id: TabId, width: u32, height: u32) -> page_scroll::PageScrollLayout {
+        let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+        let (doc_w, doc_h) = self.document_size_physical(tab_id);
+        page_scroll::compute_page_scroll_layout(cx, cy, cw, ch, doc_w, doc_h, self.scale_factor)
+    }
+
+    /// 当前窗口下活跃标签页的视口与滚动条布局。
+    pub fn page_scroll_layout(&self, tab_id: TabId) -> page_scroll::PageScrollLayout {
+        self.page_scroll_layout_for(tab_id, self.physical_size.0, self.physical_size.1)
+    }
+
+    fn clamp_tab_scroll(&mut self, tab_id: TabId) {
+        let layout = self.page_scroll_layout(tab_id);
+        let entry = self.scroll.entry(tab_id).or_default();
+        *entry = page_scroll::clamp_scroll(*entry, &layout);
     }
 
     /// 计算网页内容区域物理像素尺寸（用于滚动、合成区域）
     pub fn content_physical_size(&self) -> (u32, u32) {
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            let layout = self.page_scroll_layout(tab_id);
+            return (layout.viewport_w.max(0.0) as u32, layout.viewport_h.max(0.0) as u32);
+        }
         let (_, _, w, h) = self.page_content_rect();
         (w.max(0.0) as u32, h.max(0.0) as u32)
     }
@@ -690,6 +741,16 @@ impl BrowserApp {
     /// 避免页面背景在底部溢出并盖住圆角。
     pub fn content_logical_size(&self) -> (u32, u32) {
         let s = self.scale_factor.max(f32::EPSILON);
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            let layout = self.page_scroll_layout(tab_id);
+            let logical_w = (layout.viewport_w / s).floor().max(1.0) as u32;
+            let logical_h = if layout.viewport_h <= f32::EPSILON {
+                0
+            } else {
+                (layout.viewport_h / s).floor().max(1.0) as u32
+            };
+            return (logical_w, logical_h);
+        }
         let (_, _, w, h) = self.page_content_rect();
         let logical_w = (w / s).floor().max(1.0) as u32;
         let logical_h = if h <= f32::EPSILON {
@@ -796,7 +857,7 @@ impl BrowserApp {
         self.ensure_webview(tab_id);
 
         // 重置滚动偏移与页面选区
-        self.scroll_offset.insert(tab_id, 0.0);
+        self.scroll.insert(tab_id, TabScrollState::default());
         self.page_selection.remove(&tab_id);
         self.clear_tab_favicon(tab_id);
 
@@ -853,7 +914,7 @@ impl BrowserApp {
         if self.shell.active_tab().and_then(|t| t.url()).is_none() {
             self.load_welcome_page(tab_id);
         }
-        self.scroll_offset.insert(tab_id, 0.0);
+        self.scroll.insert(tab_id, TabScrollState::default());
         self.needs_redraw = true;
     }
 
@@ -869,7 +930,7 @@ impl BrowserApp {
             self.load_welcome_page(tab_id);
         }
 
-        self.scroll_offset.insert(tab_id, 0.0);
+        self.scroll.insert(tab_id, TabScrollState::default());
         self.tabs.on_active_tab_changed(self.shell.active_tab_id());
         self.needs_redraw = true;
     }
@@ -878,7 +939,7 @@ impl BrowserApp {
     pub fn close_active_tab(&mut self) {
         if let Some(tab_id) = self.shell.active_tab_id() {
             self.tabs.remove_tab(tab_id);
-            self.scroll_offset.remove(&tab_id);
+            self.scroll.remove(&tab_id);
             self.shell.close_tab(tab_id);
 
             if self.shell.is_empty() {
@@ -895,7 +956,7 @@ impl BrowserApp {
     /// 关闭指定 ID 的标签页
     fn close_tab_by_id(&mut self, id: TabId) {
         self.tabs.remove_tab(id);
-        self.scroll_offset.remove(&id);
+        self.scroll.remove(&id);
         self.shell.close_tab(id);
 
         if self.shell.is_empty() {
