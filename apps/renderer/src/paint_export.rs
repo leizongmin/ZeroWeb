@@ -2,14 +2,16 @@
 
 use zero_engine::{extract_img_srcs, image_resource_key, resolve_document_url};
 use zero_protocol::{
-    IpcColor, IpcDrawOp, IpcFill, IpcGlyph, IpcGradient, IpcGradientKind, IpcGradientStop, IpcImage, IpcImagePayload,
-    IpcLineCap, IpcLineStyle, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke, PaintSnapshotParams,
+    IpcClip, IpcColor, IpcDrawOp, IpcFill, IpcGlyph, IpcGradient, IpcGradientKind, IpcGradientStop, IpcImage,
+    IpcImagePayload, IpcLineCap, IpcLineStyle, IpcPathFill, IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow,
+    IpcStroke, IpcTransform, PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::decode_image_bytes;
 use zero_render_foundation::primitive::{
-    DrawOp, GradientKind, GradientPrimitive, LineCap, LineStyle, RenderPrimitives, ShadowPrimitive, StrokePrimitive,
+    ClipPrimitive, DrawOp, GradientKind, GradientPrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
+    RenderPrimitives, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
 
 fn rect_to_ipc(r: &Rect) -> IpcRect {
@@ -81,13 +83,12 @@ fn draw_op_to_ipc(op: DrawOp) -> Option<IpcDrawOp> {
         DrawOp::Shadow(i) => IpcDrawOp::Shadow(i),
         DrawOp::Image(i) => IpcDrawOp::Image(i),
         DrawOp::Stroke(i) => IpcDrawOp::Stroke(i),
+        DrawOp::PathFill(i) => IpcDrawOp::PathFill(i),
+        DrawOp::PathStroke(i) => IpcDrawOp::PathStroke(i),
+        DrawOp::Clip(i) => IpcDrawOp::Clip(i),
+        DrawOp::Transform(i) => IpcDrawOp::Transform(i),
         DrawOp::Glyph(i) => IpcDrawOp::Glyph(i),
-        DrawOp::PathFill(_)
-        | DrawOp::PathStroke(_)
-        | DrawOp::Filter(_)
-        | DrawOp::BlendMode(_)
-        | DrawOp::Transform(_)
-        | DrawOp::Clip(_) => return None,
+        DrawOp::Filter(_) | DrawOp::BlendMode(_) => return None,
     })
 }
 
@@ -205,6 +206,46 @@ pub fn paint_snapshot_from_primitives(
                 color: color_to_ipc(s.color),
                 style: line_style_to_ipc(s.style),
                 cap: line_cap_to_ipc(s.cap),
+            })
+            .collect(),
+        path_fills: primitives
+            .path_fills
+            .iter()
+            .map(|pf: &PathFillPrimitive| IpcPathFill {
+                vertices: pf.vertices.clone(),
+                color: color_to_ipc(pf.color),
+            })
+            .collect(),
+        path_strokes: primitives
+            .path_strokes
+            .iter()
+            .map(|ps: &PathStrokePrimitive| IpcPathStroke {
+                vertices: ps.vertices.clone(),
+                color: color_to_ipc(ps.color),
+                line_width: ps.line_width,
+                closed: ps.closed,
+            })
+            .collect(),
+        clips: primitives
+            .clips
+            .iter()
+            .map(|c: &ClipPrimitive| IpcClip {
+                rect: rect_to_ipc(&c.rect),
+            })
+            .collect(),
+        transforms: primitives
+            .transforms
+            .iter()
+            .map(|t: &TransformPrimitive| IpcTransform {
+                rect: rect_to_ipc(&t.rect),
+                origin_x: t.origin_x,
+                origin_y: t.origin_y,
+                a: t.a,
+                b: t.b,
+                c: t.c,
+                d: t.d,
+                tx: t.tx,
+                ty: t.ty,
             })
             .collect(),
         glyphs: primitives

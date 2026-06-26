@@ -215,6 +215,58 @@ pub struct IpcShadow {
     pub spread_radius: f32,
 }
 
+/// IPC 路径填充。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpcPathFill {
+    /// 顶点序列 (x, y, x, y, ...)。
+    pub vertices: Vec<f32>,
+    /// 填充颜色。
+    pub color: IpcColor,
+}
+
+/// IPC 路径描边。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpcPathStroke {
+    /// 顶点序列。
+    pub vertices: Vec<f32>,
+    /// 描边颜色。
+    pub color: IpcColor,
+    /// 线宽。
+    pub line_width: f32,
+    /// 是否闭合。
+    pub closed: bool,
+}
+
+/// IPC 裁剪区域。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpcClip {
+    /// 裁剪矩形。
+    pub rect: IpcRect,
+}
+
+/// IPC 2D 仿射变换。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpcTransform {
+    /// 变换应用区域。
+    pub rect: IpcRect,
+    /// 变换原点 x。
+    pub origin_x: f32,
+    /// 变换原点 y。
+    pub origin_y: f32,
+    /// 矩阵 a。
+    pub a: f32,
+    /// 矩阵 b。
+    pub b: f32,
+    /// 矩阵 c。
+    pub c: f32,
+    /// 矩阵 d。
+    pub d: f32,
+    /// 矩阵 tx。
+    pub tx: f32,
+    /// 矩阵 ty。
+    pub ty: f32,
+}
+
 /// IPC 绘制顺序条目。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum IpcDrawOp {
@@ -230,6 +282,14 @@ pub enum IpcDrawOp {
     Image(usize),
     /// `strokes` 索引。
     Stroke(usize),
+    /// `path_fills` 索引。
+    PathFill(usize),
+    /// `path_strokes` 索引。
+    PathStroke(usize),
+    /// `clips` 索引。
+    Clip(usize),
+    /// `transforms` 索引。
+    Transform(usize),
     /// `glyphs` 索引。
     Glyph(usize),
 }
@@ -257,6 +317,14 @@ pub struct PaintSnapshotParams {
     pub image_payloads: Vec<IpcImagePayload>,
     /// 描边线段。
     pub strokes: Vec<IpcStroke>,
+    /// 路径填充。
+    pub path_fills: Vec<IpcPathFill>,
+    /// 路径描边。
+    pub path_strokes: Vec<IpcPathStroke>,
+    /// 裁剪区域。
+    pub clips: Vec<IpcClip>,
+    /// 仿射变换。
+    pub transforms: Vec<IpcTransform>,
     /// 文本图元。
     pub glyphs: Vec<IpcGlyph>,
     /// 绘制顺序（与 engine `DrawOp` 子集对应）。
@@ -276,6 +344,10 @@ impl Default for PaintSnapshotParams {
             images: Vec::new(),
             image_payloads: Vec::new(),
             strokes: Vec::new(),
+            path_fills: Vec::new(),
+            path_strokes: Vec::new(),
+            clips: Vec::new(),
+            transforms: Vec::new(),
             glyphs: Vec::new(),
             draw_order: Vec::new(),
         }

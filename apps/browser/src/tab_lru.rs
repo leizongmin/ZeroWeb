@@ -7,6 +7,15 @@ use zero_browser_shell::TabId;
 /// 默认最多同时保持多少个 Tab worker 存活。
 pub const DEFAULT_MAX_LIVE_WORKERS: usize = 3;
 
+/// 环境变量 `ZERO_BROWSER_MAX_LIVE_TABS` 覆盖 live worker 上限（至少为 1）。
+pub fn max_live_workers_from_env() -> usize {
+    std::env::var("ZERO_BROWSER_MAX_LIVE_TABS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|&n| n >= 1)
+        .unwrap_or(DEFAULT_MAX_LIVE_WORKERS)
+}
+
 /// 后台 Tab LRU 策略状态。
 pub struct TabLruPolicy {
     max_live: usize,
@@ -94,13 +103,18 @@ impl TabLruPolicy {
 
 impl Default for TabLruPolicy {
     fn default() -> Self {
-        Self::new(DEFAULT_MAX_LIVE_WORKERS)
+        Self::new(max_live_workers_from_env())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn max_live_workers_from_env_defaults() {
+        assert_eq!(max_live_workers_from_env(), DEFAULT_MAX_LIVE_WORKERS);
+    }
 
     #[test]
     fn pick_victim_skips_active_tab() {
