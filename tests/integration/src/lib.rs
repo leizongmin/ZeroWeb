@@ -26,6 +26,9 @@ mod css_style;
 mod render_pipeline;
 
 #[cfg(test)]
+mod runtime_conformance;
+
+#[cfg(test)]
 mod net_security;
 
 #[cfg(test)]
