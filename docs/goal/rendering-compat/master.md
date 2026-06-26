@@ -87,6 +87,12 @@
 
 **核心结论（2026-06-23 更新，分两阶段）**：
 
+> **★ 2026-06-26 追加（R660–R668 doc-accuracy arc + M7 闭环 + font-wall 彻底定性；supersede 下方 R519-era 收敛叙述）**：
+> 1. **M7（渲染器图元覆盖）已完成**：DC-8 CPU 13/13 + DC-9 GPU 13/13 + DC-10 浏览器消费全 13 字段，均附 framebuffer 像素断言单测（R660–R666）。原 goal doc「P0 致命未起步」描述已纠正（M7 milestone section 已收口）。
+> 2. **DC-13 legacy-html smoke 里程碑**：20/20 fixture + `make product-smoke-legacy` 门禁（R656–R659）+ nav 子资源（外链 CSS R213 / img R318）✅。
+> 3. **font-wall 彻底定性为永久 plateau**：R668 证伪「rustybuzz same-source」（最后未测 font-wall 修复路径）→ product-smoke ~17% diff + reftest 字体噪声为**不可消除**（R388 光栅化≈/R631 选择对齐零变化/R633 死锁分界/R643 fontdue-advance net-negative/**R668 rustybuzz refuted** 五证）。即 goal 的 95% reftest 目标受此永久噪声 + 结构性布局缺口双重约束。
+> 4. **当前真实剩余工作**（非 doc）：(a) code 特性——Float/sticky/scroll 布局 + clip-path/backdrop-filter/mask 渲染（已解析未渲染）；(b) DC-14 独立 Oracle（reftest harness 仍 ZeroWeb self-ref，核心未解）；(c) 结构性布局（multicol/writing-modes/Phase A IFC 统一）。**goal doc 各 DC checklist 现大面积准确**（R660–R667 stale-claim 纠正穷尽）。
+
 1. **旧 plateau（R305–R323 / R384，≥10 轮一致收敛）**：在「子集分母 + 旧 lever 族」语境下，**near-pass clean-win frontier / POLLUTED 候选逐项 hunt / fontdue 度量（advance-width / AA / Bold）/ multicol paint 侧与 balance 二分 / baseline-export 3 机制 / column-aware IFC 纯 inline / Phase A font_size 单点** 等 lever 族均 ruled out 或 refuted。下表「已穷尽 / 证伪的杠杆」记录的就是**这一阶段**的结论。**该结论的范围限定**：它覆盖的是 *font/metric 精度类* 与 *POLLUTED-hunt 类* lever，**不**覆盖 R491 之后发现的 CSS-correctness 单点 lever 族（见下）。
 
 2. **★ R491–R511 CSS-correctness lever era（旧 plateau 的反例，现已 CSS2 趋尽）**：R491（画布背景传播 §14.2）打破旧 plateau，此后 ~20 轮产出**一串连续 clean win**，来自一个**未被旧 plateau「ruled out」清单覆盖**的全新 lever 族——**CSS 规范正确性单点修复**：
