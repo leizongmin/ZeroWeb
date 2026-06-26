@@ -12,9 +12,11 @@ build: setup-rusty-v8
 BROWSER_RUN = cargo run --release -p zero-browser
 
 browser: setup-rusty-v8
+	cargo build -p zero-browser -p zero-renderer
 	$(BROWSER_RUN)
 
 browser-debug: setup-rusty-v8
+	cargo build -p zero-browser -p zero-renderer
 	RUST_BACKTRACE=1 $(BROWSER_RUN)
 
 browser-debug-wayland: setup-rusty-v8
