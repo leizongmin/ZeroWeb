@@ -3,9 +3,10 @@
 use std::collections::HashMap;
 
 use zero_engine::{
-    BudgetAdvance, BudgetedRenderSession, RenderPipeline, RenderResult, extract_img_srcs, extract_stylesheet_hrefs,
+    BudgetAdvance, BudgetedRenderSession, RenderPipeline, extract_img_srcs, extract_stylesheet_hrefs,
     image_resource_key, resolve_document_url,
 };
+use zero_page_runtime::PageLoadHost;
 use zero_render_foundation::image_cache::decode_image_bytes;
 
 const FRAME_BUDGET_MS: f64 = 8.0;
@@ -18,7 +19,6 @@ pub enum PageLoadStage {
     StyledPaint,
     FetchingImages,
     Complete,
-    Failed,
 }
 
 /// 分阶段加载协调器。
@@ -32,14 +32,6 @@ pub struct RendererPageLoad {
     session: Option<BudgetedRenderSession>,
     budget_pending: bool,
     error: Option<String>,
-}
-
-/// 分阶段加载宿主：网络 fetch + 绘制推送。
-pub trait PageLoadHost {
-    /// 抓取 URL 字节。
-    fn fetch_bytes(&mut self, url: &str) -> Result<Vec<u8>, String>;
-    /// 推送中间/最终绘制结果。
-    fn publish(&mut self, result: &RenderResult, title: Option<String>, is_final: bool) -> Result<(), String>;
 }
 
 impl RendererPageLoad {
@@ -58,24 +50,12 @@ impl RendererPageLoad {
         }
     }
 
-    pub fn stage(&self) -> PageLoadStage {
-        self.stage
-    }
-
     pub fn is_active(&self) -> bool {
-        !matches!(self.stage, PageLoadStage::Complete | PageLoadStage::Failed)
+        self.stage != PageLoadStage::Complete
     }
 
     pub fn take_error(&mut self) -> Option<String> {
         self.error.take()
-    }
-
-    pub fn html(&self) -> &str {
-        &self.html
-    }
-
-    pub fn url(&self) -> &str {
-        &self.url
     }
 
     /// 推进加载；`host` 提供 fetch 与 publish。
@@ -122,10 +102,10 @@ impl RendererPageLoad {
                 match self.stage {
                     // 留在 FirstPaint，由 tick() 调用 begin_stylesheet_list（勿提前切到 FetchingStylesheets）。
                     PageLoadStage::FirstPaint => {}
-                    PageLoadStage::StyledPaint | PageLoadStage::FetchingImages => {
-                        if self.css_pending.is_empty() && self.img_pending.is_empty() {
-                            self.stage = PageLoadStage::Complete;
-                        }
+                    PageLoadStage::StyledPaint | PageLoadStage::FetchingImages
+                        if self.css_pending.is_empty() && self.img_pending.is_empty() =>
+                    {
+                        self.stage = PageLoadStage::Complete;
                     }
                     _ => {}
                 }
@@ -198,10 +178,10 @@ impl RendererPageLoad {
         let pending: Vec<(String, u64)> = self.img_pending.drain(..).collect();
         let mut sizes: HashMap<u64, (f32, f32)> = HashMap::new();
         for (url, key) in pending {
-            if let Ok(bytes) = host.fetch_bytes(&url) {
-                if let Ok(data) = decode_image_bytes(&bytes) {
-                    sizes.insert(key, (data.width as f32, data.height as f32));
-                }
+            if let Ok(bytes) = host.fetch_bytes(&url)
+                && let Ok(data) = decode_image_bytes(&bytes)
+            {
+                sizes.insert(key, (data.width as f32, data.height as f32));
             }
         }
         if !sizes.is_empty() {

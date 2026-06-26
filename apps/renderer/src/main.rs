@@ -7,7 +7,7 @@ mod page_scripts;
 mod paint_export;
 mod text_metrics;
 
-use async_load::PageLoadHost;
+use zero_page_runtime::PageLoadHost;
 
 use crate::js_worker::RendererJsWorker;
 use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, rerender, run_page_scripts};
@@ -16,11 +16,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
 
-use zero_engine::{
-    extract_page_scripts, resolve_document_url, PageScript,
-};
-use zero_script_sandbox::extract_module_import_specifiers;
 use std::io;
+use zero_engine::{PageScript, extract_page_scripts, resolve_document_url};
+use zero_script_sandbox::extract_module_import_specifiers;
 
 use zero_engine::{
     DomEventDetail, PrefersColorSchemeValue, RenderPipeline, RenderResult, selector_from_element_hit,
@@ -29,10 +27,10 @@ use zero_engine::{
 use zero_protocol::IpcChannel;
 use zero_protocol::ProcessRole;
 use zero_protocol::message::{
-    DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams,
-    HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMessage,
-    IpcMessageKind, KeyboardEventParams, LoadHtmlParams, MouseEventParams, NavigateParams, ScrollEventParams,
-    SetColorSchemeParams, SetViewportParams, StorageOpParams,
+    DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, HitTestElementResultParams,
+    HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMessage, IpcMessageKind, KeyboardEventParams,
+    LoadHtmlParams, MouseEventParams, NavigateParams, ScrollEventParams, SetColorSchemeParams, SetViewportParams,
+    StorageOpParams,
 };
 use zero_protocol::transport::PipeTransport;
 
@@ -70,6 +68,8 @@ struct RendererRuntime {
     outbound: IpcOutbound,
     /// 浏览器 → 渲染进程消息（stdin 读线程填充）。
     inbound_rx: Receiver<IpcMessage>,
+    /// 持有 IPC 读线程 JoinHandle（仅保活，不被读；drop 即分离线程）。
+    #[allow(dead_code)]
     inbound_thread: Option<JoinHandle<()>>,
     /// 渲染管线。
     pipeline: RenderPipeline,
@@ -153,9 +153,7 @@ impl RendererRuntime {
     }
 
     fn recv_blocking(&mut self) -> Result<IpcMessage, String> {
-        self.inbound_rx
-            .recv()
-            .map_err(|e| format!("IPC 接收失败: {e}"))
+        self.inbound_rx.recv().map_err(|e| format!("IPC 接收失败: {e}"))
     }
 
     fn after_page_html_loaded(&mut self, html: String, css: String) -> Result<(), String> {
@@ -272,13 +270,7 @@ impl RendererRuntime {
                 url: current_url,
                 js_worker: &self.js_worker,
             };
-            let result = dispatch_dom_event(
-                &mut ctx,
-                js_enabled,
-                &sel,
-                event_type,
-                detail.as_ref(),
-            );
+            let result = dispatch_dom_event(&mut ctx, js_enabled, &sel, event_type, detail.as_ref());
             if result.html_changed {
                 let render = text_metrics::with_measure_ctx_opt(font_loader, font_id, || rerender(&mut ctx));
                 let _ = self.publish_render(&render, None);
@@ -367,7 +359,8 @@ impl RendererRuntime {
         let font_loader = &self.font_loader;
         let font_id = self.font_id;
         let pipeline = &mut self.pipeline;
-        if let Some(result) = text_metrics::with_measure_ctx_opt(font_loader, font_id, || pipeline.repaint_cached_viewport(""))
+        if let Some(result) =
+            text_metrics::with_measure_ctx_opt(font_loader, font_id, || pipeline.repaint_cached_viewport(""))
         {
             let payloads = paint_export::fetch_image_payloads_with_fetch(&html_for_images, &url_for_images, &mut |u| {
                 self.fetch_get(u).ok()
@@ -430,7 +423,8 @@ impl RendererRuntime {
         let font_loader = &self.font_loader;
         let font_id = self.font_id;
         let pipeline = &mut self.pipeline;
-        let Some(result) = text_metrics::with_measure_ctx_opt(font_loader, font_id, || pipeline.repaint_cached_viewport(""))
+        let Some(result) =
+            text_metrics::with_measure_ctx_opt(font_loader, font_id, || pipeline.repaint_cached_viewport(""))
         else {
             return Ok(());
         };
@@ -661,13 +655,7 @@ struct IpcLoadBridge<'a> {
 
 impl PageLoadHost for IpcLoadBridge<'_> {
     fn fetch_bytes(&mut self, url: &str) -> Result<Vec<u8>, String> {
-        ipc_fetch_get(
-            self.outbound,
-            self.inbound_rx,
-            self.next_fetch_id,
-            self.deferred,
-            url,
-        )
+        ipc_fetch_get(self.outbound, self.inbound_rx, self.next_fetch_id, self.deferred, url)
     }
 
     fn publish(&mut self, result: &RenderResult, title: Option<String>, _is_final: bool) -> Result<(), String> {
@@ -690,6 +678,8 @@ fn document_height_from_layout(layout: &zero_layout_engine::LayoutResult) -> f32
     layout.root.y + layout.root.height
 }
 
+/// 注意：参数偏多，T5 FrameModel 统一后收敛为结构体入参。
+#[allow(clippy::too_many_arguments)]
 fn publish_render_with_layout(
     outbound: &mut IpcOutbound,
     next_msg_id: &mut u64,
