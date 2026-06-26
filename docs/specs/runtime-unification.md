@@ -65,7 +65,8 @@
 
 - **不动 `crates/layout-engine/src/engine.rs`**：该文件是冻结 WIP（R726–R738 监测对象，diff byte-identical 待 code-agent 消费）。本统一工作不得修改它。
 - 精准修改：只改各 T 任务点到的文件，不顺手重构相邻代码。
-- **clippy 工具链漂移（2026-06-26 发现）**：本机 rust 1.95 下 `cargo clippy` 对 `zero-engine` 报 12 个 `collapsible_if`（let-chains 在 1.95 已稳定，MSRV 1.85 下不触发）——**与本统一工作无关的既有 lint**。因此各 T 的验证门 = `cargo build` / `cargo test` 受影响 crate 通过即可；clippy 仅 best-effort，**不得顺手修这些既有 engine lint**（scope creep + 触碰 R-series 状态）。仅需保证**本次新增/改动文件本身**无 clippy 发现。
+- **clippy 策略（用户 2026-06-26 裁定）**：发现的 lint 一律修，不分是否本轮引入。本机 rust 1.95 触发若干既有 lint（let-chains `collapsible_if` 等）。已清 zero-engine(12)、zero-protocol(boxing `ViewPainted`+`while_let`)、zero-webview(6)。**持久 crate 直接修**；**T-目标文件（renderer/async_load.rs、`publish_render_with_layout` 等）的 lint 随对应 T2/T5 删除或重构解决，不做 throwaway 改动**。扫全量用不带 `-D warnings` 的 `cargo clippy --workspace` 收集 warning（带 `-D` 会卡在 renderer）。各 T 验证门仍为受影响 crate `cargo build`/`test` + 本轮改动文件 clippy 干净。
+- **提交策略（用户 2026-06-26 裁定）**：每 firing 在分支 `feat/runtime-unification` 自动 commit + push。只 stage 本工作文件，绝不带入冻结的 `engine.rs`。
 
 ## 7. 成功标准（钉死可测）
 
@@ -74,3 +75,4 @@
 ## 8. 进度日志
 
 - **2026-06-26 R2**：**T1 完成**。新建 `crates/page-runtime`（薄 crate，仅依赖 `zero-engine`），定义共享 `PageLoadHost` trait（`fetch_bytes` + `publish`，自 renderer 原样上提），挂入 workspace members + `[workspace.dependencies]`。验证：`cargo build -p zero-page-runtime` ✓ (4.24s)；`cargo fmt` ✓；本文件无 clippy 发现（既有 engine clippy 漂移见 §6）。未改任何既有代码。下一 firing → **T2**（renderer 改用共享 trait，删本地副本；需 zero-renderer 含 V8 的较慢 build）。
+- **2026-06-26 R2（续）lint 清理**：用户指示「发现的 lint 都顺手修」。L1 zero-engine 12 处（`collapsible_if`→let-chains + 去 `u64` 冗余 cast）✓ commit `00ed921e`；zero-protocol（box `ViewPainted` 大变体 + `loop`→`while let`，serde 透明、IPC 线格式不变）✓ `56d91d6f`；zero-webview 6 处（`ExternalScriptExecutor` 类型别名 + `BytesFetchRx` + match guard + 去冗余闭包）✓ `7e83fcc3`。renderer 8 处 defer 到 **T2**（6 处在 async_load.rs 待删）+ **T5**（`publish_render_with_layout` `too_many_arguments`）。分支 `feat/runtime-unification`，每 firing commit+push。
