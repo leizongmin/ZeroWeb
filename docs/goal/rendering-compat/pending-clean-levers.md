@@ -130,6 +130,16 @@
 - **fix scope（complex，非 quick win）**：ZW post-process 理论可行（仿 `resolve_relative_inset:1597` 扩展 Percent + 对所有 block-level relative 应用），但须 ① **CB-height-definiteness cascade**（%inset 对 indefinite CB height→0，类 R695 §10.5）；② **避 double-count**（taffy 已应用 LENGTH，ZW 须只补 PERCENT delta）。medium-high 复杂。**或 defer 到 taffy 升级（R304）**。
 - **裁决**：cluster ~8 案仅经 taffy 升级（R304）或 complex post-process 可 harvest。**R711 移出 clean-lever 主队列，入 complex/deferred。**
 
+## 消费顺序 & 交互 note（R732，grounded 于 R730/R731 已验代码位置）
+
+> 多 lever 共享 code path 或同区 post-process，消费时须防冲突/重复应用。按「同区→统一 pass」+「正交→可并行」分组。
+
+- **同区组 A — engine.rs parent content-height / sizing post-process（model on `clamp_percentage_max_height` engine.rs:1404）**：**R695**（%height indefinite-CB → auto）+ **R699**（非-BFC 父 height 排除 float 子）+ **R702**（collapse-through 保 inline 高度，margin_collapse.rs:83）三者**都改 parent content-height 算法**。**建议作为统一 parent-sizing post-process pass 的不同 step 实现**（非三个独立 pass），顺序 R702（collapse 保 inline）→ R695（%height→auto）→ R699（排除 float），每步幂等、避免 double-apply；R699 附带次级 `is_flow_root` BFC 检测 expand（engine.rs:676 现仅 FlowRoot|InlineBlock）。
+- **正交组 B — replaced sizing，可并行**：**R696**（tree.rs:186 tag-level，svg/canvas/object/iframe/video）与 **R717**（image_cache.rs:421 img SVG source-intrinsic）不同 code path，独立可并行（hand-off 已注「正交」）。
+- **同症组 C — shrink-to-fit，不同 path 可并行**：**R678**（float，float_positioning.rs）与 **R679**（table，table.rs）同 0-content shrink-to-fit symptom 但独立 path；**注意** R681-R684 已证 table-width 是多 facet 簇（writing-mode-aware），R679 修须 writing-mode-aware。
+- **包含组 D — relative inset**：**R716**（resolve_relative_inset engine.rs:1597，Px right/bottom，clean）是 **R711**（%inset，taffy-deferred R304）的子集；R716 先做（clean），R711 后续（complex/deferred）；R711 fix 的 CB-height-definiteness cascade 与组 A 的 R695 §10.5 同族（共享 definiteness 传播逻辑）。
+- **独立可并行**：R720（painter/mod.rs canvas bg）、R689（converter/mod.rs static-inset）、R691（grid track）、R705（clearance 算术）、R692（aspect-ratio，须先 oracle regen）、R680（br 行盒，R109 territory 评 blast radius）——各 lever 独立 code path，无强交互。
+
 ## 已识 structural-gated 区（非 clean lever，多会话架构，勿单点重试）
 
 - **css-flexbox**（inline-as-IFC，R109/R255）：inline-box-blockification（converter inline→taffy::Block）。
