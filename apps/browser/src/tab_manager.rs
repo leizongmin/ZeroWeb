@@ -402,20 +402,28 @@ impl TabManager {
         Some(&mut self.snapshots.get_mut(&tab_id)?.image_cache)
     }
 
-    /// 链接命中测试。
+    /// 链接命中测试（主线程快照，不阻塞 tab worker）。
     pub fn hit_test_link(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<String> {
         if let Some(ref mut backend) = self.process_backend {
             return backend.hit_test_link(tab_id, x, y, &mut self.snapshots);
         }
-        self.workers.get(&tab_id)?.hit_test_link(x, y)
+        self.snapshots
+            .get(&tab_id)?
+            .hit_test
+            .as_ref()?
+            .hit_test_link(x, y)
     }
 
-    /// 元素命中测试（审查元素）。
+    /// 元素命中测试（主线程快照，不阻塞 tab worker）。
     pub fn hit_test_element(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<zero_engine::ElementHit> {
         if let Some(ref mut backend) = self.process_backend {
             return backend.hit_test_element(tab_id, x, y, &mut self.snapshots);
         }
-        self.workers.get(&tab_id)?.hit_test_element(x, y)
+        self.snapshots
+            .get(&tab_id)?
+            .hit_test
+            .as_ref()?
+            .hit_test_element(x, y)
     }
 
     /// 向页面元素派发 DOM 事件并返回是否允许默认行为。

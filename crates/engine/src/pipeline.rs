@@ -304,6 +304,13 @@ impl RenderPipeline {
         hit_test::hit_test_element(doc, &layout.root, x, y)
     }
 
+    /// 构建主线程只读命中测试快照（与当前缓存 DOM/布局一致）。
+    pub fn build_hit_test_cache(&self) -> Option<hit_test::HitTestCache> {
+        let doc = self.cached_doc.as_ref()?;
+        let layout = self.cached_layout.as_ref()?;
+        Some(hit_test::HitTestCache::from_document(doc, &layout.root))
+    }
+
     /// 渲染 HTML 文档（全流程）。
     ///
     /// 执行完整的 HTML→CSS→Style→Layout→Paint 管线。

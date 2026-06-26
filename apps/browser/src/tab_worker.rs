@@ -5,7 +5,6 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use zero_browser_shell::TabId;
-use zero_engine::ElementHit;
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::set_char_measure_fn;
 use zero_render_foundation::font::loader::FontLoader;
@@ -34,18 +33,6 @@ pub enum TabWorkerCommand {
     Resize { width: u32, height: u32 },
     /// 更新颜色方案。
     SetColorScheme(PrefersColorSchemeValue),
-    /// 链接命中测试。
-    HitTestLink {
-        x: f32,
-        y: f32,
-        reply: Sender<Option<String>>,
-    },
-    /// 元素命中测试（审查元素）。
-    HitTestElement {
-        x: f32,
-        y: f32,
-        reply: Sender<Option<ElementHit>>,
-    },
     /// 向页面元素派发 DOM 事件（click / keydown 等）。
     DispatchDomEvent {
         selector: String,
@@ -105,24 +92,6 @@ impl TabWorkerHandle {
     /// 非阻塞接收 worker 消息。
     pub fn try_recv(&self) -> Option<TabWorkerMessage> {
         self.msg_rx.try_recv().ok()
-    }
-
-    /// 同步命中测试链接。
-    pub fn hit_test_link(&self, x: f32, y: f32) -> Option<String> {
-        #[cfg(test)]
-        let _guard = crate::test_sync::tab_runtime_test_guard();
-        let (tx, rx) = mpsc::channel();
-        self.send(TabWorkerCommand::HitTestLink { x, y, reply: tx });
-        rx.recv_timeout(Duration::from_millis(250)).ok().flatten()
-    }
-
-    /// 同步命中测试元素（审查元素）。
-    pub fn hit_test_element(&self, x: f32, y: f32) -> Option<ElementHit> {
-        #[cfg(test)]
-        let _guard = crate::test_sync::tab_runtime_test_guard();
-        let (tx, rx) = mpsc::channel();
-        self.send(TabWorkerCommand::HitTestElement { x, y, reply: tx });
-        rx.recv_timeout(Duration::from_millis(250)).ok().flatten()
     }
 
     /// 同步派发 DOM 事件到页面脚本环境。
@@ -198,6 +167,7 @@ fn tab_worker_main(
 
     let mut async_load: Option<AsyncPageLoad> = None;
     let mut pending_sync_html: Option<(String, Option<String>, Option<String>)> = None;
+    let mut page_script_runner: Option<tab_scripts::PageScriptRunner> = None;
     let mut javascript_enabled = true;
 
     let push_snapshot = |wv: &WebView, msg_tx: &Sender<TabWorkerMessage>| {
@@ -212,10 +182,12 @@ fn tab_worker_main(
                     wv.prepare_document_state(&url);
                     async_load = Some(AsyncPageLoad::start(url));
                     pending_sync_html = None;
+                    page_script_runner = None;
                 }
                 TabWorkerCommand::LoadHtml { html, css, url } => {
                     pending_sync_html = Some((html, css, url));
                     async_load = None;
+                    page_script_runner = None;
                 }
                 TabWorkerCommand::Resize { width, height } => {
                     with_measure(&font_loader, font_id, || wv.resize(width, height));
@@ -238,14 +210,6 @@ fn tab_worker_main(
                         });
                         push_snapshot(&wv, &msg_tx);
                     }
-                }
-                TabWorkerCommand::HitTestLink { x, y, reply } => {
-                    let href = wv.hit_test_link(x, y);
-                    let _ = reply.send(href);
-                }
-                TabWorkerCommand::HitTestElement { x, y, reply } => {
-                    let hit = wv.hit_test_element(x, y);
-                    let _ = reply.send(hit);
                 }
                 TabWorkerCommand::DispatchDomEvent {
                     selector,
@@ -294,13 +258,25 @@ fn tab_worker_main(
             with_measure(&font_loader, font_id, || {
                 wv.load_html(&html, css.as_deref());
             });
-            tab_scripts::run_page_scripts(&mut wv, javascript_enabled, _js_worker.as_ref());
+            page_script_runner = tab_scripts::PageScriptRunner::start(&wv, javascript_enabled);
             if let Some(title) = pages::extract_html_title(&html) {
                 wv.set_title(&title);
             }
             push_snapshot(&wv, &msg_tx);
             let title = page_title_from_webview(&wv);
             let _ = msg_tx.send(TabWorkerMessage::Title(title));
+        }
+
+        if let Some(ref mut runner) = page_script_runner {
+            runner.tick(&mut wv, _js_worker.as_ref());
+            push_snapshot(&wv, &msg_tx);
+            if !runner.is_active() {
+                runner.finish(&mut wv);
+                let title = page_title_from_webview(&wv);
+                let _ = msg_tx.send(TabWorkerMessage::Title(title));
+                push_snapshot(&wv, &msg_tx);
+                page_script_runner = None;
+            }
         }
 
         if let Some(ref mut load) = async_load {
@@ -322,7 +298,7 @@ fn tab_worker_main(
                     let _ = msg_tx.send(TabWorkerMessage::LoadError(err));
                     let _ = msg_tx.send(TabWorkerMessage::Title("加载失败".to_string()));
                 } else {
-                    tab_scripts::run_page_scripts(&mut wv, javascript_enabled, _js_worker.as_ref());
+                    page_script_runner = tab_scripts::PageScriptRunner::start(&wv, javascript_enabled);
                     let title = page_title_from_webview(&wv);
                     let _ = msg_tx.send(TabWorkerMessage::Title(title));
                 }

@@ -18,12 +18,22 @@ use zero_script_sandbox::{
     extract_module_import_specifiers, ModuleRegistry, SandboxConfig, V8Sandbox,
 };
 
-type ScriptFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
+/// 页面 `<script>` 执行超时（毫秒）— 短于事件派发，避免死循环拖死 tab worker。
+pub const PAGE_SCRIPT_TIMEOUT_MS: u64 = 2_500;
+/// 宿主事件 / `execute_script_direct` 超时。
+pub const TAB_JS_EVENT_TIMEOUT_MS: u64 = 5_000;
+
+fn channel_timeout_for(exec_timeout_ms: u64) -> Duration {
+    Duration::from_millis(exec_timeout_ms + 2_000)
+}
+
+type ScriptFn = Arc<dyn Fn(&str, u64) -> Result<String, String> + Send + Sync>;
 type ModuleFn = Arc<dyn Fn(&str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
 
 enum JsWorkerCommand {
     Execute {
         script: String,
+        timeout_ms: u64,
         reply: Sender<Result<String, String>>,
     },
     ExecuteModule {
@@ -34,6 +44,7 @@ enum JsWorkerCommand {
     },
     SetDomSnapshot {
         html: String,
+        url: String,
     },
     Shutdown,
 }
@@ -61,16 +72,17 @@ impl TabJsWorkerHandle {
             .spawn(move || js_worker_main(cmd_rx, mutations_for_worker))
             .expect("spawn tab js worker");
 
-        let executor: ScriptFn = Arc::new(move |script: &str| {
+        let executor: ScriptFn = Arc::new(move |script: &str, timeout_ms: u64| {
             let (reply_tx, reply_rx) = mpsc::channel();
             cmd_for_exec
                 .send(JsWorkerCommand::Execute {
                     script: script.to_string(),
+                    timeout_ms,
                     reply: reply_tx,
                 })
                 .map_err(|e| e.to_string())?;
             reply_rx
-                .recv_timeout(Duration::from_secs(30))
+                .recv_timeout(channel_timeout_for(timeout_ms))
                 .map_err(|e| e.to_string())?
         });
 
@@ -85,7 +97,7 @@ impl TabJsWorkerHandle {
                 })
                 .map_err(|e| e.to_string())?;
             reply_rx
-                .recv_timeout(Duration::from_secs(30))
+                .recv_timeout(channel_timeout_for(TAB_JS_EVENT_TIMEOUT_MS))
                 .map_err(|e| e.to_string())?
         });
 
@@ -98,9 +110,15 @@ impl TabJsWorkerHandle {
         }
     }
 
-    /// 供 WebView 注入的外部脚本执行器。
-    pub fn executor(&self) -> ScriptFn {
-        Arc::clone(&self.executor)
+    /// 供 WebView 注入的外部脚本执行器（事件派发等，较长超时）。
+    pub fn executor(&self) -> Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync> {
+        let exec = Arc::clone(&self.executor);
+        Arc::new(move |script: &str| exec(script, TAB_JS_EVENT_TIMEOUT_MS))
+    }
+
+    /// 执行页面 `<script>`（较短超时，减轻死循环对界面的影响）。
+    pub fn execute_page_script(&self, script: &str) -> Result<String, String> {
+        (self.executor)(script, PAGE_SCRIPT_TIMEOUT_MS)
     }
 
     /// 执行 ES module（含依赖注册表）。
@@ -110,13 +128,14 @@ impl TabJsWorkerHandle {
 
     /// 在 JS 线程执行脚本（不经 WebView 包装）。
     pub fn execute_script_direct(&self, script: &str) -> Result<String, String> {
-        (self.executor)(script)
+        (self.executor)(script, TAB_JS_EVENT_TIMEOUT_MS)
     }
 
-    /// 脚本执行前更新 DOM HTML 快照（供 querySelector 等只读回调）。
-    pub fn set_dom_snapshot(&self, html: &str) {
+    /// 脚本执行前更新 DOM HTML 快照与页面 URL（供 querySelector、location 等只读回调）。
+    pub fn set_dom_snapshot(&self, html: &str, url: &str) {
         let _ = self.cmd_tx.send(JsWorkerCommand::SetDomSnapshot {
             html: html.to_string(),
+            url: url.to_string(),
         });
     }
 
@@ -143,11 +162,13 @@ impl Drop for TabJsWorkerHandle {
 fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>) {
     let js_config = SandboxConfig {
         persistent_context: true,
+        timeout_ms: TAB_JS_EVENT_TIMEOUT_MS,
         ..Default::default()
     };
     let mut sandbox = V8Sandbox::with_config(js_config).expect("V8 sandbox init");
     let dom_html: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html);
+    let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
     register_module_compile_callback(&mut sandbox);
     let shim = generate_js_dom_shim();
     if let Err(e) = sandbox.execute(shim) {
@@ -156,8 +177,15 @@ fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::M
 
     while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
-            JsWorkerCommand::Execute { script, reply } => {
-                let result = sandbox.execute(&script).map(|r| r.value).map_err(|e| e.to_string());
+            JsWorkerCommand::Execute {
+                script,
+                timeout_ms,
+                reply,
+            } => {
+                sandbox.set_timeout_ms(timeout_ms);
+                let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
+                let result = sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string());
+                sandbox.set_timeout_ms(TAB_JS_EVENT_TIMEOUT_MS);
                 let _ = reply.send(result);
             }
             JsWorkerCommand::ExecuteModule {
@@ -169,9 +197,12 @@ fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::M
                 let result = execute_module_in_sandbox(&mut sandbox, &source, &url, &deps);
                 let _ = reply.send(result);
             }
-            JsWorkerCommand::SetDomSnapshot { html } => {
+            JsWorkerCommand::SetDomSnapshot { html, url } => {
                 if let Ok(mut snap) = dom_html.lock() {
                     *snap = html;
+                }
+                if let Ok(mut u) = page_url.lock() {
+                    *u = url;
                 }
             }
             JsWorkerCommand::Shutdown => break,
@@ -199,8 +230,14 @@ fn register_dom_callbacks(
     sandbox: &mut V8Sandbox,
     mutations: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
     dom_html: &Arc<std::sync::Mutex<String>>,
+    page_url: &Arc<std::sync::Mutex<String>>,
 ) {
     let counter = Arc::new(AtomicU64::new(0));
+
+    let url = Arc::clone(page_url);
+    sandbox.register_callback("__zw_get_page_url", move |_args| {
+        url.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    });
 
     let html = Arc::clone(dom_html);
     sandbox.register_callback("__zw_query_match", move |args| {
