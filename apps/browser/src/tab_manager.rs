@@ -20,6 +20,7 @@ pub struct TabManager {
     color_scheme: PrefersColorSchemeValue,
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
+    poll_tick: u64,
 }
 
 impl TabManager {
@@ -37,6 +38,7 @@ impl TabManager {
             color_scheme,
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
+            poll_tick: 0,
         }
     }
 
@@ -136,8 +138,10 @@ impl TabManager {
 
     /// 轮询 Tab 更新快照；`active_tab` 为当前前台标签（后台 Tab 降低轮询频率）。
     pub fn poll(&mut self, active_tab: Option<TabId>) -> bool {
-        static BG_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let tick = BG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        #[cfg(test)]
+        let _poll_guard = crate::test_sync::tab_runtime_test_guard();
+        let tick = self.poll_tick;
+        self.poll_tick = self.poll_tick.wrapping_add(1);
         let poll_background = tick % 5 == 0;
 
         let mut changed = false;

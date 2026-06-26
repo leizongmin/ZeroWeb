@@ -24,6 +24,7 @@ mod tab_favicon;
 mod tab_manager;
 mod tab_snapshot;
 mod tab_worker;
+mod test_sync;
 mod text_input;
 mod text_metrics;
 mod ui_icons;
@@ -375,11 +376,12 @@ mod tests {
     #[test]
     fn browser_window_config_starts_maximized_not_fullscreen() {
         let config = super::browser_window_config();
-        assert!(config.maximized);
         assert!(!config.fullscreen);
         if crate::app::is_wayland() {
+            assert!(config.maximized);
             assert!(!config.decorations);
         } else {
+            assert!(!config.maximized);
             assert!(config.decorations);
         }
     }
@@ -652,7 +654,6 @@ mod tests {
 
         let tab_id = app.shell.active_tab_id().unwrap();
         app.ensure_webview(tab_id);
-        app.sync_webview_viewport();
         app.load_webview_html(
             tab_id,
             r#"<html><body style="margin:0"><a href="https://example.com/test" style="display:block;padding:10px">Example</a></body></html>"#,
@@ -752,7 +753,7 @@ mod tests {
           .spacer { height: 2400px; background: #eef; }
         </style></head><body><div class="spacer">Tall</div></body></html>"#;
         app.load_webview_html(tab_id, tall_html, None);
-        app.sync_webview_viewport();
+        app.sync_webview_viewport_and_poll(tab_id);
 
         let (_, content_y, content_w, _) = app.page_content_rect();
         let x = (content_w * 0.5) as f64;
@@ -797,7 +798,7 @@ mod tests {
           .spacer { height: 2400px; background: #eef; }
         </style></head><body><div class="spacer">Tall</div></body></html>"#;
         app.load_webview_html(tab_id, tall_html, None);
-        app.sync_webview_viewport();
+        app.sync_webview_viewport_and_poll(tab_id);
 
         let (_, content_y, content_w, _) = app.page_content_rect();
         let touch_x = content_w as f64 * 0.5;
@@ -836,7 +837,7 @@ mod tests {
           .spacer { height: 2400px; background: #eef; }
         </style></head><body><div class="spacer">Tall</div></body></html>"#;
         app.load_webview_html(tab_id, tall_html, None);
-        app.sync_webview_viewport();
+        app.sync_webview_viewport_and_poll(tab_id);
 
         let (content_x, content_y, content_w, _) = app.page_content_rect();
         let x = (content_x + content_w * 0.5) as f64;

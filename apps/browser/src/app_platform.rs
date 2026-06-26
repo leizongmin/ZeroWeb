@@ -588,19 +588,25 @@ mod tests {
     /// 浏览器 render 路径传入渲染器并被消费。
     #[test]
     fn render_path_consumes_webview_image_cache() {
-        use zero_render_foundation::image_cache::{ImageData, ImageKey};
-        use zero_engine::simple_hash;
+        use zero_render_foundation::image_cache::ImageData;
 
         let mut app = BrowserApp::new(RenderMode::Cpu);
         app.new_tab(None);
         let tab_id = app.shell.active_tab_id().expect("active tab");
 
-        // 页面含一个 40x40 的 <img>；engine 用 simple_hash(src) 生成 image_key
+        // 页面含一个 40x40 的 <img>；engine 用 image_resource_key 生成 image_key
         let src = "r215-wiring.png";
         let html = format!(
             "<img src=\"{src}\" style=\"display:block;width:40px;height:40px\">"
         );
         app.load_webview_html(tab_id, &html, None);
+
+        let image_key = app
+            .tabs
+            .last_render(tab_id)
+            .and_then(|r| r.primitives.images.first())
+            .map(|img| img.image_key.clone())
+            .expect("page should emit an image primitive for <img>");
 
         // 区别于 chrome UI 与白色背景的鲜明颜色
         let (pr, pg, pb, pa) = (220u8, 30, 180, 255);
@@ -612,15 +618,15 @@ mod tests {
         let count0 = count_color(&fb0, pr, pg, pb, pa);
         assert_eq!(count0, 0, "baseline: image color must be absent when cache empty");
 
-        // 填充活跃标签页 WebView 的 ImageCache（键 = simple_hash(src)，与 engine 一致）
-        app.tabs
-            .image_cache_mut(tab_id)
-            .expect("tab snapshot")
-            .insert_with_key(ImageKey::new(simple_hash(src)), img);
-
-        // 装配后渲染：image_cache 经浏览器渲染路径传入渲染器 → 图片颜色应出现
-        let fb1 = app.render_full_scene_with_webview_for_test(800, 600);
-        let count1 = count_color(&fb1, pr, pg, pb, pa);
+        let count1 = {
+            let _guard = crate::test_sync::tab_runtime_test_guard();
+            app.tabs
+                .image_cache_mut(tab_id)
+                .expect("tab snapshot")
+                .insert_with_key(image_key, img);
+            let fb1 = app.render_full_scene_with_webview_for_test(800, 600);
+            count_color(&fb1, pr, pg, pb, pa)
+        };
         assert!(
             count1 > 0,
             "after populating cache, image color must be drawn (got 0 pixels)"
