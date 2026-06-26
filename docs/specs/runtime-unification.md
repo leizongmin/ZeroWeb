@@ -110,6 +110,9 @@ WebView API 已就绪：renderer 所需 ~15 个 pipeline 访问器中 WebView �
 **执行建议**：greenlight 后在**干净 worktree** 集中重写 → 全量 `cargo test --workspace` + headless smoke 通过 → 再合入 `feat/runtime-unification`。
 
 **进度（R10）**：B3-2 load 机制已 in-process 验证（`tests/integration/b3_load_mechanism`，commit `242ce907`，2 用例过：自包含 HTML drain 完成渲染 + 外链 CSS 经 `BlockingFetchHost` 抓取应用后渲染）。**lib 层 load 路径有回归门**。剩余风险集中在 renderer 的 WIRING（`run_staged_load`/publish/脚本/viewport 的 main.rs 胶水 + split-borrow）——renderer 是 bin，wiring 无单测覆盖；要安全做 B3，须先把 `RendererRuntime` 的 IPC plumbing 泛化（构造时接收 transport 对而非硬编码 stdin/stdout）使其 in-process 可测，或补子进程 smoke。这是 B3 重写前的前置。
+- **2026-06-27 R11 B3-1 完成**：`RendererRuntime::new()` 构造真实 `WebView`（1280×800，`external_script = js_worker.executor()`，单 V8）——`ScriptFn` 与 `ExternalScriptExecutor` 同型，JS 执行委派给现有 js_worker 线程。WebView 当前已构造、渲染未路由（dormant），pipeline 仍主用。验证 `cargo check` + `clippy -p zero-renderer` 通过。commit `4eaa5193`。
+
+**B3 cutover 现状**：B3-2+3+4（load+publish+脚本）**必须一起切**——load 渲染进 WebView、publish 从 WebView 读、脚本重绘目标也得跟着切，否则脚本驱动的页面静默坏。加 viewport 是对活跃 renderer 路径的大耦合改动。机制层已验证（`b3_load_mechanism`），但 wiring（main.rs 胶水 + split-borrow + publish reshape）无单测覆盖（renderer 是 bin，且 wiring 本就无测试）。**最合理的推进**：先把 renderer IPC plumbing 泛化（构造接收 transport 对）→ 加 in-process renderer load 测试 → 再做 cutover（有覆盖）。直接 cutover 须接受 wiring 无测试的回归风险。
 
 ## 9. T3 架构分支与决议（2026-06-26 R5）
 
