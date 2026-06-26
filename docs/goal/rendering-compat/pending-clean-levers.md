@@ -14,6 +14,7 @@
 | **S 快速赢** | R716 | box-offsets-rel-pos-002 / CSS2_visuren（relative right/bottom inset） | 9.18% | 低（一函数 ~6 行） | 2-3 案（001/002 twin + inline right/bottom） |
 | **A 高 cluster** | R678 | font-size-zero-3 / css-fonts（float shrink-to-fit） | 33.53% | 中 | **≥5 案 17-34% 跨 3 目录（最高渗透）** |
 | **A 高 cluster** | R696 | inline-replaced-width-009 / CSS2_normal-flow（replaced sizing） | 22.08% | 中 | **≥5 案 12-22%（unified）** |
+| **A 高 cluster** | R717 | replaced-elements-all-auto / CSS2_visudet（SVG intrinsic-size viewBox-as-intrinsic） | 31.66% | 中 | **5 案 30-32%（visudet replaced-elements-* 簇）** |
 | **A 高单发散** | R695 | height-percentage-005 / CSS2_normal-flow（%height indefinite-CB） | **88.44%（最高）** | 中 | +潜在多案 |
 | B clean | R702 | margin-collapse-101 / margin-padding-clear | 49.38% | 中 | 7 案（101/105/106/155/038/110/111） |
 | B clean | R691 | replaced-element-...-002 / css-grid（grid-item %height vs track） | 34.00% | 中 | +replaced-...-001 9% |
@@ -56,6 +57,13 @@
 - **根因**：`tree.rs:165 apply_replaced_element_sizing` line `186 if tag != "img" { return }`——仅 img 走 §10.3.2 sizing；`engine.rs:646` 已把 `img|video|iframe|embed|object|svg|canvas` 全标 `is_replaced=true`，**但 svg/canvas/object/iframe/video early-return 无 sizing**→taffy 当普通元素（满宽 / content 高 0）。
 - **fix scope**：扩展 `apply_replaced_element_sizing`（tree.rs:186）超越 img——对 svg/canvas/object/iframe/video：① 读 width/height HTML attr；② 无 intrinsic width 且无 intrinsic ratio 时 used width 默认 **300px**（§10.3.2），无 intrinsic height 默认 **150px**；③ 有 intrinsic 时按 intrinsic+ratio。**code-located 一处 + 簇 yield≥5**。
 - **风险**：中（现有 img sizing 不变，新增 svg/canvas 路径，须 A/B）。
+
+### R717 · `<img src=*.svg>` SVG intrinsic-size 用 viewBox 当固有尺寸（★cluster 5 案 30%，与 R696 正交）
+- **测试**：`CSS2/visudet/replaced-elements-all-auto`（31.66%）+ min-height-20/40 + min-width-40/80（**5 案 30-32%，同 7 SVG + min 约束变体，同根因**）
+- **根因（R717 LAYOUT_DUMP + SVG 文件 + 代码 read-only 确证）**：`image_cache.rs:421-422` `let w = size.width()/h = size.height()`（注释「按 SVG 内在尺寸（width/height 属性或 viewBox）栅格化」）——**usvg 的 size.width()/height() 在 width/height attr 缺失时回落到 viewBox 维度**，ZW 直接当固有 size。dump 实证：`<img src=height-25-ratio-2.svg>`（height:25 viewBox:1000×500 无 width）→ img **w=1000**（应 width=height×ratio=50；viewBox width 当固有）；`ratio-2.svg`（仅 viewBox 1000×500）→ img **1000×500**（应默认 300×150）；no-ratio 缺维 → img **100**（应 300/150 默认）。**混淆 viewBox（定义 ratio）与 width/height attr（定义固有 size）。**
+- **fix scope**：image_cache.rs:421-422 SVG intrinsic-size 提取须 ① 仅 width/height attr 作固有 size（usvg 区分 attr-size vs viewBox-fallback）；② 无 attr 时报「无固有 size」让 tree.rs §10.3.2 默认/ratio 逻辑处理（传 viewBox ratio）；③ 默认 100→**300×150**。**2 sub-bug**（viewBox-as-intrinsic + wrong-default），中复杂度。
+- **风险**：中（影响所有 `<img src=*.svg>`，须 A/B；与 R696 正交——R696 = 非-img 替换 TAG 无 sizing；R717 = img SVG 源固有 size 提取错，不同 code path 可独立修）。
+- **关联**：R685/R686 image_cache.rs:419 vein（彼判 mix；本案 viewBox-as-intrinsic 子 facet clean 且 high-yield 5 案）。
 
 ### R695 · %height 对 indefinite-CB-height 解析到 CB width（应 compute-to-auto）（★最高单发散 88%）
 - **测试**：`CSS2/normal-flow/height-percentage-005`（**88.44%，全 lever 最高**）
