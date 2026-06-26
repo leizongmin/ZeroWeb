@@ -549,6 +549,7 @@ impl PageLoadHost for IpcLoadBridge<'_> {
             result,
             title,
             Vec::new(),
+            None,
         )
     }
 }
@@ -566,6 +567,7 @@ fn publish_render_with_layout(
     result: &RenderResult,
     title: Option<String>,
     image_payloads: Vec<zero_protocol::IpcImagePayload>,
+    hit_test: Option<zero_engine::HitTestCache>,
 ) -> Result<(), String> {
     let paint = paint_export::paint_snapshot_from_primitives(
         viewport_width,
@@ -573,6 +575,7 @@ fn publish_render_with_layout(
         document_height,
         &result.primitives,
         image_payloads,
+        hit_test,
     );
     let msg = IpcMessage {
         id: {
@@ -661,6 +664,7 @@ fn publish_render_result(
     image_payloads: Vec<zero_protocol::IpcImagePayload>,
 ) -> Result<(), String> {
     let doc_h = pipeline.document_height().unwrap_or(pipeline.viewport_height());
+    let hit_test = pipeline.build_hit_test_cache();
     publish_render_with_layout(
         channel,
         next_msg_id,
@@ -670,6 +674,7 @@ fn publish_render_result(
         result,
         title,
         image_payloads,
+        hit_test,
     )
 }
 

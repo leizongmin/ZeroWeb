@@ -426,6 +426,51 @@ pub struct PaintSnapshotParams {
     pub glyphs: Vec<IpcGlyph>,
     /// 绘制顺序（与 engine `DrawOp` 子集对应）。
     pub draw_order: Vec<IpcDrawOp>,
+    /// 主线程命中测试快照（与绘制同帧）。
+    pub hit_test: Option<IpcHitTestCache>,
+}
+
+/// IPC 命中测试布局节点（仅几何 + node id）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpcHitTestLayoutNode {
+    /// 关联 DOM 节点 id（slotmap ffi）。
+    pub node_id: Option<u64>,
+    /// 相对父内容区 x。
+    pub x: f32,
+    /// 相对父内容区 y。
+    pub y: f32,
+    /// 盒宽。
+    pub width: f32,
+    /// 盒高。
+    pub height: f32,
+    /// 子盒。
+    pub children: Vec<IpcHitTestLayoutNode>,
+}
+
+/// IPC 命中测试节点元数据。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpcHitTestNodeMeta {
+    /// 标签名（小写）。
+    pub tag_name: String,
+    /// `id` 属性。
+    pub id: Option<String>,
+    /// `class` 属性。
+    pub class_name: Option<String>,
+    /// 链接 `href`。
+    pub href: Option<String>,
+}
+
+/// IPC 命中测试缓存。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpcHitTestCache {
+    /// 文档根节点 id。
+    pub doc_root: u64,
+    /// 布局树根。
+    pub layout_root: IpcHitTestLayoutNode,
+    /// 元素元数据 `(node_id, meta)`。
+    pub nodes: Vec<(u64, IpcHitTestNodeMeta)>,
+    /// 父节点 `(child, parent)`。
+    pub parents: Vec<(u64, u64)>,
 }
 
 impl Default for PaintSnapshotParams {
@@ -449,6 +494,7 @@ impl Default for PaintSnapshotParams {
             blend_modes: Vec::new(),
             glyphs: Vec::new(),
             draw_order: Vec::new(),
+            hit_test: None,
         }
     }
 }

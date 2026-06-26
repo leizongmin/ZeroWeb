@@ -53,7 +53,7 @@ struct CliArgs {
     remote_debugging_port: u16,
     viewport_width: f32,
     viewport_height: f32,
-    multi_process: bool,
+    single_process: bool,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -64,7 +64,7 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut remote_debugging_port = 0u16;
     let mut viewport_width = 800.0f32;
     let mut viewport_height = 600.0f32;
-    let mut multi_process = false;
+    let mut single_process = false;
 
     while let Some(arg) = args.next() {
         if arg == "--help" || arg == "-h" {
@@ -108,7 +108,11 @@ fn parse_args() -> Result<CliArgs, String> {
         }
 
         if arg == "--multi-process" {
-            multi_process = true;
+            // 默认已启用；保留该开关以兼容旧脚本。
+        }
+
+        if arg == "--single-process" {
+            single_process = true;
         }
 
         if let Some(value) = arg.strip_prefix("--viewport-width=") {
@@ -128,7 +132,7 @@ fn parse_args() -> Result<CliArgs, String> {
         remote_debugging_port,
         viewport_width,
         viewport_height,
-        multi_process,
+        single_process,
     })
 }
 
@@ -143,7 +147,8 @@ Options:
   --remote-debugging-port=<port> WebSocket port for remote debugging (default: 9222)
   --viewport-width=<px>          Headless viewport width (default: 800)
   --viewport-height=<px>         Headless viewport height (default: 600)
-  --multi-process                Use zero-renderer child processes per tab
+  --single-process               Run tabs in browser process threads (disable renderer isolation)
+  --multi-process                Use zero-renderer child processes per tab (default)
   --help, -h                     Show this help
 
 Environment: {}={}",
@@ -1195,9 +1200,12 @@ fn main() {
             std::process::exit(2);
         }
     };
-    if cli.multi_process {
-        set_multiprocess_enabled(true);
-        tracing::info!("Multi-process mode enabled");
+    let multiprocess = !cli.single_process;
+    set_multiprocess_enabled(multiprocess);
+    if multiprocess {
+        tracing::info!("Multi-process mode: tabs use zero-renderer child processes");
+    } else {
+        tracing::info!("Single-process mode: tabs use in-process tab workers");
     }
     tracing::info!("Renderer mode: {}", cli.render_mode);
 
