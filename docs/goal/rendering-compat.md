@@ -244,37 +244,37 @@
 
 以下全部 13 种图元类型都必须能在 CPU 渲染器中正确渲染，不允许跳过任何一种：
 
-- [ ] `FillPrimitive` — 纯色矩形（✅ 已有）
-- [ ] `RoundedRectPrimitive` — 圆角矩形（✅ 已有）
-- [ ] `GradientPrimitive` — 线性/径向/锥形渐变渲染
-- [ ] `ShadowPrimitive` — 高斯模糊阴影渲染
+- [x] `FillPrimitive` — 纯色矩形（✅ 已有）
+- [x] `RoundedRectPrimitive` — 圆角矩形（✅ 已有）
+- [x] `GradientPrimitive` — 线性/径向/锥形渐变渲染 ✅(cpu/gradient.rs render_gradient + get_pixel 单测)
+- [x] `ShadowPrimitive` — 高斯模糊阴影渲染 ✅(cpu/shadow.rs render_shadow + get_pixel 单测)
 - [ ] `ImagePrimitive` — 图片解码和渲染（RGBA → framebuffer 合成）
 - [ ] `StrokePrimitive` — 线段渲染（实线/虚线/点线，支持 LineCap）
 - [ ] `PathFillPrimitive` — 路径填充（任意多边形）
 - [ ] `PathStrokePrimitive` — 路径描边
 - [ ] `TransformPrimitive` — 2D 仿射变换应用到后续图元
 - [ ] `ClipPrimitive` — 矩形裁剪区域
-- [ ] `FilterPrimitive` — CSS 滤镜（至少 blur、brightness、contrast、opacity）
-- [ ] `BlendModePrimitive` — 混合模式合成
-- [ ] `GlyphPrimitive` — 文字渲染（✅ 已有）
+- [x] `FilterPrimitive` — CSS 滤镜（至少 blur、brightness、contrast、opacity） ✅(cpu/effects.rs apply_filter + get_pixel 单测)
+- [x] `BlendModePrimitive` — 混合模式合成 ✅(cpu/effects.rs apply_blend_mode + 单测)
+- [x] `GlyphPrimitive` — 文字渲染（✅ 已有）
 
 ### DC-9: GPU 渲染器图元覆盖 100%
 
 以下全部 13 种图元类型都必须能在 GPU 渲染器中正确渲染，不允许跳过任何一种。GPU 渲染必须使用真实的 GPU 渲染管线（wgpu + WGSL shaders），不允许将 GPU 渲染实现为对 CPU 渲染器的 passthrough 调用：
 
-- [ ] `FillPrimitive` — 纯色矩形（✅ 已有）
-- [ ] `RoundedRectPrimitive` — 圆角矩形（GPU 当前未实现，需扩展 WGSL shader）
-- [ ] `GradientPrimitive` — 渐变渲染（WGSL shader 或 GPU compute）
-- [ ] `ShadowPrimitive` — 阴影渲染（高斯模糊 pass 或近似算法）
+- [x] `FillPrimitive` — 纯色矩形（✅ 已有）
+- [x] `RoundedRectPrimitive` — 圆角矩形 ✅(draw_rounded_rect_pass + test_gpu_full_scene_rounded_rect；原「GPU 未实现」已过时)
+- [x] `GradientPrimitive` — 渐变渲染（WGSL shader 或 GPU compute） ✅(draw_gradient_pass + test_gpu_full_scene_gradient 像素断言 left=R/right=B)
+- [x] `ShadowPrimitive` — 阴影渲染（高斯模糊 pass 或近似算法） ✅(collect_shadow_vertices + test_gpu_full_scene_shadow)
 - [ ] `ImagePrimitive` — 图片纹理采样渲染
-- [ ] `StrokePrimitive` — 线段渲染
+- [x] `StrokePrimitive` — 线段渲染 ✅(collect_stroke_vertices + push_stroke_mesh + test_gpu_full_scene_stroke)
 - [ ] `PathFillPrimitive` — 路径填充
 - [ ] `PathStrokePrimitive` — 路径描边
-- [ ] `TransformPrimitive` — 2D 变换（顶点变换）
-- [ ] `ClipPrimitive` — 裁剪（scissor rect 或 stencil buffer）
-- [ ] `FilterPrimitive` — CSS 滤镜（post-processing pass）
-- [ ] `BlendModePrimitive` — 混合模式（blend equation 或 shader）
-- [ ] `GlyphPrimitive` — 文字渲染（✅ 已有，glyph atlas）
+- [x] `TransformPrimitive` — 2D 变换（顶点变换） ✅(test_gpu_full_scene_transform_translation)
+- [x] `ClipPrimitive` — 裁剪（scissor rect 或 stencil buffer） ✅(test_gpu_renderer_clip_rect_limits_rendering)
+- [x] `FilterPrimitive` — CSS 滤镜（post-processing pass） ✅(test_gpu_full_scene_filter_* 8 变体像素断言)
+- [x] `BlendModePrimitive` — 混合模式（blend equation 或 shader） ✅(test_render_scene_with_alpha_blending)
+- [x] `GlyphPrimitive` — 文字渲染（✅ 已有，glyph atlas）
 
 ### DC-10: 浏览器图元消费完整性
 
