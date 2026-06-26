@@ -90,9 +90,11 @@ impl TabWorkerHandle {
 
     /// 同步命中测试链接。
     pub fn hit_test_link(&self, x: f32, y: f32) -> Option<String> {
+        #[cfg(test)]
+        let _guard = crate::test_sync::tab_runtime_test_guard();
         let (tx, rx) = mpsc::channel();
         self.send(TabWorkerCommand::HitTestLink { x, y, reply: tx });
-        rx.recv_timeout(Duration::from_millis(50)).ok().flatten()
+        rx.recv_timeout(Duration::from_millis(250)).ok().flatten()
     }
 
     /// 关闭 worker 并等待线程退出。

@@ -599,23 +599,50 @@ impl BrowserApp {
         self.chrome_palette
     }
 
-    /// 测试用：向指定标签的 WebView 加载 HTML
+    /// 测试用：Tab 是否已有可滚动/可交互的页面内容。
     #[cfg(test)]
-    pub fn load_webview_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>) {
-        self.tabs.ensure_tab(tab_id);
-        self.sync_webview_viewport();
-        self.tabs.load_html(tab_id, html, css, None);
+    fn is_tab_content_ready(&self, tab_id: TabId) -> bool {
+        let has_primitives = self
+            .tabs
+            .last_render(tab_id)
+            .is_some_and(|r| !r.primitives.fills.is_empty() || !r.primitives.glyphs.is_empty());
+        let has_height = self.tabs.document_height(tab_id).is_some_and(|h| h > 0.0);
+        has_primitives && has_height
+    }
+
+    /// 测试用：轮询 worker 直至页面布局与首帧就绪。
+    #[cfg(test)]
+    pub fn wait_for_tab_content_ready(&mut self, tab_id: TabId) {
+        let _guard = crate::test_sync::tab_runtime_test_guard();
         for _ in 0..500 {
             self.tabs.poll(Some(tab_id));
-            if self
-                .tabs
-                .last_render(tab_id)
-                .is_some_and(|r| !r.primitives.fills.is_empty() || !r.primitives.glyphs.is_empty())
-            {
-                break;
+            if self.is_tab_content_ready(tab_id) {
+                return;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
+    }
+
+    /// 测试用：向指定标签的 WebView 加载 HTML（不加锁；由 `load_webview_html` 调用）。
+    #[cfg(test)]
+    pub fn load_webview_html_unlocked(&mut self, tab_id: TabId, html: &str, css: Option<&str>) {
+        self.tabs.ensure_tab(tab_id);
+        self.sync_webview_viewport();
+        self.tabs.load_html(tab_id, html, css, None);
+        self.wait_for_tab_content_ready(tab_id);
+    }
+
+    /// 测试用：向指定标签的 WebView 加载 HTML
+    #[cfg(test)]
+    pub fn load_webview_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>) {
+        self.load_webview_html_unlocked(tab_id, html, css);
+    }
+
+    /// 测试用：同步视口并等待 worker 快照更新。
+    #[cfg(test)]
+    pub fn sync_webview_viewport_and_poll(&mut self, tab_id: TabId) {
+        self.sync_webview_viewport();
+        self.wait_for_tab_content_ready(tab_id);
     }
 
     /// 平台感知的修饰键（macOS 用 Cmd，其他平台用 Ctrl）
