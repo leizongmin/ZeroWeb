@@ -190,6 +190,9 @@ fn cmd_product_smoke(args: &[String]) {
     // DC-13 回归门禁阈值（%）：diff 超过则非零退出。用于每轮 product-smoke 检查
     // 捕获产品可见回归（如 R428 min-size:auto 致 welcome +7.65pp，此前藏了 14 轮）。
     let mut max_diff: Option<f64> = None;
+    // DC-13 line 321：经 zero-webview 嵌入边界渲染（对照 engine-direct 默认路径），
+    // 验证产品层与 WebView 层不互相掩盖问题。仅自包含 fixture（无外链资源）适用。
+    let mut via_webview = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -230,6 +233,9 @@ fn cmd_product_smoke(args: &[String]) {
                     max_diff = args[i].parse().ok();
                 }
             }
+            "--via-webview" => {
+                via_webview = true;
+            }
             s if !s.starts_with('-') && html_path.is_none() => {
                 html_path = Some(s.to_string());
             }
@@ -260,10 +266,15 @@ fn cmd_product_smoke(args: &[String]) {
     let base = base_dir.as_deref().map(std::path::Path::new);
 
     eprintln!(
-        "product-smoke: rendering {html_path} ({}x{}, base_dir={:?})",
-        width, height, base
+        "product-smoke: rendering {html_path} ({}x{}, base_dir={:?}, via_webview={})",
+        width, height, base, via_webview
     );
-    let fb = reftest::render_to_framebuffer_with_base(&html, "", &config, base);
+    let fb = if via_webview {
+        // DC-13 line 321：经 zero-webview 嵌入边界（仅自包含 fixture）。
+        reftest::render_via_webview_to_framebuffer(&html, &config)
+    } else {
+        reftest::render_to_framebuffer_with_base(&html, "", &config, base)
+    };
 
     let out_path = out.as_deref().unwrap_or("product-smoke-cpu.png");
     reftest::save_fb_as_png(&fb, std::path::Path::new(out_path));

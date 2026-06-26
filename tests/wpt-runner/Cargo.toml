@@ -14,6 +14,7 @@ zero-style-system = { workspace = true }
 zero-layout-engine = { workspace = true }
 zero-render-foundation = { workspace = true }
 zero-script-sandbox = { workspace = true }
+zero-webview = { workspace = true }
 png = "0.17"
 rayon = "1"
 
