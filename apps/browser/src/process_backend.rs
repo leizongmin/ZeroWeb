@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
-use zero_protocol::message::{HitTestLinkParams, HitTestLinkResultParams, IpcMessage, IpcMessageKind};
+use zero_protocol::message::{HitTestLinkParams, HitTestLinkResultParams, IpcMessage, IpcMessageKind, LoadHtmlParams};
 use zero_protocol::process::{ProcessManager, RendererHandle};
 
 use crate::tab_snapshot::TabSnapshot;
@@ -110,6 +110,21 @@ impl ProcessTabBackend {
         }
     }
 
+    /// Tab 是否仍有 live 渲染进程。
+    pub fn has_renderer(&self, tab_id: TabId) -> bool {
+        self.tab_to_renderer.contains_key(&tab_id)
+    }
+
+    /// 当前 live 渲染进程数量。
+    pub fn live_renderer_count(&self) -> usize {
+        self.tab_to_renderer.len()
+    }
+
+    /// 所有 live Tab ID（LRU 冻结候选）。
+    pub fn live_tab_ids(&self) -> HashMap<TabId, ()> {
+        self.tab_to_renderer.keys().map(|&id| (id, ())).collect()
+    }
+
     /// 导航。
     pub fn navigate(&mut self, tab_id: TabId, url: &str) {
         let Some(renderer) = self.renderer_mut(tab_id) else {
@@ -120,9 +135,21 @@ impl ProcessTabBackend {
         }
     }
 
-    /// 加载 HTML（多进程路径暂以 URL 导航代替）。
-    pub fn load_html(&mut self, tab_id: TabId, _html: &str, _css: Option<&str>, url: Option<&str>) {
-        self.navigate(tab_id, url.unwrap_or("about:blank"));
+    /// 加载 HTML（多进程 IPC）。
+    pub fn load_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>, url: Option<&str>) {
+        let Some(renderer) = self.renderer_mut(tab_id) else {
+            return;
+        };
+        if let Err(e) = renderer.send(IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::LoadHtml(LoadHtmlParams {
+                html: html.to_string(),
+                css: css.map(str::to_string),
+                url: url.map(str::to_string),
+            }),
+        }) {
+            tracing::warn!("IPC load_html failed: {e}");
+        }
     }
 
     /// 调整视口（预留 IPC）。

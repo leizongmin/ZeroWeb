@@ -25,6 +25,8 @@ pub enum IpcMessageKind {
     StopLoading,
     /// 重新加载。
     Reload,
+    /// 直接加载 HTML（浏览器→渲染，zero:// 等内联页面）。
+    LoadHtml(LoadHtmlParams),
 
     // ── 页面事件（渲染→浏览器）──
     /// 页面标题变更。
@@ -80,6 +82,17 @@ pub struct NavigateParams {
     pub url: String,
     /// 来源页面 URL。
     pub referrer: Option<String>,
+}
+
+/// 内联 HTML 加载参数（浏览器→渲染）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadHtmlParams {
+    /// HTML 文档。
+    pub html: String,
+    /// 可选附加 CSS。
+    pub css: Option<String>,
+    /// 逻辑页面 URL（用于相对链接解析与 ImageCache 键）。
+    pub url: Option<String>,
 }
 
 /// 网络请求参数。

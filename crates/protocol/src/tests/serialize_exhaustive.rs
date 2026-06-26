@@ -55,22 +55,30 @@ fn test_roundtrip_all_message_kinds() {
         },
         IpcMessage {
             id: 6,
-            kind: IpcMessageKind::TitleChanged("Test Page".into()),
+            kind: IpcMessageKind::LoadHtml(LoadHtmlParams {
+                html: "<body>hi</body>".into(),
+                css: Some("body { margin: 0; }".into()),
+                url: Some("zero://settings".into()),
+            }),
         },
         IpcMessage {
             id: 7,
-            kind: IpcMessageKind::UrlChanged("https://new.url".into()),
+            kind: IpcMessageKind::TitleChanged("Test Page".into()),
         },
         IpcMessage {
             id: 8,
-            kind: IpcMessageKind::LoadComplete,
+            kind: IpcMessageKind::UrlChanged("https://new.url".into()),
         },
         IpcMessage {
             id: 9,
-            kind: IpcMessageKind::LoadFailed("timeout".into()),
+            kind: IpcMessageKind::LoadComplete,
         },
         IpcMessage {
             id: 10,
+            kind: IpcMessageKind::LoadFailed("timeout".into()),
+        },
+        IpcMessage {
+            id: 11,
             kind: IpcMessageKind::FetchRequest(FetchParams {
                 request_id: 1,
                 url: "https://api.example.com".into(),
@@ -80,7 +88,7 @@ fn test_roundtrip_all_message_kinds() {
             }),
         },
         IpcMessage {
-            id: 11,
+            id: 12,
             kind: IpcMessageKind::FetchResponse(FetchResponseParams {
                 request_id: 1,
                 status_code: 201,
@@ -89,7 +97,7 @@ fn test_roundtrip_all_message_kinds() {
             }),
         },
         IpcMessage {
-            id: 12,
+            id: 13,
             kind: IpcMessageKind::StorageOp(StorageOpParams {
                 storage_type: StorageType::Local,
                 operation: StorageOperation::Set,
@@ -99,7 +107,7 @@ fn test_roundtrip_all_message_kinds() {
             }),
         },
         IpcMessage {
-            id: 13,
+            id: 14,
             kind: IpcMessageKind::MouseEvent(MouseEventParams {
                 x: 100.0,
                 y: 200.0,
@@ -108,7 +116,7 @@ fn test_roundtrip_all_message_kinds() {
             }),
         },
         IpcMessage {
-            id: 14,
+            id: 15,
             kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
                 key: "A".into(),
                 code: "KeyA".into(),
@@ -120,34 +128,34 @@ fn test_roundtrip_all_message_kinds() {
             }),
         },
         IpcMessage {
-            id: 15,
+            id: 16,
             kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
                 delta_x: 10.0,
                 delta_y: -5.0,
             }),
         },
         IpcMessage {
-            id: 16,
+            id: 17,
             kind: IpcMessageKind::HitTestLink(HitTestLinkParams { x: 1.0, y: 2.0 }),
         },
         IpcMessage {
-            id: 17,
+            id: 18,
             kind: IpcMessageKind::HitTestLinkResult(HitTestLinkResultParams { href: None }),
         },
         IpcMessage {
-            id: 18,
+            id: 19,
             kind: IpcMessageKind::Heartbeat,
         },
         IpcMessage {
-            id: 19,
+            id: 20,
             kind: IpcMessageKind::CrashNotification("segfault".into()),
         },
         IpcMessage {
-            id: 20,
+            id: 21,
             kind: IpcMessageKind::Ok,
         },
         IpcMessage {
-            id: 21,
+            id: 22,
             kind: IpcMessageKind::Error("something went wrong".into()),
         },
     ];
@@ -158,7 +166,7 @@ fn test_roundtrip_all_message_kinds() {
         assert_eq!(out.id, msg.id, "id mismatch");
     }
 
-    assert_eq!(messages.len(), 21, "should test all 21 message kinds");
+    assert_eq!(messages.len(), 22, "should test all 22 message kinds");
 }
 
 /// 测试 StorageType::Session 变体也能序列化。

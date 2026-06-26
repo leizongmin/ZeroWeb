@@ -122,10 +122,25 @@ impl TabManager {
     }
 
     fn thaw_tab_if_frozen(&mut self, tab_id: TabId) {
-        if self.process_backend.is_some() || !self.lru.is_frozen(tab_id) {
+        if !self.lru.is_frozen(tab_id) {
             return;
         }
         let restore_url = self.lru.thaw(tab_id);
+
+        if let Some(ref mut backend) = self.process_backend {
+            if backend.has_renderer(tab_id) {
+                return;
+            }
+            backend.ensure_renderer(tab_id, self.viewport);
+            if let Some(url) = restore_url {
+                backend.navigate(tab_id, &url);
+                if let Some(snap) = self.snapshots.get_mut(&tab_id) {
+                    snap.loading = true;
+                }
+            }
+            return;
+        }
+
         if self.workers.contains_key(&tab_id) {
             return;
         }
@@ -140,11 +155,20 @@ impl TabManager {
     }
 
     fn enforce_lru_limit(&mut self, active: Option<TabId>) {
-        if self.process_backend.is_some() {
-            return;
-        }
-        while self.lru.should_freeze(self.workers.len(), active) {
-            let live: HashMap<TabId, ()> = self.workers.keys().map(|&id| (id, ())).collect();
+        loop {
+            let live_count = if let Some(ref backend) = self.process_backend {
+                backend.live_renderer_count()
+            } else {
+                self.workers.len()
+            };
+            if !self.lru.should_freeze(live_count, active) {
+                break;
+            }
+            let live = if let Some(ref backend) = self.process_backend {
+                backend.live_tab_ids()
+            } else {
+                self.workers.keys().map(|&id| (id, ())).collect()
+            };
             let Some(victim) = self.lru.pick_freeze_victim(active, &live) else {
                 break;
             };
@@ -154,8 +178,13 @@ impl TabManager {
 
     fn freeze_tab(&mut self, tab_id: TabId) {
         let restore_url = self.snapshots.get(&tab_id).and_then(|s| s.url.clone());
-        if let Some(mut worker) = self.workers.remove(&tab_id) {
+        if let Some(ref mut backend) = self.process_backend {
+            backend.remove_renderer(tab_id);
+        } else if let Some(mut worker) = self.workers.remove(&tab_id) {
             worker.shutdown();
+        }
+        if let Some(snap) = self.snapshots.get_mut(&tab_id) {
+            snap.image_cache.clear();
         }
         self.lru.mark_frozen(tab_id, restore_url);
         tracing::debug!("Froze tab {} (LRU, max {})", tab_id.0, self.lru.max_live());
@@ -185,6 +214,10 @@ impl TabManager {
         self.ensure_tab(tab_id);
         if let Some(ref mut backend) = self.process_backend {
             backend.load_html(tab_id, html, css, url);
+            if let Some(snap) = self.snapshots.get_mut(&tab_id) {
+                snap.loading = true;
+                snap.url = url.map(str::to_string);
+            }
             return;
         }
         if let Some(worker) = self.workers.get(&tab_id) {

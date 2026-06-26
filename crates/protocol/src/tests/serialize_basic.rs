@@ -209,6 +209,11 @@ fn test_roundtrip_all_message_types() {
         IpcMessageKind::GoForward,
         IpcMessageKind::StopLoading,
         IpcMessageKind::Reload,
+        IpcMessageKind::LoadHtml(LoadHtmlParams {
+            html: "<html></html>".into(),
+            css: None,
+            url: Some("zero://newtab".into()),
+        }),
         IpcMessageKind::TitleChanged("T".into()),
         IpcMessageKind::UrlChanged("https://example.com".into()),
         IpcMessageKind::LoadComplete,
