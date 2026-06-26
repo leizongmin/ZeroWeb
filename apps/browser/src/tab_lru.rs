@@ -4,6 +4,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use zero_browser_shell::TabId;
 
+use crate::tab_restore::TabRestorePayload;
+
 /// 默认最多同时保持多少个 Tab worker 存活。
 pub const DEFAULT_MAX_LIVE_WORKERS: usize = 3;
 
@@ -23,8 +25,8 @@ pub struct TabLruPolicy {
     deactivate_order: VecDeque<TabId>,
     /// 已冻结（worker 已关闭，快照保留）。
     frozen: HashSet<TabId>,
-    /// 解冻后用于恢复导航的 URL。
-    restore_urls: HashMap<TabId, String>,
+    /// 解冻后用于恢复加载。
+    restore_payloads: HashMap<TabId, TabRestorePayload>,
 }
 
 impl TabLruPolicy {
@@ -34,7 +36,7 @@ impl TabLruPolicy {
             max_live: max_live.max(1),
             deactivate_order: VecDeque::new(),
             frozen: HashSet::new(),
-            restore_urls: HashMap::new(),
+            restore_payloads: HashMap::new(),
         }
     }
 
@@ -50,25 +52,25 @@ impl TabLruPolicy {
     }
 
     /// 标记为已冻结。
-    pub fn mark_frozen(&mut self, tab_id: TabId, restore_url: Option<String>) {
+    pub fn mark_frozen(&mut self, tab_id: TabId, restore: Option<TabRestorePayload>) {
         self.frozen.insert(tab_id);
         self.deactivate_order.retain(|&id| id != tab_id);
-        if let Some(url) = restore_url {
-            self.restore_urls.insert(tab_id, url);
+        if let Some(payload) = restore {
+            self.restore_payloads.insert(tab_id, payload);
         }
     }
 
-    /// 解冻：清除冻结标记并返回待恢复 URL。
-    pub fn thaw(&mut self, tab_id: TabId) -> Option<String> {
+    /// 解冻：清除冻结标记并返回待恢复载荷。
+    pub fn thaw(&mut self, tab_id: TabId) -> Option<TabRestorePayload> {
         self.frozen.remove(&tab_id);
-        self.restore_urls.remove(&tab_id)
+        self.restore_payloads.remove(&tab_id)
     }
 
     /// 移除 Tab 时清理 LRU 状态。
     pub fn remove_tab(&mut self, tab_id: TabId) {
         self.deactivate_order.retain(|&id| id != tab_id);
         self.frozen.remove(&tab_id);
-        self.restore_urls.remove(&tab_id);
+        self.restore_payloads.remove(&tab_id);
     }
 
     /// 选择可冻结的后台 Tab（非 `active` 且仍有 worker）。

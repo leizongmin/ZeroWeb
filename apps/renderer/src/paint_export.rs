@@ -135,9 +135,17 @@ fn draw_op_to_ipc(op: DrawOp) -> IpcDrawOp {
     }
 }
 
-/// 抓取 HTML 中 `<img>` 子资源并编码为 IPC 像素块。
+/// 抓取 HTML 中 `<img>` 子资源并编码为 IPC 像素块（本地 HTTP）。
 pub fn fetch_image_payloads(html: &str, page_url: &str) -> Vec<IpcImagePayload> {
     let client = zero_net::client::HttpClient::new();
+    fetch_image_payloads_with_fetch(html, page_url, &mut |url| client.get(url).ok().map(|r| r.body))
+}
+
+/// 经自定义 fetch 回调抓取 `<img>` 子资源（多进程 IPC 代理）。
+pub fn fetch_image_payloads_with_fetch<F>(html: &str, page_url: &str, fetch: &mut F) -> Vec<IpcImagePayload>
+where
+    F: FnMut(&str) -> Option<Vec<u8>>,
+{
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -150,10 +158,10 @@ pub fn fetch_image_payloads(html: &str, page_url: &str) -> Vec<IpcImagePayload> 
             continue;
         }
         let resolved = resolve_document_url(page_url, &src);
-        let Ok(response) = client.get(&resolved) else {
+        let Some(body) = fetch(&resolved) else {
             continue;
         };
-        let Ok(data) = decode_image_bytes(&response.body) else {
+        let Ok(data) = decode_image_bytes(&body) else {
             continue;
         };
         out.push(IpcImagePayload {

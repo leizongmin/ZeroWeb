@@ -24,6 +24,7 @@ mod tab_favicon;
 mod tab_js_worker;
 mod tab_lru;
 mod tab_manager;
+mod tab_restore;
 mod tab_snapshot;
 mod tab_worker;
 mod test_sync;

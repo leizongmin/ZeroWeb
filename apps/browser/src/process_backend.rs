@@ -9,10 +9,11 @@ use std::time::{Duration, Instant};
 use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
 use zero_protocol::message::{
-    HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMessage, IpcMessageKind, LoadHtmlParams,
-    SetColorSchemeParams, SetViewportParams,
+    FetchParams, HitTestLinkParams, IpcColorScheme, IpcMessage, IpcMessageKind, LoadHtmlParams, SetColorSchemeParams,
+    SetViewportParams, StorageOpParams, StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
+use zero_storage::StorageManager;
 
 use crate::tab_snapshot::TabSnapshot;
 
@@ -39,6 +40,9 @@ pub struct ProcessTabBackend {
     tab_to_renderer: HashMap<TabId, u64>,
     renderer_bin: PathBuf,
     viewport: (u32, u32),
+    storage: StorageManager,
+    pending_loaded: Vec<(TabId, String, String)>,
+    pending_errors: Vec<(TabId, String)>,
 }
 
 impl ProcessTabBackend {
@@ -65,6 +69,9 @@ impl ProcessTabBackend {
             tab_to_renderer: HashMap::new(),
             renderer_bin,
             viewport: (800, 600),
+            storage: StorageManager::new(),
+            pending_loaded: Vec::new(),
+            pending_errors: Vec::new(),
         }
     }
 
@@ -73,12 +80,28 @@ impl ProcessTabBackend {
         self.manager.get_renderer(id)
     }
 
-    fn apply_inbound_message(snap: &mut TabSnapshot, kind: IpcMessageKind) {
+    fn tab_for_renderer(&self, rid: u64) -> Option<TabId> {
+        self.tab_to_renderer.iter().find(|(_, r)| **r == rid).map(|(t, _)| *t)
+    }
+
+    fn apply_inbound_message(
+        tab_id: TabId,
+        snap: &mut TabSnapshot,
+        kind: IpcMessageKind,
+        pending_loaded: &mut Vec<(TabId, String, String)>,
+        pending_errors: &mut Vec<(TabId, String)>,
+    ) {
         match kind {
             IpcMessageKind::TitleChanged(title) => snap.title = Some(title),
-            IpcMessageKind::LoadComplete => snap.loading = false,
+            IpcMessageKind::LoadComplete => {
+                snap.loading = false;
+                let title = snap.title.clone().unwrap_or_else(|| "页面".to_string());
+                let url = snap.url.clone().unwrap_or_default();
+                pending_loaded.push((tab_id, title, url));
+            }
             IpcMessageKind::LoadFailed(err) => {
                 snap.loading = false;
+                pending_errors.push((tab_id, err.clone()));
                 tracing::warn!("Renderer load failed: {err}");
             }
             IpcMessageKind::UrlChanged(url) => snap.url = Some(url),
@@ -89,6 +112,59 @@ impl ProcessTabBackend {
         }
     }
 
+    fn handle_fetch_request(&mut self, tab_id: TabId, params: FetchParams) {
+        let client = zero_net::client::HttpClient::new();
+        let (status, body) = match client.get(&params.url) {
+            Ok(resp) => (resp.status_code, resp.body),
+            Err(e) => {
+                tracing::warn!("browser fetch proxy failed: {e}");
+                (0, format!("fetch error: {e}").into_bytes())
+            }
+        };
+        if let Some(renderer) = self.renderer_mut(tab_id) {
+            let _ = renderer.send_fetch_response(params.request_id, status, Vec::new(), body);
+        }
+    }
+
+    fn handle_storage_op(&mut self, tab_id: TabId, params: StorageOpParams) {
+        let store = match params.storage_type {
+            StorageType::Local => self.storage.local_storage(&params.origin),
+            StorageType::Session => self.storage.session_storage(&params.origin),
+        };
+        let _result = match params.operation {
+            StorageOperation::Get => store.get(&params.key).map(|s| s.to_string()),
+            StorageOperation::Set => params
+                .value
+                .as_deref()
+                .and_then(|v| store.set(&params.key, v).ok())
+                .flatten(),
+            StorageOperation::Remove => store.remove(&params.key),
+            StorageOperation::Clear => {
+                store.clear();
+                None
+            }
+            StorageOperation::Length => Some(store.len().to_string()),
+            StorageOperation::Key => store.key(params.key.parse().unwrap_or(0)).map(|s| s.to_string()),
+        };
+        let _ = tab_id;
+        // 渲染进程当前不等待 Storage 响应；后续可扩展 StorageResponse IPC。
+    }
+
+    fn handle_crashes(&mut self, snapshots: &mut HashMap<TabId, TabSnapshot>) {
+        let crashed = self.manager.check_crashes();
+        for rid in crashed {
+            let Some(tab_id) = self.tab_for_renderer(rid) else {
+                continue;
+            };
+            self.tab_to_renderer.remove(&tab_id);
+            self.pending_errors.push((tab_id, "渲染进程已崩溃".to_string()));
+            if let Some(snap) = snapshots.get_mut(&tab_id) {
+                snap.loading = false;
+            }
+            tracing::warn!("Renderer {rid} crashed for tab {}", tab_id.0);
+        }
+    }
+
     fn send_to_renderer(&mut self, tab_id: TabId, kind: IpcMessageKind) {
         let Some(renderer) = self.renderer_mut(tab_id) else {
             return;
@@ -96,6 +172,16 @@ impl ProcessTabBackend {
         if let Err(e) = renderer.send(IpcMessage { id: 0, kind }) {
             tracing::warn!("IPC send failed for tab {}: {e}", tab_id.0);
         }
+    }
+
+    /// 取出待处理的加载完成事件。
+    pub fn take_page_loaded_events(&mut self) -> Vec<(TabId, String, String)> {
+        std::mem::take(&mut self.pending_loaded)
+    }
+
+    /// 取出待处理的加载失败事件。
+    pub fn take_page_error_events(&mut self) -> Vec<(TabId, String)> {
+        std::mem::take(&mut self.pending_errors)
     }
 
     /// 确保 Tab 有对应渲染进程。
@@ -154,21 +240,26 @@ impl ProcessTabBackend {
         }
     }
 
+    /// 后退（IPC）。
+    pub fn go_back(&mut self, tab_id: TabId) {
+        self.send_to_renderer(tab_id, IpcMessageKind::GoBack);
+    }
+
+    /// 前进（IPC）。
+    pub fn go_forward(&mut self, tab_id: TabId) {
+        self.send_to_renderer(tab_id, IpcMessageKind::GoForward);
+    }
+
     /// 加载 HTML（多进程 IPC）。
     pub fn load_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>, url: Option<&str>) {
-        let Some(renderer) = self.renderer_mut(tab_id) else {
-            return;
-        };
-        if let Err(e) = renderer.send(IpcMessage {
-            id: 0,
-            kind: IpcMessageKind::LoadHtml(LoadHtmlParams {
+        self.send_to_renderer(
+            tab_id,
+            IpcMessageKind::LoadHtml(LoadHtmlParams {
                 html: html.to_string(),
                 css: css.map(str::to_string),
                 url: url.map(str::to_string),
             }),
-        }) {
-            tracing::warn!("IPC load_html failed: {e}");
-        }
+        );
     }
 
     /// 调整所有 live 渲染进程视口。
@@ -195,26 +286,51 @@ impl ProcessTabBackend {
         }
     }
 
-    /// 轮询 IPC 并更新快照。
-    pub fn poll(&mut self, snapshots: &mut HashMap<TabId, TabSnapshot>) -> bool {
+    /// 轮询 IPC 并更新快照；后台 Tab 可降频。
+    pub fn poll(
+        &mut self,
+        snapshots: &mut HashMap<TabId, TabSnapshot>,
+        active_tab: Option<TabId>,
+        poll_background: bool,
+    ) -> bool {
         let mut changed = false;
-        self.manager.check_crashes();
+        self.handle_crashes(snapshots);
         let mapping: Vec<(TabId, u64)> = self.tab_to_renderer.iter().map(|(k, v)| (*k, *v)).collect();
         for (tab_id, rid) in mapping {
-            let Some(renderer) = self.manager.get_renderer(rid) else {
+            if active_tab != Some(tab_id) && !poll_background {
                 continue;
-            };
+            }
             loop {
-                match renderer.try_recv() {
-                    Ok(Some(msg)) => {
-                        changed = true;
-                        let snap = snapshots.entry(tab_id).or_default();
-                        Self::apply_inbound_message(snap, msg.kind);
-                    }
-                    Ok(None) => break,
-                    Err(e) => {
-                        tracing::debug!("IPC recv: {e}");
+                let msg = {
+                    let Some(renderer) = self.manager.get_renderer(rid) else {
                         break;
+                    };
+                    match renderer.try_recv() {
+                        Ok(Some(m)) => m,
+                        Ok(None) => break,
+                        Err(e) => {
+                            tracing::debug!("IPC recv: {e}");
+                            break;
+                        }
+                    }
+                };
+                changed = true;
+                match msg.kind {
+                    IpcMessageKind::FetchRequest(params) => {
+                        self.handle_fetch_request(tab_id, params);
+                    }
+                    IpcMessageKind::StorageOp(params) => {
+                        self.handle_storage_op(tab_id, params);
+                    }
+                    kind => {
+                        let snap = snapshots.entry(tab_id).or_default();
+                        Self::apply_inbound_message(
+                            tab_id,
+                            snap,
+                            kind,
+                            &mut self.pending_loaded,
+                            &mut self.pending_errors,
+                        );
                     }
                 }
             }
@@ -247,22 +363,33 @@ impl ProcessTabBackend {
             if Instant::now() >= deadline {
                 return None;
             }
-            let renderer = self.manager.get_renderer(rid)?;
-            match renderer.try_recv() {
-                Ok(Some(msg)) => {
-                    if msg.id == msg_id {
-                        if let IpcMessageKind::HitTestLinkResult(result) = msg.kind {
-                            return result.href;
-                        }
+            let msg = {
+                let renderer = self.manager.get_renderer(rid)?;
+                match renderer.try_recv() {
+                    Ok(Some(m)) => m,
+                    Ok(None) => {
+                        thread::sleep(Duration::from_millis(1));
                         continue;
                     }
-                    let snap = snapshots.entry(tab_id).or_default();
-                    Self::apply_inbound_message(snap, msg.kind);
+                    Err(e) => {
+                        tracing::debug!("IPC hit_test recv: {e}");
+                        return None;
+                    }
                 }
-                Ok(None) => thread::sleep(Duration::from_millis(1)),
-                Err(e) => {
-                    tracing::debug!("IPC hit_test recv: {e}");
-                    return None;
+            };
+            if msg.id == msg_id {
+                if let IpcMessageKind::HitTestLinkResult(result) = msg.kind {
+                    return result.href;
+                }
+                continue;
+            }
+            match msg.kind {
+                IpcMessageKind::FetchRequest(params) => {
+                    self.handle_fetch_request(tab_id, params);
+                }
+                kind => {
+                    let snap = snapshots.entry(tab_id).or_default();
+                    Self::apply_inbound_message(tab_id, snap, kind, &mut self.pending_loaded, &mut self.pending_errors);
                 }
             }
         }
