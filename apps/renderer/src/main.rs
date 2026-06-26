@@ -8,8 +8,8 @@ use std::process;
 use zero_engine::RenderPipeline;
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
-    FetchParams, HitTestLinkParams, HitTestLinkResultParams, IpcMessage, IpcMessageKind, NavigateParams,
-    StorageOpParams,
+    FetchParams, HitTestLinkParams, HitTestLinkResultParams, IpcMessage, IpcMessageKind, LoadHtmlParams,
+    NavigateParams, StorageOpParams,
 };
 use zero_protocol::transport::PipeTransport;
 
@@ -72,49 +72,55 @@ impl RendererRuntime {
     fn handle_navigate(&mut self, params: NavigateParams) -> Result<(), String> {
         tracing::info!("导航到: {}", params.url);
 
-        // 报告 URL 变更
         self.send(IpcMessageKind::UrlChanged(params.url.clone()))?;
         self.current_url = Some(params.url.clone());
 
-        // 使用 net crate 获取页面内容
         let client = zero_net::client::HttpClient::new();
         match client.get(&params.url) {
             Ok(response) => {
                 let html = String::from_utf8_lossy(&response.body).into_owned();
-                let title = extract_title(&html);
-
-                // 渲染页面
-                let result = self.pipeline.render_html(&html, "");
-                let doc_h = self
-                    .pipeline
-                    .document_height()
-                    .unwrap_or(self.pipeline.viewport_height());
-                let image_payloads = paint_export::fetch_image_payloads(&html, &params.url);
-                let paint = paint_export::paint_snapshot_from_primitives(
-                    self.pipeline.viewport_width() as u32,
-                    self.pipeline.viewport_height() as u32,
-                    doc_h,
-                    &result.primitives,
-                    image_payloads,
-                );
-                self.send(IpcMessageKind::ViewPainted(paint))?;
-
-                // 报告标题变更
-                if let Some(title) = title {
-                    self.send(IpcMessageKind::TitleChanged(title))?;
-                }
-
-                // 报告加载完成
-                self.send(IpcMessageKind::LoadComplete)?;
-                tracing::info!("页面加载完成: {}", params.url);
-                Ok(())
+                self.publish_html_render(&html, "", &params.url)
             }
             Err(e) => {
                 tracing::error!("页面加载失败: {e}");
-                self.send(IpcMessageKind::LoadFailed(format!("网络请求失败: {e}")))?;
-                Ok(())
+                self.send(IpcMessageKind::LoadFailed(format!("网络请求失败: {e}")))
             }
         }
+    }
+
+    /// 处理内联 HTML 加载。
+    fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
+        let page_url = params.url.clone().unwrap_or_else(|| "about:blank".to_string());
+        tracing::info!("加载内联 HTML: {page_url}");
+        self.send(IpcMessageKind::UrlChanged(page_url.clone()))?;
+        self.current_url = Some(page_url.clone());
+        let css = params.css.as_deref().unwrap_or("");
+        self.publish_html_render(&params.html, css, &page_url)
+    }
+
+    /// 渲染 HTML 并推送 ViewPainted / TitleChanged / LoadComplete。
+    fn publish_html_render(&mut self, html: &str, css: &str, page_url: &str) -> Result<(), String> {
+        let title = extract_title(html);
+        let result = self.pipeline.render_html(html, css);
+        let doc_h = self
+            .pipeline
+            .document_height()
+            .unwrap_or(self.pipeline.viewport_height());
+        let image_payloads = paint_export::fetch_image_payloads(html, page_url);
+        let paint = paint_export::paint_snapshot_from_primitives(
+            self.pipeline.viewport_width() as u32,
+            self.pipeline.viewport_height() as u32,
+            doc_h,
+            &result.primitives,
+            image_payloads,
+        );
+        self.send(IpcMessageKind::ViewPainted(paint))?;
+        if let Some(title) = title {
+            self.send(IpcMessageKind::TitleChanged(title))?;
+        }
+        self.send(IpcMessageKind::LoadComplete)?;
+        tracing::info!("页面渲染完成: {page_url}");
+        Ok(())
     }
 
     /// 处理后退命令。
@@ -167,6 +173,7 @@ impl RendererRuntime {
 
             let result = match msg.kind {
                 IpcMessageKind::Navigate(params) => self.handle_navigate(params),
+                IpcMessageKind::LoadHtml(params) => self.handle_load_html(params),
                 IpcMessageKind::GoBack => self.handle_go_back(),
                 IpcMessageKind::GoForward => self.handle_go_forward(),
                 IpcMessageKind::StopLoading => {
