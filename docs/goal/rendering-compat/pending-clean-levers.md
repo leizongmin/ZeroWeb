@@ -11,6 +11,7 @@
 | 优先级 | lever | 测试 / 目录 | 发散 | 复杂度 | cluster yield |
 |---|---|---|---|---|---|
 | **S 快速赢** | R689 | position-static-001 / css-position | 17.53%+3% | 低（一行级） | 2 案（twin） |
+| **S 快速赢** | R716 | box-offsets-rel-pos-002 / CSS2_visuren（relative right/bottom inset） | 9.18% | 低（一函数 ~6 行） | 2-3 案（001/002 twin + inline right/bottom） |
 | **A 高 cluster** | R678 | font-size-zero-3 / css-fonts（float shrink-to-fit） | 33.53% | 中 | **≥5 案 17-34% 跨 3 目录（最高渗透）** |
 | **A 高 cluster** | R696 | inline-replaced-width-009 / CSS2_normal-flow（replaced sizing） | 22.08% | 中 | **≥5 案 12-22%（unified）** |
 | **A 高单发散** | R695 | height-percentage-005 / CSS2_normal-flow（%height indefinite-CB） | **88.44%（最高）** | 中 | +潜在多案 |
@@ -32,6 +33,13 @@
 - **根因**：`converter/mod.rs:71` inset **无条件**传 taffy + `:295` `PositionValue::Static => taffy::style::Position::Relative`（Static 映射 Relative，taffy Relative 应用 inset 偏移）→ static 元素被 top/left/right/bottom 偏移。
 - **fix scope**：`position==Static` 时 inset 归零（converter/mod.rs:71-74 加 position 条件，Static 不传 top/left/right/bottom）。**一行级条件修复**，spec-correct（CSS：inset 仅适用于 non-static position）。
 - **风险**：低（无 spec 测试期望 static 元素被 inset 偏移）。
+
+### R716 · relative 的 right/bottom inset 丢失（resolve_relative_inset 仅读 left/top）
+- **测试**：`CSS2/visuren/box-offsets-rel-pos-002`（9.18%）+ `box-offsets-rel-pos-001`（twin）+ 其他 inline right/bottom-only relative 偏移案
+- **根因（R716 LAYOUT_DUMP + 代码 read-only 确证）**：`engine.rs:1597 resolve_relative_inset`（root relative `:192` + inline-level relative `apply_relative_offsets_inline:1345` 共用）`dx = style.left(Px)` / `dy = style.top(Px)`——**完全忽略 right/bottom**。dump 实证：`img{left:100}` x=108✓（left 应用）/ `img{right:100}` x=208✗（应 108，right 丢）/ `img{top:100}` abs_y=151✓ / `img{bottom:100}` abs_y=251✗（应 151，bottom 丢）。CSS §9.4.3：relative 的 `right`（无 left 时）应向左偏移、`bottom`（无 top 时）应向上偏移。**block-level relative 由 taffy 处理（不受此函数影响），仅 inline-level + root 受此 bug 影响。**
+- **fix scope**：扩展 `resolve_relative_inset`——dx：`left` Px→`+left`，elif `right` Px→`-right`；dy：`top` Px→`+top`，elif `bottom` Px→`-bottom`（§9.4.3）。**一函数 ~6 行**，spec-correct。
+- **风险**：低（仅 right/bottom-only relative offset 元素受影响；block-level relative 走 taffy 不变）。
+- **次级 note**：resolve_relative_inset 对 left/top 亦 **Px-only**（Em/Rem/Percent 丢），与 R715 percent-inset taffy 限制谱系；本 lever 聚焦 right/bottom drop（confirmed），Px-only 扩展为可选 follow-up。
 
 ---
 
