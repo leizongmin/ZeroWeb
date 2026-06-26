@@ -106,14 +106,9 @@ impl RendererHandle {
             .name(format!("renderer-{id}-ipc-in"))
             .spawn(move || {
                 let mut transport = recv_transport;
-                loop {
-                    match transport.recv() {
-                        Ok(msg) => {
-                            if inbound_tx.send(msg).is_err() {
-                                break;
-                            }
-                        }
-                        Err(_) => break,
+                while let Ok(msg) = transport.recv() {
+                    if inbound_tx.send(msg).is_err() {
+                        break;
                     }
                 }
             })
