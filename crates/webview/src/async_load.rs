@@ -163,7 +163,8 @@ impl AsyncPageLoad {
                 self.render_session = None;
                 self.budget_pending = false;
                 match self.stage {
-                    PageLoadStage::FirstPaint => self.stage = PageLoadStage::FetchingStylesheets,
+                    // 留在 FirstPaint，由 tick() 调用 begin_stylesheet_fetch。
+                    PageLoadStage::FirstPaint => {}
                     PageLoadStage::StyledPaint | PageLoadStage::FetchingImages => {
                         if self.css_pending.is_empty() && self.img_pending.is_empty() {
                             self.stage = PageLoadStage::Complete;

@@ -888,6 +888,31 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
+    /// 启动标签页加载（多进程下立即发 IPC，不等到下一帧 paint）。
+    fn start_tab_load(&mut self, tab_id: TabId, url: String) {
+        if self.shell.active_tab_id() == Some(tab_id)
+            && let Some(tab) = self.shell.active_tab_mut()
+        {
+            tab.set_loading(true);
+        }
+        if let Some(snap) = self.tabs.snapshot_mut(tab_id) {
+            snap.loading = true;
+            snap.url = Some(url.clone());
+        }
+        self.ensure_webview(tab_id);
+        self.sync_webview_viewport();
+
+        if url == "zero://settings" {
+            self.open_settings_page();
+        } else if url.starts_with("http://") || url.starts_with("https://") {
+            tracing::info!("Tab {} navigate IPC: {url}", tab_id.0);
+            self.tabs.navigate(tab_id, url);
+        } else {
+            self.load_local_tab_url(tab_id, &url);
+        }
+        self.needs_redraw = true;
+    }
+
     /// 导航到指定 URL
     pub fn navigate_to(&mut self, url: &str) {
         let url = normalize_url(&resolve_path_relative_url(url, &self.shell), &self.shell);
@@ -908,7 +933,7 @@ impl BrowserApp {
         self.page_selection.remove(&tab_id);
         self.clear_tab_favicon(tab_id);
 
-        self.schedule_tab_fetch(tab_id, url);
+        self.start_tab_load(tab_id, url);
     }
 
     fn load_welcome_page(&mut self, tab_id: TabId) {
@@ -979,6 +1004,7 @@ impl BrowserApp {
 
         self.scroll.insert(tab_id, TabScrollState::default());
         self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+        self.sync_webview_viewport();
         self.needs_redraw = true;
     }
 
@@ -1028,7 +1054,7 @@ impl BrowserApp {
             None => return,
         };
 
-        self.schedule_tab_fetch(tab_id, url);
+        self.start_tab_load(tab_id, url);
     }
 
     /// 在新标签页打开内部 HTML 文档（查看源代码、检查元素等）。
@@ -1078,9 +1104,8 @@ impl BrowserApp {
 
         self.address_bar.set_text(url.clone());
         let tab_id = self.shell.active_tab_id().unwrap();
-        self.ensure_webview(tab_id);
 
-        self.schedule_tab_fetch(tab_id, url);
+        self.start_tab_load(tab_id, url);
     }
 
     /// 执行前进导航
@@ -1096,9 +1121,8 @@ impl BrowserApp {
 
         self.address_bar.set_text(url.clone());
         let tab_id = self.shell.active_tab_id().unwrap();
-        self.ensure_webview(tab_id);
 
-        self.schedule_tab_fetch(tab_id, url);
+        self.start_tab_load(tab_id, url);
     }
 
     /// 打开设置页面（about:preferences）

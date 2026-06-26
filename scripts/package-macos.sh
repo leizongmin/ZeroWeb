@@ -27,17 +27,23 @@ fi
 
 mkdir -p "$PACKAGE_DIR"
 
-# 编译
+# 编译（browser 与 renderer 须在同一输出目录，供多进程 spawn）
 info "编译 release 二进制..."
 cd "$PROJECT_ROOT"
-cargo build --release --bin zero-browser
+cargo build --release -p zero-browser -p zero-renderer
 
 BINARY="$PROJECT_ROOT/target/release/zero-browser"
+RENDERER="$PROJECT_ROOT/target/release/zero-renderer"
 if [[ ! -f "$BINARY" ]]; then
-    echo "错误：编译失败"
+    echo "错误：编译失败 zero-browser"
+    exit 1
+fi
+if [[ ! -f "$RENDERER" ]]; then
+    echo "错误：编译失败 zero-renderer"
     exit 1
 fi
 strip "$BINARY" 2>/dev/null || true
+strip "$RENDERER" 2>/dev/null || true
 
 # 创建 .app 结构
 APP_BUNDLE="$PACKAGE_DIR/${APP_NAME}.app"
@@ -46,8 +52,9 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 
-# 复制二进制
+# 复制二进制（多进程：renderer 与 browser 同目录）
 cp "$BINARY" "$APP_BUNDLE/Contents/MacOS/ZeroBrowser"
+cp "$RENDERER" "$APP_BUNDLE/Contents/MacOS/zero-renderer"
 
 # Info.plist
 cat > "$APP_BUNDLE/Contents/Info.plist" << EOF

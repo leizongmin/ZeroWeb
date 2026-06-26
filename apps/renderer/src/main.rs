@@ -9,9 +9,11 @@ mod paint_export;
 use async_load::PageLoadHost;
 
 use crate::js_worker::RendererJsWorker;
-use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, rerender, run_page_scripts};
+use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, rerender, run_page_scripts, should_skip_scripts};
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::mpsc::{self, Receiver};
+use std::thread::{self, JoinHandle};
 
 use zero_engine::{
     extract_page_scripts, resolve_document_url, PageScript,
@@ -31,12 +33,42 @@ use zero_protocol::message::{
     SetColorSchemeParams, SetViewportParams, StorageOpParams,
 };
 use zero_protocol::transport::PipeTransport;
+
+/// 渲染进程 → 浏览器 IPC 发送端（stdout）。
+type IpcOutbound = PipeTransport<io::Empty, io::Stdout>;
+
+fn spawn_browser_ipc_inbound() -> (Receiver<IpcMessage>, JoinHandle<()>) {
+    let (tx, rx) = mpsc::channel();
+    let join = thread::Builder::new()
+        .name("renderer-ipc-in".into())
+        .spawn(move || {
+            let mut transport = PipeTransport::new(io::stdin(), io::empty());
+            loop {
+                match transport.recv() {
+                    Ok(msg) => {
+                        if tx.send(msg).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Renderer stdin IPC reader stopped: {e}");
+                        break;
+                    }
+                }
+            }
+        })
+        .expect("spawn renderer ipc inbound reader");
+    (rx, join)
+}
 use zero_render_foundation::font::loader::FontLoader;
 
 /// 渲染进程运行时状态。
 struct RendererRuntime {
-    /// IPC 通道。
-    channel: PipeTransport<io::Stdin, io::Stdout>,
+    /// 向浏览器写入 IPC（stdout）。
+    outbound: IpcOutbound,
+    /// 浏览器 → 渲染进程消息（stdin 读线程填充）。
+    inbound_rx: Receiver<IpcMessage>,
+    inbound_thread: Option<JoinHandle<()>>,
     /// 渲染管线。
     pipeline: RenderPipeline,
     /// 当前 URL。
@@ -68,11 +100,14 @@ struct RendererRuntime {
 impl RendererRuntime {
     /// 创建新的渲染进程运行时。
     fn new(renderer_id: u64) -> Self {
-        let channel = PipeTransport::new(io::stdin(), io::stdout());
+        let outbound = PipeTransport::new(io::empty(), io::stdout());
+        let (inbound_rx, inbound_thread) = spawn_browser_ipc_inbound();
         let mut pipeline = RenderPipeline::new(1280.0, 800.0);
         load_system_fonts(&mut pipeline);
         Self {
-            channel,
+            outbound,
+            inbound_rx,
+            inbound_thread: Some(inbound_thread),
             pipeline,
             current_url: None,
             next_msg_id: 1,
@@ -100,16 +135,18 @@ impl RendererRuntime {
             id: self.alloc_msg_id(),
             kind,
         };
-        self.channel.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
+        self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
     }
 
     fn send_with_id(&mut self, id: u64, kind: IpcMessageKind) -> Result<(), String> {
         let msg = IpcMessage { id, kind };
-        self.channel.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
+        self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
     }
 
     fn recv_blocking(&mut self) -> Result<IpcMessage, String> {
-        self.channel.recv().map_err(|e| format!("IPC 接收失败: {e}"))
+        self.inbound_rx
+            .recv()
+            .map_err(|e| format!("IPC 接收失败: {e}"))
     }
 
     fn after_page_html_loaded(&mut self, html: String, css: String) -> Result<(), String> {
@@ -192,7 +229,7 @@ impl RendererRuntime {
         let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
         let payloads = paint_export::fetch_image_payloads_with_fetch(&html, &url, &mut |u| self.fetch_get(u).ok());
         publish_render_result(
-            &mut self.channel,
+            &mut self.outbound,
             &mut self.next_msg_id,
             &self.pipeline,
             result,
@@ -248,7 +285,8 @@ impl RendererRuntime {
     /// 经浏览器 IPC 代理 GET 请求。
     fn fetch_get(&mut self, url: &str) -> Result<Vec<u8>, String> {
         ipc_fetch_get(
-            &mut self.channel,
+            &mut self.outbound,
+            &self.inbound_rx,
             &mut self.next_fetch_id,
             &mut self.deferred_inbound,
             url,
@@ -286,14 +324,16 @@ impl RendererRuntime {
         let url_for_images = page_url.clone();
 
         {
-            let channel = &mut self.channel;
+            let outbound = &mut self.outbound;
+            let inbound_rx = &self.inbound_rx;
             let next_msg_id = &mut self.next_msg_id;
             let next_fetch_id = &mut self.next_fetch_id;
             let deferred = &mut self.deferred_inbound;
             let pipeline = &mut self.pipeline;
             let viewport = (pipeline.viewport_width() as u32, pipeline.viewport_height() as u32);
             let mut host = IpcLoadBridge {
-                channel,
+                outbound,
+                inbound_rx,
                 next_msg_id,
                 next_fetch_id,
                 deferred,
@@ -308,7 +348,7 @@ impl RendererRuntime {
                 self.fetch_get(u).ok()
             });
             publish_render_result(
-                &mut self.channel,
+                &mut self.outbound,
                 &mut self.next_msg_id,
                 &self.pipeline,
                 &result,
@@ -317,7 +357,9 @@ impl RendererRuntime {
             )?;
         }
 
-        self.after_page_html_loaded(html_for_images, self.cached_css.clone())?;
+        if !page_scripts::should_skip_scripts(&page_url) {
+            self.after_page_html_loaded(html_for_images, self.cached_css.clone())?;
+        }
 
         if send_complete {
             self.send(IpcMessageKind::LoadComplete)?;
@@ -364,7 +406,7 @@ impl RendererRuntime {
             return Ok(());
         };
         publish_render_result(
-            &mut self.channel,
+            &mut self.outbound,
             &mut self.next_msg_id,
             &self.pipeline,
             &result,
@@ -580,7 +622,8 @@ impl RendererRuntime {
 }
 
 struct IpcLoadBridge<'a> {
-    channel: &'a mut PipeTransport<io::Stdin, io::Stdout>,
+    outbound: &'a mut IpcOutbound,
+    inbound_rx: &'a Receiver<IpcMessage>,
     next_msg_id: &'a mut u64,
     next_fetch_id: &'a mut u64,
     deferred: &'a mut VecDeque<IpcMessage>,
@@ -589,13 +632,19 @@ struct IpcLoadBridge<'a> {
 
 impl PageLoadHost for IpcLoadBridge<'_> {
     fn fetch_bytes(&mut self, url: &str) -> Result<Vec<u8>, String> {
-        ipc_fetch_get(self.channel, self.next_fetch_id, self.deferred, url)
+        ipc_fetch_get(
+            self.outbound,
+            self.inbound_rx,
+            self.next_fetch_id,
+            self.deferred,
+            url,
+        )
     }
 
     fn publish(&mut self, result: &RenderResult, title: Option<String>, _is_final: bool) -> Result<(), String> {
         let doc_h = document_height_from_layout(&result.layout);
         publish_render_with_layout(
-            self.channel,
+            self.outbound,
             self.next_msg_id,
             self.viewport.0,
             self.viewport.1,
@@ -613,7 +662,7 @@ fn document_height_from_layout(layout: &zero_layout_engine::LayoutResult) -> f32
 }
 
 fn publish_render_with_layout(
-    channel: &mut PipeTransport<io::Stdin, io::Stdout>,
+    outbound: &mut IpcOutbound,
     next_msg_id: &mut u64,
     viewport_width: u32,
     viewport_height: u32,
@@ -639,7 +688,7 @@ fn publish_render_with_layout(
         },
         kind: IpcMessageKind::ViewPainted(paint),
     };
-    channel.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+    outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
     if let Some(title) = title {
         let msg = IpcMessage {
             id: {
@@ -649,13 +698,14 @@ fn publish_render_with_layout(
             },
             kind: IpcMessageKind::TitleChanged(title),
         };
-        channel.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+        outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
     }
     Ok(())
 }
 
 fn ipc_fetch_get(
-    channel: &mut PipeTransport<io::Stdin, io::Stdout>,
+    outbound: &mut IpcOutbound,
+    inbound_rx: &Receiver<IpcMessage>,
     next_fetch_id: &mut u64,
     deferred: &mut VecDeque<IpcMessage>,
     url: &str,
@@ -672,13 +722,13 @@ fn ipc_fetch_get(
             body: None,
         }),
     };
-    channel.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+    outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
 
     loop {
         let msg = if let Some(m) = deferred.pop_front() {
             m
         } else {
-            channel.recv().map_err(|e| format!("IPC 接收失败: {e}"))?
+            inbound_rx.recv().map_err(|e| format!("IPC 接收失败: {e}"))?
         };
         match msg.kind {
             IpcMessageKind::FetchResponse(FetchResponseParams {
@@ -697,7 +747,7 @@ fn ipc_fetch_get(
                     id: msg.id,
                     kind: IpcMessageKind::Heartbeat,
                 };
-                channel.send(reply).map_err(|e| format!("IPC 发送失败: {e}"))?;
+                outbound.send(reply).map_err(|e| format!("IPC 发送失败: {e}"))?;
             }
             other => {
                 deferred.push_back(IpcMessage {
@@ -710,7 +760,7 @@ fn ipc_fetch_get(
 }
 
 fn publish_render_result(
-    channel: &mut PipeTransport<io::Stdin, io::Stdout>,
+    outbound: &mut IpcOutbound,
     next_msg_id: &mut u64,
     pipeline: &RenderPipeline,
     result: &RenderResult,
@@ -720,7 +770,7 @@ fn publish_render_result(
     let doc_h = pipeline.document_height().unwrap_or(pipeline.viewport_height());
     let hit_test = pipeline.build_hit_test_cache();
     publish_render_with_layout(
-        channel,
+        outbound,
         next_msg_id,
         pipeline.viewport_width() as u32,
         pipeline.viewport_height() as u32,
