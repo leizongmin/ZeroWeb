@@ -9,15 +9,15 @@ build: setup-rusty-v8
 # WAYLAND_DEBUG and WINIT_UNIX_BACKEND=x11 are separate targets because they
 # debug different backends and should not be combined in one run.
 
-BROWSER_RUN = cargo run --release -p zero-browser
+BROWSER_BIN = ./target/release/zero-browser
 
 browser: setup-rusty-v8
-	cargo build -p zero-browser -p zero-renderer
-	$(BROWSER_RUN)
+	cargo build --release -p zero-browser -p zero-renderer
+	$(BROWSER_BIN)
 
 browser-debug: setup-rusty-v8
-	cargo build -p zero-browser -p zero-renderer
-	RUST_BACKTRACE=1 $(BROWSER_RUN)
+	cargo build --release -p zero-browser -p zero-renderer
+	RUST_BACKTRACE=1 $(BROWSER_BIN)
 
 browser-debug-wayland: setup-rusty-v8
 	mkdir -p target
