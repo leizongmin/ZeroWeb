@@ -10,7 +10,8 @@
 
 use std::sync::mpsc::{Receiver, channel};
 
-use zero_engine::RenderResult;
+use zero_engine::{HitTestCache, RenderResult};
+use zero_render_foundation::primitive::RenderPrimitives;
 
 /// 异步抓取宿主：发起网络抓取并返回可轮询的接收器。
 ///
@@ -60,6 +61,22 @@ where
         let _ = tx.send((self.fetch)(url));
         rx
     }
+}
+
+/// 统一绘制帧契约（FrameModel）——三路径 frame 输出的抽象接缝（T5）。
+///
+/// renderer（IPC）从 WebView 读后由此打包成 `PaintSnapshotParams`；tabworker（in-process）
+/// 从 WebView 读后填入 `TabSnapshot`。统一「视口 + 文档高度 + 图元 + hit-test」的产出契约，
+/// 让两侧不再各自散列这些字段。
+pub struct FrameModel {
+    /// 视口（CSS 逻辑像素）。
+    pub viewport: (u32, u32),
+    /// 文档内容高度。
+    pub document_height: f32,
+    /// 渲染图元。
+    pub primitives: RenderPrimitives,
+    /// 主线程 hit-test 缓存（可选）。
+    pub hit_test: Option<HitTestCache>,
 }
 
 /// 分阶段页面加载宿主：网络抓取 + 绘制推送。

@@ -5914,6 +5914,7 @@ name = "zero-page-runtime"
 version = "0.1.0"
 dependencies = [
  "zero-engine",
+ "zero-render-foundation",
 ]
 
 [[package]]
