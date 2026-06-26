@@ -8,7 +8,21 @@
 
 #![warn(missing_docs)]
 
+use std::sync::mpsc::Receiver;
+
 use zero_engine::RenderResult;
+
+/// 异步抓取宿主：发起网络抓取并返回可轮询的接收器。
+///
+/// in-process 实现（webview）走 net_pool 线程池；IPC 实现（renderer）把阻塞 IPC 抓取
+/// 封装到独立线程后返回接收器。供 webview `AsyncPageLoad` 消除 `net_pool` 硬编码，
+/// 并为 renderer 复用同一加载器铺路（tick/轮询模型两端一致）。
+pub trait AsyncFetchHost {
+    /// 抓取文本资源（主文档 / 外链 CSS）。
+    fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>>;
+    /// 抓取二进制资源（图片等）。
+    fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>>;
+}
 
 /// 分阶段页面加载宿主：网络抓取 + 绘制推送。
 ///
