@@ -109,6 +109,8 @@ WebView API 已就绪：renderer 所需 ~15 个 pipeline 访问器中 WebView �
 
 **执行建议**：greenlight 后在**干净 worktree** 集中重写 → 全量 `cargo test --workspace` + headless smoke 通过 → 再合入 `feat/runtime-unification`。
 
+**进度（R10）**：B3-2 load 机制已 in-process 验证（`tests/integration/b3_load_mechanism`，commit `242ce907`，2 用例过：自包含 HTML drain 完成渲染 + 外链 CSS 经 `BlockingFetchHost` 抓取应用后渲染）。**lib 层 load 路径有回归门**。剩余风险集中在 renderer 的 WIRING（`run_staged_load`/publish/脚本/viewport 的 main.rs 胶水 + split-borrow）——renderer 是 bin，wiring 无单测覆盖；要安全做 B3，须先把 `RendererRuntime` 的 IPC plumbing 泛化（构造时接收 transport 对而非硬编码 stdin/stdout）使其 in-process 可测，或补子进程 smoke。这是 B3 重写前的前置。
+
 ## 9. T3 架构分支与决议（2026-06-26 R5）
 
 深入分析后，renderer 复用 webview `AsyncPageLoad` 有**两个真 blocker**（不是上轮以为的单纯「状态 owner 抽象」）：
