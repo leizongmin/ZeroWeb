@@ -168,7 +168,7 @@ fn layout_box_from_snapshot(snapshot: &HitTestLayoutSnapshot) -> LayoutBox {
 
 /// 将 `NodeId` 编码为 IPC 友好的整数。
 pub fn node_id_to_u64(id: NodeId) -> u64 {
-    id.data().as_ffi() as u64
+    id.data().as_ffi()
 }
 
 /// 从 IPC 整数解码 `NodeId`。
@@ -182,28 +182,28 @@ fn collect_hit_test_nodes(
     nodes: &mut HashMap<NodeId, HitTestNodeMeta>,
     parents: &mut HashMap<NodeId, NodeId>,
 ) {
-    if let Some(node_id) = layout.node_id {
-        if let Some(data) = doc.get(node_id) {
-            if let NodeKind::Element(elem) = &data.kind {
-                let tag = elem.local_name().to_ascii_lowercase();
-                let href = if tag == "a" {
-                    doc.get_attribute(node_id, "href")
-                } else {
-                    None
-                };
-                nodes.insert(
-                    node_id,
-                    HitTestNodeMeta {
-                        tag_name: tag,
-                        id: doc.get_attribute(node_id, "id"),
-                        class_name: doc.get_attribute(node_id, "class"),
-                        href,
-                    },
-                );
-            }
-            if let Some(parent) = doc.parent_node(node_id) {
-                parents.insert(node_id, parent);
-            }
+    if let Some(node_id) = layout.node_id
+        && let Some(data) = doc.get(node_id)
+    {
+        if let NodeKind::Element(elem) = &data.kind {
+            let tag = elem.local_name().to_ascii_lowercase();
+            let href = if tag == "a" {
+                doc.get_attribute(node_id, "href")
+            } else {
+                None
+            };
+            nodes.insert(
+                node_id,
+                HitTestNodeMeta {
+                    tag_name: tag,
+                    id: doc.get_attribute(node_id, "id"),
+                    class_name: doc.get_attribute(node_id, "class"),
+                    href,
+                },
+            );
+        }
+        if let Some(parent) = doc.parent_node(node_id) {
+            parents.insert(node_id, parent);
         }
     }
     for child in &layout.children {
@@ -217,14 +217,13 @@ fn find_link_href_cached(
     parents: &HashMap<NodeId, NodeId>,
 ) -> Option<String> {
     loop {
-        if let Some(meta) = nodes.get(&node) {
-            if meta.tag_name == "a" {
-                if let Some(href) = &meta.href {
-                    let href = href.trim();
-                    if !href.is_empty() && href != "#" {
-                        return Some(href.to_string());
-                    }
-                }
+        if let Some(meta) = nodes.get(&node)
+            && meta.tag_name == "a"
+            && let Some(href) = &meta.href
+        {
+            let href = href.trim();
+            if !href.is_empty() && href != "#" {
+                return Some(href.to_string());
             }
         }
         node = parents.get(&node).copied()?;
