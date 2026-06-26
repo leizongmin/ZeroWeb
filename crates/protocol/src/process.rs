@@ -6,14 +6,16 @@
 //! - 心跳检测和崩溃恢复
 //! - 进程关闭和资源清理
 
-use std::io::{Read, Write};
-use std::process::{Child, Command, Stdio};
+use std::io;
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::Receiver;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crate::message::{FetchResponseParams, IpcMessage, IpcMessageKind, NavigateParams};
 use crate::transport::PipeTransport;
-use crate::{IpcChannel, ProtocolError};
+use crate::ProtocolError;
 
 /// 渲染进程 ID 类型。
 pub type RendererId = u64;
@@ -43,8 +45,12 @@ pub struct RendererHandle {
     pub id: RendererId,
     /// 子进程句柄。
     child: Option<Child>,
-    /// IPC 通道（通过 stdin/stdout 管道）。
-    channel: Option<PipeTransport<Box<dyn Read + Send>, Box<dyn Write + Send>>>,
+    /// 向渲染进程写入 IPC（stdin）。
+    send_transport: Option<PipeTransport<io::Empty, ChildStdin>>,
+    /// 渲染进程 → 浏览器 IPC 消息队列（后台读线程填充）。
+    inbound_rx: Receiver<IpcMessage>,
+    /// stdout 读线程（子进程退出后 join）。
+    reader_thread: Option<JoinHandle<()>>,
     /// 进程状态。
     state: RendererState,
     /// 上次心跳时间。
@@ -68,24 +74,37 @@ impl RendererHandle {
             .spawn()
             .map_err(|e| ProtocolError::Process(format!("启动渲染进程失败: {e}")))?;
 
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| ProtocolError::Process("无法获取 stdin 管道".into()))?;
         let stdout = child
             .stdout
             .take()
             .ok_or_else(|| ProtocolError::Process("无法获取 stdout 管道".into()))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| ProtocolError::Process("无法获取 stdin 管道".into()))?;
 
-        let channel = PipeTransport::new(
-            Box::new(stdout) as Box<dyn Read + Send>,
-            Box::new(stdin) as Box<dyn Write + Send>,
-        );
+        let (inbound_tx, inbound_rx) = std::sync::mpsc::channel();
+        let recv_transport = PipeTransport::new(stdout, io::empty());
+        let reader_thread = std::thread::Builder::new()
+            .name(format!("renderer-{id}-ipc-in"))
+            .spawn(move || {
+                let mut transport = recv_transport;
+                while let Ok(msg) = transport.recv() {
+                    if inbound_tx.send(msg).is_err() {
+                        break;
+                    }
+                }
+            })
+            .map_err(|e| ProtocolError::Process(format!("启动 IPC 读线程失败: {e}")))?;
+
+        let send_transport = PipeTransport::new(io::empty(), stdin);
 
         Ok(Self {
             id,
             child: Some(child),
-            channel: Some(channel),
+            send_transport: Some(send_transport),
+            inbound_rx,
+            reader_thread: Some(reader_thread),
             state: RendererState::Starting,
             last_heartbeat: Instant::now(),
             current_url: None,
@@ -104,26 +123,22 @@ impl RendererHandle {
 
     /// 发送 IPC 消息到渲染进程。
     pub fn send(&mut self, msg: IpcMessage) -> Result<(), ProtocolError> {
-        match &mut self.channel {
+        match &mut self.send_transport {
             Some(ch) => ch.send(msg),
             None => Err(ProtocolError::Channel("通道已关闭".into())),
         }
     }
 
-    /// 从渲染进程接收 IPC 消息。
+    /// 从渲染进程接收 IPC 消息（阻塞直到有消息）。
     pub fn recv(&mut self) -> Result<IpcMessage, ProtocolError> {
-        match &mut self.channel {
-            Some(ch) => ch.recv(),
-            None => Err(ProtocolError::Channel("通道已关闭".into())),
-        }
+        self.inbound_rx
+            .recv()
+            .map_err(|e| ProtocolError::Channel(format!("IPC 接收失败: {e}")))
     }
 
     /// 尝试非阻塞接收。
     pub fn try_recv(&mut self) -> Result<Option<IpcMessage>, ProtocolError> {
-        match &mut self.channel {
-            Some(ch) => ch.try_recv(),
-            None => Err(ProtocolError::Channel("通道已关闭".into())),
-        }
+        Ok(self.inbound_rx.try_recv().ok())
     }
 
     /// 发送导航命令。
@@ -227,18 +242,21 @@ impl RendererHandle {
 
     /// 关闭渲染进程。
     pub fn shutdown(&mut self) -> Result<(), ProtocolError> {
-        // 先尝试优雅关闭
-        if let Some(ref mut ch) = self.channel {
+        if let Some(ref mut ch) = self.send_transport {
             ch.close();
         }
+        self.send_transport = None;
 
         if let Some(ref mut child) = self.child {
             let _ = child.kill();
             let _ = child.wait();
         }
-
-        self.channel = None;
         self.child = None;
+
+        if let Some(handle) = self.reader_thread.take() {
+            let _ = handle.join();
+        }
+
         self.state = RendererState::Closed;
         Ok(())
     }
@@ -251,8 +269,11 @@ impl RendererHandle {
                 .map_err(|e| ProtocolError::Process(format!("终止进程失败: {e}")))?;
             let _ = child.wait();
         }
-        self.channel = None;
+        self.send_transport = None;
         self.child = None;
+        if let Some(handle) = self.reader_thread.take() {
+            let _ = handle.join();
+        }
         self.state = RendererState::Closed;
         Ok(())
     }

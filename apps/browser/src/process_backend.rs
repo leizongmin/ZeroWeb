@@ -208,6 +208,8 @@ impl ProcessTabBackend {
             }
             Err(e) => {
                 tracing::error!("Failed to spawn renderer for tab {}: {e}", tab_id.0);
+                self.pending_errors
+                    .push((tab_id, format!("无法启动渲染进程: {e}")));
             }
         }
     }
