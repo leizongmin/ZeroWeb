@@ -2,9 +2,13 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
+use zero_protocol::message::{HitTestLinkParams, HitTestLinkResultParams, IpcMessage, IpcMessageKind};
 use zero_protocol::process::{ProcessManager, RendererHandle};
 
 use crate::tab_snapshot::TabSnapshot;
@@ -23,6 +27,8 @@ pub fn set_multiprocess_enabled(enabled: bool) {
         std::env::set_var("ZERO_BROWSER_MULTIPROCESS", if enabled { "1" } else { "0" });
     }
 }
+
+static NEXT_HIT_TEST_MSG_ID: AtomicU64 = AtomicU64::new(1);
 
 /// 多进程 Tab 后端。
 pub struct ProcessTabBackend {
@@ -62,6 +68,22 @@ impl ProcessTabBackend {
     fn renderer_mut(&mut self, tab_id: TabId) -> Option<&mut RendererHandle> {
         let id = self.tab_to_renderer.get(&tab_id).copied()?;
         self.manager.get_renderer(id)
+    }
+
+    fn apply_inbound_message(snap: &mut TabSnapshot, kind: IpcMessageKind) {
+        match kind {
+            IpcMessageKind::TitleChanged(title) => snap.title = Some(title),
+            IpcMessageKind::LoadComplete => snap.loading = false,
+            IpcMessageKind::LoadFailed(err) => {
+                snap.loading = false;
+                tracing::warn!("Renderer load failed: {err}");
+            }
+            IpcMessageKind::UrlChanged(url) => snap.url = Some(url),
+            IpcMessageKind::ViewPainted(params) => {
+                crate::paint_ipc::apply_paint_snapshot(snap, params);
+            }
+            _ => {}
+        }
     }
 
     /// 确保 Tab 有对应渲染进程。
@@ -113,8 +135,6 @@ impl ProcessTabBackend {
 
     /// 轮询 IPC 并更新快照。
     pub fn poll(&mut self, snapshots: &mut HashMap<TabId, TabSnapshot>) -> bool {
-        use zero_protocol::message::IpcMessageKind;
-
         let mut changed = false;
         self.manager.check_crashes();
         let mapping: Vec<(TabId, u64)> = self.tab_to_renderer.iter().map(|(k, v)| (*k, *v)).collect();
@@ -127,19 +147,7 @@ impl ProcessTabBackend {
                     Ok(Some(msg)) => {
                         changed = true;
                         let snap = snapshots.entry(tab_id).or_default();
-                        match msg.kind {
-                            IpcMessageKind::TitleChanged(title) => snap.title = Some(title),
-                            IpcMessageKind::LoadComplete => snap.loading = false,
-                            IpcMessageKind::LoadFailed(err) => {
-                                snap.loading = false;
-                                tracing::warn!("Renderer load failed: {err}");
-                            }
-                            IpcMessageKind::UrlChanged(url) => snap.url = Some(url),
-                            IpcMessageKind::ViewPainted(params) => {
-                                crate::paint_ipc::apply_paint_snapshot(snap, params);
-                            }
-                            _ => {}
-                        }
+                        Self::apply_inbound_message(snap, msg.kind);
                     }
                     Ok(None) => break,
                     Err(e) => {
@@ -152,9 +160,50 @@ impl ProcessTabBackend {
         changed
     }
 
-    /// 链接命中测试（多进程暂未实现）。
-    pub fn hit_test_link(&self, _tab_id: TabId, _x: f32, _y: f32) -> Option<String> {
-        None
+    /// 链接命中测试（同步 IPC 请求/响应）。
+    pub fn hit_test_link(
+        &mut self,
+        tab_id: TabId,
+        x: f32,
+        y: f32,
+        snapshots: &mut HashMap<TabId, TabSnapshot>,
+    ) -> Option<String> {
+        let rid = *self.tab_to_renderer.get(&tab_id)?;
+        let msg_id = NEXT_HIT_TEST_MSG_ID.fetch_add(1, Ordering::Relaxed);
+        {
+            let renderer = self.manager.get_renderer(rid)?;
+            renderer
+                .send(IpcMessage {
+                    id: msg_id,
+                    kind: IpcMessageKind::HitTestLink(HitTestLinkParams { x, y }),
+                })
+                .ok()?;
+        }
+
+        let deadline = Instant::now() + Duration::from_millis(250);
+        loop {
+            if Instant::now() >= deadline {
+                return None;
+            }
+            let renderer = self.manager.get_renderer(rid)?;
+            match renderer.try_recv() {
+                Ok(Some(msg)) => {
+                    if msg.id == msg_id {
+                        if let IpcMessageKind::HitTestLinkResult(result) = msg.kind {
+                            return result.href;
+                        }
+                        continue;
+                    }
+                    let snap = snapshots.entry(tab_id).or_default();
+                    Self::apply_inbound_message(snap, msg.kind);
+                }
+                Ok(None) => thread::sleep(Duration::from_millis(1)),
+                Err(e) => {
+                    tracing::debug!("IPC hit_test recv: {e}");
+                    return None;
+                }
+            }
+        }
     }
 }
 

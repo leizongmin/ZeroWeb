@@ -128,18 +128,26 @@ fn test_roundtrip_all_message_kinds() {
         },
         IpcMessage {
             id: 16,
-            kind: IpcMessageKind::Heartbeat,
+            kind: IpcMessageKind::HitTestLink(HitTestLinkParams { x: 1.0, y: 2.0 }),
         },
         IpcMessage {
             id: 17,
-            kind: IpcMessageKind::CrashNotification("segfault".into()),
+            kind: IpcMessageKind::HitTestLinkResult(HitTestLinkResultParams { href: None }),
         },
         IpcMessage {
             id: 18,
-            kind: IpcMessageKind::Ok,
+            kind: IpcMessageKind::Heartbeat,
         },
         IpcMessage {
             id: 19,
+            kind: IpcMessageKind::CrashNotification("segfault".into()),
+        },
+        IpcMessage {
+            id: 20,
+            kind: IpcMessageKind::Ok,
+        },
+        IpcMessage {
+            id: 21,
             kind: IpcMessageKind::Error("something went wrong".into()),
         },
     ];
@@ -150,7 +158,7 @@ fn test_roundtrip_all_message_kinds() {
         assert_eq!(out.id, msg.id, "id mismatch");
     }
 
-    assert_eq!(messages.len(), 19, "should test all 19 message kinds");
+    assert_eq!(messages.len(), 21, "should test all 21 message kinds");
 }
 
 /// 测试 StorageType::Session 变体也能序列化。

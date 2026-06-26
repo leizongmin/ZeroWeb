@@ -7,7 +7,10 @@ use std::process;
 
 use zero_engine::RenderPipeline;
 use zero_protocol::IpcChannel;
-use zero_protocol::message::{FetchParams, IpcMessage, IpcMessageKind, NavigateParams, StorageOpParams};
+use zero_protocol::message::{
+    FetchParams, HitTestLinkParams, HitTestLinkResultParams, IpcMessage, IpcMessageKind, NavigateParams,
+    StorageOpParams,
+};
 use zero_protocol::transport::PipeTransport;
 
 /// 渲染进程运行时状态。
@@ -51,6 +54,12 @@ impl RendererRuntime {
             id: self.alloc_msg_id(),
             kind,
         };
+        self.channel.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
+    }
+
+    /// 发送带指定 ID 的 IPC 响应。
+    fn send_with_id(&mut self, id: u64, kind: IpcMessageKind) -> Result<(), String> {
+        let msg = IpcMessage { id, kind };
         self.channel.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
     }
 
@@ -139,6 +148,16 @@ impl RendererRuntime {
         self.send(IpcMessageKind::Heartbeat)
     }
 
+    /// 处理链接命中测试。
+    fn handle_hit_test_link(&mut self, msg_id: u64, params: HitTestLinkParams) -> Result<(), String> {
+        let href = self.pipeline.hit_test_link(params.x, params.y);
+        tracing::trace!("HitTestLink({msg_id}) -> {:?}", href.as_deref());
+        self.send_with_id(
+            msg_id,
+            IpcMessageKind::HitTestLinkResult(HitTestLinkResultParams { href }),
+        )
+    }
+
     /// 主消息循环。
     fn run(&mut self) -> Result<(), String> {
         tracing::info!("渲染进程 {} 启动，等待 IPC 消息...", self.renderer_id);
@@ -179,12 +198,14 @@ impl RendererRuntime {
                 }
                 IpcMessageKind::FetchRequest(params) => self.handle_fetch_request(params),
                 IpcMessageKind::StorageOp(params) => self.handle_storage_op(params),
+                IpcMessageKind::HitTestLink(params) => self.handle_hit_test_link(msg.id, params),
                 IpcMessageKind::FetchResponse(_)
                 | IpcMessageKind::TitleChanged(_)
                 | IpcMessageKind::UrlChanged(_)
                 | IpcMessageKind::LoadComplete
                 | IpcMessageKind::LoadFailed(_)
                 | IpcMessageKind::ViewPainted(_)
+                | IpcMessageKind::HitTestLinkResult(_)
                 | IpcMessageKind::CrashNotification(_) => {
                     tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
                     Ok(())

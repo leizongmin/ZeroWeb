@@ -2,16 +2,17 @@
 
 use zero_engine::PipelineTimings;
 use zero_protocol::{
-    IpcColor, IpcDrawOp, IpcFill, IpcGradient, IpcGradientKind, IpcGradientStop, IpcImage, IpcImagePayload, IpcLineCap,
-    IpcLineStyle, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke, PaintSnapshotParams,
+    IpcBlendMode, IpcColor, IpcDrawOp, IpcFill, IpcFilterKind, IpcGradient, IpcGradientKind, IpcGradientStop, IpcImage,
+    IpcImagePayload, IpcLineCap, IpcLineStyle, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke, PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::{ImageData, ImageKey};
 use zero_render_foundation::primitive::{
-    ClipPrimitive, DrawOp, FillPrimitive, FontId, GlyphPrimitive, GradientKind, GradientPrimitive, GradientStop,
-    ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive,
-    ShadowPrimitive, StrokePrimitive, TransformPrimitive,
+    BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FillPrimitive, FilterKind, FilterPrimitive, FontId,
+    GlyphPrimitive, GradientKind, GradientPrimitive, GradientStop, ImagePrimitive, LineCap, LineStyle,
+    PathFillPrimitive, PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive,
+    TransformPrimitive,
 };
 use zero_webview::WebViewRenderResult;
 
@@ -59,6 +60,47 @@ fn ipc_line_style(s: IpcLineStyle) -> LineStyle {
     }
 }
 
+fn ipc_filter_kind_to_kind(k: IpcFilterKind) -> FilterKind {
+    match k {
+        IpcFilterKind::Blur(v) => FilterKind::Blur(v),
+        IpcFilterKind::Brightness(v) => FilterKind::Brightness(v),
+        IpcFilterKind::Contrast(v) => FilterKind::Contrast(v),
+        IpcFilterKind::Grayscale(v) => FilterKind::Grayscale(v),
+        IpcFilterKind::HueRotate(v) => FilterKind::HueRotate(v),
+        IpcFilterKind::Invert(v) => FilterKind::Invert(v),
+        IpcFilterKind::Opacity(v) => FilterKind::Opacity(v),
+        IpcFilterKind::Saturate(v) => FilterKind::Saturate(v),
+        IpcFilterKind::Sepia(v) => FilterKind::Sepia(v),
+        IpcFilterKind::DropShadow {
+            offset_x,
+            offset_y,
+            blur,
+            color,
+        } => FilterKind::DropShadow(offset_x, offset_y, blur, ipc_color_to_color(color)),
+    }
+}
+
+fn ipc_blend_mode_to_mode(mode: IpcBlendMode) -> BlendMode {
+    match mode {
+        IpcBlendMode::Normal => BlendMode::Normal,
+        IpcBlendMode::Multiply => BlendMode::Multiply,
+        IpcBlendMode::Screen => BlendMode::Screen,
+        IpcBlendMode::Overlay => BlendMode::Overlay,
+        IpcBlendMode::Darken => BlendMode::Darken,
+        IpcBlendMode::Lighten => BlendMode::Lighten,
+        IpcBlendMode::ColorDodge => BlendMode::ColorDodge,
+        IpcBlendMode::ColorBurn => BlendMode::ColorBurn,
+        IpcBlendMode::HardLight => BlendMode::HardLight,
+        IpcBlendMode::SoftLight => BlendMode::SoftLight,
+        IpcBlendMode::Difference => BlendMode::Difference,
+        IpcBlendMode::Exclusion => BlendMode::Exclusion,
+        IpcBlendMode::Hue => BlendMode::Hue,
+        IpcBlendMode::Saturation => BlendMode::Saturation,
+        IpcBlendMode::Color => BlendMode::Color,
+        IpcBlendMode::Luminosity => BlendMode::Luminosity,
+    }
+}
+
 fn ipc_draw_op_to_draw_op(op: IpcDrawOp) -> DrawOp {
     match op {
         IpcDrawOp::Fill(i) => DrawOp::Fill(i),
@@ -71,6 +113,8 @@ fn ipc_draw_op_to_draw_op(op: IpcDrawOp) -> DrawOp {
         IpcDrawOp::PathStroke(i) => DrawOp::PathStroke(i),
         IpcDrawOp::Clip(i) => DrawOp::Clip(i),
         IpcDrawOp::Transform(i) => DrawOp::Transform(i),
+        IpcDrawOp::Filter(i) => DrawOp::Filter(i),
+        IpcDrawOp::BlendMode(i) => DrawOp::BlendMode(i),
         IpcDrawOp::Glyph(i) => DrawOp::Glyph(i),
     }
 }
@@ -169,6 +213,18 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             d: transform.d,
             tx: transform.tx,
             ty: transform.ty,
+        });
+    }
+    for filter in params.filters {
+        primitives.filters.push(FilterPrimitive {
+            rect: ipc_rect_to_rect(filter.rect),
+            filters: filter.filters.into_iter().map(ipc_filter_kind_to_kind).collect(),
+        });
+    }
+    for blend in params.blend_modes {
+        primitives.blend_modes.push(BlendModePrimitive {
+            rect: ipc_rect_to_rect(blend.rect),
+            mode: ipc_blend_mode_to_mode(blend.mode),
         });
     }
     for glyph in params.glyphs {

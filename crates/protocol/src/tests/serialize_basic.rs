@@ -252,6 +252,10 @@ fn test_roundtrip_all_message_types() {
             delta_x: 10.0,
             delta_y: -20.0,
         }),
+        IpcMessageKind::HitTestLink(HitTestLinkParams { x: 12.0, y: 34.0 }),
+        IpcMessageKind::HitTestLinkResult(HitTestLinkResultParams {
+            href: Some("https://example.com".into()),
+        }),
         IpcMessageKind::Heartbeat,
         IpcMessageKind::CrashNotification("segfault".into()),
         IpcMessageKind::Ok,

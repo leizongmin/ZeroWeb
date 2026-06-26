@@ -267,6 +267,95 @@ pub struct IpcTransform {
     pub ty: f32,
 }
 
+/// IPC CSS filter 函数。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum IpcFilterKind {
+    /// blur(px)。
+    Blur(f32),
+    /// brightness(number)。
+    Brightness(f32),
+    /// contrast(number)。
+    Contrast(f32),
+    /// grayscale(number)。
+    Grayscale(f32),
+    /// hue-rotate(deg)。
+    HueRotate(f32),
+    /// invert(number)。
+    Invert(f32),
+    /// opacity(number)。
+    Opacity(f32),
+    /// saturate(number)。
+    Saturate(f32),
+    /// sepia(number)。
+    Sepia(f32),
+    /// drop-shadow。
+    DropShadow {
+        /// 水平偏移。
+        offset_x: f32,
+        /// 垂直偏移。
+        offset_y: f32,
+        /// 模糊半径。
+        blur: f32,
+        /// 颜色。
+        color: IpcColor,
+    },
+}
+
+/// IPC CSS filter 图元。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpcFilter {
+    /// 滤镜应用区域。
+    pub rect: IpcRect,
+    /// 滤镜链。
+    pub filters: Vec<IpcFilterKind>,
+}
+
+/// IPC CSS mix-blend-mode。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum IpcBlendMode {
+    /// normal。
+    Normal,
+    /// multiply。
+    Multiply,
+    /// screen。
+    Screen,
+    /// overlay。
+    Overlay,
+    /// darken。
+    Darken,
+    /// lighten。
+    Lighten,
+    /// color-dodge。
+    ColorDodge,
+    /// color-burn。
+    ColorBurn,
+    /// hard-light。
+    HardLight,
+    /// soft-light。
+    SoftLight,
+    /// difference。
+    Difference,
+    /// exclusion。
+    Exclusion,
+    /// hue。
+    Hue,
+    /// saturation。
+    Saturation,
+    /// color。
+    Color,
+    /// luminosity。
+    Luminosity,
+}
+
+/// IPC 混合模式图元。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpcBlendModePrimitive {
+    /// 混合区域。
+    pub rect: IpcRect,
+    /// 混合模式。
+    pub mode: IpcBlendMode,
+}
+
 /// IPC 绘制顺序条目。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum IpcDrawOp {
@@ -290,6 +379,10 @@ pub enum IpcDrawOp {
     Clip(usize),
     /// `transforms` 索引。
     Transform(usize),
+    /// `filters` 索引。
+    Filter(usize),
+    /// `blend_modes` 索引。
+    BlendMode(usize),
     /// `glyphs` 索引。
     Glyph(usize),
 }
@@ -325,6 +418,10 @@ pub struct PaintSnapshotParams {
     pub clips: Vec<IpcClip>,
     /// 仿射变换。
     pub transforms: Vec<IpcTransform>,
+    /// CSS filter。
+    pub filters: Vec<IpcFilter>,
+    /// mix-blend-mode。
+    pub blend_modes: Vec<IpcBlendModePrimitive>,
     /// 文本图元。
     pub glyphs: Vec<IpcGlyph>,
     /// 绘制顺序（与 engine `DrawOp` 子集对应）。
@@ -348,6 +445,8 @@ impl Default for PaintSnapshotParams {
             path_strokes: Vec::new(),
             clips: Vec::new(),
             transforms: Vec::new(),
+            filters: Vec::new(),
+            blend_modes: Vec::new(),
             glyphs: Vec::new(),
             draw_order: Vec::new(),
         }
