@@ -8,7 +8,7 @@ use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::set_char_measure_fn;
 use zero_render_foundation::font::loader::FontLoader;
-use zero_webview::{AsyncPageLoad, PageLoadStage, WebView, WebViewBuilder, WebViewConfig};
+use zero_webview::{AsyncPageLoad, InProcessFetchHost, PageLoadStage, WebView, WebViewBuilder, WebViewConfig};
 
 use crate::pages;
 use crate::tab_js_worker::TabJsWorkerHandle;
@@ -166,6 +166,7 @@ fn tab_worker_main(
     let _ = WebViewConfig::default();
 
     let mut async_load: Option<AsyncPageLoad> = None;
+    let mut fetch_host = InProcessFetchHost;
     let mut pending_sync_html: Option<(String, Option<String>, Option<String>)> = None;
     let mut page_script_runner: Option<tab_scripts::PageScriptRunner> = None;
     let mut javascript_enabled = true;
@@ -278,7 +279,9 @@ fn tab_worker_main(
 
         if let Some(ref mut load) = async_load {
             let prev_stage = load.stage();
-            let changed = with_measure(&font_loader, font_id, || load.tick(&mut wv, TAB_WORKER_FRAME_BUDGET_MS));
+            let changed = with_measure(&font_loader, font_id, || {
+                load.tick(&mut wv, &mut fetch_host, TAB_WORKER_FRAME_BUDGET_MS)
+            });
             if changed {
                 if load.stage() != prev_stage {
                     let _ = msg_tx.send(TabWorkerMessage::Stage(load.stage()));
