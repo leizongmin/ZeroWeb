@@ -4,11 +4,11 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    apply_mutations_to_html, extract_page_scripts, resolve_document_url, script_dispatch_dom_event,
-    DomEventDetail, PageScript, RenderPipeline, RenderResult,
+    DomEventDetail, PageScript, RenderPipeline, RenderResult, apply_mutations_to_html, extract_page_scripts,
+    resolve_document_url, script_dispatch_dom_event,
 };
 
-use crate::js_worker::{collect_module_deps, RendererJsWorker};
+use crate::js_worker::{RendererJsWorker, collect_module_deps};
 
 /// DOM 事件派发结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,10 +47,7 @@ pub fn run_page_scripts<F: Fn(&str) -> Result<String, String>>(
     let mut html = ctx.html.clone();
 
     for script in extract_page_scripts(&html) {
-        let is_module = matches!(
-            &script,
-            PageScript::InlineModule(_) | PageScript::ExternalModule(_)
-        );
+        let is_module = matches!(&script, PageScript::InlineModule(_) | PageScript::ExternalModule(_));
         let module_url = match &script {
             PageScript::ExternalModule(src) => resolve_document_url(&base, src),
             PageScript::InlineModule(_) => base.clone(),
@@ -104,7 +101,11 @@ pub fn dispatch_dom_event(
     }
     let script = script_dispatch_dom_event(selector, event_type, detail);
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).clear();
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
     let result_str = match ctx.js_worker.execute_script_direct(&script) {
         Ok(r) => r,
         Err(e) => {
@@ -133,7 +134,11 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     fetch_text: &F,
 ) -> Result<(), String> {
     ctx.js_worker.set_dom_snapshot(html, ctx.url);
-    ctx.js_worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).clear();
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
     if is_module {
         let mut registry: HashMap<String, String> = HashMap::new();
         collect_module_deps(fetch_text, module_url, code, &mut registry)?;

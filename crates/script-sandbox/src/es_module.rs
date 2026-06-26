@@ -144,11 +144,7 @@ impl std::fmt::Debug for EsModuleSandbox {
 // ── 核心转换逻辑（纯函数） ──
 
 /// 将 ES Module 源码编译为可在 V8 中执行的 IIFE 脚本（内联依赖）。
-pub fn compile_module_script(
-    source: &str,
-    url: &str,
-    registry: &ModuleRegistry,
-) -> Result<String, ScriptError> {
+pub fn compile_module_script(source: &str, url: &str, registry: &ModuleRegistry) -> Result<String, ScriptError> {
     let body = build_module_script(source, url, registry, &mut HashSet::new())?;
     if source.contains("import(") {
         Ok(format!("(async function() {{\n{body}\n}})();\n"))
@@ -158,17 +154,12 @@ pub fn compile_module_script(
 }
 
 /// 编译依赖模块为可求值的 IIFE 表达式（返回 exports 对象）。
-pub fn compile_dependency_iife(
-    specifier: &str,
-    registry: &ModuleRegistry,
-) -> Result<String, ScriptError> {
+pub fn compile_dependency_iife(specifier: &str, registry: &ModuleRegistry) -> Result<String, ScriptError> {
     build_dep_iife(specifier, registry, &mut HashSet::new())
 }
 
 /// 生成模块运行时 prelude（`__moduleCache` + 动态 `import()` 支持）。
-pub fn build_module_runtime_prelude(
-    registry: &ModuleRegistry,
-) -> Result<String, ScriptError> {
+pub fn build_module_runtime_prelude(registry: &ModuleRegistry) -> Result<String, ScriptError> {
     let mut out = String::from("var __moduleCache = {};\n");
     for spec in registry.specifiers() {
         let iife = build_dep_iife(spec, registry, &mut HashSet::new())?;
@@ -177,7 +168,9 @@ pub fn build_module_runtime_prelude(
     }
     out.push_str("globalThis.__zw_load_module = function(spec) {\n");
     out.push_str("  if (__moduleCache[spec]) return __moduleCache[spec];\n");
-    out.push_str("  var parent = (typeof _importMeta !== 'undefined' && _importMeta.url) ? _importMeta.url : 'about:blank';\n");
+    out.push_str(
+        "  var parent = (typeof _importMeta !== 'undefined' && _importMeta.url) ? _importMeta.url : 'about:blank';\n",
+    );
     out.push_str("  var code = __zw_compile_module(spec, parent);\n");
     out.push_str("  if (!code) throw new Error('Module not found: ' + spec);\n");
     out.push_str("  __moduleCache[spec] = (function() { return eval('(' + code + ')'); })();\n");

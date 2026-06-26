@@ -11,14 +11,14 @@
 
 use std::io;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::Receiver;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use crate::channel::IpcChannel;
 use crate::message::{FetchResponseParams, IpcMessage, IpcMessageKind, NavigateParams};
 use crate::transport::PipeTransport;
-use crate::channel::IpcChannel;
 use crate::{ProcessRole, ProtocolError};
 
 /// 渲染进程 ID 类型。
@@ -70,10 +70,7 @@ pub fn child_process_args(role: ProcessRole, instance_id: u64) -> Vec<String> {
         ProcessRole::Renderer => "renderer",
         ProcessRole::Network => "network",
     };
-    vec![
-        format!("--type={type_name}"),
-        format!("--instance-id={instance_id}"),
-    ]
+    vec![format!("--type={type_name}"), format!("--instance-id={instance_id}")]
 }
 
 impl RendererHandle {
@@ -190,9 +187,7 @@ impl RendererHandle {
                 Ok(Some(msg))
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                Err(ProtocolError::Channel("IPC 通道已关闭".into()))
-            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(ProtocolError::Channel("IPC 通道已关闭".into())),
         }
     }
 

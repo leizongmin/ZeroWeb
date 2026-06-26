@@ -220,10 +220,7 @@ fn tab_worker_main(
                 } => {
                     let html = wv.html_content().to_string();
                     let detail = if key.is_some() || code.is_some() {
-                        Some(zero_engine::DomEventDetail {
-                            key,
-                            code,
-                        })
+                        Some(zero_engine::DomEventDetail { key, code })
                     } else {
                         None
                     };

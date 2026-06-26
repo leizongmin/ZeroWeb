@@ -1,7 +1,7 @@
 //! 渲染进程：RenderPrimitives → IPC 绘制快照。
 
-use zero_engine::{extract_img_srcs, image_resource_key, resolve_document_url};
 use zero_engine::{HitTestCache, HitTestLayoutSnapshot, node_id_to_u64};
+use zero_engine::{extract_img_srcs, image_resource_key, resolve_document_url};
 use zero_protocol::{
     IpcBlendMode, IpcBlendModePrimitive, IpcClip, IpcColor, IpcDrawOp, IpcFill, IpcFilter, IpcFilterKind, IpcGlyph,
     IpcGradient, IpcGradientKind, IpcGradientStop, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcImage,
@@ -151,14 +151,14 @@ where
     let mut seen = std::collections::HashSet::new();
 
     for src in extract_img_srcs(html) {
-        let key = image_resource_key(&src, Some(page_url));
-        if !seen.insert(key) {
-            continue;
-        }
         if src.starts_with("data:") {
             continue;
         }
         let resolved = resolve_document_url(page_url, &src);
+        let key = image_resource_key(&resolved, None);
+        if !seen.insert(key) {
+            continue;
+        }
         let Some(body) = fetch(&resolved) else {
             continue;
         };

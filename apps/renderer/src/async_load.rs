@@ -181,7 +181,7 @@ impl RendererPageLoad {
                 continue;
             }
             let resolved = resolve_document_url(&self.url, &src);
-            let key = image_resource_key(&src, Some(&self.url));
+            let key = image_resource_key(&resolved, None);
             self.img_pending.push((resolved, key));
         }
         if self.img_pending.is_empty() {
@@ -255,12 +255,7 @@ mod tests {
             Err("no network in test".into())
         }
 
-        fn publish(
-            &mut self,
-            _result: &RenderResult,
-            _title: Option<String>,
-            _is_final: bool,
-        ) -> Result<(), String> {
+        fn publish(&mut self, _result: &RenderResult, _title: Option<String>, _is_final: bool) -> Result<(), String> {
             self.publishes += 1;
             Ok(())
         }

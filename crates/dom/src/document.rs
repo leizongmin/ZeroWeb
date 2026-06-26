@@ -1537,11 +1537,12 @@ impl Document {
                     Some(p) => p,
                     None => return false,
                 },
-                crate::query::Combinator::Descendant => match self.find_ancestor_matching_selector(current, &parts[idx])
-                {
-                    Some(p) => p,
-                    None => return false,
-                },
+                crate::query::Combinator::Descendant => {
+                    match self.find_ancestor_matching_selector(current, &parts[idx]) {
+                        Some(p) => p,
+                        None => return false,
+                    }
+                }
             };
             if !self.element_matches_selector(current, &parts[idx]) {
                 return false;
@@ -1563,7 +1564,11 @@ impl Document {
     fn parent_element_node(&self, node: NodeId) -> Option<NodeId> {
         let mut current = self.parent_node(node);
         while let Some(pid) = current {
-            if self.nodes.get(pid).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))) {
+            if self
+                .nodes
+                .get(pid)
+                .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+            {
                 return Some(pid);
             }
             current = self.parent_node(pid);
@@ -1571,11 +1576,7 @@ impl Document {
         None
     }
 
-    fn find_ancestor_matching_selector(
-        &self,
-        node: NodeId,
-        selector: &crate::query::SimpleSelector,
-    ) -> Option<NodeId> {
+    fn find_ancestor_matching_selector(&self, node: NodeId, selector: &crate::query::SimpleSelector) -> Option<NodeId> {
         let mut current = self.parent_node(node);
         while let Some(pid) = current {
             if self.element_matches_selector(pid, selector) {

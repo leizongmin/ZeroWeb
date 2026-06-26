@@ -9,13 +9,13 @@ use std::time::Duration;
 
 use zero_browser_shell::TabId;
 use zero_engine::{
-    DomMutation, generate_js_dom_shim, query_all_selector_list, query_attr_from_html,
-    query_attr_from_mutations, query_inner_html_from_html, query_inner_html_from_mutations,
-    query_match_selector, query_text_from_html, query_text_from_mutations,
+    DomMutation, generate_js_dom_shim, query_all_selector_list, query_attr_from_html, query_attr_from_mutations,
+    query_inner_html_from_html, query_inner_html_from_mutations, query_match_selector, query_text_from_html,
+    query_text_from_mutations,
 };
 use zero_script_sandbox::{
-    build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
-    extract_module_import_specifiers, ModuleRegistry, SandboxConfig, V8Sandbox,
+    ModuleRegistry, SandboxConfig, V8Sandbox, build_module_runtime_prelude, compile_dependency_iife,
+    compile_module_script, extract_module_import_specifiers,
 };
 
 /// 页面 `<script>` 执行超时（毫秒）— 短于事件派发，避免死循环拖死 tab worker。
@@ -288,13 +288,11 @@ fn register_dom_callbacks(
     let m = Arc::clone(mutations);
     sandbox.register_callback("__zw_set_attr", move |args| {
         if args.len() >= 3 {
-            m.lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .push(DomMutation::SetAttr {
-                    selector: args[0].clone(),
-                    name: args[1].clone(),
-                    value: args[2].clone(),
-                });
+            m.lock().unwrap_or_else(|e| e.into_inner()).push(DomMutation::SetAttr {
+                selector: args[0].clone(),
+                name: args[1].clone(),
+                value: args[2].clone(),
+            });
         }
         "ok".into()
     });
@@ -302,13 +300,11 @@ fn register_dom_callbacks(
     let m = Arc::clone(mutations);
     sandbox.register_callback("__zw_set_style", move |args| {
         if args.len() >= 3 {
-            m.lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .push(DomMutation::SetStyle {
-                    selector: args[0].clone(),
-                    property: args[1].clone(),
-                    value: args[2].clone(),
-                });
+            m.lock().unwrap_or_else(|e| e.into_inner()).push(DomMutation::SetStyle {
+                selector: args[0].clone(),
+                property: args[1].clone(),
+                value: args[2].clone(),
+            });
         }
         "ok".into()
     });
@@ -316,12 +312,10 @@ fn register_dom_callbacks(
     let m = Arc::clone(mutations);
     sandbox.register_callback("__zw_set_text", move |args| {
         if args.len() >= 2 {
-            m.lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .push(DomMutation::SetText {
-                    selector: args[0].clone(),
-                    text: args[1].clone(),
-                });
+            m.lock().unwrap_or_else(|e| e.into_inner()).push(DomMutation::SetText {
+                selector: args[0].clone(),
+                text: args[1].clone(),
+            });
         }
         "ok".into()
     });
@@ -486,8 +480,7 @@ fn register_dom_callbacks(
 
 fn register_module_compile_callback(sandbox: &mut V8Sandbox) {
     let http = zero_net::client::HttpClient::new();
-    let runtime_iifes: Arc<std::sync::Mutex<HashMap<String, String>>> =
-        Arc::new(std::sync::Mutex::new(HashMap::new()));
+    let runtime_iifes: Arc<std::sync::Mutex<HashMap<String, String>>> = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
     sandbox.register_callback("__zw_compile_module", move |args| {
         if args.is_empty() {
