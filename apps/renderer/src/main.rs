@@ -5,11 +5,12 @@ mod paint_export;
 use std::io;
 use std::process;
 
+use zero_engine::PrefersColorSchemeValue;
 use zero_engine::RenderPipeline;
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
-    FetchParams, HitTestLinkParams, HitTestLinkResultParams, IpcMessage, IpcMessageKind, LoadHtmlParams,
-    NavigateParams, StorageOpParams,
+    FetchParams, HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMessage, IpcMessageKind,
+    LoadHtmlParams, NavigateParams, SetColorSchemeParams, SetViewportParams, StorageOpParams,
 };
 use zero_protocol::transport::PipeTransport;
 
@@ -102,11 +103,24 @@ impl RendererRuntime {
     fn publish_html_render(&mut self, html: &str, css: &str, page_url: &str) -> Result<(), String> {
         let title = extract_title(html);
         let result = self.pipeline.render_html(html, css);
+        let image_payloads = paint_export::fetch_image_payloads(html, page_url);
+        self.publish_render_result(&result, title, image_payloads)?;
+        self.send(IpcMessageKind::LoadComplete)?;
+        tracing::info!("页面渲染完成: {page_url}");
+        Ok(())
+    }
+
+    /// 推送已有渲染结果为 ViewPainted（及可选 TitleChanged）。
+    fn publish_render_result(
+        &mut self,
+        result: &zero_engine::RenderResult,
+        title: Option<String>,
+        image_payloads: Vec<zero_protocol::IpcImagePayload>,
+    ) -> Result<(), String> {
         let doc_h = self
             .pipeline
             .document_height()
             .unwrap_or(self.pipeline.viewport_height());
-        let image_payloads = paint_export::fetch_image_payloads(html, page_url);
         let paint = paint_export::paint_snapshot_from_primitives(
             self.pipeline.viewport_width() as u32,
             self.pipeline.viewport_height() as u32,
@@ -118,9 +132,25 @@ impl RendererRuntime {
         if let Some(title) = title {
             self.send(IpcMessageKind::TitleChanged(title))?;
         }
-        self.send(IpcMessageKind::LoadComplete)?;
-        tracing::info!("页面渲染完成: {page_url}");
         Ok(())
+    }
+
+    fn try_republish_cached(&mut self) -> Result<(), String> {
+        let Some(result) = self.pipeline.repaint_cached_viewport("") else {
+            return Ok(());
+        };
+        self.publish_render_result(&result, None, Vec::new())
+    }
+
+    fn handle_set_viewport(&mut self, params: SetViewportParams) -> Result<(), String> {
+        self.pipeline.set_viewport(params.width as f32, params.height as f32);
+        self.try_republish_cached()
+    }
+
+    fn handle_set_color_scheme(&mut self, params: SetColorSchemeParams) -> Result<(), String> {
+        self.pipeline
+            .set_prefers_color_scheme(ipc_scheme_to_engine(params.scheme));
+        self.try_republish_cached()
     }
 
     /// 处理后退命令。
@@ -174,6 +204,8 @@ impl RendererRuntime {
             let result = match msg.kind {
                 IpcMessageKind::Navigate(params) => self.handle_navigate(params),
                 IpcMessageKind::LoadHtml(params) => self.handle_load_html(params),
+                IpcMessageKind::SetViewport(params) => self.handle_set_viewport(params),
+                IpcMessageKind::SetColorScheme(params) => self.handle_set_color_scheme(params),
                 IpcMessageKind::GoBack => self.handle_go_back(),
                 IpcMessageKind::GoForward => self.handle_go_forward(),
                 IpcMessageKind::StopLoading => {
@@ -238,6 +270,13 @@ fn extract_title(html: &str) -> Option<String> {
         Some(html[start..end].trim().to_string())
     } else {
         None
+    }
+}
+
+fn ipc_scheme_to_engine(scheme: IpcColorScheme) -> PrefersColorSchemeValue {
+    match scheme {
+        IpcColorScheme::Light => PrefersColorSchemeValue::Light,
+        IpcColorScheme::Dark => PrefersColorSchemeValue::Dark,
     }
 }
 

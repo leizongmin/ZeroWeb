@@ -8,7 +8,10 @@ use std::time::{Duration, Instant};
 
 use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
-use zero_protocol::message::{HitTestLinkParams, HitTestLinkResultParams, IpcMessage, IpcMessageKind, LoadHtmlParams};
+use zero_protocol::message::{
+    HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMessage, IpcMessageKind, LoadHtmlParams,
+    SetColorSchemeParams, SetViewportParams,
+};
 use zero_protocol::process::{ProcessManager, RendererHandle};
 
 use crate::tab_snapshot::TabSnapshot;
@@ -86,6 +89,15 @@ impl ProcessTabBackend {
         }
     }
 
+    fn send_to_renderer(&mut self, tab_id: TabId, kind: IpcMessageKind) {
+        let Some(renderer) = self.renderer_mut(tab_id) else {
+            return;
+        };
+        if let Err(e) = renderer.send(IpcMessage { id: 0, kind }) {
+            tracing::warn!("IPC send failed for tab {}: {e}", tab_id.0);
+        }
+    }
+
     /// 确保 Tab 有对应渲染进程。
     pub fn ensure_renderer(&mut self, tab_id: TabId, viewport: (u32, u32)) {
         self.viewport = viewport;
@@ -96,6 +108,13 @@ impl ProcessTabBackend {
             Ok(rid) => {
                 self.tab_to_renderer.insert(tab_id, rid);
                 tracing::info!("Spawned renderer {rid} for tab {}", tab_id.0);
+                self.send_to_renderer(
+                    tab_id,
+                    IpcMessageKind::SetViewport(SetViewportParams {
+                        width: viewport.0,
+                        height: viewport.1,
+                    }),
+                );
             }
             Err(e) => {
                 tracing::error!("Failed to spawn renderer for tab {}: {e}", tab_id.0);
@@ -152,13 +171,29 @@ impl ProcessTabBackend {
         }
     }
 
-    /// 调整视口（预留 IPC）。
+    /// 调整所有 live 渲染进程视口。
     pub fn resize_all(&mut self, width: u32, height: u32) {
         self.viewport = (width, height);
+        let tabs: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
+        for tab_id in tabs {
+            self.send_to_renderer(tab_id, IpcMessageKind::SetViewport(SetViewportParams { width, height }));
+        }
     }
 
-    /// 颜色方案（预留 IPC）。
-    pub fn set_color_scheme(&mut self, _scheme: PrefersColorSchemeValue) {}
+    /// 广播颜色方案到所有 live 渲染进程。
+    pub fn set_color_scheme(&mut self, scheme: PrefersColorSchemeValue) {
+        let ipc_scheme = match scheme {
+            PrefersColorSchemeValue::Light => IpcColorScheme::Light,
+            PrefersColorSchemeValue::Dark => IpcColorScheme::Dark,
+        };
+        let tabs: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
+        for tab_id in tabs {
+            self.send_to_renderer(
+                tab_id,
+                IpcMessageKind::SetColorScheme(SetColorSchemeParams { scheme: ipc_scheme }),
+            );
+        }
+    }
 
     /// 轮询 IPC 并更新快照。
     pub fn poll(&mut self, snapshots: &mut HashMap<TabId, TabSnapshot>) -> bool {
