@@ -10,6 +10,7 @@
 
 | 优先级 | lever | 测试 / 目录 | 发散 | 复杂度 | cluster yield |
 |---|---|---|---|---|---|
+| **A 最高 yield** | R720 | background-root-005 / CSS2_backgrounds（canvas bg 传播不触发） | 80.7%（簇 100%） | 低-中（wiring+测试） | **~15 案 26-100%（含 3 案 100%）** |
 | **S 快速赢** | R689 | position-static-001 / css-position | 17.53%+3% | 低（一行级） | 2 案（twin） |
 | **S 快速赢** | R716 | box-offsets-rel-pos-002 / CSS2_visuren（relative right/bottom inset） | 9.18% | 低（一函数 ~6 行） | 2-3 案（001/002 twin + inline right/bottom） |
 | **A 高 cluster** | R678 | font-size-zero-3 / css-fonts（float shrink-to-fit） | 33.53% | 中 | **≥5 案 17-34% 跨 3 目录（最高渗透）** |
@@ -45,6 +46,13 @@
 ---
 
 ## Tier A — 高 yield（cluster 或最高单发散）
+
+### R720 · canvas bg 传播标准 render 路径不触发（★最高 yield ~15 案含 3 案 100%，render-feature）
+- **测试**：`CSS2/backgrounds/background-root-005`（80.7%）+ 101/102/103（**100%**）+ 012a/b（85/81%）+ 008/009（76.8%）+ 010/006/018/002/020/007（26-38%）+ background-attachment-applies-to-004（31%）= **~15 案 26-100%**
+- **根因（R720 product-smoke PIL + REFTEST_DEBUG + 代码 read-only 确证）**：`painter/mod.rs:296-333` 有 canvas 传播逻辑（R491 color + R507 image）：html bg 透明→body bg 传播→`add_fill(0,0,viewport_w,viewport_h, bg)`。`render_html`（pipeline.rs:357-359）设 viewport_w/h + 传 doc，外层条件（viewport_w>0 && doc=Some）**成立**。**但 REFTEST_DEBUG 证 canvas fill 未生成**（9 fills = html border + body box + body border，无 (0,0,800,600) canvas fill）；product-smoke PIL：ZW viewport **75.4% 白**（应 96.3% 绿），body 绿仅在自身盒。**块内 add_fill 不触发**——疑 `doc.get_elements_by_tag_name("html"/"body")` + `styles.get(id)` 返回 None（NodeId 不匹配 / collect_by_tag_name quirk）→ prop_style=None→skip。**无 propagation 测试**（tests/ 零 canvas_propagated）→ R491/R507 静默失效。
+- **fix scope（hand-off code-agent）**：① painter/mod.rs:296-333 传播块加 debug eprintln（html_id/body_id/styles.get 结果）pin 不触发原因；② 修 html/body 查找（get_elements_by_tag_name 或 styles.get NodeId 匹配）；③ 补 propagation 通过 render_html 全路径测试（防再静默失效）。**复杂度低-中**（逻辑已存在，wiring/lookup bug + 缺测试）。
+- **风险**：低-中（canvas 传播影响每页 body/html 背景铺满；修后须 A/B product-smoke welcome/legacy——body 背景全铺是基础视觉，或暴露其他被白底掩盖的布局问题）。
+- **★ 意义**：浏览器基础视觉（每页 body/html 背景铺满 viewport），修后产品可见度极高；「逻辑存在但静默失效 + 无测试」模式（R491/R507）。
 
 ### R678 · float 0-content / width:auto 取满宽非 shrink-to-fit（★cluster≥5 案跨 3 目录，最高渗透 lever）
 - **测试**：`css-fonts/font-size-zero-3`（33.53%，R678 pin）+ `floats-clear/float-non-replaced-width-007`（21.98%，R704）+ `floats-clear/floats-125`（28.80%，R706）+ `floats-clear/floats-124`（28.24%，推同族）+ `CSS2/positioning/abspos-008`（17.64%，R714：`.control` red float w=784 应 ~185；abspos §10.3.7 shrink-to-fit `.outer` w=185 已正确，发散纯 .control float）
