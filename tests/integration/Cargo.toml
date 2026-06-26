@@ -11,6 +11,7 @@ zero-css-parser = { workspace = true }
 zero-style-system = { workspace = true }
 zero-layout-engine = { workspace = true }
 zero-engine = { workspace = true }
+zero-page-runtime = { workspace = true }
 zero-net = { workspace = true }
 zero-security = { workspace = true }
 zero-storage = { workspace = true }
