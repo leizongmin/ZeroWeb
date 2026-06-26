@@ -16,6 +16,7 @@ zero-host-runtime = { workspace = true }
 zero-render-foundation = { workspace = true }
 zero-engine = { workspace = true }
 zero-protocol = { workspace = true }
+zero-script-sandbox = { workspace = true }
 winit = { workspace = true }
 softbuffer = { workspace = true }
 tracing = { workspace = true }
@@ -29,3 +30,6 @@ reqwest = { workspace = true, features = ["blocking"] }
 png = "0.17"
 url = { workspace = true }
 ico = "0.5.0"
+
+[dev-dependencies]
+serial_test = { workspace = true }

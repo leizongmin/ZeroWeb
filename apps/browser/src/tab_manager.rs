@@ -8,6 +8,7 @@ use zero_render_foundation::image_cache::ImageCache;
 use zero_webview::WebViewRenderResult;
 
 use crate::process_backend::{ProcessTabBackend, use_multiprocess_backend};
+use crate::tab_lru::TabLruPolicy;
 use crate::tab_snapshot::TabSnapshot;
 use crate::tab_worker::{TabWorkerCommand, TabWorkerHandle, TabWorkerMessage};
 
@@ -21,6 +22,8 @@ pub struct TabManager {
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
     poll_tick: u64,
+    lru: TabLruPolicy,
+    last_active: Option<TabId>,
 }
 
 impl TabManager {
@@ -39,6 +42,8 @@ impl TabManager {
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
             poll_tick: 0,
+            lru: TabLruPolicy::default(),
+            last_active: None,
         }
     }
 
@@ -68,6 +73,9 @@ impl TabManager {
 
     /// 确保 Tab 存在 worker / 进程。
     pub fn ensure_tab(&mut self, tab_id: TabId) {
+        if self.lru.is_frozen(tab_id) {
+            self.thaw_tab_if_frozen(tab_id);
+        }
         if self.workers.contains_key(&tab_id) {
             return;
         }
@@ -83,11 +91,71 @@ impl TabManager {
 
     /// 移除 Tab。
     pub fn remove_tab(&mut self, tab_id: TabId) {
-        self.workers.remove(&tab_id);
+        if let Some(mut worker) = self.workers.remove(&tab_id) {
+            worker.shutdown();
+        }
         self.snapshots.remove(&tab_id);
+        self.lru.remove_tab(tab_id);
         if let Some(ref mut backend) = self.process_backend {
             backend.remove_renderer(tab_id);
         }
+    }
+
+    /// 前台 Tab 切换 — 触发 LRU 冻结/解冻。
+    pub fn on_active_tab_changed(&mut self, active: Option<TabId>) {
+        if let Some(prev) = self.last_active
+            && Some(prev) != active
+        {
+            self.lru.note_deactivated(prev);
+        }
+        self.last_active = active;
+
+        if let Some(id) = active {
+            if self.lru.is_frozen(id) {
+                self.thaw_tab_if_frozen(id);
+            }
+        }
+        self.enforce_lru_limit(active);
+    }
+
+    fn thaw_tab_if_frozen(&mut self, tab_id: TabId) {
+        if self.process_backend.is_some() || !self.lru.is_frozen(tab_id) {
+            return;
+        }
+        let restore_url = self.lru.thaw(tab_id);
+        if self.workers.contains_key(&tab_id) {
+            return;
+        }
+        let worker = TabWorkerHandle::spawn(tab_id, self.viewport, self.color_scheme);
+        if let Some(url) = restore_url {
+            worker.send(TabWorkerCommand::Navigate(url));
+            if let Some(snap) = self.snapshots.get_mut(&tab_id) {
+                snap.loading = true;
+            }
+        }
+        self.workers.insert(tab_id, worker);
+    }
+
+    fn enforce_lru_limit(&mut self, active: Option<TabId>) {
+        if self.process_backend.is_some() {
+            return;
+        }
+        while self.lru.should_freeze(self.workers.len(), active) {
+            let live: HashMap<TabId, ()> = self.workers.keys().map(|&id| (id, ())).collect();
+            let Some(victim) = self.lru.pick_freeze_victim(active, &live) else {
+                break;
+            };
+            self.freeze_tab(victim);
+        }
+    }
+
+    fn freeze_tab(&mut self, tab_id: TabId) {
+        let restore_url = self.snapshots.get(&tab_id).and_then(|s| s.url.clone());
+        if let Some(mut worker) = self.workers.remove(&tab_id) {
+            worker.shutdown();
+        }
+        self.lru.mark_frozen(tab_id, restore_url);
+        tracing::debug!("Froze tab {} (LRU, max {})", tab_id.0, self.lru.max_live());
     }
 
     /// 导航到 URL。

@@ -870,6 +870,7 @@ impl BrowserApp {
         }
 
         self.scroll_offset.insert(tab_id, 0.0);
+        self.tabs.on_active_tab_changed(self.shell.active_tab_id());
         self.needs_redraw = true;
     }
 
@@ -882,6 +883,8 @@ impl BrowserApp {
 
             if self.shell.is_empty() {
                 self.new_tab(None);
+            } else {
+                self.tabs.on_active_tab_changed(self.shell.active_tab_id());
             }
 
             self.update_address_bar_from_active_tab();

@@ -256,6 +256,7 @@ fn test_webview_config_all_fields_custom() {
         user_agent: Some("Custom/2.0".to_string()),
         url: Some("https://start.com".to_string()),
         devtools: true,
+        external_script: None,
     };
     let wv = WebView::new(config);
     assert_eq!(wv.config().width, 1920);

@@ -21,6 +21,8 @@ mod paint_ipc;
 mod process_backend;
 mod tab_chrome;
 mod tab_favicon;
+mod tab_js_worker;
+mod tab_lru;
 mod tab_manager;
 mod tab_snapshot;
 mod tab_worker;

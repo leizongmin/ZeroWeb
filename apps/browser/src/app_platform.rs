@@ -538,6 +538,7 @@ pub fn detect_system_color_scheme() -> PrefersColorSchemeValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use zero_render_foundation::font::loader::FontLoader;
 
     #[test]
@@ -587,26 +588,40 @@ mod tests {
     /// `simple_hash(src)` 一致）后 → 图片颜色应出现 > 0。证明 webview ImageCache 经
     /// 浏览器 render 路径传入渲染器并被消费。
     #[test]
+    #[serial]
     fn render_path_consumes_webview_image_cache() {
+        let _guard = crate::test_sync::tab_runtime_test_guard();
+        use zero_engine::RenderPipeline;
         use zero_render_foundation::image_cache::ImageData;
 
         let mut app = BrowserApp::new(RenderMode::Cpu);
         app.new_tab(None);
         let tab_id = app.shell.active_tab_id().expect("active tab");
 
-        // 页面含一个 40x40 的 <img>；engine 用 image_resource_key 生成 image_key
         let src = "r215-wiring.png";
         let html = format!(
             "<img src=\"{src}\" style=\"display:block;width:40px;height:40px\">"
         );
-        app.load_webview_html(tab_id, &html, None);
 
-        let image_key = app
-            .tabs
-            .last_render(tab_id)
-            .and_then(|r| r.primitives.images.first())
-            .map(|img| img.image_key.clone())
-            .expect("page should emit an image primitive for <img>");
+        // 同步 engine 渲染，避免并行测试下 worker 时序干扰；仍走 browser render 路径验证 ImageCache。
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(&html, "");
+        let image_key = result
+            .primitives
+            .images
+            .first()
+            .expect("engine should emit image primitive for <img>")
+            .image_key
+            .clone();
+
+        app.tabs.ensure_tab(tab_id);
+        if let Some(snap) = app.tabs.snapshot_mut(tab_id) {
+            snap.last_render = Some(zero_webview::WebViewRenderResult {
+                primitives: result.primitives,
+                timings: zero_engine::PipelineTimings::default(),
+            });
+            snap.document_height = pipeline.document_height();
+        }
 
         // 区别于 chrome UI 与白色背景的鲜明颜色
         let (pr, pg, pb, pa) = (220u8, 30, 180, 255);

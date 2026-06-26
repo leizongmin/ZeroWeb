@@ -569,6 +569,7 @@ fn test_webview_config_custom_values() {
         user_agent: Some("MyCustomAgent/1.0".to_string()),
         url: Some("https://example.com".to_string()),
         devtools: true,
+        external_script: None,
     };
 
     let wv = WebView::new(config);
