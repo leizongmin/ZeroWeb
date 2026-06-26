@@ -298,7 +298,10 @@ mod tests {
         apply_paint_snapshot(&mut snap, params);
 
         assert!(snap.last_render.is_some(), "frame data should still be applied");
-        assert!(snap.hit_test.is_none(), "browser should not retain renderer hit-test trees");
+        assert!(
+            snap.hit_test.is_none(),
+            "browser should not retain renderer hit-test trees"
+        );
     }
 
     #[test]
