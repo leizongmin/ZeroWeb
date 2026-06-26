@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 build browser browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest product-smoke product-smoke-legacy
+.PHONY: setup-rusty-v8 build browser browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle product-smoke product-smoke-legacy
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -45,6 +45,15 @@ test: target/test-guard
 # WPT reftest（同样被 test-guard 包裹）。
 reftest: target/test-guard
 	./target/test-guard -- cargo run --bin zero-wpt-runner -- reftest
+
+# DC-14 独立 Oracle：渲染上游 WPT test 页 vs chromium oracle-shots，报告真一致率
+# （chromium-Oracle pass-rate，替代 self-ref 的 ~46.5% 假通过）。oracle-shots 由
+# capture-oracle-per-dir.mjs 本地抓取（gitignored，可再生）。非硬 fail 门禁（报告性）。
+# 用法：make reftest-oracle                       全量（慢，~10k 案）
+#       make reftest-oracle DIR=css-grid          单目录
+#       make reftest-oracle DIR=css-grid ORACLE_PASS_RATIO=0.005   调严判定阈值
+reftest-oracle: target/test-guard
+	./target/test-guard -- cargo run --bin zero-wpt-runner -- reftest-oracle $(DIR)
 
 # 产品静态页 product-smoke 回归门禁（DC-13）：渲染 welcome.html vs chromium Oracle，
 # diff > 阈值则失败（退出 2）。捕获产品可见回归——如 R428 min-size:auto 致
