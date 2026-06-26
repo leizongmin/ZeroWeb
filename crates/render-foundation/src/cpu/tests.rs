@@ -6,8 +6,9 @@ use crate::geometry::Rect;
 use crate::gpu::renderer::GlyphDraw;
 use crate::primitive::{
     BlendMode, BlendModePrimitive, ClipPrimitive, FillPrimitive, FilterKind, FilterPrimitive, GradientKind,
-    GradientPrimitive, GradientStop, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, RenderPrimitives,
-    RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
+    GradientPrimitive, GradientStop, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive,
+    PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive,
+    TransformPrimitive,
 };
 
 // ─── 旧版兼容测试 ───
@@ -1040,4 +1041,107 @@ fn test_glyph_no_rotation() {
     assert_eq!(fb.get_pixel(6, 5), [0, 0, 0, 255]);
     assert_eq!(fb.get_pixel(5, 6), [0, 0, 0, 255]);
     assert_eq!(fb.get_pixel(6, 6), [0, 0, 0, 255]);
+}
+
+// ─── DC-8 CPU framebuffer rigor（对称 R664 GPU）───
+// R661 识别 gap：CPU ImagePrimitive / PathFill / PathStroke 缺 framebuffer 像素断言测试。
+// 以下 3 测用 render_full_scene + fb.get_pixel 验证 CPU 路径，与 GPU test_gpu_full_scene_* 对称。
+
+/// DC-8 CPU ImagePrimitive — 纯红图片渲染到 framebuffer，断言像素为红。
+#[test]
+fn cpu_full_scene_image_solid_red() {
+    let mut primitives = RenderPrimitives::new();
+    // 1×1 纯红 RGBA 图片（放大到 16×16 rect）
+    let img = crate::image_cache::ImageData::from_rgba(vec![255, 0, 0, 255], 1, 1)
+        .expect("red image");
+    let mut image_cache = crate::image_cache::ImageCache::new(16, 1 << 20);
+    let key = image_cache.insert(img);
+    primitives.add_image(ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+        image_key: key,
+        clip: None,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(
+        16,
+        16,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut image_cache),
+        &[],
+        &[],
+    );
+    // 中心 (8,8) 应为红
+    let c = fb.get_pixel(8, 8);
+    assert!(c[0] > 240, "image center R should be ~255, got {:?}", c);
+    assert!(c[1] < 15, "image center G should be ~0, got {:?}", c);
+    assert!(c[2] < 15, "image center B should be ~0, got {:?}", c);
+}
+
+/// DC-8 CPU PathFillPrimitive — 矩形多边形填充，断言中心黑、外部白。
+#[test]
+fn cpu_full_scene_path_fill_black_rect() {
+    let mut primitives = RenderPrimitives::new();
+    // 矩形多边形 (4,4)-(28,28)
+    primitives.add_path_fill(vec![4.0, 4.0, 28.0, 4.0, 28.0, 28.0, 4.0, 28.0], Color::BLACK);
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    // 中心 (16,16) 黑
+    let center = fb.get_pixel(16, 16);
+    assert_eq!(center, [0, 0, 0, 255], "path-fill center should be black, got {:?}", center);
+    // 角 (1,1) 白（framebuffer 默认白底）
+    let corner = fb.get_pixel(1, 1);
+    assert_eq!(corner, [255, 255, 255, 255], "path-fill corner should be white, got {:?}", corner);
+}
+
+/// DC-8 CPU PathStrokePrimitive — 闭合矩形描边，断言内部白、顶边带黑像素。
+#[test]
+fn cpu_full_scene_path_stroke_closed_rect() {
+    let mut primitives = RenderPrimitives::new();
+    // 矩形描边中心 (8,8)-(24,24)，线宽 3，闭合
+    primitives.add_path_stroke(
+        vec![8.0, 8.0, 24.0, 8.0, 24.0, 24.0, 8.0, 24.0],
+        Color::BLACK,
+        3.0,
+        true,
+    );
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    // 内部 (16,16) 白（未被描边覆盖）
+    let center = fb.get_pixel(16, 16);
+    assert_eq!(center, [255, 255, 255, 255], "path-stroke interior should be white, got {:?}", center);
+    // 顶边带 y=8 行 x∈[8,24] 至少一黑像素
+    let top_edge_black = (8..=24).any(|x| fb.get_pixel(x, 8) == [0, 0, 0, 255]);
+    assert!(top_edge_black, "path-stroke top edge should contain black pixels");
+}
+
+/// DC-8 CPU StrokePrimitive — 水平线段渲染，断言线段中心黑、外部白。
+#[test]
+fn cpu_full_scene_stroke_horizontal_line() {
+    let mut primitives = RenderPrimitives::new();
+    // 水平线 (0,16)-(31,16) 宽 4，黑
+    primitives.add_stroke(StrokePrimitive {
+        x1: 0.0,
+        y1: 16.0,
+        x2: 31.0,
+        y2: 16.0,
+        width: 4.0,
+        color: Color::BLACK,
+        style: LineStyle::Solid,
+        cap: LineCap::Butt,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    // 线段中心 (16,16) 黑
+    let mid = fb.get_pixel(16, 16);
+    assert_eq!(mid, [0, 0, 0, 255], "stroke center should be black, got {:?}", mid);
+    // 线段上方 (16,4) 白
+    let above = fb.get_pixel(16, 4);
+    assert_eq!(above, [255, 255, 255, 255], "above stroke should be white, got {:?}", above);
 }

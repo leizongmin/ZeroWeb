@@ -248,10 +248,10 @@
 - [x] `RoundedRectPrimitive` — 圆角矩形（✅ 已有）
 - [x] `GradientPrimitive` — 线性/径向/锥形渐变渲染 ✅(cpu/gradient.rs render_gradient + get_pixel 单测)
 - [x] `ShadowPrimitive` — 高斯模糊阴影渲染 ✅(cpu/shadow.rs render_shadow + get_pixel 单测)
-- [ ] `ImagePrimitive` — 图片解码和渲染（RGBA → framebuffer 合成）
-- [ ] `StrokePrimitive` — 线段渲染（实线/虚线/点线，支持 LineCap）
-- [ ] `PathFillPrimitive` — 路径填充（任意多边形）
-- [ ] `PathStrokePrimitive` — 路径描边
+- [x] `ImagePrimitive` — 图片解码和渲染（RGBA → framebuffer 合成） ✅(cpu/mod.rs render_image + R665 cpu_full_scene_image_solid_red 像素断言 红)
+- [x] `StrokePrimitive` — 线段渲染（实线/虚线/点线，支持 LineCap） ✅(cpu/stroke.rs render_stroke + R665 cpu_full_scene_stroke_horizontal_line 像素断言 中心黑)
+- [x] `PathFillPrimitive` — 路径填充（任意多边形） ✅(cpu/stroke.rs render_path_fill + R665 cpu_full_scene_path_fill_black_rect 像素断言 中心黑/外部白)
+- [x] `PathStrokePrimitive` — 路径描边 ✅(cpu/stroke.rs render_path_stroke + R665 cpu_full_scene_path_stroke_closed_rect 像素断言 描边边黑/内部白)
 - [ ] `TransformPrimitive` — 2D 仿射变换应用到后续图元
 - [ ] `ClipPrimitive` — 矩形裁剪区域
 - [x] `FilterPrimitive` — CSS 滤镜（至少 blur、brightness、contrast、opacity） ✅(cpu/effects.rs apply_filter + get_pixel 单测)
