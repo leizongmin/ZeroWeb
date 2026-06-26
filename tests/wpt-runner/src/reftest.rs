@@ -537,6 +537,7 @@ pub fn render_to_framebuffer_with_base(
         Some(&mut image_cache),
         &[],
         &[],
+        &[],
     )
 }
 
@@ -576,6 +577,7 @@ pub fn render_via_webview_to_framebuffer(html: &str, config: &ReftestConfig) -> 
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
     )

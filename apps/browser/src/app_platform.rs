@@ -159,8 +159,9 @@ impl BrowserApp {
                 &self.font_loader,
                 &mut self.glyph_cache,
                 image_cache,
+                &glyphs,
                 &overlay_fills,
-                &overlay_glyphs.iter().chain(glyphs.iter()).cloned().collect::<Vec<_>>(),
+                &overlay_glyphs,
                 1.0, // scale_factor: GPU 渲染器内部已通过 surface 尺寸处理
             );
         }
@@ -208,13 +209,9 @@ impl BrowserApp {
             &self.font_loader,
             &mut self.glyph_cache,
             image_cache,
-            // overlay_fills: chrome overlay（上下文菜单背景、圆角遮罩等）
+            &glyphs,
             &overlay_fills,
-            // overlay_glyphs: chrome overlay 文字 + 所有 GlyphDraw 文字
-            // （chrome glyphs 和 webview glyphs 都是 GlyphDraw 格式，通过 append_webview_primitives 混合）
-            // 先渲染 overlay_glyphs（chrome overlay 文字），再追加 glyphs（chrome + webview 文字）
-            // 由于 Vec 需要合并，直接拼接
-            &overlay_glyphs.iter().chain(glyphs.iter()).cloned().collect::<Vec<_>>(),
+            &overlay_glyphs,
         );
         present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data);
     }
@@ -249,12 +246,9 @@ impl BrowserApp {
             &self.font_loader,
             &mut self.glyph_cache,
             image_cache,
+            &glyphs,
             &overlay_fills,
-            &overlay_glyphs
-                .iter()
-                .chain(glyphs.iter())
-                .cloned()
-                .collect::<Vec<_>>(),
+            &overlay_glyphs,
         )
     }
 }
@@ -646,6 +640,110 @@ mod tests {
             count1 > 0,
             "after populating cache, image color must be drawn (got 0 pixels)"
         );
+    }
+
+    /// 右键菜单打开时，页面文字不得绘制在菜单背景之上（`render_full_scene` ui_glyphs / overlay 顺序）。
+    #[test]
+    fn context_menu_covers_page_glyphs_in_full_scene() {
+        let _guard = crate::test_sync::tab_runtime_test_guard();
+        use zero_engine::RenderPipeline;
+
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+
+        let tab_id = app.shell.active_tab_id().expect("active tab");
+
+        let (cx, cy, cw, ch) = app.page_content_rect();
+        let mut pipeline = RenderPipeline::new(cw, ch);
+        let result = pipeline.render_html(
+            "<html><body style='margin:0;background:#fff;padding-top:40px'><p style='font-size:20px;line-height:24px;color:#000;margin:0'>\
+             Black page text under context menu overlay regression padding\
+             Black page text under context menu overlay regression padding\
+             </p></body></html>",
+            "",
+        );
+        assert!(
+            !result.primitives.glyphs.is_empty(),
+            "engine should emit page text glyphs for overlap regression"
+        );
+
+        app.inject_tab_render_for_test(
+            tab_id,
+            zero_webview::WebViewRenderResult {
+                primitives: result.primitives,
+                timings: zero_engine::PipelineTimings::default(),
+            },
+            pipeline.document_height().unwrap_or(ch),
+        );
+        let engine_glyph_count = app
+            .tabs
+            .last_render(tab_id)
+            .map(|r| r.primitives.glyphs.len())
+            .unwrap_or(0);
+        assert!(
+            engine_glyph_count > 100,
+            "injected snapshot should carry page glyphs (got {engine_glyph_count})"
+        );
+
+        let menu_x = cx + 24.0;
+        let menu_y = cy + 24.0;
+        let menu_w = 200_u32;
+        let menu_h = 224_u32;
+
+        let fb_plain = app.render_full_scene_with_webview_for_test(1280, 900);
+        let black_before = count_rect_pixels(&fb_plain, menu_x, menu_y, menu_w, menu_h, is_near_black);
+        assert!(
+            black_before > 80,
+            "page should render black glyphs under future menu rect (got {black_before}, engine_glyphs={engine_glyph_count})"
+        );
+
+        app.show_context_menu_for_test(menu_x, menu_y);
+        assert!(app.build_scene_for_test(1280, 900).2.iter().any(|f| {
+            f.color == app.chrome_palette().context_menu_bg
+        }));
+
+        let fb_menu = app.render_full_scene_with_webview_for_test(1280, 900);
+        let black_after = count_rect_pixels(&fb_menu, menu_x, menu_y, menu_w, menu_h, is_near_black);
+        let white_after = count_rect_pixels(&fb_menu, menu_x, menu_y, menu_w, menu_h, is_near_white);
+
+        assert!(
+            black_after < black_before / 3,
+            "menu overlay should hide most page text (before={black_before}, after={black_after})"
+        );
+        assert!(
+            white_after > black_before / 2,
+            "menu background should dominate overlap region (white={white_after}, page_black={black_before})"
+        );
+    }
+
+    fn count_rect_pixels(
+        fb: &zero_render_foundation::surface::FrameBuffer,
+        x0: f32,
+        y0: f32,
+        w: u32,
+        h: u32,
+        pred: fn(u8, u8, u8) -> bool,
+    ) -> usize {
+        let x_start = x0.round().max(0.0) as u32;
+        let y_start = y0.round().max(0.0) as u32;
+        let x_end = (x_start + w).min(fb.width);
+        let y_end = (y_start + h).min(fb.height);
+        (y_start..y_end)
+            .flat_map(|y| (x_start..x_end).map(move |x| (x, y)))
+            .filter(|(x, y)| {
+                let p = fb.get_pixel(*x, *y);
+                pred(p[0], p[1], p[2])
+            })
+            .count()
+    }
+
+    fn is_near_black(r: u8, g: u8, b: u8) -> bool {
+        r < 48 && g < 48 && b < 48
+    }
+
+    fn is_near_white(r: u8, g: u8, b: u8) -> bool {
+        r > 240 && g > 240 && b > 240
     }
 
     /// 统计 FrameBuffer 中精确匹配某 RGBA 颜色的像素数。

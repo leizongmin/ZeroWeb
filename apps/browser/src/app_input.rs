@@ -1180,14 +1180,40 @@ impl BrowserApp {
                 }
             })
             .collect();
+        let item_ids: Vec<Option<String>> = menu
+            .items()
+            .iter()
+            .map(|mi| {
+                if mi.is_separator() {
+                    None
+                } else {
+                    Some(mi.id().to_string())
+                }
+            })
+            .collect();
+
+        let (page_doc_x, page_doc_y) = if context_type == ContextType::Page
+            || context_type == ContextType::Link
+            || context_type == ContextType::Selection
+        {
+            self.page_doc_point(x_f, y_f)
+                .map(|(_, dx, dy)| (dx, dy))
+                .unwrap_or((0.0, 0.0))
+        } else {
+            (0.0, 0.0)
+        };
 
         self.context_menu = ContextMenuState {
             visible: true,
             context_type,
             items,
+            item_ids,
             hovered_index: None,
             x: x as f32,
             y: y as f32,
+            source_tab_id: self.shell.active_tab_id(),
+            page_doc_x,
+            page_doc_y,
         };
         self.needs_redraw = true;
     }
@@ -1199,32 +1225,47 @@ impl BrowserApp {
             None => return,
         };
 
-        let label = match self.context_menu.items.get(idx) {
-            Some(l) => l.clone(),
-            None => return,
+        let item_id = match self.context_menu.item_ids.get(idx) {
+            Some(Some(id)) => id.clone(),
+            _ => return,
         };
+
+        let source_tab_id = self.context_menu.source_tab_id;
+        let page_doc_x = self.context_menu.page_doc_x;
+        let page_doc_y = self.context_menu.page_doc_y;
+        let context_type = self.context_menu.context_type;
 
         self.context_menu.close();
         self.needs_redraw = true;
 
-        match label.as_str() {
-            "后退" => self.go_back(),
-            "前进" => self.go_forward(),
-            "重新加载" => self.refresh_page(),
-            "复制" => {
-                if self.context_menu.context_type == ContextType::Editable {
+        match item_id.as_str() {
+            "back" => self.go_back(),
+            "forward" => self.go_forward(),
+            "reload" => self.refresh_page(),
+            "view_source" => {
+                if let Some(tab_id) = source_tab_id {
+                    self.view_page_source(tab_id);
+                }
+            }
+            "inspect" => {
+                if let Some(tab_id) = source_tab_id {
+                    self.inspect_element_at(tab_id, page_doc_x, page_doc_y);
+                }
+            }
+            "copy" => {
+                if context_type == ContextType::Editable {
                     let _ = self.address_bar.copy_selection();
                 } else {
                     let _ = self.copy_page_selection();
                 }
             }
-            "剪切" if self.address_bar.cut_selection() => {
+            "cut" if self.address_bar.cut_selection() => {
                 self.update_autocomplete();
             }
-            "粘贴" if self.address_bar.paste_from_clipboard() => {
+            "paste" if self.address_bar.paste_from_clipboard() => {
                 self.update_autocomplete();
             }
-            "全选" => {
+            "select_all" => {
                 self.address_bar.select_all();
             }
             _ => {}
@@ -1253,7 +1294,9 @@ impl BrowserApp {
         }
 
         let idx = ((y_f - menu_y) / row_h) as usize;
-        if idx < self.context_menu.items.len() {
+        if idx < self.context_menu.items.len()
+            && self.context_menu.item_ids.get(idx).is_some_and(|id| id.is_some())
+        {
             Some(idx)
         } else {
             None

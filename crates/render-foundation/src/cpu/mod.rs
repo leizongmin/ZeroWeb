@@ -58,6 +58,7 @@ pub fn render_full_scene(
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
     image_cache: Option<&mut ImageCache>,
+    ui_glyphs: &[GlyphDraw],
     overlay_fills: &[FillPrimitive],
     overlay_glyphs: &[GlyphDraw],
 ) -> FrameBuffer {
@@ -79,6 +80,11 @@ pub fn render_full_scene(
         render_draw_order(&mut fb, primitives, scale, font_loader, glyph_cache, image_cache);
     } else {
         render_typed_buckets(&mut fb, primitives, scale, font_loader, glyph_cache, image_cache);
+    }
+
+    // Chrome / WebView 文字（GlyphDraw，在 overlay 之前）
+    for glyph in ui_glyphs {
+        draw_glyph(&mut fb, glyph, scale, font_loader, glyph_cache);
     }
 
     // Overlay 层（始终在最后，独立于主体绘制顺序）

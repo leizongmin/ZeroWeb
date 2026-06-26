@@ -20,6 +20,100 @@ pub fn generate_error_page(url: &str, error: &str) -> String {
     )
 }
 
+/// HTML 文本转义（用于查看源代码页）。
+pub fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// 生成「查看源代码」页面。
+pub fn generate_view_source_page(source_url: &str, html: &str) -> String {
+    format!(
+        r#"<!DOCTYPE html>
+<html>
+<head><title>查看源代码 — {title}</title></head>
+<body style="margin:0;background:#fff;color:#202124;font-family:Consolas,Monaco,monospace;">
+  <pre style="margin:0;padding:16px;white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.5;">{body}</pre>
+</body>
+</html>"#,
+        title = html_escape(source_url),
+        body = html_escape(html),
+    )
+}
+
+/// 生成「检查元素」信息页。
+pub fn generate_inspect_element_page(
+    source_url: &str,
+    click_x: f32,
+    click_y: f32,
+    hit: Option<&zero_engine::ElementHit>,
+) -> String {
+    let (tag, id, class_name, box_x, box_y, box_w, box_h, outer) = match hit {
+        Some(el) => (
+            el.tag_name.clone(),
+            el.id.clone().unwrap_or_else(|| "—".to_string()),
+            el.class_name.clone().unwrap_or_else(|| "—".to_string()),
+            format!("{:.1}", el.x),
+            format!("{:.1}", el.y),
+            format!("{:.1}", el.width),
+            format!("{:.1}", el.height),
+            format!(
+                "<{} id=\"{}\" class=\"{}\"></{}>",
+                el.tag_name,
+                html_escape(&el.id.clone().unwrap_or_default()),
+                html_escape(&el.class_name.clone().unwrap_or_default()),
+                el.tag_name
+            ),
+        ),
+        None => (
+            "—".to_string(),
+            "—".to_string(),
+            "—".to_string(),
+            "—".to_string(),
+            "—".to_string(),
+            "—".to_string(),
+            "—".to_string(),
+            "<!-- 未命中元素 -->".to_string(),
+        ),
+    };
+
+    format!(
+        r#"<!DOCTYPE html>
+<html>
+<head><title>检查元素 — ZeroBrowser</title></head>
+<body style="font-family:Segoe UI,sans-serif;margin:0;padding:24px;background:#f8f9fa;color:#202124;">
+  <h1 style="font-size:20px;margin:0 0 8px;">检查元素</h1>
+  <p style="margin:0 0 16px;color:#5f6368;font-size:13px;">页面: <code>{url}</code></p>
+  <div style="background:#fff;border-radius:8px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.08);max-width:720px;">
+    <h2 style="font-size:16px;margin:0 0 12px;">命中信息</h2>
+    <table style="border-collapse:collapse;font-size:14px;line-height:1.8;">
+      <tr><td style="color:#5f6368;padding-right:16px;">点击坐标</td><td>({click_x:.1}, {click_y:.1})</td></tr>
+      <tr><td style="color:#5f6368;padding-right:16px;">标签</td><td><code>{tag}</code></td></tr>
+      <tr><td style="color:#5f6368;padding-right:16px;">id</td><td><code>{id}</code></td></tr>
+      <tr><td style="color:#5f6368;padding-right:16px;">class</td><td><code>{class_name}</code></td></tr>
+      <tr><td style="color:#5f6368;padding-right:16px;">布局盒</td><td>x={box_x}, y={box_y}, w={box_w}, h={box_h}</td></tr>
+    </table>
+    <h2 style="font-size:16px;margin:20px 0 8px;">外层 HTML</h2>
+    <pre style="margin:0;padding:12px;background:#f1f3f4;border-radius:6px;font-size:12px;overflow:auto;">{outer}</pre>
+  </div>
+</body>
+</html>"#,
+        url = html_escape(source_url),
+        click_x = click_x,
+        click_y = click_y,
+        tag = html_escape(&tag),
+        id = html_escape(&id),
+        class_name = html_escape(&class_name),
+        box_x = box_x,
+        box_y = box_y,
+        box_w = box_w,
+        box_h = box_h,
+        outer = html_escape(&outer),
+    )
+}
+
 /// 从 HTML 文档提取 `<title>` 文本。
 pub fn extract_html_title(html: &str) -> Option<String> {
     let lower = html.to_ascii_lowercase();

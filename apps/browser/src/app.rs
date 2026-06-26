@@ -92,11 +92,18 @@ pub struct ContextMenuState {
     pub context_type: ContextType,
     /// 菜单项标签列表
     pub items: Vec<String>,
+    /// 与 `items` 对齐的菜单项 ID（分隔线为 `None`）
+    pub item_ids: Vec<Option<String>>,
     /// 悬停索引
     pub hovered_index: Option<usize>,
     /// 菜单左上角物理像素坐标
     pub x: f32,
     pub y: f32,
+    /// 打开菜单时的源标签页。
+    pub source_tab_id: Option<TabId>,
+    /// 页面内容区文档坐标（审查元素用）。
+    pub page_doc_x: f32,
+    pub page_doc_y: f32,
 }
 
 impl ContextMenuState {
@@ -105,16 +112,22 @@ impl ContextMenuState {
             visible: false,
             context_type: ContextType::Page,
             items: Vec::new(),
+            item_ids: Vec::new(),
             hovered_index: None,
             x: 0.0,
             y: 0.0,
+            source_tab_id: None,
+            page_doc_x: 0.0,
+            page_doc_y: 0.0,
         }
     }
 
     fn close(&mut self) {
         self.visible = false;
         self.items.clear();
+        self.item_ids.clear();
         self.hovered_index = None;
+        self.source_tab_id = None;
     }
 }
 
@@ -226,7 +239,7 @@ impl BrowserApp {
 
         let color_scheme = detect_system_color_scheme();
 
-        Self {
+        let mut app = Self {
             shell: BrowserShell::new(),
             tabs: TabManager::new((800, 600), color_scheme),
             gpu_renderer: None,
@@ -271,7 +284,9 @@ impl BrowserApp {
             touch_scroll: None,
             content_pointer_drag: None,
             scrollbar_drag: None,
-        }
+        };
+        app.tabs.set_javascript_enabled(app.shell.settings().javascript_enabled);
+        app
     }
 
     /// 当前悬停链接 URL（浮动状态栏内容；无悬停时为 `None`）。
@@ -606,6 +621,27 @@ impl BrowserApp {
             &overlay_fills,
             &overlay_glyphs,
         )
+    }
+
+    /// 测试用：在页面内容区坐标打开右键菜单（与生产路径 `show_context_menu` 一致）。
+    #[cfg(test)]
+    pub fn show_context_menu_for_test(&mut self, x: f32, y: f32) {
+        self.show_context_menu(x as f64, y as f64);
+    }
+
+    /// 测试用：注入标签页渲染快照（不经过 worker，避免异步覆盖）。
+    #[cfg(test)]
+    pub fn inject_tab_render_for_test(
+        &mut self,
+        tab_id: TabId,
+        render: zero_webview::WebViewRenderResult,
+        document_height: f32,
+    ) {
+        self.tabs.ensure_snapshot_for_test(tab_id);
+        if let Some(snap) = self.tabs.snapshot_mut(tab_id) {
+            snap.last_render = Some(render);
+            snap.document_height = Some(document_height);
+        }
     }
 
     /// 测试用：当前 Chrome 配色
@@ -993,6 +1029,40 @@ impl BrowserApp {
         };
 
         self.schedule_tab_fetch(tab_id, url);
+    }
+
+    /// 在新标签页打开内部 HTML 文档（查看源代码、检查元素等）。
+    pub fn open_internal_document_tab(&mut self, html: String, url: &str, title: &str) {
+        let tab_id = self.shell.new_tab(Some(url));
+        self.tabs.ensure_tab(tab_id);
+        self.tabs.load_html(tab_id, &html, None, Some(url));
+        if let Some(tab) = self.shell.active_tab_mut() {
+            tab.set_title(title);
+        }
+        self.scroll.insert(tab_id, TabScrollState::default());
+        self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+        self.sync_webview_viewport();
+        self.needs_redraw = true;
+    }
+
+    /// 查看当前标签页 HTML 源代码。
+    pub fn view_page_source(&mut self, tab_id: TabId) {
+        let Some(html) = self.tabs.page_html(tab_id) else {
+            return;
+        };
+        let source_url = self.tabs.page_url(tab_id).unwrap_or_else(|| "about:blank".to_string());
+        let view_url = format!("view-source:{source_url}");
+        let page = pages::generate_view_source_page(&source_url, &html);
+        self.open_internal_document_tab(page, &view_url, "查看源代码");
+    }
+
+    /// 审查右键点击位置的元素。
+    pub fn inspect_element_at(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32) {
+        let hit = self.tabs.hit_test_element(tab_id, doc_x, doc_y);
+        let source_url = self.tabs.page_url(tab_id).unwrap_or_else(|| "about:blank".to_string());
+        let page = pages::generate_inspect_element_page(&source_url, doc_x, doc_y, hit.as_ref());
+        let inspect_url = format!("zero://inspect?url={source_url}");
+        self.open_internal_document_tab(page, &inspect_url, "检查元素");
     }
 
     /// 执行后退导航

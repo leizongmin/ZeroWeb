@@ -47,11 +47,84 @@ fn find_link_href(doc: &Document, mut node: NodeId) -> Option<String> {
     }
 }
 
+/// 元素命中测试结果（文档坐标系）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ElementHit {
+    /// 元素标签名（小写）。
+    pub tag_name: String,
+    /// `id` 属性。
+    pub id: Option<String>,
+    /// `class` 属性。
+    pub class_name: Option<String>,
+    /// 布局盒左上角 X（CSS 逻辑像素）。
+    pub x: f32,
+    /// 布局盒左上角 Y。
+    pub y: f32,
+    /// 布局盒宽度。
+    pub width: f32,
+    /// 布局盒高度。
+    pub height: f32,
+}
+
+fn nearest_element_node(doc: &Document, mut node: NodeId) -> NodeId {
+    loop {
+        if doc
+            .get(node)
+            .is_some_and(|data| matches!(data.kind, NodeKind::Element(_)))
+        {
+            return node;
+        }
+        node = match doc.parent_node(node) {
+            Some(p) => p,
+            None => return node,
+        };
+    }
+}
+
+fn layout_box_for_node(layout: &LayoutBox, target: NodeId, abs_x: f32, abs_y: f32) -> Option<(f32, f32, f32, f32)> {
+    let box_x = abs_x + layout.x;
+    let box_y = abs_y + layout.y;
+    if layout.node_id == Some(target) {
+        return Some((box_x, box_y, layout.width, layout.height));
+    }
+    for child in &layout.children {
+        if let Some(found) = layout_box_for_node(child, target, box_x, box_y) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn element_hit_from_node(doc: &Document, layout: &LayoutBox, node: NodeId) -> Option<ElementHit> {
+    let element = nearest_element_node(doc, node);
+    let data = doc.get(element)?;
+    let NodeKind::Element(elem) = &data.kind else {
+        return None;
+    };
+    let (x, y, width, height) = layout_box_for_node(layout, element, 0.0, 0.0)?;
+    Some(ElementHit {
+        tag_name: elem.local_name().to_ascii_lowercase(),
+        id: doc.get_attribute(element, "id"),
+        class_name: doc.get_attribute(element, "class"),
+        x,
+        y,
+        width,
+        height,
+    })
+}
+
 /// 在文档布局中命中测试链接，返回 `href`（若存在）。
 pub fn hit_test_link(doc: &Document, layout: &LayoutBox, x: f32, y: f32) -> Option<String> {
     let mut best = (0, doc.root());
     deepest_node_at(layout, 0.0, 0.0, x, y, 0, &mut best);
     find_link_href(doc, best.1)
+}
+
+/// 在文档布局中命中测试元素，返回最深元素及其布局盒。
+pub fn hit_test_element(doc: &Document, layout: &LayoutBox, x: f32, y: f32) -> Option<ElementHit> {
+    let mut best = (0, doc.root());
+    deepest_node_at(layout, 0.0, 0.0, x, y, 0, &mut best);
+    element_hit_from_node(doc, layout, best.1)
 }
 
 #[cfg(test)]
@@ -275,7 +348,19 @@ mod tests {
         assert!(hit_test_link(&doc, &layout.root, -10.0, -10.0).is_none());
     }
 
-    /// 测试链接带有查询参数和片段标识符。
+    /// 元素命中测试返回标签与属性。
+    #[test]
+    fn hit_test_element_returns_div_attributes() {
+        let html =
+            r#"<html><body><div id="main" class="box" style="width:100px;height:40px">Hello</div></body></html>"#;
+        let css = "div { display: block; }";
+        let (doc, layout) = render(html, css);
+        let hit = hit_test_element(&doc, &layout.root, 10.0, 10.0).expect("element");
+        assert_eq!(hit.tag_name, "div");
+        assert_eq!(hit.id.as_deref(), Some("main"));
+        assert_eq!(hit.class_name.as_deref(), Some("box"));
+    }
+
     #[test]
     fn hit_test_link_with_query_and_fragment() {
         let html = r#"<html><body>

@@ -700,6 +700,21 @@ impl WebView {
         })
     }
 
+    /// 命中测试元素，坐标为 WebView 视口内的 CSS 逻辑像素。
+    pub fn hit_test_element(&self, x: f32, y: f32) -> Option<zero_engine::ElementHit> {
+        self.pipeline.hit_test_element(x, y)
+    }
+
+    /// 抓取 URL 文本资源（用于外链脚本等）。
+    pub fn fetch_text_at(&self, url: &str) -> Result<String, WebViewError> {
+        let resp = self
+            .http_client
+            .get(url)
+            .map_err(|e| WebViewError::Navigation(format!("fetch {url}: {e}")))?;
+        resp.text()
+            .map_err(|e| WebViewError::Navigation(format!("decode {url}: {e}")))
+    }
+
     /// 文档布局高度（CSS 逻辑像素）。
     pub fn document_height(&self) -> Option<f32> {
         self.pipeline.document_height()
