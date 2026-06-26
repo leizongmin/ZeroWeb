@@ -2,8 +2,7 @@
 
 use zero_engine::PipelineTimings;
 use zero_protocol::{
-    IpcBlendMode, IpcColor, IpcDrawOp, IpcFill, IpcFilterKind, IpcGradient, IpcGradientKind, IpcGradientStop,
-    IpcImage, IpcImagePayload, IpcLineCap, IpcLineStyle, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke,
+    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGradientKind, IpcLineCap, IpcLineStyle, IpcRect,
     PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;

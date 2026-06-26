@@ -288,7 +288,7 @@ fn tab_worker_main(
             if !load.is_active() {
                 if let Some(err) = load.take_error() {
                     let page_url = wv.url().unwrap_or("about:blank");
-                    let error_page = pages::generate_error_page(&page_url, &err);
+                    let error_page = pages::generate_error_page(page_url, &err);
                     with_measure(&font_loader, font_id, || {
                         wv.load_html(&error_page, None);
                     });
