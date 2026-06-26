@@ -112,7 +112,7 @@ impl RendererRuntime {
         self.channel.recv().map_err(|e| format!("IPC 接收失败: {e}"))
     }
 
-(&mut self, html: String, css: String) -> Result<(), String> {
+    fn after_page_html_loaded(&mut self, html: String, css: String) -> Result<(), String> {
         self.cached_html = html;
         self.cached_css = css;
         let js_enabled = self.javascript_enabled;

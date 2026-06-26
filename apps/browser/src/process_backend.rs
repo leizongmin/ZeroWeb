@@ -40,6 +40,68 @@ pub fn set_multiprocess_enabled(enabled: bool) {
 
 static NEXT_HIT_TEST_MSG_ID: AtomicU64 = AtomicU64::new(1);
 
+fn renderer_binary_filename() -> &'static str {
+    #[cfg(windows)]
+    {
+        "zero-renderer.exe"
+    }
+    #[cfg(not(windows))]
+    {
+        "zero-renderer"
+    }
+}
+
+/// 解析 `zero-renderer` 可执行文件路径（环境变量 / 同目录 / target / PATH）。
+fn resolve_renderer_binary() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("ZERO_RENDERER_PATH") {
+        let candidate = PathBuf::from(path);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        tracing::warn!(
+            "ZERO_RENDERER_PATH 指向的文件不存在: {}",
+            candidate.display()
+        );
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sibling = dir.join(renderer_binary_filename());
+            if sibling.is_file() {
+                return Some(sibling);
+            }
+            // `cargo run` 有时将二进制放在 `target/debug/deps/` 下。
+            if dir.file_name().is_some_and(|n| n == "deps")
+                && let Some(debug_dir) = dir.parent()
+            {
+                let in_debug = debug_dir.join(renderer_binary_filename());
+                if in_debug.is_file() {
+                    return Some(in_debug);
+                }
+            }
+        }
+    }
+
+    for rel in ["target/debug", "target/release"] {
+        let candidate = PathBuf::from(rel).join(renderer_binary_filename());
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    find_renderer_in_path()
+}
+
+fn find_renderer_in_path() -> Option<PathBuf> {
+    for dir in std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()) {
+        let candidate = dir.join(renderer_binary_filename());
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 /// 多进程 Tab 后端。
 pub struct ProcessTabBackend {
     manager: ProcessManager,
@@ -52,24 +114,23 @@ pub struct ProcessTabBackend {
 }
 
 impl ProcessTabBackend {
-    /// 创建多进程后端。
-    pub fn new() -> Self {
-        let renderer_bin = std::env::current_exe()
-            .ok()
-            .and_then(|p| {
-                p.parent().map(|dir| {
-                    #[cfg(windows)]
-                    {
-                        dir.join("zero-renderer.exe")
-                    }
-                    #[cfg(not(windows))]
-                    {
-                        dir.join("zero-renderer")
-                    }
-                })
-            })
-            .unwrap_or_else(|| PathBuf::from("zero-renderer"));
+    /// 创建多进程后端；若找不到 `zero-renderer` 则返回 `None`（由调用方回退单进程 worker）。
+    pub fn try_new() -> Option<Self> {
+        let renderer_bin = resolve_renderer_binary().unwrap_or_else(|| {
+            PathBuf::from(renderer_binary_filename())
+        });
+        if !renderer_bin.is_file() {
+            tracing::warn!(
+                "未找到 zero-renderer（尝试过 ZERO_RENDERER_PATH、浏览器同目录、target/debug、PATH）。\
+                 将使用进程内 tab worker。请先 `cargo build --bin zero-renderer`，或设置 ZERO_RENDERER_PATH，或使用 --single-process。"
+            );
+            return None;
+        }
+        tracing::info!("Multi-process renderer binary: {}", renderer_bin.display());
+        Some(Self::with_renderer_bin(renderer_bin))
+    }
 
+    fn with_renderer_bin(renderer_bin: PathBuf) -> Self {
         Self {
             manager: ProcessManager::new(renderer_bin.to_string_lossy().as_ref()),
             tab_to_renderer: HashMap::new(),

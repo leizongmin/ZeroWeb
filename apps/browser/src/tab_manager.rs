@@ -41,7 +41,7 @@ impl TabManager {
             workers: HashMap::new(),
             snapshots: HashMap::new(),
             process_backend: if use_multiprocess_backend() {
-                Some(ProcessTabBackend::new())
+                ProcessTabBackend::try_new()
             } else {
                 None
             },
@@ -58,6 +58,11 @@ impl TabManager {
         };
         let max_live = manager.lru.max_live();
         tracing::info!("Tab LRU max live workers: {max_live} (ZERO_BROWSER_MAX_LIVE_TABS)");
+        if use_multiprocess_backend() && manager.process_backend.is_none() {
+            tracing::info!("Tab runtime: in-process workers (zero-renderer not available)");
+        } else if manager.process_backend.is_some() {
+            tracing::info!("Tab runtime: multi-process (zero-renderer child processes)");
+        }
         manager
     }
 
