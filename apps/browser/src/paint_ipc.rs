@@ -1,21 +1,137 @@
 //! 多进程 IPC 绘制快照 ↔ 浏览器 TabSnapshot 转换。
 
 use zero_engine::PipelineTimings;
-use zero_protocol::PaintSnapshotParams;
+use zero_protocol::{
+    IpcColor, IpcDrawOp, IpcFill, IpcGradient, IpcGradientKind, IpcGradientStop, IpcImage, IpcImagePayload, IpcLineCap,
+    IpcLineStyle, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke, PaintSnapshotParams,
+};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::{FillPrimitive, FontId, GlyphPrimitive, RenderPrimitives};
+use zero_render_foundation::image_cache::{ImageData, ImageKey};
+use zero_render_foundation::primitive::{
+    DrawOp, FillPrimitive, FontId, GlyphPrimitive, GradientKind, GradientPrimitive, GradientStop, ImagePrimitive,
+    LineCap, LineStyle, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive,
+};
 use zero_webview::WebViewRenderResult;
 
 use crate::tab_snapshot::TabSnapshot;
 
+fn ipc_rect_to_rect(r: IpcRect) -> Rect {
+    Rect::new(r.x, r.y, r.width, r.height)
+}
+
+fn ipc_color_to_color(c: IpcColor) -> Color {
+    Color::rgba(c.r, c.g, c.b, c.a)
+}
+
+fn ipc_gradient_kind_to_kind(k: IpcGradientKind) -> GradientKind {
+    match k {
+        IpcGradientKind::Linear { x0, y0, x1, y1 } => GradientKind::Linear { x0, y0, x1, y1 },
+        IpcGradientKind::Radial {
+            cx,
+            cy,
+            inner_radius,
+            outer_radius,
+        } => GradientKind::Radial {
+            cx,
+            cy,
+            inner_radius,
+            outer_radius,
+        },
+        IpcGradientKind::Conic { cx, cy, start_angle } => GradientKind::Conic { cx, cy, start_angle },
+    }
+}
+
+fn ipc_line_cap(c: IpcLineCap) -> LineCap {
+    match c {
+        IpcLineCap::Butt => LineCap::Butt,
+        IpcLineCap::Round => LineCap::Round,
+        IpcLineCap::Square => LineCap::Square,
+    }
+}
+
+fn ipc_line_style(s: IpcLineStyle) -> LineStyle {
+    match s {
+        IpcLineStyle::Solid => LineStyle::Solid,
+        IpcLineStyle::Dashed => LineStyle::Dashed,
+        IpcLineStyle::Dotted => LineStyle::Dotted,
+    }
+}
+
+fn ipc_draw_op_to_draw_op(op: IpcDrawOp) -> DrawOp {
+    match op {
+        IpcDrawOp::Fill(i) => DrawOp::Fill(i),
+        IpcDrawOp::RoundedRect(i) => DrawOp::RoundedRect(i),
+        IpcDrawOp::Gradient(i) => DrawOp::Gradient(i),
+        IpcDrawOp::Shadow(i) => DrawOp::Shadow(i),
+        IpcDrawOp::Image(i) => DrawOp::Image(i),
+        IpcDrawOp::Stroke(i) => DrawOp::Stroke(i),
+        IpcDrawOp::Glyph(i) => DrawOp::Glyph(i),
+    }
+}
+
 /// 将 IPC 绘制快照写入 Tab 快照。
 pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams) {
     let mut primitives = RenderPrimitives::new();
+
     for fill in params.fills {
         primitives.fills.push(FillPrimitive {
-            rect: Rect::new(fill.rect.x, fill.rect.y, fill.rect.width, fill.rect.height),
-            color: Color::rgba(fill.color.r, fill.color.g, fill.color.b, fill.color.a),
+            rect: ipc_rect_to_rect(fill.rect),
+            color: ipc_color_to_color(fill.color),
+        });
+    }
+    for rr in params.rounded_rects {
+        primitives.rounded_rects.push(RoundedRectPrimitive {
+            rect: ipc_rect_to_rect(rr.rect),
+            color: ipc_color_to_color(rr.color),
+            top_left_radius: rr.top_left_radius,
+            top_right_radius: rr.top_right_radius,
+            bottom_right_radius: rr.bottom_right_radius,
+            bottom_left_radius: rr.bottom_left_radius,
+        });
+    }
+    for g in params.gradients {
+        primitives.gradients.push(GradientPrimitive {
+            rect: ipc_rect_to_rect(g.rect),
+            kind: ipc_gradient_kind_to_kind(g.kind),
+            stops: g
+                .stops
+                .into_iter()
+                .map(|s| GradientStop {
+                    offset: s.offset,
+                    color: ipc_color_to_color(s.color),
+                })
+                .collect(),
+            repeating: g.repeating,
+        });
+    }
+    for shadow in params.shadows {
+        primitives.shadows.push(ShadowPrimitive {
+            rect: ipc_rect_to_rect(shadow.rect),
+            color: ipc_color_to_color(shadow.color),
+            offset_x: shadow.offset_x,
+            offset_y: shadow.offset_y,
+            blur_radius: shadow.blur_radius,
+            spread_radius: shadow.spread_radius,
+        });
+    }
+    for image in params.images {
+        primitives.images.push(ImagePrimitive {
+            rect: ipc_rect_to_rect(image.rect),
+            image_key: ImageKey::new(image.image_key),
+            clip: image.clip.map(ipc_rect_to_rect),
+        });
+    }
+    for stroke in params.strokes {
+        primitives.strokes.push(StrokePrimitive {
+            x1: stroke.x1,
+            y1: stroke.y1,
+            x2: stroke.x2,
+            y2: stroke.y2,
+            width: stroke.width,
+            color: ipc_color_to_color(stroke.color),
+            style: ipc_line_style(stroke.style),
+            cap: ipc_line_cap(stroke.cap),
         });
     }
     for glyph in params.glyphs {
@@ -23,7 +139,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             x: glyph.x,
             y: glyph.y,
             font_size: glyph.font_size,
-            color: Color::rgba(glyph.color.r, glyph.color.g, glyph.color.b, glyph.color.a),
+            color: ipc_color_to_color(glyph.color),
             glyph_id: glyph.glyph_id,
             font_id: FontId(glyph.font_id),
             bitmap_width: None,
@@ -31,6 +147,14 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             rotation: glyph.rotation,
         });
     }
+    primitives.draw_order = params.draw_order.into_iter().map(ipc_draw_op_to_draw_op).collect();
+
+    for payload in params.image_payloads {
+        if let Ok(data) = ImageData::from_rgba(payload.rgba, payload.width, payload.height) {
+            snap.image_cache.insert_with_key(ImageKey::new(payload.image_key), data);
+        }
+    }
+
     snap.last_render = Some(WebViewRenderResult {
         primitives,
         timings: PipelineTimings::default(),

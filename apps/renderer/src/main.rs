@@ -1,15 +1,6 @@
-//! ZeroWeb 渲染进程入口。
-//!
-//! 独立进程处理页面渲染和 JS 执行。
-//! 通过 stdin/stdout 管道与浏览器主进程进行 IPC 通信。
-//!
-//! ## 启动方式
-//!
-//! ```sh
-//! zero-renderer --renderer-id=1
-//! ```
-//!
-//! 浏览器主进程通过 `ProcessManager` 自动启动和管理此进程。
+//! ZeroWeb 渲染进程入口 — 独立进程处理页面渲染，经 IPC 向浏览器传递绘制快照。
+
+mod paint_export;
 
 use std::io;
 use std::process;
@@ -18,8 +9,6 @@ use zero_engine::RenderPipeline;
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{FetchParams, IpcMessage, IpcMessageKind, NavigateParams, StorageOpParams};
 use zero_protocol::transport::PipeTransport;
-use zero_protocol::{IpcColor, IpcFill, IpcGlyph, IpcRect, PaintSnapshotParams};
-use zero_render_foundation::primitive::RenderPrimitives;
 
 /// 渲染进程运行时状态。
 struct RendererRuntime {
@@ -91,11 +80,13 @@ impl RendererRuntime {
                     .pipeline
                     .document_height()
                     .unwrap_or(self.pipeline.viewport_height());
-                let paint = paint_snapshot_from_primitives(
+                let image_payloads = paint_export::fetch_image_payloads(&html, &params.url);
+                let paint = paint_export::paint_snapshot_from_primitives(
                     self.pipeline.viewport_width() as u32,
                     self.pipeline.viewport_height() as u32,
                     doc_h,
                     &result.primitives,
+                    image_payloads,
                 );
                 self.send(IpcMessageKind::ViewPainted(paint))?;
 
@@ -232,55 +223,6 @@ fn parse_renderer_id() -> u64 {
         }
     }
     0
-}
-
-fn paint_snapshot_from_primitives(
-    viewport_width: u32,
-    viewport_height: u32,
-    document_height: f32,
-    primitives: &RenderPrimitives,
-) -> PaintSnapshotParams {
-    PaintSnapshotParams {
-        viewport_width,
-        viewport_height,
-        document_height,
-        fills: primitives
-            .fills
-            .iter()
-            .map(|f| IpcFill {
-                rect: IpcRect {
-                    x: f.rect.origin.x,
-                    y: f.rect.origin.y,
-                    width: f.rect.size.width,
-                    height: f.rect.size.height,
-                },
-                color: IpcColor {
-                    r: f.color.r,
-                    g: f.color.g,
-                    b: f.color.b,
-                    a: f.color.a,
-                },
-            })
-            .collect(),
-        glyphs: primitives
-            .glyphs
-            .iter()
-            .map(|g| IpcGlyph {
-                x: g.x,
-                y: g.y,
-                font_size: g.font_size,
-                glyph_id: g.glyph_id,
-                font_id: g.font_id.0,
-                color: IpcColor {
-                    r: g.color.r,
-                    g: g.color.g,
-                    b: g.color.b,
-                    a: g.color.a,
-                },
-                rotation: g.rotation,
-            })
-            .collect(),
-    }
 }
 
 fn main() {

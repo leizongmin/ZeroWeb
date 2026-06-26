@@ -19,7 +19,7 @@ use zero_wasm_sandbox::WasmInstance;
 use crate::WebViewError;
 
 /// WebView 配置。
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WebViewConfig {
     /// 视口宽度。
     pub width: u32,
@@ -33,6 +33,9 @@ pub struct WebViewConfig {
     pub url: Option<String>,
     /// 是否启用开发者工具。
     pub devtools: bool,
+    /// 外部 JS 执行器（浏览器 Tab JS 线程注入；为 None 时使用进程内 V8）。
+    #[doc(hidden)]
+    pub external_script: Option<std::sync::Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>>,
 }
 
 impl Default for WebViewConfig {
@@ -44,7 +47,22 @@ impl Default for WebViewConfig {
             user_agent: None,
             url: None,
             devtools: false,
+            external_script: None,
         }
+    }
+}
+
+impl std::fmt::Debug for WebViewConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WebViewConfig")
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("transparent", &self.transparent)
+            .field("user_agent", &self.user_agent)
+            .field("url", &self.url)
+            .field("devtools", &self.devtools)
+            .field("external_script", &self.external_script.is_some())
+            .finish()
     }
 }
 
@@ -83,8 +101,10 @@ pub struct WebView {
     pipeline: RenderPipeline,
     /// HTTP 客户端。
     http_client: HttpClient,
-    /// JavaScript 沙箱。
-    js_sandbox: zero_script_sandbox::V8Sandbox,
+    /// 进程内 JavaScript 沙箱（`external_script` 为 None 时使用）。
+    js_sandbox: Option<zero_script_sandbox::V8Sandbox>,
+    /// 外部 JS 执行器（专用 JS 线程）。
+    external_script: Option<std::sync::Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>>,
     /// 当前 URL。
     current_url: Option<String>,
     /// 页面标题。
@@ -130,18 +150,25 @@ impl WebView {
     pub fn new(config: WebViewConfig) -> Self {
         let pipeline = RenderPipeline::new(config.width as f32, config.height as f32);
         let http_client = HttpClient::new();
-        // 启用持久化上下文：WebAssembly 桥接和 DOM polyfill 需要跨 execute_script 保持状态
-        let js_config = zero_script_sandbox::SandboxConfig {
-            persistent_context: true,
-            ..Default::default()
+        let external_script = config.external_script.clone();
+        let js_sandbox = if external_script.is_some() {
+            None
+        } else {
+            let js_config = zero_script_sandbox::SandboxConfig {
+                persistent_context: true,
+                ..Default::default()
+            };
+            Some(
+                zero_script_sandbox::V8Sandbox::with_config(js_config)
+                    .expect("V8 sandbox initialization should succeed"),
+            )
         };
-        let js_sandbox =
-            zero_script_sandbox::V8Sandbox::with_config(js_config).expect("V8 sandbox initialization should succeed");
         Self {
             config,
             pipeline,
             http_client,
             js_sandbox,
+            external_script,
             current_url: None,
             title: None,
             loading: false,
@@ -537,6 +564,22 @@ impl WebView {
         render_result
     }
 
+    /// 在已有 DOM/布局缓存上增量重绘视口（resize 等场景）；无缓存时返回 `None`。
+    pub fn render_incremental(&mut self) -> Option<WebViewRenderResult> {
+        if self.cached_html.is_empty() {
+            return None;
+        }
+        self.sync_pipeline_page_state();
+        self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
+        let result = self.pipeline.repaint_cached_viewport(&self.cached_css)?;
+        let render_result = WebViewRenderResult {
+            primitives: result.primitives,
+            timings: result.timings,
+        };
+        self.last_render = Some(render_result.clone());
+        Some(render_result)
+    }
+
     /// 导航前设置文档 URL 与 pipeline 状态（供异步加载使用）。
     pub fn prepare_document_state(&mut self, page_url: &str) {
         self.current_url = Some(page_url.to_string());
@@ -677,7 +720,11 @@ impl WebView {
     pub fn execute_script(&mut self, script: &str) -> Result<String, WebViewError> {
         tracing::debug!("execute_script called: {} bytes", script.len());
 
-        match self.js_sandbox.execute(script) {
+        if let Some(ext) = &self.external_script {
+            return ext(script).map_err(|e| WebViewError::Script(e));
+        }
+
+        match self.js_sandbox.as_mut().expect("js sandbox").execute(script) {
             Ok(result) => {
                 tracing::debug!("execute_script completed in {:.2}ms", result.execution_time_ms);
                 Ok(result.value)

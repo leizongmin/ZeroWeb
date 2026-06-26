@@ -731,6 +731,7 @@ impl BrowserApp {
                         }
                         if Some(id) != self.shell.active_tab_id() {
                             self.shell.switch_tab(id);
+                            self.tabs.on_active_tab_changed(self.shell.active_tab_id());
                             self.set_hovered_link_url(None);
                             self.update_address_bar_from_active_tab();
                             self.needs_redraw = true;

@@ -5756,6 +5756,7 @@ dependencies = [
  "resvg",
  "serde",
  "serde_json",
+ "serial_test",
  "softbuffer",
  "tracing",
  "tracing-subscriber",
@@ -5767,6 +5768,7 @@ dependencies = [
  "zero-host-runtime",
  "zero-protocol",
  "zero-render-foundation",
+ "zero-script-sandbox",
  "zero-webview",
 ]
 

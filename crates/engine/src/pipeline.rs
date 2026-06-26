@@ -478,6 +478,27 @@ impl RenderPipeline {
         Some(painter.into_primitives())
     }
 
+    /// 在已有 DOM 缓存上重绘整个视口（resize 等场景，走 `incremental_paint`）。
+    pub fn repaint_cached_viewport(&mut self, css: &str) -> Option<RenderResult> {
+        let doc = self.cached_doc.take()?;
+        let dirty = zero_render_foundation::geometry::Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
+        let stylesheets = collect_stylesheets(&doc, css);
+        let primitives = self.incremental_paint(&doc, &stylesheets, dirty)?;
+        self.cached_doc = Some(doc);
+        let layout_ref = self.cached_layout.as_ref()?;
+        let layout = LayoutResult {
+            root: layout_ref.root.clone(),
+            viewport_width: layout_ref.viewport_width,
+            viewport_height: layout_ref.viewport_height,
+        };
+        Some(RenderResult {
+            primitives,
+            layout,
+            timings: PipelineTimings::default(),
+            stats: RenderStats::default(),
+        })
+    }
+
     /// 获取当前布局结果。
     pub fn layout(&self) -> Option<&LayoutResult> {
         self.cached_layout.as_ref()

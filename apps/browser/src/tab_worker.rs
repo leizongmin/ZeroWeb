@@ -11,6 +11,7 @@ use zero_render_foundation::font::loader::FontLoader;
 use zero_webview::{AsyncPageLoad, PageLoadStage, WebView, WebViewBuilder, WebViewConfig};
 
 use crate::pages;
+use crate::tab_js_worker::TabJsWorkerHandle;
 use crate::tab_snapshot::TabSnapshot;
 use crate::text_metrics;
 
@@ -123,7 +124,23 @@ fn tab_worker_main(
     let mut font_loader = FontLoader::new();
     let font_id = load_system_fonts_worker(&mut font_loader);
 
-    let mut wv = WebViewBuilder::new().width(viewport.0).height(viewport.1).build();
+    let _js_worker = {
+        #[cfg(not(test))]
+        {
+            let js_worker = TabJsWorkerHandle::spawn(tab_id);
+            Some(js_worker)
+        }
+        #[cfg(test)]
+        {
+            None::<TabJsWorkerHandle>
+        }
+    };
+
+    let mut builder = WebViewBuilder::new().width(viewport.0).height(viewport.1);
+    if let Some(ref js_worker) = _js_worker {
+        builder = builder.external_script(js_worker.executor());
+    }
+    let mut wv = builder.build();
     wv.set_prefers_color_scheme(color_scheme);
     let _ = WebViewConfig::default();
 
@@ -151,7 +168,9 @@ fn tab_worker_main(
                     with_measure(&font_loader, font_id, || wv.resize(width, height));
                     if wv.last_render().is_some() {
                         with_measure(&font_loader, font_id, || {
-                            wv.render();
+                            if wv.render_incremental().is_none() {
+                                wv.render();
+                            }
                         });
                     }
                     push_snapshot(&wv, &msg_tx);
@@ -160,7 +179,9 @@ fn tab_worker_main(
                     wv.set_prefers_color_scheme(scheme);
                     if wv.last_render().is_some() {
                         with_measure(&font_loader, font_id, || {
-                            wv.render();
+                            if wv.render_incremental().is_none() {
+                                wv.render();
+                            }
                         });
                         push_snapshot(&wv, &msg_tx);
                     }
