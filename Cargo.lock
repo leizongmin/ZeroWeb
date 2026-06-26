@@ -5766,9 +5766,11 @@ dependencies = [
  "zero-browser-shell",
  "zero-engine",
  "zero-host-runtime",
+ "zero-net",
  "zero-protocol",
  "zero-render-foundation",
  "zero-script-sandbox",
+ "zero-storage",
  "zero-webview",
 ]
 

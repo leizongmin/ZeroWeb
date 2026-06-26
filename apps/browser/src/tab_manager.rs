@@ -9,6 +9,7 @@ use zero_webview::WebViewRenderResult;
 
 use crate::process_backend::{ProcessTabBackend, use_multiprocess_backend};
 use crate::tab_lru::TabLruPolicy;
+use crate::tab_restore::TabRestorePayload;
 use crate::tab_snapshot::TabSnapshot;
 use crate::tab_worker::{TabWorkerCommand, TabWorkerHandle, TabWorkerMessage};
 
@@ -24,6 +25,8 @@ pub struct TabManager {
     poll_tick: u64,
     lru: TabLruPolicy,
     last_active: Option<TabId>,
+    /// 最近一次加载方式（LRU 解冻用）。
+    last_restore: HashMap<TabId, TabRestorePayload>,
 }
 
 impl TabManager {
@@ -44,6 +47,7 @@ impl TabManager {
             poll_tick: 0,
             lru: TabLruPolicy::default(),
             last_active: None,
+            last_restore: HashMap::new(),
         };
         let max_live = manager.lru.max_live();
         tracing::info!("Tab LRU max live workers: {max_live} (ZERO_BROWSER_MAX_LIVE_TABS)");
@@ -99,6 +103,7 @@ impl TabManager {
         }
         self.snapshots.remove(&tab_id);
         self.lru.remove_tab(tab_id);
+        self.last_restore.remove(&tab_id);
         if let Some(ref mut backend) = self.process_backend {
             backend.remove_renderer(tab_id);
         }
@@ -121,22 +126,37 @@ impl TabManager {
         self.enforce_lru_limit(active);
     }
 
+    fn apply_restore(&mut self, tab_id: TabId, payload: TabRestorePayload) {
+        self.ensure_tab(tab_id);
+        match payload {
+            TabRestorePayload::Navigate(url) => {
+                self.navigate(tab_id, url);
+            }
+            TabRestorePayload::LoadHtml { html, css, url } => {
+                self.load_html(tab_id, &html, css.as_deref(), url.as_deref());
+            }
+        }
+    }
+
     fn thaw_tab_if_frozen(&mut self, tab_id: TabId) {
         if !self.lru.is_frozen(tab_id) {
             return;
         }
-        let restore_url = self.lru.thaw(tab_id);
+        let restore = self.lru.thaw(tab_id);
 
         if let Some(ref mut backend) = self.process_backend {
             if backend.has_renderer(tab_id) {
                 return;
             }
             backend.ensure_renderer(tab_id, self.viewport);
-            if let Some(url) = restore_url {
-                backend.navigate(tab_id, &url);
-                if let Some(snap) = self.snapshots.get_mut(&tab_id) {
-                    snap.loading = true;
-                }
+            if let Some(payload) = restore.or_else(|| {
+                self.last_restore.get(&tab_id).cloned().or_else(|| {
+                    self.snapshots
+                        .get(&tab_id)
+                        .and_then(|s| s.url.as_ref().map(|u| TabRestorePayload::from_url(u)))
+                })
+            }) {
+                self.apply_restore(tab_id, payload);
             }
             return;
         }
@@ -145,8 +165,21 @@ impl TabManager {
             return;
         }
         let worker = TabWorkerHandle::spawn(tab_id, self.viewport, self.color_scheme);
-        if let Some(url) = restore_url {
-            worker.send(TabWorkerCommand::Navigate(url));
+        if let Some(payload) = restore.or_else(|| {
+            self.last_restore.get(&tab_id).cloned().or_else(|| {
+                self.snapshots
+                    .get(&tab_id)
+                    .and_then(|s| s.url.as_ref().map(|u| TabRestorePayload::from_url(u)))
+            })
+        }) {
+            match payload {
+                TabRestorePayload::Navigate(url) => {
+                    worker.send(TabWorkerCommand::Navigate(url));
+                }
+                TabRestorePayload::LoadHtml { html, css, url } => {
+                    worker.send(TabWorkerCommand::LoadHtml { html, css, url });
+                }
+            }
             if let Some(snap) = self.snapshots.get_mut(&tab_id) {
                 snap.loading = true;
             }
@@ -177,7 +210,11 @@ impl TabManager {
     }
 
     fn freeze_tab(&mut self, tab_id: TabId) {
-        let restore_url = self.snapshots.get(&tab_id).and_then(|s| s.url.clone());
+        let restore = self.last_restore.get(&tab_id).cloned().or_else(|| {
+            self.snapshots
+                .get(&tab_id)
+                .and_then(|s| s.url.as_ref().map(|u| TabRestorePayload::from_url(u)))
+        });
         if let Some(ref mut backend) = self.process_backend {
             backend.remove_renderer(tab_id);
         } else if let Some(mut worker) = self.workers.remove(&tab_id) {
@@ -186,12 +223,14 @@ impl TabManager {
         if let Some(snap) = self.snapshots.get_mut(&tab_id) {
             snap.image_cache.clear();
         }
-        self.lru.mark_frozen(tab_id, restore_url);
+        self.lru.mark_frozen(tab_id, restore);
         tracing::debug!("Froze tab {} (LRU, max {})", tab_id.0, self.lru.max_live());
     }
 
     /// 导航到 URL。
     pub fn navigate(&mut self, tab_id: TabId, url: String) {
+        self.last_restore
+            .insert(tab_id, TabRestorePayload::Navigate(url.clone()));
         self.ensure_tab(tab_id);
         if let Some(ref mut backend) = self.process_backend {
             backend.navigate(tab_id, &url);
@@ -211,6 +250,14 @@ impl TabManager {
 
     /// 同步加载 HTML（测试与 zero:// 页面）。
     pub fn load_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>, url: Option<&str>) {
+        self.last_restore.insert(
+            tab_id,
+            TabRestorePayload::LoadHtml {
+                html: html.to_string(),
+                css: css.map(str::to_string),
+                url: url.map(str::to_string),
+            },
+        );
         self.ensure_tab(tab_id);
         if let Some(ref mut backend) = self.process_backend {
             backend.load_html(tab_id, html, css, url);
@@ -250,7 +297,9 @@ impl TabManager {
 
         let mut changed = false;
         if let Some(ref mut backend) = self.process_backend {
-            changed |= backend.poll(&mut self.snapshots);
+            changed |= backend.poll(&mut self.snapshots, active_tab, poll_background);
+            self.pending_loaded.extend(backend.take_page_loaded_events());
+            self.pending_errors.extend(backend.take_page_error_events());
         }
         for (tab_id, worker) in &self.workers {
             let is_active = active_tab == Some(*tab_id);
