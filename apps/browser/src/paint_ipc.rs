@@ -9,8 +9,9 @@ use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::{ImageData, ImageKey};
 use zero_render_foundation::primitive::{
-    DrawOp, FillPrimitive, FontId, GlyphPrimitive, GradientKind, GradientPrimitive, GradientStop, ImagePrimitive,
-    LineCap, LineStyle, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive,
+    ClipPrimitive, DrawOp, FillPrimitive, FontId, GlyphPrimitive, GradientKind, GradientPrimitive, GradientStop,
+    ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive,
+    ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
 use zero_webview::WebViewRenderResult;
 
@@ -66,6 +67,10 @@ fn ipc_draw_op_to_draw_op(op: IpcDrawOp) -> DrawOp {
         IpcDrawOp::Shadow(i) => DrawOp::Shadow(i),
         IpcDrawOp::Image(i) => DrawOp::Image(i),
         IpcDrawOp::Stroke(i) => DrawOp::Stroke(i),
+        IpcDrawOp::PathFill(i) => DrawOp::PathFill(i),
+        IpcDrawOp::PathStroke(i) => DrawOp::PathStroke(i),
+        IpcDrawOp::Clip(i) => DrawOp::Clip(i),
+        IpcDrawOp::Transform(i) => DrawOp::Transform(i),
         IpcDrawOp::Glyph(i) => DrawOp::Glyph(i),
     }
 }
@@ -132,6 +137,38 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             color: ipc_color_to_color(stroke.color),
             style: ipc_line_style(stroke.style),
             cap: ipc_line_cap(stroke.cap),
+        });
+    }
+    for pf in params.path_fills {
+        primitives.path_fills.push(PathFillPrimitive {
+            vertices: pf.vertices,
+            color: ipc_color_to_color(pf.color),
+        });
+    }
+    for ps in params.path_strokes {
+        primitives.path_strokes.push(PathStrokePrimitive {
+            vertices: ps.vertices,
+            color: ipc_color_to_color(ps.color),
+            line_width: ps.line_width,
+            closed: ps.closed,
+        });
+    }
+    for clip in params.clips {
+        primitives.clips.push(ClipPrimitive {
+            rect: ipc_rect_to_rect(clip.rect),
+        });
+    }
+    for transform in params.transforms {
+        primitives.transforms.push(TransformPrimitive {
+            rect: ipc_rect_to_rect(transform.rect),
+            origin_x: transform.origin_x,
+            origin_y: transform.origin_y,
+            a: transform.a,
+            b: transform.b,
+            c: transform.c,
+            d: transform.d,
+            tx: transform.tx,
+            ty: transform.ty,
         });
     }
     for glyph in params.glyphs {
