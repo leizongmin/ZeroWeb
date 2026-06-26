@@ -266,10 +266,10 @@
 - [x] `RoundedRectPrimitive` — 圆角矩形 ✅(draw_rounded_rect_pass + test_gpu_full_scene_rounded_rect；原「GPU 未实现」已过时)
 - [x] `GradientPrimitive` — 渐变渲染（WGSL shader 或 GPU compute） ✅(draw_gradient_pass + test_gpu_full_scene_gradient 像素断言 left=R/right=B)
 - [x] `ShadowPrimitive` — 阴影渲染（高斯模糊 pass 或近似算法） ✅(collect_shadow_vertices + test_gpu_full_scene_shadow)
-- [ ] `ImagePrimitive` — 图片纹理采样渲染
+- [x] `ImagePrimitive` — 图片纹理采样渲染 ✅(draw_image_pass + prepare_image_resources + R663 test_gpu_full_scene_image 像素断言 红 RGBA)
 - [x] `StrokePrimitive` — 线段渲染 ✅(collect_stroke_vertices + push_stroke_mesh + test_gpu_full_scene_stroke)
-- [ ] `PathFillPrimitive` — 路径填充
-- [ ] `PathStrokePrimitive` — 路径描边
+- [x] `PathFillPrimitive` — 路径填充 ✅(collect_path_fill_vertices + R663 test_gpu_full_scene_path_fill 像素断言 中心黑/外部白)
+- [x] `PathStrokePrimitive` — 路径描边 ✅(collect_path_stroke_vertices + R663 test_gpu_full_scene_path_stroke 像素断言 描边边黑/内部白)
 - [x] `TransformPrimitive` — 2D 变换（顶点变换） ✅(test_gpu_full_scene_transform_translation)
 - [x] `ClipPrimitive` — 裁剪（scissor rect 或 stencil buffer） ✅(test_gpu_renderer_clip_rect_limits_rendering)
 - [x] `FilterPrimitive` — CSS 滤镜（post-processing pass） ✅(test_gpu_full_scene_filter_* 8 变体像素断言)
