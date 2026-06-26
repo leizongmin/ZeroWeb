@@ -20,11 +20,12 @@ use zero_storage::StorageManager;
 use crate::tab_snapshot::TabSnapshot;
 use crate::tab_scripts::DomDispatchResult;
 
-/// 是否启用多进程后端（环境变量 `ZERO_BROWSER_MULTIPROCESS=1`）。
+/// 是否启用多进程后端（环境变量 `ZERO_BROWSER_MULTIPROCESS`；默认启用）。
 pub fn use_multiprocess_backend() -> bool {
-    std::env::var("ZERO_BROWSER_MULTIPROCESS")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
+    match std::env::var("ZERO_BROWSER_MULTIPROCESS") {
+        Ok(v) => v != "0" && !v.eq_ignore_ascii_case("false"),
+        Err(_) => true,
+    }
 }
 
 /// 供 CLI 在解析参数后强制启用多进程。

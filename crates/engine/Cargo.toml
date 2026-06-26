@@ -14,10 +14,10 @@ zero-render-foundation = { workspace = true }
 zero-canvas = { workspace = true }
 zero-net = { workspace = true }
 zero-security = { workspace = true }
-slotmap = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 tracing = { workspace = true }
+slotmap = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

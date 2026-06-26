@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use slotmap::{Key, KeyData};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
 
@@ -49,6 +50,130 @@ impl HitTestCache {
         deepest_node_at(&self.layout_root, 0.0, 0.0, x, y, 0, &mut best);
         element_hit_from_cache(&self.layout_root, best.1, &self.nodes, &self.parents)
     }
+
+    /// 导出可跨进程传输的快照（不含完整 DOM）。
+    pub fn snapshot(&self) -> HitTestCacheSnapshot {
+        HitTestCacheSnapshot {
+            doc_root: self.doc_root,
+            layout_root: layout_snapshot_from_box(&self.layout_root),
+            nodes: self
+                .nodes
+                .iter()
+                .map(|(id, meta)| {
+                    (
+                        *id,
+                        HitTestNodeSnapshot {
+                            tag_name: meta.tag_name.clone(),
+                            id: meta.id.clone(),
+                            class_name: meta.class_name.clone(),
+                            href: meta.href.clone(),
+                        },
+                    )
+                })
+                .collect(),
+            parents: self.parents.iter().map(|(c, p)| (*c, *p)).collect(),
+        }
+    }
+
+    /// 从跨进程快照恢复命中测试缓存。
+    pub fn from_snapshot(snap: HitTestCacheSnapshot) -> Self {
+        Self {
+            layout_root: layout_box_from_snapshot(&snap.layout_root),
+            doc_root: snap.doc_root,
+            nodes: snap
+                .nodes
+                .into_iter()
+                .map(|(id, meta)| {
+                    (
+                        id,
+                        HitTestNodeMeta {
+                            tag_name: meta.tag_name,
+                            id: meta.id,
+                            class_name: meta.class_name,
+                            href: meta.href,
+                        },
+                    )
+                })
+                .collect(),
+            parents: snap.parents.into_iter().collect(),
+        }
+    }
+}
+
+/// IPC / 快照可传输的命中测试布局节点（仅几何 + node id）。
+#[derive(Debug, Clone)]
+pub struct HitTestLayoutSnapshot {
+    /// 关联 DOM 节点。
+    pub node_id: Option<NodeId>,
+    /// 相对父内容区 x。
+    pub x: f32,
+    /// 相对父内容区 y。
+    pub y: f32,
+    /// 盒宽。
+    pub width: f32,
+    /// 盒高。
+    pub height: f32,
+    /// 子盒。
+    pub children: Vec<HitTestLayoutSnapshot>,
+}
+
+/// IPC / 快照可传输的命中测试节点元数据。
+#[derive(Debug, Clone)]
+pub struct HitTestNodeSnapshot {
+    /// 标签名（小写）。
+    pub tag_name: String,
+    /// `id` 属性。
+    pub id: Option<String>,
+    /// `class` 属性。
+    pub class_name: Option<String>,
+    /// 链接 `href`（仅 `a` 元素）。
+    pub href: Option<String>,
+}
+
+/// IPC / 快照可传输的完整命中测试缓存。
+#[derive(Debug, Clone)]
+pub struct HitTestCacheSnapshot {
+    /// 文档根节点。
+    pub doc_root: NodeId,
+    /// 布局树根。
+    pub layout_root: HitTestLayoutSnapshot,
+    /// 元素元数据。
+    pub nodes: Vec<(NodeId, HitTestNodeSnapshot)>,
+    /// 父节点索引。
+    pub parents: Vec<(NodeId, NodeId)>,
+}
+
+fn layout_snapshot_from_box(layout: &LayoutBox) -> HitTestLayoutSnapshot {
+    HitTestLayoutSnapshot {
+        node_id: layout.node_id,
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+        children: layout.children.iter().map(layout_snapshot_from_box).collect(),
+    }
+}
+
+fn layout_box_from_snapshot(snapshot: &HitTestLayoutSnapshot) -> LayoutBox {
+    LayoutBox {
+        node_id: snapshot.node_id,
+        x: snapshot.x,
+        y: snapshot.y,
+        width: snapshot.width,
+        height: snapshot.height,
+        children: snapshot.children.iter().map(layout_box_from_snapshot).collect(),
+        ..LayoutBox::default()
+    }
+}
+
+/// 将 `NodeId` 编码为 IPC 友好的整数。
+pub fn node_id_to_u64(id: NodeId) -> u64 {
+    id.data().as_ffi() as u64
+}
+
+/// 从 IPC 整数解码 `NodeId`。
+pub fn node_id_from_u64(value: u64) -> NodeId {
+    NodeId::from(KeyData::from_ffi(value))
 }
 
 fn collect_hit_test_nodes(

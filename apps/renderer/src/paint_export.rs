@@ -1,10 +1,12 @@
 //! 渲染进程：RenderPrimitives → IPC 绘制快照。
 
 use zero_engine::{extract_img_srcs, image_resource_key, resolve_document_url};
+use zero_engine::{HitTestCache, HitTestLayoutSnapshot, node_id_to_u64};
 use zero_protocol::{
     IpcBlendMode, IpcBlendModePrimitive, IpcClip, IpcColor, IpcDrawOp, IpcFill, IpcFilter, IpcFilterKind, IpcGlyph,
-    IpcGradient, IpcGradientKind, IpcGradientStop, IpcImage, IpcImagePayload, IpcLineCap, IpcLineStyle, IpcPathFill,
-    IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke, IpcTransform, PaintSnapshotParams,
+    IpcGradient, IpcGradientKind, IpcGradientStop, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcImage,
+    IpcImagePayload, IpcLineCap, IpcLineStyle, IpcPathFill, IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow,
+    IpcStroke, IpcTransform, PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -181,6 +183,7 @@ pub fn paint_snapshot_from_primitives(
     document_height: f32,
     primitives: &RenderPrimitives,
     image_payloads: Vec<IpcImagePayload>,
+    hit_test: Option<HitTestCache>,
 ) -> PaintSnapshotParams {
     PaintSnapshotParams {
         viewport_width,
@@ -329,5 +332,45 @@ pub fn paint_snapshot_from_primitives(
             })
             .collect(),
         draw_order: primitives.draw_order.iter().copied().map(draw_op_to_ipc).collect(),
+        hit_test: hit_test.map(hit_test_cache_to_ipc),
+    }
+}
+
+fn hit_test_cache_to_ipc(cache: HitTestCache) -> IpcHitTestCache {
+    let snap = cache.snapshot();
+    IpcHitTestCache {
+        doc_root: node_id_to_u64(snap.doc_root),
+        layout_root: hit_test_layout_to_ipc(&snap.layout_root),
+        nodes: snap
+            .nodes
+            .into_iter()
+            .map(|(id, meta)| {
+                (
+                    node_id_to_u64(id),
+                    IpcHitTestNodeMeta {
+                        tag_name: meta.tag_name,
+                        id: meta.id,
+                        class_name: meta.class_name,
+                        href: meta.href,
+                    },
+                )
+            })
+            .collect(),
+        parents: snap
+            .parents
+            .into_iter()
+            .map(|(child, parent)| (node_id_to_u64(child), node_id_to_u64(parent)))
+            .collect(),
+    }
+}
+
+fn hit_test_layout_to_ipc(node: &HitTestLayoutSnapshot) -> IpcHitTestLayoutNode {
+    IpcHitTestLayoutNode {
+        node_id: node.node_id.map(node_id_to_u64),
+        x: node.x,
+        y: node.y,
+        width: node.width,
+        height: node.height,
+        children: node.children.iter().map(hit_test_layout_to_ipc).collect(),
     }
 }
