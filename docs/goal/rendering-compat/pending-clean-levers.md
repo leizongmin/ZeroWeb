@@ -11,7 +11,7 @@
 | 优先级 | lever | 测试 / 目录 | 发散 | 复杂度 | cluster yield |
 |---|---|---|---|---|---|
 | **S 快速赢** | R689 | position-static-001 / css-position | 17.53%+3% | 低（一行级） | 2 案（twin） |
-| **A 高 cluster** | R678 | font-size-zero-3 / css-fonts（float shrink-to-fit） | 33.53% | 中 | **≥4 案 21-34%** |
+| **A 高 cluster** | R678 | font-size-zero-3 / css-fonts（float shrink-to-fit） | 33.53% | 中 | **≥5 案 17-34% 跨 3 目录（最高渗透）** |
 | **A 高 cluster** | R696 | inline-replaced-width-009 / CSS2_normal-flow（replaced sizing） | 22.08% | 中 | **≥5 案 12-22%（unified）** |
 | **A 高单发散** | R695 | height-percentage-005 / CSS2_normal-flow（%height indefinite-CB） | **88.44%（最高）** | 中 | +潜在多案 |
 | B clean | R702 | margin-collapse-101 / margin-padding-clear | 49.38% | 中 | 7 案（101/105/106/155/038/110/111） |
@@ -37,8 +37,8 @@
 
 ## Tier A — 高 yield（cluster 或最高单发散）
 
-### R678 · float 0-content / width:auto 取满宽非 shrink-to-fit（★cluster≥4 案）
-- **测试**：`css-fonts/font-size-zero-3`（33.53%，R678 pin）+ `floats-clear/float-non-replaced-width-007`（21.98%，R704）+ `floats-clear/floats-125`（28.80%，R706）+ `floats-clear/floats-124`（28.24%，推同族）
+### R678 · float 0-content / width:auto 取满宽非 shrink-to-fit（★cluster≥5 案跨 3 目录，最高渗透 lever）
+- **测试**：`css-fonts/font-size-zero-3`（33.53%，R678 pin）+ `floats-clear/float-non-replaced-width-007`（21.98%，R704）+ `floats-clear/floats-125`（28.80%，R706）+ `floats-clear/floats-124`（28.24%，推同族）+ `CSS2/positioning/abspos-008`（17.64%，R714：`.control` red float w=784 应 ~185；abspos §10.3.7 shrink-to-fit `.outer` w=185 已正确，发散纯 .control float）
 - **根因**：`float_positioning.rs:16` 注释明言「taffy 将 float 当普通 block（按正常流）」→ float width:auto 被当 in-flow block 拉伸到满宽（784）。ZW `float_positioning.rs` 仅 `shrink_vertical_blocks_to_content`（:47，仅垂直 WM）+ `shrink_inline_blocks_to_content`（:111，仅 inline-block R180），**无水平 WM float shrink 后处理**。
 - **fix scope**：加水平 WM float shrink-to-fit 后处理（扩展 `shrink_inline_blocks_to_content` R180 模式到 float，或 taffy 0-content float 测量 clamp）。ZW-side post-process 可行（float 位置由 float_positioning.rs 独立设，与父 height 解耦）。
 - **风险**：中（须 A/B 排查 float-heavy 测试，但 spec 上现「满宽」行为错）。
