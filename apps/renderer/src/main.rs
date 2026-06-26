@@ -715,7 +715,7 @@ fn publish_render_with_layout(
             *next_msg_id += 1;
             id
         },
-        kind: IpcMessageKind::ViewPainted(paint),
+        kind: IpcMessageKind::ViewPainted(Box::new(paint)),
     };
     outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
     if let Some(title) = title {

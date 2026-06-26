@@ -188,7 +188,7 @@ impl ProcessTabBackend {
             }
             IpcMessageKind::UrlChanged(url) => snap.url = Some(url),
             IpcMessageKind::ViewPainted(params) => {
-                crate::paint_ipc::apply_paint_snapshot(snap, params);
+                crate::paint_ipc::apply_paint_snapshot(snap, *params);
                 snap.clear_browser_owned_hit_test();
             }
             _ => {}
@@ -635,7 +635,7 @@ impl ProcessTabBackend {
                 IpcMessageKind::ViewPainted(params) => {
                     html_changed = true;
                     let snap = snapshots.entry(tab_id).or_default();
-                    crate::paint_ipc::apply_paint_snapshot(snap, params);
+                    crate::paint_ipc::apply_paint_snapshot(snap, *params);
                     snap.clear_browser_owned_hit_test();
                 }
                 kind => {

@@ -42,7 +42,10 @@ pub enum IpcMessageKind {
     /// 页面加载失败。
     LoadFailed(String),
     /// 页面绘制快照（渲染→浏览器）。
-    ViewPainted(crate::paint_snapshot::PaintSnapshotParams),
+    ///
+    /// 装箱以缩小枚举体积（`PaintSnapshotParams` 含 10+ Vec 字段，
+    /// 否则 `IpcMessageKind` 每个值都背上快照栈体积）。serde 透明，不影响 IPC 线格式。
+    ViewPainted(Box<crate::paint_snapshot::PaintSnapshotParams>),
     /// 链接命中测试（浏览器→渲染）。
     HitTestLink(HitTestLinkParams),
     /// 链接命中测试结果（渲染→浏览器）。
