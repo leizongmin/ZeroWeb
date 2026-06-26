@@ -48,6 +48,7 @@ pub enum TabWorkerCommand {
 }
 
 /// Worker 发往 UI 线程的消息。
+#[allow(clippy::large_enum_variant)]
 pub enum TabWorkerMessage {
     /// 快照更新。
     Snapshot(TabSnapshot),

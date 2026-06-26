@@ -29,6 +29,7 @@ fn channel_timeout_for(exec_timeout_ms: u64) -> Duration {
 
 type ScriptFn = Arc<dyn Fn(&str, u64) -> Result<String, String> + Send + Sync>;
 type ModuleFn = Arc<dyn Fn(&str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
+type ExecutorFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 
 enum JsWorkerCommand {
     Execute {
@@ -111,7 +112,7 @@ impl TabJsWorkerHandle {
     }
 
     /// 供 WebView 注入的外部脚本执行器（事件派发等，较长超时）。
-    pub fn executor(&self) -> Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync> {
+    pub fn executor(&self) -> ExecutorFn {
         let exec = Arc::clone(&self.executor);
         Arc::new(move |script: &str| exec(script, TAB_JS_EVENT_TIMEOUT_MS))
     }

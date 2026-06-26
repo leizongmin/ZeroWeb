@@ -959,6 +959,7 @@ impl BrowserApp {
     }
 
     /// 渲染活跃 WebView 的页面图元。
+    #[allow(clippy::too_many_arguments)]
     fn render_active_webview(
         &self,
         fills: &mut Vec<FillPrimitive>,

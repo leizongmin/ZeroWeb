@@ -525,6 +525,7 @@ impl ProcessTabBackend {
     }
 
     /// DOM 事件派发（同步 IPC 请求/响应）。
+    #[allow(clippy::too_many_arguments)]
     pub fn dispatch_dom_event(
         &mut self,
         tab_id: TabId,
@@ -648,6 +649,6 @@ fn element_hit_from_ipc(result: HitTestElementResultParams) -> Option<ElementHit
 
 impl Drop for ProcessTabBackend {
     fn drop(&mut self) {
-        let _ = self.manager.shutdown_all();
+        self.manager.shutdown_all();
     }
 }
