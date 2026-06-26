@@ -31,6 +31,7 @@ Commands:
   summary           Run tests and print summary only
   reftest           Run WPT reftest suite (rendering comparison tests)
   reftest-upstream  Run upstream WPT reftest files from wpt-data/
+  reftest-oracle [filter]  DC-14: render upstream test pages vs chromium oracle-shots (true pass-rate)
   product-smoke <html>  Render a product static fixture to CPU PNG (DC-13)
                        (--base-dir, --oracle <png>, --out <png>, --max-diff <pct>)
 
@@ -163,6 +164,7 @@ fn main() {
         "summary" => cmd_summary(&options, filter.as_deref()),
         "reftest" => cmd_reftest(&options, filter.as_deref()),
         "reftest-upstream" => cmd_reftest_upstream(&options, filter.as_deref()),
+        "reftest-oracle" => cmd_reftest_oracle(&options, filter.as_deref()),
         "--help" | "-h" => print_usage(),
         _ => {
             eprintln!("Unknown command: {command}");
@@ -681,6 +683,148 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
     if fail_count > 0 {
         std::process::exit(1);
     }
+}
+
+/// `reftest-oracle` 子命令（DC-14 独立 Oracle）— 渲染上游 WPT reftest 的 test 页，
+/// 与 chromium Oracle 截图（`oracle-shots/{safe_id}.png`）对比，报告 chromium-Oracle
+/// 一致率（DC-14 真通过指标，替代 ZeroWeb self-ref 的 ~46.5% 假通过）。
+///
+/// 用法：
+///   zero-wpt-runner reftest-oracle [filter]
+///   env: ORACLE_DIR=<dir>（默认 tests/wpt-runner/oracle-shots）
+///        ORACLE_PASS_RATIO=<f>（默认 0.01=1%，z_vs_chr < 此值判 oracle-pass）
+///        --wpt-data <dir>、--viewport、--jobs 等通用选项
+fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
+    use reftest::{compare_pixels, render_to_framebuffer_with_base, ReftestConfig};
+
+    let wpt_data_dir = match &options.wpt_data {
+        Some(p) => std::path::PathBuf::from(p),
+        None => std::path::PathBuf::from("tests/wpt-runner/wpt-data"),
+    };
+    if !wpt_data_dir.is_dir() {
+        eprintln!("Error: wpt-data directory not found: {}", wpt_data_dir.display());
+        eprintln!("Run tests/wpt-runner/scripts/import-wpt-reftests.sh first.");
+        std::process::exit(1);
+    }
+    let oracle_dir_str =
+        std::env::var("ORACLE_DIR").unwrap_or_else(|_| "tests/wpt-runner/oracle-shots".to_string());
+    let oracle_dir = std::path::Path::new(&oracle_dir_str);
+    if !oracle_dir.is_dir() {
+        eprintln!(
+            "Error: oracle directory not found: {} (capture via capture-oracle-per-dir.mjs)",
+            oracle_dir.display()
+        );
+        std::process::exit(1);
+    }
+    let pass_ratio: f64 = std::env::var("ORACLE_PASS_RATIO")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.01);
+
+    let file_cases = wpt_file_loader::load_file_reftests(&wpt_data_dir);
+    if file_cases.is_empty() {
+        eprintln!("No upstream reftest cases found in {}", wpt_data_dir.display());
+        std::process::exit(1);
+    }
+    let filtered: Vec<&wpt_file_loader::FileReftestCase> = file_cases
+        .iter()
+        .filter(|case| {
+            if let Some(f) = filter {
+                case.id.contains(f)
+                    || f.eq_ignore_ascii_case("layout") && case.category == reftest::ReftestCategory::Layout
+                    || f.eq_ignore_ascii_case("text") && case.category == reftest::ReftestCategory::Text
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    eprintln!(
+        "reftest-oracle: {} cases, oracle_dir={}, pass_ratio={:.2}%",
+        filtered.len(),
+        oracle_dir.display(),
+        pass_ratio * 100.0
+    );
+    let jobs = effective_jobs(options);
+    eprintln!("Using {jobs} job(s).");
+
+    // (safe_id, has_oracle, z_vs_chr_pct)
+    let results: Vec<(String, bool, Option<f64>)> = parallel_map(&filtered, jobs, |case| {
+        let safe_id = case.id.replace(['/', '\\', '.'], "_");
+        let oracle_path = oracle_dir.join(format!("{safe_id}.png"));
+        if !oracle_path.exists() {
+            return (case.id.clone(), false, None);
+        }
+        let config = ReftestConfig {
+            viewport_width: options.viewport_width as u32,
+            viewport_height: options.viewport_height as u32,
+            ..Default::default()
+        };
+        let test_fb =
+            render_to_framebuffer_with_base(&case.test_html, "", &config, case.base_dir.as_deref());
+        let oracle_fb = match load_png_to_framebuffer(&oracle_path.to_string_lossy()) {
+            Ok(fb) => fb,
+            Err(_) => return (case.id.clone(), false, None),
+        };
+        let (diff_px, _max_diff) = compare_pixels(&test_fb, &oracle_fb, 0);
+        let w = test_fb.width.min(oracle_fb.width) as usize;
+        let h = test_fb.height.min(oracle_fb.height) as usize;
+        let total = (w * h).max(1) as f64;
+        (case.id.clone(), true, Some(100.0 * diff_px as f64 / total))
+    });
+
+    let with_oracle: Vec<&(String, bool, Option<f64>)> = results.iter().filter(|r| r.1).collect();
+    let no_oracle = results.len() - with_oracle.len();
+    let oracle_pass = with_oracle
+        .iter()
+        .filter(|r| r.2.is_some_and(|p| p < pass_ratio * 100.0))
+        .count();
+    let total = with_oracle.len();
+    let rate = if total > 0 {
+        100.0 * oracle_pass as f64 / total as f64
+    } else {
+        0.0
+    };
+
+    eprintln!("\n═══════════════════════════════════════════════");
+    eprintln!("  DC-14 chromium-Oracle 真一致率（独立参考）");
+    eprintln!("═══════════════════════════════════════════════");
+    eprintln!("  cases scanned:      {}", results.len());
+    eprintln!("  with chromium oracle: {}", total);
+    eprintln!("  no oracle (skip):   {}", no_oracle);
+    eprintln!(
+        "  oracle-pass (z_vs_chr < {:.1}%): {}",
+        pass_ratio * 100.0,
+        oracle_pass
+    );
+    eprintln!("  chromium-Oracle pass-rate: {:.1}%", rate);
+    eprintln!("  (cf. self-source ~56.5% / DC-14 46.5% false-pass)");
+
+    // 列出 z_vs_chr 最大的 15 个（最不一致，候选修复目标）
+    let mut sorted: Vec<&(String, bool, Option<f64>)> = with_oracle.clone();
+    sorted.sort_by(|a, b| b.2.unwrap_or(0.0).partial_cmp(&a.2.unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
+    eprintln!("\n  Top 15 worst z_vs_chr（修复候选）:");
+    for (id, _, pct) in sorted.iter().take(15) {
+        eprintln!("    {:.2}%  {}", pct.unwrap_or(0.0), id);
+    }
+
+    // 按目录聚合
+    use std::collections::BTreeMap;
+    let mut by_dir: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    for (id, _has, pct) in &with_oracle {
+        let dir = id.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_else(|| id.clone());
+        let entry = by_dir.entry(dir).or_insert((0, 0));
+        entry.1 += 1;
+        if pct.is_some_and(|p| p < pass_ratio * 100.0) {
+            entry.0 += 1;
+        }
+    }
+    eprintln!("\n  per-directory oracle pass-rate:");
+    for (dir, (p, t)) in &by_dir {
+        let r = if *t > 0 { 100.0 * *p as f64 / *t as f64 } else { 0.0 };
+        eprintln!("    {}/{} ({:.0}%)  {}", p, t, r, dir);
+    }
+    let _ = no_oracle; // 已在报告中输出
 }
 
 /// 格式化 reftest 报告（文本格式）。
