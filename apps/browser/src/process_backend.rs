@@ -1,4 +1,6 @@
 //! 可选多进程 Tab 后端 — 通过 `ProcessManager` 将页面渲染隔离到 `zero-renderer` 子进程。
+//!
+//! 网络请求由本进程代理（Chromium 式 browser-hosted network）；渲染进程仅通过 `FetchRequest` IPC 访问网络。
 
 use std::collections::HashMap;
 use std::path::PathBuf;

@@ -11,7 +11,8 @@
 - **IPC 消息类型** — 涵盖导航命令（Navigate / GoBack / GoForward / Reload）、页面事件（TitleChanged / LoadComplete）、网络请求/响应、存储操作、鼠标/键盘/滚动输入事件、心跳与崩溃通知
 - **二进制序列化** — 基于 `bincode` 的高效序列化与反序列化，支持消息 ID 匹配请求与响应
 - **通道抽象** — `IpcChannel` trait 定义统一的 `send` / `recv` / `try_recv` / `close` 接口，传输层（管道、socket、共享内存）由宿主实现
-- **进程角色** — `ProcessRole` 枚举区分浏览器主进程与渲染进程
+- **进程角色** — `ProcessRole` 区分 Browser / Renderer / Network（网络当前由 Browser 承载）
+- **Chromium 式子进程** — `child_process_args()` 生成 `--type=renderer` 等启动参数；独立地址空间 + 管道 IPC，非 fork/CoW 共享页状态
 - **错误处理** — 统一的 `ProtocolError` 类型覆盖序列化、通道、进程错误
 
 ## 使用示例

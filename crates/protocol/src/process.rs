@@ -1,10 +1,13 @@
 //! 多进程管理器 — 浏览器进程和渲染进程的协调。
 //!
-//! 提供 `ProcessManager` 用于管理渲染进程的完整生命周期：
-//! - 进程创建和配置
-//! - IPC 通道建立
-//! - 心跳检测和崩溃恢复
-//! - 进程关闭和资源清理
+//! ## 与 Chromium 的对应关系（非 fork/CoW 共享内存模型）
+//!
+//! - **Browser 进程**：UI、Tab 管理、网络/存储策略与代理（本 crate 由浏览器主进程调用）。
+//! - **Renderer 进程**：独立地址空间 + 独立 `zero-renderer` 二进制；页面状态不与其他进程共享。
+//! - **Network 能力**：当前合并在 Browser 进程（`FetchRequest` IPC 由浏览器代发），与 Chromium
+//!   早期「browser 代网络」一致；后续可拆为独立 network 进程。
+//!
+//! 子进程通过 `Command::spawn` + stdin/stdout 管道 IPC 创建，**不是** fork 后与父进程 CoW 共享 DOM。
 
 use std::io;
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -15,7 +18,8 @@ use std::time::{Duration, Instant};
 
 use crate::message::{FetchResponseParams, IpcMessage, IpcMessageKind, NavigateParams};
 use crate::transport::PipeTransport;
-use crate::ProtocolError;
+use crate::channel::IpcChannel;
+use crate::{ProcessRole, ProtocolError};
 
 /// 渲染进程 ID 类型。
 pub type RendererId = u64;
@@ -59,6 +63,19 @@ pub struct RendererHandle {
     current_url: Option<String>,
 }
 
+/// 构造子进程启动参数（对齐 Chromium `--type=` 约定）。
+pub fn child_process_args(role: ProcessRole, instance_id: u64) -> Vec<String> {
+    let type_name = match role {
+        ProcessRole::Browser => "browser",
+        ProcessRole::Renderer => "renderer",
+        ProcessRole::Network => "network",
+    };
+    vec![
+        format!("--type={type_name}"),
+        format!("--instance-id={instance_id}"),
+    ]
+}
+
 impl RendererHandle {
     /// 创建新的渲染进程。
     ///
@@ -66,8 +83,11 @@ impl RendererHandle {
     pub fn spawn(renderer_bin: &str) -> Result<Self, ProtocolError> {
         let id = NEXT_RENDERER_ID.fetch_add(1, Ordering::Relaxed);
 
-        let mut child = Command::new(renderer_bin)
-            .arg(format!("--renderer-id={id}"))
+        let mut child = Command::new(renderer_bin);
+        for arg in child_process_args(ProcessRole::Renderer, id) {
+            child.arg(arg);
+        }
+        let mut child = child
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -466,6 +486,13 @@ mod tests {
         let _ = NEXT_RENDERER_ID.fetch_add(1, Ordering::Relaxed);
         let after = NEXT_RENDERER_ID.load(Ordering::Relaxed);
         assert_eq!(after, start + 1);
+    }
+
+    /// 测试 Chromium 风格子进程启动参数。
+    #[test]
+    fn test_child_process_args_renderer() {
+        let args = child_process_args(ProcessRole::Renderer, 7);
+        assert_eq!(args, vec!["--type=renderer".to_string(), "--instance-id=7".to_string()]);
     }
 
     /// 测试心跳超时常量。

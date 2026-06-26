@@ -137,10 +137,9 @@ fn draw_op_to_ipc(op: DrawOp) -> IpcDrawOp {
     }
 }
 
-/// 抓取 HTML 中 `<img>` 子资源并编码为 IPC 像素块（本地 HTTP）。
+/// 抓取 HTML 中 `<img>` 子资源（须由宿主提供 fetch，渲染进程应走浏览器 IPC）。
 pub fn fetch_image_payloads(html: &str, page_url: &str) -> Vec<IpcImagePayload> {
-    let client = zero_net::client::HttpClient::new();
-    fetch_image_payloads_with_fetch(html, page_url, &mut |url| client.get(url).ok().map(|r| r.body))
+    fetch_image_payloads_with_fetch(html, page_url, &mut |_url| None)
 }
 
 /// 经自定义 fetch 回调抓取 `<img>` 子资源（多进程 IPC 代理）。

@@ -9,14 +9,20 @@ mod paint_export;
 use async_load::PageLoadHost;
 
 use crate::js_worker::RendererJsWorker;
-use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, net_fetch_text, rerender, run_page_scripts};
+use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, rerender, run_page_scripts};
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
+
+use zero_engine::{
+    extract_page_scripts, resolve_document_url, PageScript,
+};
+use zero_script_sandbox::extract_module_import_specifiers;
 use std::io;
 
 use zero_engine::{
     DomEventDetail, PrefersColorSchemeValue, RenderPipeline, RenderResult, selector_from_element_hit,
 };
+use zero_protocol::ProcessRole;
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
     DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams,
@@ -106,21 +112,69 @@ impl RendererRuntime {
         self.channel.recv().map_err(|e| format!("IPC 接收失败: {e}"))
     }
 
-    fn fetch_text(&mut self, url: &str) -> Result<String, String> {
-        self.fetch_get(url)
-            .map(|b| String::from_utf8_lossy(&b).into_owned())
-    }
-
-    fn after_page_html_loaded(&mut self, html: String, css: String) -> Result<(), String> {
+(&mut self, html: String, css: String) -> Result<(), String> {
         self.cached_html = html;
         self.cached_css = css;
         let js_enabled = self.javascript_enabled;
+        let fetch_cache = self.build_script_fetch_cache();
         let mut ctx = self.page_script_context();
-        if run_page_scripts(&mut ctx, js_enabled, net_fetch_text) {
+        let fetch_from_cache = |url: &str| {
+            fetch_cache
+                .get(url)
+                .cloned()
+                .ok_or_else(|| format!("script fetch failed: {url}"))
+        };
+        if run_page_scripts(&mut ctx, js_enabled, fetch_from_cache) {
             let result = rerender(&mut ctx);
             self.publish_render(&result, None)?;
         }
         Ok(())
+    }
+
+    /// 经浏览器进程 IPC 预抓取页面脚本与子模块（渲染进程不直连网络）。
+    fn build_script_fetch_cache(&mut self) -> HashMap<String, String> {
+        let base = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        if page_scripts::should_skip_scripts(&base) || self.cached_html.is_empty() {
+            return HashMap::new();
+        }
+
+        let mut cache = HashMap::new();
+        let mut pending = VecDeque::new();
+        let mut seen = HashSet::new();
+
+        for script in extract_page_scripts(&self.cached_html) {
+            match script {
+                PageScript::External(src) | PageScript::ExternalModule(src) => {
+                    pending.push_back(resolve_document_url(&base, &src));
+                }
+                _ => {}
+            }
+        }
+
+        while let Some(url) = pending.pop_front() {
+            if seen.contains(&url) {
+                continue;
+            }
+            seen.insert(url.clone());
+
+            let body = match self.fetch_get(&url) {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!("script prefetch {url}: {e}");
+                    continue;
+                }
+            };
+            let text = String::from_utf8_lossy(&body).into_owned();
+            for spec in extract_module_import_specifiers(&text) {
+                let dep = resolve_document_url(&url, &spec);
+                if !seen.contains(&dep) {
+                    pending.push_back(dep);
+                }
+            }
+            cache.insert(url, text);
+        }
+
+        cache
     }
 
     fn page_script_context(&mut self) -> PageScriptContext<'_> {
@@ -710,15 +764,34 @@ fn load_system_fonts(pipeline: &mut RenderPipeline) {
     }
 }
 
-fn parse_renderer_id() -> u64 {
+fn parse_renderer_launch() -> (ProcessRole, u64) {
+    let mut role = ProcessRole::Renderer;
+    let mut instance_id = 0u64;
     for arg in std::env::args() {
+        if let Some(value) = arg.strip_prefix("--type=") {
+            role = match value {
+                "renderer" => ProcessRole::Renderer,
+                "browser" => ProcessRole::Browser,
+                "network" => ProcessRole::Network,
+                other => {
+                    tracing::error!("未知子进程类型: {other}");
+                    std::process::exit(2);
+                }
+            };
+        }
+        if let Some(id_str) = arg.strip_prefix("--instance-id=")
+            && let Ok(id) = id_str.parse::<u64>()
+        {
+            instance_id = id;
+        }
+        // 兼容旧参数
         if let Some(id_str) = arg.strip_prefix("--renderer-id=")
             && let Ok(id) = id_str.parse::<u64>()
         {
-            return id;
+            instance_id = id;
         }
     }
-    0
+    (role, instance_id)
 }
 
 fn main() {
@@ -727,8 +800,12 @@ fn main() {
         .with_target(false)
         .init();
 
-    let renderer_id = parse_renderer_id();
-    tracing::info!("ZeroWeb 渲染进程启动 (id={renderer_id})");
+    let (role, renderer_id) = parse_renderer_launch();
+    if role != ProcessRole::Renderer {
+        tracing::error!("zero-renderer 必须以 --type=renderer 启动");
+        std::process::exit(2);
+    }
+    tracing::info!("ZeroWeb 渲染进程启动 (type=renderer, instance-id={renderer_id})");
 
     let mut runtime = RendererRuntime::new(renderer_id);
 
