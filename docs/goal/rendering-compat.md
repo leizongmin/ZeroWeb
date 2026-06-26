@@ -318,7 +318,7 @@
 - [x] ✅(R658 逐项体检通过) Legacy Static Web smoke 的短期验收口径是“可读且结构不崩”：正文不重叠、不串行；表格单元格边框/内边距可见；图片按替换元素参与 inline 布局；链接颜色/下划线可见；`font size/color` 影响文本；body 背景和文本色生效。像素阈值可先作为趋势指标记录，不得用它替代 WPT/DC-14 达标口径
 - [x] ✅(R213) URL 导航路径必须加载并应用 `<link rel="stylesheet">` 外部样式表；外链 CSS 抓取失败应作为可诊断的资源加载错误记录，不得静默退化为仅内联 CSS 渲染
 - [x] ✅(R318) URL 导航路径必须加载 `<img src>` 图片子资源，将解码后的 SVG/PNG/JPEG/WebP 像素数据写入 `ImageCache`，并在 ZeroBrowser CPU/GPU 渲染路径传入 renderer；图片缺失不得被 alt 文本或占位 glyph 静默替代
-- [ ] 同一输入通过 `zero-webview` 直接渲染路径截图，并与 Chromium 参考截图对比，避免产品层和 WebView 层互相掩盖问题
+- [x] ✅(R662) 同一输入通过 `zero-webview` 直接渲染路径截图，并与 Chromium 参考截图对比，避免产品层和 WebView 层互相掩盖问题 — `product-smoke --via-webview`（`render_via_webview_to_framebuffer` 走 `WebView::load_html` 嵌入边界）；welcome.html via-webview vs engine-direct **0.00% byte-identical**，两侧 vs Chromium 均 16.16%（字体墙），证明产品层↔WebView 层不互相掩盖
 - [ ] 至少覆盖桌面和窄屏两个 viewport；桌面 viewport 下必须验证 hero 标题、四个 feature card、快捷键区、快速访问区和 footer 的相对位置
 - [ ] welcome.html 自动检查文本不重叠、不同 sibling card/link/shortcut 的文本不串联、`ZeroBrowser` 标题在宽屏下不被错误拆行、`<br>` 后的中英文 tagline 保持两行
 - [ ] morning.work 文章页自动检查 nav/title/date/tag badges/阅读时间不串联，正文段落不被压成同一行，inline code 保持行内位置，table 仍按表格布局绘制，pre/code 块保持独立背景和换行

@@ -540,6 +540,47 @@ pub fn render_to_framebuffer_with_base(
     )
 }
 
+/// DC-13 line 321：通过 `zero-webview` 稳定嵌入边界渲染 HTML 到 FrameBuffer。
+///
+/// 与 [`render_to_framebuffer_with_base`]（engine-direct，直接用 `RenderPipeline`）
+/// 形成对照——验证「产品层（ZeroBrowser）↔ WebView 层」不互相掩盖问题。WebView 路径
+/// 走完整的嵌入接口（`WebView::load_html`，含其内部的 image/font/security 处理），
+/// 产出 `RenderPrimitives` 后用同一 `render_full_scene` 光栅化。
+///
+/// **范围**：仅适用于自包含 fixture（无外链 CSS/`<img>`），因 `load_html` 不做
+/// base_dir 解析（外链资源走 `fetch_url` 的 HTTP 路径）。welcome.html 即自包含。
+pub fn render_via_webview_to_framebuffer(html: &str, config: &ReftestConfig) -> FrameBuffer {
+    // 提取并执行 <script>（与 engine-direct 路径一致，保证 JS 设置条件被应用）
+    execute_scripts(html);
+
+    let wv_config = zero_webview::WebViewConfig {
+        width: config.viewport_width,
+        height: config.viewport_height,
+        ..Default::default()
+    };
+    let mut webview = zero_webview::WebView::new(wv_config);
+    // load_html 走 WebView 嵌入边界（其内部 RenderPipeline + font_resolver + 安全上下文）
+    // 产出与 engine-direct 同类型的 RenderPrimitives。
+    let result = webview.load_html(html, None);
+
+    // 光栅化用与 product-smoke 同源的 FontLoader / GlyphCache，确保 font_id 映射一致
+    // （自包含页用默认字体，font_id 0 在两侧均为 default，对齐）。
+    let font_loader = create_font_loader();
+    let mut glyph_cache = GlyphCache::new(1024);
+
+    render_full_scene(
+        config.viewport_width,
+        config.viewport_height,
+        config.scale_factor,
+        &result.primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+    )
+}
+
 /// 诊断：转储布局盒树几何（绝对 y / margin-top / padding-top / height）。
 ///
 /// 重新解析 HTML 以建立 `NodeId → (tag, class)` 映射，然后递归遍历 `LayoutBox`，
