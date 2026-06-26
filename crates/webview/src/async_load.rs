@@ -5,6 +5,7 @@ use std::sync::mpsc::Receiver;
 
 use zero_engine::image_resource_key;
 use zero_engine::{BudgetAdvance, BudgetedRenderSession, extract_img_srcs, extract_stylesheet_hrefs};
+use zero_page_runtime::AsyncFetchHost;
 use zero_render_foundation::image_cache::{ImageKey, decode_image_bytes};
 
 use crate::net_pool::{fetch_bytes_async, fetch_text_async};
@@ -32,8 +33,22 @@ pub enum PageLoadStage {
     Failed,
 }
 
+/// in-process 异步抓取宿主：经 webview net_pool 线程池抓取（tabworker 默认）。
+pub struct InProcessFetchHost;
+
+impl AsyncFetchHost for InProcessFetchHost {
+    fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>> {
+        fetch_text_async(url.to_string())
+    }
+
+    fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>> {
+        fetch_bytes_async(url.to_string())
+    }
+}
+
 /// 分阶段异步加载协调器。
 pub struct AsyncPageLoad {
+    host: Box<dyn AsyncFetchHost>,
     url: String,
     stage: PageLoadStage,
     html: Option<String>,
@@ -47,11 +62,17 @@ pub struct AsyncPageLoad {
 }
 
 impl AsyncPageLoad {
-    /// 开始加载 URL（主文档走网络线程池）。
+    /// 开始加载 URL（主文档走 net_pool，tabworker 默认宿主）。
     pub fn start(url: impl Into<String>) -> Self {
+        Self::start_with_host(url, Box::new(InProcessFetchHost))
+    }
+
+    /// 用自定义异步抓取宿主开始加载（renderer 经 IPC 复用加载器时使用）。
+    pub fn start_with_host(url: impl Into<String>, mut host: Box<dyn AsyncFetchHost>) -> Self {
         let url = url.into();
-        let document_rx = fetch_text_async(url.clone());
+        let document_rx = host.fetch_text(&url);
         Self {
+            host,
             url,
             stage: PageLoadStage::FetchingDocument,
             html: None,
@@ -75,9 +96,15 @@ impl AsyncPageLoad {
         self.stage == PageLoadStage::Failed
     }
 
-    /// 从已有 HTML 开始（跳过主文档网络）。
+    /// 从已有 HTML 开始（跳过主文档网络，默认 net_pool 宿主）。
     pub fn from_html(url: impl Into<String>, html: String) -> Self {
+        Self::from_html_with_host(url, html, Box::new(InProcessFetchHost))
+    }
+
+    /// 从已有 HTML + 自定义异步抓取宿主开始。
+    pub fn from_html_with_host(url: impl Into<String>, html: String, host: Box<dyn AsyncFetchHost>) -> Self {
         Self {
+            host,
             url: url.into(),
             stage: PageLoadStage::FirstPaint,
             html: Some(html),
@@ -193,7 +220,7 @@ impl AsyncPageLoad {
                 Some(u) => u.to_string(),
                 None => href,
             };
-            self.css_pending.push((abs.clone(), fetch_text_async(abs)));
+            self.css_pending.push((abs.clone(), self.host.fetch_text(&abs)));
         }
         if self.css_pending.is_empty() {
             self.begin_image_fetch(webview);
@@ -246,7 +273,7 @@ impl AsyncPageLoad {
                 None => src,
             };
             let key = image_resource_key(&abs, None);
-            self.img_pending.push((abs.clone(), key, fetch_bytes_async(abs)));
+            self.img_pending.push((abs.clone(), key, self.host.fetch_bytes(&abs)));
         }
         if self.img_pending.is_empty() {
             self.stage = PageLoadStage::Complete;
