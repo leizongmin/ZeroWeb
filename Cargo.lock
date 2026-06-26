@@ -5952,6 +5952,7 @@ dependencies = [
  "zero-layout-engine",
  "zero-net",
  "zero-protocol",
+ "zero-render-foundation",
  "zero-script-sandbox",
  "zero-storage",
  "zero-style-system",

@@ -17,6 +17,7 @@ mod input_keys;
 mod layout;
 mod page_selection;
 mod pages;
+mod paint_ipc;
 mod process_backend;
 mod tab_chrome;
 mod tab_favicon;

@@ -134,13 +134,21 @@ impl TabManager {
         }
     }
 
-    /// 轮询所有 Tab 更新快照。
-    pub fn poll(&mut self) -> bool {
+    /// 轮询 Tab 更新快照；`active_tab` 为当前前台标签（后台 Tab 降低轮询频率）。
+    pub fn poll(&mut self, active_tab: Option<TabId>) -> bool {
+        static BG_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let tick = BG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let poll_background = tick % 5 == 0;
+
         let mut changed = false;
         if let Some(ref mut backend) = self.process_backend {
             changed |= backend.poll(&mut self.snapshots);
         }
         for (tab_id, worker) in &self.workers {
+            let is_active = active_tab == Some(*tab_id);
+            if !is_active && !poll_background {
+                continue;
+            }
             while let Some(msg) = worker.try_recv() {
                 changed = true;
                 match msg {
@@ -167,7 +175,10 @@ impl TabManager {
                     }
                     TabWorkerMessage::Stage(stage) => {
                         if let Some(s) = self.snapshots.get_mut(tab_id) {
-                            s.loading = stage != zero_webview::PageLoadStage::Complete;
+                            s.loading = !matches!(
+                                stage,
+                                zero_webview::PageLoadStage::Complete | zero_webview::PageLoadStage::Failed
+                            );
                         }
                     }
                 }
@@ -180,7 +191,7 @@ impl TabManager {
     #[cfg(test)]
     pub fn poll_until_idle(&mut self, max_rounds: usize) {
         for _ in 0..max_rounds {
-            self.poll();
+            self.poll(None);
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }

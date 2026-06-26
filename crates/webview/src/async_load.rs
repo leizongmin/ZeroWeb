@@ -25,6 +25,8 @@ pub enum PageLoadStage {
     FetchingImages,
     /// 加载完成。
     Complete,
+    /// 加载失败（主文档或致命错误）。
+    Failed,
 }
 
 /// 分阶段异步加载协调器。
@@ -38,6 +40,7 @@ pub struct AsyncPageLoad {
     document_rx: Option<Receiver<Result<String, String>>>,
     render_session: Option<BudgetedRenderSession>,
     budget_pending: bool,
+    last_error: Option<String>,
 }
 
 impl AsyncPageLoad {
@@ -55,7 +58,18 @@ impl AsyncPageLoad {
             document_rx: Some(document_rx),
             render_session: None,
             budget_pending: false,
+            last_error: None,
         }
+    }
+
+    /// 取出并清除加载失败原因（主文档抓取失败等）。
+    pub fn take_error(&mut self) -> Option<String> {
+        self.last_error.take()
+    }
+
+    /// 是否因错误结束。
+    pub fn failed(&self) -> bool {
+        self.stage == PageLoadStage::Failed
     }
 
     /// 从已有 HTML 开始（跳过主文档网络）。
@@ -70,6 +84,7 @@ impl AsyncPageLoad {
             document_rx: None,
             render_session: None,
             budget_pending: true,
+            last_error: None,
         }
     }
 
@@ -80,7 +95,7 @@ impl AsyncPageLoad {
 
     /// 是否仍在加载。
     pub fn is_active(&self) -> bool {
-        self.stage != PageLoadStage::Complete
+        !matches!(self.stage, PageLoadStage::Complete | PageLoadStage::Failed)
     }
 
     /// 在 `budget_ms` 内推进加载与渲染；返回 `true` 表示状态有更新。
@@ -100,7 +115,8 @@ impl AsyncPageLoad {
                 }
                 Err(e) => {
                     tracing::warn!("document fetch failed: {e}");
-                    self.stage = PageLoadStage::Complete;
+                    self.last_error = Some(e);
+                    self.stage = PageLoadStage::Failed;
                     changed = true;
                 }
             }

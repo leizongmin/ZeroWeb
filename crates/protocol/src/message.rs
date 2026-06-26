@@ -35,6 +35,8 @@ pub enum IpcMessageKind {
     LoadComplete,
     /// 页面加载失败。
     LoadFailed(String),
+    /// 页面绘制快照（渲染→浏览器）。
+    ViewPainted(crate::paint_snapshot::PaintSnapshotParams),
 
     // ── 网络请求（渲染→浏览器→网络）──
     /// 发起网络请求。

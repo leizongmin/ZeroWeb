@@ -18,6 +18,8 @@ use zero_engine::RenderPipeline;
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{FetchParams, IpcMessage, IpcMessageKind, NavigateParams, StorageOpParams};
 use zero_protocol::transport::PipeTransport;
+use zero_protocol::{IpcColor, IpcFill, IpcGlyph, IpcRect, PaintSnapshotParams};
+use zero_render_foundation::primitive::RenderPrimitives;
 
 /// 渲染进程运行时状态。
 struct RendererRuntime {
@@ -84,7 +86,18 @@ impl RendererRuntime {
                 let title = extract_title(&html);
 
                 // 渲染页面
-                let _result = self.pipeline.render_html(&html, "");
+                let result = self.pipeline.render_html(&html, "");
+                let doc_h = self
+                    .pipeline
+                    .document_height()
+                    .unwrap_or(self.pipeline.viewport_height());
+                let paint = paint_snapshot_from_primitives(
+                    self.pipeline.viewport_width() as u32,
+                    self.pipeline.viewport_height() as u32,
+                    doc_h,
+                    &result.primitives,
+                );
+                self.send(IpcMessageKind::ViewPainted(paint))?;
 
                 // 报告标题变更
                 if let Some(title) = title {
@@ -180,6 +193,7 @@ impl RendererRuntime {
                 | IpcMessageKind::UrlChanged(_)
                 | IpcMessageKind::LoadComplete
                 | IpcMessageKind::LoadFailed(_)
+                | IpcMessageKind::ViewPainted(_)
                 | IpcMessageKind::CrashNotification(_) => {
                     tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
                     Ok(())
@@ -218,6 +232,55 @@ fn parse_renderer_id() -> u64 {
         }
     }
     0
+}
+
+fn paint_snapshot_from_primitives(
+    viewport_width: u32,
+    viewport_height: u32,
+    document_height: f32,
+    primitives: &RenderPrimitives,
+) -> PaintSnapshotParams {
+    PaintSnapshotParams {
+        viewport_width,
+        viewport_height,
+        document_height,
+        fills: primitives
+            .fills
+            .iter()
+            .map(|f| IpcFill {
+                rect: IpcRect {
+                    x: f.rect.origin.x,
+                    y: f.rect.origin.y,
+                    width: f.rect.size.width,
+                    height: f.rect.size.height,
+                },
+                color: IpcColor {
+                    r: f.color.r,
+                    g: f.color.g,
+                    b: f.color.b,
+                    a: f.color.a,
+                },
+            })
+            .collect(),
+        glyphs: primitives
+            .glyphs
+            .iter()
+            .map(|g| IpcGlyph {
+                x: g.x,
+                y: g.y,
+                font_size: g.font_size,
+                glyph_id: g.glyph_id,
+                font_id: g.font_id.0,
+                color: IpcColor {
+                    r: g.color.r,
+                    g: g.color.g,
+                    b: g.color.b,
+                    a: g.color.a,
+                },
+                rotation: g.rotation,
+            })
+            .collect(),
+    }
 }
 
 fn main() {
