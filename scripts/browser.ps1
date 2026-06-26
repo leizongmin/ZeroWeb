@@ -4,7 +4,8 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\browser.ps1
 #   powershell -ExecutionPolicy Bypass -File scripts\browser.ps1 -- --headless
 #
-# 会先下载 rusty_v8 预构建产物，再执行 cargo run --release -p zero-browser。
+# 会先下载 rusty_v8，再 release 编译 zero-browser + zero-renderer，最后运行已构建的二进制
+# （不用 cargo run，确保与 zero-renderer.exe 同目录，多进程模式可 spawn 子进程）。
 
 param(
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -15,6 +16,8 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $DownloadScript = Join-Path $PSScriptRoot "download-rusty-v8.ps1"
+$BrowserBin = Join-Path $ProjectRoot "target\release\zero-browser.exe"
+$RendererBin = Join-Path $ProjectRoot "target\release\zero-renderer.exe"
 
 Push-Location $ProjectRoot
 try {
@@ -24,12 +27,25 @@ try {
         Write-Error "rusty_v8 setup failed with exit code $LASTEXITCODE"
     }
 
-    Write-Host "ZeroBrowser: building and starting (release, first run may take several minutes)..."
+    Write-Host "ZeroBrowser: building zero-browser and zero-renderer (release)..."
+    cargo build --release -p zero-browser -p zero-renderer
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+
+    if (-not (Test-Path -LiteralPath $BrowserBin)) {
+        Write-Error "zero-browser not found at $BrowserBin"
+    }
+    if (-not (Test-Path -LiteralPath $RendererBin)) {
+        Write-Error "zero-renderer not found at $RendererBin (required for default multi-process mode)"
+    }
+
+    Write-Host "ZeroBrowser: starting $BrowserBin"
     if ($BrowserArgs.Count -gt 0) {
-        cargo run --release -p zero-browser -- @BrowserArgs
+        & $BrowserBin @BrowserArgs
     }
     else {
-        cargo run --release -p zero-browser
+        & $BrowserBin
     }
     exit $LASTEXITCODE
 }
