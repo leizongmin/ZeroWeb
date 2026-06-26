@@ -236,10 +236,7 @@ fn apply_recorded_mutations(wv: &mut WebView, js_worker: Option<&TabJsWorkerHand
 }
 
 fn should_run_scripts_for_url(url: Option<&str>) -> bool {
-    match url {
-        Some(u) if u.starts_with("view-source:") => false,
-        _ => true,
-    }
+    !matches!(url, Some(u) if u.starts_with("view-source:"))
 }
 
 fn page_script_label(script: &PageScript) -> String {
