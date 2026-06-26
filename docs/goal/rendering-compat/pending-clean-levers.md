@@ -21,6 +21,7 @@
 | C complex | R705 | margin-collapse-clear-015 / floats-clear（clearance+collapse） | 33.66% | **中高** | 4 案（015/014/012/013） |
 | C caveat | R692 | nested-grid-item-block-size-001 / css-grid（aspect-ratio） | 真 64.15% | 中 | **oracle 损坏须先 regen** |
 | C caveat | R680 | table-cell-width-0 / css-tables（br 行盒高度） | 20.09% | 中 | §9.2.1.1 blast radius 风险 |
+| C caveat | R711 | bottom-113 / CSS2_positioning（relative 百分比 inset） | 47.48% | 中 | ~8 案（top/bottom 簇）须 disambiguate |
 
 ---
 
@@ -98,6 +99,12 @@
 - **fix scope**：补 br-between-block-siblings 匿名块行盒高度。**R109 territory，须评 blast radius**（br-between-blocks 模式常见，修后或惠及多 case 或致位移；依赖当前 h=0 br 行为的 case 可能受影响）。
 
 ---
+
+### R711 · position:relative 的 top/bottom 百分比 inset 未应用（须 disambiguate）
+- **测试**：`CSS2/positioning/bottom-113`（47.48%）+ top-113（39.50%）+ bottom/top-103/104（31.96/23.82%，identical 对）+ bottom/top-091/092（16.12/15.79%，identical 对），~8 案 cluster
+- **根因**：`#div1{position:relative;bottom:100%}` **未 shift**（dump abs_y=227 = parent 同位，应 shift up 96=CB height）——**relative 百分比 top/bottom inset 未应用**（非仅 inherit；#div1 显式 100% 也未生效，#div2 bottom:inherit 同未 shift）。converter/mod.rs:71 inset→`convert_length_to_lpa` 传 taffy，taffy Relative 应应用 inset，但百分比 top/bottom 未生效。
+- **fix scope**：**须先 disambiguate**——① 百分比特异 vs 所有 inset（用 length-inset 测试区分）；② ZW-side 可修 vs taffy 0.7 百分比 inset 限制（R304 deferred territory）。若 ZW 可修则 cluster yield ~8 案（+ 推 left/right 同族）。
+- **风险**：中（inset 应用影响面广，须 A/B；与 R689 static-inset 修复可能 entangled——static 应忽略 inset / relative 应应用 inset 是 inset 谱系两 facet）。
 
 ## 已识 structural-gated 区（非 clean lever，多会话架构，勿单点重试）
 
