@@ -429,15 +429,15 @@
 
 ## Single Active Milestone
 
-**当前活跃里程碑**：M7 — 渲染器图元覆盖 + 浏览器图元消费（Critical Path）
+**当前活跃里程碑**：✅ **M7 已完成**（渲染器图元覆盖 + 浏览器图元消费）—— DC-8 CPU 13/13 + DC-9 GPU 13/13 + DC-10 浏览器消费全 13 字段，均附 framebuffer 像素断言测试（见 master.md R660-R666）。**当前实际活跃工作**：M10（上游 WPT 真实 reftest 通过率）+ DC-13 产品 smoke + 真 incomplete 特性（Float/sticky/scroll + clip-path/backdrop-filter/mask 渲染）+ Phase A 字体度量 plateau（须用户多会话决策）。
 
 ### M7 目标
 
 消除渲染管线中最大的视觉输出缺口：让 CPU 渲染器、GPU 渲染器和浏览器 `append_webview_primitives()` 能够处理所有 13 种 `RenderPrimitives` 图元类型。完成此里程碑后，页面将从「只有色块和文字」升级到「接近主流浏览器的视觉输出」。
 
-### M7 背景事实
+### M7 背景事实（⚠️ pre-M7 历史快照；M7 已完成，「断桥」已修复，见 DC-8/9/10 ✅）
 
-当前渲染管线存在一个严重的「断桥」：
+**当时（pre-M7）**渲染管线存在一个严重的「断桥」（下列 3 项现已全部修复——CPU/GPU/浏览器消费全 13 图元）：
 1. **Paint 系统**（`crates/engine/src/paint/`）已能生成 13 种图元类型 ✅
 2. **CPU 渲染器**仅渲染其中 3 种（fills、rounded_rects、glyphs）❌
 3. **GPU 渲染器**仅渲染其中 2 种（fills、glyphs）❌
@@ -447,7 +447,7 @@
 
 ### M7 完成标准
 
-1. [ ] **CPU 渲染器**（`crates/render-foundation/src/cpu/`）实现以下图元渲染：
+1. [x] ✅ **CPU 渲染器**（`crates/render-foundation/src/cpu/`）实现以下图元渲染（DC-8 13/13，全 framebuffer 像素断言测试）：
    - `GradientPrimitive` — 线性/径向/锥形渐变（逐像素插值或分段近似）
    - `ShadowPrimitive` — 高斯模糊阴影（box-blur 近似或高斯核卷积）
    - `ImagePrimitive` — RGBA 像素数据合成到 framebuffer
@@ -458,7 +458,7 @@
    - `ClipPrimitive` — 矩形裁剪（像素级 discard）
    - `FilterPrimitive` — 至少 blur（box-blur 近似）和 opacity
    - `BlendModePrimitive` — 至少 normal、multiply、screen
-2. [ ] **GPU 渲染器**（`crates/render-foundation/src/gpu/`）实现以下图元渲染：
+2. [x] ✅ **GPU 渲染器**（`crates/render-foundation/src/gpu/`）实现以下图元渲染（DC-9 13/13，wgpu+mesh 管线 + framebuffer 像素断言测试）：
    - `RoundedRectPrimitive` — 扩展 WGSL shader 支持圆角
    - `GradientPrimitive` — 渐变 shader（1D texture lookup 或 shader 内插值）
    - `ShadowPrimitive` — 阴影 pass（模糊 texture 或近似）
@@ -468,13 +468,13 @@
    - `ClipPrimitive` — scissor rect 或 stencil buffer
    - `FilterPrimitive` — post-processing pass（至少 blur）
    - `BlendModePrimitive` — blend equation 配置
-3. [ ] **浏览器图元消费**（`apps/browser/src/app_render.rs`）：
+3. [x] ✅ **浏览器图元消费**（`apps/browser/src/app_render.rs`）：`append_webview_primitives()` 遍历全 13 字段（DC-10 item 1 ✅）：
    - `append_webview_primitives()` 处理 `RenderPrimitives` 的所有 13 个字段
    - 所有图元类型正确应用 `scale_factor` 和 `offset`
    - 所有图元类型正确应用视口裁剪（`clip_y` + `clip_rounded`）
    - 图元渲染顺序遵循 CSS painting order
-4. [ ] **验证**：修改后 `cargo test` 全绿，`cargo clippy` 零警告
-5. [ ] **视觉验证**：为以下每种新增图元类型编写独立的单元测试，生成已知输入图元 → 渲染到 framebuffer → 断言关键像素值正确（不允许仅凭「看起来对了」声称通过）：
+4. [x] ✅ **验证**：`cargo test` 全绿（render-foundation 504 测试，R666）+ `cargo clippy` -D warnings 零警告
+5. [x] ✅ **视觉验证**：每种图元有独立 framebuffer 像素断言单测（test_gpu_full_scene_* / cpu_full_scene_*，DC-8/9 13/13），生成已知输入图元 → 渲染到 framebuffer → 断言关键像素值正确（不允许仅凭「看起来对了」声称通过）：
    - 渐变：输入 `GradientPrimitive { kind: Linear, stops: [red→blue] }` → 断言矩形左端像素为红色、右端为蓝色
    - 阴影：输入 `ShadowPrimitive { blur_radius: 10, color: black }` → 断言阴影区域的 alpha 渐变存在
    - 图片：输入 `ImagePrimitive { RGBA 数据 }` → 断言输出像素与输入一致
