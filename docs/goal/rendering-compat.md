@@ -416,7 +416,7 @@
 | backdrop-filter | 模糊背景 | P3-低 | 完全未实现 |
 | CSS mask | 遮罩效果 | P3-低 | 完全未实现 |
 | 3D transform | 3D 效果 | P3-低 | 仅 2D 支持，3D 函数忽略 |
-| 真实 WPT reftest | 验证有效性 | P1-严重 | 当前 685 个 inline reftest 均为手写简单场景，未使用上游 WPT 真实 reftest；容差过宽松（1%-5%），无法发现真实渲染差距。**本目标要求必须基于上游真实 WPT reftest 验证** |
+| ~~真实 WPT reftest~~ | 验证有效性 | ✅ **已实现（R484）** | R484 完成 10/10 目录全量去子集化——从上游 WPT（`https://github.com/web-platform-tests/wpt`）`MANIFEST.json` 自动提取并导入 **~9967 个真实 reftest**（css2/CSS2/flexbox/grid/position/float/tables/multicol/text/writing-modes/fonts/text-decor 全覆盖），并建 DC-14 chromium Oracle 一致率基线 3608/9967=36.2%（chr<1%）。原 685 个 inline reftest 现仅作 smoke（不计入通过率）。原「685 inline 未用真实 WPT」描述已过时（pre-R484） |
 
 ### 测试基线
 
