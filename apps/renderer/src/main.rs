@@ -35,7 +35,7 @@ use zero_protocol::message::{
 use zero_protocol::transport::PipeTransport;
 
 /// 渲染进程 → 浏览器 IPC 发送端（stdout）。
-type IpcOutbound = PipeTransport<io::Empty, io::Stdout>;
+type IpcOutbound = PipeTransport<io::Empty, Box<dyn io::Write + Send>>;
 
 fn spawn_browser_ipc_inbound() -> (Receiver<IpcMessage>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
@@ -109,8 +109,16 @@ struct RendererRuntime {
 impl RendererRuntime {
     /// 创建新的渲染进程运行时。
     fn new(renderer_id: u64) -> Self {
-        let outbound = PipeTransport::new(io::empty(), io::stdout());
         let (inbound_rx, inbound_thread) = spawn_browser_ipc_inbound();
+        let mut rt = Self::with_io(renderer_id, Box::new(io::stdout()), inbound_rx);
+        rt.inbound_thread = Some(inbound_thread);
+        rt
+    }
+
+    /// 用指定出站 writer + 入站通道构造（`new()` 走 stdin/stdout；本方法供 in-process 测试，
+    /// 是 B3 cutover 回归门的基础——renderer 是 bin，否则 wiring 无法单测）。
+    fn with_io(renderer_id: u64, outbound: Box<dyn io::Write + Send>, inbound_rx: Receiver<IpcMessage>) -> Self {
+        let outbound = PipeTransport::new(io::empty(), outbound);
         let mut pipeline = RenderPipeline::new(1280.0, 800.0);
         let (font_loader, font_id) = load_system_fonts(&mut pipeline);
         set_char_measure_fn(text_metrics::measure_char);
@@ -126,7 +134,7 @@ impl RendererRuntime {
         Self {
             outbound,
             inbound_rx,
-            inbound_thread: Some(inbound_thread),
+            inbound_thread: None,
             pipeline,
             webview: Some(webview),
             font_loader,
@@ -896,5 +904,64 @@ fn main() {
     if let Err(e) = runtime.run() {
         tracing::error!("渲染进程错误退出: {e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod runtime_smoke {
+    use super::*;
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    /// 共享字节缓冲（Send），捕获出站 IPC 字节用于断言。
+    #[derive(Clone)]
+    struct SharedBuf(Arc<Mutex<Vec<u8>>>);
+    impl Write for SharedBuf {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// 把字节缓冲反帧化成 IpcMessage 列表。
+    fn drain_messages(buf: &[u8]) -> Vec<IpcMessage> {
+        let mut t = PipeTransport::new(std::io::Cursor::new(buf), std::io::empty());
+        let mut msgs = Vec::new();
+        while let Ok(m) = t.recv() {
+            msgs.push(m);
+        }
+        msgs
+    }
+
+    /// in-process renderer load+publish 回归门：喂 LoadHtml → 须产出含图元的 ViewPainted。
+    /// B3 cutover 后此测试仍过 = load+publish wiring 不坏。renderer 是 bin，靠 with_io 注入 transport 对测。
+    #[test]
+    fn renderer_load_html_publishes_viewpainted() {
+        let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+        let (_in_tx, in_rx) = mpsc::channel();
+        let mut rt = RendererRuntime::with_io(1, Box::new(buf.clone()), in_rx);
+        let html = r#"<html><body><div style="width:200px;height:100px;background:red">Box</div></body></html>"#;
+        rt.handle_load_html(LoadHtmlParams {
+            html: html.into(),
+            css: None,
+            url: Some("zero://smoke".into()),
+        })
+        .expect("load ok");
+        let captured = buf.0.lock().unwrap().clone();
+        let msgs = drain_messages(&captured);
+        let painted = msgs
+            .iter()
+            .find_map(|m| match &m.kind {
+                IpcMessageKind::ViewPainted(p) => Some(p.as_ref()),
+                _ => None,
+            })
+            .expect("须产出 ViewPainted");
+        assert!(
+            !(painted.fills.is_empty() && painted.rounded_rects.is_empty() && painted.images.is_empty()),
+            "ViewPainted 须含可见图元（fills/rounded_rects/images）"
+        );
     }
 }
