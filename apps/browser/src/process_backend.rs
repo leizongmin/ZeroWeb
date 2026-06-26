@@ -9,13 +9,16 @@ use std::time::{Duration, Instant};
 use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
 use zero_protocol::message::{
-    FetchParams, HitTestLinkParams, IpcColorScheme, IpcMessage, IpcMessageKind, LoadHtmlParams, SetColorSchemeParams,
+    DispatchDomEventParams, FetchParams, HitTestElementResultParams,
+    HitTestLinkParams, IpcColorScheme, IpcMessage, IpcMessageKind, LoadHtmlParams, SetColorSchemeParams,
     SetViewportParams, StorageOpParams, StorageOperation, StorageType,
 };
+use zero_engine::{DomEventDetail, ElementHit};
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
 
 use crate::tab_snapshot::TabSnapshot;
+use crate::tab_scripts::DomDispatchResult;
 
 /// 是否启用多进程后端（环境变量 `ZERO_BROWSER_MULTIPROCESS=1`）。
 pub fn use_multiprocess_backend() -> bool {
@@ -394,6 +397,183 @@ impl ProcessTabBackend {
             }
         }
     }
+
+    /// 元素命中测试（同步 IPC 请求/响应）。
+    pub fn hit_test_element(
+        &mut self,
+        tab_id: TabId,
+        x: f32,
+        y: f32,
+        snapshots: &mut HashMap<TabId, TabSnapshot>,
+    ) -> Option<ElementHit> {
+        let rid = *self.tab_to_renderer.get(&tab_id)?;
+        let msg_id = NEXT_HIT_TEST_MSG_ID.fetch_add(1, Ordering::Relaxed);
+        {
+            let renderer = self.manager.get_renderer(rid)?;
+            renderer
+                .send(IpcMessage {
+                    id: msg_id,
+                    kind: IpcMessageKind::HitTestElement(HitTestLinkParams { x, y }),
+                })
+                .ok()?;
+        }
+
+        let deadline = Instant::now() + Duration::from_millis(250);
+        loop {
+            if Instant::now() >= deadline {
+                return None;
+            }
+            let msg = {
+                let renderer = self.manager.get_renderer(rid)?;
+                match renderer.try_recv() {
+                    Ok(Some(m)) => m,
+                    Ok(None) => {
+                        thread::sleep(Duration::from_millis(1));
+                        continue;
+                    }
+                    Err(e) => {
+                        tracing::debug!("IPC hit_test_element recv: {e}");
+                        return None;
+                    }
+                }
+            };
+            if msg.id == msg_id {
+                if let IpcMessageKind::HitTestElementResult(result) = msg.kind {
+                    return element_hit_from_ipc(result);
+                }
+                continue;
+            }
+            match msg.kind {
+                IpcMessageKind::FetchRequest(params) => {
+                    self.handle_fetch_request(tab_id, params);
+                }
+                kind => {
+                    let snap = snapshots.entry(tab_id).or_default();
+                    Self::apply_inbound_message(tab_id, snap, kind, &mut self.pending_loaded, &mut self.pending_errors);
+                }
+            }
+        }
+    }
+
+    /// DOM 事件派发（同步 IPC 请求/响应）。
+    pub fn dispatch_dom_event(
+        &mut self,
+        tab_id: TabId,
+        selector: Option<&str>,
+        x: f32,
+        y: f32,
+        event_type: &str,
+        detail: Option<&DomEventDetail>,
+        snapshots: &mut HashMap<TabId, TabSnapshot>,
+    ) -> DomDispatchResult {
+        let rid = match self.tab_to_renderer.get(&tab_id) {
+            Some(r) => *r,
+            None => {
+                return DomDispatchResult {
+                    default_allowed: true,
+                    html_changed: false,
+                };
+            }
+        };
+        let msg_id = NEXT_HIT_TEST_MSG_ID.fetch_add(1, Ordering::Relaxed);
+        let params = DispatchDomEventParams {
+            selector: selector.map(str::to_string),
+            x,
+            y,
+            event_type: event_type.to_string(),
+            key: detail.and_then(|d| d.key.clone()),
+            code: detail.and_then(|d| d.code.clone()),
+        };
+        {
+            let Some(renderer) = self.manager.get_renderer(rid) else {
+                return DomDispatchResult {
+                    default_allowed: true,
+                    html_changed: false,
+                };
+            };
+            if renderer
+                .send(IpcMessage {
+                    id: msg_id,
+                    kind: IpcMessageKind::DispatchDomEvent(params),
+                })
+                .is_err()
+            {
+                return DomDispatchResult {
+                    default_allowed: true,
+                    html_changed: false,
+                };
+            }
+        }
+
+        let mut html_changed = false;
+        let deadline = Instant::now() + Duration::from_millis(500);
+        loop {
+            if Instant::now() >= deadline {
+                return DomDispatchResult {
+                    default_allowed: true,
+                    html_changed,
+                };
+            }
+            let msg = {
+                let Some(renderer) = self.manager.get_renderer(rid) else {
+                    return DomDispatchResult {
+                        default_allowed: true,
+                        html_changed,
+                    };
+                };
+                match renderer.try_recv() {
+                    Ok(Some(m)) => m,
+                    Ok(None) => {
+                        thread::sleep(Duration::from_millis(1));
+                        continue;
+                    }
+                    Err(e) => {
+                        tracing::debug!("IPC dispatch_dom_event recv: {e}");
+                        return DomDispatchResult {
+                            default_allowed: true,
+                            html_changed,
+                        };
+                    }
+                }
+            };
+            if msg.id == msg_id {
+                if let IpcMessageKind::DispatchDomEventResult(result) = msg.kind {
+                    return DomDispatchResult {
+                        default_allowed: result.default_allowed,
+                        html_changed,
+                    };
+                }
+                continue;
+            }
+            match msg.kind {
+                IpcMessageKind::FetchRequest(params) => {
+                    self.handle_fetch_request(tab_id, params);
+                }
+                IpcMessageKind::ViewPainted(params) => {
+                    html_changed = true;
+                    let snap = snapshots.entry(tab_id).or_default();
+                    crate::paint_ipc::apply_paint_snapshot(snap, params);
+                }
+                kind => {
+                    let snap = snapshots.entry(tab_id).or_default();
+                    Self::apply_inbound_message(tab_id, snap, kind, &mut self.pending_loaded, &mut self.pending_errors);
+                }
+            }
+        }
+    }
+}
+
+fn element_hit_from_ipc(result: HitTestElementResultParams) -> Option<ElementHit> {
+    let tag_name = result.tag_name?;
+    Some(ElementHit {
+        tag_name,
+        id: result.id,
+        class_name: result.class_name,
+        x: result.x,
+        y: result.y,
+        width: result.width,
+        height: result.height,
+    })
 }
 
 impl Drop for ProcessTabBackend {

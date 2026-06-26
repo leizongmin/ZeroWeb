@@ -2,17 +2,25 @@
 
 mod async_load;
 mod error_page;
+mod js_worker;
+mod page_scripts;
 mod paint_export;
 
 use async_load::PageLoadHost;
 
+use crate::js_worker::RendererJsWorker;
+use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, net_fetch_text, rerender, run_page_scripts};
+
 use std::collections::VecDeque;
 use std::io;
 
-use zero_engine::{PrefersColorSchemeValue, RenderPipeline, RenderResult};
+use zero_engine::{
+    DomEventDetail, PrefersColorSchemeValue, RenderPipeline, RenderResult, selector_from_element_hit,
+};
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
-    FetchParams, FetchResponseParams, HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMessage,
+    DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams,
+    HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMessage,
     IpcMessageKind, KeyboardEventParams, LoadHtmlParams, MouseEventParams, NavigateParams, ScrollEventParams,
     SetColorSchemeParams, SetViewportParams, StorageOpParams,
 };
@@ -39,6 +47,16 @@ struct RendererRuntime {
     history_index: usize,
     /// 等待处理的浏览器侧消息（fetch 阻塞 recv 时暂存）。
     deferred_inbound: VecDeque<IpcMessage>,
+    /// 当前页面 HTML（脚本执行后同步更新）。
+    cached_html: String,
+    /// 当前页面附加 CSS。
+    cached_css: String,
+    /// JS 执行 worker。
+    js_worker: RendererJsWorker,
+    /// 是否允许执行 JavaScript。
+    javascript_enabled: bool,
+    /// 最近一次交互目标选择器（键盘事件）。
+    event_target: String,
 }
 
 impl RendererRuntime {
@@ -57,6 +75,11 @@ impl RendererRuntime {
             history: Vec::new(),
             history_index: 0,
             deferred_inbound: VecDeque::new(),
+            cached_html: String::new(),
+            cached_css: String::new(),
+            js_worker: RendererJsWorker::spawn(renderer_id),
+            javascript_enabled: true,
+            event_target: "body".to_string(),
         }
     }
 
@@ -81,6 +104,84 @@ impl RendererRuntime {
 
     fn recv_blocking(&mut self) -> Result<IpcMessage, String> {
         self.channel.recv().map_err(|e| format!("IPC 接收失败: {e}"))
+    }
+
+    fn fetch_text(&mut self, url: &str) -> Result<String, String> {
+        self.fetch_get(url)
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+    }
+
+    fn after_page_html_loaded(&mut self, html: String, css: String) -> Result<(), String> {
+        self.cached_html = html;
+        self.cached_css = css;
+        let js_enabled = self.javascript_enabled;
+        let mut ctx = self.page_script_context();
+        if run_page_scripts(&mut ctx, js_enabled, net_fetch_text) {
+            let result = rerender(&mut ctx);
+            self.publish_render(&result, None)?;
+        }
+        Ok(())
+    }
+
+    fn page_script_context(&mut self) -> PageScriptContext<'_> {
+        PageScriptContext {
+            pipeline: &mut self.pipeline,
+            html: &mut self.cached_html,
+            css: &self.cached_css,
+            url: self.current_url.as_deref().unwrap_or("about:blank"),
+            js_worker: &self.js_worker,
+        }
+    }
+
+    fn publish_render(&mut self, result: &RenderResult, title: Option<String>) -> Result<(), String> {
+        let html = self.cached_html.clone();
+        let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
+        let payloads = paint_export::fetch_image_payloads_with_fetch(&html, &url, &mut |u| self.fetch_get(u).ok());
+        publish_render_result(
+            &mut self.channel,
+            &mut self.next_msg_id,
+            &self.pipeline,
+            result,
+            title,
+            payloads,
+        )
+    }
+
+    fn dispatch_dom_at(
+        &mut self,
+        selector: Option<String>,
+        x: f32,
+        y: f32,
+        event_type: &str,
+        detail: Option<DomEventDetail>,
+    ) -> DomDispatchResult {
+        let selector = selector.or_else(|| {
+            self.pipeline
+                .hit_test_element(x, y)
+                .map(|hit| selector_from_element_hit(&hit))
+        });
+        if let Some(sel) = selector {
+            self.event_target = sel.clone();
+            let js_enabled = self.javascript_enabled;
+            let mut ctx = self.page_script_context();
+            let result = dispatch_dom_event(
+                &mut ctx,
+                js_enabled,
+                &sel,
+                event_type,
+                detail.as_ref(),
+            );
+            if result.html_changed {
+                let render = rerender(&mut ctx);
+                let _ = self.publish_render(&render, None);
+            }
+            result
+        } else {
+            DomDispatchResult {
+                default_allowed: true,
+                html_changed: false,
+            }
+        }
     }
 
     fn recv_next(&mut self) -> Result<IpcMessage, String> {
@@ -162,6 +263,8 @@ impl RendererRuntime {
             )?;
         }
 
+        self.after_page_html_loaded(html_for_images, self.cached_css.clone())?;
+
         if send_complete {
             self.send(IpcMessageKind::LoadComplete)?;
             tracing::info!("页面渲染完成: {page_url}");
@@ -191,7 +294,8 @@ impl RendererRuntime {
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
         let page_url = params.url.clone().unwrap_or_else(|| "about:blank".to_string());
         tracing::info!("加载内联 HTML: {page_url}");
-        let css = params.css.as_deref().unwrap_or("");
+        self.cached_css = params.css.clone().unwrap_or_default();
+        let css = self.cached_css.as_str();
         let mut html = params.html;
         if !css.is_empty() {
             html.push_str("\n<style>\n");
@@ -277,13 +381,81 @@ impl RendererRuntime {
         )
     }
 
+    fn handle_hit_test_element(&mut self, msg_id: u64, params: HitTestLinkParams) -> Result<(), String> {
+        let result = self
+            .pipeline
+            .hit_test_element(params.x, params.y)
+            .map(|hit| {
+                let selector = selector_from_element_hit(&hit);
+                HitTestElementResultParams {
+                    tag_name: Some(hit.tag_name),
+                    id: hit.id,
+                    class_name: hit.class_name,
+                    x: hit.x,
+                    y: hit.y,
+                    width: hit.width,
+                    height: hit.height,
+                    selector: Some(selector),
+                }
+            })
+            .unwrap_or(HitTestElementResultParams {
+                tag_name: None,
+                id: None,
+                class_name: None,
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 0.0,
+                selector: None,
+            });
+        self.send_with_id(msg_id, IpcMessageKind::HitTestElementResult(result))
+    }
+
+    fn handle_dispatch_dom_event(&mut self, msg_id: u64, params: DispatchDomEventParams) -> Result<(), String> {
+        let detail = if params.key.is_some() || params.code.is_some() {
+            Some(DomEventDetail {
+                key: params.key,
+                code: params.code,
+            })
+        } else {
+            None
+        };
+        let result = self.dispatch_dom_at(params.selector, params.x, params.y, &params.event_type, detail);
+        self.send_with_id(
+            msg_id,
+            IpcMessageKind::DispatchDomEventResult(DispatchDomEventResultParams {
+                default_allowed: result.default_allowed,
+            }),
+        )
+    }
+
     fn handle_mouse_event(&mut self, params: MouseEventParams) -> Result<(), String> {
-        tracing::trace!("鼠标事件: ({}, {}) {:?}", params.x, params.y, params.event_type);
+        use zero_protocol::message::MouseEventType;
+        let event_type = match params.event_type {
+            MouseEventType::Down => "mousedown",
+            MouseEventType::Up => "mouseup",
+            MouseEventType::Move => "mousemove",
+            MouseEventType::Click => "click",
+            MouseEventType::DblClick => "dblclick",
+        };
+        if event_type != "mousemove" {
+            self.dispatch_dom_at(None, params.x, params.y, event_type, None);
+        }
         Ok(())
     }
 
     fn handle_keyboard_event(&mut self, params: KeyboardEventParams) -> Result<(), String> {
-        tracing::trace!("键盘事件: {} {:?}", params.key, params.event_type);
+        use zero_protocol::message::KeyboardEventType;
+        let event_type = match params.event_type {
+            KeyboardEventType::Down => "keydown",
+            KeyboardEventType::Up => "keyup",
+            KeyboardEventType::Press => "keypress",
+        };
+        let detail = DomEventDetail {
+            key: Some(params.key),
+            code: Some(params.code),
+        };
+        self.dispatch_dom_at(Some(self.event_target.clone()), 0.0, 0.0, event_type, Some(detail));
         Ok(())
     }
 
@@ -320,6 +492,8 @@ impl RendererRuntime {
             IpcMessageKind::ScrollEvent(params) => self.handle_scroll_event(params),
             IpcMessageKind::StorageOp(params) => self.handle_storage_op(params),
             IpcMessageKind::HitTestLink(params) => self.handle_hit_test_link(msg.id, params),
+            IpcMessageKind::HitTestElement(params) => self.handle_hit_test_element(msg.id, params),
+            IpcMessageKind::DispatchDomEvent(params) => self.handle_dispatch_dom_event(msg.id, params),
             IpcMessageKind::FetchRequest(_)
             | IpcMessageKind::FetchResponse(_)
             | IpcMessageKind::TitleChanged(_)
@@ -328,6 +502,8 @@ impl RendererRuntime {
             | IpcMessageKind::LoadFailed(_)
             | IpcMessageKind::ViewPainted(_)
             | IpcMessageKind::HitTestLinkResult(_)
+            | IpcMessageKind::HitTestElementResult(_)
+            | IpcMessageKind::DispatchDomEventResult(_)
             | IpcMessageKind::CrashNotification(_) => {
                 tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
                 Ok(())

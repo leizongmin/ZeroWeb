@@ -66,6 +66,23 @@ pub struct ElementHit {
     pub height: f32,
 }
 
+/// 从命中测试结果构造用于 JS 事件派发的稳定选择器。
+pub fn selector_from_element_hit(hit: &ElementHit) -> String {
+    if let Some(id) = &hit.id {
+        let id = id.trim();
+        if !id.is_empty() {
+            return format!("#{}", id);
+        }
+    }
+    if let Some(class) = &hit.class_name {
+        let first = class.split_whitespace().find(|c| !c.is_empty());
+        if let Some(c) = first {
+            return format!("{}.{}", hit.tag_name, c);
+        }
+    }
+    hit.tag_name.clone()
+}
+
 fn nearest_element_node(doc: &Document, mut node: NodeId) -> NodeId {
     loop {
         if doc

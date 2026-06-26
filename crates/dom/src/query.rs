@@ -94,7 +94,57 @@ impl SimpleSelector {
     }
 }
 
-/// 解析简单选择器字符串。
+/// 选择器组合器（连接两个简单选择器）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Combinator {
+    /// 后代选择器（空格）。
+    Descendant,
+    /// 子选择器（`>`）。
+    Child,
+}
+
+/// 由简单选择器与组合器构成的选择器链（如 `div > span.foo`）。
+#[derive(Debug, Clone)]
+pub struct SelectorChain {
+    /// 从左到右的简单选择器序列。
+    pub parts: Vec<SimpleSelector>,
+    /// `combinators[i]` 连接 `parts[i]` 与 `parts[i + 1]`。
+    pub combinators: Vec<Combinator>,
+}
+
+/// 解析含后代/子选择器的选择器链；单段时退化为简单选择器。
+pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
+    let trimmed = selector.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let segments: Vec<&str> = trimmed.split('>').map(str::trim).collect();
+    let mut parts = Vec::new();
+    let mut combinators = Vec::new();
+
+    for (seg_idx, segment) in segments.iter().enumerate() {
+        let subs: Vec<&str> = segment.split_whitespace().filter(|s| !s.is_empty()).collect();
+        if subs.is_empty() {
+            return None;
+        }
+        for (sub_idx, sub) in subs.iter().enumerate() {
+            parts.push(parse_simple_selector(sub)?);
+            let is_last_in_segment = sub_idx + 1 == subs.len();
+            let is_last_segment = seg_idx + 1 == segments.len();
+            if !is_last_in_segment {
+                combinators.push(Combinator::Descendant);
+            } else if !is_last_segment {
+                combinators.push(Combinator::Child);
+            }
+        }
+    }
+
+    if parts.len() == 1 {
+        combinators.clear();
+    }
+
+    Some(SelectorChain { parts, combinators })
+}
 ///
 /// 支持格式：
 /// - `"div"` — 标签名
@@ -250,5 +300,19 @@ mod tests {
     fn test_parse_empty_selector() {
         assert!(parse_simple_selector("").is_none());
         assert!(parse_simple_selector("  ").is_none());
+    }
+
+    #[test]
+    fn test_parse_selector_chain_descendant() {
+        let chain = parse_selector_chain("div .child").unwrap();
+        assert_eq!(chain.parts.len(), 2);
+        assert_eq!(chain.combinators, vec![Combinator::Descendant]);
+    }
+
+    #[test]
+    fn test_parse_selector_chain_child() {
+        let chain = parse_selector_chain("div > span").unwrap();
+        assert_eq!(chain.parts.len(), 2);
+        assert_eq!(chain.combinators, vec![Combinator::Child]);
     }
 }

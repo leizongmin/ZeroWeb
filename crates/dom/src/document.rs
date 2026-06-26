@@ -812,27 +812,34 @@ impl Document {
         result
     }
 
-    /// 在指定节点的子树中查找第一个匹配基础选择器的元素。
+    /// 在指定节点的子树中查找第一个匹配选择器的元素。
     ///
-    /// 支持的选择器格式：
-    /// - 标签名：`"div"`
-    /// - ID：`"#myid"`
-    /// - 类名：`".myclass"`
-    /// - 属性：`"[attr]"` 或 `"[attr=value]"`
+    /// 支持简单选择器及后代（空格）、子（`>`）组合器。
     pub fn query_selector(&self, root: NodeId, selector: &str) -> Option<NodeId> {
-        let parsed = crate::query::parse_simple_selector(selector)?;
-        self.find_first_matching(root, &parsed)
+        let chain = crate::query::parse_selector_chain(selector.trim())?;
+        if chain.parts.len() == 1 {
+            return self.find_first_matching(root, &chain.parts[0]);
+        }
+        self.find_first_matching_chain(root, &chain)
     }
 
-    /// 在指定节点的子树中查找所有匹配基础选择器的元素。
+    /// 在指定节点的子树中查找所有匹配选择器的元素。
     pub fn query_selector_all(&self, root: NodeId, selector: &str) -> Vec<NodeId> {
-        let parsed = match crate::query::parse_simple_selector(selector) {
-            Some(s) => s,
+        let chain = match crate::query::parse_selector_chain(selector.trim()) {
+            Some(c) => c,
             None => return vec![],
         };
-        let mut result = Vec::new();
-        self.collect_matching(root, &parsed, &mut result);
-        result
+        if chain.parts.len() == 1 {
+            let mut result = Vec::new();
+            self.collect_matching(root, &chain.parts[0], &mut result);
+            return result;
+        }
+        let mut candidates = Vec::new();
+        self.collect_matching(root, &chain.parts[chain.parts.len() - 1], &mut candidates);
+        candidates
+            .into_iter()
+            .filter(|id| self.node_matches_selector_chain(*id, &chain))
+            .collect()
     }
 
     // ── Shadow DOM ──────────────────────────────────────────────
@@ -1491,6 +1498,90 @@ impl Document {
             if let Some(found) = self.find_first_matching(child, selector) {
                 return Some(found);
             }
+        }
+        None
+    }
+
+    fn find_first_matching_chain(&self, id: NodeId, chain: &crate::query::SelectorChain) -> Option<NodeId> {
+        let node_data = self.nodes.get(id)?;
+        if let NodeKind::Element(elem) = &node_data.kind
+            && chain.parts.last().is_some_and(|s| s.matches(elem))
+            && self.node_matches_selector_chain(id, chain)
+        {
+            return Some(id);
+        }
+        let children: Vec<NodeId> = node_data.children.to_vec();
+        for child in children {
+            if let Some(found) = self.find_first_matching_chain(child, chain) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    fn node_matches_selector_chain(&self, node: NodeId, chain: &crate::query::SelectorChain) -> bool {
+        let parts = &chain.parts;
+        if parts.is_empty() {
+            return false;
+        }
+        let mut current = node;
+        let mut idx = parts.len() - 1;
+        if !self.element_matches_selector(current, &parts[idx]) {
+            return false;
+        }
+        while idx > 0 {
+            let comb = chain.combinators[idx - 1];
+            idx -= 1;
+            current = match comb {
+                crate::query::Combinator::Child => match self.parent_element_node(current) {
+                    Some(p) => p,
+                    None => return false,
+                },
+                crate::query::Combinator::Descendant => match self.find_ancestor_matching_selector(current, &parts[idx])
+                {
+                    Some(p) => p,
+                    None => return false,
+                },
+            };
+            if !self.element_matches_selector(current, &parts[idx]) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn element_matches_selector(&self, node: NodeId, selector: &crate::query::SimpleSelector) -> bool {
+        self.nodes
+            .get(node)
+            .and_then(|n| match &n.kind {
+                NodeKind::Element(elem) => Some(selector.matches(elem)),
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
+    fn parent_element_node(&self, node: NodeId) -> Option<NodeId> {
+        let mut current = self.parent_node(node);
+        while let Some(pid) = current {
+            if self.nodes.get(pid).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))) {
+                return Some(pid);
+            }
+            current = self.parent_node(pid);
+        }
+        None
+    }
+
+    fn find_ancestor_matching_selector(
+        &self,
+        node: NodeId,
+        selector: &crate::query::SimpleSelector,
+    ) -> Option<NodeId> {
+        let mut current = self.parent_node(node);
+        while let Some(pid) = current {
+            if self.element_matches_selector(pid, selector) {
+                return Some(pid);
+            }
+            current = self.parent_node(pid);
         }
         None
     }

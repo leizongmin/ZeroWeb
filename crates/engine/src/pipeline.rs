@@ -680,10 +680,14 @@ pub fn extract_stylesheet_hrefs(html: &str) -> Vec<String> {
 /// 页面脚本来源：内联文本或 `<script src>` 原始值。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PageScript {
-    /// 内联脚本内容。
+    /// 内联经典脚本。
     Inline(String),
-    /// 外链脚本 `src`（可能为相对 URL）。
+    /// 外链经典脚本 `src`（可能为相对 URL）。
     External(String),
+    /// 内联 ES module。
+    InlineModule(String),
+    /// 外链 ES module `src`。
+    ExternalModule(String),
 }
 
 fn script_type_is_javascript(type_attr: Option<&str>) -> bool {
@@ -697,6 +701,12 @@ fn script_type_is_javascript(type_attr: Option<&str>) -> bool {
     }
 }
 
+fn script_is_module(type_attr: Option<&str>) -> bool {
+    type_attr
+        .map(|t| t.trim().eq_ignore_ascii_case("module"))
+        .unwrap_or(false)
+}
+
 /// 按文档顺序提取 `<script>` 内联文本与 `src`。
 pub fn extract_page_scripts(html: &str) -> Vec<PageScript> {
     let doc = zero_dom::parse_html(html);
@@ -706,17 +716,26 @@ pub fn extract_page_scripts(html: &str) -> Vec<PageScript> {
         if !script_type_is_javascript(type_attr.as_deref()) {
             continue;
         }
+        let is_module = script_is_module(type_attr.as_deref());
         if let Some(src) = doc.get_attribute(script_id, "src") {
             let src = src.trim();
             if !src.is_empty() {
-                scripts.push(PageScript::External(src.to_string()));
+                if is_module {
+                    scripts.push(PageScript::ExternalModule(src.to_string()));
+                } else {
+                    scripts.push(PageScript::External(src.to_string()));
+                }
                 continue;
             }
         }
         if let Some(code) = doc.text_content(script_id) {
             let code = code.trim();
             if !code.is_empty() {
-                scripts.push(PageScript::Inline(code.to_string()));
+                if is_module {
+                    scripts.push(PageScript::InlineModule(code.to_string()));
+                } else {
+                    scripts.push(PageScript::Inline(code.to_string()));
+                }
             }
         }
     }
@@ -899,5 +918,17 @@ mod pseudo_tests {
         assert_eq!(scripts.len(), 2);
         assert!(matches!(&scripts[0], PageScript::Inline(s) if s.contains("var a")));
         assert!(matches!(&scripts[1], PageScript::External(s) if s == "app.js"));
+    }
+
+    #[test]
+    fn extract_page_scripts_collects_es_modules() {
+        let html = r#"<html><body>
+            <script type="module">export const x = 1;</script>
+            <script type="module" src="main.mjs"></script>
+        </body></html>"#;
+        let scripts = extract_page_scripts(html);
+        assert_eq!(scripts.len(), 2);
+        assert!(matches!(&scripts[0], PageScript::InlineModule(s) if s.contains("export")));
+        assert!(matches!(&scripts[1], PageScript::ExternalModule(s) if s == "main.mjs"));
     }
 }
