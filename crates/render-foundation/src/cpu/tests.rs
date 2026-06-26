@@ -115,6 +115,7 @@ fn gradient_linear_red_to_blue() {
         None,
         &[],
         &[],
+        &[],
     );
 
     // 左端应该是红色
@@ -163,7 +164,18 @@ fn rounded_rect_renders_via_draw_order() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(40, 40, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        40,
+        40,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
     // 中心像素（远离圆角）应为红色——若 draw_order 丢弃 rounded_rect 则为透明/黑
     let center = fb.get_pixel(20, 20);
     assert!(
@@ -199,7 +211,18 @@ fn gradient_radial_center_to_edge() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(20, 20, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        20,
+        20,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
 
     // 中心应该是白色
     let center = fb.get_pixel(10, 10);
@@ -245,6 +268,7 @@ fn gradient_linear_repeating() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
     );
@@ -301,7 +325,18 @@ fn gradient_radial_repeating() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(40, 40, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        40,
+        40,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
 
     // 中心应该是白色（t ≈ 0）
     let center = fb.get_pixel(20, 20);
@@ -348,6 +383,7 @@ fn shadow_renders_blur_around_rect() {
         None,
         &[],
         &[],
+        &[],
     );
 
     // 阴影偏移后中心区域应该有颜色变化
@@ -390,6 +426,7 @@ fn stroke_solid_line() {
         None,
         &[],
         &[],
+        &[],
     );
 
     // 线段中心应该有黑色像素
@@ -417,7 +454,18 @@ fn stroke_dashed_line_has_gaps() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(50, 20, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        50,
+        20,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
 
     // 虚线段上应该有黑色和白色交替
     let mut has_black = false;
@@ -451,7 +499,18 @@ fn stroke_dotted_line_has_dots() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(50, 20, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        50,
+        20,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
 
     // 点线应该有黑色像素
     let mut has_black = false;
@@ -484,6 +543,7 @@ fn path_fill_triangle() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
     );
@@ -524,6 +584,7 @@ fn path_stroke_rectangle() {
         None,
         &[],
         &[],
+        &[],
     );
 
     // 边框上应该有黑色像素
@@ -558,6 +619,7 @@ fn clip_removes_pixels_outside() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
     );
@@ -602,6 +664,7 @@ fn transform_translate_shifts_content() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
     );
@@ -651,6 +714,7 @@ fn image_renders_rgba_data() {
         &font_loader,
         &mut glyph_cache,
         Some(&mut cache),
+        &[],
         &[],
         &[],
     );
@@ -729,6 +793,7 @@ fn image_clip_crops_not_rescales() {
         Some(&mut cache),
         &[],
         &[],
+        &[],
     );
 
     // clip 窗口内深处 (10,10)：crop→红（落在 source 红块）；rescale→蓝（source 被挤进窗口）
@@ -775,6 +840,7 @@ fn filter_blur_softens_hard_edge() {
         None,
         &[],
         &[],
+        &[],
     );
 
     // 模糊边缘应该有过渡
@@ -798,7 +864,18 @@ fn filter_brightness_makes_image_brighter() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(10, 10, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        10,
+        10,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
 
     let p = fb.get_pixel(5, 5);
     assert_eq!(p[0], 200, "brightness(2.0) should double gray 100 to 200");
@@ -818,7 +895,18 @@ fn blend_mode_normal_does_nothing() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(10, 10, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        10,
+        10,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
 
     // Normal 混合模式不应该改变任何东西
     let p = fb.get_pixel(5, 5);
@@ -881,6 +969,7 @@ fn full_scene_renders_multiple_primitives() {
         None,
         &[],
         &[],
+        &[],
     );
 
     // 渐变区域左端应该是红色
@@ -906,7 +995,18 @@ fn rounded_rect_with_all_corners() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(60, 60, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        60,
+        60,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
 
     // 中心应该是绿色
     let center = fb.get_pixel(30, 30);
@@ -943,7 +1043,18 @@ fn rounded_rect_translucent_alpha_blends() {
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(60, 60, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        60,
+        60,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
 
     // alpha=13/255≈0.051 在白底上：dst*(1-a)+src*a = 255*0.949 + 96*0.051 ≈ 247
     let px = fb.get_pixel(30, 30);
@@ -1071,6 +1182,7 @@ fn cpu_full_scene_image_solid_red() {
         Some(&mut image_cache),
         &[],
         &[],
+        &[],
     );
     // 中心 (8,8) 应为红
     let c = fb.get_pixel(8, 8);
@@ -1087,7 +1199,18 @@ fn cpu_full_scene_path_fill_black_rect() {
     primitives.add_path_fill(vec![4.0, 4.0, 28.0, 4.0, 28.0, 28.0, 4.0, 28.0], Color::BLACK);
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        32,
+        32,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
     // 中心 (16,16) 黑
     let center = fb.get_pixel(16, 16);
     assert_eq!(
@@ -1119,7 +1242,18 @@ fn cpu_full_scene_path_stroke_closed_rect() {
     );
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        32,
+        32,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
     // 内部 (16,16) 白（未被描边覆盖）
     let center = fb.get_pixel(16, 16);
     assert_eq!(
@@ -1150,7 +1284,18 @@ fn cpu_full_scene_stroke_horizontal_line() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        32,
+        32,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
     // 线段中心 (16,16) 黑
     let mid = fb.get_pixel(16, 16);
     assert_eq!(mid, [0, 0, 0, 255], "stroke center should be black, got {:?}", mid);
@@ -1179,7 +1324,18 @@ fn cpu_full_scene_clip_rect_clears_outside() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        32,
+        32,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
     // clip 内 (16,16) 保留黑
     assert_eq!(fb.get_pixel(16, 16), [0, 0, 0, 255], "clip interior should stay black");
     // clip 外 (2,2) 被清白
@@ -1219,7 +1375,18 @@ fn cpu_full_scene_transform_translates_content() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    let fb = render_full_scene(
+        32,
+        32,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+    );
     // 变换前 (20,16) 是白（右半屏）；平移右移 8 后 (20,16) 应为黑（src=12 在原黑色区）
     assert_eq!(
         fb.get_pixel(20, 16),
@@ -1231,5 +1398,73 @@ fn cpu_full_scene_transform_translates_content() {
         fb.get_pixel(4, 16),
         [255, 255, 255, 255],
         "after tx=8, (4,16) should be white (cleared, src out of bounds)"
+    );
+}
+
+fn try_load_ui_font_for_layer_test(loader: &mut FontLoader) -> Option<u32> {
+    #[cfg(target_os = "windows")]
+    let paths: &[&str] = &["C:\\Windows\\Fonts\\arial.ttf"];
+    #[cfg(target_os = "macos")]
+    let paths: &[&str] = &["/System/Library/Fonts/Supplemental/Arial Unicode.ttf"];
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let paths: &[&str] = &[
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    ];
+
+    paths.iter().find_map(|path| {
+        std::fs::read(path)
+            .ok()
+            .and_then(|data| loader.load_font(&data).ok())
+    })
+}
+
+/// overlay 必须在 ui_glyphs 之后绘制，否则页面文字会盖住上下文菜单等浮层背景。
+#[test]
+fn render_full_scene_overlay_covers_ui_glyphs() {
+    let mut font_loader = FontLoader::new();
+    let Some(font_id) = try_load_ui_font_for_layer_test(&mut font_loader) else {
+        return;
+    };
+    let mut glyph_cache = GlyphCache::new(256);
+    let primitives = RenderPrimitives::new();
+
+    let mut ui_glyphs = Vec::new();
+    for row in 0..6 {
+        for col in 0..10 {
+            ui_glyphs.push(GlyphDraw {
+                ch: 'M',
+                x: col as f32 * 10.0 + 2.0,
+                baseline_y: row as f32 * 12.0 + 14.0,
+                color: Color::BLACK,
+                font_id,
+                font_size: 12.0,
+            });
+        }
+    }
+
+    let overlay_fills = vec![FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 96.0, 72.0),
+        color: Color::WHITE,
+    }];
+
+    let fb = render_full_scene(
+        96,
+        72,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &ui_glyphs,
+        &overlay_fills,
+        &[],
+    );
+
+    let center = fb.get_pixel(48, 36);
+    assert!(
+        center[0] > 240 && center[1] > 240 && center[2] > 240,
+        "overlay fill must paint over ui glyphs (context menu regression), got {:?}",
+        center
     );
 }

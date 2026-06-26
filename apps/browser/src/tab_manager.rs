@@ -27,6 +27,8 @@ pub struct TabManager {
     last_active: Option<TabId>,
     /// 最近一次加载方式（LRU 解冻用）。
     last_restore: HashMap<TabId, TabRestorePayload>,
+    /// 是否允许 Tab worker 执行页面 JavaScript。
+    javascript_enabled: bool,
 }
 
 impl TabManager {
@@ -48,6 +50,7 @@ impl TabManager {
             lru: TabLruPolicy::default(),
             last_active: None,
             last_restore: HashMap::new(),
+            javascript_enabled: true,
         };
         let max_live = manager.lru.max_live();
         tracing::info!("Tab LRU max live workers: {max_live} (ZERO_BROWSER_MAX_LIVE_TABS)");
@@ -57,6 +60,27 @@ impl TabManager {
     /// 是否使用多进程后端。
     pub fn is_multiprocess(&self) -> bool {
         self.process_backend.is_some()
+    }
+
+    /// 更新是否允许执行页面 JavaScript。
+    pub fn set_javascript_enabled(&mut self, enabled: bool) {
+        if self.javascript_enabled == enabled {
+            return;
+        }
+        self.javascript_enabled = enabled;
+        for worker in self.workers.values() {
+            worker.send(TabWorkerCommand::SetJavascriptEnabled(enabled));
+        }
+    }
+
+    /// 读取 Tab 页面 HTML 源码（快照）。
+    pub fn page_html(&self, tab_id: TabId) -> Option<String> {
+        self.snapshots.get(&tab_id)?.html_source.clone()
+    }
+
+    /// 读取 Tab 当前 URL（快照）。
+    pub fn page_url(&self, tab_id: TabId) -> Option<String> {
+        self.snapshots.get(&tab_id)?.url.clone()
     }
 
     /// 更新默认视口（新 Tab 使用）。
@@ -92,6 +116,7 @@ impl TabManager {
             return;
         }
         let worker = TabWorkerHandle::spawn(tab_id, self.viewport, self.color_scheme);
+        worker.send(TabWorkerCommand::SetJavascriptEnabled(self.javascript_enabled));
         self.workers.insert(tab_id, worker);
         self.snapshots.entry(tab_id).or_default();
     }
@@ -381,6 +406,14 @@ impl TabManager {
         self.workers.get(&tab_id)?.hit_test_link(x, y)
     }
 
+    /// 元素命中测试（审查元素）。
+    pub fn hit_test_element(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<zero_engine::ElementHit> {
+        if self.process_backend.is_some() {
+            return None;
+        }
+        self.workers.get(&tab_id)?.hit_test_element(x, y)
+    }
+
     /// 文档高度。
     pub fn document_height(&self, tab_id: TabId) -> Option<f32> {
         self.snapshots.get(&tab_id)?.document_height
@@ -414,6 +447,12 @@ impl TabManager {
                 .process_backend
                 .as_ref()
                 .is_some_and(|_| self.snapshots.contains_key(&tab_id))
+    }
+
+    /// 测试用：确保存在快照条目（不启动 worker）。
+    #[cfg(test)]
+    pub fn ensure_snapshot_for_test(&mut self, tab_id: TabId) {
+        self.snapshots.entry(tab_id).or_default();
     }
 
     /// 测试用：逻辑视口尺寸。

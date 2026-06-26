@@ -675,6 +675,7 @@ impl GpuRenderer {
         font_loader: &FontLoader,
         glyph_cache: &mut GlyphCache,
         image_cache: Option<&mut ImageCache>,
+        ui_glyphs: &[GlyphDraw],
         overlay_fills: &[FillPrimitive],
         overlay_glyphs: &[GlyphDraw],
         scale_factor: f32,
@@ -705,9 +706,11 @@ impl GpuRenderer {
         // 9. Glyphs
         let glyph_verts =
             self.collect_glyph_vertices_from_primitives(&primitives.glyphs, font_loader, glyph_cache, scale);
-        // 10. Overlay fills
+        // 10. Chrome / WebView 文字（GlyphDraw，在 overlay 之前）
+        let ui_glyph_verts = self.collect_overlay_glyphs_data(ui_glyphs, font_loader, glyph_cache, scale);
+        // 11. Overlay fills
         let overlay_fill_verts = self.collect_fill_vertices(overlay_fills, scale);
-        // 11. Overlay glyphs
+        // 12. Overlay glyphs
         let overlay_glyph_verts = self.collect_overlay_glyphs_data(overlay_glyphs, font_loader, glyph_cache, scale);
 
         // ── Phase 2: 提交 GPU 命令 ──
@@ -773,9 +776,11 @@ impl GpuRenderer {
             self.draw_fill_pass(&mut pass, &uniform_bg, &device, &path_stroke_verts, "PathStroke");
             // 9. Glyphs
             self.draw_fill_pass(&mut pass, &uniform_bg, &device, &glyph_verts, "Glyph");
-            // 10. Overlay fills
+            // 10. Chrome / WebView 文字
+            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &ui_glyph_verts, "UiGlyph");
+            // 11. Overlay fills
             self.draw_fill_pass(&mut pass, &uniform_bg, &device, &overlay_fill_verts, "OverlayFill");
-            // 11. Overlay glyphs
+            // 12. Overlay glyphs
             self.draw_fill_pass(&mut pass, &uniform_bg, &device, &overlay_glyph_verts, "OverlayGlyph");
         }
 

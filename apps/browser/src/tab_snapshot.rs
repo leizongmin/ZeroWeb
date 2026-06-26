@@ -17,6 +17,8 @@ pub struct TabSnapshot {
     pub title: Option<String>,
     /// 当前 URL。
     pub url: Option<String>,
+    /// 最近一次渲染使用的 HTML 源码。
+    pub html_source: Option<String>,
 }
 
 impl Default for TabSnapshot {
@@ -28,6 +30,7 @@ impl Default for TabSnapshot {
             loading: false,
             title: None,
             url: None,
+            html_source: None,
         }
     }
 }
@@ -35,6 +38,7 @@ impl Default for TabSnapshot {
 impl TabSnapshot {
     /// 从 WebView 状态构建快照（worker 线程内调用）。
     pub fn from_webview(wv: &zero_webview::WebView) -> Self {
+        let html = wv.html_content();
         Self {
             last_render: wv.last_render().cloned(),
             image_cache: wv.snapshot_image_cache(),
@@ -42,6 +46,7 @@ impl TabSnapshot {
             loading: wv.is_loading(),
             title: wv.title().map(str::to_string),
             url: wv.url().map(str::to_string),
+            html_source: if html.is_empty() { None } else { Some(html.to_string()) },
         }
     }
 }

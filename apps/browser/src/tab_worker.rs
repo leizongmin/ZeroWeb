@@ -5,6 +5,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use zero_browser_shell::TabId;
+use zero_engine::ElementHit;
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::set_char_measure_fn;
 use zero_render_foundation::font::loader::FontLoader;
@@ -12,6 +13,7 @@ use zero_webview::{AsyncPageLoad, PageLoadStage, WebView, WebViewBuilder, WebVie
 
 use crate::pages;
 use crate::tab_js_worker::TabJsWorkerHandle;
+use crate::tab_scripts;
 use crate::tab_snapshot::TabSnapshot;
 use crate::text_metrics;
 
@@ -38,6 +40,14 @@ pub enum TabWorkerCommand {
         y: f32,
         reply: Sender<Option<String>>,
     },
+    /// 元素命中测试（审查元素）。
+    HitTestElement {
+        x: f32,
+        y: f32,
+        reply: Sender<Option<ElementHit>>,
+    },
+    /// 更新是否允许执行 JavaScript。
+    SetJavascriptEnabled(bool),
     /// 关闭 worker。
     Shutdown,
 }
@@ -98,6 +108,15 @@ impl TabWorkerHandle {
         rx.recv_timeout(Duration::from_millis(250)).ok().flatten()
     }
 
+    /// 同步命中测试元素（审查元素）。
+    pub fn hit_test_element(&self, x: f32, y: f32) -> Option<ElementHit> {
+        #[cfg(test)]
+        let _guard = crate::test_sync::tab_runtime_test_guard();
+        let (tx, rx) = mpsc::channel();
+        self.send(TabWorkerCommand::HitTestElement { x, y, reply: tx });
+        rx.recv_timeout(Duration::from_millis(250)).ok().flatten()
+    }
+
     /// 关闭 worker 并等待线程退出。
     pub fn shutdown(&mut self) {
         let _ = self.cmd_tx.send(TabWorkerCommand::Shutdown);
@@ -146,6 +165,7 @@ fn tab_worker_main(
 
     let mut async_load: Option<AsyncPageLoad> = None;
     let mut pending_sync_html: Option<(String, Option<String>, Option<String>)> = None;
+    let mut javascript_enabled = true;
 
     let push_snapshot = |wv: &WebView, msg_tx: &Sender<TabWorkerMessage>| {
         let _ = msg_tx.send(TabWorkerMessage::Snapshot(TabSnapshot::from_webview(wv)));
@@ -190,6 +210,13 @@ fn tab_worker_main(
                     let href = wv.hit_test_link(x, y);
                     let _ = reply.send(href);
                 }
+                TabWorkerCommand::HitTestElement { x, y, reply } => {
+                    let hit = wv.hit_test_element(x, y);
+                    let _ = reply.send(hit);
+                }
+                TabWorkerCommand::SetJavascriptEnabled(enabled) => {
+                    javascript_enabled = enabled;
+                }
                 TabWorkerCommand::Shutdown => {
                     tracing::debug!("Tab worker {} shutting down", tab_id.0);
                     return;
@@ -204,6 +231,7 @@ fn tab_worker_main(
             with_measure(&font_loader, font_id, || {
                 wv.load_html(&html, css.as_deref());
             });
+            tab_scripts::run_page_scripts(&mut wv, javascript_enabled);
             if let Some(title) = pages::extract_html_title(&html) {
                 wv.set_title(&title);
             }
@@ -231,6 +259,7 @@ fn tab_worker_main(
                     let _ = msg_tx.send(TabWorkerMessage::LoadError(err));
                     let _ = msg_tx.send(TabWorkerMessage::Title("加载失败".to_string()));
                 } else {
+                    tab_scripts::run_page_scripts(&mut wv, javascript_enabled);
                     let title = page_title_from_webview(&wv);
                     let _ = msg_tx.send(TabWorkerMessage::Title(title));
                 }
