@@ -7,3 +7,4 @@ license.workspace = true
 
 [dependencies]
 zero-engine = { workspace = true }
+zero-render-foundation = { workspace = true }

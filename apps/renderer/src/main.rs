@@ -253,19 +253,13 @@ impl RendererRuntime {
         let (vw, vh) = self.viewport;
         let wv = self.webview.as_ref().expect("webview");
         let render = wv.last_render().ok_or_else(|| "WebView 无渲染结果".to_string())?;
-        let doc_h = wv.document_height().unwrap_or(vh as f32);
-        let hit_test = wv.build_hit_test_cache();
-        publish_render_with_layout(
-            &mut self.outbound,
-            &mut self.next_msg_id,
-            vw,
-            vh,
-            doc_h,
-            &render.primitives,
-            title,
-            payloads,
-            hit_test,
-        )
+        let frame = zero_page_runtime::FrameModel {
+            viewport: (vw, vh),
+            document_height: wv.document_height().unwrap_or(vh as f32),
+            primitives: render.primitives.clone(),
+            hit_test: wv.build_hit_test_cache(),
+        };
+        publish_render_with_layout(&mut self.outbound, &mut self.next_msg_id, &frame, title, payloads)
     }
 
     /// 用当前 cached_html/css 经 WebView 重绘并发布（脚本改 DOM 后的重渲染路径）。
@@ -665,26 +659,21 @@ impl RendererRuntime {
     }
 }
 
-/// 注意：参数偏多，T5 FrameModel 统一后收敛为结构体入参。
-#[allow(clippy::too_many_arguments)]
+/// 经 FrameModel（统一帧契约，T5）打包 IPC PaintSnapshot + 可选 Title。
 fn publish_render_with_layout(
     outbound: &mut IpcOutbound,
     next_msg_id: &mut u64,
-    viewport_width: u32,
-    viewport_height: u32,
-    document_height: f32,
-    primitives: &zero_render_foundation::primitive::RenderPrimitives,
+    frame: &zero_page_runtime::FrameModel,
     title: Option<String>,
     image_payloads: Vec<zero_protocol::IpcImagePayload>,
-    hit_test: Option<zero_engine::HitTestCache>,
 ) -> Result<(), String> {
     let paint = paint_export::paint_snapshot_from_primitives(
-        viewport_width,
-        viewport_height,
-        document_height,
-        primitives,
+        frame.viewport.0,
+        frame.viewport.1,
+        frame.document_height,
+        &frame.primitives,
         image_payloads,
-        hit_test,
+        frame.hit_test.clone(),
     );
     let msg = IpcMessage {
         id: {
