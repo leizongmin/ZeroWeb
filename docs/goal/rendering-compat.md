@@ -91,21 +91,21 @@
 | 渐变渲染 | 线性渐变、径向渐变、锥形渐变、重复渐变的 CPU + GPU 渲染 | ✅ **已实现（M7）**：CPU `render_gradient`（逐像素插值，cpu/gradient.rs）+ GPU `draw_gradient_pass` + `test_gpu_full_scene_gradient` |
 | 阴影渲染 | `box-shadow` 的高斯模糊阴影渲染（offset + blur + spread + color） | ✅ **已实现（M7）**：CPU `render_shadow`（cpu/shadow.rs）+ GPU `collect_shadow_vertices` + `test_gpu_full_scene_shadow` |
 | 图片渲染 | 背景图片（`background-image`）、`<img>` 元素、`list-style-image` 的图片解码和渲染 | ✅ **已实现（M7）**：CPU `render_image`（cpu/mod.rs）+ GPU `draw_image_pass`（纹理采样） |
-| 线段/路径渲染 | `StrokePrimitive`（线段）、`PathFillPrimitive`（路径填充）、`PathStrokePrimitive`（路径描边）的渲染 | 用于虚线/点线边框、装饰线、clip-path 等；已定义但渲染器未实现 |
-| 变换渲染 | CSS 2D transform（translate、rotate、scale、skew、matrix）的正确应用 | `TransformPrimitive` 已定义但渲染器未实现；3D transform 降级为 2D |
-| 裁剪渲染 | `overflow: hidden/clip` 的矩形裁剪，`border-radius` 的圆角裁剪 | `ClipPrimitive` 已定义但渲染器未实现；当前裁剪仅在浏览器层做像素级处理，不在渲染器层 |
-| 滤镜渲染 | CSS filter（blur、brightness、contrast、grayscale、hue-rotate、invert、opacity、saturate、sepia、drop-shadow） | `FilterPrimitive` 已定义但渲染器未实现 |
-| 混合模式渲染 | `mix-blend-mode` 的 16 种混合模式（normal、multiply、screen、overlay、darken、lighten 等） | `BlendModePrimitive` 已定义但渲染器未实现 |
+| 线段/路径渲染 | `StrokePrimitive`（线段）、`PathFillPrimitive`（路径填充）、`PathStrokePrimitive`（路径描边）的渲染 | ✅ **已实现（M7）**：render_stroke/render_path_fill/render_path_stroke（cpu/stroke.rs）；原「渲染器未实现」已过时 |
+| 变换渲染 | CSS 2D transform（translate、rotate、scale、skew、matrix）的正确应用 | `TransformPrimitive` ✅ 已实现（M7，CPU+GPU，见 DC-8/9）；原「渲染器未实现」描述已过时；3D transform 降级为 2D |
+| 裁剪渲染 | `overflow: hidden/clip` 的矩形裁剪，`border-radius` 的圆角裁剪 | `ClipPrimitive` ✅ 已实现（M7，CPU+GPU，见 DC-8/9）；原「渲染器未实现」描述已过时；当前裁剪仅在浏览器层做像素级处理，不在渲染器层 |
+| 滤镜渲染 | CSS filter（blur、brightness、contrast、grayscale、hue-rotate、invert、opacity、saturate、sepia、drop-shadow） | `FilterPrimitive` ✅ 已实现（M7，CPU+GPU，见 DC-8/9）；原「渲染器未实现」描述已过时 |
+| 混合模式渲染 | `mix-blend-mode` 的 16 种混合模式（normal、multiply、screen、overlay、darken、lighten 等） | `BlendModePrimitive` ✅ 已实现（M7，CPU+GPU，见 DC-8/9）；原「渲染器未实现」描述已过时 |
 | Margin 折叠 | 相邻块级元素 margin-top/margin-bottom 的正确折叠算法 | ✅ **已实现（R323 实测）**：taffy 0.7 `CollapsibleMarginSet` 内置块级 margin 折叠；R323 探针实测 6 case 全过（相邻兄弟 max 折叠 / 父子折叠 / border 阻断 / 负 margin 30+(-10)=20 / 祖父嵌套 max(40,0,35)=40 / BFC `overflow:hidden` 子不折叠），margin reftest 5/5 全绿（`block-in-inline-...-margin-collapse` 0.00%） |
 | BFC（Block Formatting Context） | `overflow: hidden/auto/scroll`、`display: flow-root`、浮动等正确创建 BFC，隔离浮动和 margin 折叠 | 部分实现：BFC **margin 隔离**已工作（R323 实测 `overflow:hidden` 子元素 margin 不与父折叠）；`display:flow-root`/`is_layout_container` 标志已落地（R127 float-container margin-uncollapse 修复）。浮动包含（float containment）部分由 taffy + R129 float shrink-to-fit 覆盖 |
 | 替换元素布局 | `<img>`、`<video>`、`<iframe>`、`<canvas>` 的固有尺寸计算和 `object-fit` | ✅ **已实现**（`apply_replaced_element_sizing` 三来源：HTML `width`/`height` 属性、SVG data URI、解码固有尺寸；R325 修 CSS §10 两侧显式尺寸不强制固有宽高比；`compute_object_fit_rect` 全 5 值；R318 图片数据端到端贯通）。`<video>`/`<iframe>`/`<canvas>` 固有尺寸仍按默认，非 reftest 杠杆 |
 | 滚动容器 | `overflow: scroll/auto` 的可滚动容器，滚动偏移的正确应用 | 当前滚动偏移仅在浏览器层通过 `scroll_y` 手动偏移，无真正的滚动容器 |
 | text-shadow | 文字阴影（offset + blur + color） | paint 阶段未生成 text-shadow 图元 |
-| 多背景图层 | `background-image` 多层叠加渲染 | paint 阶段仅渲染第一个背景图层 |
+| 多背景图层 | `background-image` 多层叠加渲染 | ✅ **已实现**：painter/effects.rs:134 遍历 `background_image` 全图层 `.rev()` 叠加渲染 + test_paint_multiple_overlapping_backgrounds；原「仅渲染第一个」已过时 |
 | clip-path | CSS clip-path（circle、ellipse、polygon、inset） | 仅生成指示器，无实际裁剪实现 |
 | backdrop-filter | 元素背后内容的滤镜效果 | 完全未实现 |
 | CSS mask | CSS 遮罩效果 | 完全未实现 |
-| 重复渐变 | `repeating-linear-gradient`、`repeating-radial-gradient` | paint 阶段未实现 |
+| 重复渐变 | `repeating-linear-gradient`、`repeating-radial-gradient` | ✅ **已实现**：cpu/gradient.rs:28 `if gradient.repeating` 处理 |
 
 ### 不在范围内（明确排除）
 
@@ -298,9 +298,9 @@
 
 ### DC-12: 高级视觉效果
 
-- [ ] **text-shadow** — 文字阴影渲染（offset + blur + color）
-- [ ] **多背景图层** — `background-image` 多层叠加渲染
-- [ ] **重复渐变** — `repeating-linear-gradient` / `repeating-radial-gradient`
+- [x] ✅ **text-shadow** — 文字阴影渲染（offset + blur + color）— painter/text.rs:1067 `if has_text_shadow { push shadow glyph at (x+ox,y+oy,shadow_color) }` + test_paint_text_shadow_basic
+- [x] ✅ **多背景图层** — `background-image` 多层叠加渲染 — painter/effects.rs:134 `for layer in background_image.iter().rev()` 全图层叠加 + test_paint_multiple_overlapping_backgrounds
+- [x] ✅ **重复渐变** — `repeating-linear-gradient` / `repeating-radial-gradient` — cpu/gradient.rs:28 `if gradient.repeating {` 处理重复渐变
 - [ ] **border-image** — 边框图片渲染（slice + repeat + width）
 - [ ] **clip-path** — CSS clip-path 基础形状（circle、ellipse、polygon、inset）
 - [ ] **backdrop-filter** — 元素背后内容的滤镜效果
@@ -410,8 +410,8 @@
 | ~~Position: fixed~~ | 视口定位 | ✅ **R324 已修复** | `adjust_fixed_to_viewport` 改为扣除累积祖先偏移（旧「加上」仅 parent_offset=0 时正确）；fixed 在有偏移 positioned 祖先内也视口相对，与 R98 absolute-viewport 约定一致。新单测 + 8 旧单测更新 + 全量 reftest 零回归 |
 | Position: sticky | 滚动吸附 | P2-中等 | 需 host layer 动态调整，未完整实现 |
 | text-shadow | 文字效果 | P2-中等 | paint 阶段未生成 text-shadow 图元 |
-| 多背景图层 | 视觉丰富度 | P2-中等 | 仅渲染第一个背景图层 |
-| 重复渐变 | 视觉丰富度 | P3-低 | `repeating-linear-gradient` 未实现 |
+| ~~多背景图层~~ | 视觉丰富度 | ✅ **已实现** | effects.rs:134 全图层 `.rev()` 叠加（原「仅第一个」已过时） |
+| ~~重复渐变~~ | 视觉丰富度 | ✅ **已实现** | cpu/gradient.rs:28 `if gradient.repeating`（原「未实现」已过时） |
 | clip-path | CSS 裁剪 | P3-低 | 仅生成指示器，无实际裁剪 |
 | backdrop-filter | 模糊背景 | P3-低 | 完全未实现 |
 | CSS mask | 遮罩效果 | P3-低 | 完全未实现 |
