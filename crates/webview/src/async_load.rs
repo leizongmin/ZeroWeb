@@ -10,6 +10,9 @@ use zero_render_foundation::image_cache::{ImageKey, decode_image_bytes};
 use crate::net_pool::{fetch_bytes_async, fetch_text_async};
 use crate::webview::WebView;
 
+/// 图片抓取异步接收器（net_pool 线程 → 加载器轮询）。
+type BytesFetchRx = Receiver<Result<Vec<u8>, String>>;
+
 /// 页面加载阶段（供 UI 展示进度）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageLoadStage {
@@ -36,7 +39,7 @@ pub struct AsyncPageLoad {
     html: Option<String>,
     css: String,
     css_pending: Vec<(String, Receiver<Result<String, String>>)>,
-    img_pending: Vec<(String, u64, Receiver<Result<Vec<u8>, String>>)>,
+    img_pending: Vec<(String, u64, BytesFetchRx)>,
     document_rx: Option<Receiver<Result<String, String>>>,
     render_session: Option<BudgetedRenderSession>,
     budget_pending: bool,
@@ -165,10 +168,10 @@ impl AsyncPageLoad {
                 match self.stage {
                     // 留在 FirstPaint，由 tick() 调用 begin_stylesheet_fetch。
                     PageLoadStage::FirstPaint => {}
-                    PageLoadStage::StyledPaint | PageLoadStage::FetchingImages => {
-                        if self.css_pending.is_empty() && self.img_pending.is_empty() {
-                            self.stage = PageLoadStage::Complete;
-                        }
+                    PageLoadStage::StyledPaint | PageLoadStage::FetchingImages
+                        if self.css_pending.is_empty() && self.img_pending.is_empty() =>
+                    {
+                        self.stage = PageLoadStage::Complete;
                     }
                     _ => {}
                 }
