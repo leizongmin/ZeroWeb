@@ -16,10 +16,12 @@ pub trait IpcChannel {
 }
 
 /// 进程角色。
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcessRole {
-    /// 浏览器主进程。
+    /// 浏览器主进程（UI、Tab、网络/存储策略）。
     Browser,
-    /// 渲染进程。
+    /// 渲染进程（页面解析、布局、绘制、脚本；不直连网络）。
     Renderer,
+    /// 网络服务进程（当前由 Browser 进程承载，后续可独立拆分）。
+    Network,
 }

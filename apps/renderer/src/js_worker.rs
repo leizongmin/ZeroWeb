@@ -464,6 +464,7 @@ fn register_dom_callbacks(
 }
 
 fn register_module_compile_callback(sandbox: &mut V8Sandbox) {
+    // 动态 `import()` 仍直连网络；静态模块依赖由主线程 prefetch + collect_module_deps 经 IPC 加载。
     let http = zero_net::client::HttpClient::new();
     let runtime_iifes: Arc<std::sync::Mutex<HashMap<String, String>>> =
         Arc::new(std::sync::Mutex::new(HashMap::new()));

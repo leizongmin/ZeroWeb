@@ -167,19 +167,11 @@ fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Opti
     }
 }
 
-fn should_skip_scripts(url: &str) -> bool {
+/// 渲染进程是否允许直连网络（仅测试；生产路径应经 Browser 进程 `FetchRequest`）。
+pub fn should_skip_scripts(url: &str) -> bool {
     url.starts_with("view-source:")
 }
 
-/// 经 `zero_net` 直接抓取文本（渲染进程脚本加载用）。
-pub fn net_fetch_text(url: &str) -> Result<String, String> {
-    zero_net::client::HttpClient::new()
-        .get(url)
-        .map(|r| String::from_utf8_lossy(&r.body).into_owned())
-        .map_err(|e| e.to_string())
-}
-
-/// 用当前 HTML/CSS 重渲染页面。
 pub fn rerender(ctx: &mut PageScriptContext<'_>) -> RenderResult {
     ctx.pipeline.render_html(ctx.html, ctx.css)
 }
