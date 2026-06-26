@@ -536,3 +536,19 @@ pub fn collect_module_deps(
     }
     Ok(())
 }
+
+/// renderer 的 JS worker 实现统一脚本执行器契约（T4）。
+impl zero_page_runtime::JsExecutor for RendererJsWorker {
+    fn set_dom_snapshot(&self, html: &str, url: &str) {
+        self.set_dom_snapshot(html, url)
+    }
+    fn execute_script_direct(&self, script: &str) -> Result<String, String> {
+        self.execute_script_direct(script)
+    }
+    fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
+        self.execute_module(source, url, deps)
+    }
+    fn mutations(&self) -> Arc<std::sync::Mutex<Vec<zero_engine::DomMutation>>> {
+        self.mutations()
+    }
+}

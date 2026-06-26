@@ -8,9 +8,10 @@
 
 #![warn(missing_docs)]
 
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 
-use zero_engine::{HitTestCache, RenderResult};
+use zero_engine::{DomMutation, HitTestCache, RenderResult};
 use zero_render_foundation::primitive::RenderPrimitives;
 
 /// 异步抓取宿主：发起网络抓取并返回可轮询的接收器。
@@ -77,6 +78,20 @@ pub struct FrameModel {
     pub primitives: RenderPrimitives,
     /// 主线程 hit-test 缓存（可选）。
     pub hit_test: Option<HitTestCache>,
+}
+
+/// 统一脚本执行器契约（T4）——renderer（`RendererJsWorker`）与 tabworker（`TabJsWorkerHandle`）
+/// 走同一套脚本调度语义：设 DOM 快照 → 执行脚本/module → 读回 DOM 变更。两侧方法签名一致，
+/// 本 trait 把它们抽象成同一契约，使脚本派发逻辑可跨进程/进程内共享。
+pub trait JsExecutor {
+    /// 执行前设置当前 DOM 快照（HTML + URL）。
+    fn set_dom_snapshot(&self, html: &str, url: &str);
+    /// 同步执行一段脚本，返回结果字符串。
+    fn execute_script_direct(&self, script: &str) -> Result<String, String>;
+    /// 执行 ES module（含依赖注册表）。
+    fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String>;
+    /// 取回执行期间记录的 DOM 变更。
+    fn mutations(&self) -> Arc<std::sync::Mutex<Vec<DomMutation>>>;
 }
 
 /// 分阶段页面加载宿主：网络抓取 + 绘制推送。
