@@ -41,7 +41,7 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 | `ZeroWebView` | 已有稳定嵌入 API、可运行 demo，以及跨 crate 和产品层 smoke 测试；Service Worker、WASM 桥接与 `SecurityContext` 安全检查等页面级能力已接入其中 |
 | 浏览器应用 | `zero-browser`、`browser-shell` 和 `zero-renderer` 已打通桌面入口、多进程链路、headless 调试与跨平台打包（Linux / macOS / Windows）+ CI 发布工作流；整体仍处于实验阶段 |
 | 页面 JavaScript | `script-sandbox` 已提供 V8/QuickJS feature gate（含 V8 持久化 Context 复用）、Web Worker、ES Modules，以及 WebAssembly JS API 到 `wasm-sandbox` 的自动桥接；完整 Web API 和站点兼容性仍在推进 |
-| 渲染兼容性（当前主线 M12） | 以 WPT/CSSWG reftest 对齐 Chromium 为验证标准；已有 WPT runner、reftest、真实静态页截图对比和真实站点 smoke，CSS 全面渲染集成（100+ 属性）、增量布局与渲染管线优化（填充批处理 + 视口剔除 + draw call 统计）已落地，CSS2 / Flexbox / Grid / 布局等渲染缺口仍在持续修复中，距生产级兼容仍有明显距离 |
+| 渲染兼容性（当前主线） | 以 WPT/CSSWG reftest 对齐 Chromium 为验证标准；已有 WPT runner、reftest、真实静态页截图对比和真实站点 smoke，CSS 全面渲染集成（100+ 属性）、增量布局与渲染管线优化（填充批处理 + 视口剔除 + draw call 统计）已落地，CSS2 / Flexbox / Grid / 布局等渲染缺口仍在持续修复中，距生产级兼容仍有明显距离 |
 | 安全与可访问性 | CSP 完整实现、HSTS 预加载、混合内容阻止 / 升级、权限模型与站点隔离已落地并统一接入 `SecurityContext`；可访问性基础（`FocusManager` Tab 导航 + ARIA）已起步 |
 | 项目定位 | 适合学习、研究、工程探索，不适合直接当成生产浏览器 |
 
@@ -49,7 +49,7 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 
 - 核心引擎：`dom`、`css-parser`、`style-system`、`layout-engine`、`engine`、`canvas`
 - 基础设施：`render-foundation`、`host-runtime`、`net`、`security`、`storage`、`protocol`
-- 运行时与隔离：`script-sandbox`、`wasm-sandbox`
+- 运行时与隔离：`script-sandbox`、`wasm-sandbox`、`page-runtime`
 - 对外与产品层：`webview`、`browser-shell`
 - 应用与测试：`apps/browser`、`apps/renderer`、`apps/webview-demo`、`tests/integration`、`tests/wpt-runner`
 
@@ -128,7 +128,7 @@ powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1    # Window
 
 ## 仓库结构
 
-整个工作区共 21 个 workspace member：16 个库 crate、3 个应用入口（`apps/`）和 2 个测试工具（`tests/`）。下文按「应用与进程入口 / 核心引擎 / 基础设施 / 产品层与测试」分组列出。
+整个工作区共 22 个 workspace member：17 个库 crate、3 个应用入口（`apps/`）和 2 个测试工具（`tests/`）。下文按「应用与进程入口 / 核心引擎 / 基础设施 / 产品层与测试」分组列出。
 
 ### 应用与进程入口
 
@@ -161,6 +161,7 @@ powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1    # Window
 | `crates/protocol` | IPC 与多进程消息模型 |
 | `crates/wasm-sandbox` | WASM 执行与沙箱能力 |
 | `crates/script-sandbox` | 页面 JavaScript 与扩展 / 用户脚本运行时（V8 / QuickJS feature gate） |
+| `crates/page-runtime` | WPT / TabWorker / zero-renderer 三条页面路径共享的页面加载与运行时契约（运行时统一） |
 
 ### 产品层与测试
 
