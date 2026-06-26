@@ -1145,3 +1145,57 @@ fn cpu_full_scene_stroke_horizontal_line() {
     let above = fb.get_pixel(16, 4);
     assert_eq!(above, [255, 255, 255, 255], "above stroke should be white, got {:?}", above);
 }
+
+/// DC-8 CPU ClipPrimitive — 黑色全屏 fill 后应用 clip rect，断言 clip 区内保留黑、区外清白。
+#[test]
+fn cpu_full_scene_clip_rect_clears_outside() {
+    let mut primitives = RenderPrimitives::new();
+    // 黑色 fill 覆盖整屏
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        color: Color::BLACK,
+    });
+    // clip 只保留 (8,8)-(24,24)
+    primitives.clips.push(ClipPrimitive {
+        rect: Rect::new(8.0, 8.0, 16.0, 16.0),
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    // clip 内 (16,16) 保留黑
+    assert_eq!(fb.get_pixel(16, 16), [0, 0, 0, 255], "clip interior should stay black");
+    // clip 外 (2,2) 被清白
+    assert_eq!(fb.get_pixel(2, 2), [255, 255, 255, 255], "clip outside should be cleared white");
+    // clip 边界外 (6,16) 清白（在 clip 矩形左外）
+    assert_eq!(fb.get_pixel(6, 16), [255, 255, 255, 255], "left of clip rect should be white");
+}
+
+/// DC-8 CPU TransformPrimitive — 左半屏黑色 fill 后应用平移 tx=8，断言内容右移。
+#[test]
+fn cpu_full_scene_transform_translates_content() {
+    let mut primitives = RenderPrimitives::new();
+    // 左半屏 (0-16) 黑色 fill
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 16.0, 32.0),
+        color: Color::BLACK,
+    });
+    // 平移变换：a=1,b=0,c=0,d=1,tx=8,ty=0（内容右移 8px），rect 覆盖全屏
+    primitives.transforms.push(TransformPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        origin_x: 0.0,
+        origin_y: 0.0,
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        tx: 8.0,
+        ty: 0.0,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(32, 32, 1.0, &primitives, &font_loader, &mut glyph_cache, None, &[], &[]);
+    // 变换前 (20,16) 是白（右半屏）；平移右移 8 后 (20,16) 应为黑（src=12 在原黑色区）
+    assert_eq!(fb.get_pixel(20, 16), [0, 0, 0, 255], "after tx=8, (20,16) should be black (content shifted right)");
+    // (4,16) 原 black 区左缘；平移后 src=-4 越界 → 清白
+    assert_eq!(fb.get_pixel(4, 16), [255, 255, 255, 255], "after tx=8, (4,16) should be white (cleared, src out of bounds)");
+}
