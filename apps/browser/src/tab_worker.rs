@@ -204,7 +204,12 @@ fn tab_worker_main(
             with_measure(&font_loader, font_id, || {
                 wv.load_html(&html, css.as_deref());
             });
+            if let Some(title) = pages::extract_html_title(&html) {
+                wv.set_title(&title);
+            }
             push_snapshot(&wv, &msg_tx);
+            let title = page_title_from_webview(&wv);
+            let _ = msg_tx.send(TabWorkerMessage::Title(title));
         }
 
         if let Some(ref mut load) = async_load {
@@ -215,9 +220,6 @@ fn tab_worker_main(
                     let _ = msg_tx.send(TabWorkerMessage::Stage(load.stage()));
                 }
                 push_snapshot(&wv, &msg_tx);
-                if let Some(title) = wv.title() {
-                    let _ = msg_tx.send(TabWorkerMessage::Title(title.to_string()));
-                }
             }
             if !load.is_active() {
                 if let Some(err) = load.take_error() {
@@ -228,8 +230,9 @@ fn tab_worker_main(
                     });
                     let _ = msg_tx.send(TabWorkerMessage::LoadError(err));
                     let _ = msg_tx.send(TabWorkerMessage::Title("加载失败".to_string()));
-                } else if let Some(title) = wv.title() {
-                    let _ = msg_tx.send(TabWorkerMessage::Title(title.to_string()));
+                } else {
+                    let title = page_title_from_webview(&wv);
+                    let _ = msg_tx.send(TabWorkerMessage::Title(title));
                 }
                 async_load = None;
                 push_snapshot(&wv, &msg_tx);
@@ -249,4 +252,11 @@ where
 
 fn load_system_fonts_worker(loader: &mut FontLoader) -> Option<u32> {
     crate::app::load_system_fonts(loader)
+}
+
+fn page_title_from_webview(wv: &WebView) -> String {
+    wv.title()
+        .map(str::to_string)
+        .or_else(|| pages::extract_html_title(wv.html_content()))
+        .unwrap_or_else(|| wv.url().unwrap_or("页面").to_string())
 }
