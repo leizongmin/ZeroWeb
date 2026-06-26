@@ -37,6 +37,10 @@ pub enum IpcMessageKind {
     LoadFailed(String),
     /// 页面绘制快照（渲染→浏览器）。
     ViewPainted(crate::paint_snapshot::PaintSnapshotParams),
+    /// 链接命中测试（浏览器→渲染）。
+    HitTestLink(HitTestLinkParams),
+    /// 链接命中测试结果（渲染→浏览器）。
+    HitTestLinkResult(HitTestLinkResultParams),
 
     // ── 网络请求（渲染→浏览器→网络）──
     /// 发起网络请求。
@@ -212,4 +216,20 @@ pub struct ScrollEventParams {
     pub delta_x: f32,
     /// 垂直滚动量。
     pub delta_y: f32,
+}
+
+/// 链接命中测试参数（浏览器→渲染）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HitTestLinkParams {
+    /// 文档坐标 x。
+    pub x: f32,
+    /// 文档坐标 y。
+    pub y: f32,
+}
+
+/// 链接命中测试结果（渲染→浏览器）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HitTestLinkResultParams {
+    /// 命中链接 href；未命中为 `None`。
+    pub href: Option<String>,
 }

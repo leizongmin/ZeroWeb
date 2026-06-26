@@ -2,16 +2,17 @@
 
 use zero_engine::{extract_img_srcs, image_resource_key, resolve_document_url};
 use zero_protocol::{
-    IpcClip, IpcColor, IpcDrawOp, IpcFill, IpcGlyph, IpcGradient, IpcGradientKind, IpcGradientStop, IpcImage,
-    IpcImagePayload, IpcLineCap, IpcLineStyle, IpcPathFill, IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow,
-    IpcStroke, IpcTransform, PaintSnapshotParams,
+    IpcBlendMode, IpcBlendModePrimitive, IpcClip, IpcColor, IpcDrawOp, IpcFill, IpcFilter, IpcFilterKind, IpcGlyph,
+    IpcGradient, IpcGradientKind, IpcGradientStop, IpcImage, IpcImagePayload, IpcLineCap, IpcLineStyle, IpcPathFill,
+    IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke, IpcTransform, PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::decode_image_bytes;
 use zero_render_foundation::primitive::{
-    ClipPrimitive, DrawOp, GradientKind, GradientPrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
-    RenderPrimitives, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
+    BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FilterKind, FilterPrimitive, GradientKind, GradientPrimitive,
+    LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, RenderPrimitives, ShadowPrimitive, StrokePrimitive,
+    TransformPrimitive,
 };
 
 fn rect_to_ipc(r: &Rect) -> IpcRect {
@@ -75,8 +76,49 @@ fn line_style_to_ipc(s: LineStyle) -> IpcLineStyle {
     }
 }
 
-fn draw_op_to_ipc(op: DrawOp) -> Option<IpcDrawOp> {
-    Some(match op {
+fn filter_kind_to_ipc(k: &FilterKind) -> IpcFilterKind {
+    match k {
+        FilterKind::Blur(v) => IpcFilterKind::Blur(*v),
+        FilterKind::Brightness(v) => IpcFilterKind::Brightness(*v),
+        FilterKind::Contrast(v) => IpcFilterKind::Contrast(*v),
+        FilterKind::Grayscale(v) => IpcFilterKind::Grayscale(*v),
+        FilterKind::HueRotate(v) => IpcFilterKind::HueRotate(*v),
+        FilterKind::Invert(v) => IpcFilterKind::Invert(*v),
+        FilterKind::Opacity(v) => IpcFilterKind::Opacity(*v),
+        FilterKind::Saturate(v) => IpcFilterKind::Saturate(*v),
+        FilterKind::Sepia(v) => IpcFilterKind::Sepia(*v),
+        FilterKind::DropShadow(x, y, blur, color) => IpcFilterKind::DropShadow {
+            offset_x: *x,
+            offset_y: *y,
+            blur: *blur,
+            color: color_to_ipc(*color),
+        },
+    }
+}
+
+fn blend_mode_to_ipc(mode: BlendMode) -> IpcBlendMode {
+    match mode {
+        BlendMode::Normal => IpcBlendMode::Normal,
+        BlendMode::Multiply => IpcBlendMode::Multiply,
+        BlendMode::Screen => IpcBlendMode::Screen,
+        BlendMode::Overlay => IpcBlendMode::Overlay,
+        BlendMode::Darken => IpcBlendMode::Darken,
+        BlendMode::Lighten => IpcBlendMode::Lighten,
+        BlendMode::ColorDodge => IpcBlendMode::ColorDodge,
+        BlendMode::ColorBurn => IpcBlendMode::ColorBurn,
+        BlendMode::HardLight => IpcBlendMode::HardLight,
+        BlendMode::SoftLight => IpcBlendMode::SoftLight,
+        BlendMode::Difference => IpcBlendMode::Difference,
+        BlendMode::Exclusion => IpcBlendMode::Exclusion,
+        BlendMode::Hue => IpcBlendMode::Hue,
+        BlendMode::Saturation => IpcBlendMode::Saturation,
+        BlendMode::Color => IpcBlendMode::Color,
+        BlendMode::Luminosity => IpcBlendMode::Luminosity,
+    }
+}
+
+fn draw_op_to_ipc(op: DrawOp) -> IpcDrawOp {
+    match op {
         DrawOp::Fill(i) => IpcDrawOp::Fill(i),
         DrawOp::RoundedRect(i) => IpcDrawOp::RoundedRect(i),
         DrawOp::Gradient(i) => IpcDrawOp::Gradient(i),
@@ -87,9 +129,10 @@ fn draw_op_to_ipc(op: DrawOp) -> Option<IpcDrawOp> {
         DrawOp::PathStroke(i) => IpcDrawOp::PathStroke(i),
         DrawOp::Clip(i) => IpcDrawOp::Clip(i),
         DrawOp::Transform(i) => IpcDrawOp::Transform(i),
+        DrawOp::Filter(i) => IpcDrawOp::Filter(i),
+        DrawOp::BlendMode(i) => IpcDrawOp::BlendMode(i),
         DrawOp::Glyph(i) => IpcDrawOp::Glyph(i),
-        DrawOp::Filter(_) | DrawOp::BlendMode(_) => return None,
-    })
+    }
 }
 
 /// 抓取 HTML 中 `<img>` 子资源并编码为 IPC 像素块。
@@ -248,6 +291,22 @@ pub fn paint_snapshot_from_primitives(
                 ty: t.ty,
             })
             .collect(),
+        filters: primitives
+            .filters
+            .iter()
+            .map(|f: &FilterPrimitive| IpcFilter {
+                rect: rect_to_ipc(&f.rect),
+                filters: f.filters.iter().map(filter_kind_to_ipc).collect(),
+            })
+            .collect(),
+        blend_modes: primitives
+            .blend_modes
+            .iter()
+            .map(|b: &BlendModePrimitive| IpcBlendModePrimitive {
+                rect: rect_to_ipc(&b.rect),
+                mode: blend_mode_to_ipc(b.mode),
+            })
+            .collect(),
         glyphs: primitives
             .glyphs
             .iter()
@@ -261,10 +320,6 @@ pub fn paint_snapshot_from_primitives(
                 rotation: g.rotation,
             })
             .collect(),
-        draw_order: primitives
-            .draw_order
-            .iter()
-            .filter_map(|op| draw_op_to_ipc(*op))
-            .collect(),
+        draw_order: primitives.draw_order.iter().copied().map(draw_op_to_ipc).collect(),
     }
 }

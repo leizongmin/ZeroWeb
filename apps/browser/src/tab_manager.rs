@@ -29,7 +29,7 @@ pub struct TabManager {
 impl TabManager {
     /// 创建标签页管理器。
     pub fn new(viewport: (u32, u32), color_scheme: PrefersColorSchemeValue) -> Self {
-        Self {
+        let manager = Self {
             workers: HashMap::new(),
             snapshots: HashMap::new(),
             process_backend: if use_multiprocess_backend() {
@@ -44,7 +44,10 @@ impl TabManager {
             poll_tick: 0,
             lru: TabLruPolicy::default(),
             last_active: None,
-        }
+        };
+        let max_live = manager.lru.max_live();
+        tracing::info!("Tab LRU max live workers: {max_live} (ZERO_BROWSER_MAX_LIVE_TABS)");
+        manager
     }
 
     /// 是否使用多进程后端。
@@ -289,9 +292,9 @@ impl TabManager {
     }
 
     /// 链接命中测试。
-    pub fn hit_test_link(&self, tab_id: TabId, x: f32, y: f32) -> Option<String> {
-        if let Some(ref backend) = self.process_backend {
-            return backend.hit_test_link(tab_id, x, y);
+    pub fn hit_test_link(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<String> {
+        if let Some(ref mut backend) = self.process_backend {
+            return backend.hit_test_link(tab_id, x, y, &mut self.snapshots);
         }
         self.workers.get(&tab_id)?.hit_test_link(x, y)
     }
