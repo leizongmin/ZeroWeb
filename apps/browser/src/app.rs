@@ -291,7 +291,7 @@ impl BrowserApp {
 
     /// 轮询 Tab worker / IPC 并处理页面事件。
     pub fn poll_tab_fetch(&mut self) {
-        if self.tabs.poll() {
+        if self.tabs.poll(self.shell.active_tab_id()) {
             self.needs_redraw = true;
         }
         for (tab_id, title, url) in self.tabs.take_page_loaded_events() {
@@ -606,7 +606,7 @@ impl BrowserApp {
         self.sync_webview_viewport();
         self.tabs.load_html(tab_id, html, css, None);
         for _ in 0..500 {
-            self.tabs.poll();
+            self.tabs.poll(Some(tab_id));
             if self
                 .tabs
                 .last_render(tab_id)

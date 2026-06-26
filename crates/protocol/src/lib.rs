@@ -10,12 +10,14 @@
 
 pub mod channel;
 pub mod message;
+pub mod paint_snapshot;
 pub mod process;
 pub mod serialize;
 pub mod transport;
 
 pub use channel::*;
 pub use message::*;
+pub use paint_snapshot::*;
 pub use process::*;
 pub use serialize::*;
 pub use transport::*;

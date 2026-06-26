@@ -10,6 +10,7 @@ use zero_engine::set_char_measure_fn;
 use zero_render_foundation::font::loader::FontLoader;
 use zero_webview::{AsyncPageLoad, PageLoadStage, WebView, WebViewBuilder, WebViewConfig};
 
+use crate::pages;
 use crate::tab_snapshot::TabSnapshot;
 use crate::text_metrics;
 
@@ -196,10 +197,18 @@ fn tab_worker_main(
                 }
             }
             if !load.is_active() {
-                async_load = None;
-                if let Some(title) = wv.title() {
+                if let Some(err) = load.take_error() {
+                    let page_url = wv.url().unwrap_or("about:blank");
+                    let error_page = pages::generate_error_page(&page_url, &err);
+                    with_measure(&font_loader, font_id, || {
+                        wv.load_html(&error_page, None);
+                    });
+                    let _ = msg_tx.send(TabWorkerMessage::LoadError(err));
+                    let _ = msg_tx.send(TabWorkerMessage::Title("加载失败".to_string()));
+                } else if let Some(title) = wv.title() {
                     let _ = msg_tx.send(TabWorkerMessage::Title(title.to_string()));
                 }
+                async_load = None;
                 push_snapshot(&wv, &msg_tx);
             }
         }

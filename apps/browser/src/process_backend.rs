@@ -135,6 +135,9 @@ impl ProcessTabBackend {
                                 tracing::warn!("Renderer load failed: {err}");
                             }
                             IpcMessageKind::UrlChanged(url) => snap.url = Some(url),
+                            IpcMessageKind::ViewPainted(params) => {
+                                crate::paint_ipc::apply_paint_snapshot(snap, params);
+                            }
                             _ => {}
                         }
                     }
