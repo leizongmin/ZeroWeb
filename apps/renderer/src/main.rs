@@ -1,16 +1,16 @@
 //! ZeroWeb 渲染进程入口 — 独立进程处理页面渲染，经 IPC 向浏览器传递绘制快照。
 
-mod async_load;
 mod error_page;
 mod js_worker;
 mod page_scripts;
 mod paint_export;
 mod text_metrics;
 
-use zero_page_runtime::PageLoadHost;
+use zero_page_runtime::BlockingFetchHost;
+use zero_webview::AsyncPageLoad;
 
 use crate::js_worker::RendererJsWorker;
-use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, rerender, run_page_scripts};
+use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, run_page_scripts};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc::{self, Receiver};
@@ -20,10 +20,7 @@ use std::io;
 use zero_engine::{PageScript, extract_page_scripts, resolve_document_url};
 use zero_script_sandbox::extract_module_import_specifiers;
 
-use zero_engine::{
-    DomEventDetail, PrefersColorSchemeValue, RenderPipeline, RenderResult, selector_from_element_hit,
-    set_char_measure_fn,
-};
+use zero_engine::{DomEventDetail, PrefersColorSchemeValue, selector_from_element_hit, set_char_measure_fn};
 use zero_protocol::IpcChannel;
 use zero_protocol::ProcessRole;
 use zero_protocol::message::{
@@ -62,6 +59,9 @@ fn spawn_browser_ipc_inbound() -> (Receiver<IpcMessage>, JoinHandle<()>) {
 }
 use zero_render_foundation::font::loader::FontLoader;
 
+/// 单帧渲染预算（ms）——AsyncPageLoad 同步 drain 用。
+const RENDER_FRAME_BUDGET_MS: f64 = 8.0;
+
 /// 渲染进程运行时状态。
 struct RendererRuntime {
     /// 向浏览器写入 IPC（stdout）。
@@ -71,10 +71,9 @@ struct RendererRuntime {
     /// 持有 IPC 读线程 JoinHandle（仅保活，不被读；drop 即分离线程）。
     #[allow(dead_code)]
     inbound_thread: Option<JoinHandle<()>>,
-    /// 渲染管线。
-    pipeline: RenderPipeline,
-    /// 页面运行时（B3 迁移中：将逐步接管 pipeline / page_scripts / text_metrics；当前已构造、渲染尚未路由）。
-    #[allow(dead_code)]
+    /// 当前视口（CSS 逻辑像素），随 SetViewport 更新；publish 用。
+    viewport: (u32, u32),
+    /// 页面运行时（B3：渲染/字体/脚本/hit-test 全经 WebView，与 tabworker 同一页面运行时）。
     webview: Option<zero_webview::WebView>,
     /// 字体加载器：为 paint 阶段提供真实字符 advance。
     font_loader: FontLoader,
@@ -119,23 +118,23 @@ impl RendererRuntime {
     /// 是 B3 cutover 回归门的基础——renderer 是 bin，否则 wiring 无法单测）。
     fn with_io(renderer_id: u64, outbound: Box<dyn io::Write + Send>, inbound_rx: Receiver<IpcMessage>) -> Self {
         let outbound = PipeTransport::new(io::empty(), outbound);
-        let mut pipeline = RenderPipeline::new(1280.0, 800.0);
-        let (font_loader, font_id) = load_system_fonts(&mut pipeline);
+        let (font_loader, font_id, font_resolver) = load_system_fonts();
         set_char_measure_fn(text_metrics::measure_char);
         let js_worker = RendererJsWorker::spawn(renderer_id);
-        // B3：renderer 内部持有 WebView（external_script 委派 js_worker，避免双 V8），
-        // 逐步接管 pipeline/page_scripts/text_metrics（见 doc §11）。当前已构造、尚未路由渲染。
-        let webview = zero_webview::WebView::new(zero_webview::WebViewConfig {
+        // B3：renderer 内部持有 WebView，渲染/字体/脚本全经 WebView（与 tabworker 同一页面运行时）。
+        // external_script 委派 js_worker（避免双 V8）；font_resolver 设到 WebView（paint 字体面）。
+        let mut webview = zero_webview::WebView::new(zero_webview::WebViewConfig {
             width: 1280,
             height: 800,
             external_script: Some(js_worker.executor()),
             ..Default::default()
         });
+        webview.set_font_resolver(font_resolver);
         Self {
             outbound,
             inbound_rx,
             inbound_thread: None,
-            pipeline,
+            viewport: (1280, 800),
             webview: Some(webview),
             font_loader,
             font_id,
@@ -177,19 +176,13 @@ impl RendererRuntime {
         self.inbound_rx.recv().map_err(|e| format!("IPC 接收失败: {e}"))
     }
 
-    fn after_page_html_loaded(&mut self, html: String, css: String) -> Result<(), String> {
-        self.cached_html = html;
-        self.cached_css = css;
+    fn after_page_html_loaded(&mut self) -> Result<(), String> {
         let js_enabled = self.javascript_enabled;
         let fetch_cache = self.build_script_fetch_cache();
-        let font_loader = &self.font_loader;
-        let font_id = self.font_id;
-        let current_url = self.current_url.as_deref().unwrap_or("about:blank");
+        let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let mut ctx = PageScriptContext {
-            pipeline: &mut self.pipeline,
             html: &mut self.cached_html,
-            css: &self.cached_css,
-            url: current_url,
+            url: &current_url,
             js_worker: &self.js_worker,
         };
         let fetch_from_cache = |url: &str| {
@@ -198,9 +191,9 @@ impl RendererRuntime {
                 .cloned()
                 .ok_or_else(|| format!("script fetch failed: {url}"))
         };
-        if run_page_scripts(&mut ctx, js_enabled, fetch_from_cache) {
-            let result = text_metrics::with_measure_ctx_opt(font_loader, font_id, || rerender(&mut ctx));
-            self.publish_render(&result, None)?;
+        let changed = run_page_scripts(&mut ctx, js_enabled, fetch_from_cache);
+        if changed {
+            self.rerender_publish_webview()?;
         }
         Ok(())
     }
@@ -251,18 +244,41 @@ impl RendererRuntime {
         cache
     }
 
-    fn publish_render(&mut self, result: &RenderResult, title: Option<String>) -> Result<(), String> {
+    /// 从 WebView 当前渲染产出发布 IPC frame（ViewPainted + 可选 Title）。B3：发布源切到 WebView。
+    fn publish_webview(&mut self, title: Option<String>) -> Result<(), String> {
         let html = self.cached_html.clone();
         let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
-        let payloads = paint_export::fetch_image_payloads_with_fetch(&html, &url, &mut |u| self.fetch_get(u).ok());
-        publish_render_result(
+        let mut fetch = |u: &str| self.fetch_get(u).ok();
+        let payloads = paint_export::fetch_image_payloads_with_fetch(&html, &url, &mut fetch);
+        let (vw, vh) = self.viewport;
+        let wv = self.webview.as_ref().expect("webview");
+        let render = wv.last_render().ok_or_else(|| "WebView 无渲染结果".to_string())?;
+        let doc_h = wv.document_height().unwrap_or(vh as f32);
+        let hit_test = wv.build_hit_test_cache();
+        publish_render_with_layout(
             &mut self.outbound,
             &mut self.next_msg_id,
-            &self.pipeline,
-            result,
+            vw,
+            vh,
+            doc_h,
+            &render.primitives,
             title,
             payloads,
+            hit_test,
         )
+    }
+
+    /// 用当前 cached_html/css 经 WebView 重绘并发布（脚本改 DOM 后的重渲染路径）。
+    fn rerender_publish_webview(&mut self) -> Result<(), String> {
+        let html = self.cached_html.clone();
+        let css = self.cached_css.clone();
+        let font_loader = &self.font_loader;
+        let font_id = self.font_id;
+        let wv = self.webview.as_mut().expect("webview");
+        text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
+            wv.load_html(&html, if css.is_empty() { None } else { Some(&css) });
+        });
+        self.publish_webview(None)
     }
 
     fn dispatch_dom_at(
@@ -274,27 +290,23 @@ impl RendererRuntime {
         detail: Option<DomEventDetail>,
     ) -> DomDispatchResult {
         let selector = selector.or_else(|| {
-            self.pipeline
-                .hit_test_element(x, y)
+            self.webview
+                .as_ref()
+                .and_then(|wv| wv.hit_test_element(x, y))
                 .map(|hit| selector_from_element_hit(&hit))
         });
         if let Some(sel) = selector {
             self.event_target = sel.clone();
             let js_enabled = self.javascript_enabled;
-            let font_loader = &self.font_loader;
-            let font_id = self.font_id;
-            let current_url = self.current_url.as_deref().unwrap_or("about:blank");
+            let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
             let mut ctx = PageScriptContext {
-                pipeline: &mut self.pipeline,
                 html: &mut self.cached_html,
-                css: &self.cached_css,
-                url: current_url,
+                url: &current_url,
                 js_worker: &self.js_worker,
             };
             let result = dispatch_dom_event(&mut ctx, js_enabled, &sel, event_type, detail.as_ref());
             if result.html_changed {
-                let render = text_metrics::with_measure_ctx_opt(font_loader, font_id, || rerender(&mut ctx));
-                let _ = self.publish_render(&render, None);
+                let _ = self.rerender_publish_webview();
             }
             result
         } else {
@@ -349,55 +361,42 @@ impl RendererRuntime {
         }
         self.send(IpcMessageKind::UrlChanged(page_url.clone()))?;
         self.current_url = Some(page_url.clone());
+        self.cached_html = html.clone();
+        self.cached_css = String::new();
 
-        let html_for_images = html.clone();
-        let url_for_images = page_url.clone();
-
+        // B3：load 经共享 AsyncPageLoad（与 tabworker 同一加载器），BlockingFetchHost 适配 IPC。
+        // split-borrow self 的 IPC 字段 + webview（绕开 self.method() 整体借用）。
         {
-            let font_loader = &self.font_loader;
-            let font_id = self.font_id;
             let outbound = &mut self.outbound;
             let inbound_rx = &self.inbound_rx;
-            let next_msg_id = &mut self.next_msg_id;
             let next_fetch_id = &mut self.next_fetch_id;
             let deferred = &mut self.deferred_inbound;
-            let pipeline = &mut self.pipeline;
-            let viewport = (pipeline.viewport_width() as u32, pipeline.viewport_height() as u32);
-            let mut host = IpcLoadBridge {
-                outbound,
-                inbound_rx,
-                next_msg_id,
-                next_fetch_id,
-                deferred,
-                viewport,
-            };
-
+            let webview = self.webview.as_mut().expect("webview");
+            let font_loader = &self.font_loader;
+            let font_id = self.font_id;
+            let mut host =
+                BlockingFetchHost::new(|url: &str| ipc_fetch_get(outbound, inbound_rx, next_fetch_id, deferred, url));
+            let mut load = AsyncPageLoad::from_html(page_url.clone(), html.clone());
             text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
-                async_load::run_page_load(pipeline, &page_url, &html, &mut host)
-            })?;
+                for _ in 0..10_000 {
+                    if !load.is_active() {
+                        break;
+                    }
+                    load.tick(webview, &mut host, RENDER_FRAME_BUDGET_MS);
+                }
+            });
+            if load.is_active() {
+                return Err("page load did not complete within tick budget".into());
+            }
+            if let Some(err) = load.take_error() {
+                return Err(err);
+            }
         }
 
-        let font_loader = &self.font_loader;
-        let font_id = self.font_id;
-        let pipeline = &mut self.pipeline;
-        if let Some(result) =
-            text_metrics::with_measure_ctx_opt(font_loader, font_id, || pipeline.repaint_cached_viewport(""))
-        {
-            let payloads = paint_export::fetch_image_payloads_with_fetch(&html_for_images, &url_for_images, &mut |u| {
-                self.fetch_get(u).ok()
-            });
-            publish_render_result(
-                &mut self.outbound,
-                &mut self.next_msg_id,
-                &self.pipeline,
-                &result,
-                None,
-                payloads,
-            )?;
-        }
+        self.publish_webview(None)?;
 
         if !page_scripts::should_skip_scripts(&page_url) {
-            self.after_page_html_loaded(html_for_images, self.cached_css.clone())?;
+            self.after_page_html_loaded()?;
         }
 
         if send_complete {
@@ -443,30 +442,25 @@ impl RendererRuntime {
     fn try_republish_cached(&mut self) -> Result<(), String> {
         let font_loader = &self.font_loader;
         let font_id = self.font_id;
-        let pipeline = &mut self.pipeline;
-        let Some(result) =
-            text_metrics::with_measure_ctx_opt(font_loader, font_id, || pipeline.repaint_cached_viewport(""))
-        else {
-            return Ok(());
-        };
-        publish_render_result(
-            &mut self.outbound,
-            &mut self.next_msg_id,
-            &self.pipeline,
-            &result,
-            None,
-            Vec::new(),
-        )
+        let wv = self.webview.as_mut().expect("webview");
+        text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
+            wv.render();
+        });
+        self.publish_webview(None)
     }
 
     fn handle_set_viewport(&mut self, params: SetViewportParams) -> Result<(), String> {
-        self.pipeline.set_viewport(params.width as f32, params.height as f32);
+        self.viewport = (params.width, params.height);
+        if let Some(wv) = self.webview.as_mut() {
+            wv.resize(params.width, params.height);
+        }
         self.try_republish_cached()
     }
 
     fn handle_set_color_scheme(&mut self, params: SetColorSchemeParams) -> Result<(), String> {
-        self.pipeline
-            .set_prefers_color_scheme(ipc_scheme_to_engine(params.scheme));
+        if let Some(wv) = self.webview.as_mut() {
+            wv.set_prefers_color_scheme(ipc_scheme_to_engine(params.scheme));
+        }
         self.try_republish_cached()
     }
 
@@ -513,7 +507,11 @@ impl RendererRuntime {
     }
 
     fn handle_hit_test_link(&mut self, msg_id: u64, params: HitTestLinkParams) -> Result<(), String> {
-        let href = self.pipeline.hit_test_link(params.x, params.y);
+        let href = self
+            .webview
+            .as_ref()
+            .expect("webview")
+            .hit_test_link(params.x, params.y);
         tracing::trace!("HitTestLink({msg_id}) -> {:?}", href.as_deref());
         self.send_with_id(
             msg_id,
@@ -523,7 +521,9 @@ impl RendererRuntime {
 
     fn handle_hit_test_element(&mut self, msg_id: u64, params: HitTestLinkParams) -> Result<(), String> {
         let result = self
-            .pipeline
+            .webview
+            .as_ref()
+            .expect("webview")
             .hit_test_element(params.x, params.y)
             .map(|hit| {
                 let selector = selector_from_element_hit(&hit);
@@ -665,40 +665,6 @@ impl RendererRuntime {
     }
 }
 
-struct IpcLoadBridge<'a> {
-    outbound: &'a mut IpcOutbound,
-    inbound_rx: &'a Receiver<IpcMessage>,
-    next_msg_id: &'a mut u64,
-    next_fetch_id: &'a mut u64,
-    deferred: &'a mut VecDeque<IpcMessage>,
-    viewport: (u32, u32),
-}
-
-impl PageLoadHost for IpcLoadBridge<'_> {
-    fn fetch_bytes(&mut self, url: &str) -> Result<Vec<u8>, String> {
-        ipc_fetch_get(self.outbound, self.inbound_rx, self.next_fetch_id, self.deferred, url)
-    }
-
-    fn publish(&mut self, result: &RenderResult, title: Option<String>, _is_final: bool) -> Result<(), String> {
-        let doc_h = document_height_from_layout(&result.layout);
-        publish_render_with_layout(
-            self.outbound,
-            self.next_msg_id,
-            self.viewport.0,
-            self.viewport.1,
-            doc_h,
-            &result.primitives,
-            title,
-            Vec::new(),
-            None,
-        )
-    }
-}
-
-fn document_height_from_layout(layout: &zero_layout_engine::LayoutResult) -> f32 {
-    layout.root.y + layout.root.height
-}
-
 /// 注意：参数偏多，T5 FrameModel 统一后收敛为结构体入参。
 #[allow(clippy::too_many_arguments)]
 fn publish_render_with_layout(
@@ -799,28 +765,6 @@ fn ipc_fetch_get(
     }
 }
 
-fn publish_render_result(
-    outbound: &mut IpcOutbound,
-    next_msg_id: &mut u64,
-    pipeline: &RenderPipeline,
-    result: &RenderResult,
-    title: Option<String>,
-    image_payloads: Vec<zero_protocol::IpcImagePayload>,
-) -> Result<(), String> {
-    let doc_h = pipeline.document_height().unwrap_or(pipeline.viewport_height());
-    publish_render_with_layout(
-        outbound,
-        next_msg_id,
-        pipeline.viewport_width() as u32,
-        pipeline.viewport_height() as u32,
-        doc_h,
-        &result.primitives,
-        title,
-        image_payloads,
-        None,
-    )
-}
-
 fn ipc_scheme_to_engine(scheme: IpcColorScheme) -> PrefersColorSchemeValue {
     match scheme {
         IpcColorScheme::Light => PrefersColorSchemeValue::Light,
@@ -828,9 +772,10 @@ fn ipc_scheme_to_engine(scheme: IpcColorScheme) -> PrefersColorSchemeValue {
     }
 }
 
-fn load_system_fonts(pipeline: &mut RenderPipeline) -> (FontLoader, Option<u32>) {
+fn load_system_fonts() -> (FontLoader, Option<u32>, HashMap<String, u32>) {
     let mut loader = FontLoader::new();
     let mut primary_font_id = None;
+    let mut resolver = HashMap::new();
     #[cfg(target_os = "windows")]
     let primary_paths = ["C:\\Windows\\Fonts\\segoeui.ttf", "C:\\Windows\\Fonts\\arial.ttf"];
     #[cfg(target_os = "macos")]
@@ -851,9 +796,9 @@ fn load_system_fonts(pipeline: &mut RenderPipeline) -> (FontLoader, Option<u32>)
     }) {
         tracing::info!("Renderer primary font: {path} (id={id})");
         primary_font_id = Some(id);
-        pipeline.set_font_resolver(loader.build_font_resolver());
+        resolver = loader.build_font_resolver();
     }
-    (loader, primary_font_id)
+    (loader, primary_font_id, resolver)
 }
 
 fn parse_renderer_launch() -> (ProcessRole, u64) {
