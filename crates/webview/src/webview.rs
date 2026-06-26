@@ -260,6 +260,25 @@ impl WebView {
         render_result
     }
 
+    /// 脚本修改 DOM 后重新加载 HTML（保留已缓存 CSS，并刷新图片子资源）。
+    pub fn reload_html_after_script(&mut self, html: &str) -> WebViewRenderResult {
+        self.cached_html = html.to_string();
+        if let Some(page_url) = self.current_url.clone() {
+            let image_sizes = self.fetch_image_subresources(html, &page_url);
+            self.cached_image_sizes = image_sizes.clone();
+            self.pipeline.set_image_sizes(image_sizes);
+        }
+        self.sync_pipeline_page_state();
+        self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
+        let result = self.pipeline.render_html(html, &self.cached_css);
+        let render_result = WebViewRenderResult {
+            primitives: result.primitives,
+            timings: result.timings,
+        };
+        self.last_render = Some(render_result.clone());
+        render_result
+    }
+
     /// 从 URL 中提取 origin（scheme + host + port）。
     ///
     /// `"https://example.com:8443/path?q=1"` → `"https://example.com:8443"`

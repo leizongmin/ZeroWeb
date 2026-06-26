@@ -338,6 +338,15 @@ impl BrowserApp {
             _ => {}
         }
 
+        if !self.address_bar_focused && key.len() == 1 && !self.ctrl_pressed && !self.cmd_pressed {
+            if let Some(tab_id) = self.shell.active_tab_id() {
+                let event = if pressed { "keydown" } else { "keyup" };
+                if self.tabs.dispatch_key_event(tab_id, event, key, key) {
+                    self.needs_redraw = true;
+                }
+            }
+        }
+
         // 只处理按键按下事件
         if !pressed {
             return;
@@ -780,10 +789,16 @@ impl BrowserApp {
                     self.page_selection_drag = false;
                     if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32) {
                         let collapsed = self.page_selection.get(&tab_id).is_none_or(|s| s.is_collapsed());
-                        if collapsed
-                            && let Some(href) = self.tabs.hit_test_link(tab_id, doc_x, doc_y)
-                        {
-                            self.navigate_to(&href);
+                        if collapsed {
+                            let allowed = self.tabs.dispatch_page_click(tab_id, doc_x, doc_y);
+                            if allowed
+                                && let Some(href) = self.tabs.hit_test_link(tab_id, doc_x, doc_y)
+                            {
+                                self.navigate_to(&href);
+                            }
+                            if allowed {
+                                self.needs_redraw = true;
+                            }
                         }
                     }
                 }
@@ -981,6 +996,7 @@ impl BrowserApp {
                 if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
                     && let Some(glyphs) = self.page_glyphs(tab_id)
                 {
+                self.tabs.dispatch_page_mousedown(tab_id, doc_x, doc_y);
                 self.content_pointer_drag = Some(ContentPointerDrag {
                     start_x: x,
                     start_y: y,

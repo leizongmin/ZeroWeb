@@ -1,0 +1,581 @@
+//! JS → DOM 桥接 — 将 V8 shim 回调记录的变更应用到 `zero_dom::Document`。
+//!
+//! 与 `zero_script_sandbox::V8Sandbox::register_callback` 配合：JS 侧 shim 把
+//! DOM 操作翻译为 `__zw_*` 扁平回调，宿主记录 [`DomMutation`] 后调用
+//! [`apply_dom_mutations`] 并序列化回 HTML。
+
+use std::collections::HashMap;
+
+use zero_dom::{Document, NodeId, NodeKind, parse_html};
+
+/// 一条 DOM 变更记录（由 JS shim 经 `__zw_*` 回调产生）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DomMutation {
+    /// `element.setAttribute` / 属性 setter（`src`、`class` 等）。
+    SetAttr {
+        /// CSS 选择器句柄。
+        selector: String,
+        /// 属性名。
+        name: String,
+        /// 属性值。
+        value: String,
+    },
+    /// `element.textContent = ...`
+    SetText {
+        /// CSS 选择器句柄。
+        selector: String,
+        /// 文本内容。
+        text: String,
+    },
+    /// `element.innerHTML = ...`（解析 HTML 子树）。
+    SetInnerHtml {
+        /// CSS 选择器句柄。
+        selector: String,
+        /// HTML 片段。
+        html: String,
+    },
+    /// `element.style.prop = ...`
+    SetStyle {
+        /// CSS 选择器句柄。
+        selector: String,
+        /// CSS 属性名（camelCase 或 kebab-case）。
+        property: String,
+        /// CSS 属性值。
+        value: String,
+    },
+    /// `element.remove()`
+    Remove {
+        /// CSS 选择器句柄。
+        selector: String,
+    },
+    /// `document.createElement(tag)`
+    CreateElement {
+        /// 稳定句柄（`__n1` 等）。
+        handle: String,
+        /// 标签名。
+        tag: String,
+    },
+    /// `document.createTextNode(text)`
+    CreateTextNode {
+        /// 稳定句柄。
+        handle: String,
+        /// 文本内容。
+        text: String,
+    },
+    /// `parent.appendChild(child)` — 子节点用 create 时返回的句柄。
+    AppendChild {
+        /// 父节点选择器。
+        parent_selector: String,
+        /// 子节点句柄。
+        child_handle: String,
+    },
+    /// `parentHandle.appendChild(child)` — 父节点亦为 create 句柄。
+    AppendChildByHandle {
+        /// 父节点句柄。
+        parent_handle: String,
+        /// 子节点句柄。
+        child_handle: String,
+    },
+    /// 对 create 句柄设置属性（append 前 `el.id = ...` 等）。
+    SetAttrOnHandle {
+        /// 节点句柄。
+        handle: String,
+        /// 属性名。
+        name: String,
+        /// 属性值。
+        value: String,
+    },
+    /// 对 create 句柄设置 textContent。
+    SetTextOnHandle {
+        /// 节点句柄。
+        handle: String,
+        /// 文本内容。
+        text: String,
+    },
+    /// 对 create 句柄设置 innerHTML。
+    SetInnerHtmlOnHandle {
+        /// 节点句柄。
+        handle: String,
+        /// HTML 片段。
+        html: String,
+    },
+    /// 对 create 句柄设置 style 属性。
+    SetStyleOnHandle {
+        /// 节点句柄。
+        handle: String,
+        /// CSS 属性名。
+        property: String,
+        /// CSS 属性值。
+        value: String,
+    },
+    /// 按句柄移除节点。
+    RemoveHandle {
+        /// 节点句柄。
+        handle: String,
+    },
+}
+
+/// 在文档根下按简单选择器查找第一个匹配元素。
+pub fn find_by_selector(doc: &Document, selector: &str) -> Option<NodeId> {
+    let root = doc.root();
+    doc.query_selector(root, selector.trim())
+}
+
+/// 在文档根下查找所有匹配元素并生成稳定选择器列表。
+pub fn find_all_selectors(doc: &Document, selector: &str) -> Vec<String> {
+    let root = doc.root();
+    doc.query_selector_all(root, selector.trim())
+        .into_iter()
+        .filter_map(|id| stable_selector_for_node(doc, id))
+        .collect()
+}
+
+/// 为节点生成用于后续变更的稳定选择器（优先 `#id`）。
+pub fn stable_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
+    if let Some(id) = doc.get_attribute(node, "id") {
+        let id = id.trim();
+        if !id.is_empty() {
+            return Some(format!("#{}", id));
+        }
+    }
+    let tag = doc.get(node).and_then(|n| match &n.kind {
+        NodeKind::Element(e) => Some(e.local_name().to_string()),
+        _ => None,
+    })?;
+    if let Some(class) = doc.get_attribute(node, "class") {
+        let first = class.split_whitespace().find(|c| !c.is_empty());
+        if let Some(c) = first {
+            return Some(format!("{}.{}", tag, c));
+        }
+    }
+    Some(tag)
+}
+
+/// 将变更列表应用到文档（按顺序）。
+pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Result<(), String> {
+    let mut handles: HashMap<String, NodeId> = HashMap::new();
+
+    for mutation in mutations {
+        match mutation {
+            DomMutation::SetAttr { selector, name, value } => {
+                let node = find_by_selector(doc, selector)
+                    .ok_or_else(|| format!("set_attr: no match for {selector}"))?;
+                doc.set_attribute(node, name, value);
+            }
+            DomMutation::SetText { selector, text } => {
+                let node = find_by_selector(doc, selector)
+                    .ok_or_else(|| format!("set_text: no match for {selector}"))?;
+                doc.set_text_content(node, text);
+            }
+            DomMutation::SetInnerHtml { selector, html } => {
+                let node = find_by_selector(doc, selector)
+                    .ok_or_else(|| format!("set_inner_html: no match for {selector}"))?;
+                replace_inner_html(doc, node, html)?;
+            }
+            DomMutation::SetStyle { selector, property, value } => {
+                let node = find_by_selector(doc, selector)
+                    .ok_or_else(|| format!("set_style: no match for {selector}"))?;
+                apply_style_property(doc, node, property, value);
+            }
+            DomMutation::Remove { selector } => {
+                if let Some(node) = find_by_selector(doc, selector) {
+                    if let Some(parent) = doc.get(node).and_then(|n| n.parent) {
+                        doc.remove_child(parent, node).map_err(|e| e.to_string())?;
+                    }
+                }
+            }
+            DomMutation::CreateElement { handle, tag } => {
+                let id = doc.create_element(tag);
+                handles.insert(handle.clone(), id);
+            }
+            DomMutation::CreateTextNode { handle, text } => {
+                let id = doc.create_text_node(text);
+                handles.insert(handle.clone(), id);
+            }
+            DomMutation::AppendChild {
+                parent_selector,
+                child_handle,
+            } => {
+                let parent = find_by_selector(doc, parent_selector)
+                    .ok_or_else(|| format!("append_child: no parent match for {parent_selector}"))?;
+                let child = handles
+                    .get(child_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                doc.append_child(parent, child).map_err(|e| e.to_string())?;
+            }
+            DomMutation::AppendChildByHandle {
+                parent_handle,
+                child_handle,
+            } => {
+                let parent = handles
+                    .get(parent_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
+                let child = handles
+                    .get(child_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                doc.append_child(parent, child).map_err(|e| e.to_string())?;
+            }
+            DomMutation::SetAttrOnHandle { handle, name, value } => {
+                let node = handles
+                    .get(handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                doc.set_attribute(node, name, value);
+            }
+            DomMutation::SetTextOnHandle { handle, text } => {
+                let node = handles
+                    .get(handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                doc.set_text_content(node, text);
+            }
+            DomMutation::SetInnerHtmlOnHandle { handle, html } => {
+                let node = handles
+                    .get(handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                replace_inner_html(doc, node, html)?;
+            }
+            DomMutation::SetStyleOnHandle { handle, property, value } => {
+                let node = handles
+                    .get(handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                apply_style_property(doc, node, property, value);
+            }
+            DomMutation::RemoveHandle { handle } => {
+                if let Some(node) = handles.get(handle).copied() {
+                    if let Some(parent) = doc.get(node).and_then(|n| n.parent) {
+                        doc.remove_child(parent, node).map_err(|e| e.to_string())?;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_style_property(doc: &mut Document, node: NodeId, property: &str, value: &str) {
+    let current = doc.get_attribute(node, "style").unwrap_or_default();
+    let merged = merge_style_property(&current, property, value);
+    doc.set_attribute(node, "style", &merged);
+}
+
+fn merge_style_property(style: &str, property: &str, value: &str) -> String {
+    let prop_key = property.trim().to_ascii_lowercase();
+    let mut parts: Vec<String> = style
+        .split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+    parts.retain(|p| {
+        p.split(':')
+            .next()
+            .map(|k| k.trim().to_ascii_lowercase())
+            .unwrap_or_default()
+            != prop_key
+    });
+    parts.push(format!("{}: {}", property.trim(), value.trim()));
+    parts.join("; ")
+}
+
+fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str) -> Result<(), String> {
+    let children: Vec<NodeId> = doc.get(parent).map(|n| n.children.clone()).unwrap_or_default();
+    for child in children {
+        doc.remove_child(parent, child).map_err(|e| e.to_string())?;
+    }
+    let trimmed = html.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    if !trimmed.contains('<') {
+        let text = doc.create_text_node(trimmed);
+        doc.append_child(parent, text).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    let frag_doc = parse_html(&format!("<!DOCTYPE html><html><body>{trimmed}</body></html>"));
+    let body = find_by_selector(&frag_doc, "body").ok_or("innerHTML fragment parse failed")?;
+    let frag_children: Vec<NodeId> = frag_doc.get(body).map(|n| n.children.clone()).unwrap_or_default();
+    for frag_child in frag_children {
+        let copied = copy_subtree_from(doc, &frag_doc, frag_child);
+        doc.append_child(parent, copied).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn copy_subtree_from(doc: &mut Document, src_doc: &Document, src_id: NodeId) -> NodeId {
+    let src_node = match src_doc.get(src_id) {
+        Some(n) => n,
+        None => return doc.create_text_node(""),
+    };
+    match &src_node.kind {
+        NodeKind::Text(t) => doc.create_text_node(&t.content),
+        NodeKind::Comment(c) => doc.create_comment(&c.content),
+        NodeKind::Element(_) => {
+            let tag = match src_doc.get(src_id) {
+                Some(n) => match &n.kind {
+                    NodeKind::Element(e) => e.local_name().to_string(),
+                    _ => "span".to_string(),
+                },
+                None => "span".to_string(),
+            };
+            let new_id = doc.create_element(&tag);
+            if let Some(NodeKind::Element(elem)) = src_doc.get(src_id).map(|n| &n.kind) {
+                for attr in &elem.attributes {
+                    let name = attr.name.local.to_string();
+                    doc.set_attribute(new_id, &name, &attr.value);
+                }
+            }
+            for &child in &src_node.children {
+                let copied = copy_subtree_from(doc, src_doc, child);
+                doc.append_child(new_id, copied).ok();
+            }
+            new_id
+        }
+        _ => doc.create_text_node(""),
+    }
+}
+
+/// 解析 HTML、应用变更并返回序列化后的 HTML。
+pub fn apply_mutations_to_html(html: &str, mutations: &[DomMutation]) -> Result<String, String> {
+    let mut doc = parse_html(html);
+    apply_dom_mutations(&mut doc, mutations)?;
+    Ok(doc.outer_html(doc.root()))
+}
+
+/// 从 HTML 快照查询首个匹配的稳定选择器（供 `__zw_query_match`）。
+pub fn query_match_selector(html: &str, selector: &str) -> String {
+    let doc = parse_html(html);
+    find_by_selector(&doc, selector)
+        .and_then(|n| stable_selector_for_node(&doc, n))
+        .unwrap_or_default()
+}
+
+/// 从 HTML 快照查询全部匹配的稳定选择器（`|` 分隔，供 `__zw_query_all`）。
+pub fn query_all_selector_list(html: &str, selector: &str) -> String {
+    let doc = parse_html(html);
+    find_all_selectors(&doc, selector).join("|")
+}
+
+/// 从当前 HTML 快照查询属性（供 `__zw_get_attr` 回调只读使用）。
+pub fn query_attr_from_html(html: &str, selector: &str, name: &str) -> String {
+    let doc = parse_html(html);
+    find_by_selector(&doc, selector)
+        .and_then(|n| doc.get_attribute(n, name))
+        .unwrap_or_default()
+}
+
+/// 从当前 HTML 快照查询 innerHTML。
+pub fn query_inner_html_from_html(html: &str, selector: &str) -> String {
+    let doc = parse_html(html);
+    find_by_selector(&doc, selector).map(|n| doc.inner_html(n)).unwrap_or_default()
+}
+
+/// 从已记录变更中查询 create 句柄上的 innerHTML。
+pub fn query_inner_html_from_mutations(mutations: &[DomMutation], handle: &str) -> String {
+    for m in mutations.iter().rev() {
+        if let DomMutation::SetInnerHtmlOnHandle { handle: h, html } = m {
+            if h == handle {
+                return html.clone();
+            }
+        }
+        if let DomMutation::CreateTextNode { handle: h, text } = m {
+            if h == handle {
+                return text.clone();
+            }
+        }
+        if let DomMutation::SetTextOnHandle { handle: h, text } = m {
+            if h == handle {
+                return text.clone();
+            }
+        }
+    }
+    String::new()
+}
+
+/// 键盘等 DOM 事件的附加字段（传给 JS `KeyboardEvent`）。
+#[derive(Debug, Clone, Default)]
+pub struct DomEventDetail {
+    /// `KeyboardEvent.key`
+    pub key: Option<String>,
+    /// `KeyboardEvent.code`
+    pub code: Option<String>,
+}
+
+fn escape_js_string(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+/// 生成在 V8 中派发 DOM 事件的脚本片段。
+pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Option<&DomEventDetail>) -> String {
+    let esc_sel = escape_js_string(selector);
+    let esc_ty = escape_js_string(event_type);
+    let detail_json = match detail {
+        None => "null".to_string(),
+        Some(d) => {
+            let key = d
+                .key
+                .as_deref()
+                .map(|k| format!("'{}'", escape_js_string(k)))
+                .unwrap_or_else(|| "null".to_string());
+            let code = d
+                .code
+                .as_deref()
+                .map(|c| format!("'{}'", escape_js_string(c)))
+                .unwrap_or_else(|| "null".to_string());
+            format!("{{key:{key},code:{code}}}")
+        }
+    };
+    format!("__zw_dispatch_event('{esc_sel}', '{esc_ty}', {detail_json})")
+}
+
+/// 从当前 HTML 快照查询 textContent。
+pub fn query_text_from_html(html: &str, selector: &str) -> String {
+    let doc = parse_html(html);
+    find_by_selector(&doc, selector).map(|n| doc.inner_html(n)).unwrap_or_default()
+}
+
+/// 从已记录变更中查询 create 句柄上的属性（脚本执行期间只读）。
+pub fn query_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: &str) -> String {
+    for m in mutations.iter().rev() {
+        if let DomMutation::SetAttrOnHandle { handle: h, name: n, value: v } = m {
+            if h == handle && n == name {
+                return v.clone();
+            }
+        }
+    }
+    String::new()
+}
+
+/// 从已记录变更中查询 create 句柄上的 textContent。
+pub fn query_text_from_mutations(mutations: &[DomMutation], handle: &str) -> String {
+    for m in mutations.iter().rev() {
+        if let DomMutation::CreateTextNode { handle: h, text } = m {
+            if h == handle {
+                return text.clone();
+            }
+        }
+        if let DomMutation::SetTextOnHandle { handle: h, text } = m {
+            if h == handle {
+                return text.clone();
+            }
+        }
+    }
+    String::new()
+}
+
+/// 注入到 V8 的 DOM shim（与 `__zw_*` 回调配套）。
+pub fn generate_js_dom_shim() -> &'static str {
+    include_str!("js_dom_shim.js")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_apply_set_attr_src() {
+        let html = "<html><body><img id=\"i\" src=\"old.png\"></body></html>";
+        let mutations = vec![DomMutation::SetAttr {
+            selector: "#i".into(),
+            name: "src".into(),
+            value: "new.png".into(),
+        }];
+        let out = apply_mutations_to_html(html, &mutations).unwrap();
+        assert!(out.contains("src=\"new.png\""));
+    }
+
+    #[test]
+    fn test_apply_set_style() {
+        let html = "<html><body><div id=\"d\"></div></body></html>";
+        let mutations = vec![DomMutation::SetStyle {
+            selector: "#d".into(),
+            property: "color".into(),
+            value: "red".into(),
+        }];
+        let out = apply_mutations_to_html(html, &mutations).unwrap();
+        assert!(out.contains("color: red") || out.contains("color:red"));
+    }
+
+    #[test]
+    fn test_apply_class_name_via_set_attr() {
+        let html = "<html><body><div id=\"d\"></div></body></html>";
+        let mutations = vec![DomMutation::SetAttr {
+            selector: "#d".into(),
+            name: "class".into(),
+            value: "active".into(),
+        }];
+        let out = apply_mutations_to_html(html, &mutations).unwrap();
+        assert!(out.contains("class=\"active\""));
+    }
+
+    #[test]
+    fn test_apply_create_and_append() {
+        let html = "<html><body id=\"b\"></body></html>";
+        let mutations = vec![
+            DomMutation::CreateElement {
+                handle: "__n1".into(),
+                tag: "p".into(),
+            },
+            DomMutation::SetAttrOnHandle {
+                handle: "__n1".into(),
+                name: "id".into(),
+                value: "p1".into(),
+            },
+            DomMutation::CreateTextNode {
+                handle: "__n2".into(),
+                text: "hello".into(),
+            },
+            DomMutation::AppendChild {
+                parent_selector: "#b".into(),
+                child_handle: "__n1".into(),
+            },
+            DomMutation::AppendChild {
+                parent_selector: "#p1".into(),
+                child_handle: "__n2".into(),
+            },
+        ];
+        let out = apply_mutations_to_html(html, &mutations).unwrap();
+        assert!(out.contains("<p id=\"p1\">hello</p>"));
+    }
+
+    #[test]
+    fn test_find_all_selectors() {
+        let html = "<html><body><p class=\"x\"></p><p class=\"x\"></p></body></html>";
+        let doc = parse_html(html);
+        let sels = find_all_selectors(&doc, "p.x");
+        assert_eq!(sels.len(), 2);
+    }
+
+    #[test]
+    fn test_apply_inner_html() {
+        let html = "<html><body><div id=\"d\">old</div></body></html>";
+        let mutations = vec![DomMutation::SetInnerHtml {
+            selector: "#d".into(),
+            html: "<b>new</b>".into(),
+        }];
+        let out = apply_mutations_to_html(html, &mutations).unwrap();
+        assert!(out.contains("<b>new</b>"));
+    }
+
+    #[test]
+    fn test_shim_not_empty() {
+        assert!(generate_js_dom_shim().contains("__zw_set_attr"));
+        assert!(generate_js_dom_shim().contains("addEventListener"));
+    }
+
+    #[test]
+    fn test_merge_style_property() {
+        let merged = merge_style_property("color: blue", "width", "10px");
+        assert!(merged.contains("color: blue"));
+        assert!(merged.contains("width: 10px"));
+        let replaced = merge_style_property(&merged, "color", "red");
+        assert!(!replaced.contains("blue"));
+        assert!(replaced.contains("color: red"));
+    }
+}

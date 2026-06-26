@@ -1,4 +1,4 @@
-//! 标签页专用 JS 线程 — V8 与布局/绘制 worker 分离。
+//! 渲染进程 JS 线程 — V8 与页面渲染分离。
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -7,7 +7,6 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use zero_browser_shell::TabId;
 use zero_engine::{
     DomMutation, generate_js_dom_shim, query_all_selector_list, query_attr_from_html,
     query_attr_from_mutations, query_inner_html_from_html, query_inner_html_from_mutations,
@@ -38,8 +37,8 @@ enum JsWorkerCommand {
     Shutdown,
 }
 
-/// 专用 JS worker 句柄（每 Tab 一个）。
-pub struct TabJsWorkerHandle {
+/// 渲染进程 JS worker 句柄。
+pub struct RendererJsWorker {
     cmd_tx: Sender<JsWorkerCommand>,
     join: Option<JoinHandle<()>>,
     executor: ScriptFn,
@@ -47,9 +46,9 @@ pub struct TabJsWorkerHandle {
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
 }
 
-impl TabJsWorkerHandle {
+impl RendererJsWorker {
     /// 启动 JS 专用线程。
-    pub fn spawn(tab_id: TabId) -> Self {
+    pub fn spawn(renderer_id: u64) -> Self {
         let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
@@ -57,7 +56,7 @@ impl TabJsWorkerHandle {
         let mutations_for_worker = Arc::clone(&mutations);
 
         let join = thread::Builder::new()
-            .name(format!("tab-js-{}", tab_id.0))
+            .name(format!("renderer-js-{}", renderer_id))
             .spawn(move || js_worker_main(cmd_rx, mutations_for_worker))
             .expect("spawn tab js worker");
 
@@ -134,7 +133,7 @@ impl TabJsWorkerHandle {
     }
 }
 
-impl Drop for TabJsWorkerHandle {
+impl Drop for RendererJsWorker {
     fn drop(&mut self) {
         self.shutdown();
     }

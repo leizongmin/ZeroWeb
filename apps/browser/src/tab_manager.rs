@@ -3,13 +3,14 @@
 use std::collections::HashMap;
 
 use zero_browser_shell::TabId;
-use zero_engine::PrefersColorSchemeValue;
+use zero_engine::{DomEventDetail, PrefersColorSchemeValue, selector_from_element_hit};
 use zero_render_foundation::image_cache::ImageCache;
 use zero_webview::WebViewRenderResult;
 
 use crate::process_backend::{ProcessTabBackend, use_multiprocess_backend};
 use crate::tab_lru::TabLruPolicy;
 use crate::tab_restore::TabRestorePayload;
+use crate::tab_scripts::DomDispatchResult;
 use crate::tab_snapshot::TabSnapshot;
 use crate::tab_worker::{TabWorkerCommand, TabWorkerHandle, TabWorkerMessage};
 
@@ -29,6 +30,8 @@ pub struct TabManager {
     last_restore: HashMap<TabId, TabRestorePayload>,
     /// 是否允许 Tab worker 执行页面 JavaScript。
     javascript_enabled: bool,
+    /// 各 Tab 最近一次交互目标（用于 keydown 等事件派发）。
+    event_targets: HashMap<TabId, String>,
 }
 
 impl TabManager {
@@ -51,6 +54,7 @@ impl TabManager {
             last_active: None,
             last_restore: HashMap::new(),
             javascript_enabled: true,
+            event_targets: HashMap::new(),
         };
         let max_live = manager.lru.max_live();
         tracing::info!("Tab LRU max live workers: {max_live} (ZERO_BROWSER_MAX_LIVE_TABS)");
@@ -408,10 +412,101 @@ impl TabManager {
 
     /// 元素命中测试（审查元素）。
     pub fn hit_test_element(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<zero_engine::ElementHit> {
-        if self.process_backend.is_some() {
-            return None;
+        if let Some(ref mut backend) = self.process_backend {
+            return backend.hit_test_element(tab_id, x, y, &mut self.snapshots);
         }
         self.workers.get(&tab_id)?.hit_test_element(x, y)
+    }
+
+    /// 向页面元素派发 DOM 事件并返回是否允许默认行为。
+    pub fn dispatch_dom_event(&mut self, tab_id: TabId, selector: &str, event_type: &str) -> bool {
+        self.dispatch_dom_event_impl(tab_id, selector, event_type, None).default_allowed
+    }
+
+    fn dispatch_dom_event_impl(
+        &mut self,
+        tab_id: TabId,
+        selector: &str,
+        event_type: &str,
+        detail: Option<DomEventDetail>,
+    ) -> DomDispatchResult {
+        if !self.javascript_enabled {
+            return DomDispatchResult {
+                default_allowed: true,
+                html_changed: false,
+            };
+        }
+        if let Some(ref mut backend) = self.process_backend {
+            let result = backend.dispatch_dom_event(
+                tab_id,
+                Some(selector),
+                0.0,
+                0.0,
+                event_type,
+                detail.as_ref(),
+                &mut self.snapshots,
+            );
+            if result.html_changed {
+                self.poll(Some(tab_id));
+            }
+            self.event_targets.insert(tab_id, selector.to_string());
+            return result;
+        }
+        let result = self
+            .workers
+            .get(&tab_id)
+            .map(|w| {
+                w.dispatch_dom_event(
+                    selector,
+                    event_type,
+                    detail.as_ref().and_then(|d| d.key.as_deref()),
+                    detail.as_ref().and_then(|d| d.code.as_deref()),
+                )
+            })
+            .unwrap_or(DomDispatchResult {
+                default_allowed: true,
+                html_changed: false,
+            });
+        self.event_targets.insert(tab_id, selector.to_string());
+        if result.html_changed {
+            self.poll(Some(tab_id));
+        }
+        result
+    }
+
+    /// 向当前交互目标派发键盘事件（无目标时发往 `body`）。
+    pub fn dispatch_key_event(&mut self, tab_id: TabId, event_type: &str, key: &str, code: &str) -> bool {
+        let selector = self
+            .event_targets
+            .get(&tab_id)
+            .cloned()
+            .unwrap_or_else(|| "body".to_string());
+        let detail = DomEventDetail {
+            key: Some(key.to_string()),
+            code: Some(code.to_string()),
+        };
+        self.dispatch_dom_event_impl(tab_id, &selector, event_type, Some(detail)).html_changed
+    }
+
+    /// 处理页面点击释放：派发 mouseup/click，返回是否允许默认行为（链接导航）。
+    pub fn dispatch_page_click(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32) -> bool {
+        if let Some(hit) = self.hit_test_element(tab_id, doc_x, doc_y) {
+            let selector = selector_from_element_hit(&hit);
+            self.event_targets.insert(tab_id, selector.clone());
+            let up = self.dispatch_dom_event_impl(tab_id, &selector, "mouseup", None);
+            let click = self.dispatch_dom_event_impl(tab_id, &selector, "click", None);
+            return up.default_allowed && click.default_allowed;
+        }
+        true
+    }
+
+    /// 处理页面按下：派发 mousedown。
+    pub fn dispatch_page_mousedown(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32) {
+        if let Some(hit) = self.hit_test_element(tab_id, doc_x, doc_y) {
+            let selector = selector_from_element_hit(&hit);
+            self.event_targets.insert(tab_id, selector.clone());
+            self.dispatch_dom_event_impl(tab_id, &selector, "mousedown", None);
+        }
     }
 
     /// 文档高度。

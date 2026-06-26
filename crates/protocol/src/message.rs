@@ -47,6 +47,14 @@ pub enum IpcMessageKind {
     HitTestLink(HitTestLinkParams),
     /// 链接命中测试结果（渲染→浏览器）。
     HitTestLinkResult(HitTestLinkResultParams),
+    /// 元素命中测试（浏览器→渲染）。
+    HitTestElement(HitTestLinkParams),
+    /// 元素命中测试结果（渲染→浏览器）。
+    HitTestElementResult(HitTestElementResultParams),
+    /// DOM 事件派发（浏览器→渲染，同步响应）。
+    DispatchDomEvent(DispatchDomEventParams),
+    /// DOM 事件派发结果（渲染→浏览器）。
+    DispatchDomEventResult(DispatchDomEventResultParams),
 
     // ── 网络请求（渲染→浏览器→网络）──
     /// 发起网络请求。
@@ -274,4 +282,49 @@ pub struct HitTestLinkParams {
 pub struct HitTestLinkResultParams {
     /// 命中链接 href；未命中为 `None`。
     pub href: Option<String>,
+}
+
+/// 元素命中测试结果（渲染→浏览器）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HitTestElementResultParams {
+    /// 命中元素标签名（小写）。
+    pub tag_name: Option<String>,
+    /// `id` 属性。
+    pub id: Option<String>,
+    /// `class` 属性。
+    pub class_name: Option<String>,
+    /// 布局盒左上角 X。
+    pub x: f32,
+    /// 布局盒左上角 Y。
+    pub y: f32,
+    /// 布局盒宽度。
+    pub width: f32,
+    /// 布局盒高度。
+    pub height: f32,
+    /// 用于 JS 事件派发的稳定选择器。
+    pub selector: Option<String>,
+}
+
+/// DOM 事件派发参数（浏览器→渲染）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DispatchDomEventParams {
+    /// 目标选择器；为 `None` 时在 `(x, y)` 处命中测试。
+    pub selector: Option<String>,
+    /// 文档坐标 x（选择器为空时使用）。
+    pub x: f32,
+    /// 文档坐标 y。
+    pub y: f32,
+    /// 事件类型（`click`、`keydown` 等）。
+    pub event_type: String,
+    /// `KeyboardEvent.key`
+    pub key: Option<String>,
+    /// `KeyboardEvent.code`
+    pub code: Option<String>,
+}
+
+/// DOM 事件派发结果（渲染→浏览器）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DispatchDomEventResultParams {
+    /// `preventDefault()` 未被调用。
+    pub default_allowed: bool,
 }

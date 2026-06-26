@@ -13,7 +13,7 @@ use zero_webview::{AsyncPageLoad, PageLoadStage, WebView, WebViewBuilder, WebVie
 
 use crate::pages;
 use crate::tab_js_worker::TabJsWorkerHandle;
-use crate::tab_scripts;
+use crate::tab_scripts::{self, DomDispatchResult};
 use crate::tab_snapshot::TabSnapshot;
 use crate::text_metrics;
 
@@ -45,6 +45,14 @@ pub enum TabWorkerCommand {
         x: f32,
         y: f32,
         reply: Sender<Option<ElementHit>>,
+    },
+    /// 向页面元素派发 DOM 事件（click / keydown 等）。
+    DispatchDomEvent {
+        selector: String,
+        event_type: String,
+        key: Option<String>,
+        code: Option<String>,
+        reply: Sender<DomDispatchResult>,
     },
     /// 更新是否允许执行 JavaScript。
     SetJavascriptEnabled(bool),
@@ -115,6 +123,31 @@ impl TabWorkerHandle {
         let (tx, rx) = mpsc::channel();
         self.send(TabWorkerCommand::HitTestElement { x, y, reply: tx });
         rx.recv_timeout(Duration::from_millis(250)).ok().flatten()
+    }
+
+    /// 同步派发 DOM 事件到页面脚本环境。
+    pub fn dispatch_dom_event(
+        &self,
+        selector: &str,
+        event_type: &str,
+        key: Option<&str>,
+        code: Option<&str>,
+    ) -> DomDispatchResult {
+        #[cfg(test)]
+        let _guard = crate::test_sync::tab_runtime_test_guard();
+        let (tx, rx) = mpsc::channel();
+        self.send(TabWorkerCommand::DispatchDomEvent {
+            selector: selector.to_string(),
+            event_type: event_type.to_string(),
+            key: key.map(str::to_string),
+            code: code.map(str::to_string),
+            reply: tx,
+        });
+        rx.recv_timeout(Duration::from_millis(500))
+            .unwrap_or(DomDispatchResult {
+                default_allowed: true,
+                html_changed: false,
+            })
     }
 
     /// 关闭 worker 并等待线程退出。
@@ -214,6 +247,36 @@ fn tab_worker_main(
                     let hit = wv.hit_test_element(x, y);
                     let _ = reply.send(hit);
                 }
+                TabWorkerCommand::DispatchDomEvent {
+                    selector,
+                    event_type,
+                    key,
+                    code,
+                    reply,
+                } => {
+                    let html = wv.html_content().to_string();
+                    let detail = if key.is_some() || code.is_some() {
+                        Some(zero_engine::DomEventDetail {
+                            key,
+                            code,
+                        })
+                    } else {
+                        None
+                    };
+                    let result = tab_scripts::dispatch_dom_event(
+                        &mut wv,
+                        javascript_enabled,
+                        _js_worker.as_ref(),
+                        &selector,
+                        &event_type,
+                        &html,
+                        detail.as_ref(),
+                    );
+                    if result.html_changed {
+                        push_snapshot(&wv, &msg_tx);
+                    }
+                    let _ = reply.send(result);
+                }
                 TabWorkerCommand::SetJavascriptEnabled(enabled) => {
                     javascript_enabled = enabled;
                 }
@@ -231,7 +294,7 @@ fn tab_worker_main(
             with_measure(&font_loader, font_id, || {
                 wv.load_html(&html, css.as_deref());
             });
-            tab_scripts::run_page_scripts(&mut wv, javascript_enabled);
+            tab_scripts::run_page_scripts(&mut wv, javascript_enabled, _js_worker.as_ref());
             if let Some(title) = pages::extract_html_title(&html) {
                 wv.set_title(&title);
             }
@@ -259,7 +322,7 @@ fn tab_worker_main(
                     let _ = msg_tx.send(TabWorkerMessage::LoadError(err));
                     let _ = msg_tx.send(TabWorkerMessage::Title("加载失败".to_string()));
                 } else {
-                    tab_scripts::run_page_scripts(&mut wv, javascript_enabled);
+                    tab_scripts::run_page_scripts(&mut wv, javascript_enabled, _js_worker.as_ref());
                     let title = page_title_from_webview(&wv);
                     let _ = msg_tx.send(TabWorkerMessage::Title(title));
                 }

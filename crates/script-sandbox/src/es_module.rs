@@ -119,11 +119,10 @@ impl EsModuleSandbox {
         let start = std::time::Instant::now();
         let url = url.unwrap_or("zero://module");
 
-        // 转换 ES Module 代码为普通脚本（内联所有依赖）
-        let transformed = build_module_script(source, url, &self.registry, &mut HashSet::new())?;
+        let transformed = compile_module_script(source, url, &self.registry)?;
 
         // 执行转换后的脚本
-        let result = self.sandbox.execute_json(&transformed)?;
+        let result = self.sandbox.execute(&transformed)?;
 
         let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
 
@@ -143,6 +142,122 @@ impl std::fmt::Debug for EsModuleSandbox {
 }
 
 // ── 核心转换逻辑（纯函数） ──
+
+/// 将 ES Module 源码编译为可在 V8 中执行的 IIFE 脚本（内联依赖）。
+pub fn compile_module_script(
+    source: &str,
+    url: &str,
+    registry: &ModuleRegistry,
+) -> Result<String, ScriptError> {
+    let body = build_module_script(source, url, registry, &mut HashSet::new())?;
+    if source.contains("import(") {
+        Ok(format!("(async function() {{\n{body}\n}})();\n"))
+    } else {
+        Ok(body)
+    }
+}
+
+/// 编译依赖模块为可求值的 IIFE 表达式（返回 exports 对象）。
+pub fn compile_dependency_iife(
+    specifier: &str,
+    registry: &ModuleRegistry,
+) -> Result<String, ScriptError> {
+    build_dep_iife(specifier, registry, &mut HashSet::new())
+}
+
+/// 生成模块运行时 prelude（`__moduleCache` + 动态 `import()` 支持）。
+pub fn build_module_runtime_prelude(
+    registry: &ModuleRegistry,
+) -> Result<String, ScriptError> {
+    let mut out = String::from("var __moduleCache = {};\n");
+    for spec in registry.specifiers() {
+        let iife = build_dep_iife(spec, registry, &mut HashSet::new())?;
+        let escaped = spec.replace('\\', "\\\\").replace('\'', "\\'");
+        out.push_str(&format!("__moduleCache['{escaped}'] = {iife};\n"));
+    }
+    out.push_str("globalThis.__zw_load_module = function(spec) {\n");
+    out.push_str("  if (__moduleCache[spec]) return __moduleCache[spec];\n");
+    out.push_str("  var parent = (typeof _importMeta !== 'undefined' && _importMeta.url) ? _importMeta.url : 'about:blank';\n");
+    out.push_str("  var code = __zw_compile_module(spec, parent);\n");
+    out.push_str("  if (!code) throw new Error('Module not found: ' + spec);\n");
+    out.push_str("  __moduleCache[spec] = (function() { return eval('(' + code + ')'); })();\n");
+    out.push_str("  return __moduleCache[spec];\n");
+    out.push_str("};\n");
+    out.push_str(
+        "globalThis.__zw_dynamic_import = function(spec) { return Promise.resolve(__zw_load_module(spec)); };\n",
+    );
+    Ok(out)
+}
+
+fn rewrite_dynamic_imports(source: &str) -> String {
+    let mut out = String::new();
+    let mut i = 0;
+    while i < source.len() {
+        if source[i..].starts_with("import(") {
+            out.push_str("__zw_dynamic_import(");
+            i += "import(".len();
+        } else {
+            let ch = source[i..].chars().next().expect("char");
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    out
+}
+
+/// 从模块源码中提取静态 `import` 依赖标识符。
+pub fn extract_module_import_specifiers(source: &str) -> Vec<String> {
+    let mut specs = Vec::new();
+    for stmt in split_statements(source) {
+        let trimmed = stmt.trim();
+        if !trimmed.starts_with("import ") {
+            continue;
+        }
+        if let Ok(spec) = extract_import_specifier(trimmed) {
+            push_unique_spec(&mut specs, spec);
+        }
+    }
+    push_unique_specs(&mut specs, extract_dynamic_import_specifiers(source));
+    specs
+}
+
+/// 从模块源码中提取 `import('...')` 动态依赖标识符。
+pub fn extract_dynamic_import_specifiers(source: &str) -> Vec<String> {
+    let mut specs = Vec::new();
+    let mut search_from = 0;
+    while let Some(rel) = source[search_from..].find("import(") {
+        let start = search_from + rel + "import(".len();
+        let rest = source[start..].trim_start();
+        if let Ok(spec) = extract_string_literal(rest) {
+            push_unique_spec(&mut specs, spec);
+        }
+        search_from = start;
+    }
+    specs
+}
+
+fn push_unique_spec(specs: &mut Vec<String>, spec: String) {
+    if !specs.contains(&spec) {
+        specs.push(spec);
+    }
+}
+
+fn push_unique_specs(specs: &mut Vec<String>, more: Vec<String>) {
+    for s in more {
+        push_unique_spec(specs, s);
+    }
+}
+
+fn extract_import_specifier(line: &str) -> Result<String, ScriptError> {
+    let rest = &line["import ".len()..];
+    if rest.starts_with('\'') || rest.starts_with('"') || rest.starts_with('`') {
+        return extract_string_literal(rest.split(';').next().unwrap_or(rest).trim());
+    }
+    if let Some(from_pos) = rest.find(" from ") {
+        return extract_import_specifier_from_rest(&rest[from_pos + 6..]);
+    }
+    Err(ScriptError::CompileError(format!("unsupported import: {line}")))
+}
 
 /// 构建完整的模块执行脚本，内联所有依赖。
 fn build_module_script(
@@ -169,8 +284,8 @@ fn build_module_script(
         } else if trimmed.starts_with("export ") {
             output.push_str(&transform_export(trimmed)?);
         } else {
-            // 普通语句：替换 import.meta
-            let s = trimmed.replace("import.meta", "_importMeta");
+            // 普通语句：替换 import.meta 与动态 import()
+            let s = rewrite_dynamic_imports(&trimmed.replace("import.meta", "_importMeta"));
             output.push_str("  ");
             output.push_str(&s);
             output.push_str(";\n");
@@ -212,7 +327,7 @@ fn build_dep_iife(
         } else if trimmed.starts_with("export ") {
             output.push_str(&transform_export(trimmed)?);
         } else {
-            let s = trimmed.replace("import.meta", "_importMeta");
+            let s = rewrite_dynamic_imports(&trimmed.replace("import.meta", "_importMeta"));
             output.push_str("  ");
             output.push_str(&s);
             output.push_str(";\n");
