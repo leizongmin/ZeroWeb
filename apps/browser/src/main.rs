@@ -1054,6 +1054,31 @@ mod tests {
             "fill must not extend above content area top"
         );
     }
+
+    /// 圆角矩形等 extra 图元须与 fill 一样裁剪，避免滚动后盖住地址栏。
+    #[test]
+    fn transform_webview_primitives_clips_rounded_rect_above_viewport() {
+        use app::{ViewportClip, transform_webview_primitives};
+        use zero_render_foundation::color::Color;
+        use zero_render_foundation::geometry::Rect;
+        use zero_render_foundation::primitive::{RenderPrimitives, RoundedRectPrimitive};
+
+        let mut primitives = RenderPrimitives::new();
+        primitives.rounded_rects.push(RoundedRectPrimitive::uniform(
+            Rect::new(10.0, 0.0, 40.0, 20.0),
+            Color::BLUE,
+            4.0,
+        ));
+
+        let chrome_top = layout::TOOLBAR_HEIGHT;
+        let scroll = 50.0;
+        let clip = ViewportClip::new(0.0, chrome_top, 1280.0, 800.0);
+        let out = transform_webview_primitives(&primitives, 0.0, chrome_top - scroll, 1.0, Some(clip));
+        assert!(
+            out.rounded_rects.is_empty(),
+            "rounded rect scrolled above viewport must be culled"
+        );
+    }
 }
 
 // --- 无头模式入口 ---

@@ -169,6 +169,12 @@ impl BrowserApp {
         };
         let clip_top = layout.viewport_y + find_offset;
         let clip_bottom = layout.viewport_y + layout.viewport_h;
+        let clip_viewport = ViewportClip::new(
+            layout.viewport_x,
+            clip_top,
+            layout.viewport_w,
+            clip_bottom - clip_top,
+        );
 
         let y_offset = layout.viewport_y - scroll.y;
         let x_offset = layout.viewport_x - scroll.x;
@@ -178,7 +184,7 @@ impl BrowserApp {
             x_offset,
             y_offset,
             s,
-            Some((clip_top, clip_bottom)),
+            Some(clip_viewport),
         );
 
         // fills 和 glyphs 已通过 append_webview_primitives 混入 chrome 层，此处清空避免重复
@@ -1635,6 +1641,93 @@ pub fn append_webview_primitives(
     fills.len() > fill_start || glyphs.len() > glyph_start
 }
 
+/// 页面视口裁剪区（物理像素）。
+#[derive(Debug, Clone, Copy)]
+pub struct ViewportClip {
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+}
+
+impl ViewportClip {
+    /// 由 `(x, y, w, h)` 构造视口裁剪矩形。
+    pub fn new(x: f32, y: f32, w: f32, h: f32) -> Self {
+        Self {
+            left: x,
+            top: y,
+            right: x + w,
+            bottom: y + h,
+        }
+    }
+
+    fn excludes(&self, x: f32, y: f32, w: f32, h: f32) -> bool {
+        x + w <= self.left || x >= self.right || y + h <= self.top || y >= self.bottom
+    }
+}
+
+fn clip_axis_aligned_rect(
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    clip: ViewportClip,
+) -> Option<(f32, f32, f32, f32)> {
+    if clip.excludes(x, y, w, h) {
+        return None;
+    }
+    let left = x.max(clip.left);
+    let top = y.max(clip.top);
+    let right = (x + w).min(clip.right);
+    let bottom = (y + h).min(clip.bottom);
+    let w = right - left;
+    let h = bottom - top;
+    if w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    Some((left, top, w, h))
+}
+
+fn clamp_rounded_rect_radii(rr: &mut zero_render_foundation::primitive::RoundedRectPrimitive) {
+    let max_r = rr.rect.size.width.min(rr.rect.size.height) * 0.5;
+    rr.top_left_radius = rr.top_left_radius.min(max_r);
+    rr.top_right_radius = rr.top_right_radius.min(max_r);
+    rr.bottom_right_radius = rr.bottom_right_radius.min(max_r);
+    rr.bottom_left_radius = rr.bottom_left_radius.min(max_r);
+}
+
+fn clip_rect_field(rect: &mut Rect, clip: ViewportClip) -> bool {
+    let Some((x, y, w, h)) = clip_axis_aligned_rect(rect.origin.x, rect.origin.y, rect.size.width, rect.size.height, clip)
+    else {
+        return false;
+    };
+    rect.origin.x = x;
+    rect.origin.y = y;
+    rect.size.width = w;
+    rect.size.height = h;
+    true
+}
+
+fn path_vertices_bbox(vertices: &[f32]) -> Option<(f32, f32, f32, f32)> {
+    if vertices.len() < 2 {
+        return None;
+    }
+    let mut min_x = vertices[0];
+    let mut max_x = vertices[0];
+    let mut min_y = vertices[1];
+    let mut max_y = vertices[1];
+    for chunk in vertices.chunks(2).skip(1) {
+        if chunk.len() < 2 {
+            continue;
+        }
+        min_x = min_x.min(chunk[0]);
+        max_x = max_x.max(chunk[0]);
+        min_y = min_y.min(chunk[1]);
+        max_y = max_y.max(chunk[1]);
+    }
+    Some((min_x, min_y, max_x - min_x, max_y - min_y))
+}
+
 /// 将 WebView 的所有 13 种图元类型转换为浏览器坐标（应用 scale、offset、clip）。
 ///
 /// 返回的 `RenderPrimitives` 中的图元坐标为物理像素，
@@ -1644,7 +1737,7 @@ pub fn transform_webview_primitives(
     x_offset: f32,
     y_offset: f32,
     s: f32,
-    clip_y: Option<(f32, f32)>,
+    clip_viewport: Option<ViewportClip>,
 ) -> RenderPrimitives {
     let mut out = RenderPrimitives::new();
 
@@ -1659,32 +1752,29 @@ pub fn transform_webview_primitives(
         s_clone.offset_y *= s;
         s_clone.blur_radius *= s;
         s_clone.spread_radius *= s;
+        if let Some(clip) = clip_viewport
+            && !clip_rect_field(&mut s_clone.rect, clip)
+        {
+            continue;
+        }
         out.shadows.push(s_clone);
     }
 
     // 2. 填充矩形
     for fill in &primitives.fills {
         let x = fill.rect.origin.x * s + x_offset;
-        let mut y = fill.rect.origin.y * s + y_offset;
+        let y = fill.rect.origin.y * s + y_offset;
         let w = fill.rect.size.width * s;
-        let mut h = fill.rect.size.height * s;
-        if let Some((clip_top, clip_bottom)) = clip_y {
-            let bottom = y + h;
-            if bottom <= clip_top || y >= clip_bottom {
-                continue;
+        let h = fill.rect.size.height * s;
+        let Some((x, y, w, h)) = clip_viewport.and_then(|clip| clip_axis_aligned_rect(x, y, w, h, clip)).or_else(|| {
+            if clip_viewport.is_some() {
+                None
+            } else {
+                Some((x, y, w, h))
             }
-            if y < clip_top {
-                h -= clip_top - y;
-                y = clip_top;
-            }
-            let bottom = y + h;
-            if bottom > clip_bottom {
-                h -= bottom - clip_bottom;
-            }
-            if h <= 0.0 {
-                continue;
-            }
-        }
+        }) else {
+            continue;
+        };
         out.fills.push(FillPrimitive {
             rect: Rect::new(x, y, w, h),
             color: fill.color,
@@ -1702,6 +1792,12 @@ pub fn transform_webview_primitives(
         r_clone.top_right_radius *= s;
         r_clone.bottom_right_radius *= s;
         r_clone.bottom_left_radius *= s;
+        if let Some(clip) = clip_viewport
+            && !clip_rect_field(&mut r_clone.rect, clip)
+        {
+            continue;
+        }
+        clamp_rounded_rect_radii(&mut r_clone);
         out.rounded_rects.push(r_clone);
     }
 
@@ -1712,6 +1808,11 @@ pub fn transform_webview_primitives(
         g_clone.rect.origin.y = g_clone.rect.origin.y * s + y_offset;
         g_clone.rect.size.width *= s;
         g_clone.rect.size.height *= s;
+        if let Some(clip) = clip_viewport
+            && !clip_rect_field(&mut g_clone.rect, clip)
+        {
+            continue;
+        }
         g_clone.kind = match g_clone.kind {
             GradientKind::Linear { x0, y0, x1, y1 } => GradientKind::Linear {
                 x0: x0 * s + x_offset,
@@ -1742,10 +1843,10 @@ pub fn transform_webview_primitives(
         let h = image.rect.size.height * s;
         let full_rect = Rect::new(x, y, w, h);
 
-        if let Some((clip_top, clip_bottom)) = clip_y {
-            if full_rect.bottom() <= clip_top || full_rect.top() >= clip_bottom {
-                continue;
-            }
+        if let Some(clip) = clip_viewport
+            && clip.excludes(full_rect.origin.x, full_rect.origin.y, full_rect.size.width, full_rect.size.height)
+        {
+            continue;
         }
 
         let mut i_clone = image.clone();
@@ -1761,14 +1862,12 @@ pub fn transform_webview_primitives(
             i_clone.clip = None;
         }
 
-        if let Some((clip_top, clip_bottom)) = clip_y {
-            let band = Rect::new(full_rect.left(), clip_top, full_rect.size.width, clip_bottom - clip_top);
-            if let Some(window) = full_rect.intersection(&band) {
-                i_clone.clip = match i_clone.clip {
-                    Some(existing) => existing.intersection(&window),
-                    None => Some(window),
-                };
-            }
+        if let Some(clip) = clip_viewport {
+            let window = Rect::new(clip.left, clip.top, clip.right - clip.left, clip.bottom - clip.top);
+            i_clone.clip = match i_clone.clip {
+                Some(existing) => existing.intersection(&window),
+                None => Some(window),
+            };
             if i_clone.clip.is_none() {
                 continue;
             }
@@ -1785,6 +1884,16 @@ pub fn transform_webview_primitives(
         st.x2 = st.x2 * s + x_offset;
         st.y2 = st.y2 * s + y_offset;
         st.width *= s;
+        if let Some(clip) = clip_viewport {
+            let pad = st.width * 0.5;
+            let min_x = st.x1.min(st.x2) - pad;
+            let min_y = st.y1.min(st.y2) - pad;
+            let max_x = st.x1.max(st.x2) + pad;
+            let max_y = st.y1.max(st.y2) + pad;
+            if clip.excludes(min_x, min_y, max_x - min_x, max_y - min_y) {
+                continue;
+            }
+        }
         out.strokes.push(st);
     }
 
@@ -1796,6 +1905,12 @@ pub fn transform_webview_primitives(
             if i + 1 < p_clone.vertices.len() {
                 p_clone.vertices[i + 1] = p_clone.vertices[i + 1] * s + y_offset;
             }
+        }
+        if let Some(clip) = clip_viewport
+            && let Some((x, y, w, h)) = path_vertices_bbox(&p_clone.vertices)
+            && clip.excludes(x, y, w, h)
+        {
+            continue;
         }
         out.path_fills.push(p_clone);
     }
@@ -1810,6 +1925,14 @@ pub fn transform_webview_primitives(
             }
         }
         p_clone.line_width *= s;
+        if let Some(clip) = clip_viewport
+            && let Some((x, y, w, h)) = path_vertices_bbox(&p_clone.vertices)
+        {
+            let pad = p_clone.line_width * 0.5;
+            if clip.excludes(x - pad, y - pad, w + pad * 2.0, h + pad * 2.0) {
+                continue;
+            }
+        }
         out.path_strokes.push(p_clone);
     }
 
@@ -1818,10 +1941,11 @@ pub fn transform_webview_primitives(
         let x = glyph.x * s + x_offset;
         let y = glyph.y * s + y_offset;
         let font_size = glyph.font_size * s;
-        if let Some((clip_top, clip_bottom)) = clip_y {
+        if let Some(clip) = clip_viewport {
             let top = y - font_size;
             let bottom = y + font_size * 0.25;
-            if bottom <= clip_top || top >= clip_bottom {
+            let width = font_size * 0.6;
+            if clip.excludes(x, top, width, bottom - top) {
                 continue;
             }
         }
@@ -1845,6 +1969,11 @@ pub fn transform_webview_primitives(
         c_clone.rect.origin.y = c_clone.rect.origin.y * s + y_offset;
         c_clone.rect.size.width *= s;
         c_clone.rect.size.height *= s;
+        if let Some(viewport) = clip_viewport
+            && !clip_rect_field(&mut c_clone.rect, viewport)
+        {
+            continue;
+        }
         out.clips.push(c_clone);
     }
 
@@ -1859,6 +1988,11 @@ pub fn transform_webview_primitives(
         t_clone.origin_y = t_clone.origin_y * s + y_offset;
         t_clone.tx *= s;
         t_clone.ty *= s;
+        if let Some(clip) = clip_viewport
+            && !clip_rect_field(&mut t_clone.rect, clip)
+        {
+            continue;
+        }
         out.transforms.push(t_clone);
     }
 
@@ -1869,6 +2003,11 @@ pub fn transform_webview_primitives(
         f_clone.rect.origin.y = f_clone.rect.origin.y * s + y_offset;
         f_clone.rect.size.width *= s;
         f_clone.rect.size.height *= s;
+        if let Some(clip) = clip_viewport
+            && !clip_rect_field(&mut f_clone.rect, clip)
+        {
+            continue;
+        }
         out.filters.push(f_clone);
     }
 
@@ -1879,6 +2018,11 @@ pub fn transform_webview_primitives(
         b_clone.rect.origin.y = b_clone.rect.origin.y * s + y_offset;
         b_clone.rect.size.width *= s;
         b_clone.rect.size.height *= s;
+        if let Some(clip) = clip_viewport
+            && !clip_rect_field(&mut b_clone.rect, clip)
+        {
+            continue;
+        }
         out.blend_modes.push(b_clone);
     }
 
