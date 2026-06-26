@@ -342,9 +342,9 @@
 - [ ] **非平凡性检查**：拒绝 `test == ref` 且接近纯色（或 PNG 退化）的 case 自动判 PASS——必须标记为「可疑/退化」并单独审计，防止 harness PNG 加载 bug 等导致的退化假绿（历史已发生，见 `archive/rounds-r23-r139.md` R135/R149）
 - [ ] **严格容差复跑 + 三态分类**：必须在文档锁定容差（布局 ≤ 0.1% / 文字 ≤ 0.5%，优先 WPT fuzzy 注解）下复跑全量，输出 **真通过 / 近似通过（超锁定容差但更宽松）/ 假通过（退化或同源）** 三态。唯一可信达标指标 = **严格容差真通过率**。当前 vertical-rl clearance 用 5% 容差属近似通过，不计入真通过
 - [ ] **容差锁定不可放宽**：布局类 ≤ 0.1%、文字类 ≤ 0.5% 为硬上限。不允许以「实测校准」「字体差异」为由放宽容差；文字类大面积失败必须修渲染，不得放宽容差
-- [ ] **分母真实性（去子集化）**：分母 = 上游每目录**全部**范围内 reftest（从 `MANIFEST.json` 自动提取），不允许每目录只取约 60 个子集（当前 `import-wpt-reftests.sh` 默认 `COUNT=60` 即子集）。须有对账机制量化 `N_imported / N_full` 覆盖率，分阶段补全到全量（见 `tests/wpt-runner/scripts/audit-reftest-coverage.py`）
-- [ ] **GPU 非 passthrough**：GPU 渲染器每种图元必须有独立 WGSL shader/pipeline，不允许 fallback 到 CPU 后处理（当前 DC-9 多图元标「CPU 后处理对齐」= passthrough，违反 DC-9/M7 硬约束）
-- [ ] **内联 smoke 不计达标**：DC-2~5 的内联 reftest 100% 仅作 smoke，不计入达标判定。master.md DC 进度表中任何「内联 100%」不得标记为该 DC 达标
+- [x] ✅(R484) **分母真实性（去子集化）**：分母 = 上游每目录**全部**范围内 reftest（从 `MANIFEST.json` 自动提取）。✅ R484 完成 10/10 目录全量去子集化（~9967 reftest 全覆盖，见 known-gaps「真实 WPT reftest」行 ✅）；`tests/wpt-runner/scripts/audit-reftest-coverage.py` 对账机制存在。原「`COUNT=60` 子集」描述已过时（pre-R484）
+- [x] ✅(R660/R661) **GPU 非 passthrough**：GPU 渲染器每种图元有独立 wgpu+mesh 管线（`draw_gradient/image/rounded_rect_pass` + `collect_*_vertices`，非 CPU 后处理），DC-9 13/13 图元均附 framebuffer 像素断言测试（见 DC-9）。原「DC-9 多图元 CPU 后处理对齐=passthrough」描述已过时（pre-M7）
+- [x] ✅ **内联 smoke 不计达标**：DC-2~5 的内联 reftest 100% 仅作 smoke，不计入达标判定。master.md DC 进度表中任何「内联 100%」不得标记为该 DC 达标（685 inline reftest 明确 smoke-only，通过率统计分母为上游真实 reftest）
 
 ### 通过率统计口径
 
