@@ -73,7 +73,7 @@ struct RendererRuntime {
     inbound_thread: Option<JoinHandle<()>>,
     /// 渲染管线。
     pipeline: RenderPipeline,
-    /// 页面运行时（B3 迁移中：将逐步接管 pipeline / page_scripts / text_metrics；当前 None 未启用）。
+    /// 页面运行时（B3 迁移中：将逐步接管 pipeline / page_scripts / text_metrics；当前已构造、渲染尚未路由）。
     #[allow(dead_code)]
     webview: Option<zero_webview::WebView>,
     /// 字体加载器：为 paint 阶段提供真实字符 advance。
@@ -114,12 +114,21 @@ impl RendererRuntime {
         let mut pipeline = RenderPipeline::new(1280.0, 800.0);
         let (font_loader, font_id) = load_system_fonts(&mut pipeline);
         set_char_measure_fn(text_metrics::measure_char);
+        let js_worker = RendererJsWorker::spawn(renderer_id);
+        // B3：renderer 内部持有 WebView（external_script 委派 js_worker，避免双 V8），
+        // 逐步接管 pipeline/page_scripts/text_metrics（见 doc §11）。当前已构造、尚未路由渲染。
+        let webview = zero_webview::WebView::new(zero_webview::WebViewConfig {
+            width: 1280,
+            height: 800,
+            external_script: Some(js_worker.executor()),
+            ..Default::default()
+        });
         Self {
             outbound,
             inbound_rx,
             inbound_thread: Some(inbound_thread),
             pipeline,
-            webview: None,
+            webview: Some(webview),
             font_loader,
             font_id,
             current_url: None,
@@ -131,7 +140,7 @@ impl RendererRuntime {
             deferred_inbound: VecDeque::new(),
             cached_html: String::new(),
             cached_css: String::new(),
-            js_worker: RendererJsWorker::spawn(renderer_id),
+            js_worker,
             javascript_enabled: true,
             event_target: "body".to_string(),
         }
