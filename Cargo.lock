@@ -5962,6 +5962,7 @@ dependencies = [
  "zero-engine",
  "zero-layout-engine",
  "zero-net",
+ "zero-page-runtime",
  "zero-protocol",
  "zero-render-foundation",
  "zero-script-sandbox",

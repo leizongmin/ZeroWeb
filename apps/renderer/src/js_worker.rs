@@ -101,7 +101,8 @@ impl RendererJsWorker {
         }
     }
 
-    /// 供 WebView 注入的外部脚本执行器。
+    /// 供 WebView 注入的外部脚本执行器（T4 脚本桥接统一后评估是否保留）。
+    #[allow(dead_code)]
     pub fn executor(&self) -> ScriptFn {
         Arc::clone(&self.executor)
     }
