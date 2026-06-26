@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    DomEventDetail, PageScript, RenderPipeline, RenderResult, apply_mutations_to_html, extract_page_scripts,
-    resolve_document_url, script_dispatch_dom_event,
+    DomEventDetail, PageScript, apply_mutations_to_html, extract_page_scripts, resolve_document_url,
+    script_dispatch_dom_event,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -21,12 +21,8 @@ pub struct DomDispatchResult {
 
 /// 页面脚本执行上下文。
 pub struct PageScriptContext<'a> {
-    /// 渲染管线。
-    pub pipeline: &'a mut RenderPipeline,
-    /// 当前 HTML 文档。
+    /// 当前 HTML 文档（脚本执行后同步更新）。
     pub html: &'a mut String,
-    /// 附加 CSS。
-    pub css: &'a str,
     /// 页面 URL。
     pub url: &'a str,
     /// JS worker。
@@ -175,8 +171,4 @@ fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Opti
 /// 渲染进程是否允许直连网络（仅测试；生产路径应经 Browser 进程 `FetchRequest`）。
 pub fn should_skip_scripts(url: &str) -> bool {
     url.starts_with("view-source:")
-}
-
-pub fn rerender(ctx: &mut PageScriptContext<'_>) -> RenderResult {
-    ctx.pipeline.render_html(ctx.html, ctx.css)
 }
