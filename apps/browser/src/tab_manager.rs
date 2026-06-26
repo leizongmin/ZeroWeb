@@ -268,12 +268,9 @@ impl TabManager {
 
     /// 链接命中测试（主线程快照，不阻塞渲染进程）。
     pub fn hit_test_link(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<String> {
-        if let Some(href) = self
-            .snapshots
-            .get(&tab_id)?
-            .hit_test
-            .as_ref()?
-            .hit_test_link(x, y)
+        if let Some(snap) = self.snapshots.get(&tab_id)
+            && let Some(hit_test) = snap.hit_test.as_ref()
+            && let Some(href) = hit_test.hit_test_link(x, y)
         {
             return Some(href);
         }
@@ -285,12 +282,9 @@ impl TabManager {
 
     /// 元素命中测试（主线程快照，不阻塞渲染进程）。
     pub fn hit_test_element(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<zero_engine::ElementHit> {
-        if let Some(hit) = self
-            .snapshots
-            .get(&tab_id)?
-            .hit_test
-            .as_ref()?
-            .hit_test_element(x, y)
+        if let Some(snap) = self.snapshots.get(&tab_id)
+            && let Some(hit_test) = snap.hit_test.as_ref()
+            && let Some(hit) = hit_test.hit_test_element(x, y)
         {
             return Some(hit);
         }
@@ -302,7 +296,8 @@ impl TabManager {
 
     /// 向页面元素派发 DOM 事件并返回是否允许默认行为。
     pub fn dispatch_dom_event(&mut self, tab_id: TabId, selector: &str, event_type: &str) -> bool {
-        self.dispatch_dom_event_impl(tab_id, selector, event_type, None).default_allowed
+        self.dispatch_dom_event_impl(tab_id, selector, event_type, None)
+            .default_allowed
     }
 
     fn dispatch_dom_event_impl(
@@ -367,7 +362,8 @@ impl TabManager {
             key: Some(key.to_string()),
             code: Some(code.to_string()),
         };
-        self.dispatch_dom_event_impl(tab_id, &selector, event_type, Some(detail)).html_changed
+        self.dispatch_dom_event_impl(tab_id, &selector, event_type, Some(detail))
+            .html_changed
     }
 
     /// 处理页面点击释放：派发 mouseup/click，返回是否允许默认行为（链接导航）。

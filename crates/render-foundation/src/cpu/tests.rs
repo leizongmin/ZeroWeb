@@ -4,6 +4,7 @@ use super::*;
 use crate::color::Color;
 use crate::geometry::Rect;
 use crate::gpu::renderer::GlyphDraw;
+use crate::image_cache::{ImageCache, ImageData, ImageKey};
 use crate::primitive::{
     BlendMode, BlendModePrimitive, ClipPrimitive, FillPrimitive, FilterKind, FilterPrimitive, GradientKind,
     GradientPrimitive, GradientStop, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
@@ -75,6 +76,29 @@ fn scale_dimension_edge_cases() {
     assert_eq!(scale_dimension(0, 2.0), 1);
     assert_eq!(scale_dimension(100, 1.0), 100);
     assert_eq!(scale_dimension(100, 1.5), 150);
+}
+
+#[test]
+fn render_image_releases_cache_reference_after_draw() {
+    let mut fb = FrameBuffer::new(8, 8);
+    let mut cache = ImageCache::new(8, 1024 * 1024);
+    let image = ImageData::from_rgba([255u8, 0, 0, 255].repeat(4), 2, 2).unwrap();
+    let key = ImageKey::new(7);
+    cache.insert_with_key(key.clone(), image);
+
+    let primitive = ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 4.0, 4.0),
+        image_key: key.clone(),
+        clip: None,
+    };
+
+    render_image(&mut fb, &primitive, 1.0, &mut cache);
+
+    assert_eq!(
+        cache.ref_count(&key),
+        Some(1),
+        "rendering should return image-cache refcount to baseline"
+    );
 }
 
 // ─── M7 新增图元测试 ───

@@ -158,13 +158,13 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
     for mutation in mutations {
         match mutation {
             DomMutation::SetAttr { selector, name, value } => {
-                let node = find_by_selector(doc, selector)
-                    .ok_or_else(|| format!("set_attr: no match for {selector}"))?;
+                let node =
+                    find_by_selector(doc, selector).ok_or_else(|| format!("set_attr: no match for {selector}"))?;
                 doc.set_attribute(node, name, value);
             }
             DomMutation::SetText { selector, text } => {
-                let node = find_by_selector(doc, selector)
-                    .ok_or_else(|| format!("set_text: no match for {selector}"))?;
+                let node =
+                    find_by_selector(doc, selector).ok_or_else(|| format!("set_text: no match for {selector}"))?;
                 doc.set_text_content(node, text);
             }
             DomMutation::SetInnerHtml { selector, html } => {
@@ -172,9 +172,13 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                     .ok_or_else(|| format!("set_inner_html: no match for {selector}"))?;
                 replace_inner_html(doc, node, html)?;
             }
-            DomMutation::SetStyle { selector, property, value } => {
-                let node = find_by_selector(doc, selector)
-                    .ok_or_else(|| format!("set_style: no match for {selector}"))?;
+            DomMutation::SetStyle {
+                selector,
+                property,
+                value,
+            } => {
+                let node =
+                    find_by_selector(doc, selector).ok_or_else(|| format!("set_style: no match for {selector}"))?;
                 apply_style_property(doc, node, property, value);
             }
             DomMutation::Remove { selector } => {
@@ -239,7 +243,11 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                     .ok_or_else(|| format!("unknown handle {handle}"))?;
                 replace_inner_html(doc, node, html)?;
             }
-            DomMutation::SetStyleOnHandle { handle, property, value } => {
+            DomMutation::SetStyleOnHandle {
+                handle,
+                property,
+                value,
+            } => {
                 let node = handles
                     .get(handle)
                     .copied()
@@ -373,7 +381,9 @@ pub fn query_attr_from_html(html: &str, selector: &str, name: &str) -> String {
 /// 从当前 HTML 快照查询 innerHTML。
 pub fn query_inner_html_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
-    find_by_selector(&doc, selector).map(|n| doc.inner_html(n)).unwrap_or_default()
+    find_by_selector(&doc, selector)
+        .map(|n| doc.inner_html(n))
+        .unwrap_or_default()
 }
 
 /// 从已记录变更中查询 create 句柄上的 innerHTML。
@@ -437,13 +447,20 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
 /// 从当前 HTML 快照查询 textContent。
 pub fn query_text_from_html(html: &str, selector: &str) -> String {
     let doc = parse_html(html);
-    find_by_selector(&doc, selector).map(|n| doc.inner_html(n)).unwrap_or_default()
+    find_by_selector(&doc, selector)
+        .map(|n| doc.inner_html(n))
+        .unwrap_or_default()
 }
 
 /// 从已记录变更中查询 create 句柄上的属性（脚本执行期间只读）。
 pub fn query_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: &str) -> String {
     for m in mutations.iter().rev() {
-        if let DomMutation::SetAttrOnHandle { handle: h, name: n, value: v } = m {
+        if let DomMutation::SetAttrOnHandle {
+            handle: h,
+            name: n,
+            value: v,
+        } = m
+        {
             if h == handle && n == name {
                 return v.clone();
             }

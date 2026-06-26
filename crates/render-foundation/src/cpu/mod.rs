@@ -610,6 +610,7 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
     let rect_w = (image.rect.right() - image.rect.left()) * scale;
     let rect_h = (image.rect.bottom() - image.rect.top()) * scale;
     if rect_w <= 0.0 || rect_h <= 0.0 {
+        image_cache.release(&image.image_key);
         return;
     }
 
@@ -630,6 +631,7 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
     let bottom = draw_bottom.ceil().min(fb.height as f32) as u32;
 
     if left >= right || top >= bottom {
+        image_cache.release(&image.image_key);
         return;
     }
 
@@ -638,6 +640,7 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
     if let Some(color) = data.solid_color() {
         let [sr, sg, sb, sa] = color;
         if sa == 0 {
+            image_cache.release(&image.image_key);
             return; // 全透明，跳过
         }
         for y in top..bottom {
@@ -653,6 +656,7 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
                 }
             }
         }
+        image_cache.release(&image.image_key);
         return;
     }
 
@@ -700,6 +704,7 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
             }
         }
     }
+    image_cache.release(&image.image_key);
 }
 
 /// 应用矩形裁剪 — 将裁剪区域外的像素清除为透明。

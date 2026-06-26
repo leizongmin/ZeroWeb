@@ -4,12 +4,12 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    apply_mutations_to_html, extract_page_scripts, resolve_document_url, script_dispatch_dom_event, DomEventDetail,
-    PageScript,
+    DomEventDetail, PageScript, apply_mutations_to_html, extract_page_scripts, resolve_document_url,
+    script_dispatch_dom_event,
 };
 use zero_webview::WebView;
 
-use crate::tab_js_worker::{collect_module_deps, TabJsWorkerHandle};
+use crate::tab_js_worker::{TabJsWorkerHandle, collect_module_deps};
 
 /// DOM 事件派发结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,21 +60,14 @@ impl PageScriptRunner {
     }
 
     /// 执行下一个 `<script>`；返回是否建议推送快照。
-    pub fn tick(
-        &mut self,
-        wv: &mut WebView,
-        js_worker: Option<&TabJsWorkerHandle>,
-    ) -> PageScriptTickResult {
+    pub fn tick(&mut self, wv: &mut WebView, js_worker: Option<&TabJsWorkerHandle>) -> PageScriptTickResult {
         if !self.is_active() {
             return PageScriptTickResult::Idle;
         }
 
         let script = &self.scripts[self.index];
         let label = page_script_label(script);
-        let is_module = matches!(
-            script,
-            PageScript::InlineModule(_) | PageScript::ExternalModule(_)
-        );
+        let is_module = matches!(script, PageScript::InlineModule(_) | PageScript::ExternalModule(_));
         let module_url = match script {
             PageScript::ExternalModule(src) => resolve_document_url(&self.base, src),
             PageScript::InlineModule(_) => self.base.clone(),
@@ -96,15 +89,7 @@ impl PageScriptRunner {
             }
         };
 
-        if let Err(e) = execute_script_chunk(
-            wv,
-            js_worker,
-            &self.html,
-            is_module,
-            &module_url,
-            &code,
-            true,
-        ) {
+        if let Err(e) = execute_script_chunk(wv, js_worker, &self.html, is_module, &module_url, &code, true) {
             warn!("page script error ({}): {e}", label);
         }
 
@@ -231,11 +216,7 @@ fn execute_script_chunk(
     Ok(())
 }
 
-fn apply_recorded_mutations(
-    wv: &mut WebView,
-    js_worker: Option<&TabJsWorkerHandle>,
-    html: &str,
-) -> Option<String> {
+fn apply_recorded_mutations(wv: &mut WebView, js_worker: Option<&TabJsWorkerHandle>, html: &str) -> Option<String> {
     let recorded = js_worker
         .map(|w| w.mutations().lock().unwrap_or_else(|e| e.into_inner()).clone())
         .unwrap_or_default();

@@ -1,13 +1,10 @@
 //! 多进程 IPC 绘制快照 ↔ 浏览器 TabSnapshot 转换。
 
 use zero_engine::PipelineTimings;
-use zero_engine::{
-    HitTestCache, HitTestCacheSnapshot, HitTestLayoutSnapshot, HitTestNodeSnapshot, node_id_from_u64,
-};
 use zero_protocol::{
     IpcBlendMode, IpcColor, IpcDrawOp, IpcFill, IpcFilterKind, IpcGradient, IpcGradientKind, IpcGradientStop,
-    IpcHitTestCache, IpcHitTestLayoutNode, IpcImage, IpcImagePayload, IpcLineCap, IpcLineStyle, IpcRect, IpcRoundedRect,
-    IpcShadow, IpcStroke, PaintSnapshotParams,
+    IpcImage, IpcImagePayload, IpcLineCap, IpcLineStyle, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke,
+    PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -257,44 +254,82 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
         timings: PipelineTimings::default(),
     });
     snap.document_height = Some(params.document_height);
-    snap.hit_test = params.hit_test.map(hit_test_cache_from_ipc);
+    // Multi-process mode keeps hit-testing authoritative in the renderer process.
+    // The browser consumes a composited frame here, but should not retain a page-sized
+    // interaction tree long-term.
+    let _ = params.hit_test;
+    snap.hit_test = None;
 }
 
-fn hit_test_cache_from_ipc(ipc: IpcHitTestCache) -> HitTestCache {
-    let snapshot = HitTestCacheSnapshot {
-        doc_root: node_id_from_u64(ipc.doc_root),
-        layout_root: hit_test_layout_from_ipc(&ipc.layout_root),
-        nodes: ipc
-            .nodes
-            .into_iter()
-            .map(|(id, meta)| {
-                (
-                    node_id_from_u64(id),
-                    HitTestNodeSnapshot {
-                        tag_name: meta.tag_name,
-                        id: meta.id,
-                        class_name: meta.class_name,
-                        href: meta.href,
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_protocol::{IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta};
+
+    #[test]
+    fn apply_paint_snapshot_keeps_hit_test_authoritative_in_renderer() {
+        let mut snap = TabSnapshot::default();
+        let params = PaintSnapshotParams {
+            document_height: 42.0,
+            hit_test: Some(IpcHitTestCache {
+                doc_root: 1,
+                layout_root: IpcHitTestLayoutNode {
+                    node_id: Some(1),
+                    x: 0.0,
+                    y: 0.0,
+                    width: 10.0,
+                    height: 10.0,
+                    children: Vec::new(),
+                },
+                nodes: std::iter::once((
+                    1,
+                    IpcHitTestNodeMeta {
+                        tag_name: "a".to_string(),
+                        id: None,
+                        class_name: None,
+                        href: Some("https://example.com".to_string()),
                     },
-                )
-            })
-            .collect(),
-        parents: ipc
-            .parents
-            .into_iter()
-            .map(|(child, parent)| (node_id_from_u64(child), node_id_from_u64(parent)))
-            .collect(),
-    };
-    HitTestCache::from_snapshot(snapshot)
-}
+                ))
+                .collect(),
+                parents: Default::default(),
+            }),
+            ..Default::default()
+        };
 
-fn hit_test_layout_from_ipc(node: &IpcHitTestLayoutNode) -> HitTestLayoutSnapshot {
-    HitTestLayoutSnapshot {
-        node_id: node.node_id.map(node_id_from_u64),
-        x: node.x,
-        y: node.y,
-        width: node.width,
-        height: node.height,
-        children: node.children.iter().map(hit_test_layout_from_ipc).collect(),
+        apply_paint_snapshot(&mut snap, params);
+
+        assert!(snap.last_render.is_some(), "frame data should still be applied");
+        assert!(snap.hit_test.is_none(), "browser should not retain renderer hit-test trees");
+    }
+
+    #[test]
+    fn apply_paint_snapshot_keeps_new_image_payload_available() {
+        let mut snap = TabSnapshot::default();
+        let params = PaintSnapshotParams {
+            images: vec![IpcImage {
+                rect: IpcRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 4.0,
+                    height: 4.0,
+                },
+                image_key: 99,
+                clip: None,
+            }],
+            image_payloads: vec![IpcImagePayload {
+                image_key: 99,
+                width: 2,
+                height: 2,
+                rgba: [255u8, 0, 0, 255].repeat(4),
+            }],
+            ..Default::default()
+        };
+
+        apply_paint_snapshot(&mut snap, params);
+
+        assert!(
+            snap.image_cache.get(&ImageKey::new(99)).is_some(),
+            "newly injected image payload should remain available for immediate rendering"
+        );
     }
 }

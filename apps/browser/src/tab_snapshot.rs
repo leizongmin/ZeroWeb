@@ -54,4 +54,8 @@ impl TabSnapshot {
             hit_test: wv.build_hit_test_cache(),
         }
     }
+
+    pub fn clear_browser_owned_hit_test(&mut self) {
+        self.hit_test = None;
+    }
 }

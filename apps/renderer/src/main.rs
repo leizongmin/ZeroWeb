@@ -5,11 +5,12 @@ mod error_page;
 mod js_worker;
 mod page_scripts;
 mod paint_export;
+mod text_metrics;
 
 use async_load::PageLoadHost;
 
 use crate::js_worker::RendererJsWorker;
-use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, rerender, run_page_scripts, should_skip_scripts};
+use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, rerender, run_page_scripts};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc::{self, Receiver};
@@ -23,9 +24,10 @@ use std::io;
 
 use zero_engine::{
     DomEventDetail, PrefersColorSchemeValue, RenderPipeline, RenderResult, selector_from_element_hit,
+    set_char_measure_fn,
 };
-use zero_protocol::ProcessRole;
 use zero_protocol::IpcChannel;
+use zero_protocol::ProcessRole;
 use zero_protocol::message::{
     DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams,
     HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMessage,
@@ -71,6 +73,10 @@ struct RendererRuntime {
     inbound_thread: Option<JoinHandle<()>>,
     /// 渲染管线。
     pipeline: RenderPipeline,
+    /// 字体加载器：为 paint 阶段提供真实字符 advance。
+    font_loader: FontLoader,
+    /// 当前主字体 id。
+    font_id: Option<u32>,
     /// 当前 URL。
     current_url: Option<String>,
     /// 消息 ID 计数器。
@@ -103,12 +109,15 @@ impl RendererRuntime {
         let outbound = PipeTransport::new(io::empty(), io::stdout());
         let (inbound_rx, inbound_thread) = spawn_browser_ipc_inbound();
         let mut pipeline = RenderPipeline::new(1280.0, 800.0);
-        load_system_fonts(&mut pipeline);
+        let (font_loader, font_id) = load_system_fonts(&mut pipeline);
+        set_char_measure_fn(text_metrics::measure_char);
         Self {
             outbound,
             inbound_rx,
             inbound_thread: Some(inbound_thread),
             pipeline,
+            font_loader,
+            font_id,
             current_url: None,
             next_msg_id: 1,
             next_fetch_id: 1,
@@ -154,7 +163,16 @@ impl RendererRuntime {
         self.cached_css = css;
         let js_enabled = self.javascript_enabled;
         let fetch_cache = self.build_script_fetch_cache();
-        let mut ctx = self.page_script_context();
+        let font_loader = &self.font_loader;
+        let font_id = self.font_id;
+        let current_url = self.current_url.as_deref().unwrap_or("about:blank");
+        let mut ctx = PageScriptContext {
+            pipeline: &mut self.pipeline,
+            html: &mut self.cached_html,
+            css: &self.cached_css,
+            url: current_url,
+            js_worker: &self.js_worker,
+        };
         let fetch_from_cache = |url: &str| {
             fetch_cache
                 .get(url)
@@ -162,7 +180,7 @@ impl RendererRuntime {
                 .ok_or_else(|| format!("script fetch failed: {url}"))
         };
         if run_page_scripts(&mut ctx, js_enabled, fetch_from_cache) {
-            let result = rerender(&mut ctx);
+            let result = text_metrics::with_measure_ctx_opt(font_loader, font_id, || rerender(&mut ctx));
             self.publish_render(&result, None)?;
         }
         Ok(())
@@ -214,16 +232,6 @@ impl RendererRuntime {
         cache
     }
 
-    fn page_script_context(&mut self) -> PageScriptContext<'_> {
-        PageScriptContext {
-            pipeline: &mut self.pipeline,
-            html: &mut self.cached_html,
-            css: &self.cached_css,
-            url: self.current_url.as_deref().unwrap_or("about:blank"),
-            js_worker: &self.js_worker,
-        }
-    }
-
     fn publish_render(&mut self, result: &RenderResult, title: Option<String>) -> Result<(), String> {
         let html = self.cached_html.clone();
         let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
@@ -254,7 +262,16 @@ impl RendererRuntime {
         if let Some(sel) = selector {
             self.event_target = sel.clone();
             let js_enabled = self.javascript_enabled;
-            let mut ctx = self.page_script_context();
+            let font_loader = &self.font_loader;
+            let font_id = self.font_id;
+            let current_url = self.current_url.as_deref().unwrap_or("about:blank");
+            let mut ctx = PageScriptContext {
+                pipeline: &mut self.pipeline,
+                html: &mut self.cached_html,
+                css: &self.cached_css,
+                url: current_url,
+                js_worker: &self.js_worker,
+            };
             let result = dispatch_dom_event(
                 &mut ctx,
                 js_enabled,
@@ -263,7 +280,7 @@ impl RendererRuntime {
                 detail.as_ref(),
             );
             if result.html_changed {
-                let render = rerender(&mut ctx);
+                let render = text_metrics::with_measure_ctx_opt(font_loader, font_id, || rerender(&mut ctx));
                 let _ = self.publish_render(&render, None);
             }
             result
@@ -324,6 +341,8 @@ impl RendererRuntime {
         let url_for_images = page_url.clone();
 
         {
+            let font_loader = &self.font_loader;
+            let font_id = self.font_id;
             let outbound = &mut self.outbound;
             let inbound_rx = &self.inbound_rx;
             let next_msg_id = &mut self.next_msg_id;
@@ -340,10 +359,16 @@ impl RendererRuntime {
                 viewport,
             };
 
-            async_load::run_page_load(pipeline, &page_url, &html, &mut host)?;
+            text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
+                async_load::run_page_load(pipeline, &page_url, &html, &mut host)
+            })?;
         }
 
-        if let Some(result) = self.pipeline.repaint_cached_viewport("") {
+        let font_loader = &self.font_loader;
+        let font_id = self.font_id;
+        let pipeline = &mut self.pipeline;
+        if let Some(result) = text_metrics::with_measure_ctx_opt(font_loader, font_id, || pipeline.repaint_cached_viewport(""))
+        {
             let payloads = paint_export::fetch_image_payloads_with_fetch(&html_for_images, &url_for_images, &mut |u| {
                 self.fetch_get(u).ok()
             });
@@ -402,7 +427,11 @@ impl RendererRuntime {
     }
 
     fn try_republish_cached(&mut self) -> Result<(), String> {
-        let Some(result) = self.pipeline.repaint_cached_viewport("") else {
+        let font_loader = &self.font_loader;
+        let font_id = self.font_id;
+        let pipeline = &mut self.pipeline;
+        let Some(result) = text_metrics::with_measure_ctx_opt(font_loader, font_id, || pipeline.repaint_cached_viewport(""))
+        else {
             return Ok(());
         };
         publish_render_result(
@@ -768,7 +797,6 @@ fn publish_render_result(
     image_payloads: Vec<zero_protocol::IpcImagePayload>,
 ) -> Result<(), String> {
     let doc_h = pipeline.document_height().unwrap_or(pipeline.viewport_height());
-    let hit_test = pipeline.build_hit_test_cache();
     publish_render_with_layout(
         outbound,
         next_msg_id,
@@ -778,7 +806,7 @@ fn publish_render_result(
         result,
         title,
         image_payloads,
-        hit_test,
+        None,
     )
 }
 
@@ -789,8 +817,9 @@ fn ipc_scheme_to_engine(scheme: IpcColorScheme) -> PrefersColorSchemeValue {
     }
 }
 
-fn load_system_fonts(pipeline: &mut RenderPipeline) {
+fn load_system_fonts(pipeline: &mut RenderPipeline) -> (FontLoader, Option<u32>) {
     let mut loader = FontLoader::new();
+    let mut primary_font_id = None;
     #[cfg(target_os = "windows")]
     let primary_paths = ["C:\\Windows\\Fonts\\segoeui.ttf", "C:\\Windows\\Fonts\\arial.ttf"];
     #[cfg(target_os = "macos")]
@@ -810,8 +839,10 @@ fn load_system_fonts(pipeline: &mut RenderPipeline) {
         Some((id, *path))
     }) {
         tracing::info!("Renderer primary font: {path} (id={id})");
+        primary_font_id = Some(id);
         pipeline.set_font_resolver(loader.build_font_resolver());
     }
+    (loader, primary_font_id)
 }
 
 fn parse_renderer_launch() -> (ProcessRole, u64) {

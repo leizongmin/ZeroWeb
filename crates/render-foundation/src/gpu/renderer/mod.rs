@@ -1089,6 +1089,7 @@ impl GpuRenderer {
             };
             let (iw, ih) = (image_data.width, image_data.height);
             if iw == 0 || ih == 0 {
+                ic.release(&img.image_key);
                 continue;
             }
 
@@ -1190,6 +1191,7 @@ impl GpuRenderer {
                 u1, v0, 1.0, 1.0, 1.0, right, b, u1, v1, 1.0, 1.0, 1.0, l, b, u0, v1, 1.0, 1.0, 1.0,
             ];
             resources.push((bg, verts));
+            ic.release(&img.image_key);
         }
         resources
     }
