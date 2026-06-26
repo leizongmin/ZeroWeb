@@ -108,6 +108,9 @@ impl AsyncPageLoad {
             self.document_rx = None;
             match result {
                 Ok(html) => {
+                    if let Some(title) = extract_document_title(&html) {
+                        webview.set_title(&title);
+                    }
                     self.html = Some(html);
                     self.stage = PageLoadStage::FirstPaint;
                     self.budget_pending = true;
@@ -282,5 +285,20 @@ impl AsyncPageLoad {
             *changed = true;
             let _ = self.advance_render(webview, budget_ms);
         }
+    }
+}
+
+fn extract_document_title(html: &str) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let tag_start = lower.find("<title")?;
+    let content_start = html[tag_start..].find('>')? + tag_start + 1;
+    let rest = &html[content_start..];
+    let lower_rest = rest.to_ascii_lowercase();
+    let end = lower_rest.find("</title>")?;
+    let title = rest[..end].trim();
+    if title.is_empty() {
+        None
+    } else {
+        Some(title.to_string())
     }
 }

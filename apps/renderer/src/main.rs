@@ -173,12 +173,7 @@ impl RendererRuntime {
         tracing::error!("页面加载失败 ({page_url}): {error}");
         self.send(IpcMessageKind::LoadFailed(error.to_string()))?;
         let html = error_page::generate_error_page(page_url, error);
-        self.run_staged_load(
-            format!("error://{page_url}"),
-            html,
-            false,
-            false,
-        )?;
+        self.run_staged_load(format!("error://{page_url}"), html, false, false)?;
         self.send(IpcMessageKind::TitleChanged("加载失败".to_string()))
     }
 

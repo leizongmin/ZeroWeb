@@ -852,8 +852,9 @@ impl BrowserApp {
         // 获取当前标签的滚动偏移
         let tab_id = self.shell.active_tab_id().unwrap();
         let scroll_y = self.scroll_offset.get(&tab_id).copied().unwrap_or(0.0);
+        let has_render = self.tabs.last_render(tab_id).is_some();
 
-        if !is_loading && self.render_active_webview(fills, glyphs, content_x, page_y, fid, scroll_y) {
+        if has_render && self.render_active_webview(fills, glyphs, content_x, page_y, fid, scroll_y) {
             return;
         }
 
