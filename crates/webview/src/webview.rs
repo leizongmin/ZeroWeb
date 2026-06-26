@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use zero_engine::{
-    PipelineTimings, PrefersColorSchemeValue, RenderPipeline, extract_img_srcs, extract_stylesheet_hrefs,
-    image_resource_key, resolve_document_url,
+    BudgetAdvance, BudgetedRenderSession, PipelineTimings, PrefersColorSchemeValue, RenderPipeline, RenderResult,
+    extract_img_srcs, extract_stylesheet_hrefs, image_resource_key, resolve_document_url,
 };
 use zero_net::{HttpCache, HttpClient, NetError, is_file_url};
 use zero_render_foundation::image_cache::{ImageCache, ImageKey, decode_image_bytes};
@@ -335,6 +335,16 @@ impl WebView {
         &mut self.image_cache
     }
 
+    /// 图片缓存只读引用（快照用）。
+    pub fn image_cache_ref(&self) -> &ImageCache {
+        &self.image_cache
+    }
+
+    /// 复制图片缓存供 UI 线程快照。
+    pub fn snapshot_image_cache(&self) -> ImageCache {
+        self.image_cache.duplicate_for_snapshot()
+    }
+
     /// 加载 URL（同步 HTTP GET）。
     ///
     /// 通过 zero-net 发起 HTTP 请求，获取 HTML 并渲染。
@@ -525,6 +535,52 @@ impl WebView {
         };
         self.last_render = Some(render_result.clone());
         render_result
+    }
+
+    /// 导航前设置文档 URL 与 pipeline 状态（供异步加载使用）。
+    pub fn prepare_document_state(&mut self, page_url: &str) {
+        self.current_url = Some(page_url.to_string());
+        self.loading = true;
+        self.pipeline.set_document_url(Some(page_url));
+        self.security_context.set_page_origin(page_url);
+        self.emit_event(&WebViewEvent::LoadStart(page_url.to_string()));
+    }
+
+    /// 推进预算渲染会话。
+    pub fn advance_budget_session(&mut self, session: &mut BudgetedRenderSession, budget_ms: f64) -> BudgetAdvance {
+        self.sync_pipeline_page_state();
+        self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
+        self.pipeline.advance_budgeted_render(session, budget_ms)
+    }
+
+    /// 应用预算渲染结果到 WebView 状态。
+    pub fn apply_render_result(&mut self, result: RenderResult, page_url: &str, finished: bool) {
+        let render_result = WebViewRenderResult {
+            primitives: result.primitives,
+            timings: result.timings,
+        };
+        self.last_render = Some(render_result);
+        if finished {
+            self.loading = false;
+            self.emit_event(&WebViewEvent::LoadEnd(page_url.to_string()));
+        }
+    }
+
+    /// 设置缓存 HTML/CSS（异步管线渲染前调用）。
+    pub fn set_cached_content(&mut self, html: &str, css: &str) {
+        self.cached_html = html.to_string();
+        self.cached_css = css.to_string();
+    }
+
+    /// 已缓存图片固有尺寸。
+    pub fn cached_image_sizes(&self) -> &HashMap<u64, (f32, f32)> {
+        &self.cached_image_sizes
+    }
+
+    /// 更新图片固有尺寸并同步到 pipeline。
+    pub fn set_image_sizes(&mut self, sizes: HashMap<u64, (f32, f32)>) {
+        self.cached_image_sizes = sizes.clone();
+        self.pipeline.set_image_sizes(sizes);
     }
 
     /// 获取当前 URL。

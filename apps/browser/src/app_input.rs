@@ -113,11 +113,12 @@ impl BrowserApp {
         let s = self.scale_factor;
         let content_h = self.content_physical_size().1 as f32;
         let page_height_logical = self
-            .webviews
-            .get(&tab_id)
-            .and_then(|wv| {
-                wv.document_height()
-                    .or_else(|| wv.last_render().map(|r| primitives_content_height(&r.primitives)))
+            .tabs
+            .document_height(tab_id)
+            .or_else(|| {
+                self.tabs
+                    .last_render(tab_id)
+                    .map(|r| primitives_content_height(&r.primitives))
             })
             .unwrap_or(0.0);
 
@@ -628,7 +629,7 @@ impl BrowserApp {
                     if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32) {
                         let collapsed = self.page_selection.get(&tab_id).is_none_or(|s| s.is_collapsed());
                         if collapsed
-                            && let Some(href) = self.webviews.get(&tab_id).and_then(|wv| wv.hit_test_link(doc_x, doc_y))
+                            && let Some(href) = self.tabs.hit_test_link(tab_id, doc_x, doc_y)
                         {
                             self.navigate_to(&href);
                         }
@@ -935,8 +936,7 @@ impl BrowserApp {
 
     /// 与渲染一致的页面 glyph 列表。
     fn page_glyphs(&self, tab_id: TabId) -> Option<Vec<zero_render_foundation::primitive::GlyphPrimitive>> {
-        let wv = self.webviews.get(&tab_id)?;
-        Some(wv.last_render()?.primitives.glyphs.clone())
+        Some(self.tabs.last_render(tab_id)?.primitives.glyphs.clone())
     }
 
     fn address_bar_layout(&self) -> (f32, f32, f32, f32) {
@@ -1003,11 +1003,7 @@ impl BrowserApp {
         {
             ContextType::Selection
         } else if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
-            && self
-                .webviews
-                .get(&tab_id)
-                .and_then(|wv| wv.hit_test_link(doc_x, doc_y))
-                .is_some()
+            && self.tabs.hit_test_link(tab_id, doc_x, doc_y).is_some()
         {
             ContextType::Link
         } else {

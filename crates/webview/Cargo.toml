@@ -19,6 +19,7 @@ url = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
 
 [dev-dependencies]
 criterion = { workspace = true }
