@@ -77,5 +77,9 @@ pub const PAGE_FRAME_BOTTOM_UI_GUARD: f32 = STATUS_BAR_HEIGHT;
 pub const PAGE_FRAME_BORDER: f32 = 1.0;
 /// 页面视口圆角半径
 pub const PAGE_FRAME_RADIUS: f32 = 8.0;
+/// 页面滚动条厚度（逻辑像素，classic 滚动条占位）
+pub const SCROLLBAR_THICKNESS: f32 = 12.0;
+/// 滚动条滑块最小长度（逻辑像素）
+pub const SCROLLBAR_MIN_THUMB: f32 = 24.0;
 /// Wayland 无系统装饰时，非最大化窗口外框描边宽度
 pub const WINDOW_FRAME_BORDER: f32 = 1.0;

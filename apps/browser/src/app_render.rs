@@ -104,6 +104,9 @@ impl BrowserApp {
         // 11. 页面内容（含滚动偏移）
         self.render_page_content(&mut fills, &mut glyphs, width, content_x, content_y, font_size, s);
 
+        // 11b. 页面滚动条（overlay，始终显示于溢出时）
+        self.render_page_scrollbars(&mut overlay_fills, width, height);
+
         // 12. 查找栏（覆盖在页面内容上方）
         if self.shell.find_state().is_active() {
             self.render_find_bar(&mut fills, &mut glyphs, width, content_y, font_size, s);
@@ -146,6 +149,9 @@ impl BrowserApp {
             None => return RenderPrimitives::new(),
         };
 
+        let layout = self.page_scroll_layout_for(tab_id, self.physical_size.0, self.physical_size.1);
+        let scroll = self.tab_scroll_state(tab_id);
+
         let primitives = match self
             .tabs
             .last_render(tab_id)
@@ -156,23 +162,20 @@ impl BrowserApp {
         };
 
         let s = self.scale_factor;
-        let (content_x, content_y, content_w, content_h) = self.page_content_rect();
-        let chrome_top = self.chrome_top_y_for(s);
-        let scroll_y = self.scroll_offset.get(&tab_id).copied().unwrap_or(0.0);
-        let y_offset = chrome_top - scroll_y;
-
         let find_offset = if self.shell.find_state().is_active() {
             layout::FIND_BAR_HEIGHT * s
         } else {
             0.0
         };
-        let clip_top = content_y + find_offset;
-        let (_, fy, _, fh) = self.page_frame_rect();
-        let clip_bottom = (content_y + content_h).min(fy + fh);
+        let clip_top = layout.viewport_y + find_offset;
+        let clip_bottom = layout.viewport_y + layout.viewport_h;
+
+        let y_offset = layout.viewport_y - scroll.y;
+        let x_offset = layout.viewport_x - scroll.x;
 
         let mut transformed = transform_webview_primitives(
             primitives,
-            content_x,
+            x_offset,
             y_offset,
             s,
             Some((clip_top, clip_bottom)),
@@ -182,8 +185,41 @@ impl BrowserApp {
         transformed.fills.clear();
         transformed.glyphs.clear();
 
-        let _ = (content_w,); // 避免未使用变量警告
+        let _ = (layout.viewport_w,);
         transformed
+    }
+
+    /// 绘制页面滚动条（内容溢出时）。
+    fn render_page_scrollbars(
+        &self,
+        overlay_fills: &mut Vec<FillPrimitive>,
+        width: u32,
+        height: u32,
+    ) {
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return;
+        };
+        let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+        let layout = self.page_scroll_layout_for(tab_id, width, height);
+        if !layout.show_vertical && !layout.show_horizontal {
+            return;
+        }
+        let scroll = self.tab_scroll_state(tab_id);
+        let geometry = crate::page_scroll::scrollbar_geometry(
+            &layout,
+            scroll,
+            cx,
+            cy,
+            cw,
+            ch,
+            self.scale_factor,
+        );
+        crate::page_scroll::push_scrollbar_fills(
+            &geometry,
+            self.chrome_palette.scrollbar_track,
+            self.chrome_palette.scrollbar_thumb,
+            overlay_fills,
+        );
     }
 
     /// 渲染标签页
@@ -851,10 +887,23 @@ impl BrowserApp {
 
         // 获取当前标签的滚动偏移
         let tab_id = self.shell.active_tab_id().unwrap();
-        let scroll_y = self.scroll_offset.get(&tab_id).copied().unwrap_or(0.0);
+        let scroll = self.tab_scroll_state(tab_id);
+        let layout = self.page_scroll_layout(tab_id);
         let has_render = self.tabs.last_render(tab_id).is_some();
 
-        if has_render && self.render_active_webview(fills, glyphs, content_x, page_y, fid, scroll_y) {
+        if has_render
+            && self.render_active_webview(
+                fills,
+                glyphs,
+                layout.viewport_x,
+                layout.viewport_y,
+                fid,
+                scroll.x,
+                scroll.y,
+                layout.viewport_w,
+                layout.viewport_h,
+            )
+        {
             return;
         }
 
@@ -908,10 +957,13 @@ impl BrowserApp {
         &self,
         fills: &mut Vec<FillPrimitive>,
         glyphs: &mut Vec<GlyphDraw>,
-        content_x: f32,
-        y_offset: f32,
+        viewport_x: f32,
+        viewport_y: f32,
         fallback_font_id: u32,
+        scroll_x: f32,
         scroll_y: f32,
+        viewport_w: f32,
+        viewport_h: f32,
     ) -> bool {
         let tab_id = match self.shell.active_tab_id() {
             Some(id) => id,
@@ -930,15 +982,14 @@ impl BrowserApp {
         } else {
             0.0
         };
-        let (_, content_y, content_w, content_h) = self.page_content_rect();
-        let clip_top = content_y + find_offset;
-        let (_, fy, _, fh) = self.page_frame_rect();
-        let clip_bottom = (content_y + content_h).min(fy + fh);
-        let content_y_draw = y_offset - scroll_y;
+        let clip_top = viewport_y + find_offset;
+        let clip_bottom = viewport_y + viewport_h;
+        let content_y_draw = viewport_y - scroll_y;
+        let content_x_draw = viewport_x - scroll_x;
         let s = self.scale_factor;
         let border = layout::PAGE_FRAME_BORDER * s;
         let radius = (layout::PAGE_FRAME_RADIUS * s - border).max(0.0);
-        let clip_rounded = Some((content_x, content_y, content_w, content_h, radius));
+        let clip_rounded = Some((viewport_x, viewport_y, viewport_w, viewport_h, radius));
 
         if let Some(sel) = self.page_selection.get(&tab_id)
             && !sel.is_collapsed()
@@ -947,7 +998,7 @@ impl BrowserApp {
             let end = end.min(page_primitives.glyphs.len().saturating_sub(1));
             if start <= end {
                 for glyph in &page_primitives.glyphs[start..=end] {
-                    let x = glyph.x * s + content_x;
+                    let x = glyph.x * s + content_x_draw;
                     let top = glyph.y * s + content_y_draw - glyph.font_size * s;
                     let w = glyph.font_size * s * 0.55;
                     let h = glyph.font_size * s;
@@ -979,8 +1030,8 @@ impl BrowserApp {
             &page_primitives,
             fills,
             glyphs,
-            content_x,
-            y_offset - scroll_y,
+            content_x_draw,
+            content_y_draw,
             fallback_font_id,
             self.scale_factor,
             Some((clip_top, clip_bottom)),
@@ -1484,19 +1535,9 @@ impl BrowserApp {
     }
 }
 
-/// 从渲染图元估算文档高度（逻辑像素，fills + glyphs 下界）。
+/// 从渲染图元估算文档高度（CSS 逻辑像素，fills + glyphs 下界）。
 pub fn primitives_content_height(primitives: &RenderPrimitives) -> f32 {
-    let fill_max = primitives
-        .fills
-        .iter()
-        .map(|f| f.rect.origin.y + f.rect.size.height)
-        .fold(0.0f32, f32::max);
-    let glyph_max = primitives
-        .glyphs
-        .iter()
-        .map(|g| g.y + g.font_size)
-        .fold(0.0f32, f32::max);
-    fill_max.max(glyph_max)
+    crate::page_scroll::primitives_content_height(primitives)
 }
 
 /// 将 WebView 输出的基础图元追加到浏览器场景。

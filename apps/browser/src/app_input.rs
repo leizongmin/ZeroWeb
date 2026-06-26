@@ -26,18 +26,17 @@ impl BrowserApp {
             return;
         }
 
-        // 提取 Y 方向滚动量（滚轮向下增大 scroll offset，与 Linux/winit 符号相反故取反）
-        let delta_y = match delta {
-            zero_host_runtime::event::MouseScrollDelta::PixelDelta(_, y) => -(y as f32),
-            zero_host_runtime::event::MouseScrollDelta::LineDelta(_, y) => -(y * 40.0),
+        // 提取滚动量（滚轮向下增大 scroll offset，与 Linux/winit 符号相反故取反）
+        let (delta_x, delta_y) = match delta {
+            zero_host_runtime::event::MouseScrollDelta::PixelDelta(x, y) => (-(x as f32), -(y as f32)),
+            zero_host_runtime::event::MouseScrollDelta::LineDelta(x, y) => (-(x * 40.0), -(y * 40.0)),
         };
 
-        self.apply_page_scroll_delta(tab_id, delta_y);
+        self.apply_page_scroll_delta(tab_id, delta_x, delta_y);
     }
 
     /// 处理触摸板/触摸屏平移手势（winit `PanGesture`）
     pub fn handle_pan_gesture(&mut self, delta_x: f32, delta_y: f32, x: f64, y: f64) {
-        let _ = delta_x;
         if self.context_menu.visible {
             return;
         }
@@ -52,7 +51,7 @@ impl BrowserApp {
         };
 
         // 与 PixelDelta 滚轮保持同一符号约定
-        self.apply_page_scroll_delta(tab_id, -(delta_y));
+        self.apply_page_scroll_delta(tab_id, -delta_x, -delta_y);
     }
 
     /// 处理触摸屏单指拖拽滚动
@@ -80,7 +79,7 @@ impl BrowserApp {
                 }
                 let delta_y = (last_y - touch.y) as f32;
                 if delta_y != 0.0 && let Some(tab_id) = self.shell.active_tab_id() {
-                    self.apply_page_scroll_delta(tab_id, delta_y);
+                    self.apply_page_scroll_delta(tab_id, 0.0, delta_y);
                 }
                 if let Some(state) = &mut self.touch_scroll {
                     state.1 = touch.y;
@@ -103,29 +102,22 @@ impl BrowserApp {
     }
 
     /// 按物理像素增量更新当前标签页滚动偏移
-    fn apply_page_scroll_delta(&mut self, tab_id: zero_browser_shell::TabId, delta_y: f32) {
-        if delta_y == 0.0 {
+    fn apply_page_scroll_delta(
+        &mut self,
+        tab_id: zero_browser_shell::TabId,
+        delta_x: f32,
+        delta_y: f32,
+    ) {
+        if delta_x == 0.0 && delta_y == 0.0 {
             return;
         }
 
         self.ensure_webview(tab_id);
 
-        let s = self.scale_factor;
-        let content_h = self.content_physical_size().1 as f32;
-        let page_height_logical = self
-            .tabs
-            .document_height(tab_id)
-            .or_else(|| {
-                self.tabs
-                    .last_render(tab_id)
-                    .map(|r| primitives_content_height(&r.primitives))
-            })
-            .unwrap_or(0.0);
-
-        let page_height = page_height_logical * s;
-        let max_scroll = (page_height - content_h).max(0.0);
-        let offset = self.scroll_offset.entry(tab_id).or_insert(0.0);
-        *offset = (*offset + delta_y).clamp(0.0, max_scroll);
+        let layout = self.page_scroll_layout(tab_id);
+        let entry = self.scroll.entry(tab_id).or_default();
+        entry.x = (entry.x + delta_x).clamp(0.0, layout.max_scroll_x);
+        entry.y = (entry.y + delta_y).clamp(0.0, layout.max_scroll_y);
 
         self.needs_redraw = true;
     }
@@ -170,7 +162,7 @@ impl BrowserApp {
         }
 
         if scroll_delta != 0.0 && let Some(tab_id) = self.shell.active_tab_id() {
-            self.apply_page_scroll_delta(tab_id, scroll_delta);
+            self.apply_page_scroll_delta(tab_id, 0.0, scroll_delta);
         }
     }
 
@@ -931,8 +923,8 @@ impl BrowserApp {
         if x_f < content_x || x_f >= content_x + content_w || y_f < page_top || y_f >= content_bottom {
             return None;
         }
-        let scroll_y = self.scroll_offset.get(&tab_id).copied().unwrap_or(0.0);
-        Some((tab_id, (x_f - content_x) / s, (y_f - page_top + scroll_y) / s))
+        let scroll = self.tab_scroll_state(tab_id);
+        Some((tab_id, (x_f - content_x) / s + scroll.x, (y_f - page_top + scroll.y) / s))
     }
 
     /// 与渲染一致的页面 glyph 列表。
