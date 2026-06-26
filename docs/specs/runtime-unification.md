@@ -94,6 +94,21 @@
 
 **建议**：契约层统一 + T7 gate 是自然的检查点。B3+ 属独立的重大改造，宜单独分阶段、配 headless renderer smoke 验证，不宜在「连续推到底」中冒险赶工。继续推 B3 须接受 renderer 回归风险。
 
+## 11. B3 执行计划（all-or-nothing 重写，待 greenlight）
+
+WebView API 已就绪：renderer 所需 ~15 个 pipeline 访问器中 WebView 已暴露 13 个（`build_hit_test_cache`/`hit_test_link`/`hit_test_element`/`document_height`/`set_image_sizes`/`set_font_resolver`/`advance_budget_session`/`prepare_document_state`/`resize`/`set_prefers_color_scheme`/`render`/`render_incremental`/…），仅 `repaint_cached_viewport` 缺直接等价（`render`/`last_render` 可代）。故 B3 是**重写**而非 API 扩展。但 renderer load 把 budgeted render + 字体测量 + 图片 payload + IPC publish 深度耦合，**不可增量路由**（双 pipeline 分叉）——须在单次集中重写完成，每步保 `cargo build`/`test`/`clippy -p zero-renderer` + `runtime_conformance` 通过。
+
+- **B3-1 WebView 构造（`new()`）**：`WebViewConfig { width:1280, height:800, external_script: Some(js_worker.executor()), ..Default::default() }` → `WebView::new(config)`。`external_script` 委派 renderer 现有 `js_worker`（避免双 V8，脚本执行不重写→T4 暂缓）。`load_system_fonts` 重构为返回 `font_resolver: HashMap<String,u32>` 并 `wv.set_font_resolver(...)`；保留全局 `set_char_measure_fn(text_metrics::measure_char)`（WebView 渲染走同一 engine，自动复用全局 measure）。`webview` 字段构造为 `Some`，去 `#[allow(dead_code)]`。
+- **B3-2 load 重写（`run_staged_load`）**：删 `IpcLoadBridge` + `async_load::run_page_load`（`RendererPageLoad`）。split-borrow self 字段（`outbound`/`inbound_rx`/`next_fetch_id`/`deferred_inbound`/`webview` 逐字段 `&mut` 绑定，绕开 `self.method()` 整体借用）→ `BlockingFetchHost::new(\|u\| ipc_fetch_get(...))` → `AsyncPageLoad::from_html(page_url, html)` 同步 drain `while is_active { tick(&mut wv, &mut host, FRAME_BUDGET_MS) }`，外层仍包 `text_metrics::with_measure_ctx_opt`。
+- **B3-3 publish 重写（`publish_render`/`publish_render_result`/`try_republish_cached`）**：`publish_render_result` 改收 `&WebView`：`doc_h = wv.document_height()`、primitives 来自 `wv.last_render()`/`wv.render()`、`hit_test = wv.build_hit_test_cache()`、viewport 从 config 或单独存。image_payloads 仍走 `paint_export::fetch_image_payloads_with_fetch`（IPC）。`try_republish_cached` = `wv.render()` → publish。
+- **B3-4 事件/脚本（`dispatch_dom_at`/`after_page_html_loaded`）**：现经 `page_scripts` 操作 `&mut self.pipeline`；B3 后 pipeline 在 WebView 内 → 改 `wv.execute_script(...)`（external_script 委派 js_worker）+ `wv.render()` 重绘。`page_scripts` 的纯函数（`extract_page_scripts`/`dispatch_dom_event`）保留，仅把 `&mut pipeline` 换经 WebView。与 T4 交叉——B3 做最小可工作，T4 再统一。
+- **B3-5 viewport/color-scheme**：`handle_set_viewport` → `wv.resize` + republish；`handle_set_color_scheme` → `wv.set_prefers_color_scheme` + republish。
+- **B3-6 删平行副本**：`apps/renderer/src/async_load.rs`（`RendererPageLoad`）、`page_scripts.rs`、`text_metrics.rs`、`paint_export.rs` 大部；移除 `self.pipeline` 字段。renderer 完全经 WebView → **三路径共享同一 loader（统一达成）**。
+
+**验证缺口（须补才能消回归风险）**：renderer 是多进程子进程，session 内只能 `cargo build`/`test`/clippy + `runtime_conformance`（只测 engine-direct≡WebView，不测 IPC 子进程）。B3 后须加 **headless multiprocess smoke**（spawn `zero-renderer` + 喂 HTML + 抓 `ViewPainted` 帧端到端比对）——`tests/integration/multi_process.rs` 或可扩展。无此 smoke，生产 renderer 回归无法捕捉。
+
+**执行建议**：greenlight 后在**干净 worktree** 集中重写 → 全量 `cargo test --workspace` + headless smoke 通过 → 再合入 `feat/runtime-unification`。
+
 ## 9. T3 架构分支与决议（2026-06-26 R5）
 
 深入分析后，renderer 复用 webview `AsyncPageLoad` 有**两个真 blocker**（不是上轮以为的单纯「状态 owner 抽象」）：
