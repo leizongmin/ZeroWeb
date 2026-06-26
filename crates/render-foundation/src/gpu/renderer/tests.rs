@@ -811,6 +811,114 @@ fn test_gpu_full_scene_stroke() {
     assert_eq!(pixels[mid], 0, "line center R should be 0");
 }
 
+/// DC-9 GPU ImagePrimitive — 渲染纯色图片（红），断言回读像素为红色。
+///
+/// R661 识别的 rigor gap：GPU ImagePrimitive（draw_image_pass）已实现但无 framebuffer
+/// readback 测试。本测填这个缺口，验证 GPU 图片纹理采样路径（ImageCache → 纹理 → 采样）。
+#[serial]
+#[test]
+fn test_gpu_full_scene_image() {
+    let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+    // 1×1 纯红 RGBA 图片（放大到 16×16 rect，solid_color 检测缓存，仍走 draw_image_pass）
+    let img =
+        crate::image_cache::ImageData::from_rgba(vec![255, 0, 0, 255], 1, 1).expect("red image");
+    let mut image_cache = crate::image_cache::ImageCache::new(16, 1 << 20);
+    let key = image_cache.insert(img);
+    let mut primitives = RenderPrimitives::default();
+    primitives.images.push(crate::primitive::ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+        image_key: key,
+        clip: None,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+
+    renderer.render_full_scene_gpu(
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut image_cache),
+        &[],
+        &[],
+        1.0,
+    );
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    // 图片应填满 16×16；中心 (8,8) 应为红（GPU 浮点采样容差 ±5）
+    let c = (8 * 16 + 8) * 4;
+    assert!(pixels[c] >= 250, "image center R should be ~255, got {}", pixels[c]);
+    assert!(pixels[c + 1] <= 5, "image center G should be ~0, got {}", pixels[c + 1]);
+    assert!(pixels[c + 2] <= 5, "image center B should be ~0, got {}", pixels[c + 2]);
+    assert!(pixels[c + 3] >= 250, "image center A should be ~255, got {}", pixels[c + 3]);
+}
+
+/// DC-9 GPU PathFillPrimitive — 渲染矩形多边形填充（黑），断言中心黑、外部白。
+///
+/// R661 gap：PathFill 此前仅 mesh 顶点测试（gpu/mesh.rs），无 framebuffer readback。
+#[serial]
+#[test]
+fn test_gpu_full_scene_path_fill() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    // 矩形多边形 (4,4)-(28,28)
+    primitives.path_fills.push(crate::primitive::PathFillPrimitive {
+        vertices: vec![4.0, 4.0, 28.0, 4.0, 28.0, 28.0, 4.0, 28.0],
+        color: Color::BLACK,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    // 中心 (16,16) 在多边形内 → 黑（深内部，实色无 AA）
+    let c = (16 * 32 + 16) * 4;
+    assert_eq!(pixels[c], 0, "path-fill center R should be 0 (black), got {}", pixels[c]);
+    assert_eq!(pixels[c + 2], 0, "path-fill center B should be 0");
+    // 角 (1,1) 在多边形外 → 白（clear color）
+    let corner = (1 * 32 + 1) * 4;
+    assert_eq!(pixels[corner], 255, "path-fill outside corner should be white");
+}
+
+/// DC-9 GPU PathStrokePrimitive — 渲染闭合矩形描边，断言描边边有黑像素、内部为背景白。
+///
+/// R661 gap：PathStroke 此前仅 mesh 顶点测试（gpu/mesh.rs），无 framebuffer readback。
+#[serial]
+#[test]
+fn test_gpu_full_scene_path_stroke() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    // 矩形描边中心 (8,8)-(24,24)，线宽 3，闭合
+    primitives.path_strokes.push(crate::primitive::PathStrokePrimitive {
+        vertices: vec![8.0, 8.0, 24.0, 8.0, 24.0, 24.0, 8.0, 24.0],
+        color: Color::BLACK,
+        line_width: 3.0,
+        closed: true,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], 1.0);
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    // 矩形中心 (16,16) 在描边内部 → 白（未被描边覆盖）
+    let center = (16 * 32 + 16) * 4;
+    assert_eq!(
+        pixels[center], 255,
+        "path-stroke interior should be white (background), got {}",
+        pixels[center]
+    );
+    // 顶边描边带（y=8 行，x∈[8,24]）应至少有一个黑像素（描边已绘制）
+    let top_edge_has_black = (8..=24).any(|x| {
+        let i = (8 * 32 + x) * 4;
+        pixels[i] == 0 && pixels[i + 2] == 0
+    });
+    assert!(
+        top_edge_has_black,
+        "path-stroke top edge band should contain black pixels"
+    );
+}
+
 /// 测试 render_full_scene_gpu 空场景
 #[serial]
 #[test]
