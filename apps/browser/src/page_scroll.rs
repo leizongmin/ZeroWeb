@@ -62,6 +62,122 @@ pub struct ScrollbarGeometry {
     pub corner: Option<(f32, f32, f32, f32)>,
 }
 
+/// 滚动条轴向。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollbarAxis {
+    /// 垂直滚动条。
+    Vertical,
+    /// 水平滚动条。
+    Horizontal,
+}
+
+/// 滚动条命中区域。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollbarHit {
+    /// 垂直滑块。
+    VerticalThumb,
+    /// 垂直轨道（滑块外）。
+    VerticalTrack,
+    /// 水平滑块。
+    HorizontalThumb,
+    /// 水平轨道（滑块外）。
+    HorizontalTrack,
+}
+
+fn point_in_rect(px: f32, py: f32, rect: (f32, f32, f32, f32)) -> bool {
+    let (x, y, w, h) = rect;
+    px >= x && px < x + w && py >= y && py < y + h
+}
+
+/// 命中测试：优先滑块，其次轨道。
+pub fn hit_test_scrollbar(px: f32, py: f32, geometry: &ScrollbarGeometry) -> Option<ScrollbarHit> {
+    if geometry.vertical_thumb.is_some_and(|r| point_in_rect(px, py, r)) {
+        return Some(ScrollbarHit::VerticalThumb);
+    }
+    if geometry.horizontal_thumb.is_some_and(|r| point_in_rect(px, py, r)) {
+        return Some(ScrollbarHit::HorizontalThumb);
+    }
+    if geometry.vertical_track.is_some_and(|r| point_in_rect(px, py, r)) {
+        return Some(ScrollbarHit::VerticalTrack);
+    }
+    if geometry.horizontal_track.is_some_and(|r| point_in_rect(px, py, r)) {
+        return Some(ScrollbarHit::HorizontalTrack);
+    }
+    None
+}
+
+pub(crate) fn vertical_track_len(layout: &PageScrollLayout, content_h: f32) -> f32 {
+    if layout.show_horizontal {
+        layout.viewport_h
+    } else {
+        content_h
+    }
+}
+
+pub(crate) fn horizontal_track_len(layout: &PageScrollLayout, content_w: f32) -> f32 {
+    if layout.show_vertical {
+        layout.viewport_w
+    } else {
+        content_w
+    }
+}
+
+pub(crate) fn vertical_thumb_len(layout: &PageScrollLayout, track_len: f32, scale: f32) -> f32 {
+    let min_thumb = layout::SCROLLBAR_MIN_THUMB * scale;
+    let doc_h = layout.max_scroll_y + layout.viewport_h;
+    (track_len * layout.viewport_h / doc_h).max(min_thumb).min(track_len)
+}
+
+pub(crate) fn horizontal_thumb_len(layout: &PageScrollLayout, track_len: f32, scale: f32) -> f32 {
+    let min_thumb = layout::SCROLLBAR_MIN_THUMB * scale;
+    let doc_w = layout.max_scroll_x + layout.viewport_w;
+    (track_len * layout.viewport_w / doc_w).max(min_thumb).min(track_len)
+}
+
+/// 由指针在垂直轨道上的位置计算 `scroll.y`（`grab_offset` 为指针相对滑块顶边的偏移）。
+pub fn scroll_y_from_pointer(
+    layout: &PageScrollLayout,
+    content_y: f32,
+    content_h: f32,
+    scale: f32,
+    pointer_y: f32,
+    grab_offset: f32,
+) -> f32 {
+    if layout.max_scroll_y <= 0.0 {
+        return 0.0;
+    }
+    let track_len = vertical_track_len(layout, content_h);
+    let thumb_h = vertical_thumb_len(layout, track_len, scale);
+    let travel = (track_len - thumb_h).max(0.0);
+    if travel <= 0.0 {
+        return 0.0;
+    }
+    let thumb_top = (pointer_y - grab_offset - content_y).clamp(0.0, travel);
+    (thumb_top / travel) * layout.max_scroll_y
+}
+
+/// 由指针在水平轨道上的位置计算 `scroll.x`。
+pub fn scroll_x_from_pointer(
+    layout: &PageScrollLayout,
+    content_x: f32,
+    content_w: f32,
+    scale: f32,
+    pointer_x: f32,
+    grab_offset: f32,
+) -> f32 {
+    if layout.max_scroll_x <= 0.0 {
+        return 0.0;
+    }
+    let track_len = horizontal_track_len(layout, content_w);
+    let thumb_w = horizontal_thumb_len(layout, track_len, scale);
+    let travel = (track_len - thumb_w).max(0.0);
+    if travel <= 0.0 {
+        return 0.0;
+    }
+    let thumb_left = (pointer_x - grab_offset - content_x).clamp(0.0, travel);
+    (thumb_left / travel) * layout.max_scroll_x
+}
+
 /// 从渲染图元估算文档宽度（CSS 逻辑像素）。
 pub fn primitives_content_width(primitives: &RenderPrimitives) -> f32 {
     let fill_max = primitives
