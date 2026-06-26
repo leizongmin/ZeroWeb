@@ -286,15 +286,15 @@
 ### DC-11: 布局正确性
 
 - [x] **Margin 折叠** — 相邻块级元素的 margin-top/margin-bottom 按规范折叠（正 margin 取最大、负 margin 取最负、正负抵消）— ✅ **R323 实测通过**（taffy 0.7 CollapsibleMarginSet；6 探针 case + 5 reftest 全过）
-- [ ] **BFC 创建** — `overflow: hidden/auto/scroll`、`display: flow-root`、浮动元素、`position: absolute/fixed` 正确创建 BFC，隔离浮动和 margin 折叠
+- [x] ✅ **BFC 创建** — `overflow: hidden/auto/scroll`、`display: flow-root`、浮动元素、`position: absolute/fixed` 正确创建 BFC，隔离浮动和 margin 折叠（`establishes_bfc` 全条件 + margin 隔离 R323 实测 + `use_bfc_float_containment` float containment；见 known-gaps BFC 行 ✅）
 - [ ] **Float 布局** — 完整的 float 定位（float: left/right）、clear（clear: left/right/both）、float containment（BFC 包含浮动）
 - [x] **Position: fixed** — 相对 viewport 定位（当前错误地映射为 absolute）— ✅ **R324 修复**（`adjust_fixed_to_viewport` 改为扣除祖先偏移；fixed 在有偏移 positioned 祖先内也视口相对，与 R98 absolute-viewport 约定一致；新单测 + 8 旧单测更新 + 全量 reftest 438/490 零回归）
 - [ ] **Position: sticky** — 滚动时正确固定在指定偏移范围内
 - [ ] **Overflow: scroll/auto** — 可滚动容器功能，scroll 偏移正确应用到子元素布局
 - [x] **替换元素** — `<img>` 的固有尺寸（intrinsic size）正确计算，`object-fit`（fill/contain/cover/none/scale-down）正确应用 — ✅ **R323 代码核查 + R325 修复**（`apply_replaced_element_sizing`：HTML `width`/`height` 属性 + SVG data URI + 解码固有尺寸三来源；CSS §10「两侧尺寸都显式时不强制固有宽高比」R325 修复，旧实现 `<img style="width:200px;height:50px">` 被 taffy 拉成 200×200；`compute_object_fit_rect` 全 5 值；R318 图片数据端到端贯通）
-- [ ] **百分比高度** — containing block 有明确高度时百分比高度正确解析；无明确高度时 height: auto
-- [ ] **Auto margin 居中** — `margin: auto` 在 block/flex/grid 中正确居中
-- [ ] **min/max-width/height** — 约束正确应用到最终尺寸
+- [x] ✅ **百分比高度** — containing block 有明确高度时百分比高度正确解析；无明确高度时 height: auto（`clamp_percentage_max_height` engine.rs:1422 按 definite CB 高度解析 %，R168 table height-as-minimum）
+- [x] ✅ **Auto margin 居中** — `margin: auto` 在 block/flex/grid 中正确居中（block/table R165 compute()根居中+table_shrink both_margins_auto；flex/grid taffy native auto-margin）
+- [x] ✅ **min/max-width/height** — 约束正确应用到最终尺寸（`clamp_percentage_max_height` + R517 cascade 负值 max/min-height + R428 flex min-size:auto）
 
 ### DC-12: 高级视觉效果
 
