@@ -27,6 +27,10 @@ pub enum IpcMessageKind {
     Reload,
     /// 直接加载 HTML（浏览器→渲染，zero:// 等内联页面）。
     LoadHtml(LoadHtmlParams),
+    /// 调整视口（浏览器→渲染）。
+    SetViewport(SetViewportParams),
+    /// 更新颜色方案（浏览器→渲染）。
+    SetColorScheme(SetColorSchemeParams),
 
     // ── 页面事件（渲染→浏览器）──
     /// 页面标题变更。
@@ -93,6 +97,31 @@ pub struct LoadHtmlParams {
     pub css: Option<String>,
     /// 逻辑页面 URL（用于相对链接解析与 ImageCache 键）。
     pub url: Option<String>,
+}
+
+/// 视口调整参数（浏览器→渲染）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SetViewportParams {
+    /// 视口宽度（CSS 逻辑像素）。
+    pub width: u32,
+    /// 视口高度（CSS 逻辑像素）。
+    pub height: u32,
+}
+
+/// IPC 颜色方案（对应 `prefers-color-scheme`）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum IpcColorScheme {
+    /// 亮色。
+    Light,
+    /// 暗色。
+    Dark,
+}
+
+/// 颜色方案更新参数（浏览器→渲染）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SetColorSchemeParams {
+    /// 用户偏好颜色方案。
+    pub scheme: IpcColorScheme,
 }
 
 /// 网络请求参数。

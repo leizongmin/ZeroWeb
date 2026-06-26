@@ -214,6 +214,13 @@ fn test_roundtrip_all_message_types() {
             css: None,
             url: Some("zero://newtab".into()),
         }),
+        IpcMessageKind::SetViewport(SetViewportParams {
+            width: 1024,
+            height: 768,
+        }),
+        IpcMessageKind::SetColorScheme(SetColorSchemeParams {
+            scheme: IpcColorScheme::Dark,
+        }),
         IpcMessageKind::TitleChanged("T".into()),
         IpcMessageKind::UrlChanged("https://example.com".into()),
         IpcMessageKind::LoadComplete,

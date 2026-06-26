@@ -164,6 +164,16 @@ impl RenderPipeline {
         self.style_system.set_prefers_color_scheme(scheme);
     }
 
+    /// 更新视口尺寸（保留 DOM 缓存，后续需 `repaint_cached_viewport` 重布局）。
+    pub fn set_viewport(&mut self, width: f32, height: f32) {
+        if (self.viewport_width - width).abs() < f32::EPSILON && (self.viewport_height - height).abs() < f32::EPSILON {
+            return;
+        }
+        self.viewport_width = width;
+        self.viewport_height = height;
+        self.layout_engine.set_viewport(width, height);
+    }
+
     /// 获取动画时钟的可变引用。
     pub fn animation_clock_mut(&mut self) -> &mut AnimationClock {
         &mut self.animation_clock
