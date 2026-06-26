@@ -8,8 +8,6 @@ use zero_render_foundation::image_cache::ImageCache;
 use zero_webview::WebViewRenderResult;
 
 use crate::process_backend::{ProcessTabBackend, use_multiprocess_backend};
-use crate::tab_lru::TabLruPolicy;
-use crate::tab_restore::TabRestorePayload;
 use crate::tab_scripts::DomDispatchResult;
 use crate::tab_snapshot::TabSnapshot;
 use crate::tab_worker::{TabWorkerCommand, TabWorkerHandle, TabWorkerMessage};
@@ -24,10 +22,6 @@ pub struct TabManager {
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
     poll_tick: u64,
-    lru: TabLruPolicy,
-    last_active: Option<TabId>,
-    /// 最近一次加载方式（LRU 解冻用）。
-    last_restore: HashMap<TabId, TabRestorePayload>,
     /// 是否允许 Tab worker 执行页面 JavaScript。
     javascript_enabled: bool,
     /// 各 Tab 最近一次交互目标（用于 keydown 等事件派发）。
@@ -50,14 +44,9 @@ impl TabManager {
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
             poll_tick: 0,
-            lru: TabLruPolicy::default(),
-            last_active: None,
-            last_restore: HashMap::new(),
             javascript_enabled: true,
             event_targets: HashMap::new(),
         };
-        let max_live = manager.lru.max_live();
-        tracing::info!("Tab LRU max live workers: {max_live} (ZERO_BROWSER_MAX_LIVE_TABS)");
         if use_multiprocess_backend() && manager.process_backend.is_none() {
             tracing::info!("Tab runtime: in-process workers (zero-renderer not available)");
         } else if manager.process_backend.is_some() {
@@ -113,9 +102,6 @@ impl TabManager {
 
     /// 确保 Tab 存在 worker / 进程。
     pub fn ensure_tab(&mut self, tab_id: TabId) {
-        if self.lru.is_frozen(tab_id) {
-            self.thaw_tab_if_frozen(tab_id);
-        }
         if self.workers.contains_key(&tab_id) {
             return;
         }
@@ -136,135 +122,16 @@ impl TabManager {
             worker.shutdown();
         }
         self.snapshots.remove(&tab_id);
-        self.lru.remove_tab(tab_id);
-        self.last_restore.remove(&tab_id);
         if let Some(ref mut backend) = self.process_backend {
             backend.remove_renderer(tab_id);
         }
     }
 
-    /// 前台 Tab 切换 — 触发 LRU 冻结/解冻。
-    pub fn on_active_tab_changed(&mut self, active: Option<TabId>) {
-        if let Some(prev) = self.last_active
-            && Some(prev) != active
-        {
-            self.lru.note_deactivated(prev);
-        }
-        self.last_active = active;
-
-        if let Some(id) = active {
-            if self.lru.is_frozen(id) {
-                self.thaw_tab_if_frozen(id);
-            }
-        }
-        self.enforce_lru_limit(active);
-    }
-
-    fn apply_restore(&mut self, tab_id: TabId, payload: TabRestorePayload) {
-        self.ensure_tab(tab_id);
-        match payload {
-            TabRestorePayload::Navigate(url) => {
-                self.navigate(tab_id, url);
-            }
-            TabRestorePayload::LoadHtml { html, css, url } => {
-                self.load_html(tab_id, &html, css.as_deref(), url.as_deref());
-            }
-        }
-    }
-
-    fn thaw_tab_if_frozen(&mut self, tab_id: TabId) {
-        if !self.lru.is_frozen(tab_id) {
-            return;
-        }
-        let restore = self.lru.thaw(tab_id);
-
-        if let Some(ref mut backend) = self.process_backend {
-            if backend.has_renderer(tab_id) {
-                return;
-            }
-            backend.ensure_renderer(tab_id, self.viewport);
-            if let Some(payload) = restore.or_else(|| {
-                self.last_restore.get(&tab_id).cloned().or_else(|| {
-                    self.snapshots
-                        .get(&tab_id)
-                        .and_then(|s| s.url.as_ref().map(|u| TabRestorePayload::from_url(u)))
-                })
-            }) {
-                self.apply_restore(tab_id, payload);
-            }
-            return;
-        }
-
-        if self.workers.contains_key(&tab_id) {
-            return;
-        }
-        let worker = TabWorkerHandle::spawn(tab_id, self.viewport, self.color_scheme);
-        if let Some(payload) = restore.or_else(|| {
-            self.last_restore.get(&tab_id).cloned().or_else(|| {
-                self.snapshots
-                    .get(&tab_id)
-                    .and_then(|s| s.url.as_ref().map(|u| TabRestorePayload::from_url(u)))
-            })
-        }) {
-            match payload {
-                TabRestorePayload::Navigate(url) => {
-                    worker.send(TabWorkerCommand::Navigate(url));
-                }
-                TabRestorePayload::LoadHtml { html, css, url } => {
-                    worker.send(TabWorkerCommand::LoadHtml { html, css, url });
-                }
-            }
-            if let Some(snap) = self.snapshots.get_mut(&tab_id) {
-                snap.loading = true;
-            }
-        }
-        self.workers.insert(tab_id, worker);
-    }
-
-    fn enforce_lru_limit(&mut self, active: Option<TabId>) {
-        loop {
-            let live_count = if let Some(ref backend) = self.process_backend {
-                backend.live_renderer_count()
-            } else {
-                self.workers.len()
-            };
-            if !self.lru.should_freeze(live_count, active) {
-                break;
-            }
-            let live = if let Some(ref backend) = self.process_backend {
-                backend.live_tab_ids()
-            } else {
-                self.workers.keys().map(|&id| (id, ())).collect()
-            };
-            let Some(victim) = self.lru.pick_freeze_victim(active, &live) else {
-                break;
-            };
-            self.freeze_tab(victim);
-        }
-    }
-
-    fn freeze_tab(&mut self, tab_id: TabId) {
-        let restore = self.last_restore.get(&tab_id).cloned().or_else(|| {
-            self.snapshots
-                .get(&tab_id)
-                .and_then(|s| s.url.as_ref().map(|u| TabRestorePayload::from_url(u)))
-        });
-        if let Some(ref mut backend) = self.process_backend {
-            backend.remove_renderer(tab_id);
-        } else if let Some(mut worker) = self.workers.remove(&tab_id) {
-            worker.shutdown();
-        }
-        if let Some(snap) = self.snapshots.get_mut(&tab_id) {
-            snap.image_cache.clear();
-        }
-        self.lru.mark_frozen(tab_id, restore);
-        tracing::debug!("Froze tab {} (LRU, max {})", tab_id.0, self.lru.max_live());
-    }
+    /// 前台 Tab 切换（每个 Tab 的 worker / 渲染进程保持存活直至用户关闭标签）。
+    pub fn on_active_tab_changed(&mut self, _active: Option<TabId>) {}
 
     /// 导航到 URL。
     pub fn navigate(&mut self, tab_id: TabId, url: String) {
-        self.last_restore
-            .insert(tab_id, TabRestorePayload::Navigate(url.clone()));
         self.ensure_tab(tab_id);
         if let Some(ref mut backend) = self.process_backend {
             backend.navigate(tab_id, &url);
@@ -284,14 +151,6 @@ impl TabManager {
 
     /// 同步加载 HTML（测试与 zero:// 页面）。
     pub fn load_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>, url: Option<&str>) {
-        self.last_restore.insert(
-            tab_id,
-            TabRestorePayload::LoadHtml {
-                html: html.to_string(),
-                css: css.map(str::to_string),
-                url: url.map(str::to_string),
-            },
-        );
         self.ensure_tab(tab_id);
         if let Some(ref mut backend) = self.process_backend {
             backend.load_html(tab_id, html, css, url);

@@ -1404,4 +1404,15 @@ mod integration_tests {
         let _ = h5.join();
         let _ = h6.join();
     }
+
+    #[test]
+    fn fetch_https_from_spawned_thread() {
+        let handle = std::thread::spawn(|| {
+            let client = HttpClient::new();
+            client.get("https://example.com").expect("fetch")
+        });
+        let resp = handle.join().expect("join");
+        assert_eq!(resp.status_code, 200);
+        assert!(!resp.body.is_empty());
+    }
 }

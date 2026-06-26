@@ -109,9 +109,14 @@ impl RendererHandle {
             .name(format!("renderer-{id}-ipc-in"))
             .spawn(move || {
                 let mut transport = recv_transport;
-                while let Ok(msg) = transport.recv() {
-                    if inbound_tx.send(msg).is_err() {
-                        break;
+                loop {
+                    match transport.recv() {
+                        Ok(msg) => {
+                            if inbound_tx.send(msg).is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
                     }
                 }
             })
@@ -149,16 +154,46 @@ impl RendererHandle {
         }
     }
 
+    /// 记录渲染进程存活（任意 IPC 消息均视为活跃，避免长页面加载期间误判心跳超时）。
+    fn touch_activity(&mut self) {
+        self.last_heartbeat = Instant::now();
+    }
+
+    /// 收到心跳时自动回复。
+    fn reply_heartbeat_if_needed(&mut self, msg: &IpcMessage) -> Result<(), ProtocolError> {
+        if matches!(msg.kind, IpcMessageKind::Heartbeat) {
+            self.send(IpcMessage {
+                id: msg.id,
+                kind: IpcMessageKind::Heartbeat,
+            })?;
+        }
+        Ok(())
+    }
+
     /// 从渲染进程接收 IPC 消息（阻塞直到有消息）。
     pub fn recv(&mut self) -> Result<IpcMessage, ProtocolError> {
-        self.inbound_rx
+        let msg = self
+            .inbound_rx
             .recv()
-            .map_err(|e| ProtocolError::Channel(format!("IPC 接收失败: {e}")))
+            .map_err(|e| ProtocolError::Channel(format!("IPC 接收失败: {e}")))?;
+        self.touch_activity();
+        self.reply_heartbeat_if_needed(&msg)?;
+        Ok(msg)
     }
 
     /// 尝试非阻塞接收。
     pub fn try_recv(&mut self) -> Result<Option<IpcMessage>, ProtocolError> {
-        Ok(self.inbound_rx.try_recv().ok())
+        match self.inbound_rx.try_recv() {
+            Ok(msg) => {
+                self.touch_activity();
+                self.reply_heartbeat_if_needed(&msg)?;
+                Ok(Some(msg))
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err(ProtocolError::Channel("IPC 通道已关闭".into()))
+            }
+        }
     }
 
     /// 发送导航命令。
@@ -226,20 +261,9 @@ impl RendererHandle {
         })
     }
 
-    /// 处理从渲染进程接收的消息。
-    ///
-    /// 返回接收到的消息。如果收到心跳则自动回复并更新计时。
+    /// 处理从渲染进程接收的消息（阻塞直到有消息）。
     pub fn poll(&mut self) -> Result<IpcMessage, ProtocolError> {
-        let msg = self.recv()?;
-        if matches!(msg.kind, IpcMessageKind::Heartbeat) {
-            self.last_heartbeat = Instant::now();
-            // 回复心跳
-            self.send(IpcMessage {
-                id: msg.id,
-                kind: IpcMessageKind::Heartbeat,
-            })?;
-        }
-        Ok(msg)
+        self.recv()
     }
 
     /// 检查心跳是否超时。
@@ -376,28 +400,19 @@ impl ProcessManager {
     /// 检测并处理崩溃的渲染进程。
     ///
     /// 返回崩溃的渲染进程 ID 列表。崩溃的进程会被自动关闭。
-    pub fn check_crashes(&mut self) -> Vec<RendererId> {
+    /// 仅以子进程是否退出为准；长页面加载/后台标签不发送 IPC 不算崩溃。
+    pub fn check_crashes(&mut self) -> Vec<(RendererId, String)> {
         let mut crashed = Vec::new();
         let mut to_remove = Vec::new();
 
         for (i, renderer) in self.renderers.iter_mut().enumerate() {
-            // 检查心跳超时
-            if renderer.check_heartbeat() {
-                renderer.state = RendererState::Crashed("心跳超时".into());
-                to_remove.push(i);
-                crashed.push(renderer.id);
-                continue;
-            }
-
-            // 检查进程是否存活
             if !renderer.is_alive() {
                 renderer.state = RendererState::Crashed("进程已退出".into());
                 to_remove.push(i);
-                crashed.push(renderer.id);
+                crashed.push((renderer.id, "进程已退出".to_string()));
             }
         }
 
-        // 移除崩溃的进程（从后往前移除以保持索引正确）
         for i in to_remove.into_iter().rev() {
             let mut handle = self.renderers.swap_remove(i);
             let _ = handle.kill();

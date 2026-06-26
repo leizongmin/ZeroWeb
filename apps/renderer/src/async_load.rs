@@ -120,7 +120,8 @@ impl RendererPageLoad {
                 self.session = None;
                 self.budget_pending = false;
                 match self.stage {
-                    PageLoadStage::FirstPaint => self.stage = PageLoadStage::FetchingStylesheets,
+                    // 留在 FirstPaint，由 tick() 调用 begin_stylesheet_list（勿提前切到 FetchingStylesheets）。
+                    PageLoadStage::FirstPaint => {}
                     PageLoadStage::StyledPaint | PageLoadStage::FetchingImages => {
                         if self.css_pending.is_empty() && self.img_pending.is_empty() {
                             self.stage = PageLoadStage::Complete;
@@ -147,6 +148,12 @@ impl RendererPageLoad {
 
     fn fetch_stylesheets<H: PageLoadHost>(&mut self, host: &mut H) -> Result<bool, String> {
         if self.css_pending.is_empty() {
+            if self.stage == PageLoadStage::FetchingStylesheets {
+                self.stage = PageLoadStage::StyledPaint;
+                self.budget_pending = true;
+                self.begin_image_list();
+                return Ok(true);
+            }
             return Ok(false);
         }
         let urls: Vec<String> = self.css_pending.drain(..).collect();
@@ -232,4 +239,40 @@ pub fn run_page_load<H: PageLoadHost>(
         return Err(err);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_engine::RenderResult;
+
+    struct MockHost {
+        publishes: u32,
+    }
+
+    impl PageLoadHost for MockHost {
+        fn fetch_bytes(&mut self, _url: &str) -> Result<Vec<u8>, String> {
+            Err("no network in test".into())
+        }
+
+        fn publish(
+            &mut self,
+            _result: &RenderResult,
+            _title: Option<String>,
+            _is_final: bool,
+        ) -> Result<(), String> {
+            self.publishes += 1;
+            Ok(())
+        }
+    }
+
+    /// 无外链 CSS/图片时，分阶段加载须能结束（回归：FirstPaint 后勿卡在 FetchingStylesheets）。
+    #[test]
+    fn run_page_load_completes_without_external_resources() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = "<html><head><title>Test</title></head><body><p>hi</p></body></html>";
+        let mut host = MockHost { publishes: 0 };
+        run_page_load(&mut pipeline, "zero://newtab", html, &mut host).expect("load should complete");
+        assert!(host.publishes > 0, "expected at least one publish");
+    }
 }

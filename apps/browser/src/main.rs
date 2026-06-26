@@ -23,9 +23,7 @@ mod process_backend;
 mod tab_chrome;
 mod tab_favicon;
 mod tab_js_worker;
-mod tab_lru;
 mod tab_manager;
-mod tab_restore;
 mod tab_scripts;
 mod tab_snapshot;
 mod tab_worker;
@@ -1311,6 +1309,7 @@ fn main() {
                         app.render_cpu(app.physical_size.0, app.physical_size.1, &mut cpu_surface, true);
                     }
                     app.needs_redraw = false;
+                    app.poll_tab_fetch();
                     app.begin_tab_fetch_after_paint();
                     if app.any_tab_loading() || app.tab_fetch_active() {
                         app.needs_redraw = true;

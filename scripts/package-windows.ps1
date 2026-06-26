@@ -25,17 +25,24 @@ if ($CargoToml -match 'version\s*=\s*"([^"]+)"') {
 
 Write-Host "[INFO] ZeroBrowser v$Version Windows 打包" -ForegroundColor Green
 
-# 编译
+# 编译（browser 与 renderer 须在同一输出目录，供多进程 spawn）
 Write-Host "[INFO] 编译 release 二进制..." -ForegroundColor Green
 Push-Location $ProjectRoot
-cargo build --release --bin zero-browser
+cargo build --release -p zero-browser -p zero-renderer
 Pop-Location
 
-$Binary = Join-Path $ProjectRoot "target\release\zero-browser.exe"
-if (-not (Test-Path $Binary)) {
-    Write-Host "[ERROR] 编译失败" -ForegroundColor Red
+$BrowserBin = Join-Path $ProjectRoot "target\release\zero-browser.exe"
+$RendererBin = Join-Path $ProjectRoot "target\release\zero-renderer.exe"
+if (-not (Test-Path $BrowserBin)) {
+    Write-Host "[ERROR] 编译失败: zero-browser" -ForegroundColor Red
     exit 1
 }
+if (-not (Test-Path $RendererBin)) {
+    Write-Host "[ERROR] 编译失败: zero-renderer" -ForegroundColor Red
+    exit 1
+}
+
+$Binary = $BrowserBin
 
 $BinarySize = (Get-Item $Binary).Length / 1MB
 Write-Host "[INFO] 二进制大小: $([math]::Round($BinarySize, 1)) MB"
@@ -45,8 +52,9 @@ New-Item -ItemType Directory -Force -Path $PackageDir | Out-Null
 $DistDir = Join-Path $PackageDir "ZeroBrowser-$Version-win64"
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 
-# 复制二进制
-Copy-Item $Binary (Join-Path $DistDir "ZeroBrowser.exe")
+# 复制二进制（多进程：renderer 与 browser 同目录）
+Copy-Item $BrowserBin (Join-Path $DistDir "ZeroBrowser.exe")
+Copy-Item $RendererBin (Join-Path $DistDir "zero-renderer.exe")
 
 # 创建 README
 @"

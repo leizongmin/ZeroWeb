@@ -257,7 +257,6 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
         timings: PipelineTimings::default(),
     });
     snap.document_height = Some(params.document_height);
-    snap.loading = false;
     snap.hit_test = params.hit_test.map(hit_test_cache_from_ipc);
 }
 

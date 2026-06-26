@@ -53,12 +53,11 @@ fn renderer_binary_filename() -> &'static str {
 
 /// 解析 `zero-renderer` 可执行文件路径。
 ///
-/// 与 Chromium 类似，发布布局要求 **`zero-renderer` 与 `zero-browser` 同目录**。
+/// 发布布局要求 **`zero-renderer` 与 `zero-browser` 同目录**（安装包 / 构建脚本负责保持这一布局）。
 /// 查找顺序：
 /// 1. `ZERO_RENDERER_PATH` 环境变量
-/// 2. `std::env::current_exe()` 所在目录（主路径）
-/// 3. `cargo run` 时 exe 在 `target/*/deps/` 则再试上一级 `target/debug|release`
-/// 4. `PATH`（最后兜底，例如系统级安装）
+/// 2. `std::env::current_exe()` 所在目录
+/// 3. `PATH`（系统级安装等兜底）
 fn resolve_renderer_binary() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("ZERO_RENDERER_PATH") {
         let candidate = PathBuf::from(path);
@@ -78,24 +77,13 @@ fn resolve_renderer_binary() -> Option<PathBuf> {
     find_renderer_in_path()
 }
 
-/// 在 **当前进程可执行文件** 所在目录（及 `deps` 上一级）查找 `zero-renderer`。
+/// 在 **当前进程可执行文件** 所在目录查找 `zero-renderer`。
 fn renderer_binary_beside_current_exe() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?;
-    let sibling = dir.join(renderer_binary_filename());
-    if sibling.is_file() {
-        return Some(sibling);
-    }
-    // `cargo run` 有时将二进制放在 `target/debug/deps/` 或 `target/release/deps/`。
-    if dir.file_name().is_some_and(|n| n == "deps")
-        && let Some(profile_dir) = dir.parent()
-    {
-        let beside_profile = profile_dir.join(renderer_binary_filename());
-        if beside_profile.is_file() {
-            return Some(beside_profile);
-        }
-    }
-    None
+    let sibling = exe
+        .parent()?
+        .join(renderer_binary_filename());
+    sibling.is_file().then_some(sibling)
 }
 
 fn find_renderer_in_path() -> Option<PathBuf> {
@@ -126,12 +114,14 @@ impl ProcessTabBackend {
             PathBuf::from(renderer_binary_filename())
         });
         if !renderer_bin.is_file() {
-            let beside = renderer_binary_beside_current_exe()
+            let expected = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|dir| dir.join(renderer_binary_filename())))
                 .map(|p| p.display().to_string())
-                .unwrap_or_else(|| format!("{} (同 zero-browser.exe 目录)", renderer_binary_filename()));
+                .unwrap_or_else(|| renderer_binary_filename().to_string());
             tracing::warn!(
-                "未找到 zero-renderer（应在 zero-browser 可执行文件同目录: {beside}）。\
-                 将使用进程内 tab worker。请与 zero-browser 一并编译安装，或设置 ZERO_RENDERER_PATH，或使用 --single-process。"
+                "未找到 zero-renderer（应与 zero-browser 同目录: {expected}）。\
+                 将使用进程内 tab worker。请一并安装/编译两个二进制，或设置 ZERO_RENDERER_PATH，或使用 --single-process。"
             );
             return None;
         }
@@ -148,6 +138,22 @@ impl ProcessTabBackend {
             storage: StorageManager::new(),
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
+        }
+    }
+
+    fn send_fetch_response_now(
+        &mut self,
+        tab_id: TabId,
+        request_id: u64,
+        status: u16,
+        body: Vec<u8>,
+    ) {
+        if let Some(renderer) = self.renderer_mut(tab_id) {
+            if let Err(e) = renderer.send_fetch_response(request_id, status, Vec::new(), body) {
+                tracing::warn!("FetchResponse send failed tab {}: {e}", tab_id.0);
+            }
+        } else {
+            tracing::warn!("FetchResponse dropped: no renderer for tab {}", tab_id.0);
         }
     }
 
@@ -189,17 +195,23 @@ impl ProcessTabBackend {
     }
 
     fn handle_fetch_request(&mut self, tab_id: TabId, params: FetchParams) {
+        let url = params.url.clone();
+        let request_id = params.request_id;
+        tracing::info!("Browser fetch proxy tab {}: {url}", tab_id.0);
         let client = zero_net::client::HttpClient::new();
-        let (status, body) = match client.get(&params.url) {
+        let (status, body) = match client.get(&url) {
             Ok(resp) => (resp.status_code, resp.body),
             Err(e) => {
-                tracing::warn!("browser fetch proxy failed: {e}");
+                tracing::warn!("browser fetch proxy failed ({url}): {e}");
                 (0, format!("fetch error: {e}").into_bytes())
             }
         };
-        if let Some(renderer) = self.renderer_mut(tab_id) {
-            let _ = renderer.send_fetch_response(params.request_id, status, Vec::new(), body);
-        }
+        tracing::info!(
+            "Browser fetch proxy done tab {}: {url} status={status} bytes={}",
+            tab_id.0,
+            body.len()
+        );
+        self.send_fetch_response_now(tab_id, request_id, status, body);
     }
 
     fn handle_storage_op(&mut self, tab_id: TabId, params: StorageOpParams) {
@@ -228,7 +240,7 @@ impl ProcessTabBackend {
 
     fn handle_crashes(&mut self, snapshots: &mut HashMap<TabId, TabSnapshot>) {
         let crashed = self.manager.check_crashes();
-        for rid in crashed {
+        for (rid, reason) in crashed {
             let Some(tab_id) = self.tab_for_renderer(rid) else {
                 continue;
             };
@@ -237,7 +249,7 @@ impl ProcessTabBackend {
             if let Some(snap) = snapshots.get_mut(&tab_id) {
                 snap.loading = false;
             }
-            tracing::warn!("Renderer {rid} crashed for tab {}", tab_id.0);
+            tracing::warn!("Renderer {rid} for tab {}: {reason}", tab_id.0);
         }
     }
 
@@ -263,8 +275,11 @@ impl ProcessTabBackend {
     /// 确保 Tab 有对应渲染进程。
     pub fn ensure_renderer(&mut self, tab_id: TabId, viewport: (u32, u32)) {
         self.viewport = viewport;
-        if self.tab_to_renderer.contains_key(&tab_id) {
-            return;
+        if let Some(rid) = self.tab_to_renderer.get(&tab_id).copied() {
+            if self.manager.get_renderer(rid).is_some() {
+                return;
+            }
+            self.tab_to_renderer.remove(&tab_id);
         }
         match self.manager.spawn_renderer() {
             Ok(rid) => {
@@ -301,11 +316,6 @@ impl ProcessTabBackend {
     /// 当前 live 渲染进程数量。
     pub fn live_renderer_count(&self) -> usize {
         self.tab_to_renderer.len()
-    }
-
-    /// 所有 live Tab ID（LRU 冻结候选）。
-    pub fn live_tab_ids(&self) -> HashMap<TabId, ()> {
-        self.tab_to_renderer.keys().map(|&id| (id, ())).collect()
     }
 
     /// 导航。
@@ -368,16 +378,13 @@ impl ProcessTabBackend {
     pub fn poll(
         &mut self,
         snapshots: &mut HashMap<TabId, TabSnapshot>,
-        active_tab: Option<TabId>,
-        poll_background: bool,
+        _active_tab: Option<TabId>,
+        _poll_background: bool,
     ) -> bool {
         let mut changed = false;
         self.handle_crashes(snapshots);
         let mapping: Vec<(TabId, u64)> = self.tab_to_renderer.iter().map(|(k, v)| (*k, *v)).collect();
         for (tab_id, rid) in mapping {
-            if active_tab != Some(tab_id) && !poll_background {
-                continue;
-            }
             loop {
                 let msg = {
                     let Some(renderer) = self.manager.get_renderer(rid) else {
