@@ -1,7 +1,7 @@
 //! B3 加载机制验证（in-process）。
 //!
 //! 验证 renderer 重写后将走的 load 路径：`WebView` 经 `AsyncPageLoad`（per-tick host）
-//! + `BlockingFetchHost` 同步 drain 到完成并产出渲染——即 §11 B3-2 的核心机制。
+//! 与 `BlockingFetchHost` 同步 drain 到完成并产出渲染——即 §11 B3-2 的核心机制。
 //! 无需 spawn 子进程（避免 GPU/Display 与二进制定位的 flaky），直接覆盖 B3 load 路径。
 
 #[cfg(test)]

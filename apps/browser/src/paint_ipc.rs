@@ -5,6 +5,9 @@ use zero_protocol::{
     IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGradientKind, IpcLineCap, IpcLineStyle, IpcRect,
     PaintSnapshotParams,
 };
+// 仅测试用（构造 PaintSnapshotParams 断言）。
+#[cfg(test)]
+use zero_protocol::{IpcImage, IpcImagePayload};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::{ImageData, ImageKey};
