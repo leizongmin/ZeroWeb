@@ -52,16 +52,16 @@ pub(crate) fn build_blocking_client(user_agent: &str, timeout_secs: u64) -> Clie
         .dns_resolver(Arc::new(Ipv4OnlyResolver));
     if !http2_enabled() {
         builder = builder.http1_only();
-    } else {
-        tracing::info!("HTTP/2 enabled (ZERO_HTTP2=1)");
+        tracing::info!("HTTP/1.1 only (ZERO_HTTP2=0)");
     }
     builder.build().expect("failed to build HTTP client")
 }
 
+/// 默认启用 HTTP/2；设 `ZERO_HTTP2=0` 可退回 HTTP/1.1。
 fn http2_enabled() -> bool {
     std::env::var("ZERO_HTTP2")
         .ok()
-        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .is_none_or(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
 }
 
 /// 将 reqwest 错误映射为 `NetError`；代理相关失败单独归类以便 UI/日志识别。
