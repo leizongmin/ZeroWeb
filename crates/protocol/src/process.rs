@@ -187,12 +187,13 @@ impl RendererHandle {
     }
 
     /// 发送导航命令。
-    pub fn navigate(&mut self, url: &str, referrer: Option<&str>) -> Result<(), ProtocolError> {
+    pub fn navigate(&mut self, url: &str, referrer: Option<&str>, navigation_epoch: u64) -> Result<(), ProtocolError> {
         self.send(IpcMessage {
             id: 0,
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: url.to_string(),
                 referrer: referrer.map(|s| s.to_string()),
+                navigation_epoch,
             }),
         })?;
         self.current_url = Some(url.to_string());
@@ -518,6 +519,7 @@ mod tests {
                 kind: IpcMessageKind::Navigate(NavigateParams {
                     url: "https://example.com".into(),
                     referrer: None,
+                navigation_epoch: 0,
                 }),
             })
             .unwrap();
@@ -737,6 +739,7 @@ mod tests {
                 kind: IpcMessageKind::Navigate(NavigateParams {
                     url: "https://example.com".into(),
                     referrer: None,
+                navigation_epoch: 0,
                 }),
             })
             .unwrap();
@@ -787,6 +790,7 @@ mod tests {
                 kind: IpcMessageKind::Navigate(NavigateParams {
                     url: "https://unreachable.example".into(),
                     referrer: None,
+                navigation_epoch: 0,
                 }),
             })
             .unwrap();

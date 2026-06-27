@@ -173,10 +173,7 @@ impl ProcessTabBackend {
         match kind {
             IpcMessageKind::TitleChanged(title) => snap.title = Some(title),
             IpcMessageKind::LoadComplete => {
-                snap.loading = false;
-                let title = snap.title.clone().unwrap_or_else(|| "页面".to_string());
-                let url = snap.url.clone().unwrap_or_default();
-                pending_loaded.push((tab_id, title, url));
+                // loading 结束与 paint 提交仅由 ViewPainted / LoadFailed 驱动。
             }
             IpcMessageKind::LoadFailed(err) => {
                 snap.loading = false;
@@ -185,8 +182,24 @@ impl ProcessTabBackend {
             }
             IpcMessageKind::UrlChanged(url) => snap.url = Some(url),
             IpcMessageKind::ViewPainted(params) => {
+                if params.navigation_epoch != snap.navigation_epoch {
+                    tracing::debug!(
+                        "忽略 stale ViewPainted tab {} epoch {} != {}",
+                        tab_id.0,
+                        params.navigation_epoch,
+                        snap.navigation_epoch
+                    );
+                    return;
+                }
                 crate::paint_ipc::apply_paint_snapshot(snap, *params);
                 snap.clear_browser_owned_hit_test();
+                // 首帧绘制到达即可结束 loading（脚本预取/执行可能仍在进行）。
+                if snap.loading {
+                    snap.loading = false;
+                    let title = snap.title.clone().unwrap_or_else(|| "页面".to_string());
+                    let url = snap.url.clone().unwrap_or_default();
+                    pending_loaded.push((tab_id, title, url));
+                }
             }
             _ => {}
         }
@@ -257,7 +270,8 @@ impl ProcessTabBackend {
     ///
     /// 正常运行时由事件循环 `poll` 驱动 fetch 代理；勿在主/UI 线程调用以免阻塞 winit。
     pub fn navigate_and_service(&mut self, tab_id: TabId, url: &str, snapshots: &mut HashMap<TabId, TabSnapshot>) {
-        self.navigate(tab_id, url);
+        let epoch = snapshots.get(&tab_id).map(|s| s.navigation_epoch).unwrap_or(0);
+        self.navigate(tab_id, url, epoch);
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
             self.poll(snapshots, Some(tab_id), true);
@@ -378,11 +392,11 @@ impl ProcessTabBackend {
     }
 
     /// 导航。
-    pub fn navigate(&mut self, tab_id: TabId, url: &str) {
+    pub fn navigate(&mut self, tab_id: TabId, url: &str, navigation_epoch: u64) {
         let Some(renderer) = self.renderer_mut(tab_id) else {
             return;
         };
-        if let Err(e) = renderer.navigate(url, None) {
+        if let Err(e) = renderer.navigate(url, None, navigation_epoch) {
             tracing::warn!("IPC navigate failed: {e}");
         }
     }
@@ -398,13 +412,21 @@ impl ProcessTabBackend {
     }
 
     /// 加载 HTML（多进程 IPC）。
-    pub fn load_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>, url: Option<&str>) {
+    pub fn load_html(
+        &mut self,
+        tab_id: TabId,
+        html: &str,
+        css: Option<&str>,
+        url: Option<&str>,
+        navigation_epoch: u64,
+    ) {
         self.send_to_renderer(
             tab_id,
             IpcMessageKind::LoadHtml(LoadHtmlParams {
                 html: html.to_string(),
                 css: css.map(str::to_string),
                 url: url.map(str::to_string),
+                navigation_epoch,
             }),
         );
     }
@@ -695,8 +717,13 @@ impl ProcessTabBackend {
                 IpcMessageKind::ViewPainted(params) => {
                     html_changed = true;
                     let snap = snapshots.entry(tab_id).or_default();
-                    crate::paint_ipc::apply_paint_snapshot(snap, *params);
-                    snap.clear_browser_owned_hit_test();
+                    Self::apply_inbound_message(
+                        tab_id,
+                        snap,
+                        IpcMessageKind::ViewPainted(params),
+                        &mut self.pending_loaded,
+                        &mut self.pending_errors,
+                    );
                 }
                 kind => {
                     let snap = snapshots.entry(tab_id).or_default();
@@ -723,5 +750,163 @@ fn element_hit_from_ipc(result: HitTestElementResultParams) -> Option<ElementHit
 impl Drop for ProcessTabBackend {
     fn drop(&mut self) {
         self.manager.shutdown_all();
+    }
+}
+
+#[cfg(test)]
+mod navigation_contract_tests {
+    use super::ProcessTabBackend;
+    use crate::paint_ipc::apply_paint_snapshot;
+    use crate::tab_snapshot::TabSnapshot;
+    use zero_browser_shell::TabId;
+    use zero_protocol::message::IpcMessageKind;
+    use zero_protocol::{IpcColor, IpcFill, IpcRect, PaintSnapshotParams};
+    use zero_render_foundation::color::Color;
+    use zero_render_foundation::geometry::Rect;
+    use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
+    use zero_webview::WebViewRenderResult;
+
+    fn paint_with_red_fill(epoch: u64) -> PaintSnapshotParams {
+        PaintSnapshotParams {
+            viewport_width: 800,
+            viewport_height: 600,
+            document_height: 400.0,
+            navigation_epoch: epoch,
+            fills: vec![IpcFill {
+                rect: IpcRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 100.0,
+                    height: 100.0,
+                },
+                color: IpcColor {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                    a: 255,
+                },
+            }],
+            rounded_rects: vec![],
+            gradients: vec![],
+            shadows: vec![],
+            images: vec![],
+            image_payloads: vec![],
+            strokes: vec![],
+            path_fills: vec![],
+            path_strokes: vec![],
+            clips: vec![],
+            transforms: vec![],
+            filters: vec![],
+            blend_modes: vec![],
+            glyphs: vec![],
+            draw_order: vec![],
+            hit_test: None,
+        }
+    }
+
+    fn legacy_blue_render() -> WebViewRenderResult {
+        WebViewRenderResult {
+            primitives: RenderPrimitives {
+                fills: vec![FillPrimitive {
+                    rect: Rect::new(0.0, 0.0, 50.0, 50.0),
+                    color: Color::rgb(0, 0, 255),
+                }],
+                ..RenderPrimitives::new()
+            },
+            timings: Default::default(),
+        }
+    }
+
+    #[test]
+    fn begin_navigation_discards_previous_paint() {
+        let mut snap = TabSnapshot::default();
+        snap.last_render = Some(legacy_blue_render());
+        snap.loading = false;
+
+        snap.begin_navigation("https://example.com".into());
+
+        assert!(snap.last_render.is_none());
+        assert!(snap.loading);
+        assert!(!snap.should_composite_paint());
+        assert_eq!(snap.url.as_deref(), Some("https://example.com"));
+    }
+
+    #[test]
+    fn view_painted_commits_new_frame_and_ends_loading() {
+        let tab_id = TabId(1);
+        let mut snap = TabSnapshot::default();
+        snap.begin_navigation("https://example.com".into());
+        let mut pending_loaded = Vec::new();
+        let mut pending_errors = Vec::new();
+
+        let epoch = snap.navigation_epoch;
+        ProcessTabBackend::apply_inbound_message(
+            tab_id,
+            &mut snap,
+            IpcMessageKind::ViewPainted(Box::new(paint_with_red_fill(epoch))),
+            &mut pending_loaded,
+            &mut pending_errors,
+        );
+
+        assert!(!snap.loading);
+        assert!(snap.should_composite_paint());
+        let fill = &snap.last_render.as_ref().unwrap().primitives.fills[0];
+        assert_eq!(fill.color.r, 255);
+        assert_eq!(fill.color.g, 0);
+        assert_eq!(pending_loaded.len(), 1);
+        assert!(pending_errors.is_empty());
+    }
+
+    #[test]
+    fn load_complete_alone_does_not_end_loading_or_change_paint() {
+        let tab_id = TabId(1);
+        let mut snap = TabSnapshot::default();
+        snap.begin_navigation("https://example.com".into());
+        snap.last_render = None;
+        let mut pending_loaded = Vec::new();
+        let mut pending_errors = Vec::new();
+
+        ProcessTabBackend::apply_inbound_message(
+            tab_id,
+            &mut snap,
+            IpcMessageKind::LoadComplete,
+            &mut pending_loaded,
+            &mut pending_errors,
+        );
+
+        assert!(snap.loading);
+        assert!(!snap.should_composite_paint());
+        assert!(pending_loaded.is_empty());
+    }
+
+    #[test]
+    fn stale_view_painted_is_ignored() {
+        let tab_id = TabId(1);
+        let mut snap = TabSnapshot::default();
+        snap.begin_navigation("https://example.com".into());
+        let epoch = snap.navigation_epoch;
+        let mut pending_loaded = Vec::new();
+        let mut pending_errors = Vec::new();
+
+        ProcessTabBackend::apply_inbound_message(
+            tab_id,
+            &mut snap,
+            IpcMessageKind::ViewPainted(Box::new(paint_with_red_fill(epoch.wrapping_sub(1)))),
+            &mut pending_loaded,
+            &mut pending_errors,
+        );
+
+        assert!(snap.loading);
+        assert!(snap.last_render.is_none());
+        assert!(pending_loaded.is_empty());
+    }
+
+    #[test]
+    fn apply_paint_snapshot_replaces_legacy_blue_with_red() {
+        let mut snap = TabSnapshot::default();
+        snap.last_render = Some(legacy_blue_render());
+        apply_paint_snapshot(&mut snap, paint_with_red_fill(0));
+        let fill = &snap.last_render.as_ref().unwrap().primitives.fills[0];
+        assert_eq!(fill.color.r, 255);
     }
 }

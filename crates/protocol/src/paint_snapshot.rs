@@ -428,6 +428,9 @@ pub struct PaintSnapshotParams {
     pub draw_order: Vec<IpcDrawOp>,
     /// 主线程命中测试快照（与绘制同帧）。
     pub hit_test: Option<IpcHitTestCache>,
+    /// 与浏览器 `TabSnapshot.navigation_epoch` 对齐；不匹配则丢弃 stale 帧。
+    #[serde(default)]
+    pub navigation_epoch: u64,
 }
 
 /// IPC 命中测试布局节点（仅几何 + node id）。
@@ -495,6 +498,7 @@ impl Default for PaintSnapshotParams {
             glyphs: Vec::new(),
             draw_order: Vec::new(),
             hit_test: None,
+            navigation_epoch: 0,
         }
     }
 }

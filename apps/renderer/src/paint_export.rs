@@ -142,6 +142,22 @@ pub fn fetch_image_payloads_with_fetch<F>(html: &str, page_url: &str, fetch: &mu
 where
     F: FnMut(&str) -> Option<Vec<u8>>,
 {
+    let mut cache = zero_render_foundation::image_cache::ImageCache::default();
+    fetch_image_payloads_with_cache(html, page_url, &mut cache, fetch)
+}
+
+/// 优先从已解码 `ImageCache` 取图，缺失时再经 fetch 回调抓取。
+pub fn fetch_image_payloads_with_cache<F>(
+    html: &str,
+    page_url: &str,
+    cache: &mut zero_render_foundation::image_cache::ImageCache,
+    fetch: &mut F,
+) -> Vec<IpcImagePayload>
+where
+    F: FnMut(&str) -> Option<Vec<u8>>,
+{
+    use zero_render_foundation::image_cache::ImageKey;
+
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -154,10 +170,14 @@ where
         if !seen.insert(key) {
             continue;
         }
-        let Some(body) = fetch(&resolved) else {
-            continue;
-        };
-        let Ok(data) = decode_image_bytes(&body) else {
+        let data = if let Some(img) = cache.get(&ImageKey::new(key)) {
+            img.clone()
+        } else if let Some(body) = fetch(&resolved) {
+            match decode_image_bytes(&body) {
+                Ok(data) => data,
+                Err(_) => continue,
+            }
+        } else {
             continue;
         };
         out.push(IpcImagePayload {
@@ -178,11 +198,13 @@ pub fn paint_snapshot_from_primitives(
     primitives: &RenderPrimitives,
     image_payloads: Vec<IpcImagePayload>,
     hit_test: Option<HitTestCache>,
+    navigation_epoch: u64,
 ) -> PaintSnapshotParams {
     PaintSnapshotParams {
         viewport_width,
         viewport_height,
         document_height,
+        navigation_epoch,
         fills: primitives
             .fills
             .iter()

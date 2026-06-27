@@ -77,6 +77,9 @@ mod web_api_pipeline;
 mod multi_process;
 
 #[cfg(test)]
+mod navigation_paint;
+
+#[cfg(test)]
 mod security_pipeline;
 
 #[cfg(test)]

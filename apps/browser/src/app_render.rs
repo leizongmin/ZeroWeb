@@ -895,9 +895,12 @@ impl BrowserApp {
         let tab_id = self.shell.active_tab_id().unwrap();
         let scroll = self.tab_scroll_state(tab_id);
         let layout = self.page_scroll_layout(tab_id);
-        let has_render = self.tabs.last_render(tab_id).is_some();
+        let has_composite_paint = self
+            .tabs
+            .snapshot(tab_id)
+            .is_some_and(|s| s.should_composite_paint());
 
-        if has_render
+        if has_composite_paint
             && self.render_active_webview(
                 fills,
                 glyphs,

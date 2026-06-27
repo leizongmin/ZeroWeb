@@ -26,6 +26,7 @@ fn test_shared_channel_full_duplex() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://example.com".into(),
                 referrer: None,
+                navigation_epoch: 0,
             }),
         })
         .unwrap();
@@ -53,6 +54,7 @@ fn test_pipe_transport_frame_protocol() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://test.example/page?q=hello&lang=en".into(),
             referrer: Some("https://origin.example".into()),
+                navigation_epoch: 0,
         }),
     };
 
@@ -114,6 +116,7 @@ fn test_page_load_lifecycle() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://example.com".into(),
                 referrer: None,
+                navigation_epoch: 0,
             }),
         })
         .unwrap();
@@ -376,6 +379,7 @@ fn test_page_load_failure() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://unreachable.invalid".into(),
                 referrer: None,
+                navigation_epoch: 0,
             }),
         })
         .unwrap();
@@ -460,6 +464,7 @@ fn test_interleaved_messages() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://a.com".into(),
             referrer: None,
+                navigation_epoch: 0,
         }),
     })
     .unwrap();
@@ -522,6 +527,7 @@ fn test_concurrent_bidirectional() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://tab1.com".into(),
             referrer: None,
+                navigation_epoch: 0,
         }),
     })
     .unwrap();
@@ -572,6 +578,7 @@ fn test_navigation_history_commands() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://page1.com".into(),
                 referrer: None,
+                navigation_epoch: 0,
             }),
         })
         .unwrap();

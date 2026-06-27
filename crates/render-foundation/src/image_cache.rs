@@ -74,11 +74,16 @@ impl ImageData {
         }
     }
 
-    /// 获取指定位置的像素 (R, G, B, A)
+    /// 获取指定位置的像素 (R, G, B, A)。
     ///
-    /// # Panics
-    /// 如果坐标越界则 panic
+    /// 越界坐标钳制到最近有效像素；像素缓冲与宽高不一致时返回透明（避免渲染崩溃）。
     pub fn get_pixel(&self, x: u32, y: u32) -> [u8; 4] {
+        let expected = (self.width as usize) * (self.height as usize) * 4;
+        if self.width == 0 || self.height == 0 || self.pixels.len() != expected {
+            return [0, 0, 0, 0];
+        }
+        let x = x.min(self.width - 1);
+        let y = y.min(self.height - 1);
         let idx = ((y * self.width + x) * 4) as usize;
         [
             self.pixels[idx],
@@ -764,6 +769,27 @@ mod tests {
     fn test_image_key_new() {
         let key = ImageKey::new(42);
         assert_eq!(key.0, 42);
+    }
+
+    #[test]
+    fn test_image_data_get_pixel_clamps_out_of_bounds() {
+        let pixels = vec![255u8, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255];
+        let img = ImageData::from_rgba(pixels, 2, 2).unwrap();
+        // 双线性采样在右/下边界可能传入 x=width 或 y=height，应钳制而非 panic。
+        assert_eq!(img.get_pixel(2, 0), [0, 255, 0, 255]);
+        assert_eq!(img.get_pixel(0, 2), [0, 0, 255, 255]);
+        assert_eq!(img.get_pixel(99, 99), [255, 255, 0, 255]);
+    }
+
+    #[test]
+    fn test_image_data_get_pixel_mismatched_buffer_returns_transparent() {
+        let img = ImageData {
+            pixels: vec![255; 8],
+            width: 2,
+            height: 2,
+            solid_color: None,
+        };
+        assert_eq!(img.get_pixel(0, 0), [0, 0, 0, 0]);
     }
 
     #[test]

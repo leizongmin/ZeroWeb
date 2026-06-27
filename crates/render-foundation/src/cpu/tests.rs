@@ -1215,6 +1215,39 @@ fn cpu_full_scene_image_solid_red() {
     assert!(c[2] < 15, "image center B should be ~0, got {:?}", c);
 }
 
+/// 大图缩放至视口边缘时，双线性采样不应因 src 坐标等于 width/height 而 panic。
+#[test]
+fn cpu_scaled_image_at_viewport_edge_does_not_panic() {
+    let mut primitives = RenderPrimitives::new();
+    let w = 1070_u32;
+    let h = 400_u32;
+    let pixels = vec![128u8; (w as usize) * (h as usize) * 4];
+    let img = ImageData::from_rgba(pixels, w, h).expect("large image");
+    let mut image_cache = ImageCache::new(8, 256 * 1024 * 1024);
+    let key = image_cache.insert(img);
+    primitives.add_image(ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, w as f32, h as f32),
+        image_key: key,
+        clip: None,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(
+        w,
+        h,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut image_cache),
+        &[],
+        &[],
+        &[],
+    );
+    let corner = fb.get_pixel(w - 1, h - 1);
+    assert!(corner[3] == 255, "corner should be opaque, got {:?}", corner);
+}
+
 /// DC-8 CPU PathFillPrimitive — 矩形多边形填充，断言中心黑、外部白。
 #[test]
 fn cpu_full_scene_path_fill_black_rect() {

@@ -44,6 +44,7 @@ try {
     }
 
     Write-Host "ZeroBrowser: starting $BrowserBin (WPT parity: CPU, scale 1.0)"
+    $env:RUST_BACKTRACE = "1"
     $launchArgs = @("--wpt-parity") + $BrowserArgs
     & $BrowserBin @launchArgs
     exit $LASTEXITCODE
