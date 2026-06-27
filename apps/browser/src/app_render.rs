@@ -74,6 +74,7 @@ impl BrowserApp {
 
         // 8. 书签栏（有书签且设置开启时显示；否则不占高度）
         if self.bookmarks_bar_visible() {
+            self.refresh_bookmark_favicons();
             self.render_bookmarks_bar(&mut fills, &mut glyphs, width, toolbar_h, s);
         }
 
@@ -1026,15 +1027,17 @@ impl BrowserApp {
             }
 
             let icon_cx = bx + layout::BOOKMARKS_BAR_ITEM_PAD_H * s + icon_size * 0.5;
-            crate::ui_icons::render_icon(
-                &mut self.font_loader,
-                glyphs,
-                crate::ui_icons::Icon::Star,
-                icon_cx,
-                icon_cy,
-                icon_size,
-                self.chrome_palette.bookmarks_bar_icon,
-            );
+            let bm_url = bm.url();
+            let favicon_ch =
+                crate::tab_favicon::bookmark_favicon_glyph(&mut self.font_loader, bm_url, icon_size);
+            glyphs.push(GlyphDraw {
+                ch: favicon_ch,
+                x: icon_cx - icon_size * 0.5,
+                baseline_y: icon_cy + icon_size * 0.5,
+                color: self.chrome_palette.bookmarks_bar_icon,
+                font_id: crate::tab_favicon::FAVICON_FONT_ID,
+                font_size: icon_size,
+            });
             let text_x = bx + layout::BOOKMARKS_BAR_ITEM_PAD_H * s + icon_size + layout::BOOKMARKS_BAR_ICON_GAP * s;
             let (text_top, _) = self.ui_text_centered_in_height(bar_h, font_size);
             self.draw_ui_text(
