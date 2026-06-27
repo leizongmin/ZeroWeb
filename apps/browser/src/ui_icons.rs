@@ -1,5 +1,37 @@
 //! 浏览器 Chrome 图标：运行时以 `resvg` 光栅化 `assets/icons/*.svg`，
 //! 经 glyph atlas 的 alpha 遮罩绘制（与文字相同的抗锯齿路径）。
+//!
+//! # SVG 图标资源索引
+//!
+//! 所有语义图标都存放在 [`assets/icons/`]，通过 [`Icon`] 枚举 + `svg_bytes()` 统一加载：
+//!
+//! | [`Icon`] 变体          | SVG 文件              | 用途                 |
+//! |------------------------|-----------------------|----------------------|
+//! | `ChevronLeft`          | `chevron-left.svg`    | 导航后退、查找上一个 |
+//! | `ChevronRight`         | `chevron-right.svg`   | 导航前进             |
+//! | `ChevronUp`            | `chevron-up.svg`      | 查找上一个（竖排）   |
+//! | `ChevronDown`          | `chevron-down.svg`    | 查找下一个（竖排）   |
+//! | `Refresh`              | `refresh.svg`         | 刷新页面             |
+//! | `Home`                 | `home.svg`            | 回主页               |
+//! | `Close`                | `close.svg`           | 关闭标签、关闭浮层   |
+//! | `Plus`                 | `plus.svg`            | 新建标签             |
+//! | `MoreVertical`         | `more-vertical.svg`   | 全局菜单（地址栏外） |
+//! | `Star`                 | `star.svg`            | 收藏当前页           |
+//! | `Lock`                 | `lock.svg`            | HTTPS 安全锁         |
+//! | `Download`             | `download.svg`        | 下载管理             |
+//! | `Shield`               | `shield.svg`          | 站点权限             |
+//! | `Sun` / `Moon` / `SunMoon` | `sun.svg` / `moon.svg` / `sun-moon.svg` | 主题切换（亮/暗/自动） |
+//!
+//! 另有一个 [`globe.svg`] 不走 [`Icon`] 枚举，作为默认 favicon 占位符由
+//! [`tab_favicon`] 直接加载。
+//!
+//! # 仍用代码绘制的图形（非图标，不转 SVG）
+//!
+//! 以下图形因动态变形或性能原因保持代码绘制，**不应**迁移到 SVG：
+//! - 窗口控制按钮（最小化/最大化/关闭）——形状随 `window_is_maximized` 动态变形
+//! - 加载旋转环——角度每帧变化，需高频重绘
+//! - 标签形状——宽度/圆角随布局动态变化
+//! - 分隔线、hover 圆形背景、书签 pill 等纯装饰几何
 
 use resvg::tiny_skia::{Pixmap, Transform};
 use resvg::usvg;
@@ -36,6 +68,26 @@ pub enum Icon {
 }
 
 impl Icon {
+    /// 所有图标变体，用于测试与一致性校验。新增变体时只需在此处追加。
+    pub const ALL: [Icon; 16] = [
+        Icon::ChevronLeft,
+        Icon::ChevronRight,
+        Icon::Refresh,
+        Icon::Home,
+        Icon::Close,
+        Icon::ChevronUp,
+        Icon::ChevronDown,
+        Icon::Plus,
+        Icon::MoreVertical,
+        Icon::Star,
+        Icon::Lock,
+        Icon::Download,
+        Icon::Shield,
+        Icon::Sun,
+        Icon::Moon,
+        Icon::SunMoon,
+    ];
+
     fn svg_bytes(self) -> &'static [u8] {
         match self {
             Icon::ChevronLeft => include_bytes!("../assets/icons/chevron-left.svg"),
@@ -139,24 +191,7 @@ mod tests {
     #[test]
     fn rasterize_all_icons() {
         let mut loader = FontLoader::new();
-        for icon in [
-            Icon::ChevronLeft,
-            Icon::ChevronRight,
-            Icon::Refresh,
-            Icon::Home,
-            Icon::Close,
-            Icon::ChevronUp,
-            Icon::ChevronDown,
-            Icon::Plus,
-            Icon::MoreVertical,
-            Icon::Star,
-            Icon::Lock,
-            Icon::Download,
-            Icon::Shield,
-            Icon::Sun,
-            Icon::Moon,
-            Icon::SunMoon,
-        ] {
+        for &icon in Icon::ALL.iter() {
             render_icon(&mut loader, &mut Vec::new(), icon, 16.0, 16.0, 24.0, Color::BLACK);
             assert!(loader.has_bitmap_glyph(ICON_FONT_ID, icon.glyph_id(), 24.0));
         }
