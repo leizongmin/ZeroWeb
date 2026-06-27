@@ -1,11 +1,11 @@
-# 启动 ZeroBrowser（Windows 版，等价于 make browser）
+# 以 CPU 渲染模式启动 ZeroBrowser（Windows 版，等价于 make browser-cpu）
 #
 # 用法：
-#   powershell -ExecutionPolicy Bypass -File scripts\browser.ps1
-#   powershell -ExecutionPolicy Bypass -File scripts\browser.ps1 -- --headless
-#   powershell -ExecutionPolicy Bypass -File scripts\browser.ps1 -- --scale=2
+#   powershell -ExecutionPolicy Bypass -File scripts\browser-cpu.ps1
+#   powershell -ExecutionPolicy Bypass -File scripts\browser-cpu.ps1 -- --headless
 #
-# 默认 --renderer=gpu。WPT 对齐（CPU + scale 1.0）请用 browser-cpu.ps1 / make browser-cpu。
+# 默认 --wpt-parity（CPU + scale 1.0，与 WPT/product-smoke 肉眼对齐）。
+# 显式 --renderer / --scale 可覆盖。
 # 会先下载 rusty_v8，再 release 编译 zero-browser + zero-renderer，最后运行已构建的二进制
 # （不用 cargo run，确保与 zero-renderer.exe 同目录，多进程模式可 spawn 子进程）。
 
@@ -42,9 +42,9 @@ try {
         Write-Error "zero-renderer not found at $RendererBin (required for default multi-process mode)"
     }
 
-    Write-Host "ZeroBrowser: starting $BrowserBin (GPU renderer)"
+    Write-Host "ZeroBrowser: starting $BrowserBin (WPT parity: CPU, scale 1.0)"
     $env:RUST_BACKTRACE = "1"
-    $launchArgs = @("--renderer=gpu") + $BrowserArgs
+    $launchArgs = @("--wpt-parity") + $BrowserArgs
     & $BrowserBin @launchArgs
     exit $LASTEXITCODE
 }

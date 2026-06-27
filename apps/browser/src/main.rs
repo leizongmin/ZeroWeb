@@ -136,7 +136,7 @@ fn parse_args() -> Result<CliArgs, String> {
     let cli_scale = scale_override;
     let mut render_mode = cli_render_mode.or(RenderMode::from_env()?).unwrap_or_default();
     let mut scale_override = cli_scale;
-    // make browser / browser.ps1 默认传 --wpt-parity；显式 --renderer / --scale 仍可覆盖。
+    // make browser / browser.ps1 默认 --renderer=gpu；make browser-cpu / browser-cpu.ps1 传 --wpt-parity。
     if wpt_parity {
         if cli_render_mode.is_none() {
             render_mode = RenderMode::Cpu;
@@ -170,7 +170,7 @@ Options:
   --viewport-height=<px>         Headless viewport height (default: 600)
   --single-process               Run tabs in browser process threads (disable renderer isolation)
   --multi-process                Use zero-renderer child processes per tab (default)
-  --wpt-parity                   Match WPT/product-smoke: CPU renderer and 1.0 scale (make browser default)
+  --wpt-parity                   Match WPT/product-smoke: CPU renderer and 1.0 scale (make browser-cpu default)
   --help, -h                     Show this help
 
 Environment: {}={}",
