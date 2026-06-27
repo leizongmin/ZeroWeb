@@ -5,6 +5,9 @@
 
 #![cfg_attr(test, allow(unused_imports))]
 #![cfg_attr(test, allow(unused_variables))]
+// Windows 发布构建用 GUI 子系统，避免运行 .exe 时弹出控制台窗口；
+// 测试构建保留控制台子系统（否则 test 输出不可见）。
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 #![allow(unused_comparisons)]
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::absurd_extreme_comparisons)]
