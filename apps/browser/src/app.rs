@@ -223,6 +223,8 @@ pub struct BrowserApp {
     window_control_hover: Option<usize>,
     /// 窗口是否最大化（用于绘制还原图标）
     window_is_maximized: bool,
+    /// 窗口是否处于全屏（macOS 全屏时 traffic lights 移走，标签栏左侧留白应消失）
+    window_is_fullscreen: bool,
     /// 标签栏空白处上次点击（用于双击检测）
     last_tab_bar_blank_click: Option<(f64, f64, Instant)>,
     /// 标签栏空白处按下位置（移动超过阈值后触发拖动）
@@ -306,6 +308,7 @@ impl BrowserApp {
             pending_window_chrome_action: None,
             window_control_hover: None,
             window_is_maximized: false,
+            window_is_fullscreen: false,
             last_tab_bar_blank_click: None,
             tab_bar_drag_press: None,
             chrome_anim_start: Instant::now(),
@@ -471,9 +474,10 @@ impl BrowserApp {
         is_wayland()
     }
 
-    /// macOS 一体化标题栏（系统 traffic lights 与标签栏同排）
+    /// macOS 一体化标题栏（系统 traffic lights 与标签栏同排）。
+    /// 全屏时 traffic lights 移走，无需为它们预留左侧留白。
     pub fn tab_bar_leading_inset(&self) -> f32 {
-        if uses_unified_titlebar() {
+        if uses_unified_titlebar() && !self.window_is_fullscreen {
             layout::MACOS_TRAFFIC_LIGHT_INSET
         } else {
             0.0
@@ -504,6 +508,14 @@ impl BrowserApp {
         if self.window_is_maximized != maximized {
             self.window_is_maximized = maximized;
             self.sync_webview_viewport();
+            self.needs_redraw = true;
+        }
+    }
+
+    /// 同步窗口全屏状态（macOS 全屏时去除 traffic lights 留白）。
+    pub fn set_window_fullscreen(&mut self, fullscreen: bool) {
+        if self.window_is_fullscreen != fullscreen {
+            self.window_is_fullscreen = fullscreen;
             self.needs_redraw = true;
         }
     }
@@ -755,6 +767,12 @@ impl BrowserApp {
     #[cfg(test)]
     pub fn color_scheme_for_test(&self) -> PrefersColorSchemeValue {
         self.color_scheme
+    }
+
+    /// 测试用：窗口是否处于全屏。
+    #[cfg(test)]
+    pub fn window_is_fullscreen_for_test(&self) -> bool {
+        self.window_is_fullscreen
     }
 
     /// 测试用：Tab 是否已有可滚动/可交互的页面内容。
