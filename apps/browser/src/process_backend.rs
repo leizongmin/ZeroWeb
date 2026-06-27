@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -100,6 +101,14 @@ pub struct ProcessTabBackend {
     storage: StorageManager,
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
+    pending_fetches: Vec<PendingFetch>,
+}
+
+struct PendingFetch {
+    tab_id: TabId,
+    request_id: u64,
+    url: String,
+    rx: Receiver<(u16, Vec<u8>)>,
 }
 
 impl ProcessTabBackend {
@@ -131,6 +140,7 @@ impl ProcessTabBackend {
             storage: StorageManager::new(),
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
+            pending_fetches: Vec::new(),
         }
     }
 
@@ -186,27 +196,66 @@ impl ProcessTabBackend {
         let url = params.url.clone();
         let request_id = params.request_id;
         tracing::info!("Browser fetch proxy tab {}: {url}", tab_id.0);
-        let client = zero_net::client::HttpClient::new();
-        let (status, body) = match client.get(&url) {
-            Ok(resp) => (resp.status_code, resp.body),
-            Err(e) => {
-                tracing::warn!("browser fetch proxy failed ({url}): {e}");
-                let msg = format!("网络请求失败: {e}");
-                (0, msg.into_bytes())
-            }
-        };
-        tracing::info!(
-            "Browser fetch proxy done tab {}: {url} status={status} bytes={}",
-            tab_id.0,
-            body.len()
-        );
-        self.send_fetch_response_now(tab_id, request_id, status, body);
+        let (tx, rx) = mpsc::channel();
+        let fetch_url = url.clone();
+        thread::spawn(move || {
+            let client = zero_net::HttpClient::new();
+            let result = match client.get(&fetch_url) {
+                Ok(resp) => (resp.status_code, resp.body),
+                Err(e) => {
+                    tracing::warn!("browser fetch proxy failed ({fetch_url}): {e}");
+                    (0, format!("网络请求失败: {e}").into_bytes())
+                }
+            };
+            let _ = tx.send(result);
+        });
+        self.pending_fetches.push(PendingFetch {
+            tab_id,
+            request_id,
+            url,
+            rx,
+        });
     }
 
-    /// 导航并在本线程轮询 IPC，直到该 Tab 加载完成/失败或超时。
+    fn drain_pending_fetches(&mut self) {
+        let mut still_pending = Vec::new();
+        let mut completed = Vec::new();
+        for pending in self.pending_fetches.drain(..) {
+            match pending.rx.try_recv() {
+                Ok((status, body)) => {
+                    tracing::info!(
+                        "Browser fetch proxy done tab {}: {} status={status} bytes={}",
+                        pending.tab_id.0,
+                        pending.url,
+                        body.len()
+                    );
+                    completed.push((pending.tab_id, pending.request_id, status, body));
+                }
+                Err(mpsc::TryRecvError::Empty) => still_pending.push(pending),
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    tracing::warn!(
+                        "Browser fetch proxy thread dropped tab {}: {}",
+                        pending.tab_id.0,
+                        pending.url
+                    );
+                    completed.push((
+                        pending.tab_id,
+                        pending.request_id,
+                        0,
+                        "网络请求失败: fetch worker exited".as_bytes().to_vec(),
+                    ));
+                }
+            }
+        }
+        self.pending_fetches = still_pending;
+        for (tab_id, request_id, status, body) in completed {
+            self.send_fetch_response_now(tab_id, request_id, status, body);
+        }
+    }
+
+    /// 导航并在本线程轮询 IPC，直到该 Tab 加载完成/失败或超时（测试/同步场景用）。
     ///
-    /// renderer 的 `handle_navigate` 会同步阻塞等待 `FetchResponse`；若浏览器不及时
-    /// poll，子资源/主文档 fetch 无法被代理，表现为 `HTTP 0` 或长时间卡住。
+    /// 正常运行时由事件循环 `poll` 驱动 fetch 代理；勿在主/UI 线程调用以免阻塞 winit。
     pub fn navigate_and_service(&mut self, tab_id: TabId, url: &str, snapshots: &mut HashMap<TabId, TabSnapshot>) {
         self.navigate(tab_id, url);
         let deadline = Instant::now() + Duration::from_secs(60);
@@ -391,6 +440,7 @@ impl ProcessTabBackend {
         _active_tab: Option<TabId>,
         _poll_background: bool,
     ) -> bool {
+        self.drain_pending_fetches();
         let mut changed = false;
         self.handle_crashes(snapshots);
         let mapping: Vec<(TabId, u64)> = self.tab_to_renderer.iter().map(|(k, v)| (*k, *v)).collect();

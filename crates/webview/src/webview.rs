@@ -518,6 +518,12 @@ impl WebView {
                 self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
                 Err(WebViewError::Navigation(msg))
             }
+            Err(NetError::Proxy(detail)) => {
+                self.loading = false;
+                let msg = format!("Proxy error fetching {effective_url}: {detail}");
+                self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
+                Err(WebViewError::Navigation(msg))
+            }
             Err(e) => {
                 self.loading = false;
                 let msg = format!("Failed to fetch {effective_url}: {e}");

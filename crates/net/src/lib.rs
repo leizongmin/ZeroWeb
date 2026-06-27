@@ -7,6 +7,7 @@
 #![warn(missing_docs)]
 
 pub mod client;
+pub mod connect;
 pub mod cookie;
 pub mod file_url;
 pub mod http_cache;
@@ -38,6 +39,9 @@ pub enum NetError {
     /// 网络连接错误。
     #[error("Network error: {0}")]
     Network(String),
+    /// 系统/环境代理不可用或连接失败。
+    #[error("Proxy error: {0}")]
+    Proxy(String),
     /// 请求超时。
     #[error("Timeout")]
     Timeout,

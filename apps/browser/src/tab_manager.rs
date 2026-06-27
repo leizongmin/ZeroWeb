@@ -134,7 +134,7 @@ impl TabManager {
     pub fn navigate(&mut self, tab_id: TabId, url: String) {
         self.ensure_tab(tab_id);
         if let Some(ref mut backend) = self.process_backend {
-            backend.navigate_and_service(tab_id, &url, &mut self.snapshots);
+            backend.navigate(tab_id, &url);
             if let Some(snap) = self.snapshots.get_mut(&tab_id) {
                 snap.loading = true;
                 snap.url = Some(url);

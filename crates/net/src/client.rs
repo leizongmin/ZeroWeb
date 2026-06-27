@@ -5,6 +5,7 @@
 use reqwest::blocking::Client;
 use reqwest::header::HeaderMap;
 
+use crate::connect::{build_blocking_client, map_reqwest_error, send_with_ipv4_fallback};
 use crate::{HttpRequest, HttpResponse, NetError};
 
 /// HTTP 客户端 — 封装 reqwest。
@@ -52,17 +53,7 @@ impl HttpClient {
 
     /// 使用完整配置创建 HTTP 客户端。
     fn with_config(timeout_secs: u64, max_redirects: usize) -> Self {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(timeout_secs))
-            // 禁用 reqwest 内置重定向，由我们手动处理以跟踪重定向次数
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent(Self::DEFAULT_USER_AGENT)
-            // 启用 gzip / brotli / deflate 自动解压
-            .gzip(true)
-            .brotli(true)
-            .deflate(true)
-            .build()
-            .expect("failed to build HTTP client");
+        let client = build_blocking_client(Self::DEFAULT_USER_AGENT, timeout_secs);
 
         Self {
             client,
@@ -84,7 +75,6 @@ impl HttpClient {
 
         loop {
             let reqwest_method = method.to_reqwest();
-            let mut builder = self.client.request(reqwest_method, &current_url);
 
             // 添加请求头
             let mut header_map = HeaderMap::new();
@@ -95,20 +85,10 @@ impl HttpClient {
                     .map_err(|e| NetError::Http(format!("invalid header value: {e}")))?;
                 header_map.append(header_name, header_value);
             }
-            builder = builder.headers(header_map);
 
-            // 添加请求体
-            if let Some(ref b) = body {
-                builder = builder.body(b.clone());
-            }
-
-            let response = builder.send().map_err(|e| {
-                if e.is_timeout() {
-                    NetError::Timeout
-                } else {
-                    NetError::Network(e.to_string())
-                }
-            })?;
+            let response =
+                send_with_ipv4_fallback(&self.client, reqwest_method, &current_url, &header_map, body.as_ref())
+                    .map_err(map_reqwest_error)?;
 
             let status_code = response.status().as_u16();
 
