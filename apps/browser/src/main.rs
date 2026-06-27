@@ -607,6 +607,82 @@ mod tests {
         );
     }
 
+    /// HTTPS 页面地址栏 leading slot 应绘制锁图标。
+    #[test]
+    fn address_bar_renders_lock_icon_for_https() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        if let Some(tab) = app.shell.active_tab_mut() {
+            tab.set_url("https://example.com");
+            tab.set_loading(false);
+        }
+
+        let (_, glyphs, _, _) = app.build_scene_for_test(1280, 900);
+        assert!(
+            glyphs.iter().any(|g| g.ch == '\u{E00A}'),
+            "https tab should render lock icon in address bar"
+        );
+    }
+
+    /// 工具栏应渲染下载按钮图标。
+    #[test]
+    fn toolbar_renders_download_button() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+
+        let (_, glyphs, _, _) = app.build_scene_for_test(1280, 900);
+        assert!(
+            glyphs.iter().any(|g| g.ch == '\u{E00B}'),
+            "toolbar should render download button icon"
+        );
+    }
+
+    /// 有活跃下载时工具栏下载按钮应显示角标。
+    #[test]
+    fn download_toolbar_shows_active_badge() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        app.shell
+            .downloads_mut()
+            .start_download("https://example.com/file.zip", "file.zip");
+
+        let (fills, _, _, _) = app.build_scene_for_test(1280, 900);
+        let attention = app.chrome_palette().tab_attention;
+        assert!(
+            fills.iter().any(|f| f.color == attention && f.rect.size.width <= 12.0),
+            "active download should show badge on toolbar download button"
+        );
+    }
+
+    /// 多标签拥挤时标签宽度应压缩到最小值以下 ideal 宽度。
+    #[test]
+    fn crowded_tabs_compress_tab_width() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (640, 900);
+        app.scale_factor = 1.0;
+        for _ in 0..8 {
+            app.new_tab(None);
+        }
+        let _ = app.build_scene_for_test(640, 900);
+        let tab_id = app.shell.active_tab_id().unwrap();
+        let (_, tab_w) = app.tab_layout_rect_for_test(tab_id).expect("tab layout");
+        assert!(
+            tab_w <= layout::TAB_MIN_WIDTH + 1.0,
+            "crowded tabs should compress width, got {tab_w}"
+        );
+    }
+
+    /// open_history_page 应导航到 zero://history。
+    #[test]
+    fn open_history_page_sets_url() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.open_history_page();
+        assert_eq!(app.address_bar_text(), "zero://history");
+    }
+
     /// 点击地址栏右侧三点按钮应打开浏览器菜单。
     #[test]
     fn browser_menu_button_opens_context_menu() {

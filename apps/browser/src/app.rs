@@ -447,9 +447,9 @@ impl BrowserApp {
         }
     }
 
-    /// 标签栏背景色（Windows 下与工具栏融合）。
+    /// 标签栏背景色（Windows / macOS 一体化标题栏下与工具栏融合）。
     pub fn chrome_tab_strip_bg(&self) -> zero_render_foundation::color::Color {
-        if cfg!(target_os = "windows") {
+        if cfg!(target_os = "windows") || uses_unified_titlebar() {
             self.chrome_palette.toolbar_bg
         } else {
             self.chrome_palette.tab_bar_bg
