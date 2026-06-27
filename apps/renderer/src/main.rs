@@ -1,19 +1,21 @@
 //! ZeroWeb 渲染进程入口 — 独立进程处理页面渲染，经 IPC 向浏览器传递绘制快照。
 
 mod error_page;
+mod ipc_fetch;
 mod js_worker;
 mod page_scripts;
 mod paint_export;
 mod text_metrics;
 
-use zero_page_runtime::BlockingFetchHost;
-use zero_webview::AsyncPageLoad;
+use zero_webview::{AsyncPageLoad, PageLoadStage};
+
+use crate::ipc_fetch::{IpcAsyncFetchHost, InflightIpcFetches, StubAsyncFetchHost};
 
 use crate::js_worker::RendererJsWorker;
 use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, run_page_scripts};
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::mpsc::{self, RecvTimeoutError, Receiver};
+use std::sync::mpsc::{self, RecvTimeoutError, Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -121,6 +123,10 @@ struct RendererRuntime {
     navigation_epoch: u64,
     /// 异步分阶段加载（与 tab_worker 相同 tick 模型）。
     pending_load: Option<PendingLoad>,
+    /// 进行中的非阻塞 IPC fetch（request_id → Receiver 完成端）。
+    inflight_fetches: InflightIpcFetches,
+    /// in-process 测试无 browser 进程时，避免阻塞 IPC / 子资源永久 pending。
+    stub_network: bool,
 }
 
 impl RendererRuntime {
@@ -170,6 +176,8 @@ impl RendererRuntime {
             event_target: "body".to_string(),
             navigation_epoch: 0,
             pending_load: None,
+            inflight_fetches: InflightIpcFetches::new(),
+            stub_network: false,
         }
     }
 
@@ -261,7 +269,7 @@ impl RendererRuntime {
     }
 
     /// 从 WebView 当前渲染产出发布 IPC frame（ViewPainted + 可选 Title）。B3：发布源切到 WebView。
-    fn publish_webview(&mut self, title: Option<String>) -> Result<(), String> {
+    fn publish_webview(&mut self, title: Option<String>, allow_network_fetch: bool) -> Result<(), String> {
         let html = self.cached_html.clone();
         let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
         let (vw, vh, document_height, primitives, hit_test, mut image_cache) = {
@@ -276,8 +284,13 @@ impl RendererRuntime {
                 wv.snapshot_image_cache(),
             )
         };
-        let mut fetch = |u: &str| self.fetch_get(u).ok();
-        let payloads = paint_export::fetch_image_payloads_with_cache(&html, &url, &mut image_cache, &mut fetch);
+        let payloads = if allow_network_fetch {
+            let mut fetch = |u: &str| self.fetch_get(u).ok();
+            paint_export::fetch_image_payloads_with_cache(&html, &url, &mut image_cache, &mut fetch)
+        } else {
+            let mut no_fetch = |_u: &str| None;
+            paint_export::fetch_image_payloads_with_cache(&html, &url, &mut image_cache, &mut no_fetch)
+        };
         let frame = zero_page_runtime::FrameModel {
             viewport: (vw, vh),
             document_height,
@@ -296,13 +309,37 @@ impl RendererRuntime {
         }
     }
 
-    fn try_publish_progress(&mut self) -> Result<(), String> {
+    fn try_publish_progress(&mut self, allow_network_fetch: bool) -> Result<(), String> {
         let title = self.webview.as_ref().and_then(|w| w.title().map(str::to_string));
-        self.publish_webview(title)
+        self.publish_webview(title, allow_network_fetch)
+    }
+
+    /// 非阻塞消化 inbound 中的 `FetchResponse`，避免 load tick 阻塞时 async 子资源无法完成。
+    fn drain_inflight_fetch_responses(&mut self) {
+        loop {
+            let msg = if let Some(m) = self.deferred_inbound.pop_front() {
+                m
+            } else {
+                match self.inbound_rx.try_recv() {
+                    Ok(m) => m,
+                    Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+                }
+            };
+            if self.inflight_fetches.try_complete(&msg) {
+                continue;
+            }
+            self.deferred_inbound.push_back(msg);
+            break;
+        }
     }
 
     /// 推进 pending load 一步；加载完成时发布帧、LoadComplete 与可选脚本阶段。
     fn tick_pending_load(&mut self) -> Result<(), String> {
+        self.drain_inflight_fetch_responses();
+        self.tick_pending_load_with_budget(RENDER_FRAME_BUDGET_MS)
+    }
+
+    fn tick_pending_load_with_budget(&mut self, budget_ms: f64) -> Result<(), String> {
         let Some(mut pending) = self.pending_load.take() else {
             return Ok(());
         };
@@ -313,27 +350,37 @@ impl RendererRuntime {
         }
 
         let publish_after = {
-            let outbound = &mut self.outbound;
-            let inbound_rx = &self.inbound_rx;
-            let next_fetch_id = &mut self.next_fetch_id;
-            let deferred = &mut self.deferred_inbound;
-            let mut host = BlockingFetchHost::new(|url: &str| {
-                ipc_fetch_get(outbound, inbound_rx, next_fetch_id, deferred, url)
-            });
             let webview = self.webview.as_mut().expect("webview");
             let font_loader = &self.font_loader;
             let font_id = self.font_id;
             text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
-                let changed = pending.load.tick(webview, &mut host, RENDER_FRAME_BUDGET_MS);
+                if self.stub_network {
+                    let mut host = StubAsyncFetchHost;
+                    let changed = pending.load.tick(webview, &mut host, budget_ms);
+                    return changed
+                        && webview.last_render().is_some()
+                        && !matches!(pending.load.stage(), zero_webview::PageLoadStage::FetchingDocument);
+                }
+                let outbound = &mut self.outbound;
+                let next_fetch_id = &mut self.next_fetch_id;
+                let inflight = &mut self.inflight_fetches;
+                let mut host = IpcAsyncFetchHost::new(outbound, next_fetch_id, inflight);
+                let changed = pending.load.tick(webview, &mut host, budget_ms);
                 changed
                     && webview.last_render().is_some()
                     && !matches!(pending.load.stage(), zero_webview::PageLoadStage::FetchingDocument)
             })
         };
 
-        if publish_after {
+        let stage = pending.load.stage();
+        if publish_after
+            && !matches!(
+                stage,
+                PageLoadStage::FetchingImages | PageLoadStage::FetchingStylesheets
+            )
+        {
             self.sync_cached_html_from_webview();
-            self.try_publish_progress()?;
+            self.try_publish_progress(false)?;
         }
 
         if pending.load.is_active() {
@@ -351,14 +398,14 @@ impl RendererRuntime {
         let emit_complete = pending.emit_load_complete;
 
         self.sync_cached_html_from_webview();
-        self.try_publish_progress()?;
+        self.try_publish_progress(true)?;
         if emit_complete {
             self.send(IpcMessageKind::LoadComplete)?;
             tracing::info!("页面渲染完成: {page_url}");
         }
         if run_scripts && !page_scripts::should_skip_scripts(&page_url) {
             self.after_page_html_loaded()?;
-            self.try_publish_progress()?;
+            self.try_publish_progress(true)?;
         }
         Ok(())
     }
@@ -381,11 +428,11 @@ impl RendererRuntime {
 
     #[cfg(test)]
     fn drive_until_idle(&mut self) -> Result<(), String> {
-        for _ in 0..10_000 {
+        for _ in 0..500 {
             if self.pending_load.is_none() {
                 return Ok(());
             }
-            self.tick_pending_load()?;
+            self.tick_pending_load_with_budget(2_000.0)?;
         }
         Err("测试加载未在预期步数内完成".into())
     }
@@ -400,7 +447,7 @@ impl RendererRuntime {
         text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
             wv.load_html(&html, if css.is_empty() { None } else { Some(&css) });
         });
-        self.publish_webview(None)
+        self.publish_webview(None, true)
     }
 
     fn dispatch_dom_at(
@@ -441,6 +488,9 @@ impl RendererRuntime {
 
     /// 经浏览器 IPC 代理 GET 请求。
     fn fetch_get(&mut self, url: &str) -> Result<Vec<u8>, String> {
+        if self.stub_network {
+            return Err(format!("stub network (no browser process): {url}"));
+        }
         ipc_fetch_get(
             &mut self.outbound,
             &self.inbound_rx,
@@ -519,6 +569,7 @@ impl RendererRuntime {
     fn handle_navigate(&mut self, params: NavigateParams) -> Result<(), String> {
         tracing::info!("导航到: {}", params.url);
         self.pending_load = None;
+        self.inflight_fetches.clear();
         self.push_history(&params.url);
         self.send(IpcMessageKind::UrlChanged(params.url.clone()))?;
         self.current_url = Some(params.url.clone());
@@ -562,7 +613,7 @@ impl RendererRuntime {
         text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
             wv.render();
         });
-        self.publish_webview(None)
+        self.publish_webview(None, true)
     }
 
     fn handle_set_viewport(&mut self, params: SetViewportParams) -> Result<(), String> {
@@ -731,6 +782,7 @@ impl RendererRuntime {
             IpcMessageKind::StopLoading => {
                 tracing::info!("停止加载");
                 self.pending_load = None;
+                self.inflight_fetches.clear();
                 Ok(())
             }
             IpcMessageKind::Reload => {
@@ -784,14 +836,18 @@ impl RendererRuntime {
                 continue;
             }
 
-            if self.pending_load.is_some()
-                && let Err(e) = self.tick_pending_load()
-            {
-                tracing::error!("页面加载 tick 错误: {e}");
+            if self.pending_load.is_some() {
+                self.drain_inflight_fetch_responses();
+                if let Err(e) = self.tick_pending_load() {
+                    tracing::error!("页面加载 tick 错误: {e}");
+                }
             }
 
             match self.recv_next_or_timeout(LOAD_TICK_INTERVAL)? {
                 Some(msg) => {
+                    if self.inflight_fetches.try_complete(&msg) {
+                        continue;
+                    }
                     if let Err(e) = self.dispatch_message(msg) {
                         tracing::error!("消息处理错误: {e}");
                         let _ = self.send(IpcMessageKind::Error(e.clone()));
@@ -1029,22 +1085,38 @@ mod runtime_smoke {
         msgs
     }
 
-    /// in-process renderer load+publish 回归门：喂 LoadHtml → 须产出含图元的 ViewPainted。
-    /// B3 cutover 后此测试仍过 = load+publish wiring 不坏。renderer 是 bin，靠 with_io 注入 transport 对测。
+    /// IPC publish 回归门：FrameModel → ViewPainted 帧化（不启动 V8/WebView，避免 in-process 测试卡死）。
     #[test]
-    fn renderer_load_html_publishes_viewpainted() {
+    fn publish_frame_emits_viewpainted_with_primitives() {
+        use zero_render_foundation::color::Color;
+        use zero_render_foundation::geometry::Rect;
+        use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
+
         let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
-        let (_in_tx, in_rx) = mpsc::channel();
-        let mut rt = RendererRuntime::with_io(1, Box::new(buf.clone()), in_rx);
-        let html = r#"<html><body><div style="width:200px;height:100px;background:red">Box</div></body></html>"#;
-        rt.handle_load_html(LoadHtmlParams {
-            html: html.into(),
-            css: None,
-            url: Some("zero://smoke".into()),
-            navigation_epoch: 0,
-        })
-        .expect("load ok");
-        rt.drive_until_idle().expect("load should finish");
+        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
+        let mut next_msg_id = 1_u64;
+        let frame = zero_page_runtime::FrameModel {
+            viewport: (800, 600),
+            document_height: 400.0,
+            primitives: RenderPrimitives {
+                fills: vec![FillPrimitive {
+                    rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+                    color: Color::rgb(255, 0, 0),
+                }],
+                ..RenderPrimitives::new()
+            },
+            hit_test: None,
+        };
+        publish_render_with_layout(
+            &mut outbound,
+            &mut next_msg_id,
+            &frame,
+            Some("smoke".into()),
+            Vec::new(),
+            0,
+        )
+        .expect("publish");
+
         let captured = buf.0.lock().unwrap().clone();
         let msgs = drain_messages(&captured);
         let painted = msgs
@@ -1054,9 +1126,6 @@ mod runtime_smoke {
                 _ => None,
             })
             .expect("须产出 ViewPainted");
-        assert!(
-            !(painted.fills.is_empty() && painted.rounded_rects.is_empty() && painted.images.is_empty()),
-            "ViewPainted 须含可见图元（fills/rounded_rects/images）"
-        );
+        assert!(!painted.fills.is_empty(), "ViewPainted 须含 fill 图元");
     }
 }

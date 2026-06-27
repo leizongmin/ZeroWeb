@@ -20,6 +20,7 @@ use zero_protocol::message::{
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
 
+use crate::fetch_proxy::TabFetchProxy;
 use crate::tab_scripts::DomDispatchResult;
 use crate::tab_snapshot::TabSnapshot;
 
@@ -101,14 +102,7 @@ pub struct ProcessTabBackend {
     storage: StorageManager,
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
-    pending_fetches: Vec<PendingFetch>,
-}
-
-struct PendingFetch {
-    tab_id: TabId,
-    request_id: u64,
-    url: String,
-    rx: Receiver<(u16, Vec<u8>)>,
+    fetch_proxy: TabFetchProxy,
 }
 
 impl ProcessTabBackend {
@@ -140,7 +134,7 @@ impl ProcessTabBackend {
             storage: StorageManager::new(),
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
-            pending_fetches: Vec::new(),
+            fetch_proxy: TabFetchProxy::new(),
         }
     }
 
@@ -206,63 +200,12 @@ impl ProcessTabBackend {
     }
 
     fn handle_fetch_request(&mut self, tab_id: TabId, params: FetchParams) {
-        let url = params.url.clone();
-        let request_id = params.request_id;
-        tracing::info!("Browser fetch proxy tab {}: {url}", tab_id.0);
-        let (tx, rx) = mpsc::channel();
-        let fetch_url = url.clone();
-        thread::spawn(move || {
-            let client = zero_net::HttpClient::new();
-            let result = match client.get(&fetch_url) {
-                Ok(resp) => (resp.status_code, resp.body),
-                Err(e) => {
-                    tracing::warn!("browser fetch proxy failed ({fetch_url}): {e}");
-                    (0, format!("网络请求失败: {e}").into_bytes())
-                }
-            };
-            let _ = tx.send(result);
-        });
-        self.pending_fetches.push(PendingFetch {
-            tab_id,
-            request_id,
-            url,
-            rx,
-        });
+        self.fetch_proxy.enqueue(tab_id, &params);
     }
 
     fn drain_pending_fetches(&mut self) {
-        let mut still_pending = Vec::new();
-        let mut completed = Vec::new();
-        for pending in self.pending_fetches.drain(..) {
-            match pending.rx.try_recv() {
-                Ok((status, body)) => {
-                    tracing::info!(
-                        "Browser fetch proxy done tab {}: {} status={status} bytes={}",
-                        pending.tab_id.0,
-                        pending.url,
-                        body.len()
-                    );
-                    completed.push((pending.tab_id, pending.request_id, status, body));
-                }
-                Err(mpsc::TryRecvError::Empty) => still_pending.push(pending),
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    tracing::warn!(
-                        "Browser fetch proxy thread dropped tab {}: {}",
-                        pending.tab_id.0,
-                        pending.url
-                    );
-                    completed.push((
-                        pending.tab_id,
-                        pending.request_id,
-                        0,
-                        "网络请求失败: fetch worker exited".as_bytes().to_vec(),
-                    ));
-                }
-            }
-        }
-        self.pending_fetches = still_pending;
-        for (tab_id, request_id, status, body) in completed {
-            self.send_fetch_response_now(tab_id, request_id, status, body);
+        for item in self.fetch_proxy.drain() {
+            self.send_fetch_response_now(item.tab_id, item.request_id, item.status, item.body);
         }
     }
 

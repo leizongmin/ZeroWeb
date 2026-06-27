@@ -1,54 +1,82 @@
-//! 共享 HTTP 线程池 — 避免在 UI 线程上阻塞网络 I/O。
+//! 共享 HTTP 线程池 — per-origin 并发上限，对齐主流浏览器连接策略。
 
-use std::sync::OnceLock;
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::mpsc::{self, Receiver};
 
-use zero_net::HttpClient;
+use zero_net::{FetchJobResult, PerOriginFetchScheduler};
 
-/// HTTP GET 任务结果。
+/// HTTP GET 任务结果（文本）。
 pub type HttpTextResult = Result<String, String>;
 
-struct NetPoolInner {
-    job_tx: Sender<(String, Sender<HttpTextResult>)>,
+static NET_SCHEDULER: OnceLock<Arc<Mutex<PerOriginFetchScheduler>>> = OnceLock::new();
+
+fn scheduler() -> Arc<Mutex<PerOriginFetchScheduler>> {
+    NET_SCHEDULER
+        .get_or_init(|| Arc::new(Mutex::new(PerOriginFetchScheduler::new())))
+        .clone()
 }
 
-static NET_POOL: OnceLock<NetPoolInner> = OnceLock::new();
-
-fn pool() -> &'static NetPoolInner {
-    NET_POOL.get_or_init(|| {
-        let (job_tx, job_rx) = mpsc::channel::<(String, Sender<HttpTextResult>)>();
-
-        thread::Builder::new()
-            .name("zero-net-pool".into())
-            .spawn(move || {
-                let client = HttpClient::new();
-                while let Ok((url, reply_tx)) = job_rx.recv() {
-                    let result = client.get(&url).and_then(|resp| resp.text()).map_err(|e| e.to_string());
-                    let _ = reply_tx.send(result);
-                }
+fn map_fetch_result(result: FetchJobResult) -> Result<Vec<u8>, String> {
+    match result {
+        Ok((status, body)) if (200..300).contains(&status) => Ok(body),
+        Ok((status, body)) => {
+            let detail = String::from_utf8_lossy(&body);
+            Err(if detail.trim().is_empty() {
+                format!("HTTP {status}")
+            } else {
+                detail.trim().to_string()
             })
-            .expect("spawn net worker");
-
-        NetPoolInner { job_tx }
-    })
+        }
+        Err(e) => Err(e),
+    }
 }
 
-/// 在后台线程池中发起 HTTP GET，返回文本结果接收端。
-pub fn fetch_text_async(url: impl Into<String>) -> Receiver<HttpTextResult> {
-    let (tx, rx) = mpsc::channel();
-    let _ = pool().job_tx.send((url.into(), tx));
-    rx
+fn map_fetch_text(result: FetchJobResult) -> HttpTextResult {
+    map_fetch_result(result).and_then(|b| String::from_utf8(b).map_err(|e| e.to_string()))
 }
 
-/// 在后台线程池中发起 HTTP GET 并返回原始字节。
-pub fn fetch_bytes_async(url: impl Into<String>) -> Receiver<Result<Vec<u8>, String>> {
-    let (tx, rx) = mpsc::channel();
-    let url = url.into();
-    thread::spawn(move || {
-        let client = HttpClient::new();
-        let result = client.get(&url).map(|resp| resp.body).map_err(|e| e.to_string());
-        let _ = tx.send(result);
+fn bridge_rx<T, F>(rx: Receiver<FetchJobResult>, map: F) -> Receiver<T>
+where
+    F: FnOnce(FetchJobResult) -> T + Send + 'static,
+    T: Send + 'static,
+{
+    let (tx, out) = mpsc::channel();
+    std::thread::spawn(move || {
+        if let Ok(r) = rx.recv() {
+            let _ = tx.send(map(r));
+        }
     });
-    rx
+    out
+}
+
+/// 在后台调度器中发起 HTTP GET，返回文本结果接收端。
+pub fn fetch_text_async(url: impl Into<String>) -> Receiver<HttpTextResult> {
+    let rx = PerOriginFetchScheduler::submit_shared(&scheduler(), url.into());
+    bridge_rx(rx, map_fetch_text)
+}
+
+/// 在后台调度器中发起 HTTP GET 并返回原始字节。
+pub fn fetch_bytes_async(url: impl Into<String>) -> Receiver<Result<Vec<u8>, String>> {
+    let rx = PerOriginFetchScheduler::submit_shared(&scheduler(), url.into());
+    bridge_rx(rx, map_fetch_result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc::TryRecvError;
+    use std::time::Duration;
+
+    #[test]
+    fn fetch_text_async_returns_before_completion() {
+        let rx = fetch_text_async("http://127.0.0.1:1/unreachable");
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+    }
+
+    #[test]
+    fn fetch_bytes_async_eventually_returns_error_for_unreachable_host() {
+        let rx = fetch_bytes_async("http://127.0.0.1:1/unreachable");
+        let result = rx.recv_timeout(Duration::from_secs(5)).expect("worker should respond");
+        assert!(result.is_err());
+    }
 }

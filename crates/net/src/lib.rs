@@ -8,6 +8,8 @@
 
 pub mod client;
 pub mod connect;
+pub mod fetch_scheduler;
+pub mod resource_policy;
 pub mod cookie;
 pub mod file_url;
 pub mod http_cache;
@@ -17,6 +19,11 @@ pub mod url_parser;
 pub mod websocket;
 
 pub use client::*;
+pub use fetch_scheduler::{FetchJobResult, PerOriginFetchScheduler};
+pub use resource_policy::{
+    DEFAULT_MAX_CONNECTIONS_PER_ORIGIN, ENV_MAX_CONNECTIONS_PER_ORIGIN, max_connections_per_origin,
+    origin_from_url,
+};
 pub use cookie::{Cookie, CookieStore, RequestContext, SameSite, parse_expires_date, same_site_allows};
 pub use file_url::{file_url_to_path, is_file_url, read_file_url};
 pub use http_cache::{CachedResponse, HttpCache};

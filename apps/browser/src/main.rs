@@ -22,6 +22,7 @@ mod page_scroll;
 mod page_selection;
 mod pages;
 mod paint_ipc;
+mod fetch_proxy;
 mod process_backend;
 mod tab_chrome;
 mod tab_favicon;
