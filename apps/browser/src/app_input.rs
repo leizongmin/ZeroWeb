@@ -1255,6 +1255,62 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
+    fn tab_hit_test(&self, x_f: f32, y_f: f32) -> Option<TabId> {
+        let s = self.scale_factor;
+        let tab_y = layout::TAB_BAR_TOP_INSET * s;
+        let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
+        if y_f < tab_y || y_f >= tab_strip_h {
+            return None;
+        }
+        for &(id, tab_x, tab_w) in &self.tab_layout {
+            if x_f >= tab_x && x_f < tab_x + tab_w {
+                return Some(id);
+            }
+        }
+        None
+    }
+
+    fn show_tab_context_menu(&mut self, tab_id: TabId, x: f64, y: f64) {
+        let language = UiLanguage::detect_from_env();
+        let pinned = self.shell.tab(tab_id).is_some_and(|t| t.is_pinned());
+        let muted = self.shell.tab(tab_id).is_some_and(|t| t.is_muted());
+        let pin_label = if pinned {
+            tab_menu_label(TabMenuLabel::Unpin, language)
+        } else {
+            tab_menu_label(TabMenuLabel::Pin, language)
+        };
+        let mute_label = if muted {
+            tab_menu_label(TabMenuLabel::Unmute, language)
+        } else {
+            tab_menu_label(TabMenuLabel::Mute, language)
+        };
+        self.context_menu = ContextMenuState {
+            visible: true,
+            context_type: ContextType::Page,
+            items: vec![
+                tab_menu_label(TabMenuLabel::Reload, language).to_string(),
+                pin_label.to_string(),
+                mute_label.to_string(),
+                "---".to_string(),
+                tab_menu_label(TabMenuLabel::Close, language).to_string(),
+            ],
+            item_ids: vec![
+                Some("tab_reload".to_string()),
+                Some("tab_pin".to_string()),
+                Some("tab_mute".to_string()),
+                None,
+                Some("tab_close".to_string()),
+            ],
+            hovered_index: None,
+            x: x as f32,
+            y: y as f32,
+            source_tab_id: Some(tab_id),
+            page_doc_x: 0.0,
+            page_doc_y: 0.0,
+        };
+        self.needs_redraw = true;
+    }
+
     fn address_bar_hit_test(&self, x_f: f32, y_f: f32) -> bool {
         let s = self.scale_factor;
         if y_f >= layout::TOOLBAR_HEIGHT * s {
@@ -1298,6 +1354,15 @@ impl BrowserApp {
         let y_f = y as f32;
         let x_f = x as f32;
         let chrome_top = self.chrome_top_y_for(s);
+        let tab_y = layout::TAB_BAR_TOP_INSET * s;
+        let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
+
+        if y_f >= tab_y && y_f < tab_strip_h {
+            if let Some(tab_id) = self.tab_hit_test(x_f, y_f) {
+                self.show_tab_context_menu(tab_id, x, y);
+            }
+            return;
+        }
 
         let context_type = if self.address_bar_hit_test(x_f, y_f) {
             ContextType::Editable
@@ -1411,6 +1476,33 @@ impl BrowserApp {
                 self.open_internal_document_tab(html, "zero://about", "About ZeroBrowser");
             }
             "browser_menu_settings" => self.open_settings_page(),
+            "tab_reload" => {
+                if let Some(tab_id) = source_tab_id {
+                    if self.shell.active_tab_id() != Some(tab_id) {
+                        self.shell.switch_tab(tab_id);
+                        self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+                        self.update_address_bar_from_active_tab();
+                    }
+                    self.refresh_page();
+                }
+            }
+            "tab_pin" => {
+                if let Some(tab_id) = source_tab_id {
+                    let pinned = self.shell.tab(tab_id).is_some_and(|t| t.is_pinned());
+                    self.shell.set_tab_pinned(tab_id, !pinned);
+                }
+            }
+            "tab_mute" => {
+                if let Some(tab_id) = source_tab_id {
+                    let muted = self.shell.tab(tab_id).is_some_and(|t| t.is_muted());
+                    self.shell.set_tab_muted(tab_id, !muted);
+                }
+            }
+            "tab_close" => {
+                if let Some(tab_id) = source_tab_id {
+                    self.close_tab_by_id(tab_id);
+                }
+            }
             "view_source" => {
                 if let Some(tab_id) = source_tab_id {
                     self.view_page_source(tab_id);

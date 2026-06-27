@@ -187,6 +187,25 @@ impl BrowserShell {
         self.tabs.active_tab_mut()
     }
 
+    /// 获取指定标签页的引用。
+    pub fn tab(&self, id: TabId) -> Option<&crate::tab::Tab> {
+        self.tabs.get_tab(id)
+    }
+
+    /// 设置标签页固定状态。
+    pub fn set_tab_pinned(&mut self, id: TabId, pinned: bool) {
+        if let Some(tab) = self.tabs.get_tab_mut(id) {
+            tab.set_pinned(pinned);
+        }
+    }
+
+    /// 设置标签页静音状态。
+    pub fn set_tab_muted(&mut self, id: TabId, muted: bool) {
+        if let Some(tab) = self.tabs.get_tab_mut(id) {
+            tab.set_muted(muted);
+        }
+    }
+
     /// 在活跃标签页中导航到新 URL。
     pub fn navigate(&mut self, url: &str) {
         if let Some(tab) = self.tabs.active_tab_mut() {

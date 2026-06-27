@@ -130,10 +130,12 @@ pub fn extract_html_title(html: &str) -> Option<String> {
     }
 }
 
-/// 生成设置页面 HTML
+/// 生成设置页面 HTML（含可点击开关，通过 `zero://settings/toggle/<key>` 切换）。
 pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) -> String {
     use zero_browser_shell::SearchEngine;
+    use zero_browser_shell::UiLanguage;
 
+    let lang = UiLanguage::detect_from_env();
     let se_name = match settings.search_engine {
         SearchEngine::Google => "Google",
         SearchEngine::Bing => "Bing",
@@ -141,58 +143,133 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         SearchEngine::Baidu => "百度",
     };
 
+    let (page_title, section_search, section_home, section_privacy, section_appearance, toggle, current_label) =
+        match lang {
+            UiLanguage::ZhCn => (
+                "设置 — ZeroBrowser",
+                "搜索引擎",
+                "主页",
+                "隐私与安全",
+                "外观",
+                "切换",
+                "当前",
+            ),
+            UiLanguage::EnUs => (
+                "Settings — ZeroBrowser",
+                "Search Engine",
+                "Home Page",
+                "Privacy & Security",
+                "Appearance",
+                "Toggle",
+                "Current",
+            ),
+        };
+
+    let yes_no = |value: bool| match lang {
+        UiLanguage::ZhCn => if value { "是" } else { "否" },
+        UiLanguage::EnUs => if value { "Yes" } else { "No" },
+    };
+
+    let toggle_link = |key: &str, label: &str, value: bool| {
+        format!(
+            r#"<div style="display:flex;justify-content:space-between;align-items:center;line-height:2;">
+  <span>{label}</span>
+  <span>{current_label}: <strong>{value}</strong>
+    <a href="zero://settings/toggle/{key}" style="margin-left:12px;color:#1a73e8;text-decoration:none;">{toggle}</a>
+  </span>
+</div>"#,
+            value = yes_no(value),
+        )
+    };
+
     format!(
         r#"<!DOCTYPE html>
 <html>
-<head><title>设置 — ZeroBrowser</title></head>
-<body style="font-family: sans-serif; margin: 0; padding: 40px; background: #f8f9fa; color: #333;">
+<head><title>{page_title}</title></head>
+<body style="font-family: Segoe UI, sans-serif; margin: 0; padding: 40px; background: #f8f9fa; color: #333;">
   <div style="max-width: 600px; margin: 0 auto;">
-    <h1 style="font-size: 28px; color: #1a73e8; margin-bottom: 24px;">设置</h1>
+    <h1 style="font-size: 28px; color: #1a73e8; margin-bottom: 24px;">{page_title}</h1>
 
     <div style="background: white; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-      <h2 style="font-size: 18px; margin-top: 0; color: #555;">搜索引擎</h2>
-      <p style="font-size: 14px; color: #666;">当前: <strong>{se_name}</strong></p>
+      <h2 style="font-size: 18px; margin-top: 0; color: #555;">{section_search}</h2>
+      <p style="font-size: 14px; color: #666;">{current_label}: <strong>{se_name}</strong></p>
     </div>
 
     <div style="background: white; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-      <h2 style="font-size: 18px; margin-top: 0; color: #555;">主页</h2>
+      <h2 style="font-size: 18px; margin-top: 0; color: #555;">{section_home}</h2>
       <p style="font-size: 14px; color: #666;"><code>{home}</code></p>
     </div>
 
     <div style="background: white; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-      <h2 style="font-size: 18px; margin-top: 0; color: #555;">隐私与安全</h2>
-      <div style="font-size: 14px; color: #666; line-height: 2;">
-        <div>✅ 允许 JavaScript: <strong>{js}</strong></div>
-        <div>✅ 允许 Cookie: <strong>{cookies}</strong></div>
-        <div>✅ 阻止第三方 Cookie: <strong>{block_3p}</strong></div>
-        <div>✅ 发送 Do Not Track: <strong>{dnt}</strong></div>
+      <h2 style="font-size: 18px; margin-top: 0; color: #555;">{section_privacy}</h2>
+      <div style="font-size: 14px; color: #666;">
+        {js_row}
+        {cookies_row}
+        {block_3p_row}
+        {dnt_row}
       </div>
     </div>
 
     <div style="background: white; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-      <h2 style="font-size: 18px; margin-top: 0; color: #555;">外观</h2>
-      <div style="font-size: 14px; color: #666; line-height: 2;">
-        <div>显示书签栏: <strong>{bookmarks}</strong></div>
-        <div>默认缩放: <strong>{zoom}%</strong></div>
+      <h2 style="font-size: 18px; margin-top: 0; color: #555;">{section_appearance}</h2>
+      <div style="font-size: 14px; color: #666;">
+        {bookmarks_row}
+        <div style="line-height: 2;">{current_label} zoom: <strong>{zoom}%</strong></div>
       </div>
     </div>
 
     <p style="text-align: center; color: #999; font-size: 12px; margin-top: 32px;">
-      ZeroBrowser v0.1.0 — 基于 Rust 构建
+      ZeroBrowser v0.1.0
     </p>
   </div>
 </body>
 </html>"#,
+        js_row = toggle_link(
+            "javascript_enabled",
+            if matches!(lang, UiLanguage::ZhCn) {
+                "允许 JavaScript"
+            } else {
+                "Allow JavaScript"
+            },
+            settings.javascript_enabled,
+        ),
+        cookies_row = toggle_link(
+            "cookies_enabled",
+            if matches!(lang, UiLanguage::ZhCn) {
+                "允许 Cookie"
+            } else {
+                "Allow Cookies"
+            },
+            settings.cookies_enabled,
+        ),
+        block_3p_row = toggle_link(
+            "block_third_party_cookies",
+            if matches!(lang, UiLanguage::ZhCn) {
+                "阻止第三方 Cookie"
+            } else {
+                "Block Third-Party Cookies"
+            },
+            settings.block_third_party_cookies,
+        ),
+        dnt_row = toggle_link(
+            "do_not_track",
+            if matches!(lang, UiLanguage::ZhCn) {
+                "发送 Do Not Track"
+            } else {
+                "Send Do Not Track"
+            },
+            settings.do_not_track,
+        ),
+        bookmarks_row = toggle_link(
+            "show_bookmarks_bar",
+            if matches!(lang, UiLanguage::ZhCn) {
+                "显示书签栏"
+            } else {
+                "Show Bookmarks Bar"
+            },
+            settings.show_bookmarks_bar,
+        ),
         home = settings.home_url,
-        js = if settings.javascript_enabled { "是" } else { "否" },
-        cookies = if settings.cookies_enabled { "是" } else { "否" },
-        block_3p = if settings.block_third_party_cookies {
-            "是"
-        } else {
-            "否"
-        },
-        dnt = if settings.do_not_track { "是" } else { "否" },
-        bookmarks = if settings.show_bookmarks_bar { "是" } else { "否" },
         zoom = (settings.default_zoom * 100.0) as u32,
     )
 }

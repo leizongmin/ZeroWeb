@@ -365,18 +365,33 @@ mod tests {
         assert_eq!(app.shell.tab_count(), 1, "should start with exactly one tab");
     }
 
+    fn clear_root_bookmarks(shell: &mut zero_browser_shell::BrowserShell) {
+        let ids: Vec<_> = shell
+            .bookmarks()
+            .list_root()
+            .into_iter()
+            .map(|bookmark| bookmark.id())
+            .collect();
+        for id in ids {
+            shell.bookmarks_mut().remove(id);
+        }
+    }
+
     #[test]
     fn bookmarks_bar_hidden_without_bookmarks_or_when_disabled() {
-        let app = BrowserApp::new(RenderMode::Cpu);
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        clear_root_bookmarks(&mut app.shell);
         assert!(!app.bookmarks_bar_visible());
         assert_eq!(app.bookmarks_bar_height_for(1.0), 0.0);
         assert_eq!(app.chrome_top_y_for(1.0), layout::TOOLBAR_HEIGHT);
 
         let mut with_bookmark = BrowserApp::new(RenderMode::Cpu);
+        clear_root_bookmarks(&mut with_bookmark.shell);
         with_bookmark
             .shell
             .bookmarks_mut()
             .add("Example", "https://example.com", None);
+        with_bookmark.shell.settings_mut().show_bookmarks_bar = true;
         assert!(with_bookmark.bookmarks_bar_visible());
         assert_eq!(
             with_bookmark.bookmarks_bar_height_for(1.0),
@@ -388,6 +403,7 @@ mod tests {
         );
 
         let mut disabled = BrowserApp::new(RenderMode::Cpu);
+        clear_root_bookmarks(&mut disabled.shell);
         disabled
             .shell
             .bookmarks_mut()
@@ -432,7 +448,7 @@ mod tests {
         app.set_window_maximized(false);
 
         let (_, _, overlay, _) = app.build_scene_for_test(800, 600);
-        let border = app.chrome_palette().window_frame_border;
+        let border = app.chrome_palette().separator;
         assert!(
             overlay.iter().any(|f| {
                 f.color == border && f.rect.origin.x <= 0.5 && f.rect.origin.y <= 0.5 && f.rect.size.width >= 799.0
@@ -658,6 +674,51 @@ mod tests {
         );
     }
 
+    /// 标签栏右键应打开标签上下文菜单。
+    #[test]
+    fn tab_context_menu_opens_on_right_click() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        let tab_id = app.shell.active_tab_id().unwrap();
+        let _ = app.build_scene_for_test(1280, 900);
+        let (tab_x, tab_w) = app.tab_layout_rect_for_test(tab_id).expect("tab layout");
+        let s = app.scale_factor;
+        let tab_y = layout::TAB_BAR_TOP_INSET * s;
+        let tab_h = layout::TAB_BAR_HEIGHT * s;
+        let x = (tab_x + tab_w * 0.5) as f64;
+        let y = (tab_y + tab_h * 0.5) as f64;
+
+        app.handle_mouse_click(x, y, true, "Right");
+        assert!(app.is_context_menu_visible_for_test(), "right-click tab should open tab menu");
+    }
+
+    /// 标签上下文菜单「固定标签页」应切换 pinned 状态。
+    #[test]
+    fn tab_context_menu_pin_tab() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        let tab_id = app.shell.active_tab_id().unwrap();
+        assert!(!app.shell.tab(tab_id).unwrap().is_pinned());
+        let _ = app.build_scene_for_test(1280, 900);
+        let (tab_x, tab_w) = app.tab_layout_rect_for_test(tab_id).unwrap();
+        let s = app.scale_factor;
+        let tab_y = layout::TAB_BAR_TOP_INSET * s;
+        let tab_h = layout::TAB_BAR_HEIGHT * s;
+        let x = (tab_x + tab_w * 0.5) as f64;
+        let y = (tab_y + tab_h * 0.5) as f64;
+
+        app.handle_mouse_click(x, y, true, "Right");
+        let menu_x = x as f32 + 4.0;
+        let menu_y = y as f32 + 4.0;
+        let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let pin_y = (menu_y + row_h * 1.5) as f64;
+        app.handle_mouse_click(menu_x as f64, pin_y, true, "Left");
+
+        assert!(app.shell.tab(tab_id).unwrap().is_pinned());
+    }
+
     /// 键盘 ↓ 选中自动补全首项时应使用 selected 背景色。
     #[test]
     fn autocomplete_keyboard_selection_uses_selected_bg() {
@@ -830,10 +891,61 @@ mod tests {
     fn settings_page_generates_html() {
         let settings = zero_browser_shell::BrowserSettings::new();
         let html = pages::generate_settings_html(&settings);
-        assert!(html.contains("设置"), "settings page should have title");
+        assert!(
+            html.contains("设置") || html.contains("Settings"),
+            "settings page should have title"
+        );
         assert!(html.contains("Google"), "settings page should show search engine");
         assert!(html.contains("example.com"), "settings page should show home URL");
         assert!(html.contains("ZeroBrowser"), "settings page should show browser name");
+        assert!(
+            html.contains("zero://settings/toggle/show_bookmarks_bar"),
+            "settings page should expose bookmarks bar toggle"
+        );
+        assert!(
+            html.contains("zero://settings/toggle/javascript_enabled"),
+            "settings page should expose javascript toggle"
+        );
+    }
+
+    /// 设置页 toggle URL 应切换对应选项并留在设置页。
+    #[test]
+    fn settings_toggle_url_flips_option_and_stays_on_settings() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.shell.apply_settings(|settings| settings.show_bookmarks_bar = true);
+        let initial = app.shell.settings().show_bookmarks_bar;
+        app.navigate_to("zero://settings/toggle/show_bookmarks_bar");
+        assert_eq!(app.shell.settings().show_bookmarks_bar, !initial);
+        assert_eq!(app.address_bar_text(), "zero://settings");
+        assert!(
+            !app.shell.active_tab().unwrap().is_loading(),
+            "settings toggle should clear loading state"
+        );
+    }
+
+    /// 标签 loading 时地址栏 leading slot 应绘制 spinner。
+    #[test]
+    fn address_bar_shows_loading_spinner_when_tab_loading() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        if let Some(tab) = app.shell.active_tab_mut() {
+            tab.set_loading(true);
+        }
+        let loading = app.chrome_palette().loading_indicator;
+        let (fills_loading, _, _, _) = app.build_scene_for_test(1280, 900);
+        let spinner_segments = fills_loading.iter().filter(|f| f.color == loading).count();
+        assert!(
+            spinner_segments >= 28,
+            "loading tab should draw spinner segments, got {spinner_segments}"
+        );
+
+        if let Some(tab) = app.shell.active_tab_mut() {
+            tab.set_loading(false);
+        }
+        let (fills_idle, _, _, _) = app.build_scene_for_test(1280, 900);
+        let idle_segments = fills_idle.iter().filter(|f| f.color == loading).count();
+        assert_eq!(idle_segments, 0, "idle tab should not draw loading spinner");
     }
 
     /// 验证 open_settings_page 正确加载。
