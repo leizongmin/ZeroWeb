@@ -137,11 +137,7 @@ impl TabManager {
             snap.begin_navigation(url.clone());
         }
         if let Some(ref mut backend) = self.process_backend {
-            let epoch = self
-                .snapshots
-                .get(&tab_id)
-                .map(|s| s.navigation_epoch)
-                .unwrap_or(0);
+            let epoch = self.snapshots.get(&tab_id).map(|s| s.navigation_epoch).unwrap_or(0);
             backend.navigate(tab_id, &url, epoch);
             return;
         }
@@ -157,11 +153,7 @@ impl TabManager {
             snap.begin_navigation(url.unwrap_or("about:blank").to_string());
         }
         if let Some(ref mut backend) = self.process_backend {
-            let epoch = self
-                .snapshots
-                .get(&tab_id)
-                .map(|s| s.navigation_epoch)
-                .unwrap_or(0);
+            let epoch = self.snapshots.get(&tab_id).map(|s| s.navigation_epoch).unwrap_or(0);
             backend.load_html(tab_id, html, css, url, epoch);
             return;
         }

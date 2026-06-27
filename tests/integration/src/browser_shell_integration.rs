@@ -23,7 +23,7 @@ fn test_browser_shell_navigation_ipc_roundtrip() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".to_string(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let bytes = serialize(&msg).expect("serialize navigate");

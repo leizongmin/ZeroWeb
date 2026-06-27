@@ -336,6 +336,7 @@ impl ProcessTabBackend {
 
     /// 导航。
     pub fn navigate(&mut self, tab_id: TabId, url: &str, navigation_epoch: u64) {
+        self.fetch_proxy.on_navigate(tab_id, url);
         let Some(renderer) = self.renderer_mut(tab_id) else {
             return;
         };

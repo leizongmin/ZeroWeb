@@ -4,11 +4,14 @@ use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
 
 use zero_engine::image_resource_key;
-use zero_engine::{BudgetAdvance, BudgetedRenderSession, extract_img_srcs, extract_stylesheet_hrefs};
-use zero_page_runtime::AsyncFetchHost;
+use zero_engine::preload::{ResourceHintType, ResourceType, scan_html_resource_hints};
+use zero_engine::{
+    BudgetAdvance, BudgetedRenderSession, extract_font_face_urls, extract_img_resources, extract_stylesheet_hrefs,
+};
+use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
 use zero_render_foundation::image_cache::{ImageKey, decode_image_bytes};
 
-use crate::net_pool::{fetch_bytes_async, fetch_text_async};
+use crate::net_pool::{fetch_bytes_async_meta, fetch_text_async_meta};
 use crate::webview::WebView;
 
 /// 图片抓取异步接收器（net_pool 线程 → 加载器轮询）。
@@ -37,12 +40,12 @@ pub enum PageLoadStage {
 pub struct InProcessFetchHost;
 
 impl AsyncFetchHost for InProcessFetchHost {
-    fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>> {
-        fetch_text_async(url.to_string())
+    fn fetch_text_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<String, String>> {
+        fetch_text_async_meta(url.to_string(), meta)
     }
 
-    fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>> {
-        fetch_bytes_async(url.to_string())
+    fn fetch_bytes_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
+        fetch_bytes_async_meta(url.to_string(), meta)
     }
 }
 
@@ -54,6 +57,9 @@ pub struct AsyncPageLoad {
     css: String,
     css_pending: Vec<(String, Receiver<Result<String, String>>)>,
     img_pending: Vec<(String, u64, BytesFetchRx)>,
+    lazy_img_pending: Vec<(String, u64, BytesFetchRx)>,
+    font_pending: Vec<(String, BytesFetchRx)>,
+    lazy_urls: Vec<String>,
     document_rx: Option<Receiver<Result<String, String>>>,
     render_session: Option<BudgetedRenderSession>,
     budget_pending: bool,
@@ -70,6 +76,9 @@ impl AsyncPageLoad {
             css: String::new(),
             css_pending: Vec::new(),
             img_pending: Vec::new(),
+            lazy_img_pending: Vec::new(),
+            font_pending: Vec::new(),
+            lazy_urls: Vec::new(),
             document_rx: None,
             render_session: None,
             budget_pending: false,
@@ -96,6 +105,9 @@ impl AsyncPageLoad {
             css: String::new(),
             css_pending: Vec::new(),
             img_pending: Vec::new(),
+            lazy_img_pending: Vec::new(),
+            font_pending: Vec::new(),
+            lazy_urls: Vec::new(),
             document_rx: None,
             render_session: None,
             budget_pending: true,
@@ -110,7 +122,13 @@ impl AsyncPageLoad {
 
     /// 是否仍在加载。
     pub fn is_active(&self) -> bool {
-        !matches!(self.stage, PageLoadStage::Complete | PageLoadStage::Failed)
+        if self.stage == PageLoadStage::Failed {
+            return false;
+        }
+        if self.stage != PageLoadStage::Complete {
+            return true;
+        }
+        !self.font_pending.is_empty() || !self.lazy_img_pending.is_empty()
     }
 
     fn log_stage(&self, label: &str) {
@@ -128,7 +146,7 @@ impl AsyncPageLoad {
         if self.stage == PageLoadStage::FetchingDocument && self.document_rx.is_none() {
             let url = self.url.clone();
             tracing::info!(url = %url, "page load: fetch document");
-            self.document_rx = Some(host.fetch_text(&url));
+            self.document_rx = Some(host.fetch_text_meta(&url, ResourceFetchMeta::DOCUMENT));
         }
 
         if let Some(rx) = self.document_rx.as_ref()
@@ -140,6 +158,7 @@ impl AsyncPageLoad {
                     if let Some(title) = extract_document_title(&html) {
                         webview.set_title(&title);
                     }
+                    self.begin_preload_hints(&html, host);
                     self.html = Some(html);
                     self.stage = PageLoadStage::FirstPaint;
                     self.budget_pending = true;
@@ -166,13 +185,54 @@ impl AsyncPageLoad {
 
         self.poll_stylesheets(webview, host, budget_ms, &mut changed);
         self.poll_images(webview, budget_ms, &mut changed);
+        self.poll_fonts(&mut changed);
+        self.poll_lazy_images(webview, budget_ms, &mut changed);
+
+        if self.stage == PageLoadStage::Complete && self.lazy_img_pending.is_empty() && !self.lazy_urls.is_empty() {
+            self.begin_lazy_image_fetch(host);
+            changed = true;
+        }
 
         // 图片分批到达后需在本 tick 内重绘，否则 publish 会用到上一帧。
-        if self.budget_pending && self.stage == PageLoadStage::FetchingImages {
+        if self.budget_pending && matches!(self.stage, PageLoadStage::FetchingImages | PageLoadStage::Complete) {
             changed |= self.advance_render(webview, budget_ms);
         }
 
         changed
+    }
+
+    fn begin_preload_hints(&mut self, html: &str, host: &mut dyn AsyncFetchHost) {
+        let preloader = scan_html_resource_hints(html);
+        let base = url::Url::parse(&self.url).ok();
+        let mut count = 0usize;
+        for hint in preloader.pending_resources() {
+            if hint.hint_type != ResourceHintType::Preload {
+                continue;
+            }
+            let abs = match base.as_ref().and_then(|b| b.join(&hint.url).ok()) {
+                Some(u) => u.to_string(),
+                None => hint.url.clone(),
+            };
+            let meta = match hint.resource_type {
+                ResourceType::Style => ResourceFetchMeta::STYLESHEET,
+                ResourceType::Script => ResourceFetchMeta::SCRIPT,
+                ResourceType::Font => ResourceFetchMeta::FONT,
+                ResourceType::Image => ResourceFetchMeta::IMAGE,
+                _ => ResourceFetchMeta::preload("fetch"),
+            };
+            match hint.resource_type {
+                ResourceType::Style | ResourceType::Script => {
+                    let _ = host.fetch_text_meta(&abs, meta);
+                }
+                _ => {
+                    let _ = host.fetch_bytes_meta(&abs, meta);
+                }
+            }
+            count += 1;
+        }
+        if count > 0 {
+            tracing::info!(url = %self.url, count, "page load: speculative preload hints");
+        }
     }
 
     fn advance_render(&mut self, webview: &mut WebView, budget_ms: f64) -> bool {
@@ -182,8 +242,7 @@ impl AsyncPageLoad {
         };
 
         if self.render_session.is_none() {
-            let same_navigation = webview.is_loading()
-                && webview.url().is_some_and(|u| u == self.url.as_str());
+            let same_navigation = webview.is_loading() && webview.url().is_some_and(|u| u == self.url.as_str());
             if !same_navigation {
                 webview.prepare_document_state(&self.url);
             }
@@ -197,7 +256,9 @@ impl AsyncPageLoad {
             BudgetAdvance::Complete => {
                 if let Some(result) = session.take_result() {
                     let done = matches!(self.stage, PageLoadStage::FetchingImages | PageLoadStage::Complete)
-                        && self.img_pending.is_empty();
+                        && self.img_pending.is_empty()
+                        && self.lazy_img_pending.is_empty()
+                        && self.font_pending.is_empty();
                     webview.apply_render_result(result, &self.url, done);
                 }
                 tracing::info!(url = %self.url, stage = ?self.stage, "page load: budget render complete");
@@ -207,9 +268,15 @@ impl AsyncPageLoad {
                     // 留在 FirstPaint，由 tick() 调用 begin_stylesheet_fetch。
                     PageLoadStage::FirstPaint => {}
                     PageLoadStage::StyledPaint | PageLoadStage::FetchingImages
-                        if self.css_pending.is_empty() && self.img_pending.is_empty() =>
+                        if self.css_pending.is_empty()
+                            && self.img_pending.is_empty()
+                            && self.font_pending.is_empty() =>
                     {
-                        self.stage = PageLoadStage::Complete;
+                        if self.lazy_urls.is_empty() {
+                            self.stage = PageLoadStage::Complete;
+                        } else {
+                            self.stage = PageLoadStage::Complete;
+                        }
                     }
                     _ => {}
                 }
@@ -231,7 +298,8 @@ impl AsyncPageLoad {
                 Some(u) => u.to_string(),
                 None => href,
             };
-            self.css_pending.push((abs.clone(), host.fetch_text(&abs)));
+            self.css_pending
+                .push((abs.clone(), host.fetch_text_meta(&abs, ResourceFetchMeta::STYLESHEET)));
         }
         if self.css_pending.is_empty() {
             self.begin_image_fetch(webview, host);
@@ -276,8 +344,40 @@ impl AsyncPageLoad {
             self.budget_pending = true;
             *changed = true;
             let _ = self.advance_render(webview, budget_ms);
+            self.begin_font_fetch(host);
             self.begin_image_fetch(webview, host);
         }
+    }
+
+    fn begin_font_fetch(&mut self, host: &mut dyn AsyncFetchHost) {
+        let urls = extract_font_face_urls(&self.css);
+        let base = url::Url::parse(&self.url).ok();
+        for href in urls {
+            let abs = match base.as_ref().and_then(|b| b.join(&href).ok()) {
+                Some(u) => u.to_string(),
+                None => href,
+            };
+            self.font_pending
+                .push((abs.clone(), host.fetch_bytes_meta(&abs, ResourceFetchMeta::FONT)));
+        }
+        if !self.font_pending.is_empty() {
+            tracing::info!(url = %self.url, count = self.font_pending.len(), "page load: fetch fonts");
+        }
+    }
+
+    fn poll_fonts(&mut self, changed: &mut bool) {
+        self.font_pending.retain(|(url, rx)| {
+            if let Ok(result) = rx.try_recv() {
+                match result {
+                    Ok(bytes) => tracing::info!(url, bytes = bytes.len(), "page load: font fetched"),
+                    Err(e) => tracing::warn!("font {url} fetch failed: {e}"),
+                }
+                *changed = true;
+                false
+            } else {
+                true
+            }
+        });
     }
 
     fn begin_image_fetch(&mut self, webview: &mut WebView, host: &mut dyn AsyncFetchHost) {
@@ -285,30 +385,85 @@ impl AsyncPageLoad {
             Some(h) => h.as_str(),
             None => return,
         };
-        let srcs = extract_img_srcs(html);
+        let imgs = extract_img_resources(html);
         let base = url::Url::parse(&self.url).ok();
-        for src in srcs {
-            if src.starts_with("data:") {
+        for img in imgs {
+            if img.src.starts_with("data:") {
                 continue;
             }
-            let abs = match base.as_ref().and_then(|b| b.join(&src).ok()) {
+            let abs = match base.as_ref().and_then(|b| b.join(&img.src).ok()) {
                 Some(u) => u.to_string(),
-                None => src,
+                None => img.src,
             };
+            if img.lazy {
+                self.lazy_urls.push(abs);
+                continue;
+            }
             let key = image_resource_key(&abs, None);
-            self.img_pending.push((abs.clone(), key, host.fetch_bytes(&abs)));
+            self.img_pending
+                .push((abs.clone(), key, host.fetch_bytes_meta(&abs, ResourceFetchMeta::IMAGE)));
         }
-        if self.img_pending.is_empty() {
+        if self.img_pending.is_empty() && self.lazy_urls.is_empty() {
             self.stage = PageLoadStage::Complete;
-        } else {
+        } else if !self.img_pending.is_empty() {
             tracing::info!(
                 url = %self.url,
                 count = self.img_pending.len(),
+                lazy = self.lazy_urls.len(),
                 "page load: fetch images"
             );
             self.stage = PageLoadStage::FetchingImages;
+        } else {
+            self.begin_lazy_image_fetch(host);
         }
         let _ = webview;
+    }
+
+    fn begin_lazy_image_fetch(&mut self, host: &mut dyn AsyncFetchHost) {
+        if self.lazy_urls.is_empty() {
+            return;
+        }
+        tracing::info!(url = %self.url, count = self.lazy_urls.len(), "page load: fetch lazy images");
+        for abs in self.lazy_urls.drain(..) {
+            let key = image_resource_key(&abs, None);
+            self.lazy_img_pending
+                .push((abs.clone(), key, host.fetch_bytes_meta(&abs, ResourceFetchMeta::IMAGE)));
+        }
+    }
+
+    fn poll_lazy_images(&mut self, webview: &mut WebView, budget_ms: f64, changed: &mut bool) {
+        if self.lazy_img_pending.is_empty() {
+            if self.stage == PageLoadStage::Complete && !self.lazy_urls.is_empty() {
+                return;
+            }
+            return;
+        }
+        let mut sizes: HashMap<u64, (f32, f32)> = webview.cached_image_sizes().clone();
+        self.lazy_img_pending.retain(|(url, key, rx)| {
+            if let Ok(result) = rx.try_recv() {
+                match result {
+                    Ok(bytes) => {
+                        if let Ok(img) = decode_image_bytes(&bytes) {
+                            let (w, h) = (img.width as f32, img.height as f32);
+                            sizes.insert(*key, (w, h));
+                            webview.image_cache().insert_with_key(ImageKey::new(*key), img);
+                        }
+                    }
+                    Err(e) => tracing::warn!("lazy image {url} fetch failed: {e}"),
+                }
+                *changed = true;
+                false
+            } else {
+                true
+            }
+        });
+        if !sizes.is_empty() {
+            webview.set_image_sizes(sizes);
+            self.budget_pending = true;
+        }
+        if self.lazy_img_pending.is_empty() {
+            let _ = self.advance_render(webview, budget_ms);
+        }
     }
 
     fn poll_images(&mut self, webview: &mut WebView, budget_ms: f64, changed: &mut bool) {
@@ -348,7 +503,7 @@ impl AsyncPageLoad {
             self.budget_pending = true;
         }
         if self.img_pending.is_empty() {
-            tracing::info!(url = %self.url, "page load: all images ready, final render");
+            tracing::info!(url = %self.url, "page load: all eager images ready, final render");
             self.stage = PageLoadStage::Complete;
             self.budget_pending = true;
             *changed = true;
@@ -379,7 +534,7 @@ mod tests {
     use std::sync::mpsc::{Receiver, channel};
 
     use crate::{WebView, WebViewConfig};
-    use zero_page_runtime::AsyncFetchHost;
+    use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
 
     /// 记录 fetch 调用并立即返回结果的 mock 宿主。
     struct MockFetchHost {
@@ -404,14 +559,14 @@ mod tests {
     }
 
     impl AsyncFetchHost for MockFetchHost {
-        fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>> {
+        fn fetch_text_meta(&mut self, url: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
             self.calls.push(url.to_string());
             let (tx, rx) = channel();
             let _ = tx.send(self.text_body.clone());
             rx
         }
 
-        fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>> {
+        fn fetch_bytes_meta(&mut self, url: &str, _: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
             self.calls.push(url.to_string());
             let (tx, rx) = channel();
             let _ = tx.send(self.bytes_body.clone());
@@ -422,13 +577,13 @@ mod tests {
     struct ErrFetchHost;
 
     impl AsyncFetchHost for ErrFetchHost {
-        fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>> {
+        fn fetch_text_meta(&mut self, url: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
             let (tx, rx) = channel();
             let _ = tx.send(Err(format!("fail: {url}")));
             rx
         }
 
-        fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>> {
+        fn fetch_bytes_meta(&mut self, url: &str, _: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
             let (tx, rx) = channel();
             let _ = tx.send(Err(format!("fail: {url}")));
             rx
@@ -448,13 +603,10 @@ mod tests {
             let _ = load.tick(&mut wv, &mut host, 500.0);
         }
         assert_eq!(host.calls.len(), 2);
-        let expected: HashSet<_> = [
-            "https://example.com/a.css",
-            "https://example.com/b.css",
-        ]
-        .into_iter()
-        .map(String::from)
-        .collect();
+        let expected: HashSet<_> = ["https://example.com/a.css", "https://example.com/b.css"]
+            .into_iter()
+            .map(String::from)
+            .collect();
         assert_eq!(host.calls.into_iter().collect::<HashSet<_>>(), expected);
     }
 

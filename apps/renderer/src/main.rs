@@ -5,24 +5,23 @@ mod ipc_fetch;
 mod js_worker;
 mod page_scripts;
 mod paint_export;
+mod script_prefetch;
 mod text_metrics;
 
-use zero_webview::{AsyncPageLoad, PageLoadStage};
+use zero_webview::AsyncPageLoad;
 
-use crate::ipc_fetch::{IpcAsyncFetchHost, InflightIpcFetches, StubAsyncFetchHost};
+use crate::ipc_fetch::{InflightIpcFetches, IpcAsyncFetchHost, StubAsyncFetchHost};
 
 use crate::js_worker::RendererJsWorker;
 use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, run_page_scripts};
+use crate::script_prefetch::PendingScriptPrefetch;
 
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::mpsc::{self, RecvTimeoutError, Receiver, TryRecvError};
+use std::collections::{HashMap, VecDeque};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use std::io;
-use zero_engine::{PageScript, extract_page_scripts, resolve_document_url};
-use zero_script_sandbox::extract_module_import_specifiers;
-
 use zero_engine::{DomEventDetail, PrefersColorSchemeValue, selector_from_element_hit, set_char_measure_fn};
 use zero_protocol::IpcChannel;
 use zero_protocol::ProcessRole;
@@ -123,6 +122,8 @@ struct RendererRuntime {
     navigation_epoch: u64,
     /// 异步分阶段加载（与 tab_worker 相同 tick 模型）。
     pending_load: Option<PendingLoad>,
+    /// 页面 HTML/CSS/图片加载完成后的非阻塞脚本预取。
+    pending_script_prefetch: Option<PendingScriptPrefetch>,
     /// 进行中的非阻塞 IPC fetch（request_id → Receiver 完成端）。
     inflight_fetches: InflightIpcFetches,
     /// in-process 测试无 browser 进程时，避免阻塞 IPC / 子资源永久 pending。
@@ -176,6 +177,7 @@ impl RendererRuntime {
             event_target: "body".to_string(),
             navigation_epoch: 0,
             pending_load: None,
+            pending_script_prefetch: None,
             inflight_fetches: InflightIpcFetches::new(),
             stub_network: false,
         }
@@ -200,9 +202,8 @@ impl RendererRuntime {
         self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
     }
 
-    fn after_page_html_loaded(&mut self) -> Result<(), String> {
+    fn after_page_html_loaded_with_cache(&mut self, fetch_cache: HashMap<String, String>) -> Result<(), String> {
         let js_enabled = self.javascript_enabled;
-        let fetch_cache = self.build_script_fetch_cache();
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let mut ctx = PageScriptContext {
             html: &mut self.cached_html,
@@ -222,50 +223,33 @@ impl RendererRuntime {
         Ok(())
     }
 
-    /// 经浏览器进程 IPC 预抓取页面脚本与子模块（渲染进程不直连网络）。
-    fn build_script_fetch_cache(&mut self) -> HashMap<String, String> {
-        let base = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        if page_scripts::should_skip_scripts(&base) || self.cached_html.is_empty() {
-            return HashMap::new();
+    /// 非阻塞推进脚本预取；完成后执行页面脚本。
+    fn tick_script_prefetch(&mut self) -> Result<(), String> {
+        self.drain_inflight_fetch_responses();
+        let Some(mut prefetch) = self.pending_script_prefetch.take() else {
+            return Ok(());
+        };
+
+        const SCRIPT_PREFETCH_PARALLEL: usize = 4;
+        let _changed = if self.stub_network {
+            let mut host = StubAsyncFetchHost;
+            prefetch.tick(&mut host, SCRIPT_PREFETCH_PARALLEL)
+        } else {
+            let outbound = &mut self.outbound;
+            let next_fetch_id = &mut self.next_fetch_id;
+            let inflight = &mut self.inflight_fetches;
+            let mut host = IpcAsyncFetchHost::new(outbound, next_fetch_id, inflight);
+            prefetch.tick(&mut host, SCRIPT_PREFETCH_PARALLEL)
+        };
+
+        if prefetch.is_active() {
+            self.pending_script_prefetch = Some(prefetch);
+            return Ok(());
         }
 
-        let mut cache = HashMap::new();
-        let mut pending = VecDeque::new();
-        let mut seen = HashSet::new();
-
-        for script in extract_page_scripts(&self.cached_html) {
-            match script {
-                PageScript::External(src) | PageScript::ExternalModule(src) => {
-                    pending.push_back(resolve_document_url(&base, &src));
-                }
-                _ => {}
-            }
-        }
-
-        while let Some(url) = pending.pop_front() {
-            if seen.contains(&url) {
-                continue;
-            }
-            seen.insert(url.clone());
-
-            let body = match self.fetch_get(&url) {
-                Ok(b) => b,
-                Err(e) => {
-                    tracing::warn!("script prefetch {url}: {e}");
-                    continue;
-                }
-            };
-            let text = String::from_utf8_lossy(&body).into_owned();
-            for spec in extract_module_import_specifiers(&text) {
-                let dep = resolve_document_url(&url, &spec);
-                if !seen.contains(&dep) {
-                    pending.push_back(dep);
-                }
-            }
-            cache.insert(url, text);
-        }
-
-        cache
+        let cache = prefetch.finish();
+        self.after_page_html_loaded_with_cache(cache)?;
+        self.try_publish_progress(true)
     }
 
     /// 从 WebView 当前渲染产出发布 IPC frame（ViewPainted + 可选 Title）。B3：发布源切到 WebView。
@@ -297,7 +281,14 @@ impl RendererRuntime {
             primitives,
             hit_test,
         };
-        publish_render_with_layout(&mut self.outbound, &mut self.next_msg_id, &frame, title, payloads, self.navigation_epoch)
+        publish_render_with_layout(
+            &mut self.outbound,
+            &mut self.next_msg_id,
+            &frame,
+            title,
+            payloads,
+            self.navigation_epoch,
+        )
     }
 
     fn sync_cached_html_from_webview(&mut self) {
@@ -401,8 +392,7 @@ impl RendererRuntime {
             tracing::info!("页面渲染完成: {page_url}");
         }
         if run_scripts && !page_scripts::should_skip_scripts(&page_url) {
-            self.after_page_html_loaded()?;
-            self.try_publish_progress(true)?;
+            self.pending_script_prefetch = Some(PendingScriptPrefetch::from_html(&page_url, &self.cached_html));
         }
         Ok(())
     }
@@ -426,10 +416,16 @@ impl RendererRuntime {
     #[cfg(test)]
     fn drive_until_idle(&mut self) -> Result<(), String> {
         for _ in 0..500 {
-            if self.pending_load.is_none() {
+            if self.pending_load.is_none() && self.pending_script_prefetch.is_none() {
                 return Ok(());
             }
-            self.tick_pending_load_with_budget(2_000.0)?;
+            self.drain_inflight_fetch_responses();
+            if self.pending_load.is_some() {
+                self.tick_pending_load_with_budget(2_000.0)?;
+            }
+            if self.pending_script_prefetch.is_some() {
+                self.tick_script_prefetch()?;
+            }
         }
         Err("测试加载未在预期步数内完成".into())
     }
@@ -566,6 +562,7 @@ impl RendererRuntime {
     fn handle_navigate(&mut self, params: NavigateParams) -> Result<(), String> {
         tracing::info!("导航到: {}", params.url);
         self.pending_load = None;
+        self.pending_script_prefetch = None;
         self.inflight_fetches.clear();
         self.push_history(&params.url);
         self.send(IpcMessageKind::UrlChanged(params.url.clone()))?;
@@ -833,10 +830,17 @@ impl RendererRuntime {
                 continue;
             }
 
-            if self.pending_load.is_some() {
+            if self.pending_load.is_some() || self.pending_script_prefetch.is_some() {
                 self.drain_inflight_fetch_responses();
-                if let Err(e) = self.tick_pending_load() {
-                    tracing::error!("页面加载 tick 错误: {e}");
+                if self.pending_load.is_some() {
+                    if let Err(e) = self.tick_pending_load() {
+                        tracing::error!("页面加载 tick 错误: {e}");
+                    }
+                }
+                if self.pending_script_prefetch.is_some() {
+                    if let Err(e) = self.tick_script_prefetch() {
+                        tracing::error!("脚本预取 tick 错误: {e}");
+                    }
                 }
             }
 

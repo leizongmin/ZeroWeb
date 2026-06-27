@@ -12,7 +12,7 @@ fn bench_serialize(c: &mut Criterion) {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com/page".to_string(),
             referrer: Some("https://google.com".to_string()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
 
@@ -32,7 +32,7 @@ fn bench_deserialize(c: &mut Criterion) {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com/page".to_string(),
             referrer: Some("https://google.com".to_string()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let bytes = serialize(&msg).unwrap();

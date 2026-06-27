@@ -339,6 +339,12 @@ pub fn scan_dom_resource_hints(doc: &zero_dom::Document) -> ResourcePreloader {
     preloader
 }
 
+/// 从 HTML 字符串扫描 `<link rel=preload|prefetch|…>` 资源提示。
+pub fn scan_html_resource_hints(html: &str) -> ResourcePreloader {
+    let doc = zero_dom::parse_html(html);
+    scan_dom_resource_hints(&doc)
+}
+
 /// 递归扫描节点及其子节点，查找 `<link>` 元素。
 fn scan_node_for_links(doc: &zero_dom::Document, node_id: zero_dom::NodeId, preloader: &mut ResourcePreloader) {
     if let Some(node) = doc.get(node_id) {

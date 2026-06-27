@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
-use zero_page_runtime::AsyncFetchHost;
-use zero_protocol::message::{FetchParams, FetchResponseParams, IpcMessage, IpcMessageKind};
+use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
 use zero_protocol::IpcChannel;
+use zero_protocol::message::{FetchParams, FetchResponseParams, IpcMessage, IpcMessageKind};
 use zero_protocol::transport::PipeTransport;
 
 type IpcOutbound = PipeTransport<std::io::Empty, Box<dyn std::io::Write + Send>>;
@@ -107,32 +107,39 @@ impl<'a> IpcAsyncFetchHost<'a> {
         }
     }
 
-    fn issue_fetch(&mut self, url: &str, kind: &str, reply: InflightReply) -> Result<(), String> {
+    fn issue_fetch(&mut self, url: &str, meta: ResourceFetchMeta, reply: InflightReply) -> Result<(), String> {
         let request_id = *self.next_fetch_id;
         *self.next_fetch_id += 1;
-        tracing::info!(request_id, url, kind, "renderer fetch start");
+        tracing::info!(
+            request_id,
+            url,
+            kind = meta.resource_type,
+            priority = meta.priority,
+            "renderer fetch start"
+        );
         let msg = IpcMessage {
             id: 0,
             kind: IpcMessageKind::FetchRequest(FetchParams {
                 request_id,
                 url: url.to_string(),
                 method: "GET".into(),
-                headers: Vec::new(),
+                headers: vec![
+                    ("X-Zero-Resource-Type".into(), meta.resource_type.into()),
+                    ("X-Zero-Priority".into(), meta.priority.to_string()),
+                ],
                 body: None,
             }),
         };
-        self.outbound
-            .send(msg)
-            .map_err(|e| format!("IPC 发送失败: {e}"))?;
+        self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
         self.inflight.pending.insert(request_id, reply);
         Ok(())
     }
 }
 
 impl AsyncFetchHost for IpcAsyncFetchHost<'_> {
-    fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>> {
+    fn fetch_text_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<String, String>> {
         let (tx, rx) = channel();
-        if let Err(e) = self.issue_fetch(url, "text", InflightReply::Text(tx)) {
+        if let Err(e) = self.issue_fetch(url, meta, InflightReply::Text(tx)) {
             let (fallback_tx, fallback_rx) = channel();
             let _ = fallback_tx.send(Err(e));
             return fallback_rx;
@@ -140,9 +147,9 @@ impl AsyncFetchHost for IpcAsyncFetchHost<'_> {
         rx
     }
 
-    fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>> {
+    fn fetch_bytes_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
         let (tx, rx) = channel();
-        if let Err(e) = self.issue_fetch(url, "bytes", InflightReply::Bytes(tx)) {
+        if let Err(e) = self.issue_fetch(url, meta, InflightReply::Bytes(tx)) {
             let (fallback_tx, fallback_rx) = channel();
             let _ = fallback_tx.send(Err(e));
             return fallback_rx;
@@ -155,13 +162,13 @@ impl AsyncFetchHost for IpcAsyncFetchHost<'_> {
 pub struct StubAsyncFetchHost;
 
 impl AsyncFetchHost for StubAsyncFetchHost {
-    fn fetch_text(&mut self, _: &str) -> Receiver<Result<String, String>> {
+    fn fetch_text_meta(&mut self, _: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
         let (tx, rx) = channel();
         let _ = tx.send(Err("stub network".into()));
         rx
     }
 
-    fn fetch_bytes(&mut self, _: &str) -> Receiver<Result<Vec<u8>, String>> {
+    fn fetch_bytes_meta(&mut self, _: &str, _: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
         let (tx, rx) = channel();
         let _ = tx.send(Err("stub network".into()));
         rx

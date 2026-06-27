@@ -15,7 +15,7 @@ fn test_navigation_ipc_roundtrip() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com/about".to_string(),
             referrer: Some("https://example.com".to_string()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let bytes = serialize(&msg).expect("serialize");

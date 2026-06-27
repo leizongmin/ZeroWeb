@@ -1,9 +1,10 @@
 //! 共享 HTTP 线程池 — per-origin 并发上限，对齐主流浏览器连接策略。
 
-use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex, OnceLock};
 
-use zero_net::{FetchJobResult, PerOriginFetchScheduler};
+use zero_net::{FetchJobResult, FetchPriority, PerOriginFetchScheduler};
+use zero_page_runtime::ResourceFetchMeta;
 
 /// HTTP GET 任务结果（文本）。
 pub type HttpTextResult = Result<String, String>;
@@ -11,9 +12,7 @@ pub type HttpTextResult = Result<String, String>;
 static NET_SCHEDULER: OnceLock<Arc<Mutex<PerOriginFetchScheduler>>> = OnceLock::new();
 
 fn scheduler() -> Arc<Mutex<PerOriginFetchScheduler>> {
-    NET_SCHEDULER
-        .get_or_init(|| Arc::new(Mutex::new(PerOriginFetchScheduler::new())))
-        .clone()
+    NET_SCHEDULER.get_or_init(PerOriginFetchScheduler::new_shared).clone()
 }
 
 fn map_fetch_result(result: FetchJobResult) -> Result<Vec<u8>, String> {
@@ -51,13 +50,31 @@ where
 
 /// 在后台调度器中发起 HTTP GET，返回文本结果接收端。
 pub fn fetch_text_async(url: impl Into<String>) -> Receiver<HttpTextResult> {
-    let rx = PerOriginFetchScheduler::submit_shared(&scheduler(), url.into());
+    fetch_text_async_meta(url, ResourceFetchMeta::DOCUMENT)
+}
+
+/// 带优先级的文本 GET。
+pub fn fetch_text_async_meta(url: impl Into<String>, meta: ResourceFetchMeta) -> Receiver<HttpTextResult> {
+    let rx = PerOriginFetchScheduler::submit_shared_with_priority(
+        &scheduler(),
+        url.into(),
+        FetchPriority::from_u8(meta.priority),
+    );
     bridge_rx(rx, map_fetch_text)
 }
 
 /// 在后台调度器中发起 HTTP GET 并返回原始字节。
 pub fn fetch_bytes_async(url: impl Into<String>) -> Receiver<Result<Vec<u8>, String>> {
-    let rx = PerOriginFetchScheduler::submit_shared(&scheduler(), url.into());
+    fetch_bytes_async_meta(url, ResourceFetchMeta::IMAGE)
+}
+
+/// 带优先级的字节 GET。
+pub fn fetch_bytes_async_meta(url: impl Into<String>, meta: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
+    let rx = PerOriginFetchScheduler::submit_shared_with_priority(
+        &scheduler(),
+        url.into(),
+        FetchPriority::from_u8(meta.priority),
+    );
     bridge_rx(rx, map_fetch_result)
 }
 

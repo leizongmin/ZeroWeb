@@ -15,7 +15,7 @@ fn test_ipc_channel_mock_send_recv() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some("https://ref.com".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
 
@@ -558,7 +558,7 @@ fn test_message_with_empty_fields() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: String::new(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out1 = roundtrip(msg1);
@@ -1068,7 +1068,7 @@ fn test_ipc_backward_compatibility() {
         IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
         IpcMessageKind::GoBack,
         IpcMessageKind::GoForward,
@@ -1213,7 +1213,7 @@ fn test_ipc_deterministic_encoding() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some("https://ref.com".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let bytes1 = serialize(&msg).expect("first serialize");
@@ -1465,7 +1465,7 @@ fn test_ipc_optional_fields() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out_none = roundtrip(msg_none);
@@ -1481,7 +1481,7 @@ fn test_ipc_optional_fields() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some("https://referrer.com".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out_some = roundtrip(msg_some);
@@ -1664,7 +1664,7 @@ fn test_navigate_referrer_some_empty_string() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some(String::new()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);
@@ -1928,7 +1928,7 @@ fn test_deserialization_error_recovery() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://recovery.test".into(),
             referrer: Some("https://referrer.test".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let valid_bytes2 = serialize(&valid_msg2).expect("序列化应成功");

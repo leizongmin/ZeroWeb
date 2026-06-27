@@ -519,7 +519,7 @@ mod tests {
                 kind: IpcMessageKind::Navigate(NavigateParams {
                     url: "https://example.com".into(),
                     referrer: None,
-                navigation_epoch: 0,
+                    navigation_epoch: 0,
                 }),
             })
             .unwrap();
@@ -739,7 +739,7 @@ mod tests {
                 kind: IpcMessageKind::Navigate(NavigateParams {
                     url: "https://example.com".into(),
                     referrer: None,
-                navigation_epoch: 0,
+                    navigation_epoch: 0,
                 }),
             })
             .unwrap();
@@ -790,7 +790,7 @@ mod tests {
                 kind: IpcMessageKind::Navigate(NavigateParams {
                     url: "https://unreachable.example".into(),
                     referrer: None,
-                navigation_epoch: 0,
+                    navigation_epoch: 0,
                 }),
             })
             .unwrap();

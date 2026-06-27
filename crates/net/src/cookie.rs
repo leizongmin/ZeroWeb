@@ -472,10 +472,8 @@ fn cookie_matches_url(cookie: &Cookie, url: &ParsedUrl) -> bool {
                 if !host.eq_ignore_ascii_case(domain) {
                     return false;
                 }
-            } else {
-                if !domain_matches(domain, host) {
-                    return false;
-                }
+            } else if !domain_matches(domain, host) {
+                return false;
             }
         }
         None => {

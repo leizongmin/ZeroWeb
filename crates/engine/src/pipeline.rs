@@ -769,6 +769,61 @@ pub fn extract_img_srcs(html: &str) -> Vec<String> {
     srcs
 }
 
+/// `<img>` 子资源（含 lazy 标记）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImgResource {
+    /// `src` 原始值。
+    pub src: String,
+    /// `loading=lazy`。
+    pub lazy: bool,
+}
+
+/// 提取 HTML 中所有 `<img>` 的 src 与 lazy 属性。
+pub fn extract_img_resources(html: &str) -> Vec<ImgResource> {
+    let doc = zero_dom::parse_html(html);
+    let mut out = Vec::new();
+    for img_id in doc.get_elements_by_tag_name("img") {
+        if let Some(src) = doc.get_attribute(img_id, "src") {
+            let src = src.trim();
+            if src.is_empty() {
+                continue;
+            }
+            let lazy = doc
+                .get_attribute(img_id, "loading")
+                .is_some_and(|v| v.trim().eq_ignore_ascii_case("lazy"));
+            out.push(ImgResource {
+                src: src.to_string(),
+                lazy,
+            });
+        }
+    }
+    out
+}
+
+/// 从 CSS 文本提取 `@font-face` 中的 `url(...)`（简单扫描）。
+pub fn extract_font_face_urls(css: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    let lower = css.to_ascii_lowercase();
+    let mut search_from = 0;
+    while let Some(ff) = lower[search_from..].find("@font-face") {
+        let start = search_from + ff;
+        let block_end = lower[start..].find('}').map(|i| start + i).unwrap_or(css.len());
+        let block = &css[start..block_end];
+        let mut u = 0;
+        while let Some(ui) = block[u..].find("url(") {
+            let rest = &block[u + ui + 4..];
+            let end = rest.find(')').unwrap_or(rest.len());
+            let raw = rest[..end].trim().trim_matches('"').trim_matches('\'');
+            if !raw.is_empty() && !raw.starts_with("data:") {
+                urls.push(raw.to_string());
+            }
+            u += ui + 4;
+        }
+        search_from = block_end;
+    }
+    urls
+}
+
 /// 去除 XHTML CDATA 包装（`<![CDATA[...]]>`）。
 ///
 /// html5ever 仅支持 HTML 模式解析，会将 `<style>` 中的 CDATA 标记
