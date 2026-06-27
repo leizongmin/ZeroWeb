@@ -1203,6 +1203,68 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
+    /// 复制指定标签页，副本插入其后并设为活跃。
+    fn duplicate_tab_by_id(&mut self, id: TabId) {
+        if let Some(new_id) = self.shell.duplicate_tab(id) {
+            self.tabs.ensure_tab(new_id);
+            self.scroll.insert(new_id, TabScrollState::default());
+            self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+            self.sync_webview_viewport();
+            self.update_address_bar_from_active_tab();
+            self.needs_redraw = true;
+        }
+    }
+
+    /// 关闭除指定标签页外的所有标签页。
+    fn close_other_tabs_by_id(&mut self, id: TabId) {
+        let to_close: Vec<TabId> = self.shell.tabs().map(|t| t.id()).filter(|&tid| tid != id).collect();
+        for tid in to_close {
+            self.tabs.remove_tab(tid);
+            self.scroll.remove(&tid);
+        }
+        self.shell.close_other_tabs(id);
+
+        if self.shell.is_empty() {
+            self.new_tab(None);
+        } else {
+            self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+        }
+
+        self.update_address_bar_from_active_tab();
+        self.needs_redraw = true;
+    }
+
+    /// 关闭指定标签页右侧的所有标签页。
+    fn close_tabs_to_right_by_id(&mut self, id: TabId) {
+        let to_close: Vec<TabId> = {
+            let mut found = false;
+            self.shell
+                .tabs()
+                .filter(|t| {
+                    if t.id() == id {
+                        found = true;
+                        false
+                    } else {
+                        found
+                    }
+                })
+                .map(|t| t.id())
+                .collect()
+        };
+        for tid in to_close {
+            self.tabs.remove_tab(tid);
+            self.scroll.remove(&tid);
+        }
+        self.shell.close_tabs_to_right(id);
+
+        if self.shell.is_empty() {
+            self.new_tab(None);
+        }
+
+        self.update_address_bar_from_active_tab();
+        self.needs_redraw = true;
+    }
+
     /// 刷新当前页面
     pub fn refresh_page(&mut self) {
         self.shell.refresh();

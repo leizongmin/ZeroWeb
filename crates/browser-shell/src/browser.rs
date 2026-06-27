@@ -162,6 +162,21 @@ impl BrowserShell {
         self.tabs.close_tab(id);
     }
 
+    /// 复制指定标签页（副本插入其后并设为活跃）。
+    pub fn duplicate_tab(&mut self, id: TabId) -> Option<TabId> {
+        self.tabs.duplicate_tab(id)
+    }
+
+    /// 关闭除指定标签页外的所有标签页。
+    pub fn close_other_tabs(&mut self, id: TabId) {
+        self.tabs.close_other_tabs(id);
+    }
+
+    /// 关闭指定标签页右侧的所有标签页。
+    pub fn close_tabs_to_right(&mut self, id: TabId) {
+        self.tabs.close_tabs_to_right(id);
+    }
+
     /// 切换到指定标签页。
     pub fn switch_tab(&mut self, id: TabId) {
         self.tabs.switch_to(id);
