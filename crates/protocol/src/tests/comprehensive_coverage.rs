@@ -20,7 +20,7 @@ fn test_navigate_params_edge_cases() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out1 = roundtrip(msg1);
@@ -36,7 +36,7 @@ fn test_navigate_params_edge_cases() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://test.com/path?query=value#frag".into(),
             referrer: Some("https://referrer.com".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out2 = roundtrip(msg2);

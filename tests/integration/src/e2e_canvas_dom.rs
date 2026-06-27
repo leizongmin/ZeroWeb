@@ -227,7 +227,7 @@ fn test_ipc_roundtrip_navigation() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".to_string(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let bytes = serialize(&msg).unwrap();

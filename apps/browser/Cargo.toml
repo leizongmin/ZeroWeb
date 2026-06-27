@@ -19,6 +19,7 @@ zero-engine = { workspace = true }
 zero-protocol = { workspace = true }
 zero-script-sandbox = { workspace = true }
 zero-net = { workspace = true }
+zero-security = { workspace = true }
 zero-storage = { workspace = true }
 winit = { workspace = true }
 softbuffer = { workspace = true }

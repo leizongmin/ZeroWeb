@@ -9,7 +9,7 @@ fn test_serialize_deserialize_navigate() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some("https://referrer.com".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg.clone());
@@ -205,7 +205,7 @@ fn test_roundtrip_all_message_types() {
         IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
         IpcMessageKind::GoBack,
         IpcMessageKind::GoForward,
@@ -215,7 +215,7 @@ fn test_roundtrip_all_message_types() {
             html: "<html></html>".into(),
             css: None,
             url: Some("zero://newtab".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
         IpcMessageKind::SetViewport(SetViewportParams {
             width: 1024,
@@ -314,7 +314,7 @@ fn test_navigate_params_fields() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com/page".into(),
             referrer: Some("https://google.com".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);
@@ -843,7 +843,7 @@ fn test_navigate_empty_url() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: String::new(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);
@@ -1017,7 +1017,7 @@ fn test_roundtrip_navigate_with_referrer_some() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some("https://referrer.com".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);
@@ -1036,7 +1036,7 @@ fn test_roundtrip_navigate_with_referrer_none() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);
@@ -1541,7 +1541,7 @@ fn test_deserialize_truncated_valid_data() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".to_string(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let mut bytes = serialize(&msg).expect("serialize");

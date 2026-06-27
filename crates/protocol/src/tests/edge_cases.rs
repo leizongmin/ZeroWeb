@@ -235,7 +235,7 @@ fn test_serialized_bytes_no_cross_contamination() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://a.com".into(),
             referrer: Some("https://ref.com".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let msg_b = IpcMessage {
@@ -461,7 +461,7 @@ fn test_message_clone_independence() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some("https://ref.com".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
 
@@ -600,7 +600,7 @@ fn test_navigate_with_url_encoded_referrer() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://target.com/page".into(),
             referrer: Some(referrer.into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);
@@ -983,7 +983,7 @@ fn test_navigate_params_none_referrer_roundtrip() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let rt = roundtrip(msg);
@@ -1096,7 +1096,7 @@ fn test_navigate_params_with_referrer() {
     let params = NavigateParams {
         url: "https://example.com/page".to_string(),
         referrer: Some("https://google.com".to_string()),
-                navigation_epoch: 0,
+        navigation_epoch: 0,
     };
     let bytes = bincode::serialize(&params).expect("serialize");
     let rt: NavigateParams = bincode::deserialize(&bytes).expect("deserialize");
@@ -1110,7 +1110,7 @@ fn test_navigate_params_no_referrer() {
     let params = NavigateParams {
         url: "https://example.com".to_string(),
         referrer: None,
-                navigation_epoch: 0,
+        navigation_epoch: 0,
     };
     let bytes = bincode::serialize(&params).expect("serialize");
     let rt: NavigateParams = bincode::deserialize(&bytes).expect("deserialize");
@@ -1468,7 +1468,7 @@ fn test_navigate_self_referential_referrer() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: same_url.into(),
             referrer: Some(same_url.into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);

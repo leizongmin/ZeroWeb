@@ -41,21 +41,27 @@ impl Resolve for Ipv4OnlyResolver {
 }
 
 /// 构建 blocking HTTP 客户端（与 `HttpClient` 配置一致）。
-///
-/// 使用 reqwest 默认行为读取系统/环境代理（Windows IE 代理、`HTTP(S)_PROXY` 等）。
 pub(crate) fn build_blocking_client(user_agent: &str, timeout_secs: u64) -> Client {
-    Client::builder()
+    let mut builder = Client::builder()
         .timeout(std::time::Duration::from_secs(timeout_secs))
         .redirect(reqwest::redirect::Policy::none())
         .user_agent(user_agent)
         .gzip(true)
         .brotli(true)
         .deflate(true)
-        // 部分网络/代理对 HTTP/2 握手不稳定；页面抓取优先连通性。
-        .http1_only()
-        .dns_resolver(Arc::new(Ipv4OnlyResolver))
-        .build()
-        .expect("failed to build HTTP client")
+        .dns_resolver(Arc::new(Ipv4OnlyResolver));
+    if !http2_enabled() {
+        builder = builder.http1_only();
+    } else {
+        tracing::info!("HTTP/2 enabled (ZERO_HTTP2=1)");
+    }
+    builder.build().expect("failed to build HTTP client")
+}
+
+fn http2_enabled() -> bool {
+    std::env::var("ZERO_HTTP2")
+        .ok()
+        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
 }
 
 /// 将 reqwest 错误映射为 `NetError`；代理相关失败单独归类以便 UI/日志识别。

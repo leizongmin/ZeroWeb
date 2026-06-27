@@ -16,7 +16,7 @@ fn test_navigate_referrer_with_whitespace_chars() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some(referrer.into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);
@@ -40,7 +40,7 @@ fn test_navigate_referrer_whitespace_only() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some("   ".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);
@@ -59,7 +59,7 @@ fn test_navigate_both_url_and_referrer_empty() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: String::new(),
             referrer: Some(String::new()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);
@@ -82,7 +82,7 @@ fn test_navigate_referrer_with_nul_byte() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some(referrer.into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);

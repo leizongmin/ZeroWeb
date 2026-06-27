@@ -34,10 +34,7 @@ mod tests {
 
     #[test]
     fn origin_from_https_url() {
-        assert_eq!(
-            origin_from_url("https://example.com/path?q=1"),
-            "https://example.com"
-        );
+        assert_eq!(origin_from_url("https://example.com/path?q=1"), "https://example.com");
     }
 
     #[test]

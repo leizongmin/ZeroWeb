@@ -11,6 +11,9 @@
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 
+pub mod fetch_meta;
+pub use fetch_meta::ResourceFetchMeta;
+
 use zero_engine::{DomMutation, HitTestCache, RenderResult};
 use zero_render_foundation::primitive::RenderPrimitives;
 
@@ -21,9 +24,17 @@ use zero_render_foundation::primitive::RenderPrimitives;
 /// 并为 renderer 复用同一加载器铺路（tick/轮询模型两端一致）。
 pub trait AsyncFetchHost {
     /// 抓取文本资源（主文档 / 外链 CSS）。
-    fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>>;
+    fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>> {
+        self.fetch_text_meta(url, ResourceFetchMeta::DOCUMENT)
+    }
     /// 抓取二进制资源（图片等）。
-    fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>>;
+    fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>> {
+        self.fetch_bytes_meta(url, ResourceFetchMeta::IMAGE)
+    }
+    /// 带元数据的文本抓取。
+    fn fetch_text_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<String, String>>;
+    /// 带元数据的二进制抓取。
+    fn fetch_bytes_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>>;
 }
 
 /// 阻塞抓取宿主：把一个**同步阻塞**的 fetch（如 renderer 的 IPC 抓取）适配成 [`AsyncFetchHost`]。
@@ -50,14 +61,14 @@ impl<F> AsyncFetchHost for BlockingFetchHost<F>
 where
     F: FnMut(&str) -> Result<Vec<u8>, String>,
 {
-    fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>> {
+    fn fetch_text_meta(&mut self, url: &str, _meta: ResourceFetchMeta) -> Receiver<Result<String, String>> {
         let (tx, rx) = channel();
         let result = (self.fetch)(url).and_then(|b| String::from_utf8(b).map_err(|e| e.to_string()));
         let _ = tx.send(result);
         rx
     }
 
-    fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>> {
+    fn fetch_bytes_meta(&mut self, url: &str, _meta: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
         let (tx, rx) = channel();
         let _ = tx.send((self.fetch)(url));
         rx

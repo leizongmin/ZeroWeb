@@ -54,7 +54,7 @@ fn test_pipe_transport_frame_protocol() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://test.example/page?q=hello&lang=en".into(),
             referrer: Some("https://origin.example".into()),
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
 
@@ -464,7 +464,7 @@ fn test_interleaved_messages() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://a.com".into(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     })
     .unwrap();
@@ -527,7 +527,7 @@ fn test_concurrent_bidirectional() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://tab1.com".into(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     })
     .unwrap();

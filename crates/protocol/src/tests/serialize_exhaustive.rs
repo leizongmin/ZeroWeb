@@ -299,7 +299,7 @@ fn test_navigate_no_referrer() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);

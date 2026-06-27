@@ -28,7 +28,7 @@ fn test_deserialize_partial_valid_data() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: None,
-                navigation_epoch: 0,
+            navigation_epoch: 0,
         }),
     };
     let full_bytes = serialize(&msg).unwrap();
