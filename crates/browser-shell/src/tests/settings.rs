@@ -256,5 +256,8 @@ fn test_color_theme_preference_cycle() {
     assert_eq!(ColorThemePreference::Auto.cycle(), ColorThemePreference::Light);
     assert_eq!(ColorThemePreference::Light.cycle(), ColorThemePreference::Dark);
     assert_eq!(ColorThemePreference::Dark.cycle(), ColorThemePreference::Auto);
-    assert_eq!(ColorThemePreference::from_name("dark"), Some(ColorThemePreference::Dark));
+    assert_eq!(
+        ColorThemePreference::from_name("dark"),
+        Some(ColorThemePreference::Dark)
+    );
 }
