@@ -1209,6 +1209,39 @@ fn test_resolve_font_metrics_line_height_normal() {
     );
 }
 
+/// 测试 resolve_font_metrics 中 Ahem 字体 line-height: Normal 使用字体实际度量比率 1.0
+/// （非默认 1.2）—— Chromium 对 line-height:normal 用字体 OS/2 度量，Ahem 度量=1.0。
+#[test]
+fn test_resolve_font_metrics_line_height_normal_ahem() {
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(32.0);
+    style.font_family = vec!["Ahem".to_string()];
+    // 默认 line-height 就是 Normal
+
+    let (font_size, line_height) = resolve_font_metrics(Some(&style));
+    assert!((font_size - 32.0).abs() < 0.01);
+    assert!(
+        (line_height - 32.0).abs() < 0.01,
+        "Ahem line-height:normal 应为 32.0 * 1.0 = 32.0（字体实际度量），实际 {line_height}"
+    );
+
+    // font-family 列表中含 Ahem（多字体回退）也应触发
+    style.font_family = vec!["serif".to_string(), "Ahem".to_string()];
+    let (_, line_height) = resolve_font_metrics(Some(&style));
+    assert!(
+        (line_height - 32.0).abs() < 0.01,
+        "含 Ahem 的 font-family 列表 line-height:normal 应为 32.0，实际 {line_height}"
+    );
+
+    // 大小写不敏感
+    style.font_family = vec!["ahem".to_string()];
+    let (_, line_height) = resolve_font_metrics(Some(&style));
+    assert!(
+        (line_height - 32.0).abs() < 0.01,
+        "大小写不敏感：ahem line-height:normal 应为 32.0，实际 {line_height}"
+    );
+}
+
 // ── 样式感知 layout 测试 ──
 
 /// 测试从 Document 布局时使用 ComputedStyle 中的 font-size。

@@ -153,11 +153,24 @@ pub(crate) fn estimate_string_width(text: &str, font_size: f32, is_ahem: bool) -
 /// 默认行高倍数（用于 line-height: normal）。
 pub(crate) const NORMAL_LINE_HEIGHT_RATIO: f32 = 1.2;
 
+/// Ahem 字体（WPT 标准测试字体）line-height:normal 的实际度量比率。
+///
+/// Chromium 对 line-height:normal 使用字体实际 OS/2 度量（ascent - descent + line_gap）。
+/// fontdue 实测 Ahem.ttf：ascent=800 / descent=-200 / line_gap=0 / units_per_em=1000
+/// → (ascent - descent) / upem = 1.0（度量探针见
+/// `docs/goal/rendering-compat/evidence/r759-font-metric-line-height-2026-06-28.txt`）。
+/// ZeroWeb 此前对所有字体统一用 [`NORMAL_LINE_HEIGHT_RATIO`]（1.2），致 line-height:normal
+/// 的 Ahem 文本行盒比 Chromium 高 20%，多行 Ahem reftest（不显式声明 line-height 者）
+/// Y 坐标累积发散。此处按字体实际度量修正，与 `estimate_char_width` 对 Ahem
+/// 等宽=font_size 的既有特判一致。非 Ahem 字体仍用 1.2（其度量需 FontLoader 跨 crate
+/// plumbing，且字体匹配与 chromium 的差异是正交问题，留作后续增量）。
+pub(crate) const AHEM_LINE_HEIGHT_RATIO: f32 = 1.0;
+
 /// 从 ComputedStyle 中解析 font-size 和 line-height。
 ///
 /// - `font_size` 从 `ComputedStyle::font_size` 中提取（已解析为 Px）。
 /// - `line_height` 根据 `LineHeightValue` 计算：
-///   - `Normal` → font_size × 1.2
+///   - `Normal` → font_size × 度量比率（Ahem=1.0，其余=1.2）
 ///   - `Number(n)` → font_size × n
 ///   - `Length(Px(v))` → v
 ///
@@ -171,16 +184,23 @@ pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
         None => DEFAULT_FONT_SIZE,
     };
 
+    // line-height:normal 用字体实际度量：Ahem=1.0（见 AHEM_LINE_HEIGHT_RATIO），其余 1.2。
+    // 无样式（None）时无法判定字体，回退 1.2。
+    let normal_ratio = match style {
+        Some(s) if s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")) => AHEM_LINE_HEIGHT_RATIO,
+        _ => NORMAL_LINE_HEIGHT_RATIO,
+    };
+
     let line_height = match style {
         Some(s) => match &s.line_height {
-            LineHeightValue::Normal => font_size * NORMAL_LINE_HEIGHT_RATIO,
+            LineHeightValue::Normal => font_size * normal_ratio,
             LineHeightValue::Number(n) => font_size * (*n as f32),
             LineHeightValue::Length(LengthValue::Px(v)) => *v as f32,
             // 其他长度类型（em/rem 等）在 resolve 阶段应已转换为 Px，
-            // 这里做防御性回退
-            LineHeightValue::Length(_) => font_size * NORMAL_LINE_HEIGHT_RATIO,
+            // 这里做防御性回退（用字体度量比率，Ahem 时为 1.0）
+            LineHeightValue::Length(_) => font_size * normal_ratio,
         },
-        None => DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO,
+        None => DEFAULT_FONT_SIZE * normal_ratio,
     };
 
     (font_size, line_height)
