@@ -554,3 +554,60 @@ fn test_r364b_explicit_width_floored_at_min_content() {
         col_widths[0]
     );
 }
+
+/// R702/R679：cell 含 block 子（width ≈ cell width）+ 文本（含大量空白）时，
+/// `compute_cell_intrinsic_width` 应返回 `box_content_max_width`（内容 max-content），
+/// 而非 `collect_text_length` 把空白也计入的 char_count 估算。修复前：block 子
+/// width ≈ cell width 时 else-if 跳过 → 落 text path → char_count（含空白）过大
+/// → table 不 shrink-to-fit（margin-collapse-101 table 1446px 溢出 viewport）。
+#[test]
+fn test_r702_cell_intrinsic_uses_max_content_not_whitespace_charcount() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let inner_id = doc.create_element("div");
+    let text_id = doc.create_text_node("A\n\n\n\n\n"); // 「A」+ 大量空白（块间换行）
+    let _ = doc.append_child(root, table_id);
+    let _ = doc.append_child(table_id, cell_id);
+    let _ = doc.append_child(cell_id, inner_id);
+    let _ = doc.append_child(inner_id, text_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    styles.insert(table_id, ts);
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCell;
+    cs.font_size = LengthValue::Px(50.0);
+    styles.insert(cell_id, cs);
+    let mut inner_style = ComputedStyle::default();
+    inner_style.display = DisplayValue::Block;
+    inner_style.font_size = LengthValue::Px(50.0);
+    styles.insert(inner_id, inner_style);
+
+    // inner.width ≈ cell.width → compute_cell_intrinsic_width 的 else-if（child < cell*0.95）跳过 → text path
+    let inner_box = LayoutBox {
+        node_id: Some(inner_id),
+        width: 778.0,
+        content_width: 778.0,
+        ..Default::default()
+    };
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        width: 778.0,
+        content_width: 778.0,
+        children: vec![inner_box],
+        ..Default::default()
+    };
+
+    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc);
+    // 修复前 char_count = 6 chars × char_width(30) = 180；修复后 box_content_max_width ≈ 「A」宽
+    assert!(
+        intrinsic < 80.0,
+        "cell intrinsic 应用 box_content_max_content（~「A」宽），不应被空白 char_count 撑大，got {}",
+        intrinsic
+    );
+}
