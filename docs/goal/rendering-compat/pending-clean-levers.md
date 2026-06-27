@@ -19,8 +19,13 @@
 | **R720** | ❌ **premise 错**（实证推翻 R721 结论） | background-root-005 **80.7%→80.7% 字节同（零变化）** | `expand_background` 对 `background:transparent` 产出 `background-color:transparent`→`parse_color` 已返回 **`Transparent` 枚举变体**（color.rs:443）；原 `!= Transparent` 检查本就正确，canvas 传播对本案工作。005 的 80% 发散另有他因（border/margin/`*{margin:1em}` 全局选择器布局差），非传播失效。**is_transparent() alpha-0 鲁棒改进亦因无确认 yield 已回退** |
 | **R696** | ❌ **anchor+cluster 全 inline-SVG-content 阻塞**（out-of-scope） | inline-replaced-width-009 **22.08%→22.08% 零变化** | anchor + 008/ib-007/ib-008 全用 `<svg:svg>` + `<svg:rect fill>`；ZW 不渲染内联 SVG 内容（goal line 118 排除），sizing 修不修都不 yield（内容缺失主导）。非-img 默认 300×150 sizing 修正确但因无确认 yield 已回退 |
 | **R678** | ❌ **anchor 发散非 float-width** | font-size-zero-3 **33.53%→33.53% 零变化** | `box_node.float` 已正确 populate（engine.rs:655），shrink-to-fit 实现正确，但 anchor 的 33.53% 不是 float 满宽所致（绿子/高度/位置他因）。float:right 定位顺序风险（x=container_w−used_w）下，无 yield 不值得保留，已回退 |
+| **R717** | ❌ **decode 修对但 anchor 复合 bug 阻塞**（实证，R740） | replaced-elements-all-auto **31.66%→32.39% 反而 +0.73pp 回归** | decode_svg_bytes 经 probe 实证修对（7 SVG 全 match CSS spec：ratio-2 1000×500→300×150 等），**decode 修正确且有 probe 单测**，但 anchor 的 ~32% 由 **tree.rs §10.3.2 replaced-sizing + reftest harness img 处理**的复合 bug 主导（correct intrinsic 未转化为 chr-matching layout）；all-auto 反退 0.73pp。decode 修已回退（单独无 yield 且小回归）；**R717 须 decode 修 + tree.rs sizing 修同做**才能 yield，decode 修在 git 历史/master 可复用 |
 
-**★ 关键裁决（R739 实证）**：doc-side 只读 lever 分析的**假阳性率高**——R720/R696/R678 三 lever 实证零 yield（premise 错 / out-of-scope / 发散另有他因）。**「14 clean lever 待消费」叙事大部分是幻觉**；pass-rate 提升需 per-case 实际修复验证，非盲信只读根因。后续轮次：① 优先消费 R689/R716 同类**已实证可 yield** 的 lever；② 对剩余 lever 先小范围实测 anchor（`make reftest-oracle DIR=<case>` before/after）再投入；③ R720/R696/R678 标记**实证失效**，勿再以原 premise 重试。
+**★ 关键裁决（R739/R740 实证）**：doc-side 只读 lever 分析的**假阳性率高**——R720/R696/R678/R717 四 lever 实证零 yield 或反退（premise 错 / out-of-scope / 发散另有他因 / 复合 bug）。**「14 clean lever 待消费」叙事大部分是幻觉**；pass-rate 提升需 per-case 实际修复验证，非盲信只读根因。
+
+**★ 剩余 lever 状态（R740 评估）——clean lever 队列实质耗尽**：R689/R716（已 landed，仅有的 2 个真正 clean）；R720/R696/R678/R717（实证失效）；**R702 = R109 territory**（collapse-through + §9.2.1.1 匿名块，doc 自标「类 R680 R109 同族」，已知结构性 deadlock）；R695（%height indefinite-CB，需 CB-definiteness cascade，complex）；R691（grid %height，taffy-gated R304）；R679（table shrink-to-fit，table-width 多 facet）；R699（float-height exclusion，medium）；R705（clearance 算术 complex）；R692（aspect-ratio，oracle 损坏需先 regen）；R680（br 行盒，R109 blast radius）；R711（%inset，taffy-deferred）。**剩余全部为 R109-gated / taffy-gated / complex / 需复合修复，无单点 clean lever**。
+
+**★ 战略转向（R740）**：lever 盲消费已无 EV。后续轮次应：① 勿再盲消费 doc lever（premise 假阳性高 + 剩余全 structural-gated）；② 改用**直接 chr-vs-ZeroWeb 简单用例对比**找新 high-confidence 修复（R689/R716 即此类——简单 inset handling）；③ 或攻坚**结构性根因**（R109 §9.2.1.1 匿名块 / Phase-A IFC 统一 / taffy 升级 R304），这些是多会话架构工作，需按 rally 跨会话协议推进，非单点 lever。
 
 ## 优先级总览
 
