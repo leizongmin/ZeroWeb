@@ -23,9 +23,7 @@ pub struct FaviconFetchState {
 
 impl FaviconFetchState {
     pub fn new() -> Self {
-        Self {
-            pending: Vec::new(),
-        }
+        Self { pending: Vec::new() }
     }
 
     /// 在后台拉取 favicon；若已有相同 Tab + URL 的请求则忽略。

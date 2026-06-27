@@ -615,20 +615,20 @@ mod tests {
         app.scale_factor = 1.0;
 
         let s = app.scale_factor;
-        let bar_x =
-            (layout::NAV_SECTION_LEADING_PAD + layout::NAV_BUTTON_WIDTH * 4.0 + layout::NAV_SECTION_TRAILING_GAP) * s
-                + layout::ADDRESS_BAR_PADDING * s;
-        let inset = layout::ADDRESS_BAR_INPUT_V_INSET * s;
-        let bar_y = layout::TAB_STRIP_HEIGHT * s + inset;
-        let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 2.0 * inset;
-        let menu_btn_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
-        let trailing_reserved = layout::ADDRESS_BAR_PADDING * s + layout::TOOLBAR_TRAILING_GAP * s + menu_btn_w;
-        let bar_w = app.physical_size.0 as f32 - bar_x - trailing_reserved;
-        let btn_x = bar_x + bar_w + layout::TOOLBAR_TRAILING_GAP * s;
-        let btn_y = bar_y;
+        let (btn_x, btn_y, menu_btn_w, bar_h) = app.toolbar_menu_button_rect_for_test();
 
-        app.handle_mouse_click((btn_x + menu_btn_w * 0.5) as f64, (btn_y + bar_h * 0.5) as f64, true, "Left");
-        app.handle_mouse_click((btn_x + menu_btn_w * 0.5) as f64, (btn_y + bar_h * 0.5) as f64, false, "Left");
+        app.handle_mouse_click(
+            (btn_x + menu_btn_w * 0.5) as f64,
+            (btn_y + bar_h * 0.5) as f64,
+            true,
+            "Left",
+        );
+        app.handle_mouse_click(
+            (btn_x + menu_btn_w * 0.5) as f64,
+            (btn_y + bar_h * 0.5) as f64,
+            false,
+            "Left",
+        );
         assert!(
             app.is_context_menu_visible_for_test(),
             "browser menu should stay open after button press+release"
@@ -644,20 +644,20 @@ mod tests {
         let count_before = app.shell.tab_count();
 
         let s = app.scale_factor;
-        let bar_x =
-            (layout::NAV_SECTION_LEADING_PAD + layout::NAV_BUTTON_WIDTH * 4.0 + layout::NAV_SECTION_TRAILING_GAP) * s
-                + layout::ADDRESS_BAR_PADDING * s;
-        let inset = layout::ADDRESS_BAR_INPUT_V_INSET * s;
-        let bar_y = layout::TAB_STRIP_HEIGHT * s + inset;
-        let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 2.0 * inset;
-        let menu_btn_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
-        let trailing_reserved = layout::ADDRESS_BAR_PADDING * s + layout::TOOLBAR_TRAILING_GAP * s + menu_btn_w;
-        let bar_w = app.physical_size.0 as f32 - bar_x - trailing_reserved;
-        let btn_x = bar_x + bar_w + layout::TOOLBAR_TRAILING_GAP * s;
-        let btn_y = bar_y;
+        let (btn_x, btn_y, menu_btn_w, bar_h) = app.toolbar_menu_button_rect_for_test();
 
-        app.handle_mouse_click((btn_x + menu_btn_w * 0.5) as f64, (btn_y + bar_h * 0.5) as f64, true, "Left");
-        app.handle_mouse_click((btn_x + menu_btn_w * 0.5) as f64, (btn_y + bar_h * 0.5) as f64, false, "Left");
+        app.handle_mouse_click(
+            (btn_x + menu_btn_w * 0.5) as f64,
+            (btn_y + bar_h * 0.5) as f64,
+            true,
+            "Left",
+        );
+        app.handle_mouse_click(
+            (btn_x + menu_btn_w * 0.5) as f64,
+            (btn_y + bar_h * 0.5) as f64,
+            false,
+            "Left",
+        );
         assert!(app.is_context_menu_visible_for_test());
 
         let menu_x = btn_x + menu_btn_w - layout::CONTEXT_MENU_WIDTH * s;
@@ -691,7 +691,10 @@ mod tests {
         let y = (tab_y + tab_h * 0.5) as f64;
 
         app.handle_mouse_click(x, y, true, "Right");
-        assert!(app.is_context_menu_visible_for_test(), "right-click tab should open tab menu");
+        assert!(
+            app.is_context_menu_visible_for_test(),
+            "right-click tab should open tab menu"
+        );
     }
 
     /// 标签上下文菜单「固定标签页」应切换 pinned 状态。

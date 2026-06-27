@@ -44,6 +44,12 @@ pub enum BrowserMenuLabel {
     AboutBrowser,
     /// Settings.
     Settings,
+    /// Browsing history page.
+    History,
+    /// Downloads page.
+    Downloads,
+    /// Bookmarks manager page.
+    BookmarksManager,
 }
 
 /// Tab context menu label keys.
@@ -96,6 +102,9 @@ pub fn browser_menu_label(label: BrowserMenuLabel, language: UiLanguage) -> &'st
             BrowserMenuLabel::HideBookmarksBar => "隐藏书签栏",
             BrowserMenuLabel::AboutBrowser => "关于 ZeroBrowser",
             BrowserMenuLabel::Settings => "设置",
+            BrowserMenuLabel::History => "历史记录",
+            BrowserMenuLabel::Downloads => "下载内容",
+            BrowserMenuLabel::BookmarksManager => "书签管理",
         },
         UiLanguage::EnUs => match label {
             BrowserMenuLabel::NewTab => "New Tab",
@@ -105,6 +114,9 @@ pub fn browser_menu_label(label: BrowserMenuLabel, language: UiLanguage) -> &'st
             BrowserMenuLabel::HideBookmarksBar => "Hide Bookmarks Bar",
             BrowserMenuLabel::AboutBrowser => "About ZeroBrowser",
             BrowserMenuLabel::Settings => "Settings",
+            BrowserMenuLabel::History => "History",
+            BrowserMenuLabel::Downloads => "Downloads",
+            BrowserMenuLabel::BookmarksManager => "Bookmarks",
         },
     }
 }

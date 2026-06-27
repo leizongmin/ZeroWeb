@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use zero_browser_shell::{
-    BrowserMenuLabel, BrowserSettings, BrowserShell, ContextMenu, ContextType, SuggestionSource, TabId, TabMenuLabel,
-    UiLanguage, browser_menu_label, tab_menu_label,
+    BrowserMenuLabel, BrowserSettings, BrowserShell, ContextMenu, ContextType, SearchEngine, SuggestionSource, TabId,
+    TabMenuLabel, UiLanguage, browser_menu_label, tab_menu_label,
 };
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::set_char_measure_fn;
@@ -22,11 +22,11 @@ use zero_render_foundation::image_cache::ImageCache;
 use zero_render_foundation::primitive::{FillPrimitive, GlyphPrimitive, GradientKind, RenderPrimitives};
 
 use crate::colors;
+use crate::favicon_fetch::FaviconFetchState;
 use crate::input_keys::key_matches;
 use crate::layout;
 use crate::page_scroll::{self, TabScrollState};
 use crate::page_selection::{GlyphSelection, hit_test_glyph};
-use crate::favicon_fetch::FaviconFetchState;
 use crate::pages;
 use crate::tab_manager::TabManager;
 use crate::text_input::TextInput;
@@ -249,6 +249,8 @@ pub struct BrowserApp {
     scrollbar_hover: Option<crate::page_scroll::ScrollbarHit>,
     /// 进行中的 favicon 异步拉取。
     favicon_fetch: FaviconFetchState,
+    /// 是否显示下载浮动面板（也可因活动下载自动展开）。
+    download_panel_open: bool,
 }
 
 impl BrowserApp {
@@ -315,6 +317,7 @@ impl BrowserApp {
             scrollbar_drag: None,
             scrollbar_hover: None,
             favicon_fetch: FaviconFetchState::new(),
+            download_panel_open: false,
         };
         app.tabs.set_javascript_enabled(app.shell.settings().javascript_enabled);
         app
@@ -359,16 +362,23 @@ impl BrowserApp {
             self.clamp_tab_scroll(id);
         }
         for (tab_id, title, url) in self.tabs.take_page_loaded_events() {
-            self.shell.on_page_loaded(&title);
+            if self.shell.active_tab_id() == Some(tab_id) {
+                self.shell.on_page_loaded(&title);
+            }
             self.refresh_tab_favicon(tab_id, &url);
-            if self.shell.active_tab_id() == Some(tab_id)
-                && let Some(tab) = self.shell.active_tab_mut()
-            {
-                tab.set_loading(false);
+            self.shell.set_tab_crashed(tab_id, false);
+            if self.shell.active_tab_id() == Some(tab_id) {
+                if let Some(tab) = self.shell.active_tab_mut() {
+                    tab.set_loading(false);
+                }
+                self.shell.set_tab_needs_attention(tab_id, false);
+            } else {
+                self.shell.set_tab_needs_attention(tab_id, true);
             }
         }
         for (tab_id, error) in self.tabs.take_page_error_events() {
             self.shell.on_page_error(&error);
+            self.shell.set_tab_crashed(tab_id, true);
             if self.shell.active_tab_id() == Some(tab_id)
                 && let Some(tab) = self.shell.active_tab_mut()
             {
@@ -954,13 +964,14 @@ impl BrowserApp {
     }
 
     fn load_local_tab_url(&mut self, tab_id: TabId, url: &str) {
-        if url.starts_with("zero://") {
-            if url != "zero://settings" {
-                self.load_welcome_page(tab_id);
-            }
-            return;
+        match url {
+            "zero://settings" => self.open_settings_page(),
+            "zero://history" => self.open_history_page(),
+            "zero://downloads" => self.open_downloads_page(),
+            "zero://bookmarks" => self.open_bookmarks_page(),
+            u if u.starts_with("zero://") => self.load_welcome_page(tab_id),
+            _ => self.tabs.navigate(tab_id, url.to_string()),
         }
-        self.tabs.navigate(tab_id, url.to_string());
     }
 
     fn finish_tab_load(&mut self, tab_id: TabId, url: &str, title: &str) {
@@ -969,6 +980,7 @@ impl BrowserApp {
     }
 
     fn schedule_tab_fetch(&mut self, tab_id: TabId, url: String) {
+        self.shell.set_tab_crashed(tab_id, false);
         if self.shell.active_tab_id() == Some(tab_id)
             && let Some(tab) = self.shell.active_tab_mut()
         {
@@ -1001,7 +1013,7 @@ impl BrowserApp {
 
     /// 导航到指定 URL
     pub fn navigate_to(&mut self, url: &str) {
-        if self.try_apply_settings_url(url) {
+        if self.try_apply_internal_url(url) {
             return;
         }
 
@@ -1043,9 +1055,7 @@ impl BrowserApp {
         let size = layout::TAB_ICON_SIZE * self.scale_factor;
         crate::tab_favicon::ensure_tab_favicon_placeholder(&mut self.font_loader, tab_id, size);
         let html_owned = self.tabs.page_html(tab_id);
-        let html = html_owned
-            .as_deref()
-            .or_else(|| Self::tab_html_hint(Some(page_url)));
+        let html = html_owned.as_deref().or_else(|| Self::tab_html_hint(Some(page_url)));
         self.favicon_fetch.request(tab_id, page_url, html, size);
     }
 
@@ -1242,18 +1252,71 @@ impl BrowserApp {
 
     /// 打开设置页面（about:preferences）
     pub fn open_settings_page(&mut self) {
-        let html = pages::generate_settings_html(self.shell.settings());
+        self.open_internal_list_page(
+            "zero://settings",
+            pages::generate_settings_html(self.shell.settings()),
+            "设置",
+        );
+    }
+
+    /// 打开历史记录页面。
+    pub fn open_history_page(&mut self) {
+        let html = pages::generate_history_html(self.shell.history());
+        self.open_internal_list_page("zero://history", html, "History");
+    }
+
+    /// 打开下载管理页面。
+    pub fn open_downloads_page(&mut self) {
+        let html = pages::generate_downloads_html(self.shell.downloads());
+        self.open_internal_list_page("zero://downloads", html, "Downloads");
+    }
+
+    /// 打开书签管理页面。
+    pub fn open_bookmarks_page(&mut self) {
+        let html = pages::generate_bookmarks_html(self.shell.bookmarks());
+        self.open_internal_list_page("zero://bookmarks", html, "Bookmarks");
+    }
+
+    fn open_internal_list_page(&mut self, url: &str, html: String, title: &str) {
         let tab_id = match self.shell.active_tab_id() {
             Some(id) => id,
             None => return,
         };
         self.tabs.ensure_tab(tab_id);
-        self.tabs.load_html(tab_id, &html, None, Some("zero://settings"));
+        self.tabs.load_html(tab_id, &html, None, Some(url));
         if let Some(tab) = self.shell.active_tab_mut() {
             tab.set_loading(false);
+            tab.set_title(title);
         }
-        self.address_bar.set_text("zero://settings".to_string());
+        self.address_bar.set_text(url.to_string());
         self.needs_redraw = true;
+    }
+
+    pub(crate) fn should_show_download_panel(&self) -> bool {
+        self.download_panel_open || self.shell.downloads().active_count() > 0
+    }
+
+    pub(crate) fn looks_like_search_query(text: &str) -> bool {
+        let trimmed = text.trim();
+        !trimmed.is_empty()
+            && !trimmed.contains("://")
+            && !trimmed.starts_with("localhost")
+            && (!trimmed.contains('.') || trimmed.contains(' '))
+    }
+
+    /// 处理 `zero://` 内部动作链接，成功时返回 `true`。
+    fn try_apply_internal_url(&mut self, url: &str) -> bool {
+        if self.try_apply_settings_url(url) {
+            return true;
+        }
+        match url {
+            "zero://history/clear" => {
+                self.shell.history_mut().clear();
+                self.open_history_page();
+                true
+            }
+            _ => false,
+        }
     }
 
     /// 处理设置页内部链接（toggle / cycle / set），成功时返回 `true`。
@@ -1280,6 +1343,18 @@ impl BrowserApp {
         }
         if let Some(value) = url.strip_prefix("zero://settings/set/default_zoom/") {
             self.apply_settings_default_zoom(value);
+            return true;
+        }
+        if let Some(engine) = url.strip_prefix("zero://settings/set/search_engine/") {
+            self.apply_settings_search_engine(engine);
+            return true;
+        }
+        if url == "zero://settings/edit/download_directory" {
+            self.apply_settings_edit_download_directory();
+            return true;
+        }
+        if let Some(encoded) = url.strip_prefix("zero://settings/set/download_directory/") {
+            self.apply_settings_download_directory(encoded);
             return true;
         }
         false
@@ -1358,6 +1433,29 @@ impl BrowserApp {
         self.open_settings_page();
     }
 
+    fn apply_settings_search_engine(&mut self, name: &str) {
+        let Some(engine) = SearchEngine::from_name(name) else {
+            tracing::debug!(%name, "unknown search engine");
+            return;
+        };
+        self.shell.apply_settings(|settings| settings.search_engine = engine);
+        self.open_settings_page();
+    }
+
+    fn apply_settings_edit_download_directory(&mut self) {
+        self.address_bar
+            .set_text("zero://settings/set/download_directory/".to_string());
+        self.address_bar_focused = true;
+        self.autocomplete.clear();
+        self.needs_redraw = true;
+    }
+
+    fn apply_settings_download_directory(&mut self, encoded: &str) {
+        let path = Self::percent_decode(encoded).trim().to_string();
+        self.shell.apply_settings(|settings| settings.download_directory = path);
+        self.open_settings_page();
+    }
+
     /// 应用设置页开关（`zero://settings/toggle/<key>`）。
     fn apply_settings_toggle(&mut self, key: &str) {
         let was_visible = self.bookmarks_bar_visible();
@@ -1368,7 +1466,8 @@ impl BrowserApp {
             }
             "javascript_enabled" => {
                 let enabled = !self.shell.settings().javascript_enabled;
-                self.shell.apply_settings(|settings| settings.javascript_enabled = enabled);
+                self.shell
+                    .apply_settings(|settings| settings.javascript_enabled = enabled);
                 self.tabs.set_javascript_enabled(enabled);
             }
             "cookies_enabled" => {

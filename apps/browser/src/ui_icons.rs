@@ -27,6 +27,9 @@ pub enum Icon {
     Plus,
     MoreVertical,
     Star,
+    Lock,
+    Download,
+    Shield,
 }
 
 impl Icon {
@@ -42,6 +45,9 @@ impl Icon {
             Icon::Plus => include_bytes!("../assets/icons/plus.svg"),
             Icon::MoreVertical => include_bytes!("../assets/icons/more-vertical.svg"),
             Icon::Star => include_bytes!("../assets/icons/star.svg"),
+            Icon::Lock => include_bytes!("../assets/icons/lock.svg"),
+            Icon::Download => include_bytes!("../assets/icons/download.svg"),
+            Icon::Shield => include_bytes!("../assets/icons/shield.svg"),
         }
     }
 
