@@ -37,3 +37,7 @@ ico = "0.5.0"
 
 [dev-dependencies]
 serial_test = { workspace = true }
+
+# Windows：构建时把 .ico 嵌入 .exe 资源（Explorer / 任务栏显示应用图标）
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"

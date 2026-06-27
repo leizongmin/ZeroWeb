@@ -112,8 +112,19 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           DEBROOT="zero-browser_${VERSION}_amd64"
           mkdir -p "$DEBROOT/DEBIAN" "$DEBROOT/usr/bin" "$DEBROOT/usr/share/applications"
+          mkdir -p "$DEBROOT/usr/share/icons/hicolor/scalable/apps"
           cp dist/zero-browser "$DEBROOT/usr/bin/"
           chmod 755 "$DEBROOT/usr/bin/zero-browser"
+
+          # 应用图标（SVG + 已生成的 PNG 各尺寸）
+          cp apps/browser/assets/app-icon.svg "$DEBROOT/usr/share/icons/hicolor/scalable/apps/zero-browser.svg"
+          for size in 16 32 48 128 256 512; do
+            png="apps/browser/assets/icons-gen/icon-${size}.png"
+            if [[ -f "$png" ]]; then
+              mkdir -p "$DEBROOT/usr/share/icons/hicolor/${size}x${size}/apps"
+              cp "$png" "$DEBROOT/usr/share/icons/hicolor/${size}x${size}/apps/zero-browser.png"
+            fi
+          done
 
           SIZE=$(du -sk "$DEBROOT/usr" | cut -f1)
           cat > "$DEBROOT/DEBIAN/control" << EOF
@@ -175,6 +186,7 @@ jobs:
           <plist version="1.0">
           <dict>
             <key>CFBundleExecutable</key><string>ZeroBrowser</string>
+            <key>CFBundleIconFile</key><string>ZeroBrowser</string>
             <key>CFBundleIdentifier</key><string>com.zeroweb.browser</string>
             <key>CFBundleName</key><string>ZeroBrowser</string>
             <key>CFBundleShortVersionString</key><string>${VERSION}</string>
@@ -187,6 +199,11 @@ jobs:
           EOF
 
           echo -n "APPL????" > "$APP/Contents/PkgInfo"
+
+          # 嵌入应用图标：用已生成的 iconset + iconutil 生成 .icns
+          if [[ -d "apps/browser/assets/icons-gen/iconset" ]]; then
+            iconutil -c icns apps/browser/assets/icons-gen/iconset -o "$APP/Contents/Resources/ZeroBrowser.icns" 2>/dev/null || true
+          fi
 
       - name: Upload .app
         uses: actions/upload-artifact@v4

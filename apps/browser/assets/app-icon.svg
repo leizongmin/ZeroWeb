@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a1a2e"/>
+      <stop offset="1" stop-color="#0f1626"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4a90d9"/>
+      <stop offset="1" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <linearGradient id="zmark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5fc4ff"/>
+      <stop offset="1" stop-color="#2dd4bf"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <g transform="translate(256 256)">
+    <circle r="156" fill="none" stroke="url(#ring)" stroke-width="14" opacity="0.55"/>
+    <circle r="128" fill="none" stroke="url(#ring)" stroke-width="6" opacity="0.35"/>
+
+    <g stroke="#4a90d9" stroke-width="3.5" fill="none" opacity="0.45">
+      <ellipse rx="156" ry="60"/>
+      <ellipse rx="156" ry="60" transform="rotate(60)"/>
+      <ellipse rx="156" ry="60" transform="rotate(120)"/>
+      <line x1="-156" y1="0" x2="156" y2="0"/>
+    </g>
+
+    <path d="M -78 -78 L 78 -78 L -70 70 L 78 70 L 78 92 L -104 92 L -104 74 L 70 -100 L -78 -100 Z"
+          fill="url(#zmark)"/>
+  </g>
+</svg>

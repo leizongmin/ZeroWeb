@@ -36,6 +36,9 @@ members = [
     # 测试基础设施
     "tests/wpt-runner",
     "tests/integration",
+
+    # 开发工具（不随发布产物分发）
+    "tools/icon-gen",
 ]
 
 [workspace.package]

@@ -1,0 +1,16 @@
+[package]
+name = "zero-icon-gen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+autobins = true
+
+[[bin]]
+name = "zero-icon-gen"
+path = "src/main.rs"
+
+[dependencies]
+resvg = { workspace = true }
+png = "0.17"
+ico = "0.5"

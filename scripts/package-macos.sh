@@ -120,6 +120,29 @@ EOF
 # PkgInfo
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
+# 应用图标：从源 SVG 生成 .icns 并放入 Resources（Info.plist 指定 ZeroBrowser.icns）
+ICON_SRC="$PROJECT_ROOT/apps/browser/assets/app-icon.svg"
+ICONSET_DIR="$PACKAGE_DIR/iconset.tmp"
+ICONSET_GEN="$PROJECT_ROOT/apps/browser/assets/icons-gen/iconset"
+if [[ -d "$ICONSET_GEN" ]]; then
+    # 优先用已生成的 iconset（开发机已运行 zero-icon-gen）
+    rm -rf "$ICONSET_DIR"
+    cp -R "$ICONSET_GEN" "$ICONSET_DIR"
+elif cargo run -p zero-icon-gen -- --out "$PACKAGE_DIR/icons-gen.tmp" >/dev/null 2>&1; then
+    ICONSET_DIR="$PACKAGE_DIR/icons-gen.tmp/iconset"
+else
+    ICONSET_DIR=""
+fi
+
+if [[ -n "$ICONSET_DIR" && -d "$ICONSET_DIR" ]] && command -v iconutil &>/dev/null; then
+    iconutil -c icns "$ICONSET_DIR" -o "$APP_BUNDLE/Contents/Resources/ZeroBrowser.icns" 2>/dev/null \
+        && info "✅ 已嵌入应用图标 ZeroBrowser.icns" \
+        || warn "iconutil 生成 .icns 失败，.app 将使用默认图标"
+else
+    warn "未找到 iconutil 或 iconset，.app 将使用默认图标（运行 cargo run -p zero-icon-gen 生成）"
+fi
+rm -rf "$ICONSET_DIR" "$PACKAGE_DIR/icons-gen.tmp"
+
 info "✅ .app 包已生成: $APP_BUNDLE"
 
 # 检查是否有 create-dmg 来生成 .dmg
