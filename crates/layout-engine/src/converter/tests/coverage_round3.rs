@@ -28,7 +28,9 @@ fn test_convert_length_to_lp_vmax_and_ch() {
 
 #[test]
 fn test_convert_length_to_lpa_rem_and_vh() {
+    // inset 仅对非 static 定位生效（R689）；用 relative 才会进入 inset 转换路径。
     let style = ComputedStyle {
+        position: PositionValue::Relative,
         left: LengthValue::Rem(1.5),
         right: LengthValue::Vh(10.0),
         ..ComputedStyle::default()
@@ -41,7 +43,9 @@ fn test_convert_length_to_lpa_rem_and_vh() {
 
 #[test]
 fn test_convert_length_to_lpa_vmin_vmax_ch() {
+    // inset 仅对非 static 定位生效（R689）；用 relative 才会进入 inset 转换路径。
     let style = ComputedStyle {
+        position: PositionValue::Relative,
         left: LengthValue::Vmin(3.0),
         top: LengthValue::Vmax(7.0),
         right: LengthValue::Ch(0.5),
@@ -52,6 +56,23 @@ fn test_convert_length_to_lpa_vmin_vmax_ch() {
     assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::Length(18.0));
     assert_eq!(result.inset.top, taffy::style::LengthPercentageAuto::Length(56.0));
     assert_eq!(result.inset.right, taffy::style::LengthPercentageAuto::Length(0.5));
+}
+
+#[test]
+fn test_static_position_ignores_inset() {
+    // CSS Position §6：static 定位元素的 inset（top/right/bottom/left）不生效，
+    // 必须归 Auto（R689）。
+    let style = ComputedStyle {
+        position: PositionValue::Static,
+        top: LengthValue::Px(200.0),
+        left: LengthValue::Px(200.0),
+        ..ComputedStyle::default()
+    };
+    let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(result.inset.top, taffy::style::LengthPercentageAuto::Auto);
+    assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::Auto);
+    assert_eq!(result.inset.right, taffy::style::LengthPercentageAuto::Auto);
+    assert_eq!(result.inset.bottom, taffy::style::LengthPercentageAuto::Auto);
 }
 
 #[test]
