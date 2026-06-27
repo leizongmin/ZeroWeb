@@ -24,7 +24,6 @@ use std::time::{Duration, Instant};
 use std::io;
 use zero_engine::{DomEventDetail, PrefersColorSchemeValue, selector_from_element_hit, set_char_measure_fn};
 use zero_protocol::IpcChannel;
-use zero_protocol::ProcessRole;
 use zero_protocol::message::{
     DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, HitTestElementResultParams,
     HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMessage, IpcMessageKind, KeyboardEventParams,
@@ -32,9 +31,14 @@ use zero_protocol::message::{
     StorageOpParams,
 };
 use zero_protocol::transport::PipeTransport;
+use zero_protocol::{ProcessRole, is_disconnected_channel_message};
 
 /// 渲染进程 → 浏览器 IPC 发送端（stdout）。
 type IpcOutbound = PipeTransport<io::Empty, Box<dyn io::Write + Send>>;
+
+fn browser_ipc_disconnected(err: &str) -> bool {
+    is_disconnected_channel_message(err)
+}
 
 fn spawn_browser_ipc_inbound() -> (Receiver<IpcMessage>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
@@ -825,6 +829,10 @@ impl RendererRuntime {
             {
                 let url = pending.page_url.clone();
                 if let Err(e) = self.show_error_page(&url, "页面加载超时（分阶段加载未完成）") {
+                    if browser_ipc_disconnected(&e) {
+                        tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                        return Ok(());
+                    }
                     tracing::error!("加载超时处理失败: {e}");
                 }
                 continue;
@@ -834,27 +842,49 @@ impl RendererRuntime {
                 self.drain_inflight_fetch_responses();
                 if self.pending_load.is_some() {
                     if let Err(e) = self.tick_pending_load() {
+                        if browser_ipc_disconnected(&e) {
+                            tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                            return Ok(());
+                        }
                         tracing::error!("页面加载 tick 错误: {e}");
                     }
                 }
                 if self.pending_script_prefetch.is_some() {
                     if let Err(e) = self.tick_script_prefetch() {
+                        if browser_ipc_disconnected(&e) {
+                            tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                            return Ok(());
+                        }
                         tracing::error!("脚本预取 tick 错误: {e}");
                     }
                 }
             }
 
-            match self.recv_next_or_timeout(LOAD_TICK_INTERVAL)? {
-                Some(msg) => {
+            match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {
+                Ok(Some(msg)) => {
                     if self.inflight_fetches.try_complete(&msg) {
                         continue;
                     }
                     if let Err(e) = self.dispatch_message(msg) {
+                        if browser_ipc_disconnected(&e) {
+                            tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                            return Ok(());
+                        }
                         tracing::error!("消息处理错误: {e}");
-                        let _ = self.send(IpcMessageKind::Error(e.clone()));
+                        if let Err(se) = self.send(IpcMessageKind::Error(e)) {
+                            if browser_ipc_disconnected(&se) {
+                                tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                                return Ok(());
+                            }
+                        }
                     }
                 }
-                None => {}
+                Ok(None) => {}
+                Err(e) if browser_ipc_disconnected(&e) => {
+                    tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                    return Ok(());
+                }
+                Err(e) => return Err(e),
             }
         }
     }

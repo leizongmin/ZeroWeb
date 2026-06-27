@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::{DomEventDetail, ElementHit};
+use zero_protocol::ProtocolError;
 use zero_protocol::message::{
     DispatchDomEventParams, FetchParams, HitTestElementResultParams, HitTestLinkParams, IpcColorScheme, IpcMessage,
     IpcMessageKind, LoadHtmlParams, SetColorSchemeParams, SetViewportParams, StorageOpParams, StorageOperation,
@@ -261,13 +262,35 @@ impl ProcessTabBackend {
             let Some(tab_id) = self.tab_for_renderer(rid) else {
                 continue;
             };
-            self.tab_to_renderer.remove(&tab_id);
-            self.pending_errors.push((tab_id, "渲染进程已崩溃".to_string()));
-            if let Some(snap) = snapshots.get_mut(&tab_id) {
-                snap.loading = false;
-            }
-            tracing::warn!("Renderer {rid} for tab {}: {reason}", tab_id.0);
+            self.handle_renderer_ipc_lost(tab_id, rid, snapshots, &reason);
         }
+    }
+
+    /// IPC 读端断开或子进程退出 — 清理 Tab ↔ renderer 映射并停止向该进程发消息。
+    fn handle_renderer_ipc_lost(
+        &mut self,
+        tab_id: TabId,
+        rid: u64,
+        snapshots: &mut HashMap<TabId, TabSnapshot>,
+        reason: &str,
+    ) {
+        if self.tab_to_renderer.get(&tab_id) == Some(&rid) {
+            self.tab_to_renderer.remove(&tab_id);
+        }
+        self.fetch_proxy.remove_tab(tab_id);
+        let _ = self.manager.shutdown_renderer(rid);
+        if !self.pending_errors.iter().any(|(t, _)| *t == tab_id) {
+            self.pending_errors
+                .push((tab_id, format!("渲染进程连接已断开: {reason}")));
+        }
+        if let Some(snap) = snapshots.get_mut(&tab_id) {
+            snap.loading = false;
+        }
+        tracing::info!("Renderer {rid} for tab {} disconnected: {reason}", tab_id.0);
+    }
+
+    fn ipc_recv_disconnected(err: &ProtocolError) -> bool {
+        err.is_disconnected() || format!("{err}").contains("IPC 通道已关闭")
     }
 
     fn send_to_renderer(&mut self, tab_id: TabId, kind: IpcMessageKind) {
@@ -416,6 +439,7 @@ impl ProcessTabBackend {
         let mut changed = false;
         self.handle_crashes(snapshots);
         let mapping: Vec<(TabId, u64)> = self.tab_to_renderer.iter().map(|(k, v)| (*k, *v)).collect();
+        let mut disconnected = Vec::new();
         for (tab_id, rid) in mapping {
             loop {
                 let msg = {
@@ -426,7 +450,11 @@ impl ProcessTabBackend {
                         Ok(Some(m)) => m,
                         Ok(None) => break,
                         Err(e) => {
-                            tracing::debug!("IPC recv: {e}");
+                            if Self::ipc_recv_disconnected(&e) {
+                                disconnected.push((tab_id, rid, format!("{e}")));
+                            } else {
+                                tracing::debug!("IPC recv: {e}");
+                            }
                             break;
                         }
                     }
@@ -451,6 +479,10 @@ impl ProcessTabBackend {
                     }
                 }
             }
+        }
+        for (tab_id, rid, reason) in disconnected {
+            self.handle_renderer_ipc_lost(tab_id, rid, snapshots, &reason);
+            changed = true;
         }
         changed
     }
