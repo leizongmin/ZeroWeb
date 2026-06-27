@@ -71,7 +71,7 @@ pub struct ChromePalette {
     pub download_bar_bg: Color,
     pub download_bar_fill: Color,
     pub download_bar_text: Color,
-    /// 页面滚动条轨道
+    /// 页面滚动条轨道（overlay 风格默认透明）
     pub scrollbar_track: Color,
     /// 页面滚动条滑块
     pub scrollbar_thumb: Color,
@@ -151,7 +151,7 @@ impl ChromePalette {
             download_bar_bg: rgb(241, 243, 244),
             download_bar_fill: rgb(66, 133, 244),
             download_bar_text: rgb(32, 33, 36),
-            scrollbar_track: rgb(241, 243, 244),
+            scrollbar_track: rgba(0, 0, 0, 0),
             scrollbar_thumb: rgb(193, 193, 193),
             scrollbar_thumb_hover: rgb(155, 155, 155),
             scrollbar_thumb_active: rgb(120, 120, 120),
@@ -218,7 +218,7 @@ impl ChromePalette {
             download_bar_bg: rgb(40, 40, 40),
             download_bar_fill: rgb(66, 133, 244),
             download_bar_text: rgb(220, 220, 220),
-            scrollbar_track: rgb(48, 48, 48),
+            scrollbar_track: rgba(0, 0, 0, 0),
             scrollbar_thumb: rgb(120, 120, 120),
             scrollbar_thumb_hover: rgb(150, 150, 150),
             scrollbar_thumb_active: rgb(180, 180, 180),

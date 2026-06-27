@@ -151,8 +151,8 @@ pub const PAGE_FRAME_BORDER: f32 = 0.0;
 /// Radius of the page frame.
 pub const PAGE_FRAME_RADIUS: f32 = 0.0;
 /// Thickness of classic reserved scrollbars in logical pixels.
-pub const SCROLLBAR_THICKNESS: f32 = 10.0;
+pub const SCROLLBAR_THICKNESS: f32 = 12.0;
 /// Minimum scrollbar thumb length in logical pixels.
-pub const SCROLLBAR_MIN_THUMB: f32 = 24.0;
+pub const SCROLLBAR_MIN_THUMB: f32 = 32.0;
 /// Width of the custom outer frame border used on undecorated Wayland windows.
 pub const WINDOW_FRAME_BORDER: f32 = 1.0;
