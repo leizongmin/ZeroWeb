@@ -345,6 +345,8 @@ fn scroll_rect_fill(x: f32, y: f32, w: f32, h: f32, color: Color) -> FillPrimiti
 }
 
 /// 绘制滚动条轨道与滑块。
+///
+/// Overlay 风格：track 透明，thumb 带圆角与内边距，更克制不喧宾夺主。
 #[allow(clippy::too_many_arguments)]
 pub fn push_scrollbar_fills(
     geometry: &ScrollbarGeometry,
@@ -356,11 +358,14 @@ pub fn push_scrollbar_fills(
     dragging: Option<ScrollbarAxis>,
     fills: &mut Vec<FillPrimitive>,
 ) {
-    for rect in [geometry.vertical_track, geometry.horizontal_track, geometry.corner]
-        .into_iter()
-        .flatten()
-    {
-        fills.push(scroll_rect_fill(rect.0, rect.1, rect.2, rect.3, track_color));
+    // Track：仅在传入颜色不透明时绘制（默认透明 → overlay 风格）
+    if track_color.a > 0 {
+        for rect in [geometry.vertical_track, geometry.horizontal_track, geometry.corner]
+            .into_iter()
+            .flatten()
+        {
+            fills.push(scroll_rect_fill(rect.0, rect.1, rect.2, rect.3, track_color));
+        }
     }
 
     let vertical_thumb_color = match dragging {
@@ -378,11 +383,19 @@ pub fn push_scrollbar_fills(
         },
     };
 
+    // Thumb 内缩 2px 形成圆角 overlay 效果（不贴边、留呼吸感）
+    let pad = 2.0;
     if let Some(rect) = geometry.vertical_thumb {
-        fills.push(scroll_rect_fill(rect.0, rect.1, rect.2, rect.3, vertical_thumb_color));
+        let (x, y, w, h) = (rect.0, rect.1, rect.2, rect.3);
+        let inner_w = (w - pad).max(1.0);
+        let inner_x = x + (w - inner_w) * 0.5;
+        fills.push(scroll_rect_fill(inner_x, y, inner_w, h, vertical_thumb_color));
     }
     if let Some(rect) = geometry.horizontal_thumb {
-        fills.push(scroll_rect_fill(rect.0, rect.1, rect.2, rect.3, horizontal_thumb_color));
+        let (x, y, w, h) = (rect.0, rect.1, rect.2, rect.3);
+        let inner_h = (h - pad).max(1.0);
+        let inner_y = y + (h - inner_h) * 0.5;
+        fills.push(scroll_rect_fill(x, inner_y, w, inner_h, horizontal_thumb_color));
     }
 }
 

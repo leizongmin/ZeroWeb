@@ -55,7 +55,6 @@ impl BrowserApp {
             layout::ADDRESS_BAR_HEIGHT * s,
             self.chrome_palette.toolbar_bg,
         ));
-        fills.push(rect_fill(0.0, addr_y, width as f32, s, self.chrome_palette.separator));
 
         // 5. 导航按钮
         self.render_nav_buttons(&mut fills, &mut glyphs, addr_y, font_size, s);
@@ -78,7 +77,7 @@ impl BrowserApp {
             self.render_bookmarks_bar(&mut fills, &mut glyphs, width, toolbar_h, s);
         }
 
-        // 9. 页面内容区域（圆角边框视口）
+        // 9. 页面内容区域（与工具栏无缝衔接：page_bg 直接填充到 chrome 边界）
         let chrome_top = self.chrome_top_y_for(s);
         let frame_bottom_y = self.page_frame_bottom_y_for(width, height);
         let page_gutter_h = frame_bottom_y - chrome_top;
@@ -87,7 +86,7 @@ impl BrowserApp {
             chrome_top,
             width as f32,
             page_gutter_h,
-            self.chrome_palette.tab_active_bg,
+            self.chrome_palette.page_bg,
         ));
         let (frame_x, frame_y, frame_w, frame_h) = self.page_frame_rect_for(width, height);
         self.render_page_frame(&mut fills, frame_x, frame_y, frame_w, frame_h, s);
