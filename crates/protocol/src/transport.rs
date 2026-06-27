@@ -64,6 +64,23 @@ impl<R: Read, W: Write> PipeTransport<R, W> {
     }
 }
 
+/// 判断通道错误消息是否表示 IPC 对端已断开（管道关闭 / Broken pipe）。
+pub fn is_disconnected_channel_message(message: &str) -> bool {
+    let m = message.to_ascii_lowercase();
+    m.contains("broken pipe")
+        || m.contains("connection reset")
+        || m.contains("connection aborted")
+        || m.contains("os error 109")
+        || m.contains("os error 232")
+        || m.contains("os error 54")
+        || m.contains("os error 10053")
+        || m.contains("os error 10054")
+        || m.contains("管道已结束")
+        || m.contains("管道正在被关闭")
+        || m.contains("ipc 通道已关闭")
+        || m.contains("通道已关闭")
+}
+
 impl<R: Read, W: Write> IpcChannel for PipeTransport<R, W> {
     fn send(&mut self, msg: IpcMessage) -> Result<(), ProtocolError> {
         let data = serialize::serialize(&msg)?;
@@ -332,5 +349,16 @@ mod tests {
         if let Err(ProtocolError::Channel(msg)) = result {
             assert!(msg.contains("不支持非阻塞"));
         }
+    }
+
+    #[test]
+    fn disconnected_channel_message_detection() {
+        assert!(is_disconnected_channel_message(
+            "flush 失败: 管道正在被关闭。 (os error 232)"
+        ));
+        assert!(is_disconnected_channel_message(
+            "写入帧体失败: 管道已结束。 (os error 109)"
+        ));
+        assert!(!is_disconnected_channel_message("帧过大: 999 字节"));
     }
 }

@@ -277,16 +277,17 @@ impl RendererHandle {
 
     /// 关闭渲染进程。
     pub fn shutdown(&mut self) -> Result<(), ProtocolError> {
-        if let Some(ref mut ch) = self.send_transport {
-            ch.close();
-        }
-        self.send_transport = None;
-
+        // 先终止子进程，避免仅关闭 stdin 后 renderer 仍向 stdout 写导致 Broken pipe 刷屏。
         if let Some(ref mut child) = self.child {
             let _ = child.kill();
             let _ = child.wait();
         }
         self.child = None;
+
+        if let Some(ref mut ch) = self.send_transport {
+            ch.close();
+        }
+        self.send_transport = None;
 
         if let Some(handle) = self.reader_thread.take() {
             let _ = handle.join();

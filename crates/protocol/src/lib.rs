@@ -41,5 +41,15 @@ pub enum ProtocolError {
     Process(String),
 }
 
+impl ProtocolError {
+    /// 是否为 IPC 对端断开导致的通道错误（可安全终止会话）。
+    pub fn is_disconnected(&self) -> bool {
+        match self {
+            Self::Channel(msg) => crate::transport::is_disconnected_channel_message(msg),
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;
