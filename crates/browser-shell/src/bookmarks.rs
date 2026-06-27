@@ -227,7 +227,8 @@ impl Bookmarks {
             std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {e}"))?;
         }
         let snapshot = self.to_snapshot();
-        let json = serde_json::to_string_pretty(&snapshot).map_err(|e| format!("Failed to serialize bookmarks: {e}"))?;
+        let json =
+            serde_json::to_string_pretty(&snapshot).map_err(|e| format!("Failed to serialize bookmarks: {e}"))?;
         std::fs::write(path, json).map_err(|e| format!("Failed to write bookmarks: {e}"))?;
         Ok(())
     }

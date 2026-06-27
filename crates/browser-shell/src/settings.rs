@@ -28,6 +28,17 @@ impl SearchEngine {
         }
     }
 
+    /// 从设置页使用的名称解析搜索引擎。
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "Google" => Some(SearchEngine::Google),
+            "Bing" => Some(SearchEngine::Bing),
+            "DuckDuckGo" => Some(SearchEngine::DuckDuckGo),
+            "Baidu" => Some(SearchEngine::Baidu),
+            _ => None,
+        }
+    }
+
     /// 获取搜索 URL 模板（`{query}` 为占位符）。
     pub fn search_url(&self, query: &str) -> String {
         let encoded = query.replace(' ', "+");

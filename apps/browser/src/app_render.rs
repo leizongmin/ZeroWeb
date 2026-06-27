@@ -124,7 +124,7 @@ impl BrowserApp {
         if self.shell.find_state().is_active() {
             self.render_find_bar(&mut overlay_fills, &mut overlay_glyphs, width, height, font_size, s);
         }
-        if self.shell.downloads().active_count() > 0 {
+        if self.should_show_download_panel() {
             self.render_download_panel(&mut overlay_fills, &mut overlay_glyphs, width, height, font_size, s);
         }
         if self.context_menu.visible {
@@ -227,7 +227,12 @@ impl BrowserApp {
         let pinned_total = pinned_count as f32 * layout::TAB_PINNED_WIDTH * s;
         let normal_available = (tabs_max_width - pinned_total).max(0.0);
         let normal_tab_w = if normal_count > 0 {
-            (normal_available / normal_count as f32).clamp(layout::TAB_MIN_WIDTH * s, layout::TAB_MAX_WIDTH * s)
+            let ideal = normal_available / normal_count as f32;
+            if ideal < layout::TAB_MIN_WIDTH * s {
+                ideal.clamp(layout::TAB_MIN_WIDTH_COMPRESSED * s, layout::TAB_MIN_WIDTH * s)
+            } else {
+                ideal.clamp(layout::TAB_MIN_WIDTH * s, layout::TAB_MAX_WIDTH * s)
+            }
         } else {
             0.0
         };
@@ -373,7 +378,7 @@ impl BrowserApp {
                 );
             }
 
-            if self.font_id.is_some() && !tab.is_pinned {
+            if self.font_id.is_some() && !tab.is_pinned && tab.tab_w >= layout::TAB_TITLE_HIDE_WIDTH * s {
                 let text_area_w = tab.tab_w - text_left_inset - 32.0 * s;
                 let truncated = self.truncate_ui_text(&tab.label, text_area_w.max(0.0), font_size);
                 self.draw_ui_text(
@@ -675,13 +680,24 @@ impl BrowserApp {
                 );
             } else if !self.address_bar_focused {
                 let status_label = match page_kind {
+                    AddressBarPageKind::Secure => None,
                     AddressBarPageKind::Insecure => Some(("!", self.chrome_palette.address_bar_insecure)),
                     AddressBarPageKind::Internal | AddressBarPageKind::Local => {
                         Some(("i", self.chrome_palette.address_bar_internal))
                     }
                     _ => None,
                 };
-                if let Some((label, color)) = status_label {
+                if page_kind == AddressBarPageKind::Secure {
+                    crate::ui_icons::render_icon(
+                        &mut self.font_loader,
+                        glyphs,
+                        crate::ui_icons::Icon::Lock,
+                        status_cx,
+                        status_cy,
+                        status_icon_size,
+                        self.chrome_palette.address_bar_secure,
+                    );
+                } else if let Some((label, color)) = status_label {
                     let label_w = self.measure_ui_text_width(label, status_icon_size * 0.85);
                     self.draw_ui_text(
                         label,
@@ -692,18 +708,20 @@ impl BrowserApp {
                         glyphs,
                     );
                 }
-                if let Some(tab_id) = self.shell.active_tab_id() {
-                    crate::tab_favicon::render_tab_favicon(
-                        &mut self.font_loader,
-                        glyphs,
-                        tab_id,
-                        status_url,
-                        status_hint,
-                        status_cx,
-                        status_cy,
-                        status_icon_size,
-                        self.chrome_palette.page_url,
-                    );
+                if page_kind != AddressBarPageKind::Secure {
+                    if let Some(tab_id) = self.shell.active_tab_id() {
+                        crate::tab_favicon::render_tab_favicon(
+                            &mut self.font_loader,
+                            glyphs,
+                            tab_id,
+                            status_url,
+                            status_hint,
+                            status_cx,
+                            status_cy,
+                            status_icon_size,
+                            self.chrome_palette.page_url,
+                        );
+                    }
                 }
             }
 
@@ -730,16 +748,26 @@ impl BrowserApp {
                 self.chrome_palette.address_bar_text
             };
             let visible = if show_placeholder {
-                "Search or enter URL..."
+                if self.address_bar_focused && Self::looks_like_search_query(text) {
+                    let engine = match self.shell.settings().search_engine {
+                        zero_browser_shell::SearchEngine::Google => "Google",
+                        zero_browser_shell::SearchEngine::Bing => "Bing",
+                        zero_browser_shell::SearchEngine::DuckDuckGo => "DuckDuckGo",
+                        zero_browser_shell::SearchEngine::Baidu => "Baidu",
+                    };
+                    format!("Search {engine} or enter URL...")
+                } else {
+                    "Search or enter URL...".to_string()
+                }
             } else {
-                text
+                text.to_string()
             };
             let available_text_w = (inner_x + inner_w
                 - layout::ADDRESS_BAR_TRAILING_PAD * s
                 - layout::ADDRESS_BAR_TRAILING_SLOTS * s
                 - text_x)
                 .max(0.0);
-            let visible = self.truncate_ui_text(visible, available_text_w, font_size);
+            let visible = self.truncate_ui_text(&visible, available_text_w, font_size);
             self.draw_ui_text(&visible, text_x, text_top, font_size, color, glyphs);
 
             if !self.address_bar_ime_preedit.is_empty() {
@@ -771,14 +799,51 @@ impl BrowserApp {
             let trailing_slots_w = layout::ADDRESS_BAR_TRAILING_SLOTS * s;
             let slots_x = inner_x + inner_w - layout::ADDRESS_BAR_TRAILING_PAD * s - trailing_slots_w;
             let slot_w = layout::ADDRESS_BAR_ACTION_SLOT_WIDTH * s;
-            let slot_cx = slots_x + slot_w * 0.5;
-            let slot_cy = bar_y + bar_h * 0.5;
-            let slot_hovered = self.pointer_in_rect(slots_x, inner_y, slot_w, inner_h);
-            if slot_hovered {
-                push_circle_fill(
-                    fills,
+            let slot_specs = [
+                (crate::ui_icons::Icon::Star, self.chrome_palette.nav_button),
+                (crate::ui_icons::Icon::Shield, self.chrome_palette.page_hint),
+                (crate::ui_icons::Icon::MoreVertical, self.chrome_palette.nav_button),
+            ];
+            for (index, (icon, base_color)) in slot_specs.iter().enumerate() {
+                let slot_x = slots_x + index as f32 * slot_w;
+                let slot_cx = slot_x + slot_w * 0.5;
+                let slot_cy = bar_y + bar_h * 0.5;
+                let slot_hovered = self.pointer_in_rect(slot_x, inner_y, slot_w, inner_h);
+                if slot_hovered {
+                    push_circle_fill(
+                        fills,
+                        slot_cx,
+                        slot_cy,
+                        layout::NAV_BUTTON_HOVER_DIAMETER * s,
+                        self.chrome_palette.tab_hover_bg,
+                    );
+                }
+                crate::ui_icons::render_icon(
+                    &mut self.font_loader,
+                    glyphs,
+                    *icon,
                     slot_cx,
                     slot_cy,
+                    layout::CHROME_ICON_SIZE * s,
+                    if slot_hovered {
+                        self.chrome_palette.address_bar_text
+                    } else {
+                        *base_color
+                    },
+                );
+            }
+        }
+
+        if self.font_id.is_some() {
+            let (dl_x, dl_y, dl_w, dl_h) = self.toolbar_download_button_rect();
+            let dl_cx = dl_x + dl_w * 0.5;
+            let dl_cy = dl_y + dl_h * 0.5;
+            let dl_hovered = self.pointer_in_rect(dl_x, dl_y, dl_w, dl_h);
+            if dl_hovered {
+                push_circle_fill(
+                    fills,
+                    dl_cx,
+                    dl_cy,
                     layout::NAV_BUTTON_HOVER_DIAMETER * s,
                     self.chrome_palette.tab_hover_bg,
                 );
@@ -786,16 +851,25 @@ impl BrowserApp {
             crate::ui_icons::render_icon(
                 &mut self.font_loader,
                 glyphs,
-                crate::ui_icons::Icon::Star,
-                slot_cx,
-                slot_cy,
+                crate::ui_icons::Icon::Download,
+                dl_cx,
+                dl_cy,
                 layout::CHROME_ICON_SIZE * s,
-                if slot_hovered {
+                if dl_hovered {
                     self.chrome_palette.address_bar_text
                 } else {
                     self.chrome_palette.nav_button
                 },
             );
+            if self.shell.downloads().active_count() > 0 {
+                push_circle_fill(
+                    fills,
+                    dl_x + dl_w - 6.0 * s,
+                    dl_y + 6.0 * s,
+                    4.0 * s,
+                    self.chrome_palette.tab_attention,
+                );
+            }
         }
 
         let (menu_btn_x, menu_btn_y, menu_btn_w, menu_btn_h) = self.toolbar_menu_button_rect();

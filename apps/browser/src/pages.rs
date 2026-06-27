@@ -166,8 +166,20 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         };
 
     let yes_no = |value: bool| match lang {
-        UiLanguage::ZhCn => if value { "是" } else { "否" },
-        UiLanguage::EnUs => if value { "Yes" } else { "No" },
+        UiLanguage::ZhCn => {
+            if value {
+                "是"
+            } else {
+                "否"
+            }
+        }
+        UiLanguage::EnUs => {
+            if value {
+                "Yes"
+            } else {
+                "No"
+            }
+        }
     };
 
     let toggle_link = |key: &str, label: &str, value: bool| {
@@ -183,9 +195,7 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
     };
 
     let action_link = |href: &str, label: &str| {
-        format!(
-            r#"<a href="{href}" style="margin-left:12px;color:#1a73e8;text-decoration:none;">{label}</a>"#
-        )
+        format!(r#"<a href="{href}" style="margin-left:12px;color:#1a73e8;text-decoration:none;">{label}</a>"#)
     };
 
     let (cycle_search, home_presets_title, home_example, home_newtab, edit_home, home_edit_hint) = match lang {
@@ -207,22 +217,33 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         ),
     };
 
-    let (zoom_decrease, zoom_increase, zoom_reset_label) = match lang {
-        UiLanguage::ZhCn => ("缩小", "放大", "重置 100%"),
-        UiLanguage::EnUs => ("Decrease", "Increase", "Reset 100%"),
+    let (zoom_decrease, zoom_increase, zoom_reset_label, download_dir_label, edit_download_dir) = match lang {
+        UiLanguage::ZhCn => ("缩小", "放大", "重置 100%", "下载目录", "自定义…"),
+        UiLanguage::EnUs => ("Decrease", "Increase", "Reset 100%", "Download folder", "Custom…"),
     };
 
-    let search_actions = action_link("zero://settings/cycle/search_engine", cycle_search);
+    let search_actions = format!(
+        r#"<span style="margin-left:12px;">{google}{bing}{ddg}{baidu}{cycle}</span>"#,
+        google = action_link("zero://settings/set/search_engine/Google", "Google"),
+        bing = action_link("zero://settings/set/search_engine/Bing", "Bing"),
+        ddg = action_link("zero://settings/set/search_engine/DuckDuckGo", "DDG"),
+        baidu = action_link(
+            "zero://settings/set/search_engine/Baidu",
+            if matches!(lang, UiLanguage::ZhCn) {
+                "百度"
+            } else {
+                "Baidu"
+            }
+        ),
+        cycle = action_link("zero://settings/cycle/search_engine", cycle_search),
+    );
     let home_actions = format!(
         r#"<p style="font-size:13px;color:#80868b;margin:12px 0 4px;">{home_presets_title}</p>
 <p style="font-size:14px;color:#666;line-height:2;">
   {example_link}{newtab_link}{custom_link}
 </p>
 <p style="font-size:12px;color:#80868b;margin:8px 0 0;">{home_edit_hint}</p>"#,
-        example_link = action_link(
-            "zero://settings/set/home_url/https%3A%2F%2Fexample.com",
-            home_example,
-        ),
+        example_link = action_link("zero://settings/set/home_url/https%3A%2F%2Fexample.com", home_example,),
         newtab_link = action_link("zero://settings/set/home_url/zero%3A%2F%2Fnewtab", home_newtab),
         custom_link = action_link("zero://settings/edit/home_url", edit_home),
     );
@@ -236,6 +257,21 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         decrease = action_link("zero://settings/adjust/default_zoom/down", zoom_decrease),
         increase = action_link("zero://settings/adjust/default_zoom/up", zoom_increase),
         reset = action_link("zero://settings/set/default_zoom/1.0", zoom_reset_label),
+    );
+
+    let download_dir_display = if settings.download_directory.is_empty() {
+        match lang {
+            UiLanguage::ZhCn => "系统默认",
+            UiLanguage::EnUs => "System default",
+        }
+        .to_string()
+    } else {
+        settings.download_directory.clone()
+    };
+    let download_dir_row = format!(
+        r#"<div style="line-height:2;">{download_dir_label}: <code>{dir}</code>{edit}</div>"#,
+        edit = action_link("zero://settings/edit/download_directory", edit_download_dir),
+        dir = download_dir_display,
     );
 
     format!(
@@ -272,6 +308,7 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
       <div style="font-size: 14px; color: #666;">
         {bookmarks_row}
         {zoom_actions}
+        {download_dir_row}
       </div>
     </div>
 
@@ -330,7 +367,107 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         search_actions = search_actions,
         home_actions = home_actions,
         zoom_actions = zoom_actions,
+        download_dir_row = download_dir_row,
     )
+}
+
+fn internal_page_shell(title: &str, body: &str) -> String {
+    format!(
+        r#"<!DOCTYPE html>
+<html>
+<head><title>{title}</title></head>
+<body style="font-family: Segoe UI, sans-serif; margin: 0; padding: 40px; background: #f8f9fa; color: #333;">
+  <div style="max-width: 720px; margin: 0 auto;">
+    <h1 style="font-size: 28px; color: #1a73e8; margin-bottom: 24px;">{title}</h1>
+    {body}
+  </div>
+</body>
+</html>"#
+    )
+}
+
+/// 生成历史记录页面 HTML。
+pub fn generate_history_html(history: &zero_browser_shell::History) -> String {
+    use zero_browser_shell::UiLanguage;
+    let lang = UiLanguage::detect_from_env();
+    let (title, empty, clear_label) = match lang {
+        UiLanguage::ZhCn => ("历史记录 — ZeroBrowser", "暂无历史记录。", "清除历史"),
+        UiLanguage::EnUs => ("History — ZeroBrowser", "No history yet.", "Clear History"),
+    };
+    let mut rows = String::new();
+    for entry in history.iter().take(100) {
+        rows.push_str(&format!(
+            r#"<li style="margin:8px 0;"><a href="{url}" style="color:#1a73e8;text-decoration:none;">{label}</a><br><span style="font-size:12px;color:#80868b;">{url}</span></li>"#,
+            label = html_escape(entry.title()),
+            url = html_escape(entry.url()),
+        ));
+    }
+    let body = if rows.is_empty() {
+        format!("<p style=\"color:#666;\">{empty}</p>")
+    } else {
+        format!(
+            r#"<p><a href="zero://history/clear" style="color:#1a73e8;text-decoration:none;">{clear_label}</a></p><ul style="padding-left:20px;">{rows}</ul>"#
+        )
+    };
+    internal_page_shell(title, &body)
+}
+
+/// 生成下载管理页面 HTML。
+pub fn generate_downloads_html(downloads: &zero_browser_shell::DownloadManager) -> String {
+    use zero_browser_shell::DownloadState;
+    use zero_browser_shell::UiLanguage;
+    let lang = UiLanguage::detect_from_env();
+    let (title, empty) = match lang {
+        UiLanguage::ZhCn => ("下载内容 — ZeroBrowser", "暂无下载任务。"),
+        UiLanguage::EnUs => ("Downloads — ZeroBrowser", "No downloads yet."),
+    };
+    let mut rows = String::new();
+    for entry in downloads.iter() {
+        let state = match entry.state() {
+            DownloadState::Pending => "Pending",
+            DownloadState::Downloading => "Downloading",
+            DownloadState::Paused => "Paused",
+            DownloadState::Completed => "Completed",
+            DownloadState::Cancelled => "Cancelled",
+            DownloadState::Failed => "Failed",
+        };
+        rows.push_str(&format!(
+            r#"<li style="margin:12px 0;padding:12px;background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);"><strong>{name}</strong><br><span style="font-size:12px;color:#80868b;">{url}</span><br><span style="font-size:12px;color:#555;">{state} · {progress:.0}%</span></li>"#,
+            name = html_escape(entry.filename()),
+            url = html_escape(entry.url()),
+            progress = entry.progress() * 100.0,
+        ));
+    }
+    let body = if rows.is_empty() {
+        format!("<p style=\"color:#666;\">{empty}</p>")
+    } else {
+        format!("<ul style=\"list-style:none;padding:0;\">{rows}</ul>")
+    };
+    internal_page_shell(title, &body)
+}
+
+/// 生成书签管理页面 HTML。
+pub fn generate_bookmarks_html(bookmarks: &zero_browser_shell::Bookmarks) -> String {
+    use zero_browser_shell::UiLanguage;
+    let lang = UiLanguage::detect_from_env();
+    let (title, empty) = match lang {
+        UiLanguage::ZhCn => ("书签 — ZeroBrowser", "暂无书签。"),
+        UiLanguage::EnUs => ("Bookmarks — ZeroBrowser", "No bookmarks yet."),
+    };
+    let mut rows = String::new();
+    for bookmark in bookmarks.list_root() {
+        rows.push_str(&format!(
+            r#"<li style="margin:8px 0;"><a href="{url}" style="color:#1a73e8;text-decoration:none;">{title}</a><br><span style="font-size:12px;color:#80868b;">{url}</span></li>"#,
+            title = html_escape(bookmark.title()),
+            url = html_escape(bookmark.url()),
+        ));
+    }
+    let body = if rows.is_empty() {
+        format!("<p style=\"color:#666;\">{empty}</p>")
+    } else {
+        format!("<ul style=\"padding-left:20px;\">{rows}</ul>")
+    };
+    internal_page_shell(title, &body)
 }
 
 /// 生成「关于 ZeroBrowser」页面 HTML。

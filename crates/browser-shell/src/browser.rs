@@ -206,6 +206,20 @@ impl BrowserShell {
         }
     }
 
+    /// 设置标签页崩溃状态。
+    pub fn set_tab_crashed(&mut self, id: TabId, crashed: bool) {
+        if let Some(tab) = self.tabs.get_tab_mut(id) {
+            tab.set_crashed(crashed);
+        }
+    }
+
+    /// 设置标签页需要关注状态。
+    pub fn set_tab_needs_attention(&mut self, id: TabId, needs_attention: bool) {
+        if let Some(tab) = self.tabs.get_tab_mut(id) {
+            tab.set_needs_attention(needs_attention);
+        }
+    }
+
     /// 在活跃标签页中导航到新 URL。
     pub fn navigate(&mut self, url: &str) {
         if let Some(tab) = self.tabs.active_tab_mut() {

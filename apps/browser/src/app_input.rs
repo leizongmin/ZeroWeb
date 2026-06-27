@@ -925,6 +925,7 @@ impl BrowserApp {
                         }
                         if Some(id) != self.shell.active_tab_id() {
                             self.shell.switch_tab(id);
+                            self.shell.set_tab_needs_attention(id, false);
                             self.tabs.on_active_tab_changed(self.shell.active_tab_id());
                             self.set_hovered_link_url(None);
                             self.update_address_bar_from_active_tab();
@@ -961,15 +962,29 @@ impl BrowserApp {
                 return;
             }
 
+            if self.toolbar_download_hit_test(x_f, y_f) {
+                self.download_panel_open = !self.download_panel_open;
+                self.needs_redraw = true;
+                return;
+            }
+
             if self.toolbar_menu_hit_test(x_f, y_f) {
                 self.show_browser_menu();
                 return;
             }
 
             if x_f >= addr_bar_x && x_f <= addr_bar_x + self.address_bar_layout().2 {
-                if self.address_bar_bookmark_hit_test(x_f, y_f) {
+                if self.address_bar_trailing_slot_hit_test(x_f, y_f, 0) {
                     self.shell.add_bookmark();
                     self.needs_redraw = true;
+                    return;
+                }
+                if self.address_bar_trailing_slot_hit_test(x_f, y_f, 1) {
+                    self.show_site_permissions_menu();
+                    return;
+                }
+                if self.address_bar_trailing_slot_hit_test(x_f, y_f, 2) {
+                    self.show_page_actions_menu();
                     return;
                 }
                 self.handle_address_bar_press(x, y);
@@ -1165,8 +1180,13 @@ impl BrowserApp {
     fn address_bar_layout(&self) -> (f32, f32, f32, f32) {
         let s = self.scale_factor;
         let bar_x = self.nav_section_width() + layout::ADDRESS_BAR_PADDING * s;
+        let download_w = layout::TOOLBAR_DOWNLOAD_BUTTON_WIDTH * s;
         let menu_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
-        let trailing_reserved = layout::ADDRESS_BAR_PADDING * s + layout::TOOLBAR_TRAILING_GAP * s + menu_w;
+        let trailing_reserved = layout::ADDRESS_BAR_PADDING * s
+            + layout::TOOLBAR_TRAILING_GAP * s
+            + download_w
+            + layout::TOOLBAR_TRAILING_GAP * s
+            + menu_w;
         let bar_w = self.physical_size.0 as f32 - bar_x - trailing_reserved;
         let inset = layout::ADDRESS_BAR_INPUT_V_INSET * s;
         let bar_y = layout::TAB_STRIP_HEIGHT * s + inset;
@@ -1181,6 +1201,19 @@ impl BrowserApp {
         bar_x + border + layout::ADDRESS_BAR_INNER_PAD_H * s + layout::ADDRESS_BAR_LEADING_SLOT_WIDTH * s
     }
 
+    fn toolbar_download_button_rect(&self) -> (f32, f32, f32, f32) {
+        let s = self.scale_factor;
+        let (menu_x, menu_y, _, menu_h) = self.toolbar_menu_button_rect();
+        let btn_w = layout::TOOLBAR_DOWNLOAD_BUTTON_WIDTH * s;
+        let btn_x = menu_x - layout::TOOLBAR_TRAILING_GAP * s - btn_w;
+        (btn_x, menu_y, btn_w, menu_h)
+    }
+
+    fn toolbar_download_hit_test(&self, x_f: f32, y_f: f32) -> bool {
+        let (bx, by, bw, bh) = self.toolbar_download_button_rect();
+        x_f >= bx && x_f <= bx + bw && y_f >= by && y_f <= by + bh
+    }
+
     fn toolbar_menu_button_rect(&self) -> (f32, f32, f32, f32) {
         let s = self.scale_factor;
         let (bar_x, bar_y, bar_w, bar_h) = self.address_bar_layout();
@@ -1191,23 +1224,38 @@ impl BrowserApp {
         (btn_x, btn_y, btn_w, btn_h)
     }
 
+    #[cfg(test)]
+    pub fn toolbar_menu_button_rect_for_test(&self) -> (f32, f32, f32, f32) {
+        self.toolbar_menu_button_rect()
+    }
+
     fn toolbar_menu_hit_test(&self, x_f: f32, y_f: f32) -> bool {
         let (bx, by, bw, bh) = self.toolbar_menu_button_rect();
         x_f >= bx && x_f <= bx + bw && y_f >= by && y_f <= by + bh
     }
 
-    fn address_bar_bookmark_hit_test(&self, x_f: f32, y_f: f32) -> bool {
+    fn address_bar_trailing_slot_hit_test(&self, x_f: f32, y_f: f32, slot_index: u32) -> bool {
+        let (slot_x, slot_y, slot_w, slot_h) = self.address_bar_trailing_slot_rect(slot_index);
+        x_f >= slot_x && x_f < slot_x + slot_w && y_f >= slot_y && y_f < slot_y + slot_h
+    }
+
+    fn address_bar_trailing_slot_rect(&self, slot_index: u32) -> (f32, f32, f32, f32) {
         let s = self.scale_factor;
         let (bar_x, bar_y, bar_w, bar_h) = self.address_bar_layout();
-        if y_f < bar_y || y_f > bar_y + bar_h || x_f < bar_x || x_f > bar_x + bar_w {
-            return false;
-        }
         let border = s.max(1.0);
         let inner_x = bar_x + border;
+        let inner_y = bar_y + border;
         let inner_w = bar_w - 2.0 * border;
+        let inner_h = bar_h - 2.0 * border;
         let trailing_slots_w = layout::ADDRESS_BAR_TRAILING_SLOTS * s;
         let slots_x = inner_x + inner_w - layout::ADDRESS_BAR_TRAILING_PAD * s - trailing_slots_w;
-        x_f >= slots_x && x_f < slots_x + trailing_slots_w
+        let slot_w = layout::ADDRESS_BAR_ACTION_SLOT_WIDTH * s;
+        let slot_x = slots_x + slot_index as f32 * slot_w;
+        (slot_x, inner_y, slot_w, inner_h)
+    }
+
+    fn address_bar_bookmark_hit_test(&self, x_f: f32, y_f: f32) -> bool {
+        self.address_bar_trailing_slot_hit_test(x_f, y_f, 0)
     }
 
     fn show_browser_menu(&mut self) {
@@ -1226,6 +1274,10 @@ impl BrowserApp {
                 browser_menu_label(BrowserMenuLabel::NewTab, language).to_string(),
                 browser_menu_label(BrowserMenuLabel::NewPrivateTab, language).to_string(),
                 "---".to_string(),
+                browser_menu_label(BrowserMenuLabel::History, language).to_string(),
+                browser_menu_label(BrowserMenuLabel::Downloads, language).to_string(),
+                browser_menu_label(BrowserMenuLabel::BookmarksManager, language).to_string(),
+                "---".to_string(),
                 browser_menu_label(BrowserMenuLabel::BookmarkThisTab, language).to_string(),
                 bookmarks_bar_label.to_string(),
                 "---".to_string(),
@@ -1237,6 +1289,10 @@ impl BrowserApp {
                 Some("browser_menu_new_tab".to_string()),
                 Some("browser_menu_new_private_tab".to_string()),
                 None,
+                Some("browser_menu_history".to_string()),
+                Some("browser_menu_downloads".to_string()),
+                Some("browser_menu_bookmarks".to_string()),
+                None,
                 Some("browser_menu_add_bookmark".to_string()),
                 Some("browser_menu_toggle_bookmarks_bar".to_string()),
                 None,
@@ -1247,6 +1303,79 @@ impl BrowserApp {
             hovered_index: None,
             x: bx + bw - layout::CONTEXT_MENU_WIDTH * s,
             y: by + bh + 4.0 * s,
+            source_tab_id: self.shell.active_tab_id(),
+            page_doc_x: 0.0,
+            page_doc_y: 0.0,
+        };
+        self.context_menu_suppress_left_up = true;
+        self.needs_redraw = true;
+    }
+
+    fn show_page_actions_menu(&mut self) {
+        let s = self.scale_factor;
+        let (slot_x, slot_y, slot_w, slot_h) = self.address_bar_trailing_slot_rect(2);
+        let language = UiLanguage::detect_from_env();
+        let (reload, find, source, zoom_in, zoom_out, permissions) = match language {
+            UiLanguage::ZhCn => ("重新加载", "在页面中查找", "查看源代码", "放大", "缩小", "站点权限（暂无）"),
+            UiLanguage::EnUs => (
+                "Reload",
+                "Find in Page",
+                "View Source",
+                "Zoom In",
+                "Zoom Out",
+                "Site Permissions (none)",
+            ),
+        };
+        self.context_menu = ContextMenuState {
+            visible: true,
+            context_type: ContextType::Page,
+            items: vec![
+                reload.to_string(),
+                find.to_string(),
+                source.to_string(),
+                "---".to_string(),
+                zoom_in.to_string(),
+                zoom_out.to_string(),
+                "---".to_string(),
+                permissions.to_string(),
+            ],
+            item_ids: vec![
+                Some("page_action_reload".to_string()),
+                Some("page_action_find".to_string()),
+                Some("page_action_view_source".to_string()),
+                None,
+                Some("page_action_zoom_in".to_string()),
+                Some("page_action_zoom_out".to_string()),
+                None,
+                None,
+            ],
+            hovered_index: None,
+            x: slot_x + slot_w - layout::CONTEXT_MENU_WIDTH * s,
+            y: slot_y + slot_h + 4.0 * s,
+            source_tab_id: self.shell.active_tab_id(),
+            page_doc_x: 0.0,
+            page_doc_y: 0.0,
+        };
+        self.context_menu_suppress_left_up = true;
+        self.needs_redraw = true;
+    }
+
+    fn show_site_permissions_menu(&mut self) {
+        let s = self.scale_factor;
+        let (slot_x, slot_y, slot_w, slot_h) = self.address_bar_trailing_slot_rect(1);
+        let language = UiLanguage::detect_from_env();
+        let message = match language {
+            UiLanguage::ZhCn => "此站点尚未请求任何权限",
+            UiLanguage::EnUs => "This site has not requested any permissions",
+        };
+        self.context_menu = ContextMenuState {
+            visible: true,
+            context_type: ContextType::Page,
+            items: vec![message.to_string()],
+            item_ids: vec![None],
+            hovered_index: None,
+            x: slot_x + slot_w - layout::CONTEXT_MENU_WIDTH * s,
+            y: slot_y + slot_h + 4.0 * s,
             source_tab_id: self.shell.active_tab_id(),
             page_doc_x: 0.0,
             page_doc_y: 0.0,
@@ -1476,6 +1605,28 @@ impl BrowserApp {
                 self.open_internal_document_tab(html, "zero://about", "About ZeroBrowser");
             }
             "browser_menu_settings" => self.open_settings_page(),
+            "browser_menu_history" => self.open_history_page(),
+            "browser_menu_downloads" => {
+                self.download_panel_open = true;
+                self.open_downloads_page();
+            }
+            "browser_menu_bookmarks" => self.open_bookmarks_page(),
+            "page_action_reload" => self.refresh_page(),
+            "page_action_find" => {
+                self.shell.find_start("");
+                self.needs_redraw = true;
+            }
+            "page_action_view_source" => {
+                if let Some(tab_id) = self.shell.active_tab_id() {
+                    self.view_page_source(tab_id);
+                }
+            }
+            "page_action_zoom_in" => {
+                self.shell.zoom_in();
+            }
+            "page_action_zoom_out" => {
+                self.shell.zoom_out();
+            }
             "tab_reload" => {
                 if let Some(tab_id) = source_tab_id {
                     if self.shell.active_tab_id() != Some(tab_id) {

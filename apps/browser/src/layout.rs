@@ -26,10 +26,14 @@ pub const ADDRESS_BAR_LEADING_SLOT_WIDTH: f32 = 28.0;
 pub const ADDRESS_BAR_TRAILING_PAD: f32 = 12.0;
 /// Width of one trailing action slot inside the address bar pill.
 pub const ADDRESS_BAR_ACTION_SLOT_WIDTH: f32 = 28.0;
+/// Number of trailing action slots (bookmark, permissions, page actions).
+pub const ADDRESS_BAR_TRAILING_SLOT_COUNT: f32 = 3.0;
 /// Total width reserved for trailing action slots inside the address bar pill.
-pub const ADDRESS_BAR_TRAILING_SLOTS: f32 = ADDRESS_BAR_ACTION_SLOT_WIDTH;
+pub const ADDRESS_BAR_TRAILING_SLOTS: f32 = ADDRESS_BAR_ACTION_SLOT_WIDTH * ADDRESS_BAR_TRAILING_SLOT_COUNT;
 /// Gap between the address bar and the trailing toolbar actions.
 pub const TOOLBAR_TRAILING_GAP: f32 = 8.0;
+/// Width of the trailing download button slot.
+pub const TOOLBAR_DOWNLOAD_BUTTON_WIDTH: f32 = 32.0;
 /// Width of the trailing browser menu button slot.
 pub const TOOLBAR_MENU_BUTTON_WIDTH: f32 = 32.0;
 /// Total height of the toolbar: tab strip plus address row.
@@ -52,6 +56,10 @@ pub const NAV_BUTTON_HOVER_DIAMETER: f32 = 28.0;
 pub const TAB_PINNED_WIDTH: f32 = 52.0;
 /// Minimum width of a tab.
 pub const TAB_MIN_WIDTH: f32 = 100.0;
+/// Minimum width when the tab strip is crowded.
+pub const TAB_MIN_WIDTH_COMPRESSED: f32 = 52.0;
+/// Hide tab title text below this tab width (physical layout units before scale).
+pub const TAB_TITLE_HIDE_WIDTH: f32 = 84.0;
 /// Maximum width of a tab.
 pub const TAB_MAX_WIDTH: f32 = 240.0;
 /// Close button icon box size inside a tab.

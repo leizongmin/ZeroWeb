@@ -30,15 +30,9 @@ fn test_settings_search_google() {
 fn default_zoom_adjust_respects_bounds() {
     let mut settings = BrowserSettings::new();
     settings.default_zoom = BrowserSettings::DEFAULT_ZOOM_MAX;
-    assert_eq!(
-        settings.adjust_default_zoom_by(0.1),
-        BrowserSettings::DEFAULT_ZOOM_MAX
-    );
+    assert_eq!(settings.adjust_default_zoom_by(0.1), BrowserSettings::DEFAULT_ZOOM_MAX);
     settings.default_zoom = BrowserSettings::DEFAULT_ZOOM_MIN;
-    assert_eq!(
-        settings.adjust_default_zoom_by(-0.1),
-        BrowserSettings::DEFAULT_ZOOM_MIN
-    );
+    assert_eq!(settings.adjust_default_zoom_by(-0.1), BrowserSettings::DEFAULT_ZOOM_MIN);
     settings.default_zoom = 1.0;
     assert!((settings.adjust_default_zoom_by(0.1) - 1.1).abs() < f32::EPSILON);
 }

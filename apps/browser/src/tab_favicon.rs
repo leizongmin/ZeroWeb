@@ -32,12 +32,7 @@ pub fn has_tab_favicon(font_loader: &FontLoader, tab_id: TabId, size_px: f32) ->
 }
 
 /// 注册已解码的 favicon 位图。
-pub fn register_tab_favicon_bitmap(
-    font_loader: &mut FontLoader,
-    tab_id: TabId,
-    size_px: f32,
-    bitmap: GlyphBitmap,
-) {
+pub fn register_tab_favicon_bitmap(font_loader: &mut FontLoader, tab_id: TabId, size_px: f32, bitmap: GlyphBitmap) {
     font_loader.register_bitmap_glyph(FAVICON_FONT_ID, favicon_glyph_id(tab_id), size_px, bitmap);
 }
 
@@ -45,8 +40,7 @@ pub fn register_tab_favicon_bitmap(
 pub fn ensure_tab_favicon_placeholder(font_loader: &mut FontLoader, tab_id: TabId, size_px: f32) -> char {
     let glyph_id = favicon_glyph_id(tab_id);
     if !font_loader.has_bitmap_glyph(FAVICON_FONT_ID, glyph_id, size_px) {
-        let bitmap = rasterize_svg(DEFAULT_FAVICON_SVG, size_px)
-            .unwrap_or_else(|| default_favicon_bitmap(size_px));
+        let bitmap = rasterize_svg(DEFAULT_FAVICON_SVG, size_px).unwrap_or_else(|| default_favicon_bitmap(size_px));
         font_loader.register_bitmap_glyph(FAVICON_FONT_ID, glyph_id, size_px, bitmap);
     }
     favicon_char(tab_id)
@@ -323,10 +317,7 @@ mod tests {
     #[test]
     fn extract_link_icon_href_reads_head_link() {
         let html = r#"<!doctype html><head><link rel="icon" href="/assets/app.ico"></head><body></body>"#;
-        assert_eq!(
-            extract_link_icon_href(html).as_deref(),
-            Some("/assets/app.ico")
-        );
+        assert_eq!(extract_link_icon_href(html).as_deref(), Some("/assets/app.ico"));
     }
 
     #[test]
