@@ -69,9 +69,6 @@ fn b3_load_external_css_via_blocking_host() {
         load.tick(&mut wv, &mut host, 8.0);
     }
     assert!(!load.is_active(), "load 须完成");
-    assert!(
-        calls.load(Ordering::SeqCst) > 0,
-        "BlockingFetchHost 须为 <link> 被调用"
-    );
+    assert!(calls.load(Ordering::SeqCst) > 0, "BlockingFetchHost 须为 <link> 被调用");
     assert!(wv.last_render().is_some(), "应用 CSS 后须渲染");
 }

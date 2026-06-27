@@ -191,7 +191,8 @@ impl ProcessTabBackend {
             Ok(resp) => (resp.status_code, resp.body),
             Err(e) => {
                 tracing::warn!("browser fetch proxy failed ({url}): {e}");
-                (0, format!("fetch error: {e}").into_bytes())
+                let msg = format!("网络请求失败: {e}");
+                (0, msg.into_bytes())
             }
         };
         tracing::info!(
@@ -200,6 +201,28 @@ impl ProcessTabBackend {
             body.len()
         );
         self.send_fetch_response_now(tab_id, request_id, status, body);
+    }
+
+    /// 导航并在本线程轮询 IPC，直到该 Tab 加载完成/失败或超时。
+    ///
+    /// renderer 的 `handle_navigate` 会同步阻塞等待 `FetchResponse`；若浏览器不及时
+    /// poll，子资源/主文档 fetch 无法被代理，表现为 `HTTP 0` 或长时间卡住。
+    pub fn navigate_and_service(&mut self, tab_id: TabId, url: &str, snapshots: &mut HashMap<TabId, TabSnapshot>) {
+        self.navigate(tab_id, url);
+        let deadline = Instant::now() + Duration::from_secs(60);
+        loop {
+            self.poll(snapshots, Some(tab_id), true);
+            if self.pending_loaded.iter().any(|(t, _, _)| *t == tab_id)
+                || self.pending_errors.iter().any(|(t, _)| *t == tab_id)
+            {
+                return;
+            }
+            if Instant::now() >= deadline {
+                tracing::warn!("navigate_and_service timeout tab {} url {url}", tab_id.0);
+                return;
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
     }
 
     fn handle_storage_op(&mut self, tab_id: TabId, params: StorageOpParams) {

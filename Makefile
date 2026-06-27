@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 build browser browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle product-smoke product-smoke-legacy
+.PHONY: setup-rusty-v8 build browser browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle product-smoke product-smoke-legacy
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -13,11 +13,14 @@ BROWSER_BIN = ./target/release/zero-browser
 
 browser: setup-rusty-v8
 	cargo build --release -p zero-browser -p zero-renderer
-	$(BROWSER_BIN)
+	$(BROWSER_BIN) --wpt-parity
+
+# 与 browser 相同（保留别名）
+browser-wpt-parity: browser
 
 browser-debug: setup-rusty-v8
 	cargo build --release -p zero-browser -p zero-renderer
-	RUST_BACKTRACE=1 $(BROWSER_BIN)
+	RUST_BACKTRACE=1 $(BROWSER_BIN) --wpt-parity
 
 browser-debug-wayland: setup-rusty-v8
 	mkdir -p target

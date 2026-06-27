@@ -3,7 +3,10 @@
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File scripts\browser.ps1
 #   powershell -ExecutionPolicy Bypass -File scripts\browser.ps1 -- --headless
+#   powershell -ExecutionPolicy Bypass -File scripts\browser.ps1 -- --renderer=gpu
 #
+# 默认 --wpt-parity（CPU + scale 1.0，与 WPT/product-smoke 肉眼对齐）。
+# 显式 --renderer / --scale 可覆盖。
 # 会先下载 rusty_v8，再 release 编译 zero-browser + zero-renderer，最后运行已构建的二进制
 # （不用 cargo run，确保与 zero-renderer.exe 同目录，多进程模式可 spawn 子进程）。
 
@@ -40,13 +43,9 @@ try {
         Write-Error "zero-renderer not found at $RendererBin (required for default multi-process mode)"
     }
 
-    Write-Host "ZeroBrowser: starting $BrowserBin"
-    if ($BrowserArgs.Count -gt 0) {
-        & $BrowserBin @BrowserArgs
-    }
-    else {
-        & $BrowserBin
-    }
+    Write-Host "ZeroBrowser: starting $BrowserBin (WPT parity: CPU, scale 1.0)"
+    $launchArgs = @("--wpt-parity") + $BrowserArgs
+    & $BrowserBin @launchArgs
     exit $LASTEXITCODE
 }
 finally {
