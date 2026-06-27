@@ -32,6 +32,16 @@ use crate::text_metrics;
 
 const TAB_BAR_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(450);
 
+/// 地址栏页面类型（由 URL 推导）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AddressBarPageKind {
+    Secure,
+    Insecure,
+    Internal,
+    Local,
+    Unknown,
+}
+
 /// 页面内容区指针拖拽（鼠标左键；RDP/远程桌面触摸常模拟为此路径）
 struct ContentPointerDrag {
     start_x: f64,
@@ -69,6 +79,8 @@ struct AutocompleteState {
     suggestions: Vec<zero_browser_shell::Suggestion>,
     /// 鼠标悬停的索引
     hovered_index: Option<usize>,
+    /// 键盘选中的索引
+    selected_index: Option<usize>,
 }
 
 impl AutocompleteState {
@@ -76,12 +88,18 @@ impl AutocompleteState {
         Self {
             suggestions: Vec::new(),
             hovered_index: None,
+            selected_index: None,
         }
     }
 
     fn clear(&mut self) {
         self.suggestions.clear();
         self.hovered_index = None;
+        self.selected_index = None;
+    }
+
+    fn highlight_index(&self) -> Option<usize> {
+        self.hovered_index.or(self.selected_index)
     }
 }
 
@@ -187,6 +205,8 @@ pub struct BrowserApp {
     tab_layout: Vec<(TabId, f32, f32)>,
     /// 右键上下文菜单状态
     context_menu: ContextMenuState,
+    /// 打开菜单的同一次左键按下后，忽略紧随其后的左键释放（避免按下 `...` 打开菜单时被立即关闭）。
+    context_menu_suppress_left_up: bool,
     /// 页面滚动偏移（物理像素）
     scroll: HashMap<TabId, TabScrollState>,
     /// 页面文本选区（glyph 索引）
@@ -223,6 +243,8 @@ pub struct BrowserApp {
     content_pointer_drag: Option<ContentPointerDrag>,
     /// 滚动条滑块拖拽。
     scrollbar_drag: Option<ScrollbarDrag>,
+    /// 滚动条 hover 命中。
+    scrollbar_hover: Option<crate::page_scroll::ScrollbarHit>,
 }
 
 impl BrowserApp {
@@ -268,6 +290,7 @@ impl BrowserApp {
             find_input: String::new(),
             tab_layout: Vec::new(),
             context_menu: ContextMenuState::new(),
+            context_menu_suppress_left_up: false,
             scroll: HashMap::new(),
             page_selection: HashMap::new(),
             page_selection_drag: false,
@@ -286,6 +309,7 @@ impl BrowserApp {
             touch_scroll: None,
             content_pointer_drag: None,
             scrollbar_drag: None,
+            scrollbar_hover: None,
         };
         app.tabs.set_javascript_enabled(app.shell.settings().javascript_enabled);
         app
@@ -858,6 +882,38 @@ impl BrowserApp {
     /// 页面内容区（物理像素，边框内侧）：WebView 绘制与命中区域。
     pub fn page_content_rect(&self) -> (f32, f32, f32, f32) {
         self.page_content_rect_for(self.physical_size.0, self.physical_size.1)
+    }
+
+    /// 浮动查找栏外框（物理像素）。
+    pub(crate) fn find_bar_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
+        let s = self.scale_factor;
+        let (cx, cy, cw, _ch) = self.page_content_rect_for(width, height);
+        let bar_w = layout::FIND_BAR_WIDTH * s;
+        let bar_h = layout::FIND_BAR_HEIGHT * s;
+        let margin = layout::FIND_BAR_FLOAT_MARGIN * s;
+        (cx + cw - bar_w - margin, cy + margin, bar_w, bar_h)
+    }
+
+    /// 浮动下载面板外框（物理像素）。
+    pub(crate) fn download_panel_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
+        let s = self.scale_factor;
+        let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+        let panel_w = layout::DOWNLOAD_PANEL_WIDTH * s;
+        let panel_h = layout::DOWNLOAD_PANEL_HEIGHT * s;
+        let margin = layout::DOWNLOAD_PANEL_FLOAT_MARGIN * s;
+        (cx + cw - panel_w - margin, cy + ch - panel_h - margin, panel_w, panel_h)
+    }
+
+    /// 地址栏页面类型（由 URL 推导，UI-agnostic 规则）。
+    pub(crate) fn address_bar_page_kind(url: Option<&str>) -> AddressBarPageKind {
+        match url {
+            None => AddressBarPageKind::Internal,
+            Some(u) if u.starts_with("https://") => AddressBarPageKind::Secure,
+            Some(u) if u.starts_with("http://") => AddressBarPageKind::Insecure,
+            Some(u) if u.starts_with("zero://") => AddressBarPageKind::Internal,
+            Some(u) if u.starts_with("file://") => AddressBarPageKind::Local,
+            _ => AddressBarPageKind::Unknown,
+        }
     }
 
     /// 按当前窗口尺寸同步所有 Tab 的逻辑视口

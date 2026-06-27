@@ -3,12 +3,7 @@
 
 impl BrowserApp {
     /// 处理鼠标滚轮滚动
-    pub fn handle_scroll(
-        &mut self,
-        delta: zero_host_runtime::event::MouseScrollDelta,
-        at_x: f64,
-        at_y: f64,
-    ) {
+    pub fn handle_scroll(&mut self, delta: zero_host_runtime::event::MouseScrollDelta, at_x: f64, at_y: f64) {
         // 上下文菜单打开时不滚动
         if self.context_menu.visible {
             return;
@@ -78,7 +73,9 @@ impl BrowserApp {
                     return;
                 }
                 let delta_y = (last_y - touch.y) as f32;
-                if delta_y != 0.0 && let Some(tab_id) = self.shell.active_tab_id() {
+                if delta_y != 0.0
+                    && let Some(tab_id) = self.shell.active_tab_id()
+                {
                     self.apply_page_scroll_delta(tab_id, 0.0, delta_y);
                 }
                 if let Some(state) = &mut self.touch_scroll {
@@ -102,12 +99,7 @@ impl BrowserApp {
     }
 
     /// 按物理像素增量更新当前标签页滚动偏移
-    fn apply_page_scroll_delta(
-        &mut self,
-        tab_id: zero_browser_shell::TabId,
-        delta_x: f32,
-        delta_y: f32,
-    ) {
+    fn apply_page_scroll_delta(&mut self, tab_id: zero_browser_shell::TabId, delta_x: f32, delta_y: f32) {
         if delta_x == 0.0 && delta_y == 0.0 {
             return;
         }
@@ -130,10 +122,8 @@ impl BrowserApp {
             return None;
         }
         let scroll = self.tab_scroll_state(tab_id);
-        let geometry =
-            page_scroll::scrollbar_geometry(&layout, scroll, cx, cy, cw, ch, self.scale_factor);
-        page_scroll::hit_test_scrollbar(x, y, &geometry)
-            .map(|hit| (tab_id, hit))
+        let geometry = page_scroll::scrollbar_geometry(&layout, scroll, cx, cy, cw, ch, self.scale_factor);
+        page_scroll::hit_test_scrollbar(x, y, &geometry).map(|hit| (tab_id, hit))
     }
 
     fn start_scrollbar_interaction(
@@ -146,28 +136,13 @@ impl BrowserApp {
         let (cx, cy, cw, ch) = self.page_content_rect();
         let layout = self.page_scroll_layout(tab_id);
         let scroll = self.tab_scroll_state(tab_id);
-        let geometry = page_scroll::scrollbar_geometry(
-            &layout,
-            scroll,
-            cx,
-            cy,
-            cw,
-            ch,
-            self.scale_factor,
-        );
+        let geometry = page_scroll::scrollbar_geometry(&layout, scroll, cx, cy, cw, ch, self.scale_factor);
 
         match hit {
             page_scroll::ScrollbarHit::VerticalThumb => {
                 let (_, thumb_y, _, _) = geometry.vertical_thumb.expect("vertical thumb");
                 let grab_offset = y - thumb_y;
-                let new_y = page_scroll::scroll_y_from_pointer(
-                    &layout,
-                    cy,
-                    ch,
-                    self.scale_factor,
-                    y,
-                    grab_offset,
-                );
+                let new_y = page_scroll::scroll_y_from_pointer(&layout, cy, ch, self.scale_factor, y, grab_offset);
                 self.scroll.entry(tab_id).or_default().y = new_y;
                 self.scrollbar_drag = Some(ScrollbarDrag {
                     tab_id,
@@ -182,14 +157,7 @@ impl BrowserApp {
                     self.scale_factor,
                 );
                 let grab_offset = thumb_h * 0.5;
-                let new_y = page_scroll::scroll_y_from_pointer(
-                    &layout,
-                    cy,
-                    ch,
-                    self.scale_factor,
-                    y,
-                    grab_offset,
-                );
+                let new_y = page_scroll::scroll_y_from_pointer(&layout, cy, ch, self.scale_factor, y, grab_offset);
                 self.scroll.entry(tab_id).or_default().y = new_y;
                 self.scrollbar_drag = Some(ScrollbarDrag {
                     tab_id,
@@ -200,14 +168,7 @@ impl BrowserApp {
             page_scroll::ScrollbarHit::HorizontalThumb => {
                 let (thumb_x, _, _, _) = geometry.horizontal_thumb.expect("horizontal thumb");
                 let grab_offset = x - thumb_x;
-                let new_x = page_scroll::scroll_x_from_pointer(
-                    &layout,
-                    cx,
-                    cw,
-                    self.scale_factor,
-                    x,
-                    grab_offset,
-                );
+                let new_x = page_scroll::scroll_x_from_pointer(&layout, cx, cw, self.scale_factor, x, grab_offset);
                 self.scroll.entry(tab_id).or_default().x = new_x;
                 self.scrollbar_drag = Some(ScrollbarDrag {
                     tab_id,
@@ -222,14 +183,7 @@ impl BrowserApp {
                     self.scale_factor,
                 );
                 let grab_offset = thumb_w * 0.5;
-                let new_x = page_scroll::scroll_x_from_pointer(
-                    &layout,
-                    cx,
-                    cw,
-                    self.scale_factor,
-                    x,
-                    grab_offset,
-                );
+                let new_x = page_scroll::scroll_x_from_pointer(&layout, cx, cw, self.scale_factor, x, grab_offset);
                 self.scroll.entry(tab_id).or_default().x = new_x;
                 self.scrollbar_drag = Some(ScrollbarDrag {
                     tab_id,
@@ -254,24 +208,10 @@ impl BrowserApp {
         let entry = self.scroll.entry(tab_id).or_default();
         match drag.axis {
             page_scroll::ScrollbarAxis::Vertical => {
-                entry.y = page_scroll::scroll_y_from_pointer(
-                    &layout,
-                    cy,
-                    ch,
-                    self.scale_factor,
-                    y,
-                    drag.grab_offset,
-                );
+                entry.y = page_scroll::scroll_y_from_pointer(&layout, cy, ch, self.scale_factor, y, drag.grab_offset);
             }
             page_scroll::ScrollbarAxis::Horizontal => {
-                entry.x = page_scroll::scroll_x_from_pointer(
-                    &layout,
-                    cx,
-                    cw,
-                    self.scale_factor,
-                    x,
-                    drag.grab_offset,
-                );
+                entry.x = page_scroll::scroll_x_from_pointer(&layout, cx, cw, self.scale_factor, x, drag.grab_offset);
             }
         }
         self.needs_redraw = true;
@@ -314,7 +254,9 @@ impl BrowserApp {
             }
         }
 
-        if scroll_delta != 0.0 && let Some(tab_id) = self.shell.active_tab_id() {
+        if scroll_delta != 0.0
+            && let Some(tab_id) = self.shell.active_tab_id()
+        {
             self.apply_page_scroll_delta(tab_id, 0.0, scroll_delta);
         }
     }
@@ -471,7 +413,7 @@ impl BrowserApp {
             "Enter" => {
                 let url = self.address_bar.text().trim().to_string();
                 if !url.is_empty() {
-                    let nav_url = if let Some(idx) = self.autocomplete.hovered_index {
+                    let nav_url = if let Some(idx) = self.autocomplete.highlight_index() {
                         self.autocomplete
                             .suggestions
                             .get(idx)
@@ -520,21 +462,25 @@ impl BrowserApp {
             }
             k if key_matches(k, "Down") => {
                 if !self.autocomplete.suggestions.is_empty() {
+                    self.autocomplete.hovered_index = None;
                     let next = self
                         .autocomplete
-                        .hovered_index
+                        .selected_index
                         .map(|i| (i + 1).min(self.autocomplete.suggestions.len() - 1))
                         .unwrap_or(0);
-                    self.autocomplete.hovered_index = Some(next);
+                    self.autocomplete.selected_index = Some(next);
                     self.needs_redraw = true;
                 }
             }
             k if key_matches(k, "Up") => {
-                if let Some(i) = self.autocomplete.hovered_index {
-                    if i > 0 {
-                        self.autocomplete.hovered_index = Some(i - 1);
-                    } else {
-                        self.autocomplete.hovered_index = None;
+                if !self.autocomplete.suggestions.is_empty() {
+                    self.autocomplete.hovered_index = None;
+                    if let Some(i) = self.autocomplete.selected_index {
+                        if i > 0 {
+                            self.autocomplete.selected_index = Some(i - 1);
+                        } else {
+                            self.autocomplete.selected_index = None;
+                        }
                     }
                     self.needs_redraw = true;
                 }
@@ -702,6 +648,7 @@ impl BrowserApp {
         }
         self.autocomplete.suggestions = self.shell.suggest(query);
         self.autocomplete.hovered_index = None;
+        self.autocomplete.selected_index = None;
     }
 
     /// 处理鼠标移动
@@ -723,6 +670,9 @@ impl BrowserApp {
             let hovered = self.autocomplete_hit_test(x, y);
             if hovered != self.autocomplete.hovered_index {
                 self.autocomplete.hovered_index = hovered;
+                if hovered.is_some() {
+                    self.autocomplete.selected_index = None;
+                }
                 self.needs_redraw = true;
             }
         }
@@ -779,6 +729,49 @@ impl BrowserApp {
         }
 
         self.update_hovered_link_at(x, y);
+        self.update_scrollbar_hover(x, y);
+    }
+
+    fn update_scrollbar_hover(&mut self, x: f64, y: f64) {
+        if self.scrollbar_drag.is_some() {
+            return;
+        }
+        let width = self.physical_size.0;
+        let height = self.physical_size.1;
+        let hover = self
+            .shell
+            .active_tab_id()
+            .and_then(|tab_id| {
+                let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+                let layout = self.page_scroll_layout_for(tab_id, width, height);
+                if !layout.show_vertical && !layout.show_horizontal {
+                    return None;
+                }
+                let scroll = self.tab_scroll_state(tab_id);
+                let geometry = crate::page_scroll::scrollbar_geometry(
+                    &layout,
+                    scroll,
+                    cx,
+                    cy,
+                    cw,
+                    ch,
+                    self.scale_factor,
+                );
+                crate::page_scroll::hit_test_scrollbar(x as f32, y as f32, &geometry)
+            });
+        if hover != self.scrollbar_hover {
+            self.scrollbar_hover = hover;
+            self.needs_redraw = true;
+        }
+    }
+
+    fn find_bar_hit_test(&self, x_f: f32, y_f: f32) -> bool {
+        if !self.shell.find_state().is_active() {
+            return false;
+        }
+        let (bar_x, bar_y, bar_w, bar_h) =
+            self.find_bar_rect_for(self.physical_size.0, self.physical_size.1);
+        x_f >= bar_x && x_f <= bar_x + bar_w && y_f >= bar_y && y_f <= bar_y + bar_h
     }
 
     /// 处理鼠标点击（物理像素坐标）
@@ -788,12 +781,18 @@ impl BrowserApp {
                 self.left_button_down = true;
             } else {
                 self.left_button_down = false;
+                if self.context_menu.visible && self.context_menu_suppress_left_up {
+                    self.context_menu_suppress_left_up = false;
+                    self.scrollbar_drag = None;
+                    self.content_pointer_drag = None;
+                    self.tab_bar_drag_press = None;
+                    self.address_bar_drag = false;
+                    self.page_selection_drag = false;
+                    return;
+                }
                 let was_scrollbar_drag = self.scrollbar_drag.is_some();
                 self.scrollbar_drag = None;
-                let was_scroll_drag = self
-                    .content_pointer_drag
-                    .as_ref()
-                    .is_some_and(|d| d.scrolling);
+                let was_scroll_drag = self.content_pointer_drag.as_ref().is_some_and(|d| d.scrolling);
                 self.content_pointer_drag = None;
                 self.tab_bar_drag_press = None;
                 self.address_bar_drag = false;
@@ -807,9 +806,7 @@ impl BrowserApp {
                         let collapsed = self.page_selection.get(&tab_id).is_none_or(|s| s.is_collapsed());
                         if collapsed {
                             let allowed = self.tabs.dispatch_page_click(tab_id, doc_x, doc_y);
-                            if allowed
-                                && let Some(href) = self.tabs.hit_test_link(tab_id, doc_x, doc_y)
-                            {
+                            if allowed && let Some(href) = self.tabs.hit_test_link(tab_id, doc_x, doc_y) {
                                 self.navigate_to(&href);
                             }
                             if allowed {
@@ -845,16 +842,16 @@ impl BrowserApp {
             }
         }
 
-        // 左键点击时关闭上下文菜单
+        // 左键点击时处理上下文菜单
         if self.context_menu.visible {
             if let Some(idx) = self.context_menu_hit_test(x, y) {
-                // 点击菜单项
                 self.context_menu.hovered_index = Some(idx);
+                self.context_menu_suppress_left_up = false;
                 self.activate_context_menu_item();
                 return;
             }
-            // 点击菜单外关闭
             self.context_menu.close();
+            self.context_menu_suppress_left_up = false;
             self.needs_redraw = true;
             return;
         }
@@ -970,6 +967,11 @@ impl BrowserApp {
             }
 
             if x_f >= addr_bar_x && x_f <= addr_bar_x + self.address_bar_layout().2 {
+                if self.address_bar_bookmark_hit_test(x_f, y_f) {
+                    self.shell.add_bookmark();
+                    self.needs_redraw = true;
+                    return;
+                }
                 self.handle_address_bar_press(x, y);
                 return;
             }
@@ -981,42 +983,35 @@ impl BrowserApp {
             return;
         }
 
-        // 5. 查找栏区域点击
-        let (content_x, content_y, content_w, content_h) = self.page_content_rect();
-        if self.shell.find_state().is_active() && y_f >= content_y && y_f < content_y + layout::FIND_BAR_HEIGHT * s {
-            let bar_w = 320.0 * s;
-            let bar_x = width - bar_w - 10.0 * s;
-            if x_f >= bar_x && x_f <= bar_x + bar_w {
-                let close_x = bar_x + bar_w - 40.0 * s;
-                if x_f >= close_x {
-                    self.shell.find_close();
-                    self.find_input.clear();
-                    self.needs_redraw = true;
-                    return;
-                }
-                let prev_x = bar_x + bar_w - 100.0 * s;
-                let next_x = bar_x + bar_w - 70.0 * s;
-                if x_f >= prev_x && x_f < prev_x + 28.0 * s {
-                    self.shell.find_previous();
-                    self.needs_redraw = true;
-                    return;
-                }
-                if x_f >= next_x && x_f < next_x + 28.0 * s {
-                    self.shell.find_next();
-                    self.needs_redraw = true;
-                    return;
-                }
+        // 5. 浮动查找栏点击
+        if self.find_bar_hit_test(x_f, y_f) {
+            let (bar_x, _bar_y, bar_w, _bar_h) =
+                self.find_bar_rect_for(self.physical_size.0, self.physical_size.1);
+            let close_x = bar_x + bar_w - 40.0 * s;
+            if x_f >= close_x {
+                self.shell.find_close();
+                self.find_input.clear();
+                self.needs_redraw = true;
                 return;
             }
+            let prev_x = bar_x + bar_w - 100.0 * s;
+            let next_x = bar_x + bar_w - 70.0 * s;
+            if x_f >= prev_x && x_f < prev_x + 28.0 * s {
+                self.shell.find_previous();
+                self.needs_redraw = true;
+                return;
+            }
+            if x_f >= next_x && x_f < next_x + 28.0 * s {
+                self.shell.find_next();
+                self.needs_redraw = true;
+                return;
+            }
+            return;
         }
 
         // 6. 页面内容区域 — 链接点击 / 取消地址栏焦点
-        let find_bar_h = if self.shell.find_state().is_active() {
-            layout::FIND_BAR_HEIGHT * s
-        } else {
-            0.0
-        };
-        let page_top = content_y + find_bar_h;
+        let (content_x, content_y, content_w, content_h) = self.page_content_rect();
+        let page_top = content_y;
 
         if y_f >= content_y
             && y_f < content_y + content_h
@@ -1032,25 +1027,25 @@ impl BrowserApp {
                 if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
                     && let Some(glyphs) = self.page_glyphs(tab_id)
                 {
-                self.tabs.dispatch_page_mousedown(tab_id, doc_x, doc_y);
-                self.content_pointer_drag = Some(ContentPointerDrag {
-                    start_x: x,
-                    start_y: y,
-                    last_y: y,
-                    scrolling: false,
-                });
-                let idx = hit_test_glyph(&glyphs, doc_x, doc_y).unwrap_or(0);
-                if self.shift_pressed {
-                    if let Some(sel) = self.page_selection.get_mut(&tab_id) {
-                        sel.focus = idx;
+                    self.tabs.dispatch_page_mousedown(tab_id, doc_x, doc_y);
+                    self.content_pointer_drag = Some(ContentPointerDrag {
+                        start_x: x,
+                        start_y: y,
+                        last_y: y,
+                        scrolling: false,
+                    });
+                    let idx = hit_test_glyph(&glyphs, doc_x, doc_y).unwrap_or(0);
+                    if self.shift_pressed {
+                        if let Some(sel) = self.page_selection.get_mut(&tab_id) {
+                            sel.focus = idx;
+                        } else {
+                            self.page_selection.insert(tab_id, GlyphSelection::collapsed(idx));
+                        }
                     } else {
                         self.page_selection.insert(tab_id, GlyphSelection::collapsed(idx));
                     }
-                } else {
-                    self.page_selection.insert(tab_id, GlyphSelection::collapsed(idx));
-                }
-                self.page_selection_drag = true;
-                self.needs_redraw = true;
+                    self.page_selection_drag = true;
+                    self.needs_redraw = true;
                 }
             }
 
@@ -1140,19 +1135,21 @@ impl BrowserApp {
     fn page_doc_point(&self, x_f: f32, y_f: f32) -> Option<(TabId, f32, f32)> {
         let s = self.scale_factor;
         let tab_id = self.shell.active_tab_id()?;
+        if self.find_bar_hit_test(x_f, y_f) {
+            return None;
+        }
         let (content_x, content_y, content_w, content_h) = self.page_content_rect();
-        let find_bar_h = if self.shell.find_state().is_active() {
-            layout::FIND_BAR_HEIGHT * s
-        } else {
-            0.0
-        };
-        let page_top = content_y + find_bar_h;
+        let page_top = content_y;
         let content_bottom = content_y + content_h;
         if x_f < content_x || x_f >= content_x + content_w || y_f < page_top || y_f >= content_bottom {
             return None;
         }
         let scroll = self.tab_scroll_state(tab_id);
-        Some((tab_id, (x_f - content_x) / s + scroll.x, (y_f - page_top + scroll.y) / s))
+        Some((
+            tab_id,
+            (x_f - content_x) / s + scroll.x,
+            (y_f - page_top + scroll.y) / s,
+        ))
     }
 
     /// 与渲染一致的页面 glyph 列表。
@@ -1162,18 +1159,14 @@ impl BrowserApp {
 
     fn nav_section_width(&self) -> f32 {
         let s = self.scale_factor;
-        (layout::NAV_SECTION_LEADING_PAD
-            + layout::NAV_BUTTON_WIDTH * 4.0
-            + layout::NAV_SECTION_TRAILING_GAP)
-            * s
+        (layout::NAV_SECTION_LEADING_PAD + layout::NAV_BUTTON_WIDTH * 4.0 + layout::NAV_SECTION_TRAILING_GAP) * s
     }
 
     fn address_bar_layout(&self) -> (f32, f32, f32, f32) {
         let s = self.scale_factor;
         let bar_x = self.nav_section_width() + layout::ADDRESS_BAR_PADDING * s;
         let menu_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
-        let trailing_reserved =
-            layout::ADDRESS_BAR_PADDING * s + layout::TOOLBAR_TRAILING_GAP * s + menu_w;
+        let trailing_reserved = layout::ADDRESS_BAR_PADDING * s + layout::TOOLBAR_TRAILING_GAP * s + menu_w;
         let bar_w = self.physical_size.0 as f32 - bar_x - trailing_reserved;
         let inset = layout::ADDRESS_BAR_INPUT_V_INSET * s;
         let bar_y = layout::TAB_STRIP_HEIGHT * s + inset;
@@ -1201,6 +1194,20 @@ impl BrowserApp {
     fn toolbar_menu_hit_test(&self, x_f: f32, y_f: f32) -> bool {
         let (bx, by, bw, bh) = self.toolbar_menu_button_rect();
         x_f >= bx && x_f <= bx + bw && y_f >= by && y_f <= by + bh
+    }
+
+    fn address_bar_bookmark_hit_test(&self, x_f: f32, y_f: f32) -> bool {
+        let s = self.scale_factor;
+        let (bar_x, bar_y, bar_w, bar_h) = self.address_bar_layout();
+        if y_f < bar_y || y_f > bar_y + bar_h || x_f < bar_x || x_f > bar_x + bar_w {
+            return false;
+        }
+        let border = s.max(1.0);
+        let inner_x = bar_x + border;
+        let inner_w = bar_w - 2.0 * border;
+        let trailing_slots_w = layout::ADDRESS_BAR_TRAILING_SLOTS * s;
+        let slots_x = inner_x + inner_w - layout::ADDRESS_BAR_TRAILING_PAD * s - trailing_slots_w;
+        x_f >= slots_x && x_f < slots_x + trailing_slots_w
     }
 
     fn show_browser_menu(&mut self) {
@@ -1238,12 +1245,13 @@ impl BrowserApp {
                 Some("browser_menu_settings".to_string()),
             ],
             hovered_index: None,
-            x: bx + bw - 200.0 * s,
+            x: bx + bw - layout::CONTEXT_MENU_WIDTH * s,
             y: by + bh + 4.0 * s,
             source_tab_id: self.shell.active_tab_id(),
             page_doc_x: 0.0,
             page_doc_y: 0.0,
         };
+        self.context_menu_suppress_left_up = true;
         self.needs_redraw = true;
     }
 
@@ -1443,8 +1451,8 @@ impl BrowserApp {
         let s = self.scale_factor;
         let menu_x = self.context_menu.x;
         let menu_y = self.context_menu.y;
-        let row_h = 28.0 * s;
-        let menu_w = 200.0 * s;
+        let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let menu_w = layout::CONTEXT_MENU_WIDTH * s;
         let menu_h = self.context_menu.items.len() as f32 * row_h;
 
         let x_f = x as f32;
@@ -1455,9 +1463,7 @@ impl BrowserApp {
         }
 
         let idx = ((y_f - menu_y) / row_h) as usize;
-        if idx < self.context_menu.items.len()
-            && self.context_menu.item_ids.get(idx).is_some_and(|id| id.is_some())
-        {
+        if idx < self.context_menu.items.len() && self.context_menu.item_ids.get(idx).is_some_and(|id| id.is_some()) {
             Some(idx)
         } else {
             None

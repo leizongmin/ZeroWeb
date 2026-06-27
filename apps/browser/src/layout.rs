@@ -24,6 +24,10 @@ pub const ADDRESS_BAR_INNER_PAD_H: f32 = 12.0;
 pub const ADDRESS_BAR_LEADING_SLOT_WIDTH: f32 = 28.0;
 /// Reserved trailing padding inside the address bar.
 pub const ADDRESS_BAR_TRAILING_PAD: f32 = 12.0;
+/// Width of one trailing action slot inside the address bar pill.
+pub const ADDRESS_BAR_ACTION_SLOT_WIDTH: f32 = 28.0;
+/// Total width reserved for trailing action slots inside the address bar pill.
+pub const ADDRESS_BAR_TRAILING_SLOTS: f32 = ADDRESS_BAR_ACTION_SLOT_WIDTH;
 /// Gap between the address bar and the trailing toolbar actions.
 pub const TOOLBAR_TRAILING_GAP: f32 = 8.0;
 /// Width of the trailing browser menu button slot.
@@ -44,6 +48,8 @@ pub const NAV_SECTION_LEADING_PAD: f32 = 10.0;
 pub const NAV_SECTION_TRAILING_GAP: f32 = 10.0;
 /// Hover circle diameter used by navigation and new-tab controls.
 pub const NAV_BUTTON_HOVER_DIAMETER: f32 = 28.0;
+/// Minimum width of a pinned tab.
+pub const TAB_PINNED_WIDTH: f32 = 52.0;
 /// Minimum width of a tab.
 pub const TAB_MIN_WIDTH: f32 = 100.0;
 /// Maximum width of a tab.
@@ -61,13 +67,25 @@ pub const TAB_SEPARATOR_INSET: f32 = 8.0;
 /// Maximum visible rows in the autocomplete dropdown.
 pub const AUTOCOMPLETE_MAX_VISIBLE: usize = 6;
 /// Height of one autocomplete row.
-pub const AUTOCOMPLETE_ROW_HEIGHT: f32 = 28.0;
+pub const AUTOCOMPLETE_ROW_HEIGHT: f32 = 44.0;
+/// Corner radius of the autocomplete dropdown panel.
+pub const AUTOCOMPLETE_DROPDOWN_RADIUS: f32 = 8.0;
+/// Horizontal padding inside an autocomplete row.
+pub const AUTOCOMPLETE_ROW_PAD_H: f32 = 12.0;
+/// Vertical padding inside an autocomplete row.
+pub const AUTOCOMPLETE_ROW_PAD_V: f32 = 6.0;
 /// Height of the bookmarks bar.
 pub const BOOKMARKS_BAR_HEIGHT: f32 = 26.0;
 /// macOS inset reserved for traffic lights in unified titlebar mode.
 pub const MACOS_TRAFFIC_LIGHT_INSET: f32 = 78.0;
 /// Height of the find bar.
 pub const FIND_BAR_HEIGHT: f32 = 36.0;
+/// Width of the floating find bar panel.
+pub const FIND_BAR_WIDTH: f32 = 320.0;
+/// Margin from the content frame edge for the floating find bar.
+pub const FIND_BAR_FLOAT_MARGIN: f32 = 12.0;
+/// Corner radius of the floating find bar panel.
+pub const FIND_BAR_FLOAT_RADIUS: f32 = 8.0;
 /// Height of the floating status bar used for hovered links.
 pub const STATUS_BAR_HEIGHT: f32 = 22.0;
 /// Margin between the floating status bar and the content frame edge.
@@ -76,24 +94,40 @@ pub const STATUS_BAR_FLOAT_MARGIN: f32 = 8.0;
 pub const STATUS_BAR_FLOAT_PAD_H: f32 = 8.0;
 /// Radius of the floating status bar.
 pub const STATUS_BAR_FLOAT_RADIUS: f32 = 3.0;
-/// Height of the download bar when active downloads are present.
+/// Height of the legacy download bar slot (kept for tests referencing height).
 pub const DOWNLOAD_BAR_HEIGHT: f32 = 28.0;
+/// Width of the floating download panel.
+pub const DOWNLOAD_PANEL_WIDTH: f32 = 280.0;
+/// Height of the floating download panel.
+pub const DOWNLOAD_PANEL_HEIGHT: f32 = 72.0;
+/// Margin from the content frame edge for the floating download panel.
+pub const DOWNLOAD_PANEL_FLOAT_MARGIN: f32 = 12.0;
+/// Corner radius of the floating download panel.
+pub const DOWNLOAD_PANEL_RADIUS: f32 = 8.0;
+/// Width of the context menu panel.
+pub const CONTEXT_MENU_WIDTH: f32 = 220.0;
+/// Row height inside the context menu.
+pub const CONTEXT_MENU_ROW_HEIGHT: f32 = 32.0;
+/// Corner radius of the context menu panel.
+pub const CONTEXT_MENU_RADIUS: f32 = 8.0;
+/// Horizontal padding inside a context menu row.
+pub const CONTEXT_MENU_PAD_H: f32 = 12.0;
 /// Horizontal inset of the page frame relative to chrome.
-pub const PAGE_FRAME_INSET_H: f32 = 4.0;
+pub const PAGE_FRAME_INSET_H: f32 = 0.0;
 /// Top gap between chrome and the page frame.
-pub const PAGE_FRAME_INSET_TOP: f32 = 4.0;
+pub const PAGE_FRAME_INSET_TOP: f32 = 0.0;
 /// Bottom gap between the page frame and the outer window edge.
-pub const PAGE_FRAME_INSET_BOTTOM: f32 = 4.0;
+pub const PAGE_FRAME_INSET_BOTTOM: f32 = 0.0;
 /// Extra bottom reserve used to prevent clipping in maximized windows.
 pub const PAGE_FRAME_BOTTOM_CLIP_GUARD: f32 = 24.0;
 /// Additional bottom reserve for floating UI in maximized windows.
 pub const PAGE_FRAME_BOTTOM_UI_GUARD: f32 = STATUS_BAR_HEIGHT;
 /// Border width of the page frame.
-pub const PAGE_FRAME_BORDER: f32 = 1.0;
+pub const PAGE_FRAME_BORDER: f32 = 0.0;
 /// Radius of the page frame.
-pub const PAGE_FRAME_RADIUS: f32 = 8.0;
+pub const PAGE_FRAME_RADIUS: f32 = 0.0;
 /// Thickness of classic reserved scrollbars in logical pixels.
-pub const SCROLLBAR_THICKNESS: f32 = 12.0;
+pub const SCROLLBAR_THICKNESS: f32 = 10.0;
 /// Minimum scrollbar thumb length in logical pixels.
 pub const SCROLLBAR_MIN_THUMB: f32 = 24.0;
 /// Width of the custom outer frame border used on undecorated Wayland windows.

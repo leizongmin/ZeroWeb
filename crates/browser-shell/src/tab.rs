@@ -31,6 +31,14 @@ pub struct Tab {
     history: Vec<NavigationEntry>,
     /// 无痕模式（不写磁盘缓存、不写入会话）。
     private: bool,
+    /// 是否固定标签页。
+    pinned: bool,
+    /// 是否静音。
+    muted: bool,
+    /// 是否崩溃。
+    crashed: bool,
+    /// 是否需要用户注意（例如完成通知）。
+    needs_attention: bool,
 }
 
 /// 导航历史条目。
@@ -53,6 +61,10 @@ impl Tab {
             history_index: 0,
             history: Vec::new(),
             private: false,
+            pinned: false,
+            muted: false,
+            crashed: false,
+            needs_attention: false,
         };
         tab.navigate(url);
         tab
@@ -82,12 +94,56 @@ impl Tab {
             history_index: 0,
             history: Vec::new(),
             private: false,
+            pinned: false,
+            muted: false,
+            crashed: false,
+            needs_attention: false,
         }
     }
 
     /// 是否无痕标签页。
     pub fn is_private(&self) -> bool {
         self.private
+    }
+
+    /// 是否固定标签页。
+    pub fn is_pinned(&self) -> bool {
+        self.pinned
+    }
+
+    /// 设置固定状态。
+    pub fn set_pinned(&mut self, pinned: bool) {
+        self.pinned = pinned;
+    }
+
+    /// 是否静音。
+    pub fn is_muted(&self) -> bool {
+        self.muted
+    }
+
+    /// 设置静音状态。
+    pub fn set_muted(&mut self, muted: bool) {
+        self.muted = muted;
+    }
+
+    /// 是否崩溃。
+    pub fn is_crashed(&self) -> bool {
+        self.crashed
+    }
+
+    /// 设置崩溃状态。
+    pub fn set_crashed(&mut self, crashed: bool) {
+        self.crashed = crashed;
+    }
+
+    /// 是否需要用户注意。
+    pub fn needs_attention(&self) -> bool {
+        self.needs_attention
+    }
+
+    /// 设置是否需要用户注意。
+    pub fn set_needs_attention(&mut self, needs_attention: bool) {
+        self.needs_attention = needs_attention;
     }
 
     /// 获取标签页 ID。

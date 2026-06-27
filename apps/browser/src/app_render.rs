@@ -30,7 +30,13 @@ impl BrowserApp {
         let font_size = layout::CHROME_FONT_SIZE * s;
 
         // 1. 整体背景
-        fills.push(rect_fill(0.0, 0.0, width as f32, height as f32, self.chrome_palette.background));
+        fills.push(rect_fill(
+            0.0,
+            0.0,
+            width as f32,
+            height as f32,
+            self.chrome_palette.background,
+        ));
 
         // 2. 标签栏背景（macOS 左侧为系统 traffic lights 留白）
         let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
@@ -44,7 +50,13 @@ impl BrowserApp {
                 self.chrome_palette.tab_bar_bg,
             ));
         } else {
-            fills.push(rect_fill(0.0, 0.0, width as f32, tab_strip_h, self.chrome_palette.tab_bar_bg));
+            fills.push(rect_fill(
+                0.0,
+                0.0,
+                width as f32,
+                tab_strip_h,
+                self.chrome_palette.tab_bar_bg,
+            ));
         }
 
         // 3. 标签内容（带布局缓存）
@@ -69,7 +81,13 @@ impl BrowserApp {
 
         // 7. 分隔线
         let toolbar_h = layout::TOOLBAR_HEIGHT * s;
-        fills.push(rect_fill(0.0, toolbar_h - s, width as f32, s, self.chrome_palette.separator));
+        fills.push(rect_fill(
+            0.0,
+            toolbar_h - s,
+            width as f32,
+            s,
+            self.chrome_palette.separator,
+        ));
 
         // 8. 书签栏（有书签且设置开启时显示；否则不占高度）
         if self.bookmarks_bar_visible() {
@@ -108,30 +126,28 @@ impl BrowserApp {
         // 11b. 页面滚动条（overlay，始终显示于溢出时）
         self.render_page_scrollbars(&mut overlay_fills, width, height);
 
-        // 12. 查找栏（覆盖在页面内容上方）
-        if self.shell.find_state().is_active() {
-            self.render_find_bar(&mut fills, &mut glyphs, width, content_y, font_size, s);
-        }
+        // 12. 查找栏与下载面板在 overlay 层绘制（浮动，不占布局高度）
 
         // 13. 自动补全下拉
         if self.address_bar_focused && !self.autocomplete.suggestions.is_empty() {
             self.render_autocomplete(&mut fills, &mut glyphs, width, font_size, s);
         }
 
-        // 14. 下载进度条（有活跃下载时显示在状态栏上方）
-        if self.shell.downloads().active_count() > 0 {
-            self.render_download_bar(&mut fills, &mut glyphs, width, height, font_size, s);
-        }
-
-        // 15. 链接悬停浮动状态栏（覆盖在页面内容上方，不占布局高度）
+        // 14. 链接悬停浮动状态栏（覆盖在页面内容上方，不占布局高度）
         self.render_floating_link_status(&mut fills, &mut glyphs, width, height, s);
 
-        // 16. 上下文菜单（overlay 图层，始终在最顶层）
+        // 15–17. 浮动查找栏、下载面板、上下文菜单（overlay 顶层）
+        if self.shell.find_state().is_active() {
+            self.render_find_bar(&mut overlay_fills, &mut overlay_glyphs, width, height, font_size, s);
+        }
+        if self.shell.downloads().active_count() > 0 {
+            self.render_download_panel(&mut overlay_fills, &mut overlay_glyphs, width, height, font_size, s);
+        }
         if self.context_menu.visible {
             self.render_context_menu(&mut overlay_fills, &mut overlay_glyphs, s);
         }
 
-        // 17–18. 圆角遮罩与视口边框（overlay：在 WebView glyphs 之后绘制）
+        // 18–19. 圆角遮罩与视口边框（无圆角时跳过）
         self.render_page_frame_corner_masks(&mut overlay_fills, width, height, s);
         self.render_page_frame_border(&mut overlay_fills, frame_x, frame_y, frame_w, frame_h, s);
         // 19. Wayland 非最大化：自绘窗口外框（无系统装饰时与桌面区分）
@@ -153,40 +169,18 @@ impl BrowserApp {
         let layout = self.page_scroll_layout_for(tab_id, self.physical_size.0, self.physical_size.1);
         let scroll = self.tab_scroll_state(tab_id);
 
-        let primitives = match self
-            .tabs
-            .last_render(tab_id)
-            .map(|render| &render.primitives)
-        {
+        let primitives = match self.tabs.last_render(tab_id).map(|render| &render.primitives) {
             Some(p) => p,
             None => return RenderPrimitives::new(),
         };
 
         let s = self.scale_factor;
-        let find_offset = if self.shell.find_state().is_active() {
-            layout::FIND_BAR_HEIGHT * s
-        } else {
-            0.0
-        };
-        let clip_top = layout.viewport_y + find_offset;
-        let clip_bottom = layout.viewport_y + layout.viewport_h;
-        let clip_viewport = ViewportClip::new(
-            layout.viewport_x,
-            clip_top,
-            layout.viewport_w,
-            clip_bottom - clip_top,
-        );
+        let clip_viewport = ViewportClip::new(layout.viewport_x, layout.viewport_y, layout.viewport_w, layout.viewport_h);
 
         let y_offset = layout.viewport_y - scroll.y;
         let x_offset = layout.viewport_x - scroll.x;
 
-        let mut transformed = transform_webview_primitives(
-            primitives,
-            x_offset,
-            y_offset,
-            s,
-            Some(clip_viewport),
-        );
+        let mut transformed = transform_webview_primitives(primitives, x_offset, y_offset, s, Some(clip_viewport));
 
         // fills 和 glyphs 已通过 append_webview_primitives 混入 chrome 层，此处清空避免重复
         transformed.fills.clear();
@@ -197,12 +191,7 @@ impl BrowserApp {
     }
 
     /// 绘制页面滚动条（内容溢出时）。
-    fn render_page_scrollbars(
-        &self,
-        overlay_fills: &mut Vec<FillPrimitive>,
-        width: u32,
-        height: u32,
-    ) {
+    fn render_page_scrollbars(&self, overlay_fills: &mut Vec<FillPrimitive>, width: u32, height: u32) {
         let Some(tab_id) = self.shell.active_tab_id() else {
             return;
         };
@@ -212,19 +201,16 @@ impl BrowserApp {
             return;
         }
         let scroll = self.tab_scroll_state(tab_id);
-        let geometry = crate::page_scroll::scrollbar_geometry(
-            &layout,
-            scroll,
-            cx,
-            cy,
-            cw,
-            ch,
-            self.scale_factor,
-        );
+        let geometry = crate::page_scroll::scrollbar_geometry(&layout, scroll, cx, cy, cw, ch, self.scale_factor);
+        let dragging = self.scrollbar_drag.map(|d| d.axis);
         crate::page_scroll::push_scrollbar_fills(
             &geometry,
             self.chrome_palette.scrollbar_track,
             self.chrome_palette.scrollbar_thumb,
+            self.chrome_palette.scrollbar_thumb_hover,
+            self.chrome_palette.scrollbar_thumb_active,
+            self.scrollbar_hover,
+            dragging,
             overlay_fills,
         );
     }
@@ -252,7 +238,15 @@ impl BrowserApp {
         };
         let leading = self.tab_bar_leading_inset() * s;
         let tabs_max_width = width as f32 - window_controls_w - new_tab_btn_w - leading;
-        let tab_w = (tabs_max_width / tab_count as f32).clamp(layout::TAB_MIN_WIDTH * s, layout::TAB_MAX_WIDTH * s);
+        let pinned_count = self.shell.tabs().filter(|t| t.is_pinned()).count();
+        let normal_count = tab_count.saturating_sub(pinned_count);
+        let pinned_total = pinned_count as f32 * layout::TAB_PINNED_WIDTH * s;
+        let normal_available = (tabs_max_width - pinned_total).max(0.0);
+        let normal_tab_w = if normal_count > 0 {
+            (normal_available / normal_count as f32).clamp(layout::TAB_MIN_WIDTH * s, layout::TAB_MAX_WIDTH * s)
+        } else {
+            0.0
+        };
 
         self.tab_layout.clear();
         let mut x = leading;
@@ -274,6 +268,10 @@ impl BrowserApp {
             bg: Color,
             is_active: bool,
             is_loading: bool,
+            is_pinned: bool,
+            is_muted: bool,
+            is_crashed: bool,
+            needs_attention: bool,
             label: String,
             page_url: Option<String>,
             html_hint: Option<&'static str>,
@@ -281,6 +279,11 @@ impl BrowserApp {
 
         let mut tabs: Vec<TabPaint> = Vec::new();
         for tab in self.shell.tabs() {
+            let tab_w = if tab.is_pinned() {
+                layout::TAB_PINNED_WIDTH * s
+            } else {
+                normal_tab_w
+            };
             let is_active = Some(tab.id()) == active_id;
             let is_hovered = !is_active && {
                 let mx = self.mouse_pos.0 as f32;
@@ -294,16 +297,13 @@ impl BrowserApp {
             } else {
                 self.chrome_palette.tab_bar_bg
             };
-            let label = tab
-                .title()
-                .or(tab.url())
-                .unwrap_or("New Tab")
-                .to_string();
-            let label = if tab.is_private() {
-                format!("无痕 · {label}")
-            } else {
-                label
-            };
+            let mut label = tab.title().or(tab.url()).unwrap_or("New Tab").to_string();
+            if tab.is_private() {
+                label = format!("无痕 · {label}");
+            }
+            if tab.is_muted() {
+                label = format!("静音 · {label}");
+            }
             tabs.push(TabPaint {
                 id: tab.id(),
                 x,
@@ -312,6 +312,10 @@ impl BrowserApp {
                 bg,
                 is_active,
                 is_loading: tab.is_loading(),
+                is_pinned: tab.is_pinned(),
+                is_muted: tab.is_muted(),
+                is_crashed: tab.is_crashed(),
+                needs_attention: tab.needs_attention(),
                 label,
                 page_url: tab.url().map(str::to_string),
                 html_hint: Self::tab_html_hint(tab.url()),
@@ -320,27 +324,11 @@ impl BrowserApp {
         }
 
         for tab in tabs.iter().filter(|t| !t.is_active) {
-            crate::tab_chrome::push_inactive_tab_fill(
-                fills,
-                tab.x,
-                tab_y,
-                tab.tab_body_w,
-                tab_bar_h,
-                s,
-                tab.bg,
-            );
+            crate::tab_chrome::push_inactive_tab_fill(fills, tab.x, tab_y, tab.tab_body_w, tab_bar_h, s, tab.bg);
         }
 
         if let Some(active) = tabs.iter().find(|t| t.is_active) {
-            crate::tab_chrome::push_active_tab_fill(
-                fills,
-                active.x,
-                tab_y,
-                active.tab_body_w,
-                tab_bar_h,
-                s,
-                active.bg,
-            );
+            crate::tab_chrome::push_active_tab_fill(fills, active.x, tab_y, active.tab_body_w, tab_bar_h, s, active.bg);
         }
 
         // 相邻非激活标签之间的竖线（在标签底色之上、文本图标之下）
@@ -360,12 +348,23 @@ impl BrowserApp {
         }
 
         for tab in &tabs {
-            let tab_text_color = if tab.is_active {
+            let tab_text_color = if tab.is_crashed {
+                self.chrome_palette.tab_crashed
+            } else if tab.is_active {
                 self.chrome_palette.tab_text
             } else {
-                self.chrome_palette.page_url
+                self.chrome_palette.page_hint
             };
             let icon_cx = tab.x + 12.0 * s + icon_size * 0.5;
+            if tab.needs_attention && !tab.is_loading {
+                push_circle_fill(
+                    fills,
+                    tab.x + 8.0 * s,
+                    tab_y + 8.0 * s,
+                    4.0 * s,
+                    self.chrome_palette.tab_attention,
+                );
+            }
             if tab.is_loading {
                 crate::tab_chrome::push_loading_spinner(
                     fills,
@@ -376,10 +375,7 @@ impl BrowserApp {
                     self.chrome_palette.loading_indicator,
                 );
             } else if self.font_id.is_some() {
-                let favicon_url = tab
-                    .page_url
-                    .as_deref()
-                    .or(Some("zero://newtab"));
+                let favicon_url = tab.page_url.as_deref().or(Some("zero://newtab"));
                 crate::tab_favicon::render_tab_favicon(
                     &mut self.font_loader,
                     glyphs,
@@ -393,7 +389,7 @@ impl BrowserApp {
                 );
             }
 
-            if self.font_id.is_some() {
+            if self.font_id.is_some() && !tab.is_pinned {
                 let text_area_w = tab.tab_w - text_left_inset - 32.0 * s;
                 let truncated = self.truncate_ui_text(&tab.label, text_area_w.max(0.0), font_size);
                 self.draw_ui_text(
@@ -404,6 +400,10 @@ impl BrowserApp {
                     tab_text_color,
                     glyphs,
                 );
+            }
+
+            if tab.is_pinned {
+                continue;
             }
 
             let close_x = tab.x + tab.tab_w - 28.0 * s;
@@ -505,7 +505,13 @@ impl BrowserApp {
             match i {
                 0 => {
                     let line_w = 10.0 * s;
-                    fills.push(rect_fill(cx - line_w / 2.0, cy - thickness / 2.0, line_w, thickness, icon));
+                    fills.push(rect_fill(
+                        cx - line_w / 2.0,
+                        cy - thickness / 2.0,
+                        line_w,
+                        thickness,
+                        icon,
+                    ));
                 }
                 1 if self.window_is_maximized => {
                     let size = 8.0 * s;
@@ -567,10 +573,7 @@ impl BrowserApp {
             crate::ui_icons::Icon::Refresh,
             crate::ui_icons::Icon::Home,
         ];
-        let can_back = self
-            .shell
-            .active_tab()
-            .is_some_and(|tab| tab.history_index() > 0);
+        let can_back = self.shell.active_tab().is_some_and(|tab| tab.history_index() > 0);
         let can_forward = self.shell.active_tab().is_some_and(|tab| {
             let history = tab.navigation_history();
             !history.is_empty() && tab.history_index() < history.len() - 1
@@ -583,7 +586,10 @@ impl BrowserApp {
             let cx = bx + btn_w / 2.0;
             let enabled = nav_enabled[i];
             let hovered = enabled && self.pointer_in_rect(bx, y, btn_w, btn_h);
-            if hovered {
+            let pressed = hovered && self.left_button_down && enabled;
+            if pressed {
+                push_circle_fill(fills, cx, cy, hover_diameter, self.chrome_palette.nav_button_pressed);
+            } else if hovered {
                 push_circle_fill(fills, cx, cy, hover_diameter, self.chrome_palette.tab_hover_bg);
             }
             let color = if !enabled {
@@ -629,15 +635,7 @@ impl BrowserApp {
         } else {
             self.chrome_palette.address_bar_border
         };
-        push_rounded_rect_fill(
-            fills,
-            bar_x,
-            bar_y,
-            bar_w,
-            bar_h,
-            radius,
-            border_color,
-        );
+        push_rounded_rect_fill(fills, bar_x, bar_y, bar_w, bar_h, radius, border_color);
         push_rounded_rect_fill(
             fills,
             bar_x + border,
@@ -649,8 +647,7 @@ impl BrowserApp {
         );
 
         let text = self.address_bar.text();
-        let show_placeholder =
-            text.is_empty() && !self.address_bar_focused && self.address_bar_ime_preedit.is_empty();
+        let show_placeholder = text.is_empty() && !self.address_bar_focused && self.address_bar_ime_preedit.is_empty();
 
         if self.font_id.is_some() {
             let inner_x = bar_x + border;
@@ -680,6 +677,27 @@ impl BrowserApp {
 
             let status_url = self.shell.active_tab().and_then(|tab| tab.url());
             let status_hint = Self::tab_html_hint(status_url);
+            let page_kind = Self::address_bar_page_kind(status_url);
+            if !self.address_bar_focused {
+                let status_label = match page_kind {
+                    AddressBarPageKind::Insecure => Some(("!", self.chrome_palette.address_bar_insecure)),
+                    AddressBarPageKind::Internal | AddressBarPageKind::Local => {
+                        Some(("i", self.chrome_palette.address_bar_internal))
+                    }
+                    _ => None,
+                };
+                if let Some((label, color)) = status_label {
+                    let label_w = self.measure_ui_text_width(label, status_icon_size * 0.85);
+                    self.draw_ui_text(
+                        label,
+                        status_cx - label_w * 0.5,
+                        text_top,
+                        status_icon_size * 0.85,
+                        color,
+                        glyphs,
+                    );
+                }
+            }
             if let Some(tab_id) = self.shell.active_tab_id() {
                 crate::tab_favicon::render_tab_favicon(
                     &mut self.font_loader,
@@ -725,8 +743,11 @@ impl BrowserApp {
             } else {
                 text
             };
-            let available_text_w =
-                (inner_x + inner_w - layout::ADDRESS_BAR_TRAILING_PAD * s - text_x).max(0.0);
+            let available_text_w = (inner_x + inner_w
+                - layout::ADDRESS_BAR_TRAILING_PAD * s
+                - layout::ADDRESS_BAR_TRAILING_SLOTS * s
+                - text_x)
+                .max(0.0);
             let visible = self.truncate_ui_text(visible, available_text_w, font_size);
             self.draw_ui_text(&visible, text_x, text_top, font_size, color, glyphs);
 
@@ -755,6 +776,35 @@ impl BrowserApp {
                     self.chrome_palette.address_bar_text,
                 ));
             }
+
+            let trailing_slots_w = layout::ADDRESS_BAR_TRAILING_SLOTS * s;
+            let slots_x = inner_x + inner_w - layout::ADDRESS_BAR_TRAILING_PAD * s - trailing_slots_w;
+            let slot_w = layout::ADDRESS_BAR_ACTION_SLOT_WIDTH * s;
+            let slot_cx = slots_x + slot_w * 0.5;
+            let slot_cy = bar_y + bar_h * 0.5;
+            let slot_hovered = self.pointer_in_rect(slots_x, inner_y, slot_w, inner_h);
+            if slot_hovered {
+                push_circle_fill(
+                    fills,
+                    slot_cx,
+                    slot_cy,
+                    layout::NAV_BUTTON_HOVER_DIAMETER * s,
+                    self.chrome_palette.tab_hover_bg,
+                );
+            }
+            crate::ui_icons::render_icon(
+                &mut self.font_loader,
+                glyphs,
+                crate::ui_icons::Icon::Star,
+                slot_cx,
+                slot_cy,
+                layout::CHROME_ICON_SIZE * s,
+                if slot_hovered {
+                    self.chrome_palette.address_bar_text
+                } else {
+                    self.chrome_palette.nav_button
+                },
+            );
         }
 
         let (menu_btn_x, menu_btn_y, menu_btn_w, menu_btn_h) = self.toolbar_menu_button_rect();
@@ -789,10 +839,7 @@ impl BrowserApp {
         if char_idx == 0 {
             return 0;
         }
-        text.char_indices()
-            .nth(char_idx)
-            .map(|(i, _)| i)
-            .unwrap_or(text.len())
+        text.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(text.len())
     }
 
     fn chars_slice(text: &str, start: usize, end: usize) -> &str {
@@ -815,8 +862,20 @@ impl BrowserApp {
         }
 
         let bar_h = layout::BOOKMARKS_BAR_HEIGHT * s;
-        fills.push(rect_fill(0.0, y, width as f32, bar_h, self.chrome_palette.bookmarks_bar_bg));
-        fills.push(rect_fill(0.0, y + bar_h - s, width as f32, s, self.chrome_palette.separator));
+        fills.push(rect_fill(
+            0.0,
+            y,
+            width as f32,
+            bar_h,
+            self.chrome_palette.bookmarks_bar_bg,
+        ));
+        fills.push(rect_fill(
+            0.0,
+            y + bar_h - s,
+            width as f32,
+            s,
+            self.chrome_palette.separator,
+        ));
 
         let font_size = 12.0 * s;
         let mut bx = 8.0 * s;
@@ -864,16 +923,12 @@ impl BrowserApp {
     }
 
     /// 渲染页面视口背景（外圈边框色圆角 + 内圈页面底色）
-    fn render_page_frame(
-        &self,
-        fills: &mut Vec<FillPrimitive>,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-        s: f32,
-    ) {
+    fn render_page_frame(&self, fills: &mut Vec<FillPrimitive>, x: f32, y: f32, w: f32, h: f32, s: f32) {
         if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        if layout::PAGE_FRAME_RADIUS <= 0.0 && layout::PAGE_FRAME_BORDER <= 0.0 {
+            fills.push(rect_fill(x, y, w, h, self.chrome_palette.page_bg));
             return;
         }
         let border = layout::PAGE_FRAME_BORDER * s;
@@ -892,13 +947,10 @@ impl BrowserApp {
     }
 
     /// 清掉圆角外溢出的页面像素（内圈用边框色、外圈用 gutter 色）。
-    fn render_page_frame_corner_masks(
-        &self,
-        fills: &mut Vec<FillPrimitive>,
-        width: u32,
-        height: u32,
-        s: f32,
-    ) {
+    fn render_page_frame_corner_masks(&self, fills: &mut Vec<FillPrimitive>, width: u32, height: u32, s: f32) {
+        if layout::PAGE_FRAME_RADIUS <= 0.0 {
+            return;
+        }
         let (fx, fy, fw, fh) = self.page_frame_rect_for(width, height);
         let outer_r = layout::PAGE_FRAME_RADIUS * s;
         push_rounded_rect_outside_corner_masks(fills, fx, fy, fw, fh, outer_r, self.chrome_palette.tab_active_bg);
@@ -910,40 +962,17 @@ impl BrowserApp {
     }
 
     /// 渲染页面视口灰色描边（在内容之上绘制，避免圆角处被内容污染）
-    fn render_page_frame_border(
-        &self,
-        fills: &mut Vec<FillPrimitive>,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-        s: f32,
-    ) {
-        if w <= 0.0 || h <= 0.0 {
+    fn render_page_frame_border(&self, fills: &mut Vec<FillPrimitive>, x: f32, y: f32, w: f32, h: f32, s: f32) {
+        if w <= 0.0 || h <= 0.0 || layout::PAGE_FRAME_RADIUS <= 0.0 || layout::PAGE_FRAME_BORDER <= 0.0 {
             return;
         }
         let border = layout::PAGE_FRAME_BORDER * s;
         let radius = layout::PAGE_FRAME_RADIUS * s;
-        push_rounded_rect_border(
-            fills,
-            x,
-            y,
-            w,
-            h,
-            radius,
-            border,
-            self.chrome_palette.separator,
-        );
+        push_rounded_rect_border(fills, x, y, w, h, radius, border, self.chrome_palette.separator);
     }
 
     /// Wayland 无系统装饰时，为非最大化窗口绘制 1px 外框描边。
-    fn render_custom_window_frame_border(
-        &self,
-        fills: &mut Vec<FillPrimitive>,
-        width: u32,
-        height: u32,
-        s: f32,
-    ) {
+    fn render_custom_window_frame_border(&self, fills: &mut Vec<FillPrimitive>, width: u32, height: u32, s: f32) {
         if !self.uses_custom_window_controls() || self.window_is_maximized {
             return;
         }
@@ -976,11 +1005,7 @@ impl BrowserApp {
             None => return,
         };
 
-        let content_y_offset = if self.shell.find_state().is_active() {
-            layout::FIND_BAR_HEIGHT * s
-        } else {
-            0.0
-        };
+        let content_y_offset = 0.0;
 
         let (title, url, is_loading) = match self.shell.active_tab() {
             Some(tab) => (
@@ -997,10 +1022,7 @@ impl BrowserApp {
         let tab_id = self.shell.active_tab_id().unwrap();
         let scroll = self.tab_scroll_state(tab_id);
         let layout = self.page_scroll_layout(tab_id);
-        let has_composite_paint = self
-            .tabs
-            .snapshot(tab_id)
-            .is_some_and(|s| s.should_composite_paint());
+        let has_composite_paint = self.tabs.snapshot(tab_id).is_some_and(|s| s.should_composite_paint());
 
         if has_composite_paint
             && self.render_active_webview(
@@ -1089,12 +1111,7 @@ impl BrowserApp {
 
         let page_primitives = primitives.clone();
 
-        let find_offset = if self.shell.find_state().is_active() {
-            layout::FIND_BAR_HEIGHT * self.scale_factor
-        } else {
-            0.0
-        };
-        let clip_top = viewport_y + find_offset;
+        let clip_top = viewport_y;
         let clip_bottom = viewport_y + viewport_h;
         let content_y_draw = viewport_y - scroll_y;
         let content_x_draw = viewport_x - scroll_x;
@@ -1151,13 +1168,13 @@ impl BrowserApp {
         )
     }
 
-    /// 渲染查找栏
+    /// 渲染浮动查找栏
     fn render_find_bar(
         &mut self,
         fills: &mut Vec<FillPrimitive>,
         glyphs: &mut Vec<GlyphDraw>,
         width: u32,
-        content_y: f32,
+        height: u32,
         font_size: f32,
         s: f32,
     ) {
@@ -1165,17 +1182,20 @@ impl BrowserApp {
             return;
         }
 
-        let y = content_y;
-        let bar_w = 320.0 * s;
-        let bar_x = width as f32 - bar_w - 10.0 * s;
+        let (bar_x, y, bar_w, bar_h) = self.find_bar_rect_for(width, height);
+        let radius = layout::FIND_BAR_FLOAT_RADIUS * s;
+        let border = s.max(1.0);
 
-        fills.push(rect_fill(
-            bar_x,
-            y,
-            bar_w,
-            layout::FIND_BAR_HEIGHT * s,
+        push_rounded_rect_fill(fills, bar_x, y, bar_w, bar_h, radius, self.chrome_palette.find_bar_border);
+        push_rounded_rect_fill(
+            fills,
+            bar_x + border,
+            y + border,
+            bar_w - 2.0 * border,
+            bar_h - 2.0 * border,
+            (radius - border).max(0.0),
             self.chrome_palette.find_bar_bg,
-        ));
+        );
 
         let display = if self.find_input.is_empty() {
             "Find...".to_string()
@@ -1189,8 +1209,8 @@ impl BrowserApp {
         };
         self.draw_ui_text(
             &display,
-            bar_x + 10.0 * s,
-            y + 5.0 * s,
+            bar_x + 12.0 * s,
+            y + (bar_h - font_size) * 0.5,
             font_size,
             text_color,
             glyphs,
@@ -1203,7 +1223,7 @@ impl BrowserApp {
             self.draw_ui_text(
                 &match_text,
                 match_x,
-                y + 5.0 * s,
+                y + (bar_h - font_size) * 0.5,
                 font_size,
                 self.chrome_palette.find_match_text,
                 glyphs,
@@ -1213,22 +1233,20 @@ impl BrowserApp {
             self.draw_ui_text(
                 "No matches",
                 no_match_x,
-                y + 5.0 * s,
+                y + (bar_h - font_size) * 0.5,
                 font_size,
                 self.chrome_palette.find_match_text,
                 glyphs,
             );
         }
 
-        let btn_y = y + 5.0 * s;
-        let btn_size = font_size;
+        let btn_y = y + (bar_h - font_size) * 0.5;
         let prev_x = bar_x + bar_w - 100.0 * s;
         let next_x = bar_x + bar_w - 70.0 * s;
         let close_x = bar_x + bar_w - 40.0 * s;
         let btn_w = 24.0 * s;
-        let bar_h = layout::FIND_BAR_HEIGHT * s;
         let icon_size = 16.0 * s;
-        let btn_cy = btn_y + btn_size * 0.5;
+        let btn_cy = btn_y + font_size * 0.5;
 
         for (bx, icon) in [
             (prev_x, crate::ui_icons::Icon::ChevronUp),
@@ -1238,7 +1256,13 @@ impl BrowserApp {
             let icon_cx = bx + btn_w / 2.0;
             let hovered = self.pointer_in_rect(bx, y, btn_w, bar_h);
             if hovered {
-                push_circle_fill(fills, icon_cx, btn_cy, icon_size + 8.0 * s, self.chrome_palette.tab_hover_bg);
+                push_circle_fill(
+                    fills,
+                    icon_cx,
+                    btn_cy,
+                    icon_size + 8.0 * s,
+                    self.chrome_palette.tab_hover_bg,
+                );
             }
             let icon_color = if hovered {
                 self.chrome_palette.address_bar_text
@@ -1280,27 +1304,63 @@ impl BrowserApp {
             .min(layout::AUTOCOMPLETE_MAX_VISIBLE);
         let row_h = layout::AUTOCOMPLETE_ROW_HEIGHT * s;
         let dropdown_h = visible_count as f32 * row_h;
+        let radius = layout::AUTOCOMPLETE_DROPDOWN_RADIUS * s;
+        let pad_h = layout::AUTOCOMPLETE_ROW_PAD_H * s;
+        let pad_v = layout::AUTOCOMPLETE_ROW_PAD_V * s;
+        let title_size = font_size * 0.92;
+        let url_size = font_size * 0.78;
 
-        fills.push(rect_fill(bar_x, dropdown_y, bar_w, dropdown_h, self.chrome_palette.autocomplete_bg));
+        push_rounded_rect_fill(
+            fills,
+            bar_x,
+            dropdown_y,
+            bar_w,
+            dropdown_h,
+            radius,
+            self.chrome_palette.separator,
+        );
+        push_rounded_rect_fill(
+            fills,
+            bar_x + s.max(1.0),
+            dropdown_y + s.max(1.0),
+            bar_w - 2.0 * s.max(1.0),
+            dropdown_h - 2.0 * s.max(1.0),
+            (radius - s.max(1.0)).max(0.0),
+            self.chrome_palette.autocomplete_bg,
+        );
 
         for (i, sug) in self.autocomplete.suggestions.iter().take(visible_count).enumerate() {
             let row_y = dropdown_y + i as f32 * row_h;
             let is_hovered = self.autocomplete.hovered_index == Some(i);
-
+            let is_selected = self.autocomplete.hovered_index.is_none() && self.autocomplete.selected_index == Some(i);
             if is_hovered {
-                fills.push(rect_fill(bar_x, row_y, bar_w, row_h, self.chrome_palette.autocomplete_hover_bg));
+                fills.push(rect_fill(
+                    bar_x + s.max(1.0),
+                    row_y,
+                    bar_w - 2.0 * s.max(1.0),
+                    row_h,
+                    self.chrome_palette.autocomplete_hover_bg,
+                ));
+            } else if is_selected {
+                fills.push(rect_fill(
+                    bar_x + s.max(1.0),
+                    row_y,
+                    bar_w - 2.0 * s.max(1.0),
+                    row_h,
+                    self.chrome_palette.autocomplete_selected_bg,
+                ));
             }
 
             let source_label = match sug.source() {
                 SuggestionSource::Bookmark => "★",
-                SuggestionSource::History => "🕐",
+                SuggestionSource::History => "◷",
             };
-            let source_size = font_size * 0.85;
-            let text_x = bar_x + 10.0 * s;
+            let source_size = font_size * 0.82;
+            let text_x = bar_x + pad_h;
             self.draw_ui_text(
                 source_label,
                 text_x,
-                row_y + 5.0 * s,
+                row_y + pad_v,
                 source_size,
                 if sug.source() == SuggestionSource::Bookmark {
                     self.chrome_palette.autocomplete_bookmark
@@ -1311,34 +1371,29 @@ impl BrowserApp {
             );
 
             let title = sug.title();
-            let title_area_w = bar_w - 180.0 * s;
-            let truncated_title = self.truncate_ui_text(title, title_area_w, source_size);
+            let title_x = text_x + 22.0 * s;
+            let title_area_w = bar_w - pad_h * 2.0 - 22.0 * s;
+            let truncated_title = self.truncate_ui_text(title, title_area_w, title_size);
             self.draw_ui_text(
                 &truncated_title,
-                text_x + 24.0 * s,
-                row_y + 5.0 * s,
-                source_size,
+                title_x,
+                row_y + pad_v,
+                title_size,
                 self.chrome_palette.autocomplete_text,
                 glyphs,
             );
 
             let url = sug.url();
-            let url_size = font_size * 0.75;
-            let url_area_w = bar_w * 0.4;
-            let truncated_url = self.truncate_ui_text(url, url_area_w, url_size);
-            let url_display_width = self.measure_ui_text_width(&truncated_url, url_size);
-            let url_x = bar_x + bar_w - 10.0 * s;
+            let truncated_url = self.truncate_ui_text(url, title_area_w, url_size);
             self.draw_ui_text(
                 &truncated_url,
-                url_x - url_display_width,
-                row_y + 5.0 * s,
+                title_x,
+                row_y + pad_v + title_size + 2.0 * s,
                 url_size,
                 self.chrome_palette.autocomplete_url,
                 glyphs,
             );
         }
-
-        fills.push(rect_fill(bar_x, dropdown_y + dropdown_h, bar_w, s, self.chrome_palette.separator));
     }
 
     /// 渲染右键上下文菜单
@@ -1349,44 +1404,24 @@ impl BrowserApp {
 
         let menu_x = self.context_menu.x;
         let menu_y = self.context_menu.y;
-        let row_h = 28.0 * s;
-        let menu_w = 200.0 * s;
+        let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let menu_w = layout::CONTEXT_MENU_WIDTH * s;
         let menu_h = self.context_menu.items.len() as f32 * row_h;
-        let font_size = 13.0 * s;
+        let font_size = layout::CHROME_FONT_SIZE * s;
+        let radius = layout::CONTEXT_MENU_RADIUS * s;
+        let border = s.max(1.0);
+        let pad_h = layout::CONTEXT_MENU_PAD_H * s;
 
-        // 菜单背景
-        fills.push(rect_fill(menu_x, menu_y, menu_w, menu_h, self.chrome_palette.context_menu_bg));
-
-        // 菜单边框
-        let border_w = 1.0 * s;
-        fills.push(rect_fill(
-            menu_x,
-            menu_y,
-            menu_w,
-            border_w,
-            self.chrome_palette.context_menu_separator,
-        ));
-        fills.push(rect_fill(
-            menu_x,
-            menu_y + menu_h - border_w,
-            menu_w,
-            border_w,
-            self.chrome_palette.context_menu_separator,
-        ));
-        fills.push(rect_fill(
-            menu_x,
-            menu_y,
-            border_w,
-            menu_h,
-            self.chrome_palette.context_menu_separator,
-        ));
-        fills.push(rect_fill(
-            menu_x + menu_w - border_w,
-            menu_y,
-            border_w,
-            menu_h,
-            self.chrome_palette.context_menu_separator,
-        ));
+        push_rounded_rect_fill(fills, menu_x, menu_y, menu_w, menu_h, radius, self.chrome_palette.context_menu_separator);
+        push_rounded_rect_fill(
+            fills,
+            menu_x + border,
+            menu_y + border,
+            menu_w - 2.0 * border,
+            menu_h - 2.0 * border,
+            (radius - border).max(0.0),
+            self.chrome_palette.context_menu_bg,
+        );
 
         for (i, label) in self.context_menu.items.iter().enumerate() {
             let row_y = menu_y + i as f32 * row_h;
@@ -1394,22 +1429,21 @@ impl BrowserApp {
 
             if is_hovered {
                 fills.push(rect_fill(
-                    menu_x + border_w,
+                    menu_x + border,
                     row_y,
-                    menu_w - 2.0 * border_w,
+                    menu_w - 2.0 * border,
                     row_h,
                     self.chrome_palette.context_menu_hover_bg,
                 ));
             }
 
-            // 分隔线项
             if label == "---" {
                 let sep_y = row_y + row_h / 2.0;
                 fills.push(rect_fill(
-                    menu_x + 12.0 * s,
+                    menu_x + pad_h,
                     sep_y,
-                    menu_w - 24.0 * s,
-                    border_w,
+                    menu_w - 2.0 * pad_h,
+                    border,
                     self.chrome_palette.context_menu_separator,
                 ));
                 continue;
@@ -1417,8 +1451,8 @@ impl BrowserApp {
 
             self.draw_ui_text(
                 label,
-                menu_x + 16.0 * s,
-                row_y + 6.0 * s,
+                menu_x + pad_h,
+                row_y + (row_h - font_size) * 0.5,
                 font_size,
                 self.chrome_palette.context_menu_text,
                 glyphs,
@@ -1460,7 +1494,15 @@ impl BrowserApp {
         let radius = layout::STATUS_BAR_FLOAT_RADIUS * s;
         let border = s;
 
-        push_rounded_rect_fill(fills, pill_x, pill_y, pill_w, status_h, radius, self.chrome_palette.separator);
+        push_rounded_rect_fill(
+            fills,
+            pill_x,
+            pill_y,
+            pill_w,
+            status_h,
+            radius,
+            self.chrome_palette.separator,
+        );
         push_rounded_rect_fill(
             fills,
             pill_x + border,
@@ -1569,8 +1611,8 @@ impl BrowserApp {
         result
     }
 
-    /// 渲染下载进度条（状态栏上方）
-    fn render_download_bar(
+    /// 渲染浮动下载面板（右下角）
+    fn render_download_panel(
         &self,
         fills: &mut Vec<FillPrimitive>,
         glyphs: &mut Vec<GlyphDraw>,
@@ -1583,38 +1625,52 @@ impl BrowserApp {
             return;
         }
 
-        let bar_h = layout::DOWNLOAD_BAR_HEIGHT * s;
-        let frame_bottom_y = self.page_frame_bottom_y_for(width, height);
-        let bar_y = frame_bottom_y - bar_h;
+        let (panel_x, panel_y, panel_w, panel_h) = self.download_panel_rect_for(width, height);
+        let radius = layout::DOWNLOAD_PANEL_RADIUS * s;
+        let border = s.max(1.0);
 
-        // 背景
-        fills.push(rect_fill(0.0, bar_y, width as f32, bar_h, self.chrome_palette.download_bar_bg));
+        push_rounded_rect_fill(fills, panel_x, panel_y, panel_w, panel_h, radius, self.chrome_palette.separator);
+        push_rounded_rect_fill(
+            fills,
+            panel_x + border,
+            panel_y + border,
+            panel_w - 2.0 * border,
+            panel_h - 2.0 * border,
+            (radius - border).max(0.0),
+            self.chrome_palette.download_bar_bg,
+        );
 
-        // 显示第一个活跃下载的信息
         let downloads = self.shell.downloads();
         let active: Vec<_> = downloads.iter().filter(|d| d.is_active()).collect();
         if let Some(dl) = active.first() {
             let font_size = 11.0 * s;
+            let title_size = 12.0 * s;
 
-            // 文件名
+            self.draw_ui_text(
+                "Downloading",
+                panel_x + 12.0 * s,
+                panel_y + 10.0 * s,
+                title_size,
+                self.chrome_palette.download_bar_text,
+                glyphs,
+            );
+
             let name_text = dl.filename();
             self.draw_ui_text(
                 name_text,
-                10.0 * s,
-                bar_y + 6.0 * s,
+                panel_x + 12.0 * s,
+                panel_y + 28.0 * s,
                 font_size,
                 self.chrome_palette.download_bar_text,
                 glyphs,
             );
 
-            // 进度条
             let progress = dl.progress();
-            let bar_width = 120.0 * s;
-            let bar_start_x = width as f32 - bar_width - 80.0 * s;
-            let bar_top = bar_y + 8.0 * s;
+            let bar_width = panel_w - 24.0 * s;
+            let bar_start_x = panel_x + 12.0 * s;
+            let bar_top = panel_y + panel_h - 18.0 * s;
             let bar_inner_h = 6.0 * s;
 
-            // 进度条背景
             fills.push(rect_fill(
                 bar_start_x,
                 bar_top,
@@ -1622,7 +1678,6 @@ impl BrowserApp {
                 bar_inner_h,
                 self.chrome_palette.separator,
             ));
-            // 进度条填充
             fills.push(rect_fill(
                 bar_start_x,
                 bar_top,
@@ -1631,12 +1686,12 @@ impl BrowserApp {
                 self.chrome_palette.download_bar_fill,
             ));
 
-            // 百分比文字
             let pct_text = format!("{:.0}%", progress * 100.0);
+            let pct_w = self.measure_ui_text_width(&pct_text, font_size);
             self.draw_ui_text(
                 &pct_text,
-                bar_start_x + bar_width + 8.0 * s,
-                bar_y + 6.0 * s,
+                panel_x + panel_w - 12.0 * s - pct_w,
+                panel_y + 10.0 * s,
                 font_size,
                 self.chrome_palette.download_bar_text,
                 glyphs,
@@ -1770,13 +1825,7 @@ impl ViewportClip {
     }
 }
 
-fn clip_axis_aligned_rect(
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    clip: ViewportClip,
-) -> Option<(f32, f32, f32, f32)> {
+fn clip_axis_aligned_rect(x: f32, y: f32, w: f32, h: f32, clip: ViewportClip) -> Option<(f32, f32, f32, f32)> {
     if clip.excludes(x, y, w, h) {
         return None;
     }
@@ -1801,7 +1850,8 @@ fn clamp_rounded_rect_radii(rr: &mut zero_render_foundation::primitive::RoundedR
 }
 
 fn clip_rect_field(rect: &mut Rect, clip: ViewportClip) -> bool {
-    let Some((x, y, w, h)) = clip_axis_aligned_rect(rect.origin.x, rect.origin.y, rect.size.width, rect.size.height, clip)
+    let Some((x, y, w, h)) =
+        clip_axis_aligned_rect(rect.origin.x, rect.origin.y, rect.size.width, rect.size.height, clip)
     else {
         return false;
     };
@@ -1870,13 +1920,16 @@ pub fn transform_webview_primitives(
         let y = fill.rect.origin.y * s + y_offset;
         let w = fill.rect.size.width * s;
         let h = fill.rect.size.height * s;
-        let Some((x, y, w, h)) = clip_viewport.and_then(|clip| clip_axis_aligned_rect(x, y, w, h, clip)).or_else(|| {
-            if clip_viewport.is_some() {
-                None
-            } else {
-                Some((x, y, w, h))
-            }
-        }) else {
+        let Some((x, y, w, h)) = clip_viewport
+            .and_then(|clip| clip_axis_aligned_rect(x, y, w, h, clip))
+            .or_else(|| {
+                if clip_viewport.is_some() {
+                    None
+                } else {
+                    Some((x, y, w, h))
+                }
+            })
+        else {
             continue;
         };
         out.fills.push(FillPrimitive {
@@ -1924,7 +1977,12 @@ pub fn transform_webview_primitives(
                 x1: x1 * s + x_offset,
                 y1: y1 * s + y_offset,
             },
-            GradientKind::Radial { cx, cy, inner_radius, outer_radius } => GradientKind::Radial {
+            GradientKind::Radial {
+                cx,
+                cy,
+                inner_radius,
+                outer_radius,
+            } => GradientKind::Radial {
                 cx: cx * s + x_offset,
                 cy: cy * s + y_offset,
                 inner_radius: inner_radius * s,
@@ -1948,7 +2006,12 @@ pub fn transform_webview_primitives(
         let full_rect = Rect::new(x, y, w, h);
 
         if let Some(clip) = clip_viewport
-            && clip.excludes(full_rect.origin.x, full_rect.origin.y, full_rect.size.width, full_rect.size.height)
+            && clip.excludes(
+                full_rect.origin.x,
+                full_rect.origin.y,
+                full_rect.size.width,
+                full_rect.size.height,
+            )
         {
             continue;
         }

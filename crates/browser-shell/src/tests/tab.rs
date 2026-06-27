@@ -21,6 +21,20 @@ fn test_tab_new_empty() {
 }
 
 #[test]
+fn test_tab_state_flags() {
+    let mut tab = Tab::new("https://example.com");
+    assert!(!tab.is_pinned());
+    tab.set_pinned(true);
+    assert!(tab.is_pinned());
+    tab.set_muted(true);
+    assert!(tab.is_muted());
+    tab.set_crashed(true);
+    assert!(tab.is_crashed());
+    tab.set_needs_attention(true);
+    assert!(tab.needs_attention());
+}
+
+#[test]
 fn test_tab_set_url() {
     let mut tab = Tab::new_empty();
     tab.set_url("https://example.com");
