@@ -1,4 +1,8 @@
 //! ZeroWeb 渲染进程入口 — 独立进程处理页面渲染，经 IPC 向浏览器传递绘制快照。
+//!
+// Windows：GUI 子系统。renderer 由 browser 通过 stdin/stdout 管道 spawn，
+// 不需要控制台；不加此项 Windows 会为子进程分配一个控制台窗口。
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod error_page;
 mod ipc_fetch;
