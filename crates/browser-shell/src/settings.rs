@@ -80,9 +80,21 @@ impl Default for BrowserSettings {
 }
 
 impl BrowserSettings {
+    /// 默认缩放下限。
+    pub const DEFAULT_ZOOM_MIN: f32 = 0.25;
+    /// 默认缩放上限。
+    pub const DEFAULT_ZOOM_MAX: f32 = 5.0;
+    /// 设置页 / 快捷键缩放步进。
+    pub const DEFAULT_ZOOM_STEP: f32 = 0.1;
+
     /// 创建默认设置。
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 按步进调整默认缩放并返回新值。
+    pub fn adjust_default_zoom_by(&self, delta: f32) -> f32 {
+        (self.default_zoom + delta).clamp(Self::DEFAULT_ZOOM_MIN, Self::DEFAULT_ZOOM_MAX)
     }
 
     /// 使用指定搜索引擎生成搜索 URL。

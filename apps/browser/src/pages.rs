@@ -188,32 +188,54 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         )
     };
 
-    let (cycle_search, home_presets_title, home_example, home_newtab) = match lang {
+    let (cycle_search, home_presets_title, home_example, home_newtab, edit_home, home_edit_hint) = match lang {
         UiLanguage::ZhCn => (
             "切换搜索引擎",
             "常用主页",
             "example.com",
             "欢迎页 (zero://newtab)",
+            "自定义…",
+            "点击后在地址栏输入主页 URL，按 Enter 保存",
         ),
         UiLanguage::EnUs => (
             "Cycle Search Engine",
             "Common Home Pages",
             "example.com",
             "Welcome (zero://newtab)",
+            "Custom…",
+            "Click, type the home URL in the address bar, then press Enter",
         ),
+    };
+
+    let (zoom_decrease, zoom_increase, zoom_reset_label) = match lang {
+        UiLanguage::ZhCn => ("缩小", "放大", "重置 100%"),
+        UiLanguage::EnUs => ("Decrease", "Increase", "Reset 100%"),
     };
 
     let search_actions = action_link("zero://settings/cycle/search_engine", cycle_search);
     let home_actions = format!(
         r#"<p style="font-size:13px;color:#80868b;margin:12px 0 4px;">{home_presets_title}</p>
 <p style="font-size:14px;color:#666;line-height:2;">
-  {example_link}{newtab_link}
-</p>"#,
+  {example_link}{newtab_link}{custom_link}
+</p>
+<p style="font-size:12px;color:#80868b;margin:8px 0 0;">{home_edit_hint}</p>"#,
         example_link = action_link(
             "zero://settings/set/home_url/https%3A%2F%2Fexample.com",
             home_example,
         ),
         newtab_link = action_link("zero://settings/set/home_url/zero%3A%2F%2Fnewtab", home_newtab),
+        custom_link = action_link("zero://settings/edit/home_url", edit_home),
+    );
+
+    let zoom = (settings.default_zoom * 100.0) as u32;
+
+    let zoom_actions = format!(
+        r#"<div style="line-height:2;">{current_label} zoom: <strong>{zoom}%</strong>
+  {decrease}{increase}{reset}
+</div>"#,
+        decrease = action_link("zero://settings/adjust/default_zoom/down", zoom_decrease),
+        increase = action_link("zero://settings/adjust/default_zoom/up", zoom_increase),
+        reset = action_link("zero://settings/set/default_zoom/1.0", zoom_reset_label),
     );
 
     format!(
@@ -249,7 +271,7 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
       <h2 style="font-size: 18px; margin-top: 0; color: #555;">{section_appearance}</h2>
       <div style="font-size: 14px; color: #666;">
         {bookmarks_row}
-        <div style="line-height: 2;">{current_label} zoom: <strong>{zoom}%</strong></div>
+        {zoom_actions}
       </div>
     </div>
 
@@ -305,9 +327,9 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
             settings.show_bookmarks_bar,
         ),
         home = settings.home_url,
-        zoom = (settings.default_zoom * 100.0) as u32,
         search_actions = search_actions,
         home_actions = home_actions,
+        zoom_actions = zoom_actions,
     )
 }
 
