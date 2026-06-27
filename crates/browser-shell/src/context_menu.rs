@@ -65,6 +65,12 @@ pub enum TabMenuLabel {
     Mute,
     /// Unmute tab.
     Unmute,
+    /// Duplicate tab.
+    Duplicate,
+    /// Close other tabs.
+    CloseOthers,
+    /// Close tabs to the right.
+    CloseToRight,
     /// Close tab.
     Close,
 }
@@ -78,6 +84,9 @@ pub fn tab_menu_label(label: TabMenuLabel, language: UiLanguage) -> &'static str
             TabMenuLabel::Unpin => "取消固定标签页",
             TabMenuLabel::Mute => "静音标签页",
             TabMenuLabel::Unmute => "取消静音标签页",
+            TabMenuLabel::Duplicate => "复制标签页",
+            TabMenuLabel::CloseOthers => "关闭其他标签页",
+            TabMenuLabel::CloseToRight => "关闭右侧标签页",
             TabMenuLabel::Close => "关闭标签页",
         },
         UiLanguage::EnUs => match label {
@@ -86,6 +95,9 @@ pub fn tab_menu_label(label: TabMenuLabel, language: UiLanguage) -> &'static str
             TabMenuLabel::Unpin => "Unpin Tab",
             TabMenuLabel::Mute => "Mute Tab",
             TabMenuLabel::Unmute => "Unmute Tab",
+            TabMenuLabel::Duplicate => "Duplicate Tab",
+            TabMenuLabel::CloseOthers => "Close Other Tabs",
+            TabMenuLabel::CloseToRight => "Close Tabs to the Right",
             TabMenuLabel::Close => "Close Tab",
         },
     }

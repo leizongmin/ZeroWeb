@@ -471,3 +471,61 @@ fn test_tab_navigation_history_boundary() {
     assert!(tab.go_forward()); // → C
     assert!(!tab.go_forward(), "已到历史末尾应返回 false");
 }
+
+// ── TabManager duplicate / close_others / close_to_right 测试 ──
+
+#[test]
+fn test_tab_manager_duplicate_tab_inserts_after_and_activates() {
+    let mut mgr = TabManager::new();
+    let id0 = mgr.create_tab(Some("https://a.com"));
+    let id1 = mgr.create_tab(Some("https://b.com"));
+    mgr.switch_to(id0);
+    let dup = mgr.duplicate_tab(id0).expect("应返回副本 id");
+    assert_ne!(dup, id0);
+    assert_eq!(mgr.len(), 3);
+    assert_eq!(mgr.active_tab_id(), Some(dup));
+    let urls: Vec<_> = mgr.tabs().map(|t| t.url().unwrap_or("")).collect();
+    assert_eq!(urls, &["https://a.com", "https://a.com", "https://b.com"]);
+    let _ = id1;
+}
+
+#[test]
+fn test_tab_manager_duplicate_nonexistent_returns_none() {
+    let mut mgr = TabManager::new();
+    mgr.create_tab(Some("https://a.com"));
+    assert!(mgr.duplicate_tab(TabId(99999)).is_none());
+}
+
+#[test]
+fn test_tab_manager_close_other_tabs() {
+    let mut mgr = TabManager::new();
+    let id0 = mgr.create_tab(Some("https://a.com"));
+    let _id1 = mgr.create_tab(Some("https://b.com"));
+    let _id2 = mgr.create_tab(Some("https://c.com"));
+    mgr.close_other_tabs(id0);
+    assert_eq!(mgr.len(), 1);
+    assert_eq!(mgr.active_tab_id(), Some(id0));
+    assert_eq!(mgr.tabs().next().unwrap().url(), Some("https://a.com"));
+}
+
+#[test]
+fn test_tab_manager_close_tabs_to_right() {
+    let mut mgr = TabManager::new();
+    let id0 = mgr.create_tab(Some("https://a.com"));
+    let _id1 = mgr.create_tab(Some("https://b.com"));
+    let _id2 = mgr.create_tab(Some("https://c.com"));
+    mgr.close_tabs_to_right(id0);
+    assert_eq!(mgr.len(), 1);
+    assert_eq!(mgr.tabs().next().unwrap().url(), Some("https://a.com"));
+}
+
+#[test]
+fn test_tab_manager_close_tabs_to_right_keeps_left() {
+    let mut mgr = TabManager::new();
+    let _id0 = mgr.create_tab(Some("https://a.com"));
+    let id1 = mgr.create_tab(Some("https://b.com"));
+    let _id2 = mgr.create_tab(Some("https://c.com"));
+    mgr.close_tabs_to_right(id1);
+    let urls: Vec<_> = mgr.tabs().map(|t| t.url().unwrap_or("")).collect();
+    assert_eq!(urls, &["https://a.com", "https://b.com"]);
+}

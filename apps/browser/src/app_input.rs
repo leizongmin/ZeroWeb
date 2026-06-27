@@ -1492,14 +1492,22 @@ impl BrowserApp {
                 pin_label.to_string(),
                 mute_label.to_string(),
                 "---".to_string(),
+                tab_menu_label(TabMenuLabel::Duplicate, language).to_string(),
+                "---".to_string(),
                 tab_menu_label(TabMenuLabel::Close, language).to_string(),
+                tab_menu_label(TabMenuLabel::CloseOthers, language).to_string(),
+                tab_menu_label(TabMenuLabel::CloseToRight, language).to_string(),
             ],
             item_ids: vec![
                 Some("tab_reload".to_string()),
                 Some("tab_pin".to_string()),
                 Some("tab_mute".to_string()),
                 None,
+                Some("tab_duplicate".to_string()),
+                None,
                 Some("tab_close".to_string()),
+                Some("tab_close_others".to_string()),
+                Some("tab_close_to_right".to_string()),
             ],
             hovered_index: None,
             x: x as f32,
@@ -1723,6 +1731,21 @@ impl BrowserApp {
             "tab_close" => {
                 if let Some(tab_id) = source_tab_id {
                     self.close_tab_by_id(tab_id);
+                }
+            }
+            "tab_duplicate" => {
+                if let Some(tab_id) = source_tab_id {
+                    self.duplicate_tab_by_id(tab_id);
+                }
+            }
+            "tab_close_others" => {
+                if let Some(tab_id) = source_tab_id {
+                    self.close_other_tabs_by_id(tab_id);
+                }
+            }
+            "tab_close_to_right" => {
+                if let Some(tab_id) = source_tab_id {
+                    self.close_tabs_to_right_by_id(tab_id);
                 }
             }
             "view_source" => {

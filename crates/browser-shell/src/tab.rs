@@ -101,6 +101,23 @@ impl Tab {
         }
     }
 
+    /// 创建当前标签页的副本（新 ID，保留 URL/标题/历史/固定/无痕等状态，重置加载与崩溃状态）。
+    pub fn duplicate(&self) -> Self {
+        Self {
+            id: TabId::next(),
+            url: self.url.clone(),
+            title: self.title.clone(),
+            loading: false,
+            history_index: self.history_index,
+            history: self.history.clone(),
+            private: self.private,
+            pinned: self.pinned,
+            muted: self.muted,
+            crashed: false,
+            needs_attention: false,
+        }
+    }
+
     /// 是否无痕标签页。
     pub fn is_private(&self) -> bool {
         self.private
@@ -342,6 +359,41 @@ impl TabManager {
                 let new_index = if index > 0 { index - 1 } else { 0 };
                 self.active_index = Some(new_index.min(self.tabs.len() - 1));
             }
+        }
+    }
+
+    /// 复制指定标签页，副本插入到原标签页之后并设为活跃。
+    ///
+    /// 返回新标签页的 ID；若指定标签页不存在则返回 `None`。
+    pub fn duplicate_tab(&mut self, id: TabId) -> Option<TabId> {
+        let index = self.tabs.iter().position(|t| t.id() == id)?;
+        let copy = self.tabs[index].duplicate();
+        let new_id = copy.id();
+        self.tabs.insert(index + 1, copy);
+        self.active_index = Some(index + 1);
+        Some(new_id)
+    }
+
+    /// 关闭除指定标签页外的所有标签页，并将活跃标签页切换为该标签页。
+    pub fn close_other_tabs(&mut self, id: TabId) {
+        let Some(keep_index) = self.tabs.iter().position(|t| t.id() == id) else {
+            return;
+        };
+        self.tabs.retain(|t| t.id() == id);
+        self.active_index = if self.tabs.is_empty() { None } else { Some(0) };
+        let _ = keep_index;
+    }
+
+    /// 关闭指定标签页右侧的所有标签页。
+    pub fn close_tabs_to_right(&mut self, id: TabId) {
+        let Some(index) = self.tabs.iter().position(|t| t.id() == id) else {
+            return;
+        };
+        self.tabs.truncate(index + 1);
+        if self.tabs.is_empty() {
+            self.active_index = None;
+        } else {
+            self.active_index = Some(self.active_index.unwrap_or(0).min(self.tabs.len() - 1));
         }
     }
 
