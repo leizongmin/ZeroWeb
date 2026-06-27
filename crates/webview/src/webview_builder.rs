@@ -52,10 +52,7 @@ impl WebViewBuilder {
     }
 
     /// 使用外部 JS 执行器（专用 JS 线程），不在 WebView 内初始化 V8。
-    pub fn external_script(
-        mut self,
-        executor: std::sync::Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>,
-    ) -> Self {
+    pub fn external_script(mut self, executor: crate::ExternalScriptExecutor) -> Self {
         self.config.external_script = Some(executor);
         self
     }

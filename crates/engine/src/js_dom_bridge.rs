@@ -182,10 +182,10 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 apply_style_property(doc, node, property, value);
             }
             DomMutation::Remove { selector } => {
-                if let Some(node) = find_by_selector(doc, selector) {
-                    if let Some(parent) = doc.get(node).and_then(|n| n.parent) {
-                        doc.remove_child(parent, node).map_err(|e| e.to_string())?;
-                    }
+                if let Some(node) = find_by_selector(doc, selector)
+                    && let Some(parent) = doc.get(node).and_then(|n| n.parent)
+                {
+                    doc.remove_child(parent, node).map_err(|e| e.to_string())?;
                 }
             }
             DomMutation::CreateElement { handle, tag } => {
@@ -255,10 +255,10 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 apply_style_property(doc, node, property, value);
             }
             DomMutation::RemoveHandle { handle } => {
-                if let Some(node) = handles.get(handle).copied() {
-                    if let Some(parent) = doc.get(node).and_then(|n| n.parent) {
-                        doc.remove_child(parent, node).map_err(|e| e.to_string())?;
-                    }
+                if let Some(node) = handles.get(handle).copied()
+                    && let Some(parent) = doc.get(node).and_then(|n| n.parent)
+                {
+                    doc.remove_child(parent, node).map_err(|e| e.to_string())?;
                 }
             }
         }
@@ -389,20 +389,20 @@ pub fn query_inner_html_from_html(html: &str, selector: &str) -> String {
 /// 从已记录变更中查询 create 句柄上的 innerHTML。
 pub fn query_inner_html_from_mutations(mutations: &[DomMutation], handle: &str) -> String {
     for m in mutations.iter().rev() {
-        if let DomMutation::SetInnerHtmlOnHandle { handle: h, html } = m {
-            if h == handle {
-                return html.clone();
-            }
+        if let DomMutation::SetInnerHtmlOnHandle { handle: h, html } = m
+            && h == handle
+        {
+            return html.clone();
         }
-        if let DomMutation::CreateTextNode { handle: h, text } = m {
-            if h == handle {
-                return text.clone();
-            }
+        if let DomMutation::CreateTextNode { handle: h, text } = m
+            && h == handle
+        {
+            return text.clone();
         }
-        if let DomMutation::SetTextOnHandle { handle: h, text } = m {
-            if h == handle {
-                return text.clone();
-            }
+        if let DomMutation::SetTextOnHandle { handle: h, text } = m
+            && h == handle
+        {
+            return text.clone();
         }
     }
     String::new()
@@ -460,10 +460,10 @@ pub fn query_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: 
             name: n,
             value: v,
         } = m
+            && h == handle
+            && n == name
         {
-            if h == handle && n == name {
-                return v.clone();
-            }
+            return v.clone();
         }
     }
     String::new()
@@ -472,15 +472,15 @@ pub fn query_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: 
 /// 从已记录变更中查询 create 句柄上的 textContent。
 pub fn query_text_from_mutations(mutations: &[DomMutation], handle: &str) -> String {
     for m in mutations.iter().rev() {
-        if let DomMutation::CreateTextNode { handle: h, text } = m {
-            if h == handle {
-                return text.clone();
-            }
+        if let DomMutation::CreateTextNode { handle: h, text } = m
+            && h == handle
+        {
+            return text.clone();
         }
-        if let DomMutation::SetTextOnHandle { handle: h, text } = m {
-            if h == handle {
-                return text.clone();
-            }
+        if let DomMutation::SetTextOnHandle { handle: h, text } = m
+            && h == handle
+        {
+            return text.clone();
         }
     }
     String::new()

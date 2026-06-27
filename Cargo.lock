@@ -5767,6 +5767,7 @@ dependencies = [
  "zero-engine",
  "zero-host-runtime",
  "zero-net",
+ "zero-page-runtime",
  "zero-protocol",
  "zero-render-foundation",
  "zero-script-sandbox",
@@ -5867,6 +5868,7 @@ dependencies = [
  "zero-engine",
  "zero-layout-engine",
  "zero-net",
+ "zero-page-runtime",
  "zero-protocol",
  "zero-render-foundation",
  "zero-script-sandbox",
@@ -5906,6 +5908,14 @@ dependencies = [
  "tracing",
  "tungstenite",
  "url",
+]
+
+[[package]]
+name = "zero-page-runtime"
+version = "0.1.0"
+dependencies = [
+ "zero-engine",
+ "zero-render-foundation",
 ]
 
 [[package]]
@@ -5955,11 +5965,13 @@ dependencies = [
  "zero-engine",
  "zero-layout-engine",
  "zero-net",
+ "zero-page-runtime",
  "zero-protocol",
  "zero-render-foundation",
  "zero-script-sandbox",
  "zero-storage",
  "zero-style-system",
+ "zero-webview",
 ]
 
 [[package]]
@@ -6029,6 +6041,7 @@ dependencies = [
  "zero-engine",
  "zero-host-runtime",
  "zero-net",
+ "zero-page-runtime",
  "zero-render-foundation",
  "zero-script-sandbox",
  "zero-security",

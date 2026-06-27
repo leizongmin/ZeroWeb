@@ -10,17 +10,17 @@ use std::time::{Duration, Instant};
 
 use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
-use zero_protocol::message::{
-    DispatchDomEventParams, FetchParams, HitTestElementResultParams,
-    HitTestLinkParams, IpcColorScheme, IpcMessage, IpcMessageKind, LoadHtmlParams, SetColorSchemeParams,
-    SetViewportParams, StorageOpParams, StorageOperation, StorageType,
-};
 use zero_engine::{DomEventDetail, ElementHit};
+use zero_protocol::message::{
+    DispatchDomEventParams, FetchParams, HitTestElementResultParams, HitTestLinkParams, IpcColorScheme, IpcMessage,
+    IpcMessageKind, LoadHtmlParams, SetColorSchemeParams, SetViewportParams, StorageOpParams, StorageOperation,
+    StorageType,
+};
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
 
-use crate::tab_snapshot::TabSnapshot;
 use crate::tab_scripts::DomDispatchResult;
+use crate::tab_snapshot::TabSnapshot;
 
 /// 是否启用多进程后端（环境变量 `ZERO_BROWSER_MULTIPROCESS`；默认启用）。
 pub fn use_multiprocess_backend() -> bool {
@@ -64,10 +64,7 @@ fn resolve_renderer_binary() -> Option<PathBuf> {
         if candidate.is_file() {
             return Some(candidate);
         }
-        tracing::warn!(
-            "ZERO_RENDERER_PATH 指向的文件不存在: {}",
-            candidate.display()
-        );
+        tracing::warn!("ZERO_RENDERER_PATH 指向的文件不存在: {}", candidate.display());
     }
 
     if let Some(sibling) = renderer_binary_beside_current_exe() {
@@ -80,9 +77,7 @@ fn resolve_renderer_binary() -> Option<PathBuf> {
 /// 在 **当前进程可执行文件** 所在目录查找 `zero-renderer`。
 fn renderer_binary_beside_current_exe() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let sibling = exe
-        .parent()?
-        .join(renderer_binary_filename());
+    let sibling = exe.parent()?.join(renderer_binary_filename());
     sibling.is_file().then_some(sibling)
 }
 
@@ -110,9 +105,7 @@ pub struct ProcessTabBackend {
 impl ProcessTabBackend {
     /// 创建多进程后端；若找不到 `zero-renderer` 则返回 `None`（由调用方回退单进程 worker）。
     pub fn try_new() -> Option<Self> {
-        let renderer_bin = resolve_renderer_binary().unwrap_or_else(|| {
-            PathBuf::from(renderer_binary_filename())
-        });
+        let renderer_bin = resolve_renderer_binary().unwrap_or_else(|| PathBuf::from(renderer_binary_filename()));
         if !renderer_bin.is_file() {
             let expected = std::env::current_exe()
                 .ok()
@@ -141,13 +134,7 @@ impl ProcessTabBackend {
         }
     }
 
-    fn send_fetch_response_now(
-        &mut self,
-        tab_id: TabId,
-        request_id: u64,
-        status: u16,
-        body: Vec<u8>,
-    ) {
+    fn send_fetch_response_now(&mut self, tab_id: TabId, request_id: u64, status: u16, body: Vec<u8>) {
         if let Some(renderer) = self.renderer_mut(tab_id) {
             if let Err(e) = renderer.send_fetch_response(request_id, status, Vec::new(), body) {
                 tracing::warn!("FetchResponse send failed tab {}: {e}", tab_id.0);
@@ -188,7 +175,7 @@ impl ProcessTabBackend {
             }
             IpcMessageKind::UrlChanged(url) => snap.url = Some(url),
             IpcMessageKind::ViewPainted(params) => {
-                crate::paint_ipc::apply_paint_snapshot(snap, params);
+                crate::paint_ipc::apply_paint_snapshot(snap, *params);
                 snap.clear_browser_owned_hit_test();
             }
             _ => {}
@@ -296,8 +283,7 @@ impl ProcessTabBackend {
             }
             Err(e) => {
                 tracing::error!("Failed to spawn renderer for tab {}: {e}", tab_id.0);
-                self.pending_errors
-                    .push((tab_id, format!("无法启动渲染进程: {e}")));
+                self.pending_errors.push((tab_id, format!("无法启动渲染进程: {e}")));
             }
         }
     }
@@ -539,6 +525,7 @@ impl ProcessTabBackend {
     }
 
     /// DOM 事件派发（同步 IPC 请求/响应）。
+    #[allow(clippy::too_many_arguments)]
     pub fn dispatch_dom_event(
         &mut self,
         tab_id: TabId,
@@ -635,7 +622,7 @@ impl ProcessTabBackend {
                 IpcMessageKind::ViewPainted(params) => {
                     html_changed = true;
                     let snap = snapshots.entry(tab_id).or_default();
-                    crate::paint_ipc::apply_paint_snapshot(snap, params);
+                    crate::paint_ipc::apply_paint_snapshot(snap, *params);
                     snap.clear_browser_owned_hit_test();
                 }
                 kind => {
@@ -662,6 +649,6 @@ fn element_hit_from_ipc(result: HitTestElementResultParams) -> Option<ElementHit
 
 impl Drop for ProcessTabBackend {
     fn drop(&mut self) {
-        let _ = self.manager.shutdown_all();
+        self.manager.shutdown_all();
     }
 }

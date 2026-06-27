@@ -135,6 +135,42 @@ pub fn render_test_html(html: &str, css: &str, ctx: &TestContext) -> RenderOutpu
     }
 }
 
+/// 经**共享页面运行时**（WebView）渲染 HTML，返回图元——WPT 三路径统一的 runtime 路径。
+///
+/// 与 `render_test_html`（engine-direct）对自包含 HTML 产出一致（见 `runtime_path_tests`）。
+/// reftest 确定性门仍走 engine-direct（`render_test_html` / `reftest.rs`）；本函数供 runtime 一致性校验，
+/// 让 WPT 具备调用同一套页面运行时的能力（T6）。
+#[allow(dead_code)]
+pub fn render_test_html_via_runtime(
+    html: &str,
+    css: &str,
+    ctx: &TestContext,
+) -> zero_render_foundation::primitive::RenderPrimitives {
+    let mut wv = zero_webview::WebView::new(zero_webview::WebViewConfig {
+        width: ctx.viewport_width as u32,
+        height: ctx.viewport_height as u32,
+        ..Default::default()
+    });
+    wv.load_html(html, if css.is_empty() { None } else { Some(css) });
+    wv.last_render().map(|r| r.primitives.clone()).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod runtime_path_tests {
+    use super::*;
+
+    /// WPT 的 runtime 路径（WebView）须与 engine-direct 路径产出一致图元——三路径统一的实证。
+    #[test]
+    fn runtime_path_matches_engine_direct() {
+        let ctx = TestContext::default();
+        let html = r#"<html><body><div style="width:200px;height:100px;background:red">Box</div></body></html>"#;
+        let engine = render_test_html(html, "", &ctx);
+        let runtime = render_test_html_via_runtime(html, "", &ctx);
+        assert_eq!(engine.primitives.fills.len(), runtime.fills.len());
+        assert_eq!(engine.primitives.rounded_rects.len(), runtime.rounded_rects.len());
+    }
+}
+
 /// 运行单个测试用例，返回结果。
 ///
 /// 根据预期元数据管理已知行为：

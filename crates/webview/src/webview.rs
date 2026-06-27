@@ -18,6 +18,9 @@ use zero_wasm_sandbox::WasmInstance;
 
 use crate::WebViewError;
 
+/// 外部 JS 执行器类型（浏览器 Tab JS 线程注入；为 None 时使用进程内 V8）。
+pub type ExternalScriptExecutor = std::sync::Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
+
 /// WebView 配置。
 #[derive(Clone)]
 pub struct WebViewConfig {
@@ -35,7 +38,7 @@ pub struct WebViewConfig {
     pub devtools: bool,
     /// 外部 JS 执行器（浏览器 Tab JS 线程注入；为 None 时使用进程内 V8）。
     #[doc(hidden)]
-    pub external_script: Option<std::sync::Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>>,
+    pub external_script: Option<ExternalScriptExecutor>,
 }
 
 impl Default for WebViewConfig {
@@ -104,7 +107,7 @@ pub struct WebView {
     /// 进程内 JavaScript 沙箱（`external_script` 为 None 时使用）。
     js_sandbox: Option<zero_script_sandbox::V8Sandbox>,
     /// 外部 JS 执行器（专用 JS 线程）。
-    external_script: Option<std::sync::Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>>,
+    external_script: Option<ExternalScriptExecutor>,
     /// 当前 URL。
     current_url: Option<String>,
     /// 页面标题。
@@ -760,7 +763,7 @@ impl WebView {
         tracing::debug!("execute_script called: {} bytes", script.len());
 
         if let Some(ext) = &self.external_script {
-            return ext(script).map_err(|e| WebViewError::Script(e));
+            return ext(script).map_err(WebViewError::Script);
         }
 
         match self.js_sandbox.as_mut().expect("js sandbox").execute(script) {

@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 zero-browser-shell = { workspace = true }
 zero-webview = { workspace = true }
+zero-page-runtime = { workspace = true }
 zero-host-runtime = { workspace = true }
 zero-render-foundation = { workspace = true }
 zero-engine = { workspace = true }

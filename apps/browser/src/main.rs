@@ -8,6 +8,9 @@
 #![allow(unused_comparisons)]
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::absurd_extreme_comparisons)]
+// WIP：多进程后端（ProcessTabBackend 部分 API）与 tab_js_worker 线程 worker 脚本路径
+// 尚未全量接线，存在未用方法/字段/变体；T4/T5 统一脚本/帧后评估删除或接线。
+#![allow(dead_code)]
 
 mod app;
 mod clipboard;
