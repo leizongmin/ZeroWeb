@@ -76,6 +76,12 @@ impl PerOriginFetchScheduler {
 
     fn try_start(&mut self, job: QueuedJob, hook: Option<Arc<Mutex<Self>>>) {
         if self.in_flight.get(&job.origin).copied().unwrap_or(0) >= self.max_per_origin {
+            tracing::info!(
+                url = %job.url,
+                origin = %job.origin,
+                queued = self.queue.len() + 1,
+                "HTTP fetch queued (per-origin limit)"
+            );
             self.queue.push_back(job);
             return;
         }
@@ -83,6 +89,7 @@ impl PerOriginFetchScheduler {
     }
 
     fn start(&mut self, job: QueuedJob, hook: Option<Arc<Mutex<Self>>>) {
+        tracing::info!(url = %job.url, origin = %job.origin, "HTTP fetch start");
         *self.in_flight.entry(job.origin.clone()).or_insert(0) += 1;
         let client = self.client.clone();
         let url = job.url;
@@ -93,6 +100,15 @@ impl PerOriginFetchScheduler {
                 .get(&url)
                 .map(|resp| (resp.status_code, resp.body))
                 .map_err(|e| e.to_string());
+            match &result {
+                Ok((status, body)) => tracing::info!(
+                    url = %url,
+                    status,
+                    bytes = body.len(),
+                    "HTTP fetch done"
+                ),
+                Err(e) => tracing::warn!(url = %url, error = %e, "HTTP fetch failed"),
+            }
             let _ = reply_tx.send(result);
             if let Some(sched) = hook {
                 if let Ok(mut s) = sched.lock() {

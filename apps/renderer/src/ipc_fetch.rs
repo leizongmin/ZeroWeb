@@ -107,9 +107,10 @@ impl<'a> IpcAsyncFetchHost<'a> {
         }
     }
 
-    fn issue_fetch(&mut self, url: &str, reply: InflightReply) -> Result<(), String> {
+    fn issue_fetch(&mut self, url: &str, kind: &str, reply: InflightReply) -> Result<(), String> {
         let request_id = *self.next_fetch_id;
         *self.next_fetch_id += 1;
+        tracing::info!(request_id, url, kind, "renderer fetch start");
         let msg = IpcMessage {
             id: 0,
             kind: IpcMessageKind::FetchRequest(FetchParams {
@@ -131,7 +132,7 @@ impl<'a> IpcAsyncFetchHost<'a> {
 impl AsyncFetchHost for IpcAsyncFetchHost<'_> {
     fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>> {
         let (tx, rx) = channel();
-        if let Err(e) = self.issue_fetch(url, InflightReply::Text(tx)) {
+        if let Err(e) = self.issue_fetch(url, "text", InflightReply::Text(tx)) {
             let (fallback_tx, fallback_rx) = channel();
             let _ = fallback_tx.send(Err(e));
             return fallback_rx;
@@ -141,7 +142,7 @@ impl AsyncFetchHost for IpcAsyncFetchHost<'_> {
 
     fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>> {
         let (tx, rx) = channel();
-        if let Err(e) = self.issue_fetch(url, InflightReply::Bytes(tx)) {
+        if let Err(e) = self.issue_fetch(url, "bytes", InflightReply::Bytes(tx)) {
             let (fallback_tx, fallback_rx) = channel();
             let _ = fallback_tx.send(Err(e));
             return fallback_rx;
