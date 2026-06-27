@@ -3,7 +3,8 @@
 use std::sync::OnceLock;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::Duration;
+
+use zero_net::HttpClient;
 
 /// HTTP GET 任务结果。
 pub type HttpTextResult = Result<String, String>;
@@ -21,18 +22,9 @@ fn pool() -> &'static NetPoolInner {
         thread::Builder::new()
             .name("zero-net-pool".into())
             .spawn(move || {
-                let client = reqwest::blocking::Client::builder()
-                    .timeout(Duration::from_secs(30))
-                    .user_agent("ZeroBrowser/1.0")
-                    .build()
-                    .expect("net pool client");
-
+                let client = HttpClient::new();
                 while let Ok((url, reply_tx)) = job_rx.recv() {
-                    let result = client
-                        .get(&url)
-                        .send()
-                        .and_then(|r| r.text())
-                        .map_err(|e| e.to_string());
+                    let result = client.get(&url).and_then(|resp| resp.text()).map_err(|e| e.to_string());
                     let _ = reply_tx.send(result);
                 }
             })
@@ -54,18 +46,8 @@ pub fn fetch_bytes_async(url: impl Into<String>) -> Receiver<Result<Vec<u8>, Str
     let (tx, rx) = mpsc::channel();
     let url = url.into();
     thread::spawn(move || {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .user_agent("ZeroBrowser/1.0")
-            .build();
-        let result = match client {
-            Ok(c) => c
-                .get(&url)
-                .send()
-                .and_then(|r| r.bytes().map(|b| b.to_vec()))
-                .map_err(|e| e.to_string()),
-            Err(e) => Err(e.to_string()),
-        };
+        let client = HttpClient::new();
+        let result = client.get(&url).map(|resp| resp.body).map_err(|e| e.to_string());
         let _ = tx.send(result);
     });
     rx
