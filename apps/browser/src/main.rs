@@ -1307,7 +1307,10 @@ fn apply_window_chrome_action(app: &mut BrowserApp, window: &winit::window::Wind
                 sync_window_chrome_icon(app, window);
             }
         }
-        WindowChromeAction::Close => std::process::exit(0),
+        WindowChromeAction::Close => {
+            app.persist_user_data();
+            std::process::exit(0);
+        }
         WindowChromeAction::StartDrag => {
             if let Err(err) = window.drag_window() {
                 tracing::warn!("drag_window failed: {err}");
@@ -1514,6 +1517,7 @@ fn main() {
                 app.needs_redraw = true;
             }
             AppEvent::CloseRequested => {
+                app.persist_user_data();
                 tracing::info!("Window closed");
             }
             AppEvent::KeyboardInput { key, text, pressed } => {

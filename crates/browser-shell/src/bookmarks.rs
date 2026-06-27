@@ -1,9 +1,12 @@
 //! 书签管理 — 书签和文件夹的增删改查。
 
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use serde::{Deserialize, Serialize};
+
 /// 书签唯一标识符。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BookmarkId(pub u64);
 
 impl BookmarkId {
@@ -11,6 +14,18 @@ impl BookmarkId {
     fn next() -> Self {
         static COUNTER: AtomicU64 = AtomicU64::new(1);
         Self(COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// 确保持久化恢复后新 ID 不会与已有 ID 冲突。
+    fn sync_counter(min_next: u64) {
+        static COUNTER: AtomicU64 = AtomicU64::new(1);
+        let mut current = COUNTER.load(Ordering::Relaxed);
+        while current < min_next {
+            match COUNTER.compare_exchange_weak(current, min_next, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => return,
+                Err(actual) => current = actual,
+            }
+        }
     }
 }
 
@@ -180,6 +195,126 @@ impl Bookmarks {
     pub fn iter(&self) -> impl Iterator<Item = &Bookmark> {
         self.bookmarks.iter()
     }
+
+    /// 返回书签文件的默认路径。
+    ///
+    /// 遵循 XDG 规范：`~/.config/zeroweb/bookmarks.json`
+    pub fn default_path() -> PathBuf {
+        let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("zeroweb");
+        config_dir.join("bookmarks.json")
+    }
+
+    /// 从 JSON 文件加载书签。
+    ///
+    /// 如果文件不存在或解析失败，返回空书签集。
+    pub fn load(path: &Path) -> Self {
+        match std::fs::read_to_string(path) {
+            Ok(content) => serde_json::from_str::<BookmarksSnapshot>(&content)
+                .map(Self::from_snapshot)
+                .unwrap_or_default(),
+            Err(_) => Self::new(),
+        }
+    }
+
+    /// 从默认路径加载书签。
+    pub fn load_default() -> Self {
+        Self::load(&Self::default_path())
+    }
+
+    /// 将书签保存到 JSON 文件。
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {e}"))?;
+        }
+        let snapshot = self.to_snapshot();
+        let json = serde_json::to_string_pretty(&snapshot).map_err(|e| format!("Failed to serialize bookmarks: {e}"))?;
+        std::fs::write(path, json).map_err(|e| format!("Failed to write bookmarks: {e}"))?;
+        Ok(())
+    }
+
+    /// 保存到默认路径。
+    pub fn save_default(&self) -> Result<(), String> {
+        self.save(&Self::default_path())
+    }
+
+    fn to_snapshot(&self) -> BookmarksSnapshot {
+        BookmarksSnapshot {
+            bookmarks: self
+                .bookmarks
+                .iter()
+                .map(|b| BookmarkSnapshot {
+                    id: b.id.0,
+                    title: b.title.clone(),
+                    url: b.url.clone(),
+                    folder_id: b.folder_id.map(|id| id.0),
+                })
+                .collect(),
+            folders: self
+                .folders
+                .iter()
+                .map(|f| BookmarkFolderSnapshot {
+                    id: f.id.0,
+                    name: f.name.clone(),
+                })
+                .collect(),
+        }
+    }
+
+    fn from_snapshot(snapshot: BookmarksSnapshot) -> Self {
+        let mut max_id = 0u64;
+        let folders = snapshot
+            .folders
+            .into_iter()
+            .map(|f| {
+                max_id = max_id.max(f.id);
+                BookmarkFolder {
+                    id: BookmarkId(f.id),
+                    name: f.name,
+                }
+            })
+            .collect();
+        let bookmarks = snapshot
+            .bookmarks
+            .into_iter()
+            .map(|b| {
+                max_id = max_id.max(b.id);
+                if let Some(folder_id) = b.folder_id {
+                    max_id = max_id.max(folder_id);
+                }
+                Bookmark {
+                    id: BookmarkId(b.id),
+                    title: b.title,
+                    url: b.url,
+                    folder_id: b.folder_id.map(BookmarkId),
+                }
+            })
+            .collect();
+        if max_id > 0 {
+            BookmarkId::sync_counter(max_id + 1);
+        }
+        Self { bookmarks, folders }
+    }
+}
+
+/// 可序列化的书签快照。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BookmarksSnapshot {
+    bookmarks: Vec<BookmarkSnapshot>,
+    folders: Vec<BookmarkFolderSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BookmarkSnapshot {
+    id: u64,
+    title: String,
+    url: String,
+    folder_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BookmarkFolderSnapshot {
+    id: u64,
+    name: String,
 }
 
 impl Default for Bookmarks {

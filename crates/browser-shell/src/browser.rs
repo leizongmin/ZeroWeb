@@ -107,6 +107,7 @@ impl BrowserShell {
     pub fn new_with_persisted_settings() -> Self {
         let mut shell = Self::new();
         shell.settings = BrowserSettings::load_default();
+        shell.bookmarks = Bookmarks::load_default();
         shell.zoom = shell.settings.default_zoom;
         shell
     }
@@ -114,6 +115,22 @@ impl BrowserShell {
     /// 将当前设置保存到默认路径。
     pub fn save_settings(&self) -> Result<(), String> {
         self.settings.save_default()
+    }
+
+    /// 将当前书签保存到默认路径。
+    pub fn save_bookmarks(&self) -> Result<(), String> {
+        self.bookmarks.save_default()
+    }
+
+    /// 更新设置并立即写入默认配置文件。
+    pub fn apply_settings<F>(&mut self, update: F)
+    where
+        F: FnOnce(&mut BrowserSettings),
+    {
+        update(&mut self.settings);
+        if let Err(err) = self.save_settings() {
+            tracing::warn!(%err, "failed to save settings");
+        }
     }
 
     /// 是否没有标签页。
@@ -238,6 +255,9 @@ impl BrowserShell {
         {
             let title = tab.title().unwrap_or(url);
             self.bookmarks.add(title, url, None);
+            if let Err(err) = self.bookmarks.save_default() {
+                tracing::warn!(%err, "failed to save bookmarks");
+            }
         }
     }
 

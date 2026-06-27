@@ -608,6 +608,14 @@ fn test_browser_shell_save_and_reload_settings() {
 }
 
 #[test]
+fn test_browser_shell_apply_settings() {
+    let mut shell = BrowserShell::new();
+    assert!(shell.settings().show_bookmarks_bar);
+    shell.apply_settings(|settings| settings.show_bookmarks_bar = false);
+    assert!(!shell.settings().show_bookmarks_bar);
+}
+
+#[test]
 fn test_browser_shell_save_settings() {
     let mut shell = BrowserShell::new();
     shell.settings_mut().home_url = "https://test-save.test".to_string();

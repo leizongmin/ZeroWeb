@@ -264,7 +264,7 @@ impl BrowserApp {
         let color_scheme = detect_system_color_scheme();
 
         let mut app = Self {
-            shell: BrowserShell::new(),
+            shell: BrowserShell::new_with_persisted_settings(),
             tabs: TabManager::new((800, 600), color_scheme),
             gpu_renderer: None,
             render_mode,
@@ -1216,6 +1216,16 @@ impl BrowserApp {
         self.tabs.load_html(tab_id, &html, None, Some("zero://settings"));
         self.address_bar.set_text("zero://settings".to_string());
         self.needs_redraw = true;
+    }
+
+    /// 将用户数据（设置、书签等）写入默认配置文件。
+    pub fn persist_user_data(&self) {
+        if let Err(err) = self.shell.save_settings() {
+            tracing::warn!(%err, "failed to save settings");
+        }
+        if let Err(err) = self.shell.save_bookmarks() {
+            tracing::warn!(%err, "failed to save bookmarks");
+        }
     }
 }
 
