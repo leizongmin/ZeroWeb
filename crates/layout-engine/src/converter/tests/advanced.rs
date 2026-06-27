@@ -130,6 +130,32 @@ fn test_convert_length_to_lpa_calc_percentage() {
     );
 }
 
+/// 测试含百分比的 calc() 在 max-width/max-height（convert_max_length_to_dimension）
+/// 与 padding/border/gap（convert_length_to_lp）转换器中也提取百分比，而非静默丢弃为 0.0。
+/// 与 convert_length_to_dimension / convert_length_to_lpa 一致（calc silent-drop 全 converter 闭合）。
+#[test]
+fn test_convert_max_length_and_lp_calc_percentage() {
+    use zero_css_parser::values::{CalcExpr, CalcOp};
+    // calc(60% - 0px)
+    let calc = LengthValue::Calc(Box::new(CalcExpr::BinaryOp(
+        Box::new(CalcExpr::Length(LengthValue::Percentage(60.0))),
+        CalcOp::Subtract,
+        Box::new(CalcExpr::Length(LengthValue::Px(0.0))),
+    )));
+
+    // max-width/max-height：Dimension::Percent(0.6)
+    assert_eq!(
+        convert_max_length_to_dimension(&calc, 800.0, 600.0),
+        taffy::style::Dimension::Percent(0.6)
+    );
+
+    // padding/border/gap：LengthPercentage::Percent(0.6)
+    assert_eq!(
+        convert_length_to_lp(&calc, 800.0, 600.0),
+        taffy::style::LengthPercentage::Percent(0.6)
+    );
+}
+
 /// 测试 max-width/max-height 中 Px(f64::INFINITY) 映射为 Auto。
 #[test]
 fn test_convert_max_length_infinity() {
