@@ -171,10 +171,19 @@ impl HttpClient {
 
     /// GET 请求。
     pub fn get(&self, url: &str) -> Result<HttpResponse, NetError> {
+        self.get_with_headers(url, &[])
+    }
+
+    /// 带额外请求头的 GET（用于条件再验证等）。
+    pub fn get_with_headers(&self, url: &str, headers: &[(String, String)]) -> Result<HttpResponse, NetError> {
         if crate::is_file_url(url) {
             return crate::read_file_url(url);
         }
-        self.send(HttpRequest::get(url))
+        let mut req = HttpRequest::get(url);
+        for (name, value) in headers {
+            req = req.header(name, value);
+        }
+        self.send(req)
     }
 
     /// POST 请求。

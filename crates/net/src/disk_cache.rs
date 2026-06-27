@@ -17,6 +17,7 @@ const DEFAULT_DISK_MAX_BYTES: u64 = 200 * 1024 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DiskEntryMeta {
     url: String,
+    resource_url: Option<String>,
     status_code: u16,
     headers: Vec<(String, String)>,
     etag: Option<String>,
@@ -51,17 +52,12 @@ impl DiskHttpCache {
         Self::open(default_cache_dir())
     }
 
-    /// 尝试读取有效缓存条目。
-    pub fn get(&mut self, url: &str) -> Option<DiskCacheHit> {
-        let paths = self.entry_paths(url);
+    /// 读取条目（含 stale；不删除过期项）。
+    pub fn read(&mut self, key: &str) -> Option<DiskCacheHit> {
+        let paths = self.entry_paths(key);
         let meta_text = fs::read_to_string(&paths.meta).ok()?;
         let mut meta: DiskEntryMeta = serde_json::from_str(&meta_text).ok()?;
-        if meta.url != url {
-            return None;
-        }
-        let now = unix_now();
-        if now >= meta.expires_at {
-            let _ = self.remove_files(&paths);
+        if meta.url != key {
             return None;
         }
         let body = fs::read(&paths.body).ok()?;
@@ -69,30 +65,68 @@ impl DiskHttpCache {
             let _ = self.remove_files(&paths);
             return None;
         }
+        let now = unix_now();
         meta.last_access = now;
         let _ = fs::write(&paths.meta, serde_json::to_string(&meta).unwrap_or_default());
-        let fresh_for_secs = meta.expires_at.saturating_sub(now);
         Some(DiskCacheHit {
             body,
             headers: meta.headers,
             status_code: meta.status_code,
             url: meta.url,
+            resource_url: meta.resource_url,
             etag: meta.etag,
             last_modified: meta.last_modified,
-            fresh_for_secs,
+            fresh_for_secs: meta.expires_at.saturating_sub(now),
         })
     }
 
-    /// 条件请求头（仅读元数据，不加载 body）。
-    pub fn conditional_headers(&self, url: &str) -> Vec<(String, String)> {
-        let paths = self.entry_paths(url);
+    /// 尝试读取新鲜缓存条目。
+    pub fn get(&mut self, key: &str) -> Option<DiskCacheHit> {
+        let hit = self.read(key)?;
+        if hit.fresh_for_secs == 0 {
+            return None;
+        }
+        Some(hit)
+    }
+
+    /// 304 Not Modified — 延长新鲜期并更新验证器。
+    pub fn refresh_not_modified(&mut self, key: &str, response: &HttpResponse) -> bool {
+        let paths = self.entry_paths(key);
+        let Ok(meta_text) = fs::read_to_string(&paths.meta) else {
+            return false;
+        };
+        let Ok(mut meta) = serde_json::from_str::<DiskEntryMeta>(&meta_text) else {
+            return false;
+        };
+        if meta.url != key {
+            return false;
+        }
+        let now = unix_now();
+        if let Some(ttl) = storable_ttl(response) {
+            meta.expires_at = now.saturating_add(ttl);
+        } else {
+            meta.expires_at = now.saturating_add(60);
+        }
+        if let Some(etag) = response.header("etag") {
+            meta.etag = Some(etag.to_string());
+        }
+        if let Some(lm) = response.header("last-modified") {
+            meta.last_modified = Some(lm.to_string());
+        }
+        meta.last_access = now;
+        fs::write(&paths.meta, serde_json::to_string(&meta).unwrap_or_default()).is_ok()
+    }
+
+    /// 条件请求头（含 stale 条目，供再验证）。
+    pub fn conditional_headers(&self, key: &str) -> Vec<(String, String)> {
+        let paths = self.entry_paths(key);
         let Ok(meta_text) = fs::read_to_string(&paths.meta) else {
             return Vec::new();
         };
         let Ok(meta) = serde_json::from_str::<DiskEntryMeta>(&meta_text) else {
             return Vec::new();
         };
-        if meta.url != url || unix_now() >= meta.expires_at {
+        if meta.url != key {
             return Vec::new();
         }
         let mut headers = Vec::new();
@@ -105,14 +139,15 @@ impl DiskHttpCache {
         headers
     }
 
-    /// 存储可缓存响应；`no-store` 等策略会被跳过。
-    pub fn put(&mut self, url: &str, response: &HttpResponse) -> bool {
+    /// 存储可缓存响应；`key` 为 [`cache_lookup_key`] 结果。
+    pub fn put(&mut self, key: &str, response: &HttpResponse) -> bool {
         let Some(ttl) = storable_ttl(response) else {
             return false;
         };
         let now = unix_now();
         let meta = DiskEntryMeta {
-            url: url.to_string(),
+            url: key.to_string(),
+            resource_url: Some(response.url.clone()),
             status_code: response.status_code,
             headers: response.headers.clone(),
             etag: response.header("etag").map(str::to_string),
@@ -121,7 +156,7 @@ impl DiskHttpCache {
             last_access: now,
             body_len: response.body.len() as u64,
         };
-        let paths = self.entry_paths(url);
+        let paths = self.entry_paths(key);
         if let Some(parent) = paths.meta.parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -208,8 +243,10 @@ pub struct DiskCacheHit {
     pub headers: Vec<(String, String)>,
     /// HTTP 状态码。
     pub status_code: u16,
-    /// 请求 URL。
+    /// 缓存键（Hash）。
     pub url: String,
+    /// 原始资源 URL。
+    pub resource_url: Option<String>,
     /// ETag。
     pub etag: Option<String>,
     /// Last-Modified。
@@ -360,18 +397,19 @@ mod tests {
     }
 
     #[test]
-    fn disk_expired_entry_removed_on_get() {
+    fn disk_expired_entry_not_served_as_fresh() {
         let (mut cache, dir) = temp_cache();
-        let url = "https://example.com/old.css";
-        let paths = cache.entry_paths(url);
+        let key = "https://example.com/old.css\u{0}vary=Accept-Encoding=gzip, deflate, br";
+        let paths = cache.entry_paths(key);
         if let Some(parent) = paths.meta.parent() {
             fs::create_dir_all(parent).unwrap();
         }
         let expired = DiskEntryMeta {
-            url: url.to_string(),
+            url: key.to_string(),
+            resource_url: Some("https://example.com/old.css".to_string()),
             status_code: 200,
             headers: vec![],
-            etag: None,
+            etag: Some("\"x\"".to_string()),
             last_modified: None,
             expires_at: 1,
             last_access: 1,
@@ -379,8 +417,9 @@ mod tests {
         };
         fs::write(&paths.meta, serde_json::to_string(&expired).unwrap()).unwrap();
         fs::write(&paths.body, b"old").unwrap();
-        assert!(cache.get(url).is_none());
-        assert!(!paths.meta.exists());
+        assert!(cache.get(key).is_none());
+        let hit = cache.read(key).expect("stale readable");
+        assert_eq!(hit.fresh_for_secs, 0);
         let _ = fs::remove_dir_all(dir);
     }
 
