@@ -27,6 +27,24 @@ fn test_settings_search_google() {
 }
 
 #[test]
+fn search_engine_cycle_visits_all_variants() {
+    let mut engine = SearchEngine::Google;
+    let mut seen = [false; 4];
+    for _ in 0..4 {
+        let idx = match engine {
+            SearchEngine::Google => 0,
+            SearchEngine::Bing => 1,
+            SearchEngine::DuckDuckGo => 2,
+            SearchEngine::Baidu => 3,
+        };
+        seen[idx] = true;
+        engine = engine.cycle();
+    }
+    assert!(seen.iter().all(|&hit| hit));
+    assert_eq!(engine, SearchEngine::Google);
+}
+
+#[test]
 fn test_settings_search_baidu() {
     let mut settings = BrowserSettings::new();
     settings.search_engine = SearchEngine::Baidu;

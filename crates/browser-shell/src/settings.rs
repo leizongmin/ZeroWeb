@@ -18,6 +18,16 @@ pub enum SearchEngine {
 }
 
 impl SearchEngine {
+    /// 切换到下一个搜索引擎（Google → Bing → DuckDuckGo → 百度 → Google）。
+    pub fn cycle(self) -> Self {
+        match self {
+            SearchEngine::Google => SearchEngine::Bing,
+            SearchEngine::Bing => SearchEngine::DuckDuckGo,
+            SearchEngine::DuckDuckGo => SearchEngine::Baidu,
+            SearchEngine::Baidu => SearchEngine::Google,
+        }
+    }
+
     /// 获取搜索 URL 模板（`{query}` 为占位符）。
     pub fn search_url(&self, query: &str) -> String {
         let encoded = query.replace(' ', "+");

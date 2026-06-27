@@ -182,6 +182,40 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         )
     };
 
+    let action_link = |href: &str, label: &str| {
+        format!(
+            r#"<a href="{href}" style="margin-left:12px;color:#1a73e8;text-decoration:none;">{label}</a>"#
+        )
+    };
+
+    let (cycle_search, home_presets_title, home_example, home_newtab) = match lang {
+        UiLanguage::ZhCn => (
+            "切换搜索引擎",
+            "常用主页",
+            "example.com",
+            "欢迎页 (zero://newtab)",
+        ),
+        UiLanguage::EnUs => (
+            "Cycle Search Engine",
+            "Common Home Pages",
+            "example.com",
+            "Welcome (zero://newtab)",
+        ),
+    };
+
+    let search_actions = action_link("zero://settings/cycle/search_engine", cycle_search);
+    let home_actions = format!(
+        r#"<p style="font-size:13px;color:#80868b;margin:12px 0 4px;">{home_presets_title}</p>
+<p style="font-size:14px;color:#666;line-height:2;">
+  {example_link}{newtab_link}
+</p>"#,
+        example_link = action_link(
+            "zero://settings/set/home_url/https%3A%2F%2Fexample.com",
+            home_example,
+        ),
+        newtab_link = action_link("zero://settings/set/home_url/zero%3A%2F%2Fnewtab", home_newtab),
+    );
+
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -192,12 +226,13 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
 
     <div style="background: white; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
       <h2 style="font-size: 18px; margin-top: 0; color: #555;">{section_search}</h2>
-      <p style="font-size: 14px; color: #666;">{current_label}: <strong>{se_name}</strong></p>
+      <p style="font-size: 14px; color: #666;">{current_label}: <strong>{se_name}</strong>{search_actions}</p>
     </div>
 
     <div style="background: white; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
       <h2 style="font-size: 18px; margin-top: 0; color: #555;">{section_home}</h2>
       <p style="font-size: 14px; color: #666;"><code>{home}</code></p>
+      {home_actions}
     </div>
 
     <div style="background: white; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
@@ -271,6 +306,8 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         ),
         home = settings.home_url,
         zoom = (settings.default_zoom * 100.0) as u32,
+        search_actions = search_actions,
+        home_actions = home_actions,
     )
 }
 
