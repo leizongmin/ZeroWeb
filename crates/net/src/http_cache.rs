@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::cache_key::{cache_lookup_key, cache_store_key, strip_url_fragment};
-use crate::cache_policy::{parse_cache_control, storable_mode, CacheStoreMode};
+use crate::cache_policy::{CacheStoreMode, parse_cache_control, storable_mode};
 use crate::disk_cache::DiskHttpCache;
 use crate::private_mode::private_browsing_enabled;
 use crate::request::HttpResponse;
