@@ -272,11 +272,7 @@ impl AsyncPageLoad {
                             && self.img_pending.is_empty()
                             && self.font_pending.is_empty() =>
                     {
-                        if self.lazy_urls.is_empty() {
-                            self.stage = PageLoadStage::Complete;
-                        } else {
-                            self.stage = PageLoadStage::Complete;
-                        }
+                        self.stage = PageLoadStage::Complete;
                     }
                     _ => {}
                 }

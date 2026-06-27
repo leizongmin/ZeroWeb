@@ -738,8 +738,8 @@ impl BrowserApp {
             if self.address_bar_drag && self.address_bar_focused && self.left_button_down {
                 let s = self.scale_factor;
                 let font_size = layout::CHROME_FONT_SIZE * s;
-                let (bar_x, _, _, _) = self.address_bar_layout();
-                let rel_x = (x as f32 - bar_x - 10.0 * s).max(0.0);
+                let text_x = self.address_bar_text_origin_x();
+                let rel_x = (x as f32 - text_x).max(0.0);
                 let idx = self
                     .address_bar
                     .x_to_cursor(rel_x, |t| self.measure_ui_text_width(t, font_size));
@@ -869,7 +869,6 @@ impl BrowserApp {
         let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
         let toolbar_h = layout::TOOLBAR_HEIGHT * s;
         let chrome_top = self.chrome_top_y_for(s);
-        let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
         let nav_btn_w = layout::NAV_BUTTON_WIDTH * s;
         let addr_padding = layout::ADDRESS_BAR_PADDING * s;
         let tab_close_size = layout::TAB_CLOSE_SIZE * s;
@@ -947,10 +946,11 @@ impl BrowserApp {
 
         // 3. 地址栏区域点击
         if y_f < toolbar_h {
+            let nav_w = self.nav_section_width();
             let addr_bar_x = nav_w + addr_padding;
 
             if x_f < nav_w {
-                let button_index = ((x_f - 8.0 * s) / nav_btn_w) as i32;
+                let button_index = ((x_f - layout::NAV_SECTION_LEADING_PAD * s) / nav_btn_w) as i32;
                 match button_index {
                     0 => self.go_back(),
                     1 => self.go_forward(),
@@ -964,7 +964,12 @@ impl BrowserApp {
                 return;
             }
 
-            if x_f >= addr_bar_x && x_f <= width - addr_padding {
+            if self.toolbar_menu_hit_test(x_f, y_f) {
+                self.show_browser_menu();
+                return;
+            }
+
+            if x_f >= addr_bar_x && x_f <= addr_bar_x + self.address_bar_layout().2 {
                 self.handle_address_bar_press(x, y);
                 return;
             }
@@ -1155,15 +1160,91 @@ impl BrowserApp {
         Some(self.tabs.last_render(tab_id)?.primitives.glyphs.clone())
     }
 
+    fn nav_section_width(&self) -> f32 {
+        let s = self.scale_factor;
+        (layout::NAV_SECTION_LEADING_PAD
+            + layout::NAV_BUTTON_WIDTH * 4.0
+            + layout::NAV_SECTION_TRAILING_GAP)
+            * s
+    }
+
     fn address_bar_layout(&self) -> (f32, f32, f32, f32) {
         let s = self.scale_factor;
-        let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
-        let bar_x = nav_w + layout::ADDRESS_BAR_PADDING * s;
-        let bar_w = self.physical_size.0 as f32 - bar_x - layout::ADDRESS_BAR_PADDING * s;
+        let bar_x = self.nav_section_width() + layout::ADDRESS_BAR_PADDING * s;
+        let menu_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
+        let trailing_reserved =
+            layout::ADDRESS_BAR_PADDING * s + layout::TOOLBAR_TRAILING_GAP * s + menu_w;
+        let bar_w = self.physical_size.0 as f32 - bar_x - trailing_reserved;
         let inset = layout::ADDRESS_BAR_INPUT_V_INSET * s;
         let bar_y = layout::TAB_STRIP_HEIGHT * s + inset;
         let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 2.0 * inset;
         (bar_x, bar_y, bar_w, bar_h)
+    }
+
+    fn address_bar_text_origin_x(&self) -> f32 {
+        let s = self.scale_factor;
+        let (bar_x, _, _, _) = self.address_bar_layout();
+        let border = s.max(1.0);
+        bar_x + border + layout::ADDRESS_BAR_INNER_PAD_H * s + layout::ADDRESS_BAR_LEADING_SLOT_WIDTH * s
+    }
+
+    fn toolbar_menu_button_rect(&self) -> (f32, f32, f32, f32) {
+        let s = self.scale_factor;
+        let (bar_x, bar_y, bar_w, bar_h) = self.address_bar_layout();
+        let btn_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
+        let btn_x = bar_x + bar_w + layout::TOOLBAR_TRAILING_GAP * s;
+        let btn_y = bar_y;
+        let btn_h = bar_h;
+        (btn_x, btn_y, btn_w, btn_h)
+    }
+
+    fn toolbar_menu_hit_test(&self, x_f: f32, y_f: f32) -> bool {
+        let (bx, by, bw, bh) = self.toolbar_menu_button_rect();
+        x_f >= bx && x_f <= bx + bw && y_f >= by && y_f <= by + bh
+    }
+
+    fn show_browser_menu(&mut self) {
+        let s = self.scale_factor;
+        let (bx, by, bw, bh) = self.toolbar_menu_button_rect();
+        let language = UiLanguage::detect_from_env();
+        let bookmarks_bar_label = if self.shell.settings().show_bookmarks_bar {
+            browser_menu_label(BrowserMenuLabel::HideBookmarksBar, language)
+        } else {
+            browser_menu_label(BrowserMenuLabel::ShowBookmarksBar, language)
+        };
+        self.context_menu = ContextMenuState {
+            visible: true,
+            context_type: ContextType::Page,
+            items: vec![
+                browser_menu_label(BrowserMenuLabel::NewTab, language).to_string(),
+                browser_menu_label(BrowserMenuLabel::NewPrivateTab, language).to_string(),
+                "---".to_string(),
+                browser_menu_label(BrowserMenuLabel::BookmarkThisTab, language).to_string(),
+                bookmarks_bar_label.to_string(),
+                "---".to_string(),
+                browser_menu_label(BrowserMenuLabel::AboutBrowser, language).to_string(),
+                "---".to_string(),
+                browser_menu_label(BrowserMenuLabel::Settings, language).to_string(),
+            ],
+            item_ids: vec![
+                Some("browser_menu_new_tab".to_string()),
+                Some("browser_menu_new_private_tab".to_string()),
+                None,
+                Some("browser_menu_add_bookmark".to_string()),
+                Some("browser_menu_toggle_bookmarks_bar".to_string()),
+                None,
+                Some("browser_menu_about".to_string()),
+                None,
+                Some("browser_menu_settings".to_string()),
+            ],
+            hovered_index: None,
+            x: bx + bw - 200.0 * s,
+            y: by + bh + 4.0 * s,
+            source_tab_id: self.shell.active_tab_id(),
+            page_doc_x: 0.0,
+            page_doc_y: 0.0,
+        };
+        self.needs_redraw = true;
     }
 
     fn address_bar_hit_test(&self, x_f: f32, y_f: f32) -> bool {
@@ -1178,8 +1259,8 @@ impl BrowserApp {
     fn handle_address_bar_press(&mut self, x: f64, y: f64) {
         let s = self.scale_factor;
         let font_size = layout::CHROME_FONT_SIZE * s;
-        let (bar_x, _, _, _) = self.address_bar_layout();
-        let rel_x = (x as f32 - bar_x - 10.0 * s).max(0.0);
+        let text_x = self.address_bar_text_origin_x();
+        let rel_x = (x as f32 - text_x).max(0.0);
         let measure = |t: &str| self.measure_ui_text_width(t, font_size);
         let idx = self.address_bar.x_to_cursor(rel_x, measure);
         let extend = self.shift_pressed;
@@ -1300,6 +1381,28 @@ impl BrowserApp {
             "back" => self.go_back(),
             "forward" => self.go_forward(),
             "reload" => self.refresh_page(),
+            "browser_menu_new_tab" => self.new_tab(None),
+            "browser_menu_new_private_tab" => self.new_private_tab(None),
+            "browser_menu_add_bookmark" => {
+                let was_visible = self.bookmarks_bar_visible();
+                self.shell.add_bookmark();
+                if self.bookmarks_bar_visible() != was_visible {
+                    self.sync_webview_viewport();
+                }
+            }
+            "browser_menu_toggle_bookmarks_bar" => {
+                let was_visible = self.bookmarks_bar_visible();
+                let show = !self.shell.settings().show_bookmarks_bar;
+                self.shell.settings_mut().show_bookmarks_bar = show;
+                if self.bookmarks_bar_visible() != was_visible {
+                    self.sync_webview_viewport();
+                }
+            }
+            "browser_menu_about" => {
+                let html = pages::generate_about_browser_html();
+                self.open_internal_document_tab(html, "zero://about", "About ZeroBrowser");
+            }
+            "browser_menu_settings" => self.open_settings_page(),
             "view_source" => {
                 if let Some(tab_id) = source_tab_id {
                     self.view_page_source(tab_id);
@@ -1364,9 +1467,7 @@ impl BrowserApp {
     /// 自动补全下拉命中检测（物理像素坐标）
     fn autocomplete_hit_test(&self, x: f64, y: f64) -> Option<usize> {
         let s = self.scale_factor;
-        let nav_w = (layout::NAV_BUTTON_WIDTH * 4.0 + 16.0) * s;
-        let bar_x = nav_w + layout::ADDRESS_BAR_PADDING * s;
-        let bar_w = self.physical_size.0 as f32 - bar_x - layout::ADDRESS_BAR_PADDING * s;
+        let (bar_x, _, bar_w, _) = self.address_bar_layout();
 
         let autocomplete_top = layout::TOOLBAR_HEIGHT * s;
         let y_f = y as f32;

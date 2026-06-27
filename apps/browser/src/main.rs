@@ -576,7 +576,57 @@ mod tests {
         assert!(app.address_bar_focused, "Mod+L should focus address bar");
     }
 
+    /// 地址栏右侧应渲染浏览器菜单（三点）按钮。
+    #[test]
+    fn address_bar_renders_browser_menu_button() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+
+        let (_, glyphs, _, _) = app.build_scene_for_test(1280, 900);
+        assert!(
+            glyphs.iter().any(|g| g.ch == '\u{E008}'),
+            "address bar should render the browser menu icon"
+        );
+    }
+
+    /// 点击地址栏右侧三点按钮应打开浏览器菜单。
+    #[test]
+    fn browser_menu_button_opens_context_menu() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+
+        let s = app.scale_factor;
+        let bar_x =
+            (layout::NAV_SECTION_LEADING_PAD + layout::NAV_BUTTON_WIDTH * 4.0 + layout::NAV_SECTION_TRAILING_GAP) * s
+                + layout::ADDRESS_BAR_PADDING * s;
+        let inset = layout::ADDRESS_BAR_INPUT_V_INSET * s;
+        let bar_y = layout::TAB_STRIP_HEIGHT * s + inset;
+        let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 2.0 * inset;
+        let menu_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
+        let trailing_reserved = layout::ADDRESS_BAR_PADDING * s + layout::TOOLBAR_TRAILING_GAP * s + menu_w;
+        let bar_w = app.physical_size.0 as f32 - bar_x - trailing_reserved;
+        let btn_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
+        let btn_x = bar_x + bar_w + layout::TOOLBAR_TRAILING_GAP * s;
+        let btn_y = bar_y;
+
+        app.handle_mouse_click((btn_x + btn_w * 0.5) as f64, (btn_y + bar_h * 0.5) as f64, true, "Left");
+        assert!(
+            app.is_context_menu_visible_for_test(),
+            "browser menu button should open the menu"
+        );
+    }
+
     /// 验证 Ctrl+D 添加书签（当前页面）。
+    #[test]
+    fn about_page_loads_as_internal_document() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        let html = pages::generate_about_browser_html();
+        app.open_internal_document_tab(html, "zero://about", "About ZeroBrowser");
+        assert_eq!(app.address_bar_text(), "zero://about");
+    }
+
     #[test]
     fn ctrl_d_adds_bookmark() {
         let mut app = BrowserApp::new(RenderMode::Cpu);

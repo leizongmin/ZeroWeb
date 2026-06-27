@@ -417,23 +417,6 @@ impl RendererRuntime {
         }
     }
 
-    #[cfg(test)]
-    fn drive_until_idle(&mut self) -> Result<(), String> {
-        for _ in 0..500 {
-            if self.pending_load.is_none() && self.pending_script_prefetch.is_none() {
-                return Ok(());
-            }
-            self.drain_inflight_fetch_responses();
-            if self.pending_load.is_some() {
-                self.tick_pending_load_with_budget(2_000.0)?;
-            }
-            if self.pending_script_prefetch.is_some() {
-                self.tick_script_prefetch()?;
-            }
-        }
-        Err("测试加载未在预期步数内完成".into())
-    }
-
     /// 用当前 cached_html/css 经 WebView 重绘并发布（脚本改 DOM 后的重渲染路径）。
     fn rerender_publish_webview(&mut self) -> Result<(), String> {
         let html = self.cached_html.clone();
@@ -840,23 +823,23 @@ impl RendererRuntime {
 
             if self.pending_load.is_some() || self.pending_script_prefetch.is_some() {
                 self.drain_inflight_fetch_responses();
-                if self.pending_load.is_some() {
-                    if let Err(e) = self.tick_pending_load() {
-                        if browser_ipc_disconnected(&e) {
-                            tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
-                            return Ok(());
-                        }
-                        tracing::error!("页面加载 tick 错误: {e}");
+                if self.pending_load.is_some()
+                    && let Err(e) = self.tick_pending_load()
+                {
+                    if browser_ipc_disconnected(&e) {
+                        tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                        return Ok(());
                     }
+                    tracing::error!("页面加载 tick 错误: {e}");
                 }
-                if self.pending_script_prefetch.is_some() {
-                    if let Err(e) = self.tick_script_prefetch() {
-                        if browser_ipc_disconnected(&e) {
-                            tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
-                            return Ok(());
-                        }
-                        tracing::error!("脚本预取 tick 错误: {e}");
+                if self.pending_script_prefetch.is_some()
+                    && let Err(e) = self.tick_script_prefetch()
+                {
+                    if browser_ipc_disconnected(&e) {
+                        tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                        return Ok(());
                     }
+                    tracing::error!("脚本预取 tick 错误: {e}");
                 }
             }
 
@@ -871,11 +854,11 @@ impl RendererRuntime {
                             return Ok(());
                         }
                         tracing::error!("消息处理错误: {e}");
-                        if let Err(se) = self.send(IpcMessageKind::Error(e)) {
-                            if browser_ipc_disconnected(&se) {
-                                tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
-                                return Ok(());
-                            }
+                        if let Err(se) = self.send(IpcMessageKind::Error(e))
+                            && browser_ipc_disconnected(&se)
+                        {
+                            tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                            return Ok(());
                         }
                     }
                 }

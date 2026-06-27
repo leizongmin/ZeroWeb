@@ -28,12 +28,14 @@ impl PointerTracker {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UnixBackendPreference {
     X11,
     Wayland,
 }
 
+#[cfg(target_os = "linux")]
 fn parse_unix_backend_preference(raw: &str) -> Option<UnixBackendPreference> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "x11" => Some(UnixBackendPreference::X11),
@@ -42,6 +44,7 @@ fn parse_unix_backend_preference(raw: &str) -> Option<UnixBackendPreference> {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn unix_backend_preference_from_env() -> Option<UnixBackendPreference> {
     std::env::var("WINIT_UNIX_BACKEND")
         .ok()

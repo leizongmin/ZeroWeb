@@ -60,6 +60,7 @@ fn test_roundtrip_all_message_kinds() {
                 html: "<body>hi</body>".into(),
                 css: Some("body { margin: 0; }".into()),
                 url: Some("zero://settings".into()),
+                navigation_epoch: 0,
             }),
         },
         IpcMessage {

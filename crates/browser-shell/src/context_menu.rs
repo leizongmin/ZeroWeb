@@ -1,31 +1,96 @@
-//! 右键上下文菜单 — 页面右键菜单的数据模型。
-//!
-//! 提供不同场景下的菜单项定义，由 UI 层消费渲染。
+//! Context menu data model and lightweight browser UI localization.
 
-/// 上下文菜单项。
+/// Browser UI language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiLanguage {
+    /// Simplified Chinese.
+    ZhCn,
+    /// English.
+    EnUs,
+}
+
+impl UiLanguage {
+    /// Detect the preferred UI language from common environment variables.
+    pub fn detect_from_env() -> Self {
+        for key in ["ZERO_BROWSER_UI_LANG", "LC_ALL", "LC_MESSAGES", "LANG"] {
+            if let Ok(value) = std::env::var(key) {
+                let normalized = value.trim().to_ascii_lowercase().replace('_', "-");
+                if normalized.starts_with("zh") {
+                    return Self::ZhCn;
+                }
+                if normalized.starts_with("en") {
+                    return Self::EnUs;
+                }
+            }
+        }
+        Self::EnUs
+    }
+}
+
+/// Browser main menu label keys.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowserMenuLabel {
+    /// New tab.
+    NewTab,
+    /// New private tab.
+    NewPrivateTab,
+    /// Bookmark this tab.
+    BookmarkThisTab,
+    /// Show bookmarks bar.
+    ShowBookmarksBar,
+    /// Hide bookmarks bar.
+    HideBookmarksBar,
+    /// About browser.
+    AboutBrowser,
+    /// Settings.
+    Settings,
+}
+
+/// Resolve a browser main menu label for the given UI language.
+pub fn browser_menu_label(label: BrowserMenuLabel, language: UiLanguage) -> &'static str {
+    match language {
+        UiLanguage::ZhCn => match label {
+            BrowserMenuLabel::NewTab => "新建标签页",
+            BrowserMenuLabel::NewPrivateTab => "新建无痕标签页",
+            BrowserMenuLabel::BookmarkThisTab => "收藏当前标签页",
+            BrowserMenuLabel::ShowBookmarksBar => "显示书签栏",
+            BrowserMenuLabel::HideBookmarksBar => "隐藏书签栏",
+            BrowserMenuLabel::AboutBrowser => "关于 ZeroBrowser",
+            BrowserMenuLabel::Settings => "设置",
+        },
+        UiLanguage::EnUs => match label {
+            BrowserMenuLabel::NewTab => "New Tab",
+            BrowserMenuLabel::NewPrivateTab => "New Private Tab",
+            BrowserMenuLabel::BookmarkThisTab => "Bookmark This Tab",
+            BrowserMenuLabel::ShowBookmarksBar => "Show Bookmarks Bar",
+            BrowserMenuLabel::HideBookmarksBar => "Hide Bookmarks Bar",
+            BrowserMenuLabel::AboutBrowser => "About ZeroBrowser",
+            BrowserMenuLabel::Settings => "Settings",
+        },
+    }
+}
+
+/// Context menu item.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MenuItem {
-    /// 菜单项 ID。
     id: String,
-    /// 显示文本。
     label: String,
-    /// 菜单项类型。
     item_type: MenuItemType,
 }
 
-/// 菜单项类型。
+/// Context menu item type.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MenuItemType {
-    /// 普通可点击项。
+    /// Clickable action item.
     Action,
-    /// 分隔线。
+    /// Separator line.
     Separator,
-    /// 子菜单（包含子项）。
+    /// Submenu with children.
     SubMenu(Vec<MenuItem>),
 }
 
 impl MenuItem {
-    /// 创建可点击菜单项。
+    /// Create an action item.
     pub fn action(id: &str, label: &str) -> Self {
         Self {
             id: id.to_string(),
@@ -34,7 +99,7 @@ impl MenuItem {
         }
     }
 
-    /// 创建分隔线。
+    /// Create a separator item.
     pub fn separator() -> Self {
         Self {
             id: String::new(),
@@ -43,7 +108,7 @@ impl MenuItem {
         }
     }
 
-    /// 创建子菜单。
+    /// Create a submenu item.
     pub fn sub_menu(id: &str, label: &str, children: Vec<MenuItem>) -> Self {
         Self {
             id: id.to_string(),
@@ -52,27 +117,27 @@ impl MenuItem {
         }
     }
 
-    /// 获取菜单项 ID。
+    /// Item id.
     pub fn id(&self) -> &str {
         &self.id
     }
 
-    /// 获取显示文本。
+    /// Visible label.
     pub fn label(&self) -> &str {
         &self.label
     }
 
-    /// 是否为分隔线。
+    /// Whether this item is a separator.
     pub fn is_separator(&self) -> bool {
         self.item_type == MenuItemType::Separator
     }
 
-    /// 是否为子菜单。
+    /// Whether this item is a submenu.
     pub fn is_sub_menu(&self) -> bool {
         matches!(self.item_type, MenuItemType::SubMenu(_))
     }
 
-    /// 获取子菜单项（如果不是子菜单返回 None）。
+    /// Children if this item is a submenu.
     pub fn children(&self) -> Option<&[MenuItem]> {
         match &self.item_type {
             MenuItemType::SubMenu(children) => Some(children),
@@ -81,34 +146,31 @@ impl MenuItem {
     }
 }
 
-/// 上下文场景类型 — 决定显示哪些菜单项。
+/// Context type that determines the default menu items.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextType {
-    /// 页面空白区域。
+    /// Blank page area.
     Page,
-    /// 链接。
+    /// Link.
     Link,
-    /// 图片。
+    /// Image.
     Image,
-    /// 文本选区。
+    /// Selected text.
     Selection,
-    /// 输入框 / 可编辑区域。
+    /// Editable region.
     Editable,
 }
 
-/// 右键上下文菜单。
+/// Browser context menu.
 #[derive(Debug, Clone)]
 pub struct ContextMenu {
-    /// 触发场景。
     context_type: ContextType,
-    /// 菜单项列表。
     items: Vec<MenuItem>,
-    /// 关联的 URL（链接/图片场景）。
     source_url: Option<String>,
 }
 
 impl ContextMenu {
-    /// 为指定场景创建默认上下文菜单。
+    /// Create a default menu for the given context.
     pub fn new(context_type: ContextType) -> Self {
         let items = default_items_for_context(context_type);
         Self {
@@ -118,7 +180,7 @@ impl ContextMenu {
         }
     }
 
-    /// 创建带关联 URL 的上下文菜单。
+    /// Create a default menu for the given context with an associated URL.
     pub fn with_url(context_type: ContextType, url: &str) -> Self {
         let items = default_items_for_context(context_type);
         Self {
@@ -128,7 +190,7 @@ impl ContextMenu {
         }
     }
 
-    /// 创建使用自定义菜单项的上下文菜单。
+    /// Create a menu with custom items.
     pub fn with_items(context_type: ContextType, items: Vec<MenuItem>) -> Self {
         Self {
             context_type,
@@ -137,38 +199,37 @@ impl ContextMenu {
         }
     }
 
-    /// 获取触发场景。
+    /// Context type.
     pub fn context_type(&self) -> ContextType {
         self.context_type
     }
 
-    /// 获取菜单项列表。
+    /// Menu items.
     pub fn items(&self) -> &[MenuItem] {
         &self.items
     }
 
-    /// 获取关联 URL。
+    /// Optional source URL.
     pub fn source_url(&self) -> Option<&str> {
         self.source_url.as_deref()
     }
 
-    /// 当前菜单项数量。
+    /// Number of menu items.
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
-    /// 是否为空菜单。
+    /// Whether the menu has no items.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
-    /// 查找指定 ID 的菜单项。
+    /// Find a menu item by id.
     pub fn find_item(&self, id: &str) -> Option<&MenuItem> {
         find_item_recursive(&self.items, id)
     }
 }
 
-/// 递归查找菜单项。
 fn find_item_recursive<'a>(items: &'a [MenuItem], id: &str) -> Option<&'a MenuItem> {
     for item in items {
         if item.id == id {
@@ -183,48 +244,124 @@ fn find_item_recursive<'a>(items: &'a [MenuItem], id: &str) -> Option<&'a MenuIt
     None
 }
 
-/// 根据场景生成默认菜单项。
 fn default_items_for_context(context_type: ContextType) -> Vec<MenuItem> {
+    let lang = UiLanguage::detect_from_env();
     match context_type {
-        ContextType::Page => vec![
-            MenuItem::action("back", "后退"),
-            MenuItem::action("forward", "前进"),
-            MenuItem::action("reload", "重新加载"),
-            MenuItem::separator(),
-            MenuItem::action("save_as", "另存为..."),
-            MenuItem::action("print", "打印..."),
-            MenuItem::separator(),
-            MenuItem::action("view_source", "查看源代码"),
-            MenuItem::action("inspect", "检查元素"),
-        ],
-        ContextType::Link => vec![
-            MenuItem::action("open_link", "在新标签页中打开链接"),
-            MenuItem::action("copy_link", "复制链接地址"),
-            MenuItem::separator(),
-            MenuItem::action("save_link", "将链接另存为..."),
-            MenuItem::action("bookmark_link", "将链接添加为书签"),
-        ],
-        ContextType::Image => vec![
-            MenuItem::action("open_image", "在新标签页中打开图片"),
-            MenuItem::action("copy_image_url", "复制图片地址"),
-            MenuItem::action("save_image", "将图片另存为..."),
-            MenuItem::separator(),
-            MenuItem::action("copy_image", "复制图片"),
-        ],
-        ContextType::Selection => vec![
-            MenuItem::action("copy", "复制"),
-            MenuItem::action("search_selection", "使用搜索引擎搜索"),
-            MenuItem::separator(),
-            MenuItem::action("print", "打印..."),
-        ],
-        ContextType::Editable => vec![
-            MenuItem::action("cut", "剪切"),
-            MenuItem::action("copy", "复制"),
-            MenuItem::action("paste", "粘贴"),
-            MenuItem::action("select_all", "全选"),
-            MenuItem::separator(),
-            MenuItem::action("undo", "撤销"),
-            MenuItem::action("redo", "重做"),
-        ],
+        ContextType::Page => match lang {
+            UiLanguage::ZhCn => vec![
+                MenuItem::action("back", "后退"),
+                MenuItem::action("forward", "前进"),
+                MenuItem::action("reload", "重新加载"),
+                MenuItem::separator(),
+                MenuItem::action("save_as", "另存为..."),
+                MenuItem::action("print", "打印..."),
+                MenuItem::separator(),
+                MenuItem::action("view_source", "查看源代码"),
+                MenuItem::action("inspect", "检查元素"),
+            ],
+            UiLanguage::EnUs => vec![
+                MenuItem::action("back", "Back"),
+                MenuItem::action("forward", "Forward"),
+                MenuItem::action("reload", "Reload"),
+                MenuItem::separator(),
+                MenuItem::action("save_as", "Save As..."),
+                MenuItem::action("print", "Print..."),
+                MenuItem::separator(),
+                MenuItem::action("view_source", "View Source"),
+                MenuItem::action("inspect", "Inspect"),
+            ],
+        },
+        ContextType::Link => match lang {
+            UiLanguage::ZhCn => vec![
+                MenuItem::action("open_link", "在新标签页中打开链接"),
+                MenuItem::action("copy_link", "复制链接地址"),
+                MenuItem::separator(),
+                MenuItem::action("save_link", "将链接另存为..."),
+                MenuItem::action("bookmark_link", "将链接添加为书签"),
+            ],
+            UiLanguage::EnUs => vec![
+                MenuItem::action("open_link", "Open Link in New Tab"),
+                MenuItem::action("copy_link", "Copy Link Address"),
+                MenuItem::separator(),
+                MenuItem::action("save_link", "Save Link As..."),
+                MenuItem::action("bookmark_link", "Bookmark Link"),
+            ],
+        },
+        ContextType::Image => match lang {
+            UiLanguage::ZhCn => vec![
+                MenuItem::action("open_image", "在新标签页中打开图片"),
+                MenuItem::action("copy_image_url", "复制图片地址"),
+                MenuItem::action("save_image", "将图片另存为..."),
+                MenuItem::separator(),
+                MenuItem::action("copy_image", "复制图片"),
+            ],
+            UiLanguage::EnUs => vec![
+                MenuItem::action("open_image", "Open Image in New Tab"),
+                MenuItem::action("copy_image_url", "Copy Image Address"),
+                MenuItem::action("save_image", "Save Image As..."),
+                MenuItem::separator(),
+                MenuItem::action("copy_image", "Copy Image"),
+            ],
+        },
+        ContextType::Selection => match lang {
+            UiLanguage::ZhCn => vec![
+                MenuItem::action("copy", "复制"),
+                MenuItem::action("search_selection", "使用搜索引擎搜索"),
+                MenuItem::separator(),
+                MenuItem::action("print", "打印..."),
+            ],
+            UiLanguage::EnUs => vec![
+                MenuItem::action("copy", "Copy"),
+                MenuItem::action("search_selection", "Search with Default Engine"),
+                MenuItem::separator(),
+                MenuItem::action("print", "Print..."),
+            ],
+        },
+        ContextType::Editable => match lang {
+            UiLanguage::ZhCn => vec![
+                MenuItem::action("cut", "剪切"),
+                MenuItem::action("copy", "复制"),
+                MenuItem::action("paste", "粘贴"),
+                MenuItem::action("select_all", "全选"),
+                MenuItem::separator(),
+                MenuItem::action("undo", "撤销"),
+                MenuItem::action("redo", "重做"),
+            ],
+            UiLanguage::EnUs => vec![
+                MenuItem::action("cut", "Cut"),
+                MenuItem::action("copy", "Copy"),
+                MenuItem::action("paste", "Paste"),
+                MenuItem::action("select_all", "Select All"),
+                MenuItem::separator(),
+                MenuItem::action("undo", "Undo"),
+                MenuItem::action("redo", "Redo"),
+            ],
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn browser_menu_label_is_localized_for_chinese() {
+        assert_eq!(
+            browser_menu_label(BrowserMenuLabel::AboutBrowser, UiLanguage::ZhCn),
+            "关于 ZeroBrowser"
+        );
+        assert_eq!(browser_menu_label(BrowserMenuLabel::Settings, UiLanguage::ZhCn), "设置");
+    }
+
+    #[test]
+    fn browser_menu_label_is_localized_for_english() {
+        assert_eq!(
+            browser_menu_label(BrowserMenuLabel::AboutBrowser, UiLanguage::EnUs),
+            "About ZeroBrowser"
+        );
+        assert_eq!(
+            browser_menu_label(BrowserMenuLabel::Settings, UiLanguage::EnUs),
+            "Settings"
+        );
     }
 }

@@ -197,6 +197,51 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
     )
 }
 
+/// 生成「关于 ZeroBrowser」页面 HTML。
+pub fn generate_about_browser_html() -> String {
+    r#"<!DOCTYPE html>
+<html>
+<head><title>About ZeroBrowser</title></head>
+<body style="font-family: Segoe UI, sans-serif; margin: 0; padding: 40px; background: #f8f9fa; color: #202124;">
+  <div style="max-width: 720px; margin: 0 auto;">
+    <div style="background: white; border-radius: 14px; padding: 28px 32px; box-shadow: 0 8px 24px rgba(0,0,0,0.06);">
+      <p style="margin: 0; color: #1a73e8; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;">About</p>
+      <h1 style="font-size: 32px; margin: 10px 0 12px;">ZeroBrowser</h1>
+      <p style="margin: 0 0 20px; color: #5f6368; font-size: 15px; line-height: 1.7;">
+        ZeroBrowser is the desktop browser app built on top of the ZeroWeb stack. It combines
+        the reusable <strong>ZeroWebView</strong> runtime, the <strong>BrowserShell</strong> state model,
+        and a custom-drawn browser chrome written in Rust.
+      </p>
+
+      <div style="display: grid; gap: 12px; margin: 0 0 24px;">
+        <div style="padding: 14px 16px; border-radius: 10px; background: #f1f3f4;">
+          <strong>Engine:</strong> ZeroWeb custom engine
+        </div>
+        <div style="padding: 14px 16px; border-radius: 10px; background: #f1f3f4;">
+          <strong>UI:</strong> custom Rust-rendered browser chrome
+        </div>
+        <div style="padding: 14px 16px; border-radius: 10px; background: #f1f3f4;">
+          <strong>Status:</strong> experimental browser product shell
+        </div>
+      </div>
+
+      <h2 style="font-size: 18px; margin: 0 0 10px;">What it includes</h2>
+      <ul style="margin: 0 0 20px 20px; padding: 0; color: #3c4043; line-height: 1.8;">
+        <li>tabs, navigation, bookmarks, autocomplete, downloads, and settings</li>
+        <li>a reusable embedded webview boundary for the wider ZeroWeb project</li>
+        <li>cross-platform browser chrome built without adopting a separate UI framework</li>
+      </ul>
+
+      <p style="margin: 0; color: #80868b; font-size: 13px;">
+        Version: ZeroBrowser v0.1.0-alpha
+      </p>
+    </div>
+  </div>
+</body>
+</html>"#
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

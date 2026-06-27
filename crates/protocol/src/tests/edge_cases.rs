@@ -287,6 +287,7 @@ fn test_ipc_channel_trait_object_stress_50_messages() {
                     } else {
                         None
                     },
+                    navigation_epoch: 0,
                 }),
                 1 => IpcMessageKind::TitleChanged(format!("标题 #{i}")),
                 2 => IpcMessageKind::FetchRequest(FetchParams {
@@ -726,6 +727,7 @@ fn test_channel_burst_send_then_receive_all() {
             0 => IpcMessageKind::Navigate(NavigateParams {
                 url: format!("https://example.com/{i}"),
                 referrer: None,
+                navigation_epoch: 0,
             }),
             1 => IpcMessageKind::TitleChanged(format!("标题 {i}")),
             2 => IpcMessageKind::Heartbeat,

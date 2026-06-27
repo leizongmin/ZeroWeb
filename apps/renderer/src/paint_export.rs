@@ -137,15 +137,6 @@ fn draw_op_to_ipc(op: DrawOp) -> IpcDrawOp {
     }
 }
 
-/// 经自定义 fetch 回调抓取 `<img>` 子资源（多进程 IPC 代理）。
-pub fn fetch_image_payloads_with_fetch<F>(html: &str, page_url: &str, fetch: &mut F) -> Vec<IpcImagePayload>
-where
-    F: FnMut(&str) -> Option<Vec<u8>>,
-{
-    let mut cache = zero_render_foundation::image_cache::ImageCache::default();
-    fetch_image_payloads_with_cache(html, page_url, &mut cache, fetch)
-}
-
 /// 优先从已解码 `ImageCache` 取图，缺失时再经 fetch 回调抓取。
 pub fn fetch_image_payloads_with_cache<F>(
     html: &str,
