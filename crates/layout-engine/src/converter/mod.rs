@@ -55,6 +55,10 @@ pub fn computed_style_to_taffy(
             | DisplayValue::TableRow
     );
 
+    // CSS Position §6（css-position-1）：inset 属性（top/right/bottom/left）仅对
+    // 非 static 定位元素生效。static 元素的 inset 必须忽略（R689）。
+    let is_static = matches!(style.position, PositionValue::Static);
+
     taffy::Style {
         display: convert_display(&style.display),
         box_sizing: convert_box_sizing(&style.box_sizing),
@@ -68,11 +72,22 @@ pub fn computed_style_to_taffy(
             zero_style_system::ScrollbarWidthComputedValue::None => 0.0,
         },
         position: convert_position(&style.position),
-        inset: taffy::geometry::Rect {
-            left: convert_length_to_lpa(&style.left, false, vw, vh),
-            right: convert_length_to_lpa(&style.right, false, vw, vh),
-            top: convert_length_to_lpa(&style.top, false, vw, vh),
-            bottom: convert_length_to_lpa(&style.bottom, false, vw, vh),
+        inset: if is_static {
+            // static 定位：inset 全 Auto，taffy（Relative + Auto inset）不偏移，
+            // 与 static 正常流语义一致（R689）。
+            taffy::geometry::Rect {
+                left: taffy::style::LengthPercentageAuto::Auto,
+                right: taffy::style::LengthPercentageAuto::Auto,
+                top: taffy::style::LengthPercentageAuto::Auto,
+                bottom: taffy::style::LengthPercentageAuto::Auto,
+            }
+        } else {
+            taffy::geometry::Rect {
+                left: convert_length_to_lpa(&style.left, false, vw, vh),
+                right: convert_length_to_lpa(&style.right, false, vw, vh),
+                top: convert_length_to_lpa(&style.top, false, vw, vh),
+                bottom: convert_length_to_lpa(&style.bottom, false, vw, vh),
+            }
         },
         size: taffy::geometry::Size {
             width: convert_length_to_dimension(&style.width, vw, vh),
