@@ -906,6 +906,37 @@ mod tests {
             html.contains("zero://settings/toggle/javascript_enabled"),
             "settings page should expose javascript toggle"
         );
+        assert!(
+            html.contains("zero://settings/cycle/search_engine"),
+            "settings page should expose search engine cycle"
+        );
+        assert!(
+            html.contains("zero://settings/set/home_url/https%3A%2F%2Fexample.com"),
+            "settings page should expose home url presets"
+        );
+    }
+
+    /// 轮换搜索引擎应更新设置并留在设置页。
+    #[test]
+    fn settings_cycle_search_engine_advances_engine() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.shell
+            .apply_settings(|settings| settings.search_engine = zero_browser_shell::SearchEngine::Google);
+        app.navigate_to("zero://settings/cycle/search_engine");
+        assert_eq!(
+            app.shell.settings().search_engine,
+            zero_browser_shell::SearchEngine::Bing
+        );
+        assert_eq!(app.address_bar_text(), "zero://settings");
+    }
+
+    /// 设置主页 URL 预设链接应写入配置。
+    #[test]
+    fn settings_home_url_preset_updates_home() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.navigate_to("zero://settings/set/home_url/zero%3A%2F%2Fnewtab");
+        assert_eq!(app.shell.settings().home_url, "zero://newtab");
+        assert_eq!(app.address_bar_text(), "zero://settings");
     }
 
     /// 设置页 toggle URL 应切换对应选项并留在设置页。

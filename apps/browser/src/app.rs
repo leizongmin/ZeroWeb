@@ -994,8 +994,7 @@ impl BrowserApp {
 
     /// 导航到指定 URL
     pub fn navigate_to(&mut self, url: &str) {
-        if let Some(key) = url.strip_prefix("zero://settings/toggle/") {
-            self.apply_settings_toggle(key);
+        if self.try_apply_settings_url(url) {
             return;
         }
 
@@ -1034,8 +1033,12 @@ impl BrowserApp {
 
     fn refresh_tab_favicon(&mut self, tab_id: TabId, page_url: &str) {
         let size = layout::TAB_ICON_SIZE * self.scale_factor;
-        let html = Self::tab_html_hint(Some(page_url));
+        let html_owned = self.tabs.page_html(tab_id);
+        let html = html_owned
+            .as_deref()
+            .or_else(|| Self::tab_html_hint(Some(page_url)));
         crate::tab_favicon::ensure_tab_favicon(&mut self.font_loader, tab_id, Some(page_url), html, size);
+        self.needs_redraw = true;
     }
 
     pub fn any_tab_loading(&self) -> bool {
@@ -1243,6 +1246,60 @@ impl BrowserApp {
         }
         self.address_bar.set_text("zero://settings".to_string());
         self.needs_redraw = true;
+    }
+
+    /// 处理设置页内部链接（toggle / cycle / set），成功时返回 `true`。
+    fn try_apply_settings_url(&mut self, url: &str) -> bool {
+        if let Some(key) = url.strip_prefix("zero://settings/toggle/") {
+            self.apply_settings_toggle(key);
+            return true;
+        }
+        if url == "zero://settings/cycle/search_engine" {
+            self.apply_settings_cycle_search_engine();
+            return true;
+        }
+        if let Some(encoded) = url.strip_prefix("zero://settings/set/home_url/") {
+            self.apply_settings_home_url(encoded);
+            return true;
+        }
+        false
+    }
+
+    fn percent_decode(input: &str) -> String {
+        let mut out = String::with_capacity(input.len());
+        let bytes = input.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'%' && i + 2 < bytes.len() {
+                let hex = &input[i + 1..i + 3];
+                if let Ok(value) = u8::from_str_radix(hex, 16) {
+                    out.push(char::from(value));
+                    i += 3;
+                    continue;
+                }
+            }
+            out.push(char::from(bytes[i]));
+            i += 1;
+        }
+        out
+    }
+
+    /// 轮换默认搜索引擎。
+    fn apply_settings_cycle_search_engine(&mut self) {
+        let next = self.shell.settings().search_engine.cycle();
+        self.shell.apply_settings(|settings| settings.search_engine = next);
+        self.open_settings_page();
+    }
+
+    /// 设置主页 URL（`zero://settings/set/home_url/<percent-encoded>`）。
+    fn apply_settings_home_url(&mut self, encoded: &str) {
+        let home_url = Self::percent_decode(encoded).trim().to_string();
+        if home_url.is_empty() {
+            tracing::debug!("rejecting empty home_url setting");
+            return;
+        }
+        self.shell.apply_settings(|settings| settings.home_url = home_url);
+        self.open_settings_page();
     }
 
     /// 应用设置页开关（`zero://settings/toggle/<key>`）。

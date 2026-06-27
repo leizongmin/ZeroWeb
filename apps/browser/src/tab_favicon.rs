@@ -72,9 +72,16 @@ pub fn render_tab_favicon(
 
 fn resolve_favicon_bitmap(page_url: Option<&str>, html: Option<&str>, size_px: f32) -> Option<GlyphBitmap> {
     let page_url = page_url?;
+    if should_skip_favicon_fetch(page_url) {
+        return None;
+    }
     let favicon_url = pick_favicon_url(page_url, html)?;
     let bytes = fetch_bytes(&favicon_url)?;
     decode_icon_bytes(&bytes, size_px)
+}
+
+fn should_skip_favicon_fetch(page_url: &str) -> bool {
+    page_url.starts_with("zero://") || page_url.starts_with("about:") || page_url.starts_with("file:")
 }
 
 fn pick_favicon_url(page_url: &str, html: Option<&str>) -> Option<String> {
@@ -280,6 +287,28 @@ mod tests {
     use super::*;
     use zero_browser_shell::TabId;
     use zero_render_foundation::color::Color;
+
+    #[test]
+    fn extract_link_icon_href_reads_head_link() {
+        let html = r#"<!doctype html><head><link rel="icon" href="/assets/app.ico"></head><body></body>"#;
+        assert_eq!(
+            extract_link_icon_href(html).as_deref(),
+            Some("/assets/app.ico")
+        );
+    }
+
+    #[test]
+    fn pick_favicon_url_prefers_html_link_over_default_ico() {
+        let html = r#"<link rel="shortcut icon" href="https://cdn.example.com/favicon.png">"#;
+        let url = pick_favicon_url("https://example.com/page", Some(html)).expect("favicon url");
+        assert_eq!(url, "https://cdn.example.com/favicon.png");
+    }
+
+    #[test]
+    fn pick_favicon_url_falls_back_to_favicon_ico() {
+        let url = pick_favicon_url("https://example.com", None).expect("favicon url");
+        assert_eq!(url, "https://example.com/favicon.ico");
+    }
 
     #[test]
     fn favicon_register_and_lookup_use_same_codepoint() {
