@@ -1,74 +1,40 @@
 //! HTTP 响应缓存。
 //!
-//! 提供基于 Cache-Control、ETag 和 Last-Modified 的 HTTP 响应缓存。
-//! 支持 LRU 淘汰策略和缓存容量限制。
+//! 内存热缓存 + 可选磁盘持久层（对齐浏览器 memory cache / disk cache）。
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
+use crate::cache_policy::{parse_cache_control, storable_ttl};
+use crate::disk_cache::DiskHttpCache;
 use crate::request::HttpResponse;
 
-/// 缓存条目。
+/// 缓存条目（内存层）。
 #[derive(Debug, Clone)]
 struct CacheEntry {
-    /// 响应体。
     body: Vec<u8>,
-    /// 响应头。
     headers: Vec<(String, String)>,
-    /// HTTP 状态码。
     status_code: u16,
-    /// 最终 URL（重定向后）。
     url: String,
-    /// 存储时的单调时间（用于 TTL 计算）。
     stored_at: Instant,
-    /// 缓存过期时间（TTL 秒数），None 表示不缓存。
     ttl_secs: Option<u64>,
-    /// ETag 值。
     etag: Option<String>,
-    /// Last-Modified 值。
     last_modified: Option<String>,
-    /// 是否为共享缓存。
     #[allow(dead_code)]
     is_shared: bool,
 }
 
-/// Cache-Control 指令解析结果。
-#[derive(Debug, Clone, Default)]
-struct CacheControl {
-    /// max-age 指令（秒）。
-    max_age: Option<u64>,
-    /// s-maxage 指令（秒，仅共享缓存）。
-    s_maxage: Option<u64>,
-    /// no-cache — 必须每次重新验证。
-    no_cache: bool,
-    /// no-store — 完全不缓存。
-    no_store: bool,
-    /// public — 允许共享缓存。
-    public: bool,
-    /// private — 不允许共享缓存。
-    private: bool,
-    /// must-revalidate — 过期后必须重新验证。
-    must_revalidate: bool,
-}
-
-/// HTTP 响应缓存。
+/// HTTP 响应缓存（内存 + 可选磁盘）。
 ///
-/// 基于内存的 HTTP 响应缓存，支持：
-/// - Cache-Control 头解析（max-age, no-cache, no-store, public, private）
-/// - ETag/If-None-Match 条件请求
-/// - Last-Modified/If-Modified-Since 条件请求
-/// - LRU 淘汰策略
-/// - 缓存容量限制
+/// - 内存层：LRU，默认 1000 条 / 50MB
+/// - 磁盘层：[`DiskHttpCache`]，跨会话保留；通过 [`Self::open_persistent`] 启用
 #[derive(Debug)]
 pub struct HttpCache {
-    /// 缓存存储。
     entries: HashMap<String, CacheEntry>,
-    /// LRU 访问顺序（URL 列表，最近访问的在末尾）。
     lru_order: Vec<String>,
-    /// 最大缓存条目数。
     max_entries: usize,
-    /// 最大缓存总字节数。
     max_bytes: usize,
+    disk: Option<DiskHttpCache>,
 }
 
 impl Default for HttpCache {
@@ -92,7 +58,21 @@ impl HttpCache {
             lru_order: Vec::new(),
             max_entries,
             max_bytes,
+            disk: None,
         }
+    }
+
+    /// 打开带磁盘持久层的缓存（浏览器默认路径）。
+    pub fn open_persistent() -> Self {
+        let mut cache = Self::new();
+        match DiskHttpCache::open_default() {
+            Ok(disk) => {
+                tracing::info!(dir = %crate::disk_cache::default_cache_dir().display(), "HTTP disk cache opened");
+                cache.disk = Some(disk);
+            }
+            Err(e) => tracing::warn!("HTTP disk cache unavailable: {e}"),
+        }
+        cache
     }
 
     /// 尝试从缓存获取响应。
@@ -100,21 +80,36 @@ impl HttpCache {
     /// 返回 None 表示缓存未命中或缓存已过期。
     /// 返回 Some 表示缓存命中，返回缓存的响应。
     pub fn get(&mut self, url: &str) -> Option<CachedResponse> {
+        if let Some(hit) = self.get_memory(url) {
+            return Some(hit);
+        }
+        let disk = self.disk.as_mut()?;
+        let hit = disk.get(url)?;
+        tracing::info!(url, "HTTP disk cache hit");
+        let cached = CachedResponse {
+            body: hit.body.clone(),
+            headers: hit.headers.clone(),
+            status_code: hit.status_code,
+            url: hit.url.clone(),
+            etag: hit.etag.clone(),
+            last_modified: hit.last_modified.clone(),
+        };
+        self.insert_memory_from_hit(url, &cached, hit);
+        Some(cached)
+    }
+
+    fn get_memory(&mut self, url: &str) -> Option<CachedResponse> {
         let entry = self.entries.get(url)?;
 
-        // 检查 TTL
         if let Some(ttl) = entry.ttl_secs {
             if entry.stored_at.elapsed() > Duration::from_secs(ttl) {
-                // 缓存已过期，移除
                 self.remove(url);
                 return None;
             }
         } else {
-            // 无 TTL，不缓存
             return None;
         }
 
-        // 先提取数据
         let result = CachedResponse {
             body: entry.body.clone(),
             headers: entry.headers.clone(),
@@ -124,10 +119,40 @@ impl HttpCache {
             last_modified: entry.last_modified.clone(),
         };
 
-        // 提升 LRU 顺序
         self.promote(url);
-
         Some(result)
+    }
+
+    fn insert_memory_from_hit(&mut self, url: &str, cached: &CachedResponse, disk: crate::disk_cache::DiskCacheHit) {
+        let cc = parse_cache_control(&HttpResponse {
+            status_code: cached.status_code,
+            headers: cached.headers.clone(),
+            body: vec![],
+            url: cached.url.clone(),
+            redirect_count: 0,
+        });
+        if disk.fresh_for_secs == 0 || self.max_entries == 0 {
+            return;
+        }
+        self.evict_if_needed(cached.body.len());
+        if self.entries.contains_key(url) {
+            self.remove(url);
+        }
+        self.entries.insert(
+            url.to_string(),
+            CacheEntry {
+                body: cached.body.clone(),
+                headers: cached.headers.clone(),
+                status_code: cached.status_code,
+                url: cached.url.clone(),
+                stored_at: Instant::now(),
+                ttl_secs: Some(disk.fresh_for_secs),
+                etag: cached.etag.clone(),
+                last_modified: cached.last_modified.clone(),
+                is_shared: cc.public,
+            },
+        );
+        self.lru_order.push(url.to_string());
     }
 
     /// 检查是否有有效的缓存条目（不提升 LRU 顺序）。
@@ -144,72 +169,61 @@ impl HttpCache {
     ///
     /// 根据 Cache-Control 和其他响应头决定是否缓存。
     pub fn put(&mut self, url: &str, response: &HttpResponse) -> bool {
-        // 解析 Cache-Control
-        let cc = Self::parse_cache_control(response);
-
-        // no-store 不缓存
-        if cc.no_store {
+        let Some(ttl_secs) = storable_ttl(response) else {
             return false;
-        }
-
-        // 非 GET 请求的响应通常不缓存
-        // 非 200/203/300/301/302/304/307/308/410 状态码通常不缓存
-        if !Self::is_cacheable_status(response.status_code) {
-            return false;
-        }
-
-        // 计算缓存生存时间
-        let ttl_secs = Self::compute_ttl(&cc, response);
-        let ttl_secs = match ttl_secs {
-            Some(ttl) if ttl > 0 => Some(ttl),
-            _ => return false,
         };
-
-        // 提取 ETag 和 Last-Modified
+        let cc = parse_cache_control(response);
         let etag = response.header("etag").map(|s| s.to_string());
         let last_modified = response.header("last-modified").map(|s| s.to_string());
 
-        let entry = CacheEntry {
-            body: response.body.clone(),
-            headers: response.headers.clone(),
-            status_code: response.status_code,
-            url: response.url.clone(),
-            stored_at: Instant::now(),
-            ttl_secs,
-            etag,
-            last_modified,
-            is_shared: cc.public,
-        };
-
-        // 先检查容量
-        if self.max_entries == 0 {
-            return false;
+        if self.max_entries > 0 {
+            self.evict_if_needed(response.body.len());
+            if self.entries.contains_key(url) {
+                self.remove(url);
+            }
+            self.entries.insert(
+                url.to_string(),
+                CacheEntry {
+                    body: response.body.clone(),
+                    headers: response.headers.clone(),
+                    status_code: response.status_code,
+                    url: response.url.clone(),
+                    stored_at: Instant::now(),
+                    ttl_secs: Some(ttl_secs),
+                    etag: etag.clone(),
+                    last_modified: last_modified.clone(),
+                    is_shared: cc.public,
+                },
+            );
+            self.lru_order.push(url.to_string());
         }
-        self.evict_if_needed(response.body.len());
-        if self.entries.contains_key(url) {
-            self.remove(url);
+
+        let mut stored = self.entries.contains_key(url);
+        if let Some(disk) = self.disk.as_mut() {
+            stored |= disk.put(url, response);
         }
-
-        self.entries.insert(url.to_string(), entry);
-        self.lru_order.push(url.to_string());
-
-        true
+        stored
     }
 
     /// 移除缓存条目。
     pub fn remove(&mut self, url: &str) -> bool {
-        if self.entries.remove(url).is_some() {
+        let mem = if self.entries.remove(url).is_some() {
             self.lru_order.retain(|u| u != url);
             true
         } else {
             false
-        }
+        };
+        let disk = self.disk.as_mut().is_some_and(|d| d.remove(url));
+        mem || disk
     }
 
-    /// 清空所有缓存。
+    /// 清空内存与磁盘缓存。
     pub fn clear(&mut self) {
         self.entries.clear();
         self.lru_order.clear();
+        if let Some(disk) = self.disk.as_mut() {
+            let _ = disk.clear();
+        }
     }
 
     /// 返回缓存条目数。
@@ -239,82 +253,17 @@ impl HttpCache {
             if let Some(ref lm) = entry.last_modified {
                 headers.push(("If-Modified-Since".to_string(), lm.clone()));
             }
+            return headers;
+        }
+        if let Some(disk) = &self.disk {
+            return disk.conditional_headers(url);
         }
         headers
     }
 
-    /// 解析 Cache-Control 头。
-    fn parse_cache_control(response: &HttpResponse) -> CacheControl {
-        let mut cc = CacheControl::default();
-
-        if let Some(value) = response.header("cache-control") {
-            for directive in value.split(',') {
-                let directive = directive.trim();
-                if directive.eq_ignore_ascii_case("no-cache") {
-                    cc.no_cache = true;
-                } else if directive.eq_ignore_ascii_case("no-store") {
-                    cc.no_store = true;
-                } else if directive.eq_ignore_ascii_case("public") {
-                    cc.public = true;
-                } else if directive.eq_ignore_ascii_case("private") {
-                    cc.private = true;
-                } else if directive.eq_ignore_ascii_case("must-revalidate") {
-                    cc.must_revalidate = true;
-                } else {
-                    let lower = directive.to_ascii_lowercase();
-                    if let Some(age_str) = lower.strip_prefix("max-age=") {
-                        cc.max_age = age_str.trim().parse().ok();
-                    } else if let Some(age_str) = lower.strip_prefix("s-maxage=") {
-                        cc.s_maxage = age_str.trim().parse().ok();
-                    }
-                }
-            }
-        }
-
-        cc
-    }
-
-    /// 计算缓存 TTL（秒）。
-    fn compute_ttl(cc: &CacheControl, response: &HttpResponse) -> Option<u64> {
-        // no-cache 虽然可以存储，但每次必须验证，设 TTL 为 0
-        if cc.no_cache {
-            return Some(0);
-        }
-
-        // 优先使用 s-maxage（仅共享缓存时）
-        if let Some(s_maxage) = cc.s_maxage {
-            return Some(s_maxage);
-        }
-
-        // 使用 max-age
-        if let Some(max_age) = cc.max_age {
-            return Some(max_age);
-        }
-
-        // 尝试从 Expires 头推断
-        if let Some(expires) = response.header("expires")
-            && let Ok(expires_time) = parse_http_date(expires)
-        {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-            if expires_time > now {
-                return Some(expires_time - now);
-            }
-            return Some(0);
-        }
-
-        // 无缓存指令，给一个保守的默认值（0 表示不缓存）
-        None
-    }
-
-    /// 判断 HTTP 状态码是否可缓存。
-    fn is_cacheable_status(status: u16) -> bool {
-        matches!(
-            status,
-            200 | 203 | 204 | 206 | 300 | 301 | 302 | 304 | 307 | 308 | 404 | 405 | 410 | 414 | 501
-        )
+    /// 磁盘缓存占用（无磁盘层时为 0）。
+    pub fn disk_bytes(&self) -> u64 {
+        self.disk.as_ref().map(DiskHttpCache::total_bytes).unwrap_or(0)
     }
 
     /// 提升 LRU 顺序。
@@ -367,14 +316,6 @@ impl CachedResponse {
             redirect_count: 0,
         }
     }
-}
-
-/// 解析 HTTP 日期格式（RFC 7231）。
-///
-/// 复用 cookie 模块中精确的 `parse_expires_date` 函数，
-/// 支持 RFC 1123、RFC 850 和 ANSI C asctime 三种格式。
-fn parse_http_date(date_str: &str) -> Result<u64, ()> {
-    crate::cookie::parse_expires_date(date_str).ok_or(())
 }
 
 #[cfg(test)]
@@ -458,11 +399,8 @@ mod tests {
     #[test]
     fn test_cache_no_cache_directive() {
         let mut cache = HttpCache::new();
-        // no-cache 可以存储但 TTL 为 0
         let resp = make_response(200, b"hello", vec![("cache-control", "no-cache")]);
-        // TTL 为 0 表示立即过期
-        cache.put("https://example.com/test", &resp);
-        // 由于 TTL=0，get 时应立即过期
+        assert!(!cache.put("https://example.com/test", &resp));
         assert!(cache.get("https://example.com/test").is_none());
     }
 
@@ -597,10 +535,8 @@ mod tests {
 
     #[test]
     fn test_parse_http_date() {
-        let ts = parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+        let ts = crate::cookie::parse_expires_date("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
         assert!(ts > 0, "应返回有效的 Unix 时间戳");
-
-        assert!(parse_http_date("invalid").is_err());
     }
 
     #[test]
@@ -747,10 +683,24 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_expires_past() {
-        let mut cache = HttpCache::new();
-        // Expires 在过去
-        let resp = make_response(200, b"hello", vec![("expires", "Sun, 06 Nov 1994 08:49:37 GMT")]);
-        assert!(!cache.put("https://example.com/test", &resp));
+    fn test_tiered_disk_promotes_to_memory() {
+        use crate::disk_cache::DiskHttpCache;
+        use std::fs;
+
+        let dir = std::env::temp_dir().join(format!("zero-tiered-cache-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let mut cache = HttpCache::with_config(100, 50 * 1024 * 1024);
+        cache.disk = DiskHttpCache::open(&dir).ok();
+
+        let url = "https://example.com/tier.js";
+        let resp = make_response(200, b"tiered", vec![("cache-control", "max-age=600")]);
+        assert!(cache.put(url, &resp));
+        cache.entries.clear();
+        cache.lru_order.clear();
+
+        let hit = cache.get(url).expect("disk hit promotes");
+        assert_eq!(hit.body, b"tiered");
+        assert!(cache.entries.contains_key(url), "应回填内存层");
+        let _ = fs::remove_dir_all(dir);
     }
 }

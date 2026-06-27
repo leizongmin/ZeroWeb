@@ -42,7 +42,7 @@ impl TabFetchProxy {
     pub fn new() -> Self {
         Self {
             scheduler: PerOriginFetchScheduler::new_shared(),
-            http_cache: Arc::new(Mutex::new(HttpCache::new())),
+            http_cache: Arc::new(Mutex::new(HttpCache::open_persistent())),
             pending: Vec::new(),
             tab_epochs: HashMap::new(),
             security: HashMap::new(),
@@ -113,7 +113,11 @@ impl TabFetchProxy {
         );
 
         if let Some(cached) = self.http_cache.lock().expect("http cache").get(&url) {
-            tracing::info!("fetch cache hit tab {} req_id={} {url}", tab_id.0, params.request_id);
+            tracing::info!(
+                "fetch memory cache hit tab {} req_id={} {url}",
+                tab_id.0,
+                params.request_id
+            );
             let (tx, rx) = channel();
             let _ = tx.send(Ok((cached.status_code, cached.body)));
             self.pending.push(PendingFetch {

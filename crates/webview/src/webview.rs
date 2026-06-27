@@ -183,7 +183,7 @@ impl WebView {
             workers: HashMap::new(),
             next_worker_id: 1,
             wasm_instances: HashMap::new(),
-            http_cache: HttpCache::new(),
+            http_cache: HttpCache::open_persistent(),
             image_cache: ImageCache::default(),
             cached_image_sizes: HashMap::new(),
             font_resolver: HashMap::new(),
