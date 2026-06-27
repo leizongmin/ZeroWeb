@@ -870,6 +870,34 @@ impl BrowserApp {
                     self.chrome_palette.tab_attention,
                 );
             }
+
+            let (theme_x, theme_y, theme_w, theme_h) = self.toolbar_theme_button_rect();
+            let theme_cx = theme_x + theme_w * 0.5;
+            let theme_cy = theme_y + theme_h * 0.5;
+            let theme_hovered = self.pointer_in_rect(theme_x, theme_y, theme_w, theme_h);
+            if theme_hovered {
+                push_circle_fill(
+                    fills,
+                    theme_cx,
+                    theme_cy,
+                    layout::NAV_BUTTON_HOVER_DIAMETER * s,
+                    self.chrome_palette.tab_hover_bg,
+                );
+            }
+            let theme_icon = self.theme_button_icon();
+            crate::ui_icons::render_icon(
+                &mut self.font_loader,
+                glyphs,
+                theme_icon,
+                theme_cx,
+                theme_cy,
+                layout::CHROME_ICON_SIZE * s,
+                if theme_hovered {
+                    self.chrome_palette.address_bar_text
+                } else {
+                    self.chrome_palette.nav_button
+                },
+            );
         }
 
         let (menu_btn_x, menu_btn_y, menu_btn_w, menu_btn_h) = self.toolbar_menu_button_rect();

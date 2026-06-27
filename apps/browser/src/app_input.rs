@@ -968,6 +968,11 @@ impl BrowserApp {
                 return;
             }
 
+            if self.toolbar_theme_hit_test(x_f, y_f) {
+                self.cycle_color_theme();
+                return;
+            }
+
             if self.toolbar_menu_hit_test(x_f, y_f) {
                 self.show_browser_menu();
                 return;
@@ -1181,10 +1186,13 @@ impl BrowserApp {
         let s = self.scale_factor;
         let bar_x = self.nav_section_width() + layout::ADDRESS_BAR_PADDING * s;
         let download_w = layout::TOOLBAR_DOWNLOAD_BUTTON_WIDTH * s;
+        let theme_w = layout::TOOLBAR_THEME_BUTTON_WIDTH * s;
         let menu_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
         let trailing_reserved = layout::ADDRESS_BAR_PADDING * s
             + layout::TOOLBAR_TRAILING_GAP * s
             + download_w
+            + layout::TOOLBAR_TRAILING_GAP * s
+            + theme_w
             + layout::TOOLBAR_TRAILING_GAP * s
             + menu_w;
         let bar_w = self.physical_size.0 as f32 - bar_x - trailing_reserved;
@@ -1203,15 +1211,33 @@ impl BrowserApp {
 
     fn toolbar_download_button_rect(&self) -> (f32, f32, f32, f32) {
         let s = self.scale_factor;
-        let (menu_x, menu_y, _, menu_h) = self.toolbar_menu_button_rect();
+        let (theme_x, theme_y, _, theme_h) = self.toolbar_theme_button_rect();
         let btn_w = layout::TOOLBAR_DOWNLOAD_BUTTON_WIDTH * s;
-        let btn_x = menu_x - layout::TOOLBAR_TRAILING_GAP * s - btn_w;
-        (btn_x, menu_y, btn_w, menu_h)
+        let btn_x = theme_x - layout::TOOLBAR_TRAILING_GAP * s - btn_w;
+        (btn_x, theme_y, btn_w, theme_h)
     }
 
     fn toolbar_download_hit_test(&self, x_f: f32, y_f: f32) -> bool {
         let (bx, by, bw, bh) = self.toolbar_download_button_rect();
         x_f >= bx && x_f <= bx + bw && y_f >= by && y_f <= by + bh
+    }
+
+    fn toolbar_theme_button_rect(&self) -> (f32, f32, f32, f32) {
+        let s = self.scale_factor;
+        let (menu_x, menu_y, _, menu_h) = self.toolbar_menu_button_rect();
+        let btn_w = layout::TOOLBAR_THEME_BUTTON_WIDTH * s;
+        let btn_x = menu_x - layout::TOOLBAR_TRAILING_GAP * s - btn_w;
+        (btn_x, menu_y, btn_w, menu_h)
+    }
+
+    fn toolbar_theme_hit_test(&self, x_f: f32, y_f: f32) -> bool {
+        let (bx, by, bw, bh) = self.toolbar_theme_button_rect();
+        x_f >= bx && x_f <= bx + bw && y_f >= by && y_f <= by + bh
+    }
+
+    #[cfg(test)]
+    pub fn toolbar_theme_button_rect_for_test(&self) -> (f32, f32, f32, f32) {
+        self.toolbar_theme_button_rect()
     }
 
     fn toolbar_menu_button_rect(&self) -> (f32, f32, f32, f32) {

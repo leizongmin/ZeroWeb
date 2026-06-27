@@ -835,8 +835,8 @@ mod tests {
 
             // winit 的 ScaleFactorChanged 携带 scale_factor 和 InnerSizeWriter，
             // 由于 InnerSizeWriter 无法在测试中直接构造，
-            // 使用同样落入 `_ => {}` 分支的 ThemeChanged 事件来模拟未处理事件。
-            app.handle_window_event(winit::event::WindowEvent::ThemeChanged(winit::window::Theme::Light));
+            // 使用同样落入 `_ => {}` 分支的 Destroyed 事件来模拟未处理事件。
+            app.handle_window_event(winit::event::WindowEvent::Destroyed);
 
             assert!(
                 received.is_empty(),
@@ -852,7 +852,7 @@ mod tests {
             let attrs = winit::window::WindowAttributes::default();
             let mut app = crate::window::BasicApp::new_basic(attrs, &mut callback);
 
-            app.handle_window_event(winit::event::WindowEvent::ThemeChanged(winit::window::Theme::Light));
+            app.handle_window_event(winit::event::WindowEvent::Destroyed);
             app.handle_window_event(winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize::new(
                 1600, 900,
             )));

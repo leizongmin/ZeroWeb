@@ -34,6 +34,8 @@ pub const ADDRESS_BAR_TRAILING_SLOTS: f32 = ADDRESS_BAR_ACTION_SLOT_WIDTH * ADDR
 pub const TOOLBAR_TRAILING_GAP: f32 = 8.0;
 /// Width of the trailing download button slot.
 pub const TOOLBAR_DOWNLOAD_BUTTON_WIDTH: f32 = 32.0;
+/// Width of the trailing color-theme toggle button slot.
+pub const TOOLBAR_THEME_BUTTON_WIDTH: f32 = 32.0;
 /// Width of the trailing browser menu button slot.
 pub const TOOLBAR_MENU_BUTTON_WIDTH: f32 = 32.0;
 /// Total height of the toolbar: tab strip plus address row.
