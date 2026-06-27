@@ -273,7 +273,7 @@ fn cmd_product_smoke(args: &[String]) {
     );
     let fb = if via_webview {
         // DC-13 line 321：经 zero-webview 嵌入边界（仅自包含 fixture）。
-        reftest::render_via_webview_to_framebuffer(&html, &config)
+        reftest::render_via_webview_to_framebuffer(&html, "", &config)
     } else {
         reftest::render_to_framebuffer_with_base(&html, "", &config, base)
     };

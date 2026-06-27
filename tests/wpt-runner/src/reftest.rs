@@ -550,7 +550,7 @@ pub fn render_to_framebuffer_with_base(
 ///
 /// **范围**：仅适用于自包含 fixture（无外链 CSS/`<img>`），因 `load_html` 不做
 /// base_dir 解析（外链资源走 `fetch_url` 的 HTTP 路径）。welcome.html 即自包含。
-pub fn render_via_webview_to_framebuffer(html: &str, config: &ReftestConfig) -> FrameBuffer {
+pub fn render_via_webview_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> FrameBuffer {
     // 提取并执行 <script>（与 engine-direct 路径一致，保证 JS 设置条件被应用）
     execute_scripts(html);
 
@@ -561,8 +561,8 @@ pub fn render_via_webview_to_framebuffer(html: &str, config: &ReftestConfig) -> 
     };
     let mut webview = zero_webview::WebView::new(wv_config);
     // load_html 走 WebView 嵌入边界（其内部 RenderPipeline + font_resolver + 安全上下文）
-    // 产出与 engine-direct 同类型的 RenderPrimitives。
-    let result = webview.load_html(html, None);
+    // 产出与 engine-direct 同类型的 RenderPrimitives；css 与 engine-direct 一致传入。
+    let result = webview.load_html(html, if css.is_empty() { None } else { Some(css) });
 
     // 光栅化用与 product-smoke 同源的 FontLoader / GlyphCache，确保 font_id 映射一致
     // （自包含页用默认字体，font_id 0 在两侧均为 default，对齐）。
@@ -581,6 +581,48 @@ pub fn render_via_webview_to_framebuffer(html: &str, config: &ReftestConfig) -> 
         &[],
         &[],
     )
+}
+
+/// 像素级实证：engine-direct reftest 渲染 ≡ WebView（产品路径）渲染——确保 WPT 通过率代表浏览器真实显示。
+/// engine 与 WebView 同 RenderPrimitives + 同 rasterizer（render_full_scene），像素差应近 0。
+#[test]
+fn webview_reftest_matches_engine_direct_pixels() {
+    let config = ReftestConfig::default();
+    let html = r#"<html><body>
+        <div style="width:200px;height:100px;background:#cc3333">Box</div>
+        <div style="width:120px;height:60px;background:#3366cc;border-radius:8px">R</div>
+    </body></html>"#;
+    let engine_fb = render_to_framebuffer(html, "", &config);
+    let webview_fb = render_via_webview_to_framebuffer(html, "", &config);
+    assert_eq!(engine_fb.width, webview_fb.width, "宽度须一致");
+    assert_eq!(engine_fb.height, webview_fb.height, "高度须一致");
+    let (diff_pixels, _max_channel) = compare_pixels(&engine_fb, &webview_fb, 0);
+    let total = (engine_fb.width as usize) * (engine_fb.height as usize);
+    let ratio = if total > 0 { diff_pixels as f64 / total as f64 } else { 0.0 };
+    assert!(
+        ratio < 0.01,
+        "engine-direct vs WebView 像素差过高: {diff_pixels}/{total} ({:.2}%)",
+        ratio * 100.0
+    );
+}
+
+/// 同上，但 css 经外部 <style> 注入（覆盖 css 路径）。
+#[test]
+fn webview_reftest_matches_engine_direct_with_css() {
+    let config = ReftestConfig::default();
+    let html = r#"<html><body><div class="box">Hi</div></body></html>"#;
+    let css = ".box { width: 200px; height: 100px; background: #2a8a2a; }";
+    let engine_fb = render_to_framebuffer(html, css, &config);
+    let webview_fb = render_via_webview_to_framebuffer(html, css, &config);
+    assert_eq!((engine_fb.width, engine_fb.height), (webview_fb.width, webview_fb.height));
+    let (diff_pixels, _) = compare_pixels(&engine_fb, &webview_fb, 0);
+    let total = (engine_fb.width as usize) * (engine_fb.height as usize);
+    let ratio = if total > 0 { diff_pixels as f64 / total as f64 } else { 0.0 };
+    assert!(
+        ratio < 0.01,
+        "css 路径 engine vs WebView 像素差过高: {diff_pixels}/{total} ({:.2}%)",
+        ratio * 100.0
+    );
 }
 
 /// 诊断：转储布局盒树几何（绝对 y / margin-top / padding-top / height）。
