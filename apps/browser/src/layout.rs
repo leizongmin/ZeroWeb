@@ -26,8 +26,8 @@ pub const ADDRESS_BAR_LEADING_SLOT_WIDTH: f32 = 28.0;
 pub const ADDRESS_BAR_TRAILING_PAD: f32 = 12.0;
 /// Width of one trailing action slot inside the address bar pill.
 pub const ADDRESS_BAR_ACTION_SLOT_WIDTH: f32 = 28.0;
-/// Number of trailing action slots (bookmark, permissions, page actions).
-pub const ADDRESS_BAR_TRAILING_SLOT_COUNT: f32 = 3.0;
+/// Number of trailing action slots (bookmark, permissions).
+pub const ADDRESS_BAR_TRAILING_SLOT_COUNT: f32 = 2.0;
 /// Total width reserved for trailing action slots inside the address bar pill.
 pub const ADDRESS_BAR_TRAILING_SLOTS: f32 = ADDRESS_BAR_ACTION_SLOT_WIDTH * ADDRESS_BAR_TRAILING_SLOT_COUNT;
 /// Gap between the address bar and the trailing toolbar actions.

@@ -713,6 +713,22 @@ mod tests {
         );
     }
 
+    /// 地址栏内右侧只应保留星标与盾牌两个图标，不再有页面操作三点菜单
+    /// （避免与地址栏外的全局菜单三点重复）。
+    #[test]
+    fn address_bar_inner_drops_page_actions_menu() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+
+        let (_, glyphs, _, _) = app.build_scene_for_test(1280, 900);
+        let more_vertical_count = glyphs.iter().filter(|g| g.ch == '\u{E008}').count();
+        assert_eq!(
+            more_vertical_count, 1,
+            "exactly one MoreVertical icon (the outer global menu) should be rendered"
+        );
+    }
+
     /// 工具栏应渲染下载按钮图标。
     #[test]
     fn toolbar_renders_download_button() {

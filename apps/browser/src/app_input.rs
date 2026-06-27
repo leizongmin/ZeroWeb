@@ -1033,10 +1033,6 @@ impl BrowserApp {
                     self.show_site_permissions_menu();
                     return;
                 }
-                if self.address_bar_trailing_slot_hit_test(x_f, y_f, 2) {
-                    self.show_page_actions_menu();
-                    return;
-                }
                 self.handle_address_bar_press(x, y);
                 return;
             }
@@ -1396,55 +1392,6 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
-    fn show_page_actions_menu(&mut self) {
-        let s = self.scale_factor;
-        let (slot_x, slot_y, slot_w, slot_h) = self.address_bar_trailing_slot_rect(2);
-        let language = UiLanguage::detect_from_env();
-        let (reload, find, source, zoom_in, zoom_out, permissions) = match language {
-            UiLanguage::ZhCn => ("重新加载", "在页面中查找", "查看源代码", "放大", "缩小", "站点权限（暂无）"),
-            UiLanguage::EnUs => (
-                "Reload",
-                "Find in Page",
-                "View Source",
-                "Zoom In",
-                "Zoom Out",
-                "Site Permissions (none)",
-            ),
-        };
-        self.context_menu = ContextMenuState {
-            visible: true,
-            context_type: ContextType::Page,
-            items: vec![
-                reload.to_string(),
-                find.to_string(),
-                source.to_string(),
-                "---".to_string(),
-                zoom_in.to_string(),
-                zoom_out.to_string(),
-                "---".to_string(),
-                permissions.to_string(),
-            ],
-            item_ids: vec![
-                Some("page_action_reload".to_string()),
-                Some("page_action_find".to_string()),
-                Some("page_action_view_source".to_string()),
-                None,
-                Some("page_action_zoom_in".to_string()),
-                Some("page_action_zoom_out".to_string()),
-                None,
-                None,
-            ],
-            hovered_index: None,
-            x: slot_x + slot_w - layout::CONTEXT_MENU_WIDTH * s,
-            y: slot_y + slot_h + 4.0 * s,
-            source_tab_id: self.shell.active_tab_id(),
-            page_doc_x: 0.0,
-            page_doc_y: 0.0,
-        };
-        self.context_menu_suppress_left_up = true;
-        self.needs_redraw = true;
-    }
-
     fn show_site_permissions_menu(&mut self) {
         let s = self.scale_factor;
         let (slot_x, slot_y, slot_w, slot_h) = self.address_bar_trailing_slot_rect(1);
@@ -1704,22 +1651,6 @@ impl BrowserApp {
                 self.open_downloads_page();
             }
             "browser_menu_bookmarks" => self.open_bookmarks_page(),
-            "page_action_reload" => self.refresh_page(),
-            "page_action_find" => {
-                self.shell.find_start("");
-                self.needs_redraw = true;
-            }
-            "page_action_view_source" => {
-                if let Some(tab_id) = self.shell.active_tab_id() {
-                    self.view_page_source(tab_id);
-                }
-            }
-            "page_action_zoom_in" => {
-                self.shell.zoom_in();
-            }
-            "page_action_zoom_out" => {
-                self.shell.zoom_out();
-            }
             "tab_reload" => {
                 if let Some(tab_id) = source_tab_id {
                     if self.shell.active_tab_id() != Some(tab_id) {

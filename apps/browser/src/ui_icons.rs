@@ -171,4 +171,28 @@ mod tests {
         assert!(opaque > 0, "icon should have opaque pixels");
         assert!(fringe > 0, "icon should have antialiased fringe pixels");
     }
+
+    #[test]
+    fn download_icon_has_arrow_and_tray() {
+        let bitmap = rasterize_icon_svg(Icon::Download.svg_bytes(), 32.0).expect("rasterize download");
+        let w = bitmap.width as usize;
+        let h = bitmap.height as usize;
+        assert_eq!(w, 32);
+        assert_eq!(h, 32);
+        // 上 1/3 与下 1/3 都应有实质像素（箭头在上、托盘在下），避免图标过扁
+        let row_has_ink = |start: usize, end: usize| -> bool {
+            (start..end).any(|r| {
+                let row = &bitmap.data[r * w..(r + 1) * w];
+                row.iter().filter(|&&a| a > 64).count() > 0
+            })
+        };
+        assert!(
+            row_has_ink(0, h / 3),
+            "download icon should have ink in top third (arrow)"
+        );
+        assert!(
+            row_has_ink(2 * h / 3, h),
+            "download icon should have ink in bottom third (tray)"
+        );
+    }
 }
