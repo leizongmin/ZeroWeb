@@ -30,6 +30,9 @@ pub enum Icon {
     Lock,
     Download,
     Shield,
+    Sun,
+    Moon,
+    SunMoon,
 }
 
 impl Icon {
@@ -48,6 +51,9 @@ impl Icon {
             Icon::Lock => include_bytes!("../assets/icons/lock.svg"),
             Icon::Download => include_bytes!("../assets/icons/download.svg"),
             Icon::Shield => include_bytes!("../assets/icons/shield.svg"),
+            Icon::Sun => include_bytes!("../assets/icons/sun.svg"),
+            Icon::Moon => include_bytes!("../assets/icons/moon.svg"),
+            Icon::SunMoon => include_bytes!("../assets/icons/sun-moon.svg"),
         }
     }
 
@@ -147,6 +153,9 @@ mod tests {
             Icon::Lock,
             Icon::Download,
             Icon::Shield,
+            Icon::Sun,
+            Icon::Moon,
+            Icon::SunMoon,
         ] {
             render_icon(&mut loader, &mut Vec::new(), icon, 16.0, 16.0, 24.0, Color::BLACK);
             assert!(loader.has_bitmap_glyph(ICON_FONT_ID, icon.glyph_id(), 24.0));

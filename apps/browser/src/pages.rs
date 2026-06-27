@@ -274,6 +274,25 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         dir = download_dir_display,
     );
 
+    let (theme_section_label, theme_auto, theme_light, theme_dark, theme_cycle) = match lang {
+        UiLanguage::ZhCn => ("主题", "自动", "亮色", "暗色", "轮换"),
+        UiLanguage::EnUs => ("Theme", "Auto", "Light", "Dark", "Cycle"),
+    };
+    let theme_name = match settings.color_theme {
+        zero_browser_shell::ColorThemePreference::Auto => theme_auto,
+        zero_browser_shell::ColorThemePreference::Light => theme_light,
+        zero_browser_shell::ColorThemePreference::Dark => theme_dark,
+    };
+    let theme_row = format!(
+        r#"<div style="line-height:2;">{theme_section_label}: <strong>{theme_name}</strong>
+  {auto_link}{light_link}{dark_link}{cycle_link}
+</div>"#,
+        auto_link = action_link("zero://settings/set/color_theme/auto", theme_auto),
+        light_link = action_link("zero://settings/set/color_theme/light", theme_light),
+        dark_link = action_link("zero://settings/set/color_theme/dark", theme_dark),
+        cycle_link = action_link("zero://settings/cycle/color_theme", theme_cycle),
+    );
+
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -307,6 +326,7 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
       <h2 style="font-size: 18px; margin-top: 0; color: #555;">{section_appearance}</h2>
       <div style="font-size: 14px; color: #666;">
         {bookmarks_row}
+        {theme_row}
         {zoom_actions}
         {download_dir_row}
       </div>

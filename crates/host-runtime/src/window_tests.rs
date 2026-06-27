@@ -665,11 +665,24 @@ fn test_gpu_app_ignored_events() {
     };
     let mut app = make_gpu_app(&mut callback);
     app.handle_window_event(winit::event::WindowEvent::Destroyed, None);
+    assert!(received.is_empty(), "Destroyed should not dispatch");
+}
+
+#[test]
+fn test_gpu_app_theme_changed_dispatches_event() {
+    let mut received: Vec<AppEvent> = Vec::new();
+    let mut callback = |e: AppEvent, _: Option<Arc<winit::window::Window>>| {
+        received.push(e);
+    };
+    let mut app = make_gpu_app(&mut callback);
     app.handle_window_event(
         winit::event::WindowEvent::ThemeChanged(winit::window::Theme::Dark),
         None,
     );
-    assert!(received.is_empty(), "Ignored events should not dispatch");
+    assert!(
+        matches!(received.as_slice(), [AppEvent::ThemeChanged { dark: true }]),
+        "ThemeChanged should dispatch ThemeChanged AppEvent"
+    );
 }
 
 #[test]

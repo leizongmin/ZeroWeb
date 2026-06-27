@@ -16,6 +16,7 @@ fn test_settings_default() {
     assert!(!settings.do_not_track);
     assert!((settings.default_zoom - 1.0).abs() < 0.01);
     assert!(settings.download_directory.is_empty());
+    assert_eq!(settings.color_theme, ColorThemePreference::Auto);
 }
 
 #[test]
@@ -227,6 +228,7 @@ fn test_settings_roundtrip_preserves_all_fields() {
     settings.do_not_track = true;
     settings.default_zoom = 2.0;
     settings.download_directory = "/tmp/downloads".to_string();
+    settings.color_theme = ColorThemePreference::Dark;
 
     let dir = std::env::temp_dir().join("zeroweb-test-roundtrip");
     let _ = std::fs::remove_dir_all(&dir);
@@ -244,6 +246,15 @@ fn test_settings_roundtrip_preserves_all_fields() {
     assert!(loaded.do_not_track);
     assert!((loaded.default_zoom - 2.0).abs() < 0.01);
     assert_eq!(loaded.download_directory, "/tmp/downloads");
+    assert_eq!(loaded.color_theme, ColorThemePreference::Dark);
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_color_theme_preference_cycle() {
+    assert_eq!(ColorThemePreference::Auto.cycle(), ColorThemePreference::Light);
+    assert_eq!(ColorThemePreference::Light.cycle(), ColorThemePreference::Dark);
+    assert_eq!(ColorThemePreference::Dark.cycle(), ColorThemePreference::Auto);
+    assert_eq!(ColorThemePreference::from_name("dark"), Some(ColorThemePreference::Dark));
 }

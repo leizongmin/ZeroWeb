@@ -4,6 +4,40 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+/// 浏览器外壳配色主题偏好。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ColorThemePreference {
+    /// 跟随操作系统（无法探测时默认亮色）。
+    #[default]
+    Auto,
+    /// 始终亮色。
+    Light,
+    /// 始终暗色。
+    Dark,
+}
+
+impl ColorThemePreference {
+    /// 在 Auto → Light → Dark → Auto 间轮换。
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Auto => Self::Light,
+            Self::Light => Self::Dark,
+            Self::Dark => Self::Auto,
+        }
+    }
+
+    /// 从设置页使用的名称解析。
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "auto" => Some(Self::Auto),
+            "light" => Some(Self::Light),
+            "dark" => Some(Self::Dark),
+            _ => None,
+        }
+    }
+}
+
 /// 默认搜索引擎。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SearchEngine {
@@ -72,6 +106,9 @@ pub struct BrowserSettings {
     pub default_zoom: f32,
     /// 下载目录（空表示使用系统默认）。
     pub download_directory: String,
+    /// 浏览器外壳主题（Auto 跟随系统）。
+    #[serde(default)]
+    pub color_theme: ColorThemePreference,
 }
 
 impl Default for BrowserSettings {
@@ -86,6 +123,7 @@ impl Default for BrowserSettings {
             do_not_track: false,
             default_zoom: 1.0,
             download_directory: String::new(),
+            color_theme: ColorThemePreference::Auto,
         }
     }
 }

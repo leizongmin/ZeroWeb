@@ -324,6 +324,11 @@ impl<F: FnMut(AppEvent)> BasicApp<'_, F> {
             winit::event::WindowEvent::Ime(ime) => {
                 (self.on_event)(AppEvent::Ime(convert_ime(ime)));
             }
+            winit::event::WindowEvent::ThemeChanged(theme) => {
+                (self.on_event)(AppEvent::ThemeChanged {
+                    dark: theme == winit::window::Theme::Dark,
+                });
+            }
             _ => {}
         }
     }
@@ -478,6 +483,14 @@ impl<F: FnMut(AppEvent, Option<Arc<winit::window::Window>>)> GpuApp<'_, F> {
             }
             winit::event::WindowEvent::Ime(ime) => {
                 (self.on_event)(AppEvent::Ime(convert_ime(ime)), win_ref);
+            }
+            winit::event::WindowEvent::ThemeChanged(theme) => {
+                (self.on_event)(
+                    AppEvent::ThemeChanged {
+                        dark: theme == winit::window::Theme::Dark,
+                    },
+                    win_ref,
+                );
             }
             _ => {}
         }

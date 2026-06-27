@@ -144,6 +144,11 @@ pub enum AppEvent {
     Touch(TouchEvent),
     /// IME 输入事件（用于中文、日文、韩文等输入法）
     Ime(ImeEvent),
+    /// 操作系统配色主题变更
+    ThemeChanged {
+        /// 是否为深色主题
+        dark: bool,
+    },
 }
 
 /// 将 winit 的 ElementState 转换为布尔值（pressed）

@@ -683,6 +683,54 @@ mod tests {
         assert_eq!(app.address_bar_text(), "zero://history");
     }
 
+    /// 工具栏应渲染主题切换按钮（默认 Auto 为日月图标）。
+    #[test]
+    fn toolbar_renders_theme_button() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        app.shell
+            .apply_settings(|settings| settings.color_theme = zero_browser_shell::ColorThemePreference::Auto);
+
+        let (_, glyphs, _, _) = app.build_scene_for_test(1280, 900);
+        assert!(
+            glyphs.iter().any(|g| g.ch == '\u{E00F}'),
+            "toolbar should render sun-moon icon for auto theme"
+        );
+    }
+
+    /// 点击主题按钮应在 Auto → Light → Dark 间轮换。
+    #[test]
+    fn theme_button_cycles_preference() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        app.shell
+            .apply_settings(|settings| settings.color_theme = zero_browser_shell::ColorThemePreference::Auto);
+
+        let (btn_x, btn_y, btn_w, btn_h) = app.toolbar_theme_button_rect_for_test();
+        let cx = (btn_x + btn_w * 0.5) as f64;
+        let cy = (btn_y + btn_h * 0.5) as f64;
+
+        assert_eq!(
+            app.shell.settings().color_theme,
+            zero_browser_shell::ColorThemePreference::Auto
+        );
+        app.handle_mouse_click(cx, cy, true, "Left");
+        assert_eq!(
+            app.shell.settings().color_theme,
+            zero_browser_shell::ColorThemePreference::Light
+        );
+        assert_eq!(app.color_scheme_for_test(), zero_engine::PrefersColorSchemeValue::Light);
+
+        app.handle_mouse_click(cx, cy, true, "Left");
+        assert_eq!(
+            app.shell.settings().color_theme,
+            zero_browser_shell::ColorThemePreference::Dark
+        );
+        assert_eq!(app.color_scheme_for_test(), zero_engine::PrefersColorSchemeValue::Dark);
+    }
+
     /// 点击地址栏右侧三点按钮应打开浏览器菜单。
     #[test]
     fn browser_menu_button_opens_context_menu() {
@@ -1807,6 +1855,9 @@ fn main() {
             }
             AppEvent::Ime(event) => {
                 app.handle_ime(event);
+            }
+            AppEvent::ThemeChanged { dark } => {
+                app.handle_system_theme_changed(dark);
             }
             AppEvent::Focused => {
                 tracing::debug!("Window focused");

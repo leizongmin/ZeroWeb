@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use zero_browser_shell::{
-    BrowserMenuLabel, BrowserSettings, BrowserShell, ContextMenu, ContextType, SearchEngine, SuggestionSource, TabId,
-    TabMenuLabel, UiLanguage, browser_menu_label, tab_menu_label,
+    BrowserMenuLabel, BrowserSettings, BrowserShell, ColorThemePreference, ContextMenu, ContextType, SearchEngine,
+    SuggestionSource, TabId, TabMenuLabel, UiLanguage, browser_menu_label, tab_menu_label,
 };
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::set_char_measure_fn;
@@ -233,8 +233,8 @@ pub struct BrowserApp {
     color_scheme: PrefersColorSchemeValue,
     /// 浏览器外壳配色
     chrome_palette: colors::ChromePalette,
-    /// 是否已用 winit 窗口主题同步过颜色方案
-    color_scheme_window_synced: bool,
+    /// 最近一次已知的 winit 窗口主题（Auto 模式解析用）。
+    cached_window_theme: Option<winit::window::Theme>,
     /// 标签页 URL 加载（延迟绘制 loading / 后台 HTTP）
     tab_fetch: TabFetchState,
     /// 鼠标悬停链接时在浮动状态栏中显示的 URL
@@ -267,10 +267,12 @@ impl BrowserApp {
 
         set_char_measure_fn(text_metrics::measure_char);
 
-        let color_scheme = detect_system_color_scheme();
+        let shell = BrowserShell::new_with_persisted_settings();
+        let detected = detect_system_color_scheme();
+        let color_scheme = resolve_effective_color_scheme(shell.settings().color_theme, None, detected);
 
         let mut app = Self {
-            shell: BrowserShell::new_with_persisted_settings(),
+            shell,
             tabs: TabManager::new((800, 600), color_scheme),
             gpu_renderer: None,
             render_mode,
@@ -309,7 +311,7 @@ impl BrowserApp {
             chrome_anim_start: Instant::now(),
             color_scheme,
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
-            color_scheme_window_synced: false,
+            cached_window_theme: None,
             tab_fetch: TabFetchState::None,
             hovered_link_url: None,
             touch_scroll: None,
@@ -415,22 +417,53 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
-    /// 使用 winit 窗口主题更新颜色方案（`ZERO_BROWSER_COLOR_SCHEME` 已设置时跳过）。
-    pub fn sync_color_scheme_from_window(&mut self, window: &winit::window::Window) {
-        if self.color_scheme_window_synced || color_scheme_from_env().is_some() {
+    fn apply_resolved_color_scheme(&mut self, window_theme: Option<winit::window::Theme>) {
+        let detected = detect_system_color_scheme();
+        let scheme = resolve_effective_color_scheme(self.shell.settings().color_theme, window_theme, detected);
+        self.apply_color_scheme(scheme);
+    }
+
+    /// 轮换主题偏好（Auto → Light → Dark → Auto）并立即应用。
+    pub fn cycle_color_theme(&mut self) {
+        let next = self.shell.settings().color_theme.cycle();
+        self.shell.apply_settings(|settings| settings.color_theme = next);
+        self.apply_resolved_color_scheme(self.cached_window_theme);
+    }
+
+    /// 操作系统主题变更（仅在 Auto 模式下生效）。
+    pub fn handle_system_theme_changed(&mut self, dark: bool) {
+        self.cached_window_theme = Some(if dark {
+            winit::window::Theme::Dark
+        } else {
+            winit::window::Theme::Light
+        });
+        if color_scheme_from_env().is_some() {
             return;
         }
-        self.color_scheme_window_synced = true;
-
-        let Some(theme) = window.theme() else {
-            tracing::debug!("Window theme unavailable, keeping startup color scheme");
+        if self.shell.settings().color_theme != ColorThemePreference::Auto {
             return;
-        };
-
-        self.apply_color_scheme(match theme {
-            winit::window::Theme::Dark => PrefersColorSchemeValue::Dark,
-            winit::window::Theme::Light => PrefersColorSchemeValue::Light,
+        }
+        self.apply_color_scheme(if dark {
+            PrefersColorSchemeValue::Dark
+        } else {
+            PrefersColorSchemeValue::Light
         });
+    }
+
+    fn theme_button_icon(&self) -> crate::ui_icons::Icon {
+        match self.shell.settings().color_theme {
+            ColorThemePreference::Auto => crate::ui_icons::Icon::SunMoon,
+            ColorThemePreference::Light => crate::ui_icons::Icon::Sun,
+            ColorThemePreference::Dark => crate::ui_icons::Icon::Moon,
+        }
+    }
+
+    /// 使用 winit 窗口主题更新颜色方案（`ZERO_BROWSER_COLOR_SCHEME` 已设置时跳过）。
+    pub fn sync_color_scheme_from_window(&mut self, window: &winit::window::Window) {
+        if let Some(theme) = window.theme() {
+            self.cached_window_theme = Some(theme);
+        }
+        self.apply_resolved_color_scheme(self.cached_window_theme);
     }
 
     /// Wayland 无系统装饰时需自绘窗口控制按钮
@@ -716,6 +749,12 @@ impl BrowserApp {
     #[cfg(test)]
     pub fn chrome_palette(&self) -> colors::ChromePalette {
         self.chrome_palette
+    }
+
+    /// 测试用：当前生效的颜色方案。
+    #[cfg(test)]
+    pub fn color_scheme_for_test(&self) -> PrefersColorSchemeValue {
+        self.color_scheme
     }
 
     /// 测试用：Tab 是否已有可滚动/可交互的页面内容。
@@ -1357,6 +1396,14 @@ impl BrowserApp {
             self.apply_settings_download_directory(encoded);
             return true;
         }
+        if url == "zero://settings/cycle/color_theme" {
+            self.apply_settings_cycle_color_theme();
+            return true;
+        }
+        if let Some(name) = url.strip_prefix("zero://settings/set/color_theme/") {
+            self.apply_settings_color_theme(name);
+            return true;
+        }
         false
     }
 
@@ -1383,6 +1430,23 @@ impl BrowserApp {
     fn apply_settings_cycle_search_engine(&mut self) {
         let next = self.shell.settings().search_engine.cycle();
         self.shell.apply_settings(|settings| settings.search_engine = next);
+        self.open_settings_page();
+    }
+
+    /// 轮换外壳主题偏好（Auto → Light → Dark → Auto）。
+    fn apply_settings_cycle_color_theme(&mut self) {
+        self.cycle_color_theme();
+        self.open_settings_page();
+    }
+
+    /// 设置外壳主题偏好（`zero://settings/set/color_theme/auto|light|dark`）。
+    fn apply_settings_color_theme(&mut self, name: &str) {
+        let Some(theme) = ColorThemePreference::from_name(name) else {
+            tracing::debug!(%name, "unknown color_theme setting");
+            return;
+        };
+        self.shell.apply_settings(|settings| settings.color_theme = theme);
+        self.apply_resolved_color_scheme(self.cached_window_theme);
         self.open_settings_page();
     }
 

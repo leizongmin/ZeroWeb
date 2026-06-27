@@ -534,6 +534,27 @@ pub fn detect_system_color_scheme() -> PrefersColorSchemeValue {
     PrefersColorSchemeValue::Light
 }
 
+/// 根据用户主题偏好、窗口主题与系统探测结果解析实际配色方案。
+pub fn resolve_effective_color_scheme(
+    preference: zero_browser_shell::ColorThemePreference,
+    window_theme: Option<winit::window::Theme>,
+    detected: PrefersColorSchemeValue,
+) -> PrefersColorSchemeValue {
+    if let Some(scheme) = color_scheme_from_env() {
+        return scheme;
+    }
+    match preference {
+        zero_browser_shell::ColorThemePreference::Light => PrefersColorSchemeValue::Light,
+        zero_browser_shell::ColorThemePreference::Dark => PrefersColorSchemeValue::Dark,
+        zero_browser_shell::ColorThemePreference::Auto => window_theme
+            .map(|theme| match theme {
+                winit::window::Theme::Dark => PrefersColorSchemeValue::Dark,
+                winit::window::Theme::Light => PrefersColorSchemeValue::Light,
+            })
+            .unwrap_or(detected),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -578,6 +599,28 @@ mod tests {
     fn parse_gnome_color_scheme_unrecognized_returns_none() {
         assert_eq!(parse_gnome_color_scheme_stdout(""), None);
         assert_eq!(parse_gnome_color_scheme_stdout("invalid\n"), None);
+    }
+
+    #[test]
+    fn resolve_effective_color_scheme_respects_preference() {
+        use zero_browser_shell::ColorThemePreference;
+
+        assert_eq!(
+            resolve_effective_color_scheme(
+                ColorThemePreference::Light,
+                Some(winit::window::Theme::Dark),
+                PrefersColorSchemeValue::Dark,
+            ),
+            PrefersColorSchemeValue::Light,
+        );
+        assert_eq!(
+            resolve_effective_color_scheme(
+                ColorThemePreference::Auto,
+                None,
+                PrefersColorSchemeValue::Light,
+            ),
+            PrefersColorSchemeValue::Light,
+        );
     }
 
     /// 验证浏览器渲染路径消费活跃标签页 WebView 的 ImageCache 绘制 `<img>` 图元
