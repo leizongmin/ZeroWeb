@@ -287,6 +287,11 @@ fn layout_table(table_box: &mut LayoutBox, doc: &zero_dom::Document, styles: &Ha
     // 3. 定位单元格
     position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
 
+    // R767: 列定尺寸后，cell content（width:auto block 子树）仍为 taffy 初始（body 宽）
+    // 布局宽度，约束到 cell content width（仅 max-content 装得下的非 wrapping 内容安全；
+    // wrapping 内容须 re-layout，跳过避 clip）。修 margin-collapse-101 等的 div w=778 溢出。
+    crate::table_cell_content::constrain_table_cell_content_widths(table_box, doc, styles);
+
     // 3.5 收集 <col>/<colgroup> 列背景（CSS Tables §17.5.3）
     //     列背景在单元格之下绘制，须在 paint 前把列元素几何写入 table_col_backgrounds。
     collect_table_col_backgrounds(table_box, &grid, &col_widths, spacing_x, styles, doc);
