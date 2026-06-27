@@ -1182,13 +1182,12 @@ mod tests {
 
     #[test]
     fn test_shader_sources_not_empty() {
-        assert!(!FILL_GLYPH_SHADER.is_empty());
         assert!(FILL_GLYPH_SHADER.contains("vs_main"));
         assert!(FILL_GLYPH_SHADER.contains("fs_main"));
-        assert!(!ROUNDED_RECT_SHADER.is_empty());
-        assert!(!GRADIENT_SHADER.is_empty());
-        assert!(!IMAGE_SHADER.is_empty());
-        assert!(!BLUR_SHADER.is_empty());
+        assert!(ROUNDED_RECT_SHADER.contains("vs_main"));
+        assert!(GRADIENT_SHADER.contains("vs_main"));
+        assert!(IMAGE_SHADER.contains("vs_main"));
+        assert!(BLUR_SHADER.contains("vs_main"));
     }
 
     #[test]

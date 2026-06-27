@@ -5,7 +5,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -801,9 +800,11 @@ mod navigation_contract_tests {
 
     #[test]
     fn begin_navigation_discards_previous_paint() {
-        let mut snap = TabSnapshot::default();
-        snap.last_render = Some(legacy_blue_render());
-        snap.loading = false;
+        let mut snap = TabSnapshot {
+            last_render: Some(legacy_blue_render()),
+            loading: false,
+            ..Default::default()
+        };
 
         snap.begin_navigation("https://example.com".into());
 
@@ -885,8 +886,10 @@ mod navigation_contract_tests {
 
     #[test]
     fn apply_paint_snapshot_replaces_legacy_blue_with_red() {
-        let mut snap = TabSnapshot::default();
-        snap.last_render = Some(legacy_blue_render());
+        let mut snap = TabSnapshot {
+            last_render: Some(legacy_blue_render()),
+            ..Default::default()
+        };
         apply_paint_snapshot(&mut snap, paint_with_red_fill(0));
         let fill = &snap.last_render.as_ref().unwrap().primitives.fills[0];
         assert_eq!(fill.color.r, 255);

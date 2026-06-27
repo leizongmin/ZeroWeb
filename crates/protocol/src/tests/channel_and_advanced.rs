@@ -493,6 +493,7 @@ fn test_concurrent_message_ordering() {
                     } else {
                         None
                     },
+                    navigation_epoch: 0,
                 }),
                 1 => IpcMessageKind::FetchRequest(FetchParams {
                     request_id: i as u64,

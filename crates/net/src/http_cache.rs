@@ -168,9 +168,7 @@ impl HttpCache {
         request_headers: &[(String, String)],
         response: &HttpResponse,
     ) -> Option<CachedResponse> {
-        let Some(key) = self.resolve_lookup_key(url, request_headers) else {
-            return None;
-        };
+        let key = self.resolve_lookup_key(url, request_headers)?;
         if let Some(entry) = self.entries.get(&key) {
             let mut cached = CachedResponse {
                 body: entry.body.clone(),
@@ -180,27 +178,27 @@ impl HttpCache {
                 etag: entry.etag.clone(),
                 last_modified: entry.last_modified.clone(),
             };
-            if let Some(mode) = storable_mode(response) {
-                if let Some(e) = self.entries.get_mut(&key) {
-                    e.stored_at = Instant::now();
-                    match mode {
-                        CacheStoreMode::Fresh(ttl) => {
-                            e.ttl_secs = Some(ttl);
-                            e.revalidate_only = false;
-                        }
-                        CacheStoreMode::RevalidateOnly => {
-                            e.ttl_secs = Some(0);
-                            e.revalidate_only = true;
-                        }
+            if let Some(mode) = storable_mode(response)
+                && let Some(e) = self.entries.get_mut(&key)
+            {
+                e.stored_at = Instant::now();
+                match mode {
+                    CacheStoreMode::Fresh(ttl) => {
+                        e.ttl_secs = Some(ttl);
+                        e.revalidate_only = false;
                     }
-                    if let Some(etag) = response.header("etag") {
-                        e.etag = Some(etag.to_string());
-                        cached.etag = e.etag.clone();
+                    CacheStoreMode::RevalidateOnly => {
+                        e.ttl_secs = Some(0);
+                        e.revalidate_only = true;
                     }
-                    if let Some(lm) = response.header("last-modified") {
-                        e.last_modified = Some(lm.to_string());
-                        cached.last_modified = e.last_modified.clone();
-                    }
+                }
+                if let Some(etag) = response.header("etag") {
+                    e.etag = Some(etag.to_string());
+                    cached.etag = e.etag.clone();
+                }
+                if let Some(lm) = response.header("last-modified") {
+                    e.last_modified = Some(lm.to_string());
+                    cached.last_modified = e.last_modified.clone();
                 }
             }
             if let Some(disk) = self.disk.as_mut() {
@@ -211,13 +209,12 @@ impl HttpCache {
         }
         if let Some(disk) = self.disk.as_mut()
             && let Some(hit) = disk.read(&key)
+            && disk.refresh_not_modified(&key, response)
         {
-            if disk.refresh_not_modified(&key, response) {
-                let cached = cached_from_disk_hit(&hit);
-                self.insert_memory_from_hit(&key, &cached, hit);
-                tracing::info!(url = %key, "HTTP disk cache 304 revalidated");
-                return Some(cached);
-            }
+            let cached = cached_from_disk_hit(&hit);
+            self.insert_memory_from_hit(&key, &cached, hit);
+            tracing::info!(url = %key, "HTTP disk cache 304 revalidated");
+            return Some(cached);
         }
         None
     }

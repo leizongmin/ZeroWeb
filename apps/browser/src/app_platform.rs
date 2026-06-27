@@ -90,7 +90,9 @@ impl BrowserApp {
         }
 
         if self.address_bar_focused {
-            let nav_w = layout::NAV_BUTTON_WIDTH * 4.0 + 16.0;
+            let nav_w = layout::NAV_SECTION_LEADING_PAD
+                + layout::NAV_BUTTON_WIDTH * 4.0
+                + layout::NAV_SECTION_TRAILING_GAP;
             let bar_x = nav_w + layout::ADDRESS_BAR_PADDING;
             let bar_y = layout::TAB_STRIP_HEIGHT + layout::ADDRESS_BAR_INPUT_V_INSET;
             window.set_ime_cursor_area(

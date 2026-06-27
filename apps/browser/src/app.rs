@@ -3,7 +3,9 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use zero_browser_shell::{BrowserShell, ContextMenu, ContextType, SuggestionSource, TabId};
+use zero_browser_shell::{
+    BrowserMenuLabel, BrowserShell, ContextMenu, ContextType, SuggestionSource, TabId, UiLanguage, browser_menu_label,
+};
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::set_char_measure_fn;
 use zero_render_foundation::color::Color;
@@ -629,6 +631,12 @@ impl BrowserApp {
         self.show_context_menu(x as f64, y as f64);
     }
 
+    /// 测试用：当前是否显示菜单。
+    #[cfg(test)]
+    pub fn is_context_menu_visible_for_test(&self) -> bool {
+        self.context_menu.visible
+    }
+
     /// 测试用：注入标签页渲染快照（不经过 worker，避免异步覆盖）。
     #[cfg(test)]
     pub fn inject_tab_render_for_test(
@@ -1080,6 +1088,7 @@ impl BrowserApp {
         if let Some(tab) = self.shell.active_tab_mut() {
             tab.set_title(title);
         }
+        self.address_bar.set_text(url.to_string());
         self.scroll.insert(tab_id, TabScrollState::default());
         self.tabs.on_active_tab_changed(self.shell.active_tab_id());
         self.sync_webview_viewport();

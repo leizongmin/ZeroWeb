@@ -67,12 +67,14 @@ fn test_window_config_fields_public_mutable() {
     assert_eq!(config.title, "Modified");
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn test_parse_unix_backend_preference_x11() {
     assert_eq!(parse_unix_backend_preference("x11"), Some(UnixBackendPreference::X11));
     assert_eq!(parse_unix_backend_preference(" X11 "), Some(UnixBackendPreference::X11));
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn test_parse_unix_backend_preference_wayland() {
     assert_eq!(
@@ -85,6 +87,7 @@ fn test_parse_unix_backend_preference_wayland() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn test_parse_unix_backend_preference_invalid() {
     assert_eq!(parse_unix_backend_preference(""), None);
