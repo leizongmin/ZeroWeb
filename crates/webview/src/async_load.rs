@@ -5,10 +5,14 @@ use std::sync::mpsc::Receiver;
 
 use zero_engine::image_resource_key;
 use zero_engine::{BudgetAdvance, BudgetedRenderSession, extract_img_srcs, extract_stylesheet_hrefs};
+use zero_page_runtime::AsyncFetchHost;
 use zero_render_foundation::image_cache::{ImageKey, decode_image_bytes};
 
 use crate::net_pool::{fetch_bytes_async, fetch_text_async};
 use crate::webview::WebView;
+
+/// 图片抓取异步接收器（net_pool 线程 → 加载器轮询）。
+type BytesFetchRx = Receiver<Result<Vec<u8>, String>>;
 
 /// 页面加载阶段（供 UI 展示进度）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +33,19 @@ pub enum PageLoadStage {
     Failed,
 }
 
+/// in-process 异步抓取宿主：经 webview net_pool 线程池抓取（tabworker 默认）。
+pub struct InProcessFetchHost;
+
+impl AsyncFetchHost for InProcessFetchHost {
+    fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>> {
+        fetch_text_async(url.to_string())
+    }
+
+    fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>> {
+        fetch_bytes_async(url.to_string())
+    }
+}
+
 /// 分阶段异步加载协调器。
 pub struct AsyncPageLoad {
     url: String,
@@ -36,7 +53,7 @@ pub struct AsyncPageLoad {
     html: Option<String>,
     css: String,
     css_pending: Vec<(String, Receiver<Result<String, String>>)>,
-    img_pending: Vec<(String, u64, Receiver<Result<Vec<u8>, String>>)>,
+    img_pending: Vec<(String, u64, BytesFetchRx)>,
     document_rx: Option<Receiver<Result<String, String>>>,
     render_session: Option<BudgetedRenderSession>,
     budget_pending: bool,
@@ -44,18 +61,16 @@ pub struct AsyncPageLoad {
 }
 
 impl AsyncPageLoad {
-    /// 开始加载 URL（主文档走网络线程池）。
+    /// 开始加载 URL（主文档在首 tick 经 host 抓取，tabworker 默认 InProcessFetchHost）。
     pub fn start(url: impl Into<String>) -> Self {
-        let url = url.into();
-        let document_rx = fetch_text_async(url.clone());
         Self {
-            url,
+            url: url.into(),
             stage: PageLoadStage::FetchingDocument,
             html: None,
             css: String::new(),
             css_pending: Vec::new(),
             img_pending: Vec::new(),
-            document_rx: Some(document_rx),
+            document_rx: None,
             render_session: None,
             budget_pending: false,
             last_error: None,
@@ -72,7 +87,7 @@ impl AsyncPageLoad {
         self.stage == PageLoadStage::Failed
     }
 
-    /// 从已有 HTML 开始（跳过主文档网络）。
+    /// 从已有 HTML 开始（跳过主文档网络，外链子资源经 host 抓取）。
     pub fn from_html(url: impl Into<String>, html: String) -> Self {
         Self {
             url: url.into(),
@@ -99,8 +114,17 @@ impl AsyncPageLoad {
     }
 
     /// 在 `budget_ms` 内推进加载与渲染；返回 `true` 表示状态有更新。
-    pub fn tick(&mut self, webview: &mut WebView, budget_ms: f64) -> bool {
+    ///
+    /// `host` 按需发起子资源抓取（per-tick 借用——供 renderer 经 IPC 复用同一加载器，
+    /// 无需在构造时绑定 host）。
+    pub fn tick(&mut self, webview: &mut WebView, host: &mut dyn AsyncFetchHost, budget_ms: f64) -> bool {
         let mut changed = false;
+
+        // 首次进入 FetchingDocument 时发起主文档抓取（per-tick host，不在构造时抓取）。
+        if self.stage == PageLoadStage::FetchingDocument && self.document_rx.is_none() {
+            let url = self.url.clone();
+            self.document_rx = Some(host.fetch_text(&url));
+        }
 
         if let Some(rx) = self.document_rx.as_ref()
             && let Ok(result) = rx.try_recv()
@@ -130,11 +154,11 @@ impl AsyncPageLoad {
         }
 
         if self.stage == PageLoadStage::FirstPaint && !self.budget_pending && self.render_session.is_none() {
-            self.begin_stylesheet_fetch(webview);
+            self.begin_stylesheet_fetch(webview, host);
             changed = true;
         }
 
-        self.poll_stylesheets(webview, budget_ms, &mut changed);
+        self.poll_stylesheets(webview, host, budget_ms, &mut changed);
         self.poll_images(webview, budget_ms, &mut changed);
 
         changed
@@ -165,10 +189,10 @@ impl AsyncPageLoad {
                 match self.stage {
                     // 留在 FirstPaint，由 tick() 调用 begin_stylesheet_fetch。
                     PageLoadStage::FirstPaint => {}
-                    PageLoadStage::StyledPaint | PageLoadStage::FetchingImages => {
-                        if self.css_pending.is_empty() && self.img_pending.is_empty() {
-                            self.stage = PageLoadStage::Complete;
-                        }
+                    PageLoadStage::StyledPaint | PageLoadStage::FetchingImages
+                        if self.css_pending.is_empty() && self.img_pending.is_empty() =>
+                    {
+                        self.stage = PageLoadStage::Complete;
                     }
                     _ => {}
                 }
@@ -178,7 +202,7 @@ impl AsyncPageLoad {
         }
     }
 
-    fn begin_stylesheet_fetch(&mut self, webview: &mut WebView) {
+    fn begin_stylesheet_fetch(&mut self, webview: &mut WebView, host: &mut dyn AsyncFetchHost) {
         let html = match self.html.as_ref() {
             Some(h) => h.as_str(),
             None => return,
@@ -190,16 +214,22 @@ impl AsyncPageLoad {
                 Some(u) => u.to_string(),
                 None => href,
             };
-            self.css_pending.push((abs.clone(), fetch_text_async(abs)));
+            self.css_pending.push((abs.clone(), host.fetch_text(&abs)));
         }
         if self.css_pending.is_empty() {
-            self.begin_image_fetch(webview);
+            self.begin_image_fetch(webview, host);
         } else {
             self.stage = PageLoadStage::FetchingStylesheets;
         }
     }
 
-    fn poll_stylesheets(&mut self, webview: &mut WebView, budget_ms: f64, changed: &mut bool) {
+    fn poll_stylesheets(
+        &mut self,
+        webview: &mut WebView,
+        host: &mut dyn AsyncFetchHost,
+        budget_ms: f64,
+        changed: &mut bool,
+    ) {
         if self.stage != PageLoadStage::FetchingStylesheets {
             return;
         }
@@ -223,11 +253,11 @@ impl AsyncPageLoad {
             self.budget_pending = true;
             *changed = true;
             let _ = self.advance_render(webview, budget_ms);
-            self.begin_image_fetch(webview);
+            self.begin_image_fetch(webview, host);
         }
     }
 
-    fn begin_image_fetch(&mut self, webview: &mut WebView) {
+    fn begin_image_fetch(&mut self, webview: &mut WebView, host: &mut dyn AsyncFetchHost) {
         let html = match self.html.as_ref() {
             Some(h) => h.as_str(),
             None => return,
@@ -243,7 +273,7 @@ impl AsyncPageLoad {
                 None => src,
             };
             let key = image_resource_key(&abs, None);
-            self.img_pending.push((abs.clone(), key, fetch_bytes_async(abs)));
+            self.img_pending.push((abs.clone(), key, host.fetch_bytes(&abs)));
         }
         if self.img_pending.is_empty() {
             self.stage = PageLoadStage::Complete;

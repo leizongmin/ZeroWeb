@@ -137,11 +137,6 @@ fn draw_op_to_ipc(op: DrawOp) -> IpcDrawOp {
     }
 }
 
-/// 抓取 HTML 中 `<img>` 子资源（须由宿主提供 fetch，渲染进程应走浏览器 IPC）。
-pub fn fetch_image_payloads(html: &str, page_url: &str) -> Vec<IpcImagePayload> {
-    fetch_image_payloads_with_fetch(html, page_url, &mut |_url| None)
-}
-
 /// 经自定义 fetch 回调抓取 `<img>` 子资源（多进程 IPC 代理）。
 pub fn fetch_image_payloads_with_fetch<F>(html: &str, page_url: &str, fetch: &mut F) -> Vec<IpcImagePayload>
 where

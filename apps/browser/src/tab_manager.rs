@@ -186,7 +186,7 @@ impl TabManager {
         let _poll_guard = crate::test_sync::tab_runtime_test_guard();
         let tick = self.poll_tick;
         self.poll_tick = self.poll_tick.wrapping_add(1);
-        let poll_background = tick % 5 == 0;
+        let poll_background = tick.is_multiple_of(5);
 
         let mut changed = false;
         if let Some(ref mut backend) = self.process_backend {

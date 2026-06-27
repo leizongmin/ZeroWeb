@@ -21,6 +21,9 @@ members = [
     "crates/script-sandbox",
     "crates/wasm-sandbox",
 
+    # 页面运行时（共享）
+    "crates/page-runtime",
+
     # API 层
     "crates/webview",
     "crates/browser-shell",
@@ -120,6 +123,7 @@ zero-storage = { path = "crates/storage" }
 zero-protocol = { path = "crates/protocol" }
 zero-script-sandbox = { path = "crates/script-sandbox" }
 zero-wasm-sandbox = { path = "crates/wasm-sandbox" }
+zero-page-runtime = { path = "crates/page-runtime" }
 zero-webview = { path = "crates/webview" }
 zero-browser-shell = { path = "crates/browser-shell" }
 

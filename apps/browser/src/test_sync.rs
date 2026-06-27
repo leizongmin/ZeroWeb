@@ -13,6 +13,7 @@ thread_local! {
 /// 串行化 Tab worker / WebView 相关测试（可重入，同一线程 nested 安全）。
 #[cfg(test)]
 pub struct TabRuntimeTestGuard {
+    #[allow(dead_code)]
     lock: Option<MutexGuard<'static, ()>>,
 }
 

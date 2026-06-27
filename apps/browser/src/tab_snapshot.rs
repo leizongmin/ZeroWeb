@@ -5,6 +5,7 @@ use zero_render_foundation::image_cache::ImageCache;
 use zero_webview::WebViewRenderResult;
 
 /// 标签页在 UI 线程上的只读快照。
+#[derive(Default)]
 pub struct TabSnapshot {
     /// 最近一次渲染图元。
     pub last_render: Option<WebViewRenderResult>,
@@ -22,21 +23,6 @@ pub struct TabSnapshot {
     pub html_source: Option<String>,
     /// 主线程命中测试数据（与 `last_render` 同帧）。
     pub hit_test: Option<HitTestCache>,
-}
-
-impl Default for TabSnapshot {
-    fn default() -> Self {
-        Self {
-            last_render: None,
-            image_cache: ImageCache::default(),
-            document_height: None,
-            loading: false,
-            title: None,
-            url: None,
-            html_source: None,
-            hit_test: None,
-        }
-    }
 }
 
 impl TabSnapshot {

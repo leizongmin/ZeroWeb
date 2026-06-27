@@ -2,10 +2,12 @@
 
 use zero_engine::PipelineTimings;
 use zero_protocol::{
-    IpcBlendMode, IpcColor, IpcDrawOp, IpcFill, IpcFilterKind, IpcGradient, IpcGradientKind, IpcGradientStop,
-    IpcImage, IpcImagePayload, IpcLineCap, IpcLineStyle, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke,
+    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGradientKind, IpcLineCap, IpcLineStyle, IpcRect,
     PaintSnapshotParams,
 };
+// 仅测试用（构造 PaintSnapshotParams 断言）。
+#[cfg(test)]
+use zero_protocol::{IpcImage, IpcImagePayload};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::{ImageData, ImageKey};
@@ -299,7 +301,10 @@ mod tests {
         apply_paint_snapshot(&mut snap, params);
 
         assert!(snap.last_render.is_some(), "frame data should still be applied");
-        assert!(snap.hit_test.is_none(), "browser should not retain renderer hit-test trees");
+        assert!(
+            snap.hit_test.is_none(),
+            "browser should not retain renderer hit-test trees"
+        );
     }
 
     #[test]
