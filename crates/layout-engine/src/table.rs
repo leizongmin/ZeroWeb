@@ -1628,6 +1628,15 @@ fn compute_cell_intrinsic_width(
     // 收集单元格内的文本内容长度
     let text_len = collect_text_length(cell_box, doc);
     if text_len > 0 {
+        // R702/R679：优先用 intrinsic max-content（DOM-based，不依赖 layout 结果）。
+        // collect_text_length 把 block 子之间的空白/换行也计入字符数，致 char_count
+        // 估算严重过宽（如 margin-collapse-101：31 字符含大量块间空白 → 930px 列，
+        // table 1446px 溢出 viewport；应 shrink-to-fit 到内容 max-content）。
+        // box_content_max_width 返回 border-box，即 cell 对列的宽度贡献。
+        let intrinsic = crate::intrinsic_sizing::box_content_max_width(cell_box, doc, styles);
+        if intrinsic > 0.0 {
+            return intrinsic;
+        }
         return char_width * text_len as f32 + padding;
     }
 
