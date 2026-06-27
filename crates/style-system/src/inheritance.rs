@@ -439,6 +439,30 @@ mod tests {
     }
 
     #[test]
+    /// left/top/right/bottom 显式 inherit 取父元素计算值（CSS 2.1：inset 的 computed
+    /// value 是 specified value，即使父 position:static 不应用，值仍保留供 inherit 取用）。
+    /// 对应 WPT CSS2/visuren/inherit-static-offset-001/003、positioning/left-113。
+    fn test_inset_inherit_keyword() {
+        let mut parent = ComputedStyle::default();
+        parent.left = LengthValue::Px(50.0);
+        parent.top = LengthValue::Px(50.0);
+        parent.right = LengthValue::Px(30.0);
+        parent.bottom = LengthValue::Px(30.0);
+
+        let mut cascaded = HashMap::new();
+        cascaded.insert("left".to_string(), "inherit".to_string());
+        cascaded.insert("top".to_string(), "inherit".to_string());
+        cascaded.insert("right".to_string(), "inherit".to_string());
+        cascaded.insert("bottom".to_string(), "inherit".to_string());
+
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        assert_eq!(style.left, LengthValue::Px(50.0), "left:inherit 应取父 left");
+        assert_eq!(style.top, LengthValue::Px(50.0), "top:inherit 应取父 top");
+        assert_eq!(style.right, LengthValue::Px(30.0), "right:inherit 应取父 right");
+        assert_eq!(style.bottom, LengthValue::Px(30.0), "bottom:inherit 应取父 bottom");
+    }
+
+    #[test]
     /// text-align 继承
     fn test_text_align_inherited() {
         let mut parent = ComputedStyle::default();
