@@ -230,4 +230,32 @@ mod tests {
             "download icon should have ink in bottom third (tray)"
         );
     }
+
+    #[test]
+    fn sun_moon_icon_is_half_filled_to_signal_auto() {
+        // Auto 主题图标应是半日半月：左半实心、右半描线，与纯 Sun / 纯 Moon 区分。
+        let bitmap = rasterize_icon_svg(Icon::SunMoon.svg_bytes(), 32.0).expect("rasterize sun-moon");
+        let w = bitmap.width as usize;
+        let h = bitmap.height as usize;
+        // 中线左右两侧都应有像素
+        let mid = w / 2;
+        let left_ink: usize = (0..h)
+            .map(|r| bitmap.data[r * w..r * w + mid].iter().filter(|&&a| a > 64).count())
+            .sum();
+        let right_ink: usize = (0..h)
+            .map(|r| {
+                bitmap.data[r * w + mid..(r + 1) * w]
+                    .iter()
+                    .filter(|&&a| a > 64)
+                    .count()
+            })
+            .sum();
+        assert!(left_ink > 0, "sun-moon left half should have ink");
+        assert!(right_ink > 0, "sun-moon right half should have ink");
+        // 左半（实心）应明显多于右半（描线），体现半填充
+        assert!(
+            left_ink > right_ink,
+            "sun-moon left half (filled) should have more ink than right half (outline)"
+        );
+    }
 }

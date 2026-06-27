@@ -31,6 +31,47 @@ pub fn has_tab_favicon(font_loader: &FontLoader, tab_id: TabId, size_px: f32) ->
     font_loader.has_bitmap_glyph(FAVICON_FONT_ID, favicon_glyph_id(tab_id), size_px)
 }
 
+/// 书签 favicon 专用 codepoint 区间（与标签 favicon 区分，避免哈希碰撞）。
+const BOOKMARK_FAVICON_BASE_CODEPOINT: u32 = 0xF800;
+
+fn bookmark_favicon_glyph_id(url: &str) -> u32 {
+    BOOKMARK_FAVICON_BASE_CODEPOINT + (fnv1a_url(url) & 0x3FF)
+}
+
+fn fnv1a_url(url: &str) -> u32 {
+    let mut hash = 0x811C_9DC5u32;
+    for byte in url.as_bytes() {
+        hash ^= *byte as u32;
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    hash
+}
+
+fn bookmark_favicon_char(url: &str) -> char {
+    char::from_u32(bookmark_favicon_glyph_id(url)).unwrap_or('\0')
+}
+
+/// 为书签注册已抓取的 favicon 位图（按 URL 缓存）。
+pub fn register_bookmark_favicon_bitmap(font_loader: &mut FontLoader, url: &str, size_px: f32, bitmap: GlyphBitmap) {
+    font_loader.register_bitmap_glyph(FAVICON_FONT_ID, bookmark_favicon_glyph_id(url), size_px, bitmap);
+}
+
+/// 书签是否已有真实 favicon（非兜底）。
+pub fn has_bookmark_favicon(font_loader: &FontLoader, url: &str, size_px: f32) -> bool {
+    font_loader.has_bitmap_glyph(FAVICON_FONT_ID, bookmark_favicon_glyph_id(url), size_px)
+}
+
+/// 渲染书签 favicon：优先用已缓存的真实 favicon，否则用 globe 兜底。
+/// 返回的 glyph 字符可直接用于 GlyphDraw。
+pub fn bookmark_favicon_glyph(font_loader: &mut FontLoader, url: &str, size_px: f32) -> char {
+    let glyph_id = bookmark_favicon_glyph_id(url);
+    if !font_loader.has_bitmap_glyph(FAVICON_FONT_ID, glyph_id, size_px) {
+        let bitmap = rasterize_svg(DEFAULT_FAVICON_SVG, size_px).unwrap_or_else(|| default_favicon_bitmap(size_px));
+        font_loader.register_bitmap_glyph(FAVICON_FONT_ID, glyph_id, size_px, bitmap);
+    }
+    bookmark_favicon_char(url)
+}
+
 /// 注册已解码的 favicon 位图。
 pub fn register_tab_favicon_bitmap(font_loader: &mut FontLoader, tab_id: TabId, size_px: f32, bitmap: GlyphBitmap) {
     font_loader.register_bitmap_glyph(FAVICON_FONT_ID, favicon_glyph_id(tab_id), size_px, bitmap);
@@ -293,19 +334,22 @@ fn rasterize_svg(svg: &[u8], size_px: f32) -> Option<GlyphBitmap> {
     })
 }
 
+/// 兜底 favicon 位图（globe 图标）。所有加载失败 / 内部页 / 未命中网络的情况统一用它。
 pub fn default_favicon_bitmap(size_px: f32) -> GlyphBitmap {
-    GlyphBitmap {
-        data: vec![255; 256],
-        width: 16,
-        height: 16,
-        x_offset: 0,
-        y_offset: 0,
-        advance: size_px.max(16.0),
-    }
+    rasterize_svg(DEFAULT_FAVICON_SVG, size_px).unwrap_or_else(|| blank_favicon_bitmap(size_px))
 }
 
-fn default_bitmap() -> GlyphBitmap {
-    default_favicon_bitmap(16.0)
+/// 完全无法光栅化 globe 时的最终兜底（透明，避免渲染成实心方块）。
+fn blank_favicon_bitmap(size_px: f32) -> GlyphBitmap {
+    let side = size_px.ceil().max(1.0) as u16;
+    GlyphBitmap {
+        data: vec![0; side as usize * side as usize],
+        width: side,
+        height: side,
+        x_offset: 0,
+        y_offset: 0,
+        advance: size_px,
+    }
 }
 
 #[cfg(test)]
@@ -371,5 +415,30 @@ mod tests {
                 .rasterize_glyph_with_fallback(FAVICON_FONT_ID, glyphs[0].ch, 14.0)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn bookmark_favicon_glyph_caches_and_resolves() {
+        let mut loader = FontLoader::new();
+        let url = "https://example.com/page";
+        let size = 14.0;
+        let ch = bookmark_favicon_glyph(&mut loader, url, size);
+        assert_eq!(ch, bookmark_favicon_char(url));
+        assert!(has_bookmark_favicon(&loader, url, size));
+        // 不同的 URL 应映射到不同 codepoint（哈希不同）
+        let other = bookmark_favicon_glyph(&mut loader, "https://other.test", size);
+        assert_ne!(ch, other);
+    }
+
+    #[test]
+    fn default_favicon_bitmap_is_globe_not_solid_block() {
+        let bitmap = default_favicon_bitmap(32.0);
+        assert_eq!(bitmap.width, 32);
+        assert_eq!(bitmap.height, 32);
+        // globe 是描线图标，必有透明像素（非全不透明实心块）
+        let transparent = bitmap.data.iter().filter(|&&a| a < 32).count();
+        assert!(transparent > 0, "default favicon should not be a solid block");
+        let opaque = bitmap.data.iter().filter(|&&a| a > 200).count();
+        assert!(opaque > 0, "default favicon should have ink");
     }
 }

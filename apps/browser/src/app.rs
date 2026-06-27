@@ -360,6 +360,9 @@ impl BrowserApp {
         if self.favicon_fetch.poll(&mut self.font_loader) {
             self.needs_redraw = true;
         }
+        if self.favicon_fetch.poll_bookmarks(&mut self.font_loader) {
+            self.needs_redraw = true;
+        }
         if self.tabs.poll(self.shell.active_tab_id()) {
             self.needs_redraw = true;
         }
@@ -1114,6 +1117,24 @@ impl BrowserApp {
         let html_owned = self.tabs.page_html(tab_id);
         let html = html_owned.as_deref().or_else(|| Self::tab_html_hint(Some(page_url)));
         self.favicon_fetch.request(tab_id, page_url, html, size);
+    }
+
+    /// 为书签栏中尚未缓存 favicon 的书签发起后台抓取。
+    fn refresh_bookmark_favicons(&mut self) {
+        if !self.bookmarks_bar_visible() {
+            return;
+        }
+        let size = layout::BOOKMARKS_BAR_ICON_SIZE * self.scale_factor;
+        let urls: Vec<String> = self
+            .shell
+            .bookmarks()
+            .list_root()
+            .iter()
+            .map(|bm| bm.url().to_string())
+            .collect();
+        for url in urls {
+            self.favicon_fetch.request_bookmark(&url, size);
+        }
     }
 
     pub fn any_tab_loading(&self) -> bool {
