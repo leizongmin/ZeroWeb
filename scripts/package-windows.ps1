@@ -1,4 +1,4 @@
-# ZeroBrowser Windows 打包脚本
+﻿# ZeroBrowser Windows 打包脚本
 #
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File scripts\package-windows.ps1
@@ -11,6 +11,29 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# 强制 UTF-8：脚本含中文字面量，且打包输出/README 需跨平台无乱码。
+# PowerShell 5.x 默认按系统 ACP（中文系统是 cp936/GBK）输出，会导致控制台与
+# 写出的文本文件出现乱码。这里把控制台与管道编码统一改为 UTF-8。
+try {
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+} catch {}
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+# chcp 65001 让传统 cmd 子进程（如 cargo 间接调用的工具）也走 UTF-8。
+try { chcp 65001 > $null } catch {}
+
+# 写 UTF-8（无 BOM）文本文件的辅助函数。
+# PowerShell 5.x 的 Out-File -Encoding UTF8 会写入 BOM，部分查看器/解压工具会
+# 把 BOM 当成普通字节显示乱码；这里用 .NET 显式构造无 BOM 编码器。
+function Write-Utf8NoBom {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Content
+    )
+    $enc = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $enc)
+}
 
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $PackageDir = Join-Path $ProjectRoot "target\packages"
@@ -57,7 +80,7 @@ Copy-Item $BrowserBin (Join-Path $DistDir "ZeroBrowser.exe")
 Copy-Item $RendererBin (Join-Path $DistDir "zero-renderer.exe")
 
 # 创建 README
-@"
+$readme = @"
 ZeroBrowser v$Version
 ====================
 
@@ -76,7 +99,8 @@ ZeroBrowser 是一个基于 Rust 构建的跨平台浏览器。
   - 支持的 GPU（可选，也支持 CPU 渲染）
 
 许可证：MIT
-"@ | Out-File (Join-Path $DistDir "README.txt") -Encoding UTF8
+"@
+Write-Utf8NoBom -Path (Join-Path $DistDir "README.txt") -Content $readme
 
 # 创建 ZIP
 $ZipFile = Join-Path $PackageDir "ZeroBrowser-$Version-win64.zip"
@@ -88,7 +112,7 @@ Write-Host "[INFO] .zip 已生成: $ZipFile" -ForegroundColor Green
 if ($Installer) {
     Write-Host "[INFO] 创建安装程序需要 NSIS：https://nsis.sourceforge.io/" -ForegroundColor Yellow
     $NsiPath = Join-Path $PackageDir "installer.nsi"
-    @"
+    $nsis = @"
 !define APPNAME "ZeroBrowser"
 !define APPVERSION "$Version"
 !define APPEXE "ZeroBrowser.exe"
@@ -116,7 +140,8 @@ Section "Uninstall"
   RMDir "`$SMPROGRAMS\`${APPNAME}"
   RMDir "`$INSTDIR"
 SectionEnd
-"@ | Out-File $NsiPath -Encoding UTF8
+"@
+    Write-Utf8NoBom -Path $NsiPath -Content $nsis
     Write-Host "[INFO] NSIS 脚本已生成: $NsiPath"
 }
 
