@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use zero_browser_shell::{
-    BrowserMenuLabel, BrowserShell, ContextMenu, ContextType, SuggestionSource, TabId, UiLanguage, browser_menu_label,
+    BrowserMenuLabel, BrowserShell, ContextMenu, ContextType, SuggestionSource, TabId, TabMenuLabel, UiLanguage,
+    browser_menu_label, tab_menu_label,
 };
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::set_char_measure_fn;
@@ -429,6 +430,15 @@ impl BrowserApp {
         }
     }
 
+    /// 标签栏背景色（Windows 下与工具栏融合）。
+    pub fn chrome_tab_strip_bg(&self) -> zero_render_foundation::color::Color {
+        if cfg!(target_os = "windows") {
+            self.chrome_palette.toolbar_bg
+        } else {
+            self.chrome_palette.tab_bar_bg
+        }
+    }
+
     /// 标签栏空白区可拖动窗口
     pub fn supports_tab_bar_window_drag(&self) -> bool {
         self.uses_custom_window_controls() || uses_unified_titlebar()
@@ -659,6 +669,15 @@ impl BrowserApp {
     #[cfg(test)]
     pub fn is_context_menu_visible_for_test(&self) -> bool {
         self.context_menu.visible
+    }
+
+    /// 测试用：标签在标签栏中的 `(x, width)` 布局（需先 `build_scene_for_test`）。
+    #[cfg(test)]
+    pub fn tab_layout_rect_for_test(&self, tab_id: TabId) -> Option<(f32, f32)> {
+        self.tab_layout
+            .iter()
+            .find(|(id, _, _)| *id == tab_id)
+            .map(|&(_, x, w)| (x, w))
     }
 
     /// 测试用：注入标签页渲染快照（不经过 worker，避免异步覆盖）。
@@ -975,6 +994,11 @@ impl BrowserApp {
 
     /// 导航到指定 URL
     pub fn navigate_to(&mut self, url: &str) {
+        if let Some(key) = url.strip_prefix("zero://settings/toggle/") {
+            self.apply_settings_toggle(key);
+            return;
+        }
+
         let url = normalize_url(&resolve_path_relative_url(url, &self.shell), &self.shell);
         tracing::info!("Navigating to: {url}");
 
@@ -1214,8 +1238,49 @@ impl BrowserApp {
         };
         self.tabs.ensure_tab(tab_id);
         self.tabs.load_html(tab_id, &html, None, Some("zero://settings"));
+        if let Some(tab) = self.shell.active_tab_mut() {
+            tab.set_loading(false);
+        }
         self.address_bar.set_text("zero://settings".to_string());
         self.needs_redraw = true;
+    }
+
+    /// 应用设置页开关（`zero://settings/toggle/<key>`）。
+    fn apply_settings_toggle(&mut self, key: &str) {
+        let was_visible = self.bookmarks_bar_visible();
+        match key {
+            "show_bookmarks_bar" => {
+                let show = !self.shell.settings().show_bookmarks_bar;
+                self.shell.apply_settings(|settings| settings.show_bookmarks_bar = show);
+            }
+            "javascript_enabled" => {
+                let enabled = !self.shell.settings().javascript_enabled;
+                self.shell.apply_settings(|settings| settings.javascript_enabled = enabled);
+                self.tabs.set_javascript_enabled(enabled);
+            }
+            "cookies_enabled" => {
+                let enabled = !self.shell.settings().cookies_enabled;
+                self.shell.apply_settings(|settings| settings.cookies_enabled = enabled);
+            }
+            "block_third_party_cookies" => {
+                let block = !self.shell.settings().block_third_party_cookies;
+                self.shell
+                    .apply_settings(|settings| settings.block_third_party_cookies = block);
+            }
+            "do_not_track" => {
+                let dnt = !self.shell.settings().do_not_track;
+                self.shell.apply_settings(|settings| settings.do_not_track = dnt);
+            }
+            _ => {
+                tracing::debug!(%key, "unknown settings toggle key");
+                return;
+            }
+        }
+
+        self.open_settings_page();
+        if self.bookmarks_bar_visible() != was_visible {
+            self.sync_webview_viewport();
+        }
     }
 
     /// 将用户数据（设置、书签等）写入默认配置文件。

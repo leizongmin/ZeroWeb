@@ -38,26 +38,10 @@ impl BrowserApp {
             self.chrome_palette.background,
         ));
 
-        // 2. 标签栏背景（macOS 左侧为系统 traffic lights 留白）
+        // 2. 标签栏背景（macOS 左侧为 traffic lights 留白，标签从 inset 起绘）
         let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
-        let leading = self.tab_bar_leading_inset() * s;
-        if leading > 0.0 {
-            fills.push(rect_fill(
-                leading,
-                0.0,
-                width as f32 - leading,
-                tab_strip_h,
-                self.chrome_palette.tab_bar_bg,
-            ));
-        } else {
-            fills.push(rect_fill(
-                0.0,
-                0.0,
-                width as f32,
-                tab_strip_h,
-                self.chrome_palette.tab_bar_bg,
-            ));
-        }
+        let tab_strip_bg = self.chrome_tab_strip_bg();
+        fills.push(rect_fill(0.0, 0.0, width as f32, tab_strip_h, tab_strip_bg));
 
         // 3. 标签内容（带布局缓存）
         self.render_tabs(&mut fills, &mut glyphs, width, font_size, s);
@@ -678,7 +662,18 @@ impl BrowserApp {
             let status_url = self.shell.active_tab().and_then(|tab| tab.url());
             let status_hint = Self::tab_html_hint(status_url);
             let page_kind = Self::address_bar_page_kind(status_url);
-            if !self.address_bar_focused {
+            let is_loading = self.shell.active_tab().is_some_and(|t| t.is_loading());
+            if is_loading && !self.address_bar_focused {
+                let angle = self.chrome_anim_start.elapsed().as_secs_f32() * 3.5;
+                crate::tab_chrome::push_loading_spinner(
+                    fills,
+                    status_cx,
+                    status_cy,
+                    status_icon_size,
+                    angle,
+                    self.chrome_palette.loading_indicator,
+                );
+            } else if !self.address_bar_focused {
                 let status_label = match page_kind {
                     AddressBarPageKind::Insecure => Some(("!", self.chrome_palette.address_bar_insecure)),
                     AddressBarPageKind::Internal | AddressBarPageKind::Local => {
@@ -697,23 +692,19 @@ impl BrowserApp {
                         glyphs,
                     );
                 }
-            }
-            if let Some(tab_id) = self.shell.active_tab_id() {
-                crate::tab_favicon::render_tab_favicon(
-                    &mut self.font_loader,
-                    glyphs,
-                    tab_id,
-                    status_url,
-                    status_hint,
-                    status_cx,
-                    status_cy,
-                    status_icon_size,
-                    if self.address_bar_focused {
-                        self.chrome_palette.address_bar_text
-                    } else {
-                        self.chrome_palette.page_url
-                    },
-                );
+                if let Some(tab_id) = self.shell.active_tab_id() {
+                    crate::tab_favicon::render_tab_favicon(
+                        &mut self.font_loader,
+                        glyphs,
+                        tab_id,
+                        status_url,
+                        status_hint,
+                        status_cx,
+                        status_cy,
+                        status_icon_size,
+                        self.chrome_palette.page_url,
+                    );
+                }
             }
 
             if self.address_bar_focused && self.address_bar.has_selection() {
@@ -850,7 +841,7 @@ impl BrowserApp {
 
     /// 渲染书签栏
     fn render_bookmarks_bar(
-        &self,
+        &mut self,
         fills: &mut Vec<FillPrimitive>,
         glyphs: &mut Vec<GlyphDraw>,
         width: u32,
@@ -871,51 +862,64 @@ impl BrowserApp {
         ));
         fills.push(rect_fill(
             0.0,
-            y + bar_h - s,
+            y + bar_h - s.max(1.0),
             width as f32,
-            s,
+            s.max(1.0),
             self.chrome_palette.separator,
         ));
 
-        let font_size = 12.0 * s;
-        let mut bx = 8.0 * s;
-        let by = y + 3.0 * s;
+        let font_size = layout::BOOKMARKS_BAR_FONT_SIZE * s;
+        let icon_size = layout::BOOKMARKS_BAR_ICON_SIZE * s;
+        let mut bx = layout::BOOKMARKS_BAR_PAD_H * s;
+        let item_h = (bar_h - 4.0 * s).max(0.0);
+        let item_y = y + (bar_h - item_h) * 0.5;
+        let icon_cy = y + bar_h * 0.5;
 
         let bookmarks = self.shell.bookmarks();
         for bm in bookmarks.list_root() {
             let label = bm.title();
-            let icon_w = self.measure_ui_text_width("★", font_size);
             let label_w = self.measure_ui_text_width(label, font_size);
-            let item_w = icon_w + 6.0 * s + label_w + 16.0 * s;
+            let item_w = layout::BOOKMARKS_BAR_ITEM_PAD_H * s * 2.0
+                + icon_size
+                + layout::BOOKMARKS_BAR_ICON_GAP * s
+                + label_w;
 
-            // 悬停效果
             let mx = self.mouse_pos.0 as f32;
             let my = self.mouse_pos.1 as f32;
             if mx >= bx && mx < bx + item_w && my >= y && my < y + bar_h {
                 push_rounded_rect_fill(
                     fills,
                     bx,
-                    y + 2.0 * s,
+                    item_y,
                     item_w,
-                    (bar_h - 4.0 * s).max(0.0),
-                    6.0 * s,
+                    item_h,
+                    layout::BOOKMARKS_BAR_ITEM_RADIUS * s,
                     self.chrome_palette.bookmarks_bar_hover_bg,
                 );
             }
 
-            // 书签图标
-            self.draw_ui_text("★", bx, by, font_size, self.chrome_palette.bookmarks_bar_icon, glyphs);
-            // 标签文本
+            let icon_cx = bx + layout::BOOKMARKS_BAR_ITEM_PAD_H * s + icon_size * 0.5;
+            crate::ui_icons::render_icon(
+                &mut self.font_loader,
+                glyphs,
+                crate::ui_icons::Icon::Star,
+                icon_cx,
+                icon_cy,
+                icon_size,
+                self.chrome_palette.bookmarks_bar_icon,
+            );
+            let text_x = bx + layout::BOOKMARKS_BAR_ITEM_PAD_H * s + icon_size + layout::BOOKMARKS_BAR_ICON_GAP * s;
+            let (text_top, _) = self.ui_text_centered_in_height(bar_h, font_size);
             self.draw_ui_text(
                 label,
-                bx + icon_w + 6.0 * s,
-                by,
+                text_x,
+                y + text_top,
                 font_size,
                 self.chrome_palette.bookmarks_bar_text,
                 glyphs,
             );
 
-            bx += item_w + 8.0 * s;
+            bx += item_w + layout::BOOKMARKS_BAR_ITEM_GAP * s;
             if bx > width as f32 - 40.0 * s {
                 break;
             }
@@ -980,7 +984,7 @@ impl BrowserApp {
         let border = layout::WINDOW_FRAME_BORDER * s;
         let w = width as f32;
         let h = height as f32;
-        let color = self.chrome_palette.window_frame_border;
+        let color = self.chrome_palette.separator;
 
         fills.push(rect_fill(0.0, 0.0, w, border, color));
         fills.push(rect_fill(0.0, h - border, w, border, color));

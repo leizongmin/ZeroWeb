@@ -46,6 +46,45 @@ pub enum BrowserMenuLabel {
     Settings,
 }
 
+/// Tab context menu label keys.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabMenuLabel {
+    /// Reload tab.
+    Reload,
+    /// Pin tab.
+    Pin,
+    /// Unpin tab.
+    Unpin,
+    /// Mute tab.
+    Mute,
+    /// Unmute tab.
+    Unmute,
+    /// Close tab.
+    Close,
+}
+
+/// Resolve a tab context menu label for the given UI language.
+pub fn tab_menu_label(label: TabMenuLabel, language: UiLanguage) -> &'static str {
+    match language {
+        UiLanguage::ZhCn => match label {
+            TabMenuLabel::Reload => "重新加载",
+            TabMenuLabel::Pin => "固定标签页",
+            TabMenuLabel::Unpin => "取消固定标签页",
+            TabMenuLabel::Mute => "静音标签页",
+            TabMenuLabel::Unmute => "取消静音标签页",
+            TabMenuLabel::Close => "关闭标签页",
+        },
+        UiLanguage::EnUs => match label {
+            TabMenuLabel::Reload => "Reload",
+            TabMenuLabel::Pin => "Pin Tab",
+            TabMenuLabel::Unpin => "Unpin Tab",
+            TabMenuLabel::Mute => "Mute Tab",
+            TabMenuLabel::Unmute => "Unmute Tab",
+            TabMenuLabel::Close => "Close Tab",
+        },
+    }
+}
+
 /// Resolve a browser main menu label for the given UI language.
 pub fn browser_menu_label(label: BrowserMenuLabel, language: UiLanguage) -> &'static str {
     match language {
@@ -363,5 +402,11 @@ mod tests {
             browser_menu_label(BrowserMenuLabel::Settings, UiLanguage::EnUs),
             "Settings"
         );
+    }
+
+    #[test]
+    fn tab_menu_label_is_localized() {
+        assert_eq!(tab_menu_label(TabMenuLabel::Pin, UiLanguage::ZhCn), "固定标签页");
+        assert_eq!(tab_menu_label(TabMenuLabel::Close, UiLanguage::EnUs), "Close Tab");
     }
 }

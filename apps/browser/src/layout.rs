@@ -75,7 +75,21 @@ pub const AUTOCOMPLETE_ROW_PAD_H: f32 = 12.0;
 /// Vertical padding inside an autocomplete row.
 pub const AUTOCOMPLETE_ROW_PAD_V: f32 = 6.0;
 /// Height of the bookmarks bar.
-pub const BOOKMARKS_BAR_HEIGHT: f32 = 26.0;
+pub const BOOKMARKS_BAR_HEIGHT: f32 = 28.0;
+/// Horizontal padding at the start of the bookmarks bar.
+pub const BOOKMARKS_BAR_PAD_H: f32 = 8.0;
+/// Horizontal padding inside a bookmark item pill.
+pub const BOOKMARKS_BAR_ITEM_PAD_H: f32 = 8.0;
+/// Gap between bookmark icon and label text.
+pub const BOOKMARKS_BAR_ICON_GAP: f32 = 6.0;
+/// Gap between bookmark items.
+pub const BOOKMARKS_BAR_ITEM_GAP: f32 = 4.0;
+/// Corner radius of a bookmark item hover pill.
+pub const BOOKMARKS_BAR_ITEM_RADIUS: f32 = 4.0;
+/// Icon size in the bookmarks bar.
+pub const BOOKMARKS_BAR_ICON_SIZE: f32 = 14.0;
+/// Text size in the bookmarks bar.
+pub const BOOKMARKS_BAR_FONT_SIZE: f32 = 12.0;
 /// macOS inset reserved for traffic lights in unified titlebar mode.
 pub const MACOS_TRAFFIC_LIGHT_INSET: f32 = 78.0;
 /// Height of the find bar.
