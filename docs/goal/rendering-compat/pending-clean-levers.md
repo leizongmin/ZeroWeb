@@ -20,6 +20,7 @@
 | **R696** | ❌ **anchor+cluster 全 inline-SVG-content 阻塞**（out-of-scope） | inline-replaced-width-009 **22.08%→22.08% 零变化** | anchor + 008/ib-007/ib-008 全用 `<svg:svg>` + `<svg:rect fill>`；ZW 不渲染内联 SVG 内容（goal line 118 排除），sizing 修不修都不 yield（内容缺失主导）。非-img 默认 300×150 sizing 修正确但因无确认 yield 已回退 |
 | **R678** | ❌ **anchor 发散非 float-width** | font-size-zero-3 **33.53%→33.53% 零变化** | `box_node.float` 已正确 populate（engine.rs:655），shrink-to-fit 实现正确，但 anchor 的 33.53% 不是 float 满宽所致（绿子/高度/位置他因）。float:right 定位顺序风险（x=container_w−used_w）下，无 yield 不值得保留，已回退 |
 | **R717** | ❌ **decode 修对但 anchor 复合 bug 阻塞**（实证，R740） | replaced-elements-all-auto **31.66%→32.39% 反而 +0.73pp 回归** | decode_svg_bytes 经 probe 实证修对（7 SVG 全 match CSS spec：ratio-2 1000×500→300×150 等），**decode 修正确且有 probe 单测**，但 anchor 的 ~32% 由 **tree.rs §10.3.2 replaced-sizing + reftest harness img 处理**的复合 bug 主导（correct intrinsic 未转化为 chr-matching layout）；all-auto 反退 0.73pp。decode 修已回退（单独无 yield 且小回归）；**R717 须 decode 修 + tree.rs sizing 修同做**才能 yield，decode 修在 git 历史/master 可复用 |
+| **R679 empty-table** | ✅ **LANDED（R749，空 table 子 facet）** | empty-table-height **30.74%→0.00% PASS**；css-tables 57→58 零回归；css-position 零变化 | `shrink_table_to_block_content` 早退（`block_indices.is_empty()`）致完全空的 display:table 保满宽。新增 `shrink_empty_table_to_padding_border` 收缩 width:auto 空 table 到 padding+border。**Auto-guard**（`matches!(s.width, LengthValue::Auto)`）跳过显式宽 table（Px/Percent/Em/Calc 由 taffy 解析）——无 guard 会回归 absolute-tables-007/012/016 + subpixel-table-width-001（全显式宽）。R679 多 facet（R681-R684 box/content/horizontal/vertical）仍 deferred |
 
 **★ 关键裁决（R739/R740 实证）**：doc-side 只读 lever 分析的**假阳性率高**——R720/R696/R678/R717 四 lever 实证零 yield 或反退（premise 错 / out-of-scope / 发散另有他因 / 复合 bug）。**「14 clean lever 待消费」叙事大部分是幻觉**；pass-rate 提升需 per-case 实际修复验证，非盲信只读根因。
 
@@ -118,6 +119,7 @@
 - **测试**：`css-tables/empty-table-height`（30.74%）
 - **根因**：`display:table; padding:155px` 空 table 取满宽（784），应 shrink-to-fit（CSS 2.1 §17.5.2：table width = min(CB width, max-content)；空→~padding+border≈312）。table width:auto sizing（table.rs R177 territory）。
 - **fix scope**：定位 0-content shrink-to-fit fallback（与 R678 float 同 symptom 簇，可能共享根因或独立 table path）。**注意**：R681/R682/R683/R684 已证 table-width 是多 facet 簇（box/content/horizontal/vertical），修须 writing-mode-aware shrink-to-fit + 子节点约束两层级。
+- **★ 状态（R749）**：**empty-table 子 facet 已 LANDED**（`shrink_empty_table_to_padding_border`，width:auto 空 table 收缩到 padding+border，Auto-guard 跳过显式宽）。R679 anchor empty-table-height **30.74%→0% PASS**。R681-R684 的 box/content/horizontal/vertical 多 facet 仍 deferred（需 col-sizing 路径完整 trace）。
 
 ### R699 · §10.5.1 非-BFC 块父 height 计入 float 子（应排除）
 - **测试**：`CSS2/normal-flow/block-non-replaced-height-011`（16.12%）
