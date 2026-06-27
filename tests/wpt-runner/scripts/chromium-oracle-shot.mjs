@@ -102,6 +102,21 @@ async function statSafe(p) {
   try { const s = statSync(p); return [true, s.isFile()]; } catch { return [false, false]; }
 }
 
+// 等待页面所有 <img> 加载完成（complete && naturalWidth>0），防 SVG/图片解码 race
+// 致截图时 img 未就绪（R388/R692 oracle 损坏：blank broken-img placeholder）。
+// 无 img 或已全就绪则立即返回；超时则放弃等待（不阻塞）。
+async function waitForImages(page, timeoutMs = 400) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ready = await page.evaluate(() => {
+      const imgs = Array.from(document.querySelectorAll('img'));
+      return imgs.length === 0 || imgs.every((i) => i.complete && i.naturalWidth > 0);
+    }).catch(() => true);
+    if (ready) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 async function main() {
   const opts = parseArgs();
   const manifest = JSON.parse(await readFile(MANIFEST, 'utf-8'));
@@ -142,6 +157,7 @@ async function main() {
     try {
       const url = `${server.url}/${e.test}`;
       await page.goto(url, { waitUntil: 'networkidle0', timeout: 8000 });
+      await waitForImages(page);
       await new Promise(r => setTimeout(r, 80));
       await page.screenshot({ path: join(opts.out, safeId(e.test) + '.png'), type: 'png' });
       ok++;
