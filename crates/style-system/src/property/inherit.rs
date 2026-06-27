@@ -287,6 +287,27 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.max_height = parent.max_height.clone();
             true
         }
+        // 定位 inset（非继承属性，但 `inherit` 关键字显式要求从父元素复制计算值）。
+        // 此前遗漏致 `left:inherit` 等静默失败（CSS2 inherit-static-offset-001/002/003：
+        // static 父 left:50px + relative 子 left:inherit 应继承 50px 偏移，却得 auto）。
+        // CSS 2.1：left/top/right/bottom 的 computed value 是 specified value（即使
+        // position:static 不应用，值仍保留供 inherit 取用）。
+        "left" => {
+            child.left = parent.left.clone();
+            true
+        }
+        "right" => {
+            child.right = parent.right.clone();
+            true
+        }
+        "top" => {
+            child.top = parent.top.clone();
+            true
+        }
+        "bottom" => {
+            child.bottom = parent.bottom.clone();
+            true
+        }
         _ => false,
     }
 }
