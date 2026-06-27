@@ -27,24 +27,41 @@ pub fn clear_tab_favicon(font_loader: &mut FontLoader, tab_id: TabId, size_px: f
     font_loader.clear_bitmap_glyph(FAVICON_FONT_ID, favicon_glyph_id(tab_id), size_px);
 }
 
-/// 为标签注册 favicon 并返回绘制用的 glyph 字符。
+pub fn has_tab_favicon(font_loader: &FontLoader, tab_id: TabId, size_px: f32) -> bool {
+    font_loader.has_bitmap_glyph(FAVICON_FONT_ID, favicon_glyph_id(tab_id), size_px)
+}
+
+/// 注册已解码的 favicon 位图。
+pub fn register_tab_favicon_bitmap(
+    font_loader: &mut FontLoader,
+    tab_id: TabId,
+    size_px: f32,
+    bitmap: GlyphBitmap,
+) {
+    font_loader.register_bitmap_glyph(FAVICON_FONT_ID, favicon_glyph_id(tab_id), size_px, bitmap);
+}
+
+/// 确保标签有占位 favicon（默认 globe），不进行网络请求。
+pub fn ensure_tab_favicon_placeholder(font_loader: &mut FontLoader, tab_id: TabId, size_px: f32) -> char {
+    let glyph_id = favicon_glyph_id(tab_id);
+    if !font_loader.has_bitmap_glyph(FAVICON_FONT_ID, glyph_id, size_px) {
+        let bitmap = rasterize_svg(DEFAULT_FAVICON_SVG, size_px)
+            .unwrap_or_else(|| default_favicon_bitmap(size_px));
+        font_loader.register_bitmap_glyph(FAVICON_FONT_ID, glyph_id, size_px, bitmap);
+    }
+    favicon_char(tab_id)
+}
+
+/// 为标签注册 favicon 并返回绘制用的 glyph 字符（仅使用缓存或占位，不阻塞网络）。
 #[allow(clippy::too_many_arguments)]
 pub fn ensure_tab_favicon(
     font_loader: &mut FontLoader,
     tab_id: TabId,
-    page_url: Option<&str>,
-    html: Option<&str>,
+    _page_url: Option<&str>,
+    _html: Option<&str>,
     size_px: f32,
 ) -> char {
-    let glyph_id = favicon_glyph_id(tab_id);
-    if font_loader.has_bitmap_glyph(FAVICON_FONT_ID, glyph_id, size_px) {
-        return favicon_char(tab_id);
-    }
-
-    let bitmap = resolve_favicon_bitmap(page_url, html, size_px)
-        .unwrap_or_else(|| rasterize_svg(DEFAULT_FAVICON_SVG, size_px).unwrap_or_else(default_bitmap));
-    font_loader.register_bitmap_glyph(FAVICON_FONT_ID, glyph_id, size_px, bitmap);
-    favicon_char(tab_id)
+    ensure_tab_favicon_placeholder(font_loader, tab_id, size_px)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -76,15 +93,11 @@ fn resolve_favicon_bitmap(page_url: Option<&str>, html: Option<&str>, size_px: f
         return None;
     }
     let favicon_url = pick_favicon_url(page_url, html)?;
-    let bytes = fetch_bytes(&favicon_url)?;
-    decode_icon_bytes(&bytes, size_px)
+    fetch_favicon_bitmap(&favicon_url, size_px)
 }
 
-fn should_skip_favicon_fetch(page_url: &str) -> bool {
-    page_url.starts_with("zero://") || page_url.starts_with("about:") || page_url.starts_with("file:")
-}
-
-fn pick_favicon_url(page_url: &str, html: Option<&str>) -> Option<String> {
+/// 解析 favicon URL（供异步拉取使用）。
+pub fn pick_favicon_url(page_url: &str, html: Option<&str>) -> Option<String> {
     if let Some(html) = html
         && let Some(href) = extract_link_icon_href(html)
         && let Some(resolved) = resolve_href(page_url, &href)
@@ -92,6 +105,21 @@ fn pick_favicon_url(page_url: &str, html: Option<&str>) -> Option<String> {
         return Some(resolved);
     }
     resolve_href(page_url, "/favicon.ico")
+}
+
+fn should_skip_favicon_fetch(page_url: &str) -> bool {
+    page_url.starts_with("zero://") || page_url.starts_with("about:") || page_url.starts_with("file:")
+}
+
+/// 是否应跳过 favicon 网络拉取。
+pub fn skip_favicon_fetch(page_url: &str) -> bool {
+    should_skip_favicon_fetch(page_url)
+}
+
+/// 拉取并解码 favicon（在后台线程调用）。
+pub fn fetch_favicon_bitmap(favicon_url: &str, size_px: f32) -> Option<GlyphBitmap> {
+    let bytes = fetch_bytes(favicon_url)?;
+    decode_icon_bytes(&bytes, size_px)
 }
 
 fn extract_link_icon_href(html: &str) -> Option<String> {
@@ -271,15 +299,19 @@ fn rasterize_svg(svg: &[u8], size_px: f32) -> Option<GlyphBitmap> {
     })
 }
 
-fn default_bitmap() -> GlyphBitmap {
+pub fn default_favicon_bitmap(size_px: f32) -> GlyphBitmap {
     GlyphBitmap {
         data: vec![255; 256],
         width: 16,
         height: 16,
         x_offset: 0,
         y_offset: 0,
-        advance: 16.0,
+        advance: size_px.max(16.0),
     }
+}
+
+fn default_bitmap() -> GlyphBitmap {
+    default_favicon_bitmap(16.0)
 }
 
 #[cfg(test)]

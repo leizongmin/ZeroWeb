@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use zero_browser_shell::{
-    BrowserMenuLabel, BrowserShell, ContextMenu, ContextType, SuggestionSource, TabId, TabMenuLabel, UiLanguage,
-    browser_menu_label, tab_menu_label,
+    BrowserMenuLabel, BrowserSettings, BrowserShell, ContextMenu, ContextType, SuggestionSource, TabId, TabMenuLabel,
+    UiLanguage, browser_menu_label, tab_menu_label,
 };
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::set_char_measure_fn;
@@ -26,6 +26,7 @@ use crate::input_keys::key_matches;
 use crate::layout;
 use crate::page_scroll::{self, TabScrollState};
 use crate::page_selection::{GlyphSelection, hit_test_glyph};
+use crate::favicon_fetch::FaviconFetchState;
 use crate::pages;
 use crate::tab_manager::TabManager;
 use crate::text_input::TextInput;
@@ -246,6 +247,8 @@ pub struct BrowserApp {
     scrollbar_drag: Option<ScrollbarDrag>,
     /// 滚动条 hover 命中。
     scrollbar_hover: Option<crate::page_scroll::ScrollbarHit>,
+    /// 进行中的 favicon 异步拉取。
+    favicon_fetch: FaviconFetchState,
 }
 
 impl BrowserApp {
@@ -311,6 +314,7 @@ impl BrowserApp {
             content_pointer_drag: None,
             scrollbar_drag: None,
             scrollbar_hover: None,
+            favicon_fetch: FaviconFetchState::new(),
         };
         app.tabs.set_javascript_enabled(app.shell.settings().javascript_enabled);
         app
@@ -345,6 +349,9 @@ impl BrowserApp {
 
     /// 轮询 Tab worker / IPC 并处理页面事件。
     pub fn poll_tab_fetch(&mut self) {
+        if self.favicon_fetch.poll(&mut self.font_loader) {
+            self.needs_redraw = true;
+        }
         if self.tabs.poll(self.shell.active_tab_id()) {
             self.needs_redraw = true;
         }
@@ -1029,16 +1036,17 @@ impl BrowserApp {
     fn clear_tab_favicon(&mut self, tab_id: TabId) {
         let size = layout::TAB_ICON_SIZE * self.scale_factor;
         crate::tab_favicon::clear_tab_favicon(&mut self.font_loader, tab_id, size);
+        self.favicon_fetch.cancel_tab(tab_id);
     }
 
     fn refresh_tab_favicon(&mut self, tab_id: TabId, page_url: &str) {
         let size = layout::TAB_ICON_SIZE * self.scale_factor;
+        crate::tab_favicon::ensure_tab_favicon_placeholder(&mut self.font_loader, tab_id, size);
         let html_owned = self.tabs.page_html(tab_id);
         let html = html_owned
             .as_deref()
             .or_else(|| Self::tab_html_hint(Some(page_url)));
-        crate::tab_favicon::ensure_tab_favicon(&mut self.font_loader, tab_id, Some(page_url), html, size);
-        self.needs_redraw = true;
+        self.favicon_fetch.request(tab_id, page_url, html, size);
     }
 
     pub fn any_tab_loading(&self) -> bool {
@@ -1262,6 +1270,18 @@ impl BrowserApp {
             self.apply_settings_home_url(encoded);
             return true;
         }
+        if url == "zero://settings/edit/home_url" {
+            self.apply_settings_edit_home_url();
+            return true;
+        }
+        if let Some(direction) = url.strip_prefix("zero://settings/adjust/default_zoom/") {
+            self.apply_settings_adjust_default_zoom(direction);
+            return true;
+        }
+        if let Some(value) = url.strip_prefix("zero://settings/set/default_zoom/") {
+            self.apply_settings_default_zoom(value);
+            return true;
+        }
         false
     }
 
@@ -1299,6 +1319,42 @@ impl BrowserApp {
             return;
         }
         self.shell.apply_settings(|settings| settings.home_url = home_url);
+        self.open_settings_page();
+    }
+
+    /// 聚焦地址栏以输入自定义主页 URL。
+    fn apply_settings_edit_home_url(&mut self) {
+        self.address_bar.set_text("zero://settings/set/home_url/".to_string());
+        self.address_bar_focused = true;
+        self.autocomplete.clear();
+        self.needs_redraw = true;
+    }
+
+    /// 调整默认缩放（`zero://settings/adjust/default_zoom/up|down`）。
+    fn apply_settings_adjust_default_zoom(&mut self, direction: &str) {
+        let delta = match direction {
+            "up" => BrowserSettings::DEFAULT_ZOOM_STEP,
+            "down" => -BrowserSettings::DEFAULT_ZOOM_STEP,
+            _ => {
+                tracing::debug!(%direction, "unknown default_zoom adjust direction");
+                return;
+            }
+        };
+        let zoom = self.shell.settings().adjust_default_zoom_by(delta);
+        self.shell.apply_settings(|settings| settings.default_zoom = zoom);
+        self.shell.set_zoom(zoom);
+        self.open_settings_page();
+    }
+
+    /// 设置默认缩放（`zero://settings/set/default_zoom/<value>`）。
+    fn apply_settings_default_zoom(&mut self, value: &str) {
+        let Ok(parsed) = value.parse::<f32>() else {
+            tracing::debug!(%value, "invalid default_zoom value");
+            return;
+        };
+        let zoom = parsed.clamp(BrowserSettings::DEFAULT_ZOOM_MIN, BrowserSettings::DEFAULT_ZOOM_MAX);
+        self.shell.apply_settings(|settings| settings.default_zoom = zoom);
+        self.shell.set_zoom(zoom);
         self.open_settings_page();
     }
 

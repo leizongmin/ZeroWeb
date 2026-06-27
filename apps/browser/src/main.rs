@@ -15,6 +15,7 @@
 mod app;
 mod clipboard;
 mod colors;
+mod favicon_fetch;
 mod fetch_proxy;
 mod headless;
 mod input_keys;
@@ -914,6 +915,14 @@ mod tests {
             html.contains("zero://settings/set/home_url/https%3A%2F%2Fexample.com"),
             "settings page should expose home url presets"
         );
+        assert!(
+            html.contains("zero://settings/edit/home_url"),
+            "settings page should expose custom home url editor"
+        );
+        assert!(
+            html.contains("zero://settings/adjust/default_zoom/up"),
+            "settings page should expose default zoom controls"
+        );
     }
 
     /// 轮换搜索引擎应更新设置并留在设置页。
@@ -937,6 +946,35 @@ mod tests {
         app.navigate_to("zero://settings/set/home_url/zero%3A%2F%2Fnewtab");
         assert_eq!(app.shell.settings().home_url, "zero://newtab");
         assert_eq!(app.address_bar_text(), "zero://settings");
+    }
+
+    /// 自定义主页链接应聚焦地址栏并带上设置前缀。
+    #[test]
+    fn settings_edit_home_url_focuses_address_bar() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.navigate_to("zero://settings/edit/home_url");
+        assert!(app.address_bar_focused);
+        assert_eq!(app.address_bar_text(), "zero://settings/set/home_url/");
+    }
+
+    /// 地址栏输入完整设置 URL 应保存自定义主页。
+    #[test]
+    fn settings_custom_home_url_via_address_bar() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.navigate_to("zero://settings/set/home_url/https://custom.test/home");
+        assert_eq!(app.shell.settings().home_url, "https://custom.test/home");
+    }
+
+    /// 默认缩放调整链接应持久化并更新当前缩放。
+    #[test]
+    fn settings_adjust_default_zoom_updates_shell() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.shell.apply_settings(|settings| settings.default_zoom = 1.0);
+        app.navigate_to("zero://settings/adjust/default_zoom/up");
+        assert!((app.shell.settings().default_zoom - 1.1).abs() < f32::EPSILON);
+        assert!((app.shell.zoom() - 1.1).abs() < f32::EPSILON);
+        app.navigate_to("zero://settings/set/default_zoom/1.0");
+        assert!((app.shell.settings().default_zoom - 1.0).abs() < f32::EPSILON);
     }
 
     /// 设置页 toggle URL 应切换对应选项并留在设置页。
