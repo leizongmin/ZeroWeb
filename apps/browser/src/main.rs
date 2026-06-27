@@ -555,11 +555,11 @@ mod tests {
 
         // 平台修饰键按下
         let mod_key = BrowserApp::test_modifier_key_name();
-        app.handle_key(mod_key, true);
+        app.handle_key(mod_key, true, None);
         assert!(app.is_ctrl_pressed(), "modifier should be true after modifier down");
 
         // 平台修饰键释放
-        app.handle_key(mod_key, false);
+        app.handle_key(mod_key, false, None);
         assert!(!app.is_ctrl_pressed(), "modifier should be false after modifier up");
     }
 
@@ -570,8 +570,8 @@ mod tests {
         assert!(!app.address_bar_focused);
 
         // Ctrl 按下 + L
-        app.handle_key(BrowserApp::test_modifier_key_name(), true);
-        app.handle_key("l", true);
+        app.handle_key(BrowserApp::test_modifier_key_name(), true, None);
+        app.handle_key("l", true, None);
         assert!(app.address_bar_focused, "Mod+L should focus address bar");
     }
 
@@ -587,8 +587,8 @@ mod tests {
         app.shell.on_page_loaded("Example");
 
         let count_before = app.shell.bookmarks().len();
-        app.handle_key(BrowserApp::test_modifier_key_name(), true);
-        app.handle_key("d", true);
+        app.handle_key(BrowserApp::test_modifier_key_name(), true, None);
+        app.handle_key("d", true, None);
         assert_eq!(
             app.shell.bookmarks().len(),
             count_before + 1,
@@ -604,8 +604,8 @@ mod tests {
         let count_before = app.shell.tab_count();
         assert!(count_before >= 2);
 
-        app.handle_key(BrowserApp::test_modifier_key_name(), true);
-        app.handle_key("w", true);
+        app.handle_key(BrowserApp::test_modifier_key_name(), true, None);
+        app.handle_key("w", true, None);
         assert_eq!(
             app.shell.tab_count(),
             count_before - 1,
@@ -620,8 +620,8 @@ mod tests {
         app.new_tab(None);
 
         // 按下并释放 Ctrl
-        app.handle_key(BrowserApp::test_modifier_key_name(), true);
-        app.handle_key(BrowserApp::test_modifier_key_name(), false);
+        app.handle_key(BrowserApp::test_modifier_key_name(), true, None);
+        app.handle_key(BrowserApp::test_modifier_key_name(), false, None);
         assert!(!app.is_ctrl_pressed());
 
         // 确认 ctrl_pressed 为 false
@@ -1392,8 +1392,8 @@ fn main() {
             AppEvent::CloseRequested => {
                 tracing::info!("Window closed");
             }
-            AppEvent::KeyboardInput { key, pressed } => {
-                app.handle_key(&key, pressed);
+            AppEvent::KeyboardInput { key, text, pressed } => {
+                app.handle_key(&key, pressed, text.as_deref());
             }
             AppEvent::MouseMoved { x, y } => {
                 app.handle_mouse_move(x, y);

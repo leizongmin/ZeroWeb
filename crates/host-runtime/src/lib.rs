@@ -159,9 +159,10 @@ mod tests {
         for (key_name, pressed) in cases {
             let event = AppEvent::KeyboardInput {
                 key: key_name.to_string(),
+                text: None,
                 pressed,
             };
-            if let AppEvent::KeyboardInput { key, pressed: p } = event {
+            if let AppEvent::KeyboardInput { key, pressed: p, .. } = event {
                 assert_eq!(key, key_name, "key 应为 {key_name}");
                 assert_eq!(p, pressed, "pressed 应为 {pressed}");
             } else {
@@ -529,14 +530,17 @@ mod tests {
         let events: Vec<AppEvent> = vec![
             AppEvent::KeyboardInput {
                 key: "Shift".to_string(),
+                text: None,
                 pressed: true,
             },
             AppEvent::KeyboardInput {
                 key: "Control".to_string(),
+                text: None,
                 pressed: true,
             },
             AppEvent::KeyboardInput {
                 key: "Alt".to_string(),
+                text: None,
                 pressed: true,
             },
         ];
@@ -546,7 +550,7 @@ mod tests {
         let expected: Vec<(&str, bool)> = vec![("Shift", true), ("Control", true), ("Alt", true)];
         for (i, (expected_key, expected_pressed)) in expected.iter().enumerate() {
             match &events[i] {
-                AppEvent::KeyboardInput { key, pressed } => {
+                AppEvent::KeyboardInput { key, pressed, .. } => {
                     assert_eq!(key, expected_key, "第 {} 个修饰键名称应为 {}", i + 1, expected_key);
                     assert_eq!(
                         *pressed,
@@ -641,10 +645,11 @@ mod tests {
 
         let event = AppEvent::KeyboardInput {
             key: "Space".to_string(),
+            text: None,
             pressed: false,
         };
 
-        if let AppEvent::KeyboardInput { key, pressed } = &event {
+        if let AppEvent::KeyboardInput { key, pressed, .. } = &event {
             assert_eq!(key, "Space", "按键名称应为 'Space'");
             assert!(!pressed, "Space 释放事件 pressed 应为 false");
         } else {
@@ -667,9 +672,10 @@ mod tests {
         // 使用完全虚构的键名，模拟无法识别的输入设备
         let unknown_press = AppEvent::KeyboardInput {
             key: "UnknownKey_0xDEAD".to_string(),
+            text: None,
             pressed: true,
         };
-        if let AppEvent::KeyboardInput { key, pressed } = &unknown_press {
+        if let AppEvent::KeyboardInput { key, pressed, .. } = &unknown_press {
             assert_eq!(key, "UnknownKey_0xDEAD", "未知按键名称应原样存储，不应被替换或截断");
             assert!(pressed, "未知键的 pressed 应为 true");
         } else {
@@ -679,9 +685,10 @@ mod tests {
         // 释放未知键
         let unknown_release = AppEvent::KeyboardInput {
             key: "UnknownKey_0xDEAD".to_string(),
+            text: None,
             pressed: false,
         };
-        if let AppEvent::KeyboardInput { key, pressed } = &unknown_release {
+        if let AppEvent::KeyboardInput { key, pressed, .. } = &unknown_release {
             assert_eq!(key, "UnknownKey_0xDEAD", "释放事件应保留相同的未知键名");
             assert!(!pressed, "释放事件的 pressed 应为 false");
         } else {
@@ -695,9 +702,10 @@ mod tests {
         // 空字符串键名（极端未知键场景）
         let empty_key = AppEvent::KeyboardInput {
             key: String::new(),
+            text: None,
             pressed: true,
         };
-        if let AppEvent::KeyboardInput { key, pressed } = &empty_key {
+        if let AppEvent::KeyboardInput { key, pressed, .. } = &empty_key {
             assert!(key.is_empty(), "空字符串键名应能正常存储");
             assert!(pressed);
         } else {

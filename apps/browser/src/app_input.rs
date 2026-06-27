@@ -320,7 +320,7 @@ impl BrowserApp {
     }
 
     /// 处理键盘输入
-    pub fn handle_key(&mut self, key: &str, pressed: bool) {
+    pub fn handle_key(&mut self, key: &str, pressed: bool, text: Option<&str>) {
         // 追踪修饰键状态
         match key {
             "Control" => {
@@ -392,15 +392,15 @@ impl BrowserApp {
         }
 
         if self.shell.find_state().is_active() {
-            self.handle_find_key(key);
+            self.handle_find_key(key, text);
         } else if self.address_bar_focused {
-            self.handle_address_bar_key(key);
+            self.handle_address_bar_key(key, text);
         } else {
             self.handle_global_key(key);
         }
     }
 
-    fn handle_find_key(&mut self, key: &str) {
+    fn handle_find_key(&mut self, key: &str, text: Option<&str>) {
         match key {
             "Enter" => {
                 if self.find_input.is_empty() {
@@ -427,8 +427,8 @@ impl BrowserApp {
                 self.needs_redraw = true;
             }
             _ => {
-                if key.len() == 1 {
-                    self.find_input.push_str(key);
+                if let Some(inserted) = Self::extract_typed_text(key, text) {
+                    self.find_input.push_str(&inserted);
                     self.shell.find_start(&self.find_input);
                     self.needs_redraw = true;
                 }
@@ -436,7 +436,7 @@ impl BrowserApp {
         }
     }
 
-    fn handle_address_bar_key(&mut self, key: &str) {
+    fn handle_address_bar_key(&mut self, key: &str, text: Option<&str>) {
         let extend = self.shift_pressed;
         if self.is_modifier_pressed() {
             match key {
@@ -547,13 +547,26 @@ impl BrowserApp {
                 }
             }
             _ => {
-                if key.len() == 1 {
-                    self.address_bar.insert_str(key);
+                if let Some(inserted) = Self::extract_typed_text(key, text) {
+                    self.address_bar.insert_str(&inserted);
                     self.update_autocomplete();
                     self.needs_redraw = true;
                 }
             }
         }
+    }
+
+    fn extract_typed_text(key: &str, text: Option<&str>) -> Option<String> {
+        if let Some(raw) = text.filter(|t| !t.is_empty()) {
+            let sanitized: String = raw.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+            if !sanitized.is_empty() {
+                return Some(sanitized);
+            }
+        }
+        if key.len() == 1 {
+            return Some(key.to_string());
+        }
+        None
     }
 
     fn handle_global_key(&mut self, key: &str) {
@@ -1048,21 +1061,32 @@ impl BrowserApp {
         }
     }
 
-    /// 处理 IME 输入（地址栏）
+    /// 处理 IME 输入（地址栏 / 查找框）
     pub fn handle_ime(&mut self, event: zero_host_runtime::event::ImeEvent) {
-        if !self.address_bar_focused {
+        let in_address_bar = self.address_bar_focused;
+        let in_find_bar = self.shell.find_state().is_active();
+        if !in_address_bar && !in_find_bar {
             return;
         }
         match event {
             zero_host_runtime::event::ImeEvent::Preedit { text, .. } => {
-                self.address_bar_ime_preedit = text;
-                self.needs_redraw = true;
+                if in_address_bar {
+                    self.address_bar_ime_preedit = text;
+                    self.needs_redraw = true;
+                }
             }
             zero_host_runtime::event::ImeEvent::Commit(text) => {
-                self.address_bar_ime_preedit.clear();
+                if in_address_bar {
+                    self.address_bar_ime_preedit.clear();
+                }
                 if !text.is_empty() {
-                    self.address_bar.insert_str(&text);
-                    self.update_autocomplete();
+                    if in_address_bar {
+                        self.address_bar.insert_str(&text);
+                        self.update_autocomplete();
+                    } else {
+                        self.find_input.push_str(&text);
+                        self.shell.find_start(&self.find_input);
+                    }
                 }
                 self.needs_redraw = true;
             }
