@@ -113,6 +113,10 @@ impl AsyncPageLoad {
         !matches!(self.stage, PageLoadStage::Complete | PageLoadStage::Failed)
     }
 
+    fn log_stage(&self, label: &str) {
+        tracing::info!(url = %self.url, stage = ?self.stage, "{label}");
+    }
+
     /// 在 `budget_ms` 内推进加载与渲染；返回 `true` 表示状态有更新。
     ///
     /// `host` 按需发起子资源抓取（per-tick 借用——供 renderer 经 IPC 复用同一加载器，
@@ -123,6 +127,7 @@ impl AsyncPageLoad {
         // 首次进入 FetchingDocument 时发起主文档抓取（per-tick host，不在构造时抓取）。
         if self.stage == PageLoadStage::FetchingDocument && self.document_rx.is_none() {
             let url = self.url.clone();
+            tracing::info!(url = %url, "page load: fetch document");
             self.document_rx = Some(host.fetch_text(&url));
         }
 
@@ -138,6 +143,7 @@ impl AsyncPageLoad {
                     self.html = Some(html);
                     self.stage = PageLoadStage::FirstPaint;
                     self.budget_pending = true;
+                    self.log_stage("document ready, HTML skeleton render");
                     changed = true;
                 }
                 Err(e) => {
@@ -161,6 +167,11 @@ impl AsyncPageLoad {
         self.poll_stylesheets(webview, host, budget_ms, &mut changed);
         self.poll_images(webview, budget_ms, &mut changed);
 
+        // 图片分批到达后需在本 tick 内重绘，否则 publish 会用到上一帧。
+        if self.budget_pending && self.stage == PageLoadStage::FetchingImages {
+            changed |= self.advance_render(webview, budget_ms);
+        }
+
         changed
     }
 
@@ -177,6 +188,7 @@ impl AsyncPageLoad {
                 webview.prepare_document_state(&self.url);
             }
             webview.set_cached_content(&html, &self.css);
+            tracing::info!(url = %self.url, stage = ?self.stage, "page load: budget render start");
             self.render_session = Some(BudgetedRenderSession::new(html, self.css.clone()));
         }
 
@@ -188,6 +200,7 @@ impl AsyncPageLoad {
                         && self.img_pending.is_empty();
                     webview.apply_render_result(result, &self.url, done);
                 }
+                tracing::info!(url = %self.url, stage = ?self.stage, "page load: budget render complete");
                 self.render_session = None;
                 self.budget_pending = false;
                 match self.stage {
@@ -223,6 +236,11 @@ impl AsyncPageLoad {
         if self.css_pending.is_empty() {
             self.begin_image_fetch(webview, host);
         } else {
+            tracing::info!(
+                url = %self.url,
+                count = self.css_pending.len(),
+                "page load: fetch stylesheets"
+            );
             self.stage = PageLoadStage::FetchingStylesheets;
         }
     }
@@ -253,6 +271,7 @@ impl AsyncPageLoad {
             }
         });
         if self.css_pending.is_empty() {
+            tracing::info!(url = %self.url, "page load: stylesheets ready, styled render");
             self.stage = PageLoadStage::StyledPaint;
             self.budget_pending = true;
             *changed = true;
@@ -282,6 +301,11 @@ impl AsyncPageLoad {
         if self.img_pending.is_empty() {
             self.stage = PageLoadStage::Complete;
         } else {
+            tracing::info!(
+                url = %self.url,
+                count = self.img_pending.len(),
+                "page load: fetch images"
+            );
             self.stage = PageLoadStage::FetchingImages;
         }
         let _ = webview;
@@ -314,7 +338,17 @@ impl AsyncPageLoad {
         if !sizes.is_empty() {
             webview.set_image_sizes(sizes);
         }
+        if *changed && self.stage == PageLoadStage::FetchingImages {
+            let remaining = self.img_pending.len();
+            tracing::info!(
+                url = %self.url,
+                remaining,
+                "page load: image batch ready, incremental render"
+            );
+            self.budget_pending = true;
+        }
         if self.img_pending.is_empty() {
+            tracing::info!(url = %self.url, "page load: all images ready, final render");
             self.stage = PageLoadStage::Complete;
             self.budget_pending = true;
             *changed = true;

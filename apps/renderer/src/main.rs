@@ -373,13 +373,10 @@ impl RendererRuntime {
         };
 
         let stage = pending.load.stage();
-        if publish_after
-            && !matches!(
-                stage,
-                PageLoadStage::FetchingImages | PageLoadStage::FetchingStylesheets
-            )
-        {
+        if publish_after {
             self.sync_cached_html_from_webview();
+            tracing::info!(url = %pending.page_url, stage = ?stage, "progressive paint publish");
+            // 加载过程中仅用已解码 cache，避免同步 IPC fetch 阻塞 async 子资源。
             self.try_publish_progress(false)?;
         }
 

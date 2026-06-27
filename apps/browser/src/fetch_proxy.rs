@@ -53,7 +53,11 @@ impl TabFetchProxy {
     /// 受理 renderer 的 `FetchRequest`。
     pub fn enqueue(&mut self, tab_id: TabId, params: &FetchParams) {
         let url = params.url.clone();
-        tracing::info!("Browser fetch proxy tab {}: {url}", tab_id.0);
+        tracing::info!(
+            "fetch IPC enqueue tab {} req_id={} {url}",
+            tab_id.0,
+            params.request_id
+        );
         let rx = PerOriginFetchScheduler::submit_shared(&self.scheduler, &url);
         self.pending.push(PendingFetch {
             tab_id,
@@ -72,8 +76,9 @@ impl TabFetchProxy {
             match pending.rx.try_recv() {
                 Ok(Ok((status, body))) => {
                     tracing::info!(
-                        "Browser fetch proxy done tab {}: {} status={status} bytes={}",
+                        "fetch IPC done tab {} req_id={} {} status={status} bytes={}",
                         pending.tab_id.0,
+                        pending.request_id,
                         pending.url,
                         body.len()
                     );
@@ -87,8 +92,9 @@ impl TabFetchProxy {
                 }
                 Ok(Err(e)) => {
                     tracing::warn!(
-                        "Browser fetch proxy failed tab {}: {}: {e}",
+                        "fetch IPC failed tab {} req_id={} {}: {e}",
                         pending.tab_id.0,
+                        pending.request_id,
                         pending.url
                     );
                     completed.push(DrainedFetch {
