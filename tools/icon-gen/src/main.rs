@@ -181,20 +181,69 @@ fn main() {
     println!("  - 窗口图标: {}", win_icon_path.display());
 }
 
+/// 超采样倍数：在 4× 分辨率光栅化后 box-filter 降采样到目标尺寸，
+/// 显著减少小尺寸（16/32px）下的锯齿与半透明边缘损失。
+const SUPERSAMPLE: u32 = 4;
+
 fn rasterize(tree: &usvg::Tree, view: f32, size: u32) -> (u32, u32, Vec<u8>) {
     let side = size.max(1);
-    let mut pixmap = Pixmap::new(side, side).expect("pixmap");
-    let scale = side as f32 / view;
-    resvg::render(tree, Transform::from_scale(scale, scale), &mut pixmap.as_mut());
-    let rgba: Vec<u8> = pixmap
-        .pixels()
-        .iter()
-        .flat_map(|p| {
-            let c = p.demultiply();
-            [c.red(), c.green(), c.blue(), c.alpha()]
-        })
-        .collect();
-    (side, side, rgba)
+    if side <= 64 {
+        // 小尺寸：超采样降采样，提升清晰度。
+        let hi = side * SUPERSAMPLE;
+        let mut hi_pixmap = Pixmap::new(hi, hi).expect("hi pixmap");
+        let hi_scale = hi as f32 / view;
+        resvg::render(tree, Transform::from_scale(hi_scale, hi_scale), &mut hi_pixmap.as_mut());
+        let rgba = downsample_box(&hi_pixmap, side);
+        (side, side, rgba)
+    } else {
+        // 大尺寸：直接光栅化已足够清晰。
+        let mut pixmap = Pixmap::new(side, side).expect("pixmap");
+        let scale = side as f32 / view;
+        resvg::render(tree, Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+        let rgba: Vec<u8> = pixmap
+            .pixels()
+            .iter()
+            .flat_map(|p| {
+                let c = p.demultiply();
+                [c.red(), c.green(), c.blue(), c.alpha()]
+            })
+            .collect();
+        (side, side, rgba)
+    }
+}
+
+/// Box-filter 降采样：把 hi×hi 的预乘 RGBA 位图按 SS×SS 的核平均到 side×side。
+fn downsample_box(hi: &Pixmap, side: u32) -> Vec<u8> {
+    let ss = SUPERSAMPLE as usize;
+    let hi_side = hi.width() as usize;
+    let hi_pixels = hi.pixels();
+    let mut out = Vec::with_capacity((side as usize * side as usize) * 4);
+    for oy in 0..side as usize {
+        for ox in 0..side as usize {
+            let mut r_acc = 0u32;
+            let mut g_acc = 0u32;
+            let mut b_acc = 0u32;
+            let mut a_acc = 0u32;
+            for dy in 0..ss {
+                for dx in 0..ss {
+                    let hx = ox * ss + dx;
+                    let hy = oy * ss + dy;
+                    let idx = hy * hi_side + hx;
+                    let p = hi_pixels[idx].demultiply();
+                    r_acc += p.red() as u32;
+                    g_acc += p.green() as u32;
+                    b_acc += p.blue() as u32;
+                    a_acc += p.alpha() as u32;
+                }
+            }
+            let n = (ss * ss) as u32;
+            out.push((r_acc / n) as u8);
+            out.push((g_acc / n) as u8);
+            out.push((b_acc / n) as u8);
+            out.push((a_acc / n) as u8);
+        }
+    }
+    out
 }
 
 fn encode_png(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
