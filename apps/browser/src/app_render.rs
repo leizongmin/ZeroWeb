@@ -298,6 +298,11 @@ impl BrowserApp {
                 .or(tab.url())
                 .unwrap_or("New Tab")
                 .to_string();
+            let label = if tab.is_private() {
+                format!("无痕 · {label}")
+            } else {
+                label
+            };
             tabs.push(TabPaint {
                 id: tab.id(),
                 x,

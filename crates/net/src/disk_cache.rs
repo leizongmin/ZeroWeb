@@ -7,26 +7,44 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::cache_policy::storable_ttl;
+use crate::cache_policy::{CacheStoreMode, storable_mode};
 use crate::request::HttpResponse;
+use crate::resource_policy::origin_from_url;
 
 /// 默认磁盘缓存上限（200 MiB）。
 const DEFAULT_DISK_MAX_BYTES: u64 = 200 * 1024 * 1024;
+
+/// 每个 origin 的磁盘配额（50 MiB）。
+const DEFAULT_ORIGIN_MAX_BYTES: u64 = 50 * 1024 * 1024;
 
 /// 磁盘缓存元数据（JSON 侧车文件）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DiskEntryMeta {
     url: String,
     resource_url: Option<String>,
+    origin: Option<String>,
+    vary: Option<String>,
+    revalidate_only: bool,
     status_code: u16,
     headers: Vec<(String, String)>,
     etag: Option<String>,
     last_modified: Option<String>,
-    /// 绝对过期时间（Unix 秒）。
+    /// 绝对过期时间（Unix 秒）；`revalidate_only` 条目设为存储时刻。
     expires_at: u64,
     /// 最近访问时间（Unix 秒），用于 LRU 淘汰。
     last_access: u64,
     body_len: u64,
+}
+
+/// 磁盘索引条目（用于 Vary 查找）。
+#[derive(Debug, Clone)]
+pub struct DiskIndexEntry {
+    /// 缓存键。
+    pub key: String,
+    /// 原始资源 URL。
+    pub resource_url: Option<String>,
+    /// 响应 `Vary` 头。
+    pub vary: Option<String>,
 }
 
 /// 磁盘 HTTP 缓存根目录下的持久化存储。
@@ -34,6 +52,7 @@ struct DiskEntryMeta {
 pub struct DiskHttpCache {
     root: PathBuf,
     max_bytes: u64,
+    origin_max_bytes: u64,
 }
 
 impl DiskHttpCache {
@@ -44,12 +63,40 @@ impl DiskHttpCache {
         Ok(Self {
             root,
             max_bytes: DEFAULT_DISK_MAX_BYTES,
+            origin_max_bytes: DEFAULT_ORIGIN_MAX_BYTES,
         })
     }
 
     /// 使用默认用户缓存目录（`ZERO_CACHE_DIR` 或平台 cache dir）。
     pub fn open_default() -> io::Result<Self> {
         Self::open(default_cache_dir())
+    }
+
+    /// 枚举磁盘条目元数据（用于重建内存索引）。
+    pub fn list_index_entries(&self) -> Vec<DiskIndexEntry> {
+        walk_disk_entries(&self.root)
+            .into_iter()
+            .filter_map(|paths| {
+                let text = fs::read_to_string(&paths.meta).ok()?;
+                let meta: DiskEntryMeta = serde_json::from_str(&text).ok()?;
+                Some(DiskIndexEntry {
+                    key: meta.url,
+                    resource_url: meta.resource_url,
+                    vary: meta.vary,
+                })
+            })
+            .collect()
+    }
+
+    /// 读取条目的 `Vary` 头（不更新 LRU）。
+    pub fn entry_vary(&self, key: &str) -> Option<String> {
+        let paths = self.entry_paths(key);
+        let text = fs::read_to_string(&paths.meta).ok()?;
+        let meta: DiskEntryMeta = serde_json::from_str(&text).ok()?;
+        if meta.url != key {
+            return None;
+        }
+        meta.vary
     }
 
     /// 读取条目（含 stale；不删除过期项）。
@@ -74,9 +121,15 @@ impl DiskHttpCache {
             status_code: meta.status_code,
             url: meta.url,
             resource_url: meta.resource_url,
+            vary: meta.vary,
+            revalidate_only: meta.revalidate_only,
             etag: meta.etag,
             last_modified: meta.last_modified,
-            fresh_for_secs: meta.expires_at.saturating_sub(now),
+            fresh_for_secs: if meta.revalidate_only {
+                0
+            } else {
+                meta.expires_at.saturating_sub(now)
+            },
         })
     }
 
@@ -102,10 +155,18 @@ impl DiskHttpCache {
             return false;
         }
         let now = unix_now();
-        if let Some(ttl) = storable_ttl(response) {
-            meta.expires_at = now.saturating_add(ttl);
-        } else {
-            meta.expires_at = now.saturating_add(60);
+        match storable_mode(response) {
+            Some(CacheStoreMode::Fresh(ttl)) => {
+                meta.revalidate_only = false;
+                meta.expires_at = now.saturating_add(ttl);
+            }
+            Some(CacheStoreMode::RevalidateOnly) => {
+                meta.revalidate_only = true;
+                meta.expires_at = now;
+            }
+            None => {
+                meta.expires_at = now.saturating_add(60);
+            }
         }
         if let Some(etag) = response.header("etag") {
             meta.etag = Some(etag.to_string());
@@ -139,20 +200,30 @@ impl DiskHttpCache {
         headers
     }
 
-    /// 存储可缓存响应；`key` 为 [`cache_lookup_key`] 结果。
+    /// 存储可缓存响应；`key` 为 [`cache_store_key`] 结果。
     pub fn put(&mut self, key: &str, response: &HttpResponse) -> bool {
-        let Some(ttl) = storable_ttl(response) else {
-            return false;
+        let mode = match storable_mode(response) {
+            Some(m) => m,
+            None => return false,
         };
         let now = unix_now();
+        let (expires_at, revalidate_only) = match mode {
+            CacheStoreMode::Fresh(ttl) => (now.saturating_add(ttl), false),
+            CacheStoreMode::RevalidateOnly => (now, true),
+        };
+        let resource_url = response.url.clone();
+        let origin = Some(origin_from_url(&resource_url));
         let meta = DiskEntryMeta {
             url: key.to_string(),
-            resource_url: Some(response.url.clone()),
+            resource_url: Some(resource_url),
+            origin: origin.clone(),
+            vary: response.header("vary").map(str::to_string),
+            revalidate_only,
             status_code: response.status_code,
             headers: response.headers.clone(),
             etag: response.header("etag").map(str::to_string),
             last_modified: response.header("last-modified").map(str::to_string),
-            expires_at: now.saturating_add(ttl),
+            expires_at,
             last_access: now,
             body_len: response.body.len() as u64,
         };
@@ -160,7 +231,7 @@ impl DiskHttpCache {
         if let Some(parent) = paths.meta.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        self.evict_if_needed(meta.body_len);
+        self.evict_if_needed(meta.body_len, origin.as_deref().unwrap_or(""));
         if fs::write(&paths.body, &response.body).is_err() {
             return false;
         }
@@ -209,15 +280,62 @@ impl DiskHttpCache {
         a || b
     }
 
-    fn evict_if_needed(&mut self, incoming: u64) {
+    fn evict_if_needed(&mut self, incoming: u64, origin: &str) {
         self.prune_expired();
-        while self.total_bytes().saturating_add(incoming) > self.max_bytes {
-            let Some(oldest) = find_oldest_entry(&self.root) else {
+        while !origin.is_empty() && self.origin_bytes(origin).saturating_add(incoming) > self.origin_max_bytes {
+            if !self.evict_oldest_for_origin(origin) {
                 break;
-            };
-            let _ = fs::remove_file(&oldest.meta);
-            let _ = fs::remove_file(&oldest.body);
+            }
         }
+        while self.total_bytes().saturating_add(incoming) > self.max_bytes {
+            if self.evict_oldest_global().is_none() {
+                break;
+            }
+        }
+    }
+
+    fn origin_bytes(&self, origin: &str) -> u64 {
+        walk_disk_entries(&self.root)
+            .into_iter()
+            .filter_map(|paths| {
+                let text = fs::read_to_string(&paths.meta).ok()?;
+                let meta: DiskEntryMeta = serde_json::from_str(&text).ok()?;
+                if meta.origin.as_deref() == Some(origin) {
+                    fs::metadata(&paths.body).ok().map(|m| m.len())
+                } else {
+                    None
+                }
+            })
+            .sum()
+    }
+
+    fn evict_oldest_for_origin(&mut self, origin: &str) -> bool {
+        let oldest = walk_disk_entries(&self.root)
+            .into_iter()
+            .filter_map(|paths| {
+                let text = fs::read_to_string(&paths.meta).ok()?;
+                let meta: DiskEntryMeta = serde_json::from_str(&text).ok()?;
+                if meta.origin.as_deref() == Some(origin) {
+                    Some((paths, meta.last_access))
+                } else {
+                    None
+                }
+            })
+            .min_by_key(|(_, access)| *access)
+            .map(|(p, _)| p);
+        if let Some(paths) = oldest {
+            let _ = fs::remove_file(&paths.meta);
+            let _ = fs::remove_file(&paths.body);
+            return true;
+        }
+        false
+    }
+
+    fn evict_oldest_global(&mut self) -> Option<EntryPaths> {
+        let oldest = find_oldest_entry(&self.root)?;
+        let _ = fs::remove_file(&oldest.meta);
+        let _ = fs::remove_file(&oldest.body);
+        Some(oldest)
     }
 
     fn prune_expired(&mut self) {
@@ -225,6 +343,7 @@ impl DiskHttpCache {
         for paths in walk_disk_entries(&self.root) {
             if let Ok(text) = fs::read_to_string(&paths.meta)
                 && let Ok(meta) = serde_json::from_str::<DiskEntryMeta>(&text)
+                && !meta.revalidate_only
                 && now >= meta.expires_at
             {
                 let _ = fs::remove_file(&paths.meta);
@@ -247,6 +366,10 @@ pub struct DiskCacheHit {
     pub url: String,
     /// 原始资源 URL。
     pub resource_url: Option<String>,
+    /// 响应 `Vary` 头。
+    pub vary: Option<String>,
+    /// 是否每次使用前必须再验证。
+    pub revalidate_only: bool,
     /// ETag。
     pub etag: Option<String>,
     /// Last-Modified。
@@ -313,10 +436,11 @@ fn find_oldest_entry(root: &Path) -> Option<EntryPaths> {
     walk_disk_entries(root)
         .into_iter()
         .filter_map(|paths| {
-            let modified = fs::metadata(&paths.meta).ok()?.modified().ok()?;
-            Some((paths, modified))
+            let text = fs::read_to_string(&paths.meta).ok()?;
+            let meta: DiskEntryMeta = serde_json::from_str(&text).ok()?;
+            Some((paths, meta.last_access))
         })
-        .min_by_key(|(_, m)| *m)
+        .min_by_key(|(_, access)| *access)
         .map(|(p, _)| p)
 }
 
@@ -346,10 +470,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "zero-disk-cache-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
         ));
         let _ = fs::remove_dir_all(&dir);
         (DiskHttpCache::open(&dir).unwrap(), dir)
@@ -397,9 +518,31 @@ mod tests {
     }
 
     #[test]
+    fn disk_no_cache_stored_for_revalidation() {
+        let (mut cache, dir) = temp_cache();
+        let key = "https://example.com/api";
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("Cache-Control".into(), "no-cache".into()),
+                ("ETag".into(), "\"v1\"".into()),
+            ],
+            body: b"data".to_vec(),
+            url: key.to_string(),
+            redirect_count: 0,
+        };
+        assert!(cache.put(key, &resp));
+        assert!(cache.get(key).is_none());
+        let hit = cache.read(key).expect("stale readable");
+        assert!(hit.revalidate_only);
+        assert_eq!(hit.fresh_for_secs, 0);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn disk_expired_entry_not_served_as_fresh() {
         let (mut cache, dir) = temp_cache();
-        let key = "https://example.com/old.css\u{0}vary=Accept-Encoding=gzip, deflate, br";
+        let key = "https://example.com/old.css";
         let paths = cache.entry_paths(key);
         if let Some(parent) = paths.meta.parent() {
             fs::create_dir_all(parent).unwrap();
@@ -407,6 +550,9 @@ mod tests {
         let expired = DiskEntryMeta {
             url: key.to_string(),
             resource_url: Some("https://example.com/old.css".to_string()),
+            origin: Some("https://example.com".into()),
+            vary: None,
+            revalidate_only: false,
             status_code: 200,
             headers: vec![],
             etag: Some("\"x\"".to_string()),
@@ -458,6 +604,30 @@ mod tests {
         cache.put(url, &resp);
         let headers = cache.conditional_headers(url);
         assert!(headers.iter().any(|(k, v)| k == "If-None-Match" && v == "\"abc\""));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn per_origin_quota_evicts_oldest_in_origin() {
+        let (cache, dir) = temp_cache();
+        let mut cache = DiskHttpCache {
+            root: cache.root,
+            max_bytes: DEFAULT_DISK_MAX_BYTES,
+            origin_max_bytes: 100,
+        };
+        for i in 0..3 {
+            let url = format!("https://example.com/file{i}.bin");
+            let resp = HttpResponse {
+                status_code: 200,
+                headers: vec![("Cache-Control".into(), "max-age=3600".into())],
+                body: vec![0u8; 40],
+                url,
+                redirect_count: 0,
+            };
+            assert!(cache.put(&resp.url, &resp));
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(cache.total_bytes() <= 100);
         let _ = fs::remove_dir_all(dir);
     }
 

@@ -29,6 +29,8 @@ pub struct Tab {
     history_index: usize,
     /// 导航历史列表。
     history: Vec<NavigationEntry>,
+    /// 无痕模式（不写磁盘缓存、不写入会话）。
+    private: bool,
 }
 
 /// 导航历史条目。
@@ -50,8 +52,23 @@ impl Tab {
             loading: false,
             history_index: 0,
             history: Vec::new(),
+            private: false,
         };
         tab.navigate(url);
+        tab
+    }
+
+    /// 创建无痕标签页。
+    pub fn new_private(url: &str) -> Self {
+        let mut tab = Self::new(url);
+        tab.private = true;
+        tab
+    }
+
+    /// 创建空白无痕标签页。
+    pub fn new_empty_private() -> Self {
+        let mut tab = Self::new_empty();
+        tab.private = true;
         tab
     }
 
@@ -64,7 +81,13 @@ impl Tab {
             loading: false,
             history_index: 0,
             history: Vec::new(),
+            private: false,
         }
+    }
+
+    /// 是否无痕标签页。
+    pub fn is_private(&self) -> bool {
+        self.private
     }
 
     /// 获取标签页 ID。
@@ -223,6 +246,18 @@ impl TabManager {
         let tab = match url {
             Some(url) => Tab::new(url),
             None => Tab::new_empty(),
+        };
+        let id = tab.id();
+        self.tabs.push(tab);
+        self.active_index = Some(self.tabs.len() - 1);
+        id
+    }
+
+    /// 创建无痕标签页并设为活跃。
+    pub fn create_private_tab(&mut self, url: Option<&str>) -> TabId {
+        let tab = match url {
+            Some(url) => Tab::new_private(url),
+            None => Tab::new_empty_private(),
         };
         let id = tab.id();
         self.tabs.push(tab);

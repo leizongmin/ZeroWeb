@@ -597,6 +597,9 @@ impl BrowserApp {
                     self.address_bar.select_all();
                     self.needs_redraw = true;
                 }
+                "t" | "T" if self.shift_pressed => {
+                    self.new_private_tab(None);
+                }
                 "t" | "T" => {
                     self.new_tab(None);
                 }
@@ -825,6 +828,21 @@ impl BrowserApp {
         if button == "Right" {
             self.show_context_menu(x, y);
             return;
+        }
+
+        // 中键点击「+」→ 无痕标签页
+        if button == "Middle" {
+            let s = self.scale_factor;
+            let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
+            let tab_y = layout::TAB_BAR_TOP_INSET * s;
+            let y_f = y as f32;
+            if y_f >= tab_y && y_f < tab_strip_h {
+                let new_tab_x = self.new_tab_button_x();
+                if (x as f32) >= new_tab_x && (x as f32) < new_tab_x + layout::NEW_TAB_BTN_WIDTH * s {
+                    self.new_private_tab(None);
+                    return;
+                }
+            }
         }
 
         // 左键点击时关闭上下文菜单

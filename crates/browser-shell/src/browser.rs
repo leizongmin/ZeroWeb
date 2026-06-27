@@ -135,6 +135,11 @@ impl BrowserShell {
         self.tabs.create_tab(url)
     }
 
+    /// 创建无痕标签页并设为活跃。
+    pub fn new_private_tab(&mut self, url: Option<&str>) -> TabId {
+        self.tabs.create_private_tab(url)
+    }
+
     /// 关闭指定标签页。
     pub fn close_tab(&mut self, id: TabId) {
         self.tabs.close_tab(id);
@@ -381,17 +386,21 @@ impl BrowserShell {
             }
         }
 
-        let tabs: Vec<TabInfo> = self
-            .tabs
-            .tabs()
-            .map(|tab| TabInfo {
+        let active_id = self.tabs.active_tab_id();
+        let mut tabs: Vec<TabInfo> = Vec::new();
+        let mut active_tab_index = None;
+        for tab in self.tabs.tabs().filter(|t| !t.is_private()) {
+            if Some(tab.id()) == active_id {
+                active_tab_index = Some(tabs.len());
+            }
+            tabs.push(TabInfo {
                 url: tab.url().map(|s| s.to_string()),
                 title: tab.title().map(|s| s.to_string()),
                 history: tab.navigation_history().iter().map(nav_to_snapshot).collect(),
                 history_index: tab.history_index(),
-            })
-            .collect();
-        SessionState::from_tabs(tabs.into_iter(), self.tabs.active_index())
+            });
+        }
+        SessionState::from_tabs(tabs.into_iter(), active_tab_index)
     }
 
     /// 将当前会话保存到指定路径。
