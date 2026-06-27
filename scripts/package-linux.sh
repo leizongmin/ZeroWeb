@@ -80,6 +80,31 @@ build_binary() {
     info "zero-renderer 大小: $size"
 }
 
+# ── 复制应用图标到目标 hicolor 目录 ──
+# 用法：copy_app_icons <dest_root>  （dest_root 是包含 usr/share/icons 的根）
+copy_app_icons() {
+    local dest="$1"
+    local icon_gen="$PROJECT_ROOT/apps/browser/assets/icons-gen"
+    local src_svg="$PROJECT_ROOT/apps/browser/assets/app-icon.svg"
+
+    mkdir -p "$dest/usr/share/icons/hicolor/scalable/apps"
+    cp "$src_svg" "$dest/usr/share/icons/hicolor/scalable/apps/zero-browser.svg"
+
+    # 已生成的 PNG 各尺寸
+    if [[ -d "$icon_gen" ]]; then
+        local size
+        for size in 16 32 48 128 256 512; do
+            local png="$icon_gen/icon-${size}.png"
+            if [[ -f "$png" ]]; then
+                mkdir -p "$dest/usr/share/icons/hicolor/${size}x${size}/apps"
+                cp "$png" "$dest/usr/share/icons/hicolor/${size}x${size}/apps/zero-browser.png"
+            fi
+        done
+    else
+        warn "未找到 icons-gen，请在打包前运行：cargo run -p zero-icon-gen"
+    fi
+}
+
 # ── 构建 .AppImage ──
 build_appimage() {
     info "构建 .AppImage 包..."
@@ -121,43 +146,16 @@ exec "${HERE}/usr/bin/zero-browser" "$@"
 RUNEOF
     chmod +x "$appdir/AppRun"
 
-    # 创建图标（SVG 占位符）
-    cat > "$appdir/usr/share/icons/hicolor/scalable/apps/zero-browser.svg" << 'SVGEOF'
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect width="256" height="256" rx="32" fill="#1a1a2e"/>
-  <text x="128" y="160" font-family="sans-serif" font-size="120" font-weight="bold" fill="#4a90d9" text-anchor="middle">Z</text>
-  <circle cx="200" cy="60" r="24" fill="#4caf50"/>
-</svg>
-SVGEOF
+    # 复制真实应用图标（SVG + PNG 各尺寸）
+    copy_app_icons "$appdir"
     cp "$appdir/usr/share/icons/hicolor/scalable/apps/zero-browser.svg" "$appdir/zero-browser.svg"
 
-    # 生成 PNG 图标（使用 resvg 或简单占位）
-    if command -v convert &>/dev/null; then
-        convert -background none "$appdir/zero-browser.svg" -resize 256x256 "$appdir/usr/share/icons/hicolor/256x256/apps/zero-browser.png" 2>/dev/null || true
-    fi
-
     # 创建 .DirIcon（256x256 PNG，AppImage 需要）
-    if [[ -f "$appdir/usr/share/icons/hicolor/256x256/apps/zero-browser.png" ]]; then
-        cp "$appdir/usr/share/icons/hicolor/256x256/apps/zero-browser.png" "$appdir/.DirIcon"
+    local dir_icon_src="$appdir/usr/share/icons/hicolor/256x256/apps/zero-browser.png"
+    if [[ -f "$dir_icon_src" ]]; then
+        cp "$dir_icon_src" "$appdir/.DirIcon"
     else
-        # 创建简单 PNG 占位符
-        python3 -c "
-import struct, zlib
-def create_png(w, h, color):
-    def chunk(t, d):
-        c = t + d
-        return struct.pack('>I', len(d)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
-    sig = b'\\x89PNG\\r\\n\\x1a\\n'
-    ihdr = chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
-    raw = b''
-    for y in range(h):
-        raw += b'\\x00' + color * w
-    idat = chunk(b'IDAT', zlib.compress(raw))
-    iend = chunk(b'IEND', b'')
-    return sig + ihdr + idat + iend
-with open('$appdir/.DirIcon', 'wb') as f:
-    f.write(create_png(256, 256, b'\\x1a\\x1a\\x2e'))
-" 2>/dev/null || warn "PNG 图标生成失败"
+        warn "缺少 256px PNG，.DirIcon 将缺失（运行 cargo run -p zero-icon-gen 生成）"
     fi
 
     info "AppDir 已创建: $appdir"
@@ -233,14 +231,8 @@ Keywords=browser;web;internet;
 StartupNotify=true
 EOF
 
-    # 图标
-    cat > "$debroot/usr/share/icons/hicolor/scalable/apps/zero-browser.svg" << 'SVGEOF'
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect width="256" height="256" rx="32" fill="#1a1a2e"/>
-  <text x="128" y="160" font-family="sans-serif" font-size="120" font-weight="bold" fill="#4a90d9" text-anchor="middle">Z</text>
-  <circle cx="200" cy="60" r="24" fill="#4caf50"/>
-</svg>
-SVGEOF
+    # 图标（真实 SVG + PNG 各尺寸）
+    copy_app_icons "$debroot"
 
     # copyright 文件
     cat > "$debroot/usr/share/doc/zero-browser/copyright" << 'EOF'

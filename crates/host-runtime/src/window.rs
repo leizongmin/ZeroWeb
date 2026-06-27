@@ -157,6 +157,10 @@ fn window_attributes_from_config(config: &WindowConfig) -> winit::window::Window
         .with_inner_size(winit::dpi::LogicalSize::new(config.width, config.height))
         .with_resizable(config.resizable)
         .with_decorations(config.decorations);
+    // Windows / Linux：设置任务栏与标题栏图标。macOS 由 .app bundle 的 .icns 提供。
+    if let Some(icon) = crate::app_icon::window_icon() {
+        attrs = attrs.with_window_icon(Some(icon));
+    }
     if config.fullscreen {
         attrs = attrs.with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
     }

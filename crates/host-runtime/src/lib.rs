@@ -6,6 +6,7 @@
 
 #![warn(missing_docs)]
 
+pub mod app_icon;
 pub mod event;
 pub mod window;
 
