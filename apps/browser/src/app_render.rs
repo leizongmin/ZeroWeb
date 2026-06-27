@@ -801,7 +801,6 @@ impl BrowserApp {
             let slot_specs = [
                 (crate::ui_icons::Icon::Star, self.chrome_palette.nav_button),
                 (crate::ui_icons::Icon::Shield, self.chrome_palette.page_hint),
-                (crate::ui_icons::Icon::MoreVertical, self.chrome_palette.nav_button),
             ];
             for (index, (icon, base_color)) in slot_specs.iter().enumerate() {
                 let slot_x = slots_x + index as f32 * slot_w;
