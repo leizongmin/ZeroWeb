@@ -426,7 +426,15 @@ fn convert_max_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taf
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::Dimension::Percent((*v / 100.0) as f32),
         LengthValue::Auto => taffy::style::Dimension::Auto,
-        LengthValue::Calc(_) => length(0.0),
+        // Calc 表达式：提取百分比部分（与 convert_length_to_dimension 一致），
+        // 非百分比 calc 回退 0.0。此前 calc() 被静默丢弃为 0.0（max-width/max-height 失效）。
+        LengthValue::Calc(expr) => {
+            if let Some(pct) = extract_calc_percentage(expr) {
+                taffy::style::Dimension::Percent(pct as f32 / 100.0)
+            } else {
+                length(0.0)
+            }
+        }
         LengthValue::FitContent(inner) => convert_max_length_to_dimension(inner, vw, vh),
         LengthValue::MinContent | LengthValue::MaxContent => taffy::style::Dimension::Auto,
         _ => taffy::style::Dimension::Auto,
@@ -447,7 +455,15 @@ fn convert_length_to_lp(value: &LengthValue, vw: f32, vh: f32) -> taffy::style::
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::LengthPercentage::Percent((*v / 100.0) as f32),
         LengthValue::Auto => length(0.0), // 不接受 auto 的属性，auto 视为 0
-        LengthValue::Calc(_) => length(0.0),
+        // Calc 表达式：提取百分比部分（与 convert_length_to_dimension 一致），
+        // 非百分比 calc 回退 0.0。此前 calc() 被静默丢弃为 0.0（padding/border/gap 失效）。
+        LengthValue::Calc(expr) => {
+            if let Some(pct) = extract_calc_percentage(expr) {
+                taffy::style::LengthPercentage::Percent(pct as f32 / 100.0)
+            } else {
+                length(0.0)
+            }
+        }
         LengthValue::FitContent(inner) => convert_length_to_lp(inner, vw, vh),
         LengthValue::MinContent | LengthValue::MaxContent => length(0.0),
         _ => length(0.0),
