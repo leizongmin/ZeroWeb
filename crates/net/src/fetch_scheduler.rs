@@ -9,13 +9,14 @@ use crate::client::HttpClient;
 use crate::fetch_priority::FetchPriority;
 use crate::resource_policy::{max_connections_per_origin, origin_from_url};
 
-/// HTTP GET 任务结果：`(status_code, body)` 或网络错误。
-pub type FetchJobResult = Result<(u16, Vec<u8>), String>;
+/// HTTP GET 任务结果。
+pub type FetchJobResult = Result<crate::HttpResponse, String>;
 
 struct QueuedJob {
     url: String,
     origin: String,
     priority: FetchPriority,
+    extra_headers: Vec<(String, String)>,
     reply_tx: Sender<FetchJobResult>,
 }
 
@@ -59,12 +60,23 @@ impl PerOriginFetchScheduler {
         url: impl Into<String>,
         priority: FetchPriority,
     ) -> Receiver<FetchJobResult> {
+        self.submit_with_priority_and_headers(url, priority, Vec::new())
+    }
+
+    /// 带优先级与条件请求头的 GET。
+    pub fn submit_with_priority_and_headers(
+        &mut self,
+        url: impl Into<String>,
+        priority: FetchPriority,
+        extra_headers: Vec<(String, String)>,
+    ) -> Receiver<FetchJobResult> {
         let url = url.into();
         let (reply_tx, reply_rx) = channel();
         let job = QueuedJob {
             origin: origin_from_url(&url),
             url,
             priority,
+            extra_headers,
             reply_tx,
         };
         self.try_start(job);
@@ -82,12 +94,23 @@ impl PerOriginFetchScheduler {
         url: impl Into<String>,
         priority: FetchPriority,
     ) -> Receiver<FetchJobResult> {
+        Self::submit_shared_with_priority_and_headers(sched, url, priority, Vec::new())
+    }
+
+    /// 经共享调度器提交并指定优先级与条件请求头。
+    pub fn submit_shared_with_priority_and_headers(
+        sched: &Arc<Mutex<Self>>,
+        url: impl Into<String>,
+        priority: FetchPriority,
+        extra_headers: Vec<(String, String)>,
+    ) -> Receiver<FetchJobResult> {
         let url = url.into();
         let (reply_tx, reply_rx) = channel();
         let job = QueuedJob {
             origin: origin_from_url(&url),
             url,
             priority,
+            extra_headers,
             reply_tx,
         };
         let mut s = sched.lock().expect("fetch scheduler lock");
@@ -134,16 +157,18 @@ impl PerOriginFetchScheduler {
         let origin = job.origin;
         let reply_tx = job.reply_tx;
         let hook = self.self_hook.clone();
+        let extra_headers = job.extra_headers;
         thread::spawn(move || {
-            let result = client
-                .get(&url)
-                .map(|resp| (resp.status_code, resp.body))
-                .map_err(|e| e.to_string());
+            let mut req = crate::HttpRequest::get(&url);
+            for (name, value) in extra_headers {
+                req = req.header(&name, &value);
+            }
+            let result = client.send(req).map_err(|e| e.to_string());
             match &result {
-                Ok((status, body)) => tracing::info!(
+                Ok(resp) => tracing::info!(
                     url = %url,
-                    status,
-                    bytes = body.len(),
+                    status = resp.status_code,
+                    bytes = resp.body.len(),
                     "HTTP fetch done"
                 ),
                 Err(e) => tracing::warn!(url = %url, error = %e, "HTTP fetch failed"),

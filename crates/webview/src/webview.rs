@@ -8,7 +8,7 @@ use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, PipelineTimings, PrefersColorSchemeValue, RenderPipeline, RenderResult,
     extract_img_srcs, extract_stylesheet_hrefs, image_resource_key, resolve_document_url,
 };
-use zero_net::{HttpCache, HttpClient, NetError, is_file_url};
+use zero_net::{CacheLookup, HttpCache, HttpClient, NetError, is_file_url};
 use zero_render_foundation::image_cache::{ImageCache, ImageKey, decode_image_bytes};
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
@@ -465,23 +465,53 @@ impl WebView {
         }
 
         // 检查 HTTP 缓存（本地 file: 页面不缓存，避免磁盘变更后读到旧内容）
-        if !is_file_url(&effective_url)
-            && let Some(cached) = self.http_cache.get(&effective_url)
-        {
-            tracing::info!("HTTP cache hit for {effective_url}");
-            let html = String::from_utf8(cached.body).map_err(|e| {
-                self.loading = false;
-                self.emit_event(&WebViewEvent::LoadFailed(
-                    effective_url.to_string(),
-                    format!("Cached response body is not valid UTF-8: {e}"),
-                ));
-                WebViewError::Navigation(format!("Cached response body is not valid UTF-8: {e}"))
-            })?;
-            let external_css = self.prepare_page_subresources(&html, &effective_url);
-            let render_result = self.load_html(&html, Some(&external_css));
-            self.loading = false;
-            self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
-            return Ok(render_result);
+        if !is_file_url(&effective_url) {
+            match self.http_cache.lookup(&effective_url, &[]) {
+                CacheLookup::Hit(cached) => {
+                    tracing::info!("HTTP cache hit for {effective_url}");
+                    let html = String::from_utf8(cached.body).map_err(|e| {
+                        self.loading = false;
+                        self.emit_event(&WebViewEvent::LoadFailed(
+                            effective_url.to_string(),
+                            format!("Cached response body is not valid UTF-8: {e}"),
+                        ));
+                        WebViewError::Navigation(format!("Cached response body is not valid UTF-8: {e}"))
+                    })?;
+                    let external_css = self.prepare_page_subresources(&html, &effective_url);
+                    let render_result = self.load_html(&html, Some(&external_css));
+                    self.loading = false;
+                    self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
+                    return Ok(render_result);
+                }
+                CacheLookup::Revalidate {
+                    conditional_headers, ..
+                } => match self.http_client.get_with_headers(&effective_url, &conditional_headers) {
+                    Ok(response) if response.status_code == 304 => {
+                        if let Some(cached) = self.http_cache.not_modified(&effective_url, &[], &response) {
+                            let html = String::from_utf8(cached.body)
+                                .map_err(|e| WebViewError::Navigation(format!("Cached body invalid UTF-8: {e}")))?;
+                            tracing::info!("HTTP 304 revalidated for {effective_url}");
+                            let external_css = self.prepare_page_subresources(&html, &effective_url);
+                            let render_result = self.load_html(&html, Some(&external_css));
+                            self.loading = false;
+                            self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
+                            return Ok(render_result);
+                        }
+                    }
+                    Ok(response) if (200..300).contains(&response.status_code) => {
+                        let _ = self.http_cache.put(&effective_url, &response);
+                        let html = response.text().map_err(|e| WebViewError::Navigation(e.to_string()))?;
+                        tracing::info!("Fetched {} bytes from {effective_url} (revalidate)", html.len());
+                        let external_css = self.prepare_page_subresources(&html, &effective_url);
+                        let render_result = self.load_html(&html, Some(&external_css));
+                        self.loading = false;
+                        self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
+                        return Ok(render_result);
+                    }
+                    Ok(_) | Err(_) => {}
+                },
+                CacheLookup::Miss => {}
+            }
         }
 
         // 发起 HTTP 请求

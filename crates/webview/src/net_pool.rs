@@ -15,13 +15,13 @@ fn scheduler() -> Arc<Mutex<PerOriginFetchScheduler>> {
     NET_SCHEDULER.get_or_init(PerOriginFetchScheduler::new_shared).clone()
 }
 
-fn map_fetch_result(result: FetchJobResult) -> Result<Vec<u8>, String> {
+fn map_fetch_result(result: zero_net::FetchJobResult) -> Result<Vec<u8>, String> {
     match result {
-        Ok((status, body)) if (200..300).contains(&status) => Ok(body),
-        Ok((status, body)) => {
-            let detail = String::from_utf8_lossy(&body);
+        Ok(resp) if (200..300).contains(&resp.status_code) => Ok(resp.body),
+        Ok(resp) => {
+            let detail = String::from_utf8_lossy(&resp.body);
             Err(if detail.trim().is_empty() {
-                format!("HTTP {status}")
+                format!("HTTP {}", resp.status_code)
             } else {
                 detail.trim().to_string()
             })

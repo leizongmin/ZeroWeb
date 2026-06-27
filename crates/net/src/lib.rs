@@ -6,6 +6,7 @@
 
 #![warn(missing_docs)]
 
+pub mod cache_key;
 pub mod cache_policy;
 pub mod client;
 pub mod connect;
@@ -16,6 +17,7 @@ pub mod fetch_scheduler;
 pub mod file_url;
 pub mod http_cache;
 pub mod navigation;
+pub mod private_mode;
 pub mod request;
 pub mod resource_policy;
 pub mod url_parser;
@@ -27,7 +29,7 @@ pub use disk_cache::{DiskHttpCache, default_cache_dir};
 pub use fetch_priority::{FetchPriority, infer_resource_type_from_url};
 pub use fetch_scheduler::{FetchJobResult, PerOriginFetchScheduler};
 pub use file_url::{file_url_to_path, is_file_url, read_file_url};
-pub use http_cache::{CachedResponse, HttpCache};
+pub use http_cache::{CacheLookup, CachedResponse, HttpCache};
 pub use navigation::*;
 pub use request::*;
 pub use resource_policy::{

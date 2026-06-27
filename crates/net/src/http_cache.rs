@@ -5,9 +5,27 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::cache_key::cache_lookup_key;
 use crate::cache_policy::{parse_cache_control, storable_ttl};
 use crate::disk_cache::DiskHttpCache;
+use crate::private_mode::private_browsing_enabled;
 use crate::request::HttpResponse;
+
+/// 缓存查找结果。
+#[derive(Debug, Clone)]
+pub enum CacheLookup {
+    /// 新鲜命中，可直接使用。
+    Hit(CachedResponse),
+    /// 过期但可再验证（已附带条件请求头）。
+    Revalidate {
+        /// 缓存中的旧响应（含 body）。
+        cached: CachedResponse,
+        /// 应附加到条件 GET 的请求头。
+        conditional_headers: Vec<(String, String)>,
+    },
+    /// 未命中。
+    Miss,
+}
 
 /// 缓存条目（内存层）。
 #[derive(Debug, Clone)]
@@ -62,9 +80,13 @@ impl HttpCache {
         }
     }
 
-    /// 打开带磁盘持久层的缓存（浏览器默认路径）。
+    /// 打开带磁盘持久层的缓存（浏览器默认路径；隐私模式仅内存）。
     pub fn open_persistent() -> Self {
         let mut cache = Self::new();
+        if private_browsing_enabled() {
+            tracing::info!("private browsing: HTTP disk cache disabled");
+            return cache;
+        }
         match DiskHttpCache::open_default() {
             Ok(disk) => {
                 tracing::info!(dir = %crate::disk_cache::default_cache_dir().display(), "HTTP disk cache opened");
@@ -75,42 +97,99 @@ impl HttpCache {
         cache
     }
 
-    /// 尝试从缓存获取响应。
-    ///
-    /// 返回 None 表示缓存未命中或缓存已过期。
-    /// 返回 Some 表示缓存命中，返回缓存的响应。
-    pub fn get(&mut self, url: &str) -> Option<CachedResponse> {
-        if let Some(hit) = self.get_memory(url) {
-            return Some(hit);
-        }
-        let disk = self.disk.as_mut()?;
-        let hit = disk.get(url)?;
-        tracing::info!(url, "HTTP disk cache hit");
-        let cached = CachedResponse {
-            body: hit.body.clone(),
-            headers: hit.headers.clone(),
-            status_code: hit.status_code,
-            url: hit.url.clone(),
-            etag: hit.etag.clone(),
-            last_modified: hit.last_modified.clone(),
-        };
-        self.insert_memory_from_hit(url, &cached, hit);
-        Some(cached)
+    /// 查找缓存（新鲜命中 / 需再验证 / 未命中）。
+    pub fn lookup(&mut self, url: &str, request_headers: &[(String, String)]) -> CacheLookup {
+        let key = cache_lookup_key(url, request_headers);
+        self.lookup_key(&key)
     }
 
-    fn get_memory(&mut self, url: &str) -> Option<CachedResponse> {
-        let entry = self.entries.get(url)?;
-
-        if let Some(ttl) = entry.ttl_secs {
-            if entry.stored_at.elapsed() > Duration::from_secs(ttl) {
-                self.remove(url);
-                return None;
-            }
-        } else {
-            return None;
+    fn lookup_key(&mut self, key: &str) -> CacheLookup {
+        if let Some(lookup) = self.lookup_memory(key) {
+            return lookup;
         }
+        let Some(disk) = self.disk.as_mut() else {
+            return CacheLookup::Miss;
+        };
+        let Some(hit) = disk.read(key) else {
+            return CacheLookup::Miss;
+        };
+        let cached = cached_from_disk_hit(&hit);
+        if hit.fresh_for_secs > 0 {
+            tracing::info!(url = %key, "HTTP disk cache hit");
+            self.insert_memory_from_hit(key, &cached, hit);
+            return CacheLookup::Hit(cached);
+        }
+        if is_revalidatable(&hit.etag, &hit.last_modified) {
+            tracing::info!(url = %key, "HTTP disk cache stale, revalidate");
+            return CacheLookup::Revalidate {
+                conditional_headers: conditional_from_validators(&hit.etag, &hit.last_modified),
+                cached,
+            };
+        }
+        let _ = disk.remove(key);
+        CacheLookup::Miss
+    }
 
-        let result = CachedResponse {
+    /// 304 Not Modified — 刷新新鲜期并返回缓存 body。
+    pub fn not_modified(
+        &mut self,
+        url: &str,
+        request_headers: &[(String, String)],
+        response: &HttpResponse,
+    ) -> Option<CachedResponse> {
+        let key = cache_lookup_key(url, request_headers);
+        if let Some(entry) = self.entries.get(&key) {
+            let mut cached = CachedResponse {
+                body: entry.body.clone(),
+                headers: entry.headers.clone(),
+                status_code: entry.status_code,
+                url: entry.url.clone(),
+                etag: entry.etag.clone(),
+                last_modified: entry.last_modified.clone(),
+            };
+            if let Some(ttl) = storable_ttl(response) {
+                if let Some(e) = self.entries.get_mut(&key) {
+                    e.stored_at = Instant::now();
+                    e.ttl_secs = Some(ttl);
+                    if let Some(etag) = response.header("etag") {
+                        e.etag = Some(etag.to_string());
+                        cached.etag = e.etag.clone();
+                    }
+                    if let Some(lm) = response.header("last-modified") {
+                        e.last_modified = Some(lm.to_string());
+                        cached.last_modified = e.last_modified.clone();
+                    }
+                }
+            }
+            if let Some(disk) = self.disk.as_mut() {
+                let _ = disk.refresh_not_modified(&key, response);
+            }
+            tracing::info!(url = %key, "HTTP cache 304 revalidated");
+            return Some(cached);
+        }
+        if let Some(disk) = self.disk.as_mut()
+            && let Some(hit) = disk.read(&key)
+        {
+            if disk.refresh_not_modified(&key, response) {
+                let cached = cached_from_disk_hit(&hit);
+                self.insert_memory_from_hit(&key, &cached, hit);
+                tracing::info!(url = %key, "HTTP disk cache 304 revalidated");
+                return Some(cached);
+            }
+        }
+        None
+    }
+
+    /// 尝试从缓存获取新鲜响应（兼容旧 API）。
+    pub fn get(&mut self, url: &str) -> Option<CachedResponse> {
+        match self.lookup(url, &[]) {
+            CacheLookup::Hit(r) => Some(r),
+            _ => None,
+        }
+    }
+    fn lookup_memory(&mut self, key: &str) -> Option<CacheLookup> {
+        let entry = self.entries.get(key)?;
+        let cached = CachedResponse {
             body: entry.body.clone(),
             headers: entry.headers.clone(),
             status_code: entry.status_code,
@@ -118,12 +197,24 @@ impl HttpCache {
             etag: entry.etag.clone(),
             last_modified: entry.last_modified.clone(),
         };
-
-        self.promote(url);
-        Some(result)
+        let fresh = entry
+            .ttl_secs
+            .is_some_and(|ttl| entry.stored_at.elapsed() <= Duration::from_secs(ttl));
+        if fresh {
+            self.promote(key);
+            return Some(CacheLookup::Hit(cached));
+        }
+        if is_revalidatable(&entry.etag, &entry.last_modified) {
+            return Some(CacheLookup::Revalidate {
+                conditional_headers: conditional_from_validators(&entry.etag, &entry.last_modified),
+                cached,
+            });
+        }
+        self.remove(key);
+        None
     }
 
-    fn insert_memory_from_hit(&mut self, url: &str, cached: &CachedResponse, disk: crate::disk_cache::DiskCacheHit) {
+    fn insert_memory_from_hit(&mut self, key: &str, cached: &CachedResponse, disk: crate::disk_cache::DiskCacheHit) {
         let cc = parse_cache_control(&HttpResponse {
             status_code: cached.status_code,
             headers: cached.headers.clone(),
@@ -135,11 +226,11 @@ impl HttpCache {
             return;
         }
         self.evict_if_needed(cached.body.len());
-        if self.entries.contains_key(url) {
-            self.remove(url);
+        if self.entries.contains_key(key) {
+            self.remove(key);
         }
         self.entries.insert(
-            url.to_string(),
+            key.to_string(),
             CacheEntry {
                 body: cached.body.clone(),
                 headers: cached.headers.clone(),
@@ -152,7 +243,7 @@ impl HttpCache {
                 is_shared: cc.public,
             },
         );
-        self.lru_order.push(url.to_string());
+        self.lru_order.push(key.to_string());
     }
 
     /// 检查是否有有效的缓存条目（不提升 LRU 顺序）。
@@ -165,29 +256,43 @@ impl HttpCache {
         false
     }
 
-    /// 存储响应到缓存。
-    ///
-    /// 根据 Cache-Control 和其他响应头决定是否缓存。
+    /// 存储响应到缓存（自动计算 cache key）。
     pub fn put(&mut self, url: &str, response: &HttpResponse) -> bool {
+        self.put_with_headers(url, &[], response)
+    }
+
+    /// 存储响应到缓存（含请求头以构造 Vary cache key）。
+    pub fn put_with_headers(
+        &mut self,
+        url: &str,
+        request_headers: &[(String, String)],
+        response: &HttpResponse,
+    ) -> bool {
+        let key = cache_lookup_key(url, request_headers);
+        self.put_key(&key, response)
+    }
+
+    fn put_key(&mut self, key: &str, response: &HttpResponse) -> bool {
         let Some(ttl_secs) = storable_ttl(response) else {
             return false;
         };
         let cc = parse_cache_control(response);
         let etag = response.header("etag").map(|s| s.to_string());
         let last_modified = response.header("last-modified").map(|s| s.to_string());
+        let resource_url = response.url.clone();
 
         if self.max_entries > 0 {
             self.evict_if_needed(response.body.len());
-            if self.entries.contains_key(url) {
-                self.remove(url);
+            if self.entries.contains_key(key) {
+                self.remove(key);
             }
             self.entries.insert(
-                url.to_string(),
+                key.to_string(),
                 CacheEntry {
                     body: response.body.clone(),
                     headers: response.headers.clone(),
                     status_code: response.status_code,
-                    url: response.url.clone(),
+                    url: resource_url.clone(),
                     stored_at: Instant::now(),
                     ttl_secs: Some(ttl_secs),
                     etag: etag.clone(),
@@ -195,12 +300,12 @@ impl HttpCache {
                     is_shared: cc.public,
                 },
             );
-            self.lru_order.push(url.to_string());
+            self.lru_order.push(key.to_string());
         }
 
-        let mut stored = self.entries.contains_key(url);
+        let mut stored = self.entries.contains_key(key);
         if let Some(disk) = self.disk.as_mut() {
-            stored |= disk.put(url, response);
+            stored |= disk.put(key, response);
         }
         stored
     }
@@ -245,8 +350,9 @@ impl HttpCache {
     ///
     /// 如果缓存中有该 URL 的条目，返回 If-None-Match 和/或 If-Modified-Since 头。
     pub fn conditional_headers(&self, url: &str) -> Vec<(String, String)> {
+        let key = cache_lookup_key(url, &[]);
         let mut headers = Vec::new();
-        if let Some(entry) = self.entries.get(url) {
+        if let Some(entry) = self.entries.get(&key) {
             if let Some(ref etag) = entry.etag {
                 headers.push(("If-None-Match".to_string(), etag.clone()));
             }
@@ -256,7 +362,7 @@ impl HttpCache {
             return headers;
         }
         if let Some(disk) = &self.disk {
-            return disk.conditional_headers(url);
+            return disk.conditional_headers(&key);
         }
         headers
     }
@@ -316,6 +422,32 @@ impl CachedResponse {
             redirect_count: 0,
         }
     }
+}
+
+fn cached_from_disk_hit(hit: &crate::disk_cache::DiskCacheHit) -> CachedResponse {
+    CachedResponse {
+        body: hit.body.clone(),
+        headers: hit.headers.clone(),
+        status_code: hit.status_code,
+        url: hit.resource_url.clone().unwrap_or_else(|| hit.url.clone()),
+        etag: hit.etag.clone(),
+        last_modified: hit.last_modified.clone(),
+    }
+}
+
+fn is_revalidatable(etag: &Option<String>, last_modified: &Option<String>) -> bool {
+    etag.is_some() || last_modified.is_some()
+}
+
+fn conditional_from_validators(etag: &Option<String>, last_modified: &Option<String>) -> Vec<(String, String)> {
+    let mut headers = Vec::new();
+    if let Some(e) = etag {
+        headers.push(("If-None-Match".to_string(), e.clone()));
+    }
+    if let Some(lm) = last_modified {
+        headers.push(("If-Modified-Since".to_string(), lm.clone()));
+    }
+    headers
 }
 
 #[cfg(test)]
