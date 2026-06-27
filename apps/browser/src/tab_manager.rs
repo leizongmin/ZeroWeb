@@ -133,31 +133,36 @@ impl TabManager {
     /// 导航到 URL。
     pub fn navigate(&mut self, tab_id: TabId, url: String) {
         self.ensure_tab(tab_id);
+        if let Some(snap) = self.snapshots.get_mut(&tab_id) {
+            snap.begin_navigation(url.clone());
+        }
         if let Some(ref mut backend) = self.process_backend {
-            backend.navigate(tab_id, &url);
-            if let Some(snap) = self.snapshots.get_mut(&tab_id) {
-                snap.loading = true;
-                snap.url = Some(url);
-            }
+            let epoch = self
+                .snapshots
+                .get(&tab_id)
+                .map(|s| s.navigation_epoch)
+                .unwrap_or(0);
+            backend.navigate(tab_id, &url, epoch);
             return;
         }
         if let Some(worker) = self.workers.get(&tab_id) {
             worker.send(TabWorkerCommand::Navigate(url));
-            if let Some(snap) = self.snapshots.get_mut(&tab_id) {
-                snap.loading = true;
-            }
         }
     }
 
     /// 同步加载 HTML（测试与 zero:// 页面）。
     pub fn load_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>, url: Option<&str>) {
         self.ensure_tab(tab_id);
+        if let Some(snap) = self.snapshots.get_mut(&tab_id) {
+            snap.begin_navigation(url.unwrap_or("about:blank").to_string());
+        }
         if let Some(ref mut backend) = self.process_backend {
-            backend.load_html(tab_id, html, css, url);
-            if let Some(snap) = self.snapshots.get_mut(&tab_id) {
-                snap.loading = true;
-                snap.url = url.map(str::to_string);
-            }
+            let epoch = self
+                .snapshots
+                .get(&tab_id)
+                .map(|s| s.navigation_epoch)
+                .unwrap_or(0);
+            backend.load_html(tab_id, html, css, url, epoch);
             return;
         }
         if let Some(worker) = self.workers.get(&tab_id) {

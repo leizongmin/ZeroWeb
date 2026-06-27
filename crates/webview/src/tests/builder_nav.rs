@@ -324,6 +324,17 @@ fn test_webview_current_url_updated_after_load_url() {
 }
 
 #[test]
+fn prepare_document_state_clears_last_render_for_new_navigation() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body>old</body></html>", None);
+    assert!(wv.last_render().is_some());
+
+    wv.prepare_document_state("https://next.example");
+    assert!(wv.last_render().is_none());
+    assert!(wv.is_loading());
+}
+
+#[test]
 fn test_webview_multiple_load_url_without_complete() {
     let mut wv = WebView::new(WebViewConfig::default());
     wv.load_url("https://a.com");

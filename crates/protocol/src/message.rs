@@ -97,6 +97,9 @@ pub struct NavigateParams {
     pub url: String,
     /// 来源页面 URL。
     pub referrer: Option<String>,
+    /// 浏览器侧导航世代（`begin_navigation` 递增）；ViewPainted 须携带同值。
+    #[serde(default)]
+    pub navigation_epoch: u64,
 }
 
 /// 内联 HTML 加载参数（浏览器→渲染）。
@@ -108,6 +111,9 @@ pub struct LoadHtmlParams {
     pub css: Option<String>,
     /// 逻辑页面 URL（用于相对链接解析与 ImageCache 键）。
     pub url: Option<String>,
+    /// 浏览器侧导航世代（与 Navigate 一致）。
+    #[serde(default)]
+    pub navigation_epoch: u64,
 }
 
 /// 视口调整参数（浏览器→渲染）。

@@ -666,14 +666,14 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
     for py in top..bottom {
         // 映射到源图像坐标（中心对齐，相对完整 rect）
         let src_y = ((py as f32 + 0.5 - rect_top) / rect_h) * src_h_f - 0.5;
-        let src_y0 = src_y.floor().max(0.0) as u32;
-        let src_y1 = (src_y0 + 1).min(data.height - 1);
+        let src_y0 = (src_y.floor().max(0.0) as u32).min(data.height.saturating_sub(1));
+        let src_y1 = (src_y0 + 1).min(data.height.saturating_sub(1));
         let fy = src_y - src_y0 as f32;
 
         for px in left..right {
             let src_x = ((px as f32 + 0.5 - rect_left) / rect_w) * src_w_f - 0.5;
-            let src_x0 = src_x.floor().max(0.0) as u32;
-            let src_x1 = (src_x0 + 1).min(data.width - 1);
+            let src_x0 = (src_x.floor().max(0.0) as u32).min(data.width.saturating_sub(1));
+            let src_x1 = (src_x0 + 1).min(data.width.saturating_sub(1));
             let fx = src_x - src_x0 as f32;
 
             // 双线性插值：4 个邻近像素加权平均

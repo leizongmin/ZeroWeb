@@ -609,7 +609,14 @@ impl WebView {
     }
 
     /// 导航前设置文档 URL 与 pipeline 状态（供异步加载使用）。
+    ///
+    /// 必须丢弃上一文档的 `last_render` / 缓存，否则多进程增量 publish 会把旧帧 IPC 到浏览器。
     pub fn prepare_document_state(&mut self, page_url: &str) {
+        self.last_render = None;
+        self.cached_html.clear();
+        self.cached_css.clear();
+        self.cached_image_sizes.clear();
+        self.image_cache.clear();
         self.current_url = Some(page_url.to_string());
         self.loading = true;
         self.pipeline.set_document_url(Some(page_url));

@@ -895,10 +895,6 @@ impl BrowserApp {
         {
             tab.set_loading(true);
         }
-        if let Some(snap) = self.tabs.snapshot_mut(tab_id) {
-            snap.loading = true;
-            snap.url = Some(url.clone());
-        }
         self.ensure_webview(tab_id);
         self.sync_webview_viewport();
 
@@ -1134,7 +1130,6 @@ impl BrowserApp {
         };
         self.tabs.ensure_tab(tab_id);
         self.tabs.load_html(tab_id, &html, None, Some("zero://settings"));
-        self.shell.on_page_loaded("设置");
         self.address_bar.set_text("zero://settings".to_string());
         self.needs_redraw = true;
     }

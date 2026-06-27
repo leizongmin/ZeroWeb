@@ -65,10 +65,7 @@ pub(crate) fn map_reqwest_error(e: reqwest::Error) -> NetError {
     }
     if is_proxy_connect_error(&e) {
         let detail = deepest_error_message(&e);
-        return NetError::Proxy(format!(
-            "cannot connect via {}{detail}",
-            proxy_source_hint(),
-        ));
+        return NetError::Proxy(format!("cannot connect via {}{detail}", proxy_source_hint(),));
     }
     NetError::Network(e.to_string())
 }

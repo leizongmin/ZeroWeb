@@ -13,7 +13,7 @@ BROWSER_BIN = ./target/release/zero-browser
 
 browser: setup-rusty-v8
 	cargo build --release -p zero-browser -p zero-renderer
-	$(BROWSER_BIN) --wpt-parity
+	RUST_BACKTRACE=1 $(BROWSER_BIN) --wpt-parity
 
 # 与 browser 相同（保留别名）
 browser-wpt-parity: browser

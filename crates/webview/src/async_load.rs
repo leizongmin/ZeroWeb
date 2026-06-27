@@ -171,7 +171,11 @@ impl AsyncPageLoad {
         };
 
         if self.render_session.is_none() {
-            webview.prepare_document_state(&self.url);
+            let same_navigation = webview.is_loading()
+                && webview.url().is_some_and(|u| u == self.url.as_str());
+            if !same_navigation {
+                webview.prepare_document_state(&self.url);
+            }
             webview.set_cached_content(&html, &self.css);
             self.render_session = Some(BudgetedRenderSession::new(html, self.css.clone()));
         }

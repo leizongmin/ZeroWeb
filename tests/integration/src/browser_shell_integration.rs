@@ -23,6 +23,7 @@ fn test_browser_shell_navigation_ipc_roundtrip() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".to_string(),
             referrer: None,
+                navigation_epoch: 0,
         }),
     };
     let bytes = serialize(&msg).expect("serialize navigate");
@@ -60,6 +61,7 @@ fn test_browser_shell_multi_tab_navigation_ipc() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://site-a.com".to_string(),
                 referrer: None,
+                navigation_epoch: 0,
             }),
         },
         IpcMessage {
@@ -67,6 +69,7 @@ fn test_browser_shell_multi_tab_navigation_ipc() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://site-b.com".to_string(),
                 referrer: Some("https://site-a.com".to_string()),
+                navigation_epoch: 0,
             }),
         },
     ];

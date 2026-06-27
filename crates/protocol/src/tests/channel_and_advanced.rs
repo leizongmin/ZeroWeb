@@ -15,6 +15,7 @@ fn test_ipc_channel_mock_send_recv() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some("https://ref.com".into()),
+                navigation_epoch: 0,
         }),
     };
 
@@ -105,6 +106,7 @@ fn test_serialization_deterministic() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://example.com".into(),
                 referrer: None,
+                navigation_epoch: 0,
             }),
         },
         IpcMessage {
@@ -189,6 +191,7 @@ fn test_different_message_types_interleaved() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://example.com".into(),
                 referrer: None,
+                navigation_epoch: 0,
             }),
         },
         IpcMessage {
@@ -297,6 +300,7 @@ fn test_ipc_message_concurrent_serialization() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://example.com".into(),
                 referrer: None,
+                navigation_epoch: 0,
             }),
         },
         IpcMessage {
@@ -377,6 +381,7 @@ fn test_ipc_channel_ordering() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://a.com".into(),
                 referrer: None,
+                navigation_epoch: 0,
             }),
         },
         IpcMessage {
@@ -553,6 +558,7 @@ fn test_message_with_empty_fields() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: String::new(),
             referrer: None,
+                navigation_epoch: 0,
         }),
     };
     let out1 = roundtrip(msg1);
@@ -727,6 +733,7 @@ fn test_message_with_unicode_payload() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: text.to_string(),
                 referrer: Some(text.to_string()),
+                navigation_epoch: 0,
             }),
         };
         let out5 = roundtrip(msg5);
@@ -1061,6 +1068,7 @@ fn test_ipc_backward_compatibility() {
         IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: None,
+                navigation_epoch: 0,
         }),
         IpcMessageKind::GoBack,
         IpcMessageKind::GoForward,
@@ -1174,6 +1182,7 @@ fn test_ipc_message_order_preserved() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://a.com".into(),
                 referrer: None,
+                navigation_epoch: 0,
             }),
         },
         IpcMessage {
@@ -1204,6 +1213,7 @@ fn test_ipc_deterministic_encoding() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some("https://ref.com".into()),
+                navigation_epoch: 0,
         }),
     };
     let bytes1 = serialize(&msg).expect("first serialize");
@@ -1258,6 +1268,7 @@ fn test_binary_round_trip_determinism() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://example.com/path?q=hello&lang=zh".into(),
                 referrer: Some("https://google.com".into()),
+                navigation_epoch: 0,
             }),
         },
         IpcMessage {
@@ -1265,6 +1276,7 @@ fn test_binary_round_trip_determinism() {
             kind: IpcMessageKind::Navigate(NavigateParams {
                 url: "https://example.com".into(),
                 referrer: None,
+                navigation_epoch: 0,
             }),
         },
         // 带复杂数据结构的变体
@@ -1356,6 +1368,7 @@ fn test_ipc_enum_variants() {
             IpcMessageKind::Navigate(NavigateParams {
                 url: "https://a.com".into(),
                 referrer: Some("https://b.com".into()),
+                navigation_epoch: 0,
             }),
         ),
         (2, IpcMessageKind::GoBack),
@@ -1452,6 +1465,7 @@ fn test_ipc_optional_fields() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: None,
+                navigation_epoch: 0,
         }),
     };
     let out_none = roundtrip(msg_none);
@@ -1467,6 +1481,7 @@ fn test_ipc_optional_fields() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some("https://referrer.com".into()),
+                navigation_epoch: 0,
         }),
     };
     let out_some = roundtrip(msg_some);
@@ -1649,6 +1664,7 @@ fn test_navigate_referrer_some_empty_string() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://example.com".into(),
             referrer: Some(String::new()),
+                navigation_epoch: 0,
         }),
     };
     let out = roundtrip(msg);
@@ -1912,6 +1928,7 @@ fn test_deserialization_error_recovery() {
         kind: IpcMessageKind::Navigate(NavigateParams {
             url: "https://recovery.test".into(),
             referrer: Some("https://referrer.test".into()),
+                navigation_epoch: 0,
         }),
     };
     let valid_bytes2 = serialize(&valid_msg2).expect("序列化应成功");

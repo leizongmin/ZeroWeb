@@ -13,8 +13,9 @@ use crate::js_worker::RendererJsWorker;
 use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, run_page_scripts};
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, RecvTimeoutError, Receiver};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use std::io;
 use zero_engine::{PageScript, extract_page_scripts, resolve_document_url};
@@ -59,8 +60,21 @@ fn spawn_browser_ipc_inbound() -> (Receiver<IpcMessage>, JoinHandle<()>) {
 }
 use zero_render_foundation::font::loader::FontLoader;
 
-/// 单帧渲染预算（ms）——AsyncPageLoad 同步 drain 用。
-const RENDER_FRAME_BUDGET_MS: f64 = 8.0;
+/// 单帧渲染预算（ms）——与 tab_worker 对齐，每 tick 推进一小步后归还 IPC 循环。
+const RENDER_FRAME_BUDGET_MS: f64 = 16.0;
+/// 分阶段加载最长 wall-clock 时间（复杂页面如 qq.com 布局可能需数十秒）。
+const PAGE_LOAD_DEADLINE: Duration = Duration::from_secs(120);
+/// 无 IPC 消息时推进 pending load 的轮询间隔。
+const LOAD_TICK_INTERVAL: Duration = Duration::from_millis(16);
+
+/// 进行中的分阶段页面加载（异步 tick，不阻塞 IPC 消息循环）。
+struct PendingLoad {
+    load: AsyncPageLoad,
+    page_url: String,
+    deadline: Instant,
+    run_scripts_after: bool,
+    emit_load_complete: bool,
+}
 
 /// 渲染进程运行时状态。
 struct RendererRuntime {
@@ -103,6 +117,10 @@ struct RendererRuntime {
     javascript_enabled: bool,
     /// 最近一次交互目标选择器（键盘事件）。
     event_target: String,
+    /// 与浏览器 TabSnapshot 对齐的导航世代。
+    navigation_epoch: u64,
+    /// 异步分阶段加载（与 tab_worker 相同 tick 模型）。
+    pending_load: Option<PendingLoad>,
 }
 
 impl RendererRuntime {
@@ -150,6 +168,8 @@ impl RendererRuntime {
             js_worker,
             javascript_enabled: true,
             event_target: "body".to_string(),
+            navigation_epoch: 0,
+            pending_load: None,
         }
     }
 
@@ -170,10 +190,6 @@ impl RendererRuntime {
     fn send_with_id(&mut self, id: u64, kind: IpcMessageKind) -> Result<(), String> {
         let msg = IpcMessage { id, kind };
         self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
-    }
-
-    fn recv_blocking(&mut self) -> Result<IpcMessage, String> {
-        self.inbound_rx.recv().map_err(|e| format!("IPC 接收失败: {e}"))
     }
 
     fn after_page_html_loaded(&mut self) -> Result<(), String> {
@@ -248,18 +264,130 @@ impl RendererRuntime {
     fn publish_webview(&mut self, title: Option<String>) -> Result<(), String> {
         let html = self.cached_html.clone();
         let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
+        let (vw, vh, document_height, primitives, hit_test, mut image_cache) = {
+            let wv = self.webview.as_ref().expect("webview");
+            let render = wv.last_render().ok_or_else(|| "WebView 无渲染结果".to_string())?;
+            (
+                self.viewport.0,
+                self.viewport.1,
+                wv.document_height().unwrap_or(self.viewport.1 as f32),
+                render.primitives.clone(),
+                wv.build_hit_test_cache(),
+                wv.snapshot_image_cache(),
+            )
+        };
         let mut fetch = |u: &str| self.fetch_get(u).ok();
-        let payloads = paint_export::fetch_image_payloads_with_fetch(&html, &url, &mut fetch);
-        let (vw, vh) = self.viewport;
-        let wv = self.webview.as_ref().expect("webview");
-        let render = wv.last_render().ok_or_else(|| "WebView 无渲染结果".to_string())?;
+        let payloads = paint_export::fetch_image_payloads_with_cache(&html, &url, &mut image_cache, &mut fetch);
         let frame = zero_page_runtime::FrameModel {
             viewport: (vw, vh),
-            document_height: wv.document_height().unwrap_or(vh as f32),
-            primitives: render.primitives.clone(),
-            hit_test: wv.build_hit_test_cache(),
+            document_height,
+            primitives,
+            hit_test,
         };
-        publish_render_with_layout(&mut self.outbound, &mut self.next_msg_id, &frame, title, payloads)
+        publish_render_with_layout(&mut self.outbound, &mut self.next_msg_id, &frame, title, payloads, self.navigation_epoch)
+    }
+
+    fn sync_cached_html_from_webview(&mut self) {
+        if let Some(wv) = self.webview.as_ref() {
+            let html = wv.html_content().to_string();
+            if !html.is_empty() {
+                self.cached_html = html;
+            }
+        }
+    }
+
+    fn try_publish_progress(&mut self) -> Result<(), String> {
+        let title = self.webview.as_ref().and_then(|w| w.title().map(str::to_string));
+        self.publish_webview(title)
+    }
+
+    /// 推进 pending load 一步；加载完成时发布帧、LoadComplete 与可选脚本阶段。
+    fn tick_pending_load(&mut self) -> Result<(), String> {
+        let Some(mut pending) = self.pending_load.take() else {
+            return Ok(());
+        };
+
+        if Instant::now() >= pending.deadline {
+            let url = pending.page_url;
+            return self.show_error_page(&url, "页面加载超时（分阶段加载未完成）");
+        }
+
+        let publish_after = {
+            let outbound = &mut self.outbound;
+            let inbound_rx = &self.inbound_rx;
+            let next_fetch_id = &mut self.next_fetch_id;
+            let deferred = &mut self.deferred_inbound;
+            let mut host = BlockingFetchHost::new(|url: &str| {
+                ipc_fetch_get(outbound, inbound_rx, next_fetch_id, deferred, url)
+            });
+            let webview = self.webview.as_mut().expect("webview");
+            let font_loader = &self.font_loader;
+            let font_id = self.font_id;
+            text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
+                let changed = pending.load.tick(webview, &mut host, RENDER_FRAME_BUDGET_MS);
+                changed
+                    && webview.last_render().is_some()
+                    && !matches!(pending.load.stage(), zero_webview::PageLoadStage::FetchingDocument)
+            })
+        };
+
+        if publish_after {
+            self.sync_cached_html_from_webview();
+            self.try_publish_progress()?;
+        }
+
+        if pending.load.is_active() {
+            self.pending_load = Some(pending);
+            return Ok(());
+        }
+
+        if let Some(err) = pending.load.take_error() {
+            let url = pending.page_url;
+            return self.show_error_page(&url, &err);
+        }
+
+        let page_url = pending.page_url;
+        let run_scripts = pending.run_scripts_after;
+        let emit_complete = pending.emit_load_complete;
+
+        self.sync_cached_html_from_webview();
+        self.try_publish_progress()?;
+        if emit_complete {
+            self.send(IpcMessageKind::LoadComplete)?;
+            tracing::info!("页面渲染完成: {page_url}");
+        }
+        if run_scripts && !page_scripts::should_skip_scripts(&page_url) {
+            self.after_page_html_loaded()?;
+            self.try_publish_progress()?;
+        }
+        Ok(())
+    }
+
+    fn start_pending_load(&mut self, pending: PendingLoad) -> Result<(), String> {
+        self.pending_load = Some(pending);
+        self.tick_pending_load()
+    }
+
+    fn recv_next_or_timeout(&mut self, timeout: Duration) -> Result<Option<IpcMessage>, String> {
+        if let Some(msg) = self.deferred_inbound.pop_front() {
+            return Ok(Some(msg));
+        }
+        match self.inbound_rx.recv_timeout(timeout) {
+            Ok(msg) => Ok(Some(msg)),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => Err("IPC 通道已关闭".into()),
+        }
+    }
+
+    #[cfg(test)]
+    fn drive_until_idle(&mut self) -> Result<(), String> {
+        for _ in 0..10_000 {
+            if self.pending_load.is_none() {
+                return Ok(());
+            }
+            self.tick_pending_load()?;
+        }
+        Err("测试加载未在预期步数内完成".into())
     }
 
     /// 用当前 cached_html/css 经 WebView 重绘并发布（脚本改 DOM 后的重渲染路径）。
@@ -311,13 +439,6 @@ impl RendererRuntime {
         }
     }
 
-    fn recv_next(&mut self) -> Result<IpcMessage, String> {
-        if let Some(msg) = self.deferred_inbound.pop_front() {
-            return Ok(msg);
-        }
-        self.recv_blocking()
-    }
-
     /// 经浏览器 IPC 代理 GET 请求。
     fn fetch_get(&mut self, url: &str) -> Result<Vec<u8>, String> {
         ipc_fetch_get(
@@ -358,105 +479,69 @@ impl RendererRuntime {
         self.cached_html = html.clone();
         self.cached_css = String::new();
 
-        // B3：load 经共享 AsyncPageLoad（与 tabworker 同一加载器），BlockingFetchHost 适配 IPC。
-        // split-borrow self 的 IPC 字段 + webview（绕开 self.method() 整体借用）。
-        {
-            let outbound = &mut self.outbound;
-            let inbound_rx = &self.inbound_rx;
-            let next_fetch_id = &mut self.next_fetch_id;
-            let deferred = &mut self.deferred_inbound;
-            let webview = self.webview.as_mut().expect("webview");
-            let font_loader = &self.font_loader;
-            let font_id = self.font_id;
-            let mut host =
-                BlockingFetchHost::new(|url: &str| ipc_fetch_get(outbound, inbound_rx, next_fetch_id, deferred, url));
-            let mut load = AsyncPageLoad::from_html(page_url.clone(), html.clone());
-            text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
-                for _ in 0..10_000 {
-                    if !load.is_active() {
-                        break;
-                    }
-                    load.tick(webview, &mut host, RENDER_FRAME_BUDGET_MS);
-                }
-            });
-            if load.is_active() {
-                return Err("page load did not complete within tick budget".into());
-            }
-            if let Some(err) = load.take_error() {
-                return Err(err);
-            }
-        }
-
-        self.publish_webview(None)?;
-
-        if !page_scripts::should_skip_scripts(&page_url) {
-            self.after_page_html_loaded()?;
-        }
-
-        if send_complete {
-            self.send(IpcMessageKind::LoadComplete)?;
-            tracing::info!("页面渲染完成: {page_url}");
-        }
-        Ok(())
+        self.webview
+            .as_mut()
+            .expect("webview")
+            .prepare_document_state(&page_url);
+        self.start_pending_load(PendingLoad {
+            load: AsyncPageLoad::from_html(page_url.clone(), html),
+            page_url,
+            deadline: Instant::now() + PAGE_LOAD_DEADLINE,
+            run_scripts_after: true,
+            emit_load_complete: send_complete,
+        })
     }
 
     fn show_error_page(&mut self, page_url: &str, error: &str) -> Result<(), String> {
         tracing::error!("页面加载失败 ({page_url}): {error}");
+        self.pending_load = None;
         self.send(IpcMessageKind::LoadFailed(error.to_string()))?;
         let html = error_page::generate_error_page(page_url, error);
-        self.run_staged_load(format!("error://{page_url}"), html, false, false)?;
+        let error_url = format!("error://{page_url}");
+        self.send(IpcMessageKind::UrlChanged(error_url.clone()))?;
+        self.current_url = Some(error_url.clone());
+        self.cached_html = html.clone();
+        self.cached_css.clear();
+        self.webview
+            .as_mut()
+            .expect("webview")
+            .prepare_document_state(&error_url);
+        self.start_pending_load(PendingLoad {
+            load: AsyncPageLoad::from_html(error_url.clone(), html),
+            page_url: error_url,
+            deadline: Instant::now() + PAGE_LOAD_DEADLINE,
+            run_scripts_after: false,
+            emit_load_complete: false,
+        })?;
         self.send(IpcMessageKind::TitleChanged("加载失败".to_string()))
     }
 
     fn handle_navigate(&mut self, params: NavigateParams) -> Result<(), String> {
         tracing::info!("导航到: {}", params.url);
+        self.pending_load = None;
         self.push_history(&params.url);
         self.send(IpcMessageKind::UrlChanged(params.url.clone()))?;
         self.current_url = Some(params.url.clone());
         self.cached_html.clear();
         self.cached_css.clear();
 
+        self.navigation_epoch = params.navigation_epoch;
         let page_url = params.url.clone();
-        {
-            let outbound = &mut self.outbound;
-            let inbound_rx = &self.inbound_rx;
-            let next_fetch_id = &mut self.next_fetch_id;
-            let deferred = &mut self.deferred_inbound;
-            let webview = self.webview.as_mut().expect("webview");
-            let font_loader = &self.font_loader;
-            let font_id = self.font_id;
-            let mut host =
-                BlockingFetchHost::new(|url: &str| ipc_fetch_get(outbound, inbound_rx, next_fetch_id, deferred, url));
-            let mut load = AsyncPageLoad::start(page_url.clone());
-            text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
-                for _ in 0..10_000 {
-                    if !load.is_active() {
-                        break;
-                    }
-                    load.tick(webview, &mut host, RENDER_FRAME_BUDGET_MS);
-                }
-            });
-            if load.is_active() {
-                return self.show_error_page(&page_url, "页面加载超时（分阶段加载未完成）");
-            }
-            if let Some(err) = load.take_error() {
-                return self.show_error_page(&page_url, &err);
-            }
-            self.cached_html = webview.html_content().to_string();
-        }
-
-        self.publish_webview(None)?;
-
-        if !page_scripts::should_skip_scripts(&page_url) {
-            self.after_page_html_loaded()?;
-        }
-
-        self.send(IpcMessageKind::LoadComplete)?;
-        tracing::info!("页面渲染完成: {page_url}");
-        Ok(())
+        self.webview
+            .as_mut()
+            .expect("webview")
+            .prepare_document_state(&page_url);
+        self.start_pending_load(PendingLoad {
+            load: AsyncPageLoad::start(page_url.clone()),
+            page_url,
+            deadline: Instant::now() + PAGE_LOAD_DEADLINE,
+            run_scripts_after: true,
+            emit_load_complete: true,
+        })
     }
 
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
+        self.navigation_epoch = params.navigation_epoch;
         let page_url = params.url.clone().unwrap_or_else(|| "about:blank".to_string());
         tracing::info!("加载内联 HTML: {page_url}");
         self.cached_css = params.css.clone().unwrap_or_default();
@@ -645,6 +730,7 @@ impl RendererRuntime {
             IpcMessageKind::GoForward => self.handle_go_forward(),
             IpcMessageKind::StopLoading => {
                 tracing::info!("停止加载");
+                self.pending_load = None;
                 Ok(())
             }
             IpcMessageKind::Reload => {
@@ -652,6 +738,7 @@ impl RendererRuntime {
                     self.handle_navigate(NavigateParams {
                         url: url.clone(),
                         referrer: None,
+                        navigation_epoch: self.navigation_epoch.wrapping_add(1),
                     })
                 } else {
                     Ok(())
@@ -687,10 +774,30 @@ impl RendererRuntime {
         tracing::info!("渲染进程 {} 启动，等待 IPC 消息...", self.renderer_id);
 
         loop {
-            let msg = self.recv_next()?;
-            if let Err(e) = self.dispatch_message(msg) {
-                tracing::error!("消息处理错误: {e}");
-                let _ = self.send(IpcMessageKind::Error(e.clone()));
+            if let Some(pending) = self.pending_load.as_ref()
+                && Instant::now() >= pending.deadline
+            {
+                let url = pending.page_url.clone();
+                if let Err(e) = self.show_error_page(&url, "页面加载超时（分阶段加载未完成）") {
+                    tracing::error!("加载超时处理失败: {e}");
+                }
+                continue;
+            }
+
+            if self.pending_load.is_some()
+                && let Err(e) = self.tick_pending_load()
+            {
+                tracing::error!("页面加载 tick 错误: {e}");
+            }
+
+            match self.recv_next_or_timeout(LOAD_TICK_INTERVAL)? {
+                Some(msg) => {
+                    if let Err(e) = self.dispatch_message(msg) {
+                        tracing::error!("消息处理错误: {e}");
+                        let _ = self.send(IpcMessageKind::Error(e.clone()));
+                    }
+                }
+                None => {}
             }
         }
     }
@@ -703,6 +810,7 @@ fn publish_render_with_layout(
     frame: &zero_page_runtime::FrameModel,
     title: Option<String>,
     image_payloads: Vec<zero_protocol::IpcImagePayload>,
+    navigation_epoch: u64,
 ) -> Result<(), String> {
     let paint = paint_export::paint_snapshot_from_primitives(
         frame.viewport.0,
@@ -711,6 +819,7 @@ fn publish_render_with_layout(
         &frame.primitives,
         image_payloads,
         frame.hit_test.clone(),
+        navigation_epoch,
     );
     let msg = IpcMessage {
         id: {
@@ -932,8 +1041,10 @@ mod runtime_smoke {
             html: html.into(),
             css: None,
             url: Some("zero://smoke".into()),
+            navigation_epoch: 0,
         })
         .expect("load ok");
+        rt.drive_until_idle().expect("load should finish");
         let captured = buf.0.lock().unwrap().clone();
         let msgs = drain_messages(&captured);
         let painted = msgs
