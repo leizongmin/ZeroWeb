@@ -144,6 +144,9 @@ mod tests {
             Icon::Plus,
             Icon::MoreVertical,
             Icon::Star,
+            Icon::Lock,
+            Icon::Download,
+            Icon::Shield,
         ] {
             render_icon(&mut loader, &mut Vec::new(), icon, 16.0, 16.0, 24.0, Color::BLACK);
             assert!(loader.has_bitmap_glyph(ICON_FONT_ID, icon.glyph_id(), 24.0));

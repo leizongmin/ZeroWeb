@@ -403,7 +403,9 @@ pub fn generate_history_html(history: &zero_browser_shell::History) -> String {
         ));
     }
     let body = if rows.is_empty() {
-        format!("<p style=\"color:#666;\">{empty}</p>")
+        format!(
+            r#"<p style="color:#666;">{empty}</p><p><a href="zero://history/clear" style="color:#1a73e8;text-decoration:none;">{clear_label}</a></p>"#
+        )
     } else {
         format!(
             r#"<p><a href="zero://history/clear" style="color:#1a73e8;text-decoration:none;">{clear_label}</a></p><ul style="padding-left:20px;">{rows}</ul>"#
@@ -528,5 +530,27 @@ mod tests {
     #[test]
     fn extract_html_title_returns_none_when_missing() {
         assert!(extract_html_title("<html><body>Hi</body></html>").is_none());
+    }
+
+    #[test]
+    fn generate_history_html_includes_clear_link() {
+        let history = zero_browser_shell::History::default();
+        let html = generate_history_html(&history);
+        assert!(html.contains("zero://history/clear"));
+        assert!(html.contains("History"));
+    }
+
+    #[test]
+    fn generate_downloads_html_renders_empty_state() {
+        let downloads = zero_browser_shell::DownloadManager::default();
+        let html = generate_downloads_html(&downloads);
+        assert!(html.contains("Downloads") || html.contains("下载"));
+    }
+
+    #[test]
+    fn generate_bookmarks_html_renders_empty_state() {
+        let bookmarks = zero_browser_shell::Bookmarks::default();
+        let html = generate_bookmarks_html(&bookmarks);
+        assert!(html.contains("Bookmarks") || html.contains("书签"));
     }
 }
