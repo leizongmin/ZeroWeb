@@ -16,6 +16,15 @@ pub(crate) struct CacheControl {
     pub must_revalidate: bool,
 }
 
+/// 缓存写入模式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CacheStoreMode {
+    /// 可在 TTL 内作为新鲜资源提供。
+    Fresh(u64),
+    /// 可存储但每次使用前必须再验证（`Cache-Control: no-cache`）。
+    RevalidateOnly,
+}
+
 /// 解析 Cache-Control 头。
 pub(crate) fn parse_cache_control(response: &HttpResponse) -> CacheControl {
     let mut cc = CacheControl::default();
@@ -79,18 +88,52 @@ pub(crate) fn compute_ttl_secs(cc: &CacheControl, response: &HttpResponse) -> Op
     None
 }
 
-/// 响应是否应写入缓存；返回新鲜期秒数。
-pub(crate) fn storable_ttl(response: &HttpResponse) -> Option<u64> {
+fn has_validators(response: &HttpResponse) -> bool {
+    response.header("etag").is_some() || response.header("last-modified").is_some()
+}
+
+/// 响应是否应写入缓存及其模式。
+pub(crate) fn storable_mode(response: &HttpResponse) -> Option<CacheStoreMode> {
     let cc = parse_cache_control(response);
     if cc.no_store || !is_cacheable_status(response.status_code) {
         return None;
     }
+    if cc.no_cache {
+        return has_validators(response).then_some(CacheStoreMode::RevalidateOnly);
+    }
     match compute_ttl_secs(&cc, response) {
-        Some(ttl) if ttl > 0 => Some(ttl),
+        Some(ttl) if ttl > 0 => Some(CacheStoreMode::Fresh(ttl)),
         _ => None,
     }
 }
 
 fn parse_http_date(date_str: &str) -> Result<u64, ()> {
     crate::cookie::parse_expires_date(date_str).ok_or(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn resp(headers: Vec<(&str, &str)>) -> HttpResponse {
+        HttpResponse {
+            status_code: 200,
+            headers: headers.into_iter().map(|(k, v)| (k.into(), v.into())).collect(),
+            body: vec![],
+            url: "https://example.com/".into(),
+            redirect_count: 0,
+        }
+    }
+
+    #[test]
+    fn no_cache_storable_with_validators() {
+        let r = resp(vec![("cache-control", "no-cache"), ("etag", "\"x\"")]);
+        assert_eq!(storable_mode(&r), Some(CacheStoreMode::RevalidateOnly));
+    }
+
+    #[test]
+    fn no_cache_not_storable_without_validators() {
+        let r = resp(vec![("cache-control", "no-cache")]);
+        assert_eq!(storable_mode(&r), None);
+    }
 }

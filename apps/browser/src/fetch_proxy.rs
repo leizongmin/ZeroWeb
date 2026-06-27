@@ -1,6 +1,6 @@
 //! Browser 侧 fetch 代理 — 优先级、HTTP 缓存、安全策略、导航 cancel。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
 
@@ -33,6 +33,8 @@ struct PendingFetch {
 pub struct TabFetchProxy {
     scheduler: Arc<Mutex<PerOriginFetchScheduler>>,
     http_cache: Arc<Mutex<HttpCache>>,
+    private_cache: Arc<Mutex<HttpCache>>,
+    private_tabs: HashSet<TabId>,
     pending: Vec<PendingFetch>,
     tab_epochs: HashMap<TabId, u64>,
     security: HashMap<TabId, SecurityContext>,
@@ -44,9 +46,35 @@ impl TabFetchProxy {
         Self {
             scheduler: PerOriginFetchScheduler::new_shared(),
             http_cache: Arc::new(Mutex::new(HttpCache::open_persistent())),
+            private_cache: Arc::new(Mutex::new(HttpCache::new())),
+            private_tabs: HashSet::new(),
             pending: Vec::new(),
             tab_epochs: HashMap::new(),
             security: HashMap::new(),
+        }
+    }
+
+    /// 标记 Tab 为无痕（仅内存缓存，不写磁盘）。
+    pub fn set_tab_private(&mut self, tab_id: TabId, private: bool) {
+        if private {
+            self.private_tabs.insert(tab_id);
+        } else {
+            self.private_tabs.remove(&tab_id);
+        }
+    }
+
+    /// Tab 关闭时清理状态。
+    pub fn remove_tab(&mut self, tab_id: TabId) {
+        self.private_tabs.remove(&tab_id);
+        self.tab_epochs.remove(&tab_id);
+        self.security.remove(&tab_id);
+    }
+
+    fn cache_for(&self, tab_id: TabId) -> Arc<Mutex<HttpCache>> {
+        if self.private_tabs.contains(&tab_id) {
+            Arc::clone(&self.private_cache)
+        } else {
+            Arc::clone(&self.http_cache)
         }
     }
 
@@ -115,13 +143,16 @@ impl TabFetchProxy {
             params.request_id
         );
 
-        let mut cache = self.http_cache.lock().expect("http cache");
-        match cache.lookup(&url, &request_headers) {
+        let cache = self.cache_for(tab_id);
+        let lookup = {
+            let mut guard = cache.lock().expect("http cache");
+            guard.lookup(&url, &request_headers)
+        };
+        match lookup {
             CacheLookup::Hit(cached) => {
                 tracing::info!("fetch cache hit tab {} req_id={} {url}", tab_id.0, params.request_id);
                 let (tx, rx) = channel();
                 let _ = tx.send(Ok(cached.into_response()));
-                drop(cache);
                 self.pending.push(PendingFetch {
                     tab_id,
                     request_id: params.request_id,
@@ -146,7 +177,6 @@ impl TabFetchProxy {
                     priority,
                     conditional_headers,
                 );
-                drop(cache);
                 self.pending.push(PendingFetch {
                     tab_id,
                     request_id: params.request_id,
@@ -159,7 +189,6 @@ impl TabFetchProxy {
             }
             CacheLookup::Miss => {}
         }
-        drop(cache);
 
         let rx = PerOriginFetchScheduler::submit_shared_with_priority_and_headers(
             &self.scheduler,
@@ -180,16 +209,16 @@ impl TabFetchProxy {
     pub fn drain(&mut self) -> Vec<CompletedFetch> {
         let mut still_pending = Vec::new();
         let mut completed = Vec::new();
-        let cache = Arc::clone(&self.http_cache);
-        for pending in self.pending.drain(..) {
+        let drained = std::mem::take(&mut self.pending);
+        for pending in drained {
+            let tab_cache = self.cache_for(pending.tab_id);
             match pending.rx.try_recv() {
                 Ok(Ok(resp)) if resp.status_code == 304 => {
-                    let body = if let Some(cached) =
-                        cache
-                            .lock()
-                            .expect("http cache")
-                            .not_modified(&pending.url, &pending.request_headers, &resp)
-                    {
+                    let body = if let Some(cached) = tab_cache.lock().expect("http cache").not_modified(
+                        &pending.url,
+                        &pending.request_headers,
+                        &resp,
+                    ) {
                         cached.body
                     } else {
                         Vec::new()
@@ -210,7 +239,7 @@ impl TabFetchProxy {
                 }
                 Ok(Ok(resp)) => {
                     if (200..300).contains(&resp.status_code) {
-                        let _ = cache.lock().expect("http cache").put_with_headers(
+                        let _ = tab_cache.lock().expect("http cache").put_with_headers(
                             &pending.url,
                             &pending.request_headers,
                             &resp,

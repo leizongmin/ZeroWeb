@@ -2,22 +2,8 @@
 
 use crate::request::HttpResponse;
 
-/// 构造缓存查找/存储键（去 fragment，含 Vary 相关请求维度）。
-pub fn cache_lookup_key(url: &str, request_headers: &[(String, String)]) -> String {
-    let base = strip_fragment(url);
-    match vary_suffix(request_headers) {
-        Some(v) => format!("{base}\0vary={v}"),
-        None => base,
-    }
-}
-
-/// 根据响应 `Vary` 头与本次请求头生成 vary 后缀（存储时写入条目）。
-pub fn vary_suffix_for_store(response: &HttpResponse, request_headers: &[(String, String)]) -> Option<String> {
-    let vary = response.header("vary")?;
-    vary_suffix_from_fields(vary, request_headers)
-}
-
-fn strip_fragment(url: &str) -> String {
+/// 去掉 URL fragment。
+pub fn strip_url_fragment(url: &str) -> String {
     url::Url::parse(url)
         .map(|mut u| {
             u.set_fragment(None);
@@ -26,12 +12,27 @@ fn strip_fragment(url: &str) -> String {
         .unwrap_or_else(|_| url.to_string())
 }
 
-fn vary_suffix(request_headers: &[(String, String)]) -> Option<String> {
-    // 与 reqwest 默认行为对齐：无显式头时也按 gzip 族区分（常见 Vary: Accept-Encoding）。
-    Some(format!(
-        "Accept-Encoding={}",
-        header_value(request_headers, "accept-encoding").unwrap_or_else(|| "gzip, deflate, br".to_string())
-    ))
+/// 构造缓存查找键（去 fragment；`vary_header` 来自已存储条目的响应 `Vary`）。
+pub fn cache_lookup_key(url: &str, request_headers: &[(String, String)], vary_header: Option<&str>) -> String {
+    let base = strip_url_fragment(url);
+    match vary_header.filter(|v| !v.trim().is_empty()) {
+        Some(vary) => match vary_suffix_from_fields(vary, request_headers) {
+            Some(v) if !v.is_empty() => format!("{base}\0vary={v}"),
+            _ => base,
+        },
+        None => base,
+    }
+}
+
+/// 构造缓存存储键（根据响应 `Vary` 与本次请求头）。
+pub fn cache_store_key(url: &str, request_headers: &[(String, String)], response: &HttpResponse) -> String {
+    cache_lookup_key(url, request_headers, response.header("vary"))
+}
+
+/// 根据响应 `Vary` 头与本次请求头生成 vary 后缀（存储时写入条目）。
+pub fn vary_suffix_for_store(response: &HttpResponse, request_headers: &[(String, String)]) -> Option<String> {
+    let vary = response.header("vary")?;
+    vary_suffix_from_fields(vary, request_headers)
 }
 
 fn vary_suffix_from_fields(vary: &str, request_headers: &[(String, String)]) -> Option<String> {
@@ -59,10 +60,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn strips_fragment() {
+    fn strips_fragment_without_vary() {
         assert_eq!(
-            cache_lookup_key("https://example.com/a#frag", &[]),
-            "https://example.com/a\u{0}vary=Accept-Encoding=gzip, deflate, br"
+            cache_lookup_key("https://example.com/a#frag", &[], None),
+            "https://example.com/a"
+        );
+    }
+
+    #[test]
+    fn vary_accept_encoding_key() {
+        let req = vec![("Accept-Encoding".into(), "gzip".into())];
+        assert_eq!(
+            cache_lookup_key("https://example.com/", &req, Some("Accept-Encoding")),
+            "https://example.com/\0vary=Accept-Encoding=gzip"
+        );
+    }
+
+    #[test]
+    fn vary_multi_field_key() {
+        let req = vec![
+            ("Accept-Encoding".into(), "gzip".into()),
+            ("Accept-Language".into(), "zh-CN".into()),
+        ];
+        assert_eq!(
+            cache_lookup_key("https://example.com/", &req, Some("Accept-Encoding, Accept-Language")),
+            "https://example.com/\0vary=Accept-Encoding=gzip;Accept-Language=zh-CN"
         );
     }
 
@@ -79,6 +101,10 @@ mod tests {
         assert_eq!(
             vary_suffix_for_store(&resp, &req),
             Some("Accept-Encoding=gzip".to_string())
+        );
+        assert_eq!(
+            cache_store_key("https://example.com/", &req, &resp),
+            "https://example.com/\0vary=Accept-Encoding=gzip"
         );
     }
 }

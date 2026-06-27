@@ -5,8 +5,8 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use crate::cache_key::cache_lookup_key;
-use crate::cache_policy::{parse_cache_control, storable_ttl};
+use crate::cache_key::{cache_lookup_key, cache_store_key, strip_url_fragment};
+use crate::cache_policy::{parse_cache_control, storable_mode, CacheStoreMode};
 use crate::disk_cache::DiskHttpCache;
 use crate::private_mode::private_browsing_enabled;
 use crate::request::HttpResponse;
@@ -34,8 +34,11 @@ struct CacheEntry {
     headers: Vec<(String, String)>,
     status_code: u16,
     url: String,
+    resource_base: String,
     stored_at: Instant,
     ttl_secs: Option<u64>,
+    revalidate_only: bool,
+    vary: Option<String>,
     etag: Option<String>,
     last_modified: Option<String>,
     #[allow(dead_code)]
@@ -50,6 +53,8 @@ struct CacheEntry {
 pub struct HttpCache {
     entries: HashMap<String, CacheEntry>,
     lru_order: Vec<String>,
+    resource_index: HashMap<String, Vec<String>>,
+    disk_index_loaded: bool,
     max_entries: usize,
     max_bytes: usize,
     disk: Option<DiskHttpCache>,
@@ -74,6 +79,8 @@ impl HttpCache {
         Self {
             entries: HashMap::new(),
             lru_order: Vec::new(),
+            resource_index: HashMap::new(),
+            disk_index_loaded: false,
             max_entries,
             max_bytes,
             disk: None,
@@ -99,8 +106,21 @@ impl HttpCache {
 
     /// 查找缓存（新鲜命中 / 需再验证 / 未命中）。
     pub fn lookup(&mut self, url: &str, request_headers: &[(String, String)]) -> CacheLookup {
-        let key = cache_lookup_key(url, request_headers);
-        self.lookup_key(&key)
+        self.ensure_disk_index();
+        let base = strip_url_fragment(url);
+        if let Some(keys) = self.resource_index.get(&base).cloned() {
+            for key in keys {
+                let vary = self.vary_for_key(&key);
+                let candidate = cache_lookup_key(&base, request_headers, vary.as_deref());
+                if candidate == key {
+                    let lookup = self.lookup_key(&key);
+                    if !matches!(lookup, CacheLookup::Miss) {
+                        return lookup;
+                    }
+                }
+            }
+        }
+        self.lookup_key(&base)
     }
 
     fn lookup_key(&mut self, key: &str) -> CacheLookup {
@@ -114,6 +134,17 @@ impl HttpCache {
             return CacheLookup::Miss;
         };
         let cached = cached_from_disk_hit(&hit);
+        if hit.revalidate_only {
+            if is_revalidatable(&hit.etag, &hit.last_modified) {
+                tracing::info!(url = %key, "HTTP disk cache revalidate-only");
+                return CacheLookup::Revalidate {
+                    conditional_headers: conditional_from_validators(&hit.etag, &hit.last_modified),
+                    cached,
+                };
+            }
+            let _ = disk.remove(key);
+            return CacheLookup::Miss;
+        }
         if hit.fresh_for_secs > 0 {
             tracing::info!(url = %key, "HTTP disk cache hit");
             self.insert_memory_from_hit(key, &cached, hit);
@@ -137,7 +168,9 @@ impl HttpCache {
         request_headers: &[(String, String)],
         response: &HttpResponse,
     ) -> Option<CachedResponse> {
-        let key = cache_lookup_key(url, request_headers);
+        let Some(key) = self.resolve_lookup_key(url, request_headers) else {
+            return None;
+        };
         if let Some(entry) = self.entries.get(&key) {
             let mut cached = CachedResponse {
                 body: entry.body.clone(),
@@ -147,10 +180,19 @@ impl HttpCache {
                 etag: entry.etag.clone(),
                 last_modified: entry.last_modified.clone(),
             };
-            if let Some(ttl) = storable_ttl(response) {
+            if let Some(mode) = storable_mode(response) {
                 if let Some(e) = self.entries.get_mut(&key) {
                     e.stored_at = Instant::now();
-                    e.ttl_secs = Some(ttl);
+                    match mode {
+                        CacheStoreMode::Fresh(ttl) => {
+                            e.ttl_secs = Some(ttl);
+                            e.revalidate_only = false;
+                        }
+                        CacheStoreMode::RevalidateOnly => {
+                            e.ttl_secs = Some(0);
+                            e.revalidate_only = true;
+                        }
+                    }
                     if let Some(etag) = response.header("etag") {
                         e.etag = Some(etag.to_string());
                         cached.etag = e.etag.clone();
@@ -197,6 +239,16 @@ impl HttpCache {
             etag: entry.etag.clone(),
             last_modified: entry.last_modified.clone(),
         };
+        if entry.revalidate_only {
+            if is_revalidatable(&entry.etag, &entry.last_modified) {
+                return Some(CacheLookup::Revalidate {
+                    conditional_headers: conditional_from_validators(&entry.etag, &entry.last_modified),
+                    cached,
+                });
+            }
+            self.remove(key);
+            return None;
+        }
         let fresh = entry
             .ttl_secs
             .is_some_and(|ttl| entry.stored_at.elapsed() <= Duration::from_secs(ttl));
@@ -215,6 +267,9 @@ impl HttpCache {
     }
 
     fn insert_memory_from_hit(&mut self, key: &str, cached: &CachedResponse, disk: crate::disk_cache::DiskCacheHit) {
+        if (disk.fresh_for_secs == 0 && !disk.revalidate_only) || self.max_entries == 0 {
+            return;
+        }
         let cc = parse_cache_control(&HttpResponse {
             status_code: cached.status_code,
             headers: cached.headers.clone(),
@@ -222,13 +277,11 @@ impl HttpCache {
             url: cached.url.clone(),
             redirect_count: 0,
         });
-        if disk.fresh_for_secs == 0 || self.max_entries == 0 {
-            return;
-        }
         self.evict_if_needed(cached.body.len());
         if self.entries.contains_key(key) {
             self.remove(key);
         }
+        let resource_base = strip_url_fragment(&cached.url);
         self.entries.insert(
             key.to_string(),
             CacheEntry {
@@ -236,14 +289,22 @@ impl HttpCache {
                 headers: cached.headers.clone(),
                 status_code: cached.status_code,
                 url: cached.url.clone(),
+                resource_base: resource_base.clone(),
                 stored_at: Instant::now(),
-                ttl_secs: Some(disk.fresh_for_secs),
+                ttl_secs: if disk.revalidate_only {
+                    Some(0)
+                } else {
+                    Some(disk.fresh_for_secs)
+                },
+                revalidate_only: disk.revalidate_only,
+                vary: disk.vary.clone(),
                 etag: cached.etag.clone(),
                 last_modified: cached.last_modified.clone(),
                 is_shared: cc.public,
             },
         );
         self.lru_order.push(key.to_string());
+        self.register_resource_key(&resource_base, key);
     }
 
     /// 检查是否有有效的缓存条目（不提升 LRU 顺序）。
@@ -268,18 +329,25 @@ impl HttpCache {
         request_headers: &[(String, String)],
         response: &HttpResponse,
     ) -> bool {
-        let key = cache_lookup_key(url, request_headers);
+        let key = cache_store_key(url, request_headers, response);
         self.put_key(&key, response)
     }
 
     fn put_key(&mut self, key: &str, response: &HttpResponse) -> bool {
-        let Some(ttl_secs) = storable_ttl(response) else {
-            return false;
+        let mode = match storable_mode(response) {
+            Some(m) => m,
+            None => return false,
+        };
+        let (ttl_secs, revalidate_only) = match mode {
+            CacheStoreMode::Fresh(ttl) => (Some(ttl), false),
+            CacheStoreMode::RevalidateOnly => (Some(0), true),
         };
         let cc = parse_cache_control(response);
         let etag = response.header("etag").map(|s| s.to_string());
         let last_modified = response.header("last-modified").map(|s| s.to_string());
         let resource_url = response.url.clone();
+        let resource_base = strip_url_fragment(&resource_url);
+        let vary = response.header("vary").map(|s| s.to_string());
 
         if self.max_entries > 0 {
             self.evict_if_needed(response.body.len());
@@ -293,14 +361,18 @@ impl HttpCache {
                     headers: response.headers.clone(),
                     status_code: response.status_code,
                     url: resource_url.clone(),
+                    resource_base: resource_base.clone(),
                     stored_at: Instant::now(),
-                    ttl_secs: Some(ttl_secs),
+                    ttl_secs,
+                    revalidate_only,
+                    vary: vary.clone(),
                     etag: etag.clone(),
                     last_modified: last_modified.clone(),
                     is_shared: cc.public,
                 },
             );
             self.lru_order.push(key.to_string());
+            self.register_resource_key(&resource_base, key);
         }
 
         let mut stored = self.entries.contains_key(key);
@@ -312,6 +384,10 @@ impl HttpCache {
 
     /// 移除缓存条目。
     pub fn remove(&mut self, url: &str) -> bool {
+        let resource_base = self.entries.get(url).map(|e| e.resource_base.clone());
+        if let Some(base) = resource_base {
+            self.unregister_resource_key(&base, url);
+        }
         let mem = if self.entries.remove(url).is_some() {
             self.lru_order.retain(|u| u != url);
             true
@@ -326,6 +402,8 @@ impl HttpCache {
     pub fn clear(&mut self) {
         self.entries.clear();
         self.lru_order.clear();
+        self.resource_index.clear();
+        self.disk_index_loaded = false;
         if let Some(disk) = self.disk.as_mut() {
             let _ = disk.clear();
         }
@@ -350,7 +428,18 @@ impl HttpCache {
     ///
     /// 如果缓存中有该 URL 的条目，返回 If-None-Match 和/或 If-Modified-Since 头。
     pub fn conditional_headers(&self, url: &str) -> Vec<(String, String)> {
-        let key = cache_lookup_key(url, &[]);
+        self.conditional_headers_with_request(url, &[])
+    }
+
+    /// 为条件请求生成请求头（含 Vary 维度）。
+    pub fn conditional_headers_with_request(
+        &self,
+        url: &str,
+        request_headers: &[(String, String)],
+    ) -> Vec<(String, String)> {
+        let Some(key) = self.resolve_lookup_key_readonly(url, request_headers) else {
+            return Vec::new();
+        };
         let mut headers = Vec::new();
         if let Some(entry) = self.entries.get(&key) {
             if let Some(ref etag) = entry.etag {
@@ -385,10 +474,65 @@ impl HttpCache {
             || (self.total_bytes() + incoming_bytes > self.max_bytes && !self.lru_order.is_empty())
         {
             if let Some(oldest_url) = self.lru_order.first().cloned() {
-                self.entries.remove(&oldest_url);
-                self.lru_order.remove(0);
+                self.remove(&oldest_url);
             } else {
                 break;
+            }
+        }
+    }
+
+    fn ensure_disk_index(&mut self) {
+        if self.disk_index_loaded {
+            return;
+        }
+        if let Some(disk) = self.disk.as_ref() {
+            for entry in disk.list_index_entries() {
+                if let Some(resource_url) = entry.resource_url {
+                    let base = strip_url_fragment(&resource_url);
+                    self.register_resource_key(&base, &entry.key);
+                }
+            }
+        }
+        self.disk_index_loaded = true;
+    }
+
+    fn resolve_lookup_key(&self, url: &str, request_headers: &[(String, String)]) -> Option<String> {
+        self.resolve_lookup_key_readonly(url, request_headers)
+    }
+
+    fn resolve_lookup_key_readonly(&self, url: &str, request_headers: &[(String, String)]) -> Option<String> {
+        let base = strip_url_fragment(url);
+        if let Some(keys) = self.resource_index.get(&base) {
+            for key in keys {
+                let vary = self.vary_for_key(key);
+                let candidate = cache_lookup_key(&base, request_headers, vary.as_deref());
+                if &candidate == key {
+                    return Some(key.clone());
+                }
+            }
+        }
+        Some(base)
+    }
+
+    fn vary_for_key(&self, key: &str) -> Option<String> {
+        if let Some(entry) = self.entries.get(key) {
+            return entry.vary.clone();
+        }
+        self.disk.as_ref()?.entry_vary(key)
+    }
+
+    fn register_resource_key(&mut self, resource_base: &str, key: &str) {
+        let keys = self.resource_index.entry(resource_base.to_string()).or_default();
+        if !keys.iter().any(|k| k == key) {
+            keys.push(key.to_string());
+        }
+    }
+
+    fn unregister_resource_key(&mut self, resource_base: &str, key: &str) {
+        if let Some(keys) = self.resource_index.get_mut(resource_base) {
+            keys.retain(|k| k != key);
+            if keys.is_empty() {
+                self.resource_index.remove(resource_base);
             }
         }
     }
@@ -531,9 +675,43 @@ mod tests {
     #[test]
     fn test_cache_no_cache_directive() {
         let mut cache = HttpCache::new();
-        let resp = make_response(200, b"hello", vec![("cache-control", "no-cache")]);
-        assert!(!cache.put("https://example.com/test", &resp));
+        let resp = make_response(200, b"hello", vec![("cache-control", "no-cache"), ("etag", "\"abc\"")]);
+        assert!(cache.put("https://example.com/test", &resp));
+        match cache.lookup("https://example.com/test", &[]) {
+            CacheLookup::Revalidate { .. } => {}
+            other => panic!("expected revalidate-only lookup, got {other:?}"),
+        }
         assert!(cache.get("https://example.com/test").is_none());
+    }
+
+    #[test]
+    fn test_cache_vary_multi_field() {
+        let mut cache = HttpCache::new();
+        let req = vec![
+            ("Accept-Encoding".into(), "gzip".into()),
+            ("Accept-Language".into(), "en".into()),
+        ];
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("Cache-Control".into(), "max-age=60".into()),
+                ("Vary".into(), "Accept-Encoding, Accept-Language".into()),
+            ],
+            body: b"vary-body".to_vec(),
+            url: "https://example.com/vary".into(),
+            redirect_count: 0,
+        };
+        assert!(cache.put_with_headers("https://example.com/vary", &req, &resp));
+        let hit = cache.lookup("https://example.com/vary", &req);
+        assert!(matches!(hit, CacheLookup::Hit(_)));
+        let wrong_lang = vec![
+            ("Accept-Encoding".into(), "gzip".into()),
+            ("Accept-Language".into(), "fr".into()),
+        ];
+        assert!(matches!(
+            cache.lookup("https://example.com/vary", &wrong_lang),
+            CacheLookup::Miss
+        ));
     }
 
     #[test]

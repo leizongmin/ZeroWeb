@@ -319,9 +319,15 @@ impl ProcessTabBackend {
 
     /// 关闭 Tab 对应渲染进程。
     pub fn remove_renderer(&mut self, tab_id: TabId) {
+        self.fetch_proxy.remove_tab(tab_id);
         if let Some(rid) = self.tab_to_renderer.remove(&tab_id) {
             let _ = self.manager.shutdown_renderer(rid);
         }
+    }
+
+    /// 标记 Tab 为无痕（fetch 使用仅内存缓存）。
+    pub fn set_tab_private(&mut self, tab_id: TabId, private: bool) {
+        self.fetch_proxy.set_tab_private(tab_id, private);
     }
 
     /// Tab 是否仍有 live 渲染进程。

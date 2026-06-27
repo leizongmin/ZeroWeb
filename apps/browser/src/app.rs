@@ -1004,6 +1004,25 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
+    /// 创建无痕标签页（不写磁盘 HTTP 缓存、不保存到会话）。
+    pub fn new_private_tab(&mut self, url: Option<&str>) {
+        let tab_id = self.shell.new_private_tab(url);
+        self.tabs.ensure_tab(tab_id);
+        self.tabs.set_tab_private(tab_id, true);
+
+        if let Some(url) = url {
+            self.address_bar.set_text(url.to_string());
+        } else {
+            self.address_bar.clear();
+            self.load_welcome_page(tab_id);
+        }
+
+        self.scroll.insert(tab_id, TabScrollState::default());
+        self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+        self.sync_webview_viewport();
+        self.needs_redraw = true;
+    }
+
     /// 关闭活跃标签页
     pub fn close_active_tab(&mut self) {
         if let Some(tab_id) = self.shell.active_tab_id() {

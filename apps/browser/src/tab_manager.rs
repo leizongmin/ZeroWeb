@@ -127,6 +127,13 @@ impl TabManager {
         }
     }
 
+    /// 标记 Tab 为无痕（多进程 fetch 不写磁盘缓存）。
+    pub fn set_tab_private(&mut self, tab_id: TabId, private: bool) {
+        if let Some(ref mut backend) = self.process_backend {
+            backend.set_tab_private(tab_id, private);
+        }
+    }
+
     /// 前台 Tab 切换（每个 Tab 的 worker / 渲染进程保持存活直至用户关闭标签）。
     pub fn on_active_tab_changed(&mut self, _active: Option<TabId>) {}
 
