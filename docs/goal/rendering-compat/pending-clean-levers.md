@@ -6,6 +6,22 @@
 >
 > ⚠️ **消费准则**：① 每个修复须 `make test` + scoped `make reftest` 零回归；② 涉及渲染/布局须额外 `make product-smoke`（DC-13 welcome 门禁，diff>20% 退出 2，R541 教训）；③ 用 chromium-Oracle A/B（`make reftest-oracle DIR=<case>`）确证 yield、排查假通过（self-source 同源 REF 会抵消）；④ 代码位置注释见各轮 master.md / archive 详记。
 
+## 消费状态（R739 实证：执行 agent 实际修复验证，非只读分析）
+
+> R726–R738 doc-side「极简监控态」基于**过时快照**判定 code-agent「stalled 55+ 轮」——
+> 实际 table-cell overflow WIP 早已提交（`15e25a14`），后续还有 browser/HTTPS 工作。
+> 「等 code-agent 消费」是误诊：**执行 agent 本身就是消费侧**。R739 起转为实际修复。
+
+| lever | 实证结果 | chromium Oracle A/B | 备注 |
+|---|---|---|---|
+| **R689** | ✅ **LANDED** `d8f0003e` | position-static-001 **17.53%→0.90% PASS**；CSS2 twin 3.00%→1.60% | converter/mod.rs static→inset Auto；新增单测；css-position dir 无回归 |
+| **R716** | ✅ **LANDED** `a559fbd7` | box-offsets-rel-pos-002 **9.18%→0.86% PASS** | engine.rs resolve_relative_inset 补 right/bottom（§9.4.3）；3 调用点共享 |
+| **R720** | ❌ **premise 错**（实证推翻 R721 结论） | background-root-005 **80.7%→80.7% 字节同（零变化）** | `expand_background` 对 `background:transparent` 产出 `background-color:transparent`→`parse_color` 已返回 **`Transparent` 枚举变体**（color.rs:443）；原 `!= Transparent` 检查本就正确，canvas 传播对本案工作。005 的 80% 发散另有他因（border/margin/`*{margin:1em}` 全局选择器布局差），非传播失效。**is_transparent() alpha-0 鲁棒改进亦因无确认 yield 已回退** |
+| **R696** | ❌ **anchor+cluster 全 inline-SVG-content 阻塞**（out-of-scope） | inline-replaced-width-009 **22.08%→22.08% 零变化** | anchor + 008/ib-007/ib-008 全用 `<svg:svg>` + `<svg:rect fill>`；ZW 不渲染内联 SVG 内容（goal line 118 排除），sizing 修不修都不 yield（内容缺失主导）。非-img 默认 300×150 sizing 修正确但因无确认 yield 已回退 |
+| **R678** | ❌ **anchor 发散非 float-width** | font-size-zero-3 **33.53%→33.53% 零变化** | `box_node.float` 已正确 populate（engine.rs:655），shrink-to-fit 实现正确，但 anchor 的 33.53% 不是 float 满宽所致（绿子/高度/位置他因）。float:right 定位顺序风险（x=container_w−used_w）下，无 yield 不值得保留，已回退 |
+
+**★ 关键裁决（R739 实证）**：doc-side 只读 lever 分析的**假阳性率高**——R720/R696/R678 三 lever 实证零 yield（premise 错 / out-of-scope / 发散另有他因）。**「14 clean lever 待消费」叙事大部分是幻觉**；pass-rate 提升需 per-case 实际修复验证，非盲信只读根因。后续轮次：① 优先消费 R689/R716 同类**已实证可 yield** 的 lever；② 对剩余 lever 先小范围实测 anchor（`make reftest-oracle DIR=<case>` before/after）再投入；③ R720/R696/R678 标记**实证失效**，勿再以原 premise 重试。
+
 ## 优先级总览
 
 | 优先级 | lever | 测试 / 目录 | 发散 | 复杂度 | cluster yield |
