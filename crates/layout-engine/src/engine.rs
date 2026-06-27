@@ -666,30 +666,12 @@ impl LayoutEngine {
                 s.clear.clone()
             }
         });
-        // CSS 2.1 §17.5：table cell 的 height 为最小高度，cell 始终扩展以包含内容。
-        // 但显式设置 overflow: auto/scroll 的 table cell 应创建可滚动容器。
-        // 仅当 overflow 为 hidden/clip 时，table cell 不产生裁剪效果（保持 Visible）。
-        let is_table_cell = computed.is_some_and(|s| matches!(s.display, DisplayValue::TableCell));
-        let overflow_x = if is_table_cell {
-            computed.map_or(OverflowClip::Visible, |s| {
-                match convert_overflow_to_clip(&s.overflow_x) {
-                    OverflowClip::Hidden | OverflowClip::Clip => OverflowClip::Visible,
-                    other => other,
-                }
-            })
-        } else {
-            computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x))
-        };
-        let overflow_y = if is_table_cell {
-            computed.map_or(OverflowClip::Visible, |s| {
-                match convert_overflow_to_clip(&s.overflow_y) {
-                    OverflowClip::Hidden | OverflowClip::Clip => OverflowClip::Visible,
-                    other => other,
-                }
-            })
-        } else {
-            computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y))
-        };
+        // 现代 CSS Overflow 行为（Mozilla bug 1880550 / csswg-drafts）：table cell 的
+        // `overflow: hidden/clip/auto/scroll` 与普通块盒一致产生裁剪/滚动效果。
+        // 旧 CSS 2.1 §17.5「cell 即使 overflow:hidden 也增长含内容、不裁剪」已被现代规范
+        // 取代（chromium/IE 现行行为 = 裁剪）。此处 table cell 与非 cell 用同一 overflow 映射。
+        let overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
+        let overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
         // CSS 2.1 §9.4.1: display:flow-root 和 display:inline-block 都建立 BFC
         let is_flow_root =
             computed.is_some_and(|s| matches!(s.display, DisplayValue::FlowRoot | DisplayValue::InlineBlock));
