@@ -60,6 +60,15 @@ pub(crate) fn shrink_table_to_block_content(table_box: &mut LayoutBox, styles: &
         .collect();
 
     if block_indices.is_empty() {
+        // 无 block 级「非正规表格子元素」。
+        // 完全为空（无任何子盒）的 display:table 仍须收缩到 max-content=0（仅
+        // padding+border），CSS Tables §2.4 / CSS 2.1 §17.5.2——典型：
+        // `<div style="display:table;padding:155px">` 应为 312×312，而非像 block
+        // 那样填满包含块。仅有匿名盒（如 head 产生的空盒）时无真实 in-flow 内容，
+        // 保持 no-op（历史行为，不改变既有用例）。
+        if table_box.children.is_empty() {
+            shrink_empty_table_to_padding_border(table_box, styles);
+        }
         return;
     }
 
@@ -155,6 +164,81 @@ pub(crate) fn shrink_table_to_block_content(table_box: &mut LayoutBox, styles: &
     // style="display:table;margin:auto">）。这里把 table 平移到居中位置。
     //（子元素 x 相对于 table 内容盒，paint 累积偏移 offset_x+box.x，故只改 table.x
     //   即可让整棵 table 子树整体居中，无需逐子元素平移。）
+    let both_margins_auto = table_style
+        .as_ref()
+        .is_some_and(|s| matches!(s.margin_left, LengthValue::Auto) && matches!(s.margin_right, LengthValue::Auto));
+    if both_margins_auto && new_border_width + 0.5 < old_border_width {
+        let margin = (old_border_width - new_border_width) / 2.0;
+        table_box.x += margin;
+        table_box.margin_left = margin;
+        table_box.margin_right = margin;
+    }
+}
+
+/// 对完全为空（无任何子盒）且 width:auto 的 display:table 容器执行收缩适应。
+///
+/// 空 table 的 max-content 宽/高均为 0，故 width:auto 的 table 应收缩到仅
+/// padding+border（CSS Tables §2.4 + CSS 2.1 §17.5.2），而非像 block 那样
+/// 填满包含块。min-width 下限仍被尊重（内容盒语义）。margin:auto 收缩后水平
+/// 居中（与 [`shrink_table_to_block_content`] 一致）。
+///
+/// **仅 width:auto 触发**：显式 width（px/percent/em/calc 等）已由 taffy 正确
+/// 解析（abspos `width:50%`→CB、normal-flow `width:100%`→CB），覆盖会破坏这些
+/// 用例（absolute-tables-007/012/016、subpixel-table-width-001 均为显式宽度）。
+fn shrink_empty_table_to_padding_border(table_box: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    let table_style = table_box.node_id.and_then(|id| styles.get(&id));
+
+    // 仅 width:auto 收缩；显式 width 由 taffy 解析，此处不动。
+    let is_auto_width = table_style
+        .as_ref()
+        .map(|s| matches!(s.width, LengthValue::Auto))
+        .unwrap_or(false);
+    if !is_auto_width {
+        return;
+    }
+
+    let is_border_box = table_style
+        .as_ref()
+        .is_some_and(|s| matches!(s.box_sizing, BoxSizingValue::BorderBox));
+    let padding_border_w =
+        table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;
+    let padding_border_h =
+        table_box.padding_top + table_box.padding_bottom + table_box.border_top + table_box.border_bottom;
+
+    // max-content=0；min-width 下限约束
+    let mut final_content_width = 0.0f32;
+    if let Some(s) = table_style
+        && let LengthValue::Px(v) = &s.min_width
+    {
+        let min_c = if is_border_box {
+            (*v as f32 - padding_border_w).max(0.0)
+        } else {
+            *v as f32
+        };
+        final_content_width = final_content_width.max(min_c);
+    }
+    if let Some(s) = table_style
+        && let LengthValue::Px(v) = &s.max_width
+        && *v != f64::INFINITY
+    {
+        let max_c = if is_border_box {
+            (*v as f32 - padding_border_w).max(0.0)
+        } else {
+            *v as f32
+        };
+        final_content_width = final_content_width.min(max_c);
+    }
+    // 不超过当前可用宽度
+    final_content_width = final_content_width.min(table_box.content_width).max(0.0);
+
+    let old_border_width = table_box.width;
+    let new_border_width = final_content_width + padding_border_w;
+    table_box.content_width = final_content_width;
+    table_box.width = new_border_width;
+    table_box.content_height = 0.0;
+    table_box.height = padding_border_h;
+
+    // margin:auto 居中（收缩后 taffy 未重新居中）
     let both_margins_auto = table_style
         .as_ref()
         .is_some_and(|s| matches!(s.margin_left, LengthValue::Auto) && matches!(s.margin_right, LengthValue::Auto));
@@ -357,6 +441,70 @@ mod tests {
         shrink_table_to_block_content(&mut table, &styles);
 
         assert_eq!(table.width, w_before, "no block children → no-op");
+        assert_eq!(table.height, h_before);
+    }
+
+    /// 完全为空（无任何子盒）的 display:table 应收缩到 padding+border，而非填满容器。
+    /// 对应 WPT css-tables/empty-table-height.html：`<div style="display:table;
+    /// padding:155px; border:1px solid black">` 应为 312×312。
+    #[test]
+    fn test_shrink_empty_table_to_padding_border() {
+        let mut styles = HashMap::new();
+        let ids = make_node_ids(1);
+        let table_id = ids[0];
+
+        // taffy 把 display:table 当 block 填满容器：宽 784（=body 内容宽），高 0（空内容）
+        let mut table = make_box(784.0, 0.0);
+        table.content_width = 784.0;
+        // padding 155 各侧 + border 1 各侧
+        table.padding_left = 155.0;
+        table.padding_right = 155.0;
+        table.padding_top = 155.0;
+        table.padding_bottom = 155.0;
+        table.border_left = 1.0;
+        table.border_right = 1.0;
+        table.border_top = 1.0;
+        table.border_bottom = 1.0;
+        table.node_id = Some(table_id);
+        let mut ts = ComputedStyle::default();
+        ts.display = DisplayValue::Table;
+        styles.insert(table_id, ts);
+        // 无任何子盒（truly empty）
+
+        shrink_table_to_block_content(&mut table, &styles);
+
+        // max-content=0 → 仅 padding+border = 155*2+1*2 = 312，而非 784
+        assert_eq!(table.content_width, 0.0, "empty table content width = 0");
+        assert_eq!(table.width, 312.0, "empty table width = padding+border (312)");
+        assert_eq!(table.content_height, 0.0);
+        assert_eq!(table.height, 312.0, "empty table height = padding+border (312)");
+    }
+
+    /// 完全为空但 width 非默认（显式 px / percent）的 display:table 不应被
+    /// 本收缩路径改动——显式 width 由 taffy 解析（abspos width:50%→CB、
+    /// normal-flow width:100%→CB）。覆盖会破坏 absolute-tables-007/012/016、
+    /// subpixel-table-width-001（均为显式宽度）。
+    #[test]
+    fn test_shrink_empty_table_skips_explicit_width() {
+        let mut styles = HashMap::new();
+        let ids = make_node_ids(1);
+        let table_id = ids[0];
+
+        let mut table = make_box(784.0, 0.0);
+        table.content_width = 784.0;
+        table.padding_left = 10.0;
+        table.padding_right = 10.0;
+        table.node_id = Some(table_id);
+        let mut ts = ComputedStyle::default();
+        ts.display = DisplayValue::Table;
+        ts.width = LengthValue::Percentage(50.0); // 显式 50%（taffy 已解析）
+        styles.insert(table_id, ts);
+
+        let (w_before, h_before) = (table.width, table.height);
+        shrink_table_to_block_content(&mut table, &styles);
+
+        // 显式 width → no-op（尊重 taffy 解析）
+        assert_eq!(table.width, w_before, "explicit width → no shrink");
         assert_eq!(table.height, h_before);
     }
 }

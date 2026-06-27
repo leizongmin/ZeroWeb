@@ -804,6 +804,12 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     for (id, _, pct) in sorted.iter().take(15) {
         eprintln!("    {:.2}%  {}", pct.unwrap_or(0.0), id);
     }
+    if std::env::var("ORACLE_DUMP_ALL").is_ok() {
+        eprintln!("\n  ALL cases (sorted desc):");
+        for (id, _, pct) in sorted.iter() {
+            eprintln!("    ALL {:.2}%  {}", pct.unwrap_or(0.0), id);
+        }
+    }
 
     // 按目录聚合
     use std::collections::BTreeMap;
