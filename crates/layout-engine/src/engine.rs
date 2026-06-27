@@ -1602,13 +1602,22 @@ fn resolve_relative_inset(box_node: &LayoutBox, styles: &HashMap<NodeId, Compute
     let Some(style) = styles.get(&node_id) else {
         return (0.0, 0.0);
     };
+    // CSS §9.4.3/§9.3.2：relative 定位偏移——水平取 left（无 left 时取 right，
+    // 正值向左偏移），垂直取 top（无 top 时取 bottom，正值向上偏移）（R716）。
+    // 本函数仅处理 Px；Em/Rem/Percent 与 taffy 0.7 percent-inset 限制（R711）同谱系。
     let dx = match &style.left {
         LengthValue::Px(v) => *v as f32,
-        _ => 0.0,
+        _ => match &style.right {
+            LengthValue::Px(v) => -(*v as f32),
+            _ => 0.0,
+        },
     };
     let dy = match &style.top {
         LengthValue::Px(v) => *v as f32,
-        _ => 0.0,
+        _ => match &style.bottom {
+            LengthValue::Px(v) => -(*v as f32),
+            _ => 0.0,
+        },
     };
     (dx, dy)
 }
