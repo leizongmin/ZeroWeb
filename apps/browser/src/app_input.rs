@@ -584,6 +584,21 @@ impl BrowserApp {
                     // Ctrl+, 打开设置页面
                     self.open_settings_page();
                 }
+                "h" | "H" => {
+                    self.open_history_page();
+                }
+                "j" | "J" => {
+                    self.open_downloads_page();
+                }
+                k if key_matches(k, "Tab") => {
+                    self.cycle_active_tab(self.shift_pressed);
+                }
+                k if key_matches(k, "PageDown") => {
+                    self.cycle_active_tab(false);
+                }
+                k if key_matches(k, "PageUp") => {
+                    self.cycle_active_tab(true);
+                }
                 _ => {}
             }
             return;
@@ -611,7 +626,11 @@ impl BrowserApp {
                 self.go_forward();
             }
             "Home" => {
-                self.navigate_to("https://example.com");
+                let home = self.shell.settings().home_url.clone();
+                self.navigate_to(&home);
+            }
+            "F5" => {
+                self.refresh_page();
             }
             "f" => {
                 self.find_input.clear();
@@ -637,6 +656,32 @@ impl BrowserApp {
             }
             _ => {}
         }
+    }
+
+    /// 循环切换活跃标签（`reverse=true` 向前，否则向后）。
+    fn cycle_active_tab(&mut self, reverse: bool) {
+        let active_id = match self.shell.active_tab_id() {
+            Some(id) => id,
+            None => return,
+        };
+        let ids: Vec<TabId> = self.shell.tabs().map(|t| t.id()).collect();
+        if ids.len() < 2 {
+            return;
+        }
+        let current = match ids.iter().position(|&id| id == active_id) {
+            Some(i) => i,
+            None => return,
+        };
+        let count = ids.len();
+        let next = if reverse {
+            (current + count - 1) % count
+        } else {
+            (current + 1) % count
+        };
+        let target = ids[next];
+        self.shell.switch_tab(target);
+        self.shell.set_tab_needs_attention(target, false);
+        self.needs_redraw = true;
     }
 
     /// 更新自动补全建议

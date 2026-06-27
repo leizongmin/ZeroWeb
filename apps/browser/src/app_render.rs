@@ -838,7 +838,16 @@ impl BrowserApp {
             let dl_cx = dl_x + dl_w * 0.5;
             let dl_cy = dl_y + dl_h * 0.5;
             let dl_hovered = self.pointer_in_rect(dl_x, dl_y, dl_w, dl_h);
-            if dl_hovered {
+            let dl_pressed = dl_hovered && self.left_button_down;
+            if dl_pressed {
+                push_circle_fill(
+                    fills,
+                    dl_cx,
+                    dl_cy,
+                    layout::NAV_BUTTON_HOVER_DIAMETER * s,
+                    self.chrome_palette.nav_button_pressed,
+                );
+            } else if dl_hovered {
                 push_circle_fill(
                     fills,
                     dl_cx,
@@ -874,7 +883,16 @@ impl BrowserApp {
             let theme_cx = theme_x + theme_w * 0.5;
             let theme_cy = theme_y + theme_h * 0.5;
             let theme_hovered = self.pointer_in_rect(theme_x, theme_y, theme_w, theme_h);
-            if theme_hovered {
+            let theme_pressed = theme_hovered && self.left_button_down;
+            if theme_pressed {
+                push_circle_fill(
+                    fills,
+                    theme_cx,
+                    theme_cy,
+                    layout::NAV_BUTTON_HOVER_DIAMETER * s,
+                    self.chrome_palette.nav_button_pressed,
+                );
+            } else if theme_hovered {
                 push_circle_fill(
                     fills,
                     theme_cx,
@@ -903,7 +921,16 @@ impl BrowserApp {
         let menu_btn_cx = menu_btn_x + menu_btn_w * 0.5;
         let menu_btn_cy = menu_btn_y + menu_btn_h * 0.5;
         let menu_hovered = self.pointer_in_rect(menu_btn_x, menu_btn_y, menu_btn_w, menu_btn_h);
-        if menu_hovered {
+        let menu_pressed = menu_hovered && self.left_button_down;
+        if menu_pressed {
+            push_circle_fill(
+                fills,
+                menu_btn_cx,
+                menu_btn_cy,
+                layout::NAV_BUTTON_HOVER_DIAMETER * s,
+                self.chrome_palette.nav_button_pressed,
+            );
+        } else if menu_hovered {
             push_circle_fill(
                 fills,
                 menu_btn_cx,
