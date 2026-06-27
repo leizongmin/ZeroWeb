@@ -10,41 +10,49 @@ fn test_event_modifiers_combination() {
         // 1. Ctrl 按下
         AppEvent::KeyboardInput {
             key: "Control".to_string(),
+            text: None,
             pressed: true,
         },
         // 2. Shift 按下（Ctrl 仍按住）
         AppEvent::KeyboardInput {
             key: "Shift".to_string(),
+            text: None,
             pressed: true,
         },
         // 3. Alt 按下（Ctrl+Shift 仍按住）
         AppEvent::KeyboardInput {
             key: "Alt".to_string(),
+            text: None,
             pressed: true,
         },
         // 4. 字符键按下（Ctrl+Shift+Alt 全部按住）
         AppEvent::KeyboardInput {
             key: "A".to_string(),
+            text: None,
             pressed: true,
         },
         // 5. 字符键释放
         AppEvent::KeyboardInput {
             key: "A".to_string(),
+            text: None,
             pressed: false,
         },
         // 6. Alt 释放
         AppEvent::KeyboardInput {
             key: "Alt".to_string(),
+            text: None,
             pressed: false,
         },
         // 7. Shift 释放
         AppEvent::KeyboardInput {
             key: "Shift".to_string(),
+            text: None,
             pressed: false,
         },
         // 8. Ctrl 释放
         AppEvent::KeyboardInput {
             key: "Control".to_string(),
+            text: None,
             pressed: false,
         },
     ];
@@ -74,11 +82,11 @@ fn test_event_modifiers_combination() {
     }
 
     // 验证字符键按下和释放
-    if let AppEvent::KeyboardInput { key, pressed } = &events[3] {
+    if let AppEvent::KeyboardInput { key, pressed, .. } = &events[3] {
         assert_eq!(key, "A");
         assert!(pressed, "字符键按下 pressed 应为 true");
     }
-    if let AppEvent::KeyboardInput { key, pressed } = &events[4] {
+    if let AppEvent::KeyboardInput { key, pressed, .. } = &events[4] {
         assert_eq!(key, "A");
         assert!(!pressed, "字符键释放 pressed 应为 false");
     }
@@ -87,7 +95,7 @@ fn test_event_modifiers_combination() {
     let release_keys: Vec<String> = events[5..]
         .iter()
         .map(|e| {
-            if let AppEvent::KeyboardInput { key, pressed } = e {
+            if let AppEvent::KeyboardInput { key, pressed, .. } = e {
                 assert!(!pressed, "释放事件 pressed 应为 false");
                 key.clone()
             } else {
@@ -107,29 +115,34 @@ fn test_key_event_repeat_flag() {
     let repeat_events: Vec<AppEvent> = vec![
         AppEvent::KeyboardInput {
             key: "A".to_string(),
+            text: None,
             pressed: true,
         },
         AppEvent::KeyboardInput {
             key: "A".to_string(),
+            text: None,
             pressed: true,
         },
         AppEvent::KeyboardInput {
             key: "A".to_string(),
+            text: None,
             pressed: true,
         },
         AppEvent::KeyboardInput {
             key: "A".to_string(),
+            text: None,
             pressed: true,
         },
         AppEvent::KeyboardInput {
             key: "A".to_string(),
+            text: None,
             pressed: false,
         },
     ];
 
     // 验证所有重复按下事件的 key 和 pressed 字段
     for (i, event) in repeat_events.iter().enumerate() {
-        if let AppEvent::KeyboardInput { key, pressed } = event {
+        if let AppEvent::KeyboardInput { key, pressed, .. } = event {
             assert_eq!(key, "A", "第 {} 个事件的 key 应为 'A'", i + 1);
             if i < 4 {
                 assert!(pressed, "第 {} 个 repeat 事件的 pressed 应为 true", i + 1);

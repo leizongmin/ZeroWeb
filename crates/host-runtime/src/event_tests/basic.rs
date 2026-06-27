@@ -28,9 +28,10 @@ fn test_app_event_scale_factor_changed_value() {
 fn test_app_event_keyboard_input_values() {
     let pressed = AppEvent::KeyboardInput {
         key: "A".to_string(),
+        text: None,
         pressed: true,
     };
-    if let AppEvent::KeyboardInput { key, pressed: p } = &pressed {
+    if let AppEvent::KeyboardInput { key, pressed: p, .. } = &pressed {
         assert_eq!(key, "A");
         assert!(p);
     } else {
@@ -39,6 +40,7 @@ fn test_app_event_keyboard_input_values() {
 
     let released = AppEvent::KeyboardInput {
         key: "Escape".to_string(),
+        text: None,
         pressed: false,
     };
     if let AppEvent::KeyboardInput { pressed: p, .. } = &released {
@@ -69,6 +71,7 @@ fn test_app_event_debug_format() {
             "{:?}",
             AppEvent::KeyboardInput {
                 key: "X".into(),
+                text: None,
                 pressed: true
             }
         )
@@ -83,7 +86,7 @@ fn test_app_event_focused_unfocused_distinct() {
     assert_ne!(focused, unfocused);
 }
 
-// --- 新增事件类型测试 ---
+// --- ???????? ---
 
 #[test]
 fn test_mouse_button_variants() {
@@ -124,11 +127,11 @@ fn test_ime_event_enabled() {
 #[test]
 fn test_ime_event_preedit() {
     let e = ImeEvent::Preedit {
-        text: "你好".to_string(),
+        text: "??".to_string(),
         cursor: Some((0, 2)),
     };
     if let ImeEvent::Preedit { text, cursor } = e {
-        assert_eq!(text, "你好");
+        assert_eq!(text, "??");
         assert_eq!(cursor, Some((0, 2)));
     } else {
         panic!("Expected Preedit");
@@ -151,9 +154,9 @@ fn test_ime_event_preedit_no_cursor() {
 
 #[test]
 fn test_ime_event_commit() {
-    let e = ImeEvent::Commit("你好世界".to_string());
+    let e = ImeEvent::Commit("????".to_string());
     if let ImeEvent::Commit(text) = e {
-        assert_eq!(text, "你好世界");
+        assert_eq!(text, "????");
     } else {
         panic!("Expected Commit");
     }
@@ -259,7 +262,7 @@ fn test_app_event_ime() {
     }
 }
 
-// --- 转换函数测试 ---
+// --- ?????? ---
 
 #[test]
 fn test_convert_mouse_button_all_variants() {
@@ -338,6 +341,22 @@ fn test_convert_ime_commit() {
 fn test_convert_ime_disabled() {
     let result = convert_ime(winit::event::Ime::Disabled);
     assert_eq!(result, ImeEvent::Disabled);
+}
+
+#[test]
+fn test_keyboard_input_text_field_for_unidentified_key() {
+    let event = AppEvent::KeyboardInput {
+        key: "Unidentified".to_string(),
+        text: Some("a".to_string()),
+        pressed: true,
+    };
+    if let AppEvent::KeyboardInput { key, text, pressed } = event {
+        assert_eq!(key, "Unidentified");
+        assert_eq!(text.as_deref(), Some("a"));
+        assert!(pressed);
+    } else {
+        panic!("Expected KeyboardInput variant");
+    }
 }
 
 #[test]
@@ -691,51 +710,51 @@ fn test_mouse_scroll_delta_cross_variant_inequality() {
     assert_ne!(pixel, line);
 }
 
-// --- 高优先级事件处理测试 ---
+// --- ?????????? ---
 
-/// 验证：窗口 resize 事件携带正确的新尺寸（包括极端值和常见分辨率）
+/// ????? resize ???????????????????????
 #[test]
 fn test_resize_event_carries_correct_dimensions() {
     let cases: Vec<(u32, u32)> = vec![
         (1920, 1080), // Full HD
         (2560, 1440), // QHD
-        (1366, 768),  // 常见笔记本
-        (1, 1),       // 最小值
+        (1366, 768),  // ?????
+        (1, 1),       // ???
     ];
     for (w, h) in cases {
         let event = AppEvent::Resized { width: w, height: h };
         if let AppEvent::Resized { width, height } = event {
-            assert_eq!(width, w, "resize width 不匹配: 期望 {w}, 实际 {width}");
-            assert_eq!(height, h, "resize height 不匹配: 期望 {h}, 实际 {height}");
+            assert_eq!(width, w, "resize width ???: ?? {w}, ?? {width}");
+            assert_eq!(height, h, "resize height ???: ?? {h}, ?? {height}");
         } else {
             panic!("Expected Resized variant");
         }
     }
 }
 
-/// 验证：鼠标移动事件坐标精确传递（包括分数值和负值）
+/// ?????????????????????????
 #[test]
 fn test_mouse_move_coordinates_precision() {
     let cases: Vec<(f64, f64)> = vec![
         (0.0, 0.0),
-        (1920.5, 1080.25), // 分数坐标
-        (-100.0, -200.0),  // 窗口外
+        (1920.5, 1080.25), // ????
+        (-100.0, -200.0),  // ???
     ];
     for (x, y) in cases {
         let event = AppEvent::MouseMoved { x, y };
         if let AppEvent::MouseMoved { x: ex, y: ey } = event {
-            assert!((ex - x).abs() < f64::EPSILON, "x 坐标不精确: 期望 {x}, 实际 {ex}");
-            assert!((ey - y).abs() < f64::EPSILON, "y 坐标不精确: 期望 {y}, 实际 {ey}");
+            assert!((ex - x).abs() < f64::EPSILON, "x ?????: ?? {x}, ?? {ex}");
+            assert!((ey - y).abs() < f64::EPSILON, "y ?????: ?? {y}, ?? {ey}");
         } else {
             panic!("Expected MouseMoved variant");
         }
     }
 }
 
-/// 验证：IME 组合事件完整流程 — Enabled → 多次 Preedit → Commit → Disabled
+/// ???IME ???????? ? Enabled ? ?? Preedit ? Commit ? Disabled
 #[test]
 fn test_ime_composition_full_lifecycle() {
-    // 模拟拼音输入"中"的完整流程
+    // ??????"?"?????
     let enabled = ImeEvent::Enabled;
     let preedit1 = ImeEvent::Preedit {
         text: "z".to_string(),
@@ -753,10 +772,10 @@ fn test_ime_composition_full_lifecycle() {
         text: "zhong".to_string(),
         cursor: Some((0, 5)),
     };
-    let commit = ImeEvent::Commit("中".to_string());
+    let commit = ImeEvent::Commit("?".to_string());
     let disabled = ImeEvent::Disabled;
 
-    // 验证每个阶段的事件类型和内容
+    // ??????????????
     assert!(matches!(enabled, ImeEvent::Enabled));
     assert_eq!(
         preedit3,
@@ -765,22 +784,22 @@ fn test_ime_composition_full_lifecycle() {
             cursor: Some((0, 4))
         }
     );
-    assert_eq!(commit, ImeEvent::Commit("中".to_string()));
+    assert_eq!(commit, ImeEvent::Commit("?".to_string()));
     assert!(matches!(disabled, ImeEvent::Disabled));
 
-    // 验证完整流程按序收集
+    // ??????????
     let lifecycle: Vec<ImeEvent> = vec![enabled, preedit1, preedit2, preedit3, preedit4, commit, disabled];
     assert_eq!(lifecycle.len(), 7);
 
-    // 验证 commit 文本
+    // ?? commit ??
     if let ImeEvent::Commit(text) = &lifecycle[5] {
-        assert!(!text.is_empty(), "IME commit 文本不应为空");
-        assert_eq!(text, "中");
+        assert!(!text.is_empty(), "IME commit ??????");
+        assert_eq!(text, "?");
     } else {
-        panic!("第 6 个事件应为 Commit");
+        panic!("? 6 ????? Commit");
     }
 
-    // 验证 Preedit 文本逐步增长
+    // ?? Preedit ??????
     let texts: Vec<&str> = lifecycle[1..=4]
         .iter()
         .map(|e| {
@@ -794,125 +813,132 @@ fn test_ime_composition_full_lifecycle() {
     assert_eq!(texts, vec!["z", "zh", "zhon", "zhong"]);
 }
 
-/// 验证：键盘修饰键状态通过 element_state_to_pressed 正确转换
-/// （Ctrl/Shift 按下时 pressed=true，释放时 pressed=false）
+/// ???????????? element_state_to_pressed ????
+/// ?Ctrl/Shift ??? pressed=true???? pressed=false?
 #[test]
 fn test_keyboard_modifier_state_conversion() {
-    // 模拟 Ctrl+Shift 组合键的按下和释放
-    // 1. Ctrl 按下
+    // ?? Ctrl+Shift ?????????
+    // 1. Ctrl ??
     let ctrl_pressed = element_state_to_pressed(winit::event::ElementState::Pressed);
-    assert!(ctrl_pressed, "Ctrl 按下时 pressed 应为 true");
+    assert!(ctrl_pressed, "Ctrl ??? pressed ?? true");
 
-    // 2. Shift 按下（同时 Ctrl 仍按住）
+    // 2. Shift ????? Ctrl ????
     let shift_pressed = element_state_to_pressed(winit::event::ElementState::Pressed);
-    assert!(shift_pressed, "Shift 按下时 pressed 应为 true");
+    assert!(shift_pressed, "Shift ??? pressed ?? true");
 
-    // 3. 字符键按下（Ctrl+Shift+A）
+    // 3. ??????Ctrl+Shift+A?
     let char_pressed = element_state_to_pressed(winit::event::ElementState::Pressed);
-    assert!(char_pressed, "字符键按下时 pressed 应为 true");
+    assert!(char_pressed, "?????? pressed ?? true");
 
-    // 4. 字符键释放
+    // 4. ?????
     let char_released = element_state_to_pressed(winit::event::ElementState::Released);
-    assert!(!char_released, "字符键释放时 pressed 应为 false");
+    assert!(!char_released, "?????? pressed ?? false");
 
-    // 5. Shift 释放
+    // 5. Shift ??
     let shift_released = element_state_to_pressed(winit::event::ElementState::Released);
-    assert!(!shift_released, "Shift 释放时 pressed 应为 false");
+    assert!(!shift_released, "Shift ??? pressed ?? false");
 
-    // 6. Ctrl 释放
+    // 6. Ctrl ??
     let ctrl_released = element_state_to_pressed(winit::event::ElementState::Released);
-    assert!(!ctrl_released, "Ctrl 释放时 pressed 应为 false");
+    assert!(!ctrl_released, "Ctrl ??? pressed ?? false");
 
-    // 验证 AppEvent::KeyboardInput 正确承载修饰键按下/释放状态
+    // ?? AppEvent::KeyboardInput ?????????/????
     let ctrl_down_event = AppEvent::KeyboardInput {
         key: "Control".to_string(),
+        text: None,
         pressed: ctrl_pressed,
     };
     let shift_down_event = AppEvent::KeyboardInput {
         key: "Shift".to_string(),
+        text: None,
         pressed: shift_pressed,
     };
-    if let AppEvent::KeyboardInput { key, pressed } = ctrl_down_event {
+    if let AppEvent::KeyboardInput { key, pressed, .. } = ctrl_down_event {
         assert_eq!(key, "Control");
         assert!(pressed);
     } else {
         panic!("Expected KeyboardInput");
     }
-    if let AppEvent::KeyboardInput { key, pressed } = shift_down_event {
+    if let AppEvent::KeyboardInput { key, pressed, .. } = shift_down_event {
         assert_eq!(key, "Shift");
         assert!(pressed);
     } else {
         panic!("Expected KeyboardInput");
     }
 
-    // 释放后的事件
+    // ??????
     let ctrl_up_event = AppEvent::KeyboardInput {
         key: "Control".to_string(),
+        text: None,
         pressed: ctrl_released,
     };
     if let AppEvent::KeyboardInput { pressed, .. } = ctrl_up_event {
-        assert!(!pressed, "Ctrl 释放事件 pressed 应为 false");
+        assert!(!pressed, "Ctrl ???? pressed ?? false");
     } else {
         panic!("Expected KeyboardInput");
     }
 }
 
-/// 验证：AppEvent::KeyboardInput 的 key 和 pressed 字段能正确存储和匹配。
-/// 由于 winit 的 KeyEvent 有私有字段无法直接构造，
-/// 这里直接测试 AppEvent::KeyboardInput 的构造与解构。
+/// ???AppEvent::KeyboardInput ? key ? pressed ???????????
+/// ?? winit ? KeyEvent ????????????
+/// ?????? AppEvent::KeyboardInput ???????
 #[test]
 fn test_keyboard_input_event_construction() {
-    // 按下事件
+    // ????
     let press = AppEvent::KeyboardInput {
         key: "A".into(),
+        text: None,
         pressed: true,
     };
-    if let AppEvent::KeyboardInput { key, pressed } = press {
-        assert_eq!(key, "A", "按下事件的 key 应为 'A'");
-        assert!(pressed, "按下事件 pressed 应为 true");
+    if let AppEvent::KeyboardInput { key, pressed, .. } = press {
+        assert_eq!(key, "A", "????? key ?? 'A'");
+        assert!(pressed, "???? pressed ?? true");
     } else {
         panic!("Expected KeyboardInput variant");
     }
 
-    // 释放事件
+    // ????
     let release = AppEvent::KeyboardInput {
         key: "A".into(),
+        text: None,
         pressed: false,
     };
-    if let AppEvent::KeyboardInput { key, pressed } = release {
+    if let AppEvent::KeyboardInput { key, pressed, .. } = release {
         assert_eq!(key, "A");
-        assert!(!pressed, "释放事件 pressed 应为 false");
+        assert!(!pressed, "???? pressed ?? false");
     } else {
         panic!("Expected KeyboardInput variant");
     }
 
-    // 特殊键
+    // ???
     let enter_press = AppEvent::KeyboardInput {
         key: "Enter".into(),
+        text: None,
         pressed: true,
     };
-    if let AppEvent::KeyboardInput { key, pressed } = enter_press {
+    if let AppEvent::KeyboardInput { key, pressed, .. } = enter_press {
         assert_eq!(key, "Enter");
         assert!(pressed);
     } else {
         panic!("Expected KeyboardInput variant");
     }
 
-    // 空字符串键名（防御性测试）
+    // ?????????????
     let empty_key = AppEvent::KeyboardInput {
         key: String::new(),
+        text: None,
         pressed: true,
     };
-    if let AppEvent::KeyboardInput { key, pressed } = empty_key {
-        assert_eq!(key, "", "空字符串键名应能存储");
+    if let AppEvent::KeyboardInput { key, pressed, .. } = empty_key {
+        assert_eq!(key, "", "??????????");
         assert!(pressed);
     } else {
         panic!("Expected KeyboardInput variant");
     }
 }
 
-/// 验证：鼠标事件正确存储左键、右键、中键的按钮值。
-/// 通过 BasicApp 分发路径测试 convert_mouse_button 和 AppEvent::MouseInput 的正确性。
+/// ????????????????????????
+/// ?? BasicApp ?????? convert_mouse_button ? AppEvent::MouseInput ?????
 #[test]
 fn test_mouse_event_button_values() {
     let cases: Vec<(winit::event::MouseButton, MouseButton)> = vec![
@@ -922,14 +948,14 @@ fn test_mouse_event_button_values() {
     ];
 
     for (winit_btn, expected_btn) in cases {
-        // 测试 convert_mouse_button 直接转换
+        // ?? convert_mouse_button ????
         assert_eq!(
             convert_mouse_button(winit_btn),
             expected_btn,
-            "convert_mouse_button 转换 {expected_btn:?} 失败"
+            "convert_mouse_button ?? {expected_btn:?} ??"
         );
 
-        // 测试通过 AppEvent 构造存储
+        // ???? AppEvent ????
         let press_event = AppEvent::MouseInput {
             button: expected_btn,
             pressed: true,
@@ -937,7 +963,7 @@ fn test_mouse_event_button_values() {
             y: 0.0,
         };
         if let AppEvent::MouseInput { button, pressed, .. } = press_event {
-            assert_eq!(button, expected_btn, "按钮值不匹配: 期望 {expected_btn:?}");
+            assert_eq!(button, expected_btn, "??????: ?? {expected_btn:?}");
             assert!(pressed);
         } else {
             panic!("Expected MouseInput variant");
@@ -950,7 +976,7 @@ fn test_mouse_event_button_values() {
             y: 0.0,
         };
         if let AppEvent::MouseInput { button, pressed, .. } = release_event {
-            assert_eq!(button, expected_btn, "释放事件按钮值不匹配: 期望 {expected_btn:?}");
+            assert_eq!(button, expected_btn, "??????????: ?? {expected_btn:?}");
             assert!(!pressed);
         } else {
             panic!("Expected MouseInput variant");
@@ -958,54 +984,54 @@ fn test_mouse_event_button_values() {
     }
 }
 
-/// 验证：resize 事件在 width=0、height=0 的情况下不会 panic。
-/// 某些平台在窗口最小化时可能发出 (0, 0) 尺寸。
+/// ???resize ??? width=0?height=0 ?????? panic?
+/// ??????????????? (0, 0) ???
 #[test]
 fn test_window_resize_zero_size() {
-    // 直接构造 AppEvent::Resized
+    // ???? AppEvent::Resized
     let event = AppEvent::Resized { width: 0, height: 0 };
     if let AppEvent::Resized { width, height } = event {
-        assert_eq!(width, 0, "零宽度 resize 事件的 width 应为 0");
-        assert_eq!(height, 0, "零高度 resize 事件的 height 应为 0");
+        assert_eq!(width, 0, "??? resize ??? width ?? 0");
+        assert_eq!(height, 0, "??? resize ??? height ?? 0");
     } else {
         panic!("Expected Resized variant");
     }
 
-    // 通过 winit PhysicalSize 转换路径
+    // ?? winit PhysicalSize ????
     let size = winit::dpi::PhysicalSize::new(0u32, 0u32);
     assert_eq!(size.width, 0);
     assert_eq!(size.height, 0);
 
-    // 验证 Debug 输出不会 panic
+    // ?? Debug ???? panic
     let debug_str = format!("{:?}", event);
-    assert!(!debug_str.is_empty(), "Debug 格式化不应返回空字符串");
+    assert!(!debug_str.is_empty(), "Debug ???????????");
 }
 
-/// 验证：IME 组合事件在文本为空字符串时仍能正常工作。
-/// 某些输入法在特定状态下可能提交空字符串。
+/// ???IME ????????????????????
+/// ????????????????????
 #[test]
 fn test_ime_composition_empty_string() {
-    // 空字符串的 Commit 事件
+    // ????? Commit ??
     let commit_empty = ImeEvent::Commit(String::new());
     if let ImeEvent::Commit(text) = &commit_empty {
-        assert!(text.is_empty(), "空字符串 commit 的 text 应为空");
+        assert!(text.is_empty(), "???? commit ? text ???");
     } else {
         panic!("Expected Commit variant");
     }
 
-    // 空字符串的 Preedit 事件
+    // ????? Preedit ??
     let preedit_empty = ImeEvent::Preedit {
         text: String::new(),
         cursor: None,
     };
     if let ImeEvent::Preedit { text, cursor } = &preedit_empty {
-        assert!(text.is_empty(), "空字符串 preedit 的 text 应为空");
-        assert!(cursor.is_none(), "空 preedit 的 cursor 应为 None");
+        assert!(text.is_empty(), "???? preedit ? text ???");
+        assert!(cursor.is_none(), "? preedit ? cursor ?? None");
     } else {
         panic!("Expected Preedit variant");
     }
 
-    // 空字符串 Preedit 带光标
+    // ???? Preedit ???
     let preedit_empty_with_cursor = ImeEvent::Preedit {
         text: String::new(),
         cursor: Some((0, 0)),
@@ -1017,11 +1043,11 @@ fn test_ime_composition_empty_string() {
         panic!("Expected Preedit variant");
     }
 
-    // 通过 winit 转换路径
+    // ?? winit ????
     assert_eq!(
         convert_ime(winit::event::Ime::Commit(String::new())),
         ImeEvent::Commit(String::new()),
-        "winit 空 commit 转换应一致"
+        "winit ? commit ?????"
     );
     assert_eq!(
         convert_ime(winit::event::Ime::Preedit(String::new(), None)),
@@ -1029,10 +1055,10 @@ fn test_ime_composition_empty_string() {
             text: String::new(),
             cursor: None,
         },
-        "winit 空 preedit 转换应一致"
+        "winit ? preedit ?????"
     );
 
-    // 相等性验证
+    // ?????
     assert_eq!(commit_empty, ImeEvent::Commit(String::new()));
     assert_eq!(
         preedit_empty,

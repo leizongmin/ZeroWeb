@@ -97,6 +97,8 @@ pub enum AppEvent {
     KeyboardInput {
         /// 按键名称（逻辑键名）
         key: String,
+        /// 本次按键产生的文本（远程桌面/软键盘等场景下 logical_key 可能为 Unidentified）
+        text: Option<String>,
         /// 是否按下（true = 按下, false = 释放）
         pressed: bool,
     },
@@ -212,7 +214,12 @@ pub(crate) fn convert_keyboard_input(
         }
     };
     let pressed = element_state_to_pressed(event.state);
-    AppEvent::KeyboardInput { key: key_text, pressed }
+    let text = event.text.as_ref().filter(|t| !t.is_empty()).map(|t| t.to_string());
+    AppEvent::KeyboardInput {
+        key: key_text,
+        text,
+        pressed,
+    }
 }
 
 #[cfg(test)]
