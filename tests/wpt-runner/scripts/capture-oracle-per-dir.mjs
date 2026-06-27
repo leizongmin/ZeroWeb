@@ -32,6 +32,21 @@ for (let i = 2; i < process.argv.length; i++) {
 }
 if (categories.length === 0) { console.error('Usage: capture-oracle-per-dir.mjs --category <dir> [...] [--skip-existing]'); process.exit(1); }
 
+// 等待页面所有 <img> 加载完成（complete && naturalWidth>0），防 SVG/图片解码 race
+// 致截图时 img 未就绪（R388/R692 oracle 损坏：blank broken-img placeholder）。
+// 无 img 或已全就绪则立即返回；超时则放弃等待（不阻塞，回到固定延时兜底）。
+async function waitForImages(page, timeoutMs = 400) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ready = await page.evaluate(() => {
+      const imgs = Array.from(document.querySelectorAll('img'));
+      return imgs.length === 0 || imgs.every((i) => i.complete && i.naturalWidth > 0);
+    }).catch(() => true);
+    if (ready) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 // 递归收集 category 目录下所有 test 文件（相对 category 的路径）。
 // css-text / CSS2 的 test 散落在子目录（white-space/、box/...），顶层 readdirSync 会漏掉。
 // 扁平目录（grid/flex/...）退化为仅文件名，行为不变。
@@ -86,6 +101,7 @@ for (const cat of categories) {
     await page.setViewport({ width: 800, height: 600 });
     try {
       await page.goto(`${base}/${cat}/${t}`, { waitUntil: 'networkidle0', timeout: 8000 });
+      await waitForImages(page);
       await new Promise(r => setTimeout(r, 80));
       await page.screenshot({ path: outPath, type: 'png' });
       ok++;
