@@ -1287,17 +1287,31 @@ impl BrowserApp {
 
     fn toolbar_menu_button_rect(&self) -> (f32, f32, f32, f32) {
         let s = self.scale_factor;
-        let (bar_x, bar_y, bar_w, bar_h) = self.address_bar_layout();
         let btn_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
-        let btn_x = bar_x + bar_w + layout::TOOLBAR_TRAILING_GAP * s;
-        let btn_y = bar_y;
-        let btn_h = bar_h;
-        (btn_x, btn_y, btn_w, btn_h)
+        // 最右侧按钮：紧贴窗口右内边距
+        let btn_x = self.physical_size.0 as f32 - layout::ADDRESS_BAR_PADDING * s - btn_w;
+        let (_, bar_y, _, bar_h) = self.address_bar_layout();
+        (btn_x, bar_y, btn_w, bar_h)
     }
 
     #[cfg(test)]
     pub fn toolbar_menu_button_rect_for_test(&self) -> (f32, f32, f32, f32) {
         self.toolbar_menu_button_rect()
+    }
+
+    #[cfg(test)]
+    pub fn toolbar_theme_button_rect_for_test_full(&self) -> (f32, f32, f32, f32) {
+        self.toolbar_theme_button_rect()
+    }
+
+    #[cfg(test)]
+    pub fn toolbar_download_button_rect_for_test(&self) -> (f32, f32, f32, f32) {
+        self.toolbar_download_button_rect()
+    }
+
+    #[cfg(test)]
+    pub fn address_bar_layout_for_test(&self) -> (f32, f32, f32, f32) {
+        self.address_bar_layout()
     }
 
     fn toolbar_menu_hit_test(&self, x_f: f32, y_f: f32) -> bool {

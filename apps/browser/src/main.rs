@@ -672,6 +672,29 @@ mod tests {
         );
     }
 
+    /// 工具栏尾部按钮（下载/主题/菜单）应全部位于地址栏 pill 右侧，不得重叠。
+    #[test]
+    fn trailing_toolbar_buttons_do_not_overlap_address_bar() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        app.build_scene_for_test(1280, 900);
+
+        let (bar_x, _, bar_w, _) = app.address_bar_layout_for_test();
+        let bar_right = bar_x + bar_w;
+
+        let (dl_x, _, dl_w, _) = app.toolbar_download_button_rect_for_test();
+        let (theme_x, _, theme_w, _) = app.toolbar_theme_button_rect_for_test_full();
+        let (menu_x, _, menu_w, _) = app.toolbar_menu_button_rect_for_test();
+
+        // 每个按钮都应在地址栏右边界之后
+        assert!(dl_x >= bar_right, "download button must start after address bar pill");
+        assert!(theme_x >= dl_x + dl_w, "theme button must follow download button");
+        assert!(menu_x >= theme_x + theme_w, "menu button must follow theme button");
+        // 菜单按钮右边界不应超出窗口
+        assert!(menu_x + menu_w <= 1280.0, "menu button must stay within window");
+    }
+
     /// HTTPS 页面地址栏 leading slot 应绘制锁图标。
     #[test]
     fn address_bar_renders_lock_icon_for_https() {
