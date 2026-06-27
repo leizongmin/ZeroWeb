@@ -227,3 +227,29 @@ fn test_bookmarks_default() {
     assert_eq!(bm.len(), 0);
     assert!(bm.folders().is_empty());
 }
+
+#[test]
+fn test_bookmarks_save_load_roundtrip() {
+    let dir = std::env::temp_dir().join("zeroweb_test_bookmarks");
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("bookmarks.json");
+
+    let mut bm = Bookmarks::new();
+    let folder_id = bm.create_folder("Work");
+    bm.add("Example", "https://example.com", None);
+    bm.add("Docs", "https://docs.example.com", Some(folder_id));
+    bm.save(&path).expect("save should succeed");
+
+    let mut loaded = Bookmarks::load(&path);
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded.folders().len(), 1);
+    assert_eq!(loaded.list_root().len(), 1);
+    assert_eq!(loaded.list_root()[0].title(), "Example");
+    assert_eq!(loaded.list_in_folder(folder_id).len(), 1);
+    assert_eq!(loaded.list_in_folder(folder_id)[0].title(), "Docs");
+
+    let next_id = loaded.add("After Load", "https://after.example.com", None);
+    assert!(next_id.0 > folder_id.0);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

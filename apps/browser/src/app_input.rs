@@ -1401,7 +1401,7 @@ impl BrowserApp {
             "browser_menu_toggle_bookmarks_bar" => {
                 let was_visible = self.bookmarks_bar_visible();
                 let show = !self.shell.settings().show_bookmarks_bar;
-                self.shell.settings_mut().show_bookmarks_bar = show;
+                self.shell.apply_settings(|settings| settings.show_bookmarks_bar = show);
                 if self.bookmarks_bar_visible() != was_visible {
                     self.sync_webview_viewport();
                 }
