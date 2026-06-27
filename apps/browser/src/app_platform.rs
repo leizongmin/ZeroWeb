@@ -100,9 +100,12 @@ impl BrowserApp {
                 LogicalSize::new(480.0, layout::ADDRESS_BAR_HEIGHT),
             );
         } else if self.shell.find_state().is_active() {
+            let (bar_x, bar_y, bar_w, bar_h) =
+                self.find_bar_rect_for(self.physical_size.0, self.physical_size.1);
+            let s = self.scale_factor;
             window.set_ime_cursor_area(
-                LogicalPosition::new(8.0, layout::TOOLBAR_HEIGHT + 4.0),
-                LogicalSize::new(240.0, layout::FIND_BAR_HEIGHT),
+                LogicalPosition::new(bar_x / s, bar_y / s),
+                LogicalSize::new(bar_w / s, bar_h / s),
             );
         }
     }

@@ -26,6 +26,7 @@ pub enum Icon {
     ChevronDown,
     Plus,
     MoreVertical,
+    Star,
 }
 
 impl Icon {
@@ -40,6 +41,7 @@ impl Icon {
             Icon::ChevronDown => include_bytes!("../assets/icons/chevron-down.svg"),
             Icon::Plus => include_bytes!("../assets/icons/plus.svg"),
             Icon::MoreVertical => include_bytes!("../assets/icons/more-vertical.svg"),
+            Icon::Star => include_bytes!("../assets/icons/star.svg"),
         }
     }
 
@@ -135,6 +137,7 @@ mod tests {
             Icon::ChevronDown,
             Icon::Plus,
             Icon::MoreVertical,
+            Icon::Star,
         ] {
             render_icon(&mut loader, &mut Vec::new(), icon, 16.0, 16.0, 24.0, Color::BLACK);
             assert!(loader.has_bitmap_glyph(ICON_FONT_ID, icon.glyph_id(), 24.0));

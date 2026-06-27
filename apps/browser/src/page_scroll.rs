@@ -345,10 +345,15 @@ fn scroll_rect_fill(x: f32, y: f32, w: f32, h: f32, color: Color) -> FillPrimiti
 }
 
 /// 绘制滚动条轨道与滑块。
+#[allow(clippy::too_many_arguments)]
 pub fn push_scrollbar_fills(
     geometry: &ScrollbarGeometry,
     track_color: Color,
     thumb_color: Color,
+    thumb_hover_color: Color,
+    thumb_active_color: Color,
+    hover: Option<ScrollbarHit>,
+    dragging: Option<ScrollbarAxis>,
     fills: &mut Vec<FillPrimitive>,
 ) {
     for rect in [geometry.vertical_track, geometry.horizontal_track, geometry.corner]
@@ -357,11 +362,27 @@ pub fn push_scrollbar_fills(
     {
         fills.push(scroll_rect_fill(rect.0, rect.1, rect.2, rect.3, track_color));
     }
-    for rect in [geometry.vertical_thumb, geometry.horizontal_thumb]
-        .into_iter()
-        .flatten()
-    {
-        fills.push(scroll_rect_fill(rect.0, rect.1, rect.2, rect.3, thumb_color));
+
+    let vertical_thumb_color = match dragging {
+        Some(ScrollbarAxis::Vertical) => thumb_active_color,
+        _ => match hover {
+            Some(ScrollbarHit::VerticalThumb) => thumb_hover_color,
+            _ => thumb_color,
+        },
+    };
+    let horizontal_thumb_color = match dragging {
+        Some(ScrollbarAxis::Horizontal) => thumb_active_color,
+        _ => match hover {
+            Some(ScrollbarHit::HorizontalThumb) => thumb_hover_color,
+            _ => thumb_color,
+        },
+    };
+
+    if let Some(rect) = geometry.vertical_thumb {
+        fills.push(scroll_rect_fill(rect.0, rect.1, rect.2, rect.3, vertical_thumb_color));
+    }
+    if let Some(rect) = geometry.horizontal_thumb {
+        fills.push(scroll_rect_fill(rect.0, rect.1, rect.2, rect.3, horizontal_thumb_color));
     }
 }
 

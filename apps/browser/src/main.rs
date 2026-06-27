@@ -604,17 +604,80 @@ mod tests {
         let inset = layout::ADDRESS_BAR_INPUT_V_INSET * s;
         let bar_y = layout::TAB_STRIP_HEIGHT * s + inset;
         let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 2.0 * inset;
-        let menu_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
-        let trailing_reserved = layout::ADDRESS_BAR_PADDING * s + layout::TOOLBAR_TRAILING_GAP * s + menu_w;
+        let menu_btn_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
+        let trailing_reserved = layout::ADDRESS_BAR_PADDING * s + layout::TOOLBAR_TRAILING_GAP * s + menu_btn_w;
         let bar_w = app.physical_size.0 as f32 - bar_x - trailing_reserved;
-        let btn_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
         let btn_x = bar_x + bar_w + layout::TOOLBAR_TRAILING_GAP * s;
         let btn_y = bar_y;
 
-        app.handle_mouse_click((btn_x + btn_w * 0.5) as f64, (btn_y + bar_h * 0.5) as f64, true, "Left");
+        app.handle_mouse_click((btn_x + menu_btn_w * 0.5) as f64, (btn_y + bar_h * 0.5) as f64, true, "Left");
+        app.handle_mouse_click((btn_x + menu_btn_w * 0.5) as f64, (btn_y + bar_h * 0.5) as f64, false, "Left");
         assert!(
             app.is_context_menu_visible_for_test(),
-            "browser menu button should open the menu"
+            "browser menu should stay open after button press+release"
+        );
+    }
+
+    /// 浏览器菜单项点击（按下 + 释放）应触发对应动作。
+    #[test]
+    fn browser_menu_item_click_new_tab() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        let count_before = app.shell.tab_count();
+
+        let s = app.scale_factor;
+        let bar_x =
+            (layout::NAV_SECTION_LEADING_PAD + layout::NAV_BUTTON_WIDTH * 4.0 + layout::NAV_SECTION_TRAILING_GAP) * s
+                + layout::ADDRESS_BAR_PADDING * s;
+        let inset = layout::ADDRESS_BAR_INPUT_V_INSET * s;
+        let bar_y = layout::TAB_STRIP_HEIGHT * s + inset;
+        let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 2.0 * inset;
+        let menu_btn_w = layout::TOOLBAR_MENU_BUTTON_WIDTH * s;
+        let trailing_reserved = layout::ADDRESS_BAR_PADDING * s + layout::TOOLBAR_TRAILING_GAP * s + menu_btn_w;
+        let bar_w = app.physical_size.0 as f32 - bar_x - trailing_reserved;
+        let btn_x = bar_x + bar_w + layout::TOOLBAR_TRAILING_GAP * s;
+        let btn_y = bar_y;
+
+        app.handle_mouse_click((btn_x + menu_btn_w * 0.5) as f64, (btn_y + bar_h * 0.5) as f64, true, "Left");
+        app.handle_mouse_click((btn_x + menu_btn_w * 0.5) as f64, (btn_y + bar_h * 0.5) as f64, false, "Left");
+        assert!(app.is_context_menu_visible_for_test());
+
+        let menu_x = btn_x + menu_btn_w - layout::CONTEXT_MENU_WIDTH * s;
+        let menu_y = btn_y + bar_h + 4.0 * s;
+        let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let item_x = (menu_x + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64;
+        let item_y = (menu_y + row_h * 0.5) as f64;
+
+        app.handle_mouse_click(item_x, item_y, true, "Left");
+
+        assert_eq!(
+            app.shell.tab_count(),
+            count_before + 1,
+            "clicking New Tab in browser menu should open a tab"
+        );
+    }
+
+    /// 键盘 ↓ 选中自动补全首项时应使用 selected 背景色。
+    #[test]
+    fn autocomplete_keyboard_selection_uses_selected_bg() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        app.shell.navigate("https://example.com");
+        app.shell.on_page_loaded("Example");
+        app.address_bar_focused = true;
+        for ch in ["e", "x", "a"] {
+            app.handle_key(ch, true, None);
+        }
+
+        app.handle_key("ArrowDown", true, None);
+        let (fills, _, _, _) = app.build_scene_for_test(1280, 900);
+        assert!(
+            fills
+                .iter()
+                .any(|f| f.color == app.chrome_palette().autocomplete_selected_bg),
+            "keyboard-selected autocomplete row should use selected background"
         );
     }
 
@@ -690,23 +753,29 @@ mod tests {
             .start_download("https://example.com/file.zip", "file.zip");
 
         // 构建场景应不 panic
-        let (fills, glyphs, _, _) = app.build_scene_for_test(800, 600);
+        let (fills, glyphs, overlay, overlay_glyphs) = app.build_scene_for_test(800, 600);
 
-        // 应有下载栏的 fill（至少一个蓝色进度条填充）
+        // 下载面板在 overlay 层，不应占满窗口宽度
         assert!(
-            fills.iter().any(|f| f.color == app.chrome_palette().download_bar_bg),
-            "should have download bar background"
+            overlay.iter().any(|f| f.color == app.chrome_palette().download_bar_bg),
+            "should have download panel background in overlay"
+        );
+        assert!(
+            overlay
+                .iter()
+                .any(|f| { f.color == app.chrome_palette().download_bar_bg && f.rect.size.width < 700.0 }),
+            "download panel should render as a floating panel, not full window width"
         );
 
-        // 应有下载相关文字 glyph
-        let text: String = glyphs.iter().map(|g| g.ch).collect();
+        // 应有下载相关文字 glyph（下载面板在 overlay 层）
+        let text: String = overlay_glyphs.iter().chain(glyphs.iter()).map(|g| g.ch).collect();
         assert!(
             text.contains("file.zip"),
             "download bar should show filename, got glyphs containing: {}",
             text.chars().take(200).collect::<String>()
         );
 
-        let _ = glyphs; // 避免 unused 警告
+        let _ = (fills, glyphs, overlay_glyphs);
     }
 
     /// 默认不显示底部状态栏；WebView 高度不受状态栏占用。
@@ -978,20 +1047,21 @@ mod tests {
                 wv_h as f32 * scale
             );
 
-            let (_, _, overlay, _) = app.build_scene_for_test(1280, 900);
-            assert!(!overlay.is_empty(), "scale={scale}: overlay fills missing");
+            let (_, _, _overlay, _) = app.build_scene_for_test(1280, 900);
 
             let fb = app.render_scene_for_test(1280, 900);
-            let sep = app.chrome_palette().separator;
-            for (px, py) in [(cx + 2.0, cy + ch - 2.0), (cx + cw - 3.0, cy + ch - 2.0)] {
-                let x = px.round() as u32;
-                let y = py.round() as u32;
-                let i = ((y * fb.width + x) * 4) as usize;
-                assert_eq!(
-                    (fb.data[i], fb.data[i + 1], fb.data[i + 2]),
-                    (sep.r, sep.g, sep.b),
-                    "scale={scale}: bottom corner ({x},{y}) should be separator"
-                );
+            if layout::PAGE_FRAME_RADIUS > 0.0 {
+                let sep = app.chrome_palette().separator;
+                for (px, py) in [(cx + 2.0, cy + ch - 2.0), (cx + cw - 3.0, cy + ch - 2.0)] {
+                    let x = px.round() as u32;
+                    let y = py.round() as u32;
+                    let i = ((y * fb.width + x) * 4) as usize;
+                    assert_eq!(
+                        (fb.data[i], fb.data[i + 1], fb.data[i + 2]),
+                        (sep.r, sep.g, sep.b),
+                        "scale={scale}: bottom corner ({x},{y}) should be separator"
+                    );
+                }
             }
         }
     }
@@ -1014,9 +1084,12 @@ mod tests {
         );
     }
 
-    /// 底部圆角由 overlay 遮罩绘制；角落像素应为边框色而非页面背景色。
+    /// 圆角 frame 时 overlay 应包含遮罩；扁平 frame 时 overlay 仍可用于浮动 UI。
     #[test]
     fn page_frame_bottom_corners_use_separator_overlay() {
+        if layout::PAGE_FRAME_RADIUS <= 0.0 {
+            return;
+        }
         let mut app = BrowserApp::new(RenderMode::Cpu);
         app.physical_size = (1280, 900);
         app.scale_factor = 1.0;
