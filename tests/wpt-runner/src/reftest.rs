@@ -463,14 +463,7 @@ pub fn render_to_framebuffer_with_base(
     let mut image_cache = build_image_cache(html, base_dir);
     let image_sizes = extract_image_sizes(&mut image_cache, html);
 
-    let linked_css = load_linked_stylesheets(html, base_dir);
-    let combined_css = if css.is_empty() {
-        linked_css
-    } else if linked_css.is_empty() {
-        css.to_string()
-    } else {
-        format!("{linked_css}\n{css}")
-    };
+    let combined_css = merge_page_css(html, css, base_dir);
 
     let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
     pipeline.set_skip_indicators(true);
@@ -547,12 +540,28 @@ pub fn render_to_framebuffer_with_base(
 /// 形成对照——验证「产品层（ZeroBrowser）↔ WebView 层」不互相掩盖问题。WebView 路径
 /// 走完整的嵌入接口（`WebView::load_html`，含其内部的 image/font/security 处理），
 /// 产出 `RenderPrimitives` 后用同一 `render_full_scene` 光栅化。
-///
-/// **范围**：仅适用于自包含 fixture（无外链 CSS/`<img>`），因 `load_html` 不做
-/// base_dir 解析（外链资源走 `fetch_url` 的 HTTP 路径）。welcome.html 即自包含。
+/// 带 `base_dir` 时见 [`render_via_webview_to_framebuffer_with_base`]。
 pub fn render_via_webview_to_framebuffer(html: &str, css: &str, config: &ReftestConfig) -> FrameBuffer {
-    // 提取并执行 <script>（与 engine-direct 路径一致，保证 JS 设置条件被应用）
+    render_via_webview_to_framebuffer_with_base(html, css, config, None)
+}
+
+/// 经 WebView 嵌入边界渲染（支持 `base_dir` 外链 CSS/图片，与 engine-direct 对齐）。
+pub fn render_via_webview_to_framebuffer_with_base(
+    html: &str,
+    css: &str,
+    config: &ReftestConfig,
+    base_dir: Option<&Path>,
+) -> FrameBuffer {
     execute_scripts(html);
+
+    let mut image_cache = build_image_cache(html, base_dir);
+    let image_sizes = extract_image_sizes(&mut image_cache, html);
+    let combined_css = merge_page_css(html, css, base_dir);
+
+    let mut font_loader = create_font_loader();
+    let font_scan_css = format!("{combined_css}\n{}", extract_inline_style_css(html));
+    load_font_faces_into(&mut font_loader, base_dir, &font_scan_css);
+    let font_resolver = font_loader.build_font_resolver();
 
     let wv_config = zero_webview::WebViewConfig {
         width: config.viewport_width,
@@ -560,15 +569,18 @@ pub fn render_via_webview_to_framebuffer(html: &str, css: &str, config: &Reftest
         ..Default::default()
     };
     let mut webview = zero_webview::WebView::new(wv_config);
-    // load_html 走 WebView 嵌入边界（其内部 RenderPipeline + font_resolver + 安全上下文）
-    // 产出与 engine-direct 同类型的 RenderPrimitives；css 与 engine-direct 一致传入。
-    let result = webview.load_html(html, if css.is_empty() { None } else { Some(css) });
+    webview.set_font_resolver(font_resolver);
+    webview.set_image_sizes(image_sizes);
+    let result = webview.load_html(
+        html,
+        if combined_css.is_empty() {
+            None
+        } else {
+            Some(&combined_css)
+        },
+    );
 
-    // 光栅化用与 product-smoke 同源的 FontLoader / GlyphCache，确保 font_id 映射一致
-    // （自包含页用默认字体，font_id 0 在两侧均为 default，对齐）。
-    let font_loader = create_font_loader();
     let mut glyph_cache = GlyphCache::new(1024);
-
     render_full_scene(
         config.viewport_width,
         config.viewport_height,
@@ -576,11 +588,23 @@ pub fn render_via_webview_to_framebuffer(html: &str, css: &str, config: &Reftest
         &result.primitives,
         &font_loader,
         &mut glyph_cache,
-        None,
+        Some(&mut image_cache),
         &[],
         &[],
         &[],
     )
+}
+
+/// 合并传入 CSS 与 `base_dir` 下 `<link rel="stylesheet">` 外链（engine / WebView 共用）。
+fn merge_page_css(html: &str, css: &str, base_dir: Option<&Path>) -> String {
+    let linked_css = load_linked_stylesheets(html, base_dir);
+    if css.is_empty() {
+        linked_css
+    } else if linked_css.is_empty() {
+        css.to_string()
+    } else {
+        format!("{linked_css}\n{css}")
+    }
 }
 
 /// 像素级实证：engine-direct reftest 渲染 ≡ WebView（产品路径）渲染——确保 WPT 通过率代表浏览器真实显示。
@@ -598,7 +622,11 @@ fn webview_reftest_matches_engine_direct_pixels() {
     assert_eq!(engine_fb.height, webview_fb.height, "高度须一致");
     let (diff_pixels, _max_channel) = compare_pixels(&engine_fb, &webview_fb, 0);
     let total = (engine_fb.width as usize) * (engine_fb.height as usize);
-    let ratio = if total > 0 { diff_pixels as f64 / total as f64 } else { 0.0 };
+    let ratio = if total > 0 {
+        diff_pixels as f64 / total as f64
+    } else {
+        0.0
+    };
     assert!(
         ratio < 0.01,
         "engine-direct vs WebView 像素差过高: {diff_pixels}/{total} ({:.2}%)",
@@ -614,13 +642,81 @@ fn webview_reftest_matches_engine_direct_with_css() {
     let css = ".box { width: 200px; height: 100px; background: #2a8a2a; }";
     let engine_fb = render_to_framebuffer(html, css, &config);
     let webview_fb = render_via_webview_to_framebuffer(html, css, &config);
-    assert_eq!((engine_fb.width, engine_fb.height), (webview_fb.width, webview_fb.height));
+    assert_eq!(
+        (engine_fb.width, engine_fb.height),
+        (webview_fb.width, webview_fb.height)
+    );
     let (diff_pixels, _) = compare_pixels(&engine_fb, &webview_fb, 0);
     let total = (engine_fb.width as usize) * (engine_fb.height as usize);
-    let ratio = if total > 0 { diff_pixels as f64 / total as f64 } else { 0.0 };
+    let ratio = if total > 0 {
+        diff_pixels as f64 / total as f64
+    } else {
+        0.0
+    };
     assert!(
         ratio < 0.01,
         "css 路径 engine vs WebView 像素差过高: {diff_pixels}/{total} ({:.2}%)",
+        ratio * 100.0
+    );
+}
+
+/// welcome.html（产品 newtab 页）engine-direct ≡ WebView 像素等价。
+#[test]
+fn webview_reftest_matches_engine_direct_welcome_page() {
+    let welcome_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/browser/assets/welcome.html");
+    let html =
+        std::fs::read_to_string(&welcome_path).unwrap_or_else(|e| panic!("read {}: {e}", welcome_path.display()));
+    let config = ReftestConfig::default();
+    let engine_fb = render_to_framebuffer(&html, "", &config);
+    let webview_fb = render_via_webview_to_framebuffer(&html, "", &config);
+    assert_eq!(
+        (engine_fb.width, engine_fb.height),
+        (webview_fb.width, webview_fb.height)
+    );
+    let (diff_pixels, _) = compare_pixels(&engine_fb, &webview_fb, 0);
+    let total = (engine_fb.width as usize) * (engine_fb.height as usize);
+    let ratio = if total > 0 {
+        diff_pixels as f64 / total as f64
+    } else {
+        0.0
+    };
+    assert!(
+        ratio < 0.01,
+        "welcome.html engine vs WebView 像素差过高: {diff_pixels}/{total} ({:.2}%)",
+        ratio * 100.0
+    );
+}
+
+/// `base_dir` 外链 CSS：engine-direct ≡ WebView（与 product-smoke --base-dir 对齐）。
+#[test]
+fn webview_reftest_matches_engine_direct_with_linked_css() {
+    let base = std::env::temp_dir().join(format!("zeroweb_reftest_linked_css_{}", std::process::id()));
+    std::fs::create_dir_all(&base).expect("temp dir");
+    std::fs::write(
+        base.join("linked.css"),
+        ".box { width: 200px; height: 80px; background: #009900; }",
+    )
+    .expect("write css");
+    let html =
+        r#"<html><head><link rel="stylesheet" href="linked.css"></head><body><div class="box">X</div></body></html>"#;
+    let config = ReftestConfig::default();
+    let engine_fb = render_to_framebuffer_with_base(html, "", &config, Some(&base));
+    let webview_fb = render_via_webview_to_framebuffer_with_base(html, "", &config, Some(&base));
+    let _ = std::fs::remove_dir_all(&base);
+    assert_eq!(
+        (engine_fb.width, engine_fb.height),
+        (webview_fb.width, webview_fb.height)
+    );
+    let (diff_pixels, _) = compare_pixels(&engine_fb, &webview_fb, 0);
+    let total = (engine_fb.width as usize) * (engine_fb.height as usize);
+    let ratio = if total > 0 {
+        diff_pixels as f64 / total as f64
+    } else {
+        0.0
+    };
+    assert!(
+        ratio < 0.01,
+        "linked css engine vs WebView 像素差过高: {diff_pixels}/{total} ({:.2}%)",
         ratio * 100.0
     );
 }

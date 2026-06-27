@@ -55,6 +55,8 @@ struct CliArgs {
     viewport_width: f32,
     viewport_height: f32,
     single_process: bool,
+    /// 与 WPT reftest 对齐：CPU 光栅化 + 1.0 缩放（便于肉眼对比 product-smoke）。
+    wpt_parity: bool,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -66,6 +68,7 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut viewport_width = 800.0f32;
     let mut viewport_height = 600.0f32;
     let mut single_process = false;
+    let mut wpt_parity = false;
 
     while let Some(arg) = args.next() {
         if arg == "--help" || arg == "-h" {
@@ -116,6 +119,10 @@ fn parse_args() -> Result<CliArgs, String> {
             single_process = true;
         }
 
+        if arg == "--wpt-parity" {
+            wpt_parity = true;
+        }
+
         if let Some(value) = arg.strip_prefix("--viewport-width=") {
             viewport_width = value.parse::<f32>().map_err(|_| format!("invalid width: {value}"))?;
         }
@@ -125,7 +132,19 @@ fn parse_args() -> Result<CliArgs, String> {
         }
     }
 
-    let render_mode = render_mode.or(RenderMode::from_env()?).unwrap_or_default();
+    let cli_render_mode = render_mode;
+    let cli_scale = scale_override;
+    let mut render_mode = cli_render_mode.or(RenderMode::from_env()?).unwrap_or_default();
+    let mut scale_override = cli_scale;
+    // make browser / browser.ps1 默认传 --wpt-parity；显式 --renderer / --scale 仍可覆盖。
+    if wpt_parity {
+        if cli_render_mode.is_none() {
+            render_mode = RenderMode::Cpu;
+        }
+        if cli_scale.is_none() {
+            scale_override = Some(1.0);
+        }
+    }
     Ok(CliArgs {
         render_mode,
         scale_override,
@@ -134,6 +153,7 @@ fn parse_args() -> Result<CliArgs, String> {
         viewport_width,
         viewport_height,
         single_process,
+        wpt_parity,
     })
 }
 
@@ -150,6 +170,7 @@ Options:
   --viewport-height=<px>         Headless viewport height (default: 600)
   --single-process               Run tabs in browser process threads (disable renderer isolation)
   --multi-process                Use zero-renderer child processes per tab (default)
+  --wpt-parity                   Match WPT/product-smoke: CPU renderer and 1.0 scale (make browser default)
   --help, -h                     Show this help
 
 Environment: {}={}",
@@ -1207,6 +1228,9 @@ fn main() {
         tracing::info!("Multi-process mode: tabs use zero-renderer child processes");
     } else {
         tracing::info!("Single-process mode: tabs use in-process tab workers");
+    }
+    if cli.wpt_parity {
+        tracing::info!("WPT parity mode: CPU renderer, scale 1.0 (aligned with product-smoke / reftest)");
     }
     tracing::info!("Renderer mode: {}", cli.render_mode);
 

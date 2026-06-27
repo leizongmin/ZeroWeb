@@ -410,13 +410,50 @@ impl RendererRuntime {
 
     fn handle_navigate(&mut self, params: NavigateParams) -> Result<(), String> {
         tracing::info!("导航到: {}", params.url);
-        match self.fetch_get(&params.url) {
-            Ok(body) => {
-                let html = String::from_utf8_lossy(&body).into_owned();
-                self.run_staged_load(params.url, html, true, true)
+        self.push_history(&params.url);
+        self.send(IpcMessageKind::UrlChanged(params.url.clone()))?;
+        self.current_url = Some(params.url.clone());
+        self.cached_html.clear();
+        self.cached_css.clear();
+
+        let page_url = params.url.clone();
+        {
+            let outbound = &mut self.outbound;
+            let inbound_rx = &self.inbound_rx;
+            let next_fetch_id = &mut self.next_fetch_id;
+            let deferred = &mut self.deferred_inbound;
+            let webview = self.webview.as_mut().expect("webview");
+            let font_loader = &self.font_loader;
+            let font_id = self.font_id;
+            let mut host =
+                BlockingFetchHost::new(|url: &str| ipc_fetch_get(outbound, inbound_rx, next_fetch_id, deferred, url));
+            let mut load = AsyncPageLoad::start(page_url.clone());
+            text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
+                for _ in 0..10_000 {
+                    if !load.is_active() {
+                        break;
+                    }
+                    load.tick(webview, &mut host, RENDER_FRAME_BUDGET_MS);
+                }
+            });
+            if load.is_active() {
+                return self.show_error_page(&page_url, "页面加载超时（分阶段加载未完成）");
             }
-            Err(e) => self.show_error_page(&params.url, &e),
+            if let Some(err) = load.take_error() {
+                return self.show_error_page(&page_url, &err);
+            }
+            self.cached_html = webview.html_content().to_string();
         }
+
+        self.publish_webview(None)?;
+
+        if !page_scripts::should_skip_scripts(&page_url) {
+            self.after_page_html_loaded()?;
+        }
+
+        self.send(IpcMessageKind::LoadComplete)?;
+        tracing::info!("页面渲染完成: {page_url}");
+        Ok(())
     }
 
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
@@ -698,6 +735,19 @@ fn publish_render_with_layout(
     Ok(())
 }
 
+fn ipc_fetch_error(status_code: u16, body: &[u8]) -> String {
+    if status_code == 0 {
+        let msg = String::from_utf8_lossy(body).trim().to_string();
+        if msg.is_empty() {
+            "网络请求失败（浏览器未能完成 HTTP 抓取）".to_string()
+        } else {
+            msg
+        }
+    } else {
+        format!("HTTP {status_code}")
+    }
+}
+
 fn ipc_fetch_get(
     outbound: &mut IpcOutbound,
     inbound_rx: &Receiver<IpcMessage>,
@@ -733,7 +783,7 @@ fn ipc_fetch_get(
                 ..
             }) if rid == request_id => {
                 if !(200..300).contains(&status_code) {
-                    return Err(format!("HTTP {status_code}"));
+                    return Err(ipc_fetch_error(status_code, &body));
                 }
                 return Ok(body);
             }

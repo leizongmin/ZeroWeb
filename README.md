@@ -88,6 +88,7 @@ sudo apt-get install -y \
 cargo build --workspace                    # Linux/macOS 首次构建前需先 make setup-rusty-v8（或直接用 make build）
 make test                                  # = cargo test --workspace（经 test-guard 包裹）
 make reftest                               # = WPT reftest（同样经 test-guard 包裹）
+make browser                                 # 启动浏览器（默认 WPT 对齐：CPU + scale 1.0）
 make product-smoke                         # 产品静态页（welcome.html）vs Chromium Oracle 像素回归门禁
 cargo clippy --workspace --all-targets -- -D warnings
 ```
@@ -112,7 +113,7 @@ cargo run --bin zero-browser
 cargo run --bin zero-browser -- --headless --remote-debugging-port=9222
 ```
 
-想先验证最短渲染链路，可以先跑 `webview-demo`；想直接看浏览器壳、多进程和 headless 能力，就跑 `zero-browser`。`zero-browser` 还支持 `--renderer=<mode>`（切换渲染后端）、`--scale=<factor>`（HiDPI）等参数，`--help` 可看完整列表。在 Linux 和 macOS 上，`make build` / `make browser` 会先自动处理 `rusty_v8` 下载。
+想先验证最短渲染链路，可以先跑 `webview-demo`；想直接看浏览器壳、多进程和 headless 能力，就跑 `make browser`（**默认 WPT 对齐**：CPU 渲染 + scale 1.0，与 reftest/product-smoke 一致）。需要 GPU 时可传 `--renderer=gpu`（Windows：`scripts\browser.ps1 -- --renderer=gpu`）。
 
 ### 4. 打包为可分发产物
 

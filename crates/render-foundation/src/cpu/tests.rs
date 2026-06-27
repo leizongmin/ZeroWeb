@@ -1436,11 +1436,9 @@ fn try_load_ui_font_for_layer_test(loader: &mut FontLoader) -> Option<u32> {
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
     ];
 
-    paths.iter().find_map(|path| {
-        std::fs::read(path)
-            .ok()
-            .and_then(|data| loader.load_font(&data).ok())
-    })
+    paths
+        .iter()
+        .find_map(|path| std::fs::read(path).ok().and_then(|data| loader.load_font(&data).ok()))
 }
 
 /// overlay 必须在 ui_glyphs 之后绘制，否则页面文字会盖住上下文菜单等浮层背景。
