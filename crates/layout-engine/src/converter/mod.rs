@@ -480,7 +480,16 @@ fn convert_length_to_lpa(
                 taffy::style::LengthPercentageAuto::Auto
             }
         }
-        LengthValue::Calc(_) => length(0.0),
+        // Calc 表达式：提取 P% ± Npx 的百分比部分（与 convert_length_to_dimension 一致）。
+        // calc(50% - 0px) → Percent(0.5)；px 偏移量由布局后处理（同 dimension 路径注释）。
+        // 此前 margin/inset 的 calc() 被静默丢弃为 0.0（grid-calc-margin 等用例）。
+        LengthValue::Calc(expr) => {
+            if let Some(pct) = extract_calc_percentage(expr) {
+                taffy::style::LengthPercentageAuto::Percent(pct as f32 / 100.0)
+            } else {
+                length(0.0)
+            }
+        }
         LengthValue::FitContent(inner) => convert_length_to_lpa(inner, resolve_auto_as_zero, vw, vh),
         LengthValue::MinContent | LengthValue::MaxContent => length(0.0),
         _ => length(0.0),
