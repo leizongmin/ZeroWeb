@@ -104,6 +104,32 @@ fn test_convert_length_calc_fallback() {
     );
 }
 
+/// 测试含百分比的 calc() 在 margin/inset 转换器（convert_length_to_lpa）中提取百分比
+/// 部分，而非静默丢弃为 0.0。calc(50% - 0px) → Percent(0.5)（与 convert_length_to_dimension
+/// 一致）。此前 margin/inset 的 calc() 被静默丢弃为 0.0（grid-calc-margin 等用例）。
+#[test]
+fn test_convert_length_to_lpa_calc_percentage() {
+    use zero_css_parser::values::{CalcExpr, CalcOp};
+    // calc(50% - 0px)
+    let calc = LengthValue::Calc(Box::new(CalcExpr::BinaryOp(
+        Box::new(CalcExpr::Length(LengthValue::Percentage(50.0))),
+        CalcOp::Subtract,
+        Box::new(CalcExpr::Length(LengthValue::Px(0.0))),
+    )));
+
+    assert_eq!(
+        convert_length_to_lpa(&calc, false, 800.0, 600.0),
+        taffy::style::LengthPercentageAuto::Percent(0.5)
+    );
+
+    // 纯百分比 calc(75%) → Percent(0.75)
+    let calc75 = LengthValue::Calc(Box::new(CalcExpr::Length(LengthValue::Percentage(75.0))));
+    assert_eq!(
+        convert_length_to_lpa(&calc75, false, 800.0, 600.0),
+        taffy::style::LengthPercentageAuto::Percent(0.75)
+    );
+}
+
 /// 测试 max-width/max-height 中 Px(f64::INFINITY) 映射为 Auto。
 #[test]
 fn test_convert_max_length_infinity() {
