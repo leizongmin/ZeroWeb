@@ -467,6 +467,21 @@ mod tests {
         );
     }
 
+    /// 全屏状态切换应触发重绘，且 macOS 全屏时标签栏左侧 traffic light 留白应消失。
+    #[test]
+    fn fullscreen_toggle_updates_state_and_leading_inset() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        assert!(!app.window_is_fullscreen_for_test());
+
+        app.set_window_fullscreen(true);
+        assert!(app.window_is_fullscreen_for_test());
+        // macOS 全屏时不应为 traffic lights 预留留白
+        assert_eq!(app.tab_bar_leading_inset(), 0.0);
+
+        app.set_window_fullscreen(false);
+        assert!(!app.window_is_fullscreen_for_test());
+    }
+
     /// 两个相邻的非当前标签之间应绘制竖线分隔。
     #[test]
     fn adjacent_inactive_tabs_render_vertical_separator() {
@@ -1689,7 +1704,9 @@ fn sync_window_size_from_window(app: &mut BrowserApp, window: &winit::window::Wi
 }
 
 fn sync_window_chrome_icon(app: &mut BrowserApp, window: &winit::window::Window) {
-    app.set_window_maximized(window.fullscreen().is_some() || window.is_maximized());
+    let fullscreen = window.fullscreen().is_some();
+    app.set_window_fullscreen(fullscreen);
+    app.set_window_maximized(fullscreen || window.is_maximized());
 }
 
 fn main() {
