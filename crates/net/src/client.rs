@@ -17,6 +17,16 @@ pub struct HttpClient {
     pub timeout_secs: u64,
 }
 
+impl Clone for HttpClient {
+    fn clone(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            max_redirects: self.max_redirects,
+            timeout_secs: self.timeout_secs,
+        }
+    }
+}
+
 impl Default for HttpClient {
     fn default() -> Self {
         Self::new()

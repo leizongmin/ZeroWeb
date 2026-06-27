@@ -337,3 +337,118 @@ fn extract_document_title(html: &str) -> Option<String> {
         Some(title.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+    use std::sync::mpsc::{Receiver, channel};
+
+    use crate::{WebView, WebViewConfig};
+    use zero_page_runtime::AsyncFetchHost;
+
+    /// 记录 fetch 调用并立即返回结果的 mock 宿主。
+    struct MockFetchHost {
+        calls: Vec<String>,
+        text_body: Result<String, String>,
+        bytes_body: Result<Vec<u8>, String>,
+    }
+
+    impl MockFetchHost {
+        fn new() -> Self {
+            Self {
+                calls: Vec::new(),
+                text_body: Ok(String::new()),
+                bytes_body: Ok(Vec::new()),
+            }
+        }
+
+        fn with_text(mut self, body: impl Into<String>) -> Self {
+            self.text_body = Ok(body.into());
+            self
+        }
+    }
+
+    impl AsyncFetchHost for MockFetchHost {
+        fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>> {
+            self.calls.push(url.to_string());
+            let (tx, rx) = channel();
+            let _ = tx.send(self.text_body.clone());
+            rx
+        }
+
+        fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>> {
+            self.calls.push(url.to_string());
+            let (tx, rx) = channel();
+            let _ = tx.send(self.bytes_body.clone());
+            rx
+        }
+    }
+
+    struct ErrFetchHost;
+
+    impl AsyncFetchHost for ErrFetchHost {
+        fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>> {
+            let (tx, rx) = channel();
+            let _ = tx.send(Err(format!("fail: {url}")));
+            rx
+        }
+
+        fn fetch_bytes(&mut self, url: &str) -> Receiver<Result<Vec<u8>, String>> {
+            let (tx, rx) = channel();
+            let _ = tx.send(Err(format!("fail: {url}")));
+            rx
+        }
+    }
+
+    #[test]
+    fn begin_stylesheet_fetch_issues_parallel_requests() {
+        let html = r#"<html><head>
+            <link rel="stylesheet" href="a.css">
+            <link rel="stylesheet" href="b.css">
+            </head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_text("x");
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert_eq!(host.calls.len(), 2);
+        let expected: HashSet<_> = [
+            "https://example.com/a.css",
+            "https://example.com/b.css",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        assert_eq!(host.calls.into_iter().collect::<HashSet<_>>(), expected);
+    }
+
+    #[test]
+    fn begin_image_fetch_issues_parallel_requests() {
+        let html = r#"<html><body>
+            <img src="i1.png"><img src="i2.png">
+            </body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new();
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert_eq!(host.calls.len(), 2);
+        assert!(host.calls.iter().any(|u| u.ends_with("i1.png")));
+        assert!(host.calls.iter().any(|u| u.ends_with("i2.png")));
+    }
+
+    #[test]
+    fn stub_errors_do_not_block_load_completion() {
+        let html = r#"<html><head><link rel="stylesheet" href="x.css"></head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = ErrFetchHost;
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert_eq!(load.stage(), PageLoadStage::Complete);
+    }
+}
