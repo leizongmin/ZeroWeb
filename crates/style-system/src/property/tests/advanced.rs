@@ -403,8 +403,8 @@ fn test_parse_grid_auto_flow_case_insensitive() {
 fn test_inherit_property_returns_false_for_non_inheritable() {
     let parent = ComputedStyle::default();
     let mut child = ComputedStyle::default();
-    assert!(!inherit_property(&parent, &mut child, "display"));
-    // width/height/min-*/max-* 现支持显式 inherit（R545），不再返回 false
+    // transform 仍不在 inherit 表；display/float/position/width 等 R545/R754 已支持显式 inherit
+    assert!(!inherit_property(&parent, &mut child, "transform"));
     assert!(!inherit_property(&parent, &mut child, "unknown-prop"));
 }
 
@@ -1060,13 +1060,12 @@ fn test_custom_property_chained() {
 #[test]
 /// 测试对非继承属性显式设置 inherit：没有父元素时使用默认值
 fn test_inherit_non_inherited_explicit() {
-    // display 不是继承属性，对不可继承属性调用 inherit_property 返回 false
+    // transform 仍不在 inherit 表（不可继承属性调用 inherit_property 返回 false）
     let parent = ComputedStyle::default();
     let mut child = ComputedStyle::default();
 
-    // display 不可继承
-    assert!(!inherit_property(&parent, &mut child, "display"));
-    assert_eq!(child.display, DisplayValue::Inline); // 保持默认值
+    // transform 不可继承
+    assert!(!inherit_property(&parent, &mut child, "transform"));
 
     // R545：width 现支持显式 inherit（CSS `inherit` 对任意属性生效），复制父元素计算值
     let mut parent_w = ComputedStyle::default();
@@ -1075,13 +1074,12 @@ fn test_inherit_non_inherited_explicit() {
     assert!(inherit_property(&parent_w, &mut child_w, "width"));
     assert_eq!(child_w.width, LengthValue::Px(123.0));
 
-    // 即使父元素 display 被修改，子元素也不会继承
-    let mut parent_modified = ComputedStyle::default();
-    parent_modified.display = DisplayValue::Flex;
-
-    let mut child2 = ComputedStyle::default();
-    assert!(!inherit_property(&parent_modified, &mut child2, "display"));
-    assert_eq!(child2.display, DisplayValue::Inline); // 仍为默认值，未继承父元素的 flex
+    // R754：display 现支持显式 inherit（语料 36 案 display:inherit），复制父元素计算值
+    let mut parent_d = ComputedStyle::default();
+    parent_d.display = DisplayValue::Flex;
+    let mut child_d = ComputedStyle::default();
+    assert!(inherit_property(&parent_d, &mut child_d, "display"));
+    assert_eq!(child_d.display, DisplayValue::Flex);
 }
 
 #[test]

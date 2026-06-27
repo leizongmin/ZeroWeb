@@ -149,7 +149,8 @@ fn test_inherit_property() {
     assert!(inherit_property(&parent, &mut child, "font-size"));
     assert_eq!(child.font_size, LengthValue::Px(20.0));
 
-    assert!(!inherit_property(&parent, &mut child, "display"));
+    // transform 仍不在 inherit 表（display/float/position 等 R754 已支持显式 inherit）
+    assert!(!inherit_property(&parent, &mut child, "transform"));
 }
 
 #[test]

@@ -308,6 +308,120 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.bottom = parent.bottom.clone();
             true
         }
+        // 定位/布局（display/float/position/clear 高频用于 `inherit`，display 36 案）。
+        "display" => {
+            child.display = parent.display.clone();
+            true
+        }
+        "position" => {
+            child.position = parent.position.clone();
+            true
+        }
+        "float" => {
+            child.float = parent.float.clone();
+            true
+        }
+        "clear" => {
+            child.clear = parent.clear.clone();
+            true
+        }
+        "vertical-align" => {
+            child.vertical_align = parent.vertical_align.clone();
+            true
+        }
+        "z-index" => {
+            child.z_index = parent.z_index.clone();
+            true
+        }
+        "unicode-bidi" => {
+            child.unicode_bidi = parent.unicode_bidi.clone();
+            true
+        }
+        "clip" => {
+            child.clip = parent.clip.clone();
+            true
+        }
+        "table-layout" => {
+            child.table_layout = parent.table_layout.clone();
+            true
+        }
+        // box-sizing / overflow（`inherit` 显式要求时复制）
+        "box-sizing" => {
+            child.box_sizing = parent.box_sizing.clone();
+            true
+        }
+        "overflow-x" => {
+            child.overflow_x = parent.overflow_x.clone();
+            true
+        }
+        "overflow-y" => {
+            child.overflow_y = parent.overflow_y.clone();
+            true
+        }
+        // outline（visual-only，低风险）
+        "outline-width" => {
+            child.outline_width = parent.outline_width.clone();
+            true
+        }
+        "outline-color" => {
+            child.outline_color = parent.outline_color.clone();
+            true
+        }
+        "outline-style" => {
+            child.outline_style = parent.outline_style.clone();
+            true
+        }
+        "outline-offset" => {
+            child.outline_offset = parent.outline_offset.clone();
+            true
+        }
+        // columns
+        // 注：column-count/column-width 的 inherit 暂不支持——强制继承列数会暴露
+        // ZeroWeb multicol 列分布的结构性缺口（multicol-inherit-002 +1.24pp），
+        // 属 R750「spec-correct 但暴露正交缺口」模式。column-rule-* 是视觉属性，
+        // 风险低，保留。
+        "column-rule-width" => {
+            child.column_rule_width = parent.column_rule_width.clone();
+            true
+        }
+        "column-rule-color" => {
+            child.column_rule_color = parent.column_rule_color.clone();
+            true
+        }
+        "column-rule-style" => {
+            child.column_rule_style = parent.column_rule_style.clone();
+            true
+        }
+        "column-fill" => {
+            child.column_fill = parent.column_fill.clone();
+            true
+        }
+        // counters
+        "counter-reset" => {
+            child.counter_reset = parent.counter_reset.clone();
+            true
+        }
+        "counter-increment" => {
+            child.counter_increment = parent.counter_increment.clone();
+            true
+        }
+        "counter-set" => {
+            child.counter_set = parent.counter_set.clone();
+            true
+        }
+        // page-break
+        "page-break-before" => {
+            child.page_break_before = parent.page_break_before.clone();
+            true
+        }
+        "page-break-after" => {
+            child.page_break_after = parent.page_break_after.clone();
+            true
+        }
+        "page-break-inside" => {
+            child.page_break_inside = parent.page_break_inside.clone();
+            true
+        }
         _ => false,
     }
 }
