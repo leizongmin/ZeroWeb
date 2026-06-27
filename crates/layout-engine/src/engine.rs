@@ -1817,6 +1817,43 @@ fn adjust_absolute_pct_to_viewport(
                 let target_viewport_y = viewport_height - (*bottom as f32) - child.height;
                 child.y = target_viewport_y - current_content_origin_y;
             }
+            // §10.3.7：width:auto + 全长度 left+right 填满后，max-width 钳制，再把
+            // over-constrained 方程的 leftover 重分配到 auto-margin（abspos 无 positioned
+            // 祖先时 CB=viewport）。taffy 0.7 不钳 abspos inset-fill 宽。须在 width
+            // stretch + left/right 定位之后执行（覆盖上方 x 定位）。target_viewport_x
+            // 转回父相对坐标（与上方各块同机制）。
+            if matches!(style.width, LengthValue::Auto)
+                && let (LengthValue::Px(left_v), LengthValue::Px(right_v)) = (&style.left, &style.right)
+                && let LengthValue::Px(mw_v) = &style.max_width
+                && child.width > *mw_v as f32 + 0.5
+            {
+                let (left, right, mw) = (*left_v as f32, *right_v as f32, *mw_v as f32);
+                let leftover = (viewport_width - left - right - mw).max(0.0);
+                let ml_auto = matches!(style.margin_left, LengthValue::Auto);
+                let mr_auto = matches!(style.margin_right, LengthValue::Auto);
+                let target_viewport_x = if ml_auto && mr_auto {
+                    // 两侧 auto → 居中
+                    let m = leftover / 2.0;
+                    child.margin_left = m;
+                    child.margin_right = m;
+                    left + m
+                } else if ml_auto {
+                    // 仅 margin-left auto → 吸收 leftover（右对齐）
+                    child.margin_left = leftover;
+                    left + leftover
+                } else if mr_auto {
+                    // 仅 margin-right auto → x 留在 left（左对齐）
+                    child.margin_right = leftover;
+                    left
+                } else {
+                    // 无 auto margin，over-constrained → 忽略 right，x=left
+                    left
+                };
+                child.width = mw;
+                child.content_width =
+                    (mw - child.border_left - child.border_right - child.padding_left - child.padding_right).max(0.0);
+                child.x = target_viewport_x - current_content_origin_x;
+            }
         }
 
         // 递归：用（可能已修改的）child 位置计算其内容盒原点

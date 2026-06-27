@@ -643,3 +643,116 @@ fn test_adjust_absolute_length_top_to_viewport() {
         abs.x
     );
 }
+
+/// 测试 §10.3.7：abspos（无 positioned 祖先，CB=viewport）width:auto + left+right +
+/// max-width 时，max-width 钳制填满宽，两侧 auto-margin 居中（对应 WPT
+/// absolute-non-replaced-width-025）。taffy 0.7 不钳 abspos inset-fill 宽。
+#[test]
+fn test_adjust_absolute_maxwidth_clamp_center() {
+    use std::collections::HashMap;
+    use zero_css_parser::values::LengthValue;
+    let (_doc, key_id) = make_doc_with_body();
+
+    let abs_child = LayoutBox {
+        node_id: Some(key_id),
+        x: 8.0,
+        y: 0.0,
+        width: 100.0, // 初值；函数会先 stretch 到 784 再 clamp
+        height: 100.0,
+        is_absolute: true,
+        ..Default::default()
+    };
+    let body = LayoutBox {
+        node_id: None,
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+        children: vec![abs_child],
+        ..Default::default()
+    };
+    let mut root = LayoutBox {
+        children: vec![body],
+        ..Default::default()
+    };
+
+    let mut style = ComputedStyle::default();
+    style.width = LengthValue::Auto;
+    style.left = LengthValue::Px(8.0);
+    style.right = LengthValue::Px(8.0);
+    style.max_width = LengthValue::Px(100.0);
+    style.margin_left = LengthValue::Auto;
+    style.margin_right = LengthValue::Auto;
+    let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+    styles.insert(key_id, style);
+
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false);
+
+    let abs = &root.children[0].children[0];
+    // max-width 钳制到 100
+    assert!(
+        (abs.width - 100.0).abs() < 0.001,
+        "width 应被 max-width 钳到 100，实际 {}",
+        abs.width
+    );
+    // leftover = 800-8-8-100 = 684，居中 → margin 342，target_viewport_x=8+342=350
+    assert!(
+        (abs.x - 350.0).abs() < 0.001,
+        "两侧 auto-margin 应居中到 x=350，实际 {}",
+        abs.x
+    );
+    assert!((abs.margin_left - 342.0).abs() < 0.001, "margin_left 应为 342");
+    assert!((abs.margin_right - 342.0).abs() < 0.001, "margin_right 应为 342");
+}
+
+/// 测试 §10.3.7：max-width 钳制后，仅 margin-left auto 时吸收 leftover（右对齐，
+/// 对应 WPT absolute-non-replaced-width-026）。
+#[test]
+fn test_adjust_absolute_maxwidth_clamp_margin_left_auto() {
+    use std::collections::HashMap;
+    use zero_css_parser::values::LengthValue;
+    let (_doc, key_id) = make_doc_with_body();
+
+    let abs_child = LayoutBox {
+        node_id: Some(key_id),
+        x: 8.0,
+        y: 0.0,
+        width: 100.0,
+        height: 100.0,
+        is_absolute: true,
+        ..Default::default()
+    };
+    let body = LayoutBox {
+        node_id: None,
+        width: 800.0,
+        height: 600.0,
+        children: vec![abs_child],
+        ..Default::default()
+    };
+    let mut root = LayoutBox {
+        children: vec![body],
+        ..Default::default()
+    };
+
+    let mut style = ComputedStyle::default();
+    style.width = LengthValue::Auto;
+    style.left = LengthValue::Px(8.0);
+    style.right = LengthValue::Px(8.0);
+    style.max_width = LengthValue::Px(100.0);
+    style.margin_left = LengthValue::Auto;
+    style.margin_right = LengthValue::Px(0.0); // 仅 margin-left auto
+    let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+    styles.insert(key_id, style);
+
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false);
+
+    let abs = &root.children[0].children[0];
+    assert!((abs.width - 100.0).abs() < 0.001, "width 钳到 100");
+    // margin-left 吸收 leftover 684 → target_viewport_x = 8 + 684 = 692
+    assert!(
+        (abs.x - 692.0).abs() < 0.001,
+        "仅 margin-left auto 应右对齐到 x=692，实际 {}",
+        abs.x
+    );
+    assert!((abs.margin_left - 684.0).abs() < 0.001, "margin_left 应为 684");
+}
