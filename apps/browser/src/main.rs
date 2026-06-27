@@ -593,6 +593,56 @@ mod tests {
         assert!(app.address_bar_focused, "Mod+L should focus address bar");
     }
 
+    /// Ctrl+Tab 应循环到下一个标签页。
+    #[test]
+    fn ctrl_tab_cycles_to_next_tab() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        let first = app.shell.active_tab_id().unwrap();
+        app.new_tab(None);
+        let second = app.shell.active_tab_id().unwrap();
+        assert_ne!(first, second);
+
+        // Ctrl+Tab 应回到第一个标签
+        app.handle_key(BrowserApp::test_modifier_key_name(), true, None);
+        app.handle_key("Tab", true, None);
+        assert_eq!(app.shell.active_tab_id().unwrap(), first);
+
+        // 再 Ctrl+Tab 到第二个
+        app.handle_key("Tab", true, None);
+        assert_eq!(app.shell.active_tab_id().unwrap(), second);
+    }
+
+    /// Ctrl+H 应打开历史页。
+    #[test]
+    fn ctrl_h_opens_history_page() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.handle_key(BrowserApp::test_modifier_key_name(), true, None);
+        app.handle_key("h", true, None);
+        assert_eq!(app.address_bar_text(), "zero://history");
+    }
+
+    /// Ctrl+J 应打开下载页。
+    #[test]
+    fn ctrl_j_opens_downloads_page() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.handle_key(BrowserApp::test_modifier_key_name(), true, None);
+        app.handle_key("j", true, None);
+        assert_eq!(app.address_bar_text(), "zero://downloads");
+    }
+
+    /// Home 键应导航到设置的主页 URL，而非硬编码。
+    #[test]
+    fn home_key_navigates_to_configured_home() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.shell
+            .apply_settings(|s| s.home_url = "https://custom.home.test".to_string());
+        app.handle_key("Home", true, None);
+        assert_eq!(
+            app.shell.active_tab().and_then(|t| t.url()),
+            Some("https://custom.home.test")
+        );
+    }
+
     /// 地址栏右侧应渲染浏览器菜单（三点）按钮。
     #[test]
     fn address_bar_renders_browser_menu_button() {
