@@ -141,14 +141,17 @@ impl BrowserApp {
                 self.gpu_renderer = gpu;
                 return;
             }
-            let (fills, glyphs, overlay_fills, overlay_glyphs) = self.build_scene(width, height);
+            let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows) = self.build_scene(width, height);
 
             // 获取 WebView 额外图元（渐变、阴影、圆角矩形、线段、路径等）
             let webview_extras = self.get_webview_extra_primitives();
 
-            // 合并 chrome fills + webview 图元
+            // 合并 chrome fills + chrome shadows + webview 图元
             let mut scene_primitives = webview_extras;
             scene_primitives.fills = [fills, scene_primitives.fills].concat();
+            // chrome 阴影（页面视口 drop shadow）置于 webview 阴影之前，
+            // 确保页面阴影绘制在网页内容阴影之下、chrome 背景之上。
+            scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
             // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
             // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
@@ -187,16 +190,17 @@ impl BrowserApp {
             return;
         }
 
-        let (fills, glyphs, overlay_fills, overlay_glyphs) = self.build_scene(width, height);
+        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows) = self.build_scene(width, height);
 
         // 获取 WebView 的额外图元类型（渐变、阴影、线段等）
         let webview_extras = self.get_webview_extra_primitives();
 
-        // 合并：chrome fills + webview fills (已在 fills 中) + webview 额外图元
+        // 合并：chrome fills + chrome shadows + webview fills (已在 fills 中) + webview 额外图元
         let mut scene_primitives = webview_extras;
         // fills 和 glyphs 已通过 append_webview_primitives 混入 chrome 的 fills/glyphs
         // 所以只需把 chrome fills 放入 scene_primitives.fills 的前面
         scene_primitives.fills = [fills, scene_primitives.fills].concat();
+        scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
         // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
         // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
@@ -232,10 +236,11 @@ impl BrowserApp {
         width: u32,
         height: u32,
     ) -> zero_render_foundation::surface::FrameBuffer {
-        let (fills, glyphs, overlay_fills, overlay_glyphs) = self.build_scene(width, height);
+        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows) = self.build_scene(width, height);
         let webview_extras = self.get_webview_extra_primitives();
         let mut scene_primitives = webview_extras;
         scene_primitives.fills = [fills, scene_primitives.fills].concat();
+        scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
         // 与 render_cpu / render_frame 完全一致的 ImageCache 装配（不相交字段借用）
         let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {

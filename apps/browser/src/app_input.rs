@@ -298,8 +298,50 @@ impl BrowserApp {
         if self.context_menu.visible {
             match key {
                 "Escape" => {
-                    self.context_menu.close();
+                    // 子菜单展开时优先收起子菜单，再次 Escape 才关闭整个菜单
+                    if self.context_menu.open_sub_menu.is_some() {
+                        self.context_menu.open_sub_menu = None;
+                        self.context_menu.sub_menu_hovered = None;
+                    } else {
+                        self.context_menu.close();
+                    }
                     self.needs_redraw = true;
+                }
+                k if key_matches(k, "Up") && self.context_menu.open_sub_menu.is_some() => {
+                    // 子菜单内向上
+                    let parent = self.context_menu.open_sub_menu.and_then(|i| self.context_menu.items.get(i));
+                    if let Some(children) = parent.and_then(|p| p.children()) {
+                        let len = children.len();
+                        let start = self.context_menu.sub_menu_hovered.unwrap_or(len);
+                        let mut next = start;
+                        for step in 1..=len {
+                            let candidate = (start + len - step) % len;
+                            if children.get(candidate).is_some_and(|c| c.enabled() && !c.is_separator()) {
+                                next = candidate;
+                                break;
+                            }
+                        }
+                        self.context_menu.sub_menu_hovered = Some(next);
+                        self.needs_redraw = true;
+                    }
+                }
+                k if key_matches(k, "Down") && self.context_menu.open_sub_menu.is_some() => {
+                    // 子菜单内向下
+                    let parent = self.context_menu.open_sub_menu.and_then(|i| self.context_menu.items.get(i));
+                    if let Some(children) = parent.and_then(|p| p.children()) {
+                        let len = children.len();
+                        let start = self.context_menu.sub_menu_hovered.map(|i| i + 1).unwrap_or(0);
+                        let mut next = self.context_menu.sub_menu_hovered.unwrap_or(0);
+                        for step in 0..len {
+                            let candidate = (start + step) % len;
+                            if children.get(candidate).is_some_and(|c| c.enabled() && !c.is_separator()) {
+                                next = candidate;
+                                break;
+                            }
+                        }
+                        self.context_menu.sub_menu_hovered = Some(next);
+                        self.needs_redraw = true;
+                    }
                 }
                 k if key_matches(k, "Up") && !self.context_menu.items.is_empty() => {
                     let len = self.context_menu.items.len();
@@ -313,6 +355,8 @@ impl BrowserApp {
                         }
                     }
                     self.context_menu.hovered_index = Some(next);
+                    // 移动到 sub_menu 项时展开；移到普通项时收起
+                    self.sync_open_sub_menu_with_hover();
                     self.needs_redraw = true;
                 }
                 k if key_matches(k, "Down") && !self.context_menu.items.is_empty() => {
@@ -327,10 +371,49 @@ impl BrowserApp {
                         }
                     }
                     self.context_menu.hovered_index = Some(next);
+                    self.sync_open_sub_menu_with_hover();
                     self.needs_redraw = true;
                 }
+                k if key_matches(k, "Right") => {
+                    // 在 sub_menu 父项上按右键：展开子菜单并选中第一个可激活子项
+                    if let Some(idx) = self.context_menu.hovered_index
+                        && let Some(item) = self.context_menu.items.get(idx)
+                        && item.is_sub_menu()
+                    {
+                        self.context_menu.open_sub_menu = Some(idx);
+                        self.context_menu.sub_menu_hovered = self
+                            .context_menu
+                            .items
+                            .get(idx)
+                            .and_then(|p| p.children())
+                            .and_then(|chs| chs.iter().position(|c| c.enabled() && !c.is_separator()));
+                        self.needs_redraw = true;
+                    }
+                }
+                k if key_matches(k, "Left") => {
+                    // 子菜单展开时按左键：收起，焦点回到父项
+                    if self.context_menu.open_sub_menu.is_some() {
+                        self.context_menu.open_sub_menu = None;
+                        self.context_menu.sub_menu_hovered = None;
+                        self.needs_redraw = true;
+                    }
+                }
                 "Enter" => {
-                    self.activate_context_menu_item();
+                    if self.context_menu.open_sub_menu.is_some() && self.context_menu.sub_menu_hovered.is_some() {
+                        self.activate_sub_menu_item();
+                    } else if let Some(idx) = self.context_menu.hovered_index
+                        && let Some(item) = self.context_menu.items.get(idx)
+                        && item.is_sub_menu()
+                    {
+                        // Enter 在 sub_menu 父项：展开
+                        self.context_menu.open_sub_menu = Some(idx);
+                        self.context_menu.sub_menu_hovered = item
+                            .children()
+                            .and_then(|chs| chs.iter().position(|c| c.enabled() && !c.is_separator()));
+                        self.needs_redraw = true;
+                    } else {
+                        self.activate_context_menu_item();
+                    }
                 }
                 _ => {}
             }
@@ -705,12 +788,39 @@ impl BrowserApp {
         let old_pos = self.mouse_pos;
         self.mouse_pos = (x, y);
 
-        // 上下文菜单悬停检测
+        // 上下文菜单悬停检测（含子菜单面板）
         if self.context_menu.visible {
-            let hovered = self.context_menu_hit_test(x, y);
-            if hovered != self.context_menu.hovered_index {
-                self.context_menu.hovered_index = hovered;
-                self.needs_redraw = true;
+            // 先检测子菜单面板
+            if let Some(sub_idx) = self.sub_menu_hit_test(x, y) {
+                if self.context_menu.sub_menu_hovered != Some(sub_idx) {
+                    self.context_menu.sub_menu_hovered = Some(sub_idx);
+                    self.needs_redraw = true;
+                }
+            } else {
+                if self.context_menu.sub_menu_hovered.is_some() {
+                    self.context_menu.sub_menu_hovered = None;
+                    self.needs_redraw = true;
+                }
+                // 主菜单 hit-test
+                let hovered = self.context_menu_hit_test(x, y);
+                if hovered != self.context_menu.hovered_index {
+                    self.context_menu.hovered_index = hovered;
+                    // hover 到 sub_menu 项时自动展开，hover 离开则收起
+                    let new_open = hovered.and_then(|i| {
+                        let item = self.context_menu.items.get(i)?;
+                        if item.is_sub_menu() && item.enabled() { Some(i) } else { None }
+                    });
+                    if new_open != self.context_menu.open_sub_menu {
+                        self.context_menu.open_sub_menu = new_open;
+                        self.context_menu.sub_menu_hovered = None;
+                    }
+                    self.needs_redraw = true;
+                } else if hovered.is_none() && self.context_menu.open_sub_menu.is_some() {
+                    // 鼠标移出主菜单且不在子面板：收起子菜单
+                    self.context_menu.open_sub_menu = None;
+                    self.context_menu.sub_menu_hovered = None;
+                    self.needs_redraw = true;
+                }
             }
         }
 
@@ -893,7 +1003,26 @@ impl BrowserApp {
 
         // 左键点击时处理上下文菜单
         if self.context_menu.visible {
+            // 先检测子菜单面板点击
+            if let Some(sub_idx) = self.sub_menu_hit_test(x, y) {
+                self.context_menu.sub_menu_hovered = Some(sub_idx);
+                self.activate_sub_menu_item();
+                self.context_menu_suppress_left_up = false;
+                return;
+            }
             if let Some(idx) = self.context_menu_hit_test(x, y) {
+                // 点击 sub_menu 父项：切换展开状态，不触发动作
+                if let Some(item) = self.context_menu.items.get(idx)
+                    && item.is_sub_menu()
+                {
+                    let cur = self.context_menu.open_sub_menu;
+                    self.context_menu.open_sub_menu = if cur == Some(idx) { None } else { Some(idx) };
+                    self.context_menu.hovered_index = Some(idx);
+                    self.context_menu.sub_menu_hovered = None;
+                    self.context_menu_suppress_left_up = false;
+                    self.needs_redraw = true;
+                    return;
+                }
                 self.context_menu.hovered_index = Some(idx);
                 self.context_menu_suppress_left_up = false;
                 self.activate_context_menu_item();
@@ -1352,6 +1481,29 @@ impl BrowserApp {
         } else {
             browser_menu_label(BrowserMenuLabel::ShowBookmarksBar, language)
         };
+
+        // 历史子菜单：取最近 8 条历史记录，每条作为可点击项（id 编码为 history:<url>）。
+        let history_children: Vec<MenuItem> = {
+            let mut entries: Vec<_> = self.shell.history().iter().take(8).collect();
+            entries.reverse(); // 最近访问展示在顶部
+            if entries.is_empty() {
+                let empty_label = match language {
+                    UiLanguage::ZhCn => "无历史记录",
+                    UiLanguage::EnUs => "No history",
+                };
+                vec![MenuItem::action_disabled("history_empty", empty_label)]
+            } else {
+                entries
+                    .iter()
+                    .map(|e| {
+                        let title = e.title();
+                        let label = if title.is_empty() { e.url() } else { title };
+                        MenuItem::action(&format!("history:{}", e.url()), label)
+                    })
+                    .collect()
+            }
+        };
+
         self.context_menu = ContextMenuState {
             visible: true,
             context_type: ContextType::Page,
@@ -1359,7 +1511,11 @@ impl BrowserApp {
                 MenuItem::action("browser_menu_new_tab", browser_menu_label(BrowserMenuLabel::NewTab, language)),
                 MenuItem::action("browser_menu_new_private_tab", browser_menu_label(BrowserMenuLabel::NewPrivateTab, language)),
                 MenuItem::separator(),
-                MenuItem::action("browser_menu_history", browser_menu_label(BrowserMenuLabel::History, language)),
+                MenuItem::sub_menu(
+                    "browser_menu_history",
+                    browser_menu_label(BrowserMenuLabel::History, language),
+                    history_children,
+                ),
                 MenuItem::action("browser_menu_downloads", browser_menu_label(BrowserMenuLabel::Downloads, language)),
                 MenuItem::action("browser_menu_bookmarks", browser_menu_label(BrowserMenuLabel::BookmarksManager, language)),
                 MenuItem::separator(),
@@ -1371,6 +1527,8 @@ impl BrowserApp {
                 MenuItem::action("browser_menu_settings", browser_menu_label(BrowserMenuLabel::Settings, language)),
             ],
             hovered_index: None,
+            open_sub_menu: None,
+            sub_menu_hovered: None,
             x: bx + bw - layout::CONTEXT_MENU_WIDTH * s,
             y: by + bh + 4.0 * s,
             source_tab_id: self.shell.active_tab_id(),
@@ -1433,6 +1591,8 @@ impl BrowserApp {
             context_type: ContextType::Page,
             items,
             hovered_index: None,
+            open_sub_menu: None,
+            sub_menu_hovered: None,
             x: slot_x + slot_w - layout::CONTEXT_MENU_WIDTH * s,
             y: slot_y + slot_h + 4.0 * s,
             source_tab_id: self.shell.active_tab_id(),
@@ -1487,6 +1647,8 @@ impl BrowserApp {
                 MenuItem::action("tab_close_to_right", tab_menu_label(TabMenuLabel::CloseToRight, language)),
             ],
             hovered_index: None,
+            open_sub_menu: None,
+            sub_menu_hovered: None,
             x: x as f32,
             y: y as f32,
             source_tab_id: Some(tab_id),
@@ -1584,6 +1746,8 @@ impl BrowserApp {
             context_type,
             items,
             hovered_index: None,
+            open_sub_menu: None,
+            sub_menu_hovered: None,
             x: x as f32,
             y: y as f32,
             source_tab_id: self.shell.active_tab_id(),
@@ -1601,7 +1765,7 @@ impl BrowserApp {
         };
 
         let item_id = match self.context_menu.items.get(idx) {
-            Some(item) if item.enabled() && !item.is_separator() => item.id().to_string(),
+            Some(item) if item.enabled() && !item.is_separator() && !item.is_sub_menu() => item.id().to_string(),
             _ => return,
         };
 
@@ -1727,6 +1891,19 @@ impl BrowserApp {
             .is_some_and(|item| !item.is_separator() && item.enabled())
     }
 
+    /// 键盘上下移动时，根据 hovered_index 同步子菜单展开状态：
+    /// hover 到 sub_menu 项 → 展开；hover 到普通项 → 收起。
+    fn sync_open_sub_menu_with_hover(&mut self) {
+        let new_open = self.context_menu.hovered_index.and_then(|i| {
+            let item = self.context_menu.items.get(i)?;
+            if item.is_sub_menu() && item.enabled() { Some(i) } else { None }
+        });
+        if new_open != self.context_menu.open_sub_menu {
+            self.context_menu.open_sub_menu = new_open;
+            self.context_menu.sub_menu_hovered = None;
+        }
+    }
+
     fn context_menu_hit_test(&self, x: f64, y: f64) -> Option<usize> {
         if !self.context_menu.visible {
             return None;
@@ -1754,6 +1931,70 @@ impl BrowserApp {
             Some(idx)
         } else {
             None
+        }
+    }
+
+    /// 子菜单面板命中检测，返回命中的子项索引。
+    fn sub_menu_hit_test(&self, x: f64, y: f64) -> Option<usize> {
+        let parent_idx = self.context_menu.open_sub_menu?;
+        let parent = self.context_menu.items.get(parent_idx)?;
+        let children = parent.children()?;
+        if children.is_empty() {
+            return None;
+        }
+
+        let s = self.scale_factor;
+        let menu_x = self.context_menu.x;
+        let menu_y = self.context_menu.y;
+        let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let menu_w = layout::CONTEXT_MENU_WIDTH * s;
+        // 子面板紧贴主菜单右侧（与 render_context_menu 中一致）。
+        let sub_x = menu_x + menu_w + 1.0 * s;
+        let sub_y = menu_y + parent_idx as f32 * row_h;
+        let sub_h = children.len() as f32 * row_h;
+
+        let x_f = x as f32;
+        let y_f = y as f32;
+        if x_f < sub_x || x_f > sub_x + menu_w || y_f < sub_y || y_f > sub_y + sub_h {
+            return None;
+        }
+        let ci = ((y_f - sub_y) / row_h) as usize;
+        if let Some(child) = children.get(ci)
+            && child.enabled()
+            && !child.is_separator()
+        {
+            Some(ci)
+        } else {
+            None
+        }
+    }
+
+    /// 激活子菜单中当前 hover 的子项。
+    fn activate_sub_menu_item(&mut self) {
+        let Some(parent_idx) = self.context_menu.open_sub_menu else {
+            return;
+        };
+        let Some(ci) = self.context_menu.sub_menu_hovered else {
+            return;
+        };
+        // 取出子项 id 后立即关闭整个菜单（避免持有 items 借用）。
+        let item_id = self
+            .context_menu
+            .items
+            .get(parent_idx)
+            .and_then(|p| p.children())
+            .and_then(|chs| chs.get(ci))
+            .filter(|c| c.enabled() && !c.is_separator())
+            .map(|c| c.id().to_string());
+        let Some(item_id) = item_id else {
+            return;
+        };
+        self.context_menu.close();
+        self.needs_redraw = true;
+
+        // history:<url> 编码 → 导航到该 URL
+        if let Some(url) = item_id.strip_prefix("history:") {
+            self.navigate_to(url);
         }
     }
 

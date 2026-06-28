@@ -19,7 +19,9 @@ use zero_render_foundation::font::loader::FontLoader;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::gpu::renderer::{GlyphDraw, GpuRenderer};
 use zero_render_foundation::image_cache::ImageCache;
-use zero_render_foundation::primitive::{FillPrimitive, GlyphPrimitive, GradientKind, RenderPrimitives};
+use zero_render_foundation::primitive::{
+    FillPrimitive, GlyphPrimitive, GradientKind, RenderPrimitives, ShadowPrimitive,
+};
 
 use crate::colors;
 use crate::favicon_fetch::FaviconFetchState;
@@ -33,6 +35,16 @@ use crate::text_input::TextInput;
 use crate::text_metrics;
 
 const TAB_BAR_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(450);
+
+/// 浏览器 UI 场景图元包：`(fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows)`。
+/// `overlay_*` 在所有 fills/glyphs 之后绘制；`chrome_shadows` 是壳层阴影（如页面视口）。
+pub(crate) type ChromeScene = (
+    Vec<FillPrimitive>,
+    Vec<GlyphDraw>,
+    Vec<FillPrimitive>,
+    Vec<GlyphDraw>,
+    Vec<ShadowPrimitive>,
+);
 
 /// 地址栏页面类型（由 URL 推导）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,6 +128,10 @@ pub struct ContextMenuState {
     pub items: Vec<zero_browser_shell::MenuItem>,
     /// 悬停索引
     pub hovered_index: Option<usize>,
+    /// 当前展开的子菜单父项索引（None 表示无子菜单展开）。
+    pub open_sub_menu: Option<usize>,
+    /// 子菜单内悬停的子项索引。
+    pub sub_menu_hovered: Option<usize>,
     /// 菜单左上角物理像素坐标
     pub x: f32,
     pub y: f32,
@@ -133,6 +149,8 @@ impl ContextMenuState {
             context_type: ContextType::Page,
             items: Vec::new(),
             hovered_index: None,
+            open_sub_menu: None,
+            sub_menu_hovered: None,
             x: 0.0,
             y: 0.0,
             source_tab_id: None,
@@ -145,6 +163,8 @@ impl ContextMenuState {
         self.visible = false;
         self.items.clear();
         self.hovered_index = None;
+        self.open_sub_menu = None;
+        self.sub_menu_hovered = None;
         self.source_tab_id = None;
     }
 }
@@ -702,18 +722,14 @@ impl BrowserApp {
 
     /// 测试用：构建场景（暴露私有方法给测试模块）
     #[cfg(test)]
-    pub fn build_scene_for_test(
-        &mut self,
-        width: u32,
-        height: u32,
-    ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>, Vec<FillPrimitive>, Vec<GlyphDraw>) {
+    pub fn build_scene_for_test(&mut self, width: u32, height: u32) -> ChromeScene {
         self.build_scene(width, height)
     }
 
     /// 测试用：构建场景并 CPU 渲染为帧缓冲。
     #[cfg(test)]
     pub fn render_scene_for_test(&mut self, width: u32, height: u32) -> zero_render_foundation::surface::FrameBuffer {
-        let (fills, glyphs, overlay_fills, overlay_glyphs) = self.build_scene(width, height);
+        let (fills, glyphs, overlay_fills, overlay_glyphs, _chrome_shadows) = self.build_scene(width, height);
         render_scene_to_framebuffer(
             width,
             height,
