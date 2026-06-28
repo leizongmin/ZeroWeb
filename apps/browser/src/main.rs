@@ -439,10 +439,12 @@ mod tests {
         let config = super::browser_window_config();
         assert!(!config.fullscreen);
         assert!(config.maximized);
-        if crate::app::is_wayland() {
-            assert!(!config.decorations);
+        // 无装饰平台：Wayland（规避 CSD 崩溃）+ Windows（自绘标题栏）
+        let undecorated = crate::app::is_wayland() || cfg!(target_os = "windows");
+        if undecorated {
+            assert!(!config.decorations, "应禁用系统装饰");
         } else {
-            assert!(config.decorations);
+            assert!(config.decorations, "应保留系统装饰");
         }
     }
 
@@ -1701,7 +1703,12 @@ fn run_headless(cli: CliArgs) {
 
 // --- 入口 ---
 
-/// 按平台调整窗口配置（Wayland 上禁用 CSD，避免失焦时 subsurface commit 导致 compositor 断开）
+/// 按平台调整窗口配置。
+///
+/// - Wayland：禁用 CSD，避免失焦时 subsurface commit 导致 compositor 断开
+/// - Windows：禁用系统装饰，改用自绘标题栏（控制按钮 + 拖拽区），
+///   依赖 winit 0.30 对无边框窗口的 Aero Snap 支持（WS_THICKFRAME 保留）
+/// - macOS：使用一体化标题栏（系统 traffic lights 与标签栏同排）
 fn browser_window_config() -> WindowConfig {
     let mut config = WindowConfig::new("ZeroBrowser")
         .with_size(1024, 768)
@@ -1709,6 +1716,9 @@ fn browser_window_config() -> WindowConfig {
         .with_maximized(true);
     if app::is_wayland() {
         tracing::warn!("Wayland: disabling client-side decorations (CSD subsurface crash on focus switch)");
+        config = config.with_decorations(false);
+    } else if cfg!(target_os = "windows") {
+        tracing::info!("Windows: using custom titlebar (system decorations disabled, Aero Snap retained via winit)");
         config = config.with_decorations(false);
     } else if app::uses_unified_titlebar() {
         config = config.with_unified_titlebar(true);
