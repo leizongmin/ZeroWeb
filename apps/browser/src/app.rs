@@ -1069,6 +1069,28 @@ impl BrowserApp {
             .sum()
     }
 
+    /// 子菜单面板的矩形 `(x, y, w, h)`（物理像素）。
+    ///
+    /// 默认紧贴主菜单右侧；当右侧空间不足以容纳子菜单宽度时，
+    /// 改为紧贴主菜单左侧显示，避免溢出屏幕（如全局菜单按钮位于地址栏右侧时）。
+    pub(crate) fn sub_menu_panel_rect(&self, parent_idx: usize) -> (f32, f32, f32, f32) {
+        let s = self.scale_factor;
+        let menu_x = self.context_menu.x;
+        let menu_y = self.context_menu.y;
+        let menu_w = layout::CONTEXT_MENU_WIDTH * s;
+        let sub_h = self.sub_menu_total_height(parent_idx);
+        let sub_y = menu_y + self.context_menu_row_y(parent_idx);
+
+        let screen_w = self.physical_size.0 as f32;
+        let right_gap = screen_w - (menu_x + menu_w);
+        let sub_x = if right_gap >= menu_w + 1.0 * s {
+            menu_x + menu_w + 1.0 * s
+        } else {
+            menu_x - menu_w - 1.0 * s
+        };
+        (sub_x, sub_y, menu_w, sub_h)
+    }
+
     /// 按指定窗口物理尺寸计算内容区（边框内侧）。
     pub fn page_content_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
         let (x, y, w, h) = self.page_frame_rect_for(width, height);
