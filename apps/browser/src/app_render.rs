@@ -1200,7 +1200,11 @@ impl BrowserApp {
         let border = layout::WINDOW_FRAME_BORDER * s;
         let w = width as f32;
         let h = height as f32;
-        let color = self.chrome_palette.separator;
+        // 使用专用的 window_frame_border 颜色，与 separator 区分，
+        // 保证亮/暗色主题下窗口外框都有明确的视觉边界。
+        // 注：窗口几何本身为直角（Wayland client-side rounded window 需 compositor 支持），
+        // 故自绘描边保持直角，避免与实际窗口形状冲突产生透明缺口。
+        let color = self.chrome_palette.window_frame_border;
 
         fills.push(rect_fill(0.0, 0.0, w, border, color));
         fills.push(rect_fill(0.0, h - border, w, border, color));

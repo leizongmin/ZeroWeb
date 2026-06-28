@@ -459,7 +459,7 @@ mod tests {
         app.set_window_maximized(false);
 
         let (_, _, overlay, _, _) = app.build_scene_for_test(800, 600);
-        let border = app.chrome_palette().separator;
+        let border = app.chrome_palette().window_frame_border;
         assert!(
             overlay.iter().any(|f| {
                 f.color == border && f.rect.origin.x <= 0.5 && f.rect.origin.y <= 0.5 && f.rect.size.width >= 799.0
