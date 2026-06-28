@@ -1787,6 +1787,14 @@ fn sync_window_chrome_icon(app: &mut BrowserApp, window: &winit::window::Window)
     app.set_window_maximized(fullscreen || window.is_maximized());
 }
 
+/// 同步窗口标题为当前活跃标签页的标题（任务栏可见）。
+fn sync_window_title(app: &mut BrowserApp, window: &winit::window::Window) {
+    if let Some(title) = app.window_title_if_changed() {
+        window.set_title(&title);
+        app.confirm_window_title(&title);
+    }
+}
+
 fn main() {
     tracing_subscriber::fmt().init();
 
@@ -2048,6 +2056,7 @@ fn main() {
         if let Some(ref win) = window {
             app.sync_ime_state(win);
             apply_window_chrome_action(&mut app, win);
+            sync_window_title(&mut app, win);
         }
     }) {
         tracing::error!("Event loop error: {e}");
