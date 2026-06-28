@@ -676,7 +676,9 @@ mod tests {
 
         let (_, glyphs, _, _) = app.build_scene_for_test(1280, 900);
         assert!(
-            glyphs.iter().any(|g| g.ch == crate::ui_icons::Icon::MoreVertical.as_char()),
+            glyphs
+                .iter()
+                .any(|g| g.ch == crate::ui_icons::Icon::MoreVertical.as_char()),
             "address bar should render the browser menu icon"
         );
     }

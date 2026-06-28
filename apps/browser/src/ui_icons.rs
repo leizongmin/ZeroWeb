@@ -23,9 +23,6 @@
 //! | `Shield`               | `shield.svg`          | 站点权限             |
 //! | `VolumeOff`            | `volume-off.svg`      | 标签静音状态         |
 //! | `AlertTriangle`        | `alert-triangle.svg`  | 标签崩溃状态         |
-//! | `Copy`                 | `copy.svg`            | 复制（右键菜单）     |
-//! | `Search`               | `search.svg`          | 搜索（右键菜单）     |
-//! | `ExternalLink`         | `external-link.svg`   | 新标签页打开（右键菜单） |
 //! | `Sun` / `Moon` / `SunMoon` | `sun.svg` / `moon.svg` / `sun-moon.svg` | 主题切换（亮/暗/自动） |
 //!
 //! 另有一个 [`globe.svg`] 不走 [`Icon`] 枚举，作为默认 favicon 占位符由
@@ -71,9 +68,6 @@ pub enum Icon {
     Shield,
     VolumeOff,
     AlertTriangle,
-    Copy,
-    Search,
-    ExternalLink,
     Sun,
     Moon,
     SunMoon,
@@ -81,7 +75,7 @@ pub enum Icon {
 
 impl Icon {
     /// 所有图标变体，用于测试与一致性校验。新增变体时只需在此处追加。
-    pub const ALL: [Icon; 22] = [
+    pub const ALL: [Icon; 19] = [
         Icon::ChevronLeft,
         Icon::ChevronRight,
         Icon::Refresh,
@@ -98,9 +92,6 @@ impl Icon {
         Icon::Shield,
         Icon::VolumeOff,
         Icon::AlertTriangle,
-        Icon::Copy,
-        Icon::Search,
-        Icon::ExternalLink,
         Icon::Sun,
         Icon::Moon,
         Icon::SunMoon,
@@ -124,9 +115,6 @@ impl Icon {
             Icon::Shield => include_bytes!("../assets/icons/shield.svg"),
             Icon::VolumeOff => include_bytes!("../assets/icons/volume-off.svg"),
             Icon::AlertTriangle => include_bytes!("../assets/icons/alert-triangle.svg"),
-            Icon::Copy => include_bytes!("../assets/icons/copy.svg"),
-            Icon::Search => include_bytes!("../assets/icons/search.svg"),
-            Icon::ExternalLink => include_bytes!("../assets/icons/external-link.svg"),
             Icon::Sun => include_bytes!("../assets/icons/sun.svg"),
             Icon::Moon => include_bytes!("../assets/icons/moon.svg"),
             Icon::SunMoon => include_bytes!("../assets/icons/sun-moon.svg"),

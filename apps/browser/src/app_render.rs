@@ -1647,31 +1647,9 @@ impl BrowserApp {
                 self.chrome_palette.context_menu_text
             };
 
-            // 图标槽（左侧 20px 区域），仅在有 icon 时绘制。
-            let icon_size = 14.0 * s;
-            let icon_cx = menu_x + pad_h + icon_size * 0.5;
-            let text_x = if let Some(menu_icon) = item.icon() {
-                if let Some(ui_icon) = Self::map_menu_icon(menu_icon) {
-                    crate::ui_icons::render_icon(
-                        &mut self.font_loader,
-                        glyphs,
-                        ui_icon,
-                        icon_cx,
-                        row_y + row_h * 0.5,
-                        icon_size,
-                        text_color,
-                    );
-                    pad_h + icon_size + 8.0 * s
-                } else {
-                    pad_h
-                }
-            } else {
-                pad_h
-            };
-
             self.draw_ui_text(
                 item.label(),
-                menu_x + text_x,
+                menu_x + pad_h,
                 row_y + (row_h - font_size) * 0.5,
                 font_size,
                 text_color,
@@ -1692,24 +1670,6 @@ impl BrowserApp {
                 );
             }
         }
-    }
-
-    /// 把 browser-shell 的 UI-agnostic `MenuItemIcon` 映射到本 crate 的渲染图标。
-    /// 返回 None 表示该动作暂无对应图标资源（不绘制图标，仅显示文字）。
-    fn map_menu_icon(icon: zero_browser_shell::MenuItemIcon) -> Option<crate::ui_icons::Icon> {
-        use zero_browser_shell::MenuItemIcon as M;
-        Some(match icon {
-            M::Copy => crate::ui_icons::Icon::Copy,
-            M::Search => crate::ui_icons::Icon::Search,
-            M::OpenInNewTab | M::Open => crate::ui_icons::Icon::ExternalLink,
-            M::Reload => crate::ui_icons::Icon::Refresh,
-            M::Bookmark => crate::ui_icons::Icon::Star,
-            M::Back => crate::ui_icons::Icon::ChevronLeft,
-            M::Forward => crate::ui_icons::Icon::ChevronRight,
-            // 以下动作暂无专属图标资源，留待后续补齐 SVG 后映射。
-            M::Cut | M::Paste | M::SelectAll | M::Undo | M::Redo | M::Save | M::Print
-            | M::ViewSource | M::Inspect => return None,
-        })
     }
 
     /// 渲染链接悬停浮动状态栏（Chrome 风格：左下角胶囊，宽度随 URL 内容）
