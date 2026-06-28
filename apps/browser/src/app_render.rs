@@ -1444,23 +1444,37 @@ impl BrowserApp {
 
         let find_state = self.shell.find_state();
         if find_state.total_matches() > 0 {
-            let mut match_text = format!("{}/{}", find_state.current_match(), find_state.total_matches());
-            // 循环提示后缀
-            if let Some(wrap) = find_state.last_wrap() {
-                match_text.push_str(match wrap {
-                    FindWrapHint::WrappedToStart => "  ↻",
-                    FindWrapHint::WrappedToEnd => "  ↺",
-                });
-            }
+            // 色阶：当前项用主文本色强调，分隔符与总数用次要色，符合 Chrome 习惯。
+            let current_str = find_state.current_match().to_string();
+            let rest_str = format!("/{}", find_state.total_matches());
             let match_x = bar_x + bar_w - 130.0 * s;
+            let match_y = y + (bar_h - font_size) * 0.5;
+            let current_w = self.measure_ui_text_width(&current_str, font_size);
+            self.draw_ui_text(&current_str, match_x, match_y, font_size, self.chrome_palette.find_bar_text, glyphs);
             self.draw_ui_text(
-                &match_text,
-                match_x,
-                y + (bar_h - font_size) * 0.5,
+                &rest_str,
+                match_x + current_w,
+                match_y,
                 font_size,
                 self.chrome_palette.find_match_text,
                 glyphs,
             );
+            // 循环提示后缀
+            if let Some(wrap) = find_state.last_wrap() {
+                let suffix = match wrap {
+                    FindWrapHint::WrappedToStart => "  ↻",
+                    FindWrapHint::WrappedToEnd => "  ↺",
+                };
+                let rest_w = self.measure_ui_text_width(&rest_str, font_size);
+                self.draw_ui_text(
+                    suffix,
+                    match_x + current_w + rest_w,
+                    match_y,
+                    font_size,
+                    self.chrome_palette.find_match_text,
+                    glyphs,
+                );
+            }
         } else if !self.find_input.is_empty() {
             let no_match_x = bar_x + bar_w - 130.0 * s;
             self.draw_ui_text(
