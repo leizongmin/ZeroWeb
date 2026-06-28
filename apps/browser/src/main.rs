@@ -1731,6 +1731,9 @@ fn apply_window_chrome_action(app: &mut BrowserApp, window: &winit::window::Wind
         }
         WindowChromeAction::Close => {
             app.persist_user_data();
+            // 必须在 process::exit 前 kill 子进程：process::exit 跳过 Drop，
+            // 否则 zero-renderer.exe 孤儿会锁住自身 exe，下次 cargo build 报 os error 5。
+            app.shutdown_child_processes();
             std::process::exit(0);
         }
         WindowChromeAction::StartDrag => {

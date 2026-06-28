@@ -15,6 +15,9 @@ pub mod process;
 pub mod serialize;
 pub mod transport;
 
+#[cfg(windows)]
+pub mod job;
+
 pub use channel::*;
 pub use message::*;
 pub use paint_snapshot::*;

@@ -99,6 +99,11 @@ impl RendererHandle {
             .spawn()
             .map_err(|e| ProtocolError::Process(format!("启动渲染进程失败: {e}")))?;
 
+        // Windows：把子进程挂到进程级 Job Object，确保 browser 进程以任何方式退出
+        // （含 Ctrl+C / `process::exit` / 强杀）时，OS 自动 kill 该 renderer。
+        #[cfg(windows)]
+        crate::job::assign_child(child.id());
+
         let stdout = child
             .stdout
             .take()
