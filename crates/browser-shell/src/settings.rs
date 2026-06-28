@@ -83,6 +83,16 @@ impl SearchEngine {
             SearchEngine::Baidu => format!("https://www.baidu.com/s?wd={encoded}"),
         }
     }
+
+    /// 用户可见的搜索引擎名称（用于 UI 展示）。
+    pub fn display_name(self) -> &'static str {
+        match self {
+            SearchEngine::Google => "Google",
+            SearchEngine::Bing => "Bing",
+            SearchEngine::DuckDuckGo => "DuckDuckGo",
+            SearchEngine::Baidu => "百度",
+        }
+    }
 }
 
 /// 浏览器设置。

@@ -104,6 +104,19 @@ fn test_settings_search_engine_urls() {
 }
 
 #[test]
+fn search_engine_display_name_returns_non_empty() {
+    for &engine in &[
+        SearchEngine::Google,
+        SearchEngine::Bing,
+        SearchEngine::DuckDuckGo,
+        SearchEngine::Baidu,
+    ] {
+        let name = engine.display_name();
+        assert!(!name.is_empty(), "引擎显示名不应为空");
+    }
+}
+
+#[test]
 fn test_settings_custom_home_url() {
     let mut settings = BrowserSettings::new();
     settings.home_url = "https://zeroweb.dev".to_string();

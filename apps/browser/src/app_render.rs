@@ -1571,48 +1571,112 @@ impl BrowserApp {
                 ));
             }
 
-            let source_label = match sug.source() {
-                SuggestionSource::Bookmark => "★",
-                SuggestionSource::History => "◷",
-            };
-            let source_size = font_size * 0.82;
-            let text_x = bar_x + pad_h;
-            self.draw_ui_text(
-                source_label,
-                text_x,
-                row_y + pad_v,
-                source_size,
-                if sug.source() == SuggestionSource::Bookmark {
-                    self.chrome_palette.autocomplete_bookmark
-                } else {
-                    self.chrome_palette.autocomplete_url
-                },
-                glyphs,
-            );
+            // 来源标记：图标化（搜索=放大镜，书签=实心星，历史=时钟字符）
+            let icon_size = font_size * 0.95;
+            let icon_cx = bar_x + pad_h + icon_size * 0.5;
+            let icon_cy = row_y + row_h * 0.5;
+            let text_x = bar_x + pad_h + icon_size + 10.0 * s;
+            let title_area_w = (bar_w - (text_x - bar_x) - pad_h).max(0.0);
 
-            let title = sug.title();
-            let title_x = text_x + 22.0 * s;
-            let title_area_w = bar_w - pad_h * 2.0 - 22.0 * s;
-            let truncated_title = self.truncate_ui_text(title, title_area_w, title_size);
-            self.draw_ui_text(
-                &truncated_title,
-                title_x,
-                row_y + pad_v,
-                title_size,
-                self.chrome_palette.autocomplete_text,
-                glyphs,
-            );
-
-            let url = sug.url();
-            let truncated_url = self.truncate_ui_text(url, title_area_w, url_size);
-            self.draw_ui_text(
-                &truncated_url,
-                title_x,
-                row_y + pad_v + title_size + 2.0 * s,
-                url_size,
-                self.chrome_palette.autocomplete_url,
-                glyphs,
-            );
+            match sug.source() {
+                SuggestionSource::Search => {
+                    crate::ui_icons::render_icon(
+                        &mut self.font_loader,
+                        glyphs,
+                        crate::ui_icons::Icon::Search,
+                        icon_cx,
+                        icon_cy,
+                        icon_size,
+                        self.chrome_palette.autocomplete_url,
+                    );
+                    // 主标题：搜索词（深色，加粗感由字号体现）
+                    let title = sug.title();
+                    let truncated = self.truncate_ui_text(title, title_area_w, title_size);
+                    self.draw_ui_text(
+                        &truncated,
+                        text_x,
+                        row_y + pad_v,
+                        title_size,
+                        self.chrome_palette.autocomplete_text,
+                        glyphs,
+                    );
+                    // 副标题："<query> — 在 <Engine> 中搜索"（灰色）
+                    let engine_name = self.shell.settings().search_engine.display_name();
+                    let hint = format!("{truncated} — {engine_name} 搜索");
+                    let truncated_hint = self.truncate_ui_text(&hint, title_area_w, url_size);
+                    self.draw_ui_text(
+                        &truncated_hint,
+                        text_x,
+                        row_y + pad_v + title_size + 2.0 * s,
+                        url_size,
+                        self.chrome_palette.autocomplete_url,
+                        glyphs,
+                    );
+                }
+                SuggestionSource::Bookmark => {
+                    crate::ui_icons::render_icon(
+                        &mut self.font_loader,
+                        glyphs,
+                        crate::ui_icons::Icon::StarFilled,
+                        icon_cx,
+                        icon_cy,
+                        icon_size,
+                        self.chrome_palette.autocomplete_bookmark,
+                    );
+                    let title = sug.title();
+                    let truncated_title = self.truncate_ui_text(title, title_area_w, title_size);
+                    self.draw_ui_text(
+                        &truncated_title,
+                        text_x,
+                        row_y + pad_v,
+                        title_size,
+                        self.chrome_palette.autocomplete_text,
+                        glyphs,
+                    );
+                    let url = sug.url();
+                    let truncated_url = self.truncate_ui_text(url, title_area_w, url_size);
+                    self.draw_ui_text(
+                        &truncated_url,
+                        text_x,
+                        row_y + pad_v + title_size + 2.0 * s,
+                        url_size,
+                        self.chrome_palette.autocomplete_url,
+                        glyphs,
+                    );
+                }
+                SuggestionSource::History => {
+                    // 历史无专属图标，沿用时钟字符
+                    let source_size = font_size * 0.82;
+                    self.draw_ui_text(
+                        "◷",
+                        bar_x + pad_h,
+                        row_y + pad_v,
+                        source_size,
+                        self.chrome_palette.autocomplete_url,
+                        glyphs,
+                    );
+                    let title = sug.title();
+                    let truncated_title = self.truncate_ui_text(title, title_area_w, title_size);
+                    self.draw_ui_text(
+                        &truncated_title,
+                        text_x,
+                        row_y + pad_v,
+                        title_size,
+                        self.chrome_palette.autocomplete_text,
+                        glyphs,
+                    );
+                    let url = sug.url();
+                    let truncated_url = self.truncate_ui_text(url, title_area_w, url_size);
+                    self.draw_ui_text(
+                        &truncated_url,
+                        text_x,
+                        row_y + pad_v + title_size + 2.0 * s,
+                        url_size,
+                        self.chrome_palette.autocomplete_url,
+                        glyphs,
+                    );
+                }
+            }
         }
     }
 

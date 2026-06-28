@@ -68,6 +68,7 @@ pub enum Icon {
     Shield,
     VolumeOff,
     AlertTriangle,
+    Search,
     Sun,
     Moon,
     SunMoon,
@@ -75,7 +76,7 @@ pub enum Icon {
 
 impl Icon {
     /// 所有图标变体，用于测试与一致性校验。新增变体时只需在此处追加。
-    pub const ALL: [Icon; 19] = [
+    pub const ALL: [Icon; 20] = [
         Icon::ChevronLeft,
         Icon::ChevronRight,
         Icon::Refresh,
@@ -92,6 +93,7 @@ impl Icon {
         Icon::Shield,
         Icon::VolumeOff,
         Icon::AlertTriangle,
+        Icon::Search,
         Icon::Sun,
         Icon::Moon,
         Icon::SunMoon,
@@ -115,6 +117,7 @@ impl Icon {
             Icon::Shield => include_bytes!("../assets/icons/shield.svg"),
             Icon::VolumeOff => include_bytes!("../assets/icons/volume-off.svg"),
             Icon::AlertTriangle => include_bytes!("../assets/icons/alert-triangle.svg"),
+            Icon::Search => include_bytes!("../assets/icons/search.svg"),
             Icon::Sun => include_bytes!("../assets/icons/sun.svg"),
             Icon::Moon => include_bytes!("../assets/icons/moon.svg"),
             Icon::SunMoon => include_bytes!("../assets/icons/sun-moon.svg"),

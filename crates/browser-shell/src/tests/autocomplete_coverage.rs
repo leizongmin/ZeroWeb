@@ -60,7 +60,9 @@ fn test_autocomplete_default() {
     let history = History::new();
     let bookmarks = Bookmarks::new();
     let suggestions = autocomplete.suggest("test", &history, &bookmarks);
-    assert!(suggestions.is_empty());
+    // 无匹配数据时，非 URL 输入返回单条搜索建议
+    assert_eq!(suggestions.len(), 1);
+    assert_eq!(suggestions[0].source(), SuggestionSource::Search);
 }
 
 #[test]
@@ -75,7 +77,8 @@ fn test_autocomplete_with_max_results() {
     bookmarks.add("Example 3", "https://example3.com", None);
 
     let suggestions = autocomplete.suggest("example", &history, &bookmarks);
-    assert_eq!(suggestions.len(), 2); // max_results = 2
+    // max_results=2：1 条历史/书签 + 1 条搜索建议
+    assert_eq!(suggestions.len(), 2);
 }
 
 #[test]
@@ -84,9 +87,9 @@ fn test_autocomplete_with_max_results_zero_clamped() {
     let mut history = History::new();
     let bookmarks = Bookmarks::new();
     history.record("https://example.com", "Example");
-    // max_results 被限制为最小 1
+    // max_results 被限制为最小 1：history_cap=1，1 历史 + 1 搜索建议 = 2
     let suggestions = autocomplete.suggest("ex", &history, &bookmarks);
-    assert_eq!(suggestions.len(), 1);
+    assert_eq!(suggestions.len(), 2);
 }
 
 #[test]
@@ -100,9 +103,10 @@ fn test_autocomplete_bookmark_priority() {
     bookmarks.add("Example", "https://example.com", None);
 
     let suggestions = autocomplete.suggest("ex", &history, &bookmarks);
-    // 书签应优先（只出现一次）
-    assert_eq!(suggestions.len(), 1);
-    assert_eq!(suggestions[0].source(), SuggestionSource::Bookmark);
+    // 顶部搜索建议 + 1 条书签（书签优先于同 URL 历史）
+    assert_eq!(suggestions.len(), 2);
+    assert_eq!(suggestions[0].source(), SuggestionSource::Search);
+    assert_eq!(suggestions[1].source(), SuggestionSource::Bookmark);
 }
 
 #[test]
@@ -116,7 +120,8 @@ fn test_autocomplete_url_prefix_match() {
 
     let suggestions = autocomplete.suggest("https://ex", &history, &bookmarks);
     assert!(!suggestions.is_empty());
-    // URL 前缀匹配应排在前面
+    // 输入像 URL，不插入搜索建议；URL 前缀匹配排第一
+    assert_eq!(suggestions[0].source(), SuggestionSource::History);
     assert!(suggestions[0].url().starts_with("https://example.com"));
 }
 
@@ -133,7 +138,7 @@ fn test_autocomplete_title_contains_match() {
 }
 
 #[test]
-fn test_autocomplete_no_match() {
+fn test_autocomplete_no_match_yields_search() {
     let autocomplete = Autocomplete::new();
     let mut history = History::new();
     let bookmarks = Bookmarks::new();
@@ -141,7 +146,9 @@ fn test_autocomplete_no_match() {
     history.record("https://example.com", "Example");
 
     let suggestions = autocomplete.suggest("xyz", &history, &bookmarks);
-    assert!(suggestions.is_empty());
+    // 无匹配 + 非 URL 输入 → 单条搜索建议
+    assert_eq!(suggestions.len(), 1);
+    assert_eq!(suggestions[0].source(), SuggestionSource::Search);
 }
 
 #[test]
@@ -157,4 +164,39 @@ fn test_autocomplete_case_insensitive() {
 
     let suggestions = autocomplete.suggest("TITLE", &history, &bookmarks);
     assert!(!suggestions.is_empty());
+}
+
+// ── 搜索建议行为测试 ──
+
+#[test]
+fn search_suggestion_inserted_for_plain_word() {
+    let ac = Autocomplete::new();
+    let history = History::new();
+    let bookmarks = Bookmarks::new();
+    // 纯词、无点号 → 不像 URL → 顶部应有搜索建议
+    let results = ac.suggest("hello world", &history, &bookmarks);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].source(), SuggestionSource::Search);
+    assert_eq!(results[0].title(), "hello world");
+}
+
+#[test]
+fn search_suggestion_skipped_for_url_like_input() {
+    let ac = Autocomplete::new();
+    let history = History::new();
+    let bookmarks = Bookmarks::new();
+    // 形如 host.tld → 像 URL → 不插入搜索建议
+    let results = ac.suggest("example.com", &history, &bookmarks);
+    assert!(results.is_empty(), "URL 形式输入且无匹配应返回空");
+}
+
+#[test]
+fn search_suggestion_url_equals_query_for_normalize_handoff() {
+    let ac = Autocomplete::new();
+    let history = History::new();
+    let bookmarks = Bookmarks::new();
+    let results = ac.suggest("rust async", &history, &bookmarks);
+    let s = &results[0];
+    // url 与 title 一致，交给 normalize_url 转换为搜索引擎 URL
+    assert_eq!(s.url(), s.title());
 }

@@ -22,9 +22,11 @@ fn test_autocomplete_from_history() {
     let bookmarks = Bookmarks::new();
 
     let results = ac.suggest("git", &history, &bookmarks);
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].url(), "https://github.com");
-    assert_eq!(results[0].source(), SuggestionSource::History);
+    // 顶部搜索建议 + 1 条历史匹配
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].source(), SuggestionSource::Search);
+    assert_eq!(results[1].url(), "https://github.com");
+    assert_eq!(results[1].source(), SuggestionSource::History);
 }
 
 #[test]
@@ -35,9 +37,10 @@ fn test_autocomplete_from_bookmarks() {
     bookmarks.add("Rust Lang", "https://rust-lang.org", None);
 
     let results = ac.suggest("rust", &history, &bookmarks);
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].url(), "https://rust-lang.org");
-    assert_eq!(results[0].source(), SuggestionSource::Bookmark);
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].source(), SuggestionSource::Search);
+    assert_eq!(results[1].url(), "https://rust-lang.org");
+    assert_eq!(results[1].source(), SuggestionSource::Bookmark);
 }
 
 #[test]
@@ -48,10 +51,11 @@ fn test_autocomplete_bookmark_priority() {
     let mut bookmarks = Bookmarks::new();
     bookmarks.add("Example", "https://example.com", None);
 
-    // 同 URL 书签优先
+    // 同 URL 书签优先（搜索建议在最前，书签其次）
     let results = ac.suggest("example", &history, &bookmarks);
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].source(), SuggestionSource::Bookmark);
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].source(), SuggestionSource::Search);
+    assert_eq!(results[1].source(), SuggestionSource::Bookmark);
 }
 
 #[test]
@@ -62,19 +66,22 @@ fn test_autocomplete_title_match() {
     let bookmarks = Bookmarks::new();
 
     let results = ac.suggest("python", &history, &bookmarks);
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].url(), "https://docs.python.org");
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[1].url(), "https://docs.python.org");
 }
 
 #[test]
-fn test_autocomplete_no_match() {
+fn test_autocomplete_no_match_yields_search_suggestion() {
     let ac = Autocomplete::new();
     let mut history = History::new();
     history.record("https://example.com", "Example");
     let bookmarks = Bookmarks::new();
 
+    // 无历史/书签匹配时，非 URL 输入应在顶部返回一条搜索建议
     let results = ac.suggest("zzzzz", &history, &bookmarks);
-    assert!(results.is_empty());
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].source(), SuggestionSource::Search);
+    assert_eq!(results[0].title(), "zzzzz");
 }
 
 #[test]
@@ -87,7 +94,9 @@ fn test_autocomplete_max_results() {
     let bookmarks = Bookmarks::new();
 
     let results = ac.suggest("site", &history, &bookmarks);
-    assert!(results.len() <= 2);
+    // max_results=2：1 条历史 + 1 条搜索建议
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].source(), SuggestionSource::Search);
 }
 
 #[test]
@@ -98,7 +107,7 @@ fn test_autocomplete_case_insensitive() {
     let bookmarks = Bookmarks::new();
 
     let results = ac.suggest("github", &history, &bookmarks);
-    assert_eq!(results.len(), 1);
+    assert_eq!(results.len(), 2);
 }
 
 #[test]
@@ -111,7 +120,8 @@ fn test_autocomplete_url_prefix_ranked_higher() {
 
     let results = ac.suggest("https://example", &history, &bookmarks);
     assert!(!results.is_empty());
-    // URL prefix match should rank first
+    // 输入像 URL，不插入搜索建议；URL prefix match 排第一
+    assert_eq!(results[0].source(), SuggestionSource::History);
     assert!(results[0].url().starts_with("https://example"));
 }
 
@@ -122,7 +132,9 @@ fn test_autocomplete_with_max_results_zero_clamps() {
     let history = History::new();
     let bookmarks = Bookmarks::new();
     let results = ac.suggest("test", &history, &bookmarks);
-    assert!(results.is_empty()); // 无匹配数据，所以为空
+    // 无匹配数据时仅返回搜索建议（max_results 截断后仍保留 1 个槽位）
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].source(), SuggestionSource::Search);
 }
 
 #[test]
@@ -146,7 +158,9 @@ fn test_suggestion_equality() {
 fn test_browser_shell_suggest_empty() {
     let shell = BrowserShell::new();
     let results = shell.suggest("test");
-    assert!(results.is_empty());
+    // 空 shell + 非 URL 输入 → 单条搜索建议
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].source(), SuggestionSource::Search);
 }
 
 #[test]
@@ -158,8 +172,9 @@ fn test_browser_shell_suggest_from_history() {
     shell.on_page_loaded("Example");
 
     let results = shell.suggest("git");
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].url(), "https://github.com");
+    // 搜索建议 + 1 条历史
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[1].url(), "https://github.com");
 }
 
 #[test]
@@ -170,8 +185,8 @@ fn test_browser_shell_suggest_from_bookmarks() {
     shell.add_bookmark();
 
     let results = shell.suggest("rust");
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].source(), SuggestionSource::Bookmark);
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[1].source(), SuggestionSource::Bookmark);
 }
 
 // ── Autocomplete 边界测试 ──
@@ -183,7 +198,9 @@ fn test_autocomplete_unicode_query() {
     history.record("https://example.com/你好", "你好世界");
     let bookmarks = Bookmarks::new();
     let results = ac.suggest("你好", &history, &bookmarks);
-    assert_eq!(results.len(), 1, "Unicode 查询应匹配");
+    // 搜索建议 + 1 条历史匹配
+    assert_eq!(results.len(), 2, "Unicode 查询应匹配");
+    assert_eq!(results[0].source(), SuggestionSource::Search);
 }
 
 #[test]
