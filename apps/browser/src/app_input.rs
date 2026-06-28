@@ -767,12 +767,12 @@ impl BrowserApp {
                 }
                 "g" | "G" => {
                     // Ctrl+G：查找下一个（查找栏打开时）。Shift+Ctrl+G 上一个。
-                    if self.shell.find_state().is_active() {
-                        if self.shift_pressed {
-                            self.shell.find_previous();
-                        } else {
-                            self.shell.find_next();
-                        }
+                    let find_active = self.shell.find_state().is_active();
+                    if find_active && self.shift_pressed {
+                        self.shell.find_previous();
+                        self.needs_redraw = true;
+                    } else if find_active {
+                        self.shell.find_next();
                         self.needs_redraw = true;
                     }
                 }

@@ -380,16 +380,20 @@ fn test_absolute_in_relative_parent_with_padding() {
     // 绝对定位标记
     assert!(abs_box.is_absolute, "should be flagged as absolute");
 
-    // 绝对定位的坐标是相对于包含块的 content edge（不含 padding，由 taffy 决定）
-    // top=10, left=15 表示相对于包含块的偏移
+    // R787：abspos CB = 最近 positioned 祖先 padding-box（CSS §10.1）。extract 现把 abspos
+    // 的 LayoutBox.x/y 统一为「父 content-box 相对」（与普通子节点一致，去掉旧的 abspos
+    // border-box-相对 + 绘制层双计补偿 workaround）。物理位置 = padding-box + inset；
+    // 在 content-box 相对坐标下 = inset - padding（left 15 - padding_left 30 = -15，
+    // 表示在 content-box 起点左侧 15px = padding 区内，即 padding-box + 15）。绘制层
+    // 统一加父 content origin 后落地到正确像素位置（minimal 实测 (50,50)→(0,0)）。
     assert!(
-        (abs_box.x - 15.0).abs() < 2.0,
-        "abs x 偏移应约 15（left），实际 {}",
+        (abs_box.x - -15.0).abs() < 2.0,
+        "abs x 应为 left(15) - padding_left(30) = -15（content-box 相对），实际 {}",
         abs_box.x
     );
     assert!(
-        (abs_box.y - 10.0).abs() < 2.0,
-        "abs y 偏移应约 10（top），实际 {}",
+        (abs_box.y - -10.0).abs() < 2.0,
+        "abs y 应为 top(10) - padding_top(20) = -10（content-box 相对），实际 {}",
         abs_box.y
     );
     assert_eq!(abs_box.width, 80.0);

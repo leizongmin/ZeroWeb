@@ -821,10 +821,17 @@ impl LayoutEngine {
         if matches!(own_writing_mode, WritingModeValue::HorizontalTb) {
             for child in &mut children_boxes {
                 if child.is_absolute || child.is_fixed {
-                    continue;
+                    // R787 实验：CSS §10.1 abspos/fixed 的 CB = 最近 positioned 祖先
+                    // **padding-box**。taffy 给 abspos 的 location 是 content-box origin
+                    //（border+padding），减去 padding 得 padding-box origin（border），
+                    // 仍保持 abspos border-box 相对约定。viewport-CB abspos 由
+                    // adjust_absolute_pct_to_viewport 覆写 x/y，此处调整被覆盖，无冲突。
+                    child.x -= padding_left;
+                    child.y -= padding_top;
+                } else {
+                    child.x -= content_x;
+                    child.y -= content_y;
                 }
-                child.x -= content_x;
-                child.y -= content_y;
             }
         }
 
