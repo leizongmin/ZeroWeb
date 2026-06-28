@@ -286,7 +286,28 @@ impl BrowserApp {
                 self.shift_pressed = pressed;
                 return;
             }
+            "Alt" | "AltLeft" | "AltRight" => {
+                self.alt_pressed = pressed;
+                return;
+            }
             _ => {}
+        }
+
+        // Alt+Left/Right：浏览器后退/前进（不转发给页面，地址栏聚焦时也不拦截）
+        if self.alt_pressed && pressed {
+            match key {
+                "ArrowLeft" => {
+                    self.go_back();
+                    self.needs_redraw = true;
+                    return;
+                }
+                "ArrowRight" => {
+                    self.go_forward();
+                    self.needs_redraw = true;
+                    return;
+                }
+                _ => {}
+            }
         }
 
         if !self.address_bar_focused && key.len() == 1 && !self.ctrl_pressed && !self.cmd_pressed {
@@ -995,17 +1016,28 @@ impl BrowserApp {
             return;
         }
 
-        // 中键点击「+」→ 无痕标签页
+        // 中键点击：
+        // - 点「+」→ 无痕标签页
+        // - 点标签 → 关闭该标签（Chrome/Firefox 标配交互）
         if button == "Middle" {
             let s = self.scale_factor;
             let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
             let tab_y = layout::TAB_BAR_TOP_INSET * s;
             let y_f = y as f32;
+            let x_f = x as f32;
             if y_f >= tab_y && y_f < tab_strip_h {
+                // 先检测是否点中「+」按钮
                 let new_tab_x = self.new_tab_button_x();
-                if (x as f32) >= new_tab_x && (x as f32) < new_tab_x + layout::NEW_TAB_BTN_WIDTH * s {
+                if x_f >= new_tab_x && x_f < new_tab_x + layout::NEW_TAB_BTN_WIDTH * s {
                     self.new_private_tab(None);
                     return;
+                }
+                // 再检测是否点中某个标签
+                for &(id, tab_x, tab_w) in &self.tab_layout {
+                    if x_f >= tab_x && x_f < tab_x + tab_w {
+                        self.close_tab_by_id(id);
+                        return;
+                    }
                 }
             }
         }

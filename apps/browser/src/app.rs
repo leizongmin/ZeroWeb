@@ -223,6 +223,8 @@ pub struct BrowserApp {
     cmd_pressed: bool,
     /// Shift 键是否按住
     shift_pressed: bool,
+    /// Alt 键是否按住（用于 Alt+Left/Right 后退/前进）
+    alt_pressed: bool,
     /// 自动补全状态
     autocomplete: AutocompleteState,
     /// 查找栏输入文本
@@ -322,6 +324,7 @@ impl BrowserApp {
             ctrl_pressed: false,
             cmd_pressed: false,
             shift_pressed: false,
+            alt_pressed: false,
             autocomplete: AutocompleteState::new(),
             find_input: String::new(),
             tab_layout: Vec::new(),
