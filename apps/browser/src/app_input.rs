@@ -390,13 +390,13 @@ impl BrowserApp {
                         self.needs_redraw = true;
                     }
                 }
-                k if key_matches(k, "Left") => {
+                k if key_matches(k, "Left")
                     // 子菜单展开时按左键：收起，焦点回到父项
-                    if self.context_menu.open_sub_menu.is_some() {
-                        self.context_menu.open_sub_menu = None;
-                        self.context_menu.sub_menu_hovered = None;
-                        self.needs_redraw = true;
-                    }
+                    && self.context_menu.open_sub_menu.is_some() =>
+                {
+                    self.context_menu.open_sub_menu = None;
+                    self.context_menu.sub_menu_hovered = None;
+                    self.needs_redraw = true;
                 }
                 "Enter" => {
                     if self.context_menu.open_sub_menu.is_some() && self.context_menu.sub_menu_hovered.is_some() {
