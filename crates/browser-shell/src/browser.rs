@@ -275,6 +275,30 @@ impl BrowserShell {
         Some(new_id)
     }
 
+    /// 最近关闭的标签快照（最新在尾部），只读访问，用于菜单展示。
+    pub fn recently_closed(&self) -> impl Iterator<Item = &ClosedTab> {
+        self.recently_closed.iter().rev()
+    }
+
+    /// 恢复指定 URL 对应的最近关闭标签（从队列中移除该条）。
+    /// 用于从菜单列表中点击恢复特定标签。返回新标签 ID。
+    pub fn reopen_closed_by_url(&mut self, url: &str) -> Option<TabId> {
+        // 从尾部查找最新的匹配项。
+        let pos = self
+            .recently_closed
+            .iter()
+            .rposition(|c| c.url.as_deref() == Some(url))?;
+        let closed = self.recently_closed.remove(pos)?;
+        let new_id = self.tabs.create_tab(None);
+        if let Some(url) = closed.url.as_deref() {
+            self.navigate(url);
+            if let (Some(title), Some(tab)) = (closed.title.as_deref(), self.tabs.active_tab_mut()) {
+                tab.set_title(title);
+            }
+        }
+        Some(new_id)
+    }
+
     /// 切换到指定标签页。
     pub fn switch_tab(&mut self, id: TabId) {
         self.tabs.switch_to(id);

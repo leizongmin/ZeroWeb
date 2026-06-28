@@ -1609,6 +1609,24 @@ impl BrowserApp {
                     UiLanguage::EnUs => "Clear history…",
                 },
             ));
+            // 最近关闭的标签（id 编码为 closed_tab:<url>）。
+            let closed: Vec<_> = self.shell.recently_closed().take(5).collect();
+            if !closed.is_empty() {
+                items.push(MenuItem::separator());
+                let header_label = match language {
+                    UiLanguage::ZhCn => "最近关闭的标签",
+                    UiLanguage::EnUs => "Recently closed",
+                };
+                items.push(MenuItem::action_disabled("closed_header", header_label));
+                for c in closed {
+                    let url = c.url.as_deref().unwrap_or("");
+                    if url.is_empty() {
+                        continue;
+                    }
+                    let label = c.title.as_deref().filter(|t| !t.is_empty()).unwrap_or(url);
+                    items.push(MenuItem::action(&format!("closed_tab:{url}"), label));
+                }
+            }
             items
         };
 
@@ -2266,6 +2284,11 @@ impl BrowserApp {
         }
         if let Some(url) = item_id.strip_prefix("bookmark:") {
             self.navigate_to(url);
+            return;
+        }
+        if let Some(url) = item_id.strip_prefix("closed_tab:") {
+            self.shell.reopen_closed_by_url(url);
+            self.needs_redraw = true;
             return;
         }
         match item_id.as_str() {
