@@ -373,6 +373,11 @@ impl ProcessTabBackend {
         }
     }
 
+    /// 强制刷新前清除该 URL 的缓存条目（绕过 HTTP 缓存）。
+    pub fn invalidate_url_cache(&self, tab_id: TabId, url: &str) {
+        self.fetch_proxy.invalidate_url(tab_id, url);
+    }
+
     /// 后退（IPC）。
     pub fn go_back(&mut self, tab_id: TabId) {
         self.send_to_renderer(tab_id, IpcMessageKind::GoBack);
