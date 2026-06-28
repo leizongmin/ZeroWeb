@@ -60,6 +60,16 @@ impl TabManager {
         self.process_backend.is_some()
     }
 
+    /// 显式终止所有渲染子进程。
+    ///
+    /// 供 `BrowserApp::shutdown_child_processes` 调用，确保 `std::process::exit`
+    /// 之前子进程被 kill；`Drop` 不会被 `process::exit` 触发。
+    pub fn shutdown_child_processes(&mut self) {
+        if let Some(ref mut backend) = self.process_backend {
+            backend.shutdown_all();
+        }
+    }
+
     /// 更新是否允许执行页面 JavaScript。
     pub fn set_javascript_enabled(&mut self, enabled: bool) {
         if self.javascript_enabled == enabled {

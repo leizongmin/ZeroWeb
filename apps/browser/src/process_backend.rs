@@ -728,6 +728,18 @@ fn element_hit_from_ipc(result: HitTestElementResultParams) -> Option<ElementHit
     })
 }
 
+impl ProcessTabBackend {
+    /// 显式关闭所有渲染子进程。
+    ///
+    /// `std::process::exit` 会跳过 `Drop`，因此主进程的所有最终退出路径
+    /// （窗口关闭按钮、Ctrl+C、事件循环错误）都必须显式调用此方法，
+    /// 否则 `zero-renderer.exe` 子进程会成为孤儿，持有自身可执行文件句柄，
+    /// 导致下次 `cargo build` 时无法覆盖二进制（Windows `os error 5`）。
+    pub fn shutdown_all(&mut self) {
+        self.manager.shutdown_all();
+    }
+}
+
 impl Drop for ProcessTabBackend {
     fn drop(&mut self) {
         self.manager.shutdown_all();

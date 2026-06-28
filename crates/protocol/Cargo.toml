@@ -10,6 +10,18 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 bincode = "1"
 
+# Windows：用 Job Object 绑定 renderer 子进程，browser 进程退出（含 Ctrl+C / abort / 强杀）
+# 时 OS 自动 kill 整个 Job，避免孤儿 renderer 锁住自身 exe。
+# 注意：`CreateJobObjectW` 签名引用 `SECURITY_ATTRIBUTES`，windows-sys 0.59 把它 cfg-gate
+# 在 `Win32_Security` feature 上（即使我们传 null），必须一并启用。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 criterion = { workspace = true }
 

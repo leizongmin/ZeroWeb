@@ -1669,6 +1669,15 @@ impl BrowserApp {
             tracing::warn!(%err, "failed to save bookmarks");
         }
     }
+
+    /// 显式终止所有 `zero-renderer` 子进程。
+    ///
+    /// 必须在 `std::process::exit` 之前调用 —— `process::exit` 跳过 `Drop`，
+    /// 会让 `zero-renderer.exe` 子进程成为孤儿，继续锁定自身可执行文件，
+    /// 导致下次构建覆盖二进制时 `os error 5 拒绝访问`。
+    pub fn shutdown_child_processes(&mut self) {
+        self.tabs.shutdown_child_processes();
+    }
 }
 
 // 输入处理方法（键盘、鼠标、IME、自动补全、上下文菜单）
