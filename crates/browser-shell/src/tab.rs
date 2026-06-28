@@ -326,6 +326,19 @@ impl TabManager {
         id
     }
 
+    /// 创建标签页但**不**切换为活跃（后台打开），返回新标签 id。
+    /// 用于 Ctrl+点击链接等"在新标签打开但不离开当前页"场景。
+    pub fn create_tab_background(&mut self, url: Option<&str>) -> TabId {
+        let tab = match url {
+            Some(url) => Tab::new(url),
+            None => Tab::new_empty(),
+        };
+        let id = tab.id();
+        self.tabs.push(tab);
+        // active_index 保持不变，新标签在后台。
+        id
+    }
+
     /// 创建无痕标签页并设为活跃。
     pub fn create_private_tab(&mut self, url: Option<&str>) -> TabId {
         let tab = match url {
