@@ -14,19 +14,17 @@ impl BrowserApp {
 
     /// 构建浏览器 UI 渲染图元（物理像素坐标）。
     ///
-    /// 返回 `(fills, glyphs, overlay_fills, overlay_glyphs)`：
+    /// 返回 `ChromeScene`：`(fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows)`。
     /// `overlay_fills` 和 `overlay_glyphs` 在所有 fills/glyphs 之后绘制，
     /// 用于确保上下文菜单等浮层不被其他内容覆盖。
-    fn build_scene(
-        &mut self,
-        width: u32,
-        height: u32,
-    ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>, Vec<FillPrimitive>, Vec<GlyphDraw>) {
+    /// `chrome_shadows` 是浏览器壳层产生的阴影（如页面视口 drop shadow）。
+    fn build_scene(&mut self, width: u32, height: u32) -> ChromeScene {
         let s = self.scale_factor;
         let mut fills = Vec::new();
         let mut glyphs = Vec::new();
         let mut overlay_fills = Vec::new();
         let mut overlay_glyphs = Vec::new();
+        let mut chrome_shadows: Vec<ShadowPrimitive> = Vec::new();
         let font_size = layout::CHROME_FONT_SIZE * s;
 
         // 1. 整体背景
@@ -90,6 +88,7 @@ impl BrowserApp {
             self.chrome_palette.page_bg,
         ));
         let (frame_x, frame_y, frame_w, frame_h) = self.page_frame_rect_for(width, height);
+        self.render_page_frame_shadow(&mut chrome_shadows, frame_x, frame_y, frame_w, frame_h);
         self.render_page_frame(&mut fills, frame_x, frame_y, frame_w, frame_h, s);
         let (content_x, content_y, content_w, _) = self.page_content_rect_for(width, height);
 
@@ -137,7 +136,7 @@ impl BrowserApp {
         // 19. Wayland 非最大化：自绘窗口外框（无系统装饰时与桌面区分）
         self.render_custom_window_frame_border(&mut overlay_fills, width, height, s);
 
-        (fills, glyphs, overlay_fills, overlay_glyphs)
+        (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows)
     }
 
     /// 获取 WebView 的额外图元（渐变、阴影、圆角矩形、线段、路径、变换、裁剪、滤镜、混合模式）。
@@ -750,7 +749,12 @@ impl BrowserApp {
                         glyphs,
                     );
                 }
-                if page_kind != AddressBarPageKind::Secure {
+                // favicon 绘制策略：
+                // - Secure：已画 Lock，不画 favicon。
+                // - Insecure：已画警告标记，且不安全页不应让 favicon 抢占安全语义 → 不画 favicon。
+                // - Internal/Local：已画 i 标记，不再叠加 favicon（标签上已显示 favicon）。
+                // - Unknown（非 http/https/file/zero）：画 favicon 作为站点识别。
+                if matches!(page_kind, AddressBarPageKind::Unknown) {
                     if let Some(tab_id) = self.shell.active_tab_id() {
                         crate::tab_favicon::render_tab_favicon(
                             &mut self.font_loader,
@@ -1107,6 +1111,32 @@ impl BrowserApp {
                 break;
             }
         }
+    }
+
+    /// 渲染页面视口 drop shadow（非最大化时；最大化/全屏时跳过）。
+    ///
+    /// 在 `render_page_frame` 之前调用，阴影绘制在页面背景之下、chrome 背景之上。
+    fn render_page_frame_shadow(&self, shadows: &mut Vec<ShadowPrimitive>, x: f32, y: f32, w: f32, h: f32) {
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        if self.window_is_maximized || self.window_is_fullscreen {
+            return;
+        }
+        let s = self.scale_factor;
+        let blur = layout::PAGE_FRAME_SHADOW_BLUR * s;
+        let offset_y = layout::PAGE_FRAME_SHADOW_OFFSET_Y * s;
+        let alpha = layout::PAGE_FRAME_SHADOW_ALPHA;
+        // 阴影颜色：黑色按 alpha 叠加。亮色/暗色主题都用黑底低不透明度，避免额外配色。
+        let color = Color { r: 0, g: 0, b: 0, a: alpha };
+        shadows.push(ShadowPrimitive {
+            rect: Rect::new(x, y, w, h),
+            color,
+            offset_x: 0.0,
+            offset_y,
+            blur_radius: blur,
+            spread_radius: 0.0,
+        });
     }
 
     /// 渲染页面视口背景（外圈边框色圆角 + 内圈页面底色）
@@ -1630,8 +1660,10 @@ impl BrowserApp {
 
             let is_hovered = self.context_menu.hovered_index == Some(i);
             let is_disabled = !item.enabled();
+            let is_sub_open = self.context_menu.open_sub_menu == Some(i);
 
-            if is_hovered && !is_disabled {
+            // hover 或子菜单展开时高亮（submenu 父项展开时保持高亮）。
+            if (is_hovered || is_sub_open) && !is_disabled {
                 fills.push(rect_fill(
                     menu_x + border,
                     row_y,
@@ -1656,7 +1688,7 @@ impl BrowserApp {
                 glyphs,
             );
 
-            // 子菜单右侧箭头（当前默认菜单未使用 SubMenu，但模型已支持）。
+            // 子菜单右侧箭头。
             if item.is_sub_menu() {
                 let arrow_cx = menu_x + menu_w - pad_h - 6.0 * s;
                 crate::ui_icons::render_icon(
@@ -1667,6 +1699,58 @@ impl BrowserApp {
                     row_y + row_h * 0.5,
                     12.0 * s,
                     text_color,
+                );
+            }
+        }
+
+        // 渲染展开的子菜单面板（右侧浮层）。
+        if let Some(parent_idx) = self.context_menu.open_sub_menu
+            && let Some(parent) = self.context_menu.items.get(parent_idx)
+            && let Some(children) = parent.children()
+            && !children.is_empty()
+        {
+            let sub_x = menu_x + menu_w + 1.0 * s;
+            let sub_y = menu_y + parent_idx as f32 * row_h;
+            let sub_h = children.len() as f32 * row_h;
+            push_rounded_rect_fill(fills, sub_x, sub_y, menu_w, sub_h, radius, self.chrome_palette.context_menu_separator);
+            push_rounded_rect_fill(
+                fills,
+                sub_x + border,
+                sub_y + border,
+                menu_w - 2.0 * border,
+                sub_h - 2.0 * border,
+                (radius - border).max(0.0),
+                self.chrome_palette.context_menu_bg,
+            );
+
+            for (ci, child) in children.iter().enumerate() {
+                let crow_y = sub_y + ci as f32 * row_h;
+                if child.is_separator() {
+                    continue;
+                }
+                let c_hovered = self.context_menu.sub_menu_hovered == Some(ci);
+                let c_disabled = !child.enabled();
+                if c_hovered && !c_disabled {
+                    fills.push(rect_fill(
+                        sub_x + border,
+                        crow_y,
+                        menu_w - 2.0 * border,
+                        row_h,
+                        self.chrome_palette.context_menu_hover_bg,
+                    ));
+                }
+                let c_color = if c_disabled {
+                    self.chrome_palette.page_hint
+                } else {
+                    self.chrome_palette.context_menu_text
+                };
+                self.draw_ui_text(
+                    child.label(),
+                    sub_x + pad_h,
+                    crow_y + (row_h - font_size) * 0.5,
+                    font_size,
+                    c_color,
+                    glyphs,
                 );
             }
         }

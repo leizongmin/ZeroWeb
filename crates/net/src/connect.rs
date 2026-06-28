@@ -111,9 +111,16 @@ fn message_indicates_proxy_failure(msg: &str) -> bool {
 
 /// 若 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY 任一已设置，返回其变量名（用于错误消息提示）。
 fn env_proxy_var() -> Option<&'static str> {
-    ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"]
-        .into_iter()
-        .find(|key| std::env::var(key).map(|v| !v.is_empty()).unwrap_or(false))
+    [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ]
+    .into_iter()
+    .find(|key| std::env::var(key).map(|v| !v.is_empty()).unwrap_or(false))
 }
 
 fn error_chain_matches(e: &reqwest::Error, pred: impl Fn(&str) -> bool) -> bool {
@@ -196,7 +203,14 @@ mod tests {
     /// 在本模块内，无其他测试会读取代理相关环境变量，故安全。
     #[test]
     fn env_proxy_var_unset_and_set() {
-        for key in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] {
+        for key in [
+            "HTTPS_PROXY",
+            "https_proxy",
+            "HTTP_PROXY",
+            "http_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+        ] {
             // edition 2024: 修改进程环境变量需要 unsafe。
             unsafe { std::env::remove_var(key) };
         }
