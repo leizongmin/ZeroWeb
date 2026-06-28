@@ -1757,7 +1757,8 @@ impl BrowserApp {
                     UiLanguage::ZhCn => "查看全部历史",
                     UiLanguage::EnUs => "View all history",
                 },
-            ));
+            )
+            .with_shortcut(format!("{}H", mod_prefix())));
             items.push(MenuItem::action(
                 "history_clear_all",
                 match language {
@@ -1820,7 +1821,8 @@ impl BrowserApp {
                     UiLanguage::ZhCn => "为此标签页添加书签",
                     UiLanguage::EnUs => "Bookmark this tab",
                 },
-            ));
+            )
+            .with_shortcut(format!("{}D", mod_prefix())));
             items
         };
 
@@ -1846,7 +1848,8 @@ impl BrowserApp {
                     UiLanguage::ZhCn => "查看全部下载",
                     UiLanguage::EnUs => "View all downloads",
                 },
-            ));
+            )
+            .with_shortcut(format!("{}J", mod_prefix())));
             items.push(MenuItem::action("downloads_clear_completed", clear_label));
             items
         };
@@ -1881,7 +1884,8 @@ impl BrowserApp {
                 MenuItem::separator(),
                 MenuItem::action("browser_menu_about", browser_menu_label(BrowserMenuLabel::AboutBrowser, language)),
                 MenuItem::separator(),
-                MenuItem::action("browser_menu_settings", browser_menu_label(BrowserMenuLabel::Settings, language)),
+                MenuItem::action("browser_menu_settings", browser_menu_label(BrowserMenuLabel::Settings, language))
+                    .with_shortcut(format!("{},", mod_prefix())),
             ],
             hovered_index: None,
             open_sub_menu: None,
