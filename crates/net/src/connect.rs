@@ -73,7 +73,13 @@ pub(crate) fn map_reqwest_error(e: reqwest::Error) -> NetError {
         let detail = deepest_error_message(&e);
         return NetError::Proxy(format!("cannot connect via {}{detail}", proxy_source_hint(),));
     }
-    NetError::Network(e.to_string())
+    // 普通网络错误：若环境代理变量已设置，附在消息里便于排查
+    // （reqwest 默认会透明走系统代理，但握手失败常不带 proxy 关键字）。
+    let msg = e.to_string();
+    if let Some(key) = env_proxy_var() {
+        return NetError::Network(format!("{msg} [env {key} set]"));
+    }
+    NetError::Network(msg)
 }
 
 fn is_proxy_connect_error(e: &reqwest::Error) -> bool {
@@ -86,6 +92,13 @@ fn is_proxy_connect_error(e: &reqwest::Error) -> bool {
 fn message_indicates_proxy_failure(msg: &str) -> bool {
     let m = msg.to_ascii_lowercase();
     m.contains("tunnel") || m.contains("proxy")
+}
+
+/// 若 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY 任一已设置，返回其变量名（用于错误消息提示）。
+fn env_proxy_var() -> Option<&'static str> {
+    ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"]
+        .into_iter()
+        .find(|key| std::env::var(key).map(|v| !v.is_empty()).unwrap_or(false))
 }
 
 fn error_chain_matches(e: &reqwest::Error, pred: impl Fn(&str) -> bool) -> bool {
@@ -148,7 +161,7 @@ pub(crate) fn send_with_ipv4_fallback(
 
 #[cfg(test)]
 mod tests {
-    use super::message_indicates_proxy_failure;
+    use super::{env_proxy_var, message_indicates_proxy_failure};
 
     #[test]
     fn proxy_tunnel_message_is_recognized() {
@@ -160,5 +173,23 @@ mod tests {
         assert!(!message_indicates_proxy_failure(
             "error sending request for url (https://example.com/)"
         ));
+    }
+
+    /// 覆盖 `env_proxy_var`：未设时返回 None，设置后返回变量名。
+    /// 注意：该测试通过 `set_var/remove_var` 修改进程级环境变量，
+    /// 因此依赖 `RUST_TEST_THREADS=1` 或同模块测试不会并发读这些变量。
+    /// 在本模块内，无其他测试会读取代理相关环境变量，故安全。
+    #[test]
+    fn env_proxy_var_unset_and_set() {
+        for key in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] {
+            // edition 2024: 修改进程环境变量需要 unsafe。
+            unsafe { std::env::remove_var(key) };
+        }
+        assert!(env_proxy_var().is_none());
+
+        unsafe { std::env::set_var("HTTPS_PROXY", "http://127.0.0.1:7078") };
+        assert_eq!(env_proxy_var(), Some("HTTPS_PROXY"));
+
+        unsafe { std::env::remove_var("HTTPS_PROXY") };
     }
 }
