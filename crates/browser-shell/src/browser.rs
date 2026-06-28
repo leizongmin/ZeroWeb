@@ -309,6 +309,11 @@ impl BrowserShell {
         self.tabs.switch_to(id);
     }
 
+    /// 移动标签到指定索引位置（拖拽重排序用）。
+    pub fn move_tab(&mut self, id: TabId, to_index: usize) -> bool {
+        self.tabs.move_tab(id, to_index)
+    }
+
     /// 获取活跃标签页 ID。
     pub fn active_tab_id(&self) -> Option<TabId> {
         self.tabs.active_tab_id()

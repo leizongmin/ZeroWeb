@@ -88,6 +88,23 @@ pub enum WindowChromeAction {
     StartDrag,
 }
 
+/// 标签拖拽状态。鼠标按下标签后，移动超过阈值即进入拖拽，
+/// 释放时按位置重排序。
+#[derive(Debug, Clone, Copy)]
+pub struct TabDragState {
+    pub tab_id: TabId,
+    /// 鼠标按下时的物理 x 坐标。
+    pub press_x: f32,
+    /// 标签在按下时左边缘的物理 x 坐标。
+    pub tab_origin_x: f32,
+    /// 标签宽度（按下时记录）。
+    pub tab_w: f32,
+    /// 当前鼠标物理 x 坐标。
+    pub current_x: f32,
+    /// 是否已越过拖拽阈值（进入实际拖拽）。
+    pub active: bool,
+}
+
 /// 自动补全建议缓存
 struct AutocompleteState {
     /// 当前显示的建议列表
@@ -275,6 +292,8 @@ pub struct BrowserApp {
     /// 后台标签的最近 title 快照，用于检测 title 变化触发 attention。
     /// 仅缓存非活跃标签的 title；活跃标签的 title 变化不需要提醒。
     background_tab_titles: HashMap<TabId, String>,
+    /// 当前标签拖拽状态。None 表示未拖拽。
+    tab_drag: Option<TabDragState>,
     /// 系统颜色方案偏好
     color_scheme: PrefersColorSchemeValue,
     /// 浏览器外壳配色
@@ -363,6 +382,7 @@ impl BrowserApp {
             last_tab_click_time: None,
             last_tab_click_id: None,
             background_tab_titles: HashMap::new(),
+            tab_drag: None,
             color_scheme,
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
             cached_window_theme: None,
