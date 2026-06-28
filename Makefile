@@ -49,7 +49,7 @@ target/test-guard: scripts/test-guard.rs
 # 全量测试（被 test-guard 包裹）。无人值守 / rally / CI 请用此 target，
 # 不要裸跑 cargo test。可调阈值：./target/test-guard --per-proc-mem 8 --total-mem 20 -- cargo test --workspace
 test: target/test-guard
-	./target/test-guard -- cargo test --workspace
+	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo test --workspace -- --test-threads=2
 
 # WPT reftest（同样被 test-guard 包裹）。
 reftest: target/test-guard
