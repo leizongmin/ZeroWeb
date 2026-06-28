@@ -108,4 +108,20 @@ product-smoke）**零回归**，是明确的 CSS-correctness bug 修复（spec �
     扣减（部件2，headless oracle 无 scrollbar 故 oracle-neutral）+ scrollbar 绘制（部件3）
     + scroll offset 应用——仍为多会话（max-width-105/106/107 需 1+2+3 全）。
   - 本修复不阻塞、不依赖 scroll-container；可独立 ship。
+
+================================================================================
+6. oracle 实测补量（同 session，oracle-shots 已缓存 13793 张 @ tests/wpt-runner/oracle-shots）
+================================================================================
+
+reftest-oracle filter `css/CSS2/box`（命中 box + box-display，131 案）@ HEAD（含 R793）：
+  - **css/CSS2/box：8/8（100%）oracle-pass（z_vs_chr<1%）** —— 纯 box/overflow 用例全部
+    与 chromium 一致 → R793 **零回归**确证（overflow 几何修正未破坏任何 box 用例）。
+  - css/CSS2/box-display：31/120（26%），top 发散全为 insert-inline-in-blocks /
+    insert-block-in-inlines 系列（**匿名块生成 = R109 结构性**，与 overflow 裁剪无关）。
+
+裁决（oracle 量级）：R793 在直接相关 dir（box）**oracle-neutral**（box 本就 100%），
+发散用例为 R109 结构性——与「divergence-reduction / 非 PASS-flip / 影响窄（仅
+overflow+padding+溢出内容条带）」预期一致。R793 真实收益是 **spec 正确性 + 零回归**
+（类 R776），非计数 lever；max-width-105/106/107（normal-flow，857 案）的 R793 边际
+影响未单独 A/B（其残余主因 scrollbar/scroll 部件缺失，R791 已定多会话）。
 ================================================================================
