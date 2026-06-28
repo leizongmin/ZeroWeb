@@ -662,9 +662,7 @@ impl BrowserApp {
                 }
                 "t" | "T" if self.shift_pressed => {
                     // Ctrl+Shift+T：恢复最近关闭的标签。
-                    if self.shell.reopen_last_closed_tab().is_some() {
-                        self.needs_redraw = true;
-                    }
+                    self.needs_redraw |= self.shell.reopen_last_closed_tab().is_some();
                 }
                 "n" | "N" if self.shift_pressed => {
                     // Ctrl+Shift+N：新建无痕标签页，聚焦地址栏。
