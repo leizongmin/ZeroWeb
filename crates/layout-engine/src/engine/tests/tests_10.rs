@@ -587,6 +587,46 @@ fn test_img_intrinsic_sizing_with_attributes() {
     );
 }
 
+/// R784：`<canvas>` 是替换元素，HTML width/height 属性给出固有尺寸，与 `<img>` 一致——
+/// CSS 单侧显式时另一侧按固有宽高比推导。旧实现 canvas 未被 apply_replaced_element_sizing
+/// 处理（仅 img）→ 当普通 block 拉伸填满父宽；且 HTML-attr 分支 auto 侧用 HTML 绝对值
+/// 而非按比例推导（aspect-ratio-intrinsic-size 簇 canvas 渲染错误）。
+#[test]
+fn test_canvas_one_css_side_explicit_derives_other_via_aspect() {
+    let (mut doc, body) = make_doc_with_body();
+    let canvas = doc.create_element("canvas");
+    {
+        let elem = doc.get_mut(canvas).unwrap();
+        if let zero_dom::NodeKind::Element(e) = &mut elem.kind {
+            e.set_attribute("width", "10");
+            e.set_attribute("height", "20"); // 固有比 10:20 = 1:2
+        }
+    }
+    doc.append_child(body, canvas).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Block;
+    s.height = LengthValue::Px(100.0); // CSS height 显式，width auto
+    styles.insert(canvas, s);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let cb = find_child_by_node_id(&result.root, canvas).expect("canvas found");
+    // height 显式 100，width 按 10:20 固有比推导 = 100 * 10/20 = 50（旧实现会拉满父宽或用 HTML 10）
+    assert!(
+        (cb.height - 100.0).abs() < 1.0,
+        "canvas height should be 100 (CSS explicit), got {}",
+        cb.height
+    );
+    assert!(
+        (cb.width - 50.0).abs() < 1.5,
+        "canvas width should be aspect-derived ~50 (intrinsic 10:20 @ height 100), got {}",
+        cb.width
+    );
+}
+
 /// 测试 <img> 元素有 CSS 尺寸时覆盖 HTML 属性。
 #[test]
 fn test_img_css_overrides_html_attributes() {

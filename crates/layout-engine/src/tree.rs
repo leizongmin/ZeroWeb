@@ -185,8 +185,11 @@ fn apply_replaced_element_sizing(
 
     let tag = elem.local_name();
 
-    // 目前仅处理 <img> 元素
-    if tag != "img" {
+    // 处理 <img> 和 <canvas>：都是替换元素，HTML width/height 属性给出固有尺寸
+    // （canvas 的 bitmap 大小）。R784：canvas 此前未处理→被当普通 block 拉伸填满父宽
+    // （aspect-ratio-intrinsic-size 簇 canvas 渲染 784px）。video/iframe 等暂无 driving
+    // reftest，不处理。
+    if tag != "img" && tag != "canvas" {
         return;
     }
 
@@ -217,15 +220,16 @@ fn apply_replaced_element_sizing(
                 taffy_style.aspect_ratio = Some(w / h);
             }
 
-            // 当 CSS width 为 auto 时，使用 HTML 属性作为固有宽度
-            if matches!(computed.width, LengthValue::Auto) {
+            // CSS §10 替换元素尺寸：auto 侧从显式侧按固有宽高比推导（而非直接用 HTML
+            // 绝对值）。仅当两侧 CSS 都 auto 时用 HTML 固有尺寸；一侧显式（可为 %）时，
+            // auto 侧由 taffy 按 aspect_ratio 从显式侧解析后推导。R784：旧实现 auto 侧
+            // 无条件设为 HTML 属性值，致 <canvas width=10 height=10 style="height:100%">
+            // 的 width 仍为 HTML 值 10（应按 1:1 比例从 height 100px 推导为 100px）。
+            if css_w_auto && css_h_auto {
                 taffy_style.size.width = taffy::style::Dimension::Length(w);
-            }
-
-            // 当 CSS height 为 auto 时，使用 HTML 属性作为固有高度
-            if matches!(computed.height, LengthValue::Auto) {
                 taffy_style.size.height = taffy::style::Dimension::Length(h);
             }
+            // 一侧 auto、一侧显式：不设 auto 侧尺寸，taffy 按 aspect_ratio 推导
         }
         (Some(w), None) if w > 0.0 => {
             // 仅有 width：设置宽度，高度由 aspect_ratio 推导
