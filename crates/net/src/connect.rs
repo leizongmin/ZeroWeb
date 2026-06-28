@@ -54,6 +54,12 @@ pub(crate) fn build_blocking_client(user_agent: &str, timeout_secs: u64) -> Clie
         builder = builder.http1_only();
         tracing::info!("HTTP/1.1 only (ZERO_HTTP2=0)");
     }
+    if no_proxy_enabled() {
+        // 绕过所有代理（系统注册表代理 + HTTP_PROXY/HTTPS_PROXY 等环境变量），
+        // 用于诊断代理本身故障或强制直连的场景。
+        builder = builder.no_proxy();
+        tracing::info!("proxy disabled (ZERO_NOPROXY=1)");
+    }
     builder.build().expect("failed to build HTTP client")
 }
 
@@ -62,6 +68,15 @@ fn http2_enabled() -> bool {
     std::env::var("ZERO_HTTP2")
         .ok()
         .is_none_or(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+}
+
+/// 默认尊重系统/环境代理；设 `ZERO_NOPROXY=1`（或 `true`，大小写不敏感）可完全绕过代理直连。
+fn no_proxy_enabled() -> bool {
+    match std::env::var("ZERO_NOPROXY").ok().as_deref() {
+        Some("1") => true,
+        Some(v) => v.eq_ignore_ascii_case("true"),
+        None => false,
+    }
 }
 
 /// 将 reqwest 错误映射为 `NetError`；代理相关失败单独归类以便 UI/日志识别。
@@ -161,7 +176,7 @@ pub(crate) fn send_with_ipv4_fallback(
 
 #[cfg(test)]
 mod tests {
-    use super::{env_proxy_var, message_indicates_proxy_failure};
+    use super::{env_proxy_var, message_indicates_proxy_failure, no_proxy_enabled};
 
     #[test]
     fn proxy_tunnel_message_is_recognized() {
@@ -191,5 +206,25 @@ mod tests {
         assert_eq!(env_proxy_var(), Some("HTTPS_PROXY"));
 
         unsafe { std::env::remove_var("HTTPS_PROXY") };
+    }
+
+    /// 覆盖 `no_proxy_enabled`：未设/乱设时为 false，仅 `1`/`true` 时为 true。
+    /// 读写的 `ZERO_NOPROXY` 与其他测试不重叠，无并发风险。
+    #[test]
+    fn no_proxy_enabled_truthy_values() {
+        unsafe { std::env::remove_var("ZERO_NOPROXY") };
+        assert!(!no_proxy_enabled());
+
+        for bad in ["0", "false", "no", "yes", ""] {
+            unsafe { std::env::set_var("ZERO_NOPROXY", bad) };
+            assert!(!no_proxy_enabled(), "ZERO_NOPROXY={bad:?} should be false");
+        }
+
+        for good in ["1", "true", "TRUE", "True"] {
+            unsafe { std::env::set_var("ZERO_NOPROXY", good) };
+            assert!(no_proxy_enabled(), "ZERO_NOPROXY={good:?} should be true");
+        }
+
+        unsafe { std::env::remove_var("ZERO_NOPROXY") };
     }
 }
