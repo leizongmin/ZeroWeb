@@ -268,6 +268,10 @@ pub struct BrowserApp {
     zoom_indicator_start: Option<Instant>,
     /// 上次设置的窗口标题缓存，用于检测变化避免重复 set_title。
     last_window_title: String,
+    /// 上次左键点击标签的时间，用于判定双击关闭。
+    last_tab_click_time: Option<Instant>,
+    /// 上次左键点击的标签 id。
+    last_tab_click_id: Option<TabId>,
     /// 系统颜色方案偏好
     color_scheme: PrefersColorSchemeValue,
     /// 浏览器外壳配色
@@ -353,6 +357,8 @@ impl BrowserApp {
             loading_anim_start: None,
             zoom_indicator_start: None,
             last_window_title: String::new(),
+            last_tab_click_time: None,
+            last_tab_click_id: None,
             color_scheme,
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
             cached_window_theme: None,
