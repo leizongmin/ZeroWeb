@@ -1808,6 +1808,16 @@ impl BrowserApp {
         let language = UiLanguage::detect_from_env();
         let pinned = self.shell.tab(tab_id).is_some_and(|t| t.is_pinned());
         let muted = self.shell.tab(tab_id).is_some_and(|t| t.is_muted());
+        // close_others：仅当多于 1 个标签时可用。
+        // close_to_right：仅当目标标签右侧还有其他标签时可用。
+        let tab_count = self.shell.tab_count();
+        let can_close_others = tab_count > 1;
+        // 收集所有 tab id，判断目标是否是最后一个。
+        let all_ids: Vec<TabId> = self.shell.tabs().map(|t| t.id()).collect();
+        let can_close_to_right = all_ids
+            .iter()
+            .position(|&id| id == tab_id)
+            .is_some_and(|idx| idx + 1 < all_ids.len());
         let pin_label = if pinned {
             tab_menu_label(TabMenuLabel::Unpin, language)
         } else {
@@ -1832,8 +1842,22 @@ impl BrowserApp {
                 MenuItem::separator(),
                 MenuItem::action("tab_close", tab_menu_label(TabMenuLabel::Close, language))
                     .with_shortcut(format!("{}W", mod_prefix())),
-                MenuItem::action("tab_close_others", tab_menu_label(TabMenuLabel::CloseOthers, language)),
-                MenuItem::action("tab_close_to_right", tab_menu_label(TabMenuLabel::CloseToRight, language)),
+                {
+                    let mut item = MenuItem::action(
+                        "tab_close_others",
+                        tab_menu_label(TabMenuLabel::CloseOthers, language),
+                    );
+                    item.set_enabled(can_close_others);
+                    item
+                },
+                {
+                    let mut item = MenuItem::action(
+                        "tab_close_to_right",
+                        tab_menu_label(TabMenuLabel::CloseToRight, language),
+                    );
+                    item.set_enabled(can_close_to_right);
+                    item
+                },
             ],
             hovered_index: None,
             open_sub_menu: None,
