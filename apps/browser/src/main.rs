@@ -5,9 +5,16 @@
 
 #![cfg_attr(test, allow(unused_imports))]
 #![cfg_attr(test, allow(unused_variables))]
-// Windows 发布构建用 GUI 子系统，避免运行 .exe 时弹出控制台窗口；
-// 测试构建保留控制台子系统（否则 test 输出不可见）。
-#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
+// Windows 子系统选择（编译期）：
+// - 默认（打包发布）：GUI 子系统，双击 .exe 不弹控制台黑窗。
+// - 启用 `windows-console` feature（开发脚本 browser.ps1 / browser-cpu.ps1）：
+//   console 子系统，tracing 日志直接输出到调用方控制台，Ctrl+C 可终止。
+// 测试构建始终保留 console 子系统（否则 test 输出不可见）。
+// 注意：zero-renderer.exe 始终用 GUI 子系统（由 browser 通过管道 spawn，不能弹窗）。
+#![cfg_attr(
+    all(windows, not(test), not(feature = "windows-console")),
+    windows_subsystem = "windows"
+)]
 #![allow(unused_comparisons)]
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::absurd_extreme_comparisons)]

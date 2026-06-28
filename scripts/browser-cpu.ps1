@@ -30,7 +30,9 @@ try {
     }
 
     Write-Host "ZeroBrowser: building zero-browser and zero-renderer (release)..."
-    cargo build --release -p zero-browser -p zero-renderer
+    # 启用 windows-console feature：让 zero-browser 走 console 子系统，
+    # tracing 日志输出到当前控制台、Ctrl+C 可终止；打包构建默认 GUI 子系统。
+    cargo build --release -p zero-browser -p zero-renderer --features zero-browser/windows-console
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }

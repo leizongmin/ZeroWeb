@@ -9,6 +9,12 @@ license.workspace = true
 name = "zero-browser"
 path = "src/main.rs"
 
+# 开发构建保留控制台子系统（tracing 日志可见、Ctrl+C 终止）；
+# 打包构建不启用该 feature，默认走 GUI 子系统（双击 .exe 不弹黑窗）。
+[features]
+default = []
+windows-console = []
+
 [dependencies]
 zero-browser-shell = { workspace = true }
 zero-webview = { workspace = true }
