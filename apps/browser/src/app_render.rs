@@ -109,6 +109,14 @@ impl BrowserApp {
         // 11b. 页面滚动条（overlay，始终显示于溢出时）
         self.render_page_scrollbars(&mut overlay_fills, width, height);
 
+        // 11c. 装饰层（视口圆角遮罩 / 边框 / 窗口外框）必须先绘制，
+        //      随后所有交互浮层（自动补全 / 链接状态栏 / 查找栏 / 下载面板 /
+        //      上下文菜单）才不会被这些装饰盖住。装饰仅用于边界视觉，
+        //      不参与交互，因此应位于交互浮层之下。
+        self.render_page_frame_corner_masks(&mut overlay_fills, width, height, s);
+        self.render_page_frame_border(&mut overlay_fills, frame_x, frame_y, frame_w, frame_h, s);
+        self.render_custom_window_frame_border(&mut overlay_fills, width, height, s);
+
         // 12. 查找栏与下载面板在 overlay 层绘制（浮动，不占布局高度）
 
         // 13. 自动补全下拉
@@ -129,12 +137,6 @@ impl BrowserApp {
         if self.context_menu.visible {
             self.render_context_menu(&mut overlay_fills, &mut overlay_glyphs, s);
         }
-
-        // 18–19. 圆角遮罩与视口边框（无圆角时跳过）
-        self.render_page_frame_corner_masks(&mut overlay_fills, width, height, s);
-        self.render_page_frame_border(&mut overlay_fills, frame_x, frame_y, frame_w, frame_h, s);
-        // 19. Wayland 非最大化：自绘窗口外框（无系统装饰时与桌面区分）
-        self.render_custom_window_frame_border(&mut overlay_fills, width, height, s);
 
         (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows)
     }
