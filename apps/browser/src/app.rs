@@ -1557,6 +1557,37 @@ impl BrowserApp {
         self.start_tab_load(tab_id, url);
     }
 
+    /// 强制刷新当前页（Ctrl+F5 / Ctrl+Shift+R）：清除该 URL 缓存后重新加载。
+    pub fn refresh_page_bypass_cache(&mut self) {
+        self.shell.refresh();
+
+        let tab_id = match self.shell.active_tab_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let url = match self.shell.active_tab().and_then(|t| t.url().map(|s| s.to_string())) {
+            Some(u) => u,
+            None => return,
+        };
+
+        if url.starts_with("http://") || url.starts_with("https://") {
+            if self.shell.active_tab_id() == Some(tab_id)
+                && let Some(tab) = self.shell.active_tab_mut()
+            {
+                tab.set_loading(true);
+            }
+            self.ensure_webview(tab_id);
+            self.sync_webview_viewport();
+            tracing::info!("Tab {} hard reload (bypass cache): {url}", tab_id.0);
+            self.tabs.navigate_bypass_cache(tab_id, url);
+            self.needs_redraw = true;
+        } else {
+            // 非 http(s) 页面（本地、zero://）无 HTTP 缓存，走普通刷新。
+            self.start_tab_load(tab_id, url);
+        }
+    }
+
     /// 在新标签页打开内部 HTML 文档（查看源代码、检查元素等）。
     pub fn open_internal_document_tab(&mut self, html: String, url: &str, title: &str) {
         let tab_id = self.shell.new_tab(Some(url));

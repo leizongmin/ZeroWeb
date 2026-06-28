@@ -93,6 +93,15 @@ impl TabFetchProxy {
         }
     }
 
+    /// 强制刷新前清除指定 URL 的缓存条目（绕过 HTTP 缓存）。
+    /// 仅清除该 tab 对应缓存（普通/无痕）中的主资源条目。
+    pub fn invalidate_url(&self, tab_id: TabId, url: &str) {
+        let cache = self.cache_for(tab_id);
+        if let Ok(mut cache) = cache.lock() {
+            cache.remove(url);
+        }
+    }
+
     /// 取消 Tab 当前 pending fetch。
     pub fn cancel_tab(&mut self, tab_id: TabId) {
         let epoch = self.tab_epochs.entry(tab_id).or_insert(0);

@@ -346,6 +346,16 @@ impl BrowserApp {
             return;
         }
 
+        // F5 刷新，Ctrl+F5 强制刷新（绕过缓存）。
+        if key == "F5" && pressed {
+            if self.ctrl_pressed || self.cmd_pressed {
+                self.refresh_page_bypass_cache();
+            } else {
+                self.refresh_page();
+            }
+            return;
+        }
+
         // F3 查找下一个（复用上次查询）。Shift+F3 上一个。
         // 查找栏关闭时自动打开并用 last_find_query 查找。
         if key == "F3" && pressed {
@@ -737,6 +747,10 @@ impl BrowserApp {
                 "w" | "W" => {
                     self.close_active_tab();
                 }
+                "r" | "R" if self.shift_pressed => {
+                    // Ctrl+Shift+R：强制刷新（绕过 HTTP 缓存）。
+                    self.refresh_page_bypass_cache();
+                }
                 "r" | "R" => {
                     self.refresh_page();
                 }
@@ -830,9 +844,6 @@ impl BrowserApp {
             "Home" => {
                 let home = self.shell.settings().home_url.clone();
                 self.navigate_to(&home);
-            }
-            "F5" => {
-                self.refresh_page();
             }
             "f" => {
                 self.find_input.clear();

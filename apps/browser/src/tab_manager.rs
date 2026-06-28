@@ -163,6 +163,16 @@ impl TabManager {
         }
     }
 
+    /// 强制刷新：清除该 URL 的缓存条目后再 navigate（绕过 HTTP 缓存）。
+    pub fn navigate_bypass_cache(&mut self, tab_id: TabId, url: String) {
+        self.ensure_tab(tab_id);
+        if let Some(ref backend) = self.process_backend {
+            backend.invalidate_url_cache(tab_id, &url);
+        }
+        // 清除后走正常 navigate 流程。
+        self.navigate(tab_id, url);
+    }
+
     /// 同步加载 HTML（测试与 zero:// 页面）。
     pub fn load_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>, url: Option<&str>) {
         self.ensure_tab(tab_id);
