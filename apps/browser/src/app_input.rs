@@ -1124,6 +1124,21 @@ impl BrowserApp {
                 }
                 if self.page_selection_drag {
                     self.page_selection_drag = false;
+                    // 拖拽释放落在地址栏：把选中文本填入地址栏（拖拽填充语义）。
+                    if self.address_bar_hit_test(x as f32, y as f32) {
+                        if let Some(text) = self.page_selection_text() {
+                            self.address_bar.set_text(text.clone());
+                            self.address_bar.set_cursor(
+                                self.address_bar.text().len(),
+                                false,
+                            );
+                            self.address_bar_focused = true;
+                            self.address_bar.select_all();
+                            self.update_autocomplete();
+                            self.needs_redraw = true;
+                        }
+                        return;
+                    }
                     if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32) {
                         let collapsed = self.page_selection.get(&tab_id).is_none_or(|s| s.is_collapsed());
                         if collapsed {
@@ -1554,23 +1569,26 @@ impl BrowserApp {
     }
 
     fn copy_page_selection(&self) -> bool {
-        let Some(tab_id) = self.shell.active_tab_id() else {
-            return false;
-        };
-        let Some(sel) = self.page_selection.get(&tab_id) else {
-            return false;
-        };
-        if sel.is_collapsed() {
-            return false;
+        match self.page_selection_text() {
+            Some(text) if !text.is_empty() => crate::clipboard::write_text(&text),
+            _ => false,
         }
-        let Some(glyphs) = self.page_glyphs(tab_id) else {
-            return false;
-        };
+    }
+
+    /// 取当前页面选中的文本（不写入剪贴板）。无选区返回 None。
+    fn page_selection_text(&self) -> Option<String> {
+        let tab_id = self.shell.active_tab_id()?;
+        let sel = self.page_selection.get(&tab_id)?;
+        if sel.is_collapsed() {
+            return None;
+        }
+        let glyphs = self.page_glyphs(tab_id)?;
         let text = GlyphSelection::selected_text(&glyphs, sel);
         if text.is_empty() {
-            return false;
+            None
+        } else {
+            Some(text)
         }
-        crate::clipboard::write_text(&text)
     }
 
     fn page_doc_point(&self, x_f: f32, y_f: f32) -> Option<(TabId, f32, f32)> {
