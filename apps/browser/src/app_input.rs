@@ -302,26 +302,30 @@ impl BrowserApp {
                     self.needs_redraw = true;
                 }
                 k if key_matches(k, "Up") && !self.context_menu.items.is_empty() => {
-                    let next = self
-                        .context_menu
-                        .hovered_index
-                        .map(|i| {
-                            if i > 0 {
-                                i - 1
-                            } else {
-                                self.context_menu.items.len() - 1
-                            }
-                        })
-                        .unwrap_or(self.context_menu.items.len() - 1);
+                    let len = self.context_menu.items.len();
+                    let start = self.context_menu.hovered_index.unwrap_or(len);
+                    let mut next = start;
+                    for step in 1..=len {
+                        let candidate = (start + len - step) % len;
+                        if self.context_menu_menu_item_activatable(candidate) {
+                            next = candidate;
+                            break;
+                        }
+                    }
                     self.context_menu.hovered_index = Some(next);
                     self.needs_redraw = true;
                 }
                 k if key_matches(k, "Down") && !self.context_menu.items.is_empty() => {
-                    let next = self
-                        .context_menu
-                        .hovered_index
-                        .map(|i| (i + 1) % self.context_menu.items.len())
-                        .unwrap_or(0);
+                    let len = self.context_menu.items.len();
+                    let start = self.context_menu.hovered_index.map(|i| i + 1).unwrap_or(0);
+                    let mut next = self.context_menu.hovered_index.unwrap_or(0);
+                    for step in 0..len {
+                        let candidate = (start + step) % len;
+                        if self.context_menu_menu_item_activatable(candidate) {
+                            next = candidate;
+                            break;
+                        }
+                    }
                     self.context_menu.hovered_index = Some(next);
                     self.needs_redraw = true;
                 }
@@ -1025,7 +1029,7 @@ impl BrowserApp {
 
             if x_f >= addr_bar_x && x_f <= addr_bar_x + self.address_bar_layout().2 {
                 if self.address_bar_trailing_slot_hit_test(x_f, y_f, 0) {
-                    self.shell.add_bookmark();
+                    self.shell.toggle_current_bookmark();
                     self.needs_redraw = true;
                     return;
                 }
@@ -1352,34 +1356,19 @@ impl BrowserApp {
             visible: true,
             context_type: ContextType::Page,
             items: vec![
-                browser_menu_label(BrowserMenuLabel::NewTab, language).to_string(),
-                browser_menu_label(BrowserMenuLabel::NewPrivateTab, language).to_string(),
-                "---".to_string(),
-                browser_menu_label(BrowserMenuLabel::History, language).to_string(),
-                browser_menu_label(BrowserMenuLabel::Downloads, language).to_string(),
-                browser_menu_label(BrowserMenuLabel::BookmarksManager, language).to_string(),
-                "---".to_string(),
-                browser_menu_label(BrowserMenuLabel::BookmarkThisTab, language).to_string(),
-                bookmarks_bar_label.to_string(),
-                "---".to_string(),
-                browser_menu_label(BrowserMenuLabel::AboutBrowser, language).to_string(),
-                "---".to_string(),
-                browser_menu_label(BrowserMenuLabel::Settings, language).to_string(),
-            ],
-            item_ids: vec![
-                Some("browser_menu_new_tab".to_string()),
-                Some("browser_menu_new_private_tab".to_string()),
-                None,
-                Some("browser_menu_history".to_string()),
-                Some("browser_menu_downloads".to_string()),
-                Some("browser_menu_bookmarks".to_string()),
-                None,
-                Some("browser_menu_add_bookmark".to_string()),
-                Some("browser_menu_toggle_bookmarks_bar".to_string()),
-                None,
-                Some("browser_menu_about".to_string()),
-                None,
-                Some("browser_menu_settings".to_string()),
+                MenuItem::action("browser_menu_new_tab", browser_menu_label(BrowserMenuLabel::NewTab, language)),
+                MenuItem::action("browser_menu_new_private_tab", browser_menu_label(BrowserMenuLabel::NewPrivateTab, language)),
+                MenuItem::separator(),
+                MenuItem::action("browser_menu_history", browser_menu_label(BrowserMenuLabel::History, language)),
+                MenuItem::action("browser_menu_downloads", browser_menu_label(BrowserMenuLabel::Downloads, language)),
+                MenuItem::action("browser_menu_bookmarks", browser_menu_label(BrowserMenuLabel::BookmarksManager, language)),
+                MenuItem::separator(),
+                MenuItem::action("browser_menu_add_bookmark", browser_menu_label(BrowserMenuLabel::BookmarkThisTab, language)),
+                MenuItem::action("browser_menu_toggle_bookmarks_bar", bookmarks_bar_label),
+                MenuItem::separator(),
+                MenuItem::action("browser_menu_about", browser_menu_label(BrowserMenuLabel::AboutBrowser, language)),
+                MenuItem::separator(),
+                MenuItem::action("browser_menu_settings", browser_menu_label(BrowserMenuLabel::Settings, language)),
             ],
             hovered_index: None,
             x: bx + bw - layout::CONTEXT_MENU_WIDTH * s,
@@ -1396,15 +1385,53 @@ impl BrowserApp {
         let s = self.scale_factor;
         let (slot_x, slot_y, slot_w, slot_h) = self.address_bar_trailing_slot_rect(1);
         let language = UiLanguage::detect_from_env();
-        let message = match language {
-            UiLanguage::ZhCn => "此站点尚未请求任何权限",
-            UiLanguage::EnUs => "This site has not requested any permissions",
+
+        // 取当前标签页 URL → Origin，查询真实权限状态。
+        let current_url: Option<String> = self
+            .shell
+            .active_tab()
+            .and_then(|t| t.url())
+            .map(|u| u.to_string());
+        let permissions: Vec<(zero_security::permission::PermissionName, zero_security::permission::PermissionState)> =
+            if let Some(url_str) = current_url.as_deref() {
+                match zero_security::origin::Origin::parse(url_str) {
+                    Ok(origin) => self.permissions.get_all_for_origin(&origin),
+                    Err(_) => Vec::new(),
+                }
+            } else {
+                Vec::new()
+            };
+
+        let items: Vec<MenuItem> = if permissions.is_empty() {
+            vec![MenuItem::action_disabled(
+                "no_permissions",
+                match language {
+                    UiLanguage::ZhCn => "此站点尚未请求任何权限",
+                    UiLanguage::EnUs => "This site has not requested any permissions",
+                },
+            )]
+        } else {
+            permissions
+                .iter()
+                .map(|(name, state)| {
+                    let label = permission_label(name, language);
+                    let state_str = match (state, language) {
+                        (zero_security::permission::PermissionState::Granted, UiLanguage::ZhCn) => "已允许",
+                        (zero_security::permission::PermissionState::Granted, UiLanguage::EnUs) => "Allowed",
+                        (zero_security::permission::PermissionState::Denied, UiLanguage::ZhCn) => "已阻止",
+                        (zero_security::permission::PermissionState::Denied, UiLanguage::EnUs) => "Blocked",
+                        (zero_security::permission::PermissionState::Prompt, UiLanguage::ZhCn) => "每次询问",
+                        (zero_security::permission::PermissionState::Prompt, UiLanguage::EnUs) => "Ask",
+                    };
+                    MenuItem::action_disabled("permission_entry", &format!("{label}：{state_str}"))
+                })
+                .collect()
         };
+
         self.context_menu = ContextMenuState {
             visible: true,
             context_type: ContextType::Page,
-            items: vec![message.to_string()],
-            item_ids: vec![None],
+            items,
             hovered_index: None,
             x: slot_x + slot_w - layout::CONTEXT_MENU_WIDTH * s,
             y: slot_y + slot_h + 4.0 * s,
@@ -1449,26 +1476,15 @@ impl BrowserApp {
             visible: true,
             context_type: ContextType::Page,
             items: vec![
-                tab_menu_label(TabMenuLabel::Reload, language).to_string(),
-                pin_label.to_string(),
-                mute_label.to_string(),
-                "---".to_string(),
-                tab_menu_label(TabMenuLabel::Duplicate, language).to_string(),
-                "---".to_string(),
-                tab_menu_label(TabMenuLabel::Close, language).to_string(),
-                tab_menu_label(TabMenuLabel::CloseOthers, language).to_string(),
-                tab_menu_label(TabMenuLabel::CloseToRight, language).to_string(),
-            ],
-            item_ids: vec![
-                Some("tab_reload".to_string()),
-                Some("tab_pin".to_string()),
-                Some("tab_mute".to_string()),
-                None,
-                Some("tab_duplicate".to_string()),
-                None,
-                Some("tab_close".to_string()),
-                Some("tab_close_others".to_string()),
-                Some("tab_close_to_right".to_string()),
+                MenuItem::action("tab_reload", tab_menu_label(TabMenuLabel::Reload, language)),
+                MenuItem::action("tab_pin", pin_label),
+                MenuItem::action("tab_mute", mute_label),
+                MenuItem::separator(),
+                MenuItem::action("tab_duplicate", tab_menu_label(TabMenuLabel::Duplicate, language)),
+                MenuItem::separator(),
+                MenuItem::action("tab_close", tab_menu_label(TabMenuLabel::Close, language)),
+                MenuItem::action("tab_close_others", tab_menu_label(TabMenuLabel::CloseOthers, language)),
+                MenuItem::action("tab_close_to_right", tab_menu_label(TabMenuLabel::CloseToRight, language)),
             ],
             hovered_index: None,
             x: x as f32,
@@ -1550,28 +1566,7 @@ impl BrowserApp {
         };
 
         let menu = ContextMenu::new(context_type);
-        let items: Vec<String> = menu
-            .items()
-            .iter()
-            .map(|mi| {
-                if mi.is_separator() {
-                    "---".to_string()
-                } else {
-                    mi.label().to_string()
-                }
-            })
-            .collect();
-        let item_ids: Vec<Option<String>> = menu
-            .items()
-            .iter()
-            .map(|mi| {
-                if mi.is_separator() {
-                    None
-                } else {
-                    Some(mi.id().to_string())
-                }
-            })
-            .collect();
+        let items: Vec<MenuItem> = menu.items().to_vec();
 
         let (page_doc_x, page_doc_y) = if context_type == ContextType::Page
             || context_type == ContextType::Link
@@ -1588,7 +1583,6 @@ impl BrowserApp {
             visible: true,
             context_type,
             items,
-            item_ids,
             hovered_index: None,
             x: x as f32,
             y: y as f32,
@@ -1606,8 +1600,8 @@ impl BrowserApp {
             None => return,
         };
 
-        let item_id = match self.context_menu.item_ids.get(idx) {
-            Some(Some(id)) => id.clone(),
+        let item_id = match self.context_menu.items.get(idx) {
+            Some(item) if item.enabled() && !item.is_separator() => item.id().to_string(),
             _ => return,
         };
 
@@ -1725,6 +1719,14 @@ impl BrowserApp {
     }
 
     /// 上下文菜单命中检测
+    /// 菜单项是否可激活（非分隔线、非 disabled）。键盘导航和点击共用。
+    fn context_menu_menu_item_activatable(&self, idx: usize) -> bool {
+        self.context_menu
+            .items
+            .get(idx)
+            .is_some_and(|item| !item.is_separator() && item.enabled())
+    }
+
     fn context_menu_hit_test(&self, x: f64, y: f64) -> Option<usize> {
         if !self.context_menu.visible {
             return None;
@@ -1745,7 +1747,10 @@ impl BrowserApp {
         }
 
         let idx = ((y_f - menu_y) / row_h) as usize;
-        if idx < self.context_menu.items.len() && self.context_menu.item_ids.get(idx).is_some_and(|id| id.is_some()) {
+        if let Some(item) = self.context_menu.items.get(idx)
+            && item.enabled()
+            && !item.is_separator()
+        {
             Some(idx)
         } else {
             None
@@ -1790,5 +1795,37 @@ impl BrowserApp {
         if let Some(tab) = self.shell.active_tab() {
             self.address_bar.set_text(tab.url().unwrap_or("").to_string());
         }
+    }
+}
+
+/// 权限名称的本地化标签（用于站点权限菜单展示）。
+fn permission_label(
+    name: &zero_security::permission::PermissionName,
+    language: UiLanguage,
+) -> &'static str {
+    use zero_security::permission::PermissionName::*;
+    match (name, language) {
+        (Camera, UiLanguage::ZhCn) => "摄像头",
+        (Camera, UiLanguage::EnUs) => "Camera",
+        (Microphone, UiLanguage::ZhCn) => "麦克风",
+        (Microphone, UiLanguage::EnUs) => "Microphone",
+        (Geolocation, UiLanguage::ZhCn) => "位置信息",
+        (Geolocation, UiLanguage::EnUs) => "Location",
+        (Notifications, UiLanguage::ZhCn) => "通知",
+        (Notifications, UiLanguage::EnUs) => "Notifications",
+        (ClipboardRead, UiLanguage::ZhCn) => "剪贴板读取",
+        (ClipboardRead, UiLanguage::EnUs) => "Clipboard read",
+        (ClipboardWrite, UiLanguage::ZhCn) => "剪贴板写入",
+        (ClipboardWrite, UiLanguage::EnUs) => "Clipboard write",
+        (Fullscreen, UiLanguage::ZhCn) => "全屏",
+        (Fullscreen, UiLanguage::EnUs) => "Fullscreen",
+        (PointerLock, UiLanguage::ZhCn) => "鼠标指针锁定",
+        (PointerLock, UiLanguage::EnUs) => "Pointer lock",
+        (ScreenCapture, UiLanguage::ZhCn) => "屏幕录制",
+        (ScreenCapture, UiLanguage::EnUs) => "Screen capture",
+        (BackgroundSync, UiLanguage::ZhCn) => "后台同步",
+        (BackgroundSync, UiLanguage::EnUs) => "Background sync",
+        (PersistentStorage, UiLanguage::ZhCn) => "持久化存储",
+        (PersistentStorage, UiLanguage::EnUs) => "Persistent storage",
     }
 }

@@ -290,9 +290,7 @@ impl BrowserApp {
             if tab.is_private() {
                 label = format!("无痕 · {label}");
             }
-            if tab.is_muted() {
-                label = format!("静音 · {label}");
-            }
+            // muted / crashed 不再用文本前缀，改为在 close 按钮左侧绘制独立状态图标。
             tabs.push(TabPaint {
                 id: tab.id(),
                 x,
@@ -393,6 +391,50 @@ impl BrowserApp {
 
             if tab.is_pinned {
                 continue;
+            }
+
+            // muted / crashed 状态图标（位于 close 按钮左侧）。loading/attention 已单独绘制。
+            if tab.is_crashed {
+                let st_x = tab.x + tab.tab_w - 52.0 * s;
+                let st_hit = 24.0 * s;
+                let st_cx = st_x + st_hit / 2.0;
+                let st_cy = tab_y + tab_bar_h / 2.0;
+                let st_hovered = self.pointer_in_rect(st_x, tab_y, st_hit, tab_bar_h);
+                if st_hovered {
+                    push_circle_fill(fills, st_cx, st_cy, st_hit, self.chrome_palette.tab_hover_bg);
+                }
+                crate::ui_icons::render_icon(
+                    &mut self.font_loader,
+                    glyphs,
+                    crate::ui_icons::Icon::AlertTriangle,
+                    st_cx,
+                    st_cy,
+                    14.0 * s,
+                    self.chrome_palette.tab_crashed,
+                );
+            } else if tab.is_muted {
+                let st_x = tab.x + tab.tab_w - 52.0 * s;
+                let st_hit = 24.0 * s;
+                let st_cx = st_x + st_hit / 2.0;
+                let st_cy = tab_y + tab_bar_h / 2.0;
+                let st_hovered = self.pointer_in_rect(st_x, tab_y, st_hit, tab_bar_h);
+                if st_hovered {
+                    push_circle_fill(fills, st_cx, st_cy, st_hit, self.chrome_palette.tab_hover_bg);
+                }
+                let st_color = if tab.is_active {
+                    self.chrome_palette.tab_text
+                } else {
+                    self.chrome_palette.page_hint
+                };
+                crate::ui_icons::render_icon(
+                    &mut self.font_loader,
+                    glyphs,
+                    crate::ui_icons::Icon::VolumeOff,
+                    st_cx,
+                    st_cy,
+                    14.0 * s,
+                    st_color,
+                );
             }
 
             let close_x = tab.x + tab.tab_w - 28.0 * s;
@@ -799,8 +841,19 @@ impl BrowserApp {
             let trailing_slots_w = layout::ADDRESS_BAR_TRAILING_SLOTS * s;
             let slots_x = inner_x + inner_w - layout::ADDRESS_BAR_TRAILING_PAD * s - trailing_slots_w;
             let slot_w = layout::ADDRESS_BAR_ACTION_SLOT_WIDTH * s;
+            let current_bookmarked = self.shell.is_current_page_bookmarked();
+            let star_icon = if current_bookmarked {
+                crate::ui_icons::Icon::StarFilled
+            } else {
+                crate::ui_icons::Icon::Star
+            };
+            let star_color = if current_bookmarked {
+                self.chrome_palette.tab_attention
+            } else {
+                self.chrome_palette.nav_button
+            };
             let slot_specs = [
-                (crate::ui_icons::Icon::Star, self.chrome_palette.nav_button),
+                (star_icon, star_color),
                 (crate::ui_icons::Icon::Shield, self.chrome_palette.page_hint),
             ];
             for (index, (icon, base_color)) in slot_specs.iter().enumerate() {
@@ -1061,12 +1114,13 @@ impl BrowserApp {
         if w <= 0.0 || h <= 0.0 {
             return;
         }
-        if layout::PAGE_FRAME_RADIUS <= 0.0 && layout::PAGE_FRAME_BORDER <= 0.0 {
+        let radius = self.effective_page_frame_radius();
+        let border = self.effective_page_frame_border();
+        if radius <= 0.0 && border <= 0.0 {
             fills.push(rect_fill(x, y, w, h, self.chrome_palette.page_bg));
             return;
         }
-        let border = layout::PAGE_FRAME_BORDER * s;
-        let radius = layout::PAGE_FRAME_RADIUS * s;
+        let _ = s;
         let inner_r = (radius - border).max(0.0);
         push_rounded_rect_fill(fills, x, y, w, h, radius, self.chrome_palette.separator);
         push_rounded_rect_fill(
@@ -1082,26 +1136,28 @@ impl BrowserApp {
 
     /// 清掉圆角外溢出的页面像素（内圈用边框色、外圈用 gutter 色）。
     fn render_page_frame_corner_masks(&self, fills: &mut Vec<FillPrimitive>, width: u32, height: u32, s: f32) {
-        if layout::PAGE_FRAME_RADIUS <= 0.0 {
+        let outer_r = self.effective_page_frame_radius();
+        if outer_r <= 0.0 {
             return;
         }
+        let _ = s;
         let (fx, fy, fw, fh) = self.page_frame_rect_for(width, height);
-        let outer_r = layout::PAGE_FRAME_RADIUS * s;
         push_rounded_rect_outside_corner_masks(fills, fx, fy, fw, fh, outer_r, self.chrome_palette.tab_active_bg);
 
         let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
-        let border = layout::PAGE_FRAME_BORDER * s;
-        let inner_r = (layout::PAGE_FRAME_RADIUS * s - border).max(0.0);
+        let border = self.effective_page_frame_border();
+        let inner_r = (outer_r - border).max(0.0);
         push_rounded_rect_outside_corner_masks(fills, cx, cy, cw, ch, inner_r, self.chrome_palette.separator);
     }
 
     /// 渲染页面视口灰色描边（在内容之上绘制，避免圆角处被内容污染）
     fn render_page_frame_border(&self, fills: &mut Vec<FillPrimitive>, x: f32, y: f32, w: f32, h: f32, s: f32) {
-        if w <= 0.0 || h <= 0.0 || layout::PAGE_FRAME_RADIUS <= 0.0 || layout::PAGE_FRAME_BORDER <= 0.0 {
+        let radius = self.effective_page_frame_radius();
+        let border = self.effective_page_frame_border();
+        if w <= 0.0 || h <= 0.0 || radius <= 0.0 || border <= 0.0 {
             return;
         }
-        let border = layout::PAGE_FRAME_BORDER * s;
-        let radius = layout::PAGE_FRAME_RADIUS * s;
+        let _ = s;
         push_rounded_rect_border(fills, x, y, w, h, radius, border, self.chrome_palette.separator);
     }
 
@@ -1250,8 +1306,8 @@ impl BrowserApp {
         let content_y_draw = viewport_y - scroll_y;
         let content_x_draw = viewport_x - scroll_x;
         let s = self.scale_factor;
-        let border = layout::PAGE_FRAME_BORDER * s;
-        let radius = (layout::PAGE_FRAME_RADIUS * s - border).max(0.0);
+        let border = self.effective_page_frame_border();
+        let radius = (self.effective_page_frame_radius() - border).max(0.0);
         let clip_rounded = Some((viewport_x, viewport_y, viewport_w, viewport_h, radius));
 
         if let Some(sel) = self.page_selection.get(&tab_id)
@@ -1531,7 +1587,7 @@ impl BrowserApp {
     }
 
     /// 渲染右键上下文菜单
-    fn render_context_menu(&self, fills: &mut Vec<FillPrimitive>, glyphs: &mut Vec<GlyphDraw>, s: f32) {
+    fn render_context_menu(&mut self, fills: &mut Vec<FillPrimitive>, glyphs: &mut Vec<GlyphDraw>, s: f32) {
         if self.font_id.is_none() {
             return;
         }
@@ -1557,21 +1613,10 @@ impl BrowserApp {
             self.chrome_palette.context_menu_bg,
         );
 
-        for (i, label) in self.context_menu.items.iter().enumerate() {
+        for (i, item) in self.context_menu.items.iter().enumerate() {
             let row_y = menu_y + i as f32 * row_h;
-            let is_hovered = self.context_menu.hovered_index == Some(i);
 
-            if is_hovered {
-                fills.push(rect_fill(
-                    menu_x + border,
-                    row_y,
-                    menu_w - 2.0 * border,
-                    row_h,
-                    self.chrome_palette.context_menu_hover_bg,
-                ));
-            }
-
-            if label == "---" {
+            if item.is_separator() {
                 let sep_y = row_y + row_h / 2.0;
                 fills.push(rect_fill(
                     menu_x + pad_h,
@@ -1583,15 +1628,88 @@ impl BrowserApp {
                 continue;
             }
 
+            let is_hovered = self.context_menu.hovered_index == Some(i);
+            let is_disabled = !item.enabled();
+
+            if is_hovered && !is_disabled {
+                fills.push(rect_fill(
+                    menu_x + border,
+                    row_y,
+                    menu_w - 2.0 * border,
+                    row_h,
+                    self.chrome_palette.context_menu_hover_bg,
+                ));
+            }
+
+            let text_color = if is_disabled {
+                self.chrome_palette.page_hint
+            } else {
+                self.chrome_palette.context_menu_text
+            };
+
+            // 图标槽（左侧 20px 区域），仅在有 icon 时绘制。
+            let icon_size = 14.0 * s;
+            let icon_cx = menu_x + pad_h + icon_size * 0.5;
+            let text_x = if let Some(menu_icon) = item.icon() {
+                if let Some(ui_icon) = Self::map_menu_icon(menu_icon) {
+                    crate::ui_icons::render_icon(
+                        &mut self.font_loader,
+                        glyphs,
+                        ui_icon,
+                        icon_cx,
+                        row_y + row_h * 0.5,
+                        icon_size,
+                        text_color,
+                    );
+                    pad_h + icon_size + 8.0 * s
+                } else {
+                    pad_h
+                }
+            } else {
+                pad_h
+            };
+
             self.draw_ui_text(
-                label,
-                menu_x + pad_h,
+                item.label(),
+                menu_x + text_x,
                 row_y + (row_h - font_size) * 0.5,
                 font_size,
-                self.chrome_palette.context_menu_text,
+                text_color,
                 glyphs,
             );
+
+            // 子菜单右侧箭头（当前默认菜单未使用 SubMenu，但模型已支持）。
+            if item.is_sub_menu() {
+                let arrow_cx = menu_x + menu_w - pad_h - 6.0 * s;
+                crate::ui_icons::render_icon(
+                    &mut self.font_loader,
+                    glyphs,
+                    crate::ui_icons::Icon::ChevronRight,
+                    arrow_cx,
+                    row_y + row_h * 0.5,
+                    12.0 * s,
+                    text_color,
+                );
+            }
         }
+    }
+
+    /// 把 browser-shell 的 UI-agnostic `MenuItemIcon` 映射到本 crate 的渲染图标。
+    /// 返回 None 表示该动作暂无对应图标资源（不绘制图标，仅显示文字）。
+    fn map_menu_icon(icon: zero_browser_shell::MenuItemIcon) -> Option<crate::ui_icons::Icon> {
+        use zero_browser_shell::MenuItemIcon as M;
+        Some(match icon {
+            M::Copy => crate::ui_icons::Icon::Copy,
+            M::Search => crate::ui_icons::Icon::Search,
+            M::OpenInNewTab | M::Open => crate::ui_icons::Icon::ExternalLink,
+            M::Reload => crate::ui_icons::Icon::Refresh,
+            M::Bookmark => crate::ui_icons::Icon::Star,
+            M::Back => crate::ui_icons::Icon::ChevronLeft,
+            M::Forward => crate::ui_icons::Icon::ChevronRight,
+            // 以下动作暂无专属图标资源，留待后续补齐 SVG 后映射。
+            M::Cut | M::Paste | M::SelectAll | M::Undo | M::Redo | M::Save | M::Print
+            | M::ViewSource | M::Inspect => return None,
+        })
     }
 
     /// 渲染链接悬停浮动状态栏（Chrome 风格：左下角胶囊，宽度随 URL 内容）

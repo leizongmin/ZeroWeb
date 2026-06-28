@@ -309,6 +309,38 @@ impl BrowserShell {
         }
     }
 
+    /// 切换当前页面书签状态：未收藏则添加，已收藏则移除。返回最终是否已收藏。
+    pub fn toggle_current_bookmark(&mut self) -> bool {
+        if let Some(tab) = self.tabs.active_tab()
+            && let Some(url) = tab.url()
+        {
+            if self.bookmarks.find_by_url(url).is_some() {
+                self.bookmarks.remove_by_url(url);
+                if let Err(err) = self.bookmarks.save_default() {
+                    tracing::warn!(%err, "failed to save bookmarks");
+                }
+                false
+            } else {
+                let title = tab.title().unwrap_or(url);
+                self.bookmarks.add(title, url, None);
+                if let Err(err) = self.bookmarks.save_default() {
+                    tracing::warn!(%err, "failed to save bookmarks");
+                }
+                true
+            }
+        } else {
+            false
+        }
+    }
+
+    /// 当前活跃标签页的 URL 是否已收藏。
+    pub fn is_current_page_bookmarked(&self) -> bool {
+        self.tabs
+            .active_tab()
+            .and_then(|t| t.url())
+            .is_some_and(|url| self.bookmarks.find_by_url(url).is_some())
+    }
+
     /// 书签管理器的引用。
     pub fn bookmarks(&self) -> &Bookmarks {
         &self.bookmarks
