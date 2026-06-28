@@ -1008,7 +1008,13 @@ impl BrowserApp {
                         if collapsed {
                             let allowed = self.tabs.dispatch_page_click(tab_id, doc_x, doc_y);
                             if allowed && let Some(href) = self.tabs.hit_test_link(tab_id, doc_x, doc_y) {
-                                self.navigate_to(&href);
+                                // Ctrl/Cmd+点击链接 → 后台新标签打开（Chrome 行为）。
+                                // Shift 修饰留给"前台新标签"，暂不支持前台语义，统一后台。
+                                if self.ctrl_pressed || self.cmd_pressed {
+                                    self.new_tab_background(&href);
+                                } else {
+                                    self.navigate_to(&href);
+                                }
                             }
                             if allowed {
                                 self.needs_redraw = true;

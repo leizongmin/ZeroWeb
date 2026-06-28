@@ -1353,6 +1353,15 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
+    /// 后台打开新标签页（不切换活跃、不聚焦地址栏）。
+    /// 用于 Ctrl+点击链接、中键点击链接等"在新标签打开但不离开当前页"场景。
+    pub fn new_tab_background(&mut self, url: &str) {
+        let tab_id = self.shell.new_tab_background(Some(url));
+        self.tabs.ensure_tab(tab_id);
+        self.scroll.insert(tab_id, TabScrollState::default());
+        self.needs_redraw = true;
+    }
+
     /// 创建无痕标签页（不写磁盘 HTTP 缓存、不保存到会话）。
     pub fn new_private_tab(&mut self, url: Option<&str>) {
         let tab_id = self.shell.new_private_tab(url);

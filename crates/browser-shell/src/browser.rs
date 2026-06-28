@@ -186,6 +186,11 @@ impl BrowserShell {
         self.tabs.create_tab(url)
     }
 
+    /// 创建后台标签页（不切换活跃），用于 Ctrl+点击链接等场景。
+    pub fn new_tab_background(&mut self, url: Option<&str>) -> TabId {
+        self.tabs.create_tab_background(url)
+    }
+
     /// 创建无痕标签页并设为活跃。
     pub fn new_private_tab(&mut self, url: Option<&str>) -> TabId {
         self.tabs.create_private_tab(url)
