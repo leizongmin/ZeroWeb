@@ -235,7 +235,14 @@ impl BrowserApp {
         let normal_tab_w = if normal_count > 0 {
             let ideal = normal_available / normal_count as f32;
             if ideal < layout::TAB_MIN_WIDTH * s {
-                ideal.clamp(layout::TAB_MIN_WIDTH_COMPRESSED * s, layout::TAB_MIN_WIDTH * s)
+                // 拥挤区：理想宽度低于正常最小宽度。优先压缩到 COMPRESSED（保留 favicon+close）；
+                // 若仍不够（ideal < COMPRESSED），进一步压缩到 ABSOLUTE_MIN（只保留 favicon）。
+                let lower = if ideal < layout::TAB_MIN_WIDTH_COMPRESSED * s {
+                    layout::TAB_ABSOLUTE_MIN_WIDTH * s
+                } else {
+                    layout::TAB_MIN_WIDTH_COMPRESSED * s
+                };
+                ideal.clamp(lower, layout::TAB_MIN_WIDTH * s)
             } else {
                 ideal.clamp(layout::TAB_MIN_WIDTH * s, layout::TAB_MAX_WIDTH * s)
             }
@@ -443,30 +450,34 @@ impl BrowserApp {
                 );
             }
 
-            let close_x = tab.x + tab.tab_w - 28.0 * s;
-            let close_hit = 24.0 * s;
-            let close_cx = close_x + close_hit / 2.0;
-            let close_cy = tab_y + tab_bar_h / 2.0;
-            let close_hovered = self.pointer_in_rect(close_x, tab_y, close_hit, tab_bar_h);
-            if close_hovered {
-                push_circle_fill(fills, close_cx, close_cy, close_hit, self.chrome_palette.tab_hover_bg);
+            // close 按钮：仅当标签宽度 >= COMPRESSED 时绘制。
+            // 极限压缩模式下（仅 favicon）省略 close 按钮，点击行为通过中键关闭或右键菜单兜底。
+            if tab.tab_w >= layout::TAB_MIN_WIDTH_COMPRESSED * s {
+                let close_x = tab.x + tab.tab_w - 28.0 * s;
+                let close_hit = 24.0 * s;
+                let close_cx = close_x + close_hit / 2.0;
+                let close_cy = tab_y + tab_bar_h / 2.0;
+                let close_hovered = self.pointer_in_rect(close_x, tab_y, close_hit, tab_bar_h);
+                if close_hovered {
+                    push_circle_fill(fills, close_cx, close_cy, close_hit, self.chrome_palette.tab_hover_bg);
+                }
+                let close_color = if close_hovered {
+                    self.chrome_palette.address_bar_text
+                } else if tab.is_active {
+                    self.chrome_palette.tab_close
+                } else {
+                    self.chrome_palette.page_hint
+                };
+                crate::ui_icons::render_icon(
+                    &mut self.font_loader,
+                    glyphs,
+                    crate::ui_icons::Icon::Close,
+                    close_cx,
+                    close_cy,
+                    12.0 * s,
+                    close_color,
+                );
             }
-            let close_color = if close_hovered {
-                self.chrome_palette.address_bar_text
-            } else if tab.is_active {
-                self.chrome_palette.tab_close
-            } else {
-                self.chrome_palette.page_hint
-            };
-            crate::ui_icons::render_icon(
-                &mut self.font_loader,
-                glyphs,
-                crate::ui_icons::Icon::Close,
-                close_cx,
-                close_cy,
-                12.0 * s,
-                close_color,
-            );
 
             self.tab_layout.push((tab.id, tab.x, tab.tab_w));
         }

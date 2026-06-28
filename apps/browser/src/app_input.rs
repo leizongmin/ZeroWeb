@@ -1101,14 +1101,18 @@ impl BrowserApp {
 
                 for &(id, tab_x, tab_w) in &self.tab_layout {
                     if x_f >= tab_x && x_f < tab_x + tab_w {
-                        let close_x = tab_x + tab_w - 24.0 * s;
-                        let close_y_center = tab_y + tab_bar_h / 2.0;
-                        if x_f >= close_x
-                            && x_f <= close_x + tab_close_size
-                            && (y_f - close_y_center).abs() <= tab_close_size / 2.0
-                        {
-                            self.close_tab_by_id(id);
-                            return;
+                        // 仅当标签宽度 >= COMPRESSED 时才判定 close 按钮命中，
+                        // 极限压缩模式下不绘制 close 按钮，也不应触发关闭。
+                        if tab_w >= layout::TAB_MIN_WIDTH_COMPRESSED * s {
+                            let close_x = tab_x + tab_w - 24.0 * s;
+                            let close_y_center = tab_y + tab_bar_h / 2.0;
+                            if x_f >= close_x
+                                && x_f <= close_x + tab_close_size
+                                && (y_f - close_y_center).abs() <= tab_close_size / 2.0
+                            {
+                                self.close_tab_by_id(id);
+                                return;
+                            }
                         }
                         if Some(id) != self.shell.active_tab_id() {
                             self.shell.switch_tab(id);

@@ -60,6 +60,9 @@ pub const TAB_PINNED_WIDTH: f32 = 52.0;
 pub const TAB_MIN_WIDTH: f32 = 100.0;
 /// Minimum width when the tab strip is crowded.
 pub const TAB_MIN_WIDTH_COMPRESSED: f32 = 52.0;
+/// 极限最小宽度：标签多到正常压缩仍溢出时，进一步压缩到此宽度，
+/// 只保留 favicon（无 close 按钮、无文本），确保所有标签都可见。
+pub const TAB_ABSOLUTE_MIN_WIDTH: f32 = 36.0;
 /// Hide tab title text below this tab width (physical layout units before scale).
 pub const TAB_TITLE_HIDE_WIDTH: f32 = 84.0;
 /// Maximum width of a tab.
