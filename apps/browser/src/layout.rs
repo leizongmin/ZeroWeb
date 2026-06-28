@@ -137,6 +137,7 @@ pub const CONTEXT_MENU_RADIUS: f32 = 8.0;
 /// Horizontal padding inside a context menu row.
 pub const CONTEXT_MENU_PAD_H: f32 = 12.0;
 /// Horizontal inset of the page frame relative to chrome.
+/// 保持 0：内容区不缩水；减重视觉靠圆角与边框，不靠 gutter（参考 Chrome 非最大化模式）。
 pub const PAGE_FRAME_INSET_H: f32 = 0.0;
 /// Top gap between chrome and the page frame.
 pub const PAGE_FRAME_INSET_TOP: f32 = 0.0;
@@ -146,10 +147,10 @@ pub const PAGE_FRAME_INSET_BOTTOM: f32 = 0.0;
 pub const PAGE_FRAME_BOTTOM_CLIP_GUARD: f32 = 24.0;
 /// Additional bottom reserve for floating UI in maximized windows.
 pub const PAGE_FRAME_BOTTOM_UI_GUARD: f32 = STATUS_BAR_HEIGHT;
-/// Border width of the page frame.
-pub const PAGE_FRAME_BORDER: f32 = 0.0;
-/// Radius of the page frame.
-pub const PAGE_FRAME_RADIUS: f32 = 0.0;
+/// Border width of the page frame (非最大化时；最大化时运行时归零)。
+pub const PAGE_FRAME_BORDER: f32 = 1.0;
+/// Radius of the page frame (非最大化时；最大化时运行时归零)。
+pub const PAGE_FRAME_RADIUS: f32 = 8.0;
 /// Thickness of classic reserved scrollbars in logical pixels.
 pub const SCROLLBAR_THICKNESS: f32 = 12.0;
 /// Minimum scrollbar thumb length in logical pixels.

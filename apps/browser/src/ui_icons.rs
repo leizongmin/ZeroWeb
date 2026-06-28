@@ -16,10 +16,16 @@
 //! | `Close`                | `close.svg`           | 关闭标签、关闭浮层   |
 //! | `Plus`                 | `plus.svg`            | 新建标签             |
 //! | `MoreVertical`         | `more-vertical.svg`   | 全局菜单（地址栏外） |
-//! | `Star`                 | `star.svg`            | 收藏当前页           |
+//! | `Star`                 | `star.svg`            | 收藏当前页（未收藏） |
+//! | `StarFilled`           | `star-filled.svg`     | 已收藏当前页         |
 //! | `Lock`                 | `lock.svg`            | HTTPS 安全锁         |
 //! | `Download`             | `download.svg`        | 下载管理             |
 //! | `Shield`               | `shield.svg`          | 站点权限             |
+//! | `VolumeOff`            | `volume-off.svg`      | 标签静音状态         |
+//! | `AlertTriangle`        | `alert-triangle.svg`  | 标签崩溃状态         |
+//! | `Copy`                 | `copy.svg`            | 复制（右键菜单）     |
+//! | `Search`               | `search.svg`          | 搜索（右键菜单）     |
+//! | `ExternalLink`         | `external-link.svg`   | 新标签页打开（右键菜单） |
 //! | `Sun` / `Moon` / `SunMoon` | `sun.svg` / `moon.svg` / `sun-moon.svg` | 主题切换（亮/暗/自动） |
 //!
 //! 另有一个 [`globe.svg`] 不走 [`Icon`] 枚举，作为默认 favicon 占位符由
@@ -59,9 +65,15 @@ pub enum Icon {
     Plus,
     MoreVertical,
     Star,
+    StarFilled,
     Lock,
     Download,
     Shield,
+    VolumeOff,
+    AlertTriangle,
+    Copy,
+    Search,
+    ExternalLink,
     Sun,
     Moon,
     SunMoon,
@@ -69,7 +81,7 @@ pub enum Icon {
 
 impl Icon {
     /// 所有图标变体，用于测试与一致性校验。新增变体时只需在此处追加。
-    pub const ALL: [Icon; 16] = [
+    pub const ALL: [Icon; 22] = [
         Icon::ChevronLeft,
         Icon::ChevronRight,
         Icon::Refresh,
@@ -80,9 +92,15 @@ impl Icon {
         Icon::Plus,
         Icon::MoreVertical,
         Icon::Star,
+        Icon::StarFilled,
         Icon::Lock,
         Icon::Download,
         Icon::Shield,
+        Icon::VolumeOff,
+        Icon::AlertTriangle,
+        Icon::Copy,
+        Icon::Search,
+        Icon::ExternalLink,
         Icon::Sun,
         Icon::Moon,
         Icon::SunMoon,
@@ -100,20 +118,26 @@ impl Icon {
             Icon::Plus => include_bytes!("../assets/icons/plus.svg"),
             Icon::MoreVertical => include_bytes!("../assets/icons/more-vertical.svg"),
             Icon::Star => include_bytes!("../assets/icons/star.svg"),
+            Icon::StarFilled => include_bytes!("../assets/icons/star-filled.svg"),
             Icon::Lock => include_bytes!("../assets/icons/lock.svg"),
             Icon::Download => include_bytes!("../assets/icons/download.svg"),
             Icon::Shield => include_bytes!("../assets/icons/shield.svg"),
+            Icon::VolumeOff => include_bytes!("../assets/icons/volume-off.svg"),
+            Icon::AlertTriangle => include_bytes!("../assets/icons/alert-triangle.svg"),
+            Icon::Copy => include_bytes!("../assets/icons/copy.svg"),
+            Icon::Search => include_bytes!("../assets/icons/search.svg"),
+            Icon::ExternalLink => include_bytes!("../assets/icons/external-link.svg"),
             Icon::Sun => include_bytes!("../assets/icons/sun.svg"),
             Icon::Moon => include_bytes!("../assets/icons/moon.svg"),
             Icon::SunMoon => include_bytes!("../assets/icons/sun-moon.svg"),
         }
     }
 
-    fn glyph_id(self) -> u32 {
+    pub(crate) fn glyph_id(self) -> u32 {
         ICON_BASE_CODEPOINT + self as u32
     }
 
-    fn as_char(self) -> char {
+    pub(crate) fn as_char(self) -> char {
         char::from_u32(self.glyph_id()).unwrap_or('\0')
     }
 }

@@ -126,6 +126,21 @@ impl Bookmarks {
         id
     }
 
+    /// 按 URL 查询书签（精确匹配）。同一 URL 仅返回首个匹配。
+    pub fn find_by_url(&self, url: &str) -> Option<&Bookmark> {
+        self.bookmarks.iter().find(|b| b.url == url)
+    }
+
+    /// 按 URL 移除书签。返回是否成功移除。
+    pub fn remove_by_url(&mut self, url: &str) -> bool {
+        if let Some(index) = self.bookmarks.iter().position(|b| b.url == url) {
+            self.bookmarks.remove(index);
+            true
+        } else {
+            false
+        }
+    }
+
     /// 移除书签。
     ///
     /// 返回 `true` 表示成功找到并移除。

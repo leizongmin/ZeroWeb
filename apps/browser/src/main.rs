@@ -360,7 +360,7 @@ mod tests {
         app.physical_size = (3840, 2160);
         app.scale_factor = 2.0;
         let (w, h) = app.content_logical_size();
-        let frame_w = 2.0 * (layout::PAGE_FRAME_INSET_H + layout::PAGE_FRAME_BORDER) * app.scale_factor;
+        let frame_w = 2.0 * (layout::PAGE_FRAME_INSET_H * app.scale_factor + app.effective_page_frame_border());
         let expected_w = ((3840.0 - frame_w) / app.scale_factor).floor() as u32;
         assert_eq!(w, expected_w);
         assert!(h > 0);
@@ -676,7 +676,7 @@ mod tests {
 
         let (_, glyphs, _, _) = app.build_scene_for_test(1280, 900);
         assert!(
-            glyphs.iter().any(|g| g.ch == '\u{E008}'),
+            glyphs.iter().any(|g| g.ch == crate::ui_icons::Icon::MoreVertical.as_char()),
             "address bar should render the browser menu icon"
         );
     }
@@ -717,7 +717,7 @@ mod tests {
 
         let (_, glyphs, _, _) = app.build_scene_for_test(1280, 900);
         assert!(
-            glyphs.iter().any(|g| g.ch == '\u{E00A}'),
+            glyphs.iter().any(|g| g.ch == crate::ui_icons::Icon::Lock.as_char()),
             "https tab should render lock icon in address bar"
         );
     }
@@ -731,7 +731,10 @@ mod tests {
         app.scale_factor = 1.0;
 
         let (_, glyphs, _, _) = app.build_scene_for_test(1280, 900);
-        let more_vertical_count = glyphs.iter().filter(|g| g.ch == '\u{E008}').count();
+        let more_vertical_count = glyphs
+            .iter()
+            .filter(|g| g.ch == crate::ui_icons::Icon::MoreVertical.as_char())
+            .count();
         assert_eq!(
             more_vertical_count, 1,
             "exactly one MoreVertical icon (the outer global menu) should be rendered"
@@ -747,7 +750,7 @@ mod tests {
 
         let (_, glyphs, _, _) = app.build_scene_for_test(1280, 900);
         assert!(
-            glyphs.iter().any(|g| g.ch == '\u{E00B}'),
+            glyphs.iter().any(|g| g.ch == crate::ui_icons::Icon::Download.as_char()),
             "toolbar should render download button icon"
         );
     }
@@ -807,7 +810,7 @@ mod tests {
 
         let (_, glyphs, _, _) = app.build_scene_for_test(1280, 900);
         assert!(
-            glyphs.iter().any(|g| g.ch == '\u{E00F}'),
+            glyphs.iter().any(|g| g.ch == crate::ui_icons::Icon::SunMoon.as_char()),
             "toolbar should render sun-moon icon for auto theme"
         );
     }
@@ -1453,7 +1456,7 @@ mod tests {
                 "scale={scale}: non-maximized frame should only reserve bottom inset"
             );
             assert!(
-                (cx + cw) <= fx + fw + 0.5 && (cy + ch) <= fy + fh - layout::PAGE_FRAME_BORDER * scale + 0.5,
+                (cx + cw) <= fx + fw + 0.5 && (cy + ch) <= fy + fh - app.effective_page_frame_border() + 0.5,
                 "scale={scale}: content rect must fit inside frame"
             );
 
@@ -1471,7 +1474,7 @@ mod tests {
             let (_, _, _overlay, _) = app.build_scene_for_test(1280, 900);
 
             let fb = app.render_scene_for_test(1280, 900);
-            if layout::PAGE_FRAME_RADIUS > 0.0 {
+            if app.effective_page_frame_radius() > 0.0 {
                 let sep = app.chrome_palette().separator;
                 for (px, py) in [(cx + 2.0, cy + ch - 2.0), (cx + cw - 3.0, cy + ch - 2.0)] {
                     let x = px.round() as u32;
@@ -1508,10 +1511,10 @@ mod tests {
     /// 圆角 frame 时 overlay 应包含遮罩；扁平 frame 时 overlay 仍可用于浮动 UI。
     #[test]
     fn page_frame_bottom_corners_use_separator_overlay() {
-        if layout::PAGE_FRAME_RADIUS <= 0.0 {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        if app.effective_page_frame_radius() <= 0.0 {
             return;
         }
-        let mut app = BrowserApp::new(RenderMode::Cpu);
         app.physical_size = (1280, 900);
         app.scale_factor = 1.0;
 

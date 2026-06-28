@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use zero_browser_shell::{
-    BrowserMenuLabel, BrowserSettings, BrowserShell, ColorThemePreference, ContextMenu, ContextType, SearchEngine,
-    SuggestionSource, TabId, TabMenuLabel, UiLanguage, browser_menu_label, tab_menu_label,
+    BrowserMenuLabel, BrowserSettings, BrowserShell, ColorThemePreference, ContextMenu, ContextType, MenuItem,
+    SearchEngine, SuggestionSource, TabId, TabMenuLabel, UiLanguage, browser_menu_label, tab_menu_label,
 };
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::set_char_measure_fn;
@@ -112,10 +112,8 @@ pub struct ContextMenuState {
     /// 菜单类型（预留用于区分不同场景的菜单行为）
     #[allow(dead_code)]
     pub context_type: ContextType,
-    /// 菜单项标签列表
-    pub items: Vec<String>,
-    /// 与 `items` 对齐的菜单项 ID（分隔线为 `None`）
-    pub item_ids: Vec<Option<String>>,
+    /// 菜单项（消费 browser-shell 的 MenuItem 模型，含 separator/disabled/icon/submenu）。
+    pub items: Vec<zero_browser_shell::MenuItem>,
     /// 悬停索引
     pub hovered_index: Option<usize>,
     /// 菜单左上角物理像素坐标
@@ -134,7 +132,6 @@ impl ContextMenuState {
             visible: false,
             context_type: ContextType::Page,
             items: Vec::new(),
-            item_ids: Vec::new(),
             hovered_index: None,
             x: 0.0,
             y: 0.0,
@@ -147,7 +144,6 @@ impl ContextMenuState {
     fn close(&mut self) {
         self.visible = false;
         self.items.clear();
-        self.item_ids.clear();
         self.hovered_index = None;
         self.source_tab_id = None;
     }
@@ -217,6 +213,8 @@ pub struct BrowserApp {
     page_selection_drag: bool,
     /// 左键是否按下
     left_button_down: bool,
+    /// 站点权限管理器（按 origin 隔离的 Web API 授权状态）。
+    permissions: zero_security::permission::PermissionManager,
     /// 待执行的窗口控制动作
     pending_window_chrome_action: Option<WindowChromeAction>,
     /// 窗口控制按钮悬停索引（0=最小化, 1=最大化, 2=关闭）
@@ -323,6 +321,7 @@ impl BrowserApp {
             scrollbar_hover: None,
             favicon_fetch: FaviconFetchState::new(),
             download_panel_open: false,
+            permissions: zero_security::permission::PermissionManager::new(),
         };
         app.tabs.set_javascript_enabled(app.shell.settings().javascript_enabled);
         app
@@ -963,10 +962,28 @@ impl BrowserApp {
         fy + fh + layout::PAGE_FRAME_INSET_BOTTOM * self.scale_factor
     }
 
+    /// 运行时有效的视口圆角（物理像素）。最大化/全屏时归零（避免内容被任务栏/边遮挡）。
+    pub(crate) fn effective_page_frame_radius(&self) -> f32 {
+        if self.window_is_maximized || self.window_is_fullscreen {
+            0.0
+        } else {
+            layout::PAGE_FRAME_RADIUS * self.scale_factor
+        }
+    }
+
+    /// 运行时有效的视口边框宽度（物理像素）。最大化/全屏时归零。
+    pub(crate) fn effective_page_frame_border(&self) -> f32 {
+        if self.window_is_maximized || self.window_is_fullscreen {
+            0.0
+        } else {
+            layout::PAGE_FRAME_BORDER * self.scale_factor
+        }
+    }
+
     /// 按指定窗口物理尺寸计算内容区（边框内侧）。
     pub fn page_content_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
         let (x, y, w, h) = self.page_frame_rect_for(width, height);
-        let border = layout::PAGE_FRAME_BORDER * self.scale_factor;
+        let border = self.effective_page_frame_border();
         (
             x + border,
             y + border,
