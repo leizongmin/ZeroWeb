@@ -133,47 +133,6 @@ pub fn browser_menu_label(label: BrowserMenuLabel, language: UiLanguage) -> &'st
     }
 }
 
-/// Context menu icon kind (UI-agnostic symbol identifier).
-///
-/// 渲染端按此选择对应图标资源；模型层不绑定具体 SVG 路径，保持 UI-agnostic。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MenuItemIcon {
-    /// 复制。
-    Copy,
-    /// 剪切。
-    Cut,
-    /// 粘贴。
-    Paste,
-    /// 全选。
-    SelectAll,
-    /// 撤销。
-    Undo,
-    /// 重做。
-    Redo,
-    /// 后退。
-    Back,
-    /// 前进。
-    Forward,
-    /// 刷新。
-    Reload,
-    /// 另存为。
-    Save,
-    /// 打印。
-    Print,
-    /// 查看源代码。
-    ViewSource,
-    /// 检查元素。
-    Inspect,
-    /// 在新标签页打开。
-    OpenInNewTab,
-    /// 链接 / 图片地址相关的"打开"动作。
-    Open,
-    /// 添加书签。
-    Bookmark,
-    /// 搜索。
-    Search,
-}
-
 /// Context menu item.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MenuItem {
@@ -182,8 +141,6 @@ pub struct MenuItem {
     item_type: MenuItemType,
     /// 是否启用。`false` 时渲染为灰显且不可点击。
     enabled: bool,
-    /// 可选图标（UI-agnostic 符号标识）。
-    icon: Option<MenuItemIcon>,
 }
 
 /// Context menu item type.
@@ -205,18 +162,6 @@ impl MenuItem {
             label: label.to_string(),
             item_type: MenuItemType::Action,
             enabled: true,
-            icon: None,
-        }
-    }
-
-    /// Create an action item with an icon.
-    pub fn action_with_icon(id: &str, label: &str, icon: MenuItemIcon) -> Self {
-        Self {
-            id: id.to_string(),
-            label: label.to_string(),
-            item_type: MenuItemType::Action,
-            enabled: true,
-            icon: Some(icon),
         }
     }
 
@@ -227,7 +172,6 @@ impl MenuItem {
             label: label.to_string(),
             item_type: MenuItemType::Action,
             enabled: false,
-            icon: None,
         }
     }
 
@@ -238,7 +182,6 @@ impl MenuItem {
             label: String::new(),
             item_type: MenuItemType::Separator,
             enabled: false,
-            icon: None,
         }
     }
 
@@ -249,7 +192,6 @@ impl MenuItem {
             label: label.to_string(),
             item_type: MenuItemType::SubMenu(children),
             enabled: true,
-            icon: None,
         }
     }
 
@@ -266,11 +208,6 @@ impl MenuItem {
     /// Whether this item is enabled (clickable).
     pub fn enabled(&self) -> bool {
         self.enabled
-    }
-
-    /// Optional icon symbol.
-    pub fn icon(&self) -> Option<MenuItemIcon> {
-        self.icon
     }
 
     /// Whether this item is a separator.
@@ -395,92 +332,92 @@ fn default_items_for_context(context_type: ContextType) -> Vec<MenuItem> {
     match context_type {
         ContextType::Page => match lang {
             UiLanguage::ZhCn => vec![
-                MenuItem::action_with_icon("back", "后退", MenuItemIcon::Back),
-                MenuItem::action_with_icon("forward", "前进", MenuItemIcon::Forward),
-                MenuItem::action_with_icon("reload", "重新加载", MenuItemIcon::Reload),
+                MenuItem::action("back", "后退"),
+                MenuItem::action("forward", "前进"),
+                MenuItem::action("reload", "重新加载"),
                 MenuItem::separator(),
-                MenuItem::action_with_icon("save_as", "另存为...", MenuItemIcon::Save),
-                MenuItem::action_with_icon("print", "打印...", MenuItemIcon::Print),
+                MenuItem::action("save_as", "另存为..."),
+                MenuItem::action("print", "打印..."),
                 MenuItem::separator(),
-                MenuItem::action_with_icon("view_source", "查看源代码", MenuItemIcon::ViewSource),
-                MenuItem::action_with_icon("inspect", "检查元素", MenuItemIcon::Inspect),
+                MenuItem::action("view_source", "查看源代码"),
+                MenuItem::action("inspect", "检查元素"),
             ],
             UiLanguage::EnUs => vec![
-                MenuItem::action_with_icon("back", "Back", MenuItemIcon::Back),
-                MenuItem::action_with_icon("forward", "Forward", MenuItemIcon::Forward),
-                MenuItem::action_with_icon("reload", "Reload", MenuItemIcon::Reload),
+                MenuItem::action("back", "Back"),
+                MenuItem::action("forward", "Forward"),
+                MenuItem::action("reload", "Reload"),
                 MenuItem::separator(),
-                MenuItem::action_with_icon("save_as", "Save As...", MenuItemIcon::Save),
-                MenuItem::action_with_icon("print", "Print...", MenuItemIcon::Print),
+                MenuItem::action("save_as", "Save As..."),
+                MenuItem::action("print", "Print..."),
                 MenuItem::separator(),
-                MenuItem::action_with_icon("view_source", "View Source", MenuItemIcon::ViewSource),
-                MenuItem::action_with_icon("inspect", "Inspect", MenuItemIcon::Inspect),
+                MenuItem::action("view_source", "View Source"),
+                MenuItem::action("inspect", "Inspect"),
             ],
         },
         ContextType::Link => match lang {
             UiLanguage::ZhCn => vec![
-                MenuItem::action_with_icon("open_link", "在新标签页中打开链接", MenuItemIcon::OpenInNewTab),
-                MenuItem::action_with_icon("copy_link", "复制链接地址", MenuItemIcon::Copy),
+                MenuItem::action("open_link", "在新标签页中打开链接"),
+                MenuItem::action("copy_link", "复制链接地址"),
                 MenuItem::separator(),
-                MenuItem::action_with_icon("save_link", "将链接另存为...", MenuItemIcon::Save),
-                MenuItem::action_with_icon("bookmark_link", "将链接添加为书签", MenuItemIcon::Bookmark),
+                MenuItem::action("save_link", "将链接另存为..."),
+                MenuItem::action("bookmark_link", "将链接添加为书签"),
             ],
             UiLanguage::EnUs => vec![
-                MenuItem::action_with_icon("open_link", "Open Link in New Tab", MenuItemIcon::OpenInNewTab),
-                MenuItem::action_with_icon("copy_link", "Copy Link Address", MenuItemIcon::Copy),
+                MenuItem::action("open_link", "Open Link in New Tab"),
+                MenuItem::action("copy_link", "Copy Link Address"),
                 MenuItem::separator(),
-                MenuItem::action_with_icon("save_link", "Save Link As...", MenuItemIcon::Save),
-                MenuItem::action_with_icon("bookmark_link", "Bookmark Link", MenuItemIcon::Bookmark),
+                MenuItem::action("save_link", "Save Link As..."),
+                MenuItem::action("bookmark_link", "Bookmark Link"),
             ],
         },
         ContextType::Image => match lang {
             UiLanguage::ZhCn => vec![
-                MenuItem::action_with_icon("open_image", "在新标签页中打开图片", MenuItemIcon::OpenInNewTab),
-                MenuItem::action_with_icon("copy_image_url", "复制图片地址", MenuItemIcon::Copy),
-                MenuItem::action_with_icon("save_image", "将图片另存为...", MenuItemIcon::Save),
+                MenuItem::action("open_image", "在新标签页中打开图片"),
+                MenuItem::action("copy_image_url", "复制图片地址"),
+                MenuItem::action("save_image", "将图片另存为..."),
                 MenuItem::separator(),
-                MenuItem::action_with_icon("copy_image", "复制图片", MenuItemIcon::Copy),
+                MenuItem::action("copy_image", "复制图片"),
             ],
             UiLanguage::EnUs => vec![
-                MenuItem::action_with_icon("open_image", "Open Image in New Tab", MenuItemIcon::OpenInNewTab),
-                MenuItem::action_with_icon("copy_image_url", "Copy Image Address", MenuItemIcon::Copy),
-                MenuItem::action_with_icon("save_image", "Save Image As...", MenuItemIcon::Save),
+                MenuItem::action("open_image", "Open Image in New Tab"),
+                MenuItem::action("copy_image_url", "Copy Image Address"),
+                MenuItem::action("save_image", "Save Image As..."),
                 MenuItem::separator(),
-                MenuItem::action_with_icon("copy_image", "Copy Image", MenuItemIcon::Copy),
+                MenuItem::action("copy_image", "Copy Image"),
             ],
         },
         ContextType::Selection => match lang {
             UiLanguage::ZhCn => vec![
-                MenuItem::action_with_icon("copy", "复制", MenuItemIcon::Copy),
-                MenuItem::action_with_icon("search_selection", "使用搜索引擎搜索", MenuItemIcon::Search),
+                MenuItem::action("copy", "复制"),
+                MenuItem::action("search_selection", "使用搜索引擎搜索"),
                 MenuItem::separator(),
-                MenuItem::action_with_icon("print", "打印...", MenuItemIcon::Print),
+                MenuItem::action("print", "打印..."),
             ],
             UiLanguage::EnUs => vec![
-                MenuItem::action_with_icon("copy", "Copy", MenuItemIcon::Copy),
-                MenuItem::action_with_icon("search_selection", "Search with Default Engine", MenuItemIcon::Search),
+                MenuItem::action("copy", "Copy"),
+                MenuItem::action("search_selection", "Search with Default Engine"),
                 MenuItem::separator(),
-                MenuItem::action_with_icon("print", "Print...", MenuItemIcon::Print),
+                MenuItem::action("print", "Print..."),
             ],
         },
         ContextType::Editable => match lang {
             UiLanguage::ZhCn => vec![
-                MenuItem::action_with_icon("cut", "剪切", MenuItemIcon::Cut),
-                MenuItem::action_with_icon("copy", "复制", MenuItemIcon::Copy),
-                MenuItem::action_with_icon("paste", "粘贴", MenuItemIcon::Paste),
-                MenuItem::action_with_icon("select_all", "全选", MenuItemIcon::SelectAll),
+                MenuItem::action("cut", "剪切"),
+                MenuItem::action("copy", "复制"),
+                MenuItem::action("paste", "粘贴"),
+                MenuItem::action("select_all", "全选"),
                 MenuItem::separator(),
-                MenuItem::action_with_icon("undo", "撤销", MenuItemIcon::Undo),
-                MenuItem::action_with_icon("redo", "重做", MenuItemIcon::Redo),
+                MenuItem::action("undo", "撤销"),
+                MenuItem::action("redo", "重做"),
             ],
             UiLanguage::EnUs => vec![
-                MenuItem::action_with_icon("cut", "Cut", MenuItemIcon::Cut),
-                MenuItem::action_with_icon("copy", "Copy", MenuItemIcon::Copy),
-                MenuItem::action_with_icon("paste", "Paste", MenuItemIcon::Paste),
-                MenuItem::action_with_icon("select_all", "Select All", MenuItemIcon::SelectAll),
+                MenuItem::action("cut", "Cut"),
+                MenuItem::action("copy", "Copy"),
+                MenuItem::action("paste", "Paste"),
+                MenuItem::action("select_all", "Select All"),
                 MenuItem::separator(),
-                MenuItem::action_with_icon("undo", "Undo", MenuItemIcon::Undo),
-                MenuItem::action_with_icon("redo", "Redo", MenuItemIcon::Redo),
+                MenuItem::action("undo", "Undo"),
+                MenuItem::action("redo", "Redo"),
             ],
         },
     }
