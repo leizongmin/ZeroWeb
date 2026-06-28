@@ -89,6 +89,58 @@ fn test_overflow_hidden_clips_own_direct_text() {
     );
 }
 
+/// R793：`overflow:hidden` 必须裁剪到 **padding box**（CSS §11.1.1），不是 content box。
+///
+/// 原实现 clip_rect 起点加 padding、尺寸取 content_width/height（= content box），致溢出内容
+/// 落在 content 边与 padding 边之间的条带时被多裁——chromium 保留到 padding 边。本例父盒
+/// padding=20、content=10（content box [20,30]，padding box [0,40]），子盒 100×100 红背景
+/// 从 content 原点 (20,20) 溢出。修复后子填充右边界应到 padding 边（≈40），而非 content 边（=30）。
+#[test]
+fn test_overflow_hidden_clips_to_padding_box_not_content_box() {
+    let mut doc = zero_dom::Document::new();
+    let parent = doc.create_element("div");
+    let child = doc.create_element("div");
+
+    // 子盒：红背景，远超父 content box，溢入 padding 条带
+    let child_box = make_box(Some(child), 0.0, 0.0, 100.0, 100.0);
+
+    // 父盒：overflow:hidden，四周 padding=20，content 10×10，border 0
+    // → content box [20,30]×[20,30]，padding box [0,40]×[0,40]
+    let mut parent_box = make_box(Some(parent), 0.0, 0.0, 50.0, 50.0);
+    parent_box.content_width = 10.0;
+    parent_box.content_height = 10.0;
+    parent_box.padding_top = 20.0;
+    parent_box.padding_right = 20.0;
+    parent_box.padding_bottom = 20.0;
+    parent_box.padding_left = 20.0;
+    parent_box.overflow_x = OverflowClip::Hidden;
+    parent_box.overflow_y = OverflowClip::Hidden;
+    parent_box.children = vec![child_box];
+
+    let mut styles = HashMap::new();
+    // 父盒透明背景（不发射填充），仅子盒红背景
+    styles.insert(parent, ComputedStyle::default());
+    let mut child_style = ComputedStyle::default();
+    child_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    styles.insert(child, child_style);
+
+    let mut painter = Painter::new();
+    painter.paint(&parent_box, &styles, Some(&doc));
+
+    let fills = &painter.primitives().fills;
+    // 子红填充从 content 原点 (20,20) 发射；裁剪后 origin 不变（clip_left≤20）。
+    let child_fill = fills
+        .iter()
+        .find(|f| f.rect.origin.x == 20.0 && f.rect.origin.y == 20.0)
+        .expect("子盒红填充应从 content 原点 (20,20) 发射");
+    let right = child_fill.rect.origin.x + child_fill.rect.size.width;
+    // 修复（padding box）：right≈40（padding 边）；未修复（content box）：right=30（content 边）。
+    assert!(
+        right >= 39.5,
+        "overflow 应裁剪到 padding box（right≈40），非 content box（right=30）；实际 right={right}"
+    );
+}
+
 /// 测试嵌套元素中 overflow:hidden 逐层裁剪。
 #[test]
 fn test_overflow_hidden_clips_deeply_nested_children() {
