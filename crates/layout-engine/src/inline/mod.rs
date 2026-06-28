@@ -105,13 +105,15 @@ impl TextRun {
         }
     }
 
-    /// CSS 2.1 inline 元素对行盒高度的贡献：
-    /// line-height + padding-top + padding-bottom + border-top + border-bottom。
+    /// inline 非替换元素对 line box 高度的贡献 = line-height。
     ///
-    /// CSS 2.1 §10.8.1: inline 元素的内容区高度由 line-height 决定，
-    /// 但 padding 和 border 会额外增加行盒中该元素占据的垂直空间。
+    /// CSS 2.1 §10.8.1 + §8.4：inline 非替换元素的垂直 padding/border 只绘制
+    /// （向 line box 上下方延伸），**不影响 line box 高度**。WPT blocks-019 明确
+    /// "Top padding on inline elements has no effect on layout"，chromium 同此。
+    /// 旧实现把 padding/border 加进 box_height 致 inline padding-top/border
+    /// 错误撑高 line box（minimal 复现：`<span padding-top:100px>` 让 div 120px 而非 20px）。
     pub fn box_height(&self) -> f32 {
-        self.line_height + self.padding_top + self.padding_bottom + self.border_top + self.border_bottom
+        self.line_height
     }
 }
 
