@@ -1478,7 +1478,6 @@ impl BrowserApp {
         let btn_w = 24.0 * s;
         let icon_size = 16.0 * s;
         let btn_cy = btn_y + font_size * 0.5;
-        let hover_radius = 5.0 * s;
 
         for (bx, icon) in [
             (prev_x, crate::ui_icons::Icon::ChevronUp),
@@ -1488,13 +1487,12 @@ impl BrowserApp {
             let icon_cx = bx + btn_w / 2.0;
             let hovered = self.pointer_in_rect(bx, y, btn_w, bar_h);
             if hovered {
-                push_rounded_rect_fill(
+                // 图标按钮类统一使用圆形 hover（与导航按钮、地址栏 slot 一致）。
+                push_circle_fill(
                     fills,
-                    bx,
-                    y + 2.0 * s,
-                    btn_w,
-                    bar_h - 4.0 * s,
-                    hover_radius,
+                    icon_cx,
+                    btn_cy,
+                    layout::NAV_BUTTON_HOVER_DIAMETER * s,
                     self.chrome_palette.tab_hover_bg,
                 );
             }
