@@ -140,6 +140,10 @@ pub struct ContextMenuState {
     /// 页面内容区文档坐标（审查元素用）。
     pub page_doc_x: f32,
     pub page_doc_y: f32,
+    /// 书签栏右键菜单的目标书签 URL（仅书签上下文菜单使用）。
+    pub bookmark_url: Option<String>,
+    /// 书签栏右键菜单的目标书签标题（仅书签上下文菜单使用）。
+    pub bookmark_title: Option<String>,
 }
 
 impl ContextMenuState {
@@ -156,6 +160,8 @@ impl ContextMenuState {
             source_tab_id: None,
             page_doc_x: 0.0,
             page_doc_y: 0.0,
+            bookmark_url: None,
+            bookmark_title: None,
         }
     }
 
@@ -166,6 +172,8 @@ impl ContextMenuState {
         self.open_sub_menu = None;
         self.sub_menu_hovered = None;
         self.source_tab_id = None;
+        self.bookmark_url = None;
+        self.bookmark_title = None;
     }
 }
 
