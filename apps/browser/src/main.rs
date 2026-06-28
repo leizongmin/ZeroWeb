@@ -1762,6 +1762,16 @@ fn apply_window_chrome_action(app: &mut BrowserApp, window: &winit::window::Wind
             app.shutdown_child_processes();
             std::process::exit(0);
         }
+        WindowChromeAction::ToggleFullscreen => {
+            if window.fullscreen().is_some() {
+                window.set_fullscreen(None);
+            } else {
+                window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+            }
+            app.mark_surface_stale();
+            sync_window_size_from_window(app, window);
+            sync_window_chrome_icon(app, window);
+        }
         WindowChromeAction::StartDrag => {
             if let Err(err) = window.drag_window() {
                 tracing::warn!("drag_window failed: {err}");

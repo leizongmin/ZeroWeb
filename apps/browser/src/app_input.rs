@@ -310,6 +310,12 @@ impl BrowserApp {
             }
         }
 
+        // F11 全局切换全屏（不依赖修饰键，地址栏聚焦时也生效，参考 Chrome）
+        if key == "F11" && pressed {
+            self.pending_window_chrome_action = Some(WindowChromeAction::ToggleFullscreen);
+            return;
+        }
+
         if !self.address_bar_focused && key.len() == 1 && !self.ctrl_pressed && !self.cmd_pressed {
             if let Some(tab_id) = self.shell.active_tab_id() {
                 let event = if pressed { "keydown" } else { "keyup" };
