@@ -286,30 +286,22 @@ pub fn resolve_computed_style(
         resolve_length_field(lv, font_size_px, viewport_width, viewport_height);
     }
 
-    // CSS 规范：当 border-style 为 none 或 hidden 时，border-width 必须为 0
-    // https://drafts.csswg.org/css-backgrounds/#border-style
-    if matches!(
-        resolved.border_top_style,
-        BorderStyleValue::None | BorderStyleValue::Hidden
-    ) {
+    // CSS 规范：border-style 为 none 时 computed border-width 为 0。
+    // 注意：hidden **保留** computed border-width（仅 used（布局/绘制）为 0）——
+    // WPT border-width-012 + csswg #2768/#11494：`border-width:inherit` 须能继承
+    // hidden 元素的 computed width（如 2em）。converter border_lp / paint border.rs /
+    // table_borders resolve_collapsed_borders 各自独立按 hidden=0 used，故此处仅
+    // 对 none 归零（hidden 保留供 inherit）。
+    if matches!(resolved.border_top_style, BorderStyleValue::None) {
         resolved.border_top_width = LengthValue::Px(0.0);
     }
-    if matches!(
-        resolved.border_right_style,
-        BorderStyleValue::None | BorderStyleValue::Hidden
-    ) {
+    if matches!(resolved.border_right_style, BorderStyleValue::None) {
         resolved.border_right_width = LengthValue::Px(0.0);
     }
-    if matches!(
-        resolved.border_bottom_style,
-        BorderStyleValue::None | BorderStyleValue::Hidden
-    ) {
+    if matches!(resolved.border_bottom_style, BorderStyleValue::None) {
         resolved.border_bottom_width = LengthValue::Px(0.0);
     }
-    if matches!(
-        resolved.border_left_style,
-        BorderStyleValue::None | BorderStyleValue::Hidden
-    ) {
+    if matches!(resolved.border_left_style, BorderStyleValue::None) {
         resolved.border_left_width = LengthValue::Px(0.0);
     }
 
