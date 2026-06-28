@@ -146,6 +146,22 @@ fn test_browser_shell_add_bookmark_uses_title() {
 }
 
 #[test]
+fn test_browser_shell_remove_bookmark_by_url() {
+    let mut shell = BrowserShell::new();
+    shell.navigate("https://example.com");
+    shell.on_page_loaded("Example");
+    shell.add_bookmark();
+    assert_eq!(shell.bookmarks().len(), 1);
+
+    // 删除存在的书签返回 true，并清空。
+    assert!(shell.remove_bookmark_by_url("https://example.com"));
+    assert_eq!(shell.bookmarks().len(), 0);
+
+    // 删除不存在的书签返回 false，无副作用。
+    assert!(!shell.remove_bookmark_by_url("https://example.com"));
+}
+
+#[test]
 fn test_browser_shell_add_bookmark_uses_url_as_fallback_title() {
     let mut shell = BrowserShell::new();
     shell.navigate("https://example.com");

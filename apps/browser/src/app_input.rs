@@ -1260,26 +1260,64 @@ impl BrowserApp {
         }
     }
 
-    /// 处理书签栏点击
-    fn handle_bookmark_bar_click(&mut self, x: f32, _y: f32, _bar_y: f32, _width: f32, s: f32) {
+    /// 书签栏命中检测：返回点中的书签 (url, title)。复用于左键导航与右键菜单。
+    fn bookmark_bar_item_at(&self, x: f32, s: f32) -> Option<(String, String)> {
         let font_size = 12.0 * s;
         let mut bx = 8.0 * s;
-        let mut target_url: Option<String> = None;
-
-        let bookmarks = self.shell.bookmarks();
-        for bm in bookmarks.list_root() {
+        for bm in self.shell.bookmarks().list_root() {
             let label = bm.title();
             let item_w = label.len() as f32 * font_size * 0.6 + 24.0 * s;
             if x >= bx && x < bx + item_w {
-                target_url = Some(bm.url().to_string());
-                break;
+                return Some((bm.url().to_string(), label.to_string()));
             }
             bx += item_w + 8.0 * s;
         }
+        None
+    }
 
-        if let Some(url) = target_url {
+    /// 处理书签栏点击
+    fn handle_bookmark_bar_click(&mut self, x: f32, _y: f32, _bar_y: f32, _width: f32, s: f32) {
+        if let Some((url, _)) = self.bookmark_bar_item_at(x, s) {
             self.navigate_to(&url);
         }
+    }
+
+    /// 显示书签上下文菜单（书签栏右键）。
+    fn show_bookmark_context_menu(&mut self, url: String, title: String, x: f64, y: f64) {
+        let language = UiLanguage::detect_from_env();
+        let open_label = match language {
+            UiLanguage::ZhCn => "打开",
+            UiLanguage::EnUs => "Open",
+        };
+        let copy_label = match language {
+            UiLanguage::ZhCn => "复制链接",
+            UiLanguage::EnUs => "Copy link",
+        };
+        let delete_label = match language {
+            UiLanguage::ZhCn => "删除",
+            UiLanguage::EnUs => "Delete",
+        };
+        self.context_menu = ContextMenuState {
+            visible: true,
+            context_type: ContextType::Page,
+            items: vec![
+                MenuItem::action("bookmark_open", open_label),
+                MenuItem::action("bookmark_copy_link", copy_label),
+                MenuItem::separator(),
+                MenuItem::action("bookmark_delete", delete_label),
+            ],
+            hovered_index: None,
+            open_sub_menu: None,
+            sub_menu_hovered: None,
+            x: x as f32,
+            y: y as f32,
+            source_tab_id: self.shell.active_tab_id(),
+            page_doc_x: 0.0,
+            page_doc_y: 0.0,
+            bookmark_url: Some(url),
+            bookmark_title: Some(title),
+        };
+        self.needs_redraw = true;
     }
 
     /// 处理 IME 输入（地址栏 / 查找框）
@@ -1635,6 +1673,8 @@ impl BrowserApp {
             source_tab_id: self.shell.active_tab_id(),
             page_doc_x: 0.0,
             page_doc_y: 0.0,
+            bookmark_url: None,
+            bookmark_title: None,
         };
         self.context_menu_suppress_left_up = true;
         self.needs_redraw = true;
@@ -1699,6 +1739,8 @@ impl BrowserApp {
             source_tab_id: self.shell.active_tab_id(),
             page_doc_x: 0.0,
             page_doc_y: 0.0,
+            bookmark_url: None,
+            bookmark_title: None,
         };
         self.context_menu_suppress_left_up = true;
         self.needs_redraw = true;
@@ -1758,6 +1800,8 @@ impl BrowserApp {
             source_tab_id: Some(tab_id),
             page_doc_x: 0.0,
             page_doc_y: 0.0,
+            bookmark_url: None,
+            bookmark_title: None,
         };
         self.needs_redraw = true;
     }
@@ -1815,6 +1859,15 @@ impl BrowserApp {
             return;
         }
 
+        let toolbar_h = layout::TOOLBAR_HEIGHT * s;
+        // 书签栏区域右键：弹出书签上下文菜单（打开 / 复制链接 / 删除）。
+        if y_f >= toolbar_h && y_f < chrome_top {
+            if let Some((url, title)) = self.bookmark_bar_item_at(x_f, s) {
+                self.show_bookmark_context_menu(url, title, x, y);
+            }
+            return;
+        }
+
         let context_type = if self.address_bar_hit_test(x_f, y_f) {
             ContextType::Editable
         } else if y_f < chrome_top {
@@ -1857,6 +1910,8 @@ impl BrowserApp {
             source_tab_id: self.shell.active_tab_id(),
             page_doc_x,
             page_doc_y,
+            bookmark_url: None,
+            bookmark_title: None,
         };
         self.needs_redraw = true;
     }
@@ -1877,6 +1932,7 @@ impl BrowserApp {
         let page_doc_x = self.context_menu.page_doc_x;
         let page_doc_y = self.context_menu.page_doc_y;
         let context_type = self.context_menu.context_type;
+        let bookmark_url = self.context_menu.bookmark_url.clone();
 
         self.context_menu.close();
         self.needs_redraw = true;
@@ -1980,6 +2036,21 @@ impl BrowserApp {
             }
             "select_all" => {
                 self.address_bar.select_all();
+            }
+            "bookmark_open" => {
+                if let Some(url) = &bookmark_url {
+                    self.navigate_to(url);
+                }
+            }
+            "bookmark_copy_link" => {
+                if let Some(url) = &bookmark_url {
+                    crate::clipboard::write_text(url);
+                }
+            }
+            "bookmark_delete" => {
+                if let Some(url) = &bookmark_url {
+                    self.shell.remove_bookmark_by_url(url);
+                }
             }
             _ => {}
         }

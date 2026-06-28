@@ -368,6 +368,15 @@ impl BrowserShell {
         &mut self.bookmarks
     }
 
+    /// 按 URL 删除书签，并持久化。返回是否确实删除了一条记录。
+    pub fn remove_bookmark_by_url(&mut self, url: &str) -> bool {
+        let removed = self.bookmarks.remove_by_url(url);
+        if removed && let Err(err) = self.bookmarks.save_default() {
+            tracing::warn!(%err, "failed to save bookmarks");
+        }
+        removed
+    }
+
     // ── 历史操作 ──
 
     /// 历史记录管理器的引用。
