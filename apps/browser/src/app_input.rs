@@ -327,6 +327,23 @@ impl BrowserApp {
             return;
         }
 
+        // F3 查找下一个（复用上次查询）。Shift+F3 上一个。
+        // 查找栏关闭时自动打开并用 last_find_query 查找。
+        if key == "F3" && pressed {
+            if !self.shell.find_state().is_active() && !self.last_find_query.is_empty() {
+                self.find_input = self.last_find_query.clone();
+                self.shell.find_start(&self.last_find_query.clone());
+            } else if self.shell.find_state().is_active() {
+                if self.shift_pressed {
+                    self.shell.find_previous();
+                } else {
+                    self.shell.find_next();
+                }
+            }
+            self.needs_redraw = true;
+            return;
+        }
+
         // Escape 取消正在进行的标签拖拽。
         if key == "Escape" && pressed && self.tab_drag.is_some() {
             self.tab_drag = None;
@@ -506,6 +523,7 @@ impl BrowserApp {
                     self.shell.find_close();
                 } else {
                     self.shell.find_start(&self.find_input);
+                    self.last_find_query = self.find_input.clone();
                 }
                 self.needs_redraw = true;
             }
@@ -513,6 +531,7 @@ impl BrowserApp {
                 if let Some(inserted) = Self::extract_typed_text(key, text) {
                     self.find_input.push_str(&inserted);
                     self.shell.find_start(&self.find_input);
+                    self.last_find_query = self.find_input.clone();
                     self.needs_redraw = true;
                 }
             }
@@ -703,9 +722,26 @@ impl BrowserApp {
                     self.refresh_page();
                 }
                 "f" | "F" => {
-                    self.find_input.clear();
-                    self.shell.find_close();
+                    // Ctrl+F：切换查找栏。已打开则关闭，未打开则打开（空查询激活）。
+                    if self.shell.find_state().is_active() {
+                        self.find_input.clear();
+                        self.shell.find_close();
+                    } else {
+                        self.find_input.clear();
+                        self.shell.find_start("");
+                    }
                     self.needs_redraw = true;
+                }
+                "g" | "G" => {
+                    // Ctrl+G：查找下一个（查找栏打开时）。Shift+Ctrl+G 上一个。
+                    if self.shell.find_state().is_active() {
+                        if self.shift_pressed {
+                            self.shell.find_previous();
+                        } else {
+                            self.shell.find_next();
+                        }
+                        self.needs_redraw = true;
+                    }
                 }
                 "d" | "D" => {
                     let was_visible = self.bookmarks_bar_visible();

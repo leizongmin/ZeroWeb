@@ -247,6 +247,8 @@ pub struct BrowserApp {
     autocomplete: AutocompleteState,
     /// 查找栏输入文本
     find_input: String,
+    /// 上次查找栏使用的查询（关闭后保留，供 F3 重复查找）。
+    last_find_query: String,
     /// 标签页布局缓存：每个标签页的 (x, width) 位置信息
     tab_layout: Vec<(TabId, f32, f32)>,
     /// 右键上下文菜单状态
@@ -362,6 +364,7 @@ impl BrowserApp {
             alt_pressed: false,
             autocomplete: AutocompleteState::new(),
             find_input: String::new(),
+            last_find_query: String::new(),
             tab_layout: Vec::new(),
             context_menu: ContextMenuState::new(),
             context_menu_suppress_left_up: false,
