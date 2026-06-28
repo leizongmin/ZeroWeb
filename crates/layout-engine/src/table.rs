@@ -1674,7 +1674,19 @@ fn position_cells(
     spacing_y: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
-    let table_content_width = table_box.content_width;
+    // 表格内容宽度：auto-width（shrink-to-fit）表须用列宽之和 + spacing，而非
+    // table_box.content_width（taffy 对 auto 表拉伸到容器宽，如 784）。apply_table_size_constraints
+    // 后表盒会收缩到该值，但行/单元格在此处（收缩前）定位，须用同一收缩值，否则行（背景）
+    // 保持拉伸宽而表盒收缩（anonymous-table-cell-margin-collapsing 的绿行 784 vs 表 ~110）。
+    // explicit-width 表：compute_column_widths 已把 col 扩展到 explicit，col 和 ≈ content_width，
+    // min 取 content_width，无变化。
+    let col_sum: f32 = col_widths.iter().sum();
+    let spacing_total_x = if col_widths.len() > 1 {
+        (col_widths.len() - 1) as f32 * spacing_x
+    } else {
+        0.0
+    };
+    let table_content_width = table_box.content_width.min(col_sum + spacing_total_x);
 
     // R89：表格行高分配（CSS 2.1 §17.5.3 — table 的 height 作为最小高度，
     // 额外高度按行均分到各行，使单元格增长、vertical-align 把内容压到分配后位置）。
