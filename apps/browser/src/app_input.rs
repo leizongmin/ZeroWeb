@@ -1885,7 +1885,25 @@ impl BrowserApp {
         };
 
         let menu = ContextMenu::new(context_type);
-        let items: Vec<MenuItem> = menu.items().to_vec();
+        let mut items: Vec<MenuItem> = menu.items().to_vec();
+
+        // 根据当前页面能力禁用部分菜单项。
+        // about:blank / 无 URL / zero:// 内部页 没有"源代码"或"可审查 DOM"概念，
+        // 应禁用 view_source / inspect / save_as / print，避免无效操作。
+        let active_url = self.shell.active_tab().and_then(|t| t.url());
+        let page_inspectable = match active_url {
+            None => false,
+            Some(u) if u.is_empty() || u == "about:blank" => false,
+            Some(u) if u.starts_with("zero://") => false,
+            _ => true,
+        };
+        if !page_inspectable {
+            for item in items.iter_mut() {
+                if matches!(item.id(), "view_source" | "inspect" | "save_as" | "print") {
+                    item.set_enabled(false);
+                }
+            }
+        }
 
         let (page_doc_x, page_doc_y) = if context_type == ContextType::Page
             || context_type == ContextType::Link

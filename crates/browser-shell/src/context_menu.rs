@@ -208,6 +208,13 @@ impl MenuItem {
         self
     }
 
+    /// 就地设置 enabled 状态（无需重建 MenuItem）。
+    /// 用于 GUI 在运行时根据页面能力禁用菜单项，
+    /// 例如 about:blank / 内部页禁用"查看源代码"。
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
     /// Item id.
     pub fn id(&self) -> &str {
         &self.id
