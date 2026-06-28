@@ -272,6 +272,9 @@ pub struct BrowserApp {
     last_tab_click_time: Option<Instant>,
     /// 上次左键点击的标签 id。
     last_tab_click_id: Option<TabId>,
+    /// 后台标签的最近 title 快照，用于检测 title 变化触发 attention。
+    /// 仅缓存非活跃标签的 title；活跃标签的 title 变化不需要提醒。
+    background_tab_titles: HashMap<TabId, String>,
     /// 系统颜色方案偏好
     color_scheme: PrefersColorSchemeValue,
     /// 浏览器外壳配色
@@ -359,6 +362,7 @@ impl BrowserApp {
             last_window_title: String::new(),
             last_tab_click_time: None,
             last_tab_click_id: None,
+            background_tab_titles: HashMap::new(),
             color_scheme,
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
             cached_window_theme: None,
@@ -439,6 +443,33 @@ impl BrowserApp {
                 && let Some(tab) = self.shell.active_tab_mut()
             {
                 tab.set_loading(false);
+            }
+        }
+
+        // 检测后台标签 title 变化（如聊天应用收到消息改 title 加 "(3)"），
+        // 变化时触发 needs_attention 提醒用户。
+        let active_id = self.shell.active_tab_id();
+        let mut title_changes: Vec<(TabId, String)> = Vec::new();
+        for tab in self.shell.tabs() {
+            let id = tab.id();
+            if Some(id) == active_id {
+                // 活跃标签不需要提醒，从缓存移除避免残留。
+                self.background_tab_titles.remove(&id);
+                continue;
+            }
+            let current_title = tab.title().unwrap_or("").to_string();
+            match self.background_tab_titles.get(&id) {
+                Some(prev) if *prev == current_title => {}
+                _ => title_changes.push((id, current_title)),
+            }
+        }
+        for (id, title) in title_changes {
+            let is_new = !self.background_tab_titles.contains_key(&id);
+            self.background_tab_titles.insert(id, title.clone());
+            // 仅在 title 从一个非空值变为另一个非空值时触发提醒，
+            // 首次记录（加载初期的 title）不算。
+            if !is_new && !title.is_empty() {
+                self.shell.set_tab_needs_attention(id, true);
             }
         }
     }
@@ -1403,6 +1434,7 @@ impl BrowserApp {
     fn close_tab_by_id(&mut self, id: TabId) {
         self.tabs.remove_tab(id);
         self.scroll.remove(&id);
+        self.background_tab_titles.remove(&id);
         self.shell.close_tab(id);
 
         if self.shell.is_empty() {
