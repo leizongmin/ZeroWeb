@@ -165,7 +165,78 @@ impl BrowserApp {
             self.render_context_menu(&mut overlay_fills, &mut overlay_glyphs, s);
         }
 
+        // 18. 缩放百分比浮层（右下角，缩放后 3 秒内显示）
+        self.render_zoom_indicator(&mut overlay_fills, &mut overlay_glyphs, width, height, s);
+
         (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows)
+    }
+
+    /// 渲染缩放百分比浮层。zoom 操作后 3 秒内显示在页面右下角。
+    /// 超时自动清除（清除时也请求重绘以移除浮层）。
+    fn render_zoom_indicator(
+        &mut self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        width: u32,
+        height: u32,
+        s: f32,
+    ) {
+        if self.font_id.is_none() {
+            return;
+        }
+        let Some(start) = self.zoom_indicator_start else {
+            return;
+        };
+        // 3 秒后清除。
+        if start.elapsed().as_secs_f32() > 3.0 {
+            self.zoom_indicator_start = None;
+            return;
+        }
+        // 显示期间持续重绘（用于倒计时消失）。
+        self.needs_redraw = true;
+
+        let zoom = self.shell.zoom();
+        // 100% 时不显示（zoom_reset 到 100% 仍短暂提示，便于用户确认复位）。
+        let label = if (zoom - 1.0).abs() < 0.001 {
+            "100%".to_string()
+        } else {
+            format!("{:.0}%", (zoom * 100.0).round())
+        };
+        let font_size = layout::CHROME_FONT_SIZE * s;
+        let label_w = self.measure_ui_text_width(&label, font_size);
+        let pad_h = 12.0 * s;
+        let pad_v = 8.0 * s;
+        let box_w = label_w + pad_h * 2.0;
+        let box_h = font_size + pad_v * 2.0;
+        let margin = 16.0 * s;
+        // 右下角，避开滚动条。
+        let scrollbar_w = layout::SCROLLBAR_THICKNESS * s;
+        let box_x = width as f32 - box_w - margin - scrollbar_w;
+        let box_y = height as f32 - box_h - margin;
+        let radius = 8.0 * s;
+        let border = s.max(1.0);
+
+        push_rounded_rect_fill(fills, box_x, box_y, box_w, box_h, radius, self.chrome_palette.find_bar_border);
+        push_rounded_rect_fill(
+            fills,
+            box_x + border,
+            box_y + border,
+            box_w - 2.0 * border,
+            box_h - 2.0 * border,
+            (radius - border).max(0.0),
+            self.chrome_palette.find_bar_bg,
+        );
+        if self.font_id.is_some() {
+            let (text_top, _) = self.ui_text_centered_in_height(box_h, font_size);
+            self.draw_ui_text(
+                &label,
+                box_x + (box_w - label_w) * 0.5,
+                box_y + text_top,
+                font_size,
+                self.chrome_palette.find_bar_text,
+                glyphs,
+            );
+        }
     }
 
     /// 获取 WebView 的额外图元（渐变、阴影、圆角矩形、线段、路径、变换、裁剪、滤镜、混合模式）。

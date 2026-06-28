@@ -694,15 +694,15 @@ impl BrowserApp {
                 }
                 "+" | "=" => {
                     self.shell.zoom_in();
-                    self.needs_redraw = true;
+                    self.show_zoom_indicator();
                 }
                 "-" => {
                     self.shell.zoom_out();
-                    self.needs_redraw = true;
+                    self.show_zoom_indicator();
                 }
                 "0" => {
                     self.shell.zoom_reset();
-                    self.needs_redraw = true;
+                    self.show_zoom_indicator();
                 }
                 "," => {
                     // Ctrl+, 打开设置页面
@@ -763,15 +763,15 @@ impl BrowserApp {
             }
             "+" | "=" => {
                 self.shell.zoom_in();
-                self.needs_redraw = true;
+                self.show_zoom_indicator();
             }
             "-" => {
                 self.shell.zoom_out();
-                self.needs_redraw = true;
+                self.show_zoom_indicator();
             }
             "0" => {
                 self.shell.zoom_reset();
-                self.needs_redraw = true;
+                self.show_zoom_indicator();
             }
             "n" => {
                 self.shell.find_next();
