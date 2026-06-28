@@ -265,6 +265,8 @@ pub struct BrowserApp {
     /// 缩放百分比浮层显示起始时刻。None 表示不显示。
     /// zoom_in/out/reset 触发时记录，3 秒后由渲染层清除。
     zoom_indicator_start: Option<Instant>,
+    /// 上次设置的窗口标题缓存，用于检测变化避免重复 set_title。
+    last_window_title: String,
     /// 系统颜色方案偏好
     color_scheme: PrefersColorSchemeValue,
     /// 浏览器外壳配色
@@ -349,6 +351,7 @@ impl BrowserApp {
             chrome_anim_start: Instant::now(),
             loading_anim_start: None,
             zoom_indicator_start: None,
+            last_window_title: String::new(),
             color_scheme,
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
             cached_window_theme: None,
@@ -1511,6 +1514,27 @@ impl BrowserApp {
     fn show_zoom_indicator(&mut self) {
         self.zoom_indicator_start = Some(Instant::now());
         self.needs_redraw = true;
+    }
+
+    /// 计算当前应显示的窗口标题。
+    /// 有页面标题时为 "<title> - ZeroBrowser"，否则为 "ZeroBrowser"。
+    pub fn current_window_title(&self) -> String {
+        match self.shell.active_tab().and_then(|t| t.title()) {
+            Some(t) if !t.is_empty() => format!("{t} - ZeroBrowser"),
+            _ => "ZeroBrowser".to_string(),
+        }
+    }
+
+    /// 若窗口标题相比缓存发生变化，返回新标题；否则返回 None。
+    /// 调用方在成功 set_title 后应调用 confirm_window_title 同步缓存。
+    pub fn window_title_if_changed(&mut self) -> Option<String> {
+        let new = self.current_window_title();
+        if new == self.last_window_title { None } else { Some(new) }
+    }
+
+    /// 确认窗口标题已应用，更新内部缓存。
+    pub fn confirm_window_title(&mut self, title: &str) {
+        self.last_window_title = title.to_string();
     }
 
     /// 新建空白标签页并聚焦地址栏（用户主动开新标签场景：Ctrl+T / 点 + 按钮）。
