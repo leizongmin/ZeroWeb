@@ -141,6 +141,9 @@ pub struct MenuItem {
     item_type: MenuItemType,
     /// 是否启用。`false` 时渲染为灰显且不可点击。
     enabled: bool,
+    /// 可选的快捷键提示文本（如 "Ctrl+T"），由 GUI 右对齐显示。
+    /// 仅为展示用字符串，UI-agnostic。
+    shortcut: Option<String>,
 }
 
 /// Context menu item type.
@@ -162,6 +165,7 @@ impl MenuItem {
             label: label.to_string(),
             item_type: MenuItemType::Action,
             enabled: true,
+            shortcut: None,
         }
     }
 
@@ -172,6 +176,7 @@ impl MenuItem {
             label: label.to_string(),
             item_type: MenuItemType::Action,
             enabled: false,
+            shortcut: None,
         }
     }
 
@@ -182,6 +187,7 @@ impl MenuItem {
             label: String::new(),
             item_type: MenuItemType::Separator,
             enabled: false,
+            shortcut: None,
         }
     }
 
@@ -192,7 +198,14 @@ impl MenuItem {
             label: label.to_string(),
             item_type: MenuItemType::SubMenu(children),
             enabled: true,
+            shortcut: None,
         }
+    }
+
+    /// Builder：为该项附加快捷键提示文本（如 "Ctrl+T"）。
+    pub fn with_shortcut(mut self, shortcut: impl Into<String>) -> Self {
+        self.shortcut = Some(shortcut.into());
+        self
     }
 
     /// Item id.
@@ -208,6 +221,11 @@ impl MenuItem {
     /// Whether this item is enabled (clickable).
     pub fn enabled(&self) -> bool {
         self.enabled
+    }
+
+    /// Shortcut hint text (e.g. "Ctrl+T") shown right-aligned by the GUI.
+    pub fn shortcut(&self) -> Option<&str> {
+        self.shortcut.as_deref()
     }
 
     /// Whether this item is a separator.

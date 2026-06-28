@@ -1778,14 +1778,40 @@ impl BrowserApp {
                 self.chrome_palette.context_menu_text
             };
 
+            let label = {
+                let raw = item.label();
+                if !item.is_sub_menu() && item.shortcut().is_some() {
+                    let shortcut_w = self.measure_ui_text_width(item.shortcut().unwrap_or(""), font_size);
+                    let max_w = menu_w - 2.0 * pad_h - shortcut_w - 8.0 * s;
+                    self.truncate_ui_text(raw, max_w, font_size)
+                } else {
+                    raw.to_string()
+                }
+            };
             self.draw_ui_text(
-                item.label(),
+                &label,
                 menu_x + pad_h,
                 row_y + (row_h - font_size) * 0.5,
                 font_size,
                 text_color,
                 glyphs,
             );
+
+            // 快捷键提示（右对齐，子菜单项不显示以免与箭头冲突）。
+            if !item.is_sub_menu() {
+                if let Some(shortcut) = item.shortcut() {
+                    let w = self.measure_ui_text_width(shortcut, font_size);
+                    let x = menu_x + menu_w - pad_h - w;
+                    self.draw_ui_text(
+                        shortcut,
+                        x,
+                        row_y + (row_h - font_size) * 0.5,
+                        font_size,
+                        self.chrome_palette.page_hint,
+                        glyphs,
+                    );
+                }
+            }
 
             // 子菜单右侧箭头。
             if item.is_sub_menu() {
