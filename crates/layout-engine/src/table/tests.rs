@@ -283,6 +283,64 @@ fn test_table_cell_bfc_first_child_margin_top_preserved() {
     );
 }
 
+/// R769c：auto-width（shrink-to-fit）`display:table` 的行/单元格宽度须用列宽之和，
+/// 而非 taffy 拉伸的容器宽。旧实现 `position_cells` 用 `table_box.content_width`
+/// （taffy 对 auto 表拉伸到容器，如 784），早于 `apply_table_size_constraints` 收缩表盒，
+/// 致行（背景）保持拉伸宽而表盒收缩——anonymous-table-cell-margin-collapsing 的绿行
+/// 渲染 784px 宽（应 ~100）。修复：`table_content_width = min(content_width, col_sum+spacing)`。
+#[test]
+fn test_auto_width_table_shrink_to_fit_uses_col_sum_not_container() {
+    use zero_css_parser::values::{DisplayValue, LengthValue};
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let row_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table; // 无 width → auto → shrink-to-fit
+    styles.insert(table_id, ts);
+    let mut rs = ComputedStyle::default();
+    rs.display = DisplayValue::TableRow;
+    styles.insert(row_id, rs);
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCell;
+    cs.width = LengthValue::Px(100.0); // 显式 100px cell
+    styles.insert(cell_id, cs);
+
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        width: 100.0,
+        ..Default::default()
+    };
+    let row_box = LayoutBox {
+        node_id: Some(row_id),
+        children: vec![cell_box],
+        ..Default::default()
+    };
+    // taffy 对 auto-width 表拉伸到容器宽 784（典型视口填充）
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        content_width: 784.0,
+        width: 784.0,
+        children: vec![row_box],
+        ..Default::default()
+    };
+
+    layout_table(&mut table_box, &doc, &styles);
+
+    // auto-width 表应 shrink-to-fit 到内容（~100），而非保持容器宽 784
+    assert!(
+        table_box.content_width < 200.0,
+        "auto-width table content_width should shrink-to-fit to ~100 (col sum), got {} \
+         (old bug kept taffy's stretched 784)",
+        table_box.content_width
+    );
+}
+
 /// R292：`border-collapse: collapse` 时，表四边缘的 cell border 与 table border
 /// 折叠——table border 胜出（更宽）时覆盖 cell border，后者不应再叠加进表尺寸。
 /// 旧实现把「列宽含半 cell border（border-center 语义）」+「表 border 整圈」两者
