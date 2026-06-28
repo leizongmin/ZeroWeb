@@ -76,35 +76,54 @@ impl BrowserApp {
         self.mouse_pos = (touch.x, touch.y);
 
         if self.context_menu.visible {
-            return;
+            // 上下文菜单打开时：touch 走 tap 合成路径（点菜单项），
+            // 但页面内容滚动不适用。
         }
 
         match touch.phase {
             TouchPhase::Started => {
                 if self.point_in_page_content(touch.x, touch.y) {
+                    // 页面内容区：单指滚动。
                     self.touch_scroll = Some((touch.id, touch.y));
+                    self.touch_tap_candidate = None;
+                } else {
+                    // chrome UI 区：记录 tap 候选，Ended 时判定。
+                    self.touch_tap_candidate = Some((touch.id, touch.x, touch.y));
                 }
             }
             TouchPhase::Moved => {
-                let Some((id, last_y)) = self.touch_scroll else {
-                    return;
-                };
-                if id != touch.id {
-                    return;
+                // 页面内容滚动
+                if let Some((id, last_y)) = self.touch_scroll {
+                    if id == touch.id {
+                        let delta_y = (last_y - touch.y) as f32;
+                        if delta_y != 0.0
+                            && let Some(tab_id) = self.shell.active_tab_id()
+                        {
+                            self.apply_page_scroll_delta(tab_id, 0.0, delta_y);
+                        }
+                        if let Some(state) = &mut self.touch_scroll {
+                            state.1 = touch.y;
+                        }
+                    }
                 }
-                let delta_y = (last_y - touch.y) as f32;
-                if delta_y != 0.0
-                    && let Some(tab_id) = self.shell.active_tab_id()
-                {
-                    self.apply_page_scroll_delta(tab_id, 0.0, delta_y);
-                }
-                if let Some(state) = &mut self.touch_scroll {
-                    state.1 = touch.y;
+                // chrome 区 tap 候选：移动超过阈值则取消（判定为非 tap 意图）。
+                if let Some((id, sx, sy)) = self.touch_tap_candidate {
+                    if id == touch.id && ((touch.x - sx).abs() > 10.0 || (touch.y - sy).abs() > 10.0) {
+                        self.touch_tap_candidate = None;
+                    }
                 }
             }
             TouchPhase::Ended | TouchPhase::Cancelled => {
                 if self.touch_scroll.is_some_and(|(id, _)| id == touch.id) {
                     self.touch_scroll = None;
+                }
+                // chrome 区 tap 完成：合成左键 press + release。
+                if let Some((id, _sx, _sy)) = self.touch_tap_candidate {
+                    if id == touch.id {
+                        self.touch_tap_candidate = None;
+                        self.handle_mouse_click(touch.x, touch.y, true, "Left");
+                        self.handle_mouse_click(touch.x, touch.y, false, "Left");
+                    }
                 }
             }
         }
