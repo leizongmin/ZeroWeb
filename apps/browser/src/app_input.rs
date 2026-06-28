@@ -661,6 +661,13 @@ impl BrowserApp {
                     self.needs_redraw = true;
                 }
                 "t" | "T" if self.shift_pressed => {
+                    // Ctrl+Shift+T：恢复最近关闭的标签。
+                    if self.shell.reopen_last_closed_tab().is_some() {
+                        self.needs_redraw = true;
+                    }
+                }
+                "n" | "N" if self.shift_pressed => {
+                    // Ctrl+Shift+N：新建无痕标签页。
                     self.new_private_tab(None);
                 }
                 "t" | "T" => {

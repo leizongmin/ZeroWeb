@@ -1,5 +1,7 @@
 //! 浏览器 Shell — 协调标签页、书签、历史、下载、设置的顶层控制器。
 
+use std::collections::VecDeque;
+
 use crate::autocomplete::Autocomplete;
 use crate::bookmarks::Bookmarks;
 use crate::download::DownloadManager;
@@ -7,6 +9,18 @@ use crate::history::History;
 use crate::session::{NavigationSnapshot, SessionState, TabInfo};
 use crate::settings::BrowserSettings;
 use crate::tab::{TabId, TabManager};
+
+/// 已关闭标签的快照，用于 Ctrl+Shift+T 恢复。
+#[derive(Debug, Clone)]
+pub struct ClosedTab {
+    /// 关闭时的 URL（若有）。
+    pub url: Option<String>,
+    /// 关闭时的标题（若有）。
+    pub title: Option<String>,
+}
+
+/// recently_closed 队列最大长度。
+const MAX_RECENTLY_CLOSED: usize = 10;
 
 /// 浏览器 Shell — 顶层协调器。
 ///
@@ -28,6 +42,8 @@ pub struct BrowserShell {
     find_state: FindState,
     /// 地址栏自动补全引擎。
     autocomplete: Autocomplete,
+    /// 最近关闭的标签队列（最新在尾部），用于 Ctrl+Shift+T 恢复。
+    recently_closed: VecDeque<ClosedTab>,
 }
 
 /// 页面查找循环提示方向。
@@ -115,6 +131,7 @@ impl BrowserShell {
             zoom: 1.0,
             find_state: FindState::new(),
             autocomplete: Autocomplete::new(),
+            recently_closed: VecDeque::new(),
         }
     }
 
@@ -176,6 +193,14 @@ impl BrowserShell {
 
     /// 关闭指定标签页。
     pub fn close_tab(&mut self, id: TabId) {
+        // 先收集快照，避免对 self 的共享/可变借用冲突。
+        let snapshot = self.tabs.tabs().find(|t| t.id() == id).map(|tab| ClosedTab {
+            url: tab.url().map(str::to_string),
+            title: tab.title().map(str::to_string),
+        });
+        if let Some(c) = snapshot {
+            self.push_recently_closed(c);
+        }
         self.tabs.close_tab(id);
     }
 
@@ -186,12 +211,68 @@ impl BrowserShell {
 
     /// 关闭除指定标签页外的所有标签页。
     pub fn close_other_tabs(&mut self, id: TabId) {
+        // 先收集所有将被关闭的标签快照（保留指定 id 的那个）。
+        let to_close: Vec<ClosedTab> = self
+            .tabs
+            .tabs()
+            .filter(|t| t.id() != id)
+            .map(|t| ClosedTab {
+                url: t.url().map(str::to_string),
+                title: t.title().map(str::to_string),
+            })
+            .collect();
+        for c in to_close {
+            self.push_recently_closed(c);
+        }
         self.tabs.close_other_tabs(id);
     }
 
     /// 关闭指定标签页右侧的所有标签页。
     pub fn close_tabs_to_right(&mut self, id: TabId) {
+        // 先收集要关闭的标签快照，避免 borrow 冲突。
+        let to_close: Vec<ClosedTab> = {
+            let mut iter = self.tabs.tabs().peekable();
+            // 跳过到 id 之后。
+            while let Some(t) = iter.peek() {
+                if t.id() == id {
+                    iter.next();
+                    break;
+                }
+                iter.next();
+            }
+            iter.map(|t| ClosedTab {
+                url: t.url().map(str::to_string),
+                title: t.title().map(str::to_string),
+            })
+            .collect()
+        };
+        for c in to_close {
+            self.push_recently_closed(c);
+        }
         self.tabs.close_tabs_to_right(id);
+    }
+
+    /// 推入 recently_closed 队列，超出上限时丢弃最旧的一条。
+    fn push_recently_closed(&mut self, tab: ClosedTab) {
+        if self.recently_closed.len() >= MAX_RECENTLY_CLOSED {
+            self.recently_closed.pop_front();
+        }
+        self.recently_closed.push_back(tab);
+    }
+
+    /// 恢复最近关闭的一个标签：弹出最新一条快照，新建标签并导航到原 URL。
+    /// 返回新标签页 ID；若无历史返回 None。
+    pub fn reopen_last_closed_tab(&mut self) -> Option<TabId> {
+        let closed = self.recently_closed.pop_back()?;
+        // create_tab 已将新标签设为活跃，直接用 self.navigate 导航。
+        let new_id = self.tabs.create_tab(None);
+        if let Some(url) = closed.url.as_deref() {
+            self.navigate(url);
+            if let (Some(title), Some(tab)) = (closed.title.as_deref(), self.tabs.active_tab_mut()) {
+                tab.set_title(title);
+            }
+        }
+        Some(new_id)
     }
 
     /// 切换到指定标签页。
