@@ -213,7 +213,7 @@ impl ChromePalette {
             context_menu_separator: rgb(70, 70, 70),
             bookmarks_bar_bg: rgb(52, 53, 56),
             bookmarks_bar_text: rgb(190, 190, 190),
-            bookmarks_bar_hover_bg: rgb(65, 65, 68),
+            bookmarks_bar_hover_bg: rgb(50, 50, 50),
             bookmarks_bar_icon: rgb(255, 193, 7),
             download_bar_bg: rgb(40, 40, 40),
             download_bar_fill: rgb(66, 133, 244),
