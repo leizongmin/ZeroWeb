@@ -49,6 +49,46 @@ fn make_box(node_id: Option<zero_dom::NodeId>, x: f32, y: f32, width: f32, heigh
 
 // ── 新增测试：overflow clipping with nested elements ──────
 
+/// R792：overflow:hidden 必须裁剪盒子**自身直属文本**（不仅子节点）。
+///
+/// 原实现 `counts_before_children` 快照取于 `paint_text` 之后，致裁剪范围 [snapshot..end]
+/// 只含子节点、漏掉 `paint_text` 发射的直属文本字形——overflow!=visible 的盒子直属
+/// 溢出文本（如不可断行的长字符串）不被裁到 content-box 而外溢可见。修复把快照移到
+/// `paint_text` 之前。本例 div 宽 30px、直属文本 "AAAAAAAA..."（无断行点）水平溢出，
+/// 超出 content box 右边界的字形应被裁为 font_size==0。
+#[test]
+fn test_overflow_hidden_clips_own_direct_text() {
+    let mut doc = zero_dom::Document::new();
+    let div = doc.create_element("div");
+    let text = doc.create_text_node("AAAAAAAAAAAAAAAAAAAA"); // 20 字符，无断行点，水平溢出 30px
+    doc.append_child(div, text).unwrap();
+
+    let mut box_node = make_box(Some(div), 0.0, 0.0, 30.0, 20.0);
+    box_node.overflow_x = OverflowClip::Hidden;
+    box_node.overflow_y = OverflowClip::Hidden;
+    box_node.content_width = 30.0;
+    box_node.content_height = 20.0;
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(255, 0, 0, 255);
+    styles.insert(div, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&box_node, &styles, Some(&doc));
+
+    let glyphs = &painter.primitives().glyphs;
+    assert!(!glyphs.is_empty(), "paint_text 应为直属文本发射 glyphs");
+    // 超出 content box 右边界（x ≥ content_width=30）的字形应被裁（font_size==0）。
+    // 未修复时这些字形 font_size>0 → 断言失败，捕获回归。
+    let visible_beyond_box = glyphs.iter().any(|g| g.font_size > 0.0 && g.x >= 30.0);
+    assert!(
+        !visible_beyond_box,
+        "overflow:hidden 应裁剪盒子自身直属文本超出 content box 的字形"
+    );
+}
+
 /// 测试嵌套元素中 overflow:hidden 逐层裁剪。
 #[test]
 fn test_overflow_hidden_clips_deeply_nested_children() {
