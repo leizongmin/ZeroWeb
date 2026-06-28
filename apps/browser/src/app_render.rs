@@ -27,6 +27,19 @@ impl BrowserApp {
         let mut chrome_shadows: Vec<ShadowPrimitive> = Vec::new();
         let font_size = layout::CHROME_FONT_SIZE * s;
 
+        // 0. 同步加载动画起始时刻：is_loading 从 false→true 时记录，
+        //    从 true→false 时清除。用于渲染模拟进度条。
+        let is_loading = self.shell.active_tab().is_some_and(|t| t.is_loading());
+        if is_loading && self.loading_anim_start.is_none() {
+            self.loading_anim_start = Some(Instant::now());
+        } else if !is_loading {
+            self.loading_anim_start = None;
+        }
+        // 加载期间持续请求重绘，驱动进度条动画。
+        if is_loading {
+            self.needs_redraw = true;
+        }
+
         // 1. 整体背景
         fills.push(rect_fill(
             0.0,
@@ -97,12 +110,21 @@ impl BrowserApp {
         self.render_page_frame(&mut fills, frame_x, frame_y, frame_w, frame_h, s);
         let (content_x, content_y, content_w, _) = self.page_content_rect_for(width, height);
 
-        // 10. 加载指示器
-        if self.shell.active_tab().is_some_and(|t| t.is_loading()) {
+        // 10. 加载进度条（模拟 Chrome 风格：快速到 30%，缓慢逼近 85%）
+        if let Some(start) = self.loading_anim_start {
+            let elapsed = start.elapsed().as_secs_f32();
+            // 进度曲线：前 0.3s 快速到 30%，之后向 85% 渐近。
+            let progress = if elapsed < 0.3 {
+                (elapsed / 0.3) * 0.30
+            } else {
+                // 指数渐近：0.30 + 0.55 * (1 - exp(-(t-0.3)/2.0))
+                0.30 + 0.55 * (1.0 - (-(elapsed - 0.3) / 2.0).exp())
+            };
+            let bar_w = (content_w * progress).min(content_w);
             fills.push(rect_fill(
                 content_x,
                 content_y,
-                content_w,
+                bar_w,
                 2.0 * s,
                 self.chrome_palette.loading_indicator,
             ));

@@ -259,6 +259,9 @@ pub struct BrowserApp {
     tab_bar_drag_press: Option<(f64, f64)>,
     /// 标签栏 chrome 动画起始时间（loading 旋转环）
     chrome_anim_start: Instant,
+    /// 当前加载动画起始时刻（is_loading 从 false→true 时记录）。
+    /// 用于模拟 Chrome 风格的加载进度条动画。
+    loading_anim_start: Option<Instant>,
     /// 系统颜色方案偏好
     color_scheme: PrefersColorSchemeValue,
     /// 浏览器外壳配色
@@ -341,6 +344,7 @@ impl BrowserApp {
             last_tab_bar_blank_click: None,
             tab_bar_drag_press: None,
             chrome_anim_start: Instant::now(),
+            loading_anim_start: None,
             color_scheme,
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
             cached_window_theme: None,
