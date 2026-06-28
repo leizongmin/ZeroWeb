@@ -1158,6 +1158,20 @@ impl BrowserApp {
                                 return;
                             }
                         }
+                        // 双击同一标签则关闭（参考 Chrome/Firefox）。
+                        let now = Instant::now();
+                        let is_double_click = self.last_tab_click_id == Some(id)
+                            && self
+                                .last_tab_click_time
+                                .is_some_and(|t| now.duration_since(t).as_millis() < 400);
+                        if is_double_click {
+                            self.last_tab_click_time = None;
+                            self.last_tab_click_id = None;
+                            self.close_tab_by_id(id);
+                            return;
+                        }
+                        self.last_tab_click_time = Some(now);
+                        self.last_tab_click_id = Some(id);
                         if Some(id) != self.shell.active_tab_id() {
                             self.shell.switch_tab(id);
                             self.shell.set_tab_needs_attention(id, false);
