@@ -123,7 +123,13 @@ pub(crate) fn shrink_inline_blocks_to_content(
         // 无盒装饰，收缩无意义且可能干扰）。
         let is_shrinkable = box_node.node_id.is_some_and(|id| {
             styles.get(&id).is_some_and(|s| match s.display {
-                DisplayValue::InlineBlock => true,
+                // R783：inline-flex / inline-grid 同 inline-block 一样是 inline-level 容器，
+                // width:auto 应 shrink-to-fit（CSS §10.3.10/§10.3.11），但 taffy 0.7 把它们
+                // 当 block 拉伸到可用宽（满宽）。此前仅 inline-block 收缩，inline-flex/inline-grid
+                // 漏处理→aspect-ratio-intrinsic-size-001/003/006/008 等内联弹性盒被拉到 784px。
+                // 多 item flex-row 的 main-axis 求和语义此处用 max 近似（单 item 等价；多 item
+                // 罕见且满宽→max 仍优于 784px 拉伸）。
+                DisplayValue::InlineBlock | DisplayValue::InlineFlex | DisplayValue::InlineGrid => true,
                 DisplayValue::Inline => s.background_color != ColorValue::Transparent,
                 _ => false,
             })
