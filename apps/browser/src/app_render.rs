@@ -654,7 +654,12 @@ impl BrowserApp {
         s: f32,
     ) {
         let (bar_x, bar_y, bar_w, bar_h) = self.address_bar_layout();
-        let border = s.max(1.0);
+        // 聚焦态边框加粗到 2px，强化焦点感知（参考 Chrome）。
+        let border = if self.address_bar_focused {
+            (2.0 * s).max(1.0)
+        } else {
+            s.max(1.0)
+        };
         let radius = bar_h * 0.5;
 
         let bg = if self.address_bar_focused {
