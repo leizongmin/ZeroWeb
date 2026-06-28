@@ -414,6 +414,74 @@ fn test_auto_width_table_shrink_to_fit_uses_col_sum_not_container() {
     );
 }
 
+/// CSS §17.6.1（separated borders model）：border-spacing 不仅分隔相邻 cell，还构成
+/// 表格四边周界（外缘 cell 与 table 边缘之间）。旧实现只计列间 spacing，漏掉周界 → 带
+/// border-spacing 的表尺寸偏小（visibility-collapse-border-spacing-002：1 列 100px +
+/// spacing 50 → 应 200px，旧实现 100px）。同时空 cell（无内容）行高应为 0——chromium 对
+/// 空 cell 不应用 strut（旧 20px 默认致带 border-spacing 的空表/折叠行表尺寸偏大）。
+#[test]
+fn test_separated_border_spacing_perimeter_and_empty_row_zero() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let row_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table; // 默认 border-collapse: separate
+    ts.border_spacing.horizontal = 50.0;
+    ts.border_spacing.vertical = 100.0;
+    styles.insert(table_id, ts);
+    let mut rs = ComputedStyle::default();
+    rs.display = DisplayValue::TableRow;
+    styles.insert(row_id, rs);
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCell;
+    cs.width = LengthValue::Px(100.0); // 显式 100px 列宽
+    styles.insert(cell_id, cs);
+
+    // 空 cell（无子内容）
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        width: 100.0,
+        height: 0.0,
+        ..Default::default()
+    };
+    let row_box = LayoutBox {
+        node_id: Some(row_id),
+        children: vec![cell_box],
+        ..Default::default()
+    };
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        content_width: 784.0,
+        width: 784.0,
+        children: vec![row_box],
+        ..Default::default()
+    };
+
+    layout_table(&mut table_box, &doc, &styles);
+
+    // 周界 spacing：左 50 + cell 100 + 右 50 = 200（旧实现仅 100，漏周界）
+    assert!(
+        (table_box.content_width - 200.0).abs() < 1.0,
+        "separated-border table content_width should include perimeter spacing (50+100+50=200), \
+         got {} (old impl gave 100, missing perimeter)",
+        table_box.content_width,
+    );
+    // 空 cell 行高 0（无 strut）+ 上下周界 spacing 100+100 = 200
+    assert!(
+        (table_box.content_height - 200.0).abs() < 1.0,
+        "empty-cell row should be 0 (no strut) + top/bottom perimeter spacing 100+100=200, \
+         got {} (old impl added 20px strut)",
+        table_box.content_height,
+    );
+}
+
 /// R292：`border-collapse: collapse` 时，表四边缘的 cell border 与 table border
 /// 折叠——table border 胜出（更宽）时覆盖 cell border，后者不应再叠加进表尺寸。
 /// 旧实现把「列宽含半 cell border（border-center 语义）」+「表 border 整圈」两者
