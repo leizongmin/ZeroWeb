@@ -104,7 +104,10 @@ pub fn render_stroke(fb: &mut FrameBuffer, stroke: &StrokePrimitive, scale: f32)
                     right,
                     bottom,
                     stroke.color,
-                    2.0 * scale,
+                    // R796：dot 间距（圆心到圆心）= 2× border 厚度（chromium 实测：8px 边框
+                    // 圆点直径=8、gap=8、圆心距=16=2×width）。原 2.0*scale 固定 2px 致圆点
+                    //（半径 half_w=width/2）严重重叠成实线。dot_radius=half_w 已正确（=width/2）。
+                    2.0 * stroke.width * scale,
                 );
             }
         }
