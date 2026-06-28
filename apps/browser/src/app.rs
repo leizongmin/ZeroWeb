@@ -523,8 +523,13 @@ impl BrowserApp {
     }
 
     /// 最大化/全屏时视口底部额外留白（物理像素）；普通窗口仅保留 [`PAGE_FRAME_INSET_BOTTOM`]。
+    ///
+    /// 仅在 Linux（含 WSLg）启用：这些窗口管理器会裁切最大化窗口的圆角，
+    /// 需要 clip guard 避免内容被切；UI guard 名义上给浮动状态栏预留，
+    /// 但浮动 UI 实际是 content rect 内的 overlay，并不依赖外部预留。
+    /// Windows/macOS 最大化窗口为纯矩形，无需任何 guard。
     fn page_frame_bottom_reserves(&self, scale: f32) -> (f32, f32) {
-        if self.window_is_maximized {
+        if self.window_is_maximized && cfg!(target_os = "linux") {
             (
                 layout::PAGE_FRAME_BOTTOM_CLIP_GUARD * scale,
                 layout::PAGE_FRAME_BOTTOM_UI_GUARD * scale,

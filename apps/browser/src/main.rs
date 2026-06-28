@@ -1492,9 +1492,10 @@ mod tests {
         }
     }
 
-    /// 最大化时启用底部 clip/UI guard，避免 WSLg 裁切圆角。
+    /// 最大化时的底部预留：仅 Linux（WSLg 圆角裁切）启用 guard，
+    /// Windows/macOS 最大化窗口为纯矩形，frame 应铺到窗口底边。
     #[test]
-    fn page_layout_reserves_bottom_guards_when_maximized() {
+    fn page_layout_bottom_respects_platform_when_maximized() {
         let mut app = BrowserApp::new(RenderMode::Cpu);
         app.physical_size = (1280, 900);
         app.scale_factor = 1.0;
@@ -1502,12 +1503,21 @@ mod tests {
 
         let (_, fy, _, fh) = app.page_frame_rect_for(1280, 900);
         let frame_bottom = fy + fh;
-        let window_bottom = 900.0 - layout::PAGE_FRAME_BOTTOM_CLIP_GUARD - layout::PAGE_FRAME_BOTTOM_UI_GUARD;
 
-        assert!(
-            frame_bottom + layout::PAGE_FRAME_INSET_BOTTOM <= window_bottom + 0.5,
-            "maximized frame should stay above bottom guards"
-        );
+        if cfg!(target_os = "linux") {
+            // Linux/WSLg 保留 guard 避免圆角裁切
+            let window_bottom = 900.0 - layout::PAGE_FRAME_BOTTOM_CLIP_GUARD - layout::PAGE_FRAME_BOTTOM_UI_GUARD;
+            assert!(
+                frame_bottom + layout::PAGE_FRAME_INSET_BOTTOM <= window_bottom + 0.5,
+                "maximized frame on Linux should stay above bottom guards"
+            );
+        } else {
+            // Windows/macOS 最大化窗口为纯矩形，frame 底边应贴到窗口底边
+            assert!(
+                frame_bottom >= 900.0 - 0.5,
+                "maximized frame on Windows/macOS should reach window bottom, got {frame_bottom}"
+            );
+        }
     }
 
     /// 圆角 frame 时 overlay 应包含遮罩；扁平 frame 时 overlay 仍可用于浮动 UI。
