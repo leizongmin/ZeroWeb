@@ -1513,6 +1513,19 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
+    /// 新建空白标签页并聚焦地址栏（用户主动开新标签场景：Ctrl+T / 点 + 按钮）。
+    /// 聚焦后全选地址栏内容，便于用户直接输入覆盖。
+    fn new_blank_tab_focused(&mut self, private: bool) {
+        if private {
+            self.new_private_tab(None);
+        } else {
+            self.new_tab(None);
+        }
+        self.address_bar_focused = true;
+        self.address_bar.select_all();
+        self.needs_redraw = true;
+    }
+
     pub fn go_back(&mut self) {
         if !self.shell.go_back() {
             return;
