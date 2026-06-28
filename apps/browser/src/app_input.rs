@@ -2048,9 +2048,14 @@ impl BrowserApp {
             return;
         }
         self.address_bar_last_click = Some((Instant::now(), x, y));
-        self.address_bar.set_cursor(idx, extend);
+        // 未聚焦时单击：全选 URL（Chrome 行为）；已聚焦时定位光标（便于二次编辑）。
+        if !self.address_bar_focused {
+            self.address_bar.select_all();
+        } else {
+            self.address_bar.set_cursor(idx, extend);
+            self.address_bar_drag = true;
+        }
         self.address_bar_focused = true;
-        self.address_bar_drag = true;
         self.autocomplete.clear();
         self.needs_redraw = true;
     }
