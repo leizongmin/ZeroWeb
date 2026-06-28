@@ -36,6 +36,17 @@ impl BrowserApp {
             zero_host_runtime::event::MouseScrollDelta::LineDelta(x, y) => (-(x * 40.0), -(y * 40.0)),
         };
 
+        // Ctrl+滚轮 → 页面缩放（Chrome 行为）。delta_y < 0（向上滚）放大，> 0 缩小。
+        if self.ctrl_pressed || self.cmd_pressed {
+            if delta_y < 0.0 {
+                self.shell.zoom_in();
+            } else if delta_y > 0.0 {
+                self.shell.zoom_out();
+            }
+            self.show_zoom_indicator();
+            return;
+        }
+
         self.apply_page_scroll_delta(tab_id, delta_x, delta_y);
     }
 
