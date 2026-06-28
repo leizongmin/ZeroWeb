@@ -1350,9 +1350,11 @@ mod tests {
         let result = sandbox.execute("function(");
         if let Err(ScriptError::CompileError(msg)) = result {
             assert!(!msg.is_empty(), "Compile error message should not be empty");
+            // V8 错误类型名首字母大写（如 "SyntaxError: Unexpected..."），按大小写不敏感匹配
+            let lower = msg.to_lowercase();
             assert!(
-                msg.contains("syntax") || msg.contains("error") || msg.contains("unexpected"),
-                "Error message should indicate syntax issue"
+                lower.contains("syntax") || lower.contains("error") || lower.contains("unexpected"),
+                "Error message should indicate syntax issue, got: {msg}"
             );
         } else {
             panic!("Expected CompileError");

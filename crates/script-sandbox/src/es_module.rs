@@ -121,8 +121,9 @@ impl EsModuleSandbox {
 
         let transformed = compile_module_script(source, url, &self.registry)?;
 
-        // 执行转换后的脚本
-        let result = self.sandbox.execute(&transformed)?;
+        // 执行转换后的脚本；namespace_json 需要 JSON 序列化模块命名空间对象
+        // （plain execute() 对对象返回 "[object Object]"，须用 execute_json()）
+        let result = self.sandbox.execute_json(&transformed)?;
 
         let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
 
