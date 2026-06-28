@@ -49,7 +49,12 @@ target/test-guard: scripts/test-guard.rs
 # 全量测试（被 test-guard 包裹）。无人值守 / rally / CI 请用此 target，
 # 不要裸跑 cargo test。可调阈值：./target/test-guard --per-proc-mem 8 --total-mem 20 -- cargo test --workspace
 test: target/test-guard
-	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo test --workspace -- --test-threads=2
+	# 本地（WSL2 等）无可用 GPU 后端时，zero-render-foundation 的 wgpu headless 设备测试会在
+	# surface 配置 / 渲染回读路径上间歇性长时间阻塞（>30min，跨 renderer/tests.rs 与 surface.rs
+	# 多模块，致 test-guard 1800s 总超时连累整树）。本地 make test 用 --exclude 跳过该 crate；
+	# CI 直接跑 `cargo test --workspace`（ci.yml，真 Vulkan 后端）正常全量执行该 crate 测试。
+	# 需本地验证 render-foundation 时：test-guard -- cargo test -p zero-render-foundation。
+	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo test --workspace --exclude zero-render-foundation -- --test-threads=2
 
 # WPT reftest（同样被 test-guard 包裹）。
 reftest: target/test-guard
