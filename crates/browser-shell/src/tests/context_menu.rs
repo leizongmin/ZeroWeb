@@ -15,6 +15,16 @@ fn test_menu_item_action() {
 }
 
 #[test]
+fn test_menu_item_set_enabled() {
+    let mut item = MenuItem::action("view_source", "查看源代码");
+    assert!(item.enabled(), "action 默认启用");
+    item.set_enabled(false);
+    assert!(!item.enabled(), "set_enabled(false) 后应禁用");
+    item.set_enabled(true);
+    assert!(item.enabled(), "set_enabled(true) 后重新启用");
+}
+
+#[test]
 fn test_menu_item_separator() {
     let item = MenuItem::separator();
     assert!(item.is_separator());
