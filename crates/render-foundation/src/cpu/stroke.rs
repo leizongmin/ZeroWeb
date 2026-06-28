@@ -79,8 +79,12 @@ pub fn render_stroke(fb: &mut FrameBuffer, stroke: &StrokePrimitive, scale: f32)
                     bottom,
                     stroke.color,
                     stroke.cap,
-                    6.0 * scale,
-                    4.0 * scale,
+                    // R795：dash/gap 相对 border 厚度（chromium 实测：8px 边框 dash=16/gap=8，
+                    // 即 dash=2×width、gap=1×width）。原 6.0*scale/4.0*scale 是固定 6:4 与
+                    // 厚度无关，致 dashed 边框与 chromium 发散（root-element 等）。stroke.width*scale
+                    // = 像素边框厚度（=2×half_w）。
+                    2.0 * stroke.width * scale,
+                    stroke.width * scale,
                 );
             }
         }
