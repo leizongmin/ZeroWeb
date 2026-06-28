@@ -1973,6 +1973,21 @@ impl BrowserApp {
         let menu = ContextMenu::new(context_type);
         let mut items: Vec<MenuItem> = menu.items().to_vec();
 
+        // 地址栏（Editable 场景）：根据当前选区/内容状态动态禁用编辑项，
+        // 并移除地址栏不支持的 undo/redo（单行文本框无撤销栈）。
+        if context_type == ContextType::Editable {
+            let has_sel = self.address_bar.has_selection();
+            let is_empty = self.address_bar.text().is_empty();
+            items.retain(|it| !matches!(it.id(), "undo" | "redo"));
+            for item in items.iter_mut() {
+                match item.id() {
+                    "cut" | "copy" if !has_sel => item.set_enabled(false),
+                    "select_all" if is_empty => item.set_enabled(false),
+                    _ => {}
+                }
+            }
+        }
+
         // 根据当前页面能力禁用部分菜单项。
         // about:blank / 无 URL / zero:// 内部页 没有"源代码"或"可审查 DOM"概念，
         // 应禁用 view_source / inspect / save_as / print，避免无效操作。
