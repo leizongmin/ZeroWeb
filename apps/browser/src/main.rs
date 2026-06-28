@@ -437,11 +437,10 @@ mod tests {
     fn browser_window_config_starts_maximized_not_fullscreen() {
         let config = super::browser_window_config();
         assert!(!config.fullscreen);
+        assert!(config.maximized);
         if crate::app::is_wayland() {
-            assert!(config.maximized);
             assert!(!config.decorations);
         } else {
-            assert!(!config.maximized);
             assert!(config.decorations);
         }
     }
@@ -1690,10 +1689,11 @@ fn run_headless(cli: CliArgs) {
 fn browser_window_config() -> WindowConfig {
     let mut config = WindowConfig::new("ZeroBrowser")
         .with_size(1024, 768)
-        .with_resizable(true);
+        .with_resizable(true)
+        .with_maximized(true);
     if app::is_wayland() {
         tracing::warn!("Wayland: disabling client-side decorations (CSD subsurface crash on focus switch)");
-        config = config.with_decorations(false).with_maximized(true);
+        config = config.with_decorations(false);
     } else if app::uses_unified_titlebar() {
         config = config.with_unified_titlebar(true);
     }
