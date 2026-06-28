@@ -296,6 +296,9 @@ pub struct BrowserApp {
     background_tab_titles: HashMap<TabId, String>,
     /// 当前标签拖拽状态。None 表示未拖拽。
     tab_drag: Option<TabDragState>,
+    /// 触摸 tap 候选：Started 时记录，Ended 时若移动 <阈值则合成为左键 click。
+    /// 仅 chrome UI 区（非页面内容）走此路径；页面内容区用 touch_scroll。
+    touch_tap_candidate: Option<(u64, f64, f64)>,
     /// 系统颜色方案偏好
     color_scheme: PrefersColorSchemeValue,
     /// 浏览器外壳配色
@@ -386,6 +389,7 @@ impl BrowserApp {
             last_tab_click_id: None,
             background_tab_titles: HashMap::new(),
             tab_drag: None,
+            touch_tap_candidate: None,
             color_scheme,
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
             cached_window_theme: None,
@@ -677,6 +681,12 @@ impl BrowserApp {
 
     fn new_tab_button_x(&self) -> f32 {
         self.tab_layout.last().map(|&(_, x, w)| x + w).unwrap_or(0.0)
+    }
+
+    /// 测试 helper：暴露「+」按钮 x 坐标。
+    #[cfg(test)]
+    pub fn new_tab_button_x_for_test(&self) -> f32 {
+        self.new_tab_button_x()
     }
 
     fn window_controls_origin_x(&self, width: f32, s: f32) -> f32 {

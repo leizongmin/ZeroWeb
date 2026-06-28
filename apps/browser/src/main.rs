@@ -1404,6 +1404,83 @@ mod tests {
         );
     }
 
+    /// 触摸 tap chrome UI 区应合成左键 click（验证「+」按钮 tap 新建标签）。
+    #[test]
+    fn handle_touch_tap_on_new_tab_button_creates_tab() {
+        use zero_host_runtime::event::{TouchEvent, TouchPhase};
+
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        let initial_count = app.shell.tab_count();
+
+        // build_scene 填充 tab_layout
+        let _ = app.build_scene_for_test(1280, 900);
+        let new_tab_x = app.new_tab_button_x_for_test();
+        let tap_x = new_tab_x as f64 + 8.0;
+        let tap_y = 12.0;
+
+        app.handle_touch(&TouchEvent {
+            id: 1,
+            phase: TouchPhase::Started,
+            x: tap_x,
+            y: tap_y,
+        });
+        app.handle_touch(&TouchEvent {
+            id: 1,
+            phase: TouchPhase::Ended,
+            x: tap_x,
+            y: tap_y,
+        });
+
+        assert_eq!(
+            app.shell.tab_count(),
+            initial_count + 1,
+            "touch tap on '+' should create a new tab"
+        );
+    }
+
+    /// 触摸 tap 移动超过阈值不应合成 click（避免滚动误触）。
+    #[test]
+    fn handle_touch_swipe_does_not_trigger_tap() {
+        use zero_host_runtime::event::{TouchEvent, TouchPhase};
+
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        let initial_count = app.shell.tab_count();
+
+        let _ = app.build_scene_for_test(1280, 900);
+        let new_tab_x = app.new_tab_button_x_for_test();
+        let tap_x = new_tab_x as f64 + 8.0;
+        let tap_y = 12.0;
+
+        app.handle_touch(&TouchEvent {
+            id: 1,
+            phase: TouchPhase::Started,
+            x: tap_x,
+            y: tap_y,
+        });
+        app.handle_touch(&TouchEvent {
+            id: 1,
+            phase: TouchPhase::Moved,
+            x: tap_x + 50.0,
+            y: tap_y,
+        });
+        app.handle_touch(&TouchEvent {
+            id: 1,
+            phase: TouchPhase::Ended,
+            x: tap_x + 50.0,
+            y: tap_y,
+        });
+
+        assert_eq!(
+            app.shell.tab_count(),
+            initial_count,
+            "swipe (move > threshold) should not trigger tap click"
+        );
+    }
+
     /// 鼠标左键拖拽（RDP/远程桌面触摸模拟）应更新 scroll_offset。
     #[test]
     fn handle_mouse_drag_scroll_updates_offset_for_tall_page() {
