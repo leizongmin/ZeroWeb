@@ -1929,6 +1929,21 @@ fn position_cells(
                 .max(0.0);
             cell_box.content_height = cell_content_h;
 
+            // table-cell 建立新的 BFC（CSS §9.4.1），其首个 in-flow 子元素的
+            // margin-top 不应向上穿透单元格（§8.3.1：BFC 的 margin 不与子折叠），
+            // 应作为单元格内的顶部留白保留。但 taffy 把单元格按普通 Block 布局，
+            // 把首子 margin-top 折叠上提到 cell.margin_top；自定义表格布局忽略
+            // 单元格 margin → margin 丢失，内容从 content-box 顶（y=0）开始，
+            // 而把等量空白留在了单元格底部（cell_content_height 已计入该 margin）。
+            // 将内容子树整体下移 cell.margin_top，把顶部留白从底部移到顶部，
+            // 对齐 Chromium。底部 margin（cell.margin_bottom）仍自然留作底部空白。
+            let top_gap = cell_box.margin_top;
+            if top_gap > 0.0 {
+                for child in &mut cell_box.children {
+                    child.y += top_gap;
+                }
+            }
+
             // 应用 vertical-align 到单元格内的子元素
             // CSS 2.1 表格单元格内的 vertical-align 控制内容垂直对齐
             if let Some(cell_node_id) = cell_box.node_id

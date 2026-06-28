@@ -557,7 +557,9 @@ mod tests {
         let history = zero_browser_shell::History::default();
         let html = generate_history_html(&history);
         assert!(html.contains("zero://history/clear"));
-        assert!(html.contains("History"));
+        // 标题随 UiLanguage::detect_from_env() 变化（EnUs "History" / ZhCn "历史"），
+        // 须同时接受两种 locale（与 generate_downloads_html_renders_empty_state 同模式）。
+        assert!(html.contains("History") || html.contains("历史"));
     }
 
     #[test]

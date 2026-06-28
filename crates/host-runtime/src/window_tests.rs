@@ -469,8 +469,9 @@ fn test_basic_app_ignored_events() {
     let mut received: Vec<AppEvent> = Vec::new();
     let mut callback = |e: AppEvent| received.push(e);
     let mut app = make_basic_app(&mut callback);
+    // ThemeChanged 不在此列：主题切换功能（08440050）已让 handle_window_event
+    // 派发 AppEvent::ThemeChanged；Destroyed/Occluded 仍走 `_ => {}` 静默忽略。
     app.handle_window_event(winit::event::WindowEvent::Destroyed);
-    app.handle_window_event(winit::event::WindowEvent::ThemeChanged(winit::window::Theme::Light));
     app.handle_window_event(winit::event::WindowEvent::Occluded(false));
     assert!(received.is_empty(), "Ignored events should not dispatch");
 }
@@ -1409,9 +1410,8 @@ fn test_basic_app_unhandled_events_silently_ignored() {
         let mut callback = |e: AppEvent| received.push(e);
         let mut app = make_basic_app(&mut callback);
 
-        // 以下事件均不在 handle_window_event 的 match 分支中
+        // 以下事件均不在 handle_window_event 的 match 分支中（ThemeChanged 已派发，见主题切换功能）
         app.handle_window_event(winit::event::WindowEvent::Destroyed);
-        app.handle_window_event(winit::event::WindowEvent::ThemeChanged(winit::window::Theme::Light));
         app.handle_window_event(winit::event::WindowEvent::Occluded(false));
 
         assert!(received.is_empty(), "未处理的事件应被静默忽略，不应产生任何回调事件");

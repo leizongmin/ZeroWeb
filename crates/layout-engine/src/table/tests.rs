@@ -213,6 +213,76 @@ fn test_table_cell_valign_bottom_stays_in_content_box() {
     );
 }
 
+/// R769：table-cell 建立 BFC（CSS §9.4.1），其首子 margin-top 不应向上穿透单元格
+/// 而丢失——BFC 的 margin 不与子元素折叠（§8.3.1）。但 taffy 把单元格按普通 Block
+/// 布局，把首子 margin-top 折叠上提到 `cell.margin_top`；自定义表格布局忽略单元格
+/// margin → 内容从 content-box 顶（y=0）开始，等量空白留底部（cell_content_height
+/// 已按 child.margin_top 计入高度）。`position_cells` 把内容子树下移 `cell.margin_top`，
+/// 把顶部留白从底部移到顶部，对齐 Chromium BFC margin 包含语义。
+/// 回归 margin-collapse-110/111（chromium Oracle 14.80%→4.75%）。
+#[test]
+fn test_table_cell_bfc_first_child_margin_top_preserved() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    styles.insert(table_id, ts);
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCell;
+    styles.insert(cell_id, cs);
+
+    // 单元格内一个 30px 高的内容块，自身 margin-top/bottom = 50px（模拟
+    // margin-collapse-110 的 `div { margin: 1em 0 }`）。taffy 折叠后首子 y=0。
+    let content_box = LayoutBox {
+        height: 30.0,
+        width: 100.0,
+        margin_top: 50.0,
+        margin_bottom: 50.0,
+        ..Default::default()
+    };
+    // cell.margin_top = 50px：taffy 把首子 margin-top 折叠上提到单元格（BFC
+    // 单元格应包含此 margin 作顶部留白，而非丢失）。cell_content_height 会按
+    // child.margin_top 计入 50 → 总高 130，故下移后仍在 content 区内。
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        margin_top: 50.0,
+        content_width: 100.0,
+        children: vec![content_box],
+        ..Default::default()
+    };
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        content_width: 100.0,
+        children: vec![cell_box],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    position_cells(&mut table_box, &grid, &[100.0], 0.0, 0.0, &styles);
+
+    let cell = &table_box.children[0];
+    let content = &cell.children[0];
+    // 首子应被下移 cell.margin_top（BFC 顶部留白），而非停在 y=0（旧 bug 丢失 margin）
+    assert_eq!(
+        content.y, 50.0,
+        "first child should shift down by cell.margin_top (BFC margin containment), \
+         got y={}; old behavior left content at y=0 losing the top margin",
+        content.y
+    );
+    // 下移后内容底仍在 content 区内（顶部留白从底部移到顶部，总高不变）
+    let content_bottom = content.y + content.height;
+    assert!(
+        content_bottom <= cell.content_height + 0.5,
+        "shifted content bottom ({content_bottom}) must stay within content_height ({})",
+        cell.content_height
+    );
+}
+
 /// R292：`border-collapse: collapse` 时，表四边缘的 cell border 与 table border
 /// 折叠——table border 胜出（更宽）时覆盖 cell border，后者不应再叠加进表尺寸。
 /// 旧实现把「列宽含半 cell border（border-center 语义）」+「表 border 整圈」两者

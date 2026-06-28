@@ -1187,7 +1187,9 @@ mod tests {
         assert!(ROUNDED_RECT_SHADER.contains("vs_main"));
         assert!(GRADIENT_SHADER.contains("vs_main"));
         assert!(IMAGE_SHADER.contains("vs_main"));
-        assert!(BLUR_SHADER.contains("vs_main"));
+        // BLUR_SHADER 用全屏三角形 pass，vertex entry point 命名为 vs_fullscreen（非 vs_main）
+        assert!(BLUR_SHADER.contains("vs_fullscreen"));
+        assert!(BLUR_SHADER.contains("fs_blur"));
     }
 
     #[test]
