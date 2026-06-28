@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::{CalcExpr, LengthValue, parse_var};
 
 use crate::property::ComputedStyle;
-use crate::property::types::{BorderStyleValue, FlexBasisValue, LineHeightValue};
+use crate::property::types::{FlexBasisValue, LineHeightValue};
 
 /// 默认根字体大小（px）。
 pub const ROOT_FONT_SIZE: f64 = 16.0;
@@ -286,24 +286,13 @@ pub fn resolve_computed_style(
         resolve_length_field(lv, font_size_px, viewport_width, viewport_height);
     }
 
-    // CSS 规范：border-style 为 none 时 computed border-width 为 0。
-    // 注意：hidden **保留** computed border-width（仅 used（布局/绘制）为 0）——
-    // WPT border-width-012 + csswg #2768/#11494：`border-width:inherit` 须能继承
-    // hidden 元素的 computed width（如 2em）。converter border_lp / paint border.rs /
-    // table_borders resolve_collapsed_borders 各自独立按 hidden=0 used，故此处仅
-    // 对 none 归零（hidden 保留供 inherit）。
-    if matches!(resolved.border_top_style, BorderStyleValue::None) {
-        resolved.border_top_width = LengthValue::Px(0.0);
-    }
-    if matches!(resolved.border_right_style, BorderStyleValue::None) {
-        resolved.border_right_width = LengthValue::Px(0.0);
-    }
-    if matches!(resolved.border_bottom_style, BorderStyleValue::None) {
-        resolved.border_bottom_width = LengthValue::Px(0.0);
-    }
-    if matches!(resolved.border_left_style, BorderStyleValue::None) {
-        resolved.border_left_width = LengthValue::Px(0.0);
-    }
+    // csswg #2768/#11494（覆盖 CSS2.1 §8.5.3 旧表述）：computed border-width **始终**
+    // 为 specified 值（none/hidden 都不归零），仅 used（布局/绘制）为 0。这样
+    // `border-width:inherit` 才能继承（border-width-011 body 无 border-style→none，
+    // p inherit 2em；border-width-012 body hidden）。converter border_lp / paint
+    // border.rs / table_borders resolve_collapsed_borders 各自独立按 none|hidden=0 used，
+    // 故移除 computed zeroing 对渲染无副作用，只让 computed 值保留供 inherit。
+    // （R769e 仅保留 hidden；R769f 扩展到 none —— 完整 csswg #2768/#11494。）
 
     resolve_length_field(
         &mut resolved.border_top_left_radius,
