@@ -152,9 +152,10 @@ impl ChromePalette {
             download_bar_fill: rgb(66, 133, 244),
             download_bar_text: rgb(32, 33, 36),
             scrollbar_track: rgba(0, 0, 0, 0),
-            scrollbar_thumb: rgb(193, 193, 193),
-            scrollbar_thumb_hover: rgb(155, 155, 155),
-            scrollbar_thumb_active: rgb(120, 120, 120),
+            // overlay 风格半透明滑块：默认克制，hover/active 递进加深。
+            scrollbar_thumb: rgba(0, 0, 0, 90),
+            scrollbar_thumb_hover: rgba(0, 0, 0, 160),
+            scrollbar_thumb_active: rgba(0, 0, 0, 210),
             window_frame_border: rgb(160, 164, 169),
         }
     }
@@ -219,9 +220,9 @@ impl ChromePalette {
             download_bar_fill: rgb(66, 133, 244),
             download_bar_text: rgb(220, 220, 220),
             scrollbar_track: rgba(0, 0, 0, 0),
-            scrollbar_thumb: rgb(120, 120, 120),
-            scrollbar_thumb_hover: rgb(150, 150, 150),
-            scrollbar_thumb_active: rgb(180, 180, 180),
+            scrollbar_thumb: rgba(255, 255, 255, 90),
+            scrollbar_thumb_hover: rgba(255, 255, 255, 160),
+            scrollbar_thumb_active: rgba(255, 255, 255, 210),
             window_frame_border: rgb(90, 90, 90),
         }
     }

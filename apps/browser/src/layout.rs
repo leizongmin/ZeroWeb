@@ -160,7 +160,7 @@ pub const PAGE_FRAME_SHADOW_OFFSET_Y: f32 = 2.0;
 /// 页面视口 drop shadow 不透明度（叠加在黑色之上）。
 pub const PAGE_FRAME_SHADOW_ALPHA: u8 = 38;
 /// Thickness of classic reserved scrollbars in logical pixels.
-pub const SCROLLBAR_THICKNESS: f32 = 12.0;
+pub const SCROLLBAR_THICKNESS: f32 = 10.0;
 /// Minimum scrollbar thumb length in logical pixels.
 pub const SCROLLBAR_MIN_THUMB: f32 = 32.0;
 /// Width of the custom outer frame border used on undecorated Wayland windows.
