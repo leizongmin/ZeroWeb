@@ -2093,6 +2093,7 @@ impl BrowserApp {
     /// 显示右键上下文菜单
     fn show_context_menu(&mut self, x: f64, y: f64) {
         let s = self.scale_factor;
+        let language = UiLanguage::detect_from_env();
         let y_f = y as f32;
         let x_f = x as f32;
         let chrome_top = self.chrome_top_y_for(s);
@@ -2145,6 +2146,23 @@ impl BrowserApp {
                     "cut" | "copy" if !has_sel => item.set_enabled(false),
                     "select_all" if is_empty => item.set_enabled(false),
                     _ => {}
+                }
+            }
+            // 在 paste 后插入"粘贴并转到 / 粘贴并搜索"（剪贴板有内容时）。
+            if let Some(clip) = crate::clipboard::read_text() {
+                let clip = clip.trim().to_string();
+                if !clip.is_empty() {
+                    // 启发式判断：含 "." 且无空格视为 URL，否则搜索词。
+                    let looks_like_url = clip.contains('.') && !clip.contains(' ');
+                    let label = match (looks_like_url, language) {
+                        (true, UiLanguage::ZhCn) => "粘贴并转到",
+                        (true, UiLanguage::EnUs) => "Paste and go",
+                        (false, UiLanguage::ZhCn) => "粘贴并搜索",
+                        (false, UiLanguage::EnUs) => "Paste and search",
+                    };
+                    if let Some(idx) = items.iter().position(|it| it.id() == "paste") {
+                        items.insert(idx + 1, MenuItem::action("paste_and_go", label));
+                    }
                 }
             }
         }
@@ -2313,6 +2331,17 @@ impl BrowserApp {
             }
             "paste" if self.address_bar.paste_from_clipboard() => {
                 self.update_autocomplete();
+            }
+            "paste_and_go" => {
+                // 粘贴剪贴板内容并立即导航（不保留聚焦态）。
+                if self.address_bar.paste_from_clipboard() {
+                    let text = self.address_bar.text().trim().to_string();
+                    if !text.is_empty() {
+                        self.address_bar_focused = false;
+                        self.autocomplete.clear();
+                        self.navigate_to(&text);
+                    }
+                }
             }
             "select_all" => {
                 self.address_bar.select_all();
