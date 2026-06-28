@@ -35,6 +35,7 @@ mod page_selection;
 mod pages;
 mod paint_ipc;
 mod process_backend;
+mod shutdown_signal;
 mod tab_chrome;
 mod tab_favicon;
 mod tab_js_worker;
@@ -1779,6 +1780,11 @@ fn sync_window_chrome_icon(app: &mut BrowserApp, window: &winit::window::Window)
 fn main() {
     tracing_subscriber::fmt().init();
 
+    // 注册 Ctrl+C handler：把信号转成 flag，事件循环检测到后走
+    // shutdown_child_processes 正常退出路径，避免孤儿 renderer 锁住 exe。
+    // 必须在进入事件循环前安装。
+    shutdown_signal::install();
+
     detect_and_set_platform_scale();
 
     tracing::info!("ZeroBrowser starting...");
@@ -1827,6 +1833,15 @@ fn main() {
     let mut cpu_surface: Option<softbuffer::Surface<Arc<winit::window::Window>, Arc<winit::window::Window>>> = None;
 
     if let Err(e) = runtime.run_with_window(move |event, window| {
+        // Ctrl+C / 系统关机信号：走和窗口关闭按钮一样的清理路径，
+        // 避免 process::exit 跳过 Drop 导致 zero-renderer 子进程成为孤儿。
+        if shutdown_signal::is_set() {
+            tracing::info!("Shutdown signal received, exiting gracefully...");
+            app.persist_user_data();
+            app.shutdown_child_processes();
+            std::process::exit(0);
+        }
+
         app.poll_tab_fetch();
 
         match event {

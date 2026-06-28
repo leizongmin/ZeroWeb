@@ -5780,6 +5780,7 @@ dependencies = [
  "tracing-subscriber",
  "tungstenite",
  "url",
+ "windows-sys 0.59.0",
  "winit",
  "winres",
  "zero-browser-shell",
