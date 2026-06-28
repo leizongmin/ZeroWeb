@@ -10,7 +10,10 @@ use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, WritingModeValue};
 
 use crate::converter::{GridAreaMap, computed_style_to_taffy, parse_grid_template_areas};
-use crate::inline_block_split::{InlineBlockSegment, compute_inline_block_split, inline_has_block_child};
+use crate::inline_block_split::{
+    InlineBlockSegment, block_container_has_mixed_content, compute_block_container_split, compute_inline_block_split,
+    inline_has_block_child, is_whitespace_only_inline_segment,
+};
 
 /// R109 §9.2.1.1 生产端接线（匿名块生成 + fragment border）默认**启用**——经全量
 /// reftest（+2 零回归：inline-box-001 / block-in-inline-align-001）+ 全量 make test
@@ -559,15 +562,16 @@ fn build_subtree(
             }
         } else {
             // 非 flex/grid 容器
-            // R109 §9.2.1.1（env R109_WIRE=1）：inline 元素含 in-flow block-level
-            // 子元素时，按 CSS 规范拆分为匿名块盒序列——连续 inline 内容（文本 +
-            // inline 元素）→ 匿名块，block-level 子元素 → 独立块。匿名块以 inline
-            // 的 NodeId 为 context（承其样式 + 使 extract 给出 node_id=inline），
-            // 其片段 DOM 子节点记入 fragment_registry，供 extract_layout 写
-            // LayoutBox.fragment_node_ids（IFC 只收集该片段文本）。
-            let r109_segments = if r109_wired() && inline_has_block_child(doc, styles, dom_id) {
+            // R109 §9.2.1.1（env R109_WIRE=1）：
+            // ① inline 元素含 in-flow block-level 子元素 → inline 被拆分为匿名块盒序列
+            // ② block 容器含混合 inline+block 子元素 → inline 子元素被匿名块盒包裹
+            let is_inline_r109 = r109_wired() && inline_has_block_child(doc, styles, dom_id);
+            let is_block_mixed = r109_wired() && block_container_has_mixed_content(doc, styles, dom_id);
+            let r109_segments = if is_inline_r109 {
                 ctx.r109.split_parents.insert(dom_id);
                 compute_inline_block_split(doc, styles, dom_id)
+            } else if is_block_mixed {
+                compute_block_container_split(doc, styles, dom_id)
             } else {
                 None
             };
@@ -579,6 +583,10 @@ fn build_subtree(
                 for seg in segments {
                     match seg {
                         InlineBlockSegment::Inline { item_node_ids } => {
+                            // block 容器：跳过纯空白 inline 片段保 collapse-through 语义
+                            if is_block_mixed && is_whitespace_only_inline_segment(doc, &item_node_ids) {
+                                continue;
+                            }
                             // 取片段首个文本节点作为 measure context（单文本片段精确；
                             // 多节点片段仅按首节点近似尺寸，已知限制）。
                             let ctx_node = item_node_ids
@@ -586,27 +594,35 @@ fn build_subtree(
                                 .copied()
                                 .find(|&nid| doc.get(nid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
                                 .unwrap_or(dom_id);
-                            // 匿名块继承 split inline 的盒模型（border/padding/background），
-                            // 使其 border/background 经 shrink 落在文本宽（§9.2.1.1：被拆分
-                            // inline 的 border/background 在 inline 级=各匿名块绘制）。
-                            // 用 converter 从 inline 的 computed 构建，强制 display:Block。
-                            let mut anon_style =
-                                computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
-                            anon_style.display = taffy::style::Display::Block;
-                            // 清零 inset：匿名块片段不应继承 split inline 的 position 偏移
-                            //（top/left 等）。相对偏移由 split inline 父盒单次施加，片段作为
-                            // 子盒随之移动；若片段也带 inset，taffy 会重复偏移（inline-box-002
-                            // 的 position:relative;top:2in 致片段偏低 2×192px 出视口）。
-                            anon_style.inset = taffy::geometry::Rect {
-                                left: taffy::style::LengthPercentageAuto::AUTO,
-                                right: taffy::style::LengthPercentageAuto::AUTO,
-                                top: taffy::style::LengthPercentageAuto::AUTO,
-                                bottom: taffy::style::LengthPercentageAuto::AUTO,
+                            let anon_taffy = if is_block_mixed {
+                                // block 容器匿名块：plain Block（不继承容器盒模型，容器
+                                // 自身的 bg/border/padding 仍由容器盒绘制）。
+                                let anon_style = taffy::Style {
+                                    display: taffy::style::Display::Block,
+                                    ..taffy::Style::default()
+                                };
+                                ctx.taffy
+                                    .new_leaf_with_context(anon_style, ctx_node)
+                                    .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap())
+                            } else {
+                                // inline 元素匿名块：继承 split inline 的盒模型（border/
+                                // padding/background），使其 border/background 经 shrink
+                                // 落在文本宽（§9.2.1.1：被拆分 inline 的 border/background
+                                // 在 inline 级=各匿名块绘制）。
+                                let mut anon_style =
+                                    computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
+                                anon_style.display = taffy::style::Display::Block;
+                                // 清零 inset：匿名块片段不应继承 split inline 的 position 偏移
+                                anon_style.inset = taffy::geometry::Rect {
+                                    left: taffy::style::LengthPercentageAuto::AUTO,
+                                    right: taffy::style::LengthPercentageAuto::AUTO,
+                                    top: taffy::style::LengthPercentageAuto::AUTO,
+                                    bottom: taffy::style::LengthPercentageAuto::AUTO,
+                                };
+                                ctx.taffy
+                                    .new_leaf_with_context(anon_style, ctx_node)
+                                    .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap())
                             };
-                            let anon_taffy = ctx
-                                .taffy
-                                .new_leaf_with_context(anon_style, ctx_node)
-                                .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
                             ctx.taffy_to_dom.insert(anon_taffy, dom_id);
                             ctx.r109.fragment_registry.insert(anon_taffy, item_node_ids);
                             inline_anon_ids.push(anon_taffy);
