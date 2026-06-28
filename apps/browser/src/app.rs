@@ -491,9 +491,13 @@ impl BrowserApp {
         self.apply_resolved_color_scheme(self.cached_window_theme);
     }
 
-    /// Wayland 无系统装饰时需自绘窗口控制按钮
+    /// 是否需要自绘窗口控制按钮（最小化/最大化/关闭）。
+    ///
+    /// - Wayland：无系统装饰
+    /// - Windows：禁用了系统标题栏，改用自绘
+    /// - macOS：使用系统 traffic lights，无需自绘
     pub fn uses_custom_window_controls(&self) -> bool {
-        is_wayland()
+        is_wayland() || cfg!(target_os = "windows")
     }
 
     /// macOS 一体化标题栏（系统 traffic lights 与标签栏同排）。
