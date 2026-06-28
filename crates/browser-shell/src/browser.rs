@@ -30,6 +30,15 @@ pub struct BrowserShell {
     autocomplete: Autocomplete,
 }
 
+/// 页面查找循环提示方向。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FindWrapHint {
+    /// 已从末尾回到开头。
+    WrappedToStart,
+    /// 已从开头跳到末尾。
+    WrappedToEnd,
+}
+
 /// 页面查找状态。
 #[derive(Debug, Clone)]
 pub struct FindState {
@@ -41,6 +50,8 @@ pub struct FindState {
     current_match: usize,
     /// 总匹配数。
     total_matches: usize,
+    /// 上一次 find_next/previous 是否发生了循环环绕（用于 UI 提示）。
+    last_wrap: Option<FindWrapHint>,
 }
 
 impl FindState {
@@ -51,6 +62,7 @@ impl FindState {
             active: false,
             current_match: 0,
             total_matches: 0,
+            last_wrap: None,
         }
     }
 
@@ -72,6 +84,11 @@ impl FindState {
     /// 总匹配数。
     pub fn total_matches(&self) -> usize {
         self.total_matches
+    }
+
+    /// 上一次 find 操作的循环提示（若有）。
+    pub fn last_wrap(&self) -> Option<FindWrapHint> {
+        self.last_wrap
     }
 }
 
@@ -427,12 +444,20 @@ impl BrowserShell {
         self.find_state.active = true;
         self.find_state.current_match = 0;
         self.find_state.total_matches = 0;
+        self.find_state.last_wrap = None;
     }
 
     /// 跳转到下一个匹配。
     pub fn find_next(&mut self) {
         if self.find_state.total_matches > 0 {
-            self.find_state.current_match = (self.find_state.current_match % self.find_state.total_matches) + 1;
+            let next = (self.find_state.current_match % self.find_state.total_matches) + 1;
+            // 从末尾回到开头视为循环
+            if self.find_state.current_match == self.find_state.total_matches {
+                self.find_state.last_wrap = Some(FindWrapHint::WrappedToStart);
+            } else {
+                self.find_state.last_wrap = None;
+            }
+            self.find_state.current_match = next;
         }
     }
 
@@ -441,8 +466,10 @@ impl BrowserShell {
         if self.find_state.total_matches > 0 {
             if self.find_state.current_match <= 1 {
                 self.find_state.current_match = self.find_state.total_matches;
+                self.find_state.last_wrap = Some(FindWrapHint::WrappedToEnd);
             } else {
                 self.find_state.current_match -= 1;
+                self.find_state.last_wrap = None;
             }
         }
     }
@@ -453,6 +480,7 @@ impl BrowserShell {
         self.find_state.query.clear();
         self.find_state.current_match = 0;
         self.find_state.total_matches = 0;
+        self.find_state.last_wrap = None;
     }
 
     /// 更新查找匹配数。

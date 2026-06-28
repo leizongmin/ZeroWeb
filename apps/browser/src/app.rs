@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use zero_browser_shell::{
-    BrowserMenuLabel, BrowserSettings, BrowserShell, ColorThemePreference, ContextMenu, ContextType, MenuItem,
-    SearchEngine, SuggestionSource, TabId, TabMenuLabel, UiLanguage, browser_menu_label, tab_menu_label,
+    BrowserMenuLabel, BrowserSettings, BrowserShell, ColorThemePreference, ContextMenu, ContextType, FindWrapHint,
+    MenuItem, SearchEngine, SuggestionSource, TabId, TabMenuLabel, UiLanguage, browser_menu_label, tab_menu_label,
 };
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::set_char_measure_fn;

@@ -1438,7 +1438,14 @@ impl BrowserApp {
 
         let find_state = self.shell.find_state();
         if find_state.total_matches() > 0 {
-            let match_text = format!("{}/{}", find_state.current_match(), find_state.total_matches());
+            let mut match_text = format!("{}/{}", find_state.current_match(), find_state.total_matches());
+            // 循环提示后缀
+            if let Some(wrap) = find_state.last_wrap() {
+                match_text.push_str(match wrap {
+                    FindWrapHint::WrappedToStart => "  ↻",
+                    FindWrapHint::WrappedToEnd => "  ↺",
+                });
+            }
             let match_x = bar_x + bar_w - 130.0 * s;
             self.draw_ui_text(
                 &match_text,
@@ -1467,6 +1474,7 @@ impl BrowserApp {
         let btn_w = 24.0 * s;
         let icon_size = 16.0 * s;
         let btn_cy = btn_y + font_size * 0.5;
+        let hover_radius = 5.0 * s;
 
         for (bx, icon) in [
             (prev_x, crate::ui_icons::Icon::ChevronUp),
@@ -1476,11 +1484,13 @@ impl BrowserApp {
             let icon_cx = bx + btn_w / 2.0;
             let hovered = self.pointer_in_rect(bx, y, btn_w, bar_h);
             if hovered {
-                push_circle_fill(
+                push_rounded_rect_fill(
                     fills,
-                    icon_cx,
-                    btn_cy,
-                    icon_size + 8.0 * s,
+                    bx,
+                    y + 2.0 * s,
+                    btn_w,
+                    bar_h - 4.0 * s,
+                    hover_radius,
                     self.chrome_palette.tab_hover_bg,
                 );
             }

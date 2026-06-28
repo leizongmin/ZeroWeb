@@ -361,6 +361,45 @@ fn test_browser_shell_find_wrap_around() {
 }
 
 #[test]
+fn find_next_sets_wrap_hint_when_wrapping_to_start() {
+    let mut shell = BrowserShell::new();
+    shell.find_start("test");
+    shell.find_set_matches(3);
+    // 1 → 2 → 3（无环绕）
+    shell.find_next();
+    shell.find_next();
+    assert_eq!(shell.find_state().last_wrap(), None);
+    // 3 → 1（环绕到开头）
+    shell.find_next();
+    assert_eq!(shell.find_state().last_wrap(), Some(FindWrapHint::WrappedToStart));
+}
+
+#[test]
+fn find_previous_sets_wrap_hint_when_wrapping_to_end() {
+    let mut shell = BrowserShell::new();
+    shell.find_start("test");
+    shell.find_set_matches(3);
+    // 1 → 3（环绕到末尾）
+    shell.find_previous();
+    assert_eq!(shell.find_state().last_wrap(), Some(FindWrapHint::WrappedToEnd));
+    // 3 → 2（非环绕，清除 hint）
+    shell.find_previous();
+    assert_eq!(shell.find_state().last_wrap(), None);
+}
+
+#[test]
+fn find_start_clears_wrap_hint() {
+    let mut shell = BrowserShell::new();
+    shell.find_start("test");
+    shell.find_set_matches(2);
+    shell.find_next(); // 1 → 2
+    shell.find_next(); // 2 → 1 wrap
+    assert!(shell.find_state().last_wrap().is_some());
+    shell.find_start("new");
+    assert_eq!(shell.find_state().last_wrap(), None);
+}
+
+#[test]
 fn test_browser_shell_find_previous_at_start() {
     let mut shell = BrowserShell::new();
     shell.find_start("test");
