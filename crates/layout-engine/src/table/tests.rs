@@ -2,7 +2,7 @@
 
 use super::*;
 use std::collections::HashMap;
-use zero_css_parser::values::DisplayValue;
+use zero_css_parser::values::{DisplayValue, VisibilityValue};
 use zero_dom::Document;
 use zero_style_system::ComputedStyle;
 
@@ -60,6 +60,79 @@ fn test_build_grid_consecutive_direct_cells_share_one_row() {
     // cell.child_index 指向 table_box.children（配合 is_anonymous 导航）
     assert_eq!(row.cells[0].child_index, 0);
     assert_eq!(row.cells[1].child_index, 1);
+}
+
+/// CSS Tables §4.1：table-row 上 `visibility:collapse` 的行应被标记为折叠
+/// （高度为 0、不贡献 border-spacing）。镜像列折叠 `detect_collapsed_columns`。
+/// 匿名行（无 table-row 元素）不可折叠。
+#[test]
+fn test_build_grid_detects_collapsed_rows() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let row1_id = doc.create_element("div");
+    let row2_id = doc.create_element("div");
+    let cell1_id = doc.create_element("div");
+    let cell2_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    styles.insert(table_id, ts);
+
+    let mut row1_style = ComputedStyle::default();
+    row1_style.display = DisplayValue::TableRow;
+    styles.insert(row1_id, row1_style);
+
+    let mut row2_style = ComputedStyle::default();
+    row2_style.display = DisplayValue::TableRow;
+    row2_style.visibility = VisibilityValue::Collapse; // 第 2 行折叠
+    styles.insert(row2_id, row2_style);
+
+    let cell_style = {
+        let mut cs = ComputedStyle::default();
+        cs.display = DisplayValue::TableCell;
+        cs
+    };
+    styles.insert(cell1_id, cell_style.clone());
+    styles.insert(cell2_id, cell_style);
+
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![
+            LayoutBox {
+                node_id: Some(row1_id),
+                children: vec![LayoutBox {
+                    node_id: Some(cell1_id),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            LayoutBox {
+                node_id: Some(row2_id),
+                children: vec![LayoutBox {
+                    node_id: Some(cell2_id),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+
+    assert_eq!(grid.rows.len(), 2, "two table-row children → two rows");
+    assert!(
+        !grid.rows[0].is_anonymous && !grid.rows[1].is_anonymous,
+        "table-row children produce non-anonymous rows"
+    );
+    assert_eq!(
+        grid.collapsed_rows,
+        vec![false, true],
+        "only the 2nd row (visibility:collapse) should be collapsed"
+    );
 }
 
 /// CSS Tables §4：`<col>`/`<colgroup>` 元素定义网格列。
@@ -498,6 +571,7 @@ fn test_collect_table_col_backgrounds() {
         rows: Vec::new(),
         col_count: 3,
         collapsed_cols: vec![false, true, false],
+        collapsed_rows: Vec::new(),
     };
     let col_widths = [65.0f32, 0.0, 160.0];
 

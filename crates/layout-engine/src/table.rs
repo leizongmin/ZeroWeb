@@ -72,6 +72,10 @@ pub(crate) struct TableGrid {
     /// 每列是否被 visibility:collapse 折叠。
     /// CSS Tables §4.1：visibility:collapse 的列宽度为 0，不参与布局。
     pub(crate) collapsed_cols: Vec<bool>,
+    /// 每行是否被 visibility:collapse 折叠。
+    /// CSS Tables §4.1：visibility:collapse 的行高度为 0，不参与布局，亦不贡献
+    /// 与相邻行之间的 border-spacing（与 `collapsed_cols` 对称）。
+    pub(crate) collapsed_rows: Vec<bool>,
 }
 
 /// 对 LayoutBox 树执行 table 布局后处理。
@@ -738,10 +742,14 @@ fn build_grid(table_box: &LayoutBox, doc: &zero_dom::Document, styles: &HashMap<
     // CSS Tables §4.1：col/colgroup 上 visibility:collapse 的列宽度为 0
     let collapsed_cols = detect_collapsed_columns(table_box, max_cols, styles, doc);
 
+    // 检测 visibility:collapse 的行（CSS Tables §4.1，与列折叠对称）
+    let collapsed_rows = crate::table_visibility::detect_collapsed_rows(table_box, &rows, styles);
+
     TableGrid {
         rows,
         col_count: max_cols,
         collapsed_cols,
+        collapsed_rows,
     }
 }
 
@@ -1695,7 +1703,12 @@ fn position_cells(
         let content_row_heights: Vec<f32> = grid
             .rows
             .iter()
-            .map(|row| {
+            .enumerate()
+            .map(|(row_idx, row)| {
+                // visibility:collapse 的行高度为 0（CSS Tables §4.1），不取默认最小行高。
+                if grid.collapsed_rows.get(row_idx).copied().unwrap_or(false) {
+                    return 0.0;
+                }
                 let mut h = 0.0f32;
                 if let Some(rb) = get_row_box(table_box, row) {
                     for cell in &row.cells {
@@ -1791,26 +1804,31 @@ fn position_cells(
             continue;
         };
 
-        // 行的高度 = 其所有单元格的最大高度
+        // visibility:collapse 的行高度为 0（CSS Tables §4.1），不参与布局，
+        // 也不分配 table height 的额外高度。
+        let row_collapsed = grid.collapsed_rows.get(row_idx).copied().unwrap_or(false);
         let mut row_height = 0.0f32;
-        for cell in &row.cells {
-            let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
-                row_box
-                    .children
-                    .get(rg_idx)
-                    .and_then(|rg| rg.children.get(cell.child_index))
-            } else {
-                row_box.children.get(cell.child_index)
-            };
-            if let Some(cell_box) = cell_box {
-                row_height = row_height.max(cell_box.height);
+        if !row_collapsed {
+            // 行的高度 = 其所有单元格的最大高度
+            for cell in &row.cells {
+                let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
+                    row_box
+                        .children
+                        .get(rg_idx)
+                        .and_then(|rg| rg.children.get(cell.child_index))
+                } else {
+                    row_box.children.get(cell.child_index)
+                };
+                if let Some(cell_box) = cell_box {
+                    row_height = row_height.max(cell_box.height);
+                }
             }
+            if row_height == 0.0 {
+                row_height = 20.0; // 最小行高
+            }
+            // R89：应用表格指定 height 的行高分配（额外高度均分到行）
+            row_height += row_extras.get(row_idx).copied().unwrap_or(0.0);
         }
-        if row_height == 0.0 {
-            row_height = 20.0; // 最小行高
-        }
-        // R89：应用表格指定 height 的行高分配（额外高度均分到行）
-        row_height += row_extras.get(row_idx).copied().unwrap_or(0.0);
 
         // 设置行盒的位置和尺寸
         // 注意：行组的 position:relative 偏移由 update_row_group_positions 处理，
@@ -1994,7 +2012,9 @@ fn position_cells(
             }
         }
 
-        row_y += row_height + spacing_y;
+        // 折叠行不贡献与相邻行之间的 border-spacing（CSS Tables §4.1）。
+        // row_height 对折叠行为 0，故仅折叠行跳过 spacing_y。
+        row_y += row_height + if row_collapsed { 0.0 } else { spacing_y };
     }
 
     // 后处理：应用 min-height/max-height/min-width/max-width 约束
@@ -2190,9 +2210,12 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
     // 预计算所有行的 y 位置和高度（不可变借用阶段）
     let mut row_positions: Vec<(f32, f32)> = Vec::with_capacity(grid.rows.len());
     let mut row_y = 0.0f32;
-    for row in &grid.rows {
-        let row_box = get_row_box(table_box, row);
-        let row_height = if let Some(rb) = row_box {
+    for (row_idx, row) in grid.rows.iter().enumerate() {
+        // visibility:collapse 的行高度为 0（CSS Tables §4.1），与 position_cells 对齐。
+        let row_collapsed = grid.collapsed_rows.get(row_idx).copied().unwrap_or(false);
+        let row_height = if row_collapsed {
+            0.0
+        } else if let Some(rb) = get_row_box(table_box, row) {
             let mut h = 0.0f32;
             for cell in &row.cells {
                 let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
@@ -2209,7 +2232,8 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
             20.0
         };
         row_positions.push((row_y, row_height));
-        row_y += row_height + spacing_y;
+        // 折叠行不贡献与相邻行之间的 border-spacing（CSS Tables §4.1）。
+        row_y += row_height + if row_collapsed { 0.0 } else { spacing_y };
     }
 
     // 计算需要更新的行组位置
