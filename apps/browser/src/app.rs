@@ -262,6 +262,9 @@ pub struct BrowserApp {
     /// 当前加载动画起始时刻（is_loading 从 false→true 时记录）。
     /// 用于模拟 Chrome 风格的加载进度条动画。
     loading_anim_start: Option<Instant>,
+    /// 缩放百分比浮层显示起始时刻。None 表示不显示。
+    /// zoom_in/out/reset 触发时记录，3 秒后由渲染层清除。
+    zoom_indicator_start: Option<Instant>,
     /// 系统颜色方案偏好
     color_scheme: PrefersColorSchemeValue,
     /// 浏览器外壳配色
@@ -345,6 +348,7 @@ impl BrowserApp {
             tab_bar_drag_press: None,
             chrome_anim_start: Instant::now(),
             loading_anim_start: None,
+            zoom_indicator_start: None,
             color_scheme,
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
             cached_window_theme: None,
@@ -1503,6 +1507,12 @@ impl BrowserApp {
     }
 
     /// 执行后退导航
+    /// 触发缩放百分比浮层显示（3 秒内有效），并请求重绘。
+    fn show_zoom_indicator(&mut self) {
+        self.zoom_indicator_start = Some(Instant::now());
+        self.needs_redraw = true;
+    }
+
     pub fn go_back(&mut self) {
         if !self.shell.go_back() {
             return;
