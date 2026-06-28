@@ -117,7 +117,7 @@ pub const STATUS_BAR_FLOAT_MARGIN: f32 = 8.0;
 /// Horizontal padding inside the floating status bar.
 pub const STATUS_BAR_FLOAT_PAD_H: f32 = 8.0;
 /// Radius of the floating status bar.
-pub const STATUS_BAR_FLOAT_RADIUS: f32 = 3.0;
+pub const STATUS_BAR_FLOAT_RADIUS: f32 = 8.0;
 /// Height of the legacy download bar slot (kept for tests referencing height).
 pub const DOWNLOAD_BAR_HEIGHT: f32 = 28.0;
 /// Width of the floating download panel.
