@@ -83,6 +83,7 @@ enum TabFetchState {
 pub enum WindowChromeAction {
     Minimize,
     ToggleMaximize,
+    ToggleFullscreen,
     Close,
     StartDrag,
 }
@@ -703,7 +704,9 @@ impl BrowserApp {
                 WindowChromeAction::Minimize => 0,
                 WindowChromeAction::ToggleMaximize => 1,
                 WindowChromeAction::Close => 2,
-                WindowChromeAction::StartDrag => unreachable!(),
+                WindowChromeAction::ToggleFullscreen | WindowChromeAction::StartDrag => {
+                    unreachable!()
+                }
             });
         if hover != self.window_control_hover {
             self.window_control_hover = hover;
