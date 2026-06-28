@@ -132,6 +132,8 @@ pub const DOWNLOAD_PANEL_RADIUS: f32 = 8.0;
 pub const CONTEXT_MENU_WIDTH: f32 = 220.0;
 /// Row height inside the context menu.
 pub const CONTEXT_MENU_ROW_HEIGHT: f32 = 32.0;
+/// Compact row height for separator items (visual breathing room without bloating the menu).
+pub const CONTEXT_MENU_SEPARATOR_HEIGHT: f32 = 10.0;
 /// Corner radius of the context menu panel.
 pub const CONTEXT_MENU_RADIUS: f32 = 8.0;
 /// Horizontal padding inside a context menu row.

@@ -1704,7 +1704,7 @@ impl BrowserApp {
         let menu_y = self.context_menu.y;
         let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
         let menu_w = layout::CONTEXT_MENU_WIDTH * s;
-        let menu_h = self.context_menu.items.len() as f32 * row_h;
+        let menu_h = self.context_menu_total_height();
         let font_size = layout::CHROME_FONT_SIZE * s;
         let radius = layout::CONTEXT_MENU_RADIUS * s;
         let border = s.max(1.0);
@@ -1722,10 +1722,12 @@ impl BrowserApp {
         );
 
         for (i, item) in self.context_menu.items.iter().enumerate() {
-            let row_y = menu_y + i as f32 * row_h;
+            let row_y = menu_y + self.context_menu_row_y(i);
 
             if item.is_separator() {
-                let sep_y = row_y + row_h / 2.0;
+                // separator 占紧凑高度，绘制居中的细线。
+                let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+                let sep_y = row_y + sep_h / 2.0;
                 fills.push(rect_fill(
                     menu_x + pad_h,
                     sep_y,
@@ -1788,8 +1790,8 @@ impl BrowserApp {
             && !children.is_empty()
         {
             let sub_x = menu_x + menu_w + 1.0 * s;
-            let sub_y = menu_y + parent_idx as f32 * row_h;
-            let sub_h = children.len() as f32 * row_h;
+            let sub_y = menu_y + self.context_menu_row_y(parent_idx);
+            let sub_h = self.sub_menu_total_height(parent_idx);
             push_rounded_rect_fill(fills, sub_x, sub_y, menu_w, sub_h, radius, self.chrome_palette.context_menu_separator);
             push_rounded_rect_fill(
                 fills,
@@ -1802,8 +1804,17 @@ impl BrowserApp {
             );
 
             for (ci, child) in children.iter().enumerate() {
-                let crow_y = sub_y + ci as f32 * row_h;
+                let crow_y = sub_y + self.sub_menu_row_y(parent_idx, ci);
                 if child.is_separator() {
+                    let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+                    let sep_y = crow_y + sep_h / 2.0;
+                    fills.push(rect_fill(
+                        sub_x + pad_h,
+                        sep_y,
+                        menu_w - 2.0 * pad_h,
+                        border,
+                        self.chrome_palette.context_menu_separator,
+                    ));
                     continue;
                 }
                 let c_hovered = self.context_menu.sub_menu_hovered == Some(ci);

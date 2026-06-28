@@ -2001,9 +2001,10 @@ impl BrowserApp {
         let s = self.scale_factor;
         let menu_x = self.context_menu.x;
         let menu_y = self.context_menu.y;
-        let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let normal_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
         let menu_w = layout::CONTEXT_MENU_WIDTH * s;
-        let menu_h = self.context_menu.items.len() as f32 * row_h;
+        let menu_h = self.context_menu_total_height();
 
         let x_f = x as f32;
         let y_f = y as f32;
@@ -2012,15 +2013,20 @@ impl BrowserApp {
             return None;
         }
 
-        let idx = ((y_f - menu_y) / row_h) as usize;
-        if let Some(item) = self.context_menu.items.get(idx)
-            && item.enabled()
-            && !item.is_separator()
-        {
-            Some(idx)
-        } else {
-            None
+        // 累积行高定位：separator 用紧凑高度，普通项用 normal_h。
+        let mut cur_y = menu_y;
+        for (idx, item) in self.context_menu.items.iter().enumerate() {
+            let h = if item.is_separator() { sep_h } else { normal_h };
+            if y_f >= cur_y && y_f < cur_y + h {
+                if item.enabled() && !item.is_separator() {
+                    return Some(idx);
+                } else {
+                    return None;
+                }
+            }
+            cur_y += h;
         }
+        None
     }
 
     /// 子菜单面板命中检测，返回命中的子项索引。
@@ -2035,27 +2041,32 @@ impl BrowserApp {
         let s = self.scale_factor;
         let menu_x = self.context_menu.x;
         let menu_y = self.context_menu.y;
-        let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let normal_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
         let menu_w = layout::CONTEXT_MENU_WIDTH * s;
         // 子面板紧贴主菜单右侧（与 render_context_menu 中一致）。
         let sub_x = menu_x + menu_w + 1.0 * s;
-        let sub_y = menu_y + parent_idx as f32 * row_h;
-        let sub_h = children.len() as f32 * row_h;
+        let sub_y = menu_y + self.context_menu_row_y(parent_idx);
+        let sub_h = self.sub_menu_total_height(parent_idx);
 
         let x_f = x as f32;
         let y_f = y as f32;
         if x_f < sub_x || x_f > sub_x + menu_w || y_f < sub_y || y_f > sub_y + sub_h {
             return None;
         }
-        let ci = ((y_f - sub_y) / row_h) as usize;
-        if let Some(child) = children.get(ci)
-            && child.enabled()
-            && !child.is_separator()
-        {
-            Some(ci)
-        } else {
-            None
+        let mut cur_y = sub_y;
+        for (ci, child) in children.iter().enumerate() {
+            let h = if child.is_separator() { sep_h } else { normal_h };
+            if y_f >= cur_y && y_f < cur_y + h {
+                if child.enabled() && !child.is_separator() {
+                    return Some(ci);
+                } else {
+                    return None;
+                }
+            }
+            cur_y += h;
         }
+        None
     }
 
     /// 激活子菜单中当前 hover 的子项。
