@@ -520,6 +520,9 @@ impl BrowserApp {
 
     /// 标签栏背景色（Windows / macOS 一体化标题栏下与工具栏融合）。
     pub fn chrome_tab_strip_bg(&self) -> zero_render_foundation::color::Color {
+        if !self.window_focused {
+            return self.chrome_palette.chrome_inactive_bg;
+        }
         if cfg!(target_os = "windows") || uses_unified_titlebar() {
             self.chrome_palette.toolbar_bg
         } else {

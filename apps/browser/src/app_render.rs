@@ -44,14 +44,19 @@ impl BrowserApp {
         // 3. 标签内容（带布局缓存）
         self.render_tabs(&mut fills, &mut glyphs, width, font_size, s);
 
-        // 4. 地址栏背景（与激活标签同色，形成一体工具栏）
+        // 4. 地址栏背景（与激活标签同色，形成一体工具栏；窗口失焦时统一变灰）
         let addr_y = tab_strip_h;
+        let toolbar_bg = if self.window_focused {
+            self.chrome_palette.toolbar_bg
+        } else {
+            self.chrome_palette.chrome_inactive_bg
+        };
         fills.push(rect_fill(
             0.0,
             addr_y,
             width as f32,
             layout::ADDRESS_BAR_HEIGHT * s,
-            self.chrome_palette.toolbar_bg,
+            toolbar_bg,
         ));
 
         // 5. 导航按钮
@@ -655,7 +660,8 @@ impl BrowserApp {
     ) {
         let (bar_x, bar_y, bar_w, bar_h) = self.address_bar_layout();
         // 聚焦态边框加粗到 2px，强化焦点感知（参考 Chrome）。
-        let border = if self.address_bar_focused {
+        // 窗口失焦时不加粗，避免在非激活窗口留下误导性焦点高亮。
+        let border = if self.address_bar_focused && self.window_focused {
             (2.0 * s).max(1.0)
         } else {
             s.max(1.0)
@@ -667,7 +673,11 @@ impl BrowserApp {
         } else {
             self.chrome_palette.address_bar_bg
         };
-        let border_color = if self.address_bar_focused {
+        // 窗口失焦时地址栏边框用弱化的 inactive 色（即使地址栏本身处于聚焦态，
+        // 只要窗口整体失焦就应弱化焦点感知）。
+        let border_color = if !self.window_focused {
+            self.chrome_palette.address_bar_border_inactive
+        } else if self.address_bar_focused {
             self.chrome_palette.address_bar_border_focused
         } else {
             self.chrome_palette.address_bar_border
