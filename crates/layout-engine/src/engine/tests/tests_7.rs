@@ -471,9 +471,12 @@ fn test_inline_child_box_synced_from_ifc_for_empty_span() {
     assert_eq!(span_box.content_height, 100.0, "内容高度应保留原始 line-height");
     assert_eq!(span_box.padding_left, 100.0);
     assert_eq!(span_box.border_left, 25.0);
+    // CSS §10.8.1/§8.4：inline 非替换元素的垂直 padding/border 只绘制，
+    // 不影响 line box 高度。父容器高度应仅基于 line-height（100px），
+    // 不被 inline padding/border 撑到 350（R769d 修复，对齐 chromium + blocks-019）。
     assert!(
-        container_box.content_height >= 350.0,
-        "父容器应至少容纳完整 inline box，高度={}",
+        container_box.content_height < 150.0,
+        "父容器高度应仅基于 line-height（inline padding/border 不影响 line box，CSS §10.8.1），高度={}",
         container_box.content_height
     );
 }
