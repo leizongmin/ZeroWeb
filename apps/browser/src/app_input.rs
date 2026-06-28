@@ -316,6 +316,13 @@ impl BrowserApp {
             return;
         }
 
+        // Escape 取消正在进行的标签拖拽。
+        if key == "Escape" && pressed && self.tab_drag.is_some() {
+            self.tab_drag = None;
+            self.needs_redraw = true;
+            return;
+        }
+
         if !self.address_bar_focused && key.len() == 1 && !self.ctrl_pressed && !self.cmd_pressed {
             if let Some(tab_id) = self.shell.active_tab_id() {
                 let event = if pressed { "keydown" } else { "keyup" };
@@ -866,6 +873,18 @@ impl BrowserApp {
             }
         }
 
+        // 标签拖拽：左键按住时移动超过阈值即激活拖拽，实时更新 current_x。
+        if let Some(drag) = self.tab_drag.as_mut() {
+            drag.current_x = x as f32;
+            // 阈值 4 物理像素，避免普通点击被误判为拖拽。
+            if !drag.active && (drag.current_x - drag.press_x).abs() > 4.0 {
+                drag.active = true;
+            }
+            if drag.active {
+                self.needs_redraw = true;
+            }
+        }
+
         // 自动补全悬停
         if self.address_bar_focused && !self.autocomplete.suggestions.is_empty() {
             let hovered = self.autocomplete_hit_test(x, y);
@@ -975,6 +994,23 @@ impl BrowserApp {
         x_f >= bar_x && x_f <= bar_x + bar_w && y_f >= bar_y && y_f <= bar_y + bar_h
     }
 
+    /// 标签拖拽释放：按鼠标 x 计算目标 index 并调用 move_tab 重排序。
+    fn finish_tab_drag(&mut self, drag: &crate::app::TabDragState) {
+        // 用当前 tab_layout 计算目标 index。
+        // 鼠标 x 落在哪个 tab 中点之前，就插入到那个 tab 的位置。
+        let mut target_index: Option<usize> = None;
+        for (i, &(_id, tx, tw)) in self.tab_layout.iter().enumerate() {
+            let mid = tx + tw * 0.5;
+            if drag.current_x < mid {
+                target_index = Some(i);
+                break;
+            }
+        }
+        let target_index = target_index.unwrap_or(self.tab_layout.len().saturating_sub(1));
+        self.shell.move_tab(drag.tab_id, target_index);
+        self.needs_redraw = true;
+    }
+
     /// 处理鼠标点击（物理像素坐标）
     pub fn handle_mouse_click(&mut self, x: f64, y: f64, pressed: bool, button: &str) {
         if button == "Left" {
@@ -997,6 +1033,14 @@ impl BrowserApp {
                 self.content_pointer_drag = None;
                 self.tab_bar_drag_press = None;
                 self.address_bar_drag = false;
+                // 标签拖拽释放：若已激活，按鼠标 x 计算目标 index 重排序。
+                if let Some(drag) = self.tab_drag.take() {
+                    if drag.active {
+                        self.finish_tab_drag(&drag);
+                        self.page_selection_drag = false;
+                        return;
+                    }
+                }
                 if was_scrollbar_drag || was_scroll_drag {
                     self.page_selection_drag = false;
                     return;
@@ -1173,11 +1217,22 @@ impl BrowserApp {
                         if is_double_click {
                             self.last_tab_click_time = None;
                             self.last_tab_click_id = None;
+                            self.tab_drag = None;
                             self.close_tab_by_id(id);
                             return;
                         }
                         self.last_tab_click_time = Some(now);
                         self.last_tab_click_id = Some(id);
+                        // 记录标签拖拽候选：active=false，待鼠标移动超过阈值才激活。
+                        // 释放前若未激活则按普通点击处理。
+                        self.tab_drag = Some(crate::app::TabDragState {
+                            tab_id: id,
+                            press_x: x_f,
+                            tab_origin_x: tab_x,
+                            tab_w,
+                            current_x: x_f,
+                            active: false,
+                        });
                         if Some(id) != self.shell.active_tab_id() {
                             self.shell.switch_tab(id);
                             self.shell.set_tab_needs_attention(id, false);

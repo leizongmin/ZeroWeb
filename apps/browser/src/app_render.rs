@@ -367,6 +367,7 @@ impl BrowserApp {
             is_muted: bool,
             is_crashed: bool,
             needs_attention: bool,
+            is_dragging: bool,
             label: String,
             page_url: Option<String>,
             html_hint: Option<&'static str>,
@@ -396,19 +397,27 @@ impl BrowserApp {
             if tab.is_private() {
                 label = format!("无痕 · {label}");
             }
-            // muted / crashed 不再用文本前缀，改为在 close 按钮左侧绘制独立状态图标。
+            // 被拖拽的标签：x 跟随鼠标，绘制时置于顶层。
+            let (paint_x, is_dragging) = match &self.tab_drag {
+                Some(d) if d.active && d.tab_id == tab.id() => {
+                    let offset = d.current_x - d.press_x;
+                    (x + offset, true)
+                }
+                _ => (x, false),
+            };
             tabs.push(TabPaint {
                 id: tab.id(),
-                x,
+                x: paint_x,
                 tab_w,
                 tab_body_w: tab_w - s,
-                bg,
+                bg: if is_dragging { self.chrome_palette.tab_active_bg } else { bg },
                 is_active,
                 is_loading: tab.is_loading(),
                 is_pinned: tab.is_pinned(),
                 is_muted: tab.is_muted(),
                 is_crashed: tab.is_crashed(),
                 needs_attention: tab.needs_attention(),
+                is_dragging,
                 label,
                 page_url: tab.url().map(str::to_string),
                 html_hint: Self::tab_html_hint(tab.url()),
@@ -416,12 +425,17 @@ impl BrowserApp {
             x += tab_w;
         }
 
-        for tab in tabs.iter().filter(|t| !t.is_active) {
+        for tab in tabs.iter().filter(|t| !t.is_active && !t.is_dragging) {
             crate::tab_chrome::push_inactive_tab_fill(fills, tab.x, tab_y, tab.tab_body_w, tab_bar_h, s, tab.bg);
         }
 
         if let Some(active) = tabs.iter().find(|t| t.is_active) {
             crate::tab_chrome::push_active_tab_fill(fills, active.x, tab_y, active.tab_body_w, tab_bar_h, s, active.bg);
+        }
+
+        // 被拖拽的标签最后绘制（顶层），用 active 样式突出。
+        for tab in tabs.iter().filter(|t| t.is_dragging) {
+            crate::tab_chrome::push_active_tab_fill(fills, tab.x, tab_y, tab.tab_body_w, tab_bar_h, s, tab.bg);
         }
 
         // 相邻非激活标签之间的竖线（在标签底色之上、文本图标之下）
