@@ -667,11 +667,12 @@ impl BrowserApp {
                     }
                 }
                 "n" | "N" if self.shift_pressed => {
-                    // Ctrl+Shift+N：新建无痕标签页。
-                    self.new_private_tab(None);
+                    // Ctrl+Shift+N：新建无痕标签页，聚焦地址栏。
+                    self.new_blank_tab_focused(true);
                 }
                 "t" | "T" => {
-                    self.new_tab(None);
+                    // Ctrl+T：新建标签页，聚焦地址栏。
+                    self.new_blank_tab_focused(false);
                 }
                 "w" | "W" => {
                     self.close_active_tab();
@@ -735,7 +736,7 @@ impl BrowserApp {
                 self.needs_redraw = true;
             }
             "t" => {
-                self.new_tab(None);
+                self.new_blank_tab_focused(false);
             }
             "w" => {
                 self.close_active_tab();
@@ -1036,7 +1037,7 @@ impl BrowserApp {
                 // 先检测是否点中「+」按钮
                 let new_tab_x = self.new_tab_button_x();
                 if x_f >= new_tab_x && x_f < new_tab_x + layout::NEW_TAB_BTN_WIDTH * s {
-                    self.new_private_tab(None);
+                    self.new_blank_tab_focused(true);
                     return;
                 }
                 // 再检测是否点中某个标签
@@ -1134,7 +1135,7 @@ impl BrowserApp {
             if y_f >= tab_y {
                 let new_tab_x = self.new_tab_button_x();
                 if x_f >= new_tab_x && x_f < new_tab_x + layout::NEW_TAB_BTN_WIDTH * s {
-                    self.new_tab(None);
+                    self.new_blank_tab_focused(false);
                     return;
                 }
 
