@@ -507,11 +507,14 @@ impl Painter {
         }
 
         if needs_clip {
+            // R793：CSS §11.1.1 — overflow 裁剪到 **padding box**（内容 + padding，border 之内），
+            // 非 content box。原实现按 content box 裁剪（起点加 padding、尺寸=content），致溢出内容
+            // 落在 content 边与 padding 边之间的条带时被多裁（chromium 保留到 padding 边）。
             let clip_rect = Rect::new(
-                abs_x + box_node.border_left + box_node.padding_left,
-                abs_y + box_node.border_top + box_node.padding_top,
-                box_node.content_width,
-                box_node.content_height,
+                abs_x + box_node.border_left,
+                abs_y + box_node.border_top,
+                box_node.padding_left + box_node.content_width + box_node.padding_right,
+                box_node.padding_top + box_node.content_height + box_node.padding_bottom,
             );
             super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_children, &clip_rect);
         }
@@ -837,13 +840,16 @@ impl Painter {
             }
         }
 
-        // 如果需要裁剪，将子节点产生的图元裁剪到内容盒范围内
+        // 如果需要裁剪，将子节点产生的图元裁剪到 padding box 范围内（CSS §11.1.1，见 R793）
         if needs_clip {
+            // R793：CSS §11.1.1 — overflow 裁剪到 **padding box**（内容 + padding，border 之内），
+            // 非 content box。原实现按 content box 裁剪（起点加 padding、尺寸=content），致溢出内容
+            // 落在 content 边与 padding 边之间的条带时被多裁（chromium 保留到 padding 边）。
             let clip_rect = Rect::new(
-                abs_x + box_node.border_left + box_node.padding_left,
-                abs_y + box_node.border_top + box_node.padding_top,
-                box_node.content_width,
-                box_node.content_height,
+                abs_x + box_node.border_left,
+                abs_y + box_node.border_top,
+                box_node.padding_left + box_node.content_width + box_node.padding_right,
+                box_node.padding_top + box_node.content_height + box_node.padding_bottom,
             );
             super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_children, &clip_rect);
         }
