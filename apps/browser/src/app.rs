@@ -1005,6 +1005,70 @@ impl BrowserApp {
         }
     }
 
+    /// 上下文菜单中第 `idx` 项的 y 偏移（物理像素，相对菜单顶部）。
+    ///
+    /// separator 项使用紧凑行高 `CONTEXT_MENU_SEPARATOR_HEIGHT`，
+    /// 普通项使用 `CONTEXT_MENU_ROW_HEIGHT`，以避免分隔线撑大菜单。
+    pub(crate) fn context_menu_row_y(&self, idx: usize) -> f32 {
+        let s = self.scale_factor;
+        let normal = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let sep = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+        self.context_menu
+            .items
+            .iter()
+            .take(idx)
+            .map(|it| if it.is_separator() { sep } else { normal })
+            .sum()
+    }
+
+    /// 上下文菜单总高度（物理像素），separator 项计入紧凑高度。
+    pub(crate) fn context_menu_total_height(&self) -> f32 {
+        let s = self.scale_factor;
+        let normal = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let sep = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+        self.context_menu
+            .items
+            .iter()
+            .map(|it| if it.is_separator() { sep } else { normal })
+            .sum()
+    }
+
+    /// 子菜单面板中第 `child_idx` 项的 y 偏移（物理像素，相对子面板顶部）。
+    /// 子菜单内 separator 同样使用紧凑高度。
+    pub(crate) fn sub_menu_row_y(&self, parent_idx: usize, child_idx: usize) -> f32 {
+        let s = self.scale_factor;
+        let normal = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let sep = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+        let Some(parent) = self.context_menu.items.get(parent_idx) else {
+            return 0.0;
+        };
+        let Some(children) = parent.children() else {
+            return 0.0;
+        };
+        children
+            .iter()
+            .take(child_idx)
+            .map(|it| if it.is_separator() { sep } else { normal })
+            .sum()
+    }
+
+    /// 子菜单面板总高度（物理像素）。
+    pub(crate) fn sub_menu_total_height(&self, parent_idx: usize) -> f32 {
+        let s = self.scale_factor;
+        let normal = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let sep = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+        let Some(parent) = self.context_menu.items.get(parent_idx) else {
+            return 0.0;
+        };
+        let Some(children) = parent.children() else {
+            return 0.0;
+        };
+        children
+            .iter()
+            .map(|it| if it.is_separator() { sep } else { normal })
+            .sum()
+    }
+
     /// 按指定窗口物理尺寸计算内容区（边框内侧）。
     pub fn page_content_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
         let (x, y, w, h) = self.page_frame_rect_for(width, height);
