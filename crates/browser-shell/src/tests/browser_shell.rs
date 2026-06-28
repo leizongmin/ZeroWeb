@@ -29,6 +29,43 @@ fn test_browser_shell_close_tab() {
 }
 
 #[test]
+fn test_browser_shell_reopen_last_closed_tab() {
+    let mut shell = BrowserShell::new();
+    shell.navigate("https://example.com");
+    shell.on_page_loaded("Example");
+    let id = shell.active_tab_id().unwrap();
+    shell.close_tab(id);
+    assert_eq!(shell.tab_count(), 0, "关闭唯一标签后应为 0");
+
+    // Ctrl+Shift+T 恢复
+    let reopened = shell.reopen_last_closed_tab();
+    assert!(reopened.is_some(), "应能恢复刚关闭的标签");
+    assert_eq!(shell.tab_count(), 1, "恢复后标签数应为 1");
+    // 恢复的标签应导航到原 URL。
+    let active_url = shell.active_tab().and_then(|t| t.url()).unwrap_or("");
+    assert_eq!(active_url, "https://example.com");
+
+    // 队列空后再恢复返回 None。
+    assert!(shell.reopen_last_closed_tab().is_none(), "无历史时返回 None");
+}
+
+#[test]
+fn test_browser_shell_recently_closed_max_size() {
+    let mut shell = BrowserShell::new();
+    // 关闭 15 个标签，队列上限 10。
+    for i in 0..15 {
+        let id = shell.new_tab(Some(&format!("https://example.com/{i}")));
+        shell.close_tab(id);
+    }
+    // 应只能恢复 10 次（队列上限）。
+    let mut count = 0;
+    while shell.reopen_last_closed_tab().is_some() {
+        count += 1;
+    }
+    assert_eq!(count, 10, "recently_closed 队列上限应为 10");
+}
+
+#[test]
 fn test_browser_shell_navigate() {
     let mut shell = BrowserShell::new();
     shell.navigate("https://example.com");
