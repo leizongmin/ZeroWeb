@@ -1783,21 +1783,19 @@ impl BrowserApp {
             }
         }
 
-        // 渲染展开的子菜单面板（右侧浮层）。
+        // 渲染展开的子菜单面板（默认右侧浮层；右侧空间不足时自动翻转到左侧）。
         if let Some(parent_idx) = self.context_menu.open_sub_menu
             && let Some(parent) = self.context_menu.items.get(parent_idx)
             && let Some(children) = parent.children()
             && !children.is_empty()
         {
-            let sub_x = menu_x + menu_w + 1.0 * s;
-            let sub_y = menu_y + self.context_menu_row_y(parent_idx);
-            let sub_h = self.sub_menu_total_height(parent_idx);
-            push_rounded_rect_fill(fills, sub_x, sub_y, menu_w, sub_h, radius, self.chrome_palette.context_menu_separator);
+            let (sub_x, sub_y, sub_w, sub_h) = self.sub_menu_panel_rect(parent_idx);
+            push_rounded_rect_fill(fills, sub_x, sub_y, sub_w, sub_h, radius, self.chrome_palette.context_menu_separator);
             push_rounded_rect_fill(
                 fills,
                 sub_x + border,
                 sub_y + border,
-                menu_w - 2.0 * border,
+                sub_w - 2.0 * border,
                 sub_h - 2.0 * border,
                 (radius - border).max(0.0),
                 self.chrome_palette.context_menu_bg,
@@ -1811,7 +1809,7 @@ impl BrowserApp {
                     fills.push(rect_fill(
                         sub_x + pad_h,
                         sep_y,
-                        menu_w - 2.0 * pad_h,
+                        sub_w - 2.0 * pad_h,
                         border,
                         self.chrome_palette.context_menu_separator,
                     ));
@@ -1823,7 +1821,7 @@ impl BrowserApp {
                     fills.push(rect_fill(
                         sub_x + border,
                         crow_y,
-                        menu_w - 2.0 * border,
+                        sub_w - 2.0 * border,
                         row_h,
                         self.chrome_palette.context_menu_hover_bg,
                     ));

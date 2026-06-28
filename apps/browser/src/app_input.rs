@@ -2039,19 +2039,14 @@ impl BrowserApp {
         }
 
         let s = self.scale_factor;
-        let menu_x = self.context_menu.x;
-        let menu_y = self.context_menu.y;
         let normal_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
         let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
-        let menu_w = layout::CONTEXT_MENU_WIDTH * s;
-        // 子面板紧贴主菜单右侧（与 render_context_menu 中一致）。
-        let sub_x = menu_x + menu_w + 1.0 * s;
-        let sub_y = menu_y + self.context_menu_row_y(parent_idx);
-        let sub_h = self.sub_menu_total_height(parent_idx);
+        // 子面板矩形由 sub_menu_panel_rect 决定，右侧空间不足时自动翻转到左侧。
+        let (sub_x, sub_y, _sub_w, sub_h) = self.sub_menu_panel_rect(parent_idx);
 
         let x_f = x as f32;
         let y_f = y as f32;
-        if x_f < sub_x || x_f > sub_x + menu_w || y_f < sub_y || y_f > sub_y + sub_h {
+        if x_f < sub_x || x_f > sub_x + layout::CONTEXT_MENU_WIDTH * s || y_f < sub_y || y_f > sub_y + sub_h {
             return None;
         }
         let mut cur_y = sub_y;
