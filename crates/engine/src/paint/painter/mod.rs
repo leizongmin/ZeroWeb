@@ -391,6 +391,15 @@ impl Painter {
         // 节点与脏区域相交，执行正常绘制
         let needs_clip = box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible;
 
+        // R792：overflow 裁剪基线快照。paint_text 绘制盒子**自身**直属文本（在子节点之前），
+        // 原快照取于 paint_text 之后，致裁剪范围 [snapshot..end] 只含子节点、漏掉自身文本——
+        // overflow!=visible 的盒子（如 max-width-106 的 float+overflow:scroll）直属溢出文本
+        // 不被裁到 content-box 而外溢可见。此处先取默认快照（匿名文本项/无样式分支用），
+        // 有样式分支在 bg/border/outline 之后、paint_text 之前重赋值，使裁剪范围 = 自身文本 +
+        // list marker + 列背景 + 子节点，而 background/border/outline/shadow 保持不裁（CSS：
+        // overflow 只裁内容到 padding-box，盒子自身装饰不裁）。
+        let mut counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
+
         let is_hidden = if box_node.is_anonymous_text_item {
             // 匿名文本项（flex/grid 容器中的文本节点）
             if let Some(doc) = doc
@@ -463,6 +472,10 @@ impl Painter {
                 }
             }
 
+            // R792：background/border/outline 已绘制完毕；此后（list marker + 自身文本 +
+            // 列背景 + 子节点）纳入 overflow 裁剪范围。
+            counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
+
             if !hidden {
                 if let Some(doc) = doc {
                     self.paint_list_marker(box_node, abs_x, abs_y, style, doc);
@@ -483,8 +496,6 @@ impl Painter {
 
         let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
         let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
-
-        let counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
         // CSS 2.1 Appendix E:
         // 负 z-index 的 positioned 后代在常规流内容之后方，
@@ -532,6 +543,12 @@ impl Painter {
         // 获取该节点对应的计算样式
         // 记录绘制前的图元数量，用于 opacity 应用
         let counts_before = PrimitiveCounts::snapshot(&self.primitives);
+
+        // R792：overflow 裁剪基线快照（默认覆盖匿名文本项/无样式分支）；有样式分支在装饰
+        // 绘制后、paint_text 前重赋值，使裁剪范围含 list marker/img/content/自身文本/列背景/
+        // 子节点，而排除 background/border/outline/shadow/clip-path 指示（CSS：overflow 只裁
+        // 内容到 padding-box，盒子自身装饰不裁）。原快照取于 paint_text 之后致直属文本漏裁。
+        let mut counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
         let is_hidden = if box_node.is_anonymous_text_item {
             // 匿名文本项（flex/grid 容器中的文本节点）
@@ -641,6 +658,10 @@ impl Painter {
                 }
             }
 
+            // R792：装饰（bg/border/outline/clip-path 指示/backdrop-filter/shadow）已绘制完毕；
+            // 此后（list marker/img/content/自身文本/列背景/子节点）纳入 overflow 裁剪范围。
+            counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
+
             // 列表标记和文本始终绘制（不受 empty-cells 影响）
             if !hidden {
                 // 4. 列表标记绘制（bullets/numbers，位于文本之前）
@@ -679,9 +700,6 @@ impl Painter {
         if !is_hidden {
             self.paint_table_col_backgrounds(box_node, abs_x, abs_y, styles);
         }
-
-        // 记录子节点绘制前的图元数量，用于裁剪
-        let counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
         // CSS §11.1.1：overflow 仅裁剪 CB 为本元素或其后代的 positioned 后代。
         // 当 overflow 元素自身**非 positioned** 时，其 abspos 后代的 CB 必为祖先
