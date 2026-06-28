@@ -4,9 +4,11 @@ use zero_css_parser::values::{ColorValue, CounterActionValue, LengthValue};
 use zero_dom::Document;
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
+use zero_render_foundation::geometry::Rect;
 use zero_style_system::{ComputedStyle, ContentComputedValue, ObjectFitComputedValue};
 
 use super::super::painter::Painter;
+use crate::paint::image_resource_key;
 
 /// 辅助函数：创建简单 LayoutBox。
 fn make_box(width: f32, height: f32) -> LayoutBox {
@@ -344,4 +346,65 @@ fn test_paint_img_zero_size_skipped() {
 
     painter.paint_img_element(&box_node, 0.0, 0.0, &style, &doc);
     assert!(painter.primitives.images.is_empty());
+}
+
+#[test]
+fn test_paint_img_uses_decoded_intrinsic_size_when_available() {
+    let mut doc = Document::new();
+    let mut painter = Painter::new();
+    painter.set_document_url(Some("https://example.com/page.html"));
+
+    let mut style = ComputedStyle::default();
+    style.object_fit = ObjectFitComputedValue::None;
+
+    let img_elem = doc.create_element("img");
+    doc.set_attribute(img_elem, "src", "/logo.png");
+
+    let mut box_node = make_box(200.0, 100.0);
+    box_node.node_id = Some(img_elem);
+
+    painter.image_sizes.insert(
+        image_resource_key("/logo.png", Some("https://example.com/page.html")),
+        (50.0, 25.0),
+    );
+
+    painter.paint_img_element(&box_node, 0.0, 0.0, &style, &doc);
+
+    assert_eq!(painter.primitives.images.len(), 1, "应生成一个图片图元");
+    let image = &painter.primitives.images[0];
+    assert!((image.rect.origin.x - 75.0).abs() < 0.1, "图片应在容器内水平居中");
+    assert!((image.rect.origin.y - 37.5).abs() < 0.1, "图片应在容器内垂直居中");
+    assert!((image.rect.size.width - 50.0).abs() < 0.1, "应使用解码后的真实宽度");
+    assert!((image.rect.size.height - 25.0).abs() < 0.1, "应使用解码后的真实高度");
+}
+
+#[test]
+fn test_paint_img_is_clipped_to_content_box() {
+    let mut doc = Document::new();
+    let mut painter = Painter::new();
+    painter.set_document_url(Some("https://example.com/page.html"));
+
+    let mut style = ComputedStyle::default();
+    style.object_fit = ObjectFitComputedValue::None;
+
+    let img_elem = doc.create_element("img");
+    doc.set_attribute(img_elem, "src", "/wide.png");
+
+    let mut box_node = make_box(200.0, 100.0);
+    box_node.node_id = Some(img_elem);
+
+    painter.image_sizes.insert(
+        image_resource_key("/wide.png", Some("https://example.com/page.html")),
+        (400.0, 50.0),
+    );
+
+    painter.paint_img_element(&box_node, 0.0, 0.0, &style, &doc);
+
+    assert_eq!(painter.primitives.images.len(), 1, "应生成一个图片图元");
+    let image = &painter.primitives.images[0];
+    assert_eq!(
+        image.clip,
+        Some(Rect::new(0.0, 0.0, 200.0, 100.0)),
+        "图片应裁剪到内容盒范围内"
+    );
 }

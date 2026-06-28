@@ -613,15 +613,16 @@ impl super::Painter {
         }
 
         // 尝试获取图片的固有尺寸（从 width/height 属性或回退到容器尺寸）
-        let (intrinsic_w, intrinsic_h) = get_img_intrinsic_size(node, container_w, container_h);
-
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
 
-        let image_key = ImageKey::new(super::super::helpers::image_resource_key(
-            &src,
-            self.document_url.as_deref(),
-        ));
+        let image_hash = super::super::helpers::image_resource_key(&src, self.document_url.as_deref());
+        let image_key = ImageKey::new(image_hash);
+
+        // 与布局阶段保持一致：优先使用解码后的真实图片尺寸；若图片未进入缓存，再回退到
+        // HTML width/height 属性，最后才退回容器尺寸。
+        let decoded_size = self.get_image_size(image_hash);
+        let (intrinsic_w, intrinsic_h) = get_img_intrinsic_size(node, decoded_size, container_w, container_h);
 
         let (img_x, img_y, img_w, img_h) = compute_object_fit_rect(
             &style.object_fit,
@@ -636,7 +637,7 @@ impl super::Painter {
         self.primitives.add_image(ImagePrimitive {
             rect: Rect::new(img_x, img_y, img_w, img_h),
             image_key,
-            clip: None,
+            clip: Some(Rect::new(content_x, content_y, container_w, container_h)),
         });
     }
 
@@ -1649,8 +1650,23 @@ fn format_counter_roman(value: i32, upper: bool) -> String {
     if upper { s } else { s.to_lowercase() }
 }
 
-/// 获取 `<img>` 元素的固有尺寸（从 width/height 属性）。
-fn get_img_intrinsic_size(node: &zero_dom::NodeData, fallback_w: f32, fallback_h: f32) -> (f32, f32) {
+/// 获取 `<img>` 元素的固有尺寸。
+///
+/// 优先使用解码后的真实尺寸；若图片尚未解码，再回退到 HTML `width`/`height` 属性，
+/// 最后使用调用方提供的回退尺寸。
+fn get_img_intrinsic_size(
+    node: &zero_dom::NodeData,
+    decoded_size: Option<(f32, f32)>,
+    fallback_w: f32,
+    fallback_h: f32,
+) -> (f32, f32) {
+    if let Some((w, h)) = decoded_size
+        && w > 0.0
+        && h > 0.0
+    {
+        return (w, h);
+    }
+
     let elem = match &node.kind {
         NodeKind::Element(e) => e,
         _ => return (fallback_w, fallback_h),
