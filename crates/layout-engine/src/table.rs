@@ -1694,7 +1694,20 @@ fn position_cells(
     } else {
         0.0
     };
-    let table_content_width = table_box.content_width.min(col_sum + spacing_total_x);
+    // CSS 2.1 §17.6.1（separated borders model）：border-spacing 不仅分隔相邻单元格，
+    // 还构成表格四边的「周界 spacing」（外缘 cell 与 table 边缘之间）。旧实现只计列间
+    // spacing（spacing_total_x），漏掉了左右周界（各 spacing_x）和上下周界（各 spacing_y），
+    // 致使带 border-spacing 的表尺寸偏小、cell 紧贴 table 边缘（visibility-collapse-
+    // border-spacing-002：1 列 100px + spacing 50 → 应 200px，旧实现 100px）。仅
+    // separated 模式生效（collapse 模式忽略 border-spacing）。
+    let separated = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Separate));
+    let (perimeter_x, perimeter_y) = if separated { (spacing_x, spacing_y) } else { (0.0, 0.0) };
+    let table_content_width = table_box
+        .content_width
+        .min(col_sum + spacing_total_x + 2.0 * perimeter_x);
 
     // R89：表格行高分配（CSS 2.1 §17.5.3 — table 的 height 作为最小高度，
     // 额外高度按行均分到各行，使单元格增长、vertical-align 把内容压到分配后位置）。
@@ -1722,7 +1735,8 @@ fn position_cells(
                         }
                     }
                 }
-                if h == 0.0 { 20.0 } else { h }
+                // 空 cell 行高度 0（无 strut，见 position_cells 同步注释）
+                h
             })
             .collect();
         let num_rows = content_row_heights.len();
@@ -1772,7 +1786,7 @@ fn position_cells(
         }
     };
 
-    let mut row_y = 0.0f32;
+    let mut row_y = perimeter_y;
     // 判断 table_box 本身是否为 display:table/inline-table（区分「直接 table-cell
     // 子元素的匿名行」与「孤立行组的匿名行」：前者 row_box=table_box 不应覆盖
     // table 几何，后者 row_box=table_box（行组）需要设置行组几何）。
@@ -1823,9 +1837,9 @@ fn position_cells(
                     row_height = row_height.max(cell_box.height);
                 }
             }
-            if row_height == 0.0 {
-                row_height = 20.0; // 最小行高
-            }
+            // 空行（单元格无内容）高度为 0——chromium 对空 cell 渲染 0px
+            // （visibility-collapse-border-spacing-002 chromium-Oracle 实证），旧 20px
+            // 最小行高 strut 致带 border-spacing 的空表/折叠行表尺寸偏大。
             // R89：应用表格指定 height 的行高分配（额外高度均分到行）
             row_height += row_extras.get(row_idx).copied().unwrap_or(0.0);
         }
@@ -1863,8 +1877,8 @@ fn position_cells(
             row_box.height = row_height;
         }
 
-        // 定位每个单元格
-        let mut cell_x = 0.0f32;
+        // 定位每个单元格（起始 x 含左侧周界 spacing，§17.6.1）
+        let mut cell_x = perimeter_x;
         for cell in &row.cells {
             // 根据 parent_rg_idx 查找单元格盒
             // 孤立模式下 row_box = table_box，嵌套行组的单元格通过
@@ -2066,7 +2080,15 @@ fn apply_table_size_constraints(
     } else {
         0.0
     };
-    let intrinsic_width = total_col_width + spacing_total_x;
+    // §17.6.1 周界 spacing：左右各 spacing_x，仅 separated 模式。intrinsic_height 已含
+    // 上下周界（position_cells 的 row_y 起始 = perimeter_y，循环每行 +spacing_y 自然
+    // 产生顶部+底部周界，collapsed 行跳过 spacing 故不破坏周界语义）。
+    let perimeter_x = if matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate) {
+        spacing_x
+    } else {
+        0.0
+    };
+    let intrinsic_width = total_col_width + spacing_total_x + 2.0 * perimeter_x;
     let intrinsic_height = total_row_height;
 
     // CSS 表格的 min/max 约束应用：
@@ -2206,10 +2228,17 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
         .and_then(|id| styles.get(&id))
         .map(get_border_spacing)
         .unwrap_or((0.0, 0.0));
+    // §17.6.1 周界 spacing（顶部），仅 separated 模式——与 position_cells 的 row_y 起始一致，
+    // 否则行组位置会与行位置错位。
+    let separated = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Separate));
+    let perimeter_y = if separated { spacing_y } else { 0.0 };
 
     // 预计算所有行的 y 位置和高度（不可变借用阶段）
     let mut row_positions: Vec<(f32, f32)> = Vec::with_capacity(grid.rows.len());
-    let mut row_y = 0.0f32;
+    let mut row_y = perimeter_y;
     for (row_idx, row) in grid.rows.iter().enumerate() {
         // visibility:collapse 的行高度为 0（CSS Tables §4.1），与 position_cells 对齐。
         let row_collapsed = grid.collapsed_rows.get(row_idx).copied().unwrap_or(false);
@@ -2227,9 +2256,10 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
                     h = h.max(cell_box.height);
                 }
             }
-            if h == 0.0 { 20.0 } else { h }
+            // 空 cell 行高度 0（无 strut，见 position_cells 同步注释）
+            h
         } else {
-            20.0
+            0.0
         };
         row_positions.push((row_y, row_height));
         // 折叠行不贡献与相邻行之间的 border-spacing（CSS Tables §4.1）。
