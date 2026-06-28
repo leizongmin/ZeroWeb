@@ -1483,10 +1483,11 @@ impl BrowserApp {
         };
 
         // 历史子菜单：取最近 8 条历史记录，每条作为可点击项（id 编码为 history:<url>）。
+        // 末尾追加"查看全部历史"与"清除历史"动作项。
         let history_children: Vec<MenuItem> = {
             let mut entries: Vec<_> = self.shell.history().iter().take(8).collect();
             entries.reverse(); // 最近访问展示在顶部
-            if entries.is_empty() {
+            let mut items: Vec<MenuItem> = if entries.is_empty() {
                 let empty_label = match language {
                     UiLanguage::ZhCn => "无历史记录",
                     UiLanguage::EnUs => "No history",
@@ -1501,7 +1502,88 @@ impl BrowserApp {
                         MenuItem::action(&format!("history:{}", e.url()), label)
                     })
                     .collect()
-            }
+            };
+            items.push(MenuItem::separator());
+            items.push(MenuItem::action(
+                "history_view_all",
+                match language {
+                    UiLanguage::ZhCn => "查看全部历史",
+                    UiLanguage::EnUs => "View all history",
+                },
+            ));
+            items.push(MenuItem::action(
+                "history_clear_all",
+                match language {
+                    UiLanguage::ZhCn => "清除历史…",
+                    UiLanguage::EnUs => "Clear history…",
+                },
+            ));
+            items
+        };
+
+        // 书签子菜单：列出最近添加的书签（id 编码为 bookmark:<url>），
+        // 末尾追加"管理书签"与"添加书签"动作项。
+        let bookmarks_children: Vec<MenuItem> = {
+            let mut bm_entries: Vec<_> = self.shell.bookmarks().iter().take(8).collect();
+            bm_entries.reverse();
+            let mut items: Vec<MenuItem> = if bm_entries.is_empty() {
+                let empty_label = match language {
+                    UiLanguage::ZhCn => "无书签",
+                    UiLanguage::EnUs => "No bookmarks",
+                };
+                vec![MenuItem::action_disabled("bookmarks_empty", empty_label)]
+            } else {
+                bm_entries
+                    .iter()
+                    .map(|b| {
+                        let label = if b.title().is_empty() { b.url() } else { b.title() };
+                        MenuItem::action(&format!("bookmark:{}", b.url()), label)
+                    })
+                    .collect()
+            };
+            items.push(MenuItem::separator());
+            items.push(MenuItem::action(
+                "browser_menu_bookmarks",
+                match language {
+                    UiLanguage::ZhCn => "管理书签",
+                    UiLanguage::EnUs => "Manage bookmarks",
+                },
+            ));
+            items.push(MenuItem::action(
+                "browser_menu_add_bookmark",
+                match language {
+                    UiLanguage::ZhCn => "为此标签页添加书签",
+                    UiLanguage::EnUs => "Bookmark this tab",
+                },
+            ));
+            items
+        };
+
+        // 下载子菜单：列出最近下载条目（点击打开下载页），末尾追加动作项。
+        let downloads_children: Vec<MenuItem> = {
+            let dl_entries: Vec<_> = self.shell.downloads().iter().take(5).collect();
+            let (empty_label, clear_label) = match language {
+                UiLanguage::ZhCn => ("无下载", "清空已完成下载"),
+                UiLanguage::EnUs => ("No downloads", "Clear finished downloads"),
+            };
+            let mut items: Vec<MenuItem> = if dl_entries.is_empty() {
+                vec![MenuItem::action_disabled("downloads_empty", empty_label)]
+            } else {
+                dl_entries
+                    .iter()
+                    .map(|d| MenuItem::action("browser_menu_downloads", d.filename()))
+                    .collect()
+            };
+            items.push(MenuItem::separator());
+            items.push(MenuItem::action(
+                "downloads_view_all",
+                match language {
+                    UiLanguage::ZhCn => "查看全部下载",
+                    UiLanguage::EnUs => "View all downloads",
+                },
+            ));
+            items.push(MenuItem::action("downloads_clear_completed", clear_label));
+            items
         };
 
         self.context_menu = ContextMenuState {
@@ -1516,10 +1598,17 @@ impl BrowserApp {
                     browser_menu_label(BrowserMenuLabel::History, language),
                     history_children,
                 ),
-                MenuItem::action("browser_menu_downloads", browser_menu_label(BrowserMenuLabel::Downloads, language)),
-                MenuItem::action("browser_menu_bookmarks", browser_menu_label(BrowserMenuLabel::BookmarksManager, language)),
+                MenuItem::sub_menu(
+                    "browser_menu_downloads",
+                    browser_menu_label(BrowserMenuLabel::Downloads, language),
+                    downloads_children,
+                ),
+                MenuItem::sub_menu(
+                    "browser_menu_bookmarks",
+                    browser_menu_label(BrowserMenuLabel::BookmarksManager, language),
+                    bookmarks_children,
+                ),
                 MenuItem::separator(),
-                MenuItem::action("browser_menu_add_bookmark", browser_menu_label(BrowserMenuLabel::BookmarkThisTab, language)),
                 MenuItem::action("browser_menu_toggle_bookmarks_bar", bookmarks_bar_label),
                 MenuItem::separator(),
                 MenuItem::action("browser_menu_about", browser_menu_label(BrowserMenuLabel::AboutBrowser, language)),
@@ -1992,9 +2081,40 @@ impl BrowserApp {
         self.context_menu.close();
         self.needs_redraw = true;
 
-        // history:<url> 编码 → 导航到该 URL
+        // 子菜单项 id 派发
         if let Some(url) = item_id.strip_prefix("history:") {
             self.navigate_to(url);
+            return;
+        }
+        if let Some(url) = item_id.strip_prefix("bookmark:") {
+            self.navigate_to(url);
+            return;
+        }
+        match item_id.as_str() {
+            "history_view_all" => self.open_history_page(),
+            "history_clear_all" => {
+                self.shell.history_mut().clear();
+            }
+            "downloads_view_all" => {
+                self.download_panel_open = true;
+                self.open_downloads_page();
+            }
+            "downloads_clear_completed" => {
+                self.shell.downloads_mut().clear_completed();
+            }
+            "browser_menu_downloads" => {
+                self.download_panel_open = true;
+                self.open_downloads_page();
+            }
+            "browser_menu_bookmarks" => self.open_bookmarks_page(),
+            "browser_menu_add_bookmark" => {
+                let was_visible = self.bookmarks_bar_visible();
+                self.shell.add_bookmark();
+                if self.bookmarks_bar_visible() != was_visible {
+                    self.sync_webview_viewport();
+                }
+            }
+            _ => {}
         }
     }
 
