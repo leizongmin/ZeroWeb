@@ -1,6 +1,15 @@
 // 输入处理方法（键盘、鼠标、IME、自动补全、上下文菜单）
 // 从 app.rs 拆分以控制 app.rs 体积
 
+/// 平台主修饰键前缀（macOS: ⌘，其他: Ctrl+），用于菜单快捷键提示。
+fn mod_prefix() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "⌘"
+    } else {
+        "Ctrl+"
+    }
+}
+
 impl BrowserApp {
     /// 处理鼠标滚轮滚动
     pub fn handle_scroll(&mut self, delta: zero_host_runtime::event::MouseScrollDelta, at_x: f64, at_y: f64) {
@@ -1590,8 +1599,10 @@ impl BrowserApp {
             visible: true,
             context_type: ContextType::Page,
             items: vec![
-                MenuItem::action("browser_menu_new_tab", browser_menu_label(BrowserMenuLabel::NewTab, language)),
-                MenuItem::action("browser_menu_new_private_tab", browser_menu_label(BrowserMenuLabel::NewPrivateTab, language)),
+                MenuItem::action("browser_menu_new_tab", browser_menu_label(BrowserMenuLabel::NewTab, language))
+                    .with_shortcut(format!("{}T", mod_prefix())),
+                MenuItem::action("browser_menu_new_private_tab", browser_menu_label(BrowserMenuLabel::NewPrivateTab, language))
+                    .with_shortcut(format!("{}Shift+N", mod_prefix())),
                 MenuItem::separator(),
                 MenuItem::sub_menu(
                     "browser_menu_history",
@@ -1609,7 +1620,8 @@ impl BrowserApp {
                     bookmarks_children,
                 ),
                 MenuItem::separator(),
-                MenuItem::action("browser_menu_toggle_bookmarks_bar", bookmarks_bar_label),
+                MenuItem::action("browser_menu_toggle_bookmarks_bar", bookmarks_bar_label)
+                    .with_shortcut(format!("{}Shift+B", mod_prefix())),
                 MenuItem::separator(),
                 MenuItem::action("browser_menu_about", browser_menu_label(BrowserMenuLabel::AboutBrowser, language)),
                 MenuItem::separator(),
@@ -1725,13 +1737,16 @@ impl BrowserApp {
             visible: true,
             context_type: ContextType::Page,
             items: vec![
-                MenuItem::action("tab_reload", tab_menu_label(TabMenuLabel::Reload, language)),
+                MenuItem::action("tab_reload", tab_menu_label(TabMenuLabel::Reload, language))
+                    .with_shortcut(format!("{}R", mod_prefix())),
                 MenuItem::action("tab_pin", pin_label),
                 MenuItem::action("tab_mute", mute_label),
                 MenuItem::separator(),
-                MenuItem::action("tab_duplicate", tab_menu_label(TabMenuLabel::Duplicate, language)),
+                MenuItem::action("tab_duplicate", tab_menu_label(TabMenuLabel::Duplicate, language))
+                    .with_shortcut(format!("{}Shift+D", mod_prefix())),
                 MenuItem::separator(),
-                MenuItem::action("tab_close", tab_menu_label(TabMenuLabel::Close, language)),
+                MenuItem::action("tab_close", tab_menu_label(TabMenuLabel::Close, language))
+                    .with_shortcut(format!("{}W", mod_prefix())),
                 MenuItem::action("tab_close_others", tab_menu_label(TabMenuLabel::CloseOthers, language)),
                 MenuItem::action("tab_close_to_right", tab_menu_label(TabMenuLabel::CloseToRight, language)),
             ],
