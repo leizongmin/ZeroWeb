@@ -2003,6 +2003,19 @@ fn position_cells(
     // 后处理：更新行组（tbody/thead/tfoot）的位置以包含其所有行
     // 对于 position:relative 的行组，还需应用 inset 偏移
     update_row_group_positions(table_box, grid, styles);
+
+    // 后处理：caption-side:bottom——将标题移到表格底部
+    // 当前 caption 由 taffy 作为 table 子元素布局，默认在顶部。
+    // caption-side:bottom 时需移到 row_y（表格内容总高）之后。
+    for child in &mut table_box.children {
+        if let Some(child_id) = child.node_id
+            && let Some(child_style) = styles.get(&child_id)
+            && child_style.display == DisplayValue::TableCaption
+            && child_style.caption_side == zero_style_system::property::CaptionSideValue::Bottom
+        {
+            child.y = row_y;
+        }
+    }
 }
 
 /// 应用 min-height/max-height/min-width/max-width 约束到 table 容器。
