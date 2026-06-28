@@ -81,6 +81,10 @@ pub struct ChromePalette {
     pub scrollbar_thumb_active: Color,
     /// Wayland 无系统装饰时，非最大化窗口外框描边
     pub window_frame_border: Color,
+    /// 窗口非激活（失焦）时的 chrome 背景色（标签栏 + 工具栏统一变灰）
+    pub chrome_inactive_bg: Color,
+    /// 窗口非激活时的地址栏边框色（弱化焦点感知）
+    pub address_bar_border_inactive: Color,
 }
 
 impl ChromePalette {
@@ -157,6 +161,8 @@ impl ChromePalette {
             scrollbar_thumb_hover: rgba(0, 0, 0, 160),
             scrollbar_thumb_active: rgba(0, 0, 0, 210),
             window_frame_border: rgb(160, 164, 169),
+            chrome_inactive_bg: rgb(235, 238, 242),
+            address_bar_border_inactive: rgb(224, 226, 230),
         }
     }
 
@@ -224,6 +230,8 @@ impl ChromePalette {
             scrollbar_thumb_hover: rgba(255, 255, 255, 160),
             scrollbar_thumb_active: rgba(255, 255, 255, 210),
             window_frame_border: rgb(90, 90, 90),
+            chrome_inactive_bg: rgb(40, 41, 44),
+            address_bar_border_inactive: rgb(60, 62, 65),
         }
     }
 }
