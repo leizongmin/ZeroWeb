@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use taffy::prelude::*;
-use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue};
+use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, VerticalAlignValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
@@ -540,18 +540,34 @@ pub(crate) fn compute_final_inline_layouts(
             fragments: line
                 .runs
                 .iter()
-                .map(|frag| InlineLayoutFragment {
-                    x: frag.x,
-                    y: frag.y,
-                    width: frag.width,
-                    height: frag.height,
-                    font_size: frag.font_size,
-                    is_ahem: frag.is_ahem,
-                    is_ahem_font: frag.is_ahem,
-                    text: frag.text.clone(),
-                    node_id: Some(frag.node_id),
-                    // R816 Phase 1：片段基线 = 行基线（baseline 对齐片段）。
-                    baseline_y: line.baseline_y,
+                .map(|frag| {
+                    // R822 Phase 3：per-fragment valign-aware glyph 基线。paint Path A is_ahem
+                    // glyph 位图顶 = baseline_y_abs - font_size，故 baseline_y 决定字形基线。
+                    // text-bottom ↑ half_leading（对齐父 content-area 底，glyph 上移到 strut 之上）
+                    // / text-top ↓ half_leading / sub ↓0.3·fs / super ↑0.3·fs；
+                    // baseline/top/bottom/middle = line.baseline_y。配合 R822 line-box 扩展
+                    // （apply_vertical_alignment 已把 line-box 撑高、strut 下移）使 div 高度正确。
+                    let strut_fs = ((line.ascent - line.height / 2.0) / 0.3).max(0.0);
+                    let half_leading = (line.ascent - 0.8 * strut_fs).max(0.0);
+                    let frag_baseline_y = match frag.vertical_align {
+                        VerticalAlignValue::TextBottom => line.baseline_y - half_leading,
+                        VerticalAlignValue::TextTop => line.baseline_y + half_leading,
+                        VerticalAlignValue::Sub => line.baseline_y + 0.3 * frag.font_size,
+                        VerticalAlignValue::Super => line.baseline_y - 0.3 * frag.font_size,
+                        _ => line.baseline_y,
+                    };
+                    InlineLayoutFragment {
+                        x: frag.x,
+                        y: frag.y,
+                        width: frag.width,
+                        height: frag.height,
+                        font_size: frag.font_size,
+                        is_ahem: frag.is_ahem,
+                        is_ahem_font: frag.is_ahem,
+                        text: frag.text.clone(),
+                        node_id: Some(frag.node_id),
+                        baseline_y: frag_baseline_y,
+                    }
                 })
                 .collect(),
         })
