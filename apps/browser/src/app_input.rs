@@ -83,12 +83,14 @@ impl BrowserApp {
         match touch.phase {
             TouchPhase::Started => {
                 if self.point_in_page_content(touch.x, touch.y) {
-                    // 页面内容区：单指滚动。
+                    // 页面内容区：单指滚动 + 长按候选（500ms 不动弹右键菜单）。
                     self.touch_scroll = Some((touch.id, touch.y));
                     self.touch_tap_candidate = None;
+                    self.touch_long_press = Some((touch.id, touch.x, touch.y, Instant::now()));
                 } else {
                     // chrome UI 区：记录 tap 候选，Ended 时判定。
                     self.touch_tap_candidate = Some((touch.id, touch.x, touch.y));
+                    self.touch_long_press = None;
                 }
             }
             TouchPhase::Moved => {
@@ -106,6 +108,12 @@ impl BrowserApp {
                         }
                     }
                 }
+                // 长按候选：移动超过阈值则取消（判定为滚动意图）。
+                if let Some((id, sx, sy, _)) = self.touch_long_press {
+                    if id == touch.id && ((touch.x - sx).abs() > 8.0 || (touch.y - sy).abs() > 8.0) {
+                        self.touch_long_press = None;
+                    }
+                }
                 // chrome 区 tap 候选：移动超过阈值则取消（判定为非 tap 意图）。
                 if let Some((id, sx, sy)) = self.touch_tap_candidate {
                     if id == touch.id && ((touch.x - sx).abs() > 10.0 || (touch.y - sy).abs() > 10.0) {
@@ -116,6 +124,10 @@ impl BrowserApp {
             TouchPhase::Ended | TouchPhase::Cancelled => {
                 if self.touch_scroll.is_some_and(|(id, _)| id == touch.id) {
                     self.touch_scroll = None;
+                }
+                // 长按候选在 Ended 时清除（若已触发则在 poll 中清空，此处兜底）。
+                if self.touch_long_press.is_some_and(|(id, _, _, _)| id == touch.id) {
+                    self.touch_long_press = None;
                 }
                 // chrome 区 tap 完成：合成左键 press + release。
                 if let Some((id, _sx, _sy)) = self.touch_tap_candidate {

@@ -307,6 +307,8 @@ pub struct BrowserApp {
     /// 触摸 tap 候选：Started 时记录，Ended 时若移动 <阈值则合成为左键 click。
     /// 仅 chrome UI 区（非页面内容）走此路径；页面内容区用 touch_scroll。
     touch_tap_candidate: Option<(u64, f64, f64)>,
+    /// 触摸长按候选：页面内容区 Started 时记录，超时未移动/释放则合成为右键菜单。
+    touch_long_press: Option<(u64, f64, f64, Instant)>,
     /// 系统颜色方案偏好
     color_scheme: PrefersColorSchemeValue,
     /// 浏览器外壳配色
@@ -398,6 +400,7 @@ impl BrowserApp {
             background_tab_titles: HashMap::new(),
             tab_drag: None,
             touch_tap_candidate: None,
+            touch_long_press: None,
             color_scheme,
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
             cached_window_theme: None,
@@ -505,6 +508,20 @@ impl BrowserApp {
             // 首次记录（加载初期的 title）不算。
             if !is_new && !title.is_empty() {
                 self.shell.set_tab_needs_attention(id, true);
+            }
+        }
+
+        // 触摸长按检测：页面内容区按住 ~500ms 未移动 → 合成右键菜单。
+        if let Some((id, x, y, start)) = self.touch_long_press {
+            if start.elapsed() >= std::time::Duration::from_millis(500) {
+                self.touch_long_press = None;
+                // 合成右键 click（press + release）触发 show_context_menu。
+                self.handle_mouse_click(x, y, true, "Right");
+                self.handle_mouse_click(x, y, false, "Right");
+                // 标记已处理，避免后续 Ended 重复。清空 touch_scroll 防止滚动。
+                if self.touch_scroll.is_some_and(|(sid, _)| sid == id) {
+                    self.touch_scroll = None;
+                }
             }
         }
     }
