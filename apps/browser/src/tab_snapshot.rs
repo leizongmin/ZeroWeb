@@ -61,10 +61,6 @@ impl TabSnapshot {
         self.image_cache.clear();
     }
 
-    pub fn clear_browser_owned_hit_test(&mut self) {
-        self.hit_test = None;
-    }
-
     /// 是否将 `last_render` 合成到屏幕（loading 期间即使有帧也不绘制 stale 内容）。
     pub fn should_composite_paint(&self) -> bool {
         self.last_render.is_some() && !self.loading
