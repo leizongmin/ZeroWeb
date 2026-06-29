@@ -3,6 +3,17 @@ R828 — line-height>1 字形垂直错位根因窄化（Path B paint baseline �
 性质: 纯调查（read-only 探针 + 临时插桩已全部回退），零 net 源码变更
 前置: R822（va-117a 24%→13%）/ R823-R827（残余归因 fontdue deep-plateau / margin-collapse refuted）
 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!! ⚠️ R829 SUPERSEDES R828 的结论（2026-06-29）—— 本文件核心结论被推翻，保留仅作历史。!!
+!! R828 探针用了 `font:40px/130px Ahem, sans-serif`（带 sans-serif fallback）→          !!
+!! font_family=["Ahem","sans-serif"] → is_pure_ahem=false → 不存储 → Path B → 假象 bug。 !!
+!! 改用纯 `font:40px/130px Ahem`（与真 va-117a 一致）→ is_pure_ahem=true → STORED →      !!
+!! glyph 落基线 y=37-76（正确）。故 va-117a div 走的是存储路径（R817/R822 正确），        !!
+!! 非 Path B。Path B bug 仅影响非纯 Ahem 块（影响极小）；va-117a 残余 = `<p>` font-wall。  !!
+!! 结论：R827 原 font-wall 归因更接近真相；R828「确定性 Path B div bug」判断错误。         !!
+!! 教训：CSS font: 探针的 font-family 必须与目标 WPT 测试逐字一致（勿加 fallback）。      !!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 ================================================================================
 背景
 ================================================================================
