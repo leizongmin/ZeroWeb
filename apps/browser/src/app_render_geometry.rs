@@ -245,9 +245,31 @@ fn push_rounded_rect_fill(
 }
 
 fn draw_hollow_square(fills: &mut Vec<FillPrimitive>, x: f32, y: f32, size: f32, thickness: f32, color: Color) {
+    // 对齐到整数像素，保证四条边等宽且锐利（避免 CPU backend floor/ceil 造成上下/左右边宽度不一致）。
+    let x = x.round();
+    let y = y.round();
+    let size = size.round();
+    let thickness = thickness.round().max(1.0);
     fills.push(rect_fill(x, y, size, thickness, color));
     fills.push(rect_fill(x, y + size - thickness, size, thickness, color));
     fills.push(rect_fill(x, y, thickness, size, color));
+    fills.push(rect_fill(x + size - thickness, y, thickness, size, color));
+}
+
+/// 只画方框的上边和右边（用于还原图标中被前框遮挡的后框，露出右上角）。
+fn draw_hollow_square_top_right_only(
+    fills: &mut Vec<FillPrimitive>,
+    x: f32,
+    y: f32,
+    size: f32,
+    thickness: f32,
+    color: Color,
+) {
+    let x = x.round();
+    let y = y.round();
+    let size = size.round();
+    let thickness = thickness.round().max(1.0);
+    fills.push(rect_fill(x, y, size, thickness, color));
     fills.push(rect_fill(x + size - thickness, y, thickness, size, color));
 }
 
