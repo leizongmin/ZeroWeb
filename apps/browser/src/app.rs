@@ -1582,6 +1582,19 @@ impl BrowserApp {
         self.start_tab_load(tab_id, url);
     }
 
+    /// 重新加载所有标签（菜单项「重新加载所有标签」）。
+    /// 收集所有标签的 (id, url) 快照，再逐个 start_tab_load，避免借用冲突。
+    pub fn reload_all_tabs(&mut self) {
+        let targets: Vec<(TabId, String)> = self
+            .shell
+            .tabs()
+            .filter_map(|t| t.url().map(|u| (t.id(), u.to_string())))
+            .collect();
+        for (tab_id, url) in targets {
+            self.start_tab_load(tab_id, url);
+        }
+    }
+
     /// 强制刷新当前页（Ctrl+F5 / Ctrl+Shift+R）：清除该 URL 缓存后重新加载。
     pub fn refresh_page_bypass_cache(&mut self) {
         self.shell.refresh();
