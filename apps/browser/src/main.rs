@@ -1783,6 +1783,44 @@ mod tests {
         assert!(!app.shell.active_tab().unwrap().is_loading());
     }
 
+    /// Space / PageDown 应向下滚动页面，PageUp 向上。
+    #[test]
+    fn keyboard_space_and_pagedown_scroll_page() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        let tab_id = app.shell.active_tab_id().unwrap();
+        app.ensure_webview(tab_id);
+
+        // 高页面以产生可滚动区域
+        let tall_html = r#"<!DOCTYPE html><html><head><style>
+          head, style, title { display: none; }
+          .spacer { height: 4000px; background: #eef; }
+        </style></head><body><div class="spacer">Tall</div></body></html>"#;
+        app.load_webview_html(tab_id, tall_html, None);
+        app.sync_webview_viewport_and_poll(tab_id);
+
+        let before = app.scroll_offset_for_tab(tab_id);
+        app.handle_key("PageDown", true, None);
+        let after_pagedown = app.scroll_offset_for_tab(tab_id);
+        assert!(
+            after_pagedown > before,
+            "PageDown should scroll down (before={before}, after={after_pagedown})"
+        );
+
+        app.handle_key("PageUp", true, None);
+        let after_pageup = app.scroll_offset_for_tab(tab_id);
+        assert!(
+            after_pageup < after_pagedown,
+            "PageUp should scroll up (after_pagedown={after_pagedown}, after_pageup={after_pageup})"
+        );
+
+        // Space 向下
+        let mid = app.scroll_offset_for_tab(tab_id);
+        app.handle_key("Space", true, None);
+        assert!(app.scroll_offset_for_tab(tab_id) > mid, "Space should scroll down");
+    }
+
     /// 刷新按钮在加载中点击应停止加载（按钮变停止语义）。
     #[test]
     fn refresh_button_click_stops_loading_when_loading() {
