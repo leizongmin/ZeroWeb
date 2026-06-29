@@ -308,6 +308,22 @@ impl FontLoader {
         Some((metrics.ascent, metrics.descent))
     }
 
+    /// 获取水平排版行 metrics 含 `line_gap`：`(ascent, descent, line_gap)`。
+    ///
+    /// `line_gap` 是字体的行间距（OS/2 sTypoLineGap / hhea lineGap）。chromium 与
+    /// fontdue 的 `line-height:normal` = `ascent − descent + line_gap`（按字号缩放）。
+    /// ZeroWeb 的 IFC `strut_ascent` / `half-leading` 目前用 `0.8·fs` / `1.2` 近似
+    /// （R759 仅修 Ahem 为 1.0），非 Ahem 字体偏离真实度量。本方法是 Phase A
+    /// font-metric plumbing（FontLoader → engine → IFC 真实 ascent/descent/line_gap）
+    /// 的第一阶准备：暴露此前被 [`line_metrics`] 丢弃的 `line_gap`，供后续阶段
+    /// 消费（R833/R834/R846；须全链 coherence 非 single-knob，R834 实证单点改
+    /// strut_ascent 反退 welcome）。
+    pub fn line_metrics_full(&self, font_id: u32, size: f32) -> Option<(f32, f32, f32)> {
+        let font = self.fonts.get(&font_id)?;
+        let metrics = font.horizontal_line_metrics(size)?;
+        Some((metrics.ascent, metrics.descent, metrics.line_gap))
+    }
+
     /// 测量字符 advance 宽度（含回退）
     pub fn measure_advance(&self, primary_id: u32, code_point: char, size: f32) -> f32 {
         if let Some(bitmap) = self.bitmap_glyphs.get(&(primary_id, code_point as u32, size.to_bits())) {
@@ -584,6 +600,40 @@ mod tests {
         // Verify bitmap contains non-zero pixels (the glyph is actually rendered)
         let non_zero_count = bitmap.data.iter().filter(|&&b| b > 0).count();
         assert!(non_zero_count > 0, "bitmap should contain non-zero pixels for 'A'");
+    }
+
+    /// R846 Phase A Phase 1：`line_metrics_full` 暴露此前被 `line_metrics` 丢弃的
+    /// `line_gap`。验证对真实字体返回 `(ascent, descent, line_gap)` 三元组，且与
+    /// `line_metrics` 的 ascent/descent 一致（line_metrics_full 是其超集）。
+    #[test]
+    fn test_line_metrics_full_exposes_line_gap() {
+        let font_data = match load_system_font_data() {
+            Some(d) => d,
+            None => {
+                eprintln!("skipping: no system font found");
+                return;
+            }
+        };
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(&font_data).expect("should load system font");
+
+        let size = 16.0_f32;
+        let (asc, desc, line_gap) = loader
+            .line_metrics_full(font_id, size)
+            .expect("line_metrics_full should return metrics for loaded font");
+        // ascent 为正、descent 为负（fontdue 约定）。
+        assert!(asc > 0.0, "ascent should be positive, got {asc}");
+        assert!(desc <= 0.0, "descent should be <= 0, got {desc}");
+
+        // 与 line_metrics 的一致性：ascent/descent 必须相同（line_metrics_full 是超集）。
+        let (asc2, desc2) = loader
+            .line_metrics(font_id, size)
+            .expect("line_metrics should return metrics");
+        assert!((asc - asc2).abs() < 1e-4, "ascent mismatch: {asc} vs {asc2}");
+        assert!((desc - desc2).abs() < 1e-4, "descent mismatch: {desc} vs {desc2}");
+
+        // line_gap 有限（不同字体可能为 0，但不应为 NaN）。
+        assert!(line_gap.is_finite(), "line_gap should be finite, got {line_gap}");
     }
 
     /// 测试不同大小的光栅化产生不同尺寸的 glyph
