@@ -823,10 +823,14 @@ impl super::Painter {
             struct PaintFragment {
                 x: f32,
                 y: f32,
+                // R817 Phase 2：片段基线绝对 y（container-rel = line.y + line.baseline_y）。
+                // 供 is_ahem glyph 定位用（见 stored 渲染循环），paint 非存储路径不读。
+                baseline_y_abs: f32,
                 #[allow(dead_code)]
                 height: f32,
                 font_size: f32,
                 is_ahem: bool,
+                is_ahem_font: bool,
                 text: String,
                 node_id: NodeId,
             }
@@ -847,9 +851,11 @@ impl super::Painter {
                             f.node_id.map(|nid| PaintFragment {
                                 x: f.x,
                                 y: line_y + f.y,
+                                baseline_y_abs: line_y + f.baseline_y,
                                 height: f.height,
                                 font_size: f.font_size,
                                 is_ahem: f.is_ahem,
+                                is_ahem_font: f.is_ahem_font,
                                 text: f.text.clone(),
                                 node_id: nid,
                             })
@@ -1285,12 +1291,24 @@ impl super::Painter {
 
                     if use_stored {
                         for frag in &stored_fragments {
-                            // 存储结果：frag.y 是片段框顶部（baseline_y - height）。
-                            // 基线偏移：Ahem 字形位图是完美 font_size 方块（无内部 ascent 留白），
-                            // 位图顶部应与行盒顶部对齐 → offset=0；普通字体保留 font_size（≈ascent）。
-                            // 仅在 stored 路径生效（compute_final 守卫保证 stored 片段为纯 Ahem 或
-                            // 其 is_ahem 可靠），非存储路径不在此处调整（见 else 分支）。
-                            let v_offset = if frag.is_ahem { 0.0 } else { frag.font_size };
+                            // R817 linebox 度量统一 Phase 2：is_ahem glyph 位图顶 = 片段基线 - font_size
+                            // （Ahem 方块底边齐基线，ascent=font_size）。行基线（container-rel）=
+                            // frag.baseline_y_abs。macro glyph_y = content_y + frag.y + v_offset，其中
+                            // frag.y = line.y + f.y，故 v_offset = baseline_y_abs - font_size - frag.y
+                            // → glyph_y = content_y + line.y + line.baseline_y - font_size（基线处）。
+                            // 旧 v_offset=0 把 glyph 放在 f.y（=baseline_y-run.height，line-height>1 时
+                            // 为负，glyph 越过行盒顶部错位）。line-height:1 时 f.y=baseline_y-font_size，
+                            // v_offset 退化为 0（== 旧行为，A3，font-051 不回归）。
+                            // 仅对**真正** Ahem 字形（is_ahem_font，来自 IFC run 实际字体）应用——
+                            // 容器为 Ahem 但片段实为其它字体（font-051 的 serif span）时保留旧
+                            // 容器级行为（is_ahem?0:font_size），避免按 ascent=font_size 错移。
+                            let v_offset = if frag.is_ahem_font {
+                                frag.baseline_y_abs - frag.font_size - frag.y
+                            } else if frag.is_ahem {
+                                0.0
+                            } else {
+                                frag.font_size
+                            };
                             render_fragment!(
                                 frag.x,
                                 frag.y,

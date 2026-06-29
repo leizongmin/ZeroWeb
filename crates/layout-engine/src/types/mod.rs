@@ -408,6 +408,11 @@ pub struct InlineLayoutFragment {
     pub font_size: f32,
     /// 是否使用 Ahem 字体（影响字形宽度计算）。
     pub is_ahem: bool,
+    /// R817 linebox 度量统一 Phase 2：片段**实际**字体是否 Ahem（来自 IFC run.is_ahem_font，
+    /// 区别于容器级 `is_ahem`）。用于 paint is_ahem glyph 基线定位——仅对真正 Ahem 方块字形
+    /// （ascent=font_size）应用 `baseline_y - font_size` 公式；容器为 Ahem 但片段实为其它字体
+    /// （如 font-051 的 serif span）时为 false，保留旧 v_offset 行为避免回归。
+    pub is_ahem_font: bool,
     /// 文本内容。
     pub text: String,
     /// 对应 DOM 节点 ID（用于去重）。
