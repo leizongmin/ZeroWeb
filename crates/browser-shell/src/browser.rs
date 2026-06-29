@@ -68,6 +68,10 @@ pub struct FindState {
     total_matches: usize,
     /// 上一次 find_next/previous 是否发生了循环环绕（用于 UI 提示）。
     last_wrap: Option<FindWrapHint>,
+    /// 是否区分大小写。
+    case_sensitive: bool,
+    /// 是否全字匹配。
+    whole_word: bool,
 }
 
 impl FindState {
@@ -79,6 +83,8 @@ impl FindState {
             current_match: 0,
             total_matches: 0,
             last_wrap: None,
+            case_sensitive: false,
+            whole_word: false,
         }
     }
 
@@ -105,6 +111,16 @@ impl FindState {
     /// 上一次 find 操作的循环提示（若有）。
     pub fn last_wrap(&self) -> Option<FindWrapHint> {
         self.last_wrap
+    }
+
+    /// 是否区分大小写。
+    pub fn case_sensitive(&self) -> bool {
+        self.case_sensitive
+    }
+
+    /// 是否全字匹配。
+    pub fn whole_word(&self) -> bool {
+        self.whole_word
     }
 }
 
@@ -654,6 +670,22 @@ impl BrowserShell {
         if total > 0 && self.find_state.current_match == 0 {
             self.find_state.current_match = 1;
         }
+    }
+
+    /// 切换「区分大小写」选项。切换后重置匹配计数（实际匹配由渲染层重新计算）。
+    pub fn find_toggle_case_sensitive(&mut self) {
+        self.find_state.case_sensitive = !self.find_state.case_sensitive;
+        self.find_state.current_match = 0;
+        self.find_state.total_matches = 0;
+        self.find_state.last_wrap = None;
+    }
+
+    /// 切换「全字匹配」选项。
+    pub fn find_toggle_whole_word(&mut self) {
+        self.find_state.whole_word = !self.find_state.whole_word;
+        self.find_state.current_match = 0;
+        self.find_state.total_matches = 0;
+        self.find_state.last_wrap = None;
     }
 
     // ── 地址栏自动补全 ──

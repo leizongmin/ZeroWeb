@@ -1576,11 +1576,14 @@ impl BrowserApp {
         );
 
         let find_state = self.shell.find_state();
+        // 选项切换按钮（区分大小写 / 全字匹配）位置，位于匹配数与 prev 按钮之间。
+        let case_btn_x = bar_x + bar_w - 160.0 * s;
+        let whole_btn_x = bar_x + bar_w - 130.0 * s;
         if find_state.total_matches() > 0 {
             // 色阶：当前项用主文本色强调，分隔符与总数用次要色，符合 Chrome 习惯。
             let current_str = find_state.current_match().to_string();
             let rest_str = format!("/{}", find_state.total_matches());
-            let match_x = bar_x + bar_w - 130.0 * s;
+            let match_x = bar_x + bar_w - 200.0 * s;
             let match_y = y + (bar_h - font_size) * 0.5;
             let current_w = self.measure_ui_text_width(&current_str, font_size);
             self.draw_ui_text(&current_str, match_x, match_y, font_size, self.chrome_palette.find_bar_text, glyphs);
@@ -1609,7 +1612,7 @@ impl BrowserApp {
                 );
             }
         } else if !self.find_input.is_empty() {
-            let no_match_x = bar_x + bar_w - 130.0 * s;
+            let no_match_x = bar_x + bar_w - 200.0 * s;
             self.draw_ui_text(
                 "No matches",
                 no_match_x,
@@ -1618,6 +1621,45 @@ impl BrowserApp {
                 self.chrome_palette.find_match_text,
                 glyphs,
             );
+        }
+
+        // 选项切换按钮：激活态用主色背景 + 白字，未激活态用次要文字。
+        let opt_btn_w = 28.0 * s;
+        let opt_font = font_size * 0.82;
+        let opt_y = y + (bar_h - opt_font) * 0.5;
+        for (bx, label, active) in [
+            (case_btn_x, "Aa", find_state.case_sensitive()),
+            (whole_btn_x, "W•", find_state.whole_word()),
+        ] {
+            let hovered = self.pointer_in_rect(bx, y, opt_btn_w, bar_h);
+            if active {
+                push_rounded_rect_fill(
+                    fills,
+                    bx + 2.0 * s,
+                    y + 3.0 * s,
+                    opt_btn_w - 4.0 * s,
+                    bar_h - 6.0 * s,
+                    4.0 * s,
+                    self.chrome_palette.find_active_option_bg,
+                );
+            } else if hovered {
+                push_circle_fill(
+                    fills,
+                    bx + opt_btn_w / 2.0,
+                    y + bar_h / 2.0,
+                    layout::NAV_BUTTON_HOVER_DIAMETER * s,
+                    self.chrome_palette.tab_hover_bg,
+                );
+            }
+            let color = if active {
+                self.chrome_palette.find_active_option_text
+            } else if hovered {
+                self.chrome_palette.address_bar_text
+            } else {
+                self.chrome_palette.find_match_text
+            };
+            let lw = self.measure_ui_text_width(label, opt_font);
+            self.draw_ui_text(label, bx + (opt_btn_w - lw) / 2.0, opt_y, opt_font, color, glyphs);
         }
 
         let btn_y = y + (bar_h - font_size) * 0.5;

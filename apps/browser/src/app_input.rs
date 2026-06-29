@@ -1456,6 +1456,25 @@ impl BrowserApp {
             }
             let prev_x = bar_x + bar_w - 100.0 * s;
             let next_x = bar_x + bar_w - 70.0 * s;
+            // 选项切换按钮（区分大小写 / 全字匹配），位于 prev 按钮左侧。
+            let case_x = bar_x + bar_w - 160.0 * s;
+            let whole_x = bar_x + bar_w - 130.0 * s;
+            if x_f >= case_x && x_f < case_x + 28.0 * s {
+                self.shell.find_toggle_case_sensitive();
+                if !self.find_input.is_empty() {
+                    self.shell.find_start(&self.find_input.clone());
+                }
+                self.needs_redraw = true;
+                return;
+            }
+            if x_f >= whole_x && x_f < whole_x + 28.0 * s {
+                self.shell.find_toggle_whole_word();
+                if !self.find_input.is_empty() {
+                    self.shell.find_start(&self.find_input.clone());
+                }
+                self.needs_redraw = true;
+                return;
+            }
             if x_f >= prev_x && x_f < prev_x + 28.0 * s {
                 self.shell.find_previous();
                 self.needs_redraw = true;

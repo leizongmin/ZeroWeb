@@ -108,7 +108,7 @@ pub const MACOS_TRAFFIC_LIGHT_INSET: f32 = 78.0;
 /// Height of the find bar.
 pub const FIND_BAR_HEIGHT: f32 = 36.0;
 /// Width of the floating find bar panel.
-pub const FIND_BAR_WIDTH: f32 = 320.0;
+pub const FIND_BAR_WIDTH: f32 = 380.0;
 /// Margin from the content frame edge for the floating find bar.
 pub const FIND_BAR_FLOAT_MARGIN: f32 = 12.0;
 /// Corner radius of the floating find bar panel.
