@@ -1742,3 +1742,64 @@ fn r816_linebox_metrics_populated() {
     );
     assert!(line.descent >= 0.0, "descent 非负");
 }
+
+/// R817 linebox 度量统一 Phase 2：验证 IFC 片段的 `is_ahem`（实际字体）按**每个片段**传播，
+/// 而非容器级。这是 paint Phase 2 基线定位公式（仅对真正 Ahem 方块 `baseline_y - font_size`
+/// 应用）所依赖的数据——Ahem 容器内的非 Ahem 片段（如 font-051 的 serif span）必须为 false，
+/// 否则按 ascent=font_size 错移导致回归。
+#[test]
+fn r817_is_ahem_font_propagated_per_fragment() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    // 同一行的两个片段：一个真正 Ahem，一个 serif（同容器，不同实际字体）。
+    let mut ahem_run = TextRun::simple(
+        "AAAA".to_string(),
+        NodeId::default(),
+        40.0,
+        130.0, // line-height 3.25
+        zero_css_parser::values::VerticalAlignValue::Baseline,
+    );
+    ahem_run.is_ahem_font = true;
+    let serif_run = TextRun::simple(
+        "b".to_string(),
+        NodeId::default(),
+        16.0,
+        19.2, // line-height 1.2
+        zero_css_parser::values::VerticalAlignValue::Baseline,
+    );
+    // serif_run.is_ahem_font 保持 false（simple 默认）。
+    ctx.break_into_lines(vec![ahem_run, serif_run]);
+    assert_eq!(ctx.lines.len(), 1);
+    let frags = &ctx.lines[0].runs;
+    assert!(frags.len() >= 2, "应至少 2 片段，实际 {}", frags.len());
+    // 每个片段的 is_ahem 反映其自身实际字体（run.is_ahem_font），非容器级。
+    assert!(
+        frags[0].is_ahem,
+        "Ahem 片段 is_ahem 应为 true，实际 {}",
+        frags[0].is_ahem
+    );
+    assert!(
+        !frags.iter().any(|f| f.text == "b" && f.is_ahem),
+        "serif 片段 is_ahem 应为 false（实际字体非 Ahem）"
+    );
+
+    // A3 不变量：line-height:1（run.height == font_size）时 Phase 2 v_offset 公式退化为 0。
+    // v_offset = baseline_y_abs - font_size - frag.y；line-height:1 下 frag.y = baseline_y - font_size，
+    // line.y=0 → baseline_y_abs = baseline_y → v_offset = baseline_y - font_size - (baseline_y - font_size) = 0。
+    let mut single = InlineFormattingContext::new(800.0);
+    let mut r = TextRun::simple(
+        "X".to_string(),
+        NodeId::default(),
+        100.0,
+        100.0, // line-height:1
+        zero_css_parser::values::VerticalAlignValue::Baseline,
+    );
+    r.is_ahem_font = true;
+    single.break_into_lines(vec![r]);
+    let f = &single.lines[0].runs[0];
+    let baseline_y = single.lines[0].baseline_y;
+    let v_offset = baseline_y - f.font_size - f.y; // line.y = 0
+    assert!(
+        v_offset.abs() < 0.001,
+        "line-height:1 时 Phase 2 v_offset 应退化为 0（A3），实际 {v_offset}"
+    );
+}

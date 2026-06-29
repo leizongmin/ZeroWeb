@@ -83,6 +83,7 @@ pub(crate) fn store_inline_layout_results(
                             height: frag.height,
                             font_size: frag.font_size,
                             is_ahem,
+                            is_ahem_font: frag.is_ahem,
                             text: frag.text.clone(),
                             node_id: Some(frag.node_id),
                             // R816 Phase 1：片段基线 = 行基线（baseline 对齐片段）。
@@ -546,6 +547,7 @@ pub(crate) fn compute_final_inline_layouts(
                     height: frag.height,
                     font_size: frag.font_size,
                     is_ahem: frag.is_ahem,
+                    is_ahem_font: frag.is_ahem,
                     text: frag.text.clone(),
                     node_id: Some(frag.node_id),
                     // R816 Phase 1：片段基线 = 行基线（baseline 对齐片段）。
