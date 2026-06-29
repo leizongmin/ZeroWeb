@@ -24,6 +24,7 @@
 //! | `VolumeOff`            | `volume-off.svg`      | 标签静音状态         |
 //! | `AlertTriangle`        | `alert-triangle.svg`  | 标签崩溃状态         |
 //! | `Sun` / `Moon` / `SunMoon` | `sun.svg` / `moon.svg` / `sun-moon.svg` | 主题切换（亮/暗/自动） |
+//! | `Clock`                | `clock.svg`           | 自动补全历史来源     |
 //!
 //! 另有一个 [`globe.svg`] 不走 [`Icon`] 枚举，作为默认 favicon 占位符由
 //! [`tab_favicon`] 直接加载。
@@ -72,11 +73,12 @@ pub enum Icon {
     Sun,
     Moon,
     SunMoon,
+    Clock,
 }
 
 impl Icon {
     /// 所有图标变体，用于测试与一致性校验。新增变体时只需在此处追加。
-    pub const ALL: [Icon; 20] = [
+    pub const ALL: [Icon; 21] = [
         Icon::ChevronLeft,
         Icon::ChevronRight,
         Icon::Refresh,
@@ -97,6 +99,7 @@ impl Icon {
         Icon::Sun,
         Icon::Moon,
         Icon::SunMoon,
+        Icon::Clock,
     ];
 
     fn svg_bytes(self) -> &'static [u8] {
@@ -121,6 +124,7 @@ impl Icon {
             Icon::Sun => include_bytes!("../assets/icons/sun.svg"),
             Icon::Moon => include_bytes!("../assets/icons/moon.svg"),
             Icon::SunMoon => include_bytes!("../assets/icons/sun-moon.svg"),
+            Icon::Clock => include_bytes!("../assets/icons/clock.svg"),
         }
     }
 
