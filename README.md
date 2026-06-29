@@ -129,7 +129,7 @@ powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1    # Window
 
 ## 仓库结构
 
-整个工作区共 22 个 workspace member：17 个库 crate、3 个应用入口（`apps/`）和 2 个测试工具（`tests/`）。下文按「应用与进程入口 / 核心引擎 / 基础设施 / 产品层与测试」分组列出。
+整个工作区共 23 个 workspace member：17 个库 crate、3 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 核心引擎 / 基础设施 / 产品层与测试」分组列出。
 
 ### 应用与进程入口
 
@@ -174,6 +174,7 @@ powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1    # Window
 | `tests/integration` | 跨 crate 集成测试 |
 | `tests/wpt-runner` | WPT / reftest / 兼容性基础设施 |
 | `tests/benchmarks` | benchmark 结果产物 |
+| `tools/icon-gen` | 图标资产生成工具（`zero-icon-gen`）：从源 SVG 产出 Linux / Windows / macOS 三端图标（PNG / ICO / iconset / 运行时窗口 RGBA），不随发布产物分发 |
 
 想先了解整体分层，可以看 [docs/architecture.md](docs/architecture.md)。
 

@@ -21,7 +21,7 @@
 
 ## 工作区分层
 
-整个工作区共 22 个 workspace member：17 个库 crate、3 个应用入口（`apps/`）和 2 个测试工具（`tests/`）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
+整个工作区共 23 个 workspace member：17 个库 crate、3 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
 
 ### 应用与进程入口
 
@@ -72,6 +72,8 @@
 | `tests/integration` | 跨 crate 集成测试（DOM Bridge polyfill、多进程架构、安全管线、真实网站兼容性、产品层 smoke 等） |
 | `tests/wpt-runner` | Web Platform Tests / reftest / 兼容性基础设施（按分类通过率报告、Chromium Oracle 像素对比） |
 | `tests/benchmarks` | benchmark 结果产物（不是 workspace member） |
+
+> 另有 `tools/icon-gen`（`zero-icon-gen`），它是开发工具而非业务 crate：从源 SVG 生成 Linux / Windows / macOS 三端图标资产（PNG / ICO / macOS iconset / 运行时窗口 RGBA），不随发布产物分发。
 
 ## 从请求到像素的大致链路
 
