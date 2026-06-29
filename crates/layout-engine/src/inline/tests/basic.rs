@@ -1842,7 +1842,11 @@ fn r822_linebox_grows_for_valign_extension() {
         line.height
     );
     // baseline_y 随 top_extend 下移（strut 在更高 line-box 内下移）。
-    assert!(line.baseline_y > 77.0, "baseline_y 应随扩展下移，实际 {}", line.baseline_y);
+    assert!(
+        line.baseline_y > 77.0,
+        "baseline_y 应随扩展下移，实际 {}",
+        line.baseline_y
+    );
 
     // 对照：纯 baseline 行不扩展。
     let mut ctx2 = InlineFormattingContext::new(800.0);
