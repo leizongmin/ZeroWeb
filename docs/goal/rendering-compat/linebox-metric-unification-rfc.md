@@ -229,8 +229,8 @@ pub struct InlineLayoutFragment {
 
 0. **Phase 0（read-only 探针）**：vertical-align-117a 度量插桩 + chromium 对比。→ 验证：探针报告，无代码。
 1. **Phase 1（加字段，行为不变）**：types/mod.rs 加 baseline_y/ascent/descent 字段（默认值，compute_final 填充但 paint 不读）。→ 验证：全量三态不退（纯加字段）。
-2. **Phase 2（paint Path A 读 baseline_y，Gate 2 不变）**：text.rs Path A 用 baseline_y，仅对纯-Ahem 子集启用（is_ahem 守卫）。→ 验证：font-051 等 R207 子集仍 PASS（A3）。
-3. **Phase 3（扩到非-Ahem）**：去掉 is_ahem 守卫，paint 全用 baseline_y。→ 验证：vertical-align 簇 z_vs_chr 下降，product-smoke 不退。
+2. **Phase 2（paint Path A 读 baseline_y，Gate 2 不变）**：text.rs Path A 用 baseline_y，仅对纯-Ahem 子集启用（is_ahem 守卫）。→ 验证：font-051 等 R207 子集仍 PASS（A3）。**✅ LANDED R817（commit d6d59e2a）**：实测 linebox Oracle 33.7%→57.4%（+45 case），font-051/welcome/self-ref(686/686) 零回归；A3 实证（line-height:1 退化为 no-op；font-051 oracle 3.58% 为 pre-existing 非 R817 引入）。**修正**：守卫须用**每片段实际字体** `is_ahem_font`（非容器级 is_ahem）——Ahem 容器内的非 Ahem 片段（font-051 serif span）须保留旧行为，否则按 ascent=font_size 错移。va 簇（117a/118a）仍高位（frag.baseline_y 非 valign-aware + strut/half-leading 不一致），见 Phase 3。
+3. **Phase 3（扩到非-Ahem）**：去掉 is_ahem 守卫，paint 全用 baseline_y。→ 验证：vertical-align 簇 z_vs_chr 下降，product-smoke 不退。**⚠️ 前置**：须先存 per-fragment valign-aware baseline_y（R816/R817 存的是 line.baseline_y，无 valign offset），且解 apply_vertical_alignment 的 strut/half-leading/box-height 约定冲突（baseline 用 box-bottom、text-bottom 用 box-top+strut，line-height>1 分歧）——属 Phase A IFC 统一域（多会话）。
 4. **Phase 4（收尾）**：清理 v_offset 启发式死代码。→ 验证：全量三态不退 + clippy/fmt 干净。
 5. **Phase 5（文件拆分，若需）**：inline/mod.rs 超 2000 行则抽 vertical_alignment.rs。→ 验证：纯移动，全量三态不退。
 
@@ -281,3 +281,4 @@ pub struct InlineLayoutFragment {
 | 版本 | 日期 | 变更 |
 |------|------|------|
 | v1.0 | 2026-06-29（R813） | 初始 read-only 设计产出（linebox 度量统一 RFC） |
+| v1.1 | 2026-06-29（R817） | Phase 2 LANDED（commit d6d59e2a）：paint Path A 用 baseline_y；linebox Oracle +45 case；修正守卫须用 per-fragment is_ahem_font；Phase 3 前置 strut/half-leading 不一致（Phase A） |
