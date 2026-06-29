@@ -799,10 +799,12 @@ impl super::Painter {
                 TextAlignLastValue::Justify => Some(TextAlign::Justify),
             };
 
-            // text-indent 首行缩进（px）
+            // text-indent 首行缩进（px）：Px/Em（×font_size）/Percentage（×container_width，CSS §10.3.1）。
+            // 与 layout 路径（inline_finalization::resolve_text_indent）保持一致（IFC 双路径同源）。
             let text_indent_px: f32 = match style.text_indent {
                 LengthValue::Px(v) => v as f32,
                 LengthValue::Em(v) => v as f32 * font_size,
+                LengthValue::Percentage(v) => v as f32 / 100.0 * container_width,
                 _ => 0.0,
             };
 
