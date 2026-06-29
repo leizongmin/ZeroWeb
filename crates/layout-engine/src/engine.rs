@@ -255,6 +255,12 @@ impl LayoutEngine {
         mark_anonymous_table_roots(&mut root_box, styles, false);
         adjust_float_positions(&mut root_box);
 
+        // 5.2 后处理（R699 CSS §10.5.1）：非 BFC 块级元素 height:auto 时高度只计 in-flow
+        // 子元素，浮动子元素显式忽略。taffy 把 float 当 in-flow block 计入父 content
+        // height，致 overflow:visible 父被 float 子撑高（应塌缩）。须在 adjust_float_positions
+        // 之后（float 位置已定）自底向上重算。
+        exclude_floats_from_non_bfc_auto_height(&mut root_box, styles);
+
         // 5.5 后处理：垂直书写模式下 width:auto 块级元素收缩到内容块轴跨度
         shrink_vertical_blocks_to_content(&mut root_box, styles, &WritingModeValue::HorizontalTb);
 
@@ -1556,6 +1562,65 @@ fn apply_calc_size_adjustments(root: &mut LayoutBox, styles: &HashMap<NodeId, Co
                 root.content_height = (root.content_height + diff).max(0.0);
             }
         }
+    }
+}
+
+/// R699（CSS §10.5.1）：非 BFC 块级元素 `height:auto` 且 `overflow` 计算为 `visible`
+/// 时，高度只计入 **in-flow** 子元素的 border-box，浮动子元素与绝对定位子元素被
+/// **显式忽略**。taffy 把 float 当 in-flow block 计入父 content height，致
+/// `#div1{height:auto;overflow:visible} > div{float;left;height:1in}` 的父被撑到 96px
+/// （应 0；float 溢出但本例 float 无背景故不可见 → 应「无红」）。
+///
+/// 自底向上（后序）重算：先递归子元素（子高度修正后再算父，级联自然传播）。仅对
+/// `style.height == Auto` 且非 BFC（[`establishes_bfc`]）的块级元素生效——BFC 父
+/// （overflow!=visible / flow-root / flex / grid / table 等）**包含**浮动，其高度不受
+/// 此规则影响。重算值 = in-flow 子元素（非 float、非 abspos）border-box 底边相对
+/// 父内容盒顶的最大值（无 in-flow 子元素 → 0）。
+fn exclude_floats_from_non_bfc_auto_height(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    // 后序：先修正子元素，父级重算时读到的是已修正的子高度。
+    for child in &mut box_node.children {
+        exclude_floats_from_non_bfc_auto_height(child, styles);
+    }
+    // 仅 height:auto（内容决定型）非 BFC 块级元素。
+    let is_auto_height = box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.height, LengthValue::Auto));
+    if !is_auto_height || crate::margin_collapse::establishes_bfc(box_node) {
+        return;
+    }
+    // CSS §10.5.1：取 in-flow 子元素 border-box 底边最大值（相对父内容盒顶）。
+    // child.y 为子元素 border-box 顶相对父内容盒顶（taffy 已含 margin 折叠后的偏移），
+    // 不含子元素 margin-bottom（末子 margin-bottom 与父折叠/悬挂，不计入高度）。
+    // ★ 关键守卫：仅当存在 float 子元素时才重算——无 float 时 taffy 的 content_height
+    // 已正确（max(child.y+child.height) 公式对负 margin / margin 折叠不精确，无 float 时
+    // 强行覆写会误收缩非 float 用例，如 root-box-001 的 p{margin:-1em}）。
+    let mut extent: f32 = 0.0;
+    let mut has_in_flow = false;
+    let mut has_float_child = false;
+    for child in &box_node.children {
+        let is_float = !matches!(child.float, FloatValue::None);
+        let is_abspos = child.is_absolute || child.is_fixed;
+        if is_float {
+            has_float_child = true;
+            continue;
+        }
+        if is_abspos {
+            continue;
+        }
+        has_in_flow = true;
+        extent = extent.max(child.y + child.height);
+    }
+    if !has_float_child {
+        return;
+    }
+    // 无 in-flow 子元素 → 0；否则 in-flow border-box 底边最大值。
+    let new_content_h = if has_in_flow { extent.max(0.0) } else { 0.0 };
+    let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+    // 仅当当前内容高确实被 float 撑高时收紧。
+    if new_content_h + 0.5 < box_node.content_height {
+        box_node.content_height = new_content_h;
+        box_node.height = new_content_h + pb;
     }
 }
 
