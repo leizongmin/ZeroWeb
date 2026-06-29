@@ -417,9 +417,7 @@ impl BrowserApp {
         if !self.address_bar_focused && key.len() == 1 && !self.ctrl_pressed && !self.cmd_pressed {
             if let Some(tab_id) = self.shell.active_tab_id() {
                 let event = if pressed { "keydown" } else { "keyup" };
-                if self.tabs.dispatch_key_event(tab_id, event, key, key) {
-                    self.needs_redraw = true;
-                }
+                self.tabs.dispatch_key_event(tab_id, event, key, key);
             }
         }
 
@@ -1274,19 +1272,10 @@ impl BrowserApp {
                     if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32) {
                         let collapsed = self.page_selection.get(&tab_id).is_none_or(|s| s.is_collapsed());
                         if collapsed {
-                            let allowed = self.tabs.dispatch_page_click(tab_id, doc_x, doc_y);
-                            if allowed && let Some(href) = self.tabs.hit_test_link(tab_id, doc_x, doc_y) {
-                                // Ctrl/Cmd+点击链接 → 后台新标签打开（Chrome 行为）。
-                                // Shift 修饰留给"前台新标签"，暂不支持前台语义，统一后台。
-                                if self.ctrl_pressed || self.cmd_pressed {
-                                    self.new_tab_background(&href);
-                                } else {
-                                    self.navigate_to(&href);
-                                }
-                            }
-                            if allowed {
-                                self.needs_redraw = true;
-                            }
+                            // 异步派发 click；若页面未 preventDefault，链接导航会通过
+                            // `take_pending_actions` 在下一帧 poll 后执行（仿 Chrome 延迟导航）。
+                            self.tabs
+                                .dispatch_page_click(tab_id, doc_x, doc_y, self.ctrl_pressed || self.cmd_pressed);
                         }
                     }
                 }

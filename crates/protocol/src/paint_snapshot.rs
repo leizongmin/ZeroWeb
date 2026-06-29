@@ -461,6 +461,9 @@ pub struct IpcHitTestNodeMeta {
     pub class_name: Option<String>,
     /// 链接 `href`。
     pub href: Option<String>,
+    /// 图片 `src`（仅 `img` 元素，绝对化后）。
+    #[serde(default)]
+    pub src: Option<String>,
 }
 
 /// IPC 命中测试缓存。

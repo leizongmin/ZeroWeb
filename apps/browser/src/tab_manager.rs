@@ -1,6 +1,6 @@
 //! 标签页运行时管理 — 统一 in-process worker 与可选多进程后端。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use zero_browser_shell::TabId;
 use zero_engine::{DomEventDetail, PrefersColorSchemeValue, selector_from_element_hit};
@@ -8,9 +8,27 @@ use zero_render_foundation::image_cache::ImageCache;
 use zero_webview::WebViewRenderResult;
 
 use crate::process_backend::{ProcessTabBackend, use_multiprocess_backend};
-use crate::tab_scripts::DomDispatchResult;
 use crate::tab_snapshot::TabSnapshot;
 use crate::tab_worker::{TabWorkerCommand, TabWorkerHandle, TabWorkerMessage};
+
+/// 异步派发 DOM 事件后，由 `TabManager` 在收到渲染进程回执时入队的后续动作。
+///
+/// 仿 Chrome：导航等默认动作必须等 `click` 事件的 `default_allowed` 回执到达后才执行。
+#[derive(Debug, Clone)]
+pub enum PendingTabAction {
+    /// 在当前活动标签打开链接（普通点击）。
+    NavigateActiveTab(String),
+    /// 在后台新标签打开链接（Ctrl/Cmd+点击）。
+    OpenBackgroundTab(String),
+    /// 请求主线程重绘。
+    RequestRedraw,
+}
+
+/// 一笔在途的异步派发：哪个 Tab、回执允许默认动作时要做什么。
+struct PendingDispatch {
+    tab_id: TabId,
+    on_allowed: Option<PendingTabAction>,
+}
 
 /// 标签页运行时（worker 或多进程）的统一管理器。
 pub struct TabManager {
@@ -26,6 +44,12 @@ pub struct TabManager {
     javascript_enabled: bool,
     /// 各 Tab 最近一次交互目标（用于 keydown 等事件派发）。
     event_targets: HashMap<TabId, String>,
+    /// dispatch_id → PendingDispatch。
+    pending_dispatch: HashMap<u64, PendingDispatch>,
+    /// 已 resolved、等待主事件循环消费的延迟动作。
+    pending_actions: VecDeque<(TabId, PendingTabAction)>,
+    /// 下一个 dispatch_id。
+    next_dispatch_id: u64,
 }
 
 impl TabManager {
@@ -46,6 +70,9 @@ impl TabManager {
             poll_tick: 0,
             javascript_enabled: true,
             event_targets: HashMap::new(),
+            pending_dispatch: HashMap::new(),
+            pending_actions: VecDeque::new(),
+            next_dispatch_id: 1,
         };
         if use_multiprocess_backend() && manager.process_backend.is_none() {
             tracing::info!("Tab runtime: in-process workers (zero-renderer not available)");
@@ -217,6 +244,14 @@ impl TabManager {
             changed |= backend.poll(&mut self.snapshots, active_tab, poll_background);
             self.pending_loaded.extend(backend.take_page_loaded_events());
             self.pending_errors.extend(backend.take_page_error_events());
+            for (dispatch_id, default_allowed) in backend.take_dispatch_results() {
+                Self::resolve_dispatch(
+                    &mut self.pending_dispatch,
+                    &mut self.pending_actions,
+                    dispatch_id,
+                    default_allowed,
+                );
+            }
         }
         for (tab_id, worker) in &self.workers {
             let is_active = active_tab == Some(*tab_id);
@@ -255,10 +290,43 @@ impl TabManager {
                             );
                         }
                     }
+                    TabWorkerMessage::DispatchResult {
+                        dispatch_id,
+                        default_allowed,
+                        ..
+                    } => {
+                        Self::resolve_dispatch(
+                            &mut self.pending_dispatch,
+                            &mut self.pending_actions,
+                            dispatch_id,
+                            default_allowed,
+                        );
+                    }
                 }
             }
         }
         changed
+    }
+
+    /// 根据 default_allowed 回执决定是否触发 on_allowed 动作。
+    /// 派发记录在 pending_dispatch 中移除（一次性）。
+    fn resolve_dispatch(
+        pending_dispatch: &mut HashMap<u64, PendingDispatch>,
+        pending_actions: &mut VecDeque<(TabId, PendingTabAction)>,
+        dispatch_id: u64,
+        default_allowed: bool,
+    ) {
+        if let Some(dispatch) = pending_dispatch.remove(&dispatch_id)
+            && default_allowed
+            && let Some(action) = dispatch.on_allowed
+        {
+            pending_actions.push_back((dispatch.tab_id, action));
+        }
+    }
+
+    /// 取出已 resolved 的延迟动作（由主事件循环消费）。
+    pub fn take_pending_actions(&mut self) -> VecDeque<(TabId, PendingTabAction)> {
+        std::mem::take(&mut self.pending_actions)
     }
 
     /// 测试用：阻塞直到所有 worker 队列清空（近似 idle）。
@@ -290,107 +358,102 @@ impl TabManager {
         Some(&mut self.snapshots.get_mut(&tab_id)?.image_cache)
     }
 
-    /// 链接命中测试（主线程快照，不阻塞渲染进程）。
+    /// 链接命中测试（主线程快照）。
+    ///
+    /// 缓存 miss（例如页面尚未绘制首帧）时返回 `None`，不发起同步 IPC —
+    /// 这样即便 renderer 进程 CPU 100%，hover 也不会拖累 UI 响应。
     pub fn hit_test_link(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<String> {
-        if let Some(snap) = self.snapshots.get(&tab_id)
-            && let Some(hit_test) = snap.hit_test.as_ref()
-            && let Some(href) = hit_test.hit_test_link(x, y)
-        {
-            return Some(href);
-        }
-        if let Some(ref mut backend) = self.process_backend {
-            return backend.hit_test_link(tab_id, x, y, &mut self.snapshots);
-        }
-        None
+        let snap = self.snapshots.get(&tab_id)?;
+        let hit_test = snap.hit_test.as_ref()?;
+        hit_test.hit_test_link(x, y)
     }
 
-    /// 图片命中测试：返回 `src`（绝对化）。
+    /// 图片命中测试：返回 `src`（绝对化，主线程快照）。
     pub fn hit_test_image(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<String> {
-        if let Some(snap) = self.snapshots.get(&tab_id)
-            && let Some(hit_test) = snap.hit_test.as_ref()
-            && let Some(src) = hit_test.hit_test_image(x, y)
-        {
-            return Some(src);
-        }
-        if let Some(ref mut backend) = self.process_backend {
-            return backend.hit_test_image(tab_id, x, y, &mut self.snapshots);
-        }
-        None
+        let snap = self.snapshots.get(&tab_id)?;
+        let hit_test = snap.hit_test.as_ref()?;
+        hit_test.hit_test_image(x, y)
     }
 
-    /// 元素命中测试（主线程快照，不阻塞渲染进程）。
+    /// 元素命中测试（主线程快照）。
     pub fn hit_test_element(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<zero_engine::ElementHit> {
-        if let Some(snap) = self.snapshots.get(&tab_id)
-            && let Some(hit_test) = snap.hit_test.as_ref()
-            && let Some(hit) = hit_test.hit_test_element(x, y)
-        {
-            return Some(hit);
-        }
-        if let Some(ref mut backend) = self.process_backend {
-            return backend.hit_test_element(tab_id, x, y, &mut self.snapshots);
-        }
-        None
+        let snap = self.snapshots.get(&tab_id)?;
+        let hit_test = snap.hit_test.as_ref()?;
+        hit_test.hit_test_element(x, y)
     }
 
-    /// 向页面元素派发 DOM 事件并返回是否允许默认行为。
-    pub fn dispatch_dom_event(&mut self, tab_id: TabId, selector: &str, event_type: &str) -> bool {
-        self.dispatch_dom_event_impl(tab_id, selector, event_type, None)
-            .default_allowed
-    }
-
-    fn dispatch_dom_event_impl(
+    /// 异步向页面元素派发 DOM 事件（fire-and-forget）。
+    ///
+    /// `on_allowed` 在 `default_allowed = true` 时由后续 poll 触发；用于把链接导航等默认动作
+    /// 延迟到事件回执确认之后。仿 Chrome：导航不会先于 click handler 的 `preventDefault`。
+    fn dispatch_dom_event_async(
         &mut self,
         tab_id: TabId,
         selector: &str,
         event_type: &str,
         detail: Option<DomEventDetail>,
-    ) -> DomDispatchResult {
+        on_allowed: Option<PendingTabAction>,
+    ) {
+        // JS 禁用：没有 handler 会 preventDefault，直接走默认动作。
         if !self.javascript_enabled {
-            return DomDispatchResult {
-                default_allowed: true,
-                html_changed: false,
-            };
-        }
-        if let Some(ref mut backend) = self.process_backend {
-            let result = backend.dispatch_dom_event(
-                tab_id,
-                Some(selector),
-                0.0,
-                0.0,
-                event_type,
-                detail.as_ref(),
-                &mut self.snapshots,
-            );
-            if result.html_changed {
-                self.poll(Some(tab_id));
+            if let Some(action) = on_allowed {
+                self.pending_actions.push_back((tab_id, action));
             }
-            self.event_targets.insert(tab_id, selector.to_string());
-            return result;
+            return;
         }
-        let result = self
-            .workers
-            .get(&tab_id)
-            .map(|w| {
-                w.dispatch_dom_event(
-                    selector,
-                    event_type,
-                    detail.as_ref().and_then(|d| d.key.as_deref()),
-                    detail.as_ref().and_then(|d| d.code.as_deref()),
-                )
-            })
-            .unwrap_or(DomDispatchResult {
-                default_allowed: true,
-                html_changed: false,
+        let dispatch_id = self.next_dispatch_id;
+        self.next_dispatch_id += 1;
+        let key = detail.as_ref().and_then(|d| d.key.clone());
+        let code = detail.as_ref().and_then(|d| d.code.clone());
+
+        let sent = if let Some(ref mut backend) = self.process_backend {
+            backend.dispatch_dom_event_fire_and_forget(
+                tab_id,
+                dispatch_id,
+                Some(selector),
+                event_type,
+                key,
+                code,
+            );
+            true
+        } else if let Some(worker) = self.workers.get(&tab_id) {
+            worker.send(TabWorkerCommand::DispatchDomEvent {
+                dispatch_id,
+                selector: selector.to_string(),
+                event_type: event_type.to_string(),
+                key,
+                code,
             });
-        self.event_targets.insert(tab_id, selector.to_string());
-        if result.html_changed {
-            self.poll(Some(tab_id));
+            true
+        } else {
+            false
+        };
+
+        if !sent {
+            // 没有可用的渲染端：模拟“默认允许”立即执行 on_allowed。
+            if let Some(action) = on_allowed {
+                self.pending_actions.push_back((tab_id, action));
+            }
+            return;
         }
-        result
+
+        self.event_targets.insert(tab_id, selector.to_string());
+        self.pending_dispatch.insert(
+            dispatch_id,
+            PendingDispatch {
+                tab_id,
+                on_allowed,
+            },
+        );
+    }
+
+    /// 向页面元素派发 DOM 事件（无默认动作）。
+    pub fn dispatch_dom_event(&mut self, tab_id: TabId, selector: &str, event_type: &str) {
+        self.dispatch_dom_event_async(tab_id, selector, event_type, None, None);
     }
 
     /// 向当前交互目标派发键盘事件（无目标时发往 `body`）。
-    pub fn dispatch_key_event(&mut self, tab_id: TabId, event_type: &str, key: &str, code: &str) -> bool {
+    pub fn dispatch_key_event(&mut self, tab_id: TabId, event_type: &str, key: &str, code: &str) {
         let selector = self
             .event_targets
             .get(&tab_id)
@@ -400,28 +463,42 @@ impl TabManager {
             key: Some(key.to_string()),
             code: Some(code.to_string()),
         };
-        self.dispatch_dom_event_impl(tab_id, &selector, event_type, Some(detail))
-            .html_changed
+        self.dispatch_dom_event_async(tab_id, &selector, event_type, Some(detail), None);
     }
 
-    /// 处理页面点击释放：派发 mouseup/click，返回是否允许默认行为（链接导航）。
-    pub fn dispatch_page_click(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32) -> bool {
-        if let Some(hit) = self.hit_test_element(tab_id, doc_x, doc_y) {
-            let selector = selector_from_element_hit(&hit);
-            self.event_targets.insert(tab_id, selector.clone());
-            let up = self.dispatch_dom_event_impl(tab_id, &selector, "mouseup", None);
-            let click = self.dispatch_dom_event_impl(tab_id, &selector, "click", None);
-            return up.default_allowed && click.default_allowed;
-        }
-        true
+    /// 处理页面点击释放：异步派发 mouseup + click。
+    ///
+    /// 若鼠标命中链接，会把“导航 / 后台新标签”作为 `on_allowed` 注册到 click 的回执上，
+    /// 由 `take_pending_actions` 在主事件循环中执行（仿 Chrome 延迟导航）。
+    /// `background_tab` = Ctrl/Cmd+点击 → 后台新标签打开。
+    pub fn dispatch_page_click(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32, background_tab: bool) {
+        let Some(hit) = self.hit_test_element(tab_id, doc_x, doc_y) else {
+            return;
+        };
+        let selector = selector_from_element_hit(&hit);
+        self.event_targets.insert(tab_id, selector.clone());
+
+        // mouseup 不触发导航；click 才是浏览器选择链接导航的时机。
+        self.dispatch_dom_event_async(tab_id, &selector, "mouseup", None, None);
+
+        let on_allowed = self
+            .hit_test_link(tab_id, doc_x, doc_y)
+            .map(|href| {
+                if background_tab {
+                    PendingTabAction::OpenBackgroundTab(href)
+                } else {
+                    PendingTabAction::NavigateActiveTab(href)
+                }
+            });
+        self.dispatch_dom_event_async(tab_id, &selector, "click", None, on_allowed);
     }
 
-    /// 处理页面按下：派发 mousedown。
+    /// 处理页面按下：异步派发 mousedown。
     pub fn dispatch_page_mousedown(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32) {
         if let Some(hit) = self.hit_test_element(tab_id, doc_x, doc_y) {
             let selector = selector_from_element_hit(&hit);
             self.event_targets.insert(tab_id, selector.clone());
-            self.dispatch_dom_event_impl(tab_id, &selector, "mousedown", None);
+            self.dispatch_dom_event_async(tab_id, &selector, "mousedown", None, None);
         }
     }
 

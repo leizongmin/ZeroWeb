@@ -359,6 +359,7 @@ fn hit_test_cache_to_ipc(cache: HitTestCache) -> IpcHitTestCache {
                         id: meta.id,
                         class_name: meta.class_name,
                         href: meta.href,
+                        src: meta.src,
                     },
                 )
             })
