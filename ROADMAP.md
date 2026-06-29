@@ -23,6 +23,7 @@
 - 当前优先完成 `rendering-compat` / render-compact 验收，把静态 CSS-heavy 页面渲染拉到可验证的 Chromium 参考水平
 - 补齐外部 CSS、图片子资源、SVG/PNG Logo、`ImageCache`、layout/paint/glyph 一致性和产品静态页截图门禁
 - 用真实静态页面暴露缺口：`apps/browser/assets/welcome.html`、`morning.work` 文章页、`wintertc.org` 首页
+- 短期内把 HTML 3.2/4 + CSS1/2 常见静态文档（presentational hints、UA 默认样式、基础表格 / 列表 / 链接颜色）提升为高优先级推进面，配套 `legacy-html` 产品 smoke 与 `make product-smoke-legacy` 回归门禁；不替代 WPT / DC-14 长期目标
 - `browser-shell` 已有基础骨架，后续重点是把产品层和 WebView/渲染管线的真实验收打通
 - render-compact 验收通过后，再逐步推进完整 JS/DOM API、图形 API、SVG 文档、动画逐帧、真实网站交互兼容性和平台字体差异
 
