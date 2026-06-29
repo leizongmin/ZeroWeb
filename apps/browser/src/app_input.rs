@@ -392,6 +392,22 @@ impl BrowserApp {
             return;
         }
 
+        // Escape 停止加载：仅当没有其他 Escape 上下文（菜单/查找栏/地址栏）打开，
+        // 且当前活动标签正在加载时。优先级最低，放在各早返回之后。
+        if key == "Escape"
+            && pressed
+            && !self.context_menu.visible
+            && !self.shell.find_state().is_active()
+            && !self.address_bar_focused
+        {
+            if let Some(tab) = self.shell.active_tab()
+                && tab.is_loading()
+            {
+                self.stop_loading_page();
+                return;
+            }
+        }
+
         if !self.address_bar_focused && key.len() == 1 && !self.ctrl_pressed && !self.cmd_pressed {
             if let Some(tab_id) = self.shell.active_tab_id() {
                 let event = if pressed { "keydown" } else { "keyup" };
@@ -1396,7 +1412,14 @@ impl BrowserApp {
                 match button_index {
                     0 => self.go_back(),
                     1 => self.go_forward(),
-                    2 => self.refresh_page(),
+                    2 => {
+                        // 加载中点击刷新按钮 → 停止加载（Chrome/Firefox 标配）。
+                        if self.shell.active_tab().is_some_and(|t| t.is_loading()) {
+                            self.stop_loading_page();
+                        } else {
+                            self.refresh_page();
+                        }
+                    }
                     3 => {
                         let home = self.shell.settings().home_url.clone();
                         self.navigate_to(&home);

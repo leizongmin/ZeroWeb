@@ -1747,6 +1747,68 @@ mod tests {
             "rounded rect scrolled above viewport must be culled"
         );
     }
+
+    /// Esc 在加载中应停止加载（无其他 Escape 上下文时）。
+    #[test]
+    fn escape_stops_loading_when_active_tab_loading() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+
+        // 先导航到一个 URL，使 tab 拥有 url，refresh 才会触发 loading
+        app.navigate_to("https://example.com/");
+        app.shell.refresh();
+        assert!(
+            app.shell.active_tab().unwrap().is_loading(),
+            "tab should be loading after refresh"
+        );
+
+        app.handle_key("Escape", true, None);
+        assert!(
+            !app.shell.active_tab().unwrap().is_loading(),
+            "Escape should stop loading"
+        );
+    }
+
+    /// Esc 在未加载时不应触发停止（无副作用）。
+    #[test]
+    fn escape_does_nothing_when_not_loading() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        assert!(!app.shell.active_tab().unwrap().is_loading());
+
+        // 不应 panic，也无副作用
+        app.handle_key("Escape", true, None);
+        assert!(!app.shell.active_tab().unwrap().is_loading());
+    }
+
+    /// 刷新按钮在加载中点击应停止加载（按钮变停止语义）。
+    #[test]
+    fn refresh_button_click_stops_loading_when_loading() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+
+        let _ = app.build_scene_for_test(1280, 900);
+        app.navigate_to("https://example.com/");
+        app.shell.refresh();
+        assert!(app.shell.active_tab().unwrap().is_loading());
+
+        // 计算刷新按钮中心坐标（导航区第 3 个按钮，index 2）
+        let s = app.scale_factor;
+        let nav_btn_w = layout::NAV_BUTTON_WIDTH * s;
+        let refresh_btn_cx = (layout::NAV_SECTION_LEADING_PAD + nav_btn_w * 2.0 + nav_btn_w / 2.0) * s;
+        let toolbar_y = layout::TAB_STRIP_HEIGHT * s;
+        let btn_cy = toolbar_y + (layout::ADDRESS_BAR_HEIGHT * s) / 2.0;
+
+        app.handle_mouse_click(refresh_btn_cx as f64, btn_cy as f64, true, "Left");
+        app.handle_mouse_click(refresh_btn_cx as f64, btn_cy as f64, false, "Left");
+        assert!(
+            !app.shell.active_tab().unwrap().is_loading(),
+            "clicking refresh button while loading should stop loading"
+        );
+    }
 }
 
 // --- 无头模式入口 ---

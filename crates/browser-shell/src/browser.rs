@@ -422,6 +422,13 @@ impl BrowserShell {
         }
     }
 
+    /// 停止当前活动标签页的加载（Esc 或刷新按钮在 loading 时点击）。
+    pub fn stop_loading(&mut self) {
+        if let Some(tab) = self.tabs.active_tab_mut() {
+            tab.set_loading(false);
+        }
+    }
+
     /// 页面加载完成回调。
     ///
     /// 更新标签页状态并记录到历史。
