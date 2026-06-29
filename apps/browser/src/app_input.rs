@@ -744,6 +744,10 @@ impl BrowserApp {
                     // Ctrl+T：新建标签页，聚焦地址栏。
                     self.new_blank_tab_focused(false);
                 }
+                "w" | "W" if self.shift_pressed => {
+                    // Ctrl+Shift+W：关闭整个窗口。
+                    self.pending_window_chrome_action = Some(WindowChromeAction::Close);
+                }
                 "w" | "W" => {
                     self.close_active_tab();
                 }
