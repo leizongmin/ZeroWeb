@@ -126,8 +126,8 @@ R800 修了 baseline 公式（half-leading + ascent，welcome +0.05pp 小正）�
 - 字体度量优先复用 fontdue 现有 ascent；若 fontdue 不提供 per-glyph ascent，layout 侧用 `font_size*0.8` 近似（R800 已用），**不引入 FontLoader 全量预解析**（更大独立 RFC）。
 
 ### 3.4 假设
-- **A1（待 Phase 0 验证）**：fontdue 能在 layout IFC 为每 fragment 提供 ascent（或 font_size 近似可用）。— 状态：待 Phase 0 探针。
-- **A2（待 Phase 0 验证）**：vertical-align 簇发散的主因是 layout vs paint baseline 分歧（而非 fontdue 光栅化）。— 状态：待 Phase 0 探针（R388 已证 fontdue≈chromium 光栅化，支持 A2）。
+- **A1（Phase 0 已证真）**：fontdue/font-size/ascent 基础应用正确——孤立 `<div style="font:40px/3.25 Ahem">` line-box span=129px（=line-height 130）。line-height 计算无误。— 状态：✅ 已验证（R814）。
+- **A2（Phase 0 部分推翻 + 扩范围）**：vertical-align 簇发散**非仅** layout vs paint baseline 分歧。va-117a 实测：`height:2em;width:2em`（80×80 固定盒）+ 换行 `TTTT<span..>TTTT`，ZW black TTTT 仅 50px 高（line-box 应 ~130/行）→ **连单行 line-box 高度都算错**（换行 + 固定高度约束下）。故 RFC 须扩到**换行多行盒 per-line baseline + height 约束交互**，非单 baseline_y 字段可解。— 状态：⚠️ 部分验证，范围须扩（R814）。
 - **A3**：pure-Ahem 单行子集（R207）在新 baseline_y 下退化到旧 v_offset=0 语义仍 PASS。— 状态：需 Phase 1 验证。
 
 ### 3.5 代码变更边界
