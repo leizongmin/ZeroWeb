@@ -700,6 +700,26 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
                 }
             }
         }
+        // HTML 3.2/4 <font> 元素的展示属性（COLOR/SIZE/FACE）。color/font-size/font-family
+        // 均为继承属性，设置在 <font> 上会传播到其文本子节点。SIZE 用 em 倍数以正确随父
+        // font-size 缩放（HTML 七级字号非线性刻度，HTML5 §10.4）。
+        "font" => {
+            if let Some(color) = elem_attr(elem, "color") {
+                hints.push(("color".to_string(), normalize_html_color(&color)));
+            }
+            if let Some(face) = elem_attr(elem, "face") {
+                let fam = font_family_from_face(&face);
+                if !fam.is_empty() {
+                    hints.push(("font-family".to_string(), fam));
+                }
+            }
+            // 注：`<font size>` 暂未映射——1.5em 等刻度实测使 testpage-020 单元格增高
+            //（行高叠加），净负向。待 cell-height spacing gap 先解再启用（见 master.md R808）。
+        }
+        // HTML <center>：等价 text-align:center（继承到块子元素的内联内容）。
+        "center" => {
+            hints.push(("text-align".to_string(), "center".to_string()));
+        }
         _ => {
             if let Some(bg) = elem_attr(elem, "bgcolor") {
                 hints.push(("background-color".to_string(), normalize_html_color(&bg)));
@@ -716,6 +736,53 @@ fn elem_attr(elem: &zero_dom::ElementData, name: &str) -> Option<String> {
 
 fn normalize_html_color(value: &str) -> String {
     value.trim().to_string()
+}
+
+/// 将 `<font face>` 属性值转为 CSS font-family 值：逗号分隔的字体名，含非标识符字符
+///（空格等）的名字加引号。
+fn font_family_from_face(face: &str) -> String {
+    face.split(',')
+        .map(str::trim)
+        .filter(|f| !f.is_empty())
+        .map(|f| {
+            let needs_quote = f.chars().any(|c| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+            if needs_quote {
+                // 去掉既有引号后重新加，避免双引号
+                let inner = f.trim_matches(|c| c == '"' || c == '\'');
+                format!("\"{inner}\"")
+            } else {
+                f.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// 将 `<font size>` 属性（HTML 七级字号 1-7，或相对 ±N）转为 em 倍数。
+/// 绝对值映射自 HTML5 §10.4 的非线性刻度（基准 size 3 = 1.0em）；相对值从基准 3 解析。
+#[allow(dead_code)]
+fn html_font_size_to_em(size: &str) -> Option<f32> {
+    let v = size.trim();
+    let (sign, n_str) = if let Some(rest) = v.strip_prefix('+') {
+        (1i32, rest.trim())
+    } else if let Some(rest) = v.strip_prefix('-') {
+        (-1i32, rest.trim())
+    } else {
+        (0, v)
+    };
+    let n: i32 = n_str.parse().ok()?;
+    // 相对值 ±N 解析为绝对级（从基准 3），并钳到 1..=7。
+    let abs = if sign != 0 { (3 + sign * n).clamp(1, 7) } else if (1..=7).contains(&n) { n } else { return None };
+    let em = match abs {
+        1 => 0.63,
+        2 => 0.82,
+        3 => 1.0,
+        4 => 1.13,
+        5 => 1.5,
+        6 => 2.0,
+        _ => 3.0, // 7
+    };
+    Some(em)
 }
 
 fn parse_html_px(value: &str) -> Option<f32> {
@@ -1225,6 +1292,51 @@ mod presentational_hint_tests {
         assert_eq!(h1.font_size, zero_css_parser::values::LengthValue::Px(32.0));
         assert_eq!(h2.font_size, zero_css_parser::values::LengthValue::Px(24.0));
         assert!(matches!(h1.font_weight, zero_css_parser::values::FontWeightValue::Bold));
+    }
+
+    #[test]
+    fn font_element_presentational_hints() {
+        let doc = parse_html(
+            "<font color=\"#990000\" face=\"Arial, Times New Roman\" size=\"5\">txt</font>",
+        );
+        let font = doc.get_elements_by_tag_name("font")[0];
+        let hints = collect_presentational_hints(&doc, font);
+        assert!(hints.iter().any(|(p, v)| p == "color" && v == "#990000"), "font color: {hints:?}");
+        assert!(
+            hints.iter().any(|(p, v)| p == "font-family"
+                && v.contains("Arial")
+                && v.contains("\"Times New Roman\"")),
+            "font face (quoted multi-word): {hints:?}"
+        );
+        // SIZE 暂未启用（见 html_font_size_to_em 注释 + master.md R808）。
+        assert!(!hints.iter().any(|(p, _)| p == "font-size"), "size disabled: {hints:?}");
+    }
+
+    #[test]
+    fn center_element_text_align_hint() {
+        let doc = parse_html("<center><p>x</p></center>");
+        let center = doc.get_elements_by_tag_name("center")[0];
+        let hints = collect_presentational_hints(&doc, center);
+        assert!(
+            hints.iter().any(|(p, v)| p == "text-align" && v == "center"),
+            "center text-align hint: {hints:?}"
+        );
+    }
+
+    #[test]
+    fn font_size_mapping_matches_html5_scale() {
+        // 七级绝对字号（HTML5 §10.4 非线性刻度，基准 3 = 1.0em）
+        assert_eq!(html_font_size_to_em("1"), Some(0.63));
+        assert_eq!(html_font_size_to_em("2"), Some(0.82));
+        assert_eq!(html_font_size_to_em("3"), Some(1.0));
+        assert_eq!(html_font_size_to_em("4"), Some(1.13));
+        assert_eq!(html_font_size_to_em("5"), Some(1.5));
+        assert_eq!(html_font_size_to_em("6"), Some(2.0));
+        assert_eq!(html_font_size_to_em("7"), Some(3.0));
+        // 相对值从基准 3 解析
+        assert_eq!(html_font_size_to_em("+2"), Some(1.5)); // 3+2=5
+        assert_eq!(html_font_size_to_em("-1"), Some(0.82)); // 3-1=2
+        assert_eq!(html_font_size_to_em("9"), None); // 超范围
     }
 }
 
