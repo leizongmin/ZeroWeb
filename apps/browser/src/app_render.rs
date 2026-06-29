@@ -1870,15 +1870,14 @@ impl BrowserApp {
                     );
                 }
                 SuggestionSource::History => {
-                    // 历史无专属图标，沿用时钟字符
-                    let source_size = font_size * 0.82;
-                    self.draw_ui_text(
-                        "◷",
-                        bar_x + pad_h,
-                        row_y + pad_v,
-                        source_size,
-                        self.chrome_palette.autocomplete_url,
+                    crate::ui_icons::render_icon(
+                        &mut self.font_loader,
                         glyphs,
+                        crate::ui_icons::Icon::Clock,
+                        icon_cx,
+                        icon_cy,
+                        icon_size,
+                        self.chrome_palette.autocomplete_url,
                     );
                     let title = sug.title();
                     let truncated_title = self.truncate_ui_text(title, title_area_w, title_size);
