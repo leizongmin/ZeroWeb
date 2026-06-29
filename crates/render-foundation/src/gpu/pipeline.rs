@@ -81,7 +81,7 @@ struct Uniforms {
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
-    @location(0) color: vec3f,
+    @location(0) color: vec4f,
     @location(1) world_pos: vec2f,
     @location(2) rect_lt: vec2f,
     @location(3) rect_rb: vec2f,
@@ -93,7 +93,7 @@ struct VertexOutput {
 fn vs_main(
     @location(0) pos: vec2f,
     @location(1) uv: vec2f,  // unused for rounded rect
-    @location(2) color: vec3f,
+    @location(2) color: vec4f,
     @location(3) rect_lt: vec2f,
     @location(4) rect_rb: vec2f,
     @location(5) radii_tl_tr: vec2f,
@@ -167,7 +167,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         }
     }
 
-    return vec4f(in.color, 1.0);
+    return in.color;
 }
 "#;
 
@@ -560,11 +560,11 @@ fn fs_transform(in: VertexOutput) -> @location(0) vec4f {
 }
 "#;
 
-/// RoundedRect 顶点步幅（字节）— 15 个 float
-pub const ROUNDED_RECT_VERTEX_STRIDE: u64 = 60;
+/// RoundedRect 顶点步幅（字节）— 16 个 float（color 为 rgba）
+pub const ROUNDED_RECT_VERTEX_STRIDE: u64 = 64;
 
 /// RoundedRect 每 vertex float 数量
-pub const ROUNDED_RECT_FLOATS_PER_VERTEX: usize = 15;
+pub const ROUNDED_RECT_FLOATS_PER_VERTEX: usize = 16;
 
 /// Gradient 顶点步幅（字节）— 10 个 float（x, y, world_x, world_y, grad_type+p0, p1, p2, p3 不对...)
 /// 实际：[x, y, world_x, world_y, grad_type, p0, p1, p2, p3, _pad] = 10 floats
@@ -663,7 +663,7 @@ pub fn create_fill_pipeline(
 const ROUNDED_RECT_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 7] = wgpu::vertex_attr_array![
     0 => Float32x2,   // pos [x, y]
     1 => Float32x2,   // uv (unused, but kept for layout compatibility)
-    2 => Float32x3,   // color [r, g, b]
+    2 => Float32x4,   // color [r, g, b, a]
     3 => Float32x2,   // rect_lt [left, top]
     4 => Float32x2,   // rect_rb [right, bottom]
     5 => Float32x2,   // radii_tl_tr
@@ -1197,8 +1197,8 @@ mod tests {
         assert_eq!(FILL_FLOATS_PER_VERTEX, 7);
         assert_eq!(FILL_VERTEX_STRIDE, 28);
         assert_eq!(UNIFORM_SIZE, 16);
-        assert_eq!(ROUNDED_RECT_FLOATS_PER_VERTEX, 15);
-        assert_eq!(ROUNDED_RECT_VERTEX_STRIDE, 60);
+        assert_eq!(ROUNDED_RECT_FLOATS_PER_VERTEX, 16);
+        assert_eq!(ROUNDED_RECT_VERTEX_STRIDE, 64);
         assert_eq!(GRADIENT_FLOATS_PER_VERTEX, 10);
         assert_eq!(GRADIENT_VERTEX_STRIDE, 40);
     }
