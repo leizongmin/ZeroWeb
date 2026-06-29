@@ -338,6 +338,33 @@ fn load_png_to_framebuffer(path: &str) -> Result<zero_render_foundation::surface
     Ok(fb)
 }
 
+/// DC-14 非平凡性检查：判定一帧是否「退化/接近纯色」（>99.9% 像素为同一颜色）。
+///
+/// 这类帧通常是 parsing/animation/print/crashtest/JS-only 用例在 headless 下渲染为
+/// 空白/纯色，若 ZeroWeb 也渲染为空白则 z_vs_chr≈0% → 假 PASS（历史 R135/R149 PNG
+/// 加载 bug 同类）。采样每 16 个像素估算主色占比，O(n/16) 避免 13793 case × 全帧扫描。
+pub(crate) fn frame_is_near_solid(fb: &zero_render_foundation::surface::FrameBuffer) -> bool {
+    let n_px = (fb.width as usize) * (fb.height as usize);
+    if n_px == 0 {
+        return true; // 空帧视为退化
+    }
+    let stride = 16; // 每 16 个像素采样 1 个（800×600→30000 样本）
+    let mut counts: std::collections::HashMap<[u8; 4], u32> = std::collections::HashMap::new();
+    let mut samples = 0u32;
+    let mut i = 0usize;
+    while i < fb.data.len() {
+        let px = [fb.data[i], fb.data[i + 1], fb.data[i + 2], fb.data[i + 3]];
+        *counts.entry(px).or_insert(0) += 1;
+        samples += 1;
+        i += 4 * stride;
+    }
+    if samples == 0 {
+        return true;
+    }
+    let dominant = counts.values().copied().max().unwrap_or(0) as f64;
+    dominant / samples as f64 > 0.999
+}
+
 /// `run` 子命令 — 执行测试并报告详细结果。
 fn cmd_run(options: &CliOptions, filter: Option<&str>) {
     let mut tests = builtin_tests();
@@ -746,15 +773,16 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     let jobs = effective_jobs(options);
     eprintln!("Using {jobs} job(s).");
 
-    // (safe_id, has_oracle, z_vs_chr_pct, strict_thresh_pct)
+    // (safe_id, has_oracle, z_vs_chr_pct, strict_thresh_pct, oracle_near_solid)
     // strict_thresh = DC-14 锁定严格容差（布局 0.1% / 文字 0.5%，ReftestCategory::strict_max_diff_ratio），
     // 用于三态分类（真通过 < strict / 近似通过 strict..loose / 不一致 >= loose）。
-    let results: Vec<(String, bool, Option<f64>, f64)> = parallel_map(&filtered, jobs, |case| {
+    // oracle_near_solid = DC-14 非平凡性检查（oracle 帧退化/纯色 → 假绿可疑，排除出 credible pass）。
+    let results: Vec<(String, bool, Option<f64>, f64, bool)> = parallel_map(&filtered, jobs, |case| {
         let safe_id = case.id.replace(['/', '\\', '.'], "_");
         let oracle_path = oracle_dir.join(format!("{safe_id}.png"));
         let strict_thresh_pct = case.category.strict_max_diff_ratio() * 100.0;
         if !oracle_path.exists() {
-            return (case.id.clone(), false, None, strict_thresh_pct);
+            return (case.id.clone(), false, None, strict_thresh_pct, false);
         }
         let config = ReftestConfig {
             viewport_width: options.viewport_width as u32,
@@ -764,16 +792,17 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         let test_fb = render_to_framebuffer_with_base(&case.test_html, "", &config, case.base_dir.as_deref());
         let oracle_fb = match load_png_to_framebuffer(&oracle_path.to_string_lossy()) {
             Ok(fb) => fb,
-            Err(_) => return (case.id.clone(), false, None, strict_thresh_pct),
+            Err(_) => return (case.id.clone(), false, None, strict_thresh_pct, false),
         };
+        let near_solid = frame_is_near_solid(&oracle_fb);
         let (diff_px, _max_diff) = compare_pixels(&test_fb, &oracle_fb, 0);
         let w = test_fb.width.min(oracle_fb.width) as usize;
         let h = test_fb.height.min(oracle_fb.height) as usize;
         let total = (w * h).max(1) as f64;
-        (case.id.clone(), true, Some(100.0 * diff_px as f64 / total), strict_thresh_pct)
+        (case.id.clone(), true, Some(100.0 * diff_px as f64 / total), strict_thresh_pct, near_solid)
     });
 
-    let with_oracle: Vec<&(String, bool, Option<f64>, f64)> = results.iter().filter(|r| r.1).collect();
+    let with_oracle: Vec<&(String, bool, Option<f64>, f64, bool)> = results.iter().filter(|r| r.1).collect();
     let no_oracle = results.len() - with_oracle.len();
     let loose_pct = pass_ratio * 100.0;
     let oracle_pass = with_oracle
@@ -792,9 +821,20 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
             }
         }
     }
+    // DC-14 非平凡性检查：oracle-pass 中 oracle 帧退化/纯色的（假绿可疑），排除出 credible pass。
+    let degenerate_pass = with_oracle
+        .iter()
+        .filter(|r| r.4 && r.2.is_some_and(|p| p < loose_pct))
+        .count();
+    let credible_pass = oracle_pass.saturating_sub(degenerate_pass);
     let total = with_oracle.len();
     let rate = if total > 0 {
         100.0 * oracle_pass as f64 / total as f64
+    } else {
+        0.0
+    };
+    let credible_rate = if total > 0 {
+        100.0 * credible_pass as f64 / total as f64
     } else {
         0.0
     };
@@ -811,6 +851,9 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     eprintln!("  with chromium oracle: {}", total);
     eprintln!("  no oracle (skip):   {}", no_oracle);
     eprintln!("  oracle-pass (z_vs_chr < {:.1}%): {} ({:.1}%)", loose_pct, oracle_pass, rate);
+    eprintln!("  ── DC-14 非平凡性检查（排除退化/纯色假绿）──");
+    eprintln!("  退化可疑 pass (oracle 帧近纯色): {} → 排除", degenerate_pass);
+    eprintln!("  credible pass (排除退化): {} ({:.1}%)", credible_pass, credible_rate);
     eprintln!("  ── DC-14 三态分类（严格容差真通过率 = 唯一可信达标指标）──");
     eprintln!("  真通过 (z_vs_chr < 布局0.1%/文字0.5%): {} ({:.1}%)", strict_pass, strict_rate);
     eprintln!("  近似通过 (strict..{:.1}%): {} ({:.1}%)", loose_pct, near_pass, 100.0 * near_pass as f64 / total.max(1) as f64);
@@ -818,27 +861,42 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     eprintln!("  (cf. self-source ~56.5% / DC-14 46.5% false-pass)");
 
     // 列出 z_vs_chr 最大的 15 个（最不一致，候选修复目标）
-    let mut sorted: Vec<&(String, bool, Option<f64>, f64)> = with_oracle.clone();
+    let mut sorted: Vec<&(String, bool, Option<f64>, f64, bool)> = with_oracle.clone();
     sorted.sort_by(|a, b| {
         b.2.unwrap_or(0.0)
             .partial_cmp(&a.2.unwrap_or(0.0))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     eprintln!("\n  Top 15 worst z_vs_chr（修复候选）:");
-    for (id, _, pct, _) in sorted.iter().take(15) {
+    for (id, _, pct, _, _) in sorted.iter().take(15) {
         eprintln!("    {:.2}%  {}", pct.unwrap_or(0.0), id);
     }
     if std::env::var("ORACLE_DUMP_ALL").is_ok() {
         eprintln!("\n  ALL cases (sorted desc):");
-        for (id, _, pct, _) in sorted.iter() {
+        for (id, _, pct, _, _) in sorted.iter() {
             eprintln!("    ALL {:.2}%  {}", pct.unwrap_or(0.0), id);
+        }
+    }
+    // DC-14 非平凡性：列出退化为纯色但被判 pass 的可疑 case（供单独审计）。
+    let degenerate: Vec<&(String, bool, Option<f64>, f64, bool)> = with_oracle
+        .iter()
+        .filter(|r| r.4 && r.2.is_some_and(|p| p < loose_pct))
+        .copied()
+        .collect();
+    if !degenerate.is_empty() {
+        eprintln!("\n  退化可疑 pass（oracle 帧近纯色，z_vs_chr<{:.1}%）— 供审计:", loose_pct);
+        for (id, _, pct, _, _) in degenerate.iter().take(50) {
+            eprintln!("    {:.2}%  {}", pct.unwrap_or(0.0), id);
+        }
+        if degenerate.len() > 50 {
+            eprintln!("    ... 共 {} 个（仅显示前 50）", degenerate.len());
         }
     }
 
     // 按目录聚合
     use std::collections::BTreeMap;
     let mut by_dir: BTreeMap<String, (usize, usize)> = BTreeMap::new();
-    for (id, _has, pct, _) in &with_oracle {
+    for (id, _has, pct, _, _) in &with_oracle {
         let dir = id
             .rsplit_once('/')
             .map(|(d, _)| d.to_string())
