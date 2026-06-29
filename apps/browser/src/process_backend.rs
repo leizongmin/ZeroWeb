@@ -548,6 +548,63 @@ impl ProcessTabBackend {
         }
     }
 
+    /// 图片命中测试（同步 IPC 请求/响应），返回绝对化后的 `src`。
+    pub fn hit_test_image(
+        &mut self,
+        tab_id: TabId,
+        x: f32,
+        y: f32,
+        snapshots: &mut HashMap<TabId, TabSnapshot>,
+    ) -> Option<String> {
+        let rid = *self.tab_to_renderer.get(&tab_id)?;
+        let msg_id = NEXT_HIT_TEST_MSG_ID.fetch_add(1, Ordering::Relaxed);
+        {
+            let renderer = self.manager.get_renderer(rid)?;
+            renderer
+                .send(IpcMessage {
+                    id: msg_id,
+                    kind: IpcMessageKind::HitTestImage(HitTestLinkParams { x, y }),
+                })
+                .ok()?;
+        }
+
+        let deadline = Instant::now() + Duration::from_millis(250);
+        loop {
+            if Instant::now() >= deadline {
+                return None;
+            }
+            let msg = {
+                let renderer = self.manager.get_renderer(rid)?;
+                match renderer.try_recv() {
+                    Ok(Some(m)) => m,
+                    Ok(None) => {
+                        thread::sleep(Duration::from_millis(1));
+                        continue;
+                    }
+                    Err(e) => {
+                        tracing::debug!("IPC hit_test_image recv: {e}");
+                        return None;
+                    }
+                }
+            };
+            if msg.id == msg_id {
+                if let IpcMessageKind::HitTestImageResult(result) = msg.kind {
+                    return result.href;
+                }
+                continue;
+            }
+            match msg.kind {
+                IpcMessageKind::FetchRequest(params) => {
+                    self.handle_fetch_request(tab_id, params);
+                }
+                kind => {
+                    let snap = snapshots.entry(tab_id).or_default();
+                    Self::apply_inbound_message(tab_id, snap, kind, &mut self.pending_loaded, &mut self.pending_errors);
+                }
+            }
+        }
+    }
+
     /// 元素命中测试（同步 IPC 请求/响应）。
     pub fn hit_test_element(
         &mut self,

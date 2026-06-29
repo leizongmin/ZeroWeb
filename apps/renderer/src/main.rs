@@ -671,6 +671,19 @@ impl RendererRuntime {
         )
     }
 
+    fn handle_hit_test_image(&mut self, msg_id: u64, params: HitTestLinkParams) -> Result<(), String> {
+        let src = self
+            .webview
+            .as_ref()
+            .expect("webview")
+            .hit_test_image(params.x, params.y);
+        tracing::trace!("HitTestImage({msg_id}) -> {:?}", src.as_deref());
+        self.send_with_id(
+            msg_id,
+            IpcMessageKind::HitTestImageResult(HitTestLinkResultParams { href: src }),
+        )
+    }
+
     fn handle_hit_test_element(&mut self, msg_id: u64, params: HitTestLinkParams) -> Result<(), String> {
         let result = self
             .webview
@@ -788,6 +801,7 @@ impl RendererRuntime {
             IpcMessageKind::StorageOp(params) => self.handle_storage_op(params),
             IpcMessageKind::HitTestLink(params) => self.handle_hit_test_link(msg.id, params),
             IpcMessageKind::HitTestElement(params) => self.handle_hit_test_element(msg.id, params),
+            IpcMessageKind::HitTestImage(params) => self.handle_hit_test_image(msg.id, params),
             IpcMessageKind::DispatchDomEvent(params) => self.handle_dispatch_dom_event(msg.id, params),
             IpcMessageKind::FetchRequest(_)
             | IpcMessageKind::FetchResponse(_)
@@ -798,6 +812,7 @@ impl RendererRuntime {
             | IpcMessageKind::ViewPainted(_)
             | IpcMessageKind::HitTestLinkResult(_)
             | IpcMessageKind::HitTestElementResult(_)
+            | IpcMessageKind::HitTestImageResult(_)
             | IpcMessageKind::DispatchDomEventResult(_)
             | IpcMessageKind::CrashNotification(_) => {
                 tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");

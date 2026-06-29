@@ -21,6 +21,8 @@ struct HitTestNodeMeta {
     id: Option<String>,
     class_name: Option<String>,
     href: Option<String>,
+    /// 图片 `src`（仅 `img` 元素，绝对化后存储）。
+    src: Option<String>,
 }
 
 impl HitTestCache {
@@ -42,6 +44,13 @@ impl HitTestCache {
         let mut best = (0, self.doc_root);
         deepest_node_at(&self.layout_root, 0.0, 0.0, x, y, 0, &mut best);
         find_link_href_cached(best.1, &self.nodes, &self.parents)
+    }
+
+    /// 命中测试图片，返回 `src`（若点中 img 或其子元素）。
+    pub fn hit_test_image(&self, x: f32, y: f32) -> Option<String> {
+        let mut best = (0, self.doc_root);
+        deepest_node_at(&self.layout_root, 0.0, 0.0, x, y, 0, &mut best);
+        find_image_src_cached(best.1, &self.nodes, &self.parents)
     }
 
     /// 命中测试元素，返回最深元素及其布局盒。
@@ -67,6 +76,7 @@ impl HitTestCache {
                             id: meta.id.clone(),
                             class_name: meta.class_name.clone(),
                             href: meta.href.clone(),
+                            src: meta.src.clone(),
                         },
                     )
                 })
@@ -91,6 +101,7 @@ impl HitTestCache {
                             id: meta.id,
                             class_name: meta.class_name,
                             href: meta.href,
+                            src: meta.src,
                         },
                     )
                 })
@@ -128,6 +139,8 @@ pub struct HitTestNodeSnapshot {
     pub class_name: Option<String>,
     /// 链接 `href`（仅 `a` 元素）。
     pub href: Option<String>,
+    /// 图片 `src`（仅 `img` 元素）。
+    pub src: Option<String>,
 }
 
 /// IPC / 快照可传输的完整命中测试缓存。
@@ -192,6 +205,11 @@ fn collect_hit_test_nodes(
             } else {
                 None
             };
+            let src = if tag == "img" {
+                doc.get_attribute(node_id, "src")
+            } else {
+                None
+            };
             nodes.insert(
                 node_id,
                 HitTestNodeMeta {
@@ -199,6 +217,7 @@ fn collect_hit_test_nodes(
                     id: doc.get_attribute(node_id, "id"),
                     class_name: doc.get_attribute(node_id, "class"),
                     href,
+                    src,
                 },
             );
         }
@@ -224,6 +243,26 @@ fn find_link_href_cached(
             let href = href.trim();
             if !href.is_empty() && href != "#" {
                 return Some(href.to_string());
+            }
+        }
+        node = parents.get(&node).copied()?;
+    }
+}
+
+/// 从命中节点向上查找最近的 `img` 元素的 `src`（绝对化后）。
+fn find_image_src_cached(
+    mut node: NodeId,
+    nodes: &HashMap<NodeId, HitTestNodeMeta>,
+    parents: &HashMap<NodeId, NodeId>,
+) -> Option<String> {
+    loop {
+        if let Some(meta) = nodes.get(&node)
+            && meta.tag_name == "img"
+            && let Some(src) = &meta.src
+        {
+            let src = src.trim();
+            if !src.is_empty() {
+                return Some(src.to_string());
             }
         }
         node = parents.get(&node).copied()?;
@@ -304,6 +343,22 @@ fn find_link_href(doc: &Document, mut node: NodeId) -> Option<String> {
             let href = href.trim();
             if !href.is_empty() && href != "#" {
                 return Some(href.to_string());
+            }
+        }
+        node = doc.parent_node(node)?;
+    }
+}
+
+/// 从节点向上查找最近的 `<img src="...">`。
+fn find_image_src(doc: &Document, mut node: NodeId) -> Option<String> {
+    loop {
+        let is_img = doc.get(node).is_some_and(
+            |data| matches!(&data.kind, NodeKind::Element(elem) if elem.local_name().eq_ignore_ascii_case("img")),
+        );
+        if is_img && let Some(src) = doc.get_attribute(node, "src") {
+            let src = src.trim();
+            if !src.is_empty() {
+                return Some(src.to_string());
             }
         }
         node = doc.parent_node(node)?;
@@ -398,6 +453,13 @@ pub fn hit_test_link(doc: &Document, layout: &LayoutBox, x: f32, y: f32) -> Opti
     let mut best = (0, doc.root());
     deepest_node_at(layout, 0.0, 0.0, x, y, 0, &mut best);
     find_link_href(doc, best.1)
+}
+
+/// 在文档布局中命中测试图片，返回 `src`（文档原始值，未绝对化）。
+pub fn hit_test_image(doc: &Document, layout: &LayoutBox, x: f32, y: f32) -> Option<String> {
+    let mut best = (0, doc.root());
+    deepest_node_at(layout, 0.0, 0.0, x, y, 0, &mut best);
+    find_image_src(doc, best.1)
 }
 
 /// 在文档布局中命中测试元素，返回最深元素及其布局盒。
