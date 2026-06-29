@@ -16,6 +16,12 @@
 // R342c：collapsed-border 解析抽出（2000 行规则），经具体 import 调用。
 use crate::table_borders::resolve_collapsed_borders;
 
+// R832：表数据类型 + 叶 helper 抽出到 table_types.rs（2000 行规则）。本模块的大布局
+// 函数（build_grid/compute_column_widths/position_cells 等）调用这些叶 helper；
+// `pub(crate) use` 既供本模块调用，又再导出为 `crate::table::*` 供外部模块
+//（table_borders/engine 等）访问，保持原 API 路径不变（纯移动，零行为变化）。
+pub(crate) use crate::table_types::*;
+
 use std::collections::HashMap;
 
 use zero_css_parser::values::{DisplayValue, FloatValue};
@@ -27,56 +33,6 @@ use zero_style_system::{ComputedStyle, WritingModeValue};
 use crate::types::LayoutBox;
 
 use crate::types::OverflowClip;
-
-/// 一个表格单元格的信息。
-#[derive(Debug, Clone)]
-pub(crate) struct TableCell {
-    /// 在行 LayoutBox children 中的索引。
-    pub(crate) child_index: usize,
-    /// colspan 值（默认 1）。
-    pub(crate) colspan: usize,
-    /// rowspan 值（默认 1）。
-    pub(crate) rowspan: usize,
-    /// 单元格跨的列范围 [start, end)。
-    pub(crate) col_start: usize,
-    pub(crate) col_end: usize,
-    /// 嵌套行组中的单元格：指向 table_box.children 中的行组索引。
-    /// None 表示单元格在 row_box.children[child_index] 中查找（默认）。
-    /// Some(rg_idx) 表示单元格在 table_box.children[rg_idx].children[child_index] 中查找。
-    /// 用于孤立行组（table_box 本身是行组）中混合嵌套行组和直接子单元格的匿名行。
-    pub(crate) parent_rg_idx: Option<usize>,
-}
-
-/// 一个表格行的信息。
-#[derive(Debug, Clone)]
-pub(crate) struct TableRow {
-    /// 在 table LayoutBox children 中的索引。
-    /// 当行是直接子 table-row 时，这是 table_box.children 中的索引。
-    pub(crate) child_index: usize,
-    /// 行所在的行组（tbody/thead/tfoot）在 table LayoutBox children 中的索引。
-    /// None 表示行是 table 的直接 table-row 子元素。
-    pub(crate) row_group_index: Option<usize>,
-    /// 行内的单元格列表。
-    pub(crate) cells: Vec<TableCell>,
-    /// 是否为匿名行（cells 直接在 row-group 中，无包裹 table-row）。
-    pub(crate) is_anonymous: bool,
-}
-
-/// 解析后的表格网格结构。
-#[derive(Debug)]
-pub(crate) struct TableGrid {
-    /// 行列表。
-    pub(crate) rows: Vec<TableRow>,
-    /// 总列数。
-    pub(crate) col_count: usize,
-    /// 每列是否被 visibility:collapse 折叠。
-    /// CSS Tables §4.1：visibility:collapse 的列宽度为 0，不参与布局。
-    pub(crate) collapsed_cols: Vec<bool>,
-    /// 每行是否被 visibility:collapse 折叠。
-    /// CSS Tables §4.1：visibility:collapse 的行高度为 0，不参与布局，亦不贡献
-    /// 与相邻行之间的 border-spacing（与 `collapsed_cols` 对称）。
-    pub(crate) collapsed_rows: Vec<bool>,
-}
 
 /// 对 LayoutBox 树执行 table 布局后处理。
 ///
@@ -155,107 +111,6 @@ fn reflow_siblings_after_table_height_change(parent: &mut LayoutBox, table_idx: 
     parent.height += height_delta;
     let padding_border = parent.padding_top + parent.padding_bottom + parent.border_top + parent.border_bottom;
     parent.content_height = (parent.height - padding_border).max(0.0);
-}
-
-/// 获取 LayoutBox 对应的 display 值。
-fn get_display(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> Option<DisplayValue> {
-    box_node
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .map(|s| s.display.clone())
-}
-
-/// 判断 display 值是否为某种 table-row 类型。
-fn is_table_row(display: &DisplayValue) -> bool {
-    matches!(display, DisplayValue::TableRow)
-}
-
-/// 判断 display 值是否为 table-cell。
-fn is_table_cell(display: &DisplayValue) -> bool {
-    matches!(display, DisplayValue::TableCell)
-}
-
-/// 判断 display 值是否为行组（tbody/thead/tfoot）。
-fn is_row_group(display: &DisplayValue) -> bool {
-    matches!(
-        display,
-        DisplayValue::TableRowGroup | DisplayValue::TableHeaderGroup | DisplayValue::TableFooterGroup
-    )
-}
-
-/// 判断 display 值是否为 table 内部元素（需要匿名 table 包装）。
-pub(crate) fn is_table_internal(display: &DisplayValue) -> bool {
-    matches!(
-        display,
-        DisplayValue::TableRowGroup
-            | DisplayValue::TableHeaderGroup
-            | DisplayValue::TableFooterGroup
-            | DisplayValue::TableRow
-            | DisplayValue::TableCell
-            | DisplayValue::TableColumn
-            | DisplayValue::TableColumnGroup
-            | DisplayValue::TableCaption
-    )
-}
-
-/// 行组的排序优先级。
-///
-/// CSS 规范要求 thead 在 tbody 之前，tbody 在 tfoot 之前，
-/// 无论 DOM 顺序如何。
-fn row_group_sort_priority(display: &DisplayValue) -> u8 {
-    match display {
-        DisplayValue::TableHeaderGroup => 0,
-        DisplayValue::TableRowGroup => 1,
-        DisplayValue::TableFooterGroup => 2,
-        _ => 3,
-    }
-}
-
-/// 从 DOM 中读取元素的 colspan 属性值。
-fn get_colspan(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
-    if let Some(node_id) = box_node.node_id {
-        doc.get_attribute(node_id, "colspan")
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(1)
-            .max(1)
-    } else {
-        1
-    }
-}
-
-/// 从 DOM 属性中读取 rowspan 值（默认 1）。
-fn get_rowspan(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
-    if let Some(node_id) = box_node.node_id {
-        doc.get_attribute(node_id, "rowspan")
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(1)
-            .max(1)
-    } else {
-        1
-    }
-}
-
-/// 从 ComputedStyle 中读取 border-spacing 值。
-fn get_border_spacing(style: &ComputedStyle) -> (f32, f32) {
-    (style.border_spacing.horizontal, style.border_spacing.vertical)
-}
-
-/// 从 ComputedStyle 中读取 position: relative 的 inset 偏移量。
-///
-/// `horizontal` 为 true 时读取 left，否则读取 top。
-fn resolve_length_inset(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, horizontal: bool) -> f32 {
-    use zero_css_parser::values::LengthValue;
-    let Some(node_id) = box_node.node_id else {
-        return 0.0;
-    };
-    let Some(style) = styles.get(&node_id) else {
-        return 0.0;
-    };
-    let value = if horizontal { &style.left } else { &style.top };
-    match value {
-        LengthValue::Px(v) => *v as f32,
-        _ => 0.0,
-    }
 }
 
 /// 对单个 table 容器执行布局。
@@ -1064,47 +919,6 @@ fn collect_table_col_backgrounds(
     table_box.table_col_backgrounds = entries;
 }
 
-/// 从 DOM 中读取元素的 span 属性值（用于 col/colgroup）。
-fn get_span(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
-    if let Some(node_id) = box_node.node_id {
-        doc.get_attribute(node_id, "span")
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(1)
-            .max(1)
-    } else {
-        1
-    }
-}
-
-/// 从一个 table-row 子元素构建 TableRow。
-fn build_row(child_idx: usize, row_box: &LayoutBox, doc: &zero_dom::Document) -> TableRow {
-    let mut cells = Vec::new();
-    let mut col_cursor = 0usize;
-
-    for (cell_idx, cell_child) in row_box.children.iter().enumerate() {
-        let colspan = get_colspan(cell_child, doc);
-        let rowspan = get_rowspan(cell_child, doc);
-        let col_start = col_cursor;
-        let col_end = col_start + colspan;
-        cells.push(TableCell {
-            child_index: cell_idx,
-            colspan,
-            rowspan,
-            col_start,
-            col_end,
-            parent_rg_idx: None,
-        });
-        col_cursor = col_end;
-    }
-
-    TableRow {
-        child_index: child_idx,
-        row_group_index: None, // 由调用方设置
-        cells,
-        is_anonymous: false,
-    }
-}
-
 /// Auto table layout：根据单元格内容计算每列的宽度。
 ///
 /// 算法：
@@ -1521,156 +1335,6 @@ fn compute_column_widths(
     }
 
     col_max_widths
-}
-
-/// 获取行盒 — 处理直接 table-row、row-group 内的行和匿名行三种情况。
-///
-/// 当 `row.row_group_index` 为 Some 时，行在 row-group 内。
-/// 当 `row.is_anonymous` 为 true 时，行是匿名行，行盒为 row-group 本身。
-/// 当为 None 时，行是 table 的直接 children[row.child_index]。
-pub(crate) fn get_row_box<'a>(table_box: &'a LayoutBox, row: &TableRow) -> Option<&'a LayoutBox> {
-    match row.row_group_index {
-        Some(rg_idx) => {
-            let row_group = table_box.children.get(rg_idx)?;
-            if row.is_anonymous {
-                // 匿名行：cells 是 row-group 的直接子元素，row-group 即为行盒
-                Some(row_group)
-            } else {
-                row_group.children.get(row.child_index)
-            }
-        }
-        None => {
-            if row.is_anonymous {
-                // 孤立匿名行：table_box 本身是行组，行盒就是 table_box
-                Some(table_box)
-            } else {
-                // 直接 table-row：table_box.children[row.child_index]
-                table_box.children.get(row.child_index)
-            }
-        }
-    }
-}
-
-/// 获取单元格盒。
-/// 获取单元格盒（不可变引用）。
-///
-/// 根据 cell.parent_rg_idx 决定查找路径：
-/// - None: 直接在 row_box.children 中查找
-/// - Some(rg_idx): 在 row_box.children[rg_idx].children 中查找（嵌套行组场景）
-pub(crate) fn get_cell_box<'a>(row_box: &'a LayoutBox, cell: &TableCell) -> Option<&'a LayoutBox> {
-    if let Some(rg_idx) = cell.parent_rg_idx {
-        row_box
-            .children
-            .get(rg_idx)
-            .and_then(|rg| rg.children.get(cell.child_index))
-    } else {
-        row_box.children.get(cell.child_index)
-    }
-}
-
-/// 估算单元格的固有内容宽度。
-///
-/// 当 CSS width:0 被应用时，taffy 会将单元格布局为 0 宽度。
-/// 但 CSS 表格规范要求 width:0 解析为 min-content 宽度。
-/// 计算单元格的最小内容宽度。
-///
-/// 策略：
-/// 1. 检查子元素是否有显式 CSS width → 使用这些宽度之和
-/// 2. 如果 cell_box.width 接近 0（taffy 将子元素也约束为 0），
-///    从 DOM 文本内容和字体大小估算 min-content 宽度
-/// 3. 否则用字体大小估算单字符宽度作为最小宽度
-fn compute_cell_intrinsic_width(
-    cell_box: &LayoutBox,
-    styles: &HashMap<NodeId, ComputedStyle>,
-    doc: &zero_dom::Document,
-) -> f32 {
-    let padding = cell_box.padding_left + cell_box.padding_right;
-    let is_zero_width = cell_box.width < 2.0;
-
-    // 尝试从子元素计算内容宽度
-    let mut content_width = 0.0f32;
-    let mut has_explicit_child = false;
-
-    for child in &cell_box.children {
-        // 检查子元素是否有显式 CSS width
-        let child_has_explicit_width = child
-            .node_id
-            .and_then(|id| styles.get(&id))
-            .map(|s| {
-                use zero_css_parser::values::LengthValue;
-                !matches!(s.width, LengthValue::Auto)
-            })
-            .unwrap_or(false);
-
-        if child_has_explicit_width {
-            // 有显式 width 的子元素：使用其 outer width
-            content_width = content_width.max(child.width + child.margin_left + child.margin_right);
-            has_explicit_child = true;
-        } else if child.width > 0.0 && (!is_zero_width && child.width < cell_box.width * 0.95) {
-            // 非 0 宽度单元格：子元素宽度远小于 cell 宽度时使用
-            content_width = content_width.max(child.width + child.margin_left + child.margin_right);
-            has_explicit_child = true;
-        }
-    }
-
-    if has_explicit_child && content_width > 0.0 {
-        return content_width + padding;
-    }
-
-    // 当 cell_box.width 接近 0 时，taffy 将所有子元素也约束为 0，
-    // 无法从 layout 结果获取真实内容宽度。
-    // 从 DOM 文本内容估算 min-content 宽度。
-    let (font_size, is_ahem) = cell_box
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .map(|s| {
-            use zero_css_parser::values::LengthValue;
-            let fs = match &s.font_size {
-                LengthValue::Px(v) => *v as f32,
-                LengthValue::Em(v) => *v as f32,
-                LengthValue::Rem(v) => *v as f32,
-                _ => 16.0,
-            };
-            let ahem = s.font_family.contains(&"Ahem".to_string());
-            (fs, ahem)
-        })
-        .unwrap_or((16.0, false));
-
-    let char_width = if is_ahem { font_size } else { font_size * 0.6 };
-
-    // 收集单元格内的文本内容长度
-    let text_len = collect_text_length(cell_box, doc);
-    if text_len > 0 {
-        // R702/R679：优先用 intrinsic max-content（DOM-based，不依赖 layout 结果）。
-        // collect_text_length 把 block 子之间的空白/换行也计入字符数，致 char_count
-        // 估算严重过宽（如 margin-collapse-101：31 字符含大量块间空白 → 930px 列，
-        // table 1446px 溢出 viewport；应 shrink-to-fit 到内容 max-content）。
-        // box_content_max_width 返回 border-box，即 cell 对列的宽度贡献。
-        let intrinsic = crate::intrinsic_sizing::box_content_max_width(cell_box, doc, styles);
-        if intrinsic > 0.0 {
-            return intrinsic;
-        }
-        return char_width * text_len as f32 + padding;
-    }
-
-    char_width + padding
-}
-
-/// 递归收集 LayoutBox 子树中的文本字符数。
-/// 使用 DOM text_content() 方法获取元素的完整文本内容。
-/// 注意：使用 .chars().count() 计算字符数而非 .len()（字节数），
-/// 因为多字节 Unicode 字符（如 CJK）的字节数不等于字符数。
-fn collect_text_length(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
-    let mut len = 0;
-    if let Some(node_id) = box_node.node_id {
-        if let Some(text) = doc.text_content(node_id) {
-            let trimmed = text.trim();
-            if !trimmed.is_empty() {
-                len += trimmed.chars().count();
-            }
-        }
-    }
-    len
 }
 
 /// 根据 grid 结构和列宽定位每个单元格。
