@@ -31,6 +31,22 @@ pub(super) fn is_cc_control_char(ch: char) -> bool {
         && !matches!(cp, 0x09 | 0x0A | 0x0C | 0x0D) // 排除空白 TAB/LF/FF/CR
 }
 
+/// R841：判定真正 Ahem 方块字形是否使用 em-box 位（glyph 顶 = 基线 − 0.8·fs）而非
+/// R817 默认位（基线 − fs）。
+///
+/// Chromium 的有效 Ahem 方块位**随 line-height 变**（R839 实测）：当 half-leading ≈ 0
+/// （即 line-height ≈ font-size，如 lh:1 / lh:1em / Ahem lh:normal=1.0）时，方块填满
+/// 整个 line-box，em-box 位才是正确的（修 inline-formatting-context-008、line-height-121）；
+/// 当 line-height 偏离 font-size（lh:0 行盒塌缩 / lh>1 含 leading）时，R817 的基线−fs 位
+/// 对多数用例更接近 chromium（R839 妥协）。
+///
+/// R837 全量应用 em-box 位反致 27 个 line-height:0 用例 0.99%→1.02% 越过 1% 阈值
+/// （见 evidence/r841-*）；本门控仅对 half-leading≈0 的子集启用，得 +2 零回归。
+pub(super) fn ahem_uses_embox_position(line_height: f32, font_size: f32) -> bool {
+    let half_leading = (line_height - font_size) / 2.0;
+    half_leading.abs() < 0.5
+}
+
 /// 多列布局的列信息（用于 inline 内容的列分布）。
 struct MulticolInfo {
     /// 列数
@@ -826,7 +842,6 @@ impl super::Painter {
                 // R817 Phase 2：片段基线绝对 y（container-rel = line.y + line.baseline_y）。
                 // 供 is_ahem glyph 定位用（见 stored 渲染循环），paint 非存储路径不读。
                 baseline_y_abs: f32,
-                #[allow(dead_code)]
                 height: f32,
                 font_size: f32,
                 is_ahem: bool,
@@ -1303,7 +1318,13 @@ impl super::Painter {
                             // 容器为 Ahem 但片段实为其它字体（font-051 的 serif span）时保留旧
                             // 容器级行为（is_ahem?0:font_size），避免按 ascent=font_size 错移。
                             let v_offset = if frag.is_ahem_font {
-                                frag.baseline_y_abs - frag.font_size - frag.y
+                                // R841：line-height-aware Ahem 方块位（见 ahem_uses_embox_position）。
+                                // half-leading≈0（lh≈fs）→ em-box 位 baseline−0.8·fs；否则 R817 baseline−fs。
+                                if ahem_uses_embox_position(frag.height, frag.font_size) {
+                                    frag.baseline_y_abs - 0.8 * frag.font_size - frag.y
+                                } else {
+                                    frag.baseline_y_abs - frag.font_size - frag.y
+                                }
                             } else if frag.is_ahem {
                                 0.0
                             } else {
@@ -1758,5 +1779,35 @@ pub(super) fn compute_object_fit_rect(
                 (x, y, w, h)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod r841_tests {
+    use super::ahem_uses_embox_position;
+
+    /// R841：line-height ≈ font-size（half-leading≈0）启用 em-box 位（修 ifc-008/line-height-121）。
+    #[test]
+    fn r841_embox_gate_half_leading_zero() {
+        // lh:1（含 1em、Ahem lh:normal=1.0）→ half-leading=0 → em-box 位
+        assert!(ahem_uses_embox_position(40.0, 40.0), "lh:1 应启用 em-box 位");
+        assert!(
+            ahem_uses_embox_position(100.0, 100.0),
+            "lh:1em（100px）应启用（ifc-008）"
+        );
+        // 极小数值误差仍视为 lh≈fs
+        assert!(ahem_uses_embox_position(40.0 + 0.1, 40.0), "亚像素偏差应仍启用");
+    }
+
+    /// R841：line-height:0（行盒塌缩）与 line-height>1（含 leading）保留 R817 位。
+    #[test]
+    fn r841_embox_gate_leading_present() {
+        // lh:0（line-height:0px 测试簇）→ half-leading=-fs/2 → 不启用（避免 27 用例越过 1%）
+        assert!(!ahem_uses_embox_position(0.0, 20.0), "lh:0 不应启用");
+        // lh>1（va-117a 等）→ 含正 half-leading → 不启用（R839 妥协位）
+        assert!(!ahem_uses_embox_position(130.0, 40.0), "lh>1 不应启用");
+        assert!(!ahem_uses_embox_position(80.0, 40.0), "lh:2 不应启用");
+        // lh:0.5（<fs）也不启用
+        assert!(!ahem_uses_embox_position(10.0, 20.0), "lh:0.5 不应启用");
     }
 }
