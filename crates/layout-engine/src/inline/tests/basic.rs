@@ -1707,3 +1707,38 @@ fn test_fragment_node_ids_restricts_inline_collection() {
     );
     assert!(!frag_items.is_empty(), "fragment should collect its text item");
 }
+
+/// R816 linebox 度量统一 Phase 1：`break_into_lines` 后行盒的 baseline_y/ascent/descent
+/// 必须被 `apply_vertical_alignment` 填充（非默认 0）。验证字段存储正确，供后续 Phase
+/// paint 复用。
+#[test]
+fn r816_linebox_metrics_populated() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let runs = vec![TextRun::simple(
+        "Hello".to_string(),
+        NodeId::default(),
+        20.0, // font-size
+        24.0, // line-height
+        zero_css_parser::values::VerticalAlignValue::Baseline,
+    )];
+    ctx.break_into_lines(runs);
+    assert_eq!(ctx.lines.len(), 1);
+    let line = &ctx.lines[0];
+    // ascent 应为正（half-leading + ascent），baseline_y == ascent
+    assert!(line.ascent > 0.0, "ascent 应被填充，实际 {}", line.ascent);
+    assert!(
+        (line.baseline_y - line.ascent).abs() < 0.01,
+        "baseline_y 应等于 ascent，实际 baseline_y={} ascent={}",
+        line.baseline_y,
+        line.ascent
+    );
+    // descent = height - ascent（含 half-leading 下半）
+    assert!(
+        (line.descent - (line.height - line.ascent)).abs() < 0.01,
+        "descent 应 = height - ascent，实际 descent={} height={} ascent={}",
+        line.descent,
+        line.height,
+        line.ascent
+    );
+    assert!(line.descent >= 0.0, "descent 非负");
+}
