@@ -39,6 +39,8 @@ pub struct Tab {
     crashed: bool,
     /// 是否需要用户注意（例如完成通知）。
     needs_attention: bool,
+    /// 该标签页的缩放级别（1.0 = 100%）。
+    zoom: f32,
 }
 
 /// 导航历史条目。
@@ -65,6 +67,7 @@ impl Tab {
             muted: false,
             crashed: false,
             needs_attention: false,
+            zoom: 1.0,
         };
         tab.navigate(url);
         tab
@@ -98,6 +101,7 @@ impl Tab {
             muted: false,
             crashed: false,
             needs_attention: false,
+            zoom: 1.0,
         }
     }
 
@@ -115,6 +119,7 @@ impl Tab {
             muted: self.muted,
             crashed: false,
             needs_attention: false,
+            zoom: self.zoom,
         }
     }
 
@@ -151,6 +156,16 @@ impl Tab {
     /// 设置崩溃状态。
     pub fn set_crashed(&mut self, crashed: bool) {
         self.crashed = crashed;
+    }
+
+    /// 该标签页的缩放级别（1.0 = 100%）。
+    pub fn zoom(&self) -> f32 {
+        self.zoom
+    }
+
+    /// 设置该标签页的缩放级别（自动 clamp 到 0.25~5.0）。
+    pub fn set_zoom(&mut self, zoom: f32) {
+        self.zoom = zoom.clamp(0.25, 5.0);
     }
 
     /// 是否需要用户注意。

@@ -559,30 +559,41 @@ impl BrowserShell {
     }
 
     // ── 缩放操作 ──
+    // 缩放是每标签独立的：以下方法作用于当前活动标签页。
+    // 新标签页创建时 zoom 初始化为 1.0；settings.default_zoom 作为设置页展示的默认值。
 
-    /// 获取当前缩放级别。
+    /// 获取当前缩放级别（活动标签页的 zoom；无活动标签时返回全局默认）。
     pub fn zoom(&self) -> f32 {
-        self.zoom
+        self.tabs.active_tab().map(|t| t.zoom()).unwrap_or(self.zoom)
     }
 
-    /// 设置缩放级别。
+    /// 设置当前缩放级别（作用于活动标签页）。
     pub fn set_zoom(&mut self, zoom: f32) {
-        self.zoom = zoom.clamp(0.25, 5.0);
+        let clamped = zoom.clamp(0.25, 5.0);
+        if let Some(tab) = self.tabs.active_tab_mut() {
+            tab.set_zoom(clamped);
+        }
+        // 同步全局默认值，供设置页与新标签场景使用。
+        self.zoom = clamped;
     }
 
     /// 放大（增加 10%）。
     pub fn zoom_in(&mut self) {
-        self.set_zoom(self.zoom + 0.1);
+        let cur = self.zoom();
+        self.set_zoom(cur + 0.1);
     }
 
     /// 缩小（减少 10%）。
     pub fn zoom_out(&mut self) {
-        self.set_zoom(self.zoom - 0.1);
+        let cur = self.zoom();
+        self.set_zoom(cur - 0.1);
     }
 
-    /// 重置缩放到 100%。
+    /// 重置缩放到 100%（作用于活动标签页）。
     pub fn zoom_reset(&mut self) {
-        self.zoom = 1.0;
+        if let Some(tab) = self.tabs.active_tab_mut() {
+            tab.set_zoom(1.0);
+        }
     }
 
     // ── 页面查找操作 ──
