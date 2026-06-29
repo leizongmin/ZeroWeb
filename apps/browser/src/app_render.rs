@@ -653,7 +653,8 @@ impl BrowserApp {
         let tab_bar_h = layout::TAB_BAR_HEIGHT * s;
         let x0 = self.window_controls_origin_x(width as f32, s);
         let icon = self.chrome_palette.window_control_icon;
-        let thickness = (1.0 * s).max(1.0);
+        // 窗口图标描边 1px，与 CPU/GPU backend 一致（CPU 的 floor/ceil 取整对 1px 矩形无放大效应）。
+        let thickness = 1.0 * s;
 
         for i in 0..3 {
             let bx = x0 + i as f32 * btn_w;
@@ -682,13 +683,16 @@ impl BrowserApp {
                     ));
                 }
                 1 if self.window_is_maximized => {
+                    // 还原态：前框在左下、后框在右上，偏移约 30% 边长。
+                    // 后框被前框遮挡左下，只露上+右两条边。
+                    // size/off 取整数，避免亚像素导致四条边粗细不一致。
                     let size = 8.0 * s;
-                    let off = 3.0 * s;
-                    let back_left = cx - size / 2.0 - off / 2.0;
+                    let off = (size * 0.3).round();
+                    let back_left = cx - size / 2.0 + off / 2.0;
                     let back_top = cy - size / 2.0 - off / 2.0;
-                    let front_left = cx - size / 2.0 + off / 2.0;
+                    let front_left = cx - size / 2.0 - off / 2.0;
                     let front_top = cy - size / 2.0 + off / 2.0;
-                    draw_hollow_square(fills, back_left, back_top, size, thickness, icon);
+                    draw_hollow_square_top_right_only(fills, back_left, back_top, size, thickness, icon);
                     draw_hollow_square(fills, front_left, front_top, size, thickness, icon);
                 }
                 1 => {
