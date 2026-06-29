@@ -389,6 +389,31 @@ fn test_zoom_is_per_tab_independent() {
 }
 
 #[test]
+fn test_find_options_toggle_and_reset() {
+    let mut shell = BrowserShell::new();
+    shell.find_start("hello");
+    shell.find_set_matches(5);
+    assert!(!shell.find_state().case_sensitive());
+    assert!(!shell.find_state().whole_word());
+
+    // 切换大小写：选项翻转，匹配计数重置（等待渲染层重算）
+    shell.find_toggle_case_sensitive();
+    assert!(shell.find_state().case_sensitive());
+    assert_eq!(shell.find_state().total_matches(), 0);
+    assert_eq!(shell.find_state().current_match(), 0);
+
+    // 再次切换关闭
+    shell.find_toggle_case_sensitive();
+    assert!(!shell.find_state().case_sensitive());
+
+    // 全字匹配同理
+    shell.find_set_matches(3);
+    shell.find_toggle_whole_word();
+    assert!(shell.find_state().whole_word());
+    assert_eq!(shell.find_state().total_matches(), 0);
+}
+
+#[test]
 fn test_browser_shell_find() {
     let mut shell = BrowserShell::new();
     assert!(!shell.find_state().is_active());
