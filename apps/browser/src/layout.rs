@@ -155,13 +155,13 @@ pub const PAGE_FRAME_BOTTOM_UI_GUARD: f32 = STATUS_BAR_HEIGHT;
 /// Border width of the page frame (非最大化时；最大化时运行时归零)。
 pub const PAGE_FRAME_BORDER: f32 = 1.0;
 /// Radius of the page frame (非最大化时；最大化时运行时归零)。
-pub const PAGE_FRAME_RADIUS: f32 = 8.0;
+pub const PAGE_FRAME_RADIUS: f32 = 4.0;
 /// 页面视口 drop shadow 模糊半径（非最大化时；最大化时运行时归零）。
-pub const PAGE_FRAME_SHADOW_BLUR: f32 = 8.0;
+pub const PAGE_FRAME_SHADOW_BLUR: f32 = 6.0;
 /// 页面视口 drop shadow 垂直偏移（非最大化时；最大化时运行时归零）。
-pub const PAGE_FRAME_SHADOW_OFFSET_Y: f32 = 2.0;
+pub const PAGE_FRAME_SHADOW_OFFSET_Y: f32 = 1.0;
 /// 页面视口 drop shadow 不透明度（叠加在黑色之上）。
-pub const PAGE_FRAME_SHADOW_ALPHA: u8 = 38;
+pub const PAGE_FRAME_SHADOW_ALPHA: u8 = 22;
 /// Thickness of classic reserved scrollbars in logical pixels.
 pub const SCROLLBAR_THICKNESS: f32 = 10.0;
 /// Minimum scrollbar thumb length in logical pixels.

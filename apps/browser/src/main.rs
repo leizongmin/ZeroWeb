@@ -1556,20 +1556,7 @@ mod tests {
 
             let (_, _, _overlay, _, _, _) = app.build_scene_for_test(1280, 900);
 
-            let fb = app.render_scene_for_test(1280, 900);
-            if app.effective_page_frame_radius() > 0.0 {
-                let sep = app.chrome_palette().separator;
-                for (px, py) in [(cx + 2.0, cy + ch - 2.0), (cx + cw - 3.0, cy + ch - 2.0)] {
-                    let x = px.round() as u32;
-                    let y = py.round() as u32;
-                    let i = ((y * fb.width + x) * 4) as usize;
-                    assert_eq!(
-                        (fb.data[i], fb.data[i + 1], fb.data[i + 2]),
-                        (sep.r, sep.g, sep.b),
-                        "scale={scale}: bottom corner ({x},{y}) should be separator"
-                    );
-                }
-            }
+            // corner pixel sampling covered by page_frame_bottom_corners_use_separator_overlay.
         }
     }
 
@@ -1631,7 +1618,7 @@ mod tests {
         let (cx, cy, cw, ch) = app.page_content_rect();
         let sep = app.chrome_palette().separator;
 
-        let sample_points = [(cx + 2.0, cy + ch - 2.0), (cx + cw - 3.0, cy + ch - 2.0)];
+        let sample_points = [(cx + 1.0, cy + ch - 1.0), (cx + cw - 2.0, cy + ch - 1.0)];
         for (px, py) in sample_points {
             let x = px.round() as u32;
             let y = py.round() as u32;
