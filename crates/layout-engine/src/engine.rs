@@ -117,6 +117,9 @@ impl LayoutEngine {
         styles: &HashMap<NodeId, ComputedStyle>,
         img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
     ) -> LayoutResult {
+        // R695 复用副本：build_layout_tree_with_r109 按值取走 img_intrinsic_sizes，
+        // 此处保留一份供 apply_indefinite_percent_height_to_auto 为替换元素补设固有尺寸。
+        let intrinsic_for_r695 = img_intrinsic_sizes.clone();
         // 1. 构建 taffy 树（含 R109 接线产物，仅 R109_WIRE=1 时非空）
         let (mut taffy_tree, root_id, taffy_to_dom, r109) = build_layout_tree_with_r109(
             doc,
@@ -162,7 +165,19 @@ impl LayoutEngine {
         // 宽度，对可测且大于当前宽度的容器，把对应 taffy 节点宽度设为 intrinsic 并
         // mark_dirty 后重跑布局，再重新提取（其子元素按新宽度重新布局）。
         // 仅水平书写模式起步；intrinsic 不可测（如纯文本 item）的容器保持塌缩（中性）。
-        if Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc) {
+        // 3.2 R695（CSS §10.5）：百分比 height 在不明确包含块上 compute-to-auto。
+        //     taffy 0.7 对此回退到 CB 宽度解析（非规范）。此 pass 改写 taffy style，
+        //     与 3.1 共用一次重算（两者都 set_style + mark_dirty）。
+        let changed_r695 = Self::apply_indefinite_percent_height_to_auto(
+            &mut taffy_tree,
+            &root_box,
+            &dom_to_taffy,
+            styles,
+            &intrinsic_for_r695,
+            self.viewport_height,
+        );
+        if changed_r695 || Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc)
+        {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
             let available_space = taffy::geometry::Size {
                 width: AvailableSpace::Definite(self.viewport_width),
@@ -599,6 +614,140 @@ impl LayoutEngine {
             }
         }
         changed
+    }
+
+    /// R695（CSS §10.5）：百分比 `height` 仅当包含块高度**明确指定**时才解析，
+    /// 否则 compute-to-auto。taffy 0.7 对「百分比 height + 不明确 CB」回退到 CB
+    /// **宽度**解析（非规范），致 `grandparent{height:0} > parent{auto} >
+    /// child{height:100%}` 链中 child/img 被拉到满宽（如 784）。
+    ///
+    /// 本 pass 自上而下按**样式**判定 CB 高度明确性（与 [`clamp_percentage_max_height`]
+    /// 的 `my_definite_content_height` 同语义），对水平书写模式 normal-flow 块级元素
+    /// 的 `height:Percentage`（CB 不明确）改写 taffy `size.height = Auto`。替换元素
+    /// 同时补设固有绝对尺寸（无 HTML width/height 属性时 taffy style 不含绝对固有
+    /// 尺寸，仅 aspect_ratio）。返回是否有改动；调用方据此重跑 taffy——第二趟里
+    /// taffy 正确计算非替换块的内容高度 / 替换元素的固有尺寸，无需手工重算。
+    ///
+    /// 范围限定：跳过 abspos（由 `adjust_absolute_pct_to_viewport` 处理）；跳过
+    /// flex/grid item（其 %height 有独立 stretch 语义，taffy-gated，见 R691）。常见
+    /// `html,body{height:100%}` 不受影响——根 CB 为视口（明确），整条链明确。
+    fn apply_indefinite_percent_height_to_auto(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+        viewport_height: f32,
+    ) -> bool {
+        use zero_css_parser::values::{BoxSizingValue, DisplayValue, LengthValue, PositionValue};
+
+        fn walk(
+            b: &LayoutBox,
+            cb_definite: Option<f32>,
+            parent_is_flex_grid: bool,
+            taffy_tree: &mut TaffyTree<NodeId>,
+            dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+            styles: &HashMap<NodeId, ComputedStyle>,
+            img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+        ) -> bool {
+            // 垂直书写模式块轴为 X，高度语义不同——保守跳过整棵子树。
+            if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+                return false;
+            }
+            let mut changed = false;
+            let style = b.node_id.and_then(|id| styles.get(&id));
+
+            // 本元素提供给子元素的「明确内容高度」（None = 不明确）。
+            // 默认沿用父级传入的明确性（无样式节点如匿名盒透传）。
+            let mut my_definite: Option<f32> = cb_definite;
+
+            if let Some(s) = style {
+                let is_abs = matches!(s.position, PositionValue::Absolute | PositionValue::Fixed);
+                if !is_abs && !parent_is_flex_grid {
+                    match &s.height {
+                        LengthValue::Percentage(p) => match cb_definite {
+                            Some(cbh) => {
+                                // 明确 CB → 解析为百分比（明确），供子元素继续链。
+                                my_definite = Some(*p as f32 / 100.0 * cbh);
+                            }
+                            None => {
+                                // 不明确 CB → compute-to-auto：改写 taffy height 为 Auto。
+                                if let Some(id) = b.node_id
+                                    && let Some(&tid) = dom_to_taffy.get(&id)
+                                    && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                                {
+                                    st.size.height = taffy::style::Dimension::Auto;
+                                    // 替换元素补设固有绝对尺寸：taffy 需要绝对值才能
+                                    // 在两侧 auto 时定尺寸（aspect_ratio 只够推导比例）。
+                                    if b.is_replaced
+                                        && let Some(&(iw, ih)) = img_intrinsic_sizes.get(&id)
+                                    {
+                                        let iw = iw.max(1.0);
+                                        let ih = ih.max(1.0);
+                                        if matches!(s.width, LengthValue::Auto) {
+                                            st.size.width = taffy::style::Dimension::Length(iw);
+                                        }
+                                        st.size.height = taffy::style::Dimension::Length(ih);
+                                        if st.aspect_ratio.is_none() {
+                                            st.aspect_ratio = Some(iw / ih);
+                                        }
+                                    }
+                                    let _ = taffy_tree.set_style(tid, st);
+                                    let _ = taffy_tree.mark_dirty(tid);
+                                    changed = true;
+                                }
+                                // 现为 auto（内容决定）→ 子元素 CB 不明确。
+                                my_definite = None;
+                            }
+                        },
+                        LengthValue::Px(v) => {
+                            // 明确高度：按 box-sizing 折算内容高度供子元素百分比解析。
+                            let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+                            my_definite = Some(if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
+                                (*v as f32 - pb).max(0.0)
+                            } else {
+                                *v as f32
+                            });
+                        }
+                        _ => {
+                            // Auto / Em / Rem 等内容决定型 → 子元素 CB 不明确。
+                            my_definite = None;
+                        }
+                    }
+                }
+            }
+
+            // 子元素是否为 flex/grid item（其 %height 走独立语义，本 pass 跳过）。
+            let child_parent_flex_grid = style.is_some_and(|s| {
+                matches!(
+                    s.display,
+                    DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+                )
+            });
+
+            for child in &b.children {
+                changed |= walk(
+                    child,
+                    my_definite,
+                    child_parent_flex_grid,
+                    taffy_tree,
+                    dom_to_taffy,
+                    styles,
+                    img_intrinsic_sizes,
+                );
+            }
+            changed
+        }
+
+        walk(
+            root,
+            Some(viewport_height),
+            false,
+            taffy_tree,
+            dom_to_taffy,
+            styles,
+            img_intrinsic_sizes,
+        )
     }
 
     /// 当父元素具有垂直书写模式时，taffy 的布局结果是轴交换后的，

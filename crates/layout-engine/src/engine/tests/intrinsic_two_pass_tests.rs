@@ -156,3 +156,80 @@ fn test_fixed_is_viewport_relative_inside_offset_positioned_ancestor() {
         absolute.3
     );
 }
+
+/// R695：CSS §10.5 — 百分比 `height` 仅当包含块高度**明确指定**时解析，否则
+/// compute-to-auto。
+///
+/// 复刻 height-percentage-005：`grandparent{height:0} > parent{auto} >
+/// child{height:100%} > img{height:100%}`。parent 高度 auto（不明确），故
+/// child 的 height:100% 应 compute-to-auto；进而 img 的 height:100%（CB=child
+/// 亦不明确）→ auto → 固有 96px。旧实现：taffy 0.7 把 %height 回退到 CB **宽度**，
+/// child/img 被拉到 ~784（满宽）。验证 `apply_indefinite_percent_height_to_auto`
+/// 第二趟把 img 恢复到固有尺寸、child 恢复到内容高度。
+#[test]
+fn test_r695_percent_height_indefinite_cb_computes_to_auto() {
+    let html = r#"<html><body style="margin:0">
+        <div id="grandparent" style="height:0px">
+          <div id="parent">
+            <div id="child" style="height:100%">
+              <img id="img" style="height:100%" />
+            </div>
+          </div>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    // 第一趟（空 img 尺寸）仅用于拿到 img 的 DOM NodeId（稳定）。
+    let probe = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new());
+    let img_id = find("img", &doc, &probe.root)
+        .and_then(|b| b.node_id)
+        .expect("img node_id");
+
+    // 第二趟注入 img 固有尺寸 96×96（模拟解码 black96x96.png）。
+    let mut sizes: std::collections::HashMap<zero_dom::NodeId, (f32, f32)> = std::collections::HashMap::new();
+    sizes.insert(img_id, (96.0, 96.0));
+    let result = engine.compute_with_img_sizes(&doc, &styles, sizes);
+
+    let img_box = find("img", &doc, &result.root).expect("img box");
+    assert!(
+        (img_box.height - 96.0).abs() < 2.0,
+        "img height:100% on indefinite-CB should compute-to-auto → intrinsic 96px, got {} \
+         (old taffy width-fallback gave ~784)",
+        img_box.height
+    );
+
+    // child（height:100% on indefinite CB）→ auto → 内容（img）≈ 96px。
+    let child_box = find("child", &doc, &result.root).expect("child box");
+    assert!(
+        (child_box.height - 96.0).abs() < 3.0,
+        "child height:100% on indefinite-CB should compute-to-auto → content(img) ≈96px, got {}",
+        child_box.height
+    );
+}
+
+/// R695 反向回归：包含块高度**明确**时，百分比 height 必须照常解析（不被误改 auto）。
+/// `parent{height:200px} > child{height:50%}` → child 应为 100px（明确 CB 解析）。
+#[test]
+fn test_r695_percent_height_definite_cb_still_resolves() {
+    let html = r#"<html><body style="margin:0">
+        <div id="parent" style="height:200px">
+          <div id="child" style="height:50%"></div>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let child_box = find("child", &doc, &result.root).expect("child box");
+    assert!(
+        (child_box.height - 100.0).abs() < 2.0,
+        "height:50% of definite-CB(200px) must resolve to 100px, got {}",
+        child_box.height
+    );
+}

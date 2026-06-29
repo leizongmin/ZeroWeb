@@ -67,3 +67,4 @@ node_modules/
 # Python bytecode cache (discover/cross-validate scripts)
 __pycache__/
 *.pyc
+product-smoke-cpu.png
