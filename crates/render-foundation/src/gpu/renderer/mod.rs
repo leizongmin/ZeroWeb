@@ -951,13 +951,14 @@ impl GpuRenderer {
             let right = r.right() * scale;
             let b = r.bottom() * scale;
             let (cr, cg, cb) = color_to_f32(rr.color);
+            let ca = rr.color.a as f32 / 255.0;
             let tl = rr.top_left_radius * scale;
             let tr = rr.top_right_radius * scale;
             let br = rr.bottom_right_radius * scale;
             let bl = rr.bottom_left_radius * scale;
             let uv = (-1.0f32, -1.0f32);
             let make_v =
-                |x: f32, y: f32| -> [f32; 15] { [x, y, uv.0, uv.1, cr, cg, cb, l, t, right, b, tl, tr, br, bl] };
+                |x: f32, y: f32| -> [f32; 16] { [x, y, uv.0, uv.1, cr, cg, cb, ca, l, t, right, b, tl, tr, br, bl] };
             let v0 = make_v(l, t);
             let v1 = make_v(right, t);
             let v2 = make_v(l, b);
