@@ -1206,10 +1206,12 @@ impl BrowserApp {
         // 中键点击：
         // - 点「+」→ 无痕标签页
         // - 点标签 → 关闭该标签（Chrome/Firefox 标配交互）
+        // - 点书签栏 → 后台新标签打开该书签
         if button == "Middle" {
             let s = self.scale_factor;
             let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
             let tab_y = layout::TAB_BAR_TOP_INSET * s;
+            let toolbar_h = layout::TOOLBAR_HEIGHT * s;
             let y_f = y as f32;
             let x_f = x as f32;
             if y_f >= tab_y && y_f < tab_strip_h {
@@ -1225,6 +1227,13 @@ impl BrowserApp {
                         self.close_tab_by_id(id);
                         return;
                     }
+                }
+            }
+            // 书签栏中键 → 后台新标签打开
+            if y_f >= toolbar_h && y_f < self.chrome_top_y_for(s) {
+                if let Some((url, _)) = self.bookmark_bar_item_at(x_f, s) {
+                    self.new_tab_background(&url);
+                    return;
                 }
             }
         }
@@ -1526,7 +1535,12 @@ impl BrowserApp {
     /// 处理书签栏点击
     fn handle_bookmark_bar_click(&mut self, x: f32, _y: f32, _bar_y: f32, _width: f32, s: f32) {
         if let Some((url, _)) = self.bookmark_bar_item_at(x, s) {
-            self.navigate_to(&url);
+            // Ctrl/Cmd+点击 → 后台新标签打开（Chrome 行为）。
+            if self.ctrl_pressed || self.cmd_pressed {
+                self.new_tab_background(&url);
+            } else {
+                self.navigate_to(&url);
+            }
         }
     }
 
