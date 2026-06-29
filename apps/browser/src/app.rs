@@ -883,6 +883,30 @@ impl BrowserApp {
         self.context_menu.visible
     }
 
+    /// 测试用：当前展开的子菜单父项索引。
+    #[cfg(test)]
+    pub fn open_sub_menu_for_test(&self) -> Option<usize> {
+        self.context_menu.open_sub_menu
+    }
+
+    /// 测试用：查找指定 id 的菜单项索引。
+    #[cfg(test)]
+    pub fn context_menu_item_index_for_test(&self, id: &str) -> Option<usize> {
+        self.context_menu.items.iter().position(|i| i.id() == id)
+    }
+
+    /// 测试用：菜单原点 x。
+    #[cfg(test)]
+    pub fn context_menu_x_for_test(&self) -> f32 {
+        self.context_menu.x
+    }
+
+    /// 测试用：菜单原点 y。
+    #[cfg(test)]
+    pub fn context_menu_y_for_test(&self) -> f32 {
+        self.context_menu.y
+    }
+
     /// 测试用：标签在标签栏中的 `(x, width)` 布局（需先 `build_scene_for_test`）。
     #[cfg(test)]
     pub fn tab_layout_rect_for_test(&self, tab_id: TabId) -> Option<(f32, f32)> {

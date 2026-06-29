@@ -1054,7 +1054,13 @@ impl BrowserApp {
                 }
                 // 主菜单 hit-test
                 let hovered = self.context_menu_hit_test(x, y);
-                if hovered != self.context_menu.hovered_index {
+                // 鼠标不在主菜单项上、但有子菜单展开时，判断是否在桥接区
+                // （主菜单与子菜单面板之间）。若是则视为"仍在前往子菜单的路上"，
+                // 保留当前展开状态，不触发 hover 重算导致子菜单收起。
+                let in_bridge = hovered.is_none()
+                    && self.context_menu.open_sub_menu.is_some()
+                    && self.point_in_sub_menu_bridge(x, y);
+                if !in_bridge && hovered != self.context_menu.hovered_index {
                     self.context_menu.hovered_index = hovered;
                     // hover 到 sub_menu 项时自动展开，hover 离开则收起
                     let new_open = hovered.and_then(|i| {
@@ -1066,8 +1072,11 @@ impl BrowserApp {
                         self.context_menu.sub_menu_hovered = None;
                     }
                     self.needs_redraw = true;
-                } else if hovered.is_none() && self.context_menu.open_sub_menu.is_some() {
-                    // 鼠标移出主菜单且不在子面板：收起子菜单
+                } else if !in_bridge
+                    && hovered.is_none()
+                    && self.context_menu.open_sub_menu.is_some()
+                {
+                    // 鼠标移出主菜单且不在桥接区：收起子菜单
                     self.context_menu.open_sub_menu = None;
                     self.context_menu.sub_menu_hovered = None;
                     self.needs_redraw = true;
@@ -2738,9 +2747,48 @@ impl BrowserApp {
         None
     }
 
-    /// 激活子菜单中当前 hover 的子项。
-    fn activate_sub_menu_item(&mut self) {
+    /// 判断点是否在「主菜单 ∪ 子菜单面板 ∪ 两者桥接区」内。
+    /// 用于鼠标从主菜单项移向子菜单面板时保留子菜单展开，避免经过间隙时闪烁收起。
+    fn point_in_sub_menu_bridge(&self, x: f64, y: f64) -> bool {
         let Some(parent_idx) = self.context_menu.open_sub_menu else {
+            return false;
+        };
+        let s = self.scale_factor;
+        let menu_x = self.context_menu.x;
+        let menu_y = self.context_menu.y;
+        let menu_w = layout::CONTEXT_MENU_WIDTH * s;
+        let menu_h = self.context_menu_total_height();
+        let (sub_x, sub_y, _sub_w, sub_h) = self.sub_menu_panel_rect(parent_idx);
+        let sub_w = layout::CONTEXT_MENU_WIDTH * s;
+
+        let xf = x as f32;
+        let yf = y as f32;
+
+        // 主菜单矩形内
+        if xf >= menu_x && xf <= menu_x + menu_w && yf >= menu_y && yf <= menu_y + menu_h {
+            return true;
+        }
+        // 子菜单面板矩形内
+        if xf >= sub_x && xf <= sub_x + sub_w && yf >= sub_y && yf <= sub_y + sub_h {
+            return true;
+        }
+        // 桥接区：主菜单与子菜单面板之间的水平间隙，
+        // y 范围取两者 y 区间的并集（宽松，方便斜向移动）
+        let (left_x, right_x) = if sub_x >= menu_x + menu_w {
+            (menu_x + menu_w, sub_x)
+        } else {
+            (sub_x + sub_w, menu_x)
+        };
+        let bridge_y_top = menu_y.min(sub_y);
+        let bridge_y_bot = (menu_y + menu_h).max(sub_y + sub_h);
+        if xf >= left_x && xf <= right_x && yf >= bridge_y_top && yf <= bridge_y_bot {
+            return true;
+        }
+        false
+    }
+
+    /// 激活子菜单中当前 hover 的子项。
+    fn activate_sub_menu_item(&mut self) {        let Some(parent_idx) = self.context_menu.open_sub_menu else {
             return;
         };
         let Some(ci) = self.context_menu.sub_menu_hovered else {

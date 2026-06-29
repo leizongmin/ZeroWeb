@@ -1853,6 +1853,79 @@ mod tests {
         assert!(bottom > mid, "End should scroll to bottom (bottom={bottom}, mid={mid})");
     }
 
+    /// 子菜单展开后，鼠标从主菜单项移向子菜单面板（经过桥接区）时，
+    /// 子菜单应保持展开，而非因离开主菜单项立即收起。
+    #[test]
+    fn sub_menu_stays_open_when_crossing_bridge() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        let s = app.scale_factor;
+        let (btn_x, btn_y, menu_btn_w, bar_h) = app.toolbar_menu_button_rect_for_test();
+
+        // 打开主菜单
+        app.handle_mouse_click(
+            (btn_x + menu_btn_w * 0.5) as f64,
+            (btn_y + bar_h * 0.5) as f64,
+            true,
+            "Left",
+        );
+        app.handle_mouse_click(
+            (btn_x + menu_btn_w * 0.5) as f64,
+            (btn_y + bar_h * 0.5) as f64,
+            false,
+            "Left",
+        );
+        assert!(app.is_context_menu_visible_for_test());
+
+        // 找到 history 子菜单父项
+        let history_idx = app
+            .context_menu_item_index_for_test("browser_menu_history")
+            .expect("history sub-menu should exist");
+        let menu_x = app.context_menu_x_for_test();
+        let menu_y = app.context_menu_y_for_test();
+        let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        // 用实际行 y（含 separator 紧凑高度）
+        let row_top = app.context_menu_row_y(history_idx);
+        let item_cy = menu_y + row_top + row_h * 0.5;
+
+        // hover history 项 → 展开子菜单
+        app.handle_mouse_move((menu_x + 10.0) as f64, item_cy as f64);
+        assert_eq!(
+            app.open_sub_menu_for_test(),
+            Some(history_idx),
+            "hovering history item should open its sub-menu"
+        );
+
+        // 计算桥接区中点 x（主菜单与子菜单面板之间的间隙）
+        let menu_w = layout::CONTEXT_MENU_WIDTH * s;
+        let (sub_x, sub_y, _sub_w, _sub_h) = app.sub_menu_panel_rect(history_idx);
+        let menu_right = menu_x + menu_w;
+        let sub_w = menu_w;
+        let (gap_left, gap_right) = if sub_x >= menu_right {
+            (menu_right, sub_x)
+        } else {
+            (sub_x + sub_w, menu_x)
+        };
+        let bridge_x = ((gap_left + gap_right) * 0.5) as f64;
+        let bridge_y = (sub_y + 5.0) as f64;
+
+        app.handle_mouse_move(bridge_x, bridge_y);
+        assert_eq!(
+            app.open_sub_menu_for_test(),
+            Some(history_idx),
+            "sub-menu should stay open when pointer crosses bridge to sub-menu panel"
+        );
+
+        // 移动到子菜单面板内
+        app.handle_mouse_move((sub_x + 10.0) as f64, (sub_y + 10.0) as f64);
+        assert_eq!(
+            app.open_sub_menu_for_test(),
+            Some(history_idx),
+            "sub-menu should remain open when pointer enters sub-menu panel"
+        );
+    }
+
     /// 刷新按钮在加载中点击应停止加载（按钮变停止语义）。
     #[test]
     fn refresh_button_click_stops_loading_when_loading() {
