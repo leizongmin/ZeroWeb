@@ -21,6 +21,7 @@
 | **R678** | ❌ **anchor 发散非 float-width** | font-size-zero-3 **33.53%→33.53% 零变化** | `box_node.float` 已正确 populate（engine.rs:655），shrink-to-fit 实现正确，但 anchor 的 33.53% 不是 float 满宽所致（绿子/高度/位置他因）。float:right 定位顺序风险（x=container_w−used_w）下，无 yield 不值得保留，已回退 |
 | **R717** | ❌ **decode 修对但 anchor 复合 bug 阻塞**（实证，R740） | replaced-elements-all-auto **31.66%→32.39% 反而 +0.73pp 回归** | decode_svg_bytes 经 probe 实证修对（7 SVG 全 match CSS spec：ratio-2 1000×500→300×150 等），**decode 修正确且有 probe 单测**，但 anchor 的 ~32% 由 **tree.rs §10.3.2 replaced-sizing + reftest harness img 处理**的复合 bug 主导（correct intrinsic 未转化为 chr-matching layout）；all-auto 反退 0.73pp。decode 修已回退（单独无 yield 且小回归）；**R717 须 decode 修 + tree.rs sizing 修同做**才能 yield，decode 修在 git 历史/master 可复用 |
 | **R679 empty-table** | ✅ **LANDED（R749，空 table 子 facet）** | empty-table-height **30.74%→0.00% PASS**；css-tables 57→58 零回归；css-position 零变化 | `shrink_table_to_block_content` 早退（`block_indices.is_empty()`）致完全空的 display:table 保满宽。新增 `shrink_empty_table_to_padding_border` 收缩 width:auto 空 table 到 padding+border。**Auto-guard**（`matches!(s.width, LengthValue::Auto)`）跳过显式宽 table（Px/Percent/Em/Calc 由 taffy 解析）——无 guard 会回归 absolute-tables-007/012/016 + subpixel-table-width-001（全显式宽）。R679 多 facet（R681-R684 box/content/horizontal/vertical）仍 deferred |
+| **R695** | ✅ **LANDED（R842，indefinite-CB %height → auto）** | height-percentage-005 **88.42%→0.67% PASS**；normal-flow 563→564 **+1/0**；visudet 16→16 **worst-15 字节同**；welcome 16.11% 不变 | 新增 `apply_indefinite_percent_height_to_auto`（engine.rs，~60 行），复用 apply_intrinsic_content_sizing 两趟 set_style+mark_dirty+重算基础设施。自上而下按样式判 CB 明确性（同 `clamp_percentage_max_height` 的 `my_definite_content_height`）：%height + CB 不明确 → taffy size.height=Auto；替换元素补 img_intrinsic_sizes 固有绝对尺寸。第二趟 taffy 自动算非替换块内容高/替换固有。「complex」标签实为 clean slice（既有级联 + 两趟基建）。详见 [`evidence/r695-indefinite-cb-percent-height-2026-06-30.txt`](./evidence/r695-indefinite-cb-percent-height-2026-06-30.txt)。两趟+definiteness 级联模式可供同区组 A（R699/R702）复用 |
 
 **★ 关键裁决（R739/R740 实证）**：doc-side 只读 lever 分析的**假阳性率高**——R720/R696/R678/R717 四 lever 实证零 yield 或反退（premise 错 / out-of-scope / 发散另有他因 / 复合 bug）。**「14 clean lever 待消费」叙事大部分是幻觉**；pass-rate 提升需 per-case 实际修复验证，非盲信只读根因。
 
@@ -38,7 +39,7 @@
 | **A 高 cluster** | R678 | font-size-zero-3 / css-fonts（float shrink-to-fit） | 33.53% | 中 | **≥5 案 17-34% 跨 3 目录（最高渗透）** |
 | **A 高 cluster** | R696 | inline-replaced-width-009 / CSS2_normal-flow（replaced sizing） | 22.08% | 中 | **≥5 案 12-22%（unified）** |
 | **A 高 cluster** | R717 | replaced-elements-all-auto / CSS2_visudet（SVG intrinsic-size viewBox-as-intrinsic） | 31.66% | 中 | **~9 案 9-32%（visudet replaced-elements-* 簇，R718 扩）** |
-| **A 高单发散** | R695 | height-percentage-005 / CSS2_normal-flow（%height indefinite-CB） | **88.44%（最高）** | 中 | +潜在多案 |
+| ✅ **R695 LANDED R842** | R695 | height-percentage-005 / CSS2_normal-flow（%height indefinite-CB） | ~~88.44%（最高）~~ → **0.67% PASS** | ~~中~~ 实 clean | +1（anchor；visudet 字节同 0 回归） |
 | B clean | R702 | margin-collapse-101 / margin-padding-clear | 49.38% | 中 | 7 案（101/105/106/155/038/110/111） |
 | B clean | R691 | replaced-element-...-002 / css-grid（grid-item %height vs track） | 34.00% | 中 | +replaced-...-001 9% |
 | B clean | R679 | empty-table-height / css-tables（table shrink-to-fit） | 30.74% | 中 | table-width 簇 |
