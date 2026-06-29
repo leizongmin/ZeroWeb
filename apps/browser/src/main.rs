@@ -657,12 +657,13 @@ mod tests {
         assert_eq!(app.address_bar_text(), "zero://downloads");
     }
 
-    /// Home 键应导航到设置的主页 URL，而非硬编码。
+    /// Alt+Home 应导航到设置的主页 URL，而非硬编码。
     #[test]
-    fn home_key_navigates_to_configured_home() {
+    fn alt_home_navigates_to_configured_home() {
         let mut app = BrowserApp::new(RenderMode::Cpu);
         app.shell
             .apply_settings(|s| s.home_url = "https://custom.home.test".to_string());
+        app.handle_key("Alt", true, None);
         app.handle_key("Home", true, None);
         assert_eq!(
             app.shell.active_tab().and_then(|t| t.url()),
@@ -1819,6 +1820,37 @@ mod tests {
         let mid = app.scroll_offset_for_tab(tab_id);
         app.handle_key("Space", true, None);
         assert!(app.scroll_offset_for_tab(tab_id) > mid, "Space should scroll down");
+    }
+
+    /// Home 滚动到页顶，End 滚动到页底。
+    #[test]
+    fn home_end_scroll_to_top_and_bottom() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (1280, 900);
+        app.scale_factor = 1.0;
+        let tab_id = app.shell.active_tab_id().unwrap();
+        app.ensure_webview(tab_id);
+
+        let tall_html = r#"<!DOCTYPE html><html><head><style>
+          head, style, title { display: none; }
+          .spacer { height: 4000px; background: #eef; }
+        </style></head><body><div class="spacer">Tall</div></body></html>"#;
+        app.load_webview_html(tab_id, tall_html, None);
+        app.sync_webview_viewport_and_poll(tab_id);
+
+        // 先滚到中间
+        app.handle_key("PageDown", true, None);
+        let mid = app.scroll_offset_for_tab(tab_id);
+        assert!(mid > 0.0, "should have scrolled down first");
+
+        // Home 回到顶部
+        app.handle_key("Home", true, None);
+        assert_eq!(app.scroll_offset_for_tab(tab_id), 0.0, "Home should scroll to top");
+
+        // End 到底部
+        app.handle_key("End", true, None);
+        let bottom = app.scroll_offset_for_tab(tab_id);
+        assert!(bottom > mid, "End should scroll to bottom (bottom={bottom}, mid={mid})");
     }
 
     /// 刷新按钮在加载中点击应停止加载（按钮变停止语义）。

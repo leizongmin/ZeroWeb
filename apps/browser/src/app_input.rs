@@ -336,6 +336,7 @@ impl BrowserApp {
         }
 
         // Alt+Left/Right：浏览器后退/前进（不转发给页面，地址栏聚焦时也不拦截）
+        // Alt+Home：导航到主页
         if self.alt_pressed && pressed {
             match key {
                 "ArrowLeft" => {
@@ -346,6 +347,11 @@ impl BrowserApp {
                 "ArrowRight" => {
                     self.go_forward();
                     self.needs_redraw = true;
+                    return;
+                }
+                "Home" => {
+                    let home = self.shell.settings().home_url.clone();
+                    self.navigate_to(&home);
                     return;
                 }
                 _ => {}
@@ -923,8 +929,11 @@ impl BrowserApp {
                 self.go_forward();
             }
             "Home" => {
-                let home = self.shell.settings().home_url.clone();
-                self.navigate_to(&home);
+                // 纯 Home 键滚动到页面顶部（Chrome/标准行为）。
+                self.scroll_active_page_to_top();
+            }
+            "End" => {
+                self.scroll_active_page_to_bottom();
             }
             "f" => {
                 self.find_input.clear();
@@ -966,6 +975,26 @@ impl BrowserApp {
     fn scroll_active_page_by_viewport_ratio(&mut self, ratio: f32) {
         let (_, _, _, ch) = self.page_content_rect();
         self.scroll_active_page_by_px(ch * ratio);
+    }
+
+    /// 滚动活动标签页到页面顶部（Home 键）。
+    fn scroll_active_page_to_top(&mut self) {
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            let entry = self.scroll.entry(tab_id).or_default();
+            entry.y = 0.0;
+            entry.x = 0.0;
+            self.needs_redraw = true;
+        }
+    }
+
+    /// 滚动活动标签页到页面底部（End 键）。
+    fn scroll_active_page_to_bottom(&mut self) {
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            let layout = self.page_scroll_layout(tab_id);
+            let entry = self.scroll.entry(tab_id).or_default();
+            entry.y = layout.max_scroll_y;
+            self.needs_redraw = true;
+        }
     }
 
     /// 循环切换活跃标签（`reverse=true` 向前，否则向后）。
