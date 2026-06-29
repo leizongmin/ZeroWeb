@@ -233,3 +233,63 @@ fn test_r695_percent_height_definite_cb_still_resolves() {
         child_box.height
     );
 }
+
+/// R699：CSS §10.5.1 — 非 BFC 块级元素 `height:auto` 且 `overflow` 计算为 `visible`
+/// 时，高度只计入 in-flow 子元素，浮动子元素被显式忽略。
+///
+/// `#parent{height:auto;overflow:visible} > div{float:left;height:96px}`：parent 的
+/// 唯一子元素是 float → 应被忽略 → parent height ≈ 0（float 溢出但本例无背景）。
+/// 旧实现：taffy 把 float 当 in-flow block 计入父 content height → parent=96。
+#[test]
+fn test_r699_non_bfc_auto_height_ignores_float_child() {
+    let html = r#"<html><body style="margin:0">
+        <div id="parent" style="height:auto;overflow:visible">
+          <div id="f" style="float:left;height:96px;width:96px"></div>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let parent = find("parent", &doc, &result.root).expect("parent box");
+    assert!(
+        parent.height < 1.0,
+        "non-BFC height:auto parent should ignore float child (height ~0), got {} \
+         (old taffy behavior gave ~96 from float)",
+        parent.height
+    );
+    // float 子元素自身高度仍正确（96px），只是不贡献给父高度。
+    let f = find("f", &doc, &result.root).expect("float box");
+    assert!(
+        (f.height - 96.0).abs() < 2.0,
+        "float child's own height should still be 96px, got {}",
+        f.height
+    );
+}
+
+/// R699 反向回归：BFC 父（`overflow:hidden`）应**包含** float，高度不被本规则收缩到 0。
+/// 防止 R699 误把 BFC 父也塌缩（establishes_bfc 守卫）。
+#[test]
+fn test_r699_bfc_parent_not_collapsed_by_float_exclusion() {
+    let html = r#"<html><body style="margin:0">
+        <div id="parent" style="overflow:hidden">
+          <div style="float:left;height:96px;width:96px"></div>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let parent = find("parent", &doc, &result.root).expect("parent box");
+    // overflow:hidden → BFC → 不应被 R699 塌缩到 0；应包含 float（≈96）。
+    assert!(
+        parent.height > 50.0,
+        "BFC (overflow:hidden) parent must NOT be collapsed by R699 float-exclusion; \
+         should contain float (height ~96), got {}",
+        parent.height
+    );
+}
