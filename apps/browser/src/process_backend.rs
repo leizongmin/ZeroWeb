@@ -476,8 +476,7 @@ impl ProcessTabBackend {
                         self.handle_storage_op(tab_id, params);
                     }
                     IpcMessageKind::DispatchDomEventResult(result) => {
-                        self.pending_dispatch_results
-                            .push((msg.id, result.default_allowed));
+                        self.pending_dispatch_results.push((msg.id, result.default_allowed));
                     }
                     kind => {
                         let snap = snapshots.entry(tab_id).or_default();

@@ -407,14 +407,7 @@ impl TabManager {
         let code = detail.as_ref().and_then(|d| d.code.clone());
 
         let sent = if let Some(ref mut backend) = self.process_backend {
-            backend.dispatch_dom_event_fire_and_forget(
-                tab_id,
-                dispatch_id,
-                Some(selector),
-                event_type,
-                key,
-                code,
-            );
+            backend.dispatch_dom_event_fire_and_forget(tab_id, dispatch_id, Some(selector), event_type, key, code);
             true
         } else if let Some(worker) = self.workers.get(&tab_id) {
             worker.send(TabWorkerCommand::DispatchDomEvent {
@@ -438,13 +431,8 @@ impl TabManager {
         }
 
         self.event_targets.insert(tab_id, selector.to_string());
-        self.pending_dispatch.insert(
-            dispatch_id,
-            PendingDispatch {
-                tab_id,
-                on_allowed,
-            },
-        );
+        self.pending_dispatch
+            .insert(dispatch_id, PendingDispatch { tab_id, on_allowed });
     }
 
     /// 向页面元素派发 DOM 事件（无默认动作）。
@@ -481,15 +469,13 @@ impl TabManager {
         // mouseup 不触发导航；click 才是浏览器选择链接导航的时机。
         self.dispatch_dom_event_async(tab_id, &selector, "mouseup", None, None);
 
-        let on_allowed = self
-            .hit_test_link(tab_id, doc_x, doc_y)
-            .map(|href| {
-                if background_tab {
-                    PendingTabAction::OpenBackgroundTab(href)
-                } else {
-                    PendingTabAction::NavigateActiveTab(href)
-                }
-            });
+        let on_allowed = self.hit_test_link(tab_id, doc_x, doc_y).map(|href| {
+            if background_tab {
+                PendingTabAction::OpenBackgroundTab(href)
+            } else {
+                PendingTabAction::NavigateActiveTab(href)
+            }
+        });
         self.dispatch_dom_event_async(tab_id, &selector, "click", None, on_allowed);
     }
 
