@@ -141,7 +141,7 @@ impl BrowserApp {
                 self.gpu_renderer = gpu;
                 return;
             }
-            let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows) = self.build_scene(width, height);
+            let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
 
             // 获取 WebView 额外图元（渐变、阴影、圆角矩形、线段、路径等）
             let webview_extras = self.get_webview_extra_primitives();
@@ -170,6 +170,7 @@ impl BrowserApp {
                 &glyphs,
                 &overlay_fills,
                 &overlay_glyphs,
+                &overlay_rounded_rects,
                 1.0, // scale_factor: GPU 渲染器内部已通过 surface 尺寸处理
             );
         }
@@ -190,7 +191,7 @@ impl BrowserApp {
             return;
         }
 
-        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows) = self.build_scene(width, height);
+        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
 
         // 获取 WebView 的额外图元类型（渐变、阴影、线段等）
         let webview_extras = self.get_webview_extra_primitives();
@@ -221,6 +222,7 @@ impl BrowserApp {
             &glyphs,
             &overlay_fills,
             &overlay_glyphs,
+            &overlay_rounded_rects,
         );
         present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data);
     }
@@ -236,7 +238,7 @@ impl BrowserApp {
         width: u32,
         height: u32,
     ) -> zero_render_foundation::surface::FrameBuffer {
-        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows) = self.build_scene(width, height);
+        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
         let webview_extras = self.get_webview_extra_primitives();
         let mut scene_primitives = webview_extras;
         scene_primitives.fills = [fills, scene_primitives.fills].concat();
@@ -259,6 +261,7 @@ impl BrowserApp {
             &glyphs,
             &overlay_fills,
             &overlay_glyphs,
+            &overlay_rounded_rects,
         )
     }
 }

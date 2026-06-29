@@ -25,6 +25,7 @@ impl BrowserApp {
         let mut overlay_fills = Vec::new();
         let mut overlay_glyphs = Vec::new();
         let mut chrome_shadows: Vec<ShadowPrimitive> = Vec::new();
+        let mut overlay_rounded_rects: Vec<RoundedRectPrimitive> = Vec::new();
         let font_size = layout::CHROME_FONT_SIZE * s;
 
         // 0. 同步加载动画起始时刻：is_loading 从 false→true 时记录，
@@ -134,7 +135,12 @@ impl BrowserApp {
         self.render_page_content(&mut fills, &mut glyphs, width, content_x, content_y, font_size, s);
 
         // 11b. 页面滚动条（overlay，始终显示于溢出时）
-        self.render_page_scrollbars(&mut overlay_fills, width, height);
+        self.render_page_scrollbars(
+            &mut overlay_fills,
+            &mut overlay_rounded_rects,
+            width,
+            height,
+        );
 
         // 11c. 装饰层（视口圆角遮罩 / 边框 / 窗口外框）必须先绘制，
         //      随后所有交互浮层（自动补全 / 链接状态栏 / 查找栏 / 下载面板 /
@@ -168,7 +174,7 @@ impl BrowserApp {
         // 18. 缩放百分比浮层（右下角，缩放后 3 秒内显示）
         self.render_zoom_indicator(&mut overlay_fills, &mut overlay_glyphs, width, height, s);
 
-        (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows)
+        (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects)
     }
 
     /// 渲染缩放百分比浮层。zoom 操作后 3 秒内显示在页面右下角。
@@ -274,7 +280,13 @@ impl BrowserApp {
     }
 
     /// 绘制页面滚动条（内容溢出时）。
-    fn render_page_scrollbars(&self, overlay_fills: &mut Vec<FillPrimitive>, width: u32, height: u32) {
+    fn render_page_scrollbars(
+        &self,
+        overlay_fills: &mut Vec<FillPrimitive>,
+        overlay_rounded_rects: &mut Vec<RoundedRectPrimitive>,
+        width: u32,
+        height: u32,
+    ) {
         let Some(tab_id) = self.shell.active_tab_id() else {
             return;
         };
@@ -295,6 +307,7 @@ impl BrowserApp {
             self.scrollbar_hover,
             dragging,
             overlay_fills,
+            overlay_rounded_rects,
         );
     }
 

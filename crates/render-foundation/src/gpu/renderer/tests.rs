@@ -668,7 +668,7 @@ fn test_gpu_full_scene_fills() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     assert_eq!(pixels.len(), 32 * 32 * 4);
@@ -695,7 +695,7 @@ fn test_gpu_full_scene_rounded_rect() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     // 中心像素应为蓝色
@@ -735,7 +735,7 @@ fn test_gpu_full_scene_gradient() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     // 左端应为红色（GPU 浮点精度允许 ±3 容差）
@@ -772,7 +772,7 @@ fn test_gpu_full_scene_shadow() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     assert_eq!(pixels.len(), 32 * 32 * 4);
@@ -803,7 +803,7 @@ fn test_gpu_full_scene_stroke() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     // 中间行应有黑色像素
@@ -840,6 +840,7 @@ fn test_gpu_full_scene_image() {
         &[],
         &[],
         &[],
+        &[],
         1.0,
     );
 
@@ -872,7 +873,7 @@ fn test_gpu_full_scene_path_fill() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     // 中心 (16,16) 在多边形内 → 黑（深内部，实色无 AA）
@@ -906,7 +907,7 @@ fn test_gpu_full_scene_path_stroke() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     // 矩形中心 (16,16) 在描边内部 → 白（未被描边覆盖）
@@ -936,7 +937,7 @@ fn test_gpu_full_scene_empty() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     for chunk in pixels.chunks_exact(4) {
@@ -964,7 +965,7 @@ fn test_gpu_full_scene_filter_opacity_multiplies_rgb() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     // 渲染目标为 Rgba8UnormSrgb：shader 在**线性空间**做 RGB *= amount（sRGB 自动解码→乘→
@@ -996,7 +997,7 @@ fn test_gpu_full_scene_filter_brightness() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     // brightness(0.5) 与 opacity 同数学（RGB *= 0.5，线性空间）→ sRGB 编码 ≈ 187
@@ -1021,7 +1022,7 @@ fn test_gpu_full_scene_filter_contrast() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     // contrast(2): (linear - 0.5)*2 + 0.5。64/255=0.251 linear → (0.251-0.5)*2+0.5=0.002 → sRGB ≈ 7
@@ -1048,7 +1049,7 @@ fn test_gpu_full_scene_filter_grayscale() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
@@ -1075,7 +1076,7 @@ fn test_gpu_full_scene_filter_hue_rotate() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
@@ -1102,7 +1103,7 @@ fn test_gpu_full_scene_filter_invert() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
@@ -1129,7 +1130,7 @@ fn test_gpu_full_scene_filter_saturate() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
@@ -1156,7 +1157,7 @@ fn test_gpu_full_scene_filter_sepia() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
@@ -1200,7 +1201,7 @@ fn test_gpu_full_scene_transform_translation() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     let px = |x: usize, y: usize| -> [u8; 4] {
@@ -1247,7 +1248,7 @@ fn test_gpu_full_scene_filter_blur_softens_edges() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], 1.0);
+    renderer.render_full_scene_gpu(&primitives, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     // 模糊前：红块边缘 (x=8,y=8) 是纯红 (255,0,0)，邻近 (x<8) 是白 (255,255,255)。
