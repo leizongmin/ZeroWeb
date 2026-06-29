@@ -1,6 +1,8 @@
 //! 多进程 IPC 绘制快照 ↔ 浏览器 TabSnapshot 转换。
 
-use zero_engine::{HitTestCache, HitTestCacheSnapshot, HitTestLayoutSnapshot, HitTestNodeSnapshot, PipelineTimings, node_id_from_u64};
+use zero_engine::{
+    HitTestCache, HitTestCacheSnapshot, HitTestLayoutSnapshot, HitTestNodeSnapshot, PipelineTimings, node_id_from_u64,
+};
 use zero_protocol::{
     IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGradientKind, IpcHitTestCache, IpcHitTestLayoutNode,
     IpcLineCap, IpcLineStyle, IpcRect, PaintSnapshotParams,
