@@ -725,7 +725,12 @@ impl BrowserApp {
         let nav_icons = [
             crate::ui_icons::Icon::ChevronLeft,
             crate::ui_icons::Icon::ChevronRight,
-            crate::ui_icons::Icon::Refresh,
+            // 加载中显示停止（X）图标，点击停止加载。
+            if self.shell.active_tab().is_some_and(|t| t.is_loading()) {
+                crate::ui_icons::Icon::Close
+            } else {
+                crate::ui_icons::Icon::Refresh
+            },
             crate::ui_icons::Icon::Home,
         ];
         let can_back = self.shell.active_tab().is_some_and(|tab| tab.history_index() > 0);

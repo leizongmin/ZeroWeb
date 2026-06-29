@@ -1582,6 +1582,12 @@ impl BrowserApp {
         self.start_tab_load(tab_id, url);
     }
 
+    /// 停止当前页加载（Esc / loading 时点击刷新按钮）。
+    pub fn stop_loading_page(&mut self) {
+        self.shell.stop_loading();
+        self.needs_redraw = true;
+    }
+
     /// 重新加载所有标签（菜单项「重新加载所有标签」）。
     /// 收集所有标签的 (id, url) 快照，再逐个 start_tab_load，避免借用冲突。
     pub fn reload_all_tabs(&mut self) {
