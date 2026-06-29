@@ -234,8 +234,30 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
         PseudoClassSelector::NthLastChild(pattern) => matches_nth_last_child(doc, element, pattern),
         PseudoClassSelector::NthOfType(pattern) => matches_nth_of_type(doc, element, pattern),
         PseudoClassSelector::NthLastOfType(pattern) => matches_nth_last_of_type(doc, element, pattern),
-        PseudoClassSelector::Lang(_) => false, // :lang() 需要语言上下文，暂不支持
+        PseudoClassSelector::Lang(range) => matches_lang(doc, element, range),
     }
+}
+
+/// `:lang(<range>)` 匹配（CSS 2.1 §5.11.4）。
+///
+/// 元素语言 = 自身或最近祖先的 `xml:lang`/`lang` 属性（向上查找首个）。匹配当且仅当
+/// 元素语言 == range，或以 `range-` 开头（连字符前缀边界），**大小写不敏感**。
+/// 例：`:lang(es)` 匹配 `lang="es"`/`"es-MX"`/`"ES"`，不匹配 `"MX-es"`/`"en"`。
+fn matches_lang(doc: &Document, element: NodeId, range: &str) -> bool {
+    let range_lower = range.to_ascii_lowercase();
+    let mut node = Some(element);
+    while let Some(n) = node {
+        // xml:lang 优先于 lang（XML 规范），HTML 仅 lang。
+        if let Some(lang) = doc
+            .get_attribute(n, "xml:lang")
+            .or_else(|| doc.get_attribute(n, "lang"))
+        {
+            let lang_lower = lang.to_ascii_lowercase();
+            return lang_lower == range_lower || lang_lower.starts_with(&format!("{range_lower}-"));
+        }
+        node = doc.parent_node(n);
+    }
+    false
 }
 
 /// 检查元素是否为第一个子元素。

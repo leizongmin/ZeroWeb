@@ -42,8 +42,8 @@ fn test_pseudo_element_no_match() {
 }
 
 #[test]
-/// :lang() 不支持（返回 false）
-fn test_lang_not_supported() {
+/// :lang(en) 对无 lang 属性的 div 不匹配（make_test_dom 未设 lang；CSS 2.1 §5.11.4）
+fn test_lang_no_lang_attr_no_match() {
     let (doc, _html, _body, div, _p) = make_test_dom();
 
     // 手动创建包含 :lang() 的选择器
