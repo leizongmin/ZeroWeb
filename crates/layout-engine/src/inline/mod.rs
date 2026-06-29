@@ -1861,6 +1861,47 @@ impl InlineFormattingContext {
                 // 行盒高度已含 margin box（layout_inline 时 +margin_top+bottom），故偏移后盒仍在行盒内。
                 run.y += run.margin_top;
             }
+
+            // R822：line-box 高度 = strut ∪ valign 偏移 inline box（CSS §10.8.1）。text-top/bottom/
+            // sub/super 把 inline box 移出 strut 范围，line-box 须扩展容纳（block 高度随之增长）。
+            // 旧 line.height = strut only（break_into_lines 在 valign 前算 max run.box_height），
+            // 致 va-117a ZW line-box 130 而 REF/chromium 175（text-bottom span box 越过 strut 顶 45px）。
+            // 扩展方向：text-bottom/super 向上扩（strut 下移），text-top/sub 向下扩。baseline_y/ascent
+            // 随 top_extend 下移（strut 在更高 line-box 内位置下移），line.y/run.y 不动（绝对字形位
+            // 置由 paint baseline_y_abs 决定，见 Phase 3 storage）。
+            let strut_fs_hl = if line.runs.iter().any(|r| r.font_size > 0.0) {
+                line.runs
+                    .iter()
+                    .filter(|r| r.font_size > 0.0)
+                    .map(|r| r.font_size)
+                    .fold(0.0f32, f32::max)
+            } else {
+                self.container_font_size
+            };
+            let half_leading_hl = ((line_height - strut_fs_hl) / 2.0).max(0.0);
+            let mut top_extend = 0.0f32;
+            let mut bot_extend = 0.0f32;
+            for run in &line.runs {
+                let (up, down) = match run.vertical_align {
+                    VerticalAlignValue::TextBottom => (half_leading_hl, 0.0),
+                    VerticalAlignValue::TextTop => (0.0, half_leading_hl),
+                    VerticalAlignValue::Super => (0.3 * run.font_size, 0.0),
+                    VerticalAlignValue::Sub => (0.0, 0.3 * run.font_size),
+                    _ => (0.0, 0.0),
+                };
+                if up > top_extend {
+                    top_extend = up;
+                }
+                if down > bot_extend {
+                    bot_extend = down;
+                }
+            }
+            if top_extend > 0.0 || bot_extend > 0.0 {
+                line.height += top_extend + bot_extend;
+                line.baseline_y += top_extend;
+                line.ascent += top_extend;
+                line.descent += bot_extend;
+            }
         }
     }
 

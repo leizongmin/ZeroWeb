@@ -1803,3 +1803,59 @@ fn r817_is_ahem_font_propagated_per_fragment() {
         "line-height:1 时 Phase 2 v_offset 应退化为 0（A3），实际 {v_offset}"
     );
 }
+
+/// R822：line-box 高度 = strut ∪ valign 偏移 inline box（CSS §10.8.1）。text-bottom 把 inline
+/// box 移到 strut 顶之上，line-box 须向上扩展（va-117a ZW line-box 130 而 REF 175）。验证一个含
+/// text-bottom run 的行经 break_into_lines + apply_vertical_alignment 后 line.height > strut
+/// line-height（扩展生效），且 baseline-aligned run 不触发扩展（line.height == line-height）。
+#[test]
+fn r822_linebox_grows_for_valign_extension() {
+    // text-bottom 行：font 40px, line-height 130（half-leading 45）。text-bottom run 的 box
+    // 越过 strut 顶 45px → line-box 应从 130 扩到 ~175。
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let baseline_run = TextRun::simple(
+        "TTTT".to_string(),
+        NodeId::default(),
+        40.0,
+        130.0,
+        zero_css_parser::values::VerticalAlignValue::Baseline,
+    );
+    let mut tb_run = TextRun::simple(
+        "Above".to_string(),
+        NodeId::default(),
+        40.0,
+        130.0,
+        zero_css_parser::values::VerticalAlignValue::TextBottom,
+    );
+    tb_run.is_ahem_font = true;
+    ctx.break_into_lines(vec![baseline_run, tb_run]);
+    assert_eq!(ctx.lines.len(), 1);
+    let line = &ctx.lines[0];
+    assert!(
+        line.height > 130.0 + 40.0,
+        "text-bottom 行 line-box 应扩展超 130+40，实际 {}",
+        line.height
+    );
+    assert!(
+        line.height <= 130.0 + 45.0 + 1.0,
+        "text-bottom 扩展量应≈half_leading 45，实际 height={}",
+        line.height
+    );
+    // baseline_y 随 top_extend 下移（strut 在更高 line-box 内下移）。
+    assert!(line.baseline_y > 77.0, "baseline_y 应随扩展下移，实际 {}", line.baseline_y);
+
+    // 对照：纯 baseline 行不扩展。
+    let mut ctx2 = InlineFormattingContext::new(800.0);
+    ctx2.break_into_lines(vec![TextRun::simple(
+        "X".to_string(),
+        NodeId::default(),
+        40.0,
+        130.0,
+        zero_css_parser::values::VerticalAlignValue::Baseline,
+    )]);
+    assert!(
+        (ctx2.lines[0].height - 130.0).abs() < 0.5,
+        "纯 baseline 行 line-box 应=strut 130 不扩展，实际 {}",
+        ctx2.lines[0].height
+    );
+}
