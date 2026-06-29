@@ -369,6 +369,26 @@ fn test_browser_shell_zoom_clamp() {
 }
 
 #[test]
+fn test_zoom_is_per_tab_independent() {
+    let mut shell = BrowserShell::new();
+    let id_a = shell.new_tab(Some("https://a.example/"));
+    let id_b = shell.new_tab(Some("https://b.example/"));
+
+    // 切到 A，放大
+    shell.switch_tab(id_a);
+    shell.zoom_in();
+    assert!((shell.zoom() - 1.1).abs() < 0.01, "tab A should be zoomed in");
+
+    // 切到 B，应仍是 100%
+    shell.switch_tab(id_b);
+    assert!((shell.zoom() - 1.0).abs() < 0.01, "tab B should remain at 100%");
+
+    // 切回 A，应保留 1.1
+    shell.switch_tab(id_a);
+    assert!((shell.zoom() - 1.1).abs() < 0.01, "tab A should retain its zoom");
+}
+
+#[test]
 fn test_browser_shell_find() {
     let mut shell = BrowserShell::new();
     assert!(!shell.find_state().is_active());
