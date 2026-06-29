@@ -747,6 +747,23 @@ impl BrowserApp {
                 "w" | "W" => {
                     self.close_active_tab();
                 }
+                // Ctrl+1~8 切换到对应索引标签，Ctrl+9 切换到最后标签。
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" => {
+                    if let Ok(idx) = key.parse::<usize>() {
+                        if self.shell.switch_to_index(idx.saturating_sub(1)) {
+                            self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+                            self.update_address_bar_from_active_tab();
+                            self.needs_redraw = true;
+                        }
+                    }
+                }
+                "9" => {
+                    if self.shell.switch_to_last() {
+                        self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+                        self.update_address_bar_from_active_tab();
+                        self.needs_redraw = true;
+                    }
+                }
                 "r" | "R" if self.shift_pressed => {
                     // Ctrl+Shift+R：强制刷新（绕过 HTTP 缓存）。
                     self.refresh_page_bypass_cache();

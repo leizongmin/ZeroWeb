@@ -314,6 +314,29 @@ impl BrowserShell {
         self.tabs.move_tab(id, to_index)
     }
 
+    /// 按索引切换到对应标签页（Ctrl+1~8 / Ctrl+9 用）。
+    /// index 超出范围时无操作。返回是否成功切换。
+    pub fn switch_to_index(&mut self, index: usize) -> bool {
+        let id = self.tabs.tabs().nth(index).map(|t| t.id());
+        if let Some(id) = id {
+            self.tabs.switch_to(id);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 切换到最后一个标签页（Ctrl+9 用）。无标签时返回 false。
+    pub fn switch_to_last(&mut self) -> bool {
+        let id = self.tabs.tabs().last().map(|t| t.id());
+        if let Some(id) = id {
+            self.tabs.switch_to(id);
+            true
+        } else {
+            false
+        }
+    }
+
     /// 获取活跃标签页 ID。
     pub fn active_tab_id(&self) -> Option<TabId> {
         self.tabs.active_tab_id()
