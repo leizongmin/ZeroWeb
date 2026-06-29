@@ -267,6 +267,7 @@ impl DemoState {
             &glyphs,
             &[],
             &[],
+            &[],
         );
         let Some(surface) = self.cpu_surface.as_mut() else {
             return;

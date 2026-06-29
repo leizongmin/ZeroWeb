@@ -795,12 +795,10 @@ impl BrowserApp {
                         }
                     }
                 }
-                "9" => {
-                    if self.shell.switch_to_last() {
-                        self.tabs.on_active_tab_changed(self.shell.active_tab_id());
-                        self.update_address_bar_from_active_tab();
-                        self.needs_redraw = true;
-                    }
+                "9" if self.shell.switch_to_last() => {
+                    self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+                    self.update_address_bar_from_active_tab();
+                    self.needs_redraw = true;
                 }
                 "r" | "R" if self.shift_pressed => {
                     // Ctrl+Shift+R：强制刷新（绕过 HTTP 缓存）。
@@ -2583,15 +2581,13 @@ impl BrowserApp {
             "paste" if self.address_bar.paste_from_clipboard() => {
                 self.update_autocomplete();
             }
-            "paste_and_go" => {
-                // 粘贴剪贴板内容并立即导航（不保留聚焦态）。
-                if self.address_bar.paste_from_clipboard() {
-                    let text = self.address_bar.text().trim().to_string();
-                    if !text.is_empty() {
-                        self.address_bar_focused = false;
-                        self.autocomplete.clear();
-                        self.navigate_to(&text);
-                    }
+            // 粘贴剪贴板内容并立即导航（不保留聚焦态）。
+            "paste_and_go" if self.address_bar.paste_from_clipboard() => {
+                let text = self.address_bar.text().trim().to_string();
+                if !text.is_empty() {
+                    self.address_bar_focused = false;
+                    self.autocomplete.clear();
+                    self.navigate_to(&text);
                 }
             }
             "select_all" => {

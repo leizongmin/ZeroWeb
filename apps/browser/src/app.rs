@@ -20,8 +20,7 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::gpu::renderer::{GlyphDraw, GpuRenderer};
 use zero_render_foundation::image_cache::ImageCache;
 use zero_render_foundation::primitive::{
-    FillPrimitive, GlyphPrimitive, GradientKind, RenderPrimitives, RoundedRectPrimitive,
-    ShadowPrimitive,
+    FillPrimitive, GlyphPrimitive, GradientKind, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive,
 };
 
 use crate::colors;
@@ -858,7 +857,8 @@ impl BrowserApp {
     /// 测试用：构建场景并 CPU 渲染为帧缓冲。
     #[cfg(test)]
     pub fn render_scene_for_test(&mut self, width: u32, height: u32) -> zero_render_foundation::surface::FrameBuffer {
-        let (fills, glyphs, overlay_fills, overlay_glyphs, _chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
+        let (fills, glyphs, overlay_fills, overlay_glyphs, _chrome_shadows, overlay_rounded_rects) =
+            self.build_scene(width, height);
         render_scene_to_framebuffer(
             width,
             height,

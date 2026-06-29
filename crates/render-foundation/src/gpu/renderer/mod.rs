@@ -18,9 +18,7 @@ use crate::gpu::pipeline::{
     create_transform_uniform_bgl, create_uniform_bind_group_layout,
 };
 use crate::image_cache::ImageCache;
-use crate::primitive::{
-    FillPrimitive, FilterKind, GradientKind, RenderPrimitives, RoundedRectPrimitive,
-};
+use crate::primitive::{FillPrimitive, FilterKind, GradientKind, RenderPrimitives, RoundedRectPrimitive};
 
 mod filters;
 
