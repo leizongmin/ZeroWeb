@@ -29,7 +29,19 @@ fn render_scene_to_framebuffer_scales_logical_dimensions() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    let fb = render_scene_to_framebuffer(10, 8, 2.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[], &[]);
+    let fb = render_scene_to_framebuffer(
+        10,
+        8,
+        2.0,
+        &fills,
+        &[],
+        &font_loader,
+        &mut glyph_cache,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
 
     assert_eq!(fb.width, 20);
     assert_eq!(fb.height, 16);
@@ -46,7 +58,19 @@ fn render_scene_to_framebuffer_no_scaling() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[], &[]);
+    let fb = render_scene_to_framebuffer(
+        10,
+        10,
+        1.0,
+        &fills,
+        &[],
+        &font_loader,
+        &mut glyph_cache,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
 
     assert_eq!(fb.width, 10);
     assert_eq!(fb.height, 10);

@@ -531,6 +531,7 @@ pub fn render_to_framebuffer_with_base(
         &[],
         &[],
         &[],
+        &[],
     )
 }
 
@@ -589,6 +590,7 @@ pub fn render_via_webview_to_framebuffer_with_base(
         &font_loader,
         &mut glyph_cache,
         Some(&mut image_cache),
+        &[],
         &[],
         &[],
         &[],
