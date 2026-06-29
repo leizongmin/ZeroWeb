@@ -217,6 +217,11 @@ impl LayoutEngine {
             }
         }
 
+        // R711：block-level position:relative 的**百分比** top/bottom inset 被 taffy 0.7 丢弃
+        //（R715 实证：Length 与 left/right % relative inset 应用，仅 top/bottom % 不应用）。
+        // 此 pass 后处理补上 top/bottom % delta（Px + 水平 % 已由 taffy 处理，无 double-count）。
+        apply_block_relative_percent_insets(&mut root_box, styles, self.viewport_height);
+
         // CSS §10.3.3：根元素（如 <html>）margin-left/right 均为 auto 且边框盒宽度小于
         // 视口时应水平居中。taffy 对**嵌套** block 正确处理 auto margin 居中，但对**根
         // 节点**不应用（根无父级提供居中上下文，taffy 把根左对齐到 0）。此处补上根居中。
@@ -1847,6 +1852,64 @@ fn resolve_relative_inset(box_node: &LayoutBox, styles: &HashMap<NodeId, Compute
         },
     };
     (dx, dy)
+}
+
+/// R711：block-level `position:relative` 的**百分比** inset（**仅 top/bottom `%`**）。
+///
+/// taffy 0.7 对 relative 元素：应用 Length inset；**水平（left/right %）也已应用**；
+/// 但**丢弃垂直（top/bottom %）inset**（R715 实证：`.pct{relative;top:100%}` 不应用）。
+/// CSS §9.4.3：top/bottom % 相对包含块高度解析（CB 高不明确→不解析）。本 pass 自上而下
+/// 后处理：对 block-level relative 元素（非 abspos/fixed）补上 top/bottom % delta。
+///
+/// ★ 仅垂直轴——R850 实证 taffy 已应用 left/right %，本 pass 若也应用会 double-count 致
+/// left-103/104/113、right-103/104、relpos-calcs-003/004/005 回归（0.46%→4.28%）。
+/// inline-level relative（`apply_relative_offsets_inline`，Px）与 root（`resolve_relative_inset`，
+/// Px）由各自路径处理，本 pass 与之正交（仅 block-level 垂直 %）。
+///
+/// 改 `box.y` 后其子树绝对坐标随累积偏移自然跟随（relative 偏移整个子树）。
+fn apply_block_relative_percent_insets(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    viewport_height: f32,
+) {
+    use zero_css_parser::values::LengthValue;
+    fn walk(b: &mut LayoutBox, cb_h: Option<f32>, styles: &HashMap<NodeId, ComputedStyle>) {
+        // top/bottom % 的 CB 高须明确：仅 style.height==Px 视为明确（常见 definite case，
+        // 如 R711 anchor #parent height:1in）。Auto/Percent 高→top/bottom % 不解析。
+        let my_content_h = b
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .and_then(|s| matches!(s.height, LengthValue::Px(_)).then(|| b.content_height));
+
+        // 应用本盒 Percent inset（block-level relative，非 abspos/fixed）。
+        // ★ 仅 top/bottom%（垂直轴）——R850 实证 taffy 0.7 已应用 left/right%（水平轴），
+        // 此处再应用会 double-count 致 left-103/104/113、right-103/104、relpos-calcs-003/004/005
+        // 回归（0.46%→4.28%）。taffy 仅丢弃 top/bottom%（R715 实证），故本 pass 只补垂直轴。
+        if b.is_relative
+            && b.is_block_level
+            && !b.is_absolute
+            && !b.is_fixed
+            && let Some(style) = b.node_id.and_then(|id| styles.get(&id))
+        {
+            // CSS §9.4.3：top 优先（否则 bottom，正值向上）。
+            let dy = match &style.top {
+                LengthValue::Percentage(p) => cb_h.map(|h| *p as f32 / 100.0 * h),
+                _ => match &style.bottom {
+                    LengthValue::Percentage(p) => cb_h.map(|h| -(*p as f32 / 100.0 * h)),
+                    _ => None,
+                },
+            };
+            if let Some(dy) = dy {
+                b.y += dy;
+            }
+        }
+
+        for child in &mut b.children {
+            walk(child, my_content_h, styles);
+        }
+    }
+    // 根的 CB = 视口（ICB）。
+    walk(box_node, Some(viewport_height), styles);
 }
 
 /// 将 OverflowValue 转换为 OverflowClip。

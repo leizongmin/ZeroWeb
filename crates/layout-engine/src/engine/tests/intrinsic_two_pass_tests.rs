@@ -293,3 +293,32 @@ fn test_r699_bfc_parent_not_collapsed_by_float_exclusion() {
         parent.height
     );
 }
+
+/// R711：block-level `position:relative` 的**百分比** top/bottom inset 被 taffy 0.7 丢弃。
+///
+/// 复刻 bottom-113：`#parent{height:100px} > #child{position:relative;bottom:100%}`。
+/// CSS §9.4.3：bottom:100% → 向上偏移 CB 高度（100px）。旧实现 taffy 丢弃 % → 不偏移。
+/// 验证 apply_block_relative_percent_insets 把 child 上移（child.y 相对 parent 内容盒 ≈ -100）。
+#[test]
+fn test_r711_relative_percent_bottom_inset_applied() {
+    let html = r#"<html><body style="margin:0">
+        <div id="parent" style="height:100px">
+          <div id="child" style="position:relative;bottom:100%;height:20px"></div>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let child = find("child", &doc, &result.root).expect("child");
+    // bottom:100% of parent height(100) → 上移 100。child.y（相对 parent 内容盒）≈ -100，
+    // 而非 0（taffy 0.7 丢弃 percent inset 时 child.y ≈ 0）。
+    assert!(
+        child.y < -50.0,
+        "relative bottom:100% should shift child up by ~100px (child.y ≈ -100), got {} \
+         (taffy 0.7 drops percent inset → child.y would be ~0)",
+        child.y
+    );
+}
