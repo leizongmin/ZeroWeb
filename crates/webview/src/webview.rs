@@ -765,6 +765,15 @@ impl WebView {
         })
     }
 
+    /// 命中测试图片，返回绝对化后的 `src`。
+    pub fn hit_test_image(&self, x: f32, y: f32) -> Option<String> {
+        let src = self.pipeline.hit_test_image(x, y)?;
+        Some(match self.current_url.as_deref() {
+            Some(base) => resolve_document_url(base, &src),
+            None => src,
+        })
+    }
+
     /// 命中测试元素，坐标为 WebView 视口内的 CSS 逻辑像素。
     pub fn hit_test_element(&self, x: f32, y: f32) -> Option<zero_engine::ElementHit> {
         self.pipeline.hit_test_element(x, y)

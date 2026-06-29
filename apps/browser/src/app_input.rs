@@ -1531,6 +1531,8 @@ impl BrowserApp {
             page_doc_y: 0.0,
             bookmark_url: Some(url),
             bookmark_title: Some(title),
+            image_url: None,
+            link_url: None,
         };
         self.needs_redraw = true;
     }
@@ -1915,6 +1917,8 @@ impl BrowserApp {
             page_doc_y: 0.0,
             bookmark_url: None,
             bookmark_title: None,
+            image_url: None,
+            link_url: None,
         };
         self.context_menu_suppress_left_up = true;
         self.needs_redraw = true;
@@ -1981,6 +1985,8 @@ impl BrowserApp {
             page_doc_y: 0.0,
             bookmark_url: None,
             bookmark_title: None,
+            image_url: None,
+            link_url: None,
         };
         self.context_menu_suppress_left_up = true;
         self.needs_redraw = true;
@@ -2066,6 +2072,8 @@ impl BrowserApp {
             page_doc_y: 0.0,
             bookmark_url: None,
             bookmark_title: None,
+            image_url: None,
+            link_url: None,
         };
         self.needs_redraw = true;
     }
@@ -2138,6 +2146,16 @@ impl BrowserApp {
             return;
         }
 
+        // 预先解析页面点击点的图片 src 与链接 href，用于上下文菜单判定。
+        let (image_url, link_url): (Option<String>, Option<String>) =
+            if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f) {
+                let img = self.tabs.hit_test_image(tab_id, doc_x, doc_y);
+                let lnk = self.tabs.hit_test_link(tab_id, doc_x, doc_y);
+                (img, lnk)
+            } else {
+                (None, None)
+            };
+
         let context_type = if self.address_bar_hit_test(x_f, y_f) {
             ContextType::Editable
         } else if y_f < chrome_top {
@@ -2146,9 +2164,10 @@ impl BrowserApp {
             && self.page_selection.get(&tab_id).is_some_and(|sel| !sel.is_collapsed())
         {
             ContextType::Selection
-        } else if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
-            && self.tabs.hit_test_link(tab_id, doc_x, doc_y).is_some()
-        {
+        } else if image_url.is_some() {
+            // 图片优先于链接（点中 img 时显示图片菜单，即使 img 在 a 内）。
+            ContextType::Image
+        } else if link_url.is_some() {
             ContextType::Link
         } else {
             ContextType::Page
@@ -2207,6 +2226,16 @@ impl BrowserApp {
             }
         }
 
+        // 需要文件对话框或图片原始数据的 action 暂未实现，统一禁用。
+        for item in items.iter_mut() {
+            if matches!(
+                item.id(),
+                "save_link" | "save_image" | "copy_image" | "print" | "search_selection"
+            ) {
+                item.set_enabled(false);
+            }
+        }
+
         let (page_doc_x, page_doc_y) = if context_type == ContextType::Page
             || context_type == ContextType::Link
             || context_type == ContextType::Selection
@@ -2232,6 +2261,8 @@ impl BrowserApp {
             page_doc_y,
             bookmark_url: None,
             bookmark_title: None,
+            image_url,
+            link_url,
         };
         self.needs_redraw = true;
     }
@@ -2253,6 +2284,8 @@ impl BrowserApp {
         let page_doc_y = self.context_menu.page_doc_y;
         let context_type = self.context_menu.context_type;
         let bookmark_url = self.context_menu.bookmark_url.clone();
+        let link_url = self.context_menu.link_url.clone();
+        let image_url = self.context_menu.image_url.clone();
 
         self.context_menu.close();
         self.needs_redraw = true;
@@ -2367,6 +2400,35 @@ impl BrowserApp {
             }
             "select_all" => {
                 self.address_bar.select_all();
+            }
+            // ── 链接右键菜单 ──
+            "open_link" => {
+                if let Some(href) = &link_url {
+                    // 后台新标签打开链接（Chrome 默认行为）。
+                    self.new_tab_background(href);
+                }
+            }
+            "copy_link" => {
+                if let Some(href) = &link_url {
+                    crate::clipboard::write_text(href);
+                }
+            }
+            "bookmark_link" => {
+                if let Some(href) = &link_url {
+                    self.shell.add_bookmark_with_url(href);
+                    self.needs_redraw = true;
+                }
+            }
+            // ── 图片右键菜单 ──
+            "open_image" => {
+                if let Some(src) = &image_url {
+                    self.new_tab_background(src);
+                }
+            }
+            "copy_image_url" => {
+                if let Some(src) = &image_url {
+                    crate::clipboard::write_text(src);
+                }
             }
             "bookmark_open" => {
                 if let Some(url) = &bookmark_url {

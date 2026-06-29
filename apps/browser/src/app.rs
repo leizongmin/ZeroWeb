@@ -162,6 +162,10 @@ pub struct ContextMenuState {
     pub bookmark_url: Option<String>,
     /// 书签栏右键菜单的目标书签标题（仅书签上下文菜单使用）。
     pub bookmark_title: Option<String>,
+    /// 图片右键菜单的目标图片 URL（绝对化后的 src）。
+    pub image_url: Option<String>,
+    /// 链接右键菜单的目标链接 URL（绝对化后的 href）。
+    pub link_url: Option<String>,
 }
 
 impl ContextMenuState {
@@ -180,6 +184,8 @@ impl ContextMenuState {
             page_doc_y: 0.0,
             bookmark_url: None,
             bookmark_title: None,
+            image_url: None,
+            link_url: None,
         }
     }
 
@@ -192,6 +198,8 @@ impl ContextMenuState {
         self.source_tab_id = None;
         self.bookmark_url = None;
         self.bookmark_title = None;
+        self.image_url = None;
+        self.link_url = None;
     }
 }
 

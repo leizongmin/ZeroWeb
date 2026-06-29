@@ -54,6 +54,10 @@ pub enum IpcMessageKind {
     HitTestElement(HitTestLinkParams),
     /// 元素命中测试结果（渲染→浏览器）。
     HitTestElementResult(HitTestElementResultParams),
+    /// 图片命中测试（浏览器→渲染）。
+    HitTestImage(HitTestLinkParams),
+    /// 图片命中测试结果（渲染→浏览器）。
+    HitTestImageResult(HitTestLinkResultParams),
     /// DOM 事件派发（浏览器→渲染，同步响应）。
     DispatchDomEvent(DispatchDomEventParams),
     /// DOM 事件派发结果（渲染→浏览器）。

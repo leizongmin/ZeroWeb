@@ -441,6 +441,13 @@ impl BrowserShell {
         }
     }
 
+    /// 用指定 URL 添加书签（用于"将链接添加为书签"）。
+    pub fn add_bookmark_with_url(&mut self, url: &str) {
+        self.bookmarks.add(url, url, None);
+        if let Err(err) = self.bookmarks.save_default() {
+            tracing::warn!(%err, "failed to save bookmarks");
+        }
+    }
     /// 切换当前页面书签状态：未收藏则添加，已收藏则移除。返回最终是否已收藏。
     pub fn toggle_current_bookmark(&mut self) -> bool {
         if let Some(tab) = self.tabs.active_tab()

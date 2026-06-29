@@ -304,6 +304,20 @@ impl TabManager {
         None
     }
 
+    /// 图片命中测试：返回 `src`（绝对化）。
+    pub fn hit_test_image(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<String> {
+        if let Some(snap) = self.snapshots.get(&tab_id)
+            && let Some(hit_test) = snap.hit_test.as_ref()
+            && let Some(src) = hit_test.hit_test_image(x, y)
+        {
+            return Some(src);
+        }
+        if let Some(ref mut backend) = self.process_backend {
+            return backend.hit_test_image(tab_id, x, y, &mut self.snapshots);
+        }
+        None
+    }
+
     /// 元素命中测试（主线程快照，不阻塞渲染进程）。
     pub fn hit_test_element(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<zero_engine::ElementHit> {
         if let Some(snap) = self.snapshots.get(&tab_id)
