@@ -109,7 +109,7 @@ jobs:
         run: bash scripts/download-rusty-v8.sh
 
       - name: Run reftest suite (CPU rendering)
-        run: cargo run --bin zero-wpt-runner -- reftest --format json
+        run: cargo run --release --bin zero-wpt-runner -- reftest --format json
 
       - name: Upload reftest report
         if: always()

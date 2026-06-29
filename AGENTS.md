@@ -89,7 +89,7 @@ ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
 - 运行测试：`cargo test --workspace`
 - 构建：`cargo build --workspace`
 - Release 构建：`cargo build --release --workspace`
-- 运行 WPT reftest：`cargo run --bin zero-wpt-runner -- reftest`
+- 运行 WPT reftest：`make reftest`（release + test-guard；等价于 `cargo run --release --bin zero-wpt-runner -- reftest`）
 - 运行基准测试：`./scripts/run-benchmarks.sh`
 - 检查覆盖率：`./scripts/check-coverage.sh`
 - 运行 clippy：`cargo clippy --workspace --all-targets -- -D warnings`

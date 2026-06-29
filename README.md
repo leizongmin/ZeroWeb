@@ -87,14 +87,14 @@ sudo apt-get install -y \
 ```bash
 cargo build --workspace                    # Linux/macOS 首次构建前需先 make setup-rusty-v8（或直接用 make build）
 make test                                  # = cargo test --workspace（经 test-guard 包裹）
-make reftest                               # = WPT reftest（同样经 test-guard 包裹）
+make reftest                               # = WPT reftest（release 构建，经 test-guard 包裹）
 make browser                                 # 启动浏览器（默认 WPT 对齐：CPU + scale 1.0）
 make product-smoke                         # 产品静态页（welcome.html）vs Chromium Oracle 像素回归门禁
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 > [!NOTE]
-> 跑测试和 WPT reftest 请用 `make test` / `make reftest`，不要裸跑 `cargo test` 或 `cargo run --bin zero-wpt-runner -- reftest`。这两个 target 由 `scripts/test-guard.rs` 包裹，在单进程 RSS 超过 6 GB、全树内存超过 16 GB 或总时长超过 1800 s 时杀掉整棵进程树，避免内存型 bug（如 CSS parser 未闭合括号死循环）或长时间挂起触发系统级 OOM 连累整台机器。阈值可在命令行覆盖，例如大目录 reftest 需放宽超时：`./target/test-guard --time-limit 7200 -- cargo run --bin zero-wpt-runner -- reftest`。
+> 跑测试和 WPT reftest 请用 `make test` / `make reftest`，不要裸跑 `cargo test` 或 `cargo run --bin zero-wpt-runner -- reftest`。`make reftest` 使用 release 构建（约 4× 快于 debug）。这两个 target 由 `scripts/test-guard.rs` 包裹，在单进程 RSS 超过 6 GB、全树内存超过 16 GB 或总时长超过 1800 s 时杀掉整棵进程树，避免内存型 bug（如 CSS parser 未闭合括号死循环）或长时间挂起触发系统级 OOM 连累整台机器。阈值可在命令行覆盖，例如大目录 reftest 需放宽超时：`./target/test-guard --time-limit 7200 -- cargo run --release --bin zero-wpt-runner -- reftest`。
 
 > 涉及渲染 / 布局变更时，建议额外跑 `make product-smoke`：它把产品静态页 `apps/browser/assets/welcome.html` 渲染后与 Chromium Oracle 像素截图对比（默认 diff 超过 20% 即失败，可用 `make product-smoke MAX_DIFF=22` 调阈值），用来捕获 `make test` / `make reftest` 覆盖不到的产品可见回归。
 
