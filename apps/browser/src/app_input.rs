@@ -1930,6 +1930,13 @@ impl BrowserApp {
                 MenuItem::action("browser_menu_new_private_tab", browser_menu_label(BrowserMenuLabel::NewPrivateTab, language))
                     .with_shortcut(format!("{}Shift+N", mod_prefix())),
                 MenuItem::separator(),
+                MenuItem::action(
+                    "browser_menu_reload_all",
+                    match language {
+                        UiLanguage::ZhCn => "重新加载所有标签",
+                        UiLanguage::EnUs => "Reload all tabs",
+                    },
+                ),
                 MenuItem::sub_menu(
                     "browser_menu_history",
                     browser_menu_label(BrowserMenuLabel::History, language),
@@ -2348,6 +2355,7 @@ impl BrowserApp {
             "back" => self.go_back(),
             "forward" => self.go_forward(),
             "reload" => self.refresh_page(),
+            "browser_menu_reload_all" => self.reload_all_tabs(),
             "browser_menu_new_tab" => self.new_tab(None),
             "browser_menu_new_private_tab" => self.new_private_tab(None),
             "browser_menu_add_bookmark" => {
