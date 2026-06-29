@@ -31,6 +31,7 @@ pub mod table;
 pub mod table_borders;
 pub mod table_cell_content;
 pub mod table_shrink;
+pub mod table_types;
 pub mod table_visibility;
 pub mod tree;
 pub mod types;
