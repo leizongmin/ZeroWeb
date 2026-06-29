@@ -183,7 +183,6 @@ impl ProcessTabBackend {
                     return;
                 }
                 crate::paint_ipc::apply_paint_snapshot(snap, *params);
-                snap.clear_browser_owned_hit_test();
                 // 首帧绘制到达即可结束 loading（脚本预取/执行可能仍在进行）。
                 if snap.loading {
                     snap.loading = false;
