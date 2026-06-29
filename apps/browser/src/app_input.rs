@@ -2063,6 +2063,13 @@ impl BrowserApp {
                 MenuItem::separator(),
                 MenuItem::action("tab_duplicate", tab_menu_label(TabMenuLabel::Duplicate, language))
                     .with_shortcut(format!("{}Shift+D", mod_prefix())),
+                MenuItem::action(
+                    "tab_copy_url",
+                    match language {
+                        UiLanguage::ZhCn => "复制标签 URL",
+                        UiLanguage::EnUs => "Copy tab URL",
+                    },
+                ),
                 MenuItem::separator(),
                 MenuItem::action("tab_close", tab_menu_label(TabMenuLabel::Close, language))
                     .with_shortcut(format!("{}W", mod_prefix())),
@@ -2251,7 +2258,7 @@ impl BrowserApp {
         for item in items.iter_mut() {
             if matches!(
                 item.id(),
-                "save_link" | "save_image" | "copy_image" | "print" | "search_selection"
+                "save_link" | "save_image" | "copy_image" | "print"
             ) {
                 item.set_enabled(false);
             }
@@ -2375,6 +2382,13 @@ impl BrowserApp {
                     self.duplicate_tab_by_id(tab_id);
                 }
             }
+            "tab_copy_url" => {
+                if let Some(tab_id) = source_tab_id
+                    && let Some(url) = self.shell.tab(tab_id).and_then(|t| t.url())
+                {
+                    crate::clipboard::write_text(url);
+                }
+            }
             "tab_close_others" => {
                 if let Some(tab_id) = source_tab_id {
                     self.close_other_tabs_by_id(tab_id);
@@ -2449,6 +2463,14 @@ impl BrowserApp {
             "copy_image_url" => {
                 if let Some(src) = &image_url {
                     crate::clipboard::write_text(src);
+                }
+            }
+            // ── 选中文本右键菜单 ──
+            "search_selection" => {
+                // 用默认搜索引擎在新标签打开选中文本（前台聚焦）。
+                if let Some(text) = self.page_selection_text() {
+                    let search_url = self.shell.settings().search(&text);
+                    self.new_tab(Some(&search_url));
                 }
             }
             "bookmark_open" => {
