@@ -869,6 +869,38 @@ impl BrowserApp {
             return;
         }
 
+        // 键盘页面滚动（Chrome 行为），无修饰键且非地址栏/查找栏聚焦时生效：
+        // - Space / PageDown → 向下滚动约一个视口（Shift+Space 反向）
+        // - PageUp → 向上滚动
+        // - ArrowDown/Up → 小步滚动（约 40px）
+        let scroll_handled = match key {
+            " " | "Space" => {
+                let ratio = if self.shift_pressed { -0.85 } else { 0.85 };
+                self.scroll_active_page_by_viewport_ratio(ratio);
+                true
+            }
+            "PageDown" => {
+                self.scroll_active_page_by_viewport_ratio(0.85);
+                true
+            }
+            "PageUp" => {
+                self.scroll_active_page_by_viewport_ratio(-0.85);
+                true
+            }
+            "ArrowDown" => {
+                self.scroll_active_page_by_px(40.0 * self.scale_factor);
+                true
+            }
+            "ArrowUp" => {
+                self.scroll_active_page_by_px(-40.0 * self.scale_factor);
+                true
+            }
+            _ => false,
+        };
+        if scroll_handled {
+            return;
+        }
+
         // 无修饰键的全局快捷键（保留兼容无 Ctrl 的单键模式）
         match key {
             "l" => {
@@ -920,9 +952,24 @@ impl BrowserApp {
         }
     }
 
+    /// 按像素量滚动当前活动标签页（正值向下）。
+    fn scroll_active_page_by_px(&mut self, dy: f32) {
+        if dy == 0.0 {
+            return;
+        }
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            self.apply_page_scroll_delta(tab_id, 0.0, dy);
+        }
+    }
+
+    /// 按当前内容区高度的比例滚动当前活动标签页（Space/PageDown 用）。
+    fn scroll_active_page_by_viewport_ratio(&mut self, ratio: f32) {
+        let (_, _, _, ch) = self.page_content_rect();
+        self.scroll_active_page_by_px(ch * ratio);
+    }
+
     /// 循环切换活跃标签（`reverse=true` 向前，否则向后）。
-    fn cycle_active_tab(&mut self, reverse: bool) {
-        let active_id = match self.shell.active_tab_id() {
+    fn cycle_active_tab(&mut self, reverse: bool) {        let active_id = match self.shell.active_tab_id() {
             Some(id) => id,
             None => return,
         };
