@@ -457,6 +457,27 @@ impl BrowserApp {
         if self.tabs.poll(self.shell.active_tab_id()) {
             self.needs_redraw = true;
         }
+        // 消费异步 DOM 事件派发产生的延迟动作（链接导航等）。
+        // 必须在 `tabs.poll` 之后调用 —— pending actions 由 poll 收集。
+        for (tab_id, action) in self.tabs.take_pending_actions() {
+            use crate::tab_manager::PendingTabAction;
+            match action {
+                PendingTabAction::NavigateActiveTab(href) => {
+                    if self.shell.active_tab_id() == Some(tab_id) {
+                        self.navigate_to(&href);
+                    } else {
+                        // 用户在等待结果期间切走了；在新标签打开更符合预期。
+                        self.new_tab_background(&href);
+                    }
+                }
+                PendingTabAction::OpenBackgroundTab(href) => {
+                    self.new_tab_background(&href);
+                }
+                PendingTabAction::RequestRedraw => {
+                    self.needs_redraw = true;
+                }
+            }
+        }
         if let Some(id) = self.shell.active_tab_id() {
             self.clamp_tab_scroll(id);
         }

@@ -4,24 +4,20 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
-use zero_engine::{DomEventDetail, ElementHit};
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
-    DispatchDomEventParams, FetchParams, HitTestElementResultParams, HitTestLinkParams, IpcColorScheme, IpcMessage,
-    IpcMessageKind, LoadHtmlParams, SetColorSchemeParams, SetViewportParams, StorageOpParams, StorageOperation,
-    StorageType,
+    DispatchDomEventParams, FetchParams, IpcColorScheme, IpcMessage, IpcMessageKind, LoadHtmlParams,
+    SetColorSchemeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
 
 use crate::fetch_proxy::TabFetchProxy;
-use crate::tab_scripts::DomDispatchResult;
 use crate::tab_snapshot::TabSnapshot;
 
 /// 是否启用多进程后端（环境变量 `ZERO_BROWSER_MULTIPROCESS`；默认启用）。
@@ -39,8 +35,6 @@ pub fn set_multiprocess_enabled(enabled: bool) {
         std::env::set_var("ZERO_BROWSER_MULTIPROCESS", if enabled { "1" } else { "0" });
     }
 }
-
-static NEXT_HIT_TEST_MSG_ID: AtomicU64 = AtomicU64::new(1);
 
 fn renderer_binary_filename() -> &'static str {
     #[cfg(windows)]
@@ -103,6 +97,8 @@ pub struct ProcessTabBackend {
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
     fetch_proxy: TabFetchProxy,
+    /// 异步 DOM 事件派发的回执（按 dispatch id 收集，由 TabManager 消费）。
+    pending_dispatch_results: Vec<(u64, bool)>,
 }
 
 impl ProcessTabBackend {
@@ -135,6 +131,7 @@ impl ProcessTabBackend {
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
             fetch_proxy: TabFetchProxy::new(),
+            pending_dispatch_results: Vec::new(),
         }
     }
 
@@ -433,6 +430,10 @@ impl ProcessTabBackend {
     }
 
     /// 轮询 IPC 并更新快照；后台 Tab 可降频。
+    /// 每帧 IPC 轮询时间预算（毫秒）。超过即提前返回，剩余消息留到下一帧，
+    /// 避免单个 renderer 持续吐 `ViewPainted` 把 UI 主线程吃满。
+    const POLL_BUDGET: Duration = Duration::from_millis(4);
+
     pub fn poll(
         &mut self,
         snapshots: &mut HashMap<TabId, TabSnapshot>,
@@ -444,7 +445,11 @@ impl ProcessTabBackend {
         self.handle_crashes(snapshots);
         let mapping: Vec<(TabId, u64)> = self.tab_to_renderer.iter().map(|(k, v)| (*k, *v)).collect();
         let mut disconnected = Vec::new();
+        let poll_deadline = Instant::now() + Self::POLL_BUDGET;
         for (tab_id, rid) in mapping {
+            if Instant::now() >= poll_deadline {
+                break;
+            }
             loop {
                 let msg = {
                     let Some(renderer) = self.manager.get_renderer(rid) else {
@@ -471,6 +476,10 @@ impl ProcessTabBackend {
                     IpcMessageKind::StorageOp(params) => {
                         self.handle_storage_op(tab_id, params);
                     }
+                    IpcMessageKind::DispatchDomEventResult(result) => {
+                        self.pending_dispatch_results
+                            .push((msg.id, result.default_allowed));
+                    }
                     kind => {
                         let snap = snapshots.entry(tab_id).or_default();
                         Self::apply_inbound_message(
@@ -482,6 +491,9 @@ impl ProcessTabBackend {
                         );
                     }
                 }
+                if Instant::now() >= poll_deadline {
+                    break;
+                }
             }
         }
         for (tab_id, rid, reason) in disconnected {
@@ -491,303 +503,53 @@ impl ProcessTabBackend {
         changed
     }
 
-    /// 链接命中测试（同步 IPC 请求/响应）。
-    pub fn hit_test_link(
-        &mut self,
-        tab_id: TabId,
-        x: f32,
-        y: f32,
-        snapshots: &mut HashMap<TabId, TabSnapshot>,
-    ) -> Option<String> {
-        let rid = *self.tab_to_renderer.get(&tab_id)?;
-        let msg_id = NEXT_HIT_TEST_MSG_ID.fetch_add(1, Ordering::Relaxed);
-        {
-            let renderer = self.manager.get_renderer(rid)?;
-            renderer
-                .send(IpcMessage {
-                    id: msg_id,
-                    kind: IpcMessageKind::HitTestLink(HitTestLinkParams { x, y }),
-                })
-                .ok()?;
-        }
-
-        let deadline = Instant::now() + Duration::from_millis(250);
-        loop {
-            if Instant::now() >= deadline {
-                return None;
-            }
-            let msg = {
-                let renderer = self.manager.get_renderer(rid)?;
-                match renderer.try_recv() {
-                    Ok(Some(m)) => m,
-                    Ok(None) => {
-                        thread::sleep(Duration::from_millis(1));
-                        continue;
-                    }
-                    Err(e) => {
-                        tracing::debug!("IPC hit_test recv: {e}");
-                        return None;
-                    }
-                }
-            };
-            if msg.id == msg_id {
-                if let IpcMessageKind::HitTestLinkResult(result) = msg.kind {
-                    return result.href;
-                }
-                continue;
-            }
-            match msg.kind {
-                IpcMessageKind::FetchRequest(params) => {
-                    self.handle_fetch_request(tab_id, params);
-                }
-                kind => {
-                    let snap = snapshots.entry(tab_id).or_default();
-                    Self::apply_inbound_message(tab_id, snap, kind, &mut self.pending_loaded, &mut self.pending_errors);
-                }
-            }
-        }
+    /// 取出异步 DOM 事件派发的回执（dispatch id, default_allowed）。
+    pub fn take_dispatch_results(&mut self) -> Vec<(u64, bool)> {
+        std::mem::take(&mut self.pending_dispatch_results)
     }
 
-    /// 图片命中测试（同步 IPC 请求/响应），返回绝对化后的 `src`。
-    pub fn hit_test_image(
+    /// 异步派发 DOM 事件（fire-and-forget）。
+    ///
+    /// 发出 IPC 后立即返回；渲染进程的 `DispatchDomEventResult` 会在后续 `poll` 里被收集，
+    /// 由 `TabManager` 根据回执执行延迟的默认动作（链接导航）。
+    /// 这消除了原来“主线程 busy-wait 等 renderer 响应最多 500ms”的卡顿来源。
+    pub fn dispatch_dom_event_fire_and_forget(
         &mut self,
         tab_id: TabId,
-        x: f32,
-        y: f32,
-        snapshots: &mut HashMap<TabId, TabSnapshot>,
-    ) -> Option<String> {
-        let rid = *self.tab_to_renderer.get(&tab_id)?;
-        let msg_id = NEXT_HIT_TEST_MSG_ID.fetch_add(1, Ordering::Relaxed);
-        {
-            let renderer = self.manager.get_renderer(rid)?;
-            renderer
-                .send(IpcMessage {
-                    id: msg_id,
-                    kind: IpcMessageKind::HitTestImage(HitTestLinkParams { x, y }),
-                })
-                .ok()?;
-        }
-
-        let deadline = Instant::now() + Duration::from_millis(250);
-        loop {
-            if Instant::now() >= deadline {
-                return None;
-            }
-            let msg = {
-                let renderer = self.manager.get_renderer(rid)?;
-                match renderer.try_recv() {
-                    Ok(Some(m)) => m,
-                    Ok(None) => {
-                        thread::sleep(Duration::from_millis(1));
-                        continue;
-                    }
-                    Err(e) => {
-                        tracing::debug!("IPC hit_test_image recv: {e}");
-                        return None;
-                    }
-                }
-            };
-            if msg.id == msg_id {
-                if let IpcMessageKind::HitTestImageResult(result) = msg.kind {
-                    return result.href;
-                }
-                continue;
-            }
-            match msg.kind {
-                IpcMessageKind::FetchRequest(params) => {
-                    self.handle_fetch_request(tab_id, params);
-                }
-                kind => {
-                    let snap = snapshots.entry(tab_id).or_default();
-                    Self::apply_inbound_message(tab_id, snap, kind, &mut self.pending_loaded, &mut self.pending_errors);
-                }
-            }
-        }
-    }
-
-    /// 元素命中测试（同步 IPC 请求/响应）。
-    pub fn hit_test_element(
-        &mut self,
-        tab_id: TabId,
-        x: f32,
-        y: f32,
-        snapshots: &mut HashMap<TabId, TabSnapshot>,
-    ) -> Option<ElementHit> {
-        let rid = *self.tab_to_renderer.get(&tab_id)?;
-        let msg_id = NEXT_HIT_TEST_MSG_ID.fetch_add(1, Ordering::Relaxed);
-        {
-            let renderer = self.manager.get_renderer(rid)?;
-            renderer
-                .send(IpcMessage {
-                    id: msg_id,
-                    kind: IpcMessageKind::HitTestElement(HitTestLinkParams { x, y }),
-                })
-                .ok()?;
-        }
-
-        let deadline = Instant::now() + Duration::from_millis(250);
-        loop {
-            if Instant::now() >= deadline {
-                return None;
-            }
-            let msg = {
-                let renderer = self.manager.get_renderer(rid)?;
-                match renderer.try_recv() {
-                    Ok(Some(m)) => m,
-                    Ok(None) => {
-                        thread::sleep(Duration::from_millis(1));
-                        continue;
-                    }
-                    Err(e) => {
-                        tracing::debug!("IPC hit_test_element recv: {e}");
-                        return None;
-                    }
-                }
-            };
-            if msg.id == msg_id {
-                if let IpcMessageKind::HitTestElementResult(result) = msg.kind {
-                    return element_hit_from_ipc(result);
-                }
-                continue;
-            }
-            match msg.kind {
-                IpcMessageKind::FetchRequest(params) => {
-                    self.handle_fetch_request(tab_id, params);
-                }
-                kind => {
-                    let snap = snapshots.entry(tab_id).or_default();
-                    Self::apply_inbound_message(tab_id, snap, kind, &mut self.pending_loaded, &mut self.pending_errors);
-                }
-            }
-        }
-    }
-
-    /// DOM 事件派发（同步 IPC 请求/响应）。
-    #[allow(clippy::too_many_arguments)]
-    pub fn dispatch_dom_event(
-        &mut self,
-        tab_id: TabId,
+        dispatch_id: u64,
         selector: Option<&str>,
-        x: f32,
-        y: f32,
         event_type: &str,
-        detail: Option<&DomEventDetail>,
-        snapshots: &mut HashMap<TabId, TabSnapshot>,
-    ) -> DomDispatchResult {
-        let rid = match self.tab_to_renderer.get(&tab_id) {
-            Some(r) => *r,
-            None => {
-                return DomDispatchResult {
-                    default_allowed: true,
-                    html_changed: false,
-                };
-            }
+        key: Option<String>,
+        code: Option<String>,
+    ) {
+        let Some(rid) = self.tab_to_renderer.get(&tab_id).copied() else {
+            // 渲染进程不存在：模拟一个“默认允许”回执，让 TabManager 走默认动作路径。
+            self.pending_dispatch_results.push((dispatch_id, true));
+            return;
         };
-        let msg_id = NEXT_HIT_TEST_MSG_ID.fetch_add(1, Ordering::Relaxed);
         let params = DispatchDomEventParams {
             selector: selector.map(str::to_string),
-            x,
-            y,
+            // 命中坐标由渲染进程内部 hit-test 决定（基于 selector），主线程不再传 x/y。
+            x: 0.0,
+            y: 0.0,
             event_type: event_type.to_string(),
-            key: detail.and_then(|d| d.key.clone()),
-            code: detail.and_then(|d| d.code.clone()),
+            key,
+            code,
         };
+        let Some(renderer) = self.manager.get_renderer(rid) else {
+            self.pending_dispatch_results.push((dispatch_id, true));
+            return;
+        };
+        if renderer
+            .send(IpcMessage {
+                id: dispatch_id,
+                kind: IpcMessageKind::DispatchDomEvent(params),
+            })
+            .is_err()
         {
-            let Some(renderer) = self.manager.get_renderer(rid) else {
-                return DomDispatchResult {
-                    default_allowed: true,
-                    html_changed: false,
-                };
-            };
-            if renderer
-                .send(IpcMessage {
-                    id: msg_id,
-                    kind: IpcMessageKind::DispatchDomEvent(params),
-                })
-                .is_err()
-            {
-                return DomDispatchResult {
-                    default_allowed: true,
-                    html_changed: false,
-                };
-            }
-        }
-
-        let mut html_changed = false;
-        let deadline = Instant::now() + Duration::from_millis(500);
-        loop {
-            if Instant::now() >= deadline {
-                return DomDispatchResult {
-                    default_allowed: true,
-                    html_changed,
-                };
-            }
-            let msg = {
-                let Some(renderer) = self.manager.get_renderer(rid) else {
-                    return DomDispatchResult {
-                        default_allowed: true,
-                        html_changed,
-                    };
-                };
-                match renderer.try_recv() {
-                    Ok(Some(m)) => m,
-                    Ok(None) => {
-                        thread::sleep(Duration::from_millis(1));
-                        continue;
-                    }
-                    Err(e) => {
-                        tracing::debug!("IPC dispatch_dom_event recv: {e}");
-                        return DomDispatchResult {
-                            default_allowed: true,
-                            html_changed,
-                        };
-                    }
-                }
-            };
-            if msg.id == msg_id {
-                if let IpcMessageKind::DispatchDomEventResult(result) = msg.kind {
-                    return DomDispatchResult {
-                        default_allowed: result.default_allowed,
-                        html_changed,
-                    };
-                }
-                continue;
-            }
-            match msg.kind {
-                IpcMessageKind::FetchRequest(params) => {
-                    self.handle_fetch_request(tab_id, params);
-                }
-                IpcMessageKind::ViewPainted(params) => {
-                    html_changed = true;
-                    let snap = snapshots.entry(tab_id).or_default();
-                    Self::apply_inbound_message(
-                        tab_id,
-                        snap,
-                        IpcMessageKind::ViewPainted(params),
-                        &mut self.pending_loaded,
-                        &mut self.pending_errors,
-                    );
-                }
-                kind => {
-                    let snap = snapshots.entry(tab_id).or_default();
-                    Self::apply_inbound_message(tab_id, snap, kind, &mut self.pending_loaded, &mut self.pending_errors);
-                }
-            }
+            self.pending_dispatch_results.push((dispatch_id, true));
         }
     }
-}
-
-fn element_hit_from_ipc(result: HitTestElementResultParams) -> Option<ElementHit> {
-    let tag_name = result.tag_name?;
-    Some(ElementHit {
-        tag_name,
-        id: result.id,
-        class_name: result.class_name,
-        x: result.x,
-        y: result.y,
-        width: result.width,
-        height: result.height,
-    })
 }
 
 impl ProcessTabBackend {

@@ -12,7 +12,7 @@ use zero_webview::{AsyncPageLoad, InProcessFetchHost, PageLoadStage, WebView, We
 
 use crate::pages;
 use crate::tab_js_worker::TabJsWorkerHandle;
-use crate::tab_scripts::{self, DomDispatchResult};
+use crate::tab_scripts;
 use crate::tab_snapshot::TabSnapshot;
 use crate::text_metrics;
 
@@ -33,13 +33,15 @@ pub enum TabWorkerCommand {
     Resize { width: u32, height: u32 },
     /// 更新颜色方案。
     SetColorScheme(PrefersColorSchemeValue),
-    /// 向页面元素派发 DOM 事件（click / keydown 等）。
+    /// 异步向页面元素派发 DOM 事件（click / keydown 等）。
+    ///
+    /// 结果通过 `TabWorkerMessage::DispatchResult` 异步回送，避免 UI 主线程阻塞等待。
     DispatchDomEvent {
+        dispatch_id: u64,
         selector: String,
         event_type: String,
         key: Option<String>,
         code: Option<String>,
-        reply: Sender<DomDispatchResult>,
     },
     /// 更新是否允许执行 JavaScript。
     SetJavascriptEnabled(bool),
@@ -58,6 +60,12 @@ pub enum TabWorkerMessage {
     LoadError(String),
     /// 加载阶段变化。
     Stage(PageLoadStage),
+    /// 异步 DOM 事件派发的回执。
+    DispatchResult {
+        dispatch_id: u64,
+        default_allowed: bool,
+        html_changed: bool,
+    },
 }
 
 /// Tab worker 句柄（UI 线程持有）。
@@ -93,31 +101,6 @@ impl TabWorkerHandle {
     /// 非阻塞接收 worker 消息。
     pub fn try_recv(&self) -> Option<TabWorkerMessage> {
         self.msg_rx.try_recv().ok()
-    }
-
-    /// 同步派发 DOM 事件到页面脚本环境。
-    pub fn dispatch_dom_event(
-        &self,
-        selector: &str,
-        event_type: &str,
-        key: Option<&str>,
-        code: Option<&str>,
-    ) -> DomDispatchResult {
-        #[cfg(test)]
-        let _guard = crate::test_sync::tab_runtime_test_guard();
-        let (tx, rx) = mpsc::channel();
-        self.send(TabWorkerCommand::DispatchDomEvent {
-            selector: selector.to_string(),
-            event_type: event_type.to_string(),
-            key: key.map(str::to_string),
-            code: code.map(str::to_string),
-            reply: tx,
-        });
-        rx.recv_timeout(Duration::from_millis(500))
-            .unwrap_or(DomDispatchResult {
-                default_allowed: true,
-                html_changed: false,
-            })
     }
 
     /// 关闭 worker 并等待线程退出。
@@ -214,11 +197,11 @@ fn tab_worker_main(
                     }
                 }
                 TabWorkerCommand::DispatchDomEvent {
+                    dispatch_id,
                     selector,
                     event_type,
                     key,
                     code,
-                    reply,
                 } => {
                     let html = wv.html_content().to_string();
                     let detail = if key.is_some() || code.is_some() {
@@ -238,7 +221,11 @@ fn tab_worker_main(
                     if result.html_changed {
                         push_snapshot(&wv, &msg_tx);
                     }
-                    let _ = reply.send(result);
+                    let _ = msg_tx.send(TabWorkerMessage::DispatchResult {
+                        dispatch_id,
+                        default_allowed: result.default_allowed,
+                        html_changed: result.html_changed,
+                    });
                 }
                 TabWorkerCommand::SetJavascriptEnabled(enabled) => {
                     javascript_enabled = enabled;

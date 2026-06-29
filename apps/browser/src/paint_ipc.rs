@@ -1,9 +1,9 @@
 //! 多进程 IPC 绘制快照 ↔ 浏览器 TabSnapshot 转换。
 
-use zero_engine::PipelineTimings;
+use zero_engine::{HitTestCache, HitTestCacheSnapshot, HitTestLayoutSnapshot, HitTestNodeSnapshot, PipelineTimings, node_id_from_u64};
 use zero_protocol::{
-    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGradientKind, IpcLineCap, IpcLineStyle, IpcRect,
-    PaintSnapshotParams,
+    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGradientKind, IpcHitTestCache, IpcHitTestLayoutNode,
+    IpcLineCap, IpcLineStyle, IpcRect, PaintSnapshotParams,
 };
 // 仅测试用（构造 PaintSnapshotParams 断言）。
 #[cfg(test)]
@@ -256,11 +256,58 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
         timings: PipelineTimings::default(),
     });
     snap.document_height = Some(params.document_height);
-    // Multi-process mode keeps hit-testing authoritative in the renderer process.
-    // The browser consumes a composited frame here, but should not retain a page-sized
-    // interaction tree long-term.
-    let _ = params.hit_test;
-    snap.hit_test = None;
+    snap.hit_test = params.hit_test.and_then(hit_test_cache_from_ipc);
+}
+
+/// 从 IPC 命中测试快照还原成 engine 主线程可消费的 `HitTestCache`。
+///
+/// 多进程模式下，渲染进程在每帧 `ViewPainted` 中携带 hit-test 缓存；
+/// 浏览器主线程用它完成本地 hover / 点击命中查询，避免每次交互都发起同步 IPC。
+fn hit_test_cache_from_ipc(cache: IpcHitTestCache) -> Option<HitTestCache> {
+    let doc_root = node_id_from_u64(cache.doc_root);
+    let layout_root = ipc_layout_to_snapshot(&cache.layout_root)?;
+    let mut nodes = Vec::with_capacity(cache.nodes.len());
+    for (id_u64, meta) in cache.nodes {
+        let id = node_id_from_u64(id_u64);
+        nodes.push((
+            id,
+            HitTestNodeSnapshot {
+                tag_name: meta.tag_name,
+                id: meta.id,
+                class_name: meta.class_name,
+                href: meta.href,
+                src: meta.src,
+            },
+        ));
+    }
+    let parents = cache
+        .parents
+        .into_iter()
+        .map(|(c, p)| (node_id_from_u64(c), node_id_from_u64(p)))
+        .collect::<Vec<_>>();
+    Some(HitTestCache::from_snapshot(HitTestCacheSnapshot {
+        doc_root,
+        layout_root,
+        nodes,
+        parents,
+    }))
+}
+
+fn ipc_layout_to_snapshot(node: &IpcHitTestLayoutNode) -> Option<HitTestLayoutSnapshot> {
+    let node_id = node.node_id.map(node_id_from_u64);
+    let children = node
+        .children
+        .iter()
+        .filter_map(ipc_layout_to_snapshot)
+        .collect::<Vec<_>>();
+    Some(HitTestLayoutSnapshot {
+        node_id,
+        x: node.x,
+        y: node.y,
+        width: node.width,
+        height: node.height,
+        children,
+    })
 }
 
 #[cfg(test)]
@@ -269,7 +316,7 @@ mod tests {
     use zero_protocol::{IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta};
 
     #[test]
-    fn apply_paint_snapshot_keeps_hit_test_authoritative_in_renderer() {
+    fn apply_paint_snapshot_restores_hit_test_cache() {
         let mut snap = TabSnapshot::default();
         let params = PaintSnapshotParams {
             document_height: 42.0,
@@ -290,6 +337,7 @@ mod tests {
                         id: None,
                         class_name: None,
                         href: Some("https://example.com".to_string()),
+                        src: None,
                     },
                 ))
                 .collect(),
@@ -302,8 +350,8 @@ mod tests {
 
         assert!(snap.last_render.is_some(), "frame data should still be applied");
         assert!(
-            snap.hit_test.is_none(),
-            "browser should not retain renderer hit-test trees"
+            snap.hit_test.is_some(),
+            "browser should restore hit-test cache from IPC snapshot"
         );
     }
 
