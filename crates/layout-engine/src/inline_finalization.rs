@@ -64,6 +64,9 @@ pub(crate) fn store_inline_layout_results(
             .map(|line| crate::types::InlineLayoutLine {
                 y: line.y,
                 height: line.height,
+                baseline_y: line.baseline_y,
+                ascent: line.ascent,
+                descent: line.descent,
                 fragments: line
                     .runs
                     .iter()
@@ -82,6 +85,8 @@ pub(crate) fn store_inline_layout_results(
                             is_ahem,
                             text: frag.text.clone(),
                             node_id: Some(frag.node_id),
+                            // R816 Phase 1：片段基线 = 行基线（baseline 对齐片段）。
+                            baseline_y: line.baseline_y,
                         }
                     })
                     .collect(),
@@ -528,6 +533,9 @@ pub(crate) fn compute_final_inline_layouts(
         .map(|line| InlineLayoutLine {
             y: line.y,
             height: line.height,
+            baseline_y: line.baseline_y,
+            ascent: line.ascent,
+            descent: line.descent,
             fragments: line
                 .runs
                 .iter()
@@ -540,6 +548,8 @@ pub(crate) fn compute_final_inline_layouts(
                     is_ahem: frag.is_ahem,
                     text: frag.text.clone(),
                     node_id: Some(frag.node_id),
+                    // R816 Phase 1：片段基线 = 行基线（baseline 对齐片段）。
+                    baseline_y: line.baseline_y,
                 })
                 .collect(),
         })

@@ -175,6 +175,14 @@ pub struct LineBox {
     pub height: f32,
     /// 行盒中的文本片段列表。
     pub runs: Vec<TextFragment>,
+    /// 行盒基线相对行顶的 y（= max_ascent，CSS §10.8.1）。R816 linebox 度量统一 Phase 1：
+    /// 由 `apply_vertical_alignment` 算出并存储，供后续 Phase 由 paint 复用（取代 is_ahem?0:font_size
+    /// 启发式）。Phase 1 仅存储，paint 尚未读取（行为不变）。
+    pub baseline_y: f32,
+    /// 行盒 ascent（baseline 到行顶，含 half-leading 上半）。Phase 1 存储。
+    pub ascent: f32,
+    /// 行盒 descent（baseline 到行底，含 half-leading 下半 = height - ascent）。Phase 1 存储。
+    pub descent: f32,
 }
 
 /// 文本片段 — 文本运行在行盒中的布局结果。
@@ -1057,6 +1065,9 @@ impl InlineFormattingContext {
             y: 0.0,
             height: 0.0,
             runs: Vec::new(),
+            baseline_y: 0.0,
+            ascent: 0.0,
+            descent: 0.0,
         };
         // text-indent 仅作用于首行
         let mut current_x = self.text_indent;
@@ -1168,6 +1179,9 @@ impl InlineFormattingContext {
                                 y: 0.0,
                                 height: 0.0,
                                 runs: Vec::new(),
+                                baseline_y: 0.0,
+                                ascent: 0.0,
+                                descent: 0.0,
                             };
                             let (new_left, _) = self.effective_content_area(current_y, default_line_height);
                             current_x = new_left;
@@ -1212,6 +1226,9 @@ impl InlineFormattingContext {
                                 y: 0.0,
                                 height: 0.0,
                                 runs: Vec::new(),
+                                baseline_y: 0.0,
+                                ascent: 0.0,
+                                descent: 0.0,
                             };
                             // 新行重新计算浮动偏移
                             let (new_left, _) = self.effective_content_area(current_y, run.box_height());
@@ -1248,6 +1265,9 @@ impl InlineFormattingContext {
                                         y: 0.0,
                                         height: 0.0,
                                         runs: Vec::new(),
+                                        baseline_y: 0.0,
+                                        ascent: 0.0,
+                                        descent: 0.0,
                                     };
                                     let (new_left, _) = self.effective_content_area(current_y, fragment_height);
                                     partial_x = new_left;
@@ -1338,6 +1358,9 @@ impl InlineFormattingContext {
                             y: 0.0,
                             height: 0.0,
                             runs: Vec::new(),
+                            baseline_y: 0.0,
+                            ascent: 0.0,
+                            descent: 0.0,
                         };
                         let (new_left, _) = self.effective_content_area(current_y, box_height);
                         current_x = new_left;
@@ -1388,6 +1411,9 @@ impl InlineFormattingContext {
                         y: 0.0,
                         height: 0.0,
                         runs: Vec::new(),
+                        baseline_y: 0.0,
+                        ascent: 0.0,
+                        descent: 0.0,
                     };
                     let (new_left, _) = self.effective_content_area(current_y, default_line_height);
                     current_x = new_left;
@@ -1515,6 +1541,9 @@ impl InlineFormattingContext {
             y: 0.0,
             height: 0.0,
             runs: Vec::new(),
+            baseline_y: 0.0,
+            ascent: 0.0,
+            descent: 0.0,
         };
         // 当前深度（字符沿 y 向下推进的位置）
         let mut current_depth = self.text_indent;
@@ -1557,6 +1586,9 @@ impl InlineFormattingContext {
                                 y: 0.0,
                                 height: 0.0,
                                 runs: Vec::new(),
+                                baseline_y: 0.0,
+                                ascent: 0.0,
+                                descent: 0.0,
                             };
                             current_depth = 0.0;
                         }
@@ -1582,6 +1614,9 @@ impl InlineFormattingContext {
                                         y: 0.0,
                                         height: 0.0,
                                         runs: Vec::new(),
+                                        baseline_y: 0.0,
+                                        ascent: 0.0,
+                                        descent: 0.0,
                                     };
                                     partial_depth = 0.0;
                                 }
@@ -1646,6 +1681,9 @@ impl InlineFormattingContext {
                             y: 0.0,
                             height: 0.0,
                             runs: Vec::new(),
+                            baseline_y: 0.0,
+                            ascent: 0.0,
+                            descent: 0.0,
                         };
                         current_depth = 0.0;
                     }
@@ -1680,6 +1718,9 @@ impl InlineFormattingContext {
                         y: 0.0,
                         height: 0.0,
                         runs: Vec::new(),
+                        baseline_y: 0.0,
+                        ascent: 0.0,
+                        descent: 0.0,
                     };
                     current_depth = 0.0;
                 }
@@ -1784,6 +1825,11 @@ impl InlineFormattingContext {
                 }
             }
             let baseline_y = max_ascent;
+            // R816 Phase 1：存储行盒度量供后续 Phase paint 复用。baseline_y=行顶到基线，
+            // ascent=同，descent=行高-ascent（含 half-leading）。Phase 1 仅存储，不改变 run.y 计算。
+            line.baseline_y = baseline_y;
+            line.ascent = max_ascent;
+            line.descent = (line_height - max_ascent).max(0.0);
 
             for run in &mut line.runs {
                 run.y = match run.vertical_align {

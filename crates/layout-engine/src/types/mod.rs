@@ -382,6 +382,13 @@ pub struct InlineLayoutLine {
     pub height: f32,
     /// 行盒中的片段列表。
     pub fragments: Vec<InlineLayoutFragment>,
+    /// 行盒基线相对行顶的 y（= ascent，CSS §10.8.1）。R816 linebox 度量统一 Phase 1：
+    /// 由 compute_final 从 IFC LineBox 存储供 paint 复用。Phase 1 仅存储，paint 尚未读取。
+    pub baseline_y: f32,
+    /// 行盒 ascent（baseline 到行顶，含 half-leading 上半）。Phase 1 存储。
+    pub ascent: f32,
+    /// 行盒 descent（baseline 到行底，含 half-leading 下半）。Phase 1 存储。
+    pub descent: f32,
 }
 
 /// 行内布局片段 — paint 系统使用的文本定位信息。
@@ -405,6 +412,9 @@ pub struct InlineLayoutFragment {
     pub text: String,
     /// 对应 DOM 节点 ID（用于去重）。
     pub node_id: Option<NodeId>,
+    /// 片段基线相对行顶的 y（baseline 对齐时 = line.baseline_y + vertical_align_offset）。
+    /// R816 Phase 1 存储，paint 尚未读取（行为不变）。
+    pub baseline_y: f32,
 }
 
 /// 布局结果 — 整个文档的布局树。

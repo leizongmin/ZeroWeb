@@ -772,7 +772,13 @@ fn html_font_size_to_em(size: &str) -> Option<f32> {
     };
     let n: i32 = n_str.parse().ok()?;
     // 相对值 ±N 解析为绝对级（从基准 3），并钳到 1..=7。
-    let abs = if sign != 0 { (3 + sign * n).clamp(1, 7) } else if (1..=7).contains(&n) { n } else { return None };
+    let abs = if sign != 0 {
+        (3 + sign * n).clamp(1, 7)
+    } else if (1..=7).contains(&n) {
+        n
+    } else {
+        return None;
+    };
     let em = match abs {
         1 => 0.63,
         2 => 0.82,
@@ -1296,16 +1302,17 @@ mod presentational_hint_tests {
 
     #[test]
     fn font_element_presentational_hints() {
-        let doc = parse_html(
-            "<font color=\"#990000\" face=\"Arial, Times New Roman\" size=\"5\">txt</font>",
-        );
+        let doc = parse_html("<font color=\"#990000\" face=\"Arial, Times New Roman\" size=\"5\">txt</font>");
         let font = doc.get_elements_by_tag_name("font")[0];
         let hints = collect_presentational_hints(&doc, font);
-        assert!(hints.iter().any(|(p, v)| p == "color" && v == "#990000"), "font color: {hints:?}");
         assert!(
-            hints.iter().any(|(p, v)| p == "font-family"
-                && v.contains("Arial")
-                && v.contains("\"Times New Roman\"")),
+            hints.iter().any(|(p, v)| p == "color" && v == "#990000"),
+            "font color: {hints:?}"
+        );
+        assert!(
+            hints
+                .iter()
+                .any(|(p, v)| p == "font-family" && v.contains("Arial") && v.contains("\"Times New Roman\"")),
             "font face (quoted multi-word): {hints:?}"
         );
         // SIZE 暂未启用（见 html_font_size_to_em 注释 + master.md R808）。
