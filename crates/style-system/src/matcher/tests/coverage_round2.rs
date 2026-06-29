@@ -345,7 +345,8 @@ fn test_pseudo_element_always_false() {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-fn test_lang_pseudo_always_false() {
+fn test_lang_no_lang_attribute_does_not_match() {
+    // :lang(en) 对无 lang 属性（且无 lang 祖先）的元素不匹配（CSS 2.1 §5.11.4）。
     let mut doc = Document::new();
     let root = doc.root();
     let el = doc.create_element("div");
