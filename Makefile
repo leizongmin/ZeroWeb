@@ -56,9 +56,9 @@ test: target/test-guard
 	# 需本地验证 render-foundation 时：test-guard -- cargo test -p zero-render-foundation。
 	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo test --workspace --exclude zero-render-foundation -- --test-threads=2
 
-# WPT reftest（同样被 test-guard 包裹）。
+# WPT reftest（release 构建，约 4× 快于 debug；同样被 test-guard 包裹）。
 reftest: target/test-guard
-	./target/test-guard -- cargo run --bin zero-wpt-runner -- reftest
+	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- reftest
 
 # DC-14 独立 Oracle：渲染上游 WPT test 页 vs chromium oracle-shots，报告真一致率
 # （chromium-Oracle pass-rate，替代 self-ref 的 ~46.5% 假通过）。oracle-shots 由
@@ -67,7 +67,7 @@ reftest: target/test-guard
 #       make reftest-oracle DIR=css-grid          单目录
 #       make reftest-oracle DIR=css-grid ORACLE_PASS_RATIO=0.005   调严判定阈值
 reftest-oracle: target/test-guard
-	./target/test-guard -- cargo run --bin zero-wpt-runner -- reftest-oracle $(DIR)
+	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- reftest-oracle $(DIR)
 
 # 产品静态页 product-smoke 回归门禁（DC-13）：渲染 welcome.html vs chromium Oracle，
 # diff > 阈值则失败（退出 2）。捕获产品可见回归——如 R428 min-size:auto 致
