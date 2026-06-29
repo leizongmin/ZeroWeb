@@ -2,7 +2,7 @@
 
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
+use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives, RoundedRectPrimitive};
 
 use crate::layout;
 
@@ -357,6 +357,7 @@ pub fn push_scrollbar_fills(
     hover: Option<ScrollbarHit>,
     dragging: Option<ScrollbarAxis>,
     fills: &mut Vec<FillPrimitive>,
+    rounded_rects: &mut Vec<RoundedRectPrimitive>,
 ) {
     // Track：仅在传入颜色不透明时绘制（默认透明 → overlay 风格）
     if track_color.a > 0 {
@@ -383,19 +384,35 @@ pub fn push_scrollbar_fills(
         },
     };
 
-    // Thumb 内缩 2px 形成圆角 overlay 效果（不贴边、留呼吸感）
+    // Thumb 内缩 2px 留呼吸感，用圆角矩形绘制（Chrome 风格柔和圆角）
     let pad = 2.0;
+    // 圆角半径取 thumb 厚度的一半，形成胶囊形（参考 Chrome overlay 滚动条）
+    let radius_ratio = 0.5;
     if let Some(rect) = geometry.vertical_thumb {
         let (x, y, w, h) = (rect.0, rect.1, rect.2, rect.3);
         let inner_w = (w - pad).max(1.0);
         let inner_x = x + (w - inner_w) * 0.5;
-        fills.push(scroll_rect_fill(inner_x, y, inner_w, h, vertical_thumb_color));
+        let r = (inner_w * radius_ratio).min(h * 0.5).max(0.0);
+        rounded_rects.push(scroll_rounded_rect(inner_x, y, inner_w, h, r, vertical_thumb_color));
     }
     if let Some(rect) = geometry.horizontal_thumb {
         let (x, y, w, h) = (rect.0, rect.1, rect.2, rect.3);
         let inner_h = (h - pad).max(1.0);
         let inner_y = y + (h - inner_h) * 0.5;
-        fills.push(scroll_rect_fill(x, inner_y, w, inner_h, horizontal_thumb_color));
+        let r = (inner_h * radius_ratio).min(w * 0.5).max(0.0);
+        rounded_rects.push(scroll_rounded_rect(x, inner_y, w, inner_h, r, horizontal_thumb_color));
+    }
+}
+
+/// 构造圆角矩形（uniform 圆角）。
+fn scroll_rounded_rect(x: f32, y: f32, w: f32, h: f32, radius: f32, color: Color) -> RoundedRectPrimitive {
+    RoundedRectPrimitive {
+        rect: Rect::new(x, y, w, h),
+        color,
+        top_left_radius: radius,
+        top_right_radius: radius,
+        bottom_right_radius: radius,
+        bottom_left_radius: radius,
     }
 }
 

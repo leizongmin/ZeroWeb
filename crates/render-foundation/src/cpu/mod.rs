@@ -61,6 +61,7 @@ pub fn render_full_scene(
     ui_glyphs: &[GlyphDraw],
     overlay_fills: &[FillPrimitive],
     overlay_glyphs: &[GlyphDraw],
+    overlay_rounded_rects: &[RoundedRectPrimitive],
 ) -> FrameBuffer {
     let scale = normalize_scale_factor(scale_factor);
     let physical_width = scale_dimension(width, scale);
@@ -90,6 +91,10 @@ pub fn render_full_scene(
     // Overlay 层（始终在最后，独立于主体绘制顺序）
     for fill in overlay_fills {
         fill_rect(&mut fb, fill, scale);
+    }
+
+    for rr in overlay_rounded_rects {
+        fill_rounded_rect(&mut fb, rr, scale);
     }
 
     for glyph in overlay_glyphs {
@@ -287,6 +292,7 @@ pub fn render_scene_to_framebuffer(
     glyphs: &[GlyphDraw],
     overlay_fills: &[FillPrimitive],
     overlay_glyphs: &[GlyphDraw],
+    overlay_rounded_rects: &[RoundedRectPrimitive],
 ) -> FrameBuffer {
     let scale = normalize_scale_factor(scale_factor);
     let physical_width = scale_dimension(width, scale);
@@ -308,6 +314,10 @@ pub fn render_scene_to_framebuffer(
 
     for fill in overlay_fills {
         fill_rect(&mut fb, fill, scale);
+    }
+
+    for rr in overlay_rounded_rects {
+        fill_rounded_rect(&mut fb, rr, scale);
     }
 
     for glyph in overlay_glyphs {

@@ -29,7 +29,7 @@ fn render_scene_to_framebuffer_scales_logical_dimensions() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    let fb = render_scene_to_framebuffer(10, 8, 2.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[]);
+    let fb = render_scene_to_framebuffer(10, 8, 2.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[], &[]);
 
     assert_eq!(fb.width, 20);
     assert_eq!(fb.height, 16);
@@ -46,7 +46,7 @@ fn render_scene_to_framebuffer_no_scaling() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[]);
+    let fb = render_scene_to_framebuffer(10, 10, 1.0, &fills, &[], &font_loader, &mut glyph_cache, &[], &[], &[], &[]);
 
     assert_eq!(fb.width, 10);
     assert_eq!(fb.height, 10);
@@ -59,7 +59,7 @@ fn render_scene_to_framebuffer_empty_inputs() {
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
 
-    let fb = render_scene_to_framebuffer(8, 8, 1.0, &[], &[], &font_loader, &mut glyph_cache, &[], &[], &[]);
+    let fb = render_scene_to_framebuffer(8, 8, 1.0, &[], &[], &font_loader, &mut glyph_cache, &[], &[], &[], &[]);
 
     assert_eq!(fb.width, 8);
     assert_eq!(fb.height, 8);
@@ -140,6 +140,7 @@ fn gradient_linear_red_to_blue() {
         &[],
         &[],
         &[],
+        &[],
     );
 
     // 左端应该是红色
@@ -199,6 +200,7 @@ fn rounded_rect_renders_via_draw_order() {
         &[],
         &[],
         &[],
+        &[],
     );
     // 中心像素（远离圆角）应为红色——若 draw_order 丢弃 rounded_rect 则为透明/黑
     let center = fb.get_pixel(20, 20);
@@ -243,6 +245,7 @@ fn gradient_radial_center_to_edge() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
         &[],
@@ -292,6 +295,7 @@ fn gradient_linear_repeating() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
         &[],
@@ -360,6 +364,7 @@ fn gradient_radial_repeating() {
         &[],
         &[],
         &[],
+        &[],
     );
 
     // 中心应该是白色（t ≈ 0）
@@ -408,6 +413,7 @@ fn shadow_renders_blur_around_rect() {
         &[],
         &[],
         &[],
+        &[],
     );
 
     // 阴影偏移后中心区域应该有颜色变化
@@ -451,6 +457,7 @@ fn stroke_solid_line() {
         &[],
         &[],
         &[],
+        &[],
     );
 
     // 线段中心应该有黑色像素
@@ -486,6 +493,7 @@ fn stroke_dashed_line_has_gaps() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
         &[],
@@ -534,6 +542,7 @@ fn stroke_dotted_line_has_dots() {
         &[],
         &[],
         &[],
+        &[],
     );
 
     // 点线应该有黑色像素
@@ -567,6 +576,7 @@ fn path_fill_triangle() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
         &[],
@@ -609,6 +619,7 @@ fn path_stroke_rectangle() {
         &[],
         &[],
         &[],
+        &[],
     );
 
     // 边框上应该有黑色像素
@@ -643,6 +654,7 @@ fn clip_removes_pixels_outside() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
         &[],
@@ -688,6 +700,7 @@ fn transform_translate_shifts_content() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
         &[],
@@ -738,6 +751,7 @@ fn image_renders_rgba_data() {
         &font_loader,
         &mut glyph_cache,
         Some(&mut cache),
+        &[],
         &[],
         &[],
         &[],
@@ -818,6 +832,7 @@ fn image_clip_crops_not_rescales() {
         &[],
         &[],
         &[],
+        &[],
     );
 
     // clip 窗口内深处 (10,10)：crop→红（落在 source 红块）；rescale→蓝（source 被挤进窗口）
@@ -865,6 +880,7 @@ fn filter_blur_softens_hard_edge() {
         &[],
         &[],
         &[],
+        &[],
     );
 
     // 模糊边缘应该有过渡
@@ -899,6 +915,7 @@ fn filter_brightness_makes_image_brighter() {
         &[],
         &[],
         &[],
+        &[],
     );
 
     let p = fb.get_pixel(5, 5);
@@ -927,6 +944,7 @@ fn blend_mode_normal_does_nothing() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
         &[],
@@ -994,6 +1012,7 @@ fn full_scene_renders_multiple_primitives() {
         &[],
         &[],
         &[],
+        &[],
     );
 
     // 渐变区域左端应该是红色
@@ -1027,6 +1046,7 @@ fn rounded_rect_with_all_corners() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
         &[],
@@ -1075,6 +1095,7 @@ fn rounded_rect_translucent_alpha_blends() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
         &[],
@@ -1207,6 +1228,7 @@ fn cpu_full_scene_image_solid_red() {
         &[],
         &[],
         &[],
+        &[],
     );
     // 中心 (8,8) 应为红
     let c = fb.get_pixel(8, 8);
@@ -1243,6 +1265,7 @@ fn cpu_scaled_image_at_viewport_edge_does_not_panic() {
         &[],
         &[],
         &[],
+        &[],
     );
     let corner = fb.get_pixel(w - 1, h - 1);
     assert!(corner[3] == 255, "corner should be opaque, got {:?}", corner);
@@ -1264,6 +1287,7 @@ fn cpu_full_scene_path_fill_black_rect() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
         &[],
@@ -1310,6 +1334,7 @@ fn cpu_full_scene_path_stroke_closed_rect() {
         &[],
         &[],
         &[],
+        &[],
     );
     // 内部 (16,16) 白（未被描边覆盖）
     let center = fb.get_pixel(16, 16);
@@ -1352,6 +1377,7 @@ fn cpu_full_scene_stroke_horizontal_line() {
         &[],
         &[],
         &[],
+        &[],
     );
     // 线段中心 (16,16) 黑
     let mid = fb.get_pixel(16, 16);
@@ -1389,6 +1415,7 @@ fn cpu_full_scene_clip_rect_clears_outside() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
         &[],
@@ -1440,6 +1467,7 @@ fn cpu_full_scene_transform_translates_content() {
         &font_loader,
         &mut glyph_cache,
         None,
+        &[],
         &[],
         &[],
         &[],
@@ -1513,6 +1541,7 @@ fn render_full_scene_overlay_covers_ui_glyphs() {
         None,
         &ui_glyphs,
         &overlay_fills,
+        &[],
         &[],
     );
 

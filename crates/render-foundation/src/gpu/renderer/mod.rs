@@ -18,7 +18,9 @@ use crate::gpu::pipeline::{
     create_transform_uniform_bgl, create_uniform_bind_group_layout,
 };
 use crate::image_cache::ImageCache;
-use crate::primitive::{FillPrimitive, FilterKind, GradientKind, RenderPrimitives};
+use crate::primitive::{
+    FillPrimitive, FilterKind, GradientKind, RenderPrimitives, RoundedRectPrimitive,
+};
 
 mod filters;
 
@@ -678,6 +680,7 @@ impl GpuRenderer {
         ui_glyphs: &[GlyphDraw],
         overlay_fills: &[FillPrimitive],
         overlay_glyphs: &[GlyphDraw],
+        overlay_rounded_rects: &[RoundedRectPrimitive],
         scale_factor: f32,
     ) {
         let scale = normalize_scale_factor(scale_factor);
@@ -710,6 +713,8 @@ impl GpuRenderer {
         let ui_glyph_verts = self.collect_overlay_glyphs_data(ui_glyphs, font_loader, glyph_cache, scale);
         // 11. Overlay fills
         let overlay_fill_verts = self.collect_fill_vertices(overlay_fills, scale);
+        // 11b. Overlay rounded rects（滚动条 thumb 圆角滑块；GPU 以 fill 近似绘制）
+        let overlay_rr_verts = self.collect_rounded_rect_vertices(overlay_rounded_rects, scale);
         // 12. Overlay glyphs
         let overlay_glyph_verts = self.collect_overlay_glyphs_data(overlay_glyphs, font_loader, glyph_cache, scale);
 
@@ -780,6 +785,8 @@ impl GpuRenderer {
             self.draw_fill_pass(&mut pass, &uniform_bg, &device, &ui_glyph_verts, "UiGlyph");
             // 11. Overlay fills
             self.draw_fill_pass(&mut pass, &uniform_bg, &device, &overlay_fill_verts, "OverlayFill");
+            // 11b. Overlay rounded rects（滚动条 thumb 等）
+            self.draw_rounded_rect_pass(&mut pass, &uniform_bg, &device, &overlay_rr_verts);
             // 12. Overlay glyphs
             self.draw_fill_pass(&mut pass, &uniform_bg, &device, &overlay_glyph_verts, "OverlayGlyph");
         }

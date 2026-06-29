@@ -691,6 +691,7 @@ impl HeadlessServer {
             &glyph_draws,
             &[],
             &[],
+            &[],
         );
 
         // 转为 base64 PNG（简化版：返回 raw RGBA 尺寸信息）
