@@ -1751,7 +1751,17 @@ impl InlineFormattingContext {
             //   font-size。否则 line_height 被高大的原子盒撑高，strut ascent 被错误放大，
             //   把合成 baseline 偏低的原子盒压到行盒下方，与同容器其它盒错位。
             let strut_ascent = if line.runs.iter().any(|r| r.font_size > 0.0) {
-                line_height * 0.8
+                // R800：strut baseline = half-leading + ascent（CSS §10.8.1）。原 line_height*0.8
+                // 随 line-height 线性增长过快（line-height 1.5→1.2em baseline，chromium ~1.05em），
+                // 致文本基线偏低累积（welcome ~17% 主因之一）。正确：half-leading=(line_height-em)/2，
+                // baseline = half-leading + ascent（ascent≈0.8em、em≈font_size）。用行内主导 font_size。
+                let dominant_fs = line
+                    .runs
+                    .iter()
+                    .filter(|r| r.font_size > 0.0)
+                    .map(|r| r.font_size)
+                    .fold(0.0f32, f32::max);
+                (line_height - dominant_fs).max(0.0) / 2.0 + dominant_fs * 0.8
             } else {
                 self.container_font_size * 0.8
             };
@@ -1762,8 +1772,8 @@ impl InlineFormattingContext {
                     VerticalAlignValue::Baseline | VerticalAlignValue::Sub | VerticalAlignValue::Super
                 ) {
                     if run.font_size > 0.0 {
-                        // 文本运行：ascent = font_size（字体度量的近似值）
-                        max_ascent = max_ascent.max(run.font_size);
+                        // 文本运行：ascent ≈ 0.8 × font_size（字体真实 ascent 近似，原 font_size 偏大）
+                        max_ascent = max_ascent.max(run.font_size * 0.8);
                     } else {
                         // 原子行内级盒（font_size==0 标识）：
                         // 使用 baseline 字段决定 ascent
