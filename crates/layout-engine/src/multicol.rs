@@ -97,14 +97,17 @@ pub(crate) struct ColumnInfo {
 
 /// 将 LengthValue 转换为像素值。
 ///
-/// `container_width` 用于解析百分比单位。
-/// 注意：em/rem/viewport 单位已在 computed style 阶段解析为 Px，
-/// 此处仅处理可能残留的百分比和绝对单位。
-fn length_to_px(value: &LengthValue, container_width: f32) -> f32 {
+/// `container_width` 用于解析百分比单位；`font_size_px` 用于解析 em 单位。
+/// 注意：多数 length 属性的 em/rem 已在 computed style 阶段解析为 Px，此处仅处理
+/// 可能残留的百分比和绝对单位。但 `column-width`/`column-gap` 等 multicol 属性的 apply
+/// 不解析 em（存 `Length(Em(v))`），故本函数须按 **element font-size** 解析 em——
+/// R904 修复：旧实现硬编码 `v*16.0`（root）致 column-width:2em 在 font-size:1.25em(20px)
+/// 容器内解析为 32px（应 40px），multicol-break-001 列数 6（应 5）oracle 1.06%。
+fn length_to_px(value: &LengthValue, container_width: f32, font_size_px: f32) -> f32 {
     match value {
         LengthValue::Px(v) => *v as f32,
         LengthValue::Percentage(p) => *p as f32 / 100.0 * container_width,
-        LengthValue::Em(v) => *v as f32 * 16.0, // 回退：已由 computed.rs 解析
+        LengthValue::Em(v) => *v as f32 * font_size_px,
         LengthValue::Rem(v) => *v as f32 * 16.0,
         LengthValue::Vw(v) => *v as f32 * 8.0,
         LengthValue::Vh(v) => *v as f32 * 6.0,
@@ -112,7 +115,7 @@ fn length_to_px(value: &LengthValue, container_width: f32) -> f32 {
         LengthValue::Vmin(v) => (*v as f32) * 6.0,
         LengthValue::Vmax(v) => (*v as f32) * 8.0,
         LengthValue::Ch(v) => *v as f32 * 8.0,
-        LengthValue::FitContent(inner) => length_to_px(inner, container_width),
+        LengthValue::FitContent(inner) => length_to_px(inner, container_width, font_size_px),
         LengthValue::MinContent | LengthValue::MaxContent => 0.0,
     }
 }
@@ -131,7 +134,12 @@ pub(crate) fn balance_column_geometry(style: &ComputedStyle, container_width: f3
 ///
 /// 返回 `None` 表示不需要多列布局（column-count: auto 且 column-width: auto）。
 pub(crate) fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<ColumnInfo> {
-    let gap = length_to_px(&style.column_gap, container_width);
+    // em 单位按 element font-size 解析（R904：column-width/column-gap apply 不解析 em）。
+    let font_size_px = match &style.font_size {
+        LengthValue::Px(v) => *v as f32,
+        _ => 16.0, // computed font_size 应为 Px；防御性回退
+    };
+    let gap = length_to_px(&style.column_gap, container_width, font_size_px);
     let sequential_fill = matches!(style.column_fill, ColumnFillComputedValue::Auto);
 
     // CSS Multi-column spec: column-width 是最小列宽（理想宽度）
@@ -145,7 +153,7 @@ pub(crate) fn compute_column_info(style: &ComputedStyle, container_width: f32) -
 
     let col_width_hint = match &style.column_width {
         ColumnWidthComputedValue::Auto => None,
-        ColumnWidthComputedValue::Length(l) => Some(length_to_px(l, container_width)),
+        ColumnWidthComputedValue::Length(l) => Some(length_to_px(l, container_width, font_size_px)),
     };
 
     match (col_count_from_count, col_width_hint) {
@@ -561,6 +569,23 @@ fn constrain_subtree_width(box_node: &mut LayoutBox, max_width: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R904：em 单位按 element font-size 解析（非 root 16）。column-width:2em 在
+    /// font-size 20px 容器内 = 40px（旧实现误为 32px = 2×16）。
+    #[test]
+    fn test_length_to_px_em_uses_element_font_size() {
+        use zero_css_parser::values::LengthValue;
+        // 2em @ font-size 20px → 40px（非 32px）。
+        assert!(
+            (length_to_px(&LengthValue::Em(2.0), 800.0, 20.0) - 40.0).abs() < 0.01,
+            "em must resolve against element font-size (2em@20px=40), not root 16"
+        );
+        // 1em @ font-size 16px（默认）→ 16px（不变，零回归）。
+        assert!((length_to_px(&LengthValue::Em(1.0), 800.0, 16.0) - 16.0).abs() < 0.01);
+        // Px/Percentage 不受 font_size_px 影响。
+        assert!((length_to_px(&LengthValue::Px(50.0), 800.0, 20.0) - 50.0).abs() < 0.01);
+        assert!((length_to_px(&LengthValue::Percentage(10.0), 800.0, 20.0) - 80.0).abs() < 0.01);
+    }
 
     #[test]
     fn test_compute_column_count_basic() {
