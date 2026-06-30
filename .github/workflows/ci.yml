@@ -42,6 +42,7 @@ jobs:
           - name: windows-aarch64
             os: windows-11-arm
             target: aarch64-pc-windows-msvc
+            v8_runtime: false
             release_build: false
 
     steps:
@@ -88,6 +89,7 @@ jobs:
         shell: bash
         run: |
           echo "RUSTY_V8_ARCHIVE=https://github.com/denoland/rusty_v8/releases/download/v${RUSTY_V8_VERSION}/rusty_v8_release_${{ matrix.target }}.lib" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=-C link-arg=advapi32.lib" >> "$GITHUB_ENV"
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -98,7 +100,7 @@ jobs:
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
 
-      - name: Run core crate tests
+      - name: Run core crate tests without V8
         timeout-minutes: 20
         shell: bash
         run: |
@@ -114,14 +116,23 @@ jobs:
             -p zero-security \
             -p zero-storage \
             -p zero-protocol \
-            -p zero-script-sandbox \
             -p zero-wasm-sandbox \
             -p zero-page-runtime \
-            -p zero-webview \
             -p zero-browser-shell \
             --target ${{ matrix.target }} -- --test-threads=1
 
+      - name: Run V8-backed core tests
+        if: matrix.v8_runtime != false
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          cargo test \
+            -p zero-script-sandbox \
+            -p zero-webview \
+            --target ${{ matrix.target }} -- --test-threads=1
+
       - name: Run app tests
+        if: matrix.v8_runtime != false
         timeout-minutes: 40
         shell: bash
         run: |
@@ -132,6 +143,7 @@ jobs:
             --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Run integration and WPT runner tests
+        if: matrix.v8_runtime != false
         timeout-minutes: 20
         shell: bash
         run: |
@@ -145,6 +157,11 @@ jobs:
         shell: bash
         run: |
           cargo test -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=1
+
+      - name: Note unsupported V8 runtime tests
+        if: matrix.v8_runtime == false
+        run: |
+          echo "Skipping V8-backed tests for ${{ matrix.target }} because rusty_v8 ${env:RUSTY_V8_VERSION} does not publish a Windows ARM64 native archive."
 
       - name: Build release
         if: matrix.release_build != false
