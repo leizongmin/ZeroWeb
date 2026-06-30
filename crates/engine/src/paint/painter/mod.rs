@@ -308,11 +308,20 @@ impl Painter {
             let body_id = doc.get_elements_by_tag_name("body").into_iter().next();
             let html_style = html_id.and_then(|id| styles.get(&id));
             let body_style = body_id.and_then(|id| styles.get(&id));
+            // CSS §9.2.4/§14.2：根元素 display:none 不生成盒、整个文档树不参与渲染，
+            // 故根元素（及作为其后代的 body）背景均不传播到画布（canvas 保持默认白）。
+            // 实测 chromium：html{display:none} 渲染为纯白 canvas（root-box-003）。
+            let html_is_display_none = html_style.is_some_and(|hs| hs.display == DisplayValue::None);
             // html 有任意背景（color 非透明 或 image 非空）→ html 传播；否则 body。
-            let html_has_bg = html_style
-                .is_some_and(|hs| hs.background_color != ColorValue::Transparent || !hs.background_image.is_empty());
+            let html_has_bg = !html_is_display_none
+                && html_style.is_some_and(|hs| {
+                    hs.background_color != ColorValue::Transparent || !hs.background_image.is_empty()
+                });
             let (prop_node, prop_style) = if html_has_bg {
                 (html_id, html_style)
+            } else if html_is_display_none {
+                // html display:none → body 作为其后代亦不渲染，不传播。
+                (None, None)
             } else {
                 (body_id, body_style)
             };
