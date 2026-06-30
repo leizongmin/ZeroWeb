@@ -88,8 +88,10 @@ sudo apt-get install -y \
 cargo build --workspace                    # Linux/macOS 首次构建前需先 make setup-rusty-v8（或直接用 make build）
 make test                                  # = cargo test --workspace（经 test-guard 包裹）
 make reftest                               # = WPT reftest（release 构建，经 test-guard 包裹）
+make reftest-oracle                        # ZeroWeb 渲染 vs Chromium Oracle 像素一致率（诚实通过率度量）
 make browser                                 # 启动浏览器（默认 WPT 对齐：CPU + scale 1.0）
 make product-smoke                         # 产品静态页（welcome.html）vs Chromium Oracle 像素回归门禁
+make product-smoke-legacy                  # HTML 3.2/4 + CSS1/2 静态页（testpage-001..020）vs Chromium Oracle 门禁
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 

@@ -111,7 +111,7 @@
 - **公共 API 文档**: 对外 API 必须有文档注释
 - **日志与可观测性**: 正式日志使用 `tracing`
 - **验证优先**: 行为变化需要测试，性能敏感路径需要基准或说明
-- **测试入口**: 跑测试和 reftest 用 `make test` / `make reftest`（经 `scripts/test-guard.rs` 包裹），不要裸跑 `cargo test`，避免内存型 bug 触发系统 OOM；涉及渲染 / 布局变更时额外跑 `make product-smoke`
+- **测试入口**: 跑测试和 reftest 用 `make test` / `make reftest`（经 `scripts/test-guard.rs` 包裹），不要裸跑 `cargo test`，避免内存型 bug 触发系统 OOM；涉及渲染 / 布局变更时额外跑 `make product-smoke`，渲染兼容性的诚实通过率用 `make reftest-oracle`（Chromium Oracle 像素对比）度量
 
 ## 建议的阅读顺序
 

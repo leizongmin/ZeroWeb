@@ -20,8 +20,8 @@
 
 现在最值得继续往前推的几件事：
 
-- 当前优先完成 `rendering-compat` / render-compact 验收，把静态 CSS-heavy 页面渲染拉到可验证的 Chromium 参考水平
-- 补齐外部 CSS、图片子资源、SVG/PNG Logo、`ImageCache`、layout/paint/glyph 一致性和产品静态页截图门禁
+- 当前优先完成 `rendering-compat` / render-compact 验收，把静态 CSS-heavy 页面渲染拉到可验证的 Chromium 参考水平；通过率以 Chromium Oracle 像素对比（`make reftest-oracle`）为诚实度量，同源自渲染 reftest 仅作自一致性参考
+- 外部样式表加载、图片子资源与 `ImageCache`、SVG 作为图片资源的栅格化、产品静态页截图门禁（`make product-smoke` / `make product-smoke-legacy`）均已落地；当前重点是 layout/paint/glyph 度量一致性（行盒度量统一）以及 CSS2 / Flexbox / Grid / Multicol 等渲染缺口的持续修复
 - 用真实静态页面暴露缺口：`apps/browser/assets/welcome.html`、`morning.work` 文章页、`wintertc.org` 首页
 - 短期内把 HTML 3.2/4 + CSS1/2 常见静态文档（presentational hints、UA 默认样式、基础表格 / 列表 / 链接颜色）提升为高优先级推进面，配套 `legacy-html` 产品 smoke 与 `make product-smoke-legacy` 回归门禁；不替代 WPT / DC-14 长期目标
 - `browser-shell` 已有基础骨架，后续重点是把产品层和 WebView/渲染管线的真实验收打通
@@ -78,7 +78,7 @@
 如果按当前仓库状态往下走，顺序大致会是：
 
 1. 完成 render-compact 验收：WPT/CSSWG reftest、静态产品页、真实静态文章页、图片密集首页都要能和 Chromium 做稳定截图对比。
-2. 补齐外部 stylesheet、图片子资源/ImageCache、SVG 作为图片资源的栅格化，以及 ZeroBrowser glyph 后处理收敛。
+2. 收敛 ZeroBrowser glyph 后处理与 layout/paint/glyph 度量一致性（外部 stylesheet、图片子资源/`ImageCache`、SVG 作为图片资源的栅格化均已贯通；静态页当前差异主要来自行盒与字体度量，而非资源加载）。
 3. 统一 inline formatting、layout IFC 和 paint IFC 的权威结果，解决文本串联、重叠、标题误拆行和正文压缩。
 4. 搭出 `browser-shell` 最小可用骨架，让浏览器产品层真正出现。
 5. render-compact 验收后，把 Test262、WPT testharness、WebDriver wdspec、WebGL CTS、WebGPU CTS、WebAssembly spec tests 等行业测试按阶段接入。
