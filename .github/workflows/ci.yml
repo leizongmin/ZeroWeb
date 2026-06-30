@@ -98,7 +98,30 @@ jobs:
         run: cargo check --workspace --target ${{ matrix.target }}
 
       - name: Run clippy
+        if: matrix.v8_runtime != false
         run: cargo clippy --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
+
+      - name: Run clippy without V8-backed targets
+        if: matrix.v8_runtime == false
+        shell: bash
+        run: |
+          cargo clippy \
+            -p zero-dom \
+            -p zero-css-parser \
+            -p zero-style-system \
+            -p zero-layout-engine \
+            -p zero-engine \
+            -p zero-canvas \
+            -p zero-host-runtime \
+            -p zero-net \
+            -p zero-security \
+            -p zero-storage \
+            -p zero-protocol \
+            -p zero-wasm-sandbox \
+            -p zero-page-runtime \
+            -p zero-browser-shell \
+            -p zero-render-foundation \
+            --all-targets --target ${{ matrix.target }} -- -D warnings
 
       - name: Run core crate tests without V8
         timeout-minutes: 20
