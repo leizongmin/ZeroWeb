@@ -93,6 +93,45 @@ pub fn fragment_lines_into_columns(lines: &[LineBox], ctx: &ColumnFragmentationC
     assignments
 }
 
+/// 把 IFC 行盒按**文档序均衡**分配到列（column-fill:balance 的 inline 分布）。
+///
+/// 与 `fragment_lines_into_columns`（auto，按列高 budget 顺序填）互补：balance 无单列
+/// 高度约束，每列分 `ceil(剩余行/剩余列)` 行（文档序），使各列行数尽量均等。用于
+/// R901 之后的 inline-only balance multicol 扩展（同 use_stored 重定位机制）。
+///
+/// **当前无生产 caller**：R902 A/B 测 inline-only balance 扩展零 oracle-pass yield（已回退
+/// wiring）。函数 + 单测保留作 banked infra，待 balance 路径有具体 yielding 案时重新接线。
+///
+/// 回退：`col_count == 0` 或 `lines` 空 → 空 `Vec`（调用方回退非碎片化）。
+#[allow(dead_code)]
+pub fn distribute_lines_balanced(lines: &[LineBox], col_count: usize) -> Vec<ColumnLineAssignment> {
+    if col_count == 0 || lines.is_empty() {
+        return Vec::new();
+    }
+    let n = lines.len();
+    let mut assignments = Vec::with_capacity(n);
+    let mut idx = 0usize;
+    let mut remaining_cols = col_count;
+    for col in 0..col_count {
+        let lines_in_col = (n - idx).div_ceil(remaining_cols);
+        let mut y_in_column = 0.0f32;
+        for _ in 0..lines_in_col {
+            if idx >= n {
+                break;
+            }
+            assignments.push(ColumnLineAssignment {
+                line_idx: idx,
+                column: col,
+                y_in_column,
+            });
+            y_in_column += lines[idx].height;
+            idx += 1;
+        }
+        remaining_cols -= 1;
+    }
+    assignments
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::ColumnFillMode;
@@ -279,5 +318,73 @@ mod tests {
     fn empty_lines_returns_empty() {
         let ctx = ctx_auto(3, 50.0);
         assert!(fragment_lines_into_columns(&[], &ctx).is_empty());
+    }
+
+    /// balance 文档序均衡：5 行，3 列 → col0=2 行（ceil(5/3)）、col1=2 行（ceil(3/2)）、col2=1 行。
+    #[test]
+    fn balance_distributes_document_order_ceil_split() {
+        let lines = vec![line(20.0); 5];
+        let a = distribute_lines_balanced(&lines, 3);
+        assert_eq!(a.len(), 5);
+        // col0: line0 (y=0), line1 (y=20)
+        assert_eq!(
+            a[0],
+            ColumnLineAssignment {
+                line_idx: 0,
+                column: 0,
+                y_in_column: 0.0
+            }
+        );
+        assert_eq!(
+            a[1],
+            ColumnLineAssignment {
+                line_idx: 1,
+                column: 0,
+                y_in_column: 20.0
+            }
+        );
+        // col1: line2 (y=0), line3 (y=20)
+        assert_eq!(
+            a[2],
+            ColumnLineAssignment {
+                line_idx: 2,
+                column: 1,
+                y_in_column: 0.0
+            }
+        );
+        assert_eq!(
+            a[3],
+            ColumnLineAssignment {
+                line_idx: 3,
+                column: 1,
+                y_in_column: 20.0
+            }
+        );
+        // col2: line4 (y=0)
+        assert_eq!(
+            a[4],
+            ColumnLineAssignment {
+                line_idx: 4,
+                column: 2,
+                y_in_column: 0.0
+            }
+        );
+    }
+
+    /// balance 行数 ≤ 列数 → 每列 ≤1 行。
+    #[test]
+    fn balance_fewer_lines_than_columns() {
+        let lines = vec![line(20.0); 2];
+        let a = distribute_lines_balanced(&lines, 3);
+        assert_eq!(a.len(), 2);
+        assert_eq!(a[0].column, 0);
+        assert_eq!(a[1].column, 1);
+    }
+
+    /// balance col_count=0 或空 lines → 空分配（回退）。
+    #[test]
+    fn balance_zero_cols_or_empty_returns_empty() {
+        assert!(distribute_lines_balanced(&[line(20.0)], 0).is_empty());
+        assert!(distribute_lines_balanced(&[], 3).is_empty());
     }
 }
