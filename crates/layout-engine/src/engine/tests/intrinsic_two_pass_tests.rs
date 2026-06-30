@@ -406,3 +406,59 @@ fn test_min_height_below_content_still_collapses_through() {
         footer.y
     );
 }
+
+/// CSS §8.3/§8.4：百分比 padding 相对**包含块内容宽度**解析（与元素自身宽度无关）。
+///
+/// taffy 0.7 的 LengthPercentage::Percent padding 解析为 0。`#cb{width:300} > #box{padding:20%}`
+/// 的 box padding 应为 60px（20% of 300 CB），而非 0。验证 resolve_percentage_padding
+/// 两趟预解析把百分比 padding 改写为绝对 px。
+#[test]
+fn test_percentage_padding_resolved_against_cb_width() {
+    let html = r#"<html><body style="margin:0">
+        <div id="cb" style="width:300px">
+          <div id="box" style="padding:20%"></div>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let box_ = find("box", &doc, &result.root).expect("box");
+    // 20% of CB content width (300) = 60px on each side.
+    assert!(
+        (box_.padding_top - 60.0).abs() < 1.5,
+        "percentage padding-top should resolve to 60px (20% of 300 CB), got {} \
+         (taffy 0.7 Percent padding bug gives 0)",
+        box_.padding_top
+    );
+    assert!(
+        (box_.padding_left - 60.0).abs() < 1.5,
+        "percentage padding-left should resolve to 60px, got {}",
+        box_.padding_left
+    );
+}
+
+/// 百分比 padding 应相对**父级**内容宽（非元素自身宽）。`#cb{width:300} > #box{width:150;padding:20%}`
+/// 的 box padding 仍为 60px（20% of CB 300），而非 30px（20% of own 150）。
+#[test]
+fn test_percentage_padding_uses_cb_width_not_own_width() {
+    let html = r#"<html><body style="margin:0">
+        <div id="cb" style="width:300px">
+          <div id="box" style="width:150px;padding:20%"></div>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let box_ = find("box", &doc, &result.root).expect("box");
+    assert!(
+        (box_.padding_top - 60.0).abs() < 1.5,
+        "percentage padding must use CB width (300) not own width (150): 60px, got {}",
+        box_.padding_top
+    );
+}
