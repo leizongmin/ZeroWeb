@@ -383,5 +383,44 @@ R306 执行 Phase 0 探针（env `PHASEA_BL=1` 把 stored Path A 的 `v_offset` 
 | v1.0 | 2026-06-18 | R305 初始 read-only 设计产出 |
 | v1.1 | 2026-06-18 | R305 执行期补充 §6.3A：确证 GlyphPrimitive.y=基线，frag.y/offset/glyph.y 经验性耦合，原 Phase 1「加 baseline_y 字段」改为 Phase 0 实测探针前置；Phase 计划由 5 改 6（插入 Phase 0，顺延） |
 | v1.2 | 2026-06-19 | R306 Phase 0 探针实证（§6.3B）：font-051 A/B 证伪「geometric baseline 可作 render baseline」（frag.height offset → 16.67% FAIL，默认 offset=0 → 0.00% PASS）。原 Phase 1（baseline_y=几何基线）作废；Phase 1 重定向为 Gate 2 放宽（offset 校准不动）。offset 语义非阻塞点；真硬阻塞 = 墙② multicol + 换行精度 |
+| v1.3 | 2026-06-30 | R848-R883 经验性精化（§12 新增）：R848 测绘 4 处 IFC 消费点；R876 三方补偿根因；R877 真路径 = non-stored render_fragment!；4 次 net-negative 先例（R834/R836/R849/R875）；TextFragment 已有 baseline 字段；R639 incremental 已证 + font-bridge 剩余 prerequisites |
+
+---
+
+## 12. R848-R883 经验性精化（v1.3，实施前必读）
+
+> 以下为 R305/R306 设计之后，R848-R883 多轮实证对 Phase A 的关键精化。**实施 Phase A 前必读**——这些发现重定义了「首步可执行 slice」与「墙」的精确位置。
+
+### 12.1 R848：4 处 IFC 消费点测绘
+IFC 结果被 4 处消费（painter/text.rs）：
+1. **stored path**（text.rs:1308 `if use_stored`，`stored_fragments`）——仅对 **pure-Ahem 块**存储（R84/R829 条件），用 `frag.baseline_y_abs`。
+2. **non-stored path**（text.rs:1349 `for fragment in fragments.iter()`）——真实非-Ahem 文本（welcome/morning/linebox 非-Ahem）走此路径，用 `render_fragment!` 宏，`$baseline_offset = baseline_fs(font_size)`。
+3. **Path B**（all_fragments 多行 y）——R630/R632 已修（多行 y 堆叠 + line-height override）。
+4. **multicol** IFC（text.rs:933 列分配）。
+
+### 12.2 R876：三方补偿根因（welcome 16.11% 平衡机制）
+welcome/morning line-metric 残余由 **三项互相补偿** 凑成当前平衡：
+- **① strut baseline** 用 0.8（inline/mod.rs:1571/1573/1583 `* 0.8`）；CSS 真实 ascent ≈ 0.928em（fontdue line_metrics ascent/em=0.928，line_gap=0）。ZW baseline 比 chromium 高 0.028fs。
+- **② paint v_offset** 用 `font_size`（text.rs:1359 `$baseline_offset = baseline_fs`）；应使 glyph 绝对位 = baseline − ink_ascent。fontdue tight-ink 'H' height=30（40px 时）vs font_size=40，差 10px → glyph 多上移 10px。
+- **③ tight-ink vs ascent** 7px 差（fontdue 测字身实高 30 vs CSS ascent 37）。
+
+**关键**：改任一项单独 → 平衡破裂 → welcome 退步（R834 改 ① strut 0.8→0.928 welcome +0.07pp；R836/R849/R875 同）。**安全修复须三方同改**：① strut 用真实 ascent + ② paint v_offset 用 ink-height + ③ 验 stored/Path B/raster glyph_top_left 不双计。
+
+### 12.3 R877：真路径 = non-stored render_fragment!
+R877 实证：改 **stored path** 对真实非-Ahem 文本**零效果**（stored path 仅 pure-Ahem 块触发，其非-Ahem else 分支几乎从不执行——R876 实测 welcome/linebox/sans-serif 探针字节同）。**真路径 = non-stored path**（text.rs:1349 循环，`render_fragment!` 宏 $baseline_offset at ~1359）。
+
+`TextFragment`（inline_types.rs:174）**已有 `baseline` 字段**（line 208，「从片段顶部到基线的距离」）+ `height`（line 182）。R877 原判「需加 line_height/baseline_y 字段」——`baseline` 已存在，**须核实 non-stored path 能否消费 `fragment.baseline` 替代 `font_size` 作 $baseline_offset**（可能已是 sufficient plumbing，无须新字段）。
+
+### 12.4 4 次 net-negative 先例（勿单点重试）
+R834（strut 0.8→0.928）/ R836 / R849 / R875：单点改 strut 或 v_offset 均 welcome net-negative。**R882 确认单 session clean win 脉络已挖尽**，Phase A 三方协调是多 session 任务。
+
+### 12.5 R639：incremental 已证 + font-bridge 剩余
+R639 实证 Phase A **非「全有或全无」**：per-fragment inline-bg（+13）/ per-fragment color（R358）/ 跨 block float 侵入（R362）各独立 LANDED。**剩余 prerequisites = 真实 font 度量 bridge**（IFC↔FontLoader 接口，暴露 fontdue line_metrics 真实 ascent/descent/ink-height）——当前 IFC 用硬编码 0.8 / estimate_char_width 启发式。
+
+### 12.6 首步可执行 slice（v1.3 推荐）
+1. **font-bridge**（零行为变更 enabling infra）：在 IFC 注入 font-metric 查询（fontdue line_metrics），暴露 per-font ascent/ink-height。仅添加接口，不改 0.8 常数 → 零回归。
+2. **三方同改 narrow slice**（消费 bridge）：strut 用 real ascent + non-stored v_offset 用 ink-height（或先试 `fragment.baseline` 替代 font_size）+ 验双路径不双计。**三态门禁 A/B**：welcome <20% + linebox/css-text/normal-flow oracle 零回归 + self-source 通过率不降。净负即回退（5th data point）。
+3. 守住 multicol-fill-auto 反向依赖（R198 墙）+ pre-wrap 宽度敏感（R627 -15）。
+
 
 
