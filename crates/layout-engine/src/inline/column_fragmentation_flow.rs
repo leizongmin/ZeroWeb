@@ -1,0 +1,283 @@
+//! Phase 2a multicol 列碎片化**算法** —— 把 IFC 行盒按列高预算切片到列。
+//!
+//! 本模块是 multicol Phase 2a step-2 的**纯算法**切片（设计文档 commit 1）：
+//! 消费 [`ColumnFragmentationContext`]（列几何 + 列高预算 + 每列已占高度）+
+//! IFC 宽度换行后的 `&[LineBox]`，产出每行的列分配（哪一列 + 列内 y 位置）。
+//!
+//! **CSS Multicol §2 碎片化契约**：
+//! - **整行不裁断**：块级内容的行盒不在中间断裂（区别 inline 跨列 = Phase 2c）。
+//!   当前列放不下整行且还有列 → 整行移至下列。
+//! - **列高 respected**：每列累计高度受 `available_height` 约束（避免 R897 probe A
+//!   的 overfill：每列 64px 超出 60px 列高）。
+//! - **余量 overflow**：超出 `col_count × budget` 的行留在末列（CSS：fixed
+//!   column-count + 明确高度时，余量 overflow multicol 盒外，由 paint/容器
+//!   overflow:visible 处理；本函数仅产出列分配，不渲染）。
+//!
+//! **本模块是纯函数 + 单测，零生产调用方**（net 0，零回归）。step-2 commit 2
+//! （下会话）在 layout 侧为目标结构（单层 multicol + `column-fill:auto` + 明确高度 +
+//! 单一 block 子元素）构造 ctx、调本函数、把分配结果存入 LayoutBox 新字段供 paint 消费。
+//!
+//! **R897 probe A2 已确认可行性**：`LineBox`（`inline_types.rs:155`）携带每行 `y` +
+//! `height`，IFC `layout()` 产出 `self.lines: Vec<LineBox>`，本函数可直接消费。
+//!
+//! 详见 [`multicol-phase2-column-fragmentation-context.md`] §8.4。
+
+use super::{ColumnFragmentationContext, LineBox};
+
+/// 单行行盒的列分配结果（`fragment_lines_into_columns` 输出）。
+///
+/// 记录某行（`line_idx` 指向输入 `lines`）应落入哪一列（`column`），以及该行在
+/// 该列内容区顶部的 y 偏移（`y_in_column`，已含该列此前行盒的累计高度 +
+/// `col_filled_heights` 起始偏移）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ColumnLineAssignment {
+    /// 输入 `lines` 中的行索引。
+    pub line_idx: usize,
+    /// 目标列索引（`0..col_count`）。
+    pub column: usize,
+    /// 该行在该列内容区内的 y 偏移（px，列内容顶相对）。
+    pub y_in_column: f32,
+}
+
+/// 列高预算比较容差（px）。亚像素行高/累加误差不应触发不必要的换列。
+const HEIGHT_EPS: f32 = 0.01;
+
+/// 把 IFC 宽度换行后的行盒按列高预算切片到列（Phase 2a step-2 纯算法）。
+///
+/// # 算法
+///
+/// 按文档顺序遍历行盒，逐行累加到当前列。**整行不裁断**：若当前列加上该行超过
+/// 预算且还有下一列，则推进到下一列（while 循环可连推多列，跳过已被 block 子
+/// 占满的列）。末列无法换列时，余量行留在末列（overflow 由上层处理）。
+///
+/// # 回退（保守，零回归）
+///
+/// 以下情况返回空 `Vec`，调用方须回退到非碎片化路径（当前 multicol 行为）：
+/// - `col_count == 0`；
+/// - `col_filled_heights.len() != col_count`（调用方构造错）；
+/// - `available_height` 为 `None`（balance / height:auto，非本函数职责——balance
+///   经 `assign_children_to_columns_balanced`，不走行盒切片）；
+/// - `available_height <= 0`（无效预算）。
+///
+/// fill_mode 当前仅 `Auto` 有意义（balance 已被 `None` budget 回退拦截）；字段保留
+/// 供 step-2 commit 2 的调用方校验（构造 ctx 时应确保 `Auto`）。
+pub fn fragment_lines_into_columns(lines: &[LineBox], ctx: &ColumnFragmentationContext) -> Vec<ColumnLineAssignment> {
+    // 回退：列数 / 已占高度长度不匹配 → 空分配（调用方回退非碎片化）。
+    if ctx.col_count == 0 || ctx.col_filled_heights.len() != ctx.col_count {
+        return Vec::new();
+    }
+    // 回退：仅 column-fill:auto + 明确正高度走本路径（balance 由上层 balanced 分配处理）。
+    let budget = match ctx.available_height {
+        Some(h) if h > 0.0 => h,
+        _ => return Vec::new(),
+    };
+
+    let mut col_heights = ctx.col_filled_heights.clone();
+    let mut col_idx = 0usize;
+    let mut assignments = Vec::with_capacity(lines.len());
+
+    for (i, line) in lines.iter().enumerate() {
+        // 整行不裁断：当前列放不下整行且还有下一列 → 推进（可连推多列，跳过已满列）。
+        while col_idx + 1 < ctx.col_count && col_heights[col_idx] + line.height > budget + HEIGHT_EPS {
+            col_idx += 1;
+        }
+        let y_in_column = col_heights[col_idx];
+        assignments.push(ColumnLineAssignment {
+            line_idx: i,
+            column: col_idx,
+            y_in_column,
+        });
+        col_heights[col_idx] += line.height;
+    }
+
+    assignments
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::ColumnFillMode;
+    use super::*;
+
+    /// 构造最小行盒（仅高度参与切片逻辑，其余置零/空）。
+    fn line(height: f32) -> LineBox {
+        LineBox {
+            y: 0.0,
+            height,
+            runs: Vec::new(),
+            baseline_y: 0.0,
+            ascent: 0.0,
+            descent: 0.0,
+        }
+    }
+
+    /// 构造 column-fill:auto + 明确高度 + 单一 block 子 slice 的典型 ctx
+    ///（`col_filled_heights` 全 0）。
+    fn ctx_auto(col_count: usize, budget: f32) -> ColumnFragmentationContext {
+        ColumnFragmentationContext {
+            col_count,
+            col_width: 250.0,
+            col_gap: 16.0,
+            available_height: Some(budget),
+            col_filled_heights: vec![0.0; col_count],
+            fill_mode: ColumnFillMode::Auto,
+        }
+    }
+
+    /// 整行不裁断 + 列满续列：3 行 h=20，budget=50，2 列 → col0 容纳 2 行（40），
+    /// 第 3 行（40+20=60 > 50）整行移至 col1。
+    #[test]
+    fn whole_line_never_splits_advances_column_when_full() {
+        let lines = vec![line(20.0), line(20.0), line(20.0)];
+        let ctx = ctx_auto(2, 50.0);
+        let a = fragment_lines_into_columns(&lines, &ctx);
+        assert_eq!(a.len(), 3);
+        assert_eq!(
+            a[0],
+            ColumnLineAssignment {
+                line_idx: 0,
+                column: 0,
+                y_in_column: 0.0
+            }
+        );
+        assert_eq!(
+            a[1],
+            ColumnLineAssignment {
+                line_idx: 1,
+                column: 0,
+                y_in_column: 20.0
+            }
+        );
+        // 第 3 行 col0 累计 40+20=60 > 50 → 推进 col1。
+        assert_eq!(
+            a[2],
+            ColumnLineAssignment {
+                line_idx: 2,
+                column: 1,
+                y_in_column: 0.0
+            }
+        );
+    }
+
+    /// 余量 overflow 留末列：5 行 h=20，budget=30，2 列 → col0 1 行；col1 收 4 行
+    ///（末列无法换列，余量留末列，由上层 overflow 处理）。
+    #[test]
+    fn overflow_beyond_column_count_stays_in_last_column() {
+        let lines = vec![line(20.0); 5];
+        let ctx = ctx_auto(2, 30.0);
+        let a = fragment_lines_into_columns(&lines, &ctx);
+        // 列分布：col0=line0，col1=line1..4。
+        assert_eq!(a[0].column, 0);
+        for assn in &a[1..] {
+            assert_eq!(assn.column, 1, "overflow lines must stay in last column");
+        }
+        // 末列 y 累计：line1 y=0，line2 y=20，line3 y=40，line4 y=60。
+        assert!((a[4].y_in_column - 60.0).abs() < 0.01);
+    }
+
+    /// col_filled_heights 预占（mixed-content 预演）：col0 已占 30，budget=50，
+    /// 2 行 h=20 → line0（30+20=50 ≤ 50）留 col0（y=30），line1（50+20=70 > 50）→ col1。
+    #[test]
+    fn prefilled_column_advances_when_new_line_does_not_fit() {
+        let ctx = ColumnFragmentationContext {
+            col_count: 2,
+            col_width: 250.0,
+            col_gap: 16.0,
+            available_height: Some(50.0),
+            col_filled_heights: vec![30.0, 0.0],
+            fill_mode: ColumnFillMode::Auto,
+        };
+        let lines = vec![line(20.0), line(20.0)];
+        let a = fragment_lines_into_columns(&lines, &ctx);
+        assert_eq!(
+            a[0],
+            ColumnLineAssignment {
+                line_idx: 0,
+                column: 0,
+                y_in_column: 30.0
+            }
+        );
+        assert_eq!(
+            a[1],
+            ColumnLineAssignment {
+                line_idx: 1,
+                column: 1,
+                y_in_column: 0.0
+            }
+        );
+    }
+
+    /// 单行超高（> budget）：无法放入任何整列，连推至末列留之（CSS：不可拆行 → overflow）。
+    #[test]
+    fn single_line_taller_than_budget_goes_to_last_column() {
+        let lines = vec![line(100.0)];
+        let ctx = ctx_auto(3, 30.0);
+        let a = fragment_lines_into_columns(&lines, &ctx);
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0].column, 2, "oversized line advances to last column");
+        assert_eq!(a[0].y_in_column, 0.0);
+    }
+
+    /// balance / height:auto（无高度预算）→ 空分配（回退，balance 走上层 balanced 分配）。
+    #[test]
+    fn balance_mode_no_height_budget_returns_empty() {
+        let lines = vec![line(20.0), line(20.0)];
+        let ctx = ColumnFragmentationContext {
+            col_count: 3,
+            col_width: 250.0,
+            col_gap: 16.0,
+            available_height: None,
+            col_filled_heights: vec![0.0, 0.0, 0.0],
+            fill_mode: ColumnFillMode::Balance,
+        };
+        assert!(fragment_lines_into_columns(&lines, &ctx).is_empty());
+    }
+
+    /// col_count == 0 → 空分配（回退）。
+    #[test]
+    fn zero_col_count_returns_empty() {
+        let ctx = ColumnFragmentationContext {
+            col_count: 0,
+            col_width: 0.0,
+            col_gap: 0.0,
+            available_height: Some(50.0),
+            col_filled_heights: Vec::new(),
+            fill_mode: ColumnFillMode::Auto,
+        };
+        assert!(fragment_lines_into_columns(&[line(20.0)], &ctx).is_empty());
+    }
+
+    /// col_filled_heights.len() != col_count（调用方构造错）→ 空分配（回退）。
+    #[test]
+    fn mismatched_filled_heights_returns_empty() {
+        let ctx = ColumnFragmentationContext {
+            col_count: 2,
+            col_width: 250.0,
+            col_gap: 16.0,
+            available_height: Some(50.0),
+            col_filled_heights: vec![0.0], // len 1 != col_count 2
+            fill_mode: ColumnFillMode::Auto,
+        };
+        assert!(fragment_lines_into_columns(&[line(20.0)], &ctx).is_empty());
+    }
+
+    /// budget <= 0（无效）→ 空分配（回退）。
+    #[test]
+    fn non_positive_budget_returns_empty() {
+        let ctx = ColumnFragmentationContext {
+            col_count: 2,
+            col_width: 250.0,
+            col_gap: 16.0,
+            available_height: Some(0.0),
+            col_filled_heights: vec![0.0, 0.0],
+            fill_mode: ColumnFillMode::Auto,
+        };
+        assert!(fragment_lines_into_columns(&[line(20.0)], &ctx).is_empty());
+    }
+
+    /// 空行盒列表 → 空分配。
+    #[test]
+    fn empty_lines_returns_empty() {
+        let ctx = ctx_auto(3, 50.0);
+        assert!(fragment_lines_into_columns(&[], &ctx).is_empty());
+    }
+}

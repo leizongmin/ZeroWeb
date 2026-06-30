@@ -3,7 +3,7 @@
 **版本**：v1.0（rally 自主模式，假设见 §6.5）
 **日期**：2026-06-30
 **作者**：AI Assistant（rendering-compat rally）
-**状态**：本期 Phase 1 死字段切片 LANDED（net 0，dormant，守 multicol-fill-auto-001）；Phase 2a 碎片化实施待多会话接力
+**状态**：Phase 1 死字段切片 LANDED（net 0，dormant，守 multicol-fill-auto-001）；Phase 2a step-2 commit 1 纯算法切片 LANDED（`column_fragmentation_flow.rs`，net 0，零生产调用方，9 单测）；step-2 commit 2（layout 接线 + LayoutBox 输出 + paint 消费）待多会话接力
 **模式**：**rally-pattern 设计文档**（非 `lei-spec-rfc` skill —— 该 skill 需用户确认，与无人值守 rally 输出协议冲突；详见 master.md R896）
 **关联**：
 - rendering-compat master.md R896 / R897
@@ -369,8 +369,8 @@ fn fragment_lines_into_columns(
 | ID | 项目 | 优先级 | 缺失信息 | 下一步 |
 |----|------|--------|----------|--------|
 | A1 | slice 真实缺口（单层 + 单 block 子 breaking） | 重要 | ✅ **R897 probe 已实证**（丢余量 + overfill） | 关闭 |
-| A2 | IFC 行盒可按列 budget 切片（整行不裁断） | 重要（step-2） | 未实施验证 | step-2 Commit 1 前 probe |
-| A3 | chromium 余量 = overflow multicol 盒外（非丢弃） | 重要（step-2） | 未单用例验证 | step-2 Commit 1 前 probe |
+| A2 | IFC 行盒可按列 budget 切片（整行不裁断） | 重要（step-2） | ✅ **R898 确认**（read-only 代码分析：`LineBox` 携带 `height`，IFC `layout()` 产 `self.lines: Vec<LineBox>`，`fragment_lines_into_columns` 纯算法已实现 + 9 单测验证整行不裁断/列满续列/余量 overflow/预占/mismatch 回退） | 关闭 |
+| A3 | chromium 余量 = overflow multicol 盒外（非丢弃） | 重要（step-2） | spec-defined（CSS Multicol §2：fixed column-count + 明确高度，余量 overflow 盒外，overflow:visible 默认）；commit 2 接线时用 chromium Oracle per-test 复核 | step-2 commit 2 接线时验证 |
 
 ---
 
