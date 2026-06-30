@@ -322,3 +322,195 @@ fn test_r711_relative_percent_bottom_inset_applied() {
         child.y
     );
 }
+
+/// CSS §8.3.1：min-height 溢出型块阻止末子 margin collapse-through 穿透父底部。
+///
+/// 复刻 margin-collapse-min-height-001 结构。规范：min-height 把 parent 撑到
+/// 100px（高于内容 30px），child 的 550px margin-bottom 不应穿透 parent，footer
+/// 应紧随 parent。旧实现 taffy CollapsibleMarginSet 让 550px 穿透。
+#[test]
+fn test_min_height_prevents_collapse_through() {
+    let html = r#"<html><body style="margin:0">
+        <div id="parent" style="min-height:100px">
+          <div id="child" style="height:30px;margin-bottom:550px"></div>
+        </div>
+        <div id="footer" style="height:50px"></div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let parent = find("parent", &doc, &result.root).expect("parent box");
+    let footer = find("footer", &doc, &result.root).expect("footer box");
+    // parent 受 min-height 撑到 ~100px。
+    assert!(
+        (parent.height - 100.0).abs() < 2.0,
+        "parent should be raised to min-height 100px, got {}",
+        parent.height
+    );
+    // parent 的 margin_bottom 不应含穿透的 550px（应回到自身声明值 0）。
+    assert!(
+        parent.margin_bottom < 10.0,
+        "parent margin_bottom should NOT include collapse-through child margin \
+         (should be ~0, not 550), got {}",
+        parent.margin_bottom
+    );
+    // footer 应紧随 parent：footer.y（相对 body 内容盒）≈ parent.y + parent.height，
+    // 而非 parent.y + parent.height + 550。
+    let expected_footer_y = parent.y + parent.height;
+    assert!(
+        (footer.y - expected_footer_y).abs() < 5.0,
+        "footer should follow parent immediately (y ≈ {}, not {}+550), got footer.y={}",
+        expected_footer_y,
+        expected_footer_y,
+        footer.y
+    );
+}
+
+/// CSS §8.3.1 反向回归：min-height **小于**内容时不阻止 collapse-through。
+///
+/// 复刻 margin-collapse-min-height-003 结构。min-height 不生效（内容 30 > 5），故
+/// child 的 margin-bottom 仍合法穿透 parent，footer 应在 parent_bottom + 50。
+/// 防止本规则在 min-height 未溢出时误剥离合法 margin。
+#[test]
+fn test_min_height_below_content_still_collapses_through() {
+    let html = r#"<html><body style="margin:0">
+        <div id="parent" style="min-height:5px">
+          <div id="child" style="height:30px;margin-bottom:50px"></div>
+        </div>
+        <div id="footer" style="height:50px"></div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let parent = find("parent", &doc, &result.root).expect("parent box");
+    let footer = find("footer", &doc, &result.root).expect("footer box");
+    // parent 高度由内容决定（~30），min-height:5px 不生效。
+    assert!(
+        (parent.height - 30.0).abs() < 3.0,
+        "parent height should be driven by content (~30, min-height 5 inactive), got {}",
+        parent.height
+    );
+    // footer 应被 child 的 50px margin 推下（合法穿透）：footer.y ≈ parent.y + 30 + 50。
+    let expected_footer_y = parent.y + 30.0 + 50.0;
+    assert!(
+        (footer.y - expected_footer_y).abs() < 5.0,
+        "footer should still be pushed by collapse-through margin (y ≈ {}, not parent_bottom), \
+         got footer.y={}",
+        expected_footer_y,
+        footer.y
+    );
+}
+
+/// CSS §8.3/§8.4：百分比 padding 相对**包含块内容宽度**解析（与元素自身宽度无关）。
+///
+/// taffy 0.7 的 LengthPercentage::Percent padding 解析为 0。`#cb{width:300} > #box{padding:20%}`
+/// 的 box padding 应为 60px（20% of 300 CB），而非 0。验证 resolve_percentage_padding
+/// 两趟预解析把百分比 padding 改写为绝对 px。
+#[test]
+fn test_percentage_padding_resolved_against_cb_width() {
+    let html = r#"<html><body style="margin:0">
+        <div id="cb" style="width:300px">
+          <div id="box" style="padding:20%"></div>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let box_ = find("box", &doc, &result.root).expect("box");
+    // 20% of CB content width (300) = 60px on each side.
+    assert!(
+        (box_.padding_top - 60.0).abs() < 1.5,
+        "percentage padding-top should resolve to 60px (20% of 300 CB), got {} \
+         (taffy 0.7 Percent padding bug gives 0)",
+        box_.padding_top
+    );
+    assert!(
+        (box_.padding_left - 60.0).abs() < 1.5,
+        "percentage padding-left should resolve to 60px, got {}",
+        box_.padding_left
+    );
+}
+
+/// 百分比 padding 应相对**父级**内容宽（非元素自身宽）。`#cb{width:300} > #box{width:150;padding:20%}`
+/// 的 box padding 仍为 60px（20% of CB 300），而非 30px（20% of own 150）。
+#[test]
+fn test_percentage_padding_uses_cb_width_not_own_width() {
+    let html = r#"<html><body style="margin:0">
+        <div id="cb" style="width:300px">
+          <div id="box" style="width:150px;padding:20%"></div>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let box_ = find("box", &doc, &result.root).expect("box");
+    assert!(
+        (box_.padding_top - 60.0).abs() < 1.5,
+        "percentage padding must use CB width (300) not own width (150): 60px, got {}",
+        box_.padding_top
+    );
+}
+
+/// CSS §10.3.3/§10.6.3：根元素（html）的固定 margin 相对初始包含块定位 border-box。
+///
+/// taffy 把根节点固定在 (0,0)，根的声明 margin 不被应用，致
+/// `<html style="margin:50px">` 的边框盒落在视口原点而非 (50,50)
+/// （abspos-containing-block-initial-009a 簇）。验证根固定 margin 位置偏移。
+#[test]
+fn test_root_element_margin_offsets_border_box() {
+    let html = r#"<html style="margin:50px;border:10px solid black"><body></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    // 根 html 边框盒应偏移到 (50,50)（margin 50），而非 (0,0)。
+    assert!(
+        (result.root.x - 50.0).abs() < 1.0,
+        "root border-box x should be offset by margin-left 50, got {}",
+        result.root.x
+    );
+    assert!(
+        (result.root.y - 50.0).abs() < 1.0,
+        "root border-box y should be offset by margin-top 50, got {}",
+        result.root.y
+    );
+}
+
+/// CSS §10.1/§9.3.2：根元素 position:absolute/fixed（无 positioned 祖先）的包含块是
+/// 初始包含块（视口），其 left/top Length inset 定位根 border-box。taffy 把根固定在
+/// (0,0) 不解析根的 position:absolute，致 `<html style="position:absolute;left:50px;
+/// top:50px">` 落 (0,0) 而非 (50,50)（abspos-containing-block-initial-009b/004a-d 簇）。
+#[test]
+fn test_root_abspos_inset_positions_border_box() {
+    let html = r#"<html style="position:absolute;left:50px;top:50px;width:100px;height:100px"><body></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    assert!(
+        (result.root.x - 50.0).abs() < 1.0,
+        "abspos root border-box x should be left inset 50, got {}",
+        result.root.x
+    );
+    assert!(
+        (result.root.y - 50.0).abs() < 1.0,
+        "abspos root border-box y should be top inset 50, got {}",
+        result.root.y
+    );
+}

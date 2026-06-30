@@ -189,6 +189,8 @@ fn apply_replaced_element_sizing(
     // （canvas 的 bitmap 大小）。R784：canvas 此前未处理→被当普通 block 拉伸填满父宽
     // （aspect-ratio-intrinsic-size 簇 canvas 渲染 784px）。video/iframe 等暂无 driving
     // reftest，不处理。
+    // 注：<svg> 替换元素 sizing（CSS §10.3.2 默认 300px）经实测对 driving reftest 0-effect
+    // （inline-replaced-width 簇依赖 inline SVG 形状渲染，goal line 118 out of scope），暂不处理。
     if tag != "img" && tag != "canvas" {
         return;
     }
