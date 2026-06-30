@@ -418,7 +418,7 @@ R834（strut 0.8→0.928）/ R836 / R849 / R875：单点改 strut 或 v_offset �
 R639 实证 Phase A **非「全有或全无」**：per-fragment inline-bg（+13）/ per-fragment color（R358）/ 跨 block float 侵入（R362）各独立 LANDED。**剩余 prerequisites = 真实 font 度量 bridge**（IFC↔FontLoader 接口，暴露 fontdue line_metrics 真实 ascent/descent/ink-height）——当前 IFC 用硬编码 0.8 / estimate_char_width 启发式。
 
 ### 12.6 首步可执行 slice（v1.3 推荐）
-1. **font-bridge**（零行为变更 enabling infra）：在 IFC 注入 font-metric 查询（fontdue line_metrics），暴露 per-font ascent/ink-height。仅添加接口，不改 0.8 常数 → 零回归。
+1. **✅ LANDED R885（commit `d5b7e3ae`，零行为变更 enabling infra）**：`crates/layout-engine/src/inline/font_metrics.rs` 新模块 = `LineMetrics` + `FontMetricProvider` trait + `impl FontMetricProvider for FontLoader`（family→font_id→fontdue `line_metrics_full`→ascent/descent/line_gap）+ `InlineFormattingContext.font_metric_provider`（默认 `None`，dormant）+ builder。在 IFC 注入 font-metric 查询，暴露 per-font ascent/descent/line_gap（ink-height 见 step-2 concept ②，须 render-foundation 暴露 glyph ink bounds）。**仅添加接口，不改 0.8 常数 → 零回归**（grep 证 0 production reads；make test 全绿 incl. 4 新 font_metrics 测试断言真实 Ahem 度量；product-smoke welcome 16.11%≈baseline 16.16%）。
 2. **三方同改 narrow slice**（消费 bridge）：strut 用 real ascent + non-stored v_offset 用 ink-height（或先试 `fragment.baseline` 替代 font_size）+ 验双路径不双计。**三态门禁 A/B**：welcome <20% + linebox/css-text/normal-flow oracle 零回归 + self-source 通过率不降。净负即回退（5th data point）。
 3. 守住 multicol-fill-auto 反向依赖（R198 墙）+ pre-wrap 宽度敏感（R627 -15）。
 
