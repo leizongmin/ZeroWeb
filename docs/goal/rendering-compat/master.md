@@ -961,6 +961,15 @@
 
 ### R895 DC-11 Float 实测验证（2026-06-30，真进展：Float checkbox 勾齐）
 
+### R896 multicol Phase 2 入口核查（spec-rfc skill 不适用 + subpixel 非窄 lever，2026-06-30）
+
+承 R895「下一步 multicol Phase 2 spec-rfc」，核查后发现：
+1. **lei-spec-rfc skill 与 unattended rally 冲突**：该 skill 要求「开发前需用户输入时，结束回复等待用户响应」+ 确认流程，与 rally 输出协议「不要向用户提问」+ 无人值守模式冲突。**裁决**：rally 的设计文档走既有 rally-pattern（如 multicol-fragmentation-design.md / phase-a-IFC-unification-design.md 直接产出，非 skill 的 confirmation flow）。
+2. **subpixel-column-rule-width 非 narrow lever**：渲染实测 diff 23.39%；code 核查 column-rule-width 在 text.rs:196 用 `*w as f32` 不 round（gap 存在），但 column-rule 是细线、diff 主项 = Lorem ipsum 跨列文本分布（fragmentation），rule-rounding 修复仅影响细线像素（marginal）。**multicol 所有候选均由 Phase 2 fragmentation 主导**（nested/breaking/span-all），无 narrow 单点 lever。
+3. **★ rally wpt-runner-reachable 杠杆穷尽定论**：feature/infra DC 已验证达成（DC-1/6/7/8/9/10/11-mostly/12-mostly/13/14 ✅）；reftest/oracle 侧 4 目录 7380 案 plateau 铁定（font-raster strict 噪声 + 结构性簇）；DC-2~5 strict ≥95% 受 fontdue≠Skia 光栅上限（per-glyph 0.1-3% 噪声聚合），<1% oracle 缺口 = 结构性硬核（multicol Phase 2 / R109 / baseline-export，均有 prior 证伪）。**残余可推进 = 多会话硬核架构**（非单 session）。welcome DC-13 gate PASS（16.11%<20%）。
+
+**▶ 下会话**：multicol Phase 2 设计文档（rally-pattern，非 skill）——为 layout-side column-aware IFC 的**最窄可碎片化子集**（如单层 multicol + 单一 block 子元素 breaking 跨列，非 nested/balance）设计 `ColumnFragmentationContext` 接口 + Phase 1 死字段（净 0，守 multicol-fill-auto-001），作为多年硬核的首个 enabling slice；或转 R109 §9.2.1.1 匿名块（welcome P1，亦多会话）。勿以单 session 期望 DC-2~5 显著提升（受光栅 + 结构性双上限）。
+
 承接 R894「feature 实测验证」纪律，核查 DC-11 Float 真实状态（master.md line 657 已记「table/float layout 已在 M4 实现」，但 goal DC-11 checkbox 未勾——stale）。**实测验证**（fixture = `float:left` 100×80 红盒 + 块级兄弟蓝 div 200px + 白文本）：
 - **float 定位**：红 float 正确居容器左上 x[0,99]y[0,79]（100×80）✓
 - **块级兄弟盒**：蓝 div border-box 全宽 x[0,799]y[0,199]（150678 px ≈ 800×200−float 区）在 float **之后**（CSS §9.5 正确——block border-box 不被 float 缩，仅 inline content 缩）✓
