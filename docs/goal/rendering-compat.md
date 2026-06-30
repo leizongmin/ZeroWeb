@@ -102,9 +102,9 @@
 | 滚动容器 | `overflow: scroll/auto` 的可滚动容器，滚动偏移的正确应用 | 当前滚动偏移仅在浏览器层通过 `scroll_y` 手动偏移，无真正的滚动容器 |
 | text-shadow | 文字阴影（offset + blur + color） | paint 阶段未生成 text-shadow 图元 |
 | 多背景图层 | `background-image` 多层叠加渲染 | ✅ **已实现**：painter/effects.rs:134 遍历 `background_image` 全图层 `.rev()` 叠加渲染 + test_paint_multiple_overlapping_backgrounds；原「仅渲染第一个」已过时 |
-| clip-path | CSS clip-path（circle、ellipse、polygon、inset） | 仅生成指示器，无实际裁剪实现 |
-| backdrop-filter | 元素背后内容的滤镜效果 | 完全未实现 |
-| CSS mask | CSS 遮罩效果 | 完全未实现 |
+| clip-path | CSS clip-path（circle、ellipse、polygon、inset） | ✅ **已实现（M9）**：painter/effects_indicators.rs + helpers.rs 全形状裁剪（原「仅生成指示器」描述已过时） |
+| backdrop-filter | 元素背后内容的滤镜效果 | ✅ **已实现（M9，R894 实测验证）**：painter/effects.rs，blur 效果正确限定在元素盒内（原「完全未实现」描述已过时） |
+| CSS mask | CSS 遮罩效果 | ✅ **已实现（M9）**：painter/effects.rs 渐变蒙版裁剪 + alpha 衰减（原「完全未实现」描述已过时） |
 | 重复渐变 | `repeating-linear-gradient`、`repeating-radial-gradient` | ✅ **已实现**：cpu/gradient.rs:28 `if gradient.repeating` 处理 |
 
 ### 不在范围内（明确排除）
@@ -301,11 +301,11 @@
 - [x] ✅ **text-shadow** — 文字阴影渲染（offset + blur + color）— painter/text.rs:1067 `if has_text_shadow { push shadow glyph at (x+ox,y+oy,shadow_color) }` + test_paint_text_shadow_basic
 - [x] ✅ **多背景图层** — `background-image` 多层叠加渲染 — painter/effects.rs:134 `for layer in background_image.iter().rev()` 全图层叠加 + test_paint_multiple_overlapping_backgrounds
 - [x] ✅ **重复渐变** — `repeating-linear-gradient` / `repeating-radial-gradient` — cpu/gradient.rs:28 `if gradient.repeating {` 处理重复渐变
-- [ ] **border-image** — 边框图片渲染（slice + repeat + width）
-- [ ] **clip-path** — CSS clip-path 基础形状（circle、ellipse、polygon、inset）
-- [ ] **backdrop-filter** — 元素背后内容的滤镜效果
-- [ ] **CSS mask** — 基础遮罩效果（至少 image mask）
-- [ ] **scroll-snap** — 滚动吸附行为
+- [x] ✅ **border-image** — 边框图片渲染（slice + repeat + width）— painter/mod.rs 实现 + paint/tests/border_image_repeat.rs 单测（M9）
+- [x] ✅ **clip-path** — CSS clip-path 基础形状（circle、ellipse、polygon、inset）— painter/effects_indicators.rs + helpers.rs 实现（M9）
+- [x] ✅ **backdrop-filter** — 元素背后内容的滤镜效果 — painter/effects.rs 实现；**R894 实测验证**（gradient 背景 + overlay backdrop-filter:blur(15px)，with-vs-without 渲染 diff = 15314 px 恰落在 overlay 盒 y[0,80] 带、带外 0 px，证 blur 效果正确限定在元素盒内）
+- [x] ✅ **CSS mask** — 基础遮罩效果（渐变蒙版裁剪 + alpha 衰减）— painter/effects.rs 实现（M9）
+- [ ] **scroll-snap** — 滚动吸附行为（需宿主层滚动输入路由）
 - [ ] **打印媒体查询** — `@media print` 基础支持（可选，降低优先级）
 
 ### DC-13: 产品静态页面视觉 smoke
@@ -412,9 +412,9 @@
 | text-shadow | 文字效果 | P2-中等 | paint 阶段未生成 text-shadow 图元 |
 | ~~多背景图层~~ | 视觉丰富度 | ✅ **已实现** | effects.rs:134 全图层 `.rev()` 叠加（原「仅第一个」已过时） |
 | ~~重复渐变~~ | 视觉丰富度 | ✅ **已实现** | cpu/gradient.rs:28 `if gradient.repeating`（原「未实现」已过时） |
-| clip-path | CSS 裁剪 | P3-低 | 仅生成指示器，无实际裁剪 |
-| backdrop-filter | 模糊背景 | P3-低 | 完全未实现 |
-| CSS mask | 遮罩效果 | P3-低 | 完全未实现 |
+| ~~clip-path~~ | CSS 裁剪 | ✅ 已实现（M9） | painter/effects_indicators.rs + helpers.rs 全形状裁剪（原「仅生成指示器」已过时） |
+| ~~backdrop-filter~~ | 模糊背景 | ✅ 已实现（M9，R894 实测） | painter/effects.rs；blur 效果正确限定元素盒内（原「完全未实现」已过时） |
+| ~~CSS mask~~ | 遮罩效果 | ✅ 已实现（M9） | painter/effects.rs 渐变蒙版裁剪 + alpha 衰减（原「完全未实现」已过时） |
 | 3D transform | 3D 效果 | P3-低 | 仅 2D 支持，3D 函数忽略 |
 | ~~真实 WPT reftest~~ | 验证有效性 | ✅ **已实现（R484）** | R484 完成 10/10 目录全量去子集化——从上游 WPT（`https://github.com/web-platform-tests/wpt`）`MANIFEST.json` 自动提取并导入 **~9967 个真实 reftest**（css2/CSS2/flexbox/grid/position/float/tables/multicol/text/writing-modes/fonts/text-decor 全覆盖），并建 DC-14 chromium Oracle 一致率基线 3608/9967=36.2%（chr<1%）。原 685 个 inline reftest 现仅作 smoke（不计入通过率）。原「685 inline 未用真实 WPT」描述已过时（pre-R484） |
 
@@ -429,7 +429,7 @@
 
 ## Single Active Milestone
 
-**当前活跃里程碑**：✅ **M7 已完成**（渲染器图元覆盖 + 浏览器图元消费）—— DC-8 CPU 13/13 + DC-9 GPU 13/13 + DC-10 浏览器消费全 13 字段，均附 framebuffer 像素断言测试（见 master.md R660-R666）。**当前实际活跃工作**：M10（上游 WPT 真实 reftest 通过率）+ DC-13 产品 smoke + 真 incomplete 特性（Float/sticky/scroll + clip-path/backdrop-filter/mask 渲染）+ Phase A 字体度量 plateau（按 rally 跨会话续跑协议推进）。
+**当前活跃里程碑**：✅ **M7 已完成**（渲染器图元覆盖 + 浏览器图元消费）—— DC-8 CPU 13/13 + DC-9 GPU 13/13 + DC-10 浏览器消费全 13 字段，均附 framebuffer 像素断言测试（见 master.md R660-R666）。**当前实际活跃工作**：M10（上游 WPT 真实 reftest 通过率）+ DC-13 产品 smoke + 真 incomplete 特性（Float/sticky/scroll 宿主层 + scroll-snap + @media print；clip-path/backdrop-filter/mask 已 ✅ M9/R894）+ Phase A 字体度量 plateau（按 rally 跨会话续跑协议推进）。
 
 ### M7 目标
 
