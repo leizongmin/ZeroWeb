@@ -98,13 +98,53 @@ jobs:
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
 
-      - name: Run tests
+      - name: Run core crate tests
+        timeout-minutes: 20
         run: |
-          cargo test --workspace --exclude zero-render-foundation --target ${{ matrix.target }} -- --test-threads=1
+          cargo test \
+            -p zero-dom \
+            -p zero-css-parser \
+            -p zero-style-system \
+            -p zero-layout-engine \
+            -p zero-engine \
+            -p zero-canvas \
+            -p zero-host-runtime \
+            -p zero-net \
+            -p zero-security \
+            -p zero-storage \
+            -p zero-protocol \
+            -p zero-script-sandbox \
+            -p zero-wasm-sandbox \
+            -p zero-page-runtime \
+            -p zero-webview \
+            -p zero-browser-shell \
+            --target ${{ matrix.target }} -- --test-threads=1
+
+      - name: Run app tests
+        timeout-minutes: 40
+        run: |
+          cargo test \
+            -p zero-browser \
+            -p zero-renderer \
+            -p zero-webview-demo \
+            --target ${{ matrix.target }} -- --test-threads=1
+
+      - name: Run integration and WPT runner tests
+        timeout-minutes: 20
+        run: |
+          cargo test \
+            -p zero-integration-tests \
+            -p zero-wpt-runner \
+            --target ${{ matrix.target }} -- --test-threads=1
+
+      - name: Run render CPU tests
+        timeout-minutes: 10
+        run: |
           cargo test -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Build release
         if: matrix.release_build != false
+        timeout-minutes: 20
         run: cargo build --release --workspace --target ${{ matrix.target }}
 
       - name: Note unsupported release build
