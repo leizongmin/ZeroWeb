@@ -116,6 +116,112 @@ pub(crate) fn store_inline_layout_results(
     }
 }
 
+/// R900：env `MULTICOL_COLUMN_FRAG` 门控——为 inline-only `column-fill:auto` + 明确高度
+/// multicol 容器按列宽重排 IFC、`fragment_lines_into_columns` 分布行盒到列、重定位后存入
+/// `inline_layout`，使 paint `use_stored` 按列渲染（**无 paint 改动**，绕过 R157/R198/R203/R317
+/// paint 侧 4 轮证伪）。
+///
+/// 返回 `true` 表示已存储列分布行盒（调用方早返回）；`false` 表示非目标结构（调用方走默认路径）。
+///
+/// 目标结构（R897/R900 实证真缺口）：单层 multicol + `column-fill:auto` + 明确高度 + 无 block 子
+/// （直接 inline 文本）。当前 ZW 把此类容器渲染为**单个全宽列**（multicol.rs 仅处理 block 子，
+/// inline 内容从不分布到列）——`multicol-fill-auto-001` self-source 9.41% 真失败。
+fn store_inline_multicol_columns(
+    root: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> bool {
+    use crate::inline::{
+        ColumnFillMode, ColumnFragmentationContext, InlineFormattingContext, fragment_lines_into_columns,
+    };
+
+    let node_id = match root.node_id {
+        Some(id) => id,
+        None => return false,
+    };
+    let style = match styles.get(&node_id) {
+        Some(s) => s,
+        None => return false,
+    };
+    // 仅 column-fill:auto + 列数≥2
+    let info = match crate::multicol::compute_column_info(style, root.content_width) {
+        Some(i) if i.sequential_fill && i.count >= 2 => i,
+        _ => return false,
+    };
+    // 明确高度作列高预算
+    let available_height = root.content_height;
+    if available_height <= 0.0 {
+        return false;
+    }
+    // inline-only：无 in-flow block-level 子（block 子走 multicol.rs assign_children 路径）
+    let has_block_child = root
+        .children
+        .iter()
+        .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed);
+    if has_block_child {
+        return false;
+    }
+    // 列宽重排 IFC（目标案为简单文本；复杂 override 留后续扩展）
+    let mut col_ctx = InlineFormattingContext::new(info.column_width);
+    col_ctx.layout(doc, node_id, styles);
+    if col_ctx.lines.is_empty() {
+        return false;
+    }
+    // 分布行盒到列（整行不裁断，列高 respected，余量留末列）
+    let ctx = ColumnFragmentationContext {
+        col_count: info.count,
+        col_width: info.column_width,
+        col_gap: info.gap,
+        available_height: Some(available_height),
+        col_filled_heights: vec![0.0; info.count],
+        fill_mode: ColumnFillMode::Auto,
+    };
+    let assignments = fragment_lines_into_columns(&col_ctx.lines, &ctx);
+    if assignments.is_empty() {
+        return false;
+    }
+    // 重定位存储：line.y = y_in_column（各列均从容器内容顶 0 起）；
+    // 每个 fragment.x += col_idx × (col_width + gap)（横向偏移到对应列）。
+    let is_ahem_container = style.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"));
+    let stored: Vec<crate::types::InlineLayoutLine> = assignments
+        .iter()
+        .map(|a| {
+            let line = &col_ctx.lines[a.line_idx];
+            let col_x_offset = a.column as f32 * (info.column_width + info.gap);
+            crate::types::InlineLayoutLine {
+                y: a.y_in_column,
+                height: line.height,
+                baseline_y: line.baseline_y,
+                ascent: line.ascent,
+                descent: line.descent,
+                fragments: line
+                    .runs
+                    .iter()
+                    .map(|frag| crate::types::InlineLayoutFragment {
+                        x: frag.x + col_x_offset,
+                        y: frag.y,
+                        width: frag.width,
+                        height: frag.height,
+                        font_size: frag.font_size,
+                        is_ahem: is_ahem_container,
+                        is_ahem_font: frag.is_ahem,
+                        text: frag.text.clone(),
+                        node_id: Some(frag.node_id),
+                        baseline_y: line.baseline_y,
+                    })
+                    .collect(),
+            }
+        })
+        .collect();
+    if stored.is_empty() {
+        return false;
+    }
+    root.inline_layout = Some(stored);
+    // inline_layout_width = 容器内容宽（使 paint width_matches → use_stored=true，按列渲染）
+    root.inline_layout_width = root.content_width;
+    true
+}
+
 /// 从 IFC 片段中提取各文本节点的 font_size、is_ahem 标志、letter-spacing 和 line-height 并存储到 LayoutBox。
 ///
 /// paint 系统在运行空 styles IFC 时无法获取正确的 font_size、字体信息、letter-spacing 和 line-height，
@@ -325,7 +431,15 @@ pub(crate) fn compute_final_inline_layouts(
     }
 
     // 跳过多列容器（多列在 paint 阶段按列分配 IFC 内容，不适合预存储）
+    // R900：inline-only column-fill:auto + 明确高度 multicol 容器列分布存储（命中则 paint
+    // use_stored 按列渲染，无 paint 改动）。**默认开启**（实测 css-multicol oracle +1 零回归，
+    // multicol-fill-auto-001 8.56%→0.00%；触发条件极窄：inline-only + auto + 明确高度 + 无 block
+    // 子，welcome/legacy 不命中）。env `MULTICOL_COLUMN_FRAG=0` 可关闭作回退开关。
     if root.is_multicol {
+        let enabled = std::env::var("MULTICOL_COLUMN_FRAG").as_deref() != Ok("0");
+        if enabled && store_inline_multicol_columns(root, doc, styles) {
+            return;
+        }
         return;
     }
 

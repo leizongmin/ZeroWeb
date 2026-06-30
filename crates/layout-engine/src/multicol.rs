@@ -82,15 +82,15 @@ fn column_height_limit(container: &LayoutBox, info: &ColumnInfo) -> f32 {
 }
 
 /// 多列布局计算信息。
-struct ColumnInfo {
+pub(crate) struct ColumnInfo {
     /// 列数。
-    count: usize,
+    pub count: usize,
     /// 单列宽度。
-    column_width: f32,
+    pub column_width: f32,
     /// 列间距。
-    gap: f32,
+    pub gap: f32,
     /// 是否按顺序填充（column-fill: auto）。
-    sequential_fill: bool,
+    pub sequential_fill: bool,
 }
 
 /// 将 LengthValue 转换为像素值。
@@ -128,7 +128,7 @@ pub(crate) fn balance_column_geometry(style: &ComputedStyle, container_width: f3
 /// 从 ComputedStyle 计算多列参数。
 ///
 /// 返回 `None` 表示不需要多列布局（column-count: auto 且 column-width: auto）。
-fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<ColumnInfo> {
+pub(crate) fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<ColumnInfo> {
     let gap = length_to_px(&style.column_gap, container_width);
     let sequential_fill = matches!(style.column_fill, ColumnFillComputedValue::Auto);
 

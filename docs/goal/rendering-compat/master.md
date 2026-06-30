@@ -1046,6 +1046,30 @@
 
 **意义**：R900 发现**重开 multicol 真实 yield 轨道**（inline-only 列分布缺失 = 真缺口非 false-pass，区别 R899 误判「低 yield」），并找到**绕过 paint 侧 4× 证伪**的实现路径（use_stored 存储重定位行盒）。这是 R897 接口 + R898 算法之后的**决定性 de-risk**——下会话实现是真 pass-rate 杠杆（非 net-0 enabling）。
 
+### R901 ★ multicol inline-only auto 列分布 LANDED 默认开启（首个 multicol 真 pass-rate win·+1 oracle·零回归·有 net 源码）
+
+承 R900「下会话实现 inline-only auto multicol 列分布」。**当轮实现 + 默认开启 + 实测真 pass-rate 提升**（非 net-0 enabling——R897/R898 接口+算法之后的首个 active win）。
+
+**实现**（R900 计划落地，hook 点修正为 `compute_final_inline_layouts` 而非 remeasure——remeasure 仅 height:auto）：
+- **根因 blocker 定位**：`inline_finalization.rs:327` `if root.is_multicol { return; }` —— compute_final 对 multicol 容器**早返回不存储** inline_layout（注释「多列在 paint 阶段按列分配」是 inline-only 的错误假设），致 multicol-fill-auto-001 走 paint Path B 全宽重排 = 单宽列。
+- **新 helper `store_inline_multicol_columns`**（inline_finalization.rs，~110 行）：① 门控条件——`is_multicol` + `compute_column_info` sequential_fill + count≥2 + `content_height>0`（明确高度）+ 无 in-flow block 子（inline-only）；② 列宽重排 IFC（`InlineFormattingContext::new(col_width).layout(doc, node_id, styles)`）；③ `fragment_lines_into_columns` 分布（R898 算法）；④ 行盒重定位：`InlineLayoutLine.y = y_in_column`，每个 `InlineLayoutFragment.x += col_idx × (col_width + gap)`；⑤ 存 `box_node.inline_layout` + `inline_layout_width = content_width`（使 paint `use_stored=true`）。
+- **call site**（line 433-441）：`is_multicol` 分支由无条件 return 改为先尝试 `store_inline_multicol_columns`（命中则早返回已存储）。
+- **multicol.rs**：`compute_column_info` + `ColumnInfo` 字段改 `pub(crate)`（供 helper 取 col_count/col_width/gap/sequential_fill）。
+- **★ 无 paint 改动**（绕过 R157/R198/R203/R317 paint 侧 4 轮证伪）：paint `use_stored`（text.rs:838，multicol_info 对 inline-only auto 为 None）直接渲染存储的重定位行盒，按列分布。
+
+**默认开启 + 回退开关**：`env MULTICOL_COLUMN_FRAG=0` 可关闭（默认开启）。触发条件极窄（inline-only + column-fill:auto + 明确高度 + 无 block 子——稀有模式），welcome/legacy 不命中。
+
+**验证（全门禁绿 + 真 pass-rate 提升）**：
+- **css-multicol oracle**：`make reftest-oracle DIR=css-multicol` = **105/452 (23.2%)** vs baseline 104/452 (23.0%) = **净 +1 oracle-pass 零回归**。
+- **multicol-fill-auto-001**：oracle **8.56%→0.00% PASS**（self-source 9.41%→4.40%；self-source 残余 = ZW ref float 渲染差异非 test 缺口，oracle 0.00% 证 test 与 chromium 一致）。
+- **fill-auto 家族**：oracle-pass 3→4 (30.8%)；multicol-fill-auto-003 5.26%→1.22%（大幅改善但仍 >1%）。
+- `make test` 默认 ON 全 workspace 绿（exit 0，0 FAILED）；`cargo clippy --all-targets -D warnings` 干净；`cargo fmt` 干净。
+- `make product-smoke` welcome **16.11%** 不变（<20% DC-13 gate，welcome 无 multicol 不触发）。
+
+**意义**：**首个 multicol 真 pass-rate 胜利**（R897 接口 + R898 算法 + R900 de-risk 之后的水到渠成）。证实「无 paint 改动 + use_stored 存储重定位行盒」路径**绕过了 4× paint 侧证伪**——layout 侧列分布存储，paint 直接消费。multicol oracle 23.0%→23.2%（+1），方向确立。**残余 fill-auto 案例**（003 1.22% / 004 2.74% / 005 2.08% / block-children 001-003 1.6-1.9%）= 下会话精修方向（残余 = 列宽 IFC 缺复杂 override / block-children 走另一路径）。
+
+**▶ 下会话**：① 精修 fill-auto 残余（003/004/005——查残余 diff 是列宽 IFC wrapping 差异还是 overflow 余量处理，目标再 +N oracle-pass）；② 扩展到 inline-only **balance** multicol（当前 balance 也丢列宽行盒，类似机制可解 balance inline 簇）；③ block-children fill-auto（has_block_child 排除——需 block 子列宽重排，是 R898 commit-2 原始范围，仍高风险）。**这是 multicol 轨道从 enabling 转 active yield 的转折点**。
+
 ### 已 ruled out（勿以单会话重试）
 
 near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / **column-aware IFC Phase 1（pure-inline balance 明确高度）(R381)**：执行 column-aware-IFC-spec.md §10 gate「假设 A1」，扫描全 16 css-multicol 失败案结构（height/column-fill/blockchildren），**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）——每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套；spec 自身协议「A1 不存在→紧急停止转 Phase 2」生效，Phase 1 零杠杆关闭，真实 multicol lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）/ baseline-export 3 机制(R266–R316) / **advance-width(R225–R375b) definitive 关闭**：R375 hand-crafted DejaVu 表 morning 16.41→19.14% + R375b fontdue-actual advance（临时加 fontdue dep+缓存 Font+metrics.advance_width）16.41→19.08%，双 variant 均退步；fontdue-actual（最后未测变体）亦证伪。根因：accurate DejaVuSans advance 使换行偏离 chromium（system-ui≠DejaVuSans 或换行算法不同），0.55 启发式碰巧更近。advance-width 非 morning cascade 根因/ blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304) / inline-flex·inline-grid width:auto shrink-to-fit（R370：probe 实证 inline-flex width:auto 同 inline-block 拉伸到满宽 800，是真 bug，但**零杠杆**——全 48 失败案 + product-smoke fixture 均不用 inline-flex/inline-grid width:auto；fix 需 flex_row_intrinsic_width（非 box_content_max_width，flex row 须求和 block 子元素非取 max），复杂且无 reftest/smoke 收益，按 code-guidelines「不做零价值修改」不修，勿再以单会话重试）/ **percent max-width/min-height/min-width clamping（R119 analog，doc-agent 复核 ~0 yield，闭）**：engine.rs:1408 仅 `clamp_percentage_max_height`，无 max-width/min 平行函数——但 max-width-091(percent)✓ + min-height-091/092(percent)✓ 均 PASS（block width 定值→taffy 直接钳；min-height 是测量期 floor 非 content re-clamp）；R119 缺口唯一 max-height-specific（auto-height 内容测量 re-clamp），已修即完整 percent-clamp，无平行 lever，勿以 R119 类比重扫 / **intrinsic-keyword sizing（max-content/min-content/fit-content，R97 谱系，doc-agent 复核 = 非 clean 单会话 lever）**：121 测试文件用此三关键字，但**全集中在 taffy-blocked 上下文**（css-multicol/tables/flexbox intrinsic-size/table-intrinsic-size/flex-item-*-content），CSS2 block/inline-block 上下文**仅 1 案且为 crash-test**（inline-negative-margin-minmax-crash-001，非 sizing-correctness）→ memory「block/inline-block 可独立做」slice **无 dedicated driving test**（~0 可测 yield）；max-content/min-content parse_basic.rs 解析但 resolve 丢信号→0（R97/max-content memory），修复须保留信号+shrink-to-fit 触发，grid/flex/multicol/table 受 taffy 容器不 shrink 阻塞 = 多会话/结构性，勿以单会话重扫。 / **NBSP/Unicode-space collapse (R651 read-only 复核·非 lever)**：`collapse_whitespace`（inline/mod.rs:231）用 Rust `char::is_whitespace()` 折叠 NBSP(U+00A0)/U+3000 等，违反 CSS Text 3 §4.1.1（仅 TAB/LF/FF/CR/space 可折叠）——真 correctness bug，但 collapse 上下文（normal/nowrap/pre-line）**无 reftest 覆盖**（white-space-collapse-001 是 testharness JS `assert_equals(offsetWidth)` 测，非 reftest）；NBSP reftests（white-space-pre-031/032/034/035）全在 `pre` 上下文（preserve 路径不经 collapse）实测 PASS @2.64%。无 driving reftest → 非 lever（product-smoke 影响 negligible，NBSP 罕见于 fixture），defer；R647 category (b) 的 NBSP 角度据此关闭。
