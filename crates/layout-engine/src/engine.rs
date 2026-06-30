@@ -266,6 +266,11 @@ impl LayoutEngine {
         // 之后（float 位置已定）自底向上重算。
         exclude_floats_from_non_bfc_auto_height(&mut root_box, styles);
 
+        // 5.3 后处理（CSS §8.3.1）：min-height 溢出型块阻止末子 margin collapse-through
+        // 穿透父底部。taffy 0.7 CollapsibleMarginSet 未实现此 min-height 细节，须后处理
+        // 剥离穿透 margin 并上移后续兄弟（margin-collapse-min-height-001/002 簇）。
+        prevent_collapse_through_min_height(&mut root_box, styles);
+
         // 5.5 后处理：垂直书写模式下 width:auto 块级元素收缩到内容块轴跨度
         shrink_vertical_blocks_to_content(&mut root_box, styles, &WritingModeValue::HorizontalTb);
 
@@ -1627,6 +1632,139 @@ fn exclude_floats_from_non_bfc_auto_height(box_node: &mut LayoutBox, styles: &Ha
         box_node.content_height = new_content_h;
         box_node.height = new_content_h + pb;
     }
+}
+
+/// CSS §8.3.1：min-height 溢出时阻止子元素 margin「穿透」父元素底部。
+///
+/// 规则（CSS 2.1 §8.3.1「Adjoining margins」）：块级元素的上/下 margin 只有在其
+/// `height` 计算为 `auto` 且 `min-height` 为零时才彼此 adjoining，从而允许末子
+/// `margin-bottom`「collapse through」父元素底部（父元素有效下 margin = 末子
+/// margin-bottom）。当 `min-height` 把块撑到高于其 in-flow 内容时，末子 margin 不再
+/// 穿透——父元素下 margin 应回到自身声明值，后续兄弟紧随父元素。
+///
+/// taffy 0.7 的 CollapsibleMarginSet 未实现此 min-height 细节：`#parent{min-height:100px}`
+/// 包 `#child{height:30px;margin-bottom:550px}`（parent 无 border/padding）时，
+/// child 的 550px margin 仍穿透 parent，使后续 footer 被推到 y=parent_bottom+550
+/// （`margin-collapse-min-height-001`：应 150px 绿块却渲染成 700px）。
+///
+/// 本 pass 自顶向下：对每个**容器**，遍历其块级 in-flow 子元素，当一个子元素是
+/// min-height 溢出型（min-height_px > 其 in-flow 内容 border-box 底边最大值），把它
+/// margin_bottom 超出**自身声明值**的部分（=穿透进来的末子 margin）剥离，并把该子
+/// 之后所有兄弟 `.y` 上移同样像素，同时收紧容器 content_height/height。
+///
+/// 仅在「min-height 真正溢出内容」时触发（`margin-collapse-min-height-003`：
+/// min-height:5px < content 30px 时 min-height 不生效，穿透仍合法——本 pass 跳过）。
+/// 守卫：仅 block-level、height:auto、非 BFC、无 bottom border/padding 的元素受影响
+/// （border/padding 已使 margin 不 adjoining；BFC/abspos 已隔离）。
+fn prevent_collapse_through_min_height(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    use zero_css_parser::values::LengthValue;
+
+    // 先递归子元素（深度优先；本 pass 只读父级与直接子级几何，不依赖子级已修正，
+    // 但递归保证整树都被处理）。
+    let children_ids: Vec<Option<NodeId>> = box_node.children.iter().map(|c| c.node_id).collect();
+
+    // 收集每个块级 in-flow 子元素的「是否 min-height 溢出」+ 被剥离的 margin 量，
+    // 按文档顺序应用累计位移。
+    // blocked_margin[i] = 若 children[i] 是 min-height 溢出型且其 margin_bottom 含穿透量，
+    //   则为应剥离的像素（>0）；否则 0。
+    let mut blocked: Vec<f32> = vec![0.0; box_node.children.len()];
+    for (i, child) in box_node.children.iter().enumerate() {
+        // 仅 block-level、in-flow（非 float/abspos）子元素。
+        if !child.is_block_level || !matches!(child.float, FloatValue::None) || child.is_absolute || child.is_fixed {
+            continue;
+        }
+        let Some(style) = child.node_id.and_then(|id| styles.get(&id)) else {
+            continue;
+        };
+        // 仅 height:auto（min-height 仅对 auto-height 块产生「撑高」语义）。
+        if !matches!(style.height, LengthValue::Auto) {
+            continue;
+        }
+        // BFC 元素的 margin 已与外界隔离（不与父/兄弟折叠），无需处理。
+        if crate::margin_collapse::establishes_bfc(child) {
+            continue;
+        }
+        // border/padding-bottom > 0 时 margin 已不 adjoining（穿透本就不发生）。
+        if child.border_bottom > 0.0 || child.padding_bottom > 0.0 {
+            continue;
+        }
+        // 解析 min-height（仅 Px；百分比需 definite CB，此处保守取 0 即不触发）。
+        let min_h_px = match &style.min_height {
+            LengthValue::Px(v) => *v as f32,
+            _ => 0.0,
+        };
+        if min_h_px <= 0.0 {
+            continue;
+        }
+        // in-flow 内容 border-box 底边最大值（相对 child 内容盒顶；child.y 为子相对父内容盒顶，
+        // 子内孙相对 child 内容盒顶——这里取 child 的 content_height 作为 in-flow 内容伸展量，
+        // 已由 taffy 算好；margin 不计入伸展）。
+        // content_extent = child 内 in-flow 孙元素的最大 (y + height)，无孙则为 0。
+        let content_extent = in_flow_content_extent(child);
+        // min-height 溢出 = min-height 把块撑到高于内容。
+        if (min_h_px - content_extent) <= 0.5 {
+            continue;
+        }
+        // child 的声明 margin-bottom（Px）；非 Px 视为 0（保守）。
+        let declared_mb = match &style.margin_bottom {
+            LengthValue::Px(v) => *v as f32,
+            _ => 0.0,
+        };
+        // 穿透量 = 实际 margin_bottom（含 collapse-through 进来的末子 margin）− 声明值。
+        let through = (child.margin_bottom - declared_mb).max(0.0);
+        if through > 0.5 {
+            blocked[i] = through;
+        }
+    }
+
+    // 应用：累计位移 shift，对每个子元素按文档顺序上移 .y，并在 min-height 溢出子之后
+    // 增大 shift（后续兄弟上移）。最后收紧容器自身高度。
+    if blocked.iter().any(|b| *b > 0.5) {
+        let mut shift: f32 = 0.0;
+        let mut total_blocked = 0.0;
+        for (i, child) in box_node.children.iter_mut().enumerate() {
+            if shift > 0.5
+                && child.is_block_level
+                && matches!(child.float, FloatValue::None)
+                && !child.is_absolute
+                && !child.is_fixed
+            {
+                child.y -= shift;
+            }
+            if blocked[i] > 0.5 {
+                // 剥离穿透 margin：child.margin_bottom 回到声明值。
+                child.margin_bottom -= blocked[i];
+                shift += blocked[i];
+                total_blocked += blocked[i];
+            }
+        }
+        // 收紧容器 content_height / height（剥离的 margin 不再占父高度）。
+        if total_blocked > 0.5 {
+            box_node.content_height = (box_node.content_height - total_blocked).max(0.0);
+            let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+            box_node.height = (box_node.height - total_blocked).max(pb);
+        }
+    }
+
+    // 递归子元素。
+    let _ = children_ids;
+    for child in box_node.children.iter_mut() {
+        prevent_collapse_through_min_height(child, styles);
+    }
+}
+
+/// 计算一个块级 LayoutBox 内 in-flow（非 float/abspos）子元素 border-box 底边的
+/// 最大值（相对自身内容盒顶），无 in-flow 子元素则返回 0。用于 §8.3.1 判定
+/// min-height 是否「溢出内容」。
+fn in_flow_content_extent(box_node: &LayoutBox) -> f32 {
+    let mut extent: f32 = 0.0;
+    for child in &box_node.children {
+        if !child.is_block_level || !matches!(child.float, FloatValue::None) || child.is_absolute || child.is_fixed {
+            continue;
+        }
+        extent = extent.max(child.y + child.height);
+    }
+    extent
 }
 
 /// 自上而下收紧百分比 max-height。
