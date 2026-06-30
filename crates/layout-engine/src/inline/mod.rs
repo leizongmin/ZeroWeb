@@ -23,6 +23,11 @@ pub use font_metrics::*;
 mod column_fragmentation;
 pub use column_fragmentation::*;
 
+// Phase 2a step-2：multicol 列碎片化算法（纯函数，零生产调用方，net 0）。
+// step-2 commit 2 在 layout 侧接线后才有生产调用方。
+mod column_fragmentation_flow;
+pub use column_fragmentation_flow::*;
+
 use std::collections::HashMap;
 use std::rc::Rc;
 
