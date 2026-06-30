@@ -1,0 +1,228 @@
+//! Phase A font-metric 桥接 — 真实字体行度量（fontdue line_metrics）接入 IFC。
+//!
+//! 替代 IFC 硬编码 `0.8` ascent 近似（见 `inline/mod.rs::apply_vertical_alignment`
+//! 中 `dominant_fs * 0.8` / `container_font_size * 0.8`）。本模块为 Phase A §12.6
+//! step-1 的 enabling infra：仅定义 trait + `FontLoader` 实现 + IFC 可选字段，
+//! **不改变 `0.8` 行为**（零回归）。step-2（三方协调）才在 `apply_vertical_alignment`
+//! 中消费真实 ascent/descent/line_gap，替换 `0.8` 启发式。
+//!
+//! 设计参照 advance-width plumbing（`AdvanceSource` trait，R223），但本桥接针对
+//! **行度量**（ascent/descent/line_gap，用于垂直/基线定位），**非** advance-width
+//! （字符宽度/换行，R225–R375b 已 definitive 证伪为渲染差异根因，勿混淆）。
+//!
+//! 关键事实（§12.2 三方补偿）：`0.8` 常数对 Ahem 字体**恰好正确**（fontdue 实测
+//! Ahem ascent=800/units_per_em=1000 = 0.8em），但对真实字体（system-ui / DejaVu /
+//! NotoSansCJK）ascent ≈ 0.928em，故 `0.8` 对非-Ahem 文本基线偏低（welcome/morning
+//! 文本度量残余主因之一）。本桥接暴露 per-font 真实度量，使 step-2 能按字体取真实
+//! ascent（Ahem 仍 0.8em，非-Ahem 改用 ~0.928em）。
+
+use std::rc::Rc;
+
+use zero_render_foundation::font::FontLoader;
+
+/// 真实字体行度量（来自 fontdue OS/2 / hhea），按字号缩放后的 px 值。
+///
+/// 符号约定沿用 fontdue（与 chromium `line-height:normal = ascent − descent + line_gap`
+/// 计算一致）：
+/// - `ascent`：基线到字形网格顶部的距离，**正值**。
+/// - `descent`：基线到字形网格底部的距离，**负值**（fontdue 约定）。故
+///   `ascent − descent` 即 em-box 高度（Ahem: 0.8 − (−0.2) = 1.0em）。
+/// - `line_gap`：字体推荐行间距（OS/2 sTypoLineGap / hhea lineGap），通常 0 或小正值。
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct LineMetrics {
+    /// 基线到顶（px，正值）。
+    pub ascent: f32,
+    /// 基线到底（px，**负值**，fontdue 约定）。
+    pub descent: f32,
+    /// 行间距（px）。
+    pub line_gap: f32,
+}
+
+/// IFC 字体度量提供者（依赖反转）。
+///
+/// 默认 IFC 不持有 provider（`font_metric_provider = None`），`apply_vertical_alignment`
+/// 回退到 `0.8·fs` 启发式（保持当前行为，零回归）。`zero-engine` 可在构造 IFC 时注入
+/// `FontLoader`-backed 实现（`Rc<dyn FontMetricProvider>`），供 Phase A step-2 在
+/// strut baseline / half-leading 计算中消费真实度量。
+///
+/// 为什么用 trait 而非直接持有 `&FontLoader`：IFC 当前是无生命周期的 owned 结构，
+/// trait 对象（`Rc<dyn>`）避免给 `InlineFormattingContext` 引入生命周期参数；同时允许
+/// 单测用桩实现，且与 `AdvanceSource` 既有 seam 风格一致。
+pub trait FontMetricProvider {
+    /// 按 CSS `font-family` 列表 + 字号查询真实行度量。
+    ///
+    /// - `font_family`：CSS font-family 候选列表（与 `ComputedStyle.font_family`
+    ///   同形，已展开为字符串），实现按优先级解析首个已加载字体。
+    /// - `size`：字号（px）。
+    ///
+    /// 返回 `None` 表示无匹配的已加载字体（或字体无度量），IFC 应回退到 `0.8` 启发式
+    /// （零回归）。调用方不得假设一定有值。
+    fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics>;
+}
+
+/// 持有 `FontMetricProvider` 的 trait 对象句柄。
+///
+/// 单独定义（而非直接用 `Option<Rc<dyn FontMetricProvider>>` 字段）是因为
+/// `InlineFormattingContext` 派生了 `Debug`，而 `dyn FontMetricProvider` 非自动
+/// `Debug`（且 `FontLoader` 因含 `fontdue::Font` 不可 `Debug`）。本 newtype 提供
+/// 手动 `Debug`，使 IFC 的 derive 不受影响。内部 `Rc` 允许 engine 与 IFC 共享同一
+/// `FontLoader` 而不引入生命周期参数。
+#[derive(Clone)]
+pub struct FontMetricProviderHandle(pub(crate) Rc<dyn FontMetricProvider>);
+
+impl std::fmt::Debug for FontMetricProviderHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FontMetricProviderHandle").finish_non_exhaustive()
+    }
+}
+
+impl FontMetricProviderHandle {
+    /// 经由内部 provider 查询真实行度量。
+    ///
+    /// Phase A step-2 在 `apply_vertical_alignment` 中通过此方法消费真实度量
+    /// （替换 `0.8` 启发式）；step-1 仅提供接口，IFC 默认 `None` 不调用本方法。
+    pub fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
+        self.0.line_metrics(font_family, size)
+    }
+}
+
+/// `FontLoader`-backed 实现：解析 family → font_id → fontdue `line_metrics_full`。
+///
+/// `layout-engine` 已依赖 `zero-render-foundation`（Cargo.toml），故可直接为本具体类型
+/// 实现 IFC 定义的 trait。family 解析复用 `FontLoader::build_font_resolver`（族名 → id）。
+impl FontMetricProvider for FontLoader {
+    fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
+        let resolver = self.build_font_resolver();
+        // 按优先级解析首个已加载字体：先精确匹配，再大小写不敏感回退（与 IFC
+        // `is_ahem` 检测的 `eq_ignore_ascii_case` 一致）。
+        let font_id = font_family.iter().find_map(|fam| {
+            resolver.get(fam).copied().or_else(|| {
+                resolver
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(fam))
+                    .map(|(_, v)| *v)
+            })
+        })?;
+        let (ascent, descent, line_gap) = self.line_metrics_full(font_id, size)?;
+        Some(LineMetrics {
+            ascent,
+            descent,
+            line_gap,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::rc::Rc;
+
+    /// Ahem.ttf 位于 workspace 根的 `tests/wpt-runner/fonts/`（WPT 标准正方形字体）。
+    /// 本文件在 `crates/layout-engine/src/inline/`，故 4 级 `..` 回到 workspace 根。
+    /// 编译期 `include_bytes!` 烘焙进测试二进制，避免运行期文件依赖。
+    const AHEM_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+    /// 构造一个加载了 Ahem 的 `FontLoader`。失败则跳过测试（与 render-foundation
+    /// 既有 `load_system_font_data` 测试同的宽松降级风格）。
+    fn ahem_loader() -> Option<FontLoader> {
+        let mut loader = FontLoader::new();
+        loader.load_font(AHEM_TTF).ok()?;
+        Some(loader)
+    }
+
+    /// Trait seam：`FontLoader` 实现返回 Ahem 真实行度量。
+    ///
+    /// fontdue 实测 Ahem.ttf：ascent=800 / descent=−200 / line_gap=0 /
+    /// units_per_em=1000（见 `text_metrics.rs` 注释）。故 size=40 时：
+    /// ascent=32、descent=−8、line_gap=0，且 `ascent − descent = 40 = 1.0em`。
+    #[test]
+    fn font_loader_provider_returns_ahem_line_metrics() {
+        let Some(loader) = ahem_loader() else {
+            eprintln!("skipping: Ahem.ttf failed to load");
+            return;
+        };
+        let m = <FontLoader as FontMetricProvider>::line_metrics(&loader, &["Ahem".to_string()], 40.0)
+            .expect("Ahem must resolve via build_font_resolver");
+        // ascent 正、descent 负（fontdue 约定）。
+        assert!(m.ascent > 0.0, "ascent should be positive, got {}", m.ascent);
+        assert!(m.descent < 0.0, "descent should be negative, got {}", m.descent);
+        // Ahem ascent = 0.8·size（800/1000）。
+        assert!(
+            (m.ascent - 32.0).abs() < 0.5,
+            "Ahem ascent ≈ 0.8·size = 32, got {}",
+            m.ascent
+        );
+        // Ahem descent = −0.2·size（−200/1000）。
+        assert!(
+            (m.descent - (-8.0)).abs() < 0.5,
+            "Ahem descent ≈ −0.2·size = −8, got {}",
+            m.descent
+        );
+        // Ahem line_gap = 0。
+        assert!(m.line_gap.abs() < 0.5, "Ahem line_gap ≈ 0, got {}", m.line_gap);
+        // em-box = ascent − descent = 1.0·size = 40。
+        assert!(
+            (m.ascent - m.descent - 40.0).abs() < 1.0,
+            "ascent − descent ≈ 1.0·size = 40, got {}",
+            m.ascent - m.descent
+        );
+    }
+
+    /// 未加载的 family 返回 `None`（IFC 须回退 `0.8` 启发式）。
+    #[test]
+    fn font_loader_provider_returns_none_for_unknown_family() {
+        let Some(loader) = ahem_loader() else {
+            eprintln!("skipping: Ahem.ttf failed to load");
+            return;
+        };
+        assert!(FontMetricProvider::line_metrics(&loader, &["DoesNotExist".to_string()], 16.0).is_none());
+    }
+
+    /// 大小写不敏感匹配（CSS font-family 大小写不敏感；与 IFC `is_ahem` 检测一致）。
+    #[test]
+    fn font_loader_provider_matches_family_case_insensitively() {
+        let Some(loader) = ahem_loader() else {
+            eprintln!("skipping: Ahem.ttf failed to load");
+            return;
+        };
+        assert!(
+            FontMetricProvider::line_metrics(&loader, &["aHeM".to_string()], 40.0).is_some(),
+            "family matching should be case-insensitive"
+        );
+    }
+
+    /// Zero-regression 默认：`InlineFormattingContext::new()` 的 provider 为 `None`
+    /// （`0.8` 启发式路径活跃，行为不变）；`with_font_metric_provider` 注入后为 `Some`
+    /// 且可查询。证明 step-1 仅添加 dormant 字段，未触及 `apply_vertical_alignment`。
+    #[test]
+    fn ifc_font_metric_provider_defaults_none_and_is_injectable() {
+        use crate::inline::InlineFormattingContext;
+
+        // 默认 dormant → 0.8 启发式路径不变。
+        let ctx = InlineFormattingContext::new(800.0);
+        assert!(
+            ctx.font_metric_provider.is_none(),
+            "IFC must default to no provider (0.8 heuristic active = zero behavior change)"
+        );
+
+        // 注入 FontLoader-backed provider，字段变 Some 且可经 trait 查询到 Ahem 度量。
+        let Some(loader) = ahem_loader() else {
+            eprintln!("skipping injection check: Ahem.ttf failed to load");
+            return;
+        };
+        let provider: Rc<dyn FontMetricProvider> = Rc::new(loader);
+        let ctx = InlineFormattingContext::new(800.0).with_font_metric_provider(provider);
+        let p = ctx
+            .font_metric_provider
+            .as_ref()
+            .expect("provider should be set after with_font_metric_provider");
+        let m = p
+            .line_metrics(&["Ahem".to_string()], 40.0)
+            .expect("injected provider should resolve Ahem");
+        assert!(
+            (m.ascent - 32.0).abs() < 0.5,
+            "injected provider ascent ≈ 32, got {}",
+            m.ascent
+        );
+    }
+}

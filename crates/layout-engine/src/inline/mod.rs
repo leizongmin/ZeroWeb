@@ -13,7 +13,13 @@ pub use text_metrics::*;
 mod inline_types;
 pub use inline_types::*;
 
+// Phase A §12.6 step-1：font-metric 桥接（FontLoader → IFC 真实行度量）。
+// 仅 trait + FontLoader 实现 + IFC 可选字段，dormant 默认零回归（step-2 才消费）。
+mod font_metrics;
+pub use font_metrics::*;
+
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use zero_css_parser::values::{DisplayValue, LengthValue, OverflowValue, VerticalAlignValue};
 
@@ -142,6 +148,12 @@ pub struct InlineFormattingContext {
     /// 而非遍历 container 的全部 DOM 子节点。`None` = 正常遍历 container 子节点。
     /// 为 tree.rs 匿名块生成接线奠基（当前无调用方设值，默认 None 零回归）。
     pub fragment_node_ids: Option<Vec<NodeId>>,
+    /// Phase A font-metric 提供者（可选）。
+    ///
+    /// `None`（默认）= `apply_vertical_alignment` 回退 `0.8·fs` 启发式（当前行为，零回归）。
+    /// `Some` = 注入 `FontLoader`-backed 真实度量，供 Phase A step-2 在 strut baseline /
+    /// half-leading 计算中消费（替换 `0.8`）。step-1 仅持有该字段、不读取 → 行为不变。
+    pub font_metric_provider: Option<FontMetricProviderHandle>,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -175,6 +187,7 @@ impl InlineFormattingContext {
             baseline_overrides: HashMap::new(),
             margin_overrides: HashMap::new(),
             fragment_node_ids: None,
+            font_metric_provider: None,
         }
     }
 
@@ -220,6 +233,17 @@ impl InlineFormattingContext {
     /// 硬编码的 16px/19.2px。主要用于 paint 系统的 IFC。
     pub fn with_default_font_metrics(mut self, font_size: f32, line_height: f32) -> Self {
         self.default_font_metrics = Some((font_size, line_height));
+        self
+    }
+
+    /// 注入 Phase A font-metric 提供者（`FontLoader`-backed 真实行度量）。
+    ///
+    /// **Phase A §12.6 step-1（零回归）**：本方法仅设置字段，`apply_vertical_alignment`
+    /// 尚未读取该字段（仍走 `0.8·fs` 启发式）。step-2（三方协调）才在此消费真实
+    /// ascent/descent/line_gap。调用方（`zero-engine` 构造 IFC 时）传入
+    /// `Rc::new(font_loader)` 共享同一 `FontLoader`。
+    pub fn with_font_metric_provider(mut self, provider: Rc<dyn FontMetricProvider>) -> Self {
+        self.font_metric_provider = Some(FontMetricProviderHandle(provider));
         self
     }
 
