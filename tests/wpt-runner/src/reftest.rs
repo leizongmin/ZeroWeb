@@ -2067,4 +2067,53 @@ mod tests {
         }
         println!("non-background pixels: {} (of {})", non_bg, px.len() / 4);
     }
+
+    /// R878：根元素 `display:none` 时背景不传播到画布（CSS §9.2.4/§14.2）。
+    ///
+    /// `html{display:none;background:green}` + `body{background:red}` + `<p>FAIL</p>`
+    /// ——根元素不生成盒、整个文档树不参与渲染，故根元素与 body 背景均不传播到 canvas，
+    /// canvas 保持默认白（与 chromium 实测一致，root-box-003）。
+    #[test]
+    fn test_root_element_display_none_no_canvas_background() {
+        let html = r#"<html><head><style>
+   html { display: none; background: green; color: red; }
+   body { background: red; color: yellow; }
+  </style></head>
+  <body>
+   <p>FAIL</p>
+  </body></html>"#;
+        let cfg = ReftestConfig::default();
+        let fb = render_to_framebuffer(html, "", &cfg);
+        let px = &fb.data;
+        // 全画布应为白（无背景传播，无文档树渲染）
+        for chunk in px.chunks(4) {
+            if chunk.len() == 4 {
+                assert_eq!(
+                    [chunk[0], chunk[1], chunk[2]],
+                    [255, 255, 255],
+                    "canvas must stay white"
+                );
+            }
+        }
+    }
+
+    /// R878 回归守卫：根元素背景正常传播到画布不受 display:none 修复影响。
+    ///
+    /// `html{background:green}`（无 display:none）→ 全画布绿（canvas 传播仍工作）。
+    #[test]
+    fn test_root_element_background_still_propagates_to_canvas() {
+        let html = r#"<html><head><style>
+   html { background: green; }
+  </style></head>
+  <body></body></html>"#;
+        let cfg = ReftestConfig::default();
+        let fb = render_to_framebuffer(html, "", &cfg);
+        let px = &fb.data;
+        // 全画布应为绿（根背景传播）
+        for chunk in px.chunks(4) {
+            if chunk.len() == 4 {
+                assert_eq!([chunk[0], chunk[1], chunk[2]], [0, 128, 0], "canvas must be green");
+            }
+        }
+    }
 }
