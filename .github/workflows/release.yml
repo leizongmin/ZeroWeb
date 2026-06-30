@@ -16,6 +16,35 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  windows-aarch64-status:
+    name: Windows ARM64 release status
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Check rusty_v8 Windows ARM64 archive
+        shell: bash
+        run: |
+          version="$(sed -n '/name = "rusty_v8"/{n;s/^version = "//;s/"$//;p;q;}' Cargo.lock)"
+          base_url="https://github.com/denoland/rusty_v8/releases/download/v${version}/rusty_v8_release_aarch64-pc-windows-msvc.lib"
+          if curl --fail --head --silent --location "$base_url" >/dev/null || curl --fail --head --silent --location "${base_url}.gz" >/dev/null; then
+            {
+              echo "## Windows ARM64 release"
+              echo
+              echo "rusty_v8 v${version} publishes a Windows ARM64 archive. Add aarch64-pc-windows-msvc back to the release matrix."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## Windows ARM64 release"
+              echo
+              echo "Skipped: rusty_v8 v${version} does not publish a Windows ARM64 native archive, so ZeroBrowser cannot produce a V8-backed Windows ARM64 release artifact yet."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   build-release:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
@@ -44,10 +73,6 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: zero-browser-windows-x86_64
-            ext: '.exe'
-          - os: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            artifact: zero-browser-windows-aarch64
             ext: '.exe'
 
     steps:
@@ -313,4 +338,3 @@ jobs:
             artifacts/zero-browser-macos-x86_64-app/**
             artifacts/zero-browser-macos-aarch64-app/**
             artifacts/zero-browser-windows-x86_64/*
-            artifacts/zero-browser-windows-aarch64/*

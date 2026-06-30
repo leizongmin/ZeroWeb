@@ -42,6 +42,7 @@ jobs:
           - name: windows-aarch64
             os: windows-11-arm
             target: aarch64-pc-windows-msvc
+            release_build: false
 
     steps:
       - uses: actions/checkout@v4
@@ -103,7 +104,13 @@ jobs:
           cargo test -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Build release
+        if: matrix.release_build != false
         run: cargo build --release --workspace --target ${{ matrix.target }}
+
+      - name: Note unsupported release build
+        if: matrix.release_build == false
+        run: |
+          echo "Skipping release build for ${{ matrix.target }} because rusty_v8 ${env:RUSTY_V8_VERSION} does not publish a Windows ARM64 native archive."
 
   reftest:
     runs-on: ubuntu-latest
