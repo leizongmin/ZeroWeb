@@ -337,20 +337,28 @@ pub(crate) fn adjust_float_positions_with_context(
         // 纯文本内容（无块级子元素）的 float 保持 taffy 宽度——其 shrink-to-fit 需
         // IFC 测量，留作后续。仅当内容确实更窄时才收缩，对内容更宽或显式宽度的 float 为 no-op。
         if child.declared_width_auto {
-            let block_child_widths: Vec<f32> = child
+            // 内容宽度候选：块级子元素取最大 border-box 宽度，**inline-level replaced
+            // 子元素**（img/video 等原子 inline 盒，已有确定 used 宽度）也纳入——R180 教训
+            //「content 宽须 inline 级求和 + block 级取最大」。旧实现仅 `is_block_level` 致
+            // float div 仅含 `<img>`（inline-level）时 content_child_widths 为空→跳过收缩→
+            // float 撑满全宽，img 无法覆盖 div 背景（max-width-110，red 68400px 外露）。
+            // replaced 的 used width 已解析（含 max-width 等约束），无需 IFC 测量。
+            // 纯文本 float（无 block 级、无 replaced 子元素）仍保持 taffy 宽度（需 IFC，留后续）。
+            let content_child_widths: Vec<f32> = child
                 .children
                 .iter()
-                .filter(|c| !c.is_absolute && !c.is_fixed && c.is_block_level)
+                .filter(|c| !c.is_absolute && !c.is_fixed && (c.is_block_level || c.is_replaced))
                 .map(|c| c.width)
                 .collect();
-            let content_max_w = block_child_widths.iter().copied().fold(0.0f32, f32::max);
-            // 有块级子元素时收缩到内容宽度（content_max_w + padding + border）。
+            let content_max_w = content_child_widths.iter().copied().fold(0.0f32, f32::max);
+            // 有块级或 replaced 子元素时收缩到内容宽度（content_max_w + padding + border）。
             // **content_max_w 可能为 0**（如 visibility:collapse 的 flex item 主尺寸归零，
             // 或空内容块）——旧条件 `content_max_w > 0.0` 在此跳过收缩致 float 撑满全宽
-            //（flexbox-collapsed-item-horiz-001 根因，R300）。改为「有块级子元素即收缩」：
+            //（flexbox-collapsed-item-horiz-001 根因，R300）。改为「有内容子元素即收缩」：
             // 空内容 float 收缩到 padding+border（最小盒），仍比全宽更接近 shrink-to-fit 语义。
-            // 无块级子元素（纯文本 float）保持 taffy 宽度——其 shrink-to-fit 需 IFC 测量，留后续。
-            if !block_child_widths.is_empty() {
+            // 纯文本 float（无 block 级/replaced 子元素）保持 taffy 宽度——其 shrink-to-fit
+            // 需 IFC 测量，留后续。
+            if !content_child_widths.is_empty() {
                 let shrink_border_box =
                     content_max_w + child.padding_left + child.padding_right + child.border_left + child.border_right;
                 if shrink_border_box < child.width {

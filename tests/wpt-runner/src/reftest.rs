@@ -2184,4 +2184,36 @@ mod tests {
             "no red (body bg) must be visible; abspos div must cover viewport"
         );
     }
+    /// R881：`float:left` 容器（width:auto）应 shrink-to-fit 包裹其 inline-level
+    /// replaced 子元素（img），CSS §10.3.5。旧 float shrink 只考虑 block-level 子元素，
+    /// 致 `div{float:left}` 仅含 `<img>` 时撑满全宽，img 无法覆盖 div 背景（max-width-110，
+    /// 200×200 img 受 max-width:100px 约束为 100×100，但 div 784px 满宽→红 68400px 外露）。
+    #[test]
+    fn test_float_shrink_to_fit_includes_inline_replaced_child() {
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/CSS2/normal-flow");
+        let img = base.join("support/green200x200.png");
+        if !img.exists() {
+            eprintln!("[R881] green200x200.png missing, skipping");
+            return;
+        }
+        let html = r#"<!DOCTYPE html><html><head><style>
+  div { background-color: red; float: left; }
+  img { height: auto; max-width: 100px; vertical-align: bottom; width: auto; }
+  </style></head>
+  <body>
+  <p>x</p>
+  <div><img src="support/green200x200.png" alt="x" /></div>
+  </body></html>"#;
+        let cfg = ReftestConfig::default();
+        let fb = render_to_framebuffer_with_base(html, "", &cfg, Some(&base));
+        let px = &fb.data;
+        // div shrink 包裹 img（100×100）→ green img 完全覆盖 div，无 red 外露
+        let mut red = 0usize;
+        for chunk in px.chunks(4) {
+            if chunk.len() == 4 && chunk[0] >= 150 && chunk[1] < 80 && chunk[2] < 80 {
+                red += 1;
+            }
+        }
+        assert_eq!(red, 0, "float div must shrink-to-fit img; no red bg must be visible");
+    }
 }
