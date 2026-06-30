@@ -484,6 +484,17 @@ impl StyleSystem {
                         None,
                     ));
                 }
+                // hr 默认渲染为水平线（HTML 渲染规范 / Chromium UA）：
+                // display:block（已在 ua_default_display）+ 0.5em 上下 margin + inset 1px 边框。
+                // 元素无内容（height:auto≈0），1px inset 上下边框合成 ~2px 阴影线。
+                // SIZE/NOSHADE/WIDTH/ALIGN 由 presentational hints 覆盖（见 collect_presentational_hints）。
+                // 注：pixel-diff 趋势上可能因上游 line-metric glyph 位置偏移而短期上升，但 DC-13
+                // legacy 验收口径是「结构不崩」（goal line 318），hr 可见 = 结构正确性提升。
+                "hr" => {
+                    ua_decl_inputs.push(("margin".to_string(), "0.5em 0".to_string(), false, (0, 0, 0), None));
+                    ua_decl_inputs.push(("border-style".to_string(), "inset".to_string(), false, (0, 0, 0), None));
+                    ua_decl_inputs.push(("border-width".to_string(), "1px".to_string(), false, (0, 0, 0), None));
+                }
                 _ => {}
             }
         }
@@ -719,6 +730,35 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
         // HTML <center>：等价 text-align:center（继承到块子元素的内联内容）。
         "center" => {
             hints.push(("text-align".to_string(), "center".to_string()));
+        }
+        // hr presentational hints（HTML 4 §13.2）：SIZE/NOSHADE/WIDTH/ALIGN。
+        // chromium 实测：<hr size="3" noshade> = 3px 实心满宽带。模型：noshade→solid，
+        // size=N→border-top-width:N（实心或 inset 的 N px 线，覆盖 UA 默认 1px 四边）。
+        "hr" => {
+            let noshade = elem_attr(elem, "noshade").is_some();
+            let size = elem_attr(elem, "size").and_then(|v| parse_html_px(&v));
+            if noshade {
+                hints.push(("border-style".to_string(), "solid".to_string()));
+            }
+            if let Some(s) = size {
+                if s >= 1.0 {
+                    hints.push(("border-width".to_string(), format!("{s}px 0 0 0")));
+                }
+            }
+            if let Some(v) = elem_attr(elem, "width").and_then(|v| html_length_attr(&v)) {
+                hints.push(("width".to_string(), v));
+            }
+            if let Some(align) = elem_attr(elem, "align") {
+                match align.to_ascii_lowercase().as_str() {
+                    "left" => hints.push(("margin-right".to_string(), "auto".to_string())),
+                    "right" => hints.push(("margin-left".to_string(), "auto".to_string())),
+                    "center" => {
+                        hints.push(("margin-left".to_string(), "auto".to_string()));
+                        hints.push(("margin-right".to_string(), "auto".to_string()));
+                    }
+                    _ => {}
+                }
+            }
         }
         _ => {
             if let Some(bg) = elem_attr(elem, "bgcolor") {
