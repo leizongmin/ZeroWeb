@@ -100,6 +100,7 @@ jobs:
 
       - name: Run core crate tests
         timeout-minutes: 20
+        shell: bash
         run: |
           cargo test \
             -p zero-dom \
@@ -122,6 +123,7 @@ jobs:
 
       - name: Run app tests
         timeout-minutes: 40
+        shell: bash
         run: |
           cargo test \
             -p zero-browser \
@@ -131,6 +133,7 @@ jobs:
 
       - name: Run integration and WPT runner tests
         timeout-minutes: 20
+        shell: bash
         run: |
           cargo test \
             -p zero-integration-tests \
@@ -139,6 +142,7 @@ jobs:
 
       - name: Run render CPU tests
         timeout-minutes: 10
+        shell: bash
         run: |
           cargo test -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=1
 
