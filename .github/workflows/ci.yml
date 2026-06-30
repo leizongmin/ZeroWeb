@@ -129,7 +129,6 @@ jobs:
             -p zero-protocol \
             -p zero-wasm-sandbox \
             -p zero-page-runtime \
-            -p zero-browser-shell \
             -p zero-render-foundation \
             --all-targets --target ${{ matrix.target }} -- -D warnings
 
@@ -151,7 +150,6 @@ jobs:
             -p zero-protocol \
             -p zero-wasm-sandbox \
             -p zero-page-runtime \
-            -p zero-browser-shell \
             --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Run V8-backed core tests
