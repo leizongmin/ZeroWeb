@@ -143,7 +143,7 @@ fn store_inline_multicol_columns(
         Some(s) => s,
         None => return false,
     };
-    // 仅 column-fill:auto + 列数≥2
+    // 仅 column-fill:auto + 列数≥2（balance inline 扩展经 R902 A/B 测零 oracle-pass yield，回退）
     let info = match crate::multicol::compute_column_info(style, root.content_width) {
         Some(i) if i.sequential_fill && i.count >= 2 => i,
         _ => return false,
