@@ -462,3 +462,30 @@ fn test_percentage_padding_uses_cb_width_not_own_width() {
         box_.padding_top
     );
 }
+
+/// CSS §10.3.3/§10.6.3：根元素（html）的固定 margin 相对初始包含块定位 border-box。
+///
+/// taffy 把根节点固定在 (0,0)，根的声明 margin 不被应用，致
+/// `<html style="margin:50px">` 的边框盒落在视口原点而非 (50,50)
+/// （abspos-containing-block-initial-009a 簇）。验证根固定 margin 位置偏移。
+#[test]
+fn test_root_element_margin_offsets_border_box() {
+    let html = r#"<html style="margin:50px;border:10px solid black"><body></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    // 根 html 边框盒应偏移到 (50,50)（margin 50），而非 (0,0)。
+    assert!(
+        (result.root.x - 50.0).abs() < 1.0,
+        "root border-box x should be offset by margin-left 50, got {}",
+        result.root.x
+    );
+    assert!(
+        (result.root.y - 50.0).abs() < 1.0,
+        "root border-box y should be offset by margin-top 50, got {}",
+        result.root.y
+    );
+}

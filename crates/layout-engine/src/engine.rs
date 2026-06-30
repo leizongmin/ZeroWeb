@@ -251,6 +251,24 @@ impl LayoutEngine {
             }
         }
 
+        // CSS §10.3.3/§10.6.3：根元素（如 <html>）的固定 margin 相对初始包含块（视口）
+        // 定位 border-box。taffy 把根节点固定在 (0,0)（根无父级提供定位上下文），根的
+        // 声明 margin-top/left 不被应用，致 `<html style="margin:50px">` 的边框盒落在
+        // 视口原点而非 (50,50)（abspos-containing-block-initial-009a 簇）。此处补上根
+        // 固定 margin 的位置偏移（auto 已由上方居中逻辑处理；百分比/Em 保守跳过）。
+        if matches!(root_box.writing_mode, WritingModeValue::HorizontalTb) {
+            use zero_css_parser::values::LengthValue;
+            let root_style = root_box.node_id.and_then(|id| styles.get(&id));
+            if let Some(s) = root_style {
+                if let LengthValue::Px(v) = &s.margin_left {
+                    root_box.x += *v as f32;
+                }
+                if let LengthValue::Px(v) = &s.margin_top {
+                    root_box.y += *v as f32;
+                }
+            }
+        }
+
         // 3.5 从 taffy 缓存中提取 flex/grid 容器的基线信息
         // taffy 内部计算了 first_baselines 但未通过公开 API 暴露，
         // 通过 cached_baselines() 补丁访问。
