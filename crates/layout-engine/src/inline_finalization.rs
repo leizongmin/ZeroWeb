@@ -148,8 +148,15 @@ fn store_inline_multicol_columns(
         Some(i) if i.sequential_fill && i.count >= 2 => i,
         _ => return false,
     };
-    // 明确高度作列高预算
-    let available_height = root.content_height;
+    // 列高预算：明确 height 优先，否则 max-height，最后回退 content_height。
+    // R905：max-height 容器（height:auto）的 content_height 来自全宽 IFC（偏小，列更窄→更多行），
+    // 须用 max-height 作 budget；分布后再修正容器高度。columnfill-auto-max-height-001：
+    // max-height:100px 但 content_height=50（全宽 2 行），列宽（100px）下应为 4 行=100px。
+    let (available_height, from_max_height) = match (&style.height, &style.max_height) {
+        (LengthValue::Px(h), _) => (*h as f32, false),
+        (_, LengthValue::Px(m)) => (*m as f32, true),
+        _ => (root.content_height, false),
+    };
     if available_height <= 0.0 {
         return false;
     }
@@ -215,6 +222,21 @@ fn store_inline_multicol_columns(
         .collect();
     if stored.is_empty() {
         return false;
+    }
+    // R905：max-height 容器（height:auto）的 content_height 来自全宽 IFC（偏小），分布后须用
+    // 最高列累计高度修正容器高度（否则下方行盒被容器高度裁剪不可见）。
+    if from_max_height {
+        let mut col_heights = vec![0.0f32; info.count];
+        for a in &assignments {
+            let line_h = col_ctx.lines[a.line_idx].height;
+            col_heights[a.column] = col_heights[a.column].max(a.y_in_column + line_h);
+        }
+        let tallest = col_heights.into_iter().fold(0.0f32, f32::max);
+        if tallest > root.content_height {
+            let delta = tallest - root.content_height;
+            root.content_height = tallest;
+            root.height += delta;
+        }
     }
     root.inline_layout = Some(stored);
     // inline_layout_width = 容器内容宽（使 paint width_matches → use_stored=true，按列渲染）
