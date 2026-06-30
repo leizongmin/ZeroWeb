@@ -2150,4 +2150,38 @@ mod tests {
             "canvas must be predominantly green: {green}/{total}"
         );
     }
+
+    /// R880：无 positioned 祖先的 abspos 元素以初始包含块（视口）为 CB，其
+    /// `left/top`（Px 或百分比）与百分比 `width/height` 相对**视口**解析，不受
+    /// CB 链上祖先 border/padding 影响（CSS §10.1/§10.3/§10.6）。
+    ///
+    /// `body{border+padding:1em}` + `div{position:absolute;top:0;left:0;width:100%;
+    /// height:100%;background:green}` → div 覆盖整个视口（绿），body 的红不外露。
+    /// 旧实现把 div 放在父 content origin（=border-box+border+padding=48px）而非视口
+    /// (0,0)，致左上 L 形红区（abspos-containing-block-010，9.35% diff）。
+    #[test]
+    fn test_abspos_viewport_cb_ignores_ancestor_border_padding() {
+        let html = r#"<!DOCTYPE html><html><head><style>
+   body { margin: 1em; border: 1em solid red; padding: 1em; background: red; }
+   div { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: green; }
+  </style></head>
+  <body>
+   <p>FAIL</p>
+   <div>x</div>
+  </body></html>"#;
+        let cfg = ReftestConfig::default();
+        let fb = render_to_framebuffer(html, "", &cfg);
+        let px = &fb.data;
+        // div 覆盖整个视口：几乎全绿，无任何红（body 红被完全覆盖）
+        let mut red = 0usize;
+        for chunk in px.chunks(4) {
+            if chunk.len() == 4 && chunk[0] >= 150 && chunk[1] < 80 && chunk[2] < 80 {
+                red += 1;
+            }
+        }
+        assert_eq!(
+            red, 0,
+            "no red (body bg) must be visible; abspos div must cover viewport"
+        );
+    }
 }

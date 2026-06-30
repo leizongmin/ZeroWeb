@@ -131,6 +131,16 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             && !child_has_positioned_ancestor
             && let Some(style) = child.node_id.and_then(|node_id| styles.get(&node_id))
         {
+            // R880：`current_content_origin_x/y` 是父盒（box_node）的 **border-box**
+            // 视口原点（见下方递归 line：传给子的是 border-box origin），而子盒的
+            // `child.x/y` 是相对父盒 **content box**（= border-box + border + padding）
+            // 的偏移（taffy 约定）。viewport-CB abspos 的目标视口坐标须转回父 content
+            // 相对坐标，故减父 content origin（非 border-box origin）——否则当 CB 链含
+            // border/padding 时位置偏移（abspos-containing-block-010：body border+padding
+            // 1em 致 abspos div 落 (32,32) 而非视口 (0,0)）。无 border/padding 的 CB 链
+            // 二者相等，行为不变（R98/R872 测试均 borderless CB 故此前未暴露）。
+            let parent_content_origin_x = current_content_origin_x + box_node.border_left + box_node.padding_left;
+            let parent_content_origin_y = current_content_origin_y + box_node.border_top + box_node.padding_top;
             // 仅当 width 为百分比时按视口重解析
             if let LengthValue::Percentage(p) = &style.width {
                 child.width = *p as f32 / 100.0 * viewport_width;
@@ -159,25 +169,25 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             {
                 child.height = (viewport_height - (*top as f32) - (*bottom as f32)).max(0.0);
             }
-            // left/top 百分比：目标视口绝对坐标 = p/100 * viewport，转回父相对坐标
+            // left/top 百分比：目标视口绝对坐标 = p/100 * viewport，转回父 content 相对坐标
             if let LengthValue::Percentage(p) = &style.left {
                 let target_viewport_x = *p as f32 / 100.0 * viewport_width;
-                child.x = target_viewport_x - current_content_origin_x;
+                child.x = target_viewport_x - parent_content_origin_x;
             }
             if let LengthValue::Percentage(p) = &style.top {
                 let target_viewport_y = *p as f32 / 100.0 * viewport_height;
-                child.y = target_viewport_y - current_content_origin_y;
+                child.y = target_viewport_y - parent_content_origin_y;
             }
             // left/top 为长度（Px）时：CSS 2.1 §10.1 规定无 positioned ancestor 的
             // absolute 元素以初始包含块（视口）为 containing block。taffy 用静态父
             // 作 containing block，导致 top:118px 解析为静态父相对坐标。此处把目标
-            // 视口坐标（= px 值）转回父相对坐标，与百分比路径同机制（不调整 auto
-            // 宽高，避免历史上 auto 宽高扩张导致的回归）。
+            // 视口坐标（= px 值）转回父 content 相对坐标，与百分比路径同机制（不调整
+            // auto 宽高，避免历史上 auto 宽高扩张导致的回归）。
             if let LengthValue::Px(px) = &style.left {
-                child.x = (*px as f32) - current_content_origin_x;
+                child.x = (*px as f32) - parent_content_origin_x;
             }
             if let LengthValue::Px(px) = &style.top {
-                child.y = (*px as f32) - current_content_origin_y;
+                child.y = (*px as f32) - parent_content_origin_y;
             }
             // right/bottom 为长度且 left/top 为 auto 时：CSS 2.1 §10.1 无 positioned
             // ancestor 的 absolute 元素 CB=视口。left:auto + right:Px → 右边对齐视口
@@ -190,19 +200,19 @@ pub(super) fn adjust_absolute_pct_to_viewport(
                 && let LengthValue::Px(right) = &style.right
             {
                 let target_viewport_x = viewport_width - (*right as f32) - child.width;
-                child.x = target_viewport_x - current_content_origin_x;
+                child.x = target_viewport_x - parent_content_origin_x;
             }
             if matches!(style.top, LengthValue::Auto)
                 && let LengthValue::Px(bottom) = &style.bottom
             {
                 let target_viewport_y = viewport_height - (*bottom as f32) - child.height;
-                child.y = target_viewport_y - current_content_origin_y;
+                child.y = target_viewport_y - parent_content_origin_y;
             }
             // §10.3.7：width:auto + 全长度 left+right 填满后，max-width 钳制，再把
             // over-constrained 方程的 leftover 重分配到 auto-margin（abspos 无 positioned
             // 祖先时 CB=viewport）。taffy 0.7 不钳 abspos inset-fill 宽。须在 width
             // stretch + left/right 定位之后执行（覆盖上方 x 定位）。target_viewport_x
-            // 转回父相对坐标（与上方各块同机制）。
+            // 转回父 content 相对坐标（与上方各块同机制）。
             if matches!(style.width, LengthValue::Auto)
                 && let (LengthValue::Px(left_v), LengthValue::Px(right_v)) = (&style.left, &style.right)
                 && let LengthValue::Px(mw_v) = &style.max_width
@@ -233,7 +243,7 @@ pub(super) fn adjust_absolute_pct_to_viewport(
                 child.width = mw;
                 child.content_width =
                     (mw - child.border_left - child.border_right - child.padding_left - child.padding_right).max(0.0);
-                child.x = target_viewport_x - current_content_origin_x;
+                child.x = target_viewport_x - parent_content_origin_x;
             }
         }
 
