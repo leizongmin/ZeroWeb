@@ -18,6 +18,11 @@ pub use inline_types::*;
 mod font_metrics;
 pub use font_metrics::*;
 
+// Phase 2a step-1：multicol 列碎片化上下文（IFC 把行盒碎片化到列的输入）。
+// 仅数据结构 + IFC dormant 字段，默认零回归（step-2 才消费）。
+mod column_fragmentation;
+pub use column_fragmentation::*;
+
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -154,6 +159,12 @@ pub struct InlineFormattingContext {
     /// `Some` = 注入 `FontLoader`-backed 真实度量，供 Phase A step-2 在 strut baseline /
     /// half-leading 计算中消费（替换 `0.8`）。step-1 仅持有该字段、不读取 → 行为不变。
     pub font_metric_provider: Option<FontMetricProviderHandle>,
+    /// Phase 2a multicol 列碎片化上下文（可选）。
+    ///
+    /// `None`（默认）= IFC 行盒不碎片化（当前行为，零回归）。
+    /// `Some` = step-2 在 `break_items_into_lines` 后按本上下文把行盒分配到列
+    /// （respected 列高 budget，整行不裁断）。step-1 仅持有字段、不读取 → 行为不变。
+    pub column_fragmentation: Option<ColumnFragmentationContext>,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -188,6 +199,7 @@ impl InlineFormattingContext {
             margin_overrides: HashMap::new(),
             fragment_node_ids: None,
             font_metric_provider: None,
+            column_fragmentation: None,
         }
     }
 
@@ -244,6 +256,16 @@ impl InlineFormattingContext {
     /// `Rc::new(font_loader)` 共享同一 `FontLoader`。
     pub fn with_font_metric_provider(mut self, provider: Rc<dyn FontMetricProvider>) -> Self {
         self.font_metric_provider = Some(FontMetricProviderHandle(provider));
+        self
+    }
+
+    /// 注入 Phase 2a multicol 列碎片化上下文（dormant）。
+    ///
+    /// step-1 仅持有字段、不读取 → 行为不变（零回归）。step-2 在产宽度换行行盒后
+    /// 按本上下文把行盒分配到列。调用方（layout 侧，step-2 接线）对目标结构
+    /// （单层 multicol + `column-fill:auto` + 明确高度 + 单一 block 子元素）构造。
+    pub fn with_column_fragmentation(mut self, ctx: ColumnFragmentationContext) -> Self {
+        self.column_fragmentation = Some(ctx);
         self
     }
 
