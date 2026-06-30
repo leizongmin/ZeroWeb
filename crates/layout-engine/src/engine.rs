@@ -221,6 +221,25 @@ impl LayoutEngine {
             }
         }
 
+        // CSS §10.1/§9.3.2：根元素 position:absolute/fixed（无 positioned 祖先）的包含块是
+        // 初始包含块（视口），其 left/top Length inset 应定位根 border-box。taffy 把根节点
+        // 固定在 (0,0) 且不解析根的 position:absolute（根无父级提供 abspos CB 上下文），故
+        // `<html style="position:absolute;left:50px;top:50px">` 落在 (0,0) 而非 (50,50)
+        // （abspos-containing-block-initial-009b/e/f + 004a-d 簇）。仅 Px；Em/Percent 保守跳过。
+        if (root_box.is_absolute || root_box.is_fixed)
+            && matches!(root_box.writing_mode, WritingModeValue::HorizontalTb)
+        {
+            use zero_css_parser::values::LengthValue;
+            if let Some(style) = root_box.node_id.and_then(|id| styles.get(&id)) {
+                if let LengthValue::Px(v) = &style.left {
+                    root_box.x = *v as f32;
+                }
+                if let LengthValue::Px(v) = &style.top {
+                    root_box.y = *v as f32;
+                }
+            }
+        }
+
         // R711：block-level position:relative 的**百分比** top/bottom inset 被 taffy 0.7 丢弃
         //（R715 实证：Length 与 left/right % relative inset 应用，仅 top/bottom % 不应用）。
         // 此 pass 后处理补上 top/bottom % delta（Px + 水平 % 已由 taffy 处理，无 double-count）。

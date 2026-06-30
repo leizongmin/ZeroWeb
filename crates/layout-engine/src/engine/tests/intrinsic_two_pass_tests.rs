@@ -489,3 +489,28 @@ fn test_root_element_margin_offsets_border_box() {
         result.root.y
     );
 }
+
+/// CSS §10.1/§9.3.2：根元素 position:absolute/fixed（无 positioned 祖先）的包含块是
+/// 初始包含块（视口），其 left/top Length inset 定位根 border-box。taffy 把根固定在
+/// (0,0) 不解析根的 position:absolute，致 `<html style="position:absolute;left:50px;
+/// top:50px">` 落 (0,0) 而非 (50,50)（abspos-containing-block-initial-009b/004a-d 簇）。
+#[test]
+fn test_root_abspos_inset_positions_border_box() {
+    let html = r#"<html style="position:absolute;left:50px;top:50px;width:100px;height:100px"><body></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    assert!(
+        (result.root.x - 50.0).abs() < 1.0,
+        "abspos root border-box x should be left inset 50, got {}",
+        result.root.x
+    );
+    assert!(
+        (result.root.y - 50.0).abs() < 1.0,
+        "abspos root border-box y should be top inset 50, got {}",
+        result.root.y
+    );
+}
