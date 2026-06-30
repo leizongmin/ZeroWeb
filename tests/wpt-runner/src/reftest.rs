@@ -2116,4 +2116,38 @@ mod tests {
             }
         }
     }
+
+    /// R879：`background:transparent`（解析为 `background-image:none` → `vec![None]`）
+    /// 不应阻止 body 背景传播到画布。CSS §14.2：html 背景透明时 body 背景传播到 canvas。
+    ///
+    /// `body{background:green}` + `html{background:transparent}` → 全画布绿
+    ///（background-root-005 等 cluster，R721 定位、R879 修 `vec![None]` 误判）。
+    #[test]
+    fn test_background_image_none_does_not_block_body_canvas_propagation() {
+        let html = r#"<html><head><style>
+   body { background: green; color: white; }
+   html { background: transparent; color: yellow; }
+  </style></head>
+  <body>
+   <p>body green should fill canvas</p>
+  </body></html>"#;
+        let cfg = ReftestConfig::default();
+        let fb = render_to_framebuffer(html, "", &cfg);
+        let px = &fb.data;
+        // 绝大多数像素应为绿（body green 传播到画布）；允许少量文本反走样像素
+        let mut green = 0usize;
+        let mut total = 0usize;
+        for chunk in px.chunks(4) {
+            if chunk.len() == 4 {
+                total += 1;
+                if chunk[1] >= 100 && chunk[0] < 80 && chunk[2] < 80 {
+                    green += 1;
+                }
+            }
+        }
+        assert!(
+            green * 100 > total * 90,
+            "canvas must be predominantly green: {green}/{total}"
+        );
+    }
 }

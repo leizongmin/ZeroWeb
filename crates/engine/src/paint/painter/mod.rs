@@ -76,6 +76,18 @@ fn is_positioned_child(box_node: &LayoutBox) -> bool {
     box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky
 }
 
+/// 画布背景传播判定：background-image 图层列表是否含至少一个**可绘制**图层
+///（Url 或 Gradient）。`background-image: none` 解析为 `vec![None]`（非空但无实际
+/// 图层），不应触发画布传播（CSS §14.2，R879）。
+fn has_paintable_bg_image(layers: &[zero_style_system::property::types::BackgroundImageComputedValue]) -> bool {
+    layers.iter().any(|l| {
+        !matches!(
+            l,
+            zero_style_system::property::types::BackgroundImageComputedValue::None
+        )
+    })
+}
+
 fn child_paint_sort_key(box_node: &LayoutBox) -> (u8, i32) {
     if is_positioned_child(box_node) {
         if box_node.z_index < 0 {
@@ -312,10 +324,13 @@ impl Painter {
             // 故根元素（及作为其后代的 body）背景均不传播到画布（canvas 保持默认白）。
             // 实测 chromium：html{display:none} 渲染为纯白 canvas（root-box-003）。
             let html_is_display_none = html_style.is_some_and(|hs| hs.display == DisplayValue::None);
-            // html 有任意背景（color 非透明 或 image 非空）→ html 传播；否则 body。
+            // html 有任意背景（color 非透明 或 至少一个非 None 图层）→ html 传播；否则 body。
+            // 注意：`background-image: none` 解析为 `vec![None]`（非空但无实际图层），
+            // 不应算作「有图片」——否则 html{background:transparent} 会因 [None] 图层误判
+            // 为有背景，使 body 的背景无法传播到画布（background-root-005 等，R879）。
             let html_has_bg = !html_is_display_none
                 && html_style.is_some_and(|hs| {
-                    hs.background_color != ColorValue::Transparent || !hs.background_image.is_empty()
+                    hs.background_color != ColorValue::Transparent || has_paintable_bg_image(&hs.background_image)
                 });
             let (prop_node, prop_style) = if html_has_bg {
                 (html_id, html_style)
@@ -327,7 +342,7 @@ impl Painter {
             };
             self.canvas_propagated_node = prop_node;
             if let Some(ps) = prop_style
-                && (ps.background_color != ColorValue::Transparent || !ps.background_image.is_empty())
+                && (ps.background_color != ColorValue::Transparent || has_paintable_bg_image(&ps.background_image))
             {
                 if ps.background_color != ColorValue::Transparent {
                     self.primitives.add_fill(
