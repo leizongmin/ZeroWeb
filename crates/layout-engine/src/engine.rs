@@ -176,7 +176,11 @@ impl LayoutEngine {
             &intrinsic_for_r695,
             self.viewport_height,
         );
-        if changed_r695 || Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc)
+        let changed_pct_padding =
+            Self::resolve_percentage_padding(&mut taffy_tree, &root_box, &dom_to_taffy, styles, self.viewport_width);
+        if changed_r695
+            || changed_pct_padding
+            || Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc)
         {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
             let available_space = taffy::geometry::Size {
@@ -764,6 +768,91 @@ impl LayoutEngine {
             styles,
             img_intrinsic_sizes,
         )
+    }
+
+    /// CSS §8.3/§8.4：百分比 padding 相对**包含块的内容宽度**解析（与元素自身宽度无关）。
+    ///
+    /// taffy 0.7 的 `LengthPercentage::Percent` padding 在多数布局路径上解析为 0
+    /// （实测 `#box{width:150px;padding:20%}` 在 800px 视口内 pt=0，应 160）。
+    /// 本 pass 在第一趟布局（父级 content_width 已确定）后，把百分比 padding 预解析为
+    /// 绝对 px，改写 taffy style 为 `Length(px)` 并 mark_dirty，由 compute() 重跑。
+    ///
+    /// 非循环：百分比 padding 仅依赖父级内容宽（第一趟已知），不依赖元素自身宽度，
+    /// 故一次重跑即可收敛（与 R695 %height 同模式）。
+    fn resolve_percentage_padding(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        viewport_width: f32,
+    ) -> bool {
+        use zero_css_parser::values::LengthValue;
+
+        fn walk(
+            b: &LayoutBox,
+            parent_content_width: f32,
+            taffy_tree: &mut TaffyTree<NodeId>,
+            dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+            styles: &HashMap<NodeId, ComputedStyle>,
+        ) -> bool {
+            // 垂直书写模式下块轴为 X，padding 百分比语义不同——保守跳过。
+            if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+                return false;
+            }
+            let mut changed = false;
+            let style = b.node_id.and_then(|id| styles.get(&id));
+
+            // 本元素提供给子元素的「内容宽度」（百分比 padding 的解析基准）。
+            // taffy 第一趟已算出 content_width（b.content_width）；匿名盒透传父级宽度。
+            let my_content_width = if b.content_width > 0.0 {
+                b.content_width
+            } else {
+                parent_content_width
+            };
+
+            if let Some(s) = style {
+                let has_pct = matches!(s.padding_top, LengthValue::Percentage(_))
+                    || matches!(s.padding_right, LengthValue::Percentage(_))
+                    || matches!(s.padding_bottom, LengthValue::Percentage(_))
+                    || matches!(s.padding_left, LengthValue::Percentage(_));
+                if has_pct
+                    && let Some(id) = b.node_id
+                    && let Some(&tid) = dom_to_taffy.get(&id)
+                    && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                {
+                    let resolve = |v: &LengthValue| match v {
+                        LengthValue::Percentage(p) => {
+                            taffy::style::LengthPercentage::Length((*p as f32 / 100.0 * parent_content_width).max(0.0))
+                        }
+                        // 其它值保持原 taffy 值（converter 已转换）；此处只覆盖百分比。
+                        _ => taffy::style::LengthPercentage::Length(0.0),
+                    };
+                    // 仅改写为百分比的边，其余保留 taffy 已转换值。
+                    if let LengthValue::Percentage(_) = s.padding_top {
+                        st.padding.top = resolve(&s.padding_top);
+                    }
+                    if let LengthValue::Percentage(_) = s.padding_right {
+                        st.padding.right = resolve(&s.padding_right);
+                    }
+                    if let LengthValue::Percentage(_) = s.padding_bottom {
+                        st.padding.bottom = resolve(&s.padding_bottom);
+                    }
+                    if let LengthValue::Percentage(_) = s.padding_left {
+                        st.padding.left = resolve(&s.padding_left);
+                    }
+                    let _ = taffy_tree.set_style(tid, st);
+                    let _ = taffy_tree.mark_dirty(tid);
+                    changed = true;
+                }
+            }
+
+            for child in &b.children {
+                changed |= walk(child, my_content_width, taffy_tree, dom_to_taffy, styles);
+            }
+            changed
+        }
+
+        walk(root, viewport_width, taffy_tree, dom_to_taffy, styles)
     }
 
     /// 当父元素具有垂直书写模式时，taffy 的布局结果是轴交换后的，
