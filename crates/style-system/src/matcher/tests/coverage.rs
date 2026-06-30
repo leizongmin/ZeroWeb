@@ -251,26 +251,41 @@ fn test_lang_matches_basic_inherit_boundary_caseinsensitive() {
 
     let sel_en = make_pseudo_selector(PseudoClassSelector::Lang("en".to_string()));
     // child 继承 parent 的 en-US → :lang(en) 匹配（连字符前缀边界）。
-    assert!(matches_selector(&doc, child, &sel_en), ":lang(en) should match inherited lang=en-US");
+    assert!(
+        matches_selector(&doc, child, &sel_en),
+        ":lang(en) should match inherited lang=en-US"
+    );
     // 大小写不敏感：:lang(EN) 也匹配。
     let sel_en_upper = make_pseudo_selector(PseudoClassSelector::Lang("EN".to_string()));
-    assert!(matches_selector(&doc, child, &sel_en_upper), ":lang(EN) case-insensitive match");
+    assert!(
+        matches_selector(&doc, child, &sel_en_upper),
+        ":lang(EN) case-insensitive match"
+    );
     // 精确匹配另一 range：:lang(en-US) 匹配。
     let sel_en_us = make_pseudo_selector(PseudoClassSelector::Lang("en-US".to_string()));
     assert!(matches_selector(&doc, child, &sel_en_us), ":lang(en-US) exact match");
 
     // 不应匹配：:lang(fr) 与 en-US 无关。
     let sel_fr = make_pseudo_selector(PseudoClassSelector::Lang("fr".to_string()));
-    assert!(!matches_selector(&doc, child, &sel_fr), ":lang(fr) should not match en-US");
+    assert!(
+        !matches_selector(&doc, child, &sel_fr),
+        ":lang(fr) should not match en-US"
+    );
 
     // 连字符边界：:lang(eng) 不匹配 en-US（必须 "eng-" 前缀，"en-US" 不以 "eng-" 开头）。
     let sel_eng = make_pseudo_selector(PseudoClassSelector::Lang("eng".to_string()));
-    assert!(!matches_selector(&doc, child, &sel_eng), ":lang(eng) must not match en-US (hyphen boundary)");
+    assert!(
+        !matches_selector(&doc, child, &sel_eng),
+        ":lang(eng) must not match en-US (hyphen boundary)"
+    );
 
     // 无 lang 祖先的元素不匹配。
     let orphan = doc.create_element("em");
     let _ = doc.append_child(root, orphan);
-    assert!(!matches_selector(&doc, orphan, &sel_en), ":lang(en) should not match element with no lang ancestor");
+    assert!(
+        !matches_selector(&doc, orphan, &sel_en),
+        ":lang(en) should not match element with no lang ancestor"
+    );
 }
 
 // ── :has() 内部 NextSibling/SubsequentSibling 组合器 ──
