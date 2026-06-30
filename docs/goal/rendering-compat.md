@@ -287,7 +287,7 @@
 
 - [x] **Margin 折叠** — 相邻块级元素的 margin-top/margin-bottom 按规范折叠（正 margin 取最大、负 margin 取最负、正负抵消）— ✅ **R323 实测通过**（taffy 0.7 CollapsibleMarginSet；6 探针 case + 5 reftest 全过）
 - [x] ✅ **BFC 创建** — `overflow: hidden/auto/scroll`、`display: flow-root`、浮动元素、`position: absolute/fixed` 正确创建 BFC，隔离浮动和 margin 折叠（`establishes_bfc` 全条件 + margin 隔离 R323 实测 + `use_bfc_float_containment` float containment；见 known-gaps BFC 行 ✅）
-- [ ] **Float 布局** — 完整的 float 定位（float: left/right）、clear（clear: left/right/both）、float containment（BFC 包含浮动）
+- [x] ✅ **Float 布局** — float 定位（float: left/right）+ clear + float containment（BFC）+ inline exclusion — `float_positioning.rs::adjust_float_positions(_with_context)` 处理 float 定位 + active_left/right_float_bottom（clear 语义）+ `use_bfc_float_containment`（containment）；**R895 实测验证**（float:left 100×80 盒正确居容器左上、块级兄弟盒 border-box 全宽在 float 之后、inline 文本绕 float 排版 y<80 时 x<95 无文本/x≥100 有文本）；原 master.md「无原生 float 布局」描述已过时。残余 = CSS2 float reftest 边缘 case（结构性 plateau，非核心布局缺口）
 - [x] **Position: fixed** — 相对 viewport 定位（当前错误地映射为 absolute）— ✅ **R324 修复**（`adjust_fixed_to_viewport` 改为扣除祖先偏移；fixed 在有偏移 positioned 祖先内也视口相对，与 R98 absolute-viewport 约定一致；新单测 + 8 旧单测更新 + 全量 reftest 438/490 零回归）
 - [ ] **Position: sticky** — 滚动时正确固定在指定偏移范围内
 - [ ] **Overflow: scroll/auto** — 可滚动容器功能，scroll 偏移正确应用到子元素布局
