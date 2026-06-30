@@ -1139,6 +1139,49 @@
 
 **▶ 下会话**：① columnfill-auto-max-height-003 残余 1.86%（查是否 column-rule 绘制 / column-gap 位置）；② 跑全 corpus oracle 看 R904 em + R905 max-height 对其他 dir（css2/text 用 em column-width/gap + max-height 的案）连带 yield；③ 继续扫 multicol 其余 mid-range。**multicol 轨道 R901-R905 三轮 +4，持续 active yield**。
 
+### R906 双 dead-end 调查（ch 单位 + text-transform layout 一致性·零 yield·全回退·零源码）
+
+承 R905「下会话扫 multicol 其余 mid-range + cross-dir yield」。两 lever 各 A/B 实测后均 dead-end，按 code-guidelines「不做零价值修改」全回退（工作树净零）：
+
+**① ch 单位 resolution（R904 em 类比）= NET NEGATIVE，回退**：`multicol-width-ch-001`（6.91%）驱动。定位 ch 解析两处 bug——general resolver `computed.rs:48 Ch(v)=>v*font_size*0.5`（0.5em 近似）+ multicol `multicol.rs:117 Ch(v)=>v*8.0`（硬编码）。Ahem advance=1em（loader.rs `test_ahem_measure_advance` 实测 advance==font_size），故 1ch(Ahem)=1em=font_size。修两处→1em。
+- **A/B（css-text 1650 案 + multicol 452 案）**：css-text oracle **278→275（-3）**；multicol 108 不变（multicol-width-ch-001 仅 6.91→4.12 directional，未过线，残余=内容分布非列宽）。
+- **裁决**：general 0.5em→1em 对 css-text（1042 ch 用法，height/margin/text-indent Nch）net -3——0.5em 对多数 css-text oracle 案更近（真字体 1ch≈0.5em，ZeroWeb 无 font-metric 管线，0.5em 是更好的全局默认）。multicol-only 1em 与 general 0.5em 不一致（容器 0.5em vs 列宽 1em）更差。**区别 R547（ex→0.8em clean win）**：ex 用法少 blast radius 小，ch 在 css-text 极广故 Ahem 1em 反而 net 负。**ch 杠杆关闭**，须 font-metric 管线（多会话）才能 Ahem-accurate 不伤真字体。
+
+**② text-transform layout/paint 一致性 = ZERO YIELD，回退**：css-text `text-transform-upperlower-*` 簇（8 案 ~5-5.9%）疑似 layout/paint 文本不一致（paint `text.rs:1083` 对 fragment.text 变换，layout 用原文测量→大小写字形宽度差致换行不一致）。加 layout 侧变换（inline_types.rs `apply_text_transform` + mod.rs:762/502 两 text-gather 点）。
+- **A/B（css-text）**：oracle **278 不变**（zero yield）；text-transform-upperlower-002 5.84% 字节同。
+- **裁决**：paint `text.rs:1083` 已在主 fragment loop 用 `owner_id` 的 computed style 变换（text-transform 已正确 apply at paint）；upperlower 簇 ~5.8% 真因 = **DoulosSIL-R.woff webfont fallback**（test 与 ref 同 font stack，差异仅 text-transform，若 apply 则应 ~0%；5.8% 持续 = webfont 像素差非 transform）。layout 侧变换冗余（paint 幂等）零 yield。回退。
+
+**裁决（轨道）**：multicol R901-R905 +4 后，本轮两 lever（ch / text-transform）+ column-rule 簇（10 案 ~6.3%，solid 6.35 vs none 5.81 仅差 0.54%=rule 像素足迹，~5.8% 共享基=列分布 plateau）均 dead-end。css-text / css-flexbox mid-range 簇扫描（align-content 7 案、line-break 11 案）同呈「~5% 共享 diffuse 基非单 feature bug」模式。**残余缺口确为 master.md 既述结构性 plateau（font-metric / block-子碎片化 / webfont），单 session clean lever 边际递减**。
+
+**▶ 下会话**：① LAYOUT_DUMP 单个 multicol mid-range 特定案（multicol-width-003 6.60% / multicol-count-002 8.47%）找 R904 式特定数值 bug（非簇扫描）；② 接受 multicol 轨道 R901-R905 +4 收获，pivot 全 corpus oracle 找其他 dir 未挖特定案；③ font-metric 管线 / block-子碎片化 多会话硬核。**勿以单 session 重试 ch / text-transform / column-rule 簇（已 ruled out）**。
+
+### R907 ★ column-rule-width em 解析 LANDED（+3 oracle·multicol-rule-fraction 001/002/003 PASS·单轮最高·有 net 源码）
+
+承 R906 dead-end 后转「单个 near-pass 特定案数值 bug」（非簇扫描）。**聚焦 multicol-rule-fraction 簇（~1.5%，近过线）** 读 paint 代码定位根因。
+
+**死值定位（R513 §9.7 / R904 谱系）**：`column-rule-width:1em` 经 `parse_column_rule_width`→`ColumnRuleWidthValue::Length(LengthValue::Em(1.0))`，apply 存 `ColumnRuleWidthComputedValue::Length(Em)` **未 resolve**。`computed.rs::resolve_computed_style` 的 `resolve_length_field` 列表覆盖 width/height/margin/padding/border_*/top/right/bottom/left/gap 等**裸 LengthValue 字段**，但 `column_rule_width` 是 **Medium/Thin/Thick/Length 枚举**（非裸 LengthValue），不在列表内 → 内部 `Length(Em)` 永不解析。paint `painter/text.rs::paint_column_rules` rule_w match（line 192-198）仅 `Length(Px(w))=>*w`，em 落入 `_ => 1.0` → **column-rule-width:1em 渲染为 1px**（应按 element font-size，如 1.25em 字体下 1em=20px）。multicol-rule-fraction-001/002/003 用 fractional em（0.5em 等）rule-width，旧实现统一 1px 致 ~1.5% 不过线。
+
+**修复**（`computed.rs`，border-width 谱系 precedent——`border_top_width` 等裸 LengthValue 在 line 258 etc. compute 时 resolve）：在 column_gap resolve 后加枚举内部 Length resolve——
+```rust
+if let ColumnRuleWidthComputedValue::Length(lv) = &resolved.column_rule_width.clone() {
+    let mut lv = lv.clone();
+    resolve_length_field(&mut lv, font_size_px, viewport_width, viewport_height);
+    resolved.column_rule_width = ColumnRuleWidthComputedValue::Length(lv);
+}
+```
+Medium/Thin/Thick 关键字不进 Length 分支，字节同（零回归）。
+
+**验证（全门禁绿 + 真 pass-rate 提升）**：
+- **multicol-rule-fraction 家族**：001/002/003 均 **<1% PASS**（001/002 0.88%，003 0.64%）；multicol-rule-003 1.54→1.13%（directional，残余=内容分布非 rule-width）。
+- **css-multicol oracle**：**111/452 (24.6%)** vs R905 的 108 = **净 +3 oracle-pass 零回归**（credible 101→104，near 100→103，mismatch 344→341，strict 8 不变）；welcome product-smoke 16.11% 不变（DC-13 <20% 绿）；clippy/fmt 干净；make test 全 workspace 绿（exit 0）；+1 column-rule-width em 单测。
+- 累计 multicol：R901 +1 + R904 +1 + R905 +2 + R907 +3 = **104→111 (23.0%→24.6%)**。
+
+**意义**：**第 4 个 multicol 真 pass-rate 胜利（+3，单轮历史最高）**。R906 三 dead-end（ch/text-transform/column-rule-STYLE 簇）后，转「near-pass 特定案 paint 代码核查」立即命中——**column-rule-WIDTH em 是独立于 column-rule-STYLE 簇（~6%，分布主导，仍 ruled out）的干净 lever**。证实 R904 em-resolution 谱系（apply 存 Em 不 resolve → consumer 误判）仍可挖：本次是 paint consumer 的 `_ => 1.0` fallback 暴露的 compute-side gap。方法论：**near-pass（1-1.7%）案比 mid-range（5-8%）案更易过线，paint 代码 `_ => <default>` fallback 是 em-resolution 谱系的可靠指示符**。
+
+**▶ 下会话**：① 继续扫 multicol near-pass（1.0-1.7%：column-rule-002 1.69% / multicol-rule-shorthand-2 1.53% / equal-gap-and-rule 1.41% / multicol-rule-003 1.13%）查是否 em-resolution 或 rule 绘制相关；② 扩展 em-resolution 谱系审计：grep 其他 `ComputedValue` 枚举（ColumnRuleWidth 同型）含 `Length(LengthValue)` 但不在 resolve_length_field 列表者（outline-width? column-rule-width 已修）;③ pivot 其他 dir near-pass。**multicol 轨道 R901-R907 四轮 +7，near-pass 杠杆持续 active yield**。
+
+
+
 ### 已 ruled out（勿以单会话重试）
 
 near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / **column-aware IFC Phase 1（pure-inline balance 明确高度）(R381)**：执行 column-aware-IFC-spec.md §10 gate「假设 A1」，扫描全 16 css-multicol 失败案结构（height/column-fill/blockchildren），**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）——每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套；spec 自身协议「A1 不存在→紧急停止转 Phase 2」生效，Phase 1 零杠杆关闭，真实 multicol lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）/ baseline-export 3 机制(R266–R316) / **advance-width(R225–R375b) definitive 关闭**：R375 hand-crafted DejaVu 表 morning 16.41→19.14% + R375b fontdue-actual advance（临时加 fontdue dep+缓存 Font+metrics.advance_width）16.41→19.08%，双 variant 均退步；fontdue-actual（最后未测变体）亦证伪。根因：accurate DejaVuSans advance 使换行偏离 chromium（system-ui≠DejaVuSans 或换行算法不同），0.55 启发式碰巧更近。advance-width 非 morning cascade 根因/ blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304) / inline-flex·inline-grid width:auto shrink-to-fit（R370：probe 实证 inline-flex width:auto 同 inline-block 拉伸到满宽 800，是真 bug，但**零杠杆**——全 48 失败案 + product-smoke fixture 均不用 inline-flex/inline-grid width:auto；fix 需 flex_row_intrinsic_width（非 box_content_max_width，flex row 须求和 block 子元素非取 max），复杂且无 reftest/smoke 收益，按 code-guidelines「不做零价值修改」不修，勿再以单会话重试）/ **percent max-width/min-height/min-width clamping（R119 analog，doc-agent 复核 ~0 yield，闭）**：engine.rs:1408 仅 `clamp_percentage_max_height`，无 max-width/min 平行函数——但 max-width-091(percent)✓ + min-height-091/092(percent)✓ 均 PASS（block width 定值→taffy 直接钳；min-height 是测量期 floor 非 content re-clamp）；R119 缺口唯一 max-height-specific（auto-height 内容测量 re-clamp），已修即完整 percent-clamp，无平行 lever，勿以 R119 类比重扫 / **intrinsic-keyword sizing（max-content/min-content/fit-content，R97 谱系，doc-agent 复核 = 非 clean 单会话 lever）**：121 测试文件用此三关键字，但**全集中在 taffy-blocked 上下文**（css-multicol/tables/flexbox intrinsic-size/table-intrinsic-size/flex-item-*-content），CSS2 block/inline-block 上下文**仅 1 案且为 crash-test**（inline-negative-margin-minmax-crash-001，非 sizing-correctness）→ memory「block/inline-block 可独立做」slice **无 dedicated driving test**（~0 可测 yield）；max-content/min-content parse_basic.rs 解析但 resolve 丢信号→0（R97/max-content memory），修复须保留信号+shrink-to-fit 触发，grid/flex/multicol/table 受 taffy 容器不 shrink 阻塞 = 多会话/结构性，勿以单会话重扫。 / **NBSP/Unicode-space collapse (R651 read-only 复核·非 lever)**：`collapse_whitespace`（inline/mod.rs:231）用 Rust `char::is_whitespace()` 折叠 NBSP(U+00A0)/U+3000 等，违反 CSS Text 3 §4.1.1（仅 TAB/LF/FF/CR/space 可折叠）——真 correctness bug，但 collapse 上下文（normal/nowrap/pre-line）**无 reftest 覆盖**（white-space-collapse-001 是 testharness JS `assert_equals(offsetWidth)` 测，非 reftest）；NBSP reftests（white-space-pre-031/032/034/035）全在 `pre` 上下文（preserve 路径不经 collapse）实测 PASS @2.64%。无 driving reftest → 非 lever（product-smoke 影响 negligible，NBSP 罕见于 fixture），defer；R647 category (b) 的 NBSP 角度据此关闭。
