@@ -15,7 +15,7 @@ pub use inline_types::*;
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{DisplayValue, LengthValue, VerticalAlignValue};
+use zero_css_parser::values::{DisplayValue, LengthValue, OverflowValue, VerticalAlignValue};
 
 use zero_dom::{Document, NodeId, NodeKind};
 
@@ -588,7 +588,22 @@ impl InlineFormattingContext {
                                 } else {
                                     match s.display {
                                         DisplayValue::InlineFlex | DisplayValue::InlineGrid => h * 0.5,
-                                        _ => h, // inline-block, inline-table: 基线在底部
+                                        DisplayValue::InlineBlock => {
+                                            // CSS §10.8.1：inline-block 基线 = 其最后 in-flow 行盒基线；
+                                            // 但「无 in-flow 行盒」或 overflow != visible 时基线 = 底 margin edge
+                                            // （h + margin-bottom）。adjust_inline_block_positions 早于
+                                            // compute_final_inline_layouts，无法读 IB 自身行盒；「空元素（无 DOM
+                                            // 子节点）」必无行盒可静态判定，overflow 值亦可从计算样式直接读取。
+                                            let no_line_boxes = doc.first_child(child_id).is_none();
+                                            let clips = !matches!(s.overflow_x, OverflowValue::Visible)
+                                                || !matches!(s.overflow_y, OverflowValue::Visible);
+                                            if no_line_boxes || clips {
+                                                h + length_px(&s.margin_bottom)
+                                            } else {
+                                                h
+                                            }
+                                        }
+                                        _ => h, // inline-table: 基线在底部
                                     }
                                 };
                                 items.push(InlineItem::InlineBlock(InlineBlockBox {

@@ -1795,3 +1795,80 @@ fn test_absolute_stretch_in_inline_block_container() {
     // 确保 adjust_inline_block_positions 不会覆盖绝对定位元素的位置
     let _ = container_box;
 }
+
+/// 辅助：构造 body > div(wrapper, font-size 200px) > [text "Xg", span(inline-block),
+/// text "Xg"]，返回该 inline-block 在布局树中的 y（相对 wrapper 内容盒）。大字号文本主导行盒
+/// 基线（ascent ≈ 160 > ib_baseline），使 inline-block 的 y = baseline − ib_baseline，
+/// 从而 ib_baseline 的差异直接体现为 y 的位移。
+///
+/// - `with_child`：为 true 时给 inline-block 追加一个文本子节点（使其「有 in-flow 行盒」，
+///   不再属于「空元素」分支），用于单独验证 overflow 路径。
+fn inline_block_baseline_y(margin_bottom: f64, overflow_hidden: bool, with_child: bool) -> f32 {
+    let (mut doc, body) = make_doc_with_body();
+    let wrapper = doc.create_element("div");
+    doc.append_child(body, wrapper).unwrap();
+    let t1 = doc.create_text_node("Xg");
+    doc.append_child(wrapper, t1).unwrap();
+    let ib = doc.create_element("span");
+    doc.append_child(wrapper, ib).unwrap();
+    let t2 = doc.create_text_node("Xg");
+    doc.append_child(wrapper, t2).unwrap();
+    if with_child {
+        let inner = doc.create_text_node("c");
+        doc.append_child(ib, inner).unwrap();
+    }
+
+    let mut styles = HashMap::new();
+    let mut w = ComputedStyle::default();
+    w.display = DisplayValue::Block;
+    w.font_size = LengthValue::Px(200.0);
+    styles.insert(wrapper, w);
+    let mut ib_style = ComputedStyle::default();
+    ib_style.display = DisplayValue::InlineBlock;
+    ib_style.width = LengthValue::Px(60.0);
+    ib_style.height = LengthValue::Px(60.0);
+    ib_style.margin_bottom = LengthValue::Px(margin_bottom);
+    if overflow_hidden {
+        ib_style.overflow_x = zero_css_parser::values::OverflowValue::Hidden;
+        ib_style.overflow_y = zero_css_parser::values::OverflowValue::Hidden;
+    }
+    styles.insert(ib, ib_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    find_child_by_node_id(&result.root, ib).expect("inline-block 应找到").y
+}
+
+/// CSS §10.8.1：无 in-flow 行盒的 inline-block（空元素）基线 = 底 margin edge
+/// （height + margin-bottom）。margin-bottom 增大 ib_baseline → 行盒基线不变（文本主导）→
+/// inline-block 上移约 margin-bottom 量。border-edge 基线下两者 y 相等——本测试回归守护该规则。
+#[test]
+fn test_empty_inline_block_baseline_uses_bottom_margin_edge() {
+    let y0 = inline_block_baseline_y(0.0, false, false);
+    let y80 = inline_block_baseline_y(80.0, false, false);
+    let shift = y0 - y80;
+    assert!(
+        (shift - 80.0).abs() < 8.0,
+        "空 inline-block 的 margin-bottom 应使其上移约 80px（margin-edge 基线），实际位移 {}（y0={} y80={}）",
+        shift,
+        y0,
+        y80
+    );
+}
+
+/// CSS §10.8.1：overflow != visible 的 inline-block 基线 = 底 margin edge（即便有 in-flow 行盒）。
+/// 给 inline-block 追加文本子节点（非空）后，overflow:hidden 应触发 margin-edge 基线，
+/// 比 overflow:visible（border-edge 基线）上移约 margin-bottom 量。
+#[test]
+fn test_overflow_hidden_inline_block_baseline_uses_bottom_margin_edge() {
+    let y_visible = inline_block_baseline_y(80.0, false, true);
+    let y_hidden = inline_block_baseline_y(80.0, true, true);
+    let shift = y_visible - y_hidden;
+    assert!(
+        (shift - 80.0).abs() < 8.0,
+        "overflow:hidden inline-block 应比 overflow:visible 上移约 80px（margin-edge 基线），实际位移 {}（visible={} hidden={}）",
+        shift,
+        y_visible,
+        y_hidden
+    );
+}

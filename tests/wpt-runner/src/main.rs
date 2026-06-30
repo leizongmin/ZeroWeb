@@ -799,7 +799,13 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         let w = test_fb.width.min(oracle_fb.width) as usize;
         let h = test_fb.height.min(oracle_fb.height) as usize;
         let total = (w * h).max(1) as f64;
-        (case.id.clone(), true, Some(100.0 * diff_px as f64 / total), strict_thresh_pct, near_solid)
+        (
+            case.id.clone(),
+            true,
+            Some(100.0 * diff_px as f64 / total),
+            strict_thresh_pct,
+            near_solid,
+        )
     });
 
     let with_oracle: Vec<&(String, bool, Option<f64>, f64, bool)> = results.iter().filter(|r| r.1).collect();
@@ -850,13 +856,24 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     eprintln!("  cases scanned:      {}", results.len());
     eprintln!("  with chromium oracle: {}", total);
     eprintln!("  no oracle (skip):   {}", no_oracle);
-    eprintln!("  oracle-pass (z_vs_chr < {:.1}%): {} ({:.1}%)", loose_pct, oracle_pass, rate);
+    eprintln!(
+        "  oracle-pass (z_vs_chr < {:.1}%): {} ({:.1}%)",
+        loose_pct, oracle_pass, rate
+    );
     eprintln!("  ── DC-14 非平凡性检查（排除退化/纯色假绿）──");
     eprintln!("  退化可疑 pass (oracle 帧近纯色): {} → 排除", degenerate_pass);
     eprintln!("  credible pass (排除退化): {} ({:.1}%)", credible_pass, credible_rate);
     eprintln!("  ── DC-14 三态分类（严格容差真通过率 = 唯一可信达标指标）──");
-    eprintln!("  真通过 (z_vs_chr < 布局0.1%/文字0.5%): {} ({:.1}%)", strict_pass, strict_rate);
-    eprintln!("  近似通过 (strict..{:.1}%): {} ({:.1}%)", loose_pct, near_pass, 100.0 * near_pass as f64 / total.max(1) as f64);
+    eprintln!(
+        "  真通过 (z_vs_chr < 布局0.1%/文字0.5%): {} ({:.1}%)",
+        strict_pass, strict_rate
+    );
+    eprintln!(
+        "  近似通过 (strict..{:.1}%): {} ({:.1}%)",
+        loose_pct,
+        near_pass,
+        100.0 * near_pass as f64 / total.max(1) as f64
+    );
     eprintln!("  不一致 (>= {:.1}%): {}", loose_pct, total - strict_pass - near_pass);
     eprintln!("  (cf. self-source ~56.5% / DC-14 46.5% false-pass)");
 
@@ -884,7 +901,10 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         .copied()
         .collect();
     if !degenerate.is_empty() {
-        eprintln!("\n  退化可疑 pass（oracle 帧近纯色，z_vs_chr<{:.1}%）— 供审计:", loose_pct);
+        eprintln!(
+            "\n  退化可疑 pass（oracle 帧近纯色，z_vs_chr<{:.1}%）— 供审计:",
+            loose_pct
+        );
         for (id, _, pct, _, _) in degenerate.iter().take(50) {
             eprintln!("    {:.2}%  {}", pct.unwrap_or(0.0), id);
         }
