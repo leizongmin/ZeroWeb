@@ -428,8 +428,8 @@ pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     if w == 0 || h == 0 {
         return Err("SVG 零尺寸".to_string());
     }
-    let mut pixmap = tiny_skia::Pixmap::new(w, h).ok_or_else(|| format!("SVG pixmap 分配失败 {w}x{h}"))?;
-    resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h).ok_or_else(|| format!("SVG pixmap 分配失败 {w}x{h}"))?;
+    resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
     let rgba = pixmap.take();
     ImageData::from_rgba(rgba, w, h)
 }

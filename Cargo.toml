@@ -66,7 +66,7 @@ wgpu = "24"
 fontdue = "0.9"
 swash = "0.2"
 softbuffer = "0.4"
-resvg = "0.44"
+resvg = "0.47"
 
 # 文字排版
 rustybuzz = "0.20"
@@ -101,15 +101,15 @@ serial_test = "3"
 
 # 工具
 bytemuck = "1"
-hashbrown = "0.15"
-compact_str = "0.8"
+hashbrown = "0.17"
+compact_str = "0.9"
 slotmap = "1"
 url = "2"
 parking_lot = "0.12"
 pollster = "0.4"
 
 # WebSocket（无头浏览器协议）
-tungstenite = "0.26"
+tungstenite = "0.29"
 
 # 内部 crate 依赖
 zero-dom = { path = "crates/dom" }
