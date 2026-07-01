@@ -1,6 +1,8 @@
-name: Daily Build
+name: Weekly Build
 
 on:
+  schedule:
+    - cron: '0 10 * * 6'
   workflow_dispatch:
 
 permissions:
@@ -8,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: daily-build
+  group: weekly-build
   cancel-in-progress: true
 
 env:
@@ -21,7 +23,7 @@ jobs:
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
     steps:
-      - name: Check for new commits since last successful daily build
+      - name: Check for new commits since last successful weekly build
         id: check
         uses: actions/github-script@v7
         with:
@@ -36,7 +38,7 @@ jobs:
             const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
               owner,
               repo,
-              workflow_id: 'daily.yml',
+              workflow_id: 'weekly.yml',
               branch: 'main',
               status: 'success',
               event: 'schedule',
@@ -122,6 +124,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: daily-${{ matrix.artifact }}
+          name: weekly-${{ matrix.artifact }}
           path: dist/
           retention-days: 14
