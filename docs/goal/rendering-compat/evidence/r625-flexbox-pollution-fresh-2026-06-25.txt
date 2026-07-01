@@ -1,6 +1,6 @@
 # 交叉验证：ZeroWeb 同源 vs chromium Oracle（DC-14）
-# dump: $HOME/work/ZeroWeb/target/reftest-dump
-# oracle: $HOME/work/ZeroWeb/tests/wpt-runner/oracle-shots
+# dump: $REPO/target/reftest-dump
+# oracle: $REPO/tests/wpt-runner/oracle-shots
 # 阈值: chan>5, 同源通过<0.50%, Oracle不一致>1.00%
 
 | safe_id | 判定 | z_vs_ref | z_vs_chr |

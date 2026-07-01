@@ -18,7 +18,7 @@ const REPO = join(HERE, '..', '..', '..');
 const FIXTURE_DIR = join(REPO, 'apps', 'browser', 'assets', 'wintertc');
 const EVIDENCE_DIR = join(REPO, 'docs', 'goal', 'rendering-compat', 'evidence', 'product-static', 'wintertc');
 
-const PROXY = process.env.PROXY || 'http://proxy.example.local:7078';
+const PROXY = process.env.PROXY || null;
 const URL = 'https://wintertc.org/';
 const VIEWPORT = { width: 800, height: 600 };
 
@@ -26,20 +26,24 @@ async function main() {
   await mkdir(FIXTURE_DIR, { recursive: true });
   await mkdir(EVIDENCE_DIR, { recursive: true });
 
+  const args = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--hide-scrollbars',
+  ];
+  if (PROXY) {
+    args.push(`--proxy-server=${PROXY}`);
+  }
+
   const browser = await puppeteer.launch({
     headless: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      `--proxy-server=${PROXY}`,
-      '--hide-scrollbars',
-    ],
+    args,
   });
   try {
     const page = await browser.newPage();
     await page.setViewport(VIEWPORT);
-    console.log(`loading ${URL} via ${PROXY} ...`);
+    console.log(`loading ${URL}${PROXY ? ` via ${PROXY}` : ''} ...`);
     await page.goto(URL, { waitUntil: 'networkidle0', timeout: 45000 }).catch((e) => {
       console.warn('goto warn:', e.message);
     });

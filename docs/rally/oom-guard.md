@@ -24,7 +24,7 @@ OOM，内核回收整个 `app-tmux.slice`（含 tmux session），rally 无人�
 ```bash
 systemd-run --user --scope --unit=rally-oom-guard \
   -p MemoryMax=32G -p MemorySwapMax=8G \
-  rally run "你的任务" -w $HOME/work/ZeroWeb
+  rally run "你的任务" -w ~/work/ZeroWeb
 ```
 
 - `MemoryMax=32G`：rally + agent + cargo test 全树硬上限（47GB 机器留约
