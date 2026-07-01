@@ -14,8 +14,12 @@ use std::path::Path;
 
 use zero_css_parser::ast::Rule as CssRule;
 use zero_css_parser::parser::Parser as CssParser;
-use zero_engine::RenderPipeline;
 use zero_engine::paint::simple_hash;
+use zero_engine::pipeline::PageScript;
+use zero_engine::{
+    DomMutation, RenderPipeline, apply_mutations_to_html, extract_page_scripts, generate_js_dom_shim,
+    register_dom_callbacks,
+};
 use zero_render_foundation::cpu::render_full_scene;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
@@ -456,8 +460,9 @@ pub fn render_to_framebuffer_with_base(
     config: &ReftestConfig,
     base_dir: Option<&Path>,
 ) -> FrameBuffer {
-    // 提取并执行 <script> 标签中的 JS 代码
-    execute_scripts(html);
+    // 执行页面 <script>（含 DOM 变更），把 JS 后的最终 HTML 用于后续渲染。
+    let mutated_html = apply_scripted_dom_mutations(html, base_dir);
+    let html: &str = &mutated_html;
 
     // 先构建图像缓存，提取固有尺寸供 paint 阶段使用
     let mut image_cache = build_image_cache(html, base_dir);
@@ -553,7 +558,8 @@ pub fn render_via_webview_to_framebuffer_with_base(
     config: &ReftestConfig,
     base_dir: Option<&Path>,
 ) -> FrameBuffer {
-    execute_scripts(html);
+    let mutated_html = apply_scripted_dom_mutations(html, base_dir);
+    let html: &str = &mutated_html;
 
     let mut image_cache = build_image_cache(html, base_dir);
     let image_sizes = extract_image_sizes(&mut image_cache, html);
@@ -852,84 +858,132 @@ pub fn render_to_framebuffer_gpu_with_base(
     render_to_framebuffer_with_base(html, css, config, base_dir)
 }
 
-/// 从 HTML 中提取 `<script>` 标签内容并通过 V8 runtime 执行。
+/// 执行页面 `<script>`（含 DOM 变更）并返回应用变更后的 HTML。
 ///
-/// 当前实现为"执行但不修改 DOM"模式：
-/// - JS 代码在独立的 V8 sandbox 中执行
-/// - 不提供 DOM API（document, window 等）
-/// - JS 执行结果不影响后续渲染
+/// 镜像 browser/renderer 的 JS↔DOM 桥接 cycle：注入 DOM shim + 注册 `__zw_*` 回调
+/// → 按文档序执行内联/外链脚本 → 派发 `load` 事件（触发 `<body onload>` 与
+/// `addEventListener('load', …)`）→ 收集 [`DomMutation`] → 经
+/// [`apply_mutations_to_html`] 把变更写回文档。
 ///
-/// 这适用于大多数 WPT CSS reftest 场景，其中 JS 仅用于：
-/// - 设置 CSS 变量或类名（已通过 HTML 内联处理）
-/// - 断言测试条件（不影响渲染输出）
-/// - 动态生成内容（少数场景，后续版本支持）
-fn execute_scripts(html: &str) {
-    let scripts = extract_script_content(html);
-    if scripts.is_empty() {
-        return;
+/// 用于 WPT reftest：上游 reftest 常用 DOM-modifying JS（如 `background-root-101`
+/// 的 `<body onload="setTimeout(test,5)">` 改 `head.className`）切换到最终渲染态。
+/// 旧实现用裸 V8 sandbox 跑脚本但不反映 DOM 变更 → 截 pre-JS 态，与 chromium
+/// post-JS oracle 比对产生 ~100% 假发散（R916）。
+///
+/// 失败保守：shim/脚本执行或变更应用失败时原样返回 `html`，不阻塞 reftest。
+fn apply_scripted_dom_mutations(html: &str, base_dir: Option<&Path>) -> String {
+    let scripts = extract_page_scripts(html);
+    let onload_handlers = extract_onload_handlers(html);
+    if scripts.is_empty() && onload_handlers.is_empty() {
+        return html.to_string();
     }
 
-    // 合并所有 <script> 内容
-    let combined_js: String = scripts.join(";\n");
-    if combined_js.trim().is_empty() {
-        return;
-    }
-
-    // 使用 V8 sandbox 执行 JS
+    use std::sync::Arc;
+    use std::sync::Mutex;
     use zero_script_sandbox::{SandboxConfig, V8Sandbox};
 
     let config = SandboxConfig {
-        timeout_ms: 5000, // 5 秒超时
+        // DOM-mutating reftest 脚本通常很短；与既有 reftest JS 超时一致。
+        timeout_ms: 5000,
+        persistent_context: true,
         ..Default::default()
     };
+    let Ok(mut sandbox) = V8Sandbox::with_config(config) else {
+        return html.to_string();
+    };
 
-    if let Ok(mut sandbox) = V8Sandbox::with_config(config)
-        && let Err(e) = sandbox.execute(&combined_js)
-    {
-        // JS 执行失败不阻塞渲染（reftest 仍可运行）
-        eprintln!("  [reftest JS] Script execution warning: {e}");
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(html.to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(String::from("about:blank")));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
+        eprintln!("  [reftest JS] DOM shim init warning: {e}");
+        return html.to_string();
+    }
+
+    // 按文档序执行每个脚本。外链脚本从 base_dir 读取本地文件（reftest 离线运行）。
+    for script in &scripts {
+        let code: Option<String> = match script {
+            PageScript::Inline(c) | PageScript::InlineModule(c) => Some(c.clone()),
+            PageScript::External(src) | PageScript::ExternalModule(src) => match fetch_external_script(src, base_dir) {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    eprintln!("  [reftest JS] external script {src}: {e}");
+                    None
+                }
+            },
+        };
+        let Some(code) = code else { continue };
+        if code.trim().is_empty() {
+            continue;
+        }
+        // module 语义需要编译管线；reftest 视角下按经典脚本 best-effort 执行。
+        let full = format!("__zw_begin_script && __zw_begin_script();\n{code}");
+        if let Err(e) = sandbox.execute(&full) {
+            eprintln!("  [reftest JS] Script execution warning: {e}");
+        }
+    }
+
+    // 派发 load 事件：(a) 直接执行 `<body onload>` 属性 handler 体；
+    // shim 的 setTimeout 经 microtask 立即跑（V8 execute 返回前排空 microtask）。
+    for handler in onload_handlers.iter().filter(|h| !h.trim().is_empty()) {
+        let full = format!("__zw_begin_script && __zw_begin_script();\n{handler}");
+        if let Err(e) = sandbox.execute(&full) {
+            eprintln!("  [reftest JS] onload handler warning: {e}");
+        }
+    }
+    // (b) 派发 window 'load' 事件，触发 `addEventListener('load', …)` 监听器（best-effort）。
+    let _ = sandbox.execute(
+        "if (typeof __zw_dispatch_event === 'function') { try { __zw_dispatch_event('html','load',null); } catch(_e){} }",
+    );
+
+    let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if recorded.is_empty() {
+        return html.to_string();
+    }
+    match apply_mutations_to_html(html, &recorded) {
+        Ok(new_html) => new_html,
+        Err(e) => {
+            eprintln!("  [reftest JS] apply mutations warning: {e}");
+            html.to_string()
+        }
     }
 }
 
-/// 从 HTML 字符串中提取所有 `<script>` 标签的内容。
-fn extract_script_content(html: &str) -> Vec<String> {
-    let mut scripts = Vec::new();
-    let mut pos = 0;
-
-    while pos < html.len() {
-        // 查找 <script 标签
-        let Some(script_start) = html[pos..].find("<script") else {
-            break;
-        };
-        let abs_start = pos + script_start;
-
-        // 跳过 <script> 或 <script type="...">
-        let Some(tag_end) = html[abs_start..].find('>') else {
-            break;
-        };
-        let content_start = abs_start + tag_end + 1;
-
-        // 检查是否是外部脚本（src=），跳过外部脚本
-        let tag_content = &html[abs_start..abs_start + tag_end];
-        if tag_content.contains("src=") {
-            pos = content_start;
-            continue;
+/// 提取 `<body>`/`<frameset>`/`<html>` 上 `onload` 属性的 handler 体（JS 源码）。
+///
+/// 这些属性在 `load` 事件触发时由浏览器编译为函数体执行；reftest 直接把属性值当
+/// JS 源码运行（与 browser 侧 shim 语义一致：shim 的 setTimeout 会立即经 microtask 跑）。
+fn extract_onload_handlers(html: &str) -> Vec<String> {
+    let doc = zero_dom::parse_html(html);
+    let mut out = Vec::new();
+    for tag in ["body", "frameset", "html"] {
+        for id in doc.get_elements_by_tag_name(tag) {
+            if let Some(h) = doc.get_attribute(id, "onload")
+                && !h.trim().is_empty()
+            {
+                out.push(h);
+            }
         }
-
-        // 查找 </script>
-        let Some(close_tag) = html[content_start..].find("</script>") else {
-            break;
-        };
-        let script_content = html[content_start..content_start + close_tag].to_string();
-
-        if !script_content.trim().is_empty() {
-            scripts.push(script_content);
-        }
-
-        pos = content_start + close_tag + "</script>".len();
     }
+    out
+}
 
-    scripts
+/// 从 `base_dir` 解析外链脚本 `src` 并读取本地文件内容（reftest 离线运行）。
+///
+/// `src` 可能是相对路径或绝对路径；相对路径按 `base_dir` 解析。失败返回 `Err`
+/// （调用方跳过该脚本，不阻塞 reftest）。
+fn fetch_external_script(src: &str, base_dir: Option<&Path>) -> Result<String, String> {
+    let path = std::path::Path::new(src);
+    let resolved = if path.is_absolute() {
+        path.to_path_buf()
+    } else if let Some(base) = base_dir {
+        base.join(src)
+    } else {
+        path.to_path_buf()
+    };
+    std::fs::read_to_string(&resolved).map_err(|e| format!("{}: {e}", resolved.display()))
 }
 
 /// 创建加载了系统字体和 Ahem 测试字体的 FontLoader。

@@ -1328,6 +1328,31 @@ font-metric Phase A 关闭后（R915）扫描 CSS2 oracle（**48.3% = 3009/6232 
 
 **裁决（vein 重开）**：R908-R915 关闭 CSS-layout clean-lever + font-metric 后，R916 **重开 harness-lever vein**——非渲染 bug 而是测试 harness 缺陷，但同样降 oracle mismatch，且机制全在、已实证、影响面大。这是当前**最高优先级、最高 blast radius 的可推进 lever**（远优于 subpixel 墙 / font-engine 投资）。下会话直接 START 抽取 + 接线。
 
+### R917 reftest harness DOM-mutating JS 接线 LANDED（机制正确·聚合持平 +1·零回归·harness 真实执行 JS）
+
+承 R916「下会话 START 抽取 + 接线」。**完成抽取 + 接线 + insertBefore shim 补全**，harness 从「裸 sandbox 忽略 DOM 变更」升级到「真正执行 DOM-mutating JS 并渲染 post-JS 态」。详见 [`evidence/r916-reftest-harness-skips-dom-modifying-js.txt`](./evidence/r916-reftest-harness-skips-dom-modifying-js.txt)。
+
+**实施（net 源码）**：
+1. **抽取共享**：`register_dom_callbacks` 从 renderer/browser 两份 251 行私有副本抽到 `zero-engine::js_dom_bridge::register_dom_callbacks`（pub）。`zero-engine` 加 `zero-script-sandbox` 依赖（叶 crate，无环）。三处（renderer/browser/reftest）共用，消除第三份拷贝。
+2. **reftest 接线**：新增 `apply_scripted_dom_mutations(html, base_dir)` 替换 `execute_scripts`，两条渲染路径（`render_to_framebuffer_with_base` + `render_via_webview_to_framebuffer_with_base`）均接入。流程：`extract_page_scripts` + `extract_onload_handlers` → `V8Sandbox(persistent_context)` + `register_dom_callbacks` + `generate_js_dom_shim` → 按序执行内联/外链脚本 → 派发 `load` 事件（执行 `<body onload>` handler 体 + window `load` 监听器）→ `apply_mutations_to_html` → 用 mutated HTML 重渲染。shim 的 `setTimeout` 经 microtask 立即跑（V8 `execute` 返回前 `perform_microtask_checkpoint`）。
+3. **insertBefore shim 补全**：补 shim `insertBefore`（含 `ref=null`→append 语义）+ `__zw_insert_before[_handle]` 回调 + `DomMutation::InsertBefore[_ByHandle]` 枚举 + `apply_dom_mutations` 处理（复用 `Document::insert_before`）+ proxy 暴露 `__zwSelector`。
+
+**测量（`make reftest-oracle DIR=css/CSS2`，6232 案）**：
+- 基线 R916：3009/6232 = 48.3%
+- R917 接线后：3010/6232 = 48.3%（**净 +1**）
+- DOM mutation 触发广度：**118 个 case 产生 mutation（共 2278 条）**——wiring 被广泛触发
+- **insertBefore 失败：64 → 0**（shim 补全前 `insertBefore is not a function` 是 #1 失败，64 case 中断 DOM 构建；补全后归零）
+
+**★ 调查：为何聚合持平 +1（非 R916 预测的大幅 yield）**：
+- **A. background-root-101/102 head+body 背景渲染 bug（独立，非 JS wiring）**：即便 mutation 正确应用（实测 mutated HTML 含 `<head class="after">`），渲染仍 ~100% 发散。逐项隔离：最小 HTML + CDATA + head 子元素 + DOCTYPE 全部正确渲染（绿/红），但真实 background-root-101.xht 完整文档 body 盒内 (400,30) = 灰 216、canvas = 白 → body 背景在完整真实文档中不正确染色/不传播到 canvas。**此 bug 影响未变异文件**（head=before 时也应红却白），非 JS wiring 所致 = 独立多会话调查。R916「手动 post-JS=1.51%」可能用了更简洁手工 HTML。
+- **B. insertBefore 缺失（已修）**：补全后 DOM 构建完整，但动态内容 reftest 多不翻转，因渲染层对 JS 动态构建的结构（动态 span/div 列表、动态样式切换）有次级缺口。聚合 +1 反映：DOM-mutating JS 现正确执行，但**下游渲染/布局对动态结构的支持是下一个 yield 杠杆**（独立多会话）。
+
+**门禁（全绿）**：`make test` exit 0；`make product-smoke` welcome 16.11%（< 20% DC-13 gate，零回归）；`cargo clippy --workspace --all-targets -D warnings` clean；`cargo fmt` clean。
+
+**意义**：reftest harness 的 JS 执行能力达到正确（DC-1 真实正确性提升）——能驱动 118 个 DOM-mutating case 的 JS（含 insertBefore 全 API）。聚合 reftest 通过率受次级渲染 bug 阻塞（独立 lever），但 harness 本身不再因「忽略 DOM 变更」而失真。browser/renderer 的 JS 路径现也支持 insertBefore（基础 DOM API，真实网页常用）。
+
+**▶ 下会话**：① 调查 background-root head+body 背景在完整文档不染色的根因（body 背景传播到 canvas 的条件 / 相邻兄弟在完整 head 子树下的匹配）——可能解锁 background-root 簇 + body-background 系列的真实 yield；② 扫描动态内容 reftest 的次级渲染缺口（JS 正确构建 DOM 后渲染发散的 case 逐项根因）；③ shim 其他缺口（createElementNS 2 / cloneNode 1 / getComputedStyle 1 / createDocumentFragment 1，量小）。**R917 把 harness JS 执行拉到正确，yield 阻塞转移到渲染层。**
+
 ### 已 ruled out（勿以单会话重试）
 
 near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / **column-aware IFC Phase 1（pure-inline balance 明确高度）(R381)**：执行 column-aware-IFC-spec.md §10 gate「假设 A1」，扫描全 16 css-multicol 失败案结构（height/column-fill/blockchildren），**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）——每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套；spec 自身协议「A1 不存在→紧急停止转 Phase 2」生效，Phase 1 零杠杆关闭，真实 multicol lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）/ baseline-export 3 机制(R266–R316) / **advance-width(R225–R375b) definitive 关闭**：R375 hand-crafted DejaVu 表 morning 16.41→19.14% + R375b fontdue-actual advance（临时加 fontdue dep+缓存 Font+metrics.advance_width）16.41→19.08%，双 variant 均退步；fontdue-actual（最后未测变体）亦证伪。根因：accurate DejaVuSans advance 使换行偏离 chromium（system-ui≠DejaVuSans 或换行算法不同），0.55 启发式碰巧更近。advance-width 非 morning cascade 根因/ blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304) / inline-flex·inline-grid width:auto shrink-to-fit（R370：probe 实证 inline-flex width:auto 同 inline-block 拉伸到满宽 800，是真 bug，但**零杠杆**——全 48 失败案 + product-smoke fixture 均不用 inline-flex/inline-grid width:auto；fix 需 flex_row_intrinsic_width（非 box_content_max_width，flex row 须求和 block 子元素非取 max），复杂且无 reftest/smoke 收益，按 code-guidelines「不做零价值修改」不修，勿再以单会话重试）/ **percent max-width/min-height/min-width clamping（R119 analog，doc-agent 复核 ~0 yield，闭）**：engine.rs:1408 仅 `clamp_percentage_max_height`，无 max-width/min 平行函数——但 max-width-091(percent)✓ + min-height-091/092(percent)✓ 均 PASS（block width 定值→taffy 直接钳；min-height 是测量期 floor 非 content re-clamp）；R119 缺口唯一 max-height-specific（auto-height 内容测量 re-clamp），已修即完整 percent-clamp，无平行 lever，勿以 R119 类比重扫 / **intrinsic-keyword sizing（max-content/min-content/fit-content，R97 谱系，doc-agent 复核 = 非 clean 单会话 lever）**：121 测试文件用此三关键字，但**全集中在 taffy-blocked 上下文**（css-multicol/tables/flexbox intrinsic-size/table-intrinsic-size/flex-item-*-content），CSS2 block/inline-block 上下文**仅 1 案且为 crash-test**（inline-negative-margin-minmax-crash-001，非 sizing-correctness）→ memory「block/inline-block 可独立做」slice **无 dedicated driving test**（~0 可测 yield）；max-content/min-content parse_basic.rs 解析但 resolve 丢信号→0（R97/max-content memory），修复须保留信号+shrink-to-fit 触发，grid/flex/multicol/table 受 taffy 容器不 shrink 阻塞 = 多会话/结构性，勿以单会话重扫。 / **NBSP/Unicode-space collapse (R651 read-only 复核·非 lever)**：`collapse_whitespace`（inline/mod.rs:231）用 Rust `char::is_whitespace()` 折叠 NBSP(U+00A0)/U+3000 等，违反 CSS Text 3 §4.1.1（仅 TAB/LF/FF/CR/space 可折叠）——真 correctness bug，但 collapse 上下文（normal/nowrap/pre-line）**无 reftest 覆盖**（white-space-collapse-001 是 testharness JS `assert_equals(offsetWidth)` 测，非 reftest）；NBSP reftests（white-space-pre-031/032/034/035）全在 `pre` 上下文（preserve 路径不经 collapse）实测 PASS @2.64%。无 driving reftest → 非 lever（product-smoke 影响 negligible，NBSP 罕见于 fixture），defer；R647 category (b) 的 NBSP 角度据此关闭。

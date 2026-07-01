@@ -5787,6 +5787,7 @@ dependencies = [
  "zero-layout-engine",
  "zero-net",
  "zero-render-foundation",
+ "zero-script-sandbox",
  "zero-security",
  "zero-style-system",
 ]
