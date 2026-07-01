@@ -1667,6 +1667,30 @@ css-flexbox worst-15（post-harness）**全是已知结构性簇**：flex-minimu
 
 **▶ 下会话**：① 续查 insert-* 残余：probe 为何容器 fuchsia x 起点 168（应 28）——疑匿名块盒 width/content_x 或容器盒模型问题（独立于高度的 FR-002 子症状）；② inline run 完整高度未全捕（beginning 仅 +20px 应 +~40px）——probe compute_final 对该 anon 块的 IFC 是否只产 1 行（多行未触发）；③ 上述为 FR-001 完整收尾 + FR-002/bg 涂满的下一步。A/B 守已建门禁。
 
+### R940 backfill Part 2 改 max-bottom 重算·container#1 高度修对·beginning -3.94pp（累计）·零硬门禁回归·残余 = 兄弟盒未重定位（post-taffy 限制）
+
+承 R939「下会话续查 insert-* 残余」。R940_PROBE box-tree dump 定位 R939 delta 法漏掉的真因，refine Part 2 为 max-bottom 重算。
+
+**① box-tree dump 决定性数据（insert-block-in-inlines-beginning-001）**：
+- container#1: h=**20**（应 ~80），子盒 [inserted h=20 lines=1, ANON h=40 lines=2 **已正确**]。
+- container#2: h=**80**（正确），子盒同结构。
+- **真因**：anon 块盒**自身高度已正确（40，R939 Part 1 或 taffy 已给）**，但 container#1 的 taffy 测高**未把 anon 计入**（h=20 只含 inserted）。R939 delta 法（按 anon **增长量** 扩容器）对此无效——anon 没增长（delta=0）→ 容器不扩。
+
+**② refine（engine.rs backfill_r109_anon_block_heights Part 2）**：从「按 anon delta 扩容器」改为「auto-height 容器含 anon 子或后代增长 → 重算 content_height = max in-flow 非 float 子盒 border-box 底（CSS §10.6.3，仅增大）」。max-bottom 覆盖两种：「anon 自身欠计」（Part 1 修后 max-bottom 反映）+「容器未把已正确 anon 计入」（直接 max 子盒底）。仅增大守卫避负 margin/margin 折叠误收缩（同 R699 exclude_floats 安全策略）。5 单测更新（Part 1 自身高 / Part 2 max-bottom 重算 / 显式 height 跳过 / 不收缩 / 非 anon 不动），全过。
+
+**③ 验证（全硬门禁绿）**：
+- `make test`：**12104 passed / 0 failed**。
+- `make product-smoke`：**16.11%**（= baseline）。
+- box-display oracle：**32/120**（零 pass 回归）；insert-block-in-inlines-beginning **18.83→16.57%（-2.26pp，累计 R936→16.57 = -3.94pp）**、end 19.74→20.43%（**+0.69pp 微回归**）、middle 不变。簇净 -1.57pp。
+- inline-box-001（R743/R744）：**4.54% 不变**；margin-padding-clear：**277/682 不变**。
+- PIL：beginning fuchsia 面积 29200→40480（接近 CHR 74240）。
+
+**④ 已知局限（post-taffy，独立子问题）**：box-tree dump 证 container#1 高度修对（20→80），但 **container#2 仍位于 y=79（基于旧 container#1 高度的 taffy 定位）→ 与增高后的 container#1（底 y=119）重叠**。post-taffy 改高度不会重定位兄弟盒（须 taffy 重布局，多会话）。content_end_y 仍 174（应 233）即此。beginning 仍改善（重叠 + 更多 fuchsia 净更近 chr）；end 微回归（重叠对 end 布局略不利）。
+
+**裁决**：max-bottom LANDED（net-positive 零硬门禁回归，beginning 累计 -3.94pp，更符合 CSS §10.6.3）。end +0.69pp 微回归可接受（簇净 -1.57pp）。兄弟盒重定位 = post-taffy 限制，须后续 taffy 两趟重布局（spec TBD，多会话）。
+
+**▶ 下会话**：① 兄弟盒重定位（post-taffy 高度改后重定位后续兄弟）——须 mark_dirty + taffy 重布局（复用 R695/R699 两趟基建），或后处理手算兄弟 y 偏移；② 解决后 insert-* 簇应进一步改善（container#2 不再重叠）；③ 或转 FR-002（容器 bg 涂满）/ FR-003（border 归属）。A/B 守已建门禁（make test + product-smoke + box-display/margin-padding-clear/inline-box-001 oracle）。
+
 ### 已 ruled out（勿以单会话重试）
 
 near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / **column-aware IFC Phase 1（pure-inline balance 明确高度）(R381)**：执行 column-aware-IFC-spec.md §10 gate「假设 A1」，扫描全 16 css-multicol 失败案结构（height/column-fill/blockchildren），**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）——每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套；spec 自身协议「A1 不存在→紧急停止转 Phase 2」生效，Phase 1 零杠杆关闭，真实 multicol lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）/ baseline-export 3 机制(R266–R316) / **advance-width(R225–R375b) definitive 关闭**：R375 hand-crafted DejaVu 表 morning 16.41→19.14% + R375b fontdue-actual advance（临时加 fontdue dep+缓存 Font+metrics.advance_width）16.41→19.08%，双 variant 均退步；fontdue-actual（最后未测变体）亦证伪。根因：accurate DejaVuSans advance 使换行偏离 chromium（system-ui≠DejaVuSans 或换行算法不同），0.55 启发式碰巧更近。advance-width 非 morning cascade 根因/ blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304) / inline-flex·inline-grid width:auto shrink-to-fit（R370：probe 实证 inline-flex width:auto 同 inline-block 拉伸到满宽 800，是真 bug，但**零杠杆**——全 48 失败案 + product-smoke fixture 均不用 inline-flex/inline-grid width:auto；fix 需 flex_row_intrinsic_width（非 box_content_max_width，flex row 须求和 block 子元素非取 max），复杂且无 reftest/smoke 收益，按 code-guidelines「不做零价值修改」不修，勿再以单会话重试）/ **percent max-width/min-height/min-width clamping（R119 analog，doc-agent 复核 ~0 yield，闭）**：engine.rs:1408 仅 `clamp_percentage_max_height`，无 max-width/min 平行函数——但 max-width-091(percent)✓ + min-height-091/092(percent)✓ 均 PASS（block width 定值→taffy 直接钳；min-height 是测量期 floor 非 content re-clamp）；R119 缺口唯一 max-height-specific（auto-height 内容测量 re-clamp），已修即完整 percent-clamp，无平行 lever，勿以 R119 类比重扫 / **intrinsic-keyword sizing（max-content/min-content/fit-content，R97 谱系，doc-agent 复核 = 非 clean 单会话 lever）**：121 测试文件用此三关键字，但**全集中在 taffy-blocked 上下文**（css-multicol/tables/flexbox intrinsic-size/table-intrinsic-size/flex-item-*-content），CSS2 block/inline-block 上下文**仅 1 案且为 crash-test**（inline-negative-margin-minmax-crash-001，非 sizing-correctness）→ memory「block/inline-block 可独立做」slice **无 dedicated driving test**（~0 可测 yield）；max-content/min-content parse_basic.rs 解析但 resolve 丢信号→0（R97/max-content memory），修复须保留信号+shrink-to-fit 触发，grid/flex/multicol/table 受 taffy 容器不 shrink 阻塞 = 多会话/结构性，勿以单会话重扫。 / **NBSP/Unicode-space collapse (R651 read-only 复核·非 lever)**：`collapse_whitespace`（inline/mod.rs:231）用 Rust `char::is_whitespace()` 折叠 NBSP(U+00A0)/U+3000 等，违反 CSS Text 3 §4.1.1（仅 TAB/LF/FF/CR/space 可折叠）——真 correctness bug，但 collapse 上下文（normal/nowrap/pre-line）**无 reftest 覆盖**（white-space-collapse-001 是 testharness JS `assert_equals(offsetWidth)` 测，非 reftest）；NBSP reftests（white-space-pre-031/032/034/035）全在 `pre` 上下文（preserve 路径不经 collapse）实测 PASS @2.64%。无 driving reftest → 非 lever（product-smoke 影响 negligible，NBSP 罕见于 fixture），defer；R647 category (b) 的 NBSP 角度据此关闭。

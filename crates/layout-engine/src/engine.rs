@@ -1807,43 +1807,53 @@ fn exclude_floats_from_non_bfc_auto_height(box_node: &mut LayoutBox, styles: &Ha
 ///
 /// 返回本 box 的高度增长量（供父盒累加）。
 fn backfill_r109_anon_block_heights(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
-    use zero_css_parser::values::LengthValue;
-    // 后序：先修子盒，父盒读到已修正的子高度。
-    let mut container_delta: f32 = 0.0;
+    use zero_css_parser::values::{FloatValue, LengthValue};
+    // 后序：先修子盒，父盒读到已修正的子高度/位置。
+    let mut descendant_growth: f32 = 0.0;
     for child in &mut box_node.children {
-        let child_delta = backfill_r109_anon_block_heights(child, styles);
-        if child_delta > 0.0 && !child.is_absolute && !child.is_fixed {
-            container_delta += child_delta;
+        let g = backfill_r109_anon_block_heights(child, styles);
+        if g > 0.0 && !child.is_absolute && !child.is_fixed {
+            descendant_growth += g;
         }
     }
-    // ① 匿名块盒：从 inline_layout 回填自身 content_height。
-    if box_node.fragment_node_ids.is_some() {
-        if let Some(lines) = &box_node.inline_layout
-            && !lines.is_empty()
-        {
-            let content_h = lines.iter().map(|l| l.y + l.height).fold(0.0f32, f32::max);
-            if content_h > box_node.content_height + 0.5 {
-                let delta = content_h - box_node.content_height;
-                box_node.content_height = content_h;
-                box_node.height += delta;
-                return delta;
-            }
-        }
-        return 0.0;
-    }
-    // ② auto-height 容器：按匿名块子 delta 之和扩展（非重算，保 margin 折叠）。
-    if container_delta > 0.0 {
-        let is_auto_height = box_node
-            .node_id
-            .and_then(|id| styles.get(&id))
-            .is_some_and(|s| matches!(s.height, LengthValue::Auto));
-        if is_auto_height {
-            box_node.content_height += container_delta;
-            box_node.height += container_delta;
-            return container_delta;
+    let auto_h = box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.height, LengthValue::Auto));
+    let mut grew: f32 = 0.0;
+    // ① 匿名块盒：从 inline_layout 回填自身 content_height（仅增大）。
+    if box_node.fragment_node_ids.is_some()
+        && let Some(lines) = &box_node.inline_layout
+        && !lines.is_empty()
+    {
+        let content_h = lines.iter().map(|l| l.y + l.height).fold(0.0f32, f32::max);
+        if content_h > box_node.content_height + 0.5 {
+            grew = content_h - box_node.content_height;
+            box_node.content_height = content_h;
+            box_node.height += grew;
         }
     }
-    0.0
+    // ② auto-height 容器，含匿名块子或后代增长 → 重算 content_height = max in-flow 非 float
+    //   子盒 border-box 底（仅增大）。delta 法（R939 首版）只能补「anon 自身增高」，补不了
+    //   「容器未把已正确的 anon 高度计入」（R940 box-tree dump 实证：container#1 h=20 但 anon
+    //   h=40 已正确——taffy 未把 anon 计入容器测高）。max-bottom（CSS §10.6.3）覆盖两种。
+    //   仅增大守卫避负 margin/margin 折叠误收缩（同 R699 exclude_floats 安全策略）。
+    let has_anon_child = box_node.children.iter().any(|c| c.fragment_node_ids.is_some());
+    if auto_h && (has_anon_child || descendant_growth > 0.0) {
+        let max_bottom = box_node
+            .children
+            .iter()
+            .filter(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
+            .map(|c| c.y + c.height)
+            .fold(0.0f32, f32::max);
+        if max_bottom > box_node.content_height + 0.5 {
+            let delta = max_bottom - box_node.content_height;
+            box_node.content_height = max_bottom;
+            box_node.height += delta;
+            grew += delta;
+        }
+    }
+    grew
 }
 
 /// CSS §8.3.1：min-height 溢出时阻止子元素 margin「穿透」父元素底部。

@@ -1,11 +1,12 @@
-//! R939 Batch 1：R109 §9.2.1.1 匿名块盒高度回填（spec FR-001）单测。
+//! R939 Batch 1 / R940 细化：R109 §9.2.1.1 匿名块盒高度回填（spec FR-001）单测。
 //!
 //! 验证 `backfill_r109_anon_block_heights`：
-//! ① 匿名块盒（fragment_node_ids.is_some）从 inline_layout 行盒回填 content_height
+//! ① 匿名块盒（fragment_node_ids.is_some）从 inline_layout 行盒回填自身 content_height
 //!    （仅增大，不收缩）；
-//! ② auto-height 祖先容器按直系匿名块子的 delta 之和扩展自身高度；
+//! ② auto-height 容器含匿名块子 → 重算 content_height = max in-flow 非 float 子盒 border-box
+//!    底（仅增大）——覆盖「anon 自身欠计」与「容器未把已正确的 anon 计入」两种（R940 max-bottom）；
 //! ③ 非 auto-height 容器（显式 height）不扩展；
-//! ④ 非 anon 块不回填。
+//! ④ 非 anon 块的 content_height 不被 inline_layout 改写；不收缩。
 //!
 //! NodeId 是 slotmap opaque key，须经 Document 取有效值；backfill 本身不消费 Document，
 //! 仅用 NodeId 作 styles HashMap 的键。
@@ -46,17 +47,8 @@ fn make_line(y: f32, height: f32) -> InlineLayoutLine {
 }
 
 #[test]
-fn test_backfill_anon_block_height_from_inline_layout() {
-    // 容器（height:auto），content_height=50（taffy 测：仅 div.inserted 高）。
-    let mut container = LayoutBox::default();
-    let cid = fresh_id();
-    container.node_id = Some(cid);
-    container.content_height = 50.0;
-    container.height = 50.0;
-    container.is_block_level = true;
-
-    // 匿名块子（fragment_node_ids=Some）：taffy 经 ctx_node 欠计 content_height=20，
-    // 但 inline_layout 显示真实 inline run = 2 行 × 20 = 40。
+fn test_backfill_anon_block_own_height_from_inline_layout() {
+    // ① 匿名块：taffy 经 ctx_node 欠计 content_height=20，inline_layout 真实 = 2 行 × 20 = 40。
     let mut anon = LayoutBox::default();
     anon.fragment_node_ids = Some(vec![]);
     anon.content_height = 20.0;
@@ -64,6 +56,38 @@ fn test_backfill_anon_block_height_from_inline_layout() {
     anon.is_block_level = true;
     anon.inline_layout = Some(vec![make_line(0.0, 20.0), make_line(20.0, 20.0)]);
 
+    let styles = HashMap::new();
+    let mut wrapper = LayoutBox::default();
+    wrapper.children.push(anon);
+    let _ = backfill_r109_anon_block_heights(&mut wrapper, &styles);
+
+    assert!(
+        (wrapper.children[0].content_height - 40.0).abs() < 0.01,
+        "anon content_height backfilled to 40"
+    );
+    assert!(
+        (wrapper.children[0].height - 40.0).abs() < 0.01,
+        "anon height backfilled to 40"
+    );
+}
+
+#[test]
+fn test_backfill_container_recompute_max_bottom() {
+    // ② auto-height 容器：taffy 漏算 anon 子（content_height=20），但 anon 自身已正确 h=40
+    //    位于 y=40（inserted block 之后）。max-bottom = 40+40 = 80 > 20 → 容器长到 80。
+    let mut container = LayoutBox::default();
+    let cid = fresh_id();
+    container.node_id = Some(cid);
+    container.content_height = 20.0;
+    container.height = 20.0;
+    container.is_block_level = true;
+
+    let mut anon = LayoutBox::default();
+    anon.fragment_node_ids = Some(vec![]);
+    anon.y = 40.0;
+    anon.content_height = 40.0; // 已正确（非欠计）
+    anon.height = 40.0;
+    anon.is_block_level = true;
     container.children.push(anon);
 
     let mut styles = HashMap::new();
@@ -71,30 +95,21 @@ fn test_backfill_anon_block_height_from_inline_layout() {
     s.height = LengthValue::Auto;
     styles.insert(cid, s);
 
-    let delta = backfill_r109_anon_block_heights(&mut container, &styles);
+    let _ = backfill_r109_anon_block_heights(&mut container, &styles);
 
-    // 匿名块 content_height 从 20 回填到 40（max(0+20, 20+20)=40）。
-    let anon = &container.children[0];
     assert!(
-        (anon.content_height - 40.0).abs() < 0.01,
-        "anon content_height backfilled to 40"
-    );
-    assert!((anon.height - 40.0).abs() < 0.01, "anon height backfilled to 40");
-    // 容器扩展 delta=20（50→70）。
-    assert!((delta - 20.0).abs() < 0.01, "returns delta 20");
-    assert!(
-        (container.content_height - 70.0).abs() < 0.01,
-        "container content_height extended to 70"
+        (container.content_height - 80.0).abs() < 0.01,
+        "container content_height recomputed to max-bottom 80"
     );
     assert!(
-        (container.height - 70.0).abs() < 0.01,
-        "container height extended to 70"
+        (container.height - 80.0).abs() < 0.01,
+        "container height recomputed to 80"
     );
 }
 
 #[test]
 fn test_backfill_skips_explicit_height_container() {
-    // 容器显式 height:100px → 不应被匿名块 delta 扩展。
+    // ③ 容器显式 height:100px → 即使含 anon 子也不重算（auto_h=false）。
     let mut container = LayoutBox::default();
     let cid = fresh_id();
     container.node_id = Some(cid);
@@ -104,11 +119,10 @@ fn test_backfill_skips_explicit_height_container() {
 
     let mut anon = LayoutBox::default();
     anon.fragment_node_ids = Some(vec![]);
-    anon.content_height = 10.0;
-    anon.height = 10.0;
+    anon.y = 40.0;
+    anon.content_height = 40.0;
+    anon.height = 40.0;
     anon.is_block_level = true;
-    anon.inline_layout = Some(vec![make_line(0.0, 30.0)]);
-
     container.children.push(anon);
 
     let mut styles = HashMap::new();
@@ -116,26 +130,21 @@ fn test_backfill_skips_explicit_height_container() {
     s.height = LengthValue::Px(100.0);
     styles.insert(cid, s);
 
-    let delta = backfill_r109_anon_block_heights(&mut container, &styles);
+    let _ = backfill_r109_anon_block_heights(&mut container, &styles);
 
-    // 匿名块自身仍回填（30），但容器（显式 height）不扩展 → 返回 0（不向上传播）。
-    assert!(
-        (container.children[0].content_height - 30.0).abs() < 0.01,
-        "anon still backfilled"
-    );
-    assert!(
-        (delta - 0.0).abs() < 0.01,
-        "no propagation to explicit-height container"
-    );
     assert!(
         (container.content_height - 100.0).abs() < 0.01,
         "explicit container unchanged"
+    );
+    assert!(
+        (container.height - 100.0).abs() < 0.01,
+        "explicit container height unchanged"
     );
 }
 
 #[test]
 fn test_backfill_does_not_shrink() {
-    // 匿名块 content_height 已 ≥ inline_layout → 不收缩。
+    // ④ 匿名块 content_height 已 ≥ inline_layout → 不收缩；容器 max-bottom ≤ 当前 → 不收缩。
     let mut anon = LayoutBox::default();
     anon.fragment_node_ids = Some(vec![]);
     anon.content_height = 60.0;
@@ -148,13 +157,19 @@ fn test_backfill_does_not_shrink() {
     container.children.push(anon);
     let _ = backfill_r109_anon_block_heights(&mut container, &styles);
 
-    assert!((container.children[0].content_height - 60.0).abs() < 0.01, "not shrunk");
-    assert!((container.children[0].height - 60.0).abs() < 0.01, "height not shrunk");
+    assert!(
+        (container.children[0].content_height - 60.0).abs() < 0.01,
+        "anon not shrunk"
+    );
+    assert!(
+        (container.children[0].height - 60.0).abs() < 0.01,
+        "anon height not shrunk"
+    );
 }
 
 #[test]
 fn test_backfill_ignores_non_anon_block() {
-    // 非 anon 块（fragment_node_ids=None）即使有 inline_layout 也不回填。
+    // 非 anon 块（fragment_node_ids=None）即使有 inline_layout 也不被 Part 1 改写。
     let mut block = LayoutBox::default();
     block.fragment_node_ids = None;
     block.content_height = 10.0;
@@ -169,6 +184,6 @@ fn test_backfill_ignores_non_anon_block() {
 
     assert!(
         (container.children[0].content_height - 10.0).abs() < 0.01,
-        "non-anon not touched"
+        "non-anon not touched by Part 1"
     );
 }
