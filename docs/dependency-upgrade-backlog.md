@@ -13,6 +13,7 @@
 | [html5ever](#3-html5ever) | `0.29` | `0.39` | pre-1.0 minor ×10 | 高 | P2 |
 | [reqwest](#4-reqwest) | `0.12` | `0.13` | pre-1.0 minor | 低 | P3 |
 | [rusty_v8](#5-rusty_v8) | `0.32` | 上游最新 | 受 Deno 发布制约 | 高 | P3 |
+| [wasmi](#6-wasmi) | `0.40` | `1.1` | Major 1.x（0→1） | 高 | P2 |
 
 ---
 
@@ -86,6 +87,24 @@
   2. 确保 CI 中相关平台（Linux x86_64/aarch64、macOS x86_64/aarch64、Windows x86_64）的 V8 archive 可用
   3. `script-sandbox` 是唯一消费者，升级后需跑 V8-backed 测试套件
   4. 同步更新 CI 中 Windows ARM64 的 V8 archive 可用性检查
+
+---
+
+## 6. wasmi
+
+- **当前**: `0.40`
+- **目标**: `1.1`
+- **涉及 crate**: `wasm-sandbox`
+- **跳过原因**: 0.40 → 1.1 是主版本升级，`wasmi::core` 模块变为私有，`ValType`、`TrapCode`、`HostError` 等类型导出路径变更。
+- **具体 breaking changes**（基于编译错误）:
+  - `wasmi::core::ValType` → 需通过公共 API 重新导出
+  - `wasmi::core::TrapCode` → 同上
+  - `wasmi::core::HostError` → trait 移动到其他位置
+  - `wasmi::core` 模块整体变为私有，须通过 `wasmi::` 根路径访问
+- **升级策略**:
+  1. 查阅 [wasmi changelog](https://github.com/wasmi-labs/wasmi/releases)
+  2. 适配 `wasm-sandbox/src/wasmi_backend.rs` 中的类型引用
+  3. 升级后跑 wasm-sandbox 测试
 
 ---
 
