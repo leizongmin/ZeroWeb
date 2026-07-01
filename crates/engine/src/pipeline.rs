@@ -742,8 +742,13 @@ pub fn extract_page_scripts(html: &str) -> Vec<PageScript> {
                 continue;
             }
         }
-        if let Some(code) = doc.text_content(script_id) {
-            let code = code.trim();
+        if let Some(raw) = doc.text_content(script_id) {
+            // XHTML 脚本常以 `<![CDATA[ ... ]]>` 包裹；html5ever 按 HTML 模式解析会把 CDATA
+            // 标记作为文本保留。若不剥离，传给 JS 引擎会触发 `SyntaxError: Unexpected token '<'`
+            // 致整个脚本失效（函数未定义 → onload 回调再抛 ReferenceError）。CSS21 测试套件
+            // 大量 .xht 用 CDATA 包裹脚本（insert-* 动态簇等）。兼容两种写法：裸 `<![CDATA[`
+            //（占绝大多数）与 `//<![CDATA[`（JS 注释隐藏，HTML/XHTML 双兼容）。
+            let code = strip_script_cdata(raw.trim()).trim();
             if !code.is_empty() {
                 if is_module {
                     scripts.push(PageScript::InlineModule(code.to_string()));
@@ -843,6 +848,23 @@ fn strip_cdata(css: &str) -> std::borrow::Cow<'_, str> {
     } else {
         std::borrow::Cow::Borrowed(css)
     }
+}
+
+/// 去除 `<script>` 内的 XHTML CDATA 包装，兼容两种写法：
+/// - 裸 `<![CDATA[ ... ]]>`（CSS21 .xht 套件绝大多数）
+/// - `//<![CDATA[ ... //]]>`（JS 行注释隐藏 CDATA，HTML/XHTML 双兼容写法）
+///
+/// 与 [`strip_cdata`]（专用于 `<style>` CSS）的区别：脚本侧另需处理 `//` 注释前缀。
+/// `//` 不会出现在 CSS CDATA 中（CSS 注释是 `/* */`），故二者独立。
+fn strip_script_cdata(code: &str) -> &str {
+    let mut s = code;
+    if let Some(rest) = s.strip_prefix("//<![CDATA[").or_else(|| s.strip_prefix("<![CDATA[")) {
+        s = rest;
+    }
+    if let Some(rest) = s.strip_suffix("//]]>").or_else(|| s.strip_suffix("]]>")) {
+        s = rest;
+    }
+    s
 }
 
 /// 为有 animation-name 的元素启动动画并将插值属性叠加到 ComputedStyle。
@@ -999,5 +1021,27 @@ mod pseudo_tests {
         assert_eq!(scripts.len(), 2);
         assert!(matches!(&scripts[0], PageScript::InlineModule(s) if s.contains("export")));
         assert!(matches!(&scripts[1], PageScript::ExternalModule(s) if s == "main.mjs"));
+    }
+
+    /// XHTML 脚本常以 `<![CDATA[ ... ]]>` 包裹（CSS21 测试套件 .xht 大量使用）。
+    /// html5ever 按 HTML 模式解析会把 CDATA 标记作为文本保留；若不剥离，传给 JS 引擎
+    /// 会触发 `SyntaxError: Unexpected token '<'` 致整个脚本失效。回归守护剥离行为。
+    #[test]
+    fn extract_page_scripts_strips_xhtml_cdata_wrapper() {
+        let html = r#"<html><body>
+            <script type="text/javascript">//<![CDATA[
+                function f() { return 1; }
+            //]]></script>
+        </body></html>"#;
+        let scripts = extract_page_scripts(html);
+        assert_eq!(scripts.len(), 1);
+        match &scripts[0] {
+            PageScript::Inline(s) => {
+                assert!(!s.contains("<![CDATA["), "CDATA 起始标记应被剥离，得到: {s}");
+                assert!(!s.contains("]]>"), "CDATA 结束标记应被剥离，得到: {s}");
+                assert!(s.contains("function f()"), "脚本体应保留: {s}");
+            }
+            other => panic!("应为 Inline，得到 {other:?}"),
+        }
     }
 }
