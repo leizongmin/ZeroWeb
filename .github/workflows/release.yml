@@ -324,11 +324,20 @@ jobs:
       - name: List artifacts
         run: find artifacts/ -type f | head -20
 
+      - name: Generate SHA256 checksums
+        shell: bash
+        run: |
+          cd artifacts
+          find . -type f -print0 | sort -z | xargs -0 sha256sum > ../checksums-sha256.txt
+          cd ..
+          cat checksums-sha256.txt
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
           files: |
+            checksums-sha256.txt
             artifacts/zero-browser-linux-x86_64/*
             artifacts/zero-browser-linux-aarch64/*
             artifacts/zero-browser-linux-amd64-deb/*
