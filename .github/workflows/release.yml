@@ -181,7 +181,7 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.artifact }}
           path: dist/
@@ -264,7 +264,7 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.artifact }}
           path: dist/
@@ -317,7 +317,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts/
 
