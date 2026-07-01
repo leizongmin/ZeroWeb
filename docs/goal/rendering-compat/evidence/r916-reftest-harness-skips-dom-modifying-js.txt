@@ -96,3 +96,50 @@ JS（含 insertBefore）并渲染 post-JS 态」。这是 DC-1（reftest 基础�
 的真实正确性提升——harness 现在能驱动 118 个 DOM-mutating case 的 JS。聚合
 reftest 通过率受次级渲染 bug 阻塞（独立 lever），但 harness 的 JS 执行能力
 本身达到正确，为后续渲染修复解锁 yield。
+
+========================================================================
+R917 后续：dom serializer raw text 转义 bug 修复（同 session）
+========================================================================
+
+R917 调查 background-root-101 head+body 背景在完整真实文档不染色时，定位到
+真正的根因 = **zero_dom serializer 对 raw text 元素内容的 HTML 转义 bug**：
+`serialize_node_inner` 对所有 `Text` 节点一律 `escape_text`（转义 `&`/`<`/`>`），
+但 `<script>`/`<style>` 是 raw text 元素，内容应原样保留。
+
+后果链：
+1. `apply_mutations_to_html`（R917 接线的核心）= parse HTML → apply_dom_mutations
+   → `Document::outer_html` 序列化回 HTML。
+2. `<style>` 内的 `<![CDATA[`（XHTML 常见）被序列化成 `&lt;![CDATA[`。
+3. 再次 parse 时，CSS 解析器首字符是 `&lt;`（5 字符实体），错误恢复贪婪吞噬
+   到首个 `]` → CSS 规则全被破坏 → body 背景不应用 → 渲染白/灰。
+4. 这也解释了为何 R917 接线对 background-root 簇无效——roundtrip 破坏了 CSS。
+
+实证（探针）：真实 background-root-101.xht 经空-mutation roundtrip 后，
+`<style>` text_content 从 `<![CDATA[\n head.before + body {...}` 变成
+`&lt;![CDATA[\n head.before + body {...}`（`<` 被转义）。
+
+修复（crates/dom/src/serializer.rs）：
+- `serialize_node_inner_ctx` 新签名带 `parent_tag: Option<&str>` 上下文。
+- Element 序列化子节点时传当前标签名（小写）。
+- Text 节点：父为 raw text 元素（script/style）→ 不转义（原样）；否则 escape_text。
+- `inner_html` 同样传父标签上下文（对 `<style>` 取 innerHTML 不转义 CSS）。
+- 新增 `is_raw_text_element(tag)` = script | style（textarea/title 是 rcdata，
+  `escape_text` 对它们正确 round-trip，故不在此列）。
+- 新增 2 回归测试：test_raw_text_element_content_not_escaped +
+  test_normal_text_still_escaped。
+
+修复后验证：
+- background-root-101/102/103 oracle：~100% → **2.01%**（接近 R916 的 1.51%
+  目标；残余 = 粗体文字 font/AA 噪声）。Roundtrip 后 `<style>` text_content
+  正确保留 `<![CDATA[`，CSS 规则应用，head=after → body 绿。
+- 这 3 案降到 2% 仍未过 oracle 1% 阈值，故聚合 CSS2 oracle 仍 3010（持平）；
+  但修复本身是真实的 serializer 保真度提升，影响所有 script/style 序列化
+  roundtrip（含 JS DOM-mutation 路径 + innerHTML 应用）。
+
+门禁：make test exit 0（dom 758 含 2 新测试）；make product-smoke welcome
+16.11%（零回归）；cargo clippy --workspace --all-targets -D warnings clean；
+cargo fmt clean。
+
+意义：dom serializer 对 raw text 元素的正确序列化是 JS DOM-mutation 路径
+（apply_mutations_to_html）和 innerHTML 应用的基础保真前提。修复后 R917 的
+JS wiring 才能在含 CDATA 的 XHTML 测试上真正生效。

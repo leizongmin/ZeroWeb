@@ -11,6 +11,14 @@ pub fn serialize_node(doc: &Document, id: NodeId) -> String {
 }
 
 fn serialize_node_inner(doc: &Document, id: NodeId, output: &mut String) {
+    serialize_node_inner_ctx(doc, id, None, output);
+}
+
+/// `parent_tag` 为父元素的标签名（小写）——用于判断 Text 节点是否处于
+/// raw text / escapable raw text 元素（`<script>`/`<style>` 等）内部，
+/// 这些元素的文本内容在序列化时**不得** HTML 转义（否则 `<style>` 里的
+/// `<![CDATA[`、`a > b` 等会被转义，再次解析时破坏 CSS/JS）。
+fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>, output: &mut String) {
     let node_data = match doc.get(id) {
         Some(n) => n,
         None => return,
@@ -44,7 +52,8 @@ fn serialize_node_inner(doc: &Document, id: NodeId, output: &mut String) {
         }
         NodeKind::Element(elem) => {
             output.push('<');
-            output.push_str(elem.local_name());
+            let tag = elem.local_name();
+            output.push_str(tag);
 
             // 序列化属性
             for attr in &elem.attributes {
@@ -59,11 +68,11 @@ fn serialize_node_inner(doc: &Document, id: NodeId, output: &mut String) {
             output.push('>');
 
             // 自闭合元素
-            let tag = elem.local_name();
             if !is_void_element(tag) {
-                // 序列化子节点
+                let tag_lower = tag.to_ascii_lowercase();
+                // 序列化子节点（传当前标签名，供 Text 节点判断 raw text 上下文）
                 for &child in &node_data.children {
-                    serialize_node_inner(doc, child, output);
+                    serialize_node_inner_ctx(doc, child, Some(&tag_lower), output);
                 }
 
                 output.push_str("</");
@@ -72,7 +81,15 @@ fn serialize_node_inner(doc: &Document, id: NodeId, output: &mut String) {
             }
         }
         NodeKind::Text(data) => {
-            output.push_str(&escape_text(&data.content));
+            // raw text 元素（script/style/textarea/title）的文本内容不转义：
+            // 这些元素的内容在 HTML 解析时按 rawtext / rcdata 处理，序列化须保持原样，
+            // 否则 CSS/JS 源码（如 `<style>` 内的 `<![CDATA[`、`a > b`）被转义后
+            // 再次解析会被破坏。普通文本节点按常规转义（`&`/`<`/`>`）。
+            if parent_tag.map(is_raw_text_element).unwrap_or(false) {
+                output.push_str(&data.content);
+            } else {
+                output.push_str(&escape_text(&data.content));
+            }
         }
         NodeKind::Comment(data) => {
             output.push_str("<!--");
@@ -101,9 +118,16 @@ pub fn inner_html(doc: &Document, id: NodeId) -> String {
         Some(n) => n,
         None => return output,
     };
+    // 取父元素标签名（小写）作为子节点的 raw text 上下文：对 `<style>`/`<script>`
+    // 取 innerHTML 时，其文本子节点不应被 HTML 转义。
+    let parent_tag = match &node_data.kind {
+        NodeKind::Element(e) => Some(e.local_name().to_ascii_lowercase()),
+        _ => None,
+    };
+    let parent_tag_ref = parent_tag.as_deref();
 
     for &child in &node_data.children {
-        serialize_node_inner(doc, child, &mut output);
+        serialize_node_inner_ctx(doc, child, parent_tag_ref, &mut output);
     }
     output
 }
@@ -137,7 +161,7 @@ fn escape_text(s: &str) -> String {
     result
 }
 
-/// HTML void 元素（自闭合元素）列表。
+/// HTML void 元素（自闭合元素）列表（大小写不敏感）。
 fn is_void_element(tag: &str) -> bool {
     matches!(
         tag.to_ascii_lowercase().as_str(),
@@ -156,6 +180,18 @@ fn is_void_element(tag: &str) -> bool {
             | "track"
             | "wbr"
     )
+}
+
+/// raw text 元素：内容在序列化时**不做任何 HTML 转义**（大小写不敏感）。
+///
+/// `script`、`style` 在 HTML 解析时按 rawtext 处理（不识别字符引用，`<`、`&`
+/// 原样保留）。序列化须保持原样，否则 CSS/JS 源码（如 `<style>` 内的
+/// `<![CDATA[`、`a > b`、`x && y`）被转义后再次解析会被破坏。
+///
+/// 注：`textarea`/`title` 是 escapable raw text（解析时识别 `&` 引用），
+/// 对它们用 [`escape_text`]（转义 `&`/`<`/`>`）才能正确 round-trip，故不在此列。
+fn is_raw_text_element(tag: &str) -> bool {
+    matches!(tag.to_ascii_lowercase().as_str(), "script" | "style")
 }
 
 /// 为 Document 添加 innerHTML 便捷方法。
@@ -340,6 +376,42 @@ mod tests {
         let mut doc = Document::new();
         let text = doc.create_text_node("foo&bar");
         assert_eq!(doc.outer_html(text), "foo&amp;bar");
+    }
+
+    /// `<style>`/`<script>` 是 raw text 元素，内容（CSS/JS 源码里的 `<`、`>`、
+    /// `&`、`<![CDATA[`）在序列化时**不得** HTML 转义，否则再次解析会破坏
+    /// CSS/JS（如 background-root-101 的 `<![CDATA[` 被 `&lt;![CDATA[` 取代后
+    /// CSS 规则全被贪婪吞噬）。回归测试：parse 含 CDATA style 的 HTML →
+    /// outer_html → 重新 parse，CSS 文本必须原样保留。
+    #[test]
+    fn test_raw_text_element_content_not_escaped() {
+        let html = r#"<html><head><style><![CDATA[ a > b { color: red; } ]]></style></head></html>"#;
+        let doc = crate::parse_html(html);
+        // 序列化结果应保留原始 `<`、`>`、`&`（无 `&lt;`/`&gt;`/`&amp;`）。
+        let serialized = doc.outer_html(doc.root());
+        assert!(serialized.contains("a > b"), "style 内的 `>` 不应被转义: {serialized}");
+        assert!(
+            !serialized.contains("&lt;![CDATA["),
+            "style 内的 `<![CDATA[` 不应被转义: {serialized}"
+        );
+        // round-trip：重新解析后 style 文本内容应原样保留 CDATA + 选择器。
+        let doc2 = crate::parse_html(&serialized);
+        let style = doc2.get_elements_by_tag_name("style").into_iter().next().unwrap();
+        let text = doc2.text_content(style).unwrap();
+        assert!(text.contains("a > b"), "round-trip 后 style 文本应保留 `>`: {text}");
+        assert!(
+            text.contains("<![CDATA["),
+            "round-trip 后 style 文本应保留 CDATA: {text}"
+        );
+    }
+
+    /// 普通元素（非 raw text）的文本仍须转义 `>`（回归保护）。
+    #[test]
+    fn test_normal_text_still_escaped() {
+        let html = "<p>a > b</p>";
+        let doc = crate::parse_html(html);
+        let serialized = doc.outer_html(doc.root());
+        assert!(serialized.contains("&gt;"), "普通文本的 `>` 仍应转义: {serialized}");
     }
 
     /// 测试属性值中的尖括号转义。
