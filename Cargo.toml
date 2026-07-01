@@ -109,7 +109,7 @@ parking_lot = "0.12"
 pollster = "0.4"
 
 # WebSocket（无头浏览器协议）
-tungstenite = "0.26"
+tungstenite = "0.29"
 
 # 内部 crate 依赖
 zero-dom = { path = "crates/dom" }
