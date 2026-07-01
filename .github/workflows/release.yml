@@ -93,7 +93,7 @@ jobs:
           echo "RUSTY_V8_VERSION=$(sed -n '/name = "rusty_v8"/{n;s/^version = "//;s/"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
 
       - name: Cache rusty_v8
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/zero-web/rusty_v8
@@ -102,7 +102,7 @@ jobs:
           key: rusty_v8-${{ env.RUSTY_V8_VERSION }}-${{ matrix.target }}
 
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
