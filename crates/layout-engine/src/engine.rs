@@ -406,6 +406,16 @@ impl LayoutEngine {
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
         compute_final_inline_layouts(&mut root_box, doc, styles, &[]);
 
+        // 12.1 后处理（R109 §9.2.1.1 匿名块盒高度回填，env R109_BACKFILL 默认开）：
+        // compute_final 存了 inline_layout 但不回填 box height；taffy 经 ctx_node（片段
+        // 首个文本节点）测匿名块盒高度，多节点/多行 run 欠计 → 容器矮 + bg 露白
+        // （R935 症状 b，R938 验证）。此 pass 后序回填匿名块盒 content_height（从 IFC 行盒），
+        // 并把增长 delta 加回 auto-height 祖先容器（delta 法保 margin 折叠，非重算）。
+        // 详见 docs/goal/rendering-compat/r109-anonymous-block-spec.md FR-001。
+        if std::env::var("R109_BACKFILL").as_deref() != Ok("0") {
+            backfill_r109_anon_block_heights(&mut root_box, styles);
+        }
+
         // 12.5 后处理：修正 calc(P% ± Npx) 尺寸。
         // taffy 不支持 calc 表达式，convert 层将 calc(100% - 6px) 近似为 Percent(1.0)。
         // 此步骤根据实际百分比计算值和 px 偏移量修正最终尺寸。
@@ -1777,6 +1787,63 @@ fn exclude_floats_from_non_bfc_auto_height(box_node: &mut LayoutBox, styles: &Ha
         box_node.content_height = new_content_h;
         box_node.height = new_content_h + pb;
     }
+}
+
+/// R109 §9.2.1.1 匿名块盒高度回填（spec FR-001，env R109_BACKFILL 默认开）。
+///
+/// compute_final_inline_layouts 存了 inline_layout 但不回填 box height；taffy 经
+/// `new_leaf_with_context(style, ctx_node)`（ctx_node = 片段首个文本节点）测匿名块盒，
+/// 多节点/多行 inline run 被欠计 → 容器排除部分 inline 高度 → 容器矮 + bg 露白
+/// （R935 像素 forensics 症状 b，R938 读码验证）。
+///
+/// 本 pass 后序遍历：① 匿名块盒（fragment_node_ids.is_some）从其 inline_layout 行盒
+/// 回填 content_height（取 max(line.y + line.height)），仅增大不收缩（taffy 欠计场景才补）；
+/// ② auto-height 祖先容器按「直系匿名块子增长 delta 之和」扩展自身高度。
+///
+/// 用 delta 累加而非重算（区别 exclude_floats_from_non_bfc_auto_height 的 max(child.y+h)
+/// 重算）：保留 taffy 已算的 margin 折叠/兄弟定位，仅把匿名块盒欠计的高度补回并向上传播。
+/// 局限：假设增长的匿名块子是末位 in-flow 子（case b 常见：[block, anon(inline run)]），
+/// 非末位 anon 的 delta 仍扩展容器底（bg 修对）但不移后续兄弟（独立子问题，spec TBD）。
+///
+/// 返回本 box 的高度增长量（供父盒累加）。
+fn backfill_r109_anon_block_heights(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+    use zero_css_parser::values::LengthValue;
+    // 后序：先修子盒，父盒读到已修正的子高度。
+    let mut container_delta: f32 = 0.0;
+    for child in &mut box_node.children {
+        let child_delta = backfill_r109_anon_block_heights(child, styles);
+        if child_delta > 0.0 && !child.is_absolute && !child.is_fixed {
+            container_delta += child_delta;
+        }
+    }
+    // ① 匿名块盒：从 inline_layout 回填自身 content_height。
+    if box_node.fragment_node_ids.is_some() {
+        if let Some(lines) = &box_node.inline_layout
+            && !lines.is_empty()
+        {
+            let content_h = lines.iter().map(|l| l.y + l.height).fold(0.0f32, f32::max);
+            if content_h > box_node.content_height + 0.5 {
+                let delta = content_h - box_node.content_height;
+                box_node.content_height = content_h;
+                box_node.height += delta;
+                return delta;
+            }
+        }
+        return 0.0;
+    }
+    // ② auto-height 容器：按匿名块子 delta 之和扩展（非重算，保 margin 折叠）。
+    if container_delta > 0.0 {
+        let is_auto_height = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.height, LengthValue::Auto));
+        if is_auto_height {
+            box_node.content_height += container_delta;
+            box_node.height += container_delta;
+            return container_delta;
+        }
+    }
+    0.0
 }
 
 /// CSS §8.3.1：min-height 溢出时阻止子元素 margin「穿透」父元素底部。
