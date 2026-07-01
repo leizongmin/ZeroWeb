@@ -19,6 +19,7 @@ jobs:
   windows-aarch64-status:
     name: Windows ARM64 release status
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
@@ -48,6 +49,7 @@ jobs:
   build-release:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     permissions:
       contents: read
     strategy:
@@ -160,12 +162,13 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: dist/
-          retention-days: 30
+          retention-days: 7
 
   package-linux:
     name: Package Linux .deb (${{ matrix.arch }})
     needs: build-release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     strategy:
@@ -241,12 +244,13 @@ jobs:
         with:
           name: zero-browser-linux-${{ matrix.arch }}-deb
           path: dist/*.deb
-          retention-days: 30
+          retention-days: 7
 
   package-macos:
     name: Package macOS .app (${{ matrix.arch }})
     needs: build-release
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     permissions:
       contents: read
     strategy:
@@ -308,12 +312,13 @@ jobs:
         with:
           name: zero-browser-macos-${{ matrix.arch }}-app
           path: dist/ZeroBrowser.app
-          retention-days: 30
+          retention-days: 7
 
   create-release:
     name: Upload release assets
     needs: [build-release, package-linux, package-macos]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
