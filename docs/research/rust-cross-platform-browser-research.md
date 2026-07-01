@@ -379,12 +379,12 @@ OpenHarmony 则不同。Servo 的嵌入文档明确提到 Android/OpenHarmony �
 
 | # | 类型 | 来源 | 关键用途 |
 |---|---|---|---|
-| [1] | 第一手事实 | [omniterm-terminal-render/src/lib.rs](/home/lei/work/OmniTerm/terminal/crates/omniterm-terminal-render/src/lib.rs:41) | 场景/primitive/backend 分层 |
-| [2] | 第一手事实 | [omniterm-terminal-render-wgpu/src/lib.rs](/home/lei/work/OmniTerm/terminal/crates/omniterm-terminal-render-wgpu/src/lib.rs:23) | GPU atlas、pane cache、合成 |
-| [3] | 第一手事实 | [omniterm-terminal-render-soft/src/lib.rs](/home/lei/work/OmniTerm/terminal/crates/omniterm-terminal-render-soft/src/lib.rs:27) | 字体 fallback、软件渲染、glyph cache |
-| [4] | 第一手事实 | [omniterm-terminal-image/src/lib.rs](/home/lei/work/OmniTerm/terminal/crates/omniterm-terminal-image/src/lib.rs:10) | 图片对象缓存与 GC |
-| [5] | 第一手事实 | [omniterm-terminal-ffi/src/lib.rs](/home/lei/work/OmniTerm/terminal/crates/omniterm-terminal-ffi/src/lib.rs:1) | ABI 边界 |
-| [6] | 第一手事实 | [omniterm-terminal-wasm/src/lib.rs](/home/lei/work/OmniTerm/terminal/crates/omniterm-terminal-wasm/src/lib.rs:9) | WASM 友好封装 |
+| [1] | 第一手事实 | omniterm-terminal-render/src/lib.rs:41 | 场景/primitive/backend 分层 |
+| [2] | 第一手事实 | omniterm-terminal-render-wgpu/src/lib.rs:23 | GPU atlas、pane cache、合成 |
+| [3] | 第一手事实 | omniterm-terminal-render-soft/src/lib.rs:27 | 字体 fallback、软件渲染、glyph cache |
+| [4] | 第一手事实 | omniterm-terminal-image/src/lib.rs:10 | 图片对象缓存与 GC |
+| [5] | 第一手事实 | omniterm-terminal-ffi/src/lib.rs:1 | ABI 边界 |
+| [6] | 第一手事实 | omniterm-terminal-wasm/src/lib.rs:9 | WASM 友好封装 |
 | [7] | 第一手事实 | [Servo Book: Embedding Overview](https://book.servo.org/embedding/overview.html) | Servo 嵌入目标、Android/OpenHarmony 交叉编译 |
 | [8] | 第一手事实 | [docs.rs: `servo` crate](https://docs.rs/servo/latest/servo/) | `Servo` 与 `WebView` API、依赖结构 |
 | [9] | 第一手事实 | [Servo Book: Project Structure](https://book.servo.org/design-documentation/project-structure.html) | html5ever/cssparser/mozjs/stylo/webrender 组成 |
