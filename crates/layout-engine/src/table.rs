@@ -70,26 +70,112 @@ fn adjust_table_layout_inner(
     } else {
         let mut idx = 0usize;
         while idx < root.children.len() {
-            let child_is_table = {
-                let child = &root.children[idx];
-                let child_display = get_display(child, styles);
-                child_display == Some(DisplayValue::Table)
-                    || child_display == Some(DisplayValue::InlineTable)
-                    || (!inside_table && child_display.as_ref().is_some_and(is_table_internal))
-            };
-            if child_is_table {
+            let child_display = get_display(&root.children[idx], styles);
+            let child_is_orphan_internal = !inside_table && child_display.as_ref().is_some_and(is_table_internal);
+            let child_is_real_table =
+                child_display == Some(DisplayValue::Table) || child_display == Some(DisplayValue::InlineTable);
+
+            if child_is_orphan_internal {
+                // CSS2 §17.2.1.1：连续孤立 table-internal 兄弟应合并到一个匿名 table
+                // 包装盒，而非各自独立成表（否则会重叠/不堆叠）。先测 run 长度。
+                let run_start = idx;
+                while idx < root.children.len() {
+                    let d = get_display(&root.children[idx], styles);
+                    if !inside_table && d.as_ref().is_some_and(is_table_internal) {
+                        idx += 1;
+                    } else {
+                        break;
+                    }
+                }
+                let run_len = idx - run_start;
+                if run_len >= 2 {
+                    let merged_idx = merge_orphan_table_run(root, run_start, run_len, doc, styles);
+                    for child in &mut root.children[merged_idx].children {
+                        adjust_table_layout_inner(child, doc, styles, true);
+                    }
+                } else {
+                    let old_height = root.children[run_start].height;
+                    layout_table(&mut root.children[run_start], doc, styles);
+                    reflow_siblings_after_table_height_change(root, run_start, old_height);
+                    for child in &mut root.children[run_start].children {
+                        adjust_table_layout_inner(child, doc, styles, true);
+                    }
+                }
+            } else if child_is_real_table {
                 let old_height = root.children[idx].height;
                 layout_table(&mut root.children[idx], doc, styles);
                 reflow_siblings_after_table_height_change(root, idx, old_height);
                 for child in &mut root.children[idx].children {
                     adjust_table_layout_inner(child, doc, styles, true);
                 }
+                idx += 1;
             } else {
                 adjust_table_layout_inner(&mut root.children[idx], doc, styles, inside_table);
+                idx += 1;
             }
-            idx += 1;
         }
     }
+}
+
+/// CSS2 §17.2.1.1：把连续孤立 table-internal 兄弟合并到一个匿名 table 包装盒。
+///
+/// `root.children[run_start..run_start+run_len]` 是连续的孤立 table-internal 兄弟
+/// （如两个 `display:table-row-group`）。本函数把它们 drain 到一个新的匿名 table
+/// `LayoutBox`（无 node_id，`is_anon_table_root=true`），插入到 `run_start` 处，
+/// 对其执行 `layout_table`（build_grid 正常路径收集多个 row-group → 多行堆叠），
+/// 并按 run 原始垂直 footprint 调整后续兄弟位置 + 父高度。
+///
+/// 返回插入的包装盒在 `root.children` 中的索引。
+fn merge_orphan_table_run(
+    root: &mut LayoutBox,
+    run_start: usize,
+    run_len: usize,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> usize {
+    let run_end = run_start + run_len;
+    // 1. run 原始垂直 footprint（max bottom − min top，正确反映重叠/堆叠）。
+    let (min_top, max_bottom) = root.children[run_start..run_end]
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(mn, mx), c| {
+            (mn.min(c.y), mx.max(c.y + c.height))
+        });
+    let old_footprint = (max_bottom - min_top).max(0.0);
+    // 2. 继承首位 child 的位置/宽 + 父 writing_mode。
+    let (x, y, width) = {
+        let first = &root.children[run_start];
+        (first.x, first.y, first.width)
+    };
+    let wm = root.writing_mode.clone();
+    // 3. drain run → 匿名 table 包装盒。
+    let run_children: Vec<LayoutBox> = root.children.drain(run_start..run_end).collect();
+    let mut wrapper = LayoutBox::default();
+    wrapper.is_anon_table_root = true;
+    wrapper.is_block_level = true;
+    wrapper.writing_mode = wm;
+    wrapper.x = x;
+    wrapper.y = y;
+    wrapper.width = width;
+    wrapper.children = run_children;
+    root.children.insert(run_start, wrapper);
+    // 4. layout_table 包装盒（build_grid 正常路径：多 row-group → 多行堆叠）。
+    let widx = run_start;
+    layout_table(&mut root.children[widx], doc, styles);
+    // 5. 按 footprint 差异调整后续兄弟 + 父高度。
+    let new_height = root.children[widx].height;
+    let delta = new_height - old_footprint;
+    if delta.abs() > 0.01 {
+        for sibling in root.children.iter_mut().skip(widx + 1) {
+            if sibling.is_absolute || sibling.is_fixed || !matches!(sibling.float, FloatValue::None) {
+                continue;
+            }
+            sibling.y += delta;
+        }
+        root.height += delta;
+        let pb = root.padding_top + root.padding_bottom + root.border_top + root.border_bottom;
+        root.content_height = (root.height - pb).max(0.0);
+    }
+    widx
 }
 
 /// taffy 将 table 映射为 block，高度常大于 table 后处理算出的真实高度。
