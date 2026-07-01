@@ -18,8 +18,14 @@
     }
   }
 
+  // requestAnimationFrame / takeScreenshot 预算：单次脚本执行内同步派发上限，
+  // 防止动画循环（rAF(loop)）无限链式触发；reftest 的「double-rAF 后 setup」
+  // 模式只需 2-3 帧即可收敛。
+  var _rafBudget = 64;
+
   globalThis.__zw_begin_script = function() {
     _deferBudget = 256;
+    _rafBudget = 64;
   };
 
   globalThis.setTimeout = function(fn, _delay) {
@@ -32,6 +38,28 @@
   };
   globalThis.clearTimeout = function(_id) {};
   globalThis.clearInterval = function(_id) {};
+
+  // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
+  // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
+  // 同步立即执行回调即可让 setup mutation 被记录并应用到二次渲染（镜像 setTimeout 的 microtask 语义，
+  // 但同步以保证回调在 sandbox 生命周期内必然执行）。
+  globalThis.requestAnimationFrame = function(fn) {
+    if (typeof fn === 'function' && _rafBudget > 0) {
+      _rafBudget--;
+      try { fn(0); } catch (_e) {}
+    }
+    return _timerId++;
+  };
+  globalThis.cancelAnimationFrame = function(_id) {};
+  globalThis.webkitRequestAnimationFrame = globalThis.requestAnimationFrame;
+  globalThis.mozRequestAnimationFrame = globalThis.requestAnimationFrame;
+
+  // `/common/reftest-wait.js` 提供的完成信号；harness 在 load 后统一截图，故 no-op。
+  // 失败保守：返回 resolved Promise（部分测试链式调用 `.then(...)`）。
+  globalThis.takeScreenshot = function(_cb) {
+    if (typeof _cb === 'function') { try { _cb(); } catch (_e) {} }
+    return Promise.resolve();
+  };
 
   function _emptyCollection() {
     return { length: 0, item: function() { return null; }, namedItem: function() { return null; } };
@@ -498,6 +526,27 @@
             else __zw_remove(sel);
           };
         }
+        // `Element.append(...nodesOrStrings)`（现代 API，区别于 appendChild）：
+        // 追加多个节点/字符串，字符串自动包成 Text 节点。复用既有 appendChild +
+        // createTextNode 回调，无需新增 Rust 端 callback。
+        if (prop === 'append') {
+          return function() {
+            for (var i = 0; i < arguments.length; i++) {
+              var item = arguments[i];
+              if (item == null) continue;
+              if (typeof item === 'object' && item.__zwHandle) {
+                if (handle) __zw_append_child_handle(handle, item.__zwHandle);
+                else __zw_append_child(sel, item.__zwHandle);
+              } else {
+                var txt = String(item);
+                var tn = __zw_create_text(txt);
+                if (handle) __zw_append_child_handle(handle, tn);
+                else __zw_append_child(sel, tn);
+              }
+            }
+            return undefined;
+          };
+        }
         if (prop === 'querySelector') {
           return function(q) {
             var hit = __zw_query_match(q);
@@ -510,6 +559,21 @@
             if (!all) return [];
             return all.split('|').filter(Boolean).map(_wrapSelector);
           };
+        }
+        // 布局测量 API：动态 reftest 极常用 `el.getBoundingClientRect()` 作为
+        // 「强制 reflow」触发器（返回值多不使用）。proxy 对未知属性返回 undefined →
+        // 调用 `getBoundingClientRect()` 会抛 TypeError 中断整个脚本，使其后的
+        // DOM mutation 丢失。返回零 DOMRect 不抛、对纯 reflow 触发语义正确
+        // （harness 在 mutation 应用后统一重渲染）。
+        // 注：offsetWidth/offsetHeight 等是属性访问，返回 undefined 不抛异常、
+        // 仅值错误，作 reflow 触发器时无害；不特例化以免改变 `<` 条件逻辑。
+        if (prop === 'getBoundingClientRect') {
+          return function() {
+            return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: function() { return this; } };
+          };
+        }
+        if (prop === 'getClientRects') {
+          return function() { return []; };
         }
         return undefined;
       },

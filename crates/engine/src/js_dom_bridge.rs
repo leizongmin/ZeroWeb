@@ -943,6 +943,21 @@ mod tests {
     }
 
     #[test]
+    fn test_shim_includes_modern_reftest_stubs() {
+        // 现代动态 reftest 的 `requestAnimationFrame(() => …; takeScreenshot())` 模式
+        // 要求这两个全局存在，否则 setup mutation 永不执行（R917 未捕获的 yield gap）。
+        let shim = generate_js_dom_shim();
+        assert!(shim.contains("globalThis.requestAnimationFrame"));
+        assert!(shim.contains("globalThis.cancelAnimationFrame"));
+        assert!(shim.contains("globalThis.takeScreenshot"));
+        // `Element.append(...nodesOrStrings)` 现代 API（区别于 appendChild）。
+        assert!(shim.contains("if (prop === 'append')"));
+        // `getBoundingClientRect()` 方法必须返回零 DOMRect，否则调用抛 TypeError
+        // 中断脚本，使其后的 mutation 丢失（120 reftest 文件用作 reflow 触发器）。
+        assert!(shim.contains("if (prop === 'getBoundingClientRect')"));
+    }
+
+    #[test]
     fn test_merge_style_property() {
         let merged = merge_style_property("color: blue", "width", "10px");
         assert!(merged.contains("color: blue"));
