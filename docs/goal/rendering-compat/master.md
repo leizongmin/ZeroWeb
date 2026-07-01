@@ -1234,6 +1234,21 @@ Medium/Thin/Thick 关键字不进 Length 分支，字节同（零回归）。
 
 **▶ 下会话**：① bidi 算法层（真 lever）：实现 CSS `unicode-bidi` 值注入（embed/isolate/override 经 LRE/RLE/LRI/RLI/FSI+PDF/PDI 控制符）+ 段落级 bidi（跨 run 而非逐 run `bidi_reorder`），A/B css-writing-modes bidi 簇；② font-metric Phase A（bidi 残余若含度量差）；③ 勿再投 webfont 基础设施对 bidi（R910 证零收益）。**R910 证 bidi 簇 font-unblocked，真 lever 是算法**。
 
+### R911 table-relative abspos 簇 + bidi 复核（均非 clean lever·零源码）
+
+承 R910「下轮 bidi 算法 de-risk」。本轮转核实 css-position 近 pass 簇 + bidi 复核，**均确认为非 clean lever**：
+
+**① css-position `position-relative-table-{tbody,thead,tfoot}-{left,top}-absolute-child`（6 案均 1.30%）= subpixel 非 CB bug**：假设 position:relative tbody 作 abspos containing block 有 bug。**LAYOUT_DUMP 实测**（position-relative-table-tbody-left-absolute-child）：`div.indicator` x=108（红，left:100px @ group CB 8+100）；`tbody.relative` x=58（left:50px @ 8+50）；`div.absolute` x=**108**（left:50px @ tbody CB 58+50）→ **green.absolute 完全覆盖 red.indicator**。**CB resolution 正确**（abspos CB = tbody.relative padding-box），`has_positioned_ancestor` 传播（abspos.rs:64-68）含 is_relative 无遗漏。**1.30% 是 subpixel/边缘渲染非逻辑 bug**。簇 ruled out（非 +6 lever）。
+
+**② bidi 簇复核（R910 后）**：css-writing-modes self-source reftest 686/686 PASS（含 unicode-bidi-{normal,embed-ltr,embed-rtl,bidi-override-ltr,embed-rtl} inline 案 0.00%）→ ZeroWeb bidi **内部自洽**（test==ref，inline 用例证 embed/override 逻辑匹配 inline ref）。**注意**：686 是 inline smoke 语料（非上游 bidi-*），故上游 bidi-normal-005 的 self-source 未直接测；但 R910 已证 webfont 非组分，bidi ~2.18% 共享基最可能是 **fontdue sileot advance/行盒度量 vs chromium**（font-metric 谱系）或逐-run-bidi vs 段落-bidi 差异。**bidi 算法大重构（段落级 + unicode-bidi 注入）yield 不确定**——若 self-source 已自洽，ref 也同源 ZeroWeb 渲染，oracle 差在 font-metric 则重构零 yield。
+
+**③ css-backgrounds 无 near-pass（1-2.2% 空集）**：该 dir 案例全远离过线或无 oracle。
+
+**裁决（plateau 再确认）**：R907（multicol em-resolution +3）后 R908/R909/R910/R911 **连续四轮**系统确认 clean-lever（单 session dead-value / CB bug / em-resolution）vein **彻底穷尽**——bidi（font-metric/subtle）、table-relative（subpixel）、webfont（R910 证伪）、em-resolution 谱系（R907 唯一）全 ruled out。**残余 near-pass 发散全属三类多 session 墙**：(a) **font-metric Phase A**（fontdue advance/line-height vs chromium——welcome 16% / morning 17% / bidi 2.18% / 多 text 案同源，最深最高 blast radius）；(b) **subpixel 渲染精度**（collapsed-borders / table-relative / 多 1-1.5% 案同源，可能全局坐标 round 策略差，risky）；(c) **结构性**（vertical-rl 定位 / 嵌套 breaking / table 匿名 fixup）。
+
+**▶ 下会话**：① **font-metric Phase A 是最深最高 lever**（welcome 16% + morning 17% + bidi 2.18% + 多 text 案同源 fontdue 度量）——下轮可 START 最窄 slice：fontdue advance_width 接入 IFC（替换 estimate_char_width 启发式），A/B product-smoke + css-text 看行宽/换行一致性提升（R224 曾试 DejaVu 表退步，须用真实 FontLoader advance 非 hardcoded 表）；② subpixel round 策略审计（risky，全局影响）；③ 勿再扫 near-pass 找单点 dead-value（四轮证穷尽）。**R911 证 table-relative CB 正确 + bidi self-source 自洽，clean lever vein 彻底关闭**。
+
+
 
 
 
