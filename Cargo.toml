@@ -91,7 +91,7 @@ rusty_v8 = { version = "0.32", default-features = false }
 
 # WASM 运行时
 wasmtime = { version = "36", default-features = false }
-wasmi = "0.40"
+wasmi = "1.1"
 
 # 基准测试
 criterion = "0.5"
