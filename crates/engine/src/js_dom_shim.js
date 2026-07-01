@@ -651,6 +651,13 @@
       var handle = __zw_create_element(String(tag));
       return _wrapHandle(handle);
     },
+    // `createElementNS(ns, tag)`：HTML 命名空间元素与 createElement 等价；
+    // SVG 命名空间元素（filter/cursor 等）在本目标范围外，按通用元素创建（不渲染
+    // 为 SVG 但避免 ReferenceError 中断脚本，crashtest 尤其依赖不抛）。
+    createElementNS: function(_ns, tag) {
+      var handle = __zw_create_element(String(tag));
+      return _wrapHandle(handle);
+    },
     createTextNode: function(text) {
       var handle = __zw_create_text(String(text));
       return _wrapHandle(handle);
