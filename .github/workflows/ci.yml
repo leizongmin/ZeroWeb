@@ -77,6 +77,15 @@ jobs:
         run: |
           echo "RUSTY_V8_VERSION=$(sed -n '/name = \"rusty_v8\"/{n;s/^version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
 
+      - name: Cache rusty_v8
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/zero-web/rusty_v8
+            ~/Library/Caches/zero-web/rusty_v8
+            ~/AppData/Local/zero-web/rusty_v8
+          key: rusty_v8-${{ env.RUSTY_V8_VERSION }}-${{ matrix.target }}
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -110,7 +119,8 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Check workspace
+      - name: Check workspace (V8-free targets only; V8 targets are fully checked by clippy)
+        if: matrix.v8_runtime == false
         run: cargo check --workspace --target ${{ matrix.target }}
 
       - name: Run clippy
@@ -156,7 +166,7 @@ jobs:
             -p zero-protocol \
             -p zero-wasm-sandbox \
             -p zero-page-runtime \
-            --target ${{ matrix.target }} -- --test-threads=1
+            --target ${{ matrix.target }} -- --test-threads=2
 
       - name: Run V8-backed core tests
         if: matrix.v8_runtime != false
@@ -166,7 +176,7 @@ jobs:
           cargo test \
             -p zero-script-sandbox \
             -p zero-webview \
-            --target ${{ matrix.target }} -- --test-threads=1
+            --target ${{ matrix.target }} -- --test-threads=2
 
       - name: Run app tests
         if: matrix.v8_runtime != false
@@ -177,7 +187,7 @@ jobs:
             -p zero-browser \
             -p zero-renderer \
             -p zero-webview-demo \
-            --target ${{ matrix.target }} -- --test-threads=1
+            --target ${{ matrix.target }} -- --test-threads=2
 
       - name: Run integration and WPT runner tests
         if: matrix.v8_runtime != false
@@ -187,13 +197,13 @@ jobs:
           cargo test \
             -p zero-integration-tests \
             -p zero-wpt-runner \
-            --target ${{ matrix.target }} -- --test-threads=1
+            --target ${{ matrix.target }} -- --test-threads=2
 
       - name: Run render CPU tests
         timeout-minutes: 10
         shell: bash
         run: |
-          cargo test -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=1
+          cargo test -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=2
 
       - name: Note unsupported V8 runtime tests
         if: matrix.v8_runtime == false
@@ -226,6 +236,12 @@ jobs:
         run: |
           echo "RUSTY_V8_VERSION=$(sed -n '/name = \"rusty_v8\"/{n;s/version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
 
+      - name: Cache rusty_v8
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/zero-web/rusty_v8
+          key: rusty_v8-${{ env.RUSTY_V8_VERSION }}-x86_64-unknown-linux-gnu
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -250,6 +266,7 @@ jobs:
         with:
           name: reftest-report
           path: docs/goal/rendering-compat/evidence/
+          retention-days: 3
 
   benchmarks:
     runs-on: ubuntu-latest
@@ -278,3 +295,4 @@ jobs:
         with:
           name: benchmark-results
           path: tests/benchmarks/results/
+          retention-days: 3
