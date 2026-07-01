@@ -2,6 +2,11 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      run_release_builds:
+        description: 'Also run release builds after checks and tests'
+        type: boolean
+        default: false
   pull_request_review:
     types: [submitted]
 
@@ -20,6 +25,7 @@ jobs:
   build-and-test:
     if: github.event_name == 'workflow_dispatch' || (github.event.review.state == 'approved' && github.event.review.author_association == 'OWNER')
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -195,17 +201,18 @@ jobs:
           echo "Skipping V8-backed tests for ${{ matrix.target }} because rusty_v8 ${env:RUSTY_V8_VERSION} does not publish a Windows ARM64 native archive."
 
       - name: Build release
-        if: matrix.release_build != false
+        if: matrix.release_build != false && github.event_name == 'workflow_dispatch' && inputs.run_release_builds == true
         timeout-minutes: 20
         run: cargo build --release --workspace --target ${{ matrix.target }}
 
       - name: Note unsupported release build
-        if: matrix.release_build == false
+        if: matrix.release_build == false && github.event_name == 'workflow_dispatch' && inputs.run_release_builds == true
         run: |
           echo "Skipping release build for ${{ matrix.target }} because rusty_v8 ${env:RUSTY_V8_VERSION} does not publish a Windows ARM64 native archive."
 
   reftest:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: build-and-test
     if: github.event_name == 'workflow_dispatch'
     steps:
@@ -246,6 +253,7 @@ jobs:
 
   benchmarks:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: build-and-test
     if: github.event_name == 'workflow_dispatch'
     steps:

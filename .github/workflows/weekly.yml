@@ -20,6 +20,7 @@ env:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
     steps:
@@ -52,6 +53,7 @@ jobs:
     if: needs.changes.outputs.should_build == 'true'
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     permissions:
       contents: read
     strategy:
@@ -126,4 +128,4 @@ jobs:
         with:
           name: weekly-${{ matrix.artifact }}
           path: dist/
-          retention-days: 14
+          retention-days: 7
