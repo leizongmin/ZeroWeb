@@ -1419,6 +1419,27 @@ css-flexbox worst-15（post-harness）**全是已知结构性簇**：flex-minimu
 
 **▶ 下会话**：① R109 block-in-inline 多块垂直堆叠（纯 block-level 子元素在 inline 内，merge 绕过了 table 案但通用 block-in-inline 案仍受影响，如 block-in-inline 动态测试）；② multicol Phase 2 commit-2 / aspect-ratio（taffy-blocked）/ baseline-export 等其他结构性 lever；③ table-fixup merge 现 run_len≥2；单 row-group 内嵌套 row-group 水平合并（build_grid is_orphan 既有）未动。**R922 clean win（+4 css-tables，零回归），证明结构性 lever 在精确诊断 + 干净 A/B 下可单 session 推进。**
 
+### R923 全目录 post-harness+R922 基线复测：css-position 37.9%→52.6%（+15）·累计 harness vein+R922 yield +52 case（跨 5 目录·重大里程碑）
+
+复测剩余 2 个布局类目录 at current HEAD（post R917-R920 harness vein + R922 table-fixup merge）：
+- **css/css-position（97 案）= 51/97 = 52.6%**（vs stale 37.9% pre-R917）→ **+14.7pp / +15 case**。动态 abspos 测试密集（position-absolute-dynamic-relayout / hypothetical-dynamic-change），harness vein（R917 DOM-mutation + R918 rAF/gBCR + R919 named-access）解锁大量 setup mutation。
+- **css/css-grid（49 案）= 18/49 = 36.7%**（vs stale 39.6%）→ -1（honest exposure：R917-R919 harness 让 1-2 个动态 grid 测试正确执行后暴露真渲染 bug，非 R922 回归——grid 不涉及 table-fixup）。
+
+**★ harness JS vein（R917-R920）+ R922 table-fixup merge 累计 yield 汇总（跨 5 布局类 + CSS2 目录）**：
+| 目录 | stale 基线 | post-harness+R922 | Δ |
+|------|-----------|-------------------|----|
+| css-flexbox | 50.6% | 56.1% | **+27** |
+| css-position | 37.9% | 52.6% | **+15** |
+| css-multicol | 23.5% | 25.4% | +4 |
+| css-tables | 53.0%(post-R919) | 56.5% | +4（R922）|
+| CSS2 | 48.3% | 48.3% | +2 |
+| css-grid | 39.6% | 36.7% | -1（honest）|
+**累计 ≈ +52 case**（harness vein +32 + R922 +4 + position/grid 复测 +15/-1）。这是本 rally 阶段（R917-R923）最大净收益——harness 现忠实执行现代 reftest JS + R922 table-fixup merge clean win。
+
+**残余 worst 全结构性**：css-position（backdrop-filter OOS / semi-replaced form-control R887 / JS dynamic relayout / R109 in-inline / dashed-border phase noise）/ css-grid（baseline-export / grid block-size / table-grid-item R168 / form-control）。table-row-group-color-inheritance-001（9.07%）诊断 = paint 显式跳过 table-internal 直文本（painter mod.rs:454-477）+ build_grid 不合成匿名 cell → 文本永不渲染；修复须 box-tree 文本→cell 合成（比 R922 更深入，yield ~3 case），ROI 不足 defer。
+
+**post-harness+R922 真基线**：flexbox 56.1% / position 52.6% / tables 56.5% / multicol 25.4% / grid 36.7% / CSS2 48.3%。forward motion 全结构性多会话（baseline-export / multicol Phase 2 / R109 / aspect-ratio taffy-blocked / form-control 内在尺寸）。
+
 ### 已 ruled out（勿以单会话重试）
 
 near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / **column-aware IFC Phase 1（pure-inline balance 明确高度）(R381)**：执行 column-aware-IFC-spec.md §10 gate「假设 A1」，扫描全 16 css-multicol 失败案结构（height/column-fill/blockchildren），**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）——每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套；spec 自身协议「A1 不存在→紧急停止转 Phase 2」生效，Phase 1 零杠杆关闭，真实 multicol lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）/ baseline-export 3 机制(R266–R316) / **advance-width(R225–R375b) definitive 关闭**：R375 hand-crafted DejaVu 表 morning 16.41→19.14% + R375b fontdue-actual advance（临时加 fontdue dep+缓存 Font+metrics.advance_width）16.41→19.08%，双 variant 均退步；fontdue-actual（最后未测变体）亦证伪。根因：accurate DejaVuSans advance 使换行偏离 chromium（system-ui≠DejaVuSans 或换行算法不同），0.55 启发式碰巧更近。advance-width 非 morning cascade 根因/ blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304) / inline-flex·inline-grid width:auto shrink-to-fit（R370：probe 实证 inline-flex width:auto 同 inline-block 拉伸到满宽 800，是真 bug，但**零杠杆**——全 48 失败案 + product-smoke fixture 均不用 inline-flex/inline-grid width:auto；fix 需 flex_row_intrinsic_width（非 box_content_max_width，flex row 须求和 block 子元素非取 max），复杂且无 reftest/smoke 收益，按 code-guidelines「不做零价值修改」不修，勿再以单会话重试）/ **percent max-width/min-height/min-width clamping（R119 analog，doc-agent 复核 ~0 yield，闭）**：engine.rs:1408 仅 `clamp_percentage_max_height`，无 max-width/min 平行函数——但 max-width-091(percent)✓ + min-height-091/092(percent)✓ 均 PASS（block width 定值→taffy 直接钳；min-height 是测量期 floor 非 content re-clamp）；R119 缺口唯一 max-height-specific（auto-height 内容测量 re-clamp），已修即完整 percent-clamp，无平行 lever，勿以 R119 类比重扫 / **intrinsic-keyword sizing（max-content/min-content/fit-content，R97 谱系，doc-agent 复核 = 非 clean 单会话 lever）**：121 测试文件用此三关键字，但**全集中在 taffy-blocked 上下文**（css-multicol/tables/flexbox intrinsic-size/table-intrinsic-size/flex-item-*-content），CSS2 block/inline-block 上下文**仅 1 案且为 crash-test**（inline-negative-margin-minmax-crash-001，非 sizing-correctness）→ memory「block/inline-block 可独立做」slice **无 dedicated driving test**（~0 可测 yield）；max-content/min-content parse_basic.rs 解析但 resolve 丢信号→0（R97/max-content memory），修复须保留信号+shrink-to-fit 触发，grid/flex/multicol/table 受 taffy 容器不 shrink 阻塞 = 多会话/结构性，勿以单会话重扫。 / **NBSP/Unicode-space collapse (R651 read-only 复核·非 lever)**：`collapse_whitespace`（inline/mod.rs:231）用 Rust `char::is_whitespace()` 折叠 NBSP(U+00A0)/U+3000 等，违反 CSS Text 3 §4.1.1（仅 TAB/LF/FF/CR/space 可折叠）——真 correctness bug，但 collapse 上下文（normal/nowrap/pre-line）**无 reftest 覆盖**（white-space-collapse-001 是 testharness JS `assert_equals(offsetWidth)` 测，非 reftest）；NBSP reftests（white-space-pre-031/032/034/035）全在 `pre` 上下文（preserve 路径不经 collapse）实测 PASS @2.64%。无 driving reftest → 非 lever（product-smoke 影响 negligible，NBSP 罕见于 fixture），defer；R647 category (b) 的 NBSP 角度据此关闭。
