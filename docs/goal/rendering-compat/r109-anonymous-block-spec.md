@@ -55,7 +55,7 @@ R932–R934 三角度（line-height 行为 / 存储 / 计算值）证伪了 font
 
 ### 1.4 关键假设（待验证）
 
-- **假设 A1（症状 b 根因）**：匿名块盒的 taffy 测高为 0（或不含 IFC 内容高），因为匿名块盒用 `new_leaf_with_context`（tree.rs:600）创建，taffy 无法测 inline 内容，且 `compute_final_inline_layouts` 因匿名块盒 node_id 不解析于 `doc.get()`（inline_finalization.rs:466 gate）而**跳过它**——故其 IFC 内容高度从不回填。**状态：待验证（首个落地步骤即验证此）。**
+- **假设 A1（症状 b 根因）**：~~匿名块盒 taffy 测高 0 + compute_final 跳过它~~ **【R938 已验证，部分修正】**：匿名块盒**确实被 compute_final 处理**（node_id = 容器 dom_id 经 taffy_to_dom，doc.get 解析，gate 通过；fragment_node_ids 正确配置 IFC 只收集片段；inline_layout 被存储）。**但 compute_final 末尾（inline_finalization.rs:727 `root.inline_layout = Some(lines)`）从不把 IFC 内容高度回填到 `root.height`**（grep 证：仅 :237 `root.content_height=tallest` 在另一函数）。**且 taffy 测高经 `measure_text_content(ctx_node)`（inline_finalization.rs:736），ctx_node 是片段首个文本节点（tree.rs），多文本节点/多行 run 被欠计**。故匿名块盒 height = taffy 对单文本节点的测量（非完整 inline run 高度）→ 容器排除了部分 inline 高度 → 容器矮 + bg 露白。**FR-001 fix 精确位置 = compute_final IFC 后回填 `root.height = Σ lines.height`，并加容器高度后处理 pass 重算容器（因 compute_final 在 taffy 测高后跑，改 root.height 不自动传播父盒）。**
 - **假设 A2**：容器 bg 涂布在匿名块盒/margin 区露白，是因为容器 box 高度算短（A1 后果）+ paint bg 按算短的 box 高度涂。
 - **假设 A3**：R743/R744 回归根因是 case (a) 的 collapse-through + 空 .red bg 渲染在新结构下发散（R764 复核），非 case (b)。
 
@@ -370,8 +370,8 @@ fn backfill_anon_block_heights(root, doc, styles):
 
 | ID | 项目 | 优先级 | 缺失信息 | 下一步 |
 |----|------|--------|----------|--------|
-| TBD-1 | 假设 A1（匿名块盒测高=0 + compute_final 跳过） | 阻塞 | probe 验证 | 首步 LAYOUT_DUMP/probe |
-| TBD-2 | P1 vs P2 入口选择 | 重要 | A1 验证后 + P2 风险评估 | Batch 1 前定 |
+| TBD-1 | ~~假设 A1（匿名块盒测高=0 + compute_final 跳过）~~ | ~~阻塞~~ | **【R938 已验证·部分修正】** compute_final 处理匿名块盒但**不回填 root.height**；taffy 测高经 ctx_node（首个文本节点）欠计多节点 run。FR-001 fix 位置 = compute_final IFC 后回填 root.height + 容器高度后处理 | ✅ 解除（进入 Batch 1） |
+| TBD-2 | P1 vs P2 入口选择 | 重要 | A1 已验证：fix 在 compute_final 回填 root.height（P1.5，非 P1 放宽 gate 也非纯 P2 后处理），需配套容器高度后处理 pass | Batch 1 前定 |
 | TBD-3 | welcome 是否含混合 inline+block-in-inline | 重要 | product-smoke A/B | Batch 1 验证 |
 
 ---
