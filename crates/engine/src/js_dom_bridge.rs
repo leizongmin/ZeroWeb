@@ -1005,6 +1005,8 @@ mod tests {
         // HTML 规范 named access on window（`id="x"` → 全局 `x`，257 reftest 文件）。
         assert!(shim.contains("_installNamedAccess"));
         assert!(shim.contains("__zw_collect_ids"));
+        // `createElementNS`（XHTML 命名空间 alias createElement；SVG OOS 不渲染但不中断）。
+        assert!(shim.contains("createElementNS:"));
     }
 
     #[test]
