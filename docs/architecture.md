@@ -70,7 +70,7 @@
 | Path | 作用 |
 |------|------|
 | `tests/integration` | 跨 crate 集成测试（DOM Bridge polyfill、多进程架构、安全管线、真实网站兼容性、产品层 smoke 等） |
-| `tests/wpt-runner` | Web Platform Tests / reftest / 兼容性基础设施（按分类通过率报告、Chromium Oracle 像素对比） |
+| `tests/wpt-runner` | Web Platform Tests / reftest / 兼容性基础设施（按分类通过率报告、Chromium Oracle 像素对比）；reftest harness 会执行测试页 setup 脚本（DOM 变更、`requestAnimationFrame` / `takeScreenshot` / `getBoundingClientRect` 等）后再截图对比，覆盖靠脚本构造内容的用例 |
 | `tests/benchmarks` | benchmark 结果产物（不是 workspace member） |
 
 > 另有 `tools/icon-gen`（`zero-icon-gen`），它是开发工具而非业务 crate：从源 SVG 生成 Linux / Windows / macOS 三端图标资产（PNG / ICO / macOS iconset / 运行时窗口 RGBA），不随发布产物分发。
