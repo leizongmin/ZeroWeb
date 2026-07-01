@@ -725,7 +725,7 @@ fn test_browser_shell_new_with_persisted_settings() {
 fn test_browser_shell_save_and_reload_settings() {
     use std::path::PathBuf;
 
-    let dir = std::env::temp_dir().join("zeroweb-test-shell-settings");
+    let dir = std::env::temp_dir().join(format!("zeroweb-test-shell-settings-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("settings.json");
 
@@ -761,7 +761,7 @@ fn test_browser_shell_save_settings() {
     // 这里仅验证方法不 panic，不实际验证文件（避免影响用户系统）
     let _ = shell
         .settings()
-        .save(&std::env::temp_dir().join("zeroweb-shell-save-test").join("s.json"));
+        .save(&std::env::temp_dir().join(format!("zeroweb-shell-save-test-{}", std::process::id())).join("s.json"));
 }
 
 // ── 会话持久化集成测试 ──
@@ -780,7 +780,7 @@ fn test_session_save_basic() {
 
 #[test]
 fn test_session_save_and_restore() {
-    let dir = std::env::temp_dir().join("zeroweb-test-session-restore");
+    let dir = std::env::temp_dir().join(format!("zeroweb-test-session-restore-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("session.json");
 
@@ -804,7 +804,7 @@ fn test_session_save_and_restore() {
 
 #[test]
 fn test_session_restore_preserves_urls() {
-    let dir = std::env::temp_dir().join("zeroweb-test-session-urls");
+    let dir = std::env::temp_dir().join(format!("zeroweb-test-session-urls-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("session.json");
 
@@ -853,7 +853,7 @@ fn test_session_save_empty_tab() {
 
 #[test]
 fn test_session_restore_with_active_tab() {
-    let dir = std::env::temp_dir().join("zeroweb-test-session-active");
+    let dir = std::env::temp_dir().join(format!("zeroweb-test-session-active-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("session.json");
 
@@ -878,7 +878,7 @@ fn test_session_restore_with_active_tab() {
 
 #[test]
 fn test_session_roundtrip_with_titles() {
-    let dir = std::env::temp_dir().join("zeroweb-test-session-titles");
+    let dir = std::env::temp_dir().join(format!("zeroweb-test-session-titles-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("session.json");
 

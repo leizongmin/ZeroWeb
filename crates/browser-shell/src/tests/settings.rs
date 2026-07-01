@@ -162,7 +162,7 @@ fn test_settings_serialize_deserialize() {
 
 #[test]
 fn test_settings_save_and_load() {
-    let dir = std::env::temp_dir().join("zeroweb-test-settings");
+    let dir = std::env::temp_dir().join(format!("zeroweb-test-settings-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("settings.json");
 
@@ -197,7 +197,7 @@ fn test_settings_load_missing_file_returns_default() {
 
 #[test]
 fn test_settings_load_invalid_json_returns_default() {
-    let dir = std::env::temp_dir().join("zeroweb-test-invalid-json");
+    let dir = std::env::temp_dir().join(format!("zeroweb-test-invalid-json-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("settings.json");
@@ -211,15 +211,15 @@ fn test_settings_load_invalid_json_returns_default() {
 
 #[test]
 fn test_settings_save_creates_parent_dirs() {
-    let dir = std::env::temp_dir().join("zeroweb-test-nested").join("a").join("b");
-    let _ = std::fs::remove_dir_all(std::env::temp_dir().join("zeroweb-test-nested"));
+    let dir = std::env::temp_dir().join(format!("zeroweb-test-nested-{}", std::process::id())).join("a").join("b");
+    let _ = std::fs::remove_dir_all(std::env::temp_dir().join(format!("zeroweb-test-nested-{}", std::process::id())));
     let path = dir.join("settings.json");
 
     let settings = BrowserSettings::new();
     settings.save(&path).unwrap();
     assert!(path.exists());
 
-    let _ = std::fs::remove_dir_all(std::env::temp_dir().join("zeroweb-test-nested"));
+    let _ = std::fs::remove_dir_all(std::env::temp_dir().join(format!("zeroweb-test-nested-{}", std::process::id())));
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn test_settings_roundtrip_preserves_all_fields() {
     settings.download_directory = "/tmp/downloads".to_string();
     settings.color_theme = ColorThemePreference::Dark;
 
-    let dir = std::env::temp_dir().join("zeroweb-test-roundtrip");
+    let dir = std::env::temp_dir().join(format!("zeroweb-test-roundtrip-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("settings.json");
 

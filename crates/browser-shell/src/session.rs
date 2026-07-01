@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_session_save_load_roundtrip() {
-        let dir = std::env::temp_dir().join("zeroweb_test_session");
+        let dir = std::env::temp_dir().join(format!("zeroweb_test_session-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("session.json");
 
@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn test_session_load_invalid_json() {
-        let dir = std::env::temp_dir().join("zeroweb_test_session_invalid");
+        let dir = std::env::temp_dir().join(format!("zeroweb_test_session_invalid-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("session.json");
@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn test_session_save_creates_parent_dirs() {
         let dir = std::env::temp_dir()
-            .join("zeroweb_test_session_deep")
+            .join(format!("zeroweb_test_session_deep-{}", std::process::id()))
             .join("a")
             .join("b");
         let path = dir.join("session.json");
@@ -319,7 +319,7 @@ mod tests {
         session.save(&path).expect("save should create parent dirs");
         assert!(path.exists());
 
-        let _ = std::fs::remove_dir_all(std::env::temp_dir().join("zeroweb_test_session_deep"));
+        let _ = std::fs::remove_dir_all(std::env::temp_dir().join(format!("zeroweb_test_session_deep-{}", std::process::id())));
     }
 
     #[test]
