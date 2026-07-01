@@ -187,3 +187,75 @@ fn test_backfill_ignores_non_anon_block() {
         "non-anon not touched by Part 1"
     );
 }
+
+#[test]
+fn test_backfill_shifts_subsequent_sibling_on_growth() {
+    // R941 兄弟位移：child[0]（anon）增高 delta → 后续 in-flow 非 float 非 abspos 兄弟
+    // child[1].y 下移 delta（post-taffy 改高度不会自动重定位兄弟，否则重叠）。
+    let mut container = LayoutBox::default();
+    let cid = fresh_id();
+    container.node_id = Some(cid);
+    container.content_height = 30.0;
+    container.height = 30.0;
+    container.is_block_level = true;
+
+    // child[0]：anon，taffy 欠计 content_height=20，inline_layout 真实=40 → Part 1 增高 20。
+    let mut anon = LayoutBox::default();
+    anon.fragment_node_ids = Some(vec![]);
+    anon.y = 0.0;
+    anon.content_height = 20.0;
+    anon.height = 20.0;
+    anon.is_block_level = true;
+    anon.inline_layout = Some(vec![make_line(0.0, 20.0), make_line(20.0, 20.0)]);
+    container.children.push(anon);
+
+    // child[1]：常规块兄弟，位于 y=20（child[0] 原高之后）。
+    let mut sib = LayoutBox::default();
+    sib.y = 20.0;
+    sib.content_height = 10.0;
+    sib.height = 10.0;
+    sib.is_block_level = true;
+    container.children.push(sib);
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.height = LengthValue::Auto;
+    styles.insert(cid, s);
+
+    let _ = backfill_r109_anon_block_heights(&mut container, &styles);
+
+    // child[0] 增高 20 → cumulative_shift=20 → child[1].y 从 20 移到 40。
+    assert!(
+        (container.children[1].y - 40.0).abs() < 0.01,
+        "subsequent sibling shifted down by prior growth (20→40)"
+    );
+}
+
+#[test]
+fn test_backfill_does_not_shift_abspos_sibling() {
+    // abspos 兄弟不应被位移（非 in-flow，独立定位）。
+    let mut container = LayoutBox::default();
+    container.is_block_level = true;
+
+    let mut anon = LayoutBox::default();
+    anon.fragment_node_ids = Some(vec![]);
+    anon.content_height = 20.0;
+    anon.height = 20.0;
+    anon.is_block_level = true;
+    anon.inline_layout = Some(vec![make_line(0.0, 20.0), make_line(20.0, 20.0)]);
+    container.children.push(anon);
+
+    let mut abspos = LayoutBox::default();
+    abspos.y = 20.0;
+    abspos.is_absolute = true;
+    abspos.is_block_level = true;
+    container.children.push(abspos);
+
+    let styles = HashMap::new();
+    let _ = backfill_r109_anon_block_heights(&mut container, &styles);
+
+    assert!(
+        (container.children[1].y - 20.0).abs() < 0.01,
+        "abspos sibling not shifted"
+    );
+}
