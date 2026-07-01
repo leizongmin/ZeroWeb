@@ -171,3 +171,10 @@ tests/
 - 不要执行破坏性 git 操作（push --force、reset --hard、clean -f）
 - 不要在代码中硬编码 API key、密码或 token
 - 修改涉及认证/授权的代码时需格外谨慎
+
+### 提交前安全门禁
+
+执行 `git commit` 前，必须先调用 `lei-pre-commit-guard` skill 对暂存区进行安全扫描：
+- 裁决为 **PASS** 时允许提交
+- 裁决为 **BLOCK** 时，输出发现报告并等待用户确认或修复后重新扫描
+- 用户明确要求跳过时可豁免
