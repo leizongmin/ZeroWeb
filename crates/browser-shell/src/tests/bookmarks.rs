@@ -230,7 +230,7 @@ fn test_bookmarks_default() {
 
 #[test]
 fn test_bookmarks_save_load_roundtrip() {
-    let dir = std::env::temp_dir().join("zeroweb_test_bookmarks");
+    let dir = std::env::temp_dir().join(format!("zeroweb_test_bookmarks-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("bookmarks.json");
 
