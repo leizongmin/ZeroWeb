@@ -1180,6 +1180,8 @@ Medium/Thin/Thick 关键字不进 Length 分支，字节同（零回归）。
 
 **▶ 下会话**：① 继续扫 multicol near-pass（1.0-1.7%：column-rule-002 1.69% / multicol-rule-shorthand-2 1.53% / equal-gap-and-rule 1.41% / multicol-rule-003 1.13%）查是否 em-resolution 或 rule 绘制相关；② 扩展 em-resolution 谱系审计：grep 其他 `ComputedValue` 枚举（ColumnRuleWidth 同型）含 `Length(LengthValue)` 但不在 resolve_length_field 列表者（outline-width? column-rule-width 已修）;③ pivot 其他 dir near-pass。**multicol 轨道 R901-R907 四轮 +7，near-pass 杠杆持续 active yield**。
 
+**R907 后续 em-resolution 谱系审计（已完成·无新 lever）**：grep 全 `Length(LengthValue)` 枚举（types.rs 6 处）逐项核实——LineHeight（computed.rs:201 特殊 resolve）/ FlexBasis（test line 615 证 resolve）/ ColumnWidth（R904 multicol length_to_px resolve）/ ColumnRuleWidth（R907 修）/ PropertyValue（registry 初始值非 stored field）均已 resolve 或 N/A；**TabSize 唯一未审计**→核实 paint `text.rs:813` 已 `Length(Em(v)) => v*font_size` 正确 resolve（reftest 用 number/px 非故非 lever）；**outline_width 是裸 LengthValue**（computed_style.rs:94，在 resolve 列表，已 resolve）。**结论：column-rule-width 是 em-resolution 谱系唯一 dead-value，已修，谱系穷尽**。R907 后 multicol near-pass 残余（column-rule-002 1.69%/equal-gap-and-rule 1.41% 用 **px** rule-width 非 em；shorthand-2/rule-003 em 已修但残余是**内容分布**）= 分布 plateau 非 em lever。下会话勿重扫 em-resolution 谱系（已穷尽）。
+
 
 
 ### 已 ruled out（勿以单会话重试）
