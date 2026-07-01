@@ -1872,3 +1872,57 @@ fn test_overflow_hidden_inline_block_baseline_uses_bottom_margin_edge() {
         y_hidden
     );
 }
+
+/// 辅助：构造 body > div(wrapper, font-size 200px) > [text "Xg", span(inline-flex), text "Xg"]，
+/// 返回该 inline-flex 在布局树中的 y（相对 wrapper 内容盒）。大字号文本主导行盒基线
+///（ascent ≈ 160 > ib_baseline），使 inline-flex 的 y = baseline − ib_baseline，
+/// 从而 ib_baseline 的差异直接体现为 y 的位移。`margin_bottom` 设给 inline-flex。
+///
+/// 空 inline-flex（无子元素）测 CSS Writing Modes §4.4 合成 alphabetic 基线 = margin-box
+/// 下沿（height + margin-bottom）。central 基线（h/2）不随 margin-bottom 变，故 margin-bottom
+/// 增大时是否上移可区分两路径。
+fn inline_flex_baseline_y(margin_bottom: f64) -> f32 {
+    let (mut doc, body) = make_doc_with_body();
+    let wrapper = doc.create_element("div");
+    doc.append_child(body, wrapper).unwrap();
+    let t1 = doc.create_text_node("Xg");
+    doc.append_child(wrapper, t1).unwrap();
+    let ib = doc.create_element("span");
+    doc.append_child(wrapper, ib).unwrap();
+    let t2 = doc.create_text_node("Xg");
+    doc.append_child(wrapper, t2).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut w = ComputedStyle::default();
+    w.display = DisplayValue::Block;
+    w.font_size = LengthValue::Px(200.0);
+    styles.insert(wrapper, w);
+    let mut ib_style = ComputedStyle::default();
+    ib_style.display = DisplayValue::InlineFlex;
+    ib_style.width = LengthValue::Px(60.0);
+    ib_style.height = LengthValue::Px(60.0);
+    ib_style.margin_bottom = LengthValue::Px(margin_bottom);
+    styles.insert(ib, ib_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    find_child_by_node_id(&result.root, ib).expect("inline-flex 应找到").y
+}
+
+/// CSS Writing Modes §4.4：空 inline-flex 容器（无子元素）合成 alphabetic 基线 =
+/// margin-box 下沿（height + margin-bottom）。margin-bottom 增大 → ib_baseline 增大 →
+/// 行盒基线不变（200px 文本主导）→ inline-flex 上移约 margin-bottom 量。
+/// 回归守护：此前空 inline-flex 走 central（h/2）基线，不随 margin-bottom 变。
+#[test]
+fn test_empty_inline_flex_synthesizes_alphabetic_baseline() {
+    let y0 = inline_flex_baseline_y(0.0);
+    let y80 = inline_flex_baseline_y(80.0);
+    let shift = y0 - y80;
+    assert!(
+        (shift - 80.0).abs() < 12.0,
+        "空 inline-flex 的 margin-bottom 应使其上移约 80px（§4.4 alphabetic margin-edge 基线），实际位移 {}（y0={} y80={}）",
+        shift,
+        y0,
+        y80
+    );
+}

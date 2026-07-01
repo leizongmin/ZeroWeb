@@ -1331,8 +1331,17 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
                 }
             }
 
-            // 回退：从子元素布局位置近似
+            // 回退：从子元素布局位置近似，或按 CSS Writing Modes §4.4 合成基线。
+            //
+            // 空 inline-flex/inline-grid 容器（无子元素）无可用基线，按 §4.4 合成
+            // alphabetic 基线 = 容器 margin-box 下沿（border-box 高 + margin-bottom）。
+            // 此前此处 return None 会让 IFC 回退到 central（h/2），违反 §4.4——htb 行盒内
+            // 须合成 alphabetic 非 central（见 grid-container-baseline-synthesized-001）。
             if child.children.is_empty() {
+                let baseline = child.height + child.margin_bottom;
+                if baseline > 0.0 {
+                    return Some((node_id, baseline));
+                }
                 return None;
             }
             // 找到第一行：y 值最小的一组子元素
@@ -1374,7 +1383,15 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
 
                 // 记录第一个子元素的底边作为回退
                 if i == 0 {
-                    first_item_bottom = c.y + c.content_height;
+                    // CSS Writing Modes §4.4：首 item 无基线（空元素，无 DOM 子节点）时，
+                    // 合成 alphabetic 基线 = 该 item 的 margin-box 下沿（border-box 高 +
+                    // margin-bottom）；有内容的 item 保留既有 content-box 底边启发式。
+                    let item_empty = c.node_id.is_some_and(|id| doc.first_child(id).is_none());
+                    first_item_bottom = if item_empty {
+                        c.y + c.height + c.margin_bottom
+                    } else {
+                        c.y + c.content_height
+                    };
                 }
 
                 if is_baseline_aligned {
@@ -1391,7 +1408,9 @@ fn adjust_inline_block_positions(root: &mut LayoutBox, doc: &Document, styles: &
                 first_item_bottom
             };
 
-            if baseline > 0.0 && baseline < child.content_height {
+            // 合成基线可落在 content-box 之外（border-box 下沿或更低），上限用 margin-box
+            // 下沿而非 content_height（否则 §4.4 合成的 margin-box 下沿基线会被误拒）。
+            if baseline > 0.0 && baseline <= child.height + child.margin_bottom + 1.0 {
                 Some((node_id, baseline))
             } else {
                 None
