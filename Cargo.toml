@@ -90,7 +90,7 @@ taffy = "0.7"
 rusty_v8 = { version = "0.32", default-features = false }
 
 # WASM 运行时
-wasmtime = { version = "29", default-features = false }
+wasmtime = { version = "36", default-features = false }
 wasmi = "0.40"
 
 # 基准测试

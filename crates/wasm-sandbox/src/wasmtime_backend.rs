@@ -84,6 +84,40 @@ fn wasmtime_val_to_wasm(v: &wasmtime::Val) -> WasmValue {
     }
 }
 
+fn default_wasmtime_val_for_type(ty: &wasmtime::ValType) -> wasmtime::Val {
+    match ty {
+        wasmtime::ValType::I32 => wasmtime::Val::I32(0),
+        wasmtime::ValType::I64 => wasmtime::Val::I64(0),
+        wasmtime::ValType::F32 => wasmtime::Val::F32(0),
+        wasmtime::ValType::F64 => wasmtime::Val::F64(0),
+        _ => wasmtime::Val::I32(0),
+    }
+}
+
+fn map_wasmtime_error(error: wasmtime::Error) -> WasmError {
+    if matches!(error.downcast_ref::<wasmtime::Trap>(), Some(wasmtime::Trap::OutOfFuel)) {
+        return WasmError::FuelExhausted;
+    }
+
+    let msg = error.to_string();
+    for cause in error.chain() {
+        let cause_msg = cause.to_string();
+        if cause_msg.contains("host function error:") {
+            return WasmError::CallError(cause_msg);
+        }
+    }
+
+    if msg.contains("out of fuel") || msg.contains("all fuel consumed") {
+        WasmError::FuelExhausted
+    } else if error.downcast_ref::<wasmtime::Trap>().is_some() {
+        WasmError::CallError(format!("trap: {msg}"))
+    } else if msg.contains("wasm backtrace") {
+        WasmError::CallError(format!("trap: {msg}"))
+    } else {
+        WasmError::CallError(msg)
+    }
+}
+
 impl WasmModule {
     /// 实例化模块（无主机函数）
     pub fn instantiate(&self, sandbox: &WasmSandbox) -> Result<WasmInstance, WasmError> {
@@ -110,6 +144,7 @@ impl WasmModule {
                 .iter()
                 .map(|&r| wasm_value_type_to_wasmtime(r))
                 .collect();
+            let default_results: Vec<wasmtime::Val> = results.iter().map(default_wasmtime_val_for_type).collect();
             let func_type = wasmtime::FuncType::new(&sandbox.engine, params, results);
 
             let arc_func: Arc<crate::HostFn> = host_func.func.clone();
@@ -123,6 +158,11 @@ impl WasmModule {
                         let mut wasm_results = Vec::new();
                         match arc_func(&wasm_params, &mut wasm_results) {
                             Ok(()) => {
+                                for (i, val) in default_results.iter().enumerate() {
+                                    if i < results.len() {
+                                        results[i] = val.clone();
+                                    }
+                                }
                                 for (i, val) in wasm_results.iter().enumerate() {
                                     if i < results.len() {
                                         results[i] = wasm_value_to_wasmtime(val);
@@ -130,7 +170,7 @@ impl WasmModule {
                                 }
                                 Ok(())
                             }
-                            Err(e) => Err(wasmtime::Error::msg(e.to_string())),
+                            Err(e) => Err(wasmtime::Error::msg(format!("host function error: {e}"))),
                         }
                     },
                 )
@@ -139,13 +179,13 @@ impl WasmModule {
 
         let instance = linker
             .instantiate(&mut store, &self.module)
-            .map_err(|e| WasmError::InstantiationError(e.to_string()))?;
+            .map_err(|e| WasmError::InstantiationError(map_wasmtime_error(e).to_string()))?;
 
         // 执行 start 函数（如果有）
         let start_func = instance.get_func(&mut store, "_start");
         if let Some(func) = start_func {
             func.call(&mut store, &[], &mut [])
-                .map_err(|e| WasmError::InstantiationError(e.to_string()))?;
+                .map_err(|e| WasmError::InstantiationError(map_wasmtime_error(e).to_string()))?;
         }
 
         Ok(WasmInstance {
@@ -183,20 +223,10 @@ impl WasmInstance {
 
         let func_type = func.ty(&*store);
         let result_types: Vec<wasmtime::ValType> = func_type.results().collect();
-        let mut outputs: Vec<wasmtime::Val> = result_types
-            .iter()
-            .map(|t| wasmtime::Val::default_for_ty(t).unwrap_or(wasmtime::Val::I32(0)))
-            .collect();
+        let mut outputs: Vec<wasmtime::Val> = result_types.iter().map(default_wasmtime_val_for_type).collect();
 
-        func.call(&mut *store, &params, &mut outputs).map_err(|e| {
-            let msg = e.to_string();
-            // Wasmtime 在燃料耗尽时报告 "out of fuel" 错误
-            if msg.contains("out of fuel") || msg.contains("all fuel consumed") {
-                WasmError::FuelExhausted
-            } else {
-                WasmError::CallError(msg)
-            }
-        })?;
+        func.call(&mut *store, &params, &mut outputs)
+            .map_err(map_wasmtime_error)?;
 
         Ok(outputs.iter().map(wasmtime_val_to_wasm).collect())
     }
