@@ -1405,6 +1405,7 @@ mod integration_tests {
     }
 
     #[test]
+    #[ignore = "uses external network; run manually when validating live HTTPS fetching"]
     fn fetch_https_from_spawned_thread() {
         let handle = std::thread::spawn(|| {
             let client = HttpClient::new();

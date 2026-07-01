@@ -1,18 +1,55 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
+  windows-aarch64-status:
+    name: Windows ARM64 release status
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Check rusty_v8 Windows ARM64 archive
+        shell: bash
+        run: |
+          version="$(sed -n '/name = "rusty_v8"/{n;s/^version = "//;s/"$//;p;q;}' Cargo.lock)"
+          base_url="https://github.com/denoland/rusty_v8/releases/download/v${version}/rusty_v8_release_aarch64-pc-windows-msvc.lib"
+          if curl --fail --head --silent --location "$base_url" >/dev/null || curl --fail --head --silent --location "${base_url}.gz" >/dev/null; then
+            {
+              echo "## Windows ARM64 release"
+              echo
+              echo "rusty_v8 v${version} publishes a Windows ARM64 archive. Add aarch64-pc-windows-msvc back to the release matrix."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## Windows ARM64 release"
+              echo
+              echo "Skipped: rusty_v8 v${version} does not publish a Windows ARM64 native archive, so ZeroBrowser cannot produce a V8-backed Windows ARM64 release artifact yet."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   build-release:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -20,6 +57,14 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: zero-browser-linux-x86_64
+            ext: ''
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: zero-browser-linux-aarch64
+            ext: ''
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            artifact: zero-browser-macos-x86_64
             ext: ''
           - os: macos-latest
             target: aarch64-apple-darwin
@@ -32,6 +77,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -52,17 +99,40 @@ jobs:
             ~/AppData/Local/zero-web/rusty_v8
           key: rusty_v8-${{ env.RUSTY_V8_VERSION }}-${{ matrix.target }}
 
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+            ${{ runner.os }}-cargo-
+
       - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxcb-xfixes0-dev libxkbcommon-dev libssl-dev pkg-config
+          sudo apt-get install -y pkg-config libssl-dev libxcb-xfixes0-dev libxkbcommon-dev libfontconfig1-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev mesa-vulkan-drivers
+
+      - name: Download rusty_v8 archive
+        if: runner.os != 'Windows'
+        shell: bash
+        run: RUSTY_V8_TARGET=${{ matrix.target }} bash scripts/download-rusty-v8.sh
+
+      - name: Configure rusty_v8 archive on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "RUSTY_V8_ARCHIVE=https://github.com/denoland/rusty_v8/releases/download/v${RUSTY_V8_VERSION}/rusty_v8_release_${{ matrix.target }}.lib" >> "$GITHUB_ENV"
 
       - name: Build release
         run: cargo build --release --bin zero-browser --target ${{ matrix.target }}
 
       - name: Strip binary (Linux/macOS)
-        if: matrix.os != 'windows-latest'
+        if: runner.os != 'Windows'
         run: strip target/${{ matrix.target }}/release/zero-browser${{ matrix.ext }}
 
       - name: Create output directory
@@ -93,15 +163,27 @@ jobs:
           retention-days: 30
 
   package-linux:
-    name: Package Linux .deb
+    name: Package Linux .deb (${{ matrix.arch }})
     needs: build-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact: zero-browser-linux-x86_64
+            arch: amd64
+          - artifact: zero-browser-linux-aarch64
+            arch: arm64
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
       - uses: actions/download-artifact@v4
         with:
-          name: zero-browser-linux-x86_64
+          name: ${{ matrix.artifact }}
           path: dist/
 
       - name: Make binary executable
@@ -109,8 +191,9 @@ jobs:
 
       - name: Build .deb package
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          DEBROOT="zero-browser_${VERSION}_amd64"
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          DEBROOT="zero-browser_${VERSION}_${{ matrix.arch }}"
           mkdir -p "$DEBROOT/DEBIAN" "$DEBROOT/usr/bin" "$DEBROOT/usr/share/applications"
           mkdir -p "$DEBROOT/usr/share/icons/hicolor/scalable/apps"
           cp dist/zero-browser "$DEBROOT/usr/bin/"
@@ -132,7 +215,7 @@ jobs:
           Version: ${VERSION}
           Section: web
           Priority: optional
-          Architecture: amd64
+          Architecture: ${{ matrix.arch }}
           Installed-Size: ${SIZE}
           Maintainer: ZeroWeb Team <zeroweb@example.com>
           Description: ZeroBrowser - A cross-platform browser built with Rust
@@ -150,32 +233,47 @@ jobs:
           Categories=Network;WebBrowser;
           DESKTOP
 
-          dpkg-deb --build "$DEBROOT" "dist/zero-browser_${VERSION}_amd64.deb"
+          dpkg-deb --build "$DEBROOT" "dist/zero-browser_${VERSION}_${{ matrix.arch }}.deb"
           rm -rf "$DEBROOT"
 
       - name: Upload .deb
         uses: actions/upload-artifact@v4
         with:
-          name: zero-browser-linux-deb
+          name: zero-browser-linux-${{ matrix.arch }}-deb
           path: dist/*.deb
           retention-days: 30
 
   package-macos:
-    name: Package macOS .app
+    name: Package macOS .app (${{ matrix.arch }})
     needs: build-release
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact: zero-browser-macos-x86_64
+            arch: x86_64
+            os: macos-15-intel
+          - artifact: zero-browser-macos-aarch64
+            arch: aarch64
+            os: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
       - uses: actions/download-artifact@v4
         with:
-          name: zero-browser-macos-aarch64
+          name: ${{ matrix.artifact }}
           path: dist/
 
       - name: Build .app bundle
         run: |
           chmod +x dist/zero-browser
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
           APP="dist/ZeroBrowser.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cp dist/zero-browser "$APP/Contents/MacOS/ZeroBrowser"
@@ -208,15 +306,14 @@ jobs:
       - name: Upload .app
         uses: actions/upload-artifact@v4
         with:
-          name: zero-browser-macos-app
+          name: zero-browser-macos-${{ matrix.arch }}-app
           path: dist/ZeroBrowser.app
           retention-days: 30
 
   create-release:
-    name: Create GitHub Release
+    name: Upload release assets
     needs: [build-release, package-linux, package-macos]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
@@ -230,10 +327,14 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          tag_name: ${{ github.event.release.tag_name }}
           files: |
             artifacts/zero-browser-linux-x86_64/*
-            artifacts/zero-browser-linux-deb/*
+            artifacts/zero-browser-linux-aarch64/*
+            artifacts/zero-browser-linux-amd64-deb/*
+            artifacts/zero-browser-linux-arm64-deb/*
+            artifacts/zero-browser-macos-x86_64/*
             artifacts/zero-browser-macos-aarch64/*
-            artifacts/zero-browser-macos-app/**
+            artifacts/zero-browser-macos-x86_64-app/**
+            artifacts/zero-browser-macos-aarch64-app/**
             artifacts/zero-browser-windows-x86_64/*
