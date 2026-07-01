@@ -1248,6 +1248,26 @@ Medium/Thin/Thick 关键字不进 Length 分支，字节同（零回归）。
 
 **▶ 下会话**：① **font-metric Phase A 是最深最高 lever**（welcome 16% + morning 17% + bidi 2.18% + 多 text 案同源 fontdue 度量）——下轮可 START 最窄 slice：fontdue advance_width 接入 IFC（替换 estimate_char_width 启发式），A/B product-smoke + css-text 看行宽/换行一致性提升（R224 曾试 DejaVu 表退步，须用真实 FontLoader advance 非 hardcoded 表）；② subpixel round 策略审计（risky，全局影响）；③ 勿再扫 near-pass 找单点 dead-value（四轮证穷尽）。**R911 证 table-relative CB 正确 + bidi self-source 自洽，clean lever vein 彻底关闭**。
 
+### R912 font-metric Phase A 方向纠正（advance-width 已 R225/R375b 证伪·welcome = font-engine 墙·零源码）
+
+承 R911「下轮 font-metric Phase A advance_width 接入」。**读 `advance-width-plumbing-design.md` 发现上轮 CONTINUE 提议的 lever 已被证伪**——纠正方向：
+
+**① advance-width plumbing = R225 双实验证伪（2026-06-17，已记忆）**：`advance-width-plumbing-design.md` 顶部「R225 证伪结论」+ memory `advance-width disproven R225` 明载：
+- reftest-oracle 26 共享 case：DejaVu advance 表替换后 strict true-pass 11 vs 11、median 1.06% vs 1.07%、0 case 改善/恶化。
+- product-smoke：welcome 28.34→28.31%（Δ-0.03%）、wintertc 25.11→25.14%（Δ+0.03%）零实质变化。
+- 机制：paint glyph x 定位走真实 fontdue shaping（非 estimate），estimate 仅影响 layout 换行决策。
+- **R375b 进一步证伪 fontdue-real-advance**：临时加 fontdue dep 测 `metrics.advance_width` → welcome **16.41→19.08%（regress -2.67pp）**。即 fontdue 的 NotoSansCJK advance ≠ chromium，用 fontdue 真 advance 反而更发散。
+- **结论：advance-width（estimate / DejaVu 表 / fontdue-real 三 variant）全证伪，勿再投入**。上轮 CONTINUE 提议无效。
+
+**② welcome 16.11% 发散诊断 = per-line 同源 font-engine 差异**：product-smoke diff 像素 77305，per-row diff band 分析显示**发散逐行遍布全页**（y=68-80/110-148/155-166/177-191/265-278/305-325/429-441/517-541/550-570/593-600 等 ~25 band，每 ~30-50px 一条 = 每条文本行），非单一组件坏。逐排除：advance-width（R225 证伪）、font-matching（R631 强制 NotoSansCJK 零变化）、rasterization（R388 fontdue≈chromium per-glyph）、line-height 显式值（welcome 用 1.08/1.5/1.45/1.25 显式，R632 已 fix override）。**残余 = fontdue vs chromium 字体度量/定位系统性差异**（fontdue 对 NotoSansCJK 的 metric 提取 ≠ chromium，R375b advance 已证一致；line-metric/ascent 同源推测亦 ≠）。
+
+**③ line-metric（FontMetricProvider）= font-metric 谱系唯一未证伪子项，但 yield 存疑**：`FontMetricProvider::line_metrics`（font_metrics.rs:60，FontLoader impl 返 ascent/descent/line_gap）**已实现但 dormant**——engine 不注入（IFC `font_metric_provider` 生产恒 None，仅 builder/test 设），`apply_vertical_alignment` 用 `font_size*0.8` 启发式（mod.rs:1634）、`resolve_font_metrics` Normal 用 1.2（text_metrics.rs:196）。Phase A step-2（注入 + consume）未做。**但 R375b advance regress 暗示 fontdue NotoSansCJK metric 整体 ≠ chromium**，line-metric 接入大概率同 regress（须实测确认，但预期负）。注入点散（text.rs:888/947 paint IFC + layout IFC，须 thread FontLoader），invasive。
+
+**裁决（plateau 根因定位）**：rendering-compat 残余发散（welcome 16% / oracle ~64% mismatch）**大头是 font-engine 系统性差异**（fontdue 对各字体的 metric 提取 + 定位 ≠ chromium），**非 CSS layout bug**。R901-R907（multicol em/value +7）后，CSS layout 层 clean lever 穷尽（R908-R911 四轮证），font-metric Phase A（advance 已证伪 / line-metric 大概率同源 regress）亦非可行 lever。**DC-2~5 95% 目标受 font-engine 墙阻塞**，须 font-engine 投资（匹配 chromium metric 提取 / 换字体后端）方能突破，非 CSS 层单/多 session 可解。
+
+**▶ 下会话**：① **line-metric 实测 de-risk**（唯一未证伪 font-metric 子项）：最小注入 FontMetricProvider 到一处 IFC + consume 替换 0.8 启发式，A/B welcome——若改善则 fontdue line-metric 匹配 chromium（解锁 lever），若 regress 则确证 font-engine 墙；② **pivot 到结构性 lever**（非 font）：vertical-rl clearance（R114/R164 近 miss，x 轴实现）、嵌套 multicol breaking、table 匿名 fixup；③ **font-engine 投资**（匹配 chromium metric 提取或换后端）= major 多 session，须方向决策。**R912 纠正 advance-width 方向（已证伪），font-metric Phase A 整体近 dead-end，残余 = font-engine 墙 + 结构性**。
+
+
 
 
 
