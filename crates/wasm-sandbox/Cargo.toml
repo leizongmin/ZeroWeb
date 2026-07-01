@@ -20,7 +20,7 @@ features = ["runtime", "cranelift", "std"]
 optional = true
 
 [dependencies.wasmi]
-version = "1.1"
+version = "0.40"
 optional = true
 
 [dev-dependencies]
