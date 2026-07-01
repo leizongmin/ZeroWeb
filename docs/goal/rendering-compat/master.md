@@ -1182,6 +1182,25 @@ Medium/Thin/Thick 关键字不进 Length 分支，字节同（零回归）。
 
 **R907 后续 em-resolution 谱系审计（已完成·无新 lever）**：grep 全 `Length(LengthValue)` 枚举（types.rs 6 处）逐项核实——LineHeight（computed.rs:201 特殊 resolve）/ FlexBasis（test line 615 证 resolve）/ ColumnWidth（R904 multicol length_to_px resolve）/ ColumnRuleWidth（R907 修）/ PropertyValue（registry 初始值非 stored field）均已 resolve 或 N/A；**TabSize 唯一未审计**→核实 paint `text.rs:813` 已 `Length(Em(v)) => v*font_size` 正确 resolve（reftest 用 number/px 非故非 lever）；**outline_width 是裸 LengthValue**（computed_style.rs:94，在 resolve 列表，已 resolve）。**结论：column-rule-width 是 em-resolution 谱系唯一 dead-value，已修，谱系穷尽**。R907 后 multicol near-pass 残余（column-rule-002 1.69%/equal-gap-and-rule 1.41% 用 **px** rule-width 非 em；shorthand-2/rule-003 em 已修但残余是**内容分布**）= 分布 plateau 非 em lever。下会话勿重扫 em-resolution 谱系（已穷尽）。
 
+### R908 clean-lever 穷尽确认 + 跨 dir near-pass 扫描（bidi/tables/writing-modes 全结构性·零 yield·零源码）
+
+承 R907「pivot 其他 dir near-pass 用 R907 方法论（读 paint/convert 代码找 `_ => <const>` fallback 或 dead-value）」。**全 dir near-pass（1-2.2%）扫描 + 两个 lever A/B 实测后，确认 clean-lever（单 session dead-value / em-resolution）vein 已穷尽**：
+
+**① R908 bidi paragraph level = ZERO YIELD（回退）**：css-writing-modes `bidi-*` 簇（~30 案 2.05-2.19%）疑似 dead-value。定位 `text_metrics.rs:264` `bidi_reorder` 硬编码 `ParagraphInfo { level: Level::ltr() }` 而非用 `bidi_info.paragraphs[0]`（BidiInfo::new 已自动检测真实 base direction）。修为用真实 paragraph。
+- **A/B（css-writing-modes）**：oracle **53→53（6.8%）字节同 zero yield**。机制：`reorder_line` 由 `BidiInfo::new` 预计算的 `levels` 驱动（内部已用正确 paragraph detection），传入的 `para.level` 对输出无影响（cosmetic）。回退。
+- **真 bidi lever = CSS `unicode-bidi` 值（embed/isolate/override/plaintext）完全 dead**：parse+store（apply_advanced.rs:662）但 BiDi 算法从不消费（text_metrics 用 `BidiInfo::new(text, None)` 仅按文本字符固有 bidi，CSS unicode-bidi 值不作为 embedding/override 码注入）→ isolate/embed/override 渲染零效果。**这是 ~30 案 bidi 簇的真根因，但修复须实现 UBA9 embedding/isolation levels（多 session M5 硬核，非单点 consume）**。
+
+**② css-writing-modes near-pass 全结构性**：clip-rect-vrl-010/012/014/016（4 案 2.20%，clip paint mod.rs:990 用标准 CSS2.1 物理坐标 spec-correct，divergence = vertical-rl abspos 定位非 clip）；margin-collapse-vlr/vrl（vertical margin-collapse，结构性）；bidi-*（见 ① UBA9 dead）。
+
+**③ css-tables near-pass 全精度/结构性**：subpixel-collapsed-borders-001/002/003（3 案 ~1.08-1.19%，5px green vs 4.95px red 冲突解决 = subpixel 渲染精度墙非逻辑 bug）；row/row-group-margin-border-padding（CSS tables §17.5.3 row margin 不生效，结构性）；fixup-dynamic-anonymous-inline-table（匿名 table fixup，结构性）。
+
+**④ `_ => <const>` fallback 全仓审计（R907 模式外推）**：grep paint/converter 的 `_ => 数字` fallback——剩余均为防御性 font_size 回退（text.rs:338/359/mod.rs:470/640 `_ => 16.0`，font_size 已 compute-to-Px 故 `_` 罕触发）或 debug indicator（effects_indicators.rs:1013 `_ => 4.0`），**无新 R907 式 dead-value**。
+
+**裁决（vein 穷尽）**：R901-R907 七轮（multicol +7）后，本轮系统确认 clean-lever vein 穷尽——em-resolution 谱系（R907 唯一）、`_ => const` consumer-fallback 谱系（无新）、跨 dir near-pass（writing-modes/tables 全结构性/subpixel）。**残余 near-pass 全属三类多 session 硬核**：(a) **bidi UBA9 CSS-values dead-value**（~30 案，最大单一已识别 lever，须 embedding/isolation 实现）；(b) **font-metric 精度墙**（subpixel borders / 行盒度量 Phase A）；(c) **结构性**（vertical-rl 定位 / table 匿名 fixup / margin-collapse-vertical）。下会话 lever 选择须在三者中取一做**多 session 推进**，勿再期望单 session clean dead-value。
+
+**▶ 下会话**：① **bidi UBA9 CSS-values 是最大已识别 lever**（~30 案 2.05-2.19%）——下会话可 START：先 `unicode-bidi: plaintext`（段落 base direction 从内容判定，最窄 slice，改 `BidiInfo::new(text, Some(level))` 按 `direction`/`plaintext` 注入）de-risk + 找 yielding 子集；② font-metric Phase A 行盒度量（welcome/morning 17% 真因，多 session）；③ 接受 plateau 转其他方向。**R908 已证 bidi paragraph-level 单点零 yield，真 lever 是 CSS-values 注入（多 session）**。
+
+
 
 
 ### 已 ruled out（勿以单会话重试）
