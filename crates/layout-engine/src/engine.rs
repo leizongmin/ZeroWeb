@@ -1808,14 +1808,21 @@ fn exclude_floats_from_non_bfc_auto_height(box_node: &mut LayoutBox, styles: &Ha
 /// 返回本 box 的高度增长量（供父盒累加）。
 fn backfill_r109_anon_block_heights(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
     use zero_css_parser::values::{FloatValue, LengthValue};
-    // 后序：先修子盒，父盒读到已修正的子高度/位置。
-    let mut descendant_growth: f32 = 0.0;
+    // 后序 + 兄弟位移：先递归子盒，当一个 in-flow 子盒增长（高度回填），其后续 in-flow 兄弟
+    // 必须下移同样像素（post-taffy 改高度不会自动重定位兄弟，R940 实证 container#2 仍位于
+    // 旧 y 致重叠）。child.y 相对父内容盒；descendant.y 相对 child，故只移 child.y 即移整子树。
+    let mut cumulative_shift: f32 = 0.0;
     for child in &mut box_node.children {
+        // 应用累计位移（来自先前增长的兄弟）——仅 in-flow 非 float 非 abspos 子盒。
+        if cumulative_shift > 0.0 && !child.is_absolute && !child.is_fixed && matches!(child.float, FloatValue::None) {
+            child.y += cumulative_shift;
+        }
         let g = backfill_r109_anon_block_heights(child, styles);
         if g > 0.0 && !child.is_absolute && !child.is_fixed {
-            descendant_growth += g;
+            cumulative_shift += g;
         }
     }
+    let descendant_growth = cumulative_shift;
     let auto_h = box_node
         .node_id
         .and_then(|id| styles.get(&id))
@@ -1834,10 +1841,8 @@ fn backfill_r109_anon_block_heights(box_node: &mut LayoutBox, styles: &HashMap<N
         }
     }
     // ② auto-height 容器，含匿名块子或后代增长 → 重算 content_height = max in-flow 非 float
-    //   子盒 border-box 底（仅增大）。delta 法（R939 首版）只能补「anon 自身增高」，补不了
-    //   「容器未把已正确的 anon 高度计入」（R940 box-tree dump 实证：container#1 h=20 但 anon
-    //   h=40 已正确——taffy 未把 anon 计入容器测高）。max-bottom（CSS §10.6.3）覆盖两种。
-    //   仅增大守卫避负 margin/margin 折叠误收缩（同 R699 exclude_floats 安全策略）。
+    //   子盒 border-box 底（仅增大）。max-bottom（CSS §10.6.3）覆盖「anon 自身欠计」+「容器未
+    //   把已正确 anon 计入」两种。仅增大守卫避负 margin/margin 折叠误收缩（同 R699 策略）。
     let has_anon_child = box_node.children.iter().any(|c| c.fragment_node_ids.is_some());
     if auto_h && (has_anon_child || descendant_growth > 0.0) {
         let max_bottom = box_node
