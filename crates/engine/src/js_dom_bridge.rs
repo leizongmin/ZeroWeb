@@ -423,6 +423,25 @@ pub fn query_all_selector_list(html: &str, selector: &str) -> String {
     find_all_selectors(&doc, selector).join("|")
 }
 
+/// 收集文档中所有元素的 `id` 属性值（去重、保序，首次出现优先——与
+/// `getElementById` 取首个匹配语义一致）。供 `__zw_collect_ids` 回调实现
+/// HTML 规范「Window 上的命名属性访问」（`<div id="x">` → 全局 `x`）。
+pub fn collect_element_ids(html: &str) -> String {
+    let doc = parse_html(html);
+    let root = doc.root();
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for node in doc.query_selector_all(root, "[id]") {
+        if let Some(val) = doc.get_attribute(node, "id") {
+            let v = val.trim();
+            if !v.is_empty() && seen.insert(v.to_string()) {
+                out.push(v.to_string());
+            }
+        }
+    }
+    out.join("|")
+}
+
 /// 从当前 HTML 快照查询属性（供 `__zw_get_attr` 回调只读使用）。
 pub fn query_attr_from_html(html: &str, selector: &str, name: &str) -> String {
     let doc = parse_html(html);
@@ -576,6 +595,15 @@ pub fn register_dom_callbacks(
         let sel = args.first().map(String::from).unwrap_or_default();
         let snap = html.lock().unwrap_or_else(|e| e.into_inner());
         query_all_selector_list(&snap, &sel)
+    });
+
+    // HTML 规范「Window 上的命名属性访问」：所有带 id 的元素作为全局变量可访问
+    // （`<div id="container">` → JS 裸标识符 `container`）。shim 据此在脚本执行前
+    // 安装 `globalThis[id] = getElementById(id)`（仅合法标识符、不覆盖已存在全局）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback("__zw_collect_ids", move |_args| {
+        let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+        collect_element_ids(&snap)
     });
 
     let html = Arc::clone(dom_html);
@@ -915,6 +943,25 @@ mod tests {
     }
 
     #[test]
+    fn test_collect_element_ids_dedup_preserve_order() {
+        let html = "<html><body>\
+                    <div id=\"container\"></div>\
+                    <span id=\"target\"></span>\
+                    <p id=\"container\"></p>\
+                    <b></div>\
+                    </body></html>";
+        let ids = collect_element_ids(html);
+        // 去重（首个 container 保留），保序，跳过无 id 元素。
+        assert_eq!(ids, "container|target");
+    }
+
+    #[test]
+    fn test_collect_element_ids_empty() {
+        let html = "<html><body><div></div><p class=\"x\"></p></body></html>";
+        assert_eq!(collect_element_ids(html), "");
+    }
+
+    #[test]
     fn test_apply_inner_html() {
         let html = "<html><body><div id=\"d\">old</div></body></html>";
         let mutations = vec![DomMutation::SetInnerHtml {
@@ -955,6 +1002,9 @@ mod tests {
         // `getBoundingClientRect()` 方法必须返回零 DOMRect，否则调用抛 TypeError
         // 中断脚本，使其后的 mutation 丢失（120 reftest 文件用作 reflow 触发器）。
         assert!(shim.contains("if (prop === 'getBoundingClientRect')"));
+        // HTML 规范 named access on window（`id="x"` → 全局 `x`，257 reftest 文件）。
+        assert!(shim.contains("_installNamedAccess"));
+        assert!(shim.contains("__zw_collect_ids"));
     }
 
     #[test]
