@@ -1200,6 +1200,42 @@ Medium/Thin/Thick 关键字不进 Length 分支，字节同（零回归）。
 
 **▶ 下会话**：① **bidi UBA9 CSS-values 是最大已识别 lever**（~30 案 2.05-2.19%）——下会话可 START：先 `unicode-bidi: plaintext`（段落 base direction 从内容判定，最窄 slice，改 `BidiInfo::new(text, Some(level))` 按 `direction`/`plaintext` 注入）de-risk + 找 yielding 子集；② font-metric Phase A 行盒度量（welcome/morning 17% 真因，多 session）；③ 接受 plateau 转其他方向。**R908 已证 bidi paragraph-level 单点零 yield，真 lever 是 CSS-values 注入（多 session）**。
 
+### R909 webfont 基础设施 = 多簇隐藏阻塞（bidi/text-transform/shaping）·调查零源码
+
+承 R908「下会话 START bidi UBA9」。深挖 bidi 簇（bidi-isolate-005 等）发现**真根因被 webfont 基础设施阻塞，非 bidi 逻辑单点**：
+
+**① webfont 文件本地缺失 + oracle 亦回退**：bidi 簇用 `@font-face ezra_silregular src=/fonts/sileot-webfont.woff`（Hebrew），text-transform 簇用 `DoulosSIL-R.woff`，css-text shaping 用 `Scheherazade-Regular.woff`/`mplus-1p-regular.woff`。**本地 `wpt-data/fonts/` 仅有 Ahem/GentiumPlus-R/Lato/Revalia/AD**，sileot/DoulosSIL/Scheherazade/mplus 全缺。关键：`chromium-oracle-shot.mjs:35` `DATA_ROOT=wpt-data`（oracle 抓取 HTTP server 根 = 本地 wpt-data）→ chromium 抓 oracle 时这些字体也 404 → **chromium oracle 与 ZeroWeb 均回退**到各自默认字体（chromium serif/sans vs ZeroWeb default），回退字体不同 = 簇发散主因（非 bidi 逻辑）。
+
+**② oracle 路径 vs 浏览器路径 font loading 分离**：
+- **oracle reftest 路径**（`reftest.rs:1051 load_font_faces_into`）：**工作正常**——`extract_font_faces` → `resolve_font_src`(base_dir) → `std::fs::read` → `loader.load_font` + `register_family_alias`。本地存在的字体（GentiumPlus/AD 等 87+36 案引用）正确加载。
+- **浏览器导航路径**（`async_load.rs:364 poll_fonts`）：**fetched bytes 丢弃**（line 368 仅 `tracing::info!` 不 decode/register）→ 浏览器 @font-face 全回退。但此路径**不被 oracle / product-smoke 用**（welcome 无 @font-face），修它零可测 metric（须 bytes→FontLoader decode+register plumbing，speculative，按 code-guidelines 不做）。
+
+**③ 上游可用性分级**：上游 WPT root `fonts/` 核实——**sileot/Scheherazade/mplus/NotoSansGeorgian 上游有**（可 fetch + 补本地）；**DoulosSIL-R.woff 上游无**（text-transform 簇永久回退，不可 fetch，须替换或接受）。
+
+**④ bidi 逻辑层独立缺口（叠加 webfont）**：CSS `unicode-bidi: embed/isolate/override/plaintext` 值 parse+store（apply_advanced.rs:662）但 BiDi 从不消费（`text_metrics.rs:258 BidiInfo::new(text, None)` 仅按文本字符固有 bidi，CSS 值不注入）= R513 §9.7 dead-value。**故 bidi 簇 = webfont 回退 + bidi 逻辑双阻塞**：须先修 webfont 基础设施（fetch + recapture）才能 clean-measure bidi 逻辑 yield。
+
+**裁决（vein 重定向）**：bidi/text-transform/shaping 三簇发散主因 = **webfont 基础设施**（本地字体缺 + oracle 同回退），非逻辑单点。**webfont 杠杆须协调一次性交付**：(a) fetch 上游可用字体（sileot/Scheherazade/mplus/NotoSansGeorgian）补 wpt-data/fonts；(b) **re-capture 受影响 oracle**（chromium 现加载真字体）；(c) 验 ZeroWeb `load_font_faces_into` 加载同字体 → 对齐。**注意**：仅 fetch 不 recapture = ZeroWeb 真字体 vs oracle 回退 → 发散更大（中间态 net 负），必须同 commit。bidi 簇还须额外修 unicode-bidi CSS-values 注入。DoulosSIL 簇不可修（上游无）。**webfont 基础设施是多 session 工程**（fetch N 字体 + 全量/分 dir recapture + baseline 重稳 + 逐簇逻辑修），非单 session。
+
+**▶ 下会话**：① **webfont 基础设施 START**（最高 blast radius——解锁 bidi/shaping/css-fonts 多簇）：先 fetch 1 个上游字体（sileot-webfont.woff via ~/use-proxy 代理）→ targeted re-capture bidi 簇 oracle（capture-oracle-per-dir.mjs --category）→ A/B 看 ZeroWeb(load_font_faces_into) vs 新 oracle，de-risk 「fetch+recapture 是否真消除 webfont 发散」；② 若 webfont 解锁后 bidi 仍发散 → 确证 bidi 逻辑（unicode-bidi 注入）为残余 lever，再 START UBA9；③ font-metric Phase A。**R909 证 bidi/text-transform 簇非纯逻辑阻塞，勿再单 session 修 bidi 逻辑期望 yield（webfont 阻塞）**。
+
+### R910 webfont 杠杆 A/B 证伪（bidi 簇非 font-blocked·sileot+recapture 发散不变·零源码·baseline 已还原）
+
+承 R909「webfont 基础设施 START de-risk」。**执行 A/B 实验**：① fetch `sileot-webfont.woff`（上游 WPT root fonts/ 有，59KB WOFF valid）入 `wpt-data/fonts/`；② re-capture 4 个 bidi 测试 oracle（bidi-normal/unset/isolate/embed-005，puppeteer-core + /usr/bin/chromium，chromium 现加载真 sileot Hebrew 字体）；③ ZeroWeb 经 `load_font_faces_into`（reftest.rs:1051）亦加载 sileot；④ 跑 oracle 对比。
+
+**A/B 结果（webfont 杠杆证伪）**：
+- **bidi-normal-005**：2.05% → **2.18%（未降，略升）**。
+- **bidi-unset/isolate/embed-005**：~2.18-2.19%（与 baseline 持平）。
+- **css-writing-modes oracle 整体 53（6.8%）不变**。
+- **裁决**：sileot 真字体（两侧均加载）后发散**不变** → **webfont 非 bidi 簇发散组分**。bidi ~2.18% 真因 = **bidi 算法/布局**（ZeroWeb 逐 run `bidi_reorder` vs chromium 全段落 UBA9；unicode-bidi CSS-values dead-value 见 R908；或 fontdue sileot 字形 advance/行盒度量 vs chromium freetype）。字形非主因（若一侧真字体一侧回退，发散应远大于 2%；现 2% 且两侧同 → 发散在排列/度量非字形）。
+
+**baseline 还原**：删 `wpt-data/fonts/sileot-webfont.woff` + re-capture 4 测试 oracle（无 sileot，回退，匹配原始 baseline）。工作树净零（仅 master.md），oracle-shots gitignored，oracle 53 复原。
+
+**意义（重定向）**：R909「webfont 是 bidi/text-transform 簇隐藏阻塞」假设**被 R910 A/B 推翻**（至少 bidi 簇）。bidi 簇发散是**算法/度量**，非字体文件。webfont 基础设施（fetch+recapture）对 bidi **零收益**。text-transform 簇（DoulosSIL 上游无）仍不可 fetch；shaping 簇未测但同理可能非 font-blocked。**webfont 杠杆降级**——非高 blast radius 解锁器，bidi 真 lever 是 UBA9 算法实现（R908 既述 unicode-bidi CSS-values 注入 + 段落级 bidi 而非逐 run）。
+
+**▶ 下会话**：① bidi 算法层（真 lever）：实现 CSS `unicode-bidi` 值注入（embed/isolate/override 经 LRE/RLE/LRI/RLI/FSI+PDF/PDI 控制符）+ 段落级 bidi（跨 run 而非逐 run `bidi_reorder`），A/B css-writing-modes bidi 簇；② font-metric Phase A（bidi 残余若含度量差）；③ 勿再投 webfont 基础设施对 bidi（R910 证零收益）。**R910 证 bidi 簇 font-unblocked，真 lever 是算法**。
+
+
+
 
 
 
