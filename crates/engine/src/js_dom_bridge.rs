@@ -5,8 +5,11 @@
 //! [`apply_dom_mutations`] 并序列化回 HTML。
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use zero_dom::{Document, NodeId, NodeKind, parse_html};
+use zero_script_sandbox::V8Sandbox;
 
 /// 一条 DOM 变更记录（由 JS shim 经 `__zw_*` 回调产生）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +78,24 @@ pub enum DomMutation {
         parent_handle: String,
         /// 子节点句柄。
         child_handle: String,
+    },
+    /// `parent.insertBefore(child, ref)` — 父节点为选择器，参考节点为选择器。
+    InsertBefore {
+        /// 父节点选择器。
+        parent_selector: String,
+        /// 子节点句柄。
+        child_handle: String,
+        /// 参考节点选择器（新节点插入到它之前）。
+        ref_selector: String,
+    },
+    /// `parentHandle.insertBefore(child, ref)` — 父节点为 create 句柄。
+    InsertBeforeByHandle {
+        /// 父节点句柄。
+        parent_handle: String,
+        /// 子节点句柄。
+        child_handle: String,
+        /// 参考节点选择器。
+        ref_selector: String,
     },
     /// 对 create 句柄设置属性（append 前 `el.id = ...` 等）。
     SetAttrOnHandle {
@@ -221,6 +242,38 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                     .copied()
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
                 doc.append_child(parent, child).map_err(|e| e.to_string())?;
+            }
+            DomMutation::InsertBefore {
+                parent_selector,
+                child_handle,
+                ref_selector,
+            } => {
+                let parent = find_by_selector(doc, parent_selector)
+                    .ok_or_else(|| format!("insert_before: no parent match for {parent_selector}"))?;
+                let child = handles
+                    .get(child_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                let ref_node = find_by_selector(doc, ref_selector)
+                    .ok_or_else(|| format!("insert_before: no ref match for {ref_selector}"))?;
+                doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
+            }
+            DomMutation::InsertBeforeByHandle {
+                parent_handle,
+                child_handle,
+                ref_selector,
+            } => {
+                let parent = handles
+                    .get(parent_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
+                let child = handles
+                    .get(child_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                let ref_node = find_by_selector(doc, ref_selector)
+                    .ok_or_else(|| format!("insert_before: no ref match for {ref_selector}"))?;
+                doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
             }
             DomMutation::SetAttrOnHandle { handle, name, value } => {
                 let node = handles
@@ -484,6 +537,298 @@ pub fn query_text_from_mutations(mutations: &[DomMutation], handle: &str) -> Str
         }
     }
     String::new()
+}
+
+/// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
+///
+/// 将 [`generate_js_dom_shim`] 产生的 JS shim 与宿主侧 [`DomMutation`] 收集器连接：
+/// JS 侧 `document.querySelector`/`setAttribute`/`createElement` 等操作经
+/// `__zw_*` 扁平回调翻译为 `DomMutation`，推入共享 `mutations` 向量；查询类回调
+/// （`__zw_get_attr`/`__zw_get_text`/`__zw_query_*`）则从 `dom_html` 快照读取。
+///
+/// `dom_html` / `page_url` 用 `Arc<Mutex<String>>` 共享，使宿主能在脚本执行前
+/// 经 [`V8Sandbox::execute`] 切换快照（与 browser/renderer/reftest 三处共用一致语义）。
+///
+/// 该函数从 renderer/browser 两个 JS worker 中抽取为共享实现，避免第三份拷贝
+/// （reftest harness 也复用，见 `tests/wpt-runner`）。
+pub fn register_dom_callbacks(
+    sandbox: &mut V8Sandbox,
+    mutations: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    dom_html: &Arc<std::sync::Mutex<String>>,
+    page_url: &Arc<std::sync::Mutex<String>>,
+) {
+    let counter = Arc::new(AtomicU64::new(0));
+
+    let url = Arc::clone(page_url);
+    sandbox.register_callback("__zw_get_page_url", move |_args| {
+        url.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    });
+
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback("__zw_query_match", move |args| {
+        let sel = args.first().map(String::from).unwrap_or_default();
+        let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+        query_match_selector(&snap, &sel)
+    });
+
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback("__zw_query_all", move |args| {
+        let sel = args.first().map(String::from).unwrap_or_default();
+        let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+        query_all_selector_list(&snap, &sel)
+    });
+
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback("__zw_get_attr", move |args| {
+        if args.len() < 2 {
+            return String::new();
+        }
+        let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+        query_attr_from_html(&snap, &args[0], &args[1])
+    });
+
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback("__zw_get_text", move |args| {
+        let sel = args.first().map(String::from).unwrap_or_default();
+        let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+        query_text_from_html(&snap, &sel)
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_get_attr_handle", move |args| {
+        if args.len() < 2 {
+            return String::new();
+        }
+        let list = m.lock().unwrap_or_else(|e| e.into_inner());
+        query_attr_from_mutations(&list, &args[0], &args[1])
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_get_text_handle", move |args| {
+        let handle = args.first().map(String::from).unwrap_or_default();
+        let list = m.lock().unwrap_or_else(|e| e.into_inner());
+        query_text_from_mutations(&list, &handle)
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_set_attr", move |args| {
+        if args.len() >= 3 {
+            m.lock().unwrap_or_else(|e| e.into_inner()).push(DomMutation::SetAttr {
+                selector: args[0].clone(),
+                name: args[1].clone(),
+                value: args[2].clone(),
+            });
+        }
+        "ok".into()
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_set_style", move |args| {
+        if args.len() >= 3 {
+            m.lock().unwrap_or_else(|e| e.into_inner()).push(DomMutation::SetStyle {
+                selector: args[0].clone(),
+                property: args[1].clone(),
+                value: args[2].clone(),
+            });
+        }
+        "ok".into()
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_set_text", move |args| {
+        if args.len() >= 2 {
+            m.lock().unwrap_or_else(|e| e.into_inner()).push(DomMutation::SetText {
+                selector: args[0].clone(),
+                text: args[1].clone(),
+            });
+        }
+        "ok".into()
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_remove", move |args| {
+        if let Some(sel) = args.first() {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::Remove { selector: sel.clone() });
+        }
+        "ok".into()
+    });
+
+    let m = Arc::clone(mutations);
+    let c = Arc::clone(&counter);
+    sandbox.register_callback("__zw_create_element", move |args| {
+        let tag = args.first().map(String::from).unwrap_or_else(|| "div".into());
+        let n = c.fetch_add(1, Ordering::Relaxed);
+        let handle = format!("__n{n}");
+        m.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(DomMutation::CreateElement {
+                handle: handle.clone(),
+                tag,
+            });
+        handle
+    });
+
+    let m = Arc::clone(mutations);
+    let c = Arc::clone(&counter);
+    sandbox.register_callback("__zw_create_text", move |args| {
+        let text = args.first().map(String::from).unwrap_or_default();
+        let n = c.fetch_add(1, Ordering::Relaxed);
+        let handle = format!("__n{n}");
+        m.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(DomMutation::CreateTextNode {
+                handle: handle.clone(),
+                text,
+            });
+        handle
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_append_child", move |args| {
+        if args.len() >= 2 {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::AppendChild {
+                    parent_selector: args[0].clone(),
+                    child_handle: args[1].clone(),
+                });
+        }
+        "ok".into()
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_append_child_handle", move |args| {
+        if args.len() >= 2 {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::AppendChildByHandle {
+                    parent_handle: args[0].clone(),
+                    child_handle: args[1].clone(),
+                });
+        }
+        "ok".into()
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_insert_before", move |args| {
+        if args.len() >= 3 {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::InsertBefore {
+                    parent_selector: args[0].clone(),
+                    child_handle: args[1].clone(),
+                    ref_selector: args[2].clone(),
+                });
+        }
+        "ok".into()
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_insert_before_handle", move |args| {
+        if args.len() >= 3 {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::InsertBeforeByHandle {
+                    parent_handle: args[0].clone(),
+                    child_handle: args[1].clone(),
+                    ref_selector: args[2].clone(),
+                });
+        }
+        "ok".into()
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_set_attr_handle", move |args| {
+        if args.len() >= 3 {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::SetAttrOnHandle {
+                    handle: args[0].clone(),
+                    name: args[1].clone(),
+                    value: args[2].clone(),
+                });
+        }
+        "ok".into()
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_set_style_handle", move |args| {
+        if args.len() >= 3 {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::SetStyleOnHandle {
+                    handle: args[0].clone(),
+                    property: args[1].clone(),
+                    value: args[2].clone(),
+                });
+        }
+        "ok".into()
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_set_text_handle", move |args| {
+        if args.len() >= 2 {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::SetTextOnHandle {
+                    handle: args[0].clone(),
+                    text: args[1].clone(),
+                });
+        }
+        "ok".into()
+    });
+
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback("__zw_get_inner_html", move |args| {
+        let sel = args.first().map(String::from).unwrap_or_default();
+        let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+        query_inner_html_from_html(&snap, &sel)
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_set_inner_html", move |args| {
+        if args.len() >= 2 {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::SetInnerHtml {
+                    selector: args[0].clone(),
+                    html: args[1].clone(),
+                });
+        }
+        "ok".into()
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_get_inner_html_handle", move |args| {
+        let handle = args.first().map(String::from).unwrap_or_default();
+        let list = m.lock().unwrap_or_else(|e| e.into_inner());
+        query_inner_html_from_mutations(&list, &handle)
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_set_inner_html_handle", move |args| {
+        if args.len() >= 2 {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::SetInnerHtmlOnHandle {
+                    handle: args[0].clone(),
+                    html: args[1].clone(),
+                });
+        }
+        "ok".into()
+    });
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback("__zw_remove_handle", move |args| {
+        if let Some(handle) = args.first() {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::RemoveHandle { handle: handle.clone() });
+        }
+        "ok".into()
+    });
 }
 
 /// 注入到 V8 的 DOM shim（与 `__zw_*` 回调配套）。

@@ -355,6 +355,7 @@
     return new Proxy({}, {
       get: function(_t, prop) {
         if (prop === '__zwHandle') return handle;
+        if (prop === '__zwSelector') return sel;
         if (prop === 'style') {
           return new Proxy({}, {
             set: function(_s, p, v) {
@@ -473,6 +474,22 @@
               __zw_remove_handle(child.__zwHandle);
             }
             return child;
+          };
+        }
+        if (prop === 'insertBefore') {
+          return function(newNode, refNode) {
+            if (newNode && newNode.__zwHandle) {
+              // `insertBefore(node, null)` 等价于 appendChild。
+              if (refNode == null) {
+                if (handle) __zw_append_child_handle(handle, newNode.__zwHandle);
+                else __zw_append_child(sel, newNode.__zwHandle);
+              } else if (refNode.__zwSelector) {
+                if (handle) __zw_insert_before_handle(handle, newNode.__zwHandle, refNode.__zwSelector);
+                else __zw_insert_before(sel, newNode.__zwHandle, refNode.__zwSelector);
+              }
+              // refNode 为 create 句柄（无 selector）时不支持（罕见）。
+            }
+            return newNode;
           };
         }
         if (prop === 'remove') {

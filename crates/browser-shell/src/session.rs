@@ -319,7 +319,9 @@ mod tests {
         session.save(&path).expect("save should create parent dirs");
         assert!(path.exists());
 
-        let _ = std::fs::remove_dir_all(std::env::temp_dir().join(format!("zeroweb_test_session_deep-{}", std::process::id())));
+        let _ = std::fs::remove_dir_all(
+            std::env::temp_dir().join(format!("zeroweb_test_session_deep-{}", std::process::id())),
+        );
     }
 
     #[test]

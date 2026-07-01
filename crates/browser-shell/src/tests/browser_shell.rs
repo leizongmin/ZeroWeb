@@ -759,9 +759,11 @@ fn test_browser_shell_save_settings() {
 
     // save_settings 写到默认路径（~/.config/zeroweb/settings.json）
     // 这里仅验证方法不 panic，不实际验证文件（避免影响用户系统）
-    let _ = shell
-        .settings()
-        .save(&std::env::temp_dir().join(format!("zeroweb-shell-save-test-{}", std::process::id())).join("s.json"));
+    let _ = shell.settings().save(
+        &std::env::temp_dir()
+            .join(format!("zeroweb-shell-save-test-{}", std::process::id()))
+            .join("s.json"),
+    );
 }
 
 // ── 会话持久化集成测试 ──

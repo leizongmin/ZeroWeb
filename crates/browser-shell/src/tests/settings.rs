@@ -211,7 +211,10 @@ fn test_settings_load_invalid_json_returns_default() {
 
 #[test]
 fn test_settings_save_creates_parent_dirs() {
-    let dir = std::env::temp_dir().join(format!("zeroweb-test-nested-{}", std::process::id())).join("a").join("b");
+    let dir = std::env::temp_dir()
+        .join(format!("zeroweb-test-nested-{}", std::process::id()))
+        .join("a")
+        .join("b");
     let _ = std::fs::remove_dir_all(std::env::temp_dir().join(format!("zeroweb-test-nested-{}", std::process::id())));
     let path = dir.join("settings.json");
 
