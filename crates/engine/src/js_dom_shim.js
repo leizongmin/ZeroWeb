@@ -693,6 +693,24 @@
     get: function() { return globalThis.window; }
   });
 
+  // HTML 规范「Window 上的命名属性访问」：带 id 的元素应作为全局变量可访问
+  // （`<div id="container">…</div>` → JS `container.appendChild(...)`）。动态 reftest
+  // 普遍用裸标识符引用元素（257 个 reftest 文件），缺失则抛 ReferenceError 中断脚本。
+  // 仅安装合法标识符 id；不覆盖已存在全局（避免 shadow `document`/`window` 等真实 global）。
+  function _installNamedAccess() {
+    try {
+      var ids = __zw_collect_ids();
+      if (!ids) return;
+      ids.split('|').forEach(function(id) {
+        if (!id || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) return;
+        if (globalThis[id] !== undefined) return;
+        var el = globalThis.document.getElementById(id);
+        if (el) globalThis[id] = el;
+      });
+    } catch (_e) {}
+  }
+  _installNamedAccess();
+
   globalThis.__zw_dispatch_event = function(sel, type, detail) {
     var key = _elKey(sel, null);
     var el = _wrapSelector(sel);
