@@ -7,3 +7,4 @@ license.workspace = true
 
 [dependencies]
 zero-ui-core = { workspace = true }
+compact_str = { workspace = true }

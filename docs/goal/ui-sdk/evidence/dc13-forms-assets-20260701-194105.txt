@@ -1,0 +1,60 @@
+DC-13 13 域 flesh-out（第 9-10 域）：ui/forms + ui/assets
+==========================================================
+日期: 2026-07-01
+分支: ui-sdk
+SDK-only（未触碰 render-foundation / apps/browser，无 product-smoke 风险）
+
+## ui/forms（FormState + validators + submit lifecycle）
+从 92 行骨架升级（spec §8.4.1 `ui/forms` / §8.4.1B 设置页·偏好页 / §8.8 validation/dirty/
+touched/submit lifecycle 测）。
+
+- 新增校验器：`MinLength` / `MaxLength`（trim 后字符数）+ `All` 组合器（按序运行，首个失败返回）。
+  保留 `Required` / `Validator` trait / `ValidationError`（message id）。
+- `FieldState` 加 `touch()`。
+- 新增 **`FormState`**：聚合多命名字段 + 各自校验器（builder `.field(name, initial, validator)`）；
+  dirty/touched/is_valid 跟踪；`set`/`touch`/`validate(name)`/`validate_all`/`value`/`error`/
+  `is_dirty`/`is_touched`/`is_valid`；**submit 生命周期** `submit() -> SubmitResult`（先 validate_all，
+  全过返回 `Ok(各字段值)`，否则 `Err(失败字段错误)`）；`reset()`（清 dirty/touched/error，值保留）。
+- `SubmitResult { Ok(Vec<(name,value)>), Err(Vec<(name,err)>) }`。
+
+测试：7 测全绿（required+dirty / length 校验 / All 组合首个失败 / submit 合法 Ok /
+submit 非法 Err / 单字段校验+错误查 / reset 清状态保值；原 1 测）。
+Coverage（scoped）：forms/lib.rs **91.91%**。
+
+## ui/assets（IF-010 AssetVariant + manifest fallback）
+从 79 行骨架升级（spec IF-010 `AssetProvider` / §8.8 asset manifest variant resolution 测 /
+§8.4.1B toolbar 图标·favicon fallback·theme package）。
+
+- 新增 **`AssetVariant`**（theme × density）：`VariantTheme{Any,Light,Dark}` + density（1x/2x/3x）；
+  构造器 `any/light/dark/with_density/with_theme`，Default = any。
+- **`AssetProvider` trait 改为 IF-010 签名**：`load(id, variant) -> Result<AssetData, AssetError>`
+  （加 variant 参数；DSL asset_bridge 只用 AssetId，不受影响）。
+- `InMemoryAssets` 改为变体清单：`insert(id, variant, data)` 变体特定 + `insert_default(id, data)`
+  （= Any/1x）；实现 **fallback 解析**（§8.8 variant resolution）：精确 (theme,density) → 同密度 Any
+  主题 → 同主题 1x → Any 1x → NotFound。`candidate_variants` 去重产生回退序列。
+- 保留 AssetId / AssetData(Svg/Png) / AssetError(NotFound/LoadFailed)。
+
+测试：6 测全绿（默认条目任意变体命中 / 精确变体优先 fallback / 同密度 Any 回退 / 高密度回退 1x /
+variant 构造器 / candidate 去重；原 1 测）。
+Coverage（scoped）：assets/lib.rs **95.24%**。
+
+## 门禁
+  cargo build --workspace             — Finished（0 错误）
+  cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）
+  cargo fmt --all --check             — 净（0 diff）
+  scoped test-guard：zero-ui-forms 7 passed；zero-ui-assets 6 passed
+  DC-1 复核：ui/forms 仅依赖 core+compact_str；ui/assets 仅 core+compact_str+hashbrown+thiserror，
+    零浏览器业务 crate。DSL（asset_bridge 用 AssetId）仍编译。
+
+## DC 关联
+  DC-13（13 域接口）forms + assets 两域从骨架升级到接口可用；
+  §8.4.1B 设置页/偏好页（Form/FieldState + route + i18n）+ toolbar 图标/favicon fallback/variant 行覆盖；
+  §8.8 Form validation/dirty/touched/submit lifecycle + Asset manifest variant resolution 测覆盖；
+  DC-17 coverage 两域 per-file 91.91% / 95.24%（≥85%）。
+
+## DC-13 累计进度（10/13 域 flesh-out）
+  ✅ commands ✅ restoration ✅ navigation ✅ overlay ✅ collections ✅ platform
+  ✅ gestures ✅ animation ✅ forms ✅ assets
+  剩余 3 域仍 skeleton：testing / devtools / design-system
+  （testing/devtools 为 scene/semantics snapshot + inspector/layout bounds/perf 骨架；
+  design-system 为风格包骨架，DC-15 终局需首个 Zero default 风格包）。

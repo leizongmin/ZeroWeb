@@ -6111,6 +6111,7 @@ dependencies = [
 name = "zero-ui-forms"
 version = "0.1.0"
 dependencies = [
+ "compact_str",
  "zero-ui-core",
 ]
 
