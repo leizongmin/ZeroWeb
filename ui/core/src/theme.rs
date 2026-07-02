@@ -5,6 +5,7 @@
 //! `needs_paint`（spec FR-007 / DC-5 关键不变量）。
 
 use crate::invalidation::InvalidationFlags;
+use crate::layout::WindowMetrics;
 use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
@@ -278,6 +279,22 @@ impl TypographyTokens {
             heading_weight: 600,
         }
     }
+
+    /// 按 `text_scale` 缩放字号（spec IF-009 `text_scale` / DC-15 移动端「text scale」）。
+    ///
+    /// 仅缩放**字号**（`body_size_px`/`heading_size_px`），字重/行高不变；
+    /// `text_scale` 钳到 `> 0.0`（非正数视为 1.0，防退化）。字号变化会触发 `needs_layout`
+    /// （见 [`diff_invalidation`]）——这是 text_scale 影响布局的统一路径。
+    pub fn scaled(self, text_scale: f32) -> TypographyTokens {
+        let s = if text_scale > 0.0 { text_scale } else { 1.0 };
+        TypographyTokens {
+            body_size_px: self.body_size_px * s,
+            body_weight: self.body_weight,
+            body_line_height: self.body_line_height,
+            heading_size_px: self.heading_size_px * s,
+            heading_weight: self.heading_weight,
+        }
+    }
 }
 
 /// 间距栅格 token。
@@ -435,6 +452,25 @@ impl ThemeResolver {
             radius: RadiusTokens::default_radius(),
             shadow: ShadowTokens::default_shadow(),
         }
+    }
+
+    /// 由偏好 + 系统快照 + 窗口度量构建主题（spec IF-009 / DC-15 移动端「text scale」）。
+    ///
+    /// 在 [`build_theme`] 基础上应用 `metrics.text_scale` 缩放字号——这是 runtime 在窗口度量
+    /// 变化（如用户调整系统字号）时重建主题的统一入口。`text_scale != 1.0` 会改变 typography
+    /// → 经 [`diff_invalidation`] 触发 `needs_layout`（影响文本测量）。
+    pub fn build_theme_with_metrics(
+        id: ThemeId,
+        name: &str,
+        preference: &ColorSchemePreference,
+        system: SystemThemeSnapshot,
+        palette: ColorPalette,
+        metrics: WindowMetrics,
+    ) -> Theme {
+        let scheme = Self::resolve_scheme(preference, system);
+        let mut theme = Self::build_theme(id, name, scheme, palette);
+        theme.typography = theme.typography.scaled(metrics.text_scale);
+        theme
     }
 }
 
@@ -695,5 +731,93 @@ mod tests {
         assert_eq!(scheme, ResolvedColorScheme::HighContrastLight);
         let theme = ThemeResolver::build_theme(ThemeId::new("zero"), "Zero", scheme, ColorPalette::default());
         contrast_ratio(theme.tokens.on_background, theme.tokens.background) >= 7.0
+    }
+
+    #[test]
+    fn typography_scaled_scales_font_sizes_only() {
+        // DC-15 text_scale：字号按 scale 缩放，字重/行高不变。
+        let base = TypographyTokens::default_typography();
+        let scaled = base.scaled(1.5);
+        assert!((scaled.body_size_px - 14.0 * 1.5).abs() < 1e-6);
+        assert!((scaled.heading_size_px - 18.0 * 1.5).abs() < 1e-6);
+        assert_eq!(scaled.body_weight, base.body_weight);
+        assert_eq!(scaled.body_line_height, base.body_line_height);
+        assert_eq!(scaled.heading_weight, base.heading_weight);
+        // 非正 scale 视为 1.0（防退化，不产生零/负字号）。
+        let zero = base.scaled(0.0);
+        assert_eq!(zero.body_size_px, base.body_size_px);
+        let neg = base.scaled(-2.0);
+        assert_eq!(neg.body_size_px, base.body_size_px);
+    }
+
+    #[test]
+    fn build_theme_with_metrics_applies_text_scale() {
+        // spec IF-009 / DC-15：runtime 经 WindowMetrics.text_scale 缩放主题字号。
+        use crate::layout::{DEFAULT_TEXT_SCALE, WindowMetrics};
+        let sys = SystemThemeSnapshot {
+            system_scheme: ResolvedColorScheme::Light,
+            high_contrast: false,
+        };
+        let metrics = WindowMetrics {
+            logical_size: crate::geometry::Size::new(800.0, 600.0),
+            scale_factor: 1.0,
+            safe_area: crate::geometry::Insets::all(0.0),
+            keyboard_insets: crate::geometry::Insets::all(0.0),
+            text_scale: 1.25,
+        };
+        let theme = ThemeResolver::build_theme_with_metrics(
+            ThemeId::new("zero"),
+            "Zero",
+            &ColorSchemePreference::Light,
+            sys,
+            ColorPalette::default(),
+            metrics,
+        );
+        assert!((theme.typography.body_size_px - 14.0 * 1.25).abs() < 1e-6);
+        let _ = DEFAULT_TEXT_SCALE;
+    }
+
+    #[test]
+    fn text_scale_change_requests_layout_invalidation() {
+        // DC-15 关键不变量：text_scale 改变 → typography 改变 → diff_invalidation 标 needs_layout。
+        // 这是 text_scale 影响布局（文本重测量）的统一可验证路径。
+        use crate::layout::WindowMetrics;
+        let sys = SystemThemeSnapshot {
+            system_scheme: ResolvedColorScheme::Light,
+            high_contrast: false,
+        };
+        let base_metrics = WindowMetrics {
+            logical_size: crate::geometry::Size::new(800.0, 600.0),
+            scale_factor: 1.0,
+            safe_area: crate::geometry::Insets::all(0.0),
+            keyboard_insets: crate::geometry::Insets::all(0.0),
+            text_scale: 1.0,
+        };
+        let scaled_metrics = WindowMetrics {
+            text_scale: 1.5,
+            ..base_metrics
+        };
+        let t1 = ThemeResolver::build_theme_with_metrics(
+            ThemeId::new("zero"),
+            "Zero",
+            &ColorSchemePreference::Light,
+            sys,
+            ColorPalette::default(),
+            base_metrics,
+        );
+        let t2 = ThemeResolver::build_theme_with_metrics(
+            ThemeId::new("zero"),
+            "Zero",
+            &ColorSchemePreference::Light,
+            sys,
+            ColorPalette::default(),
+            scaled_metrics,
+        );
+        let inv = diff_invalidation(&t1, &t2);
+        assert!(
+            inv.contains(InvalidationFlags::NEEDS_LAYOUT),
+            "text_scale change must request layout (text re-measure)"
+        );
+        assert!(inv.contains(InvalidationFlags::NEEDS_PAINT));
     }
 }

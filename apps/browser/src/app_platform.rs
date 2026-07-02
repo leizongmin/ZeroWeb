@@ -702,6 +702,7 @@ fn compose_sdk_chrome_overlay(
         scale_factor: 1.0,
         safe_area: Insets::all(0.0),
         keyboard_insets: Insets::all(0.0),
+        text_scale: 1.0,
     };
     let backend = sdk_font_backend();
     let bridge = render_chrome_via_sdk(shell, &metrics, &SemanticTokens::light(), backend);
@@ -748,6 +749,7 @@ fn compose_sdk_chrome_replacement(
         scale_factor: 1.0,
         safe_area: Insets::all(0.0),
         keyboard_insets: Insets::all(0.0),
+        text_scale: 1.0,
     };
     let (bridge, viewport_rect) =
         render_chrome_via_sdk_with_layout(shell, &metrics, &SemanticTokens::light(), backend);
@@ -978,6 +980,7 @@ fn compose_sdk_chrome_replacement_with_webview(
         scale_factor: 1.0,
         safe_area: Insets::all(0.0),
         keyboard_insets: Insets::all(0.0),
+        text_scale: 1.0,
     };
 
     // 构建 WebView surface：页面 fills + webview 额外图元。

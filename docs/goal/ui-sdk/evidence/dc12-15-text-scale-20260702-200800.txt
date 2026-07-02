@@ -1,0 +1,62 @@
+# DC-12/DC-15 WindowMetrics text_scale 字段（2026-07-02）
+
+## 缺口（本轮修复）
+
+`WindowMetrics`（ui/core/src/layout.rs）此前**缺少 `text_scale` 字段**——spec §IF-009 明确要求
+`WindowMetrics` 承载 viewport size、safe area、**density、text scale**、orientation、soft keyboard rect
+（spec line 813）；line 1274 给出 `pub text_scale: f32`。该字段是 spec §FR-010/FR-015 与 DC-15
+移动端「text scale」适配（line 582/1543/2103）的数据入口，但完全缺失。
+
+## 修复
+
+1. **`ui/core/src/layout.rs`**：
+   - 新增 `pub const DEFAULT_TEXT_SCALE: f32 = 1.0`。
+   - `WindowMetrics` 加 `pub text_scale: f32` 字段（文档化：桌面固定 1.0，移动端由 M4 runtime
+     从系统字号设置探测后覆盖）。
+2. **`ui/core/src/theme.rs`**：
+   - `TypographyTokens::scaled(self, text_scale) -> TypographyTokens`：按 scale 缩放字号
+     （body/heading size），字重/行高不变；非正 scale 视为 1.0（防退化，不产生零/负字号）。
+   - `ThemeResolver::build_theme_with_metrics(id, name, preference, system, palette, metrics) -> Theme`：
+     resolve_scheme + build_theme + 应用 `metrics.text_scale` 缩放 typography——runtime 在窗口度量
+     变化（用户调系统字号）时重建主题的统一入口。
+3. **全仓 WindowMetrics 构造点同步**（机械补字段，零行为变化）：
+   - `ui/adapters/winit/src/event_map.rs::map_window_metrics`（生产 resize 桥，text_scale=DEFAULT_TEXT_SCALE）
+   - `ui/adapters/render-foundation/src/lib.rs`（3 处测试 fixture）
+   - `ui/dsl/src/loader.rs`（2 处测试）
+   - `apps/browser/src/app_platform.rs`（3 处：compose_sdk_chrome_overlay/replacement 等）
+   - `browser-ui/chrome/{examples/chrome_scene.rs, src/render.rs, src/sdk_render.rs, src/shell.rs}`（4 处）
+
+## 验证（可量化）
+
+新增 4 测：
+- `layout::tests::text_scale_defaults_to_baseline`：字段存在，默认 1.0。
+- `theme::tests::typography_scaled_scales_font_sizes_only`：字号按 scale 缩放、字重/行高不变；
+  非正 scale（0.0 / -2.0）视为 1.0 不退化。
+- `theme::tests::build_theme_with_metrics_applies_text_scale`：metrics.text_scale=1.25 →
+  theme.typography.body_size_px = 14*1.25（端到端）。
+- `theme::tests::text_scale_change_requests_layout_invalidation`：**DC-15 关键不变量**——
+  text_scale 1.0→1.5 → typography 改变 → `diff_invalidation` 标 `needs_layout`+`needs_paint`
+  （text_scale 影响布局/文本重测量的统一可验证路径）。
+
+## 门禁
+
+- `./target/test-guard -- cargo test -p zero-ui-core` → 68 passed（含 4 新 text_scale 测 + 上轮 4 HC 测），0 failed。
+- 下游全绿：adapter-render-foundation 20 / adapter-winit 22 / dsl 85 / chrome 68（library+example），0 failed。
+- **`./target/test-guard -- cargo test -p zero-browser` → 189 passed; 0 failed**（DC-14 零回归硬门禁 ✓）。
+- `cargo build --workspace` Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` Finished（0 警告）。
+- `cargo fmt --all --check` 净。
+
+## 风险
+
+**SDK-only + 机械字段补全**：
+- ui/core 未触碰 render-foundation/浏览器页面渲染 → welcome.html 页面像素不变 → **无 product-smoke 风险**。
+- 所有 WindowMetrics 构造点仅加 `text_scale: 1.0`（=DEFAULT_TEXT_SCALE），默认路径逐位不变
+  （189 browser 测零回归已证）。
+- 移动端真实 text_scale 探测（从系统字号设置）在 M4 runtime（DC-15）。
+
+## 意义
+
+DC-12/DC-15「text scale」从「字段缺失」升级为「数据入口 + 缩放能力 + layout 失效闭环可用」。
+剩余 = M4 移动 runtime 实际从系统探测 text_scale 并经 build_theme_with_metrics 重建主题
+（与 safe area / soft keyboard / density 一并，DC-15 移动运行时）。

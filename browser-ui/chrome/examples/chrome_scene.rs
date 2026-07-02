@@ -72,6 +72,7 @@ fn main() {
         scale_factor: 1.0,
         safe_area: Insets::all(0.0),
         keyboard_insets: Insets::all(0.0),
+        text_scale: 1.0,
     };
     let model = build_model();
     let spec = DesktopBrowserShell.build(&model, &metrics);

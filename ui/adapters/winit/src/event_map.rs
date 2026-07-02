@@ -78,13 +78,15 @@ pub fn to_logical_size(physical: winit::dpi::PhysicalSize<u32>, scale_factor: f3
 /// winit 窗口物理尺寸 + scale → UI [`WindowMetrics`]（resize 事件桥）。
 ///
 /// `safe_area` / `keyboard_insets` 初始为 0（桌面无刘海/软键盘遮挡；移动端由 M4
-/// 运行时按平台 inset 填充）。
+/// 运行时按平台 inset 填充）。`text_scale` 固定为 `DEFAULT_TEXT_SCALE`（桌面不放大；
+/// 移动端由 M4 runtime 从系统字号设置探测后覆盖）。
 pub fn map_window_metrics(physical_size: winit::dpi::PhysicalSize<u32>, scale_factor: f32) -> WindowMetrics {
     WindowMetrics {
         logical_size: to_logical_size(physical_size, scale_factor),
         scale_factor,
         safe_area: Insets::all(0.0),
         keyboard_insets: Insets::all(0.0),
+        text_scale: zero_ui_core::layout::DEFAULT_TEXT_SCALE,
     }
 }
 

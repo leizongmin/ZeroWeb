@@ -920,6 +920,7 @@ mod tests {
             scale_factor: 1.0,
             safe_area: Insets::all(0.0),
             keyboard_insets: Insets::all(0.0),
+            text_scale: 1.0,
         };
         let spec = DesktopBrowserShell.build(&model, &metrics);
 
@@ -1050,6 +1051,7 @@ mod tests {
             scale_factor: 1.0,
             safe_area: Insets::all(0.0),
             keyboard_insets: Insets::all(0.0),
+            text_scale: 1.0,
         };
 
         // SDK chrome 渲染 → bridge（fills + 文本 ImagePrimitive + glyph cache）。
@@ -1108,6 +1110,7 @@ mod tests {
             scale_factor: 1.0,
             safe_area: Insets::all(0.0),
             keyboard_insets: Insets::all(0.0),
+            text_scale: 1.0,
         };
 
         // 模拟 WebView 渲染输出（一个填充矩形）。

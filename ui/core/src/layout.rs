@@ -10,6 +10,12 @@ use serde::{Deserialize, Serialize};
 /// 设备像素 → 逻辑像素的缩放因子（HiDPI）。
 pub type ScaleFactor = f32;
 
+/// 用户文本字号缩放的默认值（1.0 = 不放大）。
+///
+/// spec IF-009：`WindowMetrics` 承载 `text_scale`（移动端无障碍「更大字体」/系统字号设置）。
+/// 有效范围 `> 0.0`；`1.0` 为基线，`> 1.0` 放大字号（触发 layout 失效），`< 1.0` 缩小。
+pub const DEFAULT_TEXT_SCALE: f32 = 1.0;
+
 /// 窗口度量（spec IF-009 `WindowMetrics`）。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct WindowMetrics {
@@ -20,6 +26,11 @@ pub struct WindowMetrics {
     pub safe_area: Insets,
     /// 软键盘/IME 当前遮挡区域（逻辑像素，无遮挡为 0）。
     pub keyboard_insets: Insets,
+    /// 用户文本字号缩放（spec IF-009，移动端无障碍/系统字号；`DEFAULT_TEXT_SCALE`=1.0）。
+    ///
+    /// 改变本值会缩放 `TypographyTokens`（→ 触发 `needs_layout`），是 DC-15 移动端
+    /// 「text scale」适配的数据入口。桌面端固定 1.0；移动端由 M4 runtime 从系统设置探测。
+    pub text_scale: f32,
 }
 
 impl WindowMetrics {
@@ -108,6 +119,7 @@ mod tests {
             scale_factor: 1.0,
             safe_area: Insets::all(0.0),
             keyboard_insets: Insets::all(0.0),
+            text_scale: DEFAULT_TEXT_SCALE,
         }
     }
 
@@ -137,5 +149,13 @@ mod tests {
         let mut hidpi = m;
         hidpi.scale_factor = 2.0;
         assert_eq!(hidpi.physical_size().width, 1000.0);
+    }
+
+    #[test]
+    fn text_scale_defaults_to_baseline() {
+        // spec IF-009：WindowMetrics 必须承载 text_scale。默认 = 1.0（不放大）。
+        let m = metrics(800.0);
+        assert_eq!(m.text_scale, DEFAULT_TEXT_SCALE);
+        assert_eq!(DEFAULT_TEXT_SCALE, 1.0);
     }
 }

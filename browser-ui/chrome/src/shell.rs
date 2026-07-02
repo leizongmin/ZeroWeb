@@ -384,6 +384,7 @@ mod tests {
                 right: 0.0,
                 bottom: kb_bottom,
             },
+            text_scale: 1.0,
         }
     }
 
