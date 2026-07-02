@@ -9,6 +9,8 @@ license.workspace = true
 zero-ui-core = { workspace = true }
 # i18n 桥接：DSL `i18n:` 对象 → LocalizedText（DC-10）。通用 crate，零浏览器耦合。
 zero-ui-i18n = { workspace = true }
+# asset 桥接：DSL `asset:` 对象 → AssetId（DC-6 phase-5）。通用 crate，零浏览器耦合。
+zero-ui-assets = { workspace = true }
 compact_str = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }

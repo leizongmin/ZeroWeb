@@ -6090,6 +6090,7 @@ dependencies = [
  "hashbrown 0.15.5",
  "serde",
  "thiserror 2.0.18",
+ "zero-ui-assets",
  "zero-ui-core",
  "zero-ui-i18n",
 ]

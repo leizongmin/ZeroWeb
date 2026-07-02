@@ -17,6 +17,13 @@ use zero_ui_core::binding::{Binding, PropsMap, Value};
 use zero_ui_core::layout::AdaptiveBranch;
 use zero_ui_core::widget::{ComponentType, ControlDirectives, ForEachSpec, WidgetId, WidgetSpec};
 
+// ── DSL action 简写展开后的约定 ActionId（DC-6 phase-5）──────────────────────
+// `navigate` / `open_overlay` / `close_overlay` 简写映射到这些约定 action id；
+// 宿主应用为它们注册 reducer（路由栈 push / 浮层 open / close）。`command` 简写直接用命令 id 作 action。
+pub const ACTION_NAV_PUSH: &str = "nav.push";
+pub const ACTION_OVERLAY_OPEN: &str = "overlay.open";
+pub const ACTION_OVERLAY_CLOSE: &str = "overlay.close";
+
 /// YAML/字符串 → WidgetSpec 加载器（spec IF-005）。
 pub trait WidgetSpecLoader {
     fn load_str(&self, source: &str) -> Result<WidgetSpec, DslError>;
@@ -256,25 +263,46 @@ impl YamlLoader {
             let map = item
                 .as_map()
                 .ok_or_else(|| DslError::Parse("action 项必须是映射".into()))?;
-            let trigger = map
-                .iter()
-                .find(|(k, _)| k == "trigger")
-                .and_then(|(_, v)| v.as_text())
-                .ok_or_else(|| DslError::Parse("action 缺少 'trigger'".into()))?;
-            let action = map
-                .iter()
-                .find(|(k, _)| k == "action")
-                .and_then(|(_, v)| v.as_text())
-                .ok_or_else(|| DslError::Parse("action 缺少 'action'".into()))?;
-            let payload = map
-                .iter()
-                .find(|(k, _)| k == "payload")
-                .map(|(_, v)| yaml_to_payload(v));
-            out.push(ActionBinding {
-                trigger: CompactString::new(trigger),
-                action: ActionId::new(action),
-                payload,
-            });
+            let trigger = map_text(map, "trigger").ok_or_else(|| DslError::Parse("action 缺少 'trigger'".into()))?;
+            let trigger = CompactString::new(trigger);
+            // DC-6 phase-5：action / command / navigate / open_overlay / close_overlay 任一形式。
+            let binding = if let Some(action) = map_text(map, "action") {
+                ActionBinding {
+                    trigger,
+                    action: ActionId::new(action),
+                    payload: payload_of(map),
+                }
+            } else if let Some(cmd) = map_text(map, "command") {
+                // `command` 糖：触发已注册命令（action id = 命令 id）。
+                ActionBinding {
+                    trigger,
+                    action: ActionId::new(cmd),
+                    payload: payload_of(map),
+                }
+            } else if let Some(route) = map_text(map, "navigate") {
+                ActionBinding {
+                    trigger,
+                    action: ActionId::new(ACTION_NAV_PUSH),
+                    payload: Some(nav_payload(route)),
+                }
+            } else if let Some(overlay) = map_text(map, "open_overlay") {
+                ActionBinding {
+                    trigger,
+                    action: ActionId::new(ACTION_OVERLAY_OPEN),
+                    payload: Some(overlay_payload(overlay)),
+                }
+            } else if let Some(overlay) = map_text(map, "close_overlay") {
+                ActionBinding {
+                    trigger,
+                    action: ActionId::new(ACTION_OVERLAY_CLOSE),
+                    payload: Some(overlay_payload(overlay)),
+                }
+            } else {
+                return Err(DslError::Parse(
+                    "action 需 action/command/navigate/open_overlay/close_overlay 之一".into(),
+                ));
+            };
+            out.push(binding);
         }
         Ok(out)
     }
@@ -397,6 +425,34 @@ fn yaml_to_payload(v: &YamlValue) -> ActionPayload {
     }
 }
 
+/// 在 YAML 映射里按键取文本值（DC-6 phase-5 action 简写用）。
+fn map_text<'a>(map: &'a [(String, YamlValue)], key: &str) -> Option<&'a str> {
+    map.iter()
+        .find(|(k, _)| k.as_str() == key)
+        .and_then(|(_, v)| v.as_text())
+}
+
+/// 读取 action 项的可选 `payload:` 字段（`action` / `command` 形式用）。
+fn payload_of(map: &[(String, YamlValue)]) -> Option<ActionPayload> {
+    map.iter()
+        .find(|(k, _)| k.as_str() == "payload")
+        .map(|(_, v)| yaml_to_payload(v))
+}
+
+/// `navigate` 简写 payload：`Value::Object { route: <name> }`（宿主据此 push 路由）。
+fn nav_payload(route: &str) -> ActionPayload {
+    let mut m = HashMap::new();
+    m.insert("route".to_string(), Value::Text(route.to_string()));
+    ActionPayload::Value(Value::Object(m))
+}
+
+/// `open_overlay` / `close_overlay` 简写 payload：`Value::Object { id: <overlay_id> }`。
+fn overlay_payload(id: &str) -> ActionPayload {
+    let mut m = HashMap::new();
+    m.insert("id".to_string(), Value::Text(id.to_string()));
+    ActionPayload::Value(Value::Object(m))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -450,6 +506,70 @@ mod tests {
         assert_eq!(spec.actions[0].trigger.as_str(), "submit");
         assert_eq!(spec.actions[0].action, ActionId::new("app.search"));
         assert_eq!(spec.actions[0].payload, Some(ActionPayload::Text("go".into())));
+    }
+
+    // ── DC-6 phase-5：action 简写（command / navigate / overlay）──────────────
+    use zero_ui_core::binding::Value;
+
+    fn actions(src: &str) -> Vec<ActionBinding> {
+        load(src).actions
+    }
+
+    #[test]
+    fn action_command_shorthand_is_command_id() {
+        // `command:` 糖 → action id = 命令 id（可附 payload）。
+        let a = actions("component: Button\nactions:\n  - trigger: click\n    command: browser.go_back\n");
+        assert_eq!(a[0].action, ActionId::new("browser.go_back"));
+        assert!(a[0].payload.is_none());
+    }
+
+    #[test]
+    fn action_navigate_shorthand_expands_to_nav_push() {
+        let a = actions("component: Button\nactions:\n  - trigger: click\n    navigate: settings\n");
+        assert_eq!(a[0].action, ActionId::new(ACTION_NAV_PUSH));
+        // payload = Value::Object { route: "settings" }。
+        let payload = a[0].payload.as_ref().expect("navigate has payload");
+        match payload {
+            ActionPayload::Value(Value::Object(m)) => {
+                assert_eq!(m.get("route"), Some(&Value::Text("settings".to_string())));
+            }
+            other => panic!("navigate payload must be Value::Object, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn action_open_close_overlay_shorthands() {
+        let a = actions(
+            "component: Button\nactions:\n  - trigger: click\n    open_overlay: permission_prompt\n  - trigger: click\n    close_overlay: permission_prompt\n",
+        );
+        assert_eq!(a[0].action, ActionId::new(ACTION_OVERLAY_OPEN));
+        assert_eq!(a[1].action, ActionId::new(ACTION_OVERLAY_CLOSE));
+        let p0 = a[0].payload.as_ref().unwrap();
+        match p0 {
+            ActionPayload::Value(Value::Object(m)) => {
+                assert_eq!(m.get("id"), Some(&Value::Text("permission_prompt".to_string())));
+            }
+            other => panic!("overlay payload must be Value::Object, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn action_without_any_reference_form_is_error() {
+        // 既无 action 也无 command/navigate/open_overlay/close_overlay → 报错。
+        let err = YamlLoader::new()
+            .load_str("component: Button\nactions:\n  - trigger: click\n")
+            .unwrap_err();
+        assert!(matches!(err, DslError::Parse(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn asset_prop_round_trips_to_asset_id() {
+        // DC-6 phase-5：DSL `asset:` prop → Value::Object 保留 → asset_id_of 提取 AssetId。
+        let spec = load("component: IconButton\nprops:\n  icon:\n    asset: icon.nav.back\n");
+        let icon = spec.props.get("icon").expect("icon prop");
+        let id = crate::asset_id_of(icon).expect("asset id extracted");
+        assert_eq!(id, zero_ui_assets::AssetId::new("icon.nav.back"));
+        assert!(crate::is_asset_object(icon));
     }
 
     #[test]

@@ -1,0 +1,46 @@
+=== DC-6 phase-5（DSL command·route·overlay·asset 声明式引用）===
+日期: 2026-07-01
+分支: ui-sdk
+SDK-only：仅触碰 ui/dsl（loader action 简写 + 新 asset_bridge 模块 + Cargo.toml 加 zero-ui-assets 依赖）。
+
+--- 变更摘要 ---
+
+1. ui/dsl/src/loader.rs action 简写（DC-6 phase-5）：`actions:` 项除 `{trigger, action, payload?}`
+   外，新增四种声明式引用形式，展开为约定 ActionBinding（宿主注册 reducer）：
+   - `command: <cmd_id>` → action = ActionId(cmd_id)（糖：触发已注册命令）。
+   - `navigate: <route>` → action = ACTION_NAV_PUSH("nav.push")，payload = Value::Object{route: <name>}。
+   - `open_overlay: <id>` → action = ACTION_OVERLAY_OPEN("overlay.open")，payload = Value::Object{id: <id>}。
+   - `close_overlay: <id>` → action = ACTION_OVERLAY_CLOSE("overlay.close")，payload = Value::Object{id: <id>}。
+   - 约定 ActionId 常量 pub（ACTION_NAV_PUSH/ACTION_OVERLAY_OPEN/ACTION_OVERLAY_CLOSE）。
+   - 缺所有形式 → DslError::Parse。
+   辅助：map_text / payload_of / nav_payload / overlay_payload。
+   sandbox 安全：不涉及表达式求值，仅结构化引用 → 受控 payload。
+
+2. ui/dsl/src/asset_bridge.rs（新模块，parallel to i18n_bridge）：
+   - `is_asset_object(value) -> bool`：判断 prop 值是否 `{asset: <id>}` 对象。
+   - `asset_id_of(value) -> Option<AssetId>`：提取 AssetId（id 须为文本）。
+   - DSL loader 已把 `asset:` prop 以 Value::Object 原样保留（yaml_to_value 递归）；
+     asset_bridge 在装配期解析为 AssetId，宿主用 AssetProvider 加载。
+   - Cargo.toml 加 zero-ui-assets 依赖（通用 crate，DC-1 机械验证零浏览器耦合）。
+
+--- 测试结果（scoped test-guard）---
+
+ui/dsl：72 passed; 0 failed（原 64 → 72，新增 8 测）。
+  loader action 简写 4：command 糖 / navigate→nav.push+route payload /
+    open+close_overlay→overlay.open/close+id payload / 缺形式报错
+  loader asset 端到端 1：DSL `props.icon.asset` → Value::Object 保留 → asset_id_of 提取 AssetId
+  asset_bridge 3：提取 AssetId / 忽略非 asset 值 / 忽略非文本 id
+
+--- 门禁 ---
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — 净（0 diff）。
+- DC-1 机械验证：`cargo tree -p zero-ui-dsl` 零 zero-browser/webview/engine/net 依赖
+  （ui/dsl → ui/core + ui/i18n + ui/assets，全通用）。
+
+--- DC-6 进度 ---
+phase-5 完成：DSL 声明式引用 command（已注册命令）/ navigate（路由 push）/ open·close overlay
+（浮层）/ asset（资源 id）全部可表达并展开为受控 ActionBinding/payload。配合 phase-1~4
+（表达式引擎 + YAML loader + map/filter + responsive branch）+ DC-10 i18n 桥，DSL 已覆盖
+spec §8.4.7 受控计算层的主要声明式能力。DC-6 剩余：嵌套路径投影 map/filter（follow-up，
+需 spec 决策）。
