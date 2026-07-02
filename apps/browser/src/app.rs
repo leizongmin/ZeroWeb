@@ -1938,6 +1938,14 @@ include!("app_render_ext.rs");
 // 从 app_render.rs 进一步拆分以控制单文件体积
 include!("app_render_geometry.rs");
 
+// 注：WebView 图元消费层（append_webview_primitives + ViewportClip + 视口/圆角裁剪 + 变换）
+// 已并入 app_render_ext.rs（ui-sdk 分支既有拆分），不再单独 include app_render_primitives.rs
+// （与 origin/main R967 合并时该文件与本分支 ext 重复，保留 ext 这一超集）。
+
+// 地址栏 UI 渲染（render_address_bar）
+// 从 app_render.rs 进一步拆分以控制单文件体积
+include!("app_render_address.rs");
+
 // 平台相关独立函数（is_wayland、字体加载、颜色方案检测等）
 // 拆分到独立文件以控制 app.rs 体积
 include!("app_platform.rs");
