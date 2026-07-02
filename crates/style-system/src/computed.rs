@@ -348,6 +348,17 @@ pub fn resolve_computed_style(
         viewport_height,
     );
 
+    // outline-width 的 em/rem/ch 须解析为 Px（R907 同模式：column-rule-width em 缺
+    // resolve 致 paint 仅匹配 Px）。否则 paint_outline（painter/border.rs:554）经
+    // length_to_f32（helpers.rs:583，Px-only）把 em 丢为 0.0 → outline 消失。
+    // outline-offset 0 corpus 用量故不入列（code-guidelines 不做零价值）。
+    resolve_length_field(
+        &mut resolved.outline_width,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+    );
+
     resolved
 }
 
@@ -468,6 +479,18 @@ mod tests {
         let ch = LengthValue::Ch(2.0);
         let result = resolve_length(&ch, 16.0, None, None);
         assert_eq!(result, 16.0); // 2 * 16 * 0.5
+    }
+
+    #[test]
+    fn test_resolve_outline_width_em() {
+        // R907 同模式：outline-width em 须在 compute 时解析为 Px，否则 paint_outline
+        // 经 length_to_f32（Px-only）把 em 丢为 0.0 → outline 消失。
+        // outline-width:5em @ font-size 32 → Px(160)。
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(32.0);
+        style.outline_width = LengthValue::Em(5.0);
+        let resolved = resolve_computed_style(&style, &HashMap::new(), None, None, Some(32.0));
+        assert_eq!(resolved.outline_width, LengthValue::Px(160.0));
     }
 
     #[test]
