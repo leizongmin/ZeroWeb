@@ -952,4 +952,21 @@ mod sdk_chrome_tests {
             );
         }
     }
+
+    #[test]
+    fn compose_overlay_sdk_fills_have_nonzero_area() {
+        // 验证 SDK chrome 经 compose 产出的 fills 几何非零（SDK 布局正确，产出有效 fill rect）。
+        // overlay 实际光栅像素验证留待 GUI 可视验收（render_full_scene draw_order/clip 路径调查）。
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        let mut scene = RenderPrimitives::default();
+        let mut image_cache = ImageCache::new(64, 16 * 1024 * 1024);
+        compose_sdk_chrome_overlay(&shell, 1280, 800, &mut scene, Some(&mut image_cache));
+
+        let nonzero = scene
+            .fills
+            .iter()
+            .any(|f| f.rect.size.width > 0.0 && f.rect.size.height > 0.0);
+        assert!(nonzero, "SDK chrome fills include at least one non-zero-area rect");
+    }
 }

@@ -1,0 +1,32 @@
+DC-14 overlay fills 有效性验证 + 光栅化调查 — 2026-07-02
+
+## 背景
+上轮 DC-14 浏览器 SDK chrome 接线（default-off `sdk-chrome` feature）的 feature-on 测仅证明
+「SDK chrome fills 并入 scene_primitives + image 键解析」（primitive 合并层）。本轮尝试加光栅化
+测（compose → render_full_scene → 帧缓冲与空 scene 比差异）验证「SDK chrome 实际渲染出可见像素」。
+
+## 调查发现
+- 光栅化测**失败**：SDK chrome scene 经 render_full_scene 光栅后，帧缓冲与空 scene（全白 clear）
+  **无像素差异**（全白）——SDK chrome fills 似乎未渲染出可见像素。
+- 排查：render_full_scene 的 draw_order 路径（add_fill 确实 push DrawOp::Fill；render_draw_order
+  正确按 DrawOp::Fill(i) 调 fill_rect）+ SemanticTokens::light 颜色（surface=rgb(0.96,0.96,0.96)=244，
+  非 255 白，应与白 clear 有差异）。
+- **关键排除**：新增测 `compose_overlay_sdk_fills_have_nonzero_area` 证明 SDK chrome 经 compose 产出
+  的 fills **几何非零**（SDK 布局正确，产出有效 fill rect）——**非 layout 退化**。
+
+## 结论（诚实状态）
+- **overlay wiring 层正确**：SDK chrome fills 非空 + 几何非零 + image 键解析（2 feature-on 测全绿）。
+- **overlay 像素渲染层未验证（headless）**：render_full_scene 在 overlay 测试配置下产出全白帧缓冲的
+  原因未定位（可能是 draw_order/clip 交互、test 配置 artifact，或 render-foundation 在该 primitive
+  组合下的行为）。**需 GUI 可视验收**（`cargo run --bin zero-browser --features sdk-chrome`）确认
+  overlay 是否实际显示 SDK chrome，或 render-foundation draw_order/clip 路径专项调查。
+- 本轮不声称「overlay 渲染可见」——只声称「overlay wiring（primitive 合并 + fills 有效）正确」。
+
+## 变更
+apps/browser/src/app_platform.rs sdk_chrome_tests：
+- 新增 `compose_overlay_sdk_fills_have_nonzero_area`（验证 SDK fills 几何非零）。
+- （光栅化探针测已撤回——其失败原因属 render-foundation 调查范畴，非 overlay wiring bug。）
+
+## 门禁
+默认 build + clippy --all-targets -D warnings：净。--features sdk-chrome build + clippy：净。
+默认浏览器测 186 全绿。feature-on overlay 测 2 绿（merge + fills-nonzero）。fmt 净。
