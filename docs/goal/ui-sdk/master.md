@@ -411,6 +411,7 @@
 5. ~~**DC-3 ImageCache surface pipeline**~~ ✅ **已完成（2026-07-02）**：`RenderFoundationBackend` surface_caches + `set_surface_with_cache` + `merge_surface_with_cache`；`render_chrome_via_sdk_with_webview_surface` 签名扩展。DC-3 phase-2 ImageCache pipeline 闭合。
 6. ~~**DC-2 host 布局 story 最终增强：child min/max 约束 props**~~ ✅ **已完成（2026-07-02）**：`child_min_width`/`child_max_width` 等 props + `measure_linear` 钳制；host::tests 53→58 测全绿。**DC-2 host 布局 6 维完整闭合**（flex + cross_axis + main_axis + distribution + fill-sizing + child min/max）。host 布局不再有 SDK-only 可选增强项。
 7. ~~**DC-3 phase-2：WebViewWidget 真实纹理合成**~~ ✅ **已完成（2026-07-02）**：`snapshot_entries` → surface ImageCache → bridge `set_surface_with_cache` → merge+extend 全链贯通；render-foundation image_cache 69 测 + sdk-chrome 200 测全绿 + product-smoke 19.87% 零回归。DC-3 闭合。
+7b. ~~**DC-8 WidgetHost → AccessibilityBackend 自动推送（SDK-side）**~~ ✅ **已完成（2026-07-03）**：`set_accessibility_backend`/`flush_accessibility`/`announce` + `set_root` 标 NEEDS_SEMANTICS + 焦点变化推 focus_moved（不重建全树）；ui-runtime 66→74 测全绿。DC-8 剩余仅真实平台实现（M4）。同轮：origin/main 同步 merge（commit 429e791a，零回归）。
 8. **DC-14 浏览器迁移 GUI 可视验收**（本环境无 GUI；feature-on 像素级 headless 已证：sdk-chrome 200 测全绿 + product-smoke 19.87% 绿 + replacement wiring complete + WebView surface pipeline closed + scrollbar migration complete + DC-3 ImageCache pass-through complete）。
 9. **DC-15 M4 移动端运行时**（至少一个移动后端可运行；需要 Android/iOS/HarmonyOS 环境）。
 10. **跟踪项**：本机 `make test` 受 script-sandbox V8 debug-test 链接阻塞（环境性，非 UI SDK 代码）；scoped test-guard 全绿。
