@@ -1,0 +1,24 @@
+DC-3 phase-2 apps/browser WebView surface 接线（SDK-only，2026-07-02）
+============================================================
+
+变更（apps/browser/src/app_platform.rs）：
+- 新增 `build_webview_surface_primitives(page_fills, webview_extras) -> RenderPrimitives`
+  收集页面 fills + webview 额外图元（shadows/gradients/...）构造为 surface RenderPrimitives
+- 新增 `compose_sdk_chrome_replacement_with_webview(shell, w, h, page_fills, page_glyphs, webview_extras, scene_primitives, image_cache) -> (page_fills, page_glyphs)`
+  调 `render_chrome_via_sdk_with_webview_surface`（surface_id=1），
+  draw_external_surface 在 ExternalSurface marker 位置合成 webview 内容。
+  page_fills 进入 surface→返回空 Vec；page_glyphs 保留在渲染管线原有路径。
+  SDK chrome ImageCache collision-safe 合并 + fills prepend 到 scene_primitives 最底层。
+- 1 新测（sdk_chrome_tests::compose_replacement_with_webview_surface_registers_and_merges）
+
+验证：
+- cargo test -p zero-browser: 195 测全绿（默认 189 + sdk-chrome 6 → 新增 1 测）
+- cargo clippy --workspace --all-targets -- -D warnings: PASS（0 警告）
+- cargo fmt --all --check: PASS（无变更）
+- 默认路径（feature-off）零变化：189 测全绿
+
+剩余：
+- render_frame/render_cpu 实际调用 compose_sdk_chrome_replacement_with_webview
+  （需要了解 WebView primitives 在渲染管线中的完整生命周期，确保正确拆分
+  webview_extras 与 chrome_shadows，product-smoke 守门）
+- 真实纹理合成（非 geometry-only surface merge）

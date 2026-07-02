@@ -888,6 +888,105 @@ pub fn resolve_effective_color_scheme(
     }
 }
 
+/// 从页面内容构建 WebView 表面 RenderPrimitives（DC-3 phase-2）。
+///
+/// 收集页面 fills 与 webview 额外图元（shadows/gradients/images/rounded_rects 等），
+/// 构造为单个 `RenderPrimitives` 供 `set_surface` 注册。页面 glyphs 不走 surface 通路：
+/// `GlyphDraw`（GPU 渲染用）≠ `GlyphPrimitive`（RenderPrimitives 字段），
+/// glyphs 保留在渲染管线原有路径绘制。
+#[cfg(feature = "sdk-chrome")]
+fn build_webview_surface_primitives(
+    page_fills: Vec<FillPrimitive>,
+    webview_extras: RenderPrimitives,
+) -> RenderPrimitives {
+    let mut surface = webview_extras;
+    surface.fills = [page_fills, surface.fills].concat();
+    surface
+}
+
+/// DC-14 SDK chrome 替换手绘 chrome（WebView surface 变体，DC-3 phase-2）。
+///
+/// 使用 `render_chrome_via_sdk_with_webview_surface`：把 WebView 页面内容（fills + 额外图元）
+/// 作为 surface 注册到 bridge，由 `draw_external_surface` 在 WebViewWidget 的 `ExternalSurface`
+/// marker 位置合成进 SDK chrome scene。
+///
+/// `webview_extras`：WebView 额外图元（shadows/gradients/images/rounded_rects 等），
+/// **不含** chrome 阴影（chrome_shadows 应保持为单独的顶层 primitives）。
+/// 若为 `None` 则回落：使用 `render_chrome_via_sdk_with_layout`（无 surface，DC-14 路径）。
+#[cfg(feature = "sdk-chrome")]
+#[allow(clippy::too_many_arguments)]
+fn compose_sdk_chrome_replacement_with_webview(
+    shell: &zero_browser_shell::BrowserShell,
+    width: u32,
+    height: u32,
+    page_fills: Vec<FillPrimitive>,
+    page_glyphs: Vec<GlyphDraw>,
+    webview_extras: Option<RenderPrimitives>,
+    scene_primitives: &mut RenderPrimitives,
+    image_cache: &mut Option<&mut ImageCache>,
+) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
+    use zero_browser_chrome::sdk_render::render_chrome_via_sdk_with_webview_surface;
+    use zero_ui_core::geometry::{Insets, Size};
+    use zero_ui_core::layout::WindowMetrics;
+    use zero_ui_core::theme::SemanticTokens;
+
+    let Some(ic) = image_cache.as_mut() else {
+        return (page_fills, page_glyphs);
+    };
+
+    let backend = sdk_font_backend();
+    let metrics = WindowMetrics {
+        logical_size: Size::new(width as f32, height as f32),
+        scale_factor: 1.0,
+        safe_area: Insets::all(0.0),
+        keyboard_insets: Insets::all(0.0),
+    };
+
+    // 构建 WebView surface：页面 fills + webview 额外图元。
+    // surface_id=1：主 WebView（与 WebViewWidget 使用的 surface_id 一致）。
+    const SURFACE_ID: u64 = 1;
+    let webview_surface = webview_extras.map(|extras| {
+        let prims = build_webview_surface_primitives(page_fills, extras);
+        (SURFACE_ID, prims)
+    });
+
+    let (bridge, _viewport_rect) = render_chrome_via_sdk_with_webview_surface(
+        shell, &metrics, &SemanticTokens::light(), backend, webview_surface,
+    );
+    let (sdk_prims, sdk_cache) = bridge.into_primitives_and_cache();
+
+    // page_fills 已移入 surface → 返回空 Vec；page_glyphs 保留在渲染管线原有路径绘制。
+    let remaining_page_fills: Vec<FillPrimitive> = Vec::new();
+
+    // 合并 SDK chrome 的 ImageCache 到帧 cache（text glyph 键重映射，collision-safe）。
+    let rekey = ic.extend_from_other(&sdk_cache);
+
+    // 重映射 SDK image_primitives 的 image_key → 帧 cache key。
+    let mut sdk_images = sdk_prims.images;
+    if !rekey.is_empty() {
+        for img in &mut sdk_images {
+            if let Some(new_key) = rekey.get(&img.image_key) {
+                img.image_key = new_key.clone();
+            }
+        }
+    }
+
+    // 预置 SDK chrome fills 到 scene_primitives 最底层（页面内容在 surface 内，由
+    // draw_external_surface 在 ExternalSurface marker 位置合成到正确 z-order）。
+    let mut new_fills = sdk_prims.fills;
+    new_fills.append(&mut scene_primitives.fills);
+    scene_primitives.fills = new_fills;
+
+    // 预置 SDK chrome images（text glyph）。
+    if !sdk_images.is_empty() {
+        let mut new_images = sdk_images;
+        new_images.append(&mut scene_primitives.images);
+        scene_primitives.images = new_images;
+    }
+
+    (remaining_page_fills, page_glyphs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1375,5 +1474,60 @@ mod sdk_chrome_tests {
         assert!((prims.strokes[0].y2 - 106.0).abs() < 0.01);
         // rounded_rect translated
         assert!((prims.rounded_rects[0].rect.origin.y - 96.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn compose_replacement_with_webview_surface_registers_and_merges() {
+        // DC-3 phase-2：WebView surface 变体——页面 fills + webview 额外图元作为 surface
+        // 注册到 bridge，draw_external_surface 在 ExternalSurface marker 位置合成。
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        let mut scene = RenderPrimitives::default();
+        let mut image_cache = ImageCache::new(64, 16 * 1024 * 1024);
+
+        // 模拟页面内容 fills（WebView 渲染输出）
+        let page_fills = vec![FillPrimitive {
+            rect: Rect::new(16.0, 140.0, 1248.0, 740.0),
+            color: Color::rgb(255, 255, 255),
+        }];
+        let page_glyphs: Vec<GlyphDraw> = vec![];
+        let glyph_len = page_glyphs.len(); // 在 move 之前缓存
+
+        // 模拟 webview 额外图元（shadow 在 viewport 区域）
+        let mut extras = RenderPrimitives::default();
+        extras.shadows.push(ShadowPrimitive {
+            rect: Rect::new(16.0, 140.0, 1248.0, 740.0),
+            color: Color::rgb(0, 0, 0),
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur_radius: 8.0,
+            spread_radius: 0.0,
+        });
+
+        // webview surface 变体：页面内容作为 surface 注册，而非翻译后手动合并。
+        let (result_fills, result_glyphs) = compose_sdk_chrome_replacement_with_webview(
+            &shell, 1280, 800,
+            page_fills, page_glyphs,
+            Some(extras), // 传入 webview 额外图元
+            &mut scene,
+            &mut Some(&mut image_cache),
+        );
+
+        // page_fills 已移入 surface → 返回空 Vec（不再手动翻译合并）。
+        assert!(
+            result_fills.is_empty(),
+            "page_fills consumed into webview surface, should return empty"
+        );
+        // page_glyphs 保留（不进入 surface，由渲染管线原有路径绘制）。
+        assert_eq!(result_glyphs.len(), glyph_len);
+
+        // SDK chrome fills 已置于 scene 最底层。
+        assert!(!scene.fills.is_empty(), "SDK chrome fills prepended to scene");
+
+        // 验证 scene 不包含原来的 shadows（已移入 surface）。
+        assert!(
+            scene.shadows.is_empty(),
+            "webview extras consumed into surface, scene shadows should be empty"
+        );
     }
 }
