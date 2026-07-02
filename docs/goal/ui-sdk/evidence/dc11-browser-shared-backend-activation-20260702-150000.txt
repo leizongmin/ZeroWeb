@@ -1,0 +1,39 @@
+DC-11 BrowserApp 激活共享 FontdueBackend（2026-07-02）
+
+新增能力：
+- FontLoader::init_shared_backend(family, data) — convenience：创建 FontdueBackend +
+  load_family + set_shared_backend，隐藏 parking_lot::Mutex 复杂度
+- app_platform::link_font_loader_to_shared_backend(font_loader) — 读系统主字体
+  (chrome_ui_primary_font_data) → init_shared_backend("ChromeUI", data)
+- BrowserApp::new() 在 load_system_fonts 后调用 link_font_loader_to_shared_backend
+  (cfg-gated: sdk-chrome feature，默认路径不变)
+
+ID 映射：FontLoader rf_id ↔ 共享后端 FtFontId
+- FontLoader 加载字体 → 自动同步到共享后端 (load_font / load_font_with_family)
+- 共享后端注册 family_map → FontProvider::query 可解析族名
+
+测试（10 DC-11 测全绿）：
+- dc11_set_shared_backend_syncs_existing_fonts
+- dc11_load_font_auto_syncs_to_shared_backend
+- dc11_load_font_with_family_auto_syncs
+- dc11_multiple_fonts_have_distinct_shared_ids
+- dc11_without_shared_backend_returns_none
+- dc11_sync_failure_does_not_block_fontloader
+- dc11_shared_backend_raster_equivalence
+- dc11_init_shared_backend_convenience (new)
+- dc11_fontdue_shared_backend_consistency
+- dc11_load_font_with_family_produces_same_raster
+
+门禁：
+- cargo build --workspace: green (default + sdk-chrome)
+- cargo clippy --workspace --all-targets -- -D warnings: green
+- cargo fmt --all --check: green
+- cargo test -p zero-render-foundation: 524 passed (含 10 DC-11)
+- cargo test -p zero-browser: 189 passed (default) / 195 passed (sdk-chrome)
+- make product-smoke: 19.87% = baseline（零回归）
+
+设计决策：
+- feature-off 默认路径不变 → 零 product-smoke 风险
+- feature-on (sdk-chrome) → FontLoader 与 SDK chrome 共享同一字体栈
+- init_shared_backend 封装 parking_lot::Mutex → 调用方代码简洁
+- 共享后端加载失败不阻塞 FontLoader（no-op）
