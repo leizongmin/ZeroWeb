@@ -6181,6 +6181,7 @@ dependencies = [
  "compact_str",
  "hashbrown 0.17.1",
  "serde",
+ "serde_json",
  "zero-ui-core",
 ]
 

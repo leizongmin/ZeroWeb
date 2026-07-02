@@ -1,0 +1,58 @@
+DC-13 13 域 flesh-out（第 1-2 域）：ui/commands + ui/restoration
+===================================================================
+日期: 2026-07-01
+分支: ui-sdk
+SDK-only（未触碰 render-foundation / apps/browser，无 product-smoke 风险）
+
+## ui/commands（IF-010 CommandRegistry + 菜单 + 命令面板）
+从 129 行骨架升级为可用命令系统（spec IF-010 `CommandRegistry` / §8.4.1B 主菜单·上下文菜单·
+快捷键·command palette 同一 command）。新增 `menu.rs` 模块。
+
+- `CommandId = ActionId`（命令与单向数据流 action 同构）。
+- 升级 `Command` 模型（IF-010 CommandSpec）：id + label_msg + description_msg + shortcut
+  + menu_path（归组路径如 "View/Zoom"）+ in_palette + enabled，builder 链式。
+- `CommandResult { Executed, Unknown, Disabled }`（§8.4.1B 错误处理：未注册→Unknown diagnostic，
+  禁用→Disabled，不静默忽略）。
+- `CommandRegistry`：register（同 id 替换）/ execute / resolve_shortcut（跳过禁用命令）/
+  menu_model / palette_entries / palette_search（label/id/description 大小写不敏感）。
+- `MenuModel`/`MenuNode`：按 menu_path 归组构建菜单树（支持嵌套子组 View/Zoom，叶子 label
+  用 label_msg 走 message id）；top_level_labels / items_in / group_in 查询。
+- `PaletteEntry`：命令面板条目（id/label/desc/shortcut）。
+- 移除旧 `CommandDispatcher`（无外部引用，registry 的 resolve_shortcut 取代）。
+- **§8.4.1B 验收**：`same_command_triggered_from_menu_shortcut_and_palette` 测验证同一 reload
+  command 可由菜单/快捷键/command palette 三处入口触发，都解析到同一 ActionId。
+
+测试：13 测全绿（lib 9 + menu 4；原 3 测）。
+Coverage（scoped）：commands/lib.rs **98.23%** / menu.rs **93.48%**。
+
+## ui/restoration（IF-010 RestorationStore + JSON 持久化 + 类型化 id）
+从 80 行骨架升级为可持久化的恢复系统（spec IF-010 `RestorationStore` / §8.4.1B session restore /
+DC-13 route·scroll·input selection 可恢复）。加 serde_json 依赖。
+
+- `RestorationId` 类型化构造器：`route_stack()` / `scroll_y(widget)` / `selection(widget)`（DC-13
+  列出的可恢复状态）；`namespaced(prefix)` per-scope 隔离（per-tab）。
+- `RestorationStore`：save/restore/take（取出删除，一次性回填）/ remove / clear_namespace（前缀
+  批量清理，关 tab 时清 tab.N.*）。
+- **JSON 持久化**（§8.4.1B 重启恢复）：`to_json()` / `from_json()`——store 整体序列化为
+  `{"entries":[(id,Value),...]}`（按 id 排序，输出确定，便于 snapshot/diff），反序列化回填。
+- 只恢复 app UI 状态；网页 session/history 仍由浏览器模型 + WebView 负责（spec §8.4.10）。
+
+测试：9 测全绿（含 JSON roundtrip / 确定性 / 命名空间清理 / 类型化 id；原 2 测）。
+Coverage（scoped）：restoration/lib.rs **98.19%**。
+
+## 门禁
+  cargo build --workspace             — Finished（0 错误）
+  cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）
+  cargo fmt --all --check             — 净（0 diff）
+  scoped test-guard：zero-ui-commands 13 passed；zero-ui-restoration 9 passed
+
+## DC 关联
+  DC-13（13 域接口 + 浏览器最小子集）commands + restoration 两域从骨架升级到接口可用；
+  IF-010 CommandRegistry / RestorationStore trait 方法落地；
+  §8.4.1B 行 1（菜单/快捷键/palette 同 command）+ session restore 行覆盖；
+  DC-17 coverage 两域 per-file 93–98%（≥85%）。
+
+## 剩余 13 域（后续轮次）
+  gestures/navigation/overlay/collections/forms/assets/platform/animation/testing/devtools/design-system
+  仍多为 skeleton；navigation/overlay/collections 缺 IF-010 trait（RouteId/OverlayId/VirtualCollection）
+  与集成；platform 缺 ClipboardService/DragDropService/FilePickerService trait；gestures 缺 gesture arena。

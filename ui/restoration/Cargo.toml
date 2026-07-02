@@ -10,3 +10,4 @@ zero-ui-core = { workspace = true }
 compact_str = { workspace = true, features = ["serde"] }
 hashbrown = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
