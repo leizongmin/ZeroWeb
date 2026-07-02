@@ -1,0 +1,14 @@
+DC-16 main.rs + app.rs 文件大小合规拆分（2026-07-02）
+=====================================================
+
+变更：
+- main.rs: 2350 → 687 行（提取 tests 模块到 main_tests.rs 1664 行，include! 纯代码搬迁）
+- app.rs: 2093 → 1938 行（提取 helper types 到 app_types.rs 156 行，include! 纯代码搬迁）
+- 全部 apps/browser/src 源文件现 ≤2000 行（DC-16 硬约束）
+
+验证：
+- cargo build --workspace: PASS（0 错误）
+- cargo clippy --workspace --all-targets -- -D warnings: PASS（0 警告）
+- cargo fmt --all --check: PASS（无变更）
+- cargo test -p zero-browser: PASS（189 测全绿，零回归）
+- 纯代码搬迁（include! = 编译期文本包含），零行为变化
