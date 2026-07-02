@@ -1,0 +1,43 @@
+=== DC-10（DSL `i18n:` 桥接 → 闭合 message id 端到端引用）===
+日期: 2026-07-01
+分支: ui-sdk
+SDK-only：仅触碰 ui/dsl（新增 i18n_bridge 模块 + Cargo.toml 加 zero-ui-i18n 依赖）。
+
+--- 变更摘要 ---
+
+ui/dsl 新增 `i18n_bridge` 模块（spec FR-013 / DC-10 闭环最后一片）：
+- `i18n_value_to_message(value: &Value, engine: &Engine, ctx: &EvalContext)
+   -> Result<LocalizedText, DslError>`：把 DSL loader 保留的 `i18n:` 对象
+  （`Value::Object { i18n: <id>, params?: { <name>: <expr> } }`）解析为
+  `LocalizedText::Message(MessageRef)`。每个 param 表达式按 EvalContext 求值：
+  Text→文本参数，Int/Float→计数参数。结构不符/缺 id/表达式语法错/求值非文本计数
+  → DslError。
+- `is_i18n_object(value) -> bool`：判断 prop 是否为 i18n 对象（含 `i18n` 键）。
+- 依赖方向：ui/dsl → ui/i18n → ui/core（全通用 crate，零浏览器耦合，DC-1 已机械验证）。
+  不在 loader 内解析（保持 loader 不依赖 i18n），由宿主/求值期调用桥接。
+
+--- 测试结果（scoped test-guard）---
+
+ui/dsl：64 passed; 0 failed（原 56 → 64，新增 8 个 i18n_bridge 测）。
+  i18n_bridge::tests:
+    parses_message_id_and_count_param   ($state.tabs.count=3 → Count(3))
+    parses_text_param                    ($state.name → Text("Ada"))
+    no_params_yields_plain_message_ref
+    missing_id_is_error / non_object_is_error / bad_param_expression_is_error
+    end_to_end_resolve_via_catalog       (DSL i18n 对象 → LocalizedText →
+                                          CatalogStore.resolve → "Tabs: 3" 闭环)
+    is_i18n_object_detects_marker
+
+--- 门禁 ---
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — 净（0 diff）。
+- DC-1 机械验证：`cargo tree -p zero-ui-dsl` 零 zero-browser/webview/engine/net 依赖。
+
+--- DC-10 进度 ---
+DSL `i18n:` message id 端到端引用闭合：loader 保留 → i18n_bridge 解析为 LocalizedText
+（参数表达式求值）→ I18nProvider.resolve → 最终文案。配合上一轮的 locale 感知 plural +
+诊断链 + RTL 集成，DC-10 从 skeleton 推进到：locale/catalog/fallback/参数替换/
+plural（多语种 CLDR）/RTL/diagnostic/DSL message id 引用 全部可用。
+DC-10 仅剩浏览器文案 catalog 实际接入（属 browser-ui/chrome/i18n 或 apps/browser/i18n，
+M2 后期，非通用 SDK 能力）。
