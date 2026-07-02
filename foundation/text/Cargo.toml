@@ -1,0 +1,11 @@
+[package]
+name = "zero-text-foundation"
+description = "共享文本/字体基础层 — 字体发现/fallback/shaping/bidi/line break/grapheme/glyph cache（UI SDK 与 WebView 共用，浏览器无关）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+hashbrown = { workspace = true }

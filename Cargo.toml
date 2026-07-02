@@ -33,6 +33,12 @@ members = [
     "apps/renderer",
     "apps/webview-demo",
 
+    # UI SDK 通用层（浏览器无关；不得依赖 zero-browser-shell/webview/engine/net）
+    "ui/core",
+
+    # 共享文本/字体基础层（UI SDK 与 WebView 共用）
+    "foundation/text",
+
     # 测试基础设施
     "tests/wpt-runner",
     "tests/integration",
@@ -129,6 +135,10 @@ zero-wasm-sandbox = { path = "crates/wasm-sandbox" }
 zero-page-runtime = { path = "crates/page-runtime" }
 zero-webview = { path = "crates/webview" }
 zero-browser-shell = { path = "crates/browser-shell" }
+
+# UI SDK 内部 crate（浏览器无关，通用层）
+zero-ui-core = { path = "ui/core" }
+zero-text-foundation = { path = "foundation/text" }
 
 # 本地 taffy 补丁：添加 cached_baselines() 访问器以提取 flex 容器基线
 [patch.crates-io]

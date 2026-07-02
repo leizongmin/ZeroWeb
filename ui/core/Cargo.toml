@@ -1,0 +1,12 @@
+[package]
+name = "zero-ui-core"
+description = "通用 UI SDK 核心类型与协议 — geometry/event/widget/element/action/binding/theme/focus/semantics/invalidation/layout（浏览器无关）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+hashbrown = { workspace = true, features = ["serde"] }
+compact_str = { workspace = true, features = ["serde"] }
+thiserror = { workspace = true }

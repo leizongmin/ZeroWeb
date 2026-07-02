@@ -514,6 +514,7 @@ dependencies = [
  "itoa",
  "rustversion",
  "ryu",
+ "serde",
  "static_assertions",
 ]
 
@@ -5974,6 +5975,25 @@ dependencies = [
  "thiserror 2.0.18",
  "zero-css-parser",
  "zero-dom",
+]
+
+[[package]]
+name = "zero-text-foundation"
+version = "0.1.0"
+dependencies = [
+ "hashbrown 0.15.5",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "zero-ui-core"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "hashbrown 0.15.5",
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

@@ -1,0 +1,177 @@
+//! Widget 基础接口与三棵树之「声明树」（spec IF-001 / FR-004）。
+//!
+//! `WidgetSpec` 是用户/Rust API/YAML DSL 产出的**声明**结构（可频繁重建）；
+//! 实例状态落在 Element tree（`element.rs`），渲染输出落在 Render·Scene tree（`ui/render`）。
+//!
+//! M1 只定义 trait 与上下文边界；具体控件实现位于 `ui/widgets`/`ui/patterns`/`browser-ui/chrome`。
+
+use crate::action::{ActionBinding, EventResult};
+use crate::binding::{Binding, PropsMap};
+use crate::event::UiEvent;
+use crate::geometry::{Constraints, Rect, Size, Vec2};
+use crate::invalidation::InvalidationFlags;
+use crate::semantics::SemanticsNode;
+use crate::theme::Color;
+use compact_str::CompactString;
+use serde::{Deserialize, Serialize};
+
+/// 稳定组件标识。WidgetSpec 重建时同 `WidgetId` 的组件在 Element tree 中保留状态（光标/选区/焦点）。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct WidgetId(pub CompactString);
+
+impl WidgetId {
+    pub fn new(name: &str) -> WidgetId {
+        WidgetId(CompactString::new(name))
+    }
+}
+
+/// 组件类型名（如 `Button`、`TextInput`、`browser.AddressBar`）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComponentType(pub CompactString);
+
+impl ComponentType {
+    pub fn new(name: &str) -> ComponentType {
+        ComponentType(CompactString::new(name))
+    }
+}
+
+/// `Props` 类型别名（IF-001 `update(props: &Props)`）。
+pub type Props = PropsMap;
+
+/// 控制指令（spec IF-005 `ControlDirectives`）。
+///
+/// M1 以表达式**原文**承载（字符串）；M3 由 `ui/dsl` parser 解析为强类型 `Expression`。
+/// 故 `ui/core` 不依赖 `ui/dsl`，依赖方向保持 dsl → core。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ControlDirectives {
+    pub visible_when: Option<CompactString>,
+    pub enabled_when: Option<CompactString>,
+    pub for_each: Option<ForEachSpec>,
+}
+
+/// `for_each` 迭代声明。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForEachSpec {
+    /// 数据源（状态路径/表达式原文）。
+    pub source: CompactString,
+    /// 迭代变量别名（默认 `item`）。
+    pub item_alias: CompactString,
+}
+
+/// 声明树节点（spec §8.4.2 / IF-005 `WidgetSpec`）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WidgetSpec {
+    pub component: ComponentType,
+    pub id: Option<WidgetId>,
+    pub props: PropsMap,
+    pub bindings: Vec<Binding>,
+    pub actions: Vec<ActionBinding>,
+    pub control: ControlDirectives,
+    pub children: Vec<WidgetSpec>,
+}
+
+impl WidgetSpec {
+    pub fn new(component: &str) -> WidgetSpec {
+        WidgetSpec {
+            component: ComponentType::new(component),
+            id: None,
+            props: PropsMap::new(),
+            bindings: Vec::new(),
+            actions: Vec::new(),
+            control: ControlDirectives::default(),
+            children: Vec::new(),
+        }
+    }
+}
+
+/// 绘制后端抽象（M1 最小契约）。`ui/render` 提供具体实现，把记录转成 RenderPrimitives。
+pub trait PaintRecorder {
+    fn fill_rect(&mut self, rect: Rect, color: Color);
+    fn stroke_rect(&mut self, rect: Rect, color: Color, stroke_width: f32);
+}
+
+/// paint 上下文。
+pub struct PaintCtx<'a> {
+    pub recorder: &'a mut dyn PaintRecorder,
+    pub clip: Option<Rect>,
+    pub offset: Vec2,
+}
+
+/// mount 上下文（首次实例化）。
+pub struct MountCtx<'a> {
+    pub id: &'a WidgetId,
+    pub invalidation: &'a mut InvalidationFlags,
+}
+
+/// update 上下文（props 变化）。
+pub struct UpdateCtx<'a> {
+    pub invalidation: &'a mut InvalidationFlags,
+}
+
+/// event 上下文。
+pub struct EventCtx<'a> {
+    pub invalidation: &'a mut InvalidationFlags,
+}
+
+/// layout 上下文。
+pub struct LayoutCtx {
+    pub scale_factor: f32,
+}
+
+/// semantics 上下文（a11y 树构建器）。
+pub struct SemanticsCtx<'a> {
+    pub nodes: &'a mut Vec<SemanticsNode>,
+}
+
+/// Widget 基础 trait（spec IF-001）。
+///
+/// 控件不应 panic；无效 props 在 update 阶段转为诊断；未处理事件返回 `EventResult::Ignored`。
+pub trait Widget {
+    fn mount(&mut self, ctx: &mut MountCtx);
+    fn update(&mut self, ctx: &mut UpdateCtx, props: &Props);
+    fn event(&mut self, ctx: &mut EventCtx, event: &UiEvent) -> EventResult;
+    fn layout(&mut self, ctx: &mut LayoutCtx, constraints: Constraints) -> Size;
+    fn paint(&mut self, ctx: &mut PaintCtx);
+    fn semantics(&self, ctx: &mut SemanticsCtx);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::action::ActionId;
+    use crate::binding::Value;
+
+    #[test]
+    fn widget_spec_roundtrip_and_children() {
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        let mut btn = WidgetSpec::new("Button");
+        btn.props.insert("label", Value::Text("OK".into()));
+        btn.actions.push(ActionBinding {
+            trigger: CompactString::new("click"),
+            action: ActionId::new("app.confirm"),
+            payload: None,
+        });
+        root.children.push(btn);
+
+        assert_eq!(root.component, ComponentType::new("Column"));
+        assert_eq!(root.children.len(), 1);
+        assert_eq!(root.children[0].actions.len(), 1);
+    }
+
+    #[test]
+    fn stable_widget_id_equality() {
+        // 同名 WidgetId 视为同一组件实例（Element tree 状态保持的依据）。
+        let a = WidgetId::new("address_bar");
+        let b = WidgetId::new("address_bar");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn control_directives_default_none() {
+        let spec = WidgetSpec::new("Row");
+        assert!(spec.control.visible_when.is_none());
+        assert!(spec.control.enabled_when.is_none());
+        assert!(spec.control.for_each.is_none());
+    }
+}

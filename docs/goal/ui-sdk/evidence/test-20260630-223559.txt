@@ -1,0 +1,40 @@
+# make test 基线实测 — 20260630-223559（首轮）
+
+命令：`make test`（= `./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo test --workspace --exclude zero-render-foundation -- --test-threads=2`）
+
+## 结果：RED（退出码 101，环境性，非本目标引入）
+
+失败点：`zero-script-sandbox` (lib test) 链接阶段。
+
+```
+error: linking with `link.exe` failed: exit code: 1120
+  = note: librusty_v8-*.rlib(system-jit-win.obj) : error LNK2019: 无法解析的外部符号 __imp_EventRegister
+          librusty_v8-*.rlib(system-jit-win.obj) : error LNK2019: 无法解析的外部符号 __imp_EventSetInformation
+          librusty_v8-*.rlib(system-jit-win.obj) : error LNK2019: 无法解析的外部符号 __imp_EventUnregister
+          librusty_v8-*.rlib(system-jit-win.obj) : error LNK2019: 无法解析的外部符号 __imp_EventWriteTransfer
+          librusty_v8-*.rlib(wintz.obj) : error LNK2019: 无法解析的外部符号 __imp_RegOpenKeyExW
+          librusty_v8-*.rlib(wintz.obj) : error LNK2019: 无法解析的外部符号 __imp_RegQueryInfoKeyW
+          ... (advapi32 系符号，共 9 个 LNK2019)
+          fatal error LNK1120: 9 个无法解析的外部命令
+error: could not compile `zero-script-sandbox` (lib test)
+make: *** [test] 错误 101
+```
+
+## 定性
+
+- 缺失符号 `EventRegister`/`EventSetInformation`/`EventUnregister`/`EventWriteTransfer`/`RegOpenKeyExW`/`RegQueryInfoKeyW`/`RegCloseKey`/`RegEnumKeyExW`/`RegQueryValueExW` 全部属于 `advapi32.lib`（ETW + registry）。rusty_v8 debug test 二进制在本机 MSVC BuildTools 14.44.35207 上未被自动链接。
+- **`cargo build --release -p zero-script-sandbox` 成功**（Finished release in 0.86s）→ V8 库与环境本身正常；仅 debug **test** 二进制链接失败。
+- `zero-script-sandbox` 属本目标**禁止修改区**（脚本 sandbox），且为环境/工具链问题，非代码/逻辑失败。
+- CI（Linux `ci.yml`，真后端）跑全量 `cargo test --workspace` 正常（Makefile 注释佐证）。
+
+## 对本目标的影响与验证路径
+
+- 不影响 UI SDK crate 的开发与验证：新增 `ui/*` / `foundation/text` / `browser-ui/chrome` 使用 scoped test-guard：
+  `./target/test-guard -- cargo test -p zero-ui-<crate>`（不触碰 script-sandbox）。
+- 用 `cargo build --workspace` 确认不破坏其它 crate 编译。
+- 最终门禁仍以 `make test` 为准（待环境恢复或由 CI 验证）。
+- 跟踪项记入 master.md「未解决缺口」：本机 script-sandbox debug-test V8 链接环境问题（不阻塞本目标）。
+
+## 备注
+
+- `make test` 本地已 `--exclude zero-render-foundation`（GPU headless 阻塞，Makefile 既定本地 workaround；CI 全量）。
