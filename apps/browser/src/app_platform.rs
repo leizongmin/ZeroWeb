@@ -413,15 +413,23 @@ fn chrome_ui_primary_font_paths() -> &'static [&'static str] {
     }
 }
 
+/// 读取首个可用的 Chrome UI 主字体原始字节 + 其路径（DC-11 字体共享入口）。
+///
+/// render-foundation `FontLoader` 与 foundation/text `FontdueBackend` 经本函数取同一份字体
+/// 字节，使 UI SDK chrome 文本（`render_chrome_via_sdk`）与浏览器页面文本共享字体数据 →
+/// 字形一致（spec FR-014 / DC-11）。本函数只读字体文件，不触碰 render-foundation 字体栈，
+/// 故不影响页面渲染（无 product-smoke 风险）。
+pub fn chrome_ui_primary_font_data() -> Option<(Vec<u8>, &'static str)> {
+    chrome_ui_primary_font_paths().iter().find_map(|path| {
+        let data = std::fs::read(path).ok().filter(|d| !d.is_empty())?;
+        Some((data, *path))
+    })
+}
+
 /// 加载系统字体（主字体 + CJK/Emoji 回退链）
 pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
-    let primary_paths = chrome_ui_primary_font_paths();
-
-    let (primary, loaded_path) = primary_paths.iter().find_map(|path| {
-        let data = std::fs::read(path).ok()?;
-        let id = font_loader.load_font(&data).ok()?;
-        Some((id, *path))
-    })?;
+    let (primary_data, loaded_path) = chrome_ui_primary_font_data()?;
+    let primary = font_loader.load_font(&primary_data).ok()?;
     tracing::info!("Chrome UI primary font: {loaded_path} (id={primary})");
 
     #[cfg(target_os = "macos")]
@@ -581,6 +589,16 @@ mod tests {
     #[test]
     fn chrome_ui_primary_paths_non_empty() {
         assert!(!chrome_ui_primary_font_paths().is_empty());
+    }
+
+    #[test]
+    fn chrome_ui_primary_font_data_returns_bytes_when_available() {
+        // 与 load_system_fonts_loads_primary 同前提：本平台至少一个候选字体可读。
+        // DC-11 字体共享入口：返回主字体原始字节 + 路径（供 FontLoader 与 FontdueBackend 共享）。
+        let (data, path) = chrome_ui_primary_font_data()
+            .expect("expected at least one Chrome UI font on this platform");
+        assert!(!data.is_empty(), "font bytes non-empty");
+        assert!(!path.is_empty());
     }
 
     #[test]

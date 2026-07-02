@@ -1,0 +1,30 @@
+DC-11 字体共享入口（chrome_ui_primary_font_data）— 2026-07-02
+
+## 变更
+apps/browser/src/app_platform.rs：
+- 新增 `pub fn chrome_ui_primary_font_data() -> Option<(Vec<u8>, &'static str)>`——读取首个可用的
+  Chrome UI 主字体原始字节 + 其路径。**DC-11 字体共享入口**：render-foundation `FontLoader` 与
+  foundation/text `FontdueBackend` 经此取同一份字体字节，使 UI SDK chrome 文本（render_chrome_via_sdk）
+  与浏览器页面文本共享字体数据 → 字形一致（spec FR-014 / DC-11）。
+- 重构 `load_system_fonts` 主字体加载用本函数（DRY，行为不变：仍读首个可用主字体进 FontLoader +
+  log 路径）。bold/fallback 部分不动（加载不同字体）。
+
+## 为什么
+DC-14 浏览器接线的 SDK chrome 文本路径需要浏览器提供 `Arc<FontdueBackend>`（render_chrome_via_sdk
+签名）。浏览器现用 render-foundation `FontLoader`（不同字体栈）。本函数提供「同字体字节喂两个栈」
+的字体共享（非替换），**不触碰 render-foundation 字体栈** → 页面渲染（welcome.html）不变 → 无
+product-smoke 风险（区别于 DC-11 完整「字体栈统一」风险步）。这是 DC-14 chrome 文本接线的直接前置。
+
+## 测试
++1 测 `chrome_ui_primary_font_data_returns_bytes_when_available`（与既有 load_system_fonts_loads_primary
+同前提：本平台至少一个候选字体可读 → 返回非空字节 + 路径）。既有 load_system_fonts_loads_primary
+仍绿（重构行为不变）。clippy/fmt 净；默认 build（无 feature）绿。
+
+## 范围
+仅 apps/browser 字体加载（app_platform.rs），不改渲染路径、不改 render-foundation → 无 product-smoke
+风险。DC-1 不涉及（apps/browser 允许依赖任意）。
+
+## 下一步
+浏览器接线：BrowserApp 持 `Arc<FontdueBackend>`（chrome_ui_primary_font_data 构造，OnceLock 缓存）→
+render_cpu/render_frame 在默认关闭 `sdk-chrome` feature 下调 render_chrome_via_sdk + merge_into_frame
+把 SDK chrome 并入帧（grayscale；替换式迁移需先拆 build_scene 的 chrome/页面内容）。
