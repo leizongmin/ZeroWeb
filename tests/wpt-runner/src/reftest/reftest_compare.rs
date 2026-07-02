@@ -7,6 +7,33 @@ use std::path::Path;
 
 use zero_render_foundation::surface::FrameBuffer;
 
+/// DC-14 非平凡性检查——帧是否「接近纯色」（退化/空白渲染）。
+///
+/// 每 16 像素采样 1 个，主色占比 > 99.9% 判为近纯色。空帧视为退化。
+/// 用于排除退化假绿：test==ref 且都近纯色（如 parsing/animation/print/crashtest
+/// headless 空白页）的 reftest 会自源「通过」但无意义，须标可疑单独审计。
+pub fn frame_is_near_solid(fb: &FrameBuffer) -> bool {
+    let n_px = (fb.width as usize) * (fb.height as usize);
+    if n_px == 0 {
+        return true; // 空帧视为退化
+    }
+    let stride = 16; // 每 16 个像素采样 1 个（800×600→30000 样本）
+    let mut counts: std::collections::HashMap<[u8; 4], u32> = std::collections::HashMap::new();
+    let mut samples = 0u32;
+    let mut i = 0usize;
+    while i < fb.data.len() {
+        let px = [fb.data[i], fb.data[i + 1], fb.data[i + 2], fb.data[i + 3]];
+        *counts.entry(px).or_insert(0) += 1;
+        samples += 1;
+        i += 4 * stride;
+    }
+    if samples == 0 {
+        return true;
+    }
+    let dominant = counts.values().copied().max().unwrap_or(0) as f64;
+    dominant / samples as f64 > 0.999
+}
+
 /// 将 FrameBuffer 保存为 PNG 文件（用于失败诊断）。
 pub fn save_fb_as_png(fb: &FrameBuffer, path: &Path) {
     use std::io::BufWriter;
