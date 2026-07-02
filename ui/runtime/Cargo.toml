@@ -9,6 +9,8 @@ license.workspace = true
 zero-ui-core = { workspace = true }
 zero-ui-render = { workspace = true }
 zero-ui-i18n = { workspace = true }
+# DC-15：WidgetHost opt-in GestureArena（触摸/指针序列→Tap/Pan/Fling 仲裁）。
+zero-ui-gestures = { workspace = true }
 compact_str = { workspace = true }
 hashbrown = { workspace = true }
 thiserror = { workspace = true }

@@ -6224,6 +6224,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "thiserror 2.0.18",
  "zero-ui-core",
+ "zero-ui-gestures",
  "zero-ui-i18n",
  "zero-ui-render",
 ]

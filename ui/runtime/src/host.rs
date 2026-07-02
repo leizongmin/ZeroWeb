@@ -16,6 +16,7 @@ use crate::accessibility::AccessibilityBackend;
 use compact_str::CompactString;
 use zero_ui_core::action::{ActionId, ActionPayload, EventResult};
 use zero_ui_core::binding::{PropsMap, Value};
+use zero_ui_core::event::PointerPhase;
 use zero_ui_core::event::UiEvent;
 use zero_ui_core::focus::{FocusDirection, FocusScope};
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size, Vec2};
@@ -24,6 +25,7 @@ use zero_ui_core::semantics::{SemanticsFlags, SemanticsNode};
 use zero_ui_core::widget::{
     ComponentType, EventCtx, LayoutCtx, MountCtx, PaintCtx, SemanticsCtx, Widget, WidgetId, WidgetSpec,
 };
+use zero_ui_gestures::{Gesture, GestureArena, PointerEvent};
 use zero_ui_render::{Scene, SceneRecorder};
 
 /// Widget 工厂闭包：从 `WidgetSpec` 构造一个具体控件实例。
@@ -127,6 +129,14 @@ pub struct WidgetHost {
     /// 上次推送给 a11y 后端的焦点 id；与 `focused` 比较以检测焦点变化，
     /// 避免在本 host 的所有改焦点位点（focus_next/set_focus/click/作用域）分别埋标记。
     last_pushed_focus: Option<WidgetId>,
+    /// DC-15 opt-in 手势 arena：`Some` 时 `dispatch_event` 把指针序列顺带喂入 arena 仲裁
+    /// （Tap/Pan/Fling），识别出的手势缓冲到 `pending_gestures` 由 `take_gestures` 取回。
+    /// `None`（默认）→ dispatch 行为与无 arena 逐位等价（向后兼容）。
+    gesture_arena: Option<GestureArena>,
+    /// arena 识别出但尚未被 `take_gestures` 取回的手势。
+    pending_gestures: Vec<Gesture>,
+    /// 单调时间戳（ms），喂给 arena 的每个指针事件递增（UiEvent::Pointer 不带时间戳）。
+    gesture_clock: i64,
 }
 
 impl Default for WidgetHost {
@@ -142,6 +152,9 @@ impl Default for WidgetHost {
             tokens: zero_ui_core::theme::SemanticTokens::light(),
             a11y_backend: None,
             last_pushed_focus: None,
+            gesture_arena: None,
+            pending_gestures: Vec::new(),
+            gesture_clock: 0,
         }
     }
 }
@@ -269,6 +282,30 @@ impl WidgetHost {
         }
     }
 
+    /// 挂载手势 arena（DC-15 移动端 / 触摸 skeleton，opt-in）。
+    ///
+    /// 挂载后，`dispatch_event` 在处理指针事件时顺带把序列喂入 arena 仲裁（Tap/Pan/Fling），
+    /// 识别出的手势缓冲，由 [`take_gestures`](WidgetHost::take_gestures) 取回。调用方负责
+    /// 预先在 arena 注册所需识别器（`arena.push(TapRecognizer/PanRecognizer/...)`）。
+    ///
+    /// **向后兼容**：未挂载时（默认）`dispatch_event` 行为逐位等价（无手势缓冲、无额外失效）。
+    ///
+    /// 限制：`UiEvent::Pointer` 为单指针抽象，本路径覆盖 Tap/Pan/Fling；多指 Pinch 需扩展
+    /// UiEvent 携带指针 id（future work）。
+    pub fn set_gesture_arena(&mut self, arena: GestureArena) {
+        self.gesture_arena = Some(arena);
+    }
+
+    /// 是否挂载了手势 arena。
+    pub fn has_gesture_arena(&self) -> bool {
+        self.gesture_arena.is_some()
+    }
+
+    /// 取回 arena 自上次取回后识别出的手势（清空内部缓冲）。
+    pub fn take_gestures(&mut self) -> Vec<Gesture> {
+        std::mem::take(&mut self.pending_gestures)
+    }
+
     /// 两遍布局：measure（自下而上算尺寸）+ arrange（自上而下定绝对 rect）。
     /// 返回根尺寸。调用后清除 `NEEDS_LAYOUT`（layout 隐含 re-paint 由 `NEEDS_PAINT` 表达）。
     pub fn layout(&mut self, constraints: Constraints) -> Size {
@@ -318,6 +355,30 @@ impl WidgetHost {
     /// 收集 widget 发出的 action；任何 action 发出或焦点变化都标记 `NEEDS_PAINT`。
     pub fn dispatch_event(&mut self, event: &UiEvent) -> Vec<EmittedAction> {
         let mut emitted = Vec::new();
+        // DC-15 opt-in 手势 arena：挂载时把指针序列顺带喂入 arena 仲裁（不影响下方 hit-test/冒泡）。
+        // UiEvent::Pointer 单指针（id=0）+ 内部 gesture_clock 提供时序；Cancelled → arena.reset。
+        if self.gesture_arena.is_some() {
+            let recognized = if let UiEvent::Pointer { phase, position, .. } = event {
+                let arena = self.gesture_arena.as_mut().expect("checked Some above");
+                self.gesture_clock = self.gesture_clock.saturating_add(16);
+                let ts = self.gesture_clock;
+                match phase {
+                    PointerPhase::Pressed => arena.route(&PointerEvent::down(0, *position, ts)),
+                    PointerPhase::Moved => arena.route(&PointerEvent::move_(0, *position, ts)),
+                    PointerPhase::Released => arena.route(&PointerEvent::up(0, *position, ts)),
+                    PointerPhase::Cancelled => {
+                        arena.reset();
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            if let Some(g) = recognized {
+                self.pending_gestures.push(g);
+                self.pending |= InvalidationFlags::NEEDS_PAINT;
+            }
+        }
         let Some(root) = self.root.as_mut() else {
             return emitted;
         };
@@ -2772,5 +2833,128 @@ mod tests {
             vec![A11yRec::Focus(Some("nonexistent".to_string()))],
             "set_focus change is detected and pushed"
         );
+    }
+
+    // ── DC-15 opt-in GestureArena 接入 dispatch_event ──────────────────────────────
+    use zero_ui_gestures::{PanRecognizer, TapRecognizer};
+
+    fn pointer(phase: PointerPhase, position: Point) -> UiEvent {
+        UiEvent::Pointer {
+            phase,
+            button: Some(PointerButton::Primary),
+            position,
+            modifiers: Modifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn gesture_arena_off_by_default_no_breakage() {
+        // 未挂载 arena：dispatch 行为不变，take_gestures 永远空。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+        assert!(!host.has_gesture_arena());
+
+        // 指针 Released 命中 a → 仍 emit app.a（既有 click 路径不变）。
+        let click = pointer(PointerPhase::Released, Point::new(10.0, 10.0));
+        let emitted = host.dispatch_event(&click);
+        assert_eq!(emitted.len(), 1, "click 路径不受 arena 影响");
+        assert!(host.take_gestures().is_empty(), "无 arena 不缓冲手势");
+    }
+
+    #[test]
+    fn gesture_arena_recognizes_tap_from_pointer_sequence() {
+        // 挂载 arena + TapRecognizer：Pressed → Released（同点，无 move）→ Tap 缓冲。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+
+        let mut arena = GestureArena::new();
+        arena.push(TapRecognizer::new(8.0));
+        host.set_gesture_arena(arena);
+        assert!(host.has_gesture_arena());
+
+        let p = Point::new(10.0, 10.0);
+        // Pressed 不立即裁决 Tap。
+        host.dispatch_event(&pointer(PointerPhase::Pressed, p));
+        assert!(host.take_gestures().is_empty(), "down 不立即产出 Tap");
+        // Released → Tap。
+        host.dispatch_event(&pointer(PointerPhase::Released, p));
+        let gestures = host.take_gestures();
+        assert_eq!(gestures.len(), 1, "Released 产出 1 个手势");
+        assert!(matches!(gestures[0], Gesture::Tap(_)), "识别为 Tap");
+        // 再次取空（已 drain）。
+        assert!(host.take_gestures().is_empty());
+    }
+
+    #[test]
+    fn gesture_arena_recognizes_pan_from_move_sequence() {
+        // 挂载 arena + PanRecognizer：Pressed → Moved（位移超阈值）→ Pan 缓冲。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+
+        let mut arena = GestureArena::new();
+        arena.push(PanRecognizer::with_thresholds(8.0, 1.5));
+        host.set_gesture_arena(arena);
+
+        host.dispatch_event(&pointer(PointerPhase::Pressed, Point::new(100.0, 100.0)));
+        assert!(host.take_gestures().is_empty(), "down 不产出");
+        // 位移 30px 超阈值（8）→ Pan。
+        host.dispatch_event(&pointer(PointerPhase::Moved, Point::new(100.0, 130.0)));
+        let gestures = host.take_gestures();
+        assert_eq!(gestures.len(), 1);
+        assert!(matches!(gestures[0], Gesture::Pan { .. }), "识别为 Pan");
+    }
+
+    #[test]
+    fn gesture_arena_cancel_resets_without_buffering() {
+        // Cancelled → arena.reset，不缓冲手势。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+
+        let mut arena = GestureArena::new();
+        arena.push(TapRecognizer::new(8.0));
+        host.set_gesture_arena(arena);
+
+        host.dispatch_event(&pointer(PointerPhase::Pressed, Point::new(10.0, 10.0)));
+        host.dispatch_event(&pointer(PointerPhase::Cancelled, Point::new(10.0, 10.0)));
+        assert!(host.take_gestures().is_empty(), "Cancelled reset，不产出 Tap");
+    }
+
+    #[test]
+    fn gesture_arena_coexists_with_click_dispatch() {
+        // arena 挂载时，既有 click-to-focus + emit 仍工作（arena 是 additive，不替代 hit-test）。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+
+        let mut arena = GestureArena::new();
+        arena.push(TapRecognizer::new(8.0));
+        host.set_gesture_arena(arena);
+
+        let p = Point::new(10.0, 10.0);
+        host.dispatch_event(&pointer(PointerPhase::Pressed, p));
+        let emitted = host.dispatch_event(&pointer(PointerPhase::Released, p));
+        // click 仍 emit app.a（hit-test 不受 arena 影响）。
+        assert_eq!(emitted.len(), 1, "click 路径仍 emit");
+        assert_eq!(emitted[0].action, ActionId::new("app.a"));
+        // 同时 arena 识别出 Tap。
+        let gestures = host.take_gestures();
+        assert!(matches!(gestures.first(), Some(Gesture::Tap(_))));
     }
 }

@@ -1,0 +1,51 @@
+DC-15 WidgetHost opt-in GestureArena 接入 dispatch（SDK-side，2026-07-03）
+======================================================================
+
+目标
+----
+闭合 DC-15 移动多指 skeleton 最后一个 SDK-side 缺口：「GestureArena 接入 WidgetHost
+dispatch（多指仲裁）」。此前 ui/gestures arena 是独立仲裁层，未接入 host 事件流；
+本轮以 **opt-in** 方式把指针序列喂入 arena → 识别手势 → 缓冲取回，零破坏既有 dispatch。
+
+设计约束
+--------
+UiEvent::Pointer 为**单指针**抽象（无 pointer id / timestamp）：本路径覆盖 Tap/Pan/Fling
+（鼠标拖动 / 单指触摸序列）。多指 Pinch 需扩展 UiEvent 携带指针 id（future work，
+文档化为限制）。host 内部用 pointer_id=0 + 单调 gesture_clock（每事件 +16ms）提供时序。
+
+实现（ui/runtime/Cargo.toml + src/host.rs）
+-------------------------------------------
+- ui-runtime 加 dev/regular dep `zero-ui-gestures`（sibling SDK crate，DC-1 零浏览器耦合）。
+- WidgetHost 加字段：`gesture_arena: Option<GestureArena>` + `pending_gestures: Vec<Gesture>`
+  + `gesture_clock: i64`。
+- 公共 API：
+  - `set_gesture_arena(arena)` opt-in 挂载；
+  - `has_gesture_arena()` 查询；
+  - `take_gestures() -> Vec<Gesture>` 取回并清空缓冲。
+- `dispatch_event` 顶部：arena=Some 时，UiEvent::Pointer 按 PointerPhase 喂入 arena
+  （Pressed→down / Moved→move_ / Released→up / Cancelled→reset），识别出的 Gesture 入
+  `pending_gestures` + 标 NEEDS_PAINT；**随后照常执行既有 hit-test/冒泡/click-to-focus**
+  （arena additive，不替代既有路径）。arena=None → dispatch 逐位等价（向后兼容）。
+
+测试（5 新测，ui-runtime 74→79）
+--------------------------------
+- `gesture_arena_off_by_default_no_breakage`：未挂载 → take_gestures 永远空 + click emit 不变。
+- `gesture_arena_recognizes_tap_from_pointer_sequence`：TapRecognizer + Pressed→Released 同点 → Tap。
+- `gesture_arena_recognizes_pan_from_move_sequence`：PanRecognizer + Pressed→Moved 位移 30px 超阈值 → Pan。
+- `gesture_arena_cancel_resets_without_buffering`：Cancelled → reset，不产出。
+- `gesture_arena_coexists_with_click_dispatch`：挂载 arena 时既有 click emit app.a 仍工作
+  + arena 同时识别 Tap（additive 共存）。
+
+门禁
+----
+- cargo build --workspace + clippy --workspace --all-targets -D warnings + fmt：全净。
+- ui-runtime 79 测全绿（+5）；下游 chrome 81 + examples 全绿（用 WidgetHost 的 SDK crate 零回归）。
+- apps/browser 不用 WidgetHost.dispatch_event（自有 app_input.rs 输入循环）→ host 改动不影响浏览器。
+- SDK-only（ui/runtime 未触碰 render-foundation 渲染像素）→ 无 product-smoke 风险。
+
+DC-15 状态推进
+--------------
+DC-15 mobile skeleton 的 SDK-side 完整闭合：phone shell + gestures arena（含 host 接入）+
+平台 back/haptics + navigator 回落 + WindowMetrics mobile 字段 + IME，端到端集成测 + 单测
+均验证。**仅剩需移动设备/GUI 的项**：真实移动后端首帧（Android/iOS/HarmonyOS）+ back/haptics
+真实平台后端 + 多指 Pinch（UiEvent 扩展）+ GUI 可视验收。
