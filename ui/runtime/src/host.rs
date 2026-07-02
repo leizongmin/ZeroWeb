@@ -96,6 +96,7 @@ struct HostNode {
     cached_rect: Rect,
     invalidation: InvalidationFlags,
     epoch: u32,
+    focusable: bool,
 }
 
 /// Retained widget host —— 三棵树运行态的驱动器。
@@ -105,6 +106,7 @@ pub struct WidgetHost {
     scene: Scene,
     epoch: u32,
     pending: InvalidationFlags,
+    focused: Option<WidgetId>,
 }
 
 impl Default for WidgetHost {
@@ -115,6 +117,7 @@ impl Default for WidgetHost {
             scene: Scene::new(),
             epoch: 0,
             pending: InvalidationFlags::CLEAN,
+            focused: None,
         }
     }
 }
@@ -206,21 +209,134 @@ impl WidgetHost {
         self.root.as_ref().and_then(|r| find_epoch(r, id))
     }
 
-    /// 派发带位置的输入事件：hit-test 到最深的、最上层命中节点，冒泡派发；
-    /// 收集 widget 发出的 action。任何 action 发出都标记 `NEEDS_PAINT`（hover/pressed 变化）。
+    /// 派发输入事件：
+    /// - **位置事件**（指针/滚动）：hit-test 到最深的、最上层命中节点，冒泡派发。
+    /// - **键盘事件**：`Tab`/`Shift-Tab` 推进焦点遍历；其它键路由到当前 focused widget（DC-8）。
     ///
-    /// 非位置事件（键盘/焦点/IME）不在本 host 路由——焦点路由见 DC-8 / `ui/runtime::ime`。
+    /// 收集 widget 发出的 action；任何 action 发出或焦点变化都标记 `NEEDS_PAINT`。
     pub fn dispatch_event(&mut self, event: &UiEvent) -> Vec<EmittedAction> {
         let mut emitted = Vec::new();
         let Some(root) = self.root.as_mut() else {
             return emitted;
         };
-        let handled = dispatch_node(root, event, &mut emitted);
-        if handled {
-            self.pending |= InvalidationFlags::NEEDS_PAINT;
+        match event {
+            UiEvent::Key {
+                code,
+                action: key_action,
+                modifiers,
+                ..
+            } => {
+                // Tab / Shift-Tab → 焦点遍历（按声明顺序，wrap）。
+                if code.0.as_str() == "Tab" && matches!(key_action, zero_ui_core::event::KeyAction::Pressed) {
+                    let dir = if modifiers.contains(zero_ui_core::event::Modifiers::SHIFT) {
+                        zero_ui_core::focus::FocusDirection::Backward
+                    } else {
+                        zero_ui_core::focus::FocusDirection::Forward
+                    };
+                    self.focus_next(dir);
+                    self.pending |= InvalidationFlags::NEEDS_PAINT;
+                    return emitted;
+                }
+                // 其它键 → 路由到 focused widget。
+                if let Some(focused) = self.focused.clone()
+                    && let Some(node) = find_node_mut(root, &focused)
+                    && let Some(w) = node.widget.as_mut()
+                {
+                    let mut flags = InvalidationFlags::CLEAN;
+                    let res = w.event(
+                        &mut EventCtx {
+                            invalidation: &mut flags,
+                        },
+                        event,
+                    );
+                    node.invalidation |= flags;
+                    collect_emit(res, &mut emitted);
+                }
+                if !emitted.is_empty() {
+                    self.pending |= InvalidationFlags::NEEDS_PAINT;
+                }
+            }
+            _ => {
+                // 指针/滚动等位置事件。
+                let handled = dispatch_node(root, event, &mut emitted);
+                if handled {
+                    self.pending |= InvalidationFlags::NEEDS_PAINT;
+                }
+            }
         }
         emitted
     }
+
+    /// 当前 focused widget id（DC-8）。
+    pub fn focused_id(&self) -> Option<&WidgetId> {
+        self.focused.as_ref()
+    }
+
+    /// 显式设置焦点到指定 widget（若存在）。
+    pub fn set_focus(&mut self, id: WidgetId) {
+        self.focused = Some(id);
+        self.pending |= InvalidationFlags::NEEDS_PAINT;
+    }
+
+    /// 按方向推进焦点遍历（Tab 按声明顺序，wrap；DC-8 / spec FR-011）。
+    pub fn focus_next(&mut self, dir: zero_ui_core::focus::FocusDirection) {
+        use zero_ui_core::focus::FocusDirection;
+        let Some(root) = self.root.as_ref() else {
+            return;
+        };
+        let mut focusables: Vec<WidgetId> = Vec::new();
+        collect_focusables(root, &mut focusables);
+        if focusables.is_empty() {
+            self.focused = None;
+            return;
+        }
+        let idx = self
+            .focused
+            .as_ref()
+            .and_then(|f| focusables.iter().position(|x| x == f));
+        let len = focusables.len();
+        let next_idx = match (dir, idx) {
+            (FocusDirection::Forward, Some(i)) => (i + 1) % len,
+            (FocusDirection::Forward, None) => 0,
+            (FocusDirection::Backward, Some(i)) => (i + len - 1) % len,
+            (FocusDirection::Backward, None) => len - 1,
+        };
+        let new_focus = focusables[next_idx].clone();
+        if self.focused.as_ref() != Some(&new_focus) {
+            self.focused = Some(new_focus);
+            self.pending |= InvalidationFlags::NEEDS_PAINT;
+        }
+    }
+}
+
+/// 把 `EventResult` 中的 action 收集进 `emitted`。
+fn collect_emit(res: EventResult, emitted: &mut Vec<EmittedAction>) {
+    match res {
+        EventResult::Ignored | EventResult::Consumed => {}
+        EventResult::Emit(action) => emitted.push(EmittedAction { action, payload: None }),
+        EventResult::EmitWithPayload(action, payload) => emitted.push(EmittedAction {
+            action,
+            payload: Some(payload),
+        }),
+    }
+}
+
+/// 按声明（前序）顺序收集所有 focusable 节点的 id。
+fn collect_focusables(node: &HostNode, out: &mut Vec<WidgetId>) {
+    if node.focusable {
+        out.push(node.id.clone());
+    }
+    for c in &node.children {
+        collect_focusables(c, out);
+    }
+}
+
+/// 按 id 查可变节点。
+fn find_node_mut<'a>(node: &'a mut HostNode, id: &WidgetId) -> Option<&'a mut HostNode> {
+    if &node.id == id {
+        return Some(node);
+    }
+    node.children.iter_mut().find_map(|c| find_node_mut(c, id))
 }
 
 // ---------------- 构建与 reconcile ----------------
@@ -237,6 +353,7 @@ fn build_node(spec: &WidgetSpec, registry: &WidgetRegistry, epoch: u32) -> HostN
         cached_rect: Rect::ZERO,
         invalidation: InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT,
         epoch,
+        focusable: false,
     };
     if let Some(mut w) = registry.build(spec) {
         let mut flags = InvalidationFlags::CLEAN;
@@ -245,6 +362,7 @@ fn build_node(spec: &WidgetSpec, registry: &WidgetRegistry, epoch: u32) -> HostN
             invalidation: &mut flags,
         });
         node.invalidation |= flags;
+        node.focusable = w.focusable();
         node.widget = Some(w);
     }
     for child in &spec.children {
@@ -570,6 +688,18 @@ mod tests {
             } = event
             {
                 EventResult::Emit(self.action.clone())
+            } else if let UiEvent::Key {
+                code,
+                action: key_action,
+                ..
+            } = event
+            {
+                // Enter（聚焦时）→ emit action（演示键盘路由）。
+                if code.0.as_str() == "Enter" && matches!(key_action, zero_ui_core::event::KeyAction::Pressed) {
+                    EventResult::Emit(self.action.clone())
+                } else {
+                    EventResult::Ignored
+                }
             } else {
                 EventResult::Ignored
             }
@@ -583,6 +713,9 @@ mod tests {
                 .fill_rect(Rect::from_ltrb(0.0, 0.0, 50.0, 50.0), self.color);
         }
         fn semantics(&self, _ctx: &mut zero_ui_core::widget::SemanticsCtx) {}
+        fn focusable(&self) -> bool {
+            true
+        }
     }
 
     /// 用 Patch 工厂构造 host（component "Patch"）。
@@ -862,6 +995,103 @@ mod tests {
             !host.needs_layout(),
             "color-only theme change must not request re-layout"
         );
+    }
+
+    #[test]
+    fn tab_cycles_focus_in_declaration_order() {
+        // DC-8：Tab 按声明顺序推进焦点（wrap）；Shift-Tab 反向。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        root.children.push(patch("red", "c", "app.c"));
+        host.set_root(&root);
+
+        assert!(host.focused_id().is_none(), "no focus initially");
+        // Tab → a。
+        host.focus_next(zero_ui_core::focus::FocusDirection::Forward);
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("a")));
+        // Tab → b → c → a（wrap）。
+        host.focus_next(zero_ui_core::focus::FocusDirection::Forward);
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("b")));
+        host.focus_next(zero_ui_core::focus::FocusDirection::Forward);
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("c")));
+        host.focus_next(zero_ui_core::focus::FocusDirection::Forward);
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("a")), "forward wraps");
+        // Shift-Tab（Backward）从 a → c。
+        host.focus_next(zero_ui_core::focus::FocusDirection::Backward);
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("c")));
+    }
+
+    #[test]
+    fn tab_key_event_advances_focus() {
+        // DC-8：dispatch 收到 Tab 键 → 推进焦点。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+
+        let tab = UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("Tab"),
+            action: zero_ui_core::event::KeyAction::Pressed,
+            modifiers: zero_ui_core::event::Modifiers::NONE,
+            text: None,
+        };
+        let emitted = host.dispatch_event(&tab);
+        assert!(emitted.is_empty(), "Tab does not emit action");
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("a")));
+        host.dispatch_event(&tab);
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("b")));
+    }
+
+    #[test]
+    fn key_routed_to_focused_widget() {
+        // DC-8：非 Tab 键路由到 focused widget；Patch 在聚焦时按 Enter → emit action。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        // 聚焦到 b。
+        host.focus_next(zero_ui_core::focus::FocusDirection::Forward);
+        host.focus_next(zero_ui_core::focus::FocusDirection::Forward);
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("b")));
+
+        let enter = UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("Enter"),
+            action: zero_ui_core::event::KeyAction::Pressed,
+            modifiers: zero_ui_core::event::Modifiers::NONE,
+            text: None,
+        };
+        let emitted = host.dispatch_event(&enter);
+        assert_eq!(emitted.len(), 1);
+        assert_eq!(
+            emitted[0].action,
+            ActionId::new("app.b"),
+            "Enter routed to focused widget b"
+        );
+    }
+
+    #[test]
+    fn key_without_focus_is_ignored() {
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        host.set_root(&root);
+        // 无焦点时按 Enter → 无 emit。
+        let enter = UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("Enter"),
+            action: zero_ui_core::event::KeyAction::Pressed,
+            modifiers: zero_ui_core::event::Modifiers::NONE,
+            text: None,
+        };
+        let emitted = host.dispatch_event(&enter);
+        assert!(emitted.is_empty(), "key without focus must not emit");
     }
 
     // 让 `Size::clamp` 在测试里可用：Constraints 已有 is_satisfied，这里给 Size 一个临时裁剪。

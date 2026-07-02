@@ -144,6 +144,10 @@ pub trait Widget {
     fn layout(&mut self, ctx: &mut LayoutCtx, constraints: Constraints) -> Size;
     fn paint(&mut self, ctx: &mut PaintCtx);
     fn semantics(&self, ctx: &mut SemanticsCtx);
+    /// 是否参与焦点遍历（Tab）与接收键盘事件（spec FR-011 / DC-8）。默认 `false`。
+    fn focusable(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

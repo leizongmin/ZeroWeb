@@ -128,6 +128,10 @@ impl Widget for Button {
             children: Vec::new(),
         });
     }
+
+    fn focusable(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
