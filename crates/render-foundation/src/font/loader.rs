@@ -258,6 +258,66 @@ impl FontLoader {
         })
     }
 
+    /// DC-11：经共享后端光栅化 glyph（字体栈统一渲染路径）。
+    ///
+    /// 若已设置共享后端且非 Ahem 字体，把光栅化委托给共享 [`FontdueBackend`]，
+    /// 使 render-foundation 与 UI SDK / zero-webview 共享同一字体栈（DC-11 关键不变量）。
+    ///
+    /// - Ahem 字体仍走 [`rasterize_glyph`] 的特殊处理（保证 WPT 兼容性）。
+    /// - 未设置共享后端时回退到 [`rasterize_glyph`]（等价于直接调用）。
+    ///
+    /// [`FontdueBackend`]: zero_text_foundation::backend::FontdueBackend
+    pub fn rasterize_glyph_shared(&self, font_id: u32, code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
+        // Ahem 特殊处理与 rasterize_glyph 一致
+        if self.ahem_font_id == Some(font_id) && !code_point.is_whitespace() {
+            return self.rasterize_ahem_glyph(font_id, code_point, size);
+        }
+
+        // 共享后端路径：同时存在 backend 和映射时委托给共享后端
+        let ft_id_and_font = self
+            .shared_backend
+            .as_ref()
+            .and_then(|_backend| self.shared_ids.get(&font_id).copied())
+            .and_then(|ft_id| self.fonts.get(&font_id).map(|font| (ft_id, font)));
+        if let Some((ft_id, font)) = ft_id_and_font {
+            let backend = self.shared_backend.as_ref().unwrap();
+            let glyph_id = font.lookup_glyph_index(code_point) as u32;
+            if glyph_id == 0 {
+                // .notdef：回退到 FontLoader 自身路径（fontdue 可渲染 .notdef 方块）
+                let (metrics, bitmap) = font.rasterize(code_point, size);
+                return Ok(GlyphBitmap {
+                    data: bitmap,
+                    width: metrics.width as u16,
+                    height: metrics.height as u16,
+                    x_offset: metrics.xmin as i16,
+                    y_offset: metrics.ymin as i16,
+                    advance: metrics.advance_width,
+                });
+            }
+            let ft = backend.lock();
+            match ft.rasterize_glyph(ft_id, glyph_id, size) {
+                Ok(ft_bmp) => {
+                    // advance 取自 FontLoader 侧的 fontdue::Font 度量（共享后端 rasterize_glyph 只返回位图）。
+                    let advance = font.metrics_indexed(glyph_id as u16, size).advance_width;
+                    return Ok(GlyphBitmap {
+                        data: ft_bmp.coverage,
+                        width: ft_bmp.width as u16,
+                        height: ft_bmp.height as u16,
+                        x_offset: ft_bmp.xmin as i16,
+                        y_offset: ft_bmp.ymin as i16,
+                        advance,
+                    });
+                }
+                Err(_) => {
+                    // 共享后端失败 → 回退到 FontLoader 自身路径
+                }
+            }
+        }
+
+        // 回退：与 rasterize_glyph 一致的直接 fontdue 路径
+        self.rasterize_glyph(font_id, code_point, size)
+    }
+
     /// Ahem 字体特殊光栅化：生成完美填充方块。
     ///
     /// Ahem 是 WPT 标准测试字体，每个字符应渲染为边长 = font_size 的实心方块。
@@ -1674,5 +1734,88 @@ mod tests {
             loader.shared_id_of(rf_id).is_some(),
             "pre-existing font should be synced"
         );
+    }
+
+    // ── DC-11 光栅委托（rasterize_glyph_shared）测试 ─────────────────
+
+    /// rasterize_glyph_shared 经共享后端光栅化 Ahem 字符——仍走 Ahem 特殊处理
+    /// （完美填充方块），不委托给共享后端。
+    #[test]
+    fn dc11_rasterize_shared_uses_ahem_special_for_ahem() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        let shared = Arc::new(Mutex::new(FontdueBackend::new()));
+        let mut loader = FontLoader::new();
+        loader.set_shared_backend(shared.clone());
+        let rf_id = loader.load_font(ahem_data).expect("load_font Ahem");
+
+        // rasterize_glyph_shared 对 Ahem 走特殊处理（w=h=ceil(size)）
+        let bmp = loader
+            .rasterize_glyph_shared(rf_id, 'X', 16.0)
+            .expect("rasterize_shared Ahem");
+        let expected = 16.0_f32.ceil() as u16;
+        assert_eq!(bmp.width, expected, "Ahem width = ceil(size)");
+        assert_eq!(bmp.height, expected, "Ahem height = ceil(size)");
+        assert!((bmp.advance - 16.0).abs() < 1.0, "Ahem advance ≈ size");
+    }
+
+    /// rasterize_glyph_shared 未设置共享后端时回退到 rasterize_glyph。
+    #[test]
+    fn dc11_rasterize_shared_falls_back_without_backend() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        let mut loader = FontLoader::new();
+        let rf_id = loader.load_font(ahem_data).expect("load_font Ahem");
+
+        // 无共享后端 → 应与 rasterize_glyph 一致
+        let direct = loader.rasterize_glyph(rf_id, 'X', 16.0).unwrap();
+        let shared = loader.rasterize_glyph_shared(rf_id, 'X', 16.0).unwrap();
+        assert_eq!(direct.width, shared.width);
+        assert_eq!(direct.height, shared.height);
+        assert!((direct.advance - shared.advance).abs() < 0.5);
+    }
+
+    /// rasterize_glyph_shared 经共享后端光栅化非 Ahem 非空白字符：产出有效位图。
+    #[test]
+    fn dc11_rasterize_shared_produces_valid_bitmap() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        let shared = Arc::new(Mutex::new(FontdueBackend::new()));
+        let mut loader = FontLoader::new();
+        loader.set_shared_backend(shared.clone());
+        // 用显式族名加载，避免 Ahem 检测（Ahem 检测基于 name 表解析的 "Ahem" 族名）
+        let rf_id = loader
+            .load_font_with_family(ahem_data, "NotAhem")
+            .expect("load as NotAhem");
+
+        let bmp = loader
+            .rasterize_glyph_shared(rf_id, 'X', 16.0)
+            .expect("rasterize_shared");
+
+        // 非 Ahem 路径 → 共享后端光栅（fontdue rasterize_indexed）
+        assert!(bmp.width > 0, "should have non-zero width");
+        assert!(bmp.height > 0, "should have non-zero height");
+        assert!(!bmp.data.is_empty(), "should have pixel data");
+        assert!(bmp.advance > 0.0, "should have positive advance");
+    }
+
+    /// rasterize_glyph_shared 与 rasterize_glyph 对同一非 Ahem 字体产出一致结果。
+    #[test]
+    fn dc11_rasterize_shared_equivalent_to_direct() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        // 不设置共享后端：rasterize_glyph_shared 回退到 rasterize_glyph
+        let mut loader = FontLoader::new();
+        let rf_id = loader.load_font_with_family(ahem_data, "NotAhem").expect("load");
+
+        let direct = loader.rasterize_glyph(rf_id, 'X', 16.0).unwrap();
+        let shared = loader.rasterize_glyph_shared(rf_id, 'X', 16.0).unwrap();
+
+        // 回退路径：尺寸与 advance 一致
+        assert_eq!(direct.width, shared.width);
+        assert_eq!(direct.height, shared.height);
+        assert!((direct.advance - shared.advance).abs() < 0.5);
+        // 像素数据一致
+        assert_eq!(direct.data, shared.data);
     }
 }
