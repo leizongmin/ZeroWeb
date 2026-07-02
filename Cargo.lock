@@ -5935,6 +5935,7 @@ dependencies = [
  "tracing",
  "wgpu",
  "winit",
+ "zero-text-foundation",
 ]
 
 [[package]]

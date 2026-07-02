@@ -2,6 +2,10 @@
 
 use crate::font::{FontDesc, FontError, GlyphBitmap};
 use hashbrown::HashMap;
+use parking_lot::Mutex;
+use std::sync::Arc;
+use zero_text_foundation::backend::FontdueBackend;
+use zero_text_foundation::font_request::FontId as FtFontId;
 
 /// 字体加载器 — 管理字体集合
 pub struct FontLoader {
@@ -19,6 +23,10 @@ pub struct FontLoader {
     bitmap_glyphs: HashMap<(u32, u32, u32), GlyphBitmap>,
     /// Ahem 测试字体 ID（WPT 标准测试字体，每个字符渲染为完美填充方块）
     ahem_font_id: Option<u32>,
+    /// DC-11：共享文本后端。设置后，load_font 同步注册字体到此后端。
+    shared_backend: Option<Arc<Mutex<FontdueBackend>>>,
+    /// DC-11：FontLoader font_id → 共享后端 FontId 映射。
+    shared_ids: HashMap<u32, FtFontId>,
 }
 
 impl FontLoader {
@@ -32,6 +40,8 @@ impl FontLoader {
             fallback_chain: Vec::new(),
             bitmap_glyphs: HashMap::new(),
             ahem_font_id: None,
+            shared_backend: None,
+            shared_ids: HashMap::new(),
         }
     }
 
@@ -75,16 +85,23 @@ impl FontLoader {
         self.next_id += 1;
 
         // 从原始字体字节中提取字体族名称（fontdue 不暴露 name 表）
-        if let Some(name) = parse_font_family_name(data) {
+        let family = parse_font_family_name(data);
+        if let Some(ref name) = family {
             // 检测 Ahem 测试字体
             if name.eq_ignore_ascii_case("Ahem") {
                 self.ahem_font_id = Some(id);
             }
-            self.family_map.entry(name).or_default().push(id);
+            self.family_map.entry(name.clone()).or_default().push(id);
         }
 
         self.fonts.insert(id, font);
         self.font_data.insert(id, data.to_vec());
+
+        // DC-11：同步到共享后端
+        if let Some(ref name) = family {
+            self.sync_to_shared(id, name, data);
+        }
+
         Ok(id)
     }
 
@@ -117,6 +134,10 @@ impl FontLoader {
         self.family_map.entry(family.to_string()).or_default().push(id);
         self.fonts.insert(id, font);
         self.font_data.insert(id, data.to_vec());
+
+        // DC-11：同步到共享后端（sync_to_shared 内部检查 shared_backend 是否存在）
+        self.sync_to_shared(id, family, data);
+
         Ok(id)
     }
 
@@ -372,6 +393,61 @@ impl FontLoader {
     /// 是否为空
     pub fn is_empty(&self) -> bool {
         self.fonts.is_empty()
+    }
+
+    /// DC-11：设置共享文本后端。后续 `load_font` / `load_font_with_family`
+    /// 会自动把字体同步注册到此后端；已有字体也会立即同步。
+    ///
+    /// 设置后，调用方可通过 [`shared_backend`](Self::shared_backend) 获取后端引用，
+    /// 使 render-foundation 与 UI SDK / zero-webview 共享同一字体栈（DC-11 关键不变量）。
+    pub fn set_shared_backend(&mut self, backend: Arc<Mutex<FontdueBackend>>) {
+        // 先设置 shared_backend，再同步已有字体（sync_to_shared 依赖它）。
+        self.shared_backend = Some(backend);
+        // 收集待同步列表（避免 borrow checker 冲突）
+        let to_sync: Vec<(u32, String, Vec<u8>)> = self
+            .font_data
+            .iter()
+            .filter_map(|(&id, data)| {
+                let family = self
+                    .family_map
+                    .iter()
+                    .find(|(_, ids)| ids.contains(&id))
+                    .map(|(name, _)| name.clone());
+                family.map(|name| (id, name, data.clone()))
+            })
+            .collect();
+        for (id, name, data) in to_sync {
+            self.sync_to_shared(id, &name, &data);
+        }
+    }
+
+    /// DC-11：检查是否已设置共享后端。
+    pub fn has_shared_backend(&self) -> bool {
+        self.shared_backend.is_some()
+    }
+
+    /// DC-11：获取共享后端引用（如有）。
+    pub fn shared_backend(&self) -> Option<&Arc<Mutex<FontdueBackend>>> {
+        self.shared_backend.as_ref()
+    }
+
+    /// DC-11：获取 FontLoader font_id → 共享后端 FontId 映射（如有）。
+    pub fn shared_id_of(&self, rf_id: u32) -> Option<FtFontId> {
+        self.shared_ids.get(&rf_id).copied()
+    }
+
+    /// DC-11 内部方法：把单个字体注册到共享后端，记录 ID 映射。
+    fn sync_to_shared(&mut self, rf_id: u32, family: &str, data: &[u8]) {
+        if let Some(ref backend) = self.shared_backend {
+            match backend.lock().load_family(family, data) {
+                Ok(ft_id) => {
+                    self.shared_ids.insert(rf_id, ft_id);
+                }
+                Err(_) => {
+                    // 共享后端加载失败不阻塞 FontLoader 自身。
+                }
+            }
+        }
     }
 }
 
@@ -1408,5 +1484,159 @@ mod tests {
             loader_explicit.find(&FontDesc::normal("Ahem")).is_some(),
             "family name 'Ahem' should be registered via load_font_with_family"
         );
+    }
+
+    // ── DC-11 共享后端基础设施测试 ─────────────────────────────────────
+
+    /// 设置共享后端后，已有字体自动同步——共享后端中应有相同族名的字体。
+    #[test]
+    fn dc11_set_shared_backend_syncs_existing_fonts() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        let mut loader = FontLoader::new();
+        let rf_id = loader.load_font(ahem_data).expect("load_font Ahem");
+        assert!(!loader.has_shared_backend());
+
+        let shared = Arc::new(Mutex::new(FontdueBackend::new()));
+        loader.set_shared_backend(shared.clone());
+        assert!(loader.has_shared_backend());
+
+        // 共享后端应已加载 Ahem 字体
+        let ft = shared.lock();
+        assert!(!ft.is_empty(), "shared backend should have synced fonts");
+        // FontLoader ID → 共享后端 FontId 映射应存在
+        let ft_id = loader.shared_id_of(rf_id).expect("should have shared id mapping");
+        assert_eq!(ft_id, FtFontId(0), "first loaded font should get FontId(0)");
+    }
+
+    /// load_font 在共享后端已设置时自动同步新加载字体。
+    #[test]
+    fn dc11_load_font_auto_syncs_to_shared_backend() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        let shared = Arc::new(Mutex::new(FontdueBackend::new()));
+        let mut loader = FontLoader::new();
+        loader.set_shared_backend(shared.clone());
+
+        // 加载字体——应自动同步到共享后端
+        let rf_id = loader.load_font(ahem_data).expect("load_font Ahem");
+        assert!(loader.shared_id_of(rf_id).is_some());
+
+        let ft = shared.lock();
+        // 共享后端应有 1 个（Ahem）或更多字体（取决于同步时机）
+        assert!(ft.len() >= 1, "shared backend should have at least 1 font");
+    }
+
+    /// load_font_with_family 在共享后端已设置时自动同步。
+    #[test]
+    fn dc11_load_font_with_family_auto_syncs() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        let shared = Arc::new(Mutex::new(FontdueBackend::new()));
+        let mut loader = FontLoader::new();
+        loader.set_shared_backend(shared.clone());
+
+        let rf_id = loader
+            .load_font_with_family(ahem_data, "TestFamily")
+            .expect("load_font_with_family");
+        assert!(loader.shared_id_of(rf_id).is_some());
+
+        // 共享后端应按指定族名注册
+        let ft = shared.lock();
+        use zero_text_foundation::font_database::FontProvider; // trait 方法 query()
+        let query = ft.query(&zero_text_foundation::font_request::FontRequest::new("TestFamily"));
+        assert!(query.is_ok(), "shared backend should have TestFamily registered");
+    }
+
+    /// 多字体加载——验证 ID 映射正确（每个 FontLoader ID 有唯一共享后端 ID）。
+    #[test]
+    fn dc11_multiple_fonts_have_distinct_shared_ids() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        let shared = Arc::new(Mutex::new(FontdueBackend::new()));
+        let mut loader = FontLoader::new();
+        loader.set_shared_backend(shared.clone());
+
+        // 加载同一数据两次——FontLoader 分配不同 ID
+        let id0 = loader.load_font_with_family(ahem_data, "FamilyA").unwrap();
+        let id1 = loader.load_font_with_family(ahem_data, "FamilyB").unwrap();
+        assert_ne!(id0, id1, "FontLoader IDs should differ");
+
+        let ft0 = loader.shared_id_of(id0).expect("id0 should map");
+        let ft1 = loader.shared_id_of(id1).expect("id1 should map");
+        assert_ne!(ft0, ft1, "shared backend FontIds should differ");
+
+        let ft = shared.lock();
+        assert_eq!(ft.len(), 2, "shared backend should have 2 fonts");
+    }
+
+    /// DC-11 关键不变量：同一字体通过 FontLoader 和共享后端（FontdueBackend）
+    /// 加载后，双方都能为同一 glyph 产出有效的非零光栅位图（证明字体栈统一可行）。
+    #[test]
+    fn dc11_shared_backend_raster_equivalence() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        let shared = Arc::new(Mutex::new(FontdueBackend::new()));
+        let mut loader = FontLoader::new();
+        loader.set_shared_backend(shared.clone());
+        let rf_id = loader.load_font(ahem_data).expect("load_font Ahem");
+
+        // FontLoader 直接光栅（Ahem 特殊路径：完美填充方块，w=h=size.ceil()）
+        let rf_raster = loader.rasterize_glyph(rf_id, 'X', 16.0).expect("FontLoader raster");
+        assert!(
+            rf_raster.width > 0 && rf_raster.height > 0,
+            "FontLoader raster non-zero"
+        );
+
+        // 共享后端光栅同一 glyph（普通 fontdue 路径，不经过 Ahem 特殊处理）
+        let ft_id = loader.shared_id_of(rf_id).unwrap();
+        let glyph_idx = loader.get(rf_id).unwrap().lookup_glyph_index('X') as u32;
+        let ft_raster = {
+            let ft = shared.lock();
+            ft.rasterize_glyph(ft_id, glyph_idx, 16.0)
+                .expect("shared backend raster")
+        };
+
+        // DC-11 关键不变量：双方都产出有效非零光栅位图
+        assert!(
+            ft_raster.width > 0 && ft_raster.height > 0,
+            "shared backend raster non-zero"
+        );
+        assert!(!ft_raster.coverage.is_empty(), "shared backend raster has pixel data");
+        // FontLoader Ahem 特殊路径产出 size.ceil() 方块
+        let expected = 16.0_f32.ceil() as u16;
+        assert_eq!(rf_raster.width, expected, "Ahem special path: w=ceil(size)");
+        assert_eq!(rf_raster.height, expected, "Ahem special path: h=ceil(size)");
+        // FontLoader advance 为 font_size（Ahem 1em 方块）
+        assert!((rf_raster.advance - 16.0).abs() < 1.0, "Ahem advance ≈ 16");
+    }
+
+    /// 未设置共享后端时 has_shared_backend 返回 false，shared_id_of 返回 None。
+    #[test]
+    fn dc11_without_shared_backend_returns_none() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        let mut loader = FontLoader::new();
+        let rf_id = loader.load_font(ahem_data).unwrap();
+
+        assert!(!loader.has_shared_backend());
+        assert!(loader.shared_backend().is_none());
+        assert!(loader.shared_id_of(rf_id).is_none());
+    }
+
+    /// 共享后端加载失败（空数据）不阻塞 FontLoader 自身。
+    #[test]
+    fn dc11_sync_failure_does_not_block_fontloader() {
+        let shared = Arc::new(Mutex::new(FontdueBackend::new()));
+        let mut loader = FontLoader::new();
+        loader.set_shared_backend(shared.clone());
+
+        // 企图加载无效字体——FontLoader 自身应报错
+        let result = loader.load_font(&[]);
+        assert!(result.is_err(), "FontLoader should reject empty data");
+
+        // 但共享后端不受影响（无新字体注册）
+        let ft = shared.lock();
+        assert!(ft.is_empty(), "shared backend should still be empty");
     }
 }
