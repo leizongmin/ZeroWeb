@@ -110,6 +110,10 @@ impl FontLoader {
             .map_err(|e| FontError::ParseFailed(e.to_string()))?;
         let id = self.next_id;
         self.next_id += 1;
+        // 检测 Ahem 测试字体（与 load_font 一致的特殊处理）。
+        if family.eq_ignore_ascii_case("Ahem") {
+            self.ahem_font_id = Some(id);
+        }
         self.family_map.entry(family.to_string()).or_default().push(id);
         self.fonts.insert(id, font);
         self.font_data.insert(id, data.to_vec());
@@ -1371,5 +1375,38 @@ mod tests {
         // raster 位图数据非空。
         assert!(!rf_raster.data.is_empty(), "rf raster data non-empty");
         assert!(!ft_raster.coverage.is_empty(), "ft raster coverage non-empty");
+    }
+
+    /// DC-11 `load_font_with_family` 使用显式族名加载字体后，
+    /// 产出的 raster 应与 `load_font`（自动 name 表解析）一致。
+    #[test]
+    fn dc11_load_font_with_family_produces_same_raster() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        // 通过 load_font（自动检测 name 表 "Ahem"）加载。
+        let mut loader_auto = FontLoader::new();
+        let auto_id = loader_auto.load_font(ahem_data).expect("auto load");
+        let auto_raster = loader_auto.rasterize_glyph(auto_id, 'X', 8.0).expect("auto raster 'X'");
+        let auto_advance = loader_auto.measure_advance(auto_id, 'X', 8.0);
+
+        // 通过 load_font_with_family（显式族名）加载。
+        let mut loader_explicit = FontLoader::new();
+        let explicit_id = loader_explicit
+            .load_font_with_family(ahem_data, "Ahem")
+            .expect("explicit load");
+        let explicit_raster = loader_explicit
+            .rasterize_glyph(explicit_id, 'X', 8.0)
+            .expect("explicit raster 'X'");
+        let explicit_advance = loader_explicit.measure_advance(explicit_id, 'X', 8.0);
+
+        // DC-11：显式族名加载与自动 name 表解析产出一致。
+        assert_eq!(auto_raster.width, explicit_raster.width);
+        assert_eq!(auto_raster.height, explicit_raster.height);
+        assert!((auto_advance - explicit_advance).abs() < 0.5);
+        // 族名正确注册（find 可按传入的族名匹配）。
+        assert!(
+            loader_explicit.find(&FontDesc::normal("Ahem")).is_some(),
+            "family name 'Ahem' should be registered via load_font_with_family"
+        );
     }
 }
