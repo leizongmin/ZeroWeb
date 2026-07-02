@@ -1928,6 +1928,11 @@ include!("app_input.rs");
 // 输入处理（书签栏/标签拖拽/上下文菜单/hover 等，从 app_input.rs 进一步拆分以控制单文件 ≤2000 行）
 include!("app_input_ext.rs");
 
+// 注：键盘输入（handle_key 等）与上下文菜单动作在 ui-sdk 仍分别位于 app_input.rs 与
+// app_input_ext.rs（DC-16 既有拆分），不单独 include origin/main R971 抽出的
+// app_input_keys.rs / app_input_context_menus.rs（二者与既有文件 100% 重复，body 逐位
+// 等价于 merge-base，仅多 impl 包装）。
+
 // 渲染方法（build_scene 及所有 render_*）
 // 拆分到独立文件以控制 app.rs 体积
 include!("app_render.rs");
