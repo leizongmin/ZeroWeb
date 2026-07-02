@@ -9,22 +9,24 @@
 
 ## Active Milestone
 
-**M1 — UI SDK 核心骨架（广度优先，spec §M1）**。依赖：无（与浏览器并存）。浏览器运行时不触碰。
+**M2 — 浏览器首批组件迁移 + WebView adapter + text foundation 接入（spec §M2）**。依赖：M1（已完成）。
 
-**🟢 M1 Wave 1-4 crate skeleton 已全部落地（2026-06-30）**：23 个新 crate（22 通用 + 1 共享 + 2 耦合点中
-adapter-webview/chrome 计入）存在、可编译、有无窗口单测（合计 135 passed / 0 failed）；
-`cargo build --workspace` + `cargo clippy --workspace --all-targets -- -D warnings` + `cargo fmt --all` 全净；
-DC-1 依赖隔离机械验证通过（见 evidence/dep-isolation-20260630-234530.txt）。
+**✅ M1 UI SDK 核心骨架已收口（2026-07-01）**：23 个新 crate（22 通用 + 1 共享 + 2 耦合点 adapter-webview/chrome）全部存在、可编译、有无窗口单测；`cargo build --workspace` + `cargo clippy --workspace --all-targets -- -D warnings` + `cargo fmt --all` 全净；DC-1 依赖隔离机械验证 PASS（`evidence/dep-isolation-20260630-234530.txt`）；DC-17 coverage 聚合 line 93.00% / function 93.12% / region 93.41%（≥85%，per-crate 除 foundation/text stub 外全部 ≥85%）。M1 过程/决策/证据已归档 `archive/m1-skeleton-complete.md`。
 
-M1 剩余收口项：①coverage 基线（`scripts/check-coverage.sh`，DC-17）；②`ui/examples` 在 M3。
-M1 目标：把 spec §FR-002 列出的 crate 全部立起来（接口边界 + 无窗口单测），让架构在编译期与测试期成立；`ui/core` 三棵树 + 单向数据流 + 局部失效有最小可用单测；text foundation 接口接入 `ui/render`（skeleton 级）。浏览器 chrome 迁移、完整 DSL 表达式语言、移动端运行时分别在 M2/M3/M4。
+**M2 目标**（按 spec §M2 / goal §Ordered Next Milestones）：
+1. 抽取滚动条/按钮/文本输入/菜单/popup/toolbar 到 `ui/widgets`；SearchField/SuggestionList/TabBar 等到 `ui/patterns`；新增 `browser-ui/chrome` 首批领域组件（spec §8.4.1A 映射）。
+2. text foundation 真实接入 `ui/render` 与 `zero-webview`（复用 fontdue/swash/rustybuzz，DC-11 / TBD-8）；`ui/render` Scene → render-foundation 后端 trait（TBD-2）。
+3. 定义 `BrowserChromeModel` + `BrowserAction` + desktop/tablet/phone shell 共享合约；browser menu/shortcut/context menu 接 `ui/commands`；PermissionPrompt/DownloadPanel/SiteInfoPanel 接 `ui/overlay`；Downloads/Bookmarks/History/TabOverview 接 `ui/collections`。
+4. **逐组件灰度迁移**（shim / feature-flag），任意提交点浏览器可运行（DC-14 零退化硬门禁）；涉及渲染/布局变更跑 `make product-smoke`。
+
+**铁律**：M2 触碰浏览器运行时，必须保持 `make test` / `make reftest` / `make product-smoke` 不退化（姊妹目标 `rendering-compat` 主线）。
 
 ## Done Criteria 进度
 
 | DC | 标题 | 状态 | 证据 / 备注 |
 |----|------|------|------------|
-| DC-1 | 目录与依赖隔离 | 🟡 进行中（M1） | ui/ + foundation/text + browser-ui/chrome crate skeleton 落地中；依赖隔离脚本待 Wave 4 出 evidence |
-| DC-2 | 三棵树 + 单向数据流 + retained | 🟡 skeleton（M1） | ui/core Widget/Element/RenderNode/EventResult/Invalidation 类型落地中；单测随 Wave 1 |
+| DC-1 | 目录与依赖隔离 | ✅ skeleton（M1） | ui/ + foundation/text + browser-ui/chrome crate skeleton 全在；DC-1 机械验证 PASS（`evidence/dep-isolation-20260630-234530.txt`） |
+| DC-2 | 三棵树 + 单向数据流 + retained | 🟡 skeleton（M1） | ui/core Widget/Element/RenderNode/EventResult/Invalidation 类型 + UiTree reconcile 单测；完整 retained 能力随 M2 迁移深化 |
 | DC-3 | WebViewWidget 自定义组件 | ⬜ M2 | adapter/webview skeleton 在 Wave 4；真实接入 M2 |
 | DC-4 | 滚动语义与滚动条边界 | ⬜ M2 | ScrollBar skeleton 在 Wave 2；迁移自 page_scroll.rs 在 M2 |
 | DC-5 | 主题系统 | 🟡 skeleton（M1） | ui/core::theme 类型 + ui/runtime::theme_provider 在 Wave 1/2 |
