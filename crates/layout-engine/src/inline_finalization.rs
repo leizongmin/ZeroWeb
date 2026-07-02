@@ -33,14 +33,36 @@ pub(crate) fn resolve_text_indent(text_indent: &LengthValue, font_size: &LengthV
 }
 
 /// 从 ComputedStyle 读取 text-align 并转换为 IFC 的 TextAlign 枚举。
+///
+/// `start`/`end` 是**方向感知**值（CSS Text 3 §6.1）：`start` = inline-start 边
+/// （LTR→left, RTL→right），`end` 反之。旧实现无条件 start→left/end→right，
+/// 致 `direction:rtl` + `text-align:start` 错误左对齐（应右对齐）。
 pub(crate) fn resolve_text_align(style: Option<&ComputedStyle>) -> TextAlign {
-    use zero_style_system::property::TextAlignValue;
-    let align = style.map(|s| &s.text_align).unwrap_or(&TextAlignValue::Start);
-    match align {
-        TextAlignValue::Left | TextAlignValue::Start => TextAlign::Left,
-        TextAlignValue::Right | TextAlignValue::End => TextAlign::Right,
+    use zero_style_system::property::{DirectionValue, TextAlignValue};
+    let s = match style {
+        Some(s) => s,
+        None => return TextAlign::Left, // 默认 Start 在 LTR 下 = Left
+    };
+    let is_rtl = matches!(s.direction, DirectionValue::Rtl);
+    match s.text_align {
+        TextAlignValue::Left => TextAlign::Left,
+        TextAlignValue::Right => TextAlign::Right,
         TextAlignValue::Center => TextAlign::Center,
         TextAlignValue::Justify => TextAlign::Justify,
+        TextAlignValue::Start => {
+            if is_rtl {
+                TextAlign::Right
+            } else {
+                TextAlign::Left
+            }
+        }
+        TextAlignValue::End => {
+            if is_rtl {
+                TextAlign::Left
+            } else {
+                TextAlign::Right
+            }
+        }
     }
 }
 
@@ -52,14 +74,18 @@ pub(crate) fn resolve_text_align(style: Option<&ComputedStyle>) -> TextAlign {
 /// 不应用——末行恒按 text-align 默认处理。paint 非存储路径已传（text.rs:949），此处补齐使
 /// layout/paint 双路径一致。
 pub(crate) fn resolve_text_align_last(style: Option<&ComputedStyle>) -> Option<TextAlign> {
-    use zero_style_system::property::TextAlignLastValue;
-    let align = style.map(|s| &s.text_align_last).unwrap_or(&TextAlignLastValue::Auto);
-    match align {
+    use zero_style_system::property::{DirectionValue, TextAlignLastValue};
+    let s = style?;
+    let is_rtl = matches!(s.direction, DirectionValue::Rtl);
+    match s.text_align_last {
         TextAlignLastValue::Auto => None,
-        TextAlignLastValue::Left | TextAlignLastValue::Start => Some(TextAlign::Left),
-        TextAlignLastValue::Right | TextAlignLastValue::End => Some(TextAlign::Right),
+        TextAlignLastValue::Left => Some(TextAlign::Left),
+        TextAlignLastValue::Right => Some(TextAlign::Right),
         TextAlignLastValue::Center => Some(TextAlign::Center),
         TextAlignLastValue::Justify => Some(TextAlign::Justify),
+        // start/end 方向感知，与 resolve_text_align 一致（CSS Text 3 §6.2）。
+        TextAlignLastValue::Start => Some(if is_rtl { TextAlign::Right } else { TextAlign::Left }),
+        TextAlignLastValue::End => Some(if is_rtl { TextAlign::Left } else { TextAlign::Right }),
     }
 }
 
@@ -542,7 +568,7 @@ pub(crate) fn compute_final_inline_layouts(
 
     // 创建 IFC 并使用与 paint_text 相同的 CSS 属性配置
     use crate::inline::InlineFormattingContext;
-    use crate::inline::{TextAlign, WordBreakMode};
+    use crate::inline::WordBreakMode;
     use crate::types::InlineLayoutFragment;
     use crate::types::InlineLayoutLine;
     use zero_css_parser::values::LengthValue;
@@ -573,12 +599,9 @@ pub(crate) fn compute_final_inline_layouts(
         WordBreakValue::KeepAll => WordBreakMode::KeepAll,
         _ => WordBreakMode::Normal,
     };
-    let text_align = match &style.text_align {
-        zero_style_system::TextAlignValue::Left | zero_style_system::TextAlignValue::Start => TextAlign::Left,
-        zero_style_system::TextAlignValue::Right | zero_style_system::TextAlignValue::End => TextAlign::Right,
-        zero_style_system::TextAlignValue::Center => TextAlign::Center,
-        zero_style_system::TextAlignValue::Justify => TextAlign::Justify,
-    };
+    // 复用 resolve_text_align：start/end 方向感知（RTL→反向），避免此处独立 match 与
+    // resolve_text_align / paint 路径三处分叉（R958 统一）。
+    let text_align = resolve_text_align(Some(style));
     let text_align_last = resolve_text_align_last(Some(style));
     let text_indent_px = resolve_text_indent(&style.text_indent, &style.font_size, container_width);
     let tab_size_px = match &style.tab_size {
@@ -1261,9 +1284,33 @@ pub(crate) fn remeasure_inline_only_containers(
 #[cfg(test)]
 mod tests {
     use super::resolve_text_indent;
-    use super::{ComputedStyle, TextAlign, resolve_text_align_last};
+    use super::{ComputedStyle, TextAlign, resolve_text_align, resolve_text_align_last};
     use zero_css_parser::values::LengthValue;
-    use zero_style_system::property::TextAlignLastValue;
+    use zero_style_system::property::{DirectionValue, TextAlignLastValue, TextAlignValue};
+
+    #[test]
+    fn test_resolve_text_align_start_end_direction_aware() {
+        // R958：start/end 是方向感知值（CSS Text 3 §6.1）。LTR 下 start=left/end=right；
+        // RTL 下 start=right/end=left。旧实现无条件 start→left 致 direction:rtl 错误左对齐。
+        let mut style = ComputedStyle::default();
+        // LTR（默认）
+        style.direction = DirectionValue::Ltr;
+        style.text_align = TextAlignValue::Start;
+        assert_eq!(resolve_text_align(Some(&style)), TextAlign::Left);
+        style.text_align = TextAlignValue::End;
+        assert_eq!(resolve_text_align(Some(&style)), TextAlign::Right);
+        // 显式 Left/Right 不受 direction 影响
+        style.text_align = TextAlignValue::Left;
+        assert_eq!(resolve_text_align(Some(&style)), TextAlign::Left);
+        // RTL：start/end 翻转
+        style.direction = DirectionValue::Rtl;
+        style.text_align = TextAlignValue::Start;
+        assert_eq!(resolve_text_align(Some(&style)), TextAlign::Right);
+        style.text_align = TextAlignValue::End;
+        assert_eq!(resolve_text_align(Some(&style)), TextAlign::Left);
+        // None → 默认 Start 在 LTR 下 = Left
+        assert_eq!(resolve_text_align(None), TextAlign::Left);
+    }
 
     #[test]
     fn test_resolve_text_align_last_mapping() {
@@ -1286,6 +1333,18 @@ mod tests {
         assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Left));
         // 无 style 引用（None）→ 默认 Auto → None
         assert_eq!(resolve_text_align_last(None), None);
+        // R958：start/end 方向感知（默认 LTR）
+        style.direction = DirectionValue::Ltr;
+        style.text_align_last = TextAlignLastValue::Start;
+        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Left));
+        style.text_align_last = TextAlignLastValue::End;
+        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Right));
+        // RTL 下翻转
+        style.direction = DirectionValue::Rtl;
+        style.text_align_last = TextAlignLastValue::Start;
+        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Right));
+        style.text_align_last = TextAlignLastValue::End;
+        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Left));
     }
 
     #[test]
