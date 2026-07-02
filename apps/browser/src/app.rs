@@ -2082,6 +2082,8 @@ impl BrowserApp {
 // 输入处理方法（键盘、鼠标、IME、自动补全、上下文菜单）
 // 拆分到独立文件以控制 app.rs 体积
 include!("app_input.rs");
+// 输入处理（书签栏/标签拖拽/上下文菜单/hover 等，从 app_input.rs 进一步拆分以控制单文件 ≤2000 行）
+include!("app_input_ext.rs");
 
 // 渲染方法（build_scene 及所有 render_*）
 // 拆分到独立文件以控制 app.rs 体积
