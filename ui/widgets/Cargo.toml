@@ -1,0 +1,11 @@
+[package]
+name = "zero-ui-widgets"
+description = "通用 UI SDK 基础控件 — Button/TextInput/Menu/Popup/Popover/ListView/Badge/Tooltip/Tabs/Toolbar/ScrollBar/Progress（浏览器无关，不含浏览器语义）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+compact_str = { workspace = true, features = ["serde"] }

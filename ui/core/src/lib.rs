@@ -25,6 +25,7 @@ pub mod focus;
 pub mod geometry;
 pub mod invalidation;
 pub mod layout;
+pub mod scroll;
 pub mod semantics;
 pub mod theme;
 pub mod widget;

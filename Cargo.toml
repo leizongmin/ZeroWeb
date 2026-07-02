@@ -35,6 +35,11 @@ members = [
 
     # UI SDK 通用层（浏览器无关；不得依赖 zero-browser-shell/webview/engine/net）
     "ui/core",
+    "ui/render",
+    "ui/i18n",
+    "ui/runtime",
+    "ui/widgets",
+    "ui/patterns",
 
     # 共享文本/字体基础层（UI SDK 与 WebView 共用）
     "foundation/text",
@@ -138,6 +143,11 @@ zero-browser-shell = { path = "crates/browser-shell" }
 
 # UI SDK 内部 crate（浏览器无关，通用层）
 zero-ui-core = { path = "ui/core" }
+zero-ui-render = { path = "ui/render" }
+zero-ui-i18n = { path = "ui/i18n" }
+zero-ui-runtime = { path = "ui/runtime" }
+zero-ui-widgets = { path = "ui/widgets" }
+zero-ui-patterns = { path = "ui/patterns" }
 zero-text-foundation = { path = "foundation/text" }
 
 # 本地 taffy 补丁：添加 cached_baselines() 访问器以提取 flex 容器基线

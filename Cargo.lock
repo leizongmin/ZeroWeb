@@ -5997,6 +5997,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-ui-i18n"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "hashbrown 0.15.5",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "zero-ui-patterns"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "serde",
+ "zero-ui-core",
+ "zero-ui-widgets",
+]
+
+[[package]]
+name = "zero-ui-render"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "zero-ui-core",
+]
+
+[[package]]
+name = "zero-ui-runtime"
+version = "0.1.0"
+dependencies = [
+ "hashbrown 0.15.5",
+ "thiserror 2.0.18",
+ "zero-ui-core",
+ "zero-ui-i18n",
+ "zero-ui-render",
+]
+
+[[package]]
+name = "zero-ui-widgets"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "serde",
+ "zero-ui-core",
+]
+
+[[package]]
 name = "zero-wasm-sandbox"
 version = "0.1.0"
 dependencies = [

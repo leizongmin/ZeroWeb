@@ -1,0 +1,10 @@
+[package]
+name = "zero-ui-render"
+description = "通用 UI SDK 渲染/场景抽象 — scene/render node/paint context/hit-test（浏览器无关，不直接依赖 render-foundation 后端）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+serde = { workspace = true, features = ["derive"] }

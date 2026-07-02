@@ -1,0 +1,194 @@
+//! Button — 通用按钮控件（spec FR-009 / IF-001 Widget 范例）。
+//!
+//! 点击只发出 `Action`，由应用层更新状态（spec FR-003 单向数据流）。
+//! 控件内部仅保存临时 UI 状态（hover/pressed）；业务状态由应用持有。
+
+use zero_ui_core::action::{ActionId, EventResult};
+use zero_ui_core::event::{PointerButton, PointerPhase, UiEvent};
+use zero_ui_core::geometry::{Constraints, Rect, Size};
+use zero_ui_core::semantics::{SemanticsFlags, SemanticsLabel, SemanticsNode};
+use zero_ui_core::theme::Color;
+use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget};
+
+/// 按钮声明。
+#[derive(Debug, Clone)]
+pub struct ButtonSpec {
+    pub label: String,
+    pub action: ActionId,
+    pub enabled: bool,
+}
+
+impl ButtonSpec {
+    pub fn new(label: &str, action: &str) -> ButtonSpec {
+        ButtonSpec {
+            label: label.to_string(),
+            action: ActionId::new(action),
+            enabled: true,
+        }
+    }
+}
+
+/// Button 控件实例（retained 临时状态）。
+pub struct Button {
+    spec: ButtonSpec,
+    hover: bool,
+    pressed: bool,
+}
+
+impl Button {
+    pub fn new(spec: ButtonSpec) -> Button {
+        Button {
+            spec,
+            hover: false,
+            pressed: false,
+        }
+    }
+
+    fn background(&self) -> Color {
+        if !self.spec.enabled {
+            return Color::rgb(0.6, 0.6, 0.6);
+        }
+        if self.pressed {
+            Color::rgb(0.10, 0.46, 0.76)
+        } else if self.hover {
+            Color::rgb(0.16, 0.64, 1.0)
+        } else {
+            Color::rgb(0.13, 0.58, 0.95)
+        }
+    }
+}
+
+impl Widget for Button {
+    fn mount(&mut self, _ctx: &mut MountCtx) {}
+
+    fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
+        if let Some(zero_ui_core::binding::Value::Text(label)) = props.get("label") {
+            self.spec.label = label.clone();
+        }
+        if let Some(zero_ui_core::binding::Value::Bool(enabled)) = props.get("enabled") {
+            self.spec.enabled = *enabled;
+        }
+        // 标签文本可能变长 → 委托上层 layout 决定；此处只标记 paint。
+        *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
+    }
+
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        let UiEvent::Pointer { phase, button, .. } = event else {
+            return EventResult::Ignored;
+        };
+        if !self.spec.enabled {
+            return EventResult::Ignored;
+        }
+        match phase {
+            PointerPhase::Moved => {
+                self.hover = true;
+                EventResult::Consumed
+            }
+            PointerPhase::Pressed if matches!(button, Some(PointerButton::Primary)) => {
+                self.pressed = true;
+                EventResult::Consumed
+            }
+            PointerPhase::Released if matches!(button, Some(PointerButton::Primary)) => {
+                let was_pressed = self.pressed;
+                self.pressed = false;
+                if was_pressed {
+                    EventResult::Emit(self.spec.action.clone())
+                } else {
+                    EventResult::Consumed
+                }
+            }
+            _ => EventResult::Ignored,
+        }
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+        // M1：用字符数启发式估算宽度（M2 接 foundation/text 真实测量）。
+        let char_w = 8.0_f32;
+        let padding = 16.0_f32;
+        let desired = Size::new(self.spec.label.len() as f32 * char_w + padding, 32.0);
+        Size::new(
+            desired.width.clamp(constraints.min_width, constraints.max_width),
+            desired.height.clamp(constraints.min_height, constraints.max_height),
+        )
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx) {
+        // M1：填充背景 + 边框；文本绘制在 M2 接 text foundation 后补。
+        ctx.recorder
+            .fill_rect(Rect::from_ltrb(0.0, 0.0, 96.0, 32.0), self.background());
+    }
+
+    fn semantics(&self, ctx: &mut SemanticsCtx) {
+        ctx.nodes.push(SemanticsNode {
+            id: zero_ui_core::widget::WidgetId::new("button"),
+            rect: Rect::ZERO,
+            flags: SemanticsFlags::BUTTON | SemanticsFlags::FOCUSABLE,
+            label: Some(SemanticsLabel::Literal(self.spec.label.clone().into())),
+            value: None,
+            children: Vec::new(),
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_ui_core::event::Modifiers;
+    use zero_ui_core::geometry::Point;
+    use zero_ui_core::invalidation::InvalidationFlags;
+
+    fn press() -> UiEvent {
+        UiEvent::Pointer {
+            phase: PointerPhase::Pressed,
+            button: Some(PointerButton::Primary),
+            position: Point::new(5.0, 5.0),
+            modifiers: Modifiers::NONE,
+        }
+    }
+
+    fn release() -> UiEvent {
+        UiEvent::Pointer {
+            phase: PointerPhase::Released,
+            button: Some(PointerButton::Primary),
+            position: Point::new(5.0, 5.0),
+            modifiers: Modifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn click_emits_action() {
+        let mut btn = Button::new(ButtonSpec::new("OK", "app.confirm"));
+        let mut flags = InvalidationFlags::CLEAN;
+        // press
+        let _ = btn.event(
+            &mut EventCtx {
+                invalidation: &mut flags,
+            },
+            &press(),
+        );
+        assert!(btn.pressed);
+        // release → emit action
+        let result = btn.event(
+            &mut EventCtx {
+                invalidation: &mut flags,
+            },
+            &release(),
+        );
+        assert_eq!(result, EventResult::Emit(ActionId::new("app.confirm")));
+    }
+
+    #[test]
+    fn disabled_button_ignores_events() {
+        let mut spec = ButtonSpec::new("OK", "app.confirm");
+        spec.enabled = false;
+        let mut btn = Button::new(spec);
+        let mut flags = InvalidationFlags::CLEAN;
+        let result = btn.event(
+            &mut EventCtx {
+                invalidation: &mut flags,
+            },
+            &press(),
+        );
+        assert_eq!(result, EventResult::Ignored);
+    }
+}

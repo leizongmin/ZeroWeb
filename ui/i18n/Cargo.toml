@@ -1,0 +1,12 @@
+[package]
+name = "zero-ui-i18n"
+description = "通用 UI SDK 国际化 — locale/catalog/fallback/参数替换/plural/RTL direction（浏览器无关，不内置浏览器文案）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+compact_str = { workspace = true, features = ["serde"] }
+hashbrown = { workspace = true, features = ["serde"] }
+thiserror = { workspace = true }
