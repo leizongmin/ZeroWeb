@@ -1421,6 +1421,17 @@ impl Painter {
     ///
     /// 当 border-radius 为零时退化为普通矩形填充。
     fn paint_background(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        // CSS §14.2：背景已传播到画布的元素（html/body）不在自身盒上绘制背景色——
+        // 画布已以视口 (0,0) 为 origin 统一绘制其 color+image。若此处再绘 color，body（传播
+        // 到画布时，html 透明）的 bg color 会覆盖画布 image（background-root-007：body red
+        // 覆盖画布 tiled white-square image，ZW 显红而 chromium 全白）。镜像 paint_background_image
+        // 的 canvas_propagated_node 跳过（effects.rs:69）。
+        if box_node
+            .node_id
+            .is_some_and(|id| self.canvas_propagated_node == Some(id))
+        {
+            return;
+        }
         let radii = super::helpers::BorderRadiusSpec::from_style(style);
 
         // 根据 background-clip 决定背景绘制区域

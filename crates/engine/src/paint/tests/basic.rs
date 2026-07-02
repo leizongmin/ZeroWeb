@@ -159,6 +159,37 @@ fn test_painter_background_color() {
     assert_eq!(primitives.fills[0].rect.size.height, 50.0);
 }
 
+/// R979：CSS §14.2 画布背景传播——html 透明时 body 背景传播到画布，body 自身盒不再绘 bg color。
+/// 旧实现仅跳过 body 的 bg image（effects.rs:69 canvas_propagated_node 检查），仍绘 bg color
+/// → body 盒 bg color 覆盖画布 image（background-root-007：body red 覆盖画布 tiled image）。
+/// 验证 body 传播到画布时**恰好 1 个** red fill（画布），非 2 个（画布 + body 双绘）。
+#[test]
+fn test_canvas_propagation_body_skips_own_bg_color() {
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><body style="background:red"><p>X</p></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(100.0, 100.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(100.0, 100.0);
+    let result = engine.compute(&doc, &styles);
+    let mut painter = Painter::new();
+    painter.viewport_w = 100.0;
+    painter.viewport_h = 100.0;
+    painter.paint(&result.root, &styles, Some(&doc));
+    let red_fills = painter
+        .primitives()
+        .fills
+        .iter()
+        .filter(|f| f.color == Color::rgb(255, 0, 0))
+        .count();
+    assert_eq!(
+        red_fills, 1,
+        "propagated body should paint exactly 1 red fill (canvas), not 2 (canvas + body double-paint)"
+    );
+}
+
 /// 测试透明背景不生成填充图元。
 #[test]
 fn test_painter_transparent_background() {
