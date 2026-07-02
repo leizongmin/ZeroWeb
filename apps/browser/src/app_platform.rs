@@ -167,6 +167,9 @@ impl BrowserApp {
 
             // 合并 chrome fills + chrome shadows + webview 图元
             let mut scene_primitives = webview_extras;
+            // chrome 阴影（页面视口 drop shadow）在 SDK chrome 翻译之前拼入 scene_primitives，
+            // 使 translate_scene_primitives_y 将其从手绘 chrome viewport 位置迁到 SDK chrome 位置。
+            scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
             // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
             // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
@@ -203,9 +206,6 @@ impl BrowserApp {
             let glyphs = [page_glyphs, chrome_overlay_glyphs].concat();
 
             scene_primitives.fills = [fills, scene_primitives.fills].concat();
-            // chrome 阴影（页面视口 drop shadow）置于 webview 阴影之前，
-            // 确保页面阴影绘制在网页内容阴影之下、chrome 背景之上。
-            scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
             // 使用全量 GPU 渲染管线
             renderer.render_full_scene_gpu(
@@ -263,6 +263,8 @@ impl BrowserApp {
 
         // 合并：chrome fills + chrome shadows + webview fills (已在 fills 中) + webview 额外图元
         let mut scene_primitives = webview_extras;
+        // chrome 阴影在 SDK chrome 翻译之前拼入 scene_primitives（与 GPU 路径一致）。
+        scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
         // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
         // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
@@ -299,7 +301,6 @@ impl BrowserApp {
         let glyphs = [page_glyphs, chrome_overlay_glyphs].concat();
 
         scene_primitives.fills = [fills, scene_primitives.fills].concat();
-        scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
         let fb = render_full_scene(
             width,
