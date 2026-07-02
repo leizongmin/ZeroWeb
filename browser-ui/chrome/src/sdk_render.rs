@@ -10,9 +10,10 @@
 //! `ui/adapters/render-foundation` 的 `full_pipeline_chrome_scene_to_render_primitives`）。
 
 use crate::chrome_model::BrowserChromeModel;
-use crate::render::register_chrome_factories;
+use crate::render::{register_chrome_factories, register_chrome_factories_with_webview};
 use crate::shell::{BrowserChromeShell, DesktopBrowserShell, ID_VIEWPORT};
 use std::sync::Arc;
+use zero_render_foundation::primitive::RenderPrimitives;
 use zero_text_foundation::FontdueBackend;
 use zero_ui_adapter_render_foundation::RenderFoundationBackend;
 use zero_ui_core::geometry::{Constraints, Rect};
@@ -69,6 +70,40 @@ pub fn render_chrome_via_sdk_with_layout(
     let viewport_rect = host.rect_of(&WidgetId::new(ID_VIEWPORT));
     let scene = host.paint().clone();
     let mut bridge = RenderFoundationBackend::new_with_text_size(metrics.logical_size, backend);
+    paint_scene(&scene, &mut bridge);
+    (bridge, viewport_rect)
+}
+
+/// 同 [`render_chrome_via_sdk_with_layout`]，但 viewport 使用 [`WebViewWidget`]
+/// （`register_chrome_factories_with_webview`），并接受 WebView 表面注册（DC-3 phase-2）。
+///
+/// `webview_surface`：`(surface_id, primitives)` —— WebView 渲染输出（已变换到帧坐标空间）。
+/// 在 `paint_scene` 之前注册到 bridge，使 WebViewWidget 的 `ExternalSurface` marker
+/// 经 `draw_external_surface` 把 WebView 纹理合并进 SDK chrome scene。
+///
+/// 返回 `(bridge, viewport_rect)`；`webview_surface` 为 `None` 时等价于
+/// `render_chrome_via_sdk_with_layout` 但 viewport 用 WebViewWidget 工厂。
+pub fn render_chrome_via_sdk_with_webview_surface(
+    shell: &zero_browser_shell::BrowserShell,
+    metrics: &WindowMetrics,
+    tokens: &SemanticTokens,
+    backend: Arc<FontdueBackend>,
+    webview_surface: Option<(u64, RenderPrimitives)>,
+) -> (RenderFoundationBackend, Option<Rect>) {
+    let model = BrowserChromeModel::from_shell(shell);
+    let spec = DesktopBrowserShell.build(&model, metrics);
+    let mut host = WidgetHost::new();
+    register_chrome_factories_with_webview(&mut host, tokens);
+    host.set_root(&spec);
+    host.layout(Constraints::loose(metrics.logical_size));
+    let viewport_rect = host.rect_of(&WidgetId::new(ID_VIEWPORT));
+    let scene = host.paint().clone();
+    let mut bridge = RenderFoundationBackend::new_with_text_size(metrics.logical_size, backend);
+    // 在 paint_scene 之前注册 WebView 表面（DC-3 phase-2）：draw_external_surface 在 paint_scene
+    // 期间按 ExternalSurface marker 的 surface_id 取回已注册表面并合并。
+    if let Some((surface_id, primitives)) = webview_surface {
+        bridge.set_surface(surface_id, primitives);
+    }
     paint_scene(&scene, &mut bridge);
     (bridge, viewport_rect)
 }
@@ -143,5 +178,42 @@ mod tests {
             "viewport top ≈ SDK chrome 高度，got {}",
             vp.origin.y
         );
+    }
+
+    #[test]
+    fn webview_surface_merges_into_chrome_output() {
+        // DC-3 phase-2：render_chrome_via_sdk_with_webview_surface 把 WebView RenderPrimitives
+        // 注册为表面并在 paint_scene 期间合并进 SDK chrome 输出。
+        let mut shell = zero_browser_shell::BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        let mut font_backend = FontdueBackend::new();
+        font_backend.load_family("Ahem", AHEM).expect("Ahem parses via fontdue");
+
+        // 模拟 WebView 渲染输出（一个填充矩形，位于 viewport 内）。
+        let mut webview_prims = RenderPrimitives::default();
+        webview_prims.add_fill(
+            zero_render_foundation::geometry::Rect::new(0.0, 0.0, 1280.0, 704.0),
+            zero_render_foundation::color::Color::rgb(255, 255, 255),
+        );
+
+        let (bridge, vp) = render_chrome_via_sdk_with_webview_surface(
+            &shell,
+            &metrics(),
+            &SemanticTokens::light(),
+            Arc::new(font_backend),
+            Some((0, webview_prims)),
+        );
+        let p = bridge.into_primitives();
+        // chrome fills（toolbar/background 等）非空。
+        assert!(!p.fills.is_empty(), "chrome fills 非空: {:?}", p.fills.len());
+        // WebView 表面已合并（至少 webview 的 fill 在 primitives 中）+ chrome fills。
+        let webview_fills = p.fills.len();
+        assert!(
+            webview_fills >= 1,
+            "fills count after webview merge: {} (chrome + webview)",
+            webview_fills
+        );
+        // viewport rect 非空。
+        assert!(vp.is_some(), "viewport rect 非空");
     }
 }

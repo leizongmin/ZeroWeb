@@ -19,6 +19,8 @@ zero-text-foundation = { workspace = true }
 zero-browser-shell = { workspace = true }
 compact_str = { workspace = true, features = ["serde"] }
 
+# DC-3 phase-2：render_chrome_via_sdk_with_webview 接受 WebView RenderPrimitives。
+zero-render-foundation = { workspace = true }
+
 [dev-dependencies]
-# sdk_render 测试断言 RenderPrimitives（render-foundation 类型）。
 zero-render-foundation = { workspace = true }
