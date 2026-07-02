@@ -1,0 +1,66 @@
+DC-13 13 域 flesh-out（第 3-4 域）：ui/navigation + ui/overlay
+================================================================
+日期: 2026-07-01
+分支: ui-sdk
+SDK-only（未触碰 render-foundation / apps/browser，无 product-smoke 风险）
+
+## ui/navigation（IF-010 Navigator + RouteId + modal/sheet + 恢复快照）
+从 86 行骨架升级（spec IF-010 `Navigator` / §8.4.1B route 可恢复 + phone sheet route /
+§8.8 route stack·modal·sheet 测）。
+
+- `RouteId(u64)`：push/replace 分配的稳定单调 id（跨重建跟踪 route、焦点作用域绑定、恢复点关联）。
+- `RouteKind { Page, Modal, Sheet }`：modal dialog / phone bottom sheet route（§8.4.1B）；
+  `is_overlay()` 识别 Modal/Sheet。
+- `Route`（= IF-010 RouteSpec）：name + params + kind，Serde derive（可持久化）；builder `.param()`；
+  构造器 `new/modal/sheet/with_kind`。
+- `RouteStack`：`push -> RouteId` / `pop -> Option<RouteId>`（保 root）/ `replace -> RouteId`（新 id）/
+  `top` / `top_id` / `route_of(id)`（按稳定 id 查）/ `top_overlay()`（最深 overlay 路由，事件屏障）/
+  `route_names()`（恢复快照）/ `from_routes(Vec<Route>)`（重启回填，重分配连续 id root=0）。
+- `Navigator` trait（IF-010）：push/pop/replace；RouteStack 实现之，宿主可持 `&mut dyn Navigator`。
+- 向后兼容：inherent push/pop/replace 改返回 RouteId，既有调用（忽略返回值）不受影响。
+
+测试：8 测全绿（push/pop/replace + 新 id / route_of 跨 pop / modal+sheet+top_overlay /
+Navigator trait object / route_names 快照 / from_routes 重启回填 / Route serde roundtrip）。
+Coverage（scoped）：navigation/lib.rs **96.67%**。
+
+## ui/overlay（IF-010 OverlayHost + dismiss 策略 + focus trap）
+从 114 行骨架升级（spec IF-010 `OverlayHost` / §8.4.1B 权限/下载/site info / §8.8 focus trap·
+outside-click·escape dismiss 测）。
+
+- `OverlayId = WidgetId`（IF-010）。
+- `DismissPolicy { None, OutsideClick, Escape, Any }`：浮层自动 dismiss 策略。
+- `OverlayEntry { id, anchor, trap_focus, modal, dismiss }` + 构造器
+  `popover(id, anchor)` / `modal(id)` / `tooltip(id, anchor)` / `sheet(id)`（典型组合预设）。
+- `OverlayHost`：`show(entry) -> OverlayId`（IF-010）/ `dismiss(id) -> bool` / `top` / `top_id` /
+  `has_modal`（事件屏障）/ `focus_trap_ids()`（trap_focus 浮层 id，最上层在前；host 据最上层绑
+  runtime FocusScope trap，DC-8 phase-3）/ **`dismiss_on_outside_click(point)`**（§8.8 outside-click：
+  最上层「opt-in outside-click 且点落锚定矩形外」浮层被 dismiss；覆盖该点的更上层浮层（含
+  anchor=None 全屏 modal）消费点击 → 不 dismiss；一次最多 dismiss 一个）/ **`dismiss_on_escape()`**
+  （§8.8：最上层 Escape/Any 浮层被 dismiss，一次一个）。
+- 保留 `Toast`。
+
+关键语义：anchor=None = 全屏 modal = 覆盖整屏（outside-click 永不命中，只能 escape 或显式 dismiss）。
+
+测试：10 测全绿（show/dismiss/has_modal/top_id / focus_trap_ids 最上层在前 / outside-click
+dismiss 顶 popover / 点击内不 dismiss / 仅 dismiss 最上层 / 全屏 modal 阻断 outside-click /
+escape-only 不被 click dismiss / escape dismiss 顶 escape 项 / sheet Any 双策略）。
+Coverage（scoped）：overlay/lib.rs **95.52%**。
+
+## 门禁
+  cargo build --workspace             — Finished（0 错误）
+  cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）
+  cargo fmt --all --check             — 净（0 diff）
+  scoped test-guard：zero-ui-navigation 8 passed；zero-ui-overlay 10 passed
+
+## DC 关联
+  DC-13（13 域接口 + 浏览器最小子集）navigation + overlay 两域从骨架升级到接口可用；
+  IF-010 Navigator / OverlayHost trait 方法落地；
+  §8.4.1B 权限提示（navigation+overlay desktop popover / phone sheet）+ 设置页 route + session restore 行；
+  §8.8 Navigation route stack/modal/sheet + Overlay focus trap/outside-click/escape dismiss 测覆盖；
+  DC-17 coverage 两域 per-file 96.67% / 95.52%（≥85%）。
+
+## DC-13 累计进度（4/13 域 flesh-out）
+  ✅ commands（CommandRegistry+菜单+palette）✅ restoration（持久化+类型化 id）
+  ✅ navigation（RouteId+Navigator+modal/sheet）✅ overlay（OverlayId+dismiss 策略）
+  剩余 9 域仍 skeleton：collections / forms / assets / platform / gestures / animation /
+  testing / devtools / design-system（collections/platform/gestures 缺 IF-010 trait 与集成）。

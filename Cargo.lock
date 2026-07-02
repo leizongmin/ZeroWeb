@@ -6137,6 +6137,7 @@ version = "0.1.0"
 dependencies = [
  "compact_str",
  "serde",
+ "serde_json",
  "zero-ui-core",
 ]
 

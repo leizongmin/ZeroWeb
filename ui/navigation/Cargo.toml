@@ -9,3 +9,6 @@ license.workspace = true
 zero-ui-core = { workspace = true }
 compact_str = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
