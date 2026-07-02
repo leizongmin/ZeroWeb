@@ -97,6 +97,25 @@ impl FontLoader {
         self.family_map.entry(alias.to_string()).or_default().push(font_id);
     }
 
+    /// DC-11 共享字体栈：加载字体数据并以指定族名注册（桥接 foundation/text 字体）。
+    ///
+    /// 与 [`load_font`](Self::load_font) 不同，本方法用**显式族名**注册字体，
+    /// 不依赖字节内 name 表解析。这使调用方可以把 foundation/text 的
+    /// [`FontdueBackend`] 中已加载的字体族名直接映射到 `FontLoader` 的 ID 空间，
+    /// 从而实现两套后端共享同一字体数据源（DC-11 关键不变量）。
+    ///
+    /// [`FontdueBackend`]: zero_text_foundation::backend::FontdueBackend
+    pub fn load_font_with_family(&mut self, data: &[u8], family: &str) -> Result<u32, FontError> {
+        let font = fontdue::Font::from_bytes(data, fontdue::FontSettings::default())
+            .map_err(|e| FontError::ParseFailed(e.to_string()))?;
+        let id = self.next_id;
+        self.next_id += 1;
+        self.family_map.entry(family.to_string()).or_default().push(id);
+        self.fonts.insert(id, font);
+        self.font_data.insert(id, data.to_vec());
+        Ok(id)
+    }
+
     /// 根据 ID 获取字体
     pub fn get(&self, id: u32) -> Option<&fontdue::Font> {
         self.fonts.get(&id)

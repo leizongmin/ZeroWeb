@@ -10,6 +10,7 @@ wgpu = { workspace = true }
 fontdue = { workspace = true }
 swash = { workspace = true }
 rustybuzz = { workspace = true }
+zero-text-foundation = { workspace = true }
 png = "0.17"
 jpeg-decoder = "0.3"
 resvg = { workspace = true }
@@ -26,7 +27,6 @@ winit = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 serial_test = { workspace = true }
-zero-text-foundation = { workspace = true }
 
 [[bench]]
 name = "render_bench"

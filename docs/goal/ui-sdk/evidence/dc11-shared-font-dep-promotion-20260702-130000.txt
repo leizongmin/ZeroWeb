@@ -1,0 +1,22 @@
+DC-11 zero-text-foundation 晋升为 render-foundation 正式依赖（2026-07-02）
+==============================================================
+
+变更：
+- crates/render-foundation/Cargo.toml: zero-text-foundation 从 dev-deps 移至 deps
+- crates/render-foundation/src/font/loader.rs: 新增 FontLoader::load_font_with_family(data, family)
+  按显式族名加载字体数据（不依赖 font 字节内部 name 表解析），
+  桥接 foundation/text FontdueBackend 与 render-foundation FontLoader 的字体数据源。
+
+验证：
+- cargo build --workspace: PASS（0 错误，含 downstream crates）
+- cargo test -p zero-render-foundation: 515 测全绿
+- cargo test -p zero-browser: 189 测全绿
+- cargo clippy --workspace --all-targets -- -D warnings: PASS
+- cargo fmt --all --check: PASS
+- product-smoke (release, max-diff=22): 95370/480000 = 19.87% = baseline
+
+DC-11 字体栈统一基础设施就绪：
+- render-foundation 正式依赖 zero-text-foundation（生产可用）
+- FontLoader::load_font_with_family 桥接方法可用
+- 双栈兼容性已验证（同字体→同 advance+raster）
+- 剩余：渲染路径实际委托（浏览器侧加载字体到 FontdueBackend，再经 load_font_with_family 同步到 FontLoader）+ product-smoke 验零退化
