@@ -52,6 +52,11 @@ impl ThemeProvider {
         self.density
     }
 
+    /// 暴露当前用户偏好（测试辅助 / UI 控件查询）。
+    pub fn current_preference(&self) -> ColorSchemePreference {
+        self.preference.clone()
+    }
+
     /// 系统主题变化时调用；若解析方案变化则生成 `ThemeChanged`（含 diff 失效）。
     pub fn on_system_change(&mut self, system: SystemThemeSnapshot) -> Option<ThemeChanged> {
         let new_scheme = ThemeResolver::resolve_scheme(&self.preference, system);
@@ -66,6 +71,19 @@ impl ThemeProvider {
         self.preference = preference;
         let scheme = ThemeResolver::resolve_scheme(&self.preference, system);
         self.rebuild(scheme)
+    }
+
+    /// 循环切换偏好：System → Light → Dark → System（DC-5「偏好切换 UI」的 API 基础）。
+    ///
+    /// 宿主应用（如浏览器）可绑定键盘快捷键或 UI 按钮调用本方法，无需自行维护偏好状态机。
+    /// 返回 `ThemeChanged` 含 diff 失效标记（仅颜色变化 → needs_paint；字体/间距不变不布局）。
+    pub fn cycle_preference(&mut self, system: SystemThemeSnapshot) -> ThemeChanged {
+        let next = match self.preference {
+            ColorSchemePreference::System => ColorSchemePreference::Light,
+            ColorSchemePreference::Light => ColorSchemePreference::Dark,
+            _ => ColorSchemePreference::System,
+        };
+        self.set_preference(next, system)
     }
 
     /// 设置文本字号缩放（DC-15「text scale」，移动端无障碍/系统字号）。
@@ -241,5 +259,62 @@ mod tests {
         assert_eq!(p.density(), 1.5);
         assert!((p.current().typography.body_size_px - body_before).abs() < 1e-6);
         assert!((p.current().spacing.unit - unit_before).abs() < 1e-6);
+    }
+
+    // ── DC-5 preference cycling ─────────────────────────────────────────────
+
+    #[test]
+    fn cycle_preference_system_light_dark_system() {
+        // DC-5：System → Light → Dark → System 三元循环，每次切换返回 ThemeChanged。
+        let mut p = ThemeProvider::new(
+            ColorSchemePreference::System,
+            ColorPalette::default(),
+            sys(ResolvedColorScheme::Light),
+        );
+        assert_eq!(p.current_preference(), ColorSchemePreference::System);
+        assert_eq!(p.resolved_scheme(), ResolvedColorScheme::Light);
+
+        // System → Light：同解析方案 Light → tokens 不变 → 可能无 paint 失效（diff_invalidation CLEAN）。
+        // 但偏好确实变了。
+        let c1 = p.cycle_preference(sys(ResolvedColorScheme::Light));
+        assert_eq!(p.current_preference(), ColorSchemePreference::Light);
+        assert_eq!(p.resolved_scheme(), ResolvedColorScheme::Light);
+        // 同方案同 token 无变化 → 不应有 layout 失效。
+        assert!(!c1.invalidation.contains(InvalidationFlags::NEEDS_LAYOUT));
+
+        // Light → Dark：解析方案 Light→Dark，tokens 变 → needs_paint。
+        let c2 = p.cycle_preference(sys(ResolvedColorScheme::Light));
+        assert_eq!(p.current_preference(), ColorSchemePreference::Dark);
+        assert_eq!(p.resolved_scheme(), ResolvedColorScheme::Dark);
+        assert!(c2.invalidation.contains(InvalidationFlags::NEEDS_PAINT));
+        assert!(!c2.invalidation.contains(InvalidationFlags::NEEDS_LAYOUT));
+
+        // Dark → System（回环）→ 解析方案 Dark→Light，tokens 变 → needs_paint。
+        let c3 = p.cycle_preference(sys(ResolvedColorScheme::Light));
+        assert_eq!(p.current_preference(), ColorSchemePreference::System);
+        assert_eq!(p.resolved_scheme(), ResolvedColorScheme::Light);
+        assert!(c3.invalidation.contains(InvalidationFlags::NEEDS_PAINT));
+    }
+
+    #[test]
+    fn cycle_preference_respects_high_contrast() {
+        // HighContrast 由系统标志触发，非独立偏好。Dark + high_contrast → HighContrastDark。
+        let mut p = ThemeProvider::new(
+            ColorSchemePreference::System,
+            ColorPalette::default(),
+            sys(ResolvedColorScheme::Dark),
+        );
+        // System → Light。
+        p.cycle_preference(SystemThemeSnapshot {
+            system_scheme: ResolvedColorScheme::Dark,
+            high_contrast: true,
+        });
+        assert_eq!(p.resolved_scheme(), ResolvedColorScheme::HighContrastLight);
+        // Light → Dark。
+        p.cycle_preference(SystemThemeSnapshot {
+            system_scheme: ResolvedColorScheme::Dark,
+            high_contrast: true,
+        });
+        assert_eq!(p.resolved_scheme(), ResolvedColorScheme::HighContrastDark);
     }
 }

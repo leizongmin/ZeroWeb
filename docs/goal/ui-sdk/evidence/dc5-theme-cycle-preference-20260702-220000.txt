@@ -1,0 +1,20 @@
+DC-5 ThemeProvider::cycle_preference() runtime theme switching API (2026-07-02)
+
+Changes:
+- ui/runtime/theme_provider.rs:
+  - Add current_preference() accessor exposing current ColorSchemePreference
+  - Add cycle_preference(system) cycling System→Light→Dark→System
+  - Returns ThemeChanged with diff invalidation (color-only→needs_paint)
+  - +2 tests (triple-cycle / high_contrast respect)
+
+Gates:
+- ui-runtime 62 tests green (was 60, +2)
+- build/clippy/fmt clean
+- Full workspace build clean
+- chrome 79 tests green (downstream zero regression)
+- SDK-only, no product-smoke risk
+
+Effect:
+- DC-5 "preference switching UI" gap closed at API level
+- Host apps bind keyboard shortcut or button to cycle_preference()
+- No need for hosts to maintain preference state machine
