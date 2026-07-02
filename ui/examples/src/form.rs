@@ -7,7 +7,7 @@
 //! 本 crate **不依赖任何浏览器 crate**；`Label`/`Button` 复用 `counter` 示例的工厂。
 
 use crate::counter::register_counter_factories;
-use zero_ui_core::action::{ActionId, ActionPayload, EventResult};
+use zero_ui_core::action::{ActionId, ActionPayload, ActionResult, EventResult};
 use zero_ui_core::binding::Value;
 use zero_ui_core::event::{KeyAction, UiEvent};
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
@@ -15,7 +15,7 @@ use zero_ui_core::theme::Color;
 use zero_ui_core::widget::{
     EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget, WidgetId, WidgetSpec,
 };
-use zero_ui_runtime::{EmittedAction, WidgetHost};
+use zero_ui_runtime::{EmittedAction, UiApp, WidgetHost};
 
 /// form 字段编辑 action（payload = 字段新值）。
 pub const ACTION_CHANGE: &str = "form.change";
@@ -217,6 +217,30 @@ impl FormApp {
 impl Default for FormApp {
     fn default() -> FormApp {
         FormApp::new()
+    }
+}
+
+/// `UiApp` 适配（spec IF-006）：把 `FormApp` 接入通用运行时驱动器（如
+/// `zero_ui_adapter_winit::WinitDriver`）——`root_spec` 产出声明树，`dispatch` 走 reducer。
+/// 已知 action（`form.change`/`form.submit`）→ `Handled`（driver 据此重建 spec）；未知 →
+/// `UnknownAction`（不重建）。保留既有 `reduce`/`build_spec` 公共 API（低层 host 路径仍可用）。
+impl UiApp for FormApp {
+    fn root_spec(&self) -> WidgetSpec {
+        self.build_spec()
+    }
+
+    fn dispatch(&mut self, action: &ActionId, payload: Option<ActionPayload>) -> ActionResult {
+        let known = matches!(action.0.as_str(), ACTION_CHANGE | ACTION_SUBMIT);
+        let emitted = EmittedAction {
+            action: action.clone(),
+            payload,
+        };
+        self.reduce(&emitted);
+        if known {
+            ActionResult::Handled
+        } else {
+            ActionResult::UnknownAction(action.clone())
+        }
     }
 }
 

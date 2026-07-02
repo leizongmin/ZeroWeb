@@ -1,12 +1,15 @@
 //! Form 示例无窗口驱动（`cargo run -p zero-ui-examples --example form`）。
 //!
-//! 脚本化驱动 form：Tab 聚焦 TextField → 输入字符 → Enter 提交 → 校验 → 打印 message。
+//! 经 [`WinitDriver`](zero_ui_adapter_winit::WinitDriver)（DC-2 run-loop 核心）驱动 form：
+//! Tab 聚焦 TextField → 键盘输入字符 → Enter 提交 → 校验 → 打印 message。driver 内部完成
+//! dispatch → reducer → 重建 → invalidation → 帧重绘，无需手写 set_root/layout/paint。
 
+use zero_ui_adapter_winit::WinitDriver;
 use zero_ui_core::event::{KeyAction, KeyCode, Modifiers, UiEvent};
-use zero_ui_core::geometry::{Constraints, Size};
+use zero_ui_core::layout::WindowMetrics;
 use zero_ui_examples::{FormApp, register_form_factories};
+use zero_ui_render::Scene;
 use zero_ui_render::render_node::RenderPrimitive;
-use zero_ui_runtime::WidgetHost;
 
 fn key(code: &str, text: Option<&str>) -> UiEvent {
     UiEvent::Key {
@@ -17,7 +20,7 @@ fn key(code: &str, text: Option<&str>) -> UiEvent {
     }
 }
 
-fn scene_texts(scene: &zero_ui_render::Scene) -> Vec<String> {
+fn scene_texts(scene: &Scene) -> Vec<String> {
     scene
         .entries
         .iter()
@@ -30,45 +33,30 @@ fn scene_texts(scene: &zero_ui_render::Scene) -> Vec<String> {
 
 fn main() {
     let mut app = FormApp::new();
-    let mut host = WidgetHost::new();
-    register_form_factories(&mut host);
-    let vp = Constraints::loose(Size::new(400.0, 300.0));
+    let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+    register_form_factories(driver.host_mut());
+    driver.begin();
+    println!("initial: {:?}", scene_texts(driver.host().scene()));
 
-    let render = |app: &mut FormApp, host: &mut WidgetHost| {
-        host.set_root(&app.build_spec());
-        host.layout(vp);
-        host.paint();
-    };
-    render(&mut app, &mut host);
-    println!("initial: {:?}", scene_texts(host.scene()));
-
-    // Tab 聚焦字段，输入 "Ada"。
-    host.dispatch_event(&key("Tab", None));
+    // Tab 聚焦字段，输入 "Ada"：每次 key → driver 内部 form.change→reducer→重建→pump_frame 重绘。
+    driver.pump_event(&key("Tab", None));
     for ch in ["A", "d", "a"] {
-        for a in host.dispatch_event(&key("Key", Some(ch))) {
-            app.reduce(&a);
-        }
-        render(&mut app, &mut host);
+        driver.pump_event(&key("Key", Some(ch)));
+        driver.pump_frame();
     }
-    println!("after typing 'Ada': {:?}", scene_texts(host.scene()));
+    println!("after typing 'Ada': {:?}", scene_texts(driver.host().scene()));
 
-    // Enter 提交。
-    for a in host.dispatch_event(&key("Enter", None)) {
-        app.reduce(&a);
-    }
-    render(&mut app, &mut host);
-    println!("after submit: {:?}", scene_texts(host.scene()));
+    // Enter 提交 → 校验通过。
+    driver.pump_event(&key("Enter", None));
+    driver.pump_frame();
+    println!("after submit: {:?}", scene_texts(driver.host().scene()));
 
-    // 清空再提交 → 校验失败。
+    // Backspace×3 清空 → Enter → 校验失败。
     for _ in 0..3 {
-        for a in host.dispatch_event(&key("Backspace", None)) {
-            app.reduce(&a);
-        }
-        render(&mut app, &mut host);
+        driver.pump_event(&key("Backspace", None));
+        driver.pump_frame();
     }
-    for a in host.dispatch_event(&key("Enter", None)) {
-        app.reduce(&a);
-    }
-    render(&mut app, &mut host);
-    println!("after empty submit: {:?}", scene_texts(host.scene()));
+    driver.pump_event(&key("Enter", None));
+    driver.pump_frame();
+    println!("after empty submit: {:?}", scene_texts(driver.host().scene()));
 }
