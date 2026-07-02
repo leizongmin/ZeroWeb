@@ -1,0 +1,11 @@
+[package]
+name = "zero-ui-adapter-winit"
+description = "winit 平台适配器 — winit 事件→UiEvent 转换 + PlatformRuntime 实现（winit 类型不泄漏到 widgets）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+zero-ui-runtime = { workspace = true }
+winit = { workspace = true }

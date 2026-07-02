@@ -1,0 +1,59 @@
+# DC-1 目录与依赖隔离机械验证 — 20260630-234530（M1 Wave 1-4 完成）
+
+方法：grep 每个 crate 的 Cargo.toml，确认通用 UI crate 不依赖浏览器业务/页面内核 crate。
+
+## 结果：PASS ✅
+
+### 通用 UI crate（必须不依赖 zero-browser-shell/webview/engine/net 及其它页面/渲染后端 crate）
+
+```
+OK  ui/core
+OK  ui/render
+OK  ui/i18n
+OK  ui/runtime
+OK  ui/widgets
+OK  ui/patterns
+OK  ui/animation
+OK  ui/gestures
+OK  ui/navigation
+OK  ui/overlay
+OK  ui/collections
+OK  ui/commands
+OK  ui/forms
+OK  ui/assets
+OK  ui/platform
+OK  ui/restoration
+OK  ui/testing
+OK  ui/devtools
+OK  ui/design-system
+OK  ui/dsl
+OK  ui/adapters/winit
+OK  foundation/text
+```
+
+22/22 通用 crate 零浏览器依赖（zero-browser-shell / zero-webview / zero-engine / zero-net /
+zero-dom / zero-css-parser / zero-style-system / zero-layout-engine / zero-canvas / zero-security /
+zero-storage / zero-protocol / zero-script-sandbox / zero-wasm-sandbox / zero-page-runtime /
+zero-host-runtime / zero-render-foundation 均未出现）。
+
+### 允许的浏览器耦合点（spec 约束 3 / DC-1）
+
+- `ui/adapters/webview`（zero-ui-adapter-webview）：依赖 `zero-webview`（允许）。✓
+- `browser-ui/chrome`（zero-browser-chrome）：依赖 `zero-ui-core` + `zero-ui-widgets` +
+  `zero-ui-adapter-webview` + `zero-browser-shell`（全部允许）。✓
+
+## 目录与分层（DC-1 / FR-002）
+
+- `ui/` 顶层目录已建立，含 spec §FR-002 全部通用子 crate（core/render/runtime/widgets/patterns/
+  i18n/animation/gestures/navigation/overlay/collections/commands/forms/assets/platform/restoration/
+  testing/devtools/design-system/dsl/adapters/{winit,webview}）。
+- `foundation/text`（zero-text-foundation）已建立（TBD-8 决策：独立落点）。
+- `browser-ui/chrome`（zero-browser-chrome）已建立，与通用 `ui/` 分开维护。
+- `ui/examples`（counter/form/browser-shell-demo）按里程碑在 M3 落地（spec M3 / DC-14）。
+
+## 备注
+
+- 通用 crate 仅依赖 `zero-ui-core`（少数还依赖 `zero-ui-render`/`zero-ui-i18n`/`zero-ui-widgets`/
+  `zero-text-foundation` 等通用层），构成浏览器无关的依赖闭包。
+- winit 仅在 `ui/adapters/winit` 出现（IF-006 winit 类型不泄漏到 widgets/runtime/gestures 的
+  公共 API，spec §6.4 技术约束）。

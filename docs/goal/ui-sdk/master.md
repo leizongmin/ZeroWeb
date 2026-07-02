@@ -11,6 +11,12 @@
 
 **M1 — UI SDK 核心骨架（广度优先，spec §M1）**。依赖：无（与浏览器并存）。浏览器运行时不触碰。
 
+**🟢 M1 Wave 1-4 crate skeleton 已全部落地（2026-06-30）**：23 个新 crate（22 通用 + 1 共享 + 2 耦合点中
+adapter-webview/chrome 计入）存在、可编译、有无窗口单测（合计 135 passed / 0 failed）；
+`cargo build --workspace` + `cargo clippy --workspace --all-targets -- -D warnings` + `cargo fmt --all` 全净；
+DC-1 依赖隔离机械验证通过（见 evidence/dep-isolation-20260630-234530.txt）。
+
+M1 剩余收口项：①coverage 基线（`scripts/check-coverage.sh`，DC-17）；②`ui/examples` 在 M3。
 M1 目标：把 spec §FR-002 列出的 crate 全部立起来（接口边界 + 无窗口单测），让架构在编译期与测试期成立；`ui/core` 三棵树 + 单向数据流 + 局部失效有最小可用单测；text foundation 接口接入 `ui/render`（skeleton 级）。浏览器 chrome 迁移、完整 DSL 表达式语言、移动端运行时分别在 M2/M3/M4。
 
 ## Done Criteria 进度
@@ -90,15 +96,23 @@ M1 目标：把 spec §FR-002 列出的 crate 全部立起来（接口边界 + �
 ## Latest Evidence
 
 - `evidence/test-20260630-223559.txt` — 首轮 `make test` 实测：RED（script-sandbox debug-test V8 链接环境失败；release 构建 + CI 绿；定性见上）。
-- `evidence/dep-isolation-*.txt` — Wave 4 落盘（DC-1 机械验证）。
-- `evidence/capability-matrix-*.md` — Wave 4 落盘（M1 已验证能力矩阵 + 缺口）。
-- `evidence/coverage-*.txt` — M1 crate 落地后补。
+- `evidence/dep-isolation-20260630-234530.txt` — **DC-1 机械验证 PASS**：22 通用 crate 零浏览器依赖；adapter-webview→zero-webview；chrome→ui/*+browser-shell+adapter-webview。
+- `evidence/capability-matrix-20260630-234530.md` — M1 能力矩阵 + DC skeleton 证据锚点 + 未解决缺口。
+- `evidence/coverage-*.txt` — 待补（DC-17，下一步取基线）。
+
+**M1 门禁实测（2026-06-30）**：
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告；clippy 不链接，故绕过 script-sandbox V8 链接问题）。
+- `cargo fmt --all --check` — 净（0 diff）。
+- 新 crate 单元测试（scoped test-guard，23 crate）— 135 passed / 0 failed。
 
 ## Next Steps
 
-1. **Wave 1**：`ui/core`（geometry/event/widget/element/action/binding/theme/focus/semantics/invalidation/layout）+ `foundation/text`（IF-008 接口），真实类型 + 单测，加入 workspace，scoped test-guard 全绿。
-2. **Wave 2**：`ui/render` / `ui/i18n` / `ui/runtime` / `ui/widgets` / `ui/patterns`。
-3. **Wave 3**：13 能力域 + `ui/dsl` schema skeleton。
-4. **Wave 4**：`ui/adapters/{winit,webview}` + `browser-ui/chrome` + DC-1 dep-isolation evidence。
-5. 每波：`cargo build --workspace` + scoped test + clippy + fmt + 提交推送。
-6. M1 crate 全落地后：跑 `scripts/check-coverage.sh` 取 ui/* 基线；写 M1 收口 archive。
+1. **DC-17 coverage 基线**：确认 `cargo-llvm-cov` 可用 → 跑 `scripts/check-coverage.sh` 取 ui/* + foundation/text
+   line/function/region 基线，写入本控制面 + `evidence/coverage-*.txt`；持续向 85% 推进。
+2. **M1 收口 archive**：把 M1 skeleton 过程/决策/证据归档到 `archive/m1-skeleton-complete.md`。
+3. **进入 M2**（按 §Ordered Next Milestones）：browser-ui/chrome 其余 §8.4.1A 组件实现；
+   text foundation 接入 `ui/render` 与 `zero-webview`（真实 fontdue/swash/rustybuzz 桥接，DC-11）；
+   `ui/render` Scene → render-foundation 后端 trait（TBD-2）；`apps/browser` 逐组件灰度迁移（shim/feature-flag）。
+4. `ui/examples`（counter/form/browser-shell-demo）随 M3 落地（DC-14）。
+5. 跟踪项：本机 `make test` 受 script-sandbox debug-test V8 链接阻塞（环境性）；零-security cors.rs 曾瞬时工作树损坏（已恢复 HEAD 状态，git 干净）。

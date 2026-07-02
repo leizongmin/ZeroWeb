@@ -1,0 +1,10 @@
+[package]
+name = "zero-ui-adapter-webview"
+description = "WebView 高级自定义组件 — 把 zero-webview 输出合成进 UI scene；只算外部矩形，不映射 DOM（DC-3）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+zero-webview = { workspace = true }

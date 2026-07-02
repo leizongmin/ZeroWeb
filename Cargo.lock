@@ -5725,6 +5725,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-browser-chrome"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "zero-browser-shell",
+ "zero-ui-adapter-webview",
+ "zero-ui-core",
+ "zero-ui-widgets",
+]
+
+[[package]]
 name = "zero-browser-shell"
 version = "0.1.0"
 dependencies = [
@@ -5984,6 +5995,23 @@ dependencies = [
  "hashbrown 0.15.5",
  "serde",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "zero-ui-adapter-webview"
+version = "0.1.0"
+dependencies = [
+ "zero-ui-core",
+ "zero-webview",
+]
+
+[[package]]
+name = "zero-ui-adapter-winit"
+version = "0.1.0"
+dependencies = [
+ "winit",
+ "zero-ui-core",
+ "zero-ui-runtime",
 ]
 
 [[package]]

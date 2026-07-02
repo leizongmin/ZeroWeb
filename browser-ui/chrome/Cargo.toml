@@ -1,0 +1,13 @@
+[package]
+name = "zero-browser-chrome"
+description = "浏览器专属 chrome 组件 — 由通用 ui/widgets+patterns 组合；可与 zero-browser-shell + ui/adapters/webview 耦合（唯一允许的浏览器耦合点）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+zero-ui-widgets = { workspace = true }
+zero-ui-adapter-webview = { workspace = true }
+zero-browser-shell = { workspace = true }
+compact_str = { workspace = true, features = ["serde"] }

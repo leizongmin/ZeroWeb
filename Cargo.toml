@@ -54,6 +54,11 @@ members = [
     "ui/devtools",
     "ui/design-system",
     "ui/dsl",
+    "ui/adapters/winit",
+    "ui/adapters/webview",
+
+    # 浏览器专属 chrome 组件（唯一允许依赖 zero-browser-shell + ui/adapters/webview 的耦合点）
+    "browser-ui/chrome",
 
     # 共享文本/字体基础层（UI SDK 与 WebView 共用）
     "foundation/text",
@@ -176,7 +181,12 @@ zero-ui-testing = { path = "ui/testing" }
 zero-ui-devtools = { path = "ui/devtools" }
 zero-ui-design-system = { path = "ui/design-system" }
 zero-ui-dsl = { path = "ui/dsl" }
+zero-ui-adapter-winit = { path = "ui/adapters/winit" }
+zero-ui-adapter-webview = { path = "ui/adapters/webview" }
 zero-text-foundation = { path = "foundation/text" }
+
+# 浏览器专属 chrome（允许依赖 zero-browser-shell + ui/adapters/webview）
+zero-browser-chrome = { path = "browser-ui/chrome" }
 
 # 本地 taffy 补丁：添加 cached_baselines() 访问器以提取 flex 容器基线
 [patch.crates-io]
