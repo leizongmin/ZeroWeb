@@ -1,0 +1,38 @@
+DC-5 patterns + chrome 硬编码色审计（clean）— DC-5 组件域 SDK 全域闭合
+日期：2026-07-02
+分支：ui-sdk
+
+## 范围
+DC-5 widget 域已闭合（Button/Badge/ScrollBar 迁移）。本轮审计 ui/patterns 与 browser-ui/chrome
+是否仍有硬编码色，目标全域闭合 DC-5「组件只消费 semantic token 不硬编码浏览器色值」。
+
+## 审计命令与结果
+`grep -rnE "Color::rgb\(|Color::rgba\(" ui/patterns/src/ browser-ui/chrome/src/`（排除 test/comment）：
+- **ui/patterns**：**零命中**——patterns 层完全不直接用 Color（它组合 ui/widgets 控件，颜色由
+  各 widget 自身经 ctx.tokens / from_tokens 消费）。无需迁移。
+- **browser-ui/chrome**：**零硬编码 Color::rgb/rgba**——chrome 经 `chrome_color_themed(name, tokens)`
+  把语义色名（chrome/accent/secure/insecure/...）映射到 semantic token（DC-5 既有机制）。无需迁移。
+
+## 全域复核（`Color::rgb([0-9]` across ui/，排除 widgets 已迁移项）
+仅以下合法残留：
+- `ui/core/theme.rs`：token **定义本身**（BLACK/WHITE 常量 + light()/dark() token 值）——token 定义
+  本就是颜色落地处，非组件硬编码。
+- `ui/adapters/render-foundation/src/lib.rs`：`RfColor::rgb(...)` 是 render-foundation 自有颜色类型
+  的 **test fixture**（红/绿/白测试矩形），非 ui Color、非组件色。
+
+## 结论
+**DC-5「组件只消费 semantic token 不硬编码浏览器色值」对 SDK 全域（ui/widgets + ui/patterns +
+browser-ui/chrome）成立**——grep 机械验证无非测试、非 token-定义的组件硬编码色残留。
+- ui/widgets：Button/Badge/ScrollBar 全迁移到 token（ctx.tokens / from_tokens / 接收 tokens 参数）。
+- ui/patterns：不直接用色（组合控件）。
+- browser-ui/chrome：chrome_color_themed → token。
+
+## DC 影响
+- DC-5 组件消费 token 域 **SDK 全域闭合**。DC-5 剩余仅：System/Light/Dark/Custom/HighContrast 偏好
+  切换 UI（功能增强，非硬编码色问题）。
+- **SDK 侧可验证推进已基本耗尽**：DC-2/5/6/7/8/9/10/12/13 全部 SDK 级闭合；DC-11 foundation/text
+  侧就绪（完整统一=字体管理重构，product-smoke 风险）；DC-3/14/15 为「触碰浏览器/渲染」风险步 +
+  M4 移动端，需 GUI 可视验收 / product-smoke（本环境无 GUI、headroom 0.83pp 紧）。
+
+## 门禁
+本轮无代码变更（审计 clean）——无需 build/test/clippy/fmt 门禁。仅证据 + master.md 状态更新。
