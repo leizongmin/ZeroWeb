@@ -17,6 +17,7 @@ pub mod browser_tab_strip;
 pub mod chrome_model;
 pub mod download_panel;
 pub mod find_bar;
+pub mod i18n;
 pub mod navigation_buttons;
 pub mod page_load_indicator;
 pub mod page_viewport;

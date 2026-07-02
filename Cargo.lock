@@ -5735,12 +5735,14 @@ name = "zero-browser-chrome"
 version = "0.1.0"
 dependencies = [
  "compact_str",
+ "hashbrown 0.17.1",
  "zero-browser-shell",
  "zero-render-foundation",
  "zero-text-foundation",
  "zero-ui-adapter-render-foundation",
  "zero-ui-adapter-webview",
  "zero-ui-core",
+ "zero-ui-i18n",
  "zero-ui-patterns",
  "zero-ui-render",
  "zero-ui-runtime",

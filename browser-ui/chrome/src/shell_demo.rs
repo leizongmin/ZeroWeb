@@ -113,10 +113,10 @@ pub fn build_demo_spec(model: &BrowserChromeModel) -> WidgetSpec {
     let mut toolbar = node_layout("browser.ToolbarRow", ID_TOOLBAR, "row");
     toolbar
         .children
-        .push(focus_button(ID_NEW_TAB, "New Tab", "browser.new_tab"));
+        .push(focus_button(ID_NEW_TAB, "New Tab", crate::i18n::ids::NEW_TAB));
     toolbar
         .children
-        .push(focus_button(ID_MENU_OPEN, "Menu", "browser.open_menu"));
+        .push(focus_button(ID_MENU_OPEN, "Menu", crate::i18n::ids::OPEN_MENU));
     let mut address = leaf(
         "browser.AddressBar",
         ID_ADDRESS_BAR,
@@ -154,7 +154,7 @@ pub fn build_demo_spec(model: &BrowserChromeModel) -> WidgetSpec {
     // menu 子树（FocusScope trap 演示）：含一个可聚焦 Close 项。
     let mut menu = node_layout("browser.MenuPanel", ID_MENU, "column");
     menu.children
-        .push(focus_button(ID_MENU_CLOSE, "Close Menu", "browser.close_menu"));
+        .push(focus_button(ID_MENU_CLOSE, "Close Menu", crate::i18n::ids::CLOSE_MENU));
     root.children.push(menu);
 
     root

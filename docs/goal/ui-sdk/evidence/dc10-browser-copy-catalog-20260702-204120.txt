@@ -1,0 +1,65 @@
+# DC-10 浏览器文案 catalog（browser-ui/chrome/i18n，2026-07-02）
+
+## 缺口（本轮修复）
+
+`browser-ui/chrome/src/i18n/` 此前是**空占位目录**（lib.rs 未声明 `mod i18n`）。浏览器
+UI 文案（菜单项、按钮、bars 标题）以**硬编码字面量**散落各处：
+
+- `browser_menu.rs`：`MenuEntry::item("New Tab", ...)` / `"Reload"` / `"Close"`。
+- `shell.rs`：FindBar `"Find"`、导航状态 `"Back·{} Fwd·{}"`。
+- `shell_demo.rs`：临时 message-id 字面量 `"browser.new_tab"` / `"browser.open_menu"` /
+  `"browser.close_menu"`。
+
+spec FR-013 / DC-10 明确要求「浏览器文案在 `browser-ui/chrome/i18n`」（ui/i18n lib.rs
+顶部亦声明此约束）。本轮建立该 catalog 入口。
+
+## 修复
+
+新增 `browser-ui/chrome/src/i18n/mod.rs`（+ `pub mod i18n;` 声明 + Cargo.toml 加
+`zero-ui-i18n` / `hashbrown` 依赖）：
+
+1. **`ids` 模块**：浏览器文案 message id 常量（点分命名，spec FR-013）——
+   `NEW_TAB/NEW_WINDOW/RELOAD/CLOSE_TAB/CLOSE_MENU/OPEN_MENU/FIND/BOOKMARKS/
+   DOWNLOADS/SETTINGS/BACK/FORWARD`。集中定义避免散落字面量、确保拼写一致。
+2. **`default_catalog()`**：默认英语（`en`，LTR）`MessageCatalog`，覆盖全部 ids 常量。
+3. **`catalog_store()`**：注册默认 catalog 的 `CatalogStore`（测试/运行时便利）。
+4. **`resolve(store, id, locale)` / `resolve_default(store, id)`**：按 id 解析文案，返回
+   `ResolvedText`（含 fallback 诊断）；缺失 key 不报错（回退 key 占位 + `MissingKey` 诊断，
+   spec DC-10「缺失 key 走 fallback 并产生 diagnostic」）。
+5. **shell_demo.rs 字面量→常量**（DRY）：`"browser.new_tab"`→`ids::NEW_TAB`、
+   `"browser.open_menu"`→`ids::OPEN_MENU`、`"browser.close_menu"`→`ids::CLOSE_MENU`
+   （字符串值不变，纯集中化；证明 catalog 为 message id 单一来源）。
+
+## 验证（可量化）
+
+新增 4 测（browser-ui/chrome 68→72 测全绿）：
+- `default_catalog_resolves_all_known_ids`：每个 id 解析出预期英语文案 + LTR + 无诊断。
+- `unknown_id_produces_missing_key_diagnostic`：缺失 key → key 占位文案 + `MissingKey` 诊断
+  （不报错、不阻断渲染，DC-10 语义）。
+- `default_catalog_covers_all_id_constants`：完整性——ids 模块每个常量都在默认 catalog 可解析
+  （防新增 id 漏译）。
+- `literal_text_passes_through`：`LocalizedText::Literal` 直接回显（组件可混合 message id 与
+  动态字面量如 URL）。
+
+## 门禁
+
+- `./target/test-guard -- cargo test -p zero-browser-chrome` → **72 passed; 0 failed**（+4 新 i18n 测）。
+- `./target/test-guard -- cargo test -p zero-browser` → **189 passed; 0 failed**（DC-14 零回归）。
+- `cargo build --workspace` Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` Finished（0 警告）。
+- `cargo fmt --all --check` 净。
+
+## 风险
+
+**SDK-side + 纯新增模块 + 字面量→常量（值不变）**：
+- 新 i18n 模块不触碰渲染路径。
+- shell_demo 的 message-id 字符串值逐字不变（`"browser.new_tab"` == `ids::NEW_TAB`）。
+- → **无渲染/布局变更 → 无 product-smoke 风险**（189 browser + 72 chrome 测零回归已证）。
+
+## DC-10 现状
+
+DC-10 SDK 侧（ui/i18n locale/catalog/fallback/plural/RTL/diagnostic + DSL i18n 桥）早已闭合。
+本轮补**浏览器侧 catalog 入口**（spec FR-013「浏览器文案在 browser-ui/chrome/i18n」），
+message id 集中化 + 默认英语 catalog + 解析闭环。剩余 follow-up（非阻塞）：
+- chrome 组件（BrowserMenu 等）的硬编码 label 字面量迁移到持有 message id（需 resolution-layer
+  设计：组件持有 `LocalizedText`，渲染层 paint 前经 catalog 解析）——本 catalog 为其入口。
