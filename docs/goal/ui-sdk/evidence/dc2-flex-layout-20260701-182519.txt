@@ -1,0 +1,57 @@
+DC-2 host 布局增强 — Row/Column flex/grow 弹性权重
+====================================================
+日期: 2026-07-01
+分支: ui-sdk
+SDK-only（未触碰 render-foundation / apps/browser，无 product-smoke 风险）
+
+## 动机
+master.md Next Steps #1：host 的 Row/Column 此前按剩余空间顺序贪心分配、无 flex，
+导致 chrome toolbar 等多个「填宽」子节点争宽（首个填宽子节点吃光全部主轴）。
+本轮加入 opt-in `flex` 弹性权重，默认 flex=0 保持向后兼容。
+
+## 实现（ui/runtime/src/host.rs）
+- `flex_from_props(props) -> f32`：从子节点 props 读 `flex`（Int/Float，缺省/负值→0）。
+- `MainAxis { Horizontal, Vertical }` + `measure_linear(node, lctx, constraints, axis)`：
+  Row/Column 共用两遍弹性布局。
+  · Pass 1：非弹性子节点（flex==0）按声明顺序贪心 measure（约束=剩余主轴空间），与历史行为逐位等价。
+  · Pass 2：弹性子节点（flex>0）按 `flex/Σflex` 比例瓜分 `free = max_main − gaps − used_nonflex`，
+    每子节点以 tight 主轴约束（min=max=份额）measure（Expanded 语义，fill 控件正好填满份额）。
+  · 无弹性子节点时退化为纯贪心（向后兼容）。
+- `measure` 的 Column/Row 分支改为调用 `measure_linear`；Stack/None 分支不变。
+- arrange 无需改动（按 cached_size 顺序放置，flex 子节点的 cached_size 已由 measure 设好）。
+- 关键性质：向后兼容——flex=0 时与旧实现逐位等价（已由 backward-compat 测试验证）。
+
+## chrome 接入（browser-ui/chrome/src/shell_demo.rs）
+- AddressBar / WebView 节点声明 `flex=1`：填宽子节点改为弹性分配（不再依赖「填宽置末」的贪心巧合）。
+- 实跑 `cargo run --example browser_shell_demo` 验证：
+    address_bar origin=(136,28) size=(1144,36)   ← 填满两固定按钮之后的剩余宽，右沿到 1280
+    webview     origin=(12,96)  size=(1268,704)  ← 填满 12px 滚动条之后的剩余宽，右沿到 1280
+
+## 测试（全绿）
+ui/runtime host::tests（6 新）：
+  · row_flex_distributes_space_evenly_between_two_flex_children  — 两 flex=1 均分 400→各 200
+  · row_flex_with_one_fixed_and_one_flex_child                   — 固定 50 + flex 填剩余 350
+  · row_flex_respects_weight_ratios_and_gap                      — 权重 1:2:1 + gap=10 → 97.5/195/97.5
+  · column_flex_distributes_vertical_space_proportionally        — Column 三 flex=1 均分 height=300→各 100
+  · flex_default_zero_keeps_backward_compatible_greedy_behavior  — 无 flex 时贪心行为不变（向后兼容）
+  · flex_paints_into_unified_scene_with_correct_rects            — flex 几何进统一 Scene
+既有 layout 测试（column/row/stack geometry、custom_container_via_layout_prop、clip 等）全绿，无回归。
+
+browser-ui/chrome shell_demo::tests（1 新）：
+  · flex_children_fill_toolbar_and_content_remaining_width       — AddressBar(flex=1) 填满 toolbar 剩余宽
+
+## 测试汇总（scoped test-guard）
+  zero-ui-runtime:  33 passed; 0 failed（host 33 + integration 3，含 6 新 flex 测）
+  zero-browser-chrome: 54 passed; 0 failed（含 1 新 chrome flex 测）
+
+## 门禁
+  cargo build --workspace             — Finished（0 错误）
+  cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）
+  cargo fmt --all --check             — 净（0 diff）
+
+## Coverage（scoped ui-runtime，host.rs）
+  ui/runtime/src/host.rs  line 92.29%（前 91.85%，新增 flex 代码充分覆盖；per-file ≥85%）
+
+## DC 关联
+  DC-2（三棵树 + retained）布局能力增强；DC-14（browser-shell-demo）真实 chrome 用 flex 组合；
+  DC-17（coverage）host.rs 92.29% 持平抬升。

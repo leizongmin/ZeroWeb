@@ -91,16 +91,17 @@ fn scrollbar_node(id: &str, content_h: f32, viewport_h: f32, offset: f32) -> Wid
 
 /// 构造 browser-shell-demo 声明树（桌面式）。
 ///
-/// 结构（column）：security_badge 栏 / toolbar(row)[NewTab·MenuOpen·AddressBar] / TabStrip /
-/// content(row)[ScrollBar·WebView] / menu(column)[MenuClose]。
+/// 结构（column）：security_badge 栏 / toolbar(row)[NewTab·MenuOpen·AddressBar(flex)] / TabStrip /
+/// content(row)[ScrollBar·WebView(flex)] / menu(column)[MenuClose]。
 ///
-/// **布局约束**：host 的 Row 按剩余宽顺序分配、无 flex，故每个 Row 至多一个「填宽」子节点。
-/// toolbar 把固定宽按钮在前、AddressBar（ChromePanel 填宽）置末；content 把固定 12px 滚动条置首、
-/// WebView（填宽）置次。security_badge 单独成栏（避免与 AddressBar 争宽）。
+/// **布局**：host 的 Row/Column 支持 `flex` 弹性权重（`ui/runtime::host`）。填宽子节点声明
+/// `flex=1`，按权重瓜分非弹性子节点占用后的剩余主轴空间（`Expanded` 语义），与子节点声明顺序无关。
+/// toolbar 中 AddressBar(flex=1) 填满固定按钮之后的剩余宽；content 中 WebView(flex=1) 填满 12px
+/// 滚动条之后的剩余宽。security_badge 仍单独成栏（语义独立，非争宽规避）。
 pub fn build_demo_spec(model: &BrowserChromeModel) -> WidgetSpec {
     let mut root = node_layout("browser.DesktopBrowserShell", ID_ROOT, "column");
 
-    // security_badge 单独一栏（全宽，避免 Row 内与 AddressBar 争宽）。
+    // security_badge 单独一栏（全宽，语义独立）。
     root.children.push(leaf(
         "browser.SecurityBadge",
         ID_SECURITY,
@@ -108,7 +109,7 @@ pub fn build_demo_spec(model: &BrowserChromeModel) -> WidgetSpec {
         Some(format!("Security: {}", security_color_name(model.security))),
     ));
 
-    // toolbar：固定宽按钮在前，AddressBar 填剩余宽（Row 内唯一填宽项）。
+    // toolbar：固定宽按钮在前，AddressBar(flex=1) 填剩余宽。
     let mut toolbar = node_layout("browser.ToolbarRow", ID_TOOLBAR, "row");
     toolbar
         .children
@@ -116,12 +117,14 @@ pub fn build_demo_spec(model: &BrowserChromeModel) -> WidgetSpec {
     toolbar
         .children
         .push(focus_button(ID_MENU_OPEN, "Menu", "browser.open_menu"));
-    toolbar.children.push(leaf(
+    let mut address = leaf(
         "browser.AddressBar",
         ID_ADDRESS_BAR,
         "chrome",
         Some(model.address_text.clone()),
-    ));
+    );
+    address.props.insert("flex", Value::Int(1));
+    toolbar.children.push(address);
     root.children.push(toolbar);
 
     root.children.push(leaf(
@@ -138,12 +141,14 @@ pub fn build_demo_spec(model: &BrowserChromeModel) -> WidgetSpec {
         ),
     ));
 
-    // content：滚动条在前（固定 12px），WebView 填剩余宽。
+    // content：滚动条在前（固定 12px），WebView(flex=1) 填剩余宽。
     let mut content = node_layout("browser.ContentRow", ID_CONTENT, "row");
     content
         .children
         .push(scrollbar_node(ID_SCROLLBAR, 2000.0, 600.0, 300.0));
-    content.children.push(webview_node(ID_WEBVIEW));
+    let mut webview = webview_node(ID_WEBVIEW);
+    webview.props.insert("flex", Value::Int(1));
+    content.children.push(webview);
     root.children.push(content);
 
     // menu 子树（FocusScope trap 演示）：含一个可聚焦 Close 项。
@@ -495,6 +500,38 @@ mod tests {
             wv.size.width > 1000.0,
             "webview fills remaining width, got {}",
             wv.size.width
+        );
+    }
+
+    #[test]
+    fn flex_children_fill_toolbar_and_content_remaining_width() {
+        // flex 布局增强：AddressBar(flex=1) 填满 toolbar 固定按钮之后的剩余宽；
+        // WebView(flex=1) 填满 content 中 12px 滚动条之后的剩余宽。两者均与固定子节点共存。
+        let host = build_demo_host(&model(), &tokens(), &theme(), Size::new(1280.0, 800.0));
+        let ab = host
+            .rect_of(&WidgetId::new(ID_ADDRESS_BAR))
+            .expect("address bar laid out");
+        let new_tab = host
+            .rect_of(&WidgetId::new(ID_NEW_TAB))
+            .expect("new tab button laid out");
+        // AddressBar 在 NewTab 之后（同 toolbar row，声明顺序）。
+        assert!(
+            ab.origin.x >= new_tab.right(),
+            "address bar placed after fixed buttons (ab.x={}, new_tab.right={})",
+            ab.origin.x,
+            new_tab.right()
+        );
+        // AddressBar 填满 toolbar 剩余宽（1280 - 两个固定按钮宽 ≈ 远大于按钮宽）。
+        assert!(
+            ab.size.width > 1000.0,
+            "address bar (flex=1) fills toolbar remaining width, got {}",
+            ab.size.width
+        );
+        // AddressBar 右沿接近视口右边（填满至 1280）。
+        assert!(
+            ab.right() > 1270.0,
+            "address bar reaches right edge, got right={}",
+            ab.right()
         );
     }
 }

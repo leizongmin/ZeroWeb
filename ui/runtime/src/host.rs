@@ -616,47 +616,139 @@ fn node_container_kind(node: &HostNode) -> Option<ContainerKind> {
     ContainerKind::from_component(&node.component)
 }
 
+/// 从 props 读 `flex`（Row/Column 主轴弹性权重）。接受 Int/Float，缺省/负值 → 0。
+///
+/// `flex == 0`（默认）：子节点取其固有尺寸，按声明顺序贪心占用剩余主轴空间（历史行为）。
+/// `flex > 0`：子节点参与弹性分配，按 `flex / Σflex` 比例瓜分非弹性子节点占用后的剩余空间
+/// （`Expanded` 语义，tight 到份额）。这让 chrome toolbar 等多个「填宽」子节点能共存。
+fn flex_from_props(props: &PropsMap) -> f32 {
+    match props.get("flex") {
+        Some(Value::Float(f)) => (*f as f32).max(0.0),
+        Some(Value::Int(i)) => (*i as f32).max(0.0),
+        _ => 0.0,
+    }
+}
+
+/// 线性容器（Row/Column）的主轴方向。
+#[derive(Clone, Copy, PartialEq)]
+enum MainAxis {
+    /// Row：主轴 = X（width），交叉轴 = Y（height）。
+    Horizontal,
+    /// Column：主轴 = Y（height），交叉轴 = X（width）。
+    Vertical,
+}
+
+/// Row/Column 共用的弹性布局：两遍 measure。
+///
+/// 1. **非弹性子节点**（`flex == 0`）：按声明顺序贪心 measure（约束 = 剩余主轴空间），
+///    与历史行为一致；累加其主轴尺寸得到 `used_nonflex`。
+/// 2. **弹性子节点**（`flex > 0`）：剩余空间 `free = max_main − gaps − used_nonflex` 按
+///    `flex` 权重比例分配，每子节点以 tight 主轴约束（min=max=份额）measure（fill 控件正好
+///    填满份额）。无弹性子节点时退化为纯贪心，与旧实现逐位等价（向后兼容）。
+///
+/// 交叉轴：所有子节点以 `max_cross`（loose）measure，容器交叉尺寸 = 子节点交叉最大值。
+fn measure_linear(node: &mut HostNode, lctx: &mut LayoutCtx, constraints: Constraints, axis: MainAxis) -> Size {
+    let gap = gap_from_props(&node.props);
+    let n = node.children.len();
+    let (max_main, max_cross) = match axis {
+        MainAxis::Horizontal => (constraints.max_width, constraints.max_height),
+        MainAxis::Vertical => (constraints.max_height, constraints.max_width),
+    };
+    // 主轴/交叉尺寸 per child（arrange 仍按 cached_size 顺序放置，无需调整）。
+    let mut child_main = vec![0.0_f32; n];
+    let mut child_cross = vec![0.0_f32; n];
+
+    let flexes: Vec<f32> = node.children.iter().map(|c| flex_from_props(&c.props)).collect();
+    let total_flex: f32 = flexes.iter().sum();
+
+    // Pass 1：非弹性子节点（贪心，等同历史行为）。
+    let mut cursor = 0.0_f32;
+    for i in 0..n {
+        if flexes[i] > 0.0 {
+            continue;
+        }
+        let remaining = (max_main - cursor).max(0.0);
+        let child_c = match axis {
+            MainAxis::Horizontal => Constraints {
+                min_width: 0.0,
+                max_width: remaining,
+                min_height: 0.0,
+                max_height: max_cross,
+            },
+            MainAxis::Vertical => Constraints {
+                min_width: 0.0,
+                max_width: max_cross,
+                min_height: 0.0,
+                max_height: remaining,
+            },
+        };
+        let s = measure(&mut node.children[i], lctx, child_c);
+        let (m, c) = match axis {
+            MainAxis::Horizontal => (s.width, s.height),
+            MainAxis::Vertical => (s.height, s.width),
+        };
+        child_main[i] = m;
+        child_cross[i] = c;
+        cursor += m + gap;
+    }
+
+    // Pass 2：弹性子节点（按权重瓜分剩余空间）。
+    let gaps_total = gap * n.saturating_sub(1) as f32;
+    let used_nonflex: f32 = child_main
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| flexes[*i] <= 0.0)
+        .map(|(_, m)| *m)
+        .sum();
+    if total_flex > 0.0 {
+        let free = (max_main - gaps_total - used_nonflex).max(0.0);
+        for i in 0..n {
+            if flexes[i] <= 0.0 {
+                continue;
+            }
+            let share = free * (flexes[i] / total_flex);
+            let child_c = match axis {
+                MainAxis::Horizontal => Constraints {
+                    min_width: share,
+                    max_width: share,
+                    min_height: 0.0,
+                    max_height: max_cross,
+                },
+                MainAxis::Vertical => Constraints {
+                    min_width: 0.0,
+                    max_width: max_cross,
+                    min_height: share,
+                    max_height: share,
+                },
+            };
+            let s = measure(&mut node.children[i], lctx, child_c);
+            let (m, c) = match axis {
+                MainAxis::Horizontal => (s.width, s.height),
+                MainAxis::Vertical => (s.height, s.width),
+            };
+            child_main[i] = m;
+            child_cross[i] = c;
+        }
+    }
+
+    let total_main = (child_main.iter().sum::<f32>() + gaps_total).min(max_main).max(0.0);
+    let total_cross = child_cross
+        .iter()
+        .copied()
+        .fold(0.0_f32, f32::max)
+        .min(max_cross)
+        .max(0.0);
+    match axis {
+        MainAxis::Horizontal => Size::new(total_main, total_cross),
+        MainAxis::Vertical => Size::new(total_cross, total_main),
+    }
+}
+
 /// measure：自下而上算每节点尺寸，写入 `cached_size`，返回本节点尺寸。
 fn measure(node: &mut HostNode, lctx: &mut LayoutCtx, constraints: Constraints) -> Size {
     let size = match node_container_kind(node) {
-        Some(ContainerKind::Column) => {
-            let gap = gap_from_props(&node.props);
-            let mut cursor_y = 0.0_f32;
-            let mut max_w = 0.0_f32;
-            for child in node.children.iter_mut() {
-                let remaining_h = (constraints.max_height - cursor_y).max(0.0);
-                let child_c = Constraints {
-                    min_width: 0.0,
-                    max_width: constraints.max_width,
-                    min_height: 0.0,
-                    max_height: remaining_h,
-                };
-                let s = measure(child, lctx, child_c);
-                cursor_y += s.height + gap;
-                max_w = max_w.max(s.width);
-            }
-            let h = (cursor_y - gap).max(0.0);
-            Size::new(max_w.min(constraints.max_width), h.min(constraints.max_height))
-        }
-        Some(ContainerKind::Row) => {
-            let gap = gap_from_props(&node.props);
-            let mut cursor_x = 0.0_f32;
-            let mut max_h = 0.0_f32;
-            for child in node.children.iter_mut() {
-                let remaining_w = (constraints.max_width - cursor_x).max(0.0);
-                let child_c = Constraints {
-                    min_width: 0.0,
-                    max_width: remaining_w,
-                    min_height: 0.0,
-                    max_height: constraints.max_height,
-                };
-                let s = measure(child, lctx, child_c);
-                cursor_x += s.width + gap;
-                max_h = max_h.max(s.height);
-            }
-            let w = (cursor_x - gap).max(0.0);
-            Size::new(w.min(constraints.max_width), max_h.min(constraints.max_height))
-        }
+        Some(ContainerKind::Column) => measure_linear(node, lctx, constraints, MainAxis::Vertical),
+        Some(ContainerKind::Row) => measure_linear(node, lctx, constraints, MainAxis::Horizontal),
         Some(ContainerKind::Stack) => {
             let mut max_w = 0.0_f32;
             let mut max_h = 0.0_f32;
@@ -1159,6 +1251,214 @@ mod tests {
         // paint 不 panic、产出空 Scene（无 widget）。
         let scene = host.paint();
         assert!(scene.entries.is_empty());
+    }
+
+    // ── flex 弹性布局（DC-2 host 布局增强）──────────────────────────────
+
+    /// 测试用「填满」叶子控件：layout 返回约束的 max（填满被分配空间），paint 填该尺寸。
+    /// 用于验证 flex 子节点按份额填满主轴。携带上次 measure 的尺寸供 paint 复用。
+    struct Fill {
+        color: Color,
+        size: Size,
+    }
+    impl Widget for Fill {
+        fn mount(&mut self, _ctx: &mut MountCtx) {}
+        fn update(&mut self, _ctx: &mut zero_ui_core::widget::UpdateCtx, _props: &PropsMap) {}
+        fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
+            EventResult::Ignored
+        }
+        fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+            let s = Size::new(constraints.max_width, constraints.max_height);
+            self.size = s;
+            s
+        }
+        fn paint(&mut self, ctx: &mut PaintCtx) {
+            ctx.recorder
+                .fill_rect(Rect::from_origin_size(Point::ZERO, self.size), self.color);
+        }
+        fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+    }
+
+    fn fill_host() -> WidgetHost {
+        let mut host = patch_host();
+        host.register("Fill", |spec| {
+            let color = match spec.props.get("color") {
+                Some(Value::Text(s)) => match s.as_str() {
+                    "red" => Color::rgb(1.0, 0.0, 0.0),
+                    "blue" => Color::rgb(0.0, 0.0, 1.0),
+                    "green" => Color::rgb(0.0, 0.5, 0.0),
+                    _ => Color::rgb(0.5, 0.5, 0.5),
+                },
+                _ => Color::rgb(0.5, 0.5, 0.5),
+            };
+            Box::new(Fill {
+                color,
+                size: Size::ZERO,
+            })
+        });
+        host
+    }
+
+    fn fill(color: &str, id: &str, flex: i64) -> WidgetSpec {
+        let mut s = WidgetSpec::new("Fill");
+        s.id = Some(WidgetId::new(id));
+        s.props.insert("color", Value::Text(color.into()));
+        s.props.insert("flex", Value::Int(flex));
+        s
+    }
+
+    #[test]
+    fn row_flex_distributes_space_evenly_between_two_flex_children() {
+        // 两个 flex=1 的 Fill 子节点均分 Row 主轴（width=400）→ 各 200。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Row");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(fill("red", "a", 1));
+        root.children.push(fill("blue", "b", 1));
+        host.set_root(&root);
+        let size = host.layout(Constraints::loose(Size::new(400.0, 50.0)));
+        assert_eq!(size, Size::new(400.0, 50.0), "flex children fill the row");
+        assert_eq!(
+            host.rect_of(&WidgetId::new("a")),
+            Some(Rect::from_ltrb(0.0, 0.0, 200.0, 50.0)),
+            "first flex child gets first half"
+        );
+        assert_eq!(
+            host.rect_of(&WidgetId::new("b")),
+            Some(Rect::from_ltrb(200.0, 0.0, 400.0, 50.0)),
+            "second flex child gets second half"
+        );
+    }
+
+    #[test]
+    fn row_flex_with_one_fixed_and_one_flex_child() {
+        // 固定 Patch(50x50, flex=0) + Fill(flex=1)：固定取固有 50，Fill 填满剩余 350。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Row");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "fixed", "app.fixed"));
+        root.children.push(fill("blue", "flex", 1));
+        host.set_root(&root);
+        let size = host.layout(Constraints::loose(Size::new(400.0, 50.0)));
+        assert_eq!(size, Size::new(400.0, 50.0));
+        assert_eq!(
+            host.rect_of(&WidgetId::new("fixed")),
+            Some(Rect::from_ltrb(0.0, 0.0, 50.0, 50.0)),
+            "non-flex child keeps intrinsic size"
+        );
+        assert_eq!(
+            host.rect_of(&WidgetId::new("flex")),
+            Some(Rect::from_ltrb(50.0, 0.0, 400.0, 50.0)),
+            "flex child fills remaining space after fixed child"
+        );
+    }
+
+    #[test]
+    fn row_flex_respects_weight_ratios_and_gap() {
+        // flex 权重 1:2:1（总 4）+ gap=10，主轴 410：gaps=20，free=390 → 份额 97.5/195/97.5。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Row");
+        root.id = Some(WidgetId::new("root"));
+        root.props.insert("gap", Value::Float(10.0));
+        root.children.push(fill("red", "a", 1));
+        root.children.push(fill("blue", "b", 2));
+        root.children.push(fill("green", "c", 1));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(410.0, 30.0)));
+        let a = host.rect_of(&WidgetId::new("a")).unwrap();
+        let b = host.rect_of(&WidgetId::new("b")).unwrap();
+        let c = host.rect_of(&WidgetId::new("c")).unwrap();
+        assert!(
+            (a.size.width - 97.5).abs() < 1e-5,
+            "a gets free/4 = 97.5, got {}",
+            a.size.width
+        );
+        assert!(
+            (b.size.width - 195.0).abs() < 1e-5,
+            "b gets free*2/4 = 195, got {}",
+            b.size.width
+        );
+        assert!(
+            (c.size.width - 97.5).abs() < 1e-5,
+            "c gets free/4 = 97.5, got {}",
+            c.size.width
+        );
+        // gap 投影到相邻起点：b 起点 = a 终点 + gap。
+        assert!((b.origin.x - (a.origin.x + a.size.width + 10.0)).abs() < 1e-5);
+        assert!((c.origin.x - (b.origin.x + b.size.width + 10.0)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn column_flex_distributes_vertical_space_proportionally() {
+        // Column 主轴 = Y：三个 flex=1 Fill 均分 height=300 → 各 100，垂直堆叠。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(fill("red", "a", 1));
+        root.children.push(fill("blue", "b", 1));
+        root.children.push(fill("green", "c", 1));
+        host.set_root(&root);
+        let size = host.layout(Constraints::loose(Size::new(100.0, 300.0)));
+        assert_eq!(size, Size::new(100.0, 300.0));
+        assert_eq!(
+            host.rect_of(&WidgetId::new("a")),
+            Some(Rect::from_ltrb(0.0, 0.0, 100.0, 100.0))
+        );
+        assert_eq!(
+            host.rect_of(&WidgetId::new("b")),
+            Some(Rect::from_ltrb(0.0, 100.0, 100.0, 200.0))
+        );
+        assert_eq!(
+            host.rect_of(&WidgetId::new("c")),
+            Some(Rect::from_ltrb(0.0, 200.0, 100.0, 300.0))
+        );
+    }
+
+    #[test]
+    fn flex_default_zero_keeps_backward_compatible_greedy_behavior() {
+        // 无 flex（全 0）时：第一个 Fill（填满）吃光全部主轴，第二个 Fill 得 0——
+        // 与历史贪心行为一致（向后兼容），证明 flex 是 opt-in。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Row");
+        root.id = Some(WidgetId::new("root"));
+        let mut first = WidgetSpec::new("Fill");
+        first.id = Some(WidgetId::new("a"));
+        first.props.insert("color", Value::Text("red".into()));
+        // 不设 flex → 默认 0（贪心）。
+        let mut second = WidgetSpec::new("Fill");
+        second.id = Some(WidgetId::new("b"));
+        second.props.insert("color", Value::Text("blue".into()));
+        root.children.push(first);
+        root.children.push(second);
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 50.0)));
+        assert_eq!(
+            host.rect_of(&WidgetId::new("a")),
+            Some(Rect::from_ltrb(0.0, 0.0, 400.0, 50.0)),
+            "greedy non-flex fill child consumes all space (legacy behavior)"
+        );
+        assert_eq!(
+            host.rect_of(&WidgetId::new("b")),
+            Some(Rect::from_ltrb(400.0, 0.0, 400.0, 50.0)),
+            "second non-flex child gets zero remaining (legacy behavior)"
+        );
+    }
+
+    #[test]
+    fn flex_paints_into_unified_scene_with_correct_rects() {
+        // flex 分配后的几何应反映到统一 Scene：两个 flex Fill 各画一个 200x50 矩形。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Row");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(fill("red", "a", 1));
+        root.children.push(fill("blue", "b", 1));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 50.0)));
+        let scene = host.paint().clone();
+        let f = fills(&scene);
+        assert_eq!(f.len(), 2, "two flex fills → two fill_rects");
+        assert!(f.contains(&(Rect::from_ltrb(0.0, 0.0, 200.0, 50.0), Color::rgb(1.0, 0.0, 0.0))));
+        assert!(f.contains(&(Rect::from_ltrb(200.0, 0.0, 400.0, 50.0), Color::rgb(0.0, 0.0, 1.0))));
     }
 
     #[test]
