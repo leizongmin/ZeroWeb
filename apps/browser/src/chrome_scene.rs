@@ -48,3 +48,86 @@ impl ChromeScene {
         v
     }
 }
+
+/// 把 fills 整体沿 Y 轴平移 `dy`（DC-14 替换式迁移：页面内容/chrome 浮层从手绘 chrome 视口
+/// 位置迁到 SDK chrome 视口位置）。颜色与 X 不变。
+pub fn translate_fills(fills: &[FillPrimitive], dy: f32) -> Vec<FillPrimitive> {
+    fills
+        .iter()
+        .map(|f| FillPrimitive {
+            rect: Rect::new(f.rect.origin.x, f.rect.origin.y + dy, f.rect.size.width, f.rect.size.height),
+            color: f.color,
+        })
+        .collect()
+}
+
+/// 把 glyphs 整体沿 Y 轴平移 `dy`（与 [`translate_fills`] 配套，保持页面文本与 fill 对齐）。
+pub fn translate_glyphs(glyphs: &[GlyphDraw], dy: f32) -> Vec<GlyphDraw> {
+    glyphs.iter().map(|g| GlyphDraw { baseline_y: g.baseline_y + dy, ..*g }).collect()
+}
+
+#[cfg(test)]
+mod chrome_scene_tests {
+    use super::*;
+
+    fn fill(x: f32, y: f32) -> FillPrimitive {
+        FillPrimitive {
+            rect: Rect::new(x, y, 1.0, 1.0),
+            color: Color::rgb(0.1, 0.2, 0.3),
+        }
+    }
+
+    fn empty_scene() -> ChromeScene {
+        ChromeScene {
+            chrome_fills: vec![],
+            chrome_glyphs: vec![],
+            page_fills: vec![],
+            page_glyphs: vec![],
+            chrome_overlay_fills: vec![],
+            chrome_overlay_glyphs: vec![],
+            overlay_fills: vec![],
+            overlay_glyphs: vec![],
+            chrome_shadows: vec![],
+            overlay_rounded_rects: vec![],
+        }
+    }
+
+    #[test]
+    fn combined_fills_preserves_layer_order() {
+        // feature-off：combined = [chrome, page, chrome_overlay] 顺序（bit-identical 契约）。
+        let mut scene = empty_scene();
+        scene.chrome_fills = vec![fill(0.0, 0.0)];
+        scene.page_fills = vec![fill(0.0, 1.0)];
+        scene.chrome_overlay_fills = vec![fill(0.0, 2.0)];
+        let combined = scene.combined_fills();
+        assert_eq!(combined.len(), 3);
+        assert_eq!(combined[0].rect.origin.y, 0.0, "chrome 主层先");
+        assert_eq!(combined[1].rect.origin.y, 1.0, "page 居中");
+        assert_eq!(combined[2].rect.origin.y, 2.0, "chrome 浮层最后");
+    }
+
+    #[test]
+    fn translate_fills_shifts_y_preserves_x_and_color() {
+        let fills = vec![fill(10.0, 100.0)];
+        let moved = translate_fills(&fills, -24.0);
+        assert_eq!(moved[0].rect.origin.x, 10.0, "x 不变");
+        assert_eq!(moved[0].rect.origin.y, 76.0, "y 平移 dy");
+        assert_eq!(moved[0].color, fills[0].color, "颜色不变");
+    }
+
+    #[test]
+    fn translate_glyphs_shifts_baseline_preserves_x() {
+        let g = GlyphDraw {
+            ch: 'A',
+            x: 5.0,
+            baseline_y: 130.0,
+            color: Color::rgb(0.0, 0.0, 0.0),
+            font_id: 0,
+            font_size: 16.0,
+        };
+        let moved = translate_glyphs(&[g], -30.0);
+        assert_eq!(moved[0].x, 5.0, "x 不变");
+        assert_eq!(moved[0].baseline_y, 100.0, "baseline_y 平移 dy");
+        assert_eq!(moved[0].ch, 'A');
+    }
+}
