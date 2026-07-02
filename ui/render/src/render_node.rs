@@ -30,6 +30,13 @@ pub enum RenderPrimitive {
         size_px: f32,
         color: Color,
     },
+    /// 预 shape 文本（DC-11 phase 2：由 foundation/text 的 `TextShaper` + `TextMeasurer`
+    /// 产出的 `TextBlob`，后端直接光栅 glyph，不再 reshape）。
+    TextBlob {
+        blob: zero_text_foundation::TextBlob,
+        position: zero_ui_core::geometry::Point,
+        color: Color,
+    },
 }
 
 /// Render tree 节点（spec §8.4.2）。

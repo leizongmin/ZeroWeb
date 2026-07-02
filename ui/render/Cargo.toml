@@ -7,4 +7,7 @@ license.workspace = true
 
 [dependencies]
 zero-ui-core = { workspace = true }
+# DC-11 phase 2：ui/render 把文本绘制消费 foundation/text 的 TextBlob（预 shape 文本单元）。
+# foundation/text 是纯文本层（不依赖 render-foundation GPU 后端），不违反 TBD-2 / DC-1。
+zero-text-foundation = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

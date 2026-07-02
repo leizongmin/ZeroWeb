@@ -6149,6 +6149,7 @@ name = "zero-ui-render"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "zero-text-foundation",
  "zero-ui-core",
 ]
 

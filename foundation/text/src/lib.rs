@@ -36,4 +36,5 @@ pub use font_request::{
 pub use glyph_atlas::{AtlasRect, GlyphAtlasEntry};
 pub use glyph_cache::{GlyphCache, GlyphKey, InMemoryGlyphCache};
 pub use shaping::{GlyphRun, PositionedGlyph, ShapeInput, ShapedText, TextShaper};
+pub use text_blob::TextBlob;
 pub use text_measure::{TextMeasureInput, TextMeasurer, TextMetrics};

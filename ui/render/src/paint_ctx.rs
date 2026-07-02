@@ -68,7 +68,7 @@ impl PaintRecorder for SceneRecorder {
 }
 
 impl SceneRecorder {
-    /// 记录文本图元（M1 直接承载字符串；M2 改为引用 foundation/text 的 TextBlob）。
+    /// 记录原始字符串文本图元（简单场景/测试；后端自行 shape）。
     pub fn draw_text(&mut self, text: &str, position: Point, size_px: f32, color: Color) {
         self.push(RenderPrimitive::Text {
             text: text.to_string(),
@@ -76,6 +76,12 @@ impl SceneRecorder {
             size_px,
             color,
         });
+    }
+
+    /// 记录预 shape 文本图元（DC-11：调用方先用 foundation/text 的 `TextShaper`+`TextMeasurer`
+    /// 产出 `TextBlob`，后端直接光栅 glyph，不再 reshape）。
+    pub fn draw_text_blob(&mut self, blob: zero_text_foundation::TextBlob, position: Point, color: Color) {
+        self.push(RenderPrimitive::TextBlob { blob, position, color });
     }
 }
 
@@ -102,5 +108,29 @@ mod tests {
         r.fill_rect(Rect::ZERO, Color::WHITE);
         let scene = r.finish();
         assert_eq!(scene.entries[0].clip, Some(clip));
+    }
+
+    #[test]
+    fn draw_text_blob_records_textblob_primitive() {
+        // DC-11：draw_text_blob 把预 shape 的 TextBlob 记录为 TextBlob 图元。
+        let blob = zero_text_foundation::TextBlob::new(
+            zero_text_foundation::ShapedText {
+                runs: Vec::new(),
+                total_advance_x: 0.0,
+                total_advance_y: 0.0,
+            },
+            zero_text_foundation::TextMetrics {
+                width: 0.0,
+                height: 0.0,
+                ascent: 0.0,
+                descent: 0.0,
+                line_count: 0,
+            },
+        );
+        let mut r = SceneRecorder::new(WidgetId::new("lbl"));
+        r.draw_text_blob(blob, Point::ZERO, Color::WHITE);
+        let scene = r.finish();
+        assert_eq!(scene.entries.len(), 1);
+        assert!(matches!(scene.entries[0].primitive, RenderPrimitive::TextBlob { .. }));
     }
 }

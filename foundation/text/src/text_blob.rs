@@ -5,9 +5,13 @@
 
 use crate::shaping::ShapedText;
 use crate::text_measure::TextMetrics;
+use serde::{Deserialize, Serialize};
 
 /// 可绘制文本单元。
-#[derive(Debug, Clone, PartialEq)]
+///
+/// `ShapedText` 与 `TextMetrics` 均派生 `Serialize`，故 `TextBlob` 也可序列化——
+/// 使 `ui/render::RenderPrimitive::TextBlob` 能纳入可序列化的 Scene（DC-11 phase 2）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextBlob {
     pub shaped: ShapedText,
     pub metrics: TextMetrics,

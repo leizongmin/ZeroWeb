@@ -62,6 +62,17 @@ pub fn snapshot_scene(scene: &Scene) -> String {
                     fmt_color(*color)
                 ));
             }
+            RenderPrimitive::TextBlob { blob, position, color } => {
+                // 预 shape 文本（DC-11）：按 glyph 数 + 总前进量做确定性摘要。
+                out.push_str(&format!(
+                    "textblob {}g @{},{} adv{:.1} {}",
+                    blob.shaped.glyph_count(),
+                    position.x,
+                    position.y,
+                    blob.shaped.total_advance_x,
+                    fmt_color(*color)
+                ));
+            }
         }
         out.push('\n');
     }
