@@ -558,6 +558,11 @@ fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
         0.0
     };
 
+    // DC-14 self-source 三态分类（严格容差真通过率 = 唯一可信达标指标）。
+    // results 与 filtered 同序，category 取自 configs[filtered[i].0]。
+    let categories: Vec<ReftestCategory> = filtered.iter().map(|(i, _)| configs[*i].category).collect();
+    print_dc14_three_state(&results, &categories);
+
     // 输出报告
     let report_text = format_reftest_report(&results, pass_count, fail_count, pass_rate, duration);
 
@@ -583,6 +588,53 @@ fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
     if fail_count > 0 {
         std::process::exit(1);
     }
+}
+
+/// DC-14 self-source 三态分类报告（严格容差真通过 / 近似通过 / 不一致）。
+///
+/// 弥补 self-source 路径此前的 loose 二元（通过/失败）报告——在保持与实际 pass/fail
+/// 一致（`strict_pass + near_pass == pass_count`、`mismatch == fail_count`）的前提下，
+/// 把通过项进一步按 DC-14 锁定严格容差（布局 ≤0.1% & channel≤2；文字 ≤0.5% & channel≤5）
+/// 拆成两态：
+/// - **真通过**：`passed && diff_ratio ≤ strict_ratio && max_channel_diff ≤ strict_channel`（唯一可信达标指标）
+/// - **近似通过**：`passed` 但不满足严格容差（loose 通过但非严格，含同源假通过与字体噪声）
+/// - **不一致**：`!passed`（loose 失败）
+///
+/// near/mismatch 边界用 `result.passed`（编码实际有效 loose 阈值，含 ZERO_REFTEST_STRICT
+/// 与 per-test fuzzy override），因此三态计数与上方 pass/fail 报告自洽；strict 边界用 DC-14
+/// 锁定阈值，与 oracle 路径（`cmd_reftest_oracle`）口径一致。
+fn print_dc14_three_state(results: &[reftest::ReftestResult], categories: &[reftest::ReftestCategory]) {
+    let mut strict_pass = 0usize;
+    let mut near_pass = 0usize;
+    let mut mismatch = 0usize;
+    for (r, cat) in results.iter().zip(categories.iter()) {
+        let strict_ratio = cat.strict_max_diff_ratio();
+        let strict_chan = cat.strict_max_channel_diff();
+        if r.passed && r.diff_ratio <= strict_ratio && r.max_channel_diff <= strict_chan {
+            strict_pass += 1;
+        } else if r.passed {
+            near_pass += 1;
+        } else {
+            mismatch += 1;
+        }
+    }
+    let total = results.len();
+    let pct = |n: usize| {
+        if total > 0 {
+            100.0 * n as f64 / total as f64
+        } else {
+            0.0
+        }
+    };
+    eprintln!();
+    eprintln!("  ── DC-14 self-source 三态分类（严格容差 = 唯一可信达标指标）──");
+    eprintln!(
+        "  真通过 (passed 且 ≤strict): {} ({:.1}%)",
+        strict_pass,
+        pct(strict_pass)
+    );
+    eprintln!("  近似通过 (passed 但 >strict): {} ({:.1}%)", near_pass, pct(near_pass));
+    eprintln!("  不一致 (failed):            {} ({:.1}%)", mismatch, pct(mismatch));
 }
 
 /// `reftest-upstream` 子命令 — 运行从 wpt-data/ 加载的真实上游 WPT reftest。
@@ -699,6 +751,11 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
         };
         eprintln!("  {:30} {}/{} ({:.1}%)", format!("{}/", dir), pass, total_count, rate);
     }
+
+    // DC-14 self-source 三态分类（严格容差真通过率 = 唯一可信达标指标）。
+    // results 与 filtered 同序，category 取自 filtered（FileReftestCase.category）。
+    let categories: Vec<reftest::ReftestCategory> = filtered.iter().map(|c| c.category).collect();
+    print_dc14_three_state(&results, &categories);
 
     // JSON 输出
     if matches!(options.format, OutputFormat::Json) {
