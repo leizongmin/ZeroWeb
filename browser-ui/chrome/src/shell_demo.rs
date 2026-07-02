@@ -15,10 +15,12 @@
 use crate::chrome_model::BrowserChromeModel;
 use crate::render::{register_chrome_factories, security_color_name};
 use zero_ui_adapter_webview::WebViewWidget;
-use zero_ui_core::action::{ActionId, EventResult};
+use zero_ui_adapter_winit::WinitDriver;
+use zero_ui_core::action::{ActionId, ActionPayload, ActionResult, EventResult};
 use zero_ui_core::binding::Value;
 use zero_ui_core::event::UiEvent;
-use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
+use zero_ui_core::geometry::{Constraints, Insets, Point, Rect, Size};
+use zero_ui_core::layout::{DEFAULT_DENSITY, DEFAULT_TEXT_SCALE, Orientation, WindowMetrics};
 use zero_ui_core::scroll::ScrollMetrics;
 use zero_ui_core::semantics::{SemanticsFlags, SemanticsLabel, SemanticsNode};
 use zero_ui_core::theme::{Color, SemanticTokens};
@@ -28,7 +30,7 @@ use zero_ui_core::widget::{
 };
 use zero_ui_render::Scene;
 use zero_ui_render::render_node::RenderPrimitive;
-use zero_ui_runtime::WidgetHost;
+use zero_ui_runtime::{UiApp, WidgetHost};
 use zero_ui_widgets::scrollbar::{
     ScrollBarGeometry, ScrollBarStyle, ScrollOrientation, layout_scrollbar, paint_scrollbar,
 };
@@ -317,21 +319,50 @@ pub fn register_demo_factories(host: &mut WidgetHost, tokens: &SemanticTokens, t
     host.register("demo.ScrollBar", move |s| Box::new(ScrollBarWidget::from_spec(s)));
 }
 
-/// 构造并运行 demo 到一次 paint：返回已 layout+paint 的 [`WidgetHost`]，供调用方检视
-/// scene / semantics / 焦点 / 事件。
+/// browser-shell-demo 的 UiApp 适配（spec IF-006）：把 demo 声明树接入 [`WinitDriver`]。
+///
+/// demo 是**只读渲染 + 焦点/FocusScope 演示** fixture（无应用 reducer）：`root_spec` 返回
+/// [`build_demo_spec`] 产出的声明树；`dispatch` 不处理 action（返回 `UnknownAction`，driver
+/// 不重建）。真实浏览器宿主在此接入 BrowserAction reducer（参考 counter/form 示例）。
+pub struct ShellDemoApp {
+    spec: WidgetSpec,
+}
+
+impl UiApp for ShellDemoApp {
+    fn root_spec(&self) -> WidgetSpec {
+        self.spec.clone()
+    }
+
+    fn dispatch(&mut self, action: &ActionId, _payload: Option<ActionPayload>) -> ActionResult {
+        ActionResult::UnknownAction(action.clone())
+    }
+}
+
+/// 构造并运行 demo 到一次 paint：经 [`WinitDriver`]（DC-2 run-loop 核心）驱动 retained 闭环
+/// （register → begin = set_root+layout+tight 约束+paint），返回 [`WidgetHost`] 供调用方检视
+/// scene / semantics / 焦点 / FocusScope。所有 demo 测试因此均经 driver 路径证明。
 pub fn build_demo_host(
     model: &BrowserChromeModel,
     tokens: &SemanticTokens,
     theme: &zero_ui_core::theme::Theme,
     viewport: Size,
 ) -> WidgetHost {
-    let spec = build_demo_spec(model);
-    let mut host = WidgetHost::new();
-    register_demo_factories(&mut host, tokens, theme);
-    host.set_root(&spec);
-    host.layout(Constraints::loose(viewport));
-    host.paint();
-    host
+    let mut app = ShellDemoApp {
+        spec: build_demo_spec(model),
+    };
+    let metrics = WindowMetrics {
+        logical_size: viewport,
+        scale_factor: 1.0,
+        safe_area: Insets::all(0.0),
+        keyboard_insets: Insets::all(0.0),
+        text_scale: DEFAULT_TEXT_SCALE,
+        density: DEFAULT_DENSITY,
+        orientation: Orientation::from_size(viewport),
+    };
+    let mut driver = WinitDriver::new(&mut app, metrics);
+    register_demo_factories(driver.host_mut(), tokens, theme);
+    driver.begin();
+    driver.into_host()
 }
 
 /// 按图元种类统计 Scene（demo 打印用）。

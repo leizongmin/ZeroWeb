@@ -147,6 +147,14 @@ impl<'app> WinitDriver<'app> {
             FrameOutcome::Idle
         }
     }
+
+    /// 消费驱动器，取出内部的 [`WidgetHost`]（retained 运行态：scene/几何/焦点/a11y）。
+    ///
+    /// 供「经 driver 建树 + 首帧后检视 host」的场景（如 demo helper：driver 跑 begin 后把 host
+    /// 交给测试/打印检视，不再驱动事件）。取出后 host 与 app 的可变借用关系解除。
+    pub fn into_host(self) -> WidgetHost {
+        self.host
+    }
 }
 
 #[cfg(test)]
