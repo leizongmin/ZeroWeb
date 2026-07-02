@@ -265,4 +265,38 @@ mod tests {
             scene.entries
         );
     }
+
+    #[test]
+    fn scrollbar_drag_flows_to_webview_scroll() {
+        // DC-4 闭环：通用 ScrollBar 拖动 → ScrollCommand → scroll_bridge::apply_scroll_command
+        // → WebViewWidget.set_scroll_metrics（页面 offset 由 WebView 管理，spec FR-006）。
+        use zero_ui_widgets::scrollbar::{ScrollOrientation, drag_to_command, layout_scrollbar};
+        let viewport = Rect::from_ltrb(0.0, 0.0, 200.0, 200.0);
+        let mut metrics = ScrollMetrics {
+            content_width: 200.0,
+            content_height: 1000.0,
+            viewport_width: 200.0,
+            viewport_height: 200.0,
+            scroll_x: 0.0,
+            scroll_y: 100.0,
+        };
+        let geom = layout_scrollbar(viewport, metrics, ScrollOrientation::Vertical).unwrap();
+        let on_thumb = Point::new(geom.thumb.left() + 1.0, geom.thumb.top() + 1.0);
+        let cmd = drag_to_command(&geom, metrics, on_thumb, Point::new(on_thumb.x, on_thumb.y + 16.0))
+            .expect("drag on thumb produces a command");
+        // scroll_bridge 把命令钳制为最终 offset。
+        let (_tx, ty) = crate::apply_scroll_command(metrics, cmd);
+        let mut wv = WebViewWidget::new(viewport, 1.0, theme());
+        metrics.scroll_y = ty;
+        wv.set_scroll_metrics(metrics);
+        assert!(
+            wv.scroll.scroll_y > 100.0,
+            "drag should advance webview scroll offset, got {}",
+            wv.scroll.scroll_y
+        );
+        assert!(
+            wv.scroll.scroll_y <= wv.scroll.max_scroll_y(),
+            "must clamp to max_scroll"
+        );
+    }
 }

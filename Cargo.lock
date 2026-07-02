@@ -6009,6 +6009,7 @@ dependencies = [
  "zero-ui-core",
  "zero-ui-render",
  "zero-ui-runtime",
+ "zero-ui-widgets",
  "zero-webview",
 ]
 

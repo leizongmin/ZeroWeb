@@ -1,0 +1,8 @@
+=== DC-4 滚动语义 + ScrollBar（hit-test + drag command + paint + 闭环）===
+日期: Wed Jul  1 08:14:57     2026
+
+--- ui/widgets scrollbar 测试 ---
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.00s
+
+--- adapter-webview 跨 crate 闭环（ScrollBar→apply_scroll_command→WebViewWidget）---
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
