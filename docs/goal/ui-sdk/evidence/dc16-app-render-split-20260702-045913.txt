@@ -1,0 +1,28 @@
+DC-16 app_render.rs 文件大小合规拆分（DC-14 替换式迁移 prep）— 2026-07-02
+
+## 变更
+apps/browser/src/app_render.rs 2816 行（>2000，违反 DC-16 单文件 ≤2000 行规则）拆分为：
+- app_render.rs：1552 行（build_scene + chrome 主渲染 + 页面内容渲染 render_*）。
+- app_render_ext.rs（新）：1270 行（chrome 浮层/装饰渲染：render_find_bar/render_autocomplete/
+  render_context_menu/render_floating_link_status/render_download_panel + 图元 transform/clip 助手）。
+
+经 app.rs `include!`（line 2089）共享同一模块作用域——**纯代码搬迁，零行为变化**（impl BrowserApp
+拆为两块：app_render.rs 7-1551 + 闭合 `}`；app_render_ext.rs 重新 `impl BrowserApp {` + 1552-2816）。
+
+## 为什么
+1. **DC-16 合规**：app_render.rs 从 2816 → 1552 行（≤2000）。
+2. **DC-14 替换式迁移 prep**：chrome 浮层/装饰渲染模块化到 app_render_ext.rs，使后续 build_scene
+   分离 chrome/页面内容、feature-on 跳过手绘 chrome 更清晰。
+
+## 验证（行为不变）
+- cargo build -p zero-browser：净。
+- 默认浏览器测 **186 全绿**（render 路径全覆盖）。
+- clippy --all-targets -D warnings：净。cargo fmt：净。
+- **make product-smoke：19.17%（= baseline，< 20% 门槛）——零渲染回归**（welcome.html 像素不变）。
+
+## 剩余 >2000 行文件（DC-16 待续，预存债务，非本目标引入）
+- app_input.rs 2910、main.rs 2346、app.rs 2098（app.rs 因本轮 +2 行 include! 从 2096→2098）。
+  这些非 DC-14 替换式迁移直接相关；按需后续拆分（app_input 拆输入处理、main 拆子命令）。
+
+## 范围
+apps/browser 渲染代码组织（include! 同模块搬迁），不改任何渲染逻辑 → 零渲染回归（product-smoke 验证）。
