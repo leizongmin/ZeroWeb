@@ -995,9 +995,12 @@ fn compose_sdk_chrome_replacement_with_webview(
     // 构建 WebView surface：页面 fills + webview 额外图元。
     // surface_id=1：主 WebView（与 WebViewWidget 使用的 surface_id 一致）。
     const SURFACE_ID: u64 = 1;
+    // DC-3 phase-2：WebView ImageCache 暂不通过 surface 传递（WebView images 已在帧
+    // ImageCache 中，surface 内仅含 fills/strokes/shadows 等几何图元。后续若 WebView
+    // 经独立 ImageCache 产出 surface image，传入 Some(cache) 即可自动 extend）。
     let webview_surface = webview_extras.map(|extras| {
         let prims = build_webview_surface_primitives(page_fills, extras);
-        (SURFACE_ID, prims)
+        (SURFACE_ID, prims, None)
     });
 
     let (bridge, _viewport_rect) = render_chrome_via_sdk_with_webview_surface(

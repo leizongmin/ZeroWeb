@@ -88,7 +88,11 @@ pub fn render_chrome_via_sdk_with_webview_surface(
     metrics: &WindowMetrics,
     tokens: &SemanticTokens,
     backend: Arc<FontdueBackend>,
-    webview_surface: Option<(u64, RenderPrimitives)>,
+    webview_surface: Option<(
+        u64,
+        RenderPrimitives,
+        Option<zero_render_foundation::image_cache::ImageCache>,
+    )>,
 ) -> (RenderFoundationBackend, Option<Rect>) {
     let model = BrowserChromeModel::from_shell(shell);
     let spec = DesktopBrowserShell.build(&model, metrics);
@@ -101,8 +105,12 @@ pub fn render_chrome_via_sdk_with_webview_surface(
     let mut bridge = RenderFoundationBackend::new_with_text_size(metrics.logical_size, backend);
     // 在 paint_scene 之前注册 WebView 表面（DC-3 phase-2）：draw_external_surface 在 paint_scene
     // 期间按 ExternalSurface marker 的 surface_id 取回已注册表面并合并。
-    if let Some((surface_id, primitives)) = webview_surface {
-        bridge.set_surface(surface_id, primitives);
+    if let Some((surface_id, primitives, maybe_cache)) = webview_surface {
+        if let Some(cache) = maybe_cache {
+            bridge.set_surface_with_cache(surface_id, primitives, cache);
+        } else {
+            bridge.set_surface(surface_id, primitives);
+        }
     }
     paint_scene(&scene, &mut bridge);
     (bridge, viewport_rect)
@@ -204,7 +212,7 @@ mod tests {
             &metrics(),
             &SemanticTokens::light(),
             Arc::new(font_backend),
-            Some((0, webview_prims)),
+            Some((0, webview_prims, None)),
         );
         let p = bridge.into_primitives();
         // chrome fills（toolbar/background 等）非空。

@@ -42,7 +42,8 @@
 //! [`PathStrokePrimitive`]: zero_render_foundation::primitive::PathStrokePrimitive
 //! [`add_clip`]: zero_render_foundation::primitive::RenderPrimitives::add_clip
 
-use std::collections::{HashMap, HashSet};
+use hashbrown::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use zero_render_foundation::color::Color as RfColor;
 use zero_render_foundation::geometry::{Point as RfPoint, Rect as RfRect, Size as RfSize};
@@ -85,6 +86,10 @@ pub struct RenderFoundationBackend {
     uploaded: HashSet<ImageKey>,
     /// 外部表面（WebView 等）的预变换场景注册表（DC-3 phase-2）。key = surface_id。
     surfaces: HashMap<u64, RenderPrimitives>,
+    /// 外部表面的 image cache（与 surfaces 一一对应；key = surface_id）。
+    /// `draw_external_surface` 时自动 extend 进 `self.image_cache`，保证表面内 ImagePrimitive
+    /// 的 image_key 有效（DC-3 phase-2 真实纹理合成闭环）。
+    surface_caches: HashMap<u64, ImageCache>,
 }
 
 impl RenderFoundationBackend {
@@ -107,6 +112,7 @@ impl RenderFoundationBackend {
             image_cache: ImageCache::new(GLYPH_CACHE_MAX_ENTRIES, GLYPH_CACHE_MAX_BYTES),
             uploaded: HashSet::new(),
             surfaces: HashMap::new(),
+            surface_caches: HashMap::new(),
         }
     }
 
@@ -160,13 +166,47 @@ impl RenderFoundationBackend {
     /// **契约**：`primitives` 须已由调用方变换到帧坐标空间（offset/scale/clip，参考
     /// apps/browser 的 `append_webview_primitives`）。`draw_external_surface(rect, id)` 据此
     /// `id` 取回并以 `rect` 为裁剪边界合并进累积场景。
+    /// 注册外部表面的预变换图元（不含 image cache；仅 geometry-only）——向后兼容路径。
     pub fn set_surface(&mut self, surface_id: u64, primitives: RenderPrimitives) {
         self.surfaces.insert(surface_id, primitives);
+    }
+
+    /// 注册外部表面的预变换图元 + ImageCache（DC-3 phase-2 真实纹理合成）。
+    ///
+    /// `cache` 中的 image key 会在 `draw_external_surface` 时自动 extend 进后端自身的
+    /// `ImageCache`，保证 surface 内 `ImagePrimitive` 的 key 在后续 `into_primitives_and_cache`
+    /// 取出后仍有效（浏览器侧 `merge_into_frame` + `extend_from_other` 重映射闭环）。
+    pub fn set_surface_with_cache(&mut self, surface_id: u64, primitives: RenderPrimitives, cache: ImageCache) {
+        self.surfaces.insert(surface_id, primitives);
+        self.surface_caches.insert(surface_id, cache);
     }
 
     /// 清空外部表面注册表（每帧绘制前调用，避免上一帧残留）。
     pub fn clear_surfaces(&mut self) {
         self.surfaces.clear();
+        self.surface_caches.clear();
+    }
+
+    /// DC-3 phase-2：把 surface 的 ImageCache extend 进自身，remap surface image keys，merge。
+    fn merge_surface_with_cache(&mut self, surface_id: u64, src: &RenderPrimitives) {
+        let rekey = match self.surface_caches.remove(&surface_id) {
+            Some(sc) => self.image_cache.extend_from_other(&sc),
+            None => {
+                merge_primitives(&mut self.primitives, src);
+                return;
+            }
+        };
+        if rekey.is_empty() {
+            merge_primitives(&mut self.primitives, src);
+        } else {
+            let mut remapped = src.clone();
+            for img in &mut remapped.images {
+                if let Some(nk) = rekey.get(&img.image_key) {
+                    img.image_key = nk.clone();
+                }
+            }
+            merge_primitives(&mut self.primitives, &remapped);
+        }
     }
 }
 
@@ -251,8 +291,12 @@ impl RenderBackend for RenderFoundationBackend {
         // DC-3 phase-2：以 rect 为裁剪边界，把已注册（调用方预变换）的表面场景合并进帧。
         // 渲染顺序：先 clip(rect) 约束，再合并表面图元（draw_order 重映射保持表面内部 z 序）。
         self.primitives.add_clip(to_rf_rect(rect));
-        if let Some(src) = self.surfaces.get(&surface_id) {
-            merge_primitives(&mut self.primitives, src);
+        if let Some(src) = self.surfaces.get(&surface_id).cloned() {
+            // DC-3 phase-2 真实纹理合成：
+            // 1. extend surface image cache into bridge cache (get old→new key remap)
+            // 2. remap surface ImagePrimitive keys
+            // 3. merge remapped primitives
+            self.merge_surface_with_cache(surface_id, &src);
         }
         // 未注册的 surface_id → 仅留 clip（占位，不阻断；调用方应先 set_surface）。
     }
@@ -882,6 +926,77 @@ mod tests {
         assert!(p.draw_order.iter().all(|op| matches!(op, DrawOp::Clip(_))));
     }
 
+    #[test]
+    fn set_surface_with_cache_extends_bridge_image_cache() {
+        // DC-3 phase-2：set_surface_with_cache 后 draw_external_surface 自动 extend
+        // ImageCache，保证 surface 内 ImagePrimitive 的 key 在 bridge output 中有效。
+        let mut b = RenderFoundationBackend::new(viewport());
+
+        // 构造含 ImagePrimitive 的 surface + 对应的 ImageCache。
+        let mut surf = RenderPrimitives::default();
+        let mut surf_cache = ImageCache::new(16, 1_000_000);
+        let img_key =
+            surf_cache.insert(zero_render_foundation::image_cache::ImageData::from_rgba(vec![0u8; 16], 2, 2).unwrap());
+        surf.add_image(zero_render_foundation::primitive::ImagePrimitive {
+            rect: rf_rect(10.0, 10.0, 20.0, 20.0),
+            image_key: img_key.clone(),
+            clip: None,
+        });
+
+        // 用带 cache 的 API 注册 surface。
+        b.set_surface_with_cache(1, surf, surf_cache);
+
+        // draw_external_surface 应在 merge 时自动 extend ImageCache。
+        b.draw_external_surface(Rect::from_ltrb(0.0, 0.0, 100.0, 100.0), 1);
+
+        let (p, mut cache) = b.into_primitives_and_cache();
+        // surface 的 image 已合并进 primitives。
+        assert_eq!(p.images.len(), 1, "surface image merged");
+        // bridge 自身 image_cache 包含该图像数据（extend_from_other 生效；key 可能经重映射）。
+        let merged_key = &p.images[0].image_key;
+        assert!(
+            cache.get(merged_key).is_some(),
+            "surface image data present in bridge image_cache (under key {merged_key:?})"
+        );
+        assert_eq!(
+            cache.get(merged_key).map(|d| d.width),
+            Some(2),
+            "image data preserved (2x2 → width 2)"
+        );
+    }
+
+    #[test]
+    fn set_surface_without_cache_still_works_geometry_only() {
+        // 向后兼容：不带 cache 的 set_surface 仍正常工作（geometry-only merge）。
+        let mut b = RenderFoundationBackend::new(viewport());
+        let mut surf = RenderPrimitives::default();
+        surf.add_fill(
+            rf_rect(10.0, 10.0, 5.0, 5.0),
+            RfColor {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+        );
+        b.set_surface(1, surf);
+        b.draw_external_surface(Rect::from_ltrb(0.0, 0.0, 50.0, 50.0), 1);
+        let p = b.into_primitives();
+        assert!(!p.fills.is_empty(), "surface fill merged via old API");
+    }
+
+    #[test]
+    fn clear_surfaces_clears_caches_too() {
+        // DC-3 phase-2：clear_surfaces 应同时清空 surfaces 与 surface_caches。
+        let mut b = RenderFoundationBackend::new(viewport());
+        let cache = ImageCache::new(16, 1_000_000);
+        b.set_surface_with_cache(1, RenderPrimitives::default(), cache);
+        assert_eq!(b.surface_caches.len(), 1);
+        b.clear_surfaces();
+        assert!(b.surface_caches.is_empty(), "surface_caches cleared");
+        assert!(b.surfaces.is_empty(), "surfaces cleared");
+    }
+
     // ── 全链集成（DC-14 管线去险）──────────────────────────────────────
     // BrowserChromeModel → DesktopBrowserShell::build → WidgetHost reconcile+layout+paint
     // → Scene → paint_scene → RenderFoundationBackend → render-foundation RenderPrimitives。
@@ -1128,7 +1243,7 @@ mod tests {
             &metrics,
             &SemanticTokens::light(),
             std::sync::Arc::new(font_backend),
-            Some((0, webview_prims)),
+            Some((0, webview_prims, None)),
         );
         let p = bridge.into_primitives();
 

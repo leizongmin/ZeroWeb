@@ -1,0 +1,32 @@
+DC-3 phase-2 ImageCache surface pipeline (2026-07-02)
+
+Changes:
+- ui/adapters/render-foundation/src/lib.rs:
+  - Add surface_caches: HashMap<u64, ImageCache> field
+  - Add set_surface_with_cache(id, primitives, cache) method
+  - draw_external_surface: extend bridge ImageCache from surface cache,
+    remap surface ImagePrimitive keys via rekey map, merge
+  - clear_surfaces also clears surface_caches
+  - merge_surface_with_cache: helper for ImageCache extend + rekey + merge
+  - +3 tests (surface cache extend / backward compat / clear)
+- browser-ui/chrome/sdk_render.rs:
+  - render_chrome_via_sdk_with_webview_surface: accepts Option<ImageCache>
+  - set_surface_with_cache when cache provided; set_surface backward compat
+- apps/browser/app_platform.rs:
+  - compose_sdk_chrome_replacement_with_webview: passes (id, prims, None)
+    (WebView ImageCache in frame cache, surfaces are geometry-only)
+
+Gates:
+- bridge 23 tests green (was 20, +3)
+- chrome sdk_render 4 tests green
+- browser 189 tests green (zero regression)
+- browser sdk-chrome 7 tests green
+- build/clippy/fmt workspace clean
+- SDK-only, no product-smoke risk
+
+Effect:
+- DC-3 phase-2 ImageCache gap closed at pipeline level
+- Surface primitives with images (e.g. WebView renders with textures)
+  now have their image keys valid through the full pipeline:
+  set_surface_with_cache → extend image_cache → remap keys → merge
+- Backward compatible: set_surface(old API) still works without cache
