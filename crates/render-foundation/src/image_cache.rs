@@ -281,6 +281,14 @@ impl ImageCache {
 
     /// 把另一缓存 `other` 的所有条目合并进本缓存，返回 `old_key → new_key` 重映射。
     ///
+    /// 快照全部条目（键 + 数据 clone，DC-3 phase-2 表面 ImageCache 传递用）。
+    ///
+    /// 返回 `(ImageKey, ImageData)` 对，数据为独立 clone——调用方可据此重建另一
+    /// `ImageCache`（经 [`insert_with_key`] 保留原键）。
+    pub fn snapshot_entries(&self) -> Vec<(ImageKey, ImageData)> {
+        self.entries.iter().map(|(k, e)| (k.clone(), e.data.clone())).collect()
+    }
+
     /// **用途**：把独立来源（如 UI SDK chrome 渲染产出的 glyph image cache）合并进帧统一
     /// `ImageCache`，供单一 `render_full_scene` 调用解析所有图片（DC-14 chrome 文本集成）。
     ///
@@ -1295,5 +1303,37 @@ mod tests {
         let ok = other.insert(make_image(2, 2, 20));
         let _remap = frame.extend_from_other(&other);
         assert_eq!(other.get(&ok).map(|d| d.width), Some(2), "other still owns its entry");
+    }
+
+    #[test]
+    fn snapshot_entries_then_restore_via_insert_with_key_roundtrip() {
+        // DC-3 phase-2：snapshot_entries → 另一 ImageCache（insert_with_key）→
+        // 原键恢复，内容一致。
+        let mut src = ImageCache::new(10, 1024 * 1024);
+        let k1 = src.insert(make_image(2, 2, 10));
+        let k2 = src.insert(make_image(3, 3, 20));
+        assert_eq!(src.len(), 2);
+
+        let snap = src.snapshot_entries();
+        assert_eq!(snap.len(), 2);
+
+        // 从快照重建（保留原键）。
+        let mut restored = ImageCache::new(10, 1024 * 1024);
+        for (key, data) in &snap {
+            restored.insert_with_key(key.clone(), data.clone());
+        }
+        assert_eq!(restored.len(), 2);
+        // 原键在 restored 中仍有效。
+        assert_eq!(restored.get(&k1).map(|d| d.width), Some(2));
+        assert_eq!(restored.get(&k2).map(|d| d.width), Some(3));
+        // src 未被 snapshot 修改。
+        assert_eq!(src.len(), 2);
+        assert_eq!(src.get(&k1).map(|d| d.width), Some(2));
+    }
+
+    #[test]
+    fn snapshot_entries_empty_cache_returns_empty() {
+        let cache = ImageCache::new(10, 1024 * 1024);
+        assert!(cache.snapshot_entries().is_empty());
     }
 }

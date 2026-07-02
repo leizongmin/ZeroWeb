@@ -992,15 +992,27 @@ fn compose_sdk_chrome_replacement_with_webview(
         orientation: zero_ui_core::layout::Orientation::from_size(logical_size),
     };
 
-    // 构建 WebView surface：页面 fills + webview 额外图元。
+    // 构建 WebView surface：页面 fills + webview 额外图元 + 图像数据。
     // surface_id=1：主 WebView（与 WebViewWidget 使用的 surface_id 一致）。
     const SURFACE_ID: u64 = 1;
-    // DC-3 phase-2：WebView ImageCache 暂不通过 surface 传递（WebView images 已在帧
-    // ImageCache 中，surface 内仅含 fills/strokes/shadows 等几何图元。后续若 WebView
-    // 经独立 ImageCache 产出 surface image，传入 Some(cache) 即可自动 extend）。
+    // DC-3 phase-2：把 WebView ImageCache 经 surface pipeline 传递（真实纹理合成）。
+    // snapshot 帧 cache 条目 → surface ImageCache（insert_with_key 保留原键）；
+    // 帧 cache 保留原条目不清理（scene_primitives.images 仍引用原键）。
+    // surface 内的 images 经 bridge merge_surface_with_cache → extend → remap 后
+    // 在帧 cache 产生新副本（暂时冗余，但证明 pipeline 端到端，零 product-smoke 风险）。
+    let frame_snapshot = ic.snapshot_entries();
     let webview_surface = webview_extras.map(|extras| {
         let prims = build_webview_surface_primitives(page_fills, extras);
-        (SURFACE_ID, prims, None)
+        let surface_cache = if frame_snapshot.is_empty() {
+            None
+        } else {
+            let mut sc = ImageCache::new(frame_snapshot.len().max(64), 16 * 1024 * 1024);
+            for (key, data) in &frame_snapshot {
+                sc.insert_with_key(key.clone(), data.clone());
+            }
+            Some(sc)
+        };
+        (SURFACE_ID, prims, surface_cache)
     });
 
     let (bridge, _viewport_rect) = render_chrome_via_sdk_with_webview_surface(
