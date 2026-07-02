@@ -44,6 +44,25 @@ pub(crate) fn resolve_text_align(style: Option<&ComputedStyle>) -> TextAlign {
     }
 }
 
+/// 从 ComputedStyle 读取 text-align-last 并转换为 IFC 的 `Option<TextAlign>`。
+/// `Auto` → `None`（末行跟随 text-align，如 justify 末行回退 Left）；其余映射同 resolve_text_align。
+///
+/// **修复**：`compute_final_inline_layouts` 构建 stored IFC 此前只传 `text_align` 漏传
+/// `text_align_last`，致**存储路径**（pure-Ahem 容器，如 justifyall 簇）末行 text-align-last
+/// 不应用——末行恒按 text-align 默认处理。paint 非存储路径已传（text.rs:949），此处补齐使
+/// layout/paint 双路径一致。
+pub(crate) fn resolve_text_align_last(style: Option<&ComputedStyle>) -> Option<TextAlign> {
+    use zero_style_system::property::TextAlignLastValue;
+    let align = style.map(|s| &s.text_align_last).unwrap_or(&TextAlignLastValue::Auto);
+    match align {
+        TextAlignLastValue::Auto => None,
+        TextAlignLastValue::Left | TextAlignLastValue::Start => Some(TextAlign::Left),
+        TextAlignLastValue::Right | TextAlignLastValue::End => Some(TextAlign::Right),
+        TextAlignLastValue::Center => Some(TextAlign::Center),
+        TextAlignLastValue::Justify => Some(TextAlign::Justify),
+    }
+}
+
 /// R645：从 ComputedStyle 读取 white-space，返回 IFC 测量所需的 `no_wrap`。
 ///
 /// `measure_text_content` / `remeasure_*` 测量函数此前构造 IFC 时未传 white-space（no_wrap 恒
@@ -560,6 +579,7 @@ pub(crate) fn compute_final_inline_layouts(
         zero_style_system::TextAlignValue::Center => TextAlign::Center,
         zero_style_system::TextAlignValue::Justify => TextAlign::Justify,
     };
+    let text_align_last = resolve_text_align_last(Some(style));
     let text_indent_px = resolve_text_indent(&style.text_indent, &style.font_size, container_width);
     let tab_size_px = match &style.tab_size {
         zero_style_system::TabSizeValue::Number(n) => *n as f32 * 8.0,
@@ -630,6 +650,7 @@ pub(crate) fn compute_final_inline_layouts(
 
     let mut inline_ctx = InlineFormattingContext::new(container_width)
         .with_text_align(text_align)
+        .with_text_align_last(text_align_last)
         .with_break_word(break_word)
         .with_no_wrap(no_wrap)
         .with_preserve_whitespace(preserve_whitespace)
@@ -999,12 +1020,14 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             );
             let is_vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
             let text_align = resolve_text_align(styles.get(&dom_id));
+            let text_align_last = resolve_text_align_last(styles.get(&dom_id));
             let no_wrap = resolve_no_wrap_for_ifc_measure(styles.get(&dom_id));
             let mut inline_ctx = InlineFormattingContext::new(container_width)
                 .with_float_exclusions(exclusions)
                 .with_vertical(is_vertical)
                 .with_vertical_rtl(is_vertical_rtl)
                 .with_text_align(text_align)
+                .with_text_align_last(text_align_last)
                 .with_no_wrap(no_wrap)
                 .with_inline_block_sizes(ib_sizes);
             inline_ctx.layout(doc, dom_id, styles);
@@ -1119,6 +1142,7 @@ pub(crate) fn remeasure_inline_only_containers(
         );
         let is_vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
         let text_align = resolve_text_align(styles.get(&dom_id));
+        let text_align_last = resolve_text_align_last(styles.get(&dom_id));
         let no_wrap = resolve_no_wrap_for_ifc_measure(styles.get(&dom_id));
         // 收集 inline-block 子元素的 LayoutBox 尺寸，供 IFC 解析百分比宽度。
         let ib_sizes: HashMap<NodeId, (f32, f32)> = box_node
@@ -1141,6 +1165,7 @@ pub(crate) fn remeasure_inline_only_containers(
             .with_vertical(is_vertical)
             .with_vertical_rtl(is_vertical_rtl)
             .with_text_align(text_align)
+            .with_text_align_last(text_align_last)
             .with_no_wrap(no_wrap)
             .with_inline_block_sizes(ib_sizes);
         inline_ctx.layout(doc, dom_id, styles);
@@ -1159,6 +1184,7 @@ pub(crate) fn remeasure_inline_only_containers(
                 .with_vertical(is_vertical)
                 .with_vertical_rtl(is_vertical_rtl)
                 .with_text_align(text_align)
+                .with_text_align_last(text_align_last)
                 .with_no_wrap(no_wrap)
                 .with_inline_block_sizes(ib_sizes_for_mc);
             col_ctx.layout(doc, dom_id, styles);
@@ -1235,7 +1261,32 @@ pub(crate) fn remeasure_inline_only_containers(
 #[cfg(test)]
 mod tests {
     use super::resolve_text_indent;
+    use super::{ComputedStyle, TextAlign, resolve_text_align_last};
     use zero_css_parser::values::LengthValue;
+    use zero_style_system::property::TextAlignLastValue;
+
+    #[test]
+    fn test_resolve_text_align_last_mapping() {
+        // text-align-last → Option<TextAlign> 映射（compute_final 存储路径 IFC 传递用）
+        let mut style = ComputedStyle::default();
+        // Auto（默认）→ None：末行跟随 text-align（justify 末行回退 Left）
+        style.text_align_last = TextAlignLastValue::Auto;
+        assert_eq!(resolve_text_align_last(Some(&style)), None);
+        // Justify → Some(Justify)：末行也两端对齐（justify-all 语义）
+        style.text_align_last = TextAlignLastValue::Justify;
+        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Justify));
+        // Right → Some(Right)
+        style.text_align_last = TextAlignLastValue::Right;
+        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Right));
+        // Center → Some(Center)
+        style.text_align_last = TextAlignLastValue::Center;
+        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Center));
+        // Left → Some(Left)
+        style.text_align_last = TextAlignLastValue::Left;
+        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Left));
+        // 无 style 引用（None）→ 默认 Auto → None
+        assert_eq!(resolve_text_align_last(None), None);
+    }
 
     #[test]
     fn test_resolve_text_indent_px_em_percentage() {
