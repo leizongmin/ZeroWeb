@@ -1,0 +1,120 @@
+# DC-6 YAML 解析器深度审查（lei-deep-review）
+
+**日期**: 2026-07-03
+**范围**: `ui/dsl/src/yaml.rs`（受限 YAML 子集解析器：preprocess / strip_comment / expand_dash / parse_block / parse_map / parse_seq / split_key / parse_scalar_or_flow / parse_quoted_scalar / FlowParser）
+**审查重点**: 解析器健壮性/安全边界 — 嵌套深度栈溢出守卫、UTF-8 保真、Tab/CRLF/恶意缩进、流集合嵌套与未闭合检测、超大输入、loader strict 错误透传
+**结论**: 3 类 medium bug 修复（无深度守卫栈溢出 + 2 处 UTF-8 损坏 + expand_dash 递归）+ 1 low 记录 + 核心结构经查正确。
+
+---
+
+## 关键发现统计
+
+| 严重度 | 数量 | 处置 |
+|--------|------|------|
+| Critical | 0 | — |
+| Medium | 3 类（5 处） | **已修复** + 7 回归守卫 |
+| Low | 1 | 记录不修（flow map 重复键不拒绝，与 block 不一致） |
+| 非 bug（经查正确） | 10+ | — |
+
+最高优先级一句话：**yaml.rs 缺嵌套深度守卫（恶意深层 YAML 栈溢出崩溃）+ 2 处 byte→char 重建损坏非 ASCII 内容（中文 DSL 标签被静默破坏）—— 全部修复，解析器现对任意输入健壮（不 crash）且 UTF-8 保真。**
+
+---
+
+## MEDIUM-1（已修复）：无嵌套深度守卫 → 栈溢出 DoS
+
+- **位置**: `yaml.rs` `parse_block`/`parse_map`/`parse_seq`（块递归）+ `FlowParser::parse_value`/`parse_seq`/`parse_map`（流递归）+ `expand_dash`（dash 递归）
+- **严重度**: 中（栈溢出 = 进程崩溃/DoS；触发需深层嵌套输入，可由 host 加载的非可信 DSL 文档构造）
+- **置信度**: 1.0（TDD：120 层嵌套 YAML 解析成深层 Map 而非报错 → 证明无守卫；engine.rs `MAX_PARSE_DEPTH=64` 同类守护对照）
+- **描述**: yaml.rs 三条递归路径均无深度守卫：
+  1. **块解析**：`parse_block → parse_map/parse_seq → parse_block`，每层嵌套 +1 帧。`a:\n a:\n a:\n ...`（N 层）→ N 帧。
+  2. **流解析**：`FlowParser.parse_value → parse_seq/parse_map → parse_value`，`[[[...]]]`（N 层）→ N 帧。
+  3. **dash 展开**：`expand_dash` 递归处理 `- - - ... - item`（单行 N 个 `- ` 前缀）→ N 帧。
+  足够深（~10⁴+ 帧，受线程栈 8MB 限制）→ **栈溢出 SIGSEGV，崩溃整个进程**。
+- **为何重要（约束 #7 / DC-6 安全）**: engine.rs 表达式 parser 有 `MAX_PARSE_DEPTH=64` 守卫（前轮审查确认）；yaml.rs 作为 DSL 输入解析的另一半，**完全没有等价守卫**——明显 oversight。解析器不得对任意输入 crash；host 若加载非可信 DSL（插件/主题市场/用户配置）→ 恶意深层嵌套文档可 DoS。
+- **修复**:
+  - 新增 `const MAX_YAML_DEPTH: usize = 100;`（合法 UI WidgetSpec 极少嵌套 >10 层；100 留足余量，与 engine.rs 64 同类）。
+  - `parse_block` 加 `depth: usize` 参数 + 入口守卫 `depth > MAX → EvalResourceLimit`；`parse_map`/`parse_seq` 嵌套调用传 `depth + 1`；`parse()` 顶层传 0。
+  - `FlowParser` 加 `depth: usize` 字段；`parse_seq`/`parse_map` 入口 `depth += 1` + 守卫。
+  - `expand_dash` 改**迭代**（消除递归；输出与原递归版逐位等价，由 `deeply_nested_dash_seq_does_not_overflow` 测试验证 50 层嵌套 Seq 正确）。
+- **回归守卫（3 测）**:
+  - `deeply_nested_block_yaml_rejected_by_depth_guard`：120 层 `a:` → EvalResourceLimit（TDD：修复前解析成深层 Map 而非报错）。
+  - `deeply_nested_flow_rejected_by_depth_guard`：120 层 `[[[...]]]` → EvalResourceLimit。
+  - `deeply_nested_dash_seq_does_not_overflow`：50 个 `- ` 前缀单行 → 50 层嵌套 Seq + Text("item")（验证迭代版正确性）。
+
+---
+
+## MEDIUM-2（已修复）：strip_comment UTF-8 损坏
+
+- **位置**: `yaml.rs:174-216`（原 `strip_comment`）
+- **严重度**: 中（静默数据损坏；影响**所有**含非 ASCII 内容的行，对 i18n 浏览器 UI SDK 是高频路径）
+- **置信度**: 1.0（TDD：`label: 中文` → Text("ä¸\u{ad}æ\u{96}\u{87}") 损坏）
+- **描述**: 原 `strip_comment` 用 `out.push(c as char)` 逐字节重建字符串。`c` 是 `u8`，`u8 as char` 把字节值直接当码点（0-255 → U+0000..U+00FF）。多字节 UTF-8 字符（如中文「中」= E4 B8 AD）被拆成 3 个 Latin-1 字符（U+00E4/U+00B8/U+00AD）。**每行都过 strip_comment**，故非 ASCII 内容（中文/日文/韩文/emoji）**无差别损坏**——不论是否在引号内。
+- **为何重要（DC-10 i18n）**: 浏览器 UI SDK 显式支持 i18n，DSL YAML 里的中文标签（`label: 新建标签页`）会被静默破坏为乱码。属静默 correctness bug（不 crash，但数据错）。
+- **修复**: 改为**返回原串切片**——扫描字节定位注释起点（`#` 在行首或前导空格），返回 `rest[..cut].to_string()` 或 `rest.to_string()`。`#` 是 ASCII（0x23），其起始字节位置必为 UTF-8 字符边界（continuation byte 是 0x80-0xBF，不含 0x23），故 `rest[..i]` 切片合法且保真。不再重建字符串。
+- **回归守卫（3 测）**:
+  - `unicode_unquoted_plain_scalar_preserved`：`label: 中文` → Text("中文")（TDD：修复前损坏）。
+  - `unicode_with_inline_comment_preserved`：`label: 中文 # 注释` → Text("中文")（注释剥离 + UTF-8 保真）。
+  - `unicode_in_flow_collection_preserved`：`tags: [中文, "日本語"]` → [Text("中文"), Text("日本語")]（**关键**：流集合的非 ASCII 此前也损坏——因整行先过 strip_comment；修 strip_comment 后流路径也修复）。
+
+---
+
+## MEDIUM-3（已修复）：parse_quoted_scalar 双引号 UTF-8 损坏
+
+- **位置**: `yaml.rs` `parse_quoted_scalar` 双引号分支
+- **严重度**: 中（静默数据损坏；双引号非 ASCII 串损坏，与 MEDIUM-2 同源但独立）
+- **置信度**: 1.0（TDD：`label: "你好，世界"` → 损坏）
+- **描述**: 原 `parse_quoted_scalar` 双引号分支同样 `out.push(c as char)` 逐字节重建（`c = bytes[i]`）。双引号内的非 ASCII 内容损坏。注：单引号分支用 `&s[1..len-1]` 切片 + `replace("''", "'")`，UTF-8 天然保真（**无此 bug**）；`FlowParser` 已 char-based（`s.chars().collect()`，**无此 bug**）——故 bug 仅在块解析的双引号路径。
+- **修复**: 双引号分支改**按 char 迭代**（`let chars: Vec<char> = s.chars().collect();`，遍历 `chars[i]`），转义处理（`\n`/`\t`/`\"`/`\\` 等）逐 char 匹配。UTF-8 保真 + 正确处理「转义符后跟多字节字符」边界（如 `"\"中"`）。
+- **回归守卫（1 测）**:
+  - `unicode_double_quoted_string_preserved`：`label: "你好，世界"` → Text("你好，世界")（TDD：修复前损坏）。
+
+---
+
+## LOW（记录不修）
+
+### LOW-1: flow map 重复键不拒绝
+- **位置**: `FlowParser::parse_map`（不查重复键）vs `parse_map` 块版（line 242 查重 → 报错）。
+- **描述**: 块映射 `{dup: 1, dup: 2}`（多行）→ Parse error「重复键」；流映射 `{dup: 1, dup: 2}`（单行）→ Map 两Entry 保留（last-wins when converted）。不一致。
+- **不修理由**: docstring 已声明「重复键在加载器层报错」（line 26）；块版严格、流版宽松，两者都「安全」（无 crash/内存问题）。loader 层后续可统一查重。属严格性不一致，非 correctness bug。
+
+---
+
+## 经查正确（非 bug，关键安全/正确性断言）
+
+### Tab 缩进 / CRLF / 恶意缩进
+- **Tab 缩进拒绝**：`preprocess` 缩进循环遇 `b'\t'` → `Parse error`（yaml.rs:112；测试 `errors` case 3）。
+- **CRLF 处理**：`src.lines()` 按 `\n` 分割（保留 `\r`），`decommented.trim_end()` 移除尾部 `\r`（含其他尾随空白）→ CRLF 输入正确处理。
+- **缩进一致性**：`parse_block` 按行 indent 分层；`parse()` 末尾 `if i != lines.len()` 检测无法归约的残留行（缩进不匹配）→ Parse error（测试 `errors` case 1）。
+
+### UTF-8 安全的字节索引（split_key）
+- `split_key` 用 `content[..i]` / `content[i+1..]` 切片返回。`:` 是 ASCII（0x3A），位置 i 必为字符边界；`[]/{}/` depth 跟踪也仅匹配 ASCII（多字节 UTF-8 的 continuation byte 0x80-0xBF 不匹配）。非 ASCII 内容穿过 split_key 不损坏（切片保留原串）。
+
+### 流集合未闭合检测
+- `FlowParser.parse_seq`：遇 `None`（EOF）→ "流序列未闭合 ']'"；遇非预期字符 → "期望 ',' 或 ']'"。`parse_map` 同理（未闭合 `}`）。`parse_flow` 末尾 `if p.pos != chars.len()` → "流集合后多余字符"。均干净报错，不 panic。
+
+### 标量类型推断（plain_scalar）
+- `looks_numeric` 守卫：首字符须为 digit/`-`/`+`/`.`，避免把 `inf`/`nan`/`true` 等文本误判为 float（测试 `scalar_inference`：`inf` → Text）。`null`/`~`/`true`/`false`（含大小写变体）显式匹配。i64/f64 parse 回退。
+
+### 引号转义
+- 双引号：`\"`/`\\`/`\/`/`\n`/`\t`/`\r` + 其它 `\x` 透传（与 engine.rs lexer 一致）。单引号：`''` → `'`（YAML 风格）。双引号后多余内容 → 报错。
+
+### 重复键检测（块）
+- 块 `parse_map` 线性查重 → Parse error（测试 `errors` case 2）。flow 见 LOW-1。
+
+### 资源消耗
+- `preprocess` O(行数)，每行 O(行长) → 线性。无行数/行长硬上限，但 host 控制源大小（DSL 文档由宿主加载，非解析器职责限输入体积）。深度守卫防深层嵌套的指数级路径。
+
+---
+
+## 验证
+
+- **修复前**：6 新测全失败（UTF-8 × 4 损坏 + 深度 × 2 解析成深层结构而非报错）—— TDD 证明 bug 真实。
+- **修复后**：`./target/test-guard -- cargo test -p zero-ui-dsl` → **94 passed; 0 failed**（87 基线 + 7 新回归测）。
+- **门禁**：`cargo fmt --all --check` 净；`cargo clippy -p zero-ui-dsl --all-targets -- -D warnings` 净；`cargo build --workspace` 净（13.97s，下游 zero-webview-demo/zero-wpt-runner 等零回归）。
+- **SDK-only**（ui/dsl 未触碰 render-foundation / 浏览器运行时）→ 无 product-smoke 风险。
+
+## 结论
+
+DC-6 YAML 解析器的**安全边界经审查加固**：①嵌套深度守卫（块/流/dash 三路）防栈溢出 DoS，与 engine.rs `MAX_PARSE_DEPTH` 对称；②strip_comment + parse_quoted_scalar 双引号的 UTF-8 保真修复，确保 i18n（DC-10）非 ASCII DSL 内容不再被静默损坏。解析器现对任意输入健壮（不 crash）且 UTF-8 保真。配合上轮 engine.rs 表达式引擎审查，**DC-6 DSL 输入→求值全管线（YAML 解析 + 表达式 eval）的安全/健壮性审查闭合**。
+
+下一审查候选：`ui/dsl/src/loader.rs`（YamlLoader 递归 convert_spec / convert_children 的深度守卫与 strict 模式错误透传，与 yaml.rs 深度守卫互补）或 `ui/i18n`（plural/RTL/catalog resolve 的边界）——独立 turn。
