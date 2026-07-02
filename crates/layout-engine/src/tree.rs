@@ -273,6 +273,12 @@ fn apply_replaced_element_sizing(
                 // 固有宽高比从显式侧推导（而非用固有绝对值）。旧实现把 auto 侧直接设为
                 // 固有绝对值（如 width:80px 的正方形 SVG 渲染成 80×441 而非 80×80），
                 // 致真实页面 logo（仅设 width 或 height）严重变形（wintertc logo 巨高）。
+                //
+                // R976：CSS `aspect-ratio` 优先于固有宽高比（css-sizing-4 §4）。auto 侧须按
+                // **有效比例**（CSS aspect-ratio 若设，否则固有 w/h）推导。旧实现恒用固有
+                // w/h，致 `<img style="block-size:55vw;aspect-ratio:2/1">`（固有 8×16）的 width
+                // 被算成 440×(8/16)=220 而非 440×2=880（nested-grid-item-block-size-001 64% diff）。
+                let eff_ratio = computed.aspect_ratio.unwrap_or(w / h); // width/height
                 if width_auto && height_auto {
                     taffy_style.size.width = taffy::style::Dimension::Length(w);
                     taffy_style.size.height = taffy::style::Dimension::Length(h);
@@ -280,14 +286,14 @@ fn apply_replaced_element_sizing(
                     && height_auto
                     && let LengthValue::Px(cw) = &computed.width
                 {
-                    // width 显式，height auto：height = cw * h / w
-                    taffy_style.size.height = taffy::style::Dimension::Length(((*cw as f32) * h / w).max(0.5));
+                    // width 显式，height auto：height = cw / eff_ratio
+                    taffy_style.size.height = taffy::style::Dimension::Length(((*cw as f32) / eff_ratio).max(0.5));
                 } else if width_auto
                     && !height_auto
                     && let LengthValue::Px(ch) = &computed.height
                 {
-                    // height 显式，width auto：width = ch * w / h
-                    taffy_style.size.width = taffy::style::Dimension::Length(((*ch as f32) * w / h).max(0.5));
+                    // height 显式，width auto：width = ch * eff_ratio
+                    taffy_style.size.width = taffy::style::Dimension::Length(((*ch as f32) * eff_ratio).max(0.5));
                 }
                 // 两侧都显式：由 converter 从 CSS 处理，不干预
             }
