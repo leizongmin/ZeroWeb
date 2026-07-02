@@ -1,0 +1,58 @@
+DC-14 迁移 seam：BrowserChromeModel::from_shell 投影 — 2026-07-01
+=================================================================
+
+里程碑：M2→DC-14（浏览器迁移为 SDK 宿主）首个数据层接入点。
+SDK-only / 非渲染：仅 browser-ui/chrome 内新增纯数据投影 + 测试，未触碰 apps/browser
+与任何渲染路径（浏览器二进制尚未调用 from_shell）→ 无 product-smoke 风险。
+
+缺口（修复前）
+-------------
+- BrowserChromeModel（DC-12 desktop/tablet/phone shell 共享业务模型）已有结构与 shell 构造，
+  但**缺少从 `zero-browser-shell::BrowserShell` 实际状态投影出模型的桥**。
+- 即「浏览器业务状态 → SDK chrome 模型」的数据通路未通——DC-14 逐组件灰度迁移无从取 props。
+
+实现（browser-ui/chrome/src/chrome_model.rs）
+---------------------------------------------
+新增 `BrowserChromeModel::from_shell(shell: &BrowserShell) -> BrowserChromeModel`：
+纯只读映射、无副作用、不触渲染。映射范围：
+- tabs + active_tab_index：shell.tabs() → BrowserTab{id,title,loading}；active 由 TabId 匹配落 index。
+- navigation：active tab 的 history（can_go_back = history_index>0；can_go_forward = history_index+1<history_len）。
+- address_text：active tab url。
+- security：browser-shell 不追踪页面安全 → 按 URL scheme 派生（http://→Insecure，其余→Secure）。
+- page_load：active tab is_loading → PageLoadIndicator{loading, fraction:None}。
+- bookmarks：shell.bookmarks().list_root() → BookmarkNode{id:BookmarkId.0.to_string(), title, url:Some}。
+- downloads：shell.downloads().iter() → DownloadItemView，状态映射 shell 6 态 → chrome 3 态
+  （Pending/Downloading/Paused→InProgress、Completed→Completed、Cancelled/Failed→Cancelled）。
+- find：shell.find_state() is_active → FindBar（match_index 1-based→0-based，match_count 仅 total>0 时）。
+- permissions：browser-shell 当前不追踪 per-site 权限 → 空（DC-13 platform 域后续接入）。
+
+辅助：`security_from_url`、`map_download`（私有 free fn）。
+
+测试（7 新测，全绿；browser-ui/chrome 53→61 测）
+-------------------------------------------------
+1. from_shell_default_has_initial_tab — BrowserShell::new() 预建 1 空 tab（active index 0），bookmarks/downloads 空。
+2. from_shell_tabs_and_active_index — 3 tabs（initial+2 new_tab），active index 2，address/security/初始导航断言。
+3. from_shell_navigation_back_forward — navigate 压入历史 → go_back → can_go_forward=true/can_go_back=false。
+4. from_shell_http_is_insecure — http:// URL → Insecure。
+5. from_shell_bookmarks_and_downloads — 投影 bookmark + download（Downloading→InProgress）。
+6. from_shell_find_active_projects — find_start+set_matches → FindBar query/match_count。
+7. from_shell_find_inactive_is_none — 未 find_start → model.find None。
+
+门禁（2026-07-01）
+-----------------
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all --check` — 净。
+- `./target/test-guard -- cargo test -p zero-browser-chrome` — **61 passed; 0 failed**（+7 from_shell）。
+- DC-1 复核：from_shell 仅用 zero-browser-shell（chrome 允许依赖）+ chrome 既有组件类型；零新依赖。
+- 非渲染变更（纯数据投影 + 测试，浏览器二进制未调用）→ 未跑 product-smoke（无回归路径）。
+
+Coverage（cargo llvm-cov -p zero-browser-chrome）
+-------------------------------------------------
+- `chrome_model.rs`：line **98.89%** / function **100%** / region **98.71%**。
+
+DC-12 / DC-14 状态更新
+----------------------
+- DC-12：BrowserChromeModel 现可从真实浏览器状态投影（shell → model 数据桥打通）。
+- DC-14：首个迁移 seam 落地（数据层）。下一步 = apps/browser 在渲染/事件路径调用 from_shell
+  并把模型喂给 desktop/tablet/phone shell（触碰渲染，需 product-smoke）。
