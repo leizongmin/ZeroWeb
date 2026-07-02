@@ -148,6 +148,14 @@ pub trait Widget {
     fn focusable(&self) -> bool {
         false
     }
+
+    /// 焦点时的 IME 输入矩形（局部坐标，原点 = 节点左上角；spec FR-011 / DC-8）。
+    ///
+    /// 文本控件返回 caret 所在行高矩形，供宿主换算为绝对坐标交给平台 IME / 软键盘定位。
+    /// 非文本控件返回 `None`（默认）。
+    fn ime_rect(&self) -> Option<Rect> {
+        None
+    }
 }
 
 #[cfg(test)]

@@ -137,3 +137,36 @@ fn submit_button_click_via_pointer() {
         app.message
     );
 }
+
+#[test]
+fn ime_rect_tracks_focused_text_field_caret() {
+    // DC-8 phase-2：focused TextField 的 ime_rect = 节点绝对 origin + caret 局部位。
+    let mut app = FormApp::new();
+    app.name = "Hi".into(); // caret 在末尾：local caret_x = 6 + 2*8 = 22
+    let mut host = WidgetHost::new();
+    register_form_factories(&mut host);
+    let vp = Constraints::loose(Size::new(400.0, 300.0));
+    host.set_root(&app.build_spec());
+    host.layout(vp);
+    host.paint();
+
+    // 无焦点 → 无 ime_rect。
+    assert!(host.ime_rect().is_none(), "no focus → no ime rect");
+
+    // 聚焦 name 字段 → ime_rect 在字段绝对 origin + caret 局部。
+    host.set_focus(WidgetId::new("name"));
+    let ime = host.ime_rect().expect("focused text field has ime_rect");
+    let field = host.rect_of(&WidgetId::new("name")).expect("field laid out");
+    assert!(
+        (ime.origin.x - (field.origin.x + 22.0)).abs() < 0.5,
+        "ime x = field origin + caret_x(22), got {} (field origin {})",
+        ime.origin.x,
+        field.origin.x
+    );
+    assert!(
+        (ime.origin.y - (field.origin.y + 6.0)).abs() < 0.5,
+        "ime y = field origin + 6, got {}",
+        ime.origin.y
+    );
+    assert!(ime.size.height > 0.0 && ime.size.height <= field.size.height);
+}

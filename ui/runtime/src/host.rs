@@ -256,8 +256,26 @@ impl WidgetHost {
                     self.pending |= InvalidationFlags::NEEDS_PAINT;
                 }
             }
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Pressed,
+                position,
+                ..
+            } => {
+                // click-to-focus：按下时聚焦命中点最深 focusable widget（DC-8 phase-2）。
+                let target = deepest_focusable_at(root, *position);
+                let handled = dispatch_node(root, event, &mut emitted);
+                if let Some(id) = target
+                    && self.focused.as_ref() != Some(&id)
+                {
+                    self.focused = Some(id);
+                    self.pending |= InvalidationFlags::NEEDS_PAINT;
+                }
+                if handled {
+                    self.pending |= InvalidationFlags::NEEDS_PAINT;
+                }
+            }
             _ => {
-                // 指针/滚动等位置事件。
+                // 其它位置事件（移动/释放/滚动）。
                 let handled = dispatch_node(root, event, &mut emitted);
                 if handled {
                     self.pending |= InvalidationFlags::NEEDS_PAINT;
@@ -265,6 +283,25 @@ impl WidgetHost {
             }
         }
         emitted
+    }
+
+    /// 当前 focused widget 的 IME 输入矩形（绝对坐标；DC-8 phase-2）。
+    ///
+    /// 由 focused widget 的 `Widget::ime_rect`（局部 caret 矩形）按节点 origin 平移得到，
+    /// 供平台 IME / 软键盘定位。无焦点或 widget 无 caret 返回 `None`。
+    pub fn ime_rect(&self) -> Option<Rect> {
+        let root = self.root.as_ref()?;
+        let focused = self.focused.as_ref()?;
+        let node = find_node(root, focused)?;
+        let w = node.widget.as_ref()?;
+        let local = w.ime_rect()?;
+        Some(Rect::from_origin_size(
+            Point::new(
+                node.cached_rect.origin.x + local.origin.x,
+                node.cached_rect.origin.y + local.origin.y,
+            ),
+            local.size,
+        ))
     }
 
     /// 当前 focused widget id（DC-8）。
@@ -339,6 +376,29 @@ fn find_node_mut<'a>(node: &'a mut HostNode, id: &WidgetId) -> Option<&'a mut Ho
     node.children.iter_mut().find_map(|c| find_node_mut(c, id))
 }
 
+/// 按 id 查不可变节点。
+fn find_node<'a>(node: &'a HostNode, id: &WidgetId) -> Option<&'a HostNode> {
+    if &node.id == id {
+        return Some(node);
+    }
+    node.children.iter().find_map(|c| find_node(c, id))
+}
+
+/// 命中点下最深的 focusable 节点 id（click-to-focus 用，DC-8 phase-2）。
+///
+/// 优先返回子节点（最深、最上层优先，倒序），否则本节点（若 focusable）。
+fn deepest_focusable_at(node: &HostNode, point: Point) -> Option<WidgetId> {
+    if !node.cached_rect.contains(point) {
+        return None;
+    }
+    for child in node.children.iter().rev() {
+        if let Some(id) = deepest_focusable_at(child, point) {
+            return Some(id);
+        }
+    }
+    if node.focusable { Some(node.id.clone()) } else { None }
+}
+
 // ---------------- 构建与 reconcile ----------------
 
 fn build_node(spec: &WidgetSpec, registry: &WidgetRegistry, epoch: u32) -> HostNode {
@@ -361,6 +421,14 @@ fn build_node(spec: &WidgetSpec, registry: &WidgetRegistry, epoch: u32) -> HostN
             id: &node.id,
             invalidation: &mut flags,
         });
+        // 初始 props 同步：受控控件（如 TextField）需从 props 初始化内部状态，
+        // 而非仅在 reconcile 时才看到 props。
+        w.update(
+            &mut zero_ui_core::widget::UpdateCtx {
+                invalidation: &mut flags,
+            },
+            &node.props,
+        );
         node.invalidation |= flags;
         node.focusable = w.focusable();
         node.widget = Some(w);
@@ -1092,6 +1160,59 @@ mod tests {
         };
         let emitted = host.dispatch_event(&enter);
         assert!(emitted.is_empty(), "key without focus must not emit");
+    }
+
+    #[test]
+    fn click_focuses_deepest_focusable() {
+        // DC-8 phase-2：按下时聚焦命中最深 focusable widget。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+        host.paint();
+        // Column 堆叠：a 在 y≈0..50，b 在 y≈50..100（Patch 50x50）。
+        let press = |host: &mut WidgetHost, y: f32| {
+            host.dispatch_event(&UiEvent::Pointer {
+                phase: PointerPhase::Pressed,
+                button: Some(PointerButton::Primary),
+                position: Point::new(10.0, y),
+                modifiers: Modifiers::NONE,
+            });
+        };
+        assert!(host.focused_id().is_none(), "no focus initially");
+        press(&mut host, 75.0); // 命中 b
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("b")));
+        press(&mut host, 25.0); // 命中 a
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("a")));
+    }
+
+    #[test]
+    fn click_empty_space_keeps_focus() {
+        // DC-8 phase-2：按下点无 focusable（命中点外）→ 焦点不变。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+        host.paint();
+        host.focus_next(zero_ui_core::focus::FocusDirection::Forward);
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("a")));
+        // 点击根 rect 之外（Column root 仅 ~50x50）。
+        host.dispatch_event(&UiEvent::Pointer {
+            phase: PointerPhase::Pressed,
+            button: Some(PointerButton::Primary),
+            position: Point::new(300.0, 300.0),
+            modifiers: Modifiers::NONE,
+        });
+        assert_eq!(
+            host.focused_id(),
+            Some(&WidgetId::new("a")),
+            "click in empty space must not steal focus"
+        );
     }
 
     // 让 `Size::clamp` 在测试里可用：Constraints 已有 is_satisfied，这里给 Size 一个临时裁剪。

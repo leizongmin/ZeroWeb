@@ -135,6 +135,17 @@ impl Widget for TextField {
     fn focusable(&self) -> bool {
         true
     }
+
+    fn ime_rect(&self) -> Option<zero_ui_core::geometry::Rect> {
+        // caret 位于已输入文本末尾（char_w=8，左 padding 6）；行高矩形供 IME 定位。
+        let caret_x = 6.0 + self.text.chars().count() as f32 * 8.0;
+        Some(zero_ui_core::geometry::Rect::from_ltrb(
+            caret_x,
+            6.0,
+            caret_x + 2.0,
+            30.0,
+        ))
+    }
 }
 
 // ---------------- 应用状态 + reducer + 声明树 ----------------

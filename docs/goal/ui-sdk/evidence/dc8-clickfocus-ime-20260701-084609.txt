@@ -1,0 +1,12 @@
+=== DC-8 phase-2（click-to-focus + IME rect + build 初始 props）===
+日期: Wed Jul  1 08:46:09     2026
+
+--- ui/runtime click-to-focus 测试 ---
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+--- ui/examples ime_rect 测试 ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+test ime_rect_tracks_focused_text_field_caret ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
