@@ -134,4 +134,39 @@ mod tests {
         let snap = snapshot_scene(&s);
         assert!(snap.contains("text Hi @1,2"), "got: {snap}");
     }
+
+    #[test]
+    fn snapshot_includes_stroke_rect() {
+        let mut s = Scene::new();
+        s.push(SceneEntry {
+            source: WidgetId::new("frame"),
+            clip: None,
+            primitive: RenderPrimitive::StrokeRect {
+                rect: Rect::from_ltrb(0.0, 0.0, 10.0, 20.0),
+                color: Color::WHITE,
+                stroke_width: 2.0,
+                rounding: zero_ui_core::geometry::Rounding::ZERO,
+            },
+        });
+        let snap = snapshot_scene(&s);
+        assert!(snap.contains("stroke 0,0,10,20 w2 #ffffffff"), "got: {snap}");
+    }
+
+    #[test]
+    fn snapshot_includes_clip() {
+        let mut s = Scene::new();
+        s.push(SceneEntry {
+            source: WidgetId::new("clipped"),
+            clip: Some(Rect::from_ltrb(1.0, 2.0, 3.0, 4.0)),
+            primitive: RenderPrimitive::FillRect {
+                rect: Rect::from_ltrb(0.0, 0.0, 50.0, 50.0),
+                color: Color::BLACK,
+                rounding: zero_ui_core::geometry::Rounding::ZERO,
+            },
+        });
+        let snap = snapshot_scene(&s);
+        assert!(snap.contains("|clip=1,2,3,4|"), "got: {snap}");
+        // 第二条目索引递增。
+        assert!(snap.starts_with("0|src=clipped"), "got: {snap}");
+    }
 }

@@ -28,12 +28,14 @@
 - **DC-7 批次**：browser-ui/chrome §8.4.1A 实现 6 个领域组件——`PageLoadIndicator`(ProgressIndicator)、`SecurityBadge`(Badge+Tooltip)、`BookmarksBar`(Toolbar)、`BrowserTabStrip`(TabBar)、`FindBar`(TextInputState+StatusBubble)、`AddressBar`(TextInputState+SuggestionList+SecurityBadge)。遵循 props+build+on_activate 模式（由通用 widgets/patterns 组合，输出进 UI scene）；加 zero-ui-patterns 依赖；19 个新测。**SDK-only，未触碰 apps/browser**（无 product-smoke 风险）。
 - **DC-7 收尾（12/12）**：ui/widgets 补 FR-009 首批缺失 widget `IconButton`/`ContextMenu`(并入 menu.rs)/`Toggle`；BrowserAction 加 download actions（OpenDownload/CancelDownload/ShowDownload）；chrome 补 `BrowserMenu`(Menu+ContextMenu)、`PermissionPrompt`(DialogScaffold+Toggle)、`SiteInfoPanel`(Popover+ListView+权限切换)、`DownloadPanel`/`DownloadItemView`(Popover+ListView+ProgressIndicator)。**§8.4.1A 全 12 组件 + FR-009 widget 集合补齐**。
 - **DC-12**：扩展 `BrowserChromeModel`（tabs/nav/address/security/bookmarks/downloads/permissions/find/page_load，三 shell 共享业务模型）+ `BrowserChromeShell` trait + `DesktopBrowserShell`/`TabletBrowserShell`/`PhoneBrowserShell`（build→WidgetSpec 声明树，layout→ShellLayout safe-area/keyboard 避让）+ `AdaptiveBrowserChrome`（按 ViewportClass/PlatformClass/InputClass 选 shell，§8.4.4A 表）+ 跨 shell 稳定 WidgetId（address_bar/viewport 等，断点切换保留输入状态）。**SDK-only，未触碰 apps/browser**。
-- **DC-6 phase-1（M3 启动，与 M2 并行）**：ui/dsl `engine.rs` 表达式引擎落地——三阶段管线 parse（Pratt）/typecheck（推断 ValueType）/eval（EvalContext 确定性、无副作用求值）。覆盖字面量 / `$path` / 算术·比较·布尔·空值合并 / 条件 `?:` / 纯函数（count·contains·any·all·min·max·clamp·concat·starts_with·ends_with·format·field·index）。sandbox：禁用能力黑名单（eval/system/require/random/time/…）→ `ForbiddenCapability`，未注册 → `UnknownFunction`，`allow_functions=false` 全禁。资源上限：max_nodes/max_depth/max_iterations → `EvalResourceLimit`（+ parse-depth 守卫 64 防栈溢出）。26 测（含 sandbox negative + 资源上限）。**SDK-only**。map/filter（需 Lambda，spec 枚举 TBD）/ YAML→WidgetSpec loader / i18n:responsive 引用 → phase-2。
-- 门禁：`cargo build --workspace` + clippy `-D warnings` + fmt 全净；foundation/text 27 + ui/render 10(+3) + ui/testing 4 + ui/widgets 29 + browser-ui/chrome 45 + ui/dsl 26 tests 全绿；DC-17 聚合 line 93.97% / function 94.33% / region 93.07%（per-crate 全部 ≥85%；engine.rs 91.79%；聚合较上轮略降因新增 940 行 engine.rs，非既有代码退化）。
+- **DC-6 phase-1（M3 启动，与 M2 并行）**：ui/dsl `engine.rs` 表达式引擎落地——三阶段管线 parse（Pratt）/typecheck（推断 ValueType）/eval（EvalContext 确定性、无副作用求值）。覆盖字面量 / `$path` / 算术·比较·布尔·空值合并 / 条件 `?:` / 纯函数（count·contains·any·all·min·max·clamp·concat·starts_with·ends_with·format·field·index）。sandbox：禁用能力黑名单（eval/system/require/random/time/…）→ `ForbiddenCapability`，未注册 → `UnknownFunction`，`allow_functions=false` 全禁。资源上限：max_nodes/max_depth/max_iterations → `EvalResourceLimit`（+ parse-depth 守卫 64 防栈溢出）。26 测（含 sandbox negative + 资源上限）。**SDK-only**。
+- **DC-6 phase-2（YAML→WidgetSpec loader）**：新增 `ui/dsl/src/yaml.rs` **受限 YAML 子集解析器**（仓内自实现，零新依赖；spec §8.4.7 倾向仓内自实现 + serde_yaml 已弃用）。支持块映射/块序列/嵌套缩进/单双引号+纯标量/流集合 `[..]{..}`/行内注释/类型推断；dash 展开（含 `- - item` 嵌套）；不支持锚点/多文档/块标量/Tab 缩进（超子集即报错）。新增 `loader.rs::YamlLoader`（impl `WidgetSpecLoader`）：YAML→`WidgetSpec` 递归（component/id/props/bindings/actions/control/children），表达式承载字段以**原文 CompactString** 存储（保持 ui/core 不依赖 ui/dsl），strict 模式加载时调 `Engine::parse` 提前校验 visible_when/enabled_when/for_each.source/binding.source 语法（§8.4.7 Validate 阶段），`i18n:` 对象以 `Value::Object` 原样保留。**22 新测**（12 yaml + 10 loader，含端到端 load→eval、strict/lenient、i18n 保留、错误路径）。**SDK-only，未触碰 render-foundation/浏览器**（无 product-smoke 风险）。`map`/`filter` lambda 仍需 spec 决策（`Expression` 枚举无 Lambda 变体；候选：作 pure function 取字段投影/注册 fn id），留 phase-3。
+- 顺手抬升 ui/testing crate coverage：`scene_snapshot.rs` 补 StrokeRect/clip 测（70%→92%），ui/testing crate ~93%（per-crate 全部 ≥85% 收口）。
+- 门禁：`cargo build --workspace` + clippy `-D warnings` + fmt 全净；foundation/text 27 + ui/render 10(+3) + ui/testing 5(+3) + ui/widgets 29 + browser-ui/chrome 45 + ui/dsl **48**(+22) tests 全绿；DC-17 聚合 **line 93.58% / function 92.92% / region 92.51%**（per-crate 全部 ≥85%；yaml.rs 86.61%、loader.rs 92.00%、engine.rs 91.79%；聚合较上轮 -0.39pp 因新增 ~1240 行 yaml/loader，非既有代码退化；ui/testing 顺手抬到 ~93%）。
 
 **M2 剩余**：①统一 render-foundation 现有 font 栈到 foundation/text（物理迁移/复用，**触碰渲染后端需 product-smoke**，使 zero-webview 也走 foundation/text，DC-11 完整闭环）；②chrome 组件 paint → scene snapshot（widget paint 管线接通后，DC-7 完整验收）+ chrome 组件 → `apps/browser` 灰度接线；③apps/browser 逐组件灰度迁移（DC-14）；④render-foundation 实现 `RenderBackend` trait（TBD-2 后端侧，product-smoke）；⑤移动端运行时（M4，DC-15：真实 Phone/Tablet shell 渲染 + gesture/软键盘/safe area 适配）。
 
-**M3 进行中（DC-6）**：phase-1 表达式引擎已落地（见上）；phase-2 候选 = map/filter lambda（需扩 Expression 枚举）+ YAML→WidgetSpec loader + DSL `i18n:`/responsive branch/command/route 引用 + counter/form/browser-shell-demo 示例（DC-14）。
+**M3 进行中（DC-6）**：phase-1 表达式引擎 + phase-2 YAML→WidgetSpec loader 已落地（见上）；剩余 = ①map/filter lambda（需 spec 决策 `Expression` 枚举扩展；候选：字段投影 / 注册 fn id）；②DSL responsive branch（`Adaptive`/`branches`）/ command·route·overlay 引用；③counter/form/browser-shell-demo 示例（DC-14，验证 SDK 外部可复用）。
 
 ## Done Criteria 进度
 
@@ -44,7 +46,7 @@
 | DC-3 | WebViewWidget 自定义组件 | ⬜ M2 | adapter/webview skeleton 在 Wave 4；真实接入 M2 |
 | DC-4 | 滚动语义与滚动条边界 | ⬜ M2 | ScrollBar skeleton 在 Wave 2；迁移自 page_scroll.rs 在 M2 |
 | DC-5 | 主题系统 | 🟡 skeleton（M1） | ui/core::theme 类型 + ui/runtime::theme_provider 在 Wave 1/2 |
-| DC-6 | YAML DSL + 完整表达式语言 | 🟡 phase-1（M3） | ui/dsl 表达式引擎已落地（parse/typecheck/eval + sandbox 黑名单 + 资源上限，26 测）；剩余：YAML→WidgetSpec loader、map/filter lambda、DSL i18n/responsive/command 引用、示例应用（phase-2） |
+| DC-6 | YAML DSL + 完整表达式语言 | 🟡 phase-2（M3） | phase-1 表达式引擎（parse/typecheck/eval + sandbox 黑名单 + 资源上限，26 测）+ phase-2 YAML→WidgetSpec loader（受限 YAML 子集解析器 + `YamlLoader`，strict 表达式校验，22 测）已落地；剩余：map/filter lambda（spec 决策）、DSL responsive branch/command·route·overlay 引用、示例应用 |
 | DC-7 | 首批组件（通用+组合+浏览器） | 🟡 组件 12/12（M2） | FR-009 widget 集合补齐（+IconButton/ContextMenu/Toggle）；browser-ui/chrome §8.4.1A 全 12 组件已实现（props+build+on_activate+测试）；剩余：chrome 组件 paint→scene snapshot（widget paint 管线接通后）+ `apps/browser` 灰度接线 |
 | DC-8 | 无障碍/焦点/IME | 🟡 skeleton（M1） | ui/core::focus/semantics + ui/runtime::ime/accessibility |
 | DC-9 | 局部失效刷新 | 🟡 skeleton（M1） | ui/core::invalidation needs_layout/paint 区分单测在 Wave 1 |
@@ -94,10 +96,10 @@
 ## Coverage 基线
 
 - 全仓 floor（来自 `rendering-compat` 基线）：line 95.46% / function 96.94% / region 94.88%。本目标不得显著下降。
-- **`ui/*` + `foundation/text` + `browser-ui/chrome` DC-17 当前（2026-07-01，M3 DC-6 phase-1 表达式引擎后）**：
-  - 聚合：**line 93.97% / function 94.33% / region 93.07%**（6000 行，超 85% 目标）。
-  - 演进（同口径）：M1 基线 89.89% → M1 抬升 93.00% → foundation/text 93.66% → ui/render 93.40% → chrome 8 组件 93.88% → chrome 12/12+widget 94.28% → DC-12 shell 94.38% → DC-6 engine 93.97%（新增 940 行 engine.rs 91.79% 略拉低聚合，非退化）。
-  - 当前证据：`evidence/coverage-20260701-034232.txt`。
+- **`ui/*` + `foundation/text` + `browser-ui/chrome` DC-17 当前（2026-07-01，M3 DC-6 phase-2 YAML loader 后）**：
+  - 聚合：**line 93.58% / function 92.92% / region 92.51%**（6914 行，超 85% 目标）。
+  - 演进（同口径）：M1 基线 89.89% → M1 抬升 93.00% → foundation/text 93.66% → ui/render 93.40% → chrome 8 组件 93.88% → chrome 12/12+widget 94.28% → DC-12 shell 94.38% → DC-6 engine 93.97% → **DC-6 YAML loader 93.58%**（新增 ~1240 行 yaml.rs 86.61%/loader.rs 92.00% 略拉低聚合，非退化；ui/testing 顺手 70%→93%）。
+  - 当前证据：`evidence/coverage-20260701-040111.txt`。
   - 命令（统一口径）：`cargo llvm-cov -p zero-text-foundation -p zero-ui-* ... -p zero-browser-chrome --summary-only --ignore-filename-regex '[\\/](crates|apps)[\\/]' -- --test-threads=1`（`--ignore-filename-regex` 必须用 `[\\/](crates|apps)[\\/]` 匹配 profdata 绝对路径中的目录分量，`^` 锚定不生效）。口径含 `#[cfg(test)]` 内联模块（与仓库 `check-coverage.sh` 全仓口径一致，趋势可比）。注意：单 `-p zero-ui-dsl` standalone 数字偏低（~74%）是因为 ui/core 被插桩但未在该 run 测试；DC-17 以全量 run 为准。
 - **per-crate line 曲线**（M3 DC-6 phase-1 后；全部 ≥85%）：
 
@@ -106,11 +108,11 @@
   | ui/assets · ui/collections · ui/forms · ui/platform · ui/commands · ui/overlay · ui/restoration · ui/gestures | 100% / ~99% | M1 抬升 |
   | foundation/text | ~96% | M2：shaping/text_blob/text_measure 0→100、backend.rs 93 |
   | browser-ui/chrome | ~97% | M2：12 组件 95–100% + shell.rs 94% / chrome_model 100% |
-  | ui/dsl | ~92% | M3 DC-6：engine.rs（表达式引擎）91.79%、loader 100% |
+  | ui/dsl | ~91% | M3 DC-6：engine.rs 91.79%、yaml.rs 86.61%、loader.rs 92.00%（真实 loader）、expression 100% |
   | ui/widgets | ~95% | M2 DC-7：补 IconButton/Toggle/ContextMenu |
   | ui/render | ~89% | M2：backend.rs 92、paint_ctx 87、render_node 100 |
   | ui/animation · ui/patterns · ui/devtools · ui/navigation · ui/design-system · ui/i18n · ui/adapters · ui/core | 92–98% | — |
-  | ui/runtime · ui/testing | 85–88% | 可选继续抬边角 |
+  | ui/runtime · ui/testing | 87% / 93% | M3：scene_snapshot 补 StrokeRect/clip 测后 ui/testing 70%→93% |
 
 - **下一步 coverage 推进**：所有 per-crate 已 ≥85%（DC-17 阶段达标）。可选抬 ui/render(~89%)/ui/runtime/ui/testing 边角，随 M2 组件迁移自然增长。
 
@@ -122,8 +124,8 @@
 | TBD-2 ui-render 与 render-foundation 依赖方向 | **`ui/render` 定义自己的 Scene/RenderNode/PaintCtx 抽象 + M2 已加 `RenderBackend` trait + `paint_scene`**；ui/render 不直接依赖 render-foundation，通过 trait 由 render-foundation 后端实现（待 product-smoke） | 通用 UI 层不被 wgpu 后端耦合；ui/render 只依赖 foundation/text（纯文本层），不依赖 GPU 栈 | spec §8.4.1 / TBD-2 |
 | TBD-9 text shaping/font 依赖 | **复用 workspace 已声明** fontdue/rustybuzz/unicode-bidi；M2 已把 fontdue+rustybuzz 加入 foundation/text（swash 暂未用） | 已在 workspace.dependencies；零新增外部依赖；fontdue=度量/光栅、rustybuzz=OpenType shaping | spec §6.4 / TBD-9 |
 | TBD-7 i18n 依赖 | **M1 手写 minimal plural/RTL**，不引入 ICU4X/Fluent | 接口先行；依赖评估留 M3 | spec §6.5A / TBD-7 |
-| TBD-6 表达式 parser | **M3 评估**，M1 不涉及 | DSL 表达式在 M3 | TBD-6 |
-| TBD-1 serde_yaml | **M3 评估**，M1 dsl 只立 schema skeleton | — | TBD-1 |
+| TBD-6 表达式 parser | **仓内自实现 Pratt/precedence-climbing parser**（`ui/dsl/src/engine.rs`，M3 phase-1 已落地），不引 parser combinator crate | 表达式语法边界明确（spec §8.4.7 文法），手写 parser 可控 + 零新依赖；含 parse-depth 守卫防栈溢出 | spec §8.4.7 / TBD-6 |
+| TBD-1 serde_yaml | **仓内自实现受限 YAML 子集解析器**（`ui/dsl/src/yaml.rs`，M3 phase-2 已落地），不引 serde_yaml（已弃用）/ serde_yml | DSL YAML 子集结构受限（组件树 + 标量/流集合/注释），仓内解析器可控、零新依赖、错误信息友好；spec §8.4.7 倾向仓内自实现；serde_yaml 上游已 archived | spec §8.4.7 / TBD-1 |
 
 依赖自治条款（已与用户确认）：YAML 解析、表达式 parser、i18n、text shaping/font、布局均由执行器自主决策，硬约束 = 仅 MIT/Apache-2.0/BSD、最小化、优先复用 workspace 已有 crate、论证写入本表 + archive。
 
@@ -139,19 +141,20 @@
 - `evidence/coverage-20260701-031400.txt` — **DC-17（M2 DC-7 收尾 12/12 + FR-009 widget 补齐，2026-07-01）**：聚合 line 94.28% / function 94.92% / region 94.27%；per-crate 全部 ≥85%（chrome 12 组件 + IconButton/Toggle/ContextMenu 新控件 95–100%）。
 - `evidence/coverage-20260701-032214.txt` — **DC-17（M2 DC-12：BrowserChromeModel + desktop/tablet/phone shell，2026-07-01）**：聚合 line 94.38% / function 94.88% / region 94.35%；per-crate 全部 ≥85%（chrome shell.rs 94% / chrome_model.rs 100%）。+ DC-12 测试锚点（select_shell §8.4.4A 表 / phone keyboard+safe-area 避让 / 跨 shell 稳定 WidgetId / adaptive 派发）。
 - `evidence/coverage-20260701-034232.txt` — **DC-17（M3 DC-6 phase-1：DSL 表达式引擎，2026-07-01）**：聚合 line 93.97% / function 94.33% / region 93.07%；per-crate 全部 ≥85%（ui/dsl engine.rs 91.79%）。+ DC-6 测试锚点（parse/eval 各能力 / sandbox 黑名单 ForbiddenCapability / UnknownFunction / 资源上限 nodes·depth·iters）。
+- `evidence/coverage-20260701-040111.txt` — **DC-17（M3 DC-6 phase-2：YAML→WidgetSpec loader + ui/testing 补测，2026-07-01）**：聚合 line 93.58% / function 92.92% / region 92.51%（6914 行）；per-crate 全部 ≥85%（ui/dsl yaml.rs 86.61%/loader.rs 92.00%、ui/testing scene_snapshot 70%→92% / crate ~93%）。+ DC-6 phase-2 测试锚点（YAML 块/流/嵌套/注释/类型推断；loader 递归 component/id/props/bindings/actions/control/children；strict 表达式校验；端到端 load→eval；i18n 对象保留）。
 
 **M2/M3 门禁实测（2026-07-01）**：
 - `cargo build --workspace` — Finished（0 错误）。
 - `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
 - `cargo fmt --all --check` — 净（0 diff）。
-- foundation/text 27 + ui/render 10(+3 集成) + ui/testing 4 + ui/widgets 29 + browser-ui/chrome 45 + ui/dsl 26 tests 全绿（scoped test-guard）。
-- DC-1 复核：ui/dsl 经 zero-ui-core/hashbrown 仍零浏览器业务 crate 依赖。
-- DC-17 coverage：聚合 93.97%，per-crate 全部 ≥85%。
+- foundation/text 27 + ui/render 10(+3 集成) + ui/testing 5(+3) + ui/widgets 29 + browser-ui/chrome 45 + ui/dsl **48**(+22: 12 yaml + 10 loader) tests 全绿（scoped test-guard）。
+- DC-1 复核：ui/dsl 仅依赖 compact_str/hashbrown/serde/thiserror/zero-ui-core（`cargo tree -p zero-ui-dsl` 机械验证），零浏览器业务 crate；YAML loader 仓内自实现，零新依赖。
+- DC-17 coverage：聚合 line 93.58%，per-crate 全部 ≥85%。
 
 ## Next Steps
 
-1. **DC-6 phase-2**：map/filter lambda（需扩 Expression 枚举加 Lambda 变体，spec TBD 决策）+ YAML→WidgetSpec loader（serde_yaml vs 手写 parser）+ DSL `i18n:` message id / responsive branch / command·route·overlay 引用。
-2. **`ui/examples`（DC-14）**：counter / form / browser-shell-demo 示例（counter 不依赖浏览器 crate，验证 SDK 外部可复用）。
+1. **DC-6 phase-3**：①map/filter lambda —— 需 spec 决策（`Expression` 枚举无 Lambda 变体；候选：字段投影 `map($items, "field")` / 取注册 fn id；走 `lei-spec-rfc` 回写 spec §8.4.7）；②DSL `Adaptive`/`branches` responsive branch（按 ViewportClass/PlatformClass/InputClass 选布局，接 ui/core::layout）+ command·route·overlay·asset 引用。
+2. **`ui/examples`（DC-14）**：counter / form / browser-shell-demo 示例（counter 不依赖浏览器 crate，验证 SDK 外部可复用）——需要 retained runtime（UiTree reconcile→Scene）跑通最小闭环。
 3. **render-foundation 字体栈统一到 foundation/text**（DC-11 完整闭环；**触碰渲染后端，需 `make product-smoke`**）。
 4. **chrome 组件 paint → scene snapshot**（widget paint 管线接通后，DC-7 完整验收）+ apps/browser 逐组件灰度迁移（DC-14，product-smoke）。
 5. 跟踪项：本机 `make test` 受 script-sandbox debug-test V8 链接阻塞（环境性）；render-foundation 字体栈统一前 welcome.html 渲染走旧路径，未受本轮影响。
