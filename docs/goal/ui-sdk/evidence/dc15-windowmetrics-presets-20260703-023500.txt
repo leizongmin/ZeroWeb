@@ -1,0 +1,13 @@
+DC-15 WindowMetrics phone/tablet presets（M4 SDK-side，2026-07-03）
+==================================================================
+ui/core/src/layout.rs `impl WindowMetrics` 加两个 preset 构造器：
+- phone()：390×844 逻辑像素（iPhone 12 级）/ scale 3.0 / safe_area top 47（刘海）
+  + bottom 34（home indicator）/ keyboard 0 / text_scale+density 默认 / Portrait → Compact。
+- tablet()：768×1024（iPad 级）/ scale 2.0 / safe_area 0 / Medium。
+
+动机：DRY 化移动测试/示例——此前 shell 测试的 metrics() helper 手填 6+ 字段，preset
+一行构造；供 phone_demo 示例 / 移动集成测 / M4 runtime adapter 复用。
+
+测试：phone_and_tablet_presets_match_expected_viewport_class（phone→Compact + safe_area
+top/bottom 值 + Portrait；tablet→Medium + scale 2.0 + safe_area 零）。
+门禁：ui-core 测全绿；build/clippy/fmt 净；SDK-only 无 product-smoke 风险。

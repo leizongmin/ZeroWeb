@@ -1,0 +1,19 @@
+origin/main 同步 merge R972-R975（2026-07-03，commit 5e395586）
+=====================================================
+main 新增：R972（main.rs 测试模块→tests.rs）+ R973（app.rs 状态类型→app_types.rs，
+全仓 .rs ≤2000 里程碑）+ R974/R975（rendering-compat RFC Phase-0 探针
+css-position/vertical-align，docs + probe txt，非浏览器代码）。
+
+3 文件冲突（同「两分支各拆同一文件」模式，R967/R971 同型）：
+- app_types.rs（add/add）：ui-sdk DC-16 app_types.rs = AddressBarPageKind + 同 7 状态类型
+  （ContentPointerDrag/ScrollbarDrag/TabFetchState/WindowChromeAction/TabDragState/
+  AutocompleteState/ContextMenuState）；main R973 app_types.rs = 同 7 类型（无
+  AddressBarPageKind，main 保留在 app.rs 内联）。ui-sdk 为超集 → --ours。
+- app.rs：main 在 app_types include 前内联 AddressBarPageKind（ui-sdk 在 app_types.rs
+  已定义）→ 取 --ours（无内联 def，避免与 app_types.rs 重复）。
+- main.rs：ui-sdk 拆 main_tests.rs（DC-16），main 拆 tests.rs（R972）。测试 fn 名
+  逐位一致（74 each，comm 零差）→ --ours main.rs + 拒绝 tests.rs。
+
+方式：merge（非全量 rebase，master.md #11）。
+门禁：build/clippy/fmt（默认 + sdk-chrome）净；browser 默认 191 + sdk-chrome 202 全绿。
+结论：纯结构同步，零渲染/逻辑变更，零回归。

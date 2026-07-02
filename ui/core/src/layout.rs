@@ -74,6 +74,42 @@ impl WindowMetrics {
             self.logical_size.height * self.scale_factor,
         )
     }
+
+    /// 典型手机 metrics（DC-15 移动测试/示例用）：390×844 逻辑像素（iPhone 12 级），
+    /// scale 3.0，safe_area top 47（刘海/状态栏）+ bottom 34（home indicator），无键盘，
+    /// 默认 text_scale/density。`ViewportClass::Compact`。
+    pub fn phone() -> WindowMetrics {
+        let logical_size = Size::new(390.0, 844.0);
+        WindowMetrics {
+            logical_size,
+            scale_factor: 3.0,
+            safe_area: Insets {
+                left: 0.0,
+                top: 47.0,
+                right: 0.0,
+                bottom: 34.0,
+            },
+            keyboard_insets: Insets::all(0.0),
+            text_scale: DEFAULT_TEXT_SCALE,
+            density: DEFAULT_DENSITY,
+            orientation: Orientation::from_size(logical_size),
+        }
+    }
+
+    /// 典型平板 metrics（DC-15）：768×1024 逻辑像素（iPad 级），scale 2.0，无 safe_area/键盘，
+    /// 默认 text_scale/density。`ViewportClass::Medium`（→ tablet shell）。
+    pub fn tablet() -> WindowMetrics {
+        let logical_size = Size::new(768.0, 1024.0);
+        WindowMetrics {
+            logical_size,
+            scale_factor: 2.0,
+            safe_area: Insets::all(0.0),
+            keyboard_insets: Insets::all(0.0),
+            text_scale: DEFAULT_TEXT_SCALE,
+            density: DEFAULT_DENSITY,
+            orientation: Orientation::from_size(logical_size),
+        }
+    }
 }
 
 /// 视口分级（spec IF-009，Material/Bootstrap 风格断点）。
@@ -166,6 +202,31 @@ mod tests {
         assert_eq!(ViewportClass::from_width(839.0), ViewportClass::Medium);
         assert_eq!(ViewportClass::from_width(840.0), ViewportClass::Expanded);
         assert_eq!(ViewportClass::from_width(1280.0), ViewportClass::Expanded);
+    }
+
+    #[test]
+    fn phone_and_tablet_presets_match_expected_viewport_class() {
+        // DC-15 presets：phone → Compact（手机 shell），tablet → Medium（tablet shell）。
+        let phone = WindowMetrics::phone();
+        assert_eq!(
+            ViewportClass::from_width(phone.logical_size.width),
+            ViewportClass::Compact,
+            "phone preset → Compact"
+        );
+        assert_eq!(phone.scale_factor, 3.0);
+        assert_eq!(phone.safe_area.top, 47.0, "phone 有刘海 safe_area");
+        assert_eq!(phone.safe_area.bottom, 34.0, "phone 有 home indicator safe_area");
+        assert_eq!(phone.orientation, Orientation::Portrait);
+
+        let tablet = WindowMetrics::tablet();
+        assert_eq!(
+            ViewportClass::from_width(tablet.logical_size.width),
+            ViewportClass::Medium,
+            "tablet preset → Medium"
+        );
+        assert_eq!(tablet.scale_factor, 2.0);
+        // 默认无 safe_area（平板通常无刘海）。
+        assert_eq!(tablet.safe_area, Insets::all(0.0));
     }
 
     #[test]
