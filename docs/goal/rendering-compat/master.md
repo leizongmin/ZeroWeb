@@ -1913,6 +1913,38 @@ css-flexbox worst-15（post-harness）**全是已知结构性簇**：flex-minimu
 
 **▶ 下会话**：① 墙 ③ empirical per-case 角度——选 1 个 vertical-align case（117a），REFTEST_DUMP + 手动推导正确像素位（ref 黑[90,130]蓝[45,85]），针对该 case 像素级调（区别 6 轮公式级 trap），看是否可推广。② 或接受 measurable plateau，转零散 correctness 修复（不动 pass rate 但修真 bug）。③ product-smoke/font-metric/vertical-align 公式级勿再试（R945-R952 八轮证）。
 
+### R953 非存储路径 baseline_offset 修复 LANDED = 纠正 R945–R952 八轮误归因·glyph 定位 = half-leading·≈ +102 oracle（harness JS vein 后最大单轮·零目录回归）·welcome +0.77pp（font-wall trend-only）
+
+承 R952「墙 ③ empirical per-case 角度」。按建议对 117a 做像素级 forensics，**纠正 R945–R952 八轮归因**并落地一个**纯渲染正确性大胜**（非 harness/JS）。
+
+**① PHASEA_VALIGN 实验（embox-always + half_leading）证伪 Ahem glyph 角度**：实施 stored-path Ahem 无条件 embox（`baseline−0.8·fs`，区别 R841 仅 lh≈fs）+ inline_finalization half_leading 用 `(frag.height−fs)/2`（区别 post-extension 反推 30）。VALIGN_DEBUG 实测 117a 黑 `[90,130]` / 蓝 `[45,85]` div-rel **像素级精确匹配 ref**。但 oracle **更差**（13.59→14.03%）：dominant error 非 Ahem glyph。回退（零 net 源码）。
+
+**② 真根因 = 默认字体 `<p>` 块非存储路径首行定位**：117a `<p>Test passes if...</p>` 非 pure-Ahem → 走**非存储路径**（R84 空-styles 墙）。PIL 实测 ZW `<p>` 文本 p_top+11.2、chromium p_top+1.6 → ZW div y=51、chromium div y=68（**ZW 高 17px**，117a 13.59% dominant）。R945–R952 八轮全在攻 Ahem glyph（次要），未触 `<p>` 默认字体（主因）。
+
+**③ 根因公式（baseline_offset）**：非存储路径 `glyph_y = content_y + frag.y + baseline_offset`，旧 `baseline_offset = font_size`。glyph 顶（行盒相对）应 = half-leading = `(lh−fs)/2`（em-box 居中，**与 ascent 无关**）。`frag.y = baseline_y − run.height`，`baseline_y = half-leading + ascent`，故 `baseline_offset = height − 0.8·fs`（ascent≈0.8·fs 启发式，与 apply_vertical_alignment line 1634 一致）。旧 font_size 把 glyph 顶放基线位，每行偏低 ≈9.6px。**修复**：`baseline_offset = fragment.height − 0.8·fragment.font_size`（仅文本运行 fs>0；原子盒 fs==0 保留旧值）。text.rs 非存储路径 ~1345。
+
+**④ 决定性 A/B（全目录零回归）**：
+| 目录 | OFF | ON | Δ |
+|------|-----|-----|---|
+| css-text | 279 (16.9%) | 339 (20.5%) | **+60** |
+| css-text-decor | 72 (29.8%) | 99 (40.9%) | **+27** |
+| css-position | 51 (52.6%) | 54 (55.7%) | +3 |
+| css-tables | 65 (56.5%) | 68 (59.1%) | +3 |
+| css-fonts | 75 (26.6%) | 79 (28.0%) | +4 |
+| css-multicol | 115 (25.4%) | 119 (26.3%) | +4 |
+| css-writing-modes | 55 (7.0%) | 56 (7.1%) | +1 |
+| **合计** | | | **≈ +102** |
+
+★ harness JS vein（R916–R927 +52）后**最大单轮 oracle 增益**，且是**纯渲染正确性修复**（非 harness/JS），区别 R939–R943 anon-block/harness 谱系。机制：WPT corpus 几乎每个 reftest 含 `<p>Test passes if...</p>` 默认字体指令行，修其垂直定位普适。
+
+**⑤ 门禁全绿**：make test 12107+/0 failed（exit 0）；clippy -D warnings 零警告；fmt clean；self-source reftest 686/686（零回归）。
+
+**⑥ DC-13 product-smoke（trend-only）**：welcome 16.11→16.88%（+0.77pp，< 20% 退出阈值，font-wall trend-only）。**hero title 反而更准**（ORA 104-135 / OFF 135-154 低 30px / ON 105-124 近 ORA）。残余净 +0.77pp = 真字体 system-ui ascent≈0.9·fs≠0.8·fs 的字体墙噪声（R876 谱系），散布正文多行；理想修须接 fontdue 真 ascent = font-metric 墙多会话。按 goal priority：DC-2~5 WPT oracle（+102）是主达标指标，DC-13 welcome 是 trend-only 字体墙（Makefile 明示「非回归」），本轮净大胜。
+
+**裁决**：R953 LANDED。**纠正 R945–R952 八轮误归因**（vertical-align 簇 dominant = 默认字体 `<p>` 非存储路径定位，非 Ahem glyph）+ 落地 ≈+102 oracle 大胜。Ahem valign glyph 角度（embox-always / half_leading / run.y / v_offset）6+1 轮全 net-negative，**永久关闭**。**关键新认知**：R84 空-styles 墙有可修子症状（glyph 定位公式可凭行盒 half-leading 修正，无需打通全 style→paint 链路）——为 font-features/large-font 同类子症状提供新角度（区别 R945「须架构性 Path B 消除」全有或全无判断）。
+
+**▶ 下会话**：① font-features（R513，shaper.rs:82）或 large-font（R101）借 R953 新认知——找 R84 空-styles 墙的**可修子症状**（glyph 定位 / 字号 / 行高可凭行盒度量修正而非打通全链路），区别 R945 全有或全无。② welcome/morning 真字体 ascent≈0.9·fs：paint 路径接 fontdue 真 ascent（per-font metric）解 R953 残余 +0.77pp + 字体墙主部（R374/R631/R876 多会话）。③ 扫下一默认字体 `<p>` 类 lever（css-text +60 提示该 pattern 高 leverage，R953 修了定位，或还有字号/行高类）。Ahem valign glyph / 公式级 vertical-align 勿再试（7 轮证）。
+
 ### 已 ruled out（勿以单会话重试）
 
 near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / **column-aware IFC Phase 1（pure-inline balance 明确高度）(R381)**：执行 column-aware-IFC-spec.md §10 gate「假设 A1」，扫描全 16 css-multicol 失败案结构（height/column-fill/blockchildren），**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）——每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套；spec 自身协议「A1 不存在→紧急停止转 Phase 2」生效，Phase 1 零杠杆关闭，真实 multicol lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）/ baseline-export 3 机制(R266–R316) / **advance-width(R225–R375b) definitive 关闭**：R375 hand-crafted DejaVu 表 morning 16.41→19.14% + R375b fontdue-actual advance（临时加 fontdue dep+缓存 Font+metrics.advance_width）16.41→19.08%，双 variant 均退步；fontdue-actual（最后未测变体）亦证伪。根因：accurate DejaVuSans advance 使换行偏离 chromium（system-ui≠DejaVuSans 或换行算法不同），0.55 启发式碰巧更近。advance-width 非 morning cascade 根因/ blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304) / inline-flex·inline-grid width:auto shrink-to-fit（R370：probe 实证 inline-flex width:auto 同 inline-block 拉伸到满宽 800，是真 bug，但**零杠杆**——全 48 失败案 + product-smoke fixture 均不用 inline-flex/inline-grid width:auto；fix 需 flex_row_intrinsic_width（非 box_content_max_width，flex row 须求和 block 子元素非取 max），复杂且无 reftest/smoke 收益，按 code-guidelines「不做零价值修改」不修，勿再以单会话重试）/ **percent max-width/min-height/min-width clamping（R119 analog，doc-agent 复核 ~0 yield，闭）**：engine.rs:1408 仅 `clamp_percentage_max_height`，无 max-width/min 平行函数——但 max-width-091(percent)✓ + min-height-091/092(percent)✓ 均 PASS（block width 定值→taffy 直接钳；min-height 是测量期 floor 非 content re-clamp）；R119 缺口唯一 max-height-specific（auto-height 内容测量 re-clamp），已修即完整 percent-clamp，无平行 lever，勿以 R119 类比重扫 / **intrinsic-keyword sizing（max-content/min-content/fit-content，R97 谱系，doc-agent 复核 = 非 clean 单会话 lever）**：121 测试文件用此三关键字，但**全集中在 taffy-blocked 上下文**（css-multicol/tables/flexbox intrinsic-size/table-intrinsic-size/flex-item-*-content），CSS2 block/inline-block 上下文**仅 1 案且为 crash-test**（inline-negative-margin-minmax-crash-001，非 sizing-correctness）→ memory「block/inline-block 可独立做」slice **无 dedicated driving test**（~0 可测 yield）；max-content/min-content parse_basic.rs 解析但 resolve 丢信号→0（R97/max-content memory），修复须保留信号+shrink-to-fit 触发，grid/flex/multicol/table 受 taffy 容器不 shrink 阻塞 = 多会话/结构性，勿以单会话重扫。 / **NBSP/Unicode-space collapse (R651 read-only 复核·非 lever)**：`collapse_whitespace`（inline/mod.rs:231）用 Rust `char::is_whitespace()` 折叠 NBSP(U+00A0)/U+3000 等，违反 CSS Text 3 §4.1.1（仅 TAB/LF/FF/CR/space 可折叠）——真 correctness bug，但 collapse 上下文（normal/nowrap/pre-line）**无 reftest 覆盖**（white-space-collapse-001 是 testharness JS `assert_equals(offsetWidth)` 测，非 reftest）；NBSP reftests（white-space-pre-031/032/034/035）全在 `pre` 上下文（preserve 路径不经 collapse）实测 PASS @2.64%。无 driving reftest → 非 lever（product-smoke 影响 negligible，NBSP 罕见于 fixture），defer；R647 category (b) 的 NBSP 角度据此关闭。
