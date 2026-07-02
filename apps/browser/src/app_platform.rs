@@ -174,10 +174,11 @@ impl BrowserApp {
             };
             #[cfg(feature = "sdk-chrome")]
             let mut scene_primitives = {
-                let mut p = RenderPrimitives::default();
                 // chrome 阴影保持为顶层 primitives（不进入 webview surface）。
-                p.shadows = chrome_shadows;
-                p
+                RenderPrimitives {
+                    shadows: chrome_shadows,
+                    ..Default::default()
+                }
             };
 
             // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
@@ -279,10 +280,9 @@ impl BrowserApp {
             p
         };
         #[cfg(feature = "sdk-chrome")]
-        let mut scene_primitives = {
-            let mut p = RenderPrimitives::default();
-            p.shadows = chrome_shadows;
-            p
+        let mut scene_primitives = RenderPrimitives {
+            shadows: chrome_shadows,
+            ..Default::default()
         };
 
         // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
@@ -1453,6 +1453,39 @@ mod sdk_chrome_tests {
             assert!(
                 translated_y < 140.0,
                 "page fills translated upward: y={translated_y} < chrome_top=140"
+            );
+        }
+    }
+
+    #[test]
+    fn compose_replacement_emits_no_viewport_background_fill() {
+        // DC-14「双 viewport frame 叠加清理」回归守卫：SDK chrome 的 PageViewportFrame 必须
+        // fill_background=false（不填底色）——否则会发出覆盖页面内容区的 viewport-sized fill，
+        // 与页面内容（surface 合成）叠加成双 viewport 帧。SDK chrome fills 应只含顶部 bars
+        // （toolbar/tab/bookmarks，bottom ≤ ~104），不含延伸到帧底的 viewport fill。
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        let mut scene = RenderPrimitives::default();
+        let mut image_cache = ImageCache::new(64, 16 * 1024 * 1024);
+        let (_page_fills, _page_glyphs) = compose_sdk_chrome_replacement(
+            &shell,
+            1280,
+            800,
+            140.0, // 手绘 chrome 高度（仅影响翻译，不影响 SDK chrome fills）
+            vec![],
+            vec![],
+            &mut scene,
+            &mut Some(&mut image_cache),
+        );
+        assert!(!scene.fills.is_empty(), "SDK chrome bars present");
+        // 所有 SDK chrome fills 限制在顶部 chrome bar 区（bottom < 150），无 viewport-sized fill
+        // （viewport fill 的 bottom 会到帧底 800，覆盖页面内容）。
+        for f in &scene.fills {
+            assert!(
+                f.rect.bottom() < 150.0,
+                "DC-14 dual-viewport-frame guard: SDK chrome fill extends below bars (bottom={}) \
+                 — PageViewportFrame must not fill (would cover page content)",
+                f.rect.bottom()
             );
         }
     }

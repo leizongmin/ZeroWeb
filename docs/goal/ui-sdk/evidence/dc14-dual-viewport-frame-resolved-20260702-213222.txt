@@ -1,0 +1,45 @@
+# DC-14 双 viewport frame 叠加清理——解决 + 回归守卫（2026-07-02）
+
+## 结论
+
+DC-14 剩余项「双 viewport frame 叠加清理」**已解决**（PageViewportFrame `fill_background=false`，
+此前提交已修），本轮**加回归守卫测试**锁定该解决，并清理 master.md 该项（DC-18 自洽）。
+
+## 背景
+
+DC-14 替换式迁移（feature-on `sdk-chrome`）：SDK chrome 的 PageViewportFrame 早期为 solid fill，
+在替换路径中会覆盖页面内容（双 viewport 帧）。此前已改为 `fill_background=false`（SDK chrome
+viewport 只负责布局空间，页面内容由 WebView surface 合成在上层）。但 master.md DC-14 行仍把
+「双 viewport frame 叠加清理」列为剩余（stale），且无回归守卫。
+
+## 本轮
+
+### 新增回归守卫测试（apps/browser/src/app_platform.rs）
+`compose_replacement_emits_no_viewport_background_fill`：feature-on 替换路径下，SDK chrome fills
+必须只含顶部 bars（toolbar/tab/bookmarks，`rect.bottom() < 150`），**不得**含延伸到帧底的
+viewport-sized fill（PageViewportFrame 若回退为 fill 会发出 bottom=800 的 fill → 守卫拦截）。
+
+### 顺手修 2 处 pre-existing clippy（sdk-chrome gated，默认 clippy 未覆盖）
+`app_platform.rs:179/284`：`let mut p = RenderPrimitives::default(); p.shadows = x; p` →
+`RenderPrimitives { shadows: x, ..Default::default() }`（field_reassign_with_default lint，
+行为逐位等价）。使 `cargo clippy --features sdk-chrome` 也净（DC-16 加强：sdk-chrome feature
+clippy 此前未纳入门禁，现两路径都净）。
+
+## 验证
+
+- `cargo test -p zero-browser --features sdk-chrome` → **196 passed; 0 failed**
+  （195 + 1 新守卫测；含 compose_replacement_emits_no_viewport_background_fill）。
+- `cargo test -p zero-browser`（默认）→ **189 passed; 0 failed**（DC-14 默认路径零回归）。
+- `cargo clippy --workspace --all-targets -- -D warnings`（默认）净；
+  `cargo clippy -p zero-browser --all-targets --features sdk-chrome -- -D warnings` 净（新覆盖）。
+- `cargo fmt --all --check` 净。
+- 守卫测 + clippy 修复均不触碰渲染输出像素 → **无 product-smoke 风险**。
+
+## DC-14 现状
+
+- ✅ 替换式迁移接线 + 193 测 + product-smoke 19.87% baseline。
+- ✅ WebView 额外图元翻译（translate_scene_primitives_y）。
+- ✅ 双 viewport frame 叠加（本轮守卫锁定解决）。
+- ✅ sdk-chrome feature clippy 净（本轮）。
+- 剩余：**GUI 可视验收 chrome 布局**（本环境无 GUI，headless 不可验证；feature-on 像素级已由
+  compose_overlay_rasterizes_to_visible_framebuffer + 本轮守卫测 headless 证明）。
