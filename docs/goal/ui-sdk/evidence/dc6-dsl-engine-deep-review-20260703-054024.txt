@@ -1,0 +1,131 @@
+# DC-6 DSL 表达式引擎深度审查（lei-deep-review）
+
+**日期**: 2026-07-03
+**范围**: ui/dsl 表达式引擎 — `engine.rs`（tokenizer / Pratt parser / typecheck / eval / sandbox / 资源上限）+ `expression.rs`（AST / node_count）+ `for_each.rs`（迭代预算复用）+ `loader.rs`（EvalContext 默认值）+ `diagnostics.rs`（DslError）
+**审查重点**: sandbox 逃逸向量（goal 约束 #7）+ eval 边界（除零/整数溢出/NaN/空集合/类型强制）+ Pratt parser 正确性（结合律/优先级/一元负号）
+**结论**: 1 medium bug 修复（unary 取负整数溢出 panic）+ 3 low 记录不修 + 核心安全模型经查正确。
+
+---
+
+## 关键发现统计
+
+| 严重度 | 数量 | 处置 |
+|--------|------|------|
+| Critical | 0 | — |
+| Medium | 1 | **已修复** + 回归守卫（2 测） |
+| Low | 3 | 记录不修（设计选择 / defense-in-depth 边际 / follow-up） |
+| 非 bug（经查正确） | 12+ | — |
+
+最高优先级一句话：**unary `-` 在 `Value::Int(i64::MIN)` 上 panic（debug）/ wrap（release），sandbox 不得对任意 host 状态值 panic——已用 `checked_neg` + Float 兜底修复。**
+
+---
+
+## MEDIUM-1（已修复）：unary 取负整数溢出 panic
+
+- **位置**: `ui/dsl/src/engine.rs:657-661`（eval `UnaryOp::Neg` 分支）
+- **严重度**: 中（panic = DoS / 进程 abort；但触发需 host 状态含 i64::MIN）
+- **置信度**: 1.0（测试实跑 panic 复现：`attempt to negate with overflow` at engine.rs:658:49）
+- **描述**: 原实现 `Value::Int(i) => Value::Int(-i)`。当 `i == i64::MIN`（-9223372036854775808）时，`-i` 无 i64 表示（|MIN| = MAX+1）：debug 构建直接 panic（"attempt to negate with overflow"），release 构建 wrap 成 i64::MIN（静默错误：`-(-9223372036854775808) == -9223372036854775808`）。
+- **触发条件**: 任意 `Value::Int(i64::MIN)` 经 unary 取负。**字面量路径被阻断**（`-9223372036854775808` 的整数部分 `9223372036854775808` > i64::MAX，`parse::<i64>` 失败 → Parse error），但 **host 状态路径可达**：`-$state.x` / `-field($obj,"k")` / `-index($arr,0)` 解析到含 i64::MIN 的 host 状态即可触发。host 控制状态值（非 DSL 作者），sandbox 必须对任意状态值健壮。
+- **为何重要（约束 #7）**: DSL 表达式语言是受控计算层，**不得**执行任意脚本；eval 边界（除零/溢出/NaN/空集合）必须被兜住（返回错误或合理值），**不得 panic**。binary 算术（Add/Sub/Mul）经 `as_number` → f64 detour + `num()`（`x as i64` 是 Rust 1.45+ 饱和转换）本就安全；唯独 unary Neg 直连 i64 取负，绕过了 f64 安全路径。
+- **代码证据（修复前）**:
+  ```rust
+  UnaryOp::Neg => match v {
+      Value::Int(i) => Value::Int(-i),   // ← -i64::MIN panic (debug) / wrap (release)
+      Value::Float(f) => Value::Float(-f),
+      _ => return Err(DslError::Typecheck("unary '-' on non-number".into())),
+  },
+  ```
+- **修复（commit 本轮）**: 用 `checked_neg`，对 i64::MIN（None）安全退化为 Float（与 binary 算术经 f64 的安全路径一致）：
+  ```rust
+  UnaryOp::Neg => match v {
+      Value::Int(i) => match i.checked_neg() {
+          Some(n) => Value::Int(n),        // 可表示的相反数保持 Int（向后兼容）
+          None => Value::Float(-(i as f64)), // i64::MIN → Float(+9.22e18)，不 panic、不 wrap
+      },
+      Value::Float(f) => Value::Float(-f),
+      _ => return Err(DslError::Typecheck("unary '-' on non-number".into())),
+  },
+  ```
+- **回归守卫（2 新测）**:
+  - `unary_neg_of_int_min_does_not_panic`：`-($n)` n=i64::MIN → Float(正 9.22e18)，不 panic。（TDD：修复前此测在 debug panic，证明 bug 真实。）
+  - `unary_neg_preserves_int_when_representable`：`-5` → Int(-5)、`-0` → Int(0)、`-($mx)` mx=i64::MAX → Int(i64::MIN+1)（保持 Int，向后兼容）、`-index($arr,0)` arr[0]=i64::MIN → Float（field/index 路径同样安全）。
+- **行为变化范围**: 仅 `-(i64::MIN)` 一点——原 panic/wrap → Float(+9.22e18)。其余 Int 取负逐位不变（checked_neg → Some）。下游零回归（workspace build 净 + 87 测全绿）。
+
+---
+
+## LOW（记录不修）
+
+### LOW-1: `is_truthy(NaN) == true`
+- **位置**: `ui/core/src/binding.rs:31`（`Value::Float(f) => *f != 0.0`）+ `engine.rs` 除零返回 NaN。
+- **描述**: `1 / 0` → `Float(NaN)`（不 panic，确定性，已测）。但 `NaN != 0.0` 为 true，故 NaN 在条件里 truthy：`1/0 ? "a" : "b"` → "a"。多数语言 NaN 为 falsy（JS/Python）。
+- **不修理由**: 改 `is_truthy` 影响面扩到 `ui/core`（所有 Value 消费者，含 Widget 逻辑），blast radius 大；当前 div-by-zero→NaN 是已测的刻意设计（`float_arith_and_div_by_zero` 显式断言）。留作 follow-up（可选：div-by-zero 改 Typecheck error 更显式，但属语义变更）。
+
+### LOW-2: 字符串函数不按串长计 iteration 预算
+- **位置**: `engine.rs` `contains`/`starts_with`/`ends_with`（Text 路径）/ `concat` / `format`。
+- **描述**: `count(Text)` 按 chars 计 iters，但 `contains(huge_text, "x")` / `starts_with` / `concat` / `format` 不计串长 → O(n) 未计预算。defense-in-depth 缺口。
+- **不修理由**: EvalContext.vars 由 host 提供（非 DSL 作者控制状态大小）；host 负责不放入 GB 级字符串。DSL 作者控制表达式与调用，但不控制状态量级。属边际 hardening，非 bug。可选 follow-up：这些函数按 min(len) 充 iters。
+
+### LOW-3: `num()` 阈值 `9.0072e15` 略高于 2^53
+- **位置**: `engine.rs:812`（`x.abs() < 9.0072e15`）。
+- **描述**: 2^53 = 9007199254740992；阈值 `9.0072e15` = 9007200000000000.0，略高于 2^53。值在 [2^53, 9.0072e15) 区间 cast 为 i64 可能丢精度（f64 已无法精确表示整数）。
+- **不修理由**: 极窄精度边角（差约 7.4e7 的窗口），且 `x as i64` 是饱和转换不 panic。语义影响微小（极大整值表示精度），非正确性 bug。可调阈值到 `9.007199254740992e15` 精确等于 2^53，但价值极低。
+
+---
+
+## 经查正确（非 bug，关键安全断言）
+
+### sandbox 三重门（约束 #7 兜底正确）
+`call_fn`（engine.rs:819-838）三道闸门，顺序正确，无逃逸：
+1. `!ctx.allow_functions` → `ForbiddenCapability`（沙箱可全禁函数）。
+2. `FORBIDDEN_FN.contains(name)` → `ForbiddenCapability`（eval/system/require/import/load/exec/spawn/fetch/open/read/write/random/rand/time/now/date/clock/while/loop/recurse）。
+3. `!PURE_FN.contains(name)` → `UnknownFunction`（仅 14 个白名单纯函数：count/contains/any/all/min/max/clamp/concat/starts_with/ends_with/format/field/index/map/filter）。
+- **FORBIDDEN_FN ∩ PURE_FN = ∅**（无名字重叠，不会出现"既禁又许"歧义；FORBIDDEN 先判）。
+- 裸标识符（非 true/false/null/函数）→ Parse error（变量必须用 `$path`，`primary` 的 Ident 分支）。
+- DSL 不含 Lambda 变体（`Expression` 枚举无闭包），文法封闭——无用户定义计算能力注入点。
+
+### 资源上限模型 sound（防 CPU 耗尽 / 栈溢出）
+- `max_nodes`（默认 1024）：`Engine::eval` 入口检查 `expr.node_count()`，超限 → `EvalResourceLimit`。大数组字面量 `[1,2,...,200]` 受此约束（200 元素 = 201 节点；测试 `eval_node_count_limit`）。
+- `max_depth`（默认 64）：`eval()` 每层递归 +1，超限 → `EvalResourceLimit`（测试 `eval_depth_limit`：20 层 `!` + max_depth=5）。
+- `max_iterations`（默认 10000）：集合函数 `count`/`contains`/`any`/`all`/`map`/`filter` 经 `bump(n)` 累计 `st.iters`，超限 → `EvalResourceLimit`。**预算在单次 eval 调用内共享**（嵌套 `count(map($big,...))` 累计；测试 `map_filter_iter_budget`：20000 元素 > 10000）。
+- parse-depth 守卫 `MAX_PARSE_DEPTH=64`：极深嵌套表达式（如 74 层括号）在 parse 阶段即 `EvalResourceLimit`（测试 `parse_depth_limit_guard`），防解析器栈溢出（每层 ~12 解析帧，64 层 ≈ 780 帧远低于线程栈）。
+- **for_each 独立 per-item 守卫**：`materialize_for_each` 在循环体 `if idx >= ctx.max_iterations` 显式阻断（for_each.rs:112），与单次 eval 的 iters 预算正交（每次 `engine.eval` 创建新 EvalState，但外层 for_each 循环自身有 bound）。
+
+### eval 边界（除零/溢出/NaN/空集合/类型强制）
+- **除零** → `Float(NaN)`（engine.rs:775，不 panic，确定性；测试 `float_arith_and_div_by_zero`）。
+- **整数溢出（binary 算术）**：Add/Sub/Mul 经 `as_number` → f64 detour，`num()` 用 `x as i64`（饱和转换），大整值相加超 2^53 退化为 Float——安全，无溢出 panic。**唯一 panic 路径（unary Neg）已修复（见 MEDIUM-1）。**
+- **NaN 传播**：NaN 经 binary 比较走 `partial_cmp().unwrap_or(Equal)`（engine.rs:795）→ NaN 与任意数比较得 Equal（`NaN<5`=false / `NaN<=5`=true），确定性不 panic。
+- **空集合**：`count([])=0`、`any([])=false`、`all([])=true`（vacuous truth，标准逻辑）、`index([],i)=Null`、负索引/越界 → Null（engine.rs:954-963，`idx < 0 || idx as usize >= len` 双向检查，无 OOB）。
+- **类型强制**：`1 + true` → Typecheck error（无隐式强转，engine.rs:764）；`1 < true` → Typecheck error；`count(1)` → Typecheck error。混合类型严格拒绝。
+- **`count` 返回 `n as i64`**：n 经 `bump(n)?` 已 ≤ max_iterations，现实配置下远 < i64::MAX，转换安全。
+
+### Pratt parser 正确性（结合律/优先级/一元负号）
+- **优先级链**（低→高）：ternary `?:` < coalesce `??` < or `||` < and `&&` < equality `== !=` < compare `< <= > >=` < additive `+ -` < mul `* /` < unary `! -` < postfix `. []` < primary。标准且正确。
+- **结合律**：
+  - ternary 右结合（`a?b:c?d:e` = `a?b:(c?d:e)`，else 分支递归 parse_expr）。
+  - 所有 binary 左结合（`loop { left = Binary(op,left,right) }`，`a-b-c` = `(a-b)-c`）。
+- **一元负号**：unary 紧于 mul（`-2*3` = `(-2)*3` = -6）；operand 位置允许 `2*-3`（mul 的 right 经 unary 吃 `-`）；`--a` = `-(-a)`；`!!true` = true。
+- **postfix 最紧**：`a.b.c` = `field(field(a,"b"),"c")`；`a[0].b` = index 后 field；`{a:1}.b` = 2（测试 `postfix_field_and_index`）。
+- **`??` vs `||`/`&&`**：`??` 比 `||` 松（coalesce 在 logic_or 之上），故 `a ?? b || c` = `a ?? (b || c)`（C# 语义，自洽；JS 在此组合要求括号）。非 bug，文档级。
+- **tokenizer 两字符优先**：`>=`/`<=`/`==`/`!=`/`&&`/`||`/`??` 在单字符前匹配（engine.rs:182）；`!=` 不会误拆成 `!` + `=`。
+- **数字解析边界**：`1.2.3` → parse f64 失败 → error；`0x10` → `0` 后 ident `x10` → trailing tokens error；`.5` → 0.5；`5.` → 5.0；`1e18` → Float。均安全拒绝或正确解析。
+
+### path / 结构正确性
+- **`resolve_path`**：owned `Value` 无环（无 Rc/RefCell），无无限递归；缺失根/段 → Null（确定性，不报错）；Array 段尝试 parse usize，失败 → Null。
+- **`project_field`**（map/filter 嵌套路径）：按 `.` 分段下钻，深度 = 路径段数（受 DSL 源串长度约束的小常数），中段非 object → Null。
+- **Object 重复键**：HashMap 后写覆盖（last-wins），不 panic。
+
+---
+
+## 验证
+
+- **修复前**：`unary_neg_of_int_min_does_not_panic` / `unary_neg_preserves_int_when_representable` 在 debug 构建 panic（`attempt to negate with overflow` at engine.rs:658:49）—— TDD 证明 bug 真实。
+- **修复后**：`./target/test-guard -- cargo test -p zero-ui-dsl` → **87 passed; 0 failed**（85 基线 + 2 新回归测）。
+- **门禁**：`cargo fmt --all --check` 净；`cargo clippy -p zero-ui-dsl --all-targets -- -D warnings` 净；`cargo build --workspace` 净（下游 zero-browser-chrome / zero-ui-examples 零回归）。
+- **SDK-only**（ui/dsl 未触碰 render-foundation / 浏览器运行时）→ 无 product-smoke 风险。
+
+## 结论
+
+DC-6 DSL 表达式引擎的 **sandbox 安全模型经查正确且完备**：三重门（allow_functions / FORBIDDEN_FN / PURE_FN）无逃逸；资源上限（nodes/depth/iters + parse-depth）防 CPU/栈耗尽；eval 边界（除零/NaN/空集合/类型强制）被正确兜住。**唯一真实 bug 是 unary 取负在 i64::MIN 上 panic**（绕过了 binary 算术的 f64 安全路径），已用 `checked_neg` + Float 兜底修复 + 2 回归守卫。引擎现对任意 host 状态值健壮（不 panic），约束 #7（DSL 不得执行任意脚本 / eval 无副作用受控）闭合。
+
+下一安全关键审查目标候选：`yaml.rs` 受限 YAML 解析器（深度/嵌套/Unicode/恶意缩进的健壮性）——独立 turn。

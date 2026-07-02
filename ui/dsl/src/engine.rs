@@ -655,7 +655,14 @@ fn eval_inner(expr: &Expression, ctx: &EvalContext, st: &mut EvalState) -> Resul
             let v = eval(expr, ctx, st)?;
             Ok(match op {
                 UnaryOp::Neg => match v {
-                    Value::Int(i) => Value::Int(-i),
+                    // checked_neg：i64::MIN 无 i64 相反数（|MIN| = MAX+1）→ 直接 `-i` 在 debug
+                    // panic（overflow）、release wrap 成 MIN（静默错误）。sandbox 不得对任意 host
+                    // 状态值 panic，故 None 时安全退化为 Float（正 9.22e18），与 binary 算术经
+                    // f64 的安全路径一致（lei-deep-review 修复）。
+                    Value::Int(i) => match i.checked_neg() {
+                        Some(n) => Value::Int(n),
+                        None => Value::Float(-(i as f64)),
+                    },
                     Value::Float(f) => Value::Float(-f),
                     _ => return Err(DslError::Typecheck("unary '-' on non-number".into())),
                 },
@@ -1512,5 +1519,38 @@ mod tests {
         // 除零 → NaN（不 panic）。
         let v = eval_str("1 / 0", &ctx);
         assert!(matches!(v, Value::Float(x) if x.is_nan()));
+    }
+
+    // ── 深度审查（lei-deep-review）：unary 取负整数溢出边界 ────────────────
+    #[test]
+    fn unary_neg_of_int_min_does_not_panic() {
+        // i64::MIN 的相反数无 i64 表示（|MIN| = MAX+1）。
+        // 此前 `Value::Int(i) => Value::Int(-i)` 在 debug 构建会 panic（attempt to negate with overflow），
+        // release 构建会 wrap 成 i64::MIN（静默错误）。sandbox 不得对任意 host 状态值 panic。
+        // 经 $path / field / index 解析到含 i64::MIN 的状态即可触发（host 控制状态，非 DSL 作者）。
+        // 修复后：checked_neg 对 i64::MIN 返回 None → 安全退化为 Float（正 9.22e18），不 panic、不 wrap。
+        let ctx = EvalContext::default().with_var("n", Value::Int(i64::MIN));
+        let v = eval_str("-($n)", &ctx);
+        match v {
+            Value::Float(f) => assert!(f > 0.0 && f.is_finite(), "expected +9.22e18 Float, got {f}"),
+            other => panic!("expected Float for -i64::MIN (no exact i64 negation), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unary_neg_preserves_int_when_representable() {
+        // 可表示的相反数保持 Int（checked_neg → Some）。
+        let ctx = EvalContext::default();
+        assert_eq!(eval_str("-5", &ctx), Value::Int(-5));
+        assert_eq!(eval_str("-0", &ctx), Value::Int(0));
+        // i64::MAX 的相反数 = i64::MIN + 1，仍可表示 → 保持 Int。
+        let ctx_max = EvalContext::default().with_var("mx", Value::Int(i64::MAX));
+        assert_eq!(eval_str("-($mx)", &ctx_max), Value::Int(i64::MIN + 1));
+        // 经 field/index 取出的 i64::MIN 同样安全（不只字面状态路径）。
+        let arr_ctx = EvalContext::default().with_var("arr", Value::Array(vec![Value::Int(i64::MIN)]));
+        match eval_str("-index($arr, 0)", &arr_ctx) {
+            Value::Float(f) => assert!(f > 0.0 && f.is_finite()),
+            other => panic!("expected Float for -index(..)=i64::MIN, got {other:?}"),
+        }
     }
 }
