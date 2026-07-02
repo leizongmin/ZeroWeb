@@ -1,0 +1,89 @@
+# R976 Evidence — CSS aspect-ratio 优先于替换元素固有宽高比（css-sizing-4 §4）
+
+Date: 2026-07-03
+Lever type: ZeroWeb-side clean code fix（非 font-metric 墙）
+Driving test: css/css-grid/nested-grid-item-block-size-001.html（fresh css-grid oracle top-1 worst）
+
+## 发现路径（fresh oracle 而非盲信 doc 只读裁决）
+承 R975 ▶「font-metric 墙攻坚」。R974/R975 连续 8 次确认「单 session clean measurable lever
+穷尽」均针对 vertical-align/font-metric 簇。本轮转做 R740 推荐「直接 chr-vs-ZeroWeb 简单用例
+对比」找新 high-confidence lever——选 css-grid（stale 基线，taffy-backed 故非 font 墙）跑
+fresh oracle。
+
+`make reftest-oracle DIR=css-grid`：20/49 = 40.8%（与 stale 基线一致）。top-1 worst =
+**nested-grid-item-block-size-001 64.36%**（远高于 #2 的 33.91%）——单点异常，深挖。
+
+## 测试结构
+```html
+<!-- test -->
+ul.container{display:grid;grid-auto-flow:column} > li >
+  div{inline-block} > div{grid} >
+  img{block-size:55vw; aspect-ratio:2/1}   <!-- src=colors-8x16.png 固有 8×16 -->
+
+<!-- ref（同 CSS，简单结构）-->
+ul > li > img{block-size:55vw; aspect-ratio:2/1}
+```
+@800px viewport：55vw=440；aspect-ratio 2/1（w:h）→ 期望 img 880×440（溢出 viewport，测试本意）。
+
+## 诊断（env-gated R976_PROBE 探针，捕获后即删）
+`apply_replaced_element_sizing`（tree.rs）对 colors-8x16.png 的 img 实测：
+  attr_w=None  css_w=Auto  css_h=Px(440.0)   ← block-size:55vw 已被 converter 正确解析为 Px
+  aspect_ratio=Some(2.0)                      ← CSS aspect-ratio 已正确解析
+  intrinsic=Some((8.0, 16.0))                 ← 解码固有尺寸
+
+即所有 computed 值正确。bug 在 `_` 分支（无 HTML attr、回退 img_intrinsic_sizes）：
+  旧代码 line 290：width = ch * w / h = 440 * 8/16 = **220**（用**固有**比 0.5）
+  spec（css-sizing-4 §4）：CSS aspect-ratio 优先 → width = ch * aspect_ratio = 440 * 2 = **880**
+
+差 4 倍 → img 渲染 220×440 而非 880×440 → 64% diff。机制清晰、单点、spec-correctness。
+
+## 修复（crates/layout-engine/src/tree.rs `_` 分支）
+引入 `eff_ratio = computed.aspect_ratio.unwrap_or(w / h)`（CSS aspect-ratio 若设则优先，
+否则固有 w/h），auto 侧按 eff_ratio 推导：
+  - height 显式、width auto：width  = ch * eff_ratio
+  - width 显式、height auto：height = cw / eff_ratio
+
+对称覆盖两侧。HTML-attr 分支（211-256）不受影响（其 auto 侧本就交给 taffy 按 aspect_ratio
+推导，已与 CSS aspect-ratio 一致）；仅 `_`（intrinsic）分支旧实现恒用固有比是 bug。
+
+## 单测（crates/layout-engine/src/engine/tests/tests_10.rs，2 个新测）
+1. test_img_css_aspect_ratio_overrides_intrinsic_ratio
+   img 无 HTML attr、intrinsic 8×16、CSS height=440 + aspect-ratio=2.0 → 断言 width≈880
+   （旧实现 220 = bug）。
+2. test_img_css_aspect_ratio_overrides_intrinsic_ratio_width_explicit
+   对称：CSS width=200 + aspect-ratio=2.0 → 断言 height≈100（旧实现按固有 16/8 → 400 = bug）。
+两测均 PASS。用 `compute_with_img_sizes` 注入 intrinsic（绕过真实图片解码）。
+
+## 验证（三态门禁 + 产品 smoke + 全量）
+- `make test`：**12116 passed / 0 failed / 73 ignored**（R973 baseline 12114 + 2 新测）。
+- `cargo clippy --workspace --all-targets -- -D warnings`：零警告。`cargo fmt --all`：干净。
+- `make product-smoke`（welcome vs chromium）：**16.88%**（gate <20%，exit 0）。welcome.html
+  无 img/canvas/aspect-ratio（grep 确认），故 +0.77pp（vs R973 16.11%）= font-墙噪声带
+  （welcome 长 16-17% 抖动），非本修复影响。
+- `make reftest-oracle DIR=css-grid`（修后）：nested-grid-item-block-size-001 **64.36%→13.76%**
+  （-50.6pp，top-1 降到 top-7）。css-grid oracle-pass 20→20（零回归；13.76% 仍 >1% 故未转 PASS）。
+- `make reftest-oracle`（全量 10397 案）：**4528/10397 = 44.6%** oracle-pass。
+  跨 dir 核对（aspect-ratio+img 组合 ~13 案，多在 css-flexbox）：
+    css-flexbox 284/497 (57%)  ≥ R921 baseline 56.1%（未降）
+    css-grid    20/49   (41%)  = baseline（零回归）
+    css-tables  68/115  (59%)  ≥ R922 baseline 56.5%（未降）
+  无 flex-aspect-ratio-img-* 进全量 top-15 worst（writing-modes/pagination/font 主导）。
+  结论：**零跨 dir 回归**。
+
+## 残余（非本修复范围）
+nested-grid-item-block-size-001 残余 13.76% = img 已 880×440（正确）后的**嵌套 grid 容器**
+sizing 残差（grid>li>inline-block>grid 包裹 880px 溢出 img 的 track/overflow 处理），独立子问题，
+非 aspect-ratio lever。defer。
+
+## 意义
+- 打破 R964-R975 连续 10 轮「measurable lever 穷尽 / 纯维护拆分」僵局——首个真 measurable
+  渲染正确性修复（-50.6pp on top-1 worst），验证「fresh oracle + 直接 chr-vs-ZeroWeb 对比」
+  方法论仍能找到 font-墙**之外**的 clean lever（区别 vertical-align/font-metric 簇）。
+- 纠正 R975 Phase 0 一个不完整结论：R975 测 `run.y` 称 paint-dead，但**实际 valign 活机制**
+  是 `frag_baseline_y`（compute_final_inline_layouts:747-753 R822 Phase 3，paint Path A 经
+  baseline_y_abs 消费）——run.y 与 frag_baseline_y 是两套独立参数化。勿再以 run.y 为
+  vertical-align lever（详见 master.md R976 机制纠正小节）。
+
+## Reused by
+未来 replaced-element sizing（aspect-ratio + object-fit + intrinsic-size 簇）；fresh-oracle
+方法论继续用于找 font-墙外 lever。
