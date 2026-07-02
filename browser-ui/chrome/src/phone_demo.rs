@@ -1,26 +1,30 @@
-//! phone_demo（DC-15）—— 移动端 phone shell + 多指手势 + 平台 back 可运行制品。
+//! phone_demo（DC-15 + DC-2）—— 移动端 phone shell + 多指手势 + 平台 back 可运行制品。
 //!
 //! 配套 example：`cargo run -p zero-browser-chrome --example phone_demo`。
 //!
 //! 用 [`WindowMetrics::phone`] preset 构造手机视口，经 [`AdaptiveBrowserChrome`] 选
-//! [`PhoneBrowserShell`](crate::shell::PhoneBrowserShell)，跑 retained 闭环；脚本化驱动
-//! 触摸 Tap/Pinch（[`GestureArena`]，多指用 `UiEvent::Pointer.pointer_id`）+ 平台 back
-//! （[`BackNavigationService`]→[`RouteStack`] 回落），返回汇总。证明 DC-15「PhoneBrowserShell
-//! 可用」+ 手势全四类经 host arena 可达 + 平台 back 仲裁（headless 可运行，不接真实设备）。
+//! [`PhoneBrowserShell`](crate::shell::PhoneBrowserShell)，再经 [`WinitDriver`]（DC-2
+//! run-loop 核心）跑 retained 闭环：driver.begin 渲染首帧；脚本化触摸 Tap/Pinch 经
+//! `driver.pump_event` 喂入 [`GestureArena`]（多指用 `UiEvent::Pointer.pointer_id`），
+//! 证明 **driver + 手势 arena 端到端**（WinitDriver 先前已覆盖指针/键盘/焦点/提交/校验，
+//! 本步补齐手势路径）；平台 back（[`BackNavigationService`]→[`RouteStack`] 回落）独立演示。
+//! headless 可运行，不接真实设备。
 
 use crate::chrome_model::BrowserChromeModel;
 use crate::render::register_chrome_factories;
 use crate::shell::{AdaptiveBrowserChrome, ShellKind};
 use crate::{BrowserTab, NavigationButtons, SecurityState};
+use zero_ui_adapter_winit::WinitDriver;
+use zero_ui_core::action::{ActionId, ActionPayload, ActionResult};
 use zero_ui_core::event::{Modifiers, PointerButton, PointerPhase, UiEvent};
-use zero_ui_core::geometry::{Constraints, Point};
+use zero_ui_core::geometry::Point;
 use zero_ui_core::layout::{InputClass, PlatformClass, WindowMetrics};
 use zero_ui_core::theme::SemanticTokens;
-use zero_ui_core::widget::WidgetId;
+use zero_ui_core::widget::{WidgetId, WidgetSpec};
 use zero_ui_gestures::{Gesture, GestureArena, PanRecognizer, PinchRecognizer, TapRecognizer};
 use zero_ui_navigation::{Route, RouteStack};
 use zero_ui_platform::{BackHandlerId, BackNavigationService, BackResult, InMemoryBackNavigation};
-use zero_ui_runtime::WidgetHost;
+use zero_ui_runtime::UiApp;
 
 /// phone_demo 运行汇总（example 打印 + 测试断言）。
 #[derive(Debug, Clone)]
@@ -35,7 +39,7 @@ pub struct PhoneDemoSummary {
     pub bottom_chrome_height: f32,
     /// phone shell 声明树根节点是否布局到 phone 视口宽。
     pub shell_laid_out: bool,
-    /// 识别出的手势种类名（Tap/Pan/Pinch/Fling）。
+    /// 识别出的手势种类名（Tap/Pan/Pinch/Fling）——经 WinitDriver.pump_event 喂入 arena。
     pub gesture_kinds: Vec<String>,
     /// 注册了 handler 时的 back 仲裁结果（应 Handled）。
     pub back_with_handler: BackResult,
@@ -43,6 +47,25 @@ pub struct PhoneDemoSummary {
     pub back_default: BackResult,
     /// DefaultBack 回落后 navigator 剩余深度（home→settings 推入再 pop → 1）。
     pub nav_depth_after_back: usize,
+}
+
+/// phone_demo 的 UiApp 适配（spec IF-006）：把 phone shell 产出的声明树接入 [`WinitDriver`]。
+///
+/// phone_demo 是**只读渲染 + 手势演示** fixture（无应用 reducer）：`root_spec` 返回 phone shell
+/// build 的声明树；`dispatch` 不处理任何 action（返回 `UnknownAction`，driver 不重建）。
+/// 真实浏览器宿主会在此接入 BrowserAction reducer（参考 counter/form 示例的 impl UiApp）。
+struct PhoneDemoApp {
+    spec: WidgetSpec,
+}
+
+impl UiApp for PhoneDemoApp {
+    fn root_spec(&self) -> WidgetSpec {
+        self.spec.clone()
+    }
+
+    fn dispatch(&mut self, action: &ActionId, _payload: Option<ActionPayload>) -> ActionResult {
+        ActionResult::UnknownAction(action.clone())
+    }
 }
 
 fn pointer(phase: PointerPhase, position: Point, pointer_id: u32) -> UiEvent {
@@ -78,34 +101,38 @@ pub fn run_phone_demo() -> PhoneDemoSummary {
     // adaptive 选 shell（phone metrics + Mobile + Touch → Phone）。
     let result = AdaptiveBrowserChrome::new().build(&model, &metrics, PlatformClass::Mobile, InputClass::Touch);
 
-    // retained 闭环：register factories → set_root → layout(phone 紧约束) → paint。
-    // paint() 返回的 &Scene 不跨 dispatch_event 持有（避免借用冲突），scene 数据最后读。
+    // WinitDriver 驱动 retained 闭环（DC-2 run-loop 核心）：register factories → set arena →
+    // begin（首帧 reconcile+layout+paint）→ pump_event 喂手势 → pump_frame 重绘。
     let tokens = SemanticTokens::light();
-    let mut host = WidgetHost::new();
-    register_chrome_factories(&mut host, &tokens);
-    host.set_root(&result.spec);
-    host.layout(Constraints::tight(metrics.logical_size));
-    host.paint();
+    let mut app = PhoneDemoApp {
+        spec: result.spec.clone(),
+    };
+    let mut driver = WinitDriver::new(&mut app, metrics);
+    register_chrome_factories(driver.host_mut(), &tokens);
 
-    // 手势 arena：Tap + Pan + Pinch 识别器（多指 Pinch 经 pointer_id 区分）。
+    // 手势 arena：Tap + Pan + Pinch（多指 Pinch 经 pointer_id 区分）。pump_event 内部喂入 arena。
     let mut arena = GestureArena::new();
     arena.push(TapRecognizer::new(8.0));
     arena.push(PanRecognizer::new());
     arena.push(PinchRecognizer::new());
-    host.set_gesture_arena(arena);
+    driver.host_mut().set_gesture_arena(arena);
+
+    driver.begin();
 
     // 触摸 Tap（单指 id=0）于地址栏区。
     let tap_at = Point::new(195.0, 60.0);
-    host.dispatch_event(&pointer(PointerPhase::Pressed, tap_at, 0));
-    host.dispatch_event(&pointer(PointerPhase::Released, tap_at, 0));
+    driver.pump_event(&pointer(PointerPhase::Pressed, tap_at, 0));
+    driver.pump_event(&pointer(PointerPhase::Released, tap_at, 0));
 
     // 触摸 Pinch（双指 id=0 + id=1）于内容区。
-    host.dispatch_event(&pointer(PointerPhase::Pressed, Point::new(130.0, 400.0), 0));
-    host.dispatch_event(&pointer(PointerPhase::Pressed, Point::new(260.0, 400.0), 1));
+    driver.pump_event(&pointer(PointerPhase::Pressed, Point::new(130.0, 400.0), 0));
+    driver.pump_event(&pointer(PointerPhase::Pressed, Point::new(260.0, 400.0), 1));
     // 第二指外移 50px（距离 130→180，scale≈1.38）→ Pinch。
-    host.dispatch_event(&pointer(PointerPhase::Moved, Point::new(310.0, 400.0), 1));
+    driver.pump_event(&pointer(PointerPhase::Moved, Point::new(310.0, 400.0), 1));
+    driver.pump_frame();
 
-    let gesture_kinds = host
+    let gesture_kinds = driver
+        .host_mut()
         .take_gestures()
         .into_iter()
         .map(|g| match g {
@@ -116,7 +143,7 @@ pub fn run_phone_demo() -> PhoneDemoSummary {
         })
         .collect();
 
-    // 平台 back 仲裁 + navigator 回落（移动 back glue）。
+    // 平台 back 仲裁 + navigator 回落（移动 back glue；独立于 driver retained 闭环）。
     let back = InMemoryBackNavigation::new();
     back.push_handler(BackHandlerId::new("overlay"));
     let back_with_handler = back.on_platform_back(); // → Handled（overlay 消耗，不退栈）
@@ -127,9 +154,10 @@ pub fn run_phone_demo() -> PhoneDemoSummary {
         nav.pop(); // 宿主回落：DefaultBack → 退栈（settings 出栈，剩 home）
     }
 
-    // 最后读 scene + 几何（此时 host 无活跃可变借用）。
-    let scene_entries = host.scene().entries.len();
-    let shell_laid_out = host
+    // 最后读 scene + 几何（此时 driver 无活跃可变借用）。
+    let scene_entries = driver.host().scene().entries.len();
+    let shell_laid_out = driver
+        .host()
         .rect_of(&WidgetId::new("shell"))
         .map(|r| r.size.width >= 380.0)
         .unwrap_or(false);
@@ -180,7 +208,8 @@ mod tests {
 
     #[test]
     fn phone_demo_gestures_and_back_arbitration() {
-        // DC-15：Tap + Pinch 经 host arena 识别；back 仲裁 Handled→DefaultBack→navigator pop。
+        // DC-2 + DC-15：Tap + Pinch 经 WinitDriver.pump_event 喂入 arena 识别；
+        // back 仲裁 Handled→DefaultBack→navigator pop。
         let s = run_phone_demo();
         assert!(
             s.gesture_kinds.iter().any(|g| g == "Tap"),

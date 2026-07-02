@@ -29,6 +29,8 @@ zero-render-foundation = { workspace = true }
 zero-ui-gestures = { workspace = true }
 zero-ui-navigation = { workspace = true }
 zero-ui-platform = { workspace = true }
+# DC-2/DC-15 phone_demo 经 WinitDriver 驱动（手势 arena 端到端证明；chrome→ui/adapters 允许，DC-1）。
+zero-ui-adapter-winit = { workspace = true }
 
 [dev-dependencies]
 zero-render-foundation = { workspace = true }

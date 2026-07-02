@@ -5742,6 +5742,7 @@ dependencies = [
  "zero-text-foundation",
  "zero-ui-adapter-render-foundation",
  "zero-ui-adapter-webview",
+ "zero-ui-adapter-winit",
  "zero-ui-core",
  "zero-ui-gestures",
  "zero-ui-i18n",
