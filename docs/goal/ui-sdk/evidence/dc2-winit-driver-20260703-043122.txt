@@ -1,0 +1,79 @@
+DC-2 WinitDriver — winit 事件循环的可测试 run-loop 核心（M4 SDK-side）
+====================================================================
+日期：2026-07-03
+分支：ui-sdk
+commit：75e30a6c  ui-sdk(M4/DC-2): WinitDriver — winit 事件循环的可测试 run-loop 核心
+
+## 目的
+
+DC-2 终端项「真实 winit EventLoop 驱动（开窗/surface/run loop）」此前只有 M1 占位
+（WinitRuntime.run() = no-op）+ M2 完整事件映射（event_map.rs）。本轮把**事件循环的
+可测试核心**从阻塞的 winit EventLoop::run 中解耦：把示例里重复的
+`set_root → layout → paint → dispatch_event → 收 emit → reducer → 重建 → invalidation → frame`
+编排收敛为 WinitDriver，使其可在无窗口环境注入事件、断言 scene/失效行为。
+真实 EventLoop::run（开窗/surface/首帧）仍需 GUI，但其可组合核心现 headless 可验证。
+
+## 交付（ui/adapters/winit/src/driver.rs）
+
+`WinitDriver<'app>` 持 `&mut dyn UiApp` + `WidgetHost` + `WindowMetrics`：
+- `begin()`：reconcile root spec（app.root_spec()）+ 紧约束布局（窗口尺寸）+ 首次 paint（首帧）。
+- `pump_event(&UiEvent) -> EventOutcome`：host dispatch_event（命中/冒泡/手势 arena/
+  click-to-focus）→ 收 emit 的 action → 逐个 app.dispatch reducer → 任一 Handled 即
+  root_spec 重建 + set_root reconcile（稳定 WidgetId 复用控件实例状态）。
+  返回 emitted_actions / spec_rebuilt / needs_redraw。
+- `pump_frame() -> FrameOutcome`：按 invalidation 重布局（needs_layout）+ 重绘（needs_paint），
+  无失效 Idle（省 CPU）；重绘后 host.scene() 可取回喂渲染桥。
+- `set_metrics(WindowMetrics)`：resize/text_scale/density/orientation 变 → needs_layout。
+- `set_tokens(SemanticTokens)`：主题色变 → needs_paint（不布局，DC-5/DC-9 不变式）。
+- `host()`/`host_mut()`：注册控件工厂、挂载手势 arena / a11y 后端（begin 前配置）。
+- `EventOutcome`（emitted_actions/spec_rebuilt/needs_redraw）+ `FrameOutcome`（Idle/Repainted）。
+
+借用处理：host 与 app 为 driver 的不相交字段，pump_event 内顺序借用（emitted 为 owned Vec
+不别名 self）；测试读 app.count 需在 driver 作用域结束后（driver 持 &mut app）。
+
+真实 EventLoop::run 集成路径（仅文档，本轮不实现——需 GUI）：
+  begin → for winit_event { pump_event(event_map::map_*(...)) } → 每帧 pump_frame +
+  host.scene() → zero-ui-adapter-render-foundation 光栅。
+
+## 测试（6 新测，inline CounterApp + ClickBox 控件）
+
+    $ ./target/test-guard -- cargo test -p zero-ui-adapter-winit driver
+    test driver::tests::begin_renders_and_clears_invalidation ... ok
+    test driver::tests::pump_event_click_emits_dispatches_and_rebuilds ... ok
+    test driver::tests::unknown_action_does_not_rebuild ... ok
+    test driver::tests::set_metrics_marks_layout ... ok
+    test driver::tests::set_tokens_marks_paint_not_layout ... ok
+    test driver::tests::multiple_clicks_accumulate_state ... ok
+    test result: ok. 6 passed; 0 failed
+
+断言要点（证明 retained 闭环经 driver 正确编排）：
+- begin 产出非空 scene + invalidation 清空（紧接 pump_frame = Idle）。
+- 完整点击 Pressed（无 emit）→ Released（emit "tap.inc"）→ app.dispatch Handled →
+  spec_rebuilt=true + needs_redraw=true → pump_frame Repainted → Idle；app.count=1。
+- UnknownAction → spec_rebuilt=false（不重建），app.count=0。
+- set_metrics（logical_size 变）→ needs_layout=true → pump_frame Repainted。
+- set_tokens（light→dark）→ needs_paint=true / needs_layout=false（DC-5/DC-9 不变式）。
+- 三次点击 count=3 + 稳定 WidgetId "box" 跨 rebuild creation_epoch 不变（实例复用）。
+
+## 门禁
+
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — CLEAN。
+- ./target/test-guard -- cargo test -p zero-ui-adapter-winit — 28 passed; 0 failed
+  （22 既有 event_map/runtime + 6 新 driver）。
+- DC-1 复核：driver 仅依赖 zero-ui-core + zero-ui-runtime（winit adapter 既有 deps），
+  零浏览器业务 crate；winit 类型不泄漏（driver 公共 API 仅 UiApp/WidgetHost/WindowMetrics）。
+
+## Coverage（DC-17，新代码）
+
+driver.rs 新增 ~150 行实现 + ~210 行测试。per-file coverage（scoped run）：
+  ui\adapters\winit\src\driver.rs  regions/functions/lines 均高（6 测覆盖 begin/pump_event/
+  pump_frame/set_metrics/set_tokens 全公共路径 + 错误分支）；exact 数字留全量 run。
+
+## 风险
+
+- SDK-only（ui/adapters/winit 未触渲染像素/浏览器运行时）→ 无 product-smoke 风险。
+- 真实 EventLoop::run（开窗/surface/首帧）仍需 GUI 验证；本驱动是其可测试骨架。
+- 未接入既有示例（counter/form/browser_shell_demo/phone_demo 仍手写编排）——
+  follow-up：用 WinitDriver DRY 这些示例，端到端证明 driver 统一了 retained 闭环。
