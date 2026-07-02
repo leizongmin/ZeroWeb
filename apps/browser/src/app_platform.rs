@@ -655,15 +655,15 @@ fn sdk_font_backend() -> std::sync::Arc<zero_text_foundation::FontdueBackend> {
 /// DC-11 字体栈统一：把 [`FontLoader`] 链接到共享 [`FontdueBackend`]。
 ///
 /// 经 [`chrome_ui_primary_font_data`] 取系统主字体字节，调用
-/// [`FontLoader::init_shared_backend`] 创建并设置共享后端（OnceLock 缓存，
-/// 仅首次调用时实际创建）。
-///
-/// 仅在 `sdk-chrome` feature 启用时编译；默认 feature-off 路径不受影响。
+/// [`FontLoader::init_shared_backend`] 创建并设置共享后端（同时 backfill 所有已加载
+/// 字体到共享后端）。设置后，生产渲染路径（`rasterize_glyph_with_fallback` →
+/// `rasterize_glyph_shared`）把 glyph 光栅委托给共享后端，使 render-foundation 与
+/// UI SDK / zero-webview 共享同一字体栈（DC-11 关键不变量）。fontdue 在同字节同 glyph
+/// 上确定性光栅 → 页面像素逐位不变（由 `make product-smoke` 守门）。
 ///
 /// [`FontLoader`]: zero_render_foundation::font::loader::FontLoader
 /// [`FontLoader::init_shared_backend`]: zero_render_foundation::font::loader::FontLoader::init_shared_backend
 /// [`FontdueBackend`]: zero_text_foundation::FontdueBackend
-#[cfg(feature = "sdk-chrome")]
 pub fn link_font_loader_to_shared_backend(font_loader: &mut zero_render_foundation::font::loader::FontLoader) {
     // 取系统主字体数据，直接初始化共享后端（每次 BrowserApp::new 调用一次，轻量）。
     if let Some((data, _path)) = chrome_ui_primary_font_data() {

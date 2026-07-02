@@ -1,0 +1,73 @@
+# DC-11 字体栈默认路径切换到共享后端（2026-07-02）
+
+## 里程碑意义
+
+DC-11「render-foundation 字体栈统一到 foundation/text」的**默认路径切换**——master.md
+M2 剩余 #1 / 主 Next Step。此前共享 FontdueBackend 仅在 `sdk-chrome` feature 下激活；
+本轮把**生产默认渲染路径**（CPU `render_cpu` → `rasterize_glyph_with_fallback`）改为
+默认经共享 FontdueBackend 光栅，使 render-foundation 与 UI SDK / zero-webview 共享同一
+字体栈（DC-11 关键不变量，spec FR-014）。
+
+## 两阶段实施（独立提交，干净回退边界）
+
+### Part 1（commit 11698460，安全）：rasterize_glyph_with_fallback 接线共享后端
+- `crates/render-foundation/src/font/loader.rs:396`：`rasterize_glyph` → `rasterize_glyph_shared`。
+- 设置共享后端时把 glyph 光栅委托给共享 FontdueBackend；未设置时回退到 `rasterize_glyph`
+  （行为等价）→ **默认 feature-off 路径零变化**。
+- 新测 `dc11_rasterize_with_fallback_shared_path_parity`：设置共享后端前后 glyph 光栅化
+  结果逐位一致（width/height/x_offset/y_offset/advance/data 全等）。
+- render-foundation 524→529 测全绿。
+
+### Part 2（本轮，product-smoke 守门）：BrowserApp 默认激活共享后端
+- `apps/browser/src/app_platform.rs:666`：`link_font_loader_to_shared_backend` 去掉
+  `#[cfg(feature = "sdk-chrome")]` 门控（默认编译）。
+- `apps/browser/src/app.rs:187`：调用处去掉 `#[cfg(feature = "sdk-chrome")]`（默认激活）。
+- 不需 Cargo.toml 改动：`link_fn` 仅用 `FontLoader`（render-foundation，regular dep）+
+  `chrome_ui_primary_font_data`（ungated）+ `init_shared_backend`（签名不暴露 FontdueBackend，
+  调用方无需直接依赖 zero-text-foundation）。
+- BrowserApp::new() 在 `load_system_fonts` 后调 `link_font_loader_to_shared_backend` →
+  `init_shared_backend` 创建共享后端 + backfill 所有已加载字体 → 生产渲染路径默认走共享后端。
+
+## 关键验证：product-smoke（DC-14 / rendering-compat 硬门禁）
+
+```
+make product-smoke
+→ product-smoke diff vs chromium ... welcome-chromium.png: 95370/480000 px (19.87%)
+```
+
+**19.87% = baseline（逐位不变）**，< 20% 门槛 → **exit 0，门禁绿**。
+
+**为何像素不变**：fontdue 的 `rasterize(char, size)` 内部等价于
+`rasterize_indexed(lookup_glyph_index(char), size)`；共享 FontdueBackend 用
+`rasterize_indexed(glyph_id, size)` 在**同一份字体字节**（chrome_ui_primary_font_data +
+sync_to_shared backfill 的系统字体）上光栅，fontdue 确定性 → 与 FontLoader 直接路径产出
+**逐位相同**的位图。故 welcome.html 文本像素不变。`dc11_fontdue_shared_backend_consistency`
+测早已证明两套后端 advance/raster 一致；本轮 product-smoke 在真实页面像素层再次确认。
+
+## 门禁
+
+- **`make product-smoke` = 19.87% = baseline（零渲染回归）** ✓（DC-14 / rendering-compat 硬门禁）。
+- `./target/test-guard -- cargo test -p zero-browser` → **189 passed; 0 failed**（DC-14 零功能回归）。
+- `cargo build -p zero-browser`（默认）+ `--features sdk-chrome` 均编译通过。
+- `cargo clippy -p zero-browser --all-targets -- -D warnings` 0 警告；`cargo fmt --all --check` 净。
+- render-foundation 529 测全绿（含 part-1 parity 测）。
+
+## 风险评估（事后）
+
+- **本步触碰浏览器默认渲染路径 + 姊妹目标 rendering-compat 主线**——属高风险步。
+- 缓解：两阶段独立提交（part-1 默认零变化可独立保留）；product-smoke 守门（>20% 即回退 part-2）。
+- 结果：fontdue 确定性保证像素逐位不变，product-smoke 19.87%=baseline 证实。**无回归**。
+
+## DC-11 现状
+
+DC-11 全链就绪：
+- foundation/text 完整 shape+measure+raster 后端 ✓
+- ui/render TextBlob + RenderBackend + paint_scene ✓
+- bridge (adapter-render-foundation) draw_text/draw_text_blob 经共享 FontdueBackend ✓
+- FontLoader 共享后端基础设施（set/init_shared_backend + auto-sync + rasterize_glyph_shared）✓
+- **生产默认渲染路径经共享 FontdueBackend（本轮）✓**
+- BrowserApp 默认激活共享后端（本轮）✓
+
+**DC-11 从「基础设施 + 光栅路径可用」升级为「默认路径生效」**——render-foundation 字体栈
+与 foundation/text 在生产路径统一。剩余仅文档化/收尾（如 zero-webview 侧显式声明走
+foundation/text，当前经 render-foundation 共享后端已间接达成）。

@@ -183,8 +183,9 @@ impl BrowserApp {
             tracing::warn!("No system font found, text rendering will be limited");
         }
 
-        // DC-11 字体栈统一：把 FontLoader 链接到共享 FontdueBackend
-        #[cfg(feature = "sdk-chrome")]
+        // DC-11 字体栈统一：把 FontLoader 链接到共享 FontdueBackend（默认激活——
+        // 生产渲染路径 rasterize_glyph_with_fallback 经共享后端光栅，与 UI SDK/zero-webview
+        // 共享字体栈；fontdue 确定性光栅保证页面像素不变，make product-smoke 守门）。
         link_font_loader_to_shared_backend(&mut font_loader);
 
         set_char_measure_fn(text_metrics::measure_char);
