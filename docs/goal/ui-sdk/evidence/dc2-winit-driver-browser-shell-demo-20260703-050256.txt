@@ -1,0 +1,83 @@
+DC-2 WinitDriver 接入 browser_shell_demo — 全示例 driver 迁移收口（M4 SDK-side）
+==============================================================================
+日期：2026-07-03
+分支：ui-sdk
+commit：c3cc438c  ui-sdk(M4/DC-2): browser_shell_demo 接入 WinitDriver — 全示例 driver 迁移收口
+
+## 目的
+
+把 browser_shell_demo（最后一个示例）接入 WinitDriver，完成 WinitDriver 跨全部示例
+（counter/form/phone_demo/browser_shell_demo）的 retained 闭环迁移。本步补齐 driver 经
+WebView ExternalSurface + FocusScope trap 的覆盖（前三示例未涉及 webview surface 与
+focus scope）。
+
+## 交付
+
+- `ui/adapters/winit/src/driver.rs`：加 `WinitDriver::into_host(self) -> WidgetHost`
+  （消费 driver 取出 retained host，供「driver 建树+首帧后检视 host」场景——demo helper
+  经 driver 跑 begin 后把 host 交给测试/打印检视，不再驱动事件）。
+- `browser-ui/chrome/src/shell_demo.rs`：
+  · 加 ShellDemoApp（impl UiApp：只读 fixture，root_spec 返回 build_demo_spec，
+    dispatch→UnknownAction）。
+  · build_demo_host 改经 WinitDriver（ShellDemoApp + register_demo_factories + begin +
+    into_host）：所有 6 个既有 shell_demo 测试**现均经 driver 路径证明**——chrome 填充 +
+    WebView ExternalSurface + 滚动条 track/thumb + 焦点遍历 + FocusScope trap + flex
+    布局全部通过 driver.begin 渲染。tight 约束布局满足全部既有断言。
+
+## example 实跑（cargo run -p zero-browser-chrome --example browser_shell_demo）
+
+    webview node: rect=(12,96,1268,704)
+    focusable button: Some(Literal("New Tab")) (FOCUSABLE=true)
+    Focus: first Tab → new_tab
+    FocusScope trap: enter 'menu' → Tab trapped on 'menu_close' = menu_close
+    (exit scope; global traversal resumes)
+
+WebView 经 driver.begin 布局到 (12,96,1268,704)（content row：scrollbar 12px + webview
+填剩余宽 1268）；FocusScope trap 把 Tab 困在 menu 子树。所有功能经 driver 路径不变。
+
+## 测试（scoped test-guard）
+
+    $ ./target/test-guard -- cargo test -p zero-browser-chrome shell_demo
+    test shell_demo::tests::focus_scope_traps_tab_in_menu_subtree ... ok
+    test shell_demo::tests::focus_tab_cycles_across_focusable_buttons ... ok
+    test shell_demo::tests::demo_host_is_browser_chrome_composition ... ok
+    test shell_demo::tests::flex_children_fill_toolbar_and_content_remaining_width ... ok
+    test shell_demo::tests::semantics_tree_covers_webview_and_focusables ... ok
+    test shell_demo::tests::unified_scene_contains_chrome_webview_and_scrollbar ... ok
+    test result: ok. 6 passed; 0 failed   （全部经 driver 路径，零行为回归）
+
+    $ ./target/test-guard -- cargo test -p zero-browser-chrome
+    test result: ok. 84 passed; 0 failed
+
+## 门禁
+
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — CLEAN。
+- ./target/test-guard -- cargo test -p zero-browser-chrome — 84 测全绿（6 shell_demo 经 driver）。
+- DC-1 复核：shell_demo 经 adapter-winit（chrome 既有 regular dep），允许的耦合点。
+
+## 结论：WinitDriver 跨全部示例迁移收口
+
+| 示例 | 经 driver 证明的路径 | commit |
+|------|---------------------|--------|
+| counter | 指针点击 + reducer 重建 + 稳定 WidgetId 复用 | 3a6a6d07 |
+| form | 键盘受控输入 + Tab 焦点 + Enter 提交 + 校验 + ime_rect + 指针点击 | 39e81888 |
+| phone_demo | 手势 arena（单指 Tap + 双指 Pinch，pointer_id） | f191de5c |
+| browser_shell_demo | WebView ExternalSurface + FocusScope trap + flex 布局 + 滚动条 | c3cc438c（本轮） |
+
+**WinitDriver 覆盖矩阵（全部交互路径）**：指针点击 + 键盘输入 + Tab 焦点遍历 + Enter 提交 +
+非空校验 + ime_rect + metrics/tokens 变化 + 手势 arena（Tap/Pan/Pinch/Fling）+ WebView
+ExternalSurface + FocusScope trap + flex 布局。
+
+## 风险 / 剩余
+
+- SDK-only（未触渲染像素/浏览器运行时）→ 无 product-smoke 风险。
+- **WinitDriver SDK-side 工作完成**：全部示例经 driver，覆盖全部交互路径。
+- **DC-2 剩余唯一项 = 真实 winit EventLoop::run 阻塞壳**（开窗/surface/首帧，需 GUI）。
+  该步需设计决策：UiApp/PlatformRuntime 当前不暴露控件工厂注册，而 WinitDriver 需在 begin
+  前注册工厂——需扩展 UiApp（如 `register_factories`）或改入口；且 EventLoop::run/Window/
+  GPU surface 需 GUI 环境验证首帧。
+- follow-up（headless 可推进）：winit 原始事件 → event_map → driver.pump_event 端到端集成测
+  （证明真实 run loop 的 per-event 契约；当前 event_map 测止于 host.dispatch_event，driver
+  测用合成 UiEvent，二者组合未经单测串联）。
