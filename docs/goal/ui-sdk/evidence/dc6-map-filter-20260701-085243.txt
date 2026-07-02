@@ -1,0 +1,8 @@
+=== DC-6 phase-3（DSL map/filter 字段投影）===
+日期: Wed Jul  1 08:52:43     2026
+
+--- ui/dsl map/filter 测试 ---
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 48 filtered out; finished in 0.00s
+
+--- map/filter 仍是 sandbox 白名单（无 lambda，受 iter 预算约束）---
+map/filter 已加入 PURE_FN；非白名单函数仍 UnknownFunction，黑名单仍 ForbiddenCapability（既有测覆盖）

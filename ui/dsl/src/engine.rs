@@ -7,7 +7,8 @@
 //!
 //! M3 phase-1 覆盖：字面量 / `$path` / 算术·比较·布尔·空值合并 / 条件 `?:` /
 //! 纯函数 count·contains·any·all·min·max·clamp·concat·starts_with·ends_with·format·field·index。
-//! `map`/`filter` 需 lambda（spec `Expression` 枚举无 Lambda 变体）→ phase-2 TBD。
+//! phase-3 加 `map`/`filter`（字段投影：`map($items, "field")` / `filter($items, "field")`，
+//! 不引入 Lambda 变体，保持文法封闭 + sandbox 安全）。
 
 use crate::diagnostics::DslError;
 use crate::expression::{BinaryOp, Expression, PureFunctionId, UnaryOp};
@@ -594,6 +595,8 @@ fn call_return_type(name: &str, args: &[Expression]) -> ValueType {
         "min" | "max" | "clamp" => ValueType::Number,
         "concat" | "format" => ValueType::Text,
         "field" | "index" => args.first().map(type_of).unwrap_or(ValueType::Any),
+        // map/filter 经字段投影返回数组（element 类型由运行时决定）。
+        "map" | "filter" => ValueType::Array,
         _ => ValueType::Any,
     }
 }
@@ -623,6 +626,8 @@ const PURE_FN: &[&str] = &[
     "format",
     "field",
     "index",
+    "map",
+    "filter",
 ];
 
 struct EvalState {
@@ -957,7 +962,39 @@ fn call_fn(
                 _ => Err(DslError::Typecheck("index() needs array + int".into())),
             }
         }
+        // map/filter 采用**字段投影**（非 lambda）：第二参数为字段名（Text）。
+        // map 对每个 object 元素取字段 → 新数组；filter 保留字段 truthy 的元素。
+        // 避免给 Expression 加 Lambda 变体（保持文法封闭、sandbox 安全；每元素仅字段查找，
+        // 计算量受数组大小 + 迭代预算约束）。嵌套路径投影留 follow-up。
+        "map" => {
+            expect_argc(name, &argv, 2)?;
+            let a = as_array(&argv[0])?;
+            let field = text_arg(&argv[1], name)?;
+            bump(a.len())?;
+            let out: Vec<Value> = a.iter().map(|v| project_field(v, field.as_str())).collect();
+            Ok(Value::Array(out))
+        }
+        "filter" => {
+            expect_argc(name, &argv, 2)?;
+            let a = as_array(&argv[0])?;
+            let field = text_arg(&argv[1], name)?;
+            bump(a.len())?;
+            let out: Vec<Value> = a
+                .iter()
+                .filter(|v| project_field(v, field.as_str()).is_truthy())
+                .cloned()
+                .collect();
+            Ok(Value::Array(out))
+        }
         _ => Err(DslError::UnknownFunction(name.to_string())),
+    }
+}
+
+/// 从一个值投影指定字段（object 取 key；非 object 返回 Null）。map/filter 共用。
+fn project_field(v: &Value, field: &str) -> Value {
+    match v {
+        Value::Object(o) => o.get(field).cloned().unwrap_or(Value::Null),
+        _ => Value::Null,
     }
 }
 
@@ -1156,6 +1193,70 @@ mod tests {
         assert_eq!(eval_str(r#"format("{}-{}", 1, 2)"#, &ctx), Value::Text("1-2".into()));
         assert_eq!(eval_str("index([10, 20, 30], 1)", &ctx), Value::Int(20));
         assert_eq!(eval_str("index([10, 20], 9)", &ctx), Value::Null); // 越界 → null
+    }
+
+    fn items_ctx() -> EvalContext {
+        let mk = |title: &str, active: bool| {
+            let mut o = hashbrown::HashMap::new();
+            o.insert("title".to_string(), Value::Text(title.into()));
+            o.insert("active".to_string(), Value::Bool(active));
+            Value::Object(o)
+        };
+        let items = vec![mk("zero", true), mk("one", false), mk("two", true)];
+        EvalContext::default().with_var("items", Value::Array(items))
+    }
+
+    #[test]
+    fn map_filter_field_projection() {
+        // DC-6 phase-3：map/filter 用字段投影（无 lambda）。
+        let ctx = items_ctx();
+        // map 投影 title。
+        assert_eq!(
+            eval_str(r#"map($items, "title")"#, &ctx),
+            Value::Array(vec![
+                Value::Text("zero".into()),
+                Value::Text("one".into()),
+                Value::Text("two".into()),
+            ])
+        );
+        // filter 保留 active=true → 2 项。
+        match eval_str(r#"filter($items, "active")"#, &ctx) {
+            Value::Array(a) => assert_eq!(a.len(), 2),
+            other => panic!("filter should return array, got {other:?}"),
+        }
+        // 组合：map + count / filter + count。
+        assert_eq!(eval_str(r#"count(map($items, "title"))"#, &ctx), Value::Int(3));
+        assert_eq!(eval_str(r#"count(filter($items, "active"))"#, &ctx), Value::Int(2));
+        // 缺失字段 → Null（map）/ falsy 丢弃（filter）。
+        assert_eq!(
+            eval_str(r#"map($items, "missing")"#, &ctx),
+            Value::Array(vec![Value::Null, Value::Null, Value::Null])
+        );
+        assert_eq!(eval_str(r#"count(filter($items, "missing"))"#, &ctx), Value::Int(0));
+        // 字段名可由表达式提供（求值为 Text）。
+        let key_ctx = EvalContext::default().with_var("items", {
+            let mut o = hashbrown::HashMap::new();
+            o.insert("title".to_string(), Value::Text("a".into()));
+            Value::Array(vec![Value::Object(o)])
+        });
+        // 非 array → typecheck 错。
+        assert!(matches!(
+            eval_err(r#"map("notarray", "x")"#, &ctx),
+            DslError::Typecheck(_)
+        ));
+        let _ = key_ctx;
+    }
+
+    #[test]
+    fn map_filter_iter_budget() {
+        // 大数组触发迭代预算上限（default max_iterations=10_000）。
+        let big: Vec<Value> = (0..20_000).map(|_| Value::Int(1)).collect();
+        let ctx = EvalContext::default().with_var("big", Value::Array(big));
+        assert!(matches!(eval_err("count($big)", &ctx), DslError::EvalResourceLimit(_)));
+        assert!(matches!(
+            eval_err(r#"map($big, "x")"#, &ctx),
+            DslError::EvalResourceLimit(_)
+        ));
     }
 
     #[test]
