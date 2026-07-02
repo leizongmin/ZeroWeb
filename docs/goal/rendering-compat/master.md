@@ -2215,6 +2215,69 @@ app_render.rs 降至 **1942 行**（-874 net）；app.rs 加 2 行 `include!`（
 
 **▶ 下会话**：DC-10 已完成。rendering-compat measurable pass-rate 仍结构性阻塞（font-metric 墙 6 次 net-negative 先例 / R109 / multicol Phase 2 / BiDi）。务实选项：① **DC-14 self-source 路径补全**（oracle 路径三态已实现 R851/R852，self-source 严格容差复跑 + 非平凡性仍 pending——补全后 DC-14 全闭，真 DC 进展）；② font-metric 墙新角度（极窄 slice + 三态门禁）；③ 剩余 >2000 行文件续清偿（app_input.rs 2910 / main.rs 2346 / app.rs 2096——browser shell）；④ 转 zero-web 其他子目标。single-session clean measurable lever 勿再扫。
 
+### R969 DC-14 self-source 三态分类落地·print_dc14_three_state·self-source 非平凡性仍 pending
+
+承 R968 ▶「DC-14 self-source 路径补全」。DC-14 oracle 路径（R851 三态 + R852 非平凡性）已全实现；self-source 路径（默认 `reftest` / `reftest-upstream`）此前只有 loose 二元（pass/fail）报告，缺三态分解。本轮补 self-source 三态。
+
+**① 实现 `print_dc14_three_state`**（main.rs，DC-14 helper，与 `frame_is_near_solid` 同区）：对每个 `(ReftestResult, ReftestCategory)` 分到三态——
+- **真通过**：`passed && diff_ratio ≤ category.strict_max_diff_ratio() && max_channel_diff ≤ category.strict_max_channel_diff()`（布局 0.1%/ch2、文字 0.5%/ch5；唯一可信达标指标）
+- **近似通过**：`passed` 但不满足严格容差（loose 通过但非严格，含同源假通过与字体噪声）
+- **不一致**：`!passed`（loose 失败）
+
+**② 自洽性**：`strict_pass + near_pass == pass_count`、`mismatch == fail_count`——near/mismatch 边界用 `result.passed`（编码实际有效 loose 阈值，含 ZERO_REFTEST_STRICT + per-test fuzzy override），而非 category.default_max_diff_ratio。首版误用 default loose 作 mismatch 边界致「不一致 34」与实际 Failed: 0 矛盾（部分用例 config/fuzzy 阈值高于 default），改用 `result.passed` 后自洽。strict 边界用 DC-14 锁定阈值，与 oracle 路径口径一致。
+
+**③ 接线**：`cmd_reftest`（内置 css21）+ `cmd_reftest_upstream`（上游 corpus）均调用。`cmd_reftest` 的 category 取自 `configs[filtered[i].0].category`；`cmd_reftest_upstream` 取自 `FileReftestCase.category`（results 与 filtered 同序）。两路径在 pass/fail 报告后、JSON 输出前打印三态。
+
+**④ 实测（内置 css21，make reftest）**：
+```
+── DC-14 self-source 三态分类（严格容差 = 唯一可信达标指标）──
+真通过 (passed 且 ≤strict): 639 (93.1%)
+近似通过 (passed 但 >strict): 47 (6.9%)
+不一致 (failed):            0 (0.0%)
+Passed: 686  Failed: 0
+```
+639+47=686=Passed 自洽。**诚实揭示**：loose 100% 含 6.9% (47 案) 字体噪声/近似通过——strict 真通过率 93.1% 是唯一可信达标指标。self-source 三态现与 oracle 三态（R851：strict/near/mismatch 同口径）对称。
+
+**⑤ DC-14 进度**：三态分类 self-source + oracle 均落地 ✅；**残余 = self-source 非平凡性检查（test==ref 退化假绿）仍 pending**——须 frame 接入（ReftestResult 加 `near_solid` 字段 + run_reftest_with_base 调 `frame_is_near_solid`），是多构造点 struct 改动，留下轮 slice。oracle 路径非平凡性已实现（R852）。
+
+**验证**：`cargo check`/`clippy --workspace --all-targets -- -D warnings`/`fmt --all --check` 全绿；`make reftest` 三态输出正确自洽；`make test`（release + test-guard）**12114 passed / 0 failed / 73 ignored**。零 pass/fail 行为变化（纯报告新增）。
+
+**意义**：DC-14 self-source 三态补全 = self-source 路径现也报严格容差真通过率（不再被 loose 100% 掩盖字体噪声），与 oracle 路径对称。真 DC 进展（非 pass-rate）。**DC-14 现 6/7 项✅**（R669 独立 oracle / R969 self-source 三态 / R484 分母 / R660-R661 GPU 非passthrough / 内联 smoke 不计达标 / 容差锁定；pending: self-source 非平凡性 + 容差锁定文档项已满足）。
+
+**▶ 下会话**：DC-14 残余 self-source 非平凡性（frame 接入，下轮 slice）；其余同 R968：font-metric 墙极窄 slice / 剩余 >2000 行 browser shell 文件 / zero-web 其他子目标。single-session clean measurable lever 勿再扫。
+
+### R970 DC-14 self-source 非平凡性落地·frame_is_near_solid 共享 + test_near_solid 字段·DC-14 全闭
+
+承 R969 ▶「DC-14 残余 self-source 非平凡性」。R969 落地 self-source 三态分类但非平凡性（test==ref 退化假绿）仍 pending；本轮补全 → DC-14 全闭。
+
+**① `frame_is_near_solid` 提升为共享 helper**：原 `pub(crate) fn` 在 main.rs（仅 oracle 路径 R852 用），self-source 路径（reftest.rs）不可达。移到 `reftest/reftest_compare.rs` 作 `pub fn`（内聚：帧分析/退化检测，与 compare/save_fb 同组），reftest.rs `pub use` 重导出；main.rs 删原 def、oracle caller 改 `reftest::frame_is_near_solid`。两路径现共享同一实现。
+
+**② `ReftestResult.test_near_solid: bool` 字段**：4 构造点全更新——`run_reftest_with_base` / `run_reftest_gpu_with_base` 正常返回处计算 `frame_is_near_solid(&test_fb)`；2 处 size-mismatch 早退设 `false`（失败非假绿关注）。
+
+**③ `print_dc14_three_state` 升级 4 态 + 审计列表**：strict-pass 按非平凡性拆两态——
+- **真通过-可信**：`passed && ≤strict && !test_near_solid`（唯一可信达标指标）
+- **真通过-可疑**：`passed && ≤strict && test_near_solid`——test 帧近纯色，打印审计列表（前 20）供人工区分「理性近纯色简单页」vs「退化空白假绿」（历史 R135/R149 harness PNG 加载 bug 致空白假绿）
+- 近似通过 / 不一致（同 R969）
+
+自洽：`strict_credible + strict_suspicious + near_pass == pass_count`。
+
+**④ 实测（内置 css21，make reftest）**：
+```
+真通过-可信 (passed 且 ≤strict 且非近纯色): 569 (82.9%)
+真通过-可疑 (≤strict 但 test 近纯色，须审计): 70 (10.2%)
+近似通过 (passed 但 >strict): 47 (6.9%)
+不一致 (failed):            0 (0.0%)
+```
+569+70+47=686=Passed 自洽。**诚实揭示**：loose 100% → strict 93.1% → credible 82.9%——三道诚实关卡（loose→strict→非平凡性）逐层剥离假通过。70 可疑多为内置 smoke 理性近纯色（单色块/简单页），上游 corpus（复杂页近纯色=真退化空白）更有意义。机制 spec-correct（标记审计非自动拒绝）。
+
+**⑤ DC-14 全闭 ✅**：oracle 路径（R669 独立 oracle + R851 三态 + R852 非平凡性）+ self-source 路径（R969 三态 + R970 非平凡性）+ R484 分母 + R660/R661 GPU 非passthrough + 容差锁定 + 内联 smoke 不计达标。**DC-14 7/7 项全 ✅**。
+
+**验证**：`cargo check`/`clippy --workspace --all-targets -- -D warnings`/`fmt --all --check` 全绿（4 构造点全覆盖，无 missing-field）；`make reftest` 4 态输出正确自洽；`make test`（release + test-guard）**12114 passed / 0 failed / 73 ignored**。零 pass/fail 行为变化（test_near_solid 仅用于报告分类，不改 passed 判定）。
+
+**意义**：**DC-14 全闭 ✅**——self-source 路径现与 oracle 路径对称（三态 + 非平凡性），reftest 通过率报告经三道诚实关卡（loose→strict→非平凡性），是 DC-2~5 pass-rate 目标「达标数字可信」的可信度前提。真 DC 进展（非 pass-rate；rendering-compat pass-rate 仍 font-metric 墙结构性阻塞）。
+
+**▶ 下会话**：DC-10/DC-14 已完成。rendering-compat measurable pass-rate 仍结构性阻塞（font-metric 墙 6 次 net-negative 先例 / R109 / multicol Phase 2 / BiDi）。务实选项：① font-metric 墙新角度（极窄 slice + 三态门禁，现 DC-14 三态可作严格门禁）；② 剩余 >2000 行 browser shell 文件续清偿（app_input.rs 2910 / main.rs 2346 / app.rs 2096）；③ 转 zero-web 其他子目标。single-session clean measurable lever 勿再扫（6 次穷尽 + clean-lever 队列 R740 实质耗尽）。
+
 ### 已 ruled out（勿以单会话重试）
 
 near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / **column-aware IFC Phase 1（pure-inline balance 明确高度）(R381)**：执行 column-aware-IFC-spec.md §10 gate「假设 A1」，扫描全 16 css-multicol 失败案结构（height/column-fill/blockchildren），**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）——每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套；spec 自身协议「A1 不存在→紧急停止转 Phase 2」生效，Phase 1 零杠杆关闭，真实 multicol lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）/ baseline-export 3 机制(R266–R316) / **advance-width(R225–R375b) definitive 关闭**：R375 hand-crafted DejaVu 表 morning 16.41→19.14% + R375b fontdue-actual advance（临时加 fontdue dep+缓存 Font+metrics.advance_width）16.41→19.08%，双 variant 均退步；fontdue-actual（最后未测变体）亦证伪。根因：accurate DejaVuSans advance 使换行偏离 chromium（system-ui≠DejaVuSans 或换行算法不同），0.55 启发式碰巧更近。advance-width 非 morning cascade 根因/ blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304) / inline-flex·inline-grid width:auto shrink-to-fit（R370：probe 实证 inline-flex width:auto 同 inline-block 拉伸到满宽 800，是真 bug，但**零杠杆**——全 48 失败案 + product-smoke fixture 均不用 inline-flex/inline-grid width:auto；fix 需 flex_row_intrinsic_width（非 box_content_max_width，flex row 须求和 block 子元素非取 max），复杂且无 reftest/smoke 收益，按 code-guidelines「不做零价值修改」不修，勿再以单会话重试）/ **percent max-width/min-height/min-width clamping（R119 analog，doc-agent 复核 ~0 yield，闭）**：engine.rs:1408 仅 `clamp_percentage_max_height`，无 max-width/min 平行函数——但 max-width-091(percent)✓ + min-height-091/092(percent)✓ 均 PASS（block width 定值→taffy 直接钳；min-height 是测量期 floor 非 content re-clamp）；R119 缺口唯一 max-height-specific（auto-height 内容测量 re-clamp），已修即完整 percent-clamp，无平行 lever，勿以 R119 类比重扫 / **intrinsic-keyword sizing（max-content/min-content/fit-content，R97 谱系，doc-agent 复核 = 非 clean 单会话 lever）**：121 测试文件用此三关键字，但**全集中在 taffy-blocked 上下文**（css-multicol/tables/flexbox intrinsic-size/table-intrinsic-size/flex-item-*-content），CSS2 block/inline-block 上下文**仅 1 案且为 crash-test**（inline-negative-margin-minmax-crash-001，非 sizing-correctness）→ memory「block/inline-block 可独立做」slice **无 dedicated driving test**（~0 可测 yield）；max-content/min-content parse_basic.rs 解析但 resolve 丢信号→0（R97/max-content memory），修复须保留信号+shrink-to-fit 触发，grid/flex/multicol/table 受 taffy 容器不 shrink 阻塞 = 多会话/结构性，勿以单会话重扫。 / **NBSP/Unicode-space collapse (R651 read-only 复核·非 lever)**：`collapse_whitespace`（inline/mod.rs:231）用 Rust `char::is_whitespace()` 折叠 NBSP(U+00A0)/U+3000 等，违反 CSS Text 3 §4.1.1（仅 TAB/LF/FF/CR/space 可折叠）——真 correctness bug，但 collapse 上下文（normal/nowrap/pre-line）**无 reftest 覆盖**（white-space-collapse-001 是 testharness JS `assert_equals(offsetWidth)` 测，非 reftest）；NBSP reftests（white-space-pre-031/032/034/035）全在 `pre` 上下文（preserve 路径不经 collapse）实测 PASS @2.64%。无 driving reftest → 非 lever（product-smoke 影响 negligible，NBSP 罕见于 fixture），defer；R647 category (b) 的 NBSP 角度据此关闭。

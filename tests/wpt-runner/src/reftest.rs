@@ -33,7 +33,9 @@ use resources::*;
 // `save_framebuffer_png` 是 pre-existing dead public API（`#![allow(dead_code)]` 容忍），
 // 重新导出会触发 unused_imports，此处一并 allow 以保持公共 API surface 零变化。
 #[allow(unused_imports)]
-pub use reftest_compare::{compare_pixels, compare_pixels_labeled, save_fb_as_png, save_framebuffer_png};
+pub use reftest_compare::{
+    compare_pixels, compare_pixels_labeled, frame_is_near_solid, save_fb_as_png, save_framebuffer_png,
+};
 use reftest_fonts::*;
 use reftest_scripts::*;
 
@@ -130,6 +132,9 @@ pub struct ReftestResult {
     pub max_channel_diff: u8,
     /// 失败原因（通过时为空）。
     pub message: String,
+    /// DC-14 非平凡性：测试帧是否「接近纯色」（退化/空白渲染）。
+    /// 近纯色的 strict-pass 须标可疑单独审计（test==ref 退化假绿，如 headless 空白页）。
+    pub test_near_solid: bool,
 }
 
 /// Reftest 配置。
@@ -279,6 +284,7 @@ pub fn run_reftest_with_base(case: &ReftestCase, config: &ReftestConfig, base_di
             total_pixels: 0,
             diff_ratio: 0.0,
             max_channel_diff: 0,
+            test_near_solid: false,
             message: format!(
                 "Size mismatch: test={}x{} ref={}x{}",
                 test_fb.width, test_fb.height, ref_fb.width, ref_fb.height
@@ -345,6 +351,7 @@ pub fn run_reftest_with_base(case: &ReftestCase, config: &ReftestConfig, base_di
         diff_ratio,
         max_channel_diff,
         message,
+        test_near_solid: frame_is_near_solid(&test_fb),
     }
 }
 
@@ -369,6 +376,7 @@ pub fn run_reftest_gpu_with_base(case: &ReftestCase, config: &ReftestConfig, bas
             total_pixels: 0,
             diff_ratio: 0.0,
             max_channel_diff: 0,
+            test_near_solid: false,
             message: format!(
                 "Size mismatch: test={}x{} ref={}x{}",
                 test_fb.width, test_fb.height, ref_fb.width, ref_fb.height
@@ -422,6 +430,7 @@ pub fn run_reftest_gpu_with_base(case: &ReftestCase, config: &ReftestConfig, bas
         diff_ratio,
         max_channel_diff,
         message,
+        test_near_solid: frame_is_near_solid(&test_fb),
     }
 }
 
