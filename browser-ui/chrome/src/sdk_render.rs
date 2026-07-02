@@ -11,13 +11,14 @@
 
 use crate::chrome_model::BrowserChromeModel;
 use crate::render::register_chrome_factories;
-use crate::shell::{BrowserChromeShell, DesktopBrowserShell};
+use crate::shell::{BrowserChromeShell, DesktopBrowserShell, ID_VIEWPORT};
 use std::sync::Arc;
 use zero_text_foundation::FontdueBackend;
 use zero_ui_adapter_render_foundation::RenderFoundationBackend;
-use zero_ui_core::geometry::Constraints;
+use zero_ui_core::geometry::{Constraints, Rect};
 use zero_ui_core::layout::WindowMetrics;
 use zero_ui_core::theme::SemanticTokens;
+use zero_ui_core::widget::WidgetId;
 use zero_ui_render::paint_scene;
 use zero_ui_runtime::WidgetHost;
 
@@ -39,16 +40,37 @@ pub fn render_chrome_via_sdk(
     tokens: &SemanticTokens,
     backend: Arc<FontdueBackend>,
 ) -> RenderFoundationBackend {
+    render_chrome_via_sdk_with_layout(shell, metrics, tokens, backend).0
+}
+
+/// 同 [`render_chrome_via_sdk`]，但额外返回 SDK chrome 布局后的 viewport（页面内容区）矩形。
+///
+/// **替换式迁移协调**（DC-14）：SDK chrome 拥有自己的布局（toolbar/tab/bookmarks/viewport 高度
+/// 由 SDK shell 决定，与 apps/browser 手绘 chrome 几何不同——desktop chrome top ≈ 96 vs 手绘
+/// ≈ 112-140）。浏览器替换式迁移须把页面内容定位到 SDK chrome 的 viewport rect（而非手绘 chrome
+/// 的 `chrome_top`），否则页面与 SDK chrome 错位。本函数暴露该 rect，使浏览器能查询 SDK chrome
+/// 的内容区。SDK chrome 拥有布局、浏览器适配——这是「浏览器迁移为 SDK 宿主」的正确方向。
+///
+/// 返回 `(bridge, viewport_rect)`；`viewport_rect` 为 `None` 表示 SDK shell 未布局出 viewport
+/// 节点（异常情况，调用方回落到手绘 chrome 几何）。
+pub fn render_chrome_via_sdk_with_layout(
+    shell: &zero_browser_shell::BrowserShell,
+    metrics: &WindowMetrics,
+    tokens: &SemanticTokens,
+    backend: Arc<FontdueBackend>,
+) -> (RenderFoundationBackend, Option<Rect>) {
     let model = BrowserChromeModel::from_shell(shell);
     let spec = DesktopBrowserShell.build(&model, metrics);
     let mut host = WidgetHost::new();
     register_chrome_factories(&mut host, tokens);
     host.set_root(&spec);
     host.layout(Constraints::loose(metrics.logical_size));
+    // SDK chrome 布局后的页面内容区（viewport 节点绝对 rect）。
+    let viewport_rect = host.rect_of(&WidgetId::new(ID_VIEWPORT));
     let scene = host.paint().clone();
     let mut bridge = RenderFoundationBackend::new_with_text_size(metrics.logical_size, backend);
     paint_scene(&scene, &mut bridge);
-    bridge
+    (bridge, viewport_rect)
 }
 
 #[cfg(test)]
@@ -94,5 +116,32 @@ mod tests {
         let bridge = render_chrome_via_sdk(&shell, &metrics(), &SemanticTokens::dark(), backend);
         let p = bridge.into_primitives();
         assert!(!p.fills.is_empty(), "即便无字体，chrome 背景几何仍应渲染");
+    }
+
+    #[test]
+    fn render_chrome_via_sdk_with_layout_exposes_viewport_content_rect() {
+        // DC-14 替换式迁移协调：SDK chrome 布局后的 viewport rect（页面内容区）须可查询，
+        // 使浏览器能据此定位页面内容（SDK chrome 拥有布局，浏览器适配）。
+        let mut shell = zero_browser_shell::BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        let mut backend = FontdueBackend::new();
+        backend.load_family("Ahem", AHEM).expect("Ahem parses via fontdue");
+        let (bridge, viewport_rect) =
+            render_chrome_via_sdk_with_layout(&shell, &metrics(), &SemanticTokens::light(), Arc::new(backend));
+        let p = bridge.into_primitives();
+        assert!(!p.fills.is_empty(), "bridge 仍产出 chrome fills");
+
+        let vp = viewport_rect.expect("SDK shell 布局出 viewport 节点");
+        // viewport 在 chrome 之下（顶部留出 toolbar+tab+bookmarks）+ 非零 + 在 metrics 内。
+        assert!(vp.size.width > 0.0 && vp.size.height > 0.0, "viewport 非零");
+        assert!(vp.origin.y > 0.0, "viewport 在 chrome 之下（y > 0，顶部留出 chrome）");
+        assert!(vp.origin.y < metrics().logical_size.height, "viewport 起点在窗口内");
+        // viewport 顶 = SDK chrome 占用的高度（toolbar+tab+bookmarks）。
+        // desktop shell：toolbar(36) + tab(32) + bookmarks(28) ≈ 96（host 实际布局）。
+        assert!(
+            vp.origin.y >= 50.0 && vp.origin.y <= 200.0,
+            "viewport top ≈ SDK chrome 高度，got {}",
+            vp.origin.y
+        );
     }
 }

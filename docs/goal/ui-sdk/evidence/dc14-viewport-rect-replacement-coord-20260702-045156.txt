@@ -1,0 +1,34 @@
+DC-14 替换式迁移协调：SDK chrome viewport rect 暴露 — 2026-07-02
+
+## 背景
+DC-14 overlay（additive）已像素 verified。替换式迁移（feature-on 时 SDK chrome 替换手绘 chrome）
+须解决布局错位：SDK chrome 拥有自己的布局（desktop chrome top ≈ 96：toolbar 36 + tab 32 + bookmarks 28），
+与 apps/browser 手绘 chrome 几何不同（TAB_STRIP 40 + toolbar ~44 + bookmarks ~28 ≈ 112-140）。
+若直接替换，页面内容（按手绘 chrome 的 chrome_top 定位）会与 SDK chrome 错位。
+
+## 方向
+**SDK chrome 拥有布局、浏览器适配**（mission 正确方向：浏览器迁移为 SDK 宿主）。浏览器替换式迁移须
+把页面内容定位到 SDK chrome 的 viewport rect（内容区），而非手绘 chrome 的 chrome_top。为此需暴露
+SDK chrome 布局后的 viewport rect。
+
+## 变更（browser-ui/chrome）
+- `shell.rs`：`ID_VIEWPORT` 改 `pub(crate)`（sdk_render 据此取 viewport 节点）。
+- `sdk_render.rs`：新增 `render_chrome_via_sdk_with_layout(shell, metrics, tokens, backend)
+  -> (RenderFoundationBackend, Option<Rect>)`——同 render_chrome_via_sdk 渲染 SDK chrome，额外
+  返回 host 布局后的 viewport 节点绝对 rect（页面内容区）。`render_chrome_via_sdk` 改为薄 wrapper
+  （调 _with_layout 取 .0），零行为变化（既有 overlay/测试不受影响）。
+- 新增测 `render_chrome_via_sdk_with_layout_exposes_viewport_content_rect`：viewport rect Some + 非零
+  + 在 chrome 之下（y>0）+ 在窗口内 + y ∈ [50,200]（≈ SDK chrome 高度 96）。
+
+## 验证
+chrome 63→64 测全绿；feature overlay 3 测全绿（render_chrome_via_sdk wrapper 不变）；clippy
+chrome+bridge --all-targets -D warnings 净；fmt 净；sdk_render.rs coverage lines 98.55% / fn 100%。
+
+## 影响 / 下一步
+**替换式迁移协调基础设施就绪**：浏览器可用 `render_chrome_via_sdk_with_layout` 取 SDK chrome 内容区，
+据此定位页面内容。剩余替换式迁移步骤（触碰 apps/browser 渲染路径，需 GUI 可视验收 + product-smoke）：
+①build_scene 分离 chrome/页面内容；②render_page_content 用 SDK viewport rect 定位（feature-on）；
+③feature-on 跳过手绘 chrome fills/glyphs；④GUI 可视验收 chrome 布局正确性。
+
+## 范围
+SDK-only（browser-ui/chrome），未触碰 apps/browser 渲染路径 → 无 product-smoke 风险。DC-1：零新依赖。

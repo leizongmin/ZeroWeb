@@ -50,7 +50,9 @@ const ID_NAV_BUTTONS: &str = "nav_buttons";
 const ID_MENU: &str = "menu";
 const ID_TAB_STRIP: &str = "tab_strip";
 const ID_BOOKMARKS: &str = "bookmarks";
-const ID_VIEWPORT: &str = "viewport";
+/// 页面内容视口节点 id（pub(crate)：sdk_render 据此取 SDK chrome 布局后的内容区矩形，
+/// 供浏览器替换式迁移把页面内容定位到 SDK chrome 的视口（SDK chrome 拥有布局，浏览器适配）。
+pub(crate) const ID_VIEWPORT: &str = "viewport";
 const ID_BOTTOM_NAV: &str = "bottom_nav";
 const ID_FIND_BAR: &str = "find_bar";
 
