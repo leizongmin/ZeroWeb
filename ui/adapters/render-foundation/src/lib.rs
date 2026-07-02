@@ -9,14 +9,16 @@
 //!
 //! 调用：`paint_scene(&scene, &mut backend)` → `backend.into_primitives()`。
 //!
-//! ## 当前覆盖（DC-14 视觉迁移的几何 + 文本 + 外部表面）
+//! ## 当前覆盖（DC-14 视觉迁移：几何 + 文本 + 外部表面，RenderBackend 全功能）
 //! - `fill_rect`：圆角为零 → [`FillPrimitive`]；否则 → [`RoundedRectPrimitive`]（四角半径分别映射）。
 //! - `stroke_rect`：矩形四角顶点 → [`PathStrokePrimitive`]（closed）。**圆角暂忽略**（render-foundation
 //!   无 stroke 圆角矩形图元；TODO 跟踪）。
 //! - `apply_clip`：`Some(rect)` → [`add_clip`]；`None` → 回落视口矩形（"无裁剪" = 整个视口）。
 //!   render-foundation 经 `draw_order` 流式应用裁剪，与本适配器的流式 `apply_clip` 语义一致。
-//! - `draw_text_blob`（DC-11 文本）：经共享 `FontdueBackend::rasterize_glyph` 把预 shape 的 glyph
-//!   光栅为 tinted RGBA → [`ImageCache`] → [`ImagePrimitive`]（fontdue 定位：xmin 左、ymin 底）。
+//! - `draw_text`（DC-11 文本，原始字符串——SDK widgets 实际走此路径）：经共享 `FontdueBackend`
+//!   shape（默认 FontRequest 回落首个已加载字体）+ `rasterize_glyph` → tinted RGBA → [`ImageCache`] →
+//!   [`ImagePrimitive`]（fontdue 定位：xmin 左、ymin 底）。
+//! - `draw_text_blob`（DC-11 文本，预 shape）：同上但跳过 shape（TextBlob 已 shape）。
 //!   **契约**：TextBlob 生产者与本后端共享同一 `Arc<FontdueBackend>`（`new_with_text`），FontId 一致。
 //! - `draw_external_surface`（DC-3 phase-2）：`set_surface` 注册调用方**预变换**的表面（WebView）场景；
 //!   `draw_external_surface(rect, id)` 以 `rect` 为裁剪边界，把注册场景合并进帧（`draw_order` 按桶
@@ -24,8 +26,6 @@
 //!   apps/browser `append_webview_primitives`）。
 //!
 //! ## 暂未覆盖（明确 follow-up，非阻塞当前闭环）
-//! - `draw_text`（原始字符串）：no-op。SDK widgets 经 paint_ctx 产出预 shape 的 TextBlob（走
-//!   `draw_text_blob`）；本方法无 FontRequest 策略，如需可直接 shape 后转 `draw_text_blob`。
 //! - 生产集成（DC-14 真实接线）：本后端自带 `ImageCache`；浏览器消费时须把 glyph key 解析到
 //!   渲染器的 image cache（或共享）——当前无消费者，几何+文本+外部表面经测试验证。
 //!
@@ -40,7 +40,9 @@ use zero_render_foundation::color::Color as RfColor;
 use zero_render_foundation::geometry::{Point as RfPoint, Rect as RfRect, Size as RfSize};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
 use zero_render_foundation::primitive::{DrawOp, ImagePrimitive, RenderPrimitives, RoundedRectPrimitive};
-use zero_text_foundation::{FontId, FontdueBackend, GlyphBitmap, TextBlob};
+use zero_text_foundation::{
+    FontId, FontRequest, FontdueBackend, GlyphBitmap, GlyphRun, ShapeInput, TextBlob, TextDirection, TextShaper,
+};
 use zero_ui_core::geometry::{Point, Rect, Rounding};
 use zero_ui_core::theme::Color;
 use zero_ui_render::RenderBackend;
@@ -159,34 +161,33 @@ impl RenderBackend for RenderFoundationBackend {
     }
 
     fn draw_text_blob(&mut self, blob: &TextBlob, position: Point, color: Color) {
-        // DC-11 文本路径：经共享 FontdueBackend 把预 shape 的 glyph 光栅为像素 → ImagePrimitive。
-        // TextBlob 的 FontId 在 self.text 的字体空间（调用方契约：shape 与 raster 共享同一实例）。
+        // DC-11 文本路径（预 shape）：TextBlob 的 FontId 在 self.text 的字体空间
+        //（调用方契约：shape 与 raster 共享同一 FontdueBackend 实例）。
         if self.text.is_empty() {
             return; // 无字体 → 无法光栅
         }
-        let tint = to_rf_color(color);
-        for run in &blob.shaped.runs {
-            let font_id = run.font.id;
-            let size_px = run.font_size_px;
-            let mut pen_x = 0.0_f32;
-            for g in &run.glyphs {
-                let draw_x = pen_x + g.x_offset;
-                // 空 bitmap（空格）/ 光栅失败（FontId 不匹配）→ 不出图，pen 仍推进（best-effort）。
-                if let Ok(bmp) = self.text.rasterize_glyph(font_id, g.glyph_id, size_px)
-                    && bmp.width > 0
-                    && bmp.height > 0
-                {
-                    let key = glyph_cache_key(font_id, g.glyph_id, size_px);
-                    emit_glyph_image(self, key, &bmp, position, draw_x, tint);
-                }
-                pen_x += g.x_advance;
-            }
-        }
+        raster_runs(self, &blob.shaped.runs, position, to_rf_color(color));
     }
 
-    fn draw_text(&mut self, _text: &str, _position: Point, _size_px: f32, _color: Color) {
-        // 原始字符串路径：SDK widgets 经 paint_ctx 产出预 shape 的 TextBlob（走 draw_text_blob），
-        // 本方法（无 FontRequest 策略）暂不实现；如需可直接 shape 后转 draw_text_blob。
+    fn draw_text(&mut self, text: &str, position: Point, size_px: f32, color: Color) {
+        // DC-11 文本路径（原始字符串）：SDK widgets（Button/Label/chrome 等）经 paint_ctx 走本方法。
+        // 用共享 FontdueBackend shape（默认 FontRequest，回落首个已加载字体）→ 光栅。
+        if self.text.is_empty() || text.is_empty() {
+            return;
+        }
+        let shaped = match self.text.shape(&ShapeInput {
+            text: text.into(),
+            // 无调用方 FontRequest → 用通用族，best_match 回落到首个已加载字体。
+            font_request: FontRequest::new("sans-serif"),
+            size_px,
+            direction: TextDirection::Ltr,
+            script: None,
+            scale_factor: 1.0,
+        }) {
+            Ok(s) => s,
+            Err(_) => return, // shape 失败（如无字体）→ 安静跳过
+        };
+        raster_runs(self, &shaped.runs, position, to_rf_color(color));
     }
 
     fn draw_external_surface(&mut self, rect: Rect, surface_id: u64) {
@@ -265,7 +266,30 @@ fn merge_primitives(dst: &mut RenderPrimitives, src: &RenderPrimitives) {
     }
 }
 
-// ── 文本光栅化辅助（DC-11 draw_text_blob）─────────────────────────────
+// ── 文本光栅化辅助（DC-11 draw_text / draw_text_blob）─────────────────
+
+/// 把已 shape 的 glyph runs 光栅为 ImagePrimitive（draw_text / draw_text_blob 共用）。
+///
+/// pen 自 position.x 起逐 glyph 推进（x_advance）；空 bitmap（空格）/ 光栅失败（FontId 不匹配）
+/// → 不出图，pen 仍推进（best-effort）。
+fn raster_runs(backend: &mut RenderFoundationBackend, runs: &[GlyphRun], position: Point, tint: RfColor) {
+    for run in runs {
+        let font_id = run.font.id;
+        let size_px = run.font_size_px;
+        let mut pen_x = 0.0_f32;
+        for g in &run.glyphs {
+            let draw_x = pen_x + g.x_offset;
+            if let Ok(bmp) = backend.text.rasterize_glyph(font_id, g.glyph_id, size_px)
+                && bmp.width > 0
+                && bmp.height > 0
+            {
+                let key = glyph_cache_key(font_id, g.glyph_id, size_px);
+                emit_glyph_image(backend, key, &bmp, position, draw_x, tint);
+            }
+            pen_x += g.x_advance;
+        }
+    }
+}
 
 /// 把单个 glyph 位图作为 [`ImagePrimitive`] 累积（含缓存去重与屏幕定位）。
 fn emit_glyph_image(
@@ -497,15 +521,26 @@ mod tests {
     }
 
     #[test]
-    fn draw_text_raw_string_is_noop() {
-        // draw_text（原始字符串路径，无 FontRequest 策略）no-op：不出图元、不 panic。
-        // 预 shape 的 TextBlob 路径见 draw_text_blob 测试；外部表面见 draw_external_surface 测试。
+    fn draw_text_noop_without_fonts() {
+        // 无字体后端 → draw_text no-op（不出图元、不 panic）。
         let mut b = RenderFoundationBackend::new(viewport());
         b.draw_text("hi", Point::ZERO, 12.0, Color::WHITE);
         let p = b.into_primitives();
         assert!(p.glyphs.is_empty());
         assert!(p.images.is_empty());
         assert!(p.fills.is_empty());
+    }
+
+    #[test]
+    fn draw_text_emits_glyph_images() {
+        // draw_text（原始字符串——SDK widgets 实际路径）经共享 backend shape+raster → ImagePrimitive。
+        let backend = ahem_backend();
+        let mut b = RenderFoundationBackend::new_with_text(viewport(), backend);
+        b.draw_text("Hi", Point::new(5.0, 30.0), 16.0, Color::WHITE);
+        let p = b.into_primitives();
+        // "Hi" → 2 glyph → 2 ImagePrimitive，自左向右排列。
+        assert_eq!(p.images.len(), 2);
+        assert!(p.images[1].rect.origin.x > p.images[0].rect.origin.x);
     }
 
     // ── draw_text_blob（DC-11 文本路径）──────────────────────────────────

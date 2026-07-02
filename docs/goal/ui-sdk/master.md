@@ -70,6 +70,8 @@
 - **DC-11 raster 阶段：foundation/text glyph 光栅化**：`FontdueBackend::rasterize_glyph(font_id, glyph_id, size_px) -> GlyphBitmap`（fontdue `rasterize_indexed`，按 glyph id 光栅；xmin/ymin 提供定位偏移）。foundation/text 现为完整 **shape + measure + raster** 文本基础层（DC-11 raster 就绪）。`GlyphBitmap` 顶层导出。**5 新测**（Ahem 实心方块位图 / size 缩放 / 确定性 / 非法 size / 未知 font）；foundation/text 27→32 测。**纯 foundation/text 自身扩展**（无浏览器/渲染后端消费者）→ 无 product-smoke 风险。fontdue 0.9.3 API 核对：`rasterize_indexed(u16, f32)`（按 glyph id，非 `rasterize(char)`）。
 - **TBD-2 桥接文本路径（DC-11 文本全链贯通）**：`RenderFoundationBackend::draw_text_blob` 经**共享 `Arc<FontdueBackend>`**（解决 TextBlob FontId 字体空间问题——shape 与 raster 共享同一实例）把预 shape 的 glyph 光栅为 tinted RGBA → `ImageCache`（稳定 key `glyph_cache_key` + `uploaded` 去重）→ `ImagePrimitive`（fontdue 定位：xmin 左、ymin 底→top=baseline−ymin−height）。新字段 `text/image_cache/uploaded`；新构造 `new_with_text(viewport, Arc<FontdueBackend>)`；`image_cache()`/`into_image_cache()` 访问器。**4 新测**（"Hi"→2 ImagePrimitive 自左向右 / 同 glyph 跨帧缓存复用 key / 无字体 no-op / glyph_cache_key 稳定且可区分）；bridge crate 6→10 测。**纯 adapter 内部**（无浏览器/既有渲染消费者）→ 无 product-smoke 风险。SDK Scene 含文本可光栅为像素——DC-14 视觉迁移的文本基础就绪。
 - **TBD-2 桥接外部表面（DC-3 phase-2，RenderBackend 覆盖完成）**：`RenderFoundationBackend::draw_external_surface` 实现——register-pre-transformed+merge 设计（浏览器侧已有 `append_webview_primitives` 做 offset/scale/clip；桥接只取回+裁剪+合并，职责分离）。新字段 `surfaces: HashMap<u64, RenderPrimitives>`；`set_surface`/`clear_surfaces`；`draw_external_surface(rect,id)` → `add_clip(rect)` + `merge_primitives`（扩展 13 分桶 + 按桶偏移重映射 draw_order，保留表面内部 z 序）。**2 新测**（含 fill+stroke 表面合并 + draw_order 重映射断言 Fill(0)→Fill(1)/Stroke(0)→Stroke(0) 按桶偏移；未注册 id 仅留 clip）；bridge crate 10→12 测。**桥接 RenderBackend 覆盖完成**：fill/stroke/clip + draw_text_blob + draw_external_surface 全功能（仅 draw_text 原始字符串 no-op）。**整个 SDK Scene 现可光栅为 RenderPrimitives**（几何+文本+外部表面）。纯 adapter 内部 → 无 product-smoke 风险。
+- **TBD-2 桥接 draw_text（widget 文本实际路径，RenderBackend 全功能）**：核对发现 SDK widgets（counter/form/chrome render/shell_demo）**全部走 `draw_text`（原始字符串）非 `draw_text_blob`** → 此前 draw_text no-op 会让 widget 文本消失。实现 `draw_text`（共享 `Arc<FontdueBackend>` shape，默认 FontRequest 回落首字体 → raster）；抽出 free fn `raster_runs`（draw_text/draw_text_blob 共用，消除重复）。**1 新测 + 1 重命名**（draw_text("Hi")→2 ImagePrimitive 自左向右 / 无字体 no-op）；bridge crate 12→13 测。**桥接 RenderBackend 现真正全功能**（含 widget 文本路径）。纯 adapter 内部 → 无 product-smoke 风险。
+- **product-smoke 本机侦察（2026-07-01）**：`make product-smoke` **本机可用**（release 构建 1m01s，diff=**19.17%**<20% 门槛绿）——历轮「可能不可用」推测不成立。约束：headroom 仅 0.83pp（页面像素改动易触发，属姊妹目标不得退化）；product-smoke 渲染**页面非 chrome**（DC-14 chrome 迁移不被覆盖，须 `cargo run --bin zero-browser` 手动验收）。详见 Testing & Quality Gates section。
 
 **M2 剩余**：①统一 render-foundation 现有 font 栈到 foundation/text（物理迁移/复用，**触碰渲染后端需 product-smoke**，使 zero-webview 也走 foundation/text，DC-11 完整闭环）——**也是 TBD-2 文本路径（TextBlob→GlyphPrimitive）的前置**；②chrome 组件 paint → scene snapshot（widget paint 管线接通后，DC-7 完整验收）+ chrome 组件 → `apps/browser` 灰度接线；③apps/browser 逐组件灰度迁移（DC-14）；④**TBD-2 后端已落地几何+裁剪**（`ui/adapters/render-foundation`），剩余文本（DC-11）+ 外部表面纹理（DC-3 phase-2）；⑤移动端运行时（M4，DC-15：真实 Phone/Tablet shell 渲染 + gesture/软键盘/safe area 适配）。
 
@@ -129,6 +131,15 @@
 - **UI SDK 验证路径**（本轮及后续）：对新增 `ui/*` + `foundation/text` + `browser-ui/chrome` 使用 **scoped test-guard**：`./target/test-guard -- cargo test -p zero-ui-<crate>`（OOM 防护 + 不触碰 script-sandbox）；并用 `cargo build --workspace` 确认不破坏其它 crate 编译。最终门禁仍以 `make test` 为准（待环境恢复或 CI 验证）。
 - 跟踪项：本机 script-sandbox debug-test 链接环境问题记入「未解决缺口」，不阻塞本目标推进（属环境，非 UI SDK 代码）。
 
+**✅ `make product-smoke` 本机可用（2026-07-01 实测侦察）**
+
+- 命令：`make product-smoke`（test-guard 包裹 `cargo run --release --bin zero-wpt-runner -- product-smoke apps/browser/assets/welcome.html --oracle docs/goal/rendering-compat/evidence/product-static/welcome-chromium.png --max-diff 20`）。
+- release 构建**成功**（1m 01s；script-sandbox V8 链接问题仅影响 debug test 二进制，**不影响 release run**）→ 历轮推测「product-smoke 可能本机不可用」**不成立**。
+- 实测 baseline diff：**92001/480000 px = 19.17%**（< 20% 门槛 → 退出 0，门禁绿）。
+- **关键约束（后续 visual 工作须遵守）**：
+  1. **headroom 仅 0.83pp**（19.17% / 20%）——任何改变 welcome.html **页面**像素的改动（如 DC-11 render-foundation font 栈统一）极易触发门槛；该基线属姊妹目标 rendering-compat，本目标不得使其退化。
+  2. **product-smoke 渲染的是页面**（`via_webview=false`，CPU render welcome.html 800×600），**非浏览器 chrome** → DC-14 chrome 迁移走 apps/browser 代码路径，**不被 product-smoke 覆盖**（既不触发门槛，也无自动回归检测）——chrome 迁移须用 `cargo run --bin zero-browser` 手动可视验收 + scoped test。
+
 **其它门禁**：单 `.rs` ≤ 2000 行；`cargo fmt` 无变更；clippy `-D warnings`；新增能力必须带测试；依赖仅 MIT/Apache-2.0/BSD 且最小化。
 
 ## Coverage 基线
@@ -159,7 +170,7 @@
 | 决策 | 结论 | 理由 | Spec 锚点 |
 |------|------|------|-----------|
 | TBD-8 text foundation 落点 | **新建独立 `foundation/text`（`zero-text-foundation`），M2 已落地真实 `FontdueBackend`**（fontdue+rustybuzz，不依赖 render-foundation） | render-foundation 耦合 wgpu/png/resvg/tiny-skia 图形后端；纯文本/字体基础层独立避免被图形后端污染，UI 与 WebView 都能依赖而不拖入 GPU 栈。M2 第一阶段：foundation/text 自立真实后端；第二阶段（风险步，需 product-smoke）把 render-foundation 现有 font 栈统一到 foundation/text | spec §6.5A / IF-008 / TBD-8 |
-| TBD-2 ui-render 与 render-foundation 依赖方向 | **`ui/render` 定义自己的 Scene/RenderNode/PaintCtx 抽象 + `RenderBackend` trait + `paint_scene`**；ui/render 不直接依赖 render-foundation，经 **`ui/adapters/render-foundation` 桥接适配器**（`RenderFoundationBackend` impl `RenderBackend`，把 Scene 累积为 `RenderPrimitives`；**RenderBackend 覆盖完成**：fill/stroke/clip + draw_text_blob（共享 Arc<FontdueBackend> 光栅→ImagePrimitive）+ draw_external_surface（register+merge，按桶偏移重映射 draw_order）；仅 draw_text 原始字符串 no-op）由 render-foundation 后端消费 | 通用 UI 层不被 wgpu 后端耦合；adapter 模式（与 winit/webview adapter 一致），ui/render 只依赖 foundation/text | spec §8.4.1 / TBD-2 |
+| TBD-2 ui-render 与 render-foundation 依赖方向 | **`ui/render` 定义自己的 Scene/RenderNode/PaintCtx 抽象 + `RenderBackend` trait + `paint_scene`**；ui/render 不直接依赖 render-foundation，经 **`ui/adapters/render-foundation` 桥接适配器**（`RenderFoundationBackend` impl `RenderBackend`，把 Scene 累积为 `RenderPrimitives`；**RenderBackend 全功能**：fill/stroke/clip + draw_text（widget 实际路径，shape+raster）+ draw_text_blob + draw_external_surface（register+merge））由 render-foundation 后端消费 | 通用 UI 层不被 wgpu 后端耦合；adapter 模式（与 winit/webview adapter 一致），ui/render 只依赖 foundation/text | spec §8.4.1 / TBD-2 |
 | TBD-9 text shaping/font 依赖 | **复用 workspace 已声明** fontdue/rustybuzz/unicode-bidi；M2 已把 fontdue+rustybuzz 加入 foundation/text（swash 暂未用） | 已在 workspace.dependencies；零新增外部依赖；fontdue=度量/光栅、rustybuzz=OpenType shaping | spec §6.4 / TBD-9 |
 | TBD-7 i18n 依赖 | **M1 手写 minimal plural/RTL**，不引入 ICU4X/Fluent | 接口先行；依赖评估留 M3 | spec §6.5A / TBD-7 |
 | TBD-6 表达式 parser | **仓内自实现 Pratt/precedence-climbing parser**（`ui/dsl/src/engine.rs`，M3 phase-1 已落地），不引 parser combinator crate | 表达式语法边界明确（spec §8.4.7 文法），手写 parser 可控 + 零新依赖；含 parse-depth 守卫防栈溢出 | spec §8.4.7 / TBD-6 |
@@ -210,12 +221,13 @@
 - `evidence/dc11-foundation-text-raster-20260701-232307.txt` — **DC-11 raster（foundation/text glyph 光栅化，2026-07-01）**：`FontdueBackend::rasterize_glyph`（fontdue `rasterize_indexed` 按 glyph id）→ `GlyphBitmap{width,height,xmin,ymin,coverage}`；foundation/text 现为完整 shape+measure+raster 基础层。5 新测（Ahem 实心方块 / size 缩放 / 确定性 / 非法 size / 未知 font）；foundation/text 27→32 测；纯 foundation/text 扩展（无 product-smoke 风险）；build/clippy/fmt 全净。
 - `evidence/tbd2-bridge-text-path-20260701-233648.txt` — **TBD-2 桥接文本路径（draw_text_blob 经 foundation/text 光栅，2026-07-01）**：`RenderFoundationBackend::draw_text_blob` 共享 `Arc<FontdueBackend>`（解决 TextBlob FontId 字体空间）→ rasterize_glyph → tinted RGBA → ImageCache（稳定 key 去重）→ ImagePrimitive（fontdue 定位）。4 新测（"Hi"→2 ImagePrimitive 自左向右 / 跨帧缓存复用 / 无字体 no-op / key 稳定可区分）；bridge crate 6→10 测；纯 adapter 内部（无 product-smoke 风险）；build/clippy/fmt 全净。SDK Scene 含文本可光栅为像素，DC-11 文本全链贯通到桥接输出。
 - `evidence/dc3-bridge-external-surface-20260701-234535.txt` — **DC-3 phase-2 桥接外部表面（draw_external_surface，2026-07-01）**：register-pre-transformed+merge——`set_surface`/`clear_surfaces` + `draw_external_surface(rect,id)`（add_clip + merge_primitives 扩展 13 分桶 + 按桶偏移重映射 draw_order）。2 新测（含 fill+stroke 表面合并+draw_order 重映射断言 / 未注册 id 仅留 clip）；bridge crate 10→12 测；**桥接 RenderBackend 覆盖完成**（仅 draw_text 原始字符串 no-op）；整个 SDK Scene 可光栅为 RenderPrimitives；纯 adapter 内部（无 product-smoke 风险）；build/clippy/fmt 全净。
+- `evidence/tbd2-bridge-draw-text-20260701-235407.txt` — **TBD-2 桥接 draw_text（widget 文本路径）+ product-smoke 本机侦察（2026-07-01）**：核对发现 widgets 走 draw_text（非 draw_text_blob）→ 实现 draw_text（共享 backend shape→raster，抽 raster_runs 共用）；1 新测+1 重命名，bridge 12→13 测，**RenderBackend 现真正全功能**。**product-smoke 本机可用**（release 1m01s，diff 19.17%<20% 绿）；约束：headroom 0.83pp（页面改动属姊妹目标不得退化）+ 渲染页面非 chrome（DC-14 chrome 迁移须手动验收）。
 
 **M2/M3 门禁实测（2026-07-01）**：
 - `cargo build --workspace` — Finished（0 错误）。
 - `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
 - `cargo fmt --all --check` — 净（0 diff）。
-- foundation/text **32**(+5 rasterize_glyph) + ui/render 13(+render_node translate) + ui/testing 5(+3) + ui/widgets 29 + browser-ui/chrome **61**(+7 from_shell 投影) + ui/runtime 8(+6 host) + ui/dsl **85**(+1 map/filter 嵌套路径) + ui/adapters/render-foundation **12**(+2 外部表面) tests 全绿（scoped test-guard）。
+- foundation/text **32**(+5 rasterize_glyph) + ui/render 13(+render_node translate) + ui/testing 5(+3) + ui/widgets 29 + browser-ui/chrome **61**(+7 from_shell 投影) + ui/runtime 8(+6 host) + ui/dsl **85**(+1 map/filter 嵌套路径) + ui/adapters/render-foundation **13**(+1 draw_text widget 路径) tests 全绿（scoped test-guard）。
 - DC-1 复核：ui/dsl 仅依赖 compact_str/hashbrown/serde/thiserror/zero-ui-core（`cargo tree -p zero-ui-dsl` 机械验证），零浏览器业务 crate；YAML loader 仓内自实现，零新依赖；ui/runtime 仅依赖 ui/core+ui/render+ui/i18n+compact_str/hashbrown/thiserror，零浏览器业务 crate。
 - DC-17 coverage：聚合 line 93.33%，per-crate 全部 ≥85%。
 

@@ -1,0 +1,57 @@
+TBD-2 桥接 draw_text（原始字符串——widget 文本路径）+ product-smoke 本机侦察 — 2026-07-01
+========================================================================================
+
+里程碑：M2→TBD-2 / DC-11（widget 文本路径）。SDK-only：仅 ui/adapters/render-foundation 内部，
+无 product-smoke 回归路径（本机 product-smoke 实测见下，已验证可用）。
+
+缺口（修复前）
+-------------
+- 核对发现：SDK widgets（counter Label / form / chrome render / shell_demo）**全部走 `draw_text`
+  （原始字符串）**，不走 `draw_text_blob`。
+- 桥接 `draw_text` 此前是 no-op → 所有 widget 文本经桥接会**消失**。这是桥接实际可用性的真实缺口
+ （上一轮 draw_text_blob 只覆盖了预 shape 路径，非 widget 实际路径）。
+
+实现（ui/adapters/render-foundation/src/lib.rs）
+-----------------------------------------------
+- `draw_text(text, position, size_px, color)`：用共享 `Arc<FontdueBackend>` shape
+  （默认 `FontRequest::new("sans-serif")`，best_match 回落首个已加载字体）→ `raster_runs` 光栅。
+- 抽出 free fn `raster_runs(backend, runs, position, tint)`——draw_text / draw_text_blob 共用
+  （逐 glyph rasterize_glyph → emit_glyph_image；空 bitmap/光栅失败 → 跳过，pen 推进）。
+- draw_text_blob 改为调 raster_runs（消除重复）。
+- 空后端 / 空文本 → 安静 no-op（不 panic）。
+
+测试（1 新测 + 1 重命名，全绿；bridge crate 12→13 测）
+------------------------------------------------------
+- draw_text_emits_glyph_images — 共享 Ahem backend，draw_text("Hi") → 2 ImagePrimitive，自左向右。
+- draw_text_noop_without_fonts（原 draw_text_raw_string_is_noop 重命名）— 无字体 → no-op。
+
+门禁（2026-07-01）
+-----------------
+- `cargo build --workspace` / `cargo clippy --workspace --all-targets -- -D warnings` / `cargo fmt --all --check` 全净。
+- `./target/test-guard -- cargo test -p zero-ui-adapter-render-foundation` — **13 passed; 0 failed**。
+- **桥接 RenderBackend 现真正全功能**：fill/stroke/clip + draw_text（widget 路径）+ draw_text_blob + draw_external_surface。
+
+=========================================================================================
+product-smoke 本机侦察（DC-14 视觉迁移门禁——历轮 visual 工作的关键前置）
+=========================================================================================
+**结论：`make product-smoke` 在本机可用**（非历轮 master.md 推测的"可能不可用"）。
+
+- 命令：`make product-smoke`（= test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke
+  welcome.html --oracle welcome-chromium.png --max-diff 20）。
+- release 构建成功（1m 01s；script-sandbox V8 链接问题仅影响 debug **test** 二进制，不影响 release run）。
+- 实测 diff：**92001/480000 px = 19.17%**（< 20% 门槛 → 退出 0，门禁绿）。
+
+**关键约束（写入 master.md，后续 visual 工作须遵守）**：
+1. **基线 headroom 仅 0.83pp**（19.17% / 20%）——任何改变 welcome.html **页面**像素的改动
+   （如 DC-11 render-foundation font 栈统一）极易触发门槛；该基线属姊妹目标 rendering-compat，
+   本目标不得使其退化。
+2. **product-smoke 渲染的是页面（via_webview=false，CPU render welcome.html 800x600），非浏览器 chrome**。
+   → DC-14 浏览器 chrome 迁移走 apps/browser 代码路径，**不被 product-smoke 覆盖**（既不会触发门槛，
+   也无自动回归检测）——chrome 迁移须用 `cargo run --bin zero-browser` 手动可视验收 + scoped test。
+3. `make test` 仍因 script-sandbox debug-test V8 链接受阻（环境性，非本目标）——SDK 测试走 scoped test-guard。
+
+意义
+----
+- 桥接 widget 文本路径就绪 → SDK widget 经桥接可完整渲染（含文字）。
+- product-smoke 本机可用确认 → 后续浏览器页面相关 visual 改动可用它验零退化（但 headroom 紧）；
+  chrome 迁移另走手动验收。
