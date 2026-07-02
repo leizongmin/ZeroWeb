@@ -1,0 +1,14 @@
+=== DC-5 主题系统（contrast lint + semantic token + chrome 消费 + ThemeChanged→host）===
+日期: Wed Jul  1 08:26:29     2026
+
+--- ui/core theme 新增能力测试 ---
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.00s
+
+--- chrome 消费 semantic token（light/dark 同树不同色）---
+=== Light theme (semantic tokens) === root 1280x800, 12 entries
+=== Dark theme (semantic tokens) === root 1280x800, 12 entries
+DC-5 theme switch: viewport fill light=rgba(1.00,1.00,1.00,_) dark=rgba(0.12,0.12,0.13,_)
+
+--- runtime ThemeChanged→host invalidation 流 ---
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s

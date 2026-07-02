@@ -15,23 +15,42 @@ use zero_ui_core::action::EventResult;
 use zero_ui_core::binding::Value;
 use zero_ui_core::event::UiEvent;
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
-use zero_ui_core::theme::Color;
+use zero_ui_core::theme::{Color, SemanticTokens};
 use zero_ui_core::widget::{
     EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget, WidgetSpec,
 };
 use zero_ui_render::Scene;
 use zero_ui_runtime::WidgetHost;
 
-/// 语义色名 → [`Color`]（组件只消费 semantic token；DC-5 主题接入后由 ThemeResolver 解析）。
-pub fn chrome_color(name: &str) -> Color {
+/// chrome 色名 → semantic token 名（组件消费 semantic token，不硬编码浏览器色值；DC-5）。
+///
+/// chrome 领域别名（`chrome`/`accent`/`secure`/`insecure`/`mixed`/`dangerous`/`viewport`）
+/// 映射到通用 semantic token；非别名（含标准 token 名 `surface`/`primary`/... 与未知名）
+/// 返回 `None`，由 [`chrome_color_themed`] 直接当 token 名解析或回落 `surface`。
+fn chrome_alias_token(name: &str) -> Option<&'static str> {
     match name {
-        "secure" => Color::rgb(0.10, 0.70, 0.30),
-        "insecure" | "mixed" => Color::rgb(0.90, 0.60, 0.10),
-        "dangerous" => Color::rgb(0.90, 0.20, 0.20),
-        "accent" => Color::rgb(0.13, 0.58, 0.95),
-        "viewport" => Color::rgb(1.0, 1.0, 1.0),
-        _ => Color::rgb(0.92, 0.92, 0.93),
+        "chrome" => Some("surface"),
+        "accent" => Some("primary"),
+        "secure" => Some("success"),
+        "insecure" | "mixed" => Some("warning"),
+        "dangerous" => Some("error"),
+        "viewport" => Some("background"),
+        _ => None,
     }
+}
+
+/// chrome 色名 + 主题 token → [`Color`]（DC-5：组件经 semantic token 解析，随主题切换）。
+///
+/// 先按 chrome 别名映射，否则直接当 token 名（`surface`/`primary`/`on_surface`/...）解析；
+/// 未知名回落 `surface`。
+pub fn chrome_color_themed(name: &str, tokens: &SemanticTokens) -> Color {
+    let token = chrome_alias_token(name).unwrap_or(name);
+    tokens.color_for(token).unwrap_or(tokens.surface)
+}
+
+/// chrome 色名 → [`Color`]（浅色基线；等价 `chrome_color_themed(name, &SemanticTokens::light())`）。
+pub fn chrome_color(name: &str) -> Color {
+    chrome_color_themed(name, &SemanticTokens::light())
 }
 
 /// chrome 安全状态 → 语义色名。
@@ -58,19 +77,27 @@ pub struct ChromePanel {
 }
 
 impl ChromePanel {
-    /// 由声明节点构造：`bg`/`text`/`text_color`/`height` 从 props 读，缺省用传入默认。
-    pub fn from_spec(spec: &WidgetSpec, default_bg: &str, default_height: f32, fill_viewport: bool) -> ChromePanel {
-        let bg = match spec.props.get("bg") {
-            Some(Value::Text(s)) => chrome_color(s),
-            _ => chrome_color(default_bg),
+    /// 由声明节点构造：`bg`/`text`/`text_color`/`height` 从 props 读，颜色经 semantic token
+    /// 解析（`tokens`，DC-5）；缺省 bg 用 `default_bg` 别名。
+    pub fn from_spec(
+        spec: &WidgetSpec,
+        default_bg: &str,
+        default_height: f32,
+        fill_viewport: bool,
+        tokens: &SemanticTokens,
+    ) -> ChromePanel {
+        let bg_name = match spec.props.get("bg") {
+            Some(Value::Text(s)) => s.as_str(),
+            _ => default_bg,
         };
+        let bg = chrome_color_themed(bg_name, tokens);
         let text = match spec.props.get("text") {
             Some(Value::Text(s)) => Some(s.clone()),
             _ => None,
         };
         let text_color = match spec.props.get("text_color") {
-            Some(Value::Text(s)) => chrome_color(s),
-            _ => Color::rgb(0.12, 0.12, 0.12),
+            Some(Value::Text(s)) => chrome_color_themed(s, tokens),
+            _ => tokens.on_surface,
         };
         let height = match spec.props.get("height") {
             Some(Value::Float(f)) => *f as f32,
@@ -131,32 +158,34 @@ impl Widget for ChromePanel {
 ///
 /// 容器节点（shell 根 / ToolbarRow）不注册 widget —— 它们经 `props.layout` 由 host 布局。
 /// 调用方仍需先 `host.set_root(&shell.build(...))` 注入声明树。
-pub fn register_chrome_factories(host: &mut WidgetHost) {
-    // bars：固定高度的语义色条 + 可选文案。
-    host.register("browser.AddressBar", |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 36.0, false))
+pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens) {
+    // bars：固定高度的语义色条 + 可选文案；颜色经 semantic token 解析（DC-5）。
+    // SemanticTokens 是 Copy：每个 move 闭包各持一份副本。
+    let t = *tokens;
+    host.register("browser.AddressBar", move |s| {
+        Box::new(ChromePanel::from_spec(s, "chrome", 36.0, false, &t))
     });
-    host.register("browser.NavigationButtons", |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 36.0, false))
+    host.register("browser.NavigationButtons", move |s| {
+        Box::new(ChromePanel::from_spec(s, "chrome", 36.0, false, &t))
     });
-    host.register("browser.BrowserMenu", |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 36.0, false))
+    host.register("browser.BrowserMenu", move |s| {
+        Box::new(ChromePanel::from_spec(s, "chrome", 36.0, false, &t))
     });
-    host.register("browser.BrowserTabStrip", |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 32.0, false))
+    host.register("browser.BrowserTabStrip", move |s| {
+        Box::new(ChromePanel::from_spec(s, "chrome", 32.0, false, &t))
     });
-    host.register("browser.BookmarksBar", |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 28.0, false))
+    host.register("browser.BookmarksBar", move |s| {
+        Box::new(ChromePanel::from_spec(s, "chrome", 28.0, false, &t))
     });
-    host.register("browser.SecurityBadge", |s| {
-        Box::new(ChromePanel::from_spec(s, "secure", 28.0, false))
+    host.register("browser.SecurityBadge", move |s| {
+        Box::new(ChromePanel::from_spec(s, "secure", 28.0, false, &t))
     });
-    host.register("browser.FindBar", |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 32.0, false))
+    host.register("browser.FindBar", move |s| {
+        Box::new(ChromePanel::from_spec(s, "chrome", 32.0, false, &t))
     });
-    // 视口：占满剩余区域，白色背景（WebView 容器；真实网页由 WebViewWidget 在 M2 后期接入）。
-    host.register("browser.PageViewportFrame", |s| {
-        Box::new(ChromePanel::from_spec(s, "viewport", 0.0, true))
+    // 视口：占满剩余区域，背景色（WebView 容器；真实网页由 WebViewWidget 在 M2 后期接入）。
+    host.register("browser.PageViewportFrame", move |s| {
+        Box::new(ChromePanel::from_spec(s, "viewport", 0.0, true, &t))
     });
 }
 
@@ -210,7 +239,7 @@ mod tests {
         let spec = DesktopBrowserShell.build(&model, &m);
 
         let mut host = WidgetHost::new();
-        register_chrome_factories(&mut host);
+        register_chrome_factories(&mut host, &zero_ui_core::theme::SemanticTokens::light());
         host.set_root(&spec);
         let root_size = host.layout(zero_ui_core::geometry::Constraints::loose(Size::new(
             m.logical_size.width,
@@ -244,20 +273,34 @@ mod tests {
 
     #[test]
     fn security_state_drives_badge_color() {
-        // 安全状态 → 语义色名 → Scene 中该节点 fill 的颜色。
+        // 安全状态 → chrome 色名 → semantic token → Color（DC-5：经 token 解析）。
+        let light = zero_ui_core::theme::SemanticTokens::light();
+        let dark = zero_ui_core::theme::SemanticTokens::dark();
         assert_eq!(
             security_color_name(crate::security_badge::SecurityState::Secure),
             "secure"
         );
-        assert_eq!(
-            security_color_name(crate::security_badge::SecurityState::Dangerous),
-            "dangerous"
-        );
-        assert_eq!(chrome_color("dangerous"), Color::rgb(0.90, 0.20, 0.20));
-        assert_eq!(
-            chrome_color("unknown"),
-            chrome_color("chrome"),
-            "未知色名回落 chrome 灰"
-        );
+        // dangerous → error token（浅色/深色不同色值，证明经主题解析而非硬编码）。
+        assert_eq!(chrome_color_themed("dangerous", &light), light.error);
+        assert_eq!(chrome_color_themed("dangerous", &dark), dark.error);
+        // secure → success token。
+        assert_eq!(chrome_color_themed("secure", &light), light.success);
+        // chrome → surface；viewport → background；未知 → surface 回落。
+        assert_eq!(chrome_color_themed("chrome", &light), light.surface);
+        assert_eq!(chrome_color_themed("viewport", &light), light.background);
+        assert_eq!(chrome_color_themed("unknown", &light), light.surface);
+        // accent → primary。
+        assert_eq!(chrome_color_themed("accent", &light), light.primary);
+    }
+
+    #[test]
+    fn chrome_panel_default_text_color_uses_token() {
+        // ChromePanel 默认文案色 = on_surface token（不硬编码），随主题切换。
+        let light = zero_ui_core::theme::SemanticTokens::light();
+        let mut spec = WidgetSpec::new("browser.AddressBar");
+        spec.props.insert("bg", Value::Text("chrome".into()));
+        let panel = ChromePanel::from_spec(&spec, "chrome", 36.0, false, &light);
+        assert_eq!(panel.text_color, light.on_surface);
+        assert_eq!(panel.bg, light.surface);
     }
 }

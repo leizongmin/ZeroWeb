@@ -827,6 +827,43 @@ mod tests {
         assert_eq!(entry.clip, Some(Rect::from_ltrb(0.0, 0.0, 40.0, 40.0)));
     }
 
+    #[test]
+    fn theme_changed_paint_only_marks_paint_not_layout() {
+        // DC-5 端到端：ThemeProvider 系统主题变化 → ThemeChanged（paint-only）→
+        // host.mark(invalidation) → needs_paint 真 / needs_layout 假（字体/间距不变不布局）。
+        use crate::ThemeProvider;
+        use zero_ui_core::theme::{ColorPalette, ColorSchemePreference, ResolvedColorScheme, SystemThemeSnapshot};
+
+        let sys_light = SystemThemeSnapshot {
+            system_scheme: ResolvedColorScheme::Light,
+            high_contrast: false,
+        };
+        let mut provider = ThemeProvider::new(ColorSchemePreference::System, ColorPalette::default(), sys_light);
+        let mut host = WidgetHost::new();
+        host.set_root(&patch("red", "r", "app.x"));
+        // 先完成首次 layout + paint，把初始 NEEDS_LAYOUT/NEEDS_PAINT 清空。
+        host.layout(Constraints::loose(Size::new(100.0, 100.0)));
+        let _ = host.paint();
+        assert!(!host.needs_paint() && !host.needs_layout(), "baseline clean");
+
+        // 系统 Light → Dark：仅颜色变化 → ThemeChanged.invalidation = NEEDS_PAINT。
+        let changed = provider
+            .on_system_change(SystemThemeSnapshot {
+                system_scheme: ResolvedColorScheme::Dark,
+                high_contrast: false,
+            })
+            .expect("scheme changed → ThemeChanged");
+        assert!(changed.invalidation.requires_paint());
+        assert!(!changed.invalidation.requires_layout());
+
+        host.mark(changed.invalidation);
+        assert!(host.needs_paint(), "color-only theme change must request re-paint");
+        assert!(
+            !host.needs_layout(),
+            "color-only theme change must not request re-layout"
+        );
+    }
+
     // 让 `Size::clamp` 在测试里可用：Constraints 已有 is_satisfied，这里给 Size 一个临时裁剪。
     trait ClampSize {
         fn clamp(self, c: Constraints) -> Size;
