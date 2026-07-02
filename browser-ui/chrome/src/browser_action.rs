@@ -20,12 +20,21 @@ pub enum BrowserAction {
     OpenTab,
     CloseTab(TabId),
     ActivateTab(TabId),
-    ReorderTab { from: usize, to: usize },
+    ReorderTab {
+        from: usize,
+        to: usize,
+    },
     // 书签/历史
     OpenBookmark(String),
     // 权限/下载
     GrantPermission(String),
     DenyPermission(String),
+    /// 打开/运行已下载文件（download id）。
+    OpenDownload(String),
+    /// 取消进行中的下载（download id）。
+    CancelDownload(String),
+    /// 在文件夹中显示已下载文件（download id）。
+    ShowDownload(String),
     // 查找
     FindNext,
     FindPrev,
