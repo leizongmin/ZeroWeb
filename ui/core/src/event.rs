@@ -101,6 +101,9 @@ pub enum UiEvent {
         button: Option<PointerButton>,
         position: Point,
         modifiers: Modifiers,
+        /// 指针 id（DC-15 多指手势）：鼠标恒为 0；触摸为各手指的稳定 id（来自平台 touch id）。
+        /// 手势 arena 据此区分多指（如双指 Pinch）。单指针路径（Tap/Pan/Fling）忽略非零值。
+        pointer_id: u32,
     },
     /// 键盘。
     Key {
@@ -178,6 +181,7 @@ mod tests {
             button: Some(PointerButton::Primary),
             position: Point::new(10.0, 20.0),
             modifiers: Modifiers::SHIFT,
+            pointer_id: 0,
         };
         assert_eq!(pe.position(), Some(Point::new(10.0, 20.0)));
         assert!(pe.modifiers().contains(Modifiers::SHIFT));

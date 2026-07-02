@@ -157,6 +157,7 @@ mod tests {
             button: Some(PointerButton::Primary),
             position: Point::new(5.0, 5.0),
             modifiers: Modifiers::NONE,
+            pointer_id: 0,
         }
     }
 
@@ -166,6 +167,7 @@ mod tests {
             button: Some(PointerButton::Primary),
             position: Point::new(5.0, 5.0),
             modifiers: Modifiers::NONE,
+            pointer_id: 0,
         }
     }
 
@@ -254,6 +256,7 @@ mod tests {
                 button: None,
                 position: Point::new(1.0, 1.0),
                 modifiers: Modifiers::NONE,
+                pointer_id: 0,
             },
         );
         assert_eq!(paint_into(&mut btn), t.primary.lighten(0.12), "hover 背景");
@@ -323,6 +326,7 @@ mod tests {
             button: Some(PointerButton::Secondary),
             position: Point::new(0.0, 0.0),
             modifiers: Modifiers::NONE,
+            pointer_id: 0,
         };
         assert_eq!(
             btn.event(
@@ -338,6 +342,7 @@ mod tests {
             button: Some(PointerButton::Secondary),
             position: Point::new(0.0, 0.0),
             modifiers: Modifiers::NONE,
+            pointer_id: 0,
         };
         assert_eq!(
             btn.event(

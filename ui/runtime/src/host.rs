@@ -356,16 +356,22 @@ impl WidgetHost {
     pub fn dispatch_event(&mut self, event: &UiEvent) -> Vec<EmittedAction> {
         let mut emitted = Vec::new();
         // DC-15 opt-in 手势 arena：挂载时把指针序列顺带喂入 arena 仲裁（不影响下方 hit-test/冒泡）。
-        // UiEvent::Pointer 单指针（id=0）+ 内部 gesture_clock 提供时序；Cancelled → arena.reset。
+        // 用 event.pointer_id 区分多指（双指 Pinch）；内部 gesture_clock 提供时序；Cancelled → arena.reset。
         if self.gesture_arena.is_some() {
-            let recognized = if let UiEvent::Pointer { phase, position, .. } = event {
+            let recognized = if let UiEvent::Pointer {
+                phase,
+                position,
+                pointer_id,
+                ..
+            } = event
+            {
                 let arena = self.gesture_arena.as_mut().expect("checked Some above");
                 self.gesture_clock = self.gesture_clock.saturating_add(16);
                 let ts = self.gesture_clock;
                 match phase {
-                    PointerPhase::Pressed => arena.route(&PointerEvent::down(0, *position, ts)),
-                    PointerPhase::Moved => arena.route(&PointerEvent::move_(0, *position, ts)),
-                    PointerPhase::Released => arena.route(&PointerEvent::up(0, *position, ts)),
+                    PointerPhase::Pressed => arena.route(&PointerEvent::down(*pointer_id, *position, ts)),
+                    PointerPhase::Moved => arena.route(&PointerEvent::move_(*pointer_id, *position, ts)),
+                    PointerPhase::Released => arena.route(&PointerEvent::up(*pointer_id, *position, ts)),
                     PointerPhase::Cancelled => {
                         arena.reset();
                         None
@@ -1234,11 +1240,13 @@ fn localize_position(event: &UiEvent, origin: Point) -> UiEvent {
             button,
             position,
             modifiers,
+            pointer_id,
         } => UiEvent::Pointer {
             phase: *phase,
             button: *button,
             position: Point::new(position.x - origin.x, position.y - origin.y),
             modifiers: *modifiers,
+            pointer_id: *pointer_id,
         },
         UiEvent::Scroll {
             delta,
@@ -1464,6 +1472,7 @@ mod tests {
             button: Some(PointerButton::Primary),
             position: Point::new(10.0, 80.0),
             modifiers: Modifiers::NONE,
+            pointer_id: 0,
         };
         let emitted = host.dispatch_event(&click_on_b);
         assert_eq!(emitted.len(), 1);
@@ -1476,6 +1485,7 @@ mod tests {
             button: Some(PointerButton::Primary),
             position: Point::new(10.0, 10.0),
             modifiers: Modifiers::NONE,
+            pointer_id: 0,
         };
         let emitted = host.dispatch_event(&click_on_a);
         assert_eq!(emitted[0].action, ActionId::new("app.a"));
@@ -2320,6 +2330,7 @@ mod tests {
                 button: Some(PointerButton::Primary),
                 position: Point::new(10.0, y),
                 modifiers: Modifiers::NONE,
+                pointer_id: 0,
             });
         };
         assert!(host.focused_id().is_none(), "no focus initially");
@@ -2347,6 +2358,7 @@ mod tests {
             button: Some(PointerButton::Primary),
             position: Point::new(300.0, 300.0),
             modifiers: Modifiers::NONE,
+            pointer_id: 0,
         });
         assert_eq!(
             host.focused_id(),
@@ -2844,6 +2856,18 @@ mod tests {
             button: Some(PointerButton::Primary),
             position,
             modifiers: Modifiers::NONE,
+            pointer_id: 0,
+        }
+    }
+
+    /// 同 [`pointer`] 但指定 `pointer_id`（多指手势测试用，DC-15 Pinch）。
+    fn pointer_id(phase: PointerPhase, position: Point, id: u32) -> UiEvent {
+        UiEvent::Pointer {
+            phase,
+            button: Some(PointerButton::Primary),
+            position,
+            modifiers: Modifiers::NONE,
+            pointer_id: id,
         }
     }
 
@@ -2956,5 +2980,39 @@ mod tests {
         // 同时 arena 识别出 Tap。
         let gestures = host.take_gestures();
         assert!(matches!(gestures.first(), Some(Gesture::Tap(_))));
+    }
+
+    #[test]
+    fn gesture_arena_recognizes_pinch_from_two_pointer_sequence() {
+        // DC-15 多指：UiEvent::Pointer.pointer_id 区分双指 → PinchRecognizer 仲裁。
+        use zero_ui_gestures::PinchRecognizer;
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+
+        let mut arena = GestureArena::new();
+        arena.push(PinchRecognizer::new());
+        host.set_gesture_arena(arena);
+
+        let p0 = Point::new(100.0, 100.0);
+        let p1 = Point::new(200.0, 100.0); // 双指初始距离 100。
+        // 第一指 down（id=0）。
+        host.dispatch_event(&pointer_id(PointerPhase::Pressed, p0, 0));
+        assert!(host.take_gestures().is_empty());
+        // 第二指 down（id=1）→ 双指就位，arena 记录初始距离。
+        host.dispatch_event(&pointer_id(PointerPhase::Pressed, p1, 1));
+        assert!(host.take_gestures().is_empty(), "两指 down 不立即裁决 Pinch");
+        // 移动第二指（id=1）到 250 → 距离 150 → scale=1.5 → Won(Pinch)。
+        host.dispatch_event(&pointer_id(PointerPhase::Moved, Point::new(250.0, 100.0), 1));
+        let gestures = host.take_gestures();
+        assert_eq!(gestures.len(), 1, "双指移动产出 1 个 Pinch");
+        match gestures[0] {
+            Gesture::Pinch { scale, .. } => {
+                assert!((scale - 1.5).abs() < 0.01, "pinch scale = 1.5，got {scale}");
+            }
+            ref g => panic!("识别为 Pinch，got {g:?}"),
+        }
     }
 }

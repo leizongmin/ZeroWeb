@@ -127,6 +127,7 @@ fn submit_button_click_via_pointer() {
             button: Some(PointerButton::Primary),
             position: c,
             modifiers: Modifiers::NONE,
+            pointer_id: 0,
         }) {
             app.reduce(&a);
         }

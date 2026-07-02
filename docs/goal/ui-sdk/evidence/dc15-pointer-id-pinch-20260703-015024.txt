@@ -1,0 +1,42 @@
+DC-15 多指手势：UiEvent::Pointer.pointer_id + Pinch 接入 host（SDK-side，2026-07-03）
+======================================================================================
+
+目标
+----
+闭合 DC-15 多指手势最后一块：UiEvent::Pointer 原为单指针抽象（无 pointer id），
+host gesture arena 只能识别单指 Tap/Pan/Fling，多指 Pinch 不可达。本轮给
+UiEvent::Pointer 加 `pointer_id`，host arena 用真实指针 id 路由 → 双指 Pinch 可识别。
+
+实现
+----
+- **ui/core/src/event.rs**：`UiEvent::Pointer` 加 `pointer_id: u32` 字段（鼠标恒 0；
+  触摸为各手指稳定 id）。核心类型变更，机械补全仓内全部构造点（~16 处）。
+- **ui/adapters/winit/src/event_map.rs**：`map_mouse_input`/`map_cursor_moved` 填 `pointer_id: 0`；
+  `map_touch` 加 `touch_id: u32` 参数（调用方传 `touch.id as u32`，winit `TouchEvent.id: u64`
+  为各手指稳定 id）→ 填 `pointer_id: touch_id`。鼠标测断言 pointer_id==0；触摸测断言 == 平台 id。
+- **ui/runtime/src/host.rs**：dispatch_event 的 arena 喂入改用 `event.pointer_id`（原硬编码 0）→
+  双指 down(0)+down(1) 经 PinchRecognizer 仲裁。`localize_position`（生产）passthrough pointer_id。
+- 构造点全补：ui-core（1）/ ui-runtime（7 测）/ ui-widgets button（5 测）/ ui-examples
+  counter+counter_retained+form_retained（5）/ browser-ui/chrome shell_demo（destructure 已 `..`）。
+
+测试（+1 新测，ui-runtime 79→80）
+--------------------------------
+`gesture_arena_recognizes_pinch_from_two_pointer_sequence`：arena+PinchRecognizer；
+pointer_id=0 down@(100,100) → pointer_id=1 down@(200,100)（双指就位，初始距离 100）→
+pointer_id=1 move@(250,100)（距离 150）→ `Gesture::Pinch { scale: 1.5 }`。
+
+门禁
+----
+- cargo build --workspace + clippy --workspace --all-targets -D warnings + fmt：全净。
+- ui-runtime 80 / widgets 38 / examples / adapter-winit 22 / chrome 81 全绿（用 UiEvent::Pointer
+  的 SDK crate 零回归）。
+- apps/browser 不构造 UiEvent::Pointer（自有 BrowserApp 输入方法）→ 行为零影响；clippy
+  --all-targets 编译通过。
+- SDK-only（ui/core + ui/runtime + ui/widgets + ui/examples + ui/adapters/winit 未触碰
+  render-foundation 渲染像素）→ 无 product-smoke 风险。
+
+DC-15 状态推进
+--------------
+DC-15 手势全四类（Tap/Pan/Pinch/Fling）现均经 host arena 可达：单指 Tap/Pan/Fling（上轮）+
+多指 Pinch（本轮，pointer_id）。ui/gestures arena ↔ WidgetHost dispatch 双向贯通。仍待 M4
+（需设备/GUI）：真实移动后端首帧 + back/haptics 真实平台后端 + GUI 可视验收。

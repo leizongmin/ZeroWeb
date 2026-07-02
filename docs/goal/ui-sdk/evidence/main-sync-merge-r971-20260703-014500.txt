@@ -1,0 +1,53 @@
+origin/main 同步 merge R971（2026-07-03，commit 7ceb6966）
+=====================================================
+
+动机
+----
+rally run-rules 要求提交前同步远端 main。main 领先 1 commit（R971）。
+
+main 新增 commit
+----------------
+- R971 — app_input.rs 拆分（2000 行规则）：keyboard + context-menu 两组抽出 →
+  app_input_keys.rs（650 行，5 键处理 fn）+ app_input_context_menus.rs（587 行，
+  10 上下文菜单 fn）。+ rendering-compat master.md。
+
+冲突与解决（apps/browser/src/app_input.rs）
+-------------------------------------------
+两分支对 app_input.rs 做了**不同方向的拆分**：
+- ui-sdk（DC-16）：app_input.rs（2910→1634，保留 scroll/pan/touch/scrollbar/键盘/
+  鼠标主流程）+ app_input_ext.rs（1281，书签/拖拽/**上下文菜单**/hover/find_bar）。
+- main（R971）：app_input.rs + app_input_keys.rs（**键盘**）+ app_input_context_menus.rs
+  （**上下文菜单**）。
+
+重叠：main 的 app_input_keys.rs（键盘）与 ui-sdk app_input.rs（保留键盘）重复；
+main 的 app_input_context_menus.rs（上下文菜单）与 ui-sdk app_input_ext.rs（上下文菜单）重复。
+
+逐项验证（fn body vs merge-base，忽略 impl 包装与注释）：
+- app_input_keys.rs 5 fn（handle_key/handle_find_key/handle_address_bar_key/
+  extract_typed_text/handle_global_key）：body 逐位 == merge-base → 纯拆分。
+- app_input_context_menus.rs 10 fn（activate_context_menu_item/.../
+  update_address_bar_from_active_tab）：body 逐位 == merge-base → 纯拆分。
+两文件仅多 `impl BrowserApp { }` 包装（include! 进 app.rs 同模块所需）。
+
+解决决策：
+1. app_input.rs 取 --ours（ui-sdk 版，含键盘，1710 行）。
+2. **拒绝 main 的 app_input_keys.rs + app_input_context_menus.rs**（与 ui-sdk
+   app_input.rs / app_input_ext.rs 100% 重复，body 逐位等价 merge-base，无 main 侧
+   bugfix 丢失）+ 移除 app.rs 中两者 include!。
+3. 保留 ui-sdk app_input_ext.rs（上下文菜单 + 书签/拖拽/hover，超集）。
+
+方式
+----
+依 master.md #11：长分支用 merge（非全量 rebase）。
+
+门禁（merge 后）
+----------------
+- cargo build --workspace（默认 + sdk-chrome）：Finished（0 错误）。
+- cargo clippy -p zero-browser（默认 + sdk-chrome）--all-targets -D warnings：净。
+- cargo fmt --all --check：净。
+- browser 默认 **191 全绿** + sdk-chrome **202 全绿**（= baseline 零回归）。
+
+结论
+----
+纯结构同步（main app_input 拆分），ui-sdk 既有 app_input.rs + app_input_ext.rs 承担
+同等拆分职责（DC-16 合规），零渲染/逻辑变更，零回归。

@@ -177,6 +177,7 @@ pub fn map_mouse_input(
         button: Some(map_mouse_button(button)),
         position,
         modifiers,
+        pointer_id: 0,
     }
 }
 
@@ -189,6 +190,7 @@ pub fn map_cursor_moved(position: Point, modifiers: Modifiers) -> UiEvent {
         button: None,
         position,
         modifiers,
+        pointer_id: 0,
     }
 }
 
@@ -205,12 +207,14 @@ pub fn map_touch_phase(phase: winit::event::TouchPhase) -> PointerPhase {
 /// 触摸事件 → UI [`UiEvent::Pointer`]。
 ///
 /// `winit::event::Touch` 含 `pub(crate) DeviceId` 无法仓外构造，故取可构造的
-/// `(phase, location)` 入参；调用方传 `touch.phase` / `touch.location` 即可。
+/// `(phase, location, touch_id)` 入参；调用方传 `touch.phase` / `touch.location` /
+/// `touch.id as u32` 即可（`winit::event::TouchEvent.id: u64` 为各手指稳定 id）。
 /// 触摸 `Started` 视为主按键按下（等同鼠标左键，供 click-to-focus / tap），
 /// 其余阶段 `button = None`（phase 已编码按下/释放）。
 pub fn map_touch(
     phase: winit::event::TouchPhase,
     location: winit::dpi::PhysicalPosition<f64>,
+    touch_id: u32,
     scale_factor: f32,
     modifiers: Modifiers,
 ) -> UiEvent {
@@ -224,6 +228,7 @@ pub fn map_touch(
         },
         position: to_logical_point(location, scale_factor),
         modifiers,
+        pointer_id: touch_id,
     }
 }
 
@@ -419,11 +424,13 @@ mod tests {
                 button,
                 position,
                 modifiers,
+                pointer_id,
             } => {
                 assert_eq!(phase, PointerPhase::Pressed);
                 assert_eq!(button, Some(PointerButton::Primary));
                 assert_eq!(position, pos);
                 assert_eq!(modifiers, Modifiers::NONE);
+                assert_eq!(pointer_id, 0, "鼠标 pointer_id 恒为 0");
             }
             _ => panic!("expected Pointer"),
         }
@@ -458,6 +465,7 @@ mod tests {
                 button,
                 position,
                 modifiers,
+                ..
             } => {
                 assert_eq!(phase, PointerPhase::Moved);
                 assert_eq!(button, None);
@@ -482,6 +490,7 @@ mod tests {
         let started = map_touch(
             winit::event::TouchPhase::Started,
             winit::dpi::PhysicalPosition::new(200.0, 100.0),
+            7,
             2.0,
             Modifiers::NONE,
         );
@@ -489,12 +498,14 @@ mod tests {
             phase,
             button,
             position,
+            pointer_id,
             ..
         } = started
         {
             assert_eq!(phase, PointerPhase::Pressed);
             assert_eq!(button, Some(PointerButton::Primary));
             assert_eq!(position, Point::new(100.0, 50.0)); // 物理→逻辑
+            assert_eq!(pointer_id, 7, "触摸 pointer_id 取自平台 touch id");
         } else {
             panic!("expected Pointer");
         }
@@ -502,6 +513,7 @@ mod tests {
         let moved = map_touch(
             winit::event::TouchPhase::Moved,
             winit::dpi::PhysicalPosition::new(220.0, 110.0),
+            7,
             2.0,
             Modifiers::NONE,
         );

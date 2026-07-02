@@ -34,12 +34,14 @@ fn click(host: &mut WidgetHost, id: &str) -> Vec<EmittedAction> {
         button: Some(PointerButton::Primary),
         position: center,
         modifiers: Modifiers::NONE,
+        pointer_id: 0,
     });
     host.dispatch_event(&UiEvent::Pointer {
         phase: PointerPhase::Released,
         button: Some(PointerButton::Primary),
         position: center,
         modifiers: Modifiers::NONE,
+        pointer_id: 0,
     })
 }
 
