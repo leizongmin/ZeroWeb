@@ -22,6 +22,7 @@ pub mod navigation_buttons;
 pub mod page_load_indicator;
 pub mod page_viewport;
 pub mod permission_prompt;
+pub mod phone_demo;
 pub mod render;
 pub mod sdk_render;
 pub mod security_badge;
