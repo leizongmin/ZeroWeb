@@ -683,6 +683,7 @@ fn compose_sdk_chrome_overlay(
 /// 返回翻译后的 `(page_fills, page_glyphs)`。
 /// - `image_cache`：`None`（无活跃 tab）时跳过——返回未翻译的 page 内容。
 #[cfg(feature = "sdk-chrome")]
+#[allow(clippy::too_many_arguments)]
 fn compose_sdk_chrome_replacement(
     shell: &zero_browser_shell::BrowserShell,
     width: u32,
@@ -721,6 +722,9 @@ fn compose_sdk_chrome_replacement(
         if dy.abs() > 0.5 {
             page_fills = translate_fills(&page_fills, dy);
             page_glyphs = translate_glyphs(&page_glyphs, dy);
+            // 翻译 WebView 额外图元（shadows/gradients/images 等）——这些从 get_webview_extra_primitives
+            // 返回，定位在手绘 chrome viewport 位置，需同步迁到 SDK chrome viewport 位置。
+            translate_scene_primitives_y(scene_primitives, dy);
         }
     }
 
@@ -750,6 +754,64 @@ fn compose_sdk_chrome_replacement(
     }
 
     (page_fills, page_glyphs)
+}
+
+/// 把 [`RenderPrimitives`] 中所有 Y 坐标平移 `dy`（DC-14 替换式迁移：
+/// WebView 额外图元（shadows/gradients 等）从手绘 chrome viewport 位置翻译到 SDK chrome viewport）。
+#[cfg(feature = "sdk-chrome")]
+fn translate_scene_primitives_y(prims: &mut RenderPrimitives, dy: f32) {
+    if dy.abs() <= 0.5 {
+        return;
+    }
+    // shadows: rect + offset_y
+    for s in &mut prims.shadows {
+        s.rect.origin.y += dy;
+        s.offset_y += dy;
+    }
+    // images: rect + clip
+    for img in &mut prims.images {
+        img.rect.origin.y += dy;
+        if let Some(ref mut clip) = img.clip {
+            clip.origin.y += dy;
+        }
+    }
+    // gradients: rect + kind y params
+    for g in &mut prims.gradients {
+        g.rect.origin.y += dy;
+        match &mut g.kind {
+            GradientKind::Linear { x0: _, y0, x1: _, y1 } => {
+                *y0 += dy;
+                *y1 += dy;
+            }
+            GradientKind::Radial { cx: _, cy, .. } => {
+                *cy += dy;
+            }
+            GradientKind::Conic { cx: _, cy, .. } => {
+                *cy += dy;
+            }
+        }
+    }
+    // rounded_rects
+    for r in &mut prims.rounded_rects {
+        r.rect.origin.y += dy;
+    }
+    // strokes
+    for s in &mut prims.strokes {
+        s.y1 += dy;
+        s.y2 += dy;
+    }
+    // path_strokes: vertices flat [x0,y0,x1,y1,...], y at odd indices
+    for ps in &mut prims.path_strokes {
+        for i in (1..ps.vertices.len()).step_by(2) {
+            ps.vertices[i] += dy;
+        }
+    }
+    // path_fills: vertices flat [x0,y0,...], y at odd indices
+    for pf in &mut prims.path_fills {
+        for i in (1..pf.vertices.len()).step_by(2) {
+            pf.vertices[i] += dy;
+        }
+    }
 }
 
 /// 环境变量 `ZERO_BROWSER_COLOR_SCHEME` 覆盖（`dark` / `light`）。
@@ -1100,7 +1162,10 @@ mod sdk_chrome_tests {
     use super::*;
     use zero_browser_shell::BrowserShell;
     use zero_render_foundation::image_cache::ImageCache;
-    use zero_render_foundation::primitive::RenderPrimitives;
+    use zero_render_foundation::primitive::{
+        GradientKind, GradientPrimitive, ImagePrimitive, LineCap, LineStyle, RenderPrimitives,
+        RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive,
+    };
 
     #[test]
     fn compose_overlay_merges_sdk_chrome_into_scene() {
@@ -1240,5 +1305,74 @@ mod sdk_chrome_tests {
                 "page fills translated upward: y={translated_y} < chrome_top=140"
             );
         }
+    }
+
+    #[test]
+    fn translate_scene_primitives_y_shifts_shadows_and_gradients() {
+        // DC-14 WebView 额外图元翻译：shadows/gradients/images 等从手绘 chrome viewport
+        // 位置（y=140）翻译到 SDK chrome viewport（≈96，dy=-44）。
+        let mut prims = RenderPrimitives::default();
+        let dy = -44.0;
+
+        // shadow: rect.y + offset_y
+        prims.shadows.push(ShadowPrimitive {
+            rect: Rect::new(16.0, 140.0, 1248.0, 740.0),
+            color: Color::rgb(0, 0, 0),
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur_radius: 8.0,
+            spread_radius: 0.0,
+        });
+        // image: rect.y + clip.y
+        prims.images.push(ImagePrimitive {
+            rect: Rect::new(0.0, 140.0, 100.0, 100.0),
+            image_key: zero_render_foundation::image_cache::ImageKey(1),
+            clip: Some(Rect::new(4.0, 144.0, 92.0, 92.0)),
+        });
+        // gradient: rect.y + kind
+        prims.gradients.push(GradientPrimitive {
+            rect: Rect::new(0.0, 140.0, 100.0, 100.0),
+            kind: GradientKind::Linear {
+                x0: 0.0, y0: 140.0, x1: 100.0, y1: 240.0,
+            },
+            stops: vec![],
+            repeating: false,
+        });
+        // stroke
+        prims.strokes.push(StrokePrimitive {
+            x1: 0.0, y1: 140.0, x2: 10.0, y2: 150.0,
+            width: 2.0, color: Color::rgb(0, 0, 0),
+            style: LineStyle::Solid,
+            cap: LineCap::Butt,
+        });
+        // rounded_rect
+        prims.rounded_rects.push(RoundedRectPrimitive {
+            rect: Rect::new(0.0, 140.0, 100.0, 100.0),
+            color: Color::rgb(0, 0, 0),
+            top_left_radius: 8.0,
+            top_right_radius: 8.0,
+            bottom_right_radius: 8.0,
+            bottom_left_radius: 8.0,
+        });
+
+        translate_scene_primitives_y(&mut prims, dy);
+
+        // shadow translated
+        assert!((prims.shadows[0].rect.origin.y - 96.0).abs() < 0.01);
+        assert!((prims.shadows[0].offset_y - (4.0 + dy)).abs() < 0.01);
+        // image translated
+        assert!((prims.images[0].rect.origin.y - 96.0).abs() < 0.01);
+        assert!((prims.images[0].clip.unwrap().origin.y - 100.0).abs() < 0.01);
+        // gradient translated
+        assert!((prims.gradients[0].rect.origin.y - 96.0).abs() < 0.01);
+        if let GradientKind::Linear { y0, y1, .. } = &prims.gradients[0].kind {
+            assert!((*y0 - 96.0).abs() < 0.01);
+            assert!((*y1 - 196.0).abs() < 0.01);
+        }
+        // stroke translated
+        assert!((prims.strokes[0].y1 - 96.0).abs() < 0.01);
+        assert!((prims.strokes[0].y2 - 106.0).abs() < 0.01);
+        // rounded_rect translated
+        assert!((prims.rounded_rects[0].rect.origin.y - 96.0).abs() < 0.01);
     }
 }
