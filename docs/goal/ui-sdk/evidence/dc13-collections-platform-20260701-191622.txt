@@ -1,0 +1,64 @@
+DC-13 13 域 flesh-out（第 5-6 域）：ui/collections + ui/platform
+================================================================
+日期: 2026-07-01
+分支: ui-sdk
+SDK-only（未触碰 render-foundation / apps/browser，无 product-smoke 风险）
+
+## ui/collections（IF-010 VirtualCollection + 物化 + recycler + key 去重）
+从 103 行骨架升级（spec IF-010 `VirtualCollection` / §8.4.1B 万条记录不卡顿 / §8.8
+materialization + stable key 测）。
+
+- `VirtualCollection` trait（IF-010）：item_count / item_key / build_item。
+- `materialize<C: VirtualCollection + ?Sized>(c, window) -> Vec<MaterializedItem>`（§8.8 物化：
+  对可视窗口调 item_key + build_item，跳过越界索引）+ `materialize_at(c, list, scroll_y)` 便捷。
+- `MaterializedItem { index, key, spec }`。
+- `find_duplicate_key(c) -> Option<ItemKey>`（spec 错误处理：virtual item key 重复 → diagnostic）。
+- `Recycler<V>`：按 ItemKey 缓存 widget 实例状态，`retain_window(keep)` 滚动后回收（窗口外 key
+  状态回收给新进入 key，避免为每个 item 持状态）。
+- `Selection` 扩 select/clear/len/is_empty；`VisibleWindow` 扩 iter/len/is_empty/EMPTY。
+- `DynamicCollection`：闭包支撑的虚拟集合（count + key_fn + build_fn），测试/简单数据源用。
+
+测试：8 测全绿（万条物化只构建可见窗口 / 越界跳过 / 空窗口 / stable key 跨调用 /
+find_duplicate_key 首个重复 / selection toggle+select+clear / recycler retain_window）。
+Coverage（scoped）：collections/lib.rs **96.74%**。
+
+## ui/platform（IF-010 PlatformServices + 拖放/通知 + 内存 mock）
+从 60 行骨架升级（spec IF-010 `PlatformServices` / §8.4.1B 拖拽·剪贴板·file picker·通知走
+platform service / §8.8 platform service mock 测）。
+
+- 重命名 Clipboard→`ClipboardService`、FilePicker→`FilePickerService`（对齐 IF-010 命名），
+  ClipboardService 加 `available()` 默认 true。
+- 新增 `DragItem { mime, data, label }`（§8.4.1B tab/link/download/file）+ builder `.labeled()`；
+  `DragOutcome { Copied, Moved, Cancelled }`；`DragDropService` trait（begin_drag / staged /
+  accepts_mime / receive）—— 组件产生 drag intent → runtime 调 begin_drag，drop 目标经 staged/
+  receive 取回 payload（不污染 widgets）。
+- 新增 `Notification { title, body }` + builder；`NotificationService` trait（notify）。
+- `PlatformServices` 聚合结构体（IF-010）：clipboard/file_picker/drag_drop/notifications 访问器
+  （返回 &dyn Service），宿主持一个；`in_memory_platform_services()` 默认全内存 mock。
+- 内存 mock：InMemoryClipboard（已有）/ InMemoryFilePicker（队列 open + 记录 save 建议名）/
+  InMemoryDragDrop（记录 begin_drag + 暂存 staged + accepted_mimes）/ InMemoryNotifications（记录 sent）。
+
+测试：6 测全绿（clipboard roundtrip via trait object / file_picker 队列+save /
+drag_drop intent 经 service 不碰 widget（接受 MIME Copied+暂存，不接受 Cancelled；receive 取回）/
+notifications 记录 / PlatformServices 聚合四服务 / 自定义后端可注入不绑死实现）。
+Coverage（scoped）：platform/lib.rs **99.47%**。
+
+## 门禁
+  cargo build --workspace             — Finished（0 错误）
+  cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）
+  cargo fmt --all --check             — 净（0 diff）
+  scoped test-guard：zero-ui-collections 8 passed；zero-ui-platform 6 passed
+
+## DC 关联
+  DC-13（13 域接口 + 浏览器最小子集）collections + platform 两域从骨架升级到接口可用；
+  IF-010 VirtualCollection / PlatformServices trait 落地；
+  §8.4.1B 下载面板（virtual list + 打开文件走 platform）/ 拖拽 tab/link/download（drag intent →
+  platform drag/drop）/ 剪贴板·通知 走 platform service 行覆盖；
+  §8.8 Virtual collection materialization + stable key / Platform service mock 测覆盖；
+  DC-17 coverage 两域 per-file 96.74% / 99.47%（≥85%）。
+
+## DC-13 累计进度（6/13 域 flesh-out）
+  ✅ commands ✅ restoration ✅ navigation ✅ overlay ✅ collections ✅ platform
+  剩余 7 域仍 skeleton：forms / assets / gestures / animation / testing / devtools / design-system
+  （gestures 缺 IF-010 GestureRecognizer + arena；animation 缺 IF-010 AnimationClock + fake clock；
+  forms 缺 FormState/FieldState dirty/touched；assets 缺 IF-010 AssetProvider + manifest）。
