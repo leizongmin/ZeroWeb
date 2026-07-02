@@ -554,3 +554,99 @@ fn test_nth_child_first() {
     assert!(matches_selector(&doc, li1, &sel));
     assert!(!matches_selector(&doc, li2, &sel));
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// justify-all declaration 展开（CSS Text 3 §7.1）
+// ═══════════════════════════════════════════════════════════════════
+
+/// 辅助：构建 tag selector。
+fn tag_sel(tag: &str) -> Selector {
+    Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: Some(TypeSelector::Tag(tag.to_string())),
+                    subclass_selectors: vec![],
+                },
+                None,
+            )],
+        },
+    }
+}
+
+/// `text-align: justify-all` 在 declaration 收集层展开为两个 author declaration：
+/// `text-align: justify` + `text-align-last: justify`（R957）。
+/// apply 层单点特判会被 cascade「text-align-last 无 author declaration → 继承」覆盖（R956）。
+#[test]
+fn test_text_align_justify_all_expands_to_two_declarations() {
+    let mut doc = Document::new();
+    let p = doc.create_element("p");
+
+    let stylesheets = vec![zero_css_parser::Stylesheet {
+        rules: vec![zero_css_parser::ast::Rule::Style(zero_css_parser::ast::StyleRule {
+            selectors: vec![tag_sel("p")],
+            declarations: vec![zero_css_parser::ast::Declaration {
+                property: "text-align".to_string(),
+                value: "justify-all".to_string(),
+                important: false,
+            }],
+        })],
+    }];
+
+    let results = collect_matching_declarations(&doc, p, &stylesheets);
+    // 展开为 2 个 declaration
+    assert_eq!(results.len(), 2, "justify-all should expand to 2 declarations");
+    assert_eq!(results[0].0, "text-align");
+    assert_eq!(results[0].1, "justify");
+    assert_eq!(results[1].0, "text-align-last");
+    assert_eq!(results[1].1, "justify");
+    // 两者同 specificity / layer（来自同一源 declaration）
+    assert_eq!(results[0].3, results[1].3, "same specificity");
+    assert_eq!(results[0].4, results[1].4, "same layer");
+}
+
+/// `text-align: justify-all` 大小写不敏感 + 容忍空白。
+#[test]
+fn test_text_align_justify_all_case_insensitive_and_trim() {
+    let mut doc = Document::new();
+    let p = doc.create_element("p");
+
+    let stylesheets = vec![zero_css_parser::Stylesheet {
+        rules: vec![zero_css_parser::ast::Rule::Style(zero_css_parser::ast::StyleRule {
+            selectors: vec![tag_sel("p")],
+            declarations: vec![zero_css_parser::ast::Declaration {
+                property: "TEXT-ALIGN".to_string(),
+                value: "  JUSTIFY-ALL  ".to_string(),
+                important: false,
+            }],
+        })],
+    }];
+
+    let results = collect_matching_declarations(&doc, p, &stylesheets);
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].0, "text-align");
+    assert_eq!(results[1].0, "text-align-last");
+}
+
+/// 普通 `text-align: justify` 不展开（仅 justify-all 展开）。
+#[test]
+fn test_text_align_justify_not_expanded() {
+    let mut doc = Document::new();
+    let p = doc.create_element("p");
+
+    let stylesheets = vec![zero_css_parser::Stylesheet {
+        rules: vec![zero_css_parser::ast::Rule::Style(zero_css_parser::ast::StyleRule {
+            selectors: vec![tag_sel("p")],
+            declarations: vec![zero_css_parser::ast::Declaration {
+                property: "text-align".to_string(),
+                value: "justify".to_string(),
+                important: false,
+            }],
+        })],
+    }];
+
+    let results = collect_matching_declarations(&doc, p, &stylesheets);
+    assert_eq!(results.len(), 1, "plain justify should not expand");
+    assert_eq!(results[0].0, "text-align");
+    assert_eq!(results[0].1, "justify");
+}
