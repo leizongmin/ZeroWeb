@@ -141,9 +141,12 @@ impl BrowserChromeShell for DesktopBrowserShell {
             crate::render::security_color_name(model.security),
             None,
         ));
-        toolbar
-            .children
-            .push(leaf("browser.BrowserMenu", ID_MENU, "chrome", Some("Menu".into())));
+        toolbar.children.push(leaf(
+            "browser.BrowserMenu",
+            ID_MENU,
+            "chrome",
+            Some(crate::i18n::localized_label(crate::i18n::ids::OPEN_MENU)),
+        ));
         root.children.push(toolbar);
         root.children.push(leaf(
             "browser.BrowserTabStrip",
@@ -161,8 +164,12 @@ impl BrowserChromeShell for DesktopBrowserShell {
         viewport.props.insert("bg", Value::Text("viewport".into()));
         root.children.push(viewport);
         if model.find.is_some() {
-            root.children
-                .push(leaf("browser.FindBar", ID_FIND_BAR, "chrome", Some("Find".into())));
+            root.children.push(leaf(
+                "browser.FindBar",
+                ID_FIND_BAR,
+                "chrome",
+                Some(crate::i18n::localized_label(crate::i18n::ids::FIND)),
+            ));
         }
         root
     }
@@ -227,8 +234,12 @@ impl BrowserChromeShell for TabletBrowserShell {
         viewport.props.insert("bg", Value::Text("viewport".into()));
         root.children.push(viewport);
         if model.find.is_some() {
-            root.children
-                .push(leaf("browser.FindBar", ID_FIND_BAR, "chrome", Some("Find".into())));
+            root.children.push(leaf(
+                "browser.FindBar",
+                ID_FIND_BAR,
+                "chrome",
+                Some(crate::i18n::localized_label(crate::i18n::ids::FIND)),
+            ));
         }
         root
     }
@@ -284,8 +295,12 @@ impl BrowserChromeShell for PhoneBrowserShell {
             )),
         ));
         if model.find.is_some() {
-            root.children
-                .push(leaf("browser.FindBar", ID_FIND_BAR, "chrome", Some("Find".into())));
+            root.children.push(leaf(
+                "browser.FindBar",
+                ID_FIND_BAR,
+                "chrome",
+                Some(crate::i18n::localized_label(crate::i18n::ids::FIND)),
+            ));
         }
         root
     }

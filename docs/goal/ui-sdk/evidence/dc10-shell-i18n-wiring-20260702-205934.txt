@@ -1,0 +1,26 @@
+# DC-10 shell.rs label → i18n catalog 接线（2026-07-02）
+
+## 背景
+
+BrowserMenu 接 message id（上轮）后，机械推广到 shell.rs 残余硬编码文案。
+
+## 修复
+
+`browser-ui/chrome/src/shell.rs`：
+- BrowserMenu 叶子文案 `"Menu"` → `localized_label(ids::OPEN_MENU)`（1 处，desktop shell）。
+- FindBar 叶子文案 `"Find"` → `localized_label(ids::FIND)`（3 处：desktop/tablet/phone shell）。
+- 导航状态 `"Back·{} Fwd·{}"` 保留（带 count 的 format string，需参数化 message，follow-up）。
+
+**输出逐字不变**：`localized_label(ids::OPEN_MENU)`=="Menu"、`localized_label(ids::FIND)`=="Find"
+（catalog en 解析）。clippy 修正：`.into()` 多余（localized_label 已返回 String，leaf 取 Option<String>）。
+
+## 验证
+
+- chrome 74 测全绿；**browser 189 测全绿（DC-14 零回归）**。
+- build/clippy/fmt 全净。
+- SDK-side + 输出逐字不变 → 无 product-smoke 风险。
+
+## DC-10 现状
+
+chrome 主要 copy（菜单项 + Menu/Find 标签）已 message id 化。剩余：导航状态 format 参数化、
+其它组件零散文案、paint 期解析（完整 resolution-layer）——非阻塞 follow-up。
