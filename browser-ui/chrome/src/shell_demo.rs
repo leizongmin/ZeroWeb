@@ -64,11 +64,13 @@ fn leaf(component: &str, id: &str, bg: &str, text: Option<String>) -> WidgetSpec
     s
 }
 
-fn focus_button(id: &str, label: &str, action: &str) -> WidgetSpec {
+/// `message_id` 为 `crate::i18n::ids::*` 常量；label 由 i18n catalog 解析（消除硬编码）。
+fn focus_button(id: &str, message_id: &str) -> WidgetSpec {
+    let label = crate::i18n::localized_label(message_id);
     let mut s = WidgetSpec::new("demo.FocusButton");
     s.id = Some(WidgetId::new(id));
-    s.props.insert("label", Value::Text(label.into()));
-    s.props.insert("action", Value::Text(action.into()));
+    s.props.insert("label", Value::Text(label));
+    s.props.insert("action", Value::Text(message_id.into()));
     s
 }
 
@@ -106,17 +108,17 @@ pub fn build_demo_spec(model: &BrowserChromeModel) -> WidgetSpec {
         "browser.SecurityBadge",
         ID_SECURITY,
         security_color_name(model.security),
-        Some(format!("Security: {}", security_color_name(model.security))),
+        Some(crate::i18n::security_status_label(security_color_name(model.security))),
     ));
 
     // toolbar：固定宽按钮在前，AddressBar(flex=1) 填剩余宽。
     let mut toolbar = node_layout("browser.ToolbarRow", ID_TOOLBAR, "row");
     toolbar
         .children
-        .push(focus_button(ID_NEW_TAB, "New Tab", crate::i18n::ids::NEW_TAB));
+        .push(focus_button(ID_NEW_TAB, crate::i18n::ids::NEW_TAB));
     toolbar
         .children
-        .push(focus_button(ID_MENU_OPEN, "Menu", crate::i18n::ids::OPEN_MENU));
+        .push(focus_button(ID_MENU_OPEN, crate::i18n::ids::OPEN_MENU));
     let mut address = leaf(
         "browser.AddressBar",
         ID_ADDRESS_BAR,
@@ -154,7 +156,7 @@ pub fn build_demo_spec(model: &BrowserChromeModel) -> WidgetSpec {
     // menu 子树（FocusScope trap 演示）：含一个可聚焦 Close 项。
     let mut menu = node_layout("browser.MenuPanel", ID_MENU, "column");
     menu.children
-        .push(focus_button(ID_MENU_CLOSE, "Close Menu", crate::i18n::ids::CLOSE_MENU));
+        .push(focus_button(ID_MENU_CLOSE, crate::i18n::ids::CLOSE_MENU));
     root.children.push(menu);
 
     root

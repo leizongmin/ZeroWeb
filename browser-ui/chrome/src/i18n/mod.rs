@@ -43,6 +43,8 @@ pub mod ids {
     pub const NAV_STATUS: &str = "browser.nav_status";
     /// 书签计数模板：`{count}` 为 Count 参数（支持 plural）。
     pub const N_BOOKMARKS: &str = "browser.n_bookmarks";
+    /// 安全状态模板：`{status}` 为安全色名（如 "secure"/"insecure"）。
+    pub const SECURITY_STATUS: &str = "browser.security_status";
 }
 
 /// 默认 locale（`en`）。
@@ -79,6 +81,11 @@ pub fn default_catalog() -> MessageCatalog {
         pf.insert(zero_ui_i18n::PluralCategory::One, "{count} bookmark".to_string());
         e.plural_forms = pf;
         e.description = Some("书签计数：{count} 为条数，支持 plural".into());
+        e
+    });
+    messages.insert(MessageId::new(ids::SECURITY_STATUS), {
+        let mut e = MessageEntry::simple("Security: {status}");
+        e.description = Some("安全状态：{status} 为安全色名（secure/insecure/mixed/dangerous）".into());
         e
     });
     MessageCatalog {
@@ -169,6 +176,13 @@ pub fn bookmarks_label(count: usize) -> String {
     localized_label_with_params(ids::N_BOOKMARKS, &params)
 }
 
+/// 安全状态文案：`status_name`（如 "secure"/"insecure"）→ 本地化字符串（如 "Security: secure"）。
+pub fn security_status_label(status_name: &str) -> String {
+    let mut params = MessageParams::new();
+    params.set_text("status", status_name);
+    localized_label_with_params(ids::SECURITY_STATUS, &params)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,7 +254,7 @@ mod tests {
             );
         }
         // 参数化 ids：resolve 需提供 params（validate_params 阶段校验 {param}）。
-        let param_ids = [ids::NAV_STATUS, ids::N_BOOKMARKS];
+        let param_ids = [ids::NAV_STATUS, ids::N_BOOKMARKS, ids::SECURITY_STATUS];
         for id in param_ids {
             let mref = MessageRef {
                 id: MessageId::new(id),
@@ -294,6 +308,12 @@ mod tests {
     }
 
     #[test]
+    fn security_status_label_formats_status() {
+        assert_eq!(security_status_label("secure"), "Security: secure");
+        assert_eq!(security_status_label("insecure"), "Security: insecure");
+    }
+
+    #[test]
     fn bookmarks_label_plural() {
         assert_eq!(bookmarks_label(3), "3 bookmarks");
         assert_eq!(bookmarks_label(1), "1 bookmark");
@@ -308,6 +328,8 @@ mod tests {
             p.set_text("fwd", "x");
         } else if id == ids::N_BOOKMARKS {
             p.set_count("count", 1);
+        } else if id == ids::SECURITY_STATUS {
+            p.set_text("status", "x");
         }
         p
     }

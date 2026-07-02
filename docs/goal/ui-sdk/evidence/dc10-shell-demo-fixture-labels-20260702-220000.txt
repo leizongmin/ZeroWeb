@@ -1,0 +1,22 @@
+DC-10 shell_demo fixture labels → i18n message ids (2026-07-02)
+
+Changes:
+- browser-ui/chrome/i18n:
+  - Add SECURITY_STATUS message id "browser.security_status" ("Security: {status}")
+  - Add security_status_label(status_name) helper
+  - +1 test (security_status_label_formats_status)
+- browser-ui/chrome/shell_demo.rs:
+  - focus_button(): derive label from i18n catalog via localized_label(), remove hardcoded label arg
+  - Security badge: format!("Security: {}") → security_status_label()
+  - All callers updated (NEW_TAB, OPEN_MENU, CLOSE_MENU)
+
+Gates:
+- chrome 80 tests green (was 79, +1)
+- Full workspace: build + clippy --workspace --all-targets -D warnings clean
+- fmt clean
+- No browser test regression (non-render path)
+- SDK-only, no product-smoke risk
+
+Effect:
+- DC-10 "shell_demo等非生产fixture文案" gap closed
+- All hardcoded UI labels in browser-ui/chrome now go through i18n catalog
