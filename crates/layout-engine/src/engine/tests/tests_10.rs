@@ -667,6 +667,84 @@ fn test_img_css_overrides_html_attributes() {
     );
 }
 
+/// R976：CSS `aspect-ratio` 优先于替换元素固有宽高比（css-sizing-4 §4）。无 HTML width/height
+/// 属性的 `<img>`（回退到解码固有尺寸）在一侧 CSS 显式、另一侧 auto 时，auto 侧须按 **CSS
+/// aspect-ratio**（若设）推导，而非固有 w/h。旧实现恒用固有比，致 `<img style="block-size:55vw;
+/// aspect-ratio:2/1">`（固有 8×16）width 算成 440×(8/16)=220 而非 440×2=880
+/// （nested-grid-item-block-size-001 oracle 64.36%→13.76%）。
+#[test]
+fn test_img_css_aspect_ratio_overrides_intrinsic_ratio() {
+    let (mut doc, body) = make_doc_with_body();
+    let img = doc.create_element("img");
+    doc.append_child(body, img).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Block;
+    s.height = LengthValue::Px(440.0); // 显式 height（如 55vw @800 viewport）
+    s.aspect_ratio = Some(2.0); // CSS aspect-ratio: 2/1 (width/height)
+    styles.insert(img, s);
+
+    // 注入解码固有尺寸 8×16（固有比 0.5，区别于 CSS aspect-ratio 2.0）
+    let mut intrinsic = HashMap::new();
+    intrinsic.insert(img, (8.0_f32, 16.0_f32));
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, intrinsic);
+
+    let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+    // height 显式 440；width auto 须按 CSS aspect-ratio 2.0 推导 = 440×2 = 880
+    // （旧实现按固有 8/16 推导 = 220，是本次修复的 bug）。
+    assert!(
+        (img_box.height - 440.0).abs() < 2.0,
+        "img height should be ~440 (CSS explicit), got {}",
+        img_box.height
+    );
+    assert!(
+        (img_box.width - 880.0).abs() < 2.0,
+        "img width should be ~880 (CSS aspect-ratio 2/1 @ height 440), got {}; \
+         bug = used intrinsic 8/16 ratio → 220",
+        img_box.width
+    );
+}
+
+/// R976 对称分支：CSS width 显式 + aspect-ratio + height auto，height 须按 CSS aspect-ratio
+/// 推导（旧实现按固有比）。
+#[test]
+fn test_img_css_aspect_ratio_overrides_intrinsic_ratio_width_explicit() {
+    let (mut doc, body) = make_doc_with_body();
+    let img = doc.create_element("img");
+    doc.append_child(body, img).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Block;
+    s.width = LengthValue::Px(200.0);
+    s.aspect_ratio = Some(2.0); // width/height = 2/1
+    styles.insert(img, s);
+
+    let mut intrinsic = HashMap::new();
+    intrinsic.insert(img, (8.0_f32, 16.0_f32)); // 固有比 0.5
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, intrinsic);
+
+    let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+    // width 显式 200；height auto 须按 CSS aspect-ratio 2.0 推导 = 200/2 = 100
+    // （旧实现按固有 16/8 推导 = 200×(16/8)=400，是 bug）。
+    assert!(
+        (img_box.width - 200.0).abs() < 2.0,
+        "img width should be ~200 (CSS explicit), got {}",
+        img_box.width
+    );
+    assert!(
+        (img_box.height - 100.0).abs() < 2.0,
+        "img height should be ~100 (CSS aspect-ratio 2/1 @ width 200), got {}; \
+         bug = used intrinsic 16/8 ratio → 400",
+        img_box.height
+    );
+}
+
 /// 测试 inline-only 容器收缩后，后续普通流兄弟应同步上移。
 #[test]
 fn test_inline_only_container_shrink_reflows_following_sibling() {
