@@ -539,4 +539,48 @@ mod tests {
         );
         assert_eq!(r_tab.kind, ShellKind::Tablet);
     }
+
+    #[test]
+    fn phone_and_tablet_shells_render_to_scene() {
+        // DC-15：Phone/Tablet shell 经 WidgetHost 渲染到统一 Scene（mobile shell「usable」
+        // headless 验证——三 shell 共享 BrowserChromeModel + 组件工厂，渲染路径不绕过 ui/render）。
+        use crate::render::register_chrome_factories;
+        use zero_ui_core::geometry::{Constraints, Size};
+        use zero_ui_core::theme::SemanticTokens;
+        use zero_ui_render::render_node::RenderPrimitive;
+        use zero_ui_runtime::WidgetHost;
+
+        let model = BrowserChromeModel::new();
+        let tokens = SemanticTokens::light();
+
+        fn fill_count(scene: &zero_ui_render::Scene) -> usize {
+            scene
+                .entries
+                .iter()
+                .filter(|e| matches!(e.primitive, RenderPrimitive::FillRect { .. }))
+                .count()
+        }
+
+        // Phone shell @ 390x844（Compact + safe_area）。
+        let phone_metrics = metrics(390.0, 844.0, 20.0, 0.0);
+        let phone_spec = PhoneBrowserShell.build(&model, &phone_metrics);
+        let mut host = WidgetHost::new();
+        register_chrome_factories(&mut host, &tokens);
+        host.set_root(&phone_spec);
+        host.layout(Constraints::loose(Size::new(390.0, 844.0)));
+        let phone_scene = host.paint();
+        assert!(!phone_scene.entries.is_empty(), "phone shell renders non-empty scene");
+        assert!(fill_count(phone_scene) >= 1, "phone shell paints chrome bar fills");
+
+        // Tablet shell @ 720x1024（Medium）。
+        let tablet_metrics = metrics(720.0, 1024.0, 0.0, 0.0);
+        let tablet_spec = TabletBrowserShell.build(&model, &tablet_metrics);
+        let mut host = WidgetHost::new();
+        register_chrome_factories(&mut host, &tokens);
+        host.set_root(&tablet_spec);
+        host.layout(Constraints::loose(Size::new(720.0, 1024.0)));
+        let tablet_scene = host.paint();
+        assert!(!tablet_scene.entries.is_empty(), "tablet shell renders non-empty scene");
+        assert!(fill_count(tablet_scene) >= 1, "tablet shell paints chrome bar fills");
+    }
 }
