@@ -5732,6 +5732,7 @@ dependencies = [
  "zero-browser-shell",
  "zero-ui-adapter-webview",
  "zero-ui-core",
+ "zero-ui-patterns",
  "zero-ui-widgets",
 ]
 

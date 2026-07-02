@@ -6,17 +6,30 @@
 //! 这是 UI SDK **唯一**允许依赖 `zero-browser-shell` 与 `ui/adapters/webview` 的浏览器耦合点
 //! （spec 约束 3 / DC-1）。
 //!
-//! M1 skeleton：`BrowserAction` 合约、`NavigationButtons`、`PageViewportFrame`；
-//! 其余 §8.4.1A 组件（AddressBar/BrowserTabStrip/SecurityBadge/SiteInfoPanel/BookmarksBar/
-//! FindBar/PermissionPrompt/DownloadPanel/BrowserMenu/PageLoadIndicator）在 M2 随迁移落地。
+//! M2 已落地 §8.4.1A 组件：`NavigationButtons`、`PageViewportFrame`、`PageLoadIndicator`、
+//! `SecurityBadge`、`BookmarksBar`、`BrowserTabStrip`、`FindBar`、`AddressBar`。
+//! 剩余 `SiteInfoPanel`/`PermissionPrompt`/`DownloadPanel`/`BrowserMenu`（overlay/dialog 重）
+//! 随 `ui/overlay` 接入与 shell 迁移落地。
 
+pub mod address_bar;
+pub mod bookmarks_bar;
 pub mod browser_action;
+pub mod browser_tab_strip;
+pub mod find_bar;
 pub mod navigation_buttons;
+pub mod page_load_indicator;
 pub mod page_viewport;
+pub mod security_badge;
 
+pub use address_bar::{AddressBar, AddressSubmission};
+pub use bookmarks_bar::{BookmarkNode, BookmarksBar};
 pub use browser_action::BrowserAction;
+pub use browser_tab_strip::{BrowserTab, BrowserTabStrip};
+pub use find_bar::FindBar;
 pub use navigation_buttons::NavigationButtons;
+pub use page_load_indicator::PageLoadIndicator;
 pub use page_viewport::PageViewportFrame;
+pub use security_badge::{SecurityBadge, SecurityState};
 
 /// 浏览器 chrome 模型（M2 desktop/tablet/phone shell 共享合约的根，spec §8.4.1A）。
 ///

@@ -8,6 +8,8 @@ license.workspace = true
 [dependencies]
 zero-ui-core = { workspace = true }
 zero-ui-widgets = { workspace = true }
+# §8.4.1A 组件组合通用 patterns（TabBar/SuggestionList/StatusBubble/SearchField）。
+zero-ui-patterns = { workspace = true }
 zero-ui-adapter-webview = { workspace = true }
 zero-browser-shell = { workspace = true }
 compact_str = { workspace = true, features = ["serde"] }
