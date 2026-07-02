@@ -6074,6 +6074,7 @@ name = "zero-ui-design-system"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "zero-ui-core",
 ]
 

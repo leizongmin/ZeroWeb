@@ -4,11 +4,15 @@
 //!
 //! - [`scene_snapshot`]：把 Scene 序列化为确定性字符串（golden test / 回归）。
 //! - [`semantics_snapshot`]：把 a11y 树序列化为确定性字符串。
+//! - [`layout_bounds`]：把「WidgetId → Rect」列表序列化为确定性字符串（布局 golden）。
+//! - [`golden`]：逐行对比快照与黄金串，首个差异返回 [`SnapshotDiff`](golden::SnapshotDiff)。
 //! - [`FakeClock`]：确定性推进时间（动画/调度）。
 
 pub use scene_snapshot::snapshot_scene;
 pub use semantics_snapshot::snapshot_semantics;
 
+pub mod golden;
+pub mod layout_bounds;
 pub mod scene_snapshot;
 pub mod semantics_snapshot;
 

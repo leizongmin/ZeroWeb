@@ -1,0 +1,68 @@
+DC-13 13 域 flesh-out（第 11-13 域，收尾）：ui/design-system + ui/testing + ui/devtools
+==========================================================================================
+日期: 2026-07-01
+分支: ui-sdk
+SDK-only（未触碰 render-foundation / apps/browser，无 product-smoke 风险）
+
+## ui/design-system（StylePack + Zero default 首个风格包 = DC-15 终局需求）
+从 105 行骨架升级（spec §8.4.1 design-system / DC-15 首个风格包 Zero default）。
+
+- 新增 `SpacingTokens`（密度缩放 xs/sm/md/lg/xl/xxl，基线 4/8/12/16/24/32 × density factor）。
+- 新增 `RadiusTokens`（none/sm/md/lg/full）+ `TypographyScale`（caption/body/title/headline）。
+- **`StylePack`**：聚合 name + density + motion + spacing + radius + typography（风格包）；
+  `spacing_value(SpacingStep)` 便捷 API。
+- **`zero_default() -> StylePack`**（DC-15 首个风格包：Comfortable 密度 + 默认动效 + 标准 token）+
+  `zero_compact()`（Compact 密度，间距 ×0.8）。
+- **与主题边界**：风格包只管几何/动效/字号密度 token；颜色由 ui/core::theme semantic token 提供（不在风格包重复，spec DC-5）。
+- 保留 Density / MotionTokens / ComponentVariant。
+
+测试：7 测全绿（density / reduced motion / spacing 密度缩放 / radius+typography 默认 / Zero default
+风格包聚合 / zero_compact 缩放 / StylePack serde roundtrip；原 3 测）。
+Coverage（scoped）：design-system/lib.rs **89.78%**。
+
+## ui/testing（layout bounds snapshot + golden 对比）
+从 snapshot 骨架扩展（spec FR-016 testing / DC-14 CI snapshot / §8.4.1B UI 调试回归）。
+
+- 新增 `layout_bounds.rs`：`snapshot_layout_bounds(&[(WidgetId, Rect)]) -> String`
+  （DC-2 flex / DC-9 invalidation / DC-12 adaptive 布局断言用，按输入顺序序列化）。
+- 新增 `golden.rs`：`compare_snapshots(actual, expected) -> Result<(), SnapshotDiff>`
+  （逐行对比，首个差异行返回 line/actual/expected；长度差异按 `<missing>` 处理）+
+  `SnapshotDiff`（Display + Error）。
+- 保留 snapshot_scene / snapshot_semantics / FakeClock。
+
+测试：12 lib 测 + 1 集成测全绿（snapshot 确定性/text/stroke/clip 4 + semantics 1 + layout_bounds 2 +
+golden 5；原 5 测）。
+Coverage（scoped）：golden 100% / layout_bounds 100% / scene_snapshot 85.23% / semantics 97.62% / lib 100%。
+
+## ui/devtools（Inspector dev overlay + Timeline 统计）
+从 Inspector+Timeline skeleton 扩展（spec §8.4.1 devtools / §8.4.1B UI 调试回归）。
+
+- `Inspector` 加 `hovered` + dev overlay 开关（`show_layout_bounds` / `show_semantics` /
+  `show_paint_regions`）+ `any_overlay()`（host 决定是否额外调试 paint pass）+ `toggle_layout_bounds()`。
+- `Timeline` 加统计：`min_ms` / `max_ms` / `percentile(p)`（p50/p99）/ `jank_count`（超阈值掉帧数）+
+  `fps`（1000/avg）+ `with_jank_threshold()` 可配置阈值。
+- dev/test feature gate，不影响 release footprint（spec §8.4.10）。
+
+测试：5 测全绿（inspector select/hover/overlay + timeline average + min/max/percentile +
+jank/fps + 空统计；原 2 测）。
+Coverage（scoped）：devtools/lib.rs **99.16%**。
+
+## 门禁
+  cargo build --workspace             — Finished（0 错误）
+  cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）
+  cargo fmt --all --check             — 净（0 diff）
+  scoped test-guard：design-system 7 / testing 12(+1 集成) / devtools 5 全绿
+
+## DC 关联
+  DC-13（13 域接口 + 浏览器最小子集）**13/13 域全部从骨架升级到接口可用**：
+    commands / restoration / navigation / overlay / collections / platform / gestures / animation /
+    forms / assets / design-system / testing / devtools。
+  DC-15 首个风格包 Zero default 交付（`zero_default() -> StylePack`）。
+  §8.8 全部 13 域对应单测覆盖；§8.4.1B 各浏览器接入行有对应接口能力。
+  DC-17 coverage 三域 per-file 89.78% / 85–100% / 99.16%（≥85%）。
+
+## DC-13 收口（13/13）
+  全部 13 个应用级 UI 能力域的接口边界 + 浏览器无关 + 单测覆盖落地。
+  剩余 DC-13 工作：浏览器接入集成测试（§8.4.1B 矩阵逐行：菜单/快捷键/palette → commands、
+  权限/下载 → overlay+collections+platform、tab overview → gestures+collections+animation+restoration 等），
+  属 apps/browser 灰度迁移（DC-14，product-smoke）范畴，非 DC-13 接口本身。
