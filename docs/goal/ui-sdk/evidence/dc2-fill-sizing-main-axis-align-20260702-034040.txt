@@ -1,0 +1,42 @@
+DC-2 host fill-sizing + 主轴对齐（main_axis_align）— 2026-07-02
+
+## 变更
+`ui/runtime/src/host.rs`：
+1. **fill-sizing（遵守 min 约束）**：`measure_linear` 容器主/交叉尺寸钳到 `[min, max]`
+   （`content.max(min_main).min(max_main)` / cross 同）。修正此前「容器忽略 min、恒 content-sized」
+   的限制——现 tight/exact 约束下容器能填满空间。默认 loose（min=0）与历史 content-sized 逐位等价。
+2. **主轴对齐 `main_axis_align`**（start/center/end，默认 start 向后兼容）+ `MainAxisAlignment`
+   + `main_axis_offset` + `main_axis_alignment_from_props`（读 prop，Row 接受 left/right、
+   Column 接受 top/bottom 别名）。`arrange` Row/Column 臂按整组子节点打包长度算剩余主轴空间，
+   按对齐分配起始偏移。
+
+## 为什么（闭合上一轮 main-axis 架构备忘）
+上轮记录：main-axis 对齐无法生效，因 `measure_linear` 忽略 min → 无 flex 子节点时容器=内容尺寸、
+剩余主轴空间恒 0。本轮以 **fill-sizing** 解之：父给 tight/exact 主轴约束时容器填满 → 剩余空间 > 0
+→ 主轴对齐生效。弹性子节点（flex>0）消费全部剩余空间 → free=0 → 对齐无可见效果（与 CSS flexbox
+一致：flex-grow 优先于 justify-content）。chrome 工具栏可用此居中固定标题组 / 右对齐按钮组。
+
+## 测试（ui-runtime，scoped test-guard）
+新增 7 测（host::tests）：
+- row_fills_to_tight_main_constraint（tight 400x100 根 Row → 填满 400x100，此前 100x50）
+- row_loose_constraint_still_content_sized_backward_compatible（loose → 仍 100x50，向后兼容）
+- row_main_axis_center_with_tight_constraint（tight+center → 第一 Patch 150..200）
+- row_main_axis_end_with_tight_constraint（tight+end → 第二 Patch 350..400 贴右）
+- row_main_axis_center_respects_gap_in_packed_length（gap=10 → 偏移 145，第二 205）
+- row_main_axis_center_no_effect_when_flex_consumes_space（flex 子节点消费空间 → 对齐无效）
+- column_main_axis_center_with_tight_constraint（Column tight 100x400 + center → top=150）
+
+ui-runtime: host::tests 39→46 全绿 + 3 集成测全绿。
+下游回归（fill-sizing 改容器尺寸，重点验证）：browser-ui/chrome 63、ui/examples 14、
+ui/adapters/render-foundation 5、ui/widgets 33 全绿（零回归——host.layout 顶层用 loose，
+measure_linear 给子节点的约束 min 恒 0，故 fill-sizing 仅在显式 tight/exact 顶层约束时激活）。
+
+## 门禁
+- cargo build --workspace：Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings：Finished（0 警告）。
+- cargo fmt --all --check：净。
+- host.rs coverage（scoped llvm-cov）：regions 93.26% / functions 94.37% / lines 91.03%（≥85%，较上轮 92.93%/93.98%/90.56% 提升）。
+
+## 范围
+SDK-only（ui/runtime），未触碰 render-foundation / apps/browser → 无 product-smoke 风险。
+DC-1 复核：零新依赖、零浏览器业务 crate 依赖。

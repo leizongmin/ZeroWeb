@@ -645,6 +645,23 @@ fn cross_axis_alignment_from_props(props: &PropsMap) -> CrossAxisAlignment {
     CrossAxisAlignment::Start
 }
 
+/// 从 props 读主轴对齐（`main_axis_align`：`"start"`/`"center"`/`"end"`，大小写不敏感；
+/// Row 也接受 `"left"`/`"right"`、Column 也接受 `"top"`/`"bottom"`）。
+///
+/// 缺省 [`MainAxisAlignment::Start`]（向后兼容历史左/顶打包行为）。需容器主轴有剩余空间才生效
+/// （fill-sizing 或父 tight/exact 约束）；弹性子节点消费剩余空间时主轴对齐无可见效果。
+fn main_axis_alignment_from_props(props: &PropsMap) -> MainAxisAlignment {
+    if let Some(Value::Text(s)) = props.get("main_axis_align") {
+        match s.to_ascii_lowercase().as_str() {
+            "center" => return MainAxisAlignment::Center,
+            "end" | "right" | "bottom" => return MainAxisAlignment::End,
+            "start" | "left" | "top" => return MainAxisAlignment::Start,
+            _ => {}
+        }
+    }
+    MainAxisAlignment::Start
+}
+
 /// 线性容器（Row/Column）的主轴方向。
 #[derive(Clone, Copy, PartialEq)]
 enum MainAxis {
@@ -683,6 +700,35 @@ fn cross_offset(align: CrossAxisAlignment, container_cross: f32, child_cross: f3
     }
 }
 
+/// 线性容器（Row/Column）的主轴对齐方式。
+///
+/// 控制整组子节点在容器主轴上的放置。**生效前提**：容器主轴有剩余空间（`free > 0`），即容器
+/// 尺寸大于子节点打包长度。这发生在：父节点给容器 tight/exact 主轴约束（fill-sizing，
+/// [`measure_linear`] 钳到 min），或容器主轴 max 大于内容。弹性子节点（`flex > 0`）会消费全部
+/// 剩余空间 → `free = 0` → 主轴对齐无可见效果（与 CSS flexbox 一致：`flex-grow` 优先于
+/// `justify-content`）。
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum MainAxisAlignment {
+    /// 子节点紧贴主轴起点（Row=左侧 / Column=顶部），子节点间用 `gap` 间隔。默认，向后兼容。
+    #[default]
+    Start,
+    /// 整组子节点（含 `gap`）在主轴居中。
+    Center,
+    /// 整组子节点（含 `gap`）紧贴主轴终点（Row=右侧 / Column=底部）。
+    End,
+}
+
+/// 主轴对齐的起始偏移量（整组子节点相对主轴起点的位移）。
+///
+/// `free` = 容器主轴尺寸 − 整组子节点打包长度（含 gap）。Start→0、Center→free/2、End→free。
+fn main_axis_offset(align: MainAxisAlignment, free: f32) -> f32 {
+    match align {
+        MainAxisAlignment::Start => 0.0,
+        MainAxisAlignment::Center => free * 0.5,
+        MainAxisAlignment::End => free,
+    }
+}
+
 /// Row/Column 共用的弹性布局：两遍 measure。
 ///
 /// 1. **非弹性子节点**（`flex == 0`）：按声明顺序贪心 measure（约束 = 剩余主轴空间），
@@ -692,12 +738,25 @@ fn cross_offset(align: CrossAxisAlignment, container_cross: f32, child_cross: f3
 ///    填满份额）。无弹性子节点时退化为纯贪心，与旧实现逐位等价（向后兼容）。
 ///
 /// 交叉轴：所有子节点以 `max_cross`（loose）measure，容器交叉尺寸 = 子节点交叉最大值。
+///
+/// **尺寸约束**：容器主/交叉尺寸钳到 `[min, max]`（遵守传入约束的 `min`，使容器可在父节点给定
+/// tight/exact 约束时填满空间——为主轴对齐 [`MainAxisAlignment`] 提供可分配的剩余空间）。
 fn measure_linear(node: &mut HostNode, lctx: &mut LayoutCtx, constraints: Constraints, axis: MainAxis) -> Size {
     let gap = gap_from_props(&node.props);
     let n = node.children.len();
-    let (max_main, max_cross) = match axis {
-        MainAxis::Horizontal => (constraints.max_width, constraints.max_height),
-        MainAxis::Vertical => (constraints.max_height, constraints.max_width),
+    let (min_main, max_main, min_cross, max_cross) = match axis {
+        MainAxis::Horizontal => (
+            constraints.min_width,
+            constraints.max_width,
+            constraints.min_height,
+            constraints.max_height,
+        ),
+        MainAxis::Vertical => (
+            constraints.min_height,
+            constraints.max_height,
+            constraints.min_width,
+            constraints.max_width,
+        ),
     };
     // 主轴/交叉尺寸 per child（arrange 仍按 cached_size 顺序放置，无需调整）。
     let mut child_main = vec![0.0_f32; n];
@@ -776,13 +835,12 @@ fn measure_linear(node: &mut HostNode, lctx: &mut LayoutCtx, constraints: Constr
         }
     }
 
-    let total_main = (child_main.iter().sum::<f32>() + gaps_total).min(max_main).max(0.0);
-    let total_cross = child_cross
-        .iter()
-        .copied()
-        .fold(0.0_f32, f32::max)
-        .min(max_cross)
-        .max(0.0);
+    // 容器尺寸钳到 [min, max]：遵守传入约束的 min（fill-sizing），使 tight/exact 约束下容器
+    // 能填满空间，为主轴对齐提供剩余空间。默认 loose（min=0）时与历史 content-sized 行为一致。
+    let content_main = (child_main.iter().sum::<f32>() + gaps_total).max(0.0);
+    let total_main = content_main.max(min_main).min(max_main);
+    let content_cross = child_cross.iter().copied().fold(0.0_f32, f32::max).max(0.0);
+    let total_cross = content_cross.max(min_cross).min(max_cross);
     match axis {
         MainAxis::Horizontal => Size::new(total_main, total_cross),
         MainAxis::Vertical => Size::new(total_cross, total_main),
@@ -827,22 +885,33 @@ fn arrange(node: &mut HostNode, origin: Point) {
     match node_container_kind(node) {
         Some(ContainerKind::Column) => {
             let gap = gap_from_props(&node.props);
-            let align = cross_axis_alignment_from_props(&node.props);
+            let cross = cross_axis_alignment_from_props(&node.props);
+            let main = main_axis_alignment_from_props(&node.props);
             let container_cross = node.cached_size.width;
-            let mut y = origin.y;
+            let n = node.children.len();
+            // 主轴打包长度 = 子节点主轴尺寸和 + gap；剩余空间按主轴对齐分配起始偏移。
+            let packed =
+                node.children.iter().map(|c| c.cached_size.height).sum::<f32>() + gap * n.saturating_sub(1) as f32;
+            let main_offset = main_axis_offset(main, (node.cached_size.height - packed).max(0.0));
+            let mut y = origin.y + main_offset;
             for child in node.children.iter_mut() {
-                let cx = cross_offset(align, container_cross, child.cached_size.width);
+                let cx = cross_offset(cross, container_cross, child.cached_size.width);
                 arrange(child, Point::new(origin.x + cx, y));
                 y += child.cached_size.height + gap;
             }
         }
         Some(ContainerKind::Row) => {
             let gap = gap_from_props(&node.props);
-            let align = cross_axis_alignment_from_props(&node.props);
+            let cross = cross_axis_alignment_from_props(&node.props);
+            let main = main_axis_alignment_from_props(&node.props);
             let container_cross = node.cached_size.height;
-            let mut x = origin.x;
+            let n = node.children.len();
+            let packed =
+                node.children.iter().map(|c| c.cached_size.width).sum::<f32>() + gap * n.saturating_sub(1) as f32;
+            let main_offset = main_axis_offset(main, (node.cached_size.width - packed).max(0.0));
+            let mut x = origin.x + main_offset;
             for child in node.children.iter_mut() {
-                let cy = cross_offset(align, container_cross, child.cached_size.height);
+                let cy = cross_offset(cross, container_cross, child.cached_size.height);
                 arrange(child, Point::new(x, origin.y + cy));
                 x += child.cached_size.width + gap;
             }
@@ -1605,6 +1674,123 @@ mod tests {
         host.layout(Constraints::loose(Size::new(400.0, 100.0)));
         let small = host.rect_of(&WidgetId::new("small")).unwrap();
         assert_eq!(small.top(), 0.0, "unknown value → Start fallback");
+    }
+
+    // ── fill-sizing（遵守 min 约束）+ 主轴对齐（main_axis_align）测试 ──────────
+    //
+    // 容器现遵守传入约束的 min：tight/exact 约束下容器填满主轴（fill-sizing），从而为主轴对齐
+    // 提供剩余空间。默认 loose（min=0）仍为 content-sized（向后兼容）。
+
+    #[test]
+    fn row_fills_to_tight_main_constraint() {
+        // tight(400,100) 根 Row + 两 Patch(50)：内容打包 100，min=400 → 容器填满到 400x100
+        // （此前 content-sized 会返回 100x50）。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Row");
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        let size = host.layout(Constraints::tight(Size::new(400.0, 100.0)));
+        assert_eq!(
+            size,
+            Size::new(400.0, 100.0),
+            "tight constraint → container fills main+cross"
+        );
+    }
+
+    #[test]
+    fn row_loose_constraint_still_content_sized_backward_compatible() {
+        // loose(400,100)（min=0）→ 容器仍 content-sized 100x50（fill-sizing 不激活）。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Row");
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        let size = host.layout(Constraints::loose(Size::new(400.0, 100.0)));
+        assert_eq!(size, Size::new(100.0, 50.0), "loose → content-sized (backward compat)");
+    }
+
+    #[test]
+    fn row_main_axis_center_with_tight_constraint() {
+        // tight(400,100) + center：容器填满 400，打包 100，free=300，偏移 150 → 第一 Patch 150..200。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props.insert("main_axis_align", Value::Text("center".into()));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        host.layout(Constraints::tight(Size::new(400.0, 100.0)));
+        let a = host.rect_of(&WidgetId::new("a")).unwrap();
+        let b = host.rect_of(&WidgetId::new("b")).unwrap();
+        assert_eq!(a.left(), 150.0, "center: first child at free/2 = 150");
+        assert_eq!(a.right(), 200.0);
+        assert_eq!(b.left(), 200.0);
+        assert_eq!(b.right(), 250.0);
+    }
+
+    #[test]
+    fn row_main_axis_end_with_tight_constraint() {
+        // tight(400,100) + end：偏移 300 → 第二 Patch 350..400（贴右）。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props.insert("main_axis_align", Value::Text("end".into()));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        host.layout(Constraints::tight(Size::new(400.0, 100.0)));
+        let b = host.rect_of(&WidgetId::new("b")).unwrap();
+        assert_eq!(b.right(), 400.0, "end: last child flush to right edge");
+        assert_eq!(b.left(), 350.0);
+    }
+
+    #[test]
+    fn row_main_axis_center_respects_gap_in_packed_length() {
+        // tight(400,100) + center + gap=10：打包 110，free=290，偏移 145 → 第一 145..195，第二 205..255。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props.insert("main_axis_align", Value::Text("center".into()));
+        root.props.insert("gap", Value::Float(10.0));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        host.layout(Constraints::tight(Size::new(400.0, 100.0)));
+        let a = host.rect_of(&WidgetId::new("a")).unwrap();
+        let b = host.rect_of(&WidgetId::new("b")).unwrap();
+        assert_eq!(a.left(), 145.0, "center with gap: (400-110)/2 = 145");
+        assert_eq!(b.left(), 205.0, "second = 145 + 50 + gap(10)");
+    }
+
+    #[test]
+    fn row_main_axis_center_no_effect_when_flex_consumes_space() {
+        // tight(400,100) + center + Patch(50,flex=0) + Fill(flex=1)：Fill 消费剩余 350 → free=0
+        // → 主轴对齐无可见效果（flex-grow 优先于 justify-content）。Patch 仍在 0..50。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props.insert("main_axis_align", Value::Text("center".into()));
+        root.children.push(patch("red", "fixed", "app.fixed"));
+        root.children.push(fill("blue", "flex", 1));
+        host.set_root(&root);
+        host.layout(Constraints::tight(Size::new(400.0, 100.0)));
+        let fixed = host.rect_of(&WidgetId::new("fixed")).unwrap();
+        assert_eq!(
+            fixed.left(),
+            0.0,
+            "flex child consumes free space → justify has no effect"
+        );
+    }
+
+    #[test]
+    fn column_main_axis_center_with_tight_constraint() {
+        // tight(100,400) Column + center：容器填满高 400，打包 100，free=300 → 第一 Patch top=150。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.props.insert("main_axis_align", Value::Text("center".into()));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        host.layout(Constraints::tight(Size::new(100.0, 400.0)));
+        let a = host.rect_of(&WidgetId::new("a")).unwrap();
+        assert_eq!(a.top(), 150.0, "column center: first child top = free/2 = 150");
     }
 
     #[test]
