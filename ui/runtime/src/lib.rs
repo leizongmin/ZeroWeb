@@ -18,7 +18,7 @@ pub mod scheduler;
 pub mod theme_provider;
 pub mod tree;
 
-pub use accessibility::AccessibilityTree;
+pub use accessibility::{AccessibilityBackend, AccessibilityTree, RecordingAccessibilityBackend};
 pub use app::UiApp;
 pub use host::{ContainerKind, EmittedAction, WidgetHost, WidgetRegistry};
 pub use i18n_provider::I18nRuntime;

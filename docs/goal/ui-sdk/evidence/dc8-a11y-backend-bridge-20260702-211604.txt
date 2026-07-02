@@ -1,0 +1,47 @@
+# DC-8 无障碍平台后端桥接 skeleton（2026-07-02）
+
+## 缺口（本轮补）
+
+DC-8 核心（SemanticsNode 模型 + 焦点遍历 + IME rect + FocusScope + a11y 树）已闭合（phase-1~3）。
+剩余项：「a11y tree 接平台屏幕阅读器后端（宿主 adapter 层，M2/M4）」。本轮补 SDK 侧平台桥接
+**契约 + 测试 mock**（真实平台实现 Windows UI Automation / macOS NSAccessibility / Linux AT-SPI /
+移动端 TalkBack 在 M4）。
+
+## 修复（ui/runtime/src/accessibility.rs）
+
+- **`AccessibilityBackend` trait**（spec FR-011 平台桥接，与 ui/platform 服务 trait 模式一致）：
+  - `update_tree(root: Option<&SemanticsNode>)`：语义树更新（None=清空）。
+  - `focus_moved(focused: Option<WidgetId>)`：焦点移动 → 平台朗读焦点控件。
+  - `announce(message: &str)`：短暂通告（「页面已加载」等）。
+- **`RecordingAccessibilityBackend`** mock：记录三类调用（tree_updates 节点数 / focus_moves /
+  announcements），供测试断言 SDK→后端桥接。
+- **`node_count(root)`**：DFS 计算语义树节点总数。
+- **`AccessibilityTree::update_backend(backend)`**：把当前树推送到后端（宿主重建语义树后调用）。
+- lib.rs re-export `AccessibilityBackend` / `RecordingAccessibilityBackend`。
+
+## 验证（可量化）
+
+新增 4 测（ui-runtime 56→60 测全绿）：
+- `node_count_walks_full_tree`：None→0；4 节点树→4。
+- `update_backend_pushes_tree_to_backend`：空树→`[None]`；set_root 后→`[None, Some(4)]`
+  （DC-8 平台桥接核心：tree→backend.update_tree）。
+- `recording_backend_records_focus_and_announcements`：focus_moved + announce 记录。
+- `focusables_match_pushed_tree`：tree.focusables()（2 个 FOCUSABLE）与推送的树一致。
+
+## 门禁
+
+- `./target/test-guard -- cargo test -p zero-ui-runtime` → **60 passed; 0 failed**。
+- `cargo build --workspace` Finished（0 错误）；`cargo clippy --workspace --all-targets -- -D warnings`
+  0 警告；`cargo fmt --all --check` 净。
+- 改动隔离在 ui/runtime（无其它消费方）→ 不触浏览器渲染路径。
+
+## 风险
+
+**SDK-side + 纯新增（trait + mock + tree 方法）**：不触碰 render-foundation/浏览器 → **无 product-smoke 风险**。
+
+## DC-8 现状
+
+- ✅ 核心：SemanticsNode 模型 + 焦点遍历 + IME rect + FocusScope trap + WidgetHost::semantics() a11y 树。
+- ✅ 本轮：平台后端桥接契约（`AccessibilityBackend` trait）+ 测试 mock + `AccessibilityTree::update_backend`。
+- 剩余 M4：真实平台实现（Win UI Automation / macOS NSAccessibility / Linux AT-SPI / 移动 TalkBack）+
+  WidgetHost 自动推送语义更新到后端（当前宿主手动驱动 update_backend）。
