@@ -24,6 +24,7 @@ pub mod permission_prompt;
 pub mod render;
 pub mod security_badge;
 pub mod shell;
+pub mod shell_demo;
 pub mod site_info_panel;
 
 pub use address_bar::{AddressBar, AddressSubmission};

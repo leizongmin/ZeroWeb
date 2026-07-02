@@ -1,0 +1,55 @@
+=== DC-14（browser-shell-demo 示例 — 浏览器 chrome + WebView + ScrollBar 组合）===
+日期: 2026-07-01
+分支: ui-sdk
+SDK-only：新增 browser-ui/chrome 内 demo 模块 + example 二进制（不接真实浏览器进程，未触碰 apps/browser/render-foundation）。
+
+--- 交付物 ---
+
+1. `browser-ui/chrome/src/shell_demo.rs`（参考组合模块，example + tests 共用）：
+   - `build_demo_spec(model)` 组装桌面式声明树：security_badge 栏 / toolbar(row)[NewTab·MenuOpen·AddressBar] /
+     TabStrip / content(row)[ScrollBar·WebView] / menu(column)[MenuClose]。
+   - `FocusBarButton`（demo 可聚焦控件：背景+文案，click/Enter emit action，a11y BUTTON）。
+   - `ScrollBarWidget`（demo 控件：用 `ui/widgets::scrollbar` 的 layout_scrollbar/paint_scrollbar
+     画 track+thumb 进统一 Scene；固定 12px 宽）。
+   - `register_demo_factories`（chrome 叶子 + FocusButton + WebViewWidget + ScrollBar）。
+   - `build_demo_host(model, tokens, theme, viewport)` 跑 retained 闭环（set_root→layout→paint）。
+   - `count_primitives` / `find_sem_by_label`（demo 打印/断言辅助）。
+2. `browser-ui/chrome/examples/browser_shell_demo.rs`：可运行二进制，打印统一 Scene（按图元种类）+
+   layout 区域 + a11y 树（WebView 节点 rect + 可聚焦按钮）+ 焦点遍历 + FocusScope trap 演示。
+
+--- example 实跑输出（cargo run --example browser_shell_demo）---
+
+Scene: 14 entries (fill=8, text=5, external_surface=1)
+  按源：address_bar(Fill+Text URL) / security_badge(Fill 绿 = secure token) /
+        new_tab / menu_open / tab_strip(Text "Example") / scrollbar(track Fill + thumb Fill) /
+        webview(ExternalSurface id=1) / menu_close
+Layout regions:
+  address_bar    origin=(136,28) size=(1144,36)   # 填剩余宽（toolbar 内唯一填宽项）
+  security_badge origin=(0,0)    size=(1280,28)   # 全宽栏
+  tab_strip      origin=(0,64)   size=(1280,32)
+  scrollbar      origin=(0,96)   size=(12,704)    # 固定 12px
+  webview        origin=(12,96)  size=(1268,704)  # 填剩余宽
+a11y: webview node rect=(12,68,1268,732)（绝对 rect 来自 layout）；focusable button "New Tab" FOCUSABLE=true
+Focus: first Tab → new_tab；enter_focus_scope("menu") → Tab trapped on menu_close（不逃逸）；exit → 全局恢复
+
+--- 测试结果（scoped test-guard）---
+
+browser-ui/chrome：53 passed; 0 failed（原 48 → 53，新增 5 个 shell_demo 测）。
+  unified_scene_contains_chrome_webview_and_scrollbar  (chrome fills + URL text + ExternalSurface + scrollbar)
+  semantics_tree_covers_webview_and_focusables         (WebView "web content" rect + FOCUSABLE BUTTON)
+  focus_tab_cycles_across_focusable_buttons            (Tab new_tab→menu_open→...)
+  focus_scope_traps_tab_in_menu_subtree                (enter menu trap → 折返 menu_close，不逃逸)
+  demo_host_is_browser_chrome_composition              (scrollbar 在 webview 左侧且 webview 填宽 >1000)
+
+--- 门禁 ---
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — 净（0 diff）。
+- DC-1：ui/examples（counter/form）仍零浏览器依赖（demo 放 browser-ui/chrome，浏览器耦合在唯一允许点）。
+
+--- 验收 ---
+浏览器 chrome 组合力经 retained 闭环证明：领域组件 + WebView + 通用 ScrollBar 同进统一 Scene
+（不绕过 ui/render），a11y 树/焦点遍历/FocusScope trap/scrollbar 几何全链路打通。
+已知限制：host Row 无 flex（顺序剩余宽分配），故每个 Row 至多一个填宽子节点（demo 据此编排）；
+flex 布局为后续 host 增强项（不影响 DC-14 组合验收）。
+DC-14 剩余：apps/browser 真实灰度迁移（product-smoke 零退化硬门禁）。
