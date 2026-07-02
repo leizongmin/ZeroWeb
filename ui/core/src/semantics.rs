@@ -43,6 +43,12 @@ impl std::ops::BitOr for SemanticsFlags {
     }
 }
 
+impl std::ops::BitOrAssign for SemanticsFlags {
+    fn bitor_assign(&mut self, rhs: SemanticsFlags) {
+        self.0 |= rhs.0;
+    }
+}
+
 /// 可访问性标签来源（优先 message id，避免硬编码可见文案；spec FR-013）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SemanticsLabel {

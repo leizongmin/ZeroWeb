@@ -16,9 +16,13 @@ use compact_str::CompactString;
 use zero_ui_core::action::{ActionId, ActionPayload, EventResult};
 use zero_ui_core::binding::{PropsMap, Value};
 use zero_ui_core::event::UiEvent;
+use zero_ui_core::focus::{FocusDirection, FocusScope};
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size, Vec2};
 use zero_ui_core::invalidation::InvalidationFlags;
-use zero_ui_core::widget::{ComponentType, EventCtx, LayoutCtx, MountCtx, PaintCtx, Widget, WidgetId, WidgetSpec};
+use zero_ui_core::semantics::{SemanticsFlags, SemanticsNode};
+use zero_ui_core::widget::{
+    ComponentType, EventCtx, LayoutCtx, MountCtx, PaintCtx, SemanticsCtx, Widget, WidgetId, WidgetSpec,
+};
 use zero_ui_render::{Scene, SceneRecorder};
 
 /// Widget 工厂闭包：从 `WidgetSpec` 构造一个具体控件实例。
@@ -107,6 +111,12 @@ pub struct WidgetHost {
     epoch: u32,
     pending: InvalidationFlags,
     focused: Option<WidgetId>,
+    /// 活跃焦点作用域（modal/popup trap，DC-8 phase-3）。
+    ///
+    /// 非空时 `focus_next` 在作用域可聚焦项内遍历（`trap=true` 折返不逃逸），
+    /// 供弹层/模态对话框接管 Tab 焦点。`set_root` 后作用域可能失效（节点被移除），
+    /// 调用方应于弹层关闭时 `exit_focus_scope`。
+    active_scope: Option<FocusScope>,
 }
 
 impl Default for WidgetHost {
@@ -118,6 +128,7 @@ impl Default for WidgetHost {
             epoch: 0,
             pending: InvalidationFlags::CLEAN,
             focused: None,
+            active_scope: None,
         }
     }
 }
@@ -149,6 +160,21 @@ impl WidgetHost {
                 self.root = Some(build_node(spec, &self.registry, self.epoch));
                 self.pending |= InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
             }
+        }
+        // 活跃焦点作用域：reconcile 后子树可能变化，按 scope.id 重新收集可聚焦项；
+        // 若作用域根已从树中移除（弹层关闭），则清除作用域（DC-8 phase-3）。
+        if let Some(scope) = self.active_scope.take() {
+            let refreshed = self.root.as_ref().and_then(|root| {
+                let node = find_node(root, &scope.id)?;
+                let mut focusables = Vec::new();
+                collect_focusables(node, &mut focusables);
+                Some(FocusScope {
+                    id: scope.id,
+                    focusables,
+                    trap: scope.trap,
+                })
+            });
+            self.active_scope = refreshed;
         }
     }
 
@@ -316,8 +342,32 @@ impl WidgetHost {
     }
 
     /// 按方向推进焦点遍历（Tab 按声明顺序，wrap；DC-8 / spec FR-011）。
-    pub fn focus_next(&mut self, dir: zero_ui_core::focus::FocusDirection) {
-        use zero_ui_core::focus::FocusDirection;
+    ///
+    /// 若存在活跃焦点作用域（`enter_focus_scope`，modal/popup trap）：在作用域可聚焦项内
+    /// 遍历，`trap=true` 到边界折返（焦点不逃逸）；`trap=false` 到边界返回则退出作用域、
+    /// 落到全局遍历。无作用域时按整树声明顺序 wrap。
+    pub fn focus_next(&mut self, dir: FocusDirection) {
+        if let Some(scope) = self.active_scope.clone() {
+            if scope.focusables.is_empty() {
+                self.focused = None;
+                return;
+            }
+            match scope.next(self.focused.as_ref(), dir) {
+                Some(id) => {
+                    let new_focus = id.clone();
+                    let changed = self.focused.as_ref() != Some(&new_focus);
+                    self.focused = Some(new_focus);
+                    if changed {
+                        self.pending |= InvalidationFlags::NEEDS_PAINT;
+                    }
+                    return;
+                }
+                None => {
+                    // 非 trap 逃逸：退出作用域，落到全局遍历。
+                    self.active_scope = None;
+                }
+            }
+        }
         let Some(root) = self.root.as_ref() else {
             return;
         };
@@ -343,6 +393,61 @@ impl WidgetHost {
             self.focused = Some(new_focus);
             self.pending |= InvalidationFlags::NEEDS_PAINT;
         }
+    }
+
+    /// 进入焦点作用域（DC-8 phase-3，modal/popup focus trap）。
+    ///
+    /// 在 `scope_root` 子树内收集可聚焦项作为作用域焦点候选；进入后焦点落到首个候选
+    /// （按声明顺序）。`trap=true` 时 Tab 折返不逃逸（典型模态/弹层用例）；
+    /// `trap=false` 时到边界逃逸到全局遍历。`scope_root` 不存在则忽略。
+    pub fn enter_focus_scope(&mut self, scope_root: WidgetId, trap: bool) {
+        let scope = self.root.as_ref().and_then(|root| {
+            let node = find_node(root, &scope_root)?;
+            let mut focusables = Vec::new();
+            collect_focusables(node, &mut focusables);
+            Some(FocusScope {
+                id: scope_root.clone(),
+                focusables,
+                trap,
+            })
+        });
+        let Some(scope) = scope else {
+            return;
+        };
+        let first = scope.focusables.first().cloned();
+        self.active_scope = Some(scope);
+        if let Some(first) = first {
+            self.focused = Some(first);
+            self.pending |= InvalidationFlags::NEEDS_PAINT;
+        }
+    }
+
+    /// 退出当前焦点作用域（弹层/模态关闭时调用，DC-8 phase-3）。焦点保持当前位置。
+    pub fn exit_focus_scope(&mut self) {
+        if self.active_scope.take().is_some() {
+            self.pending |= InvalidationFlags::NEEDS_PAINT;
+        }
+    }
+
+    /// 当前活跃焦点作用域（只读；用于断言/调试弹层焦点接管）。
+    pub fn active_focus_scope(&self) -> Option<&FocusScope> {
+        self.active_scope.as_ref()
+    }
+
+    /// 构建无障碍语义树（spec FR-011 / DC-8 phase-3）。
+    ///
+    /// 遍历 retained 树，对每个有 widget 的节点调 `Widget::semantics` 取自描述节点，
+    /// 填入绝对 `rect`（layout 后有效）并 OR 进 host 级焦点标志（FOCUSABLE/FOCUSED），
+    /// 按实际 widget 层级组装。纯容器节点（无 widget）做 semantics merge（子节点上浮），
+    /// 避免无内容中间节点污染读屏树。根节点始终产出。返回 `None` 表示尚未 `set_root`。
+    pub fn semantics(&self) -> Option<SemanticsNode> {
+        let root = self.root.as_ref()?;
+        let mut s = self_semantics(root, self.focused.as_ref());
+        s.children.clear();
+        for child in &root.children {
+            build_semantics(child, self.focused.as_ref(), &mut s.children);
+        }
+        Some(s)
     }
 }
 
@@ -728,11 +833,54 @@ fn find_epoch(node: &HostNode, id: &WidgetId) -> Option<u32> {
     node.children.iter().find_map(|c| find_epoch(c, id))
 }
 
+// ---------------- semantics（a11y tree，DC-8 phase-3）----------------
+
+/// 由一个 retained 节点产出其自身 `SemanticsNode`（不含 children）。
+///
+/// 向 widget 索要自描述节点（`Widget::semantics` 推送一个节点），再用 host 已知信息
+/// 覆盖 `id`/`rect`，并 OR 进 host 级焦点标志（FOCUSABLE/FOCUSED）。widget 未推送时
+/// 合成空标志节点（仍保留 id/rect 参与树形）。
+fn self_semantics(node: &HostNode, focused: Option<&WidgetId>) -> SemanticsNode {
+    let mut pushed: Vec<SemanticsNode> = Vec::new();
+    if let Some(w) = node.widget.as_ref() {
+        w.semantics(&mut SemanticsCtx { nodes: &mut pushed });
+    }
+    let mut s = pushed
+        .pop()
+        .unwrap_or_else(|| SemanticsNode::new(node.id.clone(), node.cached_rect, SemanticsFlags::NONE));
+    s.id = node.id.clone();
+    s.rect = node.cached_rect;
+    if node.focusable {
+        s.flags |= SemanticsFlags::FOCUSABLE;
+    }
+    if focused == Some(&node.id) {
+        s.flags |= SemanticsFlags::FOCUSED;
+    }
+    s
+}
+
+/// 递归构建 a11y 树：有 widget 或可聚焦的节点产出独立语义节点；纯容器节点（无 widget）
+/// 把子节点合并进父级（semantics merge），避免无内容中间节点污染读屏树。
+fn build_semantics(node: &HostNode, focused: Option<&WidgetId>, out: &mut Vec<SemanticsNode>) {
+    if node.widget.is_some() || node.focusable {
+        let mut s = self_semantics(node, focused);
+        for child in &node.children {
+            build_semantics(child, focused, &mut s.children);
+        }
+        out.push(s);
+    } else {
+        for child in &node.children {
+            build_semantics(child, focused, out);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use zero_ui_core::binding::Value;
     use zero_ui_core::event::{Modifiers, PointerButton, PointerPhase};
+    use zero_ui_core::semantics::SemanticsLabel;
     use zero_ui_core::theme::Color;
     use zero_ui_render::render_node::RenderPrimitive;
 
@@ -1226,5 +1374,200 @@ mod tests {
                 self.height.clamp(c.min_height, c.max_height),
             )
         }
+    }
+
+    // ── DC-8 phase-3：焦点作用域 trap（modal/popup）─────────────────────
+
+    #[test]
+    fn focus_scope_traps_tab_within_subtree() {
+        // 树：root Column [a, modal(Column [m1, m2]), c]
+        // 进入 modal scope(trap) → Tab 在 m1/m2 间折返，绝不跳到 a/c。
+        let mut host = patch_host();
+        let mut modal = WidgetSpec::new("Column");
+        modal.id = Some(WidgetId::new("modal"));
+        modal.children.push(patch("red", "m1", "app.m1"));
+        modal.children.push(patch("blue", "m2", "app.m2"));
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(modal);
+        root.children.push(patch("red", "c", "app.c"));
+        host.set_root(&root);
+
+        host.enter_focus_scope(WidgetId::new("modal"), true);
+        assert_eq!(
+            host.focused_id(),
+            Some(&WidgetId::new("m1")),
+            "scope entry focuses first"
+        );
+        host.focus_next(FocusDirection::Forward);
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("m2")));
+        host.focus_next(FocusDirection::Forward);
+        assert_eq!(
+            host.focused_id(),
+            Some(&WidgetId::new("m1")),
+            "trap wraps within scope, never escapes to a/c"
+        );
+        // Shift-Tab 也折返（m1 → m2）。
+        host.focus_next(FocusDirection::Backward);
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("m2")));
+
+        // 退出作用域后恢复全局遍历：focused=m2 → Forward 落到 c。
+        host.exit_focus_scope();
+        host.focus_next(FocusDirection::Forward);
+        assert_eq!(
+            host.focused_id(),
+            Some(&WidgetId::new("c")),
+            "global traversal resumes after scope exit"
+        );
+    }
+
+    #[test]
+    fn focus_scope_cleared_when_subtree_removed() {
+        // set_root 移除 modal 子树 → 活跃作用域自动清除（不指向已删除节点）。
+        let mut host = patch_host();
+        let mut modal = WidgetSpec::new("Column");
+        modal.id = Some(WidgetId::new("modal"));
+        modal.children.push(patch("red", "m1", "app.m1"));
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(modal);
+        host.set_root(&root);
+        host.enter_focus_scope(WidgetId::new("modal"), true);
+        assert!(host.active_focus_scope().is_some());
+
+        // 重建：移除 modal，仅留 a。
+        let mut root2 = WidgetSpec::new("Column");
+        root2.id = Some(WidgetId::new("root"));
+        root2.children.push(patch("red", "a", "app.a"));
+        host.set_root(&root2);
+        assert!(
+            host.active_focus_scope().is_none(),
+            "scope rooted at removed subtree must be cleared on reconcile"
+        );
+    }
+
+    // ── DC-8 phase-3：SemanticsNode a11y 树 ─────────────────────────────
+
+    /// 测试用「链接标签」控件：不可聚焦，推送 LINK 角色 + Literal label 的语义节点。
+    struct Tag {
+        label: CompactString,
+    }
+    impl Widget for Tag {
+        fn mount(&mut self, _ctx: &mut MountCtx) {}
+        fn update(&mut self, _ctx: &mut zero_ui_core::widget::UpdateCtx, _props: &PropsMap) {}
+        fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
+            EventResult::Ignored
+        }
+        fn layout(&mut self, _ctx: &mut LayoutCtx, _constraints: Constraints) -> Size {
+            Size::new(40.0, 20.0)
+        }
+        fn paint(&mut self, ctx: &mut PaintCtx) {
+            ctx.recorder
+                .fill_rect(Rect::from_ltrb(0.0, 0.0, 40.0, 20.0), Color::rgb(0.0, 0.0, 0.0));
+        }
+        fn semantics(&self, ctx: &mut SemanticsCtx) {
+            ctx.nodes.push(SemanticsNode {
+                id: WidgetId::new(""),
+                rect: Rect::ZERO,
+                flags: SemanticsFlags::LINK,
+                label: Some(SemanticsLabel::Literal(self.label.clone())),
+                value: None,
+                children: Vec::new(),
+            });
+        }
+    }
+
+    fn tag_host() -> WidgetHost {
+        let mut host = patch_host();
+        host.register("Tag", |spec| {
+            let label = match spec.props.get("label") {
+                Some(Value::Text(s)) => CompactString::from(s.as_str()),
+                _ => CompactString::new(""),
+            };
+            Box::new(Tag { label })
+        });
+        host
+    }
+
+    fn tag(label: &str, id: &str) -> WidgetSpec {
+        let mut s = WidgetSpec::new("Tag");
+        s.id = Some(WidgetId::new(id));
+        s.props.insert("label", Value::Text(label.into()));
+        s
+    }
+
+    /// 在语义树里按 id 串查节点。
+    fn find_sem<'a>(node: &'a SemanticsNode, id: &str) -> Option<&'a SemanticsNode> {
+        if node.id.0.as_str() == id {
+            return Some(node);
+        }
+        for c in &node.children {
+            if let Some(n) = find_sem(c, id) {
+                return Some(n);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn semantics_tree_mirrors_widgets_with_focus_flags() {
+        // 树：root Column [a(Patch focusable), b(Patch focusable)]
+        // → root 节点（容器合并）children = [a, b]；focus a → a 带 FOCUSABLE|FOCUSED。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+
+        host.focus_next(FocusDirection::Forward); // → a
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("a")));
+
+        let sem = host.semantics().unwrap();
+        assert_eq!(sem.id, WidgetId::new("root"));
+        assert_eq!(sem.children.len(), 2, "root merges its widget children");
+        let a = find_sem(&sem, "a").expect("a present");
+        assert!(a.flags.contains(SemanticsFlags::FOCUSABLE));
+        assert!(a.flags.contains(SemanticsFlags::FOCUSED), "a is focused");
+        assert_eq!(
+            a.rect,
+            Rect::from_ltrb(0.0, 0.0, 50.0, 50.0),
+            "absolute rect from layout"
+        );
+        let b = find_sem(&sem, "b").expect("b present");
+        assert!(b.flags.contains(SemanticsFlags::FOCUSABLE));
+        assert!(!b.flags.contains(SemanticsFlags::FOCUSED));
+    }
+
+    #[test]
+    fn semantics_carries_widget_label_and_role() {
+        // Tag 推送 LINK + Literal label；经 host semantics 透出，rect 被 host 覆盖为绝对。
+        let mut host = tag_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(tag("Learn more", "lnk"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+
+        let sem = host.semantics().unwrap();
+        let lnk = find_sem(&sem, "lnk").expect("lnk present");
+        assert!(
+            lnk.flags.contains(SemanticsFlags::LINK),
+            "widget-provided role flows through"
+        );
+        assert_eq!(
+            lnk.label,
+            Some(SemanticsLabel::Literal(CompactString::new("Learn more")))
+        );
+        // host 用绝对 rect 覆盖 widget 推送的 Rect::ZERO。
+        assert_eq!(lnk.rect, Rect::from_ltrb(0.0, 0.0, 40.0, 20.0));
+    }
+
+    #[test]
+    fn semantics_is_none_before_set_root() {
+        let host = WidgetHost::new();
+        assert!(host.semantics().is_none());
     }
 }

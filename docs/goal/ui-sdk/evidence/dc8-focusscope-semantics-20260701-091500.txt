@@ -1,0 +1,69 @@
+=== DC-8 phase-3（FocusScope trap + SemanticsNode a11y 树）===
+日期: 2026-07-01
+分支: ui-sdk
+SDK-only：仅触碰 ui/core（focus.rs/semantics.rs）+ ui/runtime（host.rs），未触碰 render-foundation/浏览器。
+
+--- 变更摘要 ---
+
+1. ui/core::focus FocusScope::next 尊重 trap 字段（DC-8 phase-3）：
+   - trap=true（modal/popup）：到达作用域边界折返（wrap），焦点永不逃逸。
+   - trap=false：到达边界返回 None（逃逸到外层焦点遍历）。
+   - 首次进入（current 不在作用域）：Forward→首项，Backward→末项。
+   - 3 个新测（non_trap_forward_escapes_at_end / non_trap_backward_escapes_at_start /
+     first_entry_lands_on_edge），原 forward_backward_wrap（trap=true）保持绿。
+
+2. ui/core::semantics SemanticsFlags 补 BitOrAssign impl（flags 类型自然补全，
+   使 host 可 `s.flags |= FOCUSABLE`）。
+
+3. ui/runtime::host WidgetHost 焦点作用域（modal/popup trap）：
+   - 新字段 active_scope: Option<FocusScope>。
+   - enter_focus_scope(scope_root, trap)：收集子树可聚焦项，进入后聚焦首项。
+   - exit_focus_scope()：退出作用域（焦点保持当前位置）。
+   - active_focus_scope()：只读查询（断言/调试）。
+   - focus_next：活跃作用域内遍历（trap 折返 / 非 trap 逃逸后落全局）。
+   - set_root：reconcile 后按 scope.id 重收集可聚焦项；作用域根已移除则清除（防悬空）。
+
+4. ui/runtime::host WidgetHost 无障碍语义树（FR-011 / DC-8 phase-3）：
+   - semantics() -> Option<SemanticsNode>：遍历 retained 树，对有 widget 的节点调
+     Widget::semantics 取自描述，填绝对 rect + OR 进 host 级焦点标志
+     （FOCUSABLE / FOCUSED），按实际层级组装。纯容器节点 semantics merge（子节点上浮）。
+   - self_semantics / build_semantics 辅助。
+   - 5 个新 host 测（focus_scope_traps_tab_within_subtree /
+     focus_scope_cleared_when_subtree_removed /
+     semantics_tree_mirrors_widgets_with_focus_flags /
+     semantics_carries_widget_label_and_role / semantics_is_none_before_set_root）。
+
+--- 测试结果（scoped test-guard）---
+
+ui/core focus 模块：
+  test focus::tests::first_entry_lands_on_edge ... ok
+  test focus::tests::non_trap_forward_escapes_at_end ... ok
+  test focus::tests::non_trap_backward_escapes_at_start ... ok
+  test focus::tests::forward_backward_wrap ... ok
+  test focus::tests::collect_focusable_descendants ... ok
+  => focus 5 passed; 0 failed
+
+ui/runtime（含新 host 测）：
+  test host::tests::focus_scope_cleared_when_subtree_removed ... ok
+  test host::tests::semantics_carries_widget_label_and_role ... ok
+  test host::tests::semantics_is_none_before_set_root ... ok
+  test host::tests::focus_scope_traps_tab_within_subtree ... ok
+  test host::tests::semantics_tree_mirrors_widgets_with_focus_flags ... ok
+  （+ 全部既有 host/focus/ime/theme/scheduler/i18n 测）
+  => lib 27 passed; 3 integration passed; 0 failed
+
+--- 门禁 ---
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — 净（0 diff）。
+- host.rs 行数 ~1450（≤2000）。
+
+--- DC-1 复核 ---
+ui/runtime 仅依赖 ui/core + ui/render + ui/i18n + compact_str/hashbrown/thiserror，
+零浏览器业务 crate（cargo build --workspace 通过即证）。新增 FocusScope/semantics 路径
+均在 ui/core（纯类型），不引入浏览器/渲染后端依赖。
+
+--- DC-8 进度 ---
+phase-1（焦点遍历 + 键盘路由）✅ / phase-2（click-to-focus + IME rect）✅ /
+phase-3（FocusScope trap + SemanticsNode a11y 树）✅。
+DC-8 剩余：a11y tree 接平台后端（屏幕阅读器桥接，属宿主 adapter 层，M2/M4）。
