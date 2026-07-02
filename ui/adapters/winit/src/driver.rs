@@ -137,10 +137,14 @@ impl<'app> WinitDriver<'app> {
     /// 真实 run loop 每帧（vsync / `request_redraw`）调用；无失效时为 [`Idle`](FrameOutcome::Idle)
     /// （不重绘，省 CPU）。重绘后 [`host`](Self::host)`.scene()` 可取回新 Scene 喂给渲染桥。
     pub fn pump_frame(&mut self) -> FrameOutcome {
+        // 先捕获是否需要 paint（requires_paint 含 NEEDS_LAYOUT）：layout() 会清除 NEEDS_LAYOUT，
+        // 若之后再读 needs_paint()，单独的 NEEDS_LAYOUT（无 NEEDS_PAINT 位，经 host.mark 可达）
+        // 会被误判为无需 paint → 几何已变但 scene 不刷新。故先捕获决策。
+        let should_paint = self.host.needs_paint();
         if self.host.needs_layout() {
             self.host.layout(Constraints::tight(self.metrics.logical_size));
         }
-        if self.host.needs_paint() {
+        if should_paint {
             self.host.paint();
             FrameOutcome::Repainted
         } else {
@@ -358,5 +362,25 @@ mod tests {
             );
         }
         assert_eq!(app.count, 3, "三次点击 count=3");
+    }
+
+    #[test]
+    fn pump_frame_paints_when_only_needs_layout_marked() {
+        // DC-2/DC-9 robustness 回归守卫：单独 NEEDS_LAYOUT（经 host.mark 可达，无 NEEDS_PAINT 位）
+        // 也必须触发 paint——layout 改了几何 → scene 需刷新。此前 pump_frame 在 layout() 清除
+        // NEEDS_LAYOUT 后重读 needs_paint()（requires_paint 此时已不含 NEEDS_LAYOUT）会漏 paint
+        // （返回 Idle，scene 停留在旧几何）。修复：先捕获 should_paint 决策。
+        let mut app = CounterApp { count: 0 };
+        let mut d = new_driver(&mut app);
+        d.begin();
+        assert_eq!(d.pump_frame(), FrameOutcome::Idle);
+        // 模拟「仅 layout 失效」（如某 widget 经 ctx.invalidation 标 NEEDS_LAYOUT 但未标 NEEDS_PAINT）。
+        d.host_mut().mark(InvalidationFlags::NEEDS_LAYOUT);
+        assert_eq!(
+            d.pump_frame(),
+            FrameOutcome::Repainted,
+            "layout-only 失效必须重绘（几何变了）"
+        );
+        assert_eq!(d.pump_frame(), FrameOutcome::Idle);
     }
 }
