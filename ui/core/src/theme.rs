@@ -160,6 +160,51 @@ impl SemanticTokens {
         }
     }
 
+    /// 高对比浅色 token（DC-5 HighContrast）。
+    ///
+    /// 纯白底 + 黑字，主/状态色取深色饱和变体 + 白字，目标 **WCAG AAA（正常文本 ≥ 7:1）**。
+    /// 高对比模式服务于低视力用户，文本对必须显著超过常规 AA 基线。
+    pub fn high_contrast_light() -> SemanticTokens {
+        SemanticTokens {
+            background: Color::WHITE,
+            on_background: Color::BLACK,
+            surface: Color::WHITE,
+            on_surface: Color::BLACK,
+            // 主色用近黑：按钮/选中态黑底白字，最大对比（21:1）。
+            primary: Color::BLACK,
+            on_primary: Color::WHITE,
+            // 状态色取深色饱和变体，配白字达 AAA。
+            error: Color::rgb(0.55, 0.0, 0.0),
+            on_error: Color::WHITE,
+            success: Color::rgb(0.0, 0.33, 0.0),
+            on_success: Color::WHITE,
+            warning: Color::rgb(0.5, 0.35, 0.0),
+            on_warning: Color::WHITE,
+        }
+    }
+
+    /// 高对比深色 token（DC-5 HighContrast）。
+    ///
+    /// 纯黑底 + 白字，主/状态色取高亮变体 + 黑字，目标 **WCAG AAA（正常文本 ≥ 7:1）**。
+    pub fn high_contrast_dark() -> SemanticTokens {
+        SemanticTokens {
+            background: Color::BLACK,
+            on_background: Color::WHITE,
+            surface: Color::BLACK,
+            on_surface: Color::WHITE,
+            // 主色用近白：白底黑字，最大对比（21:1）。
+            primary: Color::WHITE,
+            on_primary: Color::BLACK,
+            // 状态色取高亮变体，配黑字达 AAA。
+            error: Color::rgb(1.0, 0.4, 0.4),
+            on_error: Color::BLACK,
+            success: Color::rgb(0.4, 1.0, 0.5),
+            on_success: Color::BLACK,
+            warning: Color::rgb(1.0, 0.85, 0.0),
+            on_warning: Color::BLACK,
+        }
+    }
+
     /// 按 token 名解析颜色（组件消费 semantic token 的统一入口）。
     ///
     /// 支持 `background`/`on_background`/`surface`/`on_surface`/`primary`/`on_primary`/
@@ -363,11 +408,15 @@ impl ThemeResolver {
     }
 
     /// 由解析方案生成基线主题。自定义 palette 覆盖会替换对应 semantic token。
+    ///
+    /// token 选择按 `scheme` 三态：常规 light/dark、高对比 high_contrast_light/dark
+    /// （DC-5：HighContrast 必须产出**真正更高对比**的 token，而非与常规方案相同）。
     pub fn build_theme(id: ThemeId, name: &str, scheme: ResolvedColorScheme, palette: ColorPalette) -> Theme {
-        let mut tokens = if scheme.is_dark() {
-            SemanticTokens::dark()
-        } else {
-            SemanticTokens::light()
+        let mut tokens = match scheme {
+            ResolvedColorScheme::Light => SemanticTokens::light(),
+            ResolvedColorScheme::Dark => SemanticTokens::dark(),
+            ResolvedColorScheme::HighContrastLight => SemanticTokens::high_contrast_light(),
+            ResolvedColorScheme::HighContrastDark => SemanticTokens::high_contrast_dark(),
         };
         if let Some(primary) = palette.primary_override {
             tokens.primary = primary;
@@ -545,5 +594,106 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn high_contrast_core_text_pairs_pass_aaa() {
+        // DC-5 HighContrast：高对比模式的核心文本对（承载绝大多数文本）必须通过 WCAG AAA
+        // （正常文本 ≥ 7:1），显著超过常规 AA 基线。这是「高对比」语义的可验证定义——
+        // HighContrast 不能只是与 Light/Dark 相同的标签。
+        for (name, tokens) in [
+            ("hc_light", SemanticTokens::high_contrast_light()),
+            ("hc_dark", SemanticTokens::high_contrast_dark()),
+        ] {
+            for (pair, fg, bg) in [
+                ("on_background/background", tokens.on_background, tokens.background),
+                ("on_surface/surface", tokens.on_surface, tokens.surface),
+                ("on_primary/primary", tokens.on_primary, tokens.primary),
+            ] {
+                let ratio = contrast_ratio(fg, bg);
+                assert!(
+                    passes_wcag_aaa(fg, bg, false),
+                    "{name} {pair} fails WCAG AAA: ratio {ratio:.2} < 7.0 (fg {fg:?} bg {bg:?})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn high_contrast_status_pairs_pass_aa() {
+        // 状态色（success/warning/error）在中亮度区间天然难以达到 AAA；高对比模式下至少
+        // 保持 AA（≥ 4.5:1），与常规基线一致，且配对比的前景色（白字/黑字）。
+        for (name, tokens) in [
+            ("hc_light", SemanticTokens::high_contrast_light()),
+            ("hc_dark", SemanticTokens::high_contrast_dark()),
+        ] {
+            for (pair, fg, bg) in [
+                ("on_error/error", tokens.on_error, tokens.error),
+                ("on_success/success", tokens.on_success, tokens.success),
+                ("on_warning/warning", tokens.on_warning, tokens.warning),
+            ] {
+                let ratio = contrast_ratio(fg, bg);
+                assert!(
+                    passes_wcag_aa(fg, bg, false),
+                    "{name} {pair} fails WCAG AA: ratio {ratio:.2} < 4.5 (fg {fg:?} bg {bg:?})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn build_theme_uses_high_contrast_tokens_for_high_contrast_scheme() {
+        // DC-5 关键不变量：HighContrast 方案必须产出**真正的高对比 token**，
+        // 而非退化为常规 light/dark。此前 build_theme 只按 is_dark() 分支，
+        // HighContrastLight 与 Light 产出相同 token（HighContrast 沦为空标签）——本测拦截该退化。
+        let normal_light = ThemeResolver::build_theme(
+            ThemeId::new("zero"),
+            "Zero",
+            ResolvedColorScheme::Light,
+            ColorPalette::default(),
+        );
+        let hc_light = ThemeResolver::build_theme(
+            ThemeId::new("zero"),
+            "Zero",
+            ResolvedColorScheme::HighContrastLight,
+            ColorPalette::default(),
+        );
+        assert_ne!(
+            hc_light.tokens, normal_light.tokens,
+            "HighContrastLight must differ from Light (else HighContrast is a no-op label)"
+        );
+        // 高对比浅色的核心文本对应达 AAA，常规浅色仅 AA——证明「更高对比」语义成立。
+        let hc_ratio = contrast_ratio(hc_light.tokens.on_surface, hc_light.tokens.surface);
+        assert!(hc_ratio >= 7.0, "HC light on_surface/surface ratio {hc_ratio:.2} < 7.0");
+
+        let normal_dark = ThemeResolver::build_theme(
+            ThemeId::new("zero"),
+            "Zero",
+            ResolvedColorScheme::Dark,
+            ColorPalette::default(),
+        );
+        let hc_dark = ThemeResolver::build_theme(
+            ThemeId::new("zero"),
+            "Zero",
+            ResolvedColorScheme::HighContrastDark,
+            ColorPalette::default(),
+        );
+        assert_ne!(
+            hc_dark.tokens, normal_dark.tokens,
+            "HighContrastDark must differ from Dark (else HighContrast is a no-op label)"
+        );
+        assert!(scheme_resolves_high_contrast_via_resolver());
+    }
+
+    fn scheme_resolves_high_contrast_via_resolver() -> bool {
+        // 端到端：用户偏好 Light + 系统高对比 → 解析为 HighContrastLight → build_theme 产出 AAA token。
+        let sys = SystemThemeSnapshot {
+            system_scheme: ResolvedColorScheme::Light,
+            high_contrast: true,
+        };
+        let scheme = ThemeResolver::resolve_scheme(&ColorSchemePreference::Light, sys);
+        assert_eq!(scheme, ResolvedColorScheme::HighContrastLight);
+        let theme = ThemeResolver::build_theme(ThemeId::new("zero"), "Zero", scheme, ColorPalette::default());
+        contrast_ratio(theme.tokens.on_background, theme.tokens.background) >= 7.0
     }
 }

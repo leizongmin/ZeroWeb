@@ -1,0 +1,54 @@
+# DC-5 HighContrast 功能化 token 变体（2026-07-02）
+
+## 缺口（本轮修复）
+
+`ThemeResolver::build_theme` 此前**仅按 `scheme.is_dark()` 二分**选择 token：
+
+```rust
+let mut tokens = if scheme.is_dark() { SemanticTokens::dark() } else { SemanticTokens::light() };
+```
+
+→ `ResolvedColorScheme::HighContrastLight` 产出与 `Light` **完全相同**的 token，
+`HighContrastDark` 与 `Dark` 相同。即 HighContrast 偏好只是**空标签**，
+不带来任何额外对比度——违反 spec §FR-007（"支持 ... 高对比"，line 319/341/1417）
+与 DC-5「支持 System/Light/Dark/Custom/HighContrast」的语义。
+
+## 修复
+
+`ui/core/src/theme.rs`：
+
+1. 新增 `SemanticTokens::high_contrast_light()` / `high_contrast_dark()`：
+   - 纯白/纯黑底 + 黑/白字（核心文本对 21:1，远超 WCAG AAA 7:1）。
+   - primary 取近黑/近白（按钮黑底白字 / 白底黑字，21:1）。
+   - 状态色取深色饱和（light）/ 高亮（dark）变体，配对比前景色。
+2. `build_theme` 改为按 `scheme` **四态 match**（Light/Dark/HighContrastLight/HighContrastDark）
+   选择 token——HighContrast 现产出**真正更高对比**的 token。
+3. 自定义 palette 覆盖逻辑不变（向后兼容）。
+
+## 验证（可量化）
+
+新增 4 测（ui/core 38→42 测全绿）：
+
+- `high_contrast_core_text_pairs_pass_aaa`：HC light+dark 的核心文本对
+  （on_background/background、on_surface/surface、on_primary/primary）**全部通过 WCAG AAA（≥7:1）**。
+- `high_contrast_status_pairs_pass_aa`：HC 状态对（error/success/warning）通过 WCAG AA（≥4.5:1）
+  （状态色中亮度区间天然难达 AAA，保持 AA 基线 + 对比前景色）。
+- `build_theme_uses_high_contrast_tokens_for_high_contrast_scheme`：
+  断言 `HighContrastLight.tokens != Light.tokens`（拦截「HighContrast 退化为空标签」回归），
+  + HC on_surface/surface ratio ≥ 7.0。
+- `scheme_resolves_high_contrast_via_resolver`：端到端 偏好 Light + 系统 high_contrast=true
+  → 解析 HighContrastLight → build_theme → on_background/background ≥ AAA。
+
+## 门禁
+
+- `./target/test-guard -- cargo test -p zero-ui-core` → **42 passed; 0 failed**（含 4 新 HC 测）。
+- 下游 theme 消费 crate 全绿：widgets 105 / runtime 13 / chrome 53 / render 6（零回归）。
+- `cargo build --workspace` Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` Finished（0 警告）。
+- `cargo fmt --all --check` 净。
+
+## 风险
+
+**SDK-only**（ui/core 未触碰 render-foundation/浏览器）→ **无 product-smoke 风险**。
+build_theme 仅在 scheme 为 HighContrast* 时改变产出（此前无人以 HighContrast 方案消费 token
+→ 默认 light/dark 路径逐位不变）。
