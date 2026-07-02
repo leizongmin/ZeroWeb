@@ -9,3 +9,7 @@ license.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 hashbrown = { workspace = true }
+# DC-11 / TBD-8：真实文本后端（fontdue 度量/光栅 + rustybuzz OpenType shaping）。
+# 均为纯字体 crate（无 GPU 后端），workspace 已声明，license MIT/Apache-2.0。
+fontdue = { workspace = true }
+rustybuzz = { workspace = true }

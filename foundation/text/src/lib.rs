@@ -9,9 +9,10 @@
 //! [`glyph_cache`]、[`glyph_atlas`]、[`bidi`]、[`line_break`]、[`grapheme`]、[`text_blob`]、
 //! [`diagnostics`]。
 //!
-//! M1 提供接口与最小实现/纯逻辑；具体 fontdue/swash/rustybuzz/unicode-bidi 桥接在 M2。
+//! M1 提供接口与最小实现/纯逻辑；M2 起 [`backend`] 提供 fontdue + rustybuzz 真实后端。
 //! 本 crate 不依赖任何 UI/浏览器业务 crate。
 
+pub mod backend;
 pub mod bidi;
 pub mod diagnostics;
 pub mod font_database;
@@ -26,6 +27,7 @@ pub mod text_blob;
 pub mod text_measure;
 
 // 顶层再导出常用接口，方便调用方 `use zero_text_foundation::{FontProvider, TextShaper, ...}`。
+pub use backend::FontdueBackend;
 pub use diagnostics::TextError;
 pub use font_database::{FontMatch, FontProvider, FontSource};
 pub use font_request::{

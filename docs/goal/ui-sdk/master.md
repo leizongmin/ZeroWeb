@@ -21,6 +21,10 @@
 
 **铁律**：M2 触碰浏览器运行时，必须保持 `make test` / `make reftest` / `make product-smoke` 不退化（姊妹目标 `rendering-compat` 主线）。
 
+**🟢 M2 进展（2026-07-01）**：foundation/text 真实文本后端已落地（DC-11/TBD-8 第一阶段）——新增 `backend::FontdueBackend`，用 workspace 已声明的 fontdue（度量/光栅）+ rustybuzz（OpenType shaping）实现 `FontProvider`/`TextShaper`/`TextMeasurer`；带 14 个单测（含 Ahem.ttf 真实 shaping/measure/换行/caret）。shaping/text_blob/text_measure 三个 M1 stub 全部从 0% 抬到 100%。**本步为 SDK-only，未触碰 render-foundation/浏览器**（无 product-smoke 风险）。`cargo build --workspace` + clippy `-D warnings` + fmt 全净；foundation/text 27 tests 全绿；DC-17 聚合 line 93.00%→93.66%（per-crate 全部 ≥85%）。
+
+**M2 剩余**：①把 ui/render 文本绘制 + zero-webview 文本路径接 foundation/text（真实共享 DC-11）；②ui/render Scene→render-foundation 后端 trait（TBD-2）；③统一 render-foundation 现有 font 栈到 foundation/text（物理迁移，**触碰渲染后端需 product-smoke**）；④browser-ui/chrome §8.4.1A 组件实现；⑤apps/browser 逐组件灰度迁移。
+
 ## Done Criteria 进度
 
 | DC | 标题 | 状态 | 证据 / 备注 |
@@ -35,13 +39,13 @@
 | DC-8 | 无障碍/焦点/IME | 🟡 skeleton（M1） | ui/core::focus/semantics + ui/runtime::ime/accessibility |
 | DC-9 | 局部失效刷新 | 🟡 skeleton（M1） | ui/core::invalidation needs_layout/paint 区分单测在 Wave 1 |
 | DC-10 | 国际化资源与 message id | 🟡 skeleton（M1） | ui/i18n IF-007 接口在 Wave 2 |
-| DC-11 | 共享文本/字体基础层 | 🟡 skeleton（M1） | foundation/text IF-008 接口在 Wave 1；真实共享接入 M2 |
+| DC-11 | 共享文本/字体基础层 | 🟡 真实后端已立（M2） | foundation/text `FontdueBackend`（fontdue+rustybuzz）实现 FontProvider/TextShaper/TextMeasurer + 14 测；ui/render 与 zero-webview 共享接入 + render-foundation 统一待续 |
 | DC-12 | 响应式/自适应 + 移动 chrome | ⬜ M2/M4 | WindowMetrics/ViewportClass 在 ui/core::layout（Wave 1）；shell 在 M2/M4 |
 | DC-13 | 完整应用级 UI 能力（13 域） | 🟡 skeleton（M1） | 13 域接口 + 最小单测在 Wave 3；浏览器接入在 M2-M4 |
 | DC-14 | 浏览器迁移完成 + 零退化 | ⬜ M2-M4 | 浏览器运行时本轮不触碰 |
 | DC-15 | 移动端运行时 | ⬜ M4 | — |
 | DC-16 | 测试与质量不可退让 | 🟡 守门中 | 新 crate scoped test 全绿；详见 Testing & Quality Gates |
-| DC-17 | Coverage 量化 | 🟡 持续推进（M1 阶段达标） | 聚合 line 93.00% / function 93.12% / region 93.41%（≥85%）；per-crate 除 foundation/text stub 外全部 ≥85%（commands/overlay/restoration/gestures/dsl 本轮抬到 ~100%、button.rs 61→99.2%） |
+| DC-17 | Coverage 量化 | 🟡 持续推进（M1 阶段达标） | 聚合 line 93.66% / function 93.92% / region 93.79%（≥85%）；per-crate **全部 ≥85%**（foundation/text 82.8→~96%，三个 stub 0→100%；M1 已 commands/overlay/restoration/gestures/dsl ~100%、button.rs 61→99.2%） |
 | DC-18 | 证据持久化与文档自洽 | 🟡 守门中 | evidence/ 持续落盘；本表与 Latest Evidence 自洽 |
 
 图例：⬜ 未开始 / 🟡 进行中或 skeleton / ✅ 完成。
@@ -80,30 +84,29 @@
 ## Coverage 基线
 
 - 全仓 floor（来自 `rendering-compat` 基线）：line 95.46% / function 96.94% / region 94.88%。本目标不得显著下降。
-- **`ui/*` + `foundation/text` + `browser-ui/chrome` DC-17 当前（2026-07-01，per-crate 抬升后）**：
-  - 聚合：**line 93.00% / function 93.12% / region 93.41%**（3514 行，超 85% 目标）。
-  - 基线（抬升前，同口径）：line 89.89% / function 89.98% / region 90.65%（`evidence/coverage-20260701-021806.txt`）。
-  - 当前证据：`evidence/coverage-20260701-022603.txt`。
+- **`ui/*` + `foundation/text` + `browser-ui/chrome` DC-17 当前（2026-07-01，M2 foundation/text 真实后端接入后）**：
+  - 聚合：**line 93.66% / function 93.92% / region 93.79%**（3909 行，超 85% 目标）。
+  - 演进（同口径）：M1 基线 89.89% → M1 per-crate 抬升 93.00% → M2 foundation/text 真实后端 93.66%。
+  - 当前证据：`evidence/coverage-20260701-024441.txt`。
   - 命令（统一口径）：`cargo llvm-cov -p zero-text-foundation -p zero-ui-* ... -p zero-browser-chrome --summary-only --ignore-filename-regex '[\\/](crates|apps)[\\/]' -- --test-threads=1`（`--ignore-filename-regex` 必须用 `[\\/](crates|apps)[\\/]` 匹配 profdata 绝对路径中的目录分量，`^` 锚定不生效）。口径含 `#[cfg(test)]` 内联模块（与仓库 `check-coverage.sh` 全仓口径一致，趋势可比）。
-- **per-crate line 曲线**（本轮抬升后；▲ 仍 <85%）：
+- **per-crate line 曲线**（M2 接入后；全部 ≥85%）：
 
   | crate | line | 变化 |
   |-------|------|------|
-  | ui/assets · ui/collections · ui/forms · ui/platform · ui/commands · ui/overlay · ui/restoration · ui/gestures · ui/dsl | 100% / ~99% | commands 75→100、overlay 77.5→100、restoration 79.3→100、gestures 84.4→100、dsl 84.6→~99 |
-  | ui/animation · ui/patterns · ui/devtools · browser-ui/chrome · ui/navigation · ui/design-system · ui/i18n · ui/adapters · ui/core | 92–98% | — |
-  | ui/widgets | ~93% | button.rs 61→99.2（补 paint/update/event/layout/semantics 全分支） |
-  | ui/render · ui/runtime · ui/testing | 85–88% | — |
-  | ▲ foundation/text | 82.8% | shaping/text_blob/text_measure 三个 M1 stub 0%，等 M2 真实现后补测（DC-11） |
+  | ui/assets · ui/collections · ui/forms · ui/platform · ui/commands · ui/overlay · ui/restoration · ui/gestures · ui/dsl | 100% / ~99% | M1 抬升 |
+  | foundation/text | ~96% | M2：shaping/text_blob/text_measure 0→100、backend.rs（新真实后端）93.16 |
+  | ui/animation · ui/patterns · ui/devtools · browser-ui/chrome · ui/navigation · ui/design-system · ui/i18n · ui/adapters · ui/core · ui/widgets | 92–98% | — |
+  | ui/render · ui/runtime · ui/testing | 85–88% | 可选继续抬边角 |
 
-- **下一步 coverage 推进**：剩余 per-crate <85% 仅 foundation/text（stub，M2）；可选继续抬 ui/render（88%）、ui/runtime（87%）的边角。M1 阶段 DC-17 已满足（聚合 93% + 除 stub 外 per-crate 全部 ≥85%）。
+- **下一步 coverage 推进**：所有 per-crate 已 ≥85%（DC-17 阶段达标）。可选继续抬 ui/render(88%)/ui/runtime(87%) 边角，随 M2 接入自然增长。
 
 ## 依赖决策日志
 
 | 决策 | 结论 | 理由 | Spec 锚点 |
 |------|------|------|-----------|
-| TBD-8 text foundation 落点 | **新建独立 `foundation/text`（`zero-text-foundation`）**，不复用 `crates/render-foundation/src/font` 作为最终落点 | render-foundation 耦合 wgpu/png/resvg/tiny-skia 图形后端；纯文本/字体基础层应独立，避免被图形后端污染，且 UI 与 WebView 都能依赖而不拖入 GPU 栈。M2 再把 render-foundation 现有 fontdue/swash/rustybuzz 实现迁移/桥接到 foundation/text | spec §6.5A / IF-008 / TBD-8 |
+| TBD-8 text foundation 落点 | **新建独立 `foundation/text`（`zero-text-foundation`），M2 已落地真实 `FontdueBackend`**（fontdue+rustybuzz，不依赖 render-foundation） | render-foundation 耦合 wgpu/png/resvg/tiny-skia 图形后端；纯文本/字体基础层独立避免被图形后端污染，UI 与 WebView 都能依赖而不拖入 GPU 栈。M2 第一阶段：foundation/text 自立真实后端；第二阶段（风险步，需 product-smoke）把 render-foundation 现有 font 栈统一到 foundation/text | spec §6.5A / IF-008 / TBD-8 |
 | TBD-2 ui-render 与 render-foundation 依赖方向 | **M1 `ui/render` 定义自己的 Scene/RenderNode/PaintCtx 抽象，不直接依赖 render-foundation**；通过 trait 在 M2 桥接 render-foundation 后端 | 通用 UI 层不应被 wgpu 后端耦合；M1 只需 scene 抽象 + 单测 | spec §8.4.1 / TBD-2 |
-| TBD-9 text shaping/font 依赖 | **复用 workspace 已声明** fontdue/swash/rustybuzz/unicode-bidi，零新增依赖 | 已在 workspace.dependencies；M1 skeleton 用 stub 实现，M2 接真实栈 | spec §6.4 / TBD-9 |
+| TBD-9 text shaping/font 依赖 | **复用 workspace 已声明** fontdue/rustybuzz/unicode-bidi；M2 已把 fontdue+rustybuzz 加入 foundation/text（swash 暂未用） | 已在 workspace.dependencies；零新增外部依赖；fontdue=度量/光栅、rustybuzz=OpenType shaping | spec §6.4 / TBD-9 |
 | TBD-7 i18n 依赖 | **M1 手写 minimal plural/RTL**，不引入 ICU4X/Fluent | 接口先行；依赖评估留 M3 | spec §6.5A / TBD-7 |
 | TBD-6 表达式 parser | **M3 评估**，M1 不涉及 | DSL 表达式在 M3 | TBD-6 |
 | TBD-1 serde_yaml | **M3 评估**，M1 dsl 只立 schema skeleton | — | TBD-1 |
@@ -116,21 +119,20 @@
 - `evidence/dep-isolation-20260630-234530.txt` — **DC-1 机械验证 PASS**：22 通用 crate 零浏览器依赖；adapter-webview→zero-webview；chrome→ui/*+browser-shell+adapter-webview。
 - `evidence/capability-matrix-20260630-234530.md` — M1 能力矩阵 + DC skeleton 证据锚点 + 未解决缺口。
 - `evidence/coverage-20260701-021806.txt` — DC-17 抬升前基线（2026-07-01）：聚合 line 89.89% / function 89.98% / region 90.65%。
-- `evidence/coverage-20260701-022603.txt` — **DC-17 抬升后（2026-07-01）**：聚合 line 93.00% / function 93.12% / region 93.41%；per-crate 曲线见 §Coverage 基线。
+- `evidence/coverage-20260701-024441.txt` — **DC-17（M2 foundation/text 真实后端接入后，2026-07-01）**：聚合 line 93.66% / function 93.92% / region 93.79%；per-crate 全部 ≥85%（foundation/text ~96%，三个 stub 0→100%）。
 
-**M1 门禁实测（2026-07-01 复核）**：
+**M2 门禁实测（2026-07-01）**：
 - `cargo build --workspace` — Finished（0 错误）。
-- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告；clippy 不链接，故绕过 script-sandbox V8 链接问题）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
 - `cargo fmt --all --check` — 净（0 diff）。
-- 新 crate 单元 + 集成测试（scoped test-guard）— render 6+3 / runtime 7+3 / testing 3+1 / core 31 / widgets 24 / i18n 12 / foundation/text 12 / patterns 7 / commands 3 / overlay 2 / restoration 2 / gestures 3 / dsl 4 / … 全绿。
-- DC-17 coverage：聚合 93%（≥85%），per-crate 除 foundation/text stub 外全部 ≥85%。
+- foundation/text 27 tests 全绿（scoped test-guard；含 backend.rs 14 测：load/query/fallback_chain/shape/measure/wrap/caret，用 Ahem.ttf 真实 shaping）。
+- DC-17 coverage：聚合 93.66%，per-crate 全部 ≥85%。
 
 ## Next Steps
 
-1. **DC-17 收尾**：剩余仅 foundation/text 三个 stub（shaping/text_blob/text_measure）0%，等 M2 真实现后补测；可选抬 ui/render(88%)/ui/runtime(87%) 边角。M1 阶段 DC-17 已满足。
-2. **M1 收口 archive**：把 M1 skeleton 过程/决策/证据归档到 `archive/m1-skeleton-complete.md`，DC-1/DC-2/DC-9/DC-11 skeleton 等标记收口。
-3. **进入 M2**（按 §Ordered Next Milestones）：browser-ui/chrome 其余 §8.4.1A 组件实现；
-   text foundation 接入 `ui/render` 与 `zero-webview`（真实 fontdue/swash/rustybuzz 桥接，DC-11）；
-   `ui/render` Scene → render-foundation 后端 trait（TBD-2）；`apps/browser` 逐组件灰度迁移（shim/feature-flag）。
-4. `ui/examples`（counter/form/browser-shell-demo）随 M3 落地（DC-14）。
-5. 跟踪项：本机 `make test` 受 script-sandbox debug-test V8 链接阻塞（环境性）；零-security cors.rs 曾瞬时工作树损坏（已恢复 HEAD 状态，git 干净）。
+1. **DC-11 共享接入**：把 `ui/render` 文本绘制（`RenderPrimitive::Text` 当前承载字符串）改为消费 foundation/text 的 `ShapedText`/`TextBlob`；定义 `ui/render` Scene→后端 trait（TBD-2），让 foundation/text 成为 ui/render 的文本来源。
+2. **render-foundation 字体栈统一**（**触碰渲染后端，需 `make product-smoke`**）：把 `crates/render-foundation/src/font` 现有 fontdue/rustybuzz 实现改为复用 foundation/text（或 re-export），消除重复，使 zero-webview 也走 foundation/text（DC-11 完整闭环）。这是 M2 风险步骤，须 product-smoke 守 welcome.html 不退化。
+3. **browser-ui/chrome §8.4.1A 组件实现**（DC-7）：BrowserTabStrip/AddressBar/NavigationButtons/SecurityBadge/SiteInfoPanel/BookmarksBar/FindBar/PermissionPrompt/DownloadPanel/BrowserMenu/PageLoadIndicator/PageViewportFrame。
+4. **`BrowserChromeModel` + `BrowserAction`** 共享合约 + desktop/tablet/phone shell（DC-12）。
+5. `ui/examples`（counter/form/browser-shell-demo）随 M3 落地（DC-14）。
+6. 跟踪项：本机 `make test` 受 script-sandbox debug-test V8 链接阻塞（环境性）；render-foundation 字体栈统一前 welcome.html 渲染走旧路径，未受本轮影响。

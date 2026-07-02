@@ -5992,7 +5992,9 @@ dependencies = [
 name = "zero-text-foundation"
 version = "0.1.0"
 dependencies = [
+ "fontdue",
  "hashbrown 0.15.5",
+ "rustybuzz 0.20.1",
  "serde",
  "thiserror 2.0.18",
 ]
