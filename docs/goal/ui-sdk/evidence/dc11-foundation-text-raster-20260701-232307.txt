@@ -1,0 +1,57 @@
+DC-11 foundation/text glyph 光栅化（raster 阶段）— 2026-07-01
+===========================================================
+
+里程碑：M2→DC-11（共享文本/字体基础层）。SDK-only / 纯新增：foundation/text 自身能力扩展，
+未触碰 apps/browser / render-foundation / 任何既有渲染路径 → 无 product-smoke 风险。
+
+缺口（修复前）
+-------------
+- foundation/text 提供 shape（rustybuzz）+ measure（fontdue 行度量），但**无 raster**——
+  无法把已 shape 的 glyph 光栅为像素。
+- DC-11 要求基础层覆盖 shape/measure/raster 三阶段（spec §8.4.9 / FR-014），
+  使 UI 与 WebView 共享同一文本实现。raster 缺失阻塞 TBD-2 桥接文本路径与 zero-webview 接入。
+
+实现（foundation/text/src/backend.rs）
+--------------------------------------
+- 新增 `GlyphBitmap { width, height, xmin, ymin, coverage: Vec<u8> }`（alpha 覆盖位图）。
+- `FontdueBackend::rasterize_glyph(font_id, glyph_id, size_px) -> Result<GlyphBitmap, TextError>`：
+  按 glyph id（rustybuzz u32 → fontdue u16）用 `fontdue::Font::rasterize_indexed` 光栅化；
+  xmin/ymin 提供 bitmap 相对 pen/baseline 的定位偏移，供合成层放置。
+- `glyph_id` 取自 shape 阶段 `PositionedGlyph::glyph_id`，与 TextBlob 共享同一字体栈
+  （DC-11 核心不变量：单一字体实现，无重复 font cache）。
+- 错误：size_px<=0 → InvalidRequest；未知 font_id → FontNotFound。
+- lib.rs 导出 `GlyphBitmap`。
+
+fontdue API 核对（0.9.3）
+-------------------------
+- `rasterize(char, px)` 按 char；`rasterize_indexed(index: u16, px)` 按 glyph id（本实现用后者，
+  因 TextBlob 携带 glyph id）。
+- `Metrics { xmin, ymin: i32; width, height: usize }`。
+
+测试（5 新测，全绿；foundation/text 27→32 测）
+----------------------------------------------
+1. rasterize_glyph_ahem_solid_square — Ahem 1em 实心方块：size=16 位图非零、覆盖以 255 为主（>75%）。
+2. rasterize_glyph_size_scales_bitmap — size 8 vs 32：大字号位图更大。
+3. rasterize_glyph_is_deterministic — 同 glyph 同 size 两次光栅结果相等。
+4. rasterize_glyph_rejects_invalid_size — size_px=0 → InvalidRequest。
+5. rasterize_glyph_unknown_font_errors — 未知 FontId → FontNotFound。
+（test helper `shape_first_glyph_id`：shape "A" → 取 GlyphRun.font.id + 首个 glyph_id。）
+
+门禁（2026-07-01）
+-----------------
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all --check` — 净。
+- `./target/test-guard -- cargo test -p zero-text-foundation` — **32 passed; 0 failed**（27→32，+5 raster）。
+- 纯 foundation/text 自身扩展（无浏览器/渲染后端消费者）→ 未跑 product-smoke（零回归路径）。
+
+DC-11 状态更新
+--------------
+- foundation/text 现为完整 shape + measure + **raster** 文本基础层（DC-11 raster 阶段就绪）。
+- 剩余 DC-11（仍需后续推进，均有明确设计约束）：
+  ①TBD-2 桥接文本路径：`RenderFoundationBackend::draw_text_blob` 把 TextBlob→像素。
+    **关键设计约束**：TextBlob 仅携带 FontId 引用（在 shape 后端的字体空间），
+    raster 需同一字体栈 → 桥接需与 TextBlob 生产者共享 FontdueBackend（或 TextBlob 携带字体数据/共享注册表）。
+  ②render-foundation 现有 font 栈（font/cache·shaper·loader）统一到 foundation/text，
+    使 zero-webview 也走 foundation/text——**触碰姊妹目标 rendering-compat 主线，需 `make product-smoke` 验零退化**
+    （welcome.html 文本像素会变；须 diff ≤ 阈值）。

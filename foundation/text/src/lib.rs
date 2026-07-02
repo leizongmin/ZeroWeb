@@ -27,7 +27,7 @@ pub mod text_blob;
 pub mod text_measure;
 
 // 顶层再导出常用接口，方便调用方 `use zero_text_foundation::{FontProvider, TextShaper, ...}`。
-pub use backend::FontdueBackend;
+pub use backend::{FontdueBackend, GlyphBitmap};
 pub use diagnostics::TextError;
 pub use font_database::{FontMatch, FontProvider, FontSource};
 pub use font_request::{

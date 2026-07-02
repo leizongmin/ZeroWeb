@@ -25,6 +25,24 @@ struct LoadedFont {
     font: fontdue::Font,
 }
 
+/// 单个 glyph 的光栅化位图（alpha 覆盖）。DC-11：基础层 raster 阶段输出。
+///
+/// 由 [`FontdueBackend::rasterize_glyph`] 产出，供 UI/WebView 合成层把预 shape 的 glyph
+/// 光栅为像素（与 shape/measure 共享同一字体栈，DC-11 关键不变量）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlyphBitmap {
+    /// 像素宽。
+    pub width: usize,
+    /// 像素高。
+    pub height: usize,
+    /// bitmap 左边缘相对 pen x 的像素偏移（fontdue `xmin`）。
+    pub xmin: i32,
+    /// bitmap 底边缘相对 baseline 的像素偏移（fontdue `ymin`；fontdue 坐标 y 向上）。
+    pub ymin: i32,
+    /// alpha 覆盖（`width*height` 字节，0..=255），行优先、自顶向下。
+    pub coverage: Vec<u8>,
+}
+
 /// fontdue + rustybuzz 文本后端。
 ///
 /// 持有已加载字体，同时实现 [`FontProvider`] / [`TextShaper`] / [`TextMeasurer`]，
@@ -66,6 +84,34 @@ impl FontdueBackend {
             font,
         });
         Ok(id)
+    }
+
+    /// 光栅化单个 glyph 为 alpha 覆盖位图（fontdue）。DC-11：基础层 raster 阶段。
+    ///
+    /// `glyph_id` 取自 shape 阶段的 [`PositionedGlyph::glyph_id`]（rustybuzz u32 → fontdue u16）。
+    /// 返回 [`GlyphBitmap`]，其 `xmin`/`ymin` 提供 bitmap 相对 pen/baseline 的定位偏移。
+    ///
+    /// 调用方（UI 合成层 / WebView raster）据此把预 shape 的 glyph 转为像素，与 shape/measure
+    /// 共用同一已加载字体栈——DC-11 的核心不变量（单一字体实现，无重复 font cache）。
+    pub fn rasterize_glyph(&self, font_id: FontId, glyph_id: u32, size_px: f32) -> Result<GlyphBitmap, TextError> {
+        if size_px <= 0.0 {
+            return Err(TextError::InvalidRequest("size_px must be > 0".into()));
+        }
+        let font = self
+            .fonts
+            .iter()
+            .find(|f| f.id == font_id)
+            .ok_or(TextError::FontNotFound)?;
+        // fontdue 的 glyph 索引为 u16；rustybuzz glyph_id 对常规字体落在 u16 范围。
+        // 用 rasterize_indexed 按 glyph id 光栅（TextBlob 携带 glyph id，非 char）。
+        let (metrics, coverage) = font.font.rasterize_indexed(glyph_id as u16, size_px);
+        Ok(GlyphBitmap {
+            width: metrics.width,
+            height: metrics.height,
+            xmin: metrics.xmin,
+            ymin: metrics.ymin,
+            coverage,
+        })
     }
 
     /// 按 [`FontRequest`] 的候选族顺序匹配首个已加载字体；无精确匹配时回退到首个已加载字体。
@@ -533,5 +579,74 @@ mod tests {
         // 中间偏移的 caret 介于起止之间。
         let mid = blob.caret_x_for_byte(1);
         assert!(mid > 0.0 && mid < shaped.total_advance_x);
+    }
+
+    // ── rasterize_glyph（DC-11 raster 阶段）──────────────────────────────
+
+    /// shape "A" → 取首个 glyph id → 光栅化，断言 Ahem 实心方块位图。
+    fn shape_first_glyph_id(b: &FontdueBackend, text: &str, size_px: f32) -> (FontId, u32) {
+        let shaped = b
+            .shape(&ShapeInput {
+                text: text.into(),
+                font_request: FontRequest::new("Ahem"),
+                size_px,
+                direction: TextDirection::Ltr,
+                script: None,
+                scale_factor: 1.0,
+            })
+            .unwrap();
+        let run = &shaped.runs[0];
+        (run.font.id, run.glyphs[0].glyph_id)
+    }
+
+    #[test]
+    fn rasterize_glyph_ahem_solid_square() {
+        // Ahem 每字符为 1em 实心方块：size=16 → 位图约 16×16、覆盖接近全 255。
+        let b = backend_with_ahem();
+        let (font_id, glyph_id) = shape_first_glyph_id(&b, "A", 16.0);
+        let bmp = b.rasterize_glyph(font_id, glyph_id, 16.0).expect("rasterize");
+        assert!(bmp.width > 0 && bmp.height > 0, "Ahem glyph 应有非零位图");
+        assert_eq!(bmp.coverage.len(), bmp.width * bmp.height);
+        // 实心方块：绝大多数像素覆盖为 255。
+        let solid = bmp.coverage.iter().filter(|&&a| a == 255).count();
+        assert!(solid * 4 > bmp.coverage.len() * 3, "Ahem 位图应以实心覆盖为主");
+    }
+
+    #[test]
+    fn rasterize_glyph_size_scales_bitmap() {
+        // 更大字号 → 位图更大。
+        let b = backend_with_ahem();
+        let (fid, gid) = shape_first_glyph_id(&b, "A", 16.0);
+        let small = b.rasterize_glyph(fid, gid, 8.0).unwrap();
+        let big = b.rasterize_glyph(fid, gid, 32.0).unwrap();
+        assert!(big.width >= small.width && big.height >= small.height);
+    }
+
+    #[test]
+    fn rasterize_glyph_is_deterministic() {
+        let b = backend_with_ahem();
+        let (fid, gid) = shape_first_glyph_id(&b, "A", 16.0);
+        let a = b.rasterize_glyph(fid, gid, 16.0).unwrap();
+        let c = b.rasterize_glyph(fid, gid, 16.0).unwrap();
+        assert_eq!(a, c);
+    }
+
+    #[test]
+    fn rasterize_glyph_rejects_invalid_size() {
+        let b = backend_with_ahem();
+        let (fid, gid) = shape_first_glyph_id(&b, "A", 16.0);
+        assert!(matches!(
+            b.rasterize_glyph(fid, gid, 0.0),
+            Err(TextError::InvalidRequest(_))
+        ));
+    }
+
+    #[test]
+    fn rasterize_glyph_unknown_font_errors() {
+        let b = backend_with_ahem();
+        assert!(matches!(
+            b.rasterize_glyph(FontId(999), 1, 16.0),
+            Err(TextError::FontNotFound)
+        ));
     }
 }
