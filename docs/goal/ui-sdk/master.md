@@ -39,7 +39,7 @@ M1 目标：把 spec §FR-002 列出的 crate 全部立起来（接口边界 + �
 | DC-14 | 浏览器迁移完成 + 零退化 | ⬜ M2-M4 | 浏览器运行时本轮不触碰 |
 | DC-15 | 移动端运行时 | ⬜ M4 | — |
 | DC-16 | 测试与质量不可退让 | 🟡 守门中 | 新 crate scoped test 全绿；详见 Testing & Quality Gates |
-| DC-17 | Coverage 量化 | ⬜ 待基线 | M1 crate 建立后跑 `scripts/check-coverage.sh` 取 ui/* 基线 |
+| DC-17 | Coverage 量化 | 🟡 基线已立（M1） | 聚合 line 89.89% / function 89.98% / region 90.65%（≥85%）；per-crate 7 项 <85% 待补（见 Coverage 基线节曲线） |
 | DC-18 | 证据持久化与文档自洽 | 🟡 守门中 | evidence/ 持续落盘；本表与 Latest Evidence 自洽 |
 
 图例：⬜ 未开始 / 🟡 进行中或 skeleton / ✅ 完成。
@@ -78,7 +78,25 @@ M1 目标：把 spec §FR-002 列出的 crate 全部立起来（接口边界 + �
 ## Coverage 基线
 
 - 全仓 floor（来自 `rendering-compat` 基线）：line 95.46% / function 96.94% / region 94.88%。本目标不得显著下降。
-- `ui/*` + `foundation/text` coverage：**待建立**。M1 crate 落地后跑 `scripts/check-coverage.sh`（cargo-llvm-cov）取基线，曲线写入本节。目标 ≥ 85%。
+- **`ui/*` + `foundation/text` + `browser-ui/chrome` DC-17 基线（2026-07-01 建立）**：
+  - 聚合：**line 89.89% / function 89.98% / region 90.65%**（3315 行，已超 85% 目标）。
+  - 命令（统一口径）：`cargo llvm-cov -p zero-text-foundation -p zero-ui-* ... -p zero-browser-chrome --summary-only --ignore-filename-regex '[\\/](crates|apps)[\\/]' -- --test-threads=1`（`--ignore-filename-regex` 必须用 `[\\/](crates|apps)[\\/]` 匹配 profdata 绝对路径中的目录分量，`^` 锚定不生效）。
+  - 证据：`evidence/coverage-20260701-021806.txt`。
+- **per-crate line 曲线**（向 85% 推进的焦点标 ▲）：
+
+  | crate | line | 备注 |
+  |-------|------|------|
+  | ui/assets · ui/collections · ui/forms · ui/platform | 100% | — |
+  | ui/animation 98.4% · ui/patterns 98.2% · ui/devtools 97.3% | — | — |
+  | browser-ui/chrome 96.3% · ui/navigation 95.4% · ui/design-system 94.9% · ui/i18n 94.1% | — | — |
+  | ui/adapters 93.5% · ui/core 92.2% | — | — |
+  | ui/render 88.0% · ui/runtime 87.1% | — | — |
+  | ui/testing 85.1% | — | 刚过线 |
+  | ▲ ui/dsl 84.6% · ▲ ui/widgets 84.6% · ▲ ui/gestures 84.4% | <85% | widgets 主要被 button.rs 61% 拖低 |
+  | ▲ foundation/text 82.8% | <85% | shaping/text_blob/text_measure 三个 M1 stub 0%（M2 真实现后补测） |
+  | ▲ ui/restoration 79.3% · ▲ ui/overlay 77.5% · ▲ ui/commands 75.0% | <85% | 优先补测目标 |
+
+- **下一步 coverage 推进**：先补 ui/commands / ui/overlay / ui/restoration / ui/widgets::button 单测（纯逻辑、无窗口，本轮或下一轮可做），把曲线整体推到 ≥85% per-crate。foundation/text stub 等待 M2 真实现。
 
 ## 依赖决策日志
 
@@ -98,19 +116,19 @@ M1 目标：把 spec §FR-002 列出的 crate 全部立起来（接口边界 + �
 - `evidence/test-20260630-223559.txt` — 首轮 `make test` 实测：RED（script-sandbox debug-test V8 链接环境失败；release 构建 + CI 绿；定性见上）。
 - `evidence/dep-isolation-20260630-234530.txt` — **DC-1 机械验证 PASS**：22 通用 crate 零浏览器依赖；adapter-webview→zero-webview；chrome→ui/*+browser-shell+adapter-webview。
 - `evidence/capability-matrix-20260630-234530.md` — M1 能力矩阵 + DC skeleton 证据锚点 + 未解决缺口。
-- `evidence/coverage-*.txt` — 待补（DC-17，下一步取基线）。
+- `evidence/coverage-20260701-021806.txt` — **DC-17 基线（2026-07-01）**：聚合 line 89.89% / function 89.98% / region 90.65%（ui/*+foundation/text+chrome，排除依赖污染）；per-crate 曲线见 §Coverage 基线。
 
-**M1 门禁实测（2026-06-30）**：
+**M1 门禁实测（2026-07-01 复核）**：
 - `cargo build --workspace` — Finished（0 错误）。
 - `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告；clippy 不链接，故绕过 script-sandbox V8 链接问题）。
 - `cargo fmt --all --check` — 净（0 diff）。
-- 新 crate 单元测试（scoped test-guard，23 crate）— 135 passed / 0 failed。
+- 新 crate 单元 + 集成测试（scoped test-guard）— render 6+3 / runtime 7+3 / testing 3+1 / core 31 / widgets 18 / i18n 12 / foundation/text 12 / patterns 7 / … 全绿。
+- DC-17 coverage 基线已立（见上）。
 
 ## Next Steps
 
-1. **DC-17 coverage 基线**：确认 `cargo-llvm-cov` 可用 → 跑 `scripts/check-coverage.sh` 取 ui/* + foundation/text
-   line/function/region 基线，写入本控制面 + `evidence/coverage-*.txt`；持续向 85% 推进。
-2. **M1 收口 archive**：把 M1 skeleton 过程/决策/证据归档到 `archive/m1-skeleton-complete.md`。
+1. **DC-17 per-crate 抬升**：补 ui/commands（75%）/ ui/overlay（77.5%）/ ui/restoration（79.3%）/ ui/widgets::button（61%）单测，把曲线整体推到 per-crate ≥85%（纯逻辑、无窗口、本轮/下一轮可做）。foundation/text 三个 stub（shaping/text_blob/text_measure）等 M2 真实现后补测。
+2. **M1 收口 archive**：把 M1 skeleton 过程/决策/证据归档到 `archive/m1-skeleton-complete.md`，DC-1/DC-2/DC-9/DC-11 skeleton 等标记收口。
 3. **进入 M2**（按 §Ordered Next Milestones）：browser-ui/chrome 其余 §8.4.1A 组件实现；
    text foundation 接入 `ui/render` 与 `zero-webview`（真实 fontdue/swash/rustybuzz 桥接，DC-11）；
    `ui/render` Scene → render-foundation 后端 trait（TBD-2）；`apps/browser` 逐组件灰度迁移（shim/feature-flag）。
