@@ -67,6 +67,8 @@ pub fn security_color_name(state: crate::security_badge::SecurityState) -> &'sta
 /// chrome 叶子绘制控件：填充背景（语义色）+ 可选文案。
 ///
 /// `fill_viewport = true` 时占满可用宽高（用于 PageViewportFrame）；否则占满宽、固定高（bars）。
+/// `fill_background = false` 时跳过 `fill_rect`（DC-14 替换式迁移：PageViewportFrame 不填底色，
+/// 页面内容由 WebView 绘制，避免 SDK chrome 的 viewport 底色覆盖页面内容）。
 /// paint 读 `ctx.clip` 得节点可视尺寸，以局部坐标 (0,0) 填充 —— host 按节点 origin 平移后覆盖节点 rect。
 pub struct ChromePanel {
     bg: Color,
@@ -74,6 +76,7 @@ pub struct ChromePanel {
     text_color: Color,
     height: f32,
     fill_viewport: bool,
+    fill_background: bool,
 }
 
 impl ChromePanel {
@@ -84,6 +87,19 @@ impl ChromePanel {
         default_bg: &str,
         default_height: f32,
         fill_viewport: bool,
+        tokens: &SemanticTokens,
+    ) -> ChromePanel {
+        Self::from_spec_with_fill(spec, default_bg, default_height, fill_viewport, true, tokens)
+    }
+
+    /// 同 [`from_spec`]，但 `fill_background` 控制是否绘制底色（DC-14 替换式迁移：
+    /// PageViewportFrame 设 `false` 不填底色，页面内容由 WebView 绘制在上层）。
+    pub fn from_spec_with_fill(
+        spec: &WidgetSpec,
+        default_bg: &str,
+        default_height: f32,
+        fill_viewport: bool,
+        fill_background: bool,
         tokens: &SemanticTokens,
     ) -> ChromePanel {
         let bg_name = match spec.props.get("bg") {
@@ -110,6 +126,7 @@ impl ChromePanel {
             text_color,
             height,
             fill_viewport,
+            fill_background,
         }
     }
 }
@@ -137,8 +154,10 @@ impl Widget for ChromePanel {
     fn paint(&mut self, ctx: &mut PaintCtx) {
         // ctx.clip = 祖先 clip ∩ 节点 rect（绝对坐标）；其 size 即节点可视尺寸。
         let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(400.0, self.height));
-        ctx.recorder
-            .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
+        if self.fill_background {
+            ctx.recorder
+                .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
+        }
         if let Some(text) = &self.text {
             // 文本基线：bars 在 height-8 处；viewport 顶部 18px。
             let baseline = if self.fill_viewport {
@@ -183,9 +202,10 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens)
     host.register("browser.FindBar", move |s| {
         Box::new(ChromePanel::from_spec(s, "chrome", 32.0, false, &t))
     });
-    // 视口：占满剩余区域，背景色（WebView 容器；真实网页由 WebViewWidget 在 M2 后期接入）。
+    // 视口：占满剩余区域，**不填底色**（DC-14 替换式迁移：页面内容由 WebView 绘制在上层，
+    // SDK chrome viewport 只负责布局空间，不覆盖页面像素）。
     host.register("browser.PageViewportFrame", move |s| {
-        Box::new(ChromePanel::from_spec(s, "viewport", 0.0, true, &t))
+        Box::new(ChromePanel::from_spec_with_fill(s, "viewport", 0.0, true, false, &t))
     });
 }
 
@@ -302,5 +322,25 @@ mod tests {
         let panel = ChromePanel::from_spec(&spec, "chrome", 36.0, false, &light);
         assert_eq!(panel.text_color, light.on_surface);
         assert_eq!(panel.bg, light.surface);
+    }
+
+    #[test]
+    fn viewport_frame_skips_background_fill() {
+        // DC-14 替换式迁移：PageViewportFrame 不填底色（页面内容由 WebView 绘制）。
+        let light = zero_ui_core::theme::SemanticTokens::light();
+        let spec = WidgetSpec::new("browser.PageViewportFrame");
+        let panel = ChromePanel::from_spec_with_fill(&spec, "viewport", 0.0, true, false, &light);
+        assert!(!panel.fill_background, "PageViewportFrame fill_background = false");
+        assert!(panel.fill_viewport, "fill_viewport 仍为 true（占满剩余空间）");
+    }
+
+    #[test]
+    fn bars_keep_background_fill_default() {
+        // 非视口 chrome 控件（AddressBar/TabStrip 等）默认 fill_background = true（向后兼容）。
+        let light = zero_ui_core::theme::SemanticTokens::light();
+        let mut spec = WidgetSpec::new("browser.AddressBar");
+        spec.props.insert("bg", Value::Text("chrome".into()));
+        let panel = ChromePanel::from_spec(&spec, "chrome", 36.0, false, &light);
+        assert!(panel.fill_background, "bars 默认 fill_background = true");
     }
 }
