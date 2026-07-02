@@ -103,3 +103,85 @@ impl RenderNode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_text_foundation::{ShapedText, TextBlob, TextMetrics};
+    use zero_ui_core::geometry::Point;
+
+    fn blob() -> TextBlob {
+        TextBlob::new(
+            ShapedText {
+                runs: Vec::new(),
+                total_advance_x: 0.0,
+                total_advance_y: 0.0,
+            },
+            TextMetrics {
+                width: 0.0,
+                height: 0.0,
+                ascent: 0.0,
+                descent: 0.0,
+                line_count: 0,
+            },
+        )
+    }
+
+    #[test]
+    fn translate_fill_and_stroke_rect_shift_rect_origin() {
+        let fill = RenderPrimitive::FillRect {
+            rect: Rect::from_ltrb(0.0, 0.0, 10.0, 10.0),
+            color: Color::BLACK,
+            rounding: Rounding::ZERO,
+        };
+        match fill.translate(Vec2::new(5.0, 7.0)) {
+            RenderPrimitive::FillRect { rect, .. } => {
+                assert_eq!(rect, Rect::from_ltrb(5.0, 7.0, 15.0, 17.0));
+            }
+            _ => panic!("expected FillRect"),
+        }
+
+        let stroke = RenderPrimitive::StrokeRect {
+            rect: Rect::from_ltrb(1.0, 2.0, 3.0, 4.0),
+            color: Color::WHITE,
+            stroke_width: 1.0,
+            rounding: Rounding::ZERO,
+        };
+        match stroke.translate(Vec2::new(10.0, 20.0)) {
+            RenderPrimitive::StrokeRect { rect, .. } => {
+                assert_eq!(rect, Rect::from_ltrb(11.0, 22.0, 13.0, 24.0));
+            }
+            _ => panic!("expected StrokeRect"),
+        }
+    }
+
+    #[test]
+    fn translate_text_and_text_blob_shift_position() {
+        let text = RenderPrimitive::Text {
+            text: "hi".to_string(),
+            position: Point::new(1.0, 2.0),
+            size_px: 12.0,
+            color: Color::BLACK,
+        };
+        match text.translate(Vec2::new(100.0, 50.0)) {
+            RenderPrimitive::Text { position, text, size_px, .. } => {
+                assert_eq!(position, Point::new(101.0, 52.0));
+                assert_eq!(text, "hi");
+                assert_eq!(size_px, 12.0);
+            }
+            _ => panic!("expected Text"),
+        }
+
+        let tb = RenderPrimitive::TextBlob {
+            blob: blob(),
+            position: Point::new(0.0, 0.0),
+            color: Color::WHITE,
+        };
+        match tb.translate(Vec2::new(8.0, 9.0)) {
+            RenderPrimitive::TextBlob { position, .. } => {
+                assert_eq!(position, Point::new(8.0, 9.0));
+            }
+            _ => panic!("expected TextBlob"),
+        }
+    }
+}
