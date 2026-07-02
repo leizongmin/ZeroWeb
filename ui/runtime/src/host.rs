@@ -629,6 +629,22 @@ fn flex_from_props(props: &PropsMap) -> f32 {
     }
 }
 
+/// 从 props 读交叉轴对齐（`cross_axis_align`：`"start"`/`"center"`/`"end"`，大小写不敏感；
+/// Row 也接受 `"top"`/`"bottom"`、Column 也接受 `"left"`/`"right"`）。
+///
+/// 缺省 [`CrossAxisAlignment::Start`]（向后兼容历史顶/左对齐行为）。
+fn cross_axis_alignment_from_props(props: &PropsMap) -> CrossAxisAlignment {
+    if let Some(Value::Text(s)) = props.get("cross_axis_align") {
+        match s.to_ascii_lowercase().as_str() {
+            "center" => return CrossAxisAlignment::Center,
+            "end" | "bottom" | "right" => return CrossAxisAlignment::End,
+            "start" | "top" | "left" => return CrossAxisAlignment::Start,
+            _ => {}
+        }
+    }
+    CrossAxisAlignment::Start
+}
+
 /// 线性容器（Row/Column）的主轴方向。
 #[derive(Clone, Copy, PartialEq)]
 enum MainAxis {
@@ -636,6 +652,35 @@ enum MainAxis {
     Horizontal,
     /// Column：主轴 = Y（height），交叉轴 = X（width）。
     Vertical,
+}
+
+/// 线性容器（Row/Column）的交叉轴对齐方式。
+///
+/// 控制子节点在容器交叉轴（Row=垂直 / Column=水平）上的放置。对齐基准是容器自身的交叉尺寸
+/// （= 最高/最宽子节点，见 [`measure_linear`] 的 `total_cross`），故最高/最宽的子节点偏移恒为 0，
+/// 较小的子节点按对齐方式定位——这正是 chrome 工具栏所需（高元素满高、短元素垂直居中）。
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum CrossAxisAlignment {
+    /// 子节点紧贴交叉轴起点（Row=顶部 / Column=左侧）。默认，向后兼容历史行为。
+    #[default]
+    Start,
+    /// 子节点在交叉轴居中。
+    Center,
+    /// 子节点紧贴交叉轴终点（Row=底部 / Column=右侧）。
+    End,
+}
+
+/// 计算子节点在交叉轴上的偏移量（相对交叉轴起点）。
+///
+/// `container_cross` = 容器交叉尺寸；`child_cross` = 子节点交叉尺寸。
+/// `free = container − child`（钳到非负）按对齐方式分配：Start→0、Center→free/2、End→free。
+fn cross_offset(align: CrossAxisAlignment, container_cross: f32, child_cross: f32) -> f32 {
+    let free = (container_cross - child_cross).max(0.0);
+    match align {
+        CrossAxisAlignment::Start => 0.0,
+        CrossAxisAlignment::Center => free * 0.5,
+        CrossAxisAlignment::End => free,
+    }
 }
 
 /// Row/Column 共用的弹性布局：两遍 measure。
@@ -782,17 +827,23 @@ fn arrange(node: &mut HostNode, origin: Point) {
     match node_container_kind(node) {
         Some(ContainerKind::Column) => {
             let gap = gap_from_props(&node.props);
+            let align = cross_axis_alignment_from_props(&node.props);
+            let container_cross = node.cached_size.width;
             let mut y = origin.y;
             for child in node.children.iter_mut() {
-                arrange(child, Point::new(origin.x, y));
+                let cx = cross_offset(align, container_cross, child.cached_size.width);
+                arrange(child, Point::new(origin.x + cx, y));
                 y += child.cached_size.height + gap;
             }
         }
         Some(ContainerKind::Row) => {
             let gap = gap_from_props(&node.props);
+            let align = cross_axis_alignment_from_props(&node.props);
+            let container_cross = node.cached_size.height;
             let mut x = origin.x;
             for child in node.children.iter_mut() {
-                arrange(child, Point::new(x, origin.y));
+                let cy = cross_offset(align, container_cross, child.cached_size.height);
+                arrange(child, Point::new(x, origin.y + cy));
                 x += child.cached_size.width + gap;
             }
         }
@@ -1459,6 +1510,101 @@ mod tests {
         assert_eq!(f.len(), 2, "two flex fills → two fill_rects");
         assert!(f.contains(&(Rect::from_ltrb(0.0, 0.0, 200.0, 50.0), Color::rgb(1.0, 0.0, 0.0))));
         assert!(f.contains(&(Rect::from_ltrb(200.0, 0.0, 400.0, 50.0), Color::rgb(0.0, 0.0, 1.0))));
+    }
+
+    // ── 交叉轴对齐（cross_axis_align）测试 ────────────────
+    //
+    // 容器交叉尺寸 = 最高/最宽子节点（measure_linear 的 total_cross）。Fill 满高/宽，
+    // Patch 固有 50x50 较小 → 对齐把 Patch 在交叉轴上居中/贴底/贴顶。这是 chrome 工具栏
+    // 「高元素满高、短元素（如文本/图标）垂直居中」所需的真实排版能力。
+
+    #[test]
+    fn row_cross_axis_center_aligns_shorter_child_vertically() {
+        // Row 高 100：Fill(flex=1) 满高 100 + Patch(50x50)。容器交叉高 = max(100,50) = 100。
+        // center → Patch 垂直居中：y 偏移 (100-50)/2 = 25 → rect top=25, bottom=75。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props.insert("cross_axis_align", Value::Text("center".into()));
+        root.children.push(fill("blue", "fill", 1));
+        root.children.push(patch("red", "small", "app.small"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 100.0)));
+        let small = host.rect_of(&WidgetId::new("small")).unwrap();
+        assert_eq!(small.top(), 25.0, "centered Patch top = (100-50)/2");
+        assert_eq!(small.bottom(), 75.0);
+    }
+
+    #[test]
+    fn row_cross_axis_end_aligns_shorter_child_to_bottom() {
+        // end → Patch 贴底：y 偏移 100-50 = 50 → rect top=50, bottom=100。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props.insert("cross_axis_align", Value::Text("end".into()));
+        root.children.push(fill("blue", "fill", 1));
+        root.children.push(patch("red", "small", "app.small"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 100.0)));
+        let small = host.rect_of(&WidgetId::new("small")).unwrap();
+        assert_eq!(small.top(), 50.0);
+        assert_eq!(small.bottom(), 100.0);
+    }
+
+    #[test]
+    fn row_cross_axis_default_start_is_backward_compatible() {
+        // 无 cross_axis_align → 缺省 Start → Patch 顶部：top=0, bottom=50（历史行为不变）。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Row");
+        root.children.push(fill("blue", "fill", 1));
+        root.children.push(patch("red", "small", "app.small"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 100.0)));
+        let small = host.rect_of(&WidgetId::new("small")).unwrap();
+        assert_eq!(small.top(), 0.0, "default Start keeps legacy top alignment");
+        assert_eq!(small.bottom(), 50.0);
+    }
+
+    #[test]
+    fn row_cross_axis_accepts_top_bottom_aliases() {
+        // Row 接受 top/bottom 别名（= start/end）。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props.insert("cross_axis_align", Value::Text("bottom".into()));
+        root.children.push(fill("blue", "fill", 1));
+        root.children.push(patch("red", "small", "app.small"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 100.0)));
+        let small = host.rect_of(&WidgetId::new("small")).unwrap();
+        assert_eq!(small.top(), 50.0, "bottom alias = end");
+    }
+
+    #[test]
+    fn column_cross_axis_center_aligns_shorter_child_horizontally() {
+        // Column 宽 100：Fill(flex=1) 满宽 100 + Patch(50x50)。容器交叉宽 = 100。
+        // center → Patch 水平居中：x 偏移 (100-50)/2 = 25 → rect left=25, right=75。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Column");
+        root.props.insert("cross_axis_align", Value::Text("center".into()));
+        root.children.push(fill("blue", "fill", 1));
+        root.children.push(patch("red", "small", "app.small"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(100.0, 400.0)));
+        let small = host.rect_of(&WidgetId::new("small")).unwrap();
+        assert_eq!(small.left(), 25.0, "centered Patch left = (100-50)/2");
+        assert_eq!(small.right(), 75.0);
+    }
+
+    #[test]
+    fn cross_axis_unknown_value_falls_back_to_start() {
+        // 未知对齐值 → 回落 Start（不 panic）。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props.insert("cross_axis_align", Value::Text("diagonal".into()));
+        root.children.push(fill("blue", "fill", 1));
+        root.children.push(patch("red", "small", "app.small"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 100.0)));
+        let small = host.rect_of(&WidgetId::new("small")).unwrap();
+        assert_eq!(small.top(), 0.0, "unknown value → Start fallback");
     }
 
     #[test]

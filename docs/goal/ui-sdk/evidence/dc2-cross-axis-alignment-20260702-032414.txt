@@ -1,0 +1,31 @@
+DC-2 host 交叉轴对齐（cross_axis_align）— 2026-07-02
+
+## 变更
+`ui/runtime/src/host.rs` 线性容器（Row/Column）加交叉轴对齐：
+- 新增 `CrossAxisAlignment { Start, Center, End }`（默认 Start，向后兼容）+ `cross_offset(align, container_cross, child_cross)`。
+- 新增 `cross_axis_alignment_from_props(props)` 读 `cross_axis_align` prop（`"start"`/`"center"`/`"end"`，大小写不敏感；Row 接受 `top`/`bottom`、Column 接受 `left`/`right` 别名；未知值回落 Start）。
+- `arrange` Row/Column 臂按对齐把子节点在交叉轴上偏移：容器交叉尺寸 = 最高/最宽子节点（measure_linear total_cross），故满高/宽子节点偏移恒 0，较短子节点按对齐定位（chrome 工具栏「高元素满高、短元素垂直居中」所需）。
+
+## 为什么
+DC-14 chrome 迁移需要真实排版：工具栏 Row 中地址栏文本/图标需垂直居中。此前 host Row/Column 把所有子节点硬编码到交叉轴起点（顶/左），无法居中。master.md Next Steps #5 列为「随 chrome 迁移需求驱动」的 SDK-only 打磨项。默认 Start 与旧实现逐位等价（向后兼容）。
+
+## 测试（ui-runtime，scoped test-guard）
+新增 6 测（host::tests）：
+- row_cross_axis_center_aligns_shorter_child_vertically（Patch 50 在高 100 Row 居中 → top=25/bottom=75）
+- row_cross_axis_end_aligns_shorter_child_to_bottom（top=50/bottom=100）
+- row_cross_axis_default_start_is_backward_compatible（无 prop → top=0/bottom=50，旧行为）
+- row_cross_axis_accepts_top_bottom_aliases（bottom 别名 = end）
+- column_cross_axis_center_aligns_shorter_child_horizontally（Patch 在宽 100 Column 居中 → left=25/right=75）
+- cross_axis_unknown_value_falls_back_to_start（"diagonal" → Start 不 panic）
+
+ui-runtime: host::tests 33→39 全绿 + 3 集成测全绿。
+下游回归（同样用 host 布局）：browser-ui/chrome 63、ui/examples 14+、ui/adapters/render-foundation 5 全绿（零回归，默认 Start 向后兼容）。
+
+## 门禁
+- cargo build --workspace：Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings：Finished（0 警告）。
+- cargo fmt --all --check：净。
+- host.rs coverage（scoped llvm-cov）：regions 92.93% / functions 93.98% / lines 90.56%（≥85%）。
+
+## 范围
+SDK-only（ui/runtime），未触碰 render-foundation / apps/browser → 无 product-smoke 风险。DC-1 复核：零新依赖、零浏览器业务 crate 依赖。
