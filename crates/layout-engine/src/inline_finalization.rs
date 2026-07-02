@@ -517,7 +517,24 @@ pub(crate) fn compute_final_inline_layouts(
     // 导致文本与 float 重叠。
     // inline-block/inline-flex/inline-grid 虽然也是 inline-level，
     // 但它们有独立的布局上下文，is_block_level 不会是 false。
-    if !root.is_block_level {
+    //
+    // R978 例外：table-internal 行/行组容器（TableRowGroup/HeaderGroup/FooterGroup/Row）
+    // 若含**直接文本子节点**（裸文本，无 row/cell 包裹），CSS Tables §3.1 要求生成匿名 row+cell。
+    // ZW 未实现匿名 cell 生成（text node 非 LayoutBox child），裸文本会完全 orphan
+    // （table_grid 跳过 text node + 此处 is_block_level=false 跳过 IFC）→ 渲染为 16px 默认。
+    // 让此类容器跑 IFC，使裸文本至少按容器 font/size 渲染（table-row-group-color-inheritance-001：
+    // 200px green Ahem X）。仅「直接 text child」触发，正常 table（rows/cells 子元素）不受影响。
+    let is_table_internal_with_text = matches!(
+        style.display,
+        DisplayValue::TableRowGroup
+            | DisplayValue::TableHeaderGroup
+            | DisplayValue::TableFooterGroup
+            | DisplayValue::TableRow
+    ) && doc
+        .child_nodes(node_id)
+        .iter()
+        .any(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))));
+    if !root.is_block_level && !is_table_internal_with_text {
         return;
     }
 

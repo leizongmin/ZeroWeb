@@ -125,6 +125,73 @@ fn test_table_cell_relative_inset_applied() {
     );
 }
 
+/// R978：table-internal 容器（display:table-row-group）内**裸文本**须经 compute_final IFC 渲染。
+/// CSS Tables §3.1 要求裸文本生成匿名 cell；ZW 未实现匿名 cell 生成（text node 非 LayoutBox
+/// child），故作为 partial fix：让 compute_final 例外允许 table-internal 行/行组（含直接 text child）
+/// 跑 IFC，使裸文本至少按容器 font/size 渲染（不再 orphan 渲染为 16px 默认）。
+/// 旧实现 engine.rs:1007 is_block_level 不含 TableRowGroup → compute_final 早返 → 裸文本 orphan。
+/// 驱动：css-tables/table-row-group-color-inheritance-001 oracle 8.99%→0.79%（200px green Ahem X）。
+#[test]
+fn test_table_row_group_bare_text_runs_ifc() {
+    use zero_dom::{NodeId, NodeKind};
+    let html = r#"<html><body style="margin:0">
+      <div style="display:table"><div id="rg" style="display:table-row-group; font-size:50px; color:green">X</div></div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let find_id = |tag_id: &str| -> Option<NodeId> {
+        let mut stack = vec![doc.root()];
+        while let Some(nid) = stack.pop() {
+            if let Some(n) = doc.get(nid) {
+                if let NodeKind::Element(e) = &n.kind {
+                    if e.id.as_deref() == Some(tag_id) {
+                        return Some(nid);
+                    }
+                }
+                stack.extend(n.children.iter().copied());
+            }
+        }
+        None
+    };
+    let rg = find_id("rg").expect("div#rg found");
+    // 裸文本「X」的 NodeId（rg 的直接 text child）
+    let text_id = doc
+        .child_nodes(rg)
+        .into_iter()
+        .find(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
+        .expect("bare text node child of row-group");
+    fn find_box(b: &LayoutBox, id: NodeId) -> Option<&LayoutBox> {
+        if b.node_id == Some(id) {
+            return Some(b);
+        }
+        for c in &b.children {
+            if let Some(found) = find_box(c, id) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    let rg_box = find_box(&result.root, rg).expect("layout box for div#rg");
+    // 裸文本「X」须触发 IFC：text_node_font_sizes 被填充（旧实现 compute_final 早返 → 空 map → orphan 16px）。
+    // inline_layout 仅 pure-Ahem 存（text_node_font_sizes 是 font-无关的 IFC-ran 信号）。
+    assert!(
+        rg_box.text_node_font_sizes.contains_key(&text_id),
+        "table-row-group with bare text should register text in text_node_font_sizes (R978 IFC fix); got empty"
+    );
+    // 且 font-size 应为容器继承值（50px），非 16px 默认（orphan 的症状）。
+    let stored_fs = rg_box.text_node_font_sizes.get(&text_id).copied().unwrap_or(0.0);
+    assert!(
+        (stored_fs - 50.0).abs() < 2.0,
+        "bare text font-size should be ~50 (inherited from row-group), got {}; orphan bug = 16",
+        stored_fs
+    );
+}
+
 /// `<img>` 无 width/height 属性时应使用解码固有尺寸（DC-11 替换元素固有尺寸）。
 #[test]
 fn test_img_intrinsic_size_from_decoded() {
