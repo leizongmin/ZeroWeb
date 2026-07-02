@@ -279,9 +279,9 @@
 ### DC-10: 浏览器图元消费完整性
 
 - [x] ✅(M7) `append_webview_primitives()` 处理 `RenderPrimitives` 的所有 13 个字段（fills、rounded_rects、path_fills、path_strokes、strokes、gradients、shadows、images、glyphs、filters、blend_modes、transforms、clips）— app_render.rs:1512 遍历全 13 字段（1526-1840）无丢弃
-- [ ] 所有图元类型正确应用 `scale_factor` 和 `offset`
-- [ ] 所有图元类型正确应用视口裁剪（`clip_y` + `clip_rounded`）
-- [ ] 图元渲染顺序遵循 CSS painting order（background → borders → content → outline）
+- [x] ✅(R968) 所有图元类型正确应用 `scale_factor` 和 `offset` — `transform_webview_primitives`（app_render_primitives.rs）对全部 13 种图元应用 `out = in * scale + offset`；单测 `transform_webview_primitives_applies_scale_and_offset_to_all_types` 覆盖 fills / rounded_rects（4 圆角独立缩放）/ gradients（Linear/Radial/Conic 三变体；Conic `start_angle` 无量纲不缩放）/ shadows（offset+blur+spread）/ strokes（端点+线宽）/ glyphs（font_size）/ transforms（rect+origin+tx/ty），逐类型断言 scale=2 + offset=(10,20) 的精确输出
+- [x] ✅(R968) 所有图元类型正确应用视口裁剪（`clip_y` + `clip_rounded`）— `transform_webview_primitives` 用 `ViewportClip`（轴对齐矩形）裁剪全部 13 种图元（rect 类走 `clip_rect_field`/`clip_axis_aligned_rect` 求交，path 走 `path_vertices_bbox`，glyph 走 font_size 包围盒）；单测 `transform_webview_primitives_culls_primitives_outside_viewport` 验证视口外 rounded_rects/gradients/path_fills/glyphs 被裁掉、视口内保留。注：`clip_y`（水平带）+ `clip_rounded`（圆角矩形）是 `append_webview_primitives`（fills+glyphs 混入 chrome 层）的细粒度裁剪，用于圆角 page frame；全 13 类主消费路径用 `ViewportClip`
+- [x] ✅(R155) 图元渲染顺序遵循 CSS painting order（background → borders → content → outline）— `draw_order` 是 painter 生产默认（R149/R152/R155，painter/mod.rs:1459 `draw_order 是默认渲染路径`）；paint 系统按 CSS painting order 发射图元，浏览器消费层（本文件）保持发射顺序按类型重组，不重排
 
 ### DC-11: 布局正确性
 
