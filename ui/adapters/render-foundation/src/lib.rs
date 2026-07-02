@@ -25,9 +25,14 @@
 //!   偏移重映射，保留表面内部 z 序）。本后端不做空间变换——调用方负责 offset/scale（参考
 //!   apps/browser `append_webview_primitives`）。
 //!
-//! ## 暂未覆盖（明确 follow-up，非阻塞当前闭环）
-//! - 生产集成（DC-14 真实接线）：本后端自带 `ImageCache`；浏览器消费时须把 glyph key 解析到
-//!   渲染器的 image cache（或共享）——当前无消费者，几何+文本+外部表面经测试验证。
+//! ## 生产集成（DC-14 真实接线）
+//! - [`merge_into_frame`]：把本后端产出的图元 + glyph image cache 合并进帧统一
+//!   `RenderPrimitives` / `ImageCache`——经 [`ImageCache::extend_from_other`] 在帧 cache 为
+//!   source image 分配新键（collision-safe）+ 重映射 source 图元的 image_key，再合并图元
+//!   （13 分桶 + draw_order 偏移）。浏览器据此把 SDK chrome（fills + 文本 ImagePrimitive +
+//!   glyph cache）并入帧，单一 `render_full_scene` 调用解析所有图片，无需为 chrome 单独光栅。
+//!
+//! [`ImageCache::extend_from_other`]: zero_render_foundation::image_cache::ImageCache::extend_from_other
 //!
 //! [`FillPrimitive`]: zero_render_foundation::primitive::FillPrimitive
 //! [`RoundedRectPrimitive`]: zero_render_foundation::primitive::RoundedRectPrimitive
@@ -281,6 +286,37 @@ fn merge_primitives(dst: &mut RenderPrimitives, src: &RenderPrimitives) {
             DrawOp::Clip(i) => DrawOp::Clip(i + o_clip),
         });
     }
+}
+
+/// 把 `source` 图元 + 其 glyph image cache 合并进帧统一 primitives / image_cache（DC-14 chrome
+/// 文本集成）。
+///
+/// **解决 ImageCache 键碰撞**：frame image_cache 可能已含与 `source` 键 id 重叠的条目（两边
+/// 各自从 0 起顺序分配，或哈希碰撞），故经 [`ImageCache::extend_from_other`] 在 frame cache
+/// 为 source 的每条 image 分配**新键**（绝不覆盖 frame 既有条目），用返回的重映射改写 source
+/// 图元的 `image_key`，再经 [`merge_primitives`] 合并图元（13 分桶 + draw_order 偏移）。
+///
+/// 合并后 source 的 image 键全部指向 frame cache，可经帧的**单一** `image_cache` 解析——这是把
+/// SDK chrome 渲染产出（`render_chrome_via_sdk` 的 fills + 文本 ImagePrimitive + glyph
+/// image_cache）并入浏览器帧的标准入口，无需为 chrome 单独光栅再合成 framebuffer。
+///
+/// - `source_primitives`：被合并的图元（消费；image_key 会被改写到 frame 键空间）。
+/// - `source_cache`：source 图元 image_key 当前指向的缓存（只读，合并后调用方可丢弃）。
+/// - `frame_primitives` / `frame_cache`：帧统一图元与缓存（就地扩展）。
+pub fn merge_into_frame(
+    mut source_primitives: RenderPrimitives,
+    source_cache: &ImageCache,
+    frame_primitives: &mut RenderPrimitives,
+    frame_cache: &mut ImageCache,
+) {
+    let remap = frame_cache.extend_from_other(source_cache);
+    // 改写 source 图元的 image_key 到 frame 键空间（collision-safe）。
+    for img in &mut source_primitives.images {
+        if let Some(new_key) = remap.get(&img.image_key) {
+            img.image_key = new_key.clone();
+        }
+    }
+    merge_primitives(frame_primitives, &source_primitives);
 }
 
 // ── 文本光栅化辅助（DC-11 draw_text / draw_text_blob）─────────────────
@@ -854,5 +890,83 @@ mod tests {
         assert!(!p.images.is_empty(), "桥接应产出 widget 文本 ImagePrimitive");
         // draw_order 有序记录（clip/fill/image 交错）。
         assert!(!p.draw_order.is_empty());
+    }
+
+    // ── merge_into_frame（DC-14 chrome 文本集成：缓存合并 + image_key 重映射）──────
+
+    fn one_pixel(r: u8, g: u8, b: u8) -> ImageData {
+        ImageData::from_rgba(vec![r, g, b, 255], 1, 1).unwrap()
+    }
+
+    #[test]
+    fn merge_into_frame_remaps_source_image_keys_collision_safe() {
+        // source 与 frame 各有 fills + image，image_key 各自指向自己的 cache（两边键 id 都从 0
+        // 起 → 碰撞）。merge_into_frame 后：frame fills 含两者；frame images 含两者且键全部可在
+        // frame_cache 解析；frame 原条目不被覆盖；source 的 image_key 被改写到 frame 新键。
+        let mut source_cache = ImageCache::new(16, 1024 * 1024);
+        let source_key = source_cache.insert(one_pixel(10, 10, 10)); // source 键 id 0
+        let mut source = RenderPrimitives::default();
+        source.add_fill(RfRect::new(0.0, 0.0, 10.0, 10.0), RfColor::rgb(255, 0, 0));
+        source.add_image(ImagePrimitive {
+            rect: RfRect::new(0.0, 0.0, 10.0, 10.0),
+            image_key: source_key.clone(),
+            clip: None,
+        });
+
+        let mut frame_cache = ImageCache::new(16, 1024 * 1024);
+        let frame_key = frame_cache.insert(one_pixel(20, 20, 20)); // frame 键 id 0（与 source_key 碰撞）
+        let mut frame = RenderPrimitives::default();
+        frame.add_fill(RfRect::new(0.0, 0.0, 5.0, 5.0), RfColor::rgb(0, 255, 0));
+        frame.add_image(ImagePrimitive {
+            rect: RfRect::new(0.0, 0.0, 5.0, 5.0),
+            image_key: frame_key.clone(),
+            clip: None,
+        });
+
+        merge_into_frame(source, &source_cache, &mut frame, &mut frame_cache);
+
+        assert_eq!(frame.fills.len(), 2, "merged fills from both");
+        assert_eq!(frame.images.len(), 2, "merged images from both");
+        // frame 原条目键仍解析为 frame 自己的图（r=20），未被覆盖。
+        assert_eq!(frame_cache.get(&frame_key).map(|d| d.get_pixel(0, 0)[0]), Some(20));
+        // source 的 image 被改写为新键（≠ source_key 原碰撞键，≠ frame_key），新键解析为 source 图（r=10）。
+        let merged_source_key = frame
+            .images
+            .iter()
+            .find(|im| im.image_key != frame_key)
+            .expect("merged source image present")
+            .image_key
+            .clone();
+        assert_ne!(
+            merged_source_key, source_key,
+            "source key remapped away from colliding id"
+        );
+        assert_ne!(merged_source_key, frame_key);
+        assert_eq!(
+            frame_cache.get(&merged_source_key).map(|d| d.get_pixel(0, 0)[0]),
+            Some(10),
+            "remapped key resolves to source image in frame cache"
+        );
+        assert_eq!(frame_cache.len(), 2, "frame cache holds original + merged entry");
+    }
+
+    #[test]
+    fn merge_into_frame_source_without_images_leaves_cache_untouched() {
+        // source 只有 fills（无文本/图片）→ merge 不触碰 frame_cache，只合并 fills。
+        let source_cache = ImageCache::new(16, 1024 * 1024); // 空
+        let mut source = RenderPrimitives::default();
+        source.add_fill(RfRect::new(0.0, 0.0, 10.0, 10.0), RfColor::rgb(255, 0, 0));
+
+        let mut frame_cache = ImageCache::new(16, 1024 * 1024);
+        let frame_key = frame_cache.insert(one_pixel(20, 20, 20));
+        let mut frame = RenderPrimitives::default();
+        frame.add_fill(RfRect::new(0.0, 0.0, 5.0, 5.0), RfColor::rgb(0, 255, 0));
+
+        merge_into_frame(source, &source_cache, &mut frame, &mut frame_cache);
+
+        assert_eq!(frame.fills.len(), 2);
+        assert!(frame.images.is_empty());
+        assert_eq!(frame_cache.len(), 1, "empty source cache → frame cache untouched");
+        assert_eq!(frame_cache.get(&frame_key).map(|d| d.get_pixel(0, 0)[0]), Some(20));
     }
 }

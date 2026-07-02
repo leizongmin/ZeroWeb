@@ -278,6 +278,27 @@ impl ImageCache {
         }
         out
     }
+
+    /// 把另一缓存 `other` 的所有条目合并进本缓存，返回 `old_key → new_key` 重映射。
+    ///
+    /// **用途**：把独立来源（如 UI SDK chrome 渲染产出的 glyph image cache）合并进帧统一
+    /// `ImageCache`，供单一 `render_full_scene` 调用解析所有图片（DC-14 chrome 文本集成）。
+    ///
+    /// **键碰撞处理**：本缓存可能已含与 `other` 键 id 重叠的条目（两边各自从 0 起顺序分配，
+    /// 或哈希碰撞），故**不为 `other` 的条目保留原键**——每条经 [`ImageCache::insert`] 在本
+    /// 缓存分配全新键，绝不覆盖既有条目。调用方据返回的重映射把引用了 `other` 键的图元
+    /// （如 `ImagePrimitive.image_key`）改写到新键，使合并后的图元键全部指向本缓存。
+    ///
+    /// 引用计数：合并进来的条目 `ref_count = 1`（本缓存独立持有，不与 `other` 共享生命周期）。
+    /// 保留 `other` 原始条目不变（仅读 `&self`），调用方可丢弃 `other`。
+    pub fn extend_from_other(&mut self, other: &Self) -> HashMap<ImageKey, ImageKey> {
+        let mut remap = HashMap::with_capacity(other.entries.len());
+        for (old_key, entry) in &other.entries {
+            let new_key = self.insert(entry.data.clone());
+            remap.insert(old_key.clone(), new_key);
+        }
+        remap
+    }
 }
 
 impl Default for ImageCache {
@@ -1211,5 +1232,68 @@ mod tests {
         assert_eq!(cache.generation(), 2);
         cache.clear();
         assert_eq!(cache.generation(), 3);
+    }
+
+    // ── extend_from_other（DC-14 chrome 文本集成：缓存合并 + 键重映射）──────
+
+    #[test]
+    fn extend_from_other_rekeys_and_returns_remap() {
+        // 两缓存各插入一张图（键 id 都从 0 起 → 相同 id 0）。extend 后 frame 的原条目保留、
+        // other 的条目以新键合入，remap 记录 other 旧键→frame 新键。
+        let mut frame = ImageCache::new(10, 1024 * 1024);
+        let fk = frame.insert(make_image(1, 1, 10)); // frame 键 id 0
+        let mut other = ImageCache::new(10, 1024 * 1024);
+        let ok = other.insert(make_image(2, 2, 20)); // other 键 id 0（与 fk 同 id）
+
+        let remap = frame.extend_from_other(&other);
+        // remap 把 other 旧键映射到 frame 新键（新键 != other 旧键，也 != frame 原键）。
+        let nk = remap.get(&ok).expect("remap contains other's old key");
+        assert_ne!(nk, &ok, "new key must differ from other's old key");
+        assert_ne!(nk, &fk, "new key must not collide with frame's existing key");
+        // frame 原条目未被覆盖。
+        assert_eq!(frame.get(&fk).map(|d| d.width), Some(1));
+        // other 条目经新键可在 frame 取回（内容正确）。
+        assert_eq!(frame.get(nk).map(|d| d.width), Some(2));
+    }
+
+    #[test]
+    fn extend_from_other_does_not_overwrite_existing_entries() {
+        // frame 已有 id 0/1，other 有 id 0（碰撞 id 0）。合并后 frame 的 id 0 仍为原值，
+        // other 的条目分配到新键，绝不覆盖。
+        let mut frame = ImageCache::new(10, 1024 * 1024);
+        let _fk0 = frame.insert(make_image(1, 1, 10)); // id 0
+        let fk1 = frame.insert(make_image(1, 1, 11)); // id 1
+        let mut other = ImageCache::new(10, 1024 * 1024);
+        let ok0 = other.insert(make_image(3, 3, 30)); // other id 0（碰撞）
+
+        let remap = frame.extend_from_other(&other);
+        // frame 原两个条目内容不变。
+        assert_eq!(frame.get(&fk1).map(|d| d.get_pixel(0, 0)[2]), Some(11));
+        // other 的条目经 remap 取回，内容是 other 的（width 3）。
+        let nk = &remap[&ok0];
+        assert_eq!(frame.get(nk).map(|d| d.width), Some(3));
+        // frame 现含 3 条（原 2 + 合并 1）。
+        assert_eq!(frame.len(), 3);
+    }
+
+    #[test]
+    fn extend_from_other_empty_other_is_noop() {
+        let mut frame = ImageCache::new(10, 1024 * 1024);
+        frame.insert(make_image(1, 1, 10));
+        let other = ImageCache::new(10, 1024 * 1024);
+        let remap = frame.extend_from_other(&other);
+        assert!(remap.is_empty());
+        assert_eq!(frame.len(), 1, "empty other → frame unchanged");
+    }
+
+    #[test]
+    fn extend_from_other_other_unchanged() {
+        // extend 仅读 other（&self），other 条目保留可继续被其原键引用。
+        let mut frame = ImageCache::new(10, 1024 * 1024);
+        frame.insert(make_image(1, 1, 10));
+        let mut other = ImageCache::new(10, 1024 * 1024);
+        let ok = other.insert(make_image(2, 2, 20));
+        let _remap = frame.extend_from_other(&other);
+        assert_eq!(other.get(&ok).map(|d| d.width), Some(2), "other still owns its entry");
     }
 }

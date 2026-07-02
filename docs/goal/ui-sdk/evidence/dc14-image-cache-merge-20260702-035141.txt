@@ -1,0 +1,46 @@
+DC-14 chrome 文本集成：ImageCache 合并 + image_key 重映射（解除浏览器接线 ImageCache 皱褶）— 2026-07-02
+
+## 背景
+master.md 标注的 DC-14 浏览器接线最后皱褶：「浏览器消费时须把后端自带的 ImageCache（glyph key）
+解析到渲染器 image cache（或共享）」。SDK chrome 渲染（render_chrome_via_sdk）产出 fills + 文本
+ImagePrimitive + 自带 glyph image_cache；浏览器帧用单一 render_full_scene 调用，image_cache 来自
+活跃 webview。两 cache 的 ImageKey(u64) 键空间可能重叠（各自从 0 起 / 哈希碰撞）→ 直接合并会覆盖。
+
+## 变更
+1. **render-foundation `ImageCache::extend_from_other(&other) -> HashMap<ImageKey, ImageKey>`**
+   （image_cache.rs）：把 other 全部条目合入本 cache，每条经 `insert` 分配**新键**（绝不覆盖本 cache
+   既有条目），返回 old_key→new_key 重映射。ImageData Clone。**collision-safe**。
+2. **ui/adapters/render-foundation `merge_into_frame(source_primitives, source_cache, frame_primitives,
+   frame_cache)`**（bridge）：经 extend_from_other 在 frame cache 为 source image 分配新键 → 用重映射
+   改写 source 图元的 `image_key` → 调既有 `merge_primitives`（13 分桶 + draw_order 偏移）合并图元。
+   合并后 source image 键全部指向 frame cache，可经帧单一 image_cache 解析。**这是 SDK chrome 并入
+   浏览器帧的标准入口**（无需为 chrome 单独光栅再合成 framebuffer）。
+
+## 测试（scoped test-guard）
+render-foundation image_cache +4 测：
+- extend_from_other_rekeys_and_returns_remap（两 cache 键 id 都 0 碰撞 → 重映射到新键）
+- extend_from_other_does_not_overwrite_existing_entries（frame 原条目保留，other 分配新键）
+- extend_from_other_empty_other_is_noop（空 other → remap 空，frame 不变）
+- extend_from_other_other_unchanged（仅读 other，other 条目保留）
+bridge +2 测：
+- merge_into_frame_remaps_source_image_keys_collision_safe（source+frame 各 fill+image，键碰撞；
+  合并后 frame 2 fills + 2 images，两 image 键全部在 frame_cache 解析，frame 原条目不被覆盖，
+  source image_key 改写到 frame 新键）
+- merge_into_frame_source_without_images_leaves_cache_untouched（source 仅 fills → frame_cache 不变）
+
+image_cache.rs 63→67 测；bridge 14→16 测。全绿。
+门禁：cargo build --workspace Finished（0 错误）；cargo clippy --workspace --all-targets -D warnings
+Finished（0 警告）；cargo fmt --all 净。
+coverage：image_cache.rs lines 92.54% / fn 96.08%；bridge lib.rs lines 94.33%（均 ≥85%）。
+
+## 为什么
+解除 DC-14 浏览器接线的最后一个技术皱褶（ImageCache 键碰撞）。现在 SDK chrome（含文本）可经
+merge_into_frame 并入浏览器帧的单一 image_cache → render_full_scene 解析。纯新增能力（extend_from_other
+是新方法，merge_into_frame 是新函数），不改动任何既有渲染路径 → 零回归（rendering-compat 姐妹目标
+不受影响，无需 product-smoke）。DC-14 浏览器接线剩余 = apps/browser 实际调用 render_chrome_via_sdk
++ merge_into_frame 进 build_scene/render_cpu（需 GUI 可视验收 chrome 布局变更）。
+
+## 范围
+SDK-only（render-foundation + ui/adapters/render-foundation），未触碰 apps/browser 运行路径 → 无
+product-smoke 风险。DC-1 复核：render-foundation 为通用基础层（非浏览器业务）；bridge 为 ui adapter。
+零新依赖。
