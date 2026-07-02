@@ -969,4 +969,62 @@ mod sdk_chrome_tests {
             .any(|f| f.rect.size.width > 0.0 && f.rect.size.height > 0.0);
         assert!(nonzero, "SDK chrome fills include at least one non-zero-area rect");
     }
+
+    #[test]
+    fn compose_overlay_rasterizes_to_visible_framebuffer() {
+        // DC-14 overlay 像素渲染验证（bridge stateful-clip 修复后）：SDK chrome scene 经
+        // render_full_scene 光栅，与空 scene 帧缓冲有像素差异 → SDK chrome 实际渲染可见像素。
+        // 此前 bridge apply_clip 映射到 render-foundation 破坏性 apply_clip（clear-clip-外），
+        // paint_scene 每 entry 一个 clip 逐个擦除兄弟 fill → 全白。修复后 apply_clip stateful
+        // intersect，draw_order 只含 fill/image，累积渲染。
+        use zero_render_foundation::cpu::render_full_scene;
+        use zero_render_foundation::font::cache::GlyphCache;
+        use zero_render_foundation::font::loader::FontLoader;
+
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        let mut scene = RenderPrimitives::default();
+        let mut image_cache = ImageCache::new(64, 16 * 1024 * 1024);
+        compose_sdk_chrome_overlay(&shell, 1280, 800, &mut scene, Some(&mut image_cache));
+
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        let fb = render_full_scene(
+            1280,
+            800,
+            1.0,
+            &scene,
+            &font_loader,
+            &mut glyph_cache,
+            Some(&mut image_cache),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert_eq!((fb.width, fb.height), (1280, 800));
+
+        let empty = RenderPrimitives::default();
+        let empty_fb = render_full_scene(
+            1280,
+            800,
+            1.0,
+            &empty,
+            &font_loader,
+            &mut glyph_cache,
+            None,
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        // SDK chrome 贡献了像素 → 两帧缓冲存在差异（.any() 首个差异像素短路）。
+        let differs = (0..fb.height)
+            .flat_map(|y| (0..fb.width).map(move |x| (x, y)))
+            .any(|(x, y)| fb.get_pixel(x, y) != empty_fb.get_pixel(x, y));
+        assert!(
+            differs,
+            "SDK chrome rasterized to visible pixels (framebuffer differs from empty scene)"
+        );
+    }
 }

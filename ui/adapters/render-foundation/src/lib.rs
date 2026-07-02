@@ -13,8 +13,11 @@
 //! - `fill_rect`：圆角为零 → [`FillPrimitive`]；否则 → [`RoundedRectPrimitive`]（四角半径分别映射）。
 //! - `stroke_rect`：矩形四角顶点 → [`PathStrokePrimitive`]（closed）。**圆角暂忽略**（render-foundation
 //!   无 stroke 圆角矩形图元；TODO 跟踪）。
-//! - `apply_clip`：`Some(rect)` → [`add_clip`]；`None` → 回落视口矩形（"无裁剪" = 整个视口）。
-//!   render-foundation 经 `draw_order` 流式应用裁剪，与本适配器的流式 `apply_clip` 语义一致。
+//! - `apply_clip`：**stateful clip**——设置 `current_clip`（`Some(rect)` → 该矩形；`None` → 视口），
+//!   后续 `fill_rect`/`stroke_rect` 经 CPU 侧 intersect 裁到本矩形。**不 emit render-foundation 的
+//!   破坏性 `ClipPrimitive`**（render-foundation `apply_clip` 是 clear-clip-外像素，与 `paint_scene`
+//!   每 entry 一个 clip 的累积语义冲突——会逐个擦除兄弟 fill）。外部表面 `draw_external_surface`
+//!   仍用显式 [`add_clip`] 取 render-foundation 原生 clip 语义。
 //! - `draw_text`（DC-11 文本，原始字符串——SDK widgets 实际走此路径）：经共享 `FontdueBackend`
 //!   shape（默认 FontRequest 回落首个已加载字体）+ `rasterize_glyph` → tinted RGBA → [`ImageCache`] →
 //!   [`ImagePrimitive`]（fontdue 定位：xmin 左、ymin 底）。
@@ -67,6 +70,15 @@ const GLYPH_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
 pub struct RenderFoundationBackend {
     primitives: RenderPrimitives,
     viewport: RfRect,
+    /// 当前裁剪矩形（stateful clip，[`apply_clip`](RenderBackend::apply_clip) 设置；
+    /// `fill_rect`/`stroke_rect` 经 CPU 侧 intersect 裁到本矩形）。默认 = viewport（"无裁剪"）。
+    ///
+    /// **不 emit render-foundation 的破坏性 `ClipPrimitive`/`DrawOp::Clip`**：render-foundation 的
+    /// `apply_clip` 是 clear-clip-外像素（destructive），与 `paint_scene` 每 entry 一个 clip 的
+    /// **累积**语义冲突——会逐个擦除兄弟 widget 的 fill（SDK chrome scene 渲染全白的根因）。
+    /// 改为 stateful：每 draw 自行 intersect 到 current_clip，draw_order 只含 Fill/Image，累积渲染。
+    /// （外部表面 `draw_external_surface` 仍用显式 `add_clip` 取 render-foundation 原生 clip 语义。）
+    current_clip: RfRect,
     text: Arc<FontdueBackend>,
     image_cache: ImageCache,
     /// 已上传 glyph 的 key 集合（避免每帧重复 raster+upload；key 稳定）。
@@ -89,6 +101,7 @@ impl RenderFoundationBackend {
     pub fn new_with_text(viewport: RfRect, text: Arc<FontdueBackend>) -> Self {
         RenderFoundationBackend {
             primitives: RenderPrimitives::default(),
+            current_clip: viewport,
             viewport,
             text,
             image_cache: ImageCache::new(GLYPH_CACHE_MAX_ENTRIES, GLYPH_CACHE_MAX_BYTES),
@@ -161,15 +174,21 @@ impl RenderBackend for RenderFoundationBackend {
     fn fill_rect(&mut self, rect: Rect, color: Color, rounding: Rounding) {
         let rf_rect = to_rf_rect(rect);
         let rf_color = to_rf_color(color);
+        // stateful clip：把 fill rect CPU 侧 intersect 到 current_clip（累积语义，非破坏性）。
+        // 圆角 fill 的 intersect 近似（按 axis-aligned bbox 裁，clipped 边圆角失真）——chrome 用例
+        // 多为直角 fill；圆角被裁是边缘情况，可接受。
+        let Some(clipped) = rf_rect.intersection(&self.current_clip) else {
+            return; // fill 完全在 clip 外 → 跳过
+        };
         if rounding.top_left == 0.0
             && rounding.top_right == 0.0
             && rounding.bottom_right == 0.0
             && rounding.bottom_left == 0.0
         {
-            self.primitives.add_fill(rf_rect, rf_color);
+            self.primitives.add_fill(clipped, rf_color);
         } else {
             self.primitives.add_rounded_rect(RoundedRectPrimitive {
-                rect: rf_rect,
+                rect: clipped,
                 color: rf_color,
                 top_left_radius: rounding.top_left,
                 top_right_radius: rounding.top_right,
@@ -182,8 +201,16 @@ impl RenderBackend for RenderFoundationBackend {
     fn stroke_rect(&mut self, rect: Rect, color: Color, stroke_width: f32, _rounding: Rounding) {
         // render-foundation 无 stroke 圆角矩形图元；用 4 角顶点的闭合路径描边。
         // 圆角 `_rounding` 暂忽略（TODO：圆角描边需路径曲线，跟踪）。
-        let (x1, y1) = (rect.origin.x, rect.origin.y);
-        let (x2, y2) = (rect.origin.x + rect.size.width, rect.origin.y + rect.size.height);
+        // stateful clip：按 axis-aligned bbox intersect 到 current_clip（近似；clipped 边描边失真）。
+        let rf_rect = to_rf_rect(rect);
+        let Some(clipped) = rf_rect.intersection(&self.current_clip) else {
+            return;
+        };
+        let (x1, y1) = (clipped.origin.x, clipped.origin.y);
+        let (x2, y2) = (
+            clipped.origin.x + clipped.size.width,
+            clipped.origin.y + clipped.size.height,
+        );
         // 闭合矩形：左上 → 右上 → 右下 → 左下（renderer closed=true 连回左上）。
         let vertices = vec![x1, y1, x2, y1, x2, y2, x1, y2];
         self.primitives
@@ -231,13 +258,13 @@ impl RenderBackend for RenderFoundationBackend {
     }
 
     fn apply_clip(&mut self, clip: Option<Rect>) {
-        // Some → 裁剪到该矩形；None → 回落视口（"无裁剪" = 整个视口）。
-        // render-foundation 经 draw_order 流式应用裁剪，与本适配器语义一致。
-        let rf_rect = match clip {
+        // stateful clip：设置 current_clip，后续 fill/stroke 经 CPU 侧 intersect 裁到本矩形。
+        // Some → 该矩形；None → 视口（"无裁剪" = 整个视口）。**不 emit 破坏性 ClipPrimitive**
+        // （见 current_clip 字段文档：paint_scene 每 entry 一个 clip，破坏性 clear 会擦除兄弟 fill）。
+        self.current_clip = match clip {
             Some(r) => to_rf_rect(r),
             None => self.viewport,
         };
-        self.primitives.add_clip(rf_rect);
     }
 }
 
@@ -521,17 +548,42 @@ mod tests {
     }
 
     #[test]
-    fn apply_clip_some_and_none() {
+    fn apply_clip_stateful_intersects_subsequent_fills() {
+        // stateful clip：apply_clip 设置 current_clip（不 emit 破坏性 ClipPrimitive），
+        // 后续 fill 经 CPU 侧 intersect 裁到 current_clip。修 paint_scene 每 entry 一个 clip
+        // + render-foundation 破坏性 apply_clip 擦除兄弟 fill 的语义冲突（SDK chrome 全白根因）。
         let mut b = RenderFoundationBackend::new(viewport());
         b.apply_clip(Some(Rect::from_ltrb(5.0, 5.0, 50.0, 50.0)));
         b.apply_clip(None); // 回落视口
         let p = b.primitives();
-        assert_eq!(p.clips.len(), 2);
-        // 第一条 = 显式裁剪；第二条 = 视口（无裁剪回落）。
-        assert_eq!(p.clips[0].rect.origin.x, 5.0);
-        assert_eq!(p.clips[0].rect.size.width, 45.0);
-        assert_eq!(p.clips[1].rect.size.width, 800.0);
-        assert_eq!(p.clips[1].rect.size.height, 600.0);
+        assert_eq!(
+            p.clips.len(),
+            0,
+            "apply_clip 不再 emit ClipPrimitive（stateful intersect，非破坏性）"
+        );
+
+        // clip (5,5)-(50,50)，fill (0,0)-(10,10) → intersect (5,5)-(10,10)（width 5）。
+        let mut b2 = RenderFoundationBackend::new(viewport());
+        b2.apply_clip(Some(Rect::from_ltrb(5.0, 5.0, 50.0, 50.0)));
+        b2.fill_rect(Rect::from_ltrb(0.0, 0.0, 10.0, 10.0), Color::WHITE, Rounding::ZERO);
+        let p2 = b2.primitives();
+        assert_eq!(p2.fills.len(), 1);
+        assert_eq!(p2.fills[0].rect.origin.x, 5.0);
+        assert!(
+            (p2.fills[0].rect.size.width - 5.0).abs() < 1e-5,
+            "fill clipped to current_clip"
+        );
+
+        // fill 完全在 clip 外 → 跳过（不出 fill）。
+        let mut b3 = RenderFoundationBackend::new(viewport());
+        b3.apply_clip(Some(Rect::from_ltrb(5.0, 5.0, 50.0, 50.0)));
+        b3.fill_rect(
+            Rect::from_ltrb(100.0, 100.0, 200.0, 200.0),
+            Color::WHITE,
+            Rounding::ZERO,
+        );
+        let p3 = b3.primitives();
+        assert!(p3.fills.is_empty(), "fill outside clip → skipped");
     }
 
     #[test]
@@ -570,15 +622,14 @@ mod tests {
         paint_scene(&scene, &mut b);
         let p = b.into_primitives();
 
-        assert_eq!(p.fills.len(), 1); // plain fill
-        assert_eq!(p.rounded_rects.len(), 1); // rounded fill
+        assert_eq!(p.fills.len(), 1); // plain fill（entry clip=None→viewport，intersect 不变）
+        assert_eq!(p.rounded_rects.len(), 1); // rounded fill（clip 100×100 含 5×5 rect，intersect 不变）
         assert_eq!(p.rounded_rects[0].top_left_radius, 3.0);
-        assert_eq!(p.path_strokes.len(), 1); // stroke
-        // 裁剪：每条 entry 一个 apply_clip → clips.len() == 3（None→viewport, Some→clip, None→viewport）。
-        assert_eq!(p.clips.len(), 3);
-        assert_eq!(p.clips[1].rect.size.width, 100.0); // 第二条 = 显式 clip
-        // draw_order 按插入顺序记录 clip/fill/rounded_rect/path_stroke 交错。
-        assert!(p.draw_order.len() >= 6);
+        assert_eq!(p.path_strokes.len(), 1); // stroke（clip=None→viewport，intersect 不变）
+        // stateful clip：apply_clip 不 emit ClipPrimitive → clips.len() == 0。
+        assert_eq!(p.clips.len(), 0);
+        // draw_order 按插入顺序记录 fill/rounded_rect/path_stroke（无 Clip op，因 apply_clip stateful）。
+        assert!(p.draw_order.len() >= 3);
     }
 
     #[test]

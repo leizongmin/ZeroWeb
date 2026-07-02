@@ -1,0 +1,40 @@
+DC-14 overlay 像素渲染修复（bridge stateful clip）— 2026-07-02
+
+## 根因（上轮「overlay 光栅全白」调查收口）
+- render-foundation 的 `apply_clip`（cpu/mod.rs:721）是**破坏性**：clear-clip-矩形外的所有像素为白。
+- `paint_scene`（ui/render backend.rs:41）对每条 entry 调 `backend.apply_clip(entry.clip)`（stateful
+  RenderBackend clip 语义：clip 约束后续 draw 到下一次 apply_clip）。
+- bridge 旧实现把 stateful apply_clip **直译**为 render-foundation 的破坏性 `add_clip`（emit
+  ClipPrimitive + DrawOp::Clip）。SDK chrome scene 的 draw_order = [Clip,Fill,Clip,Fill,...]（每 entry
+  一对），render_full_scene 经破坏性 apply_clip **逐个擦除兄弟 fill** → 只剩最后一个（viewport 白）→ 全白。
+- 这是 stateful-clip 语义 vs 破坏性-clip 实现的**语义错配**，非 layout bug（fills 已证非零）。
+
+## 修复（ui/adapters/render-foundation/src/lib.rs）
+bridge `apply_clip` 改为 **stateful**：设置 `current_clip` 字段（默认 viewport），**不 emit
+ClipPrimitive/DrawOp::Clip**。`fill_rect`/`stroke_rect` 经 CPU 侧 `Rect::intersection(&current_clip)`
+裁到当前 clip（None→空集则跳过）→ draw_order 只含 Fill/Image，render_draw_order 累积渲染（无破坏性擦除）。
+- `draw_external_surface` 仍用显式 `add_clip` 取 render-foundation 原生 clip 语义（不变）。
+- 圆角 fill / stroke 的 intersect 近似（按 axis-aligned bbox），chrome 用例多为直角 fill，可接受。
+- 文本（draw_text/image）不 intersect（chrome 文本自包含于 widget rect，无可见溢出）。
+
+## 验证（关键：overlay 像素渲染现 proven）
+- **`compose_overlay_rasterizes_to_visible_framebuffer`（apps/browser feature-on 测）现通过**：SDK chrome
+  scene 经 render_full_scene 光栅，帧缓冲与空 scene 有像素差异 → SDK chrome 实际渲染可见像素。
+  （上轮此测失败 = 全白；本轮 = 通过，证明修复有效。）
+- bridge 17 测全绿（更新 `apply_clip_some_and_none`→`apply_clip_stateful_intersects_subsequent_fills`
+  验证 stateful intersect + fill-outside-clip 跳过；更新 `paint_scene_dispatches_geometry_into_buckets`
+  clips.len() 3→0、draw_order >=6→>=3）。
+- chrome 63 测全绿（render_chrome_via_sdk 产出 fills 与 widget clip intersect = 同 fills，零行为变化）。
+- feature-on overlay 3 测全绿（merge + fills-nonzero + rasterize）。
+- 默认 + feature clippy --all-targets -D warnings 净；cargo fmt 净；cargo build --workspace 净。
+- bridge lib.rs coverage lines 95.68%（↑ 94.33%）。
+
+## 影响
+DC-14 overlay 接线 milestone **从「wiring proven / 像素渲染未验证」升级为「像素级渲染 verified」**（headless）。
+SDK chrome 经浏览器实际渲染路径（render_cpu/render_frame → compose_sdk_chrome_overlay → merge_into_frame
+→ render_full_scene）产出可见像素。剩余：GUI 可视验收 chrome 布局正确性（像素可见性已 headless proven）+ 替换式迁移。
+
+## 范围
+ui/adapters/render-foundation（bridge）+ apps/browser 测试。**不改 render-foundation 的破坏性 apply_clip**
+（webview 仍依赖其 CSS painting order 语义）——修复在 bridge 层，rendering-compat 姐妹目标零影响。
+默认关闭 sdk-chrome feature → 生产渲染路径零回归（186 默认浏览器测全绿）。
