@@ -7,7 +7,7 @@
 
 use zero_ui_core::geometry::{Point, Rect};
 use zero_ui_core::scroll::{ScrollCommand, ScrollMetrics};
-use zero_ui_core::theme::Color;
+use zero_ui_core::theme::{Color, SemanticTokens};
 use zero_ui_core::widget::PaintRecorder;
 
 /// 滚动条朝向。
@@ -206,12 +206,22 @@ pub struct ScrollBarStyle {
     pub thumb_color: Color,
 }
 
+impl ScrollBarStyle {
+    /// 从 semantic token 派生（DC-5：track/thumb 由 `on_surface` 与 `surface` 中和，
+    /// 自动适配 light/dark——light 得浅 track + 深 thumb，dark 得深 track + 浅 thumb，
+    /// 不硬编码浏览器色值）。
+    pub fn from_tokens(tokens: &SemanticTokens) -> ScrollBarStyle {
+        ScrollBarStyle {
+            // track 更接近 surface（更淡），thumb 居中（更显眼）。
+            track_color: tokens.on_surface.mix(tokens.surface, 0.85),
+            thumb_color: tokens.on_surface.mix(tokens.surface, 0.5),
+        }
+    }
+}
+
 impl Default for ScrollBarStyle {
     fn default() -> ScrollBarStyle {
-        ScrollBarStyle {
-            track_color: Color::rgb(0.85, 0.85, 0.85),
-            thumb_color: Color::rgb(0.5, 0.5, 0.5),
-        }
+        ScrollBarStyle::from_tokens(&SemanticTokens::light())
     }
 }
 
@@ -362,13 +372,26 @@ mod tests {
         // 第一条是 track，第二条是 thumb。
         assert_eq!(rec.fills[0].0, geom.track);
         assert_eq!(rec.fills[1].0, geom.thumb);
-        // 自定义样式生效。
-        let style = ScrollBarStyle {
-            track_color: Color::rgb(0.1, 0.1, 0.1),
-            thumb_color: Color::rgb(0.9, 0.9, 0.9),
-        };
+        // dark 主题样式（token 派生，非硬编码）生效：paint 用 from_tokens(dark)。
+        let style = ScrollBarStyle::from_tokens(&SemanticTokens::dark());
         let mut rec2 = CountRecorder::default();
         paint_scrollbar(&mut rec2, &geom, &style);
-        assert_eq!(rec2.fills[0].1, Color::rgb(0.1, 0.1, 0.1));
+        assert_eq!(rec2.fills[0].1, style.track_color, "paint 用 style.track_color");
+        assert_eq!(rec2.fills[1].1, style.thumb_color, "paint 用 style.thumb_color");
+    }
+
+    #[test]
+    fn style_from_tokens_adapts_to_scheme() {
+        // DC-5：from_tokens 从 on_surface/surface 派生，light/dark 自适应。
+        // light：track（0.85 向 surface）浅于 thumb（0.5 居中）—— thumb 更显眼。
+        let light = ScrollBarStyle::from_tokens(&SemanticTokens::light());
+        assert_ne!(light.track_color, light.thumb_color, "track/thumb 应可区分");
+        // light 近似历史硬编码值（track≈0.85, thumb≈0.5），确认派生合理。
+        assert!(light.track_color.r > light.thumb_color.r, "light: track 浅于 thumb");
+        // dark：on_surface 浅、surface 深 → mix 后 thumb 浅于 track（反相，dark 自适应）。
+        let dark = ScrollBarStyle::from_tokens(&SemanticTokens::dark());
+        assert!(dark.thumb_color.r > dark.track_color.r, "dark: thumb 浅于 track");
+        // default() == from_tokens(light)（无硬编码）。
+        assert_eq!(ScrollBarStyle::default().track_color, light.track_color);
     }
 }

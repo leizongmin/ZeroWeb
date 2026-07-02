@@ -1,0 +1,44 @@
+DC-5 widget 硬编码色全域审计 + ScrollBar 迁移
+日期：2026-07-02
+分支：ui-sdk
+
+## 范围
+闭合 DC-5 widget follow-up 全域——审计 ui/widgets 全部控件硬编码色，迁移剩余的 ScrollBar。
+（Button 上上轮、Badge 上轮已迁移；本轮收尾。）
+
+## 审计结果（全仓 grep `Color::rgb(` ui/widgets/src，排除测试）
+仅 **scrollbar.rs** 仍有硬编码色（其余 icon_button/list_view/menu/popover/popup/progress/
+tabs/text_input/toggle/toolbar/tooltip 均无硬编码 Color::rgb）：
+- `ScrollBarStyle::default()`：track (0.85,0.85,0.85) + thumb (0.5,0.5,0.5)（light 灰）
+- dark 测试用例：track (0.1,0.1,0.1) + thumb (0.9,0.9,0.9)
+
+## 变更（ui/widgets/scrollbar.rs）
+- 新增 `ScrollBarStyle::from_tokens(&SemanticTokens)`：track = `on_surface.mix(surface, 0.85)`
+  （更淡），thumb = `on_surface.mix(surface, 0.5)`（居中显眼）。**自动适配 light/dark**：
+  light（on_surface 深/surface 浅）→ 浅 track + 深 thumb；dark（on_surface 浅/surface 深）
+  → 深 track + 浅 thumb（反相）。light 派生值近似历史硬编码（track≈0.85/thumb≈0.5），行为延续。
+- `Default` 改为委托 `from_tokens(SemanticTokens::light())`——**不再硬编码**，调用方
+  （chrome shell_demo `ScrollBarStyle::default()`）零改动。
+
+## 测试（ui/widgets 36→37）
+- `paint_records_track_and_thumb`（更新）：dark 用例改用 `from_tokens(SemanticTokens::dark())`，
+  断言 paint 用 style.track/thumb（by construction），不再硬编码 0.1/0.9。
+- **`style_from_tokens_adapts_to_scheme`**（新）：light track 浅于 thumb / dark thumb 浅于 track
+  （反相自适应）+ default()==from_tokens(light)。
+
+## 门禁
+- `cargo build --workspace` — Finished（shell_demo default() 零改动确认）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all -- --check` — 净。
+- widgets 37 / chrome 64 / examples 3 全绿零回归。
+- SDK-only（ui/widgets 未触碰 render-foundation/浏览器）→ 无 product-smoke 风险。
+
+## DC 影响
+- DC-5：widget 硬编码色全域审计完成，三个曾硬编码色 widget（Button/Badge/ScrollBar）全部迁移到
+  消费 semantic token（ctx.tokens 或 from_tokens）。DC-5「组件只消费 semantic token 不硬编码」
+  对 ui/widgets 全域成立（grep 机械验证：无非测试 Color::rgb 残留）。
+
+## 未覆盖（诚实声明）
+- 主题色变更未做 GUI 可视确认（本环境无 GUI）；可访问性与色值由 token 派生 + contrast lint 数学保证。
+- patterns 层（StatusBubble 等）与 browser-ui/chrome 若有硬编码色未本轮审计（chrome 已有 chrome_color_themed
+  消费 token；patterns 可后续按需审计）。
