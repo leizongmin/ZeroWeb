@@ -1,0 +1,110 @@
+# DC-6 WidgetSpec Loader 深度审查（lei-deep-review）
+
+**日期**: 2026-07-03
+**范围**: `ui/dsl/src/loader.rs`（YamlLoader: convert_spec / convert_responsive / convert_props / convert_bindings / convert_actions / convert_control / convert_for_each / convert_children + yaml_to_value / yaml_to_payload / map_text / payload_of + EvalContext / ExpressionEngine trait）
+**审查重点**: 递归深度守卫（convert_spec/convert_children/convert_responsive/yaml_to_value 递归）、strict 模式 validate_expr 错误透传、responsive 递归边界、yaml_to_value 深集合栈消耗、map_text/payload_of 缺失键 None/empty/error 语义
+**结论**: 1 low-medium bug 修复（非文本控制指令静默忽略）+ 核心结论「loader 递归已被 yaml.rs MAX_YAML_DEPTH 守卫 transitively 覆盖」+ 多项经查正确。
+
+---
+
+## 关键发现统计
+
+| 严重度 | 数量 | 处置 |
+|--------|------|------|
+| Critical | 0 | — |
+| Medium | 0 | — |
+| Low-Medium | 1 | **已修复** + 回归守卫（1 测） |
+| Low（记录） | 1 | map_text 错误消息把「非文本」也说成「missing」（cosmetic，不修） |
+| 非 bug（经查正确） | 8+ | — |
+
+最高优先级一句话：**loader.rs 递归深度已被上轮 yaml.rs `MAX_YAML_DEPTH=100` 守卫 transitively 覆盖（loader 递归深度 ≤ YAML AST 深度 ≤ 100，不会栈溢出）；唯一真实 bug 是 `visible_when`/`enabled_when` 非文本值被静默忽略（与 id/component/source 严格性不一致）——已修复。**
+
+---
+
+## 核心结论：loader 递归已被 yaml.rs 守卫覆盖（经查正确）
+
+本轮审查最关键的结论是回答「loader 是否需要独立的深度守卫」。
+
+**loader 三条递归路径**：
+1. `convert_spec` → `convert_children` → `convert_spec`（children 嵌套）：每子节点是 YAML AST 的 depth+1 节点，loader 递归深度 = WidgetSpec 树深度 = YAML AST 深度。
+2. `convert_spec` → `convert_responsive` → `convert_spec`（responsive 嵌套）：`convert_responsive` 选中断点子树的**一个 child value**（`default`/`compact`/...）递归 `convert_spec`，严格更深（YamlValue 是 owned 树无环）。
+3. `convert_props` → `yaml_to_value` → `yaml_to_value`（深 Seq/Map）：递归深度 = YAML AST 深度。
+
+**关键不变量**：loader 递归深度 **恒等于** YAML AST 深度（loader 1:1 跟随 AST 结构，不放大、不引入新嵌套）。上轮给 yaml.rs 加的 `MAX_YAML_DEPTH=100`（parse_block 入口守卫）在 parse 阶段就把 AST 深度限制 ≤ 100。故 loader 递归深度 ≤ 100，远低于线程栈（8MB / ~500B 每帧 ≈ 16000 帧）。**loader 不会栈溢出。**
+
+**结论**：loader 不需要独立深度守卫（上轮 yaml.rs 守卫已 transitively 保护）。加冗余守卫属过度设计（违反 code-guidelines「避免过度设计」）。**这是上轮 yaml.rs 守卫的关键价值之一**——它不只保护 yaml.rs 自身，还覆盖了下游 loader 的所有递归路径。未来审查者无需对 loader 递归重 flag。
+
+> 备注：若未来 loader 接受非 yaml.rs 产出的 YamlValue（目前唯一入口是 `YamlLoader::load_str` → `yaml::parse`），需重新评估。当前架构下安全。
+
+---
+
+## LOW-MEDIUM-1（已修复）：非文本控制指令静默忽略
+
+- **位置**: `loader.rs` `convert_control`（visible_when / enabled_when 分支）
+- **严重度**: 低-中（strict 模式 strictness gap；非 crash/security，需畸形输入触发）
+- **置信度**: 1.0（TDD：`visible_when: 123` → 解析成 Ok(WidgetSpec { visible_when: None }) 而非报错，unwrap_err panic 证明）
+- **描述**: 原 `convert_control` 用 `if let Some(s) = v.as_text()`：非文本值（`visible_when: 123` / `visible_when: true` / `visible_when: [a]` / `visible_when: {}`）→ `as_text()` 返回 None → directive 保持 None → 控件**永远可见/启用**。strict 模式（默认，设计目的就是「加载阶段早报错」）却对这种明显的 schema 违规**静默放行**。
+- **为何是 bug**：
+  1. **不一致**：`id`（line 163）/`component`（line 152）/`source`（line 247）/`trigger`（line 266）等文本字段在非文本时均 `ok_or_else` 报 Parse error；唯独 `visible_when`/`enabled_when` 静默忽略。
+  2. **strict 失职**：strict 模式校验表达式语法，却不校验 directive **本身是文本**——畸形 directive 被默默丢弃，用户得不到早反馈。
+  3. **静默错误行为**：`visible_when: 123` → 控件永远可见（directive None），与用户意图（写了 visible_when 必是想条件化）相反。
+- **修复**: 改 `let s = v.as_text().ok_or_else(|| Parse("'visible_when' 必须是文本表达式"))?`（与 id/component/source 同模式）。enabled_when 同。validate_expr 仍随后运行（strict 语法校验）。
+- **行为变化**: `visible_when: 123` / `visible_when: true` / `visible_when:` (null) → 现 Parse error（原静默 None）。合法文本表达式路径不变（回归测覆盖）。无下游消费者（loader 尚未接线到浏览器），零生产回归。
+- **回归守卫（1 测）**:
+  - `non_text_control_directive_is_error`：`visible_when: 123` / `enabled_when: true` → Parse error；`visible_when: $state.x > 0`（文本）→ 正常（回归合法路径）。
+
+---
+
+## LOW（记录不修）
+
+### LOW-1: map_text 错误消息「missing」覆盖「non-text」
+- **位置**: `convert_bindings`（target/source）、`convert_for_each`（source）、`convert_actions`（trigger）。
+- **描述**: `map_text(map, key)` 对「键缺失」与「键存在但非文本」都返回 None；调用方 `ok_or_else(|| Parse("binding 缺少 'target'"))`。故 `target: 123`（非文本）报「缺少 'target'」——消息不精确（实际是「类型错」非「缺失」）。
+- **不修理由**: 用户仍得到指向正确字段的 error（能定位修复）；消息不精确是 cosmetic，非 correctness。改需区分 None(map_text) 的两种语义（返回 enum 或改 API），改动面 vs 收益不划算。
+
+---
+
+## 经查正确（非 bug，关键断言）
+
+### strict validate_expr 错误透传
+- `validate_expr`（line 126）：strict 时 `engine.parse(src).map_err(|e| Validate(...))?`，lenient 时 no-op。所有调用点（`convert_bindings` source / `convert_control` visible_when·enabled_when / `convert_for_each` source）均用 `?` 透传 Validate 错误，不静默吞。✓
+- Engine.parse 自身有 `MAX_PARSE_DEPTH=64` 守卫 → 深层嵌套表达式 → EvalResourceLimit → 映射为 Validate。✓
+
+### responsive 递归边界（bounded，无环）
+- YamlValue 是 owned 树（无 Rc/RefCell），**无环** → `convert_responsive` 不可能无限递归。
+- 选中子树是 responsive 节点的 **child value**（严格更深）→ 递归深度 ≤ YAML AST 深度 ≤ 100（yaml.rs 守卫）。✓
+- PRIORITY 顺序（compact/medium/expanded/mobile/desktop/embedded/touch/pointer/keyboard）正确实现 viewport > platform > input 优先级；多键匹配时 viewport 键先胜（测试 `responsive_picks_compact_subtree` / `responsive_platform_key_match` 验证）。✓
+- `convert_responsive` 必需 `default`（缺失 → Parse error）；非映射 responsive 值 → error；未知断点键（如 typo `comapct`）→ `matches_branch_key` 返回 false → 回落 default（前向兼容，可接受）。✓
+
+### map_text / payload_of None 语义
+- `map_text(map, key)`：键缺失或非文本 → None。`convert_actions` 用 if-else 链尝试 action/command/navigate/open_overlay/close_overlay，全 None → Parse error「需 ... 之一」（测试 `action_without_any_reference_form_is_error`）。故 `action: 123`（非文本）→ 最终 error（不会静默）。✓
+- `payload_of(map)`：可选 `payload:` 字段；存在则 `yaml_to_payload`，缺失则 None。✓
+- `convert_props`：`PropsMap::insert`，重复键 last-wins（props 是 map，合理）。✓
+
+### yaml_to_value / yaml_to_payload 类型映射
+- YamlValue → Value 1:1（Null/Bool/Int/Float/Text/Seq/Map），无 panic 路径。递归深度 ≤ YAML AST 深度 ≤ 100。✓
+- `yaml_to_payload`：标量 → 对应 ActionPayload 变体；Seq/Map → `ActionPayload::Value`。✓
+
+### 其它健壮性
+- `load_str`：根 Null → error「YAML 为空」；根非映射（Seq/scalar）→ convert_spec 的 `as_map` 失败 → error（测试 `errors` case 4）。✓
+- `convert_spec`：`component` 必需且须文本（缺失/非文本 → error）；未知顶层键 `_ => {}` 前向兼容忽略（docstring 声明，合理）。✓
+- `convert_for_each`：`source` 必需须文本；`item_alias` 缺省 `"item"`。✓
+- `convert_bindings`：每项须映射；target/source 必需须文本。✓
+- `convert_actions`：trigger 必需；5 种 action 形式任一。✓
+
+---
+
+## 验证
+
+- **修复前**：`non_text_control_directive_is_error` 失败（`visible_when: 123` → Ok(visible_when: None)，unwrap_err panic）—— TDD 证明 bug。
+- **修复后**：`./target/test-guard -- cargo test -p zero-ui-dsl` → **95 passed; 0 failed**（94 基线 + 1 新回归测）。
+- **门禁**：`cargo fmt --all --check` 净；`cargo clippy -p zero-ui-dsl --all-targets -- -D warnings` 净；`cargo build --workspace` 净。
+- **SDK-only**（ui/dsl 未触碰 render-foundation / 浏览器运行时）→ 无 product-smoke 风险。
+
+## 结论
+
+DC-6 WidgetSpec Loader 深度审查闭合。**核心结论：loader 递归已被上轮 yaml.rs `MAX_YAML_DEPTH=100` 守卫 transitively 覆盖**（loader 递归深度 ≤ YAML AST 深度 ≤ 100，不会栈溢出）——这是上轮 yaml.rs 守卫的关键下游价值，未来审查者无需对 loader 递归重 flag。唯一真实 bug（非文本控制指令静默忽略）已修复，strict 模式现对 directive 类型严格一致（与 id/component/source 同模式）。
+
+**至此 DC-6 ui/dsl 全 crate（engine.rs 表达式求值 + yaml.rs YAML 解析 + loader.rs WidgetSpec 加载 + for_each.rs 列表渲染 + expression.rs AST + diagnostics.rs 错误 + i18n_bridge/asset_bridge 桥接）安全/健壮性深度审查全部闭合**（3 轮：engine.rs 1 medium、yaml.rs 3 medium、loader.rs 1 low-medium）。约束 #7（DSL 不得执行任意脚本 / eval 无副作用受控）+ 解析器健壮性（不 crash / UTF-8 保真 / 深度守卫）+ strict 模式一致性全部成立。
+
+下一审查候选：`ui/i18n`（plural/RTL/catalog resolve/fallback 边界，DC-10 i18n 域）——独立 turn。

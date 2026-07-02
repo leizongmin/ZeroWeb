@@ -315,16 +315,22 @@ impl YamlLoader {
         for (k, v) in map {
             match k.as_str() {
                 "visible_when" => {
-                    if let Some(s) = v.as_text() {
-                        self.validate_expr(s)?;
-                        cd.visible_when = Some(CompactString::new(s));
-                    }
+                    // 必须是文本表达式；非文本（数字/布尔/序列/映射）此前被静默忽略
+                    // （directive None → 控件永远可见），违反 strict 早报错目的，且与
+                    // id/component/source 的非文本严格性不一致。现统一报 Parse error
+                    // （lei-deep-review 修复）。
+                    let s = v
+                        .as_text()
+                        .ok_or_else(|| DslError::Parse("'visible_when' 必须是文本表达式".into()))?;
+                    self.validate_expr(s)?;
+                    cd.visible_when = Some(CompactString::new(s));
                 }
                 "enabled_when" => {
-                    if let Some(s) = v.as_text() {
-                        self.validate_expr(s)?;
-                        cd.enabled_when = Some(CompactString::new(s));
-                    }
+                    let s = v
+                        .as_text()
+                        .ok_or_else(|| DslError::Parse("'enabled_when' 必须是文本表达式".into()))?;
+                    self.validate_expr(s)?;
+                    cd.enabled_when = Some(CompactString::new(s));
                 }
                 "for_each" => {
                     cd.for_each = Some(self.convert_for_each(v)?);
@@ -661,6 +667,34 @@ mod tests {
         assert!(loader.load_str("a: 1").is_err()); // 根无 component
         assert!(loader.load_str("component: 5").is_err()); // component 非文本
         assert!(loader.load_str("- a\n- b").is_err()); // 根是序列不是映射
+    }
+
+    // ── 深度审查（lei-deep-review）：非文本控制指令不得静默忽略 ──────────
+    #[test]
+    fn non_text_control_directive_is_error() {
+        // visible_when / enabled_when 必须是文本表达式。非文本（数字/布尔/序列/映射）
+        // 此前被 `if let Some(s) = v.as_text()` 静默忽略（directive None → 控件永远可见/启用），
+        // 违反 strict 模式早报错目的，且与 id/component/source/trigger（非文本均报错）不一致。
+        // 现统一报 Parse error（lei-deep-review 修复）。
+        let err = YamlLoader::new()
+            .load_str("component: Button\ncontrol:\n  visible_when: 123")
+            .unwrap_err();
+        assert!(
+            matches!(err, DslError::Parse(_)),
+            "visible_when 非文本应报错，got {err:?}"
+        );
+        let err2 = YamlLoader::new()
+            .load_str("component: Button\ncontrol:\n  enabled_when: true")
+            .unwrap_err();
+        assert!(
+            matches!(err2, DslError::Parse(_)),
+            "enabled_when 非文本应报错，got {err2:?}"
+        );
+        // 文本表达式仍正常（回归：不破坏合法路径）。
+        let spec = YamlLoader::new()
+            .load_str("component: Button\ncontrol:\n  visible_when: $state.x > 0")
+            .unwrap();
+        assert_eq!(spec.control.visible_when.as_deref(), Some("$state.x > 0"));
     }
 
     // ── DC-6 phase-4：响应式分支 ─────────────────────────────────────
