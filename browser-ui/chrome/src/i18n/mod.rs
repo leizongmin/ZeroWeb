@@ -16,7 +16,7 @@
 
 use zero_ui_i18n::{
     CatalogStore, I18nContext, I18nError, I18nProvider, LocaleId, LocalizedText, MessageCatalog, MessageEntry,
-    MessageId, MessageRef, ResolvedText, TextDirection, direction_for, fallback_chain,
+    MessageId, MessageParams, MessageRef, ResolvedText, TextDirection, direction_for, fallback_chain,
 };
 
 /// 浏览器文案 message id 常量（spec FR-013 点分命名）。
@@ -38,6 +38,11 @@ pub mod ids {
     // 导航按钮（NavigationButtons）。
     pub const BACK: &str = "browser.back";
     pub const FORWARD: &str = "browser.forward";
+    // 状态 / 计数（带参数，shell 组装用）。
+    /// 导航状态模板：`{back}` / `{fwd}` 为 Text 参数（"◀" / "▶" 或本地化标识）。
+    pub const NAV_STATUS: &str = "browser.nav_status";
+    /// 书签计数模板：`{count}` 为 Count 参数（支持 plural）。
+    pub const N_BOOKMARKS: &str = "browser.n_bookmarks";
 }
 
 /// 默认 locale（`en`）。
@@ -62,6 +67,20 @@ pub fn default_catalog() -> MessageCatalog {
     messages.insert(MessageId::new(ids::SETTINGS), entry("Settings"));
     messages.insert(MessageId::new(ids::BACK), entry("Back"));
     messages.insert(MessageId::new(ids::FORWARD), entry("Forward"));
+    // 带参数消息（shell 组装用）。
+    messages.insert(MessageId::new(ids::NAV_STATUS), {
+        let mut e = MessageEntry::simple("Back·{back} Fwd·{fwd}");
+        e.description = Some("导航按钮状态：{back}/{fwd} 为 on/off 文本".into());
+        e
+    });
+    messages.insert(MessageId::new(ids::N_BOOKMARKS), {
+        let mut e = MessageEntry::simple("{count} bookmarks");
+        let mut pf = hashbrown::HashMap::new();
+        pf.insert(zero_ui_i18n::PluralCategory::One, "{count} bookmark".to_string());
+        e.plural_forms = pf;
+        e.description = Some("书签计数：{count} 为条数，支持 plural".into());
+        e
+    });
     MessageCatalog {
         locale: LocaleId::new(DEFAULT_LOCALE),
         direction: TextDirection::Ltr,
@@ -114,6 +133,42 @@ pub fn localized_label(id: &str) -> String {
         .unwrap_or_else(|_| id.to_string())
 }
 
+/// 解析 message id 为可见文案（默认 locale，**infallible**，**带参数**）。
+///
+/// 先经 catalog 解析模板，再经 [`zero_ui_i18n::formatter::format_message`] 替换 `{param}`。
+/// 缺失 key 或缺失参数均回退为 id 本身（不 panic、不阻断渲染）。
+pub fn localized_label_with_params(id: &str, params: &MessageParams) -> String {
+    let store = catalog_store();
+    let locale = LocaleId::new(DEFAULT_LOCALE);
+    let ctx = context_for(&locale);
+    let mref = MessageRef {
+        id: MessageId::new(id),
+        params: params.clone(),
+    };
+    match store.resolve(&LocalizedText::Message(mref), &ctx) {
+        Ok(resolved) => resolved.text,
+        Err(_) => id.to_string(),
+    }
+}
+
+/// 导航状态文案：`can_go_back` / `can_go_forward` → 本地化字符串（如 "Back·on Fwd·off"）。
+///
+/// 模板 `browser.nav_status`（`"Back·{back} Fwd·{fwd}"`）由 catalog 提供，{back}/{fwd}
+/// 替换为 `"on"` / `"off"` 文本（后续可替换为图标或本地化等价词）。
+pub fn nav_status_label(can_go_back: bool, can_go_forward: bool) -> String {
+    let mut params = MessageParams::new();
+    params.set_text("back", if can_go_back { "on" } else { "off" });
+    params.set_text("fwd", if can_go_forward { "on" } else { "off" });
+    localized_label_with_params(ids::NAV_STATUS, &params)
+}
+
+/// 书签计数文案：`count` → 本地化字符串（如 `"3 bookmarks"` / `"1 bookmark"`）。
+pub fn bookmarks_label(count: usize) -> String {
+    let mut params = MessageParams::new();
+    params.set_count("count", count as i64);
+    localized_label_with_params(ids::N_BOOKMARKS, &params)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,6 +217,7 @@ mod tests {
     #[test]
     fn default_catalog_covers_all_id_constants() {
         // 完整性：ids 模块导出的每个常量都必须在默认 catalog 中可解析（防止新增 id 漏译）。
+        // 带 `{param}` 占位的消息需提供虚拟参数。
         let store = catalog_store();
         let all_ids = [
             ids::NEW_TAB,
@@ -183,6 +239,19 @@ mod tests {
                 "id {id} missing from default catalog"
             );
         }
+        // 参数化 ids：resolve 需提供 params（validate_params 阶段校验 {param}）。
+        let param_ids = [ids::NAV_STATUS, ids::N_BOOKMARKS];
+        for id in param_ids {
+            let mref = MessageRef {
+                id: MessageId::new(id),
+                params: dummy_params_for(id),
+            };
+            let ctx = context_for(&LocaleId::new(DEFAULT_LOCALE));
+            assert!(
+                store.resolve(&LocalizedText::Message(mref), &ctx).is_ok(),
+                "parametrized id {id} missing from default catalog"
+            );
+        }
     }
 
     #[test]
@@ -202,5 +271,83 @@ mod tests {
         assert_eq!(localized_label(ids::NEW_TAB), "New Tab");
         assert_eq!(localized_label(ids::RELOAD), "Reload");
         assert_eq!(localized_label("browser.does_not_exist"), "browser.does_not_exist");
+    }
+
+    #[test]
+    fn localized_label_with_params_substitutes_and_falls_back() {
+        // 参数化标签：正常替换 {param}；缺失 key 回落 id。
+        let mut p = MessageParams::new();
+        p.set_text("back", "on");
+        p.set_text("fwd", "off");
+        let result = localized_label_with_params(ids::NAV_STATUS, &p);
+        assert_eq!(result, "Back·on Fwd·off");
+
+        // 缺失 key → 回落 id。
+        let fallback = localized_label_with_params("browser.nope", &p);
+        assert_eq!(fallback, "browser.nope");
+    }
+
+    #[test]
+    fn nav_status_label_produces_on_off() {
+        assert_eq!(nav_status_label(true, false), "Back·on Fwd·off");
+        assert_eq!(nav_status_label(false, true), "Back·off Fwd·on");
+    }
+
+    #[test]
+    fn bookmarks_label_plural() {
+        assert_eq!(bookmarks_label(3), "3 bookmarks");
+        assert_eq!(bookmarks_label(1), "1 bookmark");
+        assert_eq!(bookmarks_label(0), "0 bookmarks");
+    }
+
+    /// 为参数化 id 构造包含所有必需占位参数的虚拟 MessageParams。
+    fn dummy_params_for(id: &str) -> MessageParams {
+        let mut p = MessageParams::new();
+        if id == ids::NAV_STATUS {
+            p.set_text("back", "x");
+            p.set_text("fwd", "x");
+        } else if id == ids::N_BOOKMARKS {
+            p.set_count("count", 1);
+        }
+        p
+    }
+
+    #[test]
+    fn default_catalog_resolves_parameterized_ids() {
+        // DC-10：NAV_STATUS / N_BOOKMARKS 在默认 catalog 中存在且接受参数。
+        let store = catalog_store();
+        let ctx = context_for(&LocaleId::new(DEFAULT_LOCALE));
+
+        // NAV_STATUS — 填充 {back}/{fwd} 后应正常解析（不含占位残留）。
+        let mut nav_p = MessageParams::new();
+        nav_p.set_text("back", "on");
+        nav_p.set_text("fwd", "off");
+        let nav = store
+            .resolve(
+                &LocalizedText::Message(MessageRef {
+                    id: MessageId::new(ids::NAV_STATUS),
+                    params: nav_p,
+                }),
+                &ctx,
+            )
+            .unwrap_or_else(|e| panic!("NAV_STATUS: {e:?}"));
+        assert_eq!(
+            nav.text, "Back·on Fwd·off",
+            "NAV_STATUS with params should be formatted"
+        );
+
+        // N_BOOKMARKS — 填充 {count} 后应正常解析。
+        let mut bm_p = MessageParams::new();
+        bm_p.set_count("count", 3);
+        let bm = store
+            .resolve(
+                &LocalizedText::Message(MessageRef {
+                    id: MessageId::new(ids::N_BOOKMARKS),
+                    params: bm_p,
+                }),
+                &ctx,
+            )
+            .unwrap_or_else(|e| panic!("N_BOOKMARKS: {e:?}"));
+        assert_eq!(bm.text, "3 bookmarks", "N_BOOKMARKS with params should be formatted");
     }
 }

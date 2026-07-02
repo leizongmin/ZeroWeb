@@ -124,9 +124,9 @@ impl BrowserChromeShell for DesktopBrowserShell {
             "browser.NavigationButtons",
             ID_NAV_BUTTONS,
             "chrome",
-            Some(format!(
-                "Back·{} Fwd·{}",
-                model.navigation.can_go_back, model.navigation.can_go_forward
+            Some(crate::i18n::nav_status_label(
+                model.navigation.can_go_back,
+                model.navigation.can_go_forward,
             )),
         ));
         toolbar.children.push(leaf(
@@ -158,7 +158,7 @@ impl BrowserChromeShell for DesktopBrowserShell {
             "browser.BookmarksBar",
             ID_BOOKMARKS,
             "chrome",
-            Some(format!("{} bookmarks", model.bookmarks.len())),
+            Some(crate::i18n::bookmarks_label(model.bookmarks.len())),
         ));
         let mut viewport = node("browser.PageViewportFrame", ID_VIEWPORT);
         viewport.props.insert("bg", Value::Text("viewport".into()));
@@ -206,9 +206,9 @@ impl BrowserChromeShell for TabletBrowserShell {
             "browser.NavigationButtons",
             ID_NAV_BUTTONS,
             "chrome",
-            Some(format!(
-                "Back·{} Fwd·{}",
-                model.navigation.can_go_back, model.navigation.can_go_forward
+            Some(crate::i18n::nav_status_label(
+                model.navigation.can_go_back,
+                model.navigation.can_go_forward,
             )),
         ));
         toolbar.children.push(leaf(
@@ -289,9 +289,9 @@ impl BrowserChromeShell for PhoneBrowserShell {
             "browser.NavigationButtons",
             ID_BOTTOM_NAV,
             "chrome",
-            Some(format!(
-                "Back·{} Fwd·{}",
-                model.navigation.can_go_back, model.navigation.can_go_forward
+            Some(crate::i18n::nav_status_label(
+                model.navigation.can_go_back,
+                model.navigation.can_go_forward,
             )),
         ));
         if model.find.is_some() {

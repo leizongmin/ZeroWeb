@@ -1,0 +1,21 @@
+DC-10 shell 硬编码 label 参数化迁移（nav_status + bookmarks，2026-07-02）
+
+变更：
+- browser-ui/chrome/src/i18n/mod.rs：新增 `browser.nav_status` / `browser.n_bookmarks` 参数化 message id
+  + catalog 条目（含 plural 变体）+ `nav_status_label` / `bookmarks_label` 便利函数
+  + `localized_label_with_params` 通用参数化解析器 + 5 新测（共 79 测）
+- browser-ui/chrome/src/shell.rs：Desktop/Tablet/Phone 三 shell 的 hardcoded format! → nav_status_label/bookmarks_label
+
+门禁：
+- cargo build --workspace：零错误
+- cargo clippy --workspace --all-targets -- -D warnings：零警告
+- cargo fmt --all --check：净（0 diff）
+- chrome 79 测全绿（含 5 新 DC-10 测；此前 74）
+- browser 189 测全绿（DC-14 零回归）
+- SDK-only 无 product-smoke 风险
+
+效果：
+- shell 生产代码内 hardcoded UI label 全部迁移到 i18n catalog（唯一剩余 = shell_demo/render test fixture）
+- 导航状态 "Back·{back} Fwd·{fwd}"（{back}/{fwd}=on/off）→ 可本地化
+- 书签计数 "{count} bookmarks"（1 bookmark plural）→ 可本地化
+- DC-10「chrome 组件硬编码 label → message id」对 shell 生产路径闭合
