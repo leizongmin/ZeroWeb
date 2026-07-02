@@ -1,0 +1,61 @@
+DC-2 / DC-8 / DC-15 prep — ui/adapters/winit 完整 winit 事件→UiEvent 映射
+日期：2026-07-02
+分支：ui-sdk
+
+## 范围
+把 `ui/adapters/winit/src/event_map.rs` 从 M1 skeleton（仅鼠标按钮 + 修饰键 2 函数）
+升级为**完整桌面端 winit 事件→UiEvent 纯函数转换层**，闭合 DC-2 列出的剩余项
+「接 winit 事件循环（M2/M4 adapter）」的事件映射部分（真实 EventLoop run-loop 仍在 M4）。
+
+## 新增公开 API（event_map.rs，15 个 pub fn + 1 const）
+- 物理像素→逻辑像素：`to_logical_point` / `to_logical_size`（scale<=0 防御除零）
+- 窗口度量：`map_window_metrics(PhysicalSize, scale) -> WindowMetrics`（resize 桥，safe_area/keyboard 初始 0）
+- 键盘：`map_key_action(ElementState, repeat) -> KeyAction`、`map_logical_key(&Key) -> KeyCode`
+  （Named→Debug 形态 "Tab"/"Enter"/"ArrowLeft"，与 host-runtime 既有转换一致；Character→字面；Dead/Unidentified）、
+  `key_text(Option<&SmolStr>) -> Option<String>`、`map_key_event(&KeyEvent, modifiers) -> UiEvent::Key`
+- 指针：`map_pointer_phase`、`map_mouse_input(MouseButton,ElementState,Point,modifiers)`、
+  `map_cursor_moved`、`map_touch_phase`、`map_touch(phase,location,scale,modifiers)`
+  （Touch 拆为可构造入参因 winit::event::Touch 含 pub(crate) DeviceId）
+- 滚轮：`map_mouse_wheel(MouseScrollDelta, scale, Point, modifiers)`
+  （LineDelta×LINE_HEIGHT_PX=20；PixelDelta 物理/scale；y 取反——winit y-up vs UI delta.y-down=向下滚）
+- IME：`map_ime(Ime) -> UiEvent::Ime`（Preedit 选择区 (start,end)→单光标 start）
+
+## 关键约束
+- 保留 M1 既有 `map_mouse_button` / `map_modifiers`（向后兼容）。
+- winit 类型唯一落点为本 adapter；产出全部为浏览器无关 UiEvent（spec §6.4 / DC-1）。
+- `winit::event::KeyEvent` 与 `Touch` 含 `pub(crate)` 字段无法仓外构造 →
+  `map_key_event`/`map_touch` 的可测逻辑抽到可构造入参的子函数（map_logical_key/map_key_action/
+  key_text/map_touch_phase）单测覆盖，主函数为薄组合。
+
+## 端到端契约（adapter↔runtime integration，3 测）
+新增 `adapter_runtime_integration` 模块——证明 winit 事件经映射后真正驱动
+`ui-runtime::WidgetHost` retained 运行态（DC-2「接 winit 事件循环」核心证据）：
+- `winit_left_click_drives_host_focus_and_emit`：winit 左键按下 @ ClickBox 中心 →
+  map_mouse_input → host.dispatch_event → emit `app.click` + click-to-focus 命中点 ClickBox。
+- `winit_cursor_move_does_not_emit`：光标移动不触发 emit。
+- `winit_click_outside_widget_no_emit`：widget 外点击不 emit。
+（任何 phase/button/位置约定错误都会让 host 不命中、不聚焦、不 emit → 这 3 测守卫契约。）
+
+## 测试
+- event_map 单元测 19 个（物理→逻辑 / 窗口度量 / 键盘 action+logical+text / 指针 phase+input+cursor /
+  触摸 phase+started / 滚轮 line+pixel / IME commit+preedit）+ 既有 2（按钮/修饰键）。
+- adapter_runtime_integration 3 个。
+- 合计 22 测全绿（`./target/test-guard -- cargo test -p zero-ui-adapter-winit`）。
+
+## 门禁
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all -- --check` — 净（0 diff）。
+- 纯 SDK-only（adapter 仅依赖 zero-ui-core + zero-ui-runtime + winit，未触碰 render-foundation/浏览器）→
+  无 product-smoke 风险。
+
+## DC 影响
+- DC-2：闭合「接 winit 事件循环」的事件映射部分（run-loop 驱动在 M4）；retained 运行态经 winit 事件可端到端驱动。
+- DC-8：键盘/IME/触摸映射就绪（a11y 接屏幕阅读器后端仍 M2/M4 adapter 层）。
+- DC-15 prep：winit 适配是移动端运行时（M4）的桌面基础。
+- DC-1：复核 adapter 依赖零浏览器业务 crate（core+runtime+winit 均通用）。
+
+## 未覆盖（诚实声明）
+- 真实 winit `EventLoop::run` 驱动（开窗/surface/IME 启停/多窗口）在 M4——本环境无 GUI，headless 不可验证；
+  本轮交付的是可单测的纯函数事件映射 + adapter→host 端到端契约。
+- 单 KeyCode 是稳定字符串（与 host-runtime 既有约定一致）；未引入 keycode crate（spec §6.4 最小依赖）。
