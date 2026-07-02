@@ -17,6 +17,7 @@ pub mod scheduler;
 pub mod theme_provider;
 pub mod tree;
 
+pub use accessibility::AccessibilityTree;
 pub use app::UiApp;
 pub use i18n_provider::I18nRuntime;
 pub use ime::ImeController;

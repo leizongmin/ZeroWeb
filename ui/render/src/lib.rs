@@ -16,6 +16,7 @@ pub mod paint_ctx;
 pub mod render_node;
 pub mod scene;
 
+pub use layer::Layer;
 pub use paint_ctx::SceneRecorder;
 pub use render_node::{RenderNode, RenderPrimitive};
 pub use scene::{Scene, SceneEntry};
