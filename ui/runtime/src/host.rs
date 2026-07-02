@@ -186,8 +186,12 @@ impl WidgetHost {
         match &mut self.root {
             Some(root) => {
                 reconcile_node(root, spec, &self.registry, self.epoch);
-                // props/结构变化可能影响语义树（label/role/焦点项），标记 NEEDS_SEMANTICS（DC-8）。
-                self.pending |= InvalidationFlags::NEEDS_PAINT | InvalidationFlags::NEEDS_SEMANTICS;
+                // props/结构变化可能改尺寸（reconcile_node 已在节点级标 NEEDS_LAYOUT）→ host 级
+                // 也须标 NEEDS_LAYOUT，否则 needs_layout() 为假、driver/host 不 relayout → 几何停滞
+                // （state 变化改 widget 尺寸时 scene 停在旧几何）。同时标 NEEDS_PAINT/SEMANTICS。
+                self.pending |= InvalidationFlags::NEEDS_LAYOUT
+                    | InvalidationFlags::NEEDS_PAINT
+                    | InvalidationFlags::NEEDS_SEMANTICS;
             }
             None => {
                 self.root = Some(build_node(spec, &self.registry, self.epoch));
@@ -1423,6 +1427,82 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// 测试用叶子控件：layout 宽度由 props.w 决定（演示「props 变化改尺寸 → 需 relayout」）。
+    /// 受控：update 同步 props.w 到 self.w（factory 仅在 mount 时跑，reconcile 靠 update）。
+    struct Sizer {
+        w: f32,
+    }
+    impl Widget for Sizer {
+        fn mount(&mut self, _ctx: &mut MountCtx) {}
+        fn update(&mut self, ctx: &mut zero_ui_core::widget::UpdateCtx, props: &PropsMap) {
+            let new_w = match props.get("w") {
+                Some(Value::Float(f)) => *f as f32,
+                Some(Value::Int(i)) => *i as f32,
+                _ => self.w,
+            };
+            if (new_w - self.w).abs() > f32::EPSILON {
+                self.w = new_w;
+                *ctx.invalidation |= InvalidationFlags::NEEDS_LAYOUT;
+            }
+        }
+        fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
+            EventResult::Ignored
+        }
+        fn layout(&mut self, _ctx: &mut LayoutCtx, c: Constraints) -> Size {
+            Size::new(
+                self.w.clamp(c.min_width, c.max_width),
+                10.0_f32.clamp(c.min_height, c.max_height),
+            )
+        }
+        fn paint(&mut self, _ctx: &mut PaintCtx) {}
+        fn semantics(&self, _ctx: &mut zero_ui_core::widget::SemanticsCtx) {}
+    }
+
+    fn sizer_host() -> WidgetHost {
+        let mut host = WidgetHost::new();
+        host.register("Sizer", |spec| {
+            let w = match spec.props.get("w") {
+                Some(Value::Float(f)) => *f as f32,
+                Some(Value::Int(i)) => *i as f32,
+                _ => 10.0,
+            };
+            Box::new(Sizer { w })
+        });
+        host
+    }
+
+    fn sizer_spec(w: f32) -> WidgetSpec {
+        let mut s = WidgetSpec::new("Sizer");
+        s.id = Some(WidgetId::new("sizer"));
+        s.props.insert("w", Value::Float(w as f64));
+        s
+    }
+
+    #[test]
+    fn reconcile_props_change_marks_host_needs_layout() {
+        // 回归守卫：set_root reconcile（props 变化）必须在 host 级标 NEEDS_LAYOUT。
+        // 此前 set_root reconcile 只标 NEEDS_PAINT|SEMANTICS → needs_layout() 为假 →
+        // driver/host 不 relayout → state 变化改 widget 尺寸时 scene 停在旧几何。
+        // reconcile_node 已在节点级标 NEEDS_LAYOUT（host.rs:705），但未传播到 host.pending。
+        let mut host = sizer_host();
+        host.set_root(&sizer_spec(100.0));
+        host.layout(Constraints::loose(Size::new(800.0, 600.0)));
+        let w0 = host.rect_of(&WidgetId::new("sizer")).expect("laid out").size.width;
+        assert_eq!(w0, 100.0);
+        assert!(!host.needs_layout(), "首帧 layout 后 NEEDS_LAYOUT 应清空");
+
+        // props 变化（w 100→250）→ reconcile 应标 host NEEDS_LAYOUT（可能改尺寸）。
+        host.set_root(&sizer_spec(250.0));
+        assert!(
+            host.needs_layout(),
+            "props 变化 → host 须标 NEEDS_LAYOUT（否则不 relayout，几何停滞）"
+        );
+        // relayout 后几何反映新 w（旧 bug 下 geometry 停在 100）。
+        host.layout(Constraints::loose(Size::new(800.0, 600.0)));
+        let w1 = host.rect_of(&WidgetId::new("sizer")).expect("laid out").size.width;
+        assert_eq!(w1, 250.0, "relayout 后宽度更新为新 w");
     }
 
     #[test]
