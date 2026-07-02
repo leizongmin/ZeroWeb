@@ -1,0 +1,76 @@
+DC-2 winit 原始事件 → driver → reducer 端到端集成测（M4 SDK-side）
+================================================================
+日期：2026-07-03
+分支：ui-sdk
+commit：1dbae491  ui-sdk(M4/DC-2): winit 原始事件 → driver → reducer 端到端集成测
+（同轮 merge origin/main R977：rendering-compat fresh-oracle 调查 doc-only，正交零冲突）
+
+## 目的
+
+补齐 winit-raw-event → driver 这条**真实 EventLoop::run per-event 路径**的唯一未串联缺口。
+既有覆盖：
+- event_map::adapter_runtime_integration（commit dc2-winit-event-mapping）止于
+  winit 事件 → map_mouse_input → host.dispatch_event（emit + click-to-focus）。
+- WinitDriver 自身测（commit 75e30a6c）用**合成 UiEvent** 喂 pump_event（证明 driver
+  内部 dispatch→reducer→重建→invalidation→帧）。
+二者组合（winit 原始事件 → driver → reducer）此前无单测串联。真实 EventLoop::run 每个
+winit 事件都走这条路径，本测证明其契约成立。
+
+## 交付
+
+`ui/adapters/winit/src/event_map.rs` 的 `adapter_runtime_integration` 模块新增：
+- `ClickApp`（最小 UiApp：计数 "app.click"，dispatch→Handled；root_spec 返回 ClickBox spec）。
+- `winit_raw_event_drives_driver_reducer_and_rebuild` 测。
+
+## 测试流程
+
+    构造 winit MouseInput（左键 Pressed @ (50,20)）
+      → map_mouse_input(MouseButton::Left, ElementState::Pressed, point, Modifiers::NONE)
+      → UiEvent::Pointer
+      → WinitDriver.pump_event(&ui_event)
+        → host.dispatch_event（ClickBox emit "app.click" + click-to-focus）
+        → 收 emit → app.dispatch("app.click") → Handled（clicks+=1）
+        → Handled → root_spec 重建 + set_root
+      → 返回 EventOutcome
+
+断言：
+- out.emitted_actions == 1（winit 点击经 driver 派发出 1 action）。
+- out.spec_rebuilt == true（Handled → driver 重建声明树）。
+- out.needs_redraw == true（重建 → 需要重绘）。
+- driver.pump_frame() 落盘。
+- driver 作用域外：app.clicks() == 1（reducer 被 winit 原始事件经 driver 真正驱动）。
+
+## 测试结果（scoped test-guard）
+
+    $ ./target/test-guard -- cargo test -p zero-ui-adapter-winit
+    test event_map::adapter_runtime_integration::winit_raw_event_drives_driver_reducer_and_rebuild ... ok
+    test result: ok. 29 passed; 0 failed   （28→29，+1 新测）
+
+## 门禁
+
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — CLEAN。
+- ./target/test-guard -- cargo test -p zero-ui-adapter-winit — 29 测全绿。
+- DC-1 复核：本测在 adapter-winit 内（winit 类型唯一落点），零浏览器业务 crate 依赖。
+
+## 结论：DC-2 SDK-side 工作完整收口
+
+WinitDriver 现已端到端证明：
+1. 事件映射（winit → UiEvent，event_map，15 pub fn + 单元测）。
+2. run-loop 核心（driver begin/pump_event/pump_frame + reducer + 重建 + invalidation）。
+3. **per-event 契约**（winit 原始事件 → event_map → driver → reducer → 重建，本测）。
+4. 跨全部示例（counter/form/phone_demo/browser_shell_demo）经 driver 驱动。
+5. 覆盖矩阵：指针点击 / 键盘输入 / Tab 焦点 / Enter 提交 / 校验 / ime_rect / metrics·tokens
+   变化 / 手势 arena（Tap/Pan/Pinch/Fling）/ WebView ExternalSurface / FocusScope trap / flex。
+
+## 风险 / 剩余
+
+- SDK-only（adapter 未触渲染像素/浏览器）→ 无 product-smoke 风险。
+- **DC-2 剩余唯一项 = 真实 winit EventLoop::run 阻塞壳**（开窗/surface/首帧，需 GUI）：
+  - 需 GUI 环境（EventLoop::new / Window / GPU surface）验证首帧。
+  - 需设计决策：真实 run loop 需在 driver.begin 前注册控件工厂（当前由调用方经
+    driver.host_mut() 注册，如 counter/form/phone_demo/browser_shell_demo 所示；
+    PlatformRuntime::run 的 &mut dyn UiApp 签名不直接支持，需 driver-based 入口或
+    扩展 UiApp 暴露工厂注册）。
+- DC-14 浏览器迁移 GUI 可视验收 + DC-15 真实移动后端首帧 = 另两项需 GUI/设备的终端门禁。
