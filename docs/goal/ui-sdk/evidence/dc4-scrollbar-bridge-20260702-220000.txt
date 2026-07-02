@@ -1,0 +1,25 @@
+DC-4 apps/browser scrollbar bridge to SDK ui/widgets::scrollbar (2026-07-02)
+
+Changes:
+- apps/browser/src/sdk_scrollbar.rs (247 lines): bridge adapter
+  - to_sdk_metrics: PageScrollLayout+TabScrollState -> SDK ScrollMetrics
+  - as_sdk_vertical/as_sdk_horizontal: browser ScrollbarGeometry -> SDK ScrollBarGeometry
+  - sdk_hit_test_scrollbar: SDK scrollbar::hit_test replacement
+  - sdk_scroll_y/x_from_pointer: SDK scrollbar::drag_to_command replacement
+  - 3 adapter tests (hit-test parity / drag range / no-overflow clamp)
+- apps/browser/src/app_input.rs: ScrollPtrCtx struct (packed context, clippy-compliant)
+  - scrollbar_hit_at: cfg-gated do_hit_test_scrollbar dispatch
+  - start_scrollbar_interaction: cfg-gated scroll_y/x_from_ptr dispatch
+  - update_scrollbar_drag: cfg-gated scroll_y/x_from_ptr dispatch
+- apps/browser/Cargo.toml: zero-ui-widgets as optional dep (sdk-chrome feature)
+
+Gates:
+- Default feature-off: 189 browser tests green (bit-identical, zero regression)
+- sdk-chrome feature: 7 tests green + build/clippy/fmt clean
+- Full workspace: build + clippy --workspace --all-targets -D warnings clean
+
+Scope:
+- Only replaces logic layer (hit-test + pointer->scroll calculation)
+- Geometry (compute_page_scroll_layout/scrollbar_geometry) and rendering
+  (push_scrollbar_fills) stay on hand-rolled path
+- No product-smoke risk (no rendering change)

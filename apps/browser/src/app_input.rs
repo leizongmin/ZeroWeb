@@ -10,6 +10,36 @@ fn mod_prefix() -> &'static str {
     }
 }
 
+/// Packed scroll pointer-context (reduces arg count for clippy `too-many-arguments`).
+struct ScrollPtrCtx<'a> {
+    layout: &'a page_scroll::PageScrollLayout,
+    scroll: page_scroll::TabScrollState,
+    cx: f32,
+    cy: f32,
+    cw: f32,
+    ch: f32,
+}
+
+impl<'a> ScrollPtrCtx<'a> {
+    fn new(
+        layout: &'a page_scroll::PageScrollLayout,
+        scroll: page_scroll::TabScrollState,
+        cx: f32,
+        cy: f32,
+        cw: f32,
+        ch: f32,
+    ) -> Self {
+        Self {
+            layout,
+            scroll,
+            cx,
+            cy,
+            cw,
+            ch,
+        }
+    }
+}
+
 impl BrowserApp {
     /// 处理鼠标滚轮滚动
     pub fn handle_scroll(&mut self, delta: zero_host_runtime::event::MouseScrollDelta, at_x: f64, at_y: f64) {
@@ -174,7 +204,17 @@ impl BrowserApp {
         }
         let scroll = self.tab_scroll_state(tab_id);
         let geometry = page_scroll::scrollbar_geometry(&layout, scroll, cx, cy, cw, ch, self.scale_factor);
-        page_scroll::hit_test_scrollbar(x, y, &geometry).map(|hit| (tab_id, hit))
+        self.do_hit_test_scrollbar(x, y, &geometry).map(|hit| (tab_id, hit))
+    }
+
+    #[cfg(not(feature = "sdk-chrome"))]
+    fn do_hit_test_scrollbar(&self, x: f32, y: f32, geometry: &page_scroll::ScrollbarGeometry) -> Option<page_scroll::ScrollbarHit> {
+        page_scroll::hit_test_scrollbar(x, y, geometry)
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    fn do_hit_test_scrollbar(&self, _x: f32, _y: f32, geometry: &page_scroll::ScrollbarGeometry) -> Option<page_scroll::ScrollbarHit> {
+        crate::sdk_scrollbar::sdk_hit_test_scrollbar(_x, _y, geometry)
     }
 
     fn start_scrollbar_interaction(
@@ -188,12 +228,13 @@ impl BrowserApp {
         let layout = self.page_scroll_layout(tab_id);
         let scroll = self.tab_scroll_state(tab_id);
         let geometry = page_scroll::scrollbar_geometry(&layout, scroll, cx, cy, cw, ch, self.scale_factor);
+        let ctx = ScrollPtrCtx::new(&layout, scroll, cx, cy, cw, ch);
 
         match hit {
             page_scroll::ScrollbarHit::VerticalThumb => {
                 let (_, thumb_y, _, _) = geometry.vertical_thumb.expect("vertical thumb");
                 let grab_offset = y - thumb_y;
-                let new_y = page_scroll::scroll_y_from_pointer(&layout, cy, ch, self.scale_factor, y, grab_offset);
+                let new_y = self.scroll_y_from_ptr(ctx, y, grab_offset);
                 self.scroll.entry(tab_id).or_default().y = new_y;
                 self.scrollbar_drag = Some(ScrollbarDrag {
                     tab_id,
@@ -208,7 +249,7 @@ impl BrowserApp {
                     self.scale_factor,
                 );
                 let grab_offset = thumb_h * 0.5;
-                let new_y = page_scroll::scroll_y_from_pointer(&layout, cy, ch, self.scale_factor, y, grab_offset);
+                let new_y = self.scroll_y_from_ptr(ctx, y, grab_offset);
                 self.scroll.entry(tab_id).or_default().y = new_y;
                 self.scrollbar_drag = Some(ScrollbarDrag {
                     tab_id,
@@ -219,7 +260,7 @@ impl BrowserApp {
             page_scroll::ScrollbarHit::HorizontalThumb => {
                 let (thumb_x, _, _, _) = geometry.horizontal_thumb.expect("horizontal thumb");
                 let grab_offset = x - thumb_x;
-                let new_x = page_scroll::scroll_x_from_pointer(&layout, cx, cw, self.scale_factor, x, grab_offset);
+                let new_x = self.scroll_x_from_ptr(ctx, x, grab_offset);
                 self.scroll.entry(tab_id).or_default().x = new_x;
                 self.scrollbar_drag = Some(ScrollbarDrag {
                     tab_id,
@@ -234,7 +275,7 @@ impl BrowserApp {
                     self.scale_factor,
                 );
                 let grab_offset = thumb_w * 0.5;
-                let new_x = page_scroll::scroll_x_from_pointer(&layout, cx, cw, self.scale_factor, x, grab_offset);
+                let new_x = self.scroll_x_from_ptr(ctx, x, grab_offset);
                 self.scroll.entry(tab_id).or_default().x = new_x;
                 self.scrollbar_drag = Some(ScrollbarDrag {
                     tab_id,
@@ -256,16 +297,51 @@ impl BrowserApp {
         let tab_id = drag.tab_id;
         let (cx, cy, cw, ch) = self.page_content_rect();
         let layout = self.page_scroll_layout(tab_id);
-        let entry = self.scroll.entry(tab_id).or_default();
-        match drag.axis {
-            page_scroll::ScrollbarAxis::Vertical => {
-                entry.y = page_scroll::scroll_y_from_pointer(&layout, cy, ch, self.scale_factor, y, drag.grab_offset);
-            }
-            page_scroll::ScrollbarAxis::Horizontal => {
-                entry.x = page_scroll::scroll_x_from_pointer(&layout, cx, cw, self.scale_factor, x, drag.grab_offset);
+        let scroll = self.tab_scroll_state(tab_id);
+        let ctx = ScrollPtrCtx::new(&layout, scroll, cx, cy, cw, ch);
+        let new_value = match drag.axis {
+            page_scroll::ScrollbarAxis::Vertical => Some((0, self.scroll_y_from_ptr(ctx, y, drag.grab_offset))),
+            page_scroll::ScrollbarAxis::Horizontal => Some((1, self.scroll_x_from_ptr(ctx, x, drag.grab_offset))),
+        };
+        if let Some((axis, val)) = new_value {
+            let entry = self.scroll.entry(tab_id).or_default();
+            if axis == 0 {
+                entry.y = val;
+            } else {
+                entry.x = val;
             }
         }
         self.needs_redraw = true;
+    }
+
+    // ── Pointer → scroll helpers (dispatched to hand-rolled or SDK per feature) ──
+
+    #[cfg(not(feature = "sdk-chrome"))]
+    fn scroll_y_from_ptr(&self, ctx: ScrollPtrCtx, pointer_y: f32, grab_offset: f32) -> f32 {
+        page_scroll::scroll_y_from_pointer(ctx.layout, ctx.cy, ctx.ch, self.scale_factor, pointer_y, grab_offset)
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    fn scroll_y_from_ptr(&self, ctx: ScrollPtrCtx, pointer_y: f32, grab_offset: f32) -> f32 {
+        let content_rect = zero_ui_core::geometry::Rect::from_ltrb(ctx.cx, ctx.cy, ctx.cx + ctx.cw, ctx.cy + ctx.ch);
+        crate::sdk_scrollbar::sdk_scroll_y_from_pointer(
+            ctx.layout, ctx.scroll, content_rect,
+            pointer_y - grab_offset, pointer_y,
+        )
+    }
+
+    #[cfg(not(feature = "sdk-chrome"))]
+    fn scroll_x_from_ptr(&self, ctx: ScrollPtrCtx, pointer_x: f32, grab_offset: f32) -> f32 {
+        page_scroll::scroll_x_from_pointer(ctx.layout, ctx.cx, ctx.cw, self.scale_factor, pointer_x, grab_offset)
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    fn scroll_x_from_ptr(&self, ctx: ScrollPtrCtx, pointer_x: f32, grab_offset: f32) -> f32 {
+        let content_rect = zero_ui_core::geometry::Rect::from_ltrb(ctx.cx, ctx.cy, ctx.cx + ctx.cw, ctx.cy + ctx.ch);
+        crate::sdk_scrollbar::sdk_scroll_x_from_pointer(
+            ctx.layout, ctx.scroll, content_rect,
+            pointer_x - grab_offset, pointer_x,
+        )
     }
     fn content_scroll_drag_threshold(&self) -> f64 {
         8.0 * self.scale_factor as f64

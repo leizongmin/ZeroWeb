@@ -35,6 +35,8 @@ mod page_selection;
 mod pages;
 mod paint_ipc;
 mod process_backend;
+#[cfg(feature = "sdk-chrome")]
+mod sdk_scrollbar;
 mod shutdown_signal;
 mod tab_chrome;
 mod tab_favicon;

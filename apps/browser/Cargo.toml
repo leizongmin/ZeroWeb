@@ -22,6 +22,7 @@ sdk-chrome = [
     "dep:zero-text-foundation",
     "dep:zero-ui-adapter-render-foundation",
     "dep:zero-ui-core",
+    "dep:zero-ui-widgets",
 ]
 
 [dependencies]
@@ -41,6 +42,7 @@ zero-browser-chrome = { workspace = true, optional = true }
 zero-text-foundation = { workspace = true, optional = true }
 zero-ui-adapter-render-foundation = { workspace = true, optional = true }
 zero-ui-core = { workspace = true, optional = true }
+zero-ui-widgets = { workspace = true, optional = true }
 winit = { workspace = true }
 softbuffer = { workspace = true }
 tracing = { workspace = true }
