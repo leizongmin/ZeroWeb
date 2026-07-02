@@ -1,0 +1,43 @@
+DC-6 map/filter 嵌套路径投影（TBD-10 收尾）— 2026-07-01
+============================================================
+
+里程碑：M3（DC-6 表达式/DSL），SDK-only（未触碰 render-foundation / apps/browser，无 product-smoke 风险）。
+
+缺口（修复前）
+-------------
+- TBD-10 follow-up：`map($items, "field")` / `filter($items, "field")` 仅支持单段字段投影；
+  嵌套路径投影 `map($items, "a.b.c")` 留作 follow-up（master.md TBD-10 原文）。
+- 谓词过滤 `filter($items, field>x)` 需 lambda，超当前受控计算层范围（仍不做）。
+
+实现（ui/dsl/src/engine.rs）
+---------------------------
+- `project_field(v, path)` 改为按 `'.'` 分段逐段下钻 object：
+  - 单段 `"title"` 行为与历史逐位一致（向后兼容，由既有 `map_filter_field_projection` 测试守护）。
+  - 嵌套 `"meta.count"` → `o["meta"]["count"]`；任一非 object 中段 → `Null`；缺失叶 → `Null`。
+- map/filter 复用同一 `project_field`，无需改 call 分发或 PURE_FN。
+- map/filter 文档注释同步更新（嵌套路径已支持；谓词过滤仍需 lambda，超范围）。
+- 安全：每元素下钻深度 = 路径段数（小常数），数组迭代仍受 `bump(a.len())`（max_iterations）约束；
+  无新可计算能力、无 lambda、无递归、无副作用（sandbox 边界不变）。
+
+测试（1 新测 `map_filter_nested_path_projection`，含 8 组断言，全绿）
+-----------------------------------------------------------------
+- 嵌套 map：`map($items,"meta.title")` → ["zero","one"]；`map($items,"meta.count")` → [1,2]。
+- 嵌套 filter：`filter($items,"meta.active")` → 1 项。
+- 缺失叶子：`map($items,"meta.missing")` → [Null,Null]；`count(filter(...,"meta.missing"))` → 0。
+- 中段缺失：`map($items,"nope.x")` → [Null,Null]。
+- 路径穿过非 object 叶子（`meta.title` 是 Text，`.deep`）→ [Null,Null]。
+- 单段向后兼容：`map($items,"meta")` → [Object,Object]。
+
+门禁（2026-07-01）
+-----------------
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all --check` — 净。
+- `./target/test-guard -- cargo test -p zero-ui-dsl` — **85 passed; 0 failed**（84→85，+1）。
+- DC-1 复核：零新依赖（仅 engine.rs 内部 project_field 改动）。
+
+DC-6 状态更新
+-------------
+- DC-6 表达式四阶段管线（parse/validate/typecheck/eval）+ sandbox + 资源上限 + 列表渲染（for_each）
+  + map/filter（含嵌套路径投影）全部落地。
+- TBD-10 收尾：嵌套路径投影已实现；唯一剩余 = 谓词过滤（需 lambda，明确超当前受控计算层范围，不做）。

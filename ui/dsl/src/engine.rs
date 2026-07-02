@@ -962,10 +962,10 @@ fn call_fn(
                 _ => Err(DslError::Typecheck("index() needs array + int".into())),
             }
         }
-        // map/filter 采用**字段投影**（非 lambda）：第二参数为字段名（Text）。
-        // map 对每个 object 元素取字段 → 新数组；filter 保留字段 truthy 的元素。
+        // map/filter 采用**字段投影**（非 lambda）：第二参数为字段路径（Text，支持点分嵌套 TBD-10）。
+        // map 对每个 object 元素按路径取值 → 新数组；filter 保留路径 truthy 的元素。
         // 避免给 Expression 加 Lambda 变体（保持文法封闭、sandbox 安全；每元素仅字段查找，
-        // 计算量受数组大小 + 迭代预算约束）。嵌套路径投影留 follow-up。
+        // 计算量受数组大小 + 迭代预算约束；谓词过滤 `filter($items, field>x)` 仍需 lambda，超当前受控计算层范围）。
         "map" => {
             expect_argc(name, &argv, 2)?;
             let a = as_array(&argv[0])?;
@@ -990,12 +990,19 @@ fn call_fn(
     }
 }
 
-/// 从一个值投影指定字段（object 取 key；非 object 返回 Null）。map/filter 共用。
-fn project_field(v: &Value, field: &str) -> Value {
-    match v {
-        Value::Object(o) => o.get(field).cloned().unwrap_or(Value::Null),
-        _ => Value::Null,
+/// 从一个值投影指定字段路径（map/filter 共用）。
+///
+/// 支持点分嵌套路径：`"a.b.c"` 逐段下钻 object（TBD-10）；任一非 object 中段 → `Null`。
+/// 单段路径（`"title"`）行为与历史一致（向后兼容）。
+fn project_field(v: &Value, path: &str) -> Value {
+    let mut cur = v;
+    for seg in path.split('.') {
+        cur = match cur {
+            Value::Object(o) => o.get(seg).unwrap_or(&Value::Null),
+            _ => &Value::Null,
+        };
     }
+    cur.clone()
 }
 
 fn value_to_text(v: &Value) -> String {
@@ -1245,6 +1252,60 @@ mod tests {
             DslError::Typecheck(_)
         ));
         let _ = key_ctx;
+    }
+
+    #[test]
+    fn map_filter_nested_path_projection() {
+        // DC-6 TBD-10：map/filter 支持点分嵌套路径投影（无 lambda）。
+        let mk = |title: &str, count: i64, active: bool| {
+            let mut meta = hashbrown::HashMap::new();
+            meta.insert("title".to_string(), Value::Text(title.into()));
+            meta.insert("count".to_string(), Value::Int(count));
+            meta.insert("active".to_string(), Value::Bool(active));
+            let mut o = hashbrown::HashMap::new();
+            o.insert("meta".to_string(), Value::Object(meta));
+            Value::Object(o)
+        };
+        let ctx =
+            EvalContext::default().with_var("items", Value::Array(vec![mk("zero", 1, true), mk("one", 2, false)]));
+        // 嵌套路径 map：取 meta.title / meta.count。
+        assert_eq!(
+            eval_str(r#"map($items, "meta.title")"#, &ctx),
+            Value::Array(vec![Value::Text("zero".into()), Value::Text("one".into())])
+        );
+        assert_eq!(
+            eval_str(r#"map($items, "meta.count")"#, &ctx),
+            Value::Array(vec![Value::Int(1), Value::Int(2)])
+        );
+        // 嵌套路径 filter：保留 meta.active=true → 1 项。
+        match eval_str(r#"filter($items, "meta.active")"#, &ctx) {
+            Value::Array(a) => assert_eq!(a.len(), 1),
+            other => panic!("filter nested should return array, got {other:?}"),
+        }
+        // 缺失叶子 → Null（map）/ falsy 丢弃（filter）。
+        assert_eq!(
+            eval_str(r#"map($items, "meta.missing")"#, &ctx),
+            Value::Array(vec![Value::Null, Value::Null])
+        );
+        assert_eq!(
+            eval_str(r#"count(filter($items, "meta.missing"))"#, &ctx),
+            Value::Int(0)
+        );
+        // 中段缺失 → Null。
+        assert_eq!(
+            eval_str(r#"map($items, "nope.x")"#, &ctx),
+            Value::Array(vec![Value::Null, Value::Null])
+        );
+        // 路径穿过非 object 叶子（meta.title 是 Text，无 .deep）→ Null。
+        assert_eq!(
+            eval_str(r#"map($items, "meta.title.deep")"#, &ctx),
+            Value::Array(vec![Value::Null, Value::Null])
+        );
+        // 单段路径仍正常（向后兼容）：map 取 meta → [Object, Object]。
+        match eval_str(r#"map($items, "meta")"#, &ctx) {
+            Value::Array(a) => assert_eq!(a.len(), 2),
+            other => panic!("map single-segment should return array, got {other:?}"),
+        }
     }
 
     #[test]
