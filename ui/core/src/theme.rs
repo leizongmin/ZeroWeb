@@ -107,7 +107,9 @@ impl SemanticTokens {
             on_background: Color::BLACK,
             surface: Color::rgb(0.96, 0.96, 0.96),
             on_surface: Color::rgb(0.1, 0.1, 0.1),
-            primary: Color::rgb(0.13, 0.58, 0.95),
+            // DC-5：可访问 primary 蓝（≈ Material Blue 700 #1976D2）。前值 (0.13,0.58,0.95)
+            // 对白字 contrast 仅 3.19 < WCAG AA 4.5；本值对白字 ≈ 4.7，对白底作链接色亦通过。
+            primary: Color::rgb(0.098, 0.463, 0.824),
             on_primary: Color::WHITE,
             error: Color::rgb(0.86, 0.21, 0.27),
             on_error: Color::WHITE,
@@ -494,6 +496,29 @@ mod tests {
                     passes_wcag_aa(fg, bg, false),
                     "{scheme:?} token pair fg={fg:?} bg={bg:?} fails WCAG AA (ratio {})",
                     contrast_ratio(fg, bg)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn all_semantic_token_pairs_pass_wcag_aa() {
+        // DC-5 contrast lint（完整接入）：Zero 主题 light + dark 的**全部 6 个** fg/bg token 对
+        // 均通过 WCAG AA（正常文本 ≥ 4.5:1）。这是主题可访问性的回归门禁——任何 token 调整
+        // 致对比度退化都会被本测试拦截。覆盖 baseline_text_pairs_pass_aa 未覆盖的 primary/error。
+        for (name, tokens) in [("light", SemanticTokens::light()), ("dark", SemanticTokens::dark())] {
+            for (pair, fg, bg) in [
+                ("on_background/background", tokens.on_background, tokens.background),
+                ("on_surface/surface", tokens.on_surface, tokens.surface),
+                ("on_primary/primary", tokens.on_primary, tokens.primary),
+                ("on_error/error", tokens.on_error, tokens.error),
+                ("on_success/success", tokens.on_success, tokens.success),
+                ("on_warning/warning", tokens.on_warning, tokens.warning),
+            ] {
+                let ratio = contrast_ratio(fg, bg);
+                assert!(
+                    passes_wcag_aa(fg, bg, false),
+                    "{name} {pair} fails WCAG AA: ratio {ratio:.2} < 4.5 (fg {fg:?} bg {bg:?})"
                 );
             }
         }

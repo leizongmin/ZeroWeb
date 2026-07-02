@@ -1,0 +1,49 @@
+DC-5 contrast lint 完整接入 + Zero 主题可访问性修复
+日期：2026-07-02
+分支：ui-sdk
+
+## 范围
+闭合 DC-5 剩余项「contrast lint 接入」——把 WCAG contrast lint 从「仅 baseline 文本对」
+扩展到 Zero 主题 light + dark 的**全部 6 个 fg/bg token 对**，作为主题可访问性回归门禁；
+并修复 lint 暴露的真实可访问性缺口（light primary）。
+
+## 发现（lint 暴露的真实缺口）
+新增 `all_semantic_token_pairs_pass_wcag_aa` 测试（ui/core/theme.rs）首次运行即**失败**：
+- `light on_primary/primary`：ratio **3.19 < WCAG AA 4.5**。
+  - 原 light primary = `rgb(0.13, 0.58, 0.95)`（亮天蓝），白字（on_primary=WHITE）对比度仅 3.19，
+    不满足 AA 正常文本（4.5），仅满足 large text（3.0）。
+- 其余 11 对（light/dark × background/surface/error/success/warning + dark primary）均通过。
+
+## 修复
+light primary 改为可访问蓝 `rgb(0.098, 0.463, 0.824)`（≈ Material Blue 700 #1976D2）：
+- 对白字 contrast ≈ 4.7（≥ AA 4.5）。
+- 作链接/强调色对白底（background WHITE）contrast ≈ 4.7（亦通过）。
+- 视觉上仍为可识别的 primary 蓝（仅略暗于原亮天蓝）。
+dark primary 不变（原 (0.4,0.73,1.0) + 黑字 ratio ≈ 9.9，已通过）。
+
+## 测试
+- 新增 `all_semantic_token_pairs_pass_wcag_aa`：遍历 light/dark 各 6 对（on_background/background、
+  on_surface/surface、on_primary/primary、on_error/error、on_success/success、on_warning/warning），
+  断言全部 `passes_wcag_aa(fg, bg, false)`（ratio ≥ 4.5）。修复后通过。
+- ui/core 38→39 测全绿；既有 contrast_ratio/wcag_aa_thresholds/baseline_text_pairs 测零回归。
+- 下游依赖主题色的 crate 全绿：browser-chrome 64、ui-render、ui-examples、ui-adapter-render-foundation。
+
+## 门禁
+- `cargo fmt --all -- --check` — 净。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- SDK-only（ui/core/theme.rs，未触碰 render-foundation/浏览器）→ 无 product-smoke 风险。
+  （product-smoke 渲染 welcome.html 页面，不消费 SDK theme token。）
+
+## DC 影响
+- DC-5：contrast lint 从 baseline 子集扩展到全部 6 对（light+dark），作为门禁接入；Zero 主题现
+  **WCAG AA 全合规**（正常文本 ≥ 4.5）。DC-5「contrast lint 接入 CI lint」闭合。
+- DC-5 剩余：System/Light/Dark/Custom/HighContrast 偏好切换 UI。
+
+## 未覆盖（诚实声明 + DC-5 follow-up）
+- **ui/widgets 硬编码色值**（DC-5「组件只消费 semantic token，不硬编码」的违反）：`ui/widgets/src/badge.rs:34`
+  （BadgeTone::Info）与 `ui/widgets/src/button.rs:56`（Button 默认背景）仍硬编码旧不可访问蓝
+  `rgb(0.13, 0.58, 0.95)`（白字 ratio 3.19）。button.rs:231 测试断言该值。
+  → contrast lint 只覆盖 SemanticTokens，未覆盖 widget 硬编码色；widget 默认色仍不可访问。
+  → follow-up：widgets 应消费 SemanticTokens（非硬编码），届时默认色自动可访问 + lint 覆盖。
+    本轮不展开（影响多 widget，独立 turn 处理）。
+- 主题色变更未做 GUI 可视确认（本环境无 GUI）；可访问性由 contrast ratio 数学保证，视觉美学待 GUI 验收。
