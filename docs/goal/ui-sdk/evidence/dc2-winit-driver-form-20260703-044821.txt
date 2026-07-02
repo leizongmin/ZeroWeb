@@ -1,0 +1,75 @@
+DC-2 WinitDriver 接入 form 示例 — 受控输入/焦点/提交闭环（M4 SDK-side）
+====================================================================
+日期：2026-07-03
+分支：ui-sdk
+commit：39e81888  ui-sdk(M4/DC-2): form 示例接入 WinitDriver — 受控输入/焦点/提交闭环
+（同轮 merge commit a9fcccb0：origin/main R976 CSS aspect-ratio，正交零冲突）
+
+## 目的
+
+继 counter（commit 3a6a6d07）后，把 form 示例也改为经 WinitDriver 驱动，证明 driver
+处理**更丰富的交互闭环**（受控文本输入 + Tab 焦点遍历 + Enter 提交 + 非空校验 + 指针点击
++ ime_rect 查询），并进一步 DRY 示例代码。driver 现已覆盖指针 + 键盘 + 焦点 + 校验全路径。
+
+## 交付
+
+- `ui/examples/src/form.rs`：加 `impl UiApp for FormApp`（root_spec→build_spec；
+  dispatch→reduce，ACTION_CHANGE|ACTION_SUBMIT→Handled 否则 UnknownAction；
+  FormApp::reduce 返回 ()，故由 action-id 匹配决定 Handled）。保留既有 reduce/build_spec。
+- `ui/examples/examples/form.rs`：重写为 WinitDriver 驱动（begin + pump_event + pump_frame）。
+- `ui/examples/tests/form_retained.rs`：3 测全部改经 WinitDriver：
+  ① form_typing_focus_submit_and_validation（Tab 焦点 + 键盘受控输入 'Hi' + Enter 提交
+     → 'Hello, Hi!' + Backspace 清空 + Enter → 'Error'，断言 scene 文本 + 焦点 wrap）；
+  ② submit_button_click_via_pointer（指针 click Submit 经 driver.pump_event）；
+  ③ ime_rect_tracks_focused_text_field_caret（driver.begin 设布局 + host 访问器查
+     focused TextField 的 ime_rect 绝对位 = field origin + caret 局部）。
+
+借用处理：driver 持 &mut app，中间状态经 scene 文本断言（'Hi|'/'Hello, Hi!'/'Error'），
+最终 app.name/message 在 driver 作用域外读（与 counter 同模式）。
+
+## example 实跑（cargo run -p zero-ui-examples --example form）
+
+    initial: ["Type your name, then press Enter", "Name"]
+    after typing 'Ada': ["Type your name, then press Enter", "Ada|"]
+    after submit: ["Hello, Ada!", "Ada|"]
+    after empty submit: ["Error: name is required", "Name"]
+
+driver 内部 dispatch→reducer→重建→invalidation→帧；受控输入回灌（'Ada|'）、校验通过
+（'Hello, Ada!'）、清空后校验失败（'Error: name is required'，回 placeholder 'Name'）。
+
+## 测试（scoped test-guard）
+
+    $ ./target/test-guard -- cargo test -p zero-ui-examples --test form_retained
+    test form_typing_focus_submit_and_validation ... ok
+    test submit_button_click_via_pointer ... ok
+    test ime_rect_tracks_focused_text_field_caret ... ok
+    test result: ok. 3 passed; 0 failed
+
+    $ ./target/test-guard -- cargo test -p zero-ui-examples   # 全 examples
+    counter_retained 2 + form_retained 3 = 5 集成测全绿（+ lib/doctest）。
+
+断言要点：
+- Tab 聚焦首个 focusable（TextField 'name'）；Tab→Submit→Tab→name（wrap）。
+- 键盘 'Hi' → form.change(Text)→reducer→重建回灌 → scene 含 'Hi|'。
+- Enter（聚焦 name）→ form.submit → 校验通过 → scene 含 'Hello, Hi!'。
+- Backspace×2 清空 → Enter → 校验失败 → scene 含 'Error'。
+- 指针点击 Submit（press+release）→ form.submit → app.message 含 'Hello, Ada!'。
+- focused TextField ime_rect = field 绝对 origin + caret 局部（22,6）。
+- 最终（driver 作用域外）：app.name=="" + app.message 含 'Error'。
+
+## 门禁
+
+- cargo build --workspace — Finished（0 错误，merge R976 后）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — CLEAN。
+- ./target/test-guard -- cargo test -p zero-ui-examples — 5 集成测全绿（counter 2 + form 3）。
+- DC-1 复核：form 经 adapter-winit 仅引入 ui/*+winit，零浏览器 crate 依赖（与 counter 同）。
+
+## 风险
+
+- SDK-only（ui/examples 未触渲染像素/浏览器运行时）→ 无 product-smoke 风险。
+- WinitDriver 现已证明覆盖：指针点击（counter/form-submit）+ 键盘输入 + Tab 焦点 +
+  Enter 提交 + 校验 + ime_rect（form）+ metrics/tokens 变化（driver 自身测）。
+  **未覆盖**：driver + 手势 arena 端到端（phone_demo 的 Tap/Pinch 经 driver.pump_event）——
+  follow-up：phone_demo/browser_shell_demo 接入 driver 证明手势路径。
+- 真实 winit EventLoop::run 阻塞壳（开窗/surface/首帧）仍需 GUI。
