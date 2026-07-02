@@ -1,0 +1,59 @@
+DC-15 平台 back 手势 + 触觉反馈 service skeleton（SDK-side，2026-07-03）
+======================================================================
+
+目标
+----
+闭合 DC-15 移动端「平台 back gesture 的最小适配 skeleton」中的平台服务契约缺口
+（DC-15 列项「touch/pan/pinch/fling gesture、soft keyboard、safe area、text scale、平台 back
+gesture 的最小适配 skeleton 落地」）。ui/gestures arena、WindowMetrics mobile 字段、IME、
+shell safe-area 避让此前已就绪；唯一未落地的移动端平台概念是「平台 back 手势仲裁」。
+顺带补触觉反馈（crate description 已预告 haptics，DC-15 touch 反馈）。
+
+实现（ui/platform/src/lib.rs）
+------------------------------
+新增两类平台服务（trait + 内存 mock，与既有 clipboard/file picker/drag drop/notifications 同模式）：
+
+1. **BackNavigationService**（平台 back 手势 / 硬件 back，DC-15）：
+   - `BackHandlerId(String)` newtype + `BackResult { Handled(BackHandlerId), DefaultBack }`。
+   - trait：`push_handler` / `pop_handler` / `has_handler` / `on_platform_back`。
+   - **LIFO 栈**仲裁（最近注册的最先响应），匹配 Android `OnBackPressedDispatcher` 与
+     Flutter `WillPopScope` 语义：弹层/菜单打开时 push、关闭时 pop；平台投递 back 意图时
+     有 handler → 消耗栈顶返回 Handled，无 → DefaultBack（宿主 navigator.pop / 退出）。
+   - `InMemoryBackNavigation`（RefCell<Vec>）+ `handlers()` 快照（断言用）。
+
+2. **HapticFeedbackService**（触觉反馈，DC-15 touch）：
+   - `HapticKind { Light, Medium, Heavy, Selection }`（匹配 Android VibrationEffect / iOS
+     UIImpactFeedbackGenerator）。
+   - trait：`tap(kind)`；`InMemoryHaptics` 记录 + `taps()` 快照。
+
+PlatformServices 聚合（IF-010，非破坏式扩展）
+----------------------------------------------
+- `PlatformServices` 加 `back_navigation` + `haptics` 字段。
+- **`new()` 保持 4 参数签名不变**（零破坏：既有调用点 / 测试无需改），新字段默认注入 InMemory。
+- 移动端宿主经 builder `with_back_navigation()` / `with_haptics()` 注入真实平台后端。
+- 新增 `back_navigation()` / `haptics()` 访问器。
+- `in_memory_platform_services()` 默认含两类新服务。
+
+测试（5 新测，ui-platform 6→11）
+--------------------------------
+- `back_navigation_lifo_arbitrates_platform_back`：无 handler→DefaultBack / push menu+downloads
+  LIFO / back 消耗栈顶 downloads / 再 back 消耗 menu / 栈空→DefaultBack。
+- `back_navigation_explicit_pop_matches_handler_lifecycle`：显式 pop 注销。
+- `haptics_record_taps`：Light/Selection/Heavy 记录。
+- `platform_services_exposes_back_and_haptics_by_default`：new() 默认注入可用。
+- `platform_services_with_back_navigation_overrides_default`：注入 NoopBack（忽略 push 恒
+  DefaultBack）与默认 in-memory（push 后 Handled）行为不同 → 证明 with_* 覆盖生效。
+
+门禁
+----
+- cargo build --workspace + clippy -D warnings + fmt：全净。
+- ui-platform 11 测全绿；下游零回归（PlatformServices::new 签名不变）。
+- SDK-only（ui/platform 未触碰 render-foundation / 浏览器）→ 无 product-smoke 风险。
+
+DC-15 状态推进
+--------------
+- DC-15 移动端平台服务契约补齐：back gesture + haptics skeleton 落地（与既有 ui/gestures
+  arena、WindowMetrics mobile 字段、IME、Phone/Tablet shell 共同构成 SDK 侧移动适配 skeleton）。
+- 仍待 M4（需移动设备 / GUI 环境）：至少一个移动后端（Android/iOS/HarmonyOS）真实可运行 +
+  runtime 每帧自动 flush a11y + back/haptics 真实平台后端实现 + GUI 可视验收。
+- SDK 侧可验证推进：DC-15 平台 back + haptics 契约闭合。

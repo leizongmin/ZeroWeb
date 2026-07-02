@@ -246,20 +246,145 @@ impl NotificationService for InMemoryNotifications {
     }
 }
 
+// ── 平台 back 手势 / 硬件 back（DC-15 移动端，spec §8.4.1B / §8.8）──────────────
+
+/// app 级 back handler 标识（如「关闭地址栏菜单」「关闭下载面板」）。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BackHandlerId(String);
+
+impl BackHandlerId {
+    pub fn new(id: &str) -> BackHandlerId {
+        BackHandlerId(id.to_string())
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// 平台 back 意图仲裁结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BackResult {
+    /// 已注册 handler 消耗了 back（携带其 id；宿主据此执行该 handler 的动作，如关闭对应浮层）。
+    Handled(BackHandlerId),
+    /// 无已注册 handler：宿主执行默认 back（典型：navigator.pop；栈底则退出应用）。
+    DefaultBack,
+}
+
+/// 平台 back 手势 / 硬件 back 仲裁（DC-15 移动端，spec §8.4.1B / §8.8）。
+///
+/// Android 硬件 back / iOS edge-swipe-back / HarmonyOS 返回：平台投递 back 意图时，先咨询
+/// 已注册的 app 级 back handler（弹层 / 菜单打开时注册、关闭时注销）；无 handler 时返回
+/// [`BackResult::DefaultBack`]，由宿主决定（navigator.pop / 退出）。
+///
+/// handler 以 **LIFO 栈**管理（最近注册的最先响应），匹配 Android `OnBackPressedDispatcher`
+/// 与 Flutter `WillPopScope` 语义。trait 方法 `&self`（内部可变性），可作 trait object。
+pub trait BackNavigationService {
+    /// 注册一个 app 级 back handler（弹层 / 菜单打开时）。重复 id 入栈不合并（每注册一次响应一次）。
+    fn push_handler(&self, id: BackHandlerId);
+    /// 注销最近注册的 handler（弹层 / 菜单关闭时）；栈空返回 None。
+    fn pop_handler(&self) -> Option<BackHandlerId>;
+    /// 当前是否有已注册 handler。
+    fn has_handler(&self) -> bool;
+    /// 平台 back 意图到达：有 handler → 消耗栈顶并返回 [`BackResult::Handled`]；无 → [`BackResult::DefaultBack`]。
+    fn on_platform_back(&self) -> BackResult;
+}
+
+/// 内存 back 导航服务（测试 + headless）：LIFO 栈记录 handler。
+#[derive(Debug, Default)]
+pub struct InMemoryBackNavigation {
+    handlers: RefCell<Vec<BackHandlerId>>,
+}
+
+impl InMemoryBackNavigation {
+    pub fn new() -> InMemoryBackNavigation {
+        InMemoryBackNavigation::default()
+    }
+    /// 当前栈快照（断言用，最在栈顶 = 末尾）。
+    pub fn handlers(&self) -> Vec<BackHandlerId> {
+        self.handlers.borrow().clone()
+    }
+}
+
+impl BackNavigationService for InMemoryBackNavigation {
+    fn push_handler(&self, id: BackHandlerId) {
+        self.handlers.borrow_mut().push(id);
+    }
+    fn pop_handler(&self) -> Option<BackHandlerId> {
+        self.handlers.borrow_mut().pop()
+    }
+    fn has_handler(&self) -> bool {
+        !self.handlers.borrow().is_empty()
+    }
+    fn on_platform_back(&self) -> BackResult {
+        match self.handlers.borrow_mut().pop() {
+            Some(id) => BackResult::Handled(id),
+            None => BackResult::DefaultBack,
+        }
+    }
+}
+
+// ── 触觉反馈 / haptics（DC-15 移动端触摸，spec §8.8）──────────────────────────
+
+/// 触觉反馈强度 / 类型（匹配 Android `VibrationEffect` / iOS `UIImpactFeedbackGenerator`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HapticKind {
+    /// 轻触反馈（按钮点击）。
+    Light,
+    /// 中等反馈（开关切换）。
+    Medium,
+    /// 强反馈（长按 / 拖拽起手）。
+    Heavy,
+    /// 选择变化反馈（滚动拾取）。
+    Selection,
+}
+
+/// 触觉反馈服务（DC-15 移动端）。组件产生 haptic intent → runtime 经此服务触发设备震动，
+/// 不污染 widgets。桌面端通常为 no-op。
+pub trait HapticFeedbackService {
+    fn tap(&self, kind: HapticKind);
+}
+
+/// 内存触觉反馈服务（测试 + headless）：记录所有 tap 调用。
+#[derive(Debug, Default)]
+pub struct InMemoryHaptics {
+    taps: RefCell<Vec<HapticKind>>,
+}
+
+impl InMemoryHaptics {
+    pub fn new() -> InMemoryHaptics {
+        InMemoryHaptics::default()
+    }
+    /// 历史 tap 调用（断言用）。
+    pub fn taps(&self) -> Vec<HapticKind> {
+        self.taps.borrow().clone()
+    }
+}
+
+impl HapticFeedbackService for InMemoryHaptics {
+    fn tap(&self, kind: HapticKind) {
+        self.taps.borrow_mut().push(kind);
+    }
+}
+
 // ── 平台服务聚合（IF-010 PlatformServices）────────────────────────────────
 
 /// 平台服务聚合（IF-010 `PlatformServices`）。
 ///
-/// 宿主持**一个** `PlatformServices`；widgets / runtime 经它访问剪贴板 / 文件选择 / 拖放 / 通知，
-/// 不直接依赖具体后端（spec §6.2：widgets 不直接访问 platform API）。
+/// 宿主持**一个** `PlatformServices`；widgets / runtime 经它访问剪贴板 / 文件选择 / 拖放 / 通知 /
+/// back 手势 / 触觉反馈，不直接依赖具体后端（spec §6.2：widgets 不直接访问 platform API）。
 pub struct PlatformServices {
     clipboard: Box<dyn ClipboardService>,
     file_picker: Box<dyn FilePickerService>,
     drag_drop: Box<dyn DragDropService>,
     notifications: Box<dyn NotificationService>,
+    back_navigation: Box<dyn BackNavigationService>,
+    haptics: Box<dyn HapticFeedbackService>,
 }
 
 impl PlatformServices {
+    /// 用四类核心服务构造；back 导航 + 触觉反馈默认为内存实现（移动端宿主经
+    /// [`with_back_navigation`](PlatformServices::with_back_navigation) /
+    /// [`with_haptics`](PlatformServices::with_haptics) 注入真实后端）。
     pub fn new(
         clipboard: Box<dyn ClipboardService>,
         file_picker: Box<dyn FilePickerService>,
@@ -271,7 +396,21 @@ impl PlatformServices {
             file_picker,
             drag_drop,
             notifications,
+            back_navigation: Box::new(InMemoryBackNavigation::new()),
+            haptics: Box::new(InMemoryHaptics::new()),
         }
+    }
+
+    /// 覆盖默认的内存 back 导航服务（移动端宿主注入平台 back 后端）。
+    pub fn with_back_navigation(mut self, back: Box<dyn BackNavigationService>) -> PlatformServices {
+        self.back_navigation = back;
+        self
+    }
+
+    /// 覆盖默认的内存触觉反馈服务（移动端宿主注入平台震动后端）。
+    pub fn with_haptics(mut self, haptics: Box<dyn HapticFeedbackService>) -> PlatformServices {
+        self.haptics = haptics;
+        self
     }
 
     pub fn clipboard(&self) -> &dyn ClipboardService {
@@ -285,6 +424,12 @@ impl PlatformServices {
     }
     pub fn notifications(&self) -> &dyn NotificationService {
         &*self.notifications
+    }
+    pub fn back_navigation(&self) -> &dyn BackNavigationService {
+        &*self.back_navigation
+    }
+    pub fn haptics(&self) -> &dyn HapticFeedbackService {
+        &*self.haptics
     }
 }
 
@@ -390,5 +535,92 @@ mod tests {
             Box::new(InMemoryNotifications::new()),
         );
         assert_eq!(ps.clipboard().get_text().as_deref(), Some("stub"));
+    }
+
+    #[test]
+    fn back_navigation_lifo_arbitrates_platform_back() {
+        // DC-15 平台 back：弹层/菜单打开时 push handler；平台 back 到达时 LIFO 消耗。
+        let bn = InMemoryBackNavigation::new();
+        // 无 handler → DefaultBack（宿主 navigator.pop / 退出）。
+        assert!(!bn.has_handler());
+        assert_eq!(bn.on_platform_back(), BackResult::DefaultBack);
+
+        // 打开菜单 → push；再打开下载面板 → push（LIFO：下载面板在上）。
+        bn.push_handler(BackHandlerId::new("menu"));
+        bn.push_handler(BackHandlerId::new("downloads"));
+        assert!(bn.has_handler());
+        assert_eq!(
+            bn.handlers(),
+            vec![BackHandlerId::new("menu"), BackHandlerId::new("downloads")]
+        );
+
+        // 平台 back → 消耗栈顶「downloads」。
+        assert_eq!(
+            bn.on_platform_back(),
+            BackResult::Handled(BackHandlerId::new("downloads"))
+        );
+        // 再 back → 消耗「menu」。
+        assert_eq!(bn.on_platform_back(), BackResult::Handled(BackHandlerId::new("menu")));
+        // 栈空 → DefaultBack。
+        assert_eq!(bn.on_platform_back(), BackResult::DefaultBack);
+    }
+
+    #[test]
+    fn back_navigation_explicit_pop_matches_handler_lifecycle() {
+        // 弹层显式关闭（非 back 触发）→ pop_handler 注销。
+        let bn = InMemoryBackNavigation::new();
+        bn.push_handler(BackHandlerId::new("menu"));
+        assert_eq!(bn.pop_handler(), Some(BackHandlerId::new("menu")));
+        assert!(bn.pop_handler().is_none());
+    }
+
+    #[test]
+    fn haptics_record_taps() {
+        let h = InMemoryHaptics::new();
+        h.tap(HapticKind::Light);
+        h.tap(HapticKind::Selection);
+        h.tap(HapticKind::Heavy);
+        assert_eq!(
+            h.taps(),
+            vec![HapticKind::Light, HapticKind::Selection, HapticKind::Heavy]
+        );
+    }
+
+    #[test]
+    fn platform_services_exposes_back_and_haptics_by_default() {
+        // PlatformServices::new 默认注入内存 back + haptics；移动端宿主可经 with_* 覆盖。
+        let ps = in_memory_platform_services();
+        // 默认 back：无 handler → DefaultBack。
+        assert_eq!(ps.back_navigation().on_platform_back(), BackResult::DefaultBack);
+        ps.back_navigation().push_handler(BackHandlerId::new("overlay"));
+        assert_eq!(
+            ps.back_navigation().on_platform_back(),
+            BackResult::Handled(BackHandlerId::new("overlay"))
+        );
+        // 默认 haptics 可记录。
+        ps.haptics().tap(HapticKind::Medium);
+    }
+
+    #[test]
+    fn platform_services_with_back_navigation_overrides_default() {
+        // 注入一个忽略 push、恒返回 DefaultBack 的后端；与默认 in-memory（push 后返回 Handled）
+        // 行为不同，借以证明 with_back_navigation 确实覆盖了默认实现。
+        struct NoopBack;
+        impl BackNavigationService for NoopBack {
+            fn push_handler(&self, _: BackHandlerId) {}
+            fn pop_handler(&self) -> Option<BackHandlerId> {
+                None
+            }
+            fn has_handler(&self) -> bool {
+                false
+            }
+            fn on_platform_back(&self) -> BackResult {
+                BackResult::DefaultBack
+            }
+        }
+        let ps = in_memory_platform_services().with_back_navigation(Box::new(NoopBack));
+        ps.back_navigation().push_handler(BackHandlerId::new("x"));
+        // 默认 in-memory 会返回 Handled("x")；注入的 NoopBack 忽略 push → DefaultBack。
+        assert_eq!(ps.back_navigation().on_platform_back(), BackResult::DefaultBack);
     }
 }
