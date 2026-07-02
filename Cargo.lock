@@ -5713,6 +5713,7 @@ dependencies = [
  "windows-sys 0.59.0",
  "winit",
  "winres",
+ "zero-browser-chrome",
  "zero-browser-shell",
  "zero-engine",
  "zero-host-runtime",
@@ -5723,6 +5724,9 @@ dependencies = [
  "zero-script-sandbox",
  "zero-security",
  "zero-storage",
+ "zero-text-foundation",
+ "zero-ui-adapter-render-foundation",
+ "zero-ui-core",
  "zero-webview",
 ]
 

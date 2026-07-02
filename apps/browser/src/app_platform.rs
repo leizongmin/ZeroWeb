@@ -156,10 +156,21 @@ impl BrowserApp {
             // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
             // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
             // self.shell / self.webviews / self.font_loader / self.glyph_cache 为不相交字段借用
-            let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
+            #[cfg_attr(not(feature = "sdk-chrome"), allow(unused_mut))]
+            let mut image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
                 Some(id) => self.tabs.image_cache_mut(id),
                 None => None,
             };
+
+            // DC-14 SDK chrome 叠加并入帧（feature `sdk-chrome`，默认关闭 → 手绘 chrome 路径不变）。
+            #[cfg(feature = "sdk-chrome")]
+            compose_sdk_chrome_overlay(
+                &self.shell,
+                width,
+                height,
+                &mut scene_primitives,
+                image_cache.as_deref_mut(),
+            );
 
             // 使用全量 GPU 渲染管线
             renderer.render_full_scene_gpu(
@@ -206,10 +217,21 @@ impl BrowserApp {
         // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
         // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
         // self.shell / self.webviews / self.font_loader / self.glyph_cache 为不相交字段借用
-        let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
+        #[cfg_attr(not(feature = "sdk-chrome"), allow(unused_mut))]
+        let mut image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
             Some(id) => self.tabs.image_cache_mut(id),
             None => None,
         };
+
+        // DC-14 SDK chrome 叠加并入帧（feature `sdk-chrome`，默认关闭 → 手绘 chrome 路径不变）。
+        #[cfg(feature = "sdk-chrome")]
+        compose_sdk_chrome_overlay(
+            &self.shell,
+            width,
+            height,
+            &mut scene_primitives,
+            image_cache.as_deref_mut(),
+        );
 
         let fb = render_full_scene(
             width,
@@ -496,6 +518,70 @@ pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
     tracing::info!("Font fallback chain: {} fonts", font_loader.fallback_chain().len());
 
     Some(primary)
+}
+
+// ── DC-14 SDK chrome 接线（feature `sdk-chrome`，默认关闭）──────────────────────
+//
+// 把 SDK chrome（browser-ui/chrome 经 render_chrome_via_sdk 产出 fills + 文本 ImagePrimitive
+// + glyph image_cache）叠加并入浏览器帧的 scene_primitives + image_cache。grayscale 验证用：
+// 与手绘 chrome 并存（替换式迁移需先拆 build_scene 的 chrome/页面内容，follow-up）。
+
+/// 懒构造 + 缓存 SDK chrome 文本用的共享 `FontdueBackend`（DC-11 字体共享）。
+///
+/// 经 [`chrome_ui_primary_font_data`] 读取系统主字体字节喂 foundation/text `FontdueBackend`，
+/// 进程内 OnceLock 缓存（避免每帧重复 parse 字体）。无系统字体时返回空 backend（chrome 文本
+/// no-op，几何仍渲染）。
+#[cfg(feature = "sdk-chrome")]
+fn sdk_font_backend() -> std::sync::Arc<zero_text_foundation::FontdueBackend> {
+    use std::sync::{Arc, OnceLock};
+    static BACKEND: OnceLock<Arc<zero_text_foundation::FontdueBackend>> = OnceLock::new();
+    BACKEND
+        .get_or_init(|| {
+            let mut backend = zero_text_foundation::FontdueBackend::new();
+            if let Some((data, _path)) = chrome_ui_primary_font_data() {
+                let _ = backend.load_family("ChromeUI", &data);
+            }
+            Arc::new(backend)
+        })
+        .clone()
+}
+
+/// 把 SDK chrome 渲染产出并入帧（DC-14 浏览器接线）。
+///
+/// 经 [`render_chrome_via_sdk`](zero_browser_chrome::sdk_render::render_chrome_via_sdk) 渲染
+/// desktop chrome（shell → model → DesktopBrowserShell → WidgetHost → Scene → bridge），再经
+/// [`merge_into_frame`](zero_ui_adapter_render_foundation::merge_into_frame) 把 fills + 文本
+/// ImagePrimitive（image_key 重映射到帧 cache）合并进 `scene_primitives` + `image_cache`。
+///
+/// - `width`/`height`：帧物理像素尺寸（SDK chrome 在此坐标空间渲染，与帧对齐）。
+/// - `image_cache`：`None`（无活跃 tab）时跳过——不阻断渲染，仅本帧不叠加 SDK chrome。
+#[cfg(feature = "sdk-chrome")]
+fn compose_sdk_chrome_overlay(
+    shell: &zero_browser_shell::BrowserShell,
+    width: u32,
+    height: u32,
+    scene_primitives: &mut zero_render_foundation::primitive::RenderPrimitives,
+    image_cache: Option<&mut zero_render_foundation::image_cache::ImageCache>,
+) {
+    use zero_browser_chrome::sdk_render::render_chrome_via_sdk;
+    use zero_ui_adapter_render_foundation::merge_into_frame;
+    use zero_ui_core::geometry::{Insets, Size};
+    use zero_ui_core::layout::WindowMetrics;
+    use zero_ui_core::theme::SemanticTokens;
+
+    let Some(image_cache) = image_cache else {
+        return;
+    };
+    let metrics = WindowMetrics {
+        logical_size: Size::new(width as f32, height as f32),
+        scale_factor: 1.0,
+        safe_area: Insets::all(0.0),
+        keyboard_insets: Insets::all(0.0),
+    };
+    let backend = sdk_font_backend();
+    let bridge = render_chrome_via_sdk(shell, &metrics, &SemanticTokens::light(), backend);
+    let (sdk_prims, sdk_cache) = bridge.into_primitives_and_cache();
+    merge_into_frame(sdk_prims, &sdk_cache, scene_primitives, image_cache);
 }
 
 /// 环境变量 `ZERO_BROWSER_COLOR_SCHEME` 覆盖（`dark` / `light`）。
@@ -835,5 +921,35 @@ mod tests {
                 p[0] == r && p[1] == g && p[2] == b && p[3] == a
             })
             .count()
+    }
+}
+
+// ── DC-14 SDK chrome 接线测试（feature `sdk-chrome`）─────────────────────────────
+#[cfg(all(test, feature = "sdk-chrome"))]
+mod sdk_chrome_tests {
+    use super::*;
+    use zero_browser_shell::BrowserShell;
+    use zero_render_foundation::image_cache::ImageCache;
+    use zero_render_foundation::primitive::RenderPrimitives;
+
+    #[test]
+    fn compose_overlay_merges_sdk_chrome_into_scene() {
+        // 真实 BrowserShell（含 URL tab）→ compose_sdk_chrome_overlay 把 SDK chrome fills
+        // 并入空 scene_primitives；文本 image（系统字体可用时）键经帧 image_cache 解析。
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        let mut scene = RenderPrimitives::default();
+        let mut image_cache = ImageCache::new(64, 16 * 1024 * 1024);
+
+        compose_sdk_chrome_overlay(&shell, 1280, 800, &mut scene, Some(&mut image_cache));
+
+        assert!(!scene.fills.is_empty(), "SDK chrome fills merged into scene");
+        // SDK chrome 文本 image（系统字体可用时）键全部可在帧 image_cache 解析。
+        for img in &scene.images {
+            assert!(
+                image_cache.get(&img.image_key).is_some(),
+                "merged SDK chrome image key resolvable in frame cache"
+            );
+        }
     }
 }

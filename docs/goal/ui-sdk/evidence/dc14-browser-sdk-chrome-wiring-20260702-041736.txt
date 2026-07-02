@@ -1,0 +1,44 @@
+DC-14 浏览器 SDK chrome 接线（首个 apps/browser → SDK 宿主 wiring，default-off feature）— 2026-07-02
+
+## 变更
+**首次把 SDK chrome 接入浏览器实际渲染路径**（mission 核心：浏览器迁移为 SDK 首个完整宿主）。
+
+1. apps/browser/Cargo.toml：新增 `sdk-chrome` feature（默认关闭）+ 可选依赖 zero-browser-chrome /
+   zero-text-foundation / zero-ui-adapter-render-foundation / zero-ui-core。
+2. apps/browser/src/app_platform.rs（cfg-gated 到 `sdk-chrome`）：
+   - `sdk_font_backend() -> Arc<FontdueBackend>`：OnceLock 懒构造 + 缓存共享字体后端（经
+     `chrome_ui_primary_font_data` 读系统主字体字节喂 foundation/text FontdueBackend，DC-11 字体共享）。
+   - `compose_sdk_chrome_overlay(shell, width, height, scene_primitives, image_cache)`：经
+     `render_chrome_via_sdk`（shell→model→DesktopBrowserShell→WidgetHost→Scene→bridge）+
+     `into_primitives_and_cache` + `merge_into_frame` 把 SDK chrome fills + 文本 ImagePrimitive
+     （image_key 重映射到帧 cache）合并进帧 `scene_primitives` + `image_cache`。
+   - render_cpu + render_frame（GPU/CPU 两条渲染路径）在 image_cache 装配后、render_full_scene 前，
+     `#[cfg(feature="sdk-chrome")]` 调 compose_sdk_chrome_overlay（grayscale 叠加：与手绘 chrome 并存；
+     替换式迁移需先拆 build_scene 的 chrome/页面内容，follow-up）。
+   - `image_cache` 改 `let mut` + `image_cache.as_deref_mut()` 重借用（compose 用后仍可 move 进
+     render_full_scene）；`#[cfg_attr(not(feature="sdk-chrome"), allow(unused_mut))]` 抑制 feature-off
+     时的 unused_mut。
+3. cfg-gated 测 `compose_overlay_merges_sdk_chrome_into_scene`：真实 BrowserShell（含 URL tab）→
+   compose → scene fills 非空 + image 键全可在帧 image_cache 解析。
+
+## 设计
+- **grayscale 叠加**（非替换）：build_scene 当前把手绘 chrome 与页面内容混在同一 fills/glyphs 缓冲，
+  难分离。故 feature-on 时 SDK chrome 叠加在手绘 chrome 之上（验证用）；替换式需先重构 build_scene
+  分离 chrome/页面内容。默认关闭 → 手绘 chrome 路径逐位不变。
+- 字体共享（非栈替换）：sdk_font_backend 经 chrome_ui_primary_font_data 读同一系统字体喂
+  FontdueBackend，**不触碰 render-foundation 字体栈** → welcome.html 页面渲染不变 → 无 product-smoke 风险。
+- 借用：&self.shell（与 self.tabs 不交字段）+ image_cache 重借用 + scene_primitives 局部 → 编译期 disjoint。
+
+## 验证
+- 默认 build + clippy --all-targets -D warnings：净（feature-off 路径不变）。
+- `--features sdk-chrome` build + clippy --all-targets -D warnings：净。
+- 默认浏览器测试：186 全绿（feature-off 零回归）。
+- `--features sdk-chrome` overlay 测：1 绿（SDK chrome fills 并入 + image 键解析）。
+- cargo fmt --all：净。cargo build --workspace：净。
+
+## 范围与限制
+- 触碰 apps/browser 渲染路径（render_cpu/render_frame），但**默认关闭** → 生产渲染逐位不变（product-smoke
+  渲染页面非 chrome，且 feature-off；本变更不被 product-smoke 覆盖也无回归风险）。
+- **可视验收缺口**：chrome 布局变更（SDK chrome 叠加）须 GUI `cargo run --bin zero-browser --features sdk-chrome`
+  可视确认 SDK chrome 渲染正确（headless 无法验证视觉）。本环境无 GUI/无 lark-cli，留待有显示的会话。
+- 替换式迁移（去掉手绘 chrome）需先拆 build_scene（app_render.rs ~2816 行）的 chrome/页面内容。

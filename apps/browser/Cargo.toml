@@ -14,6 +14,15 @@ path = "src/main.rs"
 [features]
 default = []
 windows-console = []
+# DC-14 浏览器 SDK chrome 接线：开启后 render_cpu/render_frame 经 `render_chrome_via_sdk` +
+# `merge_into_frame` 把 SDK chrome 叠加并入帧（grayscale 验证用，与手绘 chrome 并存；替换式
+# 迁移需先拆分 build_scene 的 chrome/页面内容，follow-up）。默认关闭 → 手绘 chrome 路径不变。
+sdk-chrome = [
+    "dep:zero-browser-chrome",
+    "dep:zero-text-foundation",
+    "dep:zero-ui-adapter-render-foundation",
+    "dep:zero-ui-core",
+]
 
 [dependencies]
 zero-browser-shell = { workspace = true }
@@ -27,6 +36,11 @@ zero-script-sandbox = { workspace = true }
 zero-net = { workspace = true }
 zero-security = { workspace = true }
 zero-storage = { workspace = true }
+# DC-14 SDK chrome 接线（feature `sdk-chrome`，默认关闭）。
+zero-browser-chrome = { workspace = true, optional = true }
+zero-text-foundation = { workspace = true, optional = true }
+zero-ui-adapter-render-foundation = { workspace = true, optional = true }
+zero-ui-core = { workspace = true, optional = true }
 winit = { workspace = true }
 softbuffer = { workspace = true }
 tracing = { workspace = true }
