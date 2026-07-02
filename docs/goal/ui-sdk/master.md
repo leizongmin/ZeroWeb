@@ -195,3 +195,4 @@
 4. **DC-13 13 域 flesh-out**：当前 animation/gestures/navigation/overlay/collections/commands/forms/assets/platform/restoration/testing/devtools/design-system 多为 skeleton + 最小单测；逐域推进到接口可用 + 浏览器所需最小子集（§8.4.1B 矩阵）。SDK-only 为主。
 5. **host 布局继续增强（可选）**：flex 已落地；后续可加 cross-axis 对齐（Alignment prop）、flex basis、min/max 约束等，随 chrome 迁移真实排版需求驱动。SDK-only。
 6. 跟踪项：本机 `make test` 受 script-sandbox debug-test V8 链接阻塞（环境性）；render-foundation 字体栈统一前 welcome.html 渲染走旧路径，未受本轮影响。
+7. **工作流注意（git）**：`ui-sdk` 是已发布的长期分支，远端历史**未** rebase 到最新 main（R918 reftest shim 等姊妹目标提交不在本分支）。后续轮次**不要** `git rebase origin/main` 全量重写本分支（会改写所有 commit hash → push 被拒 → 需 force-push 重写已发布历史）。保持增量 fast-forward push；如确需 main 同步，用 merge 或 `--force-with-lease` 并在 archive 记录。
