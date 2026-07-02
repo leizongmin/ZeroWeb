@@ -365,7 +365,12 @@ impl FontLoader {
         })
     }
 
-    /// 在主字体及回退链中渲染 glyph，返回实际使用的字体 ID
+    /// 在主字体及回退链中渲染 glyph，返回实际使用的字体 ID。
+    ///
+    /// 经 [`rasterize_glyph_shared`]（DC-11 字体栈统一）光栅——设置了共享后端时，
+    /// 生产渲染路径（CPU `render_cpu` / GPU 字体管线）把 glyph 光栅委托给共享
+    /// [`FontdueBackend`]，使 render-foundation 与 UI SDK / zero-webview 共享同一字体栈。
+    /// 未设置共享后端时 [`rasterize_glyph_shared`] 回退到 [`rasterize_glyph`]（行为等价）。
     pub fn rasterize_glyph_with_fallback(
         &self,
         primary_id: u32,
@@ -393,7 +398,7 @@ impl FontLoader {
             if !code_point.is_whitespace() && !font.has_glyph(code_point) {
                 continue;
             }
-            let bitmap = self.rasterize_glyph(font_id, code_point, size)?;
+            let bitmap = self.rasterize_glyph_shared(font_id, code_point, size)?;
             if Self::glyph_has_coverage(code_point, &bitmap) {
                 return Ok((font_id, bitmap));
             }
@@ -1579,6 +1584,43 @@ mod tests {
         // FontLoader ID → 共享后端 FontId 映射应存在
         let ft_id = loader.shared_id_of(rf_id).expect("should have shared id mapping");
         assert_eq!(ft_id, FtFontId(0), "first loaded font should get FontId(0)");
+    }
+
+    /// DC-11 part-1：`rasterize_glyph_with_fallback` 经 `rasterize_glyph_shared` 路径（生产渲染
+    /// 接线）——设置共享后端前后，glyph 光栅化结果**逐位一致**（共享路径不改变渲染输出，
+    /// 是默认路径切换的安全前提）。同时验证字体已同步到共享后端（非 Ahem 字体将经此委托）。
+    #[test]
+    fn dc11_rasterize_with_fallback_shared_path_parity() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        // 无共享后端：rasterize_glyph_with_fallback 走直接 fontdue 路径。
+        let mut loader_plain = FontLoader::new();
+        let id_plain = loader_plain.load_font(ahem_data).expect("load_font Ahem");
+        let (_, bitmap_plain) = loader_plain
+            .rasterize_glyph_with_fallback(id_plain, 'A', 16.0)
+            .expect("plain fallback rasterizes 'A'");
+
+        // 有共享后端：rasterize_glyph_with_fallback 经 rasterize_glyph_shared。
+        let shared = Arc::new(Mutex::new(FontdueBackend::new()));
+        let mut loader_shared = FontLoader::new();
+        let id_shared = loader_shared.load_font(ahem_data).expect("load_font Ahem");
+        loader_shared.set_shared_backend(shared);
+        // 字体已同步到共享后端（非 Ahem 字体将经此映射委托光栅）。
+        assert!(
+            loader_shared.shared_id_of(id_shared).is_some(),
+            "font synced to shared backend"
+        );
+        let (_, bitmap_shared) = loader_shared
+            .rasterize_glyph_with_fallback(id_shared, 'A', 16.0)
+            .expect("shared fallback rasterizes 'A'");
+
+        // 逐位一致：共享路径不改变 fallback 光栅化输出（默认路径切换的安全前提）。
+        assert_eq!(bitmap_plain.width, bitmap_shared.width);
+        assert_eq!(bitmap_plain.height, bitmap_shared.height);
+        assert_eq!(bitmap_plain.x_offset, bitmap_shared.x_offset);
+        assert_eq!(bitmap_plain.y_offset, bitmap_shared.y_offset);
+        assert_eq!(bitmap_plain.advance, bitmap_shared.advance);
+        assert_eq!(bitmap_plain.data, bitmap_shared.data);
     }
 
     /// load_font 在共享后端已设置时自动同步新加载字体。
