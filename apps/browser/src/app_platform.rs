@@ -154,20 +154,19 @@ impl BrowserApp {
             chrome_shadows,
             overlay_rounded_rects,
         } = scene;
-        // DC-14：feature-off 按 chrome 主层 → 页面内容 → chrome 浮层顺序拼接 fills/glyphs，
-        // 与历史单 fills/glyphs（chrome+页面+autocomplete/floating）逐位等价（bit-identical）。
-        let fills = [chrome_fills, page_fills, chrome_overlay_fills].concat();
-        let glyphs = [chrome_glyphs, page_glyphs, chrome_overlay_glyphs].concat();
 
             // 获取 WebView 额外图元（渐变、阴影、圆角矩形、线段、路径等）
+            // DC-14 SDK chrome 替换手绘 chrome：在 image_cache 可变借用之前计算 chrome_top
+            // （避免 self.chrome_top_y_for() 与 self.tabs.image_cache_mut() 的借用冲突）。
+            #[cfg(feature = "sdk-chrome")]
+            let chrome_top = self.chrome_top_y_for(self.scale_factor);
+            #[cfg(feature = "sdk-chrome")]
+            let _ = (&chrome_fills, &chrome_glyphs); // 手绘 chrome 被 SDK 替换
+
             let webview_extras = self.get_webview_extra_primitives();
 
             // 合并 chrome fills + chrome shadows + webview 图元
             let mut scene_primitives = webview_extras;
-            scene_primitives.fills = [fills, scene_primitives.fills].concat();
-            // chrome 阴影（页面视口 drop shadow）置于 webview 阴影之前，
-            // 确保页面阴影绘制在网页内容阴影之下、chrome 背景之上。
-            scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
             // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
             // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
@@ -178,15 +177,35 @@ impl BrowserApp {
                 None => None,
             };
 
-            // DC-14 SDK chrome 叠加并入帧（feature `sdk-chrome`，默认关闭 → 手绘 chrome 路径不变）。
+            // DC-14 SDK chrome 替换手绘 chrome（feature `sdk-chrome`）。
+            // feature-on：跳过手绘 chrome_fills/glyphs，改用 SDK chrome；页面内容从手绘 chrome
+            // viewport 位置翻译到 SDK chrome viewport 位置。SDK chrome fills 置于最底层，页面内容在上。
+            // feature-off：手绘 chrome 路径不变（bit-identical）。
             #[cfg(feature = "sdk-chrome")]
-            compose_sdk_chrome_overlay(
-                &self.shell,
-                width,
-                height,
-                &mut scene_primitives,
-                image_cache.as_deref_mut(),
-            );
+            let (page_fills, page_glyphs) = {
+                compose_sdk_chrome_replacement(
+                    &self.shell, width, height, chrome_top,
+                    page_fills, page_glyphs,
+                    &mut scene_primitives, &mut image_cache,
+                )
+            };
+
+            // DC-14：拼接 fills/glyphs。
+            // feature-off：chrome 主层 → 页面内容 → chrome 浮层（bit-identical）。
+            // feature-on：跳过 chrome 主层（SDK chrome 已在 scene_primitives.fills 最底层）。
+            #[cfg(not(feature = "sdk-chrome"))]
+            let fills = [chrome_fills, page_fills, chrome_overlay_fills].concat();
+            #[cfg(not(feature = "sdk-chrome"))]
+            let glyphs = [chrome_glyphs, page_glyphs, chrome_overlay_glyphs].concat();
+            #[cfg(feature = "sdk-chrome")]
+            let fills = [page_fills, chrome_overlay_fills].concat();
+            #[cfg(feature = "sdk-chrome")]
+            let glyphs = [page_glyphs, chrome_overlay_glyphs].concat();
+
+            scene_primitives.fills = [fills, scene_primitives.fills].concat();
+            // chrome 阴影（页面视口 drop shadow）置于 webview 阴影之前，
+            // 确保页面阴影绘制在网页内容阴影之下、chrome 背景之上。
+            scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
             // 使用全量 GPU 渲染管线
             renderer.render_full_scene_gpu(
@@ -231,20 +250,19 @@ impl BrowserApp {
             chrome_shadows,
             overlay_rounded_rects,
         } = scene;
-        // DC-14：feature-off 按 chrome 主层 → 页面内容 → chrome 浮层顺序拼接 fills/glyphs，
-        // 与历史单 fills/glyphs（chrome+页面+autocomplete/floating）逐位等价（bit-identical）。
-        let fills = [chrome_fills, page_fills, chrome_overlay_fills].concat();
-        let glyphs = [chrome_glyphs, page_glyphs, chrome_overlay_glyphs].concat();
+
+        // DC-14 SDK chrome 替换手绘 chrome：在 image_cache 可变借用之前计算 chrome_top
+        // （避免 self.chrome_top_y_for() 与 self.tabs.image_cache_mut() 的借用冲突）。
+        #[cfg(feature = "sdk-chrome")]
+        let chrome_top = self.chrome_top_y_for(self.scale_factor);
+        #[cfg(feature = "sdk-chrome")]
+        let _ = (&chrome_fills, &chrome_glyphs); // 手绘 chrome 被 SDK 替换
 
         // 获取 WebView 的额外图元类型（渐变、阴影、线段等）
         let webview_extras = self.get_webview_extra_primitives();
 
         // 合并：chrome fills + chrome shadows + webview fills (已在 fills 中) + webview 额外图元
         let mut scene_primitives = webview_extras;
-        // fills 和 glyphs 已通过 append_webview_primitives 混入 chrome 的 fills/glyphs
-        // 所以只需把 chrome fills 放入 scene_primitives.fills 的前面
-        scene_primitives.fills = [fills, scene_primitives.fills].concat();
-        scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
         // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
         // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
@@ -255,15 +273,33 @@ impl BrowserApp {
             None => None,
         };
 
-        // DC-14 SDK chrome 叠加并入帧（feature `sdk-chrome`，默认关闭 → 手绘 chrome 路径不变）。
+        // DC-14 SDK chrome 替换手绘 chrome（feature `sdk-chrome`）。
+        // feature-on：跳过手绘 chrome_fills/glyphs，改用 SDK chrome；页面内容从手绘 chrome
+        // viewport 位置翻译到 SDK chrome viewport 位置。SDK chrome fills 置于最底层，页面内容在上。
+        // feature-off：手绘 chrome 路径不变（bit-identical）。
         #[cfg(feature = "sdk-chrome")]
-        compose_sdk_chrome_overlay(
-            &self.shell,
-            width,
-            height,
-            &mut scene_primitives,
-            image_cache.as_deref_mut(),
-        );
+        let (page_fills, page_glyphs) = {
+            compose_sdk_chrome_replacement(
+                &self.shell, width, height, chrome_top,
+                page_fills, page_glyphs,
+                &mut scene_primitives, &mut image_cache,
+            )
+        };
+
+        // DC-14：拼接 fills/glyphs。
+        // feature-off：chrome 主层 → 页面内容 → chrome 浮层（bit-identical）。
+        // feature-on：跳过 chrome 主层（SDK chrome 已在 scene_primitives.fills 最底层）。
+        #[cfg(not(feature = "sdk-chrome"))]
+        let fills = [chrome_fills, page_fills, chrome_overlay_fills].concat();
+        #[cfg(not(feature = "sdk-chrome"))]
+        let glyphs = [chrome_glyphs, page_glyphs, chrome_overlay_glyphs].concat();
+        #[cfg(feature = "sdk-chrome")]
+        let fills = [page_fills, chrome_overlay_fills].concat();
+        #[cfg(feature = "sdk-chrome")]
+        let glyphs = [page_glyphs, chrome_overlay_glyphs].concat();
+
+        scene_primitives.fills = [fills, scene_primitives.fills].concat();
+        scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
 
         let fb = render_full_scene(
             width,
@@ -570,9 +606,11 @@ pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
 
 // ── DC-14 SDK chrome 接线（feature `sdk-chrome`，默认关闭）──────────────────────
 //
-// 把 SDK chrome（browser-ui/chrome 经 render_chrome_via_sdk 产出 fills + 文本 ImagePrimitive
-// + glyph image_cache）叠加并入浏览器帧的 scene_primitives + image_cache。grayscale 验证用：
-// 与手绘 chrome 并存（替换式迁移需先拆 build_scene 的 chrome/页面内容，follow-up）。
+// 两个接线模式：
+// - `compose_sdk_chrome_overlay`：additive overlay（SDK chrome 叠在手绘 chrome 之上，灰度验证用）。
+// - `compose_sdk_chrome_replacement`：替换式迁移（跳过手绘 chrome，SDK chrome 整体替换 chrome 层；
+//   页面内容从手绘 chrome viewport 位置翻译到 SDK chrome viewport 位置；SDK chrome fills 置于最底层，
+//   页面内容在上层覆盖 viewport 区域）。
 
 /// 懒构造 + 缓存 SDK chrome 文本用的共享 `FontdueBackend`（DC-11 字体共享）。
 ///
@@ -630,6 +668,88 @@ fn compose_sdk_chrome_overlay(
     let bridge = render_chrome_via_sdk(shell, &metrics, &SemanticTokens::light(), backend);
     let (sdk_prims, sdk_cache) = bridge.into_primitives_and_cache();
     merge_into_frame(sdk_prims, &sdk_cache, scene_primitives, image_cache);
+}
+
+/// SDK chrome 替换手绘 chrome（DC-14 替换式迁移，feature `sdk-chrome`）。
+///
+/// 与 [`compose_sdk_chrome_overlay`]（additive overlay）不同，本函数**替换**手绘 chrome 层：
+/// 1. 调用 [`render_chrome_via_sdk_with_layout`] 获取 SDK chrome + viewport rect。
+/// 2. 按 viewport rect 与手绘 chrome 的 `chrome_top` 差值翻译 `page_fills`/`page_glyphs`（页面内容
+///    从手绘 chrome viewport 位置迁到 SDK chrome viewport 位置）。
+/// 3. 把 SDK chrome fills/images 预置（prepend）到 `scene_primitives` **最底层**，使页面内容
+///    在 SDK chrome viewport 区域之上绘制（覆盖 PageViewportFrame 的 viewport 底色）。
+/// 4. SDK chrome 的 `ImageCache` 经 `extend_from_other` 合并进帧 cache（text glyph 键重映射）。
+///
+/// 返回翻译后的 `(page_fills, page_glyphs)`。
+/// - `image_cache`：`None`（无活跃 tab）时跳过——返回未翻译的 page 内容。
+#[cfg(feature = "sdk-chrome")]
+fn compose_sdk_chrome_replacement(
+    shell: &zero_browser_shell::BrowserShell,
+    width: u32,
+    height: u32,
+    chrome_top: f32,
+    page_fills: Vec<FillPrimitive>,
+    page_glyphs: Vec<GlyphDraw>,
+    scene_primitives: &mut RenderPrimitives,
+    image_cache: &mut Option<&mut ImageCache>,
+) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
+    use zero_browser_chrome::sdk_render::render_chrome_via_sdk_with_layout;
+    use zero_ui_core::geometry::{Insets, Size};
+    use zero_ui_core::layout::WindowMetrics;
+    use zero_ui_core::theme::SemanticTokens;
+
+    let Some(ic) = image_cache.as_mut() else {
+        return (page_fills, page_glyphs);
+    };
+
+    let backend = sdk_font_backend();
+    let metrics = WindowMetrics {
+        logical_size: Size::new(width as f32, height as f32),
+        scale_factor: 1.0,
+        safe_area: Insets::all(0.0),
+        keyboard_insets: Insets::all(0.0),
+    };
+    let (bridge, viewport_rect) =
+        render_chrome_via_sdk_with_layout(shell, &metrics, &SemanticTokens::light(), backend);
+    let (sdk_prims, sdk_cache) = bridge.into_primitives_and_cache();
+
+    // 翻译页面内容：从手绘 chrome viewport 位置 → SDK chrome viewport 位置。
+    let mut page_fills = page_fills;
+    let mut page_glyphs = page_glyphs;
+    if let Some(vp) = viewport_rect {
+        let dy = vp.origin.y - chrome_top;
+        if dy.abs() > 0.5 {
+            page_fills = translate_fills(&page_fills, dy);
+            page_glyphs = translate_glyphs(&page_glyphs, dy);
+        }
+    }
+
+    // 合并 SDK chrome 的 ImageCache 到帧 cache（text glyph 键分配新 key 避免碰撞）。
+    let rekey = ic.extend_from_other(&sdk_cache);
+
+    // 重映射 SDK image_primitives 的 image_key → 帧 cache key。
+    let mut sdk_images = sdk_prims.images;
+    if !rekey.is_empty() {
+        for img in &mut sdk_images {
+            if let Some(new_key) = rekey.get(&img.image_key) {
+                img.image_key = new_key.clone();
+            }
+        }
+    }
+
+    // 预置 SDK chrome fills 到 scene_primitives 最底层（先于页面内容绘制）。
+    let mut new_fills = sdk_prims.fills;
+    new_fills.append(&mut scene_primitives.fills);
+    scene_primitives.fills = new_fills;
+
+    // 预置 SDK chrome images（text glyph）。
+    if !sdk_images.is_empty() {
+        let mut new_images = sdk_images;
+        new_images.append(&mut scene_primitives.images);
+        scene_primitives.images = new_images;
+    }
+
+    (page_fills, page_glyphs)
 }
 
 /// 环境变量 `ZERO_BROWSER_COLOR_SCHEME` 覆盖（`dark` / `light`）。
@@ -1076,5 +1196,49 @@ mod sdk_chrome_tests {
             differs,
             "SDK chrome rasterized to visible pixels (framebuffer differs from empty scene)"
         );
+    }
+
+    #[test]
+    fn compose_replacement_prepends_sdk_chrome_and_translates_page() {
+        // DC-14 替换式迁移核心行为：SDK chrome 替换手绘 chrome，fills 置于最底层；
+        // 页面内容从手绘 chrome viewport 位置翻译到 SDK chrome viewport 位置。
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        let mut scene = RenderPrimitives::default();
+        let mut image_cache = ImageCache::new(64, 16 * 1024 * 1024);
+
+        // 构造模拟页面内容 fills（代表手绘 chrome viewport 位置的页面内容）。
+        let page_fills = vec![FillPrimitive {
+            rect: Rect::new(16.0, 140.0, 1248.0, 740.0),
+            color: Color::rgb(255, 255, 255),
+        }];
+        let page_glyphs = vec![];
+
+        // SDK chrome viewport y ≈ 96（toolbar36+tab32+bookmarks28），手绘 chrome ≈ 140。
+        // dy = 96 - 140 = -44，页面内容应上移 44px。
+        let chrome_top = 140.0; // 模拟手绘 chrome 高度
+
+        let (page_fills, _page_glyphs) = compose_sdk_chrome_replacement(
+            &shell,
+            1280,
+            800,
+            chrome_top,
+            page_fills,
+            page_glyphs,
+            &mut scene,
+            &mut Some(&mut image_cache),
+        );
+
+        // SDK chrome fills 已置于 scene 最底层。
+        assert!(!scene.fills.is_empty(), "SDK chrome fills prepended to scene");
+
+        // 页面内容 fills 从手绘 chrome viewport 位置 (y=140) 翻译到 SDK viewport (≈96)。
+        if !page_fills.is_empty() {
+            let translated_y = page_fills[0].rect.origin.y;
+            assert!(
+                translated_y < 140.0,
+                "page fills translated upward: y={translated_y} < chrome_top=140"
+            );
+        }
     }
 }

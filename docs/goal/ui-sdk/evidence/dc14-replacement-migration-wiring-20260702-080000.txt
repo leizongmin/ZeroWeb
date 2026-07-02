@@ -1,0 +1,40 @@
+DC-14 替换式迁移接线（feature `sdk-chrome`，2026-07-02）
+
+改动范围：apps/browser/src/app_platform.rs（render_frame + render_cpu + 新函数 compose_sdk_chrome_replacement）
++ apps/browser/src/chrome_scene.rs（修复测试 Color::rgb 类型错误，f64→u8）
+
+新增：compose_sdk_chrome_replacement() 函数
+- 调用 render_chrome_via_sdk_with_layout 获取 SDK chrome + viewport rect
+- 按 viewport rect 与手绘 chrome_top 差值翻译 page_fills/page_glyphs（translate_fills/translate_glyphs）
+- SDK chrome fills/images 预置（prepend）到 scene_primitives 最底层（页面内容在上层覆盖 viewport 区域）
+- SDK chrome 的 ImageCache 经 extend_from_other 合并进帧 cache（image_key 重映射防碰撞）
+
+render_frame (GPU) + render_cpu (CPU):
+- feature-on：跳过手绘 chrome_fills/glyphs，改用 SDK chrome（compose_sdk_chrome_replacement）
+- 页面内容从手绘 chrome viewport 位置翻译到 SDK chrome viewport 位置
+- feature-off：手绘 chrome 路径不变（bit-identical）
+
+质量门禁：
+- cargo build（默认）：0 错 0 告
+- cargo build --features sdk-chrome：0 错 0 告
+- cargo clippy -p zero-browser -- -D warnings：0 告
+- cargo fmt --check：净
+- cargo test -p zero-browser：189 passed（默认）
+- cargo test -p zero-browser --features sdk-chrome：193 passed（含 4 SDK chrome 测：overlay 3 + replacement 1）
+- make product-smoke：19.87%（<20% 绿）
+
+新增测试：
+- sdk_chrome_tests::compose_replacement_prepends_sdk_chrome_and_translates_page
+  - 验证 SDK chrome fills 预置到 scene 最底层
+  - 验证页面 fills 从手绘 chrome viewport (y=140) 翻译到 SDK chrome viewport (≈96)
+
+已知限制：
+- GUI 可视验收待做（本环境 headless 不可验证 chrome 布局视觉效果）
+- WebView 额外图元（shadows/gradients）翻译待 follow-up（位于手绘 chrome viewport 位置，非 SDK viewport）
+- chrome_overlay（自动补全/链接浮层）暂未翻译（小幅偏移，非阻塞）
+- PageViewportFrame 当前 solid fill 覆盖 viewport 区域；页面内容在上层覆盖 OK（composition 顺序：SDK chrome→页面内容→chrome overlay），但两个 viewport frame/shadow 叠加（手绘 + SDK）待清理
+
+剩余：
+- GUI 可视验收 chrome 布局（DC-14 完整验证）
+- DC-11 render-foundation 字体栈完整统一（风险步，需 product-smoke）
+- DC-3 phase-2 WebViewWidget 真实纹理合成

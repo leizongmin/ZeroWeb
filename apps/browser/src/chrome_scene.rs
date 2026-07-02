@@ -73,7 +73,7 @@ mod chrome_scene_tests {
     fn fill(x: f32, y: f32) -> FillPrimitive {
         FillPrimitive {
             rect: Rect::new(x, y, 1.0, 1.0),
-            color: Color::rgb(0.1, 0.2, 0.3),
+            color: Color::rgb(25, 51, 76),
         }
     }
 
@@ -121,7 +121,7 @@ mod chrome_scene_tests {
             ch: 'A',
             x: 5.0,
             baseline_y: 130.0,
-            color: Color::rgb(0.0, 0.0, 0.0),
+            color: Color::rgb(0, 0, 0),
             font_id: 0,
             font_size: 16.0,
         };
