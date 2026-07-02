@@ -27,9 +27,10 @@
 - DC-1 复核：ui/render 经 foundation/text 仍**零浏览器业务 crate 依赖**（foundation/text 仅纯文本/字体栈 fontdue/rustybuzz/hashbrown/ttf-parser/unicode-*）。**本步 SDK-only，未触碰 render-foundation/浏览器**（无 product-smoke 风险）。
 - **DC-7 批次**：browser-ui/chrome §8.4.1A 实现 6 个领域组件——`PageLoadIndicator`(ProgressIndicator)、`SecurityBadge`(Badge+Tooltip)、`BookmarksBar`(Toolbar)、`BrowserTabStrip`(TabBar)、`FindBar`(TextInputState+StatusBubble)、`AddressBar`(TextInputState+SuggestionList+SecurityBadge)。遵循 props+build+on_activate 模式（由通用 widgets/patterns 组合，输出进 UI scene）；加 zero-ui-patterns 依赖；19 个新测。**SDK-only，未触碰 apps/browser**（无 product-smoke 风险）。
 - **DC-7 收尾（12/12）**：ui/widgets 补 FR-009 首批缺失 widget `IconButton`/`ContextMenu`(并入 menu.rs)/`Toggle`；BrowserAction 加 download actions（OpenDownload/CancelDownload/ShowDownload）；chrome 补 `BrowserMenu`(Menu+ContextMenu)、`PermissionPrompt`(DialogScaffold+Toggle)、`SiteInfoPanel`(Popover+ListView+权限切换)、`DownloadPanel`/`DownloadItemView`(Popover+ListView+ProgressIndicator)。**§8.4.1A 全 12 组件 + FR-009 widget 集合补齐**。
-- 门禁：`cargo build --workspace` + clippy `-D warnings` + fmt 全净；foundation/text 27 + ui/render 10(+3 集成) + ui/testing 4 + ui/widgets 29 + browser-ui/chrome 35 tests 全绿；DC-17 聚合 line 94.28% / function 94.92% / region 94.27%（per-crate 全部 ≥85%；新组件/控件 95–100%）。
+- **DC-12**：扩展 `BrowserChromeModel`（tabs/nav/address/security/bookmarks/downloads/permissions/find/page_load，三 shell 共享业务模型）+ `BrowserChromeShell` trait + `DesktopBrowserShell`/`TabletBrowserShell`/`PhoneBrowserShell`（build→WidgetSpec 声明树，layout→ShellLayout safe-area/keyboard 避让）+ `AdaptiveBrowserChrome`（按 ViewportClass/PlatformClass/InputClass 选 shell，§8.4.4A 表）+ 跨 shell 稳定 WidgetId（address_bar/viewport 等，断点切换保留输入状态）。**SDK-only，未触碰 apps/browser**。
+- 门禁：`cargo build --workspace` + clippy `-D warnings` + fmt 全净；foundation/text 27 + ui/render 10(+3 集成) + ui/testing 4 + ui/widgets 29 + browser-ui/chrome 45 tests 全绿；DC-17 聚合 line 94.38% / function 94.88% / region 94.35%（per-crate 全部 ≥85%；shell 94%、chrome_model 100%）。
 
-**M2 剩余**：①统一 render-foundation 现有 font 栈到 foundation/text（物理迁移/复用，**触碰渲染后端需 product-smoke**，使 zero-webview 也走 foundation/text，DC-11 完整闭环）；②chrome 组件 paint → scene snapshot（widget paint 管线接通后，DC-7 完整验收）+ chrome 组件 → `apps/browser` 灰度接线；③`BrowserChromeModel`+`BrowserAction` + desktop/tablet/phone shell（DC-12）；④apps/browser 逐组件灰度迁移（DC-14）；⑤render-foundation 实现 `RenderBackend` trait（TBD-2 后端侧，product-smoke）。
+**M2 剩余**：①统一 render-foundation 现有 font 栈到 foundation/text（物理迁移/复用，**触碰渲染后端需 product-smoke**，使 zero-webview 也走 foundation/text，DC-11 完整闭环）；②chrome 组件 paint → scene snapshot（widget paint 管线接通后，DC-7 完整验收）+ chrome 组件 → `apps/browser` 灰度接线；③apps/browser 逐组件灰度迁移（DC-14）；④render-foundation 实现 `RenderBackend` trait（TBD-2 后端侧，product-smoke）；⑤移动端运行时（M4，DC-15：真实 Phone/Tablet shell 渲染 + gesture/软键盘/safe area 适配）。
 
 ## Done Criteria 进度
 
@@ -46,12 +47,12 @@
 | DC-9 | 局部失效刷新 | 🟡 skeleton（M1） | ui/core::invalidation needs_layout/paint 区分单测在 Wave 1 |
 | DC-10 | 国际化资源与 message id | 🟡 skeleton（M1） | ui/i18n IF-007 接口在 Wave 2 |
 | DC-11 | 共享文本/字体基础层 | 🟡 ui/render 已接入（M2） | foundation/text 真实后端（FontdueBackend）+ ui/render `RenderPrimitive::TextBlob`/`RenderBackend`/`paint_scene` 已接入（phase 1+2）；render-foundation 字体栈统一到 foundation/text + zero-webview 接入待续（需 product-smoke） |
-| DC-12 | 响应式/自适应 + 移动 chrome | ⬜ M2/M4 | WindowMetrics/ViewportClass 在 ui/core::layout（Wave 1）；shell 在 M2/M4 |
+| DC-12 | 响应式/自适应 + 移动 chrome | 🟡 shell 已立（M2） | WindowMetrics/ViewportClass/PlatformClass/InputClass/AdaptiveBranch 在 ui/core::layout；BrowserChromeModel + BrowserChromeShell + Desktop/Tablet/Phone shell + AdaptiveBrowserChrome + ShellLayout(safe-area/keyboard 避让) + 跨 shell 稳定 WidgetId 已落地；剩余：移动端真实运行时（M4，DC-15） |
 | DC-13 | 完整应用级 UI 能力（13 域） | 🟡 skeleton（M1） | 13 域接口 + 最小单测在 Wave 3；浏览器接入在 M2-M4 |
 | DC-14 | 浏览器迁移完成 + 零退化 | ⬜ M2-M4 | 浏览器运行时本轮不触碰 |
 | DC-15 | 移动端运行时 | ⬜ M4 | — |
 | DC-16 | 测试与质量不可退让 | 🟡 守门中 | 新 crate scoped test 全绿；详见 Testing & Quality Gates |
-| DC-17 | Coverage 量化 | 🟡 持续推进（M1 阶段达标） | 聚合 line 94.28% / function 94.92% / region 94.27%（≥85%）；per-crate **全部 ≥85%**（chrome 12 组件 + IconButton/Toggle 等新控件 95–100%、foundation/text ~96%） |
+| DC-17 | Coverage 量化 | 🟡 持续推进（M1 阶段达标） | 聚合 line 94.38% / function 94.88% / region 94.35%（≥85%）；per-crate **全部 ≥85%**（chrome shell 94%/chrome_model 100%、12 组件 + IconButton/Toggle 等控件 95–100%、foundation/text ~96%） |
 | DC-18 | 证据持久化与文档自洽 | 🟡 守门中 | evidence/ 持续落盘；本表与 Latest Evidence 自洽 |
 
 图例：⬜ 未开始 / 🟡 进行中或 skeleton / ✅ 完成。
@@ -90,18 +91,18 @@
 ## Coverage 基线
 
 - 全仓 floor（来自 `rendering-compat` 基线）：line 95.46% / function 96.94% / region 94.88%。本目标不得显著下降。
-- **`ui/*` + `foundation/text` + `browser-ui/chrome` DC-17 当前（2026-07-01，M2 DC-7 收尾 12/12 + FR-009 widget 补齐后）**：
-  - 聚合：**line 94.28% / function 94.92% / region 94.27%**（4719 行，超 85% 目标）。
-  - 演进（同口径）：M1 基线 89.89% → M1 per-crate 抬升 93.00% → M2 foundation/text 真实后端 93.66% → M2 ui/render 接入 93.40% → M2 chrome §8.4.1A 8 组件 93.88% → M2 chrome 12/12 + widget 补齐 94.28%。
-  - 当前证据：`evidence/coverage-20260701-031400.txt`。
+- **`ui/*` + `foundation/text` + `browser-ui/chrome` DC-17 当前（2026-07-01，M2 DC-12 shell 落地后）**：
+  - 聚合：**line 94.38% / function 94.88% / region 94.35%**（5019 行，超 85% 目标）。
+  - 演进（同口径）：M1 基线 89.89% → M1 per-crate 抬升 93.00% → M2 foundation/text 真实后端 93.66% → M2 ui/render 接入 93.40% → M2 chrome §8.4.1A 8 组件 93.88% → M2 chrome 12/12 + widget 94.28% → M2 DC-12 shell 94.38%。
+  - 当前证据：`evidence/coverage-20260701-032214.txt`。
   - 命令（统一口径）：`cargo llvm-cov -p zero-text-foundation -p zero-ui-* ... -p zero-browser-chrome --summary-only --ignore-filename-regex '[\\/](crates|apps)[\\/]' -- --test-threads=1`（`--ignore-filename-regex` 必须用 `[\\/](crates|apps)[\\/]` 匹配 profdata 绝对路径中的目录分量，`^` 锚定不生效）。口径含 `#[cfg(test)]` 内联模块（与仓库 `check-coverage.sh` 全仓口径一致，趋势可比）。
-- **per-crate line 曲线**（M2 DC-7 收尾后；全部 ≥85%）：
+- **per-crate line 曲线**（M2 DC-12 后；全部 ≥85%）：
 
   | crate | line | 变化 |
   |-------|------|------|
   | ui/assets · ui/collections · ui/forms · ui/platform · ui/commands · ui/overlay · ui/restoration · ui/gestures · ui/dsl | 100% / ~99% | M1 抬升 |
   | foundation/text | ~96% | M2：shaping/text_blob/text_measure 0→100、backend.rs 93 |
-  | browser-ui/chrome | ~99% | M2 DC-7：12 组件全部 95–100%（含本轮 browser_menu/permission_prompt/site_info_panel/download_panel） |
+  | browser-ui/chrome | ~97% | M2：12 组件 95–100% + DC-12 shell.rs 94% / chrome_model.rs 100% |
   | ui/widgets | ~95% | M2 DC-7：补 IconButton/Toggle/ContextMenu（新控件 100%） |
   | ui/render | ~89% | M2：backend.rs（RenderBackend+paint_scene）92、paint_ctx 87、render_node 100 |
   | ui/animation · ui/patterns · ui/devtools · ui/navigation · ui/design-system · ui/i18n · ui/adapters · ui/core | 92–98% | — |
@@ -132,20 +133,20 @@
 - `evidence/coverage-20260701-025355.txt` — **DC-17（M2 DC-11 phase 2：ui/render 接入 foundation/text，2026-07-01）**：聚合 line 93.40% / function 93.87% / region 93.58%；per-crate 全部 ≥85%（ui/render 新增 backend.rs/paint_ctx TextBlob 路径 ~89%）。
 - `evidence/coverage-20260701-030502.txt` — **DC-17（M2 DC-7：browser-ui/chrome §8.4.1A 组件批次，2026-07-01）**：聚合 line 93.88% / function 94.46% / region 93.96%；per-crate 全部 ≥85%（chrome 新 6 组件 96–100%）。+ DC-7 6 组件 component test 锚点（address_bar/find_bar/browser_tab_strip/bookmarks_bar/security_badge/page_load_indicator）。
 - `evidence/coverage-20260701-031400.txt` — **DC-17（M2 DC-7 收尾 12/12 + FR-009 widget 补齐，2026-07-01）**：聚合 line 94.28% / function 94.92% / region 94.27%；per-crate 全部 ≥85%（chrome 12 组件 + IconButton/Toggle/ContextMenu 新控件 95–100%）。
+- `evidence/coverage-20260701-032214.txt` — **DC-17（M2 DC-12：BrowserChromeModel + desktop/tablet/phone shell，2026-07-01）**：聚合 line 94.38% / function 94.88% / region 94.35%；per-crate 全部 ≥85%（chrome shell.rs 94% / chrome_model.rs 100%）。+ DC-12 测试锚点（select_shell §8.4.4A 表 / phone keyboard+safe-area 避让 / 跨 shell 稳定 WidgetId / adaptive 派发）。
 
 **M2 门禁实测（2026-07-01）**：
 - `cargo build --workspace` — Finished（0 错误）。
 - `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
 - `cargo fmt --all --check` — 净（0 diff）。
-- foundation/text 27 + ui/render 10(+3 集成) + ui/testing 4 + ui/widgets 29 + browser-ui/chrome 35 tests 全绿（scoped test-guard）。
-- DC-1 复核：chrome 经 zero-ui-widgets/patterns 仍是允许耦合点；ui/* 通用 crate 不受影响。
-- DC-17 coverage：聚合 94.28%，per-crate 全部 ≥85%。
+- foundation/text 27 + ui/render 10(+3 集成) + ui/testing 4 + ui/widgets 29 + browser-ui/chrome 45 tests 全绿（scoped test-guard）。
+- DC-1 复核：chrome 经 zero-ui-widgets/patterns/core 仍是允许耦合点；ui/* 通用 crate 不受影响。
+- DC-17 coverage：聚合 94.38%，per-crate 全部 ≥85%。
 
 ## Next Steps
 
 1. **render-foundation 字体栈统一到 foundation/text**（DC-11 完整闭环；**触碰渲染后端，需 `make product-smoke`**）：让 `crates/render-foundation/src/font` 复用 foundation/text（或 re-export `FontdueBackend`），使 zero-webview 也走 foundation/text；并让 render-foundation 实现 ui/render 的 `RenderBackend` trait（TBD-2 后端侧）。M2 风险步骤，须 product-smoke 守 welcome.html 不退化。
-2. **`BrowserChromeModel` + `BrowserAction`** desktop/tablet/phone shell 共享合约（DC-12）：把 12 个 chrome 组件编排进 shell 模型，按 WindowMetrics/ViewportClass 选 desktop/tablet/phone 布局。
-3. **chrome 组件 paint → scene snapshot**：通用 widget 的 Widget::paint 管线接通后，把 chrome 组件渲染到 Scene 并 golden snapshot（DC-7 完整验收）。
-4. **apps/browser 逐组件灰度迁移**（shim/feature-flag，DC-14 零退化；涉及渲染/布局变更跑 `make product-smoke`）。
-5. `ui/examples`（counter/form/browser-shell-demo）随 M3 落地（DC-14）。
-6. 跟踪项：本机 `make test` 受 script-sandbox debug-test V8 链接阻塞（环境性）；render-foundation 字体栈统一前 welcome.html 渲染走旧路径，未受本轮影响。
+2. **chrome 组件 paint → scene snapshot**：通用 widget 的 Widget::paint 管线接通后，把 chrome 组件/shell 渲染到 Scene 并 golden snapshot（DC-7 完整验收）。
+3. **apps/browser 逐组件灰度迁移**（shim/feature-flag，DC-14 零退化；涉及渲染/布局变更跑 `make product-smoke`）：把 apps/browser 自绘 chrome 改为消费 BrowserChromeModel + AdaptiveBrowserChrome，逐组件灰度。
+4. `ui/examples`（counter/form/browser-shell-demo）随 M3 落地（DC-14）。
+5. 跟踪项：本机 `make test` 受 script-sandbox debug-test V8 链接阻塞（环境性）；render-foundation 字体栈统一前 welcome.html 渲染走旧路径，未受本轮影响。

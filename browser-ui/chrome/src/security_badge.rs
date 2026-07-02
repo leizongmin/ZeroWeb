@@ -7,9 +7,10 @@ use zero_ui_widgets::badge::{Badge, BadgeTone};
 use zero_ui_widgets::tooltip::Tooltip;
 
 /// 站点安全状态（从 browser-shell navigation/security state 投影）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SecurityState {
     /// HTTPS 有效。
+    #[default]
     Secure,
     /// HTTP（无加密）。
     Insecure,
