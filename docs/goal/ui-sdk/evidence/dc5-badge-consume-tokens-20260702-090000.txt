@@ -1,0 +1,42 @@
+DC-5 Badge 消费 semantic token（tone→token 对）
+日期：2026-07-02
+分支：ui-sdk
+
+## 范围
+闭合 DC-5 widget follow-up「Badge 硬编码色值→消费 SemanticTokens」。上轮建立 theme-in-context
++ Button 迁移；本轮迁移 Badge（独立数据模型 API）。
+
+## 关键发现
+`Badge::color()` 经全仓 grep 确认**仅 badge.rs 自身测试调用**，无生产调用方（chrome
+SecurityBadge::build_badge 构造 Badge 数据模型但不调 .color()）。故 `color(self)->Color` →
+`color(&self, &SemanticTokens)->Color` 的 API 变更**零外部调用方影响**（编译期确认：workspace build 净）。
+
+## 变更（ui/widgets/badge.rs）
+Badge 从 5 色硬编码（含不可访问蓝 0.13,0.58,0.95）改为**全 token 对派生**：
+- `color(&self, tokens) -> Color`（背景）：Neutral→surface、Info→primary、Success→success、Warning→warning、Error→error
+- `text_color(&self, tokens) -> Color`（匹配前景，新增）：Neutral→on_surface、Info→on_primary、Success→on_success、Warning→on_warning、Error→on_error
+
+每个 tone 映射到 contrast lint 已保证 AA 的 token 对 → badge **继承主题可访问性**，零硬编码浏览器色值。
+
+## 测试（ui/widgets 35→36）
+- `tone_to_color_consumes_tokens`（重写）：tone → 对应 token 背景（by construction）；前景配对。
+- **`tone_pairs_pass_wcag_aa`**（新）：遍历 5 tone × light/dark，断言 (text_color, color) 对 ≥ WCAG AA 4.5
+  ——闭合 Badge 可访问性环（消费 token 对后自动 AA）。
+
+## 门禁
+- `cargo build --workspace` — Finished（0 错误；确认无外部 .color() 调用方）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all -- --check` — 净。
+- widgets 36 / patterns 7 / chrome 64 全绿零回归。
+- SDK-only（ui/widgets 未触碰 render-foundation/浏览器）→ 无 product-smoke 风险。
+
+## DC 影响
+- DC-5：Badge 从硬编码改为全 token 对派生，default bg + text 自动 WCAG AA。上轮 follow-up（Badge）闭合。
+  至此 DC-5「组件只消费 semantic token 不硬编码」对已识别的两个 widget（Button + Badge）均成立。
+
+## 未覆盖（诚实声明 + follow-up）
+- 其它 widgets（TextInput/Menu/Toolbar/IconButton 等）若有硬编码色，未本轮覆盖——按需逐个迁移到
+  ctx.tokens / 接收 tokens 参数。Badge 作为数据模型经参数传 tokens（非 PaintCtx，因其非 Widget paint 路径）。
+- chrome SecurityBadge 当前 build_badge 构造 Badge 但未消费其 color/text_color（chrome 自行经 ChromePanel
+  按语义色名 paint）；Badge::color/text_color 供未来通用 Badge paint 控件 / 外部复用方使用。
+- 主题色变更未做 GUI 可视确认（本环境无 GUI）；可访问性由 contrast ratio 数学保证。
