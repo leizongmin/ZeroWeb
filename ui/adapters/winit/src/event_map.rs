@@ -619,12 +619,13 @@ mod tests {
 #[cfg(test)]
 mod adapter_runtime_integration {
     use super::*;
-    use zero_ui_core::action::{ActionId, EventResult};
+    use zero_ui_core::action::{ActionId, ActionPayload, ActionResult, EventResult};
     use zero_ui_core::geometry::{Constraints, Size};
+    use zero_ui_core::layout::WindowMetrics;
     use zero_ui_core::widget::{
         EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget, WidgetId, WidgetSpec,
     };
-    use zero_ui_runtime::{EmittedAction, WidgetHost};
+    use zero_ui_runtime::{EmittedAction, UiApp, WidgetHost};
 
     /// 可聚焦、点击 emit `app.click` 的最小叶子控件（仅供本集成测试）。
     #[derive(Default)]
@@ -708,5 +709,64 @@ mod adapter_runtime_integration {
         );
         let emitted = host.dispatch_event(&ui_event);
         assert!(emitted.is_empty(), "widget 外点击不应 emit，got {emitted:?}");
+    }
+
+    /// 计数 "app.click" 的最小 UiApp（证明 driver → reducer 路径）。
+    struct ClickApp {
+        clicks: u32,
+    }
+
+    impl ClickApp {
+        fn new() -> ClickApp {
+            ClickApp { clicks: 0 }
+        }
+        fn clicks(&self) -> u32 {
+            self.clicks
+        }
+    }
+
+    impl UiApp for ClickApp {
+        fn root_spec(&self) -> WidgetSpec {
+            let mut spec = WidgetSpec::new("ClickBox");
+            spec.id = Some(WidgetId::new("click"));
+            spec
+        }
+        fn dispatch(&mut self, action: &ActionId, _payload: Option<ActionPayload>) -> ActionResult {
+            if action.0.as_str() == "app.click" {
+                self.clicks += 1;
+                ActionResult::Handled
+            } else {
+                ActionResult::UnknownAction(action.clone())
+            }
+        }
+    }
+
+    #[test]
+    fn winit_raw_event_drives_driver_reducer_and_rebuild() {
+        // DC-2 真实 EventLoop::run 的 per-event 契约：winit 原始 MouseInput → event_map 映射 →
+        // WinitDriver.pump_event → host dispatch（ClickBox emit "app.click"）→ app.dispatch reducer
+        // （Handled）→ driver 重建声明树。串联 winit-raw → driver → reducer 这条路径（既有
+        // event_map 测止于 host.dispatch_event；driver 测用合成 UiEvent；本测把二者合一）。
+        let mut app = ClickApp::new();
+        {
+            let mut driver = crate::WinitDriver::new(&mut app, WindowMetrics::desktop());
+            driver.host_mut().register("ClickBox", |_spec| Box::new(ClickBox));
+            driver.begin();
+            // 模拟 winit MouseInput：左键按下在 ClickBox 中心 (50, 20)。
+            let ui_event = map_mouse_input(
+                winit::event::MouseButton::Left,
+                winit::event::ElementState::Pressed,
+                Point::new(50.0, 20.0),
+                Modifiers::NONE,
+            );
+            let out = driver.pump_event(&ui_event);
+            // driver 内部 dispatch_event → ClickBox emit "app.click" → app.dispatch Handled → 重建 spec。
+            assert_eq!(out.emitted_actions, 1, "winit 点击经 driver 派发出 1 action");
+            assert!(out.spec_rebuilt, "Handled → driver 重建声明树");
+            assert!(out.needs_redraw, "重建 → 需要重绘");
+            driver.pump_frame(); // 落盘（按 invalidation 重绘）。
+        }
+        // driver 释放 &mut app 后读最终状态：reducer 被 winit 原始事件经 driver 真正驱动。
+        assert_eq!(app.clicks(), 1, "winit 原始事件经 driver 驱动了应用 reducer");
     }
 }
