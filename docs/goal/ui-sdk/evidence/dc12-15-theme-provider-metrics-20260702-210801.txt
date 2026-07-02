@@ -1,0 +1,49 @@
+# DC-12/DC-15 ThemeProvider 接入 text_scale + density（2026-07-02）
+
+## 缺口（本轮修复）
+
+上轮把 `text_scale` + `density` 加入 `WindowMetrics`（§IF-009）+ `build_theme_with_metrics` 双缩放，
+但 **runtime 主题 API（`ThemeProvider`）未消费它们**——`new`/`set_preference`/`on_system_change` 经
+`ThemeResolver::build_theme`（不含 metrics）构建主题，故 text_scale/density 字段虽存在却**不流入
+运行时主题**。本轮闭合该环。
+
+## 修复（ui/runtime/src/theme_provider.rs）
+
+- `ThemeProvider` 加 `text_scale`/`density` 字段（默认 `1.0`）+ 访问器。
+- 抽出 `build_scaled_theme(id, name, scheme, palette, text_scale, density)`：`build_theme` 后应用
+  `TypographyTokens::scaled(text_scale)` + `SpacingTokens::scaled(density)`（与 `build_theme_with_metrics`
+  等价，但 provider 只持主题相关的两个 metrics 标量，不需完整 `WindowMetrics`）。
+- `new`/`on_system_change`/`set_preference` 改经 `rebuild(scheme)`（应用当前 text_scale/density）。
+  **向后兼容**：默认 1.0 缩放 == 未缩放（`scaled(1.0)` 恒等）→ 既有 2 测逐位不变。
+- 新增 `set_text_scale(scale, system) -> Option<ThemeChanged>` / `set_density(density, system)`：
+  值不变 → None；变化 → `ThemeChanged`（字号/间距变 → `needs_layout` + `needs_paint`）。非正数视为 1.0。
+
+## 验证（可量化）
+
+新增 3 测（ui-runtime 53→56 测全绿）：
+- `text_scale_change_requests_layout_and_scales_typography`：1.0→1.5 → needs_layout+needs_paint +
+  body_size_px = base*1.5；同值 None；非正数→1.0。
+- `density_change_requests_layout_and_scales_spacing`：→2.0 → needs_layout + spacing.unit = base*2 +
+  **typography 不变（与 text_scale 正交）**；同值 None。
+- `scaled_metrics_persist_across_scheme_change`：text_scale/density 在系统 Light→Dark 切换后保留
+  并继续生效（scheme 变只叠加颜色 invalidation，字号/间距不变）。
+
+既有测（`system_scheme_change_emits_paint_only_invalidation` / `no_change_no_event`）零回归。
+
+## 门禁
+
+- `./target/test-guard -- cargo test -p zero-ui-runtime` → **56 passed; 0 failed**。
+- `cargo build --workspace` Finished（0 错误）；`cargo clippy --workspace --all-targets -- -D warnings`
+  0 警告；`cargo fmt --all --check` 净。
+- 改动隔离在 ui/runtime（ThemeProvider 无其它消费方，仅 runtime 内部测试用）→ 不触浏览器渲染路径。
+
+## 风险
+
+**SDK-side + 向后兼容（默认 1.0 缩放恒等）**：不触碰 render-foundation/浏览器 → **无 product-smoke 风险**。
+
+## DC-12/DC-15 现状
+
+text_scale/density 数据链完整闭合：`WindowMetrics`（§IF-009 字段）→ `build_theme_with_metrics`
+（构建期双缩放）→ **`ThemeProvider`（运行时态，本轮）**。宿主持 metrics 变化时调
+`provider.set_text_scale/set_density` 即得 `ThemeChanged`（needs_layout）→ 重布局重绘。
+剩余 = M4 移动 runtime 实际从系统探测 text_scale/density 并驱动 provider。
