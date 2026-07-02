@@ -1,0 +1,61 @@
+DC-13 13 域 flesh-out（第 7-8 域）：ui/gestures + ui/animation
+================================================================
+日期: 2026-07-01
+分支: ui-sdk
+SDK-only（未触碰 render-foundation / apps/browser，无 product-smoke 风险）
+
+## ui/animation（IF-010 AnimationClock + Spring + reduced-motion）
+从 4 测骨架扩展（spec IF-010 `AnimationClock` / §8.8 fake clock/tween/spring 测 /
+§8.4.1B sheet fling + reduced motion）。
+
+- clock.rs：新增 **`AnimationClock` trait**（IF-010：`now() -> Duration` + `request_frame()`），
+  FakeClock 实现之（now 返回 Duration；request_frame 累计帧请求计数，可断言动画是否要下一帧）。
+  原 `Clock`（now_ms）保留供 Tween/Spring 采样。
+- spring.rs（新）：**`Spring`** 弹簧物理（质量-弹簧-阻尼，半隐式 Euler + 子步长拆分保证大 dt 稳定）；
+  预设 `smooth`（临界阻尼无过冲）/`snappy`/`bouncy`（欠阻尼过冲）/`with_params`；
+  `launch(pos, vel)`（fling 接管）/`retarget`（保速度）/`step(dt_ms)`/`is_settled(eps)`。
+- motion.rs（新）：**`MotionPreference{Full,Reduced}`** + `sample_tween`/`settle_spring`/
+  `should_animate`（reduced-motion 直接到终态，§8.4.1B）。
+- 保留 Curve / Tween 不变。
+
+测试：17 测全绿（clock 2 + curve 2 + tween 1 + spring 9 + motion 4；原 4 测）。
+Coverage（scoped）：clock 100% / curve 100% / motion 96.77–100% / spring **96.77%** / tween 96.15%。
+
+## ui/gestures（IF-010 GestureRecognizer + arena + tap/pan/pinch/fling）
+从 118 行骨架升级（spec IF-010 `GestureRecognizer` / §8.8 arena tap/drag/pinch/fling 测 /
+§8.4.1B 手势先入 arena 未被 chrome 消费才转发 WebView）。拆为 event/recognition/recognizers/arena 模块。
+
+- event.rs：**`PointerEvent`**（id + phase + position + timestamp_ms；宿主归一化 winit 事件，
+  winit 类型不泄漏）+ `PointerPhase{Down,Move,Up}`。
+- recognition.rs：**`GestureRecognizer` trait**（IF-010：`handle_pointer -> GestureResult` + `cancel`）+
+  `Gesture{Tap,Pan,Pinch,Fling}` + `GestureResult{Pending,Won,Yield}` + `PanPhase{Start,Update,End}`。
+- recognizers.rs：`TapRecognizer`（impl trait；阈值内 release → Tap，大位移 → Yield 让 Pan 赢）+
+  `PanRecognizer`（越 pan_threshold → Pan Start/Update；松手速度超 fling_threshold → Fling）+
+  `PinchRecognizer`（双指距离比 → Pinch{scale,pivot}）。
+- arena.rs：**`GestureArena`** 多识别器仲裁——竞争时首个 Won 胜出、其余 cancel；胜出后独占路由；
+  所有指针抬起复位（下次 Down 重新竞争）。解决 chrome/WebView 手势冲突（§8.4.1B）。
+
+测试：12 测全绿（lib 6：tap/pan/fling/pinch 各路径；arena 6：Tap vs Pan 竞争/Pan 抢先 Tap cancel/
+fling/序列间复位/空 arena/默认 cancel 覆盖；原 3 测）。
+Coverage（scoped）：event 100% / recognition 100% / arena 90.08% / recognizers 88.32% / lib 95.65%。
+
+## 门禁
+  cargo build --workspace             — Finished（0 错误）
+  cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）
+  cargo fmt --all --check             — 净（0 diff）
+  scoped test-guard：zero-ui-animation 17 passed；zero-ui-gestures 12 passed
+
+## DC 关联
+  DC-13（13 域接口）gestures + animation 两域从骨架升级到接口可用；
+  IF-010 GestureRecognizer / AnimationClock trait 落地；
+  §8.4.1B 移动底部 sheet（drag/fling + reduced motion）+ 页面下拉刷新/手势导航（arena 仲裁）+
+  tab overview swipe/drag 行覆盖；
+  §8.8 Gesture arena tap/drag/pinch/fling + Animation fake clock/tween/spring 测覆盖；
+  DC-17 coverage 两域 per-file 全部 ≥85%（spring/tween 小幅补测后 spring 81%→96.77%）。
+
+## DC-13 累计进度（8/13 域 flesh-out）
+  ✅ commands ✅ restoration ✅ navigation ✅ overlay ✅ collections ✅ platform
+  ✅ gestures ✅ animation
+  剩余 5 域仍 skeleton：forms / assets / testing / devtools / design-system
+  （forms 缺 FormState/FieldState dirty/touched；assets 缺 IF-010 AssetProvider + manifest；
+  testing/devtools/design-system 为 snapshot/inspector/风格包骨架）。
