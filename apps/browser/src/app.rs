@@ -2091,6 +2091,14 @@ include!("app_render.rs");
 // 从 app_render.rs 进一步拆分以控制单文件体积
 include!("app_render_geometry.rs");
 
+// WebView 图元消费层（DC-10）：append_webview_primitives + ViewportClip + 视口/圆角裁剪 + 变换
+// 从 app_render.rs 进一步拆分以控制单文件体积
+include!("app_render_primitives.rs");
+
+// 地址栏 UI 渲染（render_address_bar）
+// 从 app_render.rs 进一步拆分以控制单文件体积
+include!("app_render_address.rs");
+
 // 平台相关独立函数（is_wayland、字体加载、颜色方案检测等）
 // 拆分到独立文件以控制 app.rs 体积
 include!("app_platform.rs");
