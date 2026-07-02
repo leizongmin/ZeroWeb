@@ -92,6 +92,23 @@ impl RenderFoundationBackend {
         }
     }
 
+    /// 同 [`Self::new_with_text`]，但视口以 ui/core [`Size`](zero_ui_core::geometry::Size) 给出
+    ///（原点 (0,0)），免去调用方构造 render-foundation Rect。便于从 [`WindowMetrics`] 等逻辑尺寸直接构造。
+    ///
+    /// [`WindowMetrics`]: zero_ui_core::layout::WindowMetrics
+    pub fn new_with_text_size(viewport_size: zero_ui_core::geometry::Size, text: Arc<FontdueBackend>) -> Self {
+        Self::new_with_text(
+            RfRect {
+                origin: RfPoint { x: 0.0, y: 0.0 },
+                size: RfSize {
+                    width: viewport_size.width,
+                    height: viewport_size.height,
+                },
+            },
+            text,
+        )
+    }
+
     /// 取出累积的 [`RenderPrimitives`]（消费后端）。
     pub fn into_primitives(self) -> RenderPrimitives {
         self.primitives

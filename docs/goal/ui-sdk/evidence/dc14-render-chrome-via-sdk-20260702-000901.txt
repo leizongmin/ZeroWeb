@@ -1,0 +1,54 @@
+DC-14 render_chrome_via_sdk ready-to-call API — 2026-07-02
+=========================================================
+
+里程碑：M2→DC-14（浏览器接线 ready-to-call）。SDK-only：browser-ui/chrome 新增封装 + bridge 便利构造，
+不触 apps/browser / 既有渲染路径 → 无 product-smoke 风险。
+
+动机
+----
+- 上轮全链集成测试已证明 SDK chrome 渲染管线端到端正确。
+- 进一步把该管线封装为 apps/browser 的 **ready-to-call 入口**，使浏览器侧接线缩减为
+  「调用本函数 + 合并进帧 + 可视验收」，SDK 管线正确性不再是接线风险。
+
+实现
+----
+**browser-ui/chrome/src/sdk_render.rs**：
+- `render_chrome_via_sdk(shell, metrics, tokens, backend) -> RenderFoundationBackend`：
+  封装完整管线——`BrowserChromeModel::from_shell(shell)` → `DesktopBrowserShell.build` →
+  `WidgetHost`（register_chrome_factories + set_root + layout + paint）→ `Scene` → `paint_scene`
+  → `RenderFoundationBackend`（已绘制）。调用方取出 `into_primitives()` / `into_image_cache()` 合并进帧。
+- `tokens` 驱动 chrome semantic token 消费（DC-5）；`backend: Arc<FontdueBackend>` 满足 DC-11 字体栈共享契约
+ （chrome 文本经 draw_text shape → backend 须已加载字体）。
+
+**ui/adapters/render-foundation/src/lib.rs**：
+- 新增 `RenderFoundationBackend::new_with_text_size(viewport_size: ui/core Size, text)` 便利构造
+ （原点 (0,0)，免调用方构造 rf Rect；从 WindowMetrics.logical_size 直接构造）。
+
+**browser-ui/chrome/Cargo.toml**：deps +zero-ui-adapter-render-foundation + zero-text-foundation
+（chrome→bridge 允许耦合，DC-1；bridge 是 ui/adapters/* 适配器，与既有 ui/adapters/webview 同类）；
+dev-deps +zero-render-foundation（测试断言 RenderPrimitives）。
+
+测试（2 新测，全绿；chrome crate 61→63 测）
+--------------------------------------------
+1. render_chrome_via_sdk_with_real_shell_produces_geometry_and_text — 真实 BrowserShell
+   （new_tab("https://example.com")）→ 渲染 → fills 非空（chrome 背景）+ images 非空（地址栏文本
+   经 draw_text→Ahem shape+raster）。验证 from_shell + 全管线 + 真实 shell 状态。
+2. render_chrome_via_sdk_empty_shell_still_renders_geometry — 空 shell + 无字体后端 → 仍渲染背景几何
+   （文本 no-op），不 panic。
+
+门禁（2026-07-02）
+-----------------
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all --check` — 净。
+- `./target/test-guard -- cargo test -p zero-browser-chrome` — **63 passed; 0 failed**（61→63，+2 sdk_render）。
+- `./target/test-guard -- cargo test -p zero-ui-adapter-render-foundation` — **14 passed; 0 failed**。
+- 纯 chrome/bridge 封装（不触 apps/browser）→ 无 product-smoke 风险。
+
+意义（DC-14）
+------------
+- DC-14 接线 ready-to-call：apps/browser 调用 `render_chrome_via_sdk` 即可取得 SDK chrome 渲染产出
+ （RenderPrimitives + ImageCache），合并进帧替代/并存手绘 chrome。
+- 浏览器侧接线仅剩：①调用本函数；②合并 RenderPrimitives 进帧（merge_primitives 已在 bridge 提供）；
+  ③可视验收（`cargo run --bin zero-browser`，product-smoke 不覆盖 chrome）。
+- DC-1 复核：chrome→ui/adapters/render-foundation + foundation/text（通用基础/ui adapter，非浏览器业务）允许。

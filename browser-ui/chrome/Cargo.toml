@@ -13,5 +13,12 @@ zero-ui-runtime = { workspace = true }
 # §8.4.1A 组件组合通用 patterns（TabBar/SuggestionList/StatusBubble/SearchField）。
 zero-ui-patterns = { workspace = true }
 zero-ui-adapter-webview = { workspace = true }
+# DC-14 render_chrome_via_sdk：SDK chrome 渲染管线桥接（chrome→bridge 允许耦合，DC-1）。
+zero-ui-adapter-render-foundation = { workspace = true }
+zero-text-foundation = { workspace = true }
 zero-browser-shell = { workspace = true }
 compact_str = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+# sdk_render 测试断言 RenderPrimitives（render-foundation 类型）。
+zero-render-foundation = { workspace = true }

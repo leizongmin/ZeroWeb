@@ -5732,6 +5732,9 @@ version = "0.1.0"
 dependencies = [
  "compact_str",
  "zero-browser-shell",
+ "zero-render-foundation",
+ "zero-text-foundation",
+ "zero-ui-adapter-render-foundation",
  "zero-ui-adapter-webview",
  "zero-ui-core",
  "zero-ui-patterns",

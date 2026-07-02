@@ -1,0 +1,98 @@
+//! SDK chrome 渲染管线（spec §8.2 / DC-14 浏览器接线 ready）。
+//!
+//! [`render_chrome_via_sdk`] 封装完整 SDK chrome 渲染管线，把 `zero-browser-shell` 业务状态
+//! 经通用 SDK 抽象（模型 → desktop shell 声明树 → retained WidgetHost → Scene → render-foundation
+//! 桥接）产出 [`RenderFoundationBackend`]（内含 `RenderPrimitives` + `ImageCache`）。
+//!
+//! **这是 apps/browser DC-14 生产接线的 ready-to-call 入口**：浏览器调用本函数取出
+//! `into_primitives()` / `into_image_cache()` 合并进帧（替代/并存手绘 chrome）。浏览器侧接线
+//! 仅剩「合并 + 可视验收」，SDK 管线正确性已由全链集成测试保证（见
+//! `ui/adapters/render-foundation` 的 `full_pipeline_chrome_scene_to_render_primitives`）。
+
+use crate::chrome_model::BrowserChromeModel;
+use crate::render::register_chrome_factories;
+use crate::shell::{BrowserChromeShell, DesktopBrowserShell};
+use std::sync::Arc;
+use zero_text_foundation::FontdueBackend;
+use zero_ui_adapter_render_foundation::RenderFoundationBackend;
+use zero_ui_core::geometry::Constraints;
+use zero_ui_core::layout::WindowMetrics;
+use zero_ui_core::theme::SemanticTokens;
+use zero_ui_render::paint_scene;
+use zero_ui_runtime::WidgetHost;
+
+/// 经完整 SDK 管线渲染 desktop chrome（spec §8.2 / DC-14）。
+///
+/// 管线：`BrowserShell` → [`BrowserChromeModel::from_shell`] → [`DesktopBrowserShell::build`]
+/// → `WidgetHost`（注册 chrome 工厂 → set_root → layout → paint）→ `Scene` →
+/// `paint_scene` → [`RenderFoundationBackend`]。
+///
+/// - `tokens`：主题 semantic token（chrome 组件消费，DC-5）。
+/// - `backend`：共享字体后端（**DC-11 字体栈共享契约**——chrome 文本经 `draw_text` shape，
+///   故 `backend` 须已加载至少一种字体；与 TextBlob 生产者共用同一实例）。
+///
+/// 返回已绘制（painted）的桥接后端；调用方（apps/browser）取出 `into_primitives()` 合并进帧、
+/// `into_image_cache()` 交给渲染器解析 glyph ImageKey。
+pub fn render_chrome_via_sdk(
+    shell: &zero_browser_shell::BrowserShell,
+    metrics: &WindowMetrics,
+    tokens: &SemanticTokens,
+    backend: Arc<FontdueBackend>,
+) -> RenderFoundationBackend {
+    let model = BrowserChromeModel::from_shell(shell);
+    let spec = DesktopBrowserShell.build(&model, metrics);
+    let mut host = WidgetHost::new();
+    register_chrome_factories(&mut host, tokens);
+    host.set_root(&spec);
+    host.layout(Constraints::loose(metrics.logical_size));
+    let scene = host.paint().clone();
+    let mut bridge = RenderFoundationBackend::new_with_text_size(metrics.logical_size, backend);
+    paint_scene(&scene, &mut bridge);
+    bridge
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_ui_core::geometry::{Insets, Size};
+
+    /// WPT 标准字体（每字符 1em 实心方块）。路径相对 crate 根：browser-ui/chrome → ../../../tests。
+    const AHEM: &[u8] = include_bytes!("../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+    fn metrics() -> WindowMetrics {
+        WindowMetrics {
+            logical_size: Size::new(1280.0, 800.0),
+            scale_factor: 1.0,
+            safe_area: Insets::all(0.0),
+            keyboard_insets: Insets::all(0.0),
+        }
+    }
+
+    #[test]
+    fn render_chrome_via_sdk_with_real_shell_produces_geometry_and_text() {
+        // 真实 BrowserShell 状态：导航到带 URL 的页面 → chrome 模型 address_text 非空。
+        let mut shell = zero_browser_shell::BrowserShell::new();
+        shell.new_tab(Some("https://example.com")); // active tab url 非空 → 地址栏文本
+
+        let mut backend = FontdueBackend::new();
+        backend.load_family("Ahem", AHEM).expect("Ahem parses via fontdue");
+        let backend = Arc::new(backend);
+
+        let bridge = render_chrome_via_sdk(&shell, &metrics(), &SemanticTokens::light(), backend);
+        let p = bridge.into_primitives();
+        // chrome 背景（toolbar/viewport 等）→ FillPrimitive 非空（管线几何正确）。
+        assert!(!p.fills.is_empty(), "SDK chrome 管线应产出背景 fills");
+        // 地址栏文本 "https://example.com" 经 draw_text → glyph ImagePrimitive 非空（管线文本正确）。
+        assert!(!p.images.is_empty(), "SDK chrome 管线应产出地址栏文本 ImagePrimitive");
+    }
+
+    #[test]
+    fn render_chrome_via_sdk_empty_shell_still_renders_geometry() {
+        // 空 shell（仅初始空 tab）→ 仍有 chrome 背景几何（toolbar/viewport），文本可能为空。
+        let shell = zero_browser_shell::BrowserShell::new();
+        let backend = Arc::new(FontdueBackend::new()); // 无字体 → 文本 no-op，几何仍渲染
+        let bridge = render_chrome_via_sdk(&shell, &metrics(), &SemanticTokens::dark(), backend);
+        let p = bridge.into_primitives();
+        assert!(!p.fills.is_empty(), "即便无字体，chrome 背景几何仍应渲染");
+    }
+}
