@@ -4,7 +4,7 @@
 
 use crate::render_node::RenderPrimitive;
 use serde::{Deserialize, Serialize};
-use zero_ui_core::geometry::Rect;
+use zero_ui_core::geometry::{Rect, Vec2};
 use zero_ui_core::widget::WidgetId;
 
 /// 单条带 clip 与来源 id 的场景命令。
@@ -33,5 +33,64 @@ impl Scene {
     /// 把另一场景的命令追加进来（overlay/合成用）。
     pub fn extend(&mut self, other: &Scene) {
         self.entries.extend(other.entries.iter().cloned());
+    }
+
+    /// 返回一份所有图元沿向量平移后的场景（clip 也同步平移）。
+    ///
+    /// retained host paint 遍历用：每个 widget 以局部坐标 paint 进自己的 SceneRecorder，
+    /// host 按节点绝对 origin 平移后并入全局 Scene。
+    pub fn translated(&self, offset: Vec2) -> Scene {
+        Scene {
+            entries: self
+                .entries
+                .iter()
+                .map(|e| SceneEntry {
+                    source: e.source.clone(),
+                    clip: e.clip.map(|c| c.translate(offset.x, offset.y)),
+                    primitive: e.primitive.clone().translate(offset),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_ui_core::geometry::Rounding;
+    use zero_ui_core::theme::Color;
+
+    #[test]
+    fn translated_shifts_primitive_rect_and_clip() {
+        // 一个局部坐标的 FillRect(0,0,10,10) + clip(0,0,10,10)，
+        // 平移 (100, 50) 后 rect/clip 都到 (100,50,110,60)，source 不变。
+        let mut scene = Scene::new();
+        scene.push(SceneEntry {
+            source: WidgetId::new("btn"),
+            clip: Some(Rect::from_ltrb(0.0, 0.0, 10.0, 10.0)),
+            primitive: RenderPrimitive::FillRect {
+                rect: Rect::from_ltrb(0.0, 0.0, 10.0, 10.0),
+                color: Color::BLACK,
+                rounding: Rounding::ZERO,
+            },
+        });
+
+        let moved = scene.translated(Vec2::new(100.0, 50.0));
+        assert_eq!(moved.entries.len(), 1);
+        assert_eq!(moved.entries[0].source, WidgetId::new("btn"));
+        assert_eq!(moved.entries[0].clip, Some(Rect::from_ltrb(100.0, 50.0, 110.0, 60.0)));
+        match &moved.entries[0].primitive {
+            RenderPrimitive::FillRect { rect, .. } => {
+                assert_eq!(*rect, Rect::from_ltrb(100.0, 50.0, 110.0, 60.0));
+            }
+            other => panic!("expected FillRect, got {other:?}"),
+        }
+        // 原场景不可变。
+        match &scene.entries[0].primitive {
+            RenderPrimitive::FillRect { rect, .. } => {
+                assert_eq!(*rect, Rect::from_ltrb(0.0, 0.0, 10.0, 10.0));
+            }
+            _ => unreachable!(),
+        }
     }
 }

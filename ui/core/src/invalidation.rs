@@ -40,6 +40,11 @@ impl InvalidationFlags {
     pub fn requires_paint(self) -> bool {
         self.contains(Self::NEEDS_LAYOUT) || self.contains(Self::NEEDS_PAINT)
     }
+
+    /// 清除指定标记位（如 layout 完成后清除 `NEEDS_LAYOUT`，保留 `NEEDS_PAINT` 直到 paint 完成）。
+    pub fn remove(&mut self, flag: InvalidationFlags) {
+        self.0 &= !flag.0;
+    }
 }
 
 impl std::ops::BitOr for InvalidationFlags {

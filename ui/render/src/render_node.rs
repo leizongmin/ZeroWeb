@@ -3,7 +3,7 @@
 //! Render tree 负责 layout 后的几何、绘制、命中、裁剪、合成、a11y；按失效标记增量更新。
 
 use serde::{Deserialize, Serialize};
-use zero_ui_core::geometry::{Rect, Rounding};
+use zero_ui_core::geometry::{Rect, Rounding, Vec2};
 use zero_ui_core::theme::Color;
 use zero_ui_core::widget::WidgetId;
 
@@ -37,6 +37,49 @@ pub enum RenderPrimitive {
         position: zero_ui_core::geometry::Point,
         color: Color,
     },
+}
+
+impl RenderPrimitive {
+    /// 沿向量平移图元的几何（color/text 内容不变）。
+    ///
+    /// retained host 的 paint 遍历用：widget 以局部坐标（原点 = 节点左上角）paint，
+    /// host 收集每节点 Scene 时按节点绝对 origin 平移后并入全局 Scene。
+    pub fn translate(self, offset: Vec2) -> RenderPrimitive {
+        match self {
+            RenderPrimitive::FillRect { rect, color, rounding } => RenderPrimitive::FillRect {
+                rect: rect.translate(offset.x, offset.y),
+                color,
+                rounding,
+            },
+            RenderPrimitive::StrokeRect {
+                rect,
+                color,
+                stroke_width,
+                rounding,
+            } => RenderPrimitive::StrokeRect {
+                rect: rect.translate(offset.x, offset.y),
+                color,
+                stroke_width,
+                rounding,
+            },
+            RenderPrimitive::Text {
+                text,
+                position,
+                size_px,
+                color,
+            } => RenderPrimitive::Text {
+                text,
+                position: position.translate(offset.x, offset.y),
+                size_px,
+                color,
+            },
+            RenderPrimitive::TextBlob { blob, position, color } => RenderPrimitive::TextBlob {
+                blob,
+                position: position.translate(offset.x, offset.y),
+                color,
+            },
+        }
+    }
 }
 
 /// Render tree 节点（spec §8.4.2）。

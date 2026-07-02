@@ -10,6 +10,7 @@
 
 pub mod accessibility;
 pub mod app;
+pub mod host;
 pub mod i18n_provider;
 pub mod ime;
 pub mod platform;
@@ -19,6 +20,7 @@ pub mod tree;
 
 pub use accessibility::AccessibilityTree;
 pub use app::UiApp;
+pub use host::{ContainerKind, EmittedAction, WidgetHost, WidgetRegistry};
 pub use i18n_provider::I18nRuntime;
 pub use ime::ImeController;
 pub use platform::{PlatformRuntime, RuntimeError, UiResult, WindowId};

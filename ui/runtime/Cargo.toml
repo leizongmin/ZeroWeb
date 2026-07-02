@@ -9,5 +9,6 @@ license.workspace = true
 zero-ui-core = { workspace = true }
 zero-ui-render = { workspace = true }
 zero-ui-i18n = { workspace = true }
+compact_str = { workspace = true }
 hashbrown = { workspace = true }
 thiserror = { workspace = true }

@@ -6169,6 +6169,7 @@ dependencies = [
 name = "zero-ui-runtime"
 version = "0.1.0"
 dependencies = [
+ "compact_str",
  "hashbrown 0.15.5",
  "thiserror 2.0.18",
  "zero-ui-core",

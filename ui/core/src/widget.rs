@@ -16,7 +16,7 @@ use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
 /// 稳定组件标识。WidgetSpec 重建时同 `WidgetId` 的组件在 Element tree 中保留状态（光标/选区/焦点）。
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct WidgetId(pub CompactString);
 
 impl WidgetId {
@@ -26,7 +26,7 @@ impl WidgetId {
 }
 
 /// 组件类型名（如 `Button`、`TextInput`、`browser.AddressBar`）。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ComponentType(pub CompactString);
 
 impl ComponentType {

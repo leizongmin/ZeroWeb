@@ -110,6 +110,14 @@ impl Rect {
         p.x >= self.left() && p.x <= self.right() && p.y >= self.top() && p.y <= self.bottom()
     }
 
+    /// 沿向量平移（返回新矩形）。
+    pub fn translate(self, dx: f32, dy: f32) -> Rect {
+        Rect {
+            origin: self.origin.translate(dx, dy),
+            size: self.size,
+        }
+    }
+
     /// 两个矩形的交集；无交集返回 None。
     pub fn intersect(self, other: Rect) -> Option<Rect> {
         let left = self.left().max(other.left());
