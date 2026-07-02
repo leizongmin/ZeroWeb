@@ -1,0 +1,20 @@
+DC-11 render-foundation 字体栈兼容性验证（render-foundation crate，2026-07-02）
+====================================================================
+
+变更：
+- crates/render-foundation/Cargo.toml: zero-text-foundation 加入 dev-dependencies
+- crates/render-foundation/src/font/loader.rs: 新增 dc11_fontdue_shared_backend_consistency 测试
+  - FontLoader + FontdueBackend 加载同一 Ahem 字体
+  - 验证 advance 一致（'A' @8px ≈ 8px）
+  - 验证 raster 尺寸/数据非零（两套后端都产出有效像素）
+
+验证：
+- cargo test -p zero-render-foundation: 515 测全绿（含新测）
+- cargo clippy --workspace --all-targets -- -D warnings: PASS
+- cargo fmt --all --check: PASS
+- product-smoke (release, max-diff=22): 95370/480000 = 19.87% = baseline（dev-dep 零生产影响）
+
+DC-11 字体栈统一可行性验证：
+- render-foundation 内部 fontdue 与 foundation/text FontdueBackend 对同一字体产出一致结果
+- 基础设施就绪（zero-text-foundation 已可作为 render-foundation dev-dep 加载）
+- 剩余：渲染路径实际切换（从 FontLoader 自管 fontdue→委托 FontdueBackend）+ product-smoke 验零退化

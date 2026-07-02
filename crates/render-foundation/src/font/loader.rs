@@ -1290,4 +1290,67 @@ mod tests {
         };
         eprintln!("sum: real={sum_real:.2} est={sum_est:.2} total_err={total_err:+.1}%");
     }
+
+    // ── DC-11 字体栈统一兼容性验证 ───────────────────────────────────────
+    // 验证 render-foundation FontLoader 与 foundation/text FontdueBackend
+    // 加载同一字体后产出一致的 glyph 光栅化结果（DC-11 关键不变量）。
+
+    /// 加载同一 Ahem 字体到两套后端，验证 fontdue 对同一 glyph 产出一致的
+    /// advance width 与 raster 尺寸——证明字体栈统一的可行性。
+    #[test]
+    fn dc11_fontdue_shared_backend_consistency() {
+        use zero_text_foundation::backend::FontdueBackend;
+        use zero_text_foundation::font_request::FontRequest;
+        use zero_text_foundation::text_measure::{TextMeasureInput, TextMeasurer};
+
+        // WPT 标准字体路径（相对 crate 根：crates/render-foundation）。
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        // ── render-foundation FontLoader：加载 + raster ──
+        let mut rf_loader = FontLoader::new();
+        let rf_id = rf_loader.load_font(ahem_data).expect("FontLoader loads Ahem");
+        let rf_raster = rf_loader
+            .rasterize_glyph(rf_id, 'A', 8.0)
+            .expect("FontLoader rasterizes 'A' @8px");
+        let rf_advance = rf_loader.measure_advance(rf_id, 'A', 8.0);
+
+        // ── foundation/text FontdueBackend：加载 + raster ──
+        let mut ft = FontdueBackend::new();
+        let ft_id = ft.load_family("Ahem", ahem_data).expect("FontdueBackend loads Ahem");
+        // 通过 fontdue::Font 拿 'A' 的 glyph index。
+        let glyph_idx: u32 = match rf_loader.get(rf_id) {
+            Some(font) => font.lookup_glyph_index('A') as u32,
+            None => 0,
+        };
+        let ft_raster = ft
+            .rasterize_glyph(ft_id, glyph_idx, 8.0)
+            .expect("FontdueBackend rasterizes 'A' @8px");
+        let ft_metrics = ft
+            .measure(&TextMeasureInput {
+                text: "A".to_string(),
+                font_request: FontRequest::new("Ahem"),
+                size_px: 8.0,
+                max_width: None,
+                direction: zero_text_foundation::font_request::TextDirection::Ltr,
+            })
+            .expect("FontdueBackend measures 'A'");
+
+        // ── DC-11 关键不变量 ──
+        // advance width 一致（来自 fontdue，不受特殊 Ahem 处理影响）。
+        assert!(
+            (rf_advance - 8.0).abs() < 1.0,
+            "rf advance 'A' @8px ≈ 8, got {rf_advance}"
+        );
+        assert!(
+            (ft_metrics.width - 8.0).abs() < 1.0,
+            "ft measure 'A' @8px ≈ 8, got {}",
+            ft_metrics.width
+        );
+        // raster 尺寸非零（两套后端都产出有效像素）。
+        assert!(rf_raster.width > 0 && rf_raster.height > 0, "rf raster non-zero");
+        assert!(ft_raster.width > 0 && ft_raster.height > 0, "ft raster non-zero");
+        // raster 位图数据非空。
+        assert!(!rf_raster.data.is_empty(), "rf raster data non-empty");
+        assert!(!ft_raster.coverage.is_empty(), "ft raster coverage non-empty");
+    }
 }
