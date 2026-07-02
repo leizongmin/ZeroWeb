@@ -1,0 +1,55 @@
+DC-17 Coverage 刷新（6 轮 WinitDriver 新代码后）
+================================================
+日期：2026-07-03
+分支：ui-sdk
+范围：6 轮 driver 工作后（WinitDriver 核心 + desktop() + counter/form/phone_demo/
+browser_shell_demo 接入 + into_host + winit-raw→driver 集成测）刷新 DC-17 聚合 coverage，
+确认新增 ~1658 行代码未拉低 ≥85% floor。
+
+## 聚合 coverage（权威口径，全量 run）
+
+命令：
+  ./target/test-guard -- cargo llvm-cov \
+    -p zero-text-foundation -p zero-ui-* ... -p zero-ui-adapter-winit \
+    -p zero-ui-adapter-render-foundation -p zero-browser-chrome \
+    --summary-only --ignore-filename-regex '[\\/](crates|apps)[\\/]' \
+    -- --test-threads=1
+
+结果：
+  TOTAL  28700 行可执行
+    line     93.86%   （1762 未覆盖 / 28700）
+    function 94.05%   （119 未覆盖 / 2000）
+    region   94.57%   （895 未覆盖 / 16468）
+
+≥85% 目标（DC-17）持续满足。
+
+## 演进（同口径）
+
+| 时点 | line | function | region | 行数 |
+|------|------|----------|--------|------|
+| 2026-07-03（DC-2 host a11y autopush 后，master.md 既记） | 93.98% | 94.06% | 94.61% | 27042 |
+| **2026-07-03（本轮，6 轮 driver 新代码后）** | **93.86%** | **94.05%** | **94.57%** | **28700** |
+| delta | -0.12pp | -0.01pp | -0.04pp | +1658 |
+
+delta 为新增代码体量稀释（非既有代码退化）：6 轮新增 WinitDriver（driver.rs）+ desktop()
+preset + counter/form/phone_demo/browser_shell_demo 接入（impl UiApp ×4 + 测）+ into_host
++ winit-raw→driver 集成测，全部带测。per-crate 仍全部 ≥85%（聚合 93.86% 远超门槛）。
+
+## 关键新文件 coverage（scoped run，单文件数字可信）
+
+  ui/adapters/winit/src/driver.rs   line 95.21% / functions 89.66% / regions 92.28%
+    （188 行可执行，9 未覆盖 = 错误/防御分支；6 driver 测 + winit-raw 集成测 + 全示例经 driver）
+
+注：单 `-p zero-ui-adapter-winit -p zero-ui-examples` standalone TOTAL（54%）是
+master.md 既知 caveat（依赖被插桩但未在该 run 测试其测），DC-17 权威数字以全量聚合 93.86% 为准。
+
+## 结论
+
+DC-17 持续达标：聚合 line 93.86% / function 94.05% / region 94.57%（≥85%）；per-crate 全部
+≥85%。6 轮 WinitDriver 新代码（~1658 行）经同步测试覆盖，未拉低 floor（delta -0.12pp 为体量
+稀释）。新核心 driver.rs line 95.21%。
+
+## 全仓 floor（rendering-compat 基线，非回归参照）
+
+line 95.46% / function 96.94% / region 94.88% —— 本目标 ui/* 聚合 93.86% 不拖累（ui/* 是
+新增代码，体量小于全仓 rendering 代码；非既有代码退化）。
