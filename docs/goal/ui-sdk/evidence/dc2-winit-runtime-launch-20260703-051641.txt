@@ -1,0 +1,73 @@
+DC-2 WinitRuntime::launch — 阻塞壳的可测试 setup 核心（M4 SDK-side）
+================================================================
+日期：2026-07-03
+分支：ui-sdk
+commit：52c4f7d8  ui-sdk(M4/DC-2): WinitRuntime::launch — 阻塞壳的可测试 setup 核心
+（同轮 merge origin/main R977 follow-up：rendering-compat evidence doc-only，零冲突）
+
+## 目的
+
+DC-2 终端「真实 EventLoop::run 阻塞壳」的设计前置：把建树 + 工厂注册 + 首帧从阻塞的 GUI
+run loop 中抽离为 headless 可单测的 setup 核心，解决「driver 需在 begin 前注册工厂」的
+设计 blocker（WinitDriver 需工厂注册后才能 begin，但 PlatformRuntime::run 的
+`&mut dyn UiApp` 签名不暴露工厂注册）。launch 用 register 闭包承载应用特定工厂注册。
+
+## 交付（ui/adapters/winit/src/runtime.rs）
+
+新增 `WinitRuntime::launch<'app>(app, metrics, register: impl FnOnce(&mut WidgetHost)) -> WinitDriver<'app>`：
+1. `WinitDriver::new(app, metrics)` 构造 driver。
+2. `register(driver.host_mut())` 经闭包注册应用控件工厂（在 begin 前）。
+3. `driver.begin()` 产出首帧（reconcile + layout + paint）。
+4. 返回 driver 供真实 run loop 继续喂事件。
+
+文档化的真实 run 形态（GUI-gated，本轮不实现）：
+    let mut driver = WinitRuntime::launch(app, metrics, register);
+    event_loop.run(|ev, _| {
+        driver.pump_event(&event_map::map_*(ev));
+        driver.pump_frame();
+        render(driver.host().scene());  // 经 zero-ui-adapter-render-foundation 光栅
+    });
+
+## 测试（headless）
+
+    $ ./target/test-guard -- cargo test -p zero-ui-adapter-winit launch
+    test runtime::tests::launch_registers_factories_before_begin_and_returns_drivable_driver ... ok
+    test result: ok. 1 passed; 0 failed
+
+`launch_registers_factories_before_begin_and_returns_drivable_driver`：
+- 经 launch 注册 _Box 工厂（闭包）。
+- 断言 register 在 begin 前调用：_Box 挂载 + 首帧 paint → scene 非空（否则组件未知为空）。
+- 断言返回的 driver 可继续驱动：点击 → _Box emit "box.click" → _App.dispatch Handled →
+  重建（out.emitted_actions==1 / spec_rebuilt）→ pump_frame；driver 作用域外 app.clicks==1。
+
+## 门禁
+
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告；修了 launch
+  doc comment 的 doc_lazy_continuation：把行首 "+ 首帧」" 改写避免被当 Markdown 列表项）。
+- cargo fmt --all --check — CLEAN。
+- ./target/test-guard -- cargo test -p zero-ui-adapter-winit — 30 测全绿（29→30，+1 launch 测）。
+- DC-1 复核：launch 在 adapter-winit 内（winit 类型唯一落点），零浏览器业务 crate 依赖。
+
+## DC-2 SDK-side 工作总结（7 轮 driver 工作完整）
+
+| 轮次 | 交付 | commit |
+|------|------|--------|
+| 1 | WinitDriver 核心（begin/pump_event/pump_frame/set_metrics/set_tokens）+ 6 自身测 | 75e30a6c |
+| 2 | counter 示例接入 + desktop() preset | 3a6a6d07 |
+| 3 | form 示例接入（键盘/焦点/提交/校验/ime_rect） | 39e81888 |
+| 4 | phone_demo 接入（手势 arena Tap/Pinch） | f191de5c |
+| 5 | browser_shell_demo 接入（WebView surface + FocusScope）+ into_host | c3cc438c |
+| 6 | winit 原始事件 → driver → reducer 端到端集成测 | 1dbae491 |
+| 7 | **WinitRuntime::launch（阻塞壳 setup 核心）** | **52c4f7d8（本轮）** |
+
+**DC-2 SDK-side 完整收口**：事件映射 + run-loop 核心 + per-event 契约 + 全示例 + launch setup 核心。
+
+## 风险 / 剩余
+
+- SDK-only（adapter 未触渲染像素/浏览器）→ 无 product-smoke 风险。
+- **DC-2 剩余唯一项 = GUI-gated 的 event_loop.run 包壳**（EventLoop::new / Window / GPU surface
+  + 阻塞 loop，需 GUI 验证首帧）。launch 是其可测试 setup 核心；真实 run 只需在 launch 外
+  包一层 EventLoop + event_loop.run（调用 driver.pump_*）。本环境无 GUI，留 GUI 会话落地。
+- 其它终端门禁（DC-14 浏览器迁移 GUI 可视 / DC-15 真实移动后端首帧 / DC-8 真实平台 a11y）
+  均需 GUI/设备环境。
