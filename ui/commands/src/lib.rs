@@ -98,4 +98,32 @@ mod tests {
         );
         assert!(d.resolve(&KeyCode::new("X"), Modifiers::CONTROL).is_none());
     }
+
+    #[test]
+    fn command_model_and_dispatch_outcomes() {
+        // Command::new 默认无快捷键。
+        let cmd = Command::new("browser.reload", "msg.reload");
+        assert_eq!(cmd.action, ActionId::new("browser.reload"));
+        assert_eq!(cmd.label_msg, CompactString::new("msg.reload"));
+        assert!(cmd.shortcut.is_none());
+
+        let mut d = CommandDispatcher::new();
+        // 未注册 → UnknownAction。
+        assert!(matches!(
+            d.dispatch(&KeyCode::new("R"), Modifiers::CONTROL),
+            ActionResult::UnknownAction(_)
+        ));
+        // register 链式 + 命中 → Handled。
+        d.register(Shortcut::new("R", Modifiers::CONTROL), ActionId::new("browser.reload"))
+            .register(Shortcut::new("T", Modifiers::CONTROL), ActionId::new("browser.new_tab"));
+        assert!(matches!(
+            d.dispatch(&KeyCode::new("T"), Modifiers::CONTROL),
+            ActionResult::Handled
+        ));
+        // 修饰键不精确匹配（多了 SHIFT）→ 未命中。
+        assert!(matches!(
+            d.dispatch(&KeyCode::new("R"), Modifiers::CONTROL | Modifiers::SHIFT),
+            ActionResult::UnknownAction(_)
+        ));
+    }
 }

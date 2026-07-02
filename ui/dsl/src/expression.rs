@@ -128,4 +128,35 @@ mod tests {
         };
         assert!(c.node_count() >= 5);
     }
+
+    #[test]
+    fn node_count_for_unary_call_array_object() {
+        // Unary: Not(path) → 1 + 1 = 2。
+        let unary = Expression::Unary {
+            op: UnaryOp::Not,
+            expr: Box::new(Expression::path("flag")),
+        };
+        assert_eq!(unary.node_count(), 2);
+
+        // Call: clamp(0, 1) → 1 + 2 = 3。
+        let call = Expression::Call {
+            function: PureFunctionId::new("clamp"),
+            args: vec![Expression::literal(Value::Int(0)), Expression::literal(Value::Int(1))],
+        };
+        assert_eq!(call.node_count(), 3);
+
+        // Array: [1, 2] → 1 + 2 = 3。
+        let arr = Expression::Array(vec![
+            Expression::literal(Value::Int(1)),
+            Expression::literal(Value::Int(2)),
+        ]);
+        assert_eq!(arr.node_count(), 3);
+
+        // Object: {k: true} → 1 + 1 = 2。
+        let obj = Expression::Object(vec![(CompactString::new("k"), Expression::literal(Value::Bool(true)))]);
+        assert_eq!(obj.node_count(), 2);
+
+        // PureFunctionId 构造与相等。
+        assert_eq!(PureFunctionId::new("clamp"), PureFunctionId::new("clamp"));
+    }
 }

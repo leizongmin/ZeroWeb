@@ -133,9 +133,12 @@ impl Widget for Button {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zero_ui_core::event::Modifiers;
-    use zero_ui_core::geometry::Point;
+    use zero_ui_core::binding::Value;
+    use zero_ui_core::event::{KeyAction, KeyCode, Modifiers};
+    use zero_ui_core::geometry::{Point, Vec2};
     use zero_ui_core::invalidation::InvalidationFlags;
+    use zero_ui_core::semantics::SemanticsFlags;
+    use zero_ui_core::widget::PaintRecorder;
 
     fn press() -> UiEvent {
         UiEvent::Pointer {
@@ -153,6 +156,29 @@ mod tests {
             position: Point::new(5.0, 5.0),
             modifiers: Modifiers::NONE,
         }
+    }
+
+    /// 记录 paint 调用，用于断言背景色随状态变化。
+    #[derive(Default)]
+    struct MockRecorder {
+        fills: Vec<(Rect, Color)>,
+    }
+    impl PaintRecorder for MockRecorder {
+        fn fill_rect(&mut self, rect: Rect, color: Color) {
+            self.fills.push((rect, color));
+        }
+        fn stroke_rect(&mut self, _rect: Rect, _color: Color, _stroke_width: f32) {}
+    }
+
+    fn paint_into(btn: &mut Button) -> Color {
+        let mut rec = MockRecorder::default();
+        let mut ctx = PaintCtx {
+            recorder: &mut rec,
+            clip: None,
+            offset: Vec2::ZERO,
+        };
+        btn.paint(&mut ctx);
+        rec.fills[0].1
     }
 
     #[test]
@@ -190,5 +216,156 @@ mod tests {
             &press(),
         );
         assert_eq!(result, EventResult::Ignored);
+    }
+
+    #[test]
+    fn paint_background_reflects_state() {
+        // default
+        let mut btn = Button::new(ButtonSpec::new("OK", "app.confirm"));
+        assert_eq!(paint_into(&mut btn), Color::rgb(0.13, 0.58, 0.95), "默认背景");
+        // hover
+        let mut flags = InvalidationFlags::CLEAN;
+        let _ = btn.event(
+            &mut EventCtx {
+                invalidation: &mut flags,
+            },
+            &UiEvent::Pointer {
+                phase: PointerPhase::Moved,
+                button: None,
+                position: Point::new(1.0, 1.0),
+                modifiers: Modifiers::NONE,
+            },
+        );
+        assert_eq!(paint_into(&mut btn), Color::rgb(0.16, 0.64, 1.0), "hover 背景");
+        // pressed
+        let mut btn = Button::new(ButtonSpec::new("OK", "app.confirm"));
+        let _ = btn.event(
+            &mut EventCtx {
+                invalidation: &mut flags,
+            },
+            &press(),
+        );
+        assert_eq!(paint_into(&mut btn), Color::rgb(0.10, 0.46, 0.76), "pressed 背景");
+        // disabled
+        let mut spec = ButtonSpec::new("OK", "app.confirm");
+        spec.enabled = false;
+        let mut btn = Button::new(spec);
+        assert_eq!(paint_into(&mut btn), Color::rgb(0.6, 0.6, 0.6), "disabled 背景");
+    }
+
+    #[test]
+    fn release_without_prior_press_consumes_no_emit() {
+        let mut btn = Button::new(ButtonSpec::new("OK", "app.confirm"));
+        let mut flags = InvalidationFlags::CLEAN;
+        // 直接 release（未先 press）→ Consumed 但不发 action。
+        let result = btn.event(
+            &mut EventCtx {
+                invalidation: &mut flags,
+            },
+            &release(),
+        );
+        assert_eq!(result, EventResult::Consumed);
+    }
+
+    #[test]
+    fn non_primary_pointer_and_non_pointer_events_ignored() {
+        let mut btn = Button::new(ButtonSpec::new("OK", "app.confirm"));
+        let mut flags = InvalidationFlags::CLEAN;
+        // 非主键 press / release → Ignored（落到 `_` 分支）。
+        let secondary = UiEvent::Pointer {
+            phase: PointerPhase::Pressed,
+            button: Some(PointerButton::Secondary),
+            position: Point::new(0.0, 0.0),
+            modifiers: Modifiers::NONE,
+        };
+        assert_eq!(
+            btn.event(
+                &mut EventCtx {
+                    invalidation: &mut flags,
+                },
+                &secondary,
+            ),
+            EventResult::Ignored
+        );
+        let secondary_release = UiEvent::Pointer {
+            phase: PointerPhase::Released,
+            button: Some(PointerButton::Secondary),
+            position: Point::new(0.0, 0.0),
+            modifiers: Modifiers::NONE,
+        };
+        assert_eq!(
+            btn.event(
+                &mut EventCtx {
+                    invalidation: &mut flags,
+                },
+                &secondary_release,
+            ),
+            EventResult::Ignored
+        );
+        // 非指针事件（键盘）→ Ignored。
+        let key = UiEvent::Key {
+            code: KeyCode::new("Space"),
+            action: KeyAction::Pressed,
+            modifiers: Modifiers::NONE,
+            text: None,
+        };
+        assert_eq!(
+            btn.event(
+                &mut EventCtx {
+                    invalidation: &mut flags,
+                },
+                &key,
+            ),
+            EventResult::Ignored
+        );
+    }
+
+    #[test]
+    fn update_applies_props_and_marks_paint() {
+        let mut btn = Button::new(ButtonSpec::new("OK", "app.confirm"));
+        let mut props = Props::new();
+        props.insert("label", Value::Text("Cancel".into()));
+        props.insert("enabled", Value::Bool(false));
+        let mut flags = InvalidationFlags::CLEAN;
+        btn.update(
+            &mut UpdateCtx {
+                invalidation: &mut flags,
+            },
+            &props,
+        );
+        assert_eq!(btn.spec.label, "Cancel");
+        assert!(!btn.spec.enabled);
+        assert!(flags.contains(InvalidationFlags::NEEDS_PAINT));
+    }
+
+    #[test]
+    fn layout_clamps_to_constraints() {
+        let mut btn = Button::new(ButtonSpec::new("OK", "app.confirm"));
+        // "OK" 期望 32×32；tight 50×20 → clamp 到 50×20。
+        let tight = btn.layout(
+            &mut LayoutCtx { scale_factor: 1.0 },
+            Constraints::tight(Size::new(50.0, 20.0)),
+        );
+        assert_eq!((tight.width, tight.height), (50.0, 20.0));
+        // loose 200×200 → 期望尺寸不被裁剪。
+        let loose = btn.layout(
+            &mut LayoutCtx { scale_factor: 1.0 },
+            Constraints::loose(Size::new(200.0, 200.0)),
+        );
+        assert_eq!((loose.width, loose.height), (32.0, 32.0));
+    }
+
+    #[test]
+    fn semantics_emits_button_node() {
+        let btn = Button::new(ButtonSpec::new("Save", "app.save"));
+        let mut nodes: Vec<SemanticsNode> = Vec::new();
+        btn.semantics(&mut SemanticsCtx { nodes: &mut nodes });
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            nodes[0]
+                .flags
+                .contains(SemanticsFlags::BUTTON | SemanticsFlags::FOCUSABLE)
+        );
+        assert!(nodes[0].label.is_some());
     }
 }

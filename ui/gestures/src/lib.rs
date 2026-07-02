@@ -101,4 +101,18 @@ mod tests {
         assert!(!r.on_move(Point::new(50.0, 0.0))); // 超阈值 → 取消
         assert_eq!(r.on_up(Point::new(50.0, 0.0)), None);
     }
+
+    #[test]
+    fn custom_tolerance_and_idle_paths() {
+        // 自定义容差构造器。
+        let mut r = TapRecognizer::new(5.0);
+        // 未 down 时 on_move → true（无起点，不取消）。
+        assert!(r.on_move(Point::new(100.0, 100.0)));
+        // 未 down 时 on_up → None。
+        assert_eq!(r.on_up(Point::new(100.0, 100.0)), None);
+        // down 后，移动 4（< 容差 5）仍有效，6（> 容差 5）取消。
+        r.on_down(Point::new(0.0, 0.0));
+        assert!(r.on_move(Point::new(4.0, 0.0)));
+        assert!(!r.on_move(Point::new(6.0, 0.0)));
+    }
 }

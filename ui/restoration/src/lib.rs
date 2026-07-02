@@ -64,4 +64,17 @@ mod tests {
         assert_eq!(store.restore(&RestorationId::new("scroll.y")), Some(&Value::Int(420)));
         assert!(store.restore(&RestorationId::new("missing")).is_none());
     }
+
+    #[test]
+    fn len_is_empty_and_save_chain() {
+        let mut store = RestorationStore::new();
+        assert!(store.is_empty());
+        assert_eq!(store.len(), 0);
+        // save 返回 &mut，可链式。
+        store
+            .save(RestorationId::new("a"), Value::Text("x".into()))
+            .save(RestorationId::new("b"), Value::Int(1));
+        assert_eq!(store.len(), 2);
+        assert!(!store.is_empty());
+    }
 }

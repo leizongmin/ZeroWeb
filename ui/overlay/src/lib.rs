@@ -90,4 +90,25 @@ mod tests {
         assert!(host.dismiss(&WidgetId::new("perm")));
         assert!(!host.has_modal());
     }
+
+    #[test]
+    fn empty_state_non_modal_and_toast_defaults() {
+        let mut host = OverlayHost::new();
+        assert!(host.is_empty());
+        // 非 modal 浮层：has_modal 为 false。
+        host.push(OverlayEntry {
+            id: WidgetId::new("tooltip"),
+            anchor: None,
+            trap_focus: false,
+            modal: false,
+        });
+        assert!(!host.is_empty());
+        assert!(!host.has_modal());
+        // dismiss 未知 id → false。
+        assert!(!host.dismiss(&WidgetId::new("nope")));
+        // Toast 默认 ttl 3000ms。
+        let t = Toast::new("msg.copied");
+        assert_eq!(t.message_id, "msg.copied");
+        assert_eq!(t.ttl_ms, 3000);
+    }
 }
