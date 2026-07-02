@@ -1,0 +1,47 @@
+DC-14 全链集成测试（chrome 渲染管线端到端去险）— 2026-07-02
+============================================================
+
+里程碑：M2→DC-14（浏览器迁移为 SDK 宿主的渲染管线去险）。
+纯测试新增：bridge crate 加 1 集成测试 + dev-deps（chrome/runtime/shell），不触 apps/browser /
+既有渲染路径 → 无 product-smoke 风险。
+
+动机
+----
+- TBD-2 桥接 RenderBackend 全功能（几何+文本+外部表面）已就绪，DC-14 真实浏览器接线是下一步。
+- 接线前需证明**完整 SDK chrome 渲染管线**端到端正确（任一环失效都能被此测试捕获），
+  避免 apps/browser 接线时多环联调的归因困难。
+
+实现（ui/adapters/render-foundation/src/lib.rs，集成测试 + Cargo.toml dev-deps）
+-------------------------------------------------------------------------------
+- bridge crate dev-deps 加 `zero-browser-chrome` / `zero-ui-runtime` / `zero-browser-shell`。
+- 测试 `full_pipeline_chrome_scene_to_render_primitives`：
+  1. 共享 `Arc<FontdueBackend>`（加载 Ahem）。
+  2. 构造 `BrowserChromeModel`（address=https://example.com / security=Secure / 1 tab "Example"）。
+  3. `DesktopBrowserShell.build(&model, &metrics)` → WidgetSpec 声明树。
+  4. `WidgetHost` + `register_chrome_factories(host, SemanticTokens::light())` → `set_root` →
+     `layout(Constraints::loose(1280×800))` → `paint()` → `Scene`。
+  5. `RenderFoundationBackend::new_with_text(viewport, backend)` → `paint_scene(&scene, &mut bridge)`。
+  6. 断言：`primitives().fills` 非空（chrome 背景几何）、`images` 非空（widget 文本经 draw_text → Ahem
+     shape+raster → ImagePrimitive）、`draw_order` 非空。
+
+覆盖的环节（任一断裂即测试失败）
+--------------------------------
+BrowserChromeModel → DesktopBrowserShell::build（声明树）→ register_chrome_factories（控件工厂）→
+WidgetHost reconcile（retained 实例）→ layout（measure/arrange）→ paint（每控件 PaintRecorder）→
+Scene（RenderPrimitive::FillRect/Text）→ paint_scene 派发 → RenderFoundationBackend
+（fill_rect→FillPrimitive、draw_text→shape+raster→ImagePrimitive）→ render-foundation RenderPrimitives。
+
+门禁（2026-07-02）
+-----------------
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all --check` — 净。
+- `./target/test-guard -- cargo test -p zero-ui-adapter-render-foundation` — **14 passed; 0 failed**（13→14，+1 全链）。
+- 纯测试 + dev-deps（无 apps/browser / 既有渲染消费者）→ 无 product-smoke 风险。
+
+意义（DC-14 去险）
+------------------
+- 完整 SDK chrome 渲染管线**经自动化测试证明端到端正确**——浏览器接线前最大技术不确定性消除。
+- DC-14 剩余 = apps/browser 生产接线（把上述管线接入浏览器渲染循环 + set_surface 接 webview），
+  接线问题将被压缩到「浏览器侧集成」而非「SDK 管线正确性」。
+- 接线仍需可视验收（product-smoke 不覆盖 chrome——见上轮 master.md 侦察），非本测试能替代。

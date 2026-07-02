@@ -10,3 +10,9 @@ zero-ui-core = { workspace = true }
 zero-ui-render = { workspace = true }
 zero-text-foundation = { workspace = true }
 zero-render-foundation = { workspace = true }
+
+[dev-dependencies]
+# 全链集成测试（DC-14 管线去险）：BrowserChromeModel → shell → WidgetHost → Scene → 本桥接。
+zero-browser-chrome = { workspace = true }
+zero-ui-runtime = { workspace = true }
+zero-browser-shell = { workspace = true }

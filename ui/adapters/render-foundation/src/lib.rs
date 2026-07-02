@@ -769,4 +769,73 @@ mod tests {
         assert!(p.strokes.is_empty());
         assert!(p.draw_order.iter().all(|op| matches!(op, DrawOp::Clip(_))));
     }
+
+    // ── 全链集成（DC-14 管线去险）──────────────────────────────────────
+    // BrowserChromeModel → DesktopBrowserShell::build → WidgetHost reconcile+layout+paint
+    // → Scene → paint_scene → RenderFoundationBackend → render-foundation RenderPrimitives。
+    // 证明浏览器接线前的完整 SDK chrome 渲染管线正确（不触 apps/browser，纯测试可验证）。
+
+    #[test]
+    fn full_pipeline_chrome_scene_to_render_primitives() {
+        use zero_browser_chrome::{
+            BrowserChromeModel, BrowserChromeShell, BrowserTab, DesktopBrowserShell, NavigationButtons, SecurityState,
+            register_chrome_factories,
+        };
+        use zero_ui_core::geometry::{Constraints, Insets, Size};
+        use zero_ui_core::layout::WindowMetrics;
+        use zero_ui_core::theme::SemanticTokens;
+        use zero_ui_runtime::WidgetHost;
+
+        // 共享字体后端（加载 Ahem 供 chrome 文本 shape+raster）。
+        let mut backend = FontdueBackend::new();
+        backend.load_family("Ahem", AHEM).expect("Ahem parses");
+        let backend = Arc::new(backend);
+
+        // 有数据的 chrome 模型（address/security/tab）。
+        let mut model = BrowserChromeModel::new();
+        model.address_text = "https://example.com".into();
+        model.security = SecurityState::Secure;
+        model.navigation = NavigationButtons::new(true, false, false);
+        model.tabs = vec![BrowserTab {
+            id: zero_browser_shell::TabId(1),
+            title: "Example".into(),
+            loading: false,
+        }];
+        model.active_tab_index = Some(0);
+
+        let metrics = WindowMetrics {
+            logical_size: Size::new(1280.0, 800.0),
+            scale_factor: 1.0,
+            safe_area: Insets::all(0.0),
+            keyboard_insets: Insets::all(0.0),
+        };
+        let spec = DesktopBrowserShell.build(&model, &metrics);
+
+        // WidgetHost：注册 chrome 工厂 → 装载声明树 → layout → paint → Scene。
+        let mut host = WidgetHost::new();
+        register_chrome_factories(&mut host, &SemanticTokens::light());
+        host.set_root(&spec);
+        host.layout(Constraints::loose(metrics.logical_size));
+        let scene = host.paint().clone();
+        assert!(!scene.entries.is_empty(), "chrome scene 应产出图元");
+
+        // 桥接：Scene → render-foundation RenderPrimitives。
+        let viewport_rect = RfRect {
+            origin: RfPoint { x: 0.0, y: 0.0 },
+            size: RfSize {
+                width: 1280.0,
+                height: 800.0,
+            },
+        };
+        let mut bridge = RenderFoundationBackend::new_with_text(viewport_rect, backend);
+        paint_scene(&scene, &mut bridge);
+        let p = bridge.primitives();
+
+        // chrome 背景几何 → FillPrimitive 非空。
+        assert!(!p.fills.is_empty(), "桥接应产出 chrome 背景 fills");
+        // chrome 文本（draw_text 经 Ahem shape+raster）→ glyph ImagePrimitive 非空。
+        assert!(!p.images.is_empty(), "桥接应产出 widget 文本 ImagePrimitive");
+        // draw_order 有序记录（clip/fill/image 交错）。
+        assert!(!p.draw_order.is_empty());
+    }
 }

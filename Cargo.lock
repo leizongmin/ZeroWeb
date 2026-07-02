@@ -6008,10 +6008,13 @@ dependencies = [
 name = "zero-ui-adapter-render-foundation"
 version = "0.1.0"
 dependencies = [
+ "zero-browser-chrome",
+ "zero-browser-shell",
  "zero-render-foundation",
  "zero-text-foundation",
  "zero-ui-core",
  "zero-ui-render",
+ "zero-ui-runtime",
 ]
 
 [[package]]
