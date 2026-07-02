@@ -9,46 +9,78 @@
 //!
 //! 调用：`paint_scene(&scene, &mut backend)` → `backend.into_primitives()`。
 //!
-//! ## 当前覆盖（DC-14 视觉迁移的几何基础）
+//! ## 当前覆盖（DC-14 视觉迁移的几何 + 文本基础）
 //! - `fill_rect`：圆角为零 → [`FillPrimitive`]；否则 → [`RoundedRectPrimitive`]（四角半径分别映射）。
 //! - `stroke_rect`：矩形四角顶点 → [`PathStrokePrimitive`]（closed）。**圆角暂忽略**（render-foundation
 //!   无 stroke 圆角矩形图元；TODO 跟踪）。
 //! - `apply_clip`：`Some(rect)` → [`add_clip`]；`None` → 回落视口矩形（"无裁剪" = 整个视口）。
 //!   render-foundation 经 `draw_order` 流式应用裁剪，与本适配器的流式 `apply_clip` 语义一致。
+//! - `draw_text_blob`（DC-11 文本）：经共享 `FontdueBackend::rasterize_glyph` 把预 shape 的 glyph
+//!   光栅为 tinted RGBA → [`ImageCache`] → [`ImagePrimitive`]（fontdue 定位：xmin 左、ymin 底）。
+//!   **契约**：TextBlob 生产者与本后端共享同一 `Arc<FontdueBackend>`（`new_with_text`），FontId 一致。
 //!
-//! ## 暂未覆盖（明确 follow-up，非阻塞当前几何闭环）
-//! - `draw_text` / `draw_text_blob`：**no-op**。文本光栅需把 `zero-text-foundation::TextBlob`
-//!   的 glyph 映射到 render-foundation `GlyphPrimitive`（不同 FontId/glyph cache），属 **DC-11
-//!   字体栈统一**。在本适配器文本方法落地前，含文本的 Scene 不会出现文字——调用方须知。
+//! ## 暂未覆盖（明确 follow-up，非阻塞当前几何+文本闭环）
+//! - `draw_text`（原始字符串）：no-op。SDK widgets 经 paint_ctx 产出预 shape 的 TextBlob（走
+//!   `draw_text_blob`）；本方法无 FontRequest 策略，如需可直接 shape 后转 `draw_text_blob`。
 //! - `draw_external_surface`：**no-op**。WebView/平台视图纹理合成属 **DC-3 phase-2**。
+//! - 生产集成（DC-14 真实接线）：本后端自带 `ImageCache`；浏览器消费时须把 glyph key 解析到
+//!   渲染器的 image cache（或共享）——当前无消费者，几何+文本经测试验证。
 //!
 //! [`FillPrimitive`]: zero_render_foundation::primitive::FillPrimitive
 //! [`RoundedRectPrimitive`]: zero_render_foundation::primitive::RoundedRectPrimitive
 //! [`PathStrokePrimitive`]: zero_render_foundation::primitive::PathStrokePrimitive
 //! [`add_clip`]: zero_render_foundation::primitive::RenderPrimitives::add_clip
 
+use std::collections::HashSet;
+use std::sync::Arc;
 use zero_render_foundation::color::Color as RfColor;
 use zero_render_foundation::geometry::{Point as RfPoint, Rect as RfRect, Size as RfSize};
-use zero_render_foundation::primitive::{RenderPrimitives, RoundedRectPrimitive};
-use zero_ui_core::geometry::{Rect, Rounding};
+use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
+use zero_render_foundation::primitive::{ImagePrimitive, RenderPrimitives, RoundedRectPrimitive};
+use zero_text_foundation::{FontId, FontdueBackend, GlyphBitmap, TextBlob};
+use zero_ui_core::geometry::{Point, Rect, Rounding};
 use zero_ui_core::theme::Color;
 use zero_ui_render::RenderBackend;
+
+/// glyph 位图缓存容量（条目数 / 字节数）。
+const GLYPH_CACHE_MAX_ENTRIES: usize = 4096;
+const GLYPH_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
 
 /// render-foundation 后端：把 `RenderBackend` 调用累积为 [`RenderPrimitives`]。
 ///
 /// 构造时传入 `viewport`（用于 `apply_clip(None)` 的"无裁剪"回落）。绘制完成后用
 /// [`into_primitives`](Self::into_primitives) 取出累积结果交给 render-foundation 渲染。
+///
+/// 文本路径（DC-11）：[`Self::new_with_text`] 注入共享 `Arc<FontdueBackend>`——TextBlob 的生产者
+/// 与本后端共享同一字体栈（FontId 一致），`draw_text_blob` 经 `rasterize_glyph` 光栅每个 glyph →
+/// tinted RGBA → [`ImageCache`] → [`ImagePrimitive`]（DC-11 共享字体栈不变量）。
 pub struct RenderFoundationBackend {
     primitives: RenderPrimitives,
     viewport: RfRect,
+    text: Arc<FontdueBackend>,
+    image_cache: ImageCache,
+    /// 已上传 glyph 的 key 集合（避免每帧重复 raster+upload；key 稳定）。
+    uploaded: HashSet<ImageKey>,
 }
 
 impl RenderFoundationBackend {
     /// 创建后端，`viewport` 为目标帧的全区域（用于 clip=None 回落）。
+    ///
+    /// 不带文本后端——`draw_text_blob` 会因无字体而 no-op。需要渲染文本用
+    /// [`Self::new_with_text`]。
     pub fn new(viewport: RfRect) -> Self {
+        Self::new_with_text(viewport, Arc::new(FontdueBackend::new()))
+    }
+
+    /// 创建后端并共享 `text`（TextBlob 生产者须用同一 `Arc<FontdueBackend>` 实例 shape，
+    /// 保证 FontId 一致——DC-11 字体栈共享契约）。
+    pub fn new_with_text(viewport: RfRect, text: Arc<FontdueBackend>) -> Self {
         RenderFoundationBackend {
             primitives: RenderPrimitives::default(),
             viewport,
+            text,
+            image_cache: ImageCache::new(GLYPH_CACHE_MAX_ENTRIES, GLYPH_CACHE_MAX_BYTES),
+            uploaded: HashSet::new(),
         }
     }
 
@@ -60,6 +92,16 @@ impl RenderFoundationBackend {
     /// 只读访问累积结果（测试/调试用）。
     pub fn primitives(&self) -> &RenderPrimitives {
         &self.primitives
+    }
+
+    /// 只读访问 glyph 位图缓存（draw_text_blob 产出的 ImageKey 在此解析）。
+    pub fn image_cache(&self) -> &ImageCache {
+        &self.image_cache
+    }
+
+    /// 取出 glyph 位图缓存（消费后端；与 [`Self::into_primitives`] 配套交给渲染器）。
+    pub fn into_image_cache(self) -> ImageCache {
+        self.image_cache
     }
 }
 
@@ -96,17 +138,35 @@ impl RenderBackend for RenderFoundationBackend {
             .add_path_stroke(vertices, to_rf_color(color), stroke_width, true);
     }
 
-    fn draw_text_blob(
-        &mut self,
-        _blob: &zero_text_foundation::TextBlob,
-        _position: zero_ui_core::geometry::Point,
-        _color: Color,
-    ) {
-        // TODO(DC-11)：TextBlob → GlyphPrimitive 映射需字体栈统一（不同 FontId/glyph cache）。当前 no-op。
+    fn draw_text_blob(&mut self, blob: &TextBlob, position: Point, color: Color) {
+        // DC-11 文本路径：经共享 FontdueBackend 把预 shape 的 glyph 光栅为像素 → ImagePrimitive。
+        // TextBlob 的 FontId 在 self.text 的字体空间（调用方契约：shape 与 raster 共享同一实例）。
+        if self.text.is_empty() {
+            return; // 无字体 → 无法光栅
+        }
+        let tint = to_rf_color(color);
+        for run in &blob.shaped.runs {
+            let font_id = run.font.id;
+            let size_px = run.font_size_px;
+            let mut pen_x = 0.0_f32;
+            for g in &run.glyphs {
+                let draw_x = pen_x + g.x_offset;
+                // 空 bitmap（空格）/ 光栅失败（FontId 不匹配）→ 不出图，pen 仍推进（best-effort）。
+                if let Ok(bmp) = self.text.rasterize_glyph(font_id, g.glyph_id, size_px)
+                    && bmp.width > 0
+                    && bmp.height > 0
+                {
+                    let key = glyph_cache_key(font_id, g.glyph_id, size_px);
+                    emit_glyph_image(self, key, &bmp, position, draw_x, tint);
+                }
+                pen_x += g.x_advance;
+            }
+        }
     }
 
-    fn draw_text(&mut self, _text: &str, _position: zero_ui_core::geometry::Point, _size_px: f32, _color: Color) {
-        // TODO(DC-11)：原始字符串文本需后端 shape；当前 no-op（等字体栈统一）。
+    fn draw_text(&mut self, _text: &str, _position: Point, _size_px: f32, _color: Color) {
+        // 原始字符串路径：SDK widgets 经 paint_ctx 产出预 shape 的 TextBlob（走 draw_text_blob），
+        // 本方法（无 FontRequest 策略）暂不实现；如需可直接 shape 后转 draw_text_blob。
     }
 
     fn draw_external_surface(&mut self, _rect: Rect, _surface_id: u64) {
@@ -122,6 +182,61 @@ impl RenderBackend for RenderFoundationBackend {
         };
         self.primitives.add_clip(rf_rect);
     }
+}
+
+// ── 文本光栅化辅助（DC-11 draw_text_blob）─────────────────────────────
+
+/// 把单个 glyph 位图作为 [`ImagePrimitive`] 累积（含缓存去重与屏幕定位）。
+fn emit_glyph_image(
+    backend: &mut RenderFoundationBackend,
+    key: ImageKey,
+    bmp: &GlyphBitmap,
+    position: Point,
+    draw_x: f32,
+    tint: RfColor,
+) {
+    // 缓存去重：同一 (font,glyph,size) 只 raster+upload 一次（key 稳定）。
+    if backend.uploaded.insert(key.clone()) {
+        let rgba = tinted_rgba(bmp, tint);
+        match ImageData::from_rgba(rgba, bmp.width as u32, bmp.height as u32) {
+            Ok(data) => backend.image_cache.insert_with_key(key.clone(), data),
+            Err(_) => {
+                backend.uploaded.remove(&key); // 插入失败 → 允许后续重试
+            }
+        }
+    }
+    // 屏幕定位：fontdue xmin = 左边缘偏移；ymin = 底边偏移（y 向上）→ top = baseline − ymin − height。
+    let left = position.x + draw_x + bmp.xmin as f32;
+    let top = position.y - bmp.ymin as f32 - bmp.height as f32;
+    backend.primitives.add_image(ImagePrimitive {
+        rect: RfRect {
+            origin: RfPoint { x: left, y: top },
+            size: RfSize {
+                width: bmp.width as f32,
+                height: bmp.height as f32,
+            },
+        },
+        image_key: key,
+        clip: None,
+    });
+}
+
+/// glyph → 稳定 ImageKey（font_id 高 16 位 / glyph_id 中 32 位 / size 0.25px 桶 低 16 位）。
+fn glyph_cache_key(font_id: FontId, glyph_id: u32, size_px: f32) -> ImageKey {
+    let size_q2 = (((size_px * 4.0).round().max(0.0)) as u64) & 0xFFFF;
+    ImageKey(((font_id.0 as u64) << 48) | (((glyph_id as u64) & 0xFFFF_FFFF) << 16) | size_q2)
+}
+
+/// glyph alpha 覆盖 → tint 着色的 RGBA（RGB = 文本色，A = 覆盖）。
+fn tinted_rgba(bmp: &GlyphBitmap, tint: RfColor) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bmp.coverage.len() * 4);
+    for &a in &bmp.coverage {
+        out.push(tint.r);
+        out.push(tint.g);
+        out.push(tint.b);
+        out.push(a);
+    }
+    out
 }
 
 // ── 类型转换（ui/core → render-foundation）─────────────────────────────
@@ -302,7 +417,8 @@ mod tests {
 
     #[test]
     fn text_and_external_surface_are_documented_noops() {
-        // 当前 follow-up（DC-11/DC-3 phase-2）：文本与外部表面 no-op，不产生图元。
+        // draw_text（原始字符串路径，无 FontRequest 策略）+ external_surface 仍 no-op。
+        // （预 shape 的 TextBlob 路径见 draw_text_blob 测试。）
         let mut b = RenderFoundationBackend::new(viewport());
         b.draw_text("hi", Point::ZERO, 12.0, Color::WHITE);
         b.draw_external_surface(Rect::from_ltrb(0.0, 0.0, 10.0, 10.0), 7);
@@ -310,5 +426,160 @@ mod tests {
         assert!(p.glyphs.is_empty());
         assert!(p.images.is_empty());
         assert!(p.fills.is_empty());
+    }
+
+    // ── draw_text_blob（DC-11 文本路径）──────────────────────────────────
+
+    /// WPT 标准字体（每字符 1em 实心方块）。路径相对 crate 根。
+    const AHEM: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+    fn ahem_backend() -> Arc<FontdueBackend> {
+        let mut b = FontdueBackend::new();
+        b.load_family("Ahem", AHEM).expect("Ahem parses via fontdue");
+        Arc::new(b)
+    }
+
+    #[test]
+    fn draw_text_blob_emits_one_image_per_glyph() {
+        use zero_text_foundation::{
+            FontRequest, ShapeInput, TextBlob, TextDirection, TextMeasureInput, TextMeasurer, TextShaper,
+        };
+        let backend = ahem_backend();
+        let mut b = RenderFoundationBackend::new_with_text(viewport(), backend.clone());
+        // 经共享 backend shape "Hi"（FontId 在 backend 字体空间）→ TextBlob。
+        let shaped = backend
+            .shape(&ShapeInput {
+                text: "Hi".into(),
+                font_request: FontRequest::new("Ahem"),
+                size_px: 16.0,
+                direction: TextDirection::Ltr,
+                script: None,
+                scale_factor: 1.0,
+            })
+            .unwrap();
+        let metrics = backend
+            .measure(&TextMeasureInput {
+                text: "Hi".into(),
+                font_request: FontRequest::new("Ahem"),
+                size_px: 16.0,
+                max_width: None,
+                direction: TextDirection::Ltr,
+            })
+            .unwrap();
+        let blob = TextBlob::new(shaped, metrics);
+
+        let mut scene = Scene::new();
+        scene.push(entry(
+            None,
+            RenderPrimitive::TextBlob {
+                blob,
+                position: Point::new(10.0, 50.0),
+                color: Color::WHITE,
+            },
+        ));
+        paint_scene(&scene, &mut b);
+        let p = b.primitives();
+        // "Hi" → 2 glyph → 2 ImagePrimitive。
+        assert_eq!(p.images.len(), 2);
+        // glyph 自左向右排列（第二个 x > 第一个）。
+        assert!(p.images[1].rect.origin.x > p.images[0].rect.origin.x);
+        // 两个 image_key 不同（不同 glyph）。
+        assert_ne!(&p.images[0].image_key, &p.images[1].image_key);
+    }
+
+    #[test]
+    fn draw_text_blob_caches_glyphs_across_paints() {
+        use zero_text_foundation::{
+            FontRequest, ShapeInput, TextBlob, TextDirection, TextMeasureInput, TextMeasurer, TextShaper,
+        };
+        let backend = ahem_backend();
+        let shaped = backend
+            .shape(&ShapeInput {
+                text: "A".into(),
+                font_request: FontRequest::new("Ahem"),
+                size_px: 16.0,
+                direction: TextDirection::Ltr,
+                script: None,
+                scale_factor: 1.0,
+            })
+            .unwrap();
+        let metrics = backend
+            .measure(&TextMeasureInput {
+                text: "A".into(),
+                font_request: FontRequest::new("Ahem"),
+                size_px: 16.0,
+                max_width: None,
+                direction: TextDirection::Ltr,
+            })
+            .unwrap();
+        let make_scene = || {
+            let blob = TextBlob::new(shaped.clone(), metrics);
+            let mut s = Scene::new();
+            s.push(SceneEntry {
+                source: WidgetId::new("t"),
+                clip: None,
+                primitive: RenderPrimitive::TextBlob {
+                    blob,
+                    position: Point::new(0.0, 20.0),
+                    color: Color::BLACK,
+                },
+            });
+            s
+        };
+        let mut b = RenderFoundationBackend::new_with_text(viewport(), backend.clone());
+        // 同一 glyph 画两次：uploaded 去重，image_cache 只插一次（第二次命中 uploaded 跳过 raster）。
+        let key = {
+            paint_scene(&make_scene(), &mut b);
+            b.primitives().images[0].image_key.clone()
+        };
+        let key2 = {
+            paint_scene(&make_scene(), &mut b);
+            b.primitives().images[1].image_key.clone()
+        };
+        assert_eq!(key, key2, "同 glyph/size 应复用同一缓存 key");
+    }
+
+    #[test]
+    fn draw_text_blob_noop_without_fonts() {
+        // 无字体后端 → draw_text_blob no-op（不 panic、不出图）。
+        let mut b = RenderFoundationBackend::new(viewport());
+        // 构造空 blob（无 runs）直接喂入也应 no-op。
+        use zero_text_foundation::{ShapedText, TextBlob, TextMetrics};
+        let blob = TextBlob::new(
+            ShapedText {
+                runs: Vec::new(),
+                total_advance_x: 0.0,
+                total_advance_y: 0.0,
+            },
+            TextMetrics {
+                width: 0.0,
+                height: 0.0,
+                ascent: 0.0,
+                descent: 0.0,
+                line_count: 1,
+            },
+        );
+        let mut scene = Scene::new();
+        scene.push(entry(
+            None,
+            RenderPrimitive::TextBlob {
+                blob,
+                position: Point::ZERO,
+                color: Color::WHITE,
+            },
+        ));
+        paint_scene(&scene, &mut b);
+        assert!(b.primitives().images.is_empty());
+    }
+
+    #[test]
+    fn glyph_cache_key_is_stable_and_distinct() {
+        let k = glyph_cache_key(FontId(1), 65, 16.0);
+        // 稳定。
+        assert_eq!(k, glyph_cache_key(FontId(1), 65, 16.0));
+        // 不同 font / glyph / size 不同。
+        assert_ne!(k, glyph_cache_key(FontId(2), 65, 16.0));
+        assert_ne!(k, glyph_cache_key(FontId(1), 66, 16.0));
+        assert_ne!(k, glyph_cache_key(FontId(1), 65, 32.0));
     }
 }

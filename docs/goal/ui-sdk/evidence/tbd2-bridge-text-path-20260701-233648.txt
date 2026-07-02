@@ -1,0 +1,57 @@
+TBD-2 桥接文本路径（draw_text_blob 经 foundation/text 光栅）— 2026-07-01
+======================================================================
+
+里程碑：M2→TBD-2 / DC-11（Scene→光栅后端的文本路径）。
+SDK-only / 纯新增：仅 ui/adapters/render-foundation 内部，未触碰 apps/browser /
+render-foundation 既有字体栈 / 任何既有渲染路径 → 无 product-smoke 风险。
+
+缺口（修复前）
+-------------
+- 上一轮 TBD-2 桥接的 draw_text_blob 是文档化 no-op——SDK Scene 含文本（TextBlob）不产出文字。
+- 阻塞点（已明确）：TextBlob 仅携带 FontId 引用（shape 后端字体空间），raster 需同一字体栈。
+
+实现（ui/adapters/render-foundation/src/lib.rs）
+-----------------------------------------------
+**设计：共享字体栈契约**——`RenderFoundationBackend` 持 `Arc<FontdueBackend>`，
+TextBlob 生产者与后端共享同一实例（`new_with_text`）→ FontId 一致 → `rasterize_glyph` 可用。
+
+- 新字段：`text: Arc<FontdueBackend>`、`image_cache: ImageCache`、`uploaded: HashSet<ImageKey>`。
+- 构造：`new(viewport)`（空字体，文本 no-op）/ `new_with_text(viewport, Arc<FontdueBackend>)`。
+- 访问：`image_cache()` / `into_image_cache()`（draw_text_blob 产出的 ImageKey 在此解析）。
+- `draw_text_blob(blob, position, color)`：逐 glyph `rasterize_glyph` → tinted RGBA
+  （RGB=文本色，A=coverage）→ `ImageData::from_rgba` → `insert_with_key`（稳定 key 去重）→
+  `ImagePrimitive`，fontdue 屏幕定位（xmin 左偏移；ymin 底边 → top = baseline − ymin − height）。
+  空 bitmap（空格）/ 光栅失败（FontId 不匹配）→ 跳过该 glyph，pen 仍推进。
+- 稳定 glyph key：`glyph_cache_key(font_id, glyph_id, size_px)`（font 高 16 / glyph 中 32 / size 0.25px 桶 低 16）；
+  `uploaded` set 防每帧重复 raster+upload。
+- `draw_text`（原始字符串）保持 no-op（SDK widgets 走预 shape 的 TextBlob 路径）。
+- `draw_external_surface` 保持 no-op（DC-3 phase-2）。
+
+测试（4 新测，全绿；bridge crate 6→10 测）
+------------------------------------------
+1. draw_text_blob_emits_one_image_per_glyph — 经共享 backend shape "Hi" → TextBlob → paint_scene
+   → 2 ImagePrimitive，第二个 x > 第一个（自左向右），key 不同。
+2. draw_text_blob_caches_glyphs_across_paints — 同一 "A" glyph 画两次 → 同一缓存 key（uploaded 去重）。
+3. draw_text_blob_noop_without_fonts — 无字体后端 + 空 blob → no-op，不出图，不 panic。
+4. glyph_cache_key_is_stable_and_distinct — 稳定；font/glyph/size 变化 → key 不同。
+
+fontdue 几何（核对 fontdue 0.9.3 源码）
+--------------------------------------
+- `Metrics.xmin`：bitmap 左边缘整像素偏移（可负）。
+- `Metrics.ymin`：bitmap **底**边缘偏移（y 向上，可负）。→ 屏幕顶 = baseline − ymin − height。
+
+门禁（2026-07-01）
+-----------------
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告；let-chains 折叠 if、TextMetrics Copy 去 clone）。
+- `cargo fmt --all --check` — 净。
+- `./target/test-guard -- cargo test -p zero-ui-adapter-render-foundation` — **10 passed; 0 failed**（6→10，+4 文本）。
+- 纯 adapter 内部（无浏览器/既有渲染消费者）→ 未跑 product-smoke（零回归路径）。
+
+DC-11 / TBD-2 / DC-14 状态更新
+------------------------------
+- TBD-2 文本路径就绪：SDK Scene 含文本可光栅为像素（经 foundation/text，DC-11 共享字体栈）。
+- DC-11：foundation/text shape+measure+raster 全链贯通到桥接输出。
+- DC-14 视觉迁移剩余阻塞 = ①DC-3 phase-2 外部表面纹理（WebView）；②生产集成（浏览器消费时
+  glyph ImageKey 须解析到渲染器 image cache，或共享）；③render-foundation 既有 font 栈统一到
+  foundation/text（触碰姊妹目标，需 product-smoke）。
