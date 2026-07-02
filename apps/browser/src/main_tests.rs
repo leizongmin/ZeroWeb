@@ -1459,6 +1459,221 @@
         );
     }
 
+    /// DC-10：scale + offset 必须一致应用到全部 13 种 RenderPrimitive 类型（R968 移植）。
+    #[test]
+    fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
+        use app::transform_webview_primitives;
+        use zero_render_foundation::color::Color;
+        use zero_render_foundation::geometry::Rect;
+        use zero_render_foundation::primitive::{
+            FontId, GlyphPrimitive, GradientKind, GradientPrimitive, LineCap, LineStyle, RenderPrimitives,
+            RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
+        };
+
+        let mut p = RenderPrimitives::new();
+        p.add_fill(Rect::new(1.0, 2.0, 10.0, 20.0), Color::rgb(255, 0, 0));
+        p.rounded_rects.push(RoundedRectPrimitive {
+            rect: Rect::new(1.0, 2.0, 10.0, 20.0),
+            color: Color::rgb(0, 255, 0),
+            top_left_radius: 1.0,
+            top_right_radius: 2.0,
+            bottom_right_radius: 3.0,
+            bottom_left_radius: 4.0,
+        });
+        p.gradients.push(GradientPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            kind: GradientKind::Linear {
+                x0: 1.0,
+                y0: 2.0,
+                x1: 3.0,
+                y1: 4.0,
+            },
+            stops: Vec::new(),
+            repeating: false,
+        });
+        p.gradients.push(GradientPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            kind: GradientKind::Radial {
+                cx: 1.0,
+                cy: 2.0,
+                inner_radius: 3.0,
+                outer_radius: 5.0,
+            },
+            stops: Vec::new(),
+            repeating: false,
+        });
+        p.gradients.push(GradientPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            kind: GradientKind::Conic {
+                cx: 1.0,
+                cy: 2.0,
+                start_angle: 0.5,
+            },
+            stops: Vec::new(),
+            repeating: false,
+        });
+        p.shadows.push(ShadowPrimitive {
+            rect: Rect::new(1.0, 2.0, 10.0, 10.0),
+            color: Color::rgb(0, 0, 0),
+            offset_x: 2.0,
+            offset_y: 3.0,
+            blur_radius: 4.0,
+            spread_radius: 5.0,
+        });
+        p.strokes.push(StrokePrimitive {
+            x1: 1.0,
+            y1: 2.0,
+            x2: 3.0,
+            y2: 4.0,
+            width: 5.0,
+            color: Color::rgb(0, 0, 0),
+            style: LineStyle::Solid,
+            cap: LineCap::Butt,
+        });
+        p.add_glyph(GlyphPrimitive {
+            x: 1.0,
+            y: 2.0,
+            font_size: 16.0,
+            color: Color::rgb(0, 0, 0),
+            glyph_id: 'A' as u32,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+        });
+        p.transforms.push(TransformPrimitive {
+            rect: Rect::new(1.0, 2.0, 10.0, 10.0),
+            origin_x: 1.0,
+            origin_y: 2.0,
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx: 3.0,
+            ty: 4.0,
+        });
+
+        let out = transform_webview_primitives(&p, 10.0, 20.0, 2.0, None);
+
+        let f = &out.fills[0];
+        assert_eq!((f.rect.origin.x, f.rect.origin.y), (12.0, 24.0));
+        assert_eq!((f.rect.size.width, f.rect.size.height), (20.0, 40.0));
+
+        let r = &out.rounded_rects[0];
+        assert_eq!((r.rect.origin.x, r.rect.origin.y), (12.0, 24.0));
+        assert_eq!((r.rect.size.width, r.rect.size.height), (20.0, 40.0));
+        assert_eq!(
+            (
+                r.top_left_radius,
+                r.top_right_radius,
+                r.bottom_right_radius,
+                r.bottom_left_radius
+            ),
+            (2.0, 4.0, 6.0, 8.0)
+        );
+
+        match &out.gradients[0].kind {
+            GradientKind::Linear { x0, y0, x1, y1 } => {
+                assert_eq!((*x0, *y0, *x1, *y1), (12.0, 24.0, 16.0, 28.0));
+            }
+            _ => panic!("expected Linear gradient"),
+        }
+        match &out.gradients[1].kind {
+            GradientKind::Radial {
+                cx,
+                cy,
+                inner_radius,
+                outer_radius,
+            } => {
+                assert_eq!((*cx, *cy, *inner_radius, *outer_radius), (12.0, 24.0, 6.0, 10.0));
+            }
+            _ => panic!("expected Radial gradient"),
+        }
+        match &out.gradients[2].kind {
+            // Conic 的 start_angle 是无量纲角度，不应被 scale 缩放。
+            GradientKind::Conic { cx, cy, start_angle } => {
+                assert_eq!((*cx, *cy, *start_angle), (12.0, 24.0, 0.5));
+            }
+            _ => panic!("expected Conic gradient"),
+        }
+
+        let sh = &out.shadows[0];
+        assert_eq!(
+            (sh.offset_x, sh.offset_y, sh.blur_radius, sh.spread_radius),
+            (4.0, 6.0, 8.0, 10.0)
+        );
+
+        let st = &out.strokes[0];
+        assert_eq!((st.x1, st.y1, st.x2, st.y2, st.width), (12.0, 24.0, 16.0, 28.0, 10.0));
+
+        let g = &out.glyphs[0];
+        assert_eq!((g.x, g.y, g.font_size), (12.0, 24.0, 32.0));
+
+        let t = &out.transforms[0];
+        assert_eq!((t.rect.origin.x, t.rect.origin.y), (12.0, 24.0));
+        assert_eq!((t.rect.size.width, t.rect.size.height), (20.0, 20.0));
+        assert_eq!((t.origin_x, t.origin_y), (12.0, 24.0));
+        assert_eq!((t.tx, t.ty), (6.0, 8.0));
+    }
+
+    /// DC-10：视口外的图元（rounded/gradient/path/glyph/fill）须被裁掉，视口内保留（R968 移植）。
+    #[test]
+    fn transform_webview_primitives_culls_primitives_outside_viewport() {
+        use app::{ViewportClip, transform_webview_primitives};
+        use zero_render_foundation::color::Color;
+        use zero_render_foundation::geometry::Rect;
+        use zero_render_foundation::primitive::{
+            FontId, GlyphPrimitive, GradientKind, GradientPrimitive, RenderPrimitives, RoundedRectPrimitive,
+        };
+
+        let mut p = RenderPrimitives::new();
+        // 视口外（视口宽高 200，图元在 1000,1000）
+        p.rounded_rects.push(RoundedRectPrimitive::uniform(
+            Rect::new(1000.0, 1000.0, 10.0, 10.0),
+            Color::BLUE,
+            2.0,
+        ));
+        p.gradients.push(GradientPrimitive {
+            rect: Rect::new(1000.0, 1000.0, 10.0, 10.0),
+            kind: GradientKind::Linear {
+                x0: 1000.0,
+                y0: 1000.0,
+                x1: 1010.0,
+                y1: 1010.0,
+            },
+            stops: Vec::new(),
+            repeating: false,
+        });
+        p.add_path_fill(
+            vec![1000.0, 1000.0, 1010.0, 1000.0, 1010.0, 1010.0],
+            Color::rgb(0, 255, 0),
+        );
+        p.add_glyph(GlyphPrimitive {
+            x: 1000.0,
+            y: 1000.0,
+            font_size: 16.0,
+            color: Color::rgb(0, 0, 0),
+            glyph_id: 'A' as u32,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+        });
+        // 视口内 fill（control：应保留）
+        p.add_fill(Rect::new(10.0, 10.0, 10.0, 10.0), Color::rgb(0, 0, 255));
+        // 视口外 fill（应裁掉）
+        p.add_fill(Rect::new(1000.0, 1000.0, 10.0, 10.0), Color::rgb(255, 0, 0));
+
+        let clip = ViewportClip::new(0.0, 0.0, 200.0, 200.0);
+        let out = transform_webview_primitives(&p, 0.0, 0.0, 1.0, Some(clip));
+
+        assert!(out.rounded_rects.is_empty(), "offscreen rounded rect must be culled");
+        assert!(out.gradients.is_empty(), "offscreen gradient must be culled");
+        assert!(out.path_fills.is_empty(), "offscreen path_fill must be culled");
+        assert!(out.glyphs.is_empty(), "offscreen glyph must be culled");
+        assert_eq!(out.fills.len(), 1, "only the in-viewport fill should survive");
+    }
+
     /// Esc 在加载中应停止加载（无其他 Escape 上下文时）。
     #[test]
     fn escape_stops_loading_when_active_tab_loading() {
