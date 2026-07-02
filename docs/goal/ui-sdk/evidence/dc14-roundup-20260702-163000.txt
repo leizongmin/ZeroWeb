@@ -1,0 +1,39 @@
+DC-14 替换式迁移三轮汇总（2026-07-02）
+
+本轮完成三个子任务：
+
+1. 替换式迁移接线（compose_sdk_chrome_replacement）
+   - feature-on 跳过手绘 chrome，SDK chrome 整体替换
+   - 页面内容按 viewport rect 翻译（translate_fills/glyphs）
+   - SDK chrome fills/images 预置 scene_primitives 最底层
+   - ImageCache collision-safe 合并（extend_from_other + rekey）
+   - render_frame(GPU) + render_cpu(CPU) 双路径接线
+
+2. PageViewportFrame solid fill → fill_background=false
+   - ChromePanel 新增 fill_background 字段 + from_spec_with_fill() 构造器
+   - PageViewportFrame 不填底色，SDK chrome viewport 只负责布局空间
+
+3. WebView 额外图元翻译（translate_scene_primitives_y）
+   - shadows/gradients/images/rounded_rects/strokes/path_strokes/path_fills Y 坐标全体平移
+   - 在 compose_sdk_chrome_replacement 中按 dy 调用
+
+门禁状态：
+- cargo build（默认）：0 错
+- cargo build --features sdk-chrome：0 错
+- cargo clippy -p zero-browser --features sdk-chrome -- -D warnings：0 告
+- cargo fmt --check：净
+- cargo test -p zero-browser：189 passed（默认）
+- cargo test -p zero-browser --features sdk-chrome：193 passed（含 5 SDK chrome 测）
+- make product-smoke：19.87% < 20%（绿）
+
+已知限制（headless 环境不可验证）：
+- GUI 可视验收 chrome 布局
+- 双 viewport frame/shadow 重叠
+- WebViewWidget 纹理合成（DC-3 phase-2）
+- 字体栈统一（DC-11）
+
+M2 剩余：
+- DC-11 render-foundation 字体栈统一（需 product-smoke）
+- DC-3 phase-2 WebViewWidget 纹理合成（需 shell 改动 + product-smoke）
+- DC-14 GUI 可视验收
+- M4 移动端运行时
