@@ -1,0 +1,28 @@
+DC-11 FontLoader rasterize_glyph_shared 光栅委托（2026-07-02）
+
+新增方法：
+- FontLoader::rasterize_glyph_shared(font_id, code_point, size) -> Result<GlyphBitmap, FontError>
+  - Ahem 字体 → rasterize_ahem_glyph 特殊处理（WPT 兼容，不委托）
+  - 共享后端存在 + ID 映射存在 → FontdueBackend.rasterize_glyph（统一渲染路径）
+  - .notdef glyph (glyph_id==0) → 回退 FontLoader 自身 fontdue 路径
+  - 共享后端 rasterize 失败 → 回退 FontLoader 自身路径
+  - 无共享后端 → 等价于 rasterize_glyph
+
+关键设计：
+- advance 取自 FontLoader 侧 fontdue::Font.metrics_indexed（共享后端 rasterize_glyph 只返回位图不含 advance）
+- 纯新增方法，不改变现有 rasterize_glyph 行为 → 零调用方影响
+- 非 Ahem 路径经共享后端光栅（rasterize_indexed），DC-11 统一渲染路径可用
+
+测试（4 新，全 14 DC-11 绿）：
+- dc11_rasterize_shared_uses_ahem_special_for_ahem — Ahem 保持 w=h=ceil(size)
+- dc11_rasterize_shared_falls_back_without_backend — 无后端回退一致
+- dc11_rasterize_shared_produces_valid_bitmap — 共享后端产出有效位图
+- dc11_rasterize_shared_equivalent_to_direct — 回退像素一致
+
+门禁：
+- cargo build --workspace: green (default + sdk-chrome)
+- cargo clippy --workspace --all-targets -- -D warnings: green
+- cargo fmt --all --check: green
+- cargo test -p zero-render-foundation: 528 passed (含 14 DC-11)
+- cargo test -p zero-browser: 189 passed (default) / 195 passed (sdk-chrome)
+- make product-smoke: 19.87% = baseline
