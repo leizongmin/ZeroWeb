@@ -1,0 +1,93 @@
+DC-2 host.rs 事件→重建关键路径深度审查（lei-deep-review）
+========================================================
+日期：2026-07-03
+分支：ui-sdk
+commit：5d7447ca  ui-sdk(M4/DC-2): deep-review host 修复 — set_root reconcile 漏标 NEEDS_LAYOUT
+
+## 范围
+
+ui/runtime/src/host.rs 的「事件 → 重建」关键路径（每个 WinitDriver.pump_event/pump_frame
+依赖的 SDK 最核心运行态）：
+- set_root / reconcile_node / reconcile_children / build_node（声明树 → retained 实例树）
+- dispatch_event / dispatch_node / collect_emit（事件命中/冒泡/emit）
+- measure / measure_linear / arrange（两遍布局）
+- 失效标记传播（node.invalidation ↔ host.pending）
+
+审查维度：实现缺陷 / 边界 / 状态一致性 / 失效传播。
+
+## 摘要
+
+- 发现：1 medium correctness（已修复 + 回归守卫）+ 若干「经查正确」项。
+- 最高优先级：set_root reconcile 漏标 host 级 NEEDS_LAYOUT → 重建不 relayout → 几何停滞。
+
+## 发现 1：set_root reconcile 漏标 NEEDS_LAYOUT（medium，已修复）
+
+- **位置**：host.rs set_root reconcile 分支（修复前 line 190）。
+- **严重程度**：中（core correctness，state 变化改 widget 尺寸时几何停滞）。
+- **置信度**：0.9。
+- **描述**：set_root 的 Some(root) 分支此前 `self.pending |= NEEDS_PAINT | NEEDS_SEMANTICS`，
+  不标 NEEDS_LAYOUT。但 reconcile_node（host.rs:705）在 props 变化时已标**节点级**
+  `node.invalidation |= NEEDS_LAYOUT | NEEDS_PAINT`（注释「props 变化可能改尺寸」）。该节点级
+  标记**未传播到 host.pending** → host.needs_layout()=requires_layout(host.pending)=假 →
+  driver.pump_frame / host.layout 跳过 relayout → state 变化改 widget 尺寸时 scene 停在旧几何
+  （Label 文案变长、列表增长、flex 子节点尺寸变等）。
+- **触发条件**：任何 rebuild（set_root reconcile）后 widget 尺寸变化。counter/form 示例因
+  断言 scene 文本（不依赖几何）未暴露；真实 app（尺寸随状态变）会触发。
+- **代码证据**：
+  ```rust
+  // 修复前（reconcile 分支）
+  reconcile_node(root, spec, &self.registry, self.epoch);
+  self.pending |= NEEDS_PAINT | NEEDS_SEMANTICS;  // 漏 NEEDS_LAYOUT
+  // 而 reconcile_node 标了节点级 NEEDS_LAYOUT（line 705），未达 host.pending
+  ```
+- **修复**：reconcile 分支补标 NEEDS_LAYOUT（与 first-mount 分支一致）：
+  ```rust
+  self.pending |= NEEDS_LAYOUT | NEEDS_PAINT | NEEDS_SEMANTICS;
+  ```
+  语义：state 变化重建应 relayout（Flutter setState 同模式）。代价：每次 rebuild 多一次
+  layout pass（廉价；rebuild 仅 state 变化时）。
+- **回归守卫**：`reconcile_props_change_marks_host_needs_layout`——Sizer 控件（layout 宽度由
+  props.w 决定，update 受控同步 w）props 变化（100→250）→ 断言 host.needs_layout()==true +
+  relayout 后宽度=250（旧 bug 下 needs_layout 假、不 relayout、宽度停滞 100）。
+- **验证状态**：✅ 确认（逻辑推演 + 测试；runtime 80→81 测全绿）。
+
+## 「经查正确」项（未改）
+
+### reconcile_node 节点级 NEEDS_LAYOUT 传播
+- reconcile_node/reconcile_children 各节点独立标 node.invalidation，不向上聚合到 root。
+  靠 set_root 兜底标 host.pending（已修复为 NEEDS_LAYOUT）→ 任一节点尺寸变都触发 host relayout
+  （全量重测，保守但正确）。无需逐节点精确传播。
+
+### measure_linear / arrange 不读 node.invalidation
+- layout 入口（host.layout）由 host.pending 决策；被调即全量 measure+arrange（不按 node 标记
+  跳过）。故「决策靠 host.pending」（已修）+「执行全量」→ 几何正确。无误跳。
+
+### dispatch_event / dispatch_node / collect_emit
+- 指针 Pressed→click-to-focus + dispatch_node 命中冒泡；Released/Moved→dispatch_node；Tab→
+  focus_next；其它键→focused widget。collect_emit 正确转 EventResult::Emit/EmitWithPayload →
+  EmittedAction。手势 arena additive 喂入不替代 hit-test。经查正确（与 driver 审查结论一致）。
+
+### focus 作用域 / semantics
+- set_root 后 active_scope 按 scope.id 重收集可聚焦项（子树移除则清防悬空）。semantics() DFS
+  组装绝对 rect + FOCUSABLE/FOCUSED + 容器 merge。经 host::tests 覆盖，正确。
+
+## 门禁
+
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — CLEAN。
+- ./target/test-guard -- cargo test -p zero-ui-runtime — 81 测全绿（80→81，+1 回归守卫）。
+- 下游 driver 示例（counter/form/phone_demo/browser_shell_demo）+ adapter-winit 全绿零回归
+  （fix 严格更正确；示例断言 scene 文本不依赖几何，故此前「未暴露」也「不受影响」）。
+
+## 结论
+
+host.rs 事件→重建关键路径经深度审查：1 medium correctness 缺陷（set_root reconcile 漏标
+NEEDS_LAYOUT → 重建不 relayout）已修复 + 回归守卫。该缺陷解释了为何 driver pump_frame
+layout-only 修复（commit 810a3321）此前「未触发」——host set_root 此前也不标 NEEDS_LAYOUT，
+二者一致地漏；driver 层修复在前（防 host.mark 单独 NEEDS_LAYOUT），host 层修复在本轮（治本：
+rebuild 正确触发 relayout）。dispatch/layout/focus/semantics 经查正确。
+
+driver（commit 810a3321）+ host（commit 5d7447ca）两层 invalidation 传播现完整正确：
+事件→dispatch→reducer→rebuild→set_root→host.pending(NEEDS_LAYOUT|PAINT|SEMANTICS)→
+pump_frame(layout+paint)→scene 正确反映新状态与新几何。
