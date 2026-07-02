@@ -10,3 +10,5 @@ zero-ui-core = { workspace = true }
 compact_str = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
+# EvalContext.vars 用 HashMap（workspace 已声明）。
+hashbrown = { workspace = true }

@@ -1,0 +1,554 @@
+=== Zero UI SDK 覆盖率（M3 DC-6 phase-1：DSL 表达式引擎后）===
+日期: Wed Jul  1 03:42:32     2026
+口径: ui/* + foundation/text + browser-ui/chrome（排除 crates/ apps/ 依赖污染）
+命令: cargo llvm-cov <24 -p> --summary-only --ignore-filename-regex '[\/](crates|apps)[\/]' --test-threads=1
+
+info: cargo-llvm-cov currently setting cfg(coverage); you can opt-out it by passing --no-cfg-coverage
+   Compiling zero-ui-core v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\core)
+   Compiling zero-text-foundation v0.1.0 (C:\Users\leizo\work\ZeroBrowser\foundation\text)
+   Compiling zero-dom v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\dom)
+   Compiling zero-render-foundation v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\render-foundation)
+   Compiling zero-css-parser v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\css-parser)
+   Compiling zero-security v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\security)
+   Compiling zero-storage v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\storage)
+   Compiling zero-host-runtime v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\host-runtime)
+   Compiling zero-ui-i18n v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\i18n)
+   Compiling zero-net v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\net)
+   Compiling zero-script-sandbox v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\script-sandbox)
+   Compiling zero-wasm-sandbox v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\wasm-sandbox)
+   Compiling zero-style-system v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\style-system)
+   Compiling zero-ui-render v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\render)
+   Compiling zero-ui-widgets v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\widgets)
+   Compiling zero-canvas v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\canvas)
+   Compiling zero-ui-patterns v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\patterns)
+   Compiling zero-ui-runtime v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\runtime)
+   Compiling zero-ui-testing v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\testing)
+   Compiling zero-layout-engine v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\layout-engine)
+   Compiling zero-ui-commands v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\commands)
+   Compiling zero-ui-adapter-winit v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\adapters\winit)
+   Compiling zero-ui-assets v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\assets)
+   Compiling zero-ui-gestures v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\gestures)
+   Compiling zero-ui-navigation v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\navigation)
+   Compiling zero-ui-overlay v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\overlay)
+   Compiling zero-ui-forms v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\forms)
+   Compiling zero-ui-dsl v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\dsl)
+   Compiling zero-ui-animation v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\animation)
+   Compiling zero-ui-platform v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\platform)
+   Compiling zero-ui-devtools v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\devtools)
+   Compiling zero-ui-collections v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\collections)
+   Compiling zero-ui-restoration v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\restoration)
+   Compiling zero-ui-design-system v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\design-system)
+   Compiling zero-engine v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\engine)
+   Compiling zero-page-runtime v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\page-runtime)
+   Compiling zero-webview v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\webview)
+   Compiling zero-browser-shell v0.1.0 (C:\Users\leizo\work\ZeroBrowser\crates\browser-shell)
+   Compiling zero-ui-adapter-webview v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\adapters\webview)
+   Compiling zero-browser-chrome v0.1.0 (C:\Users\leizo\work\ZeroBrowser\browser-ui\chrome)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.58s
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_browser_chrome-c8ee2f4d8f4a33cf.exe)
+
+running 45 tests
+test address_bar::tests::classify_url_vs_search ... ok
+test address_bar::tests::submit_emits_correct_action ... ok
+test address_bar::tests::suggestion_activation_navigates ... ok
+test address_bar::tests::text_input_and_security_composed ... ok
+test bookmarks_bar::tests::toolbar_has_item_per_root ... ok
+test bookmarks_bar::tests::unknown_id_is_none ... ok
+test bookmarks_bar::tests::url_bookmark_navigates_folder_opens ... ok
+test browser_action::tests::action_variants_distinct ... ok
+test browser_menu::tests::build_menu_preserves_order_and_separator ... ok
+test browser_menu::tests::context_menu_carries_anchor ... ok
+test browser_menu::tests::on_activate_maps_enabled_only ... ok
+test browser_tab_strip::tests::actions_map_to_correct_tab ... ok
+test browser_tab_strip::tests::out_of_range_and_noop_reorder_is_none ... ok
+test browser_tab_strip::tests::tab_bar_has_item_per_tab_and_activates ... ok
+test chrome_model::tests::active_index_out_of_range_is_none ... ok
+test chrome_model::tests::active_tab_id_resolves ... ok
+test chrome_model::tests::default_is_empty ... ok
+test download_panel::tests::actions_map_to_correct_download ... ok
+test download_panel::tests::panel_builds_popover_and_list ... ok
+test download_panel::tests::progress_completed_full_and_unknown_indeterminate ... ok
+test download_panel::tests::progress_known_size_determinate ... ok
+test find_bar::tests::actions_gated_by_open_and_query ... ok
+test find_bar::tests::status_hidden_when_closed_or_no_count ... ok
+test find_bar::tests::status_shows_count_when_present ... ok
+test find_bar::tests::text_input_carries_query ... ok
+test navigation_buttons::tests::build_toolbar_has_items ... ok
+test navigation_buttons::tests::disabled_when_no_history ... ok
+test navigation_buttons::tests::enabled_emits_action ... ok
+test page_load_indicator::tests::idle_has_no_indicator ... ok
+test page_load_indicator::tests::loading_with_fraction_is_determinate_and_clamped ... ok
+test page_load_indicator::tests::loading_without_fraction_is_indeterminate ... ok
+test page_viewport::tests::layout_input_carries_geometry ... ok
+test permission_prompt::tests::allow_deny_carry_feature ... ok
+test permission_prompt::tests::dialog_title_and_remember_toggle ... ok
+test security_badge::tests::badge_and_tooltip_carry_label ... ok
+test security_badge::tests::each_state_maps_to_label_and_tone ... ok
+test shell::tests::adaptive_build_dispatches_correct_shell ... ok
+test shell::tests::desktop_layout_top_chrome_then_viewport ... ok
+test shell::tests::find_bar_appears_only_when_active ... ok
+test shell::tests::phone_layout_avoids_keyboard_and_safe_area ... ok
+test shell::tests::phone_layout_no_keyboard_not_avoided ... ok
+test shell::tests::select_shell_matches_spec_table ... ok
+test shell::tests::stable_widget_ids_shared_across_shells ... ok
+test site_info_panel::tests::popover_and_list_built ... ok
+test site_info_panel::tests::toggle_flips_grant_deny ... ok
+
+test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_text_foundation-5a1852118f0f3d8e.exe)
+
+running 27 tests
+test backend::tests::fallback_chain_starts_with_primary ... ok
+test backend::tests::glyph_run_advance_x_and_metrics_line_height ... ok
+test backend::tests::load_family_assigns_stable_increasing_ids ... ok
+test backend::tests::load_family_rejects_empty_data ... ok
+test backend::tests::measure_rejects_nonpositive_size ... ok
+test backend::tests::measure_returns_positive_metrics_single_line ... ok
+test backend::tests::measure_wraps_when_max_width_exceeded ... ok
+test backend::tests::query_errors_when_no_font_loaded ... ok
+test backend::tests::query_resolves_loaded_family_and_falls_back ... ok
+test backend::tests::shape_ahem_one_glyph_per_ascii_char ... ok
+test backend::tests::shape_empty_text_yields_no_runs ... ok
+test backend::tests::shape_rejects_nonpositive_size ... ok
+test backend::tests::shape_wider_at_larger_size ... ok
+test backend::tests::text_blob_caret_mapping_from_real_shaped ... ok
+test backend::tests::wrap_helper_breaks_on_overflow ... ok
+test bidi::tests::paragraph_level_by_direction ... ok
+test font_fallback::tests::fallback_appends_generic_in_order ... ok
+test font_fallback::tests::fallback_dedupes_case_insensitive ... ok
+test font_request::tests::request_builder ... ok
+test font_request::tests::weight_normalize ... ok
+test glyph_cache::tests::different_keys_allocate_distinct_rects ... ok
+test glyph_cache::tests::same_key_reuses_atlas_entry ... ok
+test grapheme::tests::ascii_boundaries ... ok
+test grapheme::tests::bmp_multibyte_boundary_on_char_edge ... ok
+test grapheme::tests::empty_string ... ok
+test line_break::tests::breaks_after_hyphen ... ok
+test line_break::tests::breaks_after_spaces ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_adapter_webview-062c7a27b207fdcd.exe)
+
+running 4 tests
+test scroll_bridge::tests::clamps_negative_to_zero ... ok
+test scroll_bridge::tests::clamps_to_max_scroll ... ok
+test webview_widget::tests::layout_input_carries_viewport_and_theme ... ok
+test webview_widget::tests::widget_only_tracks_external_geometry ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_adapter_winit-87fb23c589cf410d.exe)
+
+running 4 tests
+test event_map::tests::map_buttons ... ok
+test event_map::tests::map_modifiers_combines ... ok
+test runtime::tests::run_returns_ok ... ok
+test runtime::tests::runtime_stubs_compile_and_default ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_animation-d5253d12a7c0d58b.exe)
+
+running 4 tests
+test clock::tests::fake_clock_advances ... ok
+test curve::tests::clamp_out_of_range ... ok
+test curve::tests::curve_endpoints_and_monotonic ... ok
+test tween::tests::tween_progresses_and_completes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_assets-e907e70852a3b8fb.exe)
+
+running 1 test
+test tests::load_inserted_asset ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_collections-17cdeae72c085c37.exe)
+
+running 2 tests
+test tests::lazy_list_window_clamps ... ok
+test tests::selection_toggle ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_commands-c44f49af02d9fa83.exe)
+
+running 3 tests
+test tests::command_model_and_dispatch_outcomes ... ok
+test tests::dispatcher_resolves_command ... ok
+test tests::shortcut_matches ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_core-d19772b5a7c96ebd.exe)
+
+running 31 tests
+test action::tests::event_result_emit_and_payload ... ok
+test action::tests::unknown_action_returned_not_silent ... ok
+test binding::tests::binding_schema_declare ... ok
+test binding::tests::props_map_roundtrip ... ok
+test binding::tests::state_path_parse ... ok
+test binding::tests::value_truthy_and_type ... ok
+test element::tests::changed_identity_creates_new_element ... ok
+test element::tests::stable_widget_id_preserves_element_state_across_rebuild ... ok
+test event::tests::event_position_and_modifiers ... ok
+test event::tests::modifiers_bitops ... ok
+test focus::tests::forward_backward_wrap ... ok
+test geometry::tests::constraints_tight_loose_satisfied ... ok
+test geometry::tests::insets_deflate_rect_and_constraints ... ok
+test geometry::tests::rect_contains_and_intersect ... ok
+test invalidation::tests::clean_state ... ok
+test invalidation::tests::composite_only_is_cheapest ... ok
+test invalidation::tests::layout_implies_paint ... ok
+test invalidation::tests::paint_only_change_does_not_request_layout ... ok
+test layout::tests::adaptive_branch_mobile_vs_desktop ... ok
+test layout::tests::physical_size_scales ... ok
+test layout::tests::viewport_class_breakpoints ... ok
+test scroll::tests::command_resolve_targets ... ok
+test scroll::tests::max_scroll_clamps_negative ... ok
+test semantics::tests::collect_focusable_descendants ... ok
+test theme::tests::color_only_change_is_paint_only_invalidation ... ok
+test theme::tests::custom_palette_overrides_semantic_token ... ok
+test theme::tests::system_preference_follows_system_snapshot ... ok
+test theme::tests::typography_change_requests_layout ... ok
+test widget::tests::control_directives_default_none ... ok
+test widget::tests::stable_widget_id_equality ... ok
+test widget::tests::widget_spec_roundtrip_and_children ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_design_system-864a96d2d83bc459.exe)
+
+running 3 tests
+test tests::density_spacing ... ok
+test tests::reduced_motion_zeroes_duration ... ok
+test tests::zero_default_pack ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_devtools-fdc8100f295ac390.exe)
+
+running 2 tests
+test tests::inspector_select_clear ... ok
+test tests::timeline_average ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_dsl-acd7e01930b61241.exe)
+
+running 26 tests
+test engine::tests::bare_identifier_is_parse_error ... ok
+test engine::tests::compare_bool_coalesce_ternary ... ok
+test engine::tests::end_to_end_visible_when ... ok
+test engine::tests::eval_depth_limit ... ok
+test engine::tests::eval_iteration_limit ... ok
+test engine::tests::eval_node_count_limit ... ok
+test engine::tests::float_arith_and_div_by_zero ... ok
+test engine::tests::forbidden_capabilities_rejected ... ok
+test engine::tests::functions_disabled_by_context ... ok
+test engine::tests::literals_and_arith ... ok
+test engine::tests::parse_depth_limit_guard ... ok
+test engine::tests::parse_error_paths ... ok
+test engine::tests::path_reads_state ... ok
+test engine::tests::postfix_field_and_index ... ok
+test engine::tests::pure_functions ... ok
+test engine::tests::text_comparison_and_format_branches ... ok
+test engine::tests::text_concat_with_plus ... ok
+test engine::tests::trailing_tokens_rejected ... ok
+test engine::tests::type_and_argc_errors ... ok
+test engine::tests::typecheck_infers ... ok
+test engine::tests::unknown_function_rejected ... ok
+test expression::tests::ast_node_count ... ok
+test expression::tests::conditional_construct ... ok
+test expression::tests::node_count_for_unary_call_array_object ... ok
+test loader::tests::eval_context_defaults ... ok
+test loader::tests::skeleton_loader_defers_to_m3 ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_forms-f7c05d783ca45ec9.exe)
+
+running 1 test
+test tests::required_validator_and_dirty ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_gestures-919185cb008d29d4.exe)
+
+running 3 tests
+test tests::custom_tolerance_and_idle_paths ... ok
+test tests::tap_cancelled_by_large_move ... ok
+test tests::tap_recognized_within_tolerance ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_i18n-f56d65fecc83e042.exe)
+
+running 12 tests
+test catalog::tests::fallback_chain_resolves_parent ... ok
+test catalog::tests::missing_key_returns_placeholder ... ok
+test catalog::tests::missing_param_is_error ... ok
+test catalog::tests::resolve_message_with_param ... ok
+test direction::tests::rtl_detection ... ok
+test fallback::tests::chain_descends_to_root ... ok
+test fallback::tests::single_segment_locale ... ok
+test formatter::tests::missing_param_preserved ... ok
+test formatter::tests::substitutes_count_and_plural ... ok
+test formatter::tests::substitutes_text_param ... ok
+test locale::tests::parent_chain ... ok
+test plural::tests::english_plural ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_navigation-ffcfb69a18245352.exe)
+
+running 2 tests
+test tests::push_pop_replace_keep_root ... ok
+test tests::replace_top ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_overlay-a6fcbed41ab8d117.exe)
+
+running 2 tests
+test tests::empty_state_non_modal_and_toast_defaults ... ok
+test tests::push_dismiss_modal ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_patterns-5cd94758e88fe0a0.exe)
+
+running 7 tests
+test command_palette::tests::filters_by_query ... ok
+test data_list::tests::select_bounds ... ok
+test dialog_scaffold::tests::open_close_modal_default ... ok
+test search_field::tests::query_change_detected ... ok
+test status_bubble::tests::toggle_visibility ... ok
+test suggestion_list::tests::highlight_moves_and_clamps ... ok
+test tab_bar::tests::close_active_adjusts_index ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_platform-2c7e66b0dee4e13b.exe)
+
+running 1 test
+test tests::clipboard_round_trip ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_render-872c108802961716.exe)
+
+running 10 tests
+test backend::tests::paint_scene_applies_clip_per_entry ... ok
+test backend::tests::paint_scene_dispatches_all_primitive_kinds_in_order ... ok
+test backend::tests::paint_scene_empty_scene_is_noop ... ok
+test clip::tests::disjoint_becomes_zero_rect ... ok
+test clip::tests::intersect_narrows_clip ... ok
+test hit_test::tests::miss_returns_none_or_parent ... ok
+test hit_test::tests::topmost_child_wins ... ok
+test paint_ctx::tests::clip_is_attached_to_entries ... ok
+test paint_ctx::tests::draw_text_blob_records_textblob_primitive ... ok
+test paint_ctx::tests::recorder_collects_primitives_into_scene ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\render_coverage.rs (target\llvm-cov-target\debug\deps\render_coverage-6419e65fd0311728.exe)
+
+running 3 tests
+test layer_default_opacity_and_offset ... ok
+test render_node_holds_primitives_and_children ... ok
+test scene_extend_merges_entries ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_restoration-be3e7e2750271ee4.exe)
+
+running 2 tests
+test tests::len_is_empty_and_save_chain ... ok
+test tests::save_restore_roundtrip ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_runtime-8f05b3f6a6268aa5.exe)
+
+running 7 tests
+test i18n_provider::tests::fallback_chain_updates_with_locale ... ok
+test i18n_provider::tests::locale_switch_invalidates_layout_paint_semantics ... ok
+test ime::tests::change_detected ... ok
+test scheduler::tests::cancel_removes_task ... ok
+test scheduler::tests::drain_due_in_order ... ok
+test theme_provider::tests::no_change_no_event ... ok
+test theme_provider::tests::system_scheme_change_emits_paint_only_invalidation ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\runtime_coverage.rs (target\llvm-cov-target\debug\deps\runtime_coverage-c8ab6ce4af944b3e.exe)
+
+running 3 tests
+test accessibility_tree_collects_focusables ... ok
+test ime_controller_change_detection ... ok
+test ui_tree_set_root_and_pending_invalidation ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_testing-36ec696b5a783899.exe)
+
+running 3 tests
+test scene_snapshot::tests::snapshot_includes_text ... ok
+test scene_snapshot::tests::snapshot_is_deterministic ... ok
+test semantics_snapshot::tests::snapshot_renders_tree ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\fake_clock.rs (target\llvm-cov-target\debug\deps\fake_clock-1fa223aa502e8faf.exe)
+
+running 1 test
+test fake_clock_advances_and_reads ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\llvm-cov-target\debug\deps\zero_ui_widgets-f6276296e03164e8.exe)
+
+running 29 tests
+test badge::tests::tone_to_color ... ok
+test button::tests::click_emits_action ... ok
+test button::tests::disabled_button_ignores_events ... ok
+test button::tests::layout_clamps_to_constraints ... ok
+test button::tests::non_primary_pointer_and_non_pointer_events_ignored ... ok
+test button::tests::paint_background_reflects_state ... ok
+test button::tests::release_without_prior_press_consumes_no_emit ... ok
+test button::tests::semantics_emits_button_node ... ok
+test button::tests::update_applies_props_and_marks_paint ... ok
+test icon_button::tests::construct_and_decorate ... ok
+test icon_button::tests::default_enabled ... ok
+test list_view::tests::select_within_bounds ... ok
+test menu::tests::build_menu_with_separator ... ok
+test menu::tests::context_menu_open_close_toggle ... ok
+test popover::tests::placement_default ... ok
+test popup::tests::open_close_toggle ... ok
+test progress::tests::clamps_fraction ... ok
+test progress::tests::indeterminate_has_no_fraction ... ok
+test scrollbar::tests::drag_only_when_start_on_thumb ... ok
+test scrollbar::tests::no_scrollbar_when_content_fits ... ok
+test scrollbar::tests::vertical_thumb_ratio_and_position ... ok
+test tabs::tests::activate_tab ... ok
+test text_input::tests::ime_caret_rect_advances_with_cursor ... ok
+test text_input::tests::insert_move_backspace ... ok
+test text_input::tests::replace_selection ... ok
+test toggle::tests::flip_toggles_and_emits_action ... ok
+test toggle::tests::label_optional ... ok
+test toolbar::tests::build_toolbar ... ok
+test tooltip::tests::defaults ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+warning: 48 functions have mismatched data
+Filename                                         Regions    Missed Regions     Cover   Functions  Missed Functions  Executed       Lines      Missed Lines     Cover    Branches   Missed Branches     Cover
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+browser-ui\chrome\src\address_bar.rs                 126                 4    96.83%          13                 0   100.00%          73                 0   100.00%           0                 0         -
+browser-ui\chrome\src\bookmarks_bar.rs                82                 0   100.00%          10                 0   100.00%          50                 0   100.00%           0                 0         -
+browser-ui\chrome\src\browser_action.rs                5                 0   100.00%           1                 0   100.00%           5                 0   100.00%           0                 0         -
+browser-ui\chrome\src\browser_menu.rs                113                 5    95.58%          11                 0   100.00%          71                 0   100.00%           0                 0         -
+browser-ui\chrome\src\browser_tab_strip.rs           100                 2    98.00%          14                 0   100.00%          73                 0   100.00%           0                 0         -
+browser-ui\chrome\src\chrome_model.rs                 57                 0   100.00%           7                 0   100.00%          43                 0   100.00%           0                 0         -
+browser-ui\chrome\src\download_panel.rs              140                 1    99.29%          17                 0   100.00%          75                 0   100.00%           0                 0         -
+browser-ui\chrome\src\find_bar.rs                    105                 3    97.14%          11                 0   100.00%          66                 1    98.48%           0                 0         -
+browser-ui\chrome\src\navigation_buttons.rs           75                 2    97.33%           6                 0   100.00%          40                 0   100.00%           0                 0         -
+browser-ui\chrome\src\page_load_indicator.rs          59                 0   100.00%           6                 0   100.00%          37                 0   100.00%           0                 0         -
+browser-ui\chrome\src\page_viewport.rs                30                 0   100.00%           3                 0   100.00%          33                 0   100.00%           0                 0         -
+browser-ui\chrome\src\permission_prompt.rs            49                 0   100.00%           7                 0   100.00%          31                 0   100.00%           0                 0         -
+browser-ui\chrome\src\security_badge.rs               61                 0   100.00%           7                 0   100.00%          40                 0   100.00%           0                 0         -
+browser-ui\chrome\src\shell.rs                       518                30    94.21%          27                 3    88.89%         260                15    94.23%           0                 0         -
+browser-ui\chrome\src\site_info_panel.rs              57                 1    98.25%           7                 0   100.00%          47                 0   100.00%           0                 0         -
+foundation\text\src\backend.rs                       582                50    91.41%          36                 4    88.89%         395                27    93.16%           0                 0         -
+foundation\text\src\bidi.rs                           26                 0   100.00%           3                 0   100.00%          15                 0   100.00%           0                 0         -
+foundation\text\src\font_fallback.rs                  81                 1    98.77%           9                 0   100.00%          37                 0   100.00%           0                 0         -
+foundation\text\src\font_request.rs                   46                 6    86.96%           7                 2    71.43%          34                 6    82.35%           0                 0         -
+foundation\text\src\glyph_cache.rs                    94                11    88.30%           9                 2    77.78%          71                 9    87.32%           0                 0         -
+foundation\text\src\grapheme.rs                       51                 0   100.00%           5                 0   100.00%          25                 0   100.00%           0                 0         -
+foundation\text\src\line_break.rs                     50                 1    98.00%           3                 0   100.00%          25                 0   100.00%           0                 0         -
+foundation\text\src\shaping.rs                        12                 0   100.00%           3                 0   100.00%           7                 0   100.00%           0                 0         -
+foundation\text\src\text_blob.rs                      19                 0   100.00%           2                 0   100.00%          15                 0   100.00%           0                 0         -
+foundation\text\src\text_measure.rs                    3                 0   100.00%           1                 0   100.00%           3                 0   100.00%           0                 0         -
+ui\adapters\webview\src\scroll_bridge.rs              40                 0   100.00%           4                 0   100.00%          34                 0   100.00%           0                 0         -
+ui\adapters\webview\src\webview_widget.rs             59                 0   100.00%           7                 0   100.00%          58                 0   100.00%           0                 0         -
+ui\adapters\winit\src\event_map.rs                    75                 4    94.67%           4                 0   100.00%          49                 2    95.92%           0                 0         -
+ui\adapters\winit\src\runtime.rs                      55                 7    87.27%          11                 2    81.82%          44                10    77.27%           0                 0         -
+ui\animation\src\clock.rs                             23                 0   100.00%           4                 0   100.00%          16                 0   100.00%           0                 0         -
+ui\animation\src\curve.rs                             33                 0   100.00%           3                 0   100.00%          20                 0   100.00%           0                 0         -
+ui\animation\src\tween.rs                             37                 1    97.30%           4                 0   100.00%          26                 1    96.15%           0                 0         -
+ui\assets\src\lib.rs                                  41                 2    95.12%           6                 0   100.00%          23                 0   100.00%           0                 0         -
+ui\collections\src\lib.rs                             77                 0   100.00%           8                 0   100.00%          48                 0   100.00%           0                 0         -
+ui\commands\src\lib.rs                               118                 3    97.46%          11                 0   100.00%          63                 0   100.00%           0                 0         -
+ui\core\src\action.rs                                 37                 2    94.59%           4                 0   100.00%          21                 1    95.24%           0                 0         -
+ui\core\src\binding.rs                               140                13    90.71%          13                 0   100.00%          75                 9    88.00%           0                 0         -
+ui\core\src\element.rs                               175                 6    96.57%          14                 1    92.86%          90                 3    96.67%           0                 0         -
+ui\core\src\event.rs                                  69                 5    92.75%           8                 0   100.00%          51                 3    94.12%           0                 0         -
+ui\core\src\focus.rs                                  73                 1    98.63%           7                 0   100.00%          36                 1    97.22%           0                 0         -
+ui\core\src\geometry.rs                              202                17    91.58%          25                 4    84.00%         137                23    83.21%           0                 0         -
+ui\core\src\invalidation.rs                           64                 4    93.75%          11                 1    90.91%          42                 3    92.86%           0                 0         -
+ui\core\src\layout.rs                                 70                 0   100.00%           8                 0   100.00%          51                 0   100.00%           0                 0         -
+ui\core\src\scroll.rs                                 53                 0   100.00%           6                 0   100.00%          49                 0   100.00%           0                 0         -
+ui\core\src\semantics.rs                              50                 0   100.00%           5                 0   100.00%          44                 0   100.00%           0                 0         -
+ui\core\src\theme.rs                                 173                20    88.44%          19                 3    84.21%         166                20    87.95%           0                 0         -
+ui\core\src\widget.rs                                 69                 0   100.00%           6                 0   100.00%          43                 0   100.00%           0                 0         -
+ui\design-system\src\lib.rs                           47                 2    95.74%           7                 0   100.00%          39                 2    94.87%           0                 0         -
+ui\devtools\src\lib.rs                                63                 1    98.41%           8                 0   100.00%          37                 1    97.30%           0                 0         -
+ui\dsl\src\engine.rs                                1942               232    88.05%          88                 9    89.77%         974                80    91.79%           0                 0         -
+ui\dsl\src\expression.rs                             114                 0   100.00%          10                 0   100.00%          66                 0   100.00%           0                 0         -
+ui\dsl\src\loader.rs                                  34                 1    97.06%           5                 0   100.00%          26                 0   100.00%           0                 0         -
+ui\forms\src\lib.rs                                   55                 1    98.18%           6                 0   100.00%          42                 0   100.00%           0                 0         -
+ui\gestures\src\lib.rs                                92                 1    98.91%           8                 0   100.00%          53                 0   100.00%           0                 0         -
+ui\i18n\src\catalog.rs                               194                10    94.85%          12                 1    91.67%         120                 9    92.50%           0                 0         -
+ui\i18n\src\direction.rs                              32                 0   100.00%           2                 0   100.00%          14                 0   100.00%           0                 0         -
+ui\i18n\src\fallback.rs                               37                 0   100.00%           3                 0   100.00%          21                 0   100.00%           0                 0         -
+ui\i18n\src\formatter.rs                             115                 5    95.65%           6                 0   100.00%          57                 3    94.74%           0                 0         -
+ui\i18n\src\locale.rs                                 39                 7    82.05%           4                 1    75.00%          21                 4    80.95%           0                 0         -
+ui\i18n\src\message.rs                                31                 0   100.00%           6                 0   100.00%          29                 0   100.00%           0                 0         -
+ui\i18n\src\plural.rs                                 13                 0   100.00%           2                 0   100.00%          10                 0   100.00%           0                 0         -
+ui\navigation\src\lib.rs                              76                 2    97.37%           9                 0   100.00%          43                 2    95.35%           0                 0         -
+ui\overlay\src\lib.rs                                 78                 0   100.00%          10                 0   100.00%          56                 0   100.00%           0                 0         -
+ui\patterns\src\command_palette.rs                    38                 0   100.00%           4                 0   100.00%          31                 0   100.00%           0                 0         -
+ui\patterns\src\data_list.rs                          18                 0   100.00%           3                 0   100.00%          17                 0   100.00%           0                 0         -
+ui\patterns\src\dialog_scaffold.rs                    24                 0   100.00%           4                 0   100.00%          21                 0   100.00%           0                 0         -
+ui\patterns\src\search_field.rs                       24                 0   100.00%           3                 0   100.00%          17                 0   100.00%           0                 0         -
+ui\patterns\src\status_bubble.rs                      19                 0   100.00%           3                 0   100.00%          16                 0   100.00%           0                 0         -
+ui\patterns\src\suggestion_list.rs                    31                 1    96.77%           3                 0   100.00%          29                 1    96.55%           0                 0         -
+ui\patterns\src\tab_bar.rs                            55                 2    96.36%           6                 0   100.00%          33                 2    93.94%           0                 0         -
+ui\platform\src\lib.rs                                24                 0   100.00%           4                 0   100.00%          15                 0   100.00%           0                 0         -
+ui\render\src\backend.rs                             173                15    91.33%          10                 1    90.00%         130                10    92.31%           0                 0         -
+ui\render\src\clip.rs                                 57                 8    85.96%           8                 2    75.00%          29                 6    79.31%           0                 0         -
+ui\render\src\hit_test.rs                             68                 4    94.12%           4                 0   100.00%          40                 2    95.00%           0                 0         -
+ui\render\src\layer.rs                                 3                 0   100.00%           1                 0   100.00%           8                 0   100.00%           0                 0         -
+ui\render\src\paint_ctx.rs                           112                13    88.39%          12                 2    83.33%          86                11    87.21%           0                 0         -
+ui\render\src\render_node.rs                           6                 0   100.00%           1                 0   100.00%           9                 0   100.00%           0                 0         -
+ui\render\src\scene.rs                                14                 0   100.00%           3                 0   100.00%           9                 0   100.00%           0                 0         -
+ui\restoration\src\lib.rs                             78                 0   100.00%           8                 0   100.00%          39                 0   100.00%           0                 0         -
+ui\runtime\src\accessibility.rs                       21                 1    95.24%           4                 0   100.00%          16                 0   100.00%           0                 0         -
+ui\runtime\src\i18n_provider.rs                       92                16    82.61%           9                 3    66.67%          54                10    81.48%           0                 0         -
+ui\runtime\src\ime.rs                                 34                 0   100.00%           4                 0   100.00%          20                 0   100.00%           0                 0         -
+ui\runtime\src\scheduler.rs                           90                 4    95.56%           9                 1    88.89%          49                 3    93.88%           0                 0         -
+ui\runtime\src\theme_provider.rs                     110                27    75.45%           8                 2    75.00%          78                18    76.92%           0                 0         -
+ui\runtime\src\tree.rs                                25                 0   100.00%           4                 0   100.00%          23                 0   100.00%           0                 0         -
+ui\testing\src\lib.rs                                  9                 0   100.00%           3                 0   100.00%           9                 0   100.00%           0                 0         -
+ui\testing\src\scene_snapshot.rs                     133                40    69.92%           5                 0   100.00%         108                32    70.37%           0                 0         -
+ui\testing\src\semantics_snapshot.rs                  62                 6    90.32%           3                 0   100.00%          42                 1    97.62%           0                 0         -
+ui\widgets\src\badge.rs                               29                 2    93.10%           3                 0   100.00%          20                 2    90.00%           0                 0         -
+ui\widgets\src\button.rs                             334                10    97.01%          22                 2    90.91%         251                 2    99.20%           0                 0         -
+ui\widgets\src\icon_button.rs                         41                 0   100.00%           5                 0   100.00%          29                 0   100.00%           0                 0         -
+ui\widgets\src\list_view.rs                           19                 0   100.00%           3                 0   100.00%          18                 0   100.00%           0                 0         -
+ui\widgets\src\menu.rs                                70                 0   100.00%          10                 0   100.00%          56                 0   100.00%           0                 0         -
+ui\widgets\src\popover.rs                             11                 0   100.00%           2                 0   100.00%          12                 0   100.00%           0                 0         -
+ui\widgets\src\popup.rs                               23                 0   100.00%           4                 0   100.00%          20                 0   100.00%           0                 0         -
+ui\widgets\src\progress.rs                            37                 0   100.00%           7                 0   100.00%          23                 0   100.00%           0                 0         -
+ui\widgets\src\scrollbar.rs                          160                30    81.25%           6                 0   100.00%         108                21    80.56%           0                 0         -
+ui\widgets\src\tabs.rs                                32                 0   100.00%           4                 0   100.00%          24                 0   100.00%           0                 0         -
+ui\widgets\src\text_input.rs                         150                18    88.00%           9                 0   100.00%          89                 6    93.26%           0                 0         -
+ui\widgets\src\toggle.rs                              41                 0   100.00%           5                 0   100.00%          27                 0   100.00%           0                 0         -
+ui\widgets\src\toolbar.rs                             30                 0   100.00%           4                 0   100.00%          20                 0   100.00%           0                 0         -
+ui\widgets\src\tooltip.rs                              9                 0   100.00%           2                 0   100.00%          10                 0   100.00%           0                 0         -
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TOTAL                                               9542               661    93.07%         811                46    94.33%        6000               362    93.97%           0                 0         -

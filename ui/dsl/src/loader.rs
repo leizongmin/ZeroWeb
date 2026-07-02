@@ -4,6 +4,7 @@
 
 use crate::diagnostics::DslError;
 use crate::expression::Expression;
+use hashbrown::HashMap;
 use zero_ui_core::binding::{Value, ValueType};
 use zero_ui_core::widget::WidgetSpec;
 
@@ -24,12 +25,21 @@ pub trait ExpressionEngine {
 }
 
 /// 表达式求值上下文（持有状态快照 + 权限边界，spec 约束 7）。
+///
+/// `vars` 提供路径根（`$state`/`$props`/`$theme`/`$env` 等）的值快照；
+/// 求值无副作用、确定性、可缓存。
 #[derive(Debug, Clone)]
 pub struct EvalContext {
-    /// 是否允许调用纯函数（沙箱可关闭）。
+    /// 是否允许调用纯函数（沙箱可关闭：false 时所有 Call → ForbiddenCapability）。
     pub allow_functions: bool,
     /// AST 最大节点数（防恶意 DSL 消耗 CPU，spec FR-008）。
     pub max_nodes: usize,
+    /// 求值最大递归深度（防深度嵌套 AST 栈溢出）。
+    pub max_depth: usize,
+    /// 集合函数最大累计迭代数（防超长数组消耗 CPU）。
+    pub max_iterations: usize,
+    /// 路径根 → 值快照（如 `"state" → Value::Object{...}`）。
+    pub vars: HashMap<String, Value>,
 }
 
 impl Default for EvalContext {
@@ -37,7 +47,18 @@ impl Default for EvalContext {
         EvalContext {
             allow_functions: true,
             max_nodes: 1024,
+            max_depth: 64,
+            max_iterations: 10_000,
+            vars: HashMap::new(),
         }
+    }
+}
+
+impl EvalContext {
+    /// 注入一个路径根的值快照（builder 风格）。
+    pub fn with_var(mut self, root: &str, value: Value) -> EvalContext {
+        self.vars.insert(root.to_string(), value);
+        self
     }
 }
 
