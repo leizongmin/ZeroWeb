@@ -1112,10 +1112,7 @@ mod tests {
 
         // 模拟 WebView 渲染输出（一个填充矩形）。
         let mut webview_prims = RenderPrimitives::default();
-        webview_prims.add_fill(
-            RfRect::new(0.0, 0.0, 1280.0, 704.0),
-            RfColor::rgb(255, 255, 255),
-        );
+        webview_prims.add_fill(RfRect::new(0.0, 0.0, 1280.0, 704.0), RfColor::rgb(255, 255, 255));
 
         let (bridge, vp) = render_chrome_via_sdk_with_webview_surface(
             &shell,
@@ -1131,6 +1128,6 @@ mod tests {
         // viewport rect 非空。
         assert!(vp.is_some(), "viewport rect present");
         // WebView surface 合并（至少 chrome fills + webview fill）。
-        assert!(p.fills.len() >= 1, "fills after webview merge: {}", p.fills.len());
+        assert!(!p.fills.is_empty(), "fills after webview merge: {}", p.fills.len());
     }
 }
