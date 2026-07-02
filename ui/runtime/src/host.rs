@@ -645,16 +645,26 @@ fn cross_axis_alignment_from_props(props: &PropsMap) -> CrossAxisAlignment {
     CrossAxisAlignment::Start
 }
 
-/// 从 props 读主轴对齐（`main_axis_align`：`"start"`/`"center"`/`"end"`，大小写不敏感；
-/// Row 也接受 `"left"`/`"right"`、Column 也接受 `"top"`/`"bottom"`）。
+/// 从 props 读主轴对齐（`main_axis_align`，大小写不敏感；`-`/`_`/无分隔均可）：
+/// `"start"` / `"center"` / `"end"` / `"space_between"` / `"space_around"` / `"space_evenly"`
+/// （Row 也接受 `"left"`/`"right"`、Column 也接受 `"top"`/`"bottom"`）。
 ///
 /// 缺省 [`MainAxisAlignment::Start`]（向后兼容历史左/顶打包行为）。需容器主轴有剩余空间才生效
 /// （fill-sizing 或父 tight/exact 约束）；弹性子节点消费剩余空间时主轴对齐无可见效果。
 fn main_axis_alignment_from_props(props: &PropsMap) -> MainAxisAlignment {
     if let Some(Value::Text(s)) = props.get("main_axis_align") {
-        match s.to_ascii_lowercase().as_str() {
+        // 归一化：去 `-`/`_` 再小写，使 "space-between"/"space_between"/"spacebetween" 统一。
+        let norm: String = s
+            .chars()
+            .filter(|c| *c != '-' && *c != '_')
+            .collect::<String>()
+            .to_ascii_lowercase();
+        match norm.as_str() {
             "center" => return MainAxisAlignment::Center,
             "end" | "right" | "bottom" => return MainAxisAlignment::End,
+            "spacebetween" => return MainAxisAlignment::SpaceBetween,
+            "spacearound" => return MainAxisAlignment::SpaceAround,
+            "spaceevenly" => return MainAxisAlignment::SpaceEvenly,
             "start" | "left" | "top" => return MainAxisAlignment::Start,
             _ => {}
         }
@@ -716,16 +726,46 @@ enum MainAxisAlignment {
     Center,
     /// 整组子节点（含 `gap`）紧贴主轴终点（Row=右侧 / Column=底部）。
     End,
+    /// 首尾贴边，剩余空间均匀插入 `n−1` 个间隙（CSS `justify-content: space-between`）。
+    SpaceBetween,
+    /// 每个子节点两侧等量剩余空间（CSS `space-around`）。
+    SpaceAround,
+    /// 首尾与每对子节点之间均等剩余空间（CSS `space-evenly`）。
+    SpaceEvenly,
 }
 
-/// 主轴对齐的起始偏移量（整组子节点相对主轴起点的位移）。
+/// 主轴分布：返回 `(起始偏移, 子节点间额外间距)`（CSS `justify-content` 语义）。
 ///
-/// `free` = 容器主轴尺寸 − 整组子节点打包长度（含 gap）。Start→0、Center→free/2、End→free。
-fn main_axis_offset(align: MainAxisAlignment, free: f32) -> f32 {
+/// `extra` = 容器主轴尺寸 − 子节点主轴尺寸和 − `gap*(n−1)`（调用方钳到非负），即扣除最小 `gap`
+/// 后可分配的剩余空间；`n` = 子节点数。最终子节点间间距 = `gap + between_extra`。
+///
+/// - Start / Center / End：`between_extra = 0`，剩余空间全作起始偏移（0 / extra/2 / extra）。
+/// - SpaceBetween：起始偏移 0，剩余空间均分到 `n−1` 个间隙（`n ≤ 1` 退化为 Start）。
+/// - SpaceAround：剩余空间均分到 `n` 个「环绕」槽，起始偏移 = extra/(2n)，间隙额外 = extra/n。
+/// - SpaceEvenly：剩余空间均分到 `n+1` 个等分（含首尾），起始偏移 = 间隙额外 = extra/(n+1)。
+///
+/// `extra <= 0`（溢出）或 `n == 0` 时一律退化为 Start（offset=0，间距=gap）。
+fn main_axis_layout(align: MainAxisAlignment, extra: f32, n: usize) -> (f32, f32) {
+    if extra <= 0.0 || n == 0 {
+        return (0.0, 0.0);
+    }
+    let nf = n as f32;
     match align {
-        MainAxisAlignment::Start => 0.0,
-        MainAxisAlignment::Center => free * 0.5,
-        MainAxisAlignment::End => free,
+        MainAxisAlignment::Start => (0.0, 0.0),
+        MainAxisAlignment::Center => (extra * 0.5, 0.0),
+        MainAxisAlignment::End => (extra, 0.0),
+        MainAxisAlignment::SpaceBetween => {
+            if n > 1 {
+                (0.0, extra / (nf - 1.0))
+            } else {
+                (0.0, 0.0)
+            }
+        }
+        MainAxisAlignment::SpaceAround => (extra / (2.0 * nf), extra / nf),
+        MainAxisAlignment::SpaceEvenly => {
+            let per = extra / (nf + 1.0);
+            (per, per)
+        }
     }
 }
 
@@ -889,15 +929,17 @@ fn arrange(node: &mut HostNode, origin: Point) {
             let main = main_axis_alignment_from_props(&node.props);
             let container_cross = node.cached_size.width;
             let n = node.children.len();
-            // 主轴打包长度 = 子节点主轴尺寸和 + gap；剩余空间按主轴对齐分配起始偏移。
-            let packed =
-                node.children.iter().map(|c| c.cached_size.height).sum::<f32>() + gap * n.saturating_sub(1) as f32;
-            let main_offset = main_axis_offset(main, (node.cached_size.height - packed).max(0.0));
+            // 主轴剩余空间 = 容器主轴 − 子节点尺寸和 − 最小 gap（钳到非负），按 justify-content 分布。
+            let content: f32 = node.children.iter().map(|c| c.cached_size.height).sum();
+            let gaps_min = gap * n.saturating_sub(1) as f32;
+            let extra = (node.cached_size.height - content - gaps_min).max(0.0);
+            let (main_offset, between_extra) = main_axis_layout(main, extra, n);
+            let spacing = gap + between_extra;
             let mut y = origin.y + main_offset;
             for child in node.children.iter_mut() {
                 let cx = cross_offset(cross, container_cross, child.cached_size.width);
                 arrange(child, Point::new(origin.x + cx, y));
-                y += child.cached_size.height + gap;
+                y += child.cached_size.height + spacing;
             }
         }
         Some(ContainerKind::Row) => {
@@ -906,14 +948,16 @@ fn arrange(node: &mut HostNode, origin: Point) {
             let main = main_axis_alignment_from_props(&node.props);
             let container_cross = node.cached_size.height;
             let n = node.children.len();
-            let packed =
-                node.children.iter().map(|c| c.cached_size.width).sum::<f32>() + gap * n.saturating_sub(1) as f32;
-            let main_offset = main_axis_offset(main, (node.cached_size.width - packed).max(0.0));
+            let content: f32 = node.children.iter().map(|c| c.cached_size.width).sum();
+            let gaps_min = gap * n.saturating_sub(1) as f32;
+            let extra = (node.cached_size.width - content - gaps_min).max(0.0);
+            let (main_offset, between_extra) = main_axis_layout(main, extra, n);
+            let spacing = gap + between_extra;
             let mut x = origin.x + main_offset;
             for child in node.children.iter_mut() {
                 let cy = cross_offset(cross, container_cross, child.cached_size.height);
                 arrange(child, Point::new(x, origin.y + cy));
-                x += child.cached_size.width + gap;
+                x += child.cached_size.width + spacing;
             }
         }
         Some(ContainerKind::Stack) => {
@@ -1758,6 +1802,140 @@ mod tests {
         let b = host.rect_of(&WidgetId::new("b")).unwrap();
         assert_eq!(a.left(), 145.0, "center with gap: (400-110)/2 = 145");
         assert_eq!(b.left(), 205.0, "second = 145 + 50 + gap(10)");
+    }
+
+    #[test]
+    fn row_main_axis_space_between_flush_first_and_last() {
+        // tight(400,100) + space_between + 2×Patch(50)：content=100，extra=300，n=2 →
+        // between_extra=300，spacing=300。首 Patch 0..50，末 Patch 350..400（贴两端）。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props
+            .insert("main_axis_align", Value::Text("space-between".into()));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        host.layout(Constraints::tight(Size::new(400.0, 100.0)));
+        let a = host.rect_of(&WidgetId::new("a")).unwrap();
+        let b = host.rect_of(&WidgetId::new("b")).unwrap();
+        assert_eq!(a.left(), 0.0, "space-between: first flush left");
+        assert_eq!(a.right(), 50.0);
+        assert_eq!(b.left(), 350.0);
+        assert_eq!(b.right(), 400.0, "space-between: last flush right");
+    }
+
+    #[test]
+    fn row_main_axis_space_around_equal_margin_each() {
+        // tight(400,100) + space_around + 2×Patch(50)：extra=300 → offset=75，between_extra=150。
+        // a 75..125，b 275..325（每子节点两侧 75 等量空间，中段 150）。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props.insert("main_axis_align", Value::Text("space_around".into()));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        host.layout(Constraints::tight(Size::new(400.0, 100.0)));
+        let a = host.rect_of(&WidgetId::new("a")).unwrap();
+        let b = host.rect_of(&WidgetId::new("b")).unwrap();
+        assert_eq!(a.left(), 75.0, "space-around: left margin = extra/(2n) = 75");
+        assert_eq!(a.right(), 125.0);
+        assert_eq!(b.left(), 275.0);
+        assert_eq!(b.right(), 325.0);
+        assert_eq!(b.right() + 75.0, 400.0, "right margin = 75 (symmetric)");
+    }
+
+    #[test]
+    fn row_main_axis_space_evenly_equal_divisions() {
+        // tight(400,100) + space_evenly + 2×Patch(50)：extra=300 → n+1=3 等分，每分 100。
+        // a 100..150，b 250..300（首尾与中段均 100）。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props.insert("main_axis_align", Value::Text("spaceevenly".into()));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        host.layout(Constraints::tight(Size::new(400.0, 100.0)));
+        let a = host.rect_of(&WidgetId::new("a")).unwrap();
+        let b = host.rect_of(&WidgetId::new("b")).unwrap();
+        assert_eq!(a.left(), 100.0, "space-evenly: end space = extra/(n+1) = 100");
+        assert_eq!(a.right(), 150.0);
+        assert_eq!(b.left(), 250.0, "between space = 100");
+        assert_eq!(b.right(), 300.0);
+    }
+
+    #[test]
+    fn row_main_axis_space_between_three_children() {
+        // tight(500,100) + space_between + 3×Patch(50)：content=150，extra=350，n=3 →
+        // between_extra=350/2=175，spacing=175。a 0..50，b 225..275，c 450..500。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props
+            .insert("main_axis_align", Value::Text("space_between".into()));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("green", "b", "app.b"));
+        root.children.push(patch("blue", "c", "app.c"));
+        host.set_root(&root);
+        host.layout(Constraints::tight(Size::new(500.0, 100.0)));
+        let a = host.rect_of(&WidgetId::new("a")).unwrap();
+        let b = host.rect_of(&WidgetId::new("b")).unwrap();
+        let c = host.rect_of(&WidgetId::new("c")).unwrap();
+        assert_eq!(a.left(), 0.0);
+        assert_eq!(b.left(), 225.0, "middle: 50 (a) + 175 (spacing) = 225");
+        assert_eq!(c.left(), 450.0, "last: 225 + 50 + 175 = 450");
+        assert_eq!(c.right(), 500.0);
+    }
+
+    #[test]
+    fn row_main_axis_space_between_respects_gap() {
+        // tight(400,100) + space_between + gap=20 + 2×Patch(50)：content=100，gaps_min=20，
+        // extra=400-100-20=280，spacing=20+280=300。a 0..50，b 350..400。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props
+            .insert("main_axis_align", Value::Text("space-between".into()));
+        root.props.insert("gap", Value::Float(20.0));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        host.layout(Constraints::tight(Size::new(400.0, 100.0)));
+        let a = host.rect_of(&WidgetId::new("a")).unwrap();
+        let b = host.rect_of(&WidgetId::new("b")).unwrap();
+        assert_eq!(a.left(), 0.0);
+        assert_eq!(b.left(), 350.0, "50 (a) + gap(20) + extra(280) = 350");
+        assert_eq!(b.right(), 400.0);
+    }
+
+    #[test]
+    fn row_main_axis_space_between_single_child_degenerates_to_start() {
+        // n=1：space_between 无间隙可分 → 退化为 Start（offset=0，spacing=gap）。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Row");
+        root.props
+            .insert("main_axis_align", Value::Text("space-between".into()));
+        root.children.push(patch("red", "only", "app.only"));
+        host.set_root(&root);
+        host.layout(Constraints::tight(Size::new(400.0, 100.0)));
+        let only = host.rect_of(&WidgetId::new("only")).unwrap();
+        assert_eq!(only.left(), 0.0, "single child space-between → Start (flush left)");
+    }
+
+    #[test]
+    fn column_main_axis_space_between_vertical() {
+        // tight(100,400) Column + space_between + 2×Patch(50)：extra=300，between_extra=300。
+        // a top 0..50，b top 350..400。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.props
+            .insert("main_axis_align", Value::Text("space_between".into()));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        host.layout(Constraints::tight(Size::new(100.0, 400.0)));
+        let a = host.rect_of(&WidgetId::new("a")).unwrap();
+        let b = host.rect_of(&WidgetId::new("b")).unwrap();
+        assert_eq!(a.top(), 0.0, "column space-between: first flush top");
+        assert_eq!(b.top(), 350.0);
+        assert_eq!(b.bottom(), 400.0, "last flush bottom");
     }
 
     #[test]

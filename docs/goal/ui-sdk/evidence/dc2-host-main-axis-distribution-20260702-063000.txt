@@ -1,0 +1,48 @@
+DC-2 host 主轴分布（justify-content space-between/around/evenly）
+日期：2026-07-02
+分支：ui-sdk
+
+## 范围
+闭合 master.md Next Steps #5 列出的「host 主轴分布 space-between/around」可选项——
+完善 ui/runtime `WidgetHost` 线性容器（Row/Column）的主轴分布故事（CSS `justify-content` 对齐）。
+此前已有 Start/Center/End（main_axis_offset，仅起始偏移 + 均匀 gap），本轮补齐分布语义。
+
+## 变更（ui/runtime/src/host.rs）
+- `MainAxisAlignment` 加 3 变体：`SpaceBetween` / `SpaceAround` / `SpaceEvenly`。
+- `main_axis_offset(align, free) -> f32` 替换为 `main_axis_layout(align, extra, n) -> (offset, between_extra)`：
+  返回起始偏移 + 子节点间额外间距。`extra` = 容器主轴 − 子节点尺寸和 − gap*(n−1)（钳非负）。
+  - Start/Center/End：between_extra=0，offset=0/extra/2/extra（**与旧 main_axis_offset 逐位等价**）。
+  - SpaceBetween：offset=0，between_extra=extra/(n−1)（n>1；n≤1 退化 Start）。
+  - SpaceAround：offset=extra/(2n)，between_extra=extra/n。
+  - SpaceEvenly：offset=between_extra=extra/(n+1)。
+  - extra≤0（溢出）或 n=0 → 退化 Start。
+- `arrange` Row/Column 臂：content=子节点尺寸和，gaps_min=gap*(n−1)，extra=(main−content−gaps_min).max(0)，
+  spacing=gap+between_extra；按 offset 起始、spacing 步进放置。**Start/Center/End 行为不变**（spacing=gap+0）。
+- `main_axis_alignment_from_props`：归一化去 `-`/`_` 后匹配，接受 `space_between`/`space-between`/`spacebetween`
+  （around/evenly 同）。
+
+## 测试（7 新，ui-runtime host::tests 46→53）
+- `row_main_axis_space_between_flush_first_and_last`：tight(400,100)+2×Patch(50) → a 0..50 / b 350..400。
+- `row_main_axis_space_around_equal_margin_each`：a 75..125 / b 275..325（两侧 75 对称）。
+- `row_main_axis_space_evenly_equal_divisions`：a 100..150 / b 250..300（n+1=3 等分）。
+- `row_main_axis_space_between_three_children`：tight(500)+3×Patch(50) → a 0 / b 225 / c 450..500。
+- `row_main_axis_space_between_respects_gap`：gap=20 → extra=280，spacing=300，b 350..400。
+- `row_main_axis_space_between_single_child_degenerates_to_start`：n=1 → flush left（退化 Start）。
+- `column_main_axis_space_between_vertical`：Column tight(100,400) → a top 0 / b top 350..400（垂直分布）。
+
+既有 Start/Center/End + fill-sizing + flex 测全绿（向后兼容，零回归）。
+
+## 门禁
+- `./target/test-guard -- cargo test -p zero-ui-runtime` — 53 lib + 3 集成全绿。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all -- --check` — 净。
+- 纯 SDK-only（ui/runtime，未触碰 render-foundation/浏览器）→ 无 product-smoke 风险。
+
+## DC 影响
+- DC-2：host 主轴分布故事完整（Start/Center/End + SpaceBetween/Around/Evenly，CSS justify-content 对齐）。
+  chrome 工具栏所需（如导航按钮贴左、菜单贴右的 space-between）现可用。
+- master.md Next Steps #5「space-between/around」可选项闭合；剩余可选 = flex basis / 显式 min-max 约束 prop。
+
+## 未覆盖（诚实声明）
+- 仅 justify-content 主轴分布；align-items 交叉轴已有 Start/Center/End（DC-2 既有）。
+- `gap` 在分布中作最小间距（CSS 语义：分布空间扣除 min gap 后再分配）；与 CSS flexbox `gap` 交互一致。
