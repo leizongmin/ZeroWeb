@@ -61,6 +61,34 @@
     return Promise.resolve();
   };
 
+  // `window.getComputedStyle(elt[, pseudo])`：动态 reftest 极常用作「强制 reflow」
+  // 触发器——`getComputedStyle(el).getPropertyValue('grid-template-columns')` 结果
+  // 丢弃，仅逼布局发生（css-grid/grid-with-content-dynamic-display-001 line 43 即此
+  // 模式，紧接 line 47 的 `display:block` 视觉 mutation 才是测试目的）。
+  // 本全局缺失 → 调用抛 ReferenceError **中断整个脚本**，使其后的 DOM mutation 全丢
+  // （区别于 `offsetHeight` 等属性访问返回 undefined 不抛、仅值错，作 reflow 触发器
+  // 无害）。JS 在渲染前执行，无真实 computed 值可返；返回空 CSSStyleDeclaration 桩
+  // （任意属性访问/getPropertyValue 返 ''）不抛，让后续视觉 mutation 正常执行。
+  // 返 '' 对 `if (cs.display === 'none') …` 类条件可能取错分支，但脚本本会整体中断，
+  // stub 严格不劣于中断且对无条件 mutation（主流 reflow-触发模式）净正向。
+  globalThis.getComputedStyle = function(_elt, _pseudo) {
+    var empty = '';
+    return new Proxy({}, {
+      get: function(_t, prop) {
+        var p = String(prop);
+        if (p === 'getPropertyValue' || p === 'getPropertyPriority' || p === 'item') {
+          return function() { return empty; };
+        }
+        if (p === 'length') return 0;
+        if (p === 'parentRule') return null;
+        if (p === 'cssText') return empty;
+        // 其余任意 CSS 属性访问（.height/.display/.textAlign…）返空串；
+        // Symbol 属性（toPrimitive/iterator 等）返 undefined 避免误触发协议。
+        return typeof prop === 'string' ? empty : undefined;
+      }
+    });
+  };
+
   function _emptyCollection() {
     return { length: 0, item: function() { return null; }, namedItem: function() { return null; } };
   }
