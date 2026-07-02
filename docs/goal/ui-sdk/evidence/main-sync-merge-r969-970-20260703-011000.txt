@@ -1,0 +1,37 @@
+origin/main 同步 merge R969/R970（2026-07-03，commit b56f0d7d）
+=====================================================
+
+动机
+----
+rally run-rules 要求提交前同步远端 main。main 领先 2 commit。
+
+main 新增 commit
+----------------
+- R969 — DC-14 self-source 三态分类落地（print_dc14_three_state）。wpt-runner harness。
+- R970 — DC-14 self-source 非平凡性落地 + DC-14 全闭（frame_is_near_solid 共享 +
+  test_near_solid）。wpt-runner harness + rendering-compat DC-14 关闭。
+
+涉及文件：tests/wpt-runner/src/{main.rs,reftest.rs,reftest/reftest_compare.rs} +
+docs/goal/rendering-compat{.md,/master.md}（姊妹目标，只读引用，main 自更）。
+
+冲突与解决
+----------
+**零冲突**——ort 策略自动合并。关键：ui-sdk 此前（R966 merge）已把 reftest.rs 拆为
+reftest.rs + reftest_compare.rs + reftest_fonts.rs + reftest_scripts.rs；main 的 R969/R970
+新增在 reftest.rs / reftest_compare.rs 内，与 ui-sdk 的拆分正交，git 自动合并成功。
+
+方式
+----
+依 master.md #11：长分支用 merge（非全量 rebase）。
+
+门禁（merge 后）
+----------------
+- cargo build --workspace：Finished（0 错误）。
+- cargo build -p zero-wpt-runner：Finished。
+- cargo clippy --workspace --all-targets -- -D warnings：净。
+- cargo fmt --all --check：净。
+
+结论
+----
+纯同步（rendering-compat DC-14 wpt-runner harness 变更），零 UI SDK 代码变更，零冲突，
+零回归。

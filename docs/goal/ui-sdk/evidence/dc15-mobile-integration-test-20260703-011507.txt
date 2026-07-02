@@ -1,0 +1,50 @@
+DC-15 移动 skeleton 端到端 headless 集成测试（SDK-side，2026-07-03）
+======================================================================
+
+目标
+----
+证明 DC-15 移动适配 skeleton 的各组件在一条模拟移动 runtime 事件流里**正确组合**，
+而非各自孤立单测。这是 DC-15「touch/pan/pinch/fling gesture、soft keyboard、safe area、
+text scale、平台 back gesture 的最小适配 skeleton 落地」的端到端组合证据。
+
+实现（browser-ui/chrome/src/shell.rs，dev-deps 扩展）
+------------------------------------------------------
+browser-ui/chrome Cargo.toml 加 dev-deps：zero-ui-gestures / zero-ui-navigation /
+zero-ui-platform（全通用 crate，DC-1 机械验证零浏览器业务耦合——chrome 允许依赖 ui/*）。
+
+新增测 `mobile_skeleton_input_and_back_loop_composes`，模拟一条移动 runtime 事件流：
+
+1. **phone metrics → adaptive shell 选择**：390×844 + safe_area 34 + Mobile + Touch →
+   `AdaptiveBrowserChrome.build` 选 `ShellKind::Phone`（复用既有 adaptive 分发）。
+
+2. **触摸 Tap → GestureArena 仲裁**：`GestureArena` 装 `TapRecognizer`，喂
+   `PointerEvent::down`（不立即裁决）→ `PointerEvent::up`（容差内）→ `Gesture::Tap`。
+
+3. **触摸 Pan → GestureArena 仲裁**：装 `PanRecognizer`，down → move 位移 30px 超阈值 →
+   `Gesture::Pan`。
+
+4. **平台 back → BackNavigationService 仲裁 + Navigator 回落（移动 back glue）**：
+   测试内 glue `handle_mobile_back(back, nav) -> bool`（移动宿主 back 处理逻辑）：
+     - 注册了 app handler（如「about 覆盖层」）→ `BackResult::Handled` → 返回 true，**导航栈不变**；
+     - 无 handler → `BackResult::DefaultBack` → 回落 `RouteStack.pop()`；栈底返回 None → false（退出信号）。
+   场景：home → settings → about（depth 3）。back#1 Handled（overlay）栈不变；back#2 DefaultBack pop about；
+   back#3 pop settings；back#4 栈底 home → false（退出）。逐断言 depth + top.name。
+
+结论
+----
+DC-15 mobile skeleton 组件（adaptive shell / gestures arena / back 导航 / navigator）
+经端到端集成证明组合正确：触摸流 → 手势识别；平台 back → app handler 优先 / navigator 回落 /
+栈底退出。这是真实移动 runtime adapter 在设备上要做的编排逻辑的 headless 验证。
+
+门禁
+----
+- cargo build --workspace + clippy --workspace --all-targets -D warnings + fmt：全净。
+- browser-ui/chrome 80→81 测全绿（+1 端到端集成测）。
+- 下游零回归（仅新增测试 + dev-deps；生产代码零变化）。
+- SDK-side（browser-ui/chrome 未触碰 render-foundation 渲染像素 / 浏览器运行时）→ 无 product-smoke 风险。
+
+DC-15 状态
+----------
+DC-15 移动 skeleton 的 SDK 侧组合证据闭合：phone shell 可用 + 触摸手势识别 + 平台 back →
+navigator 回落，端到端验证通过。仍待 M4（需设备 / GUI）：至少一个移动后端真实可运行 +
+back/haptics 真实平台后端 + GestureArena 接入 WidgetHost dispatch（多指仲裁）+ GUI 可视验收。

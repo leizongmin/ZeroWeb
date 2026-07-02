@@ -28,3 +28,7 @@ zero-render-foundation = { workspace = true }
 
 [dev-dependencies]
 zero-render-foundation = { workspace = true }
+# DC-15 移动 skeleton 端到端集成测试：手势 arena + back 导航 + navigator 回落。
+zero-ui-gestures = { workspace = true }
+zero-ui-navigation = { workspace = true }
+zero-ui-platform = { workspace = true }

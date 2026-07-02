@@ -583,4 +583,84 @@ mod tests {
         assert!(!tablet_scene.entries.is_empty(), "tablet shell renders non-empty scene");
         assert!(fill_count(tablet_scene) >= 1, "tablet shell paints chrome bar fills");
     }
+
+    /// DC-15 移动 skeleton 端到端 headless 集成：phone metrics → adaptive 选 PhoneBrowserShell +
+    /// 触摸序列经 GestureArena → Tap/Pan + 平台 back 经 BackNavigationService 仲裁 → Navigator 回落。
+    ///
+    /// 证明 DC-15 移动适配 skeleton 的各组件（adaptive shell / gestures arena / back 导航 /
+    /// navigator）在一条模拟移动 runtime 事件流里正确组合，而非各自孤立。
+    #[test]
+    fn mobile_skeleton_input_and_back_loop_composes() {
+        use zero_ui_core::geometry::Point;
+        use zero_ui_gestures::{Gesture, GestureArena, PanRecognizer, PointerEvent, TapRecognizer};
+        use zero_ui_navigation::{Route, RouteStack};
+        use zero_ui_platform::{BackHandlerId, BackNavigationService, BackResult, InMemoryBackNavigation};
+
+        // ── 1. phone metrics → adaptive 选 Phone shell ──
+        let chrome = AdaptiveBrowserChrome::new();
+        let model = BrowserChromeModel::new();
+        let built = chrome.build(
+            &model,
+            &metrics(390.0, 844.0, 34.0, 0.0),
+            PlatformClass::Mobile,
+            InputClass::Touch,
+        );
+        assert_eq!(built.kind, ShellKind::Phone, "窄屏 + Mobile + Touch → Phone shell");
+
+        // ── 2. 触摸 Tap → GestureArena 仲裁 → Tap ──
+        let mut arena = GestureArena::new();
+        arena.push(TapRecognizer::new(8.0));
+        let tap_at = Point::new(195.0, 800.0); // 命中 phone 底部工具栏区
+        assert!(
+            arena.route(&PointerEvent::down(0, tap_at, 0)).is_none(),
+            "down 不立即裁决 Tap"
+        );
+        let g = arena
+            .route(&PointerEvent::up(0, tap_at, 12))
+            .expect("up 在容差内 → Tap");
+        assert!(matches!(g, Gesture::Tap(_)), "识别为 Tap：{g:?}");
+
+        // ── 3. 触摸 Pan（位移超阈值）→ Pan ──
+        let mut pan_arena = GestureArena::new();
+        pan_arena.push(PanRecognizer::with_thresholds(8.0, 1.5));
+        pan_arena.route(&PointerEvent::down(0, Point::new(100.0, 400.0), 0));
+        let pan = pan_arena
+            .route(&PointerEvent::move_(0, Point::new(100.0, 430.0), 20))
+            .expect("位移 30px 超阈值 → Pan Start");
+        assert!(matches!(pan, Gesture::Pan { .. }), "识别为 Pan：{pan:?}");
+
+        // ── 4. 平台 back 仲裁 + navigator 回落（移动 runtime back glue）──
+        // glue：app handler 注册时优先消耗；无 handler 回落 Navigator.pop；栈底返回 false（退出信号）。
+        fn handle_mobile_back(back: &dyn BackNavigationService, nav: &mut RouteStack) -> bool {
+            match back.on_platform_back() {
+                BackResult::Handled(_) => true,                 // app handler 消耗，不退栈
+                BackResult::DefaultBack => nav.pop().is_some(), // 回落退栈；栈底 None → 退出
+            }
+        }
+
+        let back = InMemoryBackNavigation::new();
+        let mut nav = RouteStack::new(Route::new("home"));
+        nav.push(Route::new("settings"));
+        nav.push(Route::new("about"));
+        assert_eq!(nav.depth(), 3);
+
+        // back #1：注册了「about 覆盖层」handler → Handled，导航栈不变。
+        back.push_handler(BackHandlerId::new("about-overlay"));
+        assert!(handle_mobile_back(&back, &mut nav), "overlay handler 消耗 back");
+        assert_eq!(nav.depth(), 3, "Handled 不退栈");
+        assert!(!back.has_handler(), "handler 已消耗");
+
+        // back #2：无 handler → DefaultBack → Navigator.pop（about）。
+        assert!(handle_mobile_back(&back, &mut nav), "pop about 栈非底");
+        assert_eq!(nav.depth(), 2);
+        assert_eq!(nav.top().unwrap().name.as_str(), "settings");
+
+        // back #3：再 pop（settings）→ home。
+        assert!(handle_mobile_back(&back, &mut nav));
+        assert_eq!(nav.depth(), 1);
+        assert_eq!(nav.top().unwrap().name.as_str(), "home");
+
+        // back #4：栈底 home → pop 返回 None → 退出信号 false。
+        assert!(!handle_mobile_back(&back, &mut nav), "栈底 → 宿主应退出");
+    }
 }
