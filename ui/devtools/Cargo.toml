@@ -1,0 +1,9 @@
+[package]
+name = "zero-ui-devtools"
+description = "通用 UI SDK 开发工具 — inspector/layout bounds/semantics view/theme preview/timeline（浏览器无关；M1 skeleton）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }

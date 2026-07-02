@@ -5987,6 +5987,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-ui-animation"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "zero-ui-core",
+]
+
+[[package]]
+name = "zero-ui-assets"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "hashbrown 0.15.5",
+ "thiserror 2.0.18",
+ "zero-ui-core",
+]
+
+[[package]]
+name = "zero-ui-collections"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "hashbrown 0.15.5",
+ "zero-ui-core",
+]
+
+[[package]]
+name = "zero-ui-commands"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "zero-ui-core",
+]
+
+[[package]]
 name = "zero-ui-core"
 version = "0.1.0"
 dependencies = [
@@ -5994,6 +6029,45 @@ dependencies = [
  "hashbrown 0.15.5",
  "serde",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "zero-ui-design-system"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "zero-ui-core",
+]
+
+[[package]]
+name = "zero-ui-devtools"
+version = "0.1.0"
+dependencies = [
+ "zero-ui-core",
+]
+
+[[package]]
+name = "zero-ui-dsl"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "serde",
+ "thiserror 2.0.18",
+ "zero-ui-core",
+]
+
+[[package]]
+name = "zero-ui-forms"
+version = "0.1.0"
+dependencies = [
+ "zero-ui-core",
+]
+
+[[package]]
+name = "zero-ui-gestures"
+version = "0.1.0"
+dependencies = [
+ "zero-ui-core",
 ]
 
 [[package]]
@@ -6007,6 +6081,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-ui-navigation"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "serde",
+ "zero-ui-core",
+]
+
+[[package]]
+name = "zero-ui-overlay"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "zero-ui-core",
+]
+
+[[package]]
 name = "zero-ui-patterns"
 version = "0.1.0"
 dependencies = [
@@ -6017,9 +6108,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-ui-platform"
+version = "0.1.0"
+dependencies = [
+ "zero-ui-core",
+]
+
+[[package]]
 name = "zero-ui-render"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "zero-ui-core",
+]
+
+[[package]]
+name = "zero-ui-restoration"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "hashbrown 0.15.5",
  "serde",
  "zero-ui-core",
 ]
@@ -6032,6 +6140,14 @@ dependencies = [
  "thiserror 2.0.18",
  "zero-ui-core",
  "zero-ui-i18n",
+ "zero-ui-render",
+]
+
+[[package]]
+name = "zero-ui-testing"
+version = "0.1.0"
+dependencies = [
+ "zero-ui-core",
  "zero-ui-render",
 ]
 

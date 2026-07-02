@@ -1,0 +1,12 @@
+[package]
+name = "zero-ui-assets"
+description = "通用 UI SDK 资源 — manifest/provider/icon/image/shader/variants（浏览器无关）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+compact_str = { workspace = true, features = ["serde"] }
+hashbrown = { workspace = true, features = ["serde"] }
+thiserror = { workspace = true }

@@ -1,0 +1,12 @@
+[package]
+name = "zero-ui-restoration"
+description = "通用 UI SDK 状态恢复 — restoration id/store/snapshot/route state/widget state（浏览器无关；session restore）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+compact_str = { workspace = true, features = ["serde"] }
+hashbrown = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }

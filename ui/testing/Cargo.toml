@@ -1,0 +1,10 @@
+[package]
+name = "zero-ui-testing"
+description = "通用 UI SDK 测试工具 — test runtime/fake clock/scene snapshot/semantics snapshot/gesture driver（浏览器无关）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+zero-ui-render = { workspace = true }

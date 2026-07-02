@@ -1,0 +1,11 @@
+[package]
+name = "zero-ui-collections"
+description = "通用 UI SDK 集合 — lazy list/grid/tree/table/selection/item key/recycler（浏览器无关；大量记录虚拟化）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+compact_str = { workspace = true, features = ["serde"] }
+hashbrown = { workspace = true }

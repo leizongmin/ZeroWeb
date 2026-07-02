@@ -1,0 +1,9 @@
+[package]
+name = "zero-ui-platform"
+description = "通用 UI SDK 平台服务 — clipboard/drag-drop/file picker/notifications/haptics/system menu（浏览器无关；可 mock）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }

@@ -1,0 +1,126 @@
+//! Scene snapshot — 把 Scene 拍平为确定性字符串（spec FR-016 testing）。
+
+use zero_ui_core::theme::Color;
+use zero_ui_render::{RenderPrimitive, Scene};
+
+/// 生成场景的确定性快照（按 entries 顺序；坐标保留 2 位小数）。
+///
+/// 用于 CI golden test：相同 widget 树 + 相同状态 → 相同字符串。
+pub fn snapshot_scene(scene: &Scene) -> String {
+    let mut out = String::new();
+    for (i, e) in scene.entries.iter().enumerate() {
+        out.push_str(&format!("{}|src={}", i, e.source.0.as_str()));
+        if let Some(clip) = e.clip {
+            out.push_str(&format!(
+                "|clip={},{},{},{}",
+                clip.left(),
+                clip.top(),
+                clip.right(),
+                clip.bottom()
+            ));
+        }
+        out.push('|');
+        match &e.primitive {
+            RenderPrimitive::FillRect { rect, color, .. } => {
+                out.push_str(&format!(
+                    "fill {},{},{},{} {}",
+                    rect.left(),
+                    rect.top(),
+                    rect.right(),
+                    rect.bottom(),
+                    fmt_color(*color)
+                ));
+            }
+            RenderPrimitive::StrokeRect {
+                rect,
+                color,
+                stroke_width,
+                ..
+            } => {
+                out.push_str(&format!(
+                    "stroke {},{},{},{} w{} {}",
+                    rect.left(),
+                    rect.top(),
+                    rect.right(),
+                    rect.bottom(),
+                    stroke_width,
+                    fmt_color(*color)
+                ));
+            }
+            RenderPrimitive::Text {
+                text,
+                position,
+                size_px,
+                color,
+            } => {
+                out.push_str(&format!(
+                    "text {} @{},{} sz{} {}",
+                    text,
+                    position.x,
+                    position.y,
+                    size_px,
+                    fmt_color(*color)
+                ));
+            }
+        }
+        out.push('\n');
+    }
+    out
+}
+
+fn fmt_color(c: Color) -> String {
+    format!(
+        "#{:02x}{:02x}{:02x}{:02x}",
+        to_u8(c.r),
+        to_u8(c.g),
+        to_u8(c.b),
+        to_u8(c.a)
+    )
+}
+
+fn to_u8(f: f32) -> u8 {
+    (f.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_ui_core::geometry::{Point, Rect};
+    use zero_ui_core::widget::WidgetId;
+    use zero_ui_render::{Scene, SceneEntry};
+
+    #[test]
+    fn snapshot_is_deterministic() {
+        let mut s1 = Scene::new();
+        s1.push(SceneEntry {
+            source: WidgetId::new("btn"),
+            clip: None,
+            primitive: RenderPrimitive::FillRect {
+                rect: Rect::from_ltrb(0.0, 0.0, 96.0, 32.0),
+                color: Color::BLACK,
+                rounding: zero_ui_core::geometry::Rounding::ZERO,
+            },
+        });
+        let snap = snapshot_scene(&s1);
+        assert!(snap.contains("fill 0,0,96,32 #000000ff"), "got: {snap}");
+        // 同输入 → 同输出。
+        assert_eq!(snapshot_scene(&s1), snap);
+    }
+
+    #[test]
+    fn snapshot_includes_text() {
+        let mut s = Scene::new();
+        s.push(SceneEntry {
+            source: WidgetId::new("lbl"),
+            clip: None,
+            primitive: RenderPrimitive::Text {
+                text: "Hi".into(),
+                position: Point::new(1.0, 2.0),
+                size_px: 14.0,
+                color: Color::WHITE,
+            },
+        });
+        let snap = snapshot_scene(&s);
+        assert!(snap.contains("text Hi @1,2"), "got: {snap}");
+    }
+}

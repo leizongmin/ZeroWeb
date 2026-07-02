@@ -1,0 +1,10 @@
+[package]
+name = "zero-ui-overlay"
+description = "通用 UI SDK 浮层 — overlay host/portal/popover/tooltip/menu/dialog/sheet/toast/focus trap（浏览器无关）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+serde = { workspace = true, features = ["derive"] }

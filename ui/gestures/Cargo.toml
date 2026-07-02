@@ -1,0 +1,9 @@
+[package]
+name = "zero-ui-gestures"
+description = "通用 UI SDK 手势 — pointer/arena/tap/drag/pan/pinch/fling/capture（浏览器无关；winit 类型不泄漏）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }

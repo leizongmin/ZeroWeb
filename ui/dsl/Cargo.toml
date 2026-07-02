@@ -1,0 +1,12 @@
+[package]
+name = "zero-ui-dsl"
+description = "通用 UI SDK 声明式 DSL — YAML→WidgetSpec + 受控表达式语言（parse/validate/typecheck/eval + sandbox 在 M3；M1 skeleton）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+compact_str = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }

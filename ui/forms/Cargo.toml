@@ -1,0 +1,9 @@
+[package]
+name = "zero-ui-forms"
+description = "通用 UI SDK 表单 — form/field state/validation/submit（浏览器无关；设置/偏好页用）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }

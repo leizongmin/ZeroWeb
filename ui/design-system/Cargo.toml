@@ -1,0 +1,10 @@
+[package]
+name = "zero-ui-design-system"
+description = "通用 UI SDK 设计系统 — density/motion tokens/component variants/state layers/platform style（首个风格包 Zero default）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+serde = { workspace = true, features = ["derive"] }

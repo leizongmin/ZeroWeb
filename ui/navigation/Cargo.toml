@@ -1,0 +1,11 @@
+[package]
+name = "zero-ui-navigation"
+description = "通用 UI SDK 导航 — route/navigator/modal/sheet/dialog/deep link/restoration（浏览器无关）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+compact_str = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }

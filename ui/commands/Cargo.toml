@@ -1,0 +1,10 @@
+[package]
+name = "zero-ui-commands"
+description = "通用 UI SDK 命令 — command/shortcut/menu model/command palette/dispatcher（浏览器无关；同 command 多入口）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+compact_str = { workspace = true, features = ["serde"] }

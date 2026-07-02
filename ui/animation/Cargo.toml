@@ -1,0 +1,10 @@
+[package]
+name = "zero-ui-animation"
+description = "通用 UI SDK 动画 — fake clock/curve/tween/controller/reduced motion（浏览器无关）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
