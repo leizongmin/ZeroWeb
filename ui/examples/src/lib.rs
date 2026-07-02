@@ -8,5 +8,7 @@
 //! 当前示例：[`counter`](counter) —— retained 运行时闭环（事件→Action→AppState→重建→re-layout/paint）。
 
 pub mod counter;
+pub mod form;
 
 pub use counter::{CounterApp, Label, register_counter_factories};
+pub use form::{FormApp, TextField, register_form_factories};

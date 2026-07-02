@@ -1,0 +1,17 @@
+=== DC-14 form 示例（受控文本输入 + 焦点/键盘 + 校验，验证 SDK 外部可复用）===
+日期: Wed Jul  1 08:39:01     2026
+
+--- cargo run -p zero-ui-examples --example form（retained 闭环输出）---
+initial: ["Type your name, then press Enter", "Name"]
+after typing 'Ada': ["Type your name, then press Enter", "Ada|"]
+after submit: ["Hello, Ada!", "Ada|"]
+after empty submit: ["Error: name is required", "Name"]
+
+--- cargo test -p zero-ui-examples（scoped test-guard）---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+--- DC-1：examples 不依赖浏览器 crate（counter + form 同 crate）---
+PASS: zero-ui-examples 零浏览器 crate 依赖
