@@ -1,0 +1,44 @@
+origin/main 同步 merge R968（2026-07-03，commit 1ec1460d）
+=====================================================
+
+动机
+----
+rally run-rules 要求提交前同步远端 main。main 领先 1 commit（R968）。
+
+main 新增 commit
+----------------
+- R968 — DC-10 逐项 audit + transform_webview_primitives 全 13 类型补测 + DC-10 关闭。
+  main 在其完整 main.rs 新增 2 测：
+    transform_webview_primitives_applies_scale_and_offset_to_all_types
+    transform_webview_primitives_culls_primitives_outside_viewport
+  并更新 docs/goal/rendering-compat{.md,/master.md}（姊妹目标 DC-10 关闭记录）。
+
+冲突与解决（apps/browser/src/main.rs）
+--------------------------------------
+- main 的 main.rs 是完整版（entry + 全部测试，~2565 行）；R968 在其中加 2 测。
+- ui-sdk 的 main.rs 在 DC-16 已拆分：main.rs 689 行（entry）+ main_tests.rs（测试，
+  经 include! 并入同模块）。
+- git 报 content 冲突（HEAD 端 = `include!("main_tests.rs")`；theirs = 完整内联测试模块）。
+- 解决：**取 HEAD（ui-sdk 入口版）**——main.rs 保持 689 行入口，零 diff vs HEAD；
+  **R968 的 2 测移植进 main_tests.rs**（紧随既有 transform_webview_primitives_clips_rounded
+  _above_viewport 测之后）。`transform_webview_primitives` 在 ui-sdk 位于 app_render_ext.rs
+  （经 app.rs include! 暴露为 app::transform_webview_primitives），移植测的 `use app::...`
+  不变即生效。
+
+方式
+----
+依 master.md #11：ui-sdk 为长分支，用 **merge**（非全量 rebase）。
+
+门禁（merge + 移植后）
+----------------------
+- cargo build --workspace：Finished（0 错误）。
+- cargo clippy --workspace --all-targets / -p zero-browser --features sdk-chrome --all-targets：净。
+- cargo fmt --all --check：净。
+- 2 移植测独立运行：3 passed（含既有 1 测）。
+- browser 默认 **191 全绿**（189 baseline + 2 移植）+ sdk-chrome 200 全绿。
+- **跟踪项**：首轮全量跑 190 passed/1 failed（未命名失败，重跑两轮均 191 全绿 → 判定为
+  偶发 flaky，疑似 timing/loading 类，非本目标引入；记入 master.md 未解决缺口观察）。
+
+结论
+----
+纯测试同步（main 加 2 测，移植进 ui-sdk 的 main_tests.rs），零渲染/逻辑变更，零回归。
