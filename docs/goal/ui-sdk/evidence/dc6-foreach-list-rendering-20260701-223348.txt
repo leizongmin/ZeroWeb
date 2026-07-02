@@ -1,0 +1,65 @@
+DC-6 列表渲染（for_each materialization）— 2026-07-01
+=========================================================
+
+里程碑：M3（DC-6 表达式/DSL），SDK-only（未触碰 render-foundation / apps/browser，无 product-smoke 风险）。
+
+缺口（修复前）
+-------------
+- `for_each` + `item_alias` 仅在 loader 解析为 `ForEachSpec`（ui/core），但 eval 层**无 item 作用域物化**。
+- 即 spec §8.4.7 主示例（`for_each: "$browser.tabs"` + `item_as: tab` + `$tab.title`）无法端到端求值，
+  DC-6「列表渲染」（FR-008「列表渲染」）缺失。
+
+实现（ui/dsl/src/for_each.rs，新增）
+------------------------------------
+- `materialize_for_each(spec, engine, ctx) -> Result<Vec<WidgetSpec>, DslError>`：
+  1. 求值 `for_each.source` → `Value::Array`（Null→空列表；其它→Typecheck 错）。
+  2. 对每个元素构造 item 作用域（克隆 ctx，注入 `item_alias → item`，原 ctx 不变 = 无副作用）。
+  3. 在 item 作用域内：
+     - 求值模板每个 `binding.source` → 写入 `binding.target` prop（列表渲染核心数据通路）。
+     - 求值模板 `visible_when`：假值项**跳过**（条件纳入）。
+     - 求值模板 `enabled_when`：结果编码为字面 `"true"`/`"false"` 字符串写回子节点
+       （下游 host 在无 item 作用域时也能正确求值）。
+  4. 产出具体 `WidgetSpec`，稳定 id = `<模板 id 或组件名>@<index>`。
+- 安全（DC-6 资源上限 / spec 约束 7）：
+  - 迭代受 `EvalContext::max_iterations` 约束，超限 → `DslError::EvalResourceLimit`。
+  - 模板表达式**预解析一次**（避免每项重复 parse）。
+  - 复用 Engine 四阶段管线，**不引入** lambda/递归/状态写入（文法封闭 + sandbox 安全）。
+- 错误处理：缺 `control.for_each` / 缺子模板 → `Validate`；source 非数组 → `Typecheck`；
+  迭代超限 → `EvalResourceLimit`；表达式 parse/eval 错误透传。
+
+模块接线（ui/dsl/src/lib.rs）：`pub mod for_each;` + `pub use for_each::materialize_for_each;`。
+
+测试（12 个新测，全绿）
+-----------------------
+1. materializes_one_child_per_item_with_stable_ids — 3 item → 3 子节点，id `tab@0/1/2`，title=A/B/C。
+2. custom_item_alias_resolves — `$it.title` 别名。
+3. nested_path_and_null_coalesce_in_item_scope — `$tab.meta.title ?? 'New Tab'`（spec 示例模式）。
+4. visible_when_skips_falsy_items — `$tab.active` 过滤，假值项跳过。
+5. enabled_when_resolved_to_literal_per_item — 每项 enabled_when 编码为 `"true"`/`"false"`。
+6. source_null_yields_empty — 路径缺失（Null）→ 空列表。
+7. source_non_array_is_typecheck_error — source 为 Int → Typecheck。
+8. iteration_limit_enforced — max_iterations=2 / 3 item → EvalResourceLimit。
+9. missing_for_each_is_error — 缺 control.for_each → Validate。
+10. missing_template_is_error — 无 children → Validate。
+11. stable_id_falls_back_to_component_name_without_template_id — 模板无 id → `Tab@0`。
+12. end_to_end_dsl_yaml_loader_to_materialize — YAML→WidgetSpec→materialize 端到端。
+
+门禁（2026-07-01）
+-----------------
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all --check` — 净。
+- `./target/test-guard -- cargo test -p zero-ui-dsl` — **84 passed; 0 failed**（72→84，+12）。
+- DC-1 复核：ui/dsl 仅依赖 zero-ui-core / zero-ui-i18n / zero-ui-assets / compact_str / hashbrown /
+  serde / thiserror（既有，零浏览器业务 crate），for_each 新模块零新依赖。
+
+Coverage（cargo llvm-cov -p zero-ui-dsl，单 crate 口径）
+-------------------------------------------------------
+- `for_each.rs`：line **97.05%** / function **100%** / region **100%**。
+- 注：单 crate standalone 口径下其它 instrumented-but-untested 文件偏低属已知现象
+  （master.md 记录），DC-17 以全量 run 为准；for_each.rs 自身数字有效且高。
+
+DC-6 状态更新
+-------------
+- 列表渲染（for_each 物化）端到端可用（spec §8.4.7 主示例模式闭合）。
+- DC-6 剩余：map/filter 嵌套路径投影（follow-up，需 spec 决策，TBD-10）。

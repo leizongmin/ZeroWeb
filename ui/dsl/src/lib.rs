@@ -8,6 +8,8 @@
 //! - **DC-10 桥** 已落地：[`i18n_bridge`]（DSL `i18n:` 对象 → `LocalizedText`，参数表达式求值）。
 //! - **DC-6 phase-5** 已落地：action 简写（`command`/`navigate`/`open_overlay`/`close_overlay`，
 //!   [`loader`]）+ [`asset_bridge`]（DSL `asset:` 对象 → `AssetId`）。
+//! - **DC-6 列表渲染** 已落地：[`for_each::materialize_for_each`]（`for_each` 节点 → N 个具体子节点，
+//!   item 作用域求值 bindings/visible_when/enabled_when，稳定 id，迭代受 `max_iterations` 约束）。
 //!
 //! 剩余：map/filter 嵌套路径投影（follow-up）、counter/form/browser-shell-demo 示例（DC-14）。
 
@@ -15,6 +17,7 @@ pub mod asset_bridge;
 pub mod diagnostics;
 pub mod engine;
 pub mod expression;
+pub mod for_each;
 pub mod i18n_bridge;
 pub mod loader;
 pub mod yaml;
@@ -23,6 +26,7 @@ pub use asset_bridge::{asset_id_of, is_asset_object};
 pub use diagnostics::DslError;
 pub use engine::Engine;
 pub use expression::{BinaryOp, Expression, PureFunctionId, UnaryOp};
+pub use for_each::materialize_for_each;
 pub use i18n_bridge::{i18n_value_to_message, is_i18n_object};
 pub use loader::{EvalContext, ExpressionEngine, WidgetSpecLoader, YamlLoader};
 pub use yaml::YamlValue;
