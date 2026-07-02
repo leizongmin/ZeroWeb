@@ -1,0 +1,5 @@
+=== DC-6 phase-4（DSL responsive branch）===
+日期: Wed Jul  1 09:04:06     2026
+
+--- ui/dsl responsive 测试 ---
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s

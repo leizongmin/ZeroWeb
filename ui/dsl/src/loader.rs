@@ -14,6 +14,7 @@ use compact_str::CompactString;
 use hashbrown::HashMap;
 use zero_ui_core::action::{ActionBinding, ActionId, ActionPayload};
 use zero_ui_core::binding::{Binding, PropsMap, Value};
+use zero_ui_core::layout::AdaptiveBranch;
 use zero_ui_core::widget::{ComponentType, ControlDirectives, ForEachSpec, WidgetId, WidgetSpec};
 
 /// YAML/字符串 → WidgetSpec 加载器（spec IF-005）。
@@ -74,9 +75,13 @@ impl EvalContext {
 ///
 /// `strict = true`（默认）时，加载阶段即校验所有表达式字符串可被 [`Engine`] parse，
 /// 提前暴露 `visible_when`/`enabled_when`/`for_each.source`/`binding.source` 的语法错误。
+///
+/// `branch`（DC-6 phase-4）：加载时按 [`AdaptiveBranch`] 解析 `responsive:` 响应式节点
+/// （选匹配断点的子树），使产出的 WidgetSpec 已按当前断点收敛（无需运行期再选支）。
 pub struct YamlLoader {
     engine: Engine,
     strict: bool,
+    branch: Option<AdaptiveBranch>,
 }
 
 impl Default for YamlLoader {
@@ -84,6 +89,7 @@ impl Default for YamlLoader {
         YamlLoader {
             engine: Engine,
             strict: true,
+            branch: None,
         }
     }
 }
@@ -99,7 +105,14 @@ impl YamlLoader {
         YamlLoader {
             engine: Engine,
             strict: false,
+            branch: None,
         }
+    }
+
+    /// 设置响应式断点（DC-6 phase-4）：加载时按此 branch 解析 `responsive:` 节点。
+    pub fn with_branch(mut self, branch: AdaptiveBranch) -> YamlLoader {
+        self.branch = Some(branch);
+        self
     }
 
     /// 校验单条表达式字符串（strict 模式下被加载器调用）。
@@ -118,6 +131,11 @@ impl YamlLoader {
         let entries = node
             .as_map()
             .ok_or_else(|| DslError::Parse("组件节点必须是映射".into()))?;
+
+        // responsive 响应式分支节点（DC-6 phase-4）：按 self.branch 选匹配断点子树。
+        if let Some((_, val)) = entries.iter().find(|(k, _)| k.as_str() == "responsive") {
+            return self.convert_responsive(val);
+        }
 
         // component（必需）。
         let component = entries
@@ -158,6 +176,36 @@ impl YamlLoader {
             }
         }
         Ok(spec)
+    }
+
+    /// 解析 `responsive:` 响应式节点（DC-6 phase-4）。
+    ///
+    /// 形如 `{ default: <spec>, compact: <spec>, expanded: <spec>, mobile: <spec>, ... }`。
+    /// 按 `self.branch` 在断点键中选**最高优先级匹配**（viewport > platform > input），
+    /// 无匹配或 branch=None 时回落 `default`。选中子树递归 `convert_spec`（支持嵌套 responsive）。
+    fn convert_responsive(&self, val: &YamlValue) -> Result<WidgetSpec, DslError> {
+        let map = val
+            .as_map()
+            .ok_or_else(|| DslError::Parse("'responsive' 必须是映射".into()))?;
+        let default = map
+            .iter()
+            .find(|(k, _)| k.as_str() == "default")
+            .map(|(_, v)| v)
+            .ok_or_else(|| DslError::Parse("'responsive' 缺少 'default' 子树".into()))?;
+        // 断点键优先级（viewport 最高，platform 次之，input 最低）。
+        const PRIORITY: &[&str] = &[
+            "compact", "medium", "expanded", "mobile", "desktop", "embedded", "touch", "pointer", "keyboard",
+        ];
+        if let Some(branch) = self.branch {
+            for key in PRIORITY {
+                if let Some((_, node)) = map.iter().find(|(k, _)| k.as_str() == *key)
+                    && matches_branch_key(key, branch)
+                {
+                    return self.convert_spec(node);
+                }
+            }
+        }
+        self.convert_spec(default)
     }
 
     fn convert_props(&self, val: &YamlValue) -> Result<PropsMap, DslError> {
@@ -295,6 +343,26 @@ impl WidgetSpecLoader for YamlLoader {
             return Err(DslError::Parse("YAML 为空".into()));
         }
         self.convert_spec(&root)
+    }
+}
+
+/// responsive 断点键是否匹配当前 [`AdaptiveBranch`]（DC-6 phase-4）。
+///
+/// 键名 → 比较维度：viewport（compact/medium/expanded）、platform（mobile/desktop/embedded）、
+/// input（touch/pointer/keyboard）。
+fn matches_branch_key(key: &str, branch: AdaptiveBranch) -> bool {
+    use zero_ui_core::layout::{InputClass, PlatformClass, ViewportClass};
+    match key {
+        "compact" => branch.viewport == ViewportClass::Compact,
+        "medium" => branch.viewport == ViewportClass::Medium,
+        "expanded" => branch.viewport == ViewportClass::Expanded,
+        "mobile" => branch.platform == PlatformClass::Mobile,
+        "desktop" => branch.platform == PlatformClass::Desktop,
+        "embedded" => branch.platform == PlatformClass::Embedded,
+        "touch" => branch.input == InputClass::Touch,
+        "pointer" => branch.input == InputClass::Pointer,
+        "keyboard" => branch.input == InputClass::Keyboard,
+        _ => false,
     }
 }
 
@@ -473,5 +541,96 @@ mod tests {
         assert!(loader.load_str("a: 1").is_err()); // 根无 component
         assert!(loader.load_str("component: 5").is_err()); // component 非文本
         assert!(loader.load_str("- a\n- b").is_err()); // 根是序列不是映射
+    }
+
+    // ── DC-6 phase-4：响应式分支 ─────────────────────────────────────
+    use zero_ui_core::geometry::Size;
+    use zero_ui_core::layout::{AdaptiveBranch, InputClass, PlatformClass, ViewportClass, WindowMetrics};
+
+    fn branch_compact() -> AdaptiveBranch {
+        AdaptiveBranch::from_metrics(
+            &WindowMetrics {
+                logical_size: Size::new(390.0, 800.0),
+                scale_factor: 1.0,
+                safe_area: zero_ui_core::geometry::Insets::all(0.0),
+                keyboard_insets: zero_ui_core::geometry::Insets::all(0.0),
+            },
+            PlatformClass::Mobile,
+            InputClass::Touch,
+        )
+    }
+
+    fn branch_expanded() -> AdaptiveBranch {
+        AdaptiveBranch::from_metrics(
+            &WindowMetrics {
+                logical_size: Size::new(1280.0, 800.0),
+                scale_factor: 1.0,
+                safe_area: zero_ui_core::geometry::Insets::all(0.0),
+                keyboard_insets: zero_ui_core::geometry::Insets::all(0.0),
+            },
+            PlatformClass::Desktop,
+            InputClass::Pointer,
+        )
+    }
+
+    const RESPONSIVE_YAML: &str = "component: Column\nchildren:\n  - responsive:\n      default:\n        component: WideCard\n        props:\n          layout: row\n      compact:\n        component: StackedCard\n        props:\n          layout: column\n      expanded:\n        component: WideCard\n";
+
+    #[test]
+    fn responsive_picks_compact_subtree() {
+        let spec = YamlLoader::new()
+            .with_branch(branch_compact())
+            .load_str(RESPONSIVE_YAML)
+            .unwrap();
+        let child = &spec.children[0];
+        assert_eq!(child.component, ComponentType::new("StackedCard"));
+        // compact 子树 props 正确加载。
+        assert_eq!(child.props.get("layout"), Some(&Value::Text("column".into())));
+    }
+
+    #[test]
+    fn responsive_picks_expanded_subtree() {
+        let spec = YamlLoader::new()
+            .with_branch(branch_expanded())
+            .load_str(RESPONSIVE_YAML)
+            .unwrap();
+        assert_eq!(spec.children[0].component, ComponentType::new("WideCard"));
+    }
+
+    #[test]
+    fn responsive_falls_back_to_default_without_branch() {
+        // 无 with_branch → 回落 default 子树。
+        let spec = YamlLoader::new().load_str(RESPONSIVE_YAML).unwrap();
+        assert_eq!(spec.children[0].component, ComponentType::new("WideCard"));
+        assert_eq!(spec.children[0].props.get("layout"), Some(&Value::Text("row".into())));
+    }
+
+    #[test]
+    fn responsive_unmatched_key_falls_back_to_default() {
+        // branch=Medium（无 medium 键）→ default。
+        let medium = AdaptiveBranch {
+            viewport: ViewportClass::Medium,
+            platform: PlatformClass::Desktop,
+            input: InputClass::Pointer,
+        };
+        let spec = YamlLoader::new().with_branch(medium).load_str(RESPONSIVE_YAML).unwrap();
+        assert_eq!(spec.children[0].component, ComponentType::new("WideCard"));
+    }
+
+    #[test]
+    fn responsive_platform_key_match() {
+        // platform=Mobile 键匹配 mobile（即便 viewport 无 compact 键）。
+        let yaml = "responsive:\n  default:\n    component: A\n  mobile:\n    component: B\n";
+        let spec = YamlLoader::new()
+            .with_branch(branch_compact()) // mobile + compact
+            .load_str(yaml)
+            .unwrap();
+        assert_eq!(spec.component, ComponentType::new("B"));
+    }
+
+    #[test]
+    fn responsive_requires_default() {
+        let yaml = "responsive:\n  compact:\n    component: A\n";
+        let err = YamlLoader::new().load_str(yaml).unwrap_err();
+        assert!(matches!(err, DslError::Parse(_)));
     }
 }
