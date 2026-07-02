@@ -1064,13 +1064,37 @@ fn collect_from_rules(
                     if matched {
                         let spec = zero_css_parser::selector::specificity(selector);
                         for decl in &style_rule.declarations {
-                            results.push((
-                                decl.property.clone(),
-                                decl.value.clone(),
-                                decl.important,
-                                spec,
-                                current_layer,
-                            ));
+                            // CSS Text 3 §7.1：`text-align: justify-all` = justify +
+                            // text-align-last: justify（末行也两端对齐）。在 declaration 收集层
+                            // 展开为两个 author declaration，使 cascade 把两者都当 author declaration。
+                            // apply 层单点特判会被 cascade「text-align-last 无 author declaration →
+                            // 继承 parent Auto」覆盖（R956 根因）；R955 已让存储路径消费 text-align-last。
+                            if decl.property.eq_ignore_ascii_case("text-align")
+                                && decl.value.trim().eq_ignore_ascii_case("justify-all")
+                            {
+                                results.push((
+                                    "text-align".to_string(),
+                                    "justify".to_string(),
+                                    decl.important,
+                                    spec,
+                                    current_layer,
+                                ));
+                                results.push((
+                                    "text-align-last".to_string(),
+                                    "justify".to_string(),
+                                    decl.important,
+                                    spec,
+                                    current_layer,
+                                ));
+                            } else {
+                                results.push((
+                                    decl.property.clone(),
+                                    decl.value.clone(),
+                                    decl.important,
+                                    spec,
+                                    current_layer,
+                                ));
+                            }
                         }
                         break; // 一个选择器匹配就够了
                     }
