@@ -32,12 +32,20 @@ match → text node 被 table_grid 完全跳过，不生成匿名 cell**（违�
 
 ZW 文本以 parent LayoutBox 的 `text_node_*` map 表示（text_node_font_sizes / text_node_is_ahem），
 **非 LayoutBox child**。table_grid 遍历 LayoutBox 元素 child，无法 wrap text node 成 TableCell。
-故 text 「X」未进 table Grid，落到 row-group 的 IFC（compute_final_inline_layouts 不 skip table-row-group）
-但渲染为 16px 默认（IFC 用的 font-size 来源待定，可能 row-group computed font-size 未被该 IFC 读到）。
+故 text 「X」未进 table Grid。
+
+**R977 二次 probe（store_font_sizes_from_ifc env R977_FONT）确证**：row-group 的「X」text node **也未经
+compute_final_inline_layouts IFC**（probe 仅捕获 `<title>` 3v1 与 `<p>` 19v1 的 frag，无 row-group box 的
+「X」frag）→ 「X」**完全 orphan**（既无匿名 cell，又无 IFC），落到某默认 fallback 渲染为 16px（25 green px）。
+row-group div 的 LayoutBox 未把 text child 注册为 inline content（has_text_children=false），故 IFC 不跑。
 
 **fix 方向（架构，下会话）**：让 table_grid 识别 table-internal 容器（table/table-row-group/table-row）
 的 text-node 内容并合成匿名 cell（须造匿名 cell LayoutBox 拥有该 text node，或让 table paint 路径
 消费 row-group 的 text_node_* map 作 cell 内容）。影响面 > 1 案（任何裸文本 in table-internal）。
+**最小可行 partial fix**（须验证）：让 compute_final_inline_layouts 对 row-group 等 table-internal 容器
+的 text child 正常跑 IFC（即让 has_text_children=true，注册 text child 为 inline content），即使不造
+匿名 cell，row-group 的「X」也会以 200px green Ahem 渲染（视觉 = 200px 绿方块，匹配 oracle）——但须核
+此 partial 不会双渲染（table 路径 + IFC 都画）。
 
 ## ② CSS2/linebox fresh：119/190 = 62.6%（R976 已记，复核确认）
 top worst 全 vertical-align+line-height 簇（117a/118a/122/negative-leading/baseline-004a/005a/sub/
