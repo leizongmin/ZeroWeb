@@ -1007,6 +1007,10 @@ mod tests {
         assert!(shim.contains("__zw_collect_ids"));
         // `createElementNS`（XHTML 命名空间 alias createElement；SVG OOS 不渲染但不中断）。
         assert!(shim.contains("createElementNS:"));
+        // `getComputedStyle`：动态 reftest 常作「强制 reflow」触发器调用，缺失则抛
+        // ReferenceError 中断脚本丢失后续 mutation。返空 CSSStyleDeclaration 桩不抛。
+        assert!(shim.contains("globalThis.getComputedStyle"));
+        assert!(shim.contains("getPropertyValue"));
     }
 
     #[test]
