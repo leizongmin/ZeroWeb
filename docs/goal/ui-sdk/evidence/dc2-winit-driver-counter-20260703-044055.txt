@@ -1,0 +1,76 @@
+DC-2 WinitDriver 接入 counter 示例 — run-loop 核心端到端证明（M4 SDK-side）
+============================================================================
+日期：2026-07-03
+分支：ui-sdk
+commit：3a6a6d07  ui-sdk(M4/DC-2): counter 示例接入 WinitDriver — run-loop 核心端到端证明
+
+## 目的
+
+上轮（commit 75e30a6c）落地 WinitDriver 的可测试核心 + 6 自身测。本轮把 counter 示例
+从手写编排改为经 WinitDriver 驱动，**端到端证明 driver 统一了 retained 闭环**（driver
+内部 dispatch→reducer→重建→invalidation→帧），并 DRY 示例代码（去掉每处手写
+set_root/layout/paint/dispatch_event/收 emit/reducer/重建）。
+
+## 交付
+
+- `ui/examples/src/counter.rs`：加 `impl UiApp for CounterApp`
+  （root_spec→build_spec；dispatch→reduce→Handled/UnknownAction）。保留既有 reduce/
+  build_spec 公共 API（低层 host 路径仍可用）。
+- `ui/examples/examples/counter.rs`：重写为 WinitDriver 驱动（begin + click→pump_event×2
+  + pump_frame）；打印 Label 文案（scene 反映状态）。
+- `ui/examples/tests/counter_retained.rs`：test1 → `counter_retained_closed_loop_via_driver`
+  （经 driver click + 断言 scene Label 文案 + creation_epoch 跨 rebuild 复用 + 最终 count）；
+  test2 保留低层 host 直接驱动（证明 SDK 在 host/driver 两层级均可复用）。
+- `ui/core/src/layout.rs`：加 `WindowMetrics::desktop()`（1280×800/scale 1.0/Landscape/
+  Expanded，与 phone()/tablet() 对称）+ 扩 preset 测。
+- `ui/examples/Cargo.toml` + Cargo.lock：加 zero-ui-adapter-winit 依赖。
+
+借用处理：driver 持 &mut app，中间状态经 scene（Label 文案 "Count: N"）断言（等价于
+count），最终 app.count() 在 driver 作用域外读（与 driver 自身 6 测同一模式）。
+
+## example 实跑（cargo run -p zero-ui-examples --example counter）
+
+    initial: Count: 0 (scene primitives: 3)
+    click #1: Count: 1 (scene primitives: 3)
+    click #2: Count: 2 (scene primitives: 3)
+    click #3: Count: 3 (scene primitives: 3)
+    final: Count: 2 (scene primitives: 3)
+
+driver 内部完成 dispatch→emit→app.dispatch(reducer)→Handled→重建→pump_frame 重绘；
+无需手写 set_root/layout/paint。状态 0→1→2→3→2 正确。
+
+## 测试（scoped test-guard）
+
+    $ ./target/test-guard -- cargo test -p zero-ui-examples counter
+    test counter_external_reusable_no_browser_deps ... ok
+    test counter_retained_closed_loop_via_driver ... ok
+    test result: ok. 2 passed; 0 failed
+
+    $ ./target/test-guard -- cargo test -p zero-ui-core phone_and_tablet
+    test layout::tests::phone_and_tablet_presets_match_expected_viewport_class ... ok
+    （扩展含 desktop()：Expanded + scale 1.0 + Landscape + 无 safe_area）
+
+断言要点（test1 经 driver）：
+- begin 后 Label "Count: 0"（scene 反映初始状态）。
+- 3 次 inc 点击 → Label "Count: 3"（driver 内部 reducer + 重建 + 重绘）。
+- "+" 按钮跨多次重建 creation_epoch 不变（稳定 WidgetId 复用）。
+- 1 次 dec 点击 → Label "Count: 2"。
+- driver 作用域外 app.count()==2（reducer 最终状态）。
+- test2：低层 host loose layout → size.height≥56 + scene≥3 图元 + reduce 独立可用。
+
+## 门禁
+
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — CLEAN。
+- ./target/test-guard -- cargo test -p zero-ui-examples -p zero-ui-core — examples 8 测全绿
+  （counter 2 含 driver 闭环 + form 3 + counter 低层 1 + 其余）+ ui-core 全绿（含 desktop preset）。
+- DC-1 复核：counter 经 adapter-winit 仅引入 ui/* + winit（workspace 既有），零浏览器 crate
+  依赖（cargo tree 机械验证路径不变；adapter-winit→ui-core+ui-runtime+winit）。
+
+## 风险
+
+- SDK-only（ui/examples + ui/core 未触渲染像素/浏览器运行时）→ 无 product-smoke 风险。
+- driver 的「可测试骨架」现经真实示例（counter）端到端证明；真实 winit EventLoop::run
+  阻塞壳（开窗/surface/首帧）仍需 GUI（driver 是其可组合核心）。
+- follow-up：form / browser_shell_demo / phone_demo 同模式迁移到 WinitDriver（进一步 DRY）。
