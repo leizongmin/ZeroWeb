@@ -2045,6 +2045,28 @@ css-flexbox worst-15（post-harness）**全是已知结构性簇**：flex-minimu
 
 **▶ 下会话**：① 继续扫 css-text text-align 簇残余（text-align-end-last / text-align-default/start/end 在 stored 路径其它 property 传递）或下一个 clean correctness lever。② driving case 残差 ~1.2% = glyph 字体墙（R953 谱系），勿单 session 攻（font-metric 多会话）。③ font-size-adjust / font-feature / @font-face / vertical-align stored-path 勿以单 session 试（Phase-A gated / 7 轮 trap）。
 
+### R959 text-decoration-thickness 实验 = net-negative 回退（underline/overline 位置耦合 font-metric 墙）·css-text-decor 99→98 (-1)·零 net 源码·纯调查+实验
+
+承 R958 ▶ ① 下一个 clean correctness lever。扫 css-text-decor worst（99/242=41%），发现 `text-decoration-thickness` 完全未实现（css-parser/style-system 0 命中），且是多 cluster 共通根因（dotted-001/002 13%、length-rounding 13%、underline/linethrough/overline-001 ~1.3%、ink-skip-dilation 6%）。实施完整 property（types/parse/apply/registry/inherit/paint 8 文件）+ 1 单测全绿。
+
+**① A/B net-negative（css-text-decor oracle 99→98，-1）**：thickness 案逐案 OFF→ON：
+| case | OFF | ON | Δ |
+|------|-----|-----|---|
+| underline-001 | 1.27% | 6.08% | **+4.81pp 回归** |
+| overline-001 | 1.44% | 7.94% | **+6.50pp 回归** |
+| linethrough-001 | 1.27% | 1.02% | −0.25pp 改善（居中） |
+| scroll-001 | 3.68% | 2.22% | −1.46pp 改善 |
+| ink-skip-dilation | 6.24% | 6.87% | +0.63pp 回归 |
+| vertical-001/002 | 0.82/0.49 | 1.21/0.79 | 回归（越 1% threshold） |
+
+**② 根因（位置耦合 = font-metric 墙）**：text-decoration 下划线/上划线垂直位置是**硬编码启发式**（`y_offset = font_size*0.15`，underline；`-font_size`，overline），paint 时 `add_fill(Rect::new(base_x, y, total_width, line_width))` 从 y **向下**生长。thickness 让 line_width 从 ~1.2px 变 80px（underline-001: 4em@20px），但位置仍锚在 baseline+0.15fs → 80px 厚线**长在错位**（test 期望厚下划线盖红盒，ZW 厚线长到红盒外）→ 更多红/绿错位 = 回归。**line-through 居中**（y_offset=-0.35fs，厚度对称生长）故改善；underline/overline 从边生长故回归。这是**补偿陷阱**（同 vertical-align 簇）：thickness 与 underline 位置耦合，单修 thickness 暴露位置 mismatch。
+
+**③ 正修须耦合**：text-decoration-thickness 须**同修 underline 位置**（`text-underline-offset` + 字体 underline-position metric）才 net-positive。位置 = font-metric 墙（R374/R876 谱系，多会话）。单 thickness = dead lever。
+
+**裁决**：回退全部 thickness 实现（8 文件 git checkout，零 net 源码，git status 干净，build 绿）。R959 = 一次有价值的 net-negative 实验性 rule-out（区别纯分析）+ 锁定 text-decoration-thickness **非 clean 单 session lever**（位置耦合 font-metric 墙）。本 rally 段（R958 LANDED + R959 rule-out）forward motion = R958 方向感知 win 已固化；text-decoration-thickness 加入 ruled-out。
+
+**▶ 下会话**：① 继续找 clean correctness lever——避开 font-metric 耦合簇（text-decoration thickness/offset、font metric、vertical-align）。候选：css-text-decor 的 text-emphasis-position（6%）、text-decoration-color（6.89%，纯颜色非度量）；或 css2/css-position 几何/盒模型 case。② text-decoration-thickness 勿单 session 重试（位置耦合，须同修 underline position = font-metric 多会话）。③ font-size-adjust/font-feature/@font-face/vertical-align stored-path 勿试（Phase-A gated）。
+
 ### 已 ruled out（勿以单会话重试）
 
 near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / **column-aware IFC Phase 1（pure-inline balance 明确高度）(R381)**：执行 column-aware-IFC-spec.md §10 gate「假设 A1」，扫描全 16 css-multicol 失败案结构（height/column-fill/blockchildren），**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）——每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套；spec 自身协议「A1 不存在→紧急停止转 Phase 2」生效，Phase 1 零杠杆关闭，真实 multicol lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）/ baseline-export 3 机制(R266–R316) / **advance-width(R225–R375b) definitive 关闭**：R375 hand-crafted DejaVu 表 morning 16.41→19.14% + R375b fontdue-actual advance（临时加 fontdue dep+缓存 Font+metrics.advance_width）16.41→19.08%，双 variant 均退步；fontdue-actual（最后未测变体）亦证伪。根因：accurate DejaVuSans advance 使换行偏离 chromium（system-ui≠DejaVuSans 或换行算法不同），0.55 启发式碰巧更近。advance-width 非 morning cascade 根因/ blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304) / inline-flex·inline-grid width:auto shrink-to-fit（R370：probe 实证 inline-flex width:auto 同 inline-block 拉伸到满宽 800，是真 bug，但**零杠杆**——全 48 失败案 + product-smoke fixture 均不用 inline-flex/inline-grid width:auto；fix 需 flex_row_intrinsic_width（非 box_content_max_width，flex row 须求和 block 子元素非取 max），复杂且无 reftest/smoke 收益，按 code-guidelines「不做零价值修改」不修，勿再以单会话重试）/ **percent max-width/min-height/min-width clamping（R119 analog，doc-agent 复核 ~0 yield，闭）**：engine.rs:1408 仅 `clamp_percentage_max_height`，无 max-width/min 平行函数——但 max-width-091(percent)✓ + min-height-091/092(percent)✓ 均 PASS（block width 定值→taffy 直接钳；min-height 是测量期 floor 非 content re-clamp）；R119 缺口唯一 max-height-specific（auto-height 内容测量 re-clamp），已修即完整 percent-clamp，无平行 lever，勿以 R119 类比重扫 / **intrinsic-keyword sizing（max-content/min-content/fit-content，R97 谱系，doc-agent 复核 = 非 clean 单会话 lever）**：121 测试文件用此三关键字，但**全集中在 taffy-blocked 上下文**（css-multicol/tables/flexbox intrinsic-size/table-intrinsic-size/flex-item-*-content），CSS2 block/inline-block 上下文**仅 1 案且为 crash-test**（inline-negative-margin-minmax-crash-001，非 sizing-correctness）→ memory「block/inline-block 可独立做」slice **无 dedicated driving test**（~0 可测 yield）；max-content/min-content parse_basic.rs 解析但 resolve 丢信号→0（R97/max-content memory），修复须保留信号+shrink-to-fit 触发，grid/flex/multicol/table 受 taffy 容器不 shrink 阻塞 = 多会话/结构性，勿以单会话重扫。 / **NBSP/Unicode-space collapse (R651 read-only 复核·非 lever)**：`collapse_whitespace`（inline/mod.rs:231）用 Rust `char::is_whitespace()` 折叠 NBSP(U+00A0)/U+3000 等，违反 CSS Text 3 §4.1.1（仅 TAB/LF/FF/CR/space 可折叠）——真 correctness bug，但 collapse 上下文（normal/nowrap/pre-line）**无 reftest 覆盖**（white-space-collapse-001 是 testharness JS `assert_equals(offsetWidth)` 测，非 reftest）；NBSP reftests（white-space-pre-031/032/034/035）全在 `pre` 上下文（preserve 路径不经 collapse）实测 PASS @2.64%。无 driving reftest → 非 lever（product-smoke 影响 negligible，NBSP 罕见于 fixture），defer；R647 category (b) 的 NBSP 角度据此关闭。
