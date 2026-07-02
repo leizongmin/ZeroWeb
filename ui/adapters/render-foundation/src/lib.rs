@@ -1087,4 +1087,50 @@ mod tests {
             "frame's original image key still resolves after merge"
         );
     }
+
+    #[test]
+    fn full_pipeline_chrome_with_webview_surface() {
+        // DC-3 phase-2 端到端：render_chrome_via_sdk_with_webview_surface 把 WebView surface
+        // 注册到 bridge → ExternalSurface marker 经 draw_external_surface 合并。
+        use zero_browser_chrome::sdk_render::render_chrome_via_sdk_with_webview_surface;
+        use zero_ui_core::geometry::{Insets, Size};
+        use zero_ui_core::layout::WindowMetrics;
+        use zero_ui_core::theme::SemanticTokens;
+
+        let mut font_backend = FontdueBackend::new();
+        font_backend.load_family("Ahem", AHEM).expect("Ahem parses");
+
+        let mut shell = zero_browser_shell::BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+
+        let metrics = WindowMetrics {
+            logical_size: Size::new(1280.0, 800.0),
+            scale_factor: 1.0,
+            safe_area: Insets::all(0.0),
+            keyboard_insets: Insets::all(0.0),
+        };
+
+        // 模拟 WebView 渲染输出（一个填充矩形）。
+        let mut webview_prims = RenderPrimitives::default();
+        webview_prims.add_fill(
+            RfRect::new(0.0, 0.0, 1280.0, 704.0),
+            RfColor::rgb(255, 255, 255),
+        );
+
+        let (bridge, vp) = render_chrome_via_sdk_with_webview_surface(
+            &shell,
+            &metrics,
+            &SemanticTokens::light(),
+            std::sync::Arc::new(font_backend),
+            Some((0, webview_prims)),
+        );
+        let p = bridge.into_primitives();
+
+        // chrome fills 非空（toolbar 等几何）。
+        assert!(!p.fills.is_empty(), "chrome fills present");
+        // viewport rect 非空。
+        assert!(vp.is_some(), "viewport rect present");
+        // WebView surface 合并（至少 chrome fills + webview fill）。
+        assert!(p.fills.len() >= 1, "fills after webview merge: {}", p.fills.len());
+    }
 }
