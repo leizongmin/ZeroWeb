@@ -209,6 +209,41 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens)
     });
 }
 
+/// 同 [`register_chrome_factories`]，但 viewport 使用 [`WebViewWidget`] 替代 [`ChromePanel`]
+/// 占位符（DC-3 phase-2）。WebViewWidget paint 产出 `ExternalSurface` marker，供后端按
+/// `surface_id` 合成 WebView 纹理。
+///
+/// props 约定：`surface_id`（u64，默认 0）由宿主分配；`scale_factor`（f32，默认 1.0）。
+/// viewport rect 由 layout 填充可用空间确定。
+pub fn register_chrome_factories_with_webview(host: &mut WidgetHost, tokens: &SemanticTokens) {
+    register_chrome_factories(host, tokens);
+    // 替换 PageViewportFrame：使用 WebViewWidget 产出 ExternalSurface marker。
+    let theme = zero_ui_core::theme::ThemeResolver::build_theme(
+        zero_ui_core::theme::ThemeId::new("zero"),
+        "Zero",
+        zero_ui_core::theme::ResolvedColorScheme::Light,
+        zero_ui_core::theme::ColorPalette::default(),
+    );
+    host.register("browser.PageViewportFrame", move |s| {
+        let surface_id = match s.props.get("surface_id") {
+            Some(zero_ui_core::binding::Value::Int(v)) => *v as u64,
+            _ => 0,
+        };
+        let scale_factor = match s.props.get("scale_factor") {
+            Some(zero_ui_core::binding::Value::Float(v)) => *v as f32,
+            _ => 1.0,
+        };
+        Box::new(
+            zero_ui_adapter_webview::WebViewWidget::new(
+                zero_ui_core::geometry::Rect::from_ltrb(0.0, 0.0, 0.0, 0.0),
+                scale_factor,
+                theme.clone(),
+            )
+            .with_surface_id(surface_id),
+        )
+    });
+}
+
 /// 取 Scene 中所有文本图元的文案（断言用）。
 pub fn scene_texts(scene: &Scene) -> Vec<String> {
     use zero_ui_render::render_node::RenderPrimitive;
@@ -342,5 +377,37 @@ mod tests {
         spec.props.insert("bg", Value::Text("chrome".into()));
         let panel = ChromePanel::from_spec(&spec, "chrome", 36.0, false, &light);
         assert!(panel.fill_background, "bars 默认 fill_background = true");
+    }
+
+    #[test]
+    fn webview_viewport_paints_external_surface() {
+        // DC-3 phase-2：register_chrome_factories_with_webview 注册 WebViewWidget 为
+        // PageViewportFrame，paint 产出 ExternalSurface marker（而非 ChromePanel 的 fill_rect）。
+
+        use zero_ui_core::geometry::Size;
+        use zero_ui_render::render_node::RenderPrimitive;
+        use zero_ui_runtime::WidgetHost;
+
+        let tokens = zero_ui_core::theme::SemanticTokens::light();
+        let mut host = WidgetHost::new();
+        register_chrome_factories_with_webview(&mut host, &tokens);
+
+        // 构造含 surface_id 的 PageViewportFrame spec。
+        let mut spec = WidgetSpec::new("browser.PageViewportFrame");
+        spec.id = Some(zero_ui_core::widget::WidgetId::new("viewport"));
+        spec.props.insert("surface_id", Value::Int(42));
+        spec.props.insert("scale_factor", Value::Float(2.0));
+        host.set_root(&spec);
+        host.layout(zero_ui_core::geometry::Constraints::loose(Size::new(1280.0, 800.0)));
+
+        let scene = host.paint().clone();
+        let external = scene
+            .entries
+            .iter()
+            .find(|e| matches!(e.primitive, RenderPrimitive::ExternalSurface { .. }));
+        assert!(
+            external.is_some(),
+            "WebViewWidget factory should produce ExternalSurface marker"
+        );
     }
 }
