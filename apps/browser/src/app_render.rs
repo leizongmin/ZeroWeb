@@ -22,6 +22,12 @@ impl BrowserApp {
         let s = self.scale_factor;
         let mut fills = Vec::new();
         let mut glyphs = Vec::new();
+        // DC-14 替换式迁移分离点：页面内容（render_page_content）与 chrome 浮层（自动补全/
+        // 链接状态栏）独立成层，使 feature-on 可用 SDK chrome 替换 chrome 主层、保留页面内容。
+        let mut page_fills = Vec::new();
+        let mut page_glyphs = Vec::new();
+        let mut chrome_overlay_fills = Vec::new();
+        let mut chrome_overlay_glyphs = Vec::new();
         let mut overlay_fills = Vec::new();
         let mut overlay_glyphs = Vec::new();
         let mut chrome_shadows: Vec<ShadowPrimitive> = Vec::new();
@@ -131,8 +137,8 @@ impl BrowserApp {
             ));
         }
 
-        // 11. 页面内容（含滚动偏移）
-        self.render_page_content(&mut fills, &mut glyphs, width, content_x, content_y, font_size, s);
+        // 11. 页面内容（含滚动偏移）—— DC-14 分离点：路由到 page_fills/page_glyphs。
+        self.render_page_content(&mut page_fills, &mut page_glyphs, width, content_x, content_y, font_size, s);
 
         // 11b. 页面滚动条（overlay，始终显示于溢出时）
         self.render_page_scrollbars(
@@ -152,13 +158,13 @@ impl BrowserApp {
 
         // 12. 查找栏与下载面板在 overlay 层绘制（浮动，不占布局高度）
 
-        // 13. 自动补全下拉
+        // 13. 自动补全下拉 —— DC-14 分离点：路由到 chrome_overlay_*（覆盖于页面之上的 chrome 浮层）。
         if self.address_bar_focused && !self.autocomplete.suggestions.is_empty() {
-            self.render_autocomplete(&mut fills, &mut glyphs, width, font_size, s);
+            self.render_autocomplete(&mut chrome_overlay_fills, &mut chrome_overlay_glyphs, width, font_size, s);
         }
 
         // 14. 链接悬停浮动状态栏（覆盖在页面内容上方，不占布局高度）
-        self.render_floating_link_status(&mut fills, &mut glyphs, width, height, s);
+        self.render_floating_link_status(&mut chrome_overlay_fills, &mut chrome_overlay_glyphs, width, height, s);
 
         // 15–17. 浮动查找栏、下载面板、上下文菜单（overlay 顶层）
         if self.shell.find_state().is_active() {
@@ -174,7 +180,18 @@ impl BrowserApp {
         // 18. 缩放百分比浮层（右下角，缩放后 3 秒内显示）
         self.render_zoom_indicator(&mut overlay_fills, &mut overlay_glyphs, width, height, s);
 
-        (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects)
+        ChromeScene {
+            chrome_fills: fills,
+            chrome_glyphs: glyphs,
+            page_fills,
+            page_glyphs,
+            chrome_overlay_fills,
+            chrome_overlay_glyphs,
+            overlay_fills,
+            overlay_glyphs,
+            chrome_shadows,
+            overlay_rounded_rects,
+        }
     }
 
     /// 渲染缩放百分比浮层。zoom 操作后 3 秒内显示在页面右下角。

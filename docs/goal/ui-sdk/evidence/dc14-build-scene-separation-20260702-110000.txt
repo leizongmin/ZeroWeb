@@ -1,0 +1,50 @@
+DC-14 替换式迁移首步：build_scene 三层分离（chrome / 页面内容 / chrome 浮层）
+日期：2026-07-02
+分支：ui-sdk
+
+## 范围
+DC-14 替换式迁移的首个可验证子步——把 apps/browser `build_scene` 的单 `fills`/`glyphs`
+（chrome + 页面内容 + 自动补全/链接浮层混合）拆为三层，使 feature-on 时可用 SDK chrome
+（`render_chrome_via_sdk_with_layout`）替换 chrome 主层、保留页面内容。**feature-off 逐位等价**。
+
+## 变更
+### ChromeScene 从 6-tuple 改为三层分离 struct（apps/browser/src/chrome_scene.rs，新文件）
+- `chrome_fills`/`chrome_glyphs`：chrome 主层（工具栏/标签/书签/页面框架等）。
+- `page_fills`/`page_glyphs`：**页面内容**（render_page_content）——DC-14 替换式迁移分离点。
+- `chrome_overlay_fills`/`chrome_overlay_glyphs`：chrome 浮层（自动补全/链接状态栏，覆盖于页面之上）。
+- `overlay_*`/`chrome_shadows`/`overlay_rounded_rects`：顶层 overlay + 阴影 + 圆角（语义不变）。
+- `combined_fills()`/`combined_glyphs()`：feature-off 按 [chrome, page, chrome_overlay] 顺序拼接（bit-identical）。
+经 `include!` 并入 app.rs 同模块（沿用既有 app_input/app_render/app_platform 模式），DC-16 不增 app.rs 债务。
+
+### build_scene（app_render.rs）路由 3 个 render 调用到独立层
+- render_page_content → page_fills/page_glyphs（原 fills/glyphs）。
+- render_autocomplete + render_floating_link_status → chrome_overlay_fills/chrome_overlay_glyphs（原 fills/glyphs）。
+- 其余（chrome 主层、overlay）不变。返回 ChromeScene struct。
+
+### 3 条渲染路径（app_platform.rs render_frame/render_cpu/render_full_scene_with_webview_for_test）
+destructure struct，按 `combined_fills()/combined_glyphs()`（或 inline `[chrome,page,chrome_overlay].concat()`）
+重建 fills/glyphs——与历史单 fills/glyphs 逐位等价。`render_scene_for_test` + main.rs 22 处测试 destructure 同步更新（py 脚本机械转换）。
+
+## bit-identity 验证（关键）
+- **make product-smoke（welcome.html vs chromium Oracle）= 19.17%（= baseline，< 20% 门槛，退出 0）**——
+  页面渲染**逐像素不变**，证明 feature-off 拼接与历史单 fills 行为等价。
+- **186 浏览器测全绿**——chrome 渲染管线 + 输入/状态逻辑零回归。
+- bit-identity 由构造保证：combined = [chrome_bars, page, autocomplete/floating] = 历史单 fills 顺序。
+
+## 门禁
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all -- --check` — 净。
+- `make product-smoke` — 19.17% = baseline（零页面回归）。
+- 文件大小：app.rs 2136→**2093**（ChromeScene 抽出到 chrome_scene.rs 50 行，DC-16 不增 app.rs 债务）；
+  app_render.rs 1569 / app_platform.rs 1080（均 <2000）。app.rs 2093 / main.rs 2370 为预存 >2000 债务（master 已记）。
+
+## DC 影响
+- DC-14：替换式迁移首步落地——build_scene 三层分离，page_fills 可独立取回，feature-on 可用 SDK chrome
+  替换 chrome 主层。**bit-identity 由 product-smoke + 186 测证明**。剩余：feature-on 替换接线（SDK chrome
+  owns layout，page_fills 按 SDK viewport rect 定位）+ GUI 可视验收 chrome 布局。
+
+## 未覆盖（诚实声明）
+- feature-on 替换路径未接线（需 GUI 验收 chrome 布局——SDK chrome top≈96 vs 手绘≈112-140 会错位）。
+  本轮交付 feature-off bit-identical 的分离基础设施 + page_fills 分离点，为 feature-on 铺路。
+- chrome 可视验收本环境无 GUI；bit-identity 由 product-smoke（页面）+ 186 测（chrome 管线）保证。

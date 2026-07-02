@@ -460,7 +460,7 @@ mod tests {
         app.scale_factor = 1.0;
         app.set_window_maximized(false);
 
-        let (_, _, overlay, _, _, _) = app.build_scene_for_test(800, 600);
+        let overlay = app.build_scene_for_test(800, 600).overlay_fills;
         let border = app.chrome_palette().window_frame_border;
         assert!(
             overlay.iter().any(|f| {
@@ -470,7 +470,7 @@ mod tests {
         );
 
         app.set_window_maximized(true);
-        let (_, _, overlay_max, _, _, _) = app.build_scene_for_test(800, 600);
+        let overlay_max = app.build_scene_for_test(800, 600).overlay_fills;
         assert!(
             !overlay_max
                 .iter()
@@ -505,7 +505,7 @@ mod tests {
 
         let sep = app.chrome_palette().tab_separator;
         let line_h = layout::TAB_BAR_HEIGHT - 2.0 * layout::TAB_SEPARATOR_INSET;
-        let (fills, _, _, _, _, _) = app.build_scene_for_test(1280, 900);
+        let fills = app.build_scene_for_test(1280, 900).combined_fills();
         assert!(
             fills
                 .iter()
@@ -516,7 +516,7 @@ mod tests {
         let mut two_tabs = BrowserApp::new(RenderMode::Cpu);
         two_tabs.physical_size = (1280, 900);
         two_tabs.scale_factor = 1.0;
-        let (fills_two, _, _, _, _, _) = two_tabs.build_scene_for_test(1280, 900);
+        let fills_two = two_tabs.build_scene_for_test(1280, 900).combined_fills();
         assert!(
             !fills_two.iter().any(|f| f.color == sep),
             "single tab should not draw tab separators"
@@ -590,7 +590,7 @@ mod tests {
         app.shell.on_page_loaded("Example Domain");
 
         // 验证不 panic
-        let (_, _, _, _, _, _) = app.build_scene_for_test(800, 600);
+        let _ = app.build_scene_for_test(800, 600);
     }
 
     /// 验证 Ctrl 修饰键追踪：按下 Ctrl 后标记为活跃，释放后恢复。
@@ -678,7 +678,7 @@ mod tests {
         app.physical_size = (1280, 900);
         app.scale_factor = 1.0;
 
-        let (_, glyphs, _, _, _, _) = app.build_scene_for_test(1280, 900);
+        let glyphs = app.build_scene_for_test(1280, 900).combined_glyphs();
         assert!(
             glyphs
                 .iter()
@@ -721,7 +721,7 @@ mod tests {
             tab.set_loading(false);
         }
 
-        let (_, glyphs, _, _, _, _) = app.build_scene_for_test(1280, 900);
+        let glyphs = app.build_scene_for_test(1280, 900).combined_glyphs();
         assert!(
             glyphs.iter().any(|g| g.ch == crate::ui_icons::Icon::Lock.as_char()),
             "https tab should render lock icon in address bar"
@@ -736,7 +736,7 @@ mod tests {
         app.physical_size = (1280, 900);
         app.scale_factor = 1.0;
 
-        let (_, glyphs, _, _, _, _) = app.build_scene_for_test(1280, 900);
+        let glyphs = app.build_scene_for_test(1280, 900).combined_glyphs();
         let more_vertical_count = glyphs
             .iter()
             .filter(|g| g.ch == crate::ui_icons::Icon::MoreVertical.as_char())
@@ -754,7 +754,7 @@ mod tests {
         app.physical_size = (1280, 900);
         app.scale_factor = 1.0;
 
-        let (_, glyphs, _, _, _, _) = app.build_scene_for_test(1280, 900);
+        let glyphs = app.build_scene_for_test(1280, 900).combined_glyphs();
         assert!(
             glyphs.iter().any(|g| g.ch == crate::ui_icons::Icon::Download.as_char()),
             "toolbar should render download button icon"
@@ -771,7 +771,7 @@ mod tests {
             .downloads_mut()
             .start_download("https://example.com/file.zip", "file.zip");
 
-        let (fills, _, _, _, _, _) = app.build_scene_for_test(1280, 900);
+        let fills = app.build_scene_for_test(1280, 900).combined_fills();
         let attention = app.chrome_palette().tab_attention;
         assert!(
             fills.iter().any(|f| f.color == attention && f.rect.size.width <= 12.0),
@@ -814,7 +814,7 @@ mod tests {
         app.shell
             .apply_settings(|settings| settings.color_theme = zero_browser_shell::ColorThemePreference::Auto);
 
-        let (_, glyphs, _, _, _, _) = app.build_scene_for_test(1280, 900);
+        let glyphs = app.build_scene_for_test(1280, 900).combined_glyphs();
         assert!(
             glyphs.iter().any(|g| g.ch == crate::ui_icons::Icon::SunMoon.as_char()),
             "toolbar should render sun-moon icon for auto theme"
@@ -983,7 +983,7 @@ mod tests {
         }
 
         app.handle_key("ArrowDown", true, None);
-        let (fills, _, _, _, _, _) = app.build_scene_for_test(1280, 900);
+        let fills = app.build_scene_for_test(1280, 900).combined_fills();
         assert!(
             fills
                 .iter()
@@ -1064,7 +1064,11 @@ mod tests {
             .start_download("https://example.com/file.zip", "file.zip");
 
         // 构建场景应不 panic
-        let (fills, glyphs, overlay, overlay_glyphs, _, _) = app.build_scene_for_test(800, 600);
+        let __scene = app.build_scene_for_test(800, 600);
+        let fills = __scene.combined_fills();
+        let glyphs = __scene.combined_glyphs();
+        let overlay = __scene.overlay_fills.clone();
+        let overlay_glyphs = __scene.overlay_glyphs.clone();
 
         // 下载面板在 overlay 层，不应占满窗口宽度
         assert!(
@@ -1096,7 +1100,7 @@ mod tests {
         app.physical_size = (800, 600);
 
         assert!(app.hovered_link_url().is_none());
-        let (fills, _, _, _, _, _) = app.build_scene_for_test(800, 600);
+        let fills = app.build_scene_for_test(800, 600).combined_fills();
         assert!(
             !fills.iter().any(|f| {
                 f.rect.size.width >= 799.0
@@ -1127,7 +1131,7 @@ mod tests {
         app.handle_mouse_move((cx + 50.0) as f64, (cy + 25.0) as f64);
         assert_eq!(app.hovered_link_url(), Some("https://example.com/test"));
 
-        let (_, glyphs, _, _, _, _) = app.build_scene_for_test(800, 600);
+        let glyphs = app.build_scene_for_test(800, 600).combined_glyphs();
         let text: String = glyphs.iter().map(|g| g.ch).collect();
         assert!(
             text.contains("example.com"),
@@ -1251,7 +1255,7 @@ mod tests {
             tab.set_loading(true);
         }
         let loading = app.chrome_palette().loading_indicator;
-        let (fills_loading, _, _, _, _, _) = app.build_scene_for_test(1280, 900);
+        let fills_loading = app.build_scene_for_test(1280, 900).combined_fills();
         let spinner_segments = fills_loading.iter().filter(|f| f.color == loading).count();
         assert!(
             spinner_segments >= 28,
@@ -1261,7 +1265,7 @@ mod tests {
         if let Some(tab) = app.shell.active_tab_mut() {
             tab.set_loading(false);
         }
-        let (fills_idle, _, _, _, _, _) = app.build_scene_for_test(1280, 900);
+        let fills_idle = app.build_scene_for_test(1280, 900).combined_fills();
         let idle_segments = fills_idle.iter().filter(|f| f.color == loading).count();
         assert_eq!(idle_segments, 0, "idle tab should not draw loading spinner");
     }
@@ -1281,7 +1285,7 @@ mod tests {
             "settings page should clear loading state"
         );
         // WebView 应该有渲染结果
-        let (_, _, _, _, _, _) = app.build_scene_for_test(800, 600);
+        let _ = app.build_scene_for_test(800, 600);
     }
 
     /// 欢迎页包含双语内容与可点击链接。
@@ -1342,7 +1346,7 @@ mod tests {
         let y = content_y as f64 + 100.0;
         app.mouse_pos = (x, y);
 
-        let (fills_at_zero, _, _, _, _, _) = app.build_scene_for_test(1280, 900);
+        let fills_at_zero = app.build_scene_for_test(1280, 900).combined_fills();
 
         // Linux/WSL 滚轮向下通常为负 LineDelta
         app.handle_scroll(zero_host_runtime::event::MouseScrollDelta::LineDelta(0.0, -3.0), x, y);
@@ -1353,7 +1357,7 @@ mod tests {
         );
 
         let content_top = content_y;
-        let (fills_after, _, _, _, _, _) = app.build_scene_for_test(1280, 900);
+        let fills_after = app.build_scene_for_test(1280, 900).combined_fills();
         assert!(
             fills_after
                 .iter()
@@ -1554,7 +1558,7 @@ mod tests {
                 wv_h as f32 * scale
             );
 
-            let (_, _, _overlay, _, _, _) = app.build_scene_for_test(1280, 900);
+            let _overlay = app.build_scene_for_test(1280, 900).overlay_fills;
 
             // corner pixel sampling covered by page_frame_bottom_corners_use_separator_overlay.
         }
@@ -1608,7 +1612,7 @@ mod tests {
         app.sync_webview_viewport();
         app.shell.on_page_loaded("Tall");
 
-        let (_, _, overlay_fills, _, _, _) = app.build_scene_for_test(1280, 900);
+        let overlay_fills = app.build_scene_for_test(1280, 900).overlay_fills;
         assert!(
             !overlay_fills.is_empty(),
             "page frame overlay should include corner masks and border"

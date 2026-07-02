@@ -36,16 +36,8 @@ use crate::text_metrics;
 
 const TAB_BAR_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(450);
 
-/// 浏览器 UI 场景图元包：`(fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows)`。
-/// `overlay_*` 在所有 fills/glyphs 之后绘制；`chrome_shadows` 是壳层阴影（如页面视口）。
-pub(crate) type ChromeScene = (
-    Vec<FillPrimitive>,
-    Vec<GlyphDraw>,
-    Vec<FillPrimitive>,
-    Vec<GlyphDraw>,
-    Vec<ShadowPrimitive>,
-    Vec<RoundedRectPrimitive>,
-);
+// 浏览器 UI 场景图元包（DC-14 替换式迁移：三层分离）——定义见 `ChromeScene`（chrome_scene.rs）。
+include!("chrome_scene.rs");
 
 /// 地址栏页面类型（由 URL 推导）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -878,8 +870,9 @@ impl BrowserApp {
     /// 测试用：构建场景并 CPU 渲染为帧缓冲。
     #[cfg(test)]
     pub fn render_scene_for_test(&mut self, width: u32, height: u32) -> zero_render_foundation::surface::FrameBuffer {
-        let (fills, glyphs, overlay_fills, overlay_glyphs, _chrome_shadows, overlay_rounded_rects) =
-            self.build_scene(width, height);
+        let scene = self.build_scene(width, height);
+        let fills = scene.combined_fills();
+        let glyphs = scene.combined_glyphs();
         render_scene_to_framebuffer(
             width,
             height,
@@ -889,9 +882,9 @@ impl BrowserApp {
             &self.font_loader,
             &mut self.glyph_cache,
             &glyphs,
-            &overlay_fills,
-            &overlay_glyphs,
-            &overlay_rounded_rects,
+            &scene.overlay_fills,
+            &scene.overlay_glyphs,
+            &scene.overlay_rounded_rects,
         )
     }
 

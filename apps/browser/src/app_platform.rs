@@ -141,7 +141,23 @@ impl BrowserApp {
                 self.gpu_renderer = gpu;
                 return;
             }
-            let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
+            let scene = self.build_scene(width, height);
+        let ChromeScene {
+            chrome_fills,
+            chrome_glyphs,
+            page_fills,
+            page_glyphs,
+            chrome_overlay_fills,
+            chrome_overlay_glyphs,
+            overlay_fills,
+            overlay_glyphs,
+            chrome_shadows,
+            overlay_rounded_rects,
+        } = scene;
+        // DC-14：feature-off 按 chrome 主层 → 页面内容 → chrome 浮层顺序拼接 fills/glyphs，
+        // 与历史单 fills/glyphs（chrome+页面+autocomplete/floating）逐位等价（bit-identical）。
+        let fills = [chrome_fills, page_fills, chrome_overlay_fills].concat();
+        let glyphs = [chrome_glyphs, page_glyphs, chrome_overlay_glyphs].concat();
 
             // 获取 WebView 额外图元（渐变、阴影、圆角矩形、线段、路径等）
             let webview_extras = self.get_webview_extra_primitives();
@@ -202,7 +218,23 @@ impl BrowserApp {
             return;
         }
 
-        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
+        let scene = self.build_scene(width, height);
+        let ChromeScene {
+            chrome_fills,
+            chrome_glyphs,
+            page_fills,
+            page_glyphs,
+            chrome_overlay_fills,
+            chrome_overlay_glyphs,
+            overlay_fills,
+            overlay_glyphs,
+            chrome_shadows,
+            overlay_rounded_rects,
+        } = scene;
+        // DC-14：feature-off 按 chrome 主层 → 页面内容 → chrome 浮层顺序拼接 fills/glyphs，
+        // 与历史单 fills/glyphs（chrome+页面+autocomplete/floating）逐位等价（bit-identical）。
+        let fills = [chrome_fills, page_fills, chrome_overlay_fills].concat();
+        let glyphs = [chrome_glyphs, page_glyphs, chrome_overlay_glyphs].concat();
 
         // 获取 WebView 的额外图元类型（渐变、阴影、线段等）
         let webview_extras = self.get_webview_extra_primitives();
@@ -260,7 +292,23 @@ impl BrowserApp {
         width: u32,
         height: u32,
     ) -> zero_render_foundation::surface::FrameBuffer {
-        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
+        let scene = self.build_scene(width, height);
+        let ChromeScene {
+            chrome_fills,
+            chrome_glyphs,
+            page_fills,
+            page_glyphs,
+            chrome_overlay_fills,
+            chrome_overlay_glyphs,
+            overlay_fills,
+            overlay_glyphs,
+            chrome_shadows,
+            overlay_rounded_rects,
+        } = scene;
+        // DC-14：feature-off 按 chrome 主层 → 页面内容 → chrome 浮层顺序拼接 fills/glyphs，
+        // 与历史单 fills/glyphs（chrome+页面+autocomplete/floating）逐位等价（bit-identical）。
+        let fills = [chrome_fills, page_fills, chrome_overlay_fills].concat();
+        let glyphs = [chrome_glyphs, page_glyphs, chrome_overlay_glyphs].concat();
         let webview_extras = self.get_webview_extra_primitives();
         let mut scene_primitives = webview_extras;
         scene_primitives.fills = [fills, scene_primitives.fills].concat();
@@ -859,9 +907,11 @@ mod tests {
         );
 
         app.show_context_menu_for_test(menu_x, menu_y);
-        assert!(app.build_scene_for_test(1280, 900).2.iter().any(|f| {
-            f.color == app.chrome_palette().context_menu_bg
-        }));
+        assert!(app
+            .build_scene_for_test(1280, 900)
+            .overlay_fills
+            .iter()
+            .any(|f| { f.color == app.chrome_palette().context_menu_bg }));
 
         let fb_menu = app.render_full_scene_with_webview_for_test(1280, 900);
         let black_after = count_rect_pixels(&fb_menu, menu_x, menu_y, menu_w, menu_h, is_near_black);
