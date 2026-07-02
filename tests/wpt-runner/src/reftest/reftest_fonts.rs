@@ -1,0 +1,148 @@
+//! Reftest 字体加载 —— 构造加载了系统字体、CJK 回退与 `@font-face` 自定义字体的 FontLoader。
+//!
+//! reftest 截图的可信度依赖字体栈与真实浏览器一致：系统 sans（DejaVu/Liberation）+
+//! CJK 回退（Noto Sans CJK）+ WPT 标准 Ahem 字体 + 文档声明的 `@font-face`。
+
+use std::path::Path;
+
+use zero_css_parser::ast::Rule as CssRule;
+use zero_css_parser::parser::Parser as CssParser;
+use zero_render_foundation::font::loader::FontLoader;
+
+/// 创建加载了系统字体和 Ahem 测试字体的 FontLoader。
+///
+/// 加载顺序：
+/// 1. 系统字体（DejaVu/Liberation 系列）
+/// 2. Ahem 测试字体（WPT 标准测试字体，每个字符渲染为实心方块）
+pub(super) fn create_font_loader() -> FontLoader {
+    let mut loader = FontLoader::new();
+    let mut fallback_ids: Vec<u32> = Vec::new();
+
+    // 系统字体路径（Linux 常见路径）
+    let system_font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    ];
+
+    for path in &system_font_paths {
+        if let Ok(data) = std::fs::read(path) {
+            let _ = loader.load_font(&data);
+        }
+    }
+
+    // 加载 CJK 字体（Noto Sans CJK）并加入回退链——主字体缺 CJK 字形时回退到此，
+    // 使中文/日文/韩文字符可渲染（DC-13 welcome.html 等含 CJK 文本的真实页面）。
+    let cjk_font_paths = [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    ];
+    for path in &cjk_font_paths {
+        if let Ok(data) = std::fs::read(path) {
+            if let Ok(id) = loader.load_font(&data) {
+                fallback_ids.push(id);
+            }
+            break;
+        }
+    }
+
+    // 加载 Ahem 测试字体（WPT reftest 标准字体）
+    let ahem_path = "tests/wpt-runner/fonts/Ahem.ttf";
+    if let Ok(data) = std::fs::read(ahem_path) {
+        let _ = loader.load_font(&data);
+    }
+
+    if !fallback_ids.is_empty() {
+        loader.set_fallback_chain(fallback_ids);
+    }
+
+    loader
+}
+
+/// 从 CSS 文本中提取所有 `@font-face` 规则的 `(family, sources)` 列表。
+///
+/// 用 `zero_css_parser` 解析样式表，收集 `Rule::FontFace`。解析失败或无规则时返回空。
+pub(super) fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>)> {
+    let stylesheet = CssParser::parse_stylesheet(css);
+    stylesheet
+        .rules
+        .iter()
+        .filter_map(|rule| match rule {
+            CssRule::FontFace(ff) => Some((ff.family.clone(), ff.sources.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 提取 HTML 中所有 `<style>` 元素的文本内容（与 engine `collect_stylesheets` 同源）。
+///
+/// `@font-face` 常声明在文档内联 `<style>`（非外链 CSS），须一并扫描才能加载。
+pub(super) fn extract_inline_style_css(html: &str) -> String {
+    let doc = zero_dom::parse_html(html);
+    let mut css = String::new();
+    for style_id in doc.get_elements_by_tag_name("style") {
+        if let Some(text) = doc.text_content(style_id) {
+            let text = text.trim();
+            // 去 CDATA 包裹（XHTML 惯例 `<![CDATA[ ... ]]>`）
+            let text = text
+                .strip_prefix("<![CDATA[")
+                .and_then(|t| t.strip_suffix("]]>"))
+                .map(|t| t.trim())
+                .unwrap_or(text);
+            if !text.is_empty() {
+                if !css.is_empty() {
+                    css.push('\n');
+                }
+                css.push_str(text);
+            }
+        }
+    }
+    css
+}
+
+/// 解析 `@font-face` 的 src URL 到本地文件路径（与 `load_linked_stylesheets` 同约定）。
+///
+/// - `/abs` → `tests/wpt-runner/wpt-data/<abs>`
+/// - 相对路径 → `base_dir.join(rel)`
+/// - `data:`/`http(s):` → None（本地不可读）
+pub(super) fn resolve_font_src(href: &str, base_dir: Option<&Path>) -> Option<std::path::PathBuf> {
+    if href.starts_with("data:") || href.starts_with("http://") || href.starts_with("https://") {
+        return None;
+    }
+    let path = if href.starts_with('/') {
+        Path::new("tests/wpt-runner/wpt-data").join(href.trim_start_matches('/'))
+    } else {
+        base_dir?.join(href)
+    };
+    Some(path)
+}
+
+/// 把 CSS 中 `@font-face` 声明的自定义字体加载进 FontLoader。
+///
+/// 对每个 face，按 src 顺序尝试解析到本地文件并 `load_font`；首个成功加载的源即注册
+/// （fontdue 解码 .ttf/.otf；.woff 需解压，当前 fontdue 不支持 woff 容器，会静默失败并
+/// 跳到下一个 src）。加载后 `build_font_resolver` 即可按 family 匹配到该字体。
+pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Path>, css: &str) {
+    for (family, sources) in extract_font_faces(css) {
+        // Ahem 由 FontLoader 特殊处理（按 family 名合成方块），无需加载文件
+        if family.eq_ignore_ascii_case("Ahem") {
+            continue;
+        }
+        for src in &sources {
+            let Some(path) = resolve_font_src(src, base_dir) else {
+                continue;
+            };
+            if let Ok(data) = std::fs::read(&path)
+                && let Ok(id) = loader.load_font(&data)
+            {
+                // 把 @font-face 声明族名注册为该字体的别名（族名可能与字体
+                // 内部 name 表不同，CSS 按声明族名匹配）。
+                loader.register_family_alias(&family, id);
+                break;
+            }
+        }
+    }
+}
