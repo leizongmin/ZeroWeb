@@ -6,6 +6,7 @@
 //! 声明树 + [`ShellLayout`] 具体区域），不持有可变业务状态。
 
 use crate::chrome_model::BrowserChromeModel;
+use zero_ui_core::binding::Value;
 use zero_ui_core::geometry::Rect;
 use zero_ui_core::layout::{AdaptiveBranch, InputClass, PlatformClass, ViewportClass, WindowMetrics};
 use zero_ui_core::widget::{WidgetId, WidgetSpec};
@@ -59,6 +60,32 @@ fn node(component: &str, id: &str) -> WidgetSpec {
     s
 }
 
+/// 容器节点：声明 `props.layout`（host 据此布局子节点，无需硬编码业务组件名）。
+fn node_layout(component: &str, id: &str, layout: &str) -> WidgetSpec {
+    let mut s = node(component, id);
+    s.props.insert("layout", Value::Text(layout.into()));
+    s
+}
+
+/// 叶子节点：语义色 `bg` + 可选文案 `text`（chrome 绘制工厂据此 paint 进统一 Scene）。
+fn leaf(component: &str, id: &str, bg: &str, text: Option<String>) -> WidgetSpec {
+    let mut s = node(component, id);
+    s.props.insert("bg", Value::Text(bg.into()));
+    if let Some(t) = text {
+        s.props.insert("text", Value::Text(t));
+    }
+    s
+}
+
+fn tab_titles(model: &BrowserChromeModel) -> String {
+    model
+        .tabs
+        .iter()
+        .map(|t| t.title.clone())
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
 /// 收集声明树中所有稳定 WidgetId（测试用）。
 pub fn collect_widget_ids(spec: &WidgetSpec, out: &mut Vec<String>) {
     if let Some(id) = &spec.id {
@@ -89,18 +116,51 @@ impl BrowserChromeShell for DesktopBrowserShell {
     }
 
     fn build(&self, model: &BrowserChromeModel, _metrics: &WindowMetrics) -> WidgetSpec {
-        let mut root = node("browser.DesktopBrowserShell", ID_SHELL);
-        let mut toolbar = node("browser.ToolbarRow", ID_TOOLBAR);
-        toolbar.children.push(node("browser.NavigationButtons", ID_NAV_BUTTONS));
-        toolbar.children.push(node("browser.AddressBar", ID_ADDRESS_BAR));
-        toolbar.children.push(node("browser.SecurityBadge", ID_SECURITY_BADGE));
-        toolbar.children.push(node("browser.BrowserMenu", ID_MENU));
+        let mut root = node_layout("browser.DesktopBrowserShell", ID_SHELL, "column");
+        let mut toolbar = node_layout("browser.ToolbarRow", ID_TOOLBAR, "row");
+        toolbar.children.push(leaf(
+            "browser.NavigationButtons",
+            ID_NAV_BUTTONS,
+            "chrome",
+            Some(format!(
+                "Back·{} Fwd·{}",
+                model.navigation.can_go_back, model.navigation.can_go_forward
+            )),
+        ));
+        toolbar.children.push(leaf(
+            "browser.AddressBar",
+            ID_ADDRESS_BAR,
+            "chrome",
+            Some(model.address_text.clone()),
+        ));
+        toolbar.children.push(leaf(
+            "browser.SecurityBadge",
+            ID_SECURITY_BADGE,
+            crate::render::security_color_name(model.security),
+            None,
+        ));
+        toolbar
+            .children
+            .push(leaf("browser.BrowserMenu", ID_MENU, "chrome", Some("Menu".into())));
         root.children.push(toolbar);
-        root.children.push(node("browser.BrowserTabStrip", ID_TAB_STRIP));
-        root.children.push(node("browser.BookmarksBar", ID_BOOKMARKS));
-        root.children.push(node("browser.PageViewportFrame", ID_VIEWPORT));
+        root.children.push(leaf(
+            "browser.BrowserTabStrip",
+            ID_TAB_STRIP,
+            "chrome",
+            Some(tab_titles(model)),
+        ));
+        root.children.push(leaf(
+            "browser.BookmarksBar",
+            ID_BOOKMARKS,
+            "chrome",
+            Some(format!("{} bookmarks", model.bookmarks.len())),
+        ));
+        let mut viewport = node("browser.PageViewportFrame", ID_VIEWPORT);
+        viewport.props.insert("bg", Value::Text("viewport".into()));
+        root.children.push(viewport);
         if model.find.is_some() {
-            root.children.push(node("browser.FindBar", ID_FIND_BAR));
+            root.children
+                .push(leaf("browser.FindBar", ID_FIND_BAR, "chrome", Some("Find".into())));
         }
         root
     }
@@ -131,16 +191,42 @@ impl BrowserChromeShell for TabletBrowserShell {
     }
 
     fn build(&self, model: &BrowserChromeModel, _metrics: &WindowMetrics) -> WidgetSpec {
-        let mut root = node("browser.TabletBrowserShell", ID_SHELL);
-        let mut toolbar = node("browser.ToolbarRow", ID_TOOLBAR);
-        toolbar.children.push(node("browser.NavigationButtons", ID_NAV_BUTTONS));
-        toolbar.children.push(node("browser.AddressBar", ID_ADDRESS_BAR));
-        toolbar.children.push(node("browser.SecurityBadge", ID_SECURITY_BADGE));
+        let mut root = node_layout("browser.TabletBrowserShell", ID_SHELL, "column");
+        let mut toolbar = node_layout("browser.ToolbarRow", ID_TOOLBAR, "row");
+        toolbar.children.push(leaf(
+            "browser.NavigationButtons",
+            ID_NAV_BUTTONS,
+            "chrome",
+            Some(format!(
+                "Back·{} Fwd·{}",
+                model.navigation.can_go_back, model.navigation.can_go_forward
+            )),
+        ));
+        toolbar.children.push(leaf(
+            "browser.AddressBar",
+            ID_ADDRESS_BAR,
+            "chrome",
+            Some(model.address_text.clone()),
+        ));
+        toolbar.children.push(leaf(
+            "browser.SecurityBadge",
+            ID_SECURITY_BADGE,
+            crate::render::security_color_name(model.security),
+            None,
+        ));
         root.children.push(toolbar);
-        root.children.push(node("browser.BrowserTabStrip", ID_TAB_STRIP));
-        root.children.push(node("browser.PageViewportFrame", ID_VIEWPORT));
+        root.children.push(leaf(
+            "browser.BrowserTabStrip",
+            ID_TAB_STRIP,
+            "chrome",
+            Some(tab_titles(model)),
+        ));
+        let mut viewport = node("browser.PageViewportFrame", ID_VIEWPORT);
+        viewport.props.insert("bg", Value::Text("viewport".into()));
+        root.children.push(viewport);
         if model.find.is_some() {
-            root.children.push(node("browser.FindBar", ID_FIND_BAR));
+            root.children
+                .push(leaf("browser.FindBar", ID_FIND_BAR, "chrome", Some("Find".into())));
         }
         root
     }
@@ -171,15 +257,33 @@ impl BrowserChromeShell for PhoneBrowserShell {
     }
 
     fn build(&self, model: &BrowserChromeModel, _metrics: &WindowMetrics) -> WidgetSpec {
-        let mut root = node("browser.PhoneBrowserShell", ID_SHELL);
-        // 顶部精简地址栏（含安全徽章）。
-        let mut top = node("browser.AddressBar", ID_ADDRESS_BAR);
-        top.children.push(node("browser.SecurityBadge", ID_SECURITY_BADGE));
+        let mut root = node_layout("browser.PhoneBrowserShell", ID_SHELL, "column");
+        // 顶部地址栏（row 容器：自身 chrome 背景 + URL 文案，内含安全徽章）。
+        let mut top = node_layout("browser.AddressBar", ID_ADDRESS_BAR, "row");
+        top.props.insert("bg", Value::Text("chrome".into()));
+        top.props.insert("text", Value::Text(model.address_text.clone()));
+        top.children.push(leaf(
+            "browser.SecurityBadge",
+            ID_SECURITY_BADGE,
+            crate::render::security_color_name(model.security),
+            None,
+        ));
         root.children.push(top);
-        root.children.push(node("browser.PageViewportFrame", ID_VIEWPORT));
-        root.children.push(node("browser.NavigationButtons", ID_BOTTOM_NAV));
+        let mut viewport = node("browser.PageViewportFrame", ID_VIEWPORT);
+        viewport.props.insert("bg", Value::Text("viewport".into()));
+        root.children.push(viewport);
+        root.children.push(leaf(
+            "browser.NavigationButtons",
+            ID_BOTTOM_NAV,
+            "chrome",
+            Some(format!(
+                "Back·{} Fwd·{}",
+                model.navigation.can_go_back, model.navigation.can_go_forward
+            )),
+        ));
         if model.find.is_some() {
-            root.children.push(node("browser.FindBar", ID_FIND_BAR));
+            root.children
+                .push(leaf("browser.FindBar", ID_FIND_BAR, "chrome", Some("Find".into())));
         }
         root
     }

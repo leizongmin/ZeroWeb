@@ -308,9 +308,26 @@ fn gap_from_props(props: &PropsMap) -> f32 {
     }
 }
 
+/// 节点的容器布局种类：优先读 `props.layout`（`"column"`/`"row"`/`"stack"`，大小写不敏感），
+/// 否则按组件名识别内置容器（`Column`/`Row`/`Stack`）。
+///
+/// 让任意组件名（如 `browser.DesktopBrowserShell`、`browser.ToolbarRow`）经 props 声明为容器，
+/// 无需 host 硬编码 chrome/业务组件名 —— 保持 host 浏览器无关。
+fn node_container_kind(node: &HostNode) -> Option<ContainerKind> {
+    if let Some(Value::Text(s)) = node.props.get("layout") {
+        match s.as_str() {
+            "column" | "Column" => return Some(ContainerKind::Column),
+            "row" | "Row" => return Some(ContainerKind::Row),
+            "stack" | "Stack" => return Some(ContainerKind::Stack),
+            _ => {}
+        }
+    }
+    ContainerKind::from_component(&node.component)
+}
+
 /// measure：自下而上算每节点尺寸，写入 `cached_size`，返回本节点尺寸。
 fn measure(node: &mut HostNode, lctx: &mut LayoutCtx, constraints: Constraints) -> Size {
-    let size = match ContainerKind::from_component(&node.component) {
+    let size = match node_container_kind(node) {
         Some(ContainerKind::Column) => {
             let gap = gap_from_props(&node.props);
             let mut cursor_y = 0.0_f32;
@@ -379,7 +396,7 @@ fn measure(node: &mut HostNode, lctx: &mut LayoutCtx, constraints: Constraints) 
 /// arrange：自上而下按 `cached_size` 定每节点绝对 `cached_rect`。
 fn arrange(node: &mut HostNode, origin: Point) {
     node.cached_rect = Rect::from_origin_size(origin, node.cached_size);
-    match ContainerKind::from_component(&node.component) {
+    match node_container_kind(node) {
         Some(ContainerKind::Column) => {
             let gap = gap_from_props(&node.props);
             let mut y = origin.y;
@@ -760,6 +777,25 @@ mod tests {
             host2.rect_of(&WidgetId::new("a")),
             host2.rect_of(&WidgetId::new("b")),
             "Stack children share origin"
+        );
+    }
+
+    #[test]
+    fn custom_container_via_layout_prop() {
+        // 任意组件名经 props.layout="row" 声明为行容器（host 不硬编码业务组件名）。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("browser.ToolbarRow");
+        root.id = Some(WidgetId::new("root"));
+        root.props.insert("layout", Value::Text("row".into()));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        let size = host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+        // Row：两 Patch(50) 水平排列 → 宽 100，高 50。
+        assert_eq!(size, Size::new(100.0, 50.0));
+        assert_eq!(
+            host.rect_of(&WidgetId::new("b")),
+            Some(Rect::from_ltrb(50.0, 0.0, 100.0, 50.0))
         );
     }
 

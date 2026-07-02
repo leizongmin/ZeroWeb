@@ -21,6 +21,7 @@ pub mod navigation_buttons;
 pub mod page_load_indicator;
 pub mod page_viewport;
 pub mod permission_prompt;
+pub mod render;
 pub mod security_badge;
 pub mod shell;
 pub mod site_info_panel;
@@ -37,6 +38,7 @@ pub use navigation_buttons::NavigationButtons;
 pub use page_load_indicator::PageLoadIndicator;
 pub use page_viewport::PageViewportFrame;
 pub use permission_prompt::PermissionPrompt;
+pub use render::{ChromePanel, chrome_color, register_chrome_factories, scene_texts, security_color_name};
 pub use security_badge::{SecurityBadge, SecurityState};
 pub use shell::{
     AdaptiveBrowserChrome, AdaptiveChromeResult, BrowserChromeShell, DesktopBrowserShell, PhoneBrowserShell, ShellKind,

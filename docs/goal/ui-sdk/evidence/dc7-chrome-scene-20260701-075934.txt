@@ -1,0 +1,27 @@
+=== DC-7 chrome paint → 统一 Scene 快照（chrome_scene example + 集成测）===
+日期: Wed Jul  1 07:59:34     2026
+
+--- cargo run -p zero-browser-chrome --example chrome_scene ---
+DesktopBrowserShell scene snapshot (DC-7)
+root size: 1280x800
+scene entries: 12
+  [ 0] source=nav_buttons            FillRect(rgba(0.92,0.92,0.93,_))
+  [ 1] source=nav_buttons            Text("Back·true Fwd·false")
+  [ 2] source=address_bar            FillRect(rgba(0.92,0.92,0.93,_))
+  [ 3] source=address_bar            Text("https://example.com")
+  [ 4] source=security_badge         FillRect(rgba(0.10,0.70,0.30,_))
+  [ 5] source=menu                   FillRect(rgba(0.92,0.92,0.93,_))
+  [ 6] source=menu                   Text("Menu")
+  [ 7] source=tab_strip              FillRect(rgba(0.92,0.92,0.93,_))
+  [ 8] source=tab_strip              Text("Example")
+  [ 9] source=bookmarks              FillRect(rgba(0.92,0.92,0.93,_))
+  [10] source=bookmarks              Text("0 bookmarks")
+  [11] source=viewport               FillRect(rgba(1.00,1.00,1.00,_))
+texts: ["Back·true Fwd·false", "https://example.com", "Menu", "Example", "0 bookmarks"]
+
+--- cargo test -p zero-browser-chrome（scoped test-guard）摘要 ---
+test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+--- DC-1 复核：chrome 依赖（应含 ui-runtime；ui-runtime 不依赖浏览器业务 crate）---
+PASS: ui-runtime 零浏览器业务 crate 依赖
