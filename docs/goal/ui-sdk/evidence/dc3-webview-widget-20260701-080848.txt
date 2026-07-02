@@ -1,0 +1,13 @@
+=== DC-3 WebViewWidget 自定义组件（impl Widget + ExternalSurface 合成进 Scene）===
+日期: Wed Jul  1 08:08:48     2026
+
+--- 架构边界（DC-1）：adapter-webview 是唯一 webview 耦合点 ---
+WebViewWidget public API: viewport/scale_factor/theme/scroll/surface_id (无 DOM 类型)
+paint 记录 RenderPrimitive::ExternalSurface{rect, surface_id}（轻量 marker，ui/render 不依赖 zero-webview）
+
+--- cargo test -p zero-ui-adapter-webview（scoped test-guard）---
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+--- DC-1 复核：ui/render 不依赖 zero-webview ---
+PASS: ui/render 零 zero-webview 依赖（ExternalSurface 为浏览器无关 marker）

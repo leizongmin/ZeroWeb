@@ -73,6 +73,17 @@ pub fn snapshot_scene(scene: &Scene) -> String {
                     fmt_color(*color)
                 ));
             }
+            RenderPrimitive::ExternalSurface { rect, surface_id } => {
+                // 外部表面（DC-3 WebView）：确定性摘要（rect + surface_id）。
+                out.push_str(&format!(
+                    "surface{} {},{},{},{}",
+                    surface_id,
+                    rect.left(),
+                    rect.top(),
+                    rect.right(),
+                    rect.bottom()
+                ));
+            }
         }
         out.push('\n');
     }

@@ -6007,6 +6007,8 @@ name = "zero-ui-adapter-webview"
 version = "0.1.0"
 dependencies = [
  "zero-ui-core",
+ "zero-ui-render",
+ "zero-ui-runtime",
  "zero-webview",
 ]
 

@@ -8,3 +8,7 @@ license.workspace = true
 [dependencies]
 zero-ui-core = { workspace = true }
 zero-webview = { workspace = true }
+
+[dev-dependencies]
+zero-ui-render = { workspace = true }
+zero-ui-runtime = { workspace = true }

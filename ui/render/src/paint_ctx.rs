@@ -74,6 +74,10 @@ impl PaintRecorder for SceneRecorder {
             color,
         });
     }
+
+    fn draw_external_surface(&mut self, rect: Rect, surface_id: u64) {
+        self.push(RenderPrimitive::ExternalSurface { rect, surface_id });
+    }
 }
 
 impl SceneRecorder {

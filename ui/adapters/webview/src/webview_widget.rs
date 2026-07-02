@@ -1,8 +1,12 @@
 //! WebViewWidget 数据模型与后端 trait（spec IF-004 / FR-005）。
 
-use zero_ui_core::geometry::Rect;
+use zero_ui_core::action::EventResult;
+use zero_ui_core::event::UiEvent;
+use zero_ui_core::geometry::{Constraints, Rect, Size};
 use zero_ui_core::scroll::ScrollMetrics;
+use zero_ui_core::semantics::{SemanticsFlags, SemanticsLabel, SemanticsNode};
 use zero_ui_core::theme::Theme;
+use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, SemanticsCtx, UpdateCtx, Widget, WidgetId};
 
 /// WebView 布局输入（spec IF-004 `WebViewLayoutInput`）：UI SDK 分配给 WebViewWidget 的外部参数。
 #[derive(Debug, Clone)]
@@ -34,6 +38,8 @@ pub struct WebViewWidget {
     pub scale_factor: f32,
     pub theme: Theme,
     pub scroll: ScrollMetrics,
+    /// 宿主分配的外部表面 id（paint 记录为 `ExternalSurface` 图元；后端按 id 取回纹理合成，DC-3）。
+    pub surface_id: u64,
 }
 
 impl WebViewWidget {
@@ -50,7 +56,14 @@ impl WebViewWidget {
                 scroll_x: 0.0,
                 scroll_y: 0.0,
             },
+            surface_id: 0,
         }
+    }
+
+    /// 设置外部表面 id（宿主为每个 WebViewWidget 分配唯一 id）。
+    pub fn with_surface_id(mut self, surface_id: u64) -> WebViewWidget {
+        self.surface_id = surface_id;
+        self
     }
 
     /// 生成 layout 输入（交给 zero-webview）。
@@ -75,11 +88,59 @@ impl WebViewWidget {
     }
 }
 
+impl Widget for WebViewWidget {
+    fn mount(&mut self, _ctx: &mut MountCtx) {}
+
+    fn update(&mut self, _ctx: &mut UpdateCtx, _props: &zero_ui_core::widget::Props) {}
+
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        // 滚动事件：更新 scroll 度量（页面内容尺寸/offset 由 WebView 管控，spec FR-006）。
+        if let UiEvent::Scroll { delta, .. } = event {
+            self.scroll.scroll_x = (self.scroll.scroll_x + delta.x).clamp(0.0, self.scroll.max_scroll_x());
+            self.scroll.scroll_y = (self.scroll.scroll_y + delta.y).clamp(0.0, self.scroll.max_scroll_y());
+            EventResult::Consumed
+        } else {
+            EventResult::Ignored
+        }
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+        // UI SDK 只算 WebViewWidget 外部矩形（spec FR-005）：填充分配区域；
+        // DOM/layout/paint 完全由 zero-webview 负责。
+        Size::new(constraints.max_width, constraints.max_height)
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx) {
+        // 记录 ExternalSurface 图元（外部矩形 + surface_id）；真实纹理由后端按 id 合成。
+        // ctx.clip.size = 节点可视尺寸（host 按绝对 origin 平移后覆盖节点 rect）。
+        let size = ctx.clip.map(|r| r.size).unwrap_or(self.viewport.size);
+        ctx.recorder
+            .draw_external_surface(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.surface_id);
+    }
+
+    fn semantics(&self, ctx: &mut SemanticsCtx) {
+        // WebView 是一个合成表面，a11y 树上为单个节点（网页内部 a11y tree 由 WebView/engine 负责）。
+        ctx.nodes.push(SemanticsNode {
+            id: WidgetId::new("webview"),
+            rect: self.viewport,
+            flags: SemanticsFlags::default(),
+            label: Some(SemanticsLabel::Literal("web content".into())),
+            value: None,
+            children: Vec::new(),
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zero_ui_core::geometry::Size;
+    use zero_ui_core::event::{Modifiers, ScrollPhase};
+    use zero_ui_core::geometry::{Point, Size, Vec2};
+    use zero_ui_core::invalidation::InvalidationFlags;
     use zero_ui_core::theme::{ColorPalette, ResolvedColorScheme, ThemeId, ThemeResolver};
+    use zero_ui_core::widget::WidgetSpec;
+    use zero_ui_render::SceneRecorder;
+    use zero_ui_render::render_node::RenderPrimitive;
 
     fn theme() -> Theme {
         ThemeResolver::build_theme(
@@ -115,5 +176,93 @@ mod tests {
         let input = w.layout_input();
         assert_eq!(input.scale_factor, 1.5);
         assert_eq!(input.rect.size.width, 400.0);
+    }
+
+    #[test]
+    fn paint_records_external_surface_marker() {
+        // DC-3：WebViewWidget paint 把自身记录为 ExternalSurface 图元（外部矩形 + surface_id），
+        // 不把网页 DOM 映射为 UI widgets。
+        let rect = Rect::from_origin_size(Default::default(), Size::new(800.0, 600.0));
+        let mut w = WebViewWidget::new(rect, 1.0, theme()).with_surface_id(99);
+        let mut rec = SceneRecorder::new(WidgetId::new("wv"));
+        rec.set_clip(Some(rect));
+        let mut ctx = PaintCtx {
+            recorder: &mut rec,
+            clip: Some(rect),
+            offset: Vec2::ZERO,
+        };
+        w.paint(&mut ctx);
+        let scene = rec.finish();
+        assert_eq!(scene.entries.len(), 1);
+        match &scene.entries[0].primitive {
+            RenderPrimitive::ExternalSurface { rect: r, surface_id } => {
+                assert_eq!(*surface_id, 99);
+                assert_eq!(r.size, Size::new(800.0, 600.0));
+            }
+            other => panic!("expected ExternalSurface, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scroll_event_updates_metrics_clamped() {
+        // DC-3/DC-4：滚动事件更新 WebView 内部 scroll 度量（页面 offset 由 WebView 管控）。
+        let rect = Rect::from_origin_size(Default::default(), Size::new(400.0, 300.0));
+        let mut w = WebViewWidget::new(rect, 1.0, theme());
+        w.set_scroll_metrics(ScrollMetrics {
+            content_width: 400.0,
+            content_height: 1000.0,
+            viewport_width: 400.0,
+            viewport_height: 300.0,
+            scroll_x: 0.0,
+            scroll_y: 0.0,
+        });
+        let mut flags = InvalidationFlags::CLEAN;
+        let scroll_by = |dy: f32| UiEvent::Scroll {
+            delta: Vec2::new(0.0, dy),
+            phase: ScrollPhase::Discrete,
+            position: Point::ZERO,
+            modifiers: Modifiers::NONE,
+        };
+        assert_eq!(
+            w.event(
+                &mut EventCtx {
+                    invalidation: &mut flags
+                },
+                &scroll_by(100.0)
+            ),
+            EventResult::Consumed
+        );
+        assert_eq!(w.scroll.scroll_y, 100.0);
+        // 超过 max_scroll_y（1000-300=700）→ 钳到 700。
+        let _ = w.event(
+            &mut EventCtx {
+                invalidation: &mut flags,
+            },
+            &scroll_by(10_000.0),
+        );
+        assert_eq!(w.scroll.scroll_y, 700.0);
+    }
+
+    #[test]
+    fn host_paints_webview_as_external_surface() {
+        // DC-3 集成：WebViewWidget 注册进 WidgetHost → layout → paint → 统一 Scene 含 ExternalSurface。
+        use zero_ui_runtime::WidgetHost;
+        let mut host = WidgetHost::new();
+        host.register("WebView", |_spec| {
+            Box::new(WebViewWidget::new(Rect::from_ltrb(0.0, 0.0, 800.0, 600.0), 1.0, theme()).with_surface_id(7))
+        });
+        let mut spec = WidgetSpec::new("WebView");
+        spec.id = Some(WidgetId::new("wv"));
+        host.set_root(&spec);
+        host.layout(Constraints::loose(Size::new(800.0, 600.0)));
+        let scene = host.paint().clone();
+        assert!(
+            scene
+                .entries
+                .iter()
+                .any(|e| matches!(e.primitive, RenderPrimitive::ExternalSurface { surface_id: 7, .. })),
+            "scene should contain the webview external surface, got {:?}",
+            scene.entries
+        );
     }
 }

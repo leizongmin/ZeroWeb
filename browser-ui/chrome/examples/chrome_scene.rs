@@ -50,6 +50,7 @@ fn main() {
             RenderPrimitive::StrokeRect { .. } => "StrokeRect".to_string(),
             RenderPrimitive::Text { text, .. } => format!("Text({:?})", text),
             RenderPrimitive::TextBlob { .. } => "TextBlob".to_string(),
+            RenderPrimitive::ExternalSurface { surface_id, .. } => format!("ExternalSurface(id={surface_id})"),
         };
         println!("  [{i:2}] source={:<22} {kind}", e.source.0);
     }

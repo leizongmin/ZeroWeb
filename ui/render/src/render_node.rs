@@ -37,6 +37,12 @@ pub enum RenderPrimitive {
         position: zero_ui_core::geometry::Point,
         color: Color,
     },
+    /// 外部合成表面（DC-3：WebView/平台视图/视频纹理等由后端独立光栅的表面）。
+    ///
+    /// UI SDK 只记录其外部矩形 + 宿主分配的 `surface_id`；真实纹理/primitives 由后端
+    /// （持有 `zero-webview` 的合成层）按 id 取回合成。本图元不承载浏览器类型 → ui/render
+    /// 不依赖 `zero-webview`（DC-1）。
+    ExternalSurface { rect: Rect, surface_id: u64 },
 }
 
 impl RenderPrimitive {
@@ -77,6 +83,10 @@ impl RenderPrimitive {
                 blob,
                 position: position.translate(offset.x, offset.y),
                 color,
+            },
+            RenderPrimitive::ExternalSurface { rect, surface_id } => RenderPrimitive::ExternalSurface {
+                rect: rect.translate(offset.x, offset.y),
+                surface_id,
             },
         }
     }
@@ -152,6 +162,18 @@ mod tests {
                 assert_eq!(rect, Rect::from_ltrb(11.0, 22.0, 13.0, 24.0));
             }
             _ => panic!("expected StrokeRect"),
+        }
+
+        let surface = RenderPrimitive::ExternalSurface {
+            rect: Rect::from_ltrb(0.0, 0.0, 50.0, 50.0),
+            surface_id: 7,
+        };
+        match surface.translate(Vec2::new(100.0, 200.0)) {
+            RenderPrimitive::ExternalSurface { rect, surface_id } => {
+                assert_eq!(rect, Rect::from_ltrb(100.0, 200.0, 150.0, 250.0));
+                assert_eq!(surface_id, 7);
+            }
+            _ => panic!("expected ExternalSurface"),
         }
     }
 

@@ -93,6 +93,12 @@ pub trait PaintRecorder {
     /// 生产文本路径应优先用预 shape 的 `TextBlob`（见 `ui/render::SceneRecorder::draw_text_blob`），
     /// 避免每帧重复 shaping；本方法供 label/调试文本等不需精确度量的场景。
     fn draw_text(&mut self, text: &str, position: Point, size_px: f32, color: Color);
+
+    /// 记录外部合成表面（DC-3：WebView/平台视图/视频纹理）。
+    ///
+    /// UI SDK 只算外部矩形；真实纹理/primitives 由后端按 `surface_id` 取回合成。
+    /// 本方法不引入浏览器类型 → `PaintRecorder` 保持浏览器无关（DC-1）。
+    fn draw_external_surface(&mut self, rect: Rect, surface_id: u64);
 }
 
 /// paint 上下文。

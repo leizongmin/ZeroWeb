@@ -26,6 +26,8 @@ pub trait RenderBackend {
     fn draw_text_blob(&mut self, blob: &TextBlob, position: Point, color: Color);
     /// 原始字符串文本（后端自行 shape 或占位）。
     fn draw_text(&mut self, text: &str, position: Point, size_px: f32, color: Color);
+    /// 外部合成表面（DC-3）：后端按 `surface_id` 取回 WebView/平台视图纹理并合成到 `rect`。
+    fn draw_external_surface(&mut self, rect: Rect, surface_id: u64);
     /// 应用裁剪：后续绘制命令受 `clip` 约束，直到下一次 `apply_clip`。
     fn apply_clip(&mut self, clip: Option<Rect>);
 }
@@ -59,6 +61,9 @@ pub fn paint_scene(scene: &Scene, backend: &mut dyn RenderBackend) {
             }
             RenderPrimitive::TextBlob { blob, position, color } => {
                 backend.draw_text_blob(blob, *position, *color);
+            }
+            RenderPrimitive::ExternalSurface { rect, surface_id } => {
+                backend.draw_external_surface(*rect, *surface_id);
             }
         }
     }
@@ -106,6 +111,12 @@ mod tests {
         fn apply_clip(&mut self, clip: Option<Rect>) {
             self.current_clip = clip;
             self.calls.push(format!("clip {:?}", clip));
+        }
+        fn draw_external_surface(&mut self, rect: Rect, surface_id: u64) {
+            self.calls.push(format!(
+                "surface {surface_id} @{},{} {}x{}",
+                rect.origin.x, rect.origin.y, rect.size.width, rect.size.height
+            ));
         }
     }
 
