@@ -27,6 +27,19 @@ impl MenuEntry {
         }
     }
 
+    /// 按 message id 构造菜单项（DC-10：浏览器文案经 `browser-ui/chrome/i18n` catalog 解析）。
+    ///
+    /// `id` 经 [`crate::i18n::localized_label`] 在默认 locale 解析为可见文案；缺失 key 回退为
+    /// id 本身（携带 MissingKey 诊断，不阻断）。组件持有 message id 而非硬编码文案，
+    /// 使菜单文案可本地化（spec FR-013 / DC-10）。
+    pub fn item_msg(id: &str, action: BrowserAction) -> MenuEntry {
+        MenuEntry::Item {
+            label: crate::i18n::localized_label(id),
+            action,
+            enabled: true,
+        }
+    }
+
     pub fn separator() -> MenuEntry {
         MenuEntry::Separator
     }
@@ -34,6 +47,15 @@ impl MenuEntry {
     pub fn disabled(label: &str, action: BrowserAction) -> MenuEntry {
         MenuEntry::Item {
             label: label.to_string(),
+            action,
+            enabled: false,
+        }
+    }
+
+    /// 按 message id 构造**禁用**菜单项（DC-10，与 [`item_msg`](Self::item_msg) 对应）。
+    pub fn disabled_msg(id: &str, action: BrowserAction) -> MenuEntry {
+        MenuEntry::Item {
+            label: crate::i18n::localized_label(id),
             action,
             enabled: false,
         }
@@ -91,11 +113,15 @@ mod tests {
     use super::*;
 
     fn sample() -> BrowserMenu {
+        // DC-10：菜单文案经 message id → catalog 解析（不再硬编码 "New Tab"/"Reload"/"Close"）。
         BrowserMenu::new(vec![
-            MenuEntry::item("New Tab", BrowserAction::OpenTab),
+            MenuEntry::item_msg(crate::i18n::ids::NEW_TAB, BrowserAction::OpenTab),
             MenuEntry::separator(),
-            MenuEntry::disabled("Reload", BrowserAction::Reload),
-            MenuEntry::item("Close", BrowserAction::CloseTab(zero_browser_shell::TabId(7))),
+            MenuEntry::disabled_msg(crate::i18n::ids::RELOAD, BrowserAction::Reload),
+            MenuEntry::item_msg(
+                crate::i18n::ids::CLOSE_TAB,
+                BrowserAction::CloseTab(zero_browser_shell::TabId(7)),
+            ),
         ])
     }
 
@@ -126,5 +152,20 @@ mod tests {
             Some(&BrowserAction::CloseTab(zero_browser_shell::TabId(7)))
         );
         assert!(menu.on_activate(99).is_none(), "越界");
+    }
+
+    #[test]
+    fn item_msg_resolves_labels_via_catalog() {
+        // DC-10：item_msg/disabled_msg 经 i18n catalog 解析 message id → 可见文案。
+        let menu = sample();
+        let labels: Vec<&str> = menu
+            .entries
+            .iter()
+            .filter_map(|e| match e {
+                MenuEntry::Item { label, .. } => Some(label.as_str()),
+                MenuEntry::Separator => None,
+            })
+            .collect();
+        assert_eq!(labels, vec!["New Tab", "Reload", "Close Tab"]);
     }
 }

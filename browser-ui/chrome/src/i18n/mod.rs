@@ -101,6 +101,19 @@ pub fn resolve_default(store: &CatalogStore, id: &str) -> Result<ResolvedText, I
     resolve(store, id, &LocaleId::new(DEFAULT_LOCALE))
 }
 
+/// 解析 message id 为可见文案（默认 locale，**infallible**）。
+///
+/// 组件构造期便利入口：命中 → 文案；缺失/异常 → 回退为 id 本身（不 panic、不阻断）。
+/// 缺失 key 仍会在 [`ResolvedText::diagnostic`] 体现（调用方可选查询）；本函数只取 `.text`。
+///
+/// 用于 chrome 组件把硬编码文案改为 message id 引用（DC-10 浏览器文案接入）：
+/// 组件持有 id，构造期经本函数解析为字符串进 WidgetSpec props。
+pub fn localized_label(id: &str) -> String {
+    resolve_default(&catalog_store(), id)
+        .map(|r| r.text)
+        .unwrap_or_else(|_| id.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,5 +194,13 @@ mod tests {
             .resolve(&LocalizedText::Literal("https://example.com".into()), &ctx)
             .expect("literal resolves");
         assert_eq!(resolved.text, "https://example.com");
+    }
+
+    #[test]
+    fn localized_label_resolves_known_and_falls_back_for_unknown() {
+        // DC-10 组件便利入口：已知 id → 文案；未知 id → id 本身（infallible，不 panic）。
+        assert_eq!(localized_label(ids::NEW_TAB), "New Tab");
+        assert_eq!(localized_label(ids::RELOAD), "Reload");
+        assert_eq!(localized_label("browser.does_not_exist"), "browser.does_not_exist");
     }
 }

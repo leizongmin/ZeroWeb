@@ -1,0 +1,55 @@
+# DC-10 BrowserMenu label → i18n catalog 接线（2026-07-02）
+
+## 背景
+
+上轮建立 `browser-ui/chrome/i18n` catalog 入口（ids 常量 + en catalog + resolve）。本轮把
+**最 copy 密集的组件 BrowserMenu** 的硬编码文案迁移到 message id，证明 catalog 为浏览器
+菜单文案的单一来源（DC-10「浏览器文案通过 message id 引用」）。
+
+## 修复
+
+### i18n 新增便利入口
+`browser-ui/chrome/src/i18n/mod.rs` 新增 `localized_label(id: &str) -> String`：
+- 经 `resolve_default(&catalog_store(), id)` 取 `.text`；缺失/异常回退为 id 本身（**infallible**，不 panic）。
+- 组件构造期便利入口：持有 message id，构造期解析为字符串进 WidgetSpec props（model 层解析）。
+- 新测 `localized_label_resolves_known_and_falls_back_for_unknown`（已知 id→文案；未知 id→id 回退）。
+
+### BrowserMenu 接 message id
+`browser-ui/chrome/src/browser_menu.rs`：
+- 新增 `MenuEntry::item_msg(id, action)` / `disabled_msg(id, action)`——经 `localized_label`
+  解析 message id 存为 label String。保留 `item(label, action)`/`disabled(label, action)` 用于
+  动态/非 copy 文案（向后兼容）。
+- **测试 fixture `sample()` 改用 message id**：原硬编码 `"New Tab"`/`"Reload"`/`"Close"` →
+  `ids::NEW_TAB`/`RELOAD`/`CLOSE_TAB`（经 catalog 解析为 "New Tab"/"Reload"/"Close Tab"）。
+- 新测 `item_msg_resolves_labels_via_catalog`：断言 fixture 三项 label == catalog 文案。
+
+## resolution-layer 设计决策（写入 master.md）
+
+本轮采用**model 层（构造期）解析**：组件构造时经 `localized_label(id)` 把 message id 解析为
+当前默认 locale（en）字符串存入 props。理由：
+- 最小改动、向后兼容（`item(label)` 保留）；不动 MenuEntry 字段类型 / build_menu / paint 管线。
+- 单 locale（en）当前足够；runtime 切 locale 时模型重建（ui/runtime I18nRuntime 已触发
+  layout+paint+semantics 失效）会重新构造 → 重新解析。
+- 更完整的**paint 期解析**（组件持 `LocalizedText`，渲染层带 catalog+locale 解析）为 follow-up，
+  需 ChromePanel paint 上下文接入 catalog——本轮 catalog + 构造期解析为其入口。
+
+## 验证（可量化）
+
+- `./target/test-guard -- cargo test -p zero-browser-chrome` → **74 passed; 0 failed**
+  （+2 新测：localized_label + item_msg_resolves_labels_via_catalog）。
+- `./target/test-guard -- cargo test -p zero-browser` → **189 passed; 0 failed**（DC-14 零回归）。
+- `cargo build --workspace` Finished（0 错误）；`cargo clippy --workspace --all-targets -- -D warnings` 0 警告；
+  `cargo fmt --all --check` 净。
+- 无其它 crate 使用 MenuEntry（grep 确认），改动 chrome 内部 + 向后兼容。
+
+## 风险
+
+**SDK-side + 纯新增构造器 + 测试 fixture 改用 message id（值经 catalog 解析）**：
+- 不触碰渲染/布局路径 → **无 product-smoke 风险**。
+- 189 browser + 74 chrome 测零回归已证。
+
+## DC-10 现状
+
+- ✅ 浏览器文案 catalog 入口（上轮）+ BrowserMenu copy 接 message id（本轮）。
+- 剩余 follow-up（非阻塞）：shell.rs 的 `"Find"` / 导航状态格式、其它组件硬编码 label 同样
+  迁移到 `ids::*` + `localized_label`（模式已建立，机械推广）；paint 期解析（完整 resolution-layer）。
