@@ -1,0 +1,25 @@
+DC-3 phase-2 render_frame/render_cpu 接线 WebView surface 通路（2026-07-02）
+===================================================================
+
+变更（apps/browser/src/app_platform.rs）：
+- render_frame（GPU 路径）：webview_extras 不再拼入 scene_primitives；
+  改为调用 compose_sdk_chrome_replacement_with_webview（surface_id=1），
+  webview_extras 作为 surface 注册到 bridge，由 draw_external_surface
+  在 ExternalSurface marker 位置合成。
+  scene_primitives 仅含 chrome_shadows（顶层）+ SDK chrome fills（底层）。
+  page_fills 进入 surface→compose 返回空 Vec→fills 拼接仅含 chrome_overlay_fills。
+- render_cpu（CPU 路径）：同样改动。
+- 移除不再需要的 chrome_top 计算（surface 内部处理定位）。
+- feature-off 路径：webview_extras 仍按原方式拼入 scene_primitives（bit-identical）。
+
+验证：
+- cargo test -p zero-browser: 189 测全绿（默认路径零回归）
+- cargo test -p zero-browser --features sdk-chrome: 195 测全绿
+- cargo clippy --workspace --all-targets -- -D warnings: PASS
+- cargo fmt --all --check: PASS
+- product-smoke (release, max-diff=22): 95370/480000 = 19.87% = baseline（零页面回归）
+
+DC-3 浏览器侧 surface 管线闭合：
+- SDK chrome 现经 WebViewWidget ExternalSurface marker 合成页面内容
+  （fills + webview extra primitives），不再手动翻译/合并 fills。
+- 剩余：真实纹理合成（非 geometry-only surface merge）+ GUI 可视验收

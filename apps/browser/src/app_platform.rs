@@ -156,20 +156,29 @@ impl BrowserApp {
         } = scene;
 
             // 获取 WebView 额外图元（渐变、阴影、圆角矩形、线段、路径等）
-            // DC-14 SDK chrome 替换手绘 chrome：在 image_cache 可变借用之前计算 chrome_top
-            // （避免 self.chrome_top_y_for() 与 self.tabs.image_cache_mut() 的借用冲突）。
-            #[cfg(feature = "sdk-chrome")]
-            let chrome_top = self.chrome_top_y_for(self.scale_factor);
+            // DC-3 phase-2（feature `sdk-chrome`）：webview_extras 作为 surface 注册，
+            // 手绘 chrome_fills/glyphs 被 SDK chrome 替换。
             #[cfg(feature = "sdk-chrome")]
             let _ = (&chrome_fills, &chrome_glyphs); // 手绘 chrome 被 SDK 替换
 
             let webview_extras = self.get_webview_extra_primitives();
 
-            // 合并 chrome fills + chrome shadows + webview 图元
-            let mut scene_primitives = webview_extras;
-            // chrome 阴影（页面视口 drop shadow）在 SDK chrome 翻译之前拼入 scene_primitives，
-            // 使 translate_scene_primitives_y 将其从手绘 chrome viewport 位置迁到 SDK chrome 位置。
-            scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
+            // 合并 chrome fills + chrome shadows + webview 图元。
+            // DC-3 phase-2（feature `sdk-chrome`）：webview_extras 作为 surface 注册到 bridge，
+            // 由 draw_external_surface 合成，不直接拼入 scene_primitives。
+            #[cfg(not(feature = "sdk-chrome"))]
+            let mut scene_primitives = {
+                let mut p = webview_extras;
+                p.shadows = [chrome_shadows, p.shadows].concat();
+                p
+            };
+            #[cfg(feature = "sdk-chrome")]
+            let mut scene_primitives = {
+                let mut p = RenderPrimitives::default();
+                // chrome 阴影保持为顶层 primitives（不进入 webview surface）。
+                p.shadows = chrome_shadows;
+                p
+            };
 
             // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
             // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
@@ -181,14 +190,16 @@ impl BrowserApp {
             };
 
             // DC-14 SDK chrome 替换手绘 chrome（feature `sdk-chrome`）。
-            // feature-on：跳过手绘 chrome_fills/glyphs，改用 SDK chrome；页面内容从手绘 chrome
-            // viewport 位置翻译到 SDK chrome viewport 位置。SDK chrome fills 置于最底层，页面内容在上。
+            // DC-3 phase-2（webview surface 变体）：webview_extras 作为 surface 注册，
+            // draw_external_surface 在 ExternalSurface marker 位置合成页面内容；
+            // page_fills 进入 surface→返回空 Vec；page_glyphs 保留在渲染管线原有路径。
             // feature-off：手绘 chrome 路径不变（bit-identical）。
             #[cfg(feature = "sdk-chrome")]
             let (page_fills, page_glyphs) = {
-                compose_sdk_chrome_replacement(
-                    &self.shell, width, height, chrome_top,
+                compose_sdk_chrome_replacement_with_webview(
+                    &self.shell, width, height,
                     page_fills, page_glyphs,
+                    Some(webview_extras), // DC-3 phase-2: webview surface
                     &mut scene_primitives, &mut image_cache,
                 )
             };
@@ -251,20 +262,28 @@ impl BrowserApp {
             overlay_rounded_rects,
         } = scene;
 
-        // DC-14 SDK chrome 替换手绘 chrome：在 image_cache 可变借用之前计算 chrome_top
-        // （避免 self.chrome_top_y_for() 与 self.tabs.image_cache_mut() 的借用冲突）。
-        #[cfg(feature = "sdk-chrome")]
-        let chrome_top = self.chrome_top_y_for(self.scale_factor);
+        // DC-3 phase-2（feature `sdk-chrome`）：webview_extras 作为 surface 注册，
+        // 手绘 chrome 被 SDK chrome 替换。
         #[cfg(feature = "sdk-chrome")]
         let _ = (&chrome_fills, &chrome_glyphs); // 手绘 chrome 被 SDK 替换
 
         // 获取 WebView 的额外图元类型（渐变、阴影、线段等）
         let webview_extras = self.get_webview_extra_primitives();
 
-        // 合并：chrome fills + chrome shadows + webview fills (已在 fills 中) + webview 额外图元
-        let mut scene_primitives = webview_extras;
-        // chrome 阴影在 SDK chrome 翻译之前拼入 scene_primitives（与 GPU 路径一致）。
-        scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
+        // 合并：chrome fills + chrome shadows + webview fills + webview 额外图元。
+        // DC-3 phase-2（feature `sdk-chrome`）：webview_extras 作为 surface 注册到 bridge。
+        #[cfg(not(feature = "sdk-chrome"))]
+        let mut scene_primitives = {
+            let mut p = webview_extras;
+            p.shadows = [chrome_shadows, p.shadows].concat();
+            p
+        };
+        #[cfg(feature = "sdk-chrome")]
+        let mut scene_primitives = {
+            let mut p = RenderPrimitives::default();
+            p.shadows = chrome_shadows;
+            p
+        };
 
         // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
         // （goal doc DC-13 P1「图片子资源/ImageCache 未贯通」最后消费 hop）
@@ -276,14 +295,14 @@ impl BrowserApp {
         };
 
         // DC-14 SDK chrome 替换手绘 chrome（feature `sdk-chrome`）。
-        // feature-on：跳过手绘 chrome_fills/glyphs，改用 SDK chrome；页面内容从手绘 chrome
-        // viewport 位置翻译到 SDK chrome viewport 位置。SDK chrome fills 置于最底层，页面内容在上。
+        // DC-3 phase-2（webview surface 变体）：webview_extras 作为 surface 注册。
         // feature-off：手绘 chrome 路径不变（bit-identical）。
         #[cfg(feature = "sdk-chrome")]
         let (page_fills, page_glyphs) = {
-            compose_sdk_chrome_replacement(
-                &self.shell, width, height, chrome_top,
+            compose_sdk_chrome_replacement_with_webview(
+                &self.shell, width, height,
                 page_fills, page_glyphs,
+                Some(webview_extras), // DC-3 phase-2: webview surface
                 &mut scene_primitives, &mut image_cache,
             )
         };
