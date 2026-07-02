@@ -1,0 +1,12 @@
+[package]
+name = "zero-ui-adapter-render-foundation"
+description = "render-foundation 后端适配器 — 实现 zero-ui-render::RenderBackend，把 UI Scene 累积为 render-foundation RenderPrimitives（spec TBD-2 闭环）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+zero-ui-render = { workspace = true }
+zero-text-foundation = { workspace = true }
+zero-render-foundation = { workspace = true }

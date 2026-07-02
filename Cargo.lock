@@ -6005,6 +6005,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-ui-adapter-render-foundation"
+version = "0.1.0"
+dependencies = [
+ "zero-render-foundation",
+ "zero-text-foundation",
+ "zero-ui-core",
+ "zero-ui-render",
+]
+
+[[package]]
 name = "zero-ui-adapter-webview"
 version = "0.1.0"
 dependencies = [

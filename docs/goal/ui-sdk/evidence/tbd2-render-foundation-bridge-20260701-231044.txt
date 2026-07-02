@@ -1,0 +1,67 @@
+TBD-2 render-foundation RenderBackend 桥接适配器 — 2026-07-01
+=============================================================
+
+里程碑：M2→TBD-2（Scene→光栅后端抽象的 render-foundation 后端侧实现）。
+SDK-only / 纯新增：新 crate `ui/adapters/render-foundation`，未触碰 apps/browser
+与任何既有渲染路径（仅 workspace Cargo.toml 注册）→ 无 product-smoke 风险。
+
+缺口（修复前）
+-------------
+- `ui/render` 定义了 `RenderBackend` trait + `paint_scene`（把扁平 Scene 派发给后端），
+  但**无任何后端实现**——SDK Scene 无法被光栅化为真实像素。
+- 这是 DC-14 视觉迁移的硬阻塞：浏览器无法渲染 SDK widget，因为 SDK scene 无后端。
+- TBD-2（master.md）：「render-foundation 后端实现 RenderBackend trait」标记为 M2 剩余 ④。
+
+架构决策
+-------
+- 桥接放 `ui/adapters/render-foundation`（adapter 模式，与既有
+  `ui/adapters/{winit,webview}` 一致），依赖 zero-ui-render + zero-render-foundation
+  + zero-text-foundation + zero-ui-core。`ui/render` 仍**不直接依赖** render-foundation（TBD-2 约束保持）。
+- render-foundation 的 `RenderPrimitives` 是分桶 + `draw_order` 有序模型；`add_clip` 记录
+  `DrawOp::Clip`，CPU renderer 经 draw_order **流式**应用裁剪 → 与 ui/render 的 per-entry 流式
+  clip 语义一致（关键：clip 语义匹配，非阻塞）。
+
+实现（ui/adapters/render-foundation/src/lib.rs）
+-----------------------------------------------
+`RenderFoundationBackend { primitives: RenderPrimitives, viewport: RfRect }`，impl `RenderBackend`：
+- `fill_rect`：rounding 全零 → `add_fill(FillPrimitive)`；否则 → `add_rounded_rect(RoundedRectPrimitive)`
+  （四角半径分别映射）。
+- `stroke_rect`：矩形四角顶点 → `add_path_stroke(vertices, closed=true)`（render-foundation 无
+  stroke 圆角矩形图元；圆角暂忽略，TODO 跟踪）。
+- `apply_clip`：`Some(rect)` → `add_clip`；`None` → 回落视口（"无裁剪" = 整个视口）。
+- 类型转换：ui Color（f32 0-1）→ rf Color（u8，`(v.clamp(0,1)*255).round()`）；ui Rect/Point/Size → rf 同构。
+- `into_primitives(self)` / `primitives(&self)` 取累积结果交给 render-foundation 渲染。
+
+明确 follow-up（文档化的 no-op，非阻塞几何闭环）
+-------------------------------------------------
+- `draw_text` / `draw_text_blob`：no-op。TextBlob → GlyphPrimitive 映射需 **DC-11 字体栈统一**
+  （两侧 FontId/glyph cache 不同）。含文本的 Scene 在此落地前不会出现文字——调用方须知。
+- `draw_external_surface`：no-op。WebView/平台视图纹理合成属 **DC-3 phase-2**。
+- `stroke_rect` 圆角：暂忽略（需路径曲线）。
+
+测试（6 测，全绿）
+-----------------
+1. fill_rect_plain_uses_fill_no_rounding — 零圆角 → FillPrimitive（WHITE f32→u8 255 验证）。
+2. fill_rect_rounded_maps_radii — 非零圆角 → RoundedRectPrimitive，四角半径分别映射。
+3. stroke_rect_emits_closed_path_of_four_corners — 4 角顶点闭合路径，line_width 传递。
+4. apply_clip_some_and_none — Some→显式 clip；None→视口回落。
+5. paint_scene_dispatches_geometry_into_buckets — 真实 Scene + paint_scene 端到端：
+   plain fill → fills、rounded fill → rounded_rects、stroke → path_strokes、3 entry clip 流式入 clips/draw_order。
+6. text_and_external_surface_are_documented_noops — 文本/外部表面 no-op，不产图元。
+
+门禁（2026-07-01）
+-----------------
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all --check` — 净。
+- `./target/test-guard -- cargo test -p zero-ui-adapter-render-foundation` — **6 passed; 0 failed**。
+- 纯新增 crate（workspace Cargo.toml 仅注册）→ 未跑 product-smoke（无既有渲染路径变更，零回归路径）。
+- DC-1 复核：adapter 依赖 zero-render-foundation（通用渲染基础层，非浏览器业务 crate）+ ui 通用 crate，
+  符合 TBD-2（ui/render 经 adapter 与 render-foundation 耦合）。
+
+意义
+----
+- TBD-2 闭环：SDK Scene 现可光栅化为 render-foundation RenderPrimitives（几何 + 裁剪）。
+- DC-14 视觉迁移的几何基础就绪：浏览器可把 SDK Scene 喂给本后端，经现有 GPU/CPU 管线渲染。
+- 剩余阻塞收窄为：①DC-11 文本（字体栈统一，TextBlob→GlyphPrimitive）；②DC-3 phase-2 外部表面纹理。
+  这两项落地后，SDK chrome 即可完整渲染（含文字 + WebView）。
