@@ -7,7 +7,7 @@
 //! 应用结构：`Column[ Label(count), Row[ Button("-", dec), Button("+", inc) ] ]`。
 //! `Label` 是本示例自带的展示控件（演示如何用 SDK 自定义控件并 paint 文本）。
 
-use zero_ui_core::action::{ActionId, EventResult};
+use zero_ui_core::action::{ActionId, ActionPayload, ActionResult, EventResult};
 use zero_ui_core::binding::Value;
 use zero_ui_core::event::UiEvent;
 use zero_ui_core::geometry::{Constraints, Point, Size};
@@ -16,7 +16,7 @@ use zero_ui_core::theme::Color;
 use zero_ui_core::widget::{
     EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget, WidgetId, WidgetSpec,
 };
-use zero_ui_runtime::{EmittedAction, WidgetHost};
+use zero_ui_runtime::{EmittedAction, UiApp, WidgetHost};
 use zero_ui_widgets::button::{Button, ButtonSpec};
 
 // ---------------- 自定义展示控件：Label ----------------
@@ -140,6 +140,29 @@ impl CounterApp {
 impl Default for CounterApp {
     fn default() -> CounterApp {
         CounterApp::new()
+    }
+}
+
+/// `UiApp` 适配（spec IF-006）：把 `CounterApp` 接入通用运行时驱动器（如
+/// `zero_ui_adapter_winit::WinitDriver`）——`root_spec` 产出声明树，`dispatch` 走 reducer。
+/// 这样 counter 既可被 `WinitDriver` 驱动（事件→dispatch→重建→帧），也可被低层 host
+/// 直接驱动（保留 `reduce`/`build_spec` 公共 API）。
+impl UiApp for CounterApp {
+    fn root_spec(&self) -> WidgetSpec {
+        self.build_spec()
+    }
+
+    fn dispatch(&mut self, action: &ActionId, payload: Option<ActionPayload>) -> ActionResult {
+        // 复用既有 reducer（单一状态变更源）；Handled/UnknownAction 由是否产生状态变化决定。
+        let emitted = EmittedAction {
+            action: action.clone(),
+            payload,
+        };
+        if self.reduce(&emitted) {
+            ActionResult::Handled
+        } else {
+            ActionResult::UnknownAction(action.clone())
+        }
     }
 }
 

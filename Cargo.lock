@@ -6130,6 +6130,7 @@ dependencies = [
 name = "zero-ui-examples"
 version = "0.1.0"
 dependencies = [
+ "zero-ui-adapter-winit",
  "zero-ui-core",
  "zero-ui-render",
  "zero-ui-runtime",

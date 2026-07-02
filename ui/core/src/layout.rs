@@ -110,6 +110,22 @@ impl WindowMetrics {
             orientation: Orientation::from_size(logical_size),
         }
     }
+
+    /// 典型桌面 metrics：1280×800 逻辑像素，scale 1.0，无 safe_area/键盘，默认
+    /// text_scale/density。`ViewportClass::Expanded`（→ desktop shell）。供桌面示例 /
+    /// runtime adapter / `WinitDriver` 测试复用（与 `phone()`/`tablet()` 对称）。
+    pub fn desktop() -> WindowMetrics {
+        let logical_size = Size::new(1280.0, 800.0);
+        WindowMetrics {
+            logical_size,
+            scale_factor: 1.0,
+            safe_area: Insets::all(0.0),
+            keyboard_insets: Insets::all(0.0),
+            text_scale: DEFAULT_TEXT_SCALE,
+            density: DEFAULT_DENSITY,
+            orientation: Orientation::from_size(logical_size),
+        }
+    }
 }
 
 /// 视口分级（spec IF-009，Material/Bootstrap 风格断点）。
@@ -227,6 +243,17 @@ mod tests {
         assert_eq!(tablet.scale_factor, 2.0);
         // 默认无 safe_area（平板通常无刘海）。
         assert_eq!(tablet.safe_area, Insets::all(0.0));
+
+        // desktop preset → Expanded（desktop shell）；scale 1.0；Landscape；无 safe_area。
+        let desktop = WindowMetrics::desktop();
+        assert_eq!(
+            ViewportClass::from_width(desktop.logical_size.width),
+            ViewportClass::Expanded,
+            "desktop preset → Expanded"
+        );
+        assert_eq!(desktop.scale_factor, 1.0);
+        assert_eq!(desktop.orientation, Orientation::Landscape);
+        assert_eq!(desktop.safe_area, Insets::all(0.0));
     }
 
     #[test]
