@@ -6091,6 +6091,7 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
  "zero-ui-core",
+ "zero-ui-i18n",
 ]
 
 [[package]]
