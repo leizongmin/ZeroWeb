@@ -1,0 +1,100 @@
+DC-2 WinitDriver 深度代码审查（lei-deep-review，7 轮 driver 工作）
+================================================================
+日期：2026-07-03
+分支：ui-sdk
+范围：7 轮 WinitDriver 工作的核心 adapter 逻辑
+  - ui/adapters/winit/src/driver.rs（WinitDriver: new/begin/pump_event/pump_frame/
+    set_metrics/set_tokens/host/host_mut/into_host）
+  - ui/adapters/winit/src/runtime.rs（WinitRuntime::launch 阻塞壳 setup 核心）
+  - ui/adapters/winit/src/event_map.rs（winit-raw→driver 端到端集成测）
+审查维度：实现缺陷 / 边界 / 状态一致性 / API 契约（并发/安全/性能不适用于 headless SDK 单线程路径）
+
+## 摘要
+
+- 审查文件：3（adapter 核心）+ 交叉核对 ui/core/src/invalidation.rs、ui/runtime/src/host.rs
+- 发现：1 medium（已修复 + 回归守卫）+ 4 low/非 bug（记录，不修）
+- 最高优先级：pump_frame 在 layout-only 失效下漏 paint（潜在 correctness，已修复）。
+
+## 发现 1：pump_frame layout-only 失效漏 paint（medium，已修复）
+
+- **位置**：ui/adapters/winit/src/driver.rs pump_frame（修复前）
+- **严重程度**：中（潜在 correctness，当前 driver setter 未触发但 API 可达）
+- **置信度**：0.85
+- **描述**：pump_frame 此前先 `if needs_layout() { layout() }`（layout 清除 NEEDS_LAYOUT），
+  **之后**才 `if needs_paint()`。requires_paint() = NEEDS_LAYOUT || NEEDS_PAINT；layout 已
+  清除 NEEDS_LAYOUT → 若 pending 原本仅 NEEDS_LAYOUT（无 NEEDS_PAINT 位），paint 被跳过。
+  layout 改了几何但 scene 不刷新 → 停留旧帧。
+- **触发条件**：pending = NEEDS_LAYOUT 单独。经公开 `WidgetHost::mark(NEEDS_LAYOUT)` 可达；
+  或某 widget 经 `ctx.invalidation |= NEEDS_LAYOUT`（不伴 NEEDS_PAINT）。当前 driver 的
+  setter（set_metrics/set_tokens/begin/set_root reconcile）都同时标 NEEDS_PAINT，故未触发；
+  但 pump_frame 契约应对单独 NEEDS_LAYOUT 鲁棒（layout 隐含 repaint，见 invalidation.rs
+  注释「layout 隐含需要 re-paint」）。
+- **代码证据**：
+  ```rust
+  // 修复前
+  if self.host.needs_layout() { self.host.layout(...); }  // 清除 NEEDS_LAYOUT
+  if self.host.needs_paint() { ... }  // 此时 requires_paint 可能已假 → 漏 paint
+  ```
+- **修复**：layout 前捕获 `let should_paint = self.host.needs_paint();`（NEEDS_LAYOUT 仍在 →
+  requires_paint 真），layout 后按捕获决策 paint。
+  ```rust
+  let should_paint = self.host.needs_paint();
+  if self.host.needs_layout() { self.host.layout(...); }
+  if should_paint { self.host.paint(); Repainted } else { Idle }
+  ```
+- **回归守卫**：`pump_frame_paints_when_only_needs_layout_marked`——host.mark(NEEDS_LAYOUT)
+  单独失效 → 断言 pump_frame 返回 Repainted（旧实现返回 Idle = 漏 paint，测试会失败）。
+- **验证状态**：✅ 确认（逻辑推演 + 测试；winit 30→31 测全绿）。
+
+## 发现 2–5：low / 非 bug（记录，不修）
+
+### 发现 2：set_metrics 不自动重派生 theme typography（low，非 bug — 设计边界）
+- **位置**：driver.rs set_metrics。
+- **描述**：set_metrics 更新 metrics + 标 needs_layout，但不重派生 TypographyTokens/SpacingTokens
+  （text_scale/density 影响）。driver 仅持 SemanticTokens（色）；TypographyTokens 不在 driver
+  状态里（host 也不直接消费——widgets 用各自 sizing 启发式）。
+- **结论**：非 bug，是「driver 不集成 ThemeProvider」的设计边界（master.md 已记 ThemeProvider
+  集成为 follow-up）。caller 责任在 metrics 变时另调 set_tokens 派生新 token。文档化即可。
+
+### 发现 3：pump_event 在 Handled 但状态未变时仍重建（low，wasteful 非错误）
+- **位置**：driver.rs pump_event `if handled { set_root }`。
+- **描述**：app.dispatch 返回 Handled 但实际未改状态时，root_spec 重建出等价 spec → reconcile
+  no-op（props 不变）但仍标 NEEDS_PAINT|SEMANTICS。一次多余重绘。
+- **结论**：wasteful 非错误；reconcile 廉价（稳定 WidgetId 复用）。Flutter setState 同模式。
+  不修（修需 UiApp 暴露「状态是否真变」信号，过度设计）。
+
+### 发现 4：begin 非幂等守卫（low，无害）
+- **位置**：driver.rs begin。
+- **描述**：重复调 begin 会再 reconcile + layout + paint（重渲染首帧）。
+- **结论**：无害（idempotent 结果）；caller 不应重复调。不修（加守卫属过度防御）。
+
+### 发现 5：pump_event 后未 pump_frame 读 scene 得旧帧（low，契约文档化）
+- **位置**：driver.rs pump_event（不 paint，仅 set_root reconcile）。
+- **描述**：pump_event 处理事件 + 可能重建，但不 paint（两阶段：事件→帧）。caller 若在
+  pump_event 后、pump_frame 前读 host.scene()，得上一帧 scene。
+- **结论**：刻意两阶段设计（事件处理与渲染分离，类游戏 loop）；EventOutcome.needs_redraw
+  信号何时需 pump_frame。文档已说明（「每帧调 pump_frame + host.scene() 喂渲染桥」）。非 bug。
+
+## 未发现问题的维度
+
+- **借用正确性**：pump_event 的 host/app 不相交字段顺序借用 + emitted owned Vec 不别名 self，
+  编译通过 + 6 driver 测 + 4 示例 + winit-raw 集成测验证。
+- **手势 arena / click-to-focus 互扰**：dispatch_event additive 喂 arena + hit-test，不替代；
+  phone_demo 双指 Pinch 经 driver.pump_event 正确识别。
+- **reducer 批处理**：pump_event 先 dispatch 全部 emitted 再一次 set_root（批合并状态变 + 单次
+  重建），正确。
+- **into_host**：消费 driver 解除 app 借用，shell_demo 6 测经此路径全绿。
+
+## 门禁
+
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — CLEAN。
+- ./target/test-guard -- cargo test -p zero-ui-adapter-winit — 31 测全绿（30→31，+1 回归守卫）。
+
+## 结论
+
+7 轮 WinitDriver 工作经深度审查：1 medium 潜在 correctness 缺陷（pump_frame layout-only
+漏 paint）已修复 + 回归守卫；4 low/非 bug 记录不修（设计边界或 wasteful 非错误）。核心
+adapter 逻辑（driver/runtime/event_map）borrow/reducer 批处理/手势互扰/into_host 均正确。
+driver.rs coverage 维持高位（修复前 95.21%，新增守卫后应 ≥95%）。
