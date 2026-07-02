@@ -134,6 +134,14 @@ impl RenderFoundationBackend {
         self.image_cache
     }
 
+    /// 同时取出累积图元与 glyph 位图缓存（消费后端）。
+    ///
+    /// [`merge_into_frame`] 接受 owned `RenderPrimitives` + 借用 `&ImageCache`，故浏览器接线
+    /// （DC-14：SDK chrome 并入帧）用本方法一次取出两者，再交给 `merge_into_frame`。
+    pub fn into_primitives_and_cache(self) -> (RenderPrimitives, ImageCache) {
+        (self.primitives, self.image_cache)
+    }
+
     /// 注册外部表面（WebView 等）的本帧预变换场景（DC-3 phase-2）。
     ///
     /// **契约**：`primitives` 须已由调用方变换到帧坐标空间（offset/scale/clip，参考
@@ -968,5 +976,64 @@ mod tests {
         assert!(frame.images.is_empty());
         assert_eq!(frame_cache.len(), 1, "empty source cache → frame cache untouched");
         assert_eq!(frame_cache.get(&frame_key).map(|d| d.get_pixel(0, 0)[0]), Some(20));
+    }
+
+    #[test]
+    fn render_chrome_via_sdk_merges_into_frame_end_to_end() {
+        // DC-14 完整集成流：render_chrome_via_sdk 产出 SDK chrome（fills + 文本 ImagePrimitive +
+        // glyph cache）→ merge_into_frame 并入帧（image_key 重映射到帧 cache）→ 帧单一 image_cache
+        // 可解析所有 image（SDK 文本 + 帧原有）。证明浏览器接线前的端到端正确性。
+        use zero_browser_chrome::sdk_render::render_chrome_via_sdk;
+        use zero_browser_shell::BrowserShell;
+        use zero_ui_core::geometry::{Insets, Size};
+        use zero_ui_core::layout::WindowMetrics;
+        use zero_ui_core::theme::SemanticTokens;
+
+        let mut shell = BrowserShell::new();
+        shell.new_tab(Some("https://example.com"));
+        let mut backend = FontdueBackend::new();
+        backend.load_family("Ahem", AHEM).expect("Ahem parses");
+        let backend = Arc::new(backend);
+        let metrics = WindowMetrics {
+            logical_size: Size::new(1280.0, 800.0),
+            scale_factor: 1.0,
+            safe_area: Insets::all(0.0),
+            keyboard_insets: Insets::all(0.0),
+        };
+
+        // SDK chrome 渲染 → bridge（fills + 文本 ImagePrimitive + glyph cache）。
+        let bridge = render_chrome_via_sdk(&shell, &metrics, &SemanticTokens::light(), backend);
+        let (sdk_prims, sdk_cache) = bridge.into_primitives_and_cache();
+        assert!(!sdk_prims.fills.is_empty(), "SDK chrome 产出 fills");
+        let sdk_image_count = sdk_prims.images.len();
+        assert!(sdk_image_count > 0, "SDK chrome 产出文本 ImagePrimitive");
+
+        // 模拟帧：已有 webview 内容（fill + image，image_key 指向帧 cache，键 id 与 SDK 可能碰撞）。
+        let mut frame_cache = ImageCache::new(64, 16 * 1024 * 1024);
+        let frame_img_key = frame_cache.insert(one_pixel(99, 99, 99)); // 帧 image 键 id 0
+        let mut frame = RenderPrimitives::default();
+        frame.add_fill(RfRect::new(0.0, 0.0, 1280.0, 800.0), RfColor::rgb(255, 255, 255));
+        frame.add_image(ImagePrimitive {
+            rect: RfRect::new(0.0, 0.0, 100.0, 100.0),
+            image_key: frame_img_key.clone(),
+            clip: None,
+        });
+
+        // 合并 SDK chrome 进帧（collision-safe：SDK image 键重映射到帧 cache 新键）。
+        merge_into_frame(sdk_prims, &sdk_cache, &mut frame, &mut frame_cache);
+
+        // 帧 images 含原有 + SDK 文本，且全部键可在帧 cache 解析。
+        assert_eq!(frame.images.len(), 1 + sdk_image_count);
+        for img in &frame.images {
+            assert!(
+                frame_cache.get(&img.image_key).is_some(),
+                "every merged image key resolves in frame cache"
+            );
+        }
+        // 帧原 image 键仍解析（未被 SDK 合并覆盖）。
+        assert!(
+            frame_cache.get(&frame_img_key).is_some(),
+            "frame's original image key still resolves after merge"
+        );
     }
 }
