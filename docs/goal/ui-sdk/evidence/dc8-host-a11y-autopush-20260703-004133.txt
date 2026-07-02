@@ -1,0 +1,61 @@
+DC-8 WidgetHost → AccessibilityBackend 自动推送（SDK-side，2026-07-03）
+======================================================================
+
+目标
+----
+闭合 DC-8 剩余两项之一「WidgetHost 自动推送 a11y 树到平台后端」（另一项「真实平台实现」
+Win UI Automation / macOS NSAccessibility / Linux AT-SPI / 移动 TalkBack 属 M4 runtime adapter，
+需 GUI/平台环境，本环境不可验证）。
+
+实现（ui/runtime/src/host.rs）
+------------------------------
+WidgetHost 新增：
+- 字段 `a11y_backend: Option<Box<dyn AccessibilityBackend>>` + `last_pushed_focus: Option<WidgetId>`。
+- `set_accessibility_backend(backend)`：挂载后端并标记 NEEDS_SEMANTICS（首次 flush 推全树）。
+- `needs_semantics()`：读 NEEDS_SEMANTICS 标记。
+- `flush_accessibility()`：NEEDS_SEMANTICS 时重建 `semantics()` 推 `backend.update_tree`；
+  焦点与上次推送不同时推 `backend.focus_moved`（仅焦点变化不重建全树，廉价，与 Flutter a11y 一致）；
+  无后端时清掉 NEEDS_SEMANTICS（避免标记累积）。
+- `announce(msg)`：经后端发短暂通告（「页面已加载」「已复制」），平台屏幕阅读器朗读。
+- `set_root` 两个分支均补 NEEDS_SEMANTICS（结构/props 变化可能影响语义树 label/role/焦点项）。
+
+设计要点
+--------
+- 焦点变更检测用「focused vs last_pushed_focus 比较」，避免在本 host 所有改焦点位点
+  （focus_next / set_focus / click-to-focus / 焦点作用域）分别埋标记——单点检测，零遗漏。
+- 仅焦点变化不重建全树：平台以 focus_moved 事件追踪焦点，结构变化时重建的树才刷新
+  FOCUSED 标志（与 Flutter semantics 一致）。
+- borrow 处理：先在 &self 期间算出 owned `tree = semantics()`，再 &mut 借用 a11y_backend，
+  避免 `self.semantics()`(&self) 与 `self.a11y_backend.as_mut()`(&mut self) 冲突。
+
+测试（8 新测，ui-runtime host::tests）
+--------------------------------------
+共享态后端 `SharedA11yRec`（Rc<RefCell<Vec<A11yRec>>>）让测试在 host 拥有 Box<dyn> 后
+仍能读取 update_tree/focus_moved/announce 记录。
+
+  test host::tests::flush_pushes_full_tree_on_first_flush ... ok
+  test host::tests::flush_pushes_initial_focus_when_set_before_attach ... ok
+  test host::tests::flush_pushes_focus_change_without_full_tree_rebuild ... ok
+  test host::tests::flush_is_idempotent_when_nothing_changed ... ok
+  test host::tests::set_root_remarks_semantics_for_subsequent_flush ... ok
+  test host::tests::flush_without_backend_clears_dirty_without_panic ... ok
+  test host::tests::announce_routes_to_backend_and_is_noop_without_one ... ok
+  test host::tests::focus_moved_reflects_clearing_focus ... ok
+
+host::tests 全集：58 passed; 0 failed（含 8 新 a11y 测）。
+ui-runtime crate 全集：74 passed; 0 failed（lib 74 + 集成 3）。
+
+门禁
+----
+- cargo build --workspace：Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings：Finished（0 警告）。
+- cargo fmt --all --check：净。
+- 下游零回归：WidgetHost 仅新增字段（Box<dyn>）+ 方法，Default 仍可用；chrome/examples/
+  adapter-render-foundation/adapter-winit 全绿。
+- SDK-only（ui/runtime 未触碰 render-foundation / 浏览器）→ 无 product-smoke 风险。
+
+DC-8 状态
+---------
+DC-8 剩余两项：① WidgetHost 自动推送 ✅ 本轮闭合；② 真实平台实现（Win UI Automation /
+macOS NSAccessibility / Linux AT-SPI / 移动 TalkBack）+ WidgetHost 在每帧自动 flush ——
+属 M4 runtime adapter（需 GUI/平台环境）。SDK 侧契约（trait + host 驱动 + mock）已就绪。

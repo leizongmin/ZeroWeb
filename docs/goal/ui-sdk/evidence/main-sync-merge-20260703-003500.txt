@@ -1,0 +1,58 @@
+origin/main 同步 merge（2026-07-03，commit 429e791a）
+=====================================================
+
+动机
+----
+rally run-rules 要求提交前同步远端 main。main 领先 2 commit（ui-sdk 落后 2），均为
+2000 行规则纯拆分（非渲染/逻辑变更）。
+
+main 新增 commit
+----------------
+- R966 — reftest.rs 拆分（reftest harness 核心 3 子模块抽出：reftest_compare/fonts/scripts）。
+- R967 — app_render.rs 拆分（DC-10 图元消费层独立成文件：app_render_address.rs +
+  app_render_primitives.rs）。
+
+冲突与解决（app_render.rs）
+---------------------------
+两个分支对 app_render.rs 做了**不同方向的拆分**：
+- main：app_render.rs → app_render.rs + app_render_address.rs（render_address_bar）
+  + app_render_primitives.rs（append_webview_primitives / ViewportClip /
+  transform_webview_primitives + 视口/圆角裁剪）。
+- ui-sdk：app_render.rs → app_render.rs + app_render_ext.rs（chrome 浮层方法
+  render_find_bar/autocomplete/context_menu/floating_link_status/download_panel
+  **+ 同一组原语/裁剪 helper**）。
+
+git auto-merge 成功合并 app.rs（两边的 include! 都保留）；app_render.rs 内有一处
+content 冲突（HEAD 端 = `}` 文件结束；main 端 = render_find_bar 等 11 方法块）。
+
+解决决策（逐项验证后）：
+1. **app_render_ext.rs 保留（超集）**：ext 含 chrome 浮层方法 + 原语/裁剪 helper（1270 行）。
+2. **app_render_address.rs 保留（main 抽取）**：render_address_bar 原样从 app_render.rs 抽出。
+   验证：HEAD app_render.rs 的 render_address_bar == merge-base == address 文件（三方逐位
+   一致），ui-sdk 未对该函数做 SDK 改动 → 零丢失。
+3. **app_render_primitives.rs 拒绝（删除）**：与 ext 原语块 9/9 符号重复
+   （primitives_content_height / append_webview_primitives / ViewportClip / new / excludes /
+   clip_axis_aligned_rect / clamp_rounded_rect_radii / clip_rect_field / path_vertices_bbox /
+   transform_webview_primitives）。验证 body 逐位一致（ext 原语块 == merge-base 原语块；
+   main 仅多 7 行文件头注释）。删文件 + 移除 app.rs 的 include!。
+4. **冲突块取 HEAD**：main 端 11 方法块（render_find_bar 等）已在 ext 中 → 删除冲突块，
+   app_render.rs 以 `}` 结束（1211 行）。
+
+方式
+----
+依 master.md #11：ui-sdk 为 124-commit 长分支，用 **merge**（非全量 rebase 重写历史）。
+
+门禁（merge 后）
+----------------
+- cargo build --workspace：Finished（0 错误；原 26 个 duplicate-definition 错误已随
+  app_render_primitives.rs 删除消除）。
+- cargo clippy --workspace --all-targets -- -D warnings：Finished（0 警告）。
+- cargo clippy -p zero-browser --features sdk-chrome --all-targets -- -D warnings：净。
+- cargo fmt --all --check：净。
+- browser tests 默认 **189 全绿** + sdk-chrome feature **200 全绿**（= baseline 零回归）。
+- wpt-runner（reftest 拆分）编译通过。
+
+结论
+----
+纯结构同步，零渲染/逻辑变更，零回归。app_render.rs 几何拆分债务仍由 ui-sdk 既有
+app_render_ext.rs + app_render_geometry.rs 承担（DC-16 合规）。

@@ -12,6 +12,7 @@
 //! **本轮范围**：无窗口、单线程、确定性。焦点/键盘事件路由（DC-8）、winit 事件循环接入
 //! （`ui/adapters/winit`，M2/M4）与多窗口在后续里程碑；本 host 只负责几何/绘制/指针命中闭环。
 
+use crate::accessibility::AccessibilityBackend;
 use compact_str::CompactString;
 use zero_ui_core::action::{ActionId, ActionPayload, EventResult};
 use zero_ui_core::binding::{PropsMap, Value};
@@ -119,6 +120,13 @@ pub struct WidgetHost {
     active_scope: Option<FocusScope>,
     /// 当前主题 semantic token（DC-5：paint 时注入 `PaintCtx.tokens`，控件消费而非硬编码）。
     tokens: zero_ui_core::theme::SemanticTokens,
+    /// 已挂载的平台无障碍后端（DC-8 平台桥接）：`flush_accessibility` 时推送语义树 + 焦点/通告。
+    /// `None` 表示未启用 a11y（默认）；真实平台实现（Win UI Automation / macOS NSAccessibility /
+    /// Linux AT-SPI / 移动 TalkBack）在 M4 runtime adapter 落地。
+    a11y_backend: Option<Box<dyn AccessibilityBackend>>,
+    /// 上次推送给 a11y 后端的焦点 id；与 `focused` 比较以检测焦点变化，
+    /// 避免在本 host 的所有改焦点位点（focus_next/set_focus/click/作用域）分别埋标记。
+    last_pushed_focus: Option<WidgetId>,
 }
 
 impl Default for WidgetHost {
@@ -132,6 +140,8 @@ impl Default for WidgetHost {
             focused: None,
             active_scope: None,
             tokens: zero_ui_core::theme::SemanticTokens::light(),
+            a11y_backend: None,
+            last_pushed_focus: None,
         }
     }
 }
@@ -163,11 +173,14 @@ impl WidgetHost {
         match &mut self.root {
             Some(root) => {
                 reconcile_node(root, spec, &self.registry, self.epoch);
-                self.pending |= InvalidationFlags::NEEDS_PAINT;
+                // props/结构变化可能影响语义树（label/role/焦点项），标记 NEEDS_SEMANTICS（DC-8）。
+                self.pending |= InvalidationFlags::NEEDS_PAINT | InvalidationFlags::NEEDS_SEMANTICS;
             }
             None => {
                 self.root = Some(build_node(spec, &self.registry, self.epoch));
-                self.pending |= InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
+                self.pending |= InvalidationFlags::NEEDS_LAYOUT
+                    | InvalidationFlags::NEEDS_PAINT
+                    | InvalidationFlags::NEEDS_SEMANTICS;
             }
         }
         // 活跃焦点作用域：reconcile 后子树可能变化，按 scope.id 重新收集可聚焦项；
@@ -200,6 +213,60 @@ impl WidgetHost {
     /// 是否需要 re-paint（含 layout 连带）。
     pub fn needs_paint(&self) -> bool {
         self.pending.requires_paint()
+    }
+
+    /// 是否需要重建并推送语义树到 a11y 后端（DC-8 平台桥接）。
+    /// 结构变化（`set_root`）、locale 变化（外部 `mark(NEEDS_SEMANTICS)`）置位。
+    pub fn needs_semantics(&self) -> bool {
+        self.pending.contains(InvalidationFlags::NEEDS_SEMANTICS)
+    }
+
+    /// 挂载平台无障碍后端（DC-8 平台桥接，spec FR-011）。
+    ///
+    /// 挂载后立即标记需要推送语义树：下一次 `flush_accessibility` 推送全树 + 当前焦点。
+    /// 真实平台实现（Win UI Automation / macOS NSAccessibility / Linux AT-SPI / 移动 TalkBack）
+    /// 在 M4 runtime adapter 落地；SDK 侧只定义契约，测试用 `RecordingAccessibilityBackend`。
+    pub fn set_accessibility_backend(&mut self, backend: Box<dyn AccessibilityBackend>) {
+        self.a11y_backend = Some(backend);
+        self.pending |= InvalidationFlags::NEEDS_SEMANTICS;
+    }
+
+    /// 把语义树 + 焦点变更推送到已挂载的 a11y 后端（DC-8 平台桥接）。
+    ///
+    /// 应在 `layout` 之后调用（语义节点绝对 rect 来自 layout 产物）；幂等——无变化时不推送。
+    /// - `NEEDS_SEMANTICS`（结构/locale 变化）：重建语义树并 `update_tree`（全树）；
+    /// - 焦点变化（与上次推送不同）：`focus_moved`（仅焦点变化不重建全树，廉价；与 Flutter
+    ///   a11y 语义一致：平台以 focus_moved 事件追踪焦点，结构变化时重建的树才刷新 FOCUSED 标志）。
+    ///
+    /// 未挂载后端时清掉 `NEEDS_SEMANTICS`（避免标记无限累积，语义仅供 paint/a11y）。
+    pub fn flush_accessibility(&mut self) {
+        // 先在不可变借用 self 期间算出 owned 的语义树，再 &mut 借用后端，
+        // 避免 `self.semantics()`（&self）与 `self.a11y_backend.as_mut()`（&mut self）冲突。
+        let dirty = self.pending.contains(InvalidationFlags::NEEDS_SEMANTICS);
+        let tree = if dirty { self.semantics() } else { None };
+
+        let Some(backend) = self.a11y_backend.as_mut() else {
+            // 无后端：清掉 NEEDS_SEMANTICS（语义仅供 paint/a11y，避免标记无限累积）。
+            self.pending.remove(InvalidationFlags::NEEDS_SEMANTICS);
+            return;
+        };
+        if dirty {
+            backend.update_tree(tree.as_ref());
+            self.pending.remove(InvalidationFlags::NEEDS_SEMANTICS);
+        }
+        // 焦点字段与 a11y_backend 为不相交字段借用，可与 backend(&mut a11y_backend) 并存。
+        if self.focused != self.last_pushed_focus {
+            backend.focus_moved(self.focused.clone());
+            self.last_pushed_focus = self.focused.clone();
+        }
+    }
+
+    /// 经 a11y 后端发出短暂通告（如「页面已加载」「已复制」），平台屏幕阅读器朗读（DC-8）。
+    /// 未挂载后端时为 no-op。
+    pub fn announce(&mut self, message: &str) {
+        if let Some(backend) = self.a11y_backend.as_mut() {
+            backend.announce(message);
+        }
     }
 
     /// 两遍布局：measure（自下而上算尺寸）+ arrange（自上而下定绝对 rect）。
@@ -2518,5 +2585,192 @@ mod tests {
         host.layout(Constraints::loose(Size::new(400.0, 100.0)));
         let r = host.rect_of(&WidgetId::new("root")).unwrap();
         assert!((r.size.width - 80.0).abs() < 0.1, "flex+max=80, got {}", r.size.width);
+    }
+
+    // ── DC-8 WidgetHost → AccessibilityBackend 自动推送 ────────────────────────
+    //
+    // 用共享态后端（Rc<RefCell<记录>>）让测试在 host 内部驱动 Box<dyn AccessibilityBackend>
+    // 后仍能读取推送记录，无需在 host 暴露后端访问器。
+
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum A11yRec {
+        Tree(Option<usize>),
+        Focus(Option<String>),
+        Announce(String),
+    }
+
+    /// 共享态 a11y 后端：把 update_tree/focus_moved/announce 记录到 Rc<RefCell>，
+    /// 测试可在 host 拥有 Box<dyn> 的同时读取记录。
+    struct SharedA11yRec {
+        records: Rc<RefCell<Vec<A11yRec>>>,
+    }
+
+    impl AccessibilityBackend for SharedA11yRec {
+        fn update_tree(&mut self, root: Option<&SemanticsNode>) {
+            let n = root.map(|r| crate::accessibility::node_count(Some(r)));
+            self.records.borrow_mut().push(A11yRec::Tree(n));
+        }
+        fn focus_moved(&mut self, focused: Option<WidgetId>) {
+            self.records
+                .borrow_mut()
+                .push(A11yRec::Focus(focused.map(|f| f.0.to_string())));
+        }
+        fn announce(&mut self, message: &str) {
+            self.records.borrow_mut().push(A11yRec::Announce(message.to_string()));
+        }
+    }
+
+    fn shared_backend() -> (SharedA11yRec, Rc<RefCell<Vec<A11yRec>>>) {
+        let records = Rc::new(RefCell::new(Vec::new()));
+        let backend = SharedA11yRec {
+            records: Rc::clone(&records),
+        };
+        (backend, records)
+    }
+
+    /// root Column [a(focusable), b(focusable)]，已 set_root + layout + 挂载后端（未 flush）。
+    fn a11y_host_with_backend() -> (WidgetHost, Rc<RefCell<Vec<A11yRec>>>) {
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        root.children.push(patch("blue", "b", "app.b"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+        let (backend, records) = shared_backend();
+        host.set_accessibility_backend(Box::new(backend));
+        (host, records)
+    }
+
+    #[test]
+    fn flush_pushes_full_tree_on_first_flush() {
+        // 首次 flush：set_root 标 NEEDS_SEMANTICS → 推送全树（3 节点：root+a+b）。
+        // 焦点 None == 初始 last_pushed_focus(None) → 不推 focus_moved（树内 FOCUSED 标志
+        // 已表达「无焦点」，平台据此推断；与 Flutter a11y 语义一致）。
+        let (mut host, records) = a11y_host_with_backend();
+        assert!(host.needs_semantics(), "set_root + attach marked NEEDS_SEMANTICS");
+        host.flush_accessibility();
+        assert!(!host.needs_semantics(), "flush cleared NEEDS_SEMANTICS");
+        assert_eq!(
+            *records.borrow(),
+            vec![A11yRec::Tree(Some(3))],
+            "first flush pushes full tree; no focus_moved when focus unchanged from initial None"
+        );
+    }
+
+    #[test]
+    fn flush_pushes_initial_focus_when_set_before_attach() {
+        // 挂载前已聚焦 a → 首次 flush 焦点 Some(a) 与初始 last_pushed_focus(None) 不同
+        // → 同时推送全树 + focus_moved(Some(a))。
+        let (mut host, records) = a11y_host_with_backend();
+        host.focus_next(FocusDirection::Forward); // → a（挂载后、flush 前）
+        host.flush_accessibility();
+        assert_eq!(
+            *records.borrow(),
+            vec![A11yRec::Tree(Some(3)), A11yRec::Focus(Some("a".to_string()))],
+            "non-None initial focus is pushed on first flush"
+        );
+    }
+
+    #[test]
+    fn flush_pushes_focus_change_without_full_tree_rebuild() {
+        // 焦点变化不应重建/重推整棵语义树（廉价，与 Flutter a11y 一致）：
+        // 第二次 flush 仅追加 focus_moved(Some(a))，无 Tree 记录。
+        let (mut host, records) = a11y_host_with_backend();
+        host.flush_accessibility(); // 全树 + Focus(None)
+        records.borrow_mut().clear();
+
+        host.focus_next(FocusDirection::Forward); // → a
+        assert_eq!(host.focused_id(), Some(&WidgetId::new("a")));
+        host.flush_accessibility();
+        assert_eq!(
+            *records.borrow(),
+            vec![A11yRec::Focus(Some("a".to_string()))],
+            "focus-only change pushes focus_moved, no tree rebuild"
+        );
+    }
+
+    #[test]
+    fn flush_is_idempotent_when_nothing_changed() {
+        // 无结构/焦点变化时再 flush 不产生任何推送。
+        let (mut host, records) = a11y_host_with_backend();
+        host.flush_accessibility();
+        records.borrow_mut().clear();
+        host.flush_accessibility();
+        host.flush_accessibility();
+        assert!(records.borrow().is_empty(), "no-op flush pushes nothing");
+    }
+
+    #[test]
+    fn set_root_remarks_semantics_for_subsequent_flush() {
+        // 第二次 set_root（结构/props 变化）重新标 NEEDS_SEMANTICS → flush 再推全树。
+        let (mut host, records) = a11y_host_with_backend();
+        host.flush_accessibility();
+        records.borrow_mut().clear();
+
+        // 重建同一棵树（结构等价，但 set_root 保守地标 NEEDS_SEMANTICS）。
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        host.set_root(&root);
+        assert!(host.needs_semantics());
+        host.flush_accessibility();
+        // b 被移除 → 树缩为 root+a = 2 节点；焦点 a 仍存在 → 不变，不推 focus。
+        assert_eq!(*records.borrow(), vec![A11yRec::Tree(Some(2))]);
+    }
+
+    #[test]
+    fn flush_without_backend_clears_dirty_without_panic() {
+        // 未挂载后端：set_root 标 NEEDS_SEMANTICS；flush 清掉标记、不 panic、不推送。
+        let mut host = patch_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(patch("red", "a", "app.a"));
+        host.set_root(&root);
+        assert!(host.needs_semantics());
+        host.flush_accessibility(); // 无后端
+        assert!(!host.needs_semantics(), "dirty flag cleared even without backend");
+    }
+
+    #[test]
+    fn announce_routes_to_backend_and_is_noop_without_one() {
+        // 挂载后端：announce 经 host 路由到后端。
+        let (mut host, records) = a11y_host_with_backend();
+        host.announce("Page loaded");
+        host.announce("Copied");
+        assert_eq!(
+            records
+                .borrow()
+                .iter()
+                .filter(|r| matches!(r, A11yRec::Announce(_)))
+                .count(),
+            2,
+            "both announcements reached backend"
+        );
+        // 未挂载后端：announce 为 no-op，不 panic。
+        let mut host2 = patch_host();
+        host2.set_root(&WidgetSpec::new("Column"));
+        host2.announce("nothing happens");
+    }
+
+    #[test]
+    fn focus_moved_reflects_clearing_focus() {
+        // 聚焦 a 后退出作用域/清焦点：flush 推送 focus_moved 反映新焦点。
+        let (mut host, records) = a11y_host_with_backend();
+        host.flush_accessibility();
+        host.focus_next(FocusDirection::Forward); // → a
+        host.flush_accessibility();
+        records.borrow_mut().clear();
+
+        host.set_focus(WidgetId::new("nonexistent")); // 焦点设到不存在的 id
+        host.flush_accessibility();
+        assert_eq!(
+            *records.borrow(),
+            vec![A11yRec::Focus(Some("nonexistent".to_string()))],
+            "set_focus change is detected and pushed"
+        );
     }
 }
