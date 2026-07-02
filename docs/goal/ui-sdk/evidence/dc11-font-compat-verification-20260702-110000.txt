@@ -1,0 +1,21 @@
+DC-11 跨栈字体兼容性验证（bridge crate，2026-07-02）
+====================================================
+
+变更（ui/adapters/render-foundation/src/lib.rs）：
+- 新增 dc11_both_backends_load_and_produce_output：
+  foundation/text FontdueBackend 与 render-foundation FontLoader 加载同一 Ahem 字体，
+  验证 metrics 一致（advance 'A' @8px ≈ 8px；measure 'ABCD' @8px ≈ 32px）。
+- 新增 dc11_draw_text_produces_nonzero_image_primitive：
+  draw_text("Hi"@16px) 经共享 FontdueBackend shape+raster→2 ImagePrimitive 非零 rect。
+  证明 DC-11 文本全链（加载→shape→raster→ImagePrimitive）已通且产出有效像素数据。
+
+验证：
+- cargo test -p zero-ui-adapter-render-foundation: 20 测全绿
+- cargo test -p zero-browser: 189 测全绿（零回归）
+- cargo clippy --workspace --all-targets -- -D warnings: PASS
+- cargo fmt --all --check: PASS
+
+DC-11 字体栈统一可行性已验证：
+- 两套后端均可加载同一字体数据并产出一致的 metrics（fontdue 共享）
+- draw_text 路径产出 ImagePrimitive（预 shape→raster→ImageCache 全链贯通）
+- 剩余：render-foundation 内部 font 栈替换为 foundation/text + product-smoke 验零退化

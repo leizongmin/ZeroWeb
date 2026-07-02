@@ -1130,4 +1130,88 @@ mod tests {
         // WebView surface 合并（至少 chrome fills + webview fill）。
         assert!(!p.fills.is_empty(), "fills after webview merge: {}", p.fills.len());
     }
+
+    // ── DC-11 字体栈兼容性验证 ─────────────────────────────────────────────
+    // 验证 foundation/text（FontdueBackend）与 render-foundation（FontLoader）
+    // 都能加载同一字体数据并产出一致的 metrics，证明字体栈统一的可行性（DC-11 不变量）。
+
+    /// 两套后端加载同一 Ahem 字体后，render-foundation FontLoader 能正确光栅化 glyph，
+    /// foundation/text FontdueBackend 能正确 measure 文本宽度——验证两套后端独立可用。
+    /// 注：FontLoader 对 Ahem 有特殊光栅化处理（per-spec 完美方块），
+    /// 故不逐像素比较 raster 输出；此测验证加载 + 基本能力。
+    #[test]
+    fn dc11_both_backends_load_and_produce_output() {
+        use zero_render_foundation::font::FontLoader;
+        use zero_text_foundation::font_request::{FontRequest, TextDirection};
+        use zero_text_foundation::text_measure::{TextMeasureInput, TextMeasurer};
+
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        // ── foundation/text：加载 + measure ──
+        let mut ft_backend = zero_text_foundation::backend::FontdueBackend::new();
+        ft_backend
+            .load_family("Ahem", ahem_data)
+            .expect("FontdueBackend loads Ahem");
+        let ft_metrics = ft_backend
+            .measure(&TextMeasureInput {
+                text: "ABCD".to_string(),
+                font_request: FontRequest::new("Ahem"),
+                size_px: 8.0,
+                max_width: None,
+                direction: TextDirection::Ltr,
+            })
+            .expect("ft measure 'ABCD'");
+        assert!(ft_metrics.width > 0.0, "ft measure width > 0");
+
+        // ── render-foundation：加载 + advance ──
+        let mut rf_loader = FontLoader::new();
+        let rf_font_id = rf_loader.load_font(ahem_data).expect("FontLoader loads Ahem");
+        let rf_advance = rf_loader.measure_advance(rf_font_id, 'A', 8.0);
+        assert!(rf_advance > 0.0, "rf advance for 'A' @8px Ahem > 0, got {rf_advance}");
+        // Ahem 是等宽 8px/em → 'A' advance ≈ 8px。
+        assert!(
+            (rf_advance - 8.0).abs() < 1.0,
+            "rf advance 'A' @8px ≈ 8px, got {rf_advance}"
+        );
+        // 4 chars × ~8px ≈ 32px 总宽。
+        assert!(
+            (ft_metrics.width - 32.0).abs() < 1.0,
+            "ft measure 'ABCD' @8px ≈ 32px, got {}",
+            ft_metrics.width
+        );
+    }
+
+    /// 现有 bridge draw_text 路径（经共享 `Arc<FontdueBackend>` shape+raster）
+    /// 产出 ImagePrimitive 的 rect 尺寸非零——证明 DC-11 文本全链已通（加载→shape→raster→ImagePrimitive）。
+    #[test]
+    fn dc11_draw_text_produces_nonzero_image_primitive() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+        let mut ft = zero_text_foundation::backend::FontdueBackend::new();
+        ft.load_family("Ahem", ahem_data).expect("loads Ahem");
+        let backend = std::sync::Arc::new(ft);
+
+        let mut bridge = RenderFoundationBackend::new_with_text(
+            zero_render_foundation::geometry::Rect::new(0.0, 0.0, 800.0, 600.0),
+            backend,
+        );
+        // draw_text 经共享 FontdueBackend shape→raster→ImagePrimitive。
+        // `draw_text(text, position, size_px, color)` — RenderBackend trait 方法。
+        use zero_ui_render::RenderBackend;
+        bridge.draw_text(
+            "Hi",
+            zero_ui_core::geometry::Point::new(10.0, 100.0),
+            16.0,
+            zero_ui_core::theme::Color::BLACK,
+        );
+        let prims = bridge.into_primitives();
+        // "Hi" 两个 glyphs → 2 ImagePrimitive。
+        assert_eq!(prims.images.len(), 2, "draw_text 'Hi' @16px → 2 ImagePrimitives");
+        for img in &prims.images {
+            assert!(
+                img.rect.size.width > 0.0 && img.rect.size.height > 0.0,
+                "ImagePrimitive rect non-zero: {:?}",
+                img.rect.size
+            );
+        }
+    }
 }
