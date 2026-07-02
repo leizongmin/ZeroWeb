@@ -1,6 +1,8 @@
 //! table.rs 表格布局回归测试（从 table.rs 抽出，保持 2000 行约束）。
 
 use super::*;
+// R964：count_col_elements 抽到 table_grid 模块。
+use crate::table_grid::count_col_elements;
 use std::collections::HashMap;
 use zero_css_parser::values::{DisplayValue, VisibilityValue};
 use zero_dom::Document;
