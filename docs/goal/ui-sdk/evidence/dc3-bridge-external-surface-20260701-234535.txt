@@ -1,0 +1,54 @@
+DC-3 phase-2 桥接外部表面合成（draw_external_surface）— 2026-07-01
+==================================================================
+
+里程碑：M2→DC-3 phase-2 / TBD-2（Scene→光栅后端的外部表面路径）。
+SDK-only / 纯新增：仅 ui/adapters/render-foundation 内部，未触碰 apps/browser /
+render-foundation 既有路径 / zero-webview → 无 product-smoke 风险。
+
+缺口（修复前）
+-------------
+- 桥接 draw_external_surface 是 no-op——SDK Scene 的 ExternalSurface marker（WebView 纹理）
+  不产出任何内容。这是桥接 RenderBackend 覆盖的最后一个图元类。
+
+实现（ui/adapters/render-foundation/src/lib.rs）
+-----------------------------------------------
+**设计：register-pre-transformed + merge**——浏览器侧已有 `append_webview_primitives`
+（offset/scale/clip 变换 webview 场景）；桥接只负责「按 surface_id 取回 + 以 rect 为裁剪边界 + 合并」，
+不重复空间变换（职责分离）。
+
+- 新字段 `surfaces: HashMap<u64, RenderPrimitives>`（外部表面预变换场景注册表，key=surface_id）。
+- `set_surface(id, primitives)` / `clear_surfaces()`（每帧注册/清空）。
+- `draw_external_surface(rect, surface_id)`：`add_clip(rect)`（边界裁剪）→ 取回注册场景 → `merge_primitives`。
+- `merge_primitives(dst, src)`：扩展全部 13 个分桶（clips/fills/rounded_rects/path_fills/path_strokes/
+  strokes/gradients/shadows/images/glyphs/filters/blend_modes/transforms）+ 按桶偏移重映射 `draw_order`
+  （保留 src 内部 z 序）。**无空间变换**（调用方预变换）。
+- 未注册 surface_id → 仅留 clip 占位（不 panic、不阻断）。
+
+测试（2 新测，全绿；bridge crate 10→12 测）
+--------------------------------------------
+1. draw_external_surface_merges_registered_with_remapped_draw_order — 桥接先有 1 fill；
+   注册含 1 fill + 1 stroke 的表面；draw_external_surface → clips=1、fills=2（表面 fill 合并到 index 1
+   验证按桶偏移）、strokes=1；draw_order == [Fill(0), Clip(0), Fill(1), Stroke(0)]（surface Fill(0)→Fill(1)、
+   Stroke(0)→Stroke(0) 按各自桶偏移重映射）。
+2. draw_external_surface_unknown_id_only_clips — 未注册 id → 仅 1 clip，无 fills/strokes，不 panic。
+
+（顺带：原 text_and_external_surface_are_documented_noops 测试重命名为 draw_text_raw_string_is_noop
+ ——external_surface 已实现，仅 draw_text 原始字符串路径仍 no-op。）
+
+门禁（2026-07-01）
+-----------------
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all --check` — 净。
+- `./target/test-guard -- cargo test -p zero-ui-adapter-render-foundation` — **12 passed; 0 failed**（10→12，+2 外部表面）。
+- 纯 adapter 内部（无浏览器/webview 消费者）→ 未跑 product-smoke（零回归路径）。
+
+意义（TBD-2 / DC-3 / DC-14）
+---------------------------
+- **桥接 RenderBackend 覆盖完成**：fill_rect / stroke_rect / apply_clip / draw_text_blob /
+  draw_external_surface 全部功能可用（仅 draw_text 原始字符串路径仍 no-op——SDK widgets 走预 shape 的 TextBlob）。
+- **整个 SDK Scene 现可光栅化为 render-foundation RenderPrimitives**（几何 + 文本 + 外部表面）。
+- DC-3 phase-2 桥接侧就绪；浏览器真实接线时须把 webview RenderPrimitives 经 set_surface 注册
+  （+ 调用方 offset/scale/clip），桥接合并进帧。
+- DC-14 视觉迁移的渲染后端基础全部就绪；剩余 = 生产集成（浏览器侧 ImageCache 共享 + set_surface 接线）+
+  render-foundation font 栈统一（DC-11，触碰姊妹目标，需 product-smoke）。

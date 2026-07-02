@@ -9,7 +9,7 @@
 //!
 //! 调用：`paint_scene(&scene, &mut backend)` → `backend.into_primitives()`。
 //!
-//! ## 当前覆盖（DC-14 视觉迁移的几何 + 文本基础）
+//! ## 当前覆盖（DC-14 视觉迁移的几何 + 文本 + 外部表面）
 //! - `fill_rect`：圆角为零 → [`FillPrimitive`]；否则 → [`RoundedRectPrimitive`]（四角半径分别映射）。
 //! - `stroke_rect`：矩形四角顶点 → [`PathStrokePrimitive`]（closed）。**圆角暂忽略**（render-foundation
 //!   无 stroke 圆角矩形图元；TODO 跟踪）。
@@ -18,25 +18,28 @@
 //! - `draw_text_blob`（DC-11 文本）：经共享 `FontdueBackend::rasterize_glyph` 把预 shape 的 glyph
 //!   光栅为 tinted RGBA → [`ImageCache`] → [`ImagePrimitive`]（fontdue 定位：xmin 左、ymin 底）。
 //!   **契约**：TextBlob 生产者与本后端共享同一 `Arc<FontdueBackend>`（`new_with_text`），FontId 一致。
+//! - `draw_external_surface`（DC-3 phase-2）：`set_surface` 注册调用方**预变换**的表面（WebView）场景；
+//!   `draw_external_surface(rect, id)` 以 `rect` 为裁剪边界，把注册场景合并进帧（`draw_order` 按桶
+//!   偏移重映射，保留表面内部 z 序）。本后端不做空间变换——调用方负责 offset/scale（参考
+//!   apps/browser `append_webview_primitives`）。
 //!
-//! ## 暂未覆盖（明确 follow-up，非阻塞当前几何+文本闭环）
+//! ## 暂未覆盖（明确 follow-up，非阻塞当前闭环）
 //! - `draw_text`（原始字符串）：no-op。SDK widgets 经 paint_ctx 产出预 shape 的 TextBlob（走
 //!   `draw_text_blob`）；本方法无 FontRequest 策略，如需可直接 shape 后转 `draw_text_blob`。
-//! - `draw_external_surface`：**no-op**。WebView/平台视图纹理合成属 **DC-3 phase-2**。
 //! - 生产集成（DC-14 真实接线）：本后端自带 `ImageCache`；浏览器消费时须把 glyph key 解析到
-//!   渲染器的 image cache（或共享）——当前无消费者，几何+文本经测试验证。
+//!   渲染器的 image cache（或共享）——当前无消费者，几何+文本+外部表面经测试验证。
 //!
 //! [`FillPrimitive`]: zero_render_foundation::primitive::FillPrimitive
 //! [`RoundedRectPrimitive`]: zero_render_foundation::primitive::RoundedRectPrimitive
 //! [`PathStrokePrimitive`]: zero_render_foundation::primitive::PathStrokePrimitive
 //! [`add_clip`]: zero_render_foundation::primitive::RenderPrimitives::add_clip
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use zero_render_foundation::color::Color as RfColor;
 use zero_render_foundation::geometry::{Point as RfPoint, Rect as RfRect, Size as RfSize};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
-use zero_render_foundation::primitive::{ImagePrimitive, RenderPrimitives, RoundedRectPrimitive};
+use zero_render_foundation::primitive::{DrawOp, ImagePrimitive, RenderPrimitives, RoundedRectPrimitive};
 use zero_text_foundation::{FontId, FontdueBackend, GlyphBitmap, TextBlob};
 use zero_ui_core::geometry::{Point, Rect, Rounding};
 use zero_ui_core::theme::Color;
@@ -61,6 +64,8 @@ pub struct RenderFoundationBackend {
     image_cache: ImageCache,
     /// 已上传 glyph 的 key 集合（避免每帧重复 raster+upload；key 稳定）。
     uploaded: HashSet<ImageKey>,
+    /// 外部表面（WebView 等）的预变换场景注册表（DC-3 phase-2）。key = surface_id。
+    surfaces: HashMap<u64, RenderPrimitives>,
 }
 
 impl RenderFoundationBackend {
@@ -81,6 +86,7 @@ impl RenderFoundationBackend {
             text,
             image_cache: ImageCache::new(GLYPH_CACHE_MAX_ENTRIES, GLYPH_CACHE_MAX_BYTES),
             uploaded: HashSet::new(),
+            surfaces: HashMap::new(),
         }
     }
 
@@ -102,6 +108,20 @@ impl RenderFoundationBackend {
     /// 取出 glyph 位图缓存（消费后端；与 [`Self::into_primitives`] 配套交给渲染器）。
     pub fn into_image_cache(self) -> ImageCache {
         self.image_cache
+    }
+
+    /// 注册外部表面（WebView 等）的本帧预变换场景（DC-3 phase-2）。
+    ///
+    /// **契约**：`primitives` 须已由调用方变换到帧坐标空间（offset/scale/clip，参考
+    /// apps/browser 的 `append_webview_primitives`）。`draw_external_surface(rect, id)` 据此
+    /// `id` 取回并以 `rect` 为裁剪边界合并进累积场景。
+    pub fn set_surface(&mut self, surface_id: u64, primitives: RenderPrimitives) {
+        self.surfaces.insert(surface_id, primitives);
+    }
+
+    /// 清空外部表面注册表（每帧绘制前调用，避免上一帧残留）。
+    pub fn clear_surfaces(&mut self) {
+        self.surfaces.clear();
     }
 }
 
@@ -169,8 +189,14 @@ impl RenderBackend for RenderFoundationBackend {
         // 本方法（无 FontRequest 策略）暂不实现；如需可直接 shape 后转 draw_text_blob。
     }
 
-    fn draw_external_surface(&mut self, _rect: Rect, _surface_id: u64) {
-        // TODO(DC-3 phase-2)：WebView/平台视图纹理合成（按 surface_id 取回）。
+    fn draw_external_surface(&mut self, rect: Rect, surface_id: u64) {
+        // DC-3 phase-2：以 rect 为裁剪边界，把已注册（调用方预变换）的表面场景合并进帧。
+        // 渲染顺序：先 clip(rect) 约束，再合并表面图元（draw_order 重映射保持表面内部 z 序）。
+        self.primitives.add_clip(to_rf_rect(rect));
+        if let Some(src) = self.surfaces.get(&surface_id) {
+            merge_primitives(&mut self.primitives, src);
+        }
+        // 未注册的 surface_id → 仅留 clip（占位，不阻断；调用方应先 set_surface）。
     }
 
     fn apply_clip(&mut self, clip: Option<Rect>) {
@@ -181,6 +207,61 @@ impl RenderBackend for RenderFoundationBackend {
             None => self.viewport,
         };
         self.primitives.add_clip(rf_rect);
+    }
+}
+
+// ── 外部表面合并（DC-3 phase-2 draw_external_surface）────────────────
+
+/// 把 `src` 的全部图元合并进 `dst`（扩展各分桶 + 按桶偏移重映射 `draw_order`）。
+///
+/// **无空间变换**：调用方须预先把 `src` 的图元变换到 `dst` 的坐标空间（offset/scale/clip）。
+/// 本函数只做结构合并，保留 `src` 内部的绘制顺序（draw_order 相对位置不变）。
+fn merge_primitives(dst: &mut RenderPrimitives, src: &RenderPrimitives) {
+    // 记录各桶当前长度（合并后 src 索引的偏移基准）。
+    let o_clip = dst.clips.len();
+    let o_fill = dst.fills.len();
+    let o_rr = dst.rounded_rects.len();
+    let o_pf = dst.path_fills.len();
+    let o_ps = dst.path_strokes.len();
+    let o_st = dst.strokes.len();
+    let o_gr = dst.gradients.len();
+    let o_sh = dst.shadows.len();
+    let o_im = dst.images.len();
+    let o_gl = dst.glyphs.len();
+    let o_fi = dst.filters.len();
+    let o_bm = dst.blend_modes.len();
+    let o_tr = dst.transforms.len();
+
+    dst.clips.extend(src.clips.iter().cloned());
+    dst.fills.extend(src.fills.iter().cloned());
+    dst.rounded_rects.extend(src.rounded_rects.iter().cloned());
+    dst.path_fills.extend(src.path_fills.iter().cloned());
+    dst.path_strokes.extend(src.path_strokes.iter().cloned());
+    dst.strokes.extend(src.strokes.iter().cloned());
+    dst.gradients.extend(src.gradients.iter().cloned());
+    dst.shadows.extend(src.shadows.iter().cloned());
+    dst.images.extend(src.images.iter().cloned());
+    dst.glyphs.extend(src.glyphs.iter().cloned());
+    dst.filters.extend(src.filters.iter().cloned());
+    dst.blend_modes.extend(src.blend_modes.iter().cloned());
+    dst.transforms.extend(src.transforms.iter().cloned());
+
+    for op in &src.draw_order {
+        dst.draw_order.push(match *op {
+            DrawOp::Fill(i) => DrawOp::Fill(i + o_fill),
+            DrawOp::RoundedRect(i) => DrawOp::RoundedRect(i + o_rr),
+            DrawOp::PathFill(i) => DrawOp::PathFill(i + o_pf),
+            DrawOp::PathStroke(i) => DrawOp::PathStroke(i + o_ps),
+            DrawOp::Stroke(i) => DrawOp::Stroke(i + o_st),
+            DrawOp::Gradient(i) => DrawOp::Gradient(i + o_gr),
+            DrawOp::Shadow(i) => DrawOp::Shadow(i + o_sh),
+            DrawOp::Image(i) => DrawOp::Image(i + o_im),
+            DrawOp::Glyph(i) => DrawOp::Glyph(i + o_gl),
+            DrawOp::Filter(i) => DrawOp::Filter(i + o_fi),
+            DrawOp::BlendMode(i) => DrawOp::BlendMode(i + o_bm),
+            DrawOp::Transform(i) => DrawOp::Transform(i + o_tr),
+            DrawOp::Clip(i) => DrawOp::Clip(i + o_clip),
+        });
     }
 }
 
@@ -416,12 +497,11 @@ mod tests {
     }
 
     #[test]
-    fn text_and_external_surface_are_documented_noops() {
-        // draw_text（原始字符串路径，无 FontRequest 策略）+ external_surface 仍 no-op。
-        // （预 shape 的 TextBlob 路径见 draw_text_blob 测试。）
+    fn draw_text_raw_string_is_noop() {
+        // draw_text（原始字符串路径，无 FontRequest 策略）no-op：不出图元、不 panic。
+        // 预 shape 的 TextBlob 路径见 draw_text_blob 测试；外部表面见 draw_external_surface 测试。
         let mut b = RenderFoundationBackend::new(viewport());
         b.draw_text("hi", Point::ZERO, 12.0, Color::WHITE);
-        b.draw_external_surface(Rect::from_ltrb(0.0, 0.0, 10.0, 10.0), 7);
         let p = b.into_primitives();
         assert!(p.glyphs.is_empty());
         assert!(p.images.is_empty());
@@ -581,5 +661,77 @@ mod tests {
         assert_ne!(k, glyph_cache_key(FontId(2), 65, 16.0));
         assert_ne!(k, glyph_cache_key(FontId(1), 66, 16.0));
         assert_ne!(k, glyph_cache_key(FontId(1), 65, 32.0));
+    }
+
+    // ── draw_external_surface（DC-3 phase-2 外部表面合并）──────────────
+
+    fn rf_rect(x: f32, y: f32, w: f32, h: f32) -> RfRect {
+        RfRect {
+            origin: RfPoint { x, y },
+            size: RfSize { width: w, height: h },
+        }
+    }
+
+    #[test]
+    fn draw_external_surface_merges_registered_with_remapped_draw_order() {
+        use zero_render_foundation::primitive::{LineCap, LineStyle, StrokePrimitive};
+        let mut b = RenderFoundationBackend::new(viewport());
+        // 桥接先有一个 fill（使后续 surface fill 合并到 index 1，验证按桶偏移重映射）。
+        b.fill_rect(Rect::from_ltrb(0.0, 0.0, 1.0, 1.0), Color::WHITE, Rounding::ZERO);
+
+        // 注册表面场景：1 fill + 1 stroke（draw_order = [Fill(0), Stroke(0)]）。
+        let mut surf = RenderPrimitives::default();
+        surf.add_fill(
+            rf_rect(10.0, 10.0, 5.0, 5.0),
+            RfColor {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+        );
+        surf.add_stroke(StrokePrimitive {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 9.0,
+            y2: 9.0,
+            width: 1.0,
+            color: RfColor {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            },
+            style: LineStyle::Solid,
+            cap: LineCap::Butt,
+        });
+        assert_eq!(surf.draw_order, vec![DrawOp::Fill(0), DrawOp::Stroke(0)]);
+        b.set_surface(7, surf);
+
+        b.draw_external_surface(Rect::from_ltrb(10.0, 10.0, 100.0, 100.0), 7);
+        let p = b.into_primitives();
+        // 裁剪：draw_external_surface 加 1 个（rect）。
+        assert_eq!(p.clips.len(), 1);
+        // fills：桥接原 1 + surface 合并 1 = 2。
+        assert_eq!(p.fills.len(), 2);
+        // strokes：surface 合并 1。
+        assert_eq!(p.strokes.len(), 1);
+        // draw_order：桥接 Fill(0) → draw_external_surface Clip(0) → 合并 surface Fill(0+1)=Fill(1), Stroke(0+0)=Stroke(0)。
+        assert_eq!(
+            p.draw_order,
+            vec![DrawOp::Fill(0), DrawOp::Clip(0), DrawOp::Fill(1), DrawOp::Stroke(0)]
+        );
+    }
+
+    #[test]
+    fn draw_external_surface_unknown_id_only_clips() {
+        // 未注册 surface → 仅留 clip 占位，不合并、不 panic。
+        let mut b = RenderFoundationBackend::new(viewport());
+        b.draw_external_surface(Rect::from_ltrb(0.0, 0.0, 50.0, 50.0), 999);
+        let p = b.into_primitives();
+        assert_eq!(p.clips.len(), 1);
+        assert!(p.fills.is_empty());
+        assert!(p.strokes.is_empty());
+        assert!(p.draw_order.iter().all(|op| matches!(op, DrawOp::Clip(_))));
     }
 }
