@@ -152,6 +152,87 @@ pub(crate) fn sdk_scroll_x_from_pointer(
     scroll_by_drag_x(layout, scroll, content_rect, from_x, to_x)
 }
 
+/// DC-4：用 SDK scrollbar 语义色渲染滚动条，替换手绘 `push_scrollbar_fills`。
+///
+/// 复用浏览器现有几何（物理像素坐标），但颜色由 SDK `ScrollBarStyle` 派生
+/// （semantic token → light/dark 自适应），不再使用硬编码 `chrome_palette`。
+///
+/// Track 仅在不透明时绘制（与手绘路径 overlay 风格一致）。
+pub(crate) fn sdk_push_scrollbar_fills(
+    geometry: &crate::page_scroll::ScrollbarGeometry,
+    tokens: &zero_ui_core::theme::SemanticTokens,
+    hover: Option<crate::page_scroll::ScrollbarHit>,
+    dragging: Option<crate::page_scroll::ScrollbarAxis>,
+    fills: &mut Vec<zero_render_foundation::primitive::FillPrimitive>,
+    rounded_rects: &mut Vec<zero_render_foundation::primitive::RoundedRectPrimitive>,
+) {
+    use zero_render_foundation::color::Color as RfColor;
+    use zero_render_foundation::geometry::Rect as RfRect;
+    use zero_render_foundation::primitive::{FillPrimitive, RoundedRectPrimitive};
+    use zero_ui_widgets::scrollbar::ScrollBarStyle;
+
+    let style = ScrollBarStyle::from_tokens(tokens);
+
+    // 颜色：hover/active 时 thumb 变色，track 不变。
+    let thumb_color = match dragging {
+        Some(_) => style.thumb_active_color(),
+        None => match hover {
+            Some(crate::page_scroll::ScrollbarHit::VerticalThumb)
+            | Some(crate::page_scroll::ScrollbarHit::HorizontalThumb) => style.thumb_hover_color(),
+            _ => style.thumb_color,
+        },
+    };
+
+    let track_color = style.track_color;
+
+    // SDK Color (f32 0..1) → RF Color (u8 0..255)。
+    fn to_rf(c: zero_ui_core::theme::Color) -> RfColor {
+        let ch = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+        RfColor {
+            r: ch(c.r),
+            g: ch(c.g),
+            b: ch(c.b),
+            a: ch(c.a),
+        }
+    }
+
+    let rf_track = to_rf(track_color);
+    let rf_thumb = to_rf(thumb_color);
+
+    // Track：仅在不透明时绘制（overlay 风格，与手绘路径一致）。
+    if rf_track.a > 0 {
+        for rect in [geometry.vertical_track, geometry.horizontal_track, geometry.corner]
+            .into_iter()
+            .flatten()
+        {
+            fills.push(FillPrimitive {
+                rect: RfRect::new(rect.0, rect.1, rect.2, rect.3),
+                color: rf_track,
+            });
+        }
+    }
+
+    // Thumb：圆角矩形（与手绘路径一致）。
+    if rf_thumb.a > 0 {
+        for rect in [geometry.vertical_thumb, geometry.horizontal_thumb]
+            .into_iter()
+            .flatten()
+        {
+            let w = rect.2;
+            let h = rect.3;
+            let radius = w.min(h) * 0.5; // 两端半圆角
+            rounded_rects.push(RoundedRectPrimitive {
+                rect: RfRect::new(rect.0, rect.1, rect.2, rect.3),
+                color: rf_thumb,
+                top_left_radius: radius,
+                top_right_radius: radius,
+                bottom_right_radius: radius,
+                bottom_left_radius: radius,
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,5 +324,79 @@ mod tests {
         let cr = Rect::from_ltrb(0.0, 0.0, 800.0, 600.0);
         let result = sdk_scroll_y_from_pointer(&flat, TabScrollState::default(), cr, 300.0, 500.0);
         assert_eq!(result, 0.0, "no overflow → no scroll");
+    }
+
+    #[test]
+    fn sdk_push_scrollbar_fills_uses_semantic_colors_not_palette() {
+        // DC-4：sdk-chrome 下 scrollbar 渲染用 SDK semantic token 色，非 chrome_palette。
+        use zero_render_foundation::color::Color as RfColor;
+        use zero_render_foundation::primitive::{FillPrimitive, RoundedRectPrimitive};
+
+        let geom = page_scroll::scrollbar_geometry(&sample_layout(), sample_scroll(), 0.0, 100.0, 800.0, 600.0, 1.0);
+        let mut fills = Vec::<FillPrimitive>::new();
+        let mut rounded = Vec::<RoundedRectPrimitive>::new();
+        let tokens = zero_ui_core::theme::SemanticTokens::light();
+
+        // SDK 渲染：用 semantic token 色。
+        sdk_push_scrollbar_fills(
+            &geom,
+            &tokens,
+            None, // no hover
+            None, // no dragging
+            &mut fills,
+            &mut rounded,
+        );
+
+        // 应有 track fill(s) + thumb rounded rect。
+        assert!(!fills.is_empty(), "track fills from SDK style");
+        assert!(!rounded.is_empty(), "thumb rounded rect from SDK style");
+
+        // light 主题：track 应浅于 thumb（SDK from_tokens 行为）。
+        let track_color = fills[0].color;
+        let thumb_color = rounded[0].color;
+        assert!(
+            track_color.r > thumb_color.r,
+            "light theme: track lighter than thumb (r={} > r={})",
+            track_color.r,
+            thumb_color.r
+        );
+
+        // hover：thumb 应更亮。
+        let mut hover_fills = Vec::new();
+        let mut hover_rounded = Vec::new();
+        sdk_push_scrollbar_fills(
+            &geom,
+            &tokens,
+            Some(crate::page_scroll::ScrollbarHit::VerticalThumb),
+            None,
+            &mut hover_fills,
+            &mut hover_rounded,
+        );
+        let hover_thumb = hover_rounded[0].color;
+        assert!(
+            hover_thumb.r > thumb_color.r,
+            "hover thumb lighter: {} > {}",
+            hover_thumb.r,
+            thumb_color.r
+        );
+
+        // active (dragging)：thumb 应更暗。
+        let mut drag_fills = Vec::new();
+        let mut drag_rounded = Vec::new();
+        sdk_push_scrollbar_fills(
+            &geom,
+            &tokens,
+            None,
+            Some(crate::page_scroll::ScrollbarAxis::Vertical),
+            &mut drag_fills,
+            &mut drag_rounded,
+        );
+        let drag_thumb = drag_rounded[0].color;
+        assert!(
+            drag_thumb.r < thumb_color.r,
+            "drag thumb darker: {} < {}",
+            drag_thumb.r,
+            thumb_color.r
+        );
     }
 }

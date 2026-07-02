@@ -315,6 +315,27 @@ impl BrowserApp {
         let scroll = self.tab_scroll_state(tab_id);
         let geometry = crate::page_scroll::scrollbar_geometry(&layout, scroll, cx, cy, cw, ch, self.scale_factor);
         let dragging = self.scrollbar_drag.map(|d| d.axis);
+
+        // DC-4：sdk-chrome 启用时，用 SDK scrollbar 语义色渲染（不硬编码 chrome_palette）。
+        #[cfg(feature = "sdk-chrome")]
+        {
+            // 按 chrome palette 背景判定 light/dark → 选对应 SemanticTokens。
+            let is_dark = self.chrome_palette.background.r < 128;
+            let tokens = if is_dark {
+                zero_ui_core::theme::SemanticTokens::dark()
+            } else {
+                zero_ui_core::theme::SemanticTokens::light()
+            };
+            crate::sdk_scrollbar::sdk_push_scrollbar_fills(
+                &geometry,
+                &tokens,
+                self.scrollbar_hover,
+                dragging,
+                overlay_fills,
+                overlay_rounded_rects,
+            );
+        }
+        #[cfg(not(feature = "sdk-chrome"))]
         crate::page_scroll::push_scrollbar_fills(
             &geometry,
             self.chrome_palette.scrollbar_track,

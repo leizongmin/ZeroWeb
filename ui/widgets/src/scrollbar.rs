@@ -217,6 +217,16 @@ impl ScrollBarStyle {
             thumb_color: tokens.on_surface.mix(tokens.surface, 0.5),
         }
     }
+
+    /// thumb hover 色（略亮，DC-4 浏览器桥接用）。
+    pub fn thumb_hover_color(&self) -> Color {
+        self.thumb_color.lighten(0.1)
+    }
+
+    /// thumb active/dragging 色（略暗，DC-4 浏览器桥接用）。
+    pub fn thumb_active_color(&self) -> Color {
+        self.thumb_color.darken(0.1)
+    }
 }
 
 impl Default for ScrollBarStyle {
@@ -393,5 +403,25 @@ mod tests {
         assert!(dark.thumb_color.r > dark.track_color.r, "dark: thumb 浅于 track");
         // default() == from_tokens(light)（无硬编码）。
         assert_eq!(ScrollBarStyle::default().track_color, light.track_color);
+    }
+
+    #[test]
+    fn thumb_hover_active_colors_derived_from_thumb() {
+        // DC-4：hover=略亮、active=略暗，由 thumb_color 派生（不硬编码）。
+        let style = ScrollBarStyle::from_tokens(&SemanticTokens::light());
+        let hover = style.thumb_hover_color();
+        let active = style.thumb_active_color();
+        // hover 亮于 thumb（lighten 0.1）。
+        assert!(hover.r > style.thumb_color.r, "hover lighter than thumb");
+        // active 暗于 thumb（darken 0.1）。
+        assert!(active.r < style.thumb_color.r, "active darker than thumb");
+        // hover 与 active 应不同。
+        assert_ne!(hover, active, "hover ≠ active");
+        // dark 主题：反相，hover 更亮（更接近白）、active 更暗。
+        let dark = ScrollBarStyle::from_tokens(&SemanticTokens::dark());
+        let dh = dark.thumb_hover_color();
+        let da = dark.thumb_active_color();
+        assert!(dh.r > dark.thumb_color.r, "dark hover lighter");
+        assert!(da.r < dark.thumb_color.r, "dark active darker");
     }
 }
