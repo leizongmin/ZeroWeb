@@ -638,6 +638,29 @@ fn flex_from_props(props: &PropsMap) -> f32 {
     }
 }
 
+/// 从 props 提取浮点值（`Float` 或 `Int`），缺省返回 `default`。
+fn float_from_props(props: &PropsMap, key: &str, default: f32) -> f32 {
+    match props.get(key) {
+        Some(Value::Float(f)) => *f as f32,
+        Some(Value::Int(i)) => *i as f32,
+        _ => default,
+    }
+}
+
+/// 从子节点 props 读取 min/max 约束（缺省：min = 0, max = f32::MAX，即不约束）。
+fn child_constraints_from_props(props: &PropsMap) -> (f32, f32, f32, f32) {
+    let min_w = float_from_props(props, "min_width", 0.0).max(0.0);
+    let max_w = float_from_props(props, "max_width", f32::MAX).max(min_w);
+    let min_h = float_from_props(props, "min_height", 0.0).max(0.0);
+    let max_h = float_from_props(props, "max_height", f32::MAX).max(min_h);
+    (min_w, max_w, min_h, max_h)
+}
+
+/// 把尺寸钳到 `(min_w, max_w, min_h, max_h)` 范围内。
+fn clamp_size(s: Size, min_w: f32, max_w: f32, min_h: f32, max_h: f32) -> Size {
+    Size::new(s.width.clamp(min_w, max_w), s.height.clamp(min_h, max_h))
+}
+
 /// 从 props 读交叉轴对齐（`cross_axis_align`：`"start"`/`"center"`/`"end"`，大小写不敏感；
 /// Row 也接受 `"top"`/`"bottom"`、Column 也接受 `"left"`/`"right"`）。
 ///
@@ -820,6 +843,7 @@ fn measure_linear(node: &mut HostNode, lctx: &mut LayoutCtx, constraints: Constr
         if flexes[i] > 0.0 {
             continue;
         }
+        let (min_w, max_w, min_h, max_h) = child_constraints_from_props(&node.children[i].props);
         let remaining = (max_main - cursor).max(0.0);
         let child_c = match axis {
             MainAxis::Horizontal => Constraints {
@@ -835,7 +859,13 @@ fn measure_linear(node: &mut HostNode, lctx: &mut LayoutCtx, constraints: Constr
                 max_height: remaining,
             },
         };
-        let s = measure(&mut node.children[i], lctx, child_c);
+        let s = clamp_size(
+            measure(&mut node.children[i], lctx, child_c),
+            min_w,
+            max_w,
+            min_h,
+            max_h,
+        );
         let (m, c) = match axis {
             MainAxis::Horizontal => (s.width, s.height),
             MainAxis::Vertical => (s.height, s.width),
@@ -860,21 +890,30 @@ fn measure_linear(node: &mut HostNode, lctx: &mut LayoutCtx, constraints: Constr
                 continue;
             }
             let share = free * (flexes[i] / total_flex);
+            let (min_w, max_w, min_h, max_h) = child_constraints_from_props(&node.children[i].props);
+            // Flex 子节点：tight share 作为默认分配量，但 min_w/max_w 从 props 覆盖
+            // 使 min_w > share 时子节点获得更大的空间（CSS min-width 语义）。
             let child_c = match axis {
                 MainAxis::Horizontal => Constraints {
-                    min_width: share,
-                    max_width: share,
+                    min_width: share.max(min_w),
+                    max_width: share.max(min_w).min(max_w),
                     min_height: 0.0,
                     max_height: max_cross,
                 },
                 MainAxis::Vertical => Constraints {
                     min_width: 0.0,
                     max_width: max_cross,
-                    min_height: share,
-                    max_height: share,
+                    min_height: share.max(min_w),
+                    max_height: share.max(min_w).min(max_h),
                 },
             };
-            let s = measure(&mut node.children[i], lctx, child_c);
+            let s = clamp_size(
+                measure(&mut node.children[i], lctx, child_c),
+                min_w,
+                max_w,
+                min_h,
+                max_h,
+            );
             let (m, c) = match axis {
                 MainAxis::Horizontal => (s.width, s.height),
                 MainAxis::Vertical => (s.height, s.width),
@@ -2394,5 +2433,90 @@ mod tests {
     fn semantics_is_none_before_set_root() {
         let host = WidgetHost::new();
         assert!(host.semantics().is_none());
+    }
+
+    // ── DC-2 child min/max constraint props ─────────────────────────────────
+
+    #[test]
+    fn child_min_width_prop_enforces_lower_bound() {
+        // min_width=80 on a 40-wide widget → clamped to 80.
+        struct Tiny(Size);
+        impl Widget for Tiny {
+            fn mount(&mut self, _: &mut MountCtx) {}
+            fn update(&mut self, _: &mut zero_ui_core::widget::UpdateCtx, _: &PropsMap) {}
+            fn event(&mut self, _: &mut EventCtx, _: &UiEvent) -> EventResult {
+                EventResult::Ignored
+            }
+            fn layout(&mut self, _: &mut LayoutCtx, constraints: Constraints) -> Size {
+                let s = Size::new(
+                    self.0.width.min(constraints.max_width),
+                    self.0.height.min(constraints.max_height),
+                );
+                self.0 = s;
+                s
+            }
+            fn paint(&mut self, _: &mut PaintCtx) {}
+            fn semantics(&self, _: &mut SemanticsCtx) {}
+        }
+
+        let mut host = WidgetHost::new();
+        host.register("Tiny", |_| Box::new(Tiny(Size::new(40.0, 20.0))));
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        let mut child = WidgetSpec::new("Tiny");
+        child.props.insert("min_width", Value::Int(80));
+        root.children.push(child);
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+        let r = host.rect_of(&WidgetId::new("root")).unwrap();
+        assert!(
+            (r.size.width - 80.0).abs() < 0.1,
+            "min_width 80 > measured 40, got {}",
+            r.size.width
+        );
+    }
+
+    #[test]
+    fn child_max_width_prop_enforces_upper_bound() {
+        // max_width=60 → Fill in loose=400 clamped to 60.
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        let mut child = WidgetSpec::new("Fill");
+        child.props.insert("max_width", Value::Int(60));
+        root.children.push(child);
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 100.0)));
+        let r = host.rect_of(&WidgetId::new("root")).unwrap();
+        assert!((r.size.width - 60.0).abs() < 0.1, "max_width=60, got {}", r.size.width);
+    }
+
+    #[test]
+    fn child_constraints_default_to_noop() {
+        // 无 min/max props → 缺省不约束（向后兼容）。
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Column");
+        root.id = Some(WidgetId::new("root"));
+        root.children.push(WidgetSpec::new("Fill"));
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(200.0, 100.0)));
+        let r = host.rect_of(&WidgetId::new("root")).unwrap();
+        assert_eq!(r.size.width, 200.0, "no constraints → Fill fills parent");
+    }
+
+    #[test]
+    fn flex_child_max_width_clamps_share() {
+        // flex=1 in loose(400) with max_width=80 → child clamped to 80.
+        let mut host = fill_host();
+        let mut root = WidgetSpec::new("Row");
+        root.id = Some(WidgetId::new("root"));
+        let mut child = WidgetSpec::new("Fill");
+        child.props.insert("flex", Value::Int(1));
+        child.props.insert("max_width", Value::Int(80));
+        root.children.push(child);
+        host.set_root(&root);
+        host.layout(Constraints::loose(Size::new(400.0, 100.0)));
+        let r = host.rect_of(&WidgetId::new("root")).unwrap();
+        assert!((r.size.width - 80.0).abs() < 0.1, "flex+max=80, got {}", r.size.width);
     }
 }

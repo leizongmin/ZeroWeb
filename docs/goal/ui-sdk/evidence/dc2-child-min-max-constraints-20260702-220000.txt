@@ -1,0 +1,24 @@
+DC-2 host layout child min/max constraint props (2026-07-02)
+
+Changes:
+- ui/runtime/src/host.rs:
+  - float_from_props(props, key, default) — generic float prop reader
+  - child_constraints_from_props(props) → (min_w, max_w, min_h, max_h)
+  - clamp_size(s, min_w, max_w, min_h, max_h)
+  - measure_linear pass 1 (non-flex): clamp child size after measurement
+  - measure_linear pass 2 (flex): adjust constraints (share.max(min), share.max(min).min(max))
+    + clamp after measurement
+- +4 tests (min_width enforce / max_width clamp / default noop / flex+max clamp)
+
+Gates:
+- ui-runtime 66 tests (was 62, +4)
+- chrome 80 tests + examples tests green
+- browser 189 tests green (zero regression)
+- Workspace clippy + fmt clean
+- SDK-only, no product-smoke risk
+
+Effect:
+- Widgets can declare min_width/max_width/min_height/max_height via props
+- Non-flex children: measured size clamped to [min, max]
+- Flex children: share adjusted to respect min/max, then clamped
+- Defaults: min=0, max=f32::MAX (no constraint, backward compatible)
