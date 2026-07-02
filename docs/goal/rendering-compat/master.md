@@ -2295,6 +2295,72 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **▶ 下会话**：measurable 仍 font-metric 墙结构性阻塞。务实选项：① **main.rs 拆分**（2565 行，含 R968-R970 我加的 reftest 报告 helper + DC-10 测试——拆 reftest 报告组到独立文件，清自己造成的遗留，rule 5）；② font-metric 墙极窄 slice（DC-14 三态作严格门禁）；③ 转 zero-web 其他子目标。single-session clean measurable lever 勿再扫。
 
+### R972 apps/browser main.rs 测试模块抽出·mod tests; 到 src/tests.rs·main.rs 2565→685·零行为变化·纯维护
+
+承 R971 ▶「main.rs 拆分」。`apps/browser/src/main.rs` 2565 行结构：~278 行 CLI/平台 helper + **`#[cfg(test)] mod tests { ... }` 1881 行（lines 281-2161）** + run_headless/browser_window_config/apply_window_chrome_action/... + `fn main()`（2296）。测试模块占 73%，是 R968 DC-10 测试 + 历史测试累积的主因。
+
+**① 抽出测试模块到 `src/tests.rs`**：`sed -n '282,2160p'`（mod tests body）verbatim → `apps/browser/src/tests.rs`（1884 行，加文件头说明）；main.rs 用 `#[cfg(test)] #[allow(clippy::items_after_test_module)] mod tests;` 替代内联块（Rust 2018：`src/main.rs` 的 `mod tests;` 解析到 `src/tests.rs`）。**`super::*` 与 `super::browser_window_config()` 仍解析到 crate 根（main.rs）**——`tests` 仍是 crate 根的子模块，只是 body 落到独立文件，语义不变。
+
+**② 修正**：首版用 python 写 decl 时 `\[` 转义误把字面 `\` 写进文件（`#\[cfg(test)\]`），cargo check 报错；改 Edit 直接写正确 `#[cfg(test)]`。
+
+**验证（纯移动门禁）**：`cargo check -p zero-browser --all-targets` 全绿；`cargo clippy -p zero-browser --all-targets -- -D warnings` 零警告；`cargo fmt --all --check`（fmt 把 tests.rs 内 4-space 缩进的 body dedent 到顶层——语义中性）；`make test`（release + test-guard）**12114 passed / 0 failed / 73 ignored**（测试全过，mod tests; 解析正确）。**零行为变化**（test body 逐字移动，super:: 引用不变）。
+
+**意义**：CLAUDE.md 规则 5 合规（apps/browser/src/main.rs 2565→**685 行**，tests.rs 1884 行——两文件均 ≤2000）；清 R968 DC-10 测试 + 历史测试累积造成的 main.rs 膨胀。**非 measurable 进展**——browser shell 维护清债，rendering-compat pass-rate 仍结构性阻塞。
+
+**剩余 >2000 行**：app.rs **2112**（include! 拼装中心 + BrowserApp struct + 少量 fn——拆分空间有限，进一步拆须动 struct/字段）；taffy-local/flexbox.rs 2348（vendored 上游，跳过）。**非 vendored >2000 行文件基本清完**（layout-engine/engine/reftest/app_render/app_input/main.rs 全 ≤2000，仅 app.rs 2112 微超）。
+
+**▶ 下会话**：非 vendored >2000 行文件基本清完（仅 app.rs 2112 微超，拆分空间有限）。rendering-compat measurable pass-rate 仍 font-metric 墙结构性阻塞。务实选项：① app.rs 2112 微超 audit（include! 拼装中心，可抽 BrowserApp struct + new 到独立文件？须核查字段隐私）；② font-metric 墙极窄 slice（DC-14 三态作严格门禁，接受 net-negative 先例）；③ 转 zero-web 其他子目标。single-session clean measurable lever 勿再扫。
+
+### R973 app.rs 状态类型抽出·app_types.rs·app.rs 2112→1967·★ 非 vendored 全仓 .rs ≤2000 里程碑
+
+承 R972 ▶「app.rs 2112 微超 audit」。`apps/browser/src/app.rs` 2112 行结构：imports + 小状态类型簇（lines 60-205：ContentPointerDrag / ScrollbarDrag / TabFetchState / WindowChromeAction / TabDragState / AutocompleteState+impl / ContextMenuState+impl，~146 行）+ `pub struct BrowserApp`（208-）+ `impl BrowserApp`（核心方法）+ 8 `include!`。状态类型簇是内聚可抽块。
+
+**抽出 `app_types.rs`**（151 行）：`sed -n '60,205p'` verbatim → `apps/browser/src/app_types.rs`（加文件头说明）；app.rs 用 `include!("app_types.rs");` 替代内联块（line 60，imports 之后、BrowserApp struct 之前）。include! 文本包含→`pub enum WindowChromeAction` / `pub struct TabDragState`（main.rs `use app::WindowChromeAction` 用）路径不变，私有字段/impl 直接可达。
+
+**验证（纯移动门禁）**：`cargo check -p zero-browser --all-targets` 全绿；`cargo clippy --workspace --all-targets -- -D warnings` 零警告；`cargo fmt --all --check` 干净；`make test`（release + test-guard）**12114 passed / 0 failed / 73 ignored**。**零行为变化**（include! 文本包含）。
+
+**★ 里程碑**：**全仓非 vendored `.rs` 文件全部 ≤2000 行**——layout-engine（table/engine/reftest 系列）、apps/browser（app/app_render*/app_input*/main/tests）、tests/wpt-runner 均达标；唯一剩余 >2000 是 `crates/taffy-local/src/compute/flexbox.rs` 2348 行（vendored taffy 0.7.7 上游，拆分会偏离上游增未来升级成本，按规则跳过）。CLAUDE.md 规则 5 全仓合规（除 vendored）。
+
+**意义**：CLAUDE.md 规则 5 全仓达标（非 vendored）；browser 状态类型按 data 结构分离。**非 measurable 进展**——rendering-compat pass-rate 仍结构性阻塞。连续 R964-R973 累计拆 7 个 >2000 文件（table/engine/reftest/app_render/app_input/main/app）。
+
+**▶ 下会话**：★ **非 vendored 全仓 .rs ≤2000 已达标**——2000 行规则维护债出清。rendering-compat measurable pass-rate 仍 font-metric 墙结构性阻塞（6 次 net-negative 先例）。务实选项：① **font-metric 墙攻坚**（现 DC-14 三态+非平凡性作严格可信门禁，可量化；spec 已存 linebox-metric-rfc R813 / phase-a-IFC-design；须极窄 slice 接受 net-negative 风险）；② 转 zero-web 其他子目标（rendering-compat 单 session measurable 已结构性耗尽，DC-10/DC-14 已闭，余 DC-2~5/DC-13 阻塞 font 墙、DC-11/12 阻塞 host-layer）。single-session clean measurable lever 勿再扫。
+
+### R974 css-position fresh oracle + semi-replaced-stretch 深挖 = form-control paint feature gap（非 layout lever）·plateau 第 7 次确认·零源码·纯调查
+
+承 R973 ▶「font-metric 墙攻坚」。攻坚前做 R740 推荐「直接 chr-vs-ZeroWeb 简单用例对比」找新 high-confidence lever（区别盲信 doc 只读分析）。`make reftest-oracle DIR=css-position`：**54/97 = 56%**（R923 时 52.6%，R850/R962-era 略升）。top-15 worst 分类：
+
+- **feature gap**：replaced-object-backdrop 100%（backdrop-filter on replaced）/ backdrop-inherit-rendered 47.5%（R520 同谱系 canvas 传播残余）
+- **JS-driven**：position-absolute-dynamic-relayout-005/006 11.7%、hypothetical-dynamic-change-002/003 4.2%（dynamic relayout，须 harness JS 完整执行 + re-layout）
+- **R109/font 已 ruled out**：position-relative-002/005 4.9%（R952 = R109+%/font_metric R915 closed）
+- **semi-replaced-stretch pair 21%+14%**（input/other/button，csswg #6789）—— 最有希望 candidate，深挖：
+
+**LAYOUT_DUMP（position-absolute-semi-replaced-stretch-input）**：input.abs **正确 stretch**——div.cb w=156 h=106（150/100 + 3px border×2），input.abs w=144 h=94（CB content 150/100 − inset 3×2），test/ref layout **字节同**。csswg #6789 semi-replaced abspos stretch 规则 **ZW 已正确实现**（layout 对）。**21% diff 全在 paint**——ZW 无原生 `<input>` form-control 渲染（button/submit/render as 非原生），ref 用 div 模拟；form-control painting 是多会话 feature 工程，非单 session clean lever。
+
+**裁决**：semi-replaced-stretch = **form-control paint feature gap**（非 layout lever），勿以 layout 修复投。css-position worst 全落 feature gap / JS / R109-font / 已 ruled out 桶——**plateau 第 7 次确认**（R519/R740/R882/R945-954/R960/R961/R974）。zero net 源码（纯 oracle + LAYOUT_DUMP 调查）。
+
+**▶ 下会话**：measurable lever 仍仅多会话架构可推（font-metric 墙 / form-control paint / R109 / multicol Phase 2 / BiDi / host-layer scroll）。**勿再扫 css-position worst**（已穷尽，全 feature gap/JS/R109）。务实选项：① font-metric 墙极窄 slice（DC-14 三态门禁，接受 net-negative）；② **转 zero-web 其他子目标**（rendering-compat 单 session measurable 结构性耗尽，连续 7 次确认；DC-10/14 已闭、规则 5 全仓达标——rendering-compat 可推进面已尽，须多会话架构突破）。single-session clean measurable lever 勿再扫。
+
+### R975 RFC Phase 0 探针落地·vertical-align-117a·确证 layout TextBottom==Bottom 公式偏差 + paint-dead 死锁·建立 Phase 1 契约·零源码净变化
+
+承 R974 ▶「font-metric 墙极窄 slice」。前 6 次 net-negative 先例（R834/R836/R849/R875/R959/R962）皆跳过 linebox-metric-rfc §4.3 的 **Phase 0 read-only 探针**（直接改码）——本轮执行该探针，建立 RFC 要求的「可验证契约」再决定是否改码。
+
+**① 探针（env-gated `RFC_PHASE0=1`，`apply_vertical_alignment` 1651，run 后捕获即删）** 实测 117a span line：
+- `line.height=130` strut_ascent=77 baseline_y=77 run.fs=40 **run.height=130**（span inline-box = inherited line-height，per §10.8.1 vertical-align 用 line-height box ✓）run.va=TextBottom
+- **code 公式（1665）**：`Bottom | TextBottom => line_height - run.height` → run.y = 130-130 = **0**（span box bottom = 130 = **行盒底**）
+- **spec text-bottom**：span box bottom 对齐**父 content-area 底**（= baseline_y + descent ≈ 77+8 = 85，**排除 half-leading**，区别 Bottom 用行盒底）→ spec run.y = 85-130 = **-45**
+
+**② 确证 2 点**：
+- **(a) layout 公式偏差 CONFIRMED**：code 把 TextBottom 折叠成 Bottom（1665 同 arm），spec 要求 TextBottom = 父 content-area 底（baseline_y + descent）。117a 偏 45px。
+- **(b) paint-dead（R949 不同角度复核）**：R949 实证 vertical-align on/off = 117a 不变（13.59% 两边），**单改 (a) 公式无 yield**——paint Path A（stored Ahem 容器）不消费 run.y。Phase-A 双路径 deadlock 确证。
+
+**③ Phase 1 契约（RFC §4.3 要求）**：yield 须 **(a)+(b) 同改**——(a) layout 拆 TextBottom arm = (baseline_y + descent) - run.height；(b) paint Path A 消费 stored run.y（当前 dead）。单 (a) = R949 no-yield；单 (b) 无正确 (a) = 错位。即 R876「三方同改非单点」。**117a 单 session slice 不可行**（paint-dead）。
+
+**④ 裁决**：本轮 read-only 数据采集，探针加后删，**零 net 源码变化**（git 仅 evidence 报告 + master.md）。建立 Phase 0 契约供未来 Phase-A 统一用（linebox-metric-rfc §5 6-Phase 计划 / phase-a-IFC-design）。详见 [`evidence/r975-phase0-vertical-align-117a-probe.txt`](./evidence/r975-phase0-vertical-align-117a-probe.txt)。
+
+**意义**：执行了 RFC 一直要求但 6 次 net-negative 跳过的 Phase 0 探针——**确证 deadlock 机制精确（layout 公式 + paint-dead 双因）+ 量化偏差（45px）**，为未来 Phase-A 攻坚提供契约（避免再次盲改 net-negative）。**非 measurable 进展**（纯调查，117a 通过率不变）。
+
+**▶ 下会话**：font-metric 墙 deadlock 经 Phase 0 精确确证（须 (a) layout TextBottom 公式 + (b) paint Path A 消费 run.y 同改，多 session Phase-A 架构）。rendering-compat 单 session measurable 仍结构性耗尽（8 次确认）。务实选项：① **启动 Phase-A IFC 统一多会话攻坚**（linebox-metric-rfc §5 6-Phase，须 (a)+(b) 同改，单 session 不可行——跨会话推进，每会话一 Phase + 三态门禁）；② 转 zero-web 其他子目标（rendering-compat 单 session 已尽）。single-session clean measurable lever 勿再扫。
+
 ### 已 ruled out（勿以单会话重试）
 
 near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / **column-aware IFC Phase 1（pure-inline balance 明确高度）(R381)**：执行 column-aware-IFC-spec.md §10 gate「假设 A1」，扫描全 16 css-multicol 失败案结构（height/column-fill/blockchildren），**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）——每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套；spec 自身协议「A1 不存在→紧急停止转 Phase 2」生效，Phase 1 零杠杆关闭，真实 multicol lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）/ baseline-export 3 机制(R266–R316) / **advance-width(R225–R375b) definitive 关闭**：R375 hand-crafted DejaVu 表 morning 16.41→19.14% + R375b fontdue-actual advance（临时加 fontdue dep+缓存 Font+metrics.advance_width）16.41→19.08%，双 variant 均退步；fontdue-actual（最后未测变体）亦证伪。根因：accurate DejaVuSans advance 使换行偏离 chromium（system-ui≠DejaVuSans 或换行算法不同），0.55 启发式碰巧更近。advance-width 非 morning cascade 根因/ blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304) / inline-flex·inline-grid width:auto shrink-to-fit（R370：probe 实证 inline-flex width:auto 同 inline-block 拉伸到满宽 800，是真 bug，但**零杠杆**——全 48 失败案 + product-smoke fixture 均不用 inline-flex/inline-grid width:auto；fix 需 flex_row_intrinsic_width（非 box_content_max_width，flex row 须求和 block 子元素非取 max），复杂且无 reftest/smoke 收益，按 code-guidelines「不做零价值修改」不修，勿再以单会话重试）/ **percent max-width/min-height/min-width clamping（R119 analog，doc-agent 复核 ~0 yield，闭）**：engine.rs:1408 仅 `clamp_percentage_max_height`，无 max-width/min 平行函数——但 max-width-091(percent)✓ + min-height-091/092(percent)✓ 均 PASS（block width 定值→taffy 直接钳；min-height 是测量期 floor 非 content re-clamp）；R119 缺口唯一 max-height-specific（auto-height 内容测量 re-clamp），已修即完整 percent-clamp，无平行 lever，勿以 R119 类比重扫 / **intrinsic-keyword sizing（max-content/min-content/fit-content，R97 谱系，doc-agent 复核 = 非 clean 单会话 lever）**：121 测试文件用此三关键字，但**全集中在 taffy-blocked 上下文**（css-multicol/tables/flexbox intrinsic-size/table-intrinsic-size/flex-item-*-content），CSS2 block/inline-block 上下文**仅 1 案且为 crash-test**（inline-negative-margin-minmax-crash-001，非 sizing-correctness）→ memory「block/inline-block 可独立做」slice **无 dedicated driving test**（~0 可测 yield）；max-content/min-content parse_basic.rs 解析但 resolve 丢信号→0（R97/max-content memory），修复须保留信号+shrink-to-fit 触发，grid/flex/multicol/table 受 taffy 容器不 shrink 阻塞 = 多会话/结构性，勿以单会话重扫。 / **NBSP/Unicode-space collapse (R651 read-only 复核·非 lever)**：`collapse_whitespace`（inline/mod.rs:231）用 Rust `char::is_whitespace()` 折叠 NBSP(U+00A0)/U+3000 等，违反 CSS Text 3 §4.1.1（仅 TAB/LF/FF/CR/space 可折叠）——真 correctness bug，但 collapse 上下文（normal/nowrap/pre-line）**无 reftest 覆盖**（white-space-collapse-001 是 testharness JS `assert_equals(offsetWidth)` 测，非 reftest）；NBSP reftests（white-space-pre-031/032/034/035）全在 `pre` 上下文（preserve 路径不经 collapse）实测 PASS @2.64%。无 driving reftest → 非 lever（product-smoke 影响 negligible，NBSP 罕见于 fixture），defer；R647 category (b) 的 NBSP 角度据此关闭。
