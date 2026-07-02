@@ -13,8 +13,8 @@ use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, LineCap, StrokePrimitive};
 use zero_style_system::{
     ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
-    ComputedStyle, ContentComputedValue, ObjectFitComputedValue, TabSizeValue, TextAlignLastValue, TextAlignValue,
-    TextOverflowValue, WhiteSpaceValue,
+    ComputedStyle, ContentComputedValue, DirectionValue, ObjectFitComputedValue, TabSizeValue, TextAlignLastValue,
+    TextAlignValue, TextOverflowValue, WhiteSpaceValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -782,21 +782,40 @@ impl super::Painter {
                 _ => WordBreakMode::Normal,
             };
 
-            // 将 CSS text-align 映射到布局引擎的 TextAlign
+            // 将 CSS text-align 映射到布局引擎的 TextAlign。
+            // `start`/`end` 方向感知（CSS Text 3 §6.1）：start = LTR→left / RTL→right，end 反之。
+            let is_rtl = matches!(style.direction, DirectionValue::Rtl);
             let text_align = match style.text_align {
-                TextAlignValue::Left | TextAlignValue::Start => TextAlign::Left,
-                TextAlignValue::Right | TextAlignValue::End => TextAlign::Right,
+                TextAlignValue::Left => TextAlign::Left,
+                TextAlignValue::Right => TextAlign::Right,
                 TextAlignValue::Center => TextAlign::Center,
                 TextAlignValue::Justify => TextAlign::Justify,
+                TextAlignValue::Start => {
+                    if is_rtl {
+                        TextAlign::Right
+                    } else {
+                        TextAlign::Left
+                    }
+                }
+                TextAlignValue::End => {
+                    if is_rtl {
+                        TextAlign::Left
+                    } else {
+                        TextAlign::Right
+                    }
+                }
             };
 
-            // 将 CSS text-align-last 映射到布局引擎（Auto = 跟随 text-align）
+            // 将 CSS text-align-last 映射到布局引擎（Auto = 跟随 text-align）。
+            // start/end 同样方向感知。
             let text_align_last = match &style.text_align_last {
                 TextAlignLastValue::Auto => None,
-                TextAlignLastValue::Left | TextAlignLastValue::Start => Some(TextAlign::Left),
-                TextAlignLastValue::Right | TextAlignLastValue::End => Some(TextAlign::Right),
+                TextAlignLastValue::Left => Some(TextAlign::Left),
+                TextAlignLastValue::Right => Some(TextAlign::Right),
                 TextAlignLastValue::Center => Some(TextAlign::Center),
                 TextAlignLastValue::Justify => Some(TextAlign::Justify),
+                TextAlignLastValue::Start => Some(if is_rtl { TextAlign::Right } else { TextAlign::Left }),
+                TextAlignLastValue::End => Some(if is_rtl { TextAlign::Left } else { TextAlign::Right }),
             };
 
             // text-indent 首行缩进（px）：Px/Em（×font_size）/Percentage（×container_width，CSS §10.3.1）。
