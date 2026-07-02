@@ -2083,6 +2083,14 @@ impl BrowserApp {
 // 拆分到独立文件以控制 app.rs 体积
 include!("app_input.rs");
 
+// 键盘输入处理（handle_key 及 find/address_bar/global 等键处理）
+// 从 app_input.rs 进一步拆分以控制单文件体积
+include!("app_input_keys.rs");
+
+// 右键上下文菜单动作（show_context_menu / activate_context_menu_item 等）
+// 从 app_input.rs 进一步拆分以控制单文件体积
+include!("app_input_context_menus.rs");
+
 // 渲染方法（build_scene 及所有 render_*）
 // 拆分到独立文件以控制 app.rs 体积
 include!("app_render.rs");
