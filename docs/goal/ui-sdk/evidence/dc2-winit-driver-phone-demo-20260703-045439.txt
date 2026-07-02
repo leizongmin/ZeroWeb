@@ -1,0 +1,75 @@
+DC-2 WinitDriver 接入 phone_demo — 手势 arena 端到端证明（M4 SDK-side）
+====================================================================
+日期：2026-07-03
+分支：ui-sdk
+commit：f191de5c  ui-sdk(M4/DC-2): phone_demo 接入 WinitDriver — 手势 arena 端到端证明
+（同轮 merge origin/main f8293b20：rendering-compat master.md doc-only，零冲突）
+
+## 目的
+
+WinitDriver 先前已覆盖指针点击（counter）/ 键盘输入 + Tab 焦点 + Enter 提交 + 校验 +
+ime_rect（form）/ metrics·tokens 变化（driver 自身测）。**唯一缺口 = 手势路径**（Tap/Pinch
+经 driver.pump_event 喂入 GestureArena）。本轮把 phone_demo 的 retained 闭环从手写
+host.set_root/layout/paint/dispatch_event 改为经 WinitDriver 驱动，补齐手势路径，
+**WinitDriver 现覆盖全部交互路径**。
+
+## 交付
+
+- `browser-ui/chrome/Cargo.toml` + Cargo.lock：加 zero-ui-adapter-winit regular dep
+  （phone_demo 在 src/；chrome→ui/adapters 允许，DC-1）。
+- `browser-ui/chrome/src/phone_demo.rs`：
+  · 加 PhoneDemoApp（impl UiApp：root_spec 返回 phone shell build 的声明树；dispatch→
+    UnknownAction，phone demo 是只读渲染 fixture 无 reducer；真实宿主在此接 BrowserAction）。
+  · run_phone_demo 改经 WinitDriver：register factories → host_mut().set_gesture_arena →
+    begin → pump_event（单指 Tap + 双指 Pinch，多指经 pointer_id）→ pump_frame →
+    host_mut().take_gestures()。
+  · 平台 back 仲裁 + navigator 回落保持独立（BackNavigationService→RouteStack，非 driver 路径）。
+
+## example 实跑（cargo run -p zero-browser-chrome --example phone_demo）
+
+    adaptive shell: Phone
+    Scene: 5 entries（chrome + viewport 填充，safe_area 避让）
+    SDK chrome 布局：内容区 viewport 顶部 y=95.0px（避让顶部 safe_area），底部导航栏高 56.0px
+    识别手势: ["Tap", "Pinch"]
+    平台 back #1（注册 overlay handler）→ Handled(BackHandlerId("overlay"))（消耗，不退栈）
+    平台 back #2（无 handler）→ DefaultBack → Navigator.pop，剩余 nav depth=1
+
+Tap + Pinch 经 driver.pump_event 喂入 arena 正确识别（与 host 直驱路径一致）。
+
+## 测试（scoped test-guard）
+
+    $ ./target/test-guard -- cargo test -p zero-browser-chrome phone_demo
+    test phone_demo::tests::phone_demo_safe_area_and_bottom_nav ... ok
+    test phone_demo::tests::phone_demo_selects_phone_shell_and_renders ... ok
+    test phone_demo::tests::phone_demo_gestures_and_back_arbitration ... ok   （经 driver 识别 Tap/Pinch）
+    test result: ok. 3 passed; 0 failed
+
+    $ ./target/test-guard -- cargo test -p zero-browser-chrome
+    test result: ok. 84 passed; 0 failed   （全 chrome 测，phone_demo 改经 driver 零回归）
+
+## 门禁
+
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — CLEAN。
+- ./target/test-guard -- cargo test -p zero-browser-chrome — 84 测全绿（含 3 phone_demo 经 driver）。
+- DC-1 复核：chrome→adapter-winit（ui/*+winit），chrome 允许依赖 ui/adapters（DC-1）；
+  adapter-winit 不引入浏览器业务 crate。
+
+## 结论：WinitDriver 现已证明覆盖全部交互路径
+
+| 路径 | 证明来源 |
+|------|----------|
+| 指针点击 + 重建 + 稳定 WidgetId 复用 | counter（commit 3a6a6d07） |
+| 键盘输入 + Tab 焦点遍历 + Enter 提交 + 校验 + ime_rect | form（commit 39e81888） |
+| metrics/tokens 变化（resize/text_scale/theme） | driver 自身 6 测（commit 75e30a6c） |
+| UnknownAction 不重建 | driver 自身测 + counter/form |
+| **手势 arena（Tap/Pan/Pinch/Fling）** | **phone_demo（本轮 commit f191de5c）** |
+
+## 风险
+
+- SDK-only（browser-ui/chrome phone_demo 未触渲染像素/浏览器运行时）→ 无 product-smoke 风险。
+- 真实 winit EventLoop::run 阻塞壳（开窗/surface/首帧）仍需 GUI——driver 是其可组合核心，
+  现覆盖全部交互路径；剩余唯一项 = 把 driver 接入阻塞 EventLoop（需 GUI 验证首帧）。
+- browser_shell_demo（chrome 组合 + FocusScope + WebView surface）尚未经 driver——
+  follow-up（同模式，证明 driver + FocusScope trap + ExternalSurface）。
