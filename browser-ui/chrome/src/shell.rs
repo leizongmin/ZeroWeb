@@ -369,8 +369,9 @@ mod tests {
     use zero_ui_core::geometry::{Insets, Size};
 
     fn metrics(width: f32, height: f32, safe_bottom: f32, kb_bottom: f32) -> WindowMetrics {
+        let logical_size = Size::new(width, height);
         WindowMetrics {
-            logical_size: Size::new(width, height),
+            logical_size,
             scale_factor: 1.0,
             safe_area: Insets {
                 left: 0.0,
@@ -385,6 +386,8 @@ mod tests {
                 bottom: kb_bottom,
             },
             text_scale: 1.0,
+            density: 1.0,
+            orientation: zero_ui_core::layout::Orientation::from_size(logical_size),
         }
     }
 

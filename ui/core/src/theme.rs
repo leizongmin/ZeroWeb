@@ -307,6 +307,16 @@ impl SpacingTokens {
     pub fn default_spacing() -> SpacingTokens {
         SpacingTokens { unit: 4.0 }
     }
+
+    /// 按 `density` 缩放间距栅格（spec IF-009 `density` / DC-15 移动端布局密度）。
+    ///
+    /// 缩放基础步长 `unit`（影响 padding/margin/栅格），`density` 钳到 `> 0.0`
+    /// （非正数视为 1.0，防退化）。间距变化会触发 `needs_layout`（见 [`diff_invalidation`]）。
+    /// 与 [`TypographyTokens::scaled`]（text_scale）正交：density 不影响文本测量。
+    pub fn scaled(self, density: f32) -> SpacingTokens {
+        let d = if density > 0.0 { density } else { 1.0 };
+        SpacingTokens { unit: self.unit * d }
+    }
 }
 
 /// 圆角 token。
@@ -454,11 +464,11 @@ impl ThemeResolver {
         }
     }
 
-    /// 由偏好 + 系统快照 + 窗口度量构建主题（spec IF-009 / DC-15 移动端「text scale」）。
+    /// 由偏好 + 系统快照 + 窗口度量构建主题（spec IF-009 / DC-15 移动端「text scale」+「density」）。
     ///
-    /// 在 [`build_theme`] 基础上应用 `metrics.text_scale` 缩放字号——这是 runtime 在窗口度量
-    /// 变化（如用户调整系统字号）时重建主题的统一入口。`text_scale != 1.0` 会改变 typography
-    /// → 经 [`diff_invalidation`] 触发 `needs_layout`（影响文本测量）。
+    /// 在 [`build_theme`] 基础上应用 `metrics.text_scale`（缩字号）与 `metrics.density`（缩间距）——
+    /// 这是 runtime 在窗口度量变化（用户调字号/密度）时重建主题的统一入口。任一改变会改变
+    /// typography 或 spacing → 经 [`diff_invalidation`] 触发 `needs_layout`。
     pub fn build_theme_with_metrics(
         id: ThemeId,
         name: &str,
@@ -470,6 +480,7 @@ impl ThemeResolver {
         let scheme = Self::resolve_scheme(preference, system);
         let mut theme = Self::build_theme(id, name, scheme, palette);
         theme.typography = theme.typography.scaled(metrics.text_scale);
+        theme.spacing = theme.spacing.scaled(metrics.density);
         theme
     }
 }
@@ -764,6 +775,8 @@ mod tests {
             safe_area: crate::geometry::Insets::all(0.0),
             keyboard_insets: crate::geometry::Insets::all(0.0),
             text_scale: 1.25,
+            density: 1.5,
+            orientation: crate::layout::Orientation::Landscape,
         };
         let theme = ThemeResolver::build_theme_with_metrics(
             ThemeId::new("zero"),
@@ -773,7 +786,9 @@ mod tests {
             ColorPalette::default(),
             metrics,
         );
+        // text_scale 缩字号；density 缩间距（两者正交）。
         assert!((theme.typography.body_size_px - 14.0 * 1.25).abs() < 1e-6);
+        assert!((theme.spacing.unit - 4.0 * 1.5).abs() < 1e-6);
         let _ = DEFAULT_TEXT_SCALE;
     }
 
@@ -792,6 +807,8 @@ mod tests {
             safe_area: crate::geometry::Insets::all(0.0),
             keyboard_insets: crate::geometry::Insets::all(0.0),
             text_scale: 1.0,
+            density: 1.0,
+            orientation: crate::layout::Orientation::Landscape,
         };
         let scaled_metrics = WindowMetrics {
             text_scale: 1.5,
@@ -817,6 +834,65 @@ mod tests {
         assert!(
             inv.contains(InvalidationFlags::NEEDS_LAYOUT),
             "text_scale change must request layout (text re-measure)"
+        );
+        assert!(inv.contains(InvalidationFlags::NEEDS_PAINT));
+    }
+
+    #[test]
+    fn spacing_scaled_scales_unit_only() {
+        // DC-15 density：SpacingTokens.unit 按 density 缩放；非正数视为 1.0 防退化。
+        let base = SpacingTokens::default_spacing();
+        assert!((base.scaled(2.0).unit - 4.0 * 2.0).abs() < 1e-6);
+        assert!((base.scaled(0.5).unit - 4.0 * 0.5).abs() < 1e-6);
+        assert_eq!(base.scaled(0.0).unit, base.unit);
+        assert_eq!(base.scaled(-1.0).unit, base.unit);
+    }
+
+    #[test]
+    fn density_change_requests_layout_invalidation() {
+        // DC-15 关键不变量：density 改变 → spacing 改变 → diff_invalidation 标 needs_layout。
+        // density 影响布局（间距重排）的统一可验证路径；与 text_scale 正交。
+        use crate::layout::WindowMetrics;
+        let sys = SystemThemeSnapshot {
+            system_scheme: ResolvedColorScheme::Light,
+            high_contrast: false,
+        };
+        let base_metrics = WindowMetrics {
+            logical_size: crate::geometry::Size::new(800.0, 600.0),
+            scale_factor: 1.0,
+            safe_area: crate::geometry::Insets::all(0.0),
+            keyboard_insets: crate::geometry::Insets::all(0.0),
+            text_scale: 1.0,
+            density: 1.0,
+            orientation: crate::layout::Orientation::Landscape,
+        };
+        let dense_metrics = WindowMetrics {
+            density: 1.75,
+            ..base_metrics
+        };
+        let t1 = ThemeResolver::build_theme_with_metrics(
+            ThemeId::new("zero"),
+            "Zero",
+            &ColorSchemePreference::Light,
+            sys,
+            ColorPalette::default(),
+            base_metrics,
+        );
+        let t2 = ThemeResolver::build_theme_with_metrics(
+            ThemeId::new("zero"),
+            "Zero",
+            &ColorSchemePreference::Light,
+            sys,
+            ColorPalette::default(),
+            dense_metrics,
+        );
+        // density 改了 spacing，没改 typography（正交）。
+        assert_ne!(t1.spacing, t2.spacing);
+        assert_eq!(t1.typography, t2.typography);
+        let inv = diff_invalidation(&t1, &t2);
+        assert!(
+            inv.contains(InvalidationFlags::NEEDS_LAYOUT),
+            "density change must request layout (spacing re-flow)"
         );
         assert!(inv.contains(InvalidationFlags::NEEDS_PAINT));
     }

@@ -697,12 +697,15 @@ fn compose_sdk_chrome_overlay(
     let Some(image_cache) = image_cache else {
         return;
     };
+    let logical_size = Size::new(width as f32, height as f32);
     let metrics = WindowMetrics {
-        logical_size: Size::new(width as f32, height as f32),
+        logical_size,
         scale_factor: 1.0,
         safe_area: Insets::all(0.0),
         keyboard_insets: Insets::all(0.0),
         text_scale: 1.0,
+        density: 1.0,
+        orientation: zero_ui_core::layout::Orientation::from_size(logical_size),
     };
     let backend = sdk_font_backend();
     let bridge = render_chrome_via_sdk(shell, &metrics, &SemanticTokens::light(), backend);
@@ -744,12 +747,15 @@ fn compose_sdk_chrome_replacement(
     };
 
     let backend = sdk_font_backend();
+    let logical_size = Size::new(width as f32, height as f32);
     let metrics = WindowMetrics {
-        logical_size: Size::new(width as f32, height as f32),
+        logical_size,
         scale_factor: 1.0,
         safe_area: Insets::all(0.0),
         keyboard_insets: Insets::all(0.0),
         text_scale: 1.0,
+        density: 1.0,
+        orientation: zero_ui_core::layout::Orientation::from_size(logical_size),
     };
     let (bridge, viewport_rect) =
         render_chrome_via_sdk_with_layout(shell, &metrics, &SemanticTokens::light(), backend);
@@ -975,12 +981,15 @@ fn compose_sdk_chrome_replacement_with_webview(
     };
 
     let backend = sdk_font_backend();
+    let logical_size = Size::new(width as f32, height as f32);
     let metrics = WindowMetrics {
-        logical_size: Size::new(width as f32, height as f32),
+        logical_size,
         scale_factor: 1.0,
         safe_area: Insets::all(0.0),
         keyboard_insets: Insets::all(0.0),
         text_scale: 1.0,
+        density: 1.0,
+        orientation: zero_ui_core::layout::Orientation::from_size(logical_size),
     };
 
     // 构建 WebView surface：页面 fills + webview 额外图元。

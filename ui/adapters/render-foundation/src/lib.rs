@@ -921,6 +921,8 @@ mod tests {
             safe_area: Insets::all(0.0),
             keyboard_insets: Insets::all(0.0),
             text_scale: 1.0,
+            density: 1.0,
+            orientation: zero_ui_core::layout::Orientation::Landscape,
         };
         let spec = DesktopBrowserShell.build(&model, &metrics);
 
@@ -1052,6 +1054,8 @@ mod tests {
             safe_area: Insets::all(0.0),
             keyboard_insets: Insets::all(0.0),
             text_scale: 1.0,
+            density: 1.0,
+            orientation: zero_ui_core::layout::Orientation::Landscape,
         };
 
         // SDK chrome 渲染 → bridge（fills + 文本 ImagePrimitive + glyph cache）。
@@ -1111,6 +1115,8 @@ mod tests {
             safe_area: Insets::all(0.0),
             keyboard_insets: Insets::all(0.0),
             text_scale: 1.0,
+            density: 1.0,
+            orientation: zero_ui_core::layout::Orientation::Landscape,
         };
 
         // 模拟 WebView 渲染输出（一个填充矩形）。

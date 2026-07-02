@@ -269,12 +269,15 @@ mod tests {
     use zero_ui_render::render_node::RenderPrimitive;
 
     fn metrics(w: f32, h: f32) -> WindowMetrics {
+        let logical_size = Size::new(w, h);
         WindowMetrics {
-            logical_size: Size::new(w, h),
+            logical_size,
             scale_factor: 1.0,
             safe_area: Insets::all(0.0),
             keyboard_insets: Insets::all(0.0),
             text_scale: 1.0,
+            density: 1.0,
+            orientation: zero_ui_core::layout::Orientation::from_size(logical_size),
         }
     }
 

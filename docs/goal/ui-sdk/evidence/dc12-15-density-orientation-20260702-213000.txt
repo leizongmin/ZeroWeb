@@ -1,0 +1,87 @@
+# DC-12/DC-15 WindowMetrics density + orientation 字段（2026-07-02）
+
+## 缺口（本轮修复）
+
+上轮补齐 `text_scale` 后，`WindowMetrics` 仍缺 spec §IF-009 列出的另两个字段（spec line
+1268-1279 权威 struct 定义）：
+
+```rust
+pub struct WindowMetrics {
+    pub viewport: Size, pub density: f32, pub text_scale: f32, pub safe_area: Insets,
+    pub soft_keyboard: Option<Rect>, pub orientation: Orientation, ...
+}
+```
+
+缺：`density: f32`（布局密度）与 `orientation: Orientation`（屏幕方向）。两者均为 DC-15
+移动端关键概念（spec line 582「density、text scale」/ line 1543 / 2103）。
+
+## 语义决策（写入 master.md 依赖决策日志）
+
+- **`density: f32` = 布局密度缩放系数**（非设备 DPI bucket——后者已由 `scale_factor` 承载）。
+  消费者：`SpacingTokens::scaled(density)` 缩放间距栅格 `unit`（Material「compact/comfortable」语义）；
+  与 `text_scale`（缩字号）正交，不影响文本测量。`DEFAULT_DENSITY = 1.0`。
+- **`orientation: Orientation { Portrait, Landscape }`**：由 `logical_size` 派生
+  （`from_size`：高>宽 Portrait，否则 Landscape；正方形按 Landscape）。M4 移动端 adaptive
+  shell 选择消费（phone 横屏 vs 竖屏 chrome 差异）。
+
+## 修复
+
+1. **`ui/core/src/layout.rs`**：
+   - 新增 `pub const DEFAULT_DENSITY: f32 = 1.0`。
+   - 新增 `pub enum Orientation { Portrait, Landscape }` + `from_size(Size)`。
+   - `WindowMetrics` 加 `density: f32` + `orientation: Orientation` 字段。
+2. **`ui/core/src/theme.rs`**：
+   - `SpacingTokens::scaled(density)`（缩 `unit`，非正数防退化）。
+   - `build_theme_with_metrics` 扩展：应用 `text_scale`→typography **且** `density`→spacing。
+3. **全仓 WindowMetrics 构造点同步**（11 处，机械补字段，零行为变化）：
+   - `ui/adapters/winit/src/event_map.rs::map_window_metrics`（生产桥，bind logical_size→
+     orientation from_size；density=DEFAULT_DENSITY）
+   - `ui/adapters/render-foundation/src/lib.rs`（3 处）、`ui/dsl/src/loader.rs`（2 处）、
+     `apps/browser/src/app_platform.rs`（3 处 bind logical_size）、
+     `browser-ui/chrome/{examples/chrome_scene.rs, src/render.rs, src/sdk_render.rs, src/shell.rs}`（4 处）
+
+## 验证（可量化）
+
+新增 4 测：
+- `layout::tests::density_defaults_to_baseline`：density 字段存在，默认 1.0。
+- `layout::tests::orientation_derived_from_size`：Portrait/Landscape 派生（390×844 Portrait /
+  844×390 Landscape / 600×600 Landscape；helper 按 width 派生 390→Portrait / 1280→Landscape）。
+- `theme::tests::spacing_scaled_scales_unit_only`：unit 按 density 缩放，非正数（0.0/-1.0）视为 1.0。
+- `theme::tests::density_change_requests_layout_invalidation`：**DC-15 关键不变量**——
+  density 1.0→1.75 → spacing 改变（typography 不变，证明与 text_scale 正交）→
+  `diff_invalidation` 标 needs_layout+needs_paint。
+- 上轮 `build_theme_with_metrics_applies_text_scale` 扩展断言 density 1.5→spacing.unit=6.0（端到端双缩放）。
+
+## 门禁
+
+- `./target/test-guard -- cargo test -p zero-ui-core` → 68 passed（含 4 新 density/orientation 测），0 failed。
+- 下游全绿：adapter-render-foundation 20 / adapter-winit 22 / dsl 50 / chrome 85，0 failed。
+- **`./target/test-guard -- cargo test -p zero-browser` → 189 passed; 0 failed**（DC-14 零回归硬门禁 ✓）。
+- `cargo build --workspace` Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` Finished（0 警告）。
+- `cargo fmt --all --check` 净。
+
+## 风险
+
+**SDK-only + 机械字段补全**：ui/core 未触碰 render-foundation/浏览器页面渲染 → welcome.html
+页面像素不变 → **无 product-smoke 风险**。所有构造点仅补 `density: 1.0`（=DEFAULT_DENSITY）
++ orientation 由尺寸派生，默认路径逐位不变（189 browser 测零回归已证）。
+
+## 意义
+
+**WindowMetrics §IF-009 字段集合补全**（viewport/safe_area/keyboard/text_scale/density/orientation
+全部到位；scale_factor 为 HiDPI，对应 spec 的 density-bucket 已由其承载）。DC-12/DC-15 移动端
+自适应数据入口完整：text_scale（字号）+ density（间距）双缩放闭环 + orientation（方向）就绪。
+剩余 = M4 移动 runtime 实际探测 density/orientation 并经 adaptive shell 消费（DC-15）。
+
+## WindowMetrics §IF-009 覆盖对照
+
+| spec 字段 | 我们的字段 | 状态 |
+|-----------|-----------|------|
+| viewport: Size | logical_size: Size | ✅（命名务实） |
+| density: f32 | density: f32 | ✅ 本轮 |
+| text_scale: f32 | text_scale: f32 | ✅ 上轮 |
+| safe_area: Insets | safe_area: Insets | ✅ |
+| soft_keyboard: Option<Rect> | keyboard_insets: Insets | ✅（语义等价，0=无遮挡） |
+| orientation: Orientation | orientation: Orientation | ✅ 本轮 |
+| viewport_class / platform_class / input_class | 由 ViewportClass::from_width + AdaptiveBranch 承载 | ✅（务实拆分，非内联字段） |

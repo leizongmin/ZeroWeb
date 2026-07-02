@@ -16,6 +16,33 @@ pub type ScaleFactor = f32;
 /// 有效范围 `> 0.0`；`1.0` 为基线，`> 1.0` 放大字号（触发 layout 失效），`< 1.0` 缩小。
 pub const DEFAULT_TEXT_SCALE: f32 = 1.0;
 
+/// 布局密度缩放的默认值（1.0 = 标准密度）。
+///
+/// spec IF-009：`WindowMetrics` 承载 `density`（移动端「compact/comfortable」布局密度）。
+/// 与 `scale_factor`（HiDPI 设备像素比）不同——density 缩放**间距/图标尺寸**
+/// （`SpacingTokens`），不改变文本测量。`1.0` 标准、`>1.0` 舒朗、`<1.0` 紧凑。
+pub const DEFAULT_DENSITY: f32 = 1.0;
+
+/// 屏幕方向（spec IF-009 `Orientation`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Orientation {
+    /// 竖屏：高 > 宽。
+    Portrait,
+    /// 横屏：宽 > 高。
+    Landscape,
+}
+
+impl Orientation {
+    /// 由逻辑尺寸推断方向（宽 < 高 → Portrait；否则 Landscape；正方形按 Landscape）。
+    pub fn from_size(size: Size) -> Orientation {
+        if size.height > size.width {
+            Orientation::Portrait
+        } else {
+            Orientation::Landscape
+        }
+    }
+}
+
 /// 窗口度量（spec IF-009 `WindowMetrics`）。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct WindowMetrics {
@@ -31,6 +58,13 @@ pub struct WindowMetrics {
     /// 改变本值会缩放 `TypographyTokens`（→ 触发 `needs_layout`），是 DC-15 移动端
     /// 「text scale」适配的数据入口。桌面端固定 1.0；移动端由 M4 runtime 从系统设置探测。
     pub text_scale: f32,
+    /// 布局密度（spec IF-009，移动端「compact/comfortable」间距密度；`DEFAULT_DENSITY`=1.0）。
+    ///
+    /// 缩放 `SpacingTokens`（→ 触发 `needs_layout`），不影响文本测量（区别于 `text_scale`）。
+    /// 桌面端固定 1.0；移动端由 M4 runtime 按用户密度偏好或设备 bucket 探测。
+    pub density: f32,
+    /// 屏幕方向（spec IF-009，Portrait/Landscape；由 `logical_size` 派生，M4 移动端 adaptive 消费）。
+    pub orientation: Orientation,
 }
 
 impl WindowMetrics {
@@ -120,6 +154,8 @@ mod tests {
             safe_area: Insets::all(0.0),
             keyboard_insets: Insets::all(0.0),
             text_scale: DEFAULT_TEXT_SCALE,
+            density: DEFAULT_DENSITY,
+            orientation: Orientation::from_size(Size::new(width, 800.0)),
         }
     }
 
@@ -157,5 +193,25 @@ mod tests {
         let m = metrics(800.0);
         assert_eq!(m.text_scale, DEFAULT_TEXT_SCALE);
         assert_eq!(DEFAULT_TEXT_SCALE, 1.0);
+    }
+
+    #[test]
+    fn density_defaults_to_baseline() {
+        // spec IF-009：WindowMetrics 必须承载 density（布局密度）。默认 = 1.0（标准）。
+        let m = metrics(800.0);
+        assert_eq!(m.density, DEFAULT_DENSITY);
+        assert_eq!(DEFAULT_DENSITY, 1.0);
+    }
+
+    #[test]
+    fn orientation_derived_from_size() {
+        // spec IF-009：WindowMetrics 承载 orientation（Portrait/Landscape），由尺寸派生。
+        assert_eq!(Orientation::from_size(Size::new(390.0, 844.0)), Orientation::Portrait);
+        assert_eq!(Orientation::from_size(Size::new(844.0, 390.0)), Orientation::Landscape);
+        // 正方形按 Landscape（宽不严格小于高）。
+        assert_eq!(Orientation::from_size(Size::new(600.0, 600.0)), Orientation::Landscape);
+        // 测试 helper 按尺寸派生：宽 390<高 800 → Portrait；宽 1280>高 800 → Landscape。
+        assert_eq!(metrics(390.0).orientation, Orientation::Portrait);
+        assert_eq!(metrics(1280.0).orientation, Orientation::Landscape);
     }
 }
