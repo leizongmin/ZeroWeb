@@ -1,0 +1,32 @@
+DC-11 FontLoader 共享 FontdueBackend 基础设施（2026-07-02）
+
+新增能力：
+- FontLoader.shared_backend: Option<Arc<Mutex<FontdueBackend>>>
+- FontLoader.shared_ids: HashMap<u32, FtFontId>（rf_id → ft_id 映射）
+- set_shared_backend(Arc<Mutex<FontdueBackend>>) — 设置共享后端并同步已有字体
+- has_shared_backend() / shared_backend() / shared_id_of(u32) 访问器
+- load_font / load_font_with_family 在共享后端设置后自动同步新加载字体
+- sync_to_shared() 内部方法
+
+测试（7 新）：
+- dc11_set_shared_backend_syncs_existing_fonts — 设置后已有字体同步
+- dc11_load_font_auto_syncs_to_shared_backend — load_font 自动同步
+- dc11_load_font_with_family_auto_syncs — load_font_with_family 自动同步
+- dc11_multiple_fonts_have_distinct_shared_ids — 多字体 ID 映射唯一
+- dc11_without_shared_backend_returns_none — 未设置时返回 None
+- dc11_sync_failure_does_not_block_fontloader — 同步失败不阻塞 FontLoader
+- dc11_shared_backend_raster_equivalence — 双方产出有效光栅位图
+
+门禁：
+- cargo build --workspace: green
+- cargo clippy --workspace --all-targets -- -D warnings: green
+- cargo fmt --all --check: green
+- cargo test -p zero-render-foundation: 523 passed (含 9 DC-11 测)
+- cargo test -p zero-browser: 189 passed (default) / 195 passed (sdk-chrome)
+- make product-smoke: 19.87% = baseline（零回归）
+
+关键设计：
+- 默认 shared_backend=None → 零行为变化 → 零 product-smoke 风险
+- 设置后自动同步 → caller 控制何时激活共享
+- Ahem 特殊处理保留在 FontLoader（不改变 WPT 兼容性）
+- parking_lot::Mutex 提供线程安全（FontdueBackend::load_family 需 &mut self）
