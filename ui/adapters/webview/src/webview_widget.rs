@@ -190,6 +190,7 @@ mod tests {
             recorder: &mut rec,
             clip: Some(rect),
             offset: Vec2::ZERO,
+            tokens: &zero_ui_core::theme::SemanticTokens::light(),
         };
         w.paint(&mut ctx);
         let scene = rec.finish();

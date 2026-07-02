@@ -7,7 +7,7 @@ use zero_ui_core::action::{ActionId, EventResult};
 use zero_ui_core::event::{PointerButton, PointerPhase, UiEvent};
 use zero_ui_core::geometry::{Constraints, Rect, Size};
 use zero_ui_core::semantics::{SemanticsFlags, SemanticsLabel, SemanticsNode};
-use zero_ui_core::theme::Color;
+use zero_ui_core::theme::{Color, SemanticTokens};
 use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget};
 
 /// 按钮声明。
@@ -44,16 +44,23 @@ impl Button {
         }
     }
 
-    fn background(&self) -> Color {
+    /// 按钮背景色（DC-5：从 semantic token 派生，不硬编码浏览器色值）。
+    ///
+    /// - default = `primary`
+    /// - hover = `primary.lighten(0.12)`（变亮，交互态；WCAG 对瞬态放宽）
+    /// - pressed = `primary.darken(0.12)`（变暗）
+    /// - disabled = `on_surface` 与 `surface` 中和的中性灰（WCAG 豁免禁用态，仍 token 派生）
+    fn background(&self, tokens: &SemanticTokens) -> Color {
         if !self.spec.enabled {
-            return Color::rgb(0.6, 0.6, 0.6);
+            return tokens.on_surface.mix(tokens.surface, 0.55);
         }
+        let primary = tokens.primary;
         if self.pressed {
-            Color::rgb(0.10, 0.46, 0.76)
+            primary.darken(0.12)
         } else if self.hover {
-            Color::rgb(0.16, 0.64, 1.0)
+            primary.lighten(0.12)
         } else {
-            Color::rgb(0.13, 0.58, 0.95)
+            primary
         }
     }
 }
@@ -115,7 +122,7 @@ impl Widget for Button {
     fn paint(&mut self, ctx: &mut PaintCtx) {
         // M1：填充背景 + 边框；文本绘制在 M2 接 text foundation 后补。
         ctx.recorder
-            .fill_rect(Rect::from_ltrb(0.0, 0.0, 96.0, 32.0), self.background());
+            .fill_rect(Rect::from_ltrb(0.0, 0.0, 96.0, 32.0), self.background(ctx.tokens));
     }
 
     fn semantics(&self, ctx: &mut SemanticsCtx) {
@@ -177,11 +184,17 @@ mod tests {
     }
 
     fn paint_into(btn: &mut Button) -> Color {
+        let tokens = SemanticTokens::light();
+        paint_into_with(btn, &tokens)
+    }
+
+    fn paint_into_with(btn: &mut Button, tokens: &SemanticTokens) -> Color {
         let mut rec = MockRecorder::default();
         let mut ctx = PaintCtx {
             recorder: &mut rec,
             clip: None,
             offset: Vec2::ZERO,
+            tokens,
         };
         btn.paint(&mut ctx);
         rec.fills[0].1
@@ -226,10 +239,11 @@ mod tests {
 
     #[test]
     fn paint_background_reflects_state() {
-        // default
+        let t = SemanticTokens::light();
+        // default = primary
         let mut btn = Button::new(ButtonSpec::new("OK", "app.confirm"));
-        assert_eq!(paint_into(&mut btn), Color::rgb(0.13, 0.58, 0.95), "默认背景");
-        // hover
+        assert_eq!(paint_into(&mut btn), t.primary, "默认背景 = tokens.primary");
+        // hover = primary.lighten(0.12)
         let mut flags = InvalidationFlags::CLEAN;
         let _ = btn.event(
             &mut EventCtx {
@@ -242,8 +256,8 @@ mod tests {
                 modifiers: Modifiers::NONE,
             },
         );
-        assert_eq!(paint_into(&mut btn), Color::rgb(0.16, 0.64, 1.0), "hover 背景");
-        // pressed
+        assert_eq!(paint_into(&mut btn), t.primary.lighten(0.12), "hover 背景");
+        // pressed = primary.darken(0.12)
         let mut btn = Button::new(ButtonSpec::new("OK", "app.confirm"));
         let _ = btn.event(
             &mut EventCtx {
@@ -251,12 +265,38 @@ mod tests {
             },
             &press(),
         );
-        assert_eq!(paint_into(&mut btn), Color::rgb(0.10, 0.46, 0.76), "pressed 背景");
-        // disabled
+        assert_eq!(paint_into(&mut btn), t.primary.darken(0.12), "pressed 背景");
+        // disabled = on_surface.mix(surface, 0.55)
         let mut spec = ButtonSpec::new("OK", "app.confirm");
         spec.enabled = false;
         let mut btn = Button::new(spec);
-        assert_eq!(paint_into(&mut btn), Color::rgb(0.6, 0.6, 0.6), "disabled 背景");
+        assert_eq!(paint_into(&mut btn), t.on_surface.mix(t.surface, 0.55), "disabled 背景");
+    }
+
+    #[test]
+    fn default_background_is_wcag_aa_with_primary_text() {
+        // DC-5 闭环：Button 默认背景（= tokens.primary）+ on_primary 文字 ≥ WCAG AA 4.5。
+        // 验证控件消费 token 后继承主题可访问性（非硬编码不可访问色）。
+        use zero_ui_core::theme::{contrast_ratio, passes_wcag_aa};
+        for tokens in [SemanticTokens::light(), SemanticTokens::dark()] {
+            let mut btn = Button::new(ButtonSpec::new("OK", "app.x"));
+            let bg = paint_into_with(&mut btn, &tokens);
+            assert!(
+                passes_wcag_aa(tokens.on_primary, bg, false),
+                "button default bg {:?} + on_primary {:?} ratio {:.2} < 4.5",
+                bg,
+                tokens.on_primary,
+                contrast_ratio(tokens.on_primary, bg)
+            );
+        }
+    }
+
+    #[test]
+    fn dark_theme_background_uses_dark_tokens() {
+        // 确认 Button 经 PaintCtx.tokens 消费当前主题（dark primary），而非固定 light 值。
+        let dark = SemanticTokens::dark();
+        let mut btn = Button::new(ButtonSpec::new("OK", "app.x"));
+        assert_eq!(paint_into_with(&mut btn, &dark), dark.primary);
     }
 
     #[test]

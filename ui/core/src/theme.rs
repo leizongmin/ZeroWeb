@@ -26,6 +26,29 @@ impl Color {
     }
     pub const BLACK: Color = Color::rgb(0.0, 0.0, 0.0);
     pub const WHITE: Color = Color::rgb(1.0, 1.0, 1.0);
+
+    /// 与另一颜色线性插值（`t=0`→self，`t=1`→other；`t` 钳到 `[0,1]`），alpha 同步插值。
+    ///
+    /// 用于从 semantic token 派生交互态色（如按钮 hover 变亮 / pressed 变暗），避免硬编码色值。
+    pub fn mix(self, other: Color, t: f32) -> Color {
+        let t = t.clamp(0.0, 1.0);
+        Color {
+            r: self.r + (other.r - self.r) * t,
+            g: self.g + (other.g - self.g) * t,
+            b: self.b + (other.b - self.b) * t,
+            a: self.a + (other.a - self.a) * t,
+        }
+    }
+
+    /// 向白色插值（变亮），`t∈[0,1]`。
+    pub fn lighten(self, t: f32) -> Color {
+        self.mix(Color::WHITE, t)
+    }
+
+    /// 向黑色插值（变暗），`t∈[0,1]`。
+    pub fn darken(self, t: f32) -> Color {
+        self.mix(Color::BLACK, t)
+    }
 }
 
 /// 主题标识。

@@ -117,6 +117,8 @@ pub struct WidgetHost {
     /// 供弹层/模态对话框接管 Tab 焦点。`set_root` 后作用域可能失效（节点被移除），
     /// 调用方应于弹层关闭时 `exit_focus_scope`。
     active_scope: Option<FocusScope>,
+    /// 当前主题 semantic token（DC-5：paint 时注入 `PaintCtx.tokens`，控件消费而非硬编码）。
+    tokens: zero_ui_core::theme::SemanticTokens,
 }
 
 impl Default for WidgetHost {
@@ -129,6 +131,7 @@ impl Default for WidgetHost {
             pending: InvalidationFlags::CLEAN,
             focused: None,
             active_scope: None,
+            tokens: zero_ui_core::theme::SemanticTokens::light(),
         }
     }
 }
@@ -145,6 +148,12 @@ impl WidgetHost {
     {
         self.registry.register(component, factory);
         self
+    }
+
+    /// 设置当前主题 semantic token（DC-5）：控件 paint 时经 `PaintCtx.tokens` 消费。
+    /// 主题变化时调用，并应同步标记 `needs_paint`（仅色变不布局）。
+    pub fn set_tokens(&mut self, tokens: zero_ui_core::theme::SemanticTokens) {
+        self.tokens = tokens;
     }
 
     /// 用新声明树 reconcile：按 `WidgetId` + `ComponentType` 复用既有 widget 实例（保留临时状态），
@@ -213,7 +222,7 @@ impl WidgetHost {
         self.scene = Scene::new();
         if let Some(root) = self.root.as_mut() {
             let viewport = Some(root.cached_rect);
-            paint_node(root, &mut self.scene, viewport);
+            paint_node(root, &mut self.scene, viewport, &self.tokens);
         }
         self.pending = InvalidationFlags::CLEAN;
         &self.scene
@@ -975,7 +984,12 @@ fn arrange(node: &mut HostNode, origin: Point) {
 
 // ---------------- paint ----------------
 
-fn paint_node(node: &mut HostNode, scene: &mut Scene, parent_clip: Option<Rect>) {
+fn paint_node(
+    node: &mut HostNode,
+    scene: &mut Scene,
+    parent_clip: Option<Rect>,
+    tokens: &zero_ui_core::theme::SemanticTokens,
+) {
     let own_clip = parent_clip.and_then(|pc| pc.intersect(node.cached_rect));
     if let Some(w) = node.widget.as_mut() {
         let mut rec = SceneRecorder::new(node.id.clone());
@@ -984,6 +998,7 @@ fn paint_node(node: &mut HostNode, scene: &mut Scene, parent_clip: Option<Rect>)
             recorder: &mut rec,
             clip: own_clip,
             offset: Vec2::ZERO,
+            tokens,
         };
         w.paint(&mut ctx);
         let local = rec.finish();
@@ -993,7 +1008,7 @@ fn paint_node(node: &mut HostNode, scene: &mut Scene, parent_clip: Option<Rect>)
         }
     }
     for child in node.children.iter_mut() {
-        paint_node(child, scene, own_clip);
+        paint_node(child, scene, own_clip, tokens);
     }
 }
 

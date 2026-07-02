@@ -106,6 +106,11 @@ pub struct PaintCtx<'a> {
     pub recorder: &'a mut dyn PaintRecorder,
     pub clip: Option<Rect>,
     pub offset: Vec2,
+    /// 当前主题的 semantic token（DC-5：组件消费 token，不硬编码色值）。
+    ///
+    /// 由 `WidgetHost` 持有当前主题 token，paint 时注入；控件据此派生交互态色
+    /// （如按钮 default=`primary`、hover=`primary.lighten(..)`），无需硬编码浏览器色值。
+    pub tokens: &'a crate::theme::SemanticTokens,
 }
 
 /// mount 上下文（首次实例化）。

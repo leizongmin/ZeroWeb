@@ -1,0 +1,56 @@
+DC-5 widgets 消费 semantic token（Button）+ theme-in-context 基础设施
+日期：2026-07-02
+分支：ui-sdk
+
+## 范围
+闭合上轮 DC-5 follow-up「widgets 硬编码色值→消费 SemanticTokens」的首批——建立
+**theme-in-context 基础设施**（PaintCtx 携带当前主题 token），并把 Button 从硬编码
+4 色（含不可访问蓝 0.13,0.58,0.95）改为**全 token 派生**。Badge（数据模型 API）留下一轮。
+
+## 变更
+### 1. Color 颜色派生原语（ui/core/theme.rs）
+新增 `Color::mix(other, t)`（线性插值，alpha 同步）+ `lighten(t)`（向白）+ `darken(t)`（向黑）。
+用于从 semantic token 派生交互态色，避免硬编码。
+
+### 2. theme-in-context（ui/core/widget.rs + ui/runtime/host.rs）
+- `PaintCtx` 新增 `pub tokens: &'a SemanticTokens`——控件 paint 时经 `ctx.tokens` 取当前主题。
+- `WidgetHost` 新增 `tokens: SemanticTokens` 字段（默认 `light()`）+ `set_tokens(tokens)` 方法；
+  `paint()` → `paint_node(..., &self.tokens)` 注入。PaintCtx 构造点 3 处全更新（host paint_node、
+  Button 测试 helper、webview 测试）。
+
+### 3. Button 全 token 派生（ui/widgets/button.rs）
+`background(tokens)`：
+- default = `tokens.primary`
+- hover = `tokens.primary.lighten(0.12)`
+- pressed = `tokens.primary.darken(0.12)`
+- disabled = `tokens.on_surface.mix(tokens.surface, 0.55)`（中性灰，WCAG 豁免禁用态，仍 token 派生）
+**不再有任何硬编码浏览器色值**。paint 经 `ctx.tokens` 取 token。
+
+## 测试（ui/widgets 33→35）
+- `paint_background_reflects_state`：改为断言 token 派生值（default=primary、hover=primary.lighten(0.12)、
+  pressed=primary.darken(0.12)、disabled=on_surface.mix(surface,0.55)）——by construction 正确。
+- **`default_background_is_wcag_aa_with_primary_text`**（新）：Button 默认背景 + on_primary 文字
+  ≥ WCAG AA 4.5，**light + dark 双主题**——闭合 DC-5 widget 可访问性环（控件消费 token 后继承主题可访问性）。
+- **`dark_theme_background_uses_dark_tokens`**（新）：确认 Button 经 PaintCtx.tokens 消费**当前主题**
+  （dark primary），而非固定 light 值——验证 theme-in-context 端到端。
+
+## 门禁
+- `cargo build --workspace` — Finished（0 错误）。
+- `cargo clippy --workspace --all-targets -- -D warnings` — Finished（0 警告）。
+- `cargo fmt --all -- --check` — 净。
+- 受影响 crate scoped test 全绿：widgets 35 / core 39 / runtime 53 / adapter-webview 8 / chrome 64 / examples 3。
+- SDK-only（core/widgets/runtime/adapter-webview，未触碰 render-foundation/浏览器）→ 无 product-smoke 风险。
+
+## DC 影响
+- DC-5：widgets 消费 semantic token 基础设施建立（PaintCtx.tokens + host.set_tokens）；Button 首个
+  控件从硬编码改为全 token 派生，**default bg 自动 WCAG AA**（继承主题可访问性）。上轮 follow-up
+  首批闭合。DC-5「组件只消费 semantic token 不硬编码」对 Widget paint 路径成立。
+
+## 未覆盖（诚实声明 + follow-up）
+- **Badge**（ui/widgets/badge.rs `BadgeTone::color(self) -> Color`）：仍是独立数据模型 API（无 PaintCtx
+  接入点），5 色硬编码（含 Info 不可访问蓝）。改为 `color(self, &SemanticTokens)` 需更新所有调用方
+  （chrome SecurityBadge 等）。留下一轮（API 变更影响面独立）。
+- Button 的 hover/pressed 派生色（lighten/darken 0.12）未单独断言 AA——交互瞬态 WCAG 放宽，且
+  default（需 AA）已由 `default_background_is_wcag_aa_with_primary_text` 守卫。
+- 其它 widgets（TextInput/Menu/Toolbar 等）若有硬编码色，未本轮覆盖——按需逐个迁移到 ctx.tokens。
+- 主题色/token 变更未做 GUI 可视确认（本环境无 GUI）；可访问性由 contrast ratio 数学保证。
