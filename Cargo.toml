@@ -56,6 +56,7 @@ members = [
     "ui/dsl",
     "ui/adapters/winit",
     "ui/adapters/webview",
+    "ui/examples",
 
     # 浏览器专属 chrome 组件（唯一允许依赖 zero-browser-shell + ui/adapters/webview 的耦合点）
     "browser-ui/chrome",
@@ -165,6 +166,7 @@ zero-ui-core = { path = "ui/core" }
 zero-ui-render = { path = "ui/render" }
 zero-ui-i18n = { path = "ui/i18n" }
 zero-ui-runtime = { path = "ui/runtime" }
+zero-ui-examples = { path = "ui/examples" }
 zero-ui-widgets = { path = "ui/widgets" }
 zero-ui-patterns = { path = "ui/patterns" }
 zero-ui-animation = { path = "ui/animation" }

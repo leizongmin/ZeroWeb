@@ -1,0 +1,16 @@
+[package]
+name = "zero-ui-examples"
+description = "UI SDK 示例应用 — counter（验证通用 SDK 可被外部程序复用；不依赖任何浏览器 crate）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+zero-ui-render = { workspace = true }
+zero-ui-runtime = { workspace = true }
+zero-ui-widgets = { workspace = true }
+
+[dev-dependencies]
+zero-ui-core = { workspace = true }
+zero-ui-render = { workspace = true }

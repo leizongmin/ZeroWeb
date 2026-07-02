@@ -168,6 +168,7 @@ mod tests {
             self.fills.push((rect, color));
         }
         fn stroke_rect(&mut self, _rect: Rect, _color: Color, _stroke_width: f32) {}
+        fn draw_text(&mut self, _text: &str, _position: Point, _size_px: f32, _color: Color) {}
     }
 
     fn paint_into(btn: &mut Button) -> Color {

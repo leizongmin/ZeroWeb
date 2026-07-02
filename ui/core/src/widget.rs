@@ -8,7 +8,7 @@
 use crate::action::{ActionBinding, EventResult};
 use crate::binding::{Binding, PropsMap};
 use crate::event::UiEvent;
-use crate::geometry::{Constraints, Rect, Size, Vec2};
+use crate::geometry::{Constraints, Point, Rect, Size, Vec2};
 use crate::invalidation::InvalidationFlags;
 use crate::semantics::SemanticsNode;
 use crate::theme::Color;
@@ -88,6 +88,11 @@ impl WidgetSpec {
 pub trait PaintRecorder {
     fn fill_rect(&mut self, rect: Rect, color: Color);
     fn stroke_rect(&mut self, rect: Rect, color: Color, stroke_width: f32);
+    /// 绘制原始字符串文本（后端负责 shape/measure/raster；简单场景与测试用）。
+    ///
+    /// 生产文本路径应优先用预 shape 的 `TextBlob`（见 `ui/render::SceneRecorder::draw_text_blob`），
+    /// 避免每帧重复 shaping；本方法供 label/调试文本等不需精确度量的场景。
+    fn draw_text(&mut self, text: &str, position: Point, size_px: f32, color: Color);
 }
 
 /// paint 上下文。

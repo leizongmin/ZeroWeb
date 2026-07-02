@@ -1,0 +1,30 @@
+=== DC-14 counter 示例：可构建/可运行 + 不依赖浏览器 crate ===
+日期: Wed Jul  1 07:45:28     2026
+
+--- dep isolation（cargo tree -p zero-ui-examples，grep 浏览器 crate）---
+PASS: no zero-browser-shell/zero-webview/zero-engine/zero-net/zero-browser-chrome in dependency tree
+
+--- direct deps ---
+zero-ui-examples v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\examples)
+├── zero-ui-core v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\core)
+├── zero-ui-render v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\render)
+├── zero-ui-runtime v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\runtime)
+└── zero-ui-widgets v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\widgets)
+[dev-dependencies]
+├── zero-ui-core v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\core) (*)
+└── zero-ui-render v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\render) (*)
+
+--- cargo run -p zero-ui-examples --example counter（retained 闭环输出）---
+initial count: 0 (scene primitives: 3)
+click #1: action counter.inc
+  count: 1 (scene primitives: 3)
+click #2: action counter.inc
+  count: 2 (scene primitives: 3)
+click #3: action counter.inc
+  count: 3 (scene primitives: 3)
+  final count: 2 (scene primitives: 3)
+
+--- cargo test -p zero-ui-examples（scoped test-guard）摘要 ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

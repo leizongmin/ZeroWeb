@@ -164,7 +164,12 @@ mod tests {
             color: Color::BLACK,
         };
         match text.translate(Vec2::new(100.0, 50.0)) {
-            RenderPrimitive::Text { position, text, size_px, .. } => {
+            RenderPrimitive::Text {
+                position,
+                text,
+                size_px,
+                ..
+            } => {
                 assert_eq!(position, Point::new(101.0, 52.0));
                 assert_eq!(text, "hi");
                 assert_eq!(size_px, 12.0);

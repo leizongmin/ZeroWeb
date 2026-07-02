@@ -65,11 +65,8 @@ impl PaintRecorder for SceneRecorder {
             rounding: Rounding::ZERO,
         });
     }
-}
 
-impl SceneRecorder {
-    /// 记录原始字符串文本图元（简单场景/测试；后端自行 shape）。
-    pub fn draw_text(&mut self, text: &str, position: Point, size_px: f32, color: Color) {
+    fn draw_text(&mut self, text: &str, position: Point, size_px: f32, color: Color) {
         self.push(RenderPrimitive::Text {
             text: text.to_string(),
             position,
@@ -77,7 +74,9 @@ impl SceneRecorder {
             color,
         });
     }
+}
 
+impl SceneRecorder {
     /// 记录预 shape 文本图元（DC-11：调用方先用 foundation/text 的 `TextShaper`+`TextMeasurer`
     /// 产出 `TextBlob`，后端直接光栅 glyph，不再 reshape）。
     pub fn draw_text_blob(&mut self, blob: zero_text_foundation::TextBlob, position: Point, color: Color) {
