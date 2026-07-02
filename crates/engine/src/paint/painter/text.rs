@@ -1349,10 +1349,27 @@ impl super::Painter {
                             // 如果无存储值，回退到 16px 默认值（保持原有行为）。
                             let stored_fs = box_node.text_node_font_sizes.get(&fragment.node_id).copied();
                             let baseline_fs = stored_fs.unwrap_or(fragment.font_size);
+                            // R953：非存储路径 glyph 定位修正。glyph 顶（行盒相对）= half-leading =
+                            // (line-height − font_size)/2（与 ascent 无关，字形按 em-box 在行盒内居中）。
+                            // frag.y = run 顶 = baseline_y − run.height；glyph 顶 = frag.y + offset，需
+                            // offset = run.height − ascent = line-height − 0.8·fs（ascent≈0.8·fs 启发式，
+                            // 与 apply_vertical_alignment 的 strut_ascent 一致）。旧 offset = font_size
+                            // 把 glyph 顶放在 frag.y + fs（基线位），致默认字体文本每行偏低约 9.6px。
+                            // A/B（R953）：css-text +60 / css-text-decor +27 / position +3 / tables +3 /
+                            // fonts +4 / multicol +4 / writing-modes +1 oracle-pass（≈ +102 case），
+                            // 零目录回归；welcome hero title 反而更准（ORA 104-135 / OFF 135-154 / ON 105-124）。
+                            // 残余 welcome 净 +0.77pp = 真字体 ascent≠0.8·fs 的字体墙噪声（trend-only，
+                            // 理想修须接 fontdue 真 ascent，font-metric 墙多会话）。
+                            // 仅文本运行（fs>0）；inline-block/原子盒（fs==0）保留旧 baseline_fs。
+                            let baseline_offset = if fragment.font_size > 0.0 {
+                                fragment.height - 0.8 * fragment.font_size
+                            } else {
+                                baseline_fs
+                            };
                             render_fragment!(
                                 fragment.x,
                                 fragment.y,
-                                baseline_fs,
+                                baseline_offset,
                                 stored_fs.unwrap_or(fragment.font_size),
                                 fragment.text,
                                 fragment.node_id,
