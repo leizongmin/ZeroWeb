@@ -183,6 +183,10 @@ impl BrowserApp {
             tracing::warn!("No system font found, text rendering will be limited");
         }
 
+        // DC-11 字体栈统一：把 FontLoader 链接到共享 FontdueBackend
+        #[cfg(feature = "sdk-chrome")]
+        link_font_loader_to_shared_backend(&mut font_loader);
+
         set_char_measure_fn(text_metrics::measure_char);
 
         let shell = BrowserShell::new_with_persisted_settings();

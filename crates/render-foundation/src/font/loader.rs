@@ -421,6 +421,18 @@ impl FontLoader {
         }
     }
 
+    /// DC-11 convenience：用指定族名和字体数据创建共享后端并链接到本 `FontLoader`。
+    ///
+    /// 等价于 `FontdueBackend::new()` + `load_family(family, data)` +
+    /// `set_shared_backend(Arc::new(Mutex::new(backend)))`。调用方无需直接依赖
+    /// `parking_lot` 或 `FontdueBackend` 类型。
+    pub fn init_shared_backend(&mut self, family: &str, data: &[u8]) {
+        let mut backend = FontdueBackend::new();
+        // 共享后端加载失败不阻塞 FontLoader（backend 为空→后续同步 no-op）。
+        let _ = backend.load_family(family, data);
+        self.set_shared_backend(Arc::new(Mutex::new(backend)));
+    }
+
     /// DC-11：检查是否已设置共享后端。
     pub fn has_shared_backend(&self) -> bool {
         self.shared_backend.is_some()
@@ -1638,5 +1650,29 @@ mod tests {
         // 但共享后端不受影响（无新字体注册）
         let ft = shared.lock();
         assert!(ft.is_empty(), "shared backend should still be empty");
+    }
+
+    /// init_shared_backend convenience：一站式创建共享后端并链接。
+    #[test]
+    fn dc11_init_shared_backend_convenience() {
+        let ahem_data: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        let mut loader = FontLoader::new();
+        // 先加载一个字体
+        let rf_id = loader.load_font(ahem_data).expect("load_font Ahem");
+
+        // 通过 convenience 方法初始化共享后端
+        loader.init_shared_backend("TestInit", ahem_data);
+
+        assert!(loader.has_shared_backend());
+        // 共享后端应有 TestInit 字体
+        let backend = loader.shared_backend().expect("shared_backend should be set");
+        let ft = backend.lock();
+        assert!(ft.len() >= 1, "shared backend should have fonts");
+        // 已有字体（Ahem）也已被同步
+        assert!(
+            loader.shared_id_of(rf_id).is_some(),
+            "pre-existing font should be synced"
+        );
     }
 }
