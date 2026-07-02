@@ -1,0 +1,54 @@
+=== DC-10（i18n flesh-out：诊断 + locale 感知 plural + RTL 集成）===
+日期: 2026-07-01
+分支: ui-sdk
+SDK-only：仅触碰 ui/i18n，未触碰 render-foundation/浏览器/运行时行为。
+
+--- 变更摘要 ---
+
+1. plural.rs：CLDR cardinal plural 规则手写实现（locale 感知，DC-10）：
+   - 新增 plural_category_for(count, locale) —— 覆盖英语/根（one/other）、
+     阿拉伯语（zero/one/two/few/many/other 全 6 类）、俄语/乌克兰语/白俄罗斯语
+     （one/few/many/other）、波兰语（one/few/many）。未覆盖语种回落英语规则。
+   - plural_category(count) 保留为英语默认（委托 plural_category_for）。
+   - 4 个新 plural 测（arabic/russian/polish 全类别 / unknown 回落）。
+   - 决策 TBD-7：手写 CLDR 子集（零新依赖，不引 ICU4X/Fluent）。
+
+2. formatter.rs：select_template 改 locale 感知 + 新增 select_template_diag
+   返回 (template, Option<DiagnosticKind>)。plural 变体缺失（entry 含 plural_forms、
+   提供了 count，但缺该 locale plural 类别变体）→ 回落默认 value + PluralFallback。
+   + 1 新测（plural_fallback_emits_diagnostic）。
+
+3. catalog.rs：resolve 产出诊断（DC-10「缺失 key 走 fallback 并产生 diagnostic」）：
+   - ResolvedText 加 pub diagnostic: Option<I18nDiagnostic> 字段。
+   - MissingKey：fallback chain 全未命中 → 占位文案 + MissingKey 诊断（不报错）。
+   - FallbackUsed：命中非首选 locale（chain[0]）→ FallbackUsed 诊断。
+   - PluralFallback：plural 变体缺失 → PluralFallback 诊断（优先级最高）。
+   - 诊断优先级：plural > fallback > (none 直接命中)。
+   - 5 个新 catalog 测（missing_key/fallback 诊断 + RTL 快照 + Arabic plural 选变体
+     + plural 缺变体诊断）。
+
+--- 测试结果（scoped test-guard）---
+
+ui/i18n：22 passed; 0 failed（原 ~13 → 22，新增 9 测）。
+  plural: english / arabic_plural_full_categories / russian_plural_categories /
+          polish_plural_categories / unknown_language_falls_back_to_english
+  formatter: substitutes_count_and_plural / plural_fallback_emits_diagnostic / ...
+  catalog: missing_key_emits_diagnostic / fallback_hit_emits_diagnostic /
+           rtl_locale_resolves_with_rtl_direction /
+           arabic_plural_selects_locale_correct_form /
+           arabic_plural_missing_form_emits_diagnostic（+ 既有 4 测）
+
+--- 门禁 ---
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — 净（0 diff）。
+
+--- DC-1 复核 ---
+ui/i18n 仅依赖 serde/compact_str/hashbrown/thiserror，零浏览器业务/渲染后端 crate。
+
+--- DC-10 进度 ---
+从「skeleton（M1）」推进到：locale/catalog/fallback/参数替换/plural（多语种 CLDR）/
+text direction（RTL）/diagnostic（MissingKey/FallbackUsed/PluralFallback）全部可用 +
+locale 切换触发 layout+paint+semantics 失效（ui/runtime::I18nRuntime，既有）。
+剩余：DSL `i18n:` message id 引用端到端解析桥（DSL loader 已保留 i18n 对象为
+Value::Object，待 resolve 侧桥接 → LocalizedText）。
