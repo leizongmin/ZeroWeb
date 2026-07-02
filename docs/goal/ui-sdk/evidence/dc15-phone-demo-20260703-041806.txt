@@ -1,0 +1,94 @@
+DC-15 phone_demo 可运行制品（M4 SDK-side 移动 SDK headless 产物）
+============================================================
+日期：2026-07-03
+分支：ui-sdk
+commit：a676bed1  ui-sdk(M4/DC-15): phone_demo 可运行制品 — phone shell + Tap/Pinch + back 仲裁
+
+## 目的
+
+把 DC-15 移动 SDK 各已闭合组件（WindowMetrics::phone() preset、PhoneBrowserShell、
+GestureArena Tap/Pan/Pinch、UiEvent::Pointer.pointer_id 多指、BackNavigationService、
+Navigator 回落）组装为一个 headless 可运行制品（example 二进制 + 共享 run_phone_demo
+函数 + 3 测），证明它们在一条移动事件流里正确组合，而非孤立单测。
+
+## 交付
+
+- `browser-ui/chrome/src/phone_demo.rs`（新）：`run_phone_demo() -> PhoneDemoSummary`
+  + `PhoneDemoSummary`（shell_kind / scene_entries / viewport_top_y /
+  bottom_chrome_height / shell_laid_out / gesture_kinds / back_with_handler /
+  back_default / nav_depth_after_back）+ 3 测。example + tests 共用同一函数。
+- `browser-ui/chrome/examples/phone_demo.rs`（新）：二进制 main，打印汇总。
+- `browser-ui/chrome/Cargo.toml`：gestures/navigation/platform 从 dev-deps 提升为
+  regular deps（phone_demo 模块在 src/，非仅 tests/examples）。
+- `browser-ui/chrome/src/lib.rs`：`pub mod phone_demo;`。
+
+## 事件流（run_phone_demo）
+
+1. sample_model（1 安全 tab + address + nav back 可用）→ WindowMetrics::phone()
+   （390×844 / scale 3.0 / safe_area top 47 + bottom 34 / Portrait / Compact）。
+2. AdaptiveBrowserChrome.build（Mobile + Touch）→ 选 PhoneBrowserShell。
+3. WidgetHost retained 闭环：register_chrome_factories → set_root → layout(phone
+   tight 约束) → paint。
+4. GestureArena（Tap + Pan + Pinch）经 host.set_gesture_arena 接入。
+5. 触摸 Tap（单指 pointer_id=0）于地址栏区（195,60）：Pressed→Released。
+6. 触摸 Pinch（双指 id=0 + id=1）于内容区：down(0)@130,400 + down(1)@260,400 +
+   move(1)@310,400（距离 130→180）→ 双指 Pinch。
+7. take_gestures 收集 → gesture_kinds = ["Tap", "Pinch"]。
+8. 平台 back 仲裁：InMemoryBackNavigation.push_handler("overlay") →
+   on_platform_back = Handled（消耗，不退栈）；再 on_platform_back（无 handler）=
+   DefaultBack → Navigator.pop（settings 出栈，剩 home，depth=1）。
+
+## example 输出（cargo run -p zero-browser-chrome --example phone_demo）
+
+    === phone_demo (DC-15) — WindowMetrics::phone() ===
+    adaptive shell: Phone
+    Scene: 5 entries（chrome + viewport 填充，safe_area 避让）
+    SDK chrome 布局：内容区 viewport 顶部 y=95.0px（避让顶部 safe_area），底部导航栏高 56.0px
+    识别手势: ["Tap", "Pinch"]
+    平台 back #1（注册 overlay handler）→ Handled(BackHandlerId("overlay"))（消耗，不退栈）
+    平台 back #2（无 handler）→ DefaultBack → Navigator.pop，剩余 nav depth=1
+
+    （DC-15 移动 SDK：phone shell 可用 + Tap/Pinch 经 host arena + back 仲裁；真实移动后端首帧待设备）
+
+## 测试（scoped test-guard）
+
+    $ ./target/test-guard -- cargo test -p zero-browser-chrome phone_demo
+    test phone_demo::tests::phone_demo_safe_area_and_bottom_nav ... ok
+    test phone_demo::tests::phone_demo_selects_phone_shell_and_renders ... ok
+    test phone_demo::tests::phone_demo_gestures_and_back_arbitration ... ok
+    test result: ok. 3 passed; 0 failed
+
+    $ ./target/test-guard -- cargo test -p zero-browser-chrome
+    test result: ok. 84 passed; 0 failed; 0 ignored   (此前 81 + phone_demo 3)
+
+断言要点：
+- phone metrics → Phone shell（非 desktop/tablet）。
+- viewport_top_y=95.0 > 0（chrome + safe_area top 47 避让）。
+- bottom_chrome_height=56.0 > 0（phone 有底部导航栏，desktop/tablet 为 0）。
+- shell 根节点布局到 phone 视口宽（≥380）。
+- gesture_kinds 含 Tap + Pinch（多指经 pointer_id 区分）。
+- back #1 = Handled / back #2 = DefaultBack → nav depth 1（home→settings push 再 pop）。
+
+## 门禁
+
+- cargo build --workspace — Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings — Finished（0 警告）。
+- cargo fmt --all --check — CLEAN。
+- DC-1 复核：gestures/navigation/platform 均为通用 ui/* crate（零浏览器业务 crate
+  依赖），从 dev-deps 提升为 regular deps 不破坏依赖隔离（cargo tree 机械验证）。
+
+## Coverage（DC-17，新代码）
+
+    browser-ui\chrome\src\phone_demo.rs
+      Regions 92.02% / Functions 100.00% / Lines 94.55%
+      （110 行可执行，6 行未覆盖 = 错误路径/防御分支）
+
+phone_demo.rs line 94.55% ≥ 85% 门禁。chrome-only standalone TOTAL 偏低
+（依赖被插桩但未跑其测试，master.md 既知 standalone caveat），DC-17 权威数字以
+全量 run 为准（master.md Latest Evidence 聚合 line ~94%）。
+
+## 风险
+
+- SDK-only（browser-ui/chrome 未触渲染像素/浏览器运行时）→ 无 product-smoke 风险。
+- 真实移动后端首帧（Android/iOS/HarmonyOS）待设备（M4 终局硬要求，本环境无设备）。
+  phone_demo 证明 SDK 侧移动适配 skeleton 在 headless 完整组合可用。
