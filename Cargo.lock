@@ -5727,6 +5727,7 @@ dependencies = [
  "zero-text-foundation",
  "zero-ui-adapter-render-foundation",
  "zero-ui-core",
+ "zero-ui-widgets",
  "zero-webview",
 ]
 
@@ -6018,6 +6019,7 @@ dependencies = [
 name = "zero-ui-adapter-render-foundation"
 version = "0.1.0"
 dependencies = [
+ "hashbrown 0.17.1",
  "zero-browser-chrome",
  "zero-browser-shell",
  "zero-render-foundation",
