@@ -1511,6 +1511,8 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -5996,8 +5998,8 @@ name = "zero-text-foundation"
 version = "0.1.0"
 dependencies = [
  "fontdue",
- "hashbrown 0.15.5",
- "rustybuzz 0.20.1",
+ "hashbrown 0.17.1",
+ "rustybuzz",
  "serde",
  "thiserror 2.0.18",
 ]
@@ -6035,7 +6037,7 @@ name = "zero-ui-assets"
 version = "0.1.0"
 dependencies = [
  "compact_str",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
  "thiserror 2.0.18",
  "zero-ui-core",
 ]
@@ -6045,7 +6047,7 @@ name = "zero-ui-collections"
 version = "0.1.0"
 dependencies = [
  "compact_str",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
  "zero-ui-core",
 ]
 
@@ -6062,7 +6064,7 @@ name = "zero-ui-core"
 version = "0.1.0"
 dependencies = [
  "compact_str",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
  "serde",
  "thiserror 2.0.18",
 ]
@@ -6087,7 +6089,7 @@ name = "zero-ui-dsl"
 version = "0.1.0"
 dependencies = [
  "compact_str",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
  "serde",
  "thiserror 2.0.18",
  "zero-ui-assets",
@@ -6124,7 +6126,7 @@ name = "zero-ui-i18n"
 version = "0.1.0"
 dependencies = [
  "compact_str",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
  "serde",
  "thiserror 2.0.18",
 ]
@@ -6177,7 +6179,7 @@ name = "zero-ui-restoration"
 version = "0.1.0"
 dependencies = [
  "compact_str",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
  "serde",
  "zero-ui-core",
 ]
@@ -6187,7 +6189,7 @@ name = "zero-ui-runtime"
 version = "0.1.0"
 dependencies = [
  "compact_str",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
  "thiserror 2.0.18",
  "zero-ui-core",
  "zero-ui-i18n",
