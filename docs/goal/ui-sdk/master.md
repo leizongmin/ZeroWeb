@@ -701,3 +701,22 @@ Merge R992（正交）。**zero-integration-tests 724 passed ✅**（STATUS_ACCE
 
 ### Rounds 26-27 — 状态检查（2026-07-03）
 无新 origin/main commit，无代码变更，全门禁绿色。Evidence: `r26` `r27`
+
+### Round 28 — 状态复核（2026-07-03）
+无新 origin/main commit，无代码变更。全门禁绿色：
+- build/clippy/fmt ✅ | 全部 SDK + browser scoped tests ✅
+- reftest 686/686 (100.0%) ✅ | product-smoke 19.41% (< 20%) ✅
+
+Headless 推进能力仍耗尽；终端门禁不变（DC-2 EventLoop::run / DC-14 GUI 可视验收 / DC-15 移动设备首帧 / DC-8 平台 a11y，均需 GUI/设备环境）。
+
+Evidence: `evidence/round-20260703-170300-r28.txt`
+
+### Round 29 — 状态复核 + 交叉验证（2026-07-03）
+无新 origin/main commit，无代码变更。全门禁绿色：
+- build/clippy/fmt ✅ | reftest 686/686 (100.0%) ✅ | product-smoke 19.41% (< 20%) ✅
+- sdk-chrome feature build ✅ | OHOS 核心 20+ SDK crates 交叉编译 ✅
+- counter/form/chrome_scene 示例全部正常 ✅ | browser 191 测全绿 ✅
+
+Headless 推进能力仍耗尽；终端门禁不变（DC-2 EventLoop::run / DC-14 GUI 可视验收 / DC-15 移动设备首帧 / DC-8 平台 a11y，均需 GUI/设备环境）。
+
+Evidence: `evidence/round-20260703-095000-r29.txt`

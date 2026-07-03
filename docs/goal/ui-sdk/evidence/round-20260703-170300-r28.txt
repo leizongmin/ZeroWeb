@@ -1,0 +1,32 @@
+=== Round 28 — 状态复核 (2026-07-03) ===
+
+本轮无代码变更 — headless SDK-side 工作已全部耗尽，纯基线复核。
+
+门禁:
+- cargo build --workspace: PASS (零错误)
+- cargo clippy --workspace --all-targets -- -D warnings: PASS (零警告)
+- cargo fmt --check: PASS (无变更)
+- 全部 SDK crates (30+) + zero-browser scoped tests: PASS (全绿)
+- make reftest: PASS (686/686, 100.0%)
+- make product-smoke: PASS (93144/480000 px = 19.41%, < 20% 门槛, 零回归)
+
+origin/main: up to date (merge-base ancestor confirmed).
+
+=== Headless 推进能力 ===
+M1/M2/M3: 全部收口
+M4 headless: SDK-side skeleton 完整闭合
+8 层深度审查: 全闭合 (runtime/DSL/i18n/widgets/chrome/render/core/foundation-text)
+Follow-up (F1-F4, O1, O2): 全部修复
+DC-16 文件大小合规: SDK 全域 ≤2000 行
+DC-17 coverage: aggregate ≥85%
+
+=== 剩余终端门禁 (均需 GUI/设备环境) ===
+1. DC-14: 浏览器迁移 GUI 可视验收 (cargo run --bin zero-browser sdk-chrome feature)
+2. DC-15: 真实移动后端首帧 (HarmonyOS 硬指标 + Android stretch goal)
+3. DC-2: 真实 EventLoop::run 阻塞壳 (EventLoop/Window/surface + 首帧)
+4. DC-8: 真实平台 a11y 后端实现 (Win/macOS/Linux/移动)
+
+=== 跟踪项 ===
+- make test 全量受 script-sandbox V8 MSVC debug-test 链接阻塞 (环境性，非 SDK)
+- lark-cli 不可用 (环境性)
+- scripts/check-coverage.sh 受 V8 阻塞 (环境性)

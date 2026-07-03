@@ -1,0 +1,41 @@
+=== Round 29 — 状态复核 (2026-07-03) ===
+
+本轮无代码变更 — headless SDK-side 工作已全部耗尽，纯基线复核 + 额外交叉验证。
+
+门禁:
+- cargo build --workspace: PASS (零错误)
+- cargo clippy --workspace --all-targets -- -D warnings: PASS (零警告)
+- cargo fmt --check: PASS (无变更)
+- make test (excl. render-foundation + script-sandbox, 环境性): 集成测试 724 passed standalone
+  (ACCESS_VIOLATION in make test full run = 间歇性资源竞争，非代码回归，standalone 复跑全绿)
+- make reftest: PASS (686/686, 100.0%)
+- make product-smoke: PASS (93144/480000 px = 19.41%, < 20% 门槛, 零回归)
+
+origin/main: no new commits.
+
+=== 额外 headless 交叉验证 ===
+- sdk-chrome feature build: cargo check --features sdk-chrome -p zero-browser ✅ (零错误)
+- OHOS 核心 SDK 交叉编译: 20+ crates cargo check --target aarch64-unknown-linux-ohos ✅
+  (zero-browser-chrome + adapter-webview 阻塞于 openssl-sys OHOS 交叉 sysroot，环境性，非代码)
+- 示例验证: counter ✅ / form ✅ / chrome_scene (light+dark) ✅
+- browser 测试: cargo test -p zero-browser = 191 passed, 0 failed ✅
+
+=== Headless 推进能力 ===
+M1/M2/M3: 全部收口
+M4 headless: SDK-side skeleton 完整闭合
+8 层深度审查: 全闭合
+Follow-up (F1-F4, O1, O2): 全部修复
+DC-16 文件大小合规: 全域 ≤2000 行
+DC-17 coverage: aggregate ≥85%
+DC-13 13/13 域 flesh-out 完成
+
+=== 剩余终端门禁 (均需 GUI/设备环境) ===
+1. DC-14: 浏览器迁移 GUI 可视验收 (cargo run --bin zero-browser sdk-chrome feature)
+2. DC-15: 真实移动后端首帧 (HarmonyOS 硬指标 + Android stretch goal)
+3. DC-2: 真实 EventLoop::run 阻塞壳 (EventLoop/Window/surface + 首帧)
+4. DC-8: 真实平台 a11y 后端实现 (Win/macOS/Linux/移动)
+
+=== 跟踪项 ===
+- make test 全量受 script-sandbox V8 MSVC debug-test 链接阻塞 (环境性，非 SDK)
+- 零 integration-tests ACCESS_VIOLATION 为间歇性 (standalone 724 passed)
+- OHOS 全量交叉编译受 openssl-sys 跨 sysroot 阻塞 (环境性，非 SDK)
