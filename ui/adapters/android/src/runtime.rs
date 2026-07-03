@@ -193,8 +193,7 @@ mod tests {
         fn root_spec(&self) -> WidgetSpec {
             let mut s = WidgetSpec::new("test.Label");
             s.id = Some(zero_ui_core::widget::WidgetId::new("label"));
-            s.props
-                .insert("text", Value::Text(format!("count={}", self.counter)));
+            s.props.insert("text", Value::Text(format!("count={}", self.counter)));
             s
         }
         fn dispatch(
