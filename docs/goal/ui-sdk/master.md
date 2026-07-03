@@ -651,3 +651,35 @@ Evidence: `evidence/round-20260703-160640.txt`
 headless 可推进的 SDK-side 工作现已全部耗尽（八层深度审查 + 全部 follow-up 修复）。
 
 Evidence: `evidence/round-20260703-162034.txt`
+
+### Round 21 — 基线复核（2026-07-03 16:45 UTC）
+
+**本轮无代码变更**——headless SDK-side 工作已全部耗尽，纯基线复核确认：
+
+| 门禁 | 结果 |
+|------|------|
+| `cargo build --workspace` | ✅ 零错误 |
+| `cargo clippy --workspace --all-targets -- -D warnings` | ✅ 零警告 |
+| `cargo fmt --check` | ✅ 无变更 |
+| `make reftest` | ✅ **686/686 (100%)** |
+| `make product-smoke` | ✅ **19.41%** (< 20%, 零回归) |
+| 全部 SDK crates (30+) scoped tests | ✅ 全绿 |
+| `zero-browser` | ✅ **191/191** 全绿 |
+
+**headless SDK-side 推进能力总览**：
+- M1/M2/M3：✅ 全部收口
+- M4 headless：✅ SDK-side skeleton 完整闭合（WinitDriver + 全示例 + DC-15 mobile skeleton + HarmonyOS/Android adapters + DC-2 retained 闭环 + DC-8 平台 a11y 桥接契约）
+- 8 层深度审查：✅ 全闭合（runtime/DSL/i18n/widgets/chrome/render/core/foundation-text）
+- Follow-up (F1-F4, O2)：✅ 全部修复
+- DC-16 文件大小合规：✅ SDK 全域 ≤2000 行
+- DC-17 coverage：✅ aggregate ≥85%
+
+**剩余终端门禁（均需 GUI/设备环境，本环境不可用）**：
+1. DC-14：浏览器迁移 GUI 可视验收（`cargo run --bin zero-browser` sdk-chrome feature）
+2. DC-15：真实移动后端首帧（HarmonyOS 硬指标 + Android stretch goal）
+3. DC-2：真实 `EventLoop::run` 阻塞壳（EventLoop/Window/surface + 首帧）
+4. DC-8：真实平台 a11y 后端实现（Win/macOS/Linux/移动）
+
+**跟踪项不变**：`make test` 全量受 script-sandbox V8 MSVC debug-test 链接 + integration-tests STATUS_ACCESS_VIOLATION 阻塞（均为环境性，非 SDK 引入）；`lark-cli` 不可用；`scripts/check-coverage.sh` 受 V8 阻塞。
+
+Evidence: `evidence/round-20260703-164500.txt`

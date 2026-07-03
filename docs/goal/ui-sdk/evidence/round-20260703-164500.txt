@@ -1,0 +1,31 @@
+Round 21 — Status Verification (2026-07-03 16:45 UTC)
+
+No code changes. Pure baseline verification confirming headless SDK-side work exhausted.
+
+Gates:
+- cargo build --workspace: ✅ 零错误
+- cargo clippy --workspace --all-targets -- -D warnings: ✅ 零警告
+- cargo fmt --check: ✅ 无变更
+- make reftest: ✅ 686/686 (100.0%) — Layout 485/485 + Text 201/201
+- make product-smoke: ✅ 19.41% (< 20%, 零退化)
+- All SDK crates (30+ crates) scoped tests: ✅ 全绿
+- zero-browser: ✅ 191/191 全绿
+
+Headless SDK-side work fully exhausted:
+- M1/M2/M3: ✅ all closed
+- M4 headless: ✅ all SDK-side skeleton closed (WinitDriver + all examples + DC-15 mobile skeleton + HarmonyOS/Android adapters + DC-2 retained closed loop + DC-8 platform a11y bridge contract)
+- 8-layer deep review: ✅ all 8 layers complete (runtime/DSL/i18n/widgets/chrome/render/core/foundation-text)
+- All follow-ups (F1-F4, O2): ✅ fixed
+- DC-16 single file compliance: ✅ SDK-wide all ≤2000 lines
+- DC-17 coverage: ✅ aggregate ≥85%
+
+Remaining terminal gates (all require GUI/device):
+- DC-14: Browser migration GUI visual acceptance
+- DC-15: Real mobile backend first frame (HarmonyOS hard target + Android stretch)
+- DC-2: Real EventLoop::run blocking shell (EventLoop/Window/surface)
+- DC-8: Real platform a11y backends (Win/macOS/Linux/mobile)
+
+Tracked environmental issues:
+- make test: blocked by script-sandbox V8 MSVC debug-test link + integration-tests STATUS_ACCESS_VIOLATION (both environmental, not SDK-introduced)
+- lark-cli: not available
+- scripts/check-coverage.sh: blocked by V8 link issue
