@@ -1,0 +1,11 @@
+[package]
+name = "zero-ui-adapter-harmonyos"
+description = "HarmonyOS 平台适配器 — OHOS 触摸/键盘/IME→UiEvent 转换 + PlatformRuntime 实现（不依赖 winit）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-ui-core = { workspace = true }
+zero-ui-runtime = { workspace = true }
+zero-ui-gestures = { workspace = true }

@@ -57,6 +57,7 @@ members = [
     "ui/adapters/winit",
     "ui/adapters/webview",
     "ui/adapters/render-foundation",
+    "ui/adapters/harmonyos",
     "ui/examples",
 
     # 浏览器专属 chrome 组件（唯一允许依赖 zero-browser-shell + ui/adapters/webview 的耦合点）
@@ -187,6 +188,7 @@ zero-ui-dsl = { path = "ui/dsl" }
 zero-ui-adapter-winit = { path = "ui/adapters/winit" }
 zero-ui-adapter-webview = { path = "ui/adapters/webview" }
 zero-ui-adapter-render-foundation = { path = "ui/adapters/render-foundation" }
+zero-ui-adapter-harmonyos = { path = "ui/adapters/harmonyos" }
 zero-text-foundation = { path = "foundation/text" }
 
 # 浏览器专属 chrome（允许依赖 zero-browser-shell + ui/adapters/webview）
