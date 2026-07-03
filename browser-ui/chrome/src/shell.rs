@@ -313,9 +313,22 @@ impl BrowserChromeShell for PhoneBrowserShell {
         // 底部导航栏避开 safe area + 软键盘。
         let keyboard = metrics.keyboard_insets.bottom;
         let avail_bottom = inner.bottom() - keyboard;
-        let bottom_h = 56.0_f32.min((avail_bottom - top_chrome.bottom()) * 0.4);
+        // 可用空间不足（键盘/小窗口使 avail_bottom ≤ top chrome 底）时收缩 bottom bar 为 0，
+        // 避免 bottom_chrome/viewport 倒置（top > bottom → 负尺寸）。真实触发：横屏 / 分屏小窗口
+        // + 物理尺寸键盘 > 应用窗口高度（DC-12 robustness）。
+        let bottom_h = if avail_bottom > top_chrome.bottom() {
+            56.0_f32.min((avail_bottom - top_chrome.bottom()) * 0.4)
+        } else {
+            0.0
+        };
         let bottom_chrome = Rect::from_ltrb(inner.left(), avail_bottom - bottom_h, inner.right(), avail_bottom);
-        let viewport = Rect::from_ltrb(inner.left(), top_chrome.bottom(), inner.right(), bottom_chrome.top());
+        // 视口底不低于 top chrome 底，确保 viewport 非倒置（空间不足时退化为零高，可接受）。
+        let viewport = Rect::from_ltrb(
+            inner.left(),
+            top_chrome.bottom(),
+            inner.right(),
+            bottom_chrome.top().max(top_chrome.bottom()),
+        );
         ShellLayout {
             top_chrome,
             viewport,
@@ -461,6 +474,40 @@ mod tests {
         let lay = PhoneBrowserShell.layout(&m);
         assert!(!lay.keyboard_avoided);
         assert_eq!(lay.bottom_chrome.bottom(), 800.0);
+    }
+
+    #[test]
+    fn phone_layout_no_inverted_rects_when_keyboard_exceeds_space() {
+        // DC-12 robustness：横屏手机（800×390）+ 物理尺寸键盘（340）+ safe area（34）→
+        // inner 高度 356 < top chrome（48）+ keyboard（340），avail_bottom=16 < top_chrome.bottom()。
+        // 旧实现 bottom_h = 56.min((16-48)*0.4) = -12.8 → bottom_chrome/viewport 倒置
+        //（top > bottom → 下游 size.height 变负）。真实触发：横屏 / 分屏小窗口 + 物理键盘。
+        // 修复：空间不足时 bottom bar 收缩为 0、viewport 不倒置（top ≤ bottom，零高 acceptable）。
+        let m = metrics(800.0, 390.0, 34.0, 340.0);
+        let lay = PhoneBrowserShell.layout(&m);
+        assert!(lay.keyboard_avoided, "键盘 > 0 → 仍识别避让");
+        // 三个 rect 均非倒置（top ≤ bottom）。
+        assert!(
+            lay.top_chrome.top() <= lay.top_chrome.bottom(),
+            "top_chrome non-inverted: {:?}",
+            lay.top_chrome
+        );
+        assert!(
+            lay.bottom_chrome.top() <= lay.bottom_chrome.bottom(),
+            "bottom_chrome non-inverted: {:?}",
+            lay.bottom_chrome
+        );
+        assert!(
+            lay.viewport.top() <= lay.viewport.bottom(),
+            "viewport non-inverted: {:?}",
+            lay.viewport
+        );
+        // 下游几何（size.height ≥ 0）不因倒置变负。
+        assert!(lay.viewport.size.height >= 0.0, "viewport height non-negative");
+        assert!(
+            lay.bottom_chrome.size.height >= 0.0,
+            "bottom_chrome height non-negative"
+        );
     }
 
     #[test]

@@ -1,0 +1,136 @@
+DC-7 browser-ui/chrome 深度审查（lei-deep-review）
+日期: 2026-07-03
+范围: browser-ui/chrome 全 crate（21 文件 ~4153 行：chrome_model / render /
+      sdk_render / shell / 12 §8.4.1A 领域组件 / i18n / shell_demo / phone_demo）
+重点: chrome 组件 props→build→paint→Scene 路径正确性 / BrowserChromeModel::from_shell
+      状态投影 / adaptive shell 布局（safe-area/keyboard 避让）/ 语义色消费（DC-5 交叉）/
+      DC-12 robustness（rect 非倒置）/ DC-3/DC-14 桥接正确性。
+
+================================================================
+0. 总体结论：chrome crate 成熟度高，仅 1 medium（Phone 布局倒置）需修
+================================================================
+与上几轮（DSL 5 bug / widgets 2 bug）不同，browser-ui/chrome 经历多轮迭代
+（DC-7 12/12 + DC-12 shell + DC-14 接线 + DC-3 surface pipeline + 多次审查），
+核心文件（chrome_model/render/sdk_render/shell）质量成熟。本轮逐文件审查发现
+1 个真实 medium（Phone 布局倒置 rect）+ 若干 low/已记录限制，无 high。
+
+================================================================
+1. 修复汇总（1 medium，Phone 布局倒置）
+================================================================
+
+bug（medium）—— PhoneBrowserShell::layout 在键盘/小窗口下产出倒置 rect
+  根因：`bottom_h = 56.0.min((avail_bottom - top_chrome.bottom()) * 0.4)`。
+  当 avail_bottom（= inner.bottom - keyboard）≤ top_chrome.bottom() 时，
+  `(avail_bottom - top)*0.4` 为负 → bottom_h 负 → bottom_chrome =
+  from_ltrb(left, avail_bottom - bottom_h, right, avail_bottom) 倒置
+  （top > bottom）→ 下游 size.height 变负；viewport = from_ltrb(..., bottom_chrome.top())
+  亦倒置。
+  真实触发：横屏手机（800×390）+ 物理尺寸键盘（340）+ safe area（34）→
+  inner 高 356 < top chrome（48）+ keyboard（340）→ avail_bottom=16 < 48 → 倒置。
+  分屏小窗口 + 物理键盘同理（键盘物理尺寸 > 应用窗口高度）。
+  TDD 证明：phone_layout_no_inverted_rects_when_keyboard_exceeds_space RED
+  （bottom_chrome height -12.8，origin y=28.8 > bottom 16）。
+  修复：avail_bottom ≤ top_chrome.bottom() 时 bottom_h=0（收缩 bottom bar）+
+  viewport 底取 bottom_chrome.top().max(top_chrome.bottom())（非倒置，空间不足
+  退化为零高 acceptable）。现有 phone_layout_avoids_keyboard_and_safe_area 测
+  （正常键盘 300）逐位不变（avail_bottom 480 > 48 → bottom_h=56 正常路径）。
+  chrome 84→85 测全绿 + 下游 bridge 23/browser 默认 191/sdk-chrome 202 零回归。
+
+================================================================
+2. 经查正确（无需改）—— 核心文件逐项
+================================================================
+
+chrome_model.rs（from_shell 状态投影）：
+  - tabs + active_index：遍历 shell.tabs()，active_id 匹配记 index（id 唯一，无歧义）。
+  - navigation：history_index>0 → back；history_index+1<history_len → forward。✓
+  - security：URL scheme 派生（http://→Insecure，其余→Secure）—— docstring 明示启发式
+    （browser-shell 不追踪页面安全，DC-14 seam 暂用）；file:///chrome://→Secure 可接受。
+  - downloads：6→3 状态映射（Pending/Downloading/Paused→InProgress、Completed→Completed、
+    Cancelled/Failed→Cancelled）。✓
+  - find：is_active 才投影；current_match().checked_sub(1)（1-based→0-based，0 安全）；
+    total>0→Some else None。✓
+  - bookmarks：list_root() 只返回根级 Bookmark（folder_id=None），Bookmark.url() 恒 &str →
+    BookmarkNode.url=Some 恒成立。注释「文件夹 url=None」略 stale（folders 不在 list_root），
+    非 bug（bookmark bar 不展示文件夹嵌套是已知限制）。
+
+render.rs（Chrome → Scene 桥）：
+  - chrome_color_themed：别名（chrome→surface/accent→primary/secure→success/
+    insecure|mixed→warning/dangerous→error/viewport→background）+ 未知名→token 名解析→
+    回落 surface。DC-5 全 token。✓
+  - ChromePanel.paint：用 ctx.clip.size 作填充尺寸。关键验证：host paint_node 根调用
+    parent_clip=Some(root.cached_rect)，故所有与视口重叠的节点 ctx.clip=Some
+    （own_clip=parent_clip.and_then(intersect(node.rect))），size=节点可视尺寸 → 正确。
+    unwrap_or(Size(400,height)) 仅 host-less/不重叠边角用（不重叠节点 paint 被裁掉，无害）。
+    **非 Button 类 paint 截断 bug**（与上轮 widgets 区别：ChromePanel 经 ctx.clip 拿到真实尺寸）。
+  - from_spec_with_fill：fill_background=false（PageViewportFrame）跳过底色（DC-14 替换式迁移）。✓
+  - register_chrome_factories_with_webview：PageViewportFrame→WebViewWidget（ExternalSurface）。✓
+    low（不修）：WebViewWidget theme 硬编码 Light（dark-mode 浏览器 webview 仍 light theme）；
+    修需把 ResolvedColorScheme/Theme 经工厂签名传入（API 变更，独立 follow-up）。
+
+sdk_render.rs（render_chrome_via_sdk pipeline）：
+  - 三函数管线正确：from_shell → DesktopBrowserShell.build → register_chrome_factories →
+    set_root → layout → paint → paint_scene → bridge。✓
+  - with_layout 额外返回 viewport rect（DC-14 替换式迁移协调）。✓
+  - with_webview_surface：paint_scene 前 set_surface[_with_cache] 注册 WebView 表面。✓
+  - 4 测（real shell+text+geometry / empty shell / viewport rect / webview surface merge）。✓
+
+shell.rs（adaptive shell，除上述 Phone 布局 bug）：
+  - select_shell：Compact→Phone / Expanded→Desktop / Medium+Mobile→Tablet /
+    Medium+Touch→Tablet / Medium+Pointer→Desktop（match 臂优先级正确，§8.4.4A 表）。✓
+  - 三 shell build：稳定 WidgetId（address_bar/viewport 跨 shell 一致，DC-12 输入状态保留）+
+    容器节点 props.layout 声明 + 叶子 bg/text。✓
+  - Desktop/Tablet layout：top_h=min(const, inner_h*0.5) clamp。✓
+  - 跨 shell 稳定 id / find_bar 仅活跃时出现 / adaptive 派发 测全绿。✓
+
+12 §8.4.1A 领域组件（find_bar/download_panel/browser_menu/security_badge +
+  address_bar/bookmarks_bar/browser_tab_strip/navigation_buttons/page_load_indicator/
+  page_viewport/permission_prompt/site_info_panel）：
+  - find_bar：build_text_input/build_status（i+1/n 1-based 显示）/on_find_next|prev|close
+    gated by open+query。✓
+  - download_panel：build_progress（Completed→1.0/InProgress+total>0→clamp/else indeterminate）+
+    on_open|cancel|show bounds-checked。✓
+  - browser_menu：build_menu 保序+separator+action id=browser_menu.{i}；on_activate 仅 enabled；
+    item_msg/disabled_msg 经 i18n catalog。✓
+  - security_badge：summary_label+tone per state；build_badge/tooltip。
+    low（不修）：tooltip message_id 用 summary_label 字面（"secure"）非真实 catalog id，
+    docstring 明示 M2 占位（生产替换 i18n message id）。
+  - 其余组件纯 props+build，无逻辑 bug。
+
+================================================================
+3. 记录的 follow-up（不在本轮修）
+================================================================
+
+F2（low，API 变更）—— register_chrome_factories_with_webview 硬编码 Light theme：
+  WebViewWidget 收 Light theme，dark-mode 浏览器 webview 仍按 light 渲染
+  （prefers-color-scheme 失效）。修需把 ResolvedColorScheme/Theme 经工厂签名传入
+  （register_chrome_factories_with_webview(host, tokens, scheme?) + sdk_render 调用点）。
+
+F3（low，cosmetic）—— chrome_model bookmarks 注释 stale：
+  「文件夹 url=None 已是 BookmarkNode 语义」不准确（list_root 不返回 folders）。
+  非行为 bug，仅注释更新（bookmark bar 不展示文件夹嵌套是已知限制）。
+
+F4（low，M2 占位）—— security_badge tooltip message_id 用字面 label 非 catalog id：
+  docstring 明示 M2 承载字面量，生产替换为真实 browser.security.* message id。
+
+================================================================
+4. 门禁（全绿）
+================================================================
+- cargo test -p zero-browser-chrome: 85 passed（84→85，+1 Phone 布局倒置守卫）。
+- cargo test -p zero-ui-adapter-render-foundation（sdk_render 消费者）: 23 passed。
+- cargo test -p zero-browser（默认）: 191 passed（DC-14 零回归）。
+- cargo test -p zero-browser --features sdk-chrome: 202 passed（DC-14 零回归）。
+- cargo build --workspace: Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings: Finished（0 警告）。
+- cargo fmt --all --check: 净（0 diff）。
+- 无 product-smoke 风险（修复在 chrome shell layout，apps/browser 默认/sdk-chrome 两路径
+  测全绿；未触碰页面渲染路径）。
+- DC-1 复核：browser-ui/chrome 允许依赖 ui/* + zero-browser-shell + adapter-webview
+  （唯一浏览器耦合点），修复未引入新依赖。
+
+================================================================
+5. 与历轮审查的关系
+================================================================
+SDK 安全/健壮性深度审查现覆盖 runtime（host/driver）+ DSL（engine/yaml/loader）+
+i18n（plural/RTL/catalog）+ widgets（Button）+ chrome（shell layout/状态投影/桥接）。
+本轮修 1 medium（Phone 布局倒置，真实横屏/分屏触发），chrome 核心文件经查成熟无 high。
+DC-7 浏览器侧（chrome 12 领域组件 + shell + sdk_render pipeline）深度审查闭合。
