@@ -2648,6 +2648,32 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1011 text-transform 簇 = Phase A IFC 统一墙（paint Path B 空 styles 重跑）·DoulosSIL-R.woff 不在 WPT master 确认·capitalize/upperlower 同 sans-serif fallback·零源码·纯调查
+
+承 R1010「pivot text-transform pre-layout（R998）」。本轮深查 text-transform 7/105 残余根因。
+
+**DoulosSIL-R.woff 不在 WPT master**：GitHub API 列 WPT `/fonts/` = AD/GentiumPlus/Revalia/Scheherazade/fail/mplus-1p-regular/pass/sileot-webfont/tcu-font —— **无 DoulosSIL-R.woff**（R1007 404 证，本轮 API 复核）。capitalize/upperlower 簇全用 `@font-face webfont=DoulosSIL-R.woff`，font-family 链 `'Doulos SIL','Noto Sans',webfont,sans-serif`。chromium + ZW 均**无** Doulos SIL 系统字体 + 无 webfont（文件缺）→ 同落 sans-serif（DejaVuSans，Linux 双方一致）。**故 diff 非 font 差异**，是 **transform 逻辑**。
+
+**capitalize 实现（paint/helpers.rs apply_text_transform）核查**：Capitalize 用 `prev_is_boundary = !ch.is_alphanumeric()` + `to_uppercase` 首字母——逻辑**基本正确**（titlecase 对 Latin Basic ≈ uppercase 首字母）。Upper/Lower 用 `to_uppercase`/`to_lowercase`。无 FullWidth（R998 已闭）。
+
+**★ 真阻塞 = Phase A IFC 统一墙**：transform 现**仅 paint-time 应用**（text.rs:1102/1229 Path A/B）。pre-layout 应用（layout 用转换后文本宽度）须在 `collect_inline_items`（mod.rs:526）应用 transform。但 **paint Path B 重跑 IFC 用空 styles**（R72/R890/R1004 谱系）——`style.text_transform` 在 Path B None → 无 transform 应用于 Path B 的 line-box 宽度（用原文）。即使 layout IFC 应用 transform，**paint Path B 覆盖**（R989 同机制）→ 净效果不变。**bypass = store transform/text 进 LayoutBox + paint Path B 经 override-map 读**（R1004 ascent_ratio_overrides 同模式），即 **Phase A IFC 统一**（master blocker，多 session，R639 de-risked）。R998「多 facet」三角度现收敛到**单一前置墙**：Phase A IFC 统一（paint Path B 空 styles）。
+
+**意义**：font/text 簇（text-transform + line-break + css-fonts + font-features）现**全簇收敛**到一组已知墙：① **Phase A IFC 统一**（paint Path B 空 styles——text-transform pre-layout + per-font R1004 wiring 都被此阻塞）；② char-width 估计（R225/R375b）；③ R109 inline-span；④ rustybuzz 接生产（R513）；⑤ font 匹配（R374，Noto/Doulos 系统字体差异）。R1008（line-break anywhere→BreakAll）+2 是唯一非墙易果。**后续单 session font/text lever 边际确证尽**——yield 须破墙（Phase A 为最高 EV，解锁 text-transform + per-font + 多 text 类）。
+
+**▶ 下会话（启动 Phase A IFC 统一 master blocker，多 session 首切）**：① **text-transform override-map bypass**（R1004 模式）：layout IFC（有 styles）应用 transform 后存 `LayoutBox.text_node_text_transform`（或转换后文本）+ IFC 加 `text_transform_overrides: HashMap<NodeId, TextTransformValue>` + paint Path B 从 LayoutBox 填充 + collect_inline_items 读 override 应用——narrow slice（text-transform 簇 98 案驱动，但须守双路径一致）；② 备选：直接攻 Phase A 核心机制（store_inline_layout_results 统一，R890 标「TODO 基线计算修复后启用」）——broad 但根治。两路均多 session。**勿再扫 font/text 簇单点**（墙已穷尽）。
+
+### R1010 line-break 残余 = char-width 估计墙 + R109 inline-span（非 LB 规则）·anywhere-001 实测 6 行 vs 期望 19·normal-011 target span 错位·零源码·纯调查
+
+承 R1009「normal-011 基线诊断」。本轮 LAYOUT_DUMP 实测两驱动案，确证 line-break 残余**非 LB 规则缺失**而是已知墙：
+
+**anywhere-001（plain div 文本，非 R109）实测**：`<div id=test width:1ch line-break:anywhere>` 内容 `aa-a.a)a,a）a&nbsp;a﻿a⁠a‍a･a`（~19 可见字符）。期望每字符一行 = 19 行（h≈304）。**ZW 实测 div h=96（6 行，~3 字符/行）**——BreakAll（R1008 anywhere→BreakAll）已触发但**每行容 ~3 字符非 1**。根因 = **1ch 单位解析 + estimate_char_width 0.55 启发式**：monospace 16px 字符 ZW 估 0.55×16=8.8px，div 1ch=8px，应 8.8>8 每字符溢出断；实测容 3 字符 → ZW 1ch 解析偏宽 或 字符估宽偏窄。属 **advance-width/estimate 墙**（R225/R375b memory：estimate_char_width 改 net-negative，0.55 碰巧近 system-ui；per-char advance 改 morning 19%→19.14% 退步）。**anywhere 残余 40 案同根因**——非 GL/JW/ZJW（前轮推测纠正），是字符宽度估计。
+
+**normal-011（inline span target）实测**：`p.test` 含 2 行（h=40.4），但 `span.target`（小假名ぁ）box abs_y=54（p.test abs_y=53 → y=1 行 1），与小假名应在行 2（断前）矛盾。`p.control`（`<br>` 强制）target abs_y=91（y=1 within control）同样错位。证 **inline-span box 定位不反映实际行** = **R109 inline-as-block 谱系**（span.target 的 LayoutBox 定位在首行原点非实际行）。strict/loose/normal 28 三元组**同 R109 阻塞**——非 LB 规则缺失。
+
+**裁决（line-break 簇单 session 边际确证尽）**：R1008 收 anywhere→BreakAll 易果 +2，残余 = **① char-width/1ch 估计墙（anywhere 40 案，R225/R375b dead-end）+ ② R109 inline-span（strict/loose/normal 28 案，结构性 deadlock）**。LB 规则实现**不会 yield**（两前置墙）。line-break 簇**关闭**为单 session lever。
+
+**▶ 下会话（pivot LOGIC 簇，line-break 已闭）**：① **text-transform pre-layout 应用**（R998，98 案，@font-face R1007 就绪）——IFC 文本收集期应用 transform 使 layout 用转换后宽度，避开 char-width 墙（transform 改文本内容非宽度估计）；② rustybuzz 接生产（R513，font-features 184 案，shaper.rs:82 features: Vec::new()）；③ 任意 fresh dir 扫未深挖 LOGIC 缺口。**勿再攻 line-break**（char-width 墙 + R109 双阻塞，单 session 无 yield）。
+
 ### R1009 line-break 严格/松散/正常 = LB 算法多 session·NBSP collapse（R651）再确认无 driving reftest·anywhere GL/JW/ZJW 细节非 NBSP·零源码·纯调查
 
 承 R1008「anywhere→BreakAll +2，下会话 anywhere GL/JW/ZJW + strict/loose CJK 规则」。本轮诊断 line-break 残余 82 案。
