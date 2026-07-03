@@ -1024,3 +1024,45 @@ Evidence: `evidence/dc14-pixel-diff-baseline-20260704.txt`
 **下轮明确下一步（CONTINUE）**：
 1. 定位页面区 99.70% diff 根因（对比 SDK 路径 vs 空 scene 在页面区是否渲染了页面内容 ink；对比 SDK viewport rect 与手绘 viewport rect 是否错位；必要时让 SDK 替换路径页面内容回到直接渲染不经 surface，先把页面区压到 ≈0%）。
 2. 实现 `NavigationButtonsWidget`（真实 impl Widget：4 图标按钮 + hover/pressed 圆背景 + click emit BrowserAction；图标与手绘 `ui_icons::render_icon` 字形路径对齐）。逐组件实现后重跑本测，目标 chrome 区 91.48% → ≤2%。
+
+### Round 41 — Android APK + HarmonyOS HAP 全 CLI 构建验证（2026-07-04）
+
+**成果**：两个移动端工程均实现**全 CLI 可构建**，无需人工打开 IDE。
+
+| 平台 | 构建命令 | 产出 | 大小 | 自动化 |
+|------|----------|------|------|--------|
+| Android | `.\build.ps1` → `cargo ndk` → `gradlew assembleDebug` | `app-debug.apk` | 14.2 MB | ✅ 全链路 |
+| HarmonyOS | `.\build.ps1` → `cargo build --target aarch64-unknown-linux-ohos` → `hvigorw assembleHap` | `entry-default-unsigned.hap` | 20.7 KB | ✅ 全链路 |
+
+**工程位置**：
+- Android：`ui/adapters/android/android-app/`
+- HarmonyOS：`ui/adapters/harmonyos/harmonyos-app/`
+
+**关键修复**：
+- Android：`Cargo.toml` 加 `[lib] crate-type = ["cdylib", "rlib"]`；`ffi.rs` 加 JNI wrapper；`settings.gradle.kts` 改 `dependencyResolutionManagement`；gradle-wrapper.jar 提交 + `bootstrap.ps1` 兜底
+- HarmonyOS：`DEVECO_SDK_HOME` → `C:\Program Files\Huawei\DevEco Studio\sdk`；`AppScope/app.json5`；`hvigor/hvigor-config.json5`；`entry/build-profile.json5` format；占位图标 PNG；`densityDPI` API 兼容
+
+**部署**：
+| 平台 | 安装 | 启动 |
+|------|------|------|
+| Android | `adb install app-debug.apk` | `adb shell am start -n com.zeroweb.ui/.MainActivity` |
+| HarmonyOS | `hdc install entry-default-unsigned.hap` | `hdc shell aa start -a EntryAbility -b com.zeroweb.ui` |
+
+**移动端自动化现状更新**：
+
+此前 master.md 多条记录标注「移动端需 GUI/设备」。更新后：
+
+| 步骤 | Android | HarmonyOS |
+|------|---------|-----------|
+| Rust 交叉编译 | ✅ CLI | ✅ CLI |
+| 工程构建 (APK/HAP) | ✅ CLI (gradlew) | ✅ CLI (hvigorw) |
+| 安装到设备 | ✅ adb | ✅ hdc |
+| 启动 | ✅ am start | ✅ aa start |
+| 视觉验收 | ❌ 需人眼 | ❌ 需人眼 |
+| 测试 | 20 测 | 21 测 |
+
+**唯一不可自动化的**：首帧视觉验收（两个平台都需要人眼看第一次启动结果）。
+
+**工具链要求**：
+- Android：`ANDROID_HOME` + `ANDROID_NDK_HOME` + `cargo-ndk` + `gradle-wrapper.jar`
+- HarmonyOS：`DEVECO_SDK_HOME` + DevEco Studio + `node` (bundled) + `hvigorw.js` (bundled)
