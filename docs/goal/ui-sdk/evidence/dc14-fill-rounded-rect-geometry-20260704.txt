@@ -1,0 +1,69 @@
+DC-14 PaintRecorder fill_rounded_rect + chrome 几何对齐（高度/顺序）
+================================================================
+日期: 2026-07-04
+分支: ui-sdk
+
+背景
+----
+Round 42（全宽 bar）后 chrome 区 83.13%（y<96）。本轮：①加 fill_rounded_rect 原语（架构
+unblocker，hover 圆盘/圆角 pill/圆角 tab 都要）；②chrome 几何对齐手绘（高度 + bar 顺序）。
+
+A. fill_rounded_rect 原语
+-------------------------
+发现 `RenderPrimitive::FillRect` 早有 `rounding` 字段、`RenderBackend::fill_rect` 早带
+`Rounding` 参数、bridge `fill_rect` 早按半径 emit `RoundedRectPrimitive`——全管线已支持，
+**唯独 widget-facing `PaintRecorder` trait 只暴露 `fill_rect(rect,color)`**。
+
+最小补齐：`PaintRecorder` 加 `fill_rounded_rect(rect, corner_radius, color)` **默认方法**
+（委托 fill_rect，测试 mock 沿用）+ `SceneRecorder` 覆写（emit `FillRect { rounding }`，
+radius≤0 → ZERO）。ui/render 加测 `fill_rounded_rect_emits_fillrect_with_rounding`。
+端到端：widget → Scene → paint_scene → bridge.fill_rect(rounding) → RoundedRectPrimitive。
+ui/render 15+3 / bridge 24 测全绿。
+
+B. ChromePanel 圆角 pill（地址栏）
+----------------------------------
+`ChromePanel` 加 `corner_radius` 字段（prop，paint 时 >0 用 fill_rounded_rect）。
+shell.rs Desktop/Tablet AddressBar 设 corner_radius=18（手绘 radius = bar_h*0.5；44/2≈22，
+本轮先用 18，后续可精调）。地址栏现圆角 pill（架构正确）。
+
+C. Chrome 几何对齐手绘（高度 + 顺序）—— 主 diff 降低
+------------------------------------------------------
+对比 app_render.rs 手绘渲染顺序与 layout.rs 高度，发现 SDK chrome 两处几何错配：
+
+1. **bar 顺序错（swapped）**：手绘顺序 = tab strip（顶）→ address/nav row → bookmarks
+   （app_render.rs step 2/4/8）。SDK 此前 = toolbar(address/nav) 顶 → tab strip → bookmarks。
+   → tab strip 与 address row 上下颠倒。修：DesktopBrowserShell 改 tab strip first。
+
+2. **高度错**：手绘 layout.rs TAB_STRIP_HEIGHT=40（TAB_BAR_TOP_INSET 6 + TAB_BAR_HEIGHT 34）、
+   ADDRESS_BAR_HEIGHT=44、BOOKMARKS_BAR_HEIGHT=28（总 112）。SDK ChromePanel 此前 32/36/28
+   （总 96）。修：register_chrome_factories 高度改 40/44/28（AddressBar/Nav/Menu/Security=44，
+   TabStrip=40，Bookmarks=28），对齐 layout.rs。
+
+3. 基线测 chrome_bottom 96→112（实测 chrome 区现在 112 = 40+44+28）。
+
+Baseline 改善（dc14_chrome_region_pixel_diff_baseline，control hand-vs-hand 0.000%）
+-------------------------------------------------------------------------------------
+| 区 | Round 42 | Round 43（本轮） |
+|----|----------|------------------|
+| chrome | 83.13%（y<96, 102155/122880） | **73.99%**（y<112, 106074/143360） |
+| page | 0.00% | 0.00% |
+
+注意：chrome 区从 y<96 扩到 y<112（SDK chrome 高度对齐手绘 112），分母变大。**匹配像素数**
+20725 → **37286**（近翻倍）——高度/顺序对齐后更多 chrome 像素重合（bar 背景在正确位置）。
+剩余 73.99% diff = 内容（文字占位 vs 图标/tab 形状）+ 图标缺失（架构阻塞，见下）。
+
+架构阻塞（图标）
+----------------
+nav/address/security/menu 图标经 resvg SVG→FontLoader bitmap_glyph→GlyphDraw。SDK bridge
+用 FontdueBackend **无图标 bitmap**。fill_rounded_rect 解锁了几何圆角，但图标仍需下轮：
+要么 PaintRecorder 加 draw_image + bridge 接入浏览器图标 bitmap（ImageCache），要么图标
+经 GlyphDraw 通路（需 bridge emit glyph 而非 ImagePrimitive）。独立 turn。
+
+门禁
+----
+- ui/render 15+3 / bridge 24 / chrome crate 86 测全绿
+- browser sdk-chrome: **205 passed / 0 failed**（单线程）
+- cargo clippy（ui/core+render+chrome+browser sdk-chrome）-D warnings: 净
+- cargo fmt: 净
+- SDK-only（chrome crate + sdk-chrome feature），default 不编译本变更 → 无 product-smoke 风险。
+- merge origin/main R1008-R1009（rendering-compat line-break BreakAll，正交零冲突）。

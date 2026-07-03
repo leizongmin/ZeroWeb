@@ -1818,7 +1818,7 @@ mod sdk_chrome_tests {
         assert_eq!(control_diff, 0, "hand-vs-hand render must be deterministic");
 
         // 顶部 chrome 区 ≈ 96px；其余为页面（viewport）区。
-        let chrome_bottom = 96u32;
+        let chrome_bottom = 112u32;
         let mut chrome_diff = 0usize;
         let mut chrome_total = 0usize;
         let mut page_diff = 0usize;
@@ -1888,7 +1888,7 @@ mod sdk_chrome_tests {
             render_full_scene(width, height, 1.0, &RenderPrimitives::default(), &fl, &mut gc, None, &[], &[], &[], &[])
         };
 
-        let chrome_bottom = 96u32;
+        let chrome_bottom = 112u32;
         let ink_against_empty = |fb: &zero_render_foundation::surface::FrameBuffer| -> (usize, usize, usize, usize) {
             // 返回 (chrome_ink, chrome_total, page_ink, page_total)。
             let mut ci = 0usize;

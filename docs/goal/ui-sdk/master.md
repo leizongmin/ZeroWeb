@@ -327,6 +327,7 @@
 
 ## Latest Evidence
 
+- `evidence/dc14-fill-rounded-rect-geometry-20260704.txt` — **Round 43 PaintRecorder fill_rounded_rect + chrome 几何对齐（高度/顺序），chrome 匹配像素近翻倍**。①发现 `RenderPrimitive::FillRect` 早有 `rounding` 字段、`RenderBackend::fill_rect` 早带 `Rounding`、bridge 早按半径 emit `RoundedRectPrimitive`——全管线已支持，**唯独 `PaintRecorder` trait 未暴露**；补 `fill_rounded_rect` 默认方法 + `SceneRecorder` 覆写 + ui/render 测。②ChromePanel 加 `corner_radius` prop，地址栏圆角 pill。③**chrome 几何对齐手绘**：bar 顺序 tab-strip-first（此前 toolbar 在顶、tab strip 在下，与手绘 swapped）+ 高度 40/44/28（对齐 layout.rs TAB_STRIP_HEIGHT=40/ADDRESS_BAR_HEIGHT=44/BOOKMARKS_BAR_HEIGHT=28，总 112；此前 32/36/28=96）+ 基线测 chrome_bottom 96→112。**结果**：chrome 区 83.13%（y<96, 102155/122880）→ **73.99%（y<112, 106074/143360）**；**匹配像素 20725→37286（近翻倍）**——高度/顺序对齐后更多 chrome 像素重合；page 0.00% 不变；控制组 0.000%。剩余 73.99% = 内容（文字占位 vs 图标/tab 形状）+ 图标缺失（架构阻塞：下轮 draw_image + bridge 接入图标 bitmap）。门禁：ui/render 15+3 / bridge 24 / chrome 86 / browser sdk-chrome 205 单线程全绿 + clippy/fmt 净；SDK-only 无 product-smoke 风险。
 - `evidence/dc14-chrome-fullwidth-bars-20260704.txt` — **Round 42 DC-14 chrome 区 diff 降低：全宽 bar 修复（94.56% → 83.13%）**。临时 diagnostic dump desktop shell 各 chrome 节点 rect，定位 TabStrip(40×32)/BookmarksBar(101×28) **按文案宽收缩**而非全宽（手绘全宽 1280）→ 大片缺背景 diff。**修复**：ChromePanel 加 `fill_width` 字段（prop，layout 时 width=max_width）+ shell.rs `leaf_fullwidth` helper，TabStrip/BookmarksBar 改用之。**结果**：chrome 区 **94.56% → 83.13%**（-11.43pp），全帧 ~11.3%→~9.3%；page 区 0.00% 不变；控制组 0.000%。剩余 chrome diff = nav//address/security/menu 占位 + 图标缺失（架构阻塞：手绘图标经 resvg SVG→FontLoader bitmap_glyph→GlyphDraw，SDK bridge 用 FontdueBackend 无图标 bitmap，且 PaintRecorder 无 circle/image；需下轮扩展 PaintRecorder 加 rounded_rect+image 或 bridge 接入图标 bitmap）。门禁：chrome crate 86 / browser sdk-chrome 205 单线程全绿 + clippy/fmt 净；SDK-only 无 product-smoke 风险。
 - `evidence/dc14-page-region-rootcause-fix-20260704.txt` — **Round 40 DC-14 page-region 99.70% diff 根因定位 + 修复（headless）**。逐层 diagnostic 定位：page 区灰来自 `chrome_shadows` 的 viewport drop shadow（rect 0,84,1280,716 blur6 alpha22 覆盖整个 viewport）；手绘 chrome 用 chrome_fills step 9 的 page_bg 白底覆盖阴影内部，但 **SDK 替换路径丢弃了 chrome_fills** → 阴影染灰整片页面。**修复（Fix 1）**：SDK 替换路径 3 个 scene_primitives 初始化点（render_frame/render_cpu/test）不带 chrome_shadows（SDK chrome 不同布局几何，不应继承手绘 chrome 阴影；真实 Widget 落地后由组件自画）。**结果**：page 区 **99.70% → 0.00%**，全帧 diff ~98.7% → **~11.3%**；chrome 区 91.48%→94.56%（+3pp，SDK 现画 2 个 ChromePanel bar，待真实 Widget 收敛）；控制组 hand-vs-hand 仍 0.000%。**剩余 diff 全在 chrome 区**（12 组件 ChromePanel 占位）= NavigationButtonsWidget 等真实 Widget 的反馈环目标。顺手修复：SURFACE_ID 1→0（与 WebViewWidget 工厂默认一致，loaded page surface 不再丢）+ image_cache None 时不再 early-return（SDK chrome 仍渲染）。门禁：browser sdk-chrome **205**/default **191** 单线程全绿 + clippy/fmt 净；并行跑 6 scroll/touch/link 测 flaky（单线程全绿，既有 timing 类，非本轮引入）。Fix 2（保留阴影+page_bg 覆盖）因 fill 顺序耦合覆盖 content/overlay 致 5 测失败，回退用 Fix 1。
 - `evidence/dc14-pixel-diff-baseline-20260704.txt` — **Round 39 DC-14 chrome-region pixel-diff baseline 量化（headless 可视验收反馈环建立）**。新增 `dc14_chrome_region_pixel_diff_baseline` 测（sdk_chrome_tests，`--nocapture` 查看数值）：同一 BrowserApp 状态下逐像素比较手绘路径（`render_full_scene_with_webview_for_test`）vs SDK 替换路径（`render_full_scene_sdk_chrome_for_test`），1280×800。**控制组 hand-vs-hand = 0.000%**（harness 确定可信）。**Baseline**：chrome 区 (y<96) **91.48%** diff、页面区 (y≥96) **99.70%** diff。两个关键发现：①chrome 区 91.48% 与 §DC-7/DC-14「真实 Chrome Widget 缺口」一致（12 组件全为 ChromePanel 占位），把 DC-14 ≤2% 目标量化；②**页面区 99.70% 是意外高信号**——master.md 预期页面区 ≈0%（两路径共用 build_scene 页面内容），实测几乎全差 → SDK 替换路径的页面 surface 合成（page_fills → surface_id=1 → draw_external_surface）与直接渲染产出完全不同像素，是独立于 Widget 占位的另一类问题（待下轮定位：viewport rect 错位 / draw_order·clip / surface 坐标系）。**把 DC-14 从「定性 + 需 GUI」转为「定量 + headless 可验证」**，为真实 Widget 实现提供反馈环。门禁：browser sdk-chrome **204**（+1）/ default **191** 零回归 + clippy/fmt 净。
@@ -1132,3 +1133,43 @@ Evidence: `evidence/dc14-chrome-fullwidth-bars-20260704.txt`
 支持，并设计图标绘制通路（bridge 接入浏览器图标 bitmap 经 ImageCache，或 PaintRecorder 加 draw_image），
 为 NavigationButtonsWidget / AddressBarWidget 真实化解锁；继续用 dc14_chrome_region_pixel_diff_baseline
 看 chrome 区 83.13% 收敛。
+
+### Round 43 — fill_rounded_rect 原语 + chrome 几何对齐（高度/顺序），匹配像素近翻倍（2026-07-04）
+
+**A. fill_rounded_rect 原语（架构 unblocker）**：发现 `RenderPrimitive::FillRect` 早有 `rounding`
+字段、`RenderBackend::fill_rect` 早带 `Rounding`、bridge 早按半径 emit `RoundedRectPrimitive`——
+全管线已支持，**唯独 widget-facing `PaintRecorder` trait 未暴露**。补 `fill_rounded_rect` 默认方法
+（委托 fill_rect，测试 mock 沿用）+ `SceneRecorder` 覆写（emit FillRect{rounding}）+ ui/render 测。
+解锁 hover 圆盘 / 圆角 pill / 圆角 tab 等所有圆角 chrome 视觉。
+
+**B. ChromePanel 圆角 pill**：加 `corner_radius` prop，地址栏（Desktop/Tablet）设 radius 18。
+
+**C. chrome 几何对齐手绘（主 diff 降低）**：对比 app_render.rs 顺序 + layout.rs 高度，定位两处错配：
+1. **bar 顺序 swapped**：手绘 = tab strip（顶）→ address/nav row → bookmarks；SDK 此前 = toolbar
+   顶 → tab strip → bookmarks。修 DesktopBrowserShell 为 tab-strip-first。
+2. **高度错**：手绘 TAB_STRIP_HEIGHT=40 / ADDRESS_BAR_HEIGHT=44 / BOOKMARKS_BAR_HEIGHT=28（总 112）；
+   SDK 此前 32/36/28（总 96）。修 register_chrome_factories 为 40/44/28。
+3. 基线测 chrome_bottom 96→112。
+
+**Baseline 改善**（dc14_chrome_region_pixel_diff_baseline，control 0.000%）：
+| 区 | Round 42 | Round 43 |
+|----|----------|----------|
+| chrome | 83.13%（y<96, 102155/122880） | **73.99%（y<112, 106074/143360）** |
+| page | 0.00% | 0.00% |
+**匹配像素 20725 → 37286（近翻倍）**——高度/顺序对齐后更多 chrome 像素重合（bar 背景在正确位置）。
+
+**架构阻塞（图标）**：nav/address/security/menu 图标经 resvg SVG→FontLoader bitmap_glyph→GlyphDraw；
+SDK bridge 用 FontdueBackend 无图标 bitmap。fill_rounded_rect 解锁了几何圆角，但图标仍需下轮：
+PaintRecorder 加 draw_image + bridge 接入浏览器图标 bitmap（ImageCache），或 bridge emit glyph。
+独立 turn。
+
+**门禁全绿**：ui/render 15+3 / bridge 24 / chrome 86 / browser sdk-chrome 205（单线程 0 failed）+
+clippy -D warnings 净 + fmt 净。SDK-only（chrome crate + sdk-chrome feature）→ 无 product-smoke 风险。
+merge origin/main R1008-R1009（rendering-compat line-break BreakAll，正交零冲突）。
+
+Evidence: `evidence/dc14-fill-rounded-rect-geometry-20260704.txt`
+
+**下轮下一步**：图标绘制通路——PaintRecorder 加 `draw_image(rect, image_key)` + SceneRecorder emit
+ImagePrimitive + bridge passthrough，浏览器把 SVG 图标（ui_icons resvg 光栅化）注册进帧 ImageCache
+并把 key 经 props 传给 chrome 工厂；实现 NavigationButtonsWidget 真实图标 + hover 圆盘
+（用 fill_rounded_rect），用 dc14_chrome_region_pixel_diff_baseline 看 chrome 区 73.99% 收敛。

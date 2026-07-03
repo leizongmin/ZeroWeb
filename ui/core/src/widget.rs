@@ -87,6 +87,16 @@ impl WidgetSpec {
 /// 绘制后端抽象（M1 最小契约）。`ui/render` 提供具体实现，把记录转成 RenderPrimitives。
 pub trait PaintRecorder {
     fn fill_rect(&mut self, rect: Rect, color: Color);
+    /// 填充圆角矩形（`corner_radius` 同时应用到四角，逻辑像素）。
+    ///
+    /// 用于 chrome 控件的圆角背景：按钮 hover/pressed 圆盘（半径 = 半边长）、地址栏圆角 pill、
+    /// 圆角标签等。默认实现忽略圆角委托 [`fill_rect`](Self::fill_rect)（测试 mock 沿用）；
+    /// 真实场景由 `SceneRecorder` 覆写产出带 `Rounding` 的 `FillRect` 图元，经 `paint_scene`
+    /// → 后端 `fill_rect(rect, color, rounding)` → `RoundedRectPrimitive`。
+    fn fill_rounded_rect(&mut self, rect: Rect, corner_radius: f32, color: Color) {
+        let _ = corner_radius;
+        self.fill_rect(rect, color);
+    }
     fn stroke_rect(&mut self, rect: Rect, color: Color, stroke_width: f32);
     /// 绘制原始字符串文本（后端负责 shape/measure/raster；简单场景与测试用）。
     ///

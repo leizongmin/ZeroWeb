@@ -87,6 +87,8 @@ pub struct ChromePanel {
     /// 占满可用宽度（cross-axis 拉伸）。用于全宽 bar（TabStrip / BookmarksBar）——
     /// 这些 bar 在 column 容器里须铺满窗口宽，而非按文案宽度收缩。
     fill_width: bool,
+    /// 背景圆角半径（逻辑像素，四角同）。> 0 时用 `fill_rounded_rect`（地址栏 pill 等）。
+    corner_radius: f32,
 }
 
 impl ChromePanel {
@@ -134,6 +136,11 @@ impl ChromePanel {
             Some(Value::Bool(b)) => *b,
             _ => false,
         };
+        let corner_radius = match spec.props.get("corner_radius") {
+            Some(Value::Float(f)) => *f as f32,
+            Some(Value::Int(i)) => *i as f32,
+            _ => 0.0,
+        };
         ChromePanel {
             bg,
             text,
@@ -142,6 +149,7 @@ impl ChromePanel {
             fill_viewport,
             fill_background,
             fill_width,
+            corner_radius,
         }
     }
 }
@@ -179,8 +187,12 @@ impl Widget for ChromePanel {
         // ctx.clip = 祖先 clip ∩ 节点 rect（绝对坐标）；其 size 即节点可视尺寸。
         let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(400.0, self.height));
         if self.fill_background {
-            ctx.recorder
-                .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
+            let rect = Rect::from_ltrb(0.0, 0.0, size.width, size.height);
+            if self.corner_radius > 0.0 {
+                ctx.recorder.fill_rounded_rect(rect, self.corner_radius, self.bg);
+            } else {
+                ctx.recorder.fill_rect(rect, self.bg);
+            }
         }
         if let Some(text) = &self.text {
             // 文本基线：bars 在 height-8 处；viewport 顶部 18px。
@@ -203,28 +215,32 @@ impl Widget for ChromePanel {
 /// 调用方仍需先 `host.set_root(&shell.build(...))` 注入声明树。
 pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens) {
     // bars：固定高度的语义色条 + 可选文案；颜色经 semantic token 解析（DC-5）。
+    // 高度对齐 apps/browser/src/layout.rs 手绘 chrome（DC-14 像素级等价）：
+    //   TAB_STRIP_HEIGHT = TAB_BAR_TOP_INSET(6) + TAB_BAR_HEIGHT(34) = 40
+    //   ADDRESS_BAR_HEIGHT = 44（地址行：AddressBar / NavigationButtons / BrowserMenu / SecurityBadge）
+    //   BOOKMARKS_BAR_HEIGHT = 28
     // SemanticTokens 是 Copy：每个 move 闭包各持一份副本。
     let t = *tokens;
     host.register("browser.AddressBar", move |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 36.0, false, &t))
+        Box::new(ChromePanel::from_spec(s, "chrome", 44.0, false, &t))
     });
     host.register("browser.NavigationButtons", move |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 36.0, false, &t))
+        Box::new(ChromePanel::from_spec(s, "chrome", 44.0, false, &t))
     });
     host.register("browser.BrowserMenu", move |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 36.0, false, &t))
+        Box::new(ChromePanel::from_spec(s, "chrome", 44.0, false, &t))
     });
     host.register("browser.BrowserTabStrip", move |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 32.0, false, &t))
+        Box::new(ChromePanel::from_spec(s, "chrome", 40.0, false, &t))
     });
     host.register("browser.BookmarksBar", move |s| {
         Box::new(ChromePanel::from_spec(s, "chrome", 28.0, false, &t))
     });
     host.register("browser.SecurityBadge", move |s| {
-        Box::new(ChromePanel::from_spec(s, "secure", 28.0, false, &t))
+        Box::new(ChromePanel::from_spec(s, "secure", 44.0, false, &t))
     });
     host.register("browser.FindBar", move |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 32.0, false, &t))
+        Box::new(ChromePanel::from_spec(s, "chrome", 36.0, false, &t))
     });
     // 视口：占满剩余区域，**不填底色**（DC-14 替换式迁移：页面内容由 WebView 绘制在上层，
     // SDK chrome viewport 只负责布局空间，不覆盖页面像素）。

@@ -151,6 +151,10 @@ impl BrowserChromeShell for DesktopBrowserShell {
             Some(model.address_text.clone()),
             1.0,
         ));
+        // 地址栏为圆角 pill（手绘 chrome：radius = bar_h * 0.5；toolbar 高 ≈ 36 → radius 18）。
+        if let Some(addr) = toolbar.children.last_mut() {
+            addr.props.insert("corner_radius", Value::Float(18.0));
+        }
         toolbar.children.push(leaf(
             "browser.SecurityBadge",
             ID_SECURITY_BADGE,
@@ -163,13 +167,16 @@ impl BrowserChromeShell for DesktopBrowserShell {
             "toolbar_bg",
             Some(crate::i18n::localized_label(crate::i18n::ids::OPEN_MENU)),
         ));
-        root.children.push(toolbar);
+        // 手绘 chrome 顺序（app_render.rs）：tab strip（顶）→ address/nav row → bookmarks。
+        // 此前 SDK 顺序是 toolbar 在顶、tab strip 在下（与手绘 swapped），DC-14 chrome diff
+        // 几何错配主因之一。改为 tab strip first（2026-07-04）。
         root.children.push(leaf_fullwidth(
             "browser.BrowserTabStrip",
             ID_TAB_STRIP,
             "tab_strip_bg",
             Some(tab_titles(model)),
         ));
+        root.children.push(toolbar);
         root.children.push(leaf_fullwidth(
             "browser.BookmarksBar",
             ID_BOOKMARKS,
@@ -235,6 +242,10 @@ impl BrowserChromeShell for TabletBrowserShell {
             Some(model.address_text.clone()),
             1.0,
         ));
+        // 地址栏为圆角 pill（手绘 chrome：radius = bar_h * 0.5；toolbar 高 ≈ 36 → radius 18）。
+        if let Some(addr) = toolbar.children.last_mut() {
+            addr.props.insert("corner_radius", Value::Float(18.0));
+        }
         toolbar.children.push(leaf(
             "browser.SecurityBadge",
             ID_SECURITY_BADGE,

@@ -57,6 +57,16 @@ impl PaintRecorder for SceneRecorder {
         });
     }
 
+    fn fill_rounded_rect(&mut self, rect: Rect, corner_radius: f32, color: Color) {
+        // corner_radius ≤ 0 → 等价 fill_rect（无圆角）；> 0 → 四角同半径。
+        let rounding = if corner_radius <= 0.0 {
+            Rounding::ZERO
+        } else {
+            Rounding::all(corner_radius)
+        };
+        self.push(RenderPrimitive::FillRect { rect, color, rounding });
+    }
+
     fn stroke_rect(&mut self, rect: Rect, color: Color, stroke_width: f32) {
         self.push(RenderPrimitive::StrokeRect {
             rect,
@@ -101,6 +111,31 @@ mod tests {
         assert_eq!(scene.entries.len(), 2);
         assert_eq!(scene.entries[0].source, WidgetId::new("btn"));
         assert!(matches!(scene.entries[1].primitive, RenderPrimitive::Text { .. }));
+    }
+
+    #[test]
+    fn fill_rounded_rect_emits_fillrect_with_rounding() {
+        // fill_rounded_rect(radius > 0) → FillRect 带四角同半径 rounding；
+        // radius ≤ 0 → 等价 fill_rect（rounding ZERO）。
+        let mut r = SceneRecorder::new(WidgetId::new("disk"));
+        r.fill_rounded_rect(Rect::ZERO, 8.0, Color::WHITE);
+        r.fill_rounded_rect(Rect::ZERO, 0.0, Color::BLACK);
+        let scene = r.finish();
+        match &scene.entries[0].primitive {
+            RenderPrimitive::FillRect { rounding, color, .. } => {
+                assert_eq!(rounding.top_left, 8.0);
+                assert_eq!(rounding.top_right, 8.0);
+                assert_eq!(rounding.bottom_left, 8.0);
+                assert_eq!(*color, Color::WHITE);
+            }
+            other => panic!("expected FillRect, got {other:?}"),
+        }
+        match &scene.entries[1].primitive {
+            RenderPrimitive::FillRect { rounding, .. } => {
+                assert_eq!(*rounding, Rounding::ZERO, "radius<=0 should be ZERO rounding");
+            }
+            other => panic!("expected FillRect, got {other:?}"),
+        }
     }
 
     #[test]
