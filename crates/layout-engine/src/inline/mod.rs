@@ -35,7 +35,7 @@ use zero_css_parser::values::{DisplayValue, LengthValue, OverflowValue, Vertical
 
 use zero_dom::{Document, NodeId, NodeKind};
 
-use zero_style_system::ComputedStyle;
+use zero_style_system::{ComputedStyle, TextTransformValue};
 
 /// 读取已解析的 LengthValue（Px）为 f32，非 Px（Auto/Percentage/Calc…）返回 0。
 /// 用于 inline-block margin 读取（margin 已在 compute_style 解析为 Px）。
@@ -175,7 +175,15 @@ pub struct InlineFormattingContext {
     /// 本字段是 per-font 真实值的承载——空 map（默认）回退 R990 常数（零回归），
     /// 由 `ascent_ratio_for` 消费。
     pub ascent_ratio_overrides: HashMap<NodeId, f32>,
-    /// Phase 2a multicol 列碎片化上下文（可选）。
+    /// 逐父元素的 text-transform 覆盖（key = 文本节点的父元素 NodeId）。
+    ///
+    /// **R1012 Phase A IFC 统一首切**：text-transform 须在行断前应用（layout 用
+    /// 转换后文本宽度行断），但 paint Path B 重跑 IFC 时 styles 为空 →
+    /// `collect_inline_items` 读不到父元素 text-transform。paint 从
+    /// `LayoutBox.text_node_text_transform`（key = 文本节点）re-key 到父元素后
+    /// 填充本 map，`collect_inline_items` 据此在空 styles 下应用 transform。
+    /// 空 map（默认）= None = 原文，零回归。
+    pub text_transform_overrides: HashMap<NodeId, TextTransformValue>,
     ///
     /// `None`（默认）= IFC 行盒不碎片化（当前行为，零回归）。
     /// `Some` = step-2 在 `break_items_into_lines` 后按本上下文把行盒分配到列
@@ -216,6 +224,7 @@ impl InlineFormattingContext {
             fragment_node_ids: None,
             font_metric_provider: None,
             ascent_ratio_overrides: HashMap::new(),
+            text_transform_overrides: HashMap::new(),
             column_fragmentation: None,
         }
     }
@@ -284,6 +293,17 @@ impl InlineFormattingContext {
     /// provider family 解析（绕过 R890 空 styles 墙）。
     pub fn with_ascent_ratio_overrides(mut self, overrides: HashMap<NodeId, f32>) -> Self {
         self.ascent_ratio_overrides = overrides;
+        self
+    }
+
+    /// 注入逐父元素 text-transform 覆盖（R1012 Phase A IFC 统一首切）。
+    ///
+    /// 空 map（默认）= None = 原文，零回归。paint Path B 从
+    /// `LayoutBox.text_node_text_transform` re-key 到父元素后填充本 map，
+    /// `collect_inline_items` 据此在空 styles 下应用 transform，使行断用
+    /// 转换后文本宽度（与 layout IFC 一致）。
+    pub fn with_text_transform_overrides(mut self, overrides: HashMap<NodeId, TextTransformValue>) -> Self {
+        self.text_transform_overrides = overrides;
         self
     }
 
@@ -575,6 +595,16 @@ impl InlineFormattingContext {
                                     _ => 0.0,
                                 })
                                 .unwrap_or(0.0);
+                            // R1012：text-transform 须在行断前应用，使 layout 用转换后
+                            // 文本宽度行断（与 chromium 一致）。layout IFC（有 styles）读
+                            // 父元素 computed text-transform；paint Path B（空 styles）走
+                            // text_transform_overrides 覆盖（re-key 到父元素）。
+                            let text_transform = style.map(|s| s.text_transform).unwrap_or_else(|| {
+                                parent_id
+                                    .and_then(|pid| self.text_transform_overrides.get(&pid).copied())
+                                    .unwrap_or(TextTransformValue::None)
+                            });
+                            let text = text_transform.apply(&text);
                             let is_ahem_font = style
                                 .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
                                 .unwrap_or_else(|| {
