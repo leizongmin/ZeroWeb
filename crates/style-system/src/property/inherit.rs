@@ -36,7 +36,7 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             true
         }
         "text-transform" => {
-            child.text_transform = parent.text_transform.clone();
+            child.text_transform = parent.text_transform;
             true
         }
         "letter-spacing" => {

@@ -14,7 +14,7 @@ use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, LineCap,
 use zero_style_system::{
     ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
     ComputedStyle, ContentComputedValue, DirectionValue, ObjectFitComputedValue, TabSizeValue, TextAlignLastValue,
-    TextAlignValue, TextOverflowValue, WhiteSpaceValue,
+    TextAlignValue, TextOverflowValue, TextTransformValue, WhiteSpaceValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -967,6 +967,20 @@ impl super::Painter {
                     })
                     .collect();
 
+                // R1012：text-transform 覆盖（re-key 文本节点 → 父元素），让 paint Path B
+                // 空 styles IFC 也能在 collect_inline_items 期应用 transform，使行断用
+                // 转换后文本宽度（与 layout IFC / chromium 一致）。None 不插入（保持默认）。
+                let parent_text_transforms: HashMap<zero_dom::NodeId, TextTransformValue> = box_node
+                    .text_node_text_transform
+                    .iter()
+                    .filter_map(|(&tn, &tt)| {
+                        if !is_text(tn) || matches!(tt, TextTransformValue::None) {
+                            return None;
+                        }
+                        doc.parent_node(tn).map(|pid| (pid, tt))
+                    })
+                    .collect();
+
                 let inline_metrics = box_node.inline_element_metrics.clone();
                 let margin_overrides = box_node.inline_element_margins.clone();
 
@@ -986,6 +1000,7 @@ impl super::Painter {
                     .with_is_ahem_overrides(parent_is_ahem)
                     .with_letter_spacing_overrides(parent_letter_spacing)
                     .with_line_height_overrides(parent_line_heights)
+                    .with_text_transform_overrides(parent_text_transforms)
                     .with_inline_element_metrics(inline_metrics)
                     .with_margin_overrides(margin_overrides);
                 // R109 §9.2.1.1：匿名块盒片段——若此盒是 inline 被 block 子元素拆分后的

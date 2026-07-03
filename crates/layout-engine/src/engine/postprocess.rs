@@ -267,7 +267,7 @@ pub(super) fn adjust_inline_block_positions(
     inline_ctx.layout(doc, container_node_id, styles);
 
     // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
-    store_font_sizes_from_ifc(&inline_ctx, root);
+    store_font_sizes_from_ifc(&inline_ctx, root, doc, styles);
 
     // 将 fragment 坐标应用到 inline-block 子元素的 LayoutBox
     // 使用 all_fragments_with_line_y() 获取包含行盒 Y 偏移的绝对坐标
@@ -393,7 +393,7 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
     inline_ctx.layout(doc, container_node_id, styles);
 
     // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
-    store_font_sizes_from_ifc(&inline_ctx, root);
+    store_font_sizes_from_ifc(&inline_ctx, root, doc, styles);
 
     // 将 IFC 片段坐标应用到 abs-pos 子元素
     let fragments = inline_ctx.all_fragments();

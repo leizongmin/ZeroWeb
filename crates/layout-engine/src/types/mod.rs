@@ -219,6 +219,15 @@ pub struct LayoutBox {
     /// 的元素，近似值会导致行盒高度与 layout IFC 不一致。
     /// 使用此映射确保 paint IFC 的行盒高度与 layout IFC 一致。
     pub text_node_line_heights: HashMap<NodeId, f32>,
+    /// 文本节点的 text-transform 映射（来自 layout engine 的 IFC 运行）。
+    ///
+    /// **R1012 Phase A IFC 统一首切**：text-transform 须在行断前应用，使 layout
+    /// 用转换后文本宽度行断。但 paint Path B 重跑 IFC 时 styles 为空，无法读取
+    /// 父元素的 text-transform → 行断用原文 → 与 layout 不一致。此映射（key = 文本
+    /// 节点 NodeId）由 `store_font_sizes_from_ifc` 在 layout 期填充，paint Path B
+    /// 据此构造 `text_transform_overrides`（re-key 到父元素），让 `collect_inline_items`
+    /// 在空 styles 下也能应用 transform。空 map（默认）= None = 原文，零回归。
+    pub text_node_text_transform: HashMap<NodeId, zero_style_system::TextTransformValue>,
     /// 内联元素的 (font_size, line_height) 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// 与 text_node_font_sizes/line_heights 不同，此映射以元素自身的 NodeId 为键，
@@ -358,6 +367,7 @@ impl Default for LayoutBox {
             text_node_is_ahem: HashMap::new(),
             text_node_letter_spacing: HashMap::new(),
             text_node_line_heights: HashMap::new(),
+            text_node_text_transform: HashMap::new(),
             inline_element_metrics: HashMap::new(),
             inline_element_margins: HashMap::new(),
             taffy_baseline: None,
