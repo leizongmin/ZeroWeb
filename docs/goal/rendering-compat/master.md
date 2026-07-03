@@ -2648,6 +2648,20 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1009 line-break 严格/松散/正常 = LB 算法多 session·NBSP collapse（R651）再确认无 driving reftest·anywhere GL/JW/ZJW 细节非 NBSP·零源码·纯调查
+
+承 R1008「anywhere→BreakAll +2，下会话 anywhere GL/JW/ZJW + strict/loose CJK 规则」。本轮诊断 line-break 残余 82 案。
+
+**NBSP collapse 修复实验（R651 再激活，已回退·零 yield）**：R651 记 `collapse_whitespace`（inline_types.rs:218）用 `char::is_whitespace()` 误折叠 NBSP(U+00A0)/U+3000（违反 CSS Text 3 §4.1 仅 TAB/LF/FF/CR/SPACE 可折叠），彼时无 driving reftest 故 defer。本轮发现 line-break-anywhere 簇用 `<span>&nbsp;</span>` 驱动——试修 `is_css_collapsible_ws`（仅 5 字符）A/B：**line-break 2/84 + white-space 45/395 + line-breaking 60/127 三 dir 全持平**（零 yield 零回归）。证 anywhere 失败**非 NBSP 折叠**所致（NBSP 在 monospace 1ch 宽，BreakAll overflow-driven 已断；折叠与否不改行数）。R651「无 driving reftest」结论**再确认**——NBSP 角度永久关闭，已回退。
+
+**anywhere 残余 40 案 = GL/JW/ZJW + zero-width 字符断点细节**：BreakAll overflow-driven 仅在 `partial_x + ch_width > line_limit` 时断；zero-width 字符（ZWNBSP U+FEFF/WJ U+2060/ZWNJ U+200D）ch_width=0 不触发 overflow → 不在其处创建断点。`line-break: anywhere` spec 要求每个排版字符处断（含 zero-width）。修须 BreakAll 在 zero-width/GL/JW/ZJW 字符处也创建断机会（非 overflow-driven）——窄子集，独立 slice，EV 待测。
+
+**★ strict/loose/normal 28 案（014/016b/011/018 等三元组 ~12%）= LB 算法多 session**：每三元组测一 CJK 规则——011 小假名（U+3041 ぁ 等断前禁则）/014 迭代标记（々）/016b 居中标点（・）/018 前缀（￥$）。**关键发现**：normal-011（应匹配 ZW 默认 CJK 断行）**也 ~10.6% FAIL**——证 ZW 单一渲染（无 strict/loose/normal 区分）**连 normal 默认都不匹配**，即 ZW 基线 CJK 断行本身对这组测试不精确（非仅缺 strict/loose/normal 规则）。三案同 diff（~10.6%）= 同一 ZW 渲染 vs 三个不同 ref。修须 ① LB 字符分类（小假名/迭代标记/居中标点/前缀 break class）+ ② strict/loose/normal 规则差异 + ③ 基线 CJK 断行精度（normal 都不过 → 基线有偏）—— CSS Text §5.3 + UAX 14 LB1-LB27，多 session 硬核。
+
+**裁决**：line-break 簇 R1008 收割 anywhere 易果（+2），残余 = anywhere zero-width 细节（窄）+ strict/loose/normal LB 算法（多 session，~28+ 案）。单 session 边际已尽。下会话**勿单点攻 strict/loose/normal**（normal 基线不过证基线 CJK 断行有偏，须先查 normal-011 为何 default 不匹配）。
+
+**▶ 下会话（二选一）**：① **line-break normal-011 基线诊断**——ZW 默认 CJK 断行为何不匹配 normal-011-ref（应 default break-before-small-kana），LAYOUT_DUMP 看断点；若基线修对，normal/loose 三元组（~14 案）可能批量过；② **pivot text-transform pre-layout 应用**（R998 另一 LOGIC 簇 98 案，@font-face 已 R1007 就绪）；③ rustybuzz 接生产（R513 font-features 184 案）。三 LOGIC 轨均多 session。R1008 +2 是 line-break 易果，本 R1009 纯调查确认单 session 边际尽 + NBSP 角度永闭。
+
 ### R1008 ★line-break: anywhere → BreakAll LANDED = line-break 簇首个 PASS（0/84→2/84 +2）·CSS Text 3 §5.3 解析 + layout/paint 双路径映射·零回归·parse-basic dead-code trap 规避
 
 承 R1007「转 LOGIC 层，首推 CJK line-break」。line-break 簇 0/84 全部因 `line-break` 属性**完全未解析**（silent ignore → 默认断行）。本轮实现 line-break 解析 + `anywhere`→BreakAll 映射。
