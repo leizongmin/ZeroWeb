@@ -174,11 +174,13 @@ impl BrowserApp {
             };
             #[cfg(feature = "sdk-chrome")]
             let mut scene_primitives = {
-                // chrome 阴影保持为顶层 primitives（不进入 webview surface）。
-                RenderPrimitives {
-                    shadows: chrome_shadows,
-                    ..Default::default()
-                }
+                // DC-14: SDK chrome 不继承手绘 chrome 的 viewport drop shadow（不同布局几何）。
+                // 手绘 chrome 的 page_bg（app_render.rs step 9）会覆盖该阴影内部，但 SDK 替换
+                // 路径丢弃了 chrome_fills，致 chrome_shadows 的 viewport 阴影内部染灰整片页面
+                // （DC-14 page-region 99.70% diff 根因，2026-07-04 诊断）。故 SDK 路径不带
+                // chrome_shadows；真实 chrome Widget 落地后由组件自身画正确阴影。
+                let _ = &chrome_shadows;
+                RenderPrimitives::default()
             };
 
             // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
@@ -280,9 +282,10 @@ impl BrowserApp {
             p
         };
         #[cfg(feature = "sdk-chrome")]
-        let mut scene_primitives = RenderPrimitives {
-            shadows: chrome_shadows,
-            ..Default::default()
+        let mut scene_primitives = {
+            // DC-14: SDK 路径不带手绘 chrome viewport drop shadow（见 render_frame 注释）。
+            let _ = &chrome_shadows;
+            RenderPrimitives::default()
         };
 
         // 取活跃标签页 webview 的 ImageCache，供渲染器绘制 <img> 图元
@@ -423,9 +426,10 @@ impl BrowserApp {
         // SDK chrome 替换手绘 chrome 主层（与 render_cpu feature-on 一致）。
         let _ = (chrome_fills, chrome_glyphs);
         let webview_extras = self.get_webview_extra_primitives();
-        let mut scene_primitives = RenderPrimitives {
-            shadows: chrome_shadows,
-            ..Default::default()
+        let mut scene_primitives = {
+            // DC-14: SDK 路径不带手绘 chrome viewport drop shadow（见 render_frame 注释）。
+            let _ = &chrome_shadows;
+            RenderPrimitives::default()
         };
         let mut image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
             Some(id) => self.tabs.image_cache_mut(id),
@@ -1115,23 +1119,7 @@ fn compose_sdk_chrome_replacement_with_webview(
     // 预置 SDK chrome fills 到 scene_primitives 最底层（页面内容在 surface 内，由
     // draw_external_surface 在 ExternalSurface marker 位置合成到正确 z-order）。
     let mut new_fills = sdk_prims.fills;
-    // DC-14 page_bg 覆盖：手绘 chrome 在 chrome_fills step 9（app_render.rs:108）画 page_bg
-    // 白底覆盖 chrome_shadows 的 viewport drop shadow 内部（阴影 rect 覆盖整个 viewport，
-    // blur 填充会把内部染灰）。SDK 替换路径丢弃了手绘 chrome_fills，须在此据 SDK chrome
-    // 布局的 viewport_rect 补 page_bg fill，否则页面区被阴影染灰（DC-14 page-region
-    // 99.70% diff 根因，2026-07-04 诊断）。page_bg 在 light/dark palette 均为白色（colors.rs）。
-    // fill 经 render_full_scene 绘在 shadow 之上（与手绘 step 9 同语义），覆盖阴影内部。
-    if let Some(vp) = viewport_rect {
-        new_fills.push(zero_render_foundation::primitive::FillPrimitive {
-            rect: zero_render_foundation::geometry::Rect::new(
-                vp.origin.x,
-                vp.origin.y,
-                vp.size.width,
-                vp.size.height,
-            ),
-            color: zero_render_foundation::color::Color::rgb(255, 255, 255),
-        });
-    }
+    let _ = viewport_rect;
     new_fills.append(&mut scene_primitives.fills);
     scene_primitives.fills = new_fills;
 

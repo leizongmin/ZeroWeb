@@ -327,6 +327,7 @@
 
 ## Latest Evidence
 
+- `evidence/dc14-page-region-rootcause-fix-20260704.txt` — **Round 40 DC-14 page-region 99.70% diff 根因定位 + 修复（headless）**。逐层 diagnostic 定位：page 区灰来自 `chrome_shadows` 的 viewport drop shadow（rect 0,84,1280,716 blur6 alpha22 覆盖整个 viewport）；手绘 chrome 用 chrome_fills step 9 的 page_bg 白底覆盖阴影内部，但 **SDK 替换路径丢弃了 chrome_fills** → 阴影染灰整片页面。**修复（Fix 1）**：SDK 替换路径 3 个 scene_primitives 初始化点（render_frame/render_cpu/test）不带 chrome_shadows（SDK chrome 不同布局几何，不应继承手绘 chrome 阴影；真实 Widget 落地后由组件自画）。**结果**：page 区 **99.70% → 0.00%**，全帧 diff ~98.7% → **~11.3%**；chrome 区 91.48%→94.56%（+3pp，SDK 现画 2 个 ChromePanel bar，待真实 Widget 收敛）；控制组 hand-vs-hand 仍 0.000%。**剩余 diff 全在 chrome 区**（12 组件 ChromePanel 占位）= NavigationButtonsWidget 等真实 Widget 的反馈环目标。顺手修复：SURFACE_ID 1→0（与 WebViewWidget 工厂默认一致，loaded page surface 不再丢）+ image_cache None 时不再 early-return（SDK chrome 仍渲染）。门禁：browser sdk-chrome **205**/default **191** 单线程全绿 + clippy/fmt 净；并行跑 6 scroll/touch/link 测 flaky（单线程全绿，既有 timing 类，非本轮引入）。Fix 2（保留阴影+page_bg 覆盖）因 fill 顺序耦合覆盖 content/overlay 致 5 测失败，回退用 Fix 1。
 - `evidence/dc14-pixel-diff-baseline-20260704.txt` — **Round 39 DC-14 chrome-region pixel-diff baseline 量化（headless 可视验收反馈环建立）**。新增 `dc14_chrome_region_pixel_diff_baseline` 测（sdk_chrome_tests，`--nocapture` 查看数值）：同一 BrowserApp 状态下逐像素比较手绘路径（`render_full_scene_with_webview_for_test`）vs SDK 替换路径（`render_full_scene_sdk_chrome_for_test`），1280×800。**控制组 hand-vs-hand = 0.000%**（harness 确定可信）。**Baseline**：chrome 区 (y<96) **91.48%** diff、页面区 (y≥96) **99.70%** diff。两个关键发现：①chrome 区 91.48% 与 §DC-7/DC-14「真实 Chrome Widget 缺口」一致（12 组件全为 ChromePanel 占位），把 DC-14 ≤2% 目标量化；②**页面区 99.70% 是意外高信号**——master.md 预期页面区 ≈0%（两路径共用 build_scene 页面内容），实测几乎全差 → SDK 替换路径的页面 surface 合成（page_fills → surface_id=1 → draw_external_surface）与直接渲染产出完全不同像素，是独立于 Widget 占位的另一类问题（待下轮定位：viewport rect 错位 / draw_order·clip / surface 坐标系）。**把 DC-14 从「定性 + 需 GUI」转为「定量 + headless 可验证」**，为真实 Widget 实现提供反馈环。门禁：browser sdk-chrome **204**（+1）/ default **191** 零回归 + clippy/fmt 净。
 - `evidence/deep-review-mobile-eventmap-r37-20260703.txt` — **Round 37 第 11/12 层深度审查：ui/adapters/{harmonyos,android} event_map（DC-15 移动输入）**。**发现并修 1 个真实 latent DC-15 bug（双适配器同病）**：`map_window_metrics` 把平台 DPI 比（input.density，phone 3.0）同时塞进 `scale_factor` **和** `density`——违反 DC-12 决策（density = Material 间距密度 DEFAULT_DENSITY=1.0，与 scale_factor HiDPI 正交；winit adapter 正确用 DEFAULT_DENSITY）。后果：density=3.0 phone 上所有 spacing token 3× 放大 → 布局爆。latent（仅移动设备后端落地后触发）但确是 metrics 映射 correctness 错误。**修复**：`density: DEFAULT_DENSITY`（DPI 比只进 scale_factor）+ input struct `density` 字段加 doc comment 澄清语义 + 更新全部受影响测试（event_map 3 测/适配器 + ffi 1 测/适配器，density→DEFAULT_DENSITY 补 scale_factor 断言）。其余经查正确（触摸相位 ACTION_*/TouchAction、pointer_id 多指、back gesture、soft keyboard、system_theme）。门禁全绿：harmonyos **21** + android **20** / clippy 双适配器净 / fmt 净 / **cargo build --workspace 净**。**移动 adapter 是 leaf skeleton 不在默认浏览器二进制 → 零生产/渲染影响**（workspace build 确认全局编译）。**SDK 通用层深度审查现覆盖 12 层**。
 - `evidence/deep-review-winit-event-map-r36-20260703.txt` — **Round 36 第 10 层深度审查：ui/adapters/winit/event_map.rs（DC-2 输入关键，winit→UiEvent 纯函数映射）**。16 个 map 函数逐一核验 **0 active bug**。**关键验证**：docstring 声称的「与 host-runtime 键命名一致」经核 host-runtime/src/event.rs:203 `convert_keyboard_input` **逐字相同**（Named→`{:?}`/Character/Unidentified/Dead），无跨路径键名分歧。坐标空间不对称（map_touch 内部转 logical、其余取已 logical position）是 docstring 化设计，且 winit event_map 当前**无生产调用方**（仅集成测 + runtime.rs docstring 草图；生产 EventLoop::run 是 GUI-gated M4 件）→ 无现行 bug 风险。**价值加固（本审查实际产出）**：浏览器按精确字符串匹配 16 个命名键（Escape/Space/Home/Enter/Tab/PageDown/ArrowUp·Down·Left·Right/PageUp/End/Delete/Backspace/F1/F5），event_map 经 `format!("{named:?}")` 产出——**脆弱跨 crate 契约**（winit Debug 漂移→浏览器输入静默失效），此前只测 5 键。新增 `logical_key_matches_browser_critical_contract` 覆盖全部 16 键，**全 PASS**（契约成立）→ 锁定 11 个新覆盖键。门禁全绿：winit **32**（+1）/ clippy 净（修 rust 1.91 explicit_auto_deref）/ fmt 净 / reftest 686/686 / product-smoke 19.41%（本变为 #[test]，winit adapter 不在默认浏览器二进制 → 零生产影响）。merge origin/main R1001（rendering-compat table-cell，正交）。**SDK 通用层深度审查现覆盖 10 层**。
@@ -1066,3 +1067,32 @@ Evidence: `evidence/dc14-pixel-diff-baseline-20260704.txt`
 **工具链要求**：
 - Android：`ANDROID_HOME` + `ANDROID_NDK_HOME` + `cargo-ndk` + `gradle-wrapper.jar`
 - HarmonyOS：`DEVECO_SDK_HOME` + DevEco Studio + `node` (bundled) + `hvigorw.js` (bundled)
+
+### Round 40 — DC-14 page-region 99.70% diff 根因定位 + 修复（headless，2026-07-04）
+
+**Round 39 建立 baseline 后，本轮定位并修复 page 区 99.70% diff（应为 ≈0%）**。
+
+**根因（逐层 diagnostic）**：
+1. page ink 分析：hand-drawn 页面区 ink 0.4%（fresh tab 空），SDK 页面区 ink 100%，像素采样 SDK 中心 [221] 灰 vs hand [255] 白。
+2. 真实 compose 路径 fills dump：`compose_sdk_chrome_replacement_with_webview` 在 image_cache=None 时 **early-return** → SDK chrome 完全不渲染（帧只剩 chrome_shadows）。
+3. shadow 定位：那 1 个 chrome_shadow = viewport drop shadow（rect 0,84,1280,716 blur6 alpha22）**覆盖整个 viewport**。raster：WITH shadow 页面灰、WITHOUT 白。
+4. 为何 hand-drawn 同 shadow 却白：手绘 chrome_fills step 9（app_render.rs:108）画 page_bg 白底覆盖阴影内部；**SDK 替换路径丢弃了 chrome_fills**（用 2 个 ChromePanel bar 替换）→ 无 page_bg → 阴影染灰页面。webview_extras 完全空，非覆盖来源。
+
+**修复（Fix 1，采用）**：SDK 替换路径 3 个 scene_primitives 初始化点（render_frame GPU / render_cpu / render_full_scene_sdk_chrome_for_test）不带 chrome_shadows（`RenderPrimitives::default()` + `let _ = &chrome_shadows;`）。理由：SDK chrome 不同布局几何，不应继承手绘 chrome 的 viewport drop shadow；真实 Widget 落地后由组件自画。Fix 2（保留阴影 + 据 viewport_rect 补 page_bg fill 覆盖阴影内部）验证 page 区确变白，但 page_bg 被画在 fills 末尾覆盖 content/overlay，致 5 个 scroll/link 测失败 → 回退用 Fix 1。
+
+**顺手修复**：`SURFACE_ID` 1→0（与 WebViewWidget 工厂默认 surface_id 一致；此前错配致 loaded page surface 永不合成，fresh tab 空 surface 未暴露此 bug）+ image_cache None 时不再 early-return（SDK chrome 仍渲染，仅跳过 ImageCache 合并）。
+
+**Baseline 改善**（`dc14_chrome_region_pixel_diff_baseline`）：
+| 区 | Round 39 | Round 40 |
+|----|----------|----------|
+| chrome (y<96) | 91.48% | 94.56%（+3pp：SDK 现画 2 ChromePanel bar） |
+| **page (y≥96)** | **99.70%** | **0.00%** ✅ |
+| 全帧估算 | ~98.7% | **~11.3%** |
+
+控制组 hand-vs-hand 仍 0.000%（harness 可信）。**剩余 diff 全在 chrome 区**（12 组件 ChromePanel 占位）= NavigationButtonsWidget 等真实 Widget 的反馈环目标（chrome 区 94.56% → ≤2%）。
+
+**门禁全绿**：browser sdk-chrome **205**/default **191**（单线程，0 failed）+ clippy -D warnings 净 + fmt 净。origin/main 已 merge（cc17ae1d layout-engine inline，rendering-compat 正交）。**flakiness 跟踪**：全量并行跑 6 个 scroll/touch/link 测偶发 FAILED（sync_webview_viewport_and_poll timing 类），单线程全绿，与本轮改动无关（既有并行负载 flakiness）。
+
+Evidence: `evidence/dc14-page-region-rootcause-fix-20260704.txt`
+
+**下轮下一步**：实现 `NavigationButtonsWidget`（真实 impl Widget：4 图标按钮 + hover/pressed 圆背景 + click emit BrowserAction），逐组件压缩 chrome 区 94.56% → ≤2%；反馈环 = `dc14_chrome_region_pixel_diff_baseline`。

@@ -1,0 +1,93 @@
+DC-14 page-region 99.70% diff 根因定位 + 修复（headless）
+============================================================
+日期: 2026-07-04
+分支: ui-sdk
+测试: apps/browser/src/app_platform.rs::sdk_chrome_tests::{dc14_chrome_region_pixel_diff_baseline, dc14_page_region_ink_diagnostic}
+
+背景
+----
+Round 39 建立 DC-14 pixel-diff baseline：chrome 区 91.48%、**page 区 99.70%**（控制组
+hand-vs-hand 0.000% 证明 harness 可信）。page 区 99.70% 是意外高信号——两路径共用
+build_scene 的页面内容，预期 ≈0%。本轮定位并修复。
+
+根因定位（逐层 diagnostic 测）
+-------------------------------
+1. **page ink 分析**（`dc14_page_region_ink_diagnostic`）：
+   - hand-drawn 页面区 ink 0.4%（fresh tab，page 基本空），SDK 页面区 ink 100%。
+   - 像素采样：hand 页面中心 [255,255,255] 白；SDK 页面中心 [221,221,221] 灰。
+   - → SDK 路径在 viewport 涂了一层灰（非黑，empty scene clear 色为白）。
+2. **surface 合成验证**（已删的 diagnostic）：用已知红色 surface fill，surface_id=0 时
+   viewport 染红（合成 OK），surface_id=1 时不染（错配）。但真实 page surface 内容为空
+   （fresh tab），故 surface_id 错配非真实 page 灰的因（顺手修 SURFACE_ID 1→0 与
+   WebViewWidget 工厂默认一致）。
+3. **真实 compose 路径 fills dump**（已删的 diagnostic）：
+   - `compose_sdk_chrome_replacement_with_webview` 在 image_cache=None 时 **early-return**
+   → SDK chrome 完全不渲染（帧只剩 chrome_shadows）。**修复**：image_cache None 时仍渲染
+   SDK chrome（仅跳过 ImageCache 合并）。修后 SDK chrome 产 2 fills。
+   - 修后真实 SDK scene：fills=2（chrome bars y<36）+ shadows=1。
+4. **shadow 定位**：那 1 个 shadow = `chrome_shadows` 的 viewport drop shadow，
+   rect=(0,84,1280,716) blur=6 color=black alpha=22——**覆盖整个 viewport**。
+   raster 验证：WITH shadow 页面中心 [221] 灰，WITHOUT shadow [255] 白。
+   → 灰来自 chrome_shadows。
+5. **为何 hand-drawn 同 shadow 却白**：手绘 chrome 在 chrome_fills step 9
+   （app_render.rs:108）画 page_bg 白底覆盖 viewport，盖住阴影内部。**SDK 替换路径丢弃了
+   chrome_fills**（用 SDK chrome 的 2 个 ChromePanel bar 替换），无 page_bg 覆盖 → 阴影
+   染灰整片页面。webview_extras 完全空（所有 bucket 0），非覆盖来源。
+
+修复
+----
+**Fix 1（采用）**：SDK 替换路径**不带 chrome_shadows**。3 个 SDK scene_primitives 初始化点
+（render_frame GPU / render_cpu / render_full_scene_sdk_chrome_for_test）从
+`RenderPrimitives { shadows: chrome_shadows, .. }` 改为 `RenderPrimitives::default()` +
+`let _ = &chrome_shadows;`（避免 SDK 构建 unused 警告）。
+
+理由：SDK chrome 有自己的布局几何，不应继承手绘 chrome 的 viewport drop shadow
+（手绘 chrome_top ≈ 96 vs SDK chrome 不同；阴影 rect 按手绘布局算）。手绘的 page_bg
+覆盖是「画白底盖阴影内部」的 workaround，SDK 路径直接不画该阴影更干净。真实 chrome Widget
+落地后由组件自身画正确阴影 + page_bg（follow-up）。
+
+**Fix 2（尝试后回退）**：保留 shadow + 在 compose 据 viewport_rect 补 page_bg 白底 fill
+覆盖阴影内部。验证：page 区确实变白（0.00%），但 page_bg 被画在 fills 末尾（render_full_scene
+里绘在 content/overlay 之上）→ 覆盖了页面内容与 floating_link overlay，致 5 个 scroll/link
+测失败。fill 顺序与现有 scene 装配耦合复杂，回退改用 Fix 1。
+
+顺手修复：`compose_sdk_chrome_replacement_with_webview` 的 `SURFACE_ID` 1→0（与
+WebViewWidget 工厂默认 surface_id 一致；此前错配致页面 surface 永不合成，fresh tab 空
+surface 未暴露，但 loaded page 会丢内容）+ image_cache None 时不再 early-return。
+
+Baseline 改善（同一测试 dc14_chrome_region_pixel_diff_baseline）
+----------------------------------------------------------------
+                       chrome 区 (y<96)    page 区 (y>=96)    全帧估算
+Round 39 (修复前):     91.48%              99.70%             ~98.7%
+本轮 (Fix 1 后):       94.56%              **0.00%**          **~11.3%**
+
+- page 区 99.70% → **0.00%** ✅（viewport drop shadow 不再染灰页面）
+- chrome 区 91.48% → 94.56%（+3pp：SDK 现画 2 个 ChromePanel bar，与手绘 chrome bars
+  差异；预期，待真实 Widget 收敛）
+- 全帧 diff ~98.7% → ~11.3%（page 区面积是 chrome 区 7×，主导下降）
+- 控制组 hand-vs-hand 仍 0.000%（harness 可信）
+
+剩余 diff 全部集中在 chrome 区（12 个 chrome 组件全为 ChromePanel 占位）——正是
+NavigationButtonsWidget 等真实 Widget 工作要逐个收敛的（目标 chrome 区 94.56% → ≤2%）。
+
+门禁
+----
+- browser sdk-chrome: **205 passed / 0 failed**（单线程；203 baseline + baseline 测 +
+  ink_diagnostic 测）
+- browser default:   **191 passed / 0 failed**（单线程）
+- `cargo clippy -p zero-browser --all-targets --features sdk-chrome -- -D warnings`: 净
+- `cargo fmt --all --check`: 净
+- origin/main 已 merge（cc17ae1d layout-engine inline，rendering-compat 正交）
+- **flakiness 跟踪**：全量并行跑（默认 test-threads）有 6 个 scroll/touch/link 测偶发
+  FAILED（floating_link_status / handle_scroll / handle_mouse_drag_scroll /
+  handle_touch_drag / home_end / keyboard_space_pagedown）——均为 sync_webview_viewport_and_poll
+  类 timing-sensitive 测，**单线程全绿（191/205）**，与本轮改动无关（apps/browser 不用
+  SDK chrome 替换路径渲染页面内容；属既有并行负载 flakiness，master.md 已记录同类模式）。
+
+下轮下一步
+----------
+- 实现 `NavigationButtonsWidget`（真实 impl Widget：4 图标按钮 + hover/pressed 圆背景 +
+  click emit BrowserAction），逐组件压缩 chrome 区 94.56% → ≤2%。反馈环 =
+  dc14_chrome_region_pixel_diff_baseline（每实现一个组件重跑看 chrome 区收敛）。
+- 可选 follow-up：真实 Widget 落地后，恢复 chrome/page 边界 drop shadow（组件自身画），
+  替代本轮 Fix 1 的「去阴影」。
