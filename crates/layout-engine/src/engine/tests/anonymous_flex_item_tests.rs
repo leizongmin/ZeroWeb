@@ -2,6 +2,7 @@
 
 use crate::engine::LayoutEngine;
 use crate::types::LayoutBox;
+use std::collections::HashMap;
 use zero_css_parser::values::DisplayValue;
 use zero_dom::Document;
 use zero_style_system::StyleSystem;
@@ -316,4 +317,75 @@ fn test_abspos_flex_children_not_reordered_by_order() {
         "abspos flex children must NOT be reordered by `order`; keep DOM order (abs1 before abs2), got {:?}",
         order
     );
+}
+
+/// R982 Phase 0 探针：csswg #5663 — flex item min-width:auto 的 transferred-size-suggestion
+/// 应从「明确拉伸的 cross size」推导（非固有内容尺寸）。
+///
+/// 场景（同 flex-minimum-width-flex-items-013.html）：
+///   `<div style="display:flex; width:0; height:50px"><img style="width:999px">`
+///   img 固有 300×150（ratio 2:1）。
+///
+/// 预期（csswg #5663）：flex 容器 width:0 → img 主尺寸被 min-width:auto clamp。
+///   min-width:auto = transferred-size-suggestion = 拉伸 cross-size 50 × 固有比 300/150 = 100px。
+///   故 img 最终 width ≈ 100px（绿方块填满 100px 正方形，无红）。
+///
+/// 本探针断言正确行为；当前 ZW 若未实现 #5663，img width 会是 999（未 clamp）或 0（塌缩），
+/// 本测试 FAIL，揭示精确 gap。fix 落地后此测试转 PASS（作回归守卫）。
+#[test]
+fn test_flex_transferred_min_size_from_stretched_cross() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex; width:0px; height:50px;"><img src="g.png" style="width:999px;"></div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let mut img_sizes = HashMap::new();
+    img_sizes.insert(img_id, (300.0, 150.0)); // 固有 300×150，ratio 2:1
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let (w, h) = find_box(&result.root, img_id).expect("img box found");
+    // csswg #5663：min-width:auto = stretched cross(50) × ratio(2) = 100px
+    assert!(
+        (w - 100.0).abs() < 2.0,
+        "R982: flex item img width should be clamped to transferred min-size ~100px (stretched cross 50 × ratio 2), got width={w}, height={h}"
+    );
+}
+
+/// R982 回归守卫：transferred-size-suggestion 仅对 flex 容器生效，非 flex 父（block）
+/// 不应改 img 尺寸——img 仍按其显式 width 渲染。
+#[test]
+fn test_flex_transferred_min_size_not_applied_to_non_flex_parent() {
+    let html = r#"<html><body style="margin:0">
+<div style="width:0px; height:50px;"><img src="g.png" style="width:999px;"></div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let mut img_sizes = HashMap::new();
+    img_sizes.insert(img_id, (300.0, 150.0));
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let (w, _h) = find_box(&result.root, img_id).expect("img box found");
+    // 非 flex 父：img 不被 transferred clamp，保持显式 width 999
+    assert!(
+        (w - 999.0).abs() < 2.0,
+        "R982 guard: img in non-flex block parent should keep width 999 (no transferred clamp), got {w}"
+    );
+}
+
+/// 在 LayoutResult 树中按 node_id 查找盒的 (width, height)。
+fn find_box(root: &LayoutBox, node_id: zero_dom::NodeId) -> Option<(f32, f32)> {
+    let mut stack = vec![root];
+    while let Some(b) = stack.pop() {
+        if b.node_id == Some(node_id) {
+            return Some((b.width, b.height));
+        }
+        stack.extend(b.children.iter());
+    }
+    None
 }
