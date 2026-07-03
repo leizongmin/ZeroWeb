@@ -191,6 +191,14 @@ impl BrowserApp {
                 Some(id) => self.tabs.image_cache_mut(id),
                 None => None,
             };
+            // fresh tab 无 snapshot → image_cache None。SDK chrome 文本/图标（ImagePrimitive）仍须
+            // 可渲染：回落本帧临时 cache（compose 把 SDK image 合并进来）。
+            #[cfg(feature = "sdk-chrome")]
+            let mut sdk_local_cache = ImageCache::new(256, 8 * 1024 * 1024);
+            #[cfg(feature = "sdk-chrome")]
+            if image_cache.is_none() {
+                image_cache = Some(&mut sdk_local_cache);
+            }
 
             // DC-14 SDK chrome 替换手绘 chrome（feature `sdk-chrome`）。
             // DC-3 phase-2（webview surface 变体）：webview_extras 作为 surface 注册，
@@ -204,6 +212,7 @@ impl BrowserApp {
                     page_fills, page_glyphs,
                     Some(webview_extras), // DC-3 phase-2: webview surface
                     &mut scene_primitives, &mut image_cache,
+                    &sdk_chrome_tokens(&self.chrome_palette),
                 )
             };
 
@@ -296,6 +305,13 @@ impl BrowserApp {
             Some(id) => self.tabs.image_cache_mut(id),
             None => None,
         };
+        // fresh tab 无 snapshot → image_cache None；SDK chrome 文本/图标须可渲染 → 本帧临时 cache。
+        #[cfg(feature = "sdk-chrome")]
+        let mut sdk_local_cache = ImageCache::new(256, 8 * 1024 * 1024);
+        #[cfg(feature = "sdk-chrome")]
+        if image_cache.is_none() {
+            image_cache = Some(&mut sdk_local_cache);
+        }
 
         // DC-14 SDK chrome 替换手绘 chrome（feature `sdk-chrome`）。
         // DC-3 phase-2（webview surface 变体）：webview_extras 作为 surface 注册。
@@ -307,6 +323,7 @@ impl BrowserApp {
                 page_fills, page_glyphs,
                 Some(webview_extras), // DC-3 phase-2: webview surface
                 &mut scene_primitives, &mut image_cache,
+                &sdk_chrome_tokens(&self.chrome_palette),
             )
         };
 
@@ -451,6 +468,7 @@ impl BrowserApp {
             Some(webview_extras),
             &mut scene_primitives,
             &mut image_cache,
+            &sdk_chrome_tokens(&self.chrome_palette),
         );
         let fills = [page_fills, chrome_overlay_fills].concat();
         let glyphs = [page_glyphs, chrome_overlay_glyphs].concat();
@@ -1029,6 +1047,49 @@ fn build_webview_surface_primitives(
     surface
 }
 
+#[cfg(feature = "sdk-chrome")]
+use zero_ui_core::theme::SemanticTokens;
+
+/// 把浏览器 [`ChromePalette`](crate::colors::ChromePalette) 映射为 SDK [`SemanticTokens`]（DC-14 颜色 parity）。
+///
+/// SDK chrome 组件经 semantic token 消费颜色（DC-5），但 Zero 默认 token 集 (`SemanticTokens::light()`)
+/// 与浏览器 chrome 调色板不同（surface≈245 vs toolbar_bg=248；on_surface≈dark vs nav_button=95,99,104）。
+/// 本映射让 SDK chrome **保持 token 驱动** 同时产出与手绘 chrome 相同色值：
+/// - `surface` ← `toolbar_bg`（chrome/toolbar_bg/bookmarks bar 全用 surface → 全部精确匹配；三者
+///   在调色板里同为 248,249,250）。
+/// - `background` ← `address_bar_bg`（地址栏 pill / viewport 背景；address_bar_bg=248,249,250）。
+/// - `on_surface` ← `nav_button`（nav 图标 tint + 默认文本前景 = 95,99,104）。
+/// - `success`/`warning`/`error` ← `address_bar_secure`/`address_bar_insecure`/`tab_crashed`（安全徽章）。
+///
+/// `SemanticTokens` 是 SDK 通用层，本函数只在使用 SDK chrome 的 feature `sdk-chrome` 下编译
+/// （apps/browser 反向依赖 SDK chrome crate 已允许）。
+#[cfg(feature = "sdk-chrome")]
+fn sdk_chrome_tokens(p: &crate::colors::ChromePalette) -> zero_ui_core::theme::SemanticTokens {
+    use zero_ui_core::theme::{Color, SemanticTokens};
+    let f = |c: zero_render_foundation::color::Color| {
+        Color::rgba(
+            c.r as f32 / 255.0,
+            c.g as f32 / 255.0,
+            c.b as f32 / 255.0,
+            c.a as f32 / 255.0,
+        )
+    };
+    SemanticTokens {
+        background: f(p.address_bar_bg),
+        on_background: f(p.address_bar_text),
+        surface: f(p.toolbar_bg),
+        on_surface: f(p.nav_button),
+        primary: f(p.loading_indicator),
+        on_primary: Color::WHITE,
+        error: f(p.tab_crashed),
+        on_error: Color::WHITE,
+        success: f(p.address_bar_secure),
+        on_success: Color::WHITE,
+        warning: f(p.address_bar_insecure),
+        on_warning: Color::WHITE,
+    }
+}
+
 /// DC-14 SDK chrome 替换手绘 chrome（WebView surface 变体，DC-3 phase-2）。
 ///
 /// 使用 `render_chrome_via_sdk_with_webview_surface`：把 WebView 页面内容（fills + 额外图元）
@@ -1049,13 +1110,14 @@ fn compose_sdk_chrome_replacement_with_webview(
     webview_extras: Option<RenderPrimitives>,
     scene_primitives: &mut RenderPrimitives,
     image_cache: &mut Option<&mut ImageCache>,
+    tokens: &SemanticTokens,
 ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
     use zero_browser_chrome::sdk_render::render_chrome_via_sdk_with_webview_surface;
     use zero_browser_chrome::render::{NAV_ICON_BACK, NAV_ICON_FORWARD, NAV_ICON_HOME, NAV_ICON_RELOAD};
     use zero_browser_chrome::sdk_render::IconMask;
     use zero_ui_core::geometry::{Insets, Size};
     use zero_ui_core::layout::WindowMetrics;
-    use zero_ui_core::theme::{ResolvedColorScheme, SemanticTokens};
+    use zero_ui_core::theme::ResolvedColorScheme;
 
     // DC-14 真实 nav 图标：把 4 个 SVG 图标（back/forward/reload/home）经 resvg 光栅为 alpha 掩码，
     // 注册到桥接 image_masks。NavigationButtonsWidget 经 draw_image(NAV_ICON_*) 引用，桥接按 tint
@@ -1121,7 +1183,7 @@ fn compose_sdk_chrome_replacement_with_webview(
     });
 
     let (bridge, viewport_rect) = render_chrome_via_sdk_with_webview_surface(
-        shell, &metrics, &SemanticTokens::light(), ResolvedColorScheme::Light, backend, webview_surface, &nav_masks,
+        shell, &metrics, tokens, ResolvedColorScheme::Light, backend, webview_surface, &nav_masks,
     );
     let (sdk_prims, sdk_cache) = bridge.into_primitives_and_cache();
 
@@ -1716,6 +1778,7 @@ mod sdk_chrome_tests {
             Some(extras), // 传入 webview 额外图元
             &mut scene,
             &mut Some(&mut image_cache),
+            &sdk_chrome_tokens(&crate::colors::ChromePalette::light()),
         );
 
         // page_fills 已移入 surface → 返回空 Vec（不再手动翻译合并）。

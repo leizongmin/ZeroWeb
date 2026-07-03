@@ -1249,3 +1249,38 @@ nav_button=95,99,104 / nav_button_disabled=189,193,198 / address_bar_bg / page_b
 SDK chrome 组件保持 token 驱动（DC-5）同时产出与手绘相同色值（DC-14 parity）。预期 chrome diff 大幅
 下降。此外 production 路径（render_cpu/render_frame）的 fresh-tab image_cache fallback 同步（本轮仅修
 test 路径 render_full_scene_sdk_chrome_for_test）。
+
+### Round 46 — 颜色 parity + 关键布局 bug 定位（chrome diff 真正主因，2026-07-04）
+
+**A. 颜色 parity（ChromePalette → SemanticTokens）**：`sdk_chrome_tokens()` 把浏览器调色板映射为 SDK
+tokens，compose 经新 `tokens` 参数传入 render_chrome_via_sdk_with_webview_surface。映射：surface←toolbar_bg
+(248,249,250) / background←address_bar_bg / on_surface←nav_button(95,99,104) / on_background←
+address_bar_text(32,33,36) / success·warning·error←secure·insecure·tab_crashed。ChromePanel 默认文案色
+on_surface→on_background（对齐手绘 address_bar_text/tab_text）。nav disabled_tint mix 0.5→0.62 命中
+nav_button_disabled。3 production 调用点 + 1 测试调用点全部传 `sdk_chrome_tokens(&self.chrome_palette)`。
+
+**B. fresh-tab image_cache fallback（production 同步）**：render_cpu/render_frame 复制 Round 45 的 test
+路径修复——tab 无 snapshot（image_cache None）时回落本帧临时 ImageCache，SDK chrome 文本/图标在 fresh
+tab 也能渲染。
+
+**C. 关键发现——SDK chrome 布局 bug（chrome diff 真正主因）**：chrome 区 diff 74.40% → **74.05%**
+（-0.35pp，颜色 parity 影响微小）。dump `sdk_prims.fills` 仅 **2 条**：tab strip `(0,0,1280,40)` ✓ + nav
+widget `(0,80,154,4)`（**高 4**，应为 `(0,40,154,44)`！）。toolbar 行（nav/address/security/menu）与
+bookmarks 的 fill **完全缺失**。像素采样佐证：SDK fb 在 toolbar 区（y=40-80）+ bookmarks 区（y=84-112）
+全白（255），只有 tab strip（y=10-30）渲染了 SDK fill（230）。
+
+**根因**：host（ui/runtime/host.rs）column/row 布局把 toolbar 容器（ROW）子节点高度算错（nav 得 4px，
+address/security/menu/bookmarks 得 0px），只有 column 首子（tab strip）布局正确。颜色 parity + 图标 +
+fresh-tab fallback 都是**正确的基础工作但在布局 bug 修好前不可见**（toolbar/bookmarks fill 不渲染）。
+布局 bug 是 chrome diff 的真正阻塞。
+
+**门禁全绿**：chrome 87 / browser sdk-chrome 205 零回归 / clippy(-D warnings)/fmt 净。SDK-only 无
+product-smoke 风险。
+
+Evidence: `evidence/dc14-color-parity-layout-bug-20260704.txt`
+
+**下轮下一步（chrome diff 真正阻塞 = 布局 bug）**：定位 ui/runtime/host.rs column/row 布局为何把 toolbar
+容器子节点高度算错（nav 得 4px、其余 0px），只有 column 首子正确。怀疑 column 对容器子节点（ROW）的
+measure/arrange 递归，或 constraints 向 row 子节点传播时 cross-axis（高度）被压缩。修好后 toolbar/
+bookmarks fill 渲染，颜色 parity + 图标生效，重测 dc14_chrome_region_pixel_diff_baseline 看 chrome 区
+74.05% 大幅下降。

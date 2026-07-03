@@ -1,0 +1,57 @@
+# DC-14 颜色 parity + 关键布局 bug 定位 — 2026-07-04
+
+## 颜色 parity（ChromePalette → SemanticTokens 映射）
+
+把浏览器 `ChromePalette` 经 `sdk_chrome_tokens()` 映射为 SDK `SemanticTokens`，compose 经 tokens
+参数传入 `render_chrome_via_sdk_with_webview_surface`（已接 tokens）。SDK chrome 组件保持 token 驱动
+（DC-5）同时产出与手绘相同色值（DC-14 parity）：
+
+- surface ← toolbar_bg(248,249,250)（chrome/toolbar_bg/bookmarks bar 全用 surface → 精确匹配；
+  三者在调色板里同为 248,249,250）。
+- background ← address_bar_bg(248,249,250)。
+- on_surface ← nav_button(95,99,104)（nav 图标 tint）。
+- on_background ← address_bar_text(32,33,36)（chrome 文案色；ChromePanel 默认文案色从 on_surface
+  改为 on_background，使文本与手绘 address_bar_text/tab_text 对齐）。
+- success/warning/error ← address_bar_secure(26,127,55)/address_bar_insecure(234,134,0)/tab_crashed。
+- nav disabled_tint mix 0.5→0.62 命中 nav_button_disabled(189,193,198)。
+
+3 调用点（render_cpu/render_frame/render_full_scene_sdk_chrome_for_test）+ 1 测试调用点全部传
+`sdk_chrome_tokens(&self.chrome_palette)`。
+
+## fresh-tab image_cache fallback（production 路径同步）
+
+Round 45 仅修了 test 路径（render_full_scene_sdk_chrome_for_test）。本轮 production 路径
+（render_cpu / render_frame）同步：tab 无 snapshot（image_cache None）时回落本帧临时 ImageCache，
+SDK chrome 文本/图标在 fresh tab 也能渲染。
+
+## 关键发现：SDK chrome 布局 bug（chrome diff 真正主因）
+
+chrome 区 diff 74.40% → **74.05%**（-0.35pp，颜色 parity 影响微小）。诊断发现**真正主因是 SDK chrome
+布局 bug**：dump sdk_prims.fills 仅 **2 条**：
+
+1. `(0,0,1280,40)` — tab strip（column 首子，正确布局）。
+2. `(0,80,154,4)` — nav widget 节点 rect **高 4**（应为 `(0,40,154,44)`）！
+
+toolbar 行（nav/address/security/menu）与 bookmarks bar 的 fill **完全缺失**。即 host 布局把
+toolbar 容器（ROW）及其子节点、bookmarks leaf 的高度算错（nav 节点得 4px 而非 44px；其余子节点 0px）。
+只有 column 首子（tab strip）布局正确。
+
+像素采样佐证：SDK fb 在 toolbar 区（y=40-80）全白（255，无 fill），bookmarks 区（y=84-112）全白；
+只有 tab strip（y=10-30）渲染了 SDK fill（230）。手绘同区都是 toolbar_bg(248)。
+
+**结论**：颜色 parity + 图标 + fresh-tab fallback 都是正确的基础工作，但**在布局 bug 修好前不可见**
+（toolbar/bookmarks fill 不渲染）。布局 bug 是 chrome diff 的真正阻塞，修好后预期 diff 大幅下降
+（toolbar+bookmarks 占 chrome 区大半像素）。
+
+## 门禁全绿
+
+chrome 87 / browser sdk-chrome 205 零回归 / clippy(-D warnings)/fmt 净。SDK-only（chrome crate +
+sdk-chrome feature）无 product-smoke 风险。
+
+## 下轮下一步（chrome diff 真正阻塞 = 布局 bug）
+
+定位 host（ui/runtime/host.rs）column/row 布局为何把 toolbar 容器子节点高度算错（nav 得 4px、
+address/security/menu/bookmarks 得 0px），只有 column 首子（tab strip）正确。怀疑：column 对容器
+子节点（ROW）的 measure/arrange 递归，或 constraints 向 row 子节点传播时 cross-axis（高度）被压缩。
+修好布局后 toolbar/bookmarks fill 渲染，颜色 parity + 图标生效，重测 dc14_chrome_region_pixel_diff_baseline
+看 chrome 区 74.05% 大幅下降。

@@ -126,7 +126,7 @@ impl ChromePanel {
         };
         let text_color = match spec.props.get("text_color") {
             Some(Value::Text(s)) => chrome_color_themed(s, tokens),
-            _ => tokens.on_surface,
+            _ => tokens.on_background,
         };
         let height = match spec.props.get("height") {
             Some(Value::Float(f)) => *f as f32,
@@ -261,7 +261,10 @@ impl NavigationButtonsWidget {
         NavigationButtonsWidget {
             bg: chrome_color_themed(bg_name, tokens),
             icon_tint: tokens.on_surface,
-            disabled_tint: tokens.on_surface.mix(tokens.surface, 0.5),
+            // disabled tint ≈ on_surface.mix(surface, 0.62)：当 tokens 经 ChromePalette 映射
+            // （on_surface=nav_button 95,99,104 / surface=toolbar_bg 248,249,250）→ (190,191,195)，
+            // 对齐手绘 nav_button_disabled (189,193,198)。
+            disabled_tint: tokens.on_surface.mix(tokens.surface, 0.62),
             can_back,
             can_forward,
         }
@@ -557,12 +560,13 @@ mod tests {
 
     #[test]
     fn chrome_panel_default_text_color_uses_token() {
-        // ChromePanel 默认文案色 = on_surface token（不硬编码），随主题切换。
+        // ChromePanel 默认文案色 = on_background token（DC-14：chrome 文案色经 ChromePalette 映射
+        // on_background ← address_bar_text；不硬编码，随主题切换）。
         let light = zero_ui_core::theme::SemanticTokens::light();
         let mut spec = WidgetSpec::new("browser.AddressBar");
         spec.props.insert("bg", Value::Text("chrome".into()));
         let panel = ChromePanel::from_spec(&spec, "chrome", 36.0, false, &light);
-        assert_eq!(panel.text_color, light.on_surface);
+        assert_eq!(panel.text_color, light.on_background);
         assert_eq!(panel.bg, light.surface);
     }
 
