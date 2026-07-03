@@ -97,3 +97,61 @@ fn r717_block_parent_ratio_only_img_no_force() {
     // 仅断言不 panic + img 存在；非 flex 块上下文 ZW 暂未实现 300×150 默认（独立 gap）。
     let (_w, _h) = find_box(&result.root, img_id).expect("img box found");
 }
+
+// ── R1013：aspect-ratio fixup 守卫（非替换 + main 轴 min-size 不覆盖）──
+// R994 fixup 对非替换 leaf（div + CSS aspect-ratio）泛化后，对带 main 轴 definite min-size
+// 的项误覆盖（cross→main 反向推导破坏 min-size 驱动），致 flex-item-transferred-sizes-padding
+// 回归 +73pp。守卫：非替换 + min-size 时跳过 fixup；替换元素（img）保留（transferred 语义不变）。
+
+/// R1013 驱动案：flex column + 非替换 div（aspect-ratio:1/1 + min-height:100px）→ height 不被
+/// fixup 覆盖为 cross/ratio。修复前 fixup 把 height 强推为 width，破坏 min-height:100px 驱动。
+#[test]
+fn r1013_flex_column_non_replaced_with_min_height_not_overridden() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex;flex-direction:column">
+  <div style="min-height:100px; aspect-ratio:1/1; background:green"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let divs = doc.get_elements_by_tag_name("div");
+    // 第一个 div 是 flex 容器，第二个是 item。
+    let item_id = divs.into_iter().nth(1).expect("item div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let (_w, h) = find_box(&result.root, item_id).expect("item box found");
+    // min-height:100px 驱动：height 至少 100。修复前 fixup 覆盖为 width/ratio（width 可能很小）
+    // 致 height 远小于 100。此处断言 height ≥ 100（min-height 被尊重）。
+    assert!(
+        h >= 99.0,
+        "R1013: 非替换 div + min-height:100px 的 height 应 ≥ 100（min-height 驱动），got {h}"
+    );
+}
+
+/// R1013 对照：替换元素（img）+ min-height 仍享 fixup（transferred-size 语义不变）。
+/// flex-aspect-ratio-img-column-006 / row-004 需 fixup 才 <1%（min-size 不改变替换项语义）。
+#[test]
+fn r1013_flex_replaced_with_min_height_still_uses_fixup() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex;flex-direction:column">
+  <img src="r.svg" style="min-height:100px"/>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let mut ratios = HashMap::new();
+    ratios.insert(img_id, 2.0_f32);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), ratios);
+    let (_w, h) = find_box(&result.root, img_id).expect("img box found");
+    // 替换元素 fixup 仍触发：width 拉伸 800，height = width/ratio = 400（≥ min-height 100）。
+    assert!(
+        h >= 100.0,
+        "R1013: 替换 img + min-height:100px 仍应 fixup（height ≥ 100），got {h}"
+    );
+}
