@@ -79,6 +79,13 @@ fn leaf(component: &str, id: &str, bg: &str, text: Option<String>) -> WidgetSpec
     s
 }
 
+/// 弹性叶子节点：与 [`leaf`] 相同但设置 `flex` 权重（Row/Column 主轴弹性分配）。
+fn leaf_flex(component: &str, id: &str, bg: &str, text: Option<String>, flex: f32) -> WidgetSpec {
+    let mut s = leaf(component, id, bg, text);
+    s.props.insert("flex", Value::Float(flex as f64));
+    s
+}
+
 fn tab_titles(model: &BrowserChromeModel) -> String {
     model
         .tabs
@@ -123,17 +130,18 @@ impl BrowserChromeShell for DesktopBrowserShell {
         toolbar.children.push(leaf(
             "browser.NavigationButtons",
             ID_NAV_BUTTONS,
-            "chrome",
+            "toolbar_bg",
             Some(crate::i18n::nav_status_label(
                 model.navigation.can_go_back,
                 model.navigation.can_go_forward,
             )),
         ));
-        toolbar.children.push(leaf(
+        toolbar.children.push(leaf_flex(
             "browser.AddressBar",
             ID_ADDRESS_BAR,
-            "chrome",
+            "address_bar_bg",
             Some(model.address_text.clone()),
+            1.0,
         ));
         toolbar.children.push(leaf(
             "browser.SecurityBadge",
@@ -144,30 +152,31 @@ impl BrowserChromeShell for DesktopBrowserShell {
         toolbar.children.push(leaf(
             "browser.BrowserMenu",
             ID_MENU,
-            "chrome",
+            "toolbar_bg",
             Some(crate::i18n::localized_label(crate::i18n::ids::OPEN_MENU)),
         ));
         root.children.push(toolbar);
         root.children.push(leaf(
             "browser.BrowserTabStrip",
             ID_TAB_STRIP,
-            "chrome",
+            "tab_strip_bg",
             Some(tab_titles(model)),
         ));
         root.children.push(leaf(
             "browser.BookmarksBar",
             ID_BOOKMARKS,
-            "chrome",
+            "toolbar_bg",
             Some(crate::i18n::bookmarks_label(model.bookmarks.len())),
         ));
         let mut viewport = node("browser.PageViewportFrame", ID_VIEWPORT);
         viewport.props.insert("bg", Value::Text("viewport".into()));
+        viewport.props.insert("flex", Value::Float(1.0));
         root.children.push(viewport);
         if model.find.is_some() {
             root.children.push(leaf(
                 "browser.FindBar",
                 ID_FIND_BAR,
-                "chrome",
+                "toolbar_bg",
                 Some(crate::i18n::localized_label(crate::i18n::ids::FIND)),
             ));
         }
@@ -205,17 +214,18 @@ impl BrowserChromeShell for TabletBrowserShell {
         toolbar.children.push(leaf(
             "browser.NavigationButtons",
             ID_NAV_BUTTONS,
-            "chrome",
+            "toolbar_bg",
             Some(crate::i18n::nav_status_label(
                 model.navigation.can_go_back,
                 model.navigation.can_go_forward,
             )),
         ));
-        toolbar.children.push(leaf(
+        toolbar.children.push(leaf_flex(
             "browser.AddressBar",
             ID_ADDRESS_BAR,
-            "chrome",
+            "address_bar_bg",
             Some(model.address_text.clone()),
+            1.0,
         ));
         toolbar.children.push(leaf(
             "browser.SecurityBadge",
@@ -227,17 +237,18 @@ impl BrowserChromeShell for TabletBrowserShell {
         root.children.push(leaf(
             "browser.BrowserTabStrip",
             ID_TAB_STRIP,
-            "chrome",
+            "tab_strip_bg",
             Some(tab_titles(model)),
         ));
         let mut viewport = node("browser.PageViewportFrame", ID_VIEWPORT);
         viewport.props.insert("bg", Value::Text("viewport".into()));
+        viewport.props.insert("flex", Value::Float(1.0));
         root.children.push(viewport);
         if model.find.is_some() {
             root.children.push(leaf(
                 "browser.FindBar",
                 ID_FIND_BAR,
-                "chrome",
+                "toolbar_bg",
                 Some(crate::i18n::localized_label(crate::i18n::ids::FIND)),
             ));
         }
@@ -271,9 +282,9 @@ impl BrowserChromeShell for PhoneBrowserShell {
 
     fn build(&self, model: &BrowserChromeModel, _metrics: &WindowMetrics) -> WidgetSpec {
         let mut root = node_layout("browser.PhoneBrowserShell", ID_SHELL, "column");
-        // 顶部地址栏（row 容器：自身 chrome 背景 + URL 文案，内含安全徽章）。
+        // 顶部地址栏（row 容器：自身 toolbar 背景 + URL 文案，内含安全徽章）。
         let mut top = node_layout("browser.AddressBar", ID_ADDRESS_BAR, "row");
-        top.props.insert("bg", Value::Text("chrome".into()));
+        top.props.insert("bg", Value::Text("toolbar_bg".into()));
         top.props.insert("text", Value::Text(model.address_text.clone()));
         top.children.push(leaf(
             "browser.SecurityBadge",
@@ -284,11 +295,12 @@ impl BrowserChromeShell for PhoneBrowserShell {
         root.children.push(top);
         let mut viewport = node("browser.PageViewportFrame", ID_VIEWPORT);
         viewport.props.insert("bg", Value::Text("viewport".into()));
+        viewport.props.insert("flex", Value::Float(1.0));
         root.children.push(viewport);
         root.children.push(leaf(
             "browser.NavigationButtons",
             ID_BOTTOM_NAV,
-            "chrome",
+            "toolbar_bg",
             Some(crate::i18n::nav_status_label(
                 model.navigation.can_go_back,
                 model.navigation.can_go_forward,
@@ -298,7 +310,7 @@ impl BrowserChromeShell for PhoneBrowserShell {
             root.children.push(leaf(
                 "browser.FindBar",
                 ID_FIND_BAR,
-                "chrome",
+                "toolbar_bg",
                 Some(crate::i18n::localized_label(crate::i18n::ids::FIND)),
             ));
         }

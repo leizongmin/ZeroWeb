@@ -1,0 +1,42 @@
+Round 38 — DC-14 GUI 可视验收 + sdk-chrome 渲染修复（2026-07-03）
+
+GUI VERIFICATION (first attempt):
+  cargo run --bin zero-browser --features sdk-chrome
+
+Findings:
+  - Toolbar shows "Back·off Fwd·off" text instead of navigation arrow icons
+  - Right side shows "Menu" text (clicking closes window because ChromePanel::event() returns Ignored, winit forwards unhandled events to window manager)
+  - Tab strip, address bar, bookmarks bar all show faint placeholder rectangles with no proper rendering
+  - Window control buttons missing (never part of chrome layer, managed by winit/OS)
+
+Root cause analysis:
+  1. All 12 chrome domain components reuse a single ChromePanel placeholder widget
+  2. ChromePanel is a "colored rectangle + text" test placeholder, not a real browser chrome widget
+  3. ChromePanel cannot draw icons, borders, rounded rects, handle interactions, or manage focus
+  4. ChromePanel::event() always returns Ignored → no click/tab/hover handling
+  5. Toolbar Row layout bug: 4 non-flex ChromePanel children each claimed full width, causing overflow/clip
+
+Fixes applied (this round):
+  1. ChromePanel::layout() — non-fill-viewport: compute reasonable natural width from text content
+     (chars * 14*0.55 + 16 padding), fallback to icon size when no text
+  2. DesktopBrowserShell/TabletBrowserShell/PhoneBrowserShell — add flex:1 to AddressBar and PageViewportFrame
+  3. Color aliases — add toolbar_bg/address_bar_bg/tab_strip_bg; tab_strip_bg mixes 12% on_surface for visible gray
+  4. All three shells sync to new bg names and flex settings
+
+Architecture-level gap discovered:
+  - DC-7 "12/12 complete" refers to pipeline-level completeness (WidgetSpec → WidgetHost → Scene → pixels)
+  - 0/12 browser chrome components have real Widget implementations (all use ChromePanel placeholder)
+  - This means DC-14 "browser migration complete" in rendering pipeline sense, but NOT in chrome feature parity
+
+New headless work available:
+  - Implement real Widget implementations for browser chrome components (NavigationButtonsWidget, AddressBarWidget, etc.)
+  - All headless-testable via WidgetHost + Scene snapshot + bridge + render_full_scene
+
+Gates:
+  - chrome 86 tests ALL PASS
+  - bridge 24 tests ALL PASS
+  - sdk-chrome 8 tests ALL PASS
+  - reftest 686/686 (100.0%)
+  - product-smoke 19.41% (= baseline, zero regression)
+  - clippy -D warnings CLEAN
+  - cargo fmt CLEAN

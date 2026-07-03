@@ -29,7 +29,9 @@ use zero_ui_runtime::WidgetHost;
 /// 返回 `None`，由 [`chrome_color_themed`] 直接当 token 名解析或回落 `surface`。
 fn chrome_alias_token(name: &str) -> Option<&'static str> {
     match name {
-        "chrome" => Some("surface"),
+        "chrome" | "toolbar_bg" => Some("surface"),
+        "tab_strip_bg" => Some("surface"),
+        "address_bar_bg" => Some("background"),
         "accent" => Some("primary"),
         "secure" => Some("success"),
         "insecure" | "mixed" => Some("warning"),
@@ -43,9 +45,14 @@ fn chrome_alias_token(name: &str) -> Option<&'static str> {
 ///
 /// 先按 chrome 别名映射，否则直接当 token 名（`surface`/`primary`/`on_surface`/...）解析；
 /// 未知名回落 `surface`。
+/// `tab_strip_bg` 在 light 主题下用 on_surface 混入 surface 产生肉眼可见的中灰层次。
 pub fn chrome_color_themed(name: &str, tokens: &SemanticTokens) -> Color {
     let token = chrome_alias_token(name).unwrap_or(name);
-    tokens.color_for(token).unwrap_or(tokens.surface)
+    let base = tokens.color_for(token).unwrap_or(tokens.surface);
+    match name {
+        "tab_strip_bg" => base.mix(tokens.on_surface, 0.12),
+        _ => base,
+    }
 }
 
 /// chrome 色名 → [`Color`]（浅色基线；等价 `chrome_color_themed(name, &SemanticTokens::light())`）。
@@ -144,10 +151,16 @@ impl Widget for ChromePanel {
         if self.fill_viewport {
             Size::new(constraints.max_width, constraints.max_height)
         } else {
-            Size::new(
-                constraints.max_width,
-                self.height.clamp(constraints.min_height, constraints.max_height),
-            )
+            let height = self.height.clamp(constraints.min_height, constraints.max_height);
+            let width = if let Some(text) = &self.text {
+                let char_count = text.chars().count().max(1) as f32;
+                let approx = (char_count * 14.0 * 0.55 + 16.0).ceil();
+                approx.clamp(constraints.min_width, constraints.max_width)
+            } else {
+                let icon = (height * 0.75).ceil().max(24.0);
+                icon.clamp(constraints.min_width, constraints.max_width)
+            };
+            Size::new(width, height)
         }
     }
 

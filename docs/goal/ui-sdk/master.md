@@ -230,14 +230,14 @@
 | DC-4 | 滚动语义与滚动条边界 | ✅ 逻辑层 + 渲染层全量经 SDK（M2 收口） | `ui/widgets::scrollbar`：`layout_scrollbar` + `hit_test` + `drag_to_command` + `hit_to_page_command` + `paint_scrollbar` + `ScrollBarStyle`（from_tokens + hover/active 派生）；**跨 crate 闭环** ScrollBar→apply_scroll_command→WebViewWidget.scroll；**apps/browser 桥接适配器**（`sdk_scrollbar.rs`：hit-test + pointer→scroll + **渲染替换** `sdk_push_scrollbar_fills`）全部经 SDK，sdk-chrome 200 测全绿 + product-smoke 19.87% 零回归。DC-4 闭合。 |
 | DC-5 | 主题系统 | ✅ contrast lint + Zero WCAG AA + HighContrast + widgets 全 token + cycle_preference() API（M2 收口） | ui/core::theme 类型 + ThemeResolver + diff_invalidation + ThemeProvider；SemanticTokens +success/warning + `color_for(name)`；WCAG contrast lint（ratio/AA/AAA）；chrome `chrome_color_themed` 消费 semantic token；ThemeChanged→host.mark 端到端（色变→needs_paint 不布局）；**contrast lint 接入 CI 门禁**（全部 6 对 token light+dark AA）；**Zero 主题 WCAG AA 全合规**（修 light primary）；**widgets 全 token 消费**（Button/Badge/ScrollBar 三者全迁移，grep 验证全域零 non-test Color::rgb 残留）；**patterns + chrome 审计 clean**（零硬编码）；**HighContrast 功能化**（四态 token + HC 核心 AAA ≥7:1）；**`cycle_preference()` API**（System→Light→Dark 三元循环，宿主按需绑定快捷键/按钮，2026-07-02）。DC-5 SDK 全域闭合。剩余 = 宿主偏好切换 UI 控件实现（低优先级）。 |
 | DC-6 | YAML DSL + 完整表达式语言 | 🟡 phase-6 列表渲染 + map/filter 嵌套路径 + **ui/dsl 全 crate 深度审查收口**（M3） | phase-1 表达式引擎（parse/typecheck/eval + sandbox + 资源上限，26 测）+ phase-2 YAML→WidgetSpec loader（22 测）+ phase-3 map/filter 字段投影（无 lambda，2 测）+ phase-4 responsive branch（6 测）+ phase-5 command·route·overlay·asset 声明式引用（action 简写 + asset_bridge，8 测）+ phase-6 `for_each` 列表渲染（12 测，for_each.rs 97%）+ **map/filter 嵌套路径投影**（`project_field` 支持 `"a.b.c"` 点分下钻，TBD-10 收尾，1 测）+ **表达式引擎深度审查（lei-deep-review，2026-07-03）**（修复 unary 取负 i64::MIN panic：`checked_neg` + Float 兜底；sandbox 三重门/资源上限/eval 边界/Pratt 正确性经查正确；2 回归守卫 + 3 low 记录）+ **YAML 解析器深度审查（lei-deep-review，2026-07-03）**（修复 3 类 medium：无嵌套深度守卫→栈溢出 DoS，加 `MAX_YAML_DEPTH=100` 块/流守卫 + expand_dash 迭代；strip_comment UTF-8 损坏→改切片保真；parse_quoted_scalar 双引号 UTF-8 损坏→改 char 迭代；7 回归守卫 + 1 low）+ **WidgetSpec Loader 深度审查（lei-deep-review，2026-07-03）**（核心结论：loader 递归已被 yaml.rs MAX_YAML_DEPTH 守卫 transitively 覆盖，无需独立守卫；修复 visible_when/enabled_when 非文本值静默忽略→改 ok_or_else 报错，与 id/component/source 严格性一致；1 回归守卫 + 1 low）已落地；**ui/dsl 全 crate（engine+yaml+loader+for_each+expression+diagnostics+bridges）安全/健壮性深度审查全部闭合**（3 轮共修 5 bug）；剩余：仅谓词过滤 `filter($items, field>x)`（需 lambda，明确超当前受控计算层范围，不做） |
-| DC-7 | 首批组件（通用+组合+浏览器） | 🟡 组件 12/12 + paint→scene 已打通 + **ui/widgets 深度审查闭合（Button 修复）** + **browser-ui/chrome 深度审查闭合（Phone 布局修复）**（M2/M3） | FR-009 widget 集合补齐（+IconButton/ContextMenu/Toggle）；browser-ui/chrome §8.4.1A 全 12 组件已实现；**`render.rs` 桥接：chrome 叶子组件经 `WidgetHost` paint 进统一 Scene（`chrome_scene` 快照 12 图元，URL/安全徽章/tab 标题随模型数据），不绕过 ui/render**；**ui/widgets 深度审查（2026-07-03）**：仅 Button 是完整 Widget 实现，**修 2 medium**（paint 硬编码 96×32 截断宽按钮→缓存 size；layout `.len()` 字节计宽→`chars().count()` UTF-8 安全）；**browser-ui/chrome 深度审查（2026-07-03）**：21 文件 ~4153 行成熟度高。**修 1 medium**：PhoneBrowserShell::layout 键盘/小窗口下 bottom_h 负→bottom_chrome/viewport 倒置 rect（真实触发：横屏/分屏 + 物理键盘 > 窗口高）→ 空间不足收缩+viewport `.max(top_chrome.bottom())` 非倒置。经查正确：chrome_model from_shell 状态投影（downloads 6→3/find 1-based→0-bytes/security scheme）/ render ChromePanel.paint 用 ctx.clip.size（host 根 parent_clip=Some，非截断 bug）/ sdk_render 三函数管线 / shell select_shell §8.4.4A 表 / 12 组件 props+build。follow-up：F1 hover/pressed 粘滞（PointerPhase 无 Leave）；F2 webview 工厂硬编码 Light theme；F3 bookmarks 注释 stale；F4 security_badge tooltip message_id 占位。ui/widgets 38→40 测 + chrome 84→85 测 + 下游 bridge 23/browser 默认 191/sdk-chrome 202 零回归 + workspace build/clippy/fmt 全净。剩余：`apps/browser` 灰度接线（真实组件替换手绘）。 |
+| DC-7 | 首批组件（通用+组合+浏览器） | 🟡 占位层完成，功能等价未达成（2026-07-03 GUI 验收发现） | 12/12 Pipeline 成立（`ChromePanel` 占位）；**0/12 浏览器 chrome 组件有真实 Widget 实现**。FR-009 widget 集合补齐（+IconButton/ContextMenu/Toggle）；browser-ui/chrome §8.4.1A 全 12 组件已用 `ChromePanel` 占位注册；`render.rs` 桥接：chrome 叶子组件经 `WidgetHost` paint 进统一 Scene，不绕过 ui/render。**见 §DC-7/DC-14 真实 Chrome Widget 缺口**；**ui/widgets 深度审查（2026-07-03）**：仅 Button 是完整 Widget 实现，**修 2 medium**（paint 硬编码 96×32 截断宽按钮→缓存 size；layout `.len()` 字节计宽→`chars().count()` UTF-8 安全）；**browser-ui/chrome 深度审查（2026-07-03）**：21 文件 ~4153 行成熟度高。**修 1 medium**：PhoneBrowserShell::layout 键盘/小窗口下 bottom_h 负→bottom_chrome/viewport 倒置 rect（真实触发：横屏/分屏 + 物理键盘 > 窗口高）→ 空间不足收缩+viewport `.max(top_chrome.bottom())` 非倒置。经查正确：chrome_model from_shell 状态投影（downloads 6→3/find 1-based→0-bytes/security scheme）/ render ChromePanel.paint 用 ctx.clip.size（host 根 parent_clip=Some，非截断 bug）/ sdk_render 三函数管线 / shell select_shell §8.4.4A 表 / 12 组件 props+build。follow-up：F1 hover/pressed 粘滞（PointerPhase 无 Leave）；F2 webview 工厂硬编码 Light theme；F3 bookmarks 注释 stale；F4 security_badge tooltip message_id 占位。ui/widgets 38→40 测 + chrome 84→85 测 + 下游 bridge 23/browser 默认 191/sdk-chrome 202 零回归 + workspace build/clippy/fmt 全净。剩余：`apps/browser` 灰度接线（真实组件替换手绘）。 |
 | DC-8 | 无障碍/焦点/IME | 🟡 焦点+IME+FocusScope+a11y 树+平台后端桥接契约+**host 自动推送** 已通（M2 phase-3 + backend skeleton + host auto-push） | ui/core::focus(FocusDirection/TraversalPolicy/FocusScope trap) + semantics + ui/runtime::ime/accessibility；phase-1：Widget::focusable + focus_next(Tab wrap) + 键盘路由；phase-2：click-to-focus + ime_rect（绝对 caret）+ 初始 props 同步；**phase-3**：FocusScope trap（`enter/exit_focus_scope`，trap 折返/非 trap 逃逸，set_root 防悬空）+ `WidgetHost::semantics()` a11y 树（绝对 rect + FOCUSABLE/FOCUSED + widget label/role + 容器 merge）；**平台后端桥接契约**（`AccessibilityBackend` trait update_tree/focus_moved/announce + `RecordingAccessibilityBackend` mock + `AccessibilityTree::update_backend`）；**`WidgetHost` 自动推送**（`set_accessibility_backend`/`flush_accessibility`/`announce` + `set_root` 标 NEEDS_SEMANTICS + 焦点变化检测推 focus_moved 不重建全树，2026-07-03，8 测）。剩余 M4：真实平台实现（Win UI Automation/macOS NSAccessibility/Linux AT-SPI/移动 TalkBack）+ runtime 每帧自动 flush（需 GUI/平台环境） |
 | DC-9 | 局部失效刷新 | ✅ host 失效门控 + 端到端 invalidation（M2） | ui/core::invalidation needs_layout/paint 区分单测；`WidgetHost::needs_layout`/`needs_paint`/`mark` 驱动重布局/重绘；**`theme_changed_paint_only_marks_paint_not_layout`** 端到端断言（ThemeChanged→host.mark→needs_paint 真 / needs_layout 假，DC-5 交叉验证）。DC-9 闭合。 |
 | DC-10 | 国际化资源与 message id | ✅ flesh-out + browser catalog + 全 shell/BrowserMenu/shell_demo i18n 迁移 + **ui/i18n 全 crate 深度审查闭合**（M2 收口） | ui/i18n：locale/catalog/fallback/参数替换/plural（多语种 CLDR）/RTL direction/diagnostic/DSL `i18n:` bridge 全部可用；locale 切换→layout+paint+semantics 失效；**浏览器文案 catalog**（browser-ui/chrome/i18n，ids + catalog + resolve + localized_label + localized_label_with_params）；**BrowserMenu 接 message id**（item_msg/disabled_msg）；**shell 硬编码 label 参数化迁移**（nav_status + bookmarks + security_status，三 shell 全量，2026-07-02）；**shell_demo fixture labels 100% i18n 迁移**（消除最后硬编码 "New Tab"/"Menu"/"Close Menu"，2026-07-02）。**ui/i18n 全 crate 深度审查（lei-deep-review，2026-07-03）**：逐字句核对 CLDR cardinal（英/阿/俄/乌/白俄/波，集合代数证明波兰语整数无 other → `else=>Many` 正确）+ `unsigned_abs()` 安全处理 i64::MIN；**修复 1 medium**（direction.rs RTL 集合补 ckb/dv/nqo，TDD RED→GREEN，闭合 DC-10「RTL locale 影响文本方向」对 3 字母 RTL 语言）+ 1 文档自洽；catalog/formatter/fallback/locale 经查正确；ui/i18n 22→23 测全绿。DC-10 浏览器 UI 文案全量 i18n 迁移 + SDK 侧深度审查双重闭合。剩余 = paint 期解析（完整 resolution-layer，低优先级）。 |
 | DC-11 | 共享文本/字体基础层 | ✅ 默认路径经共享后端 + **深度审查闭合**（M2 收口） | foundation/text 真实后端 + ui/render TextBlob/RenderBackend/paint_scene + bridge draw_text/draw_text_blob + 浏览器字体共享入口 + zero-text-foundation 晋升 + load_font_with_family + 共享后端基础设施（set/init_shared_backend + auto-sync）+ **生产默认渲染路径经共享 FontdueBackend**（rasterize_glyph_with_fallback → rasterize_glyph_shared 接线 + BrowserApp 默认激活共享后端，2026-07-02）。**make product-smoke = 19.41% = baseline（零渲染回归）** + browser 191 测全绿 + foundation/text 36 测全绿。**DC-11 深度审查闭合（2026-07-03）**：全 14 文件审查，修复 M1 GPOS kerning x_advance 丢弃 + M2 glyph_id u32→u16 截断 API 契约 + L1 wrap 防护（3 fixes + 4 new tests）。**SDK 八层深度审查全覆盖**（runtime+DSL+i18n+widgets+chrome+render+core+foundation/text）。 |
 | DC-12 | 响应式/自适应 + 移动 chrome | 🟡 shell + 状态投影 + WindowMetrics §IF-009 + ThemeProvider 接 metrics（M2） | WindowMetrics/ViewportClass/PlatformClass/InputClass/AdaptiveBranch 在 ui/core::layout；BrowserChromeModel + BrowserChromeShell + Desktop/Tablet/Phone shell + AdaptiveBrowserChrome + ShellLayout(safe-area/keyboard 避让) + 跨 shell 稳定 WidgetId 已落地；**`BrowserChromeModel::from_shell(&BrowserShell)` 状态投影桥已通**（tabs/nav/address/security/bookmarks/downloads/find/page_load，DC-14 数据层 seam）；**WindowMetrics §IF-009 字段集合补全**：`text_scale`+`density`+`orientation` + `build_theme_with_metrics`（双缩放闭环）；**`ThemeProvider` 接入 text_scale/density**（运行时态：`set_text_scale`/`set_density` → ThemeChanged needs_layout，默认 1.0 向后兼容，2026-07-02）——text_scale/density 数据链闭合（WindowMetrics→build_theme_with_metrics→ThemeProvider 运行时）。剩余：移动端真实运行时（M4，DC-15） |
 | DC-13 | 完整应用级 UI 能力（13 域） | ✅ 13/13 域已全部 flesh-out（M2） | commands / restoration / navigation / overlay / collections / platform / gestures / animation / forms / assets / testing / devtools / design-system 全部从骨架升级到接口可用 + 单测覆盖；DC-15 首个风格包 `zero_default()` 已交付。per-file coverage 全部 ≥85%。 |
-| DC-14 | 浏览器迁移完成 + 零退化 | 🟡 替换式迁移接线完成 + 199 测全绿 + product-smoke 19.87% 绿（M2） | **counter + form + browser-shell-demo 示例可构建/运行**；**`BrowserChromeModel::from_shell` 数据层 seam**；**全链集成测试通过**；**`render_chrome_via_sdk_with_layout`**（SDK chrome 拥有布局→viewport rect）；**`compose_sdk_chrome_replacement`**（feature-on 跳过手绘 chrome 零回归）；**build_scene 三层分离**；**199 测全绿**（默认 189 + sdk-chrome 10，含 scrollbar 桥接/surface pipeline 测）+ product-smoke **19.87%<20% 绿**；**sdk-chrome feature clippy 净**。剩余：GUI 可视验收 chrome 布局（本环境无 GUI；feature-on 像素级 headless 三层已证：overlay 光栅 + 替换路径 scene 构造 + **替换路径完整帧光栅**（R34，`render_full_scene_sdk_chrome_for_test` 镜像 render_cpu feature-on→FrameBuffer，断言顶部 chrome 区像素可见，sdk-chrome 203 测））。 |
+| DC-14 | 浏览器迁移完成 + 零退化 | 🟡 渲染管线接通，chrome 功能等价未达成（2026-07-03 GUI 验收发现） | 替换式迁移接线完成 + 203 测全绿 + product-smoke 19.41% 绿。**SDK chrome→像素路径走通**（paint_scene→bridge→RenderPrimitives→GPU/CPU 管线）；**chrome 功能和交互与手绘版不相等**（0/12 组件有真实 Widget）。counter + form + browser-shell-demo 示例可构建/运行；`BrowserChromeModel::from_shell` 数据层 seam；`render_chrome_via_sdk_with_layout`；`compose_sdk_chrome_replacement_with_webview`；build_scene 三层分离。**见 §DC-7/DC-14 真实 Chrome Widget 缺口** |
 | DC-15 | 移动端运行时 | 🟡 M4 SDK-side skeleton 完整闭合 + Android adapter 已建（M4 stretch goal） | DC-15 移动端数据入口已就绪（`WindowMetrics.text_scale` + `density` + `orientation` + `safe_area`/`keyboard` + `build_theme_with_metrics` + `ThemeProvider.set_text_scale/density`）；ui/gestures arena（Tap/Pan/Pinch/Fling，DC-13 #8）+ Phone/Tablet shell（safe-area/keyboard 避让，DC-12）+ IME（DC-8）就绪；**平台 back 手势 + 触觉反馈 service skeleton**（`BackNavigationService` LIFO + `HapticFeedbackService`，ui-platform 11 测）；**移动 skeleton 端到端 headless 集成测试**（phone→Phone shell + 触摸 Tap/Pan→arena + 平台 back→Navigator.pop，chrome 81 测）；**GestureArena opt-in 接入 WidgetHost.dispatch_event**（指针序列→arena→`take_gestures`，向后兼容）；**多指 Pinch：`UiEvent::Pointer.pointer_id` + host arena 用真实指针 id 路由**（双指 down+move→Pinch，ui-runtime 80 测，2026-07-03）；design-system 首个风格包 `zero_default()` 已交付。**SDK-side skeleton 完整闭合，手势全四类（Tap/Pan/Pinch/Fling）经 host arena 可达**。**`phone_demo` 可运行制品**（example + 共享 `run_phone_demo` + 3 测：phone metrics→PhoneBrowserShell + 单指 Tap + 双指 Pinch（pointer_id）+ 平台 back 仲裁（Handled/DefaultBack→Navigator.pop），chrome 81→84 测，2026-07-03）证明移动 SDK 各组件在一条事件流里 headless 完整组合可用。**`ui/adapters/android`（`zero-ui-adapter-android`，M4 stretch goal，2026-07-03，commit 139c5384）**：Android adapter skeleton（20 测全绿）—— AndroidMotionEvent/KeyEvent/back/IME→UiEvent event_map + AndroidRuntime(PlatformRuntime+launch/pump_events/leak_for_jni) + JNI C ABI ffi。决策：`docs/goal/ui-sdk/decisions/m4-add-android-backend.md`（HarmonyOS 硬指标 + Android stretch goal 不阻塞 DONE）。**Android 工具链补齐 + 交叉编译验证通过（2026-07-03）**：NDK r30.0.14904198 已装 + `aarch64-linux-android`/`x86_64-linux-android` Rust target 已装 + cargo linker 经 `CARGO_TARGET_*_LINKER` 环境变量配置（不入项目级 `.cargo/config.toml`，因 cargo linker 不支持环境变量插值，写死本机路径会违反 AGENTS.md 路径通用化）；`cargo build --target aarch64-linux-android -p zero-ui-core` 通过（5.78s）。详见 `evidence/android-toolchain-verified-20260703.txt`。**R37 density/DPI 修复**：OHOS + Android `map_window_metrics` 误把 DPI 比（phone 3.0）塞进 `density`（Material 间距密度，应 DEFAULT_DENSITY=1.0，与 scale_factor 正交，DC-12）→ phone 上 spacing 3× 放大布局爆；双适配器改 `density: DEFAULT_DENSITY`（DPI 比只进 scale_factor）+ input 字段 doc + 测试更新（harmonyos 21 + android 20 测绿）。剩余：至少一个移动后端可运行到首帧（HarmonyOS 硬指标，需设备）+ back/haptics 真实平台后端 + GUI 可视验收 |
 | DC-16 | 测试与质量不可退让 | 🟡 守门中 | 新 crate scoped test 全绿；**app_render.rs 2816→1552 + app_input.rs 2910→1634 行拆分**（app_render_ext.rs 1270 + app_input_ext.rs 1281）+ **main.rs 2350→687 行拆分**（main_tests.rs 1664）+ **app.rs 2093→1938 行拆分**（app_types.rs 156），全部 apps/browser/src .rs ≤2000 合规（2026-07-02）；**host.rs 3098→1331 行拆分**（host_tests.rs 1768，`#[path]` 标准模式），**SDK 全域（ui/* + foundation + browser-ui）单文件 ≤2000 全部合规**（2026-07-03）。全部分拆纯代码搬迁零行为变化。 |
 | DC-17 | Coverage 量化 | 🟡 持续推进（M1 阶段达标） | 聚合 line 93.33% / function 92.90% / region 92.51%（≥85%）；per-crate **全部 ≥85%**（host.rs 91.85%、render_node 96%、ui/dsl engine.rs 91.79%/yaml.rs 86.61%/loader.rs 92%、chrome shell 94%/chrome_model 100%、12 组件 + IconButton/Toggle 95–100%、foundation/text ~96%；聚合随新增代码体量小幅波动，非既有代码退化） |
@@ -537,13 +537,25 @@
 - `make product-smoke` **19.41% < 20%** 绿（较 R17 19.87% **改善 0.46pp**——R990 Phase-A ascent ratio 优化了页面文本布局）。
 - Headless work 仍耗尽；终端门禁不变。
 
-**🟡 M2/M3 头端可推进工作已耗尽**：
+**🟡 M2/M3 头端可推进工作更新（2026-07-03 GUI 验收后）**：
+
+此前多次轮次判断「headless 工作已耗尽」，但 GUI 验收暴露了**新的大类 headless 可推进工作**：将 12 个浏览器 chrome 组件从 `ChromePanel` 占位升级为真实的 `impl Widget`。这些真实 widget 同样通过 `Scene` snapshot + `WidgetHost` headless 测试验证，完全可在 headless 下推进。
 
 **剩余终端门禁（需 GUI / 设备环境，本环境不可用）**：
-1. DC-14 GUI 可视验收：`cargo run --bin zero-browser`（sdk-chrome feature）验证 chrome 布局/WebView/滚动条视觉正确。
-2. **DC-15 M4 移动后端首帧（HarmonyOS）**：`cargo build --target aarch64-unknown-linux-ohos -p zero-ui-adapter-harmonyos` 需成功；DevEco Studio 创建 Ability 壳 + Rust 共享库 + 启动到首帧。**SDK-side skeleton 完整闭合**（gestures arena + harmonyos adapter + phone_demo）。
-3. DC-2 Real `EventLoop::run` 阻塞壳：开窗/surface/首帧（需 GUI）。
-4. DC-8 真实平台 a11y 后端：Win/macOS/Linux/移动（需 GUI/平台环境）。
+1. **DC-15 M4 移动后端首帧（HarmonyOS）**：DevEco Studio 创建 Ability 壳 + Rust 共享库 + 启动到首帧。SDK-side skeleton 完整闭合。
+2. DC-2 Real `EventLoop::run` 阻塞壳：开窗/surface/首帧（需 GUI）。
+3. DC-8 真实平台 a11y 后端：Win/macOS/Linux/移动（需 GUI/平台环境）。
+
+**headless 可继续推进的工作**（DC-7 chrome 组件真实化）：
+1. `NavigationButtonsWidget`：三个图标按钮（后退/前进/刷新）+ hover/pressed + 点击 emit Action
+2. `AddressBarWidget`：圆角边框 + 锁图标 + URL 文本 + 书签星形；接受焦点处理键盘输入
+3. `BrowserMenuWidget`：弹出下拉菜单 + 菜单项列表
+4. `BrowserTabStripWidget`：多标签形状 + 激活态 + hover 关闭×
+5. `BookmarksBarWidget`：水平排列书签条目
+6. `FindBarWidget`：搜索输入 + 匹配计数
+7. `SecurityBadgeWidget`：锁/警告图标 + tooltip
+
+这些都在 headless 下可测：`WidgetHost` + `Scene` snapshot + bridge + 像素验证。**DC-7 真实 chrome 组件完成后，DC-14 chrome 功能等价才成立**。
 
 **深度审查 follow-up 状态（F1-F4 全部收口，2026-07-03）**：
 - ~~F1~~ ✅ `425b9d32`：PointerPhase::Exited + host hover 追踪（Button pressed 粘滞修复）。
@@ -605,12 +617,13 @@
 7w. ~~**DC-7 browser-ui/chrome 全 crate 深度审查（chrome 组件 paint→Scene + from_shell 投影 + adaptive shell 布局 + sdk_render 管线）**~~ ✅ **已完成（2026-07-03）**：对 browser-ui/chrome 全 21 文件（~4153 行）做 lei-deep-review。**总体**：chrome 经多轮迭代（DC-7 12/12 + DC-12 shell + DC-14 接线 + DC-3 surface）成熟度高，核心文件无 high。**修复 1 medium（TDD RED→GREEN）**：**PhoneBrowserShell::layout 键盘/小窗口下倒置 rect**——`bottom_h=56.min((avail_bottom-top_chrome.bottom())*0.4)` 在 avail_bottom（inner.bottom-keyboard）≤ top_chrome.bottom() 时为负 → bottom_chrome/viewport 倒置（top>bottom→size.height 负）。**真实触发**：横屏手机 800×390 + 物理键盘 340 + safe_area 34 → inner 356 < 48+340；分屏小窗口 + 物理键盘 > 窗口高同理。修复：空间不足 bottom_h=0 + viewport 底 `.max(top_chrome.bottom())` 非倒置（正常键盘路径逐位不变）。**经查正确**：chrome_model from_shell（downloads 6→3 / find checked_sub 1→0-based / security scheme 启发式）；render ChromePanel.paint 用 ctx.clip.size（host 根 parent_clip=Some→重叠节点 ctx.clip=Some，**非** widgets Button 截断类 bug）+ chrome_color_themed 全 token；sdk_render 三函数管线；shell select_shell §8.4.4A 表 + 跨 shell 稳定 WidgetId；12 组件 props+build 无逻辑 bug。**follow-up**：F2 webview 工厂硬编码 Light theme（dark-mode webview 失效，修需 scheme 经工厂签名传入）；F3 chrome_model bookmarks 注释 stale；F4 security_badge tooltip message_id 占位。chrome 84→**85 测**全绿 + 下游 bridge 23/browser 默认 191/sdk-chrome 202 零回归 + workspace build/clippy(-D warnings)/fmt 全净。SDK-only 无 product-smoke；DC-1 chrome 允许依赖 ui/*+browser-shell+adapter-webview。详见 evidence/dc7-chrome-deep-review-20260703-095233.txt。**DC-7 浏览器侧（chrome 12 组件 + shell + sdk_render）深度审查闭合**；SDK 安全/健壮性深度审查现覆盖 runtime+DSL+i18n+widgets+chrome 五层。下一候选 = `ui/render`（scene/render_node/paint_scene/RenderBackend 抽象，DC-2/DC-3/DC-11 交叉）或 follow-up F1/F2（PointerPhase::Exited 合成 leave / webview theme 注入）——独立 turn。
 7x. ~~**DC-2/DC-3/DC-11 ui/render 全 crate 深度审查（RenderPrimitive/Scene/paint_scene/RenderBackend/ClipStack/hit_test）**~~ ✅ **已完成（2026-07-03）**：对 ui/render 全 8 文件（~856 行）做 lei-deep-review。**总体**：小而稳定的渲染/场景抽象层，**0 behavior bug**。**3 处安全加固（零生产行为变更）**：①**clip.rs 补 sticky-ZERO 回归测**——ClipStack intersect None→ZERO 后后继 push 保持 ZERO（不可见子树整支被裁不复活）的正确传播此前未被显式测试，新测 `invisible_propagates_sticky_zero` 锁定；②**backend.rs 澄清 `apply_clip(None)` 语义**——`Rect::intersect` 无交集返 None，host clip 链使视口外节点 clip=None，bridge 经 None→视口回落补偿（非契约保证），docstring 明示 None=不主动裁剪只受后端自然边界约束 + 警告未来后端勿把 None 当无限画布（防越界泄漏）；③**hit_test.rs 修正坐标契约注释**（原「已减父偏移」与实现矛盾→「同一坐标空间，不递归减偏移」）。**经查正确**：render_node translate 5 变体；scene translated 同步平移；paint_scene 每 entry apply_clip+5 图元派发；SceneRecorder PaintRecorder+draw_text_blob；hit_test rev() topmost-wins；Layer 纯数据。**跨 crate O1**（不本轮修）：host clip 链可改 `.unwrap_or(Rect::ZERO)` 使契约更纯，但 DC-14 overlay 精调 + bridge 已补偿→留 follow-up。render 13→**14 测**全绿 + workspace build/clippy(-D warnings)/fmt 全净。**零生产行为变更**（1 新测 + 2 docstring）→ 无 product-smoke 风险；DC-1 ui/render 仅依赖 core+text-foundation+serde，零浏览器业务 + 零 render-foundation 依赖（TBD-2 trait 解耦）。详见 evidence/dc2-render-deep-review-20260703-100356.txt。**DC-2 Render·Scene tree 层 + DC-3 ExternalSurface + DC-11 TextBlob 路径深度审查闭合**；SDK 安全/健壮性深度审查现覆盖 runtime+DSL+i18n+widgets+chrome+render 六层。下一候选 = `ui/core`（geometry/event/theme/focus/semantics/invalidation/layout/scroll/action/binding 基础类型层）或 follow-up F1/F2/O1（PointerPhase::Exited / webview theme / host clip 链 unwrap_or(ZERO)）——独立 turn。同轮：merge origin/main R980（rendering-compat doc-only，零冲突）。
 7y. ~~**DC-2/DC-5/DC-8/DC-9/DC-12 ui/core 全 crate 深度审查（基础类型层：geometry/scroll/layout/focus/invalidation/theme/action/binding/element/semantics）**~~ ✅ **已完成（2026-07-03）**：对 ui/core 全 13 文件（~2816 行）做 lei-deep-review（widget/event 前轮已看；theme DC-5 周期已覆盖 token 可访问性，本轮补审解析机制）。**总体**：最底层、被一切上层使用的稳定基础类型层，**0 behavior bug**。**2 处承载 host clip 链的 Rect 边界语义回归测（零生产行为变更）**：①**`Rect::contains` 边界含端点（edge-inclusive）**——hit-test 据此判定（相邻 rect 共享边界点同时 contains，z 序 rev() 仲裁），既有测只覆盖内/外部点，新测 `rect_contains_is_edge_inclusive` 锁定四角+边含/紧贴外侧不含；②**`Rect::intersect` 边相接→None**（`right <= left` 判空，共享一条边=零面积→None）——承载 host clip 链（render O1：相接节点 intersect None→own_clip=None→bridge 视口回落），既有测只覆盖真重叠/分离，新测 `rect_intersect_edge_touching_is_none` 锁定。**经查正确**：geometry from_ltrb/deflate_rect 不钳 inverted（**底层原语契约**，chrome Phone 倒置 bug 上轮已修是消费方误用）/ Constraints::deflate max(0)+min≤max；scroll max_scroll max(0)+resolve_target 不钳（一致）；layout Material 断点+Orientation+presets+physical_size；focus trap 折返/non-trap 逃逸/首次进入/空 scope 全分支（含单项 scope）；invalidation requires_paint 含 LAYOUT；action/binding/element（position-based reconcile，M1 简化 docstring 明示）/semantics clean；theme Color mix/lighten/darken + WCAG 2.1 relative_luminance（0.03928+2.4 gamma）+ contrast_ratio + diff_invalidation + build_theme 4 态 + resolve_scheme（system_scheme fully-resolved 契约自洽）+ Typography/Spacing scaled 正交。**跨 crate O2**（不本轮修）：SystemThemeSnapshot system_scheme vs high_contrast 字段角色 docstring 可澄清（M4 platform 探测器须按 fully-resolved 契约）。core 51→**53 测**全绿 + workspace build/clippy(-D warnings)/fmt 全净。**零生产行为变更**（2 新测）→ 无 product-smoke 风险；DC-1 ui/core 仅依赖 compact_str/hashbrown/serde/thiserror，零浏览器业务 + 零 ui/* 上层依赖（最底层）。详见 evidence/dc2-core-deep-review-20260703-101334.txt。**DC-2 Element tree + DC-5 主题解析机制 + DC-8 FocusScope + DC-9 InvalidationFlags + DC-12 WindowMetrics 基础类型层深度审查闭合**；**SDK 通用层（ui/* + foundation/text）深度审查全覆盖**（runtime/DSL/i18n/widgets/chrome/render/core 七层）。下一候选 = foundation/text（FontdueBackend shape/measure/raster + TextBlob）或 follow-up F1/F2/O1/O2（PointerPhase::Exited / webview theme / host clip 链 / SystemThemeSnapshot doc）或推进剩余终端门禁（DC-14 GUI / DC-15 移动后端 / DC-8 平台 a11y，均需 GUI/设备）——独立 turn。
-8. **DC-14 浏览器迁移 GUI 可视验收**（本环境无 GUI；feature-on 像素级 headless 已证，需 GUI session）。
-9. **DC-15 M4 移动端运行时**（需设备/工具链环境）。
-10. **DC-2 Real EventLoop::run 阻塞壳**（需 GUI 验证首帧）。
-11. **DC-8 真实平台 a11y 后端**（需 GUI/平台环境）。
-12. **跟踪项**：本机 `make test` 受 script-sandbox V8 debug-test 链接阻塞（环境性）；`lark-cli` 不可用（环境性）。头端可推进工作已耗尽，本 round 为状态收口。
-13. **工作流注意（git）**：`ui-sdk` 是长期分支，**不要** `git rebase origin/main` 全量重写历史；增量 fast-forward push；如确需 main 同步，用 merge 并在 archive 记录。
+8. **DC-7 真实 chrome 组件（headless 可推进）**：逐步把 12 个浏览器组件从 `ChromePanel` 占位替换为真实 `impl Widget`。优先 `NavigationButtonsWidget` + `AddressBarWidget`（桌面 chrome 最显眼组件）。见 §DC-7/DC-14 真实 Chrome Widget 缺口。
+9. **DC-14 chrome 功能等价**（headless 可推进）：真实组件实现后在无 GUI 下通过 Scene snapshot + bridge 验证每个组件的视觉产出与手绘版等价。
+10. **DC-15 M4 移动端运行时**（需设备/工具链环境）。
+11. **DC-2 Real EventLoop::run 阻塞壳**（需 GUI 验证首帧）。
+12. **DC-8 真实平台 a11y 后端**（需 GUI/平台环境）。
+13. **跟踪项**：本机 `make test` 受 script-sandbox V8 debug-test 链接阻塞（环境性）；`lark-cli` 不可用（环境性）。
+14. **工作流注意（git）**：`ui-sdk` 是长期分支，**不要** `git rebase origin/main` 全量重写历史；增量 fast-forward push；如确需 main 同步，用 merge 并在 archive 记录。
 14. ~~**DC-5/DC-7/DC-15 F2/F3/F4 deep-review follow-ups**~~ ✅ **已完成（2026-07-03，commit 16050c3f）**：F2 `register_chrome_factories_with_webview` 加 `scheme` 参数（WebViewWidget 经工厂签名传入 ResolvedColorScheme，dark-mode webview 不再硬编码 Light theme；签名改经 render.rs → sdk_render.rs → app_platform.rs/render-foundation bridge 全链传播）；F3 chrome_model bookmarks 注释更新（明确 `Option<String> url` 为未来文件夹预留）；F4 SecurityBadge.tooltip_message_id() 使用 i18n catalog id `browser.security.*` 替代 M2 字面量占位，catalog 加 4 安全状态 tooltip 文案 + 1 新测。chrome 85→86 测 + bridge 23 + sdk-chrome 202 测全绿；build/clippy/fmt 全净；product-smoke 19.87% 绿。**F1 上轮已修（PointerPhase::Exited）→ F1-F4 全部收口**。同轮：merge origin/main R982（flex transferred-size-suggestion，crates/layout-engine，正交零冲突）。
 15. **DC-14 浏览器迁移 GUI 可视验收**（本环境无 GUI；feature-on 像素级 headless 已证）。
 16. **DC-15 M4 移动端运行时**（需 HarmonyOS 设备/工具链；**SDK-side adapter skeletons 全覆盖**：HarmonyOS adapter 17 测 + Android adapter 20 测 + headless 集成测全收口）。
@@ -826,3 +839,87 @@ Evidence: `evidence/deep-review-winit-event-map-r36-20260703.txt`
 - **SDK 通用层深度审查现覆盖 12 层**（+OHOS + Android event_map）。剩余未审：ui/patterns（350 行，8 个数据-props 小文件，低 bug 面）。
 
 Evidence: `evidence/deep-review-mobile-eventmap-r37-20260703.txt`
+
+### Round 38 — DC-14 GUI 可视验收（首次） + sdk-chrome 渲染修复（2026-07-03）
+
+**首次 GUI 可视验收结果**：`cargo run --bin zero-browser --features sdk-chrome` 启动后 chrome 与预期严重不符：
+
+- 工具栏显示 "Back·off Fwd·off" 文字（而不是导航箭头图标）
+- 右上角显示 "Menu" 文字（点击后窗口关闭——因 ChromePanel::event() 永远返回 Ignored，winit 把未处理事件转发到窗口管理）
+- 标签栏、地址栏、书签栏均不可见（只有模糊的占位色块）
+- 窗口控制按钮（最小化/最大化/关闭）缺失（从来不在 chrome 层，由 winit/OS 管理）
+
+**修复（本轮）**：
+
+1. **ChromePanel 布局修复**：非 fill_viewport 控件 layout() 不再返回 max_width，改为按文本内容估算自然宽度（有文本按 char 数×字号×0.55+padding，无文本回退 icon 尺寸）。修复工具栏 Row 中 4 个子控件每个占满全宽导致重叠/裁切的问题。
+2. **shell build 加 flex**：DesktopBrowserShell / TabletBrowserShell / PhoneBrowserShell 三 shell 的 AddressBar 加 `flex: 1`、PageViewportFrame 加 `flex: 1`。修复地址栏不伸缩和视口不填满剩余高度的问题。
+3. **颜色分层**：增加 `toolbar_bg`、`address_bar_bg`、`tab_strip_bg` 等 chrome 专用语义色别名。`tab_strip_bg` 混入 12% on_surface 产生肉眼可见的中灰层次，近似手绘 chrome 的标签栏色。
+
+**门禁**：chrome 86 测 + bridge 24 测 + sdk-chrome 8 测全绿；reftest 686/686 (100.0%)；product-smoke 19.41% (= baseline 零回归)；clippy/fmt 净。
+
+---
+
+## DC-7 / DC-14 真实 Chrome Widget 缺口（GUI 验收暴露的架构层 gap）
+
+GUI 可视验收暴露了一个关键事实：**当前浏览器 chrome 的所有 12 个领域组件均复用同一个 `ChromePanel` 占位 widget，没有一个拥有真实的 Widget 实现**。
+
+### 当前状态
+
+`register_chrome_factories()` 中全部 8 个浏览器组件工厂都注册为 `ChromePanel`：
+
+| 组件 | 注册 | 实际产出 |
+|------|------|----------|
+| NavigationButtons | `ChromePanel`（bg=toolbar_bg, text=nav_status_label） | 画一个矩形 + 文字 "Back·off Fwd·off" |
+| AddressBar | `ChromePanel`（bg=address_bar_bg, text=URL） | 画一个白色矩形 + URL 文字 |
+| SecurityBadge | `ChromePanel`（bg=安全色） | 画一个彩色矩形 |
+| BrowserMenu | `ChromePanel`（bg=toolbar_bg, text="Menu"） | 画一个矩形 + 文字 "Menu" |
+| BrowserTabStrip | `ChromePanel`（bg=tab_strip_bg, text=tabs.join("\|")） | 画一个灰色矩形 + 竖线拼接的 tab 标题 |
+| BookmarksBar | `ChromePanel`（bg=toolbar_bg, text=bookmarks_label） | 画一个矩形 + 书签数量文字 |
+| FindBar | `ChromePanel`（bg=toolbar_bg, text="Find"） | 画一个矩形 + 文字 "Find" |
+| PageViewportFrame | `ChromePanel`（fill_background=false） / `WebViewWidget` | 布局占位 / ExternalSurface marker |
+
+### 缺失的能力
+
+`ChromePanel` 仅是一个「彩色矩形 + 文字」的测试占位 widget。它**不具备**以下能力：
+
+1. **图形绘制**：无法画图标（箭头、锁、星形、关闭×）、圆角矩形、边框、分隔线、渐变
+2. **交互处理**：`event()` 永远返回 `Ignored`——不处理点击、拖拽、hover
+3. **组件内布局**：无法在自身内部对子元素做排版（如地址栏内部放锁图标 + URL 文本 + 书签星形）
+4. **焦点管理**：不可聚焦（`focusable()` 默认 false）
+5. **子 widget 组合**：AddressBar 内部的 SecurityBadge 作为 toolbar row 的子节点而非 AddressBar 的子节点
+
+### 需要的真实 Widget
+
+要实现一个能用的桌面浏览器 chrome，至少需要把以下组件从 `ChromePanel` 升级为**真实的 `impl Widget`**：
+
+| Widget | 所需能力 | 预估复杂度 |
+|--------|----------|------------|
+| `AddressBarWidget` | 圆角边框 + 锁图标 + URL 文本 + 书签星形 + 页面操作按钮；接受焦点处理键盘输入 | 高 |
+| `NavigationButtonsWidget` | 后退←、前进→、刷新↻ 三个图标按钮；hover/pressed 态；点击 emit Action | 中 |
+| `BrowserTabStripWidget` | 多个带激活态的标签形状（圆角顶部+直角底部）；hover 关闭×；点击切换/关闭 | 高 |
+| `BrowserMenuWidget` | 弹出下拉菜单（弹出层 + 菜单项列表 + 选中态）；点击外部关闭 | 中 |
+| `BookmarksBarWidget` | 水平排列书签条目 + hover 背景 | 低 |
+| `FindBarWidget` | 搜索输入框 + 匹配计数 + 上下箭头按钮 | 中 |
+| `SecurityBadgeWidget` | 锁/警告图标 + tooltip | 低 |
+| `PageViewportFrame` | 已由 WebViewWidget 实现（DC-3） | ✅ |
+
+### 对 DC 状态的影响
+
+当前 DC-7 声称「12/12 组件已实现，全部 paint→Scene 已打通」——在**占位层级**上确实成立（12 个 `WidgetSpec` → host mount → layout → paint → Scene → bridge → 像素）。但在**浏览器可用性**层级上不成立：没有一个 chrome 组件能达到 hand-drawn chrome 的功能等价。
+
+DC-14 「替换式迁移完成」在**渲染管线接通**意义上成立（sdk-chrome feature 下 SDK chrome 替代手绘 chrome 走通了 fill + text + WebView surface 的完整像素路径），但在**chrome 功能等价**意义上不成立（hand-drawn chrome 的功能远多于当前的 SDK chrome 占位）。
+
+### 修正后的 DC 状态
+
+| DC | 标题 | 修正状态 | 说明 |
+|----|------|----------|------|
+| DC-7 | 首批组件 | 🟡 占位层完成，功能等价未达成 | 12/12 Pipeline 成立；0/12 组件有真实 Widget 实现 |
+| DC-14 | 浏览器迁移 | 🟡 渲染管线接通，chrome 功能等价未达成 | SDK chrome→像素路径走通；chrome 功能和交互与手绘版不相等 |
+
+### 后续推进方向
+
+1. **短路径**：先把 `NavigationButtonsWidget` 和 `AddressBarWidget` 做真实实现（这两个是桌面 chrome 最显眼的组件）
+2. **长路径**：逐步替换所有 12 个组件为真实 Widget
+3. **此工作在 headless 下完全可推进**：真实 chrome 组件同样可以通过 `Scene` snapshot + `WidgetHost` headless 测试验证视觉产出（含 fills + text + image），无需 GUI
+
+Evidence: `evidence/round38-gui-verification-20260703.txt`
