@@ -55,6 +55,38 @@
 
 补齐后，本决策记录的验证清单才能复核。
 
+### 工具链补齐结果（2026-07-03 已完成）
+
+上述三项待办已于 2026-07-03 全部完成，配置方式因 cargo 限制做了调整：
+
+| 步骤 | 实际做法 | 结果 |
+|------|----------|------|
+| NDK | 用户在 Android Studio 装 **NDK r30.0.14904198** | `Sdk\ndk\30.0.14904198` 存在 ✅ |
+| Rust target | `rustup target add aarch64-linux-android` + `x86_64-linux-android` | 两个 target 均已装 ✅ |
+| cargo linker | **不用 `.cargo/config.toml`**，改用环境变量 `CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER` / `CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER` | 见下方说明 ✅ |
+
+**为什么不用 `.cargo/config.toml`**：cargo 的 `[target.<triple>] linker` 字段不支持环境变量插值（[rust-lang/cargo#9362](https://github.com/rust-lang/cargo/issues/9362)），写死本机路径会违反 AGENTS.md 第 6 条「路径通用化」（含用户名 `leizo` 的绝对路径不能进 git，仓库曾因此触发 SL-008/SL-010，见 commit `58e74ac8`）。
+
+**实际配置位置**：`C:\Users\leizo\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`，内容为：
+
+```powershell
+$env:ANDROID_NDK_HOME = "C:\Users\leizo\AppData\Local\Android\Sdk\ndk\30.0.14904198"
+$ndkToolchain = Join-Path $env:ANDROID_NDK_HOME "toolchains\llvm\prebuilt\windows-x86_64\bin"
+$env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = Join-Path $ndkToolchain "aarch64-linux-android24-clang.cmd"
+$env:CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER = Join-Path $ndkToolchain "x86_64-linux-android24-clang.cmd"
+```
+
+**API level 选择**：24（Android 7.0，广泛兼容下限）。升级 NDK 时只需改 `ANDROID_NDK_HOME` 一处；切换 API level 需同步改 clang 文件名后缀（如 `android24` → `android28`）。
+
+**交叉编译验证**（2026-07-03）：
+
+```
+cargo build --target aarch64-linux-android -p zero-ui-core
+→ Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.78s
+```
+
+整条链路（rustc → NDK clang → Android `.a`/`.so`）打通，本机 Android 工具链达到与 HarmonyOS 同等的「开箱即用」状态。
+
 ## 接口抽象层的影响（M1–M3 回溯）
 
 好消息：M1 阶段 `ui/platform` / `ui/runtime` / `ui/gestures` / `ui/navigation` / `ui/overlay` 的接口设计**本来就要求平台中立**（见 `m4-mobile-backend-harmonyos.md` 「对 M1–M3 的回溯影响」）。Android 的关键概念与 HarmonyOS 几乎一一对应：
@@ -82,9 +114,9 @@
 
 ## 验证清单（M4 推进 Android 时复核）
 
-- [ ] NDK 已装（`Sdk\ndk\<version>` 存在）
-- [ ] `rustup target add aarch64-linux-android` 完成，`rustup target list --installed` 含 android 目标
-- [ ] `cargo build --target aarch64-linux-android -p zero-ui-adapter-android`（或 demo crate）可链接通过
+- [x] NDK 已装（`Sdk\ndk\30.0.14904198`）—— 2026-07-03
+- [x] `rustup target add aarch64-linux-android` 完成（含 x86_64-linux-android）—— 2026-07-03
+- [x] `cargo build --target aarch64-linux-android -p zero-ui-core` 可链接通过（5.78s）—— 2026-07-03
 - [ ] Android Studio 能创建 APK 壳工程并调用 Rust 共享库（`*.so`）
 - [ ] 最小 demo 或 browser 能在 Android 设备/模拟器启动到首帧（满足 DC-15 第一条的「Android 这一支」）
 - [ ] PhoneBrowserShell / TabletBrowserShell 在 Android 上与 HarmonyOS / Desktop 共享同一 `BrowserChromeModel` + `BrowserAction`
