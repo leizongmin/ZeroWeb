@@ -1,0 +1,2 @@
+# Mark gradle-wrapper.jar as binary (avoid textual diff in git)
+*.jar binary

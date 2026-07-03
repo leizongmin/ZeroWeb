@@ -1,5 +1,8 @@
 # Build script: ZeroBrowser Android APK
 # Usage: .\build.ps1 [debug|release]
+#
+# gradle-wrapper.jar is COMMITTED to the repository (standard Gradle convention).
+# If missing or corrupted, run:  .\bootstrap.ps1  to re-download from official source.
 param(
     [string]$Mode = "debug"
 )
