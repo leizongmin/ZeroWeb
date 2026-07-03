@@ -50,6 +50,8 @@ pub enum PointerPhase {
     Released,
     Moved,
     Cancelled,
+    /// 指针离开控件区域（host 合成，非原始输入；通知控件清除 hover/pressed 等交互态）。
+    Exited,
 }
 
 /// 键盘动作。

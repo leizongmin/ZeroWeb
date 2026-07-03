@@ -1766,3 +1766,144 @@ fn gesture_arena_recognizes_pinch_from_two_pointer_sequence() {
         ref g => panic!("识别为 Pinch，got {g:?}"),
     }
 }
+
+// ── F1 hover 追踪：PointerPhase::Exited 合成 ─────────────────────────────
+
+/// 测试用「事件记录」叶子控件：把收到的 PointerPhase 写入共享记录。
+struct Recorder {
+    log: Rc<RefCell<Vec<PointerPhase>>>,
+}
+impl Widget for Recorder {
+    fn mount(&mut self, _ctx: &mut MountCtx) {}
+    fn update(&mut self, _ctx: &mut zero_ui_core::widget::UpdateCtx, _props: &PropsMap) {}
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        if let UiEvent::Pointer { phase, .. } = event {
+            self.log.borrow_mut().push(*phase);
+        }
+        EventResult::Ignored
+    }
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+        Size::new(50.0, 50.0).clamp(constraints)
+    }
+    fn paint(&mut self, _ctx: &mut PaintCtx) {}
+    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+}
+
+/// 构造 recorder host + 取出 log 引用。
+fn recorder_log(_id: &str) -> (WidgetHost, Rc<RefCell<Vec<PointerPhase>>>) {
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let log_clone = Rc::clone(&log);
+    let mut host = patch_host();
+    host.register("Recorder", move |_| {
+        Box::new(Recorder {
+            log: Rc::clone(&log_clone),
+        })
+    });
+    (host, log)
+}
+
+fn recorder_spec(id: &str) -> WidgetSpec {
+    let mut s = WidgetSpec::new("Recorder");
+    s.id = Some(WidgetId::new(id));
+    s
+}
+
+#[test]
+fn hover_move_between_widgets_dispatches_exited() {
+    // F1：指针从 A 移到 B → A 收到 Exited（hover 状态清除），B 收到 Moved。
+    let (mut host, log_a) = recorder_log("a");
+    let record_b = Rc::new(RefCell::new(Vec::new()));
+    let host = &mut host;
+    host.register("RecorderB", {
+        let log = Rc::clone(&record_b);
+        move |_| Box::new(Recorder { log: Rc::clone(&log) })
+    });
+
+    let mut root = WidgetSpec::new("Column");
+    root.id = Some(WidgetId::new("root"));
+    root.children.push(recorder_spec("a"));
+    let mut b_spec = WidgetSpec::new("RecorderB");
+    b_spec.id = Some(WidgetId::new("b"));
+    root.children.push(b_spec);
+    host.set_root(&root);
+    host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+
+    // Moved 到 a（首次悬停）→ a 收到 Moved，无 Exited（无上一悬停节点）。
+    host.dispatch_event(&UiEvent::Pointer {
+        phase: PointerPhase::Moved,
+        button: None,
+        position: Point::new(10.0, 10.0),
+        modifiers: Modifiers::NONE,
+        pointer_id: 0,
+    });
+    assert_eq!(*log_a.borrow(), vec![PointerPhase::Moved], "首次 Moved → a 收到 Moved");
+
+    // Moved 到 b（Column 堆叠 Recorder 50x50 → b 在 y≈50..100）→ a 收到 Exited。
+    host.dispatch_event(&UiEvent::Pointer {
+        phase: PointerPhase::Moved,
+        button: None,
+        position: Point::new(10.0, 60.0),
+        modifiers: Modifiers::NONE,
+        pointer_id: 0,
+    });
+    assert_eq!(
+        *log_a.borrow(),
+        vec![PointerPhase::Moved, PointerPhase::Exited],
+        "指针离开 a → a 收到 Exited"
+    );
+    assert_eq!(
+        *record_b.borrow(),
+        vec![PointerPhase::Moved],
+        "指针进入 b → b 收到 Moved"
+    );
+}
+
+#[test]
+fn cancelled_dispatches_exited_and_clears_last_hovered() {
+    // F1：Cancelled → 悬停节点收到 Exited，last_hovered 清空。
+    let (mut host, log) = recorder_log("a");
+    let mut root = WidgetSpec::new("Column");
+    root.id = Some(WidgetId::new("root"));
+    root.children.push(recorder_spec("a"));
+    host.set_root(&root);
+    host.layout(Constraints::loose(Size::new(400.0, 400.0)));
+
+    // 先悬停到 a。
+    host.dispatch_event(&UiEvent::Pointer {
+        phase: PointerPhase::Moved,
+        button: None,
+        position: Point::new(10.0, 10.0),
+        modifiers: Modifiers::NONE,
+        pointer_id: 0,
+    });
+    log.borrow_mut().clear();
+
+    // Cancelled → a 收到合成 Exited（hover 追踪）+ 原 Cancelled（正常派发）。
+    host.dispatch_event(&UiEvent::Pointer {
+        phase: PointerPhase::Cancelled,
+        button: None,
+        position: Point::new(10.0, 10.0),
+        modifiers: Modifiers::NONE,
+        pointer_id: 0,
+    });
+    assert_eq!(
+        *log.borrow(),
+        vec![PointerPhase::Exited, PointerPhase::Cancelled],
+        "Cancelled → 悬停节点收到 Exited（hover 追踪）+ Cancelled（正常派发）"
+    );
+
+    // 再次 Moved 到 a → 无 Exited（last_hovered 已被 Cancelled 清空）。
+    log.borrow_mut().clear();
+    host.dispatch_event(&UiEvent::Pointer {
+        phase: PointerPhase::Moved,
+        button: None,
+        position: Point::new(10.0, 10.0),
+        modifiers: Modifiers::NONE,
+        pointer_id: 0,
+    });
+    assert_eq!(
+        *log.borrow(),
+        vec![PointerPhase::Moved],
+        "Cancelled 后首次 Moved 不产 Exited（last_hovered=None）"
+    );
+}

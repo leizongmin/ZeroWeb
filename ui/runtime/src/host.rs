@@ -137,6 +137,12 @@ pub struct WidgetHost {
     pending_gestures: Vec<Gesture>,
     /// 单调时间戳（ms），喂给 arena 的每个指针事件递增（UiEvent::Pointer 不带时间戳）。
     gesture_clock: i64,
+    /// 上次指针事件命中的最深节点 id（hover 追踪，DC-8/F1）。
+    ///
+    /// 在 Pressed/Moved 事件 hit-test 后更新；若新目标与上次不同，向前一节点派发
+    /// 合成 `PointerPhase::Exited`（通知控件清除 hover/pressed 交互态）。
+    /// Cancelled 时清空本字段并派发 Exited（如有上次悬停节点）。
+    last_hovered: Option<WidgetId>,
 }
 
 impl Default for WidgetHost {
@@ -155,6 +161,7 @@ impl Default for WidgetHost {
             gesture_arena: None,
             pending_gestures: Vec::new(),
             gesture_clock: 0,
+            last_hovered: None,
         }
     }
 }
@@ -380,6 +387,7 @@ impl WidgetHost {
                         arena.reset();
                         None
                     }
+                    PointerPhase::Exited => None, // 合成事件，不喂 arena
                 }
             } else {
                 None
@@ -392,6 +400,41 @@ impl WidgetHost {
         let Some(root) = self.root.as_mut() else {
             return emitted;
         };
+        // F1 hover 追踪：在 Pressed/Moved 时检测悬停节点变化，合成为离开的 `Exited` 事件。
+        // 根节点不可变借用（仅拿 id）——以下 match 中 `dispatch_node` 的 &mut 在独立作用域。
+        if let UiEvent::Pointer { phase, position, .. } = event {
+            match phase {
+                PointerPhase::Pressed | PointerPhase::Moved => {
+                    let new_target = deepest_node_at(root, *position);
+                    if self.last_hovered != new_target {
+                        if self.last_hovered.is_some() {
+                            dispatch_to_widget(
+                                root,
+                                self.last_hovered.as_ref().unwrap(),
+                                PointerPhase::Exited,
+                                &mut emitted,
+                            );
+                        }
+                        self.last_hovered = new_target;
+                        // 悬停变化是纯视觉（不 emit action），清空 emitted。
+                        emitted.clear();
+                        if self.last_hovered.is_some() {
+                            self.pending |= InvalidationFlags::NEEDS_PAINT;
+                        }
+                    }
+                }
+                PointerPhase::Cancelled => {
+                    if let Some(ref old_id) = self.last_hovered {
+                        dispatch_to_widget(root, old_id, PointerPhase::Exited, &mut emitted);
+                    }
+                    self.last_hovered = None;
+                    // Cancelled 也是纯视觉，清空 emitted。
+                    emitted.clear();
+                    self.pending |= InvalidationFlags::NEEDS_PAINT;
+                }
+                _ => {}
+            }
+        }
         match event {
             UiEvent::Key {
                 code,
@@ -649,6 +692,21 @@ fn deepest_focusable_at(node: &HostNode, point: Point) -> Option<WidgetId> {
         }
     }
     if node.focusable { Some(node.id.clone()) } else { None }
+}
+
+/// 命中点下最深节点 id（hover 追踪用，不论是否 focusable）。
+///
+/// 优先返回子节点（最深、最上层优先，倒序），否则本节点。
+fn deepest_node_at(node: &HostNode, point: Point) -> Option<WidgetId> {
+    if !node.cached_rect.contains(point) {
+        return None;
+    }
+    for child in node.children.iter().rev() {
+        if let Some(id) = deepest_node_at(child, point) {
+            return Some(id);
+        }
+    }
+    Some(node.id.clone())
 }
 
 // ---------------- 构建与 reconcile ----------------
@@ -1190,6 +1248,35 @@ fn paint_node(
 }
 
 // ---------------- event dispatch ----------------
+
+/// 向指定 id 的节点（非 hit-test 定位）派发合成 `Exited` 事件（F1 hover 追踪）。
+///
+/// 与 [`dispatch_node`] 不同：本函数不遍历命中测试，而是按 id 精确查找目标节点
+/// 并直接派发，用以通知旧悬停节点清除交互态（pressed/hover）。
+/// 无 widget 或不命中 rect 时直接返回（不报错）。
+fn dispatch_to_widget(node: &mut HostNode, target: &WidgetId, phase: PointerPhase, _emitted: &mut Vec<EmittedAction>) {
+    if let Some(target_node) = find_node_mut(node, target)
+        && let Some(w) = target_node.widget.as_mut()
+    {
+        let exited = UiEvent::Pointer {
+            phase,
+            button: None,
+            position: Point::ZERO,
+            modifiers: zero_ui_core::event::Modifiers::NONE,
+            pointer_id: 0,
+        };
+        let mut flags = InvalidationFlags::CLEAN;
+        let res = w.event(
+            &mut EventCtx {
+                invalidation: &mut flags,
+            },
+            &exited,
+        );
+        target_node.invalidation |= flags;
+        // Exited 是纯视觉清除（不 emit action），忽略 EventResult。
+        let _ = res;
+    }
+}
 
 fn dispatch_node(node: &mut HostNode, event: &UiEvent, emitted: &mut Vec<EmittedAction>) -> bool {
     // 仅路由带位置的事件（指针/滚动）；焦点/键盘路由见 DC-8。

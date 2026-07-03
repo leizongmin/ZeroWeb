@@ -1,0 +1,23 @@
+F1 PointerPhase::Exited + host hover 追踪（DC-8 follow-up）
+========================================================
+日期: 2026-07-03
+
+变更:
+- ui/core/event.rs: PointerPhase 加 Exited 变体（host 合成，非原始输入）
+- ui/runtime/host.rs: WidgetHost 加 last_hovered 字段 + deepest_node_at() + dispatch_to_widget()
+  + dispatch_event 新增 hover 追踪：Pressed/Moved 时检测悬停节点变化→合成 Exited 派发；
+  Cancelled→派发 Exited+清空；gesture arena Exited 分支 no-op
+- ui/widgets/button.rs: event() 处理 Exited→清除 pressed+hover（F1 根因修复）
+- ui/runtime/host_tests.rs: 3 新测（hover_move / cancelled / Recorder 共享记录模式）
+- ui/widgets/button.rs: 1 新测（exited_clears_pressed_and_hover）
+
+验证:
+- cargo test: ui/core 53 + ui/runtime 83 + ui/widgets 41 = 0 failures（含 3 新测）
+- 下游全绿零回归: chrome 85 + examples + adapter-winit 30 + adapter-webview 12 + adapter-rf 23 + dsl 95 + foundation 32
+- cargo build --release -p zero-browser: 成功（默认+sdk-chrome 双配置）
+- cargo clippy(-D warnings): 净（ui/widgets const_item_mutation 预存警告非本次引入）
+- cargo fmt: 净
+
+成果: F1 PointerPhase::Exited + host hover 追踪落地。Button 的 pressed/hover 状态在指针离开时正确清除，
+不再粘滞（旧行为：缺 Exited → 指针拖出按钮后释放仍 emit click）。
+DC-8 交互态管理闭环。

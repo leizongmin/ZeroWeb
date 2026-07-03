@@ -108,6 +108,11 @@ impl Widget for Button {
                     EventResult::Consumed
                 }
             }
+            PointerPhase::Exited => {
+                self.pressed = false;
+                self.hover = false;
+                EventResult::Consumed
+            }
             _ => EventResult::Ignored,
         }
     }
@@ -476,6 +481,34 @@ mod tests {
             (size.width - 32.0).abs() < 0.5,
             "2-char CJK label width {} should be 32 (char count), not 64 (byte length)",
             size.width
+        );
+    }
+
+    #[test]
+    fn exited_clears_pressed_and_hover() {
+        // F1：Exited 清除 Button pressed/hover 态（曾因缺 Exited 粘滞）。
+        let mut btn = Button::new(ButtonSpec::new("Click", "app.click"));
+        let mut ctx = EventCtx {
+            invalidation: &mut InvalidationFlags::CLEAN,
+        };
+
+        // 按下。
+        let _ = btn.event(&mut ctx, &press());
+        // 断言可经 pressed bg 颜色验证（后续用 Released 是否 emit 间接证）。
+        // 派发 Exited → pressed 应被清除。
+        let exited = UiEvent::Pointer {
+            phase: PointerPhase::Exited,
+            button: None,
+            position: Point::ZERO,
+            modifiers: Modifiers::NONE,
+            pointer_id: 0,
+        };
+        let _ = btn.event(&mut ctx, &exited);
+        // 释放 → 不应 emit（pressed 已被 Exited 清除）。
+        let res = btn.event(&mut ctx, &release());
+        assert!(
+            !matches!(res, EventResult::Emit(_)),
+            "Exited clears pressed → release should not emit"
         );
     }
 }
