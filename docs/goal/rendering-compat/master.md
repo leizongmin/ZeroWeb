@@ -2648,6 +2648,29 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1007 WPT @font-face .woff 字体打包 + font-loading yield 三簇证伪（R910 模式扩展）·loader 持有已解码 sfnt（生命周期修复）·零 oracle yield·纯调查+数据
+
+承 R1006「打包缺失 WPT .woff 字体后 A/B 测 font-loading 单独 yield」。本轮：① 经 ~/use-proxy 代理从 WPT GitHub raw 打包 7 个缺失 .woff 字体到 wpt-data/fonts/（mplus-1p-regular 803KB / Scheherazade-Regular / sileot-webfont / noto/noto-sans-v8-latin / math/mathvariant-italic）+ css-values/resources/ExTest(.woff/-NoSpace)；② A/B 三簇 oracle。
+
+**★ font-loading 单独 yield 证伪（R910 模式扩展，决定性）**：打包字体后 **css-fonts 98/282 + text-transform 7/105 + line-break 0/84 全部持平**（零 PASS 翻转）。结合 R910（bidi 簇 font-blocked 已证伪），font-loading 单独**不产**结论现已覆盖 4 簇。机制清晰：**这些簇的测试检验 LOGIC 非 font 渲染本身**——
+- line-break（0/84）：测 CJK 严格/松散换行**规则**（word-break: strict/loose/normal），换行点由规则定非字体→加载 mplus 不改换行。
+- text-transform（7/105）：测 capitalize/uppercase/lowercase **应用**（R998 多 facet pre-layout+Path A/B），transform 逻辑非字体→加载字体不改应用。
+- css-fonts（98/282）：测 font-features/variant/**ligature**（rustybuzz R513 未接生产）+ variable-font，需 GSUB/GPOS→加载字体但 features 不应用。
+- bidi（R910）：测 bidi**算法**布局。
+
+即 **font-loading 是这些簇的必要非充分条件**——字体加载让 glyph 正确渲染，但 PASS 还需对应的 LOGIC（规则/transform/features/bidi）实现。R1006 woff 解码器 + 本轮字体打包把 font-loading 层**彻底补齐**，yield 现在完全取决于更深 LOGIC 实现。
+
+**改动**（commit 含数据 + 测试）：
+- 数据：7 个 .woff 字体存 `tests/wpt-runner/wpt-data/fonts/` + 2 个 ExTest 存 `css-values/resources/`（harness resolve_font_src 已映射 `/fonts/X` → `wpt-data/fonts/X`，相对路径 → base_dir）。
+- 测试：woff.rs 加 `r1007_tests::decode_bundled_wpt_fonts`（5 字体全 decode→fontdue 加载，证打包字体有效 + 解码器泛化）。
+- FontLoader.load_font 生命周期修复：`decoded.as_deref().unwrap_or(data)` 后 `bytes.to_vec()` 存 font_data——`decoded` 局部 Vec 在函数末尾释放，故 stored_bytes 必须复制（已 to_vec），正确（无 use-after-free）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0** ✓（render-foundation 520 含 +r1007 测）/ product-smoke welcome 16.57%（R1006 验，本轮字体不影响 welcome）。
+
+**意义**：font-loading 轨**彻底证伪为单 session yield lever**（R910 + R1007 四簇覆盖）。font cluster 真阻塞 = LOGIC 层：CJK line-break 规则 / text-transform pre-layout 应用（R998）/ rustybuzz features 接生产（R513）/ bidi 算法（R910）。每条多 session。R1006 woff 解码器 + R1007 字体打包使 font-loading 层完整，为未来 LOGIC 修复奠基（届时字体已就绪）。
+
+**▶ 下会话（转 LOGIC 层，font-loading 已闭）**：① **CJK line-break 规则**（line-break 0/84 簇）：实现 word-break: strict/loose/normal 的 CJK 换行点规则（ZW 当前 WordBreakMode 不区分 strict/loose），mplus 字体已就绪可直接测；② 或 **text-transform pre-layout 应用**（R998，text-transform 98 簇）：IFC 文本收集期应用 transform 使 layout 用转换后文本宽度；③ 或 **rustybuzz 接生产**（R513 shaper.rs:82，font-features 184 簇）。三 LOGIC 轨均多 session，font-loading 已非阻塞。
+
 ### R1006 ★WOFF 1.0 解码器 LANDED·@font-face .woff 字体加载链补齐·FontLoader.load_font 自动 wOFF→sfnt·零回归·R1005「下游未实现」纠正·font cluster 基础设施
 
 承 R1005「@font-face 下游 fetch/decode/register 未实现」。**R1005 部分错误**——查证发现 .ttf 链**早已 wired**（`reftest_fonts.rs::load_font_faces_into` → `FontLoader.load_font` + `register_family_alias`，oracle path reftest.rs:479 调用），`.ttf`/`.otf` @font-face 字体已正确加载（css-fonts/font-face 测 0.35% PASS 证）。**真缺口 = .woff 解码**（fontdue 不识别 woff 容器，971 案用 .woff 静默跳过）。
