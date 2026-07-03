@@ -2648,6 +2648,33 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1013 ★R994 aspect-ratio fixup 守卫 LANDED = flex-item-transferred-sizes-padding 88→14.85%（-73pp ×2 案）·css-flexbox Oracle 289 baseline 保持（R993/R994 增益不丢）·零回归·fresh full oracle 46.1% 基线建立
+
+承 R1012 CONTINUE「per-element white-space 调查」。R1012 验证 font/text 簇墙化后，本轮 fresh full oracle（4680/10397=46.1%）扫全 corpus top-worst 找新 lever，定位 `flex-item-transferred-sizes-padding-border-sizing/content-sizing` = **88.19%**（R984 记 14.86%）= **+73pp 回归**。
+
+**Bisect 定位（实证）**：临时禁用 `apply_flex_aspect_ratio_item_size`（R993/R994 fixup）→ 两案回到 14.85%（R984 基线）→ **R994 fixup 过度泛化致回归**。R993 fixup 原为 ratio-only SVG `<img>`（replaced），R994 泛化到「leaf + CSS aspect-ratio」（含非替换 div）。`flex-item-transferred-sizes-padding`（div + `aspect-ratio:1/1` + `min-height:100px` + `box-sizing:border-box`）被 fixup 误触发：fixup 对 column 反向推导 height = width/ratio，覆盖了 min-height 驱动的正确尺寸推导。
+
+**精确守卫（区分 helped vs hurt）**：ORACLE_DUMP_ALL per-case 对比（noguard vs guard）找到 4 翻转案——transferred-sizes ×2（div 非 replaced，fixup hurt），flex-aspect-ratio-img-column-006/row-004 ×2（img replaced，fixup help）。区分 = **replaced vs 非替换**：
+- 非替换 div + CSS aspect-ratio + min-size：min-size 驱动尺寸，cross→main 反向推导破坏 → 跳过 fixup。
+- 替换 img/SVG + min-size：transferred-size 语义不变（intrinsic ratio + cross 推导），fixup 仍正确 → 保留。
+
+**改动**（`engine.rs::apply_flex_aspect_ratio_item_size`）：加 `main_has_definite_min` 守卫——main 轴 `LengthValue::Px` min-size 时，仅替换元素继续 fixup，非替换跳过。条件 `main_is_auto && (!main_has_definite_min || b.is_replaced)`。
+
+**验证（chromium Oracle + 三态门禁）**：
+- **flex-item-transferred-sizes-padding-border-sizing / content-sizing：88.19%→14.85%（-73pp ×2，仍 FAIL >1%，残余 = R370 flex-container-intrinsic-width + transferred-size 精度，独立子问题）**。
+- **flex-aspect-ratio-img-column-006 / row-004：0.73%→0.73% 字节同**（替换元素 fixup 保留，零回归）。
+- **css-flexbox Oracle 289/497 (58.1%) = R994/R1005 baseline 持平**（R993 aspect-ratio-intrinsic-007 + R994 +2 增益全保留，transferred-sizes ×2 几何改善但未翻 PASS 故 pass count 不变）。
+- aspect-ratio-intrinsic-size-007 仍 0.00% PASS（R993 gain 不动）。
+- **welcome 16.57% 不变**（<20% DC-13 gate）。
+- 2 新单测（`r1013_flex_column_non_replaced_with_min_height_not_overridden` + `r1013_flex_replaced_with_min_height_still_uses_fixup`）。
+- make test exit 0（workspace 绿，layout-engine 1001 含 +2 r1013 测）；clippy --workspace -D warnings ✓；fmt ✓。
+
+**fresh full oracle（post-R990/R1001/R1008/R1012/R1013）**：**4680/10397 = 46.1%**（vs R1005 的 4530/44.6%，post-R990 +138 + R1001/R1008/R1013 累计 +150）。per-dir 主要：css-flexbox 289/497 (58%) / css-tables 74/115 (64%) / css-position 55/97 (57%) / css-text-decor 108/242 (45%) / css-multicol 119/452 (26%) / css-text/white-space 45/395 (11%) / css-writing-modes 56/784 (7%) / text-transform 7/105 (7%)。global top-worst = replaced-object-backdrop 100%（::backdrop feature gap）/ font-family-invalid-characters-003 100%（parser edge case）/ pagination-print 99%（print）/ inline-svg-100-percent 97%（R717 inline）/ writing-modes vertical 86-87%（R109 structural）。
+
+**意义**：收割 R994 over-generalization 回归 bug（潜伏 14 轮，R994-R1012 间无 oracle 全量对比暴露）。fixup 守卫精确区分 replaced（transferred-size 正确）vs 非替换（min-size 驱动）是 CSS Flexbox §4.5 + css-sizing-4 §aspect-ratio 的正确语义。transferred-sizes ×2 现 14.85%（近 PASS），R370 flex-container-intrinsic-width 解后可批量翻 PASS。**方法论**：ORACLE_DUMP_ALL per-case A/B（noguard vs guard）是定位 fixup 副作用的决定性工具，避免「修一案回归他案」陷阱。
+
+**▶ 下会话**：① **R370 flex-container-intrinsic-width**（flex-item-transferred-sizes-padding 残余 14.85% + inline-flex/grid shrink-to-fit，结构性多 session，flex_row_intrinsic_width 须求和 block 子非取 max）；② **inline-svg-100-percent-in-body 97%**（R717 inline SVG，非 img，独立子问题）；③ **font-family-invalid-characters-003 100%**（CSS parser edge case，{ } 在 font-family 值中，窄）；④ per-element white-space（R1012 CONTINUE，product-smoke 价值高但 WPT yield 低）。clean lever 仍稀缺，forward = R370 / 真特性实现（::backdrop / form 控件 / scroll-container）/ 多 session 结构性。
+
 ### R1012 text-transform override-map bypass LANDED（机制证伪 R1011 误诊）·零 oracle yield·簇 = fontdue 光栅 + per-element white-space 墙（非 transform 逻辑）·CSS Text 3 §3.1 spec-compliance·零回归
 
 承 R1011「▶ 下会话启动 Phase A master blocker 首切 = text-transform override-map bypass（R1004 模式）」。本轮完整实施 4 步 bypass + 验证。**机制 LANDED 且经证明工作，但 oracle 零 yield，证 R1011 误诊**。

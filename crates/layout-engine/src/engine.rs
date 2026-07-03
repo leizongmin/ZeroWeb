@@ -755,7 +755,19 @@ impl LayoutEngine {
                 } else {
                     matches!(item_style.width, LengthValue::Auto)
                 };
-                if main_is_auto {
+                // R1013：非替换 leaf（div + CSS aspect-ratio）+ main 轴 definite min-size 时跳过——
+                // 此约束驱动尺寸（transferred-size 由 min-size × ratio 推导 cross），cross→main
+                // 反向推导会覆盖并破坏（flex-item-transferred-sizes-padding 回归 +73pp 证）。
+                // 替换元素（img/SVG）保留 fixup：其 transferred-size 由固有 ratio + cross 推导正确
+                //（flex-aspect-ratio-img-column-006 / row-004 需 fixup 才 <1%，min-size 不改变语义）。
+                // R993 driving case（aspect-ratio-intrinsic-size-007 SVG img）+ R994 +2（CSS aspect-ratio
+                // leaf 无 min-size）均不受影响。
+                let main_has_definite_min = if is_column {
+                    matches!(item_style.min_height, LengthValue::Px(_))
+                } else {
+                    matches!(item_style.min_width, LengthValue::Px(_))
+                };
+                if main_is_auto && (!main_has_definite_min || b.is_replaced) {
                     // column: main=height, cross=width；row: main=width, cross=height。
                     let (main_resolved, cross_resolved) = if is_column {
                         (b.height, b.width)
