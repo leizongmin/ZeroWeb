@@ -57,4 +57,24 @@ mod tests {
         // 无交集 → 不可见（ZERO 矩形）。
         assert_eq!(s.current(), Some(Rect::ZERO));
     }
+
+    #[test]
+    fn invisible_propagates_sticky_zero() {
+        // 深度审查（lei-deep-review）：一旦某层 clip 收缩为 ZERO（不可见），
+        // 其所有后继层应保持 ZERO（ZERO ∩ 任何 rect = None → unwrap_or(ZERO)）。
+        // 保证不可见子树整支被裁掉，不会因后续 push “复活”。
+        let mut s = ClipStack::new();
+        s.push(Rect::from_ltrb(0.0, 0.0, 10.0, 10.0));
+        s.push(Rect::from_ltrb(100.0, 100.0, 110.0, 110.0)); // 无交集 → ZERO
+        assert_eq!(s.current(), Some(Rect::ZERO));
+        // 第三层即便与第一层有交集，仍应保持 ZERO（当前有效 clip 已是 ZERO）。
+        s.push(Rect::from_ltrb(5.0, 5.0, 8.0, 8.0));
+        assert_eq!(s.current(), Some(Rect::ZERO), "不可见层传播：后继 push 不复活");
+        // pop 回到不可见层，仍是 ZERO。
+        s.pop();
+        assert_eq!(s.current(), Some(Rect::ZERO));
+        // 再 pop 回第一层才恢复可见。
+        s.pop();
+        assert_eq!(s.current(), Some(Rect::from_ltrb(0.0, 0.0, 10.0, 10.0)));
+    }
 }

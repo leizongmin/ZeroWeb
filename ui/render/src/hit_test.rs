@@ -8,7 +8,10 @@ use zero_ui_core::widget::WidgetId;
 
 /// 在 RenderNode 树上做命中测试：后序遍历子节点（子在上），首个命中即返回。
 ///
-/// `point` 在该 `node` 的坐标系内（已减去父级偏移）。
+/// **坐标契约**（深度审查 lei-deep-review 澄清）：`node.rect`、`node.clip` 与 `point`
+/// 须在同一坐标空间（通常为绝对坐标）；子节点的 rect 直接用同一空间判定，**不**递归减偏移
+/// （实现把 `point` 原样传给子节点）。靠后的子节点 = z 序更高，故 `children.iter().rev()`
+/// 先遍历最上层。
 pub fn hit_test(node: &RenderNode, point: Point) -> Option<WidgetId> {
     // 不在节点矩形内（考虑裁剪）则跳过。
     if !node.rect.contains(point) {

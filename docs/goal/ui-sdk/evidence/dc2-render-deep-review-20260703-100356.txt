@@ -1,0 +1,122 @@
+DC-2/DC-3/DC-11 ui/render 深度审查（lei-deep-review）
+日期: 2026-07-03
+范围: ui/render 全 crate（8 文件 ~856 行：render_node / scene / backend /
+      paint_ctx / clip / hit_test / layer / lib）
+重点: RenderPrimitive 全图元 + translate 正确性 / Scene 扁平化 + translated /
+      paint_scene 派发 / RenderBackend trait 契约 / ClipStack 裁剪传播 /
+      hit_test 坐标契约 / DC-3 ExternalSurface + DC-11 TextBlob 路径。
+
+================================================================
+0. 总体结论：ui/render 成熟清洁，0 behavior bug，3 处契约/测试加固
+================================================================
+ui/render 是 SDK 的渲染/场景抽象层（小而稳定），8 文件经逐文件审查**无 medium/high
+behavior bug**。本轮应用 3 处安全加固（1 新测 + 2 契约 doc 澄清），零生产行为变更。
+
+================================================================
+1. 加固汇总（1 回归测 + 2 doc 契约澄清，零行为变更）
+================================================================
+
+加固 A —— clip.rs：补 ClipStack「不可见传播 sticky-ZERO」回归测
+  现状：ClipStack.push 对无交集（intersect None）压入 Rect::ZERO 表示不可见；
+  一旦 ZERO，后续 push(current=ZERO).intersect(any)=None → 继续 ZERO（不可见子树
+  整支被裁，不“复活”）。此正确传播此前**未被显式测试**（既有测只覆盖 intersect
+  收窄 + disjoint→ZERO，未覆盖第三层 push 与 pop 回退）。
+  新测 invisible_propagates_sticky_zero：第三层 push（与第一层有交集）仍 ZERO +
+  pop 回退仍 ZERO + 再 pop 回第一层才恢复可见。锁定正确传播，防未来回归。
+
+加固 B —— backend.rs：澄清 RenderBackend::apply_clip(None) 语义（契约歧义）
+  现状：apply_clip(Option<Rect>) docstring 仅说「后续绘制受 clip 约束」，未定义 None。
+  关键背景：Rect::intersect 对无交集返回 None；host（ui/runtime）paint_node 用
+  parent_clip.and_then(|pc| pc.intersect(node.rect))，视口外节点经此链产出 own_clip=None
+  → SceneEntry.clip=None → paint_scene apply_clip(None)。
+  风险：若后端实现把 None 当「无限大画布」（不裁），视口外节点像素会越界泄漏。
+  现状安全是因为 bridge（ui/adapters/render-foundation）把 None 回落为视口 rect
+  （见 DC-14 overlay stateful-clip 修复），但这是 bridge 的「补偿」，非契约保证——
+  未来新 RenderBackend 实现可能踩坑。
+  加固：docstring 明示 None=「不主动裁剪，只受后端自然边界（surface/视口）约束」，
+  并警告后端须确保 None 下回落视口而非无限画布。零行为变更（仅 doc），但消解契约歧义。
+
+加固 C —— hit_test.rs：修正坐标契约注释（误导）
+  现状：注释「point 在该 node 的坐标系内（已减去父级偏移）」与实现矛盾——实现把
+  point 原样传给子节点（hit_test(child, point)），子节点 rect.contains(point) 直接判，
+  故所有 rect 与 point 须在同一坐标空间（通常绝对）。既有测用绝对 rect 验证。
+  加固：注释改为「node.rect/clip 与 point 须同一坐标空间（通常绝对），子节点 rect
+  直接同空间判定，不递归减偏移；靠后子节点 z 序更高 → children.iter().rev()」。
+  注：hit_test.rs 当前无外部调用（host 用自己的 dispatch hit-test），属 standby 工具，
+  但契约注释须准确以防未来误用。
+
+================================================================
+2. 经查正确（无需改）—— 逐文件
+================================================================
+
+render_node.rs（RenderPrimitive + translate）：
+  - 5 图元：FillRect/StrokeRect（含 Rounding 圆角）/Text（原始字符串）/TextBlob
+    （预 shape，DC-11）/ExternalSurface（DC-3，surface_id 不载浏览器类型→ui/render
+    不依赖 zero-webview，DC-1）。
+  - translate：5 变体全覆盖（rect/position 平移，color/text/size/id 不变），2 测验证。✓
+
+scene.rs（Scene 扁平化缓冲）：
+  - SceneEntry{source, clip, primitive}；push/extend/translated。
+  - translated：clone entries，clip + primitive 同步平移（source 不变），原场景不可变。✓
+
+backend.rs（RenderBackend trait + paint_scene，除上述 None 契约澄清）：
+  - trait 6 方法（fill_rect/stroke_rect/draw_text_blob/draw_text/draw_external_surface/
+    apply_clip）。
+  - paint_scene：按 entries 顺序，每条先 apply_clip(clip) 再按图元派发；5 图元全覆盖。
+    空 scene noop。每 entry 重新 apply_clip（即便与上条同）——bridge stateful 语义下幂等，
+    其它后端可能略冗余但语义正确（每 entry 独立 clip 状态）。✓
+  - 3 测（dispatch 顺序含真实 Ahem TextBlob→2 glyph / empty noop / per-entry clip）。✓
+
+paint_ctx.rs（SceneRecorder 实现 PaintRecorder）：
+  - 持 source/clip/scene；push 附 source+clip；fill_rect/stroke_rect（Rounding::ZERO）/
+    draw_text/draw_external_surface + inherent draw_text_blob。✓
+  - 3 测（收集/clip 附着/textblob 记录）。✓
+
+clip.rs（ClipStack，除上述 sticky-ZERO 测）：
+  - push：current().map(intersect).unwrap_or(Some(rect))，None（disjoint）→ unwrap_or(ZERO)。✓
+  - current/depth/pop。一旦 ZERO 后继保持 ZERO（加固 A 锁定）。✓
+
+hit_test.rs（除上述坐标契约注释）：
+  - 后序遍历子节点 rev()（靠后=z 高）；point 不在 rect/clip → None；子命中返子，否则返 node.id。✓
+  - 2 测（topmost_child_wins / miss_returns_none_or_parent）。✓
+  - 当前无外部调用（host 用自有 dispatch hit-test）；standby 工具。
+
+layer.rs（合成层）：
+  - Layer{id, bounds, opacity(0..=1), offset}；new 默认 opacity=1.0/offset=ZERO。✓
+  - 纯数据 struct，opacity 不钳（消费方负责，FR-012 composite 层占位）。
+
+lib.rs：re-export backend/layer/SceneRecorder/RenderNode/RenderPrimitive/Scene/SceneEntry。✓
+  （clip/hit_test 模块 pub 但未顶层 re-export，standby 工具。）
+
+================================================================
+3. 跨 crate 观察（记录，不在本轮修）
+================================================================
+
+O1（ui/runtime host clip 链，非 ui/render）—— host paint_node 用
+    parent_clip.and_then(|pc| pc.intersect(node.rect))，视口外节点产出 own_clip=None。
+    当前由 bridge None→视口回落 补偿（安全）。若要契约更纯（None=真正无 clip），
+    可改 host 为 parent_clip.map(|pc| pc.intersect(node.rect).unwrap_or(Rect::ZERO))，
+    使视口外节点得 Some(ZERO)（被裁）。但 DC-14 overlay 像素渲染经精心调试（stateful
+    clip + None→视口），改 host clip 链有回归风险，且 bridge 已补偿——本轮不动，
+    记为 follow-up（独立 turn 评估 host clip 链与 bridge None 语义对齐）。
+
+================================================================
+4. 门禁（全绿）
+================================================================
+- cargo test -p zero-ui-render: 14 passed（13→14，+1 sticky-ZERO 守卫）+ 3 doc-tests。
+- cargo build --workspace: Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings: Finished（0 警告）。
+- cargo fmt --all --check: 净（0 diff）。
+- 零生产行为变更（1 新测 + 2 docstring）→ 无 product-smoke 风险，下游零回归可能。
+- DC-1 复核：ui/render 仅依赖 zero-ui-core + zero-text-foundation + serde（TextBlob
+  来自 foundation/text），零浏览器业务 crate、零 render-foundation 依赖（TBD-2：经
+  RenderBackend trait 解耦）。
+
+================================================================
+5. 与历轮审查的关系
+================================================================
+SDK 安全/健壮性深度审查现覆盖 runtime（host/driver）+ DSL（engine/yaml/loader）+
+i18n（plural/RTL/catalog）+ widgets（Button）+ chrome（shell/model/render 桥）+
+render（Scene/RenderBackend/ClipStack）六层。本轮 ui/render 成熟清洁（0 behavior bug），
+应用 3 处契约/测试加固（sticky-ZERO 守卫 + apply_clip None 语义 + hit_test 坐标契约）。
+DC-2 三棵树之 Render·Scene tree 层 + DC-3 ExternalSurface + DC-11 TextBlob 路径深度审查闭合。

@@ -29,6 +29,12 @@ pub trait RenderBackend {
     /// 外部合成表面（DC-3）：后端按 `surface_id` 取回 WebView/平台视图纹理并合成到 `rect`。
     fn draw_external_surface(&mut self, rect: Rect, surface_id: u64);
     /// 应用裁剪：后续绘制命令受 `clip` 约束，直到下一次 `apply_clip`。
+    ///
+    /// **`None` 语义**（深度审查 lei-deep-review 澄清）：表示「不主动裁剪」——后续绘制
+    /// 只受后端自然边界（surface/framebuffer/视口）约束。`Some(rect)` 表示严格裁剪到 rect
+    /// 内。注意：`Rect::intersect` 对无交集返回 `None`，故视口外节点经 host clip 链可能
+    /// 产出 `None`；后端实现须确保 `None` 下不超出 surface 边界（如回落到视口 rect），
+    /// 而非把 `None` 当作「无限大画布」导致越界像素泄漏。
     fn apply_clip(&mut self, clip: Option<Rect>);
 }
 
