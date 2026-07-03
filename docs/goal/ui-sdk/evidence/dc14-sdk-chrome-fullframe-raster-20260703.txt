@@ -1,0 +1,62 @@
+DC-14 headless 可视验收推进：SDK chrome 替换路径完整帧 → 像素光栅
+日期: 2026-07-03
+分支: ui-sdk
+
+================================================================
+背景：本轮发现的 headless 验收缺口
+================================================================
+此前 DC-14 的 headless 像素证据仅覆盖：
+- `compose_overlay_rasterizes_to_visible_framebuffer`：只测 **additive overlay** 路径
+  （compose_sdk_chrome_overlay，旧方案：SDK chrome 叠加在手绘 chrome 之上）。
+- `compose_replacement_*`：只验证 **scene 构造**（fills 置底 / page 翻译 / 无 viewport
+  fill），未光栅为像素。
+
+缺口：`render_cpu` 真实消费的 **替换式迁移路径**（compose_sdk_chrome_replacement_with_webview
+→ webview surface 合成 → render_full_scene）的完整浏览器帧从未在 headless 下光栅为像素验证。
+即「替换路径完整帧 → 顶部 chrome 区像素」未被自动化证据覆盖。
+
+================================================================
+本轮实现（纯测试代码，零生产路径变更）
+================================================================
+1. 新增 `#[cfg(all(test, feature = "sdk-chrome"))] pub fn render_full_scene_sdk_chrome_for_test`
+   （apps/browser/src/app_platform.rs）：与 `render_cpu` 的 feature-on 装配**逐位一致**
+   （build_scene → compose_sdk_chrome_replacement_with_webview 替换手绘 chrome + webview
+   surface → render_full_scene），但返回 FrameBuffer 而非 present 到 softbuffer。镜像
+   render_cpu 既有 disjoint-field borrow 模式（shell/tabs/font_loader/glyph_cache 不相交借用）。
+
+2. 新增测试 `sdk_chrome_replacement_full_frame_rasterizes_visible_chrome_region`
+   （sdk_chrome_tests 模块）：
+   - BrowserApp::new(Cpu) + 1280×800 + scale 1.0 + 默认 active tab（image_cache 为 Some）。
+   - fb = render_full_scene_sdk_chrome_for_test(1280, 800)。
+   - empty_fb = render_full_scene(default RenderPrimitives) 作基线。
+   - 断言①：整帧与空 scene 有差异（SDK chrome bars + 页面 surface 贡献像素）。
+   - 断言②：顶部 chrome 区（y < 90，SDK chrome bars ≈ toolbar36+tab32+bookmarks28≈96）
+     与空 scene 有差异 —— 证明 SDK chrome 在真实 render_cpu 装配下渲染到顶部 chrome 区像素，
+     而非只在页面区/overlay 区贡献。
+
+================================================================
+门禁（全绿）
+================================================================
+- 新测单跑：1 passed / 0 failed（2.85s）。
+- browser sdk-chrome 全量：203 passed / 0 failed（原 202，+1）。
+- browser 默认全量：191 passed / 0 failed（不变）。
+- clippy `-D warnings`：默认 ✅ + sdk-chrome ✅ 零警告。
+- cargo fmt --check：✅ 无变更。
+- make reftest：686/686 (100.0%) ✅。
+- make product-smoke：19.41% (< 20%) ✅（生产二进制逐位不变——本变更为 cfg(test)+cfg
+  (sdk-chrome) 测试代码，不编译进生产/release 二进制；reftest/product-smoke 跑同一生产二进制）。
+
+================================================================
+DC-14 状态更新
+================================================================
+DC-14 headless 像素证据从「additive overlay 路径 + 替换路径 scene 构造」扩展为
+「替换路径完整帧 → 顶部 chrome 区像素光栅 verified」。剩余 DC-14 = GUI 可视验收
+（人眼确认 chrome 布局/配色在真实窗口中正确，headless 像素断言不替代人眼布局判断）。
+
+================================================================
+文件
+================================================================
+- apps/browser/src/app_platform.rs：+render_full_scene_sdk_chrome_for_test（test+sdk-chrome
+  cfg）+sdk_chrome_replacement_full_frame_rasterizes_visible_chrome_region 测。
+
+结论：DC-14 headless 自动化验收覆盖增强；零生产回归；SDK 无退化。

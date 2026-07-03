@@ -390,6 +390,74 @@ impl BrowserApp {
             &overlay_rounded_rects,
         )
     }
+
+    /// 测试用（feature `sdk-chrome`）：与 `render_cpu` 的 **feature-on 装配逐位一致**
+    /// （`build_scene` → `compose_sdk_chrome_replacement_with_webview` 用 SDK chrome 替换
+    /// 手绘 chrome + webview surface 合成 → `render_full_scene`），但返回 [`FrameBuffer`]
+    /// 而非 present 到 softbuffer 表面。
+    ///
+    /// **DC-14 headless 可视验收通道**：把 SDK chrome **替换式迁移**（`render_cpu` 真实消费
+    /// 的路径）的完整浏览器帧（SDK chrome bars + 页面 surface 合成 + overlays）在无 GUI
+    /// 环境光栅为像素。既有 `compose_overlay_rasterizes_to_visible_framebuffer` 只覆盖
+    /// additive overlay 路径；`compose_replacement_*` 只验证 scene 构造（未光栅）——本方法
+    /// 闭合「替换路径完整帧 → 像素」的 headless 验收缺口。
+    #[cfg(all(test, feature = "sdk-chrome"))]
+    pub fn render_full_scene_sdk_chrome_for_test(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> zero_render_foundation::surface::FrameBuffer {
+        let scene = self.build_scene(width, height);
+        let ChromeScene {
+            chrome_fills,
+            chrome_glyphs,
+            page_fills,
+            page_glyphs,
+            chrome_overlay_fills,
+            chrome_overlay_glyphs,
+            overlay_fills,
+            overlay_glyphs,
+            chrome_shadows,
+            overlay_rounded_rects,
+        } = scene;
+        // SDK chrome 替换手绘 chrome 主层（与 render_cpu feature-on 一致）。
+        let _ = (chrome_fills, chrome_glyphs);
+        let webview_extras = self.get_webview_extra_primitives();
+        let mut scene_primitives = RenderPrimitives {
+            shadows: chrome_shadows,
+            ..Default::default()
+        };
+        let mut image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
+            Some(id) => self.tabs.image_cache_mut(id),
+            None => None,
+        };
+        let (page_fills, page_glyphs) = compose_sdk_chrome_replacement_with_webview(
+            &self.shell,
+            width,
+            height,
+            page_fills,
+            page_glyphs,
+            Some(webview_extras),
+            &mut scene_primitives,
+            &mut image_cache,
+        );
+        let fills = [page_fills, chrome_overlay_fills].concat();
+        let glyphs = [page_glyphs, chrome_overlay_glyphs].concat();
+        scene_primitives.fills = [fills, scene_primitives.fills].concat();
+        render_full_scene(
+            width,
+            height,
+            1.0,
+            &scene_primitives,
+            &self.font_loader,
+            &mut self.glyph_cache,
+            image_cache,
+            &glyphs,
+            &overlay_fills,
+            &overlay_glyphs,
+            &overlay_rounded_rects,
+        )
+    }
 }
 
 // ── 平台独立函数 ──────────────────────────────────
@@ -1626,6 +1694,69 @@ mod sdk_chrome_tests {
         assert!(
             scene.shadows.is_empty(),
             "webview extras consumed into surface, scene shadows should be empty"
+        );
+    }
+
+    /// DC-14 headless 可视验收：SDK chrome **替换式迁移**的完整浏览器帧（`render_cpu`
+    /// 真实消费的路径：`build_scene` → `compose_sdk_chrome_replacement_with_webview` →
+    /// `render_full_scene`）在无 GUI 环境光栅为像素，顶部 chrome 区有可见 SDK chrome 像素。
+    ///
+    /// 既有覆盖：`compose_overlay_rasterizes_to_visible_framebuffer` 只测 additive overlay
+    /// 路径；`compose_replacement_*` 只测 scene 构造（未光栅）。本测闭合「替换路径完整帧 →
+    /// 顶部 chrome 区像素」的 headless 验收缺口。
+    #[test]
+    fn sdk_chrome_replacement_full_frame_rasterizes_visible_chrome_region() {
+        use zero_render_foundation::cpu::render_full_scene;
+        use zero_render_foundation::font::cache::GlyphCache;
+        use zero_render_foundation::font::loader::FontLoader;
+
+        let mut app = BrowserApp::new(crate::app::RenderMode::Cpu);
+        app.physical_size = (1280, 800);
+        app.scale_factor = 1.0;
+
+        // 默认 active tab → image_cache 为 Some（compose_sdk_chrome_replacement_with_webview
+        // 要求非 None，否则提前 return 不渲染 SDK chrome）。
+        assert!(app.shell.active_tab_id().is_some(), "default active tab present");
+
+        let fb = app.render_full_scene_sdk_chrome_for_test(1280, 800);
+        assert_eq!((fb.width, fb.height), (1280, 800));
+
+        // 空 scene 基线（fresh font/glyph cache，避免借用 app 字段）。
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        let empty = RenderPrimitives::default();
+        let empty_fb = render_full_scene(
+            1280,
+            800,
+            1.0,
+            &empty,
+            &font_loader,
+            &mut glyph_cache,
+            None,
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+
+        // 整帧与空 scene 有差异（SDK chrome bars + 页面 surface 贡献像素）。
+        let total_differs = (0..fb.height)
+            .flat_map(|y| (0..fb.width).map(move |x| (x, y)))
+            .any(|(x, y)| fb.get_pixel(x, y) != empty_fb.get_pixel(x, y));
+        assert!(
+            total_differs,
+            "SDK chrome replacement full frame rasterizes visible pixels (differs from empty scene)"
+        );
+
+        // 顶部 chrome 区（SDK chrome bars ≈ toolbar36 + tab32 + bookmarks28 ≈ 96px）与空 scene
+        // 有差异 —— 证明 SDK chrome 在真实 render_cpu 装配下渲染到顶部 chrome 区像素，
+        // 而非只在页面区/overlay 区贡献。
+        let chrome_region_differs = (0..90)
+            .flat_map(|y| (0..fb.width).map(move |x| (x, y)))
+            .any(|(x, y)| fb.get_pixel(x, y) != empty_fb.get_pixel(x, y));
+        assert!(
+            chrome_region_differs,
+            "SDK chrome bars render visible pixels in top chrome region (y < 90) via replacement path"
         );
     }
 }
