@@ -2648,6 +2648,25 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R996 三 dir 扫描确认 clean lever 单 session 耗尽·css-tables/css-position/css-multicol top-worst 全 structural/feature-gap/JS·零源码·纯调查
+
+承 R995 后系统复核 3 个未深扫 dir 的 top-worst，确认 R740/R882「单 session clean lever 耗尽」结论。逐 dir 分类（全非 clean single-session fix）：
+
+**css-tables**（baseline 73 post-R995）：① table-cell-width-0（20%）= R97 表 intrinsic sizing（structural，doc 早已标）。② percent-height-overflow-auto-in-unrestricted-block-size-cell（17%）= scrollbar feature gap（DC-11 scroll-container 未实现）。③ baseline-vertical（12%）= 表格基线对齐（font/baseline structural）。④ **table-cell-overflow-explicit-height-001/002（9.73% twin）probe 实测**：`<td height:20px overflow:hidden>` + 300px tall div + text——ZW td 渲染 w=**8**（应 ~text 宽 ~150）+ h=304（grew to content，min-height 语义正确）。**真根因 = 表 auto-layout 不测量 cell 内文本内容宽**（text "Can you see this text?" 未参与 cell max-content 宽计算 → cell 塌缩到 div border 8px）。这是 R109/IFC 文本测量在 table cell 上下文的扩展，非单点。⑤ percentages-grandchildren-quirks（已 R995 修）。
+
+**css-position**：① replaced-object-backdrop（100%）/ backdrop-inherit-rendered（47%）= ::backdrop feature gap（position-absolute 元素的 backdrop）。② **position-absolute-semi-replaced-stretch-input/other（21%/13.62% twin）= 表单控件（input/select/textarea/progress/meter）渲染 + abspos stretch**（csswg #6789 semi-replaced）——ZW 不渲染表单控件原生外观，feature gap。③ position-absolute-dynamic-relayout-005/006（11.71% twin）= **JS-driven**（content-visibility:hidden / display:none → visible/block 经 script 切换，需 JS 执行 + 二次布局）。④ position-absolute-in-inline-006（5.10%）= R336 abspos-in-inline 结构性。⑤ position-relative-002/005（4.88% twin）/ hypothetical-dynamic-change-002/003（4.17% twin）= 4-5% font 噪声区或 JS。
+
+**css-multicol**：top-12 worst（81%/37%/30%/28%/28%/23%/21%/20%/16%）**全 structural**——column-balancing-paged（print）、multicol-rule-nested-balancing 簇、multicol-span-all-children-height 簇（column-span:all 子高度）、multicol-breaking（fragmentation）、subpixel-column-rule-width（subpixel 舍入 + computed value）。全属 R383「multicol Phase 2 统一 column-flow」deadlock territory（嵌套/breaking/balance，多会话硬核）。
+
+**裁决**：3 dir 复核零 clean single-session lever。R993-R995（css-flexbox +4 / css-tables +4）是本会话窗口期，后续 forward motion 全在多会话结构性 / feature 实现：
+1. **表 auto-layout 文本测量**（table-cell-overflow 真根因：cell max-content 宽须含文本，R109/IFC 扩展）。
+2. **Phase A IFC font-metric per-font**（R887 provider wiring，R990 已证常数 0.928 可产 +138，per-font 增量）。
+3. **R109 §9.2.1.1 匿名块**（结构性 deadlock，CB-through-inline 等）。
+4. **multicol Phase 2 统一 column-flow**（嵌套/breaking/balance，R383）。
+5. **Feature 实现**：::backdrop / 表单控件原生渲染 / content-visibility / scroll-container。
+
+**下一步**：选上述结构性 lever 之一 dedicated session 推进（首推 table auto-layout 文本测量——R996 已精确定位 table-cell-overflow twin 真根因，cell max-content 含文本是可独立 slice，driving 案已 probe）。R993+R994+R995 累计 css-flexbox +4 / css-tables +4 零回归已 land main。
+
 ### R995 orphan table-cell shrink-to-fit = percentages-grandchildren-quirks-mode-001/002 14.85%→0.60% PASS·css-tables Oracle 69→73（+4）零回归·R679 表 shrink 簇新 facet
 
 承 R994 后扫 css-tables top-worst 定位 percentages-grandchildren-quirks-mode-001/002（twin，14.85%）。**Phase 0 probe**（layout-engine 临时单测复刻 001 结构：`<div style="display:table-cell;height:100px;background:green"><div style="width:100px"><div style="height:100%;background:red">`，quirks 模式）发现：① quirks %height 正确（red div height:100% → auto → 0，green 应显）；② **真根因 = orphan table-cell（display:table-cell 无 table 祖先）拉伸到 784px 满宽**（应为 100px 收缩到子内容），green 784×100 vs ref 100×100 = 14.85% diff 主因。
