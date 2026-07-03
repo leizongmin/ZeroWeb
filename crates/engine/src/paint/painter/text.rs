@@ -781,6 +781,13 @@ impl super::Painter {
                 zero_style_system::WordBreakValue::KeepAll => WordBreakMode::KeepAll,
                 _ => WordBreakMode::Normal,
             };
+            // CSS Text 3 §5.3：line-break: anywhere → BreakAll（与 inline_finalization 一致，
+            // layout/paint 双路径同步，避免 R1004/R989 类发散）。
+            let word_break_mode = if matches!(style.line_break, zero_style_system::LineBreakValue::Anywhere) {
+                WordBreakMode::BreakAll
+            } else {
+                word_break_mode
+            };
 
             // 将 CSS text-align 映射到布局引擎的 TextAlign。
             // `start`/`end` 方向感知（CSS Text 3 §6.1）：start = LTR→left / RTL→right，end 反之。

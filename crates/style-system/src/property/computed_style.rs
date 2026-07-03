@@ -146,6 +146,8 @@ pub struct ComputedStyle {
     pub vertical_align: VerticalAlignValue,
     /// word-break 属性。
     pub word_break: WordBreakValue,
+    /// line-break 属性（CSS Text 3 §5.3，CJK 换行严格度）。
+    pub line_break: LineBreakValue,
     /// text-indent 属性。
     pub text_indent: LengthValue,
     /// resize 属性。
