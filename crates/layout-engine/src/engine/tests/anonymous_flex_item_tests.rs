@@ -345,7 +345,7 @@ fn test_flex_transferred_min_size_from_stretched_cross() {
     let mut img_sizes = HashMap::new();
     img_sizes.insert(img_id, (300.0, 150.0)); // 固有 300×150，ratio 2:1
     let mut engine = LayoutEngine::new(800.0, 600.0);
-    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
     let (w, h) = find_box(&result.root, img_id).expect("img box found");
     // csswg #5663：min-width:auto = stretched cross(50) × ratio(2) = 100px
     assert!(
@@ -369,7 +369,7 @@ fn test_flex_transferred_min_size_not_applied_to_non_flex_parent() {
     let mut img_sizes = HashMap::new();
     img_sizes.insert(img_id, (300.0, 150.0));
     let mut engine = LayoutEngine::new(800.0, 600.0);
-    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
     let (w, _h) = find_box(&result.root, img_id).expect("img box found");
     // 非 flex 父：img 不被 transferred clamp，保持显式 width 999
     assert!(
@@ -398,7 +398,7 @@ fn test_flex_transferred_min_size_column_direction() {
     let mut img_sizes = HashMap::new();
     img_sizes.insert(img_id, (300.0, 150.0));
     let mut engine = LayoutEngine::new(800.0, 600.0);
-    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
     let (w, h) = find_box(&result.root, img_id).expect("img box found");
     assert!(
         (h - 40.0).abs() < 2.0,
@@ -422,7 +422,7 @@ fn test_flex_transferred_min_size_column_intrinsic_smaller_than_transferred() {
     let mut img_sizes = HashMap::new();
     img_sizes.insert(img_id, (60.0, 60.0)); // 固有 60×60，ratio 1
     let mut engine = LayoutEngine::new(800.0, 600.0);
-    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
     let (w, h) = find_box(&result.root, img_id).expect("img box found");
     assert!(
         (h - 100.0).abs() < 2.0,

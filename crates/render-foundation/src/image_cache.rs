@@ -30,6 +30,14 @@ pub struct ImageData {
     pub height: u32,
     /// 纯色检测结果 — 当所有像素相同时缓存该颜色，用于优化渲染
     solid_color: Option<[u8; 4]>,
+    /// 仅含宽高比、无确定固有尺寸的信号（CSS §10.3.2）。
+    ///
+    /// 仅 SVG 会出现：当 `<svg>` 的 width/height 为百分比或缺失（仅有 viewBox）时，
+    /// 替换元素**无确定固有尺寸**，仅有 viewBox 给出的宽高比。此时栅格化仍按 usvg
+    /// 解析尺寸产出像素（供绘制），但布局须把此 `ratio` 当作唯一信号——不设确定 size，
+    /// 让 taffy/flex 按上下文 ratio-derive（如 flex column width 拉伸 → height=width/ratio）。
+    /// PNG/JPEG/绝对尺寸 SVG 为 `None`（走 image_sizes 正常固有尺寸路径）。
+    intrinsic_ratio: Option<f32>,
 }
 
 impl ImageData {
@@ -60,6 +68,7 @@ impl ImageData {
             width,
             height,
             solid_color,
+            intrinsic_ratio: None,
         })
     }
 
@@ -71,6 +80,7 @@ impl ImageData {
             width,
             height,
             solid_color: Some([0, 0, 0, 0]),
+            intrinsic_ratio: None,
         }
     }
 
@@ -105,6 +115,15 @@ impl ImageData {
     /// 缩放到大尺寸时的边缘抗锯齿伪影。
     pub fn solid_color(&self) -> Option<[u8; 4]> {
         self.solid_color
+    }
+
+    /// 仅含宽高比、无确定固有尺寸的信号（CSS §10.3.2，仅 SVG 出现）。
+    ///
+    /// 返回 `Some(ratio)` 表示此图无确定固有尺寸、仅有 viewBox 宽高比——布局须以
+    /// ratio-only 信号处理（不设确定 size，仅设 aspect_ratio）。`None` 表示有确定
+    /// 固有尺寸（width/height 字段有效，走 image_sizes 路径）。
+    pub fn intrinsic_ratio(&self) -> Option<f32> {
+        self.intrinsic_ratio
     }
 
     /// 字节大小估算
@@ -447,6 +466,10 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
 ///
 /// 用 resvg + tiny-skia 按 SVG 内在尺寸（width/height 属性或 viewBox）栅格化。
 /// 字体走默认空 fontdb（logo 一般无文本）；过大尺寸由 pixmap 分配失败自然兜底。
+///
+/// CSS §10.3.2：当 `<svg>` 的 width/height 为百分比或缺失（仅有 viewBox）时，替换元素
+/// **无确定固有尺寸**，仅有 viewBox 宽高比。此时栅格化仍按 usvg 解析尺寸产出像素，
+/// 但会设置 `intrinsic_ratio` 信号，让布局以 ratio-only 处理（不设确定 size）。
 pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     let tree = resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default())
         .map_err(|e| format!("SVG 解析失败: {e}"))?;
@@ -460,7 +483,77 @@ pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h).ok_or_else(|| format!("SVG pixmap 分配失败 {w}x{h}"))?;
     resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
     let rgba = pixmap.take();
-    ImageData::from_rgba(rgba, w, h)
+    let mut data = ImageData::from_rgba(rgba, w, h)?;
+    data.intrinsic_ratio = svg_intrinsic_ratio(bytes);
+    Ok(data)
+}
+
+/// 解析 SVG `<svg>` 根元素属性，判定是否为「ratio-only」（无确定固有尺寸、仅有 viewBox 比）。
+///
+/// 返回 `Some(ratio)`：SVG 的 width/height 非双绝对（缺失/百分比/auto），且 viewBox
+/// 提供有效宽高比 → ratio = viewBox_w / viewBox_h。返回 `None`：width/height 双绝对
+/// （真固有尺寸，走 image_sizes），或无可用 viewBox 比。
+fn svg_intrinsic_ratio(bytes: &[u8]) -> Option<f32> {
+    let Ok(s) = std::str::from_utf8(bytes) else {
+        return None;
+    };
+    let trimmed = s.trim_start_matches('\u{feff}').trim_start();
+    let svg_start = trimmed.find("<svg")?;
+    let after = &trimmed[svg_start..];
+    let tag_end = after.find('>')?;
+    let tag = &after[4..tag_end]; // 去掉 "<svg"
+
+    let width = extract_svg_attr(tag, "width");
+    let height = extract_svg_attr(tag, "height");
+    let viewbox = extract_svg_attr(tag, "viewBox").or_else(|| extract_svg_attr(tag, "viewbox"));
+
+    let w_abs = width.as_deref().map(is_absolute_length).unwrap_or(false);
+    let h_abs = height.as_deref().map(is_absolute_length).unwrap_or(false);
+    // 两维都绝对 → 真固有尺寸（None 走 image_sizes 正常路径）
+    if w_abs && h_abs {
+        return None;
+    }
+    // 否则 ratio-only：从 viewBox 取比（min-x min-y width height）
+    if let Some(vb) = viewbox {
+        let nums: Vec<&str> = vb.split([' ', ',']).filter(|t| !t.is_empty()).collect();
+        if nums.len() == 4
+            && let (Ok(w), Ok(h)) = (nums[2].parse::<f32>(), nums[3].parse::<f32>())
+            && h > 0.0
+        {
+            return Some(w / h);
+        }
+    }
+    None
+}
+
+/// 从 SVG 起始标签内容中提取 `name="value"` / `name='value'` 属性值。
+fn extract_svg_attr(tag: &str, name: &str) -> Option<String> {
+    let pat = format!("{name}=");
+    let idx = tag.find(&pat)?;
+    let after = &tag[idx + pat.len()..];
+    let quote = after.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let inner = &after[1..];
+    let end = inner.find(quote)?;
+    Some(inner[..end].to_string())
+}
+
+/// SVG width/height 属性值是否为绝对长度（正数 + 可选单位，非百分比/auto/none）。
+fn is_absolute_length(v: &str) -> bool {
+    let v = v.trim();
+    if v.is_empty() || v.ends_with('%') {
+        return false;
+    }
+    let lower = v.to_ascii_lowercase();
+    if lower == "auto" || lower == "none" {
+        return false;
+    }
+    let num_end = v
+        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+')
+        .unwrap_or(v.len());
+    v[..num_end].parse::<f32>().ok().map(|n| n > 0.0).unwrap_or(false)
 }
 
 /// 把 PNG 解码后的原始缓冲（经 EXPAND 后的 RGB/RGBA/Grayscale/GrayscaleAlpha 8-bit）
@@ -624,6 +717,57 @@ mod decode_tests {
         // 非 SVG XML → resvg 解析失败
         let result = decode_svg_bytes(b"<not-a-svg></not-a-svg>");
         assert!(result.is_err());
+    }
+
+    /// 绝对 width/height 的 SVG → 真固有尺寸 → intrinsic_ratio=None（走 image_sizes 路径）。
+    #[test]
+    fn svg_ratio_absolute_dims_is_none() {
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"50\" viewBox=\"0 0 200 100\">\
+                   <rect width=\"100\" height=\"50\" fill=\"green\"/></svg>";
+        assert_eq!(svg_intrinsic_ratio(svg), None);
+    }
+
+    /// 百分比 width/height + viewBox → ratio-only，ratio = viewBox w/h。
+    #[test]
+    fn svg_ratio_percent_dims_uses_viewbox() {
+        // aspect-ratio-intrinsic-size-007 驱动案：100%×100% + viewBox 7500×3750 → ratio 2.0
+        let svg =
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\" viewBox=\"0 0 7500 3750\">\
+                   <rect width=\"7500\" height=\"3750\" fill=\"green\"/></svg>";
+        assert_eq!(svg_intrinsic_ratio(svg), Some(2.0));
+    }
+
+    /// 仅 viewBox 无 width/height → ratio-only。
+    #[test]
+    fn svg_ratio_viewbox_only() {
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1000 500\">\
+                   <rect width=\"1000\" height=\"500\" fill=\"green\"/></svg>";
+        assert_eq!(svg_intrinsic_ratio(svg), Some(2.0));
+    }
+
+    /// 一维百分比、一维绝对 → 仍 ratio-only（非双绝对），ratio 来自 viewBox。
+    #[test]
+    fn svg_ratio_mixed_percent_and_absolute() {
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"50\" viewBox=\"0 0 200 100\">\
+                   <rect width=\"200\" height=\"100\" fill=\"green\"/></svg>";
+        assert_eq!(svg_intrinsic_ratio(svg), Some(2.0));
+    }
+
+    /// 无 width/height 也无 viewBox → 无任何 ratio 信号 → None。
+    #[test]
+    fn svg_ratio_no_dims_no_viewbox_is_none() {
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\"><rect fill=\"green\"/></svg>";
+        assert_eq!(svg_intrinsic_ratio(svg), None);
+    }
+
+    /// 端到端：百分比 SVG 经 decode 后 intrinsic_ratio 字段被填充。
+    #[test]
+    fn decode_svg_percent_dims_sets_intrinsic_ratio() {
+        let svg =
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\" viewBox=\"0 0 7500 3750\">\
+                   <rect width=\"7500\" height=\"3750\" fill=\"green\"/></svg>";
+        let img = decode_svg_bytes(svg).expect("SVG rasterize should succeed");
+        assert_eq!(img.intrinsic_ratio(), Some(2.0));
     }
 }
 
@@ -817,6 +961,7 @@ mod tests {
             width: 2,
             height: 2,
             solid_color: None,
+            intrinsic_ratio: None,
         };
         assert_eq!(img.get_pixel(0, 0), [0, 0, 0, 0]);
     }

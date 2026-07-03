@@ -690,7 +690,7 @@ fn test_img_css_aspect_ratio_overrides_intrinsic_ratio() {
     intrinsic.insert(img, (8.0_f32, 16.0_f32));
 
     let mut engine = LayoutEngine::new(800.0, 600.0);
-    let result = engine.compute_with_img_sizes(&doc, &styles, intrinsic);
+    let result = engine.compute_with_img_sizes(&doc, &styles, intrinsic, std::collections::HashMap::new());
 
     let img_box = find_child_by_node_id(&result.root, img).expect("img found");
     // height 显式 440；width auto 须按 CSS aspect-ratio 2.0 推导 = 440×2 = 880
@@ -727,7 +727,7 @@ fn test_img_css_aspect_ratio_overrides_intrinsic_ratio_width_explicit() {
     intrinsic.insert(img, (8.0_f32, 16.0_f32)); // 固有比 0.5
 
     let mut engine = LayoutEngine::new(800.0, 600.0);
-    let result = engine.compute_with_img_sizes(&doc, &styles, intrinsic);
+    let result = engine.compute_with_img_sizes(&doc, &styles, intrinsic, std::collections::HashMap::new());
 
     let img_box = find_child_by_node_id(&result.root, img).expect("img found");
     // width 显式 200；height auto 须按 CSS aspect-ratio 2.0 推导 = 200/2 = 100
