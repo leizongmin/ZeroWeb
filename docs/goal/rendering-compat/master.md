@@ -2648,6 +2648,20 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1002 R1001 height-cap 假设纠正 + twin 残差 = table auto-layout 宽度平衡（非 height）·零源码·纯调查
+
+承 R1001「twin 须 height-cap + paint-clip 合做」。本轮验证发现 **R1001 height-cap 假设错误**：
+
+**height-cap 假设证伪**：R1001 试 height-cap（overflow_y!=Visible cell cap 到显式 height）致 twin 3.87→9.48%。本轮推理确认：**该 reftest 验证 td GROWS to content（CSS2 min-height 语义，chromium 对 table cell 的 overflow:hidden 不裁剪——css-tables-3 bug 1880550 的裁剪语义尚未在 chromium 对此 case 启用，或 test 依赖 CSS2 行为）**。test 页 td{height:20px;overflow:hidden} 应 == ref 页 td{无 height}（两者均 grow 到内容 ~304px）。ZW 无 height-cap 时 td 已 grow（正确，匹配 chromium）；加 height-cap 反把 ZW td cap 到 24px（错）→ diff 增。故 **height-cap 是错的，twin 不需要它**。R1001「twin 须 height-cap+paint-clip」结论作废。
+
+**twin 残差真因 = table auto-layout cell 宽度平衡**：oracle PNG 分析（chromium 渲染）显示 td 宽 ~162px（image analysis 不精确，但 < ZW 的 211px）。R1001 width fix 让 ZW cell = 文本 max-content（"Can you see this text?" 22×9.6≈211px）。chromium cell ~162px（**table auto-layout 平衡值**，介于 min-content（~30px 最宽词）与 max-content（211px）之间，受 `<table border>` + 视口约束）。**ZW 用 max-content（211），chromium 用 balance（162）→ 49px 宽差 + 文本换行差异 = 3.87% 残差**。
+
+**与 101 同类**：table auto-layout 算法（ZW 简化为 max-content，chromium 用 CSS §17.5.2.2 的 min/max-content 平衡 + available space 分配）。这是 table 布局的核心算法差异，非单点 fix。twin 与 101（也涉及 table 列宽）同根因。
+
+**裁决**：twin 完全 pass 须 ZW table auto-layout 从「max-content 简化」升级到「§17.5.2.2 min/max-content + available-space 平衡」算法——多 session 结构性工作（影响全 css-tables + CSS2 table 用例）。R1001 width fix（max-content）是改进（8→211，比 8 更近 162），但非完全正确（211 vs 162）。net 仍 +1（74）因其它 case 受益。
+
+**下一步**：① table auto-layout §17.5.2.2 平衡算法（多 session，twin + 101 + 其它 table 列宽 case 受益）；② Phase A pre-layout text-transform；③ per-font ascent；④ multicol Phase 2。R1001 已 land（css-tables 73→74 +1 零回归）；twin 残差定位为 table auto-layout（非 height）。
+
 ### R1001 ★table cell 直接匿名 inline 文本参与 intrinsic width LANDED·cell-level direct-text fix（安全·不回归 101）·css-tables Oracle 73→74（+1）·twin 4.13→3.87%·净正
 
 承 R1000「table-cell-overflow 须先解 width 不回归 101」。R1000 两轮（box_content_max_width 全局 direct-text）均回归 101（3.66→6.51），根因 = 全局函数 perturbs 101 嵌套 div 的 max-content（div.b 等 block 后代含直接文本，被新测后改变 table auto-layout 列宽）。本轮 **WDBG probe 定位**：101 的 td 直接文本=0（文本在嵌套 div 内），但 box_content_max_width 全局改影响 td 后代 div.b 等；twin 的 cell 直接文本="Can you see this text?"（211px）。
