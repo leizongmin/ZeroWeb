@@ -1,0 +1,26 @@
+Round 14 — 2026-07-03 make reftest baseline
+
+=== make reftest ===
+Command: make reftest (test-guard + cargo run --release --bin zero-wpt-runner -- reftest)
+
+Results:
+  Total:   686
+  Passed:  686
+  Failed:  0
+  Pass Rate: 100.0%
+  Duration: 0.26s
+
+By Category:
+  Layout: 485/485 (100.0%)
+  Text:   201/201 (100.0%)
+
+=== Gates ===
+cargo build --workspace: PASS
+cargo clippy --workspace --all-targets -- -D warnings: PASS (0 warnings)
+cargo fmt --all -- --check: PASS
+make product-smoke: PASS (19.87%, baseline zero regression)
+
+=== Conclusion ===
+ui-sdk branch has ZERO WPT reftest regression vs main branch baseline.
+DC-14 "make reftest 不退化" requirement VERIFIED.
+0 new commits on origin/main.
