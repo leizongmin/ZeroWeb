@@ -198,6 +198,43 @@ pub unsafe extern "C" fn harmonyos_is_runtime_ready() -> u32 {
     unsafe { (*ptr).is_some() as u32 }
 }
 
+// ── Runtime lifecycle ──────────────────────────────────────────────────────
+
+/// Initialize runtime. Called once from ArkTS EntryAbility.onCreate.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn harmonyos_init_runtime(width: f32, height: f32, density: f32) {
+    use crate::runtime::HarmonyOSRuntime;
+    let rt = HarmonyOSRuntime::new();
+    let inner: &'static RefCell<RuntimeInner> = rt.leak_for_ffi();
+    unsafe { init_runtime(inner) };
+    // Set initial metrics.
+    let is_portrait = height >= width;
+    unsafe {
+        harmonyos_window_size_change(width, height, density, 1.0, 0.0, 0.0, 0.0, 0.0, is_portrait as u32);
+    }
+}
+
+/// Pump pending events through the retained loop.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn harmonyos_pump_events() {
+    with_rt(|rt| {
+        let events: Vec<RawHarmonyOSEvent> = core::mem::take(&mut rt.borrow_mut().pending_events);
+        for raw in events {
+            let ui_event = raw.to_ui_event();
+            let mut inner = rt.borrow_mut();
+            if let Some(host) = inner.host.as_mut() {
+                host.dispatch_event(&ui_event);
+            }
+        }
+    });
+}
+
+/// Shutdown runtime (clean up).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn harmonyos_shutdown() {
+    unsafe { HARMONYOS_RT = None };
+}
+
 // ---------------------------------------------------------------------------
 // 测试
 // ---------------------------------------------------------------------------

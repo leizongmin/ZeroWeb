@@ -327,6 +327,7 @@
 
 ## Latest Evidence
 
+- `evidence/dc14-pixel-diff-baseline-20260704.txt` — **Round 39 DC-14 chrome-region pixel-diff baseline 量化（headless 可视验收反馈环建立）**。新增 `dc14_chrome_region_pixel_diff_baseline` 测（sdk_chrome_tests，`--nocapture` 查看数值）：同一 BrowserApp 状态下逐像素比较手绘路径（`render_full_scene_with_webview_for_test`）vs SDK 替换路径（`render_full_scene_sdk_chrome_for_test`），1280×800。**控制组 hand-vs-hand = 0.000%**（harness 确定可信）。**Baseline**：chrome 区 (y<96) **91.48%** diff、页面区 (y≥96) **99.70%** diff。两个关键发现：①chrome 区 91.48% 与 §DC-7/DC-14「真实 Chrome Widget 缺口」一致（12 组件全为 ChromePanel 占位），把 DC-14 ≤2% 目标量化；②**页面区 99.70% 是意外高信号**——master.md 预期页面区 ≈0%（两路径共用 build_scene 页面内容），实测几乎全差 → SDK 替换路径的页面 surface 合成（page_fills → surface_id=1 → draw_external_surface）与直接渲染产出完全不同像素，是独立于 Widget 占位的另一类问题（待下轮定位：viewport rect 错位 / draw_order·clip / surface 坐标系）。**把 DC-14 从「定性 + 需 GUI」转为「定量 + headless 可验证」**，为真实 Widget 实现提供反馈环。门禁：browser sdk-chrome **204**（+1）/ default **191** 零回归 + clippy/fmt 净。
 - `evidence/deep-review-mobile-eventmap-r37-20260703.txt` — **Round 37 第 11/12 层深度审查：ui/adapters/{harmonyos,android} event_map（DC-15 移动输入）**。**发现并修 1 个真实 latent DC-15 bug（双适配器同病）**：`map_window_metrics` 把平台 DPI 比（input.density，phone 3.0）同时塞进 `scale_factor` **和** `density`——违反 DC-12 决策（density = Material 间距密度 DEFAULT_DENSITY=1.0，与 scale_factor HiDPI 正交；winit adapter 正确用 DEFAULT_DENSITY）。后果：density=3.0 phone 上所有 spacing token 3× 放大 → 布局爆。latent（仅移动设备后端落地后触发）但确是 metrics 映射 correctness 错误。**修复**：`density: DEFAULT_DENSITY`（DPI 比只进 scale_factor）+ input struct `density` 字段加 doc comment 澄清语义 + 更新全部受影响测试（event_map 3 测/适配器 + ffi 1 测/适配器，density→DEFAULT_DENSITY 补 scale_factor 断言）。其余经查正确（触摸相位 ACTION_*/TouchAction、pointer_id 多指、back gesture、soft keyboard、system_theme）。门禁全绿：harmonyos **21** + android **20** / clippy 双适配器净 / fmt 净 / **cargo build --workspace 净**。**移动 adapter 是 leaf skeleton 不在默认浏览器二进制 → 零生产/渲染影响**（workspace build 确认全局编译）。**SDK 通用层深度审查现覆盖 12 层**。
 - `evidence/deep-review-winit-event-map-r36-20260703.txt` — **Round 36 第 10 层深度审查：ui/adapters/winit/event_map.rs（DC-2 输入关键，winit→UiEvent 纯函数映射）**。16 个 map 函数逐一核验 **0 active bug**。**关键验证**：docstring 声称的「与 host-runtime 键命名一致」经核 host-runtime/src/event.rs:203 `convert_keyboard_input` **逐字相同**（Named→`{:?}`/Character/Unidentified/Dead），无跨路径键名分歧。坐标空间不对称（map_touch 内部转 logical、其余取已 logical position）是 docstring 化设计，且 winit event_map 当前**无生产调用方**（仅集成测 + runtime.rs docstring 草图；生产 EventLoop::run 是 GUI-gated M4 件）→ 无现行 bug 风险。**价值加固（本审查实际产出）**：浏览器按精确字符串匹配 16 个命名键（Escape/Space/Home/Enter/Tab/PageDown/ArrowUp·Down·Left·Right/PageUp/End/Delete/Backspace/F1/F5），event_map 经 `format!("{named:?}")` 产出——**脆弱跨 crate 契约**（winit Debug 漂移→浏览器输入静默失效），此前只测 5 键。新增 `logical_key_matches_browser_critical_contract` 覆盖全部 16 键，**全 PASS**（契约成立）→ 锁定 11 个新覆盖键。门禁全绿：winit **32**（+1）/ clippy 净（修 rust 1.91 explicit_auto_deref）/ fmt 净 / reftest 686/686 / product-smoke 19.41%（本变为 #[test]，winit adapter 不在默认浏览器二进制 → 零生产影响）。merge origin/main R1001（rendering-compat table-cell，正交）。**SDK 通用层深度审查现覆盖 10 层**。
 - `evidence/deep-review-bridge-r35-20260703.txt` — **Round 35 第 9 层深度审查：ui/adapters/render-foundation 桥接（TBD-2 Scene→RenderPrimitives，DC-14/DC-3/DC-11 渲染关键路径）**。前 8 层审查未含本桥接。**修复 1 潜在 correctness**：`glyph_cache_key` 旧 `font_id << 48` 仅留 16 位 → FontId（pub u32）高 16 位丢失、≥65536 字体键碰撞取错 glyph 位图（潜在——FontId 顺序分配实践难达 65k，但位打包对 u32 契约不正确，与 DC-11 修 glyph_id 截断同性质）；位重分配 font:32/glyph:16/size:16（glyph_id 经 shape 钳制 ≤u16::MAX 故无损），全 u32 范围无碰撞 + 回归守卫 `glyph_cache_key_distinguishes_font_ids_beyond_u16`。**文档化 1 潜在设计假设**：`raster_runs` 单 run 假设（shaper 当前单 run；多 run fallback 需跨 run 累计 pen_x + GlyphRun 加 run-level 起点）——加注释不改逻辑（避免对不存在场景做投机性未测代码）。经查正确：fill/stroke stateful clip、merge_primitives 13 桶、merge_surface_with_cache rekey、draw_external_surface（R34 测证 surface clip 不擦除 chrome）、emit_glyph_image 定位、merge_into_frame collision-safe。门禁全绿：bridge **24**（+1）/ browser sdk-chrome 203 / 默认 191 / clippy 净 / fmt 净 / reftest 686/686 / product-smoke 19.41%（桥接仅 sdk-chrome 编译，默认 release 不含 → 零页面回归）。**SDK 通用层深度审查现覆盖 9 层（+render-foundation 桥接）**。
@@ -988,3 +989,38 @@ Evidence: `evidence/round38-gui-verification-20260703.txt`
 - chrome 区域像素 diff **≤ 2%**（手绘 vs SDK FrameBuffer）
 - 页面区域（viewport）diff 应为 0%（两边走同一页面渲染路径）
 - 不依赖 GUI，全在 headless 下可验证
+
+### Round 39 — DC-14 pixel-diff baseline 量化 + 反馈环建立（2026-07-04）
+
+**核心进展**：把 DC-14 从「定性 + 需 GUI 可视验收」推进为「定量 + headless 可验证」。此前历轮（R11–R38）多次结论「headless SDK-side 工作已耗尽，DC-14 仅剩 GUI 可视验收」，但从未在 headless 下量化手绘 chrome 路径 vs SDK chrome 替换路径的逐像素 diff。本轮建立该测量。
+
+**新增测试** `dc14_chrome_region_pixel_diff_baseline`（apps/browser/src/app_platform.rs::sdk_chrome_tests）：同一 BrowserApp 状态下逐像素比较
+- hand = `render_full_scene_with_webview_for_test(1280,800)`（手绘 chrome 路径）
+- sdk  = `render_full_scene_sdk_chrome_for_test(1280,800)`（SDK chrome 替换路径）
+
+逐像素 [u8;4] 精确不等，分区统计（chrome = y<96，page = y≥96）。控制组：再次手绘 hand-vs-hand 必须 0.000%（证明 harness 确定性，排除测试顺序/状态污染伪影）。
+
+**Baseline 结果**：
+- 控制组 hand-vs-hand = **0.000%** ✅ harness 可信
+- chrome 区 (y<96) = **91.48%** diff（112412/122880）
+- 页面区 (y≥96) = **99.70%** diff（898424/901120）← **意外高信号**
+
+**两个关键发现**：
+
+1. **chrome 区 91.48%**：与 §DC-7/DC-14「真实 Chrome Widget 缺口」一致——12 组件全为 `ChromePanel` 占位。把 DC-14 ≤2% 目标**量化**：要把 chrome 区从 91.48% 压到 ≤2%，必须逐步把 12 个组件升级为真实 `impl Widget`。
+
+2. **页面区 99.70%（意外）**：master.md 预期页面区 ≈0%（两路径共用 build_scene 页面内容）。实测几乎全差 → **SDK 替换路径的页面 surface 合成与直接渲染产出完全不同像素**。根因待定位（独立于 Widget 占位的另一类问题）：
+   - (a) SDK chrome 布局高度 ≠ 手绘 chrome 高度 → viewport rect 偏移 → 页面内容整体错位；
+   - (b) surface 合成（page_fills → surface_id=1 → `draw_external_surface` 在 WebViewWidget ExternalSurface marker 位置合成）的 draw_order/clip 未正确还原直接渲染像素；
+   - (c) surface 内 page fill 的坐标系（页面绝对坐标）与 marker rect 合成偏移不匹配。
+   这可能比 Widget 占位更基础——若页面内容合成本身错位，即便 chrome Widget 像素完美，整帧 diff 仍高。
+
+**价值**：建立 DC-14 headless 反馈环。后续每实现一个真实 chrome Widget / 修一次 surface 合成，重跑本测即可看 diff 是否收敛。本测在 chrome 区压到 ≤2% 后，把 sanity 断言升级为 hard assert。
+
+**门禁全绿**：browser sdk-chrome **204**（203+1）/ default **191** 零回归 + `cargo clippy -p zero-browser --all-targets --features sdk-chrome -- -D warnings` 净 + `cargo fmt --all --check` 净。origin/main 已最新（0 new commits）。
+
+Evidence: `evidence/dc14-pixel-diff-baseline-20260704.txt`
+
+**下轮明确下一步（CONTINUE）**：
+1. 定位页面区 99.70% diff 根因（对比 SDK 路径 vs 空 scene 在页面区是否渲染了页面内容 ink；对比 SDK viewport rect 与手绘 viewport rect 是否错位；必要时让 SDK 替换路径页面内容回到直接渲染不经 surface，先把页面区压到 ≈0%）。
+2. 实现 `NavigationButtonsWidget`（真实 impl Widget：4 图标按钮 + hover/pressed 圆背景 + click emit BrowserAction；图标与手绘 `ui_icons::render_icon` 字形路径对齐）。逐组件实现后重跑本测，目标 chrome 区 91.48% → ≤2%。

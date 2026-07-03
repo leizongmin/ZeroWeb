@@ -1,0 +1,9 @@
+{
+  "name": "zerobrowser",
+  "version": "1.0.0",
+  "description": "ZeroBrowser HarmonyOS App",
+  "main": "",
+  "author": "",
+  "license": "MIT",
+  "dependencies": {}
+}

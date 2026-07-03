@@ -1,0 +1,78 @@
+DC-14 chrome-region pixel-diff baseline（headless 可视验收量化反馈环）
+================================================================
+日期: 2026-07-04
+分支: ui-sdk
+测试: apps/browser/src/app_platform.rs::sdk_chrome_tests::dc14_chrome_region_pixel_diff_baseline
+门禁: `./target/test-guard -- cargo test -p zero-browser --features sdk-chrome dc14_chrome_region_pixel_diff_baseline -- --nocapture`
+
+动机
+----
+用户 2026-07-04 明确 DC-14 终局验收（commit 8248c604）：
+  cargo run --bin zero-browser --features sdk-chrome 的界面要跟
+  cargo run --bin zero-browser 完全一致 —— chrome 区 diff ≤ 2%、页面区 diff ≈ 0%。
+
+此前历轮（R11–R38）多次结论「headless SDK-side 工作已耗尽，DC-14 仅剩 GUI 可视验收」，
+但从未在 headless 下**量化**手绘 chrome 路径 vs SDK chrome 替换路径的逐像素 diff。
+本测闭合该缺口：把 DC-14 的成功标准从「定性 + 需 GUI」转为「定量 + headless 可验证」，
+为后续真实 chrome Widget 实现提供反馈环（每实现一个组件，重跑本测看 diff 收敛）。
+
+测量方法
+--------
+两条渲染路径，同一 BrowserApp 状态（build_scene 从当前 shell 状态重建；glyph_cache 缓存
+幂等不影响输出像素；顺序调用避免跨实例字体/状态差异），1280×800，scale 1.0，RenderMode::Cpu：
+
+  hand_fb  = app.render_full_scene_with_webview_for_test(1280, 800)   // 手绘 chrome 路径
+  sdk_fb   = app.render_full_scene_sdk_chrome_for_test(1280, 800)     // SDK chrome 替换路径
+
+逐像素比较 [u8;4] 精确不等，分区统计：
+  - chrome 区: y < 96（≈ toolbar 36 + tab strip 32 + bookmarks 28）
+  - 页面区: y >= 96（viewport）
+
+控制组（证明 harness 确定性，排除测试顺序/状态污染伪影）:
+  hand_fb2 = app.render_full_scene_with_webview_for_test(1280, 800)   // 再次手绘
+  hand-vs-hand 必须 0.000%
+
+Baseline 结果（2026-07-04）
+---------------------------
+控制组 hand-vs-hand:       0/1024000 = 0.000%   ✅ harness 确定可信
+chrome 区 (y<96):     112412/122880 = 91.48%   diff（远高于 2% 目标）
+页面区 (y>=96):       898424/901120 = 99.70%   diff（应为 ≈0%，实际几乎全差）
+
+关键发现
+--------
+1. **chrome 区 91.48% diff**：当前 12 个 chrome 组件全部复用同一 `ChromePanel` 占位
+   widget（彩色矩形 + 文案），没有一个真实 `impl Widget`。这与 master.md §DC-7/DC-14
+   「真实 Chrome Widget 缺口」一致。要把 chrome 区压到 ≤2%，必须逐步把 12 个组件从
+   ChromePanel 升级为真实 Widget（NavigationButtons / AddressBar / BrowserTabStrip /
+   BrowserMenu / BookmarksBar / FindBar / SecurityBadge），每个真实画 fill/icon/text/shadow
+   与手绘版相同。
+
+2. **页面区 99.70% diff（意外高信号）**：master.md 预期页面区 diff ≈ 0%（两路径共用
+   build_scene 的页面内容）。实测几乎全差，说明 **SDK 替换路径的页面内容 surface 合成
+   （compose_sdk_chrome_replacement_with_webview → page_fills 进 surface_id=1 →
+   draw_external_surface 在 WebViewWidget ExternalSurface marker 位置合成）与手绘路径的
+   直接 page_fills 渲染产出完全不同像素**。可能根因（待下轮定位）：
+     (a) SDK chrome 布局高度 ≠ 手绘 chrome 高度 → viewport rect 偏移 → 页面内容整体错位；
+     (b) surface 合成的 draw_order / clip 路径未正确还原直接渲染的页面像素；
+     (c) surface 内 page fills 的坐标系（页面绝对坐标）与 ExternalSurface marker rect 的
+         合成偏移不匹配。
+   这是独立于 chrome Widget 占位的另一类问题，且可能比 Widget 工作更基础 —— 若页面
+   内容合成本身错位，即便 chrome Widget 像素完美，整帧 diff 仍高。
+
+下一步（CONTINUE）
+------------------
+1. **定位页面区 99.70% diff 根因**（独立子任务）：对比 SDK 路径 vs 空 scene 在页面区是否
+   渲染了页面内容（ink 计数）；对比 SDK viewport rect 与手绘 viewport rect 是否错位；
+   必要时让 SDK 替换路径的页面内容回到直接渲染（不经 surface），先把页面区压到 ≈0%。
+2. **实现 NavigationButtonsWidget（真实 impl Widget）**：4 个图标按钮（back/forward/
+   reload-stop/home）+ hover/pressed 圆形背景 + 点击 emit BrowserAction；图标与手绘
+   ui_icons::render_icon 字形路径对齐（fontdue 共享后端）。逐个组件实现后重跑本测，
+   目标 chrome 区 diff 从 91.48% 收敛到 ≤2%。
+3. 本测在 chrome 区压到 ≤2% 后，把 sanity 断言升级为 hard assert `chrome_pct <= 2.0`。
+
+门禁
+----
+- browser sdk-chrome: **204 passed / 0 failed**（203 baseline + 1 本测）
+- browser default:   **191 passed / 0 failed**（零回归）
+- cargo clippy -p zero-browser --all-targets --features sdk-chrome -- -D warnings: 净
+- cargo fmt --all --check: 净

@@ -1,0 +1,9 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "ZeroBrowser Entry Module",
+  "main": "",
+  "author": "",
+  "license": "MIT",
+  "dependencies": {}
+}
