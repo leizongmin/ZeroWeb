@@ -258,6 +258,41 @@ mod tests {
     }
 
     #[test]
+    fn rect_contains_is_edge_inclusive() {
+        // 深度审查（lei-deep-review）：contains 边界含端点（<= / >=），hit-test 据此判定。
+        // 锁定该语义——相邻 rect 共享边界点会同时 contains（hit_test 由 z 序 rev() 仲裁）。
+        let r = Rect::from_ltrb(0.0, 0.0, 100.0, 100.0);
+        // 四角（端点）含。
+        assert!(r.contains(Point::new(0.0, 0.0)));
+        assert!(r.contains(Point::new(100.0, 100.0)));
+        assert!(r.contains(Point::new(0.0, 100.0)));
+        assert!(r.contains(Point::new(100.0, 0.0)));
+        // 边上含。
+        assert!(r.contains(Point::new(50.0, 0.0)));
+        assert!(r.contains(Point::new(100.0, 50.0)));
+        // 紧贴外侧不含。
+        assert!(!r.contains(Point::new(-0.001, 50.0)));
+        assert!(!r.contains(Point::new(100.001, 50.0)));
+    }
+
+    #[test]
+    fn rect_intersect_edge_touching_is_none() {
+        // 深度审查（lei-deep-review）：intersect 用 `right <= left || bottom <= top` 判空，
+        // 故**恰好共享一条边**（边相接）→ None（非零面积 rect）。此语义承载 host clip 链
+        // （ui/render 审查 O1：相邻/相接节点经 intersect 得 None → clip=None）。
+        let a = Rect::from_ltrb(0.0, 0.0, 100.0, 100.0);
+        // 右边与 b 左边相接于 x=100 → None。
+        let touch_x = Rect::from_ltrb(100.0, 0.0, 200.0, 100.0);
+        assert_eq!(a.intersect(touch_x), None, "x 边相接 → None");
+        // 底边与 b 顶边相接于 y=100 → None。
+        let touch_y = Rect::from_ltrb(0.0, 100.0, 100.0, 200.0);
+        assert_eq!(a.intersect(touch_y), None, "y 边相接 → None");
+        // 1px 真重叠 → Some（非 None）。
+        let overlap1 = Rect::from_ltrb(99.0, 0.0, 199.0, 100.0);
+        assert_eq!(a.intersect(overlap1), Some(Rect::from_ltrb(99.0, 0.0, 100.0, 100.0)));
+    }
+
+    #[test]
     fn constraints_tight_loose_satisfied() {
         let tight = Constraints::tight(Size::new(40.0, 60.0));
         assert!(tight.is_satisfied(Size::new(40.0, 60.0)));

@@ -1,0 +1,127 @@
+DC-2/DC-5/DC-8/DC-9/DC-12 ui/core 深度审查（lei-deep-review）
+日期: 2026-07-03
+范围: ui/core 全 crate（13 文件 ~2816 行：geometry / scroll / layout / focus /
+      invalidation / action / binding / element / semantics / theme / widget / event / lib）
+重点: 基础类型层正确性——Rect intersect/contains/translate（承载 host clip 链）/
+      ScrollMetrics/ScrollCommand（DC-4）/ WindowMetrics/ViewportClass（DC-12/15）/
+      FocusScope（DC-8）/ InvalidationFlags（DC-9）/ theme WCAG+diff_invalidation（DC-5）。
+      widget.rs/event.rs 前轮已看；theme.rs DC-5 周期已覆盖 token 可访问性，本轮补审
+      解析机制（build_theme/diff_invalidation/resolve_scheme/Color ops）。
+
+================================================================
+0. 总体结论：ui/core 成熟清洁，0 behavior bug，2 处边界语义回归测
+================================================================
+ui/core 是 SDK 最底层、被一切上层使用的稳定基础类型层。13 文件逐文件审查
+**0 medium/high behavior bug**。本轮补 2 处承载 host clip 链的 Rect 边界语义
+回归测（既有测只覆盖内部/外部点与重叠/分离 rect，未覆盖端点与边相接）。
+
+================================================================
+1. 加固汇总（2 回归测，零生产行为变更）
+================================================================
+
+加固 A —— geometry.rs：补 Rect::contains 边界含端点（edge-inclusive）回归测
+  现状：contains 用 `p.x >= left && p.x <= right && p.y >= top && p.y <= bottom`
+  （含端点）。hit-test 据此判定——相邻 rect 共享边界点会同时 contains（由 z 序
+  rev() 仲裁 topmost）。此边界含端点语义此前未被显式测（既有测只覆盖内部点
+  (50,50) 与外部点 (150,50)）。
+  新测 rect_contains_is_edge_inclusive：四角（(0,0)/(100,100)/...）+ 边上点
+  ((50,0)/(100,50)) 含；紧贴外侧（-0.001/100.001）不含。锁定 hit-test 语义。
+
+加固 B —— geometry.rs：补 Rect::intersect 边相接 → None 回归测
+  现状：intersect 用 `if right <= left || bottom <= top { None }`，故**恰好共享
+  一条边**（边相接，零面积重叠）→ None。此语义承载 host clip 链（ui/render 审查
+  O1：相邻/相接节点经 intersect 得 None → host own_clip=None → bridge None→视口
+  回落）。既有测只覆盖真重叠（Some）与分离（None），未覆盖边相接。
+  新测 rect_intersect_edge_touching_is_none：x 边相接（a.right=100=b.left）→ None；
+  y 边相接 → None；1px 真重叠 → Some。锁定 `right <= left` 边界判定。
+
+================================================================
+2. 经查正确（无需改）—— 逐文件
+================================================================
+
+geometry.rs（除上述 2 边界测）：
+  - Point/Size/Vec2/Rect/Insets/Rounding/Constraints 基础类型 + translate/from_ltrb/
+    contains/intersect/clamp_nonnegative/deflate/deflate_rect。
+  - from_ltrb/deflate_rect 不钳 inverted（right<left → 负 size）——**这是底层原语
+    契约**（调用方负责保证非倒置）；chrome Phone 布局倒置 bug（上轮修）是消费方
+    误用，非 geometry 责任。geometry 自身正确。
+  - Constraints::deflate：`.max(0.0)` 钳负；min≤max 恒成立（同减 insets.horizontal）。
+  - intersect：None for disjoint/edge-touching（`<=`）。✓
+
+scroll.rs（ScrollMetrics/ScrollCommand，DC-4）：
+  - max_scroll_x/y = (content - viewport).max(0.0)（content<viewport → 0）。✓
+  - resolve_target：By(+delta)/To(absolute)/Page(+pages*viewport)；**不钳**到
+    [0,max_scroll]——调用方负责（scrollbar closed_loop 测 + webview 自钳）。一致。✓
+
+layout.rs（WindowMetrics/ViewportClass/AdaptiveBranch，DC-12/15）：
+  - ViewportClass::from_width：<600 Compact / <840 Medium / else Expanded（Material
+    断点）。✓
+  - Orientation::from_size：height>width Portrait else Landscape（正方形→Landscape）。✓
+  - phone/tablet/desktop presets + physical_size（logical*scale）。✓
+  - AdaptiveBranch::is_mobile_shell（Compact || Mobile）。✓
+
+focus.rs（FocusScope，DC-8 phase-3）：
+  - next(current, dir)：trap 边界折返（wrap）/ non-trap 逃逸（None）/ 首次进入按方向
+    落首末项 / 空 scope→None。单项 scope trap 折返到自身、non-trap 逃逸。✓ 全分支正确。
+
+invalidation.rs（InvalidationFlags，DC-9）：
+  - bitflags（LAYOUT/PAINT/SEMANTICS/COMPOSITE）；requires_paint 含 LAYOUT（layout
+    隐含 paint）；remove 清位。BitOr/BitOrAssign/BitAnd。✓
+
+action.rs / binding.rs / element.rs / semantics.rs：
+  - action：ActionId/EventResult(Ignored/Consumed/Emit/EmitWithPayload)/ActionPayload/
+    ActionResult/ActionRegistry trait。✓
+  - binding：Value(Null/Bool/Int/Float/Text/Array/Object)+is_truthy+value_type /
+    ValueType / PropsMap / StatePath(parse 过滤空段) / Binding / BindingSchema。✓
+  - element：Element+from_spec+find/find_mut+reconcile（同位置+同 WidgetId 复用，
+    M1 Flutter-style canUpdate；无 id spec 不参与复用；reused 保留 epoch/状态）。✓
+    注：position-based 复用是 M1 简化（首插项致后移全重建），docstring 明示完整 keyed
+    reconciliation 在 runtime——已知限制非 bug。
+  - semantics：SemanticsAction/Flags(bitflags)/Label(Literal/Message)/Node+
+    collect_focusable（DFS FOCUSABLE）。✓
+
+theme.rs（DC-5，本轮补审解析机制）：
+  - Color::mix（lerp，t 钳[0,1]，alpha 同步）/ lighten(mix WHITE) / darken(mix BLACK)。✓
+  - relative_luminance（WCAG 2.1：0.03928 阈值 + 2.4 gamma，0.2126/0.7152/0.0722 系数）。✓
+  - contrast_ratio（(lighter+0.05)/(darker+0.05)，1..21）/ passes_wcag_aa/aaa。✓
+  - diff_invalidation：tokens/palette/shadow 变→PAINT；typography/spacing 变→LAYOUT|PAINT。✓
+  - build_theme：4 态 match（Light/Dark/HCLight/HCDark）选 token + palette 覆盖 primary/surface。✓
+  - resolve_scheme：System→system_scheme（fully-resolved 契约）/ Light(+hc→HCLight) /
+    Dark(+hc→HCDark) / Custom→system。内部自洽（system_scheme 承载 HC，high_contrast
+    bool 供 override 路径）。✓
+  - TypographyTokens::scaled（text_scale，非正→1.0）/ SpacingTokens::scaled（density）正交。✓
+  - 18 测（contrast/WCAG AA+AAA/diff/build_theme HC/high_contrast/text_scale/density）。✓
+
+================================================================
+3. 跨 crate 观察（记录，不在本轮修）
+================================================================
+
+O2（low，doc）—— SystemThemeSnapshot 字段语义可澄清：
+    system_scheme（ResolvedColorScheme，可承载 HighContrastLight/Dark）vs high_contrast
+    bool 的角色分工。当前 resolve_scheme(System) 信任 system_scheme verbatim，Light/Dark
+    override 路径用 high_contrast bool。设计自洽，但 docstring 未明示「system_scheme 须
+    fully-resolved（含 HC）」。M4 platform 探测器实现时须据此契约设置 system_scheme。
+    记为 follow-up（doc 澄清，零行为）。
+
+================================================================
+4. 门禁（全绿）
+================================================================
+- cargo test -p zero-ui-core: 53 passed（51→53，+2 Rect 边界守卫）。
+- cargo build --workspace: Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings: Finished（0 警告）。
+- cargo fmt --all --check: 净（0 diff）。
+- 零生产行为变更（2 新测）→ 无 product-smoke 风险，下游零回归可能。
+- DC-1 复核：ui/core 是基础类型层，仅依赖 compact_str/hashbrown/serde/thiserror，
+  零浏览器业务 crate、零 ui/* 上层依赖（最底层）。
+
+================================================================
+5. 与历轮审查的关系
+================================================================
+SDK 安全/健壮性深度审查现覆盖 runtime（host/driver）+ DSL（engine/yaml/loader）+
+i18n（plural/RTL/catalog）+ widgets（Button）+ chrome（shell/model/render 桥）+
+render（Scene/RenderBackend/ClipStack）+ core（geometry/scroll/layout/focus/
+invalidation/theme/action/binding/element/semantics）七层（全部 SDK 通用 crate）。
+本轮 ui/core 成熟清洁（0 behavior bug），补 2 处 Rect 边界语义回归测（承载 host
+clip 链）。DC-2 三棵树之 Element tree（element.rs reconcile）+ DC-5 主题解析机制 +
+DC-8 FocusScope + DC-9 InvalidationFlags + DC-12 WindowMetrics/ViewportClass 基础类型
+层深度审查闭合。SDK 通用层（ui/* + foundation/text）深度审查全覆盖。
