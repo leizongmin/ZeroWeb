@@ -18,7 +18,7 @@ use zero_text_foundation::FontdueBackend;
 use zero_ui_adapter_render_foundation::RenderFoundationBackend;
 use zero_ui_core::geometry::{Constraints, Rect};
 use zero_ui_core::layout::WindowMetrics;
-use zero_ui_core::theme::SemanticTokens;
+use zero_ui_core::theme::{ResolvedColorScheme, SemanticTokens};
 use zero_ui_core::widget::WidgetId;
 use zero_ui_render::paint_scene;
 use zero_ui_runtime::WidgetHost;
@@ -87,6 +87,7 @@ pub fn render_chrome_via_sdk_with_webview_surface(
     shell: &zero_browser_shell::BrowserShell,
     metrics: &WindowMetrics,
     tokens: &SemanticTokens,
+    scheme: ResolvedColorScheme,
     backend: Arc<FontdueBackend>,
     webview_surface: Option<(
         u64,
@@ -97,7 +98,7 @@ pub fn render_chrome_via_sdk_with_webview_surface(
     let model = BrowserChromeModel::from_shell(shell);
     let spec = DesktopBrowserShell.build(&model, metrics);
     let mut host = WidgetHost::new();
-    register_chrome_factories_with_webview(&mut host, tokens);
+    register_chrome_factories_with_webview(&mut host, tokens, scheme);
     host.set_root(&spec);
     host.layout(Constraints::loose(metrics.logical_size));
     let viewport_rect = host.rect_of(&WidgetId::new(ID_VIEWPORT));
@@ -211,6 +212,7 @@ mod tests {
             &shell,
             &metrics(),
             &SemanticTokens::light(),
+            ResolvedColorScheme::Light,
             Arc::new(font_backend),
             Some((0, webview_prims, None)),
         );

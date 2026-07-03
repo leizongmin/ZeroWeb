@@ -45,6 +45,11 @@ pub mod ids {
     pub const N_BOOKMARKS: &str = "browser.n_bookmarks";
     /// 安全状态模板：`{status}` 为安全色名（如 "secure"/"insecure"）。
     pub const SECURITY_STATUS: &str = "browser.security_status";
+    // 安全标识 tooltip（SecurityBadge）。
+    pub const SECURITY_SECURE: &str = "browser.security.secure";
+    pub const SECURITY_INSECURE: &str = "browser.security.insecure";
+    pub const SECURITY_MIXED: &str = "browser.security.mixed";
+    pub const SECURITY_DANGEROUS: &str = "browser.security.dangerous";
 }
 
 /// 默认 locale（`en`）。
@@ -86,6 +91,27 @@ pub fn default_catalog() -> MessageCatalog {
     messages.insert(MessageId::new(ids::SECURITY_STATUS), {
         let mut e = MessageEntry::simple("Security: {status}");
         e.description = Some("安全状态：{status} 为安全色名（secure/insecure/mixed/dangerous）".into());
+        e
+    });
+    // SecurityBadge tooltip 文案。
+    messages.insert(MessageId::new(ids::SECURITY_SECURE), {
+        let mut e = MessageEntry::simple("Connection is secure");
+        e.description = Some("HTTPS 连接安全".into());
+        e
+    });
+    messages.insert(MessageId::new(ids::SECURITY_INSECURE), {
+        let mut e = MessageEntry::simple("Connection is not secure");
+        e.description = Some("HTTP 连接不安全".into());
+        e
+    });
+    messages.insert(MessageId::new(ids::SECURITY_MIXED), {
+        let mut e = MessageEntry::simple("This page has mixed content");
+        e.description = Some("HTTPS 页面含混合内容".into());
+        e
+    });
+    messages.insert(MessageId::new(ids::SECURITY_DANGEROUS), {
+        let mut e = MessageEntry::simple("Deceptive site ahead");
+        e.description = Some("危险站点（钓鱼/恶意）".into());
         e
     });
     MessageCatalog {
@@ -204,6 +230,10 @@ mod tests {
             (ids::SETTINGS, "Settings"),
             (ids::BACK, "Back"),
             (ids::FORWARD, "Forward"),
+            (ids::SECURITY_SECURE, "Connection is secure"),
+            (ids::SECURITY_INSECURE, "Connection is not secure"),
+            (ids::SECURITY_MIXED, "This page has mixed content"),
+            (ids::SECURITY_DANGEROUS, "Deceptive site ahead"),
         ] {
             let resolved = resolve_default(&store, id).unwrap_or_else(|e| panic!("resolve {id} failed: {e:?}"));
             assert_eq!(resolved.text, expected, "message {id}");
@@ -246,6 +276,10 @@ mod tests {
             ids::SETTINGS,
             ids::BACK,
             ids::FORWARD,
+            ids::SECURITY_SECURE,
+            ids::SECURITY_INSECURE,
+            ids::SECURITY_MIXED,
+            ids::SECURITY_DANGEROUS,
         ];
         for id in all_ids {
             assert!(

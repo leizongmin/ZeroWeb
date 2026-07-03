@@ -98,7 +98,8 @@ impl BrowserChromeModel {
             };
         }
 
-        // bookmarks（list_root 仅返回书签项；文件夹由 bookmarks.folders 管理，当前未投影）。
+        // bookmarks（list_root 仅返回含 URL 的书签项；`url` 字段为 Option<String> 预留
+        // 未来文件夹支持，当前实现始终为 Some——bookmark bar 不展示文件夹嵌套是已知限制）。
         model.bookmarks = shell
             .bookmarks()
             .list_root()

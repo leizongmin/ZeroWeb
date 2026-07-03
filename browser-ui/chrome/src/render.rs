@@ -215,13 +215,17 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens)
 ///
 /// props 约定：`surface_id`（u64，默认 0）由宿主分配；`scale_factor`（f32，默认 1.0）。
 /// viewport rect 由 layout 填充可用空间确定。
-pub fn register_chrome_factories_with_webview(host: &mut WidgetHost, tokens: &SemanticTokens) {
+pub fn register_chrome_factories_with_webview(
+    host: &mut WidgetHost,
+    tokens: &SemanticTokens,
+    scheme: zero_ui_core::theme::ResolvedColorScheme,
+) {
     register_chrome_factories(host, tokens);
     // 替换 PageViewportFrame：使用 WebViewWidget 产出 ExternalSurface marker。
     let theme = zero_ui_core::theme::ThemeResolver::build_theme(
         zero_ui_core::theme::ThemeId::new("zero"),
         "Zero",
-        zero_ui_core::theme::ResolvedColorScheme::Light,
+        scheme,
         zero_ui_core::theme::ColorPalette::default(),
     );
     host.register("browser.PageViewportFrame", move |s| {
@@ -394,7 +398,7 @@ mod tests {
 
         let tokens = zero_ui_core::theme::SemanticTokens::light();
         let mut host = WidgetHost::new();
-        register_chrome_factories_with_webview(&mut host, &tokens);
+        register_chrome_factories_with_webview(&mut host, &tokens, zero_ui_core::theme::ResolvedColorScheme::Light);
 
         // 构造含 surface_id 的 PageViewportFrame spec。
         let mut spec = WidgetSpec::new("browser.PageViewportFrame");

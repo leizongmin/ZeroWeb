@@ -974,7 +974,7 @@ fn compose_sdk_chrome_replacement_with_webview(
     use zero_browser_chrome::sdk_render::render_chrome_via_sdk_with_webview_surface;
     use zero_ui_core::geometry::{Insets, Size};
     use zero_ui_core::layout::WindowMetrics;
-    use zero_ui_core::theme::SemanticTokens;
+    use zero_ui_core::theme::{ResolvedColorScheme, SemanticTokens};
 
     let Some(ic) = image_cache.as_mut() else {
         return (page_fills, page_glyphs);
@@ -1016,7 +1016,7 @@ fn compose_sdk_chrome_replacement_with_webview(
     });
 
     let (bridge, _viewport_rect) = render_chrome_via_sdk_with_webview_surface(
-        shell, &metrics, &SemanticTokens::light(), backend, webview_surface,
+        shell, &metrics, &SemanticTokens::light(), ResolvedColorScheme::Light, backend, webview_surface,
     );
     let (sdk_prims, sdk_cache) = bridge.into_primitives_and_cache();
 

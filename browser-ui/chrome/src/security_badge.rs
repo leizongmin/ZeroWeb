@@ -31,13 +31,26 @@ impl SecurityBadge {
         SecurityBadge { state }
     }
 
-    /// 摘要文案（M2 承载字面量便于单测；生产替换为 i18n message id）。
+    /// 摘要文案（短标签，供 Badge 文本显示）。
     pub fn summary_label(&self) -> &'static str {
         match self.state {
             SecurityState::Secure => "secure",
             SecurityState::Insecure => "not-secure",
             SecurityState::Mixed => "mixed-content",
             SecurityState::Dangerous => "dangerous",
+        }
+    }
+
+    /// 安全状态 → i18n message id（tooltip 悬停展示完整安全摘要）。
+    ///
+    /// 返回 `crate::i18n::ids::SECURITY_*` 常量，经 catalog 解析为可见文案
+    /// （如 "Connection is secure"）；生产取代原先 M2 字面量占位。
+    pub fn tooltip_message_id(&self) -> &'static str {
+        match self.state {
+            SecurityState::Secure => crate::i18n::ids::SECURITY_SECURE,
+            SecurityState::Insecure => crate::i18n::ids::SECURITY_INSECURE,
+            SecurityState::Mixed => crate::i18n::ids::SECURITY_MIXED,
+            SecurityState::Dangerous => crate::i18n::ids::SECURITY_DANGEROUS,
         }
     }
 
@@ -56,9 +69,9 @@ impl SecurityBadge {
         Badge::new(self.summary_label(), self.tone())
     }
 
-    /// 组合通用 Tooltip（悬停展示完整安全摘要）。
+    /// 组合通用 Tooltip（悬停展示完整安全摘要，文案经 i18n catalog 解析）。
     pub fn build_tooltip(&self) -> Tooltip {
-        Tooltip::new(self.summary_label())
+        Tooltip::new(self.tooltip_message_id())
     }
 }
 
@@ -85,6 +98,27 @@ mod tests {
     fn badge_and_tooltip_carry_label() {
         let b = SecurityBadge::new(SecurityState::Secure);
         assert_eq!(b.build_badge().text, "secure");
-        assert_eq!(b.build_tooltip().message_id, "secure");
+        // DC-10：tooltip message_id 使用 i18n catalog id，非 M2 字面量占位。
+        assert_eq!(b.build_tooltip().message_id, crate::i18n::ids::SECURITY_SECURE);
+        assert_eq!(b.tooltip_message_id(), crate::i18n::ids::SECURITY_SECURE);
+    }
+
+    #[test]
+    fn tooltip_message_ids_cover_all_states() {
+        // 每个安全状态都有对应的 tooltip i18n message id。
+        for state in [
+            SecurityState::Secure,
+            SecurityState::Insecure,
+            SecurityState::Mixed,
+            SecurityState::Dangerous,
+        ] {
+            let b = SecurityBadge::new(state);
+            let id = b.tooltip_message_id();
+            assert!(!id.is_empty(), "{state:?} 缺少 tooltip message id");
+            assert!(
+                id.starts_with("browser.security."),
+                "{state:?} id 应为 browser.security.* 前缀: {id}"
+            );
+        }
     }
 }

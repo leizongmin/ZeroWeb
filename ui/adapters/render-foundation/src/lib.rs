@@ -1242,6 +1242,7 @@ mod tests {
             &shell,
             &metrics,
             &SemanticTokens::light(),
+            zero_ui_core::theme::ResolvedColorScheme::Light,
             std::sync::Arc::new(font_backend),
             Some((0, webview_prims, None)),
         );
