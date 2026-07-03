@@ -33,6 +33,9 @@ pub struct Button {
     spec: ButtonSpec,
     hover: bool,
     pressed: bool,
+    /// 上次 `layout()` 算出的尺寸；`paint()` 据此填满背景（DC-7：避免硬编码宽度截断长标签）。
+    /// Widget trait 的 `paint` 不接收尺寸，故控件须在 layout 缓存。
+    size: Size,
 }
 
 impl Button {
@@ -41,6 +44,7 @@ impl Button {
             spec,
             hover: false,
             pressed: false,
+            size: Size::new(96.0, 32.0),
         }
     }
 
@@ -110,19 +114,26 @@ impl Widget for Button {
 
     fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
         // M1：用字符数启发式估算宽度（M2 接 foundation/text 真实测量）。
+        // 按字符数（非字节长度）计宽——多字节标签（CJK/重音）此前被字节数高估，
+        // 与 text_input::ime_caret_rect 用 chars().count() 一致（DC-7/i18n）。
         let char_w = 8.0_f32;
         let padding = 16.0_f32;
-        let desired = Size::new(self.spec.label.len() as f32 * char_w + padding, 32.0);
-        Size::new(
+        let desired = Size::new(self.spec.label.chars().count() as f32 * char_w + padding, 32.0);
+        let size = Size::new(
             desired.width.clamp(constraints.min_width, constraints.max_width),
             desired.height.clamp(constraints.min_height, constraints.max_height),
-        )
+        );
+        self.size = size;
+        size
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        // M1：填充背景 + 边框；文本绘制在 M2 接 text foundation 后补。
-        ctx.recorder
-            .fill_rect(Rect::from_ltrb(0.0, 0.0, 96.0, 32.0), self.background(ctx.tokens));
+        // 填满 layout 算出的节点矩形（DC-7：用缓存 size，避免硬编码 96 截断长标签背景）。
+        // 文本绘制在 M2 接 text foundation 后补。
+        ctx.recorder.fill_rect(
+            Rect::from_ltrb(0.0, 0.0, self.size.width, self.size.height),
+            self.background(ctx.tokens),
+        );
     }
 
     fn semantics(&self, ctx: &mut SemanticsCtx) {
@@ -418,5 +429,53 @@ mod tests {
                 .contains(SemanticsFlags::BUTTON | SemanticsFlags::FOCUSABLE)
         );
         assert!(nodes[0].label.is_some());
+    }
+
+    // ── 深度审查（lei-deep-review）：paint 覆盖 layout 尺寸 + i18n 字符计宽 ──
+
+    #[test]
+    fn paint_covers_full_laid_out_width_for_wide_label() {
+        // DC-7 修复：paint 背景应填满 layout 算出的节点宽度，而非硬编码 96。
+        // 长标签（>10 字符 → 宽度 >96）此前背景被截断为 96px，右侧透明。
+        let mut btn = Button::new(ButtonSpec::new("Save Settings Now", "app.save"));
+        let size = btn.layout(
+            &mut LayoutCtx { scale_factor: 1.0 },
+            Constraints::loose(Size::new(400.0, 400.0)),
+        );
+        // 标签 17 字符 → 期望宽 17×8+16 = 152。
+        assert!((size.width - 152.0).abs() < 0.5, "laid out width {}", size.width);
+        let mut rec = MockRecorder::default();
+        let tokens = SemanticTokens::light();
+        let mut ctx = PaintCtx {
+            recorder: &mut rec,
+            clip: None,
+            offset: Vec2::ZERO,
+            tokens: &tokens,
+        };
+        btn.paint(&mut ctx);
+        assert_eq!(rec.fills.len(), 1);
+        let fill_width = rec.fills[0].0.right();
+        assert!(
+            (fill_width - size.width).abs() < 0.5,
+            "paint fill width {} should cover laid-out width {} (was hardcoded 96)",
+            fill_width,
+            size.width
+        );
+    }
+
+    #[test]
+    fn layout_sizes_by_char_count_not_byte_length() {
+        // DC-7/i18n：多字节标签按字符数计宽，而非字节数（与 text_input ime_caret_rect 用 chars().count() 一致）。
+        // "保存" = 2 字符 / 6 字节 → 宽度应为 2×8+16=32，而非 6×8+16=64。
+        let mut btn = Button::new(ButtonSpec::new("保存", "app.save"));
+        let size = btn.layout(
+            &mut LayoutCtx { scale_factor: 1.0 },
+            Constraints::loose(Size::new(400.0, 400.0)),
+        );
+        assert!(
+            (size.width - 32.0).abs() < 0.5,
+            "2-char CJK label width {} should be 32 (char count), not 64 (byte length)",
+            size.width
+        );
     }
 }

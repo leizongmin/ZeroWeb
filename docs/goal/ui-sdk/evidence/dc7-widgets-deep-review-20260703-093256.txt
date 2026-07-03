@@ -1,0 +1,114 @@
+DC-7 ui/widgets 深度审查（lei-deep-review）
+日期: 2026-07-03
+范围: ui/widgets 全 crate（15 文件 ~1637 行：button / scrollbar / text_input /
+      menu / list_view / toggle / progress / badge / icon_button / tabs /
+      popover / popup / toolbar / tooltip / lib）
+重点: Widget trait 实现正确性（paint 路径 / layout 尺寸 / event 路由 / 受控状态）/
+      hit-test / UTF-8 安全 / 主题 token 消费（DC-5 交叉）/ i18n 兼容（DC-10 交叉）。
+
+================================================================
+0. 关键发现：ui/widgets 仅 Button 是完整 Widget 实现
+================================================================
+审查确认 ui/widgets 中**只有 Button 是完整 `impl Widget`**：
+- button.rs：`impl Widget for Button`（mount/update/event/layout/paint/semantics/focusable）。
+- text_input.rs：仅 `TextInputState` retained 状态模型（无 Widget impl；form 示例的
+  TextField 是宿主自定义控件）。
+- scrollbar.rs：纯函数（layout_scrollbar/hit_test/drag_to_command/paint_scrollbar），
+  无 Widget impl（host/浏览器直接调函数）。
+- 其余 12 文件（menu/list_view/toggle/progress/badge/icon_button/tabs/popover/popup/
+  toolbar/tooltip）：纯数据模型/props（无 Widget impl），由 chrome/patterns 组合消费。
+故 DC-7 widget 域深度审查核心落点 = Button；其余为数据模型正确性核对。
+
+================================================================
+1. 修复汇总（2 medium，均在 Button）
+================================================================
+
+bug A（medium）—— button.rs paint 硬编码 96×32，忽略 layout 尺寸
+  根因：`paint()` 恒填 `Rect::from_ltrb(0,0,96,32)`，与 `layout()` 返回的尺寸脱钩。
+  Widget trait 的 paint 不接收尺寸，控件须在 layout 缓存；Button 此前未缓存。
+  影响：宽按钮（标签 >10 字符 → layout 宽 >96px）背景被截断为 96px，右侧透明。
+  host clip 到节点 rect（=layout 尺寸）→ 截断处确为透明（非溢出）。真实视觉 bug。
+  示例：标签 "Save Settings Now"（17 字符）→ layout 宽 152，paint 仅填 96 → 右 56px 透明。
+  TDD 证明：paint_covers_full_laid_out_width_for_wide_label RED（fill 宽 96 ≠ 152）。
+  修复：Button 加私有 `size: Size` 字段（new 默认 96×32 作 pre-layout 兜底），layout()
+  存 `self.size = size`，paint() 用 `Rect::from_ltrb(0,0,self.size.width,self.size.height)`。
+  向后兼容：仅 Button::new 构造，私有字段，所有调用方零改动（chrome 84/examples 2 测零回归）。
+
+bug B（medium）—— button.rs layout 用字节长度（.len()）而非字符数计宽
+  根因：`self.spec.label.len() as f32 * char_w` —— String::len() 是 UTF-8 **字节**长度。
+  影响：多字节标签（CJK/重音）宽度被高估 ~2-3×。例 "保存"（2 字符/6 字节）→ 宽 64 而非 32。
+  与 DC-10 i18n 冲突（SDK 须正确处理非 ASCII 标签）。
+  不一致佐证：text_input::ime_caret_rect 正确用 `chars().count()`，button 用 .len() 是 bug。
+  TDD 证明：layout_sizes_by_char_count_not_byte_length RED（"保存" 宽 64 ≠ 32）。
+  修复：layout() 改 `self.spec.label.chars().count() as f32 * char_w`。
+  与 ime_caret_rect 一致（全 widget 域 UTF-8 安全）。
+
+================================================================
+2. 经查正确（无需改）
+================================================================
+
+button.rs 其余：
+  - event 路由：disabled→Ignored；非主键/非指针→Ignored；主键 Pressed→pressed=true/Consumed；
+    Released→was_pressed 则 Emit(action) 否则 Consumed；直接 release（未 press）→Consumed 不 emit。
+    逐分支正确（6 测覆盖）。
+  - background：token 派生（default=primary/hover=lighten/pressed=darken/disabled=on_surface.mix），
+    DC-5 全 token，WCAG AA 验证（light+dark，2 测）。
+  - update：label/enabled props 应用 + NEEDS_PAINT（label 变长委托上层 layout，仅标 paint——
+    注：实际 label 变长会改 layout 宽度，host 重建 spec→set_root→reconcile 触发 layout，
+    DC-2 host 审查已闭合此传播链，故此处仅标 paint 不漏 layout）。
+  - focusable=true / semantics BUTTON|FOCUSABLE + label。✓
+
+scrollbar.rs（DC-4 域，已多轮验证，本轮复核）：
+  - layout_scrollbar：thumb_extent = max(track*viewport/content, 24)；ratio=scroll/max；
+    thumb 起始按 (track_extent-thumb_extent)*ratio；content≤viewport 或 max_scroll≤0 → None。✓
+  - hit_test：track contains → thumb → before/after（按 orientation 用 y/x）。✓
+  - drag_to_command：usable=(track-thumb).max(1.0) 防 div0；dy/usable*max_scroll。✓
+  - paint_scrollbar：track+thumb 两条 fill。✓
+  - ScrollBarStyle::from_tokens（track=on_surface.mix(surface,0.85)/thumb=0.5，light/dark 自适应反相）
+    + thumb_hover/active_color 派生。DC-5 全 token。✓
+
+text_input.rs（TextInputState，UTF-8 安全）：
+  - insert：选区替换（lo/hi 排序）+ cursor=lo+s.len()。✓
+  - backspace：选区删除 / char_indices 找前一字符边界。✓
+  - move_cursor：char_indices 后退 / ch.len_utf8() 前进。✓
+  - ime_caret_rect：chars().count() 计字符数（UTF-8 安全，与 button 修复后一致）。✓
+  - low（不修）：cursor 为 pub 字段，外部设非字符边界值时 text[cursor..] 切片会 panic；
+    docstring 明示「字节偏移」契约，调用方负责边界；防御性 clamp-to-boundary 改 API 语义，记录。
+
+数据模型（menu/list_view/toggle/progress/badge/icon_button/tabs/popover/popup/toolbar/tooltip）：
+  全部纯数据/builder，无逻辑 bug。badge token 对 WCAG AA（5 tone × light/dark）已测；
+  progress clamp 0..1 + indeterminate None；list_view/tabs select/activate 边界检查；✓
+
+================================================================
+3. 记录的 follow-up（跨 crate，不在本轮修）
+================================================================
+
+follow-up F1（low-medium，跨 crate）—— Button hover/pressed 无 leave 重置
+  现象：PointerPhase 无 Leave/Exited 变体（仅 Pressed/Released/Moved/Cancelled）；
+  host（ui/runtime）dispatch 对 Moved 仅 hit-test 到当前指针下最深节点，**不向
+  之前 hover 的节点发合成 leave**。故 Button 一旦 hover=true（或 pressed=true 拖出后），
+  指针离开时收不到事件 → 状态「粘住」（持续高亮/按下视觉）。
+  定性：跨 crate SDK gap（需 ui/core 加 PointerPhase::Exited + ui/runtime host 追踪
+  per-pointer last-hovered 节点并派发合成 leave），非 button.rs 单点 bug。
+  影响：纯视觉（粘滞高亮），无数据/正确性后果。本轮记录，留独立 turn 修（触 event 模型 + host）。
+
+================================================================
+4. 门禁（全绿）
+================================================================
+- cargo test -p zero-ui-widgets: 40 passed（38→40，+2 paint/char-count 回归守卫）。
+- cargo test -p zero-browser-chrome: 84 passed（Button 工厂下游零回归）。
+- cargo test -p zero-ui-examples: 2 passed（counter/form 用 Button 零回归）。
+- cargo test -p zero-ui-adapter-webview: 8 passed（scrollbar 下游零回归）。
+- cargo build --workspace: Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings: Finished（0 警告）。
+- cargo fmt --all --check: 净（0 diff）。
+- 无 product-smoke 风险（SDK-only，未触碰 render-foundation/浏览器渲染路径）。
+- DC-1 复核：ui/widgets 仅依赖 zero-ui-core + serde + compact_str，零浏览器业务 crate。
+
+================================================================
+5. 与历轮审查的关系
+================================================================
+SDK 安全/健壮性深度审查现覆盖（DC-2 runtime host/driver）+（DC-6 DSL engine/yaml/loader）+
+（DC-10 i18n plural/RTL/catalog）+（DC-7 widgets Button paint/layout/UTF-8）。本轮修
+2 medium（paint 截断 + 字节计宽），均 TDD RED→GREEN + 下游零回归。Button 是 ui/widgets
+唯一完整 Widget 实现，故本轮即 DC-7 widget 域核心审查闭合；scrollbar 已 DC-4 多轮验证。
