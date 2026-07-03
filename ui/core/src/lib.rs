@@ -23,6 +23,7 @@ pub mod element;
 pub mod event;
 pub mod focus;
 pub mod geometry;
+pub mod image;
 pub mod invalidation;
 pub mod layout;
 pub mod scroll;

@@ -1173,3 +1173,40 @@ Evidence: `evidence/dc14-fill-rounded-rect-geometry-20260704.txt`
 ImagePrimitive + bridge passthrough，浏览器把 SVG 图标（ui_icons resvg 光栅化）注册进帧 ImageCache
 并把 key 经 props 传给 chrome 工厂；实现 NavigationButtonsWidget 真实图标 + hover 圆盘
 （用 fill_rounded_rect），用 dc14_chrome_region_pixel_diff_baseline 看 chrome 区 73.99% 收敛。
+
+### Round 44 — 图标绘制通路（draw_image 原语 + bridge passthrough，SDK 全层穿透，2026-07-04）
+
+**Round 43 把 fill_rounded_rect + chrome 几何对齐落地后，本轮攻克剩余架构阻塞「图标」**：手绘 chrome 的
+nav/address/security/menu 图标经 resvg SVG→alpha 掩码→GlyphDraw；SDK bridge 用 FontdueBackend 无图标
+bitmap，PaintRecorder 也无 image 绘制能力。本轮建立 SDK 层图像原语 + bridge passthrough。
+
+**设计（与 glyph 文本路径对称，DC-1 保持）**：glyph = 字体内 alpha 掩码 + 文本色；图标 = 宿主提供的
+alpha 掩码 + tint。故新增 SDK 层不透明图像引用 `ImageRef(u64)`（ui/core），承载于
+`RenderPrimitive::Image { rect, key, tint }`；桥接持有宿主预注册 alpha 掩码表，draw_image 按 tint 着色光栅。
+
+**7 层穿透落地（每层带测）**：
+1. ui/core/src/image.rs（新）：`ImageRef(pub u64)`，Copy/Eq/Hash/Serialize，注册 lib.rs。
+2. ui/core widget.rs：`PaintRecorder::draw_image(rect, image_ref, tint)`（required，与 draw_text 一致）。
+3. ui/render render_node.rs：`RenderPrimitive::Image { rect, key, tint }` + translate arm + 测。
+4. ui/render backend.rs：`RenderBackend::draw_image` + paint_scene 派发 arm + MockBackend + 派发测。
+5. ui/render paint_ctx.rs：`SceneRecorder::draw_image` emit Image + 测。
+6. ui/widgets：scrollbar CountRecorder + button MockRecorder 补 draw_image no-op。
+7. 桥接（ui/adapters/render-foundation）：`image_masks: HashMap<ImageRef,AlphaMask>` 字段 +
+   `register_image_mask(key,coverage,w,h)` + `RenderBackend::draw_image`（取掩码→稳定 RF key→uploaded 去重→
+   `tint_alpha` 着色→ImageData→image_cache→ImagePrimitive clip:None 与 glyph 一致）+ `image_cache_key`
+   （bit63 标记 image 与 glyph key 不碰撞；bits32-47 ref id；bits0-31 tint RGBA）+ `tint_alpha`。
+
+**测试矩阵全绿**：ui-core 53→54 / ui-render 15+3→18+3 / bridge 24→29（+5：emit/noop/cache-per-tint/
+key-no-collide/paint_scene e2e）/ ui-testing 15+1（scene_snapshot 加 Image 摘要）/ widgets 41 / chrome 86
+（examples 补 Image match arm）/ browser sdk-chrome **205 零回归**。clippy(-D warnings)/fmt 净；
+`cargo build --workspace --all-targets` 仅 zero-script-sandbox V8 MSVC debug-test 链接阻塞（环境性、已跟踪）。
+
+**SDK-only**（ui/core+render+bridge+widgets，未触碰 apps/browser 渲染路径）→ **无 product-smoke 风险**。
+SDK 控件现可引用任意宿主预注册图像并按 tint 着色——DC-7/DC-14 真实 chrome 组件的图标像素级还原能力就绪。
+
+Evidence: `evidence/dc14-draw-image-icon-path-20260704.txt`
+
+**下轮下一步**：NavigationButtonsWidget 真实化（触碰 apps/browser）——①暴露 ui_icons alpha 掩码
+（`icon_alpha_mask(icon,size_px)`）；②compose 前 `bridge.register_image_mask` 注册 nav 4 图标 + ImageRef
+经 props 传工厂；③真实 impl Widget（4 按钮 × hover 圆盘 fill_rounded_rect + 图标 draw_image + click emit
+BrowserAction）；④重跑 dc14_chrome_region_pixel_diff_baseline 看 chrome 区 73.99% 收敛。

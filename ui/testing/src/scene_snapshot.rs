@@ -84,6 +84,18 @@ pub fn snapshot_scene(scene: &Scene) -> String {
                     rect.bottom()
                 ));
             }
+            RenderPrimitive::Image { rect, key, tint } => {
+                // 预注册图像（如 SVG 图标）：确定性摘要（ref + rect + tint）。
+                out.push_str(&format!(
+                    "image{} {},{},{},{} {}",
+                    key.0,
+                    rect.left(),
+                    rect.top(),
+                    rect.right(),
+                    rect.bottom(),
+                    fmt_color(*tint)
+                ));
+            }
         }
         out.push('\n');
     }

@@ -43,6 +43,15 @@ pub enum RenderPrimitive {
     /// （持有 `zero-webview` 的合成层）按 id 取回合成。本图元不承载浏览器类型 → ui/render
     /// 不依赖 `zero-webview`（DC-1）。
     ExternalSurface { rect: Rect, surface_id: u64 },
+    /// 预注册图像（如 SVG 图标）。`key` 引用宿主注册到桥接的图像（通常单通道 alpha 掩码），
+    /// `tint` 为着色（典型 = 主题前景 token）。后端按 key 取回位图、按 tint 着色、缩放到
+    /// `rect` 光栅（与 glyph 文本路径对称）。`ui/render` 只持 SDK 层 `ImageRef`，不依赖
+    /// render-foundation（DC-1）。
+    Image {
+        rect: Rect,
+        key: zero_ui_core::image::ImageRef,
+        tint: Color,
+    },
 }
 
 impl RenderPrimitive {
@@ -87,6 +96,11 @@ impl RenderPrimitive {
             RenderPrimitive::ExternalSurface { rect, surface_id } => RenderPrimitive::ExternalSurface {
                 rect: rect.translate(offset.x, offset.y),
                 surface_id,
+            },
+            RenderPrimitive::Image { rect, key, tint } => RenderPrimitive::Image {
+                rect: rect.translate(offset.x, offset.y),
+                key,
+                tint,
             },
         }
     }
@@ -209,6 +223,23 @@ mod tests {
                 assert_eq!(position, Point::new(8.0, 9.0));
             }
             _ => panic!("expected TextBlob"),
+        }
+    }
+
+    #[test]
+    fn translate_image_shifts_rect_preserves_key_and_tint() {
+        let img = RenderPrimitive::Image {
+            rect: Rect::from_ltrb(0.0, 0.0, 16.0, 16.0),
+            key: zero_ui_core::image::ImageRef::new(3),
+            tint: Color::BLACK,
+        };
+        match img.translate(Vec2::new(40.0, 12.0)) {
+            RenderPrimitive::Image { rect, key, tint } => {
+                assert_eq!(rect, Rect::from_ltrb(40.0, 12.0, 56.0, 28.0));
+                assert_eq!(key, zero_ui_core::image::ImageRef::new(3));
+                assert_eq!(tint, Color::BLACK);
+            }
+            other => panic!("expected Image, got {other:?}"),
         }
     }
 }

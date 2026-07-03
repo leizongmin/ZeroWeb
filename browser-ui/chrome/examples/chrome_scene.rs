@@ -59,6 +59,7 @@ fn render(
             RenderPrimitive::Text { text, .. } => format!("Text({:?})", text),
             RenderPrimitive::TextBlob { .. } => "TextBlob".to_string(),
             RenderPrimitive::ExternalSurface { surface_id, .. } => format!("ExternalSurface(id={surface_id})"),
+            RenderPrimitive::Image { key, .. } => format!("Image(ref={})", key.0),
         };
         println!("  [{i:2}] source={:<16} {kind}", e.source.0);
     }

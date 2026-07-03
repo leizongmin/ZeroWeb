@@ -61,6 +61,7 @@ fn main() {
                 format!("ExternalSurface(id={surface_id})")
             }
             RenderPrimitive::StrokeRect { .. } => "Stroke".to_string(),
+            RenderPrimitive::Image { key, .. } => format!("Image(ref={})", key.0),
         };
         println!("  [{i:2}] source={:<22} {kind}", e.source.0);
     }

@@ -369,6 +369,7 @@ mod tests {
         fn stroke_rect(&mut self, _rect: Rect, _color: Color, _stroke_width: f32) {}
         fn draw_text(&mut self, _text: &str, _position: Point, _size_px: f32, _color: Color) {}
         fn draw_external_surface(&mut self, _rect: Rect, _surface_id: u64) {}
+        fn draw_image(&mut self, _rect: Rect, _image_ref: zero_ui_core::image::ImageRef, _tint: Color) {}
     }
 
     #[test]

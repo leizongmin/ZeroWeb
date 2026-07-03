@@ -1,0 +1,75 @@
+# DC-14 图标绘制通路（draw_image 原语 + bridge passthrough）— 2026-07-04
+
+Round 43 把 fill_rounded_rect 原语 + chrome 几何对齐落地后，剩余架构阻塞为「图标」：
+手绘 chrome 的 nav/address/security/menu 图标经 resvg SVG → alpha 掩码 → GlyphDraw；
+SDK bridge 用 FontdueBackend 无图标 bitmap，PaintRecorder 也无 image 绘制能力。
+本轮建立 SDK 层图像原语 + bridge passthrough，为 NavigationButtonsWidget 真实图标解锁。
+
+## 设计（DC-1 保持：ui/render 不依赖 render-foundation）
+
+与 glyph 文本路径对称：glyph = 字体内 alpha 掩码 + 文本色；图标 = 宿主提供的 alpha 掩码 + tint。
+故新增 SDK 层不透明图像引用 `ImageRef(u64)`（ui/core），承载于 `RenderPrimitive::Image { rect, key, tint }`；
+桥接持有宿主预注册的 alpha 掩码表，draw_image 时按 tint 着色光栅为 render-foundation ImagePrimitive。
+
+## 落地（7 层穿透，每层带测）
+
+1. **ui/core/src/image.rs（新）**：`ImageRef(pub u64)`，Copy/Eq/Hash/Serialize，`new()`。注册 lib.rs。
+2. **ui/core/src/widget.rs**：`PaintRecorder::draw_image(rect, image_ref, tint)` trait 方法（required，
+   与 draw_text/draw_external_surface 一致）。
+3. **ui/render/src/render_node.rs**：`RenderPrimitive::Image { rect, key, tint }` + `translate` arm
+   （平移 rect，key/tint 不变）+ 翻译测试。
+4. **ui/render/src/backend.rs**：`RenderBackend::draw_image` + `paint_scene` 派发 arm + MockBackend impl
+   + 派发测试（Image 图元 → backend.draw_image 透传）。
+5. **ui/render/src/paint_ctx.rs**：`SceneRecorder::draw_image` emit Image 图元 + 测试。
+6. **ui/widgets**：scrollbar `CountRecorder` + button `MockRecorder` 补 draw_image no-op（trait required）。
+7. **ui/adapters/render-foundation/src/lib.rs（桥接）**：
+   - `image_masks: HashMap<ImageRef, AlphaMask>` 字段 + `AlphaMask { coverage, width, height }`。
+   - `register_image_mask(key, coverage, w, h)`：宿主注册图标 alpha 掩码。
+   - `RenderBackend::draw_image` impl：取掩码 → `image_cache_key(ref,tint)` 稳定 RF key →
+     `uploaded` 去重 → `tint_alpha`(coverage×tint.a) → ImageData → image_cache → ImagePrimitive（clip: None，
+     与 glyph ImagePrimitive 一致）。未注册 key 安静跳过。
+   - `image_cache_key`：bit 63 标记 image（glyph key 的 font_id 在 bits 32-63 但 FontId 实际小→bit63=0；
+     两族永不碰撞）；bits 32-47 = ref id；bits 0-31 = tint RGBA（同图标不同 tint → 不同缓存条目）。
+   - `tint_alpha`：alpha 掩码 → tinted RGBA（RGB=tint，A=coverage×tint.a/255）。
+
+## 测试矩阵（全绿）
+
+| crate | 变化 | 测数 |
+|-------|------|------|
+| ui-core | +image.rs（ImageRef） | 53→54 |
+| ui-render | +Image 变体/translate/paint_scene/SceneRecorder | 15+3→18+3 |
+| ui-widgets | mock 补 draw_image（无新测） | 41 |
+| bridge | +5（emit/noop/cache-per-tint/key-no-collide/paint_scene e2e） | 24→29 |
+| ui-testing | scene_snapshot 加 Image 摘要 arm | 15+1 |
+| chrome | examples 补 Image match arm（无新测） | 86 |
+| browser sdk-chrome | 无回归 | 205 |
+
+bridge 关键测：
+- `draw_image_emits_image_primitive_with_tinted_rgba`：2x2 对角掩码 → ImagePrimitive + cache tinted RGBA 正确。
+- `draw_image_unknown_key_is_noop`：未注册 key 不出图不 panic。
+- `draw_image_caches_per_tint_and_dedups_same_tint`：同 (image,tint) dedup；不同 tint 不同 key。
+- `image_cache_key_never_collides_with_glyph_keys`：bit 63 隔离两族。
+- `draw_image_via_paint_scene_end_to_end`：Scene Image → paint_scene → bridge → ImagePrimitive，coverage 128×opaque tint → alpha 128。
+
+## 门禁
+
+- `cargo build --workspace --all-targets`：✅（仅 zero-script-sandbox V8 MSVC debug-test 链接阻塞，环境性、与本目标无关，已跟踪）。
+- `cargo clippy -p zero-ui-core -p zero-ui-render -p zero-ui-adapter-render-foundation -p zero-ui-widgets -p zero-browser-chrome -p zero-browser --features zero-browser/sdk-chrome --all-targets -- -D warnings`：✅ 净。
+- `cargo fmt --all --check`：✅ 净。
+- scoped test-guard 全绿（见上表，单线程 0 failed）。
+
+## 价值
+
+SDK 控件现可引用任意宿主预注册图像（图标/自定义符号）并按 tint 着色——DC-7/DC-14 真实 chrome 组件
+（NavigationButtonsWidget 等）的图标像素级还原能力就绪。**SDK-only**（ui/core+render+bridge+widgets，
+未触碰 apps/browser 渲染路径）→ 无 product-smoke 风险。
+
+## 下一步（NavigationButtonsWidget 真实化，触碰 apps/browser）
+
+1. 暴露 ui_icons 的 alpha 掩码（`rasterize_icon_svg` 已产出 coverage；公开一个 `icon_alpha_mask(icon, size_px) -> (Vec<u8>, w, h)`）。
+2. compose_sdk_chrome_replacement_with_webview 调用前：把 nav 4 图标（ChevronLeft/Right/Refresh/Home）
+   经 icon_alpha_mask 光栅 + `bridge.register_image_mask(ImageRef(id), ...)` 注册，ImageRef id 经 shell props
+   传给 NavigationButtons 工厂。
+3. 实现 NavigationButtonsWidget（真实 impl Widget）：4 按钮 ×（hover 圆盘 fill_rounded_rect + 图标 draw_image）
+   + click emit BrowserAction（NavBack/Forward/Reload/Home）。
+4. 重跑 dc14_chrome_region_pixel_diff_baseline 看 chrome 区 73.99% 收敛（nav 行图标 + 圆角 pill 已对齐几何）。

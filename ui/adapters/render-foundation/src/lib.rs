@@ -53,6 +53,7 @@ use zero_text_foundation::{
     FontId, FontRequest, FontdueBackend, GlyphBitmap, GlyphRun, ShapeInput, TextBlob, TextDirection, TextShaper,
 };
 use zero_ui_core::geometry::{Point, Rect, Rounding};
+use zero_ui_core::image::ImageRef;
 use zero_ui_core::theme::Color;
 use zero_ui_render::RenderBackend;
 
@@ -90,6 +91,19 @@ pub struct RenderFoundationBackend {
     /// `draw_external_surface` 时自动 extend 进 `self.image_cache`，保证表面内 ImagePrimitive
     /// 的 image_key 有效（DC-3 phase-2 真实纹理合成闭环）。
     surface_caches: HashMap<u64, ImageCache>,
+    /// 宿主预注册的图像 alpha 掩码（如浏览器 SVG 图标经 resvg 光栅后的覆盖率）。
+    /// `draw_image` 据 [`ImageRef`] 取回掩码 + 按 `tint` 着色光栅（与 glyph 路径对称）。
+    image_masks: HashMap<ImageRef, AlphaMask>,
+}
+
+/// 单通道 alpha 掩码（如 SVG 图标经 resvg 光栅后的覆盖率）。`coverage.len() = width*height`。
+///
+/// 与 foundation/text 的 `GlyphBitmap` 同构（alpha 覆盖），但本桥接不依赖 foundation/text 的
+/// 图标能力——浏览器把任意 alpha 掩码注册为 `ImageRef`，控件经 `draw_image` 引用。
+struct AlphaMask {
+    coverage: Vec<u8>,
+    width: u32,
+    height: u32,
 }
 
 impl RenderFoundationBackend {
@@ -113,6 +127,7 @@ impl RenderFoundationBackend {
             uploaded: HashSet::new(),
             surfaces: HashMap::new(),
             surface_caches: HashMap::new(),
+            image_masks: HashMap::new(),
         }
     }
 
@@ -185,6 +200,23 @@ impl RenderFoundationBackend {
     pub fn clear_surfaces(&mut self) {
         self.surfaces.clear();
         self.surface_caches.clear();
+    }
+
+    /// 注册一张图像 alpha 掩码（如浏览器 SVG 图标经 resvg 光栅的覆盖率），供 `draw_image` 引用。
+    ///
+    /// `coverage` 长度须 = `width * height`（单字节 alpha 0..=255）。同一 `key` 重复注册覆盖旧值。
+    /// 控件经 `draw_image(rect, key, tint)` 引用本掩码；桥接按 `tint` 着色光栅（RGB=tint，
+    /// A=coverage），与 glyph 文本路径完全对称。**ui/render 不依赖 render-foundation**（DC-1）：
+    /// 本注册把浏览器侧的图标位图经 SDK 层 `ImageRef` 暴露给控件。
+    pub fn register_image_mask(&mut self, key: ImageRef, coverage: Vec<u8>, width: u32, height: u32) {
+        self.image_masks.insert(
+            key,
+            AlphaMask {
+                coverage,
+                width,
+                height,
+            },
+        );
     }
 
     /// DC-3 phase-2：把 surface 的 ImageCache extend 进自身，remap surface image keys，merge。
@@ -299,6 +331,32 @@ impl RenderBackend for RenderFoundationBackend {
             self.merge_surface_with_cache(surface_id, &src);
         }
         // 未注册的 surface_id → 仅留 clip（占位，不阻断；调用方应先 set_surface）。
+    }
+
+    fn draw_image(&mut self, rect: Rect, key: ImageRef, tint: Color) {
+        // 预注册图像（如 SVG 图标）：按 key 取回 alpha 掩码 + 按 tint 着色光栅 → ImagePrimitive。
+        // 与 glyph 文本路径对称（glyph = 字体内 alpha 掩码 + 文本色；本路径 = 宿主提供的 alpha
+        // 掩码 + tint）。未注册 key 安静跳过（不 panic）。clip: None 与 glyph ImagePrimitive 一致
+        // （chrome 图标始终在视口/toolbar 内，无须 stateful intersect 裁剪）。
+        let Some(mask) = self.image_masks.get(&key) else {
+            return;
+        };
+        let rf_key = image_cache_key(key, tint);
+        // 缓存去重：同一 (image, tint) 只 tint+upload 一次（rf_key 稳定）。
+        if self.uploaded.insert(rf_key.clone()) {
+            let rgba = tint_alpha(&mask.coverage, to_rf_color(tint));
+            match ImageData::from_rgba(rgba, mask.width, mask.height) {
+                Ok(data) => self.image_cache.insert_with_key(rf_key.clone(), data),
+                Err(_) => {
+                    self.uploaded.remove(&rf_key); // 插入失败 → 允许后续重试
+                }
+            }
+        }
+        self.primitives.add_image(ImagePrimitive {
+            rect: to_rf_rect(rect),
+            image_key: rf_key,
+            clip: None,
+        });
     }
 
     fn apply_clip(&mut self, clip: Option<Rect>) {
@@ -477,6 +535,33 @@ fn emit_glyph_image(
 fn glyph_cache_key(font_id: FontId, glyph_id: u32, size_px: f32) -> ImageKey {
     let size_q2 = (((size_px * 4.0).round().max(0.0)) as u64) & 0xFFFF;
     ImageKey(((font_id.0 as u64) << 32) | (((glyph_id as u64) & 0xFFFF) << 16) | size_q2)
+}
+
+/// SDK `ImageRef` + tint → 稳定 render-foundation `ImageKey`（draw_image 缓存键）。
+///
+/// 位分配（与 glyph key 不碰撞）：
+/// - bit 63 = 1 标记 image（glyph key 把 font_id 放 bits 32-63，但 FontId 实际顺序分配很小
+///   → bit 63=0；故 image 与 glyph 永不碰撞）。
+/// - bits 32-47 = `ImageRef.0` 低 16 位（图标 id 实际 <16，足够）。
+/// - bits 0-31 = tint RGBA（u8×4 紧凑打包；同图标不同 tint → 不同 key → 不同缓存条目）。
+fn image_cache_key(image_ref: ImageRef, tint: Color) -> ImageKey {
+    let t = to_rf_color(tint);
+    let tint_packed = ((t.r as u64) << 24) | ((t.g as u64) << 16) | ((t.b as u64) << 8) | (t.a as u64);
+    ImageKey((1u64 << 63) | (((image_ref.0) & 0xFFFF) << 32) | tint_packed)
+}
+
+/// alpha 掩码 → tint 着色 RGBA（RGB=tint，A=coverage × tint.a / 255）。
+///
+/// 与 glyph 的 `tinted_rgba` 同语义；本函数服务宿主注册的任意 alpha 掩码（图标等）。
+fn tint_alpha(coverage: &[u8], tint: RfColor) -> Vec<u8> {
+    let mut out = Vec::with_capacity(coverage.len() * 4);
+    for &a in coverage {
+        out.push(tint.r);
+        out.push(tint.g);
+        out.push(tint.b);
+        out.push((a as u16 * tint.a as u16 / 255) as u8);
+    }
+    out
 }
 
 /// glyph alpha 覆盖 → tint 着色的 RGBA（RGB = 文本色，A = 覆盖）。
@@ -886,6 +971,104 @@ mod tests {
             glyph_cache_key(FontId(5), 65535, 16.0),
             "glyph_id extremes distinct"
         );
+    }
+
+    // ── draw_image（预注册图像：图标 alpha 掩码 + tint）─────────────────────
+
+    #[test]
+    fn draw_image_emits_image_primitive_with_tinted_rgba() {
+        // 注册 2x2 alpha 掩码（对角线不透明），draw_image → 1 ImagePrimitive + image_cache 含 tinted RGBA。
+        let mut b = RenderFoundationBackend::new(viewport());
+        b.register_image_mask(
+            ImageRef::new(1),
+            vec![255, 0, 0, 255], // 2x2：左上+右下不透明，右上+左下透明
+            2,
+            2,
+        );
+        b.draw_image(Rect::from_ltrb(10.0, 10.0, 26.0, 26.0), ImageRef::new(1), Color::WHITE);
+        let (p, mut cache) = b.into_primitives_and_cache();
+        assert_eq!(p.images.len(), 1, "one ImagePrimitive emitted");
+        let img = &p.images[0];
+        assert_eq!(img.rect.origin.x, 10.0);
+        assert_eq!(img.rect.size.width, 16.0);
+        assert!(img.clip.is_none(), "image clip None (与 glyph ImagePrimitive 一致)");
+        // 缓存解析：tint WHITE(255,255,255,255) × coverage → 对角像素 RGBA=(255,255,255,255)。
+        let data = cache.get(&img.image_key).expect("image key resolves in cache");
+        assert_eq!(data.width, 2);
+        assert_eq!(data.get_pixel(0, 0), [255, 255, 255, 255], "opaque pixel tinted white");
+        assert_eq!(data.get_pixel(1, 0), [255, 255, 255, 0], "transparent pixel alpha 0");
+    }
+
+    #[test]
+    fn draw_image_unknown_key_is_noop() {
+        // 未注册 key → 不出图、不 panic。
+        let mut b = RenderFoundationBackend::new(viewport());
+        b.draw_image(Rect::from_ltrb(0.0, 0.0, 16.0, 16.0), ImageRef::new(999), Color::BLACK);
+        let p = b.into_primitives();
+        assert!(p.images.is_empty(), "unregistered image key → no ImagePrimitive");
+    }
+
+    #[test]
+    fn draw_image_caches_per_tint_and_dedups_same_tint() {
+        // 同 (image, tint) 画两次 → 同一 rf key（uploaded 去重，cache 只插一次）；
+        // 同 image 不同 tint → 不同 rf key（不同缓存条目）。
+        let mut b = RenderFoundationBackend::new(viewport());
+        b.register_image_mask(ImageRef::new(1), vec![255], 1, 1);
+        b.draw_image(Rect::ZERO, ImageRef::new(1), Color::WHITE);
+        b.draw_image(Rect::ZERO, ImageRef::new(1), Color::WHITE); // 同 tint → dedup
+        b.draw_image(Rect::ZERO, ImageRef::new(1), Color::BLACK); // 不同 tint → 新条目
+        let (p, mut cache) = b.into_primitives_and_cache();
+        assert_eq!(p.images.len(), 3, "3 ImagePrimitive（每次 draw 都出图）");
+        // 只有 2 个 distinct rf key（WHITE + BLACK）。
+        let distinct: HashSet<_> = p.images.iter().map(|i| i.image_key.clone()).collect();
+        assert_eq!(distinct.len(), 2, "same tint dedup → 2 distinct cache keys");
+        // 同 tint 的两次 draw 复用同一 key。
+        assert_eq!(p.images[0].image_key, p.images[1].image_key);
+        assert_ne!(p.images[0].image_key, p.images[2].image_key);
+        // 两个 key 都能在 cache 解析。
+        for k in &distinct {
+            assert!(cache.get(k).is_some(), "tinted image key resolves");
+        }
+    }
+
+    #[test]
+    fn image_cache_key_never_collides_with_glyph_keys() {
+        // bit 63 标记 image：glyph key 的 font_id 在 bits 32-63 但 FontId 实际小 → bit 63=0；
+        // image key bit 63=1 → 两族永不碰撞。
+        let img_key = image_cache_key(ImageRef::new(1), Color::WHITE);
+        assert_ne!(
+            img_key,
+            glyph_cache_key(FontId(1), 0xE000, 16.0),
+            "image key must not collide with glyph key"
+        );
+        // 稳定 + 区分 tint。
+        assert_eq!(img_key, image_cache_key(ImageRef::new(1), Color::WHITE));
+        assert_ne!(img_key, image_cache_key(ImageRef::new(1), Color::BLACK));
+        // 区分 image_ref。
+        assert_ne!(img_key, image_cache_key(ImageRef::new(2), Color::WHITE));
+    }
+
+    #[test]
+    fn draw_image_via_paint_scene_end_to_end() {
+        // SDK Scene 含 Image 图元 → paint_scene → bridge.draw_image → ImagePrimitive。
+        // 证明 widget 经 PaintRecorder.draw_image 记录的图标能经完整 Scene 管线光栅。
+        let mut scene = Scene::new();
+        scene.push(entry(
+            None,
+            RenderPrimitive::Image {
+                rect: Rect::from_ltrb(5.0, 5.0, 21.0, 21.0),
+                key: ImageRef::new(7),
+                tint: Color::BLACK,
+            },
+        ));
+        let mut b = RenderFoundationBackend::new(viewport());
+        b.register_image_mask(ImageRef::new(7), vec![128], 1, 1); // coverage 128
+        paint_scene(&scene, &mut b);
+        let (p, mut cache) = b.into_primitives_and_cache();
+        assert_eq!(p.images.len(), 1, "Image primitive rasterized via paint_scene");
+        // coverage 128 × tint BLACK(opaque 255) → alpha = 128*255/255 = 128。
+        let data = cache.get(&p.images[0].image_key).expect("image key resolves");
+        assert_eq!(data.get_pixel(0, 0)[3], 128, "coverage 128 × opaque tint → alpha 128");
     }
 
     // ── draw_external_surface（DC-3 phase-2 外部表面合并）──────────────

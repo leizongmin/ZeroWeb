@@ -88,6 +88,14 @@ impl PaintRecorder for SceneRecorder {
     fn draw_external_surface(&mut self, rect: Rect, surface_id: u64) {
         self.push(RenderPrimitive::ExternalSurface { rect, surface_id });
     }
+
+    fn draw_image(&mut self, rect: Rect, image_ref: zero_ui_core::image::ImageRef, tint: Color) {
+        self.push(RenderPrimitive::Image {
+            rect,
+            key: image_ref,
+            tint,
+        });
+    }
 }
 
 impl SceneRecorder {
@@ -135,6 +143,27 @@ mod tests {
                 assert_eq!(*rounding, Rounding::ZERO, "radius<=0 should be ZERO rounding");
             }
             other => panic!("expected FillRect, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn draw_image_emits_image_primitive() {
+        // draw_image(rect, key, tint) → Image 图元（rect/key/tint 透传）。
+        let mut r = SceneRecorder::new(WidgetId::new("nav"));
+        r.draw_image(
+            Rect::from_ltrb(0.0, 0.0, 16.0, 16.0),
+            zero_ui_core::image::ImageRef::new(2),
+            Color::WHITE,
+        );
+        let scene = r.finish();
+        assert_eq!(scene.entries.len(), 1);
+        match &scene.entries[0].primitive {
+            RenderPrimitive::Image { rect, key, tint } => {
+                assert_eq!(*rect, Rect::from_ltrb(0.0, 0.0, 16.0, 16.0));
+                assert_eq!(*key, zero_ui_core::image::ImageRef::new(2));
+                assert_eq!(*tint, Color::WHITE);
+            }
+            other => panic!("expected Image, got {other:?}"),
         }
     }
 

@@ -109,6 +109,18 @@ pub trait PaintRecorder {
     /// UI SDK 只算外部矩形；真实纹理/primitives 由后端按 `surface_id` 取回合成。
     /// 本方法不引入浏览器类型 → `PaintRecorder` 保持浏览器无关（DC-1）。
     fn draw_external_surface(&mut self, rect: Rect, surface_id: u64);
+
+    /// 绘制预注册图像（如 SVG 图标）到 `rect`，按 `tint` 着色。
+    ///
+    /// `image_ref` 引用一张由宿主/桥接预注册的图像（通常是单通道 alpha 掩码，如浏览器把
+    /// SVG 图标经 resvg 光栅后注册到桥接 `ImageCache`）；`tint` 为着色（典型 = 主题前景
+    /// semantic token）。后端负责按 `image_ref` 取回位图、按 `tint` 着色、缩放到 `rect` 光栅。
+    /// 未注册的 ref 安静跳过（不 panic）。
+    ///
+    /// 与 glyph 文本路径对称：glyph = 字体内 alpha 掩码 + 文本色；本方法把「任意宿主提供的
+    /// alpha 掩码」（图标 / 自定义符号）以同样 tint 模型暴露给控件。`ui/render` 不依赖
+    /// render-foundation（DC-1）——本方法只携带 SDK 层 [`ImageRef`](crate::image::ImageRef)。
+    fn draw_image(&mut self, rect: Rect, image_ref: crate::image::ImageRef, tint: Color);
 }
 
 /// paint 上下文。

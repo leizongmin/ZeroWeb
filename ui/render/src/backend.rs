@@ -28,6 +28,9 @@ pub trait RenderBackend {
     fn draw_text(&mut self, text: &str, position: Point, size_px: f32, color: Color);
     /// 外部合成表面（DC-3）：后端按 `surface_id` 取回 WebView/平台视图纹理并合成到 `rect`。
     fn draw_external_surface(&mut self, rect: Rect, surface_id: u64);
+    /// 预注册图像（如 SVG 图标）：按 `key` 取回宿主注册的位图，按 `tint` 着色后光栅到 `rect`。
+    /// 未注册的 key 安静跳过（不 panic）。
+    fn draw_image(&mut self, rect: Rect, key: zero_ui_core::image::ImageRef, tint: Color);
     /// 应用裁剪：后续绘制命令受 `clip` 约束，直到下一次 `apply_clip`。
     ///
     /// **`None` 语义**（深度审查 lei-deep-review 澄清）：表示「不主动裁剪」——后续绘制
@@ -70,6 +73,9 @@ pub fn paint_scene(scene: &Scene, backend: &mut dyn RenderBackend) {
             }
             RenderPrimitive::ExternalSurface { rect, surface_id } => {
                 backend.draw_external_surface(*rect, *surface_id);
+            }
+            RenderPrimitive::Image { rect, key, tint } => {
+                backend.draw_image(*rect, *key, *tint);
             }
         }
     }
@@ -123,6 +129,9 @@ mod tests {
                 "surface {surface_id} @{},{} {}x{}",
                 rect.origin.x, rect.origin.y, rect.size.width, rect.size.height
             ));
+        }
+        fn draw_image(&mut self, rect: Rect, key: zero_ui_core::image::ImageRef, tint: Color) {
+            self.calls.push(format!("image {} {:?} {:?}", key.0, rect, tint));
         }
     }
 
@@ -221,5 +230,29 @@ mod tests {
         let mut backend = MockBackend::default();
         paint_scene(&scene, &mut backend);
         assert_eq!(backend.current_clip, Some(clip));
+    }
+
+    #[test]
+    fn paint_scene_dispatches_image_primitive() {
+        // Image 图元 → backend.draw_image(rect, key, tint)，参数逐位透传。
+        let mut scene = Scene::new();
+        scene.push(SceneEntry {
+            source: WidgetId::new("icon"),
+            clip: None,
+            primitive: RenderPrimitive::Image {
+                rect: Rect::from_ltrb(10.0, 20.0, 26.0, 36.0),
+                key: zero_ui_core::image::ImageRef::new(5),
+                tint: Color::WHITE,
+            },
+        });
+        let mut backend = MockBackend::default();
+        paint_scene(&scene, &mut backend);
+        // 第一条 = clip None，第二条 = image 5 ...
+        assert!(backend.calls[0].starts_with("clip None"));
+        assert!(
+            backend.calls[1].starts_with("image 5 "),
+            "draw_image dispatched, got: {}",
+            backend.calls[1]
+        );
     }
 }
