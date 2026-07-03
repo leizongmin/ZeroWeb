@@ -50,14 +50,17 @@ strict 真通过持平（font-raster strict 噪声封顶不变）。
 | linebox | 119 (62.6%) | 120 (63.2%) | +1 | 多 Ahem（is_ahem=true→0.8 不变） |
 | css-fonts | 98 (34.8%) | 98 (34.8%) | 0 | 持平 |
 
-### product-smoke
+### product-smoke（rigorous stash A/B：checkout R989 mod.rs 重建对照）
 
-| fixture | baseline | R990 | Δ |
-|---------|----------|------|---|
-| welcome | 16.16% | 16.57% | +0.41pp（回归，<20% gate PASS） |
+| fixture | R989 baseline | R990 | Δ |
+|---------|---------------|------|---|
+| welcome | 16.88% | 16.57% | **-0.31pp（改善）** |
+| morning-work（CJK 重） | 13.88% | 13.77% | **-0.11pp（改善）** |
 
-welcome 非-Ahem（system-ui）行盒变高致多行布局微移；残余本就 CJK+R109+hljs（R891），
-+0.41pp 是 cascade 非 Latin font-metric。**+138 oracle-pass 远大于 welcome +0.41pp，净正**。
+★ **纠正首轮「welcome +0.41pp 回归」误判**——首轮对照的 16.16% 是 R632 stale 基线（2026-06-25），
+实际 R989 基线经 R917-R988 harness 工作累积到 16.88%。rigorous A/B 确证 R990 全维度净正零回归：
+welcome -0.31pp + morning-work(CJK) -0.11pp + 全量 oracle +138 pass。**推翻「0.928 Latin-only 致
+CJK 回归」担忧**——CJK 字体 ascent（NotoSansCJK ~0.88-0.93）0.928 比 0.8 更近 chromium，同样受益。
 
 ## 意义
 
@@ -87,6 +90,6 @@ is_ahem-gated ratio 是首个真正改行盒度量且 net 正的方案。font-wa
 
 ## 下一步
 
-- R990 余波：逐 dir fresh-oracle 扫（borders/css1/visudet/values/generated-content + writing-modes 非-Ahem 簇）确认净正 + 找次级 lever
+- R990 余波：逐 dir fresh-oracle 扫（borders/css1/visudet/values/generated-content + writing-modes 非-Ahem 簇）确认净正 + 找次级 lever（writing-modes 实测 5.6%→7.1% 已 +~12，backgrounds 持平）
 - 0.928 是单常数；per-font 真实 ascent（R887 5-layer provider wiring 完成后）是增量优化
-- welcome +0.41pp cascade 调查
+- R990 全维度净正零回归（welcome -0.31pp + morning-work -0.11pp + oracle +138），无待调查回归
