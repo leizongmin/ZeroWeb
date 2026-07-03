@@ -155,3 +155,61 @@ fn r1013_flex_replaced_with_min_height_still_uses_fixup() {
         "R1013: 替换 img + min-height:100px 仍应 fixup（height ≥ 100），got {h}"
     );
 }
+
+// ── R1015：flex container width:auto + float shrink-to-fit（R370 首切）──
+// 非替换 leaf flex item（aspect-ratio + min-height）的 transferred cross-size 推导 +
+// flex_column_intrinsic_width 让 float:flex 容器 shrink-to-fit。驱动案
+// flex-item-transferred-sizes-padding（88.19%→0.60% PASS）。
+
+/// R1015 驱动案：float:left + flex column + item（aspect-ratio:1/1 + min-height:100px）。
+/// 容器应 shrink-to-fit 到 ~100px 宽（非拉满视口 800），item 应 ~100×100。
+#[test]
+fn r1015_float_flex_column_aspect_ratio_item_shrinks_to_fit() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex; flex-direction:column; float:left">
+  <div style="min-height:100px; aspect-ratio:1/1; padding-left:25px; padding-right:25px; box-sizing:border-box; background:green"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let divs = doc.get_elements_by_tag_name("div");
+    let container_id = divs.into_iter().next().expect("container div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let (cw, _ch) = find_box(&result.root, container_id).expect("container box found");
+    // 容器 shrink-to-fit：宽度应近 item intrinsic（~100），而非拉满视口 800。
+    assert!(
+        cw < 200.0,
+        "R1015: float:left flex column 容器应 shrink-to-fit 到 <200px，got {cw}"
+    );
+    assert!(
+        cw >= 80.0,
+        "R1015: 容器应至少 ~100px（item transferred width），got {cw}"
+    );
+}
+
+/// R1015 对照：非 float 的 block flex column + width:auto 不触发 shrink（保持当前行为，零回归）。
+#[test]
+fn r1015_block_flex_column_auto_width_no_shrink() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex; flex-direction:column">
+  <div style="min-height:100px; aspect-ratio:1/1; background:green"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let divs = doc.get_elements_by_tag_name("div");
+    let container_id = divs.into_iter().next().expect("container div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let (cw, _ch) = find_box(&result.root, container_id).expect("container box found");
+    // 非 float 的 block flex 容器 width:auto 仍拉满（不触发 shrink），保持当前行为。
+    assert!(
+        cw >= 700.0,
+        "R1015: block flex column auto width 应保持拉满（≥700），不 shrink，got {cw}"
+    );
+}

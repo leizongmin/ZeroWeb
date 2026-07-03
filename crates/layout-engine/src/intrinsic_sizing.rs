@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{DisplayValue, LengthValue};
+use zero_css_parser::values::{BoxSizingValue, DisplayValue, LengthValue};
 use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::FlexBasisValue;
@@ -163,8 +163,48 @@ fn flex_item_base_size(box_node: &LayoutBox, doc: &Document, styles: &HashMap<No
         let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
         return (*v as f32) + frame;
     }
+    // 2.5 R1015：aspect-ratio transferred-size——width:auto + aspect_ratio + definite main
+    //（height Px 或 min-height Px 地板）。非替换 item 的 cross（width）从 main × ratio 推导
+    //（css-sizing-4 §aspect-ratio + Flexbox §4.5 transferred-size 的非替换扩展）。
+    // 仅 item 自身 definite main（min-height/height Px）；container-stretch main（如 inline-flex
+    // height:100px 拉伸 item）须 container 上下文，此处不覆盖（下会话 slice）。
+    if let Some(s) = style
+        && matches!(s.width, LengthValue::Auto)
+        && let Some(ratio) = s.aspect_ratio.filter(|&r| r > 0.0)
+    {
+        let main = match &s.height {
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => match &s.min_height {
+                LengthValue::Px(v) => Some(*v as f32),
+                _ => None,
+            },
+        };
+        if let Some(main) = main {
+            return aspect_ratio_transferred_width(s, box_node, main, ratio);
+        }
+    }
     // 3. 内容 max-content（Round C：含纯文本 item 的文本宽度）
     box_content_max_width(box_node, doc, styles)
+}
+
+/// R1015：aspect-ratio transferred width（非替换 item）。`main` = item definite main-size（height）
+/// 的 Px 数值（border-box 或 content-box 由 `box-sizing` 决定）。返回 border-box width。
+///
+/// - `border-box`：aspect-ratio 作用于 border-box，width_bb = height_bb × ratio = main × ratio。
+/// - `content-box`：aspect-ratio 作用于 content-box，width_content = main × ratio，
+///   border-box width = width_content + 水平 frame。
+fn aspect_ratio_transferred_width(
+    s: &ComputedStyle,
+    box_node: &LayoutBox,
+    main: f32,
+    ratio: f32,
+) -> f32 {
+    let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+    if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
+        main * ratio
+    } else {
+        main * ratio + frame
+    }
 }
 
 /// 计算一个**水平 flex 行容器**的固有宽度（max-content 主尺寸）。
@@ -207,6 +247,43 @@ pub(crate) fn flex_row_intrinsic_width(
         .unwrap_or(0.0);
     let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
     Some(sum + gap * (count - 1) as f32 + frame)
+}
+
+/// 计算一个**垂直 flex 列容器**的固有宽度（cross 轴 max-content）。
+///
+/// = max(item base size + item margins) + 容器水平 padding/border。列容器的主轴是垂直，
+/// cross 轴（width）取最宽 item（非 row 的求和）。R1015：驱动案 flex-item-transferred-sizes-padding
+///（float:left + flex-direction:column + item aspect-ratio:1/1 + min-height:100px）。
+/// 返回 None 表示无法确定（如无流内 item）。
+pub(crate) fn flex_column_intrinsic_width(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> Option<f32> {
+    let mut max = 0.0f32;
+    let mut count = 0usize;
+    for child in &box_node.children {
+        if child.is_absolute || child.is_fixed {
+            continue;
+        }
+        let is_item = child
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(|s| !matches!(s.display, DisplayValue::None | DisplayValue::Contents))
+            .unwrap_or(true);
+        if is_item && child.is_block_level {
+            count += 1;
+            let base = flex_item_base_size(child, doc, styles) + child.margin_left + child.margin_right;
+            if base > max {
+                max = base;
+            }
+        }
+    }
+    if count == 0 {
+        return None;
+    }
+    let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+    Some(max + frame)
 }
 
 /// 计算一个 **grid 容器**的固有宽度（max-content 主尺寸）。
