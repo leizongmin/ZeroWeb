@@ -169,6 +169,7 @@ fn apply_replaced_element_sizing(
     taffy_style: &mut taffy::Style,
     computed: &ComputedStyle,
     doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
     dom_id: NodeId,
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
 ) {
@@ -299,9 +300,145 @@ fn apply_replaced_element_sizing(
             }
         }
     }
+
+    // CSS Flexbox §4.5 / csswg #5663：替换元素 flex item 的 min-size:auto。
+    // taffy 0.7 把 leaf flex item 的 auto-min 当作其 definite 主尺寸（width:999→min 999），
+    // 致替换 flex item 无法 flex-shrink（flex-minimum-width-flex-items-013 82% diff：
+    // img 999×500 溢出 flex width:0 容器，应被 min-width:auto=100 floor 后收缩到 100）。
+    // spec：auto-min = min(content suggestion, transferred suggestion)，transferred =
+    // 明确 cross size × 固有比。此处仅当父是 flex 容器且有明确 cross size 时计算
+    // transferred 并设 min_size.main（仅在水平书写模式，保守避免 writing-mode 轴混淆）。
+    apply_flex_transferred_min_size(
+        taffy_style,
+        computed,
+        doc,
+        styles,
+        dom_id,
+        img_intrinsic_sizes.get(&dom_id).copied(),
+    );
 }
 
-/// 从 `data:image/svg+xml,...` 数据 URI 中提取 SVG 元素的 width/height 属性。
+/// 替换元素 flex item 的 min-size:auto transferred-size-suggestion（CSS Flexbox §4.5 / csswg #5663）。
+///
+/// taffy 0.7 把 leaf（替换元素）flex item 的自动最小尺寸当作其 definite 主尺寸本身
+/// （如 `width:999px` → min-width 999），导致替换 flex item 无法被 flex-shrink 收缩。
+/// 规范要求自动最小 = min(content size suggestion, transferred size suggestion)，
+/// 其中 transferred = flex item 的「明确 cross size」× 固有宽高比。例如
+/// `<img 固有 300×150>` 在 `display:flex;height:50px` 容器内：cross(height)=50，
+/// transferred main(width) = 50 × 300/150 = 100px。
+///
+/// 仅当父是 flex/inline-flex 容器、有明确 cross size（Px）、子有 aspect_ratio、且
+/// 子在水平书写模式下时计算并设置 `min_size.main = min(intrinsic_main, transferred)`。
+/// 其余情况（非 flex / cross 不明确 / 无 ratio / 垂直书写模式）保持 taffy 默认，避免回归。
+fn apply_flex_transferred_min_size(
+    taffy_style: &mut taffy::Style,
+    computed: &ComputedStyle,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    dom_id: NodeId,
+    intrinsic: Option<(f32, f32)>,
+) {
+    use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue};
+
+    // 仅水平书写模式（保守；垂直书写模式轴映射需额外处理）
+    if !matches!(computed.writing_mode, WritingModeValue::HorizontalTb) {
+        return;
+    }
+    // 父须是 flex 容器
+    let Some(parent_id) = doc.parent_node(dom_id) else {
+        return;
+    };
+    let Some(parent_style) = styles.get(&parent_id) else {
+        return;
+    };
+    if !matches!(parent_style.display, DisplayValue::Flex | DisplayValue::InlineFlex) {
+        return;
+    }
+    // 子须有 aspect_ratio（由上方 sizing 设好，或 CSS aspect-ratio）
+    let ratio = match taffy_style.aspect_ratio {
+        Some(r) if r > 0.0 => r,
+        _ => return,
+    };
+    // 主/交叉轴：column → main=height/cross=width；row(含 reverse) → main=width/cross=height。
+    // ★ 仅 row 实现（column transferred 在 flex-aspect-ratio-img-column-012 /
+    // flex-minimum-height-flex-items-007 致回归，column 轴的 cross-stretch 语义需额外验证，
+    // 待多 session）。column 直接返回，保持 taffy 默认。
+    let is_column = matches!(
+        parent_style.flex_direction,
+        FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+    );
+    if is_column {
+        return;
+    }
+    // 父容器的明确 cross size（Px）。仅 Px 算「明确」；百分比/auto 不算（无法解 transferred）。
+    let cross = if is_column {
+        match &parent_style.width {
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        }
+    } else {
+        match &parent_style.height {
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        }
+    };
+    let cross = match cross {
+        Some(c) if c > 0.0 => c,
+        _ => return,
+    };
+    // §4.5：transferred-size-suggestion 仅当 item 的 cross size「明确」（即被 align-stretch
+    // 拉到容器 cross size）时成立。item 有 auto cross-margin（margin:auto 居中而非拉伸）
+    // 或显式非 stretch 的 align-self（center/flex-start/...）时 cross size 不等于容器
+    // cross → 跳过（auto-margins-002 回归：img margin:auto + max-width，transferred 会
+    // 与 max 冲突）。row cross=height→margin-top/bottom；column cross=width→margin-left/right。
+    let (cross_margin_a, cross_margin_b) = if is_column {
+        (&computed.margin_left, &computed.margin_right)
+    } else {
+        (&computed.margin_top, &computed.margin_bottom)
+    };
+    if matches!(cross_margin_a, LengthValue::Auto) || matches!(cross_margin_b, LengthValue::Auto) {
+        return;
+    }
+    use zero_css_parser::values::AlignmentValue;
+    match computed.align_self {
+        // Auto（继承容器，默认 stretch）/ Stretch → item 被拉伸，cross size = 容器 cross
+        AlignmentValue::Auto | AlignmentValue::Stretch => {}
+        // 显式 center/flex-start/flex-end/baseline/start/end/space-* → 不拉伸，跳过
+        _ => return,
+    }
+    // transferred main size：row → cross_h × ratio(w/h)；column → cross_w / ratio
+    let transferred = if is_column { cross / ratio } else { cross * ratio };
+    // content suggestion proxy = 固有主尺寸（若有）
+    let intrinsic_main = intrinsic.map(|(w, h)| if is_column { h } else { w });
+    let mut auto_min = match intrinsic_main {
+        Some(im) => im.min(transferred),
+        None => transferred,
+    };
+    // §4.5：auto-min 由 specified size suggestion（子元素明确主尺寸）钳制（auto-min ≤ specified）。
+    // 例：img 显式 width:50（< transferred 160）时，auto-min 须 ≤50，否则会错误 floor 到 160，
+    // 把本应 50px 的 img 撑大（flex-item-transferred-sizes-padding-* 回归）。
+    let specified_main = if is_column {
+        match &computed.height {
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        }
+    } else {
+        match &computed.width {
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        }
+    };
+    if let Some(spec) = specified_main {
+        auto_min = auto_min.min(spec);
+    }
+    if auto_min > 0.0 && auto_min.is_finite() {
+        if is_column {
+            taffy_style.min_size.height = taffy::style::Dimension::Length(auto_min);
+        } else {
+            taffy_style.min_size.width = taffy::style::Dimension::Length(auto_min);
+        }
+    }
+}
 /// 仅解析简单的内联 SVG（非 base64 编码），提取 `<svg ... width="..." height="...">` 中的数值。
 fn extract_svg_data_uri_size(elem: &zero_dom::ElementData) -> (Option<f32>, Option<f32>) {
     let src = match elem.get_attribute("src") {
@@ -418,7 +555,14 @@ fn build_subtree(
 
     // 替换元素固有尺寸：检测 <img> 元素并注入 HTML 属性中的 width/height，
     // 无属性时回退到解码后的固有尺寸（img_intrinsic_sizes）
-    apply_replaced_element_sizing(&mut taffy_style, &computed, doc, dom_id, &ctx.img_intrinsic_sizes);
+    apply_replaced_element_sizing(
+        &mut taffy_style,
+        &computed,
+        doc,
+        styles,
+        dom_id,
+        &ctx.img_intrinsic_sizes,
+    );
 
     // 多列容器：设置 overflow: Hidden 阻止 taffy 内部的父子 margin 折叠。
     // CSS Multi-column Layout Module §2 规定多列容器建立 BFC。
