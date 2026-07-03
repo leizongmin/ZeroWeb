@@ -2648,6 +2648,30 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1016 aspect-ratio-intrinsic-003/004 via 容器 cross + inline-flex gate 实验 REFUTED（taffy 不尊重 inline-flex set width）·零 yield 零回归已回退·inline-flex 须经 IFC inline-level 测量·纯调查
+
+承 R1015 CONTINUE「aspect-ratio-intrinsic-003/004 via 容器 definite height + inline-flex gate」。本轮实施 + A/B + 机制证伪。
+
+**实施（已回退）**：
+1. `flex_item_base_size` 加 `container_cross: Option<f32>` 参数；transferred case main 源优先级 (a) item height Px → (b) item min-height Px → (c) container_cross（容器 definite height 拉伸）。
+2. `flex_row_intrinsic_width` 读容器 style.height Px（区分 box-sizing 转 content height）→ 传 container_cross。
+3. `apply_intrinsic_content_sizing` gate 扩 `is_auto_inline`（width:Auto + InlineFlex/InlineGrid，无 float 也触发 shrink）。
+
+**A/B 实测（css-flexbox oracle ORACLE_DUMP_ALL vs R1015 baseline 291）**：**291→291（0 yield，0 回归，0 案 >0.3pp 变化）**。aspect-ratio-intrinsic-003/004 仍 15.67%。零价值零回归。
+
+**★ 机制证伪（TTDBG 探针 + PIL 几何）**：
+- TTDBG 确证 gate **触发**（003：InlineFlex width=Auto dir=Row intrinsic=100 current=784 should_apply=true）——intrinsic 计算正确（容器 height:100px × item aspect-ratio:1/1 = 100）。
+- 但 PIL 实测 ZW 最终渲染：003 绿盒 (8,16)→(790,115) = **782×99（仍拉满视口，未 shrink）**；CHR (8,50)→(106,149) = 98×99（正确 shrink 到 ~100）。
+- 即 **set taffy style.size.width=Length(100) + mark_dirty + 重跑** 对 inline-flex **无效**——taffy 0.7 在重跑中仍把 inline-flex 拉到满宽。
+
+**真因（与 R1015 float:block-flex 对比）**：R1015 transferred-sizes（`float:left + display:flex`，block-level 浮动块）的 set width 被 taffy 尊重 → shrink 生效。**inline-flex 是 inline-level**，taffy 经 IFC inline-level 测量路径，**style.size.width=Length 被忽略**——inline-level 宽度由 IFC 测量决定，非 taffy block 布局。inline-flex shrink 须在 **IFC inline-level 测量**层修（非 taffy style 覆盖）。
+
+**裁决（回退）**：R1016 inline-flex gate + container-cross 逻辑零 yield 零回归，但**机制证伪**（taffy 不尊重 inline-flex set width）。container-cross 逻辑虽正确但被 inline-flex IFC 测量墙阻塞，无 yield。按 code-guidelines「不做零价值修改」**全回退**（git checkout engine.rs + intrinsic_sizing.rs）。inline-flex shrink-to-fit = IFC inline-level 测量多 session（独立架构 lever）。
+
+**意义**：R370 R1015 首切（float:block-flex）yield +2 后，R1016 inline-flex 扩展被 taffy inline-level 测量墙阻塞。**inline-flex/flex 容器 shrink-to-fit 分两条路径**：(a) block-level float（R1015 解，taffy set width 尊重）；(b) inline-level inline-flex（IFC 测量墙，未解，多 session）。aspect-ratio-intrinsic-003/004/011/014（4 案）卡在 (b)。
+
+**▶ 下会话（避开 inline-flex IFC 墙）**：① **flex-row + float 的 row 对称**（R1015 现仅 column+float，row+float 同经 block-level taffy，应可扩，A/B 守回归）；② **flex-item-transferred-sizes 残余 0.60% 拆解**（item padding-left/right:25px box-sizing 精度，可能近 PASS）；③ **inline-flex IFC 测量墙**（多 session，IFC inline-level 测量时传 inline-flex 的 intrinsic 宽，类似 inline-block shrink）；④ 近 PASS 案（flexbox-collapsed-item-horiz-001 3.77% / flexbox-min-height-auto-001 1.87%，R1015 改善后残余）。clean win 阵营：R1015（+2）已 land；inline-flex 是已知墙。
+
 ### R1015 ★R370 flex column intrinsic width first slice LANDED = flex-item-transferred-sizes-padding 14.85→0.60% PASS（+2）·css-flexbox Oracle 289→291 零回归·非替换 aspect-ratio transferred-size + column max 变体 + gate 扩 auto+float
 
 承 R1014 Phase 0 测绘。本轮实施 R370 三件中的核心两件（gate 扩 auto+float + column max 变体 + transferred base size），**+2 PASS 零回归**。
