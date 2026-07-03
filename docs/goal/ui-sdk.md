@@ -21,7 +21,7 @@
 
 把当前集中在 `apps/browser` 的浏览器自绘界面（标签栏、地址栏、菜单、滚动条、页面容器等）抽取为独立的、**浏览器无关**的 Rust 自绘 UI SDK（新增 `ui/` 顶层目录），并采用 Flutter/Compose 风格的 **retained widget tree + 单向数据流 + 局部失效刷新**架构；浏览器迁移为该 SDK 的首个完整宿主应用，最终交付一套可被外部 GUI 程序复用、覆盖桌面与移动端的通用 UI SDK。
 
-**DONE 终局（全 M0–M4，已与用户确认）**：通用 UI SDK 达到外部可复用的 production-ready；浏览器完整迁移为 SDK 宿主且**零功能/输入/渲染/多平台窗口行为退化**；YAML DSL + 完整受控表达式语言可用；完整应用级 UI 能力（animation/gestures/navigation/overlay/collections/commands/forms/assets/platform/restoration/testing/devtools/design-system）的接口与浏览器所需最小子集落地；**至少一个移动端后端可运行（M4 选定 HarmonyOS，见 `docs/goal/ui-sdk/decisions/m4-mobile-backend-harmonyos.md`）**；design-system 首个风格包交付。
+**DONE 终局（全 M0–M4，已与用户确认）**：通用 UI SDK 达到外部可复用的 production-ready；浏览器完整迁移为 SDK 宿主且**零功能/输入/渲染/多平台窗口行为退化**；YAML DSL + 完整受控表达式语言可用；完整应用级 UI 能力（animation/gestures/navigation/overlay/collections/commands/forms/assets/platform/restoration/testing/devtools/design-system）的接口与浏览器所需最小子集落地；**至少一个移动端后端可运行（M4 选定 HarmonyOS 为硬指标，同时推进 Android 为第二后端，见 `docs/goal/ui-sdk/decisions/m4-mobile-backend-harmonyos.md` 与 `m4-add-android-backend.md`）**；design-system 首个风格包交付。
 
 **不可违反的关键约束**：
 
@@ -59,7 +59,7 @@
 | 共享文本/字体基础层 | `foundation/text` / `zero-text-foundation`：font 发现/fallback/shaping/bidi/line break/grapheme/glyph cache/glyph atlas/measure；优先复用 workspace 已有 `fontdue/swash/rustybuzz/unicode-bidi` | FR-014 / IF-008 / §8.4.9 |
 | 响应式/自适应 + 移动 chrome | WindowMetrics/ViewportClass(Compact/Medium/Expanded)/PlatformClass/InputClass/AdaptiveShell；desktop/tablet/phone shell 共享 `BrowserChromeModel`+`BrowserAction`；禁止 desktop chrome 原样缩小为 mobile | FR-015 / IF-009 / §8.4.4A |
 | 完整应用级 UI 能力 | 13 个能力域的接口边界 + 浏览器所需最小子集：animation/gestures/navigation/overlay/collections/commands/forms/assets/platform/restoration/testing/devtools/design-system | FR-016 / IF-010 / §8.4.10 |
-| 移动端运行时（M4 终局） | 至少一个移动后端可运行（M4 选定 HarmonyOS）；PhoneBrowserShell/TabletBrowserShell 可用；移动 gesture/navigation/restoration/platform 适配 skeleton；design-system 首个风格包 | FR-010 / FR-015 / FR-016 / M4 |
+| 移动端运行时（M4 终局） | 至少一个移动后端可运行（M4 选定 HarmonyOS 为硬指标 + Android 为第二后端）；PhoneBrowserShell/TabletBrowserShell 可用；移动 gesture/navigation/restoration/platform 适配 skeleton；design-system 首个风格包 | FR-010 / FR-015 / FR-016 / M4 |
 | 浏览器迁移 | `apps/browser` 从「绘制所有东西」变为「组装 SDK 组件 + 浏览器状态编排 + Action dispatch」 | FR-009 / §8.2 / §8.4.1A |
 | 浏览器接入完整 UI 能力 | 菜单/快捷键/command palette→`ui/commands`；权限/下载/site info→`ui/overlay`+`ui/navigation`；下载/历史/书签/tab overview→`ui/collections`；拖拽/剪贴板/file picker→`ui/platform`；session restore→`ui/restoration` | §8.4.1B |
 
@@ -178,7 +178,7 @@
 
 ### DC-15: 移动端运行时（M4 终局，已纳入 DONE）
 
-- [ ] 至少一个移动后端可运行（**M4 选定 HarmonyOS**，最小 browser 或 demo 应用能启动到首帧）。决策记录：`docs/goal/ui-sdk/decisions/m4-mobile-backend-harmonyos.md`。
+- [ ] 至少一个移动后端可运行（**M4 硬指标：HarmonyOS**；**第二后端：Android**，尽量在 M4 内达标但不阻塞 DONE）。决策记录：`docs/goal/ui-sdk/decisions/m4-mobile-backend-harmonyos.md` 与 `m4-add-android-backend.md`。
 - [ ] PhoneBrowserShell / TabletBrowserShell 可用并与 DesktopBrowserShell 共享 `BrowserChromeModel`+`BrowserAction`。
 - [ ] touch/pan/pinch/fling gesture、soft keyboard、safe area、text scale、平台 back gesture 的最小适配 skeleton 落地；`ui/testing`/`ui/devtools` 支持 responsive preview / layout bounds / semantics snapshot。
 - [ ] design-system 首个风格包（至少 Zero default）交付。
@@ -321,7 +321,7 @@
 
 ### M4 — 跨平台 runtime adapter + 移动端可运行后端 + design-system（终局）
 
-- 完善 runtime adapter；touch/软键盘/safe area/text scale/platform back gesture；PhoneBrowserShell/TabletBrowserShell 可运行；**至少一个移动后端可运行（M4 选定 HarmonyOS）**；gesture/navigation/restoration/platform 移动适配 skeleton；`ui/testing`/`ui/devtools` responsive preview / layout bounds / semantics snapshot；design-system 首个风格包。依赖：M2/M3。
+- 完善 runtime adapter；touch/软键盘/safe area/text scale/platform back gesture；PhoneBrowserShell/TabletBrowserShell 可运行；**至少一个移动后端可运行（M4 硬指标 HarmonyOS + 第二后端 Android）**；gesture/navigation/restoration/platform 移动适配 skeleton；`ui/testing`/`ui/devtools` responsive preview / layout bounds / semantics snapshot；design-system 首个风格包。依赖：M2/M3。
 
 ---
 

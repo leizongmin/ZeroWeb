@@ -6020,6 +6020,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-ui-adapter-android"
+version = "0.1.0"
+dependencies = [
+ "zero-ui-core",
+ "zero-ui-gestures",
+ "zero-ui-runtime",
+]
+
+[[package]]
 name = "zero-ui-adapter-harmonyos"
 version = "0.1.0"
 dependencies = [
