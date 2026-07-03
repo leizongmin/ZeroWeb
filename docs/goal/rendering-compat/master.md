@@ -2667,6 +2667,8 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **下一步**：选上述结构性 lever 之一 dedicated session 推进（首推 table auto-layout 文本测量——R996 已精确定位 table-cell-overflow twin 真根因，cell max-content 含文本是可独立 slice，driving 案已 probe）。R993+R994+R995 累计 css-flexbox +4 / css-tables +4 零回归已 land main。
 
+**★ R996 table-cell-overflow fix 实验（attempted + reverted，防 re-work）**：试修 `compute_cell_intrinsic_width`（table_types.rs）—— early-return + text branch 取 max(content/direct_text)。**实测 0-yield（cell 仍 w=8）**：probe 显示函数被调用（cell w=782 taffy 满，direct_text_len=22 w=211），但 early-return 未触发（tall div 子 width:auto 填满 cell 782 > cell\*0.95，故 has_explicit_child=false），落入 text branch → `box_content_max_width(cell)` 返回 4（**仅测叶盒文本，不测 cell 直接匿名 inline 文本** "Can you see this text?"）。真修须增强 `box_content_max_width` 测非叶盒的直接匿名文本（须区分「直接文本」vs「block 后代文本」避免多 block cell 过计）。**已 revert**：naive max(intrinsic, direct_text_width) 会**回归 margin-collapse-101**（collect_text_length 对多 block 子过计，正是 R702/R679 改用 box_content_max_width 的原因）。下会话若攻此 lever 须先实现「直接文本 only」测量（DOM direct text-node children，非 text_content 全后代），再 max 进 box_content_max_width 的 inline_sum。
+
 ### R995 orphan table-cell shrink-to-fit = percentages-grandchildren-quirks-mode-001/002 14.85%→0.60% PASS·css-tables Oracle 69→73（+4）零回归·R679 表 shrink 簇新 facet
 
 承 R994 后扫 css-tables top-worst 定位 percentages-grandchildren-quirks-mode-001/002（twin，14.85%）。**Phase 0 probe**（layout-engine 临时单测复刻 001 结构：`<div style="display:table-cell;height:100px;background:green"><div style="width:100px"><div style="height:100%;background:red">`，quirks 模式）发现：① quirks %height 正确（red div height:100% → auto → 0，green 应显）；② **真根因 = orphan table-cell（display:table-cell 无 table 祖先）拉伸到 784px 满宽**（应为 100px 收缩到子内容），green 784×100 vs ref 100×100 = 14.85% diff 主因。
