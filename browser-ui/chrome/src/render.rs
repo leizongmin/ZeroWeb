@@ -15,6 +15,7 @@ use zero_ui_core::action::EventResult;
 use zero_ui_core::binding::Value;
 use zero_ui_core::event::UiEvent;
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
+use zero_ui_core::image::ImageRef;
 use zero_ui_core::theme::{Color, SemanticTokens};
 use zero_ui_core::widget::{
     EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget, WidgetSpec,
@@ -209,6 +210,109 @@ impl Widget for ChromePanel {
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
+// ── NavigationButtonsWidget（真实图标，DC-14 chrome 功能等价）──────────────────────
+
+/// 导航按钮几何（与 apps/browser/src/layout.rs 手绘 chrome 对齐，DC-14 像素级等价）。
+const NAV_BUTTON_WIDTH: f32 = 36.0;
+const NAV_ICON_SIZE: f32 = 16.0;
+const NAV_BAR_HEIGHT: f32 = 44.0; // = ADDRESS_BAR_HEIGHT。
+/// nav 段左侧留白（= apps/browser layout::NAV_SECTION_LEADING_PAD）：手绘 chrome 第一个
+/// nav 按钮距 toolbar 左缘 10px，控件据此对齐图标 x 位置。
+const NAV_LEADING_PAD: f32 = 10.0;
+
+/// 导航图标 [`ImageRef`]——宿主（apps/browser）须按相同 id 把 SVG 图标的 alpha 掩码注册到
+/// 桥接 `image_masks`（`render_chrome_via_sdk_with_webview_surface` 的 `image_masks` 参数）。
+/// id 从 1 起（0 保留）。顺序 = back / forward / reload / home（手绘 chrome nav 段顺序）。
+pub const NAV_ICON_BACK: ImageRef = ImageRef::new(1);
+pub const NAV_ICON_FORWARD: ImageRef = ImageRef::new(2);
+pub const NAV_ICON_RELOAD: ImageRef = ImageRef::new(3);
+pub const NAV_ICON_HOME: ImageRef = ImageRef::new(4);
+
+/// 导航按钮组绘制控件（DC-14：真实图标替换 ChromePanel 占位）。
+///
+/// paint：填 nav 段背景（toolbar bg）+ 4 图标（back/forward/reload/home，各 `NAV_BUTTON_WIDTH` 宽，
+/// 图标 `NAV_ICON_SIZE` 居中）。disabled 按钮（无历史 back/forward）用更淡 tint。图标经
+/// [`PaintRecorder::draw_image`] 引用宿主预注册的 alpha 掩码（`NAV_ICON_*`），桥接按 tint 着色光栅
+/// （与 glyph 文本路径对称）。hover 圆盘为指针态视觉，静态/无指针时不画（与手绘一致）。
+pub struct NavigationButtonsWidget {
+    bg: Color,
+    icon_tint: Color,
+    disabled_tint: Color,
+    can_back: bool,
+    can_forward: bool,
+}
+
+impl NavigationButtonsWidget {
+    /// 由声明节点构造：`bg`（默认 `chrome`）+ `can_back`/`can_forward` bool props；
+    /// 图标 tint 由 semantic token 派生（`on_surface`，disabled = `on_surface.mix(surface,0.5)`）。
+    pub fn from_spec(spec: &WidgetSpec, tokens: &SemanticTokens) -> NavigationButtonsWidget {
+        let bg_name = match spec.props.get("bg") {
+            Some(Value::Text(s)) => s.as_str(),
+            _ => "chrome",
+        };
+        let can_back = match spec.props.get("can_back") {
+            Some(Value::Bool(b)) => *b,
+            _ => false,
+        };
+        let can_forward = match spec.props.get("can_forward") {
+            Some(Value::Bool(b)) => *b,
+            _ => false,
+        };
+        NavigationButtonsWidget {
+            bg: chrome_color_themed(bg_name, tokens),
+            icon_tint: tokens.on_surface,
+            disabled_tint: tokens.on_surface.mix(tokens.surface, 0.5),
+            can_back,
+            can_forward,
+        }
+    }
+}
+
+impl Widget for NavigationButtonsWidget {
+    fn mount(&mut self, _ctx: &mut MountCtx) {}
+
+    fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
+
+    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
+        EventResult::Ignored
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+        // leading pad + 4 按钮 × NAV_BUTTON_WIDTH 宽；高度对齐 toolbar 行（clamp 到约束）。
+        let width = (NAV_LEADING_PAD + 4.0 * NAV_BUTTON_WIDTH).clamp(constraints.min_width, constraints.max_width);
+        let height = NAV_BAR_HEIGHT.clamp(constraints.min_height, constraints.max_height);
+        Size::new(width, height)
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx) {
+        let size = ctx
+            .clip
+            .map(|r| r.size)
+            .unwrap_or_else(|| Size::new(NAV_LEADING_PAD + 4.0 * NAV_BUTTON_WIDTH, NAV_BAR_HEIGHT));
+        // nav 段背景（toolbar bg，与相邻 AddressBar/Menu 连续）。
+        ctx.recorder
+            .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
+        // 4 图标：back / forward / reload / home。手绘 chrome 图标 x = NAV_LEADING_PAD
+        // + i*NAV_BUTTON_WIDTH + (NAV_BUTTON_WIDTH-NAV_ICON_SIZE)/2（与 app_render.rs nav 段对齐）。
+        let icons = [
+            (NAV_ICON_BACK, self.can_back),
+            (NAV_ICON_FORWARD, self.can_forward),
+            (NAV_ICON_RELOAD, true),
+            (NAV_ICON_HOME, true),
+        ];
+        let icon_extent = NAV_ICON_SIZE.min(NAV_BUTTON_WIDTH);
+        let y = ((size.height - icon_extent) / 2.0).max(0.0);
+        for (i, (key, enabled)) in icons.iter().enumerate() {
+            let x = NAV_LEADING_PAD + i as f32 * NAV_BUTTON_WIDTH + (NAV_BUTTON_WIDTH - icon_extent) / 2.0;
+            let tint = if *enabled { self.icon_tint } else { self.disabled_tint };
+            ctx.recorder
+                .draw_image(Rect::from_ltrb(x, y, x + icon_extent, y + icon_extent), *key, tint);
+        }
+    }
+
+    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+}
+
 /// 把 chrome `browser.*` 叶子组件工厂注册到 host。
 ///
 /// 容器节点（shell 根 / ToolbarRow）不注册 widget —— 它们经 `props.layout` 由 host 布局。
@@ -225,7 +329,7 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens)
         Box::new(ChromePanel::from_spec(s, "chrome", 44.0, false, &t))
     });
     host.register("browser.NavigationButtons", move |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 44.0, false, &t))
+        Box::new(NavigationButtonsWidget::from_spec(s, &t))
     });
     host.register("browser.BrowserMenu", move |s| {
         Box::new(ChromePanel::from_spec(s, "chrome", 44.0, false, &t))
@@ -323,6 +427,61 @@ mod tests {
             density: 1.0,
             orientation: zero_ui_core::layout::Orientation::from_size(logical_size),
         }
+    }
+
+    #[test]
+    fn navigation_buttons_widget_draws_bg_and_four_icons() {
+        // DC-14 真实 nav 图标控件：填 nav 段背景 + 4 图标（back/forward/reload/home）。
+        // can_back=true / can_forward=false → forward 用 disabled tint（不同 cache key）。
+        use zero_ui_adapter_render_foundation::RenderFoundationBackend;
+        use zero_ui_core::binding::Value;
+        use zero_ui_core::geometry::Constraints;
+        use zero_ui_core::widget::WidgetSpec;
+        use zero_ui_render::paint_scene;
+
+        let mut nav = WidgetSpec::new("browser.NavigationButtons");
+        nav.id = Some(WidgetId::new("nav"));
+        nav.props.insert("bg", Value::Text("toolbar_bg".into()));
+        nav.props.insert("can_back", Value::Bool(true));
+        nav.props.insert("can_forward", Value::Bool(false));
+
+        let tokens = SemanticTokens::light();
+        let mut host = WidgetHost::new();
+        register_chrome_factories(&mut host, &tokens);
+        host.set_root(&nav);
+        let sz = host.layout(Constraints::loose(Size::new(400.0, 44.0)));
+        // leading pad(10) + 4 按钮 × 36px = 154。
+        assert!(
+            (sz.width - (NAV_LEADING_PAD + 4.0 * NAV_BUTTON_WIDTH)).abs() < 0.01,
+            "nav width 154, got {}",
+            sz.width
+        );
+        let scene = host.paint().clone();
+
+        // 注册 4 图标 alpha 掩码到桥接 + paint_scene。
+        let mut bridge = RenderFoundationBackend::new_with_text_size(
+            Size::new(400.0, 44.0),
+            std::sync::Arc::new(zero_text_foundation::FontdueBackend::new()),
+        );
+        for key in [NAV_ICON_BACK, NAV_ICON_FORWARD, NAV_ICON_RELOAD, NAV_ICON_HOME] {
+            bridge.register_image_mask(key, vec![255], 1, 1);
+        }
+        paint_scene(&scene, &mut bridge);
+        let p = bridge.primitives();
+        // 1 个背景 fill（nav 段）。
+        assert_eq!(p.fills.len(), 1, "nav bg fill, got {:?}", p.fills.len());
+        // 4 个 ImagePrimitive（back/forward/reload/home）。
+        assert_eq!(p.images.len(), 4, "4 nav icons, got {}", p.images.len());
+        // 自左向右排列：每槽 36px，首槽图标 x ≈ NAV_LEADING_PAD + (36-16)/2 = 20。
+        let mut xs: Vec<f32> = p.images.iter().map(|i| i.rect.origin.x).collect();
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert!((xs[0] - 20.0).abs() < 0.01, "first icon x≈20, got {}", xs[0]);
+        assert!(
+            xs[3] - xs[0] >= (3.0 * NAV_BUTTON_WIDTH) - 0.01,
+            "icons span 4 slots, first={} last={}",
+            xs[0],
+            xs[3]
+        );
     }
 
     #[test]

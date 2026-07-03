@@ -135,15 +135,13 @@ impl BrowserChromeShell for DesktopBrowserShell {
     fn build(&self, model: &BrowserChromeModel, _metrics: &WindowMetrics) -> WidgetSpec {
         let mut root = node_layout("browser.DesktopBrowserShell", ID_SHELL, "column");
         let mut toolbar = node_layout("browser.ToolbarRow", ID_TOOLBAR, "row");
-        toolbar.children.push(leaf(
-            "browser.NavigationButtons",
-            ID_NAV_BUTTONS,
-            "toolbar_bg",
-            Some(crate::i18n::nav_status_label(
-                model.navigation.can_go_back,
-                model.navigation.can_go_forward,
-            )),
-        ));
+        // NavigationButtons：真实图标控件（DC-14）。can_back/can_forward 控制图标 disabled tint；
+        // 图标 ImageRef 由控件常量内定（NAV_ICON_*），宿主按同 id 注册 alpha 掩码到桥接。
+        let mut nav = leaf("browser.NavigationButtons", ID_NAV_BUTTONS, "toolbar_bg", None);
+        nav.props.insert("can_back", Value::Bool(model.navigation.can_go_back));
+        nav.props
+            .insert("can_forward", Value::Bool(model.navigation.can_go_forward));
+        toolbar.children.push(nav);
         toolbar.children.push(leaf_flex(
             "browser.AddressBar",
             ID_ADDRESS_BAR,
@@ -226,15 +224,13 @@ impl BrowserChromeShell for TabletBrowserShell {
     fn build(&self, model: &BrowserChromeModel, _metrics: &WindowMetrics) -> WidgetSpec {
         let mut root = node_layout("browser.TabletBrowserShell", ID_SHELL, "column");
         let mut toolbar = node_layout("browser.ToolbarRow", ID_TOOLBAR, "row");
-        toolbar.children.push(leaf(
-            "browser.NavigationButtons",
-            ID_NAV_BUTTONS,
-            "toolbar_bg",
-            Some(crate::i18n::nav_status_label(
-                model.navigation.can_go_back,
-                model.navigation.can_go_forward,
-            )),
-        ));
+        // NavigationButtons：真实图标控件（DC-14）。can_back/can_forward 控制图标 disabled tint；
+        // 图标 ImageRef 由控件常量内定（NAV_ICON_*），宿主按同 id 注册 alpha 掩码到桥接。
+        let mut nav = leaf("browser.NavigationButtons", ID_NAV_BUTTONS, "toolbar_bg", None);
+        nav.props.insert("can_back", Value::Bool(model.navigation.can_go_back));
+        nav.props
+            .insert("can_forward", Value::Bool(model.navigation.can_go_forward));
+        toolbar.children.push(nav);
         toolbar.children.push(leaf_flex(
             "browser.AddressBar",
             ID_ADDRESS_BAR,

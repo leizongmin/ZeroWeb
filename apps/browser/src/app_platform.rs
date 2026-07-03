@@ -431,8 +431,15 @@ impl BrowserApp {
             let _ = &chrome_shadows;
             RenderPrimitives::default()
         };
+        // fresh tab 无 snapshot → tab image_cache 为 None；SDK chrome 文本/图标（ImagePrimitive）
+        // 仍须可渲染。回落到本帧临时 cache（compose 把 SDK image 合并进来）；有 tab cache 时
+        // 优先用 tab cache（local_cache 仅作 fallback 借用源，未被借用即闲置）。
+        let mut local_cache = ImageCache::new(256, 8 * 1024 * 1024);
         let mut image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
-            Some(id) => self.tabs.image_cache_mut(id),
+            Some(id) => match self.tabs.image_cache_mut(id) {
+                Some(c) => Some(c),
+                None => Some(&mut local_cache),
+            },
             None => None,
         };
         let (page_fills, page_glyphs) = compose_sdk_chrome_replacement_with_webview(
@@ -1044,9 +1051,28 @@ fn compose_sdk_chrome_replacement_with_webview(
     image_cache: &mut Option<&mut ImageCache>,
 ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
     use zero_browser_chrome::sdk_render::render_chrome_via_sdk_with_webview_surface;
+    use zero_browser_chrome::render::{NAV_ICON_BACK, NAV_ICON_FORWARD, NAV_ICON_HOME, NAV_ICON_RELOAD};
+    use zero_browser_chrome::sdk_render::IconMask;
     use zero_ui_core::geometry::{Insets, Size};
     use zero_ui_core::layout::WindowMetrics;
     use zero_ui_core::theme::{ResolvedColorScheme, SemanticTokens};
+
+    // DC-14 真实 nav 图标：把 4 个 SVG 图标（back/forward/reload/home）经 resvg 光栅为 alpha 掩码，
+    // 注册到桥接 image_masks。NavigationButtonsWidget 经 draw_image(NAV_ICON_*) 引用，桥接按 tint
+    // 着色光栅（与 glyph 文本路径对称）。光栅失败的单个图标静默跳过（不影响其余）。
+    let nav_masks: Vec<IconMask> = [
+        (crate::ui_icons::Icon::ChevronLeft, NAV_ICON_BACK),
+        (crate::ui_icons::Icon::ChevronRight, NAV_ICON_FORWARD),
+        (crate::ui_icons::Icon::Refresh, NAV_ICON_RELOAD),
+        (crate::ui_icons::Icon::Home, NAV_ICON_HOME),
+    ]
+    .into_iter()
+    .filter_map(|(icon, key)| {
+        crate::ui_icons::icon_alpha_mask(icon, crate::layout::CHROME_ICON_SIZE)
+            .ok()
+            .map(|(coverage, w, h)| IconMask { key, coverage, width: w, height: h })
+    })
+    .collect();
 
     // image_cache 可为 None（fresh tab 无 image cache）。SDK chrome 仍须渲染——仅跳过
     // ImageCache 合并（text glyph image 暂不解析，几何/chrome bars 正常画）。**此前 None
@@ -1095,7 +1121,7 @@ fn compose_sdk_chrome_replacement_with_webview(
     });
 
     let (bridge, viewport_rect) = render_chrome_via_sdk_with_webview_surface(
-        shell, &metrics, &SemanticTokens::light(), ResolvedColorScheme::Light, backend, webview_surface,
+        shell, &metrics, &SemanticTokens::light(), ResolvedColorScheme::Light, backend, webview_surface, &nav_masks,
     );
     let (sdk_prims, sdk_cache) = bridge.into_primitives_and_cache();
 

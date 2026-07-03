@@ -17,11 +17,26 @@ use zero_render_foundation::primitive::RenderPrimitives;
 use zero_text_foundation::FontdueBackend;
 use zero_ui_adapter_render_foundation::RenderFoundationBackend;
 use zero_ui_core::geometry::{Constraints, Rect};
+use zero_ui_core::image::ImageRef;
 use zero_ui_core::layout::WindowMetrics;
 use zero_ui_core::theme::{ResolvedColorScheme, SemanticTokens};
 use zero_ui_core::widget::WidgetId;
 use zero_ui_render::paint_scene;
 use zero_ui_runtime::WidgetHost;
+
+/// 宿主预注册的图标 alpha 掩码（DC-14 真实 chrome 图标）。
+///
+/// `key` 与 [`NavigationButtonsWidget`](crate::render::NavigationButtonsWidget) 引用的
+/// [`NAV_ICON_*`](crate::render::NAV_ICON_BACK) 常量一致；`coverage` = 单通道 alpha（如 resvg 光栅
+/// SVG 的覆盖率，`len = width*height`）。`render_chrome_via_sdk_with_webview_surface` 把这些掩码
+/// 注册到桥接 `image_masks`，paint 期间 `draw_image` 据 key 取回 + 按 tint 着色光栅。
+#[derive(Debug, Clone)]
+pub struct IconMask {
+    pub key: ImageRef,
+    pub coverage: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
 
 /// 经完整 SDK 管线渲染 desktop chrome（spec §8.2 / DC-14）。
 ///
@@ -83,6 +98,10 @@ pub fn render_chrome_via_sdk_with_layout(
 ///
 /// 返回 `(bridge, viewport_rect)`；`webview_surface` 为 `None` 时等价于
 /// `render_chrome_via_sdk_with_layout` 但 viewport 用 WebViewWidget 工厂。
+///
+/// `image_masks`：宿主预注册的图标 alpha 掩码（DC-14 真实 chrome 图标）；在 `paint_scene` 之前
+/// 注册到桥接 `image_masks`，使 `NavigationButtonsWidget` 的 `draw_image(NAV_ICON_*)` 能取回位图。
+/// 空切片 = 无图标注册（draw_image 安静 no-op，几何/chrome bars 仍正常画）。
 pub fn render_chrome_via_sdk_with_webview_surface(
     shell: &zero_browser_shell::BrowserShell,
     metrics: &WindowMetrics,
@@ -94,6 +113,7 @@ pub fn render_chrome_via_sdk_with_webview_surface(
         RenderPrimitives,
         Option<zero_render_foundation::image_cache::ImageCache>,
     )>,
+    image_masks: &[IconMask],
 ) -> (RenderFoundationBackend, Option<Rect>) {
     let model = BrowserChromeModel::from_shell(shell);
     let spec = DesktopBrowserShell.build(&model, metrics);
@@ -112,6 +132,11 @@ pub fn render_chrome_via_sdk_with_webview_surface(
         } else {
             bridge.set_surface(surface_id, primitives);
         }
+    }
+    // 注册图标 alpha 掩码（DC-14 真实 chrome 图标）：paint 期间 NavigationButtonsWidget 经
+    // draw_image(NAV_ICON_*) 取回 + 按 tint 着色光栅（与 glyph 路径对称）。
+    for m in image_masks {
+        bridge.register_image_mask(m.key, m.coverage.clone(), m.width, m.height);
     }
     paint_scene(&scene, &mut bridge);
     (bridge, viewport_rect)
@@ -215,6 +240,7 @@ mod tests {
             ResolvedColorScheme::Light,
             Arc::new(font_backend),
             Some((0, webview_prims, None)),
+            &[],
         );
         let p = bridge.into_primitives();
         // chrome fills（toolbar/background 等）非空。

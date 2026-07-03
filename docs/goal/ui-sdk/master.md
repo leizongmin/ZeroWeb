@@ -1210,3 +1210,42 @@ Evidence: `evidence/dc14-draw-image-icon-path-20260704.txt`
 （`icon_alpha_mask(icon,size_px)`）；②compose 前 `bridge.register_image_mask` 注册 nav 4 图标 + ImageRef
 经 props 传工厂；③真实 impl Widget（4 按钮 × hover 圆盘 fill_rounded_rect + 图标 draw_image + click emit
 BrowserAction）；④重跑 dc14_chrome_region_pixel_diff_baseline 看 chrome 区 73.99% 收敛。
+
+### Round 45 — NavigationButtonsWidget 真实图标 + fresh-tab image_cache fallback（2026-07-04）
+
+**Round 44 落地 draw_image 原语后，本轮实现首个消费图标的真实 chrome 组件 + 诊断修复管线缺口**。
+
+**落地**：
+1. apps/browser ui_icons `icon_alpha_mask(icon,size_px)`（复用 resvg rasterize_icon_svg → alpha 掩码）。
+2. **NavigationButtonsWidget**（browser-ui/chrome render.rs，真实 impl Widget 替换 ChromePanel 占位）：
+   几何常量对齐手绘 chrome（NAV_BUTTON_WIDTH=36 / NAV_ICON_SIZE=16 / NAV_BAR_HEIGHT=44 / NAV_LEADING_PAD=10）；
+   layout 宽 154（leading pad + 4×36）；paint 填 nav bg + 4 图标（back/forward/reload/home），图标 x =
+   NAV_LEADING_PAD + i×36 + (36-16)/2（与 app_render.rs nav 段**逐位对齐**），disabled 用更淡 tint；
+   稳定 ImageRef 常量 NAV_ICON_BACK/FORWARD/RELOAD/HOME。
+3. shell.rs：NavigationButtons leaf 传 can_back/can_forward props（替代 nav_status_label 文案），desktop+tablet。
+4. sdk_render `IconMask` + `image_masks: &[IconMask]` 参数（render_chrome_via_sdk_with_webview_surface
+   paint_scene 前注册到桥接）。
+5. apps/browser compose 接线：4 nav 图标经 icon_alpha_mask 光栅 + IconMask 传入。
+6. **fresh-tab image_cache fallback（真实生产 bug 修复）**：render_full_scene_sdk_chrome_for_test 此前
+   fresh tab（无 snapshot）image_cache=None → compose 跳过 image 合并 + render_full_scene(None) 渲染零
+   image → SDK chrome 文本/图标在 fresh tab 完全不渲染。修复：tab cache None 时回落本帧临时 ImageCache。
+
+**headless 像素级反馈环诊断**：首跑 icons 在 sdk_prims.images 正确位置但 fb 像素不变 → 定位 image_cache
+None → 修 fallback → 像素采样证明 SDK back-icon dark pixels [(29,58),(28,59),(27,60)] 与手绘**逐位同位置**
+（位置对齐 verified），仅 tint 色差。
+
+**门禁全绿**：chrome 86→**87**（+1）/ browser sdk-chrome **205** 零回归 / clippy(-D warnings)/fmt 净。
+SDK-only（chrome crate + sdk-chrome feature）→ 无 product-smoke 风险。
+
+**chrome 区 diff 73.99% → 74.40%（+0.41pp，诚实上升）**：fresh-tab fallback 让 SDK chrome 现真实渲染
+文本+图标（此前 silently 丢弃），暴露 SDK SemanticTokens vs 浏览器 ChromePalette 的颜色差（bg ~248 vs 255、
+icon tint 135 vs 189）。**位置/几何已逐位对齐，剩余 diff 几乎全在颜色 parity**。
+
+Evidence: `evidence/dc14-nav-buttons-widget-20260704.txt`
+
+**下轮下一步（chrome diff 主因 = 颜色 parity）**：把浏览器 `ChromePalette`（toolbar_bg=248,249,250 /
+nav_button=95,99,104 / nav_button_disabled=189,193,198 / address_bar_bg / page_bg / secure/insecure ...）
+映射为 `SemanticTokens` 经 compose 传入 render_chrome_via_sdk_with_webview_surface（已接 tokens 参数），
+SDK chrome 组件保持 token 驱动（DC-5）同时产出与手绘相同色值（DC-14 parity）。预期 chrome diff 大幅
+下降。此外 production 路径（render_cpu/render_frame）的 fresh-tab image_cache fallback 同步（本轮仅修
+test 路径 render_full_scene_sdk_chrome_for_test）。

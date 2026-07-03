@@ -203,6 +203,18 @@ fn rasterize_icon_svg(svg: &[u8], size_px: f32) -> Result<GlyphBitmap, String> {
     })
 }
 
+/// 光栅化图标为单通道 alpha 掩码（DC-14 SDK chrome 图标通路）。
+///
+/// 复用 [`rasterize_icon_svg`] 的 resvg 光栅，返回 `(coverage, width, height)`——
+/// `coverage.len() = width*height`，每字节为该像素 alpha 覆盖（0..=255）。
+/// 调用方（apps/browser compose 路径）把结果经桥接 `register_image_mask` 注册为
+/// [`ImageRef`](zero_ui_core::image::ImageRef)，`NavigationButtonsWidget` 经 `draw_image` 引用，
+/// 桥接按 tint 着色光栅（与 glyph 文本路径对称）。
+pub fn icon_alpha_mask(icon: Icon, size_px: f32) -> Result<(Vec<u8>, u32, u32), String> {
+    let bmp = rasterize_icon_svg(icon.svg_bytes(), size_px)?;
+    Ok((bmp.data, bmp.width as u32, bmp.height as u32))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
