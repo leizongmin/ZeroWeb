@@ -197,6 +197,8 @@
 
 	- **DC-8 F1 PointerPhase::Exited + host hover 追踪（2026-07-03）**：修复 Button hover/pressed 粘滞（DC-7 deep-review 记录的 F1 follow-up）——①ui/core `PointerPhase` 加 **`Exited`** 变体（host 合成，非原始输入，通知控件清除交互态）；②host 加 `last_hovered` 字段 + `deepest_node_at()` + `dispatch_to_widget()` + `dispatch_event` hover 追踪（Pressed/Moved→检测悬停节点变化→合成 Exited 派发给旧节点；Cancelled→派发 Exited+清空，gesture arena 分支 no-op）；③Button `event()` 处理 Exited → 清除 **pressed+hover**（根因：此前指针拖出按钮后释放仍 emit click，现正确取消）。**3 host 新测**（hover 跨 widget 边界 / Cancelled 清悬停 / exited_clears_pressed）+ **1 widget 新测**（Exited→pressed 清除→释放不 emit）。ui/core 53 + ui/runtime 83 + ui/widgets 41 全绿 + 下游 17 crate 零回归 + browser 默认+sdk-chrome 双构建成功 + clippy(-D warnings)/fmt 净。**SDK-only**（未触渲染/浏览器路径）→ 无 product-smoke 风险。详见 `evidence/dc8-f1-pointer-exited-hover-tracking-20260703-113000.txt`。**DC-8 交互态管理闭环**（focus+click-to-focus+IME rect+FocusScope a11y+hover leave 全到位）。
 
+	- **DC-7 F3 + DC-13 domain 深度审查（animation/gestures/forms，2026-07-03）**：①F3 chrome_model bookmarks 注释修正（"文件夹 url=None"→"list_root 仅返回书签项；文件夹由 bookmarks.folders 管理，当前未投影"）；②ui/animation（6 文件 ~526 行，14 测）深度审查——spring 半隐式 Euler + 子步长、curve evaluate/tween/motion reduced-motion，**0 bugs**（1 low：with_params mass=0→div0，预设安全）；③ui/gestures（5 文件 ~836 行，12 测）深度审查——GestureArena 多识别器竞争仲裁、Tap/Pan/Pinch/Fling 识别器，**0 bugs**（arena 空成员/双 Won/velocity div0 全守卫正确）；④ui/forms（1 文件 ~414 行，7 测）spot check——Required/MinLength/MaxLength/All 校验器 + FieldState + FormState submit 生命周期，**0 bugs**（缺失字段/trim+chars/dirty/touched/error/reset 全守卫正确）。全部 17 crate 测试零回归 + clippy/fmt 净。详见 `evidence/dc13-domain-deep-review-animation-gestures-forms-20260703-114500.txt`。
+
 ## Done Criteria 进度
 
 | DC | 标题 | 状态 | 证据 / 备注 |

@@ -98,7 +98,7 @@ impl BrowserChromeModel {
             };
         }
 
-        // bookmarks（根级；文件夹 url=None 已是 BookmarkNode 语义）。
+        // bookmarks（list_root 仅返回书签项；文件夹由 bookmarks.folders 管理，当前未投影）。
         model.bookmarks = shell
             .bookmarks()
             .list_root()

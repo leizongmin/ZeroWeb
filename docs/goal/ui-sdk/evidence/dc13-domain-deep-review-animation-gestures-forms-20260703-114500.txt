@@ -1,0 +1,44 @@
+DC-13 domain crates 深度审查（animation + gestures + forms + F3 fix）
+===============================================================
+日期: 2026-07-03
+
+审查范围:
+- ui/animation: 6 文件 ~526 行 (spring 235 + clock 82 + motion 91 + tween 52 + curve 47)
+- ui/gestures: 5 文件 ~836 行 (recognizers 321 + arena 242 + lib 164 + event 51 + recognition 58)
+- ui/forms: 1 文件 ~414 行
+- F3: chrome_model bookmarks 注释修正
+
+结论: 0 medium/high behavior bugs across all three crates.
+
+逐 crate 审查:
+
+ui/animation (14 tests):
+- Spring: 半隐式 Euler 积分 + 子步长 ≤1/120s 防数值爆炸（dt≤0 no-op, large-dt substep stable）
+  □ low obs: with_params 允许 mass=0 → div0（预设 mass=1 安全，文档化约束）
+- Curve evaluate: linear/ease-in/ease-out/ease-in-out，t clamp [0,1]
+- Tween: duration≤0→to, t clamp, is_done
+- motion: Reduced→snap to target, should_animate ignores curve param (cosmetic)
+- FakeClock: deterministic, now() max(0) guard
+
+ui/gestures (12 tests):
+- GestureArena.route: Down insert/Up remove/Move no-op active pointers; winner exclusive routing;
+  no winner→all compete, first Won wins+others cancel; all up→reset winner
+  □ edge: empty members→no-op (correct), 2 recognizers both Won→first wins (correct)
+- TapRecognizer: single pointer tracking, Move>tolerance→Yield, Up→Tap/Yield, reset on complete/cancel
+- PanRecognizer: pan-threshold→Start, panning→Update, Up speed≥fling→Fling else Pan End/Yield
+  □ velocity_to: t>lt guard→Vec2::ZERO, start.unwrap after is_none guard, reset on complete/cancel
+- PinchRecognizer: 2-pointer tracking (slot_of: existing/first-empty), init>0 div0 guard
+  □ re-place finger after lift: new init on next Move (standard pinch behavior)
+
+ui/forms (7 tests):
+- Required/MinLength/MaxLength validators: trim+chars count, correct
+- All combinator: runs all, returns first failure
+- FieldState: set marks dirty, touch marks touched, validate updates error
+- FormState: field builder chain, validate_all→all touched+error, submit lifecycle Ok/Err,
+  reset clears dirty/touched/error keeps values
+  □ edge: missing field→validate=true, value/error None (graceful)
+
+F3 修复: chrome_model bookmarks 注释 "文件夹 url=None" → "list_root 仅返回书签项；文件夹由 bookmarks.folders 管理，当前未投影"（反映实际行为）
+
+DC-13 审查累计: animation/gestures/forms/commands/restoration/navigation/overlay/collections/
+platform/testing/devtools/design-system 全部从骨架升级到接口可用+单测覆盖 + 深度审查覆盖 animation/gestures/forms。
