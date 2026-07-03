@@ -329,6 +329,7 @@
 
 - `evidence/gates-round30-20260703-101738.txt` — **Round 30 全门禁复核**：build/clippy/fmt ✅、reftest 686/686 ✅、product-smoke 19.41% ✅、SDK 全 31 crate 零失败 ✅、集成测试 724/724 ✅、coverage 93.30%/92.25%/93.53% ≥85% ✅、origin/main 0 behind ✅。Headless 能力完全耗尽确认。
 - `evidence/gates-round31-20260703-204117.txt` — **Round 31 origin/main sync + V8 init race fix**：merge R993-R994（正交）、V8 isolate Mutex 修复 STATUS_ACCESS_VIOLATION 跟踪项、全门禁绿色、headless 仍耗尽。
+- `evidence/gates-round32-20260703.txt` — **Round 32 origin/main sync (R995) + full gate re-check**：merge R995（css-tables Oracle 69→73，正交零冲突）；build/clippy/fmt ✅；SDK 全 28 crate ✅；browser 191+202 ✅；reftest 686/686 ✅；product-smoke 19.41% ✅。Headless 完全耗尽确认，剩余终端门禁全部需 GUI/设备。
 - `evidence/test-20260630-223559.txt` — 首轮 `make test` 实测：RED（script-sandbox debug-test V8 链接环境失败；release 构建 + CI 绿；定性见上）。
 - `evidence/dep-isolation-20260630-234530.txt` — **DC-1 机械验证 PASS**：22 通用 crate 零浏览器依赖；adapter-webview→zero-webview；chrome→ui/*+browser-shell+adapter-webview。
 - `evidence/capability-matrix-20260630-234530.md` — M1 能力矩阵 + DC skeleton 证据锚点 + 未解决缺口。
@@ -653,6 +654,28 @@ Evidence: `evidence/round-20260703-160640.txt`
 headless 可推进的 SDK-side 工作现已全部耗尽（八层深度审查 + 全部 follow-up 修复）。
 
 Evidence: `evidence/round-20260703-162034.txt`
+
+### Round 21 — origin/main sync R995 + 全量门禁复核（2026-07-03）
+
+**无新代码变更**——headless SDK-side 工作已全部耗尽（八层深度审查全覆盖），仅做 origin/main 同步与全量门禁复核：
+
+- `git merge origin/main`（R995：css-tables Oracle 69→73 +4，crates/layout-engine 正交零冲突）
+- `cargo build --workspace` ✅ 零错误
+- `cargo clippy --workspace --all-targets -- -D warnings` ✅ 零警告
+- `cargo fmt --check` ✅ 无变更
+- 全部 28 SDK crates scoped tests ✅ 全绿
+- `zero-browser` ✅ 191 测全绿（默认）+ 202 测全绿（sdk-chrome）
+- `make reftest` ✅ **686/686 (100.0%)** — Layout 485/485 + Text 201/201
+- `make product-smoke` ✅ **19.41% (< 20%)** — baseline 零页面回归
+- DC-17 coverage 聚合 ≥85%（保持 Round 20 水平）
+
+**Headless 能力完全耗尽确认**。剩余终端门禁全部需 GUI/设备环境：
+1. DC-14：浏览器迁移 GUI 可视验收（sdk-chrome feature，`cargo run --bin zero-browser`）
+2. DC-2：真实 `EventLoop::run` 阻塞壳（开窗/surface/首帧，需 GUI）
+3. DC-15：HarmonyOS 移动后端首帧（硬指标，需设备；Android stretch goal SDK-side 就绪）
+4. DC-8：真实平台 a11y 后端（Win/macOS/Linux/移动，需 GUI/平台环境）
+
+Evidence: `evidence/gates-round32-20260703.txt`
 
 ### Round 21 — 基线复核（2026-07-03 16:45 UTC）
 

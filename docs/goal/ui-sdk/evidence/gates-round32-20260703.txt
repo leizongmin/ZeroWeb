@@ -1,0 +1,32 @@
+Round 32 — origin/main sync (R995) + full gate re-check
+
+Timestamp: 2026-07-03 (after Round 31)
+
+Gates:
+- build --workspace: ✅ zero errors
+- clippy --workspace --all-targets -- -D warnings: ✅ zero warnings
+- fmt --check: ✅ no changes
+- SDK 28 crates scoped tests: ✅ all green
+- zero-browser: ✅ 191 passed (default), ✅ 202 passed (sdk-chrome)
+- make reftest: ✅ 686/686 (100.0%) — Layout 485/485 + Text 201/201
+- make product-smoke: ✅ 19.41% < 20%（baseline zero regression）
+- origin/main sync: ✅ merged R995 (css-tables Oracle 69→73, orthogonal)
+
+Headless work status: CONFIRMED EXHAUSTED
+- SDK-side 全 28 crate 测试绿色 + browser 202 测(sdk-chrome) 绿色
+- 深度审查全覆盖：runtime + DSL + i18n + widgets + chrome + render + core + foundation/text（八层）
+- 全仓 .rs ≤2000 行合规
+- 聚合 coverage ≥85%
+- WinitDriver 跨全部示例迁移收口 + 覆盖矩阵完整
+- 手柄全四类 (Tap/Pan/Pinch/Fling) 经 host arena 可达
+- HarmonyOS adapter 21 测 + Android adapter 20 测 + OHOS 交叉编译通过 + Android 交叉编译通过
+
+Remaining terminal gates (ALL require GUI/device):
+1. DC-14: Browser migration GUI visual verification
+2. DC-2: Real EventLoop::run blocking shell
+3. DC-15: HarmonyOS mobile runtime first frame
+4. DC-8: Real platform a11y backend (Win/macOS/Linux/mobile)
+
+make test known issue (environmental, non-SDK):
+- zero-integration-tests STATUS_ACCESS_VIOLATION (tracked)
+- zero-script-sandbox V8 MSVC debug-test link block (tracked)
