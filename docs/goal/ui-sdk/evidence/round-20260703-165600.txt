@@ -1,0 +1,14 @@
+Round 22 — origin/main sync + baseline (2026-07-03 16:56 UTC)
+
+Merge origin/main R991 (SVG <img> viewBox bug investigation, docs-only, crates/engine).
+No SDK code changes. Baseline confirmation:
+
+Gates:
+- cargo build --workspace: ✅
+- cargo clippy -D warnings: ✅
+- cargo fmt --check: ✅
+- make reftest: ✅ 686/686 (100%)
+- make product-smoke: ✅ 19.41% (< 20%)
+- core SDK + browser tests: ✅ all green (browser 191/191)
+
+Headless SDK-side work still fully exhausted. Terminal gates unchanged.

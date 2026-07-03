@@ -683,3 +683,9 @@ Evidence: `evidence/round-20260703-162034.txt`
 **跟踪项不变**：`make test` 全量受 script-sandbox V8 MSVC debug-test 链接 + integration-tests STATUS_ACCESS_VIOLATION 阻塞（均为环境性，非 SDK 引入）；`lark-cli` 不可用；`scripts/check-coverage.sh` 受 V8 阻塞。
 
 Evidence: `evidence/round-20260703-164500.txt`
+
+### Round 22 — origin/main sync + 基线复核（2026-07-03 16:56 UTC）
+
+Merge origin/main R991（SVG `<img>` viewBox bug 调查，docs-only，crates/engine，正交）。无 SDK 代码变更。全门禁绿色：build/clippy/fmt ✅ | reftest 686/686 ✅ | product-smoke 19.41% ✅ | 全部 SDK + browser 191 测全绿 ✅。Headless 推进能力仍耗尽；终端门禁不变。
+
+Evidence: `evidence/round-20260703-165600.txt`
