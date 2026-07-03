@@ -1920,4 +1920,65 @@ mod tests {
         }
         assert_eq!(red, 0, "float div must shrink-to-fit img; no red bg must be visible");
     }
+
+    /// R988 端到端回归门禁：background-root-101/102 类（onload setTimeout + className
+    /// mutation）经 harness 应用 JS mutation 后必须渲染绿色 canvas。覆盖 V8-init、
+    /// setTimeout-onload、className-mutation 捕获、dom serializer 保留 `<style>` CDATA
+    /// （R917 续）、head+body 相邻兄弟选择器、§14.2 canvas 背景传播全链。
+    /// 任一环节回归 → body 不绿。
+    #[test]
+    fn test_r988_background_root_render_after_mutation() {
+        let script = r#"<script type="text/javascript">
+    function test() {
+      document.getElementsByTagName('$ROOT')[0].className = 'after';
+      document.getElementsByTagName('p')[0].className = 'after';
+      document.documentElement.className = "";
+    }
+  </script>"#;
+        // 102：body.class mutation（无兄弟选择器）。
+        let html_102 = format!(
+            r#"<html class="reftest-wait"><head><style><![CDATA[
+    body.before {{ background: red; }} body.after {{ background: green; }}
+  ]]></style>{script}</head>
+ <body class="before" onload="setTimeout(test, 5)"><p class="before">x</p></body></html>"#,
+            script = script.replace("$ROOT", "body")
+        );
+        // 101：head+body 相邻兄弟选择器（JS 改 head.class）。
+        let html_101 = format!(
+            r#"<html class="reftest-wait"><head class="before"><style><![CDATA[
+    head.before + body {{ background: red; }} head.after + body {{ background: green; }}
+  ]]></style>{script}</head>
+ <body onload="setTimeout(test, 5)"><p class="before">x</p></body></html>"#,
+            script = script.replace("$ROOT", "head")
+        );
+
+        let cfg = ReftestConfig::default();
+        let green_pct = |html: &str| -> usize {
+            let fb = render_to_framebuffer(html, "", &cfg);
+            let (w, h) = (fb.width as usize, fb.height as usize);
+            let (mut green, mut total) = (0usize, 0usize);
+            for y in (h / 2..h).step_by(4) {
+                for x in (0..w).step_by(4) {
+                    let i = (y * w + x) * 4;
+                    if i + 2 < fb.data.len() {
+                        total += 1;
+                        if fb.data[i + 1] > 80 && fb.data[i] < 100 && fb.data[i + 2] < 100 {
+                            green += 1;
+                        }
+                    }
+                }
+            }
+            green * 100 / total.max(1)
+        };
+        let pct102 = green_pct(&html_102);
+        let pct101 = green_pct(&html_101);
+        assert!(
+            pct102 > 50,
+            "102 body.class mutation must paint green canvas (got {pct102}%) — harness-JS or canvas-propagation regression"
+        );
+        assert!(
+            pct101 > 50,
+            "101 head+body sibling selector must paint green canvas after head.class mutation (got {pct101}%) — sibling-selector or serializer regression"
+        );
+    }
 }
