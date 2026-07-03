@@ -1,0 +1,23 @@
+DC-16 host.rs 文件大小合规拆分
+===============================
+日期: 2026-07-03
+
+变更:
+- ui/runtime/src/host.rs: 3098 → 1331 行（DC-16 合规，≤2000）
+- ui/runtime/src/host_tests.rs: 新增 1768 行（DC-16 合规，≤2000）
+
+方法: 标准 Rust #[path] 模式
+  #[cfg(test)]
+  #[path = "host_tests.rs"]
+  mod tests;
+
+验证:
+- cargo test -p zero-ui-runtime: 81 host 测 + 3 集成测 = 84 测全绿
+- 下游全绿零回归: chrome 85 + examples + adapter-winit 30 + adapter-webview 12 + adapter-rf 23
+- cargo build --workspace (全部 SDK crate): 零错误
+- cargo clippy -p zero-ui-runtime --all-targets -- -D warnings: 零警告
+- cargo fmt --check: 净
+- product-smoke: 19.87% = baseline（纯代码搬迁未触渲染路径，零回归）
+
+成果: SDK 全域（ui/* + foundation/text + browser-ui/chrome）单文件 ≤2000 行全部合规。
+apps/browser 预存债务已在 2026-07-02 清偿（main.rs/app.rs/app_render.rs/app_input.rs 全部 ≤2000）。
