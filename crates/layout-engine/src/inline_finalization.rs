@@ -294,7 +294,16 @@ fn store_inline_multicol_columns(
 /// paint 系统在运行空 styles IFC 时无法获取正确的 font_size、字体信息、letter-spacing 和 line-height，
 /// 导致基线偏移、字符宽度、间距和行盒高度计算错误。通过此函数存储 layout IFC 的相关值，
 /// paint 可以在渲染时使用正确的值。
-pub(crate) fn store_font_sizes_from_ifc(inline_ctx: &crate::inline::InlineFormattingContext, box_node: &mut LayoutBox) {
+///
+/// `doc` + `styles` 用于 R1012 text-transform 覆盖：按片段的文本节点 NodeId 查父元素
+/// computed text-transform 存入 `text_node_text_transform`，paint Path B 据此在空 styles
+/// 下应用 transform（行断用转换后宽度）。
+pub(crate) fn store_font_sizes_from_ifc(
+    inline_ctx: &crate::inline::InlineFormattingContext,
+    box_node: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
     for line in &inline_ctx.lines {
         for frag in &line.runs {
             box_node.text_node_font_sizes.insert(frag.node_id, frag.font_size);
@@ -305,6 +314,22 @@ pub(crate) fn store_font_sizes_from_ifc(inline_ctx: &crate::inline::InlineFormat
             // line-height 不影响行断（仅影响垂直定位），传递到 paint IFC 是安全的。
             // 使用片段的 height 作为行盒高度贡献（已含 line-height + padding + border）。
             box_node.text_node_line_heights.insert(frag.node_id, frag.height);
+            // R1012：存 text-transform（按文本节点 NodeId）。paint Path B 重跑 IFC 时
+            // styles 为空，据此映射构造 text_transform_overrides 让 collect_inline_items
+            // 在空 styles 下应用 transform。仅对真正的文本节点存（其父元素 style 携带
+            // 继承的 text-transform）；inline 元素片段跳过（无对应 DOM 文本节点父链）。
+            if doc
+                .get(frag.node_id)
+                .is_some_and(|n| matches!(n.kind, NodeKind::Text(_)))
+            {
+                if let Some(pid) = doc.parent_node(frag.node_id) {
+                    let transform = styles
+                        .get(&pid)
+                        .map(|s| s.text_transform)
+                        .unwrap_or(zero_style_system::TextTransformValue::None);
+                    box_node.text_node_text_transform.insert(frag.node_id, transform);
+                }
+            }
             // 内联元素片段（node_id 是元素 NodeId 而非文本节点 NodeId）：
             // 存储其 (font_size, line_height) 供 paint IFC 使用。
             // 内联元素在 paint IFC 中无法获取自己的样式，导致使用默认值。
@@ -745,7 +770,7 @@ pub(crate) fn compute_final_inline_layouts(
     // CSS line-height，行间距度量错误（R630 修了多行 y 分行，本修复补 line_height 度量）。
     // line_height 不影响行断（mod.rs 注释），但 font_size override 命中会影响 paint IFC
     // char-width 行断——R627 曾 net -15（pre-wrap），R630 后重试（with_line_y 可能吸收）。
-    store_font_sizes_from_ifc(&inline_ctx, root);
+    store_font_sizes_from_ifc(&inline_ctx, root, doc, styles);
     let is_pure_ahem = style.font_family.len() == 1 && style.font_family[0].eq_ignore_ascii_case("Ahem");
     let is_floated = !matches!(style.float, FloatValue::None);
     if !is_pure_ahem || (is_floated && inline_ctx.lines.len() > 1) {
@@ -1086,7 +1111,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             inline_ctx.layout(doc, dom_id, styles);
 
             // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
-            store_font_sizes_from_ifc(&inline_ctx, box_node);
+            store_font_sizes_from_ifc(&inline_ctx, box_node, doc, styles);
             sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
 
             // 容器高度需要包含 float 元素占用的空间
@@ -1224,7 +1249,7 @@ pub(crate) fn remeasure_inline_only_containers(
         inline_ctx.layout(doc, dom_id, styles);
 
         // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
-        store_font_sizes_from_ifc(&inline_ctx, box_node);
+        store_font_sizes_from_ifc(&inline_ctx, box_node, doc, styles);
         sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
 
         let full_height = inline_ctx.total_height();

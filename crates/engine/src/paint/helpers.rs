@@ -526,27 +526,12 @@ pub fn apply_opacity_to_new_primitives(primitives: &mut RenderPrimitives, from: 
 }
 
 /// 根据 CSS text-transform 转换文本。
+///
+/// 实际逻辑已在 `TextTransformValue::apply`（style-system）实现，供 layout-engine
+/// 在 `collect_inline_items` 期与 paint 期共享同一转换（R1012 Phase A IFC 统一）。
+/// 本函数保留为 paint 模块的稳定入口（`&TextTransformValue` 入参），委托到该方法。
 pub fn apply_text_transform(text: &str, transform: &TextTransformValue) -> String {
-    match transform {
-        TextTransformValue::None => text.to_string(),
-        TextTransformValue::Uppercase => text.to_uppercase(),
-        TextTransformValue::Lowercase => text.to_lowercase(),
-        TextTransformValue::Capitalize => {
-            let mut result = String::with_capacity(text.len());
-            let mut prev_is_boundary = true;
-            for ch in text.chars() {
-                if prev_is_boundary && ch.is_alphabetic() {
-                    for c in ch.to_uppercase() {
-                        result.push(c);
-                    }
-                } else {
-                    result.push(ch);
-                }
-                prev_is_boundary = !ch.is_alphanumeric();
-            }
-            result
-        }
-    }
+    transform.apply(text)
 }
 
 /// 四角圆角半径集合。

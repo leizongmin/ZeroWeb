@@ -132,7 +132,7 @@ pub enum TextDecorationStyleValue {
 }
 
 /// CSS text-transform 值。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextTransformValue {
     /// none。
     None,
@@ -142,6 +142,41 @@ pub enum TextTransformValue {
     Lowercase,
     /// capitalize。
     Capitalize,
+}
+
+impl TextTransformValue {
+    /// 把 `text` 按本 transform 值转换。
+    ///
+    /// 与 CSS Text 3 §3.1 一致：`None` 原样；`Uppercase`/`Lowercase` 走 Rust
+    /// `char` 大小写折叠（覆盖 Latin/扩展 Latin 等基本多文种面）；`Capitalize`
+    /// 把每个「词」首字母（前一字符为非字母数字边界后的首个字母）转 titlecase，
+    /// 其余字符原样保留。
+    ///
+    /// 放在 style-system（非 engine/paint/helpers.rs）以便 layout-engine 在
+    /// `collect_inline_items` 期也能调用——text-transform 须在**行断前**应用，
+    /// 使 layout 用转换后文本宽度行断（R1012 Phase A IFC 统一首切）。
+    pub fn apply(&self, text: &str) -> String {
+        match self {
+            TextTransformValue::None => text.to_string(),
+            TextTransformValue::Uppercase => text.to_uppercase(),
+            TextTransformValue::Lowercase => text.to_lowercase(),
+            TextTransformValue::Capitalize => {
+                let mut result = String::with_capacity(text.len());
+                let mut prev_is_boundary = true;
+                for ch in text.chars() {
+                    if prev_is_boundary && ch.is_alphabetic() {
+                        for c in ch.to_uppercase() {
+                            result.push(c);
+                        }
+                    } else {
+                        result.push(ch);
+                    }
+                    prev_is_boundary = !ch.is_alphanumeric();
+                }
+                result
+            }
+        }
+    }
 }
 
 /// CSS white-space 值。

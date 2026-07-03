@@ -1391,3 +1391,84 @@ fn test_r1004_ascent_ratio_override_zero_or_absent_falls_back() {
         "空 map + Ahem 应回退 0.8（实测 {ratio_ahem}）"
     );
 }
+
+// ── R1012：text-transform 行断前应用（Phase A IFC 统一首切）──
+// text-transform 须在 collect_inline_items 期应用，使 layout 用转换后文本宽度行断
+// （与 chromium 一致）。layout IFC（有 styles）读父元素 computed text-transform；
+// paint Path B（空 styles）走 text_transform_overrides 覆盖（re-key 到父元素）。
+// 以下两项分别覆盖两条路径，断言 frag.text 已转换。
+
+/// R1012：layout IFC（有真实 styles）在 collect_inline_items 期应用 text-transform。
+/// `<p style="text-transform:uppercase">hello</p>` → 片段文本应为 "HELLO"。
+#[test]
+fn test_r1012_text_transform_applied_via_style() {
+    use std::collections::HashMap;
+    use zero_dom::parse_html;
+    use zero_style_system::{ComputedStyle, TextTransformValue};
+
+    let doc = parse_html("<p>hello</p>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+
+    let mut style = ComputedStyle::default();
+    style.text_transform = TextTransformValue::Uppercase;
+    let mut styles = HashMap::new();
+    styles.insert(p, style);
+
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.layout(&doc, p, &styles);
+
+    let all_text: String = ctx.all_fragments().iter().map(|f| f.text.clone()).collect();
+    assert_eq!(
+        all_text, "HELLO",
+        "layout IFC 应在行断前应用 uppercase（实测 {all_text}）"
+    );
+}
+
+/// R1012：paint Path B 空 styles IFC 经 text_transform_overrides 应用 text-transform。
+/// 模拟 Path B：styles 为空，但 override map 携带父元素 transform → collect 仍转换文本。
+#[test]
+fn test_r1012_text_transform_applied_via_override_map() {
+    use std::collections::HashMap;
+    use zero_dom::parse_html;
+    use zero_style_system::TextTransformValue;
+
+    let doc = parse_html("<p>hello</p>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+
+    // 空 styles（模拟 paint Path B），但 override map 携带 p 的 transform。
+    let mut overrides = HashMap::new();
+    overrides.insert(p, TextTransformValue::Uppercase);
+    let mut ctx = InlineFormattingContext::new(800.0).with_text_transform_overrides(overrides);
+    ctx.layout(&doc, p, &HashMap::new());
+
+    let all_text: String = ctx.all_fragments().iter().map(|f| f.text.clone()).collect();
+    assert_eq!(
+        all_text, "HELLO",
+        "空 styles + override map 应仍应用 uppercase（实测 {all_text}）；证明 Path B 绕过空 styles 墙"
+    );
+}
+
+/// R1012：默认（空 override map + 无 style text-transform）= None = 原文，零回归。
+#[test]
+fn test_r1012_text_transform_default_is_noop() {
+    use std::collections::HashMap;
+    use zero_dom::parse_html;
+
+    let doc = parse_html("<p>hello</p>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.layout(&doc, p, &HashMap::new());
+
+    let all_text: String = ctx.all_fragments().iter().map(|f| f.text.clone()).collect();
+    assert_eq!(
+        all_text, "hello",
+        "默认（无 transform）应原样，零回归（实测 {all_text}）"
+    );
+}

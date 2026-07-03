@@ -2648,6 +2648,33 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1012 text-transform override-map bypass LANDED（机制证伪 R1011 误诊）·零 oracle yield·簇 = fontdue 光栅 + per-element white-space 墙（非 transform 逻辑）·CSS Text 3 §3.1 spec-compliance·零回归
+
+承 R1011「▶ 下会话启动 Phase A master blocker 首切 = text-transform override-map bypass（R1004 模式）」。本轮完整实施 4 步 bypass + 验证。**机制 LANDED 且经证明工作，但 oracle 零 yield，证 R1011 误诊**。
+
+**改动**（CSS Text 3 §3.1：text-transform 须在行断前应用，layout/paint 双路径一致）：
+- **style-system**（property/types.rs）：`TextTransformValue` 加 `Copy` + `apply(&self, text)` 方法（none/uppercase/lowercase/capitalize）；放在 style-system 使 layout-engine 与 paint 共享同一转换逻辑。helpers.rs `apply_text_transform` 改为委托（消除重复）。
+- **layout-engine IFC**（inline/mod.rs）：新字段 `text_transform_overrides: HashMap<NodeId, TextTransformValue>`（key = 文本节点父元素）+ `with_text_transform_overrides` builder；`collect_inline_items` 行断前应用 transform（layout 读 `style.text_transform`；paint Path B 空 styles 读 override）。
+- **layout-engine LayoutBox**（types/mod.rs）：新字段 `text_node_text_transform`（key = 文本节点）；`store_font_sizes_from_ifc` 加 doc+styles 参数，按 frag 文本节点查父元素 computed transform 存入（5 调用点同步）。
+- **engine paint Path B**（painter/text.rs）：从 `box_node.text_node_text_transform` re-key 到父元素构造 `parent_text_transforms`，`.with_text_transform_overrides(...)` 注入 IFC。
+- **3 单测**（edge_cases.rs）：`r1012_text_transform_applied_via_style`（layout 有 styles）/ `_via_override_map`（paint 空 styles + override，证绕过 R72/R890 空 styles 墙）/ `_default_is_noop`（默认 None 原文，零回归）。
+
+**机制证明（决定性）**：TTDBG 探针实测 `css-text/text-transform` 全簇——`aaa Aaa`（capitalize）→ `Aaa Aaa`、`ａａａ`（fullwidth 输入）→ `Ａａａ`——**transform 确实在 collect_inline_items 期应用**（layout IFC + paint Path B 双路径）。3 单测断言 frag.text == "HELLO"/"Aaa Aaa"。机制 WORKS。
+
+**★ oracle 零 yield + R1011 误诊纠正**：text-transform oracle **7/105 持平**（capitalize-001 仍 14.42%，字节同 R1011）。结合机制证明，**簇阻塞非 transform 逻辑**。深查真因双墙：
+1. **fontdue 光栅精度**：capitalize-001 CSS `font-family: 'Doulos SIL', 'Noto Serif', 'Noto Sans', webfont, sans-serif`——本机 **'Noto Serif'/'Noto Sans' 已安装**（fc-list），chromium 经 fontconfig 匹配到 Noto Serif（链中第 2，先于 sans-serif）。R1011「chromium+ZW 同落 sans-serif」判断**错误**。实验：harness 加载 Noto Sans+Serif（resolver 注册确认）后 A/B——**仍 7/105 零 yield**。证 diff 非字体选择，是 fontdue vs chromium 对**同字体**的光栅/advance 精度差（R388 谱系，per-glyph 累积）。
+2. **per-element white-space**：capitalize-001 `.test span { white-space: nowrap }`——span 的 nowrap 应防 span 内断行，ZW IFC 用容器级 no_wrap（div.test normal）**不尊 per-span nowrap** → ZW 在 span 内空格断行（"Aaa Aaa"→2 词），chromium 不断 → 行结构差异。
+
+**R1011 误诊纠正**：R1011 把 text-transform 簇归为「Phase A IFC 统一墙（paint Path B 空 styles 重跑）」。本 R1012 实施完整 bypass（绕过空 styles 墙）后零 yield，证**真阻塞是光栅精度 + per-element white-space，非 IFC 统一**。font/text 全簇（text-transform + line-break + css-fonts + font-features）的真墙更新：① fontdue 光栅精度（R388，per-glyph 累积，不可单 session 解）；② per-element white-space（容器级 IFC 不尊 span nowrap/per，多 session）；③ char-width 估计（R225/R375b）；④ R109 inline-span；⑤ rustybuzz 接生产（R513）；⑥ font 匹配（R374）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0** ✓（layout-engine 999 含 +3 r1012 测）/ **welcome 16.57% 不变**（<20% DC-13 gate）/ css-text-decor 108/242 不变（R1005 baseline）/ text-transform 7/105 不变（零回归 + 零 yield）。
+
+**裁决（保留 LANDED）**：text-transform bypass 是 (a) R1011 指定 forward-motion slice；(b) 真正 CSS Text 3 §3.1 spec-compliance 修复（layout 现用转换后文本宽度行断，与 paint 一致）；(c) Phase A bypass 机制经证明可复用（R1004 模式扩展到 text-transform）。零 oracle yield 是因簇被**其他墙**（光栅+per-element white-space）阻塞，非机制问题。3 单测守护机制正确性。code-guidelines「不做零价值修改」——本修复非推测性（指定任务）非未用（transform 确在 layout 期应用），是 spec-compliance + Phase A 基础设施，保留。
+
+**意义**：R1011→R1012 完整闭环——bypass 机制从「设计」到「LANDED + 证伪」。text-transform 簇作为 yield lever **永久关闭**（被光栅+per-element-white-space 双墙阻塞，非 IFC 统一）。font/text 真阻塞重新定位到上述 6 墙。下会话勿再以 text-transform/IFC 统一/transform 逻辑为 yield lever。
+
+**▶ 下会话（font/text 簇关闭，转其它 lever）**：① **per-element white-space**（span nowrap 容器级 IFC 不尊，多 session，潜在解锁 capitalize/nowrap 簇 + 真实网页 span 布局）—— IFC 需 per-element white-space 信号（ InlineItem 携带或 collect 时读 styles），narrow slice；② rustybuzz 接生产（R513，font-features 184 案，shaper.rs:82）；③ 非 font/text dir 的 fresh lever 扫描（box-model 残余 / abspos 谱系）；④ R109 §9.2.1.1 匿名块（结构性 deadlock）。**font/text 单 session yield lever 边际确证尽（光栅+per-element-white-space 双墙），转其它 dir 或多 session 结构性。**
+
 ### R1011 text-transform 簇 = Phase A IFC 统一墙（paint Path B 空 styles 重跑）·DoulosSIL-R.woff 不在 WPT master 确认·capitalize/upperlower 同 sans-serif fallback·零源码·纯调查
 
 承 R1010「pivot text-transform pre-layout（R998）」。本轮深查 text-transform 7/105 残余根因。
