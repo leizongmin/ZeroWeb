@@ -2648,6 +2648,20 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R998 text-transform 多 facet gap 定位（paint-time 容器 style + Path A/B + @font-face）·full-width 实现零 yield 已回退·Path A owner-style 修零 yield 已回退·零源码·纯调查
+
+承 R997 转 css-text 扫 worst（letter-spacing-206 47% / capitalize-fullwidth 簇 20-24%）。**capitalize 已正确实现**（helpers.rs apply_text_transform + paint text.rs:1102/1229）；R855 letter-spacing Em 零-yield 已闭。**full-width 未实现**（TextTransformValue 仅 None/Upper/Lower/Capitalize）。
+
+**实验① full-width 实现（已回退·零 yield）**：加 FullWidth enum（style-system）+ parse "full-width" + apply（ASCII U+0021..7E→U+FF01..FF5E，U+0020→U+3000）。FWDBG 插桩实测 **apply_text_transform(FullWidth) 从未触发**——因 paint 传的是**容器** style.text_transform（None for span's container），FullWidth 分支不进。zero yield（debug 直接证伪），已回退。
+
+**实验② Path A owner-style 修（已回退·零 yield）**：text.rs:1102 改用 owner_id 的 text_transform（对齐 color 查找 line 1087）。css-text 全量 oracle **355→355 字节同**——driving 测试（capitalize-016/018/003、fullwidth-001）全用 **Path B（render_fragment! 宏 line 1229）** 非 Path A，且宏无 owner_id 在作用域。Path A 修正确但零可测 yield，已回退。
+
+**真 gap（多 facet，非单 session）**：text-transform 现仅 paint-time 应用，且有 3 层问题：① 用容器 style 非 fragment owner（span 级 transform 丢失，须 Path A+B 都改 owner_id）；② 仅 paint 不 pre-layout（layout 用原文 line-break，full-width 宽字符致 layout/paint 不一致，须 IFC 文本收集期应用）；③ WPT text-transform 测试全用 @font-face 自定义字体（mplus/DoulosSIL/Revalia 等 woff），ZW 字体加载/fallback 主导 diff（mplus 不在 fonts/）。三层任一单独修都不 yield（须 pre-layout 应用 + Path A/B owner + 字体加载三者齐备）。
+
+**裁决**：text-transform = 多 facet 多会话 lever（pre-layout 应用属 Phase A IFC 文本统一，Path A/B owner 修属 paint 重构，字体加载属 R374 谱系）。单 session 零 yield，回退。下会话勿单点重试。
+
+**下一步**：① Phase A IFC pre-layout text-transform 应用（多 case lever，但须 @font-face 字体加载配合）；② table-cell-overflow combined width+height/overflow（R997 测绘）；③ Phase A per-font 真实 ascent（R887）；④ multicol Phase 2。R993-R995 累计 css-flexbox +4 / css-tables +4 零回归已 land main；R996/R997/R998 三轮纯调查确认单 session clean lever 耗尽，forward motion 全在多会话结构性。
+
 ### R997 table-cell-overflow direct-text 测量实验 NET-NEGATIVE 已回退·须 width+height/overflow 合修·零源码·纯调查
 
 承 R996 addendum「table-cell-overflow 须直接文本 only 测量」。本轮实施安全版：`box_content_max_width`（intrinsic_sizing.rs）对非叶盒补测**直接文本节点子元素**（复用 `fragment_inline_max_width` + `doc.child_nodes` 过滤 `NodeKind::Text`），仅直接文本非全后代（避开 margin-collapse-101 block-后代文本过计陷阱）。
