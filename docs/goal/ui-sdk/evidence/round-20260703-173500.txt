@@ -1,0 +1,6 @@
+Round 26 — status check (2026-07-03)
+
+No new origin/main commits. No code changes.
+All gates green: build+fmt OK | reftest 686/686 | product-smoke 19.41%.
+All deep-review follow-ups (F1-F4, O1, O2) resolved in R25.
+Headless SDK work fully exhausted. Terminal gates unchanged.

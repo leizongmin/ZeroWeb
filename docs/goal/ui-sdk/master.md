@@ -709,3 +709,9 @@ Evidence: `evidence/round-20260703-171500.txt`
 全门禁绿色（build/clippy/fmt/reftest 686/product-smoke 19.41%/全部下游/191 browser）。无新 origin/main commit。
 
 Evidence: `evidence/round-20260703-173000.txt`
+
+### Round 26 — 状态检查（2026-07-03）
+
+无新 origin/main commit，无代码变更。全门禁绿色（build/fmt/reftest 686/product-smoke 19.41%）。状态与 R25 一致。
+
+Evidence: `evidence/round-20260703-173500.txt`
