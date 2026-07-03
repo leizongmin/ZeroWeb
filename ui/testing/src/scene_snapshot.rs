@@ -180,4 +180,62 @@ mod tests {
         // 第二条目索引递增。
         assert!(snap.starts_with("0|src=clipped"), "got: {snap}");
     }
+
+    #[test]
+    fn snapshot_includes_text_blob() {
+        use zero_text_foundation::shaping::ShapedText;
+        use zero_text_foundation::text_blob::TextBlob;
+        use zero_text_foundation::text_measure::TextMetrics;
+
+        let mut s = Scene::new();
+        let shaped = ShapedText {
+            runs: vec![],
+            total_advance_x: 42.0,
+            total_advance_y: 0.0,
+        };
+        let metrics = TextMetrics {
+            width: 42.0,
+            height: 16.0,
+            ascent: 14.0,
+            descent: 2.0,
+            line_count: 1,
+        };
+        let blob = TextBlob { shaped, metrics };
+        s.push(SceneEntry {
+            source: WidgetId::new("blob"),
+            clip: None,
+            primitive: RenderPrimitive::TextBlob {
+                blob,
+                position: Point::new(10.0, 20.0),
+                color: Color::BLACK,
+            },
+        });
+        let snap = snapshot_scene(&s);
+        assert!(snap.contains("textblob 0g @10,20 adv42.0 #000000ff"), "got: {snap}");
+    }
+
+    #[test]
+    fn snapshot_includes_external_surface() {
+        let mut s = Scene::new();
+        s.push(SceneEntry {
+            source: WidgetId::new("webview"),
+            clip: None,
+            primitive: RenderPrimitive::ExternalSurface {
+                rect: Rect::from_ltrb(0.0, 96.0, 1280.0, 704.0),
+                surface_id: 1,
+            },
+        });
+        let snap = snapshot_scene(&s);
+        assert!(snap.contains("surface1 0,96,1280,704"), "got: {snap}");
+    }
+
+    #[test]
+    fn to_u8_clamps_out_of_range() {
+        // Values outside [0,1] are safely clamped.
+        assert_eq!(to_u8(-0.5), 0);
+        assert_eq!(to_u8(1.5), 255);
+        assert_eq!(to_u8(0.5), 128); // 0.5 * 255 = 127.5 → rounds to 128
+        assert_eq!(to_u8(0.0), 0);
+        assert_eq!(to_u8(1.0), 255);
+    }
 }
