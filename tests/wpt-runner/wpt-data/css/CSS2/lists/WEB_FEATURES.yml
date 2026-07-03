@@ -1,9 +1,0 @@
-features:
-- name: counters
-  files:
-  - counter-*
-  - increment-counter-001.xht
-  - reset-counter-001.xht
-- name: list-style
-  files:
-  - list-style-*

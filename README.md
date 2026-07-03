@@ -87,6 +87,7 @@ sudo apt-get install -y \
 ```bash
 cargo build --workspace                    # Linux/macOS 首次构建前需先 make setup-rusty-v8（或直接用 make build）
 make test                                  # = cargo test --workspace（经 test-guard 包裹）
+make fetch-wpt-data                        # 首次跑 reftest 前先拉取上游 WPT 测试数据（~2 万文件，独立 repo；reftest target 会自动触发）
 make reftest                               # = WPT reftest（release 构建，经 test-guard 包裹）
 make reftest-oracle                        # ZeroWeb 渲染 vs Chromium Oracle 像素一致率（诚实通过率度量）
 make browser                                 # 启动浏览器（默认 WPT 对齐：CPU + scale 1.0）
