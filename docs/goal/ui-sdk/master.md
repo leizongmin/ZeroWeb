@@ -523,7 +523,15 @@
 - `make test` full run 有 `zero-integration-tests` STATUS_ACCESS_VIOLATION（已知环境性跟踪项，非 SDK 引入；R16 commit 已排除 script-sandbox V8 MSVC 链接阻塞，此 crash 为独立问题；scoped/browser 测全绿证明 SDK 侧无退化）。
 - origin/main 已最新（无新 commit 待 merge）。
 
-**🟡 M2/M3 头端可推进工作已耗尽**：15 层 SDK 深度审查全覆盖收口（0 bugs 剩余）；DC-2 WinitDriver + 全示例迁移 + winit-raw→driver 端到端契约闭合；DC-3 WebViewWidget + bridge + surface ImageCache pipeline 闭合；DC-4 滚动条逻辑+渲染全量经 SDK 闭合；DC-5 主题 WCAG AA + HighContrast + 全 widget token 消费闭合；DC-6 DSL 表达式引擎+YAML 解析器+Loader+for_each 全管线覆盖，安全/健壮性审查闭合；DC-7 12/12 组件 + widget/chrome 深度审查闭合；DC-8 focus+IME+FocusScope+a11y 树+host 自动推送 SDK-side 闭合；DC-10 i18n flesh-out + browser catalog + 全 i18n 迁移 + 深度审查闭合；DC-11 font stack unified production default path；DC-12 WindowMetrics §IF-009 字段全 + adaptive shell + ThemeProvider 接入闭合；DC-13 13/13 domain 接口可用 + 深度审查全覆盖；DC-14 replacement migration wiring complete + sdk-chrome 200 测全绿 + product-smoke 19.87% 绿。
+**🟢 Round 18 verification（2026-07-03）**：
+- merge origin/main R990（Phase-A ascent ratio is_ahem-gated LANDED，crates/layout-engine + rendering-compat docs，ort 零冲突正交）。
+- 全量门禁复核：build/clippy(-D warnings)/fmt 全净。
+- Key crates 全绿：browser 191 + chrome 86 + core 53 + dsl 95 + runtime 83+3 + sdk-chrome **202**（全部 0 失败）。
+- `make reftest` **686/686 (100%)** ✅。
+- `make product-smoke` **19.41% < 20%** 绿（较 R17 19.87% **改善 0.46pp**——R990 Phase-A ascent ratio 优化了页面文本布局）。
+- Headless work 仍耗尽；终端门禁不变。
+
+**🟡 M2/M3 头端可推进工作已耗尽**：
 
 **剩余终端门禁（需 GUI / 设备环境，本环境不可用）**：
 1. DC-14 GUI 可视验收：`cargo run --bin zero-browser`（sdk-chrome feature）验证 chrome 布局/WebView/滚动条视觉正确。
