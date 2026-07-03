@@ -67,15 +67,27 @@ impl FontLoader {
     }
 
     /// 从字节数据加载字体
+    ///
+    /// 自动识别 WOFF 1.0 容器（`.woff`，"wOFF" 魔数）并先解码为 sfnt，再交给 fontdue
+    /// （fontdue 不识别 woff 容器）。`.ttf`/`.otf` 裸 sfnt 直接加载。WOFF2（`wOF2`）不支持。
     pub fn load_font(&mut self, data: &[u8]) -> Result<u32, FontError> {
-        let font = fontdue::Font::from_bytes(data, fontdue::FontSettings::default())
+        // WOFF 容器解码（None = 非 WOFF 或解码失败，回退原数据由 fontdue 报错）
+        let decoded = if crate::font::woff::is_woff(data) {
+            crate::font::woff::decode_woff(data)
+        } else {
+            None
+        };
+        let bytes: &[u8] = decoded.as_deref().unwrap_or(data);
+
+        let font = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
             .map_err(|e| FontError::ParseFailed(e.to_string()))?;
 
         let id = self.next_id;
         self.next_id += 1;
 
-        // 从原始字体字节中提取字体族名称（fontdue 不暴露 name 表）
-        if let Some(name) = parse_font_family_name(data) {
+        // 从字体字节中提取字体族名称（fontdue 不暴露 name 表）。
+        // WOFF 解码后的 sfnt 含 name 表，解析路径与裸 sfnt 一致。
+        if let Some(name) = parse_font_family_name(bytes) {
             // 检测 Ahem 测试字体
             if name.eq_ignore_ascii_case("Ahem") {
                 self.ahem_font_id = Some(id);
@@ -84,7 +96,7 @@ impl FontLoader {
         }
 
         self.fonts.insert(id, font);
-        self.font_data.insert(id, data.to_vec());
+        self.font_data.insert(id, bytes.to_vec());
         Ok(id)
     }
 
