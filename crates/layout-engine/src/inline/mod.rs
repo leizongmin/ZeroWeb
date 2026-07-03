@@ -164,6 +164,17 @@ pub struct InlineFormattingContext {
     /// `Some` = 注入 `FontLoader`-backed 真实度量，供 Phase A step-2 在 strut baseline /
     /// half-leading 计算中消费（替换 `0.8`）。step-1 仅持有该字段、不读取 → 行为不变。
     pub font_metric_provider: Option<FontMetricProviderHandle>,
+    /// 逐文本节点的真实 ascent ratio 覆盖（key = 文本片段 NodeId）。
+    ///
+    /// **Phase A §12.6 step-2 bypass 基础设施（dormant，零回归）**：R890 实证
+    /// `apply_vertical_alignment` 在 paint Path B 被空 styles 重跑，provider 无法
+    /// 解析 family → 单点 wiring no-op。bypass = 在 layout IFC（有 styles + provider）
+    /// 算出每文本节点真实 ascent ratio（ascent / font_size），经
+    /// `store_font_sizes_from_ifc` 存入 LayoutBox，paint Path B 经此 map 读取，
+    /// 绕过空 styles。R990 已落地 is_ahem-gated 常数（Ahem 0.8 / 非-Ahem 0.928），
+    /// 本字段是 per-font 真实值的承载——空 map（默认）回退 R990 常数（零回归），
+    /// 由 `ascent_ratio_for` 消费。
+    pub ascent_ratio_overrides: HashMap<NodeId, f32>,
     /// Phase 2a multicol 列碎片化上下文（可选）。
     ///
     /// `None`（默认）= IFC 行盒不碎片化（当前行为，零回归）。
@@ -204,6 +215,7 @@ impl InlineFormattingContext {
             margin_overrides: HashMap::new(),
             fragment_node_ids: None,
             font_metric_provider: None,
+            ascent_ratio_overrides: HashMap::new(),
             column_fragmentation: None,
         }
     }
@@ -262,6 +274,26 @@ impl InlineFormattingContext {
     pub fn with_font_metric_provider(mut self, provider: Rc<dyn FontMetricProvider>) -> Self {
         self.font_metric_provider = Some(FontMetricProviderHandle(provider));
         self
+    }
+
+    /// 注入逐文本节点真实 ascent ratio 覆盖（Phase A §12.6 step-2 bypass，dormant）。
+    ///
+    /// 空调用方（默认）= R990 is_ahem-gated 常数行为（零回归）。当 paint Path B
+    /// 从 LayoutBox.text_node_ascent_ratios 填充本 map 后，`apply_vertical_alignment`
+    /// 按 `ascent_ratio_for` 优先取本 map 真实值，实现 per-font ascent 而**不**经
+    /// provider family 解析（绕过 R890 空 styles 墙）。
+    pub fn with_ascent_ratio_overrides(mut self, overrides: HashMap<NodeId, f32>) -> Self {
+        self.ascent_ratio_overrides = overrides;
+        self
+    }
+
+    /// 查文本片段的真实 ascent ratio（Phase A §12.6 step-2 bypass 消费点）。
+    ///
+    /// 优先取 `ascent_ratio_overrides[node_id]`（>0 有效，由 layout IFC 经 provider
+    /// 算出并存入）；否则回退 R990 is_ahem-gated 常数（Ahem 0.8 / 非-Ahem 0.928）。
+    /// 空 map（默认）= 全回退 = R990 行为（零回归）。
+    pub fn ascent_ratio_for(&self, node_id: NodeId, is_ahem: bool) -> f32 {
+        ascent_ratio_lookup(&self.ascent_ratio_overrides, node_id, is_ahem)
     }
 
     /// 注入 Phase 2a multicol 列碎片化上下文（dormant）。
@@ -1619,7 +1651,7 @@ impl InlineFormattingContext {
                 // 实测）。旧 0.8 对非-Ahem 偏低致行盒偏矮、基线偏低。is_ahem_font 在 layout
                 // 由 style.font_family 定、在 paint 由 is_ahem_overrides 定，两侧一致（不受
                 // paint Path B 空 styles 影响，区别于 R889/R890 provider 单点 no-op）。
-                let (dominant_fs, dominant_is_ahem) = line
+                let (dominant_fs, dominant_is_ahem, dominant_node) = line
                     .runs
                     .iter()
                     .filter(|r| r.font_size > 0.0)
@@ -1628,9 +1660,11 @@ impl InlineFormattingContext {
                             .partial_cmp(&b.font_size)
                             .unwrap_or(std::cmp::Ordering::Equal)
                     })
-                    .map(|r| (r.font_size, r.is_ahem))
-                    .unwrap_or((0.0, false));
-                let dominant_ratio = if dominant_is_ahem { 0.8 } else { 0.928 };
+                    .map(|r| (r.font_size, r.is_ahem, r.node_id))
+                    .unwrap_or((0.0, false, NodeId::default()));
+                // R1004：优先取 ascent_ratio_overrides 真实 per-font ratio（dormant，
+                // 空 map 回退 R990 常数）。用自由函数 + 字段访问绕开 &mut self.lines 借用冲突。
+                let dominant_ratio = ascent_ratio_lookup(&self.ascent_ratio_overrides, dominant_node, dominant_is_ahem);
                 (line_height - dominant_fs).max(0.0) / 2.0 + dominant_fs * dominant_ratio
             } else {
                 self.container_font_size * 0.8
@@ -1642,8 +1676,9 @@ impl InlineFormattingContext {
                     VerticalAlignValue::Baseline | VerticalAlignValue::Sub | VerticalAlignValue::Super
                 ) {
                     if run.font_size > 0.0 {
-                        // 文本运行：ascent = font_size × 字体真实 ascent ratio（Ahem 0.8 / 非-Ahem 0.928，R990）
-                        let run_ratio = if run.is_ahem { 0.8 } else { 0.928 };
+                        // 文本运行：ascent = font_size × 字体真实 ascent ratio（R990：Ahem 0.8 / 非-Ahem 0.928；
+                        // R1004：优先取 ascent_ratio_overrides 真实 per-font ratio，空 map 回退 R990 常数）。
+                        let run_ratio = ascent_ratio_lookup(&self.ascent_ratio_overrides, run.node_id, run.is_ahem);
                         max_ascent = max_ascent.max(run.font_size * run_ratio);
                     } else {
                         // 原子行内级盒（font_size==0 标识）：
@@ -1894,6 +1929,21 @@ impl InlineFormattingContext {
             })
             .collect()
     }
+}
+
+/// `ascent_ratio_for` 的自由函数内核（供 `apply_vertical_alignment` 在 `&mut self.lines`
+/// 循环内调用，绕开方法调用对整个 `self` 的不可变借用——Rust 允许不相交字段借用：
+/// `&self.ascent_ratio_overrides` 与 `&mut self.lines` 不冲突）。
+///
+/// 优先取 `overrides[node_id]`（>0 有效，由 layout IFC 经 provider 算出并存入）；
+/// 否则回退 R990 is_ahem-gated 常数（Ahem 0.8 / 非-Ahem 0.928）。空 map = 全回退 = 零回归。
+fn ascent_ratio_lookup(overrides: &HashMap<NodeId, f32>, node_id: NodeId, is_ahem: bool) -> f32 {
+    if let Some(ratio) = overrides.get(&node_id) {
+        if *ratio > 0.0 {
+            return *ratio;
+        }
+    }
+    if is_ahem { 0.8 } else { 0.928 }
 }
 
 #[cfg(test)]

@@ -2648,6 +2648,29 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1004 ★Phase A §12.6 step-2 bypass 基础设施 LANDED = ascent_ratio_overrides dormant 字段 + apply_vertical_alignment 消费点（零回归）·per-font ascent 解锁路径基石
+
+承 R1003「单 session clean lever 五 dir 确证耗尽，forward 全在多 session 结构性」。**选最高 EV 结构 lever 的 enabling slice**——per-font 真实 ascent（R990 +138 oracle 的自然延伸：常数 0.928 → 真实 per-font 值）。
+
+**R889/R890 决定性发现复用**：per-font ascent 单点 wiring 三次证伪（R889 错路径 / R890 空 styles 墙 / R891 negligible）的**真解锁机制** = `store_font_sizes_from_ifc` 的 override-map 模式（line 297，已为 font_size/is_ahem/letter_spacing/line_height 用）：layout IFC（有 styles + provider）算出每文本节点真实 ascent ratio → 存 LayoutBox → paint Path B 经 override map 读取 → `apply_vertical_alignment` 消费，**绕过 R890 空 styles 墙**（paint Path B 不需解析 family，直接读预计算 ratio）。
+
+**改动**（`crates/layout-engine/src/inline/mod.rs`，dormant enabling slice）：
+1. IFC 新字段 `ascent_ratio_overrides: HashMap<NodeId, f32>`（默认空）+ `with_ascent_ratio_overrides` builder + `ascent_ratio_for` pub 方法。
+2. 新自由函数 `ascent_ratio_lookup(overrides, node_id, is_ahem) -> f32`：优先取 map 值（>0 有效），否则回退 R990 is_ahem-gated 常数（Ahem 0.8 / 非-Ahem 0.928）。**自由函数 + 字段访问**绕开 `for line in &mut self.lines` 的可变借用与方法调用整体借用 self 的冲突（Rust 不相交字段借用）。
+3. `apply_vertical_alignment`（R990 site，mod.rs:1633/1646）两 ratio 查询（dominant strut + per-run）从 `if is_ahem {0.8} else {0.928}` 常数改为 `ascent_ratio_lookup(&self.ascent_ratio_overrides, node_id, is_ahem)`。
+
+**dormant 保证（零回归）**：空 map（默认）→ 全回退 → 字节级 R990 行为。2 新单测（`r1004`）：
+- `test_r1004_ascent_ratio_override_supersedes_r990_constant`：覆盖 0.95（模拟 NotoSansCJK）→ baseline_y = 100×0.95 = 95（无覆盖时 92.8 = 0.928），证 override 优先。
+- `test_r1004_ascent_ratio_override_zero_or_absent_falls_back`：override=0.0 / 空 map → 回退 R990 常数（非-Ahem 0.928 / Ahem 0.8），证 dormant 零回归。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test ✓（exit 0，全 workspace 零失败）** / R990 三测仍绿（零回归）/ **product-smoke welcome 16.57% == R1001 baseline**（<20% DC-13 gate PASS，字节级不变证 dormant）。
+
+**意义**：把 per-font ascent（font-wall 最大 lever R990 的延伸）从「被 R890 空 styles 墙阻塞」推进到「bypass 基础设施就绪」。下会话的 step-2 wiring 只需：① 在 `store_font_sizes_from_ifc` 用 `inline_ctx.font_metric_provider`（R885 dormant）+ styles 算每节点真实 ratio 存入新 LayoutBox 字段；② paint Path B 从 LayoutBox 填充 `ascent_ratio_overrides`；③ provider 经 `compute_final_inline_layouts` 5 站点 + harness 注入（R889 测绘）。**本 slice 是该多 session 链的零风险基石**（类 R885/R897/R898 dormant pattern）。
+
+**裁决**：R996-R1003 八轮调查确证单 session clean lever 耗尽；本 R1004 转为多 session 结构 lever 的 enabling slice 推进（rally 续跑协议：clean lever 尽 → dormant enabling slice 是 forward motion，非阻塞）。**per-font 真实 ascent 的 EV** = R990 常数 0.928 的增量（WPT 多用 Ahem 故 WPT 增量小，产品页 CJK 字体 NotoSansCJK ~0.88 受益）；下 session 完成 wiring 即可测真实 yield。
+
+**▶ 下会话（step-2 wiring，多 session）**：① `store_font_sizes_from_ifc` 增强：取 `inline_ctx.font_metric_provider` + `styles.get(&frag.parent).font_family` 算 `provider.line_metrics(family, frag.font_size).ascent / frag.font_size` → 存 `LayoutBox.text_node_ascent_ratios: HashMap<NodeId,f32>`（新字段）；② paint Path B 构造 IFC 时从 LayoutBox 填充 `ascent_ratio_overrides`（镜像 font_size_overrides 填充点）；③ provider 经 `compute_final_inline_layouts`（inline_finalization.rs:691/945/1065/1204/1223 五站点）+ engine `compute_with_img_sizes` + harness wpt-runner 注入；④ 三态门禁 A/B：welcome <20% + linebox/css-text/wm oracle 零回归 + chromium-Oracle z_vs_chr 下降（净负即回退，§12.4 R834/R836/R849/R875 单点 net-negative 先例）。勿以单 session 期望 DC-2~5 显著提升（受光栅 + 结构性双上限）。
+
 ### R1003 twin ZW 几何验证（td=172×304）·R1002「fundamental table-auto-layout gap」框架过度·残差 = 小宽差 + font·零源码·纯调查
 
 承 R1002「twin 残差 = table auto-layout（ZW max-content 211 vs chromium balance 162）」。本轮 probe（compute_styles + `<style>` CSS 正确接入）实测 **ZW twin td = 172×304**（tall div 168×304 正确 grow，R1001 cell direct-text fix 使 td 从 8px 进到 172px）。oracle PNG 分析（imprecise）chromium td ~162。
