@@ -1,0 +1,18 @@
+Round 20 — foundation/text deep review + 3 fixes (2026-07-03 16:20 UTC)
+
+DC-11 foundation/text deep review (last unreviewed crate from 7-layer trail).
+全 14 文件 ~1421 行审查。3 findings fixed + O2 docstring:
+
+M1 (medium): shape_with_font 用 rustybuzz pos.x_advance（含 GPOS kerning）
+  替代 fontdue un-kerned advance_width — 修复 kerning 字体间距偏失。
+M2 (medium): rasterize_glyph 加 glyph_id > u16::MAX guard + shape_with_font
+  钳制 stored glyph_id — 闭合 u32→u16 截断 API 契约缺口。
+L1 (low): wrap_width_and_lines 加 max_width ≤ 0 防护 — 避免每 glyph 独占行。
+O2 (low): SystemThemeSnapshot docstring 澄清 fully-resolved 字段语义。
+
+TDD: 4 new tests (M1 kerning consistency / M2 reject + clamp verify / L1 wrap guard).
+All gates green: tests 36/36 (+4), downstream SDK all green, reftest 686/686,
+product-smoke 19.41%, browser 191/191, clippy/fmt clean.
+
+SDK 安全/健壮性深度审查现覆盖全部 8 层：
+runtime+DSL+i18n+widgets+chrome+render+core+foundation/text。

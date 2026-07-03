@@ -234,7 +234,7 @@
 | DC-8 | 无障碍/焦点/IME | 🟡 焦点+IME+FocusScope+a11y 树+平台后端桥接契约+**host 自动推送** 已通（M2 phase-3 + backend skeleton + host auto-push） | ui/core::focus(FocusDirection/TraversalPolicy/FocusScope trap) + semantics + ui/runtime::ime/accessibility；phase-1：Widget::focusable + focus_next(Tab wrap) + 键盘路由；phase-2：click-to-focus + ime_rect（绝对 caret）+ 初始 props 同步；**phase-3**：FocusScope trap（`enter/exit_focus_scope`，trap 折返/非 trap 逃逸，set_root 防悬空）+ `WidgetHost::semantics()` a11y 树（绝对 rect + FOCUSABLE/FOCUSED + widget label/role + 容器 merge）；**平台后端桥接契约**（`AccessibilityBackend` trait update_tree/focus_moved/announce + `RecordingAccessibilityBackend` mock + `AccessibilityTree::update_backend`）；**`WidgetHost` 自动推送**（`set_accessibility_backend`/`flush_accessibility`/`announce` + `set_root` 标 NEEDS_SEMANTICS + 焦点变化检测推 focus_moved 不重建全树，2026-07-03，8 测）。剩余 M4：真实平台实现（Win UI Automation/macOS NSAccessibility/Linux AT-SPI/移动 TalkBack）+ runtime 每帧自动 flush（需 GUI/平台环境） |
 | DC-9 | 局部失效刷新 | ✅ host 失效门控 + 端到端 invalidation（M2） | ui/core::invalidation needs_layout/paint 区分单测；`WidgetHost::needs_layout`/`needs_paint`/`mark` 驱动重布局/重绘；**`theme_changed_paint_only_marks_paint_not_layout`** 端到端断言（ThemeChanged→host.mark→needs_paint 真 / needs_layout 假，DC-5 交叉验证）。DC-9 闭合。 |
 | DC-10 | 国际化资源与 message id | ✅ flesh-out + browser catalog + 全 shell/BrowserMenu/shell_demo i18n 迁移 + **ui/i18n 全 crate 深度审查闭合**（M2 收口） | ui/i18n：locale/catalog/fallback/参数替换/plural（多语种 CLDR）/RTL direction/diagnostic/DSL `i18n:` bridge 全部可用；locale 切换→layout+paint+semantics 失效；**浏览器文案 catalog**（browser-ui/chrome/i18n，ids + catalog + resolve + localized_label + localized_label_with_params）；**BrowserMenu 接 message id**（item_msg/disabled_msg）；**shell 硬编码 label 参数化迁移**（nav_status + bookmarks + security_status，三 shell 全量，2026-07-02）；**shell_demo fixture labels 100% i18n 迁移**（消除最后硬编码 "New Tab"/"Menu"/"Close Menu"，2026-07-02）。**ui/i18n 全 crate 深度审查（lei-deep-review，2026-07-03）**：逐字句核对 CLDR cardinal（英/阿/俄/乌/白俄/波，集合代数证明波兰语整数无 other → `else=>Many` 正确）+ `unsigned_abs()` 安全处理 i64::MIN；**修复 1 medium**（direction.rs RTL 集合补 ckb/dv/nqo，TDD RED→GREEN，闭合 DC-10「RTL locale 影响文本方向」对 3 字母 RTL 语言）+ 1 文档自洽；catalog/formatter/fallback/locale 经查正确；ui/i18n 22→23 测全绿。DC-10 浏览器 UI 文案全量 i18n 迁移 + SDK 侧深度审查双重闭合。剩余 = paint 期解析（完整 resolution-layer，低优先级）。 |
-| DC-11 | 共享文本/字体基础层 | ✅ 默认路径经共享后端（M2 收口） | foundation/text 真实后端 + ui/render TextBlob/RenderBackend/paint_scene + bridge draw_text/draw_text_blob + 浏览器字体共享入口 + zero-text-foundation 晋升 + load_font_with_family + 共享后端基础设施（set/init_shared_backend + auto-sync）+ **生产默认渲染路径经共享 FontdueBackend**（rasterize_glyph_with_fallback → rasterize_glyph_shared 接线 + BrowserApp 默认激活共享后端，2026-07-02）。**make product-smoke = 19.87% = baseline（零渲染回归）** + browser 189 测全绿 + render-foundation 529 测全绿。render-foundation 字体栈与 foundation/text 在生产路径统一。 |
+| DC-11 | 共享文本/字体基础层 | ✅ 默认路径经共享后端 + **深度审查闭合**（M2 收口） | foundation/text 真实后端 + ui/render TextBlob/RenderBackend/paint_scene + bridge draw_text/draw_text_blob + 浏览器字体共享入口 + zero-text-foundation 晋升 + load_font_with_family + 共享后端基础设施（set/init_shared_backend + auto-sync）+ **生产默认渲染路径经共享 FontdueBackend**（rasterize_glyph_with_fallback → rasterize_glyph_shared 接线 + BrowserApp 默认激活共享后端，2026-07-02）。**make product-smoke = 19.41% = baseline（零渲染回归）** + browser 191 测全绿 + foundation/text 36 测全绿。**DC-11 深度审查闭合（2026-07-03）**：全 14 文件审查，修复 M1 GPOS kerning x_advance 丢弃 + M2 glyph_id u32→u16 截断 API 契约 + L1 wrap 防护（3 fixes + 4 new tests）。**SDK 八层深度审查全覆盖**（runtime+DSL+i18n+widgets+chrome+render+core+foundation/text）。 |
 | DC-12 | 响应式/自适应 + 移动 chrome | 🟡 shell + 状态投影 + WindowMetrics §IF-009 + ThemeProvider 接 metrics（M2） | WindowMetrics/ViewportClass/PlatformClass/InputClass/AdaptiveBranch 在 ui/core::layout；BrowserChromeModel + BrowserChromeShell + Desktop/Tablet/Phone shell + AdaptiveBrowserChrome + ShellLayout(safe-area/keyboard 避让) + 跨 shell 稳定 WidgetId 已落地；**`BrowserChromeModel::from_shell(&BrowserShell)` 状态投影桥已通**（tabs/nav/address/security/bookmarks/downloads/find/page_load，DC-14 数据层 seam）；**WindowMetrics §IF-009 字段集合补全**：`text_scale`+`density`+`orientation` + `build_theme_with_metrics`（双缩放闭环）；**`ThemeProvider` 接入 text_scale/density**（运行时态：`set_text_scale`/`set_density` → ThemeChanged needs_layout，默认 1.0 向后兼容，2026-07-02）——text_scale/density 数据链闭合（WindowMetrics→build_theme_with_metrics→ThemeProvider 运行时）。剩余：移动端真实运行时（M4，DC-15） |
 | DC-13 | 完整应用级 UI 能力（13 域） | ✅ 13/13 域已全部 flesh-out（M2） | commands / restoration / navigation / overlay / collections / platform / gestures / animation / forms / assets / testing / devtools / design-system 全部从骨架升级到接口可用 + 单测覆盖；DC-15 首个风格包 `zero_default()` 已交付。per-file coverage 全部 ≥85%。 |
 | DC-14 | 浏览器迁移完成 + 零退化 | 🟡 替换式迁移接线完成 + 199 测全绿 + product-smoke 19.87% 绿（M2） | **counter + form + browser-shell-demo 示例可构建/运行**；**`BrowserChromeModel::from_shell` 数据层 seam**；**全链集成测试通过**；**`render_chrome_via_sdk_with_layout`**（SDK chrome 拥有布局→viewport rect）；**`compose_sdk_chrome_replacement`**（feature-on 跳过手绘 chrome 零回归）；**build_scene 三层分离**；**199 测全绿**（默认 189 + sdk-chrome 10，含 scrollbar 桥接/surface pipeline 测）+ product-smoke **19.87%<20% 绿**；**sdk-chrome feature clippy 净**。剩余：GUI 可视验收 chrome 布局（本环境无 GUI；feature-on 像素级 headless 已证）。 |
@@ -631,6 +631,23 @@
 - DC-8：真实平台 a11y 后端实现（需 GUI/平台环境；SDK-side host auto-push + bridge 契约 headless 已证）
 
 **跟踪项**：本机 `make test` 受影响（V8 MSVC 链接 + integration-tests STATUS_ACCESS_VIOLATION，均为环境性，非 SDK 引入）。
-**可选 follow-up**：O1 host clip 链纯度增强 / O2 SystemThemeSnapshot docstring 澄清（低优先级，deep review 留作 follow-up）。
+**可选 follow-up**：~~O2 SystemThemeSnapshot docstring 澄清~~ ✅（2026-07-03）。O1 host clip 链纯度增强（低优先级，deep review 留作 follow-up）。
 
 Evidence: `evidence/round-20260703-160640.txt`
+
+### Round 20 — foundation/text 深度审查 + 修复（2026-07-03 16:20 UTC）
+
+**DC-11 foundation/text 全 crate 深度审查（14 文件 ~1421 行）**——SDK 八层审查 trail 最后一站。
+**3 项修复（TDD，4 新测）**：
+- **M1（medium）**：`shape_with_font` 改用 rustybuzz `pos.x_advance`（含 GPOS kerning）替代 fontdue un-kerned advance——修复 kerning 字体间距偏失。
+- **M2（medium）**：`rasterize_glyph` 加 glyph_id > u16::MAX 拒绝 + `shape_with_font` 钳制 stored glyph_id——闭合 API 契约缺口。
+- **L1（low）**：`wrap_width_and_lines` 加 max_width ≤ 0 防护。
+
+**O2**：`SystemThemeSnapshot` docstring 澄清 fully-resolved 契约（M4 平台探测器）。
+
+**全门禁绿色**：foundation/text 32→36 测 + 下游全部绿色 + reftest 686/686 + product-smoke 19.41% + browser 191/191 + clippy/fmt 净。
+
+**SDK 安全/健壮性深度审查八层全覆盖**：runtime+DSL+i18n+widgets+chrome+render+core+foundation/text。
+headless 可推进的 SDK-side 工作现已全部耗尽（八层深度审查 + 全部 follow-up 修复）。
+
+Evidence: `evidence/round-20260703-162034.txt`
