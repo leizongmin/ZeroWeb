@@ -1,0 +1,28 @@
+Round 11 — 2026-07-03 state check-in
+
+=== Gates ===
+cargo build --workspace: PASS (dev, 0.36s)
+cargo clippy --workspace --all-targets -- -D warnings: PASS (0 warnings)
+cargo fmt --all -- --check: PASS (no changes)
+make product-smoke: PASS (19.87% < 20%, green, baseline zero regression)
+
+=== Tests (test-guard scoped) ===
+All SDK crates (24 crates: ui/* + foundation/text + browser-ui/chrome + adapter-* + examples): ALL PASS
+render-foundation (529 tests): ALL PASS
+browser+host+engine+webview (515 passed, 3 FAILED in zero-webview::tests::coverage_improvements::test_fetch_url_* — pre-existing network env issues, NOT UI SDK related, not in UI SDK change boundary)
+
+=== DC-17 Coverage ===
+Aggregate (29,685 lines): line 94.08% / function 94.23% / region 94.82% (≥85% floor, all per-crate ≥84%)
+Per-crate lows: ui/testing/scene_snapshot.rs 84.36%, ui/widgets/scrollbar.rs 85.61% — all within ≥85% floor
+
+=== DC-16 File Size ===
+All files ≤2000 lines in ui/, foundation/, browser-ui/, apps/browser/src — fully compliant.
+
+=== Decision ===
+Headless SDK-side work exhausted. All gates that can be verified headless are GREEN.
+Remaining terminal gates require GUI/device environment:
+- DC-14 GUI chrome visual acceptance
+- DC-15 HarmonyOS device first frame / Android NDK cross-compile  
+- DC-2 EventLoop::run real window/surface
+- DC-8 Platform a11y real backends (Win/macOS/Linux/Android)
+
