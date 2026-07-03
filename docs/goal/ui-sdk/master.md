@@ -501,8 +501,16 @@
 3. DC-2 Real `EventLoop::run` 阻塞壳：开窗/surface/首帧（需 GUI）。
 4. DC-8 真实平台 a11y 后端：Win/macOS/Linux/移动（需 GUI/平台环境）。
 
-**深度审查低优 follow-up（low，不阻塞，按需独立 turn）**：
-- F2：webview 工厂硬编码 Light theme（dark-mode 需 scheme→factory 签名）。
+**深度审查 follow-up 状态（F1-F4 全部收口，2026-07-03）**：
+- ~~F1~~ ✅ `425b9d32`：PointerPhase::Exited + host hover 追踪（Button pressed 粘滞修复）。
+- ~~F2~~ ✅ `16050c3f`：webview 工厂硬编码 Light theme → `register_chrome_factories_with_webview` 加 `scheme` 参数。
+- ~~F3~~ ✅ `16050c3f`：chrome_model bookmarks 注释更新。
+- ~~F4~~ ✅ `16050c3f`：SecurityBadge.tooltip_message_id() 使用 i18n catalog id 替代 M2 字面量占位。
+
+**本轮 evidence（2026-07-03）**：
+- `product-smoke 19.87%`（< 20% 门槛绿，baseline 零回归）。
+- SDK 全域 30 crate 测全绿（含 chrome 86 + bridge 23 + sdk-chrome 202）；build/clippy/fmt 全净。
+- merge origin/main R982（flex transferred-size-suggestion，crates/layout-engine，正交零冲突零回归）。
 
 ## Next Steps
 
@@ -543,3 +551,8 @@
 11. **DC-8 真实平台 a11y 后端**（需 GUI/平台环境）。
 12. **跟踪项**：本机 `make test` 受 script-sandbox V8 debug-test 链接阻塞（环境性）；`lark-cli` 不可用（环境性）。头端可推进工作已耗尽，本 round 为状态收口。
 13. **工作流注意（git）**：`ui-sdk` 是长期分支，**不要** `git rebase origin/main` 全量重写历史；增量 fast-forward push；如确需 main 同步，用 merge 并在 archive 记录。
+14. ~~**DC-5/DC-7/DC-15 F2/F3/F4 deep-review follow-ups**~~ ✅ **已完成（2026-07-03，commit 16050c3f）**：F2 `register_chrome_factories_with_webview` 加 `scheme` 参数（WebViewWidget 经工厂签名传入 ResolvedColorScheme，dark-mode webview 不再硬编码 Light theme；签名改经 render.rs → sdk_render.rs → app_platform.rs/render-foundation bridge 全链传播）；F3 chrome_model bookmarks 注释更新（明确 `Option<String> url` 为未来文件夹预留）；F4 SecurityBadge.tooltip_message_id() 使用 i18n catalog id `browser.security.*` 替代 M2 字面量占位，catalog 加 4 安全状态 tooltip 文案 + 1 新测。chrome 85→86 测 + bridge 23 + sdk-chrome 202 测全绿；build/clippy/fmt 全净；product-smoke 19.87% 绿。**F1 上轮已修（PointerPhase::Exited）→ F1-F4 全部收口**。同轮：merge origin/main R982（flex transferred-size-suggestion，crates/layout-engine，正交零冲突）。
+15. **DC-14 浏览器迁移 GUI 可视验收**（本环境无 GUI；feature-on 像素级 headless 已证）。
+16. **DC-15 M4 移动端运行时**（需 HarmonyOS 设备/工具链；SDK-side adapter skeleton + headless 集成测已全部收口）。
+17. **DC-2 Real EventLoop::run 阻塞壳**（需 GUI 验证首帧；WinitRuntime::launch setup 核心 headless 已证）。
+18. **DC-8 真实平台 a11y 后端**（需 GUI/平台环境；SDK-side host auto-push + bridge 契约 headless 已证）。
