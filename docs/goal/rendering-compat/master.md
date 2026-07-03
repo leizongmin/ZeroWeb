@@ -2648,6 +2648,28 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R991 R717 Phase 0 调查 = SVG `<img>` viewBox-as-intrinsic bug 定位·4-crate ratio-signal 修复面精确测绘·零源码·纯调查
+
+承 R990 余波结束转 R717（aspect-ratio-intrinsic 簇，非 font 角度）。本轮 read-only Phase 0 调查 R717 驱动案 aspect-ratio-intrinsic-size-007（33.65%，css-flexbox）的精确根因 + 测绘修复面。
+
+**驱动案**：`<div style="display:flex;flex-direction:column"><img src="large-green-rectangle.svg"/></div>`，SVG = `<svg width="100%" height="100%" viewBox="0 0 7500 3750">`（百分比 dim + viewBox ratio 2:1，无绝对固有）。REF = `<svg viewBox="0 0 1000 500" style="background:green">`。期望 img 在 flex column 内 width 拉伸 800、height = 800/ratio = 400（800×400 绿）。
+
+**根因精确**：`decode_svg_bytes`（render-foundation/image_cache.rs:421）用 `usvg tree.size()` 对 % dim SVG 返回 **viewBox 维度（7500×3750）作 intrinsic size**。CSS 规范：**% dim SVG 无 intrinsic size（仅有 viewBox ratio）**。这 7500×3750「假固有」经 `img_intrinsic_sizes`（tree.rs:54）→ `apply_replaced_element_sizing`（tree.rs:168）→ taffy，使 flex transferred-size suggestion 错误（按假固有 7500×3750 而非 ratio+definite-cross 推导）。
+
+**R980 trap 重述 + 区分**：R980 测 **ratio-推导（50×25）decode fix** → all-auto 反退（rendered 50×25 vs chromium 300×150）。**ratio-推导错**：chromium 对 % dim SVG `<img>` 用 **300×150 CSS 默认**（非 ratio-推导）。R980 未测 300×150-specific（测的是 ratio-推导）；但 300×150 对 all-auto 正确，对 explicit-dim（width:40 + viewBox ratio 2:1）经 aspect_ratio 推导 height=20 也正确（ratio 2.0 同）。但若 viewBox ratio≠2:1（如 1:1），300×150 默认 ratio 2:1 与真 ratio 1:1 冲突 → 须「300×150 默认盒 + 缩放到真 ratio」（CSS §10.3.2）。
+
+**R717 真 fix（4-crate ratio-signal，已测绘）**：
+1. **decode（render-foundation）**：区分 **真固有**（PNG/both-attr-SVG）vs **ratio-only**（%-dim/viewBox-only SVG）—— 须 parse SVG width/height attr 判定是否 %（usvg 不暴露原始 attr 类型）；ratio-only 不填 image_sizes，仅填并行 `image_ratios: HashMap<u64, f32>`（viewBox w/h）。
+2. **pipeline（engine）**：加 `image_ratios` 字段（镜像 image_sizes），经 extract_image_sizes（harness）填充，转发 painter/layout。
+3. **tree.rs §10.3.2 消费（layout-engine）**：img 无 HTML/CSS dim 时——若 image_sizes Some（真固有）用之；elif image_ratios Some 用 **300×150 默认盒缩放到 ratio**（如 ratio=2 → 300×150，ratio=1 → 150×150，ratio=0.5 → 75×150）；else 300×150。explicit-dim 一侧时 aspect_ratio 用 image_ratios（非默认 2:1）。
+4. **flex transferred-size（R982/R983 §4.5）**：确保 transferred-suggestion 用 ratio + definite-cross 而非假固有。
+
+**范围**：跨 4 crate（render-foundation decode + engine pipeline + layout-engine tree.rs + wpt-runner harness extract）+ Option 类型变化（image_sizes → Option 或并行 map）。driving 案 5-9 个（aspect-ratio-intrinsic 簇 007 33% / 003/004 15% / 005/009/008 2-3%）。中等 yield（~5 case）高 effort。
+
+**裁决**：R717 是真 multi-session 架构（4-crate + Option 变化 + SVG attr parse），非单 session 可完成。Phase 0 已精确定位根因（usvg viewBox-as-intrinsic）+ 测绘修复面（4 步跨 crate）。**勿以 R980 ratio-推导 decode 单点 fix 重试**（all-auto 反退 trap 已证）；须完整 ratio-signal（decode 区分 + 并行 map + tree.rs 消费 + transferred-size）。下会话 dedicated session 实施。
+
+**▶ 下会话**：① **R717 实施（dedicated session）**——按 Phase 0 测绘的 4 步：decode 加 SVG attr % 检测 + image_ratios map（additive Phase 0 先 land dormant 零回归）→ tree.rs §10.3.2 消费 300×150-scaled-to-ratio → A/B aspect-ratio-intrinsic 簇 + 全量 oracle；② 备选 per-font 真实 ascent（R887 provider wiring，R990 已证常数可行 per-font 增量）；③ R370 flex-container-intrinsic-width。font-wall layout-side 常数 lever 已尽（R990 + line-height + site-3 三证），forward 是 R717 replaced-element sizing 或 per-font provider。
+
 **意义**：**font-wall 首次实质突破**——R388/R631/R633/R643/R668 五证把 font-wall 定性为「不可消除」，但那些是**光栅化/选择/advance/bolding/rustybuzz** 五角度；**line-box ascent ratio**（apply_vertical_alignment 行盒度量）是**未被 R891 测过的第 6 角度**（R891 concept ② 是 paint-only `render_fragment baseline_offset` 字形定位，**不**改行盒高度；本 R990 改 apply_vertical_alignment strut/run ascent → 行盒高度本身，机制不同）。R989 已纠正此传递性证伪误判。**+138 oracle-pass 证实**：非-Ahem 文本行盒高度修正（0.8→0.928）让 138 案接近 chromium 的真实行盒度量跨过 1% 阈值。这是迄今单轮最大 DC-14 yield 之一，打破 R964-R989 调查/neutral 为主的僵局。
 
 **纠正 R989「7 次 strut 先例」悲观预期**：R834/R836/R849/R875/R889/R890/R891 七次 strut net-negative **全部是 provider 单点或 paint-only 变体**（受 empty-styles / 不改行盒高度 双重局限），**is_ahem-gated ratio 是首个真正改变行盒度量的方案，且 net 正**。font-wall 非「永久 plateau」——line-box ascent 角度可修，证明结构性 plateau 内仍有 narrow slice 可挖。
