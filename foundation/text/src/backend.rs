@@ -97,6 +97,11 @@ impl FontdueBackend {
         if size_px <= 0.0 {
             return Err(TextError::InvalidRequest("size_px must be > 0".into()));
         }
+        if glyph_id > u16::MAX as u32 {
+            return Err(TextError::InvalidRequest(format!(
+                "glyph_id {glyph_id} exceeds u16::MAX"
+            )));
+        }
         let font = self
             .fonts
             .iter()
@@ -248,15 +253,18 @@ fn shape_with_font(font: &LoadedFont, text: &str, size_px: f32, direction: TextD
     let mut out = Vec::with_capacity(infos.len());
     for (info, pos) in infos.iter().zip(positions.iter()) {
         // glyph_id == 0 → .notdef（字体缺字），用 0.6·size 估算宽度避免塌陷。
+        // 用 rustybuzz pos.x_advance（含 GPOS kerning）而非 fontdue per-glyph advance，
+        // 保证 kerning 调整（如 "AV" 的 V 向 A 下收进）在 x 前进量中生效（DC-11）。
         let x_advance = if info.glyph_id == 0 {
             size_px * 0.6
         } else {
-            font.font
-                .metrics_indexed(info.glyph_id.min(u16::MAX as u32) as u16, size_px)
-                .advance_width
+            pos.x_advance as f32 * px_per_unit
         };
+        // 钳制 glyph_id 到 u16 范围（fontdue rasterize_indexed 接收 u16）；
+        // 同时保证 rasterize_glyph 的 glyph_id→u16 截断前值与 metrics 一致。
+        let glyph_id = info.glyph_id.min(u16::MAX as u32);
         out.push(PositionedGlyph {
-            glyph_id: info.glyph_id,
+            glyph_id,
             cluster: info.cluster,
             x_advance,
             y_advance: pos.y_advance as f32 * px_per_unit,
@@ -290,7 +298,13 @@ fn shape_fallback_per_char(font: &LoadedFont, text: &str, size_px: f32) -> Vec<P
 }
 
 /// 贪心硬折行：累计 advance 超过 `max_width` 即折行。返回 (最宽行宽, 行数)。
+///
+/// `max_width ≤ 0` 时视为无约束（单行），避免每 glyph 独占一行的病态行为。
 fn wrap_width_and_lines(glyphs: &[PositionedGlyph], max_width: f32) -> (f32, u32) {
+    if max_width <= 0.0 {
+        let w = glyphs.iter().map(|g| g.x_advance).sum::<f32>();
+        return (w, if glyphs.is_empty() { 0 } else { 1 });
+    }
     let mut lines = 1u32;
     let mut line_w = 0.0f32;
     let mut widest = 0.0f32;
@@ -648,5 +662,89 @@ mod tests {
             b.rasterize_glyph(FontId(999), 1, 16.0),
             Err(TextError::FontNotFound)
         ));
+    }
+
+    // ── M1 kerning fix: rustybuzz x_advance（DC-11 深度审查）─────────────
+
+    #[test]
+    fn shape_x_advance_uses_rustybuzz_pos_for_ahem_consistency() {
+        // Ahem 无 kerning → rustybuzz pos.x_advance * px_per_unit 与 fontdue advance_width 对
+        // 1em 方块字体给出相同结果。本测验证修复后 x_advance 仍是正确的像素值。
+        let b = backend_with_ahem();
+        let shaped = b
+            .shape(&ShapeInput {
+                text: "A".into(),
+                font_request: FontRequest::new("Ahem"),
+                size_px: 16.0,
+                direction: TextDirection::Ltr,
+                script: None,
+                scale_factor: 1.0,
+            })
+            .unwrap();
+        let g = &shaped.runs[0].glyphs[0];
+        // Ahem 1em 方块：advance ≈ size_px（允许浮点误差）。
+        assert!(
+            (g.x_advance - 16.0).abs() < 1.0,
+            "Ahem 'A' at 16px advance ≈ 16, got {}",
+            g.x_advance
+        );
+        assert!(g.x_advance > 0.0);
+        assert_eq!(shaped.total_advance_x, g.x_advance); // 单字符 = 总 advance
+    }
+
+    // ── M2 glyph_id 截断校验（DC-11 深度审查）────────────────────────────
+
+    #[test]
+    fn rasterize_glyph_rejects_glyph_id_exceeding_u16_max() {
+        let b = backend_with_ahem();
+        let (fid, _) = shape_first_glyph_id(&b, "A", 16.0);
+        // glyph_id > 65535 → InvalidRequest，不静默截断。
+        assert!(matches!(
+            b.rasterize_glyph(fid, u16::MAX as u32 + 1, 16.0),
+            Err(TextError::InvalidRequest(_))
+        ));
+    }
+
+    #[test]
+    fn shape_clamps_stored_glyph_id_to_u16_max() {
+        // shape_with_font 现在钳制 glyph_id 到 u16::MAX（与 metrics_indexed 一致），
+        // 保证后续 rasterize_glyph 的 glyph_id 也不超 u16 范围。
+        let b = backend_with_ahem();
+        let shaped = b
+            .shape(&ShapeInput {
+                text: "A".into(),
+                font_request: FontRequest::new("Ahem"),
+                size_px: 16.0,
+                direction: TextDirection::Ltr,
+                script: None,
+                scale_factor: 1.0,
+            })
+            .unwrap();
+        // Ahem 字体 glyph_id 远小于 65535，验证产出 glyph_id 在 u16 范围内。
+        for g in &shaped.runs[0].glyphs {
+            assert!(g.glyph_id <= u16::MAX as u32, "glyph_id must be ≤ u16::MAX");
+        }
+    }
+
+    // ── L1 wrap 防护（DC-11 深度审查）─────────────────────────────────────
+
+    #[test]
+    fn wrap_helper_max_width_zero_or_negative_is_single_line() {
+        // max_width ≤ 0 → 视为无约束，返回单行（不每 glyph 独占一行）。
+        let glyphs: Vec<PositionedGlyph> = (0..5)
+            .map(|i| PositionedGlyph {
+                glyph_id: i,
+                cluster: i,
+                x_advance: 10.0,
+                y_advance: 0.0,
+                x_offset: 0.0,
+                y_offset: 0.0,
+            })
+            .collect();
+        for &mw in &[0.0, -1.0, -100.0] {
+            let (w, lines) = wrap_width_and_lines(&glyphs, mw);
+            assert_eq!(lines, 1, "max_width={mw}: should be single line");
+            assert!((w - 50.0).abs() < 0.01);
+        }
     }
 }

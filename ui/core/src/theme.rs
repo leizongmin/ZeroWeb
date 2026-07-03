@@ -92,7 +92,15 @@ impl ResolvedColorScheme {
     }
 }
 
-/// 系统主题快照（由 `ui/runtime::platform` 探测）。
+/// 平台探测返回的系统主题快照。
+///
+/// **字段角色**：`system_scheme` 是已含高对比度的 fully-resolved 方案——
+/// 当用户偏好为 `System` 时直接取用（OS 已报告含 HC 的完整方案）。
+/// `high_contrast` 是独立布尔，供用户显式选择 `Light`/`Dark`/`Custom`
+/// 但 OS 处于高对比模式时升级到 `HighContrast*` 变体。
+///
+/// M4 平台探测器须按此契约填充：`system_scheme` 含 HC 信息，
+/// `high_contrast` 供偏好非 `System` 的分支做 HC 升级判断。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SystemThemeSnapshot {
     pub system_scheme: ResolvedColorScheme,
