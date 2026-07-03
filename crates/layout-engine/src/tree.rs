@@ -307,15 +307,8 @@ fn apply_replaced_element_sizing(
     // img 999×500 溢出 flex width:0 容器，应被 min-width:auto=100 floor 后收缩到 100）。
     // spec：auto-min = min(content suggestion, transferred suggestion)，transferred =
     // 明确 cross size × 固有比。此处仅当父是 flex 容器且有明确 cross size 时计算
-    // transferred 并设 min_size.main（仅在水平书写模式，保守避免 writing-mode 轴混淆）。
-    apply_flex_transferred_min_size(
-        taffy_style,
-        computed,
-        doc,
-        styles,
-        dom_id,
-        img_intrinsic_sizes.get(&dom_id).copied(),
-    );
+    // transferred 并设 min_size.main（row + column 对称，仅水平书写模式）。
+    apply_flex_transferred_min_size(taffy_style, computed, doc, styles, dom_id);
 }
 
 /// 替换元素 flex item 的 min-size:auto transferred-size-suggestion（CSS Flexbox §4.5 / csswg #5663）。
@@ -323,20 +316,21 @@ fn apply_replaced_element_sizing(
 /// taffy 0.7 把 leaf（替换元素）flex item 的自动最小尺寸当作其 definite 主尺寸本身
 /// （如 `width:999px` → min-width 999），导致替换 flex item 无法被 flex-shrink 收缩。
 /// 规范要求自动最小 = min(content size suggestion, transferred size suggestion)，
-/// 其中 transferred = flex item 的「明确 cross size」× 固有宽高比。例如
-/// `<img 固有 300×150>` 在 `display:flex;height:50px` 容器内：cross(height)=50，
+/// 其中 transferred = flex item 的「明确 cross size」× 固有宽高比。当 cross 明确时
+/// content suggestion 也是 cross 推导（= transferred），故 auto_min = transferred。
+/// 例如 `<img 固有 300×150>` 在 `display:flex;height:50px` 容器内：cross(height)=50，
 /// transferred main(width) = 50 × 300/150 = 100px。
 ///
 /// 仅当父是 flex/inline-flex 容器、有明确 cross size（Px）、子有 aspect_ratio、且
-/// 子在水平书写模式下时计算并设置 `min_size.main = min(intrinsic_main, transferred)`。
-/// 其余情况（非 flex / cross 不明确 / 无 ratio / 垂直书写模式）保持 taffy 默认，避免回归。
+/// 子在水平书写模式下、cross-margin 非 auto、align-self 为 Auto/Stretch（cross 被拉伸）
+/// 时计算并设置 `min_size.main = transferred`（再被 specified main 钳制）。
+/// 其余情况保持 taffy 默认，避免回归。
 fn apply_flex_transferred_min_size(
     taffy_style: &mut taffy::Style,
     computed: &ComputedStyle,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     dom_id: NodeId,
-    intrinsic: Option<(f32, f32)>,
 ) {
     use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue};
 
@@ -360,16 +354,10 @@ fn apply_flex_transferred_min_size(
         _ => return,
     };
     // 主/交叉轴：column → main=height/cross=width；row(含 reverse) → main=width/cross=height。
-    // ★ 仅 row 实现（column transferred 在 flex-aspect-ratio-img-column-012 /
-    // flex-minimum-height-flex-items-007 致回归，column 轴的 cross-stretch 语义需额外验证，
-    // 待多 session）。column 直接返回，保持 taffy 默认。
     let is_column = matches!(
         parent_style.flex_direction,
         FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
     );
-    if is_column {
-        return;
-    }
     // 父容器的明确 cross size（Px）。仅 Px 算「明确」；百分比/auto 不算（无法解 transferred）。
     let cross = if is_column {
         match &parent_style.width {
@@ -390,7 +378,8 @@ fn apply_flex_transferred_min_size(
     // 拉到容器 cross size）时成立。item 有 auto cross-margin（margin:auto 居中而非拉伸）
     // 或显式非 stretch 的 align-self（center/flex-start/...）时 cross size 不等于容器
     // cross → 跳过（auto-margins-002 回归：img margin:auto + max-width，transferred 会
-    // 与 max 冲突）。row cross=height→margin-top/bottom；column cross=width→margin-left/right。
+    // 与 max 冲突；flex-aspect-ratio-img-column-012：align-items:flex-start 非拉伸）。
+    // row cross=height→margin-top/bottom；column cross=width→margin-left/right。
     let (cross_margin_a, cross_margin_b) = if is_column {
         (&computed.margin_left, &computed.margin_right)
     } else {
@@ -406,14 +395,35 @@ fn apply_flex_transferred_min_size(
         // 显式 center/flex-start/flex-end/baseline/start/end/space-* → 不拉伸，跳过
         _ => return,
     }
-    // transferred main size：row → cross_h × ratio(w/h)；column → cross_w / ratio
-    let transferred = if is_column { cross / ratio } else { cross * ratio };
-    // content suggestion proxy = 固有主尺寸（若有）
-    let intrinsic_main = intrinsic.map(|(w, h)| if is_column { h } else { w });
-    let mut auto_min = match intrinsic_main {
-        Some(im) => im.min(transferred),
-        None => transferred,
+    // transferred main size：row → cross_h × ratio(w/h)；column → cross_w / ratio。
+    // transferred 须基于 item 的 **content-box** cross size（扣除 item cross 方向 padding），
+    // 非 border-box（flex-aspect-ratio-intrinsic-padding-001：img padding:20，cross 240 border-box
+    // → content 200 → transferred height = 200/ratio=100，非 240/ratio=120）。无 padding 时
+    // item_cross_padding=0，不影响（driving/007/022 均无 padding）。仅扣 padding 不扣 border：
+    // ZW 默认 border-width=medium=3px（即使 border-style:none），扣 border 会污染无 border 项。
+    let px = |lv: &LengthValue| match lv {
+        LengthValue::Px(v) => *v as f32,
+        _ => 0.0,
     };
+    let item_cross_padding = if is_column {
+        px(&computed.padding_left) + px(&computed.padding_right)
+    } else {
+        px(&computed.padding_top) + px(&computed.padding_bottom)
+    };
+    let content_cross = (cross - item_cross_padding).max(0.0);
+    if content_cross <= 0.0 {
+        return;
+    }
+    let transferred = if is_column {
+        content_cross / ratio
+    } else {
+        content_cross * ratio
+    };
+    // §4.5 + csswg #5663：当 cross size 明确时，content size suggestion 也是从 cross 推导
+    // （= transferred），而非 raw 固有主尺寸。故 auto_min = transferred（非 min(intrinsic, transferred)）。
+    // flex-minimum-height-flex-items-007：img 固有 60×60，column cross(width)=100，transferred=100；
+    // 旧 min(intrinsic=60, transferred=100)=60 错（应 100），致回归。现直接用 transferred。
+    let mut auto_min = transferred;
     // §4.5：auto-min 由 specified size suggestion（子元素明确主尺寸）钳制（auto-min ≤ specified）。
     // 例：img 显式 width:50（< transferred 160）时，auto-min 须 ≤50，否则会错误 floor 到 160，
     // 把本应 50px 的 img 撑大（flex-item-transferred-sizes-padding-* 回归）。

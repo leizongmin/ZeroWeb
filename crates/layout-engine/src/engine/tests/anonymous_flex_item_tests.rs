@@ -378,6 +378,58 @@ fn test_flex_transferred_min_size_not_applied_to_non_flex_parent() {
     );
 }
 
+/// R983 回归：flex-direction:column 下 transferred-size-suggestion 作用于主轴（height）。
+/// 容器 flex-direction:column width:80px height:0，img height:999 固有 300×150（ratio 2:1）。
+/// 主轴=height，cross=width=80（明确）。transferred main = cross_w / ratio = 80 / 2 = 40px。
+/// img height 应被 min-height:auto=40 floor（从 999 收缩到 40）。
+/// 关键：auto_min = transferred（40），非 min(intrinsic_h=150, transferred=40)=40——
+/// 此处 intrinsic>transferred 故两种算法一致；真正区别在 intrinsic<transferred 的案
+/// （flex-minimum-height-flex-items-007：固有 60×60，cross 100，transferred 100，intrinsic 60）。
+#[test]
+fn test_flex_transferred_min_size_column_direction() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex; flex-direction:column; width:80px; height:0px;"><img src="g.png" style="height:999px;"></div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let mut img_sizes = HashMap::new();
+    img_sizes.insert(img_id, (300.0, 150.0));
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let (w, h) = find_box(&result.root, img_id).expect("img box found");
+    assert!(
+        (h - 40.0).abs() < 2.0,
+        "R983: column flex item img height should be clamped to transferred min-size ~40px (cross 80 / ratio 2), got width={w}, height={h}"
+    );
+}
+
+/// R983 回归：column flex item，intrinsic < transferred 时 auto_min = transferred（非 intrinsic）。
+/// 同 flex-minimum-height-flex-items-007：img 固有 60×60（ratio 1），column 容器 width:100。
+/// transferred = cross_w / ratio = 100 / 1 = 100。旧 min(intrinsic_h=60, 100)=60 错→应 100。
+#[test]
+fn test_flex_transferred_min_size_column_intrinsic_smaller_than_transferred() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex; flex-direction:column; width:100px; height:10px;"><img src="g.png" style="width:100px;"></div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let mut img_sizes = HashMap::new();
+    img_sizes.insert(img_id, (60.0, 60.0)); // 固有 60×60，ratio 1
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let (w, h) = find_box(&result.root, img_id).expect("img box found");
+    assert!(
+        (h - 100.0).abs() < 2.0,
+        "R983: column flex item img height should be transferred min-size ~100px (cross 100 / ratio 1), NOT raw intrinsic 60; got width={w}, height={h}"
+    );
+}
+
 /// 在 LayoutResult 树中按 node_id 查找盒的 (width, height)。
 fn find_box(root: &LayoutBox, node_id: zero_dom::NodeId) -> Option<(f32, f32)> {
     let mut stack = vec![root];
