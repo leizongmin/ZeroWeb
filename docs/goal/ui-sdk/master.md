@@ -695,3 +695,9 @@ Evidence: `evidence/round-20260703-165600.txt`
 无新 origin/main commit，无代码变更。全门禁绿色：reftest 686/686 | product-smoke 19.41% | build+fmt OK。状态与 R22 一致，headless 耗尽。
 
 Evidence: `evidence/round-20260703-170300.txt`
+
+### Round 24 — origin/main sync + integration 验证（2026-07-03）
+
+Merge origin/main R992（R717 decode-level 实验，正交）。无 SDK 代码变更。全门禁绿色 + **zero-integration-tests 724 passed ✅**（STATUS_ACCESS_VIOLATION 不可复现）。核心 SDK coverage 90.45%（>85%）。Headless 耗尽不变。
+
+Evidence: `evidence/round-20260703-171500.txt`

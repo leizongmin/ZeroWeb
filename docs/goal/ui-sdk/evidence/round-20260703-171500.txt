@@ -1,0 +1,17 @@
+Round 24 — origin/main sync + integration-tests verified (2026-07-03)
+
+Merge origin/main R992 (R717 decode-level experiment, crates/engine, docs-only, orthogonal).
+Zero SDK code changes.
+
+Gates:
+- cargo build --workspace: ✅
+- cargo clippy -D warnings: ✅
+- cargo fmt --check: ✅
+- make reftest: ✅ 686/686 (100%)
+- make product-smoke: ✅ 19.41% (< 20%)
+- core SDK + browser tests: ✅ all green (browser 191/191)
+- zero-integration-tests: ✅ 724 passed / 0 failed (STATUS_ACCESS_VIOLATION NOT reproducible)
+- core SDK coverage: 90.45% line / 86.71% fn / 90.31% region (> 85%)
+
+Tracked: make test blocked by V8 MSVC debug-test link (environmental, unfixable).
+Headless SDK work fully exhausted. Terminal gates unchanged.
