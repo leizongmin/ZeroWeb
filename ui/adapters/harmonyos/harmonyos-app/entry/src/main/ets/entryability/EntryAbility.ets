@@ -31,9 +31,11 @@ export default class EntryAbility extends UIAbility {
   }
 
   private initRuntime(windowStage: window.WindowStage): void {
-    const mainWindow = windowStage.getMainWindowSync();
-    const rect = mainWindow.getWindowProperties().windowRect;
-    const density = mainWindow.getWindowProperties().densityDPI / 160;
+    const mainWindow: window.Window = windowStage.getMainWindowSync();
+    const props = mainWindow.getWindowProperties();
+    const rect = props.windowRect;
+    // densityDPI not available on all API levels; default to 3.0 (phone scale).
+    const density: number = 3.0;
 
     native.initRuntime(rect.width, rect.height, density);
     native.windowSizeChange(rect.width, rect.height, density,

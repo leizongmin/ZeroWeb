@@ -1,4 +1,5 @@
 {
+  "modelVersion": "6.1.1",
   "name": "zerobrowser",
   "version": "1.0.0",
   "description": "ZeroBrowser HarmonyOS App",

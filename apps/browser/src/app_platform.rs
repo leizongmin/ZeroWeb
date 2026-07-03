@@ -1044,10 +1044,10 @@ fn compose_sdk_chrome_replacement_with_webview(
     use zero_ui_core::layout::WindowMetrics;
     use zero_ui_core::theme::{ResolvedColorScheme, SemanticTokens};
 
-    let Some(ic) = image_cache.as_mut() else {
-        return (page_fills, page_glyphs);
-    };
-
+    // image_cache 可为 None（fresh tab 无 image cache）。SDK chrome 仍须渲染——仅跳过
+    // ImageCache 合并（text glyph image 暂不解析，几何/chrome bars 正常画）。**此前 None
+    // 时 early-return 致 SDK chrome 完全不渲染**（帧只剩 chrome_shadows），是 DC-14
+    // chrome/page region 大面积 diff 的根因（2026-07-04 诊断）。
     let backend = sdk_font_backend();
     let logical_size = Size::new(width as f32, height as f32);
     let metrics = WindowMetrics {
@@ -1061,14 +1061,21 @@ fn compose_sdk_chrome_replacement_with_webview(
     };
 
     // 构建 WebView surface：页面 fills + webview 额外图元 + 图像数据。
-    // surface_id=1：主 WebView（与 WebViewWidget 使用的 surface_id 一致）。
-    const SURFACE_ID: u64 = 1;
+    // surface_id 必须与 WebViewWidget 工厂读取的 surface_id（render.rs
+    // `register_chrome_factories_with_webview`，默认 0）**一致**——WebViewWidget 在
+    // ExternalSurface marker 上携带此 id，paint_scene 经 draw_external_surface(rect, id)
+    // 取回本 surface 合成。此前为 1（与工厂默认 0 错配）→ 页面内容永不合成（DC-14
+    // page-region 99.70% diff 根因，2026-07-04 诊断）。
+    const SURFACE_ID: u64 = 0;
     // DC-3 phase-2：把 WebView ImageCache 经 surface pipeline 传递（真实纹理合成）。
     // snapshot 帧 cache 条目 → surface ImageCache（insert_with_key 保留原键）；
     // 帧 cache 保留原条目不清理（scene_primitives.images 仍引用原键）。
     // surface 内的 images 经 bridge merge_surface_with_cache → extend → remap 后
     // 在帧 cache 产生新副本（暂时冗余，但证明 pipeline 端到端，零 product-smoke 风险）。
-    let frame_snapshot = ic.snapshot_entries();
+    let frame_snapshot: Vec<_> = match image_cache.as_mut() {
+        Some(ic) => ic.snapshot_entries(),
+        None => Vec::new(),
+    };
     let webview_surface = webview_extras.map(|extras| {
         let prims = build_webview_surface_primitives(page_fills, extras);
         let surface_cache = if frame_snapshot.is_empty() {
@@ -1083,7 +1090,7 @@ fn compose_sdk_chrome_replacement_with_webview(
         (SURFACE_ID, prims, surface_cache)
     });
 
-    let (bridge, _viewport_rect) = render_chrome_via_sdk_with_webview_surface(
+    let (bridge, viewport_rect) = render_chrome_via_sdk_with_webview_surface(
         shell, &metrics, &SemanticTokens::light(), ResolvedColorScheme::Light, backend, webview_surface,
     );
     let (sdk_prims, sdk_cache) = bridge.into_primitives_and_cache();
@@ -1092,14 +1099,15 @@ fn compose_sdk_chrome_replacement_with_webview(
     let remaining_page_fills: Vec<FillPrimitive> = Vec::new();
 
     // 合并 SDK chrome 的 ImageCache 到帧 cache（text glyph 键重映射，collision-safe）。
-    let rekey = ic.extend_from_other(&sdk_cache);
-
-    // 重映射 SDK image_primitives 的 image_key → 帧 cache key。
+    // image_cache 为 None 时跳过——SDK text image 暂不解析（fallback），几何仍画。
     let mut sdk_images = sdk_prims.images;
-    if !rekey.is_empty() {
-        for img in &mut sdk_images {
-            if let Some(new_key) = rekey.get(&img.image_key) {
-                img.image_key = new_key.clone();
+    if let Some(ic) = image_cache.as_mut() {
+        let rekey = ic.extend_from_other(&sdk_cache);
+        if !rekey.is_empty() {
+            for img in &mut sdk_images {
+                if let Some(new_key) = rekey.get(&img.image_key) {
+                    img.image_key = new_key.clone();
+                }
             }
         }
     }
@@ -1107,6 +1115,23 @@ fn compose_sdk_chrome_replacement_with_webview(
     // 预置 SDK chrome fills 到 scene_primitives 最底层（页面内容在 surface 内，由
     // draw_external_surface 在 ExternalSurface marker 位置合成到正确 z-order）。
     let mut new_fills = sdk_prims.fills;
+    // DC-14 page_bg 覆盖：手绘 chrome 在 chrome_fills step 9（app_render.rs:108）画 page_bg
+    // 白底覆盖 chrome_shadows 的 viewport drop shadow 内部（阴影 rect 覆盖整个 viewport，
+    // blur 填充会把内部染灰）。SDK 替换路径丢弃了手绘 chrome_fills，须在此据 SDK chrome
+    // 布局的 viewport_rect 补 page_bg fill，否则页面区被阴影染灰（DC-14 page-region
+    // 99.70% diff 根因，2026-07-04 诊断）。page_bg 在 light/dark palette 均为白色（colors.rs）。
+    // fill 经 render_full_scene 绘在 shadow 之上（与手绘 step 9 同语义），覆盖阴影内部。
+    if let Some(vp) = viewport_rect {
+        new_fills.push(zero_render_foundation::primitive::FillPrimitive {
+            rect: zero_render_foundation::geometry::Rect::new(
+                vp.origin.x,
+                vp.origin.y,
+                vp.size.width,
+                vp.size.height,
+            ),
+            color: zero_render_foundation::color::Color::rgb(255, 255, 255),
+        });
+    }
     new_fills.append(&mut scene_primitives.fills);
     scene_primitives.fills = new_fills;
 
@@ -1508,7 +1533,7 @@ mod sdk_chrome_tests {
         // 构造模拟页面内容 fills（代表手绘 chrome viewport 位置的页面内容）。
         let page_fills = vec![FillPrimitive {
             rect: Rect::new(16.0, 140.0, 1248.0, 740.0),
-            color: Color::rgb(255, 255, 255),
+            color: Color::rgb(255, 0, 0),
         }];
         let page_glyphs = vec![];
 
@@ -1654,7 +1679,7 @@ mod sdk_chrome_tests {
         // 模拟页面内容 fills（WebView 渲染输出）
         let page_fills = vec![FillPrimitive {
             rect: Rect::new(16.0, 140.0, 1248.0, 740.0),
-            color: Color::rgb(255, 255, 255),
+            color: Color::rgb(255, 0, 0),
         }];
         let page_glyphs: Vec<GlyphDraw> = vec![];
         let glyph_len = page_glyphs.len(); // 在 move 之前缓存
@@ -1840,4 +1865,110 @@ mod sdk_chrome_tests {
             "page region fully differs — render paths diverged unexpectedly"
         );
     }
+
+    /// DC-14 page-region 99.70% diff 根因定位（diagnostic）。
+    ///
+    /// [`dc14_chrome_region_pixel_diff_baseline`] 测出页面区 99.70% diff（应 ≈0%）。本测把
+    /// 「页面区差异」拆解为可定位的指标：对 hand-drawn / SDK / empty 三条帧，分别统计 chrome 区
+    /// 与页面区的 **ink 像素数**（与 empty scene 不同的像素 = 该路径实际画出的内容）。
+    ///
+    /// - 若 SDK 页面区 ink ≈ 0 而 hand-drawn 页面区 ink 高 → SDK 替换路径**丢失了页面内容**
+    ///   （surface 合成未把 page_fills 还原为像素，draw_external_surface 路径断裂）。
+    /// - 若 SDK 页面区 ink 与 hand-drawn 接近但两者互相 diff 高 → 内容存在但**位置错位**
+    ///   （SDK viewport rect 与手绘 viewport y 起点不同 → 整体平移）。
+    /// - 此外统计 SDK 路径在页面区的「非黑像素分布」首末 y，判断页面内容是否被画到了
+    ///   错误的纵向位置。
+    #[test]
+    fn dc14_page_region_ink_diagnostic() {
+        use zero_render_foundation::cpu::render_full_scene;
+        use zero_render_foundation::font::cache::GlyphCache;
+        use zero_render_foundation::font::loader::FontLoader;
+
+        let width = 1280u32;
+        let height = 800u32;
+        let mut app = BrowserApp::new(crate::app::RenderMode::Cpu);
+        app.physical_size = (width, height);
+        app.scale_factor = 1.0;
+
+        let hand_fb = app.render_full_scene_with_webview_for_test(width, height);
+        let sdk_fb = app.render_full_scene_sdk_chrome_for_test(width, height);
+
+        // 空 scene 基线（fresh font/glyph cache）。
+        let empty_fb = {
+            let fl = FontLoader::new();
+            let mut gc = GlyphCache::new(64);
+            render_full_scene(width, height, 1.0, &RenderPrimitives::default(), &fl, &mut gc, None, &[], &[], &[], &[])
+        };
+
+        let chrome_bottom = 96u32;
+        let ink_against_empty = |fb: &zero_render_foundation::surface::FrameBuffer| -> (usize, usize, usize, usize) {
+            // 返回 (chrome_ink, chrome_total, page_ink, page_total)。
+            let mut ci = 0usize;
+            let mut ct = 0usize;
+            let mut pi = 0usize;
+            let mut pt = 0usize;
+            for y in 0..height {
+                let in_chrome = y < chrome_bottom;
+                for x in 0..width {
+                    let ink = fb.get_pixel(x, y) != empty_fb.get_pixel(x, y);
+                    if in_chrome {
+                        ct += 1;
+                        if ink { ci += 1; }
+                    } else {
+                        pt += 1;
+                        if ink { pi += 1; }
+                    }
+                }
+            }
+            (ci, ct, pi, pt)
+        };
+        let (hci, hct, hpi, hpt) = ink_against_empty(&hand_fb);
+        let (sci, _sct, spi, _spt) = ink_against_empty(&sdk_fb);
+
+        // SDK 路径页面区「ink 首末 y」：判断页面内容纵向位置。
+        let mut sdk_page_y_min = None::<u32>;
+        let mut sdk_page_y_max = None::<u32>;
+        for y in chrome_bottom..height {
+            let row_has_ink = (0..width).any(|x| sdk_fb.get_pixel(x, y) != empty_fb.get_pixel(x, y));
+            if row_has_ink {
+                sdk_page_y_min = Some(sdk_page_y_min.map_or(y, |m: u32| m.min(y)));
+                sdk_page_y_max = Some(sdk_page_y_max.map_or(y, |m: u32| m.max(y)));
+            }
+        }
+        let mut hand_page_y_min = None::<u32>;
+        let mut hand_page_y_max = None::<u32>;
+        for y in chrome_bottom..height {
+            let row_has_ink = (0..width).any(|x| hand_fb.get_pixel(x, y) != empty_fb.get_pixel(x, y));
+            if row_has_ink {
+                hand_page_y_min = Some(hand_page_y_min.map_or(y, |m: u32| m.min(y)));
+                hand_page_y_max = Some(hand_page_y_max.map_or(y, |m: u32| m.max(y)));
+            }
+        }
+
+        eprintln!(
+            "DC-14 page ink diagnostic: hand chrome ink {hci}/{hct} ({:.1}%), page ink {hpi}/{hpt} ({:.1}%), y[{:?}..{:?}]; \
+             SDK chrome ink {sci}/{} ({:.1}%), page ink {spi}/{} ({:.1}%), y[{:?}..{:?}]",
+            100.0 * hci as f64 / hct as f64,
+            100.0 * hpi as f64 / hpt as f64,
+            hand_page_y_min, hand_page_y_max,
+            hct, 100.0 * sci as f64 / hct as f64,
+            hpt, 100.0 * spi as f64 / hpt as f64,
+            sdk_page_y_min, sdk_page_y_max,
+        );
+
+        // 像素采样：页面中心 + 四角，定位 SDK 路径给页面区涂了什么色。
+        let hand_ctr = hand_fb.get_pixel(width / 2, (height + chrome_bottom) / 2);
+        let sdk_ctr = sdk_fb.get_pixel(width / 2, (height + chrome_bottom) / 2);
+        let sdk_tl = sdk_fb.get_pixel(2, chrome_bottom + 2);
+        let sdk_br = sdk_fb.get_pixel(width - 3, height - 3);
+        eprintln!(
+            "DC-14 page pixel sample: hand center {:?}; SDK center {:?}, SDK page TL {:?}, SDK page BR {:?}",
+            hand_ctr, sdk_ctr, sdk_tl, sdk_br
+        );
+
+        // 两条路径都应渲染出非空帧（sanity）。
+        assert!(hci > 0, "hand-drawn renders chrome ink");
+        assert!(sci > 0, "SDK renders chrome ink");
+    }
+
 }
