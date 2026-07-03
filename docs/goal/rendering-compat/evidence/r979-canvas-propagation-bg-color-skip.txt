@@ -1,0 +1,48 @@
+# R979 Evidence — CSS §14.2 画布传播 bg color 跳过（body 自身盒不再覆盖画布 image）
+
+Date: 2026-07-03
+Lever type: ZeroWeb-side correctness fix（spec-conformance，非 font-墙；但 driving cluster 仍 font-墙阻挡 PASS）
+Driving: css/CSS2/backgrounds/background-root-007（body 传播时 body 盒 bg color 覆盖画布 image）
+
+## 发现路径（fresh-oracle 深挖 background-root 簇）
+R978 CONTINUE 推荐扫 backgrounds。fresh oracle 67.3%，top worst **background-root-* 12 案簇**
+（7-51%）。深挖 background-root-007（51%，body 传播：`html:transparent; body{background:red url(...)}`）：
+
+pixel 分析：**ZW 显红 10077 px，chromium 0 红**。`square-white.png` 是 PNG color type 0（grayscale，
+**opaque**）→ chromium 平铺全覆盖红底（无红显），ZW 显红 = body 盒在画布上绘了红。
+
+## root cause
+CSS §14.2：根元素背景传播到画布时，元素**自身盒不再绘背景**（color + image 均被画布吸收）。
+ZW `paint_background_image`（effects.rs:69-74）已检查 `canvas_propagated_node` 跳过自身 image，
+但 `paint_background`（mod.rs:1423，绘 bg **color**）**无此检查** → body（传播到画布时）仍绘自身
+bg color → 红色覆盖画布 tiled image（background-root-007 ZW 显红）。
+
+## 修复（painter/mod.rs paint_background 顶部加 guard）
+```rust
+if box_node.node_id.is_some_and(|id| self.canvas_propagated_node == Some(id)) {
+    return;  // CSS §14.2：传播元素自身盒不绘 bg color（画布已统一绘）
+}
+```
+镜像 effects.rs:69 的 image-skip。仅影响传播元素（html/body 其中之一），正常元素零影响。
+
+## 验证（三态门禁 + 产品 smoke + 全量）
+- **driving**：background-root-007 **51.15%→40.98%**（红消除：10077→0；画布 tiled image 现可见）。
+  background-root-018 45.61%→40.28%。余 ~41% = Verdana `<p>` 绿色文本度量（font-墙，非本 fix）。
+- **backgrounds dir**：228/339=67.3%（**0 新 pass**——簇受 font-墙阻挡，但 2 案 diff 降）。
+- **make test**：**12118/0/73**（+1 新单测 test_canvas_propagation_body_skips_own_bg_color）。
+- **clippy/fmt**：干净。
+- **product-smoke welcome**：16.88%（<20%，未变——welcome 无此 body-propagation-image 场景）。
+- **全量 oracle 10397 案**：**4529=44.6%（= R978 baseline，净 0，零回归）**。
+- **单测**：`<html><body style=background:red><p>X</p></body></html>` → 断言恰好 1 个 red fill
+  （画布），非 2（画布+body 双绘）。验证 body 传播时自身盒不绘 bg color。
+
+## 意义 / 限制
+- **真 correctness 修复**（非零价值）：body 盒不再错误覆盖画布 image。spec-conformant（CSS §14.2）。
+  对真实页面（body 传 bg image 时）可见性提升；一旦 font-墙解，background-root 簇可随本 fix 转 PASS。
+- **限制**：0 WPT 新 pass（簇受 Verdana `<p>` font-墙阻挡）。measurable yield 弱于 R976/R978
+  （均 +1 pass），但 correctness 价值实在。
+- **方法论**：fresh-oracle + pixel forensics 深挖「font-墙主导的簇」中的 **clean 子组件**——
+  background-root 簇整体 font-墙，但其 canvas-propagation color absorption 是独立 clean bug。
+
+## Reused by
+未来 font-墙解后 background-root 簇转 PASS（本 fix 已就位）；CSS §14.2 画布传播完整正确性。
