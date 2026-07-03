@@ -99,3 +99,38 @@ fresh-oracle 方法论仍有效（R976/R978/R979 三连证明），但须转向 
 clean 子组件**（R979 canvas-propagation 模式）或 **多 session 架构**（R717 ratio-signal / Phase-A）。
 
 验证：decode fix 回退后 cargo test -p zero-render-foundation image_cache 全绿（67 passed）；git status 干净。
+
+─ 追加：CSS2/normal-flow（599/746=80.3%）扫描 + inline-replaced-width 簇 = XML 命名空间解析 trap ─
+
+normal-flow top worst = inline-replaced-width-* / inline-block-replaced-width-* 簇（8+ 案 10-22%）。
+深查 inline-block-replaced-width-008（22.06%，`<svg:svg height="300">` + 绿 div overlap）：
+
+**trap 机制（独立 probe 确证）**：WPT XHTML (.xht) 用 `<svg:svg>`（命名空间前缀 svg:），ZW 经 html5ever
+**HTML 模式**解析（非 XML）→ local_name 保留前缀字面 "svg:svg"（probe 实测 ns=http://www.w3.org/1999/xhtml
+非 SVG ns，local_name="svg:svg"）→ 后果：
+  1. CSS 选择器 `svg#overlapped-red { display:inline-block }` **不匹配**（type selector `svg` ≠ tag "svg:svg"）
+     → computed display=Inline（probe 实证），display:inline-block 未应用。
+  2. apply_replaced_element_sizing `tag == "svg"` 也不匹配 → sizing 跳过。
+实施 svg sizing fix（加 "svg:svg" 匹配 + CSS §10.3.2 300/150 默认）实测：svg width 600→300（默认生效）
+但 **height 仍 0**（display=Inline 映射 block 但 height 被 inline-only-remeasure 覆盖；且即使 300×300，
+display=Inline vs inline-block 布局行为仍不同）。fix 已回退。
+
+**根本**：inline-replaced-width 簇依赖 **XHTML XML 命名空间解析**（`svg:svg` → local "svg" + SVG ns），
+ZW HTML 解析保留前缀作字面 tag，CSS 选择器 + sizing 双失败。修复须 parser 层 strip 命名空间前缀
+（影响所有 namespaced 元素，broad change）或 XML 解析模式（大改）。配合 goal line 118「内联 SVG 渲染
+out of scope」。★ normal-flow inline-replaced-width 簇 = XML 命名空间 trap，非 clean 单 session lever。
+
+min-height-106（19.39%）= float + min-height + Ahem（font-墙/structural）；其余 normal-flow worst 多
+taffy-backed 已落地区域（R695/R699 LANDED）残余 font/structural。normal-flow 无新 clean lever。
+
+─ 最终总结（5 dir 扫描）──────────────────────────────────────────────────────
+
+5 dir（borders/css1/visudet/values/normal-flow）fresh-oracle 系统扫 + R717 decode 实测 + svg sizing 实测，
+**全部 non-clean**。CSS2 已扫 dir 内 clean single-session lever 确系耗尽。两类新 trap 独立确证：
+(a) R717 decode-level（decode ratio vs 300×150 default 编码矛盾，须 ratio 独立信号 4 crate 同改）；
+(b) inline-replaced-width XML 命名空间（HTML 解析保留 `svg:svg` 前缀，CSS selector + sizing 双失败，
+须 parser strip 前缀或 XML 模式）。二者均多 session / out-of-scope。
+
+measurable pass-rate 提升路径（rally 跨会话协议）：① 未扫大 dir（tables 1139 / selectors 618 / positioning 578）
+仍可能有 taffy-backed clean sizing lever（R976 css-grid 先例）；② R717 full ratio-signal fix（4 crate）；
+③ font-墙 Phase-A IFC 统一（DC-2~5 主线）；④ 真 CSS Tables §3.1 匿名 cell（R978 partial 之上）。
