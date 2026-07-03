@@ -176,3 +176,100 @@ impl PlatformRuntime for HarmonyOSRuntime {
         system_theme_from_dark_mode(self.system_dark, self.system_high_contrast)
     }
 }
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_ui_core::binding::Value;
+    use zero_ui_core::widget::WidgetSpec;
+    use zero_ui_runtime::app::UiApp;
+
+    struct TestApp {
+        counter: i32,
+    }
+    impl UiApp for TestApp {
+        fn root_spec(&self) -> WidgetSpec {
+            let mut s = WidgetSpec::new("test.Label");
+            s.id = Some(zero_ui_core::widget::WidgetId::new("label"));
+            s.props.insert("text", Value::Text(format!("count={}", self.counter)));
+            s
+        }
+        fn dispatch(
+            &mut self,
+            _action: &zero_ui_core::action::ActionId,
+            _payload: Option<zero_ui_core::action::ActionPayload>,
+        ) -> ActionResult {
+            self.counter += 1;
+            ActionResult::Handled
+        }
+    }
+
+    #[test]
+    fn launch_then_pump_touch_event_drives_retained_loop() {
+        let rt = HarmonyOSRuntime::new();
+        let mut app = TestApp { counter: 0 };
+        rt.launch(&mut app, WindowMetrics::phone(), |_host| {});
+
+        rt.enqueue_event(RawHarmonyOSEvent {
+            kind: RawHarmonyOSEvent::KIND_TOUCH,
+            arg0: 0.0,
+            arg1: 100.0,
+            arg2: 200.0,
+            arg3: 1, // DOWN
+        });
+        let outcomes = rt.pump_events(&mut app);
+        assert!(!outcomes.is_empty());
+    }
+
+    #[test]
+    fn launch_then_pump_back_event_enqueues() {
+        let rt = HarmonyOSRuntime::new();
+        let mut app = TestApp { counter: 0 };
+        rt.launch(&mut app, WindowMetrics::phone(), |_host| {});
+
+        rt.enqueue_event(RawHarmonyOSEvent {
+            kind: RawHarmonyOSEvent::KIND_BACK,
+            arg0: 0.0,
+            arg1: 0.0,
+            arg2: 0.0,
+            arg3: 0,
+        });
+        let outcomes = rt.pump_events(&mut app);
+        assert!(!outcomes.is_empty());
+    }
+
+    #[test]
+    fn set_metrics_updates_inner() {
+        let rt = HarmonyOSRuntime::new();
+        let m = WindowMetrics::phone();
+        rt.set_metrics(m);
+        assert_eq!(rt.metrics().logical_size, m.logical_size);
+    }
+
+    #[test]
+    fn enqueue_and_take_events() {
+        let rt = HarmonyOSRuntime::new();
+        rt.enqueue_event(RawHarmonyOSEvent {
+            kind: RawHarmonyOSEvent::KIND_TOUCH,
+            arg0: 0.0,
+            arg1: 10.0,
+            arg2: 20.0,
+            arg3: 1,
+        });
+        rt.enqueue_event(RawHarmonyOSEvent {
+            kind: RawHarmonyOSEvent::KIND_KEY,
+            arg0: 2054.0, // KEYCODE_TAB
+            arg1: 1.0,
+            arg2: 0.0,
+            arg3: 0,
+        });
+        let events = rt.take_pending_events();
+        assert_eq!(events.len(), 2);
+        // Second take returns empty.
+        assert_eq!(rt.take_pending_events().len(), 0);
+    }
+}

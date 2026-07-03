@@ -1,0 +1,27 @@
+Round 12 — 2026-07-03 DC-15 HarmonyOS cross-compile verification
+
+=== HarmonyOS Adapter Tests ===
+Before: 17 tests (event_map 12 + ffi 5)
+After: 21 tests (+4 runtime tests: launch+pump, back event, set_metrics, enqueue+take)
+All 21 tests PASS.
+
+=== OHOS Cross-Compile ===
+Target: aarch64-unknown-linux-ohos (installed via rustup)
+Command: cargo build --target aarch64-unknown-linux-ohos -p zero-ui-adapter-harmonyos
+Result: SUCCESS — compiled cleanly in 5.87s
+
+Dependency chain cross-compiled:
+- zero-ui-core
+- zero-ui-i18n
+- zero-ui-gestures
+- zero-text-foundation
+- zero-ui-render
+- zero-ui-runtime
+- zero-ui-adapter-harmonyos
+
+All 7 crates compile to aarch64-unknown-linux-ohos without errors or warnings.
+
+=== DC-15 Status ===
+- SDK-side skeleton: COMPLETE (HarmonyOS adapter 21 tests + Android adapter 20 tests)
+- Headless cross-compile: VERIFIED for HarmonyOS (aarch64-unknown-linux-ohos)
+- Remaining: real device first frame (requires DevEco Studio + device/emulator, GUI)
