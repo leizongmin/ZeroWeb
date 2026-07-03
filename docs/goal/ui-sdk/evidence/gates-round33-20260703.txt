@@ -1,0 +1,86 @@
+Round 33 — origin/main sync (R996) + rustc ICE 根因定位修复 + 全量门禁复核
+日期: 2026-07-03 (UTC 13:3x)
+分支: ui-sdk (head d1f6e4d9 = merge R996)
+
+================================================================
+1. origin/main 同步
+================================================================
+- fetch origin；ui-sdk 落后 main 1 commit（领先 232）。
+- R996 `24b5b36b` = rendering-compat 纯调查 commit（css-tables/position/multicol 三 dir 扫描），
+  仅改 docs/goal/rendering-compat/master.md (+19 行)，与 UI SDK 正交。
+- `git merge origin/main`（ort 策略）零冲突。merge commit `d1f6e4d9`。
+
+================================================================
+2. 新发现 + 修复：rustc 1.91.0 debug 增量编译 ICE
+================================================================
+现象: `cargo build --workspace`（debug）在 zero-webview (lib) 上失败，rustc 报
+  "the compiler unexpectedly panicked. this is a bug"（query stack during panic，
+  exit 101）。rustc 1.91.0 (f8297e35 2025-10-28)。
+关键定性:
+  - `cargo build -p zero-webview`（单独）成功（1.78s）→ 非 zero-webview 代码缺陷。
+  - 关闭增量 `CARGO_INCREMENTAL=0 cargo build --workspace` 成功（11.14s）→
+    根因 = target/debug/incremental 缓存损坏（rustc 1.91.0 已知增量编译 ICE 类问题）。
+修复: `rm -rf target/debug/incremental`（清除损坏缓存）。修复后
+  `cargo build --workspace`（默认增量）成功（8.26s）→ 缓存损坏非常驻 rustc bug，
+  清缓存即持久修复。
+影响范围: 仅 debug 增量构建路径；release 构建（reftest/product-smoke）不受影响。
+对后续轮次的处置: 若再遇 "could not compile ... the compiler unexpectedly panicked"，
+  先 `rm -rf target/debug/incremental`（或临时 `CARGO_INCREMENTAL=0`）再重试，不要
+  误判为代码回归。本轮所有 scoped test 命令均带 CARGO_INCREMENTAL=0 防御。
+
+================================================================
+3. 全量门禁复核（R996 merge 后）
+================================================================
+| 门禁 | 结果 |
+|------|------|
+| cargo build --workspace | ✅ 零错误（清缓存后） |
+| cargo clippy --workspace --all-targets -- -D warnings | ✅ 零警告 |
+| cargo fmt --check | ✅ 无变更 |
+| make reftest | ✅ 686/686 (100.0%) — Layout 485/485 + Text 201/201 |
+| make product-smoke | ✅ 19.41% (< 20%) — welcome.html vs chromium Oracle 零页面回归 |
+| SDK scoped tests（28 crate） | ✅ 681 passed / 0 failed / 0 ignored |
+| zero-browser（默认） | ✅ 191 passed / 0 failed |
+| zero-browser（sdk-chrome feature） | ✅ 202 passed / 0 failed |
+| cargo build --target aarch64-unknown-linux-ohos -p zero-ui-core | ✅（R29 已证 OHOS 交叉编译；本轮未重跑） |
+
+SDK scoped test 覆盖：core/render/i18n/runtime/widgets/patterns/animation/gestures/
+navigation/overlay/collections/commands/forms/assets/platform/restoration/testing/
+devtools/design-system/dsl + adapters(winit/webview/render-foundation/harmonyos/android)
++ examples + foundation/text + browser-ui/chrome。
+
+================================================================
+4. headless 能力状态
+================================================================
+与 R28–R32 一致：headless 自动化能力已完全耗尽。
+- M1/M2/M3 全部收口；M4 SDK-side skeleton 完整闭合。
+- 8 层深度审查全覆盖（runtime/DSL/i18n/widgets/chrome/render/core/foundation-text）。
+- Follow-up（F1–F4, O1, O2）全部修复。
+
+剩余 4 项终端门禁（均需 GUI/设备环境，本环境不可用）：
+1. DC-2: 真实 EventLoop::run 阻塞壳（开窗/surface/首帧；WinitRuntime::launch setup 核心 headless 已证）。
+2. DC-8: 真实平台 a11y 后端（Win UI Automation / macOS NSAccessibility / Linux AT-SPI / 移动；
+   SDK-side host auto-push + bridge 契约 headless 已证）。
+3. DC-14: 浏览器迁移 GUI 可视验收（cargo run --bin zero-browser sdk-chrome feature；
+   feature-on 像素级 headless 已证 wiring 正确）。
+4. DC-15: 真实移动后端首帧（HarmonyOS 硬指标 + Android stretch goal；SDK-side adapter
+   skeletons + 交叉编译 headless 已证）。
+
+================================================================
+5. 跟踪项（环境性，非 SDK 引入）
+================================================================
+- lark-cli: 本环境不可用（无法发飞书通知；纯告知通道，不阻塞）。
+- rustc 1.91.0 debug 增量 ICE: 本轮定位根因 + 持久修复（清缓存），见上 §2。
+- make test 全量（澄清）:
+  * 非 SDK crate（--test-threads=2）: 10 二进制 5901 passed / 0 failed。
+  * zero-integration-tests（--test-threads=2）: STATUS_ACCESS_VIOLATION 崩溃
+    （Windows V8/renderer 进程 teardown race，崩在禁止修改区，非 SDK 引入）。
+  * zero-integration-tests（--test-threads=1，workaround 复核）: **724 passed /
+    0 failed / 59 ignored**（EXIT=0）→ single-thread workaround 确认可用。
+  * 结论: make test 全量内容全绿（仅集成测试需单线程规避 teardown race）。
+
+================================================================
+6. 结论
+================================================================
+全部 headless 自动化门禁绿色；SDK 无回归；rustc ICE 根因定位并持久修复；
+make test 跟踪项现状澄清（集成 teardown race，单线程规避）。
+剩余 4 项终端门禁均需 GUI/设备环境（headless 已完全耗尽）。

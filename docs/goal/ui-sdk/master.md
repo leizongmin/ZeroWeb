@@ -327,9 +327,8 @@
 
 ## Latest Evidence
 
-- `evidence/gates-round30-20260703-101738.txt` — **Round 30 全门禁复核**：build/clippy/fmt ✅、reftest 686/686 ✅、product-smoke 19.41% ✅、SDK 全 31 crate 零失败 ✅、集成测试 724/724 ✅、coverage 93.30%/92.25%/93.53% ≥85% ✅、origin/main 0 behind ✅。Headless 能力完全耗尽确认。
-- `evidence/gates-round31-20260703-204117.txt` — **Round 31 origin/main sync + V8 init race fix**：merge R993-R994（正交）、V8 isolate Mutex 修复 STATUS_ACCESS_VIOLATION 跟踪项、全门禁绿色、headless 仍耗尽。
-- `evidence/gates-round32-20260703.txt` — **Round 32 origin/main sync (R995) + full gate re-check**：merge R995（css-tables Oracle 69→73，正交零冲突）；build/clippy/fmt ✅；SDK 全 28 crate ✅；browser 191+202 ✅；reftest 686/686 ✅；product-smoke 19.41% ✅。Headless 完全耗尽确认，剩余终端门禁全部需 GUI/设备。
+- `evidence/gates-round33-20260703.txt` — **Round 33 origin/main sync (R996) + rustc ICE 根因定位修复 + 全量门禁复核**：merge R996（rendering-compat 纯调查 doc，正交零冲突）；**新发现并修复 rustc 1.91.0 debug 增量编译 ICE**（zero-webview lib "compiler unexpectedly panicked"，根因 = `target/debug/incremental` 缓存损坏，清缓存后持久修复，处置见 evidence §2）；build/clippy/fmt ✅；reftest **686/686 (100.0%)** ✅；product-smoke **19.41%** (< 20%) ✅；SDK 28 crate scoped **681 passed/0 failed** ✅；browser 默认 **191** + sdk-chrome **202** ✅；`make test` 全量复核：非 SDK crate 10 二进制 **5901 passed/0 failed**，唯一失败 = `zero-integration-tests` lib STATUS_ACCESS_VIOLATION（Windows V8/renderer teardown race，--test-threads=2 仍复现，非 SDK 引入，禁止修改区，single-thread workaround 见跟踪项）。headless 仍完全耗尽，剩余 4 项终端门禁均需 GUI/设备。
+- **R30–R32（压缩）**：连续三轮 origin/main sync（R993–R995，rendering-compat 正交 doc/CSS 修复零冲突）+ 全量门禁复核全绿（build/clippy/fmt / reftest 686/686 / product-smoke 19.41% / SDK + browser scoped / coverage ≥85%）。R31 加 V8_INIT_LOCK 修复 isolate **创建**竞态（teardown race 仍偶发，见 R33）。headless 能力完全耗尽确认。详见 evidence/gates-round30/31/32-*.txt。
 - `evidence/test-20260630-223559.txt` — 首轮 `make test` 实测：RED（script-sandbox debug-test V8 链接环境失败；release 构建 + CI 绿；定性见上）。
 - `evidence/dep-isolation-20260630-234530.txt` — **DC-1 机械验证 PASS**：22 通用 crate 零浏览器依赖；adapter-webview→zero-webview；chrome→ui/*+browser-shell+adapter-webview。
 - `evidence/capability-matrix-20260630-234530.md` — M1 能力矩阵 + DC skeleton 证据锚点 + 未解决缺口。
@@ -766,3 +765,14 @@ Evidence: `evidence/gates-round30-20260703-101738.txt`
 - **headless 推进能力仍耗尽**（与 R29-R30 一致）。剩余终端门禁不变。
 
 Evidence: `evidence/gates-round31-20260703-204117.txt`
+
+### Round 33 — origin/main sync (R996) + rustc ICE 根因定位修复 + 全量门禁复核（2026-07-03）
+
+- **Merge origin/main R996**（`24b5b36b`，rendering-compat 纯调查 doc：css-tables/position/multicol 三 dir 扫描，仅改 docs/goal/rendering-compat/master.md +19 行，正交零冲突；merge commit `d1f6e4d9`）。
+- **新发现 + 修复：rustc 1.91.0 debug 增量编译 ICE**。`cargo build --workspace`（debug）在 zero-webview (lib) 上报 "the compiler unexpectedly panicked. this is a bug"（query stack during panic，exit 101）。定性：`cargo build -p zero-webview` 单独成功；`CARGO_INCREMENTAL=0` 下 workspace 成功 → 根因 = `target/debug/incremental` 缓存损坏。**修复**：`rm -rf target/debug/incremental`，清缓存后默认增量 workspace build 成功（8.26s）→ 非常驻 rustc bug，清缓存持久修复。**对后续轮次处置**：再遇该 ICE 先清增量缓存（或临时 `CARGO_INCREMENTAL=0`），勿误判为代码回归。release 路径（reftest/product-smoke）不受影响。
+- **全量门禁复核（R996 merge 后，全绿）**：build ✅ | clippy `-D warnings` ✅ | fmt ✅ | reftest **686/686 (100.0%)** ✅ | product-smoke **19.41%** (< 20%) ✅ | SDK 28 crate scoped **681 passed/0 failed** ✅ | browser 默认 **191** + sdk-chrome **202** ✅。
+- **`make test` 全量复核**（澄清长期跟踪项现状）：非 SDK crate 10 二进制 **5901 passed/0 failed**；唯一失败 = `zero-integration-tests` lib **STATUS_ACCESS_VIOLATION**（0xc0000005，Windows V8/renderer 进程 teardown race，`--test-threads=2` 仍复现，R24「不可复现」判定失效）。**关键**：崩溃在 V8/renderer 进程 teardown（zero-engine/page-runtime/webview，禁止修改区），**非 SDK 引入、非 SDK crate**。R31 V8_INIT_LOCK 修复的是 isolate **创建**竞态，teardown race 仍偶发。**workaround 复核通过**：`cargo test -p zero-integration-tests --lib -- --test-threads=1` → **724 passed/0 failed/59 ignored**（EXIT=0），single-thread 规避 teardown race 可用。SDK 健康性由 scoped 门禁（SDK 28 crate + browser 191+202 + reftest 686 + product-smoke 19.41%）权威证明。
+- **headless 推进能力仍完全耗尽**（与 R28–R32 一致）。8 层深度审查全覆盖 + F1–F4/O1/O2 follow-up 全闭合。剩余 4 项终端门禁不变（均需 GUI/设备环境）：DC-2 真实 EventLoop::run 阻塞壳、DC-8 真实平台 a11y 后端、DC-14 GUI chrome 可视验收、DC-15 HarmonyOS/Android 设备首帧。
+- **跟踪项**：lark-cli 本环境不可用（纯告知通道，不阻塞）；make test 全量受 integration teardown race 影响（环境性，非 SDK）。
+
+Evidence: `evidence/gates-round33-20260703.txt`
