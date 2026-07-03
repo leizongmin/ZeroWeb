@@ -2648,6 +2648,24 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1006 ★WOFF 1.0 解码器 LANDED·@font-face .woff 字体加载链补齐·FontLoader.load_font 自动 wOFF→sfnt·零回归·R1005「下游未实现」纠正·font cluster 基础设施
+
+承 R1005「@font-face 下游 fetch/decode/register 未实现」。**R1005 部分错误**——查证发现 .ttf 链**早已 wired**（`reftest_fonts.rs::load_font_faces_into` → `FontLoader.load_font` + `register_family_alias`，oracle path reftest.rs:479 调用），`.ttf`/`.otf` @font-face 字体已正确加载（css-fonts/font-face 测 0.35% PASS 证）。**真缺口 = .woff 解码**（fontdue 不识别 woff 容器，971 案用 .woff 静默跳过）。
+
+**改动**：
+- 新 `crates/render-foundation/src/font/woff.rs`（~230 行）= `is_woff`（"wOFF" 魔数）/ `decode_woff`（W3C WOFF 1.0：头/表目录解析 + flate2 ZlibDecoder 解压 `compLength<origLength` 表 + sfnt 偏移表/表目录（按 tag 排序，含 searchRange/entrySelector/rangeShift 计算）/表数据（4 字节对齐）重建）。WOFF2（wOF2 brotli）不支持。
+- `FontLoader.load_font` 自动检测 wOFF → 解码 sfnt → fontdue 加载；family 名解析 + font_data 存 sfnt 字节。`.ttf`/`.otf` 裸 sfnt 路径不变。
+- `flate2 = "1"` 加入 render-foundation 直接依赖（已在 lock 树，png/resvg 传递依赖，非新外部 crate；miniz_oxide 纯 Rust 后端）。
+- 3 单测：`decode_real_woff_revalia`（真实 WPT Revalia.woff → sfnt → fontdue 加载成功）/ `is_woff_rejects_non_woff`（裸 ttf/wOF2/空）/ `decode_truncated_returns_none`（残缺不 panic）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0** ✓（render-foundation 519 含 +3 woff 测）/ **product-smoke welcome 16.57% == R1005 baseline**（<20% gate，welcome 无 @font-face 故零影响）。
+
+**★ yield 现状（诚实·零 PASS 翻转）**：css-fonts 98/282 + text-transform 7/105 oracle A/B **持平**。根因非解码（`first-available-font-005` 用现存 Revalia.woff @ 0.45% PASS 证 .woff 链完整工作），而是 **① 多数 .woff 字体文件未打包**（wpt-data 仅 7 个 .woff，`mplus-1p-regular`/`DoulosSIL-R`/`noto-sans-v8-latin`/`ExTest`/`pass`/`fail` 等缺失——WPT GitHub fetch 任务）+ **② 更深阻塞**（text-transform 应用 R998 多 facet pre-layout+Path A/B / font-features rustybuzz R513 / variable-font 支持）。本解码器是 font cluster 基础设施，yield 须打包字体 + 解更深阻塞（多 session）。
+
+**意义**：font cluster（~450 案 blocked）的 **.woff 解码层补齐**——此前 .woff 完全跳过，现 .woff 字体能被 load_font 加载（验 end-to-end）。R1005「下游未实现」纠正为「下游 .ttf wired / .woff 本轮补」。R910 仅证伪 bidi 簇 font-blocked，未证伪 text-transform/line-break（字体 IS the point），但本轮实测 .woff 加载单独**不产**（须字体文件 + 应用逻辑齐备）。
+
+**▶ 下会话**：① 打包缺失 WPT .woff 字体（mplus-1p-regular/DoulosSIL-R/noto-sans-v8-latin 等，~/use-proxy 经 WPT GitHub fetch 存 `tests/wpt-runner/wpt-data/fonts/`）后 A/B text-transform/line-break——测「font-loading 单独 yield」假设；② 若仍零 yield → 证更深阻塞主导（text-transform 应用 R998 / line-break CJK 规则），转 rustybuzz-in-production（R513 shaper.rs:82 features: Vec::new()）或 text-transform pre-layout 应用；③ R1004 per-font wiring 待字体加载真起效后才有 yield。本 R1006 LANDED 工作 .woff 解码器（非 dormant），零回归，font cluster 基础设施推进。
+
 ### R1005 ★★font-wall 单 session 杠杆四角度证伪 + fresh full oracle（plateau 再确认·post-R990 多 dir 进）·pre-wrap-align 簇 ruled out·零源码·纯调查
 
 承 R1004「per-font ascent step-2 wiring 是下会话 CONTINUE」。本轮**先评估该 wiring 的 yield 前置条件**，再决定是否投入。结论：**per-font wiring 当前零 yield**（须 webfont 先行）+ 另三角度同证伪。同时跑 fresh full oracle 得 post-R990/R1004 当前数。
