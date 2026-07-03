@@ -68,3 +68,6 @@ node_modules/
 __pycache__/
 *.pyc
 product-smoke-cpu.png
+
+# 渲染兼容性评审证据（截图/交叉验证报告，可由 reftest / chromium-oracle-shot.mjs 重新生成）
+docs/goal/rendering-compat/evidence/

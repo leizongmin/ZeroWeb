@@ -2648,6 +2648,80 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1007 WPT @font-face .woff 字体打包 + font-loading yield 三簇证伪（R910 模式扩展）·loader 持有已解码 sfnt（生命周期修复）·零 oracle yield·纯调查+数据
+
+承 R1006「打包缺失 WPT .woff 字体后 A/B 测 font-loading 单独 yield」。本轮：① 经 ~/use-proxy 代理从 WPT GitHub raw 打包 7 个缺失 .woff 字体到 wpt-data/fonts/（mplus-1p-regular 803KB / Scheherazade-Regular / sileot-webfont / noto/noto-sans-v8-latin / math/mathvariant-italic）+ css-values/resources/ExTest(.woff/-NoSpace)；② A/B 三簇 oracle。
+
+**★ font-loading 单独 yield 证伪（R910 模式扩展，决定性）**：打包字体后 **css-fonts 98/282 + text-transform 7/105 + line-break 0/84 全部持平**（零 PASS 翻转）。结合 R910（bidi 簇 font-blocked 已证伪），font-loading 单独**不产**结论现已覆盖 4 簇。机制清晰：**这些簇的测试检验 LOGIC 非 font 渲染本身**——
+- line-break（0/84）：测 CJK 严格/松散换行**规则**（word-break: strict/loose/normal），换行点由规则定非字体→加载 mplus 不改换行。
+- text-transform（7/105）：测 capitalize/uppercase/lowercase **应用**（R998 多 facet pre-layout+Path A/B），transform 逻辑非字体→加载字体不改应用。
+- css-fonts（98/282）：测 font-features/variant/**ligature**（rustybuzz R513 未接生产）+ variable-font，需 GSUB/GPOS→加载字体但 features 不应用。
+- bidi（R910）：测 bidi**算法**布局。
+
+即 **font-loading 是这些簇的必要非充分条件**——字体加载让 glyph 正确渲染，但 PASS 还需对应的 LOGIC（规则/transform/features/bidi）实现。R1006 woff 解码器 + 本轮字体打包把 font-loading 层**彻底补齐**，yield 现在完全取决于更深 LOGIC 实现。
+
+**改动**（commit 含数据 + 测试）：
+- 数据：7 个 .woff 字体存 `tests/wpt-runner/wpt-data/fonts/` + 2 个 ExTest 存 `css-values/resources/`（harness resolve_font_src 已映射 `/fonts/X` → `wpt-data/fonts/X`，相对路径 → base_dir）。
+- 测试：woff.rs 加 `r1007_tests::decode_bundled_wpt_fonts`（5 字体全 decode→fontdue 加载，证打包字体有效 + 解码器泛化）。
+- FontLoader.load_font 生命周期修复：`decoded.as_deref().unwrap_or(data)` 后 `bytes.to_vec()` 存 font_data——`decoded` 局部 Vec 在函数末尾释放，故 stored_bytes 必须复制（已 to_vec），正确（无 use-after-free）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0** ✓（render-foundation 520 含 +r1007 测）/ product-smoke welcome 16.57%（R1006 验，本轮字体不影响 welcome）。
+
+**意义**：font-loading 轨**彻底证伪为单 session yield lever**（R910 + R1007 四簇覆盖）。font cluster 真阻塞 = LOGIC 层：CJK line-break 规则 / text-transform pre-layout 应用（R998）/ rustybuzz features 接生产（R513）/ bidi 算法（R910）。每条多 session。R1006 woff 解码器 + R1007 字体打包使 font-loading 层完整，为未来 LOGIC 修复奠基（届时字体已就绪）。
+
+**▶ 下会话（转 LOGIC 层，font-loading 已闭）**：① **CJK line-break 规则**（line-break 0/84 簇）：实现 word-break: strict/loose/normal 的 CJK 换行点规则（ZW 当前 WordBreakMode 不区分 strict/loose），mplus 字体已就绪可直接测；② 或 **text-transform pre-layout 应用**（R998，text-transform 98 簇）：IFC 文本收集期应用 transform 使 layout 用转换后文本宽度；③ 或 **rustybuzz 接生产**（R513 shaper.rs:82，font-features 184 簇）。三 LOGIC 轨均多 session，font-loading 已非阻塞。
+
+### R1006 ★WOFF 1.0 解码器 LANDED·@font-face .woff 字体加载链补齐·FontLoader.load_font 自动 wOFF→sfnt·零回归·R1005「下游未实现」纠正·font cluster 基础设施
+
+承 R1005「@font-face 下游 fetch/decode/register 未实现」。**R1005 部分错误**——查证发现 .ttf 链**早已 wired**（`reftest_fonts.rs::load_font_faces_into` → `FontLoader.load_font` + `register_family_alias`，oracle path reftest.rs:479 调用），`.ttf`/`.otf` @font-face 字体已正确加载（css-fonts/font-face 测 0.35% PASS 证）。**真缺口 = .woff 解码**（fontdue 不识别 woff 容器，971 案用 .woff 静默跳过）。
+
+**改动**：
+- 新 `crates/render-foundation/src/font/woff.rs`（~230 行）= `is_woff`（"wOFF" 魔数）/ `decode_woff`（W3C WOFF 1.0：头/表目录解析 + flate2 ZlibDecoder 解压 `compLength<origLength` 表 + sfnt 偏移表/表目录（按 tag 排序，含 searchRange/entrySelector/rangeShift 计算）/表数据（4 字节对齐）重建）。WOFF2（wOF2 brotli）不支持。
+- `FontLoader.load_font` 自动检测 wOFF → 解码 sfnt → fontdue 加载；family 名解析 + font_data 存 sfnt 字节。`.ttf`/`.otf` 裸 sfnt 路径不变。
+- `flate2 = "1"` 加入 render-foundation 直接依赖（已在 lock 树，png/resvg 传递依赖，非新外部 crate；miniz_oxide 纯 Rust 后端）。
+- 3 单测：`decode_real_woff_revalia`（真实 WPT Revalia.woff → sfnt → fontdue 加载成功）/ `is_woff_rejects_non_woff`（裸 ttf/wOF2/空）/ `decode_truncated_returns_none`（残缺不 panic）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0** ✓（render-foundation 519 含 +3 woff 测）/ **product-smoke welcome 16.57% == R1005 baseline**（<20% gate，welcome 无 @font-face 故零影响）。
+
+**★ yield 现状（诚实·零 PASS 翻转）**：css-fonts 98/282 + text-transform 7/105 oracle A/B **持平**。根因非解码（`first-available-font-005` 用现存 Revalia.woff @ 0.45% PASS 证 .woff 链完整工作），而是 **① 多数 .woff 字体文件未打包**（wpt-data 仅 7 个 .woff，`mplus-1p-regular`/`DoulosSIL-R`/`noto-sans-v8-latin`/`ExTest`/`pass`/`fail` 等缺失——WPT GitHub fetch 任务）+ **② 更深阻塞**（text-transform 应用 R998 多 facet pre-layout+Path A/B / font-features rustybuzz R513 / variable-font 支持）。本解码器是 font cluster 基础设施，yield 须打包字体 + 解更深阻塞（多 session）。
+
+**意义**：font cluster（~450 案 blocked）的 **.woff 解码层补齐**——此前 .woff 完全跳过，现 .woff 字体能被 load_font 加载（验 end-to-end）。R1005「下游未实现」纠正为「下游 .ttf wired / .woff 本轮补」。R910 仅证伪 bidi 簇 font-blocked，未证伪 text-transform/line-break（字体 IS the point），但本轮实测 .woff 加载单独**不产**（须字体文件 + 应用逻辑齐备）。
+
+**▶ 下会话**：① 打包缺失 WPT .woff 字体（mplus-1p-regular/DoulosSIL-R/noto-sans-v8-latin 等，~/use-proxy 经 WPT GitHub fetch 存 `tests/wpt-runner/wpt-data/fonts/`）后 A/B text-transform/line-break——测「font-loading 单独 yield」假设；② 若仍零 yield → 证更深阻塞主导（text-transform 应用 R998 / line-break CJK 规则），转 rustybuzz-in-production（R513 shaper.rs:82 features: Vec::new()）或 text-transform pre-layout 应用；③ R1004 per-font wiring 待字体加载真起效后才有 yield。本 R1006 LANDED 工作 .woff 解码器（非 dormant），零回归，font cluster 基础设施推进。
+
+### R1005 ★★font-wall 单 session 杠杆四角度证伪 + fresh full oracle（plateau 再确认·post-R990 多 dir 进）·pre-wrap-align 簇 ruled out·零源码·纯调查
+
+承 R1004「per-font ascent step-2 wiring 是下会话 CONTINUE」。本轮**先评估该 wiring 的 yield 前置条件**，再决定是否投入。结论：**per-font wiring 当前零 yield**（须 webfont 先行）+ 另三角度同证伪。同时跑 fresh full oracle 得 post-R990/R1004 当前数。
+
+**① per-font wiring yield 前置证伪（决定性）**：per-font ascent 仅当页面**容器字体**为 non-Ahem-非-DejaVuSans 时才与 R990 常数 0.928 不同。ZW FontLoader 只加载 system fonts（Linux = DejaVuSans ascent 0.928，即 R990 常数）+ Ahem（0.8）+ NotoSansCJK fallback（仅 CJK glyph）。ZW **从不**渲染 non-Ahem-非-DejaVuSans 容器字体（webfont @font-face fetch/decode 未实现，R909/R910 territory）。故**当前所有渲染页面的 line-box ascent 都已被 R990 常数正确覆盖**（Ahem 0.8 / DejaVuSans-container 0.928）。per-font wiring 须等 @font-face webfont 加载落地才有 yield——**premature optimization，当前勿投入 wiring**。R1004 dormant slice 作为 webfont 后的基础设施保留，正确但待前置。
+
+**② CJK 文本检测 heuristic 证伪（理论不成立）**：考虑「文本含 CJK 字符 → 用 0.88（NotoSansCJK ascent）替 0.928」heuristic。**理论不成立**：CSS line-box ascent 由**容器字体**（system-ui→DejaVuSans 0.928）定，非 CJK 字符内容。CJK glyph 用 NotoSansCJK fallback 仅影响 glyph 在行盒内 ink 位置（R655/R876 glyph-metric territory），**不影响 line-box ascent**。故 R990 的 0.928 对 CJK-heavy 行（如 morning.work）仍正确；CJK 残余 diff = glyph 度量/字体匹配（R374/R633），非 line ascent。
+
+**③ semi-replaced stretch = paint gap 再确认（R974 正确）**：`position-absolute-semi-replaced-stretch-input/other`（fresh css-position oracle 21.19%/13.62%）。复用既有单测 `test_absolute_stretch_in_inline_block_container`（tests_5.rs:1716）**PASS**——ZW **已正确 stretch** abspos `<input>` 到 144×94（display:InlineBlock UA 默认 + §10.3.7 abspos stretch）。diff = input 内部**绘制外观**（button 边框/文本，ZW 不渲染表单控件原生外观），非 sizing/layout。R974「form-control paint feature gap」结论正确，非 layout lever。
+
+**④ pre-wrap-align 簇 ruled out（font-wall + bidi）**：fresh `css-text/white-space` oracle 45/395（11%）；top-worst = `pre-wrap-align-{start,end,left,right,center}-001/002/003`（~12 案 10-12%）+ `pre-line-with-space-and-newline`。test 含 `<p>` 非-Ahem 默认字体说明文字（font-wall）+ `start` 案 dir=rtl（bidi structural, R114/R164 territory）。实施 trailing-ws hang 修复（CSS Text §4.6 Phase IV，apply_text_alignment 扣末片段尾随空格）A/B：right/end/center 仅 -0.34pp（小幅正向），start 案不变，**pass-rate 持平 45/395 零 PASS 翻转**。且 fix 不完整（split_into_words 末尾独立 " " 片段未扣）。**裁决回退**——cluster residual = font-wall 底 + bidi，trailing-ws hang（无论完整否）无法翻 PASS。CSS §4.6 修复非当前 lever（font-wall 主导）。
+
+**fresh full oracle（post-R990/R1001/R1004，aggregate 因 tail 截断未捕获，per-dir 进）**：
+| 目录 | fresh | pre-R990/R1001 doc | 变化 |
+|------|-------|--------------------|------|
+| css-flexbox | **289/497 (58%)** | 50.6% (R944) | **+7.4pp**（R990 + R993-R994）|
+| css-tables | **74/115 (64%)** | 56.5% (R944) | **+7.5pp**（R995 + R1001）|
+| css-multicol | **119/452 (26%)** | 23.0% (R893) | **+3pp**（R901-R907）|
+| css-position | **55/97 (57%)** | 52.6% (R944) | +4.4pp |
+| css-text-decor | **108/242 (45%)** | 28.9% (R944 doc) | **+16pp**（harness JS + R955-R957）|
+| css-fonts | 98/282 (35%) | 34.4% | 持平（rustybuzz blocker）|
+| css-grid | 20/49 (41%) | 39.6% | 持平 |
+| css-writing-modes | 56/784 (7%) | — | 低（vertical structural）|
+| css-text/i18n | 0/158 (0%) | — | font/shaping blocked |
+| css-text/line-break | 0/84 (0%) | — | font/shaping blocked |
+| css-text/shaping | 0/28 (0%) | — | rustybuzz R513 |
+
+**意义**：near-pass dirs（flexbox 58% / tables 64% / position 57% / text-decor 45%）post-R990 实质进，但已被各轮收割（R976/R978/R982-R983/R990/R993-R995/R1001/R955-R957）。残余大簇全 blocked：font/shaping（i18n 158 + line-break 84 + shaping 28 + text-transform 98 + word-break 80 = ~450 案，rustybuzz-in-prod R513 + webfont R909 + font-matching R374 三 blocker）、writing-modes 728 案（vertical structural R109/R114）、multicol 333 案（Phase 2 structural）。
+
+**font-wall 四角度穷尽证伪的单 session 杠杆**：① per-font wiring（须 webfont 先行）② CJK heuristic（理论不成立）③ advance-width（R225/R375b 双证伪，memory 记录）④ line-height 常数（R990 余波 1.15 证伪，1.2 最优）。**R990 的 is_ahem-gated 0.8/0.928 是 font-wall layout-side 唯一可产常数**，已尽。
+
+**▶ 下会话方向（最高 EV 多 session 轨）**：**@font-face webfont 加载**——css-parser 已 parse @font-face AtRule（ast.rs:73），但**下游 fetch/decode/register 未实现**（R909 territory）。是 per-font wiring（R1004 infra 待此）、text-transform 簇（R998「测试全用 @font-face 自定义字体 mplus/DoulosSIL/Revalia，ZW 字体 fallback 主导 diff」）、font-family/feature 簇的共同前置。R910 仅证伪 bidi 簇非 font-blocked，**未证伪 text-transform/font-family 簇**（这些簇字体 IS the point）。首 slice = @font-face 消费：css-parser AtRule → engine 收集 → net fetch .woff/.ttf → render-foundation decode → FontLoader register（family→font_id）；dormant/env-gated 起步，A/B text-transform/font-family oracle。备选 = multicol Phase 2 commit-2（无 driving WPT 案，低 EV）/ R109 §9.2.1.1（结构性 deadlock）。**勿以单 session 期望 DC-2~5 显著提升**（font-wall + 结构性双上限，须 webfont/rustybuzz 前置解锁大簇）。
+
 ### R1004 ★Phase A §12.6 step-2 bypass 基础设施 LANDED = ascent_ratio_overrides dormant 字段 + apply_vertical_alignment 消费点（零回归）·per-font ascent 解锁路径基石
 
 承 R1003「单 session clean lever 五 dir 确证耗尽，forward 全在多 session 结构性」。**选最高 EV 结构 lever 的 enabling slice**——per-font 真实 ascent（R990 +138 oracle 的自然延伸：常数 0.928 → 真实 per-font 值）。
