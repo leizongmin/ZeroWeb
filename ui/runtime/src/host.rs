@@ -1219,6 +1219,19 @@ fn arrange(node: &mut HostNode, origin: Point) {
 
 // ---------------- paint ----------------
 
+/// 递归遍历 widget 实例树，paint 进全局 `Scene`。
+///
+/// # Clip 链契约
+///
+/// 视口外节点（`parent_clip.intersect(cached_rect) == None`）产出 `own_clip = None`。
+/// `None` 裁剪语义由后端 adapter 定义：`ui/adapters/render-foundation` 把 `None`
+/// 回落为视口（viewport fallback），使节点仍可能渲染在视口内。这是**有意设计**：
+/// - 根节点 `parent_clip = Some(viewport)` → 可见节点产 `Some(intersection)` →
+///   不可见节点产 `None`。
+/// - 若改为 `.unwrap_or(Rect::ZERO)`（视口外→零面积 clip），虽然语义更纯，
+///   但 bridge stateful-clip 路径对此未经充分验证（O1 follow-up）。
+/// - `Rect::intersect` 边相接（共享一条边，零面积）返 `None`（ui/core 已回归测试覆盖），
+///   此时 bridge viewport fallback 使边缘节点正确渲染。
 fn paint_node(
     node: &mut HostNode,
     scene: &mut Scene,
