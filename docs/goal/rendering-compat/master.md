@@ -2648,6 +2648,28 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1001 ★table cell 直接匿名 inline 文本参与 intrinsic width LANDED·cell-level direct-text fix（安全·不回归 101）·css-tables Oracle 73→74（+1）·twin 4.13→3.87%·净正
+
+承 R1000「table-cell-overflow 须先解 width 不回归 101」。R1000 两轮（box_content_max_width 全局 direct-text）均回归 101（3.66→6.51），根因 = 全局函数 perturbs 101 嵌套 div 的 max-content（div.b 等 block 后代含直接文本，被新测后改变 table auto-layout 列宽）。本轮 **WDBG probe 定位**：101 的 td 直接文本=0（文本在嵌套 div 内），但 box_content_max_width 全局改影响 td 后代 div.b 等；twin 的 cell 直接文本="Can you see this text?"（211px）。
+
+**关键洞察（R1000 → R1001）**：direct-text 测量须限定在 **cell 级（compute_cell_intrinsic_width）**，非全局（box_content_max_width）。cell 的直接文本是 cell 的匿名 inline 内容；block 后代的文本由 box_content_max_width 递归 block_max 处理（不改）。这样 twin cell 直接文本被测（211），101 cell 直接文本=0（安全），101 嵌套 div.b 走 box_content_max_width 原路径（不变）。
+
+**改动**（`table_types.rs::compute_cell_intrinsic_width`）：新增 `cell_direct_text_width(cell_box, styles, doc)` helper——遍历 cell 的 DOM **直接**文本节点子（`doc.child_nodes` 过滤 `NodeKind::Text`，非全后代），用 cell font 度量（复用 `fragment_inline_max_width`）。在 compute_cell_intrinsic_width 两返回点取 max：early-return `max(content_width, direct_text_w)`；text branch `max(box_content_max_width, direct_text_w)`。
+
+**验证（chromium Oracle + 三态门禁）**：
+- table-cell-overflow-explicit-height twin：**4.13%→3.87%**（改善，仍 FAIL >1%，残余 = td height overflow 裁剪语义，须 height-cap + paint-clip 合做，见下）。
+- **margin-collapse-101：3.66%→3.66% 字节同**（零回归——cell 直接文本=0，101 安全）。
+- **css-tables Oracle 73→74（+1 零回归）**（twin 改善 + 另 1 案翻 PASS）。
+- **welcome 16.57% 不变**（<20% gate）。
+- 2 新单测（`r1001_table_cell_direct_text_tests`）：cell 直接文本参与宽（>150px）/ 文本在 block 后代不过计（<120px）。
+- make test 全 workspace 绿（exit 0）；clippy/fmt 干净。
+
+**★ height-cap 实验（attempted + reverted）**：试加 `cell_height_cap`（table.rs，overflow_y!=Visible 时 cell height cap 到显式 height，CSS Tables L3 + bug 1880550）。**A/B net 0 + twin 反退**：twin 3.87→9.48%（cell cap 到 24px 但 content 300px **未被 paint 裁剪** → 内容溢出短 cell 致 diff 增）；min-height-table-2 翻 PASS（+1）抵消某处 -1，css-tables 仍 74。**paint overflow 裁剪对 table cell 未生效**——twin 须 height-cap + paint-clip 合做才能 pass。已回退 height-cap（net 0 + twin 反退不值）。
+
+**意义**：R1000 两轮失败后，R1001 找到安全 slice（cell-level vs 全局）。table cell 直接文本参与 intrinsic width 是真实 CSS correctness（cell 的匿名 inline 内容应贡献列宽）。R679 table sizing 簇再进一 facet。
+
+**下一步**：twin 完全 pass 须 height-cap + table-cell paint overflow 裁剪（content 被 clip 到 cell 盒）合做——下会话 dedicated。或转 Phase A pre-layout text-transform / per-font ascent / multicol Phase 2。R993-R995 + R1001 累计 css-flexbox +4 / css-tables +5 零回归已 land。
+
 ### R1000 table-cell-overflow width-fix 再确认 + letter-spacing R855 territory·两结构 lever 单 session 均不可独立·零源码·纯调查
 
 承 R999「commit 到结构性 lever」。本轮 dedicated 攻 table-cell-overflow（R997 测绘的 combined fix）。

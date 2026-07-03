@@ -77,6 +77,7 @@ fn find_absolute_position_by_node_id_inner(
 mod anonymous_flex_item_tests;
 mod coverage;
 mod intrinsic_two_pass_tests;
+mod r1001_table_cell_direct_text_tests;
 mod r109_backfill_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
