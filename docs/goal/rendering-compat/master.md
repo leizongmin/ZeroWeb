@@ -2648,6 +2648,25 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1014 R370 flex-container-intrinsic-width Phase 0 测绘 = ~6 案阻塞定位（transferred-sizes + aspect-ratio-intrinsic 簇）·3 耦合件（gate 扩 auto+float / column max 变体 / transferred base size）·R370「零杠杆」纠正·零源码·纯调查
+
+承 R1013 CONTINUE。本轮探索 fresh full oracle top-worst 候选 + 测绘下一结构 lever（R370）。**R370「零杠杆」纠正**：R370 memory「inline-flex width:auto 零杠杆——48 案不用 inline-flex width:auto」是**部分误判**——确有 ~6 案用 flex/inline-flex width:auto shrink-to-fit 且 FAIL：flex-item-transferred-sizes-padding-{border,content}-sizing（14.85% ×2，R1013 改善后残余）+ aspect-ratio-intrinsic-size-{003,004,011,014}（14.85% ×4）。同根因 = flex 容器 width:auto 不 shrink-to-fit（拉满 800）。
+
+**几何实证（transferred-sizes-padding-border-sizing，product-smoke + PIL）**：ZW 绿盒 (9,51)→(789,150) = 780×99（**宽错**，拉满视口）；CHR 绿盒 (9,50)→(105,149) = 96×99（**宽正确**~100）。height 对（min-height:100px 驱动），width 错（flex container float:left 应 shrink-to-fit 到 item intrinsic ~100，ZW 拉满 800）。
+
+**R370 机制 3 耦合件（partial slice 无 yield，须同改）**：
+1. **gate 扩 auto+float/inline-flex**：`apply_intrinsic_content_sizing`（engine.rs:663）现仅 `width == MaxContent|MinContent` 触发（line 675-677），不覆盖 `width:Auto + float/inline-flex` shrink-to-fit 上下文。须扩 gate。
+2. **column flex intrinsic max 变体**：`flex_row_intrinsic_width`（intrinsic_sizing.rs:175）是 **row-only（Σ item base size）**；column flex 须取 **max(item widths)**（cross 轴）。transferred-sizes 是 column flex，row 函数给错值。须加 `flex_column_intrinsic_width`（max 变体）+ dispatch。
+3. **transferred base size（非替换 aspect-ratio）**：`flex_item_base_size`（intrinsic_sizing.rs:148）fall through `box_content_max_width`（叶 div 内容空 → ~0），**不计 aspect-ratio + main min-size 推导 cross**。transferred-sizes item（aspect-ratio:1/1 + min-height:100px）应 width = main × ratio = 100。须加非替换 aspect-ratio transferred-size 推导（R982/R983 仅替换元素的自然扩展）。
+
+**为何 R1013 不解此案**：R1013 守卫对「非替换 + main 轴 min-size」**跳过** fixup（因 fixup 反向推导 main = cross/ratio 错误）。正确方向是 **cross = main_min × ratio**（正向），但这是 transferred-base-size（intrinsic 测量期），非 post-layout fixup（R993/R994 fixup 是 post-layout 改 main）。机制不同，须在 intrinsic_sizing 解。
+
+**EV**：~6 案（transferred-sizes ×2 + aspect-ratio-intrinsic ×4）潜在翻 PASS + R370 「零杠杆」纠正（多 session 结构 lever 重开）。风险：width:auto flex 容器 sizing 改动可能回归其它 passing 案（须 ORACLE_DUMP_ALL per-case A/B，R1013 方法论）。
+
+**裁决**：R370 = 真结构 lever（3 耦合件），多 session。本轮 Phase 0 测绘精确化根因 + 3 件路径 + ~6 案 EV。下会话实施首件（safest first slice）。
+
+**▶ 下会话（R370 实施，多 session）**：① **safest first slice** = 加 `flex_column_intrinsic_width`（max 变体）+ gate 扩 `width:Auto + float` 仅 flex column（不扩 inline-flex/row，最小化回归面）→ ORACLE_DUMP_ALL A/B css-flexbox oracle（验 transferred-sizes ×2 + aspect-ratio ×4 改善 + 0 回归）；② 若 net 正，扩 row + inline-flex；③ 加 transferred base size（非替换 aspect-ratio）。三件分轮交付。备选：font-family-invalid-characters-003（100%，css-parser { } 错误恢复，窄但风险高）/ ::backdrop feature gap（replaced-object-backdrop 100%）。clean single-session lever 跨 corpus 确系穷尽，forward = R370 多 session 或 feature 实现。
+
 ### R1013 ★R994 aspect-ratio fixup 守卫 LANDED = flex-item-transferred-sizes-padding 88→14.85%（-73pp ×2 案）·css-flexbox Oracle 289 baseline 保持（R993/R994 增益不丢）·零回归·fresh full oracle 46.1% 基线建立
 
 承 R1012 CONTINUE「per-element white-space 调查」。R1012 验证 font/text 簇墙化后，本轮 fresh full oracle（4680/10397=46.1%）扫全 corpus top-worst 找新 lever，定位 `flex-item-transferred-sizes-padding-border-sizing/content-sizing` = **88.19%**（R984 记 14.86%）= **+73pp 回归**。
