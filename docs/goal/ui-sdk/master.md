@@ -923,3 +923,24 @@ DC-14 「替换式迁移完成」在**渲染管线接通**意义上成立（sdk-
 3. **此工作在 headless 下完全可推进**：真实 chrome 组件同样可以通过 `Scene` snapshot + `WidgetHost` headless 测试验证视觉产出（含 fills + text + image），无需 GUI
 
 Evidence: `evidence/round38-gui-verification-20260703.txt`
+
+### Round 38 follow-up — DC-14 成功标准精确化（2026-07-04，用户确认）
+
+用户明确 DC-14 的终局验收标准：
+
+> `cargo run --bin zero-browser --features sdk-chrome` 的界面要跟 `cargo run --bin zero-browser` **完全一致**
+
+即 sdk-chrome feature-on 与 feature-off（手绘 chrome）在视觉上必须**像素级等价**，用户肉眼无法区分。
+
+这意味着：
+- DC-7「12/12 组件」必须从 `ChromePanel` 占位升级为真实 Widget（不再是 nice-to-have，是 hard requirement）
+- 每个 chrome 组件的 SDK 版画出来的 fill/rect/icon/text/shadow 必须与手绘版相同
+- 交互行为也必须等同：按钮 hover/pressed 视觉反馈、点击触发相同 Action、地址栏焦点/输入行为等
+
+**已同步更新入口文档 `ui-sdk.md`**：约束 #9 和 DC-14 done criteria 加入「视觉完全一致」措辞。
+
+**对推进路径的影响**：
+- 此前 headless「Scene snapshot 验证」只能证明几何正确，无法证明像素级等价
+- 真实像素验证需要：手绘 chrome → render_full_scene → FrameBuffer PNG vs SDK chrome → render_full_scene → FrameBuffer PNG → pixel diff
+- **这个 diff 比较完全可以在 headless 下做**（`render_full_scene_sdk_chrome_for_test` 已证明可行）
+- 做法：对同一个 `BrowserShell` 状态，分别走手绘路径和 SDK 路径，产出两个 FrameBuffer，逐像素比较，diff < 阈值即通过

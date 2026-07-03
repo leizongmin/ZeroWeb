@@ -33,7 +33,7 @@
 6. 主题、i18n、字体/文本、输入法、焦点、无障碍、响应式/自适应布局、移动端关键概念必须在第一版架构中预留。
 7. YAML DSL 与表达式语言**不得**执行任意脚本；事件只能绑定到宿主显式注册的 `ActionId`；表达式求值必须无副作用、可缓存、受 `EvalContext` 权限边界限制。
 8. 用户可见字符串必须通过 `LocalizedText` / message id 引用，production DSL 不得硬编码可见文案。
-9. 浏览器迁移完成后必须保持现有功能、输入、渲染和多平台窗口行为**不退化**；**不得**破坏姊妹目标 `rendering-compat` 的主线（`make test` / `make reftest` / `make product-smoke` 不得退化）。
+9. 浏览器迁移完成后必须保持现有功能、输入、渲染和多平台窗口行为**不退化**。具体：`cargo run --bin zero-browser` 与 `cargo run --bin zero-browser --features sdk-chrome` 在视觉上必须**完全一致**（用户肉眼无法区分）。**不得**破坏姊妹目标 `rendering-compat` 的主线（`make test` / `make reftest` / `make product-smoke` 不得退化）。
 
 执行方式：**分阶段交替推进** — 每轮同时 (a) 扩展 SDK 骨架与能力，(b) 把浏览器 chrome 渐进迁移到 SDK，(c) 补测试与 evidence，直到 Done Criteria 全部满足。
 
@@ -171,7 +171,7 @@
 
 ### DC-14: 浏览器迁移完成 + 零退化（硬门禁）
 
-- [ ] `apps/browser` 启动后标签、地址栏、导航按钮、书签栏、菜单、滚动、WebView 渲染均保持可用（`cargo run --bin zero-browser` + product smoke）。
+- [ ] `cargo run --bin zero-browser` 与 `cargo run --bin zero-browser --features sdk-chrome` 在视觉上**完全一致**（标签、地址栏、导航按钮、书签栏、菜单、滚动条、WebView 渲染均同手绘版像素级等价）。
 - [ ] `make test` 全绿；`make product-smoke`（welcome.html vs chromium Oracle，diff ≤ 当前阈值，可 `MAX_DIFF` 调整）不退化；`make reftest` 不退化（不得拖累 `rendering-compat` 主线）。
 - [ ] `apps/browser` 不再直接拥有 toolbar/tab/address/menu 几何与绘制，只负责状态编排、进程/导航接入、Action dispatch、应用生命周期。
 - [ ] counter/form/browser-shell-demo 示例可构建运行；counter 示例不依赖 `zero-browser-shell`/`zero-webview`。
