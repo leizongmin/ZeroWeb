@@ -140,6 +140,9 @@ pub struct WebView {
     image_cache: ImageCache,
     /// 已抓取图片的固有尺寸（url hash → (w,h)），resize/render 时回填 pipeline。
     cached_image_sizes: HashMap<u64, (f32, f32)>,
+    /// ratio-only 图片信号（url hash → width/height 比，CSS §10.3.2 仅 SVG 出现）。
+    /// %-dim / viewBox-only SVG 无确定固有尺寸、仅有 viewBox 宽高比，布局仅设 aspect_ratio。
+    cached_image_ratios: HashMap<u64, f32>,
     /// CSS font-family → font_id，供 paint 解析 font-weight 粗体 face。
     font_resolver: std::collections::HashMap<String, u32>,
     /// 用户颜色方案偏好。
@@ -186,6 +189,7 @@ impl WebView {
             http_cache: HttpCache::open_persistent(),
             image_cache: ImageCache::default(),
             cached_image_sizes: HashMap::new(),
+            cached_image_ratios: HashMap::new(),
             font_resolver: HashMap::new(),
             prefers_color_scheme: PrefersColorSchemeValue::Light,
             security_context: SecurityContext::new(),
@@ -233,9 +237,11 @@ impl WebView {
     fn prepare_page_subresources(&mut self, html: &str, page_url: &str) -> String {
         self.pipeline.set_document_url(Some(page_url));
         let external_css = self.resolve_external_css(html, page_url);
-        let image_sizes = self.fetch_image_subresources(html, page_url);
+        let (image_sizes, image_ratios) = self.fetch_image_subresources(html, page_url);
         self.cached_image_sizes = image_sizes.clone();
+        self.cached_image_ratios = image_ratios.clone();
         self.pipeline.set_image_sizes(image_sizes);
+        self.pipeline.set_image_ratios(image_ratios);
         external_css
     }
 
@@ -244,6 +250,9 @@ impl WebView {
         self.pipeline.set_document_url(self.current_url.as_deref());
         if !self.cached_image_sizes.is_empty() {
             self.pipeline.set_image_sizes(self.cached_image_sizes.clone());
+        }
+        if !self.cached_image_ratios.is_empty() {
+            self.pipeline.set_image_ratios(self.cached_image_ratios.clone());
         }
     }
 
@@ -267,9 +276,11 @@ impl WebView {
     pub fn reload_html_after_script(&mut self, html: &str) -> WebViewRenderResult {
         self.cached_html = html.to_string();
         if let Some(page_url) = self.current_url.clone() {
-            let image_sizes = self.fetch_image_subresources(html, &page_url);
+            let (image_sizes, image_ratios) = self.fetch_image_subresources(html, &page_url);
             self.cached_image_sizes = image_sizes.clone();
+            self.cached_image_ratios = image_ratios.clone();
             self.pipeline.set_image_sizes(image_sizes);
+            self.pipeline.set_image_ratios(image_ratios);
         }
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
@@ -337,11 +348,16 @@ impl WebView {
     /// 及渲染器查找一致），并返回 `image_sizes`（url hash → (w,h)）供 pipeline 对无
     /// width/height 属性的 `<img>` 注入固有尺寸（DC-11 替换元素固有尺寸）。
     /// `data:` URI 暂不支持（跳过）；抓取/解码失败仅 warn 不阻断（宽松降级）。
-    fn fetch_image_subresources(&mut self, html: &str, base_url: &str) -> HashMap<u64, (f32, f32)> {
+    fn fetch_image_subresources(
+        &mut self,
+        html: &str,
+        base_url: &str,
+    ) -> (HashMap<u64, (f32, f32)>, HashMap<u64, f32>) {
         let srcs = extract_img_srcs(html);
         let mut image_sizes = HashMap::new();
+        let mut image_ratios = HashMap::new();
         if srcs.is_empty() {
-            return image_sizes;
+            return (image_sizes, image_ratios);
         }
         let base = url::Url::parse(base_url).ok();
         for src in &srcs {
@@ -367,13 +383,20 @@ impl WebView {
                     continue;
                 }
             };
-            let (w, h) = (img.width as f32, img.height as f32);
             let key_hash = image_resource_key(&abs, None);
             let key = ImageKey::new(key_hash);
-            image_sizes.insert(key_hash, (w, h));
+            // R717：ratio-only SVG（%-dim / viewBox-only）无确定固有尺寸，仅有 viewBox 比——
+            // 进 image_ratios，**不**进 image_sizes（任何确定 size 都会被 taffy 当作固有高度，
+            // 阻止 flex ratio-derivation）。其余图像走 image_sizes 正常固有尺寸路径。
+            if let Some(ratio) = img.intrinsic_ratio() {
+                image_ratios.insert(key_hash, ratio);
+            } else {
+                let (w, h) = (img.width as f32, img.height as f32);
+                image_sizes.insert(key_hash, (w, h));
+            }
             self.image_cache.insert_with_key(key, img);
         }
-        image_sizes
+        (image_sizes, image_ratios)
     }
 
     /// 获取已解码图片子资源缓存的可变引用，供下游渲染器绘制时消费。
@@ -646,6 +669,7 @@ impl WebView {
         self.cached_html.clear();
         self.cached_css.clear();
         self.cached_image_sizes.clear();
+        self.cached_image_ratios.clear();
         self.image_cache.clear();
         self.current_url = Some(page_url.to_string());
         self.loading = true;
@@ -691,6 +715,17 @@ impl WebView {
         self.pipeline.set_image_sizes(sizes);
     }
 
+    /// 更新 ratio-only 图片信号并同步到 pipeline（CSS §10.3.2，仅 SVG 出现）。
+    pub fn set_image_ratios(&mut self, ratios: HashMap<u64, f32>) {
+        self.cached_image_ratios = ratios.clone();
+        self.pipeline.set_image_ratios(ratios);
+    }
+
+    /// 获取已抓取图片的 ratio-only 信号快照（供增量加载合并）。
+    pub fn cached_image_ratios(&self) -> &HashMap<u64, f32> {
+        &self.cached_image_ratios
+    }
+
     /// 获取当前 URL。
     pub fn url(&self) -> Option<&str> {
         self.current_url.as_deref()
@@ -731,6 +766,7 @@ impl WebView {
     pub fn resize(&mut self, width: u32, height: u32) {
         let doc_url = self.current_url.clone();
         let image_sizes = self.cached_image_sizes.clone();
+        let image_ratios = self.cached_image_ratios.clone();
         self.config.width = width;
         self.config.height = height;
         self.pipeline = RenderPipeline::new(width as f32, height as f32);
@@ -738,6 +774,9 @@ impl WebView {
         self.pipeline.set_document_url(doc_url.as_deref());
         if !image_sizes.is_empty() {
             self.pipeline.set_image_sizes(image_sizes);
+        }
+        if !image_ratios.is_empty() {
+            self.pipeline.set_image_ratios(image_ratios);
         }
         self.pipeline.set_font_resolver(self.font_resolver.clone());
     }

@@ -44,6 +44,12 @@ pub struct RenderPipeline {
     pub(crate) skip_indicators: bool,
     /// 图像固有尺寸缓存（image_key hash → (width, height)）。
     pub(crate) image_sizes: HashMap<u64, (f32, f32)>,
+    /// 仅含宽高比、无确定固有尺寸的图像信号（image_key hash → ratio）。
+    ///
+    /// 仅 %-dim / viewBox-only SVG 出现（CSS §10.3.2）：这些 SVG 无确定固有尺寸，
+    /// 仅有 viewBox 宽高比。布局须以 ratio-only 处理（不设确定 size，仅设 aspect_ratio），
+    /// 让 taffy/flex 按上下文 ratio-derive。由调用方从解码后的 ImageCache 填充。
+    pub(crate) image_ratios: HashMap<u64, f32>,
     /// CSS font-family 查找表（字体族名 → FontId）。
     pub(crate) font_resolver: HashMap<String, u32>,
     /// 当前文档 URL（用于解析相对 `<img src>` 与 image_sizes 键）。
@@ -102,6 +108,7 @@ impl RenderPipeline {
             cached_doc: None,
             skip_indicators: false,
             image_sizes: HashMap::new(),
+            image_ratios: HashMap::new(),
             font_resolver: HashMap::new(),
             document_url: None,
         }
@@ -133,6 +140,14 @@ impl RenderPipeline {
         self.image_sizes = sizes;
     }
 
+    /// 设置 ratio-only 图像信号缓存（CSS §10.3.2，仅 SVG 出现）。
+    ///
+    /// 键为图像 URL 的 hash 值，值为 viewBox 宽高比（width/height）。这些图像无确定
+    /// 固有尺寸，布局须仅设 aspect_ratio、不设确定 size。
+    pub fn set_image_ratios(&mut self, ratios: HashMap<u64, f32>) {
+        self.image_ratios = ratios;
+    }
+
     /// 从 `self.image_sizes`（按 URL hash 索引）解析出 `<img>` 元素的解码固有尺寸，
     /// 按 DOM NodeId 索引返回，供布局引擎对无 width/height 属性的 `<img>` 注入固有尺寸。
     ///
@@ -145,6 +160,22 @@ impl RenderPipeline {
                 let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
                 if let Some(&size) = self.image_sizes.get(&key) {
                     map.insert(img_id, size);
+                }
+            }
+        }
+        map
+    }
+
+    /// 从 `self.image_ratios`（按 URL hash 索引）解析出 `<img>` 元素的 ratio-only 信号，
+    /// 按 DOM NodeId 索引返回，供布局引擎对无 width/height 属性且无确定固有尺寸的
+    /// `<img>`（%-dim / viewBox-only SVG）仅设 aspect_ratio（CSS §10.3.2）。
+    pub(crate) fn build_img_intrinsic_ratios(&self, doc: &Document) -> HashMap<NodeId, f32> {
+        let mut map = HashMap::new();
+        for img_id in doc.get_elements_by_tag_name("img") {
+            if let Some(src) = doc.get_attribute(img_id, "src") {
+                let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
+                if let Some(&ratio) = self.image_ratios.get(&key) {
+                    map.insert(img_id, ratio);
                 }
             }
         }
@@ -246,7 +277,10 @@ impl RenderPipeline {
         // 6. 计算布局
         let layout_start = Instant::now();
         let img_sizes = self.build_img_intrinsic_sizes(&doc);
-        let layout_result = self.layout_engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+        let img_ratios = self.build_img_intrinsic_ratios(&doc);
+        let layout_result = self
+            .layout_engine
+            .compute_with_img_sizes(&doc, &styles, img_sizes, img_ratios);
         let layout_ms = layout_start.elapsed().as_secs_f64() * 1000.0;
 
         // 7. 生成绘制命令
@@ -351,7 +385,10 @@ impl RenderPipeline {
         // 4. 计算布局
         let layout_start = Instant::now();
         let img_sizes = self.build_img_intrinsic_sizes(&doc);
-        let layout_result = self.layout_engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+        let img_ratios = self.build_img_intrinsic_ratios(&doc);
+        let layout_result = self
+            .layout_engine
+            .compute_with_img_sizes(&doc, &styles, img_sizes, img_ratios);
         let layout_ms = layout_start.elapsed().as_secs_f64() * 1000.0;
 
         // 5. 生成绘制命令
@@ -414,7 +451,10 @@ impl RenderPipeline {
 
         // 计算布局
         let img_sizes = self.build_img_intrinsic_sizes(doc);
-        let layout_result = self.layout_engine.compute_with_img_sizes(doc, &styles, img_sizes);
+        let img_ratios = self.build_img_intrinsic_ratios(doc);
+        let layout_result = self
+            .layout_engine
+            .compute_with_img_sizes(doc, &styles, img_sizes, img_ratios);
 
         // 生成绘制命令
         let mut painter = Painter::new();
@@ -490,7 +530,10 @@ impl RenderPipeline {
 
         // 计算布局
         let img_sizes = self.build_img_intrinsic_sizes(doc);
-        let layout_result = self.layout_engine.compute_with_img_sizes(doc, &styles, img_sizes);
+        let img_ratios = self.build_img_intrinsic_ratios(doc);
+        let layout_result = self
+            .layout_engine
+            .compute_with_img_sizes(doc, &styles, img_sizes, img_ratios);
         self.cached_layout = Some(LayoutResult {
             root: layout_result.root.clone(),
             viewport_width: layout_result.viewport_width,

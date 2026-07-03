@@ -78,6 +78,7 @@ mod anonymous_flex_item_tests;
 mod coverage;
 mod intrinsic_two_pass_tests;
 mod r109_backfill_tests;
+mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
 mod tests_10;

@@ -211,7 +211,7 @@ fn test_img_intrinsic_size_from_decoded() {
     img_sizes.insert(img_id, (120.0, 90.0));
 
     let mut engine = LayoutEngine::new(800.0, 600.0);
-    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
 
     // 在布局树中找到 img 盒，断言其尺寸 ≈ 解码固有尺寸
     let mut found = None;
@@ -243,7 +243,7 @@ fn test_img_width_set_height_auto_preserves_aspect() {
     let mut img_sizes = HashMap::new();
     img_sizes.insert(img_id, (441.0, 441.0)); // 正方形固有尺寸
     let mut engine = LayoutEngine::new(800.0, 600.0);
-    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
     let mut found = None;
     let mut stack = vec![&result.root];
     while let Some(b) = stack.pop() {
@@ -273,7 +273,7 @@ fn test_img_height_set_width_auto_preserves_aspect() {
     let mut img_sizes = HashMap::new();
     img_sizes.insert(img_id, (200.0, 100.0)); // 2:1 宽图
     let mut engine = LayoutEngine::new(800.0, 600.0);
-    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
     let mut found = None;
     let mut stack = vec![&result.root];
     while let Some(b) = stack.pop() {
@@ -305,7 +305,7 @@ fn test_img_both_width_height_set_no_aspect_enforcement() {
     let mut img_sizes = HashMap::new();
     img_sizes.insert(img_id, (100.0, 100.0)); // 正方形 intrinsic（ratio 1:1）
     let mut engine = LayoutEngine::new(800.0, 600.0);
-    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
     let mut found = None;
     let mut stack = vec![&result.root];
     while let Some(b) = stack.pop() {

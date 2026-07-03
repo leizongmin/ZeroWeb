@@ -124,11 +124,12 @@ impl RenderPipeline {
                     let doc = session.doc.as_ref().expect("parse must run before layout");
                     let start = Instant::now();
                     let img_sizes = self.build_img_intrinsic_sizes(doc);
-                    session.layout_result = Some(self.layout_engine.compute_with_img_sizes(
-                        doc,
-                        &session.styles,
-                        img_sizes,
-                    ));
+                    let img_ratios = self.build_img_intrinsic_ratios(doc);
+                    session.layout_result =
+                        Some(
+                            self.layout_engine
+                                .compute_with_img_sizes(doc, &session.styles, img_sizes, img_ratios),
+                        );
                     session.timings.layout_ms = start.elapsed().as_secs_f64() * 1000.0;
                     session.step = BudgetStep::Paint;
                 }
@@ -200,7 +201,9 @@ impl RenderPipeline {
 
         let layout_start = Instant::now();
         let img_sizes = self.build_img_intrinsic_sizes(&doc);
-        let layout_result = self.layout_engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+        let layout_result =
+            self.layout_engine
+                .compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
         let layout_ms = layout_start.elapsed().as_secs_f64() * 1000.0;
 
         let paint_start = Instant::now();
