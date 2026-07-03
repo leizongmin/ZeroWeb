@@ -435,13 +435,20 @@ impl AsyncPageLoad {
             return;
         }
         let mut sizes: HashMap<u64, (f32, f32)> = webview.cached_image_sizes().clone();
+        let mut ratios: HashMap<u64, f32> = webview.cached_image_ratios().clone();
         self.lazy_img_pending.retain(|(url, key, rx)| {
             if let Ok(result) = rx.try_recv() {
                 match result {
                     Ok(bytes) => {
                         if let Ok(img) = decode_image_bytes(&bytes) {
-                            let (w, h) = (img.width as f32, img.height as f32);
-                            sizes.insert(*key, (w, h));
+                            // R717：ratio-only SVG 进 ratios、不进 sizes（避免确定 size 阻止 ratio-derivation）。
+                            let intrinsic_ratio = img.intrinsic_ratio();
+                            if let Some(r) = intrinsic_ratio {
+                                ratios.insert(*key, r);
+                            } else {
+                                let (w, h) = (img.width as f32, img.height as f32);
+                                sizes.insert(*key, (w, h));
+                            }
                             webview.image_cache().insert_with_key(ImageKey::new(*key), img);
                         }
                     }
@@ -457,6 +464,9 @@ impl AsyncPageLoad {
             webview.set_image_sizes(sizes);
             self.budget_pending = true;
         }
+        if !ratios.is_empty() {
+            webview.set_image_ratios(ratios);
+        }
         if self.lazy_img_pending.is_empty() {
             let _ = self.advance_render(webview, budget_ms);
         }
@@ -467,13 +477,19 @@ impl AsyncPageLoad {
             return;
         }
         let mut sizes: HashMap<u64, (f32, f32)> = webview.cached_image_sizes().clone();
+        let mut ratios: HashMap<u64, f32> = webview.cached_image_ratios().clone();
         self.img_pending.retain(|(url, key, rx)| {
             if let Ok(result) = rx.try_recv() {
                 match result {
                     Ok(bytes) => match decode_image_bytes(&bytes) {
                         Ok(img) => {
-                            let (w, h) = (img.width as f32, img.height as f32);
-                            sizes.insert(*key, (w, h));
+                            // R717：ratio-only SVG 进 ratios、不进 sizes。
+                            if let Some(r) = img.intrinsic_ratio() {
+                                ratios.insert(*key, r);
+                            } else {
+                                let (w, h) = (img.width as f32, img.height as f32);
+                                sizes.insert(*key, (w, h));
+                            }
                             webview.image_cache().insert_with_key(ImageKey::new(*key), img);
                         }
                         Err(e) => tracing::warn!("image {url} decode failed: {e}"),
@@ -488,6 +504,9 @@ impl AsyncPageLoad {
         });
         if !sizes.is_empty() {
             webview.set_image_sizes(sizes);
+        }
+        if !ratios.is_empty() {
+            webview.set_image_ratios(ratios);
         }
         if *changed && self.stage == PageLoadStage::FetchingImages {
             let remaining = self.img_pending.len();

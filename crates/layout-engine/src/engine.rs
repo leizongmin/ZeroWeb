@@ -112,20 +112,26 @@ impl LayoutEngine {
     /// - `doc` — DOM 文档
     /// - `styles` — 元素 NodeId → ComputedStyle 映射
     pub fn compute(&mut self, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> LayoutResult {
-        self.compute_with_img_sizes(doc, styles, HashMap::new())
+        self.compute_with_img_sizes(doc, styles, HashMap::new(), HashMap::new())
     }
 
     /// 与 `compute` 相同，但额外注入 `<img>` 的解码固有尺寸（按 DOM NodeId 索引），
-    /// 供无 width/height 属性的替换元素回退到固有尺寸（DC-11）。
+    /// 供无 width/height 属性的替换元素回退到固有尺寸（DC-11）。`img_intrinsic_ratios`
+    /// 为仅含宽高比、无确定固有尺寸的 SVG 信号（CSS §10.3.2），布局仅设 aspect_ratio。
     pub fn compute_with_img_sizes(
         &mut self,
         doc: &Document,
         styles: &HashMap<NodeId, ComputedStyle>,
         img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
+        img_intrinsic_ratios: HashMap<NodeId, f32>,
     ) -> LayoutResult {
         // R695 复用副本：build_layout_tree_with_r109 按值取走 img_intrinsic_sizes，
         // 此处保留一份供 apply_indefinite_percent_height_to_auto 为替换元素补设固有尺寸。
         let intrinsic_for_r695 = img_intrinsic_sizes.clone();
+        // R717 复用副本：build_layout_tree_with_r109 按值取走 img_intrinsic_ratios，
+        // 此处保留一份供 apply_flex_ratio_img_size 在第一趟布局后按解析出的 cross 尺寸
+        // 推导 ratio-only img 的 main 尺寸（CSS §10.3.2 + Flexbox §4.5 transferred-size）。
+        let ratios_for_r717 = img_intrinsic_ratios.clone();
         // 1. 构建 taffy 树（含 R109 接线产物，仅 R109_WIRE=1 时非空）
         let (mut taffy_tree, root_id, taffy_to_dom, r109) = build_layout_tree_with_r109(
             doc,
@@ -133,6 +139,7 @@ impl LayoutEngine {
             self.viewport_width,
             self.viewport_height,
             img_intrinsic_sizes,
+            img_intrinsic_ratios,
         );
 
         // 构建 dom→taffy 反向映射
@@ -184,8 +191,14 @@ impl LayoutEngine {
         );
         let changed_pct_padding =
             Self::resolve_percentage_padding(&mut taffy_tree, &root_box, &dom_to_taffy, styles, self.viewport_width);
+        // R717：ratio-only SVG `<img>`（%-dim / viewBox-only）在 flex 容器内——第一趟 taffy
+        // 对无确定固有尺寸的 leaf 项无法从 aspect_ratio + Auto-cross 推导 main 尺寸（ collapses）。
+        // 此处按解析出的 cross 尺寸 + ratio 推导 main 尺寸（CSS §10.3.2 + Flexbox §4.5）。
+        let changed_ratio_img =
+            Self::apply_flex_ratio_img_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles, &ratios_for_r717);
         if changed_r695
             || changed_pct_padding
+            || changed_ratio_img
             || Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc)
         {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
@@ -687,6 +700,88 @@ impl LayoutEngine {
             }
         }
         changed
+    }
+
+    /// R717（CSS §10.3.2 + Flexbox §4.5）：ratio-only SVG `<img>`（%-dim / viewBox-only，
+    /// 无确定固有尺寸、仅有 viewBox 宽高比）在 flex 容器内时，第一趟 taffy 对该 leaf 项
+    /// 无法从 `aspect_ratio` + Auto-cross（容器 cross 尺寸在 computed style 中为 Auto，但
+    /// 实际解析为视口/包含块宽度）推导出 main 尺寸——item collapses 到 0。
+    ///
+    /// `apply_flex_transferred_min_size`（build_layout_tree 期）尝试设 transferred min，
+    /// 但它读 `parent_style.width` 仅接受 `LengthValue::Px`，对 Auto 容器（007 驱动案：
+    /// `<div style="display:flex;flex-direction:column">` 宽度 Auto→解析 800）提前返回。
+    ///
+    /// 本 pass 在**第一趟布局后**运行——此时 LayoutBox 已含解析出的 cross 尺寸（经
+    /// align-stretch / 包含块解析）。对 ratio-only img flex item，按 cross × ratio（row）
+    /// 或 cross / ratio（column）推导 main 尺寸，改写 taffy `size.main = Length(...)` 并
+    /// mark_dirty，由调用方重跑 taffy。仅水平书写模式；仅当推导值与当前 main 显著不同时触发。
+    fn apply_flex_ratio_img_size(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        img_intrinsic_ratios: &HashMap<NodeId, f32>,
+    ) -> bool {
+        use zero_css_parser::values::{DisplayValue, FlexDirectionValue};
+
+        fn walk(
+            b: &LayoutBox,
+            parent_style: Option<&ComputedStyle>,
+            taffy_tree: &mut TaffyTree<NodeId>,
+            dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+            styles: &HashMap<NodeId, ComputedStyle>,
+            img_intrinsic_ratios: &HashMap<NodeId, f32>,
+        ) -> bool {
+            if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+                return false;
+            }
+            let mut changed = false;
+            let my_style = b.node_id.and_then(|id| styles.get(&id));
+
+            // ratio-only img 直接作为 flex item（父是 flex 容器）。
+            if b.is_replaced
+                && let Some(id) = b.node_id
+                && let Some(&ratio) = img_intrinsic_ratios.get(&id)
+                && ratio > 0.0
+                && let Some(ps) = parent_style
+                && matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                && let Some(&tid) = dom_to_taffy.get(&id)
+                && let Ok(mut st) = taffy_tree.style(tid).cloned()
+            {
+                let is_column = matches!(
+                    ps.flex_direction,
+                    FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+                );
+                // column: main=height, cross=width；row: main=width, cross=height。
+                let (main_resolved, cross_resolved) = if is_column {
+                    (b.height, b.width)
+                } else {
+                    (b.width, b.height)
+                };
+                let expected_main = if is_column {
+                    cross_resolved / ratio
+                } else {
+                    cross_resolved * ratio
+                };
+                // 仅当 cross 已解析（>0）且 main 与推导值显著不同（collapsed 或不一致）时改写。
+                if cross_resolved > 0.0 && (main_resolved - expected_main).abs() > 0.5 {
+                    if is_column {
+                        st.size.height = taffy::style::Dimension::Length(expected_main.max(0.5));
+                    } else {
+                        st.size.width = taffy::style::Dimension::Length(expected_main.max(0.5));
+                    }
+                    let _ = taffy_tree.set_style(tid, st);
+                    let _ = taffy_tree.mark_dirty(tid);
+                    changed = true;
+                }
+            }
+
+            for c in &b.children {
+                changed |= walk(c, my_style, taffy_tree, dom_to_taffy, styles, img_intrinsic_ratios);
+            }
+            changed
+        }
+        walk(root, None, taffy_tree, dom_to_taffy, styles, img_intrinsic_ratios)
     }
 
     /// R695（CSS §10.5）：百分比 `height` 仅当包含块高度**明确指定**时才解析，

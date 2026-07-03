@@ -127,7 +127,7 @@ fn test_flex_transferred_size_suggestion() {
     let mut engine = LayoutEngine::new(800.0, 600.0);
     let mut img_sizes = HashMap::new();
     img_sizes.insert(img, (300.0_f32, 150.0_f32));
-    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
 
     let img_box = find_child_by_node_id(&result.root, img).expect("img found");
     // transferred = cross(50) × aspect(2) = 100；item 不应塌缩到 0

@@ -498,16 +498,22 @@ fn parse_hex_color(hex: &str) -> Option<[u8; 4]> {
     }
 }
 
-/// 从 ImageCache 中提取所有图像的固有尺寸。
+/// 从 ImageCache 中提取所有图像的固有尺寸与 ratio-only 信号。
 ///
-/// 遍历 HTML 中的所有图片 URL，查找缓存中对应的 ImageData，
-/// 返回 (url_hash → (width, height)) 映射，供 Painter 用于
-/// background-size: auto 计算。
-pub(super) fn extract_image_sizes(
+/// 遍历 HTML 中的所有图片 URL，查找缓存中对应的 ImageData，返回：
+/// - `image_sizes`（url_hash → (width, height)）：用于 background-size: auto 计算，
+///   以及有确定固有尺寸的 `<img>`（PNG/JPEG/绝对尺寸 SVG）替换元素 sizing。
+/// - `image_ratios`（url_hash → width/height 比）：仅 %-dim / viewBox-only SVG（CSS §10.3.2），
+///   无确定固有尺寸、仅有 viewBox 宽高比，布局仅设 aspect_ratio。
+pub(super) fn extract_image_metrics(
     image_cache: &mut ImageCache,
     html: &str,
-) -> std::collections::HashMap<u64, (f32, f32)> {
+) -> (
+    std::collections::HashMap<u64, (f32, f32)>,
+    std::collections::HashMap<u64, f32>,
+) {
     let mut sizes = std::collections::HashMap::new();
+    let mut ratios = std::collections::HashMap::new();
 
     let mut all_urls = extract_img_srcs(html);
     all_urls.extend(extract_css_urls(html));
@@ -517,10 +523,26 @@ pub(super) fn extract_image_sizes(
     for url in &all_urls {
         let key = ImageKey::new(simple_hash(url));
         if let Some(data) = image_cache.get(&key) {
-            let s = data.size();
-            sizes.insert(key.0, (s.width, s.height));
+            // R717：ratio-only SVG 进 ratios、不进 sizes（避免确定 size 阻止 flex ratio-derivation）。
+            if let Some(ratio) = data.intrinsic_ratio() {
+                ratios.insert(key.0, ratio);
+            } else {
+                let s = data.size();
+                sizes.insert(key.0, (s.width, s.height));
+            }
         }
     }
 
-    sizes
+    (sizes, ratios)
+}
+
+/// 从 ImageCache 中提取所有图像的固有尺寸（仅 sizes，无 ratios）。
+///
+/// 保留给仅需 background-size: auto 的旧调用点；`<img>` 替换元素 sizing 须改用
+/// `extract_image_metrics` 以同时获得 ratio-only 信号。
+pub(super) fn extract_image_sizes(
+    image_cache: &mut ImageCache,
+    html: &str,
+) -> std::collections::HashMap<u64, (f32, f32)> {
+    extract_image_metrics(image_cache, html).0
 }

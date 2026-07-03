@@ -184,7 +184,12 @@ fn test_r695_percent_height_indefinite_cb_computes_to_auto() {
 
     let mut engine = LayoutEngine::new(800.0, 600.0);
     // 第一趟（空 img 尺寸）仅用于拿到 img 的 DOM NodeId（稳定）。
-    let probe = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new());
+    let probe = engine.compute_with_img_sizes(
+        &doc,
+        &styles,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
     let img_id = find("img", &doc, &probe.root)
         .and_then(|b| b.node_id)
         .expect("img node_id");
@@ -192,7 +197,7 @@ fn test_r695_percent_height_indefinite_cb_computes_to_auto() {
     // 第二趟注入 img 固有尺寸 96×96（模拟解码 black96x96.png）。
     let mut sizes: std::collections::HashMap<zero_dom::NodeId, (f32, f32)> = std::collections::HashMap::new();
     sizes.insert(img_id, (96.0, 96.0));
-    let result = engine.compute_with_img_sizes(&doc, &styles, sizes);
+    let result = engine.compute_with_img_sizes(&doc, &styles, sizes, std::collections::HashMap::new());
 
     let img_box = find("img", &doc, &result.root).expect("img box");
     assert!(
