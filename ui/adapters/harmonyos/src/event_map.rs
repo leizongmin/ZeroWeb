@@ -7,7 +7,7 @@
 
 use zero_ui_core::event::{KeyAction, KeyCode, Modifiers, PointerPhase, UiEvent};
 use zero_ui_core::geometry::{Insets, Point, Size};
-use zero_ui_core::layout::{Orientation, WindowMetrics};
+use zero_ui_core::layout::{DEFAULT_DENSITY, Orientation, WindowMetrics};
 use zero_ui_core::theme::SystemThemeSnapshot;
 
 // ---------------------------------------------------------------------------
@@ -98,6 +98,8 @@ pub fn map_key_event(key_name: &str, is_down: bool) -> UiEvent {
 pub struct OhosWindowMetricsInput {
     pub viewport_w: f32,
     pub viewport_h: f32,
+    /// 平台 DPI 比（HiDPI 设备像素比，OHOS `display.densityPixels`，如 phone 3.0）。
+    /// 映射到 [`WindowMetrics::scale_factor`]；**非** Material 间距密度（后者恒为 `DEFAULT_DENSITY`）。
     pub density: f32,
     pub text_scale: f32,
     pub safe_top: f32,
@@ -125,6 +127,7 @@ pub fn map_window_metrics(input: OhosWindowMetricsInput) -> WindowMetrics {
 
     WindowMetrics {
         logical_size,
+        // `input.density` = 平台 DPI 比（HiDPI，如 phone 3.0）→ scale_factor（设备像素比）。
         scale_factor: input.density.max(0.0),
         safe_area: Insets {
             top: input.safe_top,
@@ -134,7 +137,10 @@ pub fn map_window_metrics(input: OhosWindowMetricsInput) -> WindowMetrics {
         },
         keyboard_insets,
         text_scale: input.text_scale.max(0.0),
-        density: input.density.max(0.0),
+        // **density = Material 间距密度（compact/comfortable），非 DPI 比**（DC-12 决策：
+        // density 与 scale_factor 正交；DEFAULT_DENSITY=1.0）。OHOS 无独立「间距密度」API，
+        // 故回落默认 1.0——此前误把 DPI 比塞进 density 会 3× 放大所有 spacing token（phone 上布局爆）。
+        density: DEFAULT_DENSITY,
         orientation,
     }
 }
@@ -324,7 +330,8 @@ mod tests {
             is_portrait: true,
         });
         assert_eq!(m.logical_size, Size::new(390.0, 844.0));
-        assert_eq!(m.density, 3.0);
+        assert_eq!(m.scale_factor, 3.0, "DPI 比 → scale_factor");
+        assert_eq!(m.density, DEFAULT_DENSITY, "Material 间距密度恒为默认，非 DPI 比");
         assert_eq!(m.text_scale, 1.0);
         assert_eq!(m.safe_area.top, 47.0);
         assert_eq!(m.safe_area.bottom, 34.0);
@@ -350,7 +357,8 @@ mod tests {
         assert_eq!(m.logical_size, Size::new(1024.0, 768.0));
         assert_eq!(m.orientation, Orientation::Landscape);
         assert_eq!(ViewportClass::from_width(1024.0), ViewportClass::Expanded);
-        assert_eq!(m.density, 2.0);
+        assert_eq!(m.scale_factor, 2.0, "DPI 比 → scale_factor");
+        assert_eq!(m.density, DEFAULT_DENSITY, "Material 间距密度恒为默认");
         assert_eq!(m.text_scale, 1.25);
         assert!(m.keyboard_insets.bottom > 0.0);
     }
@@ -371,7 +379,7 @@ mod tests {
         });
         assert_eq!(m.logical_size, Size::new(1.0, 1.0));
         assert_eq!(m.scale_factor, 0.0);
-        assert_eq!(m.density, 0.0);
+        assert_eq!(m.density, DEFAULT_DENSITY, "density 恒为 Material 默认（不随 DPI 比）");
         assert_eq!(m.text_scale, 0.0);
     }
 

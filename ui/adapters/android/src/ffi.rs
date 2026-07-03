@@ -297,7 +297,12 @@ mod tests {
         }));
         let m = rt.metrics();
         assert_eq!(m.logical_size, zero_ui_core::geometry::Size::new(412.0, 915.0));
-        assert_eq!(m.density, 2.625);
+        assert_eq!(m.scale_factor, 2.625, "DPI 比 → scale_factor");
+        assert_eq!(
+            m.density,
+            zero_ui_core::layout::DEFAULT_DENSITY,
+            "Material 间距密度恒为默认"
+        );
         assert_eq!(m.safe_area.top, 24.0);
     }
 }

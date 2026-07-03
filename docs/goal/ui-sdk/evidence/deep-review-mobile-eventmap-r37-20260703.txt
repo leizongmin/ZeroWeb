@@ -1,0 +1,59 @@
+ui/adapters/{harmonyos,android} event_map 深度审查（R37）— 第 11/12 层审查 + DC-15 真实 latent bug 修复
+日期: 2026-07-03
+模块: ui/adapters/harmonyos/src/event_map.rs（402 行）+ ui/adapters/android/src/event_map.rs（420 行）
+背景: R36 收口时列出的未审模块（DC-15 移动输入映射）。移动 event mapping 有独特 bug 面
+     （多指 pointer_id / back gesture / 软键盘 phase / density vs DPI），值得专门审查。
+
+================================================================
+审查结论：1 个真实 latent correctness bug（双适配器同病）已修 + 其余经查正确
+================================================================
+
+修复（真实 latent bug，DC-15）：density-vs-scale_factor 映射混淆
+----------------------------------------------------------------------
+- 现象：OHOS + Android `map_window_metrics` 均把平台 DPI 比（input.density，如 phone 3.0）
+  同时塞进 `scale_factor` **和** `density` 两个字段。
+- 根因：违反 DC-12 决策——`WindowMetrics.density` 是 **Material 间距密度**
+  （compact/comfortable，DEFAULT_DENSITY=1.0，消费者 SpacingTokens::scaled(density)），
+  与 `scale_factor`（HiDPI 设备像素比）**正交**。winit adapter 正确用 DEFAULT_DENSITY，
+  两个移动适配器误把 DPI 比塞进 density。
+- 后果：在 density=3.0 的 phone 上，所有 spacing token 被 3× 放大 → 布局爆（间距/内边距翻倍）。
+  latent（仅在移动设备后端落地后触发），但确是 DC-15 移动 metrics 映射 correctness 错误。
+- 修复：`density: DEFAULT_DENSITY`（DPI 比只进 scale_factor）；双适配器 input struct 的
+  `density` 字段加 doc comment 澄清「平台 DPI 比 → scale_factor，非 Material 间距密度」；
+  函数体加 DC-12 决策引用注释。更新全部受影响测试（event_map 3 测/适配器 + ffi 1 测/适配器）：
+  density 断言 → DEFAULT_DENSITY，补 scale_factor 断言。
+
+经查正确（双适配器逐一核验）
+----------------------------------------------------------------------
+- 触摸相位：OHOS TouchAction(0/1/2/3=cancel/down/move/up)、Android ACTION_*(0/1/2/3/5/6)
+  masked → PointerPhase，未知回落 Cancelled（不 panic）。正确。
+- map_touch_event(s)：pointer_id=touch_id（多指区分），position 窗口坐标。正确。
+- map_key_action / map_key_event：is_down→Pressed/Released，key_name 直接作 KeyCode。正确。
+- map_window_metrics：logical_size.max(1.0) 防 0、keyboard_insets 取 bottom=h（底部贴合键盘假设，
+  OHOS/Android 键盘均底部贴合，等价 screen_h - y）、safe_area 直传、orientation portrait/landscape。
+  正确（keyboard 用 h 而非 screen_h-y 是底部贴合假设，documented）。
+- map_soft_keyboard：keyboardShow/Hide → UiEvent::Key 合成事件触发布局刷新。正确（设计选择）。
+- map_back_gesture：合成 "ohos.back_gesture"/Back → BackNavigationService 仲裁。正确。
+- system_theme_from_dark_mode：dark→Dark/light→Light + high_contrast。正确。
+
+================================================================
+门禁（全绿）
+================================================================
+- harmonyos adapter 测试：21 passed / 0 failed（含 ffi_window_metrics_update 已更新）。
+- android adapter 测试：20 passed / 0 failed（含 ffi_window_metrics_update 已更新）。
+- clippy `-D warnings`（双适配器）：✅ 零警告。
+- cargo fmt --check：✅ 无变更（cargo fmt 自动格式化后净）。
+- cargo build --workspace：✅ 零错误。
+- **无 product-smoke/reftest 风险**：移动适配器是 leaf skeleton crate，不在默认浏览器二进制
+  （无设备后端）→ 默认 release 二进制逐位不变；workspace build 确认全局编译通过。
+
+================================================================
+影响面 + 结论
+================================================================
+- 变更：ui/adapters/harmonyos/src/{event_map,ffi}.rs + ui/adapters/android/src/{event_map,ffi}.rs
+  （density 映射修正 + input 字段 doc + 受影响测试断言更新）。
+- 第 11/12 层深度审查（+OHOS + Android event_map）：发现并修 1 个真实 latent DC-15 bug
+  （density/DPI 混淆，双适配器同病）；其余经查正确。零回归（移动 crate 不在生产路径）。
+- SDK 通用层深度审查现覆盖 12 层（runtime/DSL/i18n/widgets/chrome/render/core/foundation-text/
+  render-foundation 桥接/winit event_map/OHOS event_map/Android event_map）。剩余未审：ui/patterns。
+- DC-15 SDK-side 移动 metrics 映射 correctness 增强（density 与 DPI 正交现在双适配器都正确）。
