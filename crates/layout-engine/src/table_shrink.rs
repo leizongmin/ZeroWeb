@@ -155,8 +155,20 @@ pub(crate) fn shrink_table_to_block_content(table_box: &mut LayoutBox, styles: &
     let new_border_width = final_content_width + padding_border_w;
     table_box.content_width = final_content_width;
     table_box.width = new_border_width;
-    table_box.content_height = content_height;
-    table_box.height = content_height + padding_border_h;
+    // CSS §17.5.2：table 的显式 height 作 min-height 语义（table 高度由内容决定但不小于
+    // 显式值）。CSS §10.4/§17.5.2 + quirks 表高度（已预烘焙）：width/height 显式时须尊重。
+    // orphan display:table-cell（如 percentages-grandchildren-quirks-mode：table-cell
+    // height:100px + 0 内容子）显式 height 不应被 0 内容塌缩。
+    let explicit_height = table_style
+        .as_ref()
+        .and_then(|s| match &s.height {
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        })
+        .unwrap_or(0.0);
+    let final_content_height = content_height.max((explicit_height - padding_border_h).max(0.0));
+    table_box.content_height = final_content_height;
+    table_box.height = final_content_height + padding_border_h;
 
     // CSS §10.3.3 / §17.5.2：width:auto 的 display:table 收缩到内容后，若
     // margin-left/right 均为 auto，应水平居中于包含块。taffy 在收缩前（table 仍
@@ -288,6 +300,19 @@ fn block_max_content_width(box_node: &LayoutBox, styles: &HashMap<NodeId, Comput
     }
 
     let inner = inline_sum.max(block_max);
+    // 元素自身显式 Px 宽度是 max-content 的下界：shrink-to-fit 不应把 table 收缩到
+    // 小于 block 子元素的显式宽度（如 `<div style="width:100px">` 内无内容时不应算 0，
+    // 否则 orphan table-cell / display:table 容器会留在满宽——percentages-grandchildren-
+    // quirks-mode-001/002 驱动案：table-cell 784px vs 应 100px）。
+    let own_explicit_w = box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .and_then(|s| match &s.width {
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        })
+        .unwrap_or(0.0);
+    let inner = inner.max(own_explicit_w);
     inner + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right
 }
 
@@ -419,6 +444,49 @@ mod tests {
 
         // 显式 width:400px（content-box 语义）应被尊重
         assert_eq!(table.content_width, 400.0, "explicit width should be respected");
+    }
+
+    /// R995 orphan `display:table-cell`（无 table 祖先）经 layout_table → 本函数收缩。
+    /// 驱动案 percentages-grandchildren-quirks-mode-001：table-cell height:100px 含一个
+    /// width:100px 的 block 子（其子 0 内容）。cell 应收缩到子显式 width 100px，且尊重自身
+    /// 显式 height 100px（不被 0 内容子塌缩）。修复前 max_content_width=0 致早退，cell 留 784px。
+    #[test]
+    fn test_shrink_orphan_table_cell_respects_child_explicit_width_and_own_height() {
+        let mut styles = HashMap::new();
+        let ids = make_node_ids(2);
+        let [cell_id, child_id] = [ids[0], ids[1]];
+
+        // orphan table-cell：taffy 拉伸到 784×100（满宽），height:100px 显式
+        let mut table = make_box(784.0, 100.0);
+        table.content_width = 784.0;
+        table.node_id = Some(cell_id);
+        let mut ts = ComputedStyle::default();
+        ts.display = DisplayValue::TableCell;
+        ts.height = LengthValue::Px(100.0);
+        styles.insert(cell_id, ts);
+
+        // block 子：显式 width:100px，0 内容（height 0）
+        let mut child = make_box(100.0, 0.0);
+        child.node_id = Some(child_id);
+        let mut cs = ComputedStyle::default();
+        cs.display = DisplayValue::Block;
+        cs.width = LengthValue::Px(100.0);
+        styles.insert(child_id, cs);
+        table.children.push(child);
+
+        shrink_table_to_block_content(&mut table, &styles);
+
+        // cell 收缩到子显式 width 100px（非 784 满宽）
+        assert_eq!(
+            table.width, 100.0,
+            "orphan table-cell should shrink to child explicit width"
+        );
+        assert_eq!(table.content_width, 100.0);
+        // cell 自身显式 height 100px 不被 0 内容子塌缩
+        assert_eq!(
+            table.height, 100.0,
+            "orphan table-cell explicit height should be respected"
+        );
     }
 
     /// 没有 block 级子元素时函数为 no-op。

@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R995 orphan table-cell shrink-to-fit = percentages-grandchildren-quirks-mode-001/002 14.85%→0.60% PASS·css-tables Oracle 69→73（+4）零回归·R679 表 shrink 簇新 facet
+
+承 R994 后扫 css-tables top-worst 定位 percentages-grandchildren-quirks-mode-001/002（twin，14.85%）。**Phase 0 probe**（layout-engine 临时单测复刻 001 结构：`<div style="display:table-cell;height:100px;background:green"><div style="width:100px"><div style="height:100%;background:red">`，quirks 模式）发现：① quirks %height 正确（red div height:100% → auto → 0，green 应显）；② **真根因 = orphan table-cell（display:table-cell 无 table 祖先）拉伸到 784px 满宽**（应为 100px 收缩到子内容），green 784×100 vs ref 100×100 = 14.85% diff 主因。
+
+**根因链**：orphan table-cell 经 `adjust_table_layout_inner`（table.rs:65 孤立 table-internal 分支）→ `layout_table` → `build_grid` 空（cell 子是 block 非 table-internal）→ `shrink_table_to_block_content`。该函数本应收缩 cell 到 block 子的 max-content 宽，但 **`block_max_content_width` 只递归求和子，不读元素自身显式 Px 宽**——middle div（width:100px）子是 0 内容 red div → max_content_width=0 → 早退（line 82）→ cell 留 784。即使收缩触发，函数用子内容高（0）覆写 cell 自身显式 height:100px → 高度塌缩。
+
+**改动**（`table_shrink.rs`）两处：
+1. `block_max_content_width`：把元素自身显式 Px 宽作 max-content 下界（`inner.max(own_explicit_w)`）——shrink-to-fit 不应把 table 收缩到小于 block 子的显式宽。
+2. `shrink_table_to_block_content`：table/cell 自身显式 Px height 作 min-height 下界（CSS §17.5.2）——`final_content_height = content_height.max(explicit_height - padding_border)`，不被 0 内容子塌缩。
+
+**验证（chromium Oracle + 三态门禁）**：percentages-grandchildren-quirks-mode-001/002 **14.85%→0.60% PASS**（strict）；**css-tables Oracle 69→73（+4 零回归）**（001/002 +2 + 另 2 案同 shrink 改善）；**welcome 16.57% 不变**（<20%）；table_shrink 6 既有 + 1 新单测（`test_shrink_orphan_table_cell_respects_child_explicit_width_and_own_height`）全绿；make test 全 workspace 绿（exit 0）；clippy/fmt 干净。
+
+**意义**：收割 R679（table shrink-to-fit 簇）新 facet——orphan `display:table-cell` 的 max-content 收缩（显式宽子）+ 显式 height 尊重。R679 此前 landed empty-table（R749）+ deferred R681-R684；本 R995 是「显式宽子 + 显式 height」slice。block_max_content_width 的「显式 Px 宽作下界」修复对真实网页 orphan table-cell（如 `display:table-cell` 布局 hack）是基础正确性。
+
+**下一步**：css-tables 残余 worst（table-cell-width-0 20% R97 表 intrinsic / percent-height-overflow-auto 17% scrollbar / baseline-vertical 12% 基线 / table-cell-overflow-explicit-height 9.73% twin table overflow+height），或转 R990 余波 per-font ascent / R370 flex-container-intrinsic-width。R993+R994+R995 累计 css-flexbox +4 / css-tables +4 零回归。
+
 ### R994 R717 fixup 泛化（leaf + CSS aspect-ratio）= css-flexbox Oracle +2（287→289）·零回归·R993 收割延伸
 
 承 R993。R993 的 post-layout fixup 原仅覆盖 ratio-only SVG `<img>`（`b.is_replaced && img_intrinsic_ratios`）。复查 aspect-ratio-intrinsic 簇残余发现 003/004/011/014 是**不同机制**——CSS `aspect-ratio` 在非替换 **leaf `<div>`**（非 img/SVG）上、flex 容器内（003: `inline-flex;height:100px` + 子 `<div aspect-ratio:1/1>`）。003 容器 height 明确（100px）→ taffy 已正确 derive，15.67% 残差 = inline/text 定位（非 ratio 问题，独立）。
