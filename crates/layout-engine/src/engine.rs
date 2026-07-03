@@ -11,7 +11,9 @@ use std::collections::HashMap;
 
 use taffy::prelude::*;
 
-use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue, PositionValue};
+use zero_css_parser::values::{
+    ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, PositionValue,
+};
 
 use zero_dom::{Document, NodeId, NodeKind};
 
@@ -672,17 +674,37 @@ impl LayoutEngine {
             if !is_container || !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
                 continue;
             }
-            if !matches!(s.width, LengthValue::MaxContent | LengthValue::MinContent) {
+            // R1015：扩展 gate——除 MaxContent/MinContent 外，width:Auto + float（shrink-to-fit
+            // 上下文）的 flex 容器也触发固有宽度计算（flex container float:left 应 shrink 到
+            // item intrinsic，非拉满视口）。仅 flex（grid 无 column 派生函数，沿用 grid_intrinsic）。
+            let is_max_min = matches!(s.width, LengthValue::MaxContent | LengthValue::MinContent);
+            let is_auto_float = matches!(s.width, LengthValue::Auto)
+                && !matches!(s.float, FloatValue::None)
+                && matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex);
+            if !is_max_min && !is_auto_float {
                 continue;
             }
             let intrinsic = if matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid) {
                 crate::intrinsic_sizing::grid_intrinsic_width(b, doc, styles)
+            } else if matches!(s.flex_direction, FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse)
+            {
+                crate::intrinsic_sizing::flex_column_intrinsic_width(b, doc, styles)
             } else {
                 crate::intrinsic_sizing::flex_row_intrinsic_width(b, doc, styles)
             };
             let Some(intrinsic) = intrinsic else { continue };
-            // intrinsic 不可测或容器已足够宽 → 跳过（保持塌缩/当前行为，中性）
-            if intrinsic <= 1.0 || b.width >= intrinsic + 1.0 {
+            // intrinsic 不可测 → 跳过。否则按上下文判定 apply 条件：
+            // - MaxContent/MinContent（grow）：current 比 intrinsic 窄 → grow 到 intrinsic。
+            // - Auto+float（R1015 shrink-to-fit）：current 比 intrinsic 宽 → shrink 到 intrinsic。
+            if intrinsic <= 1.0 {
+                continue;
+            }
+            let should_apply = if is_auto_float {
+                b.width > intrinsic + 1.0
+            } else {
+                b.width < intrinsic + 1.0
+            };
+            if !should_apply {
                 continue;
             }
             let Some(&taffy_id) = dom_to_taffy.get(&id) else {

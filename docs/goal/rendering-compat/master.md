@@ -2648,6 +2648,29 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1015 ★R370 flex column intrinsic width first slice LANDED = flex-item-transferred-sizes-padding 14.85→0.60% PASS（+2）·css-flexbox Oracle 289→291 零回归·非替换 aspect-ratio transferred-size + column max 变体 + gate 扩 auto+float
+
+承 R1014 Phase 0 测绘。本轮实施 R370 三件中的核心两件（gate 扩 auto+float + column max 变体 + transferred base size），**+2 PASS 零回归**。
+
+**改动**（3 处，CSS css-sizing-4 §aspect-ratio + Flexbox §4.5）：
+- **`intrinsic_sizing.rs::flex_item_base_size` 加 transferred case（步骤 2.5）**：width:Auto + aspect_ratio>0 + definite main（height Px 或 min-height Px 地板）→ cross width = main × ratio（`aspect_ratio_transferred_width` helper，区分 border-box / content-box）。覆盖非替换 item（R982/R983 transferred-size 的非替换扩展，R1013 守卫跳过的案的正确方向）。
+- **新 `flex_column_intrinsic_width`**：列容器 cross 轴 max-content = **max(item base size + margin)** + frame（镜像 row 的 Σ；列容器主轴垂直，cross=width 取最宽 item）。
+- **`engine.rs::apply_intrinsic_content_sizing` gate 扩 + dispatch**：除 MaxContent/MinContent 外，**width:Auto + float≠None + display:Flex/InlineFlex** 也触发（shrink-to-fit 上下文）。flex dispatch：Column/ColumnReverse → `flex_column_intrinsic_width`（max），否则 → `flex_row_intrinsic_width`（Σ）。apply 条件按上下文反转：auto_float 当 current > intrinsic 时 shrink（原 MaxContent 当 current < intrinsic 时 grow）。
+
+**验证（chromium Oracle + ORACLE_DUMP_ALL per-case A/B vs R1013 baseline 289）**：
+- **flex-item-transferred-sizes-padding-border-sizing / content-sizing：14.85%→0.60% PASS（-14.25pp ×2，FAIL→PASS）**。
+- **额外改善（无翻转）**：flexbox-collapsed-item-horiz-001 15.04→3.77%（-11.27pp）、flexbox-min-height-auto-001 3.26→1.87%（-1.39pp）。
+- **css-flexbox Oracle 289→291（+2 PASS，0 回归）**——全 497 案 per-case A/B 仅 4 案变化（上述），无任何他案 >0.5pp 退步。
+- **welcome 16.57% 不变**（<20% DC-13 gate）；**CSS2/normal-flow 604/746 (81%) 不变**；**CSS2/floats-clear 66/214 不变**（gate 仅 Flex/InlineFlex，floats-clear/normal-flow 非 flex 容器不受影响）。
+- 2 新单测：`r1015_float_flex_column_aspect_ratio_item_shrinks_to_fit`（容器 shrink 到 <200px）+ `r1015_block_flex_column_auto_width_no_shrink`（block flex 不 shrink，零回归）。
+- make test exit 0（workspace 绿，layout-engine 1003 含 +2 r1015 测）；clippy --workspace -D warnings ✓；fmt ✓。
+
+**意义**：R370「零杠杆」纠正后首切 +2 PASS。**非替换 aspect-ratio transferred-size**（R982/R983 替换元素 transferred 的自然扩展）+ **flex 列容器 max-content**（镜像 row）+ **width:auto+float shrink-to-fit gate** 三件合做才能 yield（partial slice 无 yield，证 R1014 三耦合件判断）。transferred-sizes ×2 现 PASS。flexbox-collapsed-item-horiz / min-height-auto 改善（近 PASS，潜在下轮翻）。
+
+**★ R1013 与 R1015 的关系**：R1013 守卫对「非替换 + main 轴 min-size」**跳过** post-layout fixup（因 fixup 反向推导 main = cross/ratio 错误）。R1015 在 **intrinsic 测量期**用正确方向（cross = main × ratio）解同一组案——R1013 防 post-layout 反向覆盖，R1015 在 intrinsic 期正向推导，两者互补。R1013 的 fixup（replaced 元素 main 推导）仍保留。
+
+**▶ 下会话（R370 余波 + aspect-ratio-intrinsic 簇）**：① **aspect-ratio-intrinsic-size-003/004/011/014**（14.85% ×4，inline-flex/flex + container-stretch main——item 无 min-height，main 来自容器 height:100px/100% 拉伸）：transferred base size 须扩到 **container-definite-cross 上下文**（flex_row/column_intrinsic_width 读容器 height Px 推 item stretch main），多 session；② **flexbox-collapsed-item-horiz-001 / flexbox-min-height-auto-001**（R1015 改善后 3.77% / 1.87%，近 PASS，查残余）；③ row 对称（flex-direction:row + float）+ inline-flex gate 扩（现仅 column + float，row/inline-flex 待 A/B）；④ R370 全量 oracle 三态门禁复跑。clean win 已 land。
+
 ### R1014 R370 flex-container-intrinsic-width Phase 0 测绘 = ~6 案阻塞定位（transferred-sizes + aspect-ratio-intrinsic 簇）·3 耦合件（gate 扩 auto+float / column max 变体 / transferred base size）·R370「零杠杆」纠正·零源码·纯调查
 
 承 R1013 CONTINUE。本轮探索 fresh full oracle top-worst 候选 + 测绘下一结构 lever（R370）。**R370「零杠杆」纠正**：R370 memory「inline-flex width:auto 零杠杆——48 案不用 inline-flex width:auto」是**部分误判**——确有 ~6 案用 flex/inline-flex width:auto shrink-to-fit 且 FAIL：flex-item-transferred-sizes-padding-{border,content}-sizing（14.85% ×2，R1013 改善后残余）+ aspect-ratio-intrinsic-size-{003,004,011,014}（14.85% ×4）。同根因 = flex 容器 width:auto 不 shrink-to-fit（拉满 800）。
