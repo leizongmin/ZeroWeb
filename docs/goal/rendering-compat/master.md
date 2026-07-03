@@ -2648,6 +2648,18 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1003 twin ZW 几何验证（td=172×304）·R1002「fundamental table-auto-layout gap」框架过度·残差 = 小宽差 + font·零源码·纯调查
+
+承 R1002「twin 残差 = table auto-layout（ZW max-content 211 vs chromium balance 162）」。本轮 probe（compute_styles + `<style>` CSS 正确接入）实测 **ZW twin td = 172×304**（tall div 168×304 正确 grow，R1001 cell direct-text fix 使 td 从 8px 进到 172px）。oracle PNG 分析（imprecise）chromium td ~162。
+
+**关键纠正 R1002**：R1002 框架「ZW max-content 211 vs chromium 162 = fundamental gap」**过度**。实测 ZW td=172（**非 211**——compute_column_widths 经 `final.min(table_box.content_width)` 被 taffy 分配的 table 宽 clamp 到 172，非纯 max-content）。**chromium ~162**。**两者仅差 ~10px**（172 vs 162），twin 已 close（3.87%）。R1001 显著改进（8→172，近 chromium 162）。残差 = 10px 宽差 + 文本换行差异 + font 渲染（非 Ahem 默认字体），非 fundamental 算法 gap。
+
+**意义**：twin 在 R1001 后已 close（3.87%）。完全 pass（<1%）须 10px 宽差对齐（table 列宽 clamp 精度 / tall div border 计入 / 文本测量）+ font 渲染（非 Ahem 字体 advance/raster）。两者均 font-wall + table 精度 territory，非单 session。
+
+**裁决**：R1002「table auto-layout §17.5.2.2 多 session 重写」结论**收窄**——twin 已 close，无须大重写，须小宽差对齐（可独立 slice，但 EV 低 ~2 case）。下会话优先其它 lever（twin 3.87% 可作 stretch goal，非阻塞）。
+
+**下一步**：twin 小宽差对齐（EV 低，可选）；或转 Phase A pre-layout text-transform / per-font ascent / multicol Phase 2 / 其它 dir fresh case。R1001 已 land（css-tables 73→74 +1 零回归）；本 R1003 纯调查无新代码。
+
 ### R1002 R1001 height-cap 假设纠正 + twin 残差 = table auto-layout 宽度平衡（非 height）·零源码·纯调查
 
 承 R1001「twin 须 height-cap + paint-clip 合做」。本轮验证发现 **R1001 height-cap 假设错误**：
