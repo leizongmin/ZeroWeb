@@ -618,6 +618,18 @@ pub fn parse_word_break(value: &str) -> Option<WordBreakValue> {
     }
 }
 
+/// 解析 CSS line-break 属性值（CSS Text 3 §5.3）。
+pub fn parse_line_break(value: &str) -> Option<LineBreakValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(LineBreakValue::Auto),
+        "loose" => Some(LineBreakValue::Loose),
+        "normal" => Some(LineBreakValue::Normal),
+        "strict" => Some(LineBreakValue::Strict),
+        "anywhere" => Some(LineBreakValue::Anywhere),
+        _ => None,
+    }
+}
+
 /// 解析 CSS writing-mode 属性值。
 pub fn parse_writing_mode(value: &str) -> Option<WritingModeValue> {
     match value.trim().to_ascii_lowercase().as_str() {

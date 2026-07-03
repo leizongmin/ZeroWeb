@@ -294,6 +294,26 @@ pub enum WordBreakValue {
     BreakWord,
 }
 
+/// CSS line-break 值（CSS Text 3 §5.3）。
+///
+/// 控制 CJK 文本的换行严格度。`Anywhere` 在每个排版字符处创建换行机会
+/// （覆盖 GL/JW/ZJW 禁则），近似 `word-break: break-all` 但更强。其余值
+/// （strict/loose/normal/auto）涉及 CJK 标点/小假名等规则，当前解析但按
+/// 默认（normal）行为处理。
+#[derive(Debug, Clone, PartialEq)]
+pub enum LineBreakValue {
+    /// auto（依 locale，等价 normal）。
+    Auto,
+    /// loose（松散，用于短行如报纸）。
+    Loose,
+    /// normal（默认）。
+    Normal,
+    /// strict（严格）。
+    Strict,
+    /// anywhere（任意字符可换行，覆盖禁则）。
+    Anywhere,
+}
+
 /// CSS writing-mode 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum WritingModeValue {

@@ -616,6 +616,19 @@ pub(crate) fn compute_final_inline_layouts(
         WordBreakValue::KeepAll => WordBreakMode::KeepAll,
         _ => WordBreakMode::Normal,
     };
+    // CSS Text 3 §5.3：line-break: anywhere 在每个排版字符处创建换行机会（覆盖
+    // GL/JW/ZJW 禁则）。ZW 复用 BreakAll（任意字符可断）作为近似——break-all 在
+    // overflow 时逐字符断行，对 width:1ch/窄容器场景产出与 anywhere 一致的逐字换行
+    // （line-break-anywhere 簇驱动）。strict/loose/normal/auto 涉及 CJK 标点禁则，
+    // 当前不实现（按 normal 默认行为）。
+    let word_break_mode = if matches!(
+        style.line_break,
+        zero_style_system::property::types::LineBreakValue::Anywhere
+    ) {
+        WordBreakMode::BreakAll
+    } else {
+        word_break_mode
+    };
     // 复用 resolve_text_align：start/end 方向感知（RTL→反向），避免此处独立 match 与
     // resolve_text_align / paint 路径三处分叉（R958 统一）。
     let text_align = resolve_text_align(Some(style));
