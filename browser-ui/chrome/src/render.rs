@@ -84,6 +84,9 @@ pub struct ChromePanel {
     height: f32,
     fill_viewport: bool,
     fill_background: bool,
+    /// 占满可用宽度（cross-axis 拉伸）。用于全宽 bar（TabStrip / BookmarksBar）——
+    /// 这些 bar 在 column 容器里须铺满窗口宽，而非按文案宽度收缩。
+    fill_width: bool,
 }
 
 impl ChromePanel {
@@ -127,6 +130,10 @@ impl ChromePanel {
             Some(Value::Int(i)) => *i as f32,
             _ => default_height,
         };
+        let fill_width = match spec.props.get("fill_width") {
+            Some(Value::Bool(b)) => *b,
+            _ => false,
+        };
         ChromePanel {
             bg,
             text,
@@ -134,6 +141,7 @@ impl ChromePanel {
             height,
             fill_viewport,
             fill_background,
+            fill_width,
         }
     }
 }
@@ -152,7 +160,10 @@ impl Widget for ChromePanel {
             Size::new(constraints.max_width, constraints.max_height)
         } else {
             let height = self.height.clamp(constraints.min_height, constraints.max_height);
-            let width = if let Some(text) = &self.text {
+            let width = if self.fill_width {
+                // 全宽 bar（TabStrip / BookmarksBar）：占满 column 容器可用宽。
+                constraints.max_width
+            } else if let Some(text) = &self.text {
                 let char_count = text.chars().count().max(1) as f32;
                 let approx = (char_count * 14.0 * 0.55 + 16.0).ceil();
                 approx.clamp(constraints.min_width, constraints.max_width)

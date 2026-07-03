@@ -1,0 +1,63 @@
+DC-14 chrome 区 diff 降低：全宽 bar 修复（94.56% → 83.13%）
+============================================================
+日期: 2026-07-04
+分支: ui-sdk
+
+背景
+----
+Round 40 修复 page 区（99.70%→0.00%）后，剩余 diff 全在 chrome 区（94.56%）。
+本轮用临时 diagnostic（sdk_render.rs tmp_dump_desktop_chrome_layout）dump desktop shell
+各 chrome 节点布局 rect，定位几何错配。
+
+发现
+----
+SDK chrome 6 个 bar 都有非零布局，但 TabStrip / BookmarksBar **按文案宽度收缩**而非全宽：
+  tab_strip  : 40×32   （应 1280×32，手绘全宽）
+  bookmarks  : 101×28  （应 1280×28，手绘全宽）
+  → 这两个 bar 缺 ~1240/1179 px 宽的背景，是 chrome 区 diff 主因之一。
+
+根因：`ChromePanel::layout` 非 fill_viewport 时按 text 字符数估算宽度（bar 在 column 容器里
+须铺满窗口宽，而非 content-width）。column 容器 cross-axis 默认 Start（child 取自身测量宽），
+不拉伸。
+
+修复
+----
+1. `ChromePanel` 加 `fill_width: bool` 字段（从 prop `fill_width` 读，默认 false）；
+   `layout` 在 `fill_width` 时 width = `constraints.max_width`（占满 column 可用宽）。
+2. shell.rs 加 `leaf_fullwidth` helper（设 `fill_width: true` prop）。
+3. DesktopBrowserShell 的 BrowserTabStrip + BookmarksBar 改用 `leaf_fullwidth`。
+
+验证（tmp diagnostic，已删）：
+  tab_strip  : 1280×32 ✅
+  bookmarks  : 1280×28 ✅
+
+Baseline 改善（dc14_chrome_region_pixel_diff_baseline，control hand-vs-hand 0.000%）
+-------------------------------------------------------------------------------------
+                       Round 40    Round 42（本轮）
+chrome 区 (y<96):      94.56%      **83.13%**（-11.43pp）
+page 区 (y>=96):       0.00%       0.00%
+全帧估算:              ~11.3%      ~9.3%
+
+全宽 bar 背景现在覆盖手绘 chrome 的 tab strip + bookmarks 区域，消除大片「缺背景」diff。
+剩余 chrome diff（83.13%）来自：nav 按钮（ChromePanel 文字占位 vs 手绘 4 图标）、address bar
+（缺圆角边框 + 锁图标）、security/menu（占位 rect vs 图标）、以及图标整体缺失（需 SDK
+PaintRecorder 扩展 image/icon 绘制能力，见下）。
+
+架构阻塞（NavigationButtonsWidget 真实化）
+------------------------------------------
+手绘 nav 按钮的 4 图标（ChevronLeft/ChevronRight/Refresh/Home）经 `ui_icons::render_icon` →
+resvg 光栅化 SVG → 注册为 FontLoader 的 bitmap_glyph（ICON_FONT_ID）→ 渲染为 GlyphDraw。
+SDK chrome 走 bridge（FontdueBackend），**无图标 bitmap**；且 `PaintRecorder` 只有
+fill_rect/stroke_rect/draw_text/draw_external_surface（**无 circle/rounded_rect/image**）。
+故像素级还原 nav 图标需要：
+  (a) PaintRecorder 加 rounded_rect（hover 圆背景）+ image/icon 绘制；或
+  (b) bridge 接入浏览器图标 bitmap（经 ImageCache）。
+属下一轮的架构扩展（独立 turn）。本轮先把 bar 几何修对（已降 11pp）。
+
+门禁
+----
+- browser-ui/chrome crate: **86 passed / 0 failed**
+- browser sdk-chrome: **205 passed / 0 failed**（单线程）
+- cargo clippy -p zero-browser-chrome -p zero-browser --all-targets --features sdk-chrome -- -D warnings: 净
+- cargo fmt --all --check: 净
+- SDK-only（chrome crate + sdk-chrome feature），default 路径不编译本变更 → 无 product-smoke 风险。

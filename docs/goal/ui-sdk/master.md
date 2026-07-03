@@ -327,6 +327,7 @@
 
 ## Latest Evidence
 
+- `evidence/dc14-chrome-fullwidth-bars-20260704.txt` — **Round 42 DC-14 chrome 区 diff 降低：全宽 bar 修复（94.56% → 83.13%）**。临时 diagnostic dump desktop shell 各 chrome 节点 rect，定位 TabStrip(40×32)/BookmarksBar(101×28) **按文案宽收缩**而非全宽（手绘全宽 1280）→ 大片缺背景 diff。**修复**：ChromePanel 加 `fill_width` 字段（prop，layout 时 width=max_width）+ shell.rs `leaf_fullwidth` helper，TabStrip/BookmarksBar 改用之。**结果**：chrome 区 **94.56% → 83.13%**（-11.43pp），全帧 ~11.3%→~9.3%；page 区 0.00% 不变；控制组 0.000%。剩余 chrome diff = nav//address/security/menu 占位 + 图标缺失（架构阻塞：手绘图标经 resvg SVG→FontLoader bitmap_glyph→GlyphDraw，SDK bridge 用 FontdueBackend 无图标 bitmap，且 PaintRecorder 无 circle/image；需下轮扩展 PaintRecorder 加 rounded_rect+image 或 bridge 接入图标 bitmap）。门禁：chrome crate 86 / browser sdk-chrome 205 单线程全绿 + clippy/fmt 净；SDK-only 无 product-smoke 风险。
 - `evidence/dc14-page-region-rootcause-fix-20260704.txt` — **Round 40 DC-14 page-region 99.70% diff 根因定位 + 修复（headless）**。逐层 diagnostic 定位：page 区灰来自 `chrome_shadows` 的 viewport drop shadow（rect 0,84,1280,716 blur6 alpha22 覆盖整个 viewport）；手绘 chrome 用 chrome_fills step 9 的 page_bg 白底覆盖阴影内部，但 **SDK 替换路径丢弃了 chrome_fills** → 阴影染灰整片页面。**修复（Fix 1）**：SDK 替换路径 3 个 scene_primitives 初始化点（render_frame/render_cpu/test）不带 chrome_shadows（SDK chrome 不同布局几何，不应继承手绘 chrome 阴影；真实 Widget 落地后由组件自画）。**结果**：page 区 **99.70% → 0.00%**，全帧 diff ~98.7% → **~11.3%**；chrome 区 91.48%→94.56%（+3pp，SDK 现画 2 个 ChromePanel bar，待真实 Widget 收敛）；控制组 hand-vs-hand 仍 0.000%。**剩余 diff 全在 chrome 区**（12 组件 ChromePanel 占位）= NavigationButtonsWidget 等真实 Widget 的反馈环目标。顺手修复：SURFACE_ID 1→0（与 WebViewWidget 工厂默认一致，loaded page surface 不再丢）+ image_cache None 时不再 early-return（SDK chrome 仍渲染）。门禁：browser sdk-chrome **205**/default **191** 单线程全绿 + clippy/fmt 净；并行跑 6 scroll/touch/link 测 flaky（单线程全绿，既有 timing 类，非本轮引入）。Fix 2（保留阴影+page_bg 覆盖）因 fill 顺序耦合覆盖 content/overlay 致 5 测失败，回退用 Fix 1。
 - `evidence/dc14-pixel-diff-baseline-20260704.txt` — **Round 39 DC-14 chrome-region pixel-diff baseline 量化（headless 可视验收反馈环建立）**。新增 `dc14_chrome_region_pixel_diff_baseline` 测（sdk_chrome_tests，`--nocapture` 查看数值）：同一 BrowserApp 状态下逐像素比较手绘路径（`render_full_scene_with_webview_for_test`）vs SDK 替换路径（`render_full_scene_sdk_chrome_for_test`），1280×800。**控制组 hand-vs-hand = 0.000%**（harness 确定可信）。**Baseline**：chrome 区 (y<96) **91.48%** diff、页面区 (y≥96) **99.70%** diff。两个关键发现：①chrome 区 91.48% 与 §DC-7/DC-14「真实 Chrome Widget 缺口」一致（12 组件全为 ChromePanel 占位），把 DC-14 ≤2% 目标量化；②**页面区 99.70% 是意外高信号**——master.md 预期页面区 ≈0%（两路径共用 build_scene 页面内容），实测几乎全差 → SDK 替换路径的页面 surface 合成（page_fills → surface_id=1 → draw_external_surface）与直接渲染产出完全不同像素，是独立于 Widget 占位的另一类问题（待下轮定位：viewport rect 错位 / draw_order·clip / surface 坐标系）。**把 DC-14 从「定性 + 需 GUI」转为「定量 + headless 可验证」**，为真实 Widget 实现提供反馈环。门禁：browser sdk-chrome **204**（+1）/ default **191** 零回归 + clippy/fmt 净。
 - `evidence/deep-review-mobile-eventmap-r37-20260703.txt` — **Round 37 第 11/12 层深度审查：ui/adapters/{harmonyos,android} event_map（DC-15 移动输入）**。**发现并修 1 个真实 latent DC-15 bug（双适配器同病）**：`map_window_metrics` 把平台 DPI 比（input.density，phone 3.0）同时塞进 `scale_factor` **和** `density`——违反 DC-12 决策（density = Material 间距密度 DEFAULT_DENSITY=1.0，与 scale_factor HiDPI 正交；winit adapter 正确用 DEFAULT_DENSITY）。后果：density=3.0 phone 上所有 spacing token 3× 放大 → 布局爆。latent（仅移动设备后端落地后触发）但确是 metrics 映射 correctness 错误。**修复**：`density: DEFAULT_DENSITY`（DPI 比只进 scale_factor）+ input struct `density` 字段加 doc comment 澄清语义 + 更新全部受影响测试（event_map 3 测/适配器 + ffi 1 测/适配器，density→DEFAULT_DENSITY 补 scale_factor 断言）。其余经查正确（触摸相位 ACTION_*/TouchAction、pointer_id 多指、back gesture、soft keyboard、system_theme）。门禁全绿：harmonyos **21** + android **20** / clippy 双适配器净 / fmt 净 / **cargo build --workspace 净**。**移动 adapter 是 leaf skeleton 不在默认浏览器二进制 → 零生产/渲染影响**（workspace build 确认全局编译）。**SDK 通用层深度审查现覆盖 12 层**。
@@ -1096,3 +1097,38 @@ Evidence: `evidence/dc14-pixel-diff-baseline-20260704.txt`
 Evidence: `evidence/dc14-page-region-rootcause-fix-20260704.txt`
 
 **下轮下一步**：实现 `NavigationButtonsWidget`（真实 impl Widget：4 图标按钮 + hover/pressed 圆背景 + click emit BrowserAction），逐组件压缩 chrome 区 94.56% → ≤2%；反馈环 = `dc14_chrome_region_pixel_diff_baseline`。
+
+### Round 42 — DC-14 chrome 区全宽 bar 修复（94.56% → 83.13%，2026-07-04）
+
+**Round 40 修 page 区后，本轮降 chrome 区**。临时 diagnostic（sdk_render.rs，已删）dump desktop
+shell 各 chrome 节点布局 rect：6 个 bar 都非零布局，但 **TabStrip(40×32) / BookmarksBar(101×28)
+按文案宽收缩**（手绘全宽 1280）→ 缺 ~1240/1179 px 背景的 diff。根因：ChromePanel.layout 非
+fill_viewport 时按 text 字符数估宽；column 容器 cross-axis 默认 Start 不拉伸。
+
+**修复**：①ChromePanel 加 `fill_width: bool`（prop，layout 时 width = constraints.max_width）；
+②shell.rs 加 `leaf_fullwidth` helper；③DesktopBrowserShell 的 TabStrip + BookmarksBar 改用之。
+
+**Baseline 改善**（dc14_chrome_region_pixel_diff_baseline，control 0.000%）：
+| 区 | Round 40 | Round 42 |
+|----|----------|----------|
+| chrome (y<96) | 94.56% | **83.13%**（-11.43pp） |
+| page (y≥96) | 0.00% | 0.00% |
+| 全帧估算 | ~11.3% | ~9.3% |
+
+**架构阻塞（NavigationButtonsWidget 真实化）**：手绘 nav 4 图标（ChevronLeft/Right/Refresh/Home）
+经 resvg SVG→FontLoader bitmap_glyph(ICON_FONT_ID)→GlyphDraw 渲染。SDK bridge 用 FontdueBackend
+**无图标 bitmap**，且 PaintRecorder 只有 fill_rect/stroke_rect/draw_text/draw_external_surface
+（**无 circle/rounded_rect/image**）。故 nav 图标像素级还原需先扩展 PaintRecorder（加 rounded_rect
+做 hover 圆背景 + image/icon 绘制）或让 bridge 接入浏览器图标 bitmap（ImageCache）。独立 turn。
+
+**门禁全绿**：chrome crate 86 / browser sdk-chrome 205（单线程 0 failed）+ clippy -D warnings 净 +
+fmt 净。SDK-only（chrome crate + sdk-chrome feature），default 不编译本变更 → 无 product-smoke 风险。
+merge origin/main R1004-R1007（rendering-compat WOFF 解码器 + @font-face，font/loader.rs 冲突已解：
+保留 WOFF→sfnt 解码 + DC-11 sync_to_shared 传 decoded sfnt bytes）。
+
+Evidence: `evidence/dc14-chrome-fullwidth-bars-20260704.txt`
+
+**下轮下一步**：扩展 SDK PaintRecorder 加 `fill_rounded_rect`（hover 圆背景 + 圆角地址栏边框）+ 桥接
+支持，并设计图标绘制通路（bridge 接入浏览器图标 bitmap 经 ImageCache，或 PaintRecorder 加 draw_image），
+为 NavigationButtonsWidget / AddressBarWidget 真实化解锁；继续用 dc14_chrome_region_pixel_diff_baseline
+看 chrome 区 83.13% 收敛。

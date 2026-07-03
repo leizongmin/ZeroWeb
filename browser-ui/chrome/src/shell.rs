@@ -86,6 +86,14 @@ fn leaf_flex(component: &str, id: &str, bg: &str, text: Option<String>, flex: f3
     s
 }
 
+/// 全宽 bar 叶子节点：与 [`leaf`] 相同但 `fill_width = true`（占满 column 容器可用宽）。
+/// 用于 TabStrip / BookmarksBar 等须铺满窗口宽的 bar（手绘 chrome 这些 bar 是全宽的）。
+fn leaf_fullwidth(component: &str, id: &str, bg: &str, text: Option<String>) -> WidgetSpec {
+    let mut s = leaf(component, id, bg, text);
+    s.props.insert("fill_width", Value::Bool(true));
+    s
+}
+
 fn tab_titles(model: &BrowserChromeModel) -> String {
     model
         .tabs
@@ -156,13 +164,13 @@ impl BrowserChromeShell for DesktopBrowserShell {
             Some(crate::i18n::localized_label(crate::i18n::ids::OPEN_MENU)),
         ));
         root.children.push(toolbar);
-        root.children.push(leaf(
+        root.children.push(leaf_fullwidth(
             "browser.BrowserTabStrip",
             ID_TAB_STRIP,
             "tab_strip_bg",
             Some(tab_titles(model)),
         ));
-        root.children.push(leaf(
+        root.children.push(leaf_fullwidth(
             "browser.BookmarksBar",
             ID_BOOKMARKS,
             "toolbar_bg",
