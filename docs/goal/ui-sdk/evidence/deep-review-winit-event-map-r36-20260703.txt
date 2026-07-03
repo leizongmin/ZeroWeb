@@ -1,0 +1,78 @@
+ui/adapters/winit/event_map.rs 深度审查（R36）— 第 10 层审查 + 输入契约锁定
+日期: 2026-07-03
+模块: ui/adapters/winit/src/event_map.rs（772 行，winit 事件→UiEvent 纯函数映射，DC-2 输入关键）
+背景: R35 收口时列出的未审模块之一。输入映射是 silent bug 高发区（相位/键名/坐标符号错
+      只静默失效），值得专门审查。
+
+================================================================
+审查结论：0 active bug + 1 价值加固（锁定脆弱跨 crate 键契约）
+================================================================
+
+经查正确（16 个 map 函数逐一核验）
+----------------------------------------------------------------------
+- map_mouse_button：Left/Right/Middle/Back→Other(3)/Forward→Other(4)/Other(code)→Other(code)。
+  Back=Other(3) 与真实 Other(3) 语义重叠（注释明示设计选择，chrome 可识别）。
+- map_modifiers：SHIFT/CONTROL/ALT/SUPER 四修饰键组合正确。
+- to_logical_point/size：physical/scale，scale<=0→1.0 防除零。f64 除法→f32 转换精度可接受。
+- map_window_metrics：logical_size + scale + safe_area/keyboard=0 + 默认 text_scale/density
+  + orientation 派生。正确（桌面初始；移动由 M4 runtime 覆盖）。
+- map_key_action：repeat→Repeat（含 Released+repeat 边界，winit 不发，注释明示）。
+- map_logical_key：Named→Debug 形态 / Character→as_str / Unidentified→"Unidentified" / Dead。
+- map_pointer_phase / map_touch_phase：Pressed/Released/Moved/Cancelled 全分支正确。
+- map_mouse_input/cursor_moved：pointer_id=0（鼠标），button/Moved 正确。
+- map_touch：Started→Pressed+Primary（click-to-focus/tap），其余 button=None（phase 编码）；
+  pointer_id=touch_id（u32，winit u64 id 截断，注释明示，per-gesture 唯一即可）。
+- map_mouse_wheel：LineDelta(x,y)→(x*20,-y*20)、PixelDelta→物理/scale 取反 y。y 取反约定
+  （winit y-up vs UI delta.y down=向下滚）与消费端 scroll_y+=delta.y 一致。
+- map_ime：Enabled/Disabled/Preedit(start 锚点)/Commit 正确。Preedit 选择区(start,end)→start
+  是文档化简化（单光标 UI）。
+
+关键验证：与 host-runtime 键命名一致性（docstring 声称）
+----------------------------------------------------------------------
+- 声称：event_map map_logical_key 的 Debug 形态命名「与 crates/host-runtime 既有转换一致」。
+- 核验 host-runtime/src/event.rs:203 `convert_keyboard_input`：Named→`format!("{:?}",named)`、
+  Character→to_string、Unidentified→"Unidentified"、Dead→`format!("Dead({})",ch)`/"Dead"。
+- **与 event_map map_logical_key 逐字相同**。一致性声明 verified，无跨路径键名分歧 bug。
+
+坐标空间不对称（docstring 化设计，非 bug）
+----------------------------------------------------------------------
+- map_touch 内部做 physical→logical 转换；map_mouse_input/cursor_moved/mouse_wheel 取
+  **已 logical** 的 position。API 不对称，但每函数 docstring 明示其输入空间。
+- **无生产调用方**：winit event_map 函数当前仅被本模块集成测试调用（+ runtime.rs docstring 草图）；
+  生产 EventLoop::run 阻塞壳是 GUI-gated M4 件。故坐标空间误用无现行 bug 风险（未来 run 实现
+  须按各函数 docstring 传正确空间）。
+
+价值加固：锁定脆弱 Debug-format 键契约（本审查的实际产出）
+----------------------------------------------------------------------
+- 浏览器（apps/browser + host-runtime）按**精确字符串**匹配 16 个命名键：Escape/Space/Home/
+  Enter/Tab/PageDown/ArrowUp/ArrowLeft/ArrowDown/PageUp/End/ArrowRight/Delete/Backspace/F1/F5。
+- event_map 经 `format!("{named:?}")` 产出这些串——**脆弱跨 crate 契约**：winit NamedKey Debug
+  若变，浏览器输入静默失效（如 Escape 关菜单失灵）。
+- event_map 此前只测 5 个键（Tab/Enter/ArrowLeft/Backspace/Space），其余 11 个关键键未锁定。
+- **新增 `logical_key_matches_browser_critical_contract`**：覆盖全部 16 键，断言 Debug 形态 ==
+  浏览器期望串。**全部 PASS**（契约当前成立）→ 锁定；未来 winit Debug 漂移会在 CI 先于浏览器
+  静默失效被捕获。
+- Unidentified 分支不可单测（winit `NativeKey` 为 `pub(crate)`，仓外不可构造，与 map_key_event
+  同理）——注释记录此约束。
+
+================================================================
+门禁（全绿）
+================================================================
+- winit adapter 测试：32 passed / 0 failed（原 31，+1 契约锁定测）。
+- clippy `-D warnings`：✅ 零警告（修复一处 rust 1.91 explicit_auto_deref：`*expected`→
+  `.iter().copied()` 消除 `&&str` 双引用）。
+- cargo fmt --check：✅ 无变更。
+- make reftest：686/686 (100.0%) ✅。
+- make product-smoke：19.41% (< 20%) ✅（本变更为 #[test]；winit adapter 不在默认浏览器二进制
+  → 零生产影响；R1001 merge 经 reftest/product-smoke 确认 sound）。
+- merge origin/main R1001（rendering-compat table-cell direct-text，crates/layout-engine，
+  正交零冲突）。
+
+================================================================
+影响面 + 结论
+================================================================
+- 变更：ui/adapters/winit/src/event_map.rs +1 测试（键契约锁定）。
+- 第 10 层深度审查（+winit event_map）：0 active bug，输入映射正确；锁定 16 个浏览器关键键的
+  脆弱 Debug-format 契约（11 个新覆盖）。零回归。
+- SDK 通用层深度审查现覆盖 10 层。剩余未审：ui/patterns、ui/adapters/{harmonyos,android} 的
+  event_map。

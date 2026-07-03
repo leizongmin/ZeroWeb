@@ -393,6 +393,44 @@ mod tests {
     }
 
     #[test]
+    fn logical_key_matches_browser_critical_contract() {
+        // 浏览器输入（apps/browser）与 host-runtime 按**精确字符串**匹配这些命名键
+        // （Escape 关菜单 / Space 滚屏 / Home·End·PageUp·PageDown 翻页 / 方向键 caret·scroll /
+        // Backspace·Delete 编辑 / F1·F5 快捷键）。本测锁定 map_logical_key 的 Debug 形态产出
+        // 这些串——`format!("{named:?}")` 是脆弱的跨 crate 契约（winit NamedKey Debug 若变，
+        // 浏览器输入会静默失效）。任何不匹配 = 该键在浏览器已 silently broken。
+        use winit::keyboard::{Key, NamedKey};
+        let cases: &[(NamedKey, &str)] = &[
+            (NamedKey::Tab, "Tab"),
+            (NamedKey::Enter, "Enter"),
+            (NamedKey::Space, "Space"),
+            (NamedKey::Backspace, "Backspace"),
+            (NamedKey::Escape, "Escape"),
+            (NamedKey::Delete, "Delete"),
+            (NamedKey::Home, "Home"),
+            (NamedKey::End, "End"),
+            (NamedKey::PageUp, "PageUp"),
+            (NamedKey::PageDown, "PageDown"),
+            (NamedKey::ArrowUp, "ArrowUp"),
+            (NamedKey::ArrowDown, "ArrowDown"),
+            (NamedKey::ArrowLeft, "ArrowLeft"),
+            (NamedKey::ArrowRight, "ArrowRight"),
+            (NamedKey::F1, "F1"),
+            (NamedKey::F5, "F5"),
+        ];
+        for (named, expected) in cases.iter().copied() {
+            assert_eq!(
+                map_logical_key(&Key::Named(named)),
+                KeyCode::new(expected),
+                "NamedKey::{named:?} → 浏览器期望 \"{expected}\"，实际 {:?}",
+                map_logical_key(&Key::Named(named))
+            );
+        }
+        // 注：`Key::Unidentified(NativeKey)` 的 NativeKey 为 winit `pub(crate)`，仓外不可构造，
+        // 故 Unidentified/Dead(None) 外的分支无法直接单测（与 map_key_event 同理，见其 docstring）。
+    }
+
+    #[test]
     fn key_text_filters_empty_and_none() {
         use winit::keyboard::SmolStr;
         assert_eq!(key_text(Some(&SmolStr::new("a"))), Some("a".to_string()));
