@@ -1,0 +1,20 @@
+Round 25 — O1 follow-up closure (2026-07-03)
+
+Doc improvement: document paint_node clip chain contract in ui/runtime/src/host.rs.
+Explains why out-of-viewport nodes produce own_clip=None (not Rect::ZERO):
+- Bridge viewport fallback compensates (stateful-clip path)
+- Edge-touching rect intersections return None (zero-area), bridge renders correctly
+- Deep-review O1 observation now closed with explicit contract documentation
+
+No behavior change (doc-only). No new origin/main commits.
+
+Gates:
+- cargo build --workspace: ✅
+- cargo fmt --check: ✅
+- make reftest: ✅ 686/686 (100%)
+- make product-smoke: ✅ 19.41% (< 20%)
+- All downstream tests (30+ crates): ✅ 0 failures
+- browser: ✅ 191/191
+
+All deep-review follow-ups (F1-F4, O1, O2) now closed.
+Terminal gates unchanged — all require GUI/device.

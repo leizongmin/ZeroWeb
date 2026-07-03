@@ -701,3 +701,11 @@ Evidence: `evidence/round-20260703-170300.txt`
 Merge origin/main R992（R717 decode-level 实验，正交）。无 SDK 代码变更。全门禁绿色 + **zero-integration-tests 724 passed ✅**（STATUS_ACCESS_VIOLATION 不可复现）。核心 SDK coverage 90.45%（>85%）。Headless 耗尽不变。
 
 Evidence: `evidence/round-20260703-171500.txt`
+
+### Round 25 — O1 follow-up 收口（2026-07-03）
+
+**`ui/runtime/src/host.rs`**：为 `paint_node` 添加 clip 链契约文档注释，解释视口外节点产 `own_clip=None` 的设计理由（bridge viewport fallback 补偿；边相接 `Rect::intersect→None` 的正确行为）。纯文档变更，无行为变化。**O1 follow-up 收口**——全部 deep-review follow-up（F1–F4, O1, O2）均已关闭。
+
+全门禁绿色（build/clippy/fmt/reftest 686/product-smoke 19.41%/全部下游/191 browser）。无新 origin/main commit。
+
+Evidence: `evidence/round-20260703-173000.txt`
