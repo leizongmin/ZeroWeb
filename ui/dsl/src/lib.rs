@@ -11,7 +11,9 @@
 //! - **DC-6 列表渲染** 已落地：[`for_each::materialize_for_each`]（`for_each` 节点 → N 个具体子节点，
 //!   item 作用域求值 bindings/visible_when/enabled_when，稳定 id，迭代受 `max_iterations` 约束）。
 //!
-//! 剩余：map/filter 嵌套路径投影（follow-up）、counter/form/browser-shell-demo 示例（DC-14）。
+//! DC-6 全部 phases（引擎/YAML loader/map+filter 嵌套路径投影/`for_each`/responsive/action 简写）
+//! 已落地；counter/form/browser-shell-demo 示例已可构建运行（DC-14）。
+//! 唯一不做：谓词过滤 `filter($items, field>x)`（需 lambda，明确超受控计算层范围）。
 
 pub mod asset_bridge;
 pub mod diagnostics;

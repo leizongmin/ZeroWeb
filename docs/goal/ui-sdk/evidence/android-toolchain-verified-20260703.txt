@@ -1,0 +1,87 @@
+# Android 工具链补齐 + 交叉编译验证
+
+**日期**: 2026-07-03
+**触发**: 用户在本机装好 Android SDK（含 NDK）后，要求把 Android 补齐为 M4 第二移动后端
+**结论**: ✅ 通过——本机 Android 工具链达到与 HarmonyOS 同等的「开箱即用」状态
+
+## 本机环境复测（2026-07-03）
+
+| 组件 | 状态 | 说明 |
+|------|------|------|
+| Android SDK 根目录 | ✅ 已装 | `C:\Users\leizo\AppData\Local\Android\Sdk`，含 build-tools / platform-tools / platforms / emulator / system-images / sources / extras |
+| **adb** | ✅ 已装 | version 1.0.41（`platform-tools\adb.exe`） |
+| **Android Studio** | ✅ 已装 | `C:\Users\leizo\AppData\Local\Programs\Android Studio\bin\studio64.exe` |
+| **NDK** | ✅ 已装 | **r30.0.14904198**（`Sdk\ndk\30.0.14904198`）——本轮由用户在 Android Studio SDK Manager 装 |
+| **sdkmanager / cmdline-tools** | ❌ 缺失 | 不阻塞（NDK 已通过 GUI 装好） |
+| Java 17 | ✅ 已装 | `C:\Program Files\Microsoft\jdk-17.0.16.8-hotspot\`（与 HarmonyOS 共用） |
+
+## Rust target
+
+```
+$ rustup target list --installed
+aarch64-linux-android          ← 本轮新增
+aarch64-unknown-linux-ohos
+x86_64-linux-android           ← 本轮新增
+x86_64-pc-windows-msvc
+x86_64-unknown-linux-ohos
+```
+
+命令：`rustup target add aarch64-linux-android` + `rustup target add x86_64-linux-android`
+
+## cargo linker 配置
+
+**决策**：用环境变量，不入 `.cargo/config.toml`。
+
+**理由**：cargo `[target.<triple>] linker` 字段不支持环境变量插值（[rust-lang/cargo#9362](https://github.com/rust-lang/cargo/issues/9362)）。写死本机路径（含用户名 `leizo` + 绝对路径 `C:\Users\leizo\AppData\...`）到项目级 `.cargo/config.toml` 会：
+1. 违反 AGENTS.md 第 6 条「路径通用化」
+2. 把用户名泄漏到 git 公开仓库（仓库曾因此触发 SL-008/SL-010，见 commit `58e74ac8`）
+3. 在他人/CI 机器上失效
+
+**配置位置**：用户级 PowerShell `$PROFILE`（`C:\Users\leizo\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`）：
+
+```powershell
+$env:ANDROID_NDK_HOME = "C:\Users\leizo\AppData\Local\Android\Sdk\ndk\30.0.14904198"
+$ndkToolchain = Join-Path $env:ANDROID_NDK_HOME "toolchains\llvm\prebuilt\windows-x86_64\bin"
+$env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = Join-Path $ndkToolchain "aarch64-linux-android24-clang.cmd"
+$env:CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER = Join-Path $ndkToolchain "x86_64-linux-android24-clang.cmd"
+```
+
+**API level 选择**：24（Android 7.0，广泛兼容下限）。升级 NDK 只改 `ANDROID_NDK_HOME` 一处；切换 API level 需同步改 clang 文件名后缀（如 `android24` → `android28`）。
+
+**项目级 `.cargo/config.toml` 保持干净**（只有原 RUSTY_V8_ARCHIVE），未引入本机路径。
+
+## 交叉编译验证
+
+实测命令与输出：
+
+```
+$ cargo build --target aarch64-linux-android -p zero-ui-core
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.46
+   Compiling serde_core v1.0.228
+   Compiling rustversion v1.0.22
+   Compiling serde v1.0.228
+   ...（中间依赖省略）...
+   Compiling zero-ui-core v0.1.0 (C:\Users\leizo\work\ZeroBrowser\ui\core)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.78s
+```
+
+**整条链路验证**：rustc（host）→ NDK clang（`aarch64-linux-android24-clang.cmd`）→ Android `.a`/`.so`（target）。`Finished dev profile` 无任何错误。
+
+（PowerShell 的 `NativeCommandError` 提示是因 cargo 把编译进度输出到 stderr，非真错误——cargo build 成功完成。）
+
+## 同步落盘的其它文档
+
+- `docs/goal/ui-sdk/decisions/m4-add-android-backend.md`：加「工具链补齐结果」段 + 勾掉验证清单前 3 项
+- `docs/goal/ui-sdk.md`：4 处措辞（Mission DONE 第 24 行 / Support Envelope 第 62 行 / DC-15 第 181 行 / M4 第 324 行）从「M4 选定 HarmonyOS」收敛为「M4 硬指标 HarmonyOS + 第二后端 Android」
+- `docs/goal/ui-sdk/master.md`：DC-15 进度表加工具链验证通过条目；依赖决策日志加「M4 移动后端选型」+「Android cargo linker 配置方式」两条；Latest Evidence 加本轮段
+
+## M4 Android 剩余工作（不属本轮）
+
+- APK 壳工程 + Rust 共享库调用（`*.so`）
+- 真机/模拟器首帧验证
+- back gesture / soft keyboard / safe area / text scale 真实平台后端实现
+- `ui/adapters/android` adapter 接入真实 Activity / surface（当前 skeleton 已有 20 测）
+
+HarmonyOS（M4 DONE 硬指标）的对应工作并行推进中。

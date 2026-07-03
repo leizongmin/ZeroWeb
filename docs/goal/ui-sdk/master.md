@@ -9,9 +9,20 @@
 
 ## Active Milestone
 
-**M2 — 浏览器首批组件迁移 + WebView adapter + text foundation 接入（spec §M2）**。依赖：M1（已完成）。
+**M4 — 跨平台 runtime adapter + 移动端可运行后端 + design-system 首个风格包（spec §M4）**。M1（✅ 已收口 2026-07-01）、M2（✅ 已收口 2026-07-02）、M3（✅ 已收口 2026-07-03）。
 
-**✅ M1 UI SDK 核心骨架已收口（2026-07-01）**：23 个新 crate（22 通用 + 1 共享 + 2 耦合点 adapter-webview/chrome）全部存在、可编译、有无窗口单测；`cargo build --workspace` + `cargo clippy --workspace --all-targets -- -D warnings` + `cargo fmt --all` 全净；DC-1 依赖隔离机械验证 PASS（`evidence/dep-isolation-20260630-234530.txt`）；DC-17 coverage 聚合 line 93.00% / function 93.12% / region 93.41%（≥85%，per-crate 除 foundation/text stub 外全部 ≥85%）。M1 过程/决策/证据已归档 `archive/m1-skeleton-complete.md`。
+**M4 目标**（按 spec §M4 / goal §Ordered Next Milestones）：
+1. 完善 runtime adapter 接口；**WinitDriver headless 核心 ✅（DC-2）**；真实 `EventLoop::run` 阻塞壳（需 GUI）。
+2. 增强触摸、软键盘、safe area、text scale、platform back gesture——**SDK-side skeleton ✅（DC-15）**。
+3. **至少一个移动后端可运行：HarmonyOS 硬指标**（DevEco Studio + OHOS toolchains 已安装，`aarch64-unknown-linux-ohos` 交叉编译 ✅）。
+   Android adapter 为 stretch goal（NDK 待安装）。
+4. **PhoneBrowserShell / TabletBrowserShell** 可用并与 DesktopBrowserShell 共享 `BrowserChromeModel`+`BrowserAction`——**SDK-side ✅（DC-12/DC-15）**。
+5. **design-system 首个风格包** `zero_default()` 已交付（DC-15）。
+6. `ui/testing`/`ui/devtools` responsive preview / layout bounds / semantics snapshot——**SDK-side ✅**。
+7. 为 Android/iOS/HarmonyOS 接入提供设计文档或最小 adapter skeleton——**HarmonyOS ✅（21 测 + OHOS 交叉编译）、Android ✅（20 测）**。
+8. **DC-14 浏览器迁移**：`sdk-chrome` feature 替换式迁移 wiring ✅ + reftest 686/686 ✅ + product-smoke 19.87% ✅。剩余：GUI 可视验收（本环境无 GUI）。
+
+**M4 headless 已闭合项**：DC-15 SDK-side skeleton（HarmonyOS 21 测 + Android 20 测 + headless 集成测）+ OHOS 交叉编译 ✅；DC-2 WinitDriver 可测试核心 + 全示例 ✅；DC-8 SDK-side（焦点/IME/FocusScope/a11y 树 + 平台后端桥接契约 + host 自动推送）✅；DC-12 WindowMetrics §IF-009 字段全集 + adaptive shell + ThemeProvider 接 metrics ✅。**剩余终端门禁均需 GUI/设备**。
 
 **M2 目标**（按 spec §M2 / goal §Ordered Next Milestones）：
 1. 抽取滚动条/按钮/文本输入/菜单/popup/toolbar 到 `ui/widgets`；SearchField/SuggestionList/TabBar 等到 `ui/patterns`；新增 `browser-ui/chrome` 首批领域组件（spec §8.4.1A 映射）。
