@@ -5895,6 +5895,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "criterion",
+ "flate2",
  "fontdue",
  "hashbrown 0.17.1",
  "jpeg-decoder",
