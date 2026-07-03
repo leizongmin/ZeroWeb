@@ -1,0 +1,46 @@
+# DC-14 chrome 几何 parity（bookmarks_bar_visible + 几何桶合并）— 2026-07-04
+
+Round 47 修复 paint_node clip 双重平移后，chrome diff 92.19%（SDK chrome 现忠实渲染，暴露几何/结构差）。
+本轮闭合两个几何 parity 缺口，chrome diff 92.19% → **39.00%**（-53pp，远低于起点 R43 73.99%）。
+
+## A. bookmarks_bar_visible（条件渲染，对齐手绘）
+
+手绘 chrome `bookmarks_bar_visible = show_bookmarks_bar && !bookmarks.empty`；默认 fresh app 无书签 →
+不渲染 bookmarks bar（chrome 高 = tab 40 + toolbar 44 = 84）。SDK 此前**无条件**渲染 bookmarks bar
+（28px）→ SDK chrome 高 112，在 y=84-112 画 toolbar_bg(248) 覆盖手绘已是页面(255)的位置（~36k 像素错配）。
+
+修复：BrowserChromeModel 加 `bookmarks_bar_visible` 字段（from_shell = settings.show_bookmarks_bar &&
+!bookmarks.empty），DesktopBrowserShell 据此条件渲染 BookmarksBar 行。
+
+## B. compose 合并几何桶（rounded_rects/strokes/gradients/path_*）
+
+compose_sdk_chrome_replacement_with_webview 此前**仅合并 fills+images** 进 scene_primitives → 地址栏 pill
+（fill_rounded_rect → RoundedRectPrimitive，正确光栅为 `(154,40,1046,44, 248,249,250)`）被**丢弃**，
+addr-bg 渲染 255（应 248）。修复：prepend_vec 合并 rounded_rects/strokes/gradients/path_fills/path_strokes
+（shadows 不合并——保持「SDK 路径不带页面 shadow」既有行为，避免 R40 shadow 覆盖页面回归）。
+
+## 测量（dc14_chrome_region_pixel_diff_baseline）
+
+| 阶段 | chrome diff |
+|------|-------------|
+| R43（起点）| 73.99% |
+| R46 颜色 parity | 74.05% |
+| R47 paint_node clip fix | 92.19%（SDK 现忠实渲染，暴露几何/结构差）|
+| R47 + bookmarks_bar_visible | 68.23% |
+| R47 + 几何桶合并 | **39.00%** |
+
+像素采样：nav-bg (100,60) = 248=248 ✓；addr-bg (700,60) 现 248 ✓（pill 渲染）；bookmarks 区 (640,90/100)
+SDK=hand=255 ✓。剩余 39% 主要在 tab strip（SDK flat 230 mix vs 手绘 tab 结构 248/222 + tab 形状）+
+nav 图标色细节 + 结构（flat bars vs tab 形状）。
+
+## 门禁全绿
+
+chrome 87 / browser sdk-chrome 205 全绿零回归 / clippy(-D warnings)/fmt 净。SDK-only（chrome crate +
+sdk-chrome feature）无 product-smoke 风险。
+
+## 下轮下一步
+
+tab strip 结构/颜色 parity：SDK BrowserTabStrip 当前是 ChromePanel flat bar（tab_strip_bg mix 230），
+手绘是带 tab 形状（圆角 tab + 分隔线 + close 按钮 + favicon）的结构化条。实现真实 TabStrip widget
+（圆角 tab 矩形 + 标题文本 + close 图标）匹配手绘，预期 chrome diff 39% 进一步下降。此外 nav 图标
+disabled tint 微调 + security/menu 图标真实化。

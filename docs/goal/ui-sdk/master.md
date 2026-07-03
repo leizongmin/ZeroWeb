@@ -1319,3 +1319,31 @@ Evidence: `evidence/dc14-paint-node-clip-fix-20260704.txt`
 **下轮下一步**：①几何 parity（SDK chrome 高度对齐手绘；无书签时不渲染 bookmarks bar）；②地址栏 pill
 rounded_rect 渲染 255（应 248）定位（bridge rounded_rect 路径或 current_clip）；③结构 parity（真实
 TabStrip / BookmarksBar widget 匹配手绘 tab 形状/bookmark items）。逐项压 chrome diff 92.19% 收敛。
+
+### Round 48 — chrome 几何 parity（bookmarks_bar_visible + 几何桶合并），diff 92.19% → 39.00%（2026-07-04）
+
+**Round 47 修复 paint_node clip 后，本轮闭合两个几何 parity 缺口，chrome diff 大幅下降**：
+
+**A. bookmarks_bar_visible（条件渲染）**：手绘 chrome 默认 fresh app 无书签 → 不渲染 bookmarks bar
+（chrome 高 = tab 40 + toolbar 44 = 84）。SDK 此前无条件渲染 bookmarks bar（28px）→ SDK chrome 高 112，
+在 y=84-112 画 toolbar_bg 覆盖手绘已是页面的位置。修复：BrowserChromeModel 加 `bookmarks_bar_visible`
+（from_shell = settings.show_bookmarks_bar && !bookmarks.empty），shell 据此条件渲染。
+
+**B. compose 合并几何桶**：compose 此前**仅合并 fills+images** → 地址栏 pill（fill_rounded_rect →
+RoundedRectPrimitive，已正确光栅 `(154,40,1046,44, 248,249,250)`）被丢弃，addr-bg 渲染 255 应 248。
+修复：`prepend_vec` 合并 rounded_rects/strokes/gradients/path_fills/path_strokes（shadows 不合并，
+保持「SDK 路径不带页面 shadow」既有行为，避免 R40 shadow 回归）。
+
+**测量**（dc14_chrome_region_pixel_diff_baseline）：R43 73.99% → R46 74.05% → R47 clip fix 92.19% →
++bookmarks_bar_visible 68.23% → +几何桶合并 **39.00%**（-53pp from 92.19%，远低于起点 73.99%）。
+像素采样：nav-bg 248=248 ✓ / addr-bg 248 ✓（pill 渲染）/ bookmarks 区 255=255 ✓。剩余 39% 主要在
+tab strip（SDK flat 230 mix vs 手绘 tab 结构）+ 结构差。
+
+**门禁全绿**：chrome 87 / browser sdk-chrome 205 全绿零回归 / clippy(-D warnings)/fmt 净。SDK-only
+无 product-smoke 风险。
+
+Evidence: `evidence/dc14-geometry-parity-20260704.txt`
+
+**下轮下一步**：tab strip 结构/颜色 parity——SDK BrowserTabStrip 当前是 ChromePanel flat bar，手绘是
+带 tab 形状（圆角 tab + 分隔线 + close + favicon）的结构化条。实现真实 TabStrip widget 匹配手绘，
+预期 chrome diff 39% 进一步下降。此外 nav disabled tint 微调 + security/menu 图标真实化。

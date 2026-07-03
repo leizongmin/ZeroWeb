@@ -1050,6 +1050,17 @@ fn build_webview_surface_primitives(
 #[cfg(feature = "sdk-chrome")]
 use zero_ui_core::theme::SemanticTokens;
 
+/// `dst = src ++ dst`（SDK chrome 几何桶预置到帧 primitives 最底层，z-order 在页面内容之下）。
+#[cfg(feature = "sdk-chrome")]
+fn prepend_vec<T>(dst: &mut Vec<T>, src: Vec<T>) {
+    if src.is_empty() {
+        return;
+    }
+    let mut combined = src;
+    combined.append(dst);
+    *dst = combined;
+}
+
 /// 把浏览器 [`ChromePalette`](crate::colors::ChromePalette) 映射为 SDK [`SemanticTokens`]（DC-14 颜色 parity）。
 ///
 /// SDK chrome 组件经 semantic token 消费颜色（DC-5），但 Zero 默认 token 集 (`SemanticTokens::light()`)
@@ -1210,6 +1221,16 @@ fn compose_sdk_chrome_replacement_with_webview(
     let _ = viewport_rect;
     new_fills.append(&mut scene_primitives.fills);
     scene_primitives.fills = new_fills;
+
+    // 预置 SDK chrome 其余几何桶（rounded_rects/strokes/gradients/path_*）。
+    // 此前仅合并 fills+images → 地址栏 pill（rounded_rect）被丢弃（addr-bg 渲染 255 应 248）。
+    // shadows **不**合并：webview_extras 的 shadow 经 surface 已并入 sdk_prims.shadows，但保持
+    // 既有「SDK 路径不带页面 shadow」行为（避免 shadow 覆盖页面内容的回归，见 R40 chrome_shadows 诊断）。
+    prepend_vec(&mut scene_primitives.rounded_rects, sdk_prims.rounded_rects);
+    prepend_vec(&mut scene_primitives.strokes, sdk_prims.strokes);
+    prepend_vec(&mut scene_primitives.gradients, sdk_prims.gradients);
+    prepend_vec(&mut scene_primitives.path_fills, sdk_prims.path_fills);
+    prepend_vec(&mut scene_primitives.path_strokes, sdk_prims.path_strokes);
 
     // 预置 SDK chrome images（text glyph）。
     if !sdk_images.is_empty() {

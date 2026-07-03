@@ -28,6 +28,9 @@ pub struct BrowserChromeModel {
     pub security: SecurityState,
     /// 书签栏根节点。
     pub bookmarks: Vec<BookmarkNode>,
+    /// 书签栏是否可见（`show_bookmarks_bar` 设置 && 有书签；与手绘 chrome `bookmarks_bar_visible` 一致）。
+    /// shell 据此决定是否渲染 BookmarksBar 行（DC-14 几何 parity）。
+    pub bookmarks_bar_visible: bool,
     /// 下载项。
     pub downloads: Vec<DownloadItemView>,
     /// 站点权限状态（SiteInfoPanel 展示/切换）。
@@ -110,6 +113,8 @@ impl BrowserChromeModel {
                 url: Some(b.url().to_string()),
             })
             .collect();
+        // bookmarks_bar_visible = show_bookmarks_bar 设置 && 有书签（与手绘 chrome 一致）。
+        model.bookmarks_bar_visible = shell.settings().show_bookmarks_bar && !model.bookmarks.is_empty();
 
         // downloads（状态映射见上方约定）。
         model.downloads = shell.downloads().iter().map(map_download).collect();
