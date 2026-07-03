@@ -2648,6 +2648,39 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1000 table-cell-overflow width-fix 再确认 + letter-spacing R855 territory·两结构 lever 单 session 均不可独立·零源码·纯调查
+
+承 R999「commit 到结构性 lever」。本轮 dedicated 攻 table-cell-overflow（R997 测绘的 combined fix）。
+
+**table-cell-overflow width-fix 再确认（已回退）**：重做 R997 的 box_content_max_width 直接文本测量，这次用正确匿名盒语义（has_block_child 时直接文本→匿名 block→block_max 取 max；仅 inline 时→inline_sum 求和）。**A/B 与 R997 完全一致**：margin-collapse-101 仍 3.66%→6.51% 回归，twin 仍 4.13% FAIL。证明回归非 inline/block 分类问题，是「测 div.b 直接文本 "B"(30px) 本身」使 101 列宽变化（baseline ZW 不为 div.b 生成匿名 block LayoutBox 故 "B" 漏测；新测后列变宽超 chromium）。**101 回归机制未解（须 dedicated probe 101 列宽决定路径）**。width-fix 单做 net-negative，回退。
+
+**letter-spacing-206 (47%) = R855 territory**：css-text worst letter-spacing-206/202 用 `letter-spacing: 1em/3em`（Ahem）。IFC collection（inline/mod.rs:530/779, inline_finalization.rs:819, text.rs:685）letter_spacing 仅 Px（`_=>0.0` 丢 Em）。**R855 已测 Em-in-IFC 双路径零 yield 已回退**——故 206 的 47% 非「IFC Em 缺失」单一原因。新假设：intrinsic sizing（text_content_max_width / fragment_inline_max_width）不加 letter-spacing（即使 Px），float shrink-to-fit 测窄。但 coherent fix 须 5 site（IFC collection 4 处 Em + intrinsic 2 处加 spacing），且 R855 零-yield 先例，单 session 风险高。
+
+**裁决（两 lever 单 session 均不可独立）**：table-cell-overflow 须 width + height/overflow 合做且 width 须先解 101 回归（未解机制）；letter-spacing 须 5-site coherent 改且有 R855 零-yield 先例。两者均非单 session 可产 clean win。
+
+**战略重申（R999 已述）**：单 session clean lever 五 dir 确证耗尽。**后续须 dedicated 多 session 结构计划**，非继续单点尝试（R996-R1000 五轮纯调查/回退已证边际为零）。推荐多 session 计划：
+1. **table-cell-overflow combined**：先 probe 101 列宽决定路径解 width 回归机制 → height/overflow clipping（css-tables-3）→ 合做 A/B。
+2. **letter-spacing coherent**：5-site Em + intrinsic spacing，须先 A/B 证非零 yield（R855 先例）。
+3. **Phase A IFC pre-layout text-transform**（R998 测绘 + @font-face）。
+4. **Phase A per-font ascent R887** / **multicol Phase 2** / **R109**。
+
+**下一步**：下会话选上述 1 个 dedicated 多 session 计划，先做 safest first slice + 三态门禁 A/B。R993-R995 已 land（css-flexbox +4 / css-tables +4 零回归）；R996-R1000 五轮纯调查确认单 session clean lever 耗尽 + 结构 lever 须多 session。
+
+### R999 css-grid 第 5 dir 扫描复核·clean lever 单 session 耗尽五 dir 确证·转结构性 lever·零源码·纯调查
+
+承 R998 后扫 css-grid（第 5 个 dir）top-worst，再证 R740/R882/R996 单 session clean lever 耗尽结论。css-grid worst 全 structural：① replaced-element-percentage-height-in-grid-nested-in-flex-002/001（33.9%/8.9%，grid+flex+replaced 三层嵌套 %height）；② table-grid-item-dynamic-003/004（25.8%/9.25%，table-grid-item + dynamic JS）；③ **grid-container-baseline-synthesized-001/002/003/004（16-17% ×4 cluster，inline-grid 基线合成 + vertical/sideways writing-modes，R109/writing-mode 结构性）**；④ nested-grid-item-block-size-001（13.76%，R976 aspect-ratio）；⑤ stretch-grid-item-button-overflow（8.17%，button 表单控件）。
+
+**五 dir 复核总结（css-tables/position/multicol/text/grid）**：clean single-session lever **彻底耗尽**。残余 100% 落五桶：① 结构性（R109 §9.2.1.1 / writing-mode 基线 / multicol Phase 2 / table auto-layout 文本测量）；② feature gap（::backdrop / 表单控件原生渲染 / content-visibility / scroll-container / subpixel）；③ font-wall 残余（per-font 真实 ascent，R990 常数已尽）；④ JS-driven（dynamic relayout / onload）；⑤ 多 facet（text-transform 须 pre-layout+owner+font 三修，table-cell-overflow 须 width+height/overflow 合修）。
+
+**战略裁决**：单 session clean lever 五 dir 确证耗尽。后续须 **commit 到一个结构性 lever 的 dedicated 多 session 推进**，非继续扫描（扫描边际已尽）。推荐优先级（按 EV × 可独立性）：
+1. **table-cell-overflow combined fix**（R997 测绘：width 直接文本测量安全版 + td overflow!=visible 时 height 作 used-height 裁剪 css-tables-3 §height-distribution；两步合做，driving twin 001/002 + dynamic-003/004 簇；须先解 width 不回归 101，可能 gate width 于 overflow 或重审 div.b anonymous-block 测量）。
+2. **Phase A IFC pre-layout text-transform**（R998 测绘：IFC 文本收集期应用 transform + Path A/B owner_id + @font-face woff 加载；多 case capitalize/uppercase/lowercase/fullwidth）。
+3. **Phase A per-font 真实 ascent R887**（R970 provider wiring，R990 常数 0.928 已证可产 +138，per-font 增量；WPT 多用 Ahem 故 WPT 增量小，产品页 CJK 受益）。
+4. **multicol Phase 2 统一 column-flow**（R383，嵌套/breaking/balance，多会话硬核）。
+5. **R109 §9.2.1.1 匿名块**（结构性 deadlock，CB-through-inline 等）。
+
+**下一步**：下会话选上述 1 个结构性 lever dedicated 推进，先做 safest first slice（如 table-cell-overflow 的 height-clipping 半，或 text-transform 的 pre-layout 半），三态门禁 A/B。R993-R995 已 land（css-flexbox +4 / css-tables +4 零回归）；R996-R999 四轮纯调查无新代码，forward motion 转结构性。
+
 ### R998 text-transform 多 facet gap 定位（paint-time 容器 style + Path A/B + @font-face）·full-width 实现零 yield 已回退·Path A owner-style 修零 yield 已回退·零源码·纯调查
 
 承 R997 转 css-text 扫 worst（letter-spacing-206 47% / capitalize-fullwidth 簇 20-24%）。**capitalize 已正确实现**（helpers.rs apply_text_transform + paint text.rs:1102/1229）；R855 letter-spacing Em 零-yield 已闭。**full-width 未实现**（TextTransformValue 仅 None/Upper/Lower/Capitalize）。
