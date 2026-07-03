@@ -1,0 +1,70 @@
+ui/adapters/render-foundation 桥接层深度审查（R35）— 第 9 层审查
+日期: 2026-07-03
+模块: ui/adapters/render-foundation/src/lib.rs（1342 行，TBD-2 Scene→RenderPrimitives 桥接）
+背景: 前 8 层审查（runtime/DSL/i18n/widgets/chrome/render/core/foundation-text）未含本桥接层。
+      桥接是 DC-14/DC-3/DC-11 渲染关键路径，此前有过 stateful-clip bug（已修），值得专门审查。
+
+================================================================
+审查结论：1 个潜在 correctness 修复 + 1 个潜在设计假设文档化
+================================================================
+
+修复 A（潜在 correctness，已修）：glyph_cache_key FontId 位打包碰撞
+----------------------------------------------------------------------
+- `FontId(pub u32)`（foundation/text/src/font_request.rs:10），但旧 `glyph_cache_key`:
+    ImageKey(((font_id.0 as u64) << 48) | (((glyph_id) & 0xFFFF_FFFF) << 16) | size_q2)
+  `font_id << 48` 把 u32 放进 bits 48-63（仅 16 位）→ FontId 高 16 位（bits 16-31）丢失。
+- 后果：FontId ≥ 65536 且低 16 位相同的字体 → 同一 cache key → 取错 glyph 位图（视觉损坏）。
+- 实际影响：FontId 顺序分配自 0，浏览器约 5-20 字体，实践中难达 65k → 潜在、非现行 bug。
+  但位打包对 FontId 的 u32 契约不正确（与 DC-11 深度审查修 glyph_id u32→u16 截断同性质）。
+- 修复：位重分配 font_id bits 32-63 / glyph_id bits 16-31 / size bits 0-15。
+  glyph_id 经 foundation/text shape_with_font 钳制 ≤ u16::MAX（DC-11 M2 修复），故 & 0xFFFF 无损；
+  三者占满 u64，全 FontId u32 范围无碰撞。
+- 回归守卫：`glyph_cache_key_distinguishes_font_ids_beyond_u16`（FontId(1) vs FontId(65537)
+  vs FontId(u32::MAX) 必区分；旧代码此测会 FAIL）。
+
+文档化 B（潜在设计假设，加注释不改逻辑）：raster_runs 单 run 假设
+----------------------------------------------------------------------
+- `raster_runs` 每 run 内 pen_x 自 0 起累进。foundation/text `shape()` 当前产出**单个** GlyphRun
+  （backend.rs:189 `vec![GlyphRun]`），故正确。
+- 若未来引入字体 fallback 产出多 run，本函数需跨 run 累计 pen_x（GlyphRun 当前无 run-level
+  起点偏移字段）→ 否则各 run 重叠在 position.x。
+- 处置：加注释文档化单 run 假设 + 多 run 所需的 ShapedText/GlyphRun 扩展，不改逻辑（避免
+  对不存在的多 run 场景做投机性未测代码；shaper 单 run 时任何 pen_x 移动都是 no-op）。
+
+================================================================
+经查正确（未改）
+================================================================
+- fill_rect：stateful clip intersect + plain/rounded 分支。圆角 fill 被 clip 时 radii 不调整
+  （注释已明示近似；chrome 多直角 fill，可接受）。
+- stroke_rect：被 clip 时画 clipped 矩形的 4 角（注释明示近似；clipped 边描边失真）。
+- merge_primitives：13 桶 + draw_order 按桶偏移重映射，全 13 DrawOp 变体覆盖，正确。
+- merge_surface_with_cache：extend_from_other rekey + 图元 image_key 重映射，正确。
+- draw_external_surface：add_clip + merge；R34 完整帧光栅测（chrome 区像素可见）经验证
+  surface clip 不擦除 chrome（非破坏性语义）。
+- emit_glyph_image：fontdue xmin/ymin 定位（top = baseline − ymin − height），正确。
+- tinted_rgba / to_rf_color / ch()：clamp + round，正确。
+- merge_into_frame：collision-safe rekey + frame 原条目不覆盖，正确（多测覆盖）。
+
+================================================================
+门禁（全绿）
+================================================================
+- bridge crate 测试：24 passed / 0 failed（原 23，+1 回归守卫）。
+- clippy `-D warnings`：✅ 零警告。
+- cargo fmt --check：✅ 无变更。
+- browser sdk-chrome（消费桥接）：203 passed / 0 failed。
+- browser 默认：191 passed / 0 failed。
+- make reftest：686/686 (100.0%) ✅。
+- make product-smoke：19.41% (< 20%) ✅（桥接仅在 sdk-chrome feature 编译；默认 release
+  二进制不含本变更 → 页面渲染逐位不变）。
+
+================================================================
+影响面
+================================================================
+- 变更仅在 ui/adapters/render-foundation/src/lib.rs（glyph_cache_key 位重分配 + raster_runs
+  注释 + 1 新测）。
+- 桥接仅在 sdk-chrome feature 下编译进浏览器；默认/release 构建不包含 → reftest/product-smoke
+  跑同一默认二进制，零页面回归。
+- SDK 通用层深度审查现覆盖 9 层（+ render-foundation 桥接）。
+
+结论：桥接层成熟（前 stateful-clip 修复后无 active bug）；本次修 1 潜在 correctness（cache key
+位打包对 FontId u32 契约）+ 文档化 1 潜在设计假设。零回归。

@@ -404,6 +404,12 @@ pub fn merge_into_frame(
 ///
 /// pen 自 position.x 起逐 glyph 推进（x_advance）；空 bitmap（空格）/ 光栅失败（FontId 不匹配）
 /// → 不出图，pen 仍推进（best-effort）。
+///
+/// **单 run 假设**：foundation/text `shape()` 当前产出**单个** `GlyphRun`（`vec![GlyphRun]`），
+/// 故每个 run 内 pen_x 自 0 起即可正确累进。若未来引入字体 fallback 产出**多 run**，本函数需
+/// 跨 run 累计 pen_x（每 run 起点 = 前一 run advance_x 之和），否则各 run 会重叠在 position.x。
+/// `GlyphRun` 当前无 run-level 起点偏移字段——多 run 支持须先扩展 ShapedText/GlyphRun 携带
+/// 每 run 绝对起点。
 fn raster_runs(backend: &mut RenderFoundationBackend, runs: &[GlyphRun], position: Point, tint: RfColor) {
     for run in runs {
         let font_id = run.font.id;
@@ -458,10 +464,19 @@ fn emit_glyph_image(
     });
 }
 
-/// glyph → 稳定 ImageKey（font_id 高 16 位 / glyph_id 中 32 位 / size 0.25px 桶 低 16 位）。
+/// glyph → 稳定 ImageKey（font_id bits 32-63 / glyph_id bits 16-31 / size 0.25px 桶 bits 0-15）。
+///
+/// 位分配按类型的实际值域：
+/// - `FontId(pub u32)` → 占 bits 32-63（全 u32 范围，无高位丢失）。
+/// - `glyph_id`：foundation/text `shape_with_font` 已钳制 ≤ `u16::MAX`（DC-11 深度审查 M2 修复），
+///   故 bits 16-31（`& 0xFFFF` 对已钳制值无损）。
+/// - `size_q2`：`(size_px × 4).round()` 0.25px 桶 → bits 0-15（size_px ≤ 16383px）。
+///
+/// 三者占满 u64，**全 FontId 范围无碰撞**。此前 `font_id << 48` 仅留 16 位 → FontId ≥ 65536
+/// 高位被丢、键碰撞（虽 FontId 顺序分配实践中难达 65k，但位打包对 u32 契约不正确）。
 fn glyph_cache_key(font_id: FontId, glyph_id: u32, size_px: f32) -> ImageKey {
     let size_q2 = (((size_px * 4.0).round().max(0.0)) as u64) & 0xFFFF;
-    ImageKey(((font_id.0 as u64) << 48) | (((glyph_id as u64) & 0xFFFF_FFFF) << 16) | size_q2)
+    ImageKey(((font_id.0 as u64) << 32) | (((glyph_id as u64) & 0xFFFF) << 16) | size_q2)
 }
 
 /// glyph alpha 覆盖 → tint 着色的 RGBA（RGB = 文本色，A = 覆盖）。
@@ -852,6 +867,25 @@ mod tests {
         assert_ne!(k, glyph_cache_key(FontId(2), 65, 16.0));
         assert_ne!(k, glyph_cache_key(FontId(1), 66, 16.0));
         assert_ne!(k, glyph_cache_key(FontId(1), 65, 32.0));
+    }
+
+    #[test]
+    fn glyph_cache_key_distinguishes_font_ids_beyond_u16() {
+        // 回归守卫：FontId 为 u32，cache key 须区分低 16 位相同、高位不同的 FontId
+        //（旧 `font_id << 48` 仅留 16 位 → FontId(1) 与 FontId(65537)=0x10001 碰撞，
+        // 会取错 glyph 位图——视觉损坏）。修复后 font_id 占 bits 32-63，全 u32 范围无碰撞。
+        let k1 = glyph_cache_key(FontId(1), 65, 16.0);
+        let k65537 = glyph_cache_key(FontId(65537), 65, 16.0); // 0x10001：低 16 位 = 1，bit 16 置位
+        assert_ne!(k1, k65537, "FontId(1) vs FontId(65537) must not collide");
+        // 边界：FontId::MAX 与低 16 位相同的较小 id 仍区分。
+        let kmax = glyph_cache_key(FontId(u32::MAX), 65, 16.0);
+        assert_ne!(k1, kmax, "FontId(u32::MAX) must not collide with FontId(1)");
+        // glyph_id 仍在 bits 16-31（≤ u16::MAX 经 shape 钳制）：同 font 下不同 glyph 区分。
+        assert_ne!(
+            glyph_cache_key(FontId(5), 1, 16.0),
+            glyph_cache_key(FontId(5), 65535, 16.0),
+            "glyph_id extremes distinct"
+        );
     }
 
     // ── draw_external_surface（DC-3 phase-2 外部表面合并）──────────────

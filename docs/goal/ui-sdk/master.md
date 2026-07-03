@@ -327,6 +327,7 @@
 
 ## Latest Evidence
 
+- `evidence/deep-review-bridge-r35-20260703.txt` — **Round 35 第 9 层深度审查：ui/adapters/render-foundation 桥接（TBD-2 Scene→RenderPrimitives，DC-14/DC-3/DC-11 渲染关键路径）**。前 8 层审查未含本桥接。**修复 1 潜在 correctness**：`glyph_cache_key` 旧 `font_id << 48` 仅留 16 位 → FontId（pub u32）高 16 位丢失、≥65536 字体键碰撞取错 glyph 位图（潜在——FontId 顺序分配实践难达 65k，但位打包对 u32 契约不正确，与 DC-11 修 glyph_id 截断同性质）；位重分配 font:32/glyph:16/size:16（glyph_id 经 shape 钳制 ≤u16::MAX 故无损），全 u32 范围无碰撞 + 回归守卫 `glyph_cache_key_distinguishes_font_ids_beyond_u16`。**文档化 1 潜在设计假设**：`raster_runs` 单 run 假设（shaper 当前单 run；多 run fallback 需跨 run 累计 pen_x + GlyphRun 加 run-level 起点）——加注释不改逻辑（避免对不存在场景做投机性未测代码）。经查正确：fill/stroke stateful clip、merge_primitives 13 桶、merge_surface_with_cache rekey、draw_external_surface（R34 测证 surface clip 不擦除 chrome）、emit_glyph_image 定位、merge_into_frame collision-safe。门禁全绿：bridge **24**（+1）/ browser sdk-chrome 203 / 默认 191 / clippy 净 / fmt 净 / reftest 686/686 / product-smoke 19.41%（桥接仅 sdk-chrome 编译，默认 release 不含 → 零页面回归）。**SDK 通用层深度审查现覆盖 9 层（+render-foundation 桥接）**。
 - `evidence/dc14-sdk-chrome-fullframe-raster-20260703.txt` — **Round 34 DC-14 headless 可视验收增强**：发现并闭合 headless 像素证据缺口——此前仅 overlay 路径光栅 + 替换路径 scene 构造被测，`render_cpu` 真实消费的**替换式迁移路径**（compose_sdk_chrome_replacement_with_webview→surface→render_full_scene）完整帧从未光栅验证。新增 `render_full_scene_sdk_chrome_for_test`（cfg(test)+sdk-chrome，逐位镜像 render_cpu feature-on→FrameBuffer）+ `sdk_chrome_replacement_full_frame_rasterizes_visible_chrome_region` 测（断言整帧 + 顶部 chrome 区 y<90 与空 scene 有像素差异）。**纯测试代码，零生产路径变更**（release 二进制逐位不变）。门禁全绿：browser sdk-chrome **203**（+1）/ 默认 191 / clippy 双 config 净 / fmt 净 / reftest 686/686 / product-smoke 19.41%。DC-14 headless 像素证据三层闭合（overlay 光栅 + 替换 scene 构造 + 替换完整帧光栅）。merge origin/main R998（rendering-compat 调查 doc，正交）。
 - `evidence/gates-round33-20260703.txt` — **Round 33 origin/main sync (R996) + rustc ICE 根因定位修复 + 全量门禁复核**：merge R996（rendering-compat 纯调查 doc，正交零冲突）；**新发现并修复 rustc 1.91.0 debug 增量编译 ICE**（zero-webview lib "compiler unexpectedly panicked"，根因 = `target/debug/incremental` 缓存损坏，清缓存后持久修复，处置见 evidence §2）；build/clippy/fmt ✅；reftest **686/686 (100.0%)** ✅；product-smoke **19.41%** (< 20%) ✅；SDK 28 crate scoped **681 passed/0 failed** ✅；browser 默认 **191** + sdk-chrome **202** ✅；`make test` 全量复核：非 SDK crate 10 二进制 **5901 passed/0 failed**，唯一失败 = `zero-integration-tests` lib STATUS_ACCESS_VIOLATION（Windows V8/renderer teardown race，--test-threads=2 仍复现，非 SDK 引入，禁止修改区，single-thread workaround 见跟踪项）。headless 仍完全耗尽，剩余 4 项终端门禁均需 GUI/设备。
 - **R30–R32（压缩）**：连续三轮 origin/main sync（R993–R995，rendering-compat 正交 doc/CSS 修复零冲突）+ 全量门禁复核全绿（build/clippy/fmt / reftest 686/686 / product-smoke 19.41% / SDK + browser scoped / coverage ≥85%）。R31 加 V8_INIT_LOCK 修复 isolate **创建**竞态（teardown race 仍偶发，见 R33）。headless 能力完全耗尽确认。详见 evidence/gates-round30/31/32-*.txt。
@@ -694,7 +695,7 @@ Evidence: `evidence/gates-round32-20260703.txt`
 **headless SDK-side 推进能力总览**：
 - M1/M2/M3：✅ 全部收口
 - M4 headless：✅ SDK-side skeleton 完整闭合（WinitDriver + 全示例 + DC-15 mobile skeleton + HarmonyOS/Android adapters + DC-2 retained 闭环 + DC-8 平台 a11y 桥接契约）
-- 8 层深度审查：✅ 全闭合（runtime/DSL/i18n/widgets/chrome/render/core/foundation-text）
+- 8 层深度审查：✅ 全闭合（runtime/DSL/i18n/widgets/chrome/render/core/foundation-text）+ **R35 第 9 层：render-foundation 桥接**（修 1 潜在 cache-key collision + 文档化 raster_runs 单 run 假设）
 - Follow-up (F1-F4, O2)：✅ 全部修复
 - DC-16 文件大小合规：✅ SDK 全域 ≤2000 行
 - DC-17 coverage：✅ aggregate ≥85%
@@ -789,3 +790,14 @@ Evidence: `evidence/gates-round33-20260703.txt`
 - **headless 推进能力**：本轮证明 DC-14 仍有可推进的 headless 工作（替换路径完整帧光栅），更新 R28–R33「headless 完全耗尽」为「DC-14 headless 像素证据已三层闭合；其余终端门禁（DC-2 EventLoop::run / DC-8 平台 a11y / DC-15 移动后端）仍需 GUI/设备」。后续将继续逐项复核其余「GUI-gated」结论是否也有 headless 可推进面。
 
 Evidence: `evidence/dc14-sdk-chrome-fullframe-raster-20260703.txt`
+
+### Round 35 — 第 9 层深度审查：render-foundation 桥接（cache-key collision 修复）（2026-07-03）
+
+- **延续 R34「逐项复核 headless 可推进面」**：本轮选未审的 `ui/adapters/render-foundation` 桥接（TBD-2 Scene→RenderPrimitives，DC-14/DC-3/DC-11 渲染关键路径；前 8 层审查未含；此前有过 stateful-clip bug 已修，值得专门审查）。
+- **修复 1 潜在 correctness（glyph_cache_key FontId 位打包碰撞）**：`FontId(pub u32)`，旧 `font_id << 48` 仅留 16 位 → FontId ≥ 65536 且低 16 位相同时键碰撞 → 取错 glyph 位图（视觉损坏）。潜在（FontId 顺序分配实践难达 65k），但位打包对 u32 契约不正确（与 DC-11 修 glyph_id u32→u16 截断同性质）。**位重分配** font:32/glyph:16/size:16（glyph_id 经 shape 钳制 ≤u16::MAX 故 `& 0xFFFF` 无损）→ 全 u32 范围无碰撞。回归守卫 `glyph_cache_key_distinguishes_font_ids_beyond_u16`（FontId(1) vs 65537 vs u32::MAX；旧代码 FAIL）。
+- **文档化 1 潜在设计假设（raster_runs 单 run）**：foundation/text `shape()` 当前产出单 GlyphRun（`vec![GlyphRun]`），`raster_runs` 每 run pen_x 自 0 正确；未来多 run（字体 fallback）需跨 run 累计 pen_x + GlyphRun 加 run-level 起点字段。**加注释不改逻辑**（避免对不存在场景做投机性未测代码；shaper 单 run 时任何 pen_x 移动是 no-op）。
+- **经查正确（未改）**：fill/stroke stateful clip（圆角/描边被 clip 的近似已注释）、merge_primitives 13 桶 + draw_order 偏移、merge_surface_with_cache rekey、draw_external_surface（R34 完整帧测证 surface clip 不擦除 chrome）、emit_glyph_image fontdue xmin/ymin 定位、merge_into_frame collision-safe。
+- **门禁全绿**：bridge **24**（+1）/ browser sdk-chrome **203** / 默认 **191** / clippy `-D warnings` 净 / fmt 净 / reftest **686/686 (100.0%)** / product-smoke **19.41%** (< 20%)。**桥接仅 sdk-chrome feature 编译；默认 release 二进制不含本变更 → 零页面回归**。
+- **SDK 通用层深度审查现覆盖 9 层**（runtime/DSL/i18n/widgets/chrome/render/core/foundation-text/**render-foundation 桥接**）。剩余可审模块：ui/adapters/winit event_map（772 行，DC-2 输入关键）、ui/patterns、ui/adapters/{harmonyos,android}。
+
+Evidence: `evidence/deep-review-bridge-r35-20260703.txt`
