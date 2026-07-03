@@ -7,7 +7,7 @@
 //! - [`message`]：`MessageId`/`LocalizedText`/`MessageRef`/`MessageEntry`。
 //! - [`catalog`]：`MessageCatalog`/`I18nContext`/`I18nProvider` + `CatalogStore` 实现。
 //! - [`fallback`]：fallback chain 生成。
-//! - [`plural`]：CLDR plural category（M1 英语规则）。
+//! - [`plural`]：CLDR cardinal plural category（英/阿/俄/乌/白俄/波；未覆盖语种回落英语）。
 //! - [`direction`]：locale → RTL/LTR 方向。
 //! - [`formatter`]：`{param}` 占位替换 + plural 变体选择。
 //! - [`diagnostics`]：`I18nError`。

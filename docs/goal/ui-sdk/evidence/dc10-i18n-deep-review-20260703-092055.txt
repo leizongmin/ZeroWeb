@@ -1,0 +1,118 @@
+DC-10 ui/i18n 深度审查（lei-deep-review）
+日期: 2026-07-03
+范围: ui/i18n 全 crate（plural.rs / direction.rs / catalog.rs / formatter.rs /
+      message.rs / fallback.rs / locale.rs / diagnostics.rs / lib.rs，共 ~910 行）
+重点: CLDR plural 规则正确性（约束 #7 关联：plural 决定可见文案变体）/ RTL 检测
+      完整性（DC-10「RTL locale 影响文本方向」）/ catalog resolve·fallback 边界 /
+      参数替换健壮性 / locale parent 派生。
+
+================================================================
+1. 审查结论（逐文件）
+================================================================
+
+plural.rs —— ✅ 经查正确（与上轮 host 浮点路径审查互补）
+  覆盖语种（CLDR cardinal，整数 n）：
+  - 英语/根（默认分支）：one(n==1) / other。✓
+  - 阿拉伯语 ar：zero(0)/one(1)/two(2)/few(n%100∈3..10)/many(n%100∈11..99)/
+    other(其余整数: n%100∈{0,1,2} 且 n∉{0,1,2}，如 100/101/102/200/201/202)。
+    CLDR `other` 对这些整数确为 other（非 few/many），代码 match 分支逐位正确。
+  - 俄/乌/白俄 ru|uk|be：one(mod10=1∧mod100≠11) / few(mod10∈2..4∧mod100∉12..14) /
+    many(mod10=0 ∨ mod10∈5..9 ∨ mod100∈11..14) / other(不可达，整数全落在 one/few/many)。
+    与 CLDR 逐字句对应。n=11→many（mod100=11）✓，n=21→one（mod10=1,mod100=21≠11）✓。
+  - 波兰语 pl：one(n=1) / few(mod10∈2..4 ∧ mod100∉12..14) / many(其余整数)。
+    关键不变量：**波兰语没有整数落入 other**（not-one ∧ not-few 必落 many，已在审查中
+    用集合代数证明：i%10∈{2,3,4} ∧ i%100∉12..14（not-many）与 not-few 互斥矛盾）。
+    故 `else => Many` 对整数完全正确；other 仅对 fractional（本实现按整数计数不出现）。
+  - 负数：n = count.unsigned_abs()（按绝对值处理，docstring 明示）。i64::MIN →
+    unsigned_abs = 2^63（合法 u64，不 panic，mod10=8，英语→other / 阿拉伯→few）。✓
+  资源：无外部资源消耗（纯算术）；无 panic 路径。
+  测：5（english/arabic full/russian/polish/unknown fallback），全绿。
+
+direction.rs —— 🔴→🟢 修复 1 类 medium（CLDR RTL 集合完整性）
+  根因：RTL_LANG_PREFIXES 仅含 ISO 639-1（2 字母）ar/he/iw/fa/ur/yi/ps/sd，
+  docstring 自标「完整集合留 M2」，但 CLDR script metadata 中默认 RTL 的现代语言
+  还包括 3 字母码：ckb（中库尔德 Sorani，阿拉伯字母）/ dv（迪维希 Thaana）/
+  nqo（N'Ko）。此前 ckb/dv/nqo locale 被错误判定为 Ltr → DC-10「RTL locale
+  影响文本方向」对这三语种失效（布局方向错误）。
+  TDD 证明：上轮先加测 ckb_dv_nqo_detected_as_rtl（RED，`direction_for("ckb")`=Ltr
+  ≠ Rtl）；本轮修 RTL_LANG_PREFIXES 加 ckb/dv/nqo → GREEN。
+  关键区分：ku（库尔德 Kurmanji，拉丁字母）默认 LTR，**不**加入集合（测覆盖 ku→Ltr）。
+  修复后 RTL_LANG_PREFIXES = [ar,he,iw,fa,ur,yi,ps,sd,ckb,dv,nqo]，docstring 更新为
+  CLDR script metadata 来源 + ku LTR 说明 + script 子标签细分留宿主。
+  回归守卫：ckb_dv_nqo_detected_as_rtl（ckb/ckb-IQ/dv/nqo→Rtl + ku→Ltr + xx-YY→Ltr）。
+  测：2（rtl_detection + ckb_dv_nqo），全绿。
+
+catalog.rs —— ✅ 经查正确
+  - lookup 按 fallback_chain 顺序找首个命中 catalog+entry；空 chain → None → MissingKey。
+  - resolve：Literal 直通（无诊断）；Message 命中→select_template_diag(locale 感知 plural)
+    + validate_params（缺参→Err MissingParam 硬错误）+ format_message；
+    诊断优先级 plural(PluralFallback) > fallback(FallbackUsed) > None，与 docstring 一致。
+  - fallback 诊断：`loc != chain.first().unwrap_or(loc)`——chain 空时 unwrap_or(loc)=loc
+    → loc≠loc=false（无 FallbackUsed）；命首选项→无诊断；命非首选项→FallbackUsed。✓
+  - 缺 key：返回 id 占位（不报错）+ MissingKey 诊断（DC-10 语义）。✓
+  测：9（含 RTL 快照 + Arabic plural 各变体 + PluralFallback 诊断），全绿。
+  low（不修）：validate_params 对 `{{name}}` 把内层 `{name` 当占位名 → MissingParam，
+  与 format_message（保留原样）略不一致；但 `{{` 转义非 DC-10 要求，生产模板不用，
+  修复收益 < 复杂度成本，记录留 follow-up。
+
+formatter.rs —— ✅ 经查正确
+  - select_template_diag：取首个 Count 参数 → plural_category_for → 选 plural_forms 变体；
+    plural_forms 非空 + count 提供但变体缺失 → 默认 value + PluralFallback；无 count →
+    默认 value（无 plural 选择，无诊断）。✓
+  - format_message：`{name}`→值；缺参→保留 `{name}`；无闭合 `}`→原样输出剩余。
+    多 Count 参数仅首项驱动 plural（CLDR 单 plural 计数语义，docstring 一致）。
+  测：4，全绿。
+  low（不修）：同 catalog `{{` 转义非要求。
+
+message.rs / fallback.rs / locale.rs / diagnostics.rs —— ✅ 经查正确
+  - message：LocalizedText(Literal|Message) / MessageRef / MessageParams(Text|Count i64) /
+    MessageEntry(value+description+plural_forms)。Count i64::MIN format → "-922..."（不 panic）。
+  - fallback：fallback_chain 递归 parent() 至 None；en→[en]，zh-Hans-CN→
+    [zh-Hans-CN,zh-Hans,zh]。✓
+  - locale：parent() rfind('-')；en-US→en，zh-Hans-CN→zh-Hans→zh，单段→None。✓
+    尾随 `-`（`en-`）→parent=`en`（畸形 locale 容错，无害）。
+  - diagnostics：I18nError(MissingParam|InvalidParamType|CatalogLoad) +
+    DiagnosticKind(MissingKey|FallbackUsed|PluralFallback)。干净。
+
+lib.rs —— 🟢 修 1 处文档自洽（DC-18）
+  plural 模块 doc 注释过时（「M1 英语规则」），实际已覆盖 ar/ru/uk/be/pl。
+  改为「CLDR cardinal plural category（英/阿/俄/乌/白俄/波；未覆盖语种回落英语）」。
+
+================================================================
+2. 修复汇总（1 medium + 1 doc 自洽）
+================================================================
+- direction.rs RTL 集合补全（ckb/dv/nqo）—— 上轮 TDD RED 测驱动，本轮修实现 GREEN。
+- lib.rs plural 模块 doc 注释自洽（DC-18）。
+- 其余 7 文件经查正确，无需改动。
+
+================================================================
+3. 门禁（全绿）
+================================================================
+- cargo test -p zero-ui-i18n: 23 passed（22→23，+1 RTL 完整性测）。
+- cargo test -p zero-browser-chrome: 84 passed（i18n 下游零回归）。
+- cargo test -p zero-ui-dsl: 95 passed（i18n_bridge 下游零回归）。
+- cargo build --workspace: Finished（0 错误）。
+- cargo clippy --workspace --all-targets -- -D warnings: Finished（0 警告）。
+- cargo fmt --all --check: 净（0 diff）。
+- 无 product-smoke 风险（SDK-only，未触碰 render-foundation/浏览器渲染路径）。
+- DC-1 复核：ui/i18n 仅依赖 compact_str/hashbrown/serde/thiserror/zero-ui-core
+  （plural/direction 用 LocaleId 来自 core），零浏览器业务 crate。
+
+================================================================
+4. 约束符合性
+================================================================
+- 约束 #7（DSL/i18n 受控、无副作用）：plural 纯函数（CLDR 规则仓内手写，无 ICU4X/
+  Fluent 依赖，TBD-7 决策 upheld）；direction 纯函数表查询；catalog resolve 无副作用。
+- DC-10「RTL locale 影响文本方向」：现对 CLDR 全部常见 RTL 语言（含 3 字母 ckb/dv/nqo）
+  成立；catalog resolve 返回的 ResolvedText.direction 来自命中 catalog 的 direction
+  字段（ar catalog Rtl），宿主据此翻转布局。
+- DC-10「缺失 key 走 fallback 并产生 diagnostic」：MissingKey/FallbackUsed/PluralFallback
+  三档诊断齐全，优先级正确。
+
+================================================================
+5. 与上轮审查的关系
+================================================================
+DC-6 ui/dsl 全 crate（engine+yaml+loader，3 轮 5 bug）已闭合。本轮闭合 ui/i18n
+（DC-10 域）深度审查，与 DC-6 互补覆盖 SDK 全部「解析/求值/文案」受控计算层。
+SDK-side 安全/健壮性深度审查现已覆盖：DSL 引擎 + YAML 解析器 + Loader（DC-6）+
+i18n plural/RTL/catalog（DC-10）+ runtime host/driver（DC-2，前轮）。
