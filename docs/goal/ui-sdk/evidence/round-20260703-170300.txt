@@ -1,0 +1,6 @@
+Round 23 — status check (2026-07-03)
+
+No new origin/main commits. No code changes. All gates remain green:
+reftest 686/686 | product-smoke 19.41% | build+fmt OK.
+Headless SDK work fully exhausted — state unchanged from R22.
+Terminal gates all require GUI/device.
