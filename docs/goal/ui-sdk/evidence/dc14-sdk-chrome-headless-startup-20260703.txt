@@ -1,0 +1,26 @@
+DC-14 sdk-chrome headless startup verification
+=============================================
+Date: 2026-07-03
+Commit: 651d4364 (post-merge origin/main R986)
+
+Build:
+  cargo build --bin zero-browser --features sdk-chrome = PASS (0 errors)
+
+Run:
+  zero-browser --headless --viewport-width=800 --viewport-height=600 = PASS
+  - Ctrl+C handler installed
+  - ZeroBrowser starting
+  - Headless mode on port 9222, viewport 800x600
+  - Server listening on ws://127.0.0.1:9222
+  - Exit code 143 = SIGTERM (clean shutdown, not crash)
+
+Test suite:
+  - Browser default: 191 passed, 0 failed
+  - Browser sdk-chrome feature: 202 passed, 0 failed
+  - Product-smoke: 19.87% < 20% PASS
+  - cargo build --workspace: PASS
+  - cargo clippy --workspace --all-targets -- -D warnings: PASS
+  - cargo fmt --all --check: PASS
+
+Conclusion: SDK chrome wiring compiles and initializes headlessly without crashes.
+Full GUI visual acceptance still required for DC-14 completion (needs GUI environment).
