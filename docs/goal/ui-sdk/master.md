@@ -328,6 +328,7 @@
 ## Latest Evidence
 
 - `evidence/gates-round30-20260703-101738.txt` — **Round 30 全门禁复核**：build/clippy/fmt ✅、reftest 686/686 ✅、product-smoke 19.41% ✅、SDK 全 31 crate 零失败 ✅、集成测试 724/724 ✅、coverage 93.30%/92.25%/93.53% ≥85% ✅、origin/main 0 behind ✅。Headless 能力完全耗尽确认。
+- `evidence/gates-round31-20260703-204117.txt` — **Round 31 origin/main sync + V8 init race fix**：merge R993-R994（正交）、V8 isolate Mutex 修复 STATUS_ACCESS_VIOLATION 跟踪项、全门禁绿色、headless 仍耗尽。
 - `evidence/test-20260630-223559.txt` — 首轮 `make test` 实测：RED（script-sandbox debug-test V8 链接环境失败；release 构建 + CI 绿；定性见上）。
 - `evidence/dep-isolation-20260630-234530.txt` — **DC-1 机械验证 PASS**：22 通用 crate 零浏览器依赖；adapter-webview→zero-webview；chrome→ui/*+browser-shell+adapter-webview。
 - `evidence/capability-matrix-20260630-234530.md` — M1 能力矩阵 + DC skeleton 证据锚点 + 未解决缺口。
@@ -733,3 +734,12 @@ Evidence: `evidence/round-20260703-095000-r29.txt`
 **headless 能力已完全耗尽确认**。剩余全部 4 项终端门禁均需 GUI/设备环境（与 R29 一致）：DC-2 `EventLoop::run` 阻塞壳、DC-8 平台 a11y 真实后端、DC-14 GUI chrome 可视验收、DC-15 HarmonyOS/Android 设备首帧。
 
 Evidence: `evidence/gates-round30-20260703-101738.txt`
+
+### Round 31 — origin/main sync + V8 init race fix（2026-07-03 20:41 UTC）
+
+- **Merge origin/main R993-R994**（CSS aspect-ratio intrinsic sizing，layout-engine；正交零冲突）
+- **fix(integration)**: 加全局 `V8_INIT_LOCK: Mutex<()>` 序列化 V8 Isolate 创建，防止并行测试线程 C++ FFI 竞态崩溃（闭口 `zero-integration-tests STATUS_ACCESS_VIOLATION` 环境跟踪项）
+- 全门禁绿色：build ✅ | clippy `-D warnings` ✅ | fmt ✅ | reftest **686/686 (100.0%)** ✅ | product-smoke **19.41%** (< 20%) ✅ | browser **191/191** ✅ | integration **724/724** (--test-threads=1) ✅
+- **headless 推进能力仍耗尽**（与 R29-R30 一致）。剩余终端门禁不变。
+
+Evidence: `evidence/gates-round31-20260703-204117.txt`

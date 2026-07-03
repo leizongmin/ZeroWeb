@@ -1,0 +1,23 @@
+Round 31 — 2026-07-03 20:41 UTC
+
+门禁复核（origin/main merge R993-R994 + V8 init mutex fix）:
+
+| 门禁 | 结果 |
+|------|------|
+| cargo build --workspace | ✅ 零错误 |
+| cargo clippy --workspace --all-targets -- -D warnings | ✅ 零警告 |
+| cargo fmt --check | ✅ 无变更 |
+| make reftest | ✅ 686/686 (100.0%), 0 failed |
+| make product-smoke | ✅ 19.41% (< 20%, 零回归) |
+| cargo test -p zero-browser | ✅ 191/191 全绿 |
+| cargo test -p zero-integration-tests (--test-threads=1) | ✅ 724/724 全绿 |
+
+变更:
+- Merge origin/main R993-R994 (CSS aspect-ratio intrinsic sizing, layout-engine; 正交零冲突)
+- fix(integration): 加 V8 init Mutex lock 防并行 isolate 创建竞态（解决 STATUS_ACCESS_VIOLATION 跟踪项）
+
+Headless 推进能力确认: 仍耗尽（与 R30 一致）。剩余 4 项终端门禁均需 GUI/设备:
+  1. DC-2 EventLoop::run 阻塞壳（需 GUI 开窗/surface/首帧）
+  2. DC-8 平台 a11y 真实后端（需 GUI/平台环境）
+  3. DC-14 浏览器迁移 GUI 可视验收（cargo run --bin zero-browser sdk-chrome）
+  4. DC-15 移动后端设备首帧（HarmonyOS 硬指标 + Android stretch goal）
