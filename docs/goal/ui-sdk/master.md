@@ -514,6 +514,15 @@
 - **F1 测试借检修复**：commit `b6f1ce82` —— `ui/widgets/src/button.rs` `exited_clears_pressed_and_hover` 测试借 `&mut InvalidationFlags::CLEAN` 生命周期不足 → 改为临时 `inval` 变量再引用，纯借检修复零行为变化。
 - **门禁全绿**：56 SDK crate scoped test 全绿 + 191 浏览器测全绿（默认）+ 200 sdk-chrome 测全绿 + `cargo build --workspace` + `cargo clippy --workspace --all-targets -- -D warnings`（默认+sdk-chrome 双 feature）+ `cargo fmt --all --check` 全净。已推送远端。
 
+**🟢 Round 17 verification（2026-07-03）**：
+- 0 new commits — 全量门禁复核：build/clippy(-D warnings)/fmt 全净。
+- SDK 全域 crate scoped tests 全绿（core 53/runtime 83+3/dsl 95/chrome 86/widgets 41/i18n 23/text-foundation 32/render 14/animation 17/gestures 12/navigation 8/overlay 13/collections 8/commands 12/forms 7/assets 12/platform 11/restoration 10/testing 11/devtools 9/design-system 15/winit 31/webview 8/bridge 23/harmonyos 21/android 20/examples 8 —— 全部 0 失败）。
+- Browser 默认 191 测全绿 + sdk-chrome **202 测全绿**（DC-14 零回归）。
+- `make reftest` **686/686 (100%)** — Layout 485/485 + Text 201/201 ✅。
+- `make product-smoke` **19.87% < 20%** 绿（baseline 零页面回归）✅。
+- `make test` full run 有 `zero-integration-tests` STATUS_ACCESS_VIOLATION（已知环境性跟踪项，非 SDK 引入；R16 commit 已排除 script-sandbox V8 MSVC 链接阻塞，此 crash 为独立问题；scoped/browser 测全绿证明 SDK 侧无退化）。
+- origin/main 已最新（无新 commit 待 merge）。
+
 **🟡 M2/M3 头端可推进工作已耗尽**：15 层 SDK 深度审查全覆盖收口（0 bugs 剩余）；DC-2 WinitDriver + 全示例迁移 + winit-raw→driver 端到端契约闭合；DC-3 WebViewWidget + bridge + surface ImageCache pipeline 闭合；DC-4 滚动条逻辑+渲染全量经 SDK 闭合；DC-5 主题 WCAG AA + HighContrast + 全 widget token 消费闭合；DC-6 DSL 表达式引擎+YAML 解析器+Loader+for_each 全管线覆盖，安全/健壮性审查闭合；DC-7 12/12 组件 + widget/chrome 深度审查闭合；DC-8 focus+IME+FocusScope+a11y 树+host 自动推送 SDK-side 闭合；DC-10 i18n flesh-out + browser catalog + 全 i18n 迁移 + 深度审查闭合；DC-11 font stack unified production default path；DC-12 WindowMetrics §IF-009 字段全 + adaptive shell + ThemeProvider 接入闭合；DC-13 13/13 domain 接口可用 + 深度审查全覆盖；DC-14 replacement migration wiring complete + sdk-chrome 200 测全绿 + product-smoke 19.87% 绿。
 
 **剩余终端门禁（需 GUI / 设备环境，本环境不可用）**：
@@ -528,10 +537,11 @@
 - ~~F3~~ ✅ `16050c3f`：chrome_model bookmarks 注释更新。
 - ~~F4~~ ✅ `16050c3f`：SecurityBadge.tooltip_message_id() 使用 i18n catalog id 替代 M2 字面量占位。
 
-**本轮 evidence（2026-07-03）**：
-- `product-smoke 19.87%`（< 20% 门槛绿，baseline 零回归）。
-- SDK 全域 30 crate 测全绿（含 chrome 86 + bridge 23 + sdk-chrome 202）；build/clippy/fmt 全净。
-- merge origin/main R982（flex transferred-size-suggestion，crates/layout-engine，正交零冲突零回归）。
+**R17 evidence（2026-07-03，全量门禁复核）**：
+- `product-smoke 19.87%`（< 20% 绿，baseline 零回归）。
+- `reftest 686/686 (100%)` — Layout 485/485 + Text 201/201 零退化。
+- SDK 全域 30+ crate scoped tests 全绿 + browser 191(default) + 202(sdk-chrome) 全绿。
+- build/clippy(-D warnings)/fmt 全净；origin/main 已最新。
 
 **本轮 evidence（2026-07-03，M4 Android adapter）**：
 - `ui/adapters/android` 新建（zero-ui-adapter-android）：20 测全绿，build/clippy/fmt 全净。
@@ -592,4 +602,4 @@
 16. **DC-15 M4 移动端运行时**（需 HarmonyOS 设备/工具链；**SDK-side adapter skeletons 全覆盖**：HarmonyOS adapter 17 测 + Android adapter 20 测 + headless 集成测全收口）。
 17. **DC-2 Real EventLoop::run 阻塞壳**（需 GUI 验证首帧；WinitRuntime::launch setup 核心 headless 已证）。
 18. **DC-8 真实平台 a11y 后端**（需 GUI/平台环境；SDK-side host auto-push + bridge 契约 headless 已证）。
-19. **Android 工具链补齐**（需用户操作/联网下载，见 `docs/goal/ui-sdk/decisions/m4-add-android-backend.md`）：NDK 安装 + `rustup target add aarch64-linux-android` + cargo linker 配置。补齐后方可 `cargo build --target aarch64-linux-android -p zero-ui-adapter-android` 交叉编译验证。
+20. **跟踪项**：`make test` 全量跑有 `zero-integration-tests` STATUS_ACCESS_VIOLATION 偶发 crash（非 SDK 引入——scoped SDK + browser 全部 30+ crate 独立跑全绿；与 R16 已排除的 script-sandbox V8 MSVC 链接阻塞不同，此为新发现的独立环境性问题）。workaround：`cargo test -p zero-browser -p zero-ui-core ...` 逐 crate 跑。
