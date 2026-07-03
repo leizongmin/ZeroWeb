@@ -488,8 +488,9 @@ mod tests {
     fn exited_clears_pressed_and_hover() {
         // F1：Exited 清除 Button pressed/hover 态（曾因缺 Exited 粘滞）。
         let mut btn = Button::new(ButtonSpec::new("Click", "app.click"));
+        let mut inval = InvalidationFlags::CLEAN;
         let mut ctx = EventCtx {
-            invalidation: &mut InvalidationFlags::CLEAN,
+            invalidation: &mut inval,
         };
 
         // 按下。
