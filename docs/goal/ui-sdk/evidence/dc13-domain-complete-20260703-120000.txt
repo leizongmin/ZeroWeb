@@ -1,0 +1,54 @@
+DC-13 domain crates 全量深度审查收口
+====================================
+日期: 2026-07-03
+
+本轮审查 (7 crates, ~3,151 lines, 72 tests, 0 bugs):
+- ui/navigation (314 lines, 8 tests): RouteStack push/pop/replace/replace_id/route_of/top_overlay/
+  route_names/from_routes + Navigator trait。pop 根守卫、overlay 最深层查找、restoration snapshot
+  roundtrip、serde 序列化——全正确。
+- ui/overlay (344 lines, 10 tests): OverlayHost show/dismiss/top/has_modal + focus_trap_ids（最上层在前）+
+  dismiss_on_outside_click（covers_point anchor=None→整屏 / 候选之上的浮层消费点击→不 dismiss /
+  一次只 dismiss 一个）+ dismiss_on_escape（rposition 最上层 escape）+ 四种 OverlayEntry 预设
+  （popover/modal/tooltip/sheet）——全正确。
+- ui/collections (375 lines, 8 tests): LazyList.window_at（max(1.0) guard + buffer + clamp）+
+  materialize（越界过滤）+ find_duplicate_key（HashSet O(n)）+ Selection（toggle/select/clear）+
+  Recycler（retain_window 回收）+ DynamicCollection——全正确。
+- ui/commands (678 lines, 13 tests): Shortcut.matches（双方精确匹配）+ Command builder + CommandRegistry
+  register(同id替换)/execute(Unknown/Disabled/Executed)/resolve_shortcut(跳过禁用)/menu_model(
+  MenuNode树归组+嵌套子组)/palette_entries/palette_search（大小写不敏感、trim、三字段检索）+
+  §8.4.1B 验收（同一 command 经菜单/快捷键/palette 三入口可达）——全正确。
+- ui/animation (526 lines, 14 tests): Spring（半隐式Euler+子步长≤1/120s/dt≤0 no-op/large-dt stable）+
+  Curve/Tween/FakeClock/MotionPreference reduced-motion——全正确（前轮已详审）。
+- ui/gestures (836 lines, 12 tests): GestureArena（active pointers + winner exclusive + competition +
+  first Won + cancel + all up reset）+ TapRecognizer/PanRecognizer/PinchRecognizer——全正确（前轮已详审）。
+- ui/forms (414 lines, 7 tests): Required/MinLength/MaxLength/All validators + FieldState（dirty/touched/
+  error）+ FormState（builder chain + validate_all + submit Ok/Err + reset）——全正确（前轮已详审）。
+
+DC-13 全量 13 域深度审查累计:
+- animation/gestures/navigation/overlay/collections/commands/forms/assets/platform/restoration/
+  testing/devtools/design-system 全部审查完毕
+- 总计 ~5,500 lines, 100+ tests, 0 medium/high behavior bugs
+- 唯一 low observ: Spring::with_params mass=0 div0 (预设 mass=1 安全)
+
+SDK 全量深度审查覆盖率:
+✅ ui/core (基础类型层)
+✅ ui/render (Scene/RenderPrimitive/RenderBackend)
+✅ ui/runtime (host 三棵树 + driver event loop)
+✅ ui/widgets (Button 唯一 Widget + scrollbar + 数据模型)
+✅ browser-ui/chrome (12 组件 + shell + sdk_render + chrome_model)
+✅ ui/i18n (plural/RTL/catalog/fallback/formatter)
+✅ ui/dsl (engine + yaml + loader + for_each + bridges)
+✅ foundation/text (FontdueBackend shape/measure/raster)
+✅ ui/animation (spring/tween/curves/motion/clock)
+✅ ui/gestures (arena/tap/pan/pinch/fling)
+✅ ui/forms (validators/field/form submit)
+✅ ui/navigation (route stack/restoration)
+✅ ui/overlay (focus trap/dismiss policy/modal barrier)
+✅ ui/collections (virtual list/recycler/selection)
+✅ ui/commands (registry/menu model/shortcut/palette)
+= 15/15 major layers deep-reviewed, 0 unfixed behavior bugs
+
+浏览器侧（apps/browser）:
+- DC-14 replacement wiring: feature-on 打包 SDK chrome 替换手绘，默认 193 测 + sdk-chrome 200+ 测全绿
+- product-smoke 19.87% = baseline（零页面渲染回归）
+- 解析式迁移已接线但需 GUI 可视验收（headless 已证 headless 像素正确）

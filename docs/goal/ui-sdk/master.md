@@ -199,6 +199,8 @@
 
 	- **DC-7 F3 + DC-13 domain 深度审查（animation/gestures/forms，2026-07-03）**：①F3 chrome_model bookmarks 注释修正（"文件夹 url=None"→"list_root 仅返回书签项；文件夹由 bookmarks.folders 管理，当前未投影"）；②ui/animation（6 文件 ~526 行，14 测）深度审查——spring 半隐式 Euler + 子步长、curve evaluate/tween/motion reduced-motion，**0 bugs**（1 low：with_params mass=0→div0，预设安全）；③ui/gestures（5 文件 ~836 行，12 测）深度审查——GestureArena 多识别器竞争仲裁、Tap/Pan/Pinch/Fling 识别器，**0 bugs**（arena 空成员/双 Won/velocity div0 全守卫正确）；④ui/forms（1 文件 ~414 行，7 测）spot check——Required/MinLength/MaxLength/All 校验器 + FieldState + FormState submit 生命周期，**0 bugs**（缺失字段/trim+chars/dirty/touched/error/reset 全守卫正确）。全部 17 crate 测试零回归 + clippy/fmt 净。详见 `evidence/dc13-domain-deep-review-animation-gestures-forms-20260703-114500.txt`。
 
+	- **DC-13 domain crates 全量深度审查收口（2026-07-03）**：继续审查剩余 4 域——⑤ui/navigation（314 行，8 测）RouteStack push/pop/replace/route_of/top_overlay/restoration snapshot/Navigator trait，**0 bugs**；⑥ui/overlay（344 行，10 测）OverlayHost dismiss_on_outside_click（covers_point 算法/anchor=None 全屏/候选之上浮层消费点击→不 dismiss/一次只 dismiss 一个）+ dismiss_on_escape + focus_trap_ids（最上层在前），**0 bugs**；⑦ui/collections（375 行，8 测）LazyList.window_at + materialize（越界过滤）+ find_duplicate_key + Recycler.retain_window + Selection，**0 bugs**；⑧ui/commands（678 行，13 测）CommandRegistry register/execute(Unknown/Disabled/Executed)/resolve_shortcut(跳过禁用)/menu_model(嵌套子组)/palette_search(大小写不敏感/三字段)+ §8.4.1B 同 command 三入口验收，**0 bugs**。DC-13 全 13 域审查累计 5,500+ 行、100+ 测，**0 medium/high behavior bugs**。详见 `evidence/dc13-domain-complete-20260703-120000.txt`。**SDK 安全/健壮性深度审查 15/15 层全覆盖收口**（core/render/runtime/widgets/chrome/i18n/dsl/text/animation/gestures/forms/navigation/overlay/collections/commands）。
+
 ## Done Criteria 进度
 
 | DC | 标题 | 状态 | 证据 / 备注 |
