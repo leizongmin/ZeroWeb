@@ -1278,3 +1278,55 @@ fn test_estimate_advance_matches_estimate_char_width() {
     let no_id = src.measure('W', None, font_size, false);
     assert!((with_id - no_id).abs() < 1e-6, "EstimateAdvance 应忽略 font_id");
 }
+
+// ── R990：apply_vertical_alignment 的 ascent ratio 按 is_ahem 区分 ──
+
+/// 构造单文本运行 IFC（line-height:1，即 line_height == font_size，half-leading=0），
+/// 使 baseline_y == font_size × ascent_ratio，便于直接断言 ratio。
+fn build_single_text_line(is_ahem: bool) -> InlineFormattingContext {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let items = vec![InlineItem::Text(TextRun {
+        text: "Text".to_string(),
+        node_id: NodeId::default(),
+        font_size: 100.0,
+        line_height: 100.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: is_ahem,
+    })];
+    ctx.break_items_into_lines(items);
+    ctx
+}
+
+/// R990：Ahem 文本 ascent ratio = 0.8（精确，upem 1000/ascent 800）。
+/// line-height:1 → baseline_y = font_size × 0.8 = 80。
+#[test]
+fn test_r990_ahem_ascent_ratio_0p8() {
+    let ctx = build_single_text_line(true);
+    assert_eq!(ctx.lines.len(), 1);
+    let baseline_y = ctx.lines[0].baseline_y;
+    assert!(
+        (baseline_y - 80.0).abs() < 0.01,
+        "Ahem 文本 baseline_y 应 = fs×0.8 = 80（实测 {baseline_y}）"
+    );
+}
+
+/// R990：非-Ahem 文本 ascent ratio = 0.928（system-ui/DejaVuSans 真实 ascent，R885 实测）。
+/// 旧实现硬编码 0.8 致非-Ahem 行盒偏矮、基线偏低（font-wall 主因之一）。
+#[test]
+fn test_r990_non_ahem_ascent_ratio_0p928() {
+    let ctx = build_single_text_line(false);
+    assert_eq!(ctx.lines.len(), 1);
+    let baseline_y = ctx.lines[0].baseline_y;
+    assert!(
+        (baseline_y - 92.8).abs() < 0.01,
+        "非-Ahem 文本 baseline_y 应 = fs×0.928 = 92.8（实测 {baseline_y}）"
+    );
+}
