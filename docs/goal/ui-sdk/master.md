@@ -691,27 +691,13 @@ Merge origin/main R991（SVG `<img>` viewBox bug 调查，docs-only，crates/eng
 Evidence: `evidence/round-20260703-165600.txt`
 
 ### Round 23 — 状态检查（2026-07-03）
-
-无新 origin/main commit，无代码变更。全门禁绿色：reftest 686/686 | product-smoke 19.41% | build+fmt OK。状态与 R22 一致，headless 耗尽。
-
-Evidence: `evidence/round-20260703-170300.txt`
+无变更。Evidence: `evidence/round-20260703-170300.txt`
 
 ### Round 24 — origin/main sync + integration 验证（2026-07-03）
-
-Merge origin/main R992（R717 decode-level 实验，正交）。无 SDK 代码变更。全门禁绿色 + **zero-integration-tests 724 passed ✅**（STATUS_ACCESS_VIOLATION 不可复现）。核心 SDK coverage 90.45%（>85%）。Headless 耗尽不变。
-
-Evidence: `evidence/round-20260703-171500.txt`
+Merge R992（正交）。**zero-integration-tests 724 passed ✅**（STATUS_ACCESS_VIOLATION 不可复现）。Evidence: `evidence/round-20260703-171500.txt`
 
 ### Round 25 — O1 follow-up 收口（2026-07-03）
+**`ui/runtime/src/host.rs`**：`paint_node` clip 链契约文档注释。全部 deep-review follow-up（F1–F4, O1, O2）均已关闭。Evidence: `evidence/round-20260703-173000.txt`
 
-**`ui/runtime/src/host.rs`**：为 `paint_node` 添加 clip 链契约文档注释，解释视口外节点产 `own_clip=None` 的设计理由（bridge viewport fallback 补偿；边相接 `Rect::intersect→None` 的正确行为）。纯文档变更，无行为变化。**O1 follow-up 收口**——全部 deep-review follow-up（F1–F4, O1, O2）均已关闭。
-
-全门禁绿色（build/clippy/fmt/reftest 686/product-smoke 19.41%/全部下游/191 browser）。无新 origin/main commit。
-
-Evidence: `evidence/round-20260703-173000.txt`
-
-### Round 26 — 状态检查（2026-07-03）
-
-无新 origin/main commit，无代码变更。全门禁绿色（build/fmt/reftest 686/product-smoke 19.41%）。状态与 R25 一致。
-
-Evidence: `evidence/round-20260703-173500.txt`
+### Rounds 26-27 — 状态检查（2026-07-03）
+无新 origin/main commit，无代码变更，全门禁绿色。Evidence: `r26` `r27`
