@@ -937,10 +937,13 @@ Evidence: `evidence/round38-gui-verification-20260703.txt`
 - 每个 chrome 组件的 SDK 版画出来的 fill/rect/icon/text/shadow 必须与手绘版相同
 - 交互行为也必须等同：按钮 hover/pressed 视觉反馈、点击触发相同 Action、地址栏焦点/输入行为等
 
-**已同步更新入口文档 `ui-sdk.md`**：约束 #9 和 DC-14 done criteria 加入「视觉完全一致」措辞。
+**像素 diff 验证方法（headless 可行）**：
+- 手绘路径：`render_full_scene_with_webview_for_test` → FrameBuffer
+- SDK 路径：`render_full_scene_sdk_chrome_for_test` → FrameBuffer
+- 两者共用一个 `build_scene`，页面内容相同，差异只在 chrome 渲染路径
+- 逐像素比较，chrome 区域（viewport 上方 + 下方）的 diff
 
-**对推进路径的影响**：
-- 此前 headless「Scene snapshot 验证」只能证明几何正确，无法证明像素级等价
-- 真实像素验证需要：手绘 chrome → render_full_scene → FrameBuffer PNG vs SDK chrome → render_full_scene → FrameBuffer PNG → pixel diff
-- **这个 diff 比较完全可以在 headless 下做**（`render_full_scene_sdk_chrome_for_test` 已证明可行）
-- 做法：对同一个 `BrowserShell` 状态，分别走手绘路径和 SDK 路径，产出两个 FrameBuffer，逐像素比较，diff < 阈值即通过
+**验收阈值（2026-07-04 用户确认）**：
+- chrome 区域像素 diff **≤ 2%**（手绘 vs SDK FrameBuffer）
+- 页面区域（viewport）diff 应为 0%（两边走同一页面渲染路径）
+- 不依赖 GUI，全在 headless 下可验证
