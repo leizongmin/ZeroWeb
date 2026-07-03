@@ -67,9 +67,10 @@ fn test_vertical_align_sub_in_line() {
 
     assert_eq!(ctx.lines.len(), 1);
     let fragment = &ctx.lines[0].runs[0];
-    // R800：行盒基线 = half-leading + ascent（CSS §10.8.1）= (line_height - em)/2 + 0.8*em，
-    // em = font_size（行内单文本运行，dominant_fs = font_size）。
-    let baseline_y = (line_height - font_size) / 2.0 + font_size * 0.8;
+    // R800/R990：行盒基线 = half-leading + ascent（CSS §10.8.1）= (line_height - em)/2 + ratio*em，
+    // em = font_size（行内单文本运行，dominant_fs = font_size）；ratio 按 is_ahem 区分
+    // （Ahem 0.8 / 非-Ahem 0.928，R990）。此处 is_ahem_font=false → 0.928。
+    let baseline_y = (line_height - font_size) / 2.0 + font_size * 0.928;
     let offset = font_size * 0.3;
     let expected_y = baseline_y - fragment.height + offset;
     assert!(
@@ -108,9 +109,10 @@ fn test_vertical_align_super_in_line() {
 
     assert_eq!(ctx.lines.len(), 1);
     let fragment = &ctx.lines[0].runs[0];
-    // R800：行盒基线 = half-leading + ascent（CSS §10.8.1）= (line_height - em)/2 + 0.8*em，
-    // em = font_size（行内单文本运行，dominant_fs = font_size）。
-    let baseline_y = (line_height - font_size) / 2.0 + font_size * 0.8;
+    // R800/R990：行盒基线 = half-leading + ascent（CSS §10.8.1）= (line_height - em)/2 + ratio*em，
+    // em = font_size（行内单文本运行，dominant_fs = font_size）；ratio 按 is_ahem 区分
+    // （Ahem 0.8 / 非-Ahem 0.928，R990）。此处 is_ahem_font=false → 0.928。
+    let baseline_y = (line_height - font_size) / 2.0 + font_size * 0.928;
     let offset = font_size * 0.3;
     let expected_y = baseline_y - fragment.height - offset;
     assert!(
