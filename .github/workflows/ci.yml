@@ -257,6 +257,9 @@ jobs:
         shell: bash
         run: bash scripts/download-rusty-v8.sh
 
+      - name: Fetch wpt-data
+        run: make fetch-wpt-data
+
       - name: Run reftest suite (CPU rendering)
         run: cargo run --release --bin zero-wpt-runner -- reftest --format json
 
