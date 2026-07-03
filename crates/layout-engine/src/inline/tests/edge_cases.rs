@@ -1330,3 +1330,64 @@ fn test_r990_non_ahem_ascent_ratio_0p928() {
         "非-Ahem 文本 baseline_y 应 = fs×0.928 = 92.8（实测 {baseline_y}）"
     );
 }
+
+// ── R1004：ascent_ratio_overrides bypass 基础设施（dormant，零回归）──
+// Phase A §12.6 step-2 解锁机制：layout IFC 经 provider 算出每文本节点真实 ascent
+// ratio，存入 LayoutBox → paint Path B 经 ascent_ratio_overrides 读取，绕过 R890
+// 实证的空 styles 墙。空 map（默认）回退 R990 常数 → 零回归。下两项断言覆盖优先级。
+
+/// R1004：ascent_ratio_overrides 真实 per-font ratio 优先于 R990 is_ahem 常数。
+/// 非-Ahem 文本 + 覆盖 0.95（模拟 NotoSansCJK 真实 ascent）→ baseline_y = 100×0.95 = 95
+/// （无覆盖时为 92.8 = 0.928）。
+#[test]
+fn test_r1004_ascent_ratio_override_supersedes_r990_constant() {
+    let node_id = NodeId::default();
+    let mut overrides = std::collections::HashMap::new();
+    overrides.insert(node_id, 0.95);
+    let mut ctx = InlineFormattingContext::new(800.0).with_ascent_ratio_overrides(overrides);
+    let items = vec![InlineItem::Text(TextRun {
+        text: "Text".to_string(),
+        node_id,
+        font_size: 100.0,
+        line_height: 100.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
+    })];
+    ctx.break_items_into_lines(items);
+    assert_eq!(ctx.lines.len(), 1);
+    let baseline_y = ctx.lines[0].baseline_y;
+    assert!(
+        (baseline_y - 95.0).abs() < 0.01,
+        "覆盖 0.95 时 baseline_y 应 = fs×0.95 = 95（实测 {baseline_y}）；证明 override 优先于 R990 常数"
+    );
+}
+
+/// R1004：override ratio ≤ 0（无效/未填充）回退 R990 is_ahem 常数。
+/// 保证 dormant 默认（空 map 或 step-2 未填充节点）= R990 行为，零回归。
+#[test]
+fn test_r1004_ascent_ratio_override_zero_or_absent_falls_back() {
+    let node_id = NodeId::default();
+    // 覆盖 0.0（无效）→ 回退 0.928（非-Ahem）
+    let mut overrides = std::collections::HashMap::new();
+    overrides.insert(node_id, 0.0);
+    let ratio = ascent_ratio_lookup(&overrides, node_id, false);
+    assert!(
+        (ratio - 0.928).abs() < 1e-6,
+        "override=0.0 应回退非-Ahem 常数 0.928（实测 {ratio}）"
+    );
+    // 空 map（默认 dormant）→ 回退 0.8（Ahem）
+    let empty: std::collections::HashMap<NodeId, f32> = std::collections::HashMap::new();
+    let ratio_ahem = ascent_ratio_lookup(&empty, NodeId::default(), true);
+    assert!(
+        (ratio_ahem - 0.8).abs() < 1e-6,
+        "空 map + Ahem 应回退 0.8（实测 {ratio_ahem}）"
+    );
+}
