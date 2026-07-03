@@ -79,7 +79,137 @@ impl RawAndroidEvent {
 }
 
 // ---------------------------------------------------------------------------
-// JNI-exported functions (C ABI, callable from Kotlin via external fun)
+// JNI-exported functions — Java_com_zeroweb_ui_MainActivity_* (Kotlin external fun)
+//
+// JNI 函数接受头两个隐藏参数（JNIEnv* + jclass），但 extern "C" 下额外参数存寄存器无害。
+// 用 std::ffi::c_void 占位，不依赖 jni crate。
+// ---------------------------------------------------------------------------
+
+/// Initialize runtime. Called once from Activity.onCreate.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Java_com_zeroweb_ui_MainActivity_nativeInitRuntime(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+) -> u8 {
+    // Create a leaked AndroidRuntime for JNI global access.
+    // The Kotlin side must hold a long-lived reference; we use Box::leak.
+    use crate::runtime::AndroidRuntime;
+    let rt = AndroidRuntime::new();
+    let inner: &'static RefCell<RuntimeInner> = rt.leak_for_jni();
+    unsafe { init_runtime(inner) };
+    1 // true
+}
+
+/// Notify window size / density change.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Java_com_zeroweb_ui_MainActivity_nativeWindowResize(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+    width: i32,
+    height: i32,
+    scale: f32,
+) {
+    // delegate to existing C ABI function
+    unsafe { android_window_size_change(width as f32, height as f32, scale, 1.0, 0.0, 0.0, 0.0, 0.0, 1) };
+}
+
+/// Dispatch a single-touch event.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Java_com_zeroweb_ui_MainActivity_nativeDispatchTouch(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+    pointer_id: i32,
+    action: i32,
+    x: f32,
+    y: f32,
+    _timestamp_ms: i64,
+) {
+    unsafe { android_dispatch_touch(pointer_id as u32, x, y, action as u32) };
+}
+
+/// Dispatch a key event.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Java_com_zeroweb_ui_MainActivity_nativeDispatchKey(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+    key_code: i32,
+    action: i32,
+) {
+    with_rt(|rt| {
+        rt.borrow_mut().pending_events.push(RawAndroidEvent {
+            kind: RawAndroidEvent::KIND_KEY,
+            arg0: key_code as f32,
+            arg1: action as f32,
+            arg2: 0.0,
+            arg3: 0,
+        });
+    });
+}
+
+/// Handle system back gesture.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Java_com_zeroweb_ui_MainActivity_nativeBackPressed(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+) -> u8 {
+    // Push back event and pump
+    unsafe { android_back_pressed() };
+    // Check if there's a back handler registered (via BackNavigationService).
+    // For skeleton: always report consumed to prevent Activity from finishing.
+    1 // true = consumed
+}
+
+/// Soft keyboard visibility / geometry change.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Java_com_zeroweb_ui_MainActivity_nativeSoftKeyboard(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+    height: i32,
+    visible: u8,
+) {
+    unsafe { android_input_method_change(0.0, 0.0, 0.0, height as f32, visible as u32) };
+}
+
+/// Check if runtime is ready.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Java_com_zeroweb_ui_MainActivity_nativeIsRuntimeReady(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+) -> u8 {
+    (unsafe { android_is_runtime_ready() }) as u8
+}
+
+/// Pump pending events through the retained loop.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Java_com_zeroweb_ui_MainActivity_nativePumpEvents(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+) {
+    with_rt(|rt| {
+        let events: Vec<RawAndroidEvent> = core::mem::take(&mut rt.borrow_mut().pending_events);
+        for raw in events {
+            let ui_event = raw.to_ui_event();
+            let mut inner = rt.borrow_mut();
+            if let Some(host) = inner.host.as_mut() {
+                host.dispatch_event(&ui_event);
+            }
+        }
+    });
+}
+
+/// Shutdown runtime (clean up leaked memory).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Java_com_zeroweb_ui_MainActivity_nativeShutdown(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+) {
+    // Safety: NULL out the global ptr; leaked Box<RefCell<RuntimeInner>> is dropped
+    // by the OS on process exit (acceptable for mobile app lifecycle).
+    unsafe { ANDROID_RT = None };
+}
+
+// ---------------------------------------------------------------------------
+// Plain C ABI functions (internal use, not callable from Kotlin directly)
 // ---------------------------------------------------------------------------
 
 /// Notify runtime of window size/density/orientation changes.
