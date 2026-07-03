@@ -2648,6 +2648,18 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R994 R717 fixup 泛化（leaf + CSS aspect-ratio）= css-flexbox Oracle +2（287→289）·零回归·R993 收割延伸
+
+承 R993。R993 的 post-layout fixup 原仅覆盖 ratio-only SVG `<img>`（`b.is_replaced && img_intrinsic_ratios`）。复查 aspect-ratio-intrinsic 簇残余发现 003/004/011/014 是**不同机制**——CSS `aspect-ratio` 在非替换 **leaf `<div>`**（非 img/SVG）上、flex 容器内（003: `inline-flex;height:100px` + 子 `<div aspect-ratio:1/1>`）。003 容器 height 明确（100px）→ taffy 已正确 derive，15.67% 残差 = inline/text 定位（非 ratio 问题，独立）。
+
+**改动**：把 `apply_flex_ratio_img_size` 重命名为 `apply_flex_aspect_ratio_item_size` 并**泛化触发条件**——不再要求 `is_replaced + img_intrinsic_ratios`，改为：① `b.children.is_empty()`（leaf，无内容决定 main，避免误覆盖文本/子内容 flex item）；② 父 Flex/InlineFlex；③ taffy style `aspect_ratio > 0`（直接读 st.aspect_ratio，涵盖 CSS aspect-ratio 与 SVG ratio-only）；④ item main 轴 CSS Auto（显式 Px 由 converter 处理，不覆盖）；⑤ cross>0 且 main 与 cross×/÷ratio 推导值差 >0.5px。drop `ratios_for_r717` param（fixup 不再需要 ratios map，aspect_ratio 已在 taffy style 上）。
+
+**验证（chromium Oracle + 三态门禁）**：007 仍 0.00% PASS（未回归）；**css-flexbox Oracle 287→289（+2，新翻 2 案 CSS aspect-ratio leaf flex item）**，baseline 285→289 累计 +4；css-grid 40.8%（fixup Flex-only 不触发，未回归）；**welcome 16.57% 不变**（<20%）；R717 三单测仍绿；clippy/fmt 干净；**make test 全 workspace 绿（exit 0）**。
+
+**意义**：R717 fixup 泛化使 CSS `aspect-ratio` 在 flex leaf item 上也正确按 transferred-size 推导 main（taffy 0.7 对 Auto-cross 不自动 derive 的同一缺口，CSS aspect-ratio 与 SVG ratio 共享）。leaf + auto-main 双守卫保证不误覆盖内容/显式尺寸 flex item。
+
+**下一步**：R717 残余 003/004/011/014 = inline-flex 定位 / JS-driven（document.body.offsetTop + style 变更），独立子机制非 ratio；或转 R990 余波 per-font ascent / R370 flex-container-intrinsic-width。R993+R994 累计 css-flexbox +4 零回归。
+
 ### R993 ★★R717 ratio-signal 全链 LANDED = aspect-ratio-intrinsic-size-007 33.65%→0.00% PASS·css-flexbox Oracle +2 零回归·4-crate plumbing + post-layout flex-ratio fixup·净正
 
 承 R992「decode-level 死路彻底关闭，下会话必须做完整 ratio-signal」。R992 三次 decode-level definite-size 尝试（R980/R991-设计/R992-实测）全失败，证明正确路径是 **ratio-only signal（不设确定 size）+ 让 taffy/flex ratio-derive**。本轮实施 R991 测绘的 4-crate ratio-signal，并**发现 + 修复** R991/R992 未预见的第二阻塞。
