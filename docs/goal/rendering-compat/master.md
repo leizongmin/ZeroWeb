@@ -2648,6 +2648,18 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R997 table-cell-overflow direct-text 测量实验 NET-NEGATIVE 已回退·须 width+height/overflow 合修·零源码·纯调查
+
+承 R996 addendum「table-cell-overflow 须直接文本 only 测量」。本轮实施安全版：`box_content_max_width`（intrinsic_sizing.rs）对非叶盒补测**直接文本节点子元素**（复用 `fragment_inline_max_width` + `doc.child_nodes` 过滤 `NodeKind::Text`），仅直接文本非全后代（避开 margin-collapse-101 block-后代文本过计陷阱）。
+
+**A/B 实测 NET-NEGATIVE 已回退**：① table-cell-overflow-explicit-height twin **9.73%→4.13%（改善但仍 FAIL >1%）**——cell 宽测对了（was 8px → ~211px），残余 4.13% = **td height 语义**（ZW td{height:20px} 当 min-height 撑到内容 304px，chromium 现 spec（bug 1880550）对 overflow:hidden 的 td **裁剪到 20px**）。② **margin-collapse-101 回归 3.66%→6.51%**——`<div class="b"><div class="red"></div>B</div>` 的 div.b 有直接文本 "B"（50px font ~30px），ZW 此前测 0（missed），新测 30px → 列宽 +30px → 超 chromium（chromium 列宽由别处定）→ diff 增。css-tables 全量 73→74（+1 真实 pass）但跨 dir 净负（101 worse）。
+
+**裁决（回退）**：width-only 修不充分——driving twin 仍 FAIL（4.13%，需 height/overflow 合修），且净跨 dir 负（101 回归）。**table-cell-overflow 须 width 测量 + td overflow:hidden 裁剪语义 两步同做**才能 net-positive（width 单做 perturbs 101 且 twin 不过）。按 code-guidelines「不做负价值修改」+ R855/R996 零-yield/负-yield 回退先例**回退**。下一会话勿再做 width-only。
+
+**真修路径（更新测绘）**：① width 测量（本轮安全 direct-text 方案，已验证不破坏 leaf 路径）+ ② td/`display:table-cell` 的 `overflow != visible` 时 height 作 used height（裁剪内容，css-tables-3 §height-distribution + bug 1880550）——目前 ZW 把 td height 作 min-height（撑内容）须改为 overflow-gated used-height。两步合做后 twin 应过 + 101 应恢复（width 增被 height 裁剪补偿）。
+
+**下一步**：table-cell-overflow combined fix（dedicated session）；或转 Phase A per-font 真实 ascent（R887 provider wiring，R970 已证常数 0.928 可产 +138，per-font 增量）；或 multicol Phase 2；或 feature gap（::backdrop/表单控件/content-visibility）。R993-R995 累计 css-flexbox +4 / css-tables +4 零回归已 land main，本 R997 纯调查无新代码。
+
 ### R996 三 dir 扫描确认 clean lever 单 session 耗尽·css-tables/css-position/css-multicol top-worst 全 structural/feature-gap/JS·零源码·纯调查
 
 承 R995 后系统复核 3 个未深扫 dir 的 top-worst，确认 R740/R882「单 session clean lever 耗尽」结论。逐 dir 分类（全非 clean single-session fix）：
