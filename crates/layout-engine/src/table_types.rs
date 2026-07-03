@@ -300,8 +300,16 @@ pub(crate) fn compute_cell_intrinsic_width(
         }
     }
 
+    // R1001：cell 的**直接匿名 inline 文本**（cell 的直接文本节点子元素）。
+    // box_content_max_width 仅测叶盒文本 + block 子递归；cell 的直接文本（非叶、与 block 子
+    // 混合生成匿名 block）被漏测，致含直接文本的 cell 塌缩（table-cell-overflow-explicit-height
+    // twin：tall div block 子 + "Can you see this text?" 直接文本，cell 测 8px 应 ~211px）。
+    // 仅测**直接**文本节点（非 text_content 全后代）——多 block cell 的文本在 block 后代内，
+    // cell 直接文本=0，避免过计（margin-collapse-101 安全）。
+    let direct_text_w = cell_direct_text_width(cell_box, styles, doc);
+
     if has_explicit_child && content_width > 0.0 {
-        return content_width + padding;
+        return content_width.max(direct_text_w) + padding;
     }
 
     // 当 cell_box.width 接近 0 时，taffy 将所有子元素也约束为 0，
@@ -333,14 +341,40 @@ pub(crate) fn compute_cell_intrinsic_width(
         // 估算严重过宽（如 margin-collapse-101：31 字符含大量块间空白 → 930px 列，
         // table 1446px 溢出 viewport；应 shrink-to-fit 到内容 max-content）。
         // box_content_max_width 返回 border-box，即 cell 对列的宽度贡献。
+        // R1001：与 cell 直接文本取 max（直接匿名 inline 内容）。
         let intrinsic = crate::intrinsic_sizing::box_content_max_width(cell_box, doc, styles);
-        if intrinsic > 0.0 {
-            return intrinsic;
+        let result = intrinsic.max(direct_text_w);
+        if result > 0.0 {
+            return result;
         }
         return char_width * text_len as f32 + padding;
     }
 
     char_width + padding
+}
+
+/// R1001：测量 cell 的**直接文本节点**子元素的 max-content 宽度（cell 的匿名 inline 内容）。
+///
+/// 仅遍历 cell 的 DOM 直接子节点中的文本节点（非全后代），用 cell 的 font 度量。
+/// 用于 `compute_cell_intrinsic_width` 补测 cell 直接文本（box_content_max_width 漏测的非叶
+/// 直接文本）。返回 0 = 无直接文本。
+fn cell_direct_text_width(
+    cell_box: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) -> f32 {
+    use zero_dom::NodeKind;
+    let Some(id) = cell_box.node_id else { return 0.0 };
+    let Some(style) = styles.get(&id) else { return 0.0 };
+    let text_children: Vec<NodeId> = doc
+        .child_nodes(id)
+        .into_iter()
+        .filter(|&cid| doc.get(cid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
+        .collect();
+    if text_children.is_empty() {
+        return 0.0;
+    }
+    crate::intrinsic_sizing::fragment_inline_max_width(style, &text_children, doc)
 }
 
 /// 递归收集 LayoutBox 子树中的文本字符数。
