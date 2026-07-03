@@ -2648,6 +2648,29 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1008 ★line-break: anywhere → BreakAll LANDED = line-break 簇首个 PASS（0/84→2/84 +2）·CSS Text 3 §5.3 解析 + layout/paint 双路径映射·零回归·parse-basic dead-code trap 规避
+
+承 R1007「转 LOGIC 层，首推 CJK line-break」。line-break 簇 0/84 全部因 `line-break` 属性**完全未解析**（silent ignore → 默认断行）。本轮实现 line-break 解析 + `anywhere`→BreakAll 映射。
+
+**改动**（CSS Text 3 §5.3，layout/paint 双路径一致）：
+- css-parser：`LineBreakValue` 枚举（Auto/Loose/Normal/Strict/Anywhere）+ `parse_line_break`（color.rs live 位，**非** parse_basic.rs dead 模块——R1008 触发 parse-basic-dead-code-trap 记忆，迁回 color.rs 镜像 parse_word_break）。
+- style-system：`LineBreakValue` 枚举（types.rs，镜像 WordBreakValue 双定义模式）+ `parse_line_break`（parse.rs）+ ComputedStyle 字段（line_break）+ default（Auto）+ apply（"line-break" dispatch）+ inherit（**line-break 是继承属性** §5.3）。
+- layout-engine：`inline_finalization.rs::compute_inline_ifc_config`（line 614 word_break_mode 后）—— `line_break: Anywhere` → `WordBreakMode::BreakAll`（复用既有逐字符断行，width:1ch/窄容器场景产出与 anywhere 一致的逐字换行）。
+- engine paint：`text.rs:778` 同映射（layout/paint 双路径同步，避免 R1004/R989 类发散）。
+- 1 新单测：`test_parse_line_break_all_values`（css-parser tests_3.rs，5 关键字 + 大小写不敏感 + 无效输入）。
+
+**严格/松散/正常 CJK 规则暂不实现**（解析但按 normal 默认行为）——标点禁则/小假名等多 session。
+
+**验证（chromium Oracle + 三态门禁）**：
+- **line-break oracle：0/84 → 2/84（+2 PASS，首个 line-break 通过）**。
+- 其余 40 anywhere 失败 = GL/JW/ZJW 字符（NBSP/ZWNBSP/WJ/ZWNJ）逐字断行处理 + zero-width 字符断点（BreakAll overflow-driven 不在 zero-width 处断，anywhere 应断）—— 窄子集，独立子问题。
+- welcome 16.57% 不变（<20% gate，welcome 无 line-break）。
+- make test exit 0（workspace 绿，含 +1 line-break parse 测）；clippy --workspace -D warnings ✓；fmt ✓。
+
+**意义**：font-loading 轨（R1006/R1007）证伪后，**转 LOGIC 层首个 yield**——CJK line-break 规则簇的 `anywhere` 子集（最窄，映射 BreakAll 即可产）。证实「font-loading 必要非充分，yield 须 LOGIC 实现」（R1007 结论）的 LOGIC 路径可行。line-break 簇 84 案现 2 通过，残余 = anywhere GL/JW/ZJW 细节 + strict/loose CJK 规则（标点禁则 LB1-LB27，多 session）。
+
+**▶ 下会话**：① line-break:anywhere 残余 40 案——BreakAll 在 zero-width/GL/JW/ZJW 字符处也断（不只在 overflow 时），潜在 +N（须守不过度断行回归）；② line-break:strict/loose CJK 标点禁则（LB1-LB27，多 session）；③ text-transform pre-layout 应用（R998，另一 LOGIC 簇）；④ rustybuzz 接生产（R513，font-features 簇）。三 LOGIC 轨均多 session，R1008 是首切。
+
 ### R1007 WPT @font-face .woff 字体打包 + font-loading yield 三簇证伪（R910 模式扩展）·loader 持有已解码 sfnt（生命周期修复）·零 oracle yield·纯调查+数据
 
 承 R1006「打包缺失 WPT .woff 字体后 A/B 测 font-loading 单独 yield」。本轮：① 经 ~/use-proxy 代理从 WPT GitHub raw 打包 7 个缺失 .woff 字体到 wpt-data/fonts/（mplus-1p-regular 803KB / Scheherazade-Regular / sileot-webfont / noto/noto-sans-v8-latin / math/mathvariant-italic）+ css-values/resources/ExTest(.woff/-NoSpace)；② A/B 三簇 oracle。

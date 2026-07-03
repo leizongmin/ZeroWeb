@@ -1223,6 +1223,25 @@ fn test_parse_word_break_all_values() {
     assert_eq!(parse_word_break("inherit"), None);
 }
 
+/// 测试 parse_line_break 所有关键字（CSS Text 3 §5.3）：auto/loose/normal/strict/anywhere，
+/// 大小写不敏感，无效输入返回 None。R1008 line-break:anywhere → BreakAll 的解析基础。
+#[test]
+fn test_parse_line_break_all_values() {
+    use crate::values::{LineBreakValue, parse_line_break};
+    assert_eq!(parse_line_break("auto"), Some(LineBreakValue::Auto));
+    assert_eq!(parse_line_break("loose"), Some(LineBreakValue::Loose));
+    assert_eq!(parse_line_break("normal"), Some(LineBreakValue::Normal));
+    assert_eq!(parse_line_break("strict"), Some(LineBreakValue::Strict));
+    assert_eq!(parse_line_break("anywhere"), Some(LineBreakValue::Anywhere));
+    // 大小写不敏感
+    assert_eq!(parse_line_break("ANYWHERE"), Some(LineBreakValue::Anywhere));
+    assert_eq!(parse_line_break("  Strict  "), Some(LineBreakValue::Strict));
+    // 无效输入
+    assert_eq!(parse_line_break("invalid"), None);
+    assert_eq!(parse_line_break(""), None);
+    assert_eq!(parse_line_break("break-all"), None); // 不是 line-break 值
+}
+
 #[test]
 /// 测试 parse_contain 所有关键字和自定义标志位组合。
 /// 验证 none/strict/content/单关键字/多关键字组合的正确解析，

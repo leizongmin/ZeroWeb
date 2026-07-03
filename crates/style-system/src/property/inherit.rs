@@ -55,6 +55,11 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.word_break = parent.word_break.clone();
             true
         }
+        "line-break" => {
+            // line-break 是继承属性（CSS Text 3 §5.3）。
+            child.line_break = parent.line_break.clone();
+            true
+        }
         "visibility" => {
             child.visibility = parent.visibility.clone();
             true
@@ -680,6 +685,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "word-break" => {
             style.word_break = default_style.word_break;
+            true
+        }
+        "line-break" => {
+            style.line_break = default_style.line_break.clone();
             true
         }
         "text-indent" => {

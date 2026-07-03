@@ -480,6 +480,12 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "line-break" => {
+            if let Some(v) = parse_line_break(value) {
+                style.line_break = v;
+                return true;
+            }
+        }
         "writing-mode" => {
             if let Some(v) = parse_writing_mode(value) {
                 style.writing_mode = v;
