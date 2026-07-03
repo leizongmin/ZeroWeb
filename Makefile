@@ -54,7 +54,12 @@ test: target/test-guard
 	# 多模块，致 test-guard 1800s 总超时连累整树）。本地 make test 用 --exclude 跳过该 crate；
 	# CI 直接跑 `cargo test --workspace`（ci.yml，真 Vulkan 后端）正常全量执行该 crate 测试。
 	# 需本地验证 render-foundation 时：test-guard -- cargo test -p zero-render-foundation。
-	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo test --workspace --exclude zero-render-foundation -- --test-threads=2
+	# 同 zero-script-sandbox：rusty_v8 debug-test 在 MSVC 上缺失 advapi32 符号链
+	# 接（环境性问题，非代码缺陷），本地排除以保持 make test 可用。CI 直接跑 cargo test
+	# --workspace（ci.yml，Linux/GNU 链接器）正常执行该 crate 测试。
+	# 需本地验证 script-sandbox 时：test-guard -- cargo test -p zero-script-sandbox --release
+	# （release 构建不触发 V8 链接问题）。
+	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo test --workspace --exclude zero-render-foundation --exclude zero-script-sandbox -- --test-threads=2
 
 # WPT reftest（release 构建，约 4× 快于 debug；同样被 test-guard 包裹）。
 reftest: target/test-guard
