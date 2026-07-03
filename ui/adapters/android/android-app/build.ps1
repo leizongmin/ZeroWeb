@@ -18,13 +18,14 @@ $linker = "$env:ANDROID_NDK_HOME\toolchains\llvm\prebuilt\windows-x86_64\bin\$ru
 $rustMode = if ($Mode -eq "release") { "--release" } else { "" }
 $buildType = if ($Mode -eq "release") { "release" } else { "debug" }
 $soName = "libzero_ui_adapter_android.so"
-$rustOutDir = "..\..\..\..\target\$rustTarget\$buildType"
+$workspaceRoot = Resolve-Path "$projectRoot\..\..\..\.."
+$rustOutDir = "$workspaceRoot\target\$rustTarget\$buildType"
 $jniLibsDir = "$PSScriptRoot\app\src\main\jniLibs\arm64-v8a"
 
 # Step 1: Build Rust .so
 Write-Host "=== Building Rust .so for $rustTarget ($Mode) ==="
 $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = $linker
-Push-Location $projectRoot
+Push-Location $workspaceRoot
 try {
     cargo ndk -t arm64-v8a build -p zero-ui-adapter-android $rustMode.Split(' ')
     if ($LASTEXITCODE -ne 0) { throw "cargo ndk failed" }
@@ -36,10 +37,7 @@ try {
 # Step 2: Copy .so to jniLibs
 Write-Host "=== Copying .so to jniLibs ==="
 New-Item -Path $jniLibsDir -ItemType Directory -Force | Out-Null
-$so = Join-Path $projectRoot "target\$rustTarget\$buildType\$soName"
-if (-not (Test-Path $so)) {
-    $so = Join-Path $projectRoot "..\..\..\target\$rustTarget\$buildType\$soName"
-}
+$so = Join-Path $rustOutDir $soName
 Copy-Item $so $jniLibsDir -Force
 Write-Host "Copied $so -> $jniLibsDir"
 

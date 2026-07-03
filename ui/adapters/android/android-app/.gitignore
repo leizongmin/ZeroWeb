@@ -1,0 +1,13 @@
+# Gradle build artifacts
+.gradle/
+build/
+*.apk
+*.ap_
+
+# IDE
+.idea/
+*.iml
+local.properties
+
+# JNI libs (built by build.ps1 from Rust .so)
+app/src/main/jniLibs/

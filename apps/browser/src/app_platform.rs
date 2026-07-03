@@ -1759,4 +1759,85 @@ mod sdk_chrome_tests {
             "SDK chrome bars render visible pixels in top chrome region (y < 90) via replacement path"
         );
     }
+
+    /// DC-14 chrome-region pixel-diff **baseline 量化**（headless 可视验收反馈环）。
+    ///
+    /// 用户确认的 DC-14 终局验收（2026-07-04，commit 8248c604）：`cargo run --bin zero-browser
+    /// --features sdk-chrome` 与 `cargo run --bin zero-browser` 视觉像素级等价，**chrome 区 diff ≤
+    /// 2%**、页面区 diff ≈ 0%。此前只证明了「SDK chrome 替换路径能光栅出可见像素」，从未**量化**
+    /// 两路径的差异百分比 —— 本测闭合该缺口。
+    ///
+    /// 在 headless 下逐像素比较：
+    /// - 手绘 chrome 路径：[`BrowserApp::render_full_scene_with_webview_for_test`]
+    /// - SDK chrome 替换路径：[`BrowserApp::render_full_scene_sdk_chrome_for_test`]
+    ///
+    /// 报告顶部 chrome 区（y < 96，≈ toolbar 36 + tab strip 32 + bookmarks 28）与页面区的 diff
+    /// 百分比（用 `--nocapture` 查看）。当前 12 个 chrome 组件仍为 `ChromePanel` 占位，预期 chrome
+    /// 区 diff 远高于 2% —— 本测把该缺口量化为后续真实 Widget 实现的反馈环（每实现一个真实
+    /// 组件，重跑本测看 diff 收敛）。当前不断言 chrome ≤ 2%（baseline 阶段），仅 sanity 断言。
+    #[test]
+    fn dc14_chrome_region_pixel_diff_baseline() {
+        let width = 1280u32;
+        let height = 800u32;
+        let mut app = BrowserApp::new(crate::app::RenderMode::Cpu);
+        app.physical_size = (width, height);
+        app.scale_factor = 1.0;
+        assert!(app.shell.active_tab_id().is_some(), "default active tab present");
+
+        // 两路径共享同一 app 状态（build_scene 从当前 shell 状态重建；glyph_cache 缓存幂等，
+        // 不影响输出像素），顺序调用避免跨实例字体/状态差异。
+        let hand_fb = app.render_full_scene_with_webview_for_test(width, height);
+        let sdk_fb = app.render_full_scene_sdk_chrome_for_test(width, height);
+        // 控制组：再次渲染手绘路径，证明 harness 确定性（hand-vs-hand 必须为 0%，否则
+        // 上面的 diff 是测试顺序/状态污染伪影而非真实路径差异）。
+        let hand_fb2 = app.render_full_scene_with_webview_for_test(width, height);
+        assert_eq!((hand_fb.width, hand_fb.height), (width, height));
+        assert_eq!((sdk_fb.width, sdk_fb.height), (width, height));
+        let control_diff = (0..height)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .filter(|(x, y)| hand_fb.get_pixel(*x, *y) != hand_fb2.get_pixel(*x, *y))
+            .count();
+        let control_pct = (control_diff as f64 / (width * height) as f64) * 100.0;
+        eprintln!(
+            "DC-14 control (hand-vs-hand): {control_diff}/{} = {control_pct:.3}% (must be 0%)",
+            width * height
+        );
+        assert_eq!(control_diff, 0, "hand-vs-hand render must be deterministic");
+
+        // 顶部 chrome 区 ≈ 96px；其余为页面（viewport）区。
+        let chrome_bottom = 96u32;
+        let mut chrome_diff = 0usize;
+        let mut chrome_total = 0usize;
+        let mut page_diff = 0usize;
+        let mut page_total = 0usize;
+        for y in 0..height {
+            let in_chrome = y < chrome_bottom;
+            for x in 0..width {
+                let differs = hand_fb.get_pixel(x, y) != sdk_fb.get_pixel(x, y);
+                if in_chrome {
+                    chrome_total += 1;
+                    if differs {
+                        chrome_diff += 1;
+                    }
+                } else {
+                    page_total += 1;
+                    if differs {
+                        page_diff += 1;
+                    }
+                }
+            }
+        }
+        let chrome_pct = (chrome_diff as f64 / chrome_total as f64) * 100.0;
+        let page_pct = (page_diff as f64 / page_total as f64) * 100.0;
+        eprintln!(
+            "DC-14 pixel-diff baseline: chrome region (y<{chrome_bottom}) {chrome_diff}/{chrome_total} = {chrome_pct:.2}%, page region {page_diff}/{page_total} = {page_pct:.2}%"
+        );
+
+        // sanity：区域非空；页面区两路径共用 build_scene 的页面内容，不应整体错位全差。
+        assert!(chrome_total > 0 && page_total > 0);
+        assert!(
+            page_pct < 100.0,
+            "page region fully differs — render paths diverged unexpectedly"
+        );
+    }
 }

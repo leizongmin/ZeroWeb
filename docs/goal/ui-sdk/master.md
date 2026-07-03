@@ -840,6 +840,47 @@ Evidence: `evidence/deep-review-winit-event-map-r36-20260703.txt`
 
 Evidence: `evidence/deep-review-mobile-eventmap-r37-20260703.txt`
 
+### Round 39 — Android 工程脚手架 + JNI bridge 落地（2026-07-04）
+
+**成果**：
+
+- 新建 `ui/adapters/android/android-app/` — 完整 Android Gradle 工程
+- `MainActivity.kt`：SurfaceView + 触摸/键盘/back/软键盘事件 → Rust JNI
+- `ffi.rs` 新增 JNI 命名 wrapper 函数（`Java_com_zeroweb_ui_MainActivity_*`）
+- `build.ps1`：`cargo ndk` 交叉编译 → jniLibs → `gradlew assembleDebug` → APK
+- `bootstrap.ps1`：从官方源重新下载 gradle-wrapper.jar
+- `.gitattributes`：标记 `*.jar binary`
+
+**构建链路**：
+
+```
+cargo ndk -t arm64-v8a → libzero_ui_adapter_android.so
+    → jniLibs/arm64-v8a/
+    → gradlew assembleDebug → app-debug.apk
+    → adb install → adb shell am start
+```
+
+**自动化程度**：
+| 步骤 | 自动化 | 说明 |
+|------|--------|------|
+| Rust .so 交叉编译 | ✅ | `cargo ndk` 已验证 |
+| Gradle APK 构建 | ⚠️ | `build.ps1` 已写，**未实际跑过**——需验证 gradle-wrapper 能否引导下载 Gradle |
+| `adb install` / 启动 | ✅ | 命令行可做 |
+| 画面验收 | ❌ | 需要人眼看 |
+
+**测试现状**：
+- Rust adapter：20 测全绿（event_map + runtime + ffi）
+- Gradle 工程：未跑过 `gradlew assembleDebug`（wrapper jar 需首次下载 Gradle ~250MB）
+- 建议：加一条 `./build.ps1` 的 CI 型验证（仅构建 APK，不部署），成功即证明完整 Android 工具链可用；失败记环境跟踪项
+
+**环境依赖**（agent 和 CI 需要）：
+- `ANDROID_HOME` / `ANDROID_NDK_HOME` 环境变量
+- `cargo-ndk` crate（`cargo install cargo-ndk`）
+- Rust target `aarch64-linux-android`
+- Java 17+
+
+**门禁**：android 20 测全绿 + workspace build/clippy/fmt 全净。
+
 ### Round 38 — DC-14 GUI 可视验收（首次） + sdk-chrome 渲染修复（2026-07-03）
 
 **首次 GUI 可视验收结果**：`cargo run --bin zero-browser --features sdk-chrome` 启动后 chrome 与预期严重不符：
