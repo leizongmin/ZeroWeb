@@ -176,6 +176,19 @@ mod tests {
         let p = bridge.into_primitives();
         // chrome 背景（toolbar/viewport 等）→ FillPrimitive 非空（管线几何正确）。
         assert!(!p.fills.is_empty(), "SDK chrome 管线应产出背景 fills");
+        // 回归守卫（paint_node clip 双重平移 bug 修复，2026-07-04）：toolbar 容器（ROW，非零 origin）
+        // 的子节点 nav/security/menu/bookmarks 的 fill 不能被 clip 误丢弃。修复前 bridge fills 只有
+        // 2 条（tab strip + nav 残片），修复后 ≥5（tab strip + nav + security + menu + bookmarks；
+        // 地址栏为 rounded_rect 单列）。任何 ≤3 都说明 clip 再次把非零 origin 子节点的 fill 丢掉。
+        assert!(
+            p.fills.len() >= 4,
+            "toolbar/bookmarks fills must render (clip not double-shifted), got {} fills: {:?}",
+            p.fills.len(),
+            p.fills
+                .iter()
+                .map(|f| (f.rect.origin.x as i32, f.rect.origin.y as i32))
+                .collect::<Vec<_>>()
+        );
         // 地址栏文本 "https://example.com" 经 draw_text → glyph ImagePrimitive 非空（管线文本正确）。
         assert!(!p.images.is_empty(), "SDK chrome 管线应产出地址栏文本 ImagePrimitive");
     }

@@ -1284,3 +1284,38 @@ Evidence: `evidence/dc14-color-parity-layout-bug-20260704.txt`
 measure/arrange 递归，或 constraints 向 row 子节点传播时 cross-axis（高度）被压缩。修好后 toolbar/
 bookmarks fill 渲染，颜色 parity + 图标生效，重测 dc14_chrome_region_pixel_diff_baseline 看 chrome 区
 74.05% 大幅下降。
+
+### Round 47 — paint_node clip 双重平移 bug 修复（chrome 渲染 correctness，2026-07-04）
+
+**Round 46 定位「布局 bug」后，本轮查明真正根因并在 ui/runtime/src/host.rs 修复**。
+
+**根因**：`paint_node` 把 widget recorder clip 设为 `own_clip`（绝对坐标 = parent_clip ∩ cached_rect），
+随后 `local.translated(abs_offset)` 又把 clip 按 node origin 平移一次 → **clip 双重平移**。后端
+`fill_rect ∩ current_clip` 为空，**非零 origin 子节点（toolbar/bookmarks 等）的 fill 被丢弃**（修复前
+bridge fills=2，只有 tab strip + nav 残片 4px）。布局本身（rect_of）一直正确，是 paint 期 clip 把 fill
+误丢。诊断证据：修复前 scene entry clips 全部双倍（nav `(0,80,154,44)` 应 `(0,40,154,44)`；security
+`(2400,80,...)` 出屏）。
+
+**修复**：paint_node 把 recorder/PaintCtx clip 从绝对 `own_clip` 改为**局部坐标**
+`own_clip.translate(-cached_rect.origin)`（widget 本就以局部坐标 paint）。`local.translated(abs_offset)`
+把图元 + clip 一起平移到绝对 → clip 落回正确绝对位置，fill 不再被误丢。
+
+**验证**：修复后 scene entry clips 全部正确；bridge fills=2→**5**（tab strip + nav + security + menu +
+bookmarks；地址栏 pill 为 rounded_rect 单列）。**像素级 parity**：SDK nav-bg `(100,60)` = `[248,249,250]`
+与手绘完全一致（clip fix + Round 46 颜色 parity 共同生效）。回归守卫：加强
+`render_chrome_via_sdk_with_real_shell_produces_geometry_and_text` 断言 fills >= 4。
+
+**门禁全绿**：runtime 83 / examples 2+3 / chrome 87 / browser sdk-chrome 205 全绿零回归（paint_node 是
+所有 SDK retained 渲染核心，counter/form/chrome/shell_demo 全过）。clippy(-D warnings)/fmt 净。
+
+**chrome diff 74.05% → 92.19%（+18pp，诚实上升）**：clip fix 让 SDK chrome 现真实渲染全部 bars（此前
+toolbar/bookmarks 被丢弃=白），暴露**几何/结构差**（SDK chrome 高 112 vs 手绘更矮，bookmarks 区 y=100
+手绘已是页面白；地址栏 pill 渲染 255 应 248；flat bars vs tab 形状/结构）。**clip fix 是必要 correctness
+修复**（此前 SDK chrome 因 bug 无法正确渲染任何非零 origin 子节点）；diff 上升是诚实信号——SDK 现忠实
+渲染，剩余 diff 转为更可解的几何/结构 parity。nav-bg 248=248 证明 clip fix + 颜色 parity 通路正确。
+
+Evidence: `evidence/dc14-paint-node-clip-fix-20260704.txt`
+
+**下轮下一步**：①几何 parity（SDK chrome 高度对齐手绘；无书签时不渲染 bookmarks bar）；②地址栏 pill
+rounded_rect 渲染 255（应 248）定位（bridge rounded_rect 路径或 current_clip）；③结构 parity（真实
+TabStrip / BookmarksBar widget 匹配手绘 tab 形状/bookmark items）。逐项压 chrome diff 92.19% 收敛。

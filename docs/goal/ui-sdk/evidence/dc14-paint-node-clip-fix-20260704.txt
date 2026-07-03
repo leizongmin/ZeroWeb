@@ -1,0 +1,57 @@
+# paint_node clip 双重平移 bug 修复 — 2026-07-04
+
+## 根因（Round 46 定位的 chrome diff 真正主因）
+
+`ui/runtime/src/host.rs::paint_node` 把 widget 的 recorder clip 设为 `own_clip`（**绝对坐标**，
+= parent_clip ∩ cached_rect），随后 `local.translated(abs_offset)` 又把 clip 按 node origin 平移一次
+→ **clip 双重平移**。后端 `fill_rect(rect) ∩ current_clip` 因此为空，toolbar/bookmarks 等**非零 origin
+子节点的 fill 被丢弃**。
+
+诊断证据（dump scene entry clips）：
+- 修复前：nav_buttons clip `(0,80,154,44)`（应 `(0,40,154,44)`，y 翻倍）、address `(308,80,...)`
+  （x·y 翻倍）、security `(2400,80,...)`（出屏）、bookmarks `(0,168,...)`（y 翻倍）。
+- 修复前 `bridge fills=2`（仅 tab strip + nav 残片 4px 高）。
+- 布局本身正确（rect_of 各节点都对），是 paint 期 clip 错把 fill 丢掉。
+
+## 修复
+
+`paint_node`：把 recorder/PaintCtx clip 从绝对 `own_clip` 改为**节点局部坐标**
+`own_clip.translate(-cached_rect.origin)`。widget 本就以局部坐标 paint（fill `Rect::from_ltrb(0,0,w,h)`），
+局部 clip 与之配对；`local.translated(abs_offset)` 把图元和 clip 一起平移到绝对坐标 → clip 落回正确
+绝对位置，后端 intersect 不再误丢 fill。
+
+## 验证
+
+- 修复后 scene entry clips 全部正确：nav `(0,40,154,44)` / address `(154,40,1046,44)` / security
+  `(1200,40,33,44)` / menu `(1233,40,47,44)` / bookmarks `(0,84,1280,28)`。
+- 修复后 `bridge fills=5`（tab strip + nav + security + menu + bookmarks；地址栏 pill 为 rounded_rect
+  单列）。
+- **像素级 parity 证据**：SDK nav-bg `(100,60)` = `[248,249,250]` 与手绘完全一致（颜色 parity +
+  clip fix 共同生效）。
+- 回归守卫：`render_chrome_via_sdk_with_real_shell_produces_geometry_and_text` 加强断言 `fills >= 4`
+  （toolbar/bookmarks fill 不被 clip 丢弃）。
+
+## 门禁全绿
+
+runtime 83 / examples 2+3 / chrome 87 / browser sdk-chrome 205 全绿零回归（paint_node 是所有 SDK
+retained 渲染核心，全过证明 clip fix 不伤 counter/form/chrome/shell_demo）。clippy(-D warnings)/fmt 净。
+
+## 对 chrome diff 的影响（诚实记录）
+
+chrome 区 diff 74.05% → **92.19%**（+18pp，**上升**）。原因：clip fix 让 SDK chrome 现真实渲染全部
+bars（此前 toolbar/bookmarks fill 被丢弃=白），暴露**几何/结构差**：
+- SDK chrome 高 112（tab 40 + toolbar 44 + bookmarks 28）；手绘 chrome 更矮（bookmarks 区 y=100
+  手绘已是页面白 255，SDK 仍画 bookmarks 248）→ SDK 画 chrome 在手绘已是页面的区域。
+- 地址栏 pill 渲染 255（应 248，rounded_rect 路径另有问题）。
+- 结构差（SDK flat bars vs 手绘 tab 形状/bookmark items/详细结构）仍在。
+
+**结论**：clip fix 是**必要且正确的 correctness 修复**（此前 SDK chrome 因 bug 无法正确渲染任何
+非零 origin 子节点）。diff 上升是诚实信号——SDK chrome 现忠实渲染，剩余 diff 转为几何/结构 parity
+问题（更可解）。nav-bg 像素级 parity（248=248）证明 clip fix + 颜色 parity 通路正确。
+
+## 下轮下一步
+
+1. 几何 parity：SDK chrome 高度对齐手绘（手绘 bookmarks 区 y=100 已是页面 → SDK bookmarks 应在
+   无书签时不渲染，或对齐手绘 bookmarks 高度/位置）。
+2. 地址栏 pill rounded_rect 渲染 255（应 248）——定位 bridge rounded_rect 路径或 current_clip。
+3. 结构 parity（真实 TabStrip / BookmarksBar widget，匹配手绘 tab 形状/bookmark items）。

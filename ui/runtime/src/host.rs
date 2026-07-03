@@ -1240,11 +1240,16 @@ fn paint_node(
 ) {
     let own_clip = parent_clip.and_then(|pc| pc.intersect(node.cached_rect));
     if let Some(w) = node.widget.as_mut() {
+        // widget 以**节点局部坐标** paint（原点 = 节点左上角）。own_clip 是绝对坐标
+        //（parent_clip ∩ cached_rect），须平移到局部坐标后传给 recorder / PaintCtx；
+        // 否则随后的 `local.translated(abs_offset)` 会把 clip 再平移一次（双重平移），
+        // 使 clip 偏出节点 rect → 后端 `fill_rect ∩ current_clip` 为空、chrome fills 被丢弃。
+        let local_clip = own_clip.map(|c| c.translate(-node.cached_rect.origin.x, -node.cached_rect.origin.y));
         let mut rec = SceneRecorder::new(node.id.clone());
-        rec.set_clip(own_clip);
+        rec.set_clip(local_clip);
         let mut ctx = PaintCtx {
             recorder: &mut rec,
-            clip: own_clip,
+            clip: local_clip,
             offset: Vec2::ZERO,
             tokens,
         };
