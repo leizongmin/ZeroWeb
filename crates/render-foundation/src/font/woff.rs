@@ -231,3 +231,30 @@ mod tests {
         assert!(decode_woff(&truncated).is_none());
     }
 }
+
+#[cfg(test)]
+mod r1007_tests {
+    use super::*;
+    #[test]
+    fn decode_bundled_wpt_fonts() {
+        let fonts = [
+            "tests/wpt-runner/wpt-data/fonts/mplus-1p-regular.woff",
+            "tests/wpt-runner/wpt-data/fonts/Scheherazade-Regular.woff",
+            "tests/wpt-runner/wpt-data/fonts/sileot-webfont.woff",
+            "tests/wpt-runner/wpt-data/fonts/noto/noto-sans-v8-latin-regular.woff",
+            "tests/wpt-runner/wpt-data/fonts/math/mathvariant-italic.woff",
+        ];
+        for f in &fonts {
+            let data = match std::fs::read(f) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            assert!(is_woff(&data), "{f} 应为 WOFF");
+            let sfnt = decode_woff(&data).unwrap_or_else(|| panic!("decode 失败: {f}"));
+            assert!(
+                fontdue::Font::from_bytes(sfnt.as_slice(), fontdue::FontSettings::default()).is_ok(),
+                "{f} fontdue 加载失败"
+            );
+        }
+    }
+}
