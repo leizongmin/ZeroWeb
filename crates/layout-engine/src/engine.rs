@@ -757,9 +757,16 @@ impl LayoutEngine {
                 };
                 if main_is_auto {
                     // column: main=height, cross=width；row: main=width, cross=height。
-                    let (main_resolved, cross_resolved) =
-                        if is_column { (b.height, b.width) } else { (b.width, b.height) };
-                    let expected_main = if is_column { cross_resolved / ratio } else { cross_resolved * ratio };
+                    let (main_resolved, cross_resolved) = if is_column {
+                        (b.height, b.width)
+                    } else {
+                        (b.width, b.height)
+                    };
+                    let expected_main = if is_column {
+                        cross_resolved / ratio
+                    } else {
+                        cross_resolved * ratio
+                    };
                     // 仅当 cross 已解析（>0）且 main 与推导值显著不同（collapsed 或不一致）时改写。
                     if cross_resolved > 0.0 && (main_resolved - expected_main).abs() > 0.5 {
                         if is_column {
