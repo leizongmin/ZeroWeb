@@ -436,6 +436,20 @@ mod tests {
         m
     }
 
+    /// 空地址栏模型（触发 placeholder "Search or enter URL..." 渲染）。
+    fn empty_model() -> BrowserChromeModel {
+        let mut m = BrowserChromeModel::new();
+        m.address_text = "".into(); // 空 → AddressBarWidget 渲染 placeholder
+        m.security = SecurityState::Secure;
+        m.tabs = vec![crate::BrowserTab {
+            id: zero_browser_shell::TabId(1),
+            title: "New Tab".into(),
+            loading: false,
+        }];
+        m.active_tab_index = Some(0);
+        m
+    }
+
     #[test]
     fn unified_scene_contains_chrome_webview_and_scrollbar() {
         // DC-7 + DC-3 + DC-4 组合：chrome 填充/文案 + WebView ExternalSurface + 滚动条 track/thumb 同进一 Scene。
@@ -457,6 +471,34 @@ mod tests {
                 .entries
                 .iter()
                 .any(|e| matches!(&e.primitive, RenderPrimitive::ExternalSurface { surface_id: 1, .. }))
+        );
+    }
+
+    #[test]
+    fn placeholder_text_renders_in_empty_address_bar() {
+        // DC-11 R57：地址栏文本为空时渲染 placeholder "Search or enter URL..."。
+        let host = build_demo_host(&empty_model(), &tokens(), &theme(), Size::new(1280.0, 800.0));
+        let scene = host.scene();
+        let texts = crate::render::scene_texts(scene);
+        assert!(
+            texts.iter().any(|t| t.contains("Search or enter URL")),
+            "placeholder text should appear in empty address bar, got {texts:?}"
+        );
+    }
+
+    #[test]
+    fn url_text_does_not_contain_placeholder() {
+        // 反向守卫：有 URL 文本时不应出现 placeholder 文案。
+        let host = build_demo_host(&model(), &tokens(), &theme(), Size::new(1280.0, 800.0));
+        let scene = host.scene();
+        let texts = crate::render::scene_texts(scene);
+        assert!(
+            texts.iter().any(|t| t.contains("https://example.com")),
+            "URL text should appear in address bar, got {texts:?}"
+        );
+        assert!(
+            !texts.iter().any(|t| t.contains("Search or enter URL")),
+            "placeholder must NOT appear when URL is present, got {texts:?}"
         );
     }
 

@@ -24,28 +24,32 @@ Changes
 
 2. browser-ui/chrome/src/render.rs: AddressBarWidget placeholder
    - New field `placeholder_color` derived from `on_surface.mix(surface,0.55)`
-     ≈ hand-drawn `address_bar_placeholder` (muted gray).
+     = hand-drawn `address_bar_placeholder` (muted gray).
    - paint() renders "Search or enter URL..." when text is empty, using
      placeholder_color. Replaces old skip-guard that deferred placeholder.
 
-3. New tests (adapter-render-foundation):
-   - `draw_text_with_spaces_advances_correctly`: "a b" emits 2 images
-     (space zero-size → no image); 'b' x > 16px (past 'a' + space advance).
-   - `draw_text_preserves_advance_for_non_emitting_glyphs`: "a b" vs "ab";
-     space advances pen_x, making 'b' significantly more right.
+3. browser-ui/chrome/src/shell_demo.rs: placeholder regression tests
+   - `placeholder_text_renders_in_empty_address_bar`: empty address_text
+     scene contains "Search or enter URL..." text.
+   - `url_text_does_not_contain_placeholder`: URL present scene contains
+     URL text and does NOT contain placeholder text.
+
+4. New tests (adapter-render-foundation, from R57):
+   - `draw_text_with_spaces_advances_correctly`
+   - `draw_text_preserves_advance_for_non_emitting_glyphs`
 
 Test Results
 ------------
-- adapter-render-foundation: 31 passed (0 failed, +2 new)
-- browser-chrome: 87 passed (0 failed)
+- adapter-render-foundation: 31 passed (0 failed, +2 from R57)
+- browser-chrome: 89 passed (0 failed, +2 new placeholder tests)
 - browser (default): 191 passed (0 failed)
 - browser (sdk-chrome): 10 passed (0 failed)
-- dc14_chrome_region_pixel_diff_baseline: chrome 2.14%, page 0.00% (baseline)
-- cargo clippy -D warnings: clean
-- cargo fmt: clean
+- dc14_chrome_region_pixel_diff_baseline: chrome 2.14%, page 0.00%
+- cargo clippy -D warnings: clean / cargo fmt: clean
 
 Impact
 ------
-- SDK chrome text with spaces now uses correct advance matching hand-drawn
+- SDK chrome text with spaces uses correct advance matching hand-drawn
 - Placeholder text renders in empty address bar (unblocked from R56 deferral)
+- Placeholder regression tests guard against accidental text mismatches
 - Zero prod behavior change for non-space text (URLs have no spaces)
