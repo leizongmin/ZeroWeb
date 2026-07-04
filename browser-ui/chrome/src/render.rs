@@ -942,6 +942,61 @@ impl Widget for FindBarWidget {
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
+// ── SecurityBadgeWidget（真实安全徽章，DC-14 chrome 功能等价）───────────────────
+
+const SECURITY_BADGE_HEIGHT: f32 = 44.0;
+
+/// 安全徽章绘制控件：根据安全状态显示彩色背景条 + 状态文本。
+pub struct SecurityBadgeWidget {
+    bg: Color,
+    text: Option<String>,
+    text_color: Color,
+}
+
+impl SecurityBadgeWidget {
+    pub fn from_spec(spec: &WidgetSpec, tokens: &SemanticTokens) -> SecurityBadgeWidget {
+        let bg_name = match spec.props.get("bg") {
+            Some(Value::Text(s)) => s.as_str(),
+            _ => "secure",
+        };
+        let text = match spec.props.get("text") {
+            Some(Value::Text(s)) => Some(s.clone()),
+            _ => None,
+        };
+        SecurityBadgeWidget {
+            bg: chrome_color_themed(bg_name, tokens),
+            text,
+            text_color: tokens.on_surface,
+        }
+    }
+}
+
+impl Widget for SecurityBadgeWidget {
+    fn mount(&mut self, _ctx: &mut MountCtx) {}
+    fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
+    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
+        EventResult::Ignored
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+        let width = constraints.max_width;
+        let height = SECURITY_BADGE_HEIGHT.clamp(constraints.min_height, constraints.max_height);
+        Size::new(width, height)
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx) {
+        let size = ctx.clip.map(|r| r.size).unwrap_or_else(|| Size::new(400.0, SECURITY_BADGE_HEIGHT));
+        ctx.recorder
+            .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
+        if let Some(text) = &self.text {
+            let baseline = size.height * 0.5 + 13.0 * 0.35;
+            ctx.recorder.draw_text(text, Point::new(8.0, baseline), 13.0, self.text_color);
+        }
+    }
+
+    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+}
+
 // ── AddressBarWidget（真实地址栏 pill，DC-14 chrome 功能等价）──────────────────────
 
 /// 地址栏几何（与 apps/browser/src/layout.rs 手绘 chrome 对齐，DC-14 像素级等价）。
@@ -1112,7 +1167,7 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens,
         Box::new(BookmarksBarWidget::from_spec(s, &t))
     });
     host.register("browser.SecurityBadge", move |s| {
-        Box::new(ChromePanel::from_spec(s, "secure", 44.0, false, &t))
+        Box::new(SecurityBadgeWidget::from_spec(s, &t))
     });
     host.register("browser.FindBar", move |s| {
         Box::new(FindBarWidget::from_spec(s, &t))
@@ -1444,5 +1499,24 @@ mod tests {
         let texts = scene_texts(&scene);
         assert!(texts.iter().any(|t| t.contains("hello")), "query text, got {texts:?}");
         assert!(texts.iter().any(|t| t.contains("1/5")), "match count, got {texts:?}");
+    }
+
+    #[test]
+    fn security_badge_widget_paints_bg_and_label() {
+        let tokens = zero_ui_core::theme::SemanticTokens::light();
+        let mut spec = WidgetSpec::new("browser.SecurityBadge");
+        spec.id = Some(zero_ui_core::widget::WidgetId::new("security_badge"));
+        spec.props.insert("bg", Value::Text("secure".into()));
+        spec.props.insert("text", Value::Text("Secure".into()));
+        let mut host = zero_ui_runtime::WidgetHost::new();
+        let t = tokens;
+        host.register("browser.SecurityBadge", move |s| {
+            Box::new(SecurityBadgeWidget::from_spec(s, &t))
+        });
+        host.set_root(&spec);
+        host.layout(zero_ui_core::geometry::Constraints::loose(Size::new(1280.0, 800.0)));
+        let scene = host.paint().clone();
+        let texts = scene_texts(&scene);
+        assert!(texts.iter().any(|t| t.contains("Secure")), "security label, got {texts:?}");
     }
 }

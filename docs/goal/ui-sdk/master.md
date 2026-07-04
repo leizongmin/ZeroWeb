@@ -401,6 +401,8 @@
 
 - **R59 (2026-07-04) BookmarksBarWidget：ChromePanel → 真实 Widget**。新增 `BookmarksBarWidget` 替换 `browser.BookmarksBar` 的 ChromePanel 占位。通过 `bookmarks` prop（`Value::Array`）接收书签标题列表，paint 渲染为水平排列的文本标签。`shell.rs` `DesktopBrowserShell` 更新为传递 `bookmarks` 数组（原用 `bookmarks_label` 计数文案）。新增单元测 `bookmarks_bar_widget_paints_bg_and_text`。chrome 90/browser 191+10 sdk-chrome 全绿，dc14 baseline 2.14% 不变。commit `04f31701`。
 
+- **R60 (2026-07-04) FindBarWidget：ChromePanel → 真实 Widget**。新增 `FindBarWidget` 替换 `browser.FindBar` 的 ChromePanel 占位。通过 `query`/`match_index`/`match_count` props 接收查找状态，paint 显示查询文本与匹配计数（如 `"hello" (1/5)`）。Desktop/Tablet/Phone 三 shell 同步更新为传递结构化查找数据。新增单元测 `find_bar_widget_paints_bg_and_label`。chrome 91/browser 191+10 sdk-chrome 全绿，dc14 baseline 2.14% 不变。commit `987a610f`。
+
 - `evidence/dc5-contrast-lint-wcag-aa-20260702-073000.txt` — **DC-5 contrast lint 完整接入 + Zero 主题 WCAG AA 修复（2026-07-02）**：新增 `all_semantic_token_pairs_pass_wcag_aa`（light+dark 全部 6 对 token，≥4.5 门禁）；lint 首跑暴露 light on_primary/primary ratio 3.19<4.5 真实缺口 → 修 light primary 为 Material Blue 700 (0.098,0.463,0.824)（≈4.7）；Zero 主题现 WCAG AA 全合规；ui/core 38→39 测，下游 chrome/render/examples 全绿；build/clippy/fmt 全净；SDK-only 无 product-smoke 风险。follow-up：widgets 硬编码色→消费 token。
 
 - `evidence/dc5-widgets-consume-tokens-20260702-083000.txt` — **DC-5 widgets 消费 token（Button）+ theme-in-context（2026-07-02）**：`PaintCtx` 加 `tokens` + `WidgetHost.set_tokens` + `paint_node` 注入；`Color::mix/lighten/darken` 派生原语；Button 硬编码 4 色→全 token 派生（default=primary/hover=lighten/pressed=darken/disabled=on_surface.mix）；2 新测（default bg WCAG AA light+dark / dark-theme 消费当前 token）；widgets 33→35 测，core/runtime/webview/chrome/examples 全绿；build/clippy/fmt 全净；SDK-only 无 product-smoke 风险。follow-up：Badge API 改消费 token。
