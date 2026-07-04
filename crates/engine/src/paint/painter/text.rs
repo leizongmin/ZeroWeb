@@ -14,7 +14,8 @@ use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, LineCap,
 use zero_style_system::{
     ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnWidthComputedValue,
     ComputedStyle, ContentComputedValue, DirectionValue, ObjectFitComputedValue, TabSizeValue, TextAlignLastValue,
-    TextAlignValue, TextOverflowValue, TextTransformValue, WhiteSpaceValue,
+    TextAlignValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue, TextTransformValue,
+    WhiteSpaceValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -1106,11 +1107,26 @@ impl super::Painter {
                                     fragment.node_id
                                 };
                                 self.painted_inline_nodes.insert(owner_id);
-                                let frag_color = styles
-                                    .and_then(|s| s.get(&owner_id))
+                                let owner_style = styles.and_then(|s| s.get(&owner_id));
+                                let frag_color = owner_style
                                     .filter(|s| s.color != ColorValue::CurrentColor)
                                     .map(|s| color_value_to_render(&s.color))
                                     .unwrap_or(color);
+                                // R1021：text-emphasis 标记取自片段 owner 样式（<span> 上设的属性），
+                                // 非容器 style。None/Char 判定 + 位置均来自 owner。
+                                let emphasis_mark: Option<char> =
+                                    owner_style.and_then(|s| match s.text_emphasis_style {
+                                        TextEmphasisStyleValue::Char(c) => Some(c),
+                                        TextEmphasisStyleValue::None => None,
+                                    });
+                                let emphasis_over = owner_style
+                                    .map(|s| {
+                                        matches!(
+                                            s.text_emphasis_position,
+                                            TextEmphasisPositionValue::OverRight | TextEmphasisPositionValue::OverLeft
+                                        )
+                                    })
+                                    .unwrap_or(true);
 
                                 let frag_base_x = content_x + fragment.x + col_x_offset + tx;
                                 // 行盒顶部 = (line.y - col_start_y)；基线偏移 v_offset
@@ -1159,6 +1175,33 @@ impl super::Painter {
                                         + letter_spacing
                                         + if ch == ' ' { word_spacing } else { 0.0 };
                                     char_pos += advance;
+
+                                    // R1021：text-emphasis 标记（CSS Text Decoration 3 §3）。
+                                    // 每个非空白字符上方（over）或下方（under）居中绘一个小标记字符。
+                                    if !ch.is_whitespace()
+                                        && let Some(mark_ch) = emphasis_mark
+                                    {
+                                        let mark_fs = fragment.font_size * 0.5;
+                                        let mark_advance = measure_char_for_paint(mark_ch, mark_fs, frag_is_ahem);
+                                        // 居中于当前字符（char_pos 已前进 advance，故字符中心 = char_pos - advance/2）
+                                        let mark_x = char_pos - advance / 2.0 - mark_advance / 2.0;
+                                        let mark_y = if emphasis_over {
+                                            frag_base_y - fragment.font_size
+                                        } else {
+                                            frag_base_y + fragment.font_size * 0.35
+                                        };
+                                        self.primitives.add_glyph(GlyphPrimitive {
+                                            x: mark_x,
+                                            y: mark_y,
+                                            font_size: mark_fs,
+                                            color: frag_color,
+                                            glyph_id: mark_ch as u32,
+                                            font_id: default_font_id,
+                                            bitmap_width: None,
+                                            bitmap_height: None,
+                                            rotation,
+                                        });
+                                    }
                                 }
 
                                 let text_width: f32 = transformed
@@ -1232,6 +1275,20 @@ impl super::Painter {
                                 })
                                 .map(|s| color_value_to_render(&s.color))
                                 .unwrap_or(color);
+
+                            // R1021：text-emphasis 取自片段 owner 样式（<span> 上设）。
+                            let owner_style_opt = styles.and_then(|s| s.get(&owner_id));
+                            let emphasis_mark: Option<char> =
+                                owner_style_opt.and_then(|s| match s.text_emphasis_style {
+                                    TextEmphasisStyleValue::Char(c) => Some(c),
+                                    TextEmphasisStyleValue::None => None,
+                                });
+                            let emphasis_over = owner_style_opt
+                                .map(|s| matches!(
+                                    s.text_emphasis_position,
+                                    TextEmphasisPositionValue::OverRight | TextEmphasisPositionValue::OverLeft
+                                ))
+                                .unwrap_or(true);
 
                             let (frag_base_x, frag_base_y, char_advance_is_y) = if is_vertical {
                                 (content_x + $frag_x + tx, content_y + $frag_y + ty, true)
@@ -1334,6 +1391,33 @@ impl super::Painter {
                                     + letter_spacing
                                     + if ch == ' ' { word_spacing } else { 0.0 };
                                 char_pos += advance;
+
+                                // R1021：text-emphasis 标记（水平书写模式；垂直暂不支持）。
+                                if !char_advance_is_y
+                                    && !ch.is_whitespace()
+                                    && let Some(mark_ch) = emphasis_mark
+                                {
+                                    let mark_fs = $frag_fs * 0.5;
+                                    let mark_advance = measure_char_for_paint(mark_ch, mark_fs, $is_ahem);
+                                    let mark_x = char_pos - advance / 2.0 - mark_advance / 2.0;
+                                    // over：mark 基线在文本顶部之上（leading 区）；under：基线之下
+                                    let mark_y = if emphasis_over {
+                                        frag_base_y - $frag_fs - mark_fs * 0.4
+                                    } else {
+                                        frag_base_y + $frag_fs * 0.5
+                                    };
+                                    self.primitives.add_glyph(GlyphPrimitive {
+                                        x: mark_x,
+                                        y: mark_y,
+                                        font_size: mark_fs,
+                                        color: frag_color,
+                                        glyph_id: mark_ch as u32,
+                                        font_id: default_font_id,
+                                        bitmap_width: None,
+                                        bitmap_height: None,
+                                        rotation,
+                                    });
+                                }
                             }
 
                             self.paint_text_decoration_from_style(
