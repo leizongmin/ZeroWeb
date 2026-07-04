@@ -2666,6 +2666,12 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **▶ 下会话**：① **MinContent 测量**（flex-container-min-content-001 4.96% 近 PASS，min-content width 函数，gate 扩 MinContent block 路径，+1 potential）；② column-span 解析（解锁 multicol-width-005 + span:all 渲染簇，多 session）；③ 转其它 dir fresh worst（writing-modes R109 structural / abspos-inset）。clean win 已 land（+2 PASS + 修 R1018 回归）。
 
+**★ R1020 续 MinContent 深度 de-risk（同 session，零源码，纯调查）**：本轮 R1020 land 后 dedicated 调查 MinContent lever 单 session 可行性，结论 = **不 clean，双阻塞**：
+- **MinContent 测量基础设施缺失**：`intrinsic_sizing.rs` 现有 `text_content_max_width`/`flex_item_base_size`/`flex_row_intrinsic_width` 全是 max-content 语义（sum 全字符，假设不换行）。min-content 须新 `text_content_min_width`（split 空格取最宽词）+ `flex_item_min_content_base_size` + `flex_row_min_content_width`（~3 函数），且 gate `apply_intrinsic_content_sizing`（engine.rs:656-744）须按 `s.width==MinContent` dispatch 到 min-content 测量（现 is_max_min 含 MinContent 但测量走 max-content）。
+- **ch 单位近似阻塞 headline driver**：flex-container-min-content-001 用 `font:10px/1 Ahem` + 48 子案大量 `ch` 单位（0.4ch/1.5ch/2ch/0.2ch flex-basis/width）。`computed.rs:46` 解 `Ch(v)=v*font_size*0.5`（近似 1ch≈0.5em）——**对 Ahem 错**：Ahem 字形 advance=font-size，1ch 应=10px（1em），ZW 给 5px（2× 错）。即使 min-content 测量正确，ch 2× 错仍致 48 子案大量 diff。修须 `Ch` font-aware（Ahem→1em，is_ahem 模式同 `estimate_char_width`，~1 行 + helper）。
+- **其它 min-content 案不同机制**：flex-item-max-width-min-content = `max-width:min-content`+vertical-rl（不同 gate 路径）；flex-minimum-width-flex-items-013 = replaced img `min-size:auto`（R428 谱系，非 width:MinContent 测量）。均非本轮 lever。
+- **裁决**：MinContent 单 session 须**合做**（min-content 测量 + ch Ahem font-aware）且 yield 不确定（即使合做，48 子案 flex-basis/grow/shrink 交互仍可能残留 >1%）。列为多 session slice。**推荐下会话**：要么合做 MinContent+ch（高复杂度），要么转 fresh dir worst 扫描（找未触 dir 的 clean lever，更可能产 +N PASS）。
+
 ### R1019 ★float:block + flex/grid 子 shrink-to-fit gate LANDED = aspect-ratio-intrinsic-014 14.85→0.60% PASS + css/CSS2/floats-clear +5 PASS（floats-122/145/float-replaced-height-004/005/007）·float-non-replaced-width-007 20.62→5.17（-15.45pp）·零回归
 
 承 R1018 CONTINUE「aspect-ratio-intrinsic-014（float:left block + flex 子 + JS）」。R1018 解 block + width:MaxContent；R1019 解 float:left block + width:auto（float shrink-to-fit 上下文）含 flex/grid 子。
