@@ -29,7 +29,7 @@ struct LoadedFont {
 ///
 /// 由 [`FontdueBackend::rasterize_glyph`] 产出，供 UI/WebView 合成层把预 shape 的 glyph
 /// 光栅为像素（与 shape/measure 共享同一字体栈，DC-11 关键不变量）。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GlyphBitmap {
     /// 像素宽。
     pub width: usize,
@@ -39,6 +39,9 @@ pub struct GlyphBitmap {
     pub xmin: i32,
     /// bitmap 底边缘相对 baseline 的像素偏移（fontdue `ymin`；fontdue 坐标 y 向上）。
     pub ymin: i32,
+    /// 字符 advance 宽度（光学 → layout 水平前进量，单位 px）。DC-11 text path 统一：
+    /// 手绘 chrome 用此值按字符定 pen_x，SDK bridge draw_text 改用 per-char 路径时需此值。
+    pub advance: f32,
     /// alpha 覆盖（`width*height` 字节，0..=255），行优先、自顶向下。
     pub coverage: Vec<u8>,
 }
@@ -126,6 +129,34 @@ impl FontdueBackend {
             height: metrics.height,
             xmin: metrics.xmin,
             ymin: metrics.ymin,
+            advance: metrics.advance_width,
+            coverage,
+        })
+    }
+
+    /// 按字符码点光栅化（DC-11 text path 统一）。与手绘 chrome 的字符级路径一致：
+    /// `fontdue::Font::rasterize(ch, size)` 经 `lookup_glyph_index` 解析字符→glyph id
+    /// 再光栅，不经过 rustybuzz shaping。用于 SDK 文本路径需要与手绘逐字符逐位匹配的场景。
+    ///
+    /// `advance` 字段携带 fontdue 的 advance_width（光学前进量），调用方可据此计算
+    /// 逐字符的水平偏移 pen_x（手绘 chrome `draw_ui_text` 的 `x += measure_advance`）。
+    pub fn rasterize_char(&self, font_id: FontId, ch: char, size_px: f32) -> Result<GlyphBitmap, TextError> {
+        if size_px <= 0.0 {
+            return Err(TextError::InvalidRequest("size_px must be > 0".into()));
+        }
+        let font = self
+            .fonts
+            .iter()
+            .find(|f| f.id == font_id)
+            .ok_or(TextError::FontNotFound)?;
+        let glyph_id = font.font.lookup_glyph_index(ch);
+        let (metrics, coverage) = font.font.rasterize_indexed(glyph_id, size_px);
+        Ok(GlyphBitmap {
+            width: metrics.width,
+            height: metrics.height,
+            xmin: metrics.xmin,
+            ymin: metrics.ymin,
+            advance: metrics.advance_width,
             coverage,
         })
     }

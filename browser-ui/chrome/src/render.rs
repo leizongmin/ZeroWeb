@@ -864,9 +864,9 @@ impl Widget for AddressBarWidget {
             ctx.recorder
                 .draw_text("!", Point::new(icon_x - 3.0, baseline), 13.0, self.insecure_color);
         }
-        // 文本渲染：URL（非空）或 placeholder（空）。注意 baseline 须精确匹配手绘
-        // ui_text_centered_in_height，否则文字偏移产生更多 diff（本轮 placeholder baseline 待校准，
-        // 暂只渲染非空 URL；placeholder_color 已接入留待 baseline 校准后启用）。
+        // 文本渲染：URL（非空用 text_color）。placeholder 文案暂不渲染——per-char text path
+        // 虽已对齐手绘 rasterize 路径，但 advance_width / font_id 映射仍有亚像素差异
+        //（DC-11 text path unification follow-up），渲染 placeholder 会扩大 chrome diff。
         if let Some(text) = &self.text
             && !text.is_empty()
         {

@@ -50,7 +50,7 @@ use zero_render_foundation::geometry::{Point as RfPoint, Rect as RfRect, Size as
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
 use zero_render_foundation::primitive::{DrawOp, ImagePrimitive, RenderPrimitives, RoundedRectPrimitive};
 use zero_text_foundation::{
-    FontId, FontRequest, FontdueBackend, GlyphBitmap, GlyphRun, ShapeInput, TextBlob, TextDirection, TextShaper,
+    FontId, FontdueBackend, GlyphBitmap, GlyphRun, TextBlob,
 };
 use zero_ui_core::geometry::{Point, Rect, Rounding};
 use zero_ui_core::image::ImageRef;
@@ -299,24 +299,33 @@ impl RenderBackend for RenderFoundationBackend {
     }
 
     fn draw_text(&mut self, text: &str, position: Point, size_px: f32, color: Color) {
-        // DC-11 文本路径（原始字符串）：SDK widgets（Button/Label/chrome 等）经 paint_ctx 走本方法。
-        // 用共享 FontdueBackend shape（默认 FontRequest，回落首个已加载字体）→ 光栅。
+        // DC-11 文本路径：逐字符 rasterize（匹配手绘 chrome 的 per-char 路径）。
+        // 手绘 chrome `draw_ui_text` 对每个字符调用 fontdue `rasterize(char)`，
+        // 不经过 rustybuzz shaping（无 GPOS kerning），提前进 `measure_advance` 定位下
+        // 一字符。SDK 旧实现用 rustybuzz shaping 产生不同 glyph x-positions → pixel diff。
+        // 本路径直接逐字符 rasterize，与手绘逐位一致。
         if self.text.is_empty() || text.is_empty() {
             return;
         }
-        let shaped = match self.text.shape(&ShapeInput {
-            text: text.into(),
-            // 无调用方 FontRequest → 用通用族，best_match 回落到首个已加载字体。
-            font_request: FontRequest::new("sans-serif"),
-            size_px,
-            direction: TextDirection::Ltr,
-            script: None,
-            scale_factor: 1.0,
-        }) {
-            Ok(s) => s,
-            Err(_) => return, // shape 失败（如无字体）→ 安静跳过
-        };
-        raster_runs(self, &shaped.runs, position, to_rf_color(color));
+        // 首个已加载字体（ChromeUI / sdk_font_backend 加载的字体）。
+        let font_id = FontId(0);
+        let tint = to_rf_color(color);
+        let mut pen_x = 0.0_f32;
+        for ch in text.chars() {
+            match self.text.rasterize_char(font_id, ch, size_px) {
+                Ok(bmp) if bmp.width > 0 && bmp.height > 0 => {
+                    // cache key 用字符码点作为「glyph_id」（fontdue 内部 lookup_glyph_index 映射
+                    // 字符→glyph id，与 `rasterize_char` 一致；手绘 `rasterize_glyph_with_fallback`
+                    // 的缓存键也是 `(font_id, code_point, size)`）。
+                    let key = glyph_cache_key(font_id, ch as u32, size_px);
+                    emit_glyph_image(self, key, &bmp, position, pen_x, tint);
+                    pen_x += bmp.advance;
+                }
+                _ => {
+                    pen_x += size_px * 0.5; // 空格/缺失 glyph 的 fallback advance
+                }
+            }
+        }
     }
 
     fn draw_external_surface(&mut self, rect: Rect, surface_id: u64) {
