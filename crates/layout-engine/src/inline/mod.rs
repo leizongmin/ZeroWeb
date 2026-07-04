@@ -514,6 +514,33 @@ impl InlineFormattingContext {
         self.break_items_into_lines(items);
     }
 
+    /// 递归收集 `id` 子树的所有文本，跳过 `local_name` 在 `exclude` 中的元素子树。
+    ///
+    /// R1022：用于 `<ruby>` —— 收集 rb 文本作 inline 文本，排除 `<rt>`/`<rp>`
+    /// （rt 文本在 paint 期作 zero-width annotation 上移到 rb 之上，不参与 inline 流）。
+    fn collect_text_excluding(doc: &Document, id: NodeId, exclude: &[&str]) -> String {
+        let mut out = String::new();
+        Self::collect_text_excluding_inner(doc, id, exclude, &mut out);
+        out
+    }
+
+    fn collect_text_excluding_inner(doc: &Document, id: NodeId, exclude: &[&str], out: &mut String) {
+        for child_id in doc.child_nodes(id) {
+            if let Some(node) = doc.get(child_id) {
+                match &node.kind {
+                    NodeKind::Text(data) => out.push_str(&data.content),
+                    NodeKind::Element(elem) => {
+                        if exclude.iter().any(|e| elem.local_name().eq_ignore_ascii_case(e)) {
+                            continue;
+                        }
+                        Self::collect_text_excluding_inner(doc, child_id, exclude, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// 收集容器中所有行内级内容（文本节点 + inline 元素 + `<br>` 元素），
     /// 从 ComputedStyle 中读取 font-size 和 line-height。
     fn collect_inline_items(
@@ -821,7 +848,14 @@ impl InlineFormattingContext {
                         }
 
                         // 其他 inline 元素的文本内容也收集进来
-                        let text = doc.text_content(child_id).unwrap_or_default();
+                        // R1022：<ruby> 默认 text_content 会扁平化 <rt>/<rp> 文本
+                        // （● 当行内字符渲染）。改为只收集 rb 文本作 inline 流，
+                        // rt 文本由 paint 期作 zero-width annotation 上移到 rb 之上。
+                        let text = if elem_data.local_name() == "ruby" {
+                            Self::collect_text_excluding(doc, child_id, &["rt", "rp"])
+                        } else {
+                            doc.text_content(child_id).unwrap_or_default()
+                        };
                         let trimmed = collapse_whitespace(&text);
                         let style = styles.get(&child_id);
                         let (font_size, line_height) = if style.is_some() {
