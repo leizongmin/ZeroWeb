@@ -80,6 +80,9 @@ pub fn render_chrome_via_sdk_with_layout(
     let mut host = WidgetHost::new();
     // 非 webview 路径（测试 / fallback）：tab 色从 token 近似（生产 webview 路径从 ChromePalette 精确注入）。
     register_chrome_factories(&mut host, tokens, ChromeTabColors::from_tokens(tokens));
+    // host.tokens 驱动 paint_node 容器 bg（DC-14 toolbar parity）——须与工厂 tokens 一致，
+    // 否则容器 bg 用默认 light token（245）≠ sdk_chrome_tokens surface（248）。
+    host.set_tokens(*tokens);
     host.set_root(&spec);
     host.layout(Constraints::loose(metrics.logical_size));
     // SDK chrome 布局后的页面内容区（viewport 节点绝对 rect）。
@@ -122,6 +125,8 @@ pub fn render_chrome_via_sdk_with_webview_surface(
     let spec = DesktopBrowserShell.build(&model, metrics);
     let mut host = WidgetHost::new();
     register_chrome_factories_with_webview(&mut host, tokens, scheme, tab_colors);
+    // host.tokens 驱动 paint_node 容器 bg（DC-14 toolbar parity）——须与工厂 tokens 一致。
+    host.set_tokens(*tokens);
     host.set_root(&spec);
     host.layout(Constraints::loose(metrics.logical_size));
     let viewport_rect = host.rect_of(&WidgetId::new(ID_VIEWPORT));

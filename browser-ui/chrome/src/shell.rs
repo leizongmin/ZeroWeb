@@ -145,6 +145,10 @@ impl BrowserChromeShell for DesktopBrowserShell {
     fn build(&self, model: &BrowserChromeModel, _metrics: &WindowMetrics) -> WidgetSpec {
         let mut root = node_layout("browser.DesktopBrowserShell", ID_SHELL, "column");
         let mut toolbar = node_layout("browser.ToolbarRow", ID_TOOLBAR, "row");
+        // 工具栏行铺 surface 底色（= toolbar_bg 经 sdk_chrome_tokens 映射）：手绘 chrome 先铺整行
+        // toolbar_bg 再画 nav/address pill/security/menu，address pill 圆角 (=底色) 不可见。SDK
+        // 容器此前不画底色 → pill 圆角透出帧白底。容器 bg 经 host paint_node（bg prop = token 名）。
+        toolbar.props.insert("bg", Value::Text("surface".into()));
         // NavigationButtons：真实图标控件（DC-14）。can_back/can_forward 控制图标 disabled tint；
         // 图标 ImageRef 由控件常量内定（NAV_ICON_*），宿主按同 id 注册 alpha 掩码到桥接。
         let mut nav = leaf("browser.NavigationButtons", ID_NAV_BUTTONS, "toolbar_bg", None);
@@ -235,6 +239,10 @@ impl BrowserChromeShell for TabletBrowserShell {
     fn build(&self, model: &BrowserChromeModel, _metrics: &WindowMetrics) -> WidgetSpec {
         let mut root = node_layout("browser.TabletBrowserShell", ID_SHELL, "column");
         let mut toolbar = node_layout("browser.ToolbarRow", ID_TOOLBAR, "row");
+        // 工具栏行铺 surface 底色（= toolbar_bg 经 sdk_chrome_tokens 映射）：手绘 chrome 先铺整行
+        // toolbar_bg 再画 nav/address pill/security/menu，address pill 圆角 (=底色) 不可见。SDK
+        // 容器此前不画底色 → pill 圆角透出帧白底。容器 bg 经 host paint_node（bg prop = token 名）。
+        toolbar.props.insert("bg", Value::Text("surface".into()));
         // NavigationButtons：真实图标控件（DC-14）。can_back/can_forward 控制图标 disabled tint；
         // 图标 ImageRef 由控件常量内定（NAV_ICON_*），宿主按同 id 注册 alpha 掩码到桥接。
         let mut nav = leaf("browser.NavigationButtons", ID_NAV_BUTTONS, "toolbar_bg", None);

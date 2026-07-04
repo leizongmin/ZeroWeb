@@ -19,14 +19,14 @@ use zero_ui_core::binding::{PropsMap, Value};
 use zero_ui_core::event::PointerPhase;
 use zero_ui_core::event::UiEvent;
 use zero_ui_core::focus::{FocusDirection, FocusScope};
-use zero_ui_core::geometry::{Constraints, Point, Rect, Size, Vec2};
+use zero_ui_core::geometry::{Constraints, Point, Rect, Rounding, Size, Vec2};
 use zero_ui_core::invalidation::InvalidationFlags;
 use zero_ui_core::semantics::{SemanticsFlags, SemanticsNode};
 use zero_ui_core::widget::{
     ComponentType, EventCtx, LayoutCtx, MountCtx, PaintCtx, SemanticsCtx, Widget, WidgetId, WidgetSpec,
 };
 use zero_ui_gestures::{Gesture, GestureArena, PointerEvent};
-use zero_ui_render::{Scene, SceneRecorder};
+use zero_ui_render::{RenderPrimitive, Scene, SceneEntry, SceneRecorder};
 
 /// Widget 工厂闭包：从 `WidgetSpec` 构造一个具体控件实例。
 pub type WidgetFactory = Box<dyn Fn(&WidgetSpec) -> Box<dyn Widget>>;
@@ -1239,6 +1239,26 @@ fn paint_node(
     tokens: &zero_ui_core::theme::SemanticTokens,
 ) {
     let own_clip = parent_clip.and_then(|pc| pc.intersect(node.cached_rect));
+    // 容器节点底色：无 widget 的容器（layout=column/row/stack）若声明 `bg` prop（**token 名**，
+    // 如 "surface"/"background"），先铺底色再画子节点（子节点 paint 在上）。这闭合 SDK chrome
+    // 容器（如 ToolbarRow）圆角/间隙透出帧白底的问题（DC-14 toolbar parity）——手绘 chrome 先铺
+    // 整行 toolbar_bg 再画 pill/按钮；SDK 容器此前不画底色，address pill 圆角处透出帧白底。
+    // 颜色经 semantic token 解析（DC-5 token 驱动；chrome 别名如 "toolbar_bg" 由 shell 经 leaf
+    // 控件消费，容器 bg 用通用 token 名）。
+    if node.widget.is_none()
+        && let Some(Value::Text(token)) = node.props.get("bg")
+        && let Some(color) = tokens.color_for(token)
+    {
+        scene.push(SceneEntry {
+            source: node.id.clone(),
+            clip: own_clip,
+            primitive: RenderPrimitive::FillRect {
+                rect: node.cached_rect,
+                color,
+                rounding: Rounding::ZERO,
+            },
+        });
+    }
     if let Some(w) = node.widget.as_mut() {
         // widget 以**节点局部坐标** paint（原点 = 节点左上角）。own_clip 是绝对坐标
         //（parent_clip ∩ cached_rect），须平移到局部坐标后传给 recorder / PaintCtx；

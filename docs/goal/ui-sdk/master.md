@@ -1408,3 +1408,34 @@ Evidence: `evidence/dc14-tabstrip-shape-parity-20260704-025023.txt`
 
 **下轮下一步**：①tab 标签文字 + favicon + close 图标（剩余 diff 主因，~4%）；②窗口控制图标（min/max/close）。
 预期 chrome diff 4.60% → ≤2%（DC-14 阈值）。
+
+### Round 50 — 容器 bg + host tokens 修正 + toolbar diff 诊断（2026-07-04）
+
+**诊断定位剩余 diff 分布**（diag_diff_distribution，y-band × x-band 桶）：chrome 区 6598 diff 中
+**toolbar 区（y 40-84）占 6073**（非 tab strip 525）。采样揭示：
+- (154,40) address pill 圆角：hand=248(toolbar_bg) sdk=255(帧白底透出)——SDK 容器（ToolbarRow）
+  此前不画底色，pill 圆角透出帧白底。
+- (1200,60) security 徽章：hand=248 sdk=26,127,55(secure 绿)——**SDK security 徽章位置错配**
+  （SDK 在 toolbar 末尾独立子节点；手绘 security 在 address pill 内部左侧）。
+- (300,60) address 中部：hand=232 sdk=248——address pill BORDER（218）等结构 SDK 未画。
+
+**A. host 容器 bg（DC-14 toolbar parity 基础设施）**：`ui/runtime/host.rs::paint_node` 对带 `bg` prop
+（token 名）的容器节点（无 widget 的 column/row/stack）铺底色（子节点 paint 在上）。通用能力
+（所有容器受益），颜色经 semantic token 解析（DC-5 token 驱动）。`DesktopBrowserShell` / `TabletBrowserShell`
+的 ToolbarRow 加 `bg="surface"`。**B. host tokens 修正**：`render_chrome_via_sdk_with_layout` /
+`render_chrome_via_sdk_with_webview_surface` 此前不调 `host.set_tokens`，致 paint_node 容器 bg 用默认
+light token（surface=245）而非 sdk_chrome_tokens（surface=248）——容器 bg 此前画 245 仍 diff。
+补 `host.set_tokens(*tokens)` 使 host.tokens 与工厂 tokens 一致（**也修正 PaintCtx.tokens 一致性**——
+此前 widget 经 ctx.tokens 取色用默认 light，与工厂注册 tokens 不一致）。
+
+**测量**（dc14_chrome_region_pixel_diff_baseline）：chrome 4.60% → **4.43%**（6598→6350，-248）。
+容器 bg 修正了 address pill 圆角透出（255→248）。剩余 toolbar diff 主因 = address pill BORDER
+（SDK 无 stroke_rounded_rect 原语）+ security 徽章位置（SDK 在 toolbar 末尾 vs 手绘在 address 内部，
+结构性）+ address 内部结构。
+
+**门禁全绿**：build / clippy `-D warnings`（含 let-chain 修 collapsible_if）/ fmt 净；
+runtime 83 / chrome 87 / browser sdk-chrome 205 测全绿零回归。
+
+**下轮下一步**（重新排序，按 diff 影响）：①address pill border（需 SDK `stroke_rounded_rect` 原语
++ bridge PathStrokePrimitive 圆角支持）；②security 徽章重定位到 address 内部（shell 结构性重构）；
+③tab 标签文字/favicon/close + 窗口控制图标。三项任意一项可压 chrome diff 4.43% 向 ≤2%。
