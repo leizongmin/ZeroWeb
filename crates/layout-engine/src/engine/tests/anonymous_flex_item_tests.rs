@@ -527,3 +527,39 @@ fn test_r1025_inline_block_with_text_and_br_shrink_to_fit() {
          was 800 before fix (filled parent — block build path skipped text → new_with_children non-leaf → measure not fired)"
     );
 }
+
+/// R1025：float 含文本 + inline Element 子（`<br>`）应 shrink-to-fit，不应填满父宽。
+/// 同 inline-block bug 形态，R1024 leaf pattern 扩展到 float（content-sized）。
+#[test]
+fn test_r1025_float_with_text_and_br_shrink_to_fit() {
+    let html = r#"<html><body style="margin:0"><div id="fl" style="float:left">The quick brown fox<br>jumps over the lazy dog</div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let fl_id = doc
+        .query_selector(doc.root(), "#fl")
+        .or_else(|| {
+            let mut stack = vec![doc.root()];
+            while let Some(nid) = stack.pop() {
+                if let Some(n) = doc.get(nid) {
+                    if let zero_dom::NodeKind::Element(e) = &n.kind {
+                        if e.get_attribute("id").as_deref() == Some("fl") {
+                            return Some(nid);
+                        }
+                    }
+                    stack.extend(doc.child_nodes(nid));
+                }
+            }
+            None
+        })
+        .expect("fl element found");
+    let (w, _h) = find_box(&result.root, fl_id).expect("fl box found");
+    assert!(
+        w < 400.0,
+        "R1025: float with text+br should shrink-to-fit (w<400), got w={w}; was 800 before fix"
+    );
+}
