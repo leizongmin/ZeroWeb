@@ -4,6 +4,7 @@
 //! 导航项点击会 emit action → GalleryApp reducer 切换 current_page → 重建 widget tree。
 
 pub mod app;
+pub mod chrome;
 pub mod highlight;
 pub mod model;
 pub mod pages;

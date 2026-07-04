@@ -104,6 +104,24 @@ pub trait PaintRecorder {
     /// 避免每帧重复 shaping；本方法供 label/调试文本等不需精确度量的场景。
     fn draw_text(&mut self, text: &str, position: Point, size_px: f32, color: Color);
 
+    /// 量取文本以 `size_px` 渲染时的视觉宽度（逻辑像素，DC-17 SourceCode 真实 metrics）。
+    ///
+    /// 默认实现按字符 Unicode 属性估算（向后兼容没接入字体后端的实现）：
+    /// - ASCII 字母/数字（12px Noto Sans）：~6.6px
+    /// - 空格：~3.3px
+    /// - ASCII 标点：~3.5–7.0px（按字符查表）
+    /// - CJK / 全角符号：~12.0px
+    ///
+    /// 生产实现（如 RenderFoundationBackend）应覆写为 fontdue 的真实 advance 累加。
+    fn measure_text(&mut self, text: &str, size_px: f32) -> f32 {
+        let scale = size_px / 12.0;
+        let mut w = 0.0_f32;
+        for c in text.chars() {
+            w += char_width_estimate(c) * scale;
+        }
+        w
+    }
+
     /// 记录外部合成表面（DC-3：WebView/平台视图/视频纹理）。
     ///
     /// UI SDK 只算外部矩形；真实纹理/primitives 由后端按 `surface_id` 取回合成。
@@ -210,6 +228,47 @@ pub trait Widget {
     /// 非文本控件返回 `None`（默认）。
     fn ime_rect(&self) -> Option<Rect> {
         None
+    }
+}
+
+/// 单字符在 12px Noto Sans + CJK fallback 下的近似视觉宽度（DC-17 SourceCode 真实 metrics）。
+///
+/// 估算规则：
+/// - 空格：3.3
+/// - ASCII 字母/数字：6.6
+/// - 常见窄标点（. , ; : ! '）：3.0–4.5
+/// - 常见宽标点（{ } [ ] ( ) < > = + - * / 等）：6.0–7.5
+/// - CJK / 全角符号（U+3000–U+9FFF、U+FF00–U+FFEF）：12.0
+/// - 其它（控制字符等）：0
+///
+/// 误差通常 < 1.5px/字符，对代码块场景肉眼可接受。
+fn char_width_estimate(c: char) -> f32 {
+    if c.is_control() {
+        return 0.0;
+    }
+    match c {
+        ' ' => 3.3,
+        '.' | ',' => 3.0,
+        ';' | ':' | '\'' | '"' => 4.0,
+        '!' | '?' => 4.5,
+        '/' | '\\' => 5.0,
+        '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' => 5.5,
+        '=' | '+' | '-' | '*' | '|' | '&' | '^' | '%' | '~' => 6.5,
+        '_' | '@' | '#' | '$' => 7.0,
+        _ if c.is_ascii() => 6.6,
+        _ => {
+            let cp = c as u32;
+            // CJK 统一表意文字 + 全角符号 + 韩文 + 日文假名
+            if (0x3000..=0x9FFF).contains(&cp)
+                || (0xA000..=0xA4CF).contains(&cp)
+                || (0xAC00..=0xD7AF).contains(&cp)
+                || (0xFF00..=0xFFEF).contains(&cp)
+            {
+                12.0
+            } else {
+                7.0 // 其它非 ASCII 字符（如带音调拉丁字母、阿拉伯文）取保守估值
+            }
+        }
     }
 }
 
