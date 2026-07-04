@@ -209,12 +209,20 @@ impl BrowserChromeShell for DesktopBrowserShell {
         // 对齐手绘 chrome `bookmarks_bar_visible`：默认 fresh app 无书签 → 不占行，chrome 高 = tab+toolbar。
         // 此前无条件渲染 → SDK chrome 比手绘高 28px，bookmarks 区画 toolbar_bg 覆盖手绘已是页面的位置。
         if model.bookmarks_bar_visible {
-            root.children.push(leaf_fullwidth(
+            let mut bm_bar = leaf_fullwidth(
                 "browser.BookmarksBar",
                 ID_BOOKMARKS,
                 "toolbar_bg",
-                Some(crate::i18n::bookmarks_label(model.bookmarks.len())),
-            ));
+                None,
+            );
+            // 传递书签标题（BookmarksBarWidget paint 时渲染书签标签）。
+            let titles: Vec<Value> = model
+                .bookmarks
+                .iter()
+                .map(|b| Value::Text(b.title.clone()))
+                .collect();
+            bm_bar.props.insert("bookmarks", Value::Array(titles));
+            root.children.push(bm_bar);
         }
         let mut viewport = node("browser.PageViewportFrame", ID_VIEWPORT);
         viewport.props.insert("bg", Value::Text("viewport".into()));

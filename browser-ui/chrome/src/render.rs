@@ -797,6 +797,75 @@ impl Widget for BrowserTabStripWidget {
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
+// ── BookmarksBarWidget（真实书签栏，DC-14 chrome 功能等价）──────────────────────
+
+const BOOKMARKS_BAR_HEIGHT: f32 = 28.0;
+
+/// 书签栏绘制控件：填充背景 + 书签标题列表（bookmarks prop）。
+pub struct BookmarksBarWidget {
+    bg: Color,
+    bookmarks: Vec<String>,
+    text_color: Color,
+}
+
+impl BookmarksBarWidget {
+    /// 由声明节点构造：`bg` + `bookmarks`（`Value::Array`，可选）。
+    pub fn from_spec(spec: &WidgetSpec, tokens: &SemanticTokens) -> BookmarksBarWidget {
+        let bg_name = match spec.props.get("bg") {
+            Some(Value::Text(s)) => s.as_str(),
+            _ => "chrome",
+        };
+        let bookmarks = match spec.props.get("bookmarks") {
+            Some(Value::Array(arr)) => arr
+                .iter()
+                .filter_map(|v| match v {
+                    Value::Text(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        BookmarksBarWidget {
+            bg: chrome_color_themed(bg_name, tokens),
+            bookmarks,
+            text_color: tokens.on_surface,
+        }
+    }
+}
+
+impl Widget for BookmarksBarWidget {
+    fn mount(&mut self, _ctx: &mut MountCtx) {}
+    fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
+    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
+        EventResult::Ignored
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+        let width = constraints.max_width;
+        let height = BOOKMARKS_BAR_HEIGHT.clamp(constraints.min_height, constraints.max_height);
+        Size::new(width, height)
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx) {
+        let size = ctx.clip.map(|r| r.size).unwrap_or_else(|| Size::new(400.0, BOOKMARKS_BAR_HEIGHT));
+        ctx.recorder
+            .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
+        if !self.bookmarks.is_empty() {
+            let baseline = size.height * 0.5 + 13.0 * 0.32;
+            let mut x = 8.0;
+            for bm in &self.bookmarks {
+                if x >= size.width - 8.0 {
+                    break;
+                }
+                ctx.recorder.draw_text(bm, Point::new(x, baseline), 13.0, self.text_color);
+                x += 8.0 + bm.chars().count() as f32 * 7.5;
+            }
+        }
+    }
+
+    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+}
+
 // ── AddressBarWidget（真实地址栏 pill，DC-14 chrome 功能等价）──────────────────────
 
 /// 地址栏几何（与 apps/browser/src/layout.rs 手绘 chrome 对齐，DC-14 像素级等价）。
@@ -964,7 +1033,7 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens,
         Box::new(BrowserTabStripWidget::from_spec(s, tc))
     });
     host.register("browser.BookmarksBar", move |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 28.0, false, &t))
+        Box::new(BookmarksBarWidget::from_spec(s, &t))
     });
     host.register("browser.SecurityBadge", move |s| {
         Box::new(ChromePanel::from_spec(s, "secure", 44.0, false, &t))
@@ -1254,5 +1323,28 @@ mod tests {
             external.is_some(),
             "WebViewWidget factory should produce ExternalSurface marker"
         );
+    }
+
+    #[test]
+    fn bookmarks_bar_widget_paints_bg_and_text() {
+        let tokens = zero_ui_core::theme::SemanticTokens::light();
+        let mut spec = WidgetSpec::new("browser.BookmarksBar");
+        spec.id = Some(zero_ui_core::widget::WidgetId::new("bookmarks_bar"));
+        spec.props.insert("bg", Value::Text("toolbar_bg".into()));
+        spec.props.insert("bookmarks", Value::Array(vec![
+            Value::Text("MDN".into()),
+            Value::Text("GitHub".into()),
+        ]));
+        let mut host = zero_ui_runtime::WidgetHost::new();
+        let t = tokens;
+        host.register("browser.BookmarksBar", move |s| {
+            Box::new(BookmarksBarWidget::from_spec(s, &t))
+        });
+        host.set_root(&spec);
+        host.layout(zero_ui_core::geometry::Constraints::loose(Size::new(1280.0, 800.0)));
+        let scene = host.paint().clone();
+        let texts = scene_texts(&scene);
+        assert!(texts.iter().any(|t| t.contains("MDN")), "MDN label, got {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("GitHub")), "GitHub label, got {texts:?}");
     }
 }
