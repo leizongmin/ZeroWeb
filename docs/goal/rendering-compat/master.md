@@ -2662,6 +2662,8 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **▶ 下会话**：css-multicol 余下 worst 全结构性（span-all-children-height 需 column-span:all 解析 + Phase 2 rebalancing / nested-balancing / breaking / paged）。forward = ① multicol Phase 2（多 session，column-span:all 解析是前置）；② css-writing-modes vertical block-flow（R109 §9.2.1.1 + vertical flow，本会话 oracle 实测 7% top-worst 全 87% vertical block-flow 结构性）；③ font-wall per-font line-height（须 webfont/font-metric provider）。break-after 死值扫描方法可外推到其它属性（page-break-after legacy alias 等，预期零 yield 因 ZW 不做 paged media）。
 
+**★ break-inside:avoid 死值复核（同 R1027 谱系，已 ruled out）**：break_inside 在 layout 全无消费（仅 paint 指示器），23 multicol 文件用 break-inside:avoid。看似同 break-before/after 死值杠杆，**实测非 clean lever**：① break-inside:avoid 仅在 with_breaking 的 `else`（child_height > max_col_height 拆分）分支有意义；② 驱动案 multicol-br-inside-avoidcolumn-001（200px 子 / 300px 列高）走 `else if`（整体移动不拆分）分支，**根本不经拆分路径**——残差是 overflow 放置（avoid 子溢出末列被 overflow:hidden 裁剪的边界 diff），非拆分 bug；③ multicol-nested-008/022（100px 子 / 100px 列高）也走 else if（==max_col_height），非拆分；④ 多数 break-inside:avoid 案（balance-break-avoidance-000/001、multicol-nested-027/028 等）已 0.73% PASS（balanced 不拆分）。结论：break-inside:avoid 消费仅在「子严格高于列高 + avoid」罕见场景有效（corpus 极少），且改 with_breaking 风险高，yield 窄。**勿以「同 break-before/after 死值」为名单点重试**——已 ruled out。
+
 ### R1026 css-tables 近-pass 残余扫描 + table-cell leaf 扩展（net-neutral）+ 空 cell strut 实验（net-negative，font-wall）·零源码 net·纯调查
 
 承 R1025 后扫 css-tables（64.3% baseline）近-pass 残余找下一 lever。**结论：css-tables 近-pass 残余 = 精度 / 空 cell 渲染（font-wall 阻塞），无 clean 单会话 lever**。
