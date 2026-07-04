@@ -5,8 +5,8 @@ mod text_input;
 mod toggle;
 
 use button::{BUTTON_PAGE, ICON_BUTTON_PAGE};
-use text_input::{TEXT_INPUT_PAGE, LIST_VIEW_PAGE, MENU_PAGE, TABS_PAGE};
-use toggle::{TOGGLE_PAGE, BADGE_PAGE, PROGRESS_PAGE};
+use text_input::{LIST_VIEW_PAGE, MENU_PAGE, TABS_PAGE, TEXT_INPUT_PAGE};
+use toggle::{BADGE_PAGE, PROGRESS_PAGE, TOGGLE_PAGE};
 
 pub static ALL_PAGES: &[DemoPage] = &[
     BUTTON_PAGE,

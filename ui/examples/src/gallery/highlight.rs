@@ -55,10 +55,11 @@ pub fn highlight_yaml(src: &str) -> Vec<(&str, &str)> {
 
 /// Rust 高亮：关键字 → Keyword, "..." → String, // → Comment
 pub fn highlight_rust(src: &str) -> Vec<(&str, &str)> {
-    let keywords = ["fn", "let", "mut", "pub", "struct", "impl", "use", "mod",
-                     "const", "static", "enum", "trait", "for", "match", "if",
-                     "else", "while", "return", "true", "false", "Some", "None",
-                     "Box", "Ok", "Err", "self", "&", "->", "=>", "|"];
+    let keywords = [
+        "fn", "let", "mut", "pub", "struct", "impl", "use", "mod", "const", "static", "enum", "trait", "for", "match",
+        "if", "else", "while", "return", "true", "false", "Some", "None", "Box", "Ok", "Err", "self", "&", "->", "=>",
+        "|",
+    ];
     let mut result = Vec::new();
     let mut remaining = src;
     while !remaining.is_empty() {
@@ -98,8 +99,7 @@ pub fn highlight_rust(src: &str) -> Vec<(&str, &str)> {
         if found_keyword {
             continue;
         }
-        let next_special = remaining.find(['"', '/', '\n'])
-            .unwrap_or(remaining.len());
+        let next_special = remaining.find(['"', '/', '\n']).unwrap_or(remaining.len());
         if next_special > 0 {
             result.push((&remaining[..next_special], "default"));
             remaining = &remaining[next_special..];
