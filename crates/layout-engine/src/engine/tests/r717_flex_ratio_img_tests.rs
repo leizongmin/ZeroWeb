@@ -230,6 +230,49 @@ fn r1017_inline_flex_definite_height_aspect_ratio_item_shrinks_to_fit() {
     );
 }
 
+/// R1018 驱动案 `aspect-ratio-intrinsic-size-011`（post-JS final state）：block div +
+/// `width:fit-content`（bare keyword，parser 映射 MaxContent）+ flex 子 + aspect-ratio item。
+/// block-level shrink-to-fit gate + block_max_content_width（dispatch flex 子）→ target shrink 到
+/// flex 子 intrinsic（item transferred width = height 100 × ratio 1 = 100）。
+#[test]
+fn r1018_block_fit_content_with_flex_aspect_ratio_child_shrinks_to_fit() {
+    let html = r#"<html><body style="margin:0">
+<div id="target" style="height:100px; width:fit-content; background:green">
+  <div style="display:flex; height:100%; background:green">
+    <div style="aspect-ratio:1/1;"></div>
+  </div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let divs = doc.get_elements_by_tag_name("div");
+    let mut iter = divs.into_iter();
+    let target_id = iter.next().expect("target div");
+    let flex_id = iter.next().expect("flex div");
+    let item_id = iter.next().expect("item div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let (tw, th) = find_box(&result.root, target_id).expect("target box found");
+    let (fw, fh) = find_box(&result.root, flex_id).expect("flex box found");
+    let (iw, ih) = find_box(&result.root, item_id).expect("item box found");
+    // target 应 shrink 到 ~100（flex 子 intrinsic），非拉满视口 800（fit-content pre-R1018）也非 0。
+    assert!(
+        (tw - 100.0).abs() < 3.0,
+        "R1018: target width:fit-content 应 shrink 到 100，got {tw}"
+    );
+    assert!((th - 100.0).abs() < 3.0, "R1018: target height 应为 100px，got {th}");
+    assert!(
+        (fw - 100.0).abs() < 3.0 && (fh - 100.0).abs() < 3.0,
+        "R1018: flex 子应 100×100（height:100% + width:fill target），got {fw}x{fh}"
+    );
+    assert!(
+        (iw - 100.0).abs() < 3.0 && (ih - 100.0).abs() < 3.0,
+        "R1018: item 应 stretch 100×100，got {iw}x{ih}"
+    );
+}
+
 /// R1015 对照：非 float 的 block flex column + width:auto 不触发 shrink（保持当前行为，零回归）。
 #[test]
 fn r1015_block_flex_column_auto_width_no_shrink() {

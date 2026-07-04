@@ -2648,6 +2648,30 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1018 ★bare fit-content 关键字 + block-level max-content shrink-to-fit gate LANDED = aspect-ratio-intrinsic-011 14.85→0.60% PASS + fit-content-item-002/003 PASS（+3）·css-multicol change-intrinsic-width 16→1.75（-14pp）·短路 bug 修复（apply_intrinsic_content_sizing 此前被 `||` 短路）·1 已知 multicol 回归
+
+承 R1017 CONTINUE「011/014 block flex + width:fit-content + JS」。R1017 解 inline-flex（inline-level），R1018 解 block-level + bare `fit-content` 关键字（R97「max-content→0 bug」memory 标「block/inline-block 可独立做」slice）。
+
+**5 件改动（CSS css-sizing-3 §fit-content/max-content + Flexbox §4.5）**：
+- **`css-parser/values/types.rs::parse_length`**（★live 函数，非 parse_basic.rs dead-code——R544/R549 trap 规避）：加 bare `fit-content` 关键字 → 映射 `MaxContent`（layout trigger 等价；fit-content(arg) 函数形式仍独立 `FitContent(Box)` 变体）。
+- **`intrinsic_sizing.rs`**：① 新 `block_max_content_width`——block-level 容器 max-content 宽，对 flex/grid **子**分发到 `flex_row/column_intrinsic_width`/`grid_intrinsic_width`（通用 `box_content_max_width` 递归对 aspect-ratio 空 item 测 0）；② `flex_row_intrinsic_width` 的 `container_cross` 加 fallback——非 Px height（百分比/auto）用 taffy 第一趟解析的 `box_node.height`（flex 子 height:100% 在 definite-height 父内已解析）。
+- **`engine.rs::apply_intrinsic_content_sizing` gate**：① 扩 `is_block`（display:Block）+ `width:MaxContent` 触发 block shrink-to-fit，用 `block_max_content_width`；② block + MaxContent 当 intrinsic 不可测（≤1）时回退 `Dimension::Auto`（fill 父宽），非留 converter 的 0 塌缩（multicol + aspect-ratio 子 box_content 无法度量案）。
+- **`engine.rs` 短路 bug 修复（关键 pre-existing bug）**：四趟后处理 pass（r695/pct_padding/ratio_img/intrinsic_sizing）原用 `||` 短路求值，前三趟任一 fire 即跳过 `apply_intrinsic_content_sizing`（R1015/R1017 仅在前三趟都不 fire 时才工作！）。改为先求值 `changed_intrinsic` 再合并，确保四趟总执行。
+- **`converter/mod.rs`**：flex/inline-flex 容器的 `height:MaxContent/MinContent` → `Dimension::Auto`（content-based），非 `length(0)`。仅限 flex 容器——grid/block 的 height:max-content 在空 item 时应塌缩（max-content of empty=0），Auto 会触发 align-self stretch 误拉伸（grid-item-non-auto-height-stretch-001 回归）。
+
+**验证（chromium Oracle + ORACLE_DUMP_ALL per-case A/B vs R1017 baseline，5 dir stash 对照）**：
+- **css-flexbox +3 PASS**：aspect-ratio-intrinsic-size-011 **14.85→0.60% PASS**（-14.25pp）、fit-content-item-002/003 **2.65→0.60% PASS**（-2.05pp ×2）；额外 flex-container-min-content-001 8.78→4.96（-3.82pp）、flex-container-max-content-001 11.54→10.13（-1.41pp）。
+- **css-multicol 大改善**：change-intrinsic-width **16.01→1.75%（-14.26pp 近 PASS）**、intrinsic-size-004 6.98→3.84（-3.14pp）。
+- **css-grid / css-tables / css-position：零变化零回归**（display 靶向 + Auto-fallback 守住）。
+- **1 已知回归**：css-multicol/intrinsic-width-change-column-count 0.73→2.28（+1.55pp，PASS→FAIL）。根因 = multicol 容器 intrinsic = columns × column-content，`block_max_content_width` 只测单子宽（25）→ gate 应用 25（应 ~75-100）。multicol intrinsic sizing 精度独立 gap（非本轮范围），诚实记录。
+- **welcome (DC-13) 16.57% 不变**（<20% gate PASS）；make test exit 0（layout-engine 1005 含 +1 r1018 测）；clippy --workspace -D warnings ✓；fmt ✓。
+
+**★ pre-existing 短路 bug 意义**：`changed_r695 || ... || apply_intrinsic_content_sizing(...)` 的 `||` 在 r695/padding/ratio 任一 true 时短路跳过 gate。这意味着含 aspect-ratio flex item / 百分比 padding / 不明确百分比 height 的页面，flex/grid/block 容器 shrink-to-fit 此前**失效**。修复后 R1015/R1017/R1018 在这些页面也生效（向后放大收益）。R1015/R1017 当时 A/B 的测试恰好不含触发前三趟的元素，故未暴露。
+
+**未解（独立 gap）**：① `aspect-ratio-intrinsic-size-014`（float:left block + flex 子 + JS，14.85% 不变）= float shrink-to-fit 路径需 flex-dispatch 测量（float_positioning 用 box_content_max_width 非 block_max_content_width）；② multicol intrinsic = columns × content（intrinsic-width-change-column-count 回归）；③ MinContent 测量（min-content = 最宽词，独立函数）；④ height:max-content 真正 intrinsic（content height，现 flex 容器 Auto 近似）。
+
+**▶ 下会话**：① **aspect-ratio-intrinsic-014**（float:block + flex 子，float shrink 路径接 block_max_content_width，+1 potential）；② **MinContent 测量**（min-content width 函数，flex-container-min-content-001 4.96% 近 PASS）；③ multicol intrinsic sizing（columns × content，独立多 session）；④ R1015 row+float/inline-flex 已确认覆盖，转其它 dir fresh worst。clean win 已 land（+3 PASS + 多几何改善）。
+
 ### R1017 ★inline-flex shrink via IFC `shrink_inline_blocks_to_content` 路径 LANDED = aspect-ratio-intrinsic-003/004 15.67→1.80%（-13.87pp ×2，几何 100×100 精确）·css-flexbox Oracle 291 持平（残余 = `<p>` 字体墙）·零回归·攻克 R1016 IFC 测量墙
 
 承 R1016 CONTINUE「避开 inline-flex IFC 墙，转其它 lever」。R1016 证伪 taffy-gate 路径后定位真因 = 「inline-flex 须经 IFC inline-level 测量层」。本轮**精准在该层落地**（非 taffy gate），机制生效。
