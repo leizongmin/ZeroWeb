@@ -6091,8 +6091,14 @@ dependencies = [
 name = "zero-ui-adapter-winit"
 version = "0.1.0"
 dependencies = [
+ "hashbrown 0.17.1",
+ "tracing",
  "winit",
+ "zero-render-foundation",
+ "zero-text-foundation",
+ "zero-ui-adapter-render-foundation",
  "zero-ui-core",
+ "zero-ui-render",
  "zero-ui-runtime",
 ]
 

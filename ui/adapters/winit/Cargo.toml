@@ -8,4 +8,10 @@ license.workspace = true
 [dependencies]
 zero-ui-core = { workspace = true }
 zero-ui-runtime = { workspace = true }
+zero-ui-render = { workspace = true }
+zero-ui-adapter-render-foundation = { workspace = true }
+zero-render-foundation = { workspace = true }
+zero-text-foundation = { workspace = true }
 winit = { workspace = true }
+tracing = { workspace = true }
+hashbrown = { workspace = true }

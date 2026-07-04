@@ -6,23 +6,46 @@
 //! run loop 中抽离为可单测的 setup 核心（headless 可验证）；GUI-gated 的 `EventLoop::new`/
 //! `Window`/surface + `event_loop.run` 包壳是剩余运行时件（需 GUI 验证首帧）。
 
-use crate::driver::WinitDriver;
+use std::sync::Arc;
+
+use winit::application::ApplicationHandler;
+use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
+use winit::event::WindowEvent;
+use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::window::{Window, WindowAttributes};
+
+use zero_render_foundation::font::cache::GlyphCache;
+use zero_render_foundation::font::loader::FontLoader;
+use zero_render_foundation::gpu::renderer::GpuRenderer;
+use zero_text_foundation::FontdueBackend;
+use zero_ui_adapter_render_foundation::RenderFoundationBackend;
 use zero_ui_core::geometry::Rect;
+use zero_ui_core::geometry::Size as UiSize;
 use zero_ui_core::layout::WindowMetrics;
 use zero_ui_core::theme::{ResolvedColorScheme, SystemThemeSnapshot};
+use zero_ui_render::paint_scene;
 use zero_ui_runtime::app::UiApp;
 use zero_ui_runtime::host::WidgetHost;
-use zero_ui_runtime::platform::{PlatformRuntime, UiResult, WindowId};
+use zero_ui_runtime::platform::{PlatformRuntime, RuntimeError, UiResult, WindowId};
+
+use crate::driver::WinitDriver;
+use crate::event_map::{
+    map_cursor_moved, map_mouse_input, map_mouse_wheel, map_window_metrics, to_logical_point, to_logical_size,
+};
+
+type RegisterFn = Box<dyn FnOnce(&mut WidgetHost)>;
 
 /// winit 平台运行时（M1 占位）。
 pub struct WinitRuntime {
     system_scheme: ResolvedColorScheme,
+    register: Option<RegisterFn>,
 }
 
 impl Default for WinitRuntime {
     fn default() -> WinitRuntime {
         WinitRuntime {
             system_scheme: ResolvedColorScheme::Light,
+            register: None,
         }
     }
 }
@@ -35,6 +58,13 @@ impl WinitRuntime {
     /// 测试/注入用：设置系统主题快照。
     pub fn set_system_scheme(&mut self, scheme: ResolvedColorScheme) {
         self.system_scheme = scheme;
+    }
+
+    /// 注册控件工厂闭包，将在 `run()` 中调用（`host.register(...)`）。
+    ///
+    /// 必须在调用 `run()` 前设置；调用后 consume 内部 Option。
+    pub fn set_register(&mut self, register: impl FnOnce(&mut WidgetHost) + 'static) {
+        self.register = Some(Box::new(register));
     }
 
     /// 真实 `EventLoop::run` 的**可测试 setup 核心**（DC-2 终端阻塞壳前置）。
@@ -67,8 +97,52 @@ impl WinitRuntime {
 }
 
 impl PlatformRuntime for WinitRuntime {
-    fn run(&mut self, _app: &mut dyn UiApp) -> UiResult<()> {
-        // M1 占位：真实 run loop 在 M2 接入 winit EventLoop。
+    fn run(&mut self, app: &mut dyn UiApp) -> UiResult<()> {
+        let event_loop = EventLoop::new().map_err(|e| RuntimeError::Platform(e.to_string()))?;
+
+        let window_attrs = Window::default_attributes()
+            .with_title("UI SDK")
+            .with_inner_size(LogicalSize::new(1024.0, 768.0));
+
+        // SAFETY: 事件循环在本函数内同步运行，app 引用在 run() 返回前始终有效。
+        // 事件循环退出后 handler 不再访问 app_ptr，run() 返回即丢弃 handler。
+        let app_ptr: *mut dyn UiApp = unsafe { std::mem::transmute::<&mut dyn UiApp, *mut dyn UiApp>(app) };
+
+        let mut ui_text_backend = FontdueBackend::new();
+        // 主字体：Noto Sans（拉丁字符覆盖 gallery UI 文案）。WOFF 容器需先解码为 TTF 字节。
+        // 失败时仍加载 Ahem 作为最后 fallback（保证 scene 有 glyph，不至于全帧空白）。
+        let noto = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/noto/noto-sans-v8-latin-regular.woff");
+        match zero_render_foundation::font::decode_woff(noto) {
+            Some(ttf) => match ui_text_backend.load_family("UI", &ttf) {
+                Ok(fid) => eprintln!("[DBG] noto font loaded: id={fid:?}, len={}", ui_text_backend.len()),
+                Err(e) => eprintln!("[DBG] noto font load FAILED: {e:?}"),
+            },
+            None => eprintln!("[DBG] noto woff decode failed"),
+        }
+        match ui_text_backend.load_family("Ahem", AHEM) {
+            Ok(fid) => eprintln!("[DBG] ahem font loaded: id={fid:?}, len={}", ui_text_backend.len()),
+            Err(e) => eprintln!("[DBG] ahem font load FAILED: {e:?}"),
+        }
+        let mut handler = SdkGpuApp {
+            window_attrs: Some(window_attrs),
+            register: self.register.take(),
+            window: None,
+            scale_factor: 1.0,
+            cursor_pos: (0.0, 0.0),
+            app_ptr,
+            driver: None,
+            gpu: None,
+            rf_backend: None,
+            text_backend: Arc::new(ui_text_backend),
+            font_loader: FontLoader::new(),
+            glyph_cache: GlyphCache::new(1024),
+            needs_render: true,
+        };
+
+        event_loop
+            .run_app(&mut handler)
+            .map_err(|e| RuntimeError::Platform(e.to_string()))?;
+
         Ok(())
     }
     fn request_redraw(&mut self, _window: WindowId) {}
@@ -77,6 +151,229 @@ impl PlatformRuntime for WinitRuntime {
         SystemThemeSnapshot {
             system_scheme: self.system_scheme,
             high_contrast: false,
+        }
+    }
+}
+
+// ── winit 0.30 ApplicationHandler：UI SDK GPU demo ──
+
+struct SdkGpuApp {
+    window_attrs: Option<WindowAttributes>,
+    register: Option<RegisterFn>,
+    window: Option<Arc<Window>>,
+    scale_factor: f32,
+    cursor_pos: (f64, f64),
+    app_ptr: *mut dyn UiApp,
+    driver: Option<WinitDriver<'static>>,
+    gpu: Option<GpuRenderer>,
+    rf_backend: Option<RenderFoundationBackend>,
+    text_backend: Arc<FontdueBackend>,
+    font_loader: FontLoader,
+    glyph_cache: GlyphCache,
+    needs_render: bool,
+}
+
+/// Ahem 测试字体（证明文本渲染的最小字体）。
+const AHEM: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+impl ApplicationHandler<()> for SdkGpuApp {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_none()
+            && let Some(attrs) = self.window_attrs.take()
+        {
+            let win = event_loop.create_window(attrs).expect("Failed to create window");
+            let window = Arc::new(win);
+
+            let size = window.inner_size();
+            let sf = window.scale_factor() as f32;
+            self.scale_factor = sf;
+
+            // GPU 渲染器
+            match GpuRenderer::new_for_window(window.clone()) {
+                Ok(mut gpu) => {
+                    gpu.configure_surface(size.width, size.height);
+                    self.gpu = Some(gpu);
+                }
+                Err(e) => {
+                    tracing::error!("GPU renderer init failed: {e}");
+                    event_loop.exit();
+                    return;
+                }
+            }
+
+            // UI SDK 驱动器
+            let metrics = map_window_metrics(size, sf);
+            // SAFETY: app_ptr 来自 run() 的参数 &mut dyn UiApp，该引用在事件循环
+            // 退出前始终有效（run() 同步阻塞）。
+            let app_ref: &'static mut dyn UiApp = unsafe { &mut *self.app_ptr };
+            let mut driver = WinitDriver::new(app_ref, metrics);
+            if let Some(register) = self.register.take() {
+                register(driver.host_mut());
+            }
+            driver.begin();
+            self.driver = Some(driver);
+
+            // 绘制后端
+            let logical = to_logical_size(size, sf);
+            let mut backend = RenderFoundationBackend::new_with_text_size(
+                UiSize::new(logical.width, logical.height),
+                self.text_backend.clone(),
+            );
+            backend.set_scale_factor(sf);
+            self.rf_backend = Some(backend);
+
+            self.window = Some(window);
+            self.needs_render = true;
+        }
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: winit::window::WindowId, event: WindowEvent) {
+        let sf = self.scale_factor;
+        match event {
+            WindowEvent::CloseRequested => {
+                event_loop.exit();
+            }
+            WindowEvent::Resized(size) if size.width > 0 && size.height > 0 => {
+                if let Some(ref mut gpu) = self.gpu {
+                    gpu.configure_surface(size.width, size.height);
+                }
+                let logical = to_logical_size(size, sf);
+                if let Some(ref mut driver) = self.driver {
+                    driver.set_metrics(map_window_metrics(size, sf));
+                }
+                let mut backend = RenderFoundationBackend::new_with_text_size(
+                    UiSize::new(logical.width, logical.height),
+                    self.text_backend.clone(),
+                );
+                backend.set_scale_factor(sf);
+                self.rf_backend = Some(backend);
+                self.needs_render = true;
+                if let Some(ref window) = self.window {
+                    window.request_redraw();
+                }
+            }
+            WindowEvent::RedrawRequested => {
+                let (width, height) = if let Some(ref window) = self.window {
+                    let size = window.inner_size();
+                    (size.width, size.height)
+                } else {
+                    return;
+                };
+
+                if let Some(ref mut driver) = self.driver {
+                    driver.pump_frame();
+                    let scene = driver.host().scene();
+                    if let Some(ref mut backend) = self.rf_backend {
+                        paint_scene(scene, backend);
+
+                        if let Some(ref mut gpu) = self.gpu {
+                            let logical = to_logical_size(PhysicalSize::new(width, height), sf);
+                            let mut fresh = RenderFoundationBackend::new_with_text_size(
+                                UiSize::new(logical.width, logical.height),
+                                self.text_backend.clone(),
+                            );
+                            fresh.set_scale_factor(sf);
+                            let (primitives, mut image_cache) =
+                                std::mem::replace(backend, fresh).into_primitives_and_cache();
+
+                            eprintln!(
+                                "[DBG] scene={} fills={} rounded={} images={} glyphs={} clips={}",
+                                scene.entries.len(),
+                                primitives.fills.len(),
+                                primitives.rounded_rects.len(),
+                                primitives.images.len(),
+                                primitives.glyphs.len(),
+                                primitives.clips.len(),
+                            );
+
+                            gpu.render_full_scene_gpu(
+                                &primitives,
+                                &self.font_loader,
+                                &mut self.glyph_cache,
+                                Some(&mut image_cache),
+                                &[],
+                                &[],
+                                &[],
+                                &[],
+                                sf,
+                            );
+                        }
+                    }
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor_pos = (position.x, position.y);
+                if let Some(ref mut driver) = self.driver {
+                    let pt = to_logical_point(position, sf);
+                    driver.pump_event(&map_cursor_moved(pt, zero_ui_core::event::Modifiers::NONE));
+                    self.needs_render = true;
+                    if let Some(ref window) = self.window {
+                        window.request_redraw();
+                    }
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                if let Some(ref mut driver) = self.driver {
+                    let pt = to_logical_point(PhysicalPosition::new(self.cursor_pos.0, self.cursor_pos.1), sf);
+                    driver.pump_event(&map_mouse_input(
+                        button,
+                        state,
+                        pt,
+                        zero_ui_core::event::Modifiers::NONE,
+                    ));
+                    self.needs_render = true;
+                    if let Some(ref window) = self.window {
+                        window.request_redraw();
+                    }
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                if let Some(ref mut driver) = self.driver {
+                    let pt = to_logical_point(PhysicalPosition::new(self.cursor_pos.0, self.cursor_pos.1), sf);
+                    driver.pump_event(&map_mouse_wheel(delta, sf, pt, zero_ui_core::event::Modifiers::NONE));
+                    self.needs_render = true;
+                    if let Some(ref window) = self.window {
+                        window.request_redraw();
+                    }
+                }
+            }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                self.scale_factor = scale_factor as f32;
+                if let Some(ref window) = self.window {
+                    let size = window.inner_size();
+                    let logical = to_logical_size(size, self.scale_factor);
+                    if let Some(ref mut driver) = self.driver {
+                        driver.set_metrics(map_window_metrics(size, self.scale_factor));
+                    }
+                    if let Some(ref mut gpu) = self.gpu {
+                        gpu.configure_surface(size.width, size.height);
+                    }
+                    let mut backend = RenderFoundationBackend::new_with_text_size(
+                        UiSize::new(logical.width, logical.height),
+                        self.text_backend.clone(),
+                    );
+                    backend.set_scale_factor(sf);
+                    self.rf_backend = Some(backend);
+                    self.needs_render = true;
+                    window.request_redraw();
+                }
+            }
+            WindowEvent::Focused(true) => {
+                self.needs_render = true;
+                if let Some(ref window) = self.window {
+                    window.request_redraw();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {}
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        // 连续渲染循环：每帧请求重绘（vsync 节流），避免首次 acquire 失败后永久空白。
+        if let Some(ref window) = self.window {
+            window.request_redraw();
         }
     }
 }
@@ -103,12 +400,14 @@ mod tests {
     }
 
     #[test]
-    fn run_returns_ok() {
-        use zero_ui_runtime::platform::RuntimeError;
+    fn run_rejects_test_thread() {
+        // run() 现在创建 winit EventLoop，需要在主线程运行。在测试线程上调用会 panic。
+        // 验证错误而非段错误。
         let mut rt = WinitRuntime::new();
-        // 用空 app 指针验证 run 签名；不真正驱动循环。
-        let result: Result<(), RuntimeError> = rt.run(&mut _Noop);
-        assert!(result.is_ok());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = rt.run(&mut _Noop);
+        }));
+        assert!(result.is_err(), "run() should panic on non-main thread");
     }
 
     struct _Noop;

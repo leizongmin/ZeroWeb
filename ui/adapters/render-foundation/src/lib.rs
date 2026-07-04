@@ -92,6 +92,9 @@ pub struct RenderFoundationBackend {
     /// 宿主预注册的图像 alpha 掩码（如浏览器 SVG 图标经 resvg 光栅后的覆盖率）。
     /// `draw_image` 据 [`ImageRef`] 取回掩码 + 按 `tint` 着色光栅（与 glyph 路径对称）。
     image_masks: HashMap<ImageRef, AlphaMask>,
+    /// 物理/逻辑像素比（来自窗口 scale_factor）。`draw_text` 按 `size_px * scale` 光栅，
+    /// GPU 1:1 显示物理像素，避免 Nearest 上采样锯齿 / Linear 模糊。
+    scale_factor: f32,
 }
 
 /// 单通道 alpha 掩码（如 SVG 图标经 resvg 光栅后的覆盖率）。`coverage.len() = width*height`。
@@ -126,6 +129,7 @@ impl RenderFoundationBackend {
             surfaces: HashMap::new(),
             surface_caches: HashMap::new(),
             image_masks: HashMap::new(),
+            scale_factor: 1.0,
         }
     }
 
@@ -154,6 +158,12 @@ impl RenderFoundationBackend {
     /// 只读访问累积结果（测试/调试用）。
     pub fn primitives(&self) -> &RenderPrimitives {
         &self.primitives
+    }
+
+    /// 设置物理/逻辑像素比（来自窗口 scale_factor）。`draw_text` 据此按物理分辨率光栅，
+    /// GPU 1:1 显示避免上采样锯齿。需在 paint 之前调用。
+    pub fn set_scale_factor(&mut self, scale: f32) {
+        self.scale_factor = scale.max(1.0);
     }
 
     /// 只读访问 glyph 位图缓存（draw_text_blob 产出的 ImageKey 在此解析）。
@@ -301,6 +311,11 @@ impl RenderBackend for RenderFoundationBackend {
             return;
         }
         let tint = to_rf_color(color);
+        // HiDPI 清晰度：按物理 size 光栅（size_px * scale），rect 用逻辑尺寸（bmp 尺寸 / scale）
+        // 让 GPU 在物理像素 1:1 显示。gallery 在 1.75x 等高 DPI 屏上若按逻辑 size 光栅再上采样
+        // 会产生明显锯齿（Nearest）/ 模糊（Linear）。
+        let scale = self.scale_factor;
+        let phys_size = size_px * scale;
         let mut pen_x = 0.0_f32;
         for ch in text.chars() {
             // per-character font fallback: try each loaded font until one covers
@@ -308,16 +323,18 @@ impl RenderBackend for RenderFoundationBackend {
             let mut found = false;
             for font_id in 0..self.text.len() as u32 {
                 let id = FontId(font_id);
-                if self.text.has_char(id, ch) {
-                    if let Ok(bmp) = self.text.rasterize_char(id, ch, size_px) {
-                        if bmp.width > 0 && bmp.height > 0 {
-                            let key = glyph_cache_key(id, ch as u32, size_px);
-                            emit_glyph_image(self, key, &bmp, position, pen_x, tint);
-                        }
-                        pen_x += bmp.advance;
-                        found = true;
-                        break;
+                if self.text.has_char(id, ch)
+                    && let Ok(bmp) = self.text.rasterize_char(id, ch, phys_size)
+                {
+                    if bmp.width > 0 && bmp.height > 0 {
+                        // key 用物理 size：不同 scale 下缓存独立条目，避免互相覆盖。
+                        let key = glyph_cache_key(id, ch as u32, phys_size);
+                        emit_glyph_image_scaled(self, key, &bmp, position, pen_x, tint, scale);
                     }
+                    // advance 按物理像素返回，转回逻辑累加 pen_x（与 rect 单位一致）。
+                    pen_x += bmp.advance / scale;
+                    found = true;
+                    break;
                 }
             }
             if !found {
@@ -503,6 +520,20 @@ fn emit_glyph_image(
     draw_x: f32,
     tint: RfColor,
 ) {
+    emit_glyph_image_scaled(backend, key, bmp, position, draw_x, tint, 1.0)
+}
+
+/// 同 [`emit_glyph_image`]，但 bmp 是按 `scale` 倍物理分辨率光栅的；rect 用逻辑尺寸
+/// （bmp 尺寸 / scale）让 GPU 渲染时 `rect * scale` 回到物理像素，与 image 数据 1:1。
+fn emit_glyph_image_scaled(
+    backend: &mut RenderFoundationBackend,
+    key: ImageKey,
+    bmp: &GlyphBitmap,
+    position: Point,
+    draw_x: f32,
+    tint: RfColor,
+    scale: f32,
+) {
     // 缓存去重：同一 (font,glyph,size) 只 raster+upload 一次（key 稳定）。
     if backend.uploaded.insert(key.clone()) {
         let rgba = tinted_rgba(bmp, tint);
@@ -513,15 +544,19 @@ fn emit_glyph_image(
             }
         }
     }
+    // bmp 尺寸是物理像素，转回逻辑用于 ImagePrimitive.rect（GPU 渲染时再 * scale 回到物理）。
+    let w_logical = bmp.width as f32 / scale;
+    let h_logical = bmp.height as f32 / scale;
     // 屏幕定位：fontdue xmin = 左边缘偏移；ymin = 底边偏移（y 向上）→ top = baseline − ymin − height。
-    let left = position.x + draw_x + bmp.xmin as f32;
-    let top = position.y - bmp.ymin as f32 - bmp.height as f32;
+    // 物理像素偏移转逻辑（与 position 单位一致）。
+    let left = position.x + draw_x + bmp.xmin as f32 / scale;
+    let top = position.y - bmp.ymin as f32 / scale - h_logical;
     backend.primitives.add_image(ImagePrimitive {
         rect: RfRect {
             origin: RfPoint { x: left, y: top },
             size: RfSize {
-                width: bmp.width as f32,
-                height: bmp.height as f32,
+                width: w_logical,
+                height: h_logical,
             },
         },
         image_key: key,

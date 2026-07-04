@@ -685,6 +685,7 @@ impl GpuRenderer {
         let (width, height) = self.surface_size;
 
         if self.present_suspended {
+            eprintln!("[DBG-RF] present_suspended=true, skipping frame");
             return;
         }
 
@@ -700,6 +701,14 @@ impl GpuRenderer {
         let grad_resources = self.prepare_gradient_resources(&primitives.gradients, scale);
         // 5. Images（预创建纹理和绑定组）
         let img_resources = self.prepare_image_resources(&primitives.images, image_cache, scale);
+        eprintln!(
+            "[DBG-RF] surface_size=({width}x{height}) present_suspended={} images={}/{} img_resources={} fills={}",
+            self.present_suspended,
+            primitives.images.len(),
+            primitives.images.len(),
+            img_resources.len(),
+            primitives.fills.len(),
+        );
         // 6-8. Strokes + PathFills + PathStrokes
         let stroke_verts = self.collect_stroke_vertices(&primitives.strokes, scale);
         let path_fill_verts = self.collect_path_fill_vertices(&primitives.path_fills, scale);
@@ -739,8 +748,12 @@ impl GpuRenderer {
         // 获取渲染目标
         let target = match self.acquire_render_target(width, height) {
             Some(target) => target,
-            None => return,
+            None => {
+                eprintln!("[DBG-RF] acquire_render_target returned None");
+                return;
+            }
         };
+        eprintln!("[DBG-RF] acquire_render_target OK, starting render pass");
         let view = target.view();
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -812,6 +825,7 @@ impl GpuRenderer {
             self.apply_transform_filters_headless(width, height, &transforms, scale);
         }
 
+        eprintln!("[DBG-RF] submitting and presenting");
         target.present(&device);
     }
 
@@ -1133,12 +1147,14 @@ impl GpuRenderer {
                 },
             );
             let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            // Linear 滤波：glyph/image 在 HiDPI（scale_factor != 1）下按逻辑像素光栅，
+            // GPU 上采样到物理像素时双线性插值，避免 Nearest 产生的像素锯齿。
             let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("Image Sampler"),
                 address_mode_u: wgpu::AddressMode::ClampToEdge,
                 address_mode_v: wgpu::AddressMode::ClampToEdge,
-                mag_filter: wgpu::FilterMode::Nearest,
-                min_filter: wgpu::FilterMode::Nearest,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
                 ..Default::default()
             });
             let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
