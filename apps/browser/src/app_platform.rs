@@ -1124,6 +1124,7 @@ fn sdk_chrome_tab_colors(
         active_bg: rf_color_to_ui(p.tab_active_bg),
         bar_bg: rf_color_to_ui(p.tab_bar_bg),
         separator: rf_color_to_ui(p.tab_separator),
+        address_border: rf_color_to_ui(p.address_bar_border),
     }
 }
 

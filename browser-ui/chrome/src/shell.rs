@@ -148,7 +148,10 @@ impl BrowserChromeShell for DesktopBrowserShell {
         // 工具栏行铺 surface 底色（= toolbar_bg 经 sdk_chrome_tokens 映射）：手绘 chrome 先铺整行
         // toolbar_bg 再画 nav/address pill/security/menu，address pill 圆角 (=底色) 不可见。SDK
         // 容器此前不画底色 → pill 圆角透出帧白底。容器 bg 经 host paint_node（bg prop = token 名）。
+        // cross_axis_align=center：address pill 32 高在 44 行垂直居中（bar_y = toolbar_top + 6）；
+        // nav/security/menu 44 高 (=行高) 居中偏移 0，不受影响。
         toolbar.props.insert("bg", Value::Text("surface".into()));
+        toolbar.props.insert("cross_axis_align", Value::Text("center".into()));
         // NavigationButtons：真实图标控件（DC-14）。can_back/can_forward 控制图标 disabled tint；
         // 图标 ImageRef 由控件常量内定（NAV_ICON_*），宿主按同 id 注册 alpha 掩码到桥接。
         let mut nav = leaf("browser.NavigationButtons", ID_NAV_BUTTONS, "toolbar_bg", None);
@@ -163,10 +166,8 @@ impl BrowserChromeShell for DesktopBrowserShell {
             Some(model.address_text.clone()),
             1.0,
         ));
-        // 地址栏为圆角 pill（手绘 chrome：radius = bar_h * 0.5；toolbar 高 ≈ 36 → radius 18）。
-        if let Some(addr) = toolbar.children.last_mut() {
-            addr.props.insert("corner_radius", Value::Float(18.0));
-        }
+        // 地址栏 pill：AddressBarWidget 自画双层 rounded border（radius 16）+ 32 高；
+        // 垂直居中由 toolbar 行 cross_axis_align=center 提供（容器属性）。
         toolbar.children.push(leaf(
             "browser.SecurityBadge",
             ID_SECURITY_BADGE,
@@ -242,7 +243,10 @@ impl BrowserChromeShell for TabletBrowserShell {
         // 工具栏行铺 surface 底色（= toolbar_bg 经 sdk_chrome_tokens 映射）：手绘 chrome 先铺整行
         // toolbar_bg 再画 nav/address pill/security/menu，address pill 圆角 (=底色) 不可见。SDK
         // 容器此前不画底色 → pill 圆角透出帧白底。容器 bg 经 host paint_node（bg prop = token 名）。
+        // cross_axis_align=center：address pill 32 高在 44 行垂直居中（bar_y = toolbar_top + 6）；
+        // nav/security/menu 44 高 (=行高) 居中偏移 0，不受影响。
         toolbar.props.insert("bg", Value::Text("surface".into()));
+        toolbar.props.insert("cross_axis_align", Value::Text("center".into()));
         // NavigationButtons：真实图标控件（DC-14）。can_back/can_forward 控制图标 disabled tint；
         // 图标 ImageRef 由控件常量内定（NAV_ICON_*），宿主按同 id 注册 alpha 掩码到桥接。
         let mut nav = leaf("browser.NavigationButtons", ID_NAV_BUTTONS, "toolbar_bg", None);
@@ -257,10 +261,8 @@ impl BrowserChromeShell for TabletBrowserShell {
             Some(model.address_text.clone()),
             1.0,
         ));
-        // 地址栏为圆角 pill（手绘 chrome：radius = bar_h * 0.5；toolbar 高 ≈ 36 → radius 18）。
-        if let Some(addr) = toolbar.children.last_mut() {
-            addr.props.insert("corner_radius", Value::Float(18.0));
-        }
+        // 地址栏 pill：AddressBarWidget 自画双层 rounded border（radius 16）+ 32 高；
+        // 垂直居中由 toolbar 行 cross_axis_align=center 提供（容器属性）。
         toolbar.children.push(leaf(
             "browser.SecurityBadge",
             ID_SECURITY_BADGE,

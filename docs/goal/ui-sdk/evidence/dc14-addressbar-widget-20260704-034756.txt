@@ -1,0 +1,77 @@
+DC-14 chrome parity — AddressBarWidget 真实地址栏 pill
+======================================================
+Round 51（2026-07-04 03:47 UTC）
+
+摘要
+----
+把 SDK `browser.AddressBar` 从 `ChromePanel`（44 高全填充、无 border）升级为真实
+`AddressBarWidget`：32 高 pill（对齐手绘 `address_bar_layout` inset 6）+ 双层 fill_rounded_rect
+border（外 address_bar_border 218 + 内 bg 248 inset 1px，镜像手绘 `render_address_bar`）+
+URL 文本。chrome 区像素 diff 从 Round 50 的 4.43% 降到 **3.25%**（-1.18pp）。
+
+实现
+----
+1. `ChromeTabColors` 加 `address_border: Color`（light=218,220,220 来自 address_bar_border）：
+   - `from_tokens` 近似 `on_surface.mix(surface, 0.84)`（测试用）。
+   - `sdk_chrome_tab_colors`（app_platform.rs）从 `ChromePalette.address_bar_border` 精确注入。
+2. `AddressBarWidget`（render.rs，真实 impl Widget）：
+   - 几何常量对齐 apps/browser/src/layout.rs：ADDRESS_BAR_HEIGHT=32（=44-2×6 inset）、
+     RADIUS=16（=bar_h×0.5 完整半圆 pill）、BORDER_WIDTH=1。
+   - paint：外层 `fill_rounded_rect(rect, 16, border_color)` + 内层 `fill_rounded_rect(inset 1,
+     15, bg)`——**双层 fill 实现 border，复用现有原语，无需 stroke_rounded_rect**。
+   - URL 文本 `draw_text` 在 security slot 之后（text_x = border + INNER_PAD_H + LEADING_SLOT
+     = 1+12+28 = 41），文案色 = on_background token（对齐 address_bar_text）。
+   - layout：宽填满（flex）+ 固定 32 高。
+3. `register_chrome_factories`：`browser.AddressBar` 改注册 AddressBarWidget（传 tokens + tab_colors）。
+4. `shell.rs` Desktop/Tablet toolbar 行：
+   - 加 `cross_axis_align="center"`（容器属性）：address pill 32 高在 44 行垂直居中
+     （bar_y = toolbar_top + 6），nav/security/menu 44 高（=行高）居中偏移 0 不受影响。
+   - 移除原 address 节点 corner_radius=18（widget 自带 radius=16）。
+
+诊断过程（关键定位）
+--------------------
+首版把 cross_axis_align 设在 address **子节点** → diff 反升至 5.91%（pill 顶部对齐 y=40
+而非居中 y=46，整体偏移 6px）。读 host.rs `arrange` 确认 cross_axis_align 是**容器**属性
+（line 1191 从 container node props 读），移到 toolbar 行后 pill 居中正确，border 像素对齐。
+
+DC-1 保持
+---------
+AddressBarWidget 是 browser-ui/chrome 内控件；address_border 经 ChromeTabColors（通用 Color
+载体）从 apps/browser ChromePalette 注入，与既有 tab_colors/scheme 注入路径同构。ui/* 通用
+crate 零新依赖。
+
+基线测量（dc14_chrome_region_pixel_diff_baseline）
+--------------------------------------------------
+控制组 hand-vs-hand = 0.000%。
+
+| 区 | Round 50 | Round 51 |
+|----|----------|----------|
+| chrome (y<112) | 4.43% | **3.25%**（4666/143360） |
+| page (y≥112) | 0.00% | 0.00% |
+
+诊断采样：pill-top (300,46) hand=218 sdk=218 ✅（border 匹配）；pill-bottom (300,77)
+hand=218 sdk=218 ✅；pill-left-edge (165,62) hand=248 sdk=248 ✅（interior bg）。
+
+剩余 3.25% diff 主因（下轮目标）
+--------------------------------
+1. pill-center (300,62) hand=212 sdk=248——address 内部 security slot 分隔线 / 状态图标 /
+   placeholder（SDK 未画内部结构）。
+2. security 徽章位置：SDK 在 toolbar 末尾独立子节点（绿），手绘在 address pill 内部左侧 slot。
+3. tab 标签文字 / favicon / close + 窗口控制图标（min/max/close）。
+
+门禁
+----
+- `cargo build --workspace` ✅
+- `cargo clippy -p zero-browser-chrome -p zero-browser --features sdk-chrome --all-targets -- -D warnings` ✅
+- `cargo fmt --check` ✅
+- zero-browser-chrome 87 测 ✅ / zero-browser sdk-chrome **205** 测 ✅ / default **191** 测 ✅ /
+  adapter-render-foundation 29 测 ✅ 全绿零回归。
+- `make product-smoke` 本环境 oracle 缺失（commit a6f08937 evidence 出库，预存环境问题）。
+  本轮改动在 sdk-chrome feature gate / browser-ui/chrome SDK crate，welcome.html 默认渲染
+  路径位等价不经 chrome → 零页面回归风险。
+
+下轮下一步
+----------
+①security 徽章从 toolbar 末尾移入 address pill 内部左侧 slot（手绘结构，shell 重构，预期消除
+toolbar-right ~1889 diff）；②address 内部 security slot 分隔线 / placeholder；③tab 标签文字 +
+favicon/close + 窗口控制图标。预期 chrome diff 3.25% → ≤2%（DC-14 阈值）。

@@ -334,6 +334,9 @@ pub struct ChromeTabColors {
     pub bar_bg: Color,
     /// 相邻非激活 tab 间分隔线（tab_separator；light=148,152,160）。
     pub separator: Color,
+    /// 地址栏 pill 边框色（address_bar_border；light=218,220,224）。手绘 chrome 地址栏 pill 为
+    /// 双层 fill_rounded_rect（外 border + 内 bg inset 1px），非 stroke。AddressBarWidget 据此画 border。
+    pub address_border: Color,
 }
 
 impl ChromeTabColors {
@@ -346,6 +349,8 @@ impl ChromeTabColors {
             active_bg: tokens.surface.lighten(1.0),
             bar_bg: tokens.on_surface.mix(tokens.surface, 0.86),
             separator: tokens.on_surface.mix(tokens.surface, 0.6),
+            // address border ≈ on_surface 向 surface 提亮 0.84（light≈224 vs 调色板 218；测试近似）。
+            address_border: tokens.on_surface.mix(tokens.surface, 0.84),
         }
     }
 }
@@ -598,6 +603,101 @@ impl Widget for BrowserTabStripWidget {
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
+// ── AddressBarWidget（真实地址栏 pill，DC-14 chrome 功能等价）──────────────────────
+
+/// 地址栏几何（与 apps/browser/src/layout.rs 手绘 chrome 对齐，DC-14 像素级等价）。
+///
+/// 手绘 `address_bar_layout`：toolbar 行高 ADDRESS_BAR_HEIGHT=44，地址栏垂直 inset
+/// ADDRESS_BAR_INPUT_V_INSET=6 → bar_h = 44 - 2*6 = 32，bar_y = toolbar_top + 6。
+/// radius = bar_h * 0.5 = 16（完整半圆 pill）。border 1px（失焦态）。
+const ADDRESS_BAR_HEIGHT: f32 = 32.0;
+const ADDRESS_BAR_RADIUS: f32 = 16.0; // = ADDRESS_BAR_HEIGHT * 0.5。
+const ADDRESS_BAR_BORDER_WIDTH: f32 = 1.0;
+
+/// 地址栏 pill 绠制控件（DC-14：真实 pill border 替换 ChromePanel 占位）。
+///
+/// paint 用**双层 fill_rounded_rect** 镜像手绘 `render_address_bar`：外层 address_bar_border(218)
+/// 与内层 bg(248) inset border_width（手绘如此实现 border，非 stroke；SDK 复用 fill_rounded_rect
+/// 无需新原语）。layout 高 32（toolbar 44 内 inset 6），宽填满（flex）；垂直居中由 shell 在
+/// toolbar 行声明 cross_axis_align=center 提供（bar_y = toolbar_top + 6）。
+///
+/// URL 文本经 `draw_text` 渲染在 security slot 之后（text_x = border + INNER_PAD_H + LEADING_SLOT）。
+/// security 状态图标 / focus 态 / placeholder 为后续轮次。
+pub struct AddressBarWidget {
+    bg: Color,
+    border_color: Color,
+    text: Option<String>,
+    text_color: Color,
+}
+
+impl AddressBarWidget {
+    /// 由声明节点构造：`bg` prop（默认 `address_bar_bg`）经 semantic token 解析；
+    /// border 色经 [`ChromeTabColors::address_border`]（生产从 `ChromePalette` 精确注入）；
+    /// `text` prop（URL 文案）+ 文案色 = on_background token（对齐手绘 address_bar_text）。
+    pub fn from_spec(spec: &WidgetSpec, tokens: &SemanticTokens, tab_colors: ChromeTabColors) -> AddressBarWidget {
+        let bg_name = match spec.props.get("bg") {
+            Some(Value::Text(s)) => s.as_str(),
+            _ => "address_bar_bg",
+        };
+        let text = match spec.props.get("text") {
+            Some(Value::Text(s)) => Some(s.clone()),
+            _ => None,
+        };
+        AddressBarWidget {
+            bg: chrome_color_themed(bg_name, tokens),
+            border_color: tab_colors.address_border,
+            text,
+            text_color: tokens.on_background,
+        }
+    }
+}
+
+impl Widget for AddressBarWidget {
+    fn mount(&mut self, _ctx: &mut MountCtx) {}
+
+    fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
+
+    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
+        EventResult::Ignored
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+        // 宽填满（flex 由 shell 设；layout 取 max_width）+ 固定 32 高。
+        let width = constraints.max_width;
+        let height = ADDRESS_BAR_HEIGHT.clamp(constraints.min_height, constraints.max_height);
+        Size::new(width, height)
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx) {
+        let size = ctx
+            .clip
+            .map(|r| r.size)
+            .unwrap_or_else(|| Size::new(400.0, ADDRESS_BAR_HEIGHT));
+        let w = size.width;
+        let h = size.height;
+        let bw = ADDRESS_BAR_BORDER_WIDTH;
+        // 外层 border（圆角 pill，border 色）。
+        ctx.recorder
+            .fill_rounded_rect(Rect::from_ltrb(0.0, 0.0, w, h), ADDRESS_BAR_RADIUS, self.border_color);
+        // 内层 bg（inset border_width，radius 减 border_width）。
+        let inner = Rect::from_ltrb(bw, bw, (w - bw).max(bw), (h - bw).max(bw));
+        ctx.recorder
+            .fill_rounded_rect(inner, (ADDRESS_BAR_RADIUS - bw).max(0.0), self.bg);
+        // URL 文本：security slot 之后（border + INNER_PAD_H + LEADING_SLOT_WIDTH = 1+12+28 = 41）。
+        // 基线 ≈ bar_h/2 + font_ascent 偏移（对齐手绘 ui_text_centered_in_height，font 13）。
+        if let Some(text) = &self.text {
+            const ADDRESS_BAR_INNER_PAD_H: f32 = 12.0;
+            const ADDRESS_BAR_LEADING_SLOT_WIDTH: f32 = 28.0;
+            let text_x = bw + ADDRESS_BAR_INNER_PAD_H + ADDRESS_BAR_LEADING_SLOT_WIDTH;
+            let baseline = h * 0.5 + 13.0 * 0.35;
+            ctx.recorder
+                .draw_text(text, Point::new(text_x, baseline), 13.0, self.text_color);
+        }
+    }
+
+    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+}
+
 /// 把 chrome `browser.*` 叶子组件工厂注册到 host。
 ///
 /// 容器节点（shell 根 / ToolbarRow）不注册 widget —— 它们经 `props.layout` 由 host 布局。
@@ -615,7 +715,7 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens,
     let t = *tokens;
     let tc = tab_colors;
     host.register("browser.AddressBar", move |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 44.0, false, &t))
+        Box::new(AddressBarWidget::from_spec(s, &t, tc))
     });
     host.register("browser.NavigationButtons", move |s| {
         Box::new(NavigationButtonsWidget::from_spec(s, &t))

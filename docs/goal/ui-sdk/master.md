@@ -1439,3 +1439,42 @@ runtime 83 / chrome 87 / browser sdk-chrome 205 测全绿零回归。
 **下轮下一步**（重新排序，按 diff 影响）：①address pill border（需 SDK `stroke_rounded_rect` 原语
 + bridge PathStrokePrimitive 圆角支持）；②security 徽章重定位到 address 内部（shell 结构性重构）；
 ③tab 标签文字/favicon/close + 窗口控制图标。三项任意一项可压 chrome diff 4.43% 向 ≤2%。
+
+### Round 51 — AddressBarWidget 真实 pill border + 几何 parity（chrome diff 4.43% → 3.25%，2026-07-04）
+
+**Round 50 定位 toolbar 为 diff 主区后，本轮实现 address bar 真实化**（最大单块）。SDK AddressBar
+此前是 `ChromePanel`（44 高全填充、无 border），手绘 `render_address_bar` 是 32 高 pill（44 行内
+inset 6）+ 双层 fill_rounded_rect border（外 address_bar_border 218 + 内 bg 248 inset 1px）。
+
+**A. `ChromeTabColors.address_border`**：加 address_border 色（light=218 来自 address_bar_border）。
+`from_tokens` 近似 `on_surface.mix(surface, 0.84)`；`sdk_chrome_tab_colors` 从 ChromePalette 精确注入。
+
+**B. `AddressBarWidget`（真实 impl Widget）**：几何对齐 layout.rs（height=32 = 44-2×6 inset、radius=16
+= bar_h×0.5 完整半圆 pill、border_width=1）。paint 用**双层 fill_rounded_rect** 镜像手绘 border
+（外 border 色 + 内 bg inset 1px）——**复用现有 fill_rounded_rect，无需 stroke_rounded_rect 新原语**
+（手绘 border 本就是双层 fill 非 stroke）。URL 文本经 draw_text 在 security slot 之后（text_x=41），
+文案色 = on_background token。register_chrome_factories 改注册 AddressBarWidget。
+
+**C. shell toolbar `cross_axis_align=center`**：address pill 32 高在 44 行垂直居中（bar_y=toolbar_top+6）。
+nav/security/menu 44 高（=行高）居中偏移 0 不受影响。移除原 address corner_radius=18（widget 自带 16）。
+
+**诊断关键**：首版把 cross_axis_align 设在 address **子节点** → diff 反升 5.91%（pill 顶部对齐 y=40
+而非居中 y=46，偏移 6px）。读 host.rs `arrange` 确认 cross_axis_align 是**容器属性**（从 container
+node props 读），移到 toolbar 行后正确。
+
+**测量**（dc14_chrome_region_pixel_diff_baseline，control 0.000%）：chrome 4.43% → **3.25%**
+（4666/143360，-1.18pp）。诊断采样：pill-top (300,46) hand=218 sdk=218 ✅；pill-bottom (300,77)
+218=218 ✅；pill-left-edge (165,62) 248=248 ✅。
+
+**剩余 3.25% diff 主因**：①pill-center (300,62) hand=212——address 内部 security slot 分隔线/状态
+图标/placeholder（SDK 未画内部结构）；②security 徽章位置（SDK toolbar 末尾独立子节点绿 vs 手绘
+address 内部左侧 slot）；③tab 标签文字/favicon/close + 窗口控制图标。
+
+**门禁全绿**：build / clippy `-D warnings` / fmt 净；chrome 87 / browser sdk-chrome 205 / default 191 /
+adapter-rf 29 测全绿零回归。SDK-only（改动在 sdk-chrome feature gate / browser-ui/chrome SDK crate）。
+
+Evidence: `evidence/dc14-addressbar-widget-20260704-034756.txt`
+
+**下轮下一步**：①security 徽章从 toolbar 末尾移入 address pill 内部左侧 slot（手绘结构，shell 重构，
+预期消除 toolbar-right ~1889 diff）；②address 内部 security slot 分隔线/placeholder；③tab 标签文字
++ favicon/close + 窗口控制图标。预期 chrome diff 3.25% → ≤2%。
