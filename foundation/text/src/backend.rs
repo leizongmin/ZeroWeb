@@ -86,6 +86,17 @@ impl FontdueBackend {
         Ok(id)
     }
 
+    /// 查询已加载字体的排版度量（ascent, descent，按 `size_px` 缩放）。
+    ///
+    /// 返回值与 render-foundation `FontLoader::line_metrics` 的 `(ascent, descent)` 一致，
+    /// 使 SDK widget（AddressBar 等）可计算与手绘 chrome 相同的基线（DC-11 text path 统一）。
+    /// `descent` 为负值（fontdue 约定）；未知字体返回 `None`。
+    pub fn line_metrics(&self, font_id: FontId, size_px: f32) -> Option<(f32, f32)> {
+        let font = self.fonts.iter().find(|f| f.id == font_id)?;
+        let m = font.font.horizontal_line_metrics(size_px)?;
+        Some((m.ascent, m.descent))
+    }
+
     /// 光栅化单个 glyph 为 alpha 覆盖位图（fontdue）。DC-11：基础层 raster 阶段。
     ///
     /// `glyph_id` 取自 shape 阶段的 [`PositionedGlyph::glyph_id`]（rustybuzz u32 → fontdue u16）。
@@ -746,5 +757,39 @@ mod tests {
             assert_eq!(lines, 1, "max_width={mw}: should be single line");
             assert!((w - 50.0).abs() < 0.01);
         }
+    }
+
+    #[test]
+    fn line_metrics_ahem_returns_ascent_descent() {
+        let b = backend_with_ahem();
+        // Ahem.ttf 是空格方块字体，每个字符 1em 方形。其 line metrics 由 fontdue
+        // 从 OS/2 表读取：ascent > 0，descent < 0。
+        let id = FontId(0); // Ahem 是首个加载字体 → id=0
+        let m = b.line_metrics(id, 13.0).expect("Ahem line_metrics");
+        assert!(
+            m.0 > 0.0,
+            "ascent should be positive for Ahem at 13px, got {}",
+            m.0
+        );
+        assert!(
+            m.1 < 0.0,
+            "descent should be negative for Ahem, got {}",
+            m.1
+        );
+        let line_h = m.0 - m.1; // ascent - descent = line height
+        assert!(
+            line_h > 10.0 && line_h < 20.0,
+            "Ahem line height at 13px should be near 13-16, got {}",
+            line_h
+        );
+    }
+
+    #[test]
+    fn line_metrics_unknown_font_returns_none() {
+        let b = backend_with_ahem();
+        assert!(
+            b.line_metrics(FontId(999), 13.0).is_none(),
+            "unknown font_id should return None"
+        );
     }
 }
