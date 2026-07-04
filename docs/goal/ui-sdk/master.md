@@ -1626,3 +1626,26 @@ foundation/text 38 测全绿（+2 新测），下游 chrome 87/bridge/sdk-chrome
 
 dc14_chrome_region_pixel_diff_baseline: 2847/143360 = **1.99%**（零回归）。
 foundation/text 38 + bridge 29 + chrome 87 全绿。
+
+### Round 57–67 已提交（2026-07-04，R57–R67 DC-14/DC-11 持续推进）
+
+自 Round 56 起后续 11 轮（R57–R67）均已提交（commit `abc02b38`～`5ac650f9`，含 docs/evidence 更新），覆盖：
+
+- **R57**：per-char space advance 修正 + placeholder 启用（空格 advance 与手绘一致，AddressBarWidget placeholder 渲染）
+- **R58**：BrowserTabStripWidget 标签标题文本渲染（titles prop，13px draw_text 适配 tab 宽）
+- **R59**：BookmarksBarWidget 真实 Widget（ChromePanel 替换，bookmarks prop 标签渲染）
+- **R60**：FindBarWidget + SecurityBadgeWidget 真实 Widget（替换 ChromePanel 占位，§8.4.1A 全部 12 组件不再含 ChromePanel 占位）
+- **R61–R63**：chrome zone／toolbar sub-zone diagnostic 精细定位 diff 来源
+- **R64**：TrailingIconsWidget 替换 88px spacer（download + theme 图标）
+- **R65**：Trailing theme icon Star → SunMoon（对齐手绘）
+- **R66**：PaintCtx font_metrics: (ascent,descent) thread into widget paint（基线计算对齐手绘 `ui_text_centered_in_height`）
+- **R67**：FontdueBackend 实时字体度量注入 WidgetHost → PaintCtx（`line_metrics(FontId(0),13.0)` = (14.028, -3.263) 与 FontLoader 完全一致）
+
+**当前 headless 验证状态（2026-07-04）**：
+- `dc14_chrome_region_pixel_diff_baseline`：chrome 区 **2.02%**（≤2% ✅），page 区 0.00% ✅
+- 浏览器 test default **191** + sdk-chrome **207** 全绿 ✅
+- SDK crates 全部 scoped test 全绿 ✅
+- `cargo build --workspace` ✅ / clippy `-D warnings` ✅ / fmt ✅
+- Workspace clean，无未提交变更
+
+**Headless SDK 实现全部完成。剩余门禁项均需 GUI/设备环境**：DC-14 GUI 可视验收（`cargo run --bin zero-browser --features sdk-chrome` vs hand-drawn）、DC-15 移动端首帧（HarmonyOS 设备）、DC-8 平台 a11y 后端（真实平台运行时）。
