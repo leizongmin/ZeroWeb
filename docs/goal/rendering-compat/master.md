@@ -2648,6 +2648,20 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1027 ★break-after:column 死值消费（R903 mirror）LANDED = multicol-break-000 PASS（1.12→0.81%）·css-multicol Oracle 120→121（+1）零回归·spec-correctness
+
+承 R1026 后续扫 multicol 近-pass（26.5% baseline）。复查 §9.7 dead-value 簇发现 `break_after` 仅在 paint/effects_indicators.rs 画调试指示器时读，**layout 侧从未消费**——与 R903 前的 `break_before` 完全对称的死值（R513 §9.7 扫描遗漏项）。CSS Fragmentation §3.3：`break-after: column` = 放置完当前子元素后强制推进到下一列。
+
+**实现**（crates/layout-engine/src/multicol.rs，mirror R903）：① 收集期加 `forced_breaks_after: Vec<bool>`（`style.break_after ∈ {Column, Page}`）；② 三 assignment 函数（balanced/with_breaking/sequential）签名加 `forced_breaks_after`，每个在放置完子元素 i（含其全部 breaking 片段）后 gate `if forced_breaks_after[i] && current_col + 1 < col_count { advance }`。末列守卫防越界 + 不创建尾随空列（与 R903 break-before 的 `current_col_height > 0.0` 前导空列守卫互补）。
+
+**验证（chromium Oracle + 三态门禁）**：multicol-break-000.xht（`div > div { break-after: column }`）**1.12%→0.81% PASS**（flipped，★纠正首轮「balanced 巧合覆盖」推测——break-after 确为必需）；spanner-fragmentation-012 2.02→1.5%（FAIL 内改善）；**css-multicol Oracle 120→121（+1）零新翻 FAIL**（top-15 worst 完全一致）；column-wrap-no-constraints-002 1.02→1.76%（FAIL 内恶化，该测试用 `column-wrap:wrap` css-multicol-2 草案特性 ZW 不支持，根本性 unsupported，恶化是更正确 break-after 在不支持 row-wrap 下的副作用非真回归）；welcome <20% gate（multicol-only，零影响）。3 新 R1027 单测（break-after balanced/breaking/last-col-noop）+ 9 既有 R903 测更新签名；19 multicol 测全绿。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / make test ✓（workspace 零失败）。
+
+**意义**：关闭 break-after:column 死值（R513 §9.7 遗漏，R903 break-before 对称项）。R903-R907 multicol spec-correctness 簇续延。yield 小（+1）但 dead-value→consumed 真实 spec-correctness，同 R903/R1021 先例。详见 [`evidence/r1027-break-after-column-2026-07-05.txt`](./evidence/r1027-break-after-column-2026-07-05.txt)。
+
+**▶ 下会话**：css-multicol 余下 worst 全结构性（span-all-children-height 需 column-span:all 解析 + Phase 2 rebalancing / nested-balancing / breaking / paged）。forward = ① multicol Phase 2（多 session，column-span:all 解析是前置）；② css-writing-modes vertical block-flow（R109 §9.2.1.1 + vertical flow，本会话 oracle 实测 7% top-worst 全 87% vertical block-flow 结构性）；③ font-wall per-font line-height（须 webfont/font-metric provider）。break-after 死值扫描方法可外推到其它属性（page-break-after legacy alias 等，预期零 yield 因 ZW 不做 paged media）。
+
 ### R1026 css-tables 近-pass 残余扫描 + table-cell leaf 扩展（net-neutral）+ 空 cell strut 实验（net-negative，font-wall）·零源码 net·纯调查
 
 承 R1025 后扫 css-tables（64.3% baseline）近-pass 残余找下一 lever。**结论：css-tables 近-pass 残余 = 精度 / 空 cell 渲染（font-wall 阻塞），无 clean 单会话 lever**。
