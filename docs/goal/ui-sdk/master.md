@@ -1478,3 +1478,31 @@ Evidence: `evidence/dc14-addressbar-widget-20260704-034756.txt`
 **下轮下一步**：①security 徽章从 toolbar 末尾移入 address pill 内部左侧 slot（手绘结构，shell 重构，
 预期消除 toolbar-right ~1889 diff）；②address 内部 security slot 分隔线/placeholder；③tab 标签文字
 + favicon/close + 窗口控制图标。预期 chrome diff 3.25% → ≤2%。
+
+### Round 52 — security 徽章移入 address slot + slot divider（chrome diff 3.25% → 2.40%，2026-07-04）
+
+**Round 51 后 security 徽章位置是 toolbar-right ~1889 diff 的主因**（SDK 在 toolbar 末尾独立绿块；
+手绘在 address pill 内部左侧 slot，Secure 态不画图标）。本轮把 security 从 toolbar 独立子节点移入
+AddressBarWidget slot。
+
+**A. shell Desktop/Tablet toolbar**：移除 `browser.SecurityBadge` 独立叶子；address 节点加 `security_state`
+prop（security_color_name：secure/not-secure/mixed-content/dangerous）。
+**B. AddressBarWidget security slot**：读 security_state；画 slot divider（1px 竖线，对齐手绘 slot_divider，
+色 = on_surface.mix(surface,0.6)）；Secure 态无图标（对齐手绘 Secure→None），非 Secure 画 "!"（warning 色）。
+**C. Tablet 同步**：Tablet toolbar 同样移除 SecurityBadge + 加 security_state prop。
+
+**测量**（dc14_chrome_region_pixel_diff_baseline，control 0.000%）：chrome 3.25% → **2.40%**
+（3441/143360，-0.85pp）。距 DC-14 ≤2% 阈值 0.40pp。
+
+**剩余 2.40% diff 分布**（diag_dist 桶统计）：addr 1911 + menu 796 + tab 404 + nav 209 + win-ctrl 77
++ tab-mid 44。**addr 1911 主因 = toolbar 布局错配**：SDK address 紧贴 nav（x=154），手绘 bar_x=174
+（nav_section 164 含 NAV_SECTION_TRAILING_GAP + ADDRESS_BAR_PADDING 10）；且手绘 trailing 有
+download/theme/menu 三按钮（SDK 缺 download/theme），address 宽度亦不同。
+
+**门禁全绿**：build / clippy `-D warnings` / fmt 净；chrome 87 / browser sdk-chrome 205 测全绿零回归。
+SDK-only（改动在 sdk-chrome feature gate / browser-ui/chrome SDK crate）。
+
+**下轮下一步**：toolbar 布局 parity——①nav widget 宽含 NAV_SECTION_TRAILING_GAP+ADDRESS_BAR_PADDING
+（154→174，address 左缘对齐手绘 bar_x=174）；②address 宽度对齐（手绘 bar_w = width - bar_x - trailing，
+trailing = download/theme/menu + gaps）；③补 download/theme 按钮或确认 fresh app 不渲染。预期 chrome
+diff 2.40% → ≤2%（跨过 DC-14 阈值）。

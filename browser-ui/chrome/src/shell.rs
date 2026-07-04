@@ -159,21 +159,23 @@ impl BrowserChromeShell for DesktopBrowserShell {
         nav.props
             .insert("can_forward", Value::Bool(model.navigation.can_go_forward));
         toolbar.children.push(nav);
-        toolbar.children.push(leaf_flex(
+        // 地址栏 pill：AddressBarWidget 自画双层 rounded border（radius 16）+ 32 高 + security slot
+        // （Secure=无图标，对齐手绘；非 Secure 在 slot 内画图标）。security_state prop 传入。
+        // 垂直居中由 toolbar 行 cross_axis_align=center 提供（容器属性）。
+        let mut address = leaf_flex(
             "browser.AddressBar",
             ID_ADDRESS_BAR,
             "address_bar_bg",
             Some(model.address_text.clone()),
             1.0,
-        ));
-        // 地址栏 pill：AddressBarWidget 自画双层 rounded border（radius 16）+ 32 高；
-        // 垂直居中由 toolbar 行 cross_axis_align=center 提供（容器属性）。
-        toolbar.children.push(leaf(
-            "browser.SecurityBadge",
-            ID_SECURITY_BADGE,
-            crate::render::security_color_name(model.security),
-            None,
-        ));
+        );
+        address.props.insert(
+            "security_state",
+            Value::Text(crate::render::security_color_name(model.security).into()),
+        );
+        toolbar.children.push(address);
+        // SecurityBadge 不再作为 toolbar 末尾独立子节点——手绘 chrome security 在 address pill
+        // 内部左侧 slot（AddressBarWidget 渲染），独立子节点会画在 toolbar 末尾产生位置 diff。
         toolbar.children.push(leaf(
             "browser.BrowserMenu",
             ID_MENU,
@@ -254,21 +256,19 @@ impl BrowserChromeShell for TabletBrowserShell {
         nav.props
             .insert("can_forward", Value::Bool(model.navigation.can_go_forward));
         toolbar.children.push(nav);
-        toolbar.children.push(leaf_flex(
+        // 地址栏 pill：security slot 内联（同 Desktop，Secure=无图标）。
+        let mut address = leaf_flex(
             "browser.AddressBar",
             ID_ADDRESS_BAR,
             "address_bar_bg",
             Some(model.address_text.clone()),
             1.0,
-        ));
-        // 地址栏 pill：AddressBarWidget 自画双层 rounded border（radius 16）+ 32 高；
-        // 垂直居中由 toolbar 行 cross_axis_align=center 提供（容器属性）。
-        toolbar.children.push(leaf(
-            "browser.SecurityBadge",
-            ID_SECURITY_BADGE,
-            crate::render::security_color_name(model.security),
-            None,
-        ));
+        );
+        address.props.insert(
+            "security_state",
+            Value::Text(crate::render::security_color_name(model.security).into()),
+        );
+        toolbar.children.push(address);
         root.children.push(toolbar);
         root.children
             .push(tab_strip_node(ID_TAB_STRIP, "tab_strip_bg", false, model));

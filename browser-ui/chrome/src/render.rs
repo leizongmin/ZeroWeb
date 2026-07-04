@@ -628,6 +628,11 @@ pub struct AddressBarWidget {
     border_color: Color,
     text: Option<String>,
     text_color: Color,
+    /// security 状态名（"secure"/"not-secure"/"mixed-content"/"dangerous"；默认 "secure"）。
+    /// 手绘 chrome：Secure 态不画图标（slot 空），非 Secure 在 slot 画 "!" 等。SDK 复此逻辑。
+    security_state: String,
+    slot_divider_color: Color,
+    insecure_color: Color,
 }
 
 impl AddressBarWidget {
@@ -643,11 +648,18 @@ impl AddressBarWidget {
             Some(Value::Text(s)) => Some(s.clone()),
             _ => None,
         };
+        let security_state = match spec.props.get("security_state") {
+            Some(Value::Text(s)) => s.to_string(),
+            _ => "secure".to_string(),
+        };
         AddressBarWidget {
             bg: chrome_color_themed(bg_name, tokens),
             border_color: tab_colors.address_border,
             text,
             text_color: tokens.on_background,
+            security_state,
+            slot_divider_color: tokens.on_surface.mix(tokens.surface, 0.6),
+            insecure_color: tokens.warning,
         }
     }
 }
@@ -685,11 +697,30 @@ impl Widget for AddressBarWidget {
             .fill_rounded_rect(inner, (ADDRESS_BAR_RADIUS - bw).max(0.0), self.bg);
         // URL 文本：security slot 之后（border + INNER_PAD_H + LEADING_SLOT_WIDTH = 1+12+28 = 41）。
         // 基线 ≈ bar_h/2 + font_ascent 偏移（对齐手绘 ui_text_centered_in_height，font 13）。
+        const ADDRESS_BAR_INNER_PAD_H: f32 = 12.0;
+        const ADDRESS_BAR_LEADING_SLOT_WIDTH: f32 = 28.0;
+        let slot_x = bw + ADDRESS_BAR_INNER_PAD_H; // slot 起（图标区）
+        let text_x = slot_x + ADDRESS_BAR_LEADING_SLOT_WIDTH; // slot 后文本起
+        let baseline = h * 0.5 + 13.0 * 0.35;
+        // security slot 分隔线（1px 竖线，对齐手绘 slot_divider； inset 6 顶/底）。
+        let divider_inset = 6.0_f32;
+        ctx.recorder.fill_rect(
+            Rect::from_ltrb(
+                text_x,
+                divider_inset,
+                text_x + 1.0,
+                (h - divider_inset).max(divider_inset),
+            ),
+            self.slot_divider_color,
+        );
+        // security 状态图标：Secure = 无（对齐手绘 Secure→None）；非 Secure 在 slot 中心画 "!"。
+        // 图标中心 = slot_x + LEADING_SLOT/2 = slot_x + 14。
+        if self.security_state != "secure" {
+            let icon_x = slot_x + ADDRESS_BAR_LEADING_SLOT_WIDTH * 0.5;
+            ctx.recorder
+                .draw_text("!", Point::new(icon_x - 3.0, baseline), 13.0, self.insecure_color);
+        }
         if let Some(text) = &self.text {
-            const ADDRESS_BAR_INNER_PAD_H: f32 = 12.0;
-            const ADDRESS_BAR_LEADING_SLOT_WIDTH: f32 = 28.0;
-            let text_x = bw + ADDRESS_BAR_INNER_PAD_H + ADDRESS_BAR_LEADING_SLOT_WIDTH;
-            let baseline = h * 0.5 + 13.0 * 0.35;
             ctx.recorder
                 .draw_text(text, Point::new(text_x, baseline), 13.0, self.text_color);
         }
