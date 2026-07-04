@@ -174,8 +174,21 @@ impl BrowserChromeShell for DesktopBrowserShell {
             Value::Text(crate::render::security_color_name(model.security).into()),
         );
         toolbar.children.push(address);
-        // SecurityBadge 不再作为 toolbar 末尾独立子节点——手绘 chrome security 在 address pill
-        // 内部左侧 slot（AddressBarWidget 渲染），独立子节点会画在 toolbar 末尾产生位置 diff。
+        // trailing spacer：手绘 chrome toolbar 在 address pill 右侧还有 download/theme 按钮 +
+        // 间隙（trailing_reserved = padding(10) + gap(8) + download(32) + gap(8) + theme(32) +
+        // gap(8) + menu(32) = 130）。SDK 当前只有 menu(42=32+10pad)，缺 88px → address flex 多 88
+        // → addr-r diff 主因。无注册工厂的空容器节点加 child_min/max 约束占固定 88×44 空间
+        //（host 中 node_container_kind=None + widget=None → fill available 后 clamp 到此约束；
+        // 必须约束 height=44，否则 fill 行为撑高 toolbar→760 → viewport 归零）。
+        {
+            let mut spacer = node("browser.ToolbarSpacer", "toolbar_spacer");
+            spacer.props.insert("min_width", Value::Float(88.0));
+            spacer.props.insert("max_width", Value::Float(88.0));
+            spacer.props.insert("min_height", Value::Float(44.0));
+            spacer.props.insert("max_height", Value::Float(44.0));
+            toolbar.children.push(spacer);
+        }
+        // BrowserMenu：真实图标控件（DC-14）。MoreVertical 图标，42px（含右侧 trailing pad）。
         toolbar
             .children
             .push(leaf("browser.BrowserMenu", ID_MENU, "toolbar_bg", None));
