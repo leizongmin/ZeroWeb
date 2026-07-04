@@ -2648,6 +2648,23 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1033 css-text-decor multi-value + position:relative-table 复核 = 全 font-wall/structural 阻塞·plateau 综合再确证·零源码·纯调查
+
+承 R1032 CONTINUE。本轮复核两个候选，均确证 blocked：
+
+**css-text-decor text-decoration-line multi-value（63 文件 grep，R724 标 single-value enum）**：text-decoration-line.html（11%）测 multi-line + cascade/!important/blink（entangled）。near-pass 多值案（text-decoration-style-multiple 0.96%、shorthands 0.61-1.79%、underline-offset-overline 1.02%）**全 font-wall 阻**——装饰线 y 位置跟随 baseline（fontdue vs chromium baseline 度量），multi-line 支持只改「画几条线」不改线位置 → 实现后仍 +0（同 thickness R875/R914/R1020-cont 3× net-negative 谱系）。enum→bitset 重构（~30 match sites）+ paint multi-line = 中 effort，**yield +0 不 justified**。裁决：不实现（font-wall 阻 flip）。
+
+**css-position position-relative-table 簇（8 案 ~1.32%，R1020-cont target）**：apply_relative_offsets（postprocess.rs:994）已递归应用到 table-internal 盒（含 tbody/tr/td），relative offset MOSTLY 生效（1.32% 残余非 offset 全缺）。R1020-cont global postprocess fix overshoot（table.rs 已接近正确），1.32% 残余 = table 路径 abspos/relative 定位精度，**structurally entangled**（须 converter/taffy 层统一非 postprocess，多 session）。再确证 R1020-cont 结论。
+
+**plateau 综合再确证（R1030-R1033 四轮）**：跨 multicol / css-text-decor / css-fonts / css-values / css-writing-modes / css-position / css-tables / css-flexbox / css-grid **全 WPT reftest dir**，单 session clean lever 已尽。残余 forward motion 全多 session 结构性：
+- **font-wall**（text-rendering 全 dir 主体 blocker）：R953 baseline_offset（+102）+ R990 ascent 0.928（+138）已尽 metric/positioning 侧；残余 = glyph raster accumulation（R388 单 glyph ≈chr 但累积发散）+ advance width（R375b accurate net-negative）= 硬核多 session（fontdue→chromium 光栅协调或 FreeType 替换）。
+- **R109 vertical block-flow**（css-writing-modes 87% + text-emphasis-position vertical）：结构性多 session。
+- **multicol Phase 2 multi-row**（span-all-children-height + span-all-rule + nested-balancing）：结构性多 session。
+- **position:relative offset**（structurally entangled，R1020-cont 证 postprocess 不可解）：多 session。
+- **feature gaps**（text-decoration-inset/thickness CSS4 + 表单控件 + ::backdrop + scroll-container）。
+
+**▶ 下会话**：plateau 已四轮确证，**勿再扫找 clean lever**（边际为零）。须 committed dedicated 多 session：① **font-wall glyph raster accumulation**（最高价值，解 text-rendering 全 dir——但 R834/R836/R849 多轮 net-negative，须 fresh angle 如 paint-side per-glyph subpixel positioning 或 fontdue raster hinting）；② multicol multi-row 模型；③ R109 vertical block-flow；④ position:relative converter-layer 统一。**选一 dedicated 推进，单 session 不求完成，求可验证的 incremental slice**（避免 R376 dormant WIP：每个 slice 须独立 yield 或 net-neutral correctness）。
+
 ### R1032 css-fonts font-size-adjust 簇 Phase 0 + Ahem slice 实现 A/B（+0，font-wall 阻 flip）已回退·机制确证·零 net 源码·纯调查
 
 承 R1031 CONTINUE 转 font-wall per-font ascent，转 probe css-fonts（fresh oracle 98/287 34.8%）。定位最高密度簇 **font-size-adjust**（40 文件，7+ top-worst 13-34%），**完全未实现**（css-parser/style/layout/engine 全零命中）。
