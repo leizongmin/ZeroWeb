@@ -14,10 +14,83 @@
 //! `ChromePanel` 等）在 paint 前经本 catalog 解析为可见字符串。当前 `shell_demo` / `browser_menu`
 //! 的字面文案逐步迁移到本 catalog 的 id（DC-10 浏览器文案接入，本模块为入口）。
 
+use std::collections::HashMap as StdHashMap;
 use zero_ui_i18n::{
-    CatalogStore, I18nContext, I18nError, I18nProvider, LocaleId, LocalizedText, MessageCatalog, MessageEntry,
-    MessageId, MessageParams, MessageRef, ResolvedText, TextDirection, direction_for, fallback_chain,
+    CatalogStore, I18nContext, I18nError, I18nProvider, LocaleId, LocalizedText, MessageCatalog, MessageEntry, MessageId,
+    MessageParams, MessageRef, ResolvedText, TextDirection, direction_for, fallback_chain,
 };
+
+// ── YAML catalog 反序列化（零-ui-i18n 类型自带 serde，但 MessageCatalog 无 serde derive，
+//    故定义本地中间结构，再转换为 MessageCatalog）────────────────────────────
+
+/// YAML catalog 的中间反序列化格式。
+#[derive(serde::Deserialize)]
+struct YamlCatalog {
+    locale: String,
+    direction: String,
+    messages: StdHashMap<String, YamlEntry>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum YamlEntry {
+    /// 简写格式：`key: "value"` → 等价于 `{ value: "value" }`
+    Simple(String),
+    /// 完整格式：`key: { value: "...", description: "...", plural: { one: "..." } }`
+    Full {
+        value: String,
+        #[serde(default)]
+        description: Option<String>,
+        #[serde(default)]
+        plural: Option<StdHashMap<String, String>>,
+    },
+}
+
+/// 把 YAML 字符串解析为 [`MessageCatalog`]。
+///
+/// YAML 格式见 `browser-ui/chrome/i18n/en-US.yaml`。
+pub fn catalog_from_yaml(yaml: &str) -> Result<MessageCatalog, String> {
+    let yc: YamlCatalog =
+        serde_yaml::from_str(yaml).map_err(|e| format!("i18n YAML 解析失败: {e}"))?;
+    let direction = match yc.direction.to_lowercase().as_str() {
+        "rtl" => TextDirection::Rtl,
+        _ => TextDirection::Ltr,
+    };
+    let mut messages = hashbrown::HashMap::with_capacity(yc.messages.len());
+    for (id, entry) in yc.messages {
+        let msg_entry = match entry {
+            YamlEntry::Simple(v) => MessageEntry::simple(&v),
+            YamlEntry::Full {
+                value,
+                description,
+                plural,
+            } => {
+                let mut e = MessageEntry::simple(&value);
+                e.description = description;
+                let pf = plural.unwrap_or_default();
+                for (cat, tmpl) in pf {
+                    let cat = match cat.as_str() {
+                        "zero" => zero_ui_i18n::PluralCategory::Zero,
+                        "one" => zero_ui_i18n::PluralCategory::One,
+                        "two" => zero_ui_i18n::PluralCategory::Two,
+                        "few" => zero_ui_i18n::PluralCategory::Few,
+                        "many" => zero_ui_i18n::PluralCategory::Many,
+                        "other" => zero_ui_i18n::PluralCategory::Other,
+                        _ => continue,
+                    };
+                    e.plural_forms.insert(cat, tmpl);
+                }
+                e
+            }
+        };
+        messages.insert(MessageId::new(&id), msg_entry);
+    }
+    Ok(MessageCatalog {
+        locale: LocaleId::new(&yc.locale),
+        direction,
+        messages,
+    })
+}
 
 /// 浏览器文案 message id 常量（spec FR-013 点分命名）。
 ///
@@ -57,68 +130,12 @@ pub const DEFAULT_LOCALE: &str = "en";
 
 /// 默认英语文案 catalog（spec FR-013 / DC-10）。
 ///
-/// 返回的 catalog 覆盖 [`ids`] 中全部 message id；后续 locale 翻译以同结构新增 catalog
+/// YAML 规范源在 `browser-ui/chrome/i18n/en-US.yaml`，编译时嵌入。
+/// 返回的 catalog 覆盖 [`ids`] 中全部 message id；后续 locale 翻译以同结构新增 YAML 文件
 /// 注册到 [`catalog_store`]。
 pub fn default_catalog() -> MessageCatalog {
-    let mut messages = hashbrown::HashMap::new();
-    let entry = |v: &str| MessageEntry::simple(v);
-    messages.insert(MessageId::new(ids::NEW_TAB), entry("New Tab"));
-    messages.insert(MessageId::new(ids::NEW_WINDOW), entry("New Window"));
-    messages.insert(MessageId::new(ids::RELOAD), entry("Reload"));
-    messages.insert(MessageId::new(ids::CLOSE_TAB), entry("Close Tab"));
-    messages.insert(MessageId::new(ids::CLOSE_MENU), entry("Close Menu"));
-    messages.insert(MessageId::new(ids::OPEN_MENU), entry("Menu"));
-    messages.insert(MessageId::new(ids::FIND), entry("Find"));
-    messages.insert(MessageId::new(ids::BOOKMARKS), entry("Bookmarks"));
-    messages.insert(MessageId::new(ids::DOWNLOADS), entry("Downloads"));
-    messages.insert(MessageId::new(ids::SETTINGS), entry("Settings"));
-    messages.insert(MessageId::new(ids::BACK), entry("Back"));
-    messages.insert(MessageId::new(ids::FORWARD), entry("Forward"));
-    // 带参数消息（shell 组装用）。
-    messages.insert(MessageId::new(ids::NAV_STATUS), {
-        let mut e = MessageEntry::simple("Back·{back} Fwd·{fwd}");
-        e.description = Some("导航按钮状态：{back}/{fwd} 为 on/off 文本".into());
-        e
-    });
-    messages.insert(MessageId::new(ids::N_BOOKMARKS), {
-        let mut e = MessageEntry::simple("{count} bookmarks");
-        let mut pf = hashbrown::HashMap::new();
-        pf.insert(zero_ui_i18n::PluralCategory::One, "{count} bookmark".to_string());
-        e.plural_forms = pf;
-        e.description = Some("书签计数：{count} 为条数，支持 plural".into());
-        e
-    });
-    messages.insert(MessageId::new(ids::SECURITY_STATUS), {
-        let mut e = MessageEntry::simple("Security: {status}");
-        e.description = Some("安全状态：{status} 为安全色名（secure/insecure/mixed/dangerous）".into());
-        e
-    });
-    // SecurityBadge tooltip 文案。
-    messages.insert(MessageId::new(ids::SECURITY_SECURE), {
-        let mut e = MessageEntry::simple("Connection is secure");
-        e.description = Some("HTTPS 连接安全".into());
-        e
-    });
-    messages.insert(MessageId::new(ids::SECURITY_INSECURE), {
-        let mut e = MessageEntry::simple("Connection is not secure");
-        e.description = Some("HTTP 连接不安全".into());
-        e
-    });
-    messages.insert(MessageId::new(ids::SECURITY_MIXED), {
-        let mut e = MessageEntry::simple("This page has mixed content");
-        e.description = Some("HTTPS 页面含混合内容".into());
-        e
-    });
-    messages.insert(MessageId::new(ids::SECURITY_DANGEROUS), {
-        let mut e = MessageEntry::simple("Deceptive site ahead");
-        e.description = Some("危险站点（钓鱼/恶意）".into());
-        e
-    });
-    MessageCatalog {
-        locale: LocaleId::new(DEFAULT_LOCALE),
-        direction: TextDirection::Ltr,
-        messages,
-    }
+    catalog_from_yaml(include_str!("../../i18n/en-US.yaml"))
+        .expect("default catalog YAML 编译时嵌入，必须合法")
 }
 
 /// 注册了默认 catalog 的 [`CatalogStore`]（测试 / 运行时便利入口）。

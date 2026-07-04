@@ -1292,23 +1292,25 @@ pub trait BrowserChromeShell {
 - **DSL 规格**:
 
 ```yaml
-component: Adaptive
-branches:
+# responsive 键在 DSL WidgetSpec 节点中代替 component，按 AdaptiveBranch
+# (viewport/platform/input) 选择匹配分支；default 始终必需。
+responsive:
   compact:
     component: PhoneBrowserShell
-  medium:
-    component: TabletBrowserShell
   expanded:
     component: DesktopBrowserShell
+  default:
+    component: TabletBrowserShell
 ```
 
+- **匹配优先级**（按维度降序）：viewport（`compact`/`medium`/`expanded`）→ platform（`mobile`/`desktop`/`embedded`）→ input（`touch`/`pointer`/`keyboard`）。同一维度内按列表顺序优先匹配，之后按 `default` 回落。
 - **默认动作**:
-  - 未匹配断点时使用最接近的较小 viewport branch；仍无匹配时使用 `default` branch。
+  - `responsive:` 节点**始终要求 `default` 分支**（无 default → DSL validation error）。
   - soft keyboard rect 为空时按无键盘布局。
   - safe area 为空时按 zero insets 处理。
 - **错误处理**:
-  - 缺少 `default` 且无匹配 branch: validation error。
-  - branch 组件不存在: DSL validation error。
+  - `responsive:` 缺少 `default`: DSL validation error。
+  - 分支组件不存在: DSL validation error。
   - `WindowMetrics` 非法，如负尺寸或 NaN density: runtime diagnostic，并使用最后一次有效 metrics。
 
 ### IF-010: 完整 UI 能力接口集合
@@ -2293,16 +2295,17 @@ message id in Rust/YAML
 首阶段资源格式使用 YAML：
 
 ```yaml
-locale: en-US
+locale: en
 direction: ltr
 messages:
-  browser.address.placeholder:
-    value: "Search or enter address"
-    description: "Placeholder for the browser address bar."
-  browser.permission.camera.title:
-    value: "Allow {origin} to use your camera?"
-    params:
-      origin: string
+  # 简写格式：无 plural/description 时可省略 value 键。
+  browser.new_tab: "New Tab"
+  # 完整格式：带 description 与 plural 变体。
+  browser.n_bookmarks:
+    value: "{count} bookmarks"
+    description: "书签计数：{count} 为条数，支持 plural"
+    plural:
+      one: "{count} bookmark"
 ```
 
 DSL 中使用对象形式引用：

@@ -22,6 +22,8 @@ zero-browser-shell = { workspace = true }
 compact_str = { workspace = true, features = ["serde"] }
 # DC-10：MessageCatalog.messages 用 hashbrown::HashMap（与 zero-ui-i18n 同类型）。
 hashbrown = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
 
 # DC-3 phase-2：render_chrome_via_sdk_with_webview 接受 WebView RenderPrimitives。
 zero-render-foundation = { workspace = true }

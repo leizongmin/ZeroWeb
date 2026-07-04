@@ -1,0 +1,52 @@
+# English (US) message catalog for ZeroBrowser chrome (spec FR-013).
+# DC-10: browser 文案在 browser-ui/chrome/i18n，YAML 为规范源。
+# simple 格式：`key: "value"`（等价于 `{ value: "value" }`）。
+# 带 plural/description 用对象格式。
+
+locale: en
+direction: ltr
+messages:
+  # 菜单项（BrowserMenu）。
+  browser.new_tab: "New Tab"
+  browser.new_window: "New Window"
+  browser.reload: "Reload"
+  browser.close_tab: "Close Tab"
+  browser.close_menu: "Close Menu"
+  browser.open_menu: "Menu"
+
+  # 工具栏 / bars。
+  browser.find: "Find"
+  browser.bookmarks: "Bookmarks"
+  browser.downloads: "Downloads"
+  browser.settings: "Settings"
+
+  # 导航按钮（NavigationButtons）。
+  browser.back: "Back"
+  browser.forward: "Forward"
+
+  # 状态 / 计数（带参数）。
+  browser.nav_status:
+    value: "Back·{back} Fwd·{fwd}"
+    description: "导航按钮状态：{back}/{fwd} 为 on/off 文本"
+  browser.n_bookmarks:
+    value: "{count} bookmarks"
+    description: "书签计数：{count} 为条数，支持 plural"
+    plural:
+      one: "{count} bookmark"
+  browser.security_status:
+    value: "Security: {status}"
+    description: "安全状态：{status} 为安全色名（secure/insecure/mixed/dangerous）"
+
+  # 安全标识 tooltip（SecurityBadge）。
+  browser.security.secure:
+    value: "Connection is secure"
+    description: "HTTPS 连接安全"
+  browser.security.insecure:
+    value: "Connection is not secure"
+    description: "HTTP 连接不安全"
+  browser.security.mixed:
+    value: "This page has mixed content"
+    description: "HTTPS 页面含混合内容"
+  browser.security.dangerous:
+    value: "Deceptive site ahead"
+    description: "危险站点（钓鱼/恶意）"

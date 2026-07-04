@@ -7,5 +7,6 @@ license.workspace = true
 
 [dependencies]
 zero-ui-core = { workspace = true }
+zero-ui-collections = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 compact_str = { workspace = true, features = ["serde"] }
