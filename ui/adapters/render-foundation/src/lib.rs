@@ -304,12 +304,12 @@ impl RenderBackend for RenderFoundationBackend {
         let mut pen_x = 0.0_f32;
         for ch in text.chars() {
             // per-character font fallback: try each loaded font until one covers
-            // the character (glyph_id != 0), not just FontId(0).
+            // the character (has_char → glyph_id != 0), then rasterize.
             let mut found = false;
             for font_id in 0..self.text.len() as u32 {
                 let id = FontId(font_id);
-                match self.text.rasterize_char(id, ch, size_px) {
-                    Ok(bmp) => {
+                if self.text.has_char(id, ch) {
+                    if let Ok(bmp) = self.text.rasterize_char(id, ch, size_px) {
                         if bmp.width > 0 && bmp.height > 0 {
                             let key = glyph_cache_key(id, ch as u32, size_px);
                             emit_glyph_image(self, key, &bmp, position, pen_x, tint);
@@ -318,7 +318,6 @@ impl RenderBackend for RenderFoundationBackend {
                         found = true;
                         break;
                     }
-                    Err(_) => continue,
                 }
             }
             if !found {

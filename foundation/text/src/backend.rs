@@ -161,6 +161,15 @@ impl FontdueBackend {
         })
     }
 
+    /// Check whether a loaded font covers the given character (glyph_id != 0).
+    pub fn has_char(&self, font_id: FontId, ch: char) -> bool {
+        self.fonts
+            .iter()
+            .find(|f| f.id == font_id)
+            .map(|f| f.font.lookup_glyph_index(ch) != 0)
+            .unwrap_or(false)
+    }
+
     /// 按 [`FontRequest`] 的候选族顺序匹配首个已加载字体；无精确匹配时回退到首个已加载字体。
     fn best_match(&self, request: &FontRequest) -> Option<&LoadedFont> {
         for fam in &request.families {
