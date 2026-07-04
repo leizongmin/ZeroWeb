@@ -797,16 +797,8 @@ mod tests {
         // 从 OS/2 表读取：ascent > 0，descent < 0。
         let id = FontId(0); // Ahem 是首个加载字体 → id=0
         let m = b.line_metrics(id, 13.0).expect("Ahem line_metrics");
-        assert!(
-            m.0 > 0.0,
-            "ascent should be positive for Ahem at 13px, got {}",
-            m.0
-        );
-        assert!(
-            m.1 < 0.0,
-            "descent should be negative for Ahem, got {}",
-            m.1
-        );
+        assert!(m.0 > 0.0, "ascent should be positive for Ahem at 13px, got {}", m.0);
+        assert!(m.1 < 0.0, "descent should be negative for Ahem, got {}", m.1);
         let line_h = m.0 - m.1; // ascent - descent = line height
         assert!(
             line_h > 10.0 && line_h < 20.0,

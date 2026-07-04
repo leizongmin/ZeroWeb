@@ -111,11 +111,7 @@ fn tab_strip_node(id: &str, bg: &str, fill_width: bool, model: &BrowserChromeMod
         Value::Float(model.window_controls_width as f64),
     );
     // 传递标签标题列表（BrowserTabStripWidget paint 时渲染在对应 tab 上）。
-    let titles: Vec<Value> = model
-        .tabs
-        .iter()
-        .map(|t| Value::Text(t.title.clone()))
-        .collect();
+    let titles: Vec<Value> = model.tabs.iter().map(|t| Value::Text(t.title.clone())).collect();
     s.props.insert("titles", Value::Array(titles));
     s
 }
@@ -184,7 +180,9 @@ impl BrowserChromeShell for DesktopBrowserShell {
         // trailing 图标：download + theme（DC-14 真实图标替换 spacer 占位）。
         // 总宽 80（gap8+32+gap8+32），对齐手绘 trailing reserved 区（不含 menu 与 trailing pad）。
         // 此前用 88×44 空容器占位（toolbar 背景无内容 → toolbar sub-zone 最高 diff 源 6.14%）。
-        toolbar.children.push(leaf("browser.TrailingIcons", "toolbar_trailing", "toolbar_bg", None));
+        toolbar
+            .children
+            .push(leaf("browser.TrailingIcons", "toolbar_trailing", "toolbar_bg", None));
         // BrowserMenu：真实图标控件（DC-14）。MoreVertical 图标，42px（含右侧 trailing pad）。
         toolbar
             .children
@@ -199,18 +197,9 @@ impl BrowserChromeShell for DesktopBrowserShell {
         // 对齐手绘 chrome `bookmarks_bar_visible`：默认 fresh app 无书签 → 不占行，chrome 高 = tab+toolbar。
         // 此前无条件渲染 → SDK chrome 比手绘高 28px，bookmarks 区画 toolbar_bg 覆盖手绘已是页面的位置。
         if model.bookmarks_bar_visible {
-            let mut bm_bar = leaf_fullwidth(
-                "browser.BookmarksBar",
-                ID_BOOKMARKS,
-                "toolbar_bg",
-                None,
-            );
+            let mut bm_bar = leaf_fullwidth("browser.BookmarksBar", ID_BOOKMARKS, "toolbar_bg", None);
             // 传递书签标题（BookmarksBarWidget paint 时渲染书签标签）。
-            let titles: Vec<Value> = model
-                .bookmarks
-                .iter()
-                .map(|b| Value::Text(b.title.clone()))
-                .collect();
+            let titles: Vec<Value> = model.bookmarks.iter().map(|b| Value::Text(b.title.clone())).collect();
             bm_bar.props.insert("bookmarks", Value::Array(titles));
             root.children.push(bm_bar);
         }
@@ -219,15 +208,16 @@ impl BrowserChromeShell for DesktopBrowserShell {
         viewport.props.insert("flex", Value::Float(1.0));
         root.children.push(viewport);
         if let Some(find) = &model.find {
-            let mut fb = leaf(
-                "browser.FindBar",
-                ID_FIND_BAR,
-                "toolbar_bg",
-                None,
-            );
+            let mut fb = leaf("browser.FindBar", ID_FIND_BAR, "toolbar_bg", None);
             fb.props.insert("query", Value::Text(find.query.clone()));
-            fb.props.insert("match_index", Value::Int(find.match_index.map(|i| i as i64).unwrap_or(-1)));
-            fb.props.insert("match_count", Value::Int(find.match_count.map(|i| i as i64).unwrap_or(-1)));
+            fb.props.insert(
+                "match_index",
+                Value::Int(find.match_index.map(|i| i as i64).unwrap_or(-1)),
+            );
+            fb.props.insert(
+                "match_count",
+                Value::Int(find.match_count.map(|i| i as i64).unwrap_or(-1)),
+            );
             root.children.push(fb);
         }
         root
@@ -296,15 +286,16 @@ impl BrowserChromeShell for TabletBrowserShell {
         viewport.props.insert("flex", Value::Float(1.0));
         root.children.push(viewport);
         if let Some(find) = &model.find {
-            let mut fb = leaf(
-                "browser.FindBar",
-                ID_FIND_BAR,
-                "toolbar_bg",
-                None,
-            );
+            let mut fb = leaf("browser.FindBar", ID_FIND_BAR, "toolbar_bg", None);
             fb.props.insert("query", Value::Text(find.query.clone()));
-            fb.props.insert("match_index", Value::Int(find.match_index.map(|i| i as i64).unwrap_or(-1)));
-            fb.props.insert("match_count", Value::Int(find.match_count.map(|i| i as i64).unwrap_or(-1)));
+            fb.props.insert(
+                "match_index",
+                Value::Int(find.match_index.map(|i| i as i64).unwrap_or(-1)),
+            );
+            fb.props.insert(
+                "match_count",
+                Value::Int(find.match_count.map(|i| i as i64).unwrap_or(-1)),
+            );
             root.children.push(fb);
         }
         root
@@ -362,15 +353,16 @@ impl BrowserChromeShell for PhoneBrowserShell {
             )),
         ));
         if let Some(find) = &model.find {
-            let mut fb = leaf(
-                "browser.FindBar",
-                ID_FIND_BAR,
-                "toolbar_bg",
-                None,
-            );
+            let mut fb = leaf("browser.FindBar", ID_FIND_BAR, "toolbar_bg", None);
             fb.props.insert("query", Value::Text(find.query.clone()));
-            fb.props.insert("match_index", Value::Int(find.match_index.map(|i| i as i64).unwrap_or(-1)));
-            fb.props.insert("match_count", Value::Int(find.match_count.map(|i| i as i64).unwrap_or(-1)));
+            fb.props.insert(
+                "match_index",
+                Value::Int(find.match_index.map(|i| i as i64).unwrap_or(-1)),
+            );
+            fb.props.insert(
+                "match_count",
+                Value::Int(find.match_count.map(|i| i as i64).unwrap_or(-1)),
+            );
             root.children.push(fb);
         }
         root

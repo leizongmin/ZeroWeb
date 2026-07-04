@@ -1,0 +1,42 @@
+R65 DC-14 trailing theme icon: Star → SunMoon (chrome diff 2.10% → 2.00%)
+==========================================================================
+Date: 2026-07-04
+Branch: ui-sdk
+Commit: (pending)
+
+Summary
+-------
+Changed the trailing theme icon from `Icon::Star` (star.svg, bookmark
+placeholder) to `Icon::SunMoon` (sun-moon.svg, theme toggle icon) in
+`compose_sdk_chrome_overlay` to match the hand-drawn chrome's default
+`theme_button_icon()` (Auto→SunMoon).
+
+Previously the SDK used Star as an approximation, causing the trailing zone
+(6.30% subzone diff) to have a completely wrong icon shape.
+
+Changes
+-------
+1. apps/browser/src/app_platform.rs line 1176:
+   `Icon::Star` → `Icon::SunMoon` for `TRAILING_ICON_THEME` (ImageRef 8)
+
+Results
+-------
+dc14_chrome_region_pixel_diff_baseline:
+- control (hand-vs-hand): 0/1024000 = 0.000% (deterministic)
+- chrome region (y<112): 2865/143360 = **2.00%** (from 2.10%)
+- page region (y≥112): 0/880640 = 0.00% (unchanged)
+
+Test results
+------------
+- zero-browser-chrome: 92/92 passed
+- zero-browser (sdk-chrome): 206/206 passed (all 206 including diff baseline)
+- cargo clippy -D warnings: clean
+- cargo fmt: clean
+
+Remaining gaps (unaffected by this change)
+------------------------------------------
+1. Address bar text zone ~4.58%: anti-aliasing/positioning differences between
+   SDK draw_text (fontdue rasterization) and hand-drawn GlyphDraw (render-foundation
+   font pipeline). Would require font metrics in PaintCtx for exact baseline parity.
+2. Nav icons ~2.99%: icon rendering path differences (glyph atlas vs alpha mask).
+3. DC-15 mobile / DC-14 GUI verification: blocked (need window/device).

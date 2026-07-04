@@ -131,20 +131,11 @@ pub fn build_demo_spec(model: &BrowserChromeModel) -> WidgetSpec {
     toolbar.children.push(address);
     root.children.push(toolbar);
 
-    let mut tab_strip = leaf(
-        "browser.BrowserTabStrip",
-        ID_TAB_STRIP,
-        "chrome",
-        None,
-    );
+    let mut tab_strip = leaf("browser.BrowserTabStrip", ID_TAB_STRIP, "chrome", None);
     tab_strip.props.insert("tab_count", Value::Int(model.tabs.len() as i64));
     let active = model.active_tab_index.map(|i| i as i64).unwrap_or(-1);
     tab_strip.props.insert("active_tab_index", Value::Int(active));
-    let titles: Vec<Value> = model
-        .tabs
-        .iter()
-        .map(|t| Value::Text(t.title.clone()))
-        .collect();
+    let titles: Vec<Value> = model.tabs.iter().map(|t| Value::Text(t.title.clone())).collect();
     tab_strip.props.insert("titles", Value::Array(titles));
     root.children.push(tab_strip);
 

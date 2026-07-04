@@ -1173,7 +1173,7 @@ fn compose_sdk_chrome_replacement_with_webview(
         (crate::ui_icons::Icon::MoreVertical, MENU_ICON_MORE),
         (crate::ui_icons::Icon::Close, WC_ICON_CLOSE),
         (crate::ui_icons::Icon::Download, TRAILING_ICON_DOWNLOAD),
-        (crate::ui_icons::Icon::Star, TRAILING_ICON_THEME),
+        (crate::ui_icons::Icon::SunMoon, TRAILING_ICON_THEME),
     ]
     .into_iter()
     .filter_map(|(icon, key)| {

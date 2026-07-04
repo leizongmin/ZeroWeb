@@ -236,7 +236,7 @@ pub const WC_ICON_CLOSE: ImageRef = ImageRef::new(6);
 const WINDOW_CONTROL_BTN_WIDTH: f32 = 46.0;
 /// toolbar trailing download 图标（Image ID 7）。
 pub const TRAILING_ICON_DOWNLOAD: ImageRef = ImageRef::new(7);
-/// toolbar trailing theme 图标（Image ID 8；用 Star 近似，待 palette SVG）。
+/// toolbar trailing theme 图标（Image ID 8；SunMoon 对齐手绘 theme_button_icon）。
 pub const TRAILING_ICON_THEME: ImageRef = ImageRef::new(8);
 /// menu 按钮右侧留白 = ADDRESS_BAR_PADDING(10)：手绘 `menu_btn_x = width - ADDRESS_BAR_PADDING -
 /// btn_w(32) = 1238`，menu [1238,1270] + 右侧 10px padding。控件宽含此留白使 flex-end 摆放时
@@ -406,7 +406,8 @@ const TRAILING_ICON_GAP: f32 = 8.0;
 const TRAILING_ICON_SIZE: f32 = 16.0;
 const TRAILING_BUTTON_WIDTH: f32 = 32.0;
 /// trailing 控件总宽 = gap + download(32) + gap + theme(32) = 80。
-const TRAILING_TOTAL_WIDTH: f32 = TRAILING_ICON_GAP + TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP + TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP;
+const TRAILING_TOTAL_WIDTH: f32 =
+    TRAILING_ICON_GAP + TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP + TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP;
 
 /// toolbar trailing 图标绘制控件：download 图标 + theme 图标（对齐手绘 trailing reserved 区）。
 /// paint 填 toolbar bg + 2 图标（download/theme，各 32px 宽，图标 16px 居中）。
@@ -442,9 +443,13 @@ impl Widget for TrailingIconsWidget {
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let size = ctx.clip.map(|r| r.size).unwrap_or_else(|| Size::new(TRAILING_TOTAL_WIDTH, NAV_BAR_HEIGHT));
+        let size = ctx
+            .clip
+            .map(|r| r.size)
+            .unwrap_or_else(|| Size::new(TRAILING_TOTAL_WIDTH, NAV_BAR_HEIGHT));
         // toolbar bg
-        ctx.recorder.fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
+        ctx.recorder
+            .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
         // 2 图标：download + theme，各 32px 宽，图标 16px 居中。
         let icon_extent = TRAILING_ICON_SIZE.min(TRAILING_BUTTON_WIDTH);
         let y = ((size.height - icon_extent) / 2.0).max(0.0);
@@ -862,12 +867,19 @@ impl Widget for BrowserTabStripWidget {
             // char-count 近似截断（~8px/char at 13px）。
             let max_chars = (useable_w / 8.0).floor() as usize;
             let display = if label.chars().count() > max_chars && max_chars > 1 {
-                format!("{}…", label.chars().take(max_chars.saturating_sub(1)).collect::<String>())
+                format!(
+                    "{}…",
+                    label.chars().take(max_chars.saturating_sub(1)).collect::<String>()
+                )
             } else {
                 label.to_string()
             };
             if !display.is_empty() {
-                let color = if Some(i) == self.active_index { self.text_color } else { self.muted_text_color };
+                let color = if Some(i) == self.active_index {
+                    self.text_color
+                } else {
+                    self.muted_text_color
+                };
                 ctx.recorder.draw_text(
                     &display,
                     Point::new(tab_x + TAB_TEXT_LEFT_INSET, tab_text_baseline),
@@ -931,7 +943,10 @@ impl Widget for BookmarksBarWidget {
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let size = ctx.clip.map(|r| r.size).unwrap_or_else(|| Size::new(400.0, BOOKMARKS_BAR_HEIGHT));
+        let size = ctx
+            .clip
+            .map(|r| r.size)
+            .unwrap_or_else(|| Size::new(400.0, BOOKMARKS_BAR_HEIGHT));
         ctx.recorder
             .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
         if !self.bookmarks.is_empty() {
@@ -941,7 +956,8 @@ impl Widget for BookmarksBarWidget {
                 if x >= size.width - 8.0 {
                     break;
                 }
-                ctx.recorder.draw_text(bm, Point::new(x, baseline), 13.0, self.text_color);
+                ctx.recorder
+                    .draw_text(bm, Point::new(x, baseline), 13.0, self.text_color);
                 x += 8.0 + bm.chars().count() as f32 * 7.5;
             }
         }
@@ -1005,7 +1021,10 @@ impl Widget for FindBarWidget {
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let size = ctx.clip.map(|r| r.size).unwrap_or_else(|| Size::new(400.0, FIND_BAR_HEIGHT));
+        let size = ctx
+            .clip
+            .map(|r| r.size)
+            .unwrap_or_else(|| Size::new(400.0, FIND_BAR_HEIGHT));
         ctx.recorder
             .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
         let label = if let (Some(idx), Some(cnt)) = (self.match_index, self.match_count) {
@@ -1020,7 +1039,8 @@ impl Widget for FindBarWidget {
             format!("\"{}\"", self.query)
         };
         let baseline = size.height * 0.5 + 13.0 * 0.36;
-        ctx.recorder.draw_text(&label, Point::new(12.0, baseline), 13.0, self.text_color);
+        ctx.recorder
+            .draw_text(&label, Point::new(12.0, baseline), 13.0, self.text_color);
     }
 
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
@@ -1069,12 +1089,16 @@ impl Widget for SecurityBadgeWidget {
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let size = ctx.clip.map(|r| r.size).unwrap_or_else(|| Size::new(400.0, SECURITY_BADGE_HEIGHT));
+        let size = ctx
+            .clip
+            .map(|r| r.size)
+            .unwrap_or_else(|| Size::new(400.0, SECURITY_BADGE_HEIGHT));
         ctx.recorder
             .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
         if let Some(text) = &self.text {
             let baseline = size.height * 0.5 + 13.0 * 0.36;
-            ctx.recorder.draw_text(text, Point::new(8.0, baseline), 13.0, self.text_color);
+            ctx.recorder
+                .draw_text(text, Point::new(8.0, baseline), 13.0, self.text_color);
         }
     }
 
@@ -1253,9 +1277,7 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens,
     host.register("browser.SecurityBadge", move |s| {
         Box::new(SecurityBadgeWidget::from_spec(s, &t))
     });
-    host.register("browser.FindBar", move |s| {
-        Box::new(FindBarWidget::from_spec(s, &t))
-    });
+    host.register("browser.FindBar", move |s| Box::new(FindBarWidget::from_spec(s, &t)));
     host.register("browser.TrailingIcons", move |s| {
         Box::new(TrailingIconsWidget::from_spec(s, &t))
     });
@@ -1549,10 +1571,10 @@ mod tests {
         let mut spec = WidgetSpec::new("browser.BookmarksBar");
         spec.id = Some(zero_ui_core::widget::WidgetId::new("bookmarks_bar"));
         spec.props.insert("bg", Value::Text("toolbar_bg".into()));
-        spec.props.insert("bookmarks", Value::Array(vec![
-            Value::Text("MDN".into()),
-            Value::Text("GitHub".into()),
-        ]));
+        spec.props.insert(
+            "bookmarks",
+            Value::Array(vec![Value::Text("MDN".into()), Value::Text("GitHub".into())]),
+        );
         let mut host = zero_ui_runtime::WidgetHost::new();
         let t = tokens;
         host.register("browser.BookmarksBar", move |s| {
@@ -1563,7 +1585,10 @@ mod tests {
         let scene = host.paint().clone();
         let texts = scene_texts(&scene);
         assert!(texts.iter().any(|t| t.contains("MDN")), "MDN label, got {texts:?}");
-        assert!(texts.iter().any(|t| t.contains("GitHub")), "GitHub label, got {texts:?}");
+        assert!(
+            texts.iter().any(|t| t.contains("GitHub")),
+            "GitHub label, got {texts:?}"
+        );
     }
 
     #[test]
@@ -1577,9 +1602,7 @@ mod tests {
         spec.props.insert("match_count", Value::Int(5));
         let mut host = zero_ui_runtime::WidgetHost::new();
         let t = tokens;
-        host.register("browser.FindBar", move |s| {
-            Box::new(FindBarWidget::from_spec(s, &t))
-        });
+        host.register("browser.FindBar", move |s| Box::new(FindBarWidget::from_spec(s, &t)));
         host.set_root(&spec);
         host.layout(zero_ui_core::geometry::Constraints::loose(Size::new(1280.0, 800.0)));
         let scene = host.paint().clone();
@@ -1604,6 +1627,9 @@ mod tests {
         host.layout(zero_ui_core::geometry::Constraints::loose(Size::new(1280.0, 800.0)));
         let scene = host.paint().clone();
         let texts = scene_texts(&scene);
-        assert!(texts.iter().any(|t| t.contains("Secure")), "security label, got {texts:?}");
+        assert!(
+            texts.iter().any(|t| t.contains("Secure")),
+            "security label, got {texts:?}"
+        );
     }
 }

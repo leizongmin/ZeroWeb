@@ -49,9 +49,7 @@ use zero_render_foundation::color::Color as RfColor;
 use zero_render_foundation::geometry::{Point as RfPoint, Rect as RfRect, Size as RfSize};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
 use zero_render_foundation::primitive::{DrawOp, ImagePrimitive, RenderPrimitives, RoundedRectPrimitive};
-use zero_text_foundation::{
-    FontId, FontdueBackend, GlyphBitmap, GlyphRun, TextBlob,
-};
+use zero_text_foundation::{FontId, FontdueBackend, GlyphBitmap, GlyphRun, TextBlob};
 use zero_ui_core::geometry::{Point, Rect, Rounding};
 use zero_ui_core::image::ImageRef;
 use zero_ui_core::theme::Color;
@@ -826,11 +824,7 @@ mod tests {
         let p = b.into_primitives();
         // Ahem 字体：每个可见字符产生一幅图（空格尺寸=0 → 无图）。
         // "a b": a(图1) + space(无图) + b(图2) → 2 幅图
-        assert_eq!(
-            p.images.len(),
-            2,
-            "space should not emit an image (zero-size glyph)"
-        );
+        assert_eq!(p.images.len(), 2, "space should not emit an image (zero-size glyph)");
         // "b" 的 x 位置 = a.advance + space.advance > a.advance（即有空格时 b 比纯 "ab" 更右）。
         assert!(
             p.images[1].rect.origin.x > 16.0,
