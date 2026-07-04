@@ -403,7 +403,9 @@
 
 - **R60 (2026-07-04) FindBarWidget + SecurityBadgeWidget：ChromePanel → 真实 Widget**。新增 `FindBarWidget` 替换 `browser.FindBar` 的 ChromePanel 占位（`query`/`match_index`/`match_count` props，显示查询文本与匹配计数）。新增 `SecurityBadgeWidget` 替换 `browser.SecurityBadge` 的 ChromePanel 占位（`bg`/`text` props，安全状态彩色条）。三 shell（Desktop/Tablet/Phone）同步更新为传递结构化查找数据。新增单元测 `find_bar_widget_paints_bg_and_label` + `security_badge_widget_paints_bg_and_label`。**至此 §8.4.1A 全部 12 组件 + FR-009 widget 集合不再含 ChromePanel 占位**（`ChromePanel` 保留为通用叶子/视口/备用注册）。chrome 92/browser 191+10 sdk-chrome 全绿，dc14 baseline 2.14% 不变。commit `987a610f` + `86c97133`。
 
-- **R60 (2026-07-04) FindBarWidget：ChromePanel → 真实 Widget**。新增 `FindBarWidget` 替换 `browser.FindBar` 的 ChromePanel 占位。通过 `query`/`match_index`/`match_count` props 接收查找状态，paint 显示查询文本与匹配计数（如 `"hello" (1/5)`）。Desktop/Tablet/Phone 三 shell 同步更新为传递结构化查找数据。新增单元测 `find_bar_widget_paints_bg_and_label`。chrome 91/browser 191+10 sdk-chrome 全绿，dc14 baseline 2.14% 不变。commit `987a610f`。
+- **R61 (2026-07-04) chrome zone diagnostic test**：新增 `dc14_chrome_zone_ink_diagnostic` 将 chrome 区按垂直带拆分（tab_strip/toolbar/bookmarks），精确定位 diff 主要来源：toolbar (4.58%) > tab_strip (0.96%) > bookmarks (0.00%)。支持后续定向优化。commit `8598d85a`。
+
+- **R62 (2026-07-04) 文本基线常量微调**：`13.0 * 0.35` → `13.0 * 0.36`（≈ `(ascent+descent)/2/font_size` 典型值），使 4 处控件文本基线更接近基于 font metric 的手绘基线（~0.15px → ~0.02px 偏差）。AddressBarWidget/BrowserTabStripWidget/FindBarWidget/SecurityBadgeWidget 均影响。toolbar zone diff 4.58% → 4.57%（-4px）。commit `40d72e96`。
 
 - `evidence/dc5-contrast-lint-wcag-aa-20260702-073000.txt` — **DC-5 contrast lint 完整接入 + Zero 主题 WCAG AA 修复（2026-07-02）**：新增 `all_semantic_token_pairs_pass_wcag_aa`（light+dark 全部 6 对 token，≥4.5 门禁）；lint 首跑暴露 light on_primary/primary ratio 3.19<4.5 真实缺口 → 修 light primary 为 Material Blue 700 (0.098,0.463,0.824)（≈4.7）；Zero 主题现 WCAG AA 全合规；ui/core 38→39 测，下游 chrome/render/examples 全绿；build/clippy/fmt 全净；SDK-only 无 product-smoke 风险。follow-up：widgets 硬编码色→消费 token。
 
