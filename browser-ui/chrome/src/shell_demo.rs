@@ -131,19 +131,22 @@ pub fn build_demo_spec(model: &BrowserChromeModel) -> WidgetSpec {
     toolbar.children.push(address);
     root.children.push(toolbar);
 
-    root.children.push(leaf(
+    let mut tab_strip = leaf(
         "browser.BrowserTabStrip",
         ID_TAB_STRIP,
         "chrome",
-        Some(
-            model
-                .tabs
-                .iter()
-                .map(|t| t.title.clone())
-                .collect::<Vec<_>>()
-                .join(" | "),
-        ),
-    ));
+        None,
+    );
+    tab_strip.props.insert("tab_count", Value::Int(model.tabs.len() as i64));
+    let active = model.active_tab_index.map(|i| i as i64).unwrap_or(-1);
+    tab_strip.props.insert("active_tab_index", Value::Int(active));
+    let titles: Vec<Value> = model
+        .tabs
+        .iter()
+        .map(|t| Value::Text(t.title.clone()))
+        .collect();
+    tab_strip.props.insert("titles", Value::Array(titles));
+    root.children.push(tab_strip);
 
     // content：滚动条在前（固定 12px），WebView(flex=1) 填剩余宽。
     let mut content = node_layout("browser.ContentRow", ID_CONTENT, "row");

@@ -110,6 +110,13 @@ fn tab_strip_node(id: &str, bg: &str, fill_width: bool, model: &BrowserChromeMod
         "window_controls_width",
         Value::Float(model.window_controls_width as f64),
     );
+    // 传递标签标题列表（BrowserTabStripWidget paint 时渲染在对应 tab 上）。
+    let titles: Vec<Value> = model
+        .tabs
+        .iter()
+        .map(|t| Value::Text(t.title.clone()))
+        .collect();
+    s.props.insert("titles", Value::Array(titles));
     s
 }
 

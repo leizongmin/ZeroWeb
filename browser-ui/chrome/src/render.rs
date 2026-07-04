@@ -556,12 +556,18 @@ pub struct BrowserTabStripWidget {
     active_index: Option<usize>,
     /// 自定义窗口控制按钮区宽度（Windows 138；0 = 不画）。手绘在此区画 tab_bar_bg 底（DC-14 parity）。
     window_controls_width: f32,
+    /// 各标签标题（DC-14 标签文本对齐手绘）。
+    titles: Vec<String>,
+    /// 标签文本色（取自 token，active 用 on_surface，inactive 调低对比度）。
+    text_color: Color,
+    muted_text_color: Color,
 }
 
 impl BrowserTabStripWidget {
     /// 由声明节点构造：`tab_count`（Int）/ `active_tab_index`（Int，-1 = 无）/
     /// `window_controls_width`（Float，0 = 无自定义窗口控制）props；tab 色经
     /// [`ChromeTabColors`] 注入（生产从 `ChromePalette`，测试从 token 近似）。
+    /// `titles` 为 `Value::Array` 可选 prop（标签标题列表，长度不必匹配 tab_count）。
     pub fn from_spec(spec: &WidgetSpec, tab_colors: ChromeTabColors) -> BrowserTabStripWidget {
         let tab_count = match spec.props.get("tab_count") {
             Some(Value::Int(i)) => (*i).max(0) as usize,
@@ -576,6 +582,19 @@ impl BrowserTabStripWidget {
             Some(Value::Int(i)) => *i as f32,
             _ => 0.0,
         };
+        let titles = match spec.props.get("titles") {
+            Some(Value::Array(arr)) => arr
+                .iter()
+                .filter_map(|v| match v {
+                    Value::Text(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        // text_color 用 on_surface（≈ 手绘 tab_text）；muted_text_color ≈ 手绘 page_hint。
+        let text_color = tab_colors.window_icon; // on_surface
+        let muted_text_color = text_color.mix(tab_colors.strip_bg, 0.45);
         BrowserTabStripWidget {
             strip_bg: tab_colors.strip_bg,
             active_bg: tab_colors.active_bg,
@@ -585,6 +604,9 @@ impl BrowserTabStripWidget {
             tab_count,
             active_index,
             window_controls_width,
+            titles,
+            text_color,
+            muted_text_color,
         }
     }
 }
@@ -741,6 +763,34 @@ impl Widget for BrowserTabStripWidget {
                 ),
                 self.separator,
             );
+        }
+        // 6. 标签标题文本（对齐手绘 render_tabs 的 draw_ui_text 路径）。
+        // 手绘 text_left_inset = 12*s + icon_size(16) + 8*s = 36（s=1）。
+        // 可用文本宽 = tab_w - 36 - 32（close 按钮预留）= tab_w - 68。
+        // baseline 计算：手绘经 ui_text_centered_in_height → text_top + ascent。
+        const TAB_TEXT_LEFT_INSET: f32 = 36.0;
+        const TAB_TEXT_RIGHT_RESERVE: f32 = 32.0;
+        let tab_text_baseline = tab_y + TAB_BAR_HEIGHT * 0.5 + 13.0 * 0.35;
+        for i in 0..self.tab_count {
+            let label = self.titles.get(i).map(|s| s.as_str()).unwrap_or("");
+            let tab_x = leading + i as f32 * tab_w;
+            let useable_w = (tab_body_w - TAB_TEXT_LEFT_INSET - TAB_TEXT_RIGHT_RESERVE).max(0.0);
+            // char-count 近似截断（~8px/char at 13px）。
+            let max_chars = (useable_w / 8.0).floor() as usize;
+            let display = if label.chars().count() > max_chars && max_chars > 1 {
+                format!("{}…", label.chars().take(max_chars.saturating_sub(1)).collect::<String>())
+            } else {
+                label.to_string()
+            };
+            if !display.is_empty() {
+                let color = if Some(i) == self.active_index { self.text_color } else { self.muted_text_color };
+                ctx.recorder.draw_text(
+                    &display,
+                    Point::new(tab_x + TAB_TEXT_LEFT_INSET, tab_text_baseline),
+                    13.0,
+                    color,
+                );
+            }
         }
     }
 
