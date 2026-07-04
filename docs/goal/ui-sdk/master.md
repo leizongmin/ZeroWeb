@@ -1533,3 +1533,19 @@ Evidence: `evidence/dc14-menu-icon-nav-width-20260704-040925.txt`
 **下轮下一步**：①menu 按钮宽含 ADDRESS_BAR_PADDING trailing（32→42 或 toolbar 行加 trailing pad）使
 menu 位置对齐手绘 [1238,1270]；②address 宽度对齐手绘 bar_w（fixed width = width - bar_x - trailing_reserved，
 而非 flex 填满）；③tab 标签文字/favicon/close + 窗口控制图标。预期 chrome diff 2.20% → ≤2% 跨过 DC-14 阈值。
+
+**menu trailing pad（同轮续）**：MenuButtonWidget 宽 32→42（MENU_TRAILING_PAD=10），图标居中前 32px
+→ menu 按钮左缘对齐手绘 menu_btn_x=1238。chrome diff 2.20% → **2.17%**（3106/143360）。
+
+**placeholder 文本尝试（回退，关键发现）**：addr-l 1843 diff 主因是空地址栏 placeholder 文本
+（"Search or enter URL..." 手绘画、SDK 未画）。两次尝试渲染 placeholder（baseline=h*0.5+13*0.35；
+后改用实测 font metrics ascent=14.03/line_h=17.29 精确算 baseline=21.4）**均致 diff 反升**（→2.31%/2.34%）。
+根因：**SDK draw_text 与手绘 GlyphDraw 是两条不同 text 光栅化路径**——SDK bridge draw_text 用
+`FontRequest::new("sans-serif")` + `top = baseline - ymin - height` 定位；手绘 GlyphDraw 经
+render-foundation FontLoader 路径。即使 baseline 相同，glyph 落点不同 → 文字像素不重叠 → 反增 diff。
+**这是 DC-11 text path 统一的深层 follow-up**（pixel-exact text parity 需统一两侧 text 光栅化路径），
+非本轮 baseline 能修。已干净回退。
+
+**剩余 2.17% 构成**（非 text 块理论上可修）：addr-l 1843（placeholder text，需 DC-11）、nav 229、
+addr-r 468（address 右边缘 border + 圆角）、tab 404（tab labels/favicon/close，含 text）、win-ctrl 121。
+**距 DC-14 ≤2% 阈值 0.17pp，但跨过需 DC-11 text path 统一**（addr-l 1843 + tab labels 占大头）。
