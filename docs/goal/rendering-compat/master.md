@@ -2676,7 +2676,7 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **意义**：R370 R1015（block-level float flex）+ R1017（inline-level inline-flex）**双路径覆盖 flex 容器 shrink-to-fit**。R1016 标记的 IFC 测量墙被证明可经现有 inline-block 基础设施解。inline-flex aspect-ratio transferred sizing（css-sizing-4 §aspect-ratio + css-flexbox §4.5）布局维度正确。
 
-**▶ 下会话**：① **011/014 block flex + fit-content + JS**（14.85% ×2，独立子问题，R370 block-level 扩 fit-content）；② **flex-row + float row 对称**（R1015 现仅 column+float，row+float 应可扩，A/B 守回归）；③ **flex-item-transferred-sizes 残余 0.60%**（item padding box-sizing 精度，可能近 PASS）；④ 近 PASS 案（flexbox-collapsed-item-horiz-001 3.77% / flexbox-min-height-auto-001 1.87%）。clean win 已 land。
+**▶ 下会话**：① **011/014 block flex + fit-content + JS**（14.85% ×2，独立子问题，R370 block-level 扩 fit-content 上下文——R1017 inline-flex gate 不覆盖 block-level flex）；② **flexbox-min-height-auto-001（1.87%）** 近 PASS，9 子场景 + 紫色 dotted border，R1015 已从 3.26 改善，残余大概率 dotted border 光栅化 + calc() 子案例；③ **flexbox-collapsed-item-horiz-001（3.77%）** 近 PASS。**★ 已确认无需再做（R1016 遗留清单纠正）**：row+float 对称——R1015 `is_auto_float` gate dispatch 已按 flex_direction 路由 row/column（engine.rs:705-712），row+float **已隐含覆盖**；flex-item-transferred-sizes-padding（0.60%）已 <1% **已 PASS**（R1015 翻）。clean win 已 land。
 
 ### R1016 aspect-ratio-intrinsic-003/004 via 容器 cross + inline-flex gate 实验 REFUTED（taffy 不尊重 inline-flex set width）·零 yield 零回归已回退·inline-flex 须经 IFC inline-level 测量·纯调查
 
