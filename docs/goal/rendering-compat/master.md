@@ -2648,9 +2648,9 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
-### R1025 css-flexbox/grid 近-pass 残余扫描 = 精度/结构性 plateau 确认·row-reverse/flex-flow/flex-basis 均正确·rootpos br 诊断纠正·零源码·纯调查
+### R1025 css-flexbox/grid 近-pass 残余扫描 = 精度/结构性 plateau 确认 + ★inline-block 含文本+br 误填满父宽修复 LANDED（R1024 leaf pattern 扩展到 inline-block）·net-neutral oracle·correctness
 
-承 R1024 后扫 css-flexbox + css-grid 近-pass 残余找下一 lever。**结论：两 dir 近-pass 残余 = 精度（text/color 1-2px）/结构性 plateau，无 clean 单会话 lever**。
+承 R1024 后扫 css-flexbox + css-grid 近-pass 残余找下一 lever。**结论：两 dir 近-pass 残余 = 精度（text/color 1-2px）/结构性 plateau，无 clean 单会话 lever**。调查中定位 inline-block 同 bug 形态并修复 LANDED（commit d85ed534）。
 
 **css-flexbox 残余复核（post-R1024 59.4%）**：
 - **row-reverse 簇**（flexbox_direction-row-reverse 14.5% / flex-direction-row-reverse 11.6%）：LAYOUT_DUMP 实测 **item 顺序正确反转**（`<span>first..forth</span>` 渲染 x=647/487/327/167，从右起 pack = row-reverse 正确语义）。非 order bug，残差 = 颜色（red/green bg）+ 精度。
@@ -2668,7 +2668,9 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **战略**：forward motion 转向 (a) 多 session 结构性（multicol Phase 2 / grid-baseline-synthesis / replaced-element-in-grid-nested-in-flex 三层）；(b) font-wall（per-font ascent，须 @font-face webfont 前置）；(c) R1024 leaf 测量扩展到 inline-block/float/table-cell 等其它 content-sized 上下文（同 bug 形态，但需逐上下文 gate + A/B，潜在 css-tables/css2 yield）。
 
-**▶ 下会话**：① **R1024 扩展**——同一「block 含文本+inline Element 子塌缩」bug 形态在 inline-block/float/table-cell/auto-abspos 等 content-sized 上下文是否也存在？逐上下文 gate（is_inline_block_item / is_float / is_table_cell 等）+ A/B（css-tables/css2/css-grid）查 yield，紧 gate 守回归；② 备选 multicol Phase 2（多 session 结构性）；③ 备选 font-wall webfont 前置（@font-face 加载，R1006/R1007 已部分）。css-flexbox/grid 近-pass 勿重扫（已证精度 plateau）。
+**★ R1025 inline-block 扩展 LANDED（commit d85ed534）**：调查中复现 `<span display:inline-block>text<br>text</span>` w=800（误填满父宽，应 shrink-to-fit ~338）——同 R1024 bug 形态。修复：R1024 leaf gate 加 `|| matches!(computed.display, DisplayValue::InlineBlock)`（content-sized block = flex/grid item OR inline-block）。验证：复现案 800→338 ✓；chromium Oracle 全 dir（css2/css-flexbox/css-grid/css-position/css-text-decor/css-multicol/css-tables）**全 R1024 baseline 零回归**（net-neutral，inline-block+text+br 罕见于 WPT corpus）；welcome 16.57% 不变；1 新单测 test_r1025_inline_block_with_text_and_br_shrink_to_fit；fmt/clippy/make test 全绿。意义：R1024 leaf pattern 扩展到 inline-block，correctness（真实网页 inline-block 含 br/span+a 文本常见），同 R903/R904/R1021 spec-correctness 先例。net-neutral on oracle（无 driving WPT 案）。
+
+**▶ 下会话**：① R1024 leaf pattern 再扩展到 **float / table-cell / auto-abspos** content-sized 上下文（同 bug 形态：block 含文本+inline Element 子 → new_with_children 非 leaf → measure 不触发 → 塌缩/误填满）——逐上下文 gate + A/B（css-tables/css2/css-position）查 yield，紧 gate 守回归；② 备选 multicol Phase 2（多 session 结构性）；③ 备选 font-wall webfont 前置（@font-face 加载，R1006/R1007 已部分）。css-flexbox/grid 近-pass 勿重扫（已证精度 plateau）。inline-block 已 land（d85ed534，net-neutral correctness）。
 
 ### R1024 ★flex/grid item 含文本+inline Element 子塌缩 w=0 修复 LANDED = css-flexbox Oracle 289→295（+6）+ css-multicol +1 ·零回归·紧 gate（parent-flex/grid）·三方 gate 演进
 
