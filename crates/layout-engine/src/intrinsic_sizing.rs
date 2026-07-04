@@ -145,7 +145,12 @@ pub(crate) fn fragment_inline_max_width(
 /// - 无法确定（无显式值且内容为 0）→ 返回 0.0（调用方应作 no-op 处理）
 ///
 /// 返回 border-box 贡献（含 item 自身 padding+border，不含 margin——margin 由容器求和时加）。
-fn flex_item_base_size(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+fn flex_item_base_size(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    container_cross: Option<f32>,
+) -> f32 {
     let style = box_node.node_id.and_then(|id| styles.get(&id));
     // 1. flex-basis 显式长度优先
     if let Some(s) = style
@@ -163,11 +168,10 @@ fn flex_item_base_size(box_node: &LayoutBox, doc: &Document, styles: &HashMap<No
         let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
         return (*v as f32) + frame;
     }
-    // 2.5 R1015：aspect-ratio transferred-size——width:auto + aspect_ratio + definite main
-    //（height Px 或 min-height Px 地板）。非替换 item 的 cross（width）从 main × ratio 推导
-    //（css-sizing-4 §aspect-ratio + Flexbox §4.5 transferred-size 的非替换扩展）。
-    // 仅 item 自身 definite main（min-height/height Px）；container-stretch main（如 inline-flex
-    // height:100px 拉伸 item）须 container 上下文，此处不覆盖（下会话 slice）。
+    // 2.5 R1015/R1017：aspect-ratio transferred-size——width:auto + aspect_ratio + definite main。
+    // main 来源优先级：(a) item 自身 height Px；(b) item min-height Px 地板；(c) R1017 container-
+    // stretch cross（容器 definite height Px 拉伸 item，如 inline-flex height:100px；经
+    // shrink_inline_blocks_to_content IFC 路径调用，绕过 R1016 的 taffy gate 墙）。
     if let Some(s) = style
         && matches!(s.width, LengthValue::Auto)
         && let Some(ratio) = s.aspect_ratio.filter(|&r| r > 0.0)
@@ -176,7 +180,7 @@ fn flex_item_base_size(box_node: &LayoutBox, doc: &Document, styles: &HashMap<No
             LengthValue::Px(v) => Some(*v as f32),
             _ => match &s.min_height {
                 LengthValue::Px(v) => Some(*v as f32),
-                _ => None,
+                _ => container_cross,
             },
         };
         if let Some(main) = main {
@@ -193,12 +197,7 @@ fn flex_item_base_size(box_node: &LayoutBox, doc: &Document, styles: &HashMap<No
 /// - `border-box`：aspect-ratio 作用于 border-box，width_bb = height_bb × ratio = main × ratio。
 /// - `content-box`：aspect-ratio 作用于 content-box，width_content = main × ratio，
 ///   border-box width = width_content + 水平 frame。
-fn aspect_ratio_transferred_width(
-    s: &ComputedStyle,
-    box_node: &LayoutBox,
-    main: f32,
-    ratio: f32,
-) -> f32 {
+fn aspect_ratio_transferred_width(s: &ComputedStyle, box_node: &LayoutBox, main: f32, ratio: f32) -> f32 {
     let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
     if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
         main * ratio
@@ -217,6 +216,24 @@ pub(crate) fn flex_row_intrinsic_width(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) -> Option<f32> {
+    // R1017：容器 definite cross（height Px）作 item stretch 源——item 无自身 main 时，
+    // width = container_content_height × ratio（inline-flex height:100px + item aspect-ratio:1/1）。
+    let container_cross = box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .and_then(|s| match &s.height {
+            LengthValue::Px(v) => {
+                let vframe =
+                    box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+                let content = if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
+                    (*v as f32) - vframe
+                } else {
+                    *v as f32
+                };
+                Some(content.max(0.0))
+            }
+            _ => None,
+        });
     let mut sum = 0.0f32;
     let mut count = 0usize;
     for child in &box_node.children {
@@ -231,7 +248,7 @@ pub(crate) fn flex_row_intrinsic_width(
             .unwrap_or(true);
         if is_item && child.is_block_level {
             count += 1;
-            sum += flex_item_base_size(child, doc, styles) + child.margin_left + child.margin_right;
+            sum += flex_item_base_size(child, doc, styles, container_cross) + child.margin_left + child.margin_right;
         }
     }
     if count == 0 {
@@ -273,7 +290,8 @@ pub(crate) fn flex_column_intrinsic_width(
             .unwrap_or(true);
         if is_item && child.is_block_level {
             count += 1;
-            let base = flex_item_base_size(child, doc, styles) + child.margin_left + child.margin_right;
+            // column：computing container width（cross）— container_cross = width 是循环，传 None。
+            let base = flex_item_base_size(child, doc, styles, None) + child.margin_left + child.margin_right;
             if base > max {
                 max = base;
             }
