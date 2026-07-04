@@ -675,20 +675,25 @@ impl LayoutEngine {
             if !(is_flex_grid || is_block) || !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
                 continue;
             }
-            // R1015：扩展 gate——除 MaxContent/MinContent 外，width:Auto + float（shrink-to-fit
-            // 上下文）的 flex 容器也触发固有宽度计算（flex container float:left 应 shrink 到
-            // item intrinsic，非拉满视口）。仅 flex（grid 无 column 派生函数，沿用 grid_intrinsic）。
+            // R1015/R1019：扩展 gate——除 MaxContent/MinContent 外，width:Auto + float（shrink-to-fit
+            // 上下文）的 flex 容器或 block 容器也触发固有宽度计算。flex container float:left shrink
+            // 到 item intrinsic；block container float:left 含 flex/grid 子时 shrink 到子 intrinsic
+            //（aspect-ratio-intrinsic-014：float:left block + flex 子 + aspect-ratio item）。
+            // float:block 由本 gate 处理（用 block_max_content_width 测 flex 子），float shrink
+            // postprocess 路径（adjust_float_positions_with_context）见此宽度后为 no-op，无双重 shrink。
             let is_max_min = matches!(s.width, LengthValue::MaxContent | LengthValue::MinContent);
             let is_auto_float = matches!(s.width, LengthValue::Auto)
                 && !matches!(s.float, FloatValue::None)
-                && matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex);
+                && matches!(
+                    s.display,
+                    DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Block
+                );
             if !is_max_min && !is_auto_float {
                 continue;
             }
-            // R1018：block-level 仅在 width:MaxContent 时触发（bare fit-content 经 parser 映射到
-            // MaxContent；MinContent 需独立 min-content 测量函数，暂不支持，避免错误 grow）。
-            // block + auto-float 不触发（float:block 由 float shrink 路径处理，避免双重 shrink）。
-            if is_block && !matches!(s.width, LengthValue::MaxContent) {
+            // R1018：block-level 仅在 width:MaxContent 或 auto-float 时触发（bare fit-content 经
+            // parser 映射 MaxContent；MinContent 需独立 min-content 测量，暂不支持）。
+            if is_block && !matches!(s.width, LengthValue::MaxContent) && !is_auto_float {
                 continue;
             }
             // R1018：block-level 用 block_max_content_width（对 flex/grid 子分发到专用 intrinsic）。

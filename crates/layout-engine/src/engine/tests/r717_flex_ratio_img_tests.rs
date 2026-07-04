@@ -273,6 +273,37 @@ fn r1018_block_fit_content_with_flex_aspect_ratio_child_shrinks_to_fit() {
     );
 }
 
+/// R1019 驱动案 `aspect-ratio-intrinsic-size-014`（post-JS final state）：float:left block +
+/// width:auto + flex 子（height:100%）+ aspect-ratio item。block-float gate（R1019 扩 is_auto_float
+/// 含 Block）+ block_max_content_width（dispatch flex 子）→ float block shrink 到 flex 子 intrinsic
+///（item transferred width = height 100 × ratio 1 = 100）。
+#[test]
+fn r1019_float_block_with_flex_aspect_ratio_child_shrinks_to_fit() {
+    let html = r#"<html><body style="margin:0">
+<div id="target" style="float:left; height:100px; background:green">
+  <div style="display:flex; height:100%; background:green">
+    <div style="aspect-ratio:1/1;"></div>
+  </div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let divs = doc.get_elements_by_tag_name("div");
+    let mut iter = divs.into_iter();
+    let target_id = iter.next().expect("target div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let (tw, th) = find_box(&result.root, target_id).expect("target box found");
+    // target（float:left block）应 shrink 到 ~100（flex 子 intrinsic），非拉满视口 800。
+    assert!(
+        (tw - 100.0).abs() < 5.0,
+        "R1019: float:left block + flex 子 应 shrink 到 100，got {tw}"
+    );
+    assert!((th - 100.0).abs() < 3.0, "R1019: target height 应为 100px，got {th}");
+}
+
 /// R1015 对照：非 float 的 block flex column + width:auto 不触发 shrink（保持当前行为，零回归）。
 #[test]
 fn r1015_block_flex_column_auto_width_no_shrink() {
