@@ -770,7 +770,7 @@ impl Widget for BrowserTabStripWidget {
         // baseline 计算：手绘经 ui_text_centered_in_height → text_top + ascent。
         const TAB_TEXT_LEFT_INSET: f32 = 36.0;
         const TAB_TEXT_RIGHT_RESERVE: f32 = 32.0;
-        let tab_text_baseline = tab_y + TAB_BAR_HEIGHT * 0.5 + 13.0 * 0.35;
+        let tab_text_baseline = tab_y + TAB_BAR_HEIGHT * 0.5 + 13.0 * 0.36;
         for i in 0..self.tab_count {
             let label = self.titles.get(i).map(|s| s.as_str()).unwrap_or("");
             let tab_x = leading + i as f32 * tab_w;
@@ -935,7 +935,7 @@ impl Widget for FindBarWidget {
         } else {
             format!("\"{}\"", self.query)
         };
-        let baseline = size.height * 0.5 + 13.0 * 0.35;
+        let baseline = size.height * 0.5 + 13.0 * 0.36;
         ctx.recorder.draw_text(&label, Point::new(12.0, baseline), 13.0, self.text_color);
     }
 
@@ -989,7 +989,7 @@ impl Widget for SecurityBadgeWidget {
         ctx.recorder
             .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
         if let Some(text) = &self.text {
-            let baseline = size.height * 0.5 + 13.0 * 0.35;
+            let baseline = size.height * 0.5 + 13.0 * 0.36;
             ctx.recorder.draw_text(text, Point::new(8.0, baseline), 13.0, self.text_color);
         }
     }
@@ -1102,7 +1102,7 @@ impl Widget for AddressBarWidget {
         const ADDRESS_BAR_LEADING_SLOT_WIDTH: f32 = 28.0;
         let slot_x = bw + ADDRESS_BAR_INNER_PAD_H; // slot 起（图标区）
         let text_x = slot_x + ADDRESS_BAR_LEADING_SLOT_WIDTH; // slot 后文本起
-        let baseline = h * 0.5 + 13.0 * 0.35;
+        let baseline = h * 0.5 + 13.0 * 0.36;
         // security slot 分隔线（1px 竖线，对齐手绘 slot_divider； inset 6 顶/底）。
         let divider_inset = 6.0_f32;
         ctx.recorder.fill_rect(
