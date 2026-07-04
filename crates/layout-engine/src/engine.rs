@@ -192,11 +192,13 @@ impl LayoutEngine {
         // 尺寸（ collapses）。此处按解析出的 cross 尺寸 + ratio 推导 main（CSS §10.3.2 + Flexbox §4.5）。
         let changed_ratio_img =
             Self::apply_flex_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles);
-        if changed_r695
-            || changed_pct_padding
-            || changed_ratio_img
-            || Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc)
-        {
+        // R1018：四趟后处理 pass 共用同一 first-pass root_box，各自独立 set taffy style。
+        // 原先 `||` 短路求值会在前三趟任一 fire 时跳过 apply_intrinsic_content_sizing，
+        // 致 flex 容器 shrink-to-fit / block max-content 在含 aspect-ratio/百分比 padding/不明确
+        // 百分比 height 的页面失效。改为先求值再合并，确保四趟都执行。
+        let changed_intrinsic =
+            Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc);
+        if changed_r695 || changed_pct_padding || changed_ratio_img || changed_intrinsic {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
             let available_space = taffy::geometry::Size {
                 width: AvailableSpace::Definite(self.viewport_width),
@@ -664,12 +666,13 @@ impl LayoutEngine {
             stack.extend(b.children.iter());
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
-            // 仅水平书写模式的 flex/grid 容器，且 width 为 max-content/min-content
-            let is_container = matches!(
+            // 仅水平书写模式的 flex/grid 容器，或 R1018 block-level（width:max-content/fit-content）
+            let is_flex_grid = matches!(
                 s.display,
                 DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
             );
-            if !is_container || !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+            let is_block = matches!(s.display, DisplayValue::Block);
+            if !(is_flex_grid || is_block) || !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
                 continue;
             }
             // R1015：扩展 gate——除 MaxContent/MinContent 外，width:Auto + float（shrink-to-fit
@@ -682,7 +685,19 @@ impl LayoutEngine {
             if !is_max_min && !is_auto_float {
                 continue;
             }
-            let intrinsic = if matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid) {
+            // R1018：block-level 仅在 width:MaxContent 时触发（bare fit-content 经 parser 映射到
+            // MaxContent；MinContent 需独立 min-content 测量函数，暂不支持，避免错误 grow）。
+            // block + auto-float 不触发（float:block 由 float shrink 路径处理，避免双重 shrink）。
+            if is_block && !matches!(s.width, LengthValue::MaxContent) {
+                continue;
+            }
+            // R1018：block-level 用 block_max_content_width（对 flex/grid 子分发到专用 intrinsic）。
+            // multicol 容器 intrinsic = columns × column-content，block_max_content_width 不解（只测
+            // 单子宽）——可测时给出部分正确值（change-intrinsic-width -14pp），不可测时走下方 Auto-fallback。
+            // multicol intrinsic sizing 精度（columns × content）独立 gap。
+            let intrinsic: Option<f32> = if is_block {
+                Some(crate::intrinsic_sizing::block_max_content_width(b, doc, styles))
+            } else if matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid) {
                 crate::intrinsic_sizing::grid_intrinsic_width(b, doc, styles)
             } else if matches!(
                 s.flex_direction,
@@ -696,7 +711,21 @@ impl LayoutEngine {
             // intrinsic 不可测 → 跳过。否则按上下文判定 apply 条件：
             // - MaxContent/MinContent（grow）：current 比 intrinsic 窄 → grow 到 intrinsic。
             // - Auto+float（R1015 shrink-to-fit）：current 比 intrinsic 宽 → shrink 到 intrinsic。
+            // R1018：block + MaxContent（含 bare fit-content）当 intrinsic 不可测（≤1，如 multicol
+            // 容器或 aspect-ratio block 子 box_content 无法度量）时，回退 Auto（fill）而非留 0 塌缩
+            // ——converter 已把 MaxContent width 映射 0，gate 测不出则元素归零（intrinsic-size-005
+            // multicol + aspect-ratio 子回归）。fill（父宽）比 collapse 更接近 fit-content 语义。
             if intrinsic <= 1.0 {
+                if is_block
+                    && matches!(s.width, LengthValue::MaxContent)
+                    && let Some(&taffy_id) = dom_to_taffy.get(&id)
+                    && let Ok(mut style) = taffy_tree.style(taffy_id).cloned()
+                {
+                    style.size.width = taffy::style::Dimension::Auto;
+                    let _ = taffy_tree.set_style(taffy_id, style);
+                    let _ = taffy_tree.mark_dirty(taffy_id);
+                    changed = true;
+                }
                 continue;
             }
             let should_apply = if is_auto_float {

@@ -91,7 +91,19 @@ pub fn computed_style_to_taffy(
         },
         size: taffy::geometry::Size {
             width: convert_length_to_dimension(&style.width, vw, vh),
-            height: convert_length_to_dimension(&style.height, vw, vh),
+            // R1018：flex/inline-flex 容器的 height:MaxContent/MinContent（含 bare fit-content
+            // 经 parser 映射）映射 Auto（content-based），非 length(0)。flex 容器 height:auto
+            // = 内容最高 item（fit-content-item-002/003/004 驱动）。width 的 MaxContent→0 是
+            // R181c 实测要求（gate grow 依赖），height 无 gate 还原。仅限 flex 容器——grid/block
+            // 的 height:max-content 在空 item 时应塌缩（max-content of empty=0），Auto 会触发
+            // align-self stretch 误拉伸（grid-item-non-auto-height-stretch-001 回归）。
+            height: if matches!(style.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                && matches!(style.height, LengthValue::MaxContent | LengthValue::MinContent)
+            {
+                taffy::style::Dimension::Auto
+            } else {
+                convert_length_to_dimension(&style.height, vw, vh)
+            },
         },
         min_size: taffy::geometry::Size {
             width: convert_length_to_dimension(&style.min_width, vw, vh),

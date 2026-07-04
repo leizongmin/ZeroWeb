@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{BoxSizingValue, DisplayValue, LengthValue};
+use zero_css_parser::values::{BoxSizingValue, DisplayValue, FlexDirectionValue, LengthValue};
 use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::FlexBasisValue;
@@ -80,6 +80,95 @@ pub(crate) fn box_content_max_width(
     let inner = if !has_in_flow_child {
         // 叶盒：显式宽或文本内容宽（Round C）。纯文本 item（无 LayoutBox 子元素）
         // 之前测 0，现按 DOM 文本内容度量。取 max 避免显式宽被文本低估。
+        let text_w = box_node
+            .node_id
+            .map_or(0.0, |id| text_content_max_width(id, doc, styles));
+        own_explicit.max(text_w)
+    } else if children_inner < own_explicit {
+        own_explicit
+    } else {
+        children_inner
+    };
+
+    inner + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right
+}
+
+/// R1018：block-level 容器的 max-content 宽度，对 flex/grid **子容器**分发到专用 intrinsic 函数。
+///
+/// 区别于 [`box_content_max_width`] 的通用递归：当 block 的子元素本身是 flex/grid 容器时，
+/// flex/grid 容器的 intrinsic 宽度须用专用测量（`flex_row_intrinsic_width` 等，含 transferred
+/// sizing / aspect-ratio 推导），而非通用递归（通用递归对 aspect-ratio 空 item 测 0）。
+///
+/// 用于 `width:max-content`/`fit-content` block 的 shrink-to-fit（CSS css-sizing-3）。返回 border-box。
+/// 仅水平书写模式。leaf 文本/显式宽回退同 [`box_content_max_width`]。
+pub(crate) fn block_max_content_width(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> f32 {
+    let mut inline_sum = 0.0f32;
+    let mut block_max = 0.0f32;
+    let mut has_in_flow_child = false;
+
+    for child in &box_node.children {
+        if child.is_absolute || child.is_fixed {
+            continue;
+        }
+        has_in_flow_child = true;
+        let child_style = child.node_id.and_then(|id| styles.get(&id));
+        let is_inline_level = child_style
+            .map(|s| {
+                matches!(
+                    s.display,
+                    DisplayValue::Inline
+                        | DisplayValue::InlineBlock
+                        | DisplayValue::InlineFlex
+                        | DisplayValue::InlineGrid
+                        | DisplayValue::InlineTable
+                )
+            })
+            .unwrap_or(false);
+        if is_inline_level {
+            // inline-level 子：用 outer_w（已布局宽度）求和。inline-flex/inline-grid 的
+            // intrinsic 测量由 shrink_inline_blocks_to_content（R180/R1017）路径处理，此处不重复。
+            inline_sum += (child.width + child.margin_left + child.margin_right).max(0.0);
+            continue;
+        }
+        // block-level 子：若是 flex/grid 容器，dispatch 到专用 intrinsic 函数（R1018 关键）。
+        let child_intrinsic = child_style
+            .map(|s| match s.display {
+                DisplayValue::Flex | DisplayValue::InlineFlex => {
+                    let base = if matches!(
+                        s.flex_direction,
+                        FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+                    ) {
+                        flex_column_intrinsic_width(child, doc, styles)
+                    } else {
+                        flex_row_intrinsic_width(child, doc, styles)
+                    };
+                    base.unwrap_or(0.0)
+                }
+                DisplayValue::Grid | DisplayValue::InlineGrid => {
+                    grid_intrinsic_width(child, doc, styles).unwrap_or(0.0)
+                }
+                _ => box_content_max_width(child, doc, styles),
+            })
+            .unwrap_or_else(|| box_content_max_width(child, doc, styles));
+        block_max = block_max.max(child_intrinsic + child.margin_left + child.margin_right);
+    }
+
+    let children_inner = inline_sum.max(block_max);
+
+    // leaf 回退同 box_content_max_width：显式 Px width 或文本内容宽。
+    let own_explicit = box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .and_then(|s| match &s.width {
+            LengthValue::Px(v) => Some(*v as f32),
+            _ => None,
+        })
+        .unwrap_or(0.0);
+    let inner = if !has_in_flow_child {
         let text_w = box_node
             .node_id
             .map_or(0.0, |id| text_content_max_width(id, doc, styles));
@@ -218,6 +307,8 @@ pub(crate) fn flex_row_intrinsic_width(
 ) -> Option<f32> {
     // R1017：容器 definite cross（height Px）作 item stretch 源——item 无自身 main 时，
     // width = container_content_height × ratio（inline-flex height:100px + item aspect-ratio:1/1）。
+    // R1018：百分比/auto height 经 taffy 第一趟已解析到 LayoutBox.height（border-box），
+    // 作 fallback container_cross（flex 子 height:100% 在 definite-height 父内已解析）。
     let container_cross = box_node
         .node_id
         .and_then(|id| styles.get(&id))
@@ -232,7 +323,13 @@ pub(crate) fn flex_row_intrinsic_width(
                 };
                 Some(content.max(0.0))
             }
-            _ => None,
+            _ => {
+                // 非 Px（百分比/auto/em）：用 taffy 第一趟解析的 border-box height 减 frame。
+                let vframe =
+                    box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+                let resolved = (box_node.height - vframe).max(0.0);
+                (resolved > 0.0).then_some(resolved)
+            }
         });
     let mut sum = 0.0f32;
     let mut count = 0usize;
