@@ -750,6 +750,28 @@ fn sdk_font_backend() -> std::sync::Arc<zero_text_foundation::FontdueBackend> {
             if let Some((data, _path)) = chrome_ui_primary_font_data() {
                 let _ = backend.load_family("ChromeUI", &data);
             }
+            // 加载 fallback 字体（与 load_system_fonts 一致，保证 CJK/符号覆盖）。
+            #[cfg(target_os = "windows")]
+            let fallback_paths = ["C:\\Windows\\Fonts\\msyh.ttc", "C:\\Windows\\Fonts\\seguiemj.ttf"];
+            #[cfg(target_os = "macos")]
+            let fallback_paths = [
+                "/System/Library/Fonts/PingFang.ttc",
+                "/System/Library/Fonts/STHeiti Light.ttc",
+                "/System/Library/Fonts/Apple Symbols.ttf",
+            ];
+            #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+            let fallback_paths = [
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            ];
+            for path in fallback_paths {
+                if let Ok(data) = std::fs::read(path)
+                    && !data.is_empty()
+                {
+                    let _ = backend.load_family("Fallback", &data);
+                }
+            }
             Arc::new(backend)
         })
         .clone()
