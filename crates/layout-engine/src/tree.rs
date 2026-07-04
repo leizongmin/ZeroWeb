@@ -143,6 +143,18 @@ pub(crate) fn build_layout_tree_with_r109(
     (ctx.taffy, root_taffy_id, ctx.taffy_to_dom, ctx.r109)
 }
 
+/// R1024：dom_id 的父元素是否为 flex/grid 容器（即 dom_id 是 flex/grid item）。
+fn is_flex_grid_item(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, dom_id: NodeId) -> bool {
+    doc.parent_node(dom_id)
+        .and_then(|pid| styles.get(&pid))
+        .is_some_and(|s| {
+            matches!(
+                s.display,
+                DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+            )
+        })
+}
+
 /// 查找指定节点子树中的第一个元素节点。
 fn find_first_element(doc: &Document, node: NodeId) -> NodeId {
     let node_data = match doc.get(node) {
@@ -869,32 +881,75 @@ fn build_subtree(
                     }
                 }
             } else {
-                // 非 flex/grid 容器：仅处理元素子节点（原有行为）
-                let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
-                for &child_dom in &children_dom {
-                    let child_data = doc.get(child_dom);
-                    if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
-                        let order = styles.get(&child_dom).map_or(0, |s| s.order);
-                        children_with_order.push((child_dom, order));
+                // 非 flex/grid 容器
+                // R1024：block 容器的子若**全部**是 inline 级（文本 + display:Inline 元素如 br/span/a，
+                // 无 block/inline-block/img 等需独立 taffy 子树的子），整容器作 **leaf**（context=dom_id），
+                // 让 measure 回调经 has_inline_content 把全部 inline 文本作为一个 IFC 单位测量——
+                // 否则容器成 new_with_children（仅 Element 子）非 leaf，measure 不触发，intrinsic 宽不含文本
+                //（flex/grid item 含文本+br 时塌缩 w=0；rootpos 4 案 body 驱动）。inline 元素的样式由
+                // paint IFC 读 DOM 处理（与纯文本块一致），不需要独立 LayoutBox。
+                let has_text_child = children_dom
+                    .iter()
+                    .any(|&c| doc.get(c).is_some_and(|n| matches!(&n.kind, NodeKind::Text(_))));
+                let has_element_child = children_dom
+                    .iter()
+                    .any(|&c| doc.get(c).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))));
+                let all_inline = children_dom.iter().all(|&c| {
+                    let Some(n) = doc.get(c) else {
+                        return true;
+                    };
+                    match &n.kind {
+                        NodeKind::Text(_) => true,
+                        NodeKind::Element(_) => {
+                            // R1024：inline 元素还须「无 Element 子」——含 Element 后代（如 span 内
+                            // 嵌 abspos/block）的 inline 须保留 taffy 子树，否则其后代被丢出 taffy 树
+                            //（abspos-in-inline 簇 regression：span 内 abspos 失去 CB）。
+                            let is_inline = styles
+                                .get(&c)
+                                .is_some_and(|s| matches!(s.display, DisplayValue::Inline));
+                            let no_elem_child = !doc
+                                .child_nodes(c)
+                                .iter()
+                                .any(|&gc| doc.get(gc).is_some_and(|gn| matches!(&gn.kind, NodeKind::Element(_))));
+                            is_inline && no_elem_child
+                        }
+                        _ => true,
                     }
-                }
+                });
+                if has_text_child && has_element_child && all_inline && is_flex_grid_item(doc, styles, dom_id) {
+                    // R1024：仅 flex/grid item（父为 flex/grid 容器，content-sized）的全 inline 子 block
+                    // 作 leaf——让 measure 经 has_inline_content 把全部 inline 文本作一个 IFC 单位测量，
+                    // 修 flex/grid item 含文本+br 塌缩 w=0（rootpos 4 案 body 驱动）。fill-width block
+                    //（multicol 容器、普通 div）不入此路径（multicol -6 回归、welcome 改变非必需）。
+                    // inline Element 须无 Element 子（abspos-in-inline 簇的 span 内 abspos 须保留 CB）。
+                } else {
+                    // 仅处理元素子节点（原有行为）
+                    let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
+                    for &child_dom in &children_dom {
+                        let child_data = doc.get(child_dom);
+                        if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
+                            let order = styles.get(&child_dom).map_or(0, |s| s.order);
+                            children_with_order.push((child_dom, order));
+                        }
+                    }
 
-                // 按 order 稳定排序（相同 order 保持 DOM 顺序）
-                children_with_order.sort_by_key(|(_, order)| *order);
+                    // 按 order 稳定排序（相同 order 保持 DOM 顺序）
+                    children_with_order.sort_by_key(|(_, order)| *order);
 
-                for &(child_dom, _) in &children_with_order {
-                    let child_taffy = build_subtree(
-                        ctx,
-                        doc,
-                        styles,
-                        child_dom,
-                        grid_areas.as_ref(),
-                        false,
-                        own_writing_mode.clone(),
-                        viewport_w,
-                        viewport_h,
-                    );
-                    child_taffy_ids.push(child_taffy);
+                    for &(child_dom, _) in &children_with_order {
+                        let child_taffy = build_subtree(
+                            ctx,
+                            doc,
+                            styles,
+                            child_dom,
+                            grid_areas.as_ref(),
+                            false,
+                            own_writing_mode.clone(),
+                            viewport_w,
+                            viewport_h,
+                        );
+                        child_taffy_ids.push(child_taffy);
+                    }
                 }
             }
         }
