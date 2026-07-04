@@ -2648,6 +2648,28 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1028 ★column-span:all spanner 布局 LANDED = css-multicol Oracle 121→129（+8 net）·spanner-fragmentation 簇翻 PASS·Phase 2 第一步
+
+承 R1027 CONTINUE 转向 multicol Phase 2 第一阶：column-span:all。此前完全未实现（css-parser/style-system/layout 全无消费，intrinsic_sizing 用 leaf-guard proxy 近似），185 css-multicol 文件用 column-span:all = css-multicol 最大结构性缺口。
+
+**Phase 0 de-risk**：~10 个 "spanner" 案当前 PASS，核查发现这些案的 column-span:all 元素是 NESTED（非 multicol 直接子，如 spanner-in-opacity 在 opacity div 内）→ column-span:all 仅作用于直接子 → nested 案不受影响，回归风险可控。
+
+**实现**（crates/style-system + crates/layout-engine/src/multicol.rs）：
+- style-system（mirror column-fill plumbing）：types.rs `ColumnSpanComputedValue { None, All }` + ColumnSpan 变体；computed_style.rs `column_span` 字段；default_impl None；registry initial + known list（★中途误删 object-fit 已修）；apply_advanced parse none/all；inherit.rs inherit+reset 分支（非继承属性）。
+- multicol.rs：① `layout_multicol` 收集期检测 `has_spanner`（直接子 column-span:all），有则分支到 `layout_multicol_with_spanners`（原单区域路径零回归）；② `position_multicol_children` 加 `y_base` 参数 + 返回 region_height（单区域调用传 0.0，行为不变）；③ `layout_multicol_with_spanners` 划分 regions（spanner 作边界，N spanner → N+1 区域）→ 每区域 balanced 分配 → 逐区域定位（y_base 累加）→ spanner 全宽插入（width=content_width，column_span_offsets.clear 正常 block 渲染）。
+
+**限制（R1028 初版）**：每区域 balanced（多数 span-all 用 column-fill:balance 默认）；column-fill:auto + spanner 的 sequential row-fill 暂不支持（更复杂 multi-column row 模型，多 session）。
+
+**验证（chromium Oracle + 三态门禁）**：**css-multicol Oracle 121→129（+8 net）**——9 newly PASS（**spanner-fragmentation-000/001/002/003/004/006/007 簇** + replaced-content-spanner-auto-width + column-height-019），1 regression（nested-with-padding-and-spanner 0.73→3.86%，nested+padding 复杂案，gate 演进可后续修）。top-worst 改善：multicol-span-all-rule-002 28.73→25.65%；column-balancing-paged 81.18→77.32%。welcome 16.57% 不变（<20% gate，无 multicol）。1 新单测 r1028_column_span_all_spanner_is_full_width + 19 既有 multicol 测全绿（position 签名变更零回归）；engine 1179 / layout-engine 1927 / style-system 1016 全 0 failed。
+
+**★ zero-browser bin suite OOM（test-guard 6GB/8GB per-proc）= PRE-EXISTING**：stash 本变更后 clean R1027-cont 同样 OOM 6.3GB。zero-browser 无 multicol 测试，非本变更引起。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / 受影响 crate make test 全绿。
+
+**意义**：攻克 css-multicol 最大结构性缺口（column-span:all），实现 spanner region-split 基础。+8 oracle pass 是 R990（+138）后单轮最大 multicol yield，spanner-fragmentation 簇整体翻 PASS。详见 [`evidence/r1028-column-span-all-2026-07-05.txt`](./evidence/r1028-column-span-all-2026-07-05.txt)。
+
+**▶ 下会话**：R1028 残余 ① nested-with-padding-and-spanner 回归（gate 收紧 nested 守卫，或 spanner 在 nested multicol 内的边界处理）；② span-all-children-height 簇（15-30%，需 column-fill:auto + spanner row-fill 模型，多 session）；③ multicol-span-all-rule（列 rule 在 spanner 处中断）。或转其它结构性 dir（writing-modes vertical / font-wall webfont）。column-span:all 基础已落地，可作 children-height/rule 扩展前置。
+
 ### R1027 ★break-after:column 死值消费（R903 mirror）LANDED = multicol-break-000 PASS（1.12→0.81%）·css-multicol Oracle 120→121（+1）零回归·spec-correctness
 
 承 R1026 后续扫 multicol 近-pass（26.5% baseline）。复查 §9.7 dead-value 簇发现 `break_after` 仅在 paint/effects_indicators.rs 画调试指示器时读，**layout 侧从未消费**——与 R903 前的 `break_before` 完全对称的死值（R513 §9.7 扫描遗漏项）。CSS Fragmentation §3.3：`break-after: column` = 放置完当前子元素后强制推进到下一列。

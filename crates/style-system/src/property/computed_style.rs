@@ -416,6 +416,8 @@ pub struct ComputedStyle {
     pub column_width: ColumnWidthComputedValue,
     /// column-fill 属性（balance 或 auto）。
     pub column_fill: ColumnFillComputedValue,
+    /// column-span 属性（none 或 all）。`all` 使元素成为 spanner 跨越全宽。
+    pub column_span: ColumnSpanComputedValue,
 
     // ── Object Fit / Filter ──
     /// object-fit 属性。

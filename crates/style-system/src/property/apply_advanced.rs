@@ -772,6 +772,21 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 _ => {}
             }
         }
+        // ── ColumnSpan 属性（§6.1：none 留在列流，all 跨越全宽成 spanner）──
+        "column-span" => {
+            let v = value.trim().to_ascii_lowercase();
+            match v.as_str() {
+                "none" => {
+                    style.column_span = ColumnSpanComputedValue::None;
+                    return true;
+                }
+                "all" => {
+                    style.column_span = ColumnSpanComputedValue::All;
+                    return true;
+                }
+                _ => {}
+            }
+        }
         // ── ObjectFit 属性 ──
         "object-fit" => {
             if let Some(v) = values::parse_object_fit(value) {

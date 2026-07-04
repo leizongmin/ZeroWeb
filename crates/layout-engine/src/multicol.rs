@@ -30,7 +30,7 @@ use zero_css_parser::values::LengthValue;
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::{
-    BreakValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnWidthComputedValue,
+    BreakValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue,
 };
 
 use crate::types::LayoutBox;
@@ -258,15 +258,20 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
 
     // 收集非 absolute/fixed 的子元素索引、高度，以及 break-before/after:column 标志
     //（R903：消费此前死值 break_before，强制换列；R1027：mirror 到 break_after）。
+    // 同时检测 column-span:all spanner（R1028：spanner 脱离列流成全宽元素）。
     let mut child_info: Vec<(usize, f32)> = Vec::new();
     let mut forced_breaks: Vec<bool> = Vec::new();
     let mut forced_breaks_after: Vec<bool> = Vec::new();
+    let mut has_spanner = false;
     for (i, c) in container.children.iter().enumerate() {
         if c.is_absolute || c.is_fixed {
             continue;
         }
         child_info.push((i, c.height + c.margin_top + c.margin_bottom));
         let style = c.node_id.and_then(|id| styles.get(&id));
+        if style.is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All)) {
+            has_spanner = true;
+        }
         let force = style.is_some_and(|s| matches!(s.break_before, BreakValue::Column | BreakValue::Page));
         forced_breaks.push(force);
         let force_after = style.is_some_and(|s| matches!(s.break_after, BreakValue::Column | BreakValue::Page));
@@ -274,6 +279,12 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
     }
 
     if child_info.is_empty() {
+        return;
+    }
+
+    // column-span:all spanner 路径：独立处理（区域分割 + 全宽 spanner），不走走单区域路径。
+    if has_spanner {
+        layout_multicol_with_spanners(container, info, styles);
         return;
     }
 
@@ -307,8 +318,94 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
         assign_children_to_columns_balanced(&child_info, info.count, &forced_breaks, &forced_breaks_after)
     };
 
-    // 定位子元素
-    position_multicol_children(container, &assignments, info);
+    // 定位子元素（y_base=0：单区域，整个 multicol 内容在一行列内）
+    let _ = position_multicol_children(container, &assignments, info, 0.0);
+}
+
+/// column-span:all spanner 布局（R1028）。
+///
+/// CSS Multi-column Layout §6.1：`column-span: all` 的直接子元素（spanner）脱离列流，
+/// 跨越 multicol 容器全宽，把内容按 spanner 分成多段独立平衡的列区域：
+/// region 0（spanner[0] 之前）→ spanner 0（全宽）→ region 1 → spanner 1 → ... → region N。
+///
+/// 限制（R1028 初版）：每段区域用 balanced 分配（多数 span-all 测试用 column-fill:balance
+/// 默认）。`column-fill:auto` + spanner 的 sequential row-fill 是更复杂的 multi-column
+/// row 模型，暂不支持。
+fn layout_multicol_with_spanners(
+    container: &mut LayoutBox,
+    info: &ColumnInfo,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    let col_count = info.count;
+    if col_count == 0 {
+        return;
+    }
+    let full_width = container.content_width;
+
+    // 1. 划分区域：遍历直接子元素（非 abspos/fixed），spanner 作区域边界。
+    //    regions[i] = 第 i 段非 spanner 子元素索引；spanners[i] = 第 i 个 spanner 索引。
+    //    区域数 = spanner 数 + 1（首尾各一段，相邻 spanner 间可能有空区域）。
+    let mut regions: Vec<Vec<usize>> = vec![Vec::new()];
+    let mut spanners: Vec<usize> = Vec::new();
+    for (i, c) in container.children.iter().enumerate() {
+        if c.is_absolute || c.is_fixed {
+            continue;
+        }
+        let is_spanner = c
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
+        if is_spanner {
+            spanners.push(i);
+            regions.push(Vec::new());
+        } else {
+            regions.last_mut().unwrap().push(i);
+        }
+    }
+
+    // 2. 逐区域分配 + 定位，spanner 全宽插入其後。
+    let mut y_base = 0.0f32;
+    for (region_idx, region_children) in regions.iter().enumerate() {
+        // 该区域子元素高度信息（break 标志暂不传递——spanner 区域内 break-before/after:column 罕见）。
+        let region_child_info: Vec<(usize, f32)> = region_children
+            .iter()
+            .map(|&i| {
+                let c = &container.children[i];
+                (i, c.height + c.margin_top + c.margin_bottom)
+            })
+            .collect();
+        let assignments = if region_child_info.is_empty() {
+            vec![Vec::new(); col_count.max(1)]
+        } else {
+            assign_children_to_columns_balanced(&region_child_info, col_count, &[], &[])
+        };
+
+        // 定位该区域子元素（列内 y 从 y_base 起），返回该区域高度。
+        let region_height = position_multicol_children(container, &assignments, info, y_base);
+        y_base += region_height;
+
+        // 该区域之后插入对应 spanner（region_idx 与 spanner_idx 一一对应；末区域无 spanner）。
+        if region_idx < spanners.len() {
+            let spanner = &mut container.children[spanners[region_idx]];
+            // spanner 全宽：x = margin_left，width = 容器 content_width。
+            // 清空 column_span_offsets 使其按正常 block 渲染（非列片段）。
+            spanner.column_span_offsets.clear();
+            spanner.x = spanner.margin_left;
+            spanner.y = y_base + spanner.margin_top;
+            if spanner.width < full_width {
+                spanner.width = full_width;
+                spanner.content_width = (full_width
+                    - spanner.border_left
+                    - spanner.border_right
+                    - spanner.padding_left
+                    - spanner.padding_right)
+                    .max(0.0);
+                spanner.content_x = spanner.border_left + spanner.padding_left;
+                constrain_subtree_width(spanner, spanner.content_width);
+            }
+            y_base += spanner.height + spanner.margin_top + spanner.margin_bottom;
+        }
+    }
 }
 
 /// 均衡分配子元素到各列（顺序流 + 目标高度策略）。
@@ -523,13 +620,19 @@ fn assign_children_to_columns_sequential(
 /// - 第一个片段的位置存储在 child.x/y（主位置）
 /// - 后续片段存储在 child.column_span_offsets
 /// - paint 层对每个额外片段重新绘制子元素，并裁剪到对应列区域
-fn position_multicol_children(container: &mut LayoutBox, assignments: &[Vec<ColumnFragment>], info: &ColumnInfo) {
+fn position_multicol_children(
+    container: &mut LayoutBox,
+    assignments: &[Vec<ColumnFragment>],
+    info: &ColumnInfo,
+    y_base: f32,
+) -> f32 {
     // 跟踪每个子元素已出现的片段数（用于区分主片段和额外片段）
     let mut child_fragment_count: HashMap<usize, usize> = HashMap::new();
+    let mut region_height = 0.0f32;
 
     for (col_idx, col_fragments) in assignments.iter().enumerate() {
         let col_x = col_idx as f32 * (info.column_width + info.gap);
-        let mut y_offset = 0.0f32;
+        let mut y_offset = y_base;
 
         for frag in col_fragments {
             let child = &mut container.children[frag.child_idx];
@@ -574,7 +677,12 @@ fn position_multicol_children(container: &mut LayoutBox, assignments: &[Vec<Colu
                 constrain_subtree_width(child, new_content_w);
             }
         }
+        // region 高度 = 各列达到的最大 y（相对 y_base）。各列 balance 后高度相近。
+        if y_offset - y_base > region_height {
+            region_height = y_offset - y_base;
+        }
     }
+    region_height
 }
 
 /// 递归约束子树中所有元素的宽度不超过指定最大值。
