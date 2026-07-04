@@ -228,13 +228,17 @@ impl BrowserChromeShell for DesktopBrowserShell {
         viewport.props.insert("bg", Value::Text("viewport".into()));
         viewport.props.insert("flex", Value::Float(1.0));
         root.children.push(viewport);
-        if model.find.is_some() {
-            root.children.push(leaf(
+        if let Some(find) = &model.find {
+            let mut fb = leaf(
                 "browser.FindBar",
                 ID_FIND_BAR,
                 "toolbar_bg",
-                Some(crate::i18n::localized_label(crate::i18n::ids::FIND)),
-            ));
+                None,
+            );
+            fb.props.insert("query", Value::Text(find.query.clone()));
+            fb.props.insert("match_index", Value::Int(find.match_index.map(|i| i as i64).unwrap_or(-1)));
+            fb.props.insert("match_count", Value::Int(find.match_count.map(|i| i as i64).unwrap_or(-1)));
+            root.children.push(fb);
         }
         root
     }
@@ -301,13 +305,17 @@ impl BrowserChromeShell for TabletBrowserShell {
         viewport.props.insert("bg", Value::Text("viewport".into()));
         viewport.props.insert("flex", Value::Float(1.0));
         root.children.push(viewport);
-        if model.find.is_some() {
-            root.children.push(leaf(
+        if let Some(find) = &model.find {
+            let mut fb = leaf(
                 "browser.FindBar",
                 ID_FIND_BAR,
                 "toolbar_bg",
-                Some(crate::i18n::localized_label(crate::i18n::ids::FIND)),
-            ));
+                None,
+            );
+            fb.props.insert("query", Value::Text(find.query.clone()));
+            fb.props.insert("match_index", Value::Int(find.match_index.map(|i| i as i64).unwrap_or(-1)));
+            fb.props.insert("match_count", Value::Int(find.match_count.map(|i| i as i64).unwrap_or(-1)));
+            root.children.push(fb);
         }
         root
     }
@@ -363,13 +371,17 @@ impl BrowserChromeShell for PhoneBrowserShell {
                 model.navigation.can_go_forward,
             )),
         ));
-        if model.find.is_some() {
-            root.children.push(leaf(
+        if let Some(find) = &model.find {
+            let mut fb = leaf(
                 "browser.FindBar",
                 ID_FIND_BAR,
                 "toolbar_bg",
-                Some(crate::i18n::localized_label(crate::i18n::ids::FIND)),
-            ));
+                None,
+            );
+            fb.props.insert("query", Value::Text(find.query.clone()));
+            fb.props.insert("match_index", Value::Int(find.match_index.map(|i| i as i64).unwrap_or(-1)));
+            fb.props.insert("match_count", Value::Int(find.match_count.map(|i| i as i64).unwrap_or(-1)));
+            root.children.push(fb);
         }
         root
     }

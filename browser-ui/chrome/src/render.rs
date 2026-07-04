@@ -866,6 +866,82 @@ impl Widget for BookmarksBarWidget {
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
+// ── FindBarWidget（真实查找栏，DC-14 chrome 功能等价）────────────────────────
+
+const FIND_BAR_HEIGHT: f32 = 36.0;
+
+/// 查找栏绘制控件：背景 + 查询文本 + 匹配计数。
+pub struct FindBarWidget {
+    bg: Color,
+    query: String,
+    match_index: Option<i64>,
+    match_count: Option<i64>,
+    text_color: Color,
+}
+
+impl FindBarWidget {
+    pub fn from_spec(spec: &WidgetSpec, tokens: &SemanticTokens) -> FindBarWidget {
+        let bg_name = match spec.props.get("bg") {
+            Some(Value::Text(s)) => s.as_str(),
+            _ => "chrome",
+        };
+        let query = match spec.props.get("query") {
+            Some(Value::Text(s)) => s.clone(),
+            _ => String::new(),
+        };
+        let match_index = match spec.props.get("match_index") {
+            Some(Value::Int(i)) if *i >= 0 => Some(*i),
+            _ => None,
+        };
+        let match_count = match spec.props.get("match_count") {
+            Some(Value::Int(i)) if *i >= 0 => Some(*i),
+            _ => None,
+        };
+        FindBarWidget {
+            bg: chrome_color_themed(bg_name, tokens),
+            query,
+            match_index,
+            match_count,
+            text_color: tokens.on_surface,
+        }
+    }
+}
+
+impl Widget for FindBarWidget {
+    fn mount(&mut self, _ctx: &mut MountCtx) {}
+    fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
+    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
+        EventResult::Ignored
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+        let width = constraints.max_width;
+        let height = FIND_BAR_HEIGHT.clamp(constraints.min_height, constraints.max_height);
+        Size::new(width, height)
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx) {
+        let size = ctx.clip.map(|r| r.size).unwrap_or_else(|| Size::new(400.0, FIND_BAR_HEIGHT));
+        ctx.recorder
+            .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
+        let label = if let (Some(idx), Some(cnt)) = (self.match_index, self.match_count) {
+            if self.query.is_empty() {
+                format!("Find  ({}/{cnt})", idx + 1)
+            } else {
+                format!("\"{}\" ({}/{cnt})", self.query, idx + 1)
+            }
+        } else if self.query.is_empty() {
+            "Find".to_string()
+        } else {
+            format!("\"{}\"", self.query)
+        };
+        let baseline = size.height * 0.5 + 13.0 * 0.35;
+        ctx.recorder.draw_text(&label, Point::new(12.0, baseline), 13.0, self.text_color);
+    }
+
+    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+}
+
 // ── AddressBarWidget（真实地址栏 pill，DC-14 chrome 功能等价）──────────────────────
 
 /// 地址栏几何（与 apps/browser/src/layout.rs 手绘 chrome 对齐，DC-14 像素级等价）。
@@ -1039,7 +1115,7 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens,
         Box::new(ChromePanel::from_spec(s, "secure", 44.0, false, &t))
     });
     host.register("browser.FindBar", move |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 36.0, false, &t))
+        Box::new(FindBarWidget::from_spec(s, &t))
     });
     // 视口：占满剩余区域，**不填底色**（DC-14 替换式迁移：页面内容由 WebView 绘制在上层，
     // SDK chrome viewport 只负责布局空间，不覆盖页面像素）。
@@ -1346,5 +1422,27 @@ mod tests {
         let texts = scene_texts(&scene);
         assert!(texts.iter().any(|t| t.contains("MDN")), "MDN label, got {texts:?}");
         assert!(texts.iter().any(|t| t.contains("GitHub")), "GitHub label, got {texts:?}");
+    }
+
+    #[test]
+    fn find_bar_widget_paints_bg_and_label() {
+        let tokens = zero_ui_core::theme::SemanticTokens::light();
+        let mut spec = WidgetSpec::new("browser.FindBar");
+        spec.id = Some(zero_ui_core::widget::WidgetId::new("find_bar"));
+        spec.props.insert("bg", Value::Text("toolbar_bg".into()));
+        spec.props.insert("query", Value::Text("hello".into()));
+        spec.props.insert("match_index", Value::Int(0));
+        spec.props.insert("match_count", Value::Int(5));
+        let mut host = zero_ui_runtime::WidgetHost::new();
+        let t = tokens;
+        host.register("browser.FindBar", move |s| {
+            Box::new(FindBarWidget::from_spec(s, &t))
+        });
+        host.set_root(&spec);
+        host.layout(zero_ui_core::geometry::Constraints::loose(Size::new(1280.0, 800.0)));
+        let scene = host.paint().clone();
+        let texts = scene_texts(&scene);
+        assert!(texts.iter().any(|t| t.contains("hello")), "query text, got {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("1/5")), "match count, got {texts:?}");
     }
 }
