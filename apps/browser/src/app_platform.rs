@@ -213,6 +213,7 @@ impl BrowserApp {
                     Some(webview_extras), // DC-3 phase-2: webview surface
                     &mut scene_primitives, &mut image_cache,
                     &sdk_chrome_tokens(&self.chrome_palette),
+                    &sdk_chrome_tab_colors(&self.chrome_palette),
                 )
             };
 
@@ -324,6 +325,7 @@ impl BrowserApp {
                 Some(webview_extras), // DC-3 phase-2: webview surface
                 &mut scene_primitives, &mut image_cache,
                 &sdk_chrome_tokens(&self.chrome_palette),
+                &sdk_chrome_tab_colors(&self.chrome_palette),
             )
         };
 
@@ -469,6 +471,7 @@ impl BrowserApp {
             &mut scene_primitives,
             &mut image_cache,
             &sdk_chrome_tokens(&self.chrome_palette),
+            &sdk_chrome_tab_colors(&self.chrome_palette),
         );
         let fills = [page_fills, chrome_overlay_fills].concat();
         let glyphs = [page_glyphs, chrome_overlay_glyphs].concat();
@@ -1077,14 +1080,7 @@ fn prepend_vec<T>(dst: &mut Vec<T>, src: Vec<T>) {
 #[cfg(feature = "sdk-chrome")]
 fn sdk_chrome_tokens(p: &crate::colors::ChromePalette) -> zero_ui_core::theme::SemanticTokens {
     use zero_ui_core::theme::{Color, SemanticTokens};
-    let f = |c: zero_render_foundation::color::Color| {
-        Color::rgba(
-            c.r as f32 / 255.0,
-            c.g as f32 / 255.0,
-            c.b as f32 / 255.0,
-            c.a as f32 / 255.0,
-        )
-    };
+    let f = rf_color_to_ui;
     SemanticTokens {
         background: f(p.address_bar_bg),
         on_background: f(p.address_bar_text),
@@ -1098,6 +1094,36 @@ fn sdk_chrome_tokens(p: &crate::colors::ChromePalette) -> zero_ui_core::theme::S
         on_success: Color::WHITE,
         warning: f(p.address_bar_insecure),
         on_warning: Color::WHITE,
+    }
+}
+
+/// 把 `zero_render_foundation::color::Color`（u8 通道）转为 SDK [`Color`](zero_ui_core::theme::Color)
+/// （f32 0-1）。[`sdk_chrome_tokens`] 与 [`sdk_chrome_tab_colors`] 共用。
+#[cfg(feature = "sdk-chrome")]
+fn rf_color_to_ui(c: zero_render_foundation::color::Color) -> zero_ui_core::theme::Color {
+    zero_ui_core::theme::Color::rgba(
+        c.r as f32 / 255.0,
+        c.g as f32 / 255.0,
+        c.b as f32 / 255.0,
+        c.a as f32 / 255.0,
+    )
+}
+
+/// 把浏览器 tab 专属色（[`ChromePalette`](crate::colors::ChromePalette)）映射为 SDK
+/// [`ChromeTabColors`]（DC-14 tab 形状 parity）。
+///
+/// tab 专属色（active/inactive/separator/strip bg）不是通用 `SemanticTokens` 标准 slot，故作为
+/// tokens 补集经工厂签名注入（详见 `browser-ui/chrome::render::ChromeTabColors`）。light 调色板：
+/// tab_active_bg=255 / tab_bar_bg=222,225,230 / tab_separator=148,152,160 / toolbar_bg=248,249,250。
+#[cfg(feature = "sdk-chrome")]
+fn sdk_chrome_tab_colors(
+    p: &crate::colors::ChromePalette,
+) -> zero_browser_chrome::render::ChromeTabColors {
+    zero_browser_chrome::render::ChromeTabColors {
+        strip_bg: rf_color_to_ui(p.toolbar_bg),
+        active_bg: rf_color_to_ui(p.tab_active_bg),
+        bar_bg: rf_color_to_ui(p.tab_bar_bg),
+        separator: rf_color_to_ui(p.tab_separator),
     }
 }
 
@@ -1122,6 +1148,7 @@ fn compose_sdk_chrome_replacement_with_webview(
     scene_primitives: &mut RenderPrimitives,
     image_cache: &mut Option<&mut ImageCache>,
     tokens: &SemanticTokens,
+    tab_colors: &zero_browser_chrome::render::ChromeTabColors,
 ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
     use zero_browser_chrome::sdk_render::render_chrome_via_sdk_with_webview_surface;
     use zero_browser_chrome::render::{NAV_ICON_BACK, NAV_ICON_FORWARD, NAV_ICON_HOME, NAV_ICON_RELOAD};
@@ -1195,6 +1222,7 @@ fn compose_sdk_chrome_replacement_with_webview(
 
     let (bridge, viewport_rect) = render_chrome_via_sdk_with_webview_surface(
         shell, &metrics, tokens, ResolvedColorScheme::Light, backend, webview_surface, &nav_masks,
+        *tab_colors,
     );
     let (sdk_prims, sdk_cache) = bridge.into_primitives_and_cache();
 
@@ -1800,6 +1828,7 @@ mod sdk_chrome_tests {
             &mut scene,
             &mut Some(&mut image_cache),
             &sdk_chrome_tokens(&crate::colors::ChromePalette::light()),
+            &sdk_chrome_tab_colors(&crate::colors::ChromePalette::light()),
         );
 
         // page_fills 已移入 surface → 返回空 Vec（不再手动翻译合并）。

@@ -18,7 +18,7 @@ use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
 use zero_ui_core::image::ImageRef;
 use zero_ui_core::theme::{Color, SemanticTokens};
 use zero_ui_core::widget::{
-    EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget, WidgetSpec,
+    EventCtx, LayoutCtx, MountCtx, PaintCtx, PaintRecorder, Props, SemanticsCtx, UpdateCtx, Widget, WidgetSpec,
 };
 use zero_ui_render::Scene;
 use zero_ui_runtime::WidgetHost;
@@ -46,14 +46,9 @@ fn chrome_alias_token(name: &str) -> Option<&'static str> {
 ///
 /// 先按 chrome 别名映射，否则直接当 token 名（`surface`/`primary`/`on_surface`/...）解析；
 /// 未知名回落 `surface`。
-/// `tab_strip_bg` 在 light 主题下用 on_surface 混入 surface 产生肉眼可见的中灰层次。
 pub fn chrome_color_themed(name: &str, tokens: &SemanticTokens) -> Color {
     let token = chrome_alias_token(name).unwrap_or(name);
-    let base = tokens.color_for(token).unwrap_or(tokens.surface);
-    match name {
-        "tab_strip_bg" => base.mix(tokens.on_surface, 0.12),
-        _ => base,
-    }
+    tokens.color_for(token).unwrap_or(tokens.surface)
 }
 
 /// chrome 色名 → [`Color`]（浅色基线；等价 `chrome_color_themed(name, &SemanticTokens::light())`）。
@@ -316,18 +311,291 @@ impl Widget for NavigationButtonsWidget {
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
+// ── BrowserTabStripWidget（真实 tab 形状，DC-14 chrome 功能等价）───────────────────
+
+/// 浏览器 tab 专属色（DC-14 parity）。
+///
+/// 这些色（active/inactive tab 底、分隔线、strip 底）在浏览器 [`ChromePalette`] 里有精确值
+/// （light：tab_active_bg=255 / tab_bar_bg=222,225,230 / tab_separator=148,152,160 / toolbar_bg=248），
+/// 但**不是**通用 `SemanticTokens` 的标准 slot——通用 token 集无法承载浏览器专属 chrome 语义。
+/// 故本结构作为 tokens 的**补集**经工厂签名传入（apps/browser 从 `ChromePalette` 构造），
+/// 使 SDK chrome 组件既保持 token 驱动（DC-5 通用色）又产出与手绘相同 tab 色值（DC-14 parity）。
+/// 与 [`NavigationButtonsWidget`] 的 disabled tint（token 推导近似）不同：tab 形状是 chrome 最显眼
+/// 结构，近似色会产生肉眼可见 diff，故走精确调色板注入。
+///
+/// [`ChromePalette`]: crate::chrome_model
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ChromeTabColors {
+    /// tab strip 背景（toolbar_bg；= tokens.surface，此处冗余携带避免 widget 再查 token）。
+    pub strip_bg: Color,
+    /// 激活 tab 底色（tab_active_bg；light=白 255）。
+    pub active_bg: Color,
+    /// 非激活 tab 底色（tab_bar_bg；light=222,225,230）。
+    pub bar_bg: Color,
+    /// 相邻非激活 tab 间分隔线（tab_separator；light=148,152,160）。
+    pub separator: Color,
+}
+
+impl ChromeTabColors {
+    /// SDK-only 默认（无浏览器调色板时从 token 近似；仅测试 / 非 webview 路径用）。
+    /// 生产路径（`compose_sdk_chrome_replacement_with_webview`）从 `ChromePalette` 构造精确值。
+    pub fn from_tokens(tokens: &SemanticTokens) -> ChromeTabColors {
+        ChromeTabColors {
+            strip_bg: tokens.surface,
+            // active tab 在 light 主题为纯白；dark 主题为深灰，token 近似取 surface 向白提亮。
+            active_bg: tokens.surface.lighten(1.0),
+            bar_bg: tokens.on_surface.mix(tokens.surface, 0.86),
+            separator: tokens.on_surface.mix(tokens.surface, 0.6),
+        }
+    }
+}
+
+/// tab 几何常量（与 apps/browser/src/layout.rs 手绘 chrome 对齐，DC-14 像素级等价）。
+const TAB_BAR_TOP_INSET: f32 = 6.0;
+const TAB_BAR_HEIGHT: f32 = 34.0;
+const TAB_STRIP_HEIGHT: f32 = 40.0; // = TAB_BAR_TOP_INSET + TAB_BAR_HEIGHT。
+const TAB_MIN_WIDTH: f32 = 100.0;
+const TAB_MAX_WIDTH: f32 = 240.0;
+const TAB_TOP_RADIUS: f32 = 7.0;
+const TAB_FOOT_RADIUS: f32 = 7.0;
+const TAB_SEPARATOR_INSET: f32 = 8.0;
+/// 「新建标签」按钮预留宽（手绘 chrome tab 区右侧；SDK 不画该按钮但需预留使 tab 宽一致）。
+const NEW_TAB_BTN_WIDTH: f32 = 34.0;
+
+/// 顶部圆角矩形扫描线（非激活 tab）——镜像 apps/browser/src/tab_chrome.rs::push_top_rounded_rect_fill，
+/// 逐行 1px `fill_rect`（局部坐标），与手绘像素级一致（同一扫描线算法，DC-14 parity）。
+fn paint_top_rounded_scanlines(rec: &mut dyn PaintRecorder, x: f32, y: f32, w: f32, h: f32, radius: f32, color: Color) {
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let r = radius.min(w * 0.5).min(h);
+    if r <= f32::EPSILON {
+        rec.fill_rect(Rect::from_ltrb(x, y, x + w, y + h), color);
+        return;
+    }
+    let min_y = y.floor() as i32;
+    let max_y = (y + h).ceil() as i32;
+    let r_sq = r * r;
+    for row in min_y..max_y {
+        let yf = row as f32 + 0.5;
+        if yf >= y + h {
+            break;
+        }
+        let mut x_start = x;
+        let mut x_end = x + w;
+        if yf < y + r {
+            let dy = (y + r) - yf;
+            let dx = (r_sq - dy * dy).max(0.0).sqrt();
+            x_start = x + r - dx;
+            x_end = x + w - r + dx;
+        }
+        if x_end > x_start {
+            rec.fill_rect(Rect::from_ltrb(x_start, row as f32, x_end, row as f32 + 1.0), color);
+        }
+    }
+}
+
+/// Chrome 风格激活 tab 扫描线（顶部圆角 + 底部 foot 二次曲线外扩）——镜像
+/// apps/browser/src/tab_chrome.rs::push_active_tab_fill。逐行 1px `fill_rect`（`tab_y` 为 strip
+/// 局部 y 偏移），与手绘像素级一致。foot 使激活 tab 底部与下方工具栏「连成一片」的经典 Chrome 形状。
+#[allow(clippy::too_many_arguments)]
+fn paint_active_tab_scanlines(
+    rec: &mut dyn PaintRecorder,
+    x: f32,
+    tab_y: f32,
+    w: f32,
+    h: f32,
+    r_top_in: f32,
+    r_foot_in: f32,
+    color: Color,
+) {
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let r_top = r_top_in.min(w * 0.5).min(h);
+    let r_foot = r_foot_in.min(w * 0.5).min(h * 0.5);
+    let bottom_y = h;
+    let foot_top = bottom_y - r_foot;
+    let r_top_sq = r_top * r_top;
+    let min_y = 0;
+    let max_y = bottom_y.ceil() as i32;
+    for row in min_y..max_y {
+        let yf = row as f32 + 0.5;
+        if yf >= bottom_y {
+            continue;
+        }
+        let mut x_start = x;
+        let mut x_end = x + w;
+        if yf < r_top && r_top > f32::EPSILON {
+            let dy = r_top - yf;
+            let dx = (r_top_sq - dy * dy).max(0.0).sqrt();
+            x_start = x + r_top - dx;
+            x_end = x + w - r_top + dx;
+        }
+        if yf >= foot_top && r_foot > f32::EPSILON {
+            let foot_span = (bottom_y - foot_top - 0.5).max(f32::EPSILON);
+            let progress = ((yf - foot_top) / foot_span).clamp(0.0, 1.0);
+            let foot_extend = r_foot * progress * progress;
+            x_start -= foot_extend;
+            x_end += foot_extend;
+        }
+        if x_end > x_start {
+            rec.fill_rect(
+                Rect::from_ltrb(x_start, tab_y + row as f32, x_end, tab_y + row as f32 + 1.0),
+                color,
+            );
+        }
+    }
+}
+
+/// 标签栏绘制控件（DC-14：真实 tab 形状替换 ChromePanel 占位）。
+///
+/// paint：填 strip 背景（toolbar bg 全宽）+ 逐 tab 几何（active=Chrome foot 形状白底 /
+/// inactive=顶部圆角 bar 底 / 相邻 inactive 间分隔线）。tab 几何算法镜像
+/// apps/browser/src/app_render.rs::render_tabs（无 pinned、Windows leading=0 简化；fresh app 默认）。
+/// 图标 / 标签文案 / close 按钮 / hover 为后续轮次（本轮先闭合形状 parity，diff 主因）。
+pub struct BrowserTabStripWidget {
+    strip_bg: Color,
+    active_bg: Color,
+    bar_bg: Color,
+    separator: Color,
+    tab_count: usize,
+    active_index: Option<usize>,
+}
+
+impl BrowserTabStripWidget {
+    /// 由声明节点构造：`tab_count`（Int）/ `active_tab_index`（Int，-1 = 无）props；tab 色经
+    /// [`ChromeTabColors`] 注入（生产从 `ChromePalette`，测试从 token 近似）。
+    pub fn from_spec(spec: &WidgetSpec, tab_colors: ChromeTabColors) -> BrowserTabStripWidget {
+        let tab_count = match spec.props.get("tab_count") {
+            Some(Value::Int(i)) => (*i).max(0) as usize,
+            _ => 0,
+        };
+        let active_index = match spec.props.get("active_tab_index") {
+            Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
+            _ => None,
+        };
+        BrowserTabStripWidget {
+            strip_bg: tab_colors.strip_bg,
+            active_bg: tab_colors.active_bg,
+            bar_bg: tab_colors.bar_bg,
+            separator: tab_colors.separator,
+            tab_count,
+            active_index,
+        }
+    }
+}
+
+impl Widget for BrowserTabStripWidget {
+    fn mount(&mut self, _ctx: &mut MountCtx) {}
+
+    fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
+
+    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
+        EventResult::Ignored
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+        // 全宽 bar（铺满 column 容器宽）+ 固定 TAB_STRIP_HEIGHT（clamp 到约束）。
+        let width = constraints.max_width;
+        let height = TAB_STRIP_HEIGHT.clamp(constraints.min_height, constraints.max_height);
+        Size::new(width, height)
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx) {
+        let size = ctx
+            .clip
+            .map(|r| r.size)
+            .unwrap_or_else(|| Size::new(1280.0, TAB_STRIP_HEIGHT));
+        let width = size.width;
+        // 1. strip 背景全宽（toolbar bg）。
+        ctx.recorder
+            .fill_rect(Rect::from_ltrb(0.0, 0.0, width, TAB_STRIP_HEIGHT), self.strip_bg);
+        if self.tab_count == 0 {
+            return;
+        }
+        // 2. tab 宽布局（镜像 app_render.rs render_tabs：Windows leading=0、无 OS 窗口控件、无 pinned）。
+        let leading = 0.0_f32;
+        let window_controls_w = 0.0;
+        let tabs_max_width = (width - window_controls_w - NEW_TAB_BTN_WIDTH - leading).max(0.0);
+        let normal_count = self.tab_count as f32;
+        let ideal = if normal_count > 0.0 {
+            tabs_max_width / normal_count
+        } else {
+            0.0
+        };
+        let tab_w = ideal.clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH).max(0.0);
+        let tab_body_w = (tab_w - 1.0).max(0.0); // 手绘 tab_body_w = tab_w - scale。
+        let tab_y = TAB_BAR_TOP_INSET;
+        let active = self.active_index;
+        // 3. 非激活 tab（顶部圆角 bar 底）先画。
+        for i in 0..self.tab_count {
+            if Some(i) == active {
+                continue;
+            }
+            let x = leading + i as f32 * tab_w;
+            paint_top_rounded_scanlines(
+                ctx.recorder,
+                x,
+                tab_y,
+                tab_body_w,
+                TAB_BAR_HEIGHT,
+                TAB_TOP_RADIUS,
+                self.bar_bg,
+            );
+        }
+        // 4. 激活 tab（Chrome foot 形状白底）画在 inactive 之上（foot 覆盖相邻 inactive 边）。
+        if let Some(ai) = active.filter(|&a| a < self.tab_count) {
+            let x = leading + ai as f32 * tab_w;
+            paint_active_tab_scanlines(
+                ctx.recorder,
+                x,
+                tab_y,
+                tab_body_w,
+                TAB_BAR_HEIGHT,
+                TAB_TOP_RADIUS,
+                TAB_FOOT_RADIUS,
+                self.active_bg,
+            );
+        }
+        // 5. 相邻非激活 tab 间分隔线（在 tab 底色之上；与手绘一致：仅相邻均非激活时画）。
+        let sep_w = 1.0_f32;
+        for i in 0..self.tab_count.saturating_sub(1) {
+            if Some(i) == active || Some(i + 1) == active {
+                continue;
+            }
+            let gap_center = leading + (i + 1) as f32 * tab_w - 0.5;
+            ctx.recorder.fill_rect(
+                Rect::from_ltrb(
+                    gap_center - sep_w * 0.5,
+                    tab_y + TAB_SEPARATOR_INSET,
+                    gap_center + sep_w * 0.5,
+                    tab_y + TAB_BAR_HEIGHT - TAB_SEPARATOR_INSET,
+                ),
+                self.separator,
+            );
+        }
+    }
+
+    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+}
+
 /// 把 chrome `browser.*` 叶子组件工厂注册到 host。
 ///
 /// 容器节点（shell 根 / ToolbarRow）不注册 widget —— 它们经 `props.layout` 由 host 布局。
 /// 调用方仍需先 `host.set_root(&shell.build(...))` 注入声明树。
-pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens) {
+///
+/// `tab_colors`：tab 专属色（active/inactive/separator/strip bg），生产从浏览器 `ChromePalette`
+/// 构造（DC-14 parity）；测试可用 [`ChromeTabColors::from_tokens`] 近似。
+pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens, tab_colors: ChromeTabColors) {
     // bars：固定高度的语义色条 + 可选文案；颜色经 semantic token 解析（DC-5）。
     // 高度对齐 apps/browser/src/layout.rs 手绘 chrome（DC-14 像素级等价）：
     //   TAB_STRIP_HEIGHT = TAB_BAR_TOP_INSET(6) + TAB_BAR_HEIGHT(34) = 40
     //   ADDRESS_BAR_HEIGHT = 44（地址行：AddressBar / NavigationButtons / BrowserMenu / SecurityBadge）
     //   BOOKMARKS_BAR_HEIGHT = 28
-    // SemanticTokens 是 Copy：每个 move 闭包各持一份副本。
+    // SemanticTokens / ChromeTabColors 是 Copy：每个 move 闭包各持一份副本。
     let t = *tokens;
+    let tc = tab_colors;
     host.register("browser.AddressBar", move |s| {
         Box::new(ChromePanel::from_spec(s, "chrome", 44.0, false, &t))
     });
@@ -338,7 +606,7 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens)
         Box::new(ChromePanel::from_spec(s, "chrome", 44.0, false, &t))
     });
     host.register("browser.BrowserTabStrip", move |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 40.0, false, &t))
+        Box::new(BrowserTabStripWidget::from_spec(s, tc))
     });
     host.register("browser.BookmarksBar", move |s| {
         Box::new(ChromePanel::from_spec(s, "chrome", 28.0, false, &t))
@@ -366,8 +634,9 @@ pub fn register_chrome_factories_with_webview(
     host: &mut WidgetHost,
     tokens: &SemanticTokens,
     scheme: zero_ui_core::theme::ResolvedColorScheme,
+    tab_colors: ChromeTabColors,
 ) {
-    register_chrome_factories(host, tokens);
+    register_chrome_factories(host, tokens, tab_colors);
     // 替换 PageViewportFrame：使用 WebViewWidget 产出 ExternalSurface marker。
     let theme = zero_ui_core::theme::ThemeResolver::build_theme(
         zero_ui_core::theme::ThemeId::new("zero"),
@@ -450,7 +719,7 @@ mod tests {
 
         let tokens = SemanticTokens::light();
         let mut host = WidgetHost::new();
-        register_chrome_factories(&mut host, &tokens);
+        register_chrome_factories(&mut host, &tokens, ChromeTabColors::from_tokens(&tokens));
         host.set_root(&nav);
         let sz = host.layout(Constraints::loose(Size::new(400.0, 44.0)));
         // leading pad(10) + 4 按钮 × 36px = 154。
@@ -504,7 +773,11 @@ mod tests {
         let spec = DesktopBrowserShell.build(&model, &m);
 
         let mut host = WidgetHost::new();
-        register_chrome_factories(&mut host, &zero_ui_core::theme::SemanticTokens::light());
+        register_chrome_factories(
+            &mut host,
+            &zero_ui_core::theme::SemanticTokens::light(),
+            ChromeTabColors::from_tokens(&zero_ui_core::theme::SemanticTokens::light()),
+        );
         host.set_root(&spec);
         let root_size = host.layout(zero_ui_core::geometry::Constraints::loose(Size::new(
             m.logical_size.width,
@@ -601,7 +874,12 @@ mod tests {
 
         let tokens = zero_ui_core::theme::SemanticTokens::light();
         let mut host = WidgetHost::new();
-        register_chrome_factories_with_webview(&mut host, &tokens, zero_ui_core::theme::ResolvedColorScheme::Light);
+        register_chrome_factories_with_webview(
+            &mut host,
+            &tokens,
+            zero_ui_core::theme::ResolvedColorScheme::Light,
+            ChromeTabColors::from_tokens(&tokens),
+        );
 
         // 构造含 surface_id 的 PageViewportFrame spec。
         let mut spec = WidgetSpec::new("browser.PageViewportFrame");

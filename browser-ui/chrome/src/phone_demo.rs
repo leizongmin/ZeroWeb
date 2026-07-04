@@ -108,7 +108,11 @@ pub fn run_phone_demo() -> PhoneDemoSummary {
         spec: result.spec.clone(),
     };
     let mut driver = WinitDriver::new(&mut app, metrics);
-    register_chrome_factories(driver.host_mut(), &tokens);
+    register_chrome_factories(
+        driver.host_mut(),
+        &tokens,
+        crate::render::ChromeTabColors::from_tokens(&tokens),
+    );
 
     // 手势 arena：Tap + Pan + Pinch（多指 Pinch 经 pointer_id 区分）。pump_event 内部喂入 arena。
     let mut arena = GestureArena::new();

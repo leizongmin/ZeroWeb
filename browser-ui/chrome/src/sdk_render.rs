@@ -10,7 +10,7 @@
 //! `ui/adapters/render-foundation` 的 `full_pipeline_chrome_scene_to_render_primitives`）。
 
 use crate::chrome_model::BrowserChromeModel;
-use crate::render::{register_chrome_factories, register_chrome_factories_with_webview};
+use crate::render::{ChromeTabColors, register_chrome_factories, register_chrome_factories_with_webview};
 use crate::shell::{BrowserChromeShell, DesktopBrowserShell, ID_VIEWPORT};
 use std::sync::Arc;
 use zero_render_foundation::primitive::RenderPrimitives;
@@ -78,7 +78,8 @@ pub fn render_chrome_via_sdk_with_layout(
     let model = BrowserChromeModel::from_shell(shell);
     let spec = DesktopBrowserShell.build(&model, metrics);
     let mut host = WidgetHost::new();
-    register_chrome_factories(&mut host, tokens);
+    // 非 webview 路径（测试 / fallback）：tab 色从 token 近似（生产 webview 路径从 ChromePalette 精确注入）。
+    register_chrome_factories(&mut host, tokens, ChromeTabColors::from_tokens(tokens));
     host.set_root(&spec);
     host.layout(Constraints::loose(metrics.logical_size));
     // SDK chrome 布局后的页面内容区（viewport 节点绝对 rect）。
@@ -102,6 +103,7 @@ pub fn render_chrome_via_sdk_with_layout(
 /// `image_masks`：宿主预注册的图标 alpha 掩码（DC-14 真实 chrome 图标）；在 `paint_scene` 之前
 /// 注册到桥接 `image_masks`，使 `NavigationButtonsWidget` 的 `draw_image(NAV_ICON_*)` 能取回位图。
 /// 空切片 = 无图标注册（draw_image 安静 no-op，几何/chrome bars 仍正常画）。
+#[allow(clippy::too_many_arguments)]
 pub fn render_chrome_via_sdk_with_webview_surface(
     shell: &zero_browser_shell::BrowserShell,
     metrics: &WindowMetrics,
@@ -114,11 +116,12 @@ pub fn render_chrome_via_sdk_with_webview_surface(
         Option<zero_render_foundation::image_cache::ImageCache>,
     )>,
     image_masks: &[IconMask],
+    tab_colors: ChromeTabColors,
 ) -> (RenderFoundationBackend, Option<Rect>) {
     let model = BrowserChromeModel::from_shell(shell);
     let spec = DesktopBrowserShell.build(&model, metrics);
     let mut host = WidgetHost::new();
-    register_chrome_factories_with_webview(&mut host, tokens, scheme);
+    register_chrome_factories_with_webview(&mut host, tokens, scheme, tab_colors);
     host.set_root(&spec);
     host.layout(Constraints::loose(metrics.logical_size));
     let viewport_rect = host.rect_of(&WidgetId::new(ID_VIEWPORT));
@@ -254,6 +257,7 @@ mod tests {
             Arc::new(font_backend),
             Some((0, webview_prims, None)),
             &[],
+            ChromeTabColors::from_tokens(&SemanticTokens::light()),
         );
         let p = bridge.into_primitives();
         // chrome fills（toolbar/background 等）非空。

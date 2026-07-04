@@ -7,7 +7,7 @@
 //! DC-5：工厂接收 semantic token —— 同一声明树在 light/dark 主题下产出不同色值，
 //! 证明 chrome 组件消费 semantic token（不硬编码色值）。
 
-use zero_browser_chrome::render::scene_texts;
+use zero_browser_chrome::render::{ChromeTabColors, scene_texts};
 use zero_browser_chrome::{
     BrowserChromeModel, BrowserChromeShell, DesktopBrowserShell, SecurityState, register_chrome_factories,
 };
@@ -39,7 +39,7 @@ fn render(
     metrics: &WindowMetrics,
 ) -> Scene {
     let mut host = WidgetHost::new();
-    register_chrome_factories(&mut host, tokens);
+    register_chrome_factories(&mut host, tokens, ChromeTabColors::from_tokens(tokens));
     host.set_root(spec);
     let root_size = host.layout(Constraints::loose(metrics.logical_size));
     let scene = host.paint().clone();

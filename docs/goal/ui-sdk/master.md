@@ -621,7 +621,7 @@
 7w. ~~**DC-7 browser-ui/chrome 全 crate 深度审查（chrome 组件 paint→Scene + from_shell 投影 + adaptive shell 布局 + sdk_render 管线）**~~ ✅ **已完成（2026-07-03）**：对 browser-ui/chrome 全 21 文件（~4153 行）做 lei-deep-review。**总体**：chrome 经多轮迭代（DC-7 12/12 + DC-12 shell + DC-14 接线 + DC-3 surface）成熟度高，核心文件无 high。**修复 1 medium（TDD RED→GREEN）**：**PhoneBrowserShell::layout 键盘/小窗口下倒置 rect**——`bottom_h=56.min((avail_bottom-top_chrome.bottom())*0.4)` 在 avail_bottom（inner.bottom-keyboard）≤ top_chrome.bottom() 时为负 → bottom_chrome/viewport 倒置（top>bottom→size.height 负）。**真实触发**：横屏手机 800×390 + 物理键盘 340 + safe_area 34 → inner 356 < 48+340；分屏小窗口 + 物理键盘 > 窗口高同理。修复：空间不足 bottom_h=0 + viewport 底 `.max(top_chrome.bottom())` 非倒置（正常键盘路径逐位不变）。**经查正确**：chrome_model from_shell（downloads 6→3 / find checked_sub 1→0-based / security scheme 启发式）；render ChromePanel.paint 用 ctx.clip.size（host 根 parent_clip=Some→重叠节点 ctx.clip=Some，**非** widgets Button 截断类 bug）+ chrome_color_themed 全 token；sdk_render 三函数管线；shell select_shell §8.4.4A 表 + 跨 shell 稳定 WidgetId；12 组件 props+build 无逻辑 bug。**follow-up**：F2 webview 工厂硬编码 Light theme（dark-mode webview 失效，修需 scheme 经工厂签名传入）；F3 chrome_model bookmarks 注释 stale；F4 security_badge tooltip message_id 占位。chrome 84→**85 测**全绿 + 下游 bridge 23/browser 默认 191/sdk-chrome 202 零回归 + workspace build/clippy(-D warnings)/fmt 全净。SDK-only 无 product-smoke；DC-1 chrome 允许依赖 ui/*+browser-shell+adapter-webview。详见 evidence/dc7-chrome-deep-review-20260703-095233.txt。**DC-7 浏览器侧（chrome 12 组件 + shell + sdk_render）深度审查闭合**；SDK 安全/健壮性深度审查现覆盖 runtime+DSL+i18n+widgets+chrome 五层。下一候选 = `ui/render`（scene/render_node/paint_scene/RenderBackend 抽象，DC-2/DC-3/DC-11 交叉）或 follow-up F1/F2（PointerPhase::Exited 合成 leave / webview theme 注入）——独立 turn。
 7x. ~~**DC-2/DC-3/DC-11 ui/render 全 crate 深度审查（RenderPrimitive/Scene/paint_scene/RenderBackend/ClipStack/hit_test）**~~ ✅ **已完成（2026-07-03）**：对 ui/render 全 8 文件（~856 行）做 lei-deep-review。**总体**：小而稳定的渲染/场景抽象层，**0 behavior bug**。**3 处安全加固（零生产行为变更）**：①**clip.rs 补 sticky-ZERO 回归测**——ClipStack intersect None→ZERO 后后继 push 保持 ZERO（不可见子树整支被裁不复活）的正确传播此前未被显式测试，新测 `invisible_propagates_sticky_zero` 锁定；②**backend.rs 澄清 `apply_clip(None)` 语义**——`Rect::intersect` 无交集返 None，host clip 链使视口外节点 clip=None，bridge 经 None→视口回落补偿（非契约保证），docstring 明示 None=不主动裁剪只受后端自然边界约束 + 警告未来后端勿把 None 当无限画布（防越界泄漏）；③**hit_test.rs 修正坐标契约注释**（原「已减父偏移」与实现矛盾→「同一坐标空间，不递归减偏移」）。**经查正确**：render_node translate 5 变体；scene translated 同步平移；paint_scene 每 entry apply_clip+5 图元派发；SceneRecorder PaintRecorder+draw_text_blob；hit_test rev() topmost-wins；Layer 纯数据。**跨 crate O1**（不本轮修）：host clip 链可改 `.unwrap_or(Rect::ZERO)` 使契约更纯，但 DC-14 overlay 精调 + bridge 已补偿→留 follow-up。render 13→**14 测**全绿 + workspace build/clippy(-D warnings)/fmt 全净。**零生产行为变更**（1 新测 + 2 docstring）→ 无 product-smoke 风险；DC-1 ui/render 仅依赖 core+text-foundation+serde，零浏览器业务 + 零 render-foundation 依赖（TBD-2 trait 解耦）。详见 evidence/dc2-render-deep-review-20260703-100356.txt。**DC-2 Render·Scene tree 层 + DC-3 ExternalSurface + DC-11 TextBlob 路径深度审查闭合**；SDK 安全/健壮性深度审查现覆盖 runtime+DSL+i18n+widgets+chrome+render 六层。下一候选 = `ui/core`（geometry/event/theme/focus/semantics/invalidation/layout/scroll/action/binding 基础类型层）或 follow-up F1/F2/O1（PointerPhase::Exited / webview theme / host clip 链 unwrap_or(ZERO)）——独立 turn。同轮：merge origin/main R980（rendering-compat doc-only，零冲突）。
 7y. ~~**DC-2/DC-5/DC-8/DC-9/DC-12 ui/core 全 crate 深度审查（基础类型层：geometry/scroll/layout/focus/invalidation/theme/action/binding/element/semantics）**~~ ✅ **已完成（2026-07-03）**：对 ui/core 全 13 文件（~2816 行）做 lei-deep-review（widget/event 前轮已看；theme DC-5 周期已覆盖 token 可访问性，本轮补审解析机制）。**总体**：最底层、被一切上层使用的稳定基础类型层，**0 behavior bug**。**2 处承载 host clip 链的 Rect 边界语义回归测（零生产行为变更）**：①**`Rect::contains` 边界含端点（edge-inclusive）**——hit-test 据此判定（相邻 rect 共享边界点同时 contains，z 序 rev() 仲裁），既有测只覆盖内/外部点，新测 `rect_contains_is_edge_inclusive` 锁定四角+边含/紧贴外侧不含；②**`Rect::intersect` 边相接→None**（`right <= left` 判空，共享一条边=零面积→None）——承载 host clip 链（render O1：相接节点 intersect None→own_clip=None→bridge 视口回落），既有测只覆盖真重叠/分离，新测 `rect_intersect_edge_touching_is_none` 锁定。**经查正确**：geometry from_ltrb/deflate_rect 不钳 inverted（**底层原语契约**，chrome Phone 倒置 bug 上轮已修是消费方误用）/ Constraints::deflate max(0)+min≤max；scroll max_scroll max(0)+resolve_target 不钳（一致）；layout Material 断点+Orientation+presets+physical_size；focus trap 折返/non-trap 逃逸/首次进入/空 scope 全分支（含单项 scope）；invalidation requires_paint 含 LAYOUT；action/binding/element（position-based reconcile，M1 简化 docstring 明示）/semantics clean；theme Color mix/lighten/darken + WCAG 2.1 relative_luminance（0.03928+2.4 gamma）+ contrast_ratio + diff_invalidation + build_theme 4 态 + resolve_scheme（system_scheme fully-resolved 契约自洽）+ Typography/Spacing scaled 正交。**跨 crate O2**（不本轮修）：SystemThemeSnapshot system_scheme vs high_contrast 字段角色 docstring 可澄清（M4 platform 探测器须按 fully-resolved 契约）。core 51→**53 测**全绿 + workspace build/clippy(-D warnings)/fmt 全净。**零生产行为变更**（2 新测）→ 无 product-smoke 风险；DC-1 ui/core 仅依赖 compact_str/hashbrown/serde/thiserror，零浏览器业务 + 零 ui/* 上层依赖（最底层）。详见 evidence/dc2-core-deep-review-20260703-101334.txt。**DC-2 Element tree + DC-5 主题解析机制 + DC-8 FocusScope + DC-9 InvalidationFlags + DC-12 WindowMetrics 基础类型层深度审查闭合**；**SDK 通用层（ui/* + foundation/text）深度审查全覆盖**（runtime/DSL/i18n/widgets/chrome/render/core 七层）。下一候选 = foundation/text（FontdueBackend shape/measure/raster + TextBlob）或 follow-up F1/F2/O1/O2（PointerPhase::Exited / webview theme / host clip 链 / SystemThemeSnapshot doc）或推进剩余终端门禁（DC-14 GUI / DC-15 移动后端 / DC-8 平台 a11y，均需 GUI/设备）——独立 turn。
-8. **DC-7 真实 chrome 组件（headless 可推进）**：逐步把 12 个浏览器组件从 `ChromePanel` 占位替换为真实 `impl Widget`。优先 `NavigationButtonsWidget` + `AddressBarWidget`（桌面 chrome 最显眼组件）。见 §DC-7/DC-14 真实 Chrome Widget 缺口。
+8. **DC-7 真实 chrome 组件（headless 可推进）**：逐步把 12 个浏览器组件从 `ChromePanel` 占位替换为真实 `impl Widget`。✅ `NavigationButtonsWidget`（Round 45）+ ✅ `BrowserTabStripWidget`（Round 49，chrome diff 39%→7.80%）。剩余：`AddressBarWidget`（圆角 pill + 锁图标 + URL 文本 + 焦点输入）、`SecurityBadgeWidget`、`BrowserMenuWidget`、`BookmarksBarWidget`、`FindBarWidget`、+ 窗口控制按钮（min/max/close，DC-14 chrome diff 剩余主因之一）。见 §DC-7/DC-14 真实 Chrome Widget 缺口。
 9. **DC-14 chrome 功能等价**（headless 可推进）：真实组件实现后在无 GUI 下通过 Scene snapshot + bridge 验证每个组件的视觉产出与手绘版等价。
 10. **DC-15 M4 移动端运行时**（需设备/工具链环境）。
 11. **DC-2 Real EventLoop::run 阻塞壳**（需 GUI 验证首帧）。
@@ -906,7 +906,7 @@ cargo ndk -t arm64-v8a → libzero_ui_adapter_android.so
 
 ## DC-7 / DC-14 真实 Chrome Widget 缺口（GUI 验收暴露的架构层 gap）
 
-GUI 可视验收暴露了一个关键事实：**当前浏览器 chrome 的所有 12 个领域组件均复用同一个 `ChromePanel` 占位 widget，没有一个拥有真实的 Widget 实现**。
+GUI 可视验收暴露了一个关键事实：**浏览器 chrome 的 12 个领域组件多数复用 `ChromePanel` 占位 widget**。截至 Round 49，**2/12 已升级为真实 `impl Widget`**：`NavigationButtonsWidget`（Round 45，真实 nav 图标）+ `BrowserTabStripWidget`（Round 49，真实 tab 形状扫描线，chrome diff 39%→7.80%）。剩余 10 个仍为 `ChromePanel` 占位。
 
 ### 当前状态
 
@@ -1347,3 +1347,60 @@ Evidence: `evidence/dc14-geometry-parity-20260704.txt`
 **下轮下一步**：tab strip 结构/颜色 parity——SDK BrowserTabStrip 当前是 ChromePanel flat bar，手绘是
 带 tab 形状（圆角 tab + 分隔线 + close + favicon）的结构化条。实现真实 TabStrip widget 匹配手绘，
 预期 chrome diff 39% 进一步下降。此外 nav disabled tint 微调 + security/menu 图标真实化。
+
+### Round 49 — BrowserTabStripWidget 真实 tab 形状（chrome diff 39.00% → 7.80%，2026-07-04）
+
+**Round 48 把 chrome 几何 parity 闭合后，本轮实现首个结构化 chrome 组件——真实 tab 形状**。
+Round 48 的 BrowserTabStrip 仍是 `ChromePanel` flat 占位（全宽 surface bar + 拼接标题文案），
+手绘则是 active tab 白色 Chrome foot 形状 + inactive tab 顶部圆角 + 分隔线。诊断证实 active-tab
+(100,20) hand=255（白）vs sdk=248（flat bar）——形状缺失是 chrome diff 主因。
+
+**A. `ChromeTabColors` 载体（DC-1 保持 + DC-14 parity）**：tab 专属色（active_bg=tab_active_bg /
+bar_bg=tab_bar_bg=222,225,230 / separator=tab_separator=148,152,160 / strip_bg=toolbar_bg）不是通用
+`SemanticTokens` 标准 slot——通用 token 集无法承载浏览器专属 chrome 语义。故新增 `ChromeTabColors`
+（browser-ui/chrome 通用 Color 结构）作为 tokens **补集**经工厂签名注入（仿 F2 scheme 线程模式）：
+`sdk_chrome_tab_colors(&ChromePalette)` 在 apps/browser 从调色板构造精确值，`ChromeTabColors::from_tokens`
+提供 SDK 测试近似默认。`register_chrome_factories` + `register_chrome_factories_with_webview` +
+`render_chrome_via_sdk_with_webview_surface` + `compose_sdk_chrome_replacement_with_webview` 全链加
+`tab_colors` 参数；提取 `rf_color_to_ui` 转换器（sdk_chrome_tokens + sdk_chrome_tab_colors 共用）。
+全调用链同步（render-foundation adapter test、chrome_scene example、phone_demo、shell_demo、shell tests）。
+
+**B. `BrowserTabStripWidget`（真实 impl Widget 替换 ChromePanel 占位）**：tab 几何常量对齐
+apps/browser/src/layout.rs（TAB_BAR_TOP_INSET=6 / TAB_BAR_HEIGHT=34 / TAB_STRIP_HEIGHT=40 /
+TAB_MIN/MAX_WIDTH=100/240 / TAB_TOP/FOOT_RADIUS=7 / NEW_TAB_BTN_WIDTH=34）。paint 用扫描线算法
+镜像手绘：`paint_top_rounded_scanlines`（inactive 顶部圆角）+ `paint_active_tab_scanlines`
+（active 顶部圆角 + 底部 foot 二次曲线外扩）——逐行 1px fill_rect，**镜像 tab_chrome.rs 同名算法**，
+保证与手绘像素级一致（同一扫描线算法、同一几何）。读 `tab_count`/`active_tab_index` props；
+tab 宽布局镜像 app_render.rs render_tabs（Windows leading=0、无 pinned）。shell.rs `tab_strip_node`
+helper 传 props（替代 `tab_titles` 拼接文案，移除 dead code）。
+
+**测量**（dc14_chrome_region_pixel_diff_baseline，control 0.000%）：
+| 区 | Round 48 | Round 49 |
+|----|----------|----------|
+| chrome (y<112) | 39.00% | **7.80%**（11179/143360） |
+| page (y≥112) | 0.00% | 0.00% |
+诊断：active-tab (100,20) hand=255 sdk=255 ✅（Round 48 时 sdk=248 flat bar）；nav-bg / addr-bg /
+tabstrip-bg 全部逐位匹配。
+
+**剩余 7.80% diff 主因（诊断定位，下轮目标）**：①**自定义窗口控制按钮** [1142,1280]（138px）——
+`uses_custom_window_controls()` 在 Windows 为 true，手绘画 min/max/close（tab_bar_bg 底+图标），SDK 未画
+（y=6..14 每行 137 diff）；②**tab 标签文字+favicon+close**——手绘画，SDK 未画（本轮先闭合形状 parity，
+y=15..39 文字像素 diff）。
+
+**顺手修复预存 test-binary 编译断裂**：`ui/adapters/render-foundation/src/lib.rs` 的
+`render_chrome_via_sdk_with_webview_surface` 调用自 Round 45 加 `image_masks` 参数后一直漏改
+（`cargo build` 不编译 test binary + 全量 `make test` 被 V8 链接阻塞未暴露）；本轮加 `image_masks` (`&[]`)
++ `tab_colors` 修复。
+
+**门禁全绿**：`cargo build --workspace` ✅ / clippy `-D warnings` ✅ / fmt ✅；
+zero-browser-chrome 87 测 / zero-browser sdk-chrome **206** 测 / default **191** 测 /
+adapter-render-foundation 29+18 测 全绿零回归。SDK-only（改动全在 sdk-chrome feature gate 或
+browser-ui/chrome SDK crate，welcome.html 默认渲染路径位等价不经 chrome）。
+`make product-smoke` 本环境 oracle 缺失（commit a6f08937「evidence 出库」移出 welcome-chromium.png，
+预存环境问题，非本轮引入）。
+
+Evidence: `evidence/dc14-tabstrip-shape-parity-20260704-025023.txt`
+
+**下轮下一步**：①窗口控制按钮（min/max/close）真实化——paint 3 按钮底（tab_bar_bg）+ 3 图标
+（NAV_ICON 同模式 ImageRef）；②tab 标签文字——传 titles props，draw_text 渲染（tab_text 色 + baseline）；
+③favicon/close 图标。预期 chrome diff 7.80% → ≤2%（DC-14 阈值）。

@@ -13,7 +13,7 @@
 //! 不接真实浏览器进程；WebViewWidget 仅作为占位自定义组件记录 `ExternalSurface`。
 
 use crate::chrome_model::BrowserChromeModel;
-use crate::render::{register_chrome_factories, security_color_name};
+use crate::render::{ChromeTabColors, register_chrome_factories, security_color_name};
 use zero_ui_adapter_webview::WebViewWidget;
 use zero_ui_adapter_winit::WinitDriver;
 use zero_ui_core::action::{ActionId, ActionPayload, ActionResult, EventResult};
@@ -308,7 +308,7 @@ impl Widget for ScrollBarWidget {
 
 /// 注册 demo 全部工厂：chrome 叶子（`register_chrome_factories`）+ FocusButton + WebView + ScrollBar。
 pub fn register_demo_factories(host: &mut WidgetHost, tokens: &SemanticTokens, theme: &zero_ui_core::theme::Theme) {
-    register_chrome_factories(host, tokens);
+    register_chrome_factories(host, tokens, ChromeTabColors::from_tokens(tokens));
     let t = *tokens;
     host.register("demo.FocusButton", move |s| Box::new(FocusBarButton::from_spec(s, &t)));
     let theme = theme.clone();

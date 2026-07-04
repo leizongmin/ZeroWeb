@@ -1,0 +1,100 @@
+DC-14 chrome parity — BrowserTabStripWidget 真实 tab 形状
+==========================================================
+Round 49（2026-07-04 02:50 UTC）
+
+摘要
+----
+把 SDK `browser.BrowserTabStrip` 从 `ChromePanel` flat 占位升级为真实
+`BrowserTabStripWidget`（impl Widget），用扫描线算法镜像手绘 chrome 的
+active/inactive tab 形状（顶部圆角 + Chrome foot 曲线）。chrome 区像素 diff
+从 Round 48 的 39.00% 降到 **7.80%**（-31pp）。
+
+实现
+----
+1. `browser-ui/chrome/src/render.rs`：
+   - 新 `ChromeTabColors { strip_bg, active_bg, bar_bg, separator }`——tab 专属色
+     载体（不是通用 SemanticTokens 标准 slot，故作为 tokens 补集经工厂签名注入，
+     仿 F2 scheme 线程模式）。`from_tokens()` 提供 SDK 测试近似默认。
+   - tab 几何常量（TAB_BAR_TOP_INSET=6 / TAB_BAR_HEIGHT=34 / TAB_STRIP_HEIGHT=40 /
+     TAB_MIN/MAX_WIDTH=100/240 / TAB_TOP/FOOT_RADIUS=7 / TAB_SEPARATOR_INSET=8 /
+     NEW_TAB_BTN_WIDTH=34）对齐 apps/browser/src/layout.rs。
+   - `paint_top_rounded_scanlines`（inactive tab，顶部圆角扫描线）+
+     `paint_active_tab_scanlines`（active tab，顶部圆角 + 底部 foot 二次曲线外扩）——
+     逐行 1px fill_rect，**镜像 apps/browser/src/tab_chrome.rs 同名算法**，
+     保证与手绘像素级一致（同一扫描线算法、同一几何）。
+   - `BrowserTabStripWidget`（impl Widget）：读 `tab_count`/`active_tab_index` props；
+     layout 全宽 × 40；paint = strip bg 全宽 + inactive tabs（顶部圆角 bar 底）+
+     active tab（Chrome foot 形状）+ 相邻 inactive 间分隔线。tab 宽布局镜像
+     app_render.rs render_tabs（Windows leading=0、无 OS 窗口控件预留、无 pinned）。
+   - `register_chrome_factories(host, tokens, tab_colors)` + `register_chrome_factories
+     _with_webview(host, tokens, scheme, tab_colors)` 加 `tab_colors` 参数。
+
+2. `browser-ui/chrome/src/shell.rs`：`tab_strip_node()` helper 替代 Desktop/Tablet
+   shell 里的 BrowserTabStrip 叶子，传 `tab_count` + `active_tab_index` props
+   （替代早期 `tab_titles` 拼接文案占位，移除 dead `tab_titles`）。
+
+3. `browser-ui/chrome/src/sdk_render.rs`：`render_chrome_via_sdk_with_webview_surface`
+   加 `tab_colors` 参数（+`#[allow(clippy::too_many_arguments)]`）；
+   `render_chrome_via_sdk_with_layout` 内部 `ChromeTabColors::from_tokens` 派生。
+
+4. `apps/browser/src/app_platform.rs`：
+   - 提取 `rf_color_to_ui` 转换器（sdk_chrome_tokens + sdk_chrome_tab_colors 共用）。
+   - 新 `sdk_chrome_tab_colors(&ChromePalette)`——从浏览器调色板构造精确 tab 色
+     （active_bg←tab_active_bg / bar_bg←tab_bar_bg / separator←tab_separator /
+     strip_bg←toolbar_bg）。
+   - `compose_sdk_chrome_replacement_with_webview` 加 `tab_colors` 参数；3 个生产
+     调用点（render_frame / render_cpu / test）+ 1 测试调用点传
+     `&sdk_chrome_tab_colors(&self.chrome_palette)`。
+
+5. 全调用链同步：render-foundation adapter test、chrome_scene example、phone_demo、
+   shell_demo、shell.rs tests——全部加 `ChromeTabColors::from_tokens(...)`。
+
+DC-1 保持
+---------
+ChromeTabColors 是 browser-ui/chrome 内的通用 Color 结构（不依赖浏览器业务 crate）；
+tab_colors 从 apps/browser 的 ChromePalette 构造，经 compose → sdk_render → factory
+注入，与既有 tokens / scheme 注入路径同构。通用 ui/* crate 零新依赖。
+
+基线测量（dc14_chrome_region_pixel_diff_baseline）
+--------------------------------------------------
+控制组 hand-vs-hand = 0.000%（harness 可信）。
+
+| 区 | Round 48 | Round 49 |
+|----|----------|----------|
+| chrome (y<112) | 39.00% | **7.80%**（11179/143360） |
+| page (y≥112) | 0.00% | 0.00% |
+
+诊断采样（active-tab (100,20) hand=255 sdk=255 ✅ 匹配；nav-bg / addr-bg /
+tabstrip-bg 全部匹配）。Round 48 时 active-tab hand=255 sdk=248（flat bar），
+本轮 SDK 渲染真实白色 Chrome foot 形状，逐位匹配。
+
+剩余 7.80% diff 主因（诊断定位，下轮目标）
+------------------------------------------
+1. **自定义窗口控制按钮** [1142, 1280]（138px）：`uses_custom_window_controls()`
+   在 Windows 为 true，WINDOW_CONTROLS_WIDTH=138。手绘在此画 min/max/close 按钮
+   （tab_bar_bg 底 + 图标），SDK 未画。y=6..14 每行 137 diff（hand=222 tab_bar_bg）。
+2. **tab 标签文字 + favicon + close 按钮**：手绘在 active tab 内画 "New Tab" 文案 +
+   favicon 图标 + close ×，SDK 未画（本轮先闭合形状 parity）。y=15..39 diffs（hand=
+   各种灰/深色文字像素，sdk=255 白）。
+3. 次要：active tab 形状边缘微量差异（foot 曲线像素级）。
+
+门禁
+----
+- `cargo build --workspace` ✅
+- `cargo clippy -p zero-browser-chrome -p zero-browser -p zero-ui-adapter-render-foundation
+  --all-targets -- -D warnings` ✅ 零警告
+- `cargo fmt --check` ✅ 无变更
+- zero-browser-chrome 87 测 ✅ / zero-browser sdk-chrome 206 测 ✅
+  / zero-browser default 191 测 ✅ / adapter-render-foundation 29+18 测 ✅
+- `make product-smoke` ⚠️ 本环境 oracle 缺失（commit a6f08937「evidence 出库」
+  移出 welcome-chromium.png，预存环境问题，非本轮引入）。本轮改动全在 sdk-chrome
+  feature gate 或 browser-ui/chrome SDK crate，welcome.html 默认渲染路径位等价
+  不经 chrome → 零页面回归风险。
+
+下轮下一步
+----------
+- 自定义窗口控制按钮（min/max/close）真实化：paint 3 按钮底（tab_bar_bg）+ 3 图标
+  （需 NAV_ICON 同模式注册 ImageRef）。
+- tab 标签文字：传 titles props，draw_text 渲染（需文本布局匹配 tab_text 色 + baseline）。
+- favicon / close 按钮 图标真实化。
+预期 chrome diff 7.80% → ≤2%（DC-14 阈值）。

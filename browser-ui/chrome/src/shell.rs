@@ -94,13 +94,19 @@ fn leaf_fullwidth(component: &str, id: &str, bg: &str, text: Option<String>) -> 
     s
 }
 
-fn tab_titles(model: &BrowserChromeModel) -> String {
-    model
-        .tabs
-        .iter()
-        .map(|t| t.title.clone())
-        .collect::<Vec<_>>()
-        .join(" | ")
+/// 构造 BrowserTabStrip 声明节点（DC-14 真实 tab 形状）。
+///
+/// 传 `tab_count` + `active_tab_index`（-1 = 无激活）props 给 [`BrowserTabStripWidget`]。
+/// widget 据此画 active/inactive tab 形状；标签文案 / 图标为后续轮次（本轮先闭合形状 parity）。
+fn tab_strip_node(id: &str, bg: &str, fill_width: bool, model: &BrowserChromeModel) -> WidgetSpec {
+    let mut s = leaf("browser.BrowserTabStrip", id, bg, None);
+    if fill_width {
+        s.props.insert("fill_width", Value::Bool(true));
+    }
+    s.props.insert("tab_count", Value::Int(model.tabs.len() as i64));
+    let active = model.active_tab_index.map(|i| i as i64).unwrap_or(-1);
+    s.props.insert("active_tab_index", Value::Int(active));
+    s
 }
 
 /// 收集声明树中所有稳定 WidgetId（测试用）。
@@ -168,12 +174,8 @@ impl BrowserChromeShell for DesktopBrowserShell {
         // 手绘 chrome 顺序（app_render.rs）：tab strip（顶）→ address/nav row → bookmarks。
         // 此前 SDK 顺序是 toolbar 在顶、tab strip 在下（与手绘 swapped），DC-14 chrome diff
         // 几何错配主因之一。改为 tab strip first（2026-07-04）。
-        root.children.push(leaf_fullwidth(
-            "browser.BrowserTabStrip",
-            ID_TAB_STRIP,
-            "tab_strip_bg",
-            Some(tab_titles(model)),
-        ));
+        root.children
+            .push(tab_strip_node(ID_TAB_STRIP, "tab_strip_bg", true, model));
         root.children.push(toolbar);
         // bookmarks bar 仅在 `bookmarks_bar_visible`（show_bookmarks_bar 设置 && 有书签）时渲染——
         // 对齐手绘 chrome `bookmarks_bar_visible`：默认 fresh app 无书签 → 不占行，chrome 高 = tab+toolbar。
@@ -254,12 +256,8 @@ impl BrowserChromeShell for TabletBrowserShell {
             None,
         ));
         root.children.push(toolbar);
-        root.children.push(leaf(
-            "browser.BrowserTabStrip",
-            ID_TAB_STRIP,
-            "tab_strip_bg",
-            Some(tab_titles(model)),
-        ));
+        root.children
+            .push(tab_strip_node(ID_TAB_STRIP, "tab_strip_bg", false, model));
         let mut viewport = node("browser.PageViewportFrame", ID_VIEWPORT);
         viewport.props.insert("bg", Value::Text("viewport".into()));
         viewport.props.insert("flex", Value::Float(1.0));
@@ -644,7 +642,7 @@ mod tests {
         let phone_metrics = metrics(390.0, 844.0, 20.0, 0.0);
         let phone_spec = PhoneBrowserShell.build(&model, &phone_metrics);
         let mut host = WidgetHost::new();
-        register_chrome_factories(&mut host, &tokens);
+        register_chrome_factories(&mut host, &tokens, crate::render::ChromeTabColors::from_tokens(&tokens));
         host.set_root(&phone_spec);
         host.layout(Constraints::loose(Size::new(390.0, 844.0)));
         let phone_scene = host.paint();
@@ -655,7 +653,7 @@ mod tests {
         let tablet_metrics = metrics(720.0, 1024.0, 0.0, 0.0);
         let tablet_spec = TabletBrowserShell.build(&model, &tablet_metrics);
         let mut host = WidgetHost::new();
-        register_chrome_factories(&mut host, &tokens);
+        register_chrome_factories(&mut host, &tokens, crate::render::ChromeTabColors::from_tokens(&tokens));
         host.set_root(&tablet_spec);
         host.layout(Constraints::loose(Size::new(720.0, 1024.0)));
         let tablet_scene = host.paint();

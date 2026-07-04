@@ -1260,7 +1260,11 @@ mod tests {
 
         // WidgetHost：注册 chrome 工厂 → 装载声明树 → layout → paint → Scene。
         let mut host = WidgetHost::new();
-        register_chrome_factories(&mut host, &SemanticTokens::light());
+        register_chrome_factories(
+            &mut host,
+            &SemanticTokens::light(),
+            zero_browser_chrome::render::ChromeTabColors::from_tokens(&SemanticTokens::light()),
+        );
         host.set_root(&spec);
         host.layout(Constraints::loose(metrics.logical_size));
         let scene = host.paint().clone();
@@ -1462,6 +1466,8 @@ mod tests {
             zero_ui_core::theme::ResolvedColorScheme::Light,
             std::sync::Arc::new(font_backend),
             Some((0, webview_prims, None)),
+            &[],
+            zero_browser_chrome::render::ChromeTabColors::from_tokens(&SemanticTokens::light()),
         );
         let p = bridge.into_primitives();
 
