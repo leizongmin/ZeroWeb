@@ -2688,6 +2688,14 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 - **裁决**：text-decoration-thickness/offset 被 position:relative offset bug 阻塞，单做 net-negative。**position:relative offset bug 现确证阻塞 ≥2 簇**（position:relative-table +6 + text-decoration-thickness +6 = **+12 潜力**），是最高价值多 session 解锁 lever。text-emphasis 簇（+22）独立未阻塞但须 per-glyph 标记绘制（IFC fragment 协调，大工程）。
 - **★ 4 dir 扫描 + 1 实现-回退 结论（position/multicol/tables/text-decor）**：position:relative offset bug 是横跨多 dir 的 pervasive blocker。**推荐下会话最高优先 = 修 position:relative offset bug**（解 +12，须 full-corpus A/B 守 abspos 回归），其次 text-emphasis（+22 clean feature）。
 
+**★ R1020 续 position:relative offset 修复尝试→A/B css-position net-NEGATIVE（9 regressed/0 improved）→REVERTED（同 session）**：承 cont4 推荐「修 position:relative offset bug」，本轮**诊断 solidify + 实现 + 全量 A/B**。
+- **诊断 solidify（layout diagnostic，已 revert）**：3 组测（simple-top `cb(relative,top:50)+abs(top:50)` / nested `relative-in-relative` / bottom）。**ZW baseline 全错**：abs@y=50（simple/nested 应 100）、abs@y=50（bottom 应 cb-30+50=20）。**机制确证 = abspos 按 CB 静态（pre-inset）位解析 top/left，未 track CB relative 偏移**。bug 通用（非 table 特有、非 nested 特有）。
+- **实现（postprocess.rs `propagate_relative_cb_offset_to_abspos` + engine.rs:419 接线）**：遍历树，沿 relative 祖先传 resolve_relative_inset(dx,dy)，对 abspos 加到 x/y；abspos/fixed CB 重置上下文。诊断测 3 组**全对**（abs→100/100/20，与 spec 一致）。
+- **★ A/B css-position 98 案全量（stash 严格对照）→ NET-NEGATIVE：9 regressed / 0 improved → REVERTED**。**8 个目标 position-relative-table-* 簇全回归**（thead/tbody/tfoot × left/top，1.32→2.37 +1.05pp ×6；tr-left/top 0.80→1.85 +1.05pp ×2）+ position-relative-004 2.94→4.88。**目标簇本应是受益者却全回归**。
+- **★ 矛盾根因（关键）**：诊断（plain div）显示 fix 产 spec-correct y=100，但真实 table 测全回归。说明 **ZW table 布局已通过另一路径（table.rs grid 定位）把 abspos 摆在接近正确位**，fix 的 +50 inset **double-apply/overshoot**（abs 已 ~100，+50→150 越界）。div 测 baseline abs@50（错），table 测 baseline abs 已接近正确（故 1.32% 小 diff）——**两路径 abspos 定位机制不同**，post-hoc 全局传播 inset 对 div 对、对 table 错。
+- **裁决**：position:relative offset bug **非简单 postprocess 可解**——须先理解 table 布局如何定位 abspos（为何已接近正确而 div 路径错），可能须在 converter/taffy 层统一（非后处理）。**难度从「risky 多 session」升级为「structurally entangled 多 session」**。R98/R123/R500 谱系 abspos CB 调优路径已多轮，进一步改动须 dedicated table+abspos 交互调查。
+- **★ 战略调整**：position:relative offset 修复已证两次间接 blocker（thickness cont4 + 本轮直击）均 net-negative。**下会话转 text-emphasis 簇（+22，clean unblocked feature，per-glyph 标记绘制）更可产**；position:relative 列为长期架构 slice（须 table+abspos 交互 dedicated 调查，非后处理补丁）。
+
 ### R1019 ★float:block + flex/grid 子 shrink-to-fit gate LANDED = aspect-ratio-intrinsic-014 14.85→0.60% PASS + css/CSS2/floats-clear +5 PASS（floats-122/145/float-replaced-height-004/005/007）·float-non-replaced-width-007 20.62→5.17（-15.45pp）·零回归
 
 承 R1018 CONTINUE「aspect-ratio-intrinsic-014（float:left block + flex 子 + JS）」。R1018 解 block + width:MaxContent；R1019 解 float:left block + width:auto（float shrink-to-fit 上下文）含 flex/grid 子。
