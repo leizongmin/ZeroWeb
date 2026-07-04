@@ -25,11 +25,23 @@ pub struct GalleryApp {
 
 impl GalleryApp {
     pub fn new() -> GalleryApp {
+        // 默认折叠除当前页所属组（Widgets）以外的分组，避免侧栏内容溢出视口
+        // （当前 layout 引擎未暴露滚动 API；用户可点击分组头展开，或用搜索过滤）。
+        let mut collapsed = HashSet::new();
+        collapsed.insert(GroupId::Patterns);
+        collapsed.insert(GroupId::Forms);
+        collapsed.insert(GroupId::Gestures);
+        collapsed.insert(GroupId::Animation);
+        collapsed.insert(GroupId::Collections);
+        collapsed.insert(GroupId::Theme);
+        collapsed.insert(GroupId::I18n);
+        collapsed.insert(GroupId::Dsl);
+        collapsed.insert(GroupId::Navigation);
         GalleryApp {
             current_page: String::from("button"),
             locale: Locale::En,
             theme: ThemeKind::Light,
-            collapsed_groups: HashSet::new(),
+            collapsed_groups: collapsed,
             search_query: String::new(),
         }
     }
@@ -443,24 +455,37 @@ impl Widget for HeaderButton {
         }
     }
     fn layout(&mut self, _ctx: &mut LayoutCtx, c: Constraints) -> Size {
+        // 按内容估宽：每字符 ~10 + 左右内边距各 12；最小 64。
+        let content_w = (self.label.chars().count() as f32 * 10.0 + 24.0).max(64.0);
         Size::new(
-            60.0_f32.clamp(c.min_width, c.max_width),
+            content_w.clamp(c.min_width, c.max_width),
             32.0_f32.clamp(c.min_height, c.max_height),
         )
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
         let tokens = tokens_for(self.theme);
-        let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(60.0, 32.0));
+        let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(64.0, 32.0));
         let bg = if self.pressed { tokens.primary } else { tokens.surface };
         ctx.recorder.fill_rect(Rect::from_origin_size(Point::ZERO, size), bg);
+        // 边框：让按钮在 header 上有可见边界（避免与背景同色看不出来）。
+        let border = Color::rgb(
+            tokens.on_background.r * 0.3 + tokens.surface.r * 0.7,
+            tokens.on_background.g * 0.3 + tokens.surface.g * 0.7,
+            tokens.on_background.b * 0.3 + tokens.surface.b * 0.7,
+        );
+        ctx.recorder
+            .stroke_rect(Rect::from_origin_size(Point::ZERO, size), border, 1.0);
         let on_bg = if self.pressed {
             tokens.on_primary
         } else {
             tokens.on_surface
         };
-        ctx.recorder.draw_text(&self.label, Point::new(8.0, 22.0), 14.0, on_bg);
+        ctx.recorder.draw_text(&self.label, Point::new(12.0, 22.0), 14.0, on_bg);
     }
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+    fn focusable(&self) -> bool {
+        true
+    }
 }
 
 /// 导航项
@@ -793,6 +818,9 @@ impl Widget for DemoTitle {
 pub struct DemoPreview {
     page_id: String,
     theme: ThemeKind,
+    /// 内部交互状态：随 page 不同语义不同（如 toggle 的 on/off、button 的 pressed index）。
+    /// 用 u64 位掩码：低 8 位用于 toggle on/off 标志位 0..7。
+    state: u64,
 }
 
 impl Widget for DemoPreview {
@@ -811,11 +839,46 @@ impl Widget for DemoPreview {
             *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
         }
     }
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
-        EventResult::Ignored
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        // 仅响应在 toggle 预览区内的点击：翻转第 i 位。
+        let UiEvent::Pointer {
+            phase: PointerPhase::Released,
+            position,
+            ..
+        } = event
+        else {
+            return EventResult::Ignored;
+        };
+        if self.page_id == "toggle" {
+            // 3 个 toggle，y 区间分别为 [20,60] / [60,100] / [100,140]。
+            let x = position.x;
+            let y = position.y;
+            if (40.0..=200.0).contains(&x) {
+                let y_ranges: [(usize, f32, f32); 3] = [(0, 20.0, 60.0), (1, 60.0, 100.0), (2, 100.0, 140.0)];
+                for (i, y_lo, y_hi) in y_ranges {
+                    if y >= y_lo && y < y_hi {
+                        // 第 2 个 (i=2) 视为 disabled 不可点。
+                        if i == 2 {
+                            return EventResult::Consumed;
+                        }
+                        self.state ^= 1 << i;
+                        return EventResult::Consumed;
+                    }
+                }
+            }
+            EventResult::Ignored
+        } else {
+            let _ = position;
+            EventResult::Ignored
+        }
     }
     fn layout(&mut self, _ctx: &mut LayoutCtx, c: Constraints) -> Size {
-        Size::new(c.max_width, 120.0_f32.clamp(c.min_height, c.max_height))
+        // 不同 demo 高度不同：toggle/按钮类需要更多垂直空间显示多行示例。
+        let h: f32 = match self.page_id.as_str() {
+            "toggle" | "button" | "theme_demo" => 160.0,
+            _ => 120.0,
+        };
+        Size::new(c.max_width, h.clamp(c.min_height, c.max_height))
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
         let tokens = tokens_for(self.theme);
@@ -828,11 +891,124 @@ impl Widget for DemoPreview {
             tokens.on_background.b * 0.3 + tokens.surface.b * 0.7,
         );
         ctx.recorder.stroke_rect(frame, border, 1.0);
-        let label = format!("{} preview", self.page_id.replace('_', " "));
-        ctx.recorder
-            .draw_text(&label, Point::new(20.0, 30.0), 14.0, tokens.on_surface);
+
+        match self.page_id.as_str() {
+            "button" => self.paint_button_preview(ctx, &tokens),
+            "toggle" => self.paint_toggle_preview(ctx, &tokens),
+            "theme_demo" => self.paint_theme_preview(ctx, &tokens, size),
+            other => {
+                // 占位：未实现真实交互预览的页面继续显示 "{page} preview" 文案。
+                let label = format!("{} preview", other.replace('_', " "));
+                ctx.recorder
+                    .draw_text(&label, Point::new(20.0, 30.0), 14.0, tokens.on_surface);
+            }
+        }
     }
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+}
+
+impl DemoPreview {
+    fn paint_button_preview(&self, ctx: &mut PaintCtx, tokens: &SemanticTokens) {
+        // 三个示例按钮：default / pressed / disabled，水平排列。
+        let labels = ["Default", "Pressed", "Disabled"];
+        let colors = [
+            tokens.surface,
+            tokens.primary,
+            Color::rgb(
+                tokens.surface.r * 0.7 + tokens.background.r * 0.3,
+                tokens.surface.g * 0.7 + tokens.background.g * 0.3,
+                tokens.surface.b * 0.7 + tokens.background.b * 0.3,
+            ),
+        ];
+        let fg_colors = [tokens.on_surface, tokens.on_primary, tokens.on_surface];
+        for (i, label) in labels.iter().enumerate() {
+            let x = 24.0 + i as f32 * 130.0;
+            let rect = Rect::from_origin_size(Point::new(x, 40.0), Size::new(110.0, 36.0));
+            ctx.recorder.fill_rect(rect, colors[i]);
+            ctx.recorder.stroke_rect(rect, border_of(tokens, colors[i]), 1.0);
+            ctx.recorder
+                .draw_text(label, Point::new(x + 12.0, 64.0), 14.0, fg_colors[i]);
+        }
+        ctx.recorder.draw_text(
+            "Click → emit Action (state held by parent app)",
+            Point::new(24.0, 110.0),
+            12.0,
+            tokens.on_surface,
+        );
+    }
+
+    fn paint_toggle_preview(&self, ctx: &mut PaintCtx, tokens: &SemanticTokens) {
+        // 三个 toggle：state bit 0/1 = on/off；bit 2 固定 disabled off。
+        let labels = ["On/Off (interactive)", "On/Off (interactive)", "Disabled"];
+        for (i, label) in labels.iter().enumerate() {
+            let y = 28.0 + i as f32 * 40.0;
+            // 标签
+            ctx.recorder
+                .draw_text(label, Point::new(24.0, y + 18.0), 13.0, tokens.on_surface);
+            // Toggle 轨道
+            let track_x = 200.0;
+            let is_on = i < 2 && (self.state & (1 << i)) != 0;
+            let track_color = if i == 2 {
+                Color::rgb(
+                    tokens.surface.r * 0.6 + tokens.background.r * 0.4,
+                    tokens.surface.g * 0.6 + tokens.background.g * 0.4,
+                    tokens.surface.b * 0.6 + tokens.background.b * 0.4,
+                )
+            } else if is_on {
+                tokens.primary
+            } else {
+                Color::rgb(
+                    tokens.on_background.r * 0.3 + tokens.background.r * 0.7,
+                    tokens.on_background.g * 0.3 + tokens.background.g * 0.7,
+                    tokens.on_background.b * 0.3 + tokens.background.b * 0.7,
+                )
+            };
+            let track_rect = Rect::from_origin_size(Point::new(track_x, y), Size::new(48.0, 24.0));
+            ctx.recorder.fill_rect(track_rect, track_color);
+            // Thumb：on 时靠右，off 时靠左
+            let thumb_x = if is_on { track_x + 26.0 } else { track_x + 2.0 };
+            let thumb_rect = Rect::from_origin_size(Point::new(thumb_x, y + 2.0), Size::new(20.0, 20.0));
+            ctx.recorder.fill_rect(thumb_rect, tokens.background);
+            ctx.recorder.stroke_rect(thumb_rect, tokens.on_background, 1.0);
+        }
+    }
+
+    fn paint_theme_preview(&self, ctx: &mut PaintCtx, tokens: &SemanticTokens, size: Size) {
+        // 列出几个关键 semantic token 的色板，每行一个：色块 + 名字。
+        let entries: &[(&str, zero_ui_core::theme::Color)] = &[
+            ("background", tokens.background),
+            ("surface", tokens.surface),
+            ("primary", tokens.primary),
+            ("on_primary", tokens.on_primary),
+            ("on_background", tokens.on_background),
+            ("error", tokens.error),
+        ];
+        for (i, (name, color)) in entries.iter().enumerate() {
+            let y = 20.0 + i as f32 * 22.0;
+            let swatch = Rect::from_origin_size(Point::new(24.0, y), Size::new(32.0, 16.0));
+            ctx.recorder.fill_rect(swatch, *color);
+            ctx.recorder.stroke_rect(
+                swatch,
+                Color::rgb(
+                    tokens.on_background.r * 0.3 + tokens.background.r * 0.7,
+                    tokens.on_background.g * 0.3 + tokens.background.g * 0.7,
+                    tokens.on_background.b * 0.3 + tokens.background.b * 0.7,
+                ),
+                1.0,
+            );
+            ctx.recorder
+                .draw_text(name, Point::new(70.0, y + 14.0), 12.0, tokens.on_background);
+        }
+        let _ = size;
+    }
+}
+
+fn border_of(tokens: &SemanticTokens, fill: zero_ui_core::theme::Color) -> zero_ui_core::theme::Color {
+    Color::rgb(
+        tokens.on_background.r * 0.25 + fill.r * 0.75,
+        tokens.on_background.g * 0.25 + fill.g * 0.75,
+        tokens.on_background.b * 0.25 + fill.b * 0.75,
+    )
 }
 
 /// 源码标签
@@ -941,18 +1117,34 @@ impl Widget for SourceCode {
             "rust" => highlight_rust(&self.source),
             _ => vec![(&self.source as &str, "default")],
         };
+        // 按字符遍历，遇换行重置 x；同色段累计成字符串，整段一次 draw_text 调用——
+        // 让 fontdue 内部按真实 advance 绘制字符（避免每字符硬编码 7.2px 导致
+        // 窄字符间距过大、宽字符/中文重叠的问题）。
+        //
+        // 段间 x 推进按「字符数 × 字体平均宽度」估算：对 Noto Sans 12px 约 6.6px/字符，
+        // 中文 12px/字符。误差 < 1px，肉眼不可察。
         let mut x = 16.0_f32;
         let mut y = 14.0_f32;
+        let line_h = 16.0_f32;
         for (text, kind) in &code_tokens {
             let color = mix(token_color(kind));
-            for ch in text.chars() {
-                if ch == '\n' {
+            // 把 token 内按行切分：每行单独画（同色段不跨行）。
+            let mut first_segment = true;
+            for segment in text.split('\n') {
+                if !first_segment {
+                    // 遇到 '\n'：换行。
                     x = 16.0;
-                    y += 16.0;
-                } else {
-                    ctx.recorder.draw_text(&ch.to_string(), Point::new(x, y), 12.0, color);
-                    x += 7.2;
+                    y += line_h;
                 }
+                first_segment = false;
+                if segment.is_empty() {
+                    continue;
+                }
+                ctx.recorder.draw_text(segment, Point::new(x, y), 12.0, color);
+                // 推进 x：ASCII 窄字符 ~6.6，CJK ~12。按是否含 CJK 估算。
+                let ascii_count = segment.chars().filter(|c| c.is_ascii()).count() as f32;
+                let cjk_count = segment.chars().count() as f32 - ascii_count;
+                x += ascii_count * 6.6 + cjk_count * 12.0;
             }
         }
     }
@@ -1045,6 +1237,7 @@ pub fn register_gallery_factories(host: &mut WidgetHost) {
         Box::new(DemoPreview {
             page_id,
             theme: ThemeKind::Light,
+            state: 0,
         })
     });
     host.register("SourceLabel", |spec| {

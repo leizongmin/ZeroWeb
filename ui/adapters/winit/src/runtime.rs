@@ -119,6 +119,17 @@ impl PlatformRuntime for WinitRuntime {
             },
             None => eprintln!("[DBG] noto woff decode failed"),
         }
+        // CJK 字体：M+ 1P 覆盖中文/日文/韩文，与 Noto Sans 形成互补的 per-char fallback
+        // （RenderFoundationBackend::draw_text 已实现：每个字符按字体顺序尝试 has_char）。
+        // 不加载此字体时，gallery 切到 zh 后所有中文文案查不到 glyph → 文字消失。
+        let mplus = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/mplus-1p-regular.woff");
+        match zero_render_foundation::font::decode_woff(mplus) {
+            Some(ttf) => match ui_text_backend.load_family("CJK", &ttf) {
+                Ok(fid) => eprintln!("[DBG] mplus font loaded: id={fid:?}, len={}", ui_text_backend.len()),
+                Err(e) => eprintln!("[DBG] mplus font load FAILED: {e:?}"),
+            },
+            None => eprintln!("[DBG] mplus woff decode failed"),
+        }
         match ui_text_backend.load_family("Ahem", AHEM) {
             Ok(fid) => eprintln!("[DBG] ahem font loaded: id={fid:?}, len={}", ui_text_backend.len()),
             Err(e) => eprintln!("[DBG] ahem font load FAILED: {e:?}"),
