@@ -2662,11 +2662,11 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（workspace 零失败）/ **product-smoke welcome 16.57% < 20% gate** ✓（welcome 无 multicol 零影响）。
 
-**未解（下会话 lever）**：① **span-all-children-height-002（驱动案）26.76% 未变**——ZW 未把 block2 height:100% 解析为 multicol 容器高（assert 明示 percentage height 须相对 entire multicol 非 region），block2 不够高不触发 overflow → multirow 不 fire。修此 percentage-height-against-multicol-container 解析可望翻 002 + 同簇 004a/004b/006 = **独立高价值 lever**。② 003/007 残余 = percentage-height 同款 + multi-row breaking 精度。③ auto+spanner sequential row-fill（fill-auto-block-children 簇）多 session。
+**未解（下会话 lever）**：① **span-all-children-height-002（驱动案）26.76% 未变**——LAYOUT_DUMP 实测证 **block2 h=200px（percentage 解析正确）**，真前置 = **balance 模式须对超 target 的单 child 做 column-breaking**：block1(200px) balance 应拆 2 列各 100px（region0=100px），但 ZW balanced 把单超 target child 整体留 col0（region0=200px 占满），y_base 推进到 250 → region_available=200−250<0 → multirow gate 不 fire。**R1035 旧「percentage-height 失败」hypothesis 已 dump 推翻**。修 balance-mode column-breaking（单 child>target 时跨列拆分，复用 with_breaking fragment 机制）可望翻 002 + 004a/004b/006 = 独立高价值 lever，是 R1035 multirow 的天然放大器。② 003/007 改善但残余（同 balance-breaking 精度 + column-rule 交互）。③ auto+spanner sequential row-fill（fill-auto-block-children 簇）多 session。
 
 **意义**：R1029 后、R1030-R1034 五轮 plateau 后首个 landed code win。证实「spanner 路径 + 紧 gate（balance-only + definite 高 + 无 nested multicol）」是 multicol multi-row 可产方向（纠正 R1034「multi-row 全 ruled out」——仅非 spanner ruled out，spanner 路径可产）。span-all-children-height 簇首次实质进展。详见 [`evidence/r1035-spanner-multirow-landed-2026-07-05.txt`](./evidence/r1035-spanner-multirow-landed-2026-07-05.txt)。
 
-**▶ 下会话**：① **percentage-height-against-multicol-container 解析**（block2 height:100% 应 = 容器高 200px 非 region leftover，修后 002 + 004a/004b/006 可望翻，是 R1035 multirow 的天然放大器——multirow 基础设施已 land，percentage-height 修后自动受益）；② 003/007 残余深挖（multi-row breaking 精度 / column-rule 交互）；③ auto+spanner sequential row-fill（独立多 session）。
+**▶ 下会话**：① **balance-mode column-breaking**（`assign_children_to_columns_balanced` 单 child 超 target 时跨列拆分，复用 with_breaking fragment；是 002 + 004a/004b/006 的真前置 + R1035 multirow 天然放大器；风险=影响全 balanced multicol，须全 css-multicol A/B 守回归）；② 003/007 残余深挖；③ auto+spanner sequential row-fill（独立多 session）。**勿以「percentage-height-against-multicol」为名重试**（已 dump 证 block2 h=200 正确）。
 
 ### R1034 multicol non-spanner multi-row 实验 net-negative 已回退 + font-wall subpixel x 角度分析（fresh 但 WPT yield 低）·零 net 源码·纯调查
 
