@@ -1181,7 +1181,7 @@ fn compose_sdk_chrome_replacement_with_webview(
     use zero_browser_chrome::sdk_render::render_chrome_via_sdk_with_webview_surface;
     use zero_browser_chrome::render::{
         MENU_ICON_MORE, NAV_ICON_BACK, NAV_ICON_FORWARD, NAV_ICON_HOME, NAV_ICON_RELOAD,
-        TRAILING_ICON_DOWNLOAD, TRAILING_ICON_THEME, WC_ICON_CLOSE,
+        TAB_CLOSE_ICON, NEW_TAB_ICON, TRAILING_ICON_DOWNLOAD, TRAILING_ICON_THEME, WC_ICON_CLOSE,
     };
     use zero_browser_chrome::sdk_render::IconMask;
     use zero_ui_core::geometry::{Insets, Size};
@@ -1200,6 +1200,8 @@ fn compose_sdk_chrome_replacement_with_webview(
         (crate::ui_icons::Icon::Close, WC_ICON_CLOSE),
         (crate::ui_icons::Icon::Download, TRAILING_ICON_DOWNLOAD),
         (crate::ui_icons::Icon::SunMoon, TRAILING_ICON_THEME),
+        (crate::ui_icons::Icon::Close, TAB_CLOSE_ICON),
+        (crate::ui_icons::Icon::Plus, NEW_TAB_ICON),
     ]
     .into_iter()
     .filter_map(|(icon, key)| {

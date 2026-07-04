@@ -238,6 +238,10 @@ const WINDOW_CONTROL_BTN_WIDTH: f32 = 46.0;
 pub const TRAILING_ICON_DOWNLOAD: ImageRef = ImageRef::new(7);
 /// toolbar trailing theme 图标（Image ID 8；SunMoon 对齐手绘 theme_button_icon）。
 pub const TRAILING_ICON_THEME: ImageRef = ImageRef::new(8);
+/// 标签页关闭 × 图标（Image ID 9）。
+pub const TAB_CLOSE_ICON: ImageRef = ImageRef::new(9);
+/// 新建标签页 + 图标（Image ID 10）。
+pub const NEW_TAB_ICON: ImageRef = ImageRef::new(10);
 /// menu 按钮右侧留白 = ADDRESS_BAR_PADDING(10)：手绘 `menu_btn_x = width - ADDRESS_BAR_PADDING -
 /// btn_w(32) = 1238`，menu [1238,1270] + 右侧 10px padding。控件宽含此留白使 flex-end 摆放时
 /// menu 按钮左缘对齐手绘 1238（图标在按钮 [0,32] 中心 local x=16，trailing [32,42] 为 toolbar_bg）。
@@ -539,6 +543,7 @@ const TAB_MIN_WIDTH: f32 = 100.0;
 const TAB_MAX_WIDTH: f32 = 240.0;
 const TAB_TOP_RADIUS: f32 = 7.0;
 const TAB_FOOT_RADIUS: f32 = 7.0;
+const TAB_MIN_WIDTH_COMPRESSED: f32 = 52.0;
 const TAB_SEPARATOR_INSET: f32 = 8.0;
 /// 「新建标签」按钮预留宽（手绘 chrome tab 区右侧；SDK 不画该按钮但需预留使 tab 宽一致）。
 const NEW_TAB_BTN_WIDTH: f32 = 34.0;
@@ -890,7 +895,36 @@ impl Widget for BrowserTabStripWidget {
                     color,
                 );
             }
+            // 7. 关闭按钮（× 图标），仅非 pinned 且宽度 ≥ COMPRESSED 时画。
+            if tab_w >= TAB_MIN_WIDTH_COMPRESSED {
+                let close_sz = 14.0_f32;
+                let close_cx = tab_x + tab_w - 16.0;
+                let close_cy = tab_y + TAB_BAR_HEIGHT * 0.5;
+                ctx.recorder.draw_image(
+                    Rect::from_ltrb(
+                        close_cx - close_sz * 0.5,
+                        close_cy - close_sz * 0.5,
+                        close_cx + close_sz * 0.5,
+                        close_cy + close_sz * 0.5,
+                    ),
+                    TAB_CLOSE_ICON,
+                    self.window_icon,
+                );
+            }
         }
+        // 8. 新建标签页按钮（+ 图标），在 tab strip 最右端。
+        let new_tab_x = (width - NEW_TAB_BTN_WIDTH).max(0.0);
+        let nti = NAV_ICON_SIZE;
+        ctx.recorder.draw_image(
+            Rect::from_ltrb(
+                new_tab_x + (NEW_TAB_BTN_WIDTH - nti) * 0.5,
+                tab_y + (TAB_BAR_HEIGHT - nti) * 0.5,
+                new_tab_x + (NEW_TAB_BTN_WIDTH + nti) * 0.5,
+                tab_y + (TAB_BAR_HEIGHT + nti) * 0.5,
+            ),
+            NEW_TAB_ICON,
+            self.window_icon,
+        );
     }
 
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
