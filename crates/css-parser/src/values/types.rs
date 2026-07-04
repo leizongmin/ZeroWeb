@@ -1037,6 +1037,14 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         return Some(LengthValue::MaxContent);
     }
 
+    // R1018：bare `fit-content` 关键字（无参数，CSS css-sizing-3 legacy form）。
+    // 语义 ≡ fit-content(max-content)，触发 shrink-to-fit（与 max-content 同 gate 触发）。
+    // 复用 MaxContent 变体（layout trigger 等价；clamp-to-available 由 taffy block 布局自然处理）。
+    // 注意：fit-content(arg) 函数形式有独立 FitContent(Box<LengthValue>) 变体（下方）。
+    if value.eq_ignore_ascii_case("fit-content") {
+        return Some(LengthValue::MaxContent);
+    }
+
     // 处理 fit-content() 函数
     if value.starts_with("fit-content(") && value.ends_with(')') {
         let inner = &value["fit-content(".len()..value.len() - 1];
