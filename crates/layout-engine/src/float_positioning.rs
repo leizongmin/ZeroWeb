@@ -5,7 +5,7 @@
 //! 垂直书写模式块收缩、inline-block shrink-to-fit、匿名 table 根标记。
 
 use std::collections::HashMap;
-use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue};
+use zero_css_parser::values::{ColorValue, DisplayValue, FlexDirectionValue, LengthValue};
 use zero_dom::NodeId;
 use zero_style_system::{ComputedStyle, WritingModeValue};
 
@@ -138,12 +138,31 @@ pub(crate) fn shrink_inline_blocks_to_content(
             .node_id
             .is_some_and(|id| styles.get(&id).is_some_and(|s| matches!(s.width, LengthValue::Auto)));
         if is_shrinkable && width_auto {
-            // 内容最大宽度（max-content）：用 intrinsic_sizing 的统一测量（box_content_max_width）。
-            // 该函数对 inline 级子元素水平求和、block 级子元素递归取最大、且对**无 LayoutBox 子元素
-            // 的纯文本内容**（文本经 measure callback 不产生子盒）按 DOM text_content + 字体度量
-            // 累加（R368：ifc-011 span 的 "X" 文本此前因 children 为空→content_max_w=0→不收缩→
-            // inline-block 被拉伸到容器满宽 784，IFC 误判换行）。返回 border-box（含 frame）。
+            // 内容最大宽度（max-content）。R1017：InlineFlex/InlineGrid 当 box_content_max_width
+            // 测得 0（aspect-ratio 空 item 等 box_content 无法度量）时，fallback 到专用 flex_intrinsic
+            //（含 aspect-ratio transferred + container-cross 推导）；否则保留 box_content_max_width
+            //（覆盖 gap/abspos/文本等有 content 案，避免回归）。
             let intrinsic_border_box = crate::intrinsic_sizing::box_content_max_width(box_node, doc, styles);
+            let intrinsic_border_box = if intrinsic_border_box > 0.5 {
+                intrinsic_border_box
+            } else {
+                let flex_intrinsic = box_node.node_id.and_then(|id| styles.get(&id)).and_then(|s| {
+                    if !matches!(s.display, DisplayValue::InlineFlex | DisplayValue::InlineGrid) {
+                        return None;
+                    }
+                    if matches!(s.display, DisplayValue::InlineGrid) {
+                        crate::intrinsic_sizing::grid_intrinsic_width(box_node, doc, styles)
+                    } else if matches!(
+                        s.flex_direction,
+                        FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+                    ) {
+                        crate::intrinsic_sizing::flex_column_intrinsic_width(box_node, doc, styles)
+                    } else {
+                        crate::intrinsic_sizing::flex_row_intrinsic_width(box_node, doc, styles)
+                    }
+                });
+                flex_intrinsic.unwrap_or(0.0)
+            };
             let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
             let content_max_w = (intrinsic_border_box - frame).max(0.0);
             if content_max_w > 0.0 {
