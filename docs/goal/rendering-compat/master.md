@@ -2648,6 +2648,27 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1019 ★float:block + flex/grid 子 shrink-to-fit gate LANDED = aspect-ratio-intrinsic-014 14.85→0.60% PASS + css/CSS2/floats-clear +5 PASS（floats-122/145/float-replaced-height-004/005/007）·float-non-replaced-width-007 20.62→5.17（-15.45pp）·零回归
+
+承 R1018 CONTINUE「aspect-ratio-intrinsic-014（float:left block + flex 子 + JS）」。R1018 解 block + width:MaxContent；R1019 解 float:left block + width:auto（float shrink-to-fit 上下文）含 flex/grid 子。
+
+**改动（1 处，engine.rs gate）**：`apply_intrinsic_content_sizing` 的 `is_auto_float` 扩 `DisplayValue::Block`——float:left + width:auto + display:block 触发 gate，用 `block_max_content_width`（R1018 新增，对 flex/grid 子分发到专用 intrinsic）测量。原 `is_auto_float` 仅 Flex/InlineFlex。block + auto-float 的 `should_apply` 走 shrink（`b.width > intrinsic`）。float shrink postprocess（adjust_float_positions_with_context）见此宽度后为 no-op，无双重 shrink。
+
+**机制**：014 的 target（float:left block）含 flex 子（display:flex, height:100%）+ aspect-ratio item。taffy 第一趟无法测 flex 子 intrinsic（aspect-ratio 空 item）→ float 拉满。gate 用 block_max_content_width dispatch flex 子 → flex_row_intrinsic_width → container_cross（box_node.height fallback 解析百分比 height）→ item transferred = 100 → float target shrink 到 100。
+
+**验证（chromium Oracle + ORACLE_DUMP_ALL per-case A/B vs R1018 baseline）**：
+- **css-flexbox +1 PASS**：aspect-ratio-intrinsic-size-014 **14.85→0.60% PASS**（-14.25pp）；额外 flexbox_box-clear 9.08→2.13（-6.95pp）。
+- **css/CSS2/floats-clear +5 PASS**：floats-122 1.81→0.78、floats-145 3.39→0.55、float-replaced-height-004/005/007 1.40→0.62（×3）；额外 float-non-replaced-width-007 **20.62→5.17（-15.45pp）**、floats-143 6.91→1.27（-5.64pp）。
+- **css/CSS2/floats**：float-nowrap-5/6 +0.07/+0.08（噪声，仍 PASS <0.2%），余零变化。
+- **css-grid / css-tables / css-position / css-multicol**：未受影响（is_auto_float 仅扩 Block，multicol/grid 非本路径）。
+- **welcome (DC-13) 16.57% 不变**（<20% gate PASS）；make test exit 0（layout-engine 1006 含 +1 r1019 测）；clippy --workspace -D warnings ✓；fmt ✓。
+
+**意义**：R1015（block float flex 容器）+ R1017（inline-flex）+ R1018（block + fit-content/max-content）+ R1019（float:block + flex/grid 子）四路径覆盖 flex/grid 容器 shrink-to-fit 主要场景。block_max_content_width（R1018）的 flex/grid 子分发在 float 路径同样生效（gate 统一入口）。float-non-replaced-width-007 等 floats-clear 老案批量改善（float:block 含 replaced/aspect-ratio 子此前未被正确测量）。
+
+**未解（独立 gap）**：① multicol intrinsic = columns × content（intrinsic-width-change-column-count，R1018 已知回归）；② MinContent 测量（min-content = 最宽词，独立函数，flex-container-min-content-001 4.96% 近 PASS）；③ height:max-content 真正 intrinsic（现 flex 容器 Auto 近似）。
+
+**▶ 下会话**：① **MinContent 测量**（flex-container-min-content-001 4.96% 近 PASS，min-content = 最宽不可拆词宽，需独立 min-content-width 函数，gate 扩 MinContent block 路径）；② multicol intrinsic = columns × content（独立多 session）；③ 转其它 dir fresh worst（writing-modes R109 structural / abspos-inset）。clean win 已 land（+6 PASS）。
+
 ### R1018 ★bare fit-content 关键字 + block-level max-content shrink-to-fit gate LANDED = aspect-ratio-intrinsic-011 14.85→0.60% PASS + fit-content-item-002/003 PASS（+3）·css-multicol change-intrinsic-width 16→1.75（-14pp）·短路 bug 修复（apply_intrinsic_content_sizing 此前被 `||` 短路）·1 已知 multicol 回归
 
 承 R1017 CONTINUE「011/014 block flex + width:fit-content + JS」。R1017 解 inline-flex（inline-level），R1018 解 block-level + bare `fit-content` 关键字（R97「max-content→0 bug」memory 标「block/inline-block 可独立做」slice）。
