@@ -21,6 +21,8 @@ sdk-chrome = [
     "dep:zero-text-foundation",
     "dep:zero-ui-adapter-render-foundation",
     "dep:zero-ui-core",
+    "dep:zero-ui-render",
+    "dep:zero-ui-runtime",
     "dep:zero-ui-widgets",
 ]
 
@@ -41,6 +43,8 @@ zero-browser-chrome = { workspace = true, optional = true }
 zero-text-foundation = { workspace = true, optional = true }
 zero-ui-adapter-render-foundation = { workspace = true, optional = true }
 zero-ui-core = { workspace = true, optional = true }
+zero-ui-render = { workspace = true, optional = true }
+zero-ui-runtime = { workspace = true, optional = true }
 zero-ui-widgets = { workspace = true, optional = true }
 winit = { workspace = true }
 softbuffer = { workspace = true }
@@ -53,6 +57,7 @@ arboard = { workspace = true }
 resvg = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 png = "0.17"
+base64 = "0.22"
 url = { workspace = true }
 ico = "0.5.0"
 

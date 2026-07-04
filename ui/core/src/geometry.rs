@@ -27,7 +27,10 @@ impl Point {
     }
 
     pub fn scale(self, factor: f32) -> Point {
-        Point { x: self.x * factor, y: self.y * factor }
+        Point {
+            x: self.x * factor,
+            y: self.y * factor,
+        }
     }
 }
 
@@ -126,7 +129,10 @@ impl Rect {
     pub fn scale(self, factor: f32) -> Rect {
         Rect {
             origin: self.origin.scale(factor),
-            size: Size { width: self.size.width * factor, height: self.size.height * factor },
+            size: Size {
+                width: self.size.width * factor,
+                height: self.size.height * factor,
+            },
         }
     }
 

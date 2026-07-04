@@ -81,6 +81,12 @@ struct HeadlessSession {
     shell: BrowserShell,
     /// WebView（页面渲染）。
     webview: WebView,
+    /// 最近一次 captureScreenshot 渲染的 chrome frame（含 host）；下次 chrome.* 命令复用。
+    /// None 表示尚未截图或上次截图失败。
+    #[cfg(feature = "sdk-chrome")]
+    last_chrome_frame: Option<crate::headless_chrome::ChromeFrame>,
+    /// 最近一次 chrome.click 的 emitted actions（供 chrome.emittedActions 查询）。
+    last_emitted_actions_json: serde_json::Value,
 }
 
 impl HeadlessSession {
@@ -93,7 +99,13 @@ impl HeadlessSession {
             ..Default::default()
         };
         let webview = WebView::new(config);
-        Self { shell, webview }
+        Self {
+            shell,
+            webview,
+            #[cfg(feature = "sdk-chrome")]
+            last_chrome_frame: None,
+            last_emitted_actions_json: serde_json::Value::Array(Vec::new()),
+        }
     }
 }
 
@@ -481,6 +493,22 @@ impl HeadlessServer {
             // ── 页面内容 ──
             "browsingContext.getDOMSnapshot" => self.cmd_get_dom_snapshot(session),
 
+            // ── Chrome 自动化（feature sdk-chrome）──
+            #[cfg(feature = "sdk-chrome")]
+            "chrome.getLayout" => self.cmd_chrome_get_layout(session),
+            #[cfg(feature = "sdk-chrome")]
+            "chrome.getSemantics" => self.cmd_chrome_get_semantics(session),
+            #[cfg(feature = "sdk-chrome")]
+            "chrome.click" => self.cmd_chrome_click(session, params),
+            #[cfg(feature = "sdk-chrome")]
+            "chrome.rectOf" => self.cmd_chrome_rect_of(session, params),
+            #[cfg(feature = "sdk-chrome")]
+            "chrome.emittedActions" => self.cmd_chrome_emitted_actions(session),
+            #[cfg(not(feature = "sdk-chrome"))]
+            "chrome.getLayout" | "chrome.getSemantics" | "chrome.click" | "chrome.rectOf" | "chrome.emittedActions" => {
+                Err(headless_chrome_unavailable())
+            }
+
             // ── 未知命令 ──
             _ => Err(ProtocolError {
                 code: -32601,
@@ -659,50 +687,106 @@ impl HeadlessServer {
     }
 
     fn cmd_capture_screenshot(&self, session: &mut HeadlessSession) -> Result<Value, ProtocolError> {
-        let result = session.webview.render();
+        let scale_factor = 1.0_f32;
 
-        // 从 RenderPrimitives 提取 fills 和 glyphs
-        let fills: Vec<FillPrimitive> = result.primitives.fills.clone();
-        let glyph_primitives = result.primitives.glyphs.clone();
+        // feature sdk-chrome 开启时，渲染合成 chrome + 页面；否则仅渲染页面（旧行为）。
+        #[cfg(feature = "sdk-chrome")]
+        {
+            let frame = crate::headless_chrome::render_chrome_frame(
+                &session.shell,
+                &mut session.webview,
+                self.viewport_width as u32,
+                self.viewport_height as u32,
+                scale_factor,
+            );
+            let fills: Vec<FillPrimitive> = frame.fills.clone();
+            let glyph_draws: Vec<GlyphDraw> = frame
+                .glyphs
+                .iter()
+                .map(|g| GlyphDraw {
+                    ch: char::from_u32(g.glyph_id).unwrap_or('?'),
+                    x: g.x,
+                    baseline_y: g.y,
+                    font_size: g.font_size,
+                    color: g.color,
+                    font_id: g.font_id.0,
+                })
+                .collect();
+            session.last_chrome_frame = Some(frame);
 
-        let glyph_draws: Vec<GlyphDraw> = glyph_primitives
-            .iter()
-            .map(|g| GlyphDraw {
-                ch: char::from_u32(g.glyph_id).unwrap_or('?'),
-                x: g.x,
-                baseline_y: g.y,
-                font_size: g.font_size,
-                color: g.color,
-                font_id: g.font_id.0,
-            })
-            .collect();
+            let font_loader = FontLoader::new();
+            let mut glyph_cache = GlyphCache::new(1024);
+            let fb = render_scene_to_framebuffer(
+                self.viewport_width as u32,
+                self.viewport_height as u32,
+                scale_factor,
+                &fills,
+                &[],
+                &font_loader,
+                &mut glyph_cache,
+                &glyph_draws,
+                &[],
+                &[],
+                &[],
+            );
 
-        let font_loader = FontLoader::new();
-        let mut glyph_cache = GlyphCache::new(1024);
+            return Ok(serde_json::json!({
+                "data": {
+                    "width": fb.width,
+                    "height": fb.height,
+                    "format": "rgba8",
+                    "pixelCount": fb.width as usize * fb.height as usize,
+                    "withChrome": true,
+                },
+                "pixels": encode_pixels_base64(&fb),
+            }));
+        }
 
-        let fb = render_scene_to_framebuffer(
-            self.viewport_width as u32,
-            self.viewport_height as u32,
-            1.0,
-            &fills,
-            &[],
-            &font_loader,
-            &mut glyph_cache,
-            &glyph_draws,
-            &[],
-            &[],
-            &[],
-        );
+        // fallback：无 sdk-chrome feature（旧行为）。
+        #[allow(unreachable_code)]
+        {
+            let result = session.webview.render();
+            let fills: Vec<FillPrimitive> = result.primitives.fills.clone();
+            let glyph_primitives = result.primitives.glyphs.clone();
+            let glyph_draws: Vec<GlyphDraw> = glyph_primitives
+                .iter()
+                .map(|g| GlyphDraw {
+                    ch: char::from_u32(g.glyph_id).unwrap_or('?'),
+                    x: g.x,
+                    baseline_y: g.y,
+                    font_size: g.font_size,
+                    color: g.color,
+                    font_id: g.font_id.0,
+                })
+                .collect();
 
-        // 转为 base64 PNG（简化版：返回 raw RGBA 尺寸信息）
-        Ok(serde_json::json!({
-            "data": {
-                "width": fb.width,
-                "height": fb.height,
-                "format": "rgba8",
-                "pixelCount": fb.width as usize * fb.height as usize,
-            }
-        }))
+            let font_loader = FontLoader::new();
+            let mut glyph_cache = GlyphCache::new(1024);
+            let fb = render_scene_to_framebuffer(
+                self.viewport_width as u32,
+                self.viewport_height as u32,
+                scale_factor,
+                &fills,
+                &[],
+                &font_loader,
+                &mut glyph_cache,
+                &glyph_draws,
+                &[],
+                &[],
+                &[],
+            );
+
+            Ok(serde_json::json!({
+                "data": {
+                    "width": fb.width,
+                    "height": fb.height,
+                    "format": "rgba8",
+                    "pixelCount": fb.width as usize * fb.height as usize,
+                    "withChrome": false,
+                },
+                "pixels": encode_pixels_base64(&fb),
+            }))
+        }
     }
 
     fn cmd_get_dom_snapshot(&self, session: &mut HeadlessSession) -> Result<Value, ProtocolError> {
@@ -832,6 +916,210 @@ impl HeadlessServer {
             "webSocketDebuggerUrl": format!("ws://{addr}"),
         })
         .to_string()
+    }
+
+    // ── Chrome 自动化命令（feature sdk-chrome）──
+
+    #[cfg(feature = "sdk-chrome")]
+    fn cmd_chrome_get_layout(&self, session: &mut HeadlessSession) -> Result<Value, ProtocolError> {
+        let frame = session.last_chrome_frame.take().ok_or_else(|| ProtocolError {
+            code: -32002,
+            message: "No chrome frame available; call browsingContext.captureScreenshot first".into(),
+        })?;
+        let viewport_rect = frame.viewport_rect;
+        session.last_chrome_frame = Some(frame);
+        Ok(serde_json::json!({
+            "viewport": viewport_rect.map(crate::headless_chrome::rect_to_json),
+            "windowSize": {
+                "width": self.viewport_width,
+                "height": self.viewport_height,
+            },
+        }))
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    fn cmd_chrome_get_semantics(&self, session: &mut HeadlessSession) -> Result<Value, ProtocolError> {
+        let frame = session.last_chrome_frame.take().ok_or_else(|| ProtocolError {
+            code: -32002,
+            message: "No chrome frame available; call browsingContext.captureScreenshot first".into(),
+        })?;
+        let sem = frame.host.semantics();
+        session.last_chrome_frame = Some(frame);
+        let tree_json = match sem {
+            Some(root) => semantics_to_json(&root),
+            None => Value::Null,
+        };
+        Ok(serde_json::json!({ "tree": tree_json }))
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    fn cmd_chrome_click(&self, session: &mut HeadlessSession, params: Value) -> Result<Value, ProtocolError> {
+        // 接受 {x, y} 绝对坐标 或 {widgetId} 已知 id（取其中心点）。
+        let (x, y) = if let (Some(xv), Some(yv)) = (params.get("x"), params.get("y")) {
+            (
+                xv.as_f64().ok_or_else(|| ProtocolError {
+                    code: -32602,
+                    message: "'x' must be a number".into(),
+                })? as f32,
+                yv.as_f64().ok_or_else(|| ProtocolError {
+                    code: -32602,
+                    message: "'y' must be a number".into(),
+                })? as f32,
+            )
+        } else if let Some(wid) = params.get("widgetId").and_then(|v| v.as_str()) {
+            let frame = session.last_chrome_frame.take().ok_or_else(|| ProtocolError {
+                code: -32002,
+                message: "No chrome frame available; call browsingContext.captureScreenshot first".into(),
+            })?;
+            let rect = frame.host.rect_of(&zero_ui_core::widget::WidgetId::new(wid));
+            session.last_chrome_frame = Some(frame);
+            let rect = rect.ok_or_else(|| ProtocolError {
+                code: -32603,
+                message: format!("widgetId '{}' not found in chrome layout", wid),
+            })?;
+            (
+                rect.origin.x + rect.size.width / 2.0,
+                rect.origin.y + rect.size.height / 2.0,
+            )
+        } else {
+            return Err(ProtocolError {
+                code: -32602,
+                message: "Either {x, y} or {widgetId} required".into(),
+            });
+        };
+
+        // 渲染最新 chrome frame（确保 dispatch 用的是当前 shell 状态）。
+        let mut frame = crate::headless_chrome::render_chrome_frame(
+            &session.shell,
+            &mut session.webview,
+            self.viewport_width as u32,
+            self.viewport_height as u32,
+            1.0,
+        );
+
+        let events = crate::headless_chrome::make_click_events(x, y);
+        let mut all_emitted = Vec::new();
+        for ev in &events {
+            let emitted = frame.host.dispatch_event(ev);
+            all_emitted.extend(emitted);
+        }
+
+        // 应用最小 reducer：把 chrome actions 应用到 shell（如 NAV_BACK → go_back）。
+        let mut applied: Vec<Value> = Vec::new();
+        for ea in &all_emitted {
+            let action_str = ea.action.0.as_str().to_string();
+            let (count, desc) = crate::headless_chrome::apply_chrome_action_to_shell(&mut session.shell, &action_str);
+            if count > 0 {
+                applied.push(serde_json::json!({
+                    "action": action_str,
+                    "description": desc,
+                }));
+            }
+        }
+
+        let emitted_json = crate::headless_chrome::emitted_actions_to_json(&all_emitted);
+        session.last_emitted_actions_json = emitted_json.clone();
+        session.last_chrome_frame = Some(frame);
+
+        Ok(serde_json::json!({
+            "point": { "x": x, "y": y },
+            "emittedActions": emitted_json,
+            "applied": applied,
+        }))
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    fn cmd_chrome_rect_of(&self, session: &mut HeadlessSession, params: Value) -> Result<Value, ProtocolError> {
+        let widget_id = params
+            .get("widgetId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: "Missing 'widgetId' parameter".into(),
+            })?;
+        let frame = session.last_chrome_frame.take().ok_or_else(|| ProtocolError {
+            code: -32002,
+            message: "No chrome frame available; call browsingContext.captureScreenshot first".into(),
+        })?;
+        let rect_opt = frame.host.rect_of(&zero_ui_core::widget::WidgetId::new(widget_id));
+        session.last_chrome_frame = Some(frame);
+        match rect_opt {
+            Some(r) => Ok(serde_json::json!({
+                "widgetId": widget_id,
+                "rect": crate::headless_chrome::rect_to_json(r),
+            })),
+            None => Err(ProtocolError {
+                code: -32603,
+                message: format!("widgetId '{}' not found", widget_id),
+            }),
+        }
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    fn cmd_chrome_emitted_actions(&self, session: &mut HeadlessSession) -> Result<Value, ProtocolError> {
+        Ok(serde_json::json!({
+            "actions": session.last_emitted_actions_json,
+        }))
+    }
+}
+
+// ── Chrome 自动化辅助（feature sdk-chrome）──
+
+/// 把 FrameBuffer 编码为 PNG，再 base64 包装（供客户端直接解码保存为 .png）。
+fn encode_pixels_base64(fb: &zero_render_foundation::surface::FrameBuffer) -> String {
+    use base64::Engine;
+    let mut png_buf: Vec<u8> = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png_buf, fb.width, fb.height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("PNG header");
+        writer.write_image_data(&fb.data).expect("PNG image data");
+    }
+    base64::engine::general_purpose::STANDARD.encode(&png_buf)
+}
+
+/// 把 SemanticsNode 递归转 JSON（供 chrome.getSemantics 返回）。
+#[cfg(feature = "sdk-chrome")]
+fn semantics_to_json(node: &zero_ui_core::semantics::SemanticsNode) -> Value {
+    use zero_ui_core::semantics::{SemanticsFlags, SemanticsLabel};
+    let mut flags_arr: Vec<&str> = Vec::new();
+    if node.flags.contains(SemanticsFlags::BUTTON) {
+        flags_arr.push("button");
+    }
+    if node.flags.contains(SemanticsFlags::TEXT_FIELD) {
+        flags_arr.push("text_field");
+    }
+    if node.flags.contains(SemanticsFlags::FOCUSABLE) {
+        flags_arr.push("focusable");
+    }
+    if node.flags.contains(SemanticsFlags::FOCUSED) {
+        flags_arr.push("focused");
+    }
+    if node.flags.contains(SemanticsFlags::READ_ONLY) {
+        flags_arr.push("read_only");
+    }
+    let label = match &node.label {
+        Some(SemanticsLabel::Literal(t)) => Some(t.to_string()),
+        Some(SemanticsLabel::Message(id)) => Some(format!("msg:{}", id)),
+        None => None,
+    };
+    let children: Vec<Value> = node.children.iter().map(semantics_to_json).collect();
+    serde_json::json!({
+        "id": node.id.0.as_str(),
+        "flags": flags_arr,
+        "label": label,
+        "rect": crate::headless_chrome::rect_to_json(node.rect),
+        "children": children,
+    })
+}
+
+/// feature 关闭时的 fallback 错误。
+#[cfg(not(feature = "sdk-chrome"))]
+pub(crate) fn headless_chrome_unavailable() -> ProtocolError {
+    ProtocolError {
+        code: -32001,
+        message: "Chrome automation requires feature 'sdk-chrome'".into(),
     }
 }
 
@@ -1757,5 +2045,205 @@ mod tests {
     fn test_server_binds_to_localhost_only() {
         let server = HeadlessServer::new(0, 800.0, 600.0);
         assert_eq!(server.addr.ip(), std::net::IpAddr::from([127, 0, 0, 1]));
+    }
+
+    // ── Chrome 自动化命令测试（feature sdk-chrome）──
+
+    #[cfg(feature = "sdk-chrome")]
+    #[test]
+    fn test_chrome_screenshot_returns_with_chrome_flag() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let result = server.dispatch(&mut session, "browsingContext.captureScreenshot", Value::Null);
+        assert!(result.is_ok(), "screenshot should succeed: {:?}", result.err());
+        let v = result.unwrap();
+        assert_eq!(v["data"]["withChrome"], true);
+        assert!(v["pixels"].as_str().is_some(), "pixels base64 should be present");
+        assert!(session.last_chrome_frame.is_some(), "frame should be cached");
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    #[test]
+    fn test_chrome_get_layout_returns_viewport_rect() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        // 先截图缓存 frame
+        let _ = server.dispatch(&mut session, "browsingContext.captureScreenshot", Value::Null);
+        let result = server.dispatch(&mut session, "chrome.getLayout", Value::Null);
+        assert!(result.is_ok(), "getLayout should succeed: {:?}", result.err());
+        let v = result.unwrap();
+        assert_eq!(v["windowSize"]["width"].as_f64().unwrap_or(0.0), 800.0);
+        // viewport 应有非零尺寸（chrome 占顶部，viewport 从 chrome 高度之后开始）。
+        let vp = &v["viewport"];
+        assert!(
+            vp["y"].as_f64().unwrap_or(0.0) > 0.0,
+            "viewport y should be > 0 (chrome height): {}",
+            vp
+        );
+        assert!(
+            vp["height"].as_f64().unwrap_or(0.0) > 0.0,
+            "viewport height should be > 0: {}",
+            vp
+        );
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    #[test]
+    fn test_chrome_get_layout_requires_screenshot_first() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let result = server.dispatch(&mut session, "chrome.getLayout", Value::Null);
+        assert!(result.is_err(), "getLayout without prior screenshot should fail");
+        assert_eq!(result.unwrap_err().code, -32002);
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    #[test]
+    fn test_chrome_get_semantics_returns_tree() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let _ = server.dispatch(&mut session, "browsingContext.captureScreenshot", Value::Null);
+        let result = server.dispatch(&mut session, "chrome.getSemantics", Value::Null);
+        assert!(result.is_ok(), "getSemantics should succeed: {:?}", result.err());
+        let v = result.unwrap();
+        let tree = &v["tree"];
+        // 树非空（至少有根节点）。
+        assert!(tree.is_object(), "tree should be an object: {}", tree);
+        assert!(tree["id"].is_string(), "root node should have id: {}", tree);
+        // 至少有一些 focusable 节点（nav buttons / address bar）。
+        let focusable_count = count_focusable_in_tree(tree);
+        assert!(
+            focusable_count >= 1,
+            "expected at least 1 focusable node, got {}",
+            focusable_count
+        );
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    fn count_focusable_in_tree(node: &Value) -> usize {
+        let mut count = 0;
+        if let Some(flags) = node["flags"].as_array() {
+            if flags.iter().any(|f| f.as_str() == Some("focusable")) {
+                count += 1;
+            }
+        }
+        if let Some(children) = node["children"].as_array() {
+            for child in children {
+                count += count_focusable_in_tree(child);
+            }
+        }
+        count
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    #[test]
+    fn test_chrome_click_with_widget_id_emits_action() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let _ = server.dispatch(&mut session, "browsingContext.captureScreenshot", Value::Null);
+
+        // 从 semantics 找一个 button 类节点（如菜单按钮）来点击。
+        let sem = server
+            .dispatch(&mut session, "chrome.getSemantics", Value::Null)
+            .unwrap();
+        let widget_id = find_first_button_id(&sem["tree"]).expect("expected at least one button widget in chrome");
+
+        let result = server.dispatch(
+            &mut session,
+            "chrome.click",
+            serde_json::json!({ "widgetId": widget_id }),
+        );
+        assert!(result.is_ok(), "click should succeed: {:?}", result.err());
+        let v = result.unwrap();
+        // emitted actions 数组（可能是 0 或多个；至少有 point 字段）。
+        assert!(v["point"]["x"].as_f64().is_some(), "click should return point: {}", v);
+        // 上次 emitted actions 已缓存。
+        let emitted = server
+            .dispatch(&mut session, "chrome.emittedActions", Value::Null)
+            .unwrap();
+        assert!(
+            emitted["actions"].is_array(),
+            "emittedActions should return array: {}",
+            emitted
+        );
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    fn find_first_button_id(node: &Value) -> Option<String> {
+        if let Some(flags) = node["flags"].as_array() {
+            if flags.iter().any(|f| f.as_str() == Some("button")) {
+                return node["id"].as_str().map(|s| s.to_string());
+            }
+        }
+        if let Some(children) = node["children"].as_array() {
+            for child in children {
+                if let Some(id) = find_first_button_id(child) {
+                    return Some(id);
+                }
+            }
+        }
+        None
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    #[test]
+    fn test_chrome_rect_of_returns_geometry() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let _ = server.dispatch(&mut session, "browsingContext.captureScreenshot", Value::Null);
+
+        // viewport 节点 id 必然存在。
+        let result = server.dispatch(
+            &mut session,
+            "chrome.rectOf",
+            serde_json::json!({ "widgetId": "viewport" }),
+        );
+        assert!(result.is_ok(), "rectOf viewport should succeed: {:?}", result.err());
+        let v = result.unwrap();
+        assert!(v["rect"]["y"].as_f64().unwrap_or(0.0) > 0.0, "viewport y > 0: {}", v);
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    #[test]
+    fn test_chrome_rect_of_unknown_widget_fails() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let _ = server.dispatch(&mut session, "browsingContext.captureScreenshot", Value::Null);
+
+        let result = server.dispatch(
+            &mut session,
+            "chrome.rectOf",
+            serde_json::json!({ "widgetId": "nonexistent-widget" }),
+        );
+        assert!(result.is_err(), "rectOf unknown widget should fail");
+        assert_eq!(result.unwrap_err().code, -32603);
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    #[test]
+    fn test_chrome_click_xy_dispatches_pointer() {
+        // 点击 chrome 区域的某点（如 tab strip 左侧）；只要不报错就算通过。
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let _ = server.dispatch(&mut session, "browsingContext.captureScreenshot", Value::Null);
+
+        let result = server.dispatch(
+            &mut session,
+            "chrome.click",
+            serde_json::json!({ "x": 50.0, "y": 25.0 }), // tab strip 区域
+        );
+        assert!(result.is_ok(), "click by x,y should succeed: {:?}", result.err());
+    }
+
+    #[cfg(feature = "sdk-chrome")]
+    #[test]
+    fn test_chrome_click_missing_params_errors() {
+        let server = HeadlessServer::new(0, 800.0, 600.0);
+        let mut session = HeadlessSession::new(800.0, 600.0);
+        let _ = server.dispatch(&mut session, "browsingContext.captureScreenshot", Value::Null);
+
+        let result = server.dispatch(&mut session, "chrome.click", Value::Null);
+        assert!(result.is_err(), "click with no params should fail");
+        assert_eq!(result.unwrap_err().code, -32602);
     }
 }

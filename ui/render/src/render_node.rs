@@ -116,13 +116,23 @@ impl RenderPrimitive {
                 color,
                 rounding: rounding.scale(factor),
             },
-            RenderPrimitive::StrokeRect { rect, color, stroke_width, rounding } => RenderPrimitive::StrokeRect {
+            RenderPrimitive::StrokeRect {
+                rect,
+                color,
+                stroke_width,
+                rounding,
+            } => RenderPrimitive::StrokeRect {
                 rect: rect.scale(factor),
                 color,
                 stroke_width: stroke_width * factor,
                 rounding: rounding.scale(factor),
             },
-            RenderPrimitive::Text { text, position, size_px, color } => RenderPrimitive::Text {
+            RenderPrimitive::Text {
+                text,
+                position,
+                size_px,
+                color,
+            } => RenderPrimitive::Text {
                 text,
                 position: position.scale(factor),
                 size_px: size_px * factor,

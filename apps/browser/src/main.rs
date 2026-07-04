@@ -28,6 +28,8 @@ mod colors;
 mod favicon_fetch;
 mod fetch_proxy;
 mod headless;
+#[cfg(feature = "sdk-chrome")]
+mod headless_chrome;
 mod input_keys;
 mod layout;
 mod page_scroll;

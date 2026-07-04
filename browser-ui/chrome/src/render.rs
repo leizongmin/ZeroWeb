@@ -19,7 +19,8 @@ use zero_ui_core::image::ImageRef;
 use zero_ui_core::semantics::{SemanticsFlags, SemanticsLabel, SemanticsNode};
 use zero_ui_core::theme::{Color, SemanticTokens};
 use zero_ui_core::widget::{
-    EventCtx, LayoutCtx, MountCtx, PaintCtx, PaintRecorder, Props, SemanticsCtx, UpdateCtx, Widget, WidgetId, WidgetSpec,
+    EventCtx, LayoutCtx, MountCtx, PaintCtx, PaintRecorder, Props, SemanticsCtx, UpdateCtx, Widget, WidgetId,
+    WidgetSpec,
 };
 use zero_ui_render::Scene;
 use zero_ui_runtime::WidgetHost;
@@ -316,9 +317,7 @@ impl NavigationButtonsWidget {
     fn action_for_button(&self, i: u8) -> EventResult {
         match i {
             0 if self.can_back => EventResult::Emit(crate::actions::id(crate::actions::NAV_BACK)),
-            1 if self.can_forward => {
-                EventResult::Emit(crate::actions::id(crate::actions::NAV_FORWARD))
-            }
+            1 if self.can_forward => EventResult::Emit(crate::actions::id(crate::actions::NAV_FORWARD)),
             2 => EventResult::Emit(crate::actions::id(crate::actions::NAV_RELOAD_OR_STOP)),
             3 => EventResult::Emit(crate::actions::id(crate::actions::NAV_HOME)),
             _ => EventResult::Ignored,
@@ -440,7 +439,6 @@ impl Widget for NavigationButtonsWidget {
                 .draw_image(Rect::from_ltrb(x, y, x + icon_extent, y + icon_extent), *key, tint);
         }
     }
-
 }
 
 // ── MenuButtonWidget（真实 MoreVertical 图标，DC-14 chrome 功能等价）──────────────
@@ -598,8 +596,7 @@ impl TrailingIconsWidget {
         let rel = local_x - btn0_start;
         if rel < TRAILING_BUTTON_WIDTH {
             Some(0)
-        } else if (TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP
-            ..2.0 * TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP)
+        } else if (TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP..2.0 * TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP)
             .contains(&rel)
         {
             Some(1)
@@ -680,9 +677,7 @@ impl Widget for TrailingIconsWidget {
             id: WidgetId::new("browser.trailing.theme"),
             rect: Rect::ZERO,
             flags: SemanticsFlags::BUTTON | SemanticsFlags::FOCUSABLE,
-            label: Some(SemanticsLabel::Literal(compact_str::CompactString::new(
-                "Toggle theme",
-            ))),
+            label: Some(SemanticsLabel::Literal(compact_str::CompactString::new("Toggle theme"))),
             value: None,
             children: Vec::new(),
         });
@@ -973,8 +968,7 @@ impl BrowserTabStripWidget {
         if tab_count == 0 {
             return 0.0;
         }
-        let tabs_max_width =
-            (total_width - NEW_TAB_BTN_WIDTH).max(0.0);
+        let tabs_max_width = (total_width - NEW_TAB_BTN_WIDTH).max(0.0);
         let ideal = tabs_max_width / tab_count as f32;
         ideal.clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH).max(0.0)
     }
@@ -1091,9 +1085,7 @@ impl Widget for BrowserTabStripWidget {
                 id: WidgetId::new(&id_str),
                 rect: Rect::ZERO,
                 flags: SemanticsFlags::BUTTON | SemanticsFlags::FOCUSABLE,
-                label: Some(SemanticsLabel::Literal(compact_str::CompactString::new(
-                    title.as_str(),
-                ))),
+                label: Some(SemanticsLabel::Literal(compact_str::CompactString::new(title.as_str()))),
                 value: None,
                 children: Vec::new(),
             });
@@ -1442,9 +1434,7 @@ impl Widget for BookmarksBarWidget {
                 id: WidgetId::new(&id_str),
                 rect: Rect::ZERO,
                 flags: SemanticsFlags::LINK | SemanticsFlags::FOCUSABLE,
-                label: Some(SemanticsLabel::Literal(compact_str::CompactString::new(
-                    bm.as_str(),
-                ))),
+                label: Some(SemanticsLabel::Literal(compact_str::CompactString::new(bm.as_str()))),
                 value: None,
                 children: Vec::new(),
             });
@@ -1534,19 +1524,17 @@ impl Widget for FindBarWidget {
                 action: zero_ui_core::event::KeyAction::Pressed,
                 modifiers,
                 ..
-            } => {
-                match code.0.as_str() {
-                    "Escape" => EventResult::Emit(crate::actions::id(crate::actions::FIND_CLOSE)),
-                    "Enter" => {
-                        if modifiers.contains(zero_ui_core::event::Modifiers::SHIFT) {
-                            EventResult::Emit(crate::actions::id(crate::actions::FIND_PREV))
-                        } else {
-                            EventResult::Emit(crate::actions::id(crate::actions::FIND_NEXT))
-                        }
+            } => match code.0.as_str() {
+                "Escape" => EventResult::Emit(crate::actions::id(crate::actions::FIND_CLOSE)),
+                "Enter" => {
+                    if modifiers.contains(zero_ui_core::event::Modifiers::SHIFT) {
+                        EventResult::Emit(crate::actions::id(crate::actions::FIND_PREV))
+                    } else {
+                        EventResult::Emit(crate::actions::id(crate::actions::FIND_NEXT))
                     }
-                    _ => EventResult::Ignored,
                 }
-            }
+                _ => EventResult::Ignored,
+            },
             _ => EventResult::Ignored,
         }
     }
@@ -1647,9 +1635,7 @@ impl Widget for SecurityBadgeWidget {
         // label 优先用 widget 的 text（来自 shell 注入的安全状态文案），fallback 到通用 message id。
         let label = match self.text.as_ref().filter(|t| !t.is_empty()) {
             Some(t) => SemanticsLabel::Literal(compact_str::CompactString::from(t.as_str())),
-            None => SemanticsLabel::Message(compact_str::CompactString::new(
-                crate::i18n::ids::SECURITY_STATUS,
-            )),
+            None => SemanticsLabel::Message(compact_str::CompactString::new(crate::i18n::ids::SECURITY_STATUS)),
         };
         ctx.nodes.push(SemanticsNode {
             id: WidgetId::new("browser.security_badge"),
@@ -1882,9 +1868,7 @@ impl Widget for AddressBarWidget {
             id: WidgetId::new("browser.address_bar.input"),
             rect: Rect::ZERO,
             flags: SemanticsFlags::TEXT_FIELD | SemanticsFlags::FOCUSABLE,
-            label: Some(SemanticsLabel::Literal(compact_str::CompactString::new(
-                "Address bar",
-            ))),
+            label: Some(SemanticsLabel::Literal(compact_str::CompactString::new("Address bar"))),
             value,
             children: Vec::new(),
         });
@@ -2130,14 +2114,18 @@ mod tests {
         let mut flags = zero_ui_core::invalidation::InvalidationFlags::default();
         // down + up 都在 back 按钮范围 → emit back action。
         {
-            let mut ctx = EventCtx { invalidation: &mut flags };
+            let mut ctx = EventCtx {
+                invalidation: &mut flags,
+            };
             assert!(matches!(
                 w.event(&mut ctx, &pointer_down(28.0, 22.0)),
                 EventResult::Consumed
             ));
         }
         let result = {
-            let mut ctx = EventCtx { invalidation: &mut flags };
+            let mut ctx = EventCtx {
+                invalidation: &mut flags,
+            };
             w.event(&mut ctx, &pointer_up(28.0, 22.0))
         };
         assert_eq!(
@@ -2155,14 +2143,18 @@ mod tests {
         let mut w = NavigationButtonsWidget::from_spec(&spec, &tokens);
         let mut flags = zero_ui_core::invalidation::InvalidationFlags::default();
         {
-            let mut ctx = EventCtx { invalidation: &mut flags };
+            let mut ctx = EventCtx {
+                invalidation: &mut flags,
+            };
             assert!(matches!(
                 w.event(&mut ctx, &pointer_down(28.0, 22.0)),
                 EventResult::Consumed
             ));
         }
         let result = {
-            let mut ctx = EventCtx { invalidation: &mut flags };
+            let mut ctx = EventCtx {
+                invalidation: &mut flags,
+            };
             w.event(&mut ctx, &pointer_up(28.0, 22.0))
         };
         assert!(matches!(result, EventResult::Ignored));
@@ -2176,14 +2168,18 @@ mod tests {
         let mut w = MenuButtonWidget::from_spec(&spec, &tokens);
         let mut flags = zero_ui_core::invalidation::InvalidationFlags::default();
         {
-            let mut ctx = EventCtx { invalidation: &mut flags };
+            let mut ctx = EventCtx {
+                invalidation: &mut flags,
+            };
             assert!(matches!(
                 w.event(&mut ctx, &pointer_down(16.0, 22.0)),
                 EventResult::Consumed
             ));
         }
         let result = {
-            let mut ctx = EventCtx { invalidation: &mut flags };
+            let mut ctx = EventCtx {
+                invalidation: &mut flags,
+            };
             w.event(&mut ctx, &pointer_up(16.0, 22.0))
         };
         assert_eq!(
@@ -2199,7 +2195,6 @@ mod tests {
         let w = NavigationButtonsWidget::from_spec(&spec, &SemanticTokens::light());
         assert!(w.focusable());
     }
-
 
     #[test]
     fn navigation_buttons_widget_draws_bg_and_four_icons() {

@@ -343,10 +343,9 @@ impl BrowserChromeShell for TabletBrowserShell {
         // SDK chrome 实际 paint 高度 = TAB_STRIP_HEIGHT(40) + TOOLBAR_ROW_HEIGHT(44) +
         // PAGE_LOAD_HEIGHT(2) = 86（tablet 无 bookmarks bar）。引用 widget 几何常量保证自洽
         //（审查报告问题 #1 + #4）。
-        let top_h = (crate::render::TAB_STRIP_HEIGHT
-            + crate::render::TOOLBAR_ROW_HEIGHT
-            + crate::render::PAGE_LOAD_HEIGHT)
-            .min((inner.bottom() - inner.top()) * 0.5);
+        let top_h =
+            (crate::render::TAB_STRIP_HEIGHT + crate::render::TOOLBAR_ROW_HEIGHT + crate::render::PAGE_LOAD_HEIGHT)
+                .min((inner.bottom() - inner.top()) * 0.5);
         let top_chrome = Rect::from_ltrb(inner.left(), inner.top(), inner.right(), inner.top() + top_h);
         let viewport = Rect::from_ltrb(inner.left(), top_chrome.bottom(), inner.right(), inner.bottom());
         ShellLayout {

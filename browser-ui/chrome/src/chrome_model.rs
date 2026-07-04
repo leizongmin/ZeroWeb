@@ -92,10 +92,7 @@ impl BrowserChromeModel {
     ///
     /// `apps/browser` 应通过 `uses_custom_window_controls()`（含 `is_wayland()` 运行时检测）
     /// 决定值——SDK chrome crate 无法做 Wayland 运行时检测（无 host 环境信息）。
-    pub fn from_shell_with_window_controls(
-        shell: &BrowserShell,
-        window_controls_width: f32,
-    ) -> BrowserChromeModel {
+    pub fn from_shell_with_window_controls(shell: &BrowserShell, window_controls_width: f32) -> BrowserChromeModel {
         let mut model = BrowserChromeModel::new();
 
         // tabs + active index（shell 用 TabId，模型用 index）。
@@ -329,7 +326,7 @@ mod tests {
             ("https://example.com", SecurityState::Secure),
             ("http://example.com", SecurityState::Insecure),
             ("ftp://example.com", SecurityState::Insecure),
-            ("about:blank", SecurityState::Secure),     // 本机/特殊页面
+            ("about:blank", SecurityState::Secure), // 本机/特殊页面
             ("chrome://settings", SecurityState::Secure),
             ("zerobrowser://newtab", SecurityState::Secure),
             ("file:///home/me/doc.html", SecurityState::Secure),
@@ -390,10 +387,7 @@ mod tests {
         // 审查报告问题 #5：外部注入 window_controls_width 应正确填入 model（Wayland 场景）。
         let shell = BrowserShell::new();
         let m = BrowserChromeModel::from_shell_with_window_controls(&shell, 138.0);
-        assert!(
-            (m.window_controls_width - 138.0).abs() < 0.01,
-            "注入值 138 应正确填入"
-        );
+        assert!((m.window_controls_width - 138.0).abs() < 0.01, "注入值 138 应正确填入");
 
         let m2 = BrowserChromeModel::from_shell_with_window_controls(&shell, 0.0);
         assert!(

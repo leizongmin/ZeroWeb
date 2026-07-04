@@ -1165,7 +1165,7 @@ fn sdk_chrome_tab_colors(
 /// 若为 `None` 则回落：使用 `render_chrome_via_sdk_with_layout`（无 surface，DC-14 路径）。
 #[cfg(feature = "sdk-chrome")]
 #[allow(clippy::too_many_arguments)]
-fn compose_sdk_chrome_replacement_with_webview(
+pub(crate) fn compose_sdk_chrome_replacement_with_webview(
     shell: &zero_browser_shell::BrowserShell,
     width: u32,
     height: u32,

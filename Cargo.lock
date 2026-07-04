@@ -5698,6 +5698,7 @@ name = "zero-browser"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "base64",
  "ico",
  "png 0.17.16",
  "reqwest",
@@ -5727,6 +5728,8 @@ dependencies = [
  "zero-text-foundation",
  "zero-ui-adapter-render-foundation",
  "zero-ui-core",
+ "zero-ui-render",
+ "zero-ui-runtime",
  "zero-ui-widgets",
  "zero-webview",
 ]
