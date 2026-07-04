@@ -313,16 +313,22 @@ impl RenderBackend for RenderFoundationBackend {
         let mut pen_x = 0.0_f32;
         for ch in text.chars() {
             match self.text.rasterize_char(font_id, ch, size_px) {
-                Ok(bmp) if bmp.width > 0 && bmp.height > 0 => {
-                    // cache key 用字符码点作为「glyph_id」（fontdue 内部 lookup_glyph_index 映射
-                    // 字符→glyph id，与 `rasterize_char` 一致；手绘 `rasterize_glyph_with_fallback`
-                    // 的缓存键也是 `(font_id, code_point, size)`）。
-                    let key = glyph_cache_key(font_id, ch as u32, size_px);
-                    emit_glyph_image(self, key, &bmp, position, pen_x, tint);
+                Ok(bmp) => {
+                    // 所有 glyph（含空格/零尺寸空白字符）都用真实 advance 推进 pen_x，
+                    // 以便与手绘 `measure_advance` 路径逐位一致（手绘不跳过任何字符的 advance）。
+                    // 仅对非零尺寸 glyph 发射位图（空格等空白字符宽高=0，无需发射 image）。
+                    if bmp.width > 0 && bmp.height > 0 {
+                        // cache key 用字符码点作为「glyph_id」（fontdue 内部 lookup_glyph_index 映射
+                        // 字符→glyph id，与 `rasterize_char` 一致；手绘 `rasterize_glyph_with_fallback`
+                        // 的缓存键也是 `(font_id, code_point, size)`）。
+                        let key = glyph_cache_key(font_id, ch as u32, size_px);
+                        emit_glyph_image(self, key, &bmp, position, pen_x, tint);
+                    }
                     pen_x += bmp.advance;
                 }
-                _ => {
-                    pen_x += size_px * 0.5; // 空格/缺失 glyph 的 fallback advance
+                Err(_) => {
+                    // 光栅失败（如未知字体），用保守 fallback advance 避免布局坍塌。
+                    pen_x += size_px * 0.5;
                 }
             }
         }
@@ -806,6 +812,54 @@ mod tests {
         // "Hi" → 2 glyph → 2 ImagePrimitive，自左向右排列。
         assert_eq!(p.images.len(), 2);
         assert!(p.images[1].rect.origin.x > p.images[0].rect.origin.x);
+    }
+
+    #[test]
+    fn draw_text_with_spaces_advances_correctly() {
+        // DC-11 空格处理回归守卫：draw_text 对空白字符必须用真实 advance 而非 `size * 0.5`
+        // fallback，否则文本总宽度不匹配手绘 `measure_advance` 路径 → placeholder 像素 diff。
+        let backend = ahem_backend();
+        // Ahem 每字符 1em 方块 + 1em advance。空格 advance = fontdue 实际值（> 0，pos）。
+        let mut b = RenderFoundationBackend::new_with_text(viewport(), backend);
+        // "a b"：字符+空格+字符。空格不出图（零尺寸）但 advance 推进 pen_x。
+        b.draw_text("a b", Point::new(0.0, 16.0), 16.0, Color::WHITE);
+        let p = b.into_primitives();
+        // Ahem 字体：每个可见字符产生一幅图（空格尺寸=0 → 无图）。
+        // "a b": a(图1) + space(无图) + b(图2) → 2 幅图
+        assert_eq!(
+            p.images.len(),
+            2,
+            "space should not emit an image (zero-size glyph)"
+        );
+        // "b" 的 x 位置 = a.advance + space.advance > a.advance（即有空格时 b 比纯 "ab" 更右）。
+        assert!(
+            p.images[1].rect.origin.x > 16.0,
+            "'b' after space should be advanced past 'a' + space width, got x={}",
+            p.images[1].rect.origin.x
+        );
+    }
+
+    #[test]
+    fn draw_text_preserves_advance_for_non_emitting_glyphs() {
+        // 验证 fontdue 返回 zero-size glyph（空格）仍通过 advance 推进 pen_x，
+        // 不会无端丢掉 advance 导致后续字符位置偏移。
+        let backend = ahem_backend();
+        // "a b" 与 "ab" 对比：前者 "b" 的 x 位置应严格大于后者 "b" 的 x（差 = space.advance）。
+        let mut with_space = RenderFoundationBackend::new_with_text(viewport(), backend.clone());
+        with_space.draw_text("a b", Point::new(0.0, 16.0), 16.0, Color::WHITE);
+        let ps = with_space.into_primitives();
+        let mut no_space = RenderFoundationBackend::new_with_text(viewport(), backend);
+        no_space.draw_text("ab", Point::new(0.0, 16.0), 16.0, Color::WHITE);
+        let pn = no_space.into_primitives();
+        assert_eq!(ps.images.len(), 2, "with space: a + b = 2 images");
+        assert_eq!(pn.images.len(), 2, "no space: a + b = 2 images");
+        // "a b" 的第二个字符（b）必须比 "ab" 的第二个字符更靠右（空格额外推进了）。
+        assert!(
+            ps.images[1].rect.origin.x > pn.images[1].rect.origin.x,
+            "space should push 'b' rightward: with_space={} vs no_space={}",
+            ps.images[1].rect.origin.x,
+            pn.images[1].rect.origin.x
+        );
     }
 
     // ── draw_text_blob（DC-11 文本路径）──────────────────────────────────

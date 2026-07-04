@@ -766,12 +766,15 @@ const ADDRESS_BAR_BORDER_WIDTH: f32 = 1.0;
 /// toolbar 行声明 cross_axis_align=center 提供（bar_y = toolbar_top + 6）。
 ///
 /// URL 文本经 `draw_text` 渲染在 security slot 之后（text_x = border + INNER_PAD_H + LEADING_SLOT）。
-/// security 状态图标 / focus 态 / placeholder 为后续轮次。
+/// 文本为空时渲染 placeholder "Search or enter URL..."（对齐手绘 `render_address_bar`）。
+/// security 状态图标 / focus 态 为后续轮次。
 pub struct AddressBarWidget {
     bg: Color,
     border_color: Color,
     text: Option<String>,
     text_color: Color,
+    /// placeholder 文本色（手绘 `address_bar_placeholder`：muted gray，≈ on_surface 混 surface）。
+    placeholder_color: Color,
     /// security 状态名（"secure"/"not-secure"/"mixed-content"/"dangerous"；默认 "secure"）。
     /// 手绘 chrome：Secure 态不画图标（slot 空），非 Secure 在 slot 画 "!" 等。SDK 复此逻辑。
     security_state: String,
@@ -796,11 +799,15 @@ impl AddressBarWidget {
             Some(Value::Text(s)) => s.to_string(),
             _ => "secure".to_string(),
         };
+        // placeholder 色 ≈ 手绘 chrome `address_bar_placeholder`（muted gray）：
+        // on_surface 混 surface 约 0.55 在 light 下 ≈ rgb(128,134,139)，dark 下 ≈ rgb(160,160,160)。
+        let placeholder_color = tokens.on_surface.mix(tokens.surface, 0.55);
         AddressBarWidget {
             bg: chrome_color_themed(bg_name, tokens),
             border_color: tab_colors.address_border,
             text,
             text_color: tokens.on_background,
+            placeholder_color,
             security_state,
             slot_divider_color: tokens.on_surface.mix(tokens.surface, 0.6),
             insecure_color: tokens.warning,
@@ -864,15 +871,15 @@ impl Widget for AddressBarWidget {
             ctx.recorder
                 .draw_text("!", Point::new(icon_x - 3.0, baseline), 13.0, self.insecure_color);
         }
-        // 文本渲染：URL（非空用 text_color）。placeholder 文案暂不渲染——per-char text path
-        // 虽已对齐手绘 rasterize 路径，但 advance_width / font_id 映射仍有亚像素差异
-        //（DC-11 text path unification follow-up），渲染 placeholder 会扩大 chrome diff。
-        if let Some(text) = &self.text
-            && !text.is_empty()
-        {
-            ctx.recorder
-                .draw_text(text, Point::new(text_x, baseline), 13.0, self.text_color);
-        }
+        // 文本渲染：若 text 非空渲染 URL（用 text_color），否则渲染 placeholder 文案
+        //（用 placeholder_color，对齐手绘 address_bar_placeholder 色）。
+        // DC-11 per-char 文本路径与手绘 `draw_ui_text` 的 advance 逐位一致（含空格）。
+        let (display_text, display_color) = match &self.text {
+            Some(t) if !t.is_empty() => (t.as_str(), self.text_color),
+            _ => ("Search or enter URL...", self.placeholder_color),
+        };
+        ctx.recorder
+            .draw_text(display_text, Point::new(text_x, baseline), 13.0, display_color);
     }
 
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
