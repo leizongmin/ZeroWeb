@@ -5,8 +5,8 @@ pub const BUTTON_PAGE: DemoPage = DemoPage {
     group: crate::gallery::model::GroupId::Widgets,
     title: "Button",
     title_zh: "按钮",
-    description: "可点击按钮，支持 hover/pressed/disabled 状态。点击发出 Action，由应用层处理。",
-    description_zh: "Clickable button with hover/pressed/disabled states. Emits Action on click.",
+    description: "Clickable button with hover/pressed/disabled states. Emits Action on click.",
+    description_zh: "可点击按钮，支持 hover/pressed/disabled 状态。点击发出 Action，由应用层处理。",
     source_dsl: r#"Button:
   id: my_button
   props:
@@ -30,8 +30,8 @@ pub const ICON_BUTTON_PAGE: DemoPage = DemoPage {
     group: crate::gallery::model::GroupId::Widgets,
     title: "IconButton",
     title_zh: "图标按钮",
-    description: "带图标标识的按钮，导航按钮、菜单触发等用。",
-    description_zh: "Button with icon identifier for navigation, menu triggers, etc.",
+    description: "Button with icon identifier for navigation, menu triggers, etc.",
+    description_zh: "带图标标识的按钮，导航按钮、菜单触发等用。",
     source_dsl: r#"IconButton:
   id: nav_back
   props:

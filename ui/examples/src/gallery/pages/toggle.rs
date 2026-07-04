@@ -5,8 +5,8 @@ pub const TOGGLE_PAGE: DemoPage = DemoPage {
     group: crate::gallery::model::GroupId::Widgets,
     title: "Toggle",
     title_zh: "开关",
-    description: "双态开关（on/off）。点击翻转状态并发出 action。",
-    description_zh: "Binary toggle (on/off). Fires action on state flip.",
+    description: "Binary toggle (on/off). Fires action on state flip.",
+    description_zh: "双态开关（on/off）。点击翻转状态并发出 action。",
     source_dsl: r#"Toggle:
   id: dark_mode
   props:
@@ -22,8 +22,8 @@ pub const BADGE_PAGE: DemoPage = DemoPage {
     group: crate::gallery::model::GroupId::Widgets,
     title: "Badge",
     title_zh: "角标",
-    description: "数字/圆点角标，附着于其他控件之上。",
-    description_zh: "Numeric or dot badge attached to other widgets.",
+    description: "Numeric or dot badge attached to other widgets.",
+    description_zh: "数字/圆点角标，附着于其他控件之上。",
     source_dsl: r#"Badge:
   id: notify_badge
   props:
@@ -37,8 +37,8 @@ pub const PROGRESS_PAGE: DemoPage = DemoPage {
     group: crate::gallery::model::GroupId::Widgets,
     title: "Progress",
     title_zh: "进度条",
-    description: "不确定/定值进度条。",
-    description_zh: "Indeterminate or determinate progress indicator.",
+    description: "Indeterminate or determinate progress indicator.",
+    description_zh: "不确定/定值进度条。",
     source_dsl: r#"Progress:
   id: loading
   props:

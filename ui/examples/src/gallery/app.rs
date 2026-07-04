@@ -1287,4 +1287,17 @@ mod tests {
             assert!(ids.insert(page.id), "重复 page_id: {}", page.id);
         }
     }
+
+    /// RFC §4：每个 Demo 页必须有非空的 title/description/source_dsl/source_rust。
+    #[test]
+    fn all_pages_have_non_empty_metadata() {
+        for page in super::super::pages::ALL_PAGES {
+            assert!(!page.title.is_empty(), "page {} title 为空", page.id);
+            assert!(!page.title_zh.is_empty(), "page {} title_zh 为空", page.id);
+            assert!(!page.description.is_empty(), "page {} description 为空", page.id);
+            assert!(!page.description_zh.is_empty(), "page {} description_zh 为空", page.id);
+            assert!(!page.source_dsl.trim().is_empty(), "page {} source_dsl 为空", page.id);
+            assert!(!page.source_rust.trim().is_empty(), "page {} source_rust 为空", page.id);
+        }
+    }
 }

@@ -1,14 +1,26 @@
 use crate::gallery::model::DemoPage;
 
+mod advanced;
 mod button;
+mod patterns;
 mod text_input;
 mod toggle;
+mod widgets_extra;
 
+use advanced::{
+    ANIMATION_DEMO_PAGE, COLLECTION_DEMO_PAGE, DSL_DEMO_PAGE, FORM_DEMO_PAGE, GESTURE_DEMO_PAGE, I18N_DEMO_PAGE,
+    NAV_DEMO_PAGE, THEME_DEMO_PAGE,
+};
 use button::{BUTTON_PAGE, ICON_BUTTON_PAGE};
+use patterns::{
+    COMMAND_PALETTE_PAGE, DATA_LIST_PAGE, DIALOG_SCAFFOLD_PAGE, SEARCH_FIELD_PAGE, STATUS_BUBBLE_PAGE, TAB_BAR_PAGE,
+};
 use text_input::{LIST_VIEW_PAGE, MENU_PAGE, TABS_PAGE, TEXT_INPUT_PAGE};
 use toggle::{BADGE_PAGE, PROGRESS_PAGE, TOGGLE_PAGE};
+use widgets_extra::{POPOVER_PAGE, POPUP_PAGE, TOOLBAR_PAGE, TOOLTIP_PAGE};
 
 pub static ALL_PAGES: &[DemoPage] = &[
+    // Widgets
     BUTTON_PAGE,
     ICON_BUTTON_PAGE,
     TOGGLE_PAGE,
@@ -18,4 +30,25 @@ pub static ALL_PAGES: &[DemoPage] = &[
     LIST_VIEW_PAGE,
     MENU_PAGE,
     TABS_PAGE,
+    TOOLTIP_PAGE,
+    TOOLBAR_PAGE,
+    POPOVER_PAGE,
+    POPUP_PAGE,
+    // Patterns
+    SEARCH_FIELD_PAGE,
+    DATA_LIST_PAGE,
+    COMMAND_PALETTE_PAGE,
+    STATUS_BUBBLE_PAGE,
+    TAB_BAR_PAGE,
+    DIALOG_SCAFFOLD_PAGE,
+    // Forms / Gestures / Animation / Collections
+    FORM_DEMO_PAGE,
+    GESTURE_DEMO_PAGE,
+    ANIMATION_DEMO_PAGE,
+    COLLECTION_DEMO_PAGE,
+    // Theme / i18n / DSL / Navigation
+    THEME_DEMO_PAGE,
+    I18N_DEMO_PAGE,
+    DSL_DEMO_PAGE,
+    NAV_DEMO_PAGE,
 ];

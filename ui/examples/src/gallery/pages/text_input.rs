@@ -5,8 +5,8 @@ pub const TEXT_INPUT_PAGE: DemoPage = DemoPage {
     group: crate::gallery::model::GroupId::Widgets,
     title: "TextInput",
     title_zh: "文本输入",
-    description: "文本输入框，支持光标、选区、受控模式。",
-    description_zh: "Text input with cursor, selection, controlled mode.",
+    description: "Text input with cursor, selection, controlled mode.",
+    description_zh: "文本输入框，支持光标、选区、受控模式。",
     source_dsl: r#"TextInput:
   id: search_field
   props:
@@ -22,8 +22,8 @@ pub const LIST_VIEW_PAGE: DemoPage = DemoPage {
     group: crate::gallery::model::GroupId::Widgets,
     title: "ListView",
     title_zh: "列表视图",
-    description: "可虚拟化的列表视图，支持选择集与滚动。",
-    description_zh: "Virtualizable list view with selection and scrolling.",
+    description: "Virtualizable list view with selection and scrolling.",
+    description_zh: "可虚拟化的列表视图，支持选择集与滚动。",
     source_dsl: r#"ListView:
   id: file_list
   props:
@@ -39,8 +39,8 @@ pub const MENU_PAGE: DemoPage = DemoPage {
     group: crate::gallery::model::GroupId::Widgets,
     title: "Menu",
     title_zh: "菜单",
-    description: "上下文/下拉菜单，支持嵌套与快捷键标识。",
-    description_zh: "Context/pull-down menu with nesting and shortcut hints.",
+    description: "Context/pull-down menu with nesting and shortcut hints.",
+    description_zh: "上下文/下拉菜单，支持嵌套与快捷键标识。",
     source_dsl: r#"Menu:
   id: file_menu
   items:
@@ -59,8 +59,8 @@ pub const TABS_PAGE: DemoPage = DemoPage {
     group: crate::gallery::model::GroupId::Widgets,
     title: "Tabs",
     title_zh: "标签页",
-    description: "多标签导航，支持选中切换。",
-    description_zh: "Multi-tab navigation with selection.",
+    description: "Multi-tab navigation with selection.",
+    description_zh: "多标签导航，支持选中切换。",
     source_dsl: r#"Tabs:
   id: pref_tabs
   props:
