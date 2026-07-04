@@ -40,7 +40,8 @@ mod tests {
             |i| ItemKey::new(&format!("d.{i}")),
             |i| {
                 let mut s = WidgetSpec::new("DataRow");
-                s.props.insert("label", zero_ui_core::binding::Value::Text(format!("Row {i}")));
+                s.props
+                    .insert("label", zero_ui_core::binding::Value::Text(format!("Row {i}")));
                 s
             },
         )

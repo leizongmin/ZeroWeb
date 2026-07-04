@@ -228,7 +228,9 @@ impl HeadlessServer {
 
                 // 读帧头 2 字节
                 let mut header2 = [0u8; 2];
-                if ws.get_ref().read_exact(&mut header2).is_err() { break; }
+                if ws.get_ref().read_exact(&mut header2).is_err() {
+                    break;
+                }
                 let opcode = header2[0] & 0x0f;
                 let masked = (header2[1] & 0x80) != 0;
                 let mut payload_len = (header2[1] & 0x7f) as u64;
@@ -236,34 +238,49 @@ impl HeadlessServer {
                 // 扩展长度
                 if payload_len == 126 {
                     let mut ext = [0u8; 2];
-                    if ws.get_ref().read_exact(&mut ext).is_err() { break; }
+                    if ws.get_ref().read_exact(&mut ext).is_err() {
+                        break;
+                    }
                     payload_len = u16::from_be_bytes(ext) as u64;
                 } else if payload_len == 127 {
                     let mut ext = [0u8; 8];
-                    if ws.get_ref().read_exact(&mut ext).is_err() { break; }
+                    if ws.get_ref().read_exact(&mut ext).is_err() {
+                        break;
+                    }
                     payload_len = u64::from_be_bytes(ext);
                 }
 
                 // mask key
                 let mask_key = if masked {
                     let mut mk = [0u8; 4];
-                    if ws.get_ref().read_exact(&mut mk).is_err() { break; }
+                    if ws.get_ref().read_exact(&mut mk).is_err() {
+                        break;
+                    }
                     Some(mk)
-                } else { None };
+                } else {
+                    None
+                };
 
                 // payload
                 let mut payload = vec![0u8; payload_len as usize];
-                if payload_len > 0 && ws.get_ref().read_exact(&mut payload).is_err() { break; }
+                if payload_len > 0 && ws.get_ref().read_exact(&mut payload).is_err() {
+                    break;
+                }
 
                 // unmask
                 if let Some(mk) = mask_key {
-                    for (i, b) in payload.iter_mut().enumerate() { *b ^= mk[i & 3]; }
+                    for (i, b) in payload.iter_mut().enumerate() {
+                        *b ^= mk[i & 3];
+                    }
                 }
 
                 // 控制帧
                 if opcode & 0x08 != 0 {
                     match opcode {
-                        0x08 => { tracing::info!("Close"); break; }
+                        0x08 => {
+                            tracing::info!("Close");
+                            break;
+                        }
                         0x09 => {
                             let pong = Self::encode_frame(0x8a, &payload);
                             let _ = ws.get_mut().write_all(&pong);
@@ -276,7 +293,9 @@ impl HeadlessServer {
                 // 仅 text 帧
                 let msg_str = if opcode == 0x01 {
                     String::from_utf8_lossy(&payload).to_string()
-                } else { continue; };
+                } else {
+                    continue;
+                };
 
                 // 认证
                 if !authenticated {
@@ -285,16 +304,28 @@ impl HeadlessServer {
                         if self.security.verify_token(token) {
                             authenticated = true;
                         } else {
-                            let err = ServerResponse { id: req.id, result: None,
-                                error: Some(ProtocolError { code: -32001, message: "invalid token".into() }) };
+                            let err = ServerResponse {
+                                id: req.id,
+                                result: None,
+                                error: Some(ProtocolError {
+                                    code: -32001,
+                                    message: "invalid token".into(),
+                                }),
+                            };
                             if let Ok(j) = serde_json::to_string(&err) {
                                 let _ = ws.get_mut().write_all(&Self::encode_frame(0x81, j.as_bytes()));
                             }
                             continue;
                         }
                     } else {
-                        let err = ServerResponse { id: 0, result: None,
-                            error: Some(ProtocolError { code: -32001, message: "auth required".into() }) };
+                        let err = ServerResponse {
+                            id: 0,
+                            result: None,
+                            error: Some(ProtocolError {
+                                code: -32001,
+                                message: "auth required".into(),
+                            }),
+                        };
                         if let Ok(j) = serde_json::to_string(&err) {
                             let _ = ws.get_mut().write_all(&Self::encode_frame(0x81, j.as_bytes()));
                         }
@@ -306,12 +337,21 @@ impl HeadlessServer {
 
                 for event in events {
                     if let Ok(j) = serde_json::to_string(&event) {
-                        if ws.get_mut().write_all(&Self::encode_frame(0x81, j.as_bytes())).is_err() { break; }
+                        if ws.get_mut().write_all(&Self::encode_frame(0x81, j.as_bytes())).is_err() {
+                            break;
+                        }
                     }
                 }
-                let rj = serde_json::to_string(&response).unwrap_or_else(|e|
-                    format!("{{\"id\":0,\"error\":{{\"code\":-32700,\"message\":\"JSON: {e}\"}}}}"));
-                if ws.get_mut().write_all(&Self::encode_frame(0x81, rj.as_bytes())).is_err() { break; }
+                let rj = serde_json::to_string(&response).unwrap_or_else(|e| {
+                    format!("{{\"id\":0,\"error\":{{\"code\":-32700,\"message\":\"JSON: {e}\"}}}}")
+                });
+                if ws
+                    .get_mut()
+                    .write_all(&Self::encode_frame(0x81, rj.as_bytes()))
+                    .is_err()
+                {
+                    break;
+                }
             }
 
             tracing::info!("Headless session ended");

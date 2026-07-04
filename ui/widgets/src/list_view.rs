@@ -54,8 +54,7 @@ impl ListView {
 
     /// 根据当前 scroll_offset 计算可见窗口。
     pub fn visible_window(&self) -> VisibleWindow {
-        LazyList::new(self.item_count, self.item_height_px, self.viewport_height)
-            .window_at(self.scroll_offset)
+        LazyList::new(self.item_count, self.item_height_px, self.viewport_height).window_at(self.scroll_offset)
     }
 
     /// 物化可见窗口内的条目（调 `VirtualCollection::build_item`）。

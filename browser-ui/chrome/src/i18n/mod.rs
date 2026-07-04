@@ -16,8 +16,8 @@
 
 use std::collections::HashMap as StdHashMap;
 use zero_ui_i18n::{
-    CatalogStore, I18nContext, I18nError, I18nProvider, LocaleId, LocalizedText, MessageCatalog, MessageEntry, MessageId,
-    MessageParams, MessageRef, ResolvedText, TextDirection, direction_for, fallback_chain,
+    CatalogStore, I18nContext, I18nError, I18nProvider, LocaleId, LocalizedText, MessageCatalog, MessageEntry,
+    MessageId, MessageParams, MessageRef, ResolvedText, TextDirection, direction_for, fallback_chain,
 };
 
 // ── YAML catalog 反序列化（零-ui-i18n 类型自带 serde，但 MessageCatalog 无 serde derive，
@@ -50,8 +50,7 @@ enum YamlEntry {
 ///
 /// YAML 格式见 `browser-ui/chrome/i18n/en-US.yaml`。
 pub fn catalog_from_yaml(yaml: &str) -> Result<MessageCatalog, String> {
-    let yc: YamlCatalog =
-        serde_yaml::from_str(yaml).map_err(|e| format!("i18n YAML 解析失败: {e}"))?;
+    let yc: YamlCatalog = serde_yaml::from_str(yaml).map_err(|e| format!("i18n YAML 解析失败: {e}"))?;
     let direction = match yc.direction.to_lowercase().as_str() {
         "rtl" => TextDirection::Rtl,
         _ => TextDirection::Ltr,
@@ -134,8 +133,7 @@ pub const DEFAULT_LOCALE: &str = "en";
 /// 返回的 catalog 覆盖 [`ids`] 中全部 message id；后续 locale 翻译以同结构新增 YAML 文件
 /// 注册到 [`catalog_store`]。
 pub fn default_catalog() -> MessageCatalog {
-    catalog_from_yaml(include_str!("../../i18n/en-US.yaml"))
-        .expect("default catalog YAML 编译时嵌入，必须合法")
+    catalog_from_yaml(include_str!("../../i18n/en-US.yaml")).expect("default catalog YAML 编译时嵌入，必须合法")
 }
 
 /// 注册了默认 catalog 的 [`CatalogStore`]（测试 / 运行时便利入口）。
