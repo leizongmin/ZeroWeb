@@ -2648,6 +2648,18 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1029 column-rule 在 spanner 处分段（CSS §6.1）LANDED·net-neutral oracle·spec-correctness·foundational
+
+承 R1028-cont CONTINUE 转 column-rule-spanner。CSS Multicol §6.1：column-span:all spanner 使 column-rule 在 spanner 处中断。R1028 spanner 布局后 paint_column_rules 仍画整条 rule（穿过 spanner）。
+
+**实现**（paint/painter/text.rs::paint_column_rules）：① 检测直接子元素 spanner（in-flow + column_span_offsets.is_empty()【R1028 清空，非 spanner 列子元素被填充】+ width >= content_w-1.0【spanner 全宽，列子元素 narrow 到 col_w】）；② 收集 spanner Y 区间；③ 把 rule 的 [0, content_h] 按 spanner 区间分段（区间减法）；④ 每条列 rule 按 segments 循环绘制（Solid/Dotted/Dashed/_ 四 style）。**非 spanner 容器 → spanner_ranges 空 → segments = [(0, content_h)] 单段，行为不变（零回归 gate）。**
+
+**验证**：css-multicol Oracle **130 → 130（0 net）**——multicol-span-all-rule-001 17.30%/rule-002 25.65%/rule-nested-balancing-002/003/004 全 diff 不变。**rule 分段正确但 yield 零**——这些案 diff 由 layout 主导（balanced 模式不拆分单 block 跨列，需 column-fill:auto + spanner row-fill 模型，多 session）。rule-through-spanner 是这些案的小部分。0 regression（column-rule 仅 css-multicol 用）；welcome 16.57% 不变；engine 1179 测 0 failed。
+
+**意义**：spec-correctness（CSS §6.1 rule 中断）正确实现，net-neutral on oracle 但 **foundational**——一旦 column-fill:auto + spanner row-fill 模型实现，rule 部分自动正确无需再改 paint。gate 严格（非 spanner 容器零行为变化）低风险。详见 [`evidence/r1029-column-rule-spanner-split-2026-07-05.txt`](./evidence/r1029-column-rule-spanner-split-2026-07-05.txt)。
+
+**▶ 下会话**：R1029 yield 零，真 yield 解锁需 column-fill:auto + spanner row-fill 模型（span-all-children-height 簇 15-30% + span-all-rule 簇，多 session 结构性，是 R1028 column-span:all 基础上的下一阶）。或转其它结构性 dir（writing-modes vertical block-flow / font-wall webfont per-font）。
+
 ### R1028-cont ★spanner width 不强制（尊 taffy auto-stretch / 显式 width）= nested-with-padding-and-spanner 回归修复 + Oracle 129→130（+1）
 
 承 R1028。R1028 初版 `if spanner.width < full_width { spanner.width = full_width }` 误覆盖显式 width spanner（nested-with-padding-and-spanner 的 `width:100px; column-span:all`），致 0.73→3.86% 回归。CSS §6.1：column-span:all 使 spanner containing block 全宽，但 spanner 自身显式 width 须尊重。taffy 已按 block 子规则把 auto 宽拉伸到容器 content_width，故 width 不须强制——移除 override block。
