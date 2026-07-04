@@ -912,8 +912,8 @@ impl Widget for BrowserTabStripWidget {
                 );
             }
         }
-        // 8. 新建标签页按钮（+ 图标），在 tab strip 最右端。
-        let new_tab_x = (width - NEW_TAB_BTN_WIDTH).max(0.0);
+        // 8. 新建标签页按钮（+ 图标），在 tab strip 最右端，窗口控制按钮之前。
+        let new_tab_x = (width - self.window_controls_width - NEW_TAB_BTN_WIDTH).max(0.0);
         let nti = NAV_ICON_SIZE;
         ctx.recorder.draw_image(
             Rect::from_ltrb(
