@@ -1574,3 +1574,18 @@ page (y≥112) 0.00% (不变)。sdk-chrome **205** 测 + default **191** 测全�
 
 **门禁全绿**：build ✅ | clippy -D warnings ✅ | fmt 净 ✅ | chrome 87 测 ✅ | sdk-chrome 205 ✅ |
 default 191 ✅。SDK-only（browser-ui/chrome + sdk-chrome feature gate）。
+
+### Round 55 — DC-11 foundation/text: line_metrics API（2026-07-04）
+
+`FontdueBackend::line_metrics(font_id, size_px) -> Option<(f32, f32)>` 新增方法，封装
+fontdue `Font::horizontal_line_metrics`，返回 `(ascent, descent)`（descent 为负），与
+render-foundation `FontLoader::line_metrics` 返回值格式一致。
+
+**用途**：SDK widget（AddressBar、tab labels）可据此计算与手绘 chrome 相同的基线位置
+（手绘 `ui_text_top_in_box` 用 `font_loader.line_metrics(primary, font_size)` 得
+ascent/descent → `line_h = ascent - descent` → `text_top = box_y + (box_h - line_h)/2` →
+`baseline = text_top + ascent`），替代当前 SDK 硬编码 heuristic `h*0.5 + 13*0.35`。
+
+**下一步**：将 font_metrics 线程到 PaintCtx，使 AddressBarWidget baseline = actual font metrics，
+然后用正确基线渲染 placeholder text（当前 largest single diff 项 ~1843px 的 addr-l）。
+foundation/text 38 测全绿（+2 新测），下游 chrome 87/bridge/sdk-chrome 零回归。
