@@ -340,7 +340,6 @@ fn layout_multicol_with_spanners(
     if col_count == 0 {
         return;
     }
-    let full_width = container.content_width;
 
     // 1. 划分区域：遍历直接子元素（非 abspos/fixed），spanner 作区域边界。
     //    regions[i] = 第 i 段非 spanner 子元素索引；spanners[i] = 第 i 个 spanner 索引。
@@ -387,22 +386,12 @@ fn layout_multicol_with_spanners(
         // 该区域之后插入对应 spanner（region_idx 与 spanner_idx 一一对应；末区域无 spanner）。
         if region_idx < spanners.len() {
             let spanner = &mut container.children[spanners[region_idx]];
-            // spanner 全宽：x = margin_left，width = 容器 content_width。
-            // 清空 column_span_offsets 使其按正常 block 渲染（非列片段）。
+            // spanner 脱离列流：清空 column_span_offsets 使其按正常 block 渲染（非列片段），
+            // 定位到当前 y_base。width 不强制——taffy 已按 block 子元素规则把 auto 宽拉伸到
+            // 容器 content_width（全宽），显式 width（如 `width:100px; column-span:all`）须尊重。
             spanner.column_span_offsets.clear();
             spanner.x = spanner.margin_left;
             spanner.y = y_base + spanner.margin_top;
-            if spanner.width < full_width {
-                spanner.width = full_width;
-                spanner.content_width = (full_width
-                    - spanner.border_left
-                    - spanner.border_right
-                    - spanner.padding_left
-                    - spanner.padding_right)
-                    .max(0.0);
-                spanner.content_x = spanner.border_left + spanner.padding_left;
-                constrain_subtree_width(spanner, spanner.content_width);
-            }
             y_base += spanner.height + spanner.margin_top + spanner.margin_bottom;
         }
     }
