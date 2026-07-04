@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1026 css-tables 近-pass 残余扫描 + table-cell leaf 扩展（net-neutral）+ 空 cell strut 实验（net-negative，font-wall）·零源码 net·纯调查
+
+承 R1025 后扫 css-tables（64.3% baseline）近-pass 残余找下一 lever。**结论：css-tables 近-pass 残余 = 精度 / 空 cell 渲染（font-wall 阻塞），无 clean 单会话 lever**。
+
+**table-cell leaf 扩展实验（net-neutral 已回退）**：R1024 leaf pattern 扩展到 table-cell（`|| matches!(computed.display, DisplayValue::TableCell)`）——table-cell 含文本+br 同 bug 形态。A/B css-tables **74→74 持平**（net-neutral），welcome 16.57% 不变。table-cell 走独立 table auto-layout sizing，leaf 测量不影响列宽分配 → 无 yield。已回退（table 布局风险 + net-neutral，按 code-guidelines 不做零价值修改）。
+
+**★ 空 cell strut 实验（net-negative 已回退，font-wall 阻塞）**：css-tables **46 文件含空单元格** `<td></td>`（cluster）。空 cell 实测 ZW h=6（仅 border，0 内容）vs chromium h~25（cell strut = 一行 line-height）。CSS §17.5.3 空 cell 应有 strut（虚拟行盒）。实施：measure_text_content 空 cell（display:TableCell + 无 inline 内容）返回 height = line-height（resolve_font_metrics[1]）。**A/B net 负**：css-tables **74→73（-1）**，row-margin-border-padding 1.47→1.68、row-group 1.47→1.71（**变差**）。根因：ZW line-height:normal = **1.2×fs**（NORMAL_LINE_HEIGHT_RATIO），chromium 空 cell strut = 字体固有 line-height（DejaVuSans ~**1.16×fs**）→ ZW strut 偏高 → 空 cell 过高 → diff 增。**这是 R989/R990 font-wall**（line-height:normal 常数 1.2 vs 字体固有，R989 证 1.15 对 welcome net 负、1.2 corpus 最优）。空 cell strut 受同一 font-wall 阻塞，非单 session 修。已回退。
+
+**row-margin-border-padding 实查**：ZW dark=4607 vs CHR=8204（缺 ~12/16 空 cell 表的 border，空 cell 塌缩致表不可见）。证实空 cell strut 缺口，但修受 font-wall 阻。
+
+**意义（负面结果）**：css-tables 近-pass 残余**确证无 clean 单会话 lever**（table-cell leaf net-neutral，空 cell strut 受 font-wall 阻）。46 空 cell 案的 yield 阻塞 = line-height:normal 常数 1.2 vs 字体固有 1.16（R989 font-wall，corpus 最优 1.2 已尽）。下会话**勿以空 cell strut 重试**（font-wall，须 per-font line-height 多 session）。
+
+**战略**：R1024 leaf pattern 扩展已尽（flex/grid +6 yield，inline-block/float/table-cell 全 net-neutral correctness）。forward 转向 (a) multicol Phase 2（多 session 结构性）；(b) font-wall per-font line-height（须 webfont 前置或 font-metric provider）；(c) 其它 dir（css-writing-modes 7% 结构性 / css-fonts 35% rustybuzz）。css-tables + css-flexbox + css-grid 近-pass 勿重扫（全精度/font-wall/结构性 plateau）。
+
+**▶ 下会话**：① multicol Phase 2（多 session 结构性，css-multicol 26.5% 唯一非 font-wall 阻塞的近-pass dir）；② css-writing-modes 扫 top-worst 找非 vertical-rl-clearance 的可翻案（7% baseline，R164 vertical-rl clearance 死锁勿重试，但 writing-mode-011/012 等其它簇可能）；③ font-wall per-font line-height（须 webfont/font-metric provider，R1004 dormant 基建）。table-cell leaf / 空 cell strut / R1024 leaf 残余扩展勿重试（已证 net-neutral/negative）。
+
 ### R1025 css-flexbox/grid 近-pass 残余扫描 = 精度/结构性 plateau 确认 + ★inline-block 含文本+br 误填满父宽修复 LANDED（R1024 leaf pattern 扩展到 inline-block）·net-neutral oracle·correctness
 
 承 R1024 后扫 css-flexbox + css-grid 近-pass 残余找下一 lever。**结论：两 dir 近-pass 残余 = 精度（text/color 1-2px）/结构性 plateau，无 clean 单会话 lever**。调查中定位 inline-block 同 bug 形态并修复 LANDED（commit d85ed534）。
