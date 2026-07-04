@@ -859,7 +859,10 @@ impl Widget for BrowserTabStripWidget {
         // baseline 计算：手绘经 ui_text_centered_in_height → text_top + ascent。
         const TAB_TEXT_LEFT_INSET: f32 = 36.0;
         const TAB_TEXT_RIGHT_RESERVE: f32 = 32.0;
-        let tab_text_baseline = tab_y + TAB_BAR_HEIGHT * 0.5 + 13.0 * 0.36;
+        let (tab_ascent, tab_descent) = ctx.line_metrics(13.0);
+        let tab_line_h = tab_ascent - tab_descent;
+        let tab_text_top = (TAB_BAR_HEIGHT - tab_line_h) * 0.5;
+        let tab_text_baseline = tab_y + tab_text_top + tab_ascent;
         for i in 0..self.tab_count {
             let label = self.titles.get(i).map(|s| s.as_str()).unwrap_or("");
             let tab_x = leading + i as f32 * tab_w;
@@ -950,7 +953,8 @@ impl Widget for BookmarksBarWidget {
         ctx.recorder
             .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
         if !self.bookmarks.is_empty() {
-            let baseline = size.height * 0.5 + 13.0 * 0.32;
+            let (bm_ascent, bm_descent) = ctx.line_metrics(13.0);
+            let baseline = (size.height + bm_ascent + bm_descent) * 0.5;
             let mut x = 8.0;
             for bm in &self.bookmarks {
                 if x >= size.width - 8.0 {
@@ -1038,7 +1042,8 @@ impl Widget for FindBarWidget {
         } else {
             format!("\"{}\"", self.query)
         };
-        let baseline = size.height * 0.5 + 13.0 * 0.36;
+        let (fb_ascent, fb_descent) = ctx.line_metrics(13.0);
+        let baseline = (size.height + fb_ascent + fb_descent) * 0.5;
         ctx.recorder
             .draw_text(&label, Point::new(12.0, baseline), 13.0, self.text_color);
     }
@@ -1096,7 +1101,8 @@ impl Widget for SecurityBadgeWidget {
         ctx.recorder
             .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
         if let Some(text) = &self.text {
-            let baseline = size.height * 0.5 + 13.0 * 0.36;
+            let (sb_ascent, sb_descent) = ctx.line_metrics(13.0);
+            let baseline = (size.height + sb_ascent + sb_descent) * 0.5;
             ctx.recorder
                 .draw_text(text, Point::new(8.0, baseline), 13.0, self.text_color);
         }
@@ -1205,12 +1211,13 @@ impl Widget for AddressBarWidget {
         ctx.recorder
             .fill_rounded_rect(inner, (ADDRESS_BAR_RADIUS - bw).max(0.0), self.bg);
         // URL 文本：security slot 之后（border + INNER_PAD_H + LEADING_SLOT_WIDTH = 1+12+28 = 41）。
-        // 基线 ≈ bar_h/2 + font_ascent 偏移（对齐手绘 ui_text_centered_in_height，font 13）。
+        // 基线经 ctx.line_metrics 计算，对齐手绘 ui_text_centered_in_height（font 13）。
         const ADDRESS_BAR_INNER_PAD_H: f32 = 12.0;
         const ADDRESS_BAR_LEADING_SLOT_WIDTH: f32 = 28.0;
         let slot_x = bw + ADDRESS_BAR_INNER_PAD_H; // slot 起（图标区）
         let text_x = slot_x + ADDRESS_BAR_LEADING_SLOT_WIDTH; // slot 后文本起
-        let baseline = h * 0.5 + 13.0 * 0.36;
+        let (ab_ascent, ab_descent) = ctx.line_metrics(13.0);
+        let baseline = (h + ab_ascent + ab_descent) * 0.5;
         // security slot 分隔线（1px 竖线，对齐手绘 slot_divider； inset 6 顶/底）。
         let divider_inset = 6.0_f32;
         ctx.recorder.fill_rect(

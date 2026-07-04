@@ -1,0 +1,73 @@
+R66 PaintCtx font_metrics: thread (ascent,descent) into widget paint (chrome diff 2.00%)
+=====================================================================================
+Date: 2026-07-04
+Branch: ui-sdk
+Commit: (pending)
+
+Summary
+-------
+Added `PaintCtx::line_metrics(font_size) -> (f32, f32)` method providing
+font-agnostic (ascent, descent) metrics for baseline calculation. Updated
+all SDK chrome widgets (AddressBarWidget, BrowserTabStripWidget,
+BookmarksBarWidget, FindBarWidget, SecurityBadgeWidget) to use the same
+baseline formula as hand-drawn chrome's `ui_text_centered_in_height`:
+
+    let (ascent, descent) = ctx.line_metrics(font_size);
+    let line_h = ascent - descent;
+    let text_top = (box_h - line_h) * 0.5;
+    let baseline = text_top + ascent;
+
+This replaces the previous per-widget hardcoded heuristic
+`h * 0.5 + 13.0 * 0.36` with a centralized method that future font
+backend integration can override with real font metrics from
+`FontdueBackend::line_metrics`.
+
+Changes
+-------
+1. `ui/core/src/widget.rs`: Add `PaintCtx::line_metrics()` method with
+   default heuristic (ascent=font_size*0.92, descent=-font_size*0.23 ≈
+   typical UI font ratios). Docstring includes usage example matching
+   hand-drawn `ui_text_centered_in_height`.
+2. `browser-ui/chrome/src/render.rs`: Update 5 widget implementations:
+   - AddressBarWidget: `(h + ascent + descent) * 0.5` baseline formula
+   - BrowserTabStripWidget: same, using TAB_BAR_HEIGHT as box height
+   - BookmarksBarWidget: same, using size.height
+   - FindBarWidget: same, using size.height
+   - SecurityBadgeWidget: same, using size.height
+
+Results
+-------
+dc14_chrome_region_pixel_diff_baseline:
+- control (hand-vs-hand): 0/1024000 = 0.000% (deterministic)
+- chrome region (y<112): 2874/143360 = **2.00%** (from 2.00%, ±9px noise)
+- page region (y≥112): 0/880640 = 0.00% (unchanged)
+
+Pixel diff essentially unchanged because:
+1. The heuristic value was already close to real font metrics (old 20.68 vs
+   new 20.485 vs hand-drawn ~20.5 — difference <0.2px)
+2. Anti-aliasing differences between fontdue rasterization and
+   render-foundation glyph pipeline dominate the remaining text zone diff
+
+Test results
+------------
+- zero-ui-core: tests pass
+- zero-browser-chrome: 92/92 passed
+- zero-browser (sdk-chrome): 206/206 passed
+- cargo clippy -D warnings: clean
+- cargo fmt: clean
+
+Architectural significance
+--------------------------
+`PaintCtx::line_metrics` is the single injection point for real font
+metrics. When the bridge (`RenderFoundationBackend`) or host later has
+access to `FontdueBackend` at paint time, it can set a custom provider
+on the paint context and all widgets automatically inherit the correct
+baseline calculation — no per-widget heuristic updates needed.
+
+Remaining gaps
+--------------
+1. Address bar text zone ~4.58%: dominated by anti-aliasing differences
+   between fontdue rasterization and render-foundation glyph pipeline.
+   Not fixable by baseline adjustment alone.
+2. Nav icons ~2.99%: icon glyph atlas vs alpha mask rendering path.
+3. DC-15 mobile / DC-14 GUI verification: blocked (need window/device).

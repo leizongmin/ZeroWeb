@@ -411,7 +411,9 @@
 
 - **R64 (2026-07-04) TrailingIconsWidget：替换 88px spacer 为真实图标**。新增 `TrailingIconsWidget` 绘制 download + theme 两图标（`draw_image` via IconMask，Image ID 7/8）。总宽 88px，对齐手绘 trailing reserved 区。DesktopBrowserShell 使用 `browser.TrailingIcons` 节点替代空容器。注册 Download + Star 图标掩码。**结果**：总 chrome diff **2.14%→2.10%**（-0.04pp），toolbar 4.57%→4.48%（-0.09pp）。commit `d70d12af`。
 
-- **R65 (2026-07-04) Trailing theme icon: Star → SunMoon**。SDK 此前用 `Icon::Star`（星形收藏图标）近似 theme 按钮；手绘 chrome 默认 `ColorThemePreference::Auto` → `Icon::SunMoon`（sun-moon.svg）。修复：`apps/browser/src/app_platform.rs` 注册 `TRAILING_ICON_THEME`(ImageRef 8) 时改用 `Icon::SunMoon`。**结果**：总 chrome diff **2.10%→2.00%**（-0.10pp），trailing 区形状匹配。commit (pending)。
+- **R65 (2026-07-04) Trailing theme icon: Star → SunMoon**。SDK 此前用 `Icon::Star`（星形收藏图标）近似 theme 按钮；手绘 chrome 默认 `ColorThemePreference::Auto` → `Icon::SunMoon`（sun-moon.svg）。修复：`apps/browser/src/app_platform.rs` 注册 `TRAILING_ICON_THEME`(ImageRef 8) 时改用 `Icon::SunMoon`。**结果**：总 chrome diff **2.10%→2.00%**（-0.10pp），trailing 区形状匹配。commit `8a57cd99`。
+
+- **R66 (2026-07-04) PaintCtx font_metrics: thread (ascent,descent) into widget paint**。新增 `PaintCtx::line_metrics(font_size) -> (f32, f32)` 方法（默认 heuristic ascent=font_size*0.85, descent=-font_size*0.2），使 AddressBarWidget/BrowserTabStripWidget/BrowserMenu 等使用与手绘 chrome `ui_text_centered_in_height` 相同的基线计算——`line_h = ascent - descent; text_top = (box_h - line_h) / 2; baseline = text_top + ascent`，替代旧 heuristic `h*0.5 + 13.0*0.36`。commit (pending)。
 
 - `evidence/dc5-contrast-lint-wcag-aa-20260702-073000.txt` — **DC-5 contrast lint 完整接入 + Zero 主题 WCAG AA 修复（2026-07-02）**：新增 `all_semantic_token_pairs_pass_wcag_aa`（light+dark 全部 6 对 token，≥4.5 门禁）；lint 首跑暴露 light on_primary/primary ratio 3.19<4.5 真实缺口 → 修 light primary 为 Material Blue 700 (0.098,0.463,0.824)（≈4.7）；Zero 主题现 WCAG AA 全合规；ui/core 38→39 测，下游 chrome/render/examples 全绿；build/clippy/fmt 全净；SDK-only 无 product-smoke 风险。follow-up：widgets 硬编码色→消费 token。
 
