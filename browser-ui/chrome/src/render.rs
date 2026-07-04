@@ -230,6 +230,10 @@ pub const NAV_ICON_HOME: ImageRef = ImageRef::new(4);
 pub const MENU_ICON_MORE: ImageRef = ImageRef::new(5);
 /// menu 按钮宽（= apps/browser layout::TOOLBAR_MENU_BUTTON_WIDTH）。
 const MENU_BUTTON_WIDTH: f32 = 32.0;
+/// 窗口控制 close（X）图标（min/max 用 fill_rect 画线/方块，close 是 SVG 图标需 ImageRef）。
+pub const WC_ICON_CLOSE: ImageRef = ImageRef::new(6);
+/// 窗口控制按钮宽（= apps/browser layout::WINDOW_CONTROL_BTN_WIDTH）。
+const WINDOW_CONTROL_BTN_WIDTH: f32 = 46.0;
 /// menu 按钮右侧留白 = ADDRESS_BAR_PADDING(10)：手绘 `menu_btn_x = width - ADDRESS_BAR_PADDING -
 /// btn_w(32) = 1238`，menu [1238,1270] + 右侧 10px padding。控件宽含此留白使 flex-end 摆放时
 /// menu 按钮左缘对齐手绘 1238（图标在按钮 [0,32] 中心 local x=16，trailing [32,42] 为 toolbar_bg）。
@@ -415,6 +419,9 @@ pub struct ChromeTabColors {
     /// 地址栏 pill 边框色（address_bar_border；light=218,220,224）。手绘 chrome 地址栏 pill 为
     /// 双层 fill_rounded_rect（外 border + 内 bg inset 1px），非 stroke。AddressBarWidget 据此画 border。
     pub address_border: Color,
+    /// 窗口控制按钮图标色（window_control_icon；light=95,99,104 = nav_button）。
+    /// BrowserTabStripWidget 据此画 min/max/close 图标（DC-14 窗口控制 parity）。
+    pub window_icon: Color,
 }
 
 impl ChromeTabColors {
@@ -429,6 +436,8 @@ impl ChromeTabColors {
             separator: tokens.on_surface.mix(tokens.surface, 0.6),
             // address border ≈ on_surface 向 surface 提亮 0.84（light≈224 vs 调色板 218；测试近似）。
             address_border: tokens.on_surface.mix(tokens.surface, 0.84),
+            // window icon = on_surface（light=nav_button 95,99,104；手绘 window_control_icon 同色）。
+            window_icon: tokens.on_surface,
         }
     }
 }
@@ -542,6 +551,7 @@ pub struct BrowserTabStripWidget {
     active_bg: Color,
     bar_bg: Color,
     separator: Color,
+    window_icon: Color,
     tab_count: usize,
     active_index: Option<usize>,
     /// 自定义窗口控制按钮区宽度（Windows 138；0 = 不画）。手绘在此区画 tab_bar_bg 底（DC-14 parity）。
@@ -571,6 +581,7 @@ impl BrowserTabStripWidget {
             active_bg: tab_colors.active_bg,
             bar_bg: tab_colors.bar_bg,
             separator: tab_colors.separator,
+            window_icon: tab_colors.window_icon,
             tab_count,
             active_index,
             window_controls_width,
@@ -603,14 +614,69 @@ impl Widget for BrowserTabStripWidget {
         // 1. strip 背景全宽（toolbar bg）。
         ctx.recorder
             .fill_rect(Rect::from_ltrb(0.0, 0.0, width, TAB_STRIP_HEIGHT), self.strip_bg);
-        // 1b. 自定义窗口控制按钮区（Windows）：tab_bar_bg 底（手绘 render_window_controls 每个
-        // 按钮 bg = tab_bar_bg，DC-14 parity）。图标（min/max/close）留后续轮次。
+        // 1b. 自定义窗口控制按钮区（Windows）：tab_bar_bg 底 + 3 图标（min/max/close），
+        // 镜像手绘 render_window_controls（每按钮 bg=tab_bar_bg + 图标 window_control_icon）。
         if self.window_controls_width > 0.0 {
             let wc_x = (width - self.window_controls_width).max(0.0);
             ctx.recorder.fill_rect(
                 Rect::from_ltrb(wc_x, TAB_BAR_TOP_INSET, width, TAB_BAR_TOP_INSET + TAB_BAR_HEIGHT),
                 self.bar_bg,
             );
+            // 3 按钮各 WINDOW_CONTROL_BTN_WIDTH(46) 宽，图标在按钮中心。
+            // cy = tab bar 垂直中心；thickness = 1（与手绘 1px 描边一致）。
+            let cy = TAB_BAR_TOP_INSET + TAB_BAR_HEIGHT * 0.5;
+            let thickness = 1.0_f32;
+            for i in 0..3u32 {
+                let btn_cx = wc_x + (i as f32 + 0.5) * WINDOW_CONTROL_BTN_WIDTH;
+                match i {
+                    0 => {
+                        // minimize：10px 横线，居中于 cy。
+                        let line_w = 10.0_f32;
+                        ctx.recorder.fill_rect(
+                            Rect::from_ltrb(
+                                btn_cx - line_w * 0.5,
+                                cy - thickness * 0.5,
+                                btn_cx + line_w * 0.5,
+                                cy + thickness * 0.5,
+                            ),
+                            self.window_icon,
+                        );
+                    }
+                    1 => {
+                        // maximize：10px 空心方块（4 条 1px 边）。
+                        let sz = 10.0_f32;
+                        let left = btn_cx - sz * 0.5;
+                        let top = cy - sz * 0.5;
+                        // 上、下、左、右 四条边。
+                        for (r, color) in [
+                            (Rect::from_ltrb(left, top, left + sz, top + thickness), self.window_icon),
+                            (
+                                Rect::from_ltrb(left, top + sz - thickness, left + sz, top + sz),
+                                self.window_icon,
+                            ),
+                            (Rect::from_ltrb(left, top, left + thickness, top + sz), self.window_icon),
+                            (
+                                Rect::from_ltrb(left + sz - thickness, top, left + sz, top + sz),
+                                self.window_icon,
+                            ),
+                        ] {
+                            ctx.recorder.fill_rect(r, color);
+                        }
+                    }
+                    2 => {
+                        // close：X 图标（SVG），12px，经 draw_image 着色（与 NAV_ICON 同模式）。
+                        let icon_extent = 12.0_f32;
+                        let x = btn_cx - icon_extent * 0.5;
+                        let y = cy - icon_extent * 0.5;
+                        ctx.recorder.draw_image(
+                            Rect::from_ltrb(x, y, x + icon_extent, y + icon_extent),
+                            WC_ICON_CLOSE,
+                            self.window_icon,
+                        );
+                    }
+                    _ => {}
+                }
+            }
         }
         if self.tab_count == 0 {
             return;
