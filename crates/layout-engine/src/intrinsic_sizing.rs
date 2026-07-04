@@ -179,7 +179,41 @@ pub(crate) fn block_max_content_width(
         children_inner
     };
 
-    inner + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right
+    let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+
+    // R1020：multicol 容器（column-count:N）shrink-to-fit intrinsic = N × column_content + (N-1) × gap，
+    // **仅当所有 in-flow 子都是 leaf（无元素子）**——驱动案 change-intrinsic-width（columns:2 +
+    // 2 个 50px leaf 子 → 100）、intrinsic-width-change-column-count（columns:4 + 25px leaf → 100）。
+    // column-span:all 子（含嵌套元素，intrinsic-size-002/003/004）跨全宽不应乘 N——其有元素子，
+    // 守卫跳过，回落 max（span:all content = 全宽）。ZW 暂未解析 column-span，用「子是否 leaf」
+    // 作代理判定（span:all 通常含嵌套结构）。
+    let col_count = box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .and_then(|s| match s.column_count {
+            zero_style_system::ColumnCountComputedValue::Number(n) => Some(n as usize),
+            _ => None,
+        });
+    if let Some(n) = col_count
+        && n >= 2
+        && box_node
+            .children
+            .iter()
+            .filter(|c| !c.is_absolute && !c.is_fixed)
+            .all(|c| c.children.iter().all(|gc| gc.is_absolute || gc.is_fixed))
+    {
+        let gap_px = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .and_then(|s| match &s.column_gap {
+                LengthValue::Px(v) => Some(*v as f32),
+                _ => None,
+            })
+            .unwrap_or(0.0);
+        return (n as f32) * inner + ((n - 1) as f32) * gap_px + frame;
+    }
+
+    inner + frame
 }
 
 /// 测量一个 DOM 元素的文本内容 max-content 宽度（Round C：纯文本 flex/grid item 测量）。

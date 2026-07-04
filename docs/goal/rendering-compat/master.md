@@ -2648,6 +2648,24 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1020 ★multicol 容器 intrinsic = N × column-content shrink-to-fit gate LANDED = change-intrinsic-width + intrinsic-width-change-column-count 双 PASS（+2，1.75/2.28→0.73）·修 R1018 已知 multicol 回归·1 已知 leaf-guard 限制（multicol-width-005 +0.94，已 FAIL）
+
+承 R1019 未解 ①「multicol intrinsic = columns × content（intrinsic-width-change-column-count，R1018 已知回归）」。R1018 的 `block_max_content_width` 只测单子 max-content 宽 → multicol `columns:N` 容器被 gate 收缩到单列宽（应 N × 列宽）。本轮**精准在 `block_max_content_width` 加 multicol 分支**。
+
+**改动（1 处，css-multicol-1 §3.4 + css-sizing-3 §max-content）**：`intrinsic_sizing.rs::block_max_content_width` 末尾加 multicol 分支——容器 `column_count:Number(n) ≥ 2` 且**所有 in-flow 子都是 leaf（无元素孙）**时，intrinsic = `n × inner + (n-1) × gap_px + frame`（inner = max 子宽，gap 来自 `column_gap:Px`）。leaf guard 守护 column-span:all 子（含嵌套元素，intrinsic-size-002/003/004）——span:all 子有元素孙 → guard 跳过 N× → 容器取 max(span:all content) 全宽。ZW 暂未解析 `column-span`，用「子是否 leaf」作代理（span:all 通常含嵌套结构）。
+
+**验证（chromium Oracle + ORACLE_DUMP_ALL 全量 per-case A/B，stash 严格对照，css-multicol 453 案全 diff）**：
+- **css-multicol +2 PASS**：`change-intrinsic-width` **1.75→0.73%（PASS）**、`intrinsic-width-change-column-count` **2.28→0.73%（PASS，★修 R1018 已知回归 0.73→2.28）**。
+- **oracle 净 +2**：118/452 (26%) → 120/452 (26.5%)。**全 453 案 diff 仅 3 案变化**——上述 2 PASS flip + multicol-width-005 8.85→9.79（+0.94，non-flip，见下）。
+- **leaf guard 守护目标确证**：intrinsic-size-002 (0.73% PASS) / 003 (0.73% PASS) / 004 (3.84%) / multicol-width-004 (5.37%) **全不变**——span:all 含元素子的案 guard 正确跳过 N×。
+- **welcome (DC-13) 16.57% 不变**（<20% gate PASS）；make test exit 0（layout-engine 1007 含 +2 r1020 测）；clippy --workspace -D warnings ✓；fmt ✓。
+
+**★ multicol-width-005 +0.94pp 已知限制（leaf guard 代理失效案，非 PASS flip）**：该页 6 个 `<article>` 中 case 4/5/6 用 `column-count:2` + `.spanner{column-span:all}` 子，spanner 子仅含文本（"spanner"）无元素孙 → leaf guard 误判为 leaf → N× 触发。case 6 spanner `width:250px` 被误乘 2×250=500（应 250，span:all 全宽不乘 N）。**根因**：ZW 未解析 `column-span` 属性，leaf 代理无法区分文本 spanner 与真 leaf 列内容。**为何接受**：① 该案 8.85% 已 FAIL（column-span:all + column-width 双语义均未实现，非本轮范围）；② +0.94 non-flip（8.85→9.79 仍 FAIL）；③ 驱动 +2 PASS 是 R1018 已知 gap ① 的既定目标；④ 修须先解析 `column-span`（独立多 session slice，css-multicol-1 §6）。诚实记录，不掩盖。
+
+**未解（独立 gap）**：① `column-span` 属性未解析（multicol-width-005 leaf-guard 限制 + span:all 渲染独立子问题）；② MinContent 测量（min-content = 最宽词，独立函数，flex-container-min-content-001 4.96% 近 PASS）；③ height:max-content 真正 intrinsic（现 flex 容器 Auto 近似）。
+
+**▶ 下会话**：① **MinContent 测量**（flex-container-min-content-001 4.96% 近 PASS，min-content width 函数，gate 扩 MinContent block 路径，+1 potential）；② column-span 解析（解锁 multicol-width-005 + span:all 渲染簇，多 session）；③ 转其它 dir fresh worst（writing-modes R109 structural / abspos-inset）。clean win 已 land（+2 PASS + 修 R1018 回归）。
+
 ### R1019 ★float:block + flex/grid 子 shrink-to-fit gate LANDED = aspect-ratio-intrinsic-014 14.85→0.60% PASS + css/CSS2/floats-clear +5 PASS（floats-122/145/float-replaced-height-004/005/007）·float-non-replaced-width-007 20.62→5.17（-15.45pp）·零回归
 
 承 R1018 CONTINUE「aspect-ratio-intrinsic-014（float:left block + flex 子 + JS）」。R1018 解 block + width:MaxContent；R1019 解 float:left block + width:auto（float shrink-to-fit 上下文）含 flex/grid 子。
