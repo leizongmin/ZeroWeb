@@ -83,7 +83,6 @@ pub fn render_chrome_via_sdk_with_layout(
     // host.tokens 驱动 paint_node 容器 bg（DC-14 toolbar parity）——须与工厂 tokens 一致，
     // 否则容器 bg 用默认 light token（245）≠ sdk_chrome_tokens surface（248）。
     host.set_tokens(*tokens);
-    host.set_scale_factor(metrics.scale_factor);
     inject_font_metrics(&mut host, &backend);
     host.set_root(&spec);
     host.layout(Constraints::loose(metrics.logical_size));
@@ -129,12 +128,11 @@ pub fn render_chrome_via_sdk_with_webview_surface(
     register_chrome_factories_with_webview(&mut host, tokens, scheme, tab_colors);
     // host.tokens 驱动 paint_node 容器 bg（DC-14 toolbar parity）——须与工厂 tokens 一致。
     host.set_tokens(*tokens);
-    host.set_scale_factor(metrics.scale_factor);
     inject_font_metrics(&mut host, &backend);
     host.set_root(&spec);
     host.layout(Constraints::loose(metrics.logical_size));
     let viewport_rect = host.rect_of(&WidgetId::new(ID_VIEWPORT));
-    let scene = host.paint().clone();
+    let scene = host.paint().scaled(metrics.scale_factor);
     let mut bridge = RenderFoundationBackend::new_with_text_size(metrics.logical_size, backend);
     // 在 paint_scene 之前注册 WebView 表面（DC-3 phase-2）：draw_external_surface 在 paint_scene
     // 期间按 ExternalSurface marker 的 surface_id 取回已注册表面并合并。

@@ -1181,7 +1181,7 @@ fn compose_sdk_chrome_replacement_with_webview(
     ]
     .into_iter()
     .filter_map(|(icon, key)| {
-        crate::ui_icons::icon_alpha_mask(icon, crate::layout::CHROME_ICON_SIZE)
+        crate::ui_icons::icon_alpha_mask(icon, crate::layout::CHROME_ICON_SIZE * scale_factor)
             .ok()
             .map(|(coverage, w, h)| IconMask { key, coverage, width: w, height: h })
     })
@@ -1192,7 +1192,10 @@ fn compose_sdk_chrome_replacement_with_webview(
     // 时 early-return 致 SDK chrome 完全不渲染**（帧只剩 chrome_shadows），是 DC-14
     // chrome/page region 大面积 diff 的根因（2026-07-04 诊断）。
     let backend = sdk_font_backend();
-    let logical_size = Size::new(width as f32, height as f32);
+    let logical_size = Size::new(
+        (width as f32 / scale_factor).max(1.0),
+        (height as f32 / scale_factor).max(1.0),
+    );
     let metrics = WindowMetrics {
         logical_size,
         scale_factor,

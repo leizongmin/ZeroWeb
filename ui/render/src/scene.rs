@@ -52,6 +52,19 @@ impl Scene {
                 .collect(),
         }
     }
+
+    /// 按 scale_factor 缩放所有几何 → 逻辑坐标到物理坐标。
+    /// host 在逻辑坐标空间布局/paint 后，用此方法一步缩放到物理坐标再喂 bridge。
+    pub fn scaled(&self, factor: f32) -> Scene {
+        if (factor - 1.0).abs() < f32::EPSILON { return self.clone(); }
+        Scene {
+            entries: self.entries.iter().map(|e| SceneEntry {
+                source: e.source.clone(),
+                clip: e.clip.map(|c| c.scale(factor)),
+                primitive: e.primitive.clone().scale(factor),
+            }).collect(),
+        }
+    }
 }
 
 #[cfg(test)]

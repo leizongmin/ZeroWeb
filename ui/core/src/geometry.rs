@@ -25,6 +25,10 @@ impl Point {
             y: self.y + dy,
         }
     }
+
+    pub fn scale(self, factor: f32) -> Point {
+        Point { x: self.x * factor, y: self.y * factor }
+    }
 }
 
 /// 二维尺寸（逻辑像素，非负）。
@@ -118,6 +122,14 @@ impl Rect {
         }
     }
 
+    /// 按 scale_factor 缩放位置与尺寸。
+    pub fn scale(self, factor: f32) -> Rect {
+        Rect {
+            origin: self.origin.scale(factor),
+            size: Size { width: self.size.width * factor, height: self.size.height * factor },
+        }
+    }
+
     /// 两个矩形的交集；无交集返回 None。
     pub fn intersect(self, other: Rect) -> Option<Rect> {
         let left = self.left().max(other.left());
@@ -185,6 +197,15 @@ impl Rounding {
             top_right: v,
             bottom_right: v,
             bottom_left: v,
+        }
+    }
+
+    pub fn scale(self, factor: f32) -> Rounding {
+        Rounding {
+            top_left: self.top_left * factor,
+            top_right: self.top_right * factor,
+            bottom_right: self.bottom_right * factor,
+            bottom_left: self.bottom_left * factor,
         }
     }
 

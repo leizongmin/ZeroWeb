@@ -104,6 +104,46 @@ impl RenderPrimitive {
             },
         }
     }
+
+    /// 按 scale_factor 缩放所有几何字段，使逻辑坐标 → 物理坐标。
+    pub fn scale(self, factor: f32) -> RenderPrimitive {
+        if (factor - 1.0).abs() < f32::EPSILON {
+            return self;
+        }
+        match self {
+            RenderPrimitive::FillRect { rect, color, rounding } => RenderPrimitive::FillRect {
+                rect: rect.scale(factor),
+                color,
+                rounding: rounding.scale(factor),
+            },
+            RenderPrimitive::StrokeRect { rect, color, stroke_width, rounding } => RenderPrimitive::StrokeRect {
+                rect: rect.scale(factor),
+                color,
+                stroke_width: stroke_width * factor,
+                rounding: rounding.scale(factor),
+            },
+            RenderPrimitive::Text { text, position, size_px, color } => RenderPrimitive::Text {
+                text,
+                position: position.scale(factor),
+                size_px: size_px * factor,
+                color,
+            },
+            RenderPrimitive::TextBlob { blob, position, color } => RenderPrimitive::TextBlob {
+                blob,
+                position: position.scale(factor),
+                color,
+            },
+            RenderPrimitive::ExternalSurface { rect, surface_id } => RenderPrimitive::ExternalSurface {
+                rect: rect.scale(factor),
+                surface_id,
+            },
+            RenderPrimitive::Image { rect, key, tint } => RenderPrimitive::Image {
+                rect: rect.scale(factor),
+                key,
+                tint,
+            },
+        }
+    }
 }
 
 /// Render tree 节点（spec §8.4.2）。

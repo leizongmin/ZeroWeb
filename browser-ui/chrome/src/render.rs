@@ -85,8 +85,6 @@ pub struct ChromePanel {
     fill_width: bool,
     /// 背景圆角半径（逻辑像素，四角同）。> 0 时用 `fill_rounded_rect`（地址栏 pill 等）。
     corner_radius: f32,
-    /// UI 缩放因子（layout 时从 `LayoutCtx.scale_factor` 取值）。
-    scale: f32,
 }
 
 impl ChromePanel {
@@ -148,7 +146,6 @@ impl ChromePanel {
             fill_background,
             fill_width,
             corner_radius,
-            scale: 1.0,
         }
     }
 }
@@ -162,21 +159,20 @@ impl Widget for ChromePanel {
         EventResult::Ignored
     }
 
-    fn layout(&mut self, ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
-        self.scale = ctx.scale_factor;
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
         if self.fill_viewport {
             Size::new(constraints.max_width, constraints.max_height)
         } else {
-            let s = self.scale;
-            let height = (self.height * s).clamp(constraints.min_height, constraints.max_height);
+            let height = self.height.clamp(constraints.min_height, constraints.max_height);
             let width = if self.fill_width {
+                // 全宽 bar（TabStrip / BookmarksBar）：占满 column 容器可用宽。
                 constraints.max_width
             } else if let Some(text) = &self.text {
                 let char_count = text.chars().count().max(1) as f32;
-                let approx = (char_count * 14.0 * s * 0.55 + 16.0 * s).ceil();
+                let approx = (char_count * 14.0 * 0.55 + 16.0).ceil();
                 approx.clamp(constraints.min_width, constraints.max_width)
             } else {
-                let icon = (height * 0.75).ceil().max(24.0 * s);
+                let icon = (height * 0.75).ceil().max(24.0);
                 icon.clamp(constraints.min_width, constraints.max_width)
             };
             Size::new(width, height)
@@ -184,24 +180,25 @@ impl Widget for ChromePanel {
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let s = self.scale;
+        // ctx.clip = 祖先 clip ∩ 节点 rect（绝对坐标）；其 size 即节点可视尺寸。
         let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(400.0, self.height));
         if self.fill_background {
             let rect = Rect::from_ltrb(0.0, 0.0, size.width, size.height);
             if self.corner_radius > 0.0 {
-                ctx.recorder.fill_rounded_rect(rect, self.corner_radius * s, self.bg);
+                ctx.recorder.fill_rounded_rect(rect, self.corner_radius, self.bg);
             } else {
                 ctx.recorder.fill_rect(rect, self.bg);
             }
         }
         if let Some(text) = &self.text {
+            // 文本基线：bars 在 height-8 处；viewport 顶部 18px。
             let baseline = if self.fill_viewport {
-                18.0 * s
+                18.0
             } else {
-                ((self.height * s - 8.0 * s).max(10.0 * s))
+                (self.height - 8.0).max(10.0)
             };
             ctx.recorder
-                .draw_text(text, Point::new(6.0 * s, baseline), 14.0 * s, self.text_color);
+                .draw_text(text, Point::new(6.0, baseline), 14.0, self.text_color);
         }
     }
 
