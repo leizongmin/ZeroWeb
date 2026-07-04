@@ -2672,6 +2672,13 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 - **其它 min-content 案不同机制**：flex-item-max-width-min-content = `max-width:min-content`+vertical-rl（不同 gate 路径）；flex-minimum-width-flex-items-013 = replaced img `min-size:auto`（R428 谱系，非 width:MinContent 测量）。均非本轮 lever。
 - **裁决**：MinContent 单 session 须**合做**（min-content 测量 + ch Ahem font-aware）且 yield 不确定（即使合做，48 子案 flex-basis/grow/shrink 交互仍可能残留 >1%）。列为多 session slice。**推荐下会话**：要么合做 MinContent+ch（高复杂度），要么转 fresh dir worst 扫描（找未触 dir 的 clean lever，更可能产 +N PASS）。
 
+**★ R1020 续 css-position fresh 扫描 + position:relative-table 簇诊断（同 session，零源码，纯调查）**：本轮做 css-position fresh worst 扫描（ORACLE_DUMP_ALL，98 案）定位近 PASS 候选。发现 **position-relative-table-{tbody,tfoot,thead}-{left,top}-absolute-child 簇 6 案 @ 1.32%（同根因，+6 potential）**。
+- **诊断（layout diagnostic test，已 revert）**：driver `position-relative-table-thead-top-absolute-child` = `<thead class="relative" style="top:50px">` + `<td><div class="absolute" style="top:50px">`，期望 absolute 在 y=100（thead 50 + 自身 50）覆盖 red indicator@100。**ZW 实测**：thead@y=50（offset 已应用 ✓）、absolute@y=50（❌ 应 100）。
+- **★ 非 table 特有（DIV 对照同 bug）**：同结构 div 替代 table/thead/td 亦复现——relblock(relative,top:50)@y=50 + 内 absolute(top:50)@y=50（应 100）。**真根因 = 通用 relative-inset × abspos-CB 顺序 bug**：taffy 对 block-level position:relative 元素应用 inset 到 layout.location（engine.rs:370 注释），但 abspos 子元素的 `top` 被解析 against CB 的 **pre-inset 位置**（y=0），未 track CB 的 relative 偏移。故 absolute 落在 y=50（CB 原位 + 自身 top），非 y=100（CB 偏移后 + 自身 top）。
+- **为何不 clean 单 session**：① 此路径经 R98/R123/R500 多轮调优（abspos CB resolution），改动顺序高风险（可能破当前 passing 的 abspos+relative 案）；② 修须在 abspos 解析后补传播 CB 的 relative inset 到 abspos 后代（须正确判定 CB 链，非简单 shift）；③ taffy 0.7 内部顺序，可能须 converter 或 postprocess 双侧协调。**列为多 session slice（+6 potential，高复杂度高回归风险）**。
+- **css-position 其它近 PASS（不同机制，独立子问题）**：position-absolute-center-001/002/007（1.14/1.85/2.55，abspos margin:auto 居中，R165 未覆盖 abspos 路径）、position-absolute-replaced-intrinsic-size（2.65×2，replaced intrinsic in abspos）、position-absolute-in-inline-003/004/005（2.72-2.99，R109 §9.2.1.1 静态位）。
+- **裁决**：css-position 近 PASS 簇均非 clean 单点（abspos CB + 顺序 + R109 结构）。**推荐下会话**：position:relative-table 簇若攻，须 full-corpus A/B 守回归（taffy 顺序改动）；或转 css-tables/css-text-decor fresh 扫描找更低风险 lever。
+
 ### R1019 ★float:block + flex/grid 子 shrink-to-fit gate LANDED = aspect-ratio-intrinsic-014 14.85→0.60% PASS + css/CSS2/floats-clear +5 PASS（floats-122/145/float-replaced-height-004/005/007）·float-non-replaced-width-007 20.62→5.17（-15.45pp）·零回归
 
 承 R1018 CONTINUE「aspect-ratio-intrinsic-014（float:left block + flex 子 + JS）」。R1018 解 block + width:MaxContent；R1019 解 float:left block + width:auto（float shrink-to-fit 上下文）含 flex/grid 子。
