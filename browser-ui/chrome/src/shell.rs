@@ -176,12 +176,9 @@ impl BrowserChromeShell for DesktopBrowserShell {
         toolbar.children.push(address);
         // SecurityBadge 不再作为 toolbar 末尾独立子节点——手绘 chrome security 在 address pill
         // 内部左侧 slot（AddressBarWidget 渲染），独立子节点会画在 toolbar 末尾产生位置 diff。
-        toolbar.children.push(leaf(
-            "browser.BrowserMenu",
-            ID_MENU,
-            "toolbar_bg",
-            Some(crate::i18n::localized_label(crate::i18n::ids::OPEN_MENU)),
-        ));
+        toolbar
+            .children
+            .push(leaf("browser.BrowserMenu", ID_MENU, "toolbar_bg", None));
         // 手绘 chrome 顺序（app_render.rs）：tab strip（顶）→ address/nav row → bookmarks。
         // 此前 SDK 顺序是 toolbar 在顶、tab strip 在下（与手绘 swapped），DC-14 chrome diff
         // 几何错配主因之一。改为 tab strip first（2026-07-04）。

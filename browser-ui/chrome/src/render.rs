@@ -214,6 +214,10 @@ const NAV_BAR_HEIGHT: f32 = 44.0; // = ADDRESS_BAR_HEIGHT。
 /// nav 段左侧留白（= apps/browser layout::NAV_SECTION_LEADING_PAD）：手绘 chrome 第一个
 /// nav 按钮距 toolbar 左缘 10px，控件据此对齐图标 x 位置。
 const NAV_LEADING_PAD: f32 = 10.0;
+/// nav 段右侧留白 = NAV_SECTION_TRAILING_GAP(10) + ADDRESS_BAR_PADDING(10) = 20：手绘 chrome
+/// `bar_x = nav_section_width(164) + ADDRESS_BAR_PADDING(10) = 174`。nav 控件宽含此留白使
+/// 后续 AddressBar 左缘对齐手绘 bar_x（nav 图标仍在 [10,154]，[154,174] 为 toolbar_bg 不可见）。
+const NAV_TRAILING_PAD: f32 = 20.0;
 
 /// 导航图标 [`ImageRef`]——宿主（apps/browser）须按相同 id 把 SVG 图标的 alpha 掩码注册到
 /// 桥接 `image_masks`（`render_chrome_via_sdk_with_webview_surface` 的 `image_masks` 参数）。
@@ -222,6 +226,10 @@ pub const NAV_ICON_BACK: ImageRef = ImageRef::new(1);
 pub const NAV_ICON_FORWARD: ImageRef = ImageRef::new(2);
 pub const NAV_ICON_RELOAD: ImageRef = ImageRef::new(3);
 pub const NAV_ICON_HOME: ImageRef = ImageRef::new(4);
+/// menu（更多）按钮 MoreVertical 三点图标。手绘 chrome menu 是 MoreVertical 图标（非 "Menu" 文本）。
+pub const MENU_ICON_MORE: ImageRef = ImageRef::new(5);
+/// menu 按钮宽（= apps/browser layout::TOOLBAR_MENU_BUTTON_WIDTH）。
+const MENU_BUTTON_WIDTH: f32 = 32.0;
 
 /// 导航按钮组绘制控件（DC-14：真实图标替换 ChromePanel 占位）。
 ///
@@ -276,17 +284,21 @@ impl Widget for NavigationButtonsWidget {
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
-        // leading pad + 4 按钮 × NAV_BUTTON_WIDTH 宽；高度对齐 toolbar 行（clamp 到约束）。
-        let width = (NAV_LEADING_PAD + 4.0 * NAV_BUTTON_WIDTH).clamp(constraints.min_width, constraints.max_width);
+        // leading pad + 4 按钮 × NAV_BUTTON_WIDTH + trailing pad（含 NAV_SECTION_TRAILING_GAP +
+        // ADDRESS_BAR_PADDING，对齐手绘 nav_section_width + padding → 后续 AddressBar 左缘 bar_x=174）。
+        let width = (NAV_LEADING_PAD + 4.0 * NAV_BUTTON_WIDTH + NAV_TRAILING_PAD)
+            .clamp(constraints.min_width, constraints.max_width);
         let height = NAV_BAR_HEIGHT.clamp(constraints.min_height, constraints.max_height);
         Size::new(width, height)
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let size = ctx
-            .clip
-            .map(|r| r.size)
-            .unwrap_or_else(|| Size::new(NAV_LEADING_PAD + 4.0 * NAV_BUTTON_WIDTH, NAV_BAR_HEIGHT));
+        let size = ctx.clip.map(|r| r.size).unwrap_or_else(|| {
+            Size::new(
+                NAV_LEADING_PAD + 4.0 * NAV_BUTTON_WIDTH + NAV_TRAILING_PAD,
+                NAV_BAR_HEIGHT,
+            )
+        });
         // nav 段背景（toolbar bg，与相邻 AddressBar/Menu 连续）。
         ctx.recorder
             .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
@@ -306,6 +318,66 @@ impl Widget for NavigationButtonsWidget {
             ctx.recorder
                 .draw_image(Rect::from_ltrb(x, y, x + icon_extent, y + icon_extent), *key, tint);
         }
+    }
+
+    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+}
+
+// ── MenuButtonWidget（真实 MoreVertical 图标，DC-14 chrome 功能等价）──────────────
+
+/// menu（更多）按钮控件（DC-14：真实 MoreVertical 三点图标替换 ChromePanel "Menu" 文本占位）。
+///
+/// paint：填 toolbar bg + 居中 MoreVertical 图标（[`MENU_ICON_MORE`]，tint = on_surface）。
+/// 图标经 `draw_image` 引用宿主预注册 alpha 掩码（与 NAV_ICON_* 同模式）。layout 宽 32
+/// （TOOLBAR_MENU_BUTTON_WIDTH）+ 高 44（toolbar 行）。
+pub struct MenuButtonWidget {
+    bg: Color,
+    icon_tint: Color,
+}
+
+impl MenuButtonWidget {
+    pub fn from_spec(spec: &WidgetSpec, tokens: &SemanticTokens) -> MenuButtonWidget {
+        let bg_name = match spec.props.get("bg") {
+            Some(Value::Text(s)) => s.as_str(),
+            _ => "chrome",
+        };
+        MenuButtonWidget {
+            bg: chrome_color_themed(bg_name, tokens),
+            icon_tint: tokens.on_surface,
+        }
+    }
+}
+
+impl Widget for MenuButtonWidget {
+    fn mount(&mut self, _ctx: &mut MountCtx) {}
+
+    fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
+
+    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
+        EventResult::Ignored
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+        let width = MENU_BUTTON_WIDTH.clamp(constraints.min_width, constraints.max_width);
+        let height = NAV_BAR_HEIGHT.clamp(constraints.min_height, constraints.max_height);
+        Size::new(width, height)
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx) {
+        let size = ctx
+            .clip
+            .map(|r| r.size)
+            .unwrap_or_else(|| Size::new(MENU_BUTTON_WIDTH, NAV_BAR_HEIGHT));
+        ctx.recorder
+            .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
+        let icon_extent = NAV_ICON_SIZE.min(MENU_BUTTON_WIDTH);
+        let x = (size.width - icon_extent) / 2.0;
+        let y = ((size.height - icon_extent) / 2.0).max(0.0);
+        ctx.recorder.draw_image(
+            Rect::from_ltrb(x, y, x + icon_extent, y + icon_extent),
+            MENU_ICON_MORE,
+            self.icon_tint,
+        );
     }
 
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
@@ -752,7 +824,7 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens,
         Box::new(NavigationButtonsWidget::from_spec(s, &t))
     });
     host.register("browser.BrowserMenu", move |s| {
-        Box::new(ChromePanel::from_spec(s, "chrome", 44.0, false, &t))
+        Box::new(MenuButtonWidget::from_spec(s, &t))
     });
     host.register("browser.BrowserTabStrip", move |s| {
         Box::new(BrowserTabStripWidget::from_spec(s, tc))
@@ -871,10 +943,11 @@ mod tests {
         register_chrome_factories(&mut host, &tokens, ChromeTabColors::from_tokens(&tokens));
         host.set_root(&nav);
         let sz = host.layout(Constraints::loose(Size::new(400.0, 44.0)));
-        // leading pad(10) + 4 按钮 × 36px = 154。
+        // leading pad(10) + 4 按钮 × 36px + trailing pad(20) = 174（含 NAV_SECTION_TRAILING_GAP +
+        // ADDRESS_BAR_PADDING，对齐手绘 bar_x=174）。
         assert!(
-            (sz.width - (NAV_LEADING_PAD + 4.0 * NAV_BUTTON_WIDTH)).abs() < 0.01,
-            "nav width 154, got {}",
+            (sz.width - (NAV_LEADING_PAD + 4.0 * NAV_BUTTON_WIDTH + NAV_TRAILING_PAD)).abs() < 0.01,
+            "nav width 174, got {}",
             sz.width
         );
         let scene = host.paint().clone();

@@ -1,0 +1,53 @@
+DC-14 chrome parity — MenuButtonWidget 图标 + nav 宽度 parity
+=============================================================
+Round 53（2026-07-04 04:09 UTC）
+
+摘要
+--
+两项 toolbar parity：(1) MenuButtonWidget 用 MoreVertical 三点图标替换 ChromePanel "Menu" 文本
+（手绘 menu 是 MoreVertical 图标非文本）；(2) nav widget 宽 154→174 含 NAV_SECTION_TRAILING_GAP +
+ADDRESS_BAR_PADDING 使 AddressBar 左缘对齐手绘 bar_x=174。chrome diff 2.40% → **2.20%**。
+
+实现
+--
+1. MenuButtonWidget（render.rs，真实 impl Widget）：镜像 NavigationButtonsWidget 图标模式。
+   MENU_ICON_MORE ImageRef(5) + MENU_BUTTON_WIDTH=32（TOOLBAR_MENU_BUTTON_WIDTH）。paint 填
+   toolbar_bg + 居中 MoreVertical 图标（draw_image，tint=on_surface）。register_chrome_factories
+   改注册 browser.BrowserMenu。
+2. compose（app_platform.rs）：icon_masks（原 nav_masks）加 (Icon::MoreVertical, MENU_ICON_MORE)
+   alpha mask 注册；桥接 image_masks 据此光栅 menu 图标。
+3. shell.rs：BrowserMenu leaf 移除 "Menu" 文本（MenuButtonWidget 用图标）。
+4. NavigationButtonsWidget 宽 154→174：加 NAV_TRAILING_PAD=20（NAV_SECTION_TRAILING_GAP 10 +
+   ADDRESS_BAR_PADDING 10）→ 后续 AddressBar 左缘对齐手绘 bar_x=174（nav 图标仍在 [10,154]，
+   [154,174] 为 toolbar_bg 不可见）。nav 测试断言更新 154→174。
+
+DC-1 保持
+---------
+MenuButtonWidget 是 browser-ui/chrome 控件；MoreVertical alpha mask 经 compose 从 apps/browser
+ui_icons 光栅注入，与 NAV_ICON_* 同模式。ui/* 通用 crate 零新依赖。
+
+基线测量（dc14_chrome_region_pixel_diff_baseline）
+--------------------------------------------------
+控制组 hand-vs-hand = 0.000%。
+
+| 区 | Round 52 | Round 53 |
+|----|----------|----------|
+| chrome (y<112) | 2.40% | **2.20%**（3154/143360） |
+| page (y≥112) | 0.00% | 0.00% |
+
+门禁
+----
+- `cargo build --workspace` ✅
+- `cargo clippy -p zero-browser-chrome -p zero-browser --features sdk-chrome --all-targets -- -D warnings` ✅
+- `cargo fmt --check` ✅
+- zero-browser-chrome 87 测 ✅ / zero-browser sdk-chrome 205 测 ✅ / adapter-render-foundation 29 测 ✅
+  全绿零回归。
+- `make product-smoke` 本环境 oracle 缺失（a6f08937 evidence 出库，预存环境问题）。本轮改动在
+  sdk-chrome feature gate / browser-ui/chrome SDK crate，welcome.html 默认渲染路径位等价 → 零页面回归风险。
+
+剩余 2.20% diff（下轮目标，需 ≤2.00%）
+---------------------------------------
+- menu 位置：SDK menu flex-end [1248,1280] vs 手绘 [1238,1270]（ADDRESS_BAR_PADDING trailing 10 缺）。
+- address 宽度：SDK flex 填到 menu（[174,1248]）vs 手绘 bar_w 结束 1150（trailing reserved 130 含
+  download/theme/menu，fresh app 仅渲染 menu）。address 右边缘 border 位错配。
+- tab 标签文字 / favicon / close + 窗口控制图标 + nav 图标边缘。

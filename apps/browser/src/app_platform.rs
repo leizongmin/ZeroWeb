@@ -1152,20 +1152,23 @@ fn compose_sdk_chrome_replacement_with_webview(
     tab_colors: &zero_browser_chrome::render::ChromeTabColors,
 ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
     use zero_browser_chrome::sdk_render::render_chrome_via_sdk_with_webview_surface;
-    use zero_browser_chrome::render::{NAV_ICON_BACK, NAV_ICON_FORWARD, NAV_ICON_HOME, NAV_ICON_RELOAD};
+    use zero_browser_chrome::render::{
+        MENU_ICON_MORE, NAV_ICON_BACK, NAV_ICON_FORWARD, NAV_ICON_HOME, NAV_ICON_RELOAD,
+    };
     use zero_browser_chrome::sdk_render::IconMask;
     use zero_ui_core::geometry::{Insets, Size};
     use zero_ui_core::layout::WindowMetrics;
     use zero_ui_core::theme::ResolvedColorScheme;
 
-    // DC-14 真实 nav 图标：把 4 个 SVG 图标（back/forward/reload/home）经 resvg 光栅为 alpha 掩码，
-    // 注册到桥接 image_masks。NavigationButtonsWidget 经 draw_image(NAV_ICON_*) 引用，桥接按 tint
-    // 着色光栅（与 glyph 文本路径对称）。光栅失败的单个图标静默跳过（不影响其余）。
-    let nav_masks: Vec<IconMask> = [
+    // DC-14 真实 chrome 图标：nav 4 图标（back/forward/reload/home）+ menu MoreVertical，经 resvg
+    // 光栅为 alpha 掩码注册到桥接 image_masks。NavigationButtonsWidget / MenuButtonWidget 经
+    // draw_image 引用，桥接按 tint 着色光栅（与 glyph 文本路径对称）。光栅失败的单个图标静默跳过。
+    let icon_masks: Vec<IconMask> = [
         (crate::ui_icons::Icon::ChevronLeft, NAV_ICON_BACK),
         (crate::ui_icons::Icon::ChevronRight, NAV_ICON_FORWARD),
         (crate::ui_icons::Icon::Refresh, NAV_ICON_RELOAD),
         (crate::ui_icons::Icon::Home, NAV_ICON_HOME),
+        (crate::ui_icons::Icon::MoreVertical, MENU_ICON_MORE),
     ]
     .into_iter()
     .filter_map(|(icon, key)| {
@@ -1222,7 +1225,7 @@ fn compose_sdk_chrome_replacement_with_webview(
     });
 
     let (bridge, viewport_rect) = render_chrome_via_sdk_with_webview_surface(
-        shell, &metrics, tokens, ResolvedColorScheme::Light, backend, webview_surface, &nav_masks,
+        shell, &metrics, tokens, ResolvedColorScheme::Light, backend, webview_surface, &icon_masks,
         *tab_colors,
     );
     let (sdk_prims, sdk_cache) = bridge.into_primitives_and_cache();

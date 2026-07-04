@@ -1506,3 +1506,30 @@ SDK-only（改动在 sdk-chrome feature gate / browser-ui/chrome SDK crate）。
 （154→174，address 左缘对齐手绘 bar_x=174）；②address 宽度对齐（手绘 bar_w = width - bar_x - trailing，
 trailing = download/theme/menu + gaps）；③补 download/theme 按钮或确认 fresh app 不渲染。预期 chrome
 diff 2.40% → ≤2%（跨过 DC-14 阈值）。
+
+### Round 53 — MenuButtonWidget 图标 + nav 宽度 parity（chrome diff 2.40% → 2.20%，2026-07-04）
+
+**A. MenuButtonWidget（MoreVertical 图标替换 "Menu" 文本）**：手绘 menu 是 MoreVertical 三点图标
+（`render_icon(Icon::MoreVertical)`），SDK 此前是 ChromePanel "Menu" 文本 → menu 区 796 diff。本轮
+新增 MenuButtonWidget（镜像 NavigationButtonsWidget 图标模式）：MENU_ICON_MORE ImageRef(5) + 32 宽
+（TOOLBAR_MENU_BUTTON_WIDTH）+ 居中 MoreVertical 图标（draw_image，tint=on_surface）。compose 的
+icon_masks 加 MoreVertical alpha mask 注册。shell BrowserMenu leaf 移除文本。
+**B. nav 宽 154→174**：NAV_TRAILING_PAD=20（NAV_SECTION_TRAILING_GAP 10 + ADDRESS_BAR_PADDING 10）
+→ 后续 AddressBar 左缘对齐手绘 bar_x=174（nav 图标仍在 [10,154]，[154,174] toolbar_bg 不可见）。
+
+**测量**（dc14_chrome_region_pixel_diff_baseline，control 0.000%）：chrome 2.40% → **2.20%**
+（3154/143360，-0.20pp）。距 DC-14 ≤2% 阈值 0.20pp。
+
+**剩余 2.20% 主因**：menu 位置（SDK flex-end [1248,1280] vs 手绘 [1238,1270]，缺 ADDRESS_BAR_PADDING
+trailing 10）；address 宽度（SDK flex 填到 menu [174,1248] vs 手绘 bar_w 结束 1150，trailing reserved 130
+含 download/theme/menu，fresh app 仅渲染 menu，address 右边缘 border 位错配）；tab 标签/favicon/close +
+窗口控制图标 + nav 图标边缘。
+
+**门禁全绿**：build / clippy `-D warnings` / fmt 净；chrome 87 / browser sdk-chrome 205 / adapter-rf 29
+测全绿零回归。SDK-only（改动在 sdk-chrome feature gate / browser-ui/chrome SDK crate）。
+
+Evidence: `evidence/dc14-menu-icon-nav-width-20260704-040925.txt`
+
+**下轮下一步**：①menu 按钮宽含 ADDRESS_BAR_PADDING trailing（32→42 或 toolbar 行加 trailing pad）使
+menu 位置对齐手绘 [1238,1270]；②address 宽度对齐手绘 bar_w（fixed width = width - bar_x - trailing_reserved，
+而非 flex 填满）；③tab 标签文字/favicon/close + 窗口控制图标。预期 chrome diff 2.20% → ≤2% 跨过 DC-14 阈值。
