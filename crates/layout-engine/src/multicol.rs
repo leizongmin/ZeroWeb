@@ -262,6 +262,7 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
     let mut child_info: Vec<(usize, f32)> = Vec::new();
     let mut forced_breaks: Vec<bool> = Vec::new();
     let mut forced_breaks_after: Vec<bool> = Vec::new();
+    let mut explicit_height: Vec<bool> = Vec::new();
     let mut has_spanner = false;
     for (i, c) in container.children.iter().enumerate() {
         if c.is_absolute || c.is_fixed {
@@ -276,6 +277,8 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
         forced_breaks.push(force);
         let force_after = style.is_some_and(|s| matches!(s.break_after, BreakValue::Column | BreakValue::Page));
         forced_breaks_after.push(force_after);
+        // R1037：explicit-height 标志（balance-breaking gate）。
+        explicit_height.push(style.is_some_and(is_explicit_height));
     }
 
     if child_info.is_empty() {
@@ -315,7 +318,20 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
         // CSS Multi-column Layout §3.3：内容应均衡分布在各列中。
         // 使用 shortest-column-first 策略：每个子元素放入当前最短的列。
         // 这自然实现均衡分布，无需人工设置 target_height。
-        assign_children_to_columns_balanced(&child_info, info.count, &forced_breaks, &forced_breaks_after)
+        // R1037：balance-breaking 仅在容器有 definite 高度时启用（避 zero-height 容器
+        // 误触——zero-height-002 height:0 容器 + explicit 子，breaking 强回归 +5.51pp）。
+        let explicit_for_break: &[bool] = if container.content_height > 0.0 {
+            &explicit_height
+        } else {
+            &[]
+        };
+        assign_children_to_columns_balanced(
+            &child_info,
+            info.count,
+            &forced_breaks,
+            &forced_breaks_after,
+            explicit_for_break,
+        )
     };
 
     // 定位子元素（y_base=0：单区域，整个 multicol 内容在一行列内）
@@ -415,8 +431,23 @@ fn layout_multicol_with_spanners(
         } else if region_child_info.is_empty() {
             (vec![Vec::new(); col_count.max(1)], 0.0)
         } else {
+            // R1037：region 子元素 explicit-height 标志（balance-breaking gate）。
+            // 仅容器 definite 高度时启用（避 zero-height 容器误触，同非 spanner 路径）。
+            let region_explicit: Vec<bool> = if container.content_height > 0.0 {
+                region_children
+                    .iter()
+                    .map(|&i| {
+                        container.children[i]
+                            .node_id
+                            .and_then(|id| styles.get(&id))
+                            .is_some_and(is_explicit_height)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             (
-                assign_children_to_columns_balanced(&region_child_info, col_count, &[], &[]),
+                assign_children_to_columns_balanced(&region_child_info, col_count, &[], &[], &region_explicit),
                 0.0,
             )
         };
@@ -439,6 +470,21 @@ fn layout_multicol_with_spanners(
     }
 }
 
+/// 判断 height 是否为 explicit（length/percentage，非 auto/keyword）。
+/// R1037 balance-mode column-breaking gate：CSS Fragmentation monolithic 元素
+/// （overflow≠visible 滚动容器 / 替换元素 / auto 高度）不可分；仅 explicit-height
+/// 子元素可跨列拆分。排除 Auto/Calc/FitContent/MinContent/MaxContent。
+fn is_explicit_height(style: &ComputedStyle) -> bool {
+    !matches!(
+        style.height,
+        LengthValue::Auto
+            | LengthValue::Calc(_)
+            | LengthValue::FitContent(_)
+            | LengthValue::MinContent
+            | LengthValue::MaxContent
+    )
+}
+
 /// 均衡分配子元素到各列（顺序流 + 目标高度策略）。
 ///
 /// CSS Multi-column Layout §3.3：在 column-fill: balance（默认）模式下，
@@ -448,6 +494,10 @@ fn layout_multicol_with_spanners(
 /// 1. 计算所有子元素的总高度
 /// 2. 目标列高 = 总高度 / 列数
 /// 3. 按文档顺序将子元素填入当前列，当列高超过目标时移至下一列
+/// 4. **R1037 balance-mode column-breaking**：单个子元素超过目标列高时跨列拆分
+///    （每片填满 target 边界），避免超大子元素整体留单列破坏均衡。**仅对 explicit-height
+///    子元素启用**（`explicit_height[i]=true`）——CSS Fragmentation monolithic 元素
+///    （overflow≠visible 滚动容器 / 替换元素 / auto 高度）不可分。
 ///
 /// 这比 shortest-column-first 更符合规范行为：内容按顺序流过各列，
 /// 而非被任意分配到最短列。
@@ -456,6 +506,7 @@ fn assign_children_to_columns_balanced(
     col_count: usize,
     forced_breaks: &[bool],
     forced_breaks_after: &[bool],
+    explicit_height: &[bool],
 ) -> Vec<Vec<ColumnFragment>> {
     if children.is_empty() || col_count == 0 {
         return vec![Vec::new(); col_count.max(1)];
@@ -481,12 +532,52 @@ fn assign_children_to_columns_balanced(
             current_col_height = 0.0;
         }
 
-        columns[current_col].push(ColumnFragment {
-            child_idx,
-            fragment_y_offset: 0.0,
-            visual_height: child_height,
-        });
-        current_col_height += child_height;
+        // R1037：balance-mode column-breaking，仅对 explicit-height 子元素启用。
+        // CSS Fragmentation：monolithic 元素（overflow≠visible 滚动容器 / 替换元素 / auto 高度）
+        // 不可分。explicit-height（length/percentage）子元素可跨列拆分以均衡分布。
+        // gate 排除 overflow-unsplittable（overflow:scroll + auto height → 不拆）等回归案，
+        // 捕获 span-all-children-height（height:200px/100% explicit → 拆）目标簇。
+        // R1036 通用应用 net -12（18 回归），本 gate 避免回归。
+        let is_explicit = explicit_height.get(i).copied().unwrap_or(false);
+        if is_explicit && child_height > target_height && target_height > 0.0 {
+            // 先消耗当前列剩余空间。
+            let available = (target_height - current_col_height).max(0.0);
+            if available > 0.0 {
+                columns[current_col].push(ColumnFragment {
+                    child_idx,
+                    fragment_y_offset: 0.0,
+                    visual_height: available,
+                });
+            }
+            // 后续片段按 target_height 填充连续列；末列之外 clip（与 with_breaking 一致）。
+            let mut offset = available;
+            while offset < child_height {
+                if current_col + 1 < col_count {
+                    current_col += 1;
+                } else {
+                    break;
+                }
+                let remaining = child_height - offset;
+                let frag_height = remaining.min(target_height);
+                columns[current_col].push(ColumnFragment {
+                    child_idx,
+                    fragment_y_offset: offset,
+                    visual_height: frag_height,
+                });
+                offset += frag_height;
+                current_col_height = frag_height;
+            }
+            if current_col + 1 >= col_count {
+                current_col_height = target_height;
+            }
+        } else {
+            columns[current_col].push(ColumnFragment {
+                child_idx,
+                fragment_y_offset: 0.0,
+                visual_height: child_height,
+            });
+            current_col_height += child_height;
+        }
         // break-after:column：放置完子元素后强制推进到下一列（R1027 消费死值 break_after，mirror R903 break-before）。
         if forced_breaks_after.get(i).copied().unwrap_or(false) && current_col + 1 < col_count {
             current_col += 1;
@@ -879,7 +970,7 @@ mod tests {
         // child3: col1=200 >= 166.67 → col2=[3]
         // child4: col2=100 < 166.67 → col2=[3,4]
         let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0), (4, 100.0)];
-        let cols = assign_children_to_columns_balanced(&children, 3, &[false; 5], &[false; 5]);
+        let cols = assign_children_to_columns_balanced(&children, 3, &[false; 5], &[false; 5], &[]);
         assert_eq!(cols.len(), 3);
         assert_eq!(cols[0].len(), 2); // [0, 1]
         assert_eq!(cols[1].len(), 2); // [2, 3]
@@ -896,7 +987,7 @@ mod tests {
         // Wait: child1(100): col0=200 < 250, so it's added to col0! col0=[0,1], height=300
         // child2(200): 300 >= 250 → col1=[2], height=200
         let children = vec![(0, 200.0), (1, 100.0), (2, 200.0)];
-        let cols = assign_children_to_columns_balanced(&children, 2, &[false; 5], &[false; 5]);
+        let cols = assign_children_to_columns_balanced(&children, 2, &[false; 5], &[false; 5], &[]);
         assert_eq!(cols.len(), 2);
         assert_eq!(cols[0].len(), 2); // [0, 1]
         assert_eq!(cols[1].len(), 1); // [2]
@@ -912,10 +1003,36 @@ mod tests {
         // child2(100): 200 >= 200 → col1=[2], h=100
         // child3(100): 100 < 200 → col1=[2,3], h=200
         let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0)];
-        let cols = assign_children_to_columns_balanced(&children, 2, &[false; 5], &[false; 5]);
+        let cols = assign_children_to_columns_balanced(&children, 2, &[false; 5], &[false; 5], &[]);
         assert_eq!(cols.len(), 2);
         assert_eq!(cols[0].len(), 2); // [0, 1]
         assert_eq!(cols[1].len(), 2); // [2, 3]
+    }
+
+    /// R1037：balance-mode column-breaking 对 explicit-height 子元素跨列拆分。
+    /// 单个 200px explicit 子 + 2 列 → target=100，child>target → 拆 2 片各 100px。
+    #[test]
+    fn test_assign_children_balanced_explicit_height_breaks() {
+        let children = vec![(0, 200.0)];
+        let cols = assign_children_to_columns_balanced(&children, 2, &[false; 1], &[false; 1], &[true]);
+        assert_eq!(cols.len(), 2);
+        assert_eq!(cols[0].len(), 1);
+        assert_eq!(cols[0][0].fragment_y_offset, 0.0);
+        assert!((cols[0][0].visual_height - 100.0).abs() < 0.01);
+        assert_eq!(cols[1].len(), 1);
+        assert!((cols[1][0].fragment_y_offset - 100.0).abs() < 0.01);
+    }
+
+    /// R1037：auto-height（非 explicit）子元素不拆分（CSS Fragmentation monolithic）。
+    /// 同 200px 子但 explicit_height=[false] → 整体留 col0，col1 空。
+    #[test]
+    fn test_assign_children_balanced_auto_height_no_break() {
+        let children = vec![(0, 200.0)];
+        let cols = assign_children_to_columns_balanced(&children, 2, &[false; 1], &[false; 1], &[false]);
+        assert_eq!(cols.len(), 2);
+        assert_eq!(cols[0].len(), 1); // 整体留 col0
+        assert!((cols[0][0].visual_height - 200.0).abs() < 0.01);
+        assert_eq!(cols[1].len(), 0); // col1 空，未拆分
     }
 
     #[test]
@@ -996,7 +1113,7 @@ mod tests {
     fn test_break_before_column_forces_new_column_balanced() {
         let children = vec![(0, 100.0), (1, 100.0), (2, 100.0)];
         // 全部 forced break（模拟 `div > div { break-before: column }`）
-        let cols = assign_children_to_columns_balanced(&children, 3, &[true, true, true], &[false; 3]);
+        let cols = assign_children_to_columns_balanced(&children, 3, &[true, true, true], &[false; 3], &[]);
         assert_eq!(cols.len(), 3);
         // 首个子元素 break 在空 col0 上 no-op → col0=[0]；col1=[1]；col2=[2]。
         assert_eq!(cols[0].len(), 1);
@@ -1025,7 +1142,7 @@ mod tests {
     fn test_break_before_column_first_child_is_noop() {
         let children = vec![(0, 100.0), (1, 100.0)];
         // 仅首个 forced break → no-op（col0 空，不创建前导空列），child0 仍落 col0。
-        let cols = assign_children_to_columns_balanced(&children, 2, &[true, false], &[false; 2]);
+        let cols = assign_children_to_columns_balanced(&children, 2, &[true, false], &[false; 2], &[]);
         assert_eq!(cols.len(), 2);
         assert!(
             cols[0].iter().any(|f| f.child_idx == 0),
@@ -1043,7 +1160,7 @@ mod tests {
     fn test_break_after_column_forces_new_column_balanced() {
         let children = vec![(0, 100.0), (1, 100.0), (2, 100.0)];
         // 全部 break-after（模拟 `div > div { break-after: column }`）
-        let cols = assign_children_to_columns_balanced(&children, 3, &[false; 3], &[true, true, true]);
+        let cols = assign_children_to_columns_balanced(&children, 3, &[false; 3], &[true, true, true], &[]);
         assert_eq!(cols.len(), 3);
         assert_eq!(cols[0].len(), 1);
         assert_eq!(cols[1].len(), 1);
@@ -1075,7 +1192,7 @@ mod tests {
         let children = vec![(0, 100.0), (1, 100.0)];
         // 仅末子 break-after → child0 落 col0 后 break-after 推进 col1；child1 落 col1（末列），
         // 其 break-after 因 current_col+1 >= col_count no-op，不创建尾随空列。
-        let cols = assign_children_to_columns_balanced(&children, 2, &[false; 2], &[false, true]);
+        let cols = assign_children_to_columns_balanced(&children, 2, &[false; 2], &[false, true], &[]);
         assert_eq!(cols.len(), 2);
         assert!(cols[0].iter().any(|f| f.child_idx == 0));
         assert!(cols[1].iter().any(|f| f.child_idx == 1));
