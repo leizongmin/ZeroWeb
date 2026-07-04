@@ -1517,13 +1517,13 @@ icon_masks 加 MoreVertical alpha mask 注册。shell BrowserMenu leaf 移除文
 **B. nav 宽 154→174**：NAV_TRAILING_PAD=20（NAV_SECTION_TRAILING_GAP 10 + ADDRESS_BAR_PADDING 10）
 → 后续 AddressBar 左缘对齐手绘 bar_x=174（nav 图标仍在 [10,154]，[154,174] toolbar_bg 不可见）。
 
-**测量**（dc14_chrome_region_pixel_diff_baseline，control 0.000%）：chrome 2.40% → **2.20%**
-（3154/143360，-0.20pp）。距 DC-14 ≤2% 阈值 0.20pp。
+**测量**（dc14_chrome_region_pixel_diff_baseline，control 0.000%）：chrome 2.40% → 2.20% → **2.17%**
+（3106/143360）。menu trailing pad（MENU_TRAILING_PAD=10，menu 宽 32→42，图标居中前 32px 对齐手绘
+menu_btn_x=1238）再降 0.03pp。距 DC-14 ≤2% 阈值 0.17pp。
 
-**剩余 2.20% 主因**：menu 位置（SDK flex-end [1248,1280] vs 手绘 [1238,1270]，缺 ADDRESS_BAR_PADDING
-trailing 10）；address 宽度（SDK flex 填到 menu [174,1248] vs 手绘 bar_w 结束 1150，trailing reserved 130
-含 download/theme/menu，fresh app 仅渲染 menu，address 右边缘 border 位错配）；tab 标签/favicon/close +
-窗口控制图标 + nav 图标边缘。
+**剩余 2.17% 主因**（diag_dist 桶统计）：addr-l[174,1150] **1843**（空地址栏 placeholder 文本 "Search or
+enter URL..." 手绘画、SDK 未画；尝试渲染 placeholder 但 draw_text baseline 偏移致 diff 反升，已回退，
+需精确匹配手绘 ui_text_centered_in_height baseline）；nav 229；addr-r 468；tab 404；win-ctrl 121。
 
 **门禁全绿**：build / clippy `-D warnings` / fmt 净；chrome 87 / browser sdk-chrome 205 / adapter-rf 29
 测全绿零回归。SDK-only（改动在 sdk-chrome feature gate / browser-ui/chrome SDK crate）。

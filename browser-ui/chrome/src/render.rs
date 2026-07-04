@@ -230,6 +230,10 @@ pub const NAV_ICON_HOME: ImageRef = ImageRef::new(4);
 pub const MENU_ICON_MORE: ImageRef = ImageRef::new(5);
 /// menu 按钮宽（= apps/browser layout::TOOLBAR_MENU_BUTTON_WIDTH）。
 const MENU_BUTTON_WIDTH: f32 = 32.0;
+/// menu 按钮右侧留白 = ADDRESS_BAR_PADDING(10)：手绘 `menu_btn_x = width - ADDRESS_BAR_PADDING -
+/// btn_w(32) = 1238`，menu [1238,1270] + 右侧 10px padding。控件宽含此留白使 flex-end 摆放时
+/// menu 按钮左缘对齐手绘 1238（图标在按钮 [0,32] 中心 local x=16，trailing [32,42] 为 toolbar_bg）。
+const MENU_TRAILING_PAD: f32 = 10.0;
 
 /// 导航按钮组绘制控件（DC-14：真实图标替换 ChromePanel 占位）。
 ///
@@ -358,7 +362,8 @@ impl Widget for MenuButtonWidget {
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
-        let width = MENU_BUTTON_WIDTH.clamp(constraints.min_width, constraints.max_width);
+        // 按钮宽 32 + 右侧 padding 10 = 42（flex-end 摆放时按钮左缘对齐手绘 menu_btn_x=1238）。
+        let width = (MENU_BUTTON_WIDTH + MENU_TRAILING_PAD).clamp(constraints.min_width, constraints.max_width);
         let height = NAV_BAR_HEIGHT.clamp(constraints.min_height, constraints.max_height);
         Size::new(width, height)
     }
@@ -367,11 +372,12 @@ impl Widget for MenuButtonWidget {
         let size = ctx
             .clip
             .map(|r| r.size)
-            .unwrap_or_else(|| Size::new(MENU_BUTTON_WIDTH, NAV_BAR_HEIGHT));
+            .unwrap_or_else(|| Size::new(MENU_BUTTON_WIDTH + MENU_TRAILING_PAD, NAV_BAR_HEIGHT));
         ctx.recorder
             .fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
         let icon_extent = NAV_ICON_SIZE.min(MENU_BUTTON_WIDTH);
-        let x = (size.width - icon_extent) / 2.0;
+        // 图标在按钮 [0, MENU_BUTTON_WIDTH] 中心（local x = 16），对齐手绘 menu_btn_cx。
+        let x = (MENU_BUTTON_WIDTH - icon_extent) / 2.0;
         let y = ((size.height - icon_extent) / 2.0).max(0.0);
         ctx.recorder.draw_image(
             Rect::from_ltrb(x, y, x + icon_extent, y + icon_extent),
@@ -792,7 +798,12 @@ impl Widget for AddressBarWidget {
             ctx.recorder
                 .draw_text("!", Point::new(icon_x - 3.0, baseline), 13.0, self.insecure_color);
         }
-        if let Some(text) = &self.text {
+        // 文本渲染：URL（非空）或 placeholder（空）。注意 baseline 须精确匹配手绘
+        // ui_text_centered_in_height，否则文字偏移产生更多 diff（本轮 placeholder baseline 待校准，
+        // 暂只渲染非空 URL；placeholder_color 已接入留待 baseline 校准后启用）。
+        if let Some(text) = &self.text
+            && !text.is_empty()
+        {
             ctx.recorder
                 .draw_text(text, Point::new(text_x, baseline), 13.0, self.text_color);
         }
