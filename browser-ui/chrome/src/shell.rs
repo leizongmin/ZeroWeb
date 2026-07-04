@@ -225,8 +225,16 @@ impl BrowserChromeShell for DesktopBrowserShell {
 
     fn layout(&self, metrics: &WindowMetrics) -> ShellLayout {
         let inner = inner_rect(metrics);
-        // toolbar(40) + tab strip(36) + bookmarks(28) ≈ 104。
-        let top_h = 104.0_f32.min((inner.bottom() - inner.top()) * 0.5);
+        // SDK chrome 实际 paint 高度 = TAB_STRIP_HEIGHT(40) + TOOLBAR_ROW_HEIGHT(44) +
+        // BOOKMARKS_BAR_HEIGHT(28) = 112（无书签时 84）。引用 widget 几何常量（pub(crate)）
+        // 保证 ShellLayout 与 SDK 实际布局自洽（审查报告问题 #1）。
+        //
+        // 注意：与手绘 chrome（`apps/browser/src/layout.rs` `TOOLBAR_HEIGHT=84` 无书签）
+        // 一致——这是替换式迁移的几何基础。
+        let top_h = (crate::render::TAB_STRIP_HEIGHT
+            + crate::render::TOOLBAR_ROW_HEIGHT
+            + crate::render::BOOKMARKS_BAR_HEIGHT)
+            .min((inner.bottom() - inner.top()) * 0.5);
         let top_chrome = Rect::from_ltrb(inner.left(), inner.top(), inner.right(), inner.top() + top_h);
         let viewport = Rect::from_ltrb(inner.left(), top_chrome.bottom(), inner.right(), inner.bottom());
         ShellLayout {
@@ -303,8 +311,10 @@ impl BrowserChromeShell for TabletBrowserShell {
 
     fn layout(&self, metrics: &WindowMetrics) -> ShellLayout {
         let inner = inner_rect(metrics);
-        // toolbar(40) + tab strip(36) = 76。
-        let top_h = 76.0_f32.min((inner.bottom() - inner.top()) * 0.5);
+        // SDK chrome 实际 paint 高度 = TAB_STRIP_HEIGHT(40) + TOOLBAR_ROW_HEIGHT(44) = 84
+        // （tablet 无 bookmarks bar）。引用 widget 几何常量保证自洽（审查报告问题 #1）。
+        let top_h = (crate::render::TAB_STRIP_HEIGHT + crate::render::TOOLBAR_ROW_HEIGHT)
+            .min((inner.bottom() - inner.top()) * 0.5);
         let top_chrome = Rect::from_ltrb(inner.left(), inner.top(), inner.right(), inner.top() + top_h);
         let viewport = Rect::from_ltrb(inner.left(), top_chrome.bottom(), inner.right(), inner.bottom());
         ShellLayout {

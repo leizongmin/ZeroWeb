@@ -210,7 +210,10 @@ impl Widget for ChromePanel {
 /// 导航按钮几何（与 apps/browser/src/layout.rs 手绘 chrome 对齐，DC-14 像素级等价）。
 const NAV_BUTTON_WIDTH: f32 = 36.0;
 const NAV_ICON_SIZE: f32 = 16.0;
-const NAV_BAR_HEIGHT: f32 = 44.0; // = ADDRESS_BAR_HEIGHT。
+/// toolbar 行高（nav/menu/trailing 共占的行）= 手绘 chrome `ADDRESS_BAR_HEIGHT=44`。
+/// 注意：这是**toolbar 行**的高，不是地址栏 pill 的高——pill 高见下方 [`ADDRESS_BAR_HEIGHT`]（32）。
+/// 之前注释 `= ADDRESS_BAR_HEIGHT` 误导，是审查报告问题 #1 的根因之一。
+const NAV_BAR_HEIGHT: f32 = 44.0;
 /// nav 段左侧留白（= apps/browser layout::NAV_SECTION_LEADING_PAD）：手绘 chrome 第一个
 /// nav 按钮距 toolbar 左缘 10px，控件据此对齐图标 x 位置。
 const NAV_LEADING_PAD: f32 = 10.0;
@@ -538,7 +541,11 @@ impl ChromeTabColors {
 /// tab 几何常量（与 apps/browser/src/layout.rs 手绘 chrome 对齐，DC-14 像素级等价）。
 const TAB_BAR_TOP_INSET: f32 = 6.0;
 const TAB_BAR_HEIGHT: f32 = 34.0;
-const TAB_STRIP_HEIGHT: f32 = 40.0; // = TAB_BAR_TOP_INSET + TAB_BAR_HEIGHT。
+/// SDK chrome 各 bar 的实际 paint 高度（供 shell.rs `layout()` 引用，保证 ShellLayout 与
+/// widget 实际 paint 自洽——审查报告问题 #1）。
+pub(crate) const TAB_STRIP_HEIGHT: f32 = 40.0; // = TAB_BAR_TOP_INSET + TAB_BAR_HEIGHT。
+pub(crate) const TOOLBAR_ROW_HEIGHT: f32 = 44.0; // = NAV_BAR_HEIGHT（toolbar 行：nav/address/menu/trailing）。
+pub(crate) const BOOKMARKS_BAR_HEIGHT: f32 = 28.0;
 const TAB_MIN_WIDTH: f32 = 100.0;
 const TAB_MAX_WIDTH: f32 = 240.0;
 const TAB_TOP_RADIUS: f32 = 7.0;
@@ -932,7 +939,7 @@ impl Widget for BrowserTabStripWidget {
 
 // ── BookmarksBarWidget（真实书签栏，DC-14 chrome 功能等价）──────────────────────
 
-const BOOKMARKS_BAR_HEIGHT: f32 = 28.0;
+// BOOKMARKS_BAR_HEIGHT 已上移到文件上方 pub(crate) 块，供 shell.rs layout() 引用。
 
 /// 书签栏绘制控件：填充背景 + 书签标题列表（bookmarks prop）。
 pub struct BookmarksBarWidget {
@@ -1294,10 +1301,12 @@ impl Widget for AddressBarWidget {
 pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens, tab_colors: ChromeTabColors) {
     // bars：固定高度的语义色条 + 可选文案；颜色经 semantic token 解析（DC-5）。
     // 高度对齐 apps/browser/src/layout.rs 手绘 chrome（DC-14 像素级等价）：
-    //   TAB_STRIP_HEIGHT = TAB_BAR_TOP_INSET(6) + TAB_BAR_HEIGHT(34) = 40
-    //   ADDRESS_BAR_HEIGHT = 44（地址行：AddressBar / NavigationButtons / BrowserMenu / SecurityBadge）
-    //   BOOKMARKS_BAR_HEIGHT = 28
-    // SemanticTokens / ChromeTabColors 是 Copy：每个 move 闭包各持一份副本。
+    //   TAB_STRIP_HEIGHT       = TAB_BAR_TOP_INSET(6) + TAB_BAR_HEIGHT(34) = 40（[`TAB_STRIP_HEIGHT`]）
+    //   TOOLBAR_ROW_HEIGHT     = 44（toolbar 行：nav/address pill/menu/trailing；[`TOOLBAR_ROW_HEIGHT`]）
+    //   ADDRESS_BAR_HEIGHT     = 32（地址栏 pill 高，行内 inset 6；[`ADDRESS_BAR_HEIGHT`]）
+    //   BOOKMARKS_BAR_HEIGHT   = 28（[`BOOKMARKS_BAR_HEIGHT`]）
+    // 这些 pub(crate) 常量被 shell.rs `layout()` 引用，使 ShellLayout 与 widget 实际高度一致
+    // （审查报告问题 #1）。
     let t = *tokens;
     let tc = tab_colors;
     host.register("browser.AddressBar", move |s| {
