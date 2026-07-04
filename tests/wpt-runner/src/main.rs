@@ -648,7 +648,7 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
 
     if !wpt_data_dir.is_dir() {
         eprintln!("Error: wpt-data directory not found: {}", wpt_data_dir.display());
-        eprintln!("Run tests/wpt-runner/scripts/import-wpt-reftests.sh first.");
+        eprintln!("Run `make fetch-wpt-data` first.");
         std::process::exit(1);
     }
 
@@ -786,7 +786,7 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     };
     if !wpt_data_dir.is_dir() {
         eprintln!("Error: wpt-data directory not found: {}", wpt_data_dir.display());
-        eprintln!("Run tests/wpt-runner/scripts/import-wpt-reftests.sh first.");
+        eprintln!("Run `make fetch-wpt-data` first.");
         std::process::exit(1);
     }
     let oracle_dir_str = std::env::var("ORACLE_DIR").unwrap_or_else(|_| "tests/wpt-runner/oracle-shots".to_string());
