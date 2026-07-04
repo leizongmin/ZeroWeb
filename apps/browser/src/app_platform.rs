@@ -2028,6 +2028,29 @@ mod sdk_chrome_tests {
         assert_eq!(ctrl_diff, 0, "hand-vs-hand render must be deterministic");
     }
 
+    /// DC-14 toolbar sub-zone diagnostic：水平拆分 toolbar 区域定位 diff 集中子区。
+    #[test]
+    fn dc14_toolbar_subzone_ink_diagnostic() {
+        let width = 1280u32;
+        let height = 800u32;
+        let mut app = BrowserApp::new(crate::app::RenderMode::Cpu);
+        app.physical_size = (width, height);
+        app.scale_factor = 1.0;
+        let hand_fb = app.render_full_scene_with_webview_for_test(width, height);
+        let sdk_fb = app.render_full_scene_sdk_chrome_for_test(width, height);
+        let subzones = [(0u32, 174u32, "nav"), (174, 1196, "address"), (1196, 1280, "trailing")];
+        for (x0, x1, name) in &subzones {
+            let mut diff = 0usize; let mut total = 0usize;
+            for y in 40..84 { for x in *x0..*x1 { total += 1; if hand_fb.get_pixel(x, y) != sdk_fb.get_pixel(x, y) { diff += 1; } } }
+            eprintln!("  toolbar/{name} (x={x0}..{x1}): {diff}/{total} = {:.2}%", (diff as f64 / total as f64) * 100.0);
+        }
+        let hand_fb2 = app.render_full_scene_with_webview_for_test(width, height);
+        let ctrl_diff: usize = (0..height).flat_map(|y| (0..width).map(move |x| (x, y)))
+            .filter(|(x, y)| hand_fb.get_pixel(*x, *y) != hand_fb2.get_pixel(*x, *y)).count();
+        eprintln!("  control: {ctrl_diff}/{} = {:.3}%", width * height, (ctrl_diff as f64 / (width * height) as f64) * 100.0);
+        assert_eq!(ctrl_diff, 0, "hand-vs-hand render must be deterministic");
+    }
+
     /// DC-14 page-region 99.70% diff 根因定位（diagnostic）。
     ///
     /// [`dc14_chrome_region_pixel_diff_baseline`] 测出页面区 99.70% diff（应 ≈0%）。本测把
