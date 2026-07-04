@@ -190,6 +190,46 @@ fn r1015_float_flex_column_aspect_ratio_item_shrinks_to_fit() {
     );
 }
 
+/// R1017 驱动案 `aspect-ratio-intrinsic-size-003`：inline-flex + definite height + item
+/// aspect-ratio:1/1 → 容器经 IFC `shrink_inline_blocks_to_content` 路径 shrink-to-fit 到
+/// item transferred width（height 100 × ratio 1 = 100）。R1016 taffy-gate 路径证伪后，
+/// R1017 改走 inline-block IFC 测量路径（inline-flex 是 inline-level）。
+#[test]
+fn r1017_inline_flex_definite_height_aspect_ratio_item_shrinks_to_fit() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:inline-flex; height:100px; background:green">
+  <div style="aspect-ratio:1/1;"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let divs = doc.get_elements_by_tag_name("div");
+    let mut iter = divs.into_iter();
+    let container_id = iter.next().expect("container div");
+    let item_id = iter.next().expect("item div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let (cw, ch) = find_box(&result.root, container_id).expect("container box found");
+    let (iw, ih) = find_box(&result.root, item_id).expect("item box found");
+    // 几何应精确 100×100（item transferred width = container height 100 × ratio 1）。
+    // 容器 width shrink 自 800→100；height 来自 style height:100px；item stretch 填满。
+    // 残余 oracle 1.80% = `<p>` 文本字体光栅化墙（非布局；R990/R1005 territory）。
+    assert!(
+        (cw - 100.0).abs() < 2.0,
+        "R1017: inline-flex 容器 width 应 shrink 到 100，got {cw}"
+    );
+    assert!(
+        (ch - 100.0).abs() < 2.0,
+        "R1017: 容器 height 应为 style 100px，got {ch}"
+    );
+    assert!(
+        (iw - 100.0).abs() < 2.0 && (ih - 100.0).abs() < 2.0,
+        "R1017: item 应 stretch 填满 100×100，got {iw}x{ih}"
+    );
+}
+
 /// R1015 对照：非 float 的 block flex column + width:auto 不触发 shrink（保持当前行为，零回归）。
 #[test]
 fn r1015_block_flex_column_auto_width_no_shrink() {

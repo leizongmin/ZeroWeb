@@ -11,9 +11,7 @@ use std::collections::HashMap;
 
 use taffy::prelude::*;
 
-use zero_css_parser::values::{
-    ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, PositionValue,
-};
+use zero_css_parser::values::{ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, PositionValue};
 
 use zero_dom::{Document, NodeId, NodeKind};
 
@@ -686,8 +684,10 @@ impl LayoutEngine {
             }
             let intrinsic = if matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid) {
                 crate::intrinsic_sizing::grid_intrinsic_width(b, doc, styles)
-            } else if matches!(s.flex_direction, FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse)
-            {
+            } else if matches!(
+                s.flex_direction,
+                FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+            ) {
                 crate::intrinsic_sizing::flex_column_intrinsic_width(b, doc, styles)
             } else {
                 crate::intrinsic_sizing::flex_row_intrinsic_width(b, doc, styles)
