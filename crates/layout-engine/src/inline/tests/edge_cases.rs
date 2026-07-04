@@ -1472,3 +1472,35 @@ fn test_r1012_text_transform_default_is_noop() {
         "默认（无 transform）应原样，零回归（实测 {all_text}）"
     );
 }
+
+/// R1022：`<ruby>` inline 收集排除 `<rt>`/`<rp>` 文本。
+///
+/// `<ruby><rb>Fi</rb><rt>●●</rt><rp>(注)</rp></ruby>l` → inline 文本应为 "Fil"
+/// （rb "Fi" + 尾 "l"），rt/rp 文本不混入 inline 流（由 paint 期作 annotation 上移）。
+#[test]
+fn test_r1022_ruby_excludes_rt_rp_from_inline_flow() {
+    use std::collections::HashMap;
+    use zero_dom::parse_html;
+
+    let doc = parse_html("<div><ruby><rb>Fi</rb><rt>\u{25CF}\u{25CF}</rt><rp>(\u{6ce8})</rp></ruby>l</div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let div = doc.first_child(body).unwrap();
+
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.layout(&doc, div, &HashMap::new());
+
+    let all_text: String = ctx.all_fragments().iter().map(|f| f.text.clone()).collect();
+    assert!(
+        !all_text.contains('\u{25CF}'),
+        "rt 文本 ● 不应出现在 inline 流（实测 {all_text:?}）"
+    );
+    assert!(
+        !all_text.contains('\u{6ce8}'),
+        "rp 文本「注」不应出现在 inline 流（实测 {all_text:?}）"
+    );
+    assert!(
+        all_text.contains("Fi") && all_text.contains('l'),
+        "rb 文本 + 尾文本应保留在 inline 流（实测 {all_text:?}）"
+    );
+}

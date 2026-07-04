@@ -139,6 +139,39 @@ fn compute_multicol_info_for_paint(
     }
 }
 
+/// R1022：收集 `<ruby>` owner 的 `<rt>` 后代文本作 annotation。
+///
+/// 返回非空白字符序列（rt 标记逐字符配对 rb 文本，paint 期上移到 rb 之上）。
+/// owner 非 ruby 元素或无 rt 文本时返回 None。
+fn ruby_annotation_chars(doc: &Document, owner_id: NodeId) -> Option<Vec<char>> {
+    let owner = doc.get(owner_id)?;
+    if !matches!(&owner.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("ruby")) {
+        return None;
+    }
+    let mut text = String::new();
+    collect_ruby_rt_text(doc, owner_id, &mut text);
+    let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
+    if chars.is_empty() { None } else { Some(chars) }
+}
+
+/// 递归收集 `id` 子树内所有 `<rt>` 元素的文本。
+fn collect_ruby_rt_text(doc: &Document, id: NodeId, out: &mut String) {
+    for child_id in doc.child_nodes(id) {
+        if let Some(node) = doc.get(child_id)
+            && let NodeKind::Element(elem) = &node.kind
+        {
+            if elem.local_name().eq_ignore_ascii_case("rt") {
+                if let Some(t) = doc.text_content(child_id) {
+                    out.push_str(&t);
+                }
+            } else {
+                // 递归查找嵌套 ruby 中的 rt（如 ruby 嵌套）
+                collect_ruby_rt_text(doc, child_id, out);
+            }
+        }
+    }
+}
+
 impl super::Painter {
     /// 绘制多列布局的 column-rule（列之间的分隔线）。
     pub(super) fn paint_column_rules(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
@@ -1127,6 +1160,8 @@ impl super::Painter {
                                         )
                                     })
                                     .unwrap_or(true);
+                                // R1022：ruby annotation —— owner 为 <ruby> 时，rt 后代文本逐字符上移。
+                                let ruby_marks: Option<Vec<char>> = ruby_annotation_chars(doc, owner_id);
 
                                 let frag_base_x = content_x + fragment.x + col_x_offset + tx;
                                 // 行盒顶部 = (line.y - col_start_y)；基线偏移 v_offset
@@ -1141,7 +1176,7 @@ impl super::Painter {
                                 let mut char_pos = frag_base_x;
                                 let frag_is_ahem = fragment.is_ahem;
 
-                                for ch in transformed.chars() {
+                                for (char_idx, ch) in transformed.chars().enumerate() {
                                     let glyph_x = char_pos;
                                     let glyph_y = frag_base_y;
 
@@ -1196,6 +1231,28 @@ impl super::Painter {
                                             font_size: mark_fs,
                                             color: frag_color,
                                             glyph_id: mark_ch as u32,
+                                            font_id: default_font_id,
+                                            bitmap_width: None,
+                                            bitmap_height: None,
+                                            rotation,
+                                        });
+                                    }
+
+                                    // R1022：ruby annotation —— rt[char_idx] 上移到 rb 字符上方
+                                    // （类 text-emphasis over，mark 来自 rt 文本而非 style）。
+                                    if !ch.is_whitespace()
+                                        && let Some(rt_ch) = ruby_marks.as_ref().and_then(|v| v.get(char_idx).copied())
+                                    {
+                                        let rt_fs = fragment.font_size * 0.5;
+                                        let rt_advance = measure_char_for_paint(rt_ch, rt_fs, frag_is_ahem);
+                                        let rt_x = char_pos - advance / 2.0 - rt_advance / 2.0;
+                                        let rt_y = frag_base_y - fragment.font_size;
+                                        self.primitives.add_glyph(GlyphPrimitive {
+                                            x: rt_x,
+                                            y: rt_y,
+                                            font_size: rt_fs,
+                                            color: frag_color,
+                                            glyph_id: rt_ch as u32,
                                             font_id: default_font_id,
                                             bitmap_width: None,
                                             bitmap_height: None,
@@ -1289,6 +1346,8 @@ impl super::Painter {
                                     TextEmphasisPositionValue::OverRight | TextEmphasisPositionValue::OverLeft
                                 ))
                                 .unwrap_or(true);
+                            // R1022：ruby annotation —— owner 为 <ruby> 时，rt 后代文本逐字符上移。
+                            let ruby_marks: Option<Vec<char>> = ruby_annotation_chars(doc, owner_id);
 
                             let (frag_base_x, frag_base_y, char_advance_is_y) = if is_vertical {
                                 (content_x + $frag_x + tx, content_y + $frag_y + ty, true)
@@ -1343,7 +1402,7 @@ impl super::Painter {
                                 );
                             }
 
-                            for ch in transformed.chars() {
+                            for (char_idx, ch) in transformed.chars().enumerate() {
                                 let (glyph_x, glyph_y) = if char_advance_is_y {
                                     (frag_base_x, char_pos)
                                 } else {
@@ -1412,6 +1471,30 @@ impl super::Painter {
                                         font_size: mark_fs,
                                         color: frag_color,
                                         glyph_id: mark_ch as u32,
+                                        font_id: default_font_id,
+                                        bitmap_width: None,
+                                        bitmap_height: None,
+                                        rotation,
+                                    });
+                                }
+
+                                // R1022：ruby annotation —— rt[char_idx] 上移到 rb 字符上方
+                                // （类 text-emphasis over，mark 来自 rt 文本）。
+                                if !char_advance_is_y
+                                    && !ch.is_whitespace()
+                                    && let Some(rt_ch) =
+                                        ruby_marks.as_ref().and_then(|v| v.get(char_idx).copied())
+                                {
+                                    let rt_fs = $frag_fs * 0.5;
+                                    let rt_advance = measure_char_for_paint(rt_ch, rt_fs, $is_ahem);
+                                    let rt_x = char_pos - advance / 2.0 - rt_advance / 2.0;
+                                    let rt_y = frag_base_y - $frag_fs - rt_fs * 0.4;
+                                    self.primitives.add_glyph(GlyphPrimitive {
+                                        x: rt_x,
+                                        y: rt_y,
+                                        font_size: rt_fs,
+                                        color: frag_color,
+                                        glyph_id: rt_ch as u32,
                                         font_id: default_font_id,
                                         bitmap_width: None,
                                         bitmap_height: None,
