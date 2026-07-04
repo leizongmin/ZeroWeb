@@ -10,13 +10,12 @@ name = "zero-browser"
 path = "src/main.rs"
 
 # 开发构建保留控制台子系统（tracing 日志可见、Ctrl+C 终止）；
-# 打包构建不启用该 feature，默认走 GUI 子系统（双击 .exe 不弹黑窗）。
+# ui-sdk 分支实验阶段：sdk-chrome 默认开启，用 SDK 渲染浏览器 chrome。
 [features]
-default = []
+default = ["sdk-chrome"]
 windows-console = []
 # DC-14 浏览器 SDK chrome 接线：开启后 render_cpu/render_frame 经 `render_chrome_via_sdk` +
-# `merge_into_frame` 把 SDK chrome 叠加并入帧（grayscale 验证用，与手绘 chrome 并存；替换式
-# 迁移需先拆分 build_scene 的 chrome/页面内容，follow-up）。默认关闭 → 手绘 chrome 路径不变。
+# `merge_into_frame` 把 SDK chrome 叠加并入帧。
 sdk-chrome = [
     "dep:zero-browser-chrome",
     "dep:zero-text-foundation",
