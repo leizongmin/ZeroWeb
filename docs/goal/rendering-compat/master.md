@@ -2648,6 +2648,24 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1038 ★spanner balance-breaking region_idx gate LANDED = css-multicol Oracle 135→136（+1 PASS）·修 R1037 no-balancing 回归·累计 css-multicol +6
+
+承 R1037 CONTINUE（目标簇残余深挖 + 2 小回归）。本轮先探目标簇 002 残余（paint clip 放大探针证伪——clip 正确，002 8.56→18.98 更差），转修 R1037 确定回归 no-balancing。
+
+**002 残余调查（探针证伪）**：LAYOUT_DUMP 确认 block1 现 split（spanner abs_y 213→113，region0=100px ✓）。假设 multi-row overflow row 被 paint clip 裁剪——`mod.rs:849` breaking fragment `clip_h=box_node.content_height`。**探针放大 clip_h+1000 → 002 8.56→18.98（更差！）证伪**：clip 正确（隐藏溢出内容），残余**不在** paint clip，在 multi-row+breaking 协同精度（region_available/fragment_y_offset/row_height 交互，多 session）。
+
+**★ 修 R1037 no-balancing-after-column-span 回归**：结构 = column-fill:**auto** + column-span:all + 内容在 spanner 后。assert：auto 模式 spanner **之后**不应 balance。R1037 spanner 路径 region_explicit 对 auto 模式也触发 balance-breaking（误）。**修**：region_explicit gate 加 `|| region_idx == 0`——region 0（spanner 前）保留 breaking（always-balancing-before-column-span 案），region>0（spanner 后）+ auto 禁 breaking。
+
+**Gate 演进**：v1（`!sequential_fill`）136/452(+1) 但 always-balancing-before 2.81→3.84(+1.03 仍 FAIL，过宽禁了 region 0 breaking) → v2（`!sequential_fill || region_idx==0`）136/452(+1) + always-balancing 不再恶化。chromium auto+spanner 语义：spanner 前 balance（region 0）/ 后 sequential（region>0）。
+
+**A/B（stash 对照 R1037 135/452）**：**136/452（+1 net）**。**1 flip**：no-balancing-after-column-span 1.77→0.73（修 R1037 回归）。噪声 column-height-029 +0.05（仍 FAIL）。6 flip + 目标簇 + always-balancing 全保持。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0** / **product-smoke welcome 16.57% < 20%** ✓。21 multicol 测全过。
+
+**意义**：修 R1037 no-balancing 回归，css-multicol 135→136。gate 精细化（region_idx 区分 spanner 前后）匹配 chromium auto+spanner 语义。**累计 R1035(+1)+R1037(+4)+R1038(+1) = css-multicol 130→136（+6）**，三连 landed win。详见 [`evidence/r1038-no-balancing-after-span-fix-2026-07-05.txt`](./evidence/r1038-no-balancing-after-span-fix-2026-07-05.txt)。
+
+**▶ 下会话**：① **目标簇 002/007/013 残余**——paint clip 探针证伪，残余在 multi-row+breaking 协同精度，须 LAYOUT_DUMP 逐 fragment 查位置 + ref PNG 像素带对比定位（多 session，但 007 6.85%/013 1.23% 接近 flip，EV 高）；② clip-scrolled-content-001（R1037 残余 +0.21 小回归）；③ 或转 R109 vertical / position:relative 其它结构性（multicol 三连 +6 后可换方向）。
+
 ### R1037 ★balance-mode column-breaking + explicit-height gate LANDED = css-multicol Oracle 131→135（+4 PASS）·目标簇 span-all-children-height 大改善·2 小回归·纠正 R1036「avoid 前置」误判
 
 承 R1036（通用 balance-breaking net -12 回退）。本轮找到正确 gate，转 **net +4**。

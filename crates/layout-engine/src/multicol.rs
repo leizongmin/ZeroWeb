@@ -432,20 +432,25 @@ fn layout_multicol_with_spanners(
             (vec![Vec::new(); col_count.max(1)], 0.0)
         } else {
             // R1037：region 子元素 explicit-height 标志（balance-breaking gate）。
-            // 仅容器 definite 高度时启用（避 zero-height 容器误触，同非 spanner 路径）。
-            let region_explicit: Vec<bool> = if container.content_height > 0.0 {
-                region_children
-                    .iter()
-                    .map(|&i| {
-                        container.children[i]
-                            .node_id
-                            .and_then(|id| styles.get(&id))
-                            .is_some_and(is_explicit_height)
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
+            // 仅 balance 模式（!sequential_fill）+ 容器 definite 高度时启用：
+            // (a) 避 zero-height 容器误触（同非 spanner 路径）；
+            // (b) column-fill:auto 的 spanner **之后** 区域应 sequential fill（region_idx>0），
+            //     不做 balance-breaking（no-balancing-after-column-span：auto+spanner 后不应 balance）；
+            //     region_idx==0（spanner 之前）保留 breaking（always-balancing-before-column-span）。
+            let region_explicit: Vec<bool> =
+                if container.content_height > 0.0 && (!info.sequential_fill || region_idx == 0) {
+                    region_children
+                        .iter()
+                        .map(|&i| {
+                            container.children[i]
+                                .node_id
+                                .and_then(|id| styles.get(&id))
+                                .is_some_and(is_explicit_height)
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
             (
                 assign_children_to_columns_balanced(&region_child_info, col_count, &[], &[], &region_explicit),
                 0.0,
