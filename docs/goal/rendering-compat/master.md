@@ -2648,6 +2648,24 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1037 ★balance-mode column-breaking + explicit-height gate LANDED = css-multicol Oracle 131→135（+4 PASS）·目标簇 span-all-children-height 大改善·2 小回归·纠正 R1036「avoid 前置」误判
+
+承 R1036（通用 balance-breaking net -12 回退）。本轮找到正确 gate，转 **net +4**。
+
+**R1036 误判纠正**：回归案 break-inside:avoid 全 0（含 overflow-unsplittable）→ avoid 非前置。读结构：overflow-unsplittable-001 = `overflow:scroll + height:auto`（monolithic 滚动容器）；span-all-children-height-004a = `height:200px`（explicit length）。**真区分器 = explicit height**（CSS Fragmentation monolithic 元素 overflow≠visible/scroll/auto-height 不可分）。
+
+**实现（crates/layout-engine/src/multicol.rs）**：① `is_explicit_height(style)` helper（height 非 Auto/Calc/FitContent/MinContent/MaxContent）；② `assign_children_to_columns_balanced` 加 `explicit_height: &[bool]` 5th 参数，R1036 breaking 分支 gate on `is_explicit && child > target && target > 0`；③ 两 caller（非 spanner + spanner）从 styles 算 explicit_height；④ **zero-height 守卫**：`container.content_height > 0.0` 才传非空（避 zero-height 容器误触）；⑤ 8 既有测试加 `&[]`，2 新 R1037 单测（explicit split / auto no-break）。
+
+**A/B（stash 严格对照，baseline 131/452）**：v1（explicit-height gate）134/452（+3，仍含 zero-height-002 0.91→6.42 强回归）→ v2（+ zero-height 守卫）**135/452（+4）**。**6 flip**（column-height-020/fill-balance-005/030/nested-023/031/spanner-fragmentation-005）。**2 小回归**（clip-scrolled-content 0.93→1.14 +0.21pp、no-balancing-after-column-span 0.73→1.77 +1.04pp 语义）。explicit-height gate 消 R1036 的 15 个回归 + zero-height 守卫再消 zero-height-002 = R1036 18 回归 → R1037 仅 2 小回归。
+
+**★ 目标簇 span-all-children-height 改善（R1035 multirow + R1037 breaking 协同）**：002 **26.76→8.56（-18pp）**、007 16.28→6.85（-9.4pp 接近 flip）、004a 30→18、004b 28→19、003 23→18、006 22→15、013 1.91→1.23（接近）、001 0.72→0.40（PASS 改善）。多数仍 FAIL（残余 = multi-row+breaking 协同精度 + region 高度交互）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（workspace 零失败，layout-engine 1021 测 +2 R1037）/ **product-smoke welcome 16.57% < 20% gate** ✓。21 multicol 测全过（2 新 R1037）。
+
+**意义**：R1036 通用 breaking + explicit-height gate（CSS Fragmentation monolithic gate）+ zero-height 守卫，转 net -12 → **net +4**。继 R1035（+1）后第二个 landed multicol win，**累计 R1035+R1037 = css-multicol 130→135（+5）**。纠正 R1036「break-inside:avoid 是前置」误判（回归案 avoid 全 0，真前置 = monolithic/explicit-height gate）。详见 [`evidence/r1037-balance-breaking-explicit-gate-landed-2026-07-05.txt`](./evidence/r1037-balance-breaking-explicit-gate-landed-2026-07-05.txt)。
+
+**▶ 下会话**：① **目标簇残余深挖**——002/007/013 接近 flip（<2%），查 multi-row+breaking 协同精度（002 region leftover 与 breaking 片段边界交互）+ region 高度计算；② 2 小回归（clip-scrolled-content 滚动容器 / no-balancing-after-span 语义）逐案查；③ 或转 R109 vertical / position:relative 其它结构性。css-multicol 累计 +5，仍可继续挖（目标簇接近 flip）。
+
 ### R1036 balance-mode column-breaking 通用应用 net -12 已回退·目标簇大改善但 18 回归·真前置 = break-inside:avoid plumbing·零 net 源码·纯调查
 
 承 R1035 CONTINUE（span-all-children-height-002 真前置 = balance-mode column-breaking，LAYOUT_DUMP 证 block1 200px 应拆 2 列各 100px 让 region0=100px 留 room 给 region1 multirow）。本轮实现 + A/B，**net -12 回退**。
