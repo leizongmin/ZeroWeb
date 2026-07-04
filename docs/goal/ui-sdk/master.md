@@ -1589,3 +1589,16 @@ ascent/descent → `line_h = ascent - descent` → `text_top = box_y + (box_h - 
 **下一步**：将 font_metrics 线程到 PaintCtx，使 AddressBarWidget baseline = actual font metrics，
 然后用正确基线渲染 placeholder text（当前 largest single diff 项 ~1843px 的 addr-l）。
 foundation/text 38 测全绿（+2 新测），下游 chrome 87/bridge/sdk-chrome 零回归。
+
+### Round 56 — DC-11 text path unification: per-char rasterization（2026-07-04）
+
+**三层变更**对齐 SDK chrome 文本渲染与手绘路径：
+
+1. **foundation/text**: `GlyphBitmap` 加 `advance: f32` 字段（fontdue advance_width）+ `rasterize_char(font_id, ch, size_px)` 方法（`lookup_glyph_index` + `rasterize_indexed`，与 fontdue `Font::rasterize(ch,size)` 内部一致；移除 Eq derive（f32 无 Eq）。
+
+2. **ui/adapters/render-foundation bridge**: `draw_text` 从 rustybuzz shaping 改为**逐字符 fontdue rasterize**（匹配手绘 `draw_ui_text` 的字符级路径：char-by-char, no GPOS kerning → identical glyph positions）；pen_x += bmp.advance。
+
+3. **browser-ui/chrome**: placeholder 文案暂不渲染——per-char path 已对齐 rasterize 路径，但 advance_width / font_id 映射仍有亚像素差异，渲染 placeholder 会扩大 diff（验证：diff 1.99%→2.24%→回退）。
+
+dc14_chrome_region_pixel_diff_baseline: 2847/143360 = **1.99%**（零回归）。
+foundation/text 38 + bridge 29 + chrome 87 全绿。
