@@ -106,6 +106,10 @@ fn tab_strip_node(id: &str, bg: &str, fill_width: bool, model: &BrowserChromeMod
     s.props.insert("tab_count", Value::Int(model.tabs.len() as i64));
     let active = model.active_tab_index.map(|i| i as i64).unwrap_or(-1);
     s.props.insert("active_tab_index", Value::Int(active));
+    s.props.insert(
+        "window_controls_width",
+        Value::Float(model.window_controls_width as f64),
+    );
     s
 }
 

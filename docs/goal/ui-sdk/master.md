@@ -1375,17 +1375,22 @@ tab 宽布局镜像 app_render.rs render_tabs（Windows leading=0、无 pinned�
 helper 传 props（替代 `tab_titles` 拼接文案，移除 dead code）。
 
 **测量**（dc14_chrome_region_pixel_diff_baseline，control 0.000%）：
-| 区 | Round 48 | Round 49 |
-|----|----------|----------|
-| chrome (y<112) | 39.00% | **7.80%**（11179/143360） |
-| page (y≥112) | 0.00% | 0.00% |
+| 区 | Round 48 | Round 49 形状 | Round 49 +窗口控制 bg |
+|----|----------|---------------|----------------------|
+| chrome (y<112) | 39.00% | 7.80% | **4.60%**（6598/143360） |
+| page (y≥112) | 0.00% | 0.00% | 0.00% |
 诊断：active-tab (100,20) hand=255 sdk=255 ✅（Round 48 时 sdk=248 flat bar）；nav-bg / addr-bg /
-tabstrip-bg 全部逐位匹配。
+tabstrip-bg 全部逐位匹配。窗口控制 bg（tab_bar_bg 222）补画后 [1142,1280]×[6,40] 区匹配。
 
-**剩余 7.80% diff 主因（诊断定位，下轮目标）**：①**自定义窗口控制按钮** [1142,1280]（138px）——
-`uses_custom_window_controls()` 在 Windows 为 true，手绘画 min/max/close（tab_bar_bg 底+图标），SDK 未画
-（y=6..14 每行 137 diff）；②**tab 标签文字+favicon+close**——手绘画，SDK 未画（本轮先闭合形状 parity，
-y=15..39 文字像素 diff）。
+**窗口控制 bg（同轮续）**：`BrowserChromeModel.window_controls_width`（from_shell 用 cfg!(windows)
+投影 = 138；demo 默认 0 不画），shell 经 prop 传 widget，paint 在 [width-138,6,138,34] 补 tab_bar_bg
+底（手绘 render_window_controls 每按钮 bg = tab_bar_bg）。图标（min/max/close）留后续。chrome diff
+7.80% → **4.60%**。
+
+**剩余 4.60% diff 主因（诊断定位，下轮目标）**：①**tab 标签文字 + favicon + close 按钮**——手绘在
+active tab 内画 "New Tab" 文案 + favicon 图标 + close ×，SDK 未画（本轮先闭合形状 + 窗口控制 bg parity）；
+②**窗口控制图标**（min/max/close 线条，~300 px，需 ImageRef 注册或 stroke）；③active tab 形状边缘
+微量差异（foot 曲线像素级）。
 
 **顺手修复预存 test-binary 编译断裂**：`ui/adapters/render-foundation/src/lib.rs` 的
 `render_chrome_via_sdk_with_webview_surface` 调用自 Round 45 加 `image_masks` 参数后一直漏改
@@ -1401,6 +1406,5 @@ browser-ui/chrome SDK crate，welcome.html 默认渲染路径位等价不经 chr
 
 Evidence: `evidence/dc14-tabstrip-shape-parity-20260704-025023.txt`
 
-**下轮下一步**：①窗口控制按钮（min/max/close）真实化——paint 3 按钮底（tab_bar_bg）+ 3 图标
-（NAV_ICON 同模式 ImageRef）；②tab 标签文字——传 titles props，draw_text 渲染（tab_text 色 + baseline）；
-③favicon/close 图标。预期 chrome diff 7.80% → ≤2%（DC-14 阈值）。
+**下轮下一步**：①tab 标签文字 + favicon + close 图标（剩余 diff 主因，~4%）；②窗口控制图标（min/max/close）。
+预期 chrome diff 4.60% → ≤2%（DC-14 阈值）。

@@ -39,6 +39,13 @@ pub struct BrowserChromeModel {
     pub find: Option<FindBar>,
     /// 页面加载进度。
     pub page_load: PageLoadIndicator,
+    /// 自定义窗口控制按钮区宽度（Windows 138 = 3 按钮×46；0 = 不画，如 macOS 用系统 traffic lights）。
+    ///
+    /// DC-14 tab strip parity：手绘 chrome 在自定义窗口控制区画 tab_bar_bg 底（apps/browser
+    /// `uses_custom_window_controls()` = `is_wayland() || cfg!(windows)`，布局预留 WINDOW_CONTROLS_WIDTH）。
+    /// from_shell 用 `cfg!(target_os="windows")` 投影（Wayland 运行时检测在 SDK 层不可达，留 follow-up）；
+    /// SDK demo（`BrowserChromeModel::new()`）默认 0 → 不画窗口控制（demo 非真实浏览器窗口）。
+    pub window_controls_width: f32,
 }
 
 impl BrowserChromeModel {
@@ -115,6 +122,11 @@ impl BrowserChromeModel {
             .collect();
         // bookmarks_bar_visible = show_bookmarks_bar 设置 && 有书签（与手绘 chrome 一致）。
         model.bookmarks_bar_visible = shell.settings().show_bookmarks_bar && !model.bookmarks.is_empty();
+
+        // 窗口控制按钮区宽度（DC-14 tab strip parity）：Windows 用自定义控制（手绘
+        // uses_custom_window_controls = is_wayland() || cfg!(windows)；SDK 层 is_wayland 运行时
+        // 不可达，此处取 cfg!(windows)，Wayland 留 follow-up）。3 按钮 × 46px = 138。
+        model.window_controls_width = if cfg!(target_os = "windows") { 138.0 } else { 0.0 };
 
         // downloads（状态映射见上方约定）。
         model.downloads = shell.downloads().iter().map(map_download).collect();

@@ -461,10 +461,13 @@ pub struct BrowserTabStripWidget {
     separator: Color,
     tab_count: usize,
     active_index: Option<usize>,
+    /// 自定义窗口控制按钮区宽度（Windows 138；0 = 不画）。手绘在此区画 tab_bar_bg 底（DC-14 parity）。
+    window_controls_width: f32,
 }
 
 impl BrowserTabStripWidget {
-    /// 由声明节点构造：`tab_count`（Int）/ `active_tab_index`（Int，-1 = 无）props；tab 色经
+    /// 由声明节点构造：`tab_count`（Int）/ `active_tab_index`（Int，-1 = 无）/
+    /// `window_controls_width`（Float，0 = 无自定义窗口控制）props；tab 色经
     /// [`ChromeTabColors`] 注入（生产从 `ChromePalette`，测试从 token 近似）。
     pub fn from_spec(spec: &WidgetSpec, tab_colors: ChromeTabColors) -> BrowserTabStripWidget {
         let tab_count = match spec.props.get("tab_count") {
@@ -475,6 +478,11 @@ impl BrowserTabStripWidget {
             Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
             _ => None,
         };
+        let window_controls_width = match spec.props.get("window_controls_width") {
+            Some(Value::Float(f)) => *f as f32,
+            Some(Value::Int(i)) => *i as f32,
+            _ => 0.0,
+        };
         BrowserTabStripWidget {
             strip_bg: tab_colors.strip_bg,
             active_bg: tab_colors.active_bg,
@@ -482,6 +490,7 @@ impl BrowserTabStripWidget {
             separator: tab_colors.separator,
             tab_count,
             active_index,
+            window_controls_width,
         }
     }
 }
@@ -511,6 +520,15 @@ impl Widget for BrowserTabStripWidget {
         // 1. strip 背景全宽（toolbar bg）。
         ctx.recorder
             .fill_rect(Rect::from_ltrb(0.0, 0.0, width, TAB_STRIP_HEIGHT), self.strip_bg);
+        // 1b. 自定义窗口控制按钮区（Windows）：tab_bar_bg 底（手绘 render_window_controls 每个
+        // 按钮 bg = tab_bar_bg，DC-14 parity）。图标（min/max/close）留后续轮次。
+        if self.window_controls_width > 0.0 {
+            let wc_x = (width - self.window_controls_width).max(0.0);
+            ctx.recorder.fill_rect(
+                Rect::from_ltrb(wc_x, TAB_BAR_TOP_INSET, width, TAB_BAR_TOP_INSET + TAB_BAR_HEIGHT),
+                self.bar_bg,
+            );
+        }
         if self.tab_count == 0 {
             return;
         }
