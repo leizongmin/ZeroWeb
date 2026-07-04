@@ -2648,6 +2648,26 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1030 span-all-children-height 簇 Phase 0 探测 = multi-row column model + overflow columns（多 session 结构性，纠正「row-fill」诊断）·零源码·纯调查
+
+承 R1029 CONTINUE 转 column-fill:auto + spanner row-fill 模型。本轮 Phase 0 探测 span-all-children-height 簇（002/003/004a/004b/006/007 @ 20-34%）真机制。
+
+**关键发现**：此簇非上会话推测的「row-fill 模型」单点，而是 **multi-row column model + overflow columns + 百分比高度** 三层耦合：
+- **multicol-span-all-children-height-002** 驱动案注释明示：「Column container has only 25% height left, so **two extra overflow columns are created. Total 4 columns, each 50px**」——block2（height:100%）在 spanner 下方的剩余高度不够，**创建溢出列**，形成 2 行 × 2 列的 column grid。
+- **001**（0.72% PASS）：单 spanner + 百分比高度，R1028 balanced-per-region 巧合通过。
+- **005/008**（1.03-1.04%）：nested multicol + multi-spanner + column-fill:auto，结构复杂非单点。
+- **balance-mode column-breaking**：block1（100px）需跨列拆分以均衡（chromium 行为），ZW balanced 不拆分单 block（block 整体入 col0）→ region 高度错。
+
+**CSS 规范根源**：CSS Multicol §3 与 CSS Fragmentation 的 multi-row column 模型——column-fill:auto + 明确高度时，内容溢出末列会创建新行（multi-row），spanner 在行间断开。这是 taffy 不支持、须自建 row-column grid 的硬核结构性，与 R383 Phase 2 同级。
+
+**裁决**：span-all-children-height 簇 = 多 session 结构性（multi-row + overflow + 百分比 + balance-breaking 四层），**非单 session slice 可产**。下会话勿以「row-fill 单点」重试。真解锁须 dedicated session 实现 multi-row column 模型（row-column grid + overflow column 创建 + spanner row 断开），或先做 balance-mode column-breaking（block 跨列拆分以均衡）这个相对窄的前置。
+
+**multicol near-pass 复核**（1-3% 带）：count-non-integer/negative（1.0-1.17%）= Ahem font-wall（parser 已正确拒负值）；gap-negative/large（1.07-1.18%）= Ahem；baseline-001/004/006（1.02-1.03%）= multicol baseline；column-height-012/multicol-height-001/rule-003（1.13%）= Ahem 精度；intrinsic-size-001（1.14%）= R1020 谱系；fill-balance-030（1.14%）= balance。**全 Ahem font-wall 或已 ruled-out 谱系，无新 clean lever**。
+
+**战略**：css-multicol Oracle 130/452（28.8%）残余 worst 全结构性（multi-row / nested-balancing / breaking / paged / subpixel）。单 session clean lever 在 multicol 已尽（R1027 break-after +1、R1028 column-span:all +8、R1029 rule-split foundational 是本窗口期）。forward = ① multi-row column 模型（多 session 硬核，最高 yield——span-all-children-height + span-all-rule 簇）；② balance-mode column-breaking（前置，相对窄）；③ 转 font-wall webfont per-font 或 writing-modes vertical（同多 session）。
+
+**▶ 下会话**：① **balance-mode column-breaking**（assign_children_to_columns_balanced 对单 child 超过 target_height 时跨列拆分，复用 with_breaking 的 fragment 机制）——这是 span-all-children-height 001/002 + balance 簇的前置，相对窄可单 session probe；② 备选 multi-row column 模型 dedicated session（硬核多 session）；③ 备选转 font-wall/writing-modes。css-multicol near-pass 勿重扫（全 Ahem/ruled-out）。
+
 ### R1029 column-rule 在 spanner 处分段（CSS §6.1）LANDED·net-neutral oracle·spec-correctness·foundational
 
 承 R1028-cont CONTINUE 转 column-rule-spanner。CSS Multicol §6.1：column-span:all spanner 使 column-rule 在 spanner 处中断。R1028 spanner 布局后 paint_column_rules 仍画整条 rule（穿过 spanner）。
