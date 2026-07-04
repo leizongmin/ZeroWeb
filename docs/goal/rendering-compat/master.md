@@ -2648,6 +2648,30 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1022 <ruby> 渲染最小实现 LANDED·rb inline + rt zero-width annotation 上移·net-neutral oracle（108/242 持平，font-wall 阻塞 yield）·零回归·spec-correctness
+
+承 R1021「ruby 是 text-emphasis 混合案 + ruby 专属簇的共同阻塞（71/242 文件 footprint）」。本轮实施 R1021 测绘的 ruby 最小切片（CSS Ruby Layout L1）。
+
+**改动**（commit 3228b358，跨 2 crate）：
+- layout-engine/inline/mod.rs：`collect_text_excluding` 辅助（递归收集文本，跳过指定 local_name 子树）+ `collect_inline_items` 对 `<ruby>` 元素改用 `collect_text_excluding(ruby, ["rt","rp"])` 替代 `text_content`——rb 文本正常进 inline 流，`<rt>`/`<rp>` 文本被排除（不再当行内字符与 rb 混排 "F●i●l●..."）。TextRun node_id = ruby 元素。
+- engine/paint/painter/text.rs：`ruby_annotation_chars` + `collect_ruby_rt_text`（paint 期按 fragment owner 是否 `<ruby>` 收集 rt 后代文本）+ Path A / Path B（render_fragment! 宏）逐字符渲染 rt[k] 居中于 rb char k 上方（rt_fs=0.5×frag_fs，几何镜像 text-emphasis over 标记）。
+- 测试：`test_r1022_ruby_excludes_rt_rp_from_inline_flow`（parse_html `<ruby><rb>Fi</rb><rt>●●</rt><rp>注</rp></ruby>l` → IFC layout → 断言 ● 与「注」不在 inline 流，rb "Fi"+尾 "l" 保留）。
+
+**★ A/B 实测 net-neutral（诚实·font-wall 阻塞 yield）**：stash A/B chromium-Oracle css-text-decor **108/242 → 108/242 持平**，6 案微改善（text-emphasis-position-over/under-right/left-**002** -0.18pp ×4、color-001 -0.13、shape-001 -0.11），**零回归**。见 [`evidence/r1022-ruby-ab-2026-07-04.txt`](./evidence/r1022-ruby-ab-2026-07-04.txt)。
+
+**★ dark-pixel 实测定位 yield 真因 = font-wall（非 ruby 标记定位）**：filled-001 驱动案 dark-pixel 计数——R1021（rt 当行内字符）**11627** → R1022（rt 上移）**11102** → CHR oracle **7064**。R1022 正确把 rt 移出 inline 流（dark 降 525），但 ZW 总 dark（11102）仍**远高于** CHR（7064）= ZW 文本渲染比 chromium 厚（font-wall，同 R1021 text-emphasis 谱系）。ruby 标记 image-level 证实**正确上移**（rt 形状/over 位置匹配 chromium）。yield 不来 = font-wall 主导 diff，非 ruby 实现错误。
+
+**意义**：`<ruby>` 结构现**正确**（此前 `<ruby><rb>F</rb><rt>●</rt>...` 被 `text_content` 扁平化为 "F●i●l●l●e●r●"，rt 的 ● 当行内字符与 rb 混排；现 rb "Filler" 正常 inline 流 + rt ● 作 zero-width annotation 上移到 rb 字符上方）。CSS Ruby Layout L1 的最小可行切片落地。yield 阻塞 = font-wall（同 text-emphasis R1021，ZW 光栅/度量比 chromium 厚 ~57%），非 ruby 实现。零回归（welcome 16.57% 不变证 inline collection 改动只对 `<ruby>` 分支，非 ruby 页面零影响）。
+
+**★ 限制（多 session 改进点，下会话勿以单 session 期望 yield）**：
+1. **rt 标记无 line-box 扩展**：chromium 为 ruby annotation 扩展行盒高度（rb 行之上加 annotation 行），ZW 行盒高度不变 → rt 渲染在行盒上方 may 挤占上一行（line-height 紧的案如 position-over-right-001 `font:20px/1em` 行盒仅 20px，rt 上移到行盒外）。须 layout 期为含 ruby 的行加 annotation 半行高（多 session，影响全 IFC 行盒度量）。
+2. **多字符 rt 居中于整个 rb segment 未实现**：当前 rt[k] 配对 rb char k 逐字符方案——WPT 主流案（每 `<rb>` 1 字符 + 每 `<rt>` 1 字符）正确；多字符 rt over 多字符 rb（如 `<rb>Fill</rb><rt>XY</rt>`）会逐字符错位（应居中 XY over Fill 的整 advance）。
+3. **`<rtc>` / `ruby-position: under` / 垂直 ruby / ruby-line-break / 级联 annotation 未支持**（CSS Ruby L1 完整特性集，多 session）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（workspace 零失败，layout-engine +1 R1022 测）/ **product-smoke welcome 16.57% < 20% gate** ✓（welcome 无 ruby，零影响，证 inline collection 改动安全）。
+
+**▶ 下会话**：① ruby line-box 扩展（多 session，layout 期为含 ruby 行加 annotation 半行高）——可望翻 position-over/under-*-001 等紧 line-height 案；② ruby 多字符 rt 居中（rt 文本居中于 rb segment advance，非逐字符）；③ 或转 R1020 已 ruled-out 的其它结构性（multicol Phase 2 / R109 / per-font ascent）。ruby 结构已 land（3228b358），font-wall 仍是 text-decor 簇 yield 主阻塞（同 R1021 结论）。
+
 ### R1021 text-emphasis-style/position 解析+继承+渲染 LANDED（CSS Text Decoration 3 §3）·net-neutral oracle（108/242 持平）·驱动案混 <ruby> 未实现阻塞·spec-correctness·纯调查定位 ruby 真因
 
 承 R1020 后转 css-text-decor（doc R232 标 text-emphasis 未实现）。实现 `text-emphasis-style`（none / [filled|open] × [dot|circle|double-circle|triangle|sesame] 任意顺序 + `<string>` 首字符）+ `text-emphasis-position`（over/under × left/right，默认 over right）两个**继承**属性，paint 期每个非空白字符上方（over）或下方（under）居中绘制 0.5×font-size 标记字符。
