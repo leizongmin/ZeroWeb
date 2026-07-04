@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1032 css-fonts font-size-adjust 簇 Phase 0 + Ahem slice 实现 A/B（+0，font-wall 阻 flip）已回退·机制确证·零 net 源码·纯调查
+
+承 R1031 CONTINUE 转 font-wall per-font ascent，转 probe css-fonts（fresh oracle 98/287 34.8%）。定位最高密度簇 **font-size-adjust**（40 文件，7+ top-worst 13-34%），**完全未实现**（css-parser/style/layout/engine 全零命中）。
+
+**Phase 0 机制确证**：CSS Fonts §9.4 `font-size-adjust: <number>` → `used_font_size = font_size × (number / font_aspect)`，aspect = font x-height/em。基础单数语法 18 文件 + 高级两值（ch-width 等 CSS4）10 文件。006/007/008 PASS 是因测「无效值（%）须忽略」——ZW ignore-all 巧合匹配（正确实现也忽略无效值→无回归风险）。font-size-adjust-001-ref 实证 formula：`font:40px/40px Ahem; font-size-adjust:0.9` → ref `font-size:45px`，即 0.9/0.8×40=45（aspect=0.8 = R547 ex-height）。
+
+**Ahem slice 实现 A/B（已回退）**：完整 plumbed（types/computed_style/default/registry 4处+is_inherited/apply/inherit/lib.rs 应用，aspect=0.8 hardcoded for Ahem）。**A/B css-fonts 全量**：001 **2.01→1.81**、002 **4.25→1.25**（改善但**均未 flip <1%**），005/014/units-001 不变（非 Ahem 或高级），006/007/008 持平 0.73（无回归）。**oracle 98→98（+0 net，0 regression）**。
+
+**★ +0 根因 = font-wall**：formula 正确（45px = ref），aspect 0.8 正确（R547），调整已应用（diff 减），但**残余 1.25-1.81% = 调整后尺寸的 glyph 渲染精度**（ZW is_ahem synthetic / fontdue 光栅 vs chromium Ahem.ttf at 45px/10px）——同 R388/R631 font-wall。aspect 调精也无效（45px 已精确，残余在 glyph 光栅非 size 计算）。
+
+**裁决（回退）**：+0 oracle + hardcoded magic constant（0.8，不泛化非 Ahem）+ font-wall 阻 flip = 按 code-guidelines「不做零价值修改 / 不做推测性开发」**回退全部实现**（7 文件 git checkout）。真实现须 ① R887 font-metric provider（real fontdue aspect via `font.metrics('x', px).bounds.height / px`，替代 hardcoded 0.8，泛化所有字体）；② font-wall 解除（glyph 光栅对齐，多 session）。两者皆多 session，premature 单做。
+
+**意义**：font-size-adjust 是 css-fonts 最高密度簇（40 文件），机制/formula 完全确证（45px ref 实证），但**同 css-text/-decor = font-wall gated**——font-wall 是 text-rendering 全 dir（css-fonts/-text/-text-decor）的 pervasive blocker。再确证 R1031 结论：单 session clean lever 全尽，#1 multi-session lever = font-wall（R887 provider + glyph 光栅对齐）。
+
+**▶ 下会话**：font-size-adjust 机制已确证（formula + 45px ref），R887 font-metric provider 落地后可一次性实现（real aspect + 全字体泛化）。但 font-wall glyph 光栅对齐仍可能阻 flip（须 fontdue→chromium 光栅协调，R834/R836/R849 多轮证 net-negative）。建议：① font-wall 是 pervasive blocker，dedicated session 攻 R887 provider + glyph 光栅（最高价值，解 text-rendering 全 dir）；② 或转 multicol multi-row / R109 vertical / position:relative（其它多 session 结构性，非 font-wall）。font-size-adjust 勿以 hardcoded aspect 单 session 重试（已证 +0）。
+
 ### R1031 多 dir 复核确认单 session clean lever 全尽·multicol balance-breaking + css-text-decor thickness 均结构性/已 ruled-out·零源码·纯调查
 
 承 R1030 CONTINUE 转 balance-mode column-breaking。本轮多 dir 复核找 clean lever，**结论：单 session clean lever 全尽**。
