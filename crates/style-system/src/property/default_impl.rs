@@ -89,6 +89,8 @@ impl Default for ComputedStyle {
             text_decoration_line: TextDecorationLineValue::None,
             text_decoration_color: ColorValue::CurrentColor,
             text_decoration_style: TextDecorationStyleValue::Solid,
+            text_emphasis_style: TextEmphasisStyleValue::None,
+            text_emphasis_position: TextEmphasisPositionValue::OverRight,
             text_transform: TextTransformValue::None,
             letter_spacing: LengthValue::Px(0.0),
             word_spacing: LengthValue::Px(0.0),

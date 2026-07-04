@@ -43,6 +43,14 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.letter_spacing = parent.letter_spacing.clone();
             true
         }
+        "text-emphasis-style" => {
+            child.text_emphasis_style = parent.text_emphasis_style.clone();
+            true
+        }
+        "text-emphasis-position" => {
+            child.text_emphasis_position = parent.text_emphasis_position;
+            true
+        }
         "word-spacing" => {
             child.word_spacing = parent.word_spacing.clone();
             true
@@ -665,6 +673,14 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "text-decoration-style" => {
             style.text_decoration_style = default_style.text_decoration_style;
+            true
+        }
+        "text-emphasis-style" => {
+            style.text_emphasis_style = default_style.text_emphasis_style.clone();
+            true
+        }
+        "text-emphasis-position" => {
+            style.text_emphasis_position = default_style.text_emphasis_position;
             true
         }
         "text-transform" => {

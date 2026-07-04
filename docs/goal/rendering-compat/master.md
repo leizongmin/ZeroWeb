@@ -2648,6 +2648,37 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1021 text-emphasis-style/position 解析+继承+渲染 LANDED（CSS Text Decoration 3 §3）·net-neutral oracle（108/242 持平）·驱动案混 <ruby> 未实现阻塞·spec-correctness·纯调查定位 ruby 真因
+
+承 R1020 后转 css-text-decor（doc R232 标 text-emphasis 未实现）。实现 `text-emphasis-style`（none / [filled|open] × [dot|circle|double-circle|triangle|sesame] 任意顺序 + `<string>` 首字符）+ `text-emphasis-position`（over/under × left/right，默认 over right）两个**继承**属性，paint 期每个非空白字符上方（over）或下方（under）居中绘制 0.5×font-size 标记字符。
+
+**改动**（commit 019f7fb0，跨 3 crate）：
+- css-parser: `parse_text_emphasis_style`（关键字组合→标记字符 U+2022/25CF/25CB/25C9/25CE/25B2/25B3/FE45/FE46；`<string>` 取首字符；空串 None）/ `parse_text_emphasis_position` + `TextEmphasisStyleValue`/`TextEmphasisPositionValue` 枚举。
+- style-system: registry 注册两属性（均标继承）+ apply 分支 + inherit + apply_initial + default_impl + computed_style 两字段 + PropertyValue 两变体。
+- engine paint（text.rs）: Path A（inline owner-style）与 Path B（`render_fragment!` 宏）两处按 fragment owner 样式取 mark char + over/under，逐字符 `add_glyph`（mark_fs=0.5×frag_fs，居中于 char_pos-advance/2，over 在 frag_base_y 之上 / under 之下）。owner_id 取 fragment 真实 owner（`<span>` 上设的属性生效），非容器 style。
+- 6 单测（parse 关键字/组合/string/非法/position 缺省）。
+
+**★ A/B 实测 net-neutral（诚实·零 PASS 翻转）**：stash A/B chromium-Oracle css-text-decor **108/242 → 108/242 持平**；4 案微回归 +0.06~0.12pp（字体噪声级，style-007/008/010 + color-001）。per-case 见 [`evidence/r1021-text-emphasis-ab-2026-07-04.txt`](./evidence/r1021-text-emphasis-ab-2026-07-04.txt)。
+
+**★ 真根因（图像分析定位·纠正前轮「mark 定位」方向）**：渲染 `text-emphasis-style-filled-001.xht` vs chromium oracle PNG 对比——
+- ZW **上半行**（`<span style="text-emphasis-style">Filler</span>`）：标记**正确渲染**（circle/dot/double-circle/sesame/triangle 形状区分正确，over 位置在文本上方留 leading 间隙，匹配 chromium）。
+- ZW **下半行**（`<ruby><rb>F</rb><rt>●</rt>...</ruby>`）：**零标记**——ZW 完全不识别 `<ruby>/<rb>/<rt>`（`ua_default_display` 未列 → 回落 inline），`<rt>` 的 `●` 当作**行内字符**渲染（与 rb 文字混排在基线上），而非 chromium 的「rt 文字悬浮在 rb 之上」。
+- 测试页设计：上半行用 text-emphasis，下半行用 ruby 模拟，期望两者**视觉一致**（"Test passes if upper and lower block identical"）。ZW 下半行缺 ruby 标记 = oracle diff 主导（filled-001 6.30% / position-over-right-001 3.48% 残余**主要由 ruby 缺口构成**，非 mark 定位）。
+
+**前轮「mark y-offset 调参」方向证伪**：上一会话 thinking 深陷 mark_y 偏移推导（over 位置 1.78×fs 等）。本轮 A/B + 图像分析证**mark 定位已正确**（图像分析「floating with a small gap above letters，匹配 chromium」），调参是死路——真阻塞是 ruby。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（workspace 零失败，css-parser +150 含 +6 R1021 测）/ **product-smoke welcome 16.57% < 20% gate** ✓（welcome 无 text-emphasis，零影响）。
+
+**★ ruby footprint 测绘（下会话 lever）**：css-text-decor 中 **71/242 文件用 `<ruby>`**（29%，含 text-emphasis-* 用 ruby 作 ref 模拟 + text-emphasis-ruby-* 簇 + ruby-text-decoration-* 簇）+ css-text 3 文件。`ua_default_display`（lib.rs:49）未列 ruby/rb/rt/rtc/rp → 全回落 inline。**ruby 渲染是 text-emphasis 混合案 + ruby 专属簇（~130 案）的共同阻塞**，实现后 css-text-decor 可望从 108/242（45%）显著上跳。
+
+**ruby 多 session 性**：UA 识别（display:ruby 变体 + UA 表）**不能单独做**——无 layout 支持时 `<rt>` 会消失或破坏当前可读的 inline 回退。须并发：① 新 `DisplayValue::Ruby`/`RubyBase`/`RubyText`/`RubyBaseContainer`/`RubyTextContainer` 变体（CSS Ruby Layout L1）② UA 表列 ruby/rb/rt/rtc/rp（rp → none）③ inline layout 把 ruby 当特殊 inline 盒，rt 配对 rb 上移（类 text-emphasis per-char mark，但 per-rb-segment 且 rt 文本变长）④ paint 走 inline text 路径带 rt 偏移。最小 slice = 单字符 rb/rt（WPT 主流案）的「rt 上移 0.5em 作 superscript」近似，但须先有 display 变体 + UA + layout 配对。非单 session。
+
+**★ Phase 0 UA-style hack REFUTED（下会话勿重试）**：考虑用 UA 样式 `rt { font-size:0.5em; vertical-align:0.5em }`（lib.rs:415 `ua_decl_inputs` 机制，已为 body/h1/p/a/hr 等用）让 rt 上浮。**机制不成立**：ruby annotation 必须 **zero-width 悬浮在配对 rb 正上方**（如 text-emphasis mark 居中在 char_pos 上方不占 advance）——`<ruby><rb>F</rb><rt>●</rt><rb>i</rb>...` 期望 "Filler" 上方每字母居中一 ●。若 rt 走 inline run，● 会占自身 advance（0.5em）排在 F **右侧**（F●i● 横向错位），非 F 上方。CSS `vertical-align` 只改 y 不改 zero-width，UA-style 单独**无法**实现 ruby（须 layout 把 rt 文本标为零宽 + 上移到 rb 位置，即 IFC 文本收集期识别 rt-owner run + paint 期不 advance、y 偏移）。下会话 ruby 须从 IFC/inline layout 入手，勿以 UA-style/vertical-align 重试。
+
+**意义**：text-emphasis（doc R232 标未实现）现 parse+store+apply+render 全链工作，是真实 CSS spec-correctness（CSS Text Decoration 3 §3）。net-neutral 因驱动案阻塞在 ruby（独立 feature 缺口），非 text-emphasis 本身错误——image-level 证实标记形状/位置正确。前轮 mark-y 调参方向纠正。ruby 测绘为下会话 dedicated 多 session lever 奠基（71 文件 footprint + UA/layout/paint 三层切片面已画）。
+
+**▶ 下会话**：① **ruby 渲染 dedicated 多 session**——Phase 0 设计 minimal ruby（display 变体 + UA + inline 配对 layout），首 slice 目标单字符 rb/rt 的 rt 上移近似，A/B css-text-decor（目标 +N，71 ruby 文件 + text-emphasis 混合案受益）；② 备选 R1020 已 ruled-out 的结构性（multicol Phase 2 / R109 / per-font ascent）。text-emphasis 本身已 land（019f7fb0），下会话勿重做 mark 定位（已证正确）。
+
 ### R1020 ★multicol 容器 intrinsic = N × column-content shrink-to-fit gate LANDED = change-intrinsic-width + intrinsic-width-change-column-count 双 PASS（+2，1.75/2.28→0.73）·修 R1018 已知 multicol 回归·1 已知 leaf-guard 限制（multicol-width-005 +0.94，已 FAIL）
 
 承 R1019 未解 ①「multicol intrinsic = columns × content（intrinsic-width-change-column-count，R1018 已知回归）」。R1018 的 `block_max_content_width` 只测单子 max-content 宽 → multicol `columns:N` 容器被 gate 收缩到单列宽（应 N × 列宽）。本轮**精准在 `block_max_content_width` 加 multicol 分支**。
@@ -2681,6 +2712,20 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R1020 续 css-tables fresh 扫描（同 session，零源码，纯调查）**：css-tables 116 案 fresh 扫描，近 PASS 簇 = table-intrinsic-size-001/002/003/004（2.65% ×4，min-content 驱动，MinContent 已 de-risk 双阻塞）、row-margin-border-padding + row-group-margin-border-padding（1.47% ×2）、border-collapse-empty-cell/dynamic-*（1.10-1.45 簇）、colspan-004/table_grid_size_col_colspan（R177 colspan 谱系）。**row-margin-border-padding 深查**：converter:48-56 + painter:454-494/611 **已双层归零** tr/row-group 的 border/padding/margin（layout + paint 均已正确处理），1.47% 残余 = 微妙子案（border-collapse:collapse vs separate 交互 / `.inherited>td{border:inherit}` 继承），**非 clean 单点**。table-intrinsic-size 簇受 MinContent ch 阻塞（同 R1020-cont）。
 - **裁决**：css-tables 近 PASS 簇亦均非 clean 单 session（intrinsic=min-content 墙 / row-internal 已双层处理 / colspan=R177 结构）。**3 dir 扫描结论（css-position/css-multicol/css-tables）**：近 PASS 残余全是 (a) font-metric/ch 墙 (b) abspos+relative+table 顺序结构 (c) R109 §9.2.1.1 inline 结构 (d) R177 colspan 结构——均多 session。clean 单 session lever 在 layout/intrinsic/abspos/table 主流 dir **确证耗尽**。**推荐下会话**：选 1 个多 session lever 深做（position:relative-table +6 最高 yield，须 full-corpus A/B；或 MinContent+ch 合做解锁 table-intrinsic-size +4 + flex-container-min-content +1），或转 css-text-decor/css-fonts/css-writing-modes 未扫 dir 碰运气。
+
+**★ R1020 续 css-text-decor 扫描 + text-decoration-thickness/offset 实现→A/B net-negative→REVERTED（同 session）**：css-text-decor fresh 扫描 243 案，最大簇 = **text-emphasis-style/position/ruby 簇（~22 案 1.0-1.3%，全 unimplemented feature，per-glyph 标记绘制，clean 新增低回归风险但大工程）**；次 = text-decoration-thickness/offset（~6 案）。
+- **text-decoration-thickness + text-underline-offset 实现（7 件改动：types/computed_style/registry/default_impl/apply/inherit + paint effects.rs）→ A/B css-text-decor 全量 net-NEGATIVE → REVERTED**：text-decoration-thickness-underline-001 **1.26→6.08（+4.8pp）**、overline-001 **1.42→7.92（+6.5pp）**、vertical-001 **0.81→1.20（PASS→FAIL）**、dotted-001/002 +1pp。仅 linethrough-001 1.26→1.01、scroll-001 3.67→2.19 改善（不足抵消）。
+- **★ 根因 = position:relative offset bug（同 R1020-cont2 诊断）**：thickness 驱动案 `#text{position:relative;bottom:3em;text-decoration-thickness:4em}` —— `bottom:3em` 须把 #text 上移 60px，4em(80px) 厚 underline 须随之落在 #box(80×20 red) 上覆盖之。ZW 的 position:relative offset 未正确作用于 #text 的装饰绘制 → 80px 厚线落错位（比默认细线更糟）。**thickness 量级正确**（paint_decoration_line Solid 已 grow-down：Rect top=y 向下 line_width），**问题在 #text 相对偏移未到位**。**★ 纠正 R874「text-decoration-thickness 更可控可单 session」推荐**——A/B 实证 net-negative，须先修 position:relative。
+- **裁决**：text-decoration-thickness/offset 被 position:relative offset bug 阻塞，单做 net-negative。**position:relative offset bug 现确证阻塞 ≥2 簇**（position:relative-table +6 + text-decoration-thickness +6 = **+12 潜力**），是最高价值多 session 解锁 lever。text-emphasis 簇（+22）独立未阻塞但须 per-glyph 标记绘制（IFC fragment 协调，大工程）。
+- **★ 4 dir 扫描 + 1 实现-回退 结论（position/multicol/tables/text-decor）**：position:relative offset bug 是横跨多 dir 的 pervasive blocker。**推荐下会话最高优先 = 修 position:relative offset bug**（解 +12，须 full-corpus A/B 守 abspos 回归），其次 text-emphasis（+22 clean feature）。
+
+**★ R1020 续 position:relative offset 修复尝试→A/B css-position net-NEGATIVE（9 regressed/0 improved）→REVERTED（同 session）**：承 cont4 推荐「修 position:relative offset bug」，本轮**诊断 solidify + 实现 + 全量 A/B**。
+- **诊断 solidify（layout diagnostic，已 revert）**：3 组测（simple-top `cb(relative,top:50)+abs(top:50)` / nested `relative-in-relative` / bottom）。**ZW baseline 全错**：abs@y=50（simple/nested 应 100）、abs@y=50（bottom 应 cb-30+50=20）。**机制确证 = abspos 按 CB 静态（pre-inset）位解析 top/left，未 track CB relative 偏移**。bug 通用（非 table 特有、非 nested 特有）。
+- **实现（postprocess.rs `propagate_relative_cb_offset_to_abspos` + engine.rs:419 接线）**：遍历树，沿 relative 祖先传 resolve_relative_inset(dx,dy)，对 abspos 加到 x/y；abspos/fixed CB 重置上下文。诊断测 3 组**全对**（abs→100/100/20，与 spec 一致）。
+- **★ A/B css-position 98 案全量（stash 严格对照）→ NET-NEGATIVE：9 regressed / 0 improved → REVERTED**。**8 个目标 position-relative-table-* 簇全回归**（thead/tbody/tfoot × left/top，1.32→2.37 +1.05pp ×6；tr-left/top 0.80→1.85 +1.05pp ×2）+ position-relative-004 2.94→4.88。**目标簇本应是受益者却全回归**。
+- **★ 矛盾根因（关键）**：诊断（plain div）显示 fix 产 spec-correct y=100，但真实 table 测全回归。说明 **ZW table 布局已通过另一路径（table.rs grid 定位）把 abspos 摆在接近正确位**，fix 的 +50 inset **double-apply/overshoot**（abs 已 ~100，+50→150 越界）。div 测 baseline abs@50（错），table 测 baseline abs 已接近正确（故 1.32% 小 diff）——**两路径 abspos 定位机制不同**，post-hoc 全局传播 inset 对 div 对、对 table 错。
+- **裁决**：position:relative offset bug **非简单 postprocess 可解**——须先理解 table 布局如何定位 abspos（为何已接近正确而 div 路径错），可能须在 converter/taffy 层统一（非后处理）。**难度从「risky 多 session」升级为「structurally entangled 多 session」**。R98/R123/R500 谱系 abspos CB 调优路径已多轮，进一步改动须 dedicated table+abspos 交互调查。
+- **★ 战略调整**：position:relative offset 修复已证两次间接 blocker（thickness cont4 + 本轮直击）均 net-negative。**下会话转 text-emphasis 簇（+22，clean unblocked feature，per-glyph 标记绘制）更可产**；position:relative 列为长期架构 slice（须 table+abspos 交互 dedicated 调查，非后处理补丁）。
 
 ### R1019 ★float:block + flex/grid 子 shrink-to-fit gate LANDED = aspect-ratio-intrinsic-014 14.85→0.60% PASS + css/CSS2/floats-clear +5 PASS（floats-122/145/float-replaced-height-004/005/007）·float-non-replaced-width-007 20.62→5.17（-15.45pp）·零回归
 

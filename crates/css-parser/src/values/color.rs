@@ -664,6 +664,80 @@ pub fn parse_text_decoration_style(value: &str) -> Option<TextDecorationStyleVal
     }
 }
 
+/// 解析 CSS text-emphasis-style 值（CSS Text Decoration 3 §3.1）。
+/// `none` | [ [ filled | open ] || [ dot | circle | double-circle | triangle | sesame ] ] | <string>
+/// 关键字组合解析为对应标记字符（filled dot → '•' 等）；<string> 取首字符。
+pub fn parse_text_emphasis_style(value: &str) -> Option<TextEmphasisStyleValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(TextEmphasisStyleValue::None);
+    }
+    // <string>："..." 取首字符
+    if v.len() >= 3 && v.starts_with('"') && v.ends_with('"') {
+        let inner = &v[1..v.len() - 1];
+        return Some(TextEmphasisStyleValue::Char(inner.chars().next().unwrap_or('\u{2022}')));
+    }
+    // 关键字：[filled|open] [shape] 任意顺序，各可缺省（filled 默认 dot，shape 缺省 filled）
+    let mut filled: Option<bool> = None;
+    let mut shape: Option<&str> = None;
+    for tok in v.split_whitespace() {
+        match tok.to_ascii_lowercase().as_str() {
+            "filled" => filled = Some(true),
+            "open" => filled = Some(false),
+            "dot" | "circle" | "double-circle" | "triangle" | "sesame" => {
+                shape = Some(match tok {
+                    "dot" => "dot",
+                    "circle" => "circle",
+                    "double-circle" => "double-circle",
+                    "triangle" => "triangle",
+                    _ => "sesame",
+                })
+            }
+            _ => return None,
+        }
+    }
+    let filled = filled.unwrap_or(true);
+    let shape = shape.unwrap_or("dot");
+    let ch = match (filled, shape) {
+        (true, "dot") => '\u{2022}',            // •
+        (false, "dot") => '\u{25E6}',           // ◦
+        (true, "circle") => '\u{25CF}',         // ●
+        (false, "circle") => '\u{25CB}',        // ○
+        (true, "double-circle") => '\u{25C9}',  // ◉
+        (false, "double-circle") => '\u{25CE}', // ◎
+        (true, "triangle") => '\u{25B2}',       // ▲
+        (false, "triangle") => '\u{25B3}',      // △
+        (true, "sesame") => '\u{FE45}',         // ﹅
+        (false, "sesame") => '\u{FE46}',        // ﹆
+        _ => '\u{2022}',
+    };
+    Some(TextEmphasisStyleValue::Char(ch))
+}
+
+/// 解析 CSS text-emphasis-position 值（CSS Text Decoration 3 §3.2）。
+/// `[ over | under ] && [ right | left ]`，各可缺省（默认 over right）。
+pub fn parse_text_emphasis_position(value: &str) -> Option<TextEmphasisPositionValue> {
+    let mut over: Option<bool> = None;
+    let mut right: Option<bool> = None;
+    for tok in value.split_whitespace() {
+        match tok.to_ascii_lowercase().as_str() {
+            "over" => over = Some(true),
+            "under" => over = Some(false),
+            "right" => right = Some(true),
+            "left" => right = Some(false),
+            _ => return None,
+        }
+    }
+    let over = over.unwrap_or(true);
+    use TextEmphasisPositionValue::*;
+    Some(match (over, right) {
+        (true, Some(false)) => OverLeft,
+        (true, _) => OverRight,
+        (false, Some(false)) => UnderLeft,
+        (false, _) => UnderRight,
+    })
+}
+
 /// 解析 CSS text-transform 值。
 pub fn parse_text_transform(value: &str) -> Option<TextTransformValue> {
     match value.to_ascii_lowercase().as_str() {
@@ -988,6 +1062,78 @@ mod tests {
         assert_eq!(parse_text_transform("uppercase"), Some(TextTransformValue::Uppercase));
         assert_eq!(parse_text_transform("lowercase"), Some(TextTransformValue::Lowercase));
         assert_eq!(parse_text_transform("capitalize"), Some(TextTransformValue::Capitalize));
+    }
+
+    // ── parse_text_emphasis_style / parse_text_emphasis_position ───────
+
+    #[test]
+    fn test_parse_text_emphasis_style_none() {
+        assert_eq!(parse_text_emphasis_style("none"), Some(TextEmphasisStyleValue::None));
+        assert_eq!(parse_text_emphasis_style("NONE"), Some(TextEmphasisStyleValue::None));
+    }
+
+    #[test]
+    fn test_parse_text_emphasis_style_keywords() {
+        // 默认 filled → filled dot (•)
+        assert_eq!(
+            parse_text_emphasis_style("filled"),
+            Some(TextEmphasisStyleValue::Char('\u{2022}'))
+        );
+        assert_eq!(
+            parse_text_emphasis_style("dot"),
+            Some(TextEmphasisStyleValue::Char('\u{2022}'))
+        );
+        // filled/open × shape 任意顺序
+        assert_eq!(
+            parse_text_emphasis_style("filled circle"),
+            Some(TextEmphasisStyleValue::Char('\u{25CF}'))
+        );
+        assert_eq!(
+            parse_text_emphasis_style("circle open"),
+            Some(TextEmphasisStyleValue::Char('\u{25CB}'))
+        );
+        assert_eq!(
+            parse_text_emphasis_style("open sesame"),
+            Some(TextEmphasisStyleValue::Char('\u{FE46}'))
+        );
+        assert_eq!(
+            parse_text_emphasis_style("filled triangle"),
+            Some(TextEmphasisStyleValue::Char('\u{25B2}'))
+        );
+    }
+
+    #[test]
+    fn test_parse_text_emphasis_style_string() {
+        assert_eq!(
+            parse_text_emphasis_style("\"X\""),
+            Some(TextEmphasisStyleValue::Char('X'))
+        );
+        // 空字符串视为无效（不产生标记）
+        assert_eq!(parse_text_emphasis_style("\"\""), None);
+        // 多字符取首字符
+        assert_eq!(
+            parse_text_emphasis_style("\"foo\""),
+            Some(TextEmphasisStyleValue::Char('f'))
+        );
+    }
+
+    #[test]
+    fn test_parse_text_emphasis_style_invalid() {
+        assert!(parse_text_emphasis_style("not-a-keyword").is_none());
+        assert!(parse_text_emphasis_style("filled unknown").is_none());
+    }
+
+    #[test]
+    fn test_parse_text_emphasis_position() {
+        use TextEmphasisPositionValue::*;
+        assert_eq!(parse_text_emphasis_position("over right"), Some(OverRight));
+        assert_eq!(parse_text_emphasis_position("over left"), Some(OverLeft));
+        assert_eq!(parse_text_emphasis_position("under right"), Some(UnderRight));
+        assert_eq!(parse_text_emphasis_position("under left"), Some(UnderLeft));
+        // 缺省 right/left → right
+        assert_eq!(parse_text_emphasis_position("over"), Some(OverRight));
+        assert_eq!(parse_text_emphasis_position("under"), Some(UnderRight));
+        assert!(parse_text_emphasis_position("beside").is_none());
     }
 
     // ── parse_font_weight ───────────────────────────────────────────────
