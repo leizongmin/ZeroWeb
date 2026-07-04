@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1036 balance-mode column-breaking 通用应用 net -12 已回退·目标簇大改善但 18 回归·真前置 = break-inside:avoid plumbing·零 net 源码·纯调查
+
+承 R1035 CONTINUE（span-all-children-height-002 真前置 = balance-mode column-breaking，LAYOUT_DUMP 证 block1 200px 应拆 2 列各 100px 让 region0=100px 留 room 给 region1 multirow）。本轮实现 + A/B，**net -12 回退**。
+
+**实现（已回退）**：`assign_children_to_columns_balanced` 加 oversized 分支——child > target_height 时按 target 边界跨列拆分（复用 fragment_y_offset/visual_height）。3 单测 + 19 multicol 测全过。
+
+**A/B（stash 严格对照）**：css-multicol **131→119（-12 net）**。**6 flip**（column-height-020/fill-balance-005/030/nested-023/031/spanner-fragmentation-005）。**18 regress**（overflow-unsplittable-001/002/003 强回归 0.16-0.92→2.08-2.65 = **break-inside:avoid 未尊重**、span-all-dynamic-add 6+ 案、span-all-006/007/008、no-balancing-after-column-span、multicol-zero-height-002 0.91→6.42）。**目标簇大改善（仍 FAIL）**：span-all-children-height-002 **26.76→8.56（-18pp 驱动案）**、004a 30→18、span-all-rule-001 17→1.25、rule-nested-balancing-003 20→4。
+
+**★ gate 探索均失败**：① percentage-height gate——目标案 002 有 height:% 但同簇 004a/006/007 多无 percentage，非通用签名；② spanner-only gate——18 回归中 ~12 是 spanner 案（span-all-dynamic-add/006/007/008/no-balancing-after-column-span），spanner-only 不能救回。无 clean gate 区分目标 vs 回归。
+
+**★ 真前置（多 session）**：① **break-inside:avoid plumbing**——overflow-unsplittable 簇强回归明示须尊重 break-inside:avoid（ZW 现 break-inside layout 全无消费，R1027 标死值仅 paint 指示器）；balanced assign 须接收 break-inside 信号，oversized avoid 子不拆。② spanner dynamic 案（span-all-dynamic-add 6+ + span-all-006/007/008）逐案查结构。③ zero-height / target_height=0 守卫。
+
+**意义**：通用 balance-breaking net -12（6 flip/18 regress）。目标簇 + 6 flip 证机制正确，但 break-inside:avoid 未尊重 + spanner dynamic + edge 致回归。**真解锁 = break-inside:avoid plumbing（独立多 session slice）+ balanced enable_breaking flag**。R1035 multirow 基础设施已 land，balance-breaking 是其天然放大器但须先解 break-inside:avoid。详见 [`evidence/r1036-balance-breaking-net-negative-2026-07-05.txt`](./evidence/r1036-balance-breaking-net-negative-2026-07-05.txt)。
+
+**▶ 下会话**：① **break-inside:avoid layout plumbing**（独立多 session——break_inside 现 layout 全无消费，须传入 balanced assign + with_breaking，overflow-unsplittable 簇 + dynamic-change-inside-break-inside-avoid 受益，是 R1036 balance-breaking 的前置 + 独立 spec-correctness lever）；② 解 break-inside:avoid 后重试 balance-breaking（带 enable_breaking flag + avoid 守卫，预期 net 正——目标簇 + 6 flip 保，overflow-unsplittable 等 avoid 回归消失）；③ 或转 R109 vertical / position:relative 其它结构性。**勿以「通用 balance-breaking 无 gate」单 session 重试**（已证 net -12）。
+
 ### R1035 ★multicol spanner 路径 multi-row 列模型 LANDED = css-multicol Oracle 130→131（+1 PASS）+ 2 大改善·零回归·plateau 五轮后首个 landed code win
 
 承 R1034 CONTINUE（multicol multi-row 须在 spanner 路径做，R1034 非 spanner 实验 net-negative 回退）。本轮精准在 `layout_multicol_with_spanners` 加 per-region overflow → multi-row，**clean win**。
