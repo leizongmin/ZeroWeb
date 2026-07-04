@@ -2648,6 +2648,16 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1028-cont ★spanner width 不强制（尊 taffy auto-stretch / 显式 width）= nested-with-padding-and-spanner 回归修复 + Oracle 129→130（+1）
+
+承 R1028。R1028 初版 `if spanner.width < full_width { spanner.width = full_width }` 误覆盖显式 width spanner（nested-with-padding-and-spanner 的 `width:100px; column-span:all`），致 0.73→3.86% 回归。CSS §6.1：column-span:all 使 spanner containing block 全宽，但 spanner 自身显式 width 须尊重。taffy 已按 block 子规则把 auto 宽拉伸到容器 content_width，故 width 不须强制——移除 override block。
+
+**验证**：nested-with-padding-and-spanner 3.86→0.73% PASS（回归修复）；r1028 单测 release 通过（auto-width spanner 仍全宽 ~400，证 taffy 拉伸有效）；css-multicol Oracle 129→130（+1）；welcome 16.57% 不变；engine/style/layout release 测全 0 failed。
+
+**★ 本会话累计 css-multicol Oracle 120→130（+10 net）**：R1027 break-after:column（+1）+ R1028 column-span:all（+8）+ R1028-cont width fix（+1）。column-span:all 攻克 css-multicol 最大结构性缺口，spanner-fragmentation 簇整体翻 PASS，是 R990 后 multicol 最大单 session yield。
+
+**⚠️ debug-link 预存基础设施问题（wgpu_core debug-info 溢出 lld 32-bit offset）**：layout-engine 测试 binary 链接 wgpu_core（经 render-foundation 依赖），其 debug-info 超 rust-lld 32-bit 偏移上限。**clean R1027-cont（stash 本会话变更）同样链接失败**——预存非本变更引起。临时解法：`RUSTFLAGS="-C debuginfo=1" cargo test` 可链接（debuginfo=1 仅行号）。release 测试全绿不受影响。须后续单独修：`[profile.test] debug=1` 或 layout-engine 解耦 render-foundation 依赖。
+
 ### R1028 ★column-span:all spanner 布局 LANDED = css-multicol Oracle 121→129（+8 net）·spanner-fragmentation 簇翻 PASS·Phase 2 第一步
 
 承 R1027 CONTINUE 转向 multicol Phase 2 第一阶：column-span:all。此前完全未实现（css-parser/style-system/layout 全无消费，intrinsic_sizing 用 leaf-guard proxy 近似），185 css-multicol 文件用 column-span:all = css-multicol 最大结构性缺口。
