@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use zero_ui_core::action::{ActionId, ActionPayload, ActionResult, EventResult};
 use zero_ui_core::binding::Value;
-use zero_ui_core::event::{PointerPhase, UiEvent};
+use zero_ui_core::event::{KeyAction, PointerPhase, UiEvent};
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
 use zero_ui_core::theme::{Color, SemanticTokens};
 use zero_ui_core::widget::{
@@ -557,7 +557,10 @@ impl Widget for NavItem {
 /// 分组标题
 pub struct GroupHeader {
     label: String,
+    /// 序列化进 action payload 的 group 标识（与 dispatch 端的 `{:?}` 解析对应）。
+    group: String,
     collapsed: bool,
+    pressed: bool,
     theme: ThemeKind,
 }
 
@@ -573,6 +576,9 @@ impl Widget for GroupHeader {
             self.label = l.clone();
             changed = true;
         }
+        if let Some(Value::Text(g)) = props.get("group") {
+            self.group = g.clone();
+        }
         if let Some(Value::Bool(c)) = props.get("collapsed")
             && *c != self.collapsed
         {
@@ -583,8 +589,27 @@ impl Widget for GroupHeader {
             *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
         }
     }
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
-        EventResult::Ignored
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        match event {
+            UiEvent::Pointer {
+                phase: PointerPhase::Pressed,
+                ..
+            } => {
+                self.pressed = true;
+                EventResult::Consumed
+            }
+            UiEvent::Pointer {
+                phase: PointerPhase::Released,
+                ..
+            } => {
+                self.pressed = false;
+                EventResult::EmitWithPayload(
+                    ActionId::new("gallery.group.toggle"),
+                    ActionPayload::Text(self.group.clone()),
+                )
+            }
+            _ => EventResult::Ignored,
+        }
     }
     fn layout(&mut self, _ctx: &mut LayoutCtx, c: Constraints) -> Size {
         let content_w = 8.0 + self.label.chars().count() as f32 * 8.0 + 8.0;
@@ -596,14 +621,21 @@ impl Widget for GroupHeader {
         let prefix = if self.collapsed { "▸ " } else { "▾ " };
         let display = format!("{}{}", prefix, self.label);
         // 二级文本用 on_background 与 surface 之间的中间灰。
-        let fg = Color::rgb(
-            tokens.on_background.r * 0.6 + tokens.surface.r * 0.4,
-            tokens.on_background.g * 0.6 + tokens.surface.g * 0.4,
-            tokens.on_background.b * 0.6 + tokens.surface.b * 0.4,
-        );
+        let fg = if self.pressed {
+            tokens.primary
+        } else {
+            Color::rgb(
+                tokens.on_background.r * 0.6 + tokens.surface.r * 0.4,
+                tokens.on_background.g * 0.6 + tokens.surface.g * 0.4,
+                tokens.on_background.b * 0.6 + tokens.surface.b * 0.4,
+            )
+        };
         ctx.recorder.draw_text(&display, Point::new(8.0, 18.0), 12.0, fg);
     }
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+    fn focusable(&self) -> bool {
+        true
+    }
 }
 
 /// 导航搜索框
@@ -631,8 +663,43 @@ impl Widget for NavSearch {
             *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
         }
     }
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
-        EventResult::Ignored
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        // 仅处理 Key Pressed（host 已截获 Tab 用于焦点遍历）。
+        let UiEvent::Key {
+            code,
+            action: KeyAction::Pressed,
+            text,
+            ..
+        } = event
+        else {
+            return EventResult::Ignored;
+        };
+        match code.0.as_str() {
+            "Backspace" => {
+                let mut q = self.query.clone();
+                q.pop();
+                EventResult::EmitWithPayload(ActionId::new("gallery.search"), ActionPayload::Text(q))
+            }
+            "Enter" | "Escape" => {
+                // Enter/Escape 清空搜索（轻量 UX：用户敲回车表示「就是这些」时清场）。
+                if self.query.is_empty() {
+                    EventResult::Ignored
+                } else {
+                    EventResult::EmitWithPayload(ActionId::new("gallery.search"), ActionPayload::Text(String::new()))
+                }
+            }
+            _ => match text {
+                Some(ch) => {
+                    // 忽略控制字符（空格除外，允许搜索含空格的查询）。
+                    if ch.chars().any(|c| c.is_control()) {
+                        return EventResult::Ignored;
+                    }
+                    let q = format!("{}{}", self.query, ch);
+                    EventResult::EmitWithPayload(ActionId::new("gallery.search"), ActionPayload::Text(q))
+                }
+                None => EventResult::Ignored,
+            },
+        }
     }
     fn layout(&mut self, _ctx: &mut LayoutCtx, c: Constraints) -> Size {
         // 侧栏建议 200 宽；如果父级给的 max_width 更小，遵循父级。
@@ -666,6 +733,9 @@ impl Widget for NavSearch {
         ctx.recorder.draw_text(&display, Point::new(8.0, 22.0), 13.0, fg);
     }
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+    fn focusable(&self) -> bool {
+        true
+    }
 }
 
 /// Demo 标题区域
@@ -943,10 +1013,13 @@ pub fn register_gallery_factories(host: &mut WidgetHost) {
     });
     host.register("GroupHeader", |spec| {
         let label = str_prop(spec, "label").unwrap_or_default();
+        let group = str_prop(spec, "group").unwrap_or_default();
         let collapsed = bool_prop(spec, "collapsed");
         Box::new(GroupHeader {
             label,
+            group,
             collapsed,
+            pressed: false,
             theme: ThemeKind::Light,
         })
     });
@@ -1124,6 +1197,53 @@ mod tests {
         let result = app.dispatch(&action, payload);
         assert_eq!(result, ActionResult::Handled);
         assert_eq!(app.current_page, "button");
+    }
+
+    /// RFC §8「分组折叠」横向能力：dispatch 收到 group.toggle 翻转 collapsed_groups。
+    #[test]
+    fn group_toggle_collapses_and_expands() {
+        let mut app = setup_gallery();
+        assert!(
+            !app.collapsed_groups.contains(&crate::gallery::model::GroupId::Widgets),
+            "默认不折叠"
+        );
+        let action = ActionId::new("gallery.group.toggle");
+        let payload = Some(ActionPayload::Text("Widgets".into()));
+        app.dispatch(&action, payload);
+        assert!(
+            app.collapsed_groups.contains(&crate::gallery::model::GroupId::Widgets),
+            "toggle 一次后应折叠"
+        );
+        app.dispatch(&action, Some(ActionPayload::Text("Widgets".into())));
+        assert!(
+            !app.collapsed_groups.contains(&crate::gallery::model::GroupId::Widgets),
+            "toggle 二次后应展开"
+        );
+    }
+
+    /// RFC §8「搜索过滤」横向能力：dispatch 收到 gallery.search 更新 query，
+    /// 且 filtered_pages 按查询缩小返回集。
+    #[test]
+    fn search_query_filters_pages() {
+        let mut app = setup_gallery();
+        let total = app.filtered_pages().len();
+        assert!(total > 1, "默认应有多页");
+
+        app.dispatch(
+            &ActionId::new("gallery.search"),
+            Some(ActionPayload::Text("toggle".into())),
+        );
+        let filtered = app.filtered_pages();
+        let ids: Vec<_> = filtered.iter().map(|p| p.id).collect();
+        assert_eq!(filtered.len(), 1, "应只剩 toggle 相关页: {ids:?}");
+        assert_eq!(filtered[0].id, "toggle");
+
+        // 清空搜索 → 恢复全集
+        app.dispatch(
+            &ActionId::new("gallery.search"),
+            Some(ActionPayload::Text(String::new())),
+        );
+        assert_eq!(app.filtered_pages().len(), total, "清空 query 恢复全量");
     }
 
     #[test]
