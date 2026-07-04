@@ -15,7 +15,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tungstenite::Message;
 use tungstenite::accept;
 
 use zero_browser_shell::BrowserShell;
@@ -217,134 +216,107 @@ impl HeadlessServer {
             let (stream, peer) = listener.accept().map_err(|e| format!("Accept failed: {e}"))?;
             tracing::info!("Connection from {peer}");
 
-            // peek 前几个字节判断是 HTTP 还是 WebSocket
-            let mut buf = [0u8; 4096];
-            stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).ok();
-            let n = match stream.peek(&mut buf) {
-                Ok(n) if n > 0 => n,
-                Ok(_) => continue,
-                Err(e) => {
-                    tracing::warn!("Peek failed for {peer}: {e}");
-                    continue;
-                }
-            };
-            let peeked = &buf[..n];
-
-            // 检测是否是普通 HTTP GET 请求（非 WebSocket 升级）
-            if Self::is_http_get_request(peeked) {
-                // Origin 检查（HTTP 发现请求）
-                let origin = Self::extract_origin_header(peeked);
-                if !self.security.verify_origin(origin.as_deref()) {
-                    tracing::warn!("HTTP request from disallowed origin: {origin:?} from {peer}");
-                    continue;
-                }
-                Self::handle_http_discovery(&stream, self.addr);
-                continue;
-            }
-
-            // Origin 检查（WebSocket 升级请求）
-            let origin = Self::extract_origin_header(peeked);
-            if !self.security.verify_origin(origin.as_deref()) {
-                tracing::warn!("WebSocket from disallowed origin: {origin:?} from {peer}");
-                continue;
-            }
-
-            // WebSocket 连接
             let mut ws = accept(stream).map_err(|e| format!("WebSocket handshake failed: {e}"))?;
-            let mut session = HeadlessSession::new(self.viewport_width, self.viewport_height);
+            tracing::info!("Handshake done");
 
-            // 认证状态：首个有效请求完成认证
+            // 手动帧解析：读裸字节，自己解析 WS 帧（绕过 ws.read() bug）
+            let mut session = HeadlessSession::new(self.viewport_width, self.viewport_height);
             let mut authenticated = self.security.auth_token.is_none();
 
-            // WebSocket 消息循环
             loop {
-                let msg = match ws.read() {
-                    Ok(Message::Text(text)) => text,
-                    Ok(Message::Close(_)) => {
-                        tracing::info!("Client disconnected");
-                        break;
-                    }
-                    Ok(Message::Ping(data)) => {
-                        let _ = ws.write(Message::Pong(data));
-                        continue;
-                    }
-                    Ok(_) => continue,
-                    Err(e) => {
-                        tracing::error!("WebSocket read error: {e}");
-                        break;
-                    }
-                };
+                use std::io::{Read, Write};
 
-                // 认证检查（Phase 5）
+                // 读帧头 2 字节
+                let mut header2 = [0u8; 2];
+                if ws.get_ref().read_exact(&mut header2).is_err() { break; }
+                let opcode = header2[0] & 0x0f;
+                let masked = (header2[1] & 0x80) != 0;
+                let mut payload_len = (header2[1] & 0x7f) as u64;
+
+                // 扩展长度
+                if payload_len == 126 {
+                    let mut ext = [0u8; 2];
+                    if ws.get_ref().read_exact(&mut ext).is_err() { break; }
+                    payload_len = u16::from_be_bytes(ext) as u64;
+                } else if payload_len == 127 {
+                    let mut ext = [0u8; 8];
+                    if ws.get_ref().read_exact(&mut ext).is_err() { break; }
+                    payload_len = u64::from_be_bytes(ext);
+                }
+
+                // mask key
+                let mask_key = if masked {
+                    let mut mk = [0u8; 4];
+                    if ws.get_ref().read_exact(&mut mk).is_err() { break; }
+                    Some(mk)
+                } else { None };
+
+                // payload
+                let mut payload = vec![0u8; payload_len as usize];
+                if payload_len > 0 && ws.get_ref().read_exact(&mut payload).is_err() { break; }
+
+                // unmask
+                if let Some(mk) = mask_key {
+                    for (i, b) in payload.iter_mut().enumerate() { *b ^= mk[i & 3]; }
+                }
+
+                // 控制帧
+                if opcode & 0x08 != 0 {
+                    match opcode {
+                        0x08 => { tracing::info!("Close"); break; }
+                        0x09 => {
+                            let pong = Self::encode_frame(0x8a, &payload);
+                            let _ = ws.get_mut().write_all(&pong);
+                            continue;
+                        }
+                        _ => continue,
+                    }
+                }
+
+                // 仅 text 帧
+                let msg_str = if opcode == 0x01 {
+                    String::from_utf8_lossy(&payload).to_string()
+                } else { continue; };
+
+                // 认证
                 if !authenticated {
-                    // 尝试从首个请求中提取 token
-                    if let Ok(req) = serde_json::from_str::<ClientRequest>(&msg) {
+                    if let Ok(req) = serde_json::from_str::<ClientRequest>(&msg_str) {
                         let token = req.params.get("token").and_then(|v| v.as_str());
                         if self.security.verify_token(token) {
                             authenticated = true;
-                            tracing::info!("Client authenticated");
                         } else {
-                            tracing::warn!("Authentication failed from {peer}");
-                            let err = ServerResponse {
-                                id: req.id,
-                                result: None,
-                                error: Some(ProtocolError {
-                                    code: -32001,
-                                    message: "Authentication required: invalid or missing token".into(),
-                                }),
-                            };
-                            if let Ok(json) = serde_json::to_string(&err) {
-                                let _ = ws.write(Message::Text(json.into()));
+                            let err = ServerResponse { id: req.id, result: None,
+                                error: Some(ProtocolError { code: -32001, message: "invalid token".into() }) };
+                            if let Ok(j) = serde_json::to_string(&err) {
+                                let _ = ws.get_mut().write_all(&Self::encode_frame(0x81, j.as_bytes()));
                             }
                             continue;
                         }
                     } else {
-                        let err = ServerResponse {
-                            id: 0,
-                            result: None,
-                            error: Some(ProtocolError {
-                                code: -32001,
-                                message: "Authentication required".into(),
-                            }),
-                        };
-                        if let Ok(json) = serde_json::to_string(&err) {
-                            let _ = ws.write(Message::Text(json.into()));
+                        let err = ServerResponse { id: 0, result: None,
+                            error: Some(ProtocolError { code: -32001, message: "auth required".into() }) };
+                        if let Ok(j) = serde_json::to_string(&err) {
+                            let _ = ws.get_mut().write_all(&Self::encode_frame(0x81, j.as_bytes()));
                         }
                         continue;
                     }
                 }
 
-                let (response, events) = self.handle_message_with_events(&mut session, &msg);
+                let (response, events) = self.handle_message_with_events(&mut session, &msg_str);
 
-                // 先推送事件通知
                 for event in events {
-                    if let Ok(event_json) = serde_json::to_string(&event)
-                        && let Err(e) = ws.write(Message::Text(event_json.into()))
-                    {
-                        tracing::error!("Event push error: {e}");
-                        break;
+                    if let Ok(j) = serde_json::to_string(&event) {
+                        if ws.get_mut().write_all(&Self::encode_frame(0x81, j.as_bytes())).is_err() { break; }
                     }
                 }
-
-                // 再推送命令响应
-                let response_json = serde_json::to_string(&response).unwrap_or_else(|e| {
-                    format!("{{\"id\":0,\"error\":{{\"code\":-32700,\"message\":\"JSON serialize: {e}\"}}}}")
-                });
-
-                if let Err(e) = ws.write(Message::Text(response_json.into())) {
-                    tracing::error!("WebSocket write error: {e}");
-                    break;
-                }
+                let rj = serde_json::to_string(&response).unwrap_or_else(|e|
+                    format!("{{\"id\":0,\"error\":{{\"code\":-32700,\"message\":\"JSON: {e}\"}}}}"));
+                if ws.get_mut().write_all(&Self::encode_frame(0x81, rj.as_bytes())).is_err() { break; }
             }
 
             tracing::info!("Headless session ended");
+            tracing::info!("Headless session ended (raw echo test)");
         }
-    }
-
-    /// 判断是否为普通 HTTP GET 请求（非 WebSocket 升级）。
-    fn is_http_get_request(data: &[u8]) -> bool {
-        let s = String::from_utf8_lossy(data);
-        s.starts_with("GET ") && !s.contains("Upgrade: websocket")
     }
 
     /// 从 HTTP 请求头中提取 Origin 值。
@@ -361,15 +333,29 @@ impl HeadlessServer {
         None
     }
 
+    /// 发送 HTTP 错误响应。
+    fn http_error_response(stream: &std::net::TcpStream, code: u16, message: &str) {
+        use std::io::Write;
+        let body = format!("<h1>{code} {message}</h1>");
+        let response = format!(
+            "HTTP/1.1 {code} {message}\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        if let Ok(mut writable) = stream.try_clone() {
+            let _ = writable.write_all(response.as_bytes());
+            let _ = writable.flush();
+        }
+    }
+
     /// 处理 HTTP 发现请求（CDP 风格的 /json 端点）。
     fn handle_http_discovery(stream: &std::net::TcpStream, addr: SocketAddr) {
         use std::io::{Read, Write};
 
-        let mut read_buf = [0u8; 4096];
+        // 从 stream 读取完整的 HTTP 请求行（使用 try_clone 避免数据丢失）
+        let mut read_buf = [0u8; 1024];
         let path = if let Ok(mut readable) = stream.try_clone() {
             let n = readable.read(&mut read_buf).unwrap_or(0);
-            let request = String::from_utf8_lossy(&read_buf[..n]);
-            request
+            String::from_utf8_lossy(&read_buf[..n])
                 .lines()
                 .next()
                 .unwrap_or("")
@@ -1060,6 +1046,24 @@ impl HeadlessServer {
         Ok(serde_json::json!({
             "actions": session.last_emitted_actions_json,
         }))
+    }
+
+    /// 构造 WebSocket 帧（服务端发送，不 mask）。
+    fn encode_frame(header: u8, payload: &[u8]) -> Vec<u8> {
+        let len = payload.len();
+        let mut frame = Vec::with_capacity(10 + len);
+        frame.push(header);
+        if len < 126 {
+            frame.push(len as u8);
+        } else if len < 65536 {
+            frame.push(126);
+            frame.extend_from_slice(&(len as u16).to_be_bytes());
+        } else {
+            frame.push(127);
+            frame.extend_from_slice(&(len as u64).to_be_bytes());
+        }
+        frame.extend_from_slice(payload);
+        frame
     }
 }
 

@@ -1,0 +1,23 @@
+{
+  "name": "zerobrowser-acceptance",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ZeroBrowser chrome UI 验收脚本（product-acceptance）",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "scripts": {
+    "smoke": "node recipes/smoke.js",
+    "perf": "node recipes/perf.js",
+    "recipe1": "node recipes/recipe1-p0-regression.js",
+    "recipe2": "node recipes/recipe2-parity-diff.js",
+    "recipe3": "node recipes/recipe3-full-regression.js",
+    "recipe4": "node recipes/recipe4-exploratory.js",
+    "all": "node recipes/smoke.js && node recipes/perf.js && node recipes/recipe1-p0-regression.js && node recipes/recipe2-parity-diff.js && node recipes/recipe3-full-regression.js",
+    "setup": "npm install"
+  }
+}

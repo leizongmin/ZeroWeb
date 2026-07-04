@@ -1,0 +1,4 @@
+.acceptance/
+__test_ws*.mjs
+__test_ws*.py
+node_modules/
