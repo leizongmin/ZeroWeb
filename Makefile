@@ -1,7 +1,15 @@
-.PHONY: setup-rusty-v8 build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle product-smoke product-smoke-legacy
+.PHONY: setup-rusty-v8 fetch-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle product-smoke product-smoke-legacy
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
+
+# WPT reftest 数据（上游 web-platform-tests/wpt 子集，~19952 文件，独立 repo）。
+# reftest / reftest-oracle 会自动前置触发；目录已存在则跳过，刷新需先 rm -rf。
+WPT_DATA_REPO ?= https://github.com/leizongmin/zeroweb-wpt-data.git
+WPT_DATA_REF  ?= v1.0
+WPT_DATA_DIR  ?= tests/wpt-runner/wpt-data
+fetch-wpt-data:
+	@if [ -d "$(WPT_DATA_DIR)" ] && [ -n "$$(ls -A $(WPT_DATA_DIR) 2>/dev/null)" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi
 
 build: setup-rusty-v8
 	cargo build --workspace
@@ -62,7 +70,7 @@ test: target/test-guard
 	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo test --workspace --exclude zero-render-foundation --exclude zero-script-sandbox -- --test-threads=2
 
 # WPT reftest（release 构建，约 4× 快于 debug；同样被 test-guard 包裹）。
-reftest: target/test-guard
+reftest: fetch-wpt-data target/test-guard
 	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- reftest
 
 # DC-14 独立 Oracle：渲染上游 WPT test 页 vs chromium oracle-shots，报告真一致率
@@ -71,7 +79,7 @@ reftest: target/test-guard
 # 用法：make reftest-oracle                       全量（慢，~10k 案）
 #       make reftest-oracle DIR=css-grid          单目录
 #       make reftest-oracle DIR=css-grid ORACLE_PASS_RATIO=0.005   调严判定阈值
-reftest-oracle: target/test-guard
+reftest-oracle: fetch-wpt-data target/test-guard
 	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- reftest-oracle $(DIR)
 
 # 产品静态页 product-smoke 回归门禁（DC-13）：渲染 welcome.html vs chromium Oracle，

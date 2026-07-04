@@ -304,6 +304,59 @@ fn r1019_float_block_with_flex_aspect_ratio_child_shrinks_to_fit() {
     assert!((th - 100.0).abs() < 3.0, "R1019: target height 应为 100px，got {th}");
 }
 
+/// R1020 驱动案 `change-intrinsic-width`（post-JS final state）：multicol 容器 columns:2 +
+/// width:fit-content + 2 个 leaf 子（50px each）→ 容器 shrink-to-fit 到 2 × 50 = 100。
+/// block_max_content_width 的 multicol 分支（leaf guard：仅所有 in-flow 子无元素子才乘 N）。
+#[test]
+fn r1020_multicol_fit_content_two_leaf_columns_shrinks_to_2x_content() {
+    let html = r#"<html><body style="margin:0">
+<div id="target" style="columns:2; column-gap:0; width:fit-content; height:100px; background:green">
+  <div style="width:50px; height:100px; background:green"></div>
+  <div style="width:50px; height:100px; background:green"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let divs = doc.get_elements_by_tag_name("div");
+    let target_id = divs.into_iter().next().expect("target div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let (tw, _th) = find_box(&result.root, target_id).expect("target box found");
+    assert!(
+        (tw - 100.0).abs() < 5.0,
+        "R1020: multicol columns:2 + leaf 子 50px 应 shrink 到 2×50=100，got {tw}"
+    );
+}
+
+/// R1020 对照：multicol + column-span:all 嵌套子不触发 N×（leaf guard 守护）——容器取 span:all
+/// 内容宽（100），非 3×100=300。intrinsic-size-002 驱动。
+#[test]
+fn r1020_multicol_column_span_all_not_multiplied() {
+    let html = r#"<html><body style="margin:0">
+<div style="width:100px; height:100px; background:red">
+  <div id="mc" style="width:fit-content; columns:3; background:green">
+    <div style="column-span:all"><div style="width:100px; height:100px;"></div></div>
+  </div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let divs = doc.get_elements_by_tag_name("div");
+    let mc_id = divs.into_iter().nth(1).expect("mc div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let (mcw, _mch) = find_box(&result.root, mc_id).expect("mc box found");
+    // span:all 子有元素子 → leaf guard 跳过 N× → 容器取 max(span:all content=100)，非 300。
+    assert!(
+        (mcw - 100.0).abs() < 10.0,
+        "R1020: multicol + column-span:all 嵌套子不应 N×（应 ~100），got {mcw}"
+    );
+}
+
 /// R1015 对照：非 float 的 block flex column + width:auto 不触发 shrink（保持当前行为，零回归）。
 #[test]
 fn r1015_block_flex_column_auto_width_no_shrink() {
