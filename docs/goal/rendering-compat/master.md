@@ -2648,6 +2648,42 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1024 ★flex/grid item 含文本+inline Element 子塌缩 w=0 修复 LANDED = css-flexbox Oracle 289→295（+6）+ css-multicol +1 ·零回归·紧 gate（parent-flex/grid）·三方 gate 演进
+
+承 R1023b 精确根因（block flex item 含文本+Element 子如 `<br>` 塌缩 w=0）。本轮 Phase 0 验证高度耦合 + 三轮 gate 演进 + LANDED。
+
+**Phase 0 高度耦合验证（决定安全性）**：`remeasure_text_with_float_exclusions`（inline_finalization.rs:1129）对 block content_height 是 **max/overwrite-if-larger**（`if text_height > content_height { content_height = text_height; height += diff }`，非 add）。但「文本 leaf 作 block 子」会**破坏 inline flow**（每文本 run 成独立 block 行，普通 mixed 块高度膨胀）——实验粗 gate（全 mixed 块作 leaf）welcome **16.57→29.36% 回归**（已回退）。结论：文本 leaf 作 block 子是错的（破坏 inline flow），正确做法是「整 inline 内容作一个 IFC 单位测量」。
+
+**正确修复（紧 gate）**：build_subtree 默认 block 路径（tree.rs:871 else 分支），当容器**同时**满足：
+1. **父为 flex/grid 容器**（`is_flex_grid_item`，content-sized item）——fill-width block（multicol 容器、普通 div）不入此路径。
+2. **全子为 inline 级**（文本 + display:Inline 元素如 br/span/a，无 block/inline-block/img 等需独立 taffy 子树的子）。
+3. **各 inline Element 子无 Element 子**——含 Element 后代（如 span 内嵌 abspos/block）的 inline 须保留 taffy 子树，否则 abspos-in-inline 簇的 span 内 abspos 失去 CB。
+→ 整容器作 **leaf**（context=dom_id），measure 回调经 `has_inline_content` 把全部 inline 文本作一个 IFC 单位测量，intrinsic 宽含文本。
+
+**Gate 三轮演进（关键决策审计）**：
+- **粗 gate**（全 mixed 块 + 全 inline 子）：welcome -0.17pp 改善，但 **css-position -3**（abspos-in-inline：span 含 abspos 子，span 丢 taffy 子树 → abspos 失 CB）+ **css-multicol -6**（multicol 容器被 leaf 化破坏列分布）。
+- **中 gate**（粗 gate + inline Element 无 Element 子）：修 css-position -3（abspos-in-inline span 保 CB），但 css-multicol 仍 -6（multicol 容器仍被 leaf 化）。
+- **终 gate**（中 gate + parent-flex/grid）：仅 flex/grid item 走 leaf 路径，fill-width block（multicol/普通 div）完全不变 → **全 dir 零回归**。
+
+**改动**（commit ba7cc0be）：
+- `tree.rs`：新 `is_flex_grid_item(doc, styles, dom_id)` 辅助 + 默认 block 路径加 R1024 leaf gate（has_text_child && has_element_child && all_inline && is_flex_grid_item）。
+- `anonymous_flex_item_tests.rs`：`test_r1024_flex_item_with_text_and_br_not_collapse`（`<div flex><div id=item>text<br>text</div></div>` → item w>100，证不塌缩）。
+
+**验证（chromium Oracle + 三态门禁）**：
+- **css-flexbox Oracle 289→295（+6 零回归）**——anonymous-flex-item-001~006（0.89-0.91% 翻 PASS，直接对应本 bug：flex item 含 inline 文本）+ align-self-001~013 簇（0.73% 改善）+ aspect-ratio-intrinsic-011 等。
+- **css-multicol 119→120（+1 零回归）**。
+- css-position 55 / css-text-decor 108 / css-tables 74 / css2 9 / css-grid 20 **全 baseline 零回归**。
+- welcome 16.57% 不变（<20% gate ✓）。
+- per-case A/B 见 [`evidence/r1024-flex-item-text-collapse-fix-2026-07-04.txt`](./evidence/r1024-flex-item-text-collapse-fix-2026-07-04.txt)。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（workspace 零失败，layout-engine +1 R1024 测）/ product-smoke welcome 16.57% < 20% ✓。
+
+**意义**：R1023b 定位的「block flex item 含文本+inline Element 子塌缩 w=0」bug **修复**——CSS Flexbox §4 inline 子应作 IFC 单位测量（非每文本 run 独立 block 行）。anonymous-flex-item 簇 + align-self 簇受益。紧 gate（parent-flex/grid）保证只修 content-sized item，不波及 fill-width block（multicol/普通 div），全 dir 零回归。R1023「flex+text per-word」误判经 R1023b 纠正后，本轮完成真正修复。
+
+**★ rootpos 4 案（position-{absolute,fixed}-root-element-{flex,grid}）**：body 现作 flex item leaf（w 正确），但 root-abspos stretch（R1023 已测绘，dormant）未启 → html 仍 shrinkwrap → rootpos 未翻。下会话 root-abspos stretch + 本修复合做可望翻 rootpos 4 案（root-abspos 此前 net-negative 是因 body 塌缩，现 body 已修）。
+
+**▶ 下会话**：① **root-abspos stretch 重试**（R1023 dormant fix，apply_root_position_stretch 已测绘）——body 塌缩已修（R1024），重试应 net-positive，目标翻 rootpos 4 案（css-position 55→59）；② A/B 全量确认无新回归；③ 备选其它 css-flexbox 残余（59.4% baseline 后续 lever）。
+
 ### R1023 per-font ascent（mono）re-confirm R1005 + root-element abspos stretch 实验 net-negative 已回退·flex+匿名文本 per-word 堆叠 bug 定位（root-abspos 前置阻塞）·零源码 net·纯调查
 
 承 R1021/R1022 后转 css-position 4 案簇 root-element abspos（4.05% twin）。本轮先验证 per-font ascent 对 monospace 是否 lever，再试 root-abspos stretch fix。
