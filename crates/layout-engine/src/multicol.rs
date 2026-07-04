@@ -858,10 +858,13 @@ fn position_multicol_children(
             // 所有片段（包括主片段）存储到 column_span_offsets。
             // paint 层根据 column_span_offsets 的存在跳过正常渲染，
             // 并对每个片段进行独立的列区域裁剪渲染。
-            // 格式：(x_in_container, y_in_container, column_x, column_width)
+            // R1039：扩存 col_top（片段列顶 y_offset）+ col_h（片段视觉高 visual_height），
+            // 供 paint 把 breaking 片段裁到自己的 slice 范围 [col_top, col_top+col_h]，
+            // 而非容器全高（修 span-all-children-height-002 block1 全 200px 覆盖 spanner 区）。
+            // 格式：(x_in_container, y_in_container, column_x, column_width, col_top, col_h)
             child
                 .column_span_offsets
-                .push((child_x, child_y, col_x, info.column_width));
+                .push((child_x, child_y, col_x, info.column_width, y_offset, frag.visual_height));
 
             if frag_idx == 0 {
                 // 第一个片段同时设置主位置（用于非 column-breaking 的子元素

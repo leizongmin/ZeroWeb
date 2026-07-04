@@ -2648,6 +2648,24 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1039 ★multicol column fragment slice clip LANDED = css-multicol Oracle 136→140（+4 PASS）·per-pixel 定位 paint clip 根因·修 002 block1 覆盖 spanner·累计 css-multicol +10
+
+承 R1038 CONTINUE（目标簇 002 残余 8.56%）。本轮 **per-pixel y 带对比定位** paint clip 系统根因，**+4 net**。
+
+**per-pixel 定位**：product-smoke 渲 002 → PIL per-10px y 带对比 chr oracle。y[110-160]（spanner 区）**ZW=(255,255,0) 黄 vs CHR=(173,216,230) lightblue**（3900 px/band 大 diff）。真因：block1（R1037 balance-breaking 跨 2 列各 100px）paint `clip_h = box_node.content_height`（容器 200）未裁到 slice 100px，block1 全 200px 渲染覆盖 spanner 区。前轮 paint clip 探针（clip_h+1000）证伪是因为方向错（应**收紧**到 slice 非放宽）。
+
+**实现（column_span_offsets 4-tuple → 6-tuple + paint slice ∩ container clip）**：① types/mod.rs 扩存 `(child_x, child_y, col_x, col_w, col_top, col_h)`，col_top=y_offset（片段列顶），col_h=visual_height（slice 高）；② multicol.rs push 扩展；③ paint mod.rs:840 breaking 片段 clip 从 `(content_y, container_h)` 改 `(content_y+col_top, col_h ∩ container)`——`col_top>=container_h` 跳过（multi-row overflow row，chromium 裁剪 multicol 列溢出），`effective_h=col_h.min(container_h-col_top)`。
+
+**★ clip 演进**：v1（slice 仅）139/452(+3) 但 003 17.88→**31.12(+13pp)**——block2 overflow row 被显示（chromium 裁剪）；v2（slice ∩ container，overflow row 跳过）**140/452(+4)** + 002 8.56→**4.49** + 003 恢复 17.92 ✓；v3（+1px tolerance）同 v2，tolerance 无效（回归结构性）→ 回 v2。
+
+**A/B（stash 对照 R1038 136/452）**：**140/452（+4 net）**。**7 flip**（multicol-contained-absolute 8.50→0.33 大改善 + change-fragmentainer-size/column-wrap-no-constraints/fill-balance-018/spanner-fragmentation-012/span-all-020/column-height-017）。**3 borderline 回归**（column-height-020 0.98→1.13、nested-023 0.99→1.24、spanner-fragmentation-004 0.73→1.33，结构性）。**002 驱动案 8.56→4.49（接近 flip）**，007 6.85→6.39。004a/004b/006 略恶化（仍 FAIL，slice clip 对 nested 结构稍紧）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0** / **product-smoke welcome 16.57% < 20%** ✓。21 multicol 测全过。
+
+**意义**：per-pixel y 带对比定位 paint clip 系统根因（breaking 片段未裁到 slice），column_span_offsets 扩存 + slice ∩ container clip 修复。002 驱动案 8.56→4.49 接近 flip。**累计 R1035(+1)+R1037(+4)+R1038(+1)+R1039(+4) = css-multicol 130→140（+10）四连 landed win**，彻底打破 R1030-R1034 五轮 plateau。详见 [`evidence/r1039-fragment-slice-clip-landed-2026-07-05.txt`](./evidence/r1039-fragment-slice-clip-landed-2026-07-05.txt)。
+
+**▶ 下会话**：① **002 残余 4.49% 接近 flip** + 004a/004b/006/003 簇残余——slice clip 对 nested 结构稍紧，逐案 LAYOUT_DUMP 查 col_top/col_h 精度 + 对比 ref 像素带；② 3 borderline 回归（column-height-020/nested-023/spanner-fragmentation-004）查是否可微调；③ 或转 R109 vertical / position:relative 换方向（multicol 四连 +10 后可换）。
+
 ### R1038 ★spanner balance-breaking region_idx gate LANDED = css-multicol Oracle 135→136（+1 PASS）·修 R1037 no-balancing 回归·累计 css-multicol +6
 
 承 R1037 CONTINUE（目标簇残余深挖 + 2 小回归）。本轮先探目标簇 002 残余（paint clip 放大探针证伪——clip 正确，002 8.56→18.98 更差），转修 R1037 确定回归 no-balancing。

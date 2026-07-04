@@ -175,16 +175,18 @@ pub struct LayoutBox {
     ///
     /// 子元素的主位置（第一个片段）存储在 `x/y` 中。
     /// 此字段存储额外的片段信息，每条格式为：
-    /// `(x_in_container, y_in_container, column_x, column_width)`
+    /// `(x_in_container, y_in_container, column_x, column_width, col_top, col_h)`
     ///
     /// - `x_in_container`: 片段在容器内容区域中的 x 坐标
     /// - `y_in_container`: 片段在容器内容区域中的 y 坐标
     ///   （含负偏移，使子元素内容不同垂直范围可见）
     /// - `column_x`: 该列在容器内容区域中的起始 x 坐标（用于 paint 层裁剪）
     /// - `column_width`: 列宽度（用于 paint 层水平裁剪）
+    /// - `col_top`: 该片段列顶 y（片段在列内的起始 y，用于 R1039 paint 垂直裁剪）
+    /// - `col_h`: 该片段视觉高度（slice 高度，用于 R1039 paint 裁到 fragment slice）
     ///
     /// paint 系统对每个额外片段重新绘制子元素，并裁剪到对应列的区域。
-    pub column_span_offsets: Vec<(f32, f32, f32, f32)>,
+    pub column_span_offsets: Vec<(f32, f32, f32, f32, f32, f32)>,
     /// 行内布局结果（来自 layout engine 的 IFC 运行）。
     ///
     /// 当设置时，paint 系统直接复用这些结果渲染文字，不再重新运行 IFC。
