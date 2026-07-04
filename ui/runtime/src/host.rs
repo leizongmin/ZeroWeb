@@ -148,6 +148,9 @@ pub struct WidgetHost {
     /// 由应用层（apps/browser）从共享 `FontdueBackend` 查询后设置，`paint_node` 注入
     /// `PaintCtx.font_metrics`。`None` 时 `PaintCtx::line_metrics` 回落 heuristic。
     font_metrics: Option<(f32, f32)>,
+    /// UI 缩放因子（系统 DPI 比，如 1.0 / 1.25 / 1.5 / 2.0）。
+    /// layout 时注入 `LayoutCtx.scale_factor`，控件据此缩放尺寸与字体。
+    scale_factor: f32,
 }
 
 impl Default for WidgetHost {
@@ -168,6 +171,7 @@ impl Default for WidgetHost {
             gesture_clock: 0,
             last_hovered: None,
             font_metrics: None,
+            scale_factor: 1.0,
         }
     }
 }
@@ -175,6 +179,11 @@ impl Default for WidgetHost {
 impl WidgetHost {
     pub fn new() -> WidgetHost {
         WidgetHost::default()
+    }
+
+    /// 设置 UI 缩放因子（系统 DPI 比）。layout 时注入 `LayoutCtx.scale_factor`。
+    pub fn set_scale_factor(&mut self, s: f32) {
+        self.scale_factor = if s > 0.0 { s } else { 1.0 };
     }
 
     /// 注册一个组件工厂（builder 便捷方法）。
@@ -336,7 +345,7 @@ impl WidgetHost {
         let Some(root) = self.root.as_mut() else {
             return Size::ZERO;
         };
-        let mut lctx = LayoutCtx { scale_factor: 1.0 };
+        let mut lctx = LayoutCtx { scale_factor: self.scale_factor };
         let size = measure(root, &mut lctx, constraints);
         arrange(root, Point::ZERO);
         self.pending.remove(InvalidationFlags::NEEDS_LAYOUT);

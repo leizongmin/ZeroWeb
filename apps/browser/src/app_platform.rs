@@ -214,6 +214,7 @@ impl BrowserApp {
                     &mut scene_primitives, &mut image_cache,
                     &sdk_chrome_tokens(&self.chrome_palette),
                     &sdk_chrome_tab_colors(&self.chrome_palette),
+                    self.scale_factor,
                 )
             };
 
@@ -326,6 +327,7 @@ impl BrowserApp {
                 &mut scene_primitives, &mut image_cache,
                 &sdk_chrome_tokens(&self.chrome_palette),
                 &sdk_chrome_tab_colors(&self.chrome_palette),
+                self.scale_factor,
             )
         };
 
@@ -472,6 +474,7 @@ impl BrowserApp {
             &mut image_cache,
             &sdk_chrome_tokens(&self.chrome_palette),
             &sdk_chrome_tab_colors(&self.chrome_palette),
+            self.scale_factor,
         );
         let fills = [page_fills, chrome_overlay_fills].concat();
         let glyphs = [page_glyphs, chrome_overlay_glyphs].concat();
@@ -1151,6 +1154,7 @@ fn compose_sdk_chrome_replacement_with_webview(
     image_cache: &mut Option<&mut ImageCache>,
     tokens: &SemanticTokens,
     tab_colors: &zero_browser_chrome::render::ChromeTabColors,
+    scale_factor: f32,
 ) -> (Vec<FillPrimitive>, Vec<GlyphDraw>) {
     use zero_browser_chrome::sdk_render::render_chrome_via_sdk_with_webview_surface;
     use zero_browser_chrome::render::{
@@ -1191,7 +1195,7 @@ fn compose_sdk_chrome_replacement_with_webview(
     let logical_size = Size::new(width as f32, height as f32);
     let metrics = WindowMetrics {
         logical_size,
-        scale_factor: 1.0,
+        scale_factor,
         safe_area: Insets::all(0.0),
         keyboard_insets: Insets::all(0.0),
         text_scale: 1.0,
@@ -1838,6 +1842,7 @@ mod sdk_chrome_tests {
             &mut Some(&mut image_cache),
             &sdk_chrome_tokens(&crate::colors::ChromePalette::light()),
             &sdk_chrome_tab_colors(&crate::colors::ChromePalette::light()),
+            1.0,
         );
 
         // page_fills 已移入 surface → 返回空 Vec（不再手动翻译合并）。

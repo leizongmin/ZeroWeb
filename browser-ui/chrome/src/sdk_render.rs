@@ -83,6 +83,7 @@ pub fn render_chrome_via_sdk_with_layout(
     // host.tokens 驱动 paint_node 容器 bg（DC-14 toolbar parity）——须与工厂 tokens 一致，
     // 否则容器 bg 用默认 light token（245）≠ sdk_chrome_tokens surface（248）。
     host.set_tokens(*tokens);
+    host.set_scale_factor(metrics.scale_factor);
     inject_font_metrics(&mut host, &backend);
     host.set_root(&spec);
     host.layout(Constraints::loose(metrics.logical_size));
@@ -128,6 +129,7 @@ pub fn render_chrome_via_sdk_with_webview_surface(
     register_chrome_factories_with_webview(&mut host, tokens, scheme, tab_colors);
     // host.tokens 驱动 paint_node 容器 bg（DC-14 toolbar parity）——须与工厂 tokens 一致。
     host.set_tokens(*tokens);
+    host.set_scale_factor(metrics.scale_factor);
     inject_font_metrics(&mut host, &backend);
     host.set_root(&spec);
     host.layout(Constraints::loose(metrics.logical_size));
