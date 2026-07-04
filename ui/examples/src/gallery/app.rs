@@ -132,6 +132,9 @@ impl GalleryApp {
         search_box
             .props
             .insert("theme", Value::Text(self.theme.as_str().into()));
+        search_box
+            .props
+            .insert("locale", Value::Text(self.locale.as_str().into()));
         search_box.props.insert("query", Value::Text(self.search_query.clone()));
         col.children.push(search_box);
 
@@ -149,7 +152,7 @@ impl GalleryApp {
                     .insert("theme", Value::Text(self.theme.as_str().into()));
                 group_header
                     .props
-                    .insert("label", Value::Text(page.group.name_en().into()));
+                    .insert("label", Value::Text(page.group.name_for(self.locale).into()));
                 group_header.props.insert("collapsed", Value::Bool(is_collapsed));
                 group_header
                     .props
@@ -200,7 +203,9 @@ impl GalleryApp {
             let mut dsl_label = WidgetSpec::new("SourceLabel");
             dsl_label.id = Some(WidgetId::new("dsl_label"));
             dsl_label.props.insert("theme", Value::Text(self.theme.as_str().into()));
-            dsl_label.props.insert("text", Value::Text("DSL YAML".into()));
+            dsl_label
+                .props
+                .insert("text", Value::Text(self.locale.dsl_label().into()));
             col.children.push(dsl_label);
 
             let mut dsl_src = WidgetSpec::new("SourceCode");
@@ -215,7 +220,9 @@ impl GalleryApp {
             rust_label
                 .props
                 .insert("theme", Value::Text(self.theme.as_str().into()));
-            rust_label.props.insert("text", Value::Text("Rust API".into()));
+            rust_label
+                .props
+                .insert("text", Value::Text(self.locale.rust_label().into()));
             col.children.push(rust_label);
 
             let mut rust_src = WidgetSpec::new("SourceCode");
@@ -296,6 +303,14 @@ fn theme_from_props(props: &Props) -> ThemeKind {
     match props.get("theme") {
         Some(Value::Text(s)) => ThemeKind::parse_str(s).unwrap_or(ThemeKind::Light),
         _ => ThemeKind::Light,
+    }
+}
+
+/// 从 `locale` prop 解析当前语言（非法/缺省回落 En）。
+fn locale_from_props(props: &Props) -> Locale {
+    match props.get("locale") {
+        Some(Value::Text(s)) => Locale::parse_str(s).unwrap_or(Locale::En),
+        _ => Locale::En,
     }
 }
 
@@ -595,14 +610,17 @@ impl Widget for GroupHeader {
 pub struct NavSearch {
     query: String,
     theme: ThemeKind,
+    locale: Locale,
 }
 
 impl Widget for NavSearch {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
         let new_theme = theme_from_props(props);
-        let mut changed = new_theme != self.theme;
+        let new_locale = locale_from_props(props);
+        let mut changed = new_theme != self.theme || new_locale != self.locale;
         self.theme = new_theme;
+        self.locale = new_locale;
         if let Some(Value::Text(q)) = props.get("query")
             && q != &self.query
         {
@@ -635,7 +653,7 @@ impl Widget for NavSearch {
         ctx.recorder
             .stroke_rect(Rect::from_origin_size(Point::ZERO, size), border, 1.0);
         let display = if self.query.is_empty() {
-            "Search...".to_string()
+            self.locale.search_placeholder().to_string()
         } else {
             format!("🔍 {}", self.query)
         };
@@ -937,6 +955,7 @@ pub fn register_gallery_factories(host: &mut WidgetHost) {
         Box::new(NavSearch {
             query,
             theme: ThemeKind::Light,
+            locale: Locale::En,
         })
     });
     host.register("DemoTitle", |spec| {
@@ -1116,6 +1135,80 @@ mod tests {
         assert_eq!(app.locale, Locale::Zh);
         app.dispatch(&action, None);
         assert_eq!(app.locale, Locale::En);
+    }
+
+    #[test]
+    fn locale_toggle_propagates_to_header_title() {
+        // 回归：HeaderTitle 的 text prop 必须按 locale 切换。
+        // 历史 bug：text prop 被错写成 "locale" 导致文本始终为空。
+        let mut app = GalleryApp::new();
+        app.dispatch(&ActionId::new("gallery.locale.toggle"), None);
+        let spec = app.root_spec();
+        let header = spec
+            .children
+            .iter()
+            .find(|c| c.id.as_ref().map(|i| i.0.as_str()) == Some("gallery_header"))
+            .expect("header 存在");
+        let title = header
+            .children
+            .iter()
+            .find(|c| c.component.0 == "HeaderTitle")
+            .expect("HeaderTitle 存在");
+        match title.props.get("text") {
+            Some(Value::Text(t)) => assert_eq!(t, "组件画廊", "locale=Zh 时 HeaderTitle 应为中文"),
+            other => panic!("HeaderTitle text prop 应为 Value::Text，实际 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn locale_toggle_propagates_to_group_header_label() {
+        // 回归：GroupHeader 的 label 应通过 GroupId::name_for(locale) 选文案，
+        // 而非硬编码 name_en()。
+        let mut app = GalleryApp::new();
+        app.dispatch(&ActionId::new("gallery.locale.toggle"), None);
+        let spec = app.root_spec();
+        let body = spec
+            .children
+            .iter()
+            .find(|c| c.id.as_ref().map(|i| i.0.as_str()) == Some("gallery_body"))
+            .expect("body 存在");
+        let sidebar = body
+            .children
+            .iter()
+            .find(|c| c.id.as_ref().map(|i| i.0.as_str()) == Some("sidebar"))
+            .expect("sidebar 存在");
+        let group_labels: Vec<String> = sidebar
+            .children
+            .iter()
+            .filter(|c| c.component.0 == "GroupHeader")
+            .filter_map(|c| match c.props.get("label") {
+                Some(Value::Text(t)) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            group_labels.iter().any(|l| l == "控件"),
+            "locale=Zh 时分组标签应含中文「控件」，实际 {:?}",
+            group_labels
+        );
+    }
+
+    #[test]
+    fn nav_search_renders_localized_placeholder() {
+        // 验证 NavSearch widget 收到 locale prop 后按语言选占位符。
+        let mut app = GalleryApp::new();
+        app.dispatch(&ActionId::new("gallery.locale.toggle"), None);
+        let mut driver = WinitDriver::new(&mut app, WindowMetrics::tablet());
+        register_gallery_factories(driver.host_mut());
+        driver.begin();
+        // 在 scene 中找一个文本是 "搜索..." 的 entry
+        use zero_ui_render::render_node::RenderPrimitive;
+        let scene = driver.host().scene();
+        let has_zh_placeholder = scene
+            .entries
+            .iter()
+            .any(|e| matches!(&e.primitive, RenderPrimitive::Text { text, .. } if text == "搜索..."));
+        assert!(has_zh_placeholder, "locale=Zh 时 NavSearch 应渲染中文占位符「搜索...」");
     }
 
     #[test]

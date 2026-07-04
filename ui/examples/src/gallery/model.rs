@@ -44,6 +44,14 @@ impl GroupId {
             GroupId::Navigation => "导航",
         }
     }
+
+    /// 按 locale 选分组名（i18n）。
+    pub fn name_for(&self, locale: Locale) -> &'static str {
+        match locale {
+            Locale::En => self.name_en(),
+            Locale::Zh => self.name_zh(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +113,46 @@ impl Locale {
         match self {
             Locale::En => "EN",
             Locale::Zh => "中文",
+        }
+    }
+
+    /// 序列化进 WidgetSpec props 的字符串形式（与 ThemeKind::as_str 对称）。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Locale::En => "en",
+            Locale::Zh => "zh",
+        }
+    }
+
+    /// 反序列化 `locale` prop。非法值回落 `None`，调用方按 En 默认。
+    pub fn parse_str(s: &str) -> Option<Locale> {
+        match s {
+            "en" => Some(Locale::En),
+            "zh" => Some(Locale::Zh),
+            _ => None,
+        }
+    }
+
+    /// NavSearch 占位符（i18n）。
+    pub fn search_placeholder(self) -> &'static str {
+        match self {
+            Locale::En => "Search...",
+            Locale::Zh => "搜索...",
+        }
+    }
+
+    /// 源码标签（i18n）。
+    pub fn dsl_label(self) -> &'static str {
+        match self {
+            Locale::En => "DSL YAML",
+            Locale::Zh => "DSL YAML",
+        }
+    }
+
+    pub fn rust_label(self) -> &'static str {
+        match self {
+            Locale::En => "Rust API",
+            Locale::Zh => "Rust API",
         }
     }
 }
