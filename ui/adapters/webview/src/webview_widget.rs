@@ -191,6 +191,7 @@ mod tests {
             clip: Some(rect),
             offset: Vec2::ZERO,
             tokens: &zero_ui_core::theme::SemanticTokens::light(),
+            font_metrics: None,
         };
         w.paint(&mut ctx);
         let scene = rec.finish();

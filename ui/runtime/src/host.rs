@@ -143,6 +143,11 @@ pub struct WidgetHost {
     /// 合成 `PointerPhase::Exited`（通知控件清除 hover/pressed 交互态）。
     /// Cancelled 时清空本字段并派发 Exited（如有上次悬停节点）。
     last_hovered: Option<WidgetId>,
+    /// 可供 widgets 查询的实时字体度量 `(ascent, descent)`（DC-11 text path 统一）。
+    ///
+    /// 由应用层（apps/browser）从共享 `FontdueBackend` 查询后设置，`paint_node` 注入
+    /// `PaintCtx.font_metrics`。`None` 时 `PaintCtx::line_metrics` 回落 heuristic。
+    font_metrics: Option<(f32, f32)>,
 }
 
 impl Default for WidgetHost {
@@ -162,6 +167,7 @@ impl Default for WidgetHost {
             pending_gestures: Vec::new(),
             gesture_clock: 0,
             last_hovered: None,
+            font_metrics: None,
         }
     }
 }
@@ -184,6 +190,13 @@ impl WidgetHost {
     /// 主题变化时调用，并应同步标记 `needs_paint`（仅色变不布局）。
     pub fn set_tokens(&mut self, tokens: zero_ui_core::theme::SemanticTokens) {
         self.tokens = tokens;
+    }
+
+    /// 设置实时字体度量 `(ascent, descent)`，由应用层从共享 `FontdueBackend` 查询后注入。
+    /// 设置后 `paint_node` 会将其注入 `PaintCtx.font_metrics`，使 widgets 经
+    /// [`PaintCtx::line_metrics`] 得到与手绘 chrome 相同的基线计算（DC-11 text path 统一）。
+    pub fn set_font_metrics(&mut self, ascent: f32, descent: f32) {
+        self.font_metrics = Some((ascent, descent));
     }
 
     /// 用新声明树 reconcile：按 `WidgetId` + `ComponentType` 复用既有 widget 实例（保留临时状态），
@@ -337,7 +350,7 @@ impl WidgetHost {
         self.scene = Scene::new();
         if let Some(root) = self.root.as_mut() {
             let viewport = Some(root.cached_rect);
-            paint_node(root, &mut self.scene, viewport, &self.tokens);
+            paint_node(root, &mut self.scene, viewport, &self.tokens, self.font_metrics);
         }
         self.pending = InvalidationFlags::CLEAN;
         &self.scene
@@ -1237,6 +1250,7 @@ fn paint_node(
     scene: &mut Scene,
     parent_clip: Option<Rect>,
     tokens: &zero_ui_core::theme::SemanticTokens,
+    font_metrics: Option<(f32, f32)>,
 ) {
     let own_clip = parent_clip.and_then(|pc| pc.intersect(node.cached_rect));
     // 容器节点底色：无 widget 的容器（layout=column/row/stack）若声明 `bg` prop（**token 名**，
@@ -1272,6 +1286,7 @@ fn paint_node(
             clip: local_clip,
             offset: Vec2::ZERO,
             tokens,
+            font_metrics,
         };
         w.paint(&mut ctx);
         let local = rec.finish();
@@ -1281,7 +1296,7 @@ fn paint_node(
         }
     }
     for child in node.children.iter_mut() {
-        paint_node(child, scene, own_clip, tokens);
+        paint_node(child, scene, own_clip, tokens, font_metrics);
     }
 }
 

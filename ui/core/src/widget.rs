@@ -133,10 +133,18 @@ pub struct PaintCtx<'a> {
     /// 由 `WidgetHost` 持有当前主题 token，paint 时注入；控件据此派生交互态色
     /// （如按钮 default=`primary`、hover=`primary.lighten(..)`），无需硬编码浏览器色值。
     pub tokens: &'a crate::theme::SemanticTokens,
+    /// 可供 widgets 查询的实时字体度量 `(ascent, descent)`（DC-11 text path 统一）。
+    ///
+    /// 由 `WidgetHost` 从关联的 `FontdueBackend` 查询后注入。`None` 时
+    /// [`line_metrics`](Self::line_metrics) 回落回 heuristic 默认值。
+    pub font_metrics: Option<(f32, f32)>,
 }
 
 impl<'a> PaintCtx<'a> {
     /// 返回默认字体度量 `(ascent, descent)`（DC-11 text path 统一）。
+    ///
+    /// 若 [`font_metrics`](Self::font_metrics) 域被 host 注入真实字体后端度量
+    /// （`FontdueBackend::line_metrics`），则优先使用；否则回落 heuristic 近似值。
     ///
     /// `ascent` 为正值（基线上方高度），`descent` 为负值（基线下方深度）。
     /// 控件应据此计算文本基线，与手绘 chrome `ui_text_centered_in_height` 一致：
@@ -145,17 +153,13 @@ impl<'a> PaintCtx<'a> {
     /// let text_top = (box_h - line_h) / 2.0;
     /// let baseline = text_top + ascent;
     /// ```
-    ///
-    /// 默认返回 heuristic ≈ 典型无衬线字体比例。后续可通过 `PaintRecorder` 扩展或
-    /// host 注入真实的字体后端度量（`FontdueBackend::line_metrics`），使 SDK 文本
-    /// 基线精确匹配手绘 chrome。
-    /// Default heuristic ≈ 典型 UI 字体（如 Segoe UI / SF Pro）x-height 比例。
-    /// asent ≈ font_size * 0.92, descent ≈ -font_size * 0.23。
-    /// 与手绘 chrome `FontLoader::line_metrics` 真实值（ascent≈12, descent≈-3 @13px）
-    /// 的 `ascent + descent` 一致（≈9 = 13*0.69），使基线公式 `(h+ascent+descent)/2`
-    /// 产出与手绘 chrome `ui_text_centered_in_height` 几乎相同的像素位置。
+    /// `font_metrics` 存储为归一化比率（per-px），需乘以 `font_size` 得到实际大小。
+    /// 回落 heuristic：`(font_size * 0.92, -(font_size * 0.23))` ≈ 典型 UI 字体。
     pub fn line_metrics(&self, font_size: f32) -> (f32, f32) {
-        (font_size * 0.92, -(font_size * 0.23))
+        match self.font_metrics {
+            Some((ascent_ratio, descent_ratio)) => (ascent_ratio * font_size, descent_ratio * font_size),
+            None => (font_size * 0.92, -(font_size * 0.23)),
+        }
     }
 }
 

@@ -14,7 +14,7 @@ use crate::render::{ChromeTabColors, register_chrome_factories, register_chrome_
 use crate::shell::{BrowserChromeShell, DesktopBrowserShell, ID_VIEWPORT};
 use std::sync::Arc;
 use zero_render_foundation::primitive::RenderPrimitives;
-use zero_text_foundation::FontdueBackend;
+use zero_text_foundation::{FontId, FontdueBackend};
 use zero_ui_adapter_render_foundation::RenderFoundationBackend;
 use zero_ui_core::geometry::{Constraints, Rect};
 use zero_ui_core::image::ImageRef;
@@ -83,6 +83,7 @@ pub fn render_chrome_via_sdk_with_layout(
     // host.tokens 驱动 paint_node 容器 bg（DC-14 toolbar parity）——须与工厂 tokens 一致，
     // 否则容器 bg 用默认 light token（245）≠ sdk_chrome_tokens surface（248）。
     host.set_tokens(*tokens);
+    inject_font_metrics(&mut host, &backend);
     host.set_root(&spec);
     host.layout(Constraints::loose(metrics.logical_size));
     // SDK chrome 布局后的页面内容区（viewport 节点绝对 rect）。
@@ -127,6 +128,7 @@ pub fn render_chrome_via_sdk_with_webview_surface(
     register_chrome_factories_with_webview(&mut host, tokens, scheme, tab_colors);
     // host.tokens 驱动 paint_node 容器 bg（DC-14 toolbar parity）——须与工厂 tokens 一致。
     host.set_tokens(*tokens);
+    inject_font_metrics(&mut host, &backend);
     host.set_root(&spec);
     host.layout(Constraints::loose(metrics.logical_size));
     let viewport_rect = host.rect_of(&WidgetId::new(ID_VIEWPORT));
@@ -148,6 +150,18 @@ pub fn render_chrome_via_sdk_with_webview_surface(
     }
     paint_scene(&scene, &mut bridge);
     (bridge, viewport_rect)
+}
+
+/// 从共享 `FontdueBackend` 查询主字体度量并注入 host（DC-11 text path 统一）。
+///
+/// 查询 FontId(0)（首个加载的 UI 主字体）在 13px 的 ascent/descent，存储归一化比率
+///（per-px），使不同字号的 widget 经 `PaintCtx::line_metrics` 可正确缩放。
+/// 查询失败（无字体或 FontId(0) 未加载）安静跳过 → `PaintCtx` 回落 heuristic。
+fn inject_font_metrics(host: &mut WidgetHost, backend: &std::sync::Arc<FontdueBackend>) {
+    const UI_FONT_SIZE: f32 = 13.0;
+    if let Some((raw_ascent, raw_descent)) = backend.line_metrics(FontId(0), UI_FONT_SIZE) {
+        host.set_font_metrics(raw_ascent / UI_FONT_SIZE, raw_descent / UI_FONT_SIZE);
+    }
 }
 
 #[cfg(test)]

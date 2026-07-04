@@ -214,8 +214,10 @@ mod tests {
             clip: None,
             offset: Vec2::ZERO,
             tokens,
+            font_metrics: None,
         };
         btn.paint(&mut ctx);
+        assert_eq!(rec.fills.len(), 1);
         rec.fills[0].1
     }
 
@@ -457,6 +459,7 @@ mod tests {
             clip: None,
             offset: Vec2::ZERO,
             tokens: &tokens,
+            font_metrics: None,
         };
         btn.paint(&mut ctx);
         assert_eq!(rec.fills.len(), 1);
