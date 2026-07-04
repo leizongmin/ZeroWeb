@@ -916,11 +916,16 @@ fn build_subtree(
                         _ => true,
                     }
                 });
-                if has_text_child && has_element_child && all_inline && is_flex_grid_item(doc, styles, dom_id) {
-                    // R1024：仅 flex/grid item（父为 flex/grid 容器，content-sized）的全 inline 子 block
+                if has_text_child
+                    && has_element_child
+                    && all_inline
+                    && (is_flex_grid_item(doc, styles, dom_id) || matches!(computed.display, DisplayValue::InlineBlock))
+                {
+                    // R1024/R1025：content-sized block（flex/grid item 或 inline-block）的全 inline 子
                     // 作 leaf——让 measure 经 has_inline_content 把全部 inline 文本作一个 IFC 单位测量，
-                    // 修 flex/grid item 含文本+br 塌缩 w=0（rootpos 4 案 body 驱动）。fill-width block
-                    //（multicol 容器、普通 div）不入此路径（multicol -6 回归、welcome 改变非必需）。
+                    // 修 flex/grid item 含文本+br 塌缩 w=0（rootpos 4 案 body 驱动）+ inline-block 含
+                    // 文本+br 误填满父宽（w=800，应 shrink-to-fit）。fill-width block（multicol 容器、
+                    // 普通 div）不入此路径（multicol -6 回归、welcome 改变非必需）。
                     // inline Element 须无 Element 子（abspos-in-inline 簇的 span 内 abspos 须保留 CB）。
                 } else {
                     // 仅处理元素子节点（原有行为）

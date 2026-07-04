@@ -486,3 +486,44 @@ fn test_r1024_flex_item_with_text_and_br_not_collapse() {
          was 0 before fix (block build path skipped text children → new_with_children non-leaf → measure not fired)"
     );
 }
+
+/// R1025：inline-block 含文本 + inline Element 子（`<br>`）应 shrink-to-fit，不应填满父宽。
+///
+/// `<span style="display:inline-block">text<br>text</span>` 此前：默认 block build 路径只收
+/// Element 子 → inline-block 成 new_with_children([br]) 非 leaf → measure 不触发 → 误填满父宽
+///（w=800）。修复：inline-block（content-sized）的全 inline 子作 leaf，measure 经 has_inline_content
+/// 测文本宽 → shrink-to-fit（w=文本宽）。
+#[test]
+fn test_r1025_inline_block_with_text_and_br_shrink_to_fit() {
+    let html = r#"<html><body style="margin:0"><span id="ib" style="display:inline-block">The quick brown fox<br>jumps over the lazy dog</span></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let ib_id = doc
+        .query_selector(doc.root(), "#ib")
+        .or_else(|| {
+            let mut stack = vec![doc.root()];
+            while let Some(nid) = stack.pop() {
+                if let Some(n) = doc.get(nid) {
+                    if let zero_dom::NodeKind::Element(e) = &n.kind {
+                        if e.get_attribute("id").as_deref() == Some("ib") {
+                            return Some(nid);
+                        }
+                    }
+                    stack.extend(doc.child_nodes(nid));
+                }
+            }
+            None
+        })
+        .expect("ib element found");
+    let (w, _h) = find_box(&result.root, ib_id).expect("ib box found");
+    assert!(
+        w < 400.0,
+        "R1025: inline-block with text+br should shrink-to-fit (w<400, text width), got w={w}; \
+         was 800 before fix (filled parent — block build path skipped text → new_with_children non-leaf → measure not fired)"
+    );
+}
