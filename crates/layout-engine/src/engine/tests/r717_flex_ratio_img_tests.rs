@@ -357,6 +357,37 @@ fn r1020_multicol_column_span_all_not_multiplied() {
     );
 }
 
+/// R1028：`column-span:all` spanner 脱离列流成全宽元素（width = 容器 content_width），
+/// 非 narrowed 到列宽。spanner-fragmentation-000~007 / multicol-span-all-001 驱动
+/// （+9 oracle pass）。
+#[test]
+fn r1028_column_span_all_spanner_is_full_width() {
+    let html = r#"<html><body style="margin:0">
+<div id="mc" style="width:400px; columns:2; column-gap:0; background:green">
+  <div id="first" style="height:50px; background:blue"></div>
+  <div id="spanner" style="column-span:all; height:30px; background:black"></div>
+  <div id="last" style="height:50px; background:red"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let divs = doc.get_elements_by_tag_name("div");
+    let mut iter = divs.into_iter();
+    let _mc_id = iter.next().expect("mc");
+    let _first_id = iter.next().expect("first");
+    let spanner_id = iter.next().expect("spanner");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let (sw, _sh) = find_box(&result.root, spanner_id).expect("spanner box found");
+    // spanner 全宽 = 容器 400px（非被 narrow 到列宽 200px）。
+    assert!(
+        (sw - 400.0).abs() < 10.0,
+        "R1028: column-span:all spanner 应全宽 ~400px（容器宽），非列宽 200px，got {sw}"
+    );
+}
+
 /// R1015 对照：非 float 的 block flex column + width:auto 不触发 shrink（保持当前行为，零回归）。
 #[test]
 fn r1015_block_flex_column_auto_width_no_shrink() {

@@ -1391,6 +1391,8 @@ pub enum PropertyValue {
     ColumnWidth(ColumnWidthComputedValue),
     /// column-fill 值。
     ColumnFill(ColumnFillComputedValue),
+    /// column-span 值。
+    ColumnSpan(ColumnSpanComputedValue),
     /// object-fit 值。
     ObjectFit(ObjectFitComputedValue),
     /// filter 值。
@@ -1510,6 +1512,20 @@ pub enum ColumnFillComputedValue {
     Balance,
     /// auto — 按顺序填充列。
     Auto,
+}
+
+/// CSS column-span 属性值。
+///
+/// §6.1：`column-span: all` 使元素脱离列流，跨越 multicol 容器全宽
+/// （成为「spanner」），将其上下内容分成独立平衡的列区域。默认 `none`
+/// （留在列流中）。ZW 仅支持 `all`/`none`（`column-span` 在 css-multicol-1
+/// 只有这两值）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnSpanComputedValue {
+    /// none — 元素留在正常列流中（默认）。
+    None,
+    /// all — 元素跨越所有列（spanner）。
+    All,
 }
 
 /// CSS object-fit 属性值。
