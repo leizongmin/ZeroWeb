@@ -2648,6 +2648,25 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1031 多 dir 复核确认单 session clean lever 全尽·multicol balance-breaking + css-text-decor thickness 均结构性/已 ruled-out·零源码·纯调查
+
+承 R1030 CONTINUE 转 balance-mode column-breaking。本轮多 dir 复核找 clean lever，**结论：单 session clean lever 全尽**。
+
+**balance-mode column-breaking 复核（纠正 R1030「相对窄前置」）**：R1030 称 balance-breaking 是 span-all-children-height 的「相对窄前置」。本轮 probe 其驱动案 multicol-fill-balance-030（1.14%）= **nested multicol + column-fill:auto + break-before:column + 百分比宽 + overflow**（外 columns:2 column-fill:auto 内嵌 columns:2，子含 break-before:column + 50%宽 180/250px 高）——非简单 balance 单案，是 nested+overflow 结构性。balance-breaking 单做不 flip 这些案（需 nested multicol + multi-row 模型）。**R1030「相对窄」纠正为「同 multi-row 结构性」**。
+
+**css-text-decor 复核（fresh oracle 108/242 45%）**：① **text-decoration-thickness（3× ruled-out 再确证）**——paint effects.rs:213 硬编码 `line_width=(font_size*0.06).max(1.0)`，属性零消费；但 R875/R914/R1020-cont 三轮实现均 net-negative（diff 由 table 边框 / font-wall / position:relative offset bug 主导非 thickness）→ **勿再以 thickness 为 lever**。② css-text-decor near-pass 1-3.5% 带 = **text-emphasis-position-property 簇（12+ 案 1.0-1.02%，全 vertical-lr/rl writing-mode 驱动，blocked by R109 vertical block-flow）** + text-emphasis-ruby（1.11-1.19%，ruby+emphasis 交互）+ text-underline-offset（1.02-1.09%，position:relative bug blocked，R1020-cont 回退）。**全 vertical-writing-mode / font-wall / position:relative blocked，无 clean lever**。
+
+**css-values**：0 reftest oracle（testharness JS 单测，非 reftest dir），不可 oracle 测。
+
+**战略结论（再确证 R882/R999/R1026 plateau）**：跨 multicol / css-text-decor / css-values / css-writing-modes / css-tables / css-flexbox / css-grid 全 WPT reftest dir，**单 session clean lever 已尽**。残余 forward motion 全在多 session 结构性：
+1. **font-wall**（Phase A IFC font-metric 统一 / per-font ascent provider R887 5-layer / webfont 加载）——解 css-text + css-text-decor + welcome/morning 主体 diff。
+2. **R109 §9.2.1.1 匿名块 + vertical block-flow**——解 css-writing-modes 87% 簇 + text-emphasis-position vertical 簇。
+3. **multicol Phase 2 multi-row column 模型**——解 span-all-children-height + span-all-rule + nested-balancing 簇。
+4. **position:relative offset bug（structurally entangled）**——R1020-cont 证 postprocess 不可解，须 converter/taffy 层统一；解 +12 potential。
+5. **feature gaps**（text-decoration-inset CSS4 draft / 表单控件 / ::backdrop / scroll-container）。
+
+**▶ 下会话**：单 session clean lever 已尽，**须 committed 多 session 结构性**。推荐优先级：① **font-wall per-font ascent provider R887**（最高价值——解多 dir 主体 diff，welcome/morning + css-text + css-text-decor；前置 = webfont 加载已 wired（R1027-cont 确证），R990 常数 0.928 已证机制，per-font 增量；5-layer plumbing 多 session 但首层（fontdue ascent → FontLoader → layout）可单 session probe）；② multicol multi-row 模型 dedicated session；③ R109 vertical block-flow dedicated session。**勿再扫近 pass 找 clean lever**（全 blocked）。
+
 ### R1030 span-all-children-height 簇 Phase 0 探测 = multi-row column model + overflow columns（多 session 结构性，纠正「row-fill」诊断）·零源码·纯调查
 
 承 R1029 CONTINUE 转 column-fill:auto + spanner row-fill 模型。本轮 Phase 0 探测 span-all-children-height 簇（002/003/004a/004b/006/007 @ 20-34%）真机制。
