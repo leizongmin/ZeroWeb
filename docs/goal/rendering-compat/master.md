@@ -2648,6 +2648,26 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1035 ★multicol spanner 路径 multi-row 列模型 LANDED = css-multicol Oracle 130→131（+1 PASS）+ 2 大改善·零回归·plateau 五轮后首个 landed code win
+
+承 R1034 CONTINUE（multicol multi-row 须在 spanner 路径做，R1034 非 spanner 实验 net-negative 回退）。本轮精准在 `layout_multicol_with_spanners` 加 per-region overflow → multi-row，**clean win**。
+
+**驱动案（multicol-span-all-children-height-002）**：article column-count:2 height:200px（definite，balance）+ spanner(height:25%) + block2(height:100%=200px)。region1（spanner 下方）仅剩 50px leftover，block2(200px) overflow → 应 4 列=2 行×2 列各 50px。缺失机制 = `region_available = container_height − y_base`（每区域 leftover 高度）。
+
+**实现（crates/layout-engine/src/multicol.rs）**：① 新增 `assign_children_to_columns_multirow`（overflow 换行非截断末列，含跨行 breaking）；② `position_multicol_children` 加 `row_height: f32` 参数（row=col_idx/col_count, y=y_base+row×row_height；非 spanner 调用者传 0.0 不变）；③ `layout_multicol_with_spanners` 区域循环加 multirow gate：`region_available=(content_height-y_base).max(0)`，`use_multirow = !empty && !sequential_fill && region_available>0 && total>col_count×region_available+1 && !has_nested_multicol`。
+
+**★ Gate 演进（关键）**：v1（无 `!sequential_fill`）A/B +1 但 fill-auto-block-children-002 +0.12pp 回归（auto+spanner 下 multirow 语义偏差）；v2（加 balance-only gate）+1 保持 + 回归消除；`!has_nested_multicol` 守卫避 R1034 multicol-nested-019 谱系。
+
+**验证（chromium Oracle + stash 严格 A/B）**：css-multicol **130→131（+1 net）**。**1 flip**：multicol-span-all-012 1.65→**0.88% PASS**。**2 大改善（仍 FAIL）**：span-all-children-height-003 34.08→23.59%（-10.49pp）、-007 19.78→16.28%（-3.50pp）。**0 回归**。3 新 R1035 multirow 单测 + 19 multicol 测全过。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（workspace 零失败）/ **product-smoke welcome 16.57% < 20% gate** ✓（welcome 无 multicol 零影响）。
+
+**未解（下会话 lever）**：① **span-all-children-height-002（驱动案）26.76% 未变**——ZW 未把 block2 height:100% 解析为 multicol 容器高（assert 明示 percentage height 须相对 entire multicol 非 region），block2 不够高不触发 overflow → multirow 不 fire。修此 percentage-height-against-multicol-container 解析可望翻 002 + 同簇 004a/004b/006 = **独立高价值 lever**。② 003/007 残余 = percentage-height 同款 + multi-row breaking 精度。③ auto+spanner sequential row-fill（fill-auto-block-children 簇）多 session。
+
+**意义**：R1029 后、R1030-R1034 五轮 plateau 后首个 landed code win。证实「spanner 路径 + 紧 gate（balance-only + definite 高 + 无 nested multicol）」是 multicol multi-row 可产方向（纠正 R1034「multi-row 全 ruled out」——仅非 spanner ruled out，spanner 路径可产）。span-all-children-height 簇首次实质进展。详见 [`evidence/r1035-spanner-multirow-landed-2026-07-05.txt`](./evidence/r1035-spanner-multirow-landed-2026-07-05.txt)。
+
+**▶ 下会话**：① **percentage-height-against-multicol-container 解析**（block2 height:100% 应 = 容器高 200px 非 region leftover，修后 002 + 004a/004b/006 可望翻，是 R1035 multirow 的天然放大器——multirow 基础设施已 land，percentage-height 修后自动受益）；② 003/007 残余深挖（multi-row breaking 精度 / column-rule 交互）；③ auto+spanner sequential row-fill（独立多 session）。
+
 ### R1034 multicol non-spanner multi-row 实验 net-negative 已回退 + font-wall subpixel x 角度分析（fresh 但 WPT yield 低）·零 net 源码·纯调查
 
 承 R1033 CONTINUE（plateau 四轮确证，须 committed 多 session，#1 = font-wall fresh angle = subpixel positioning）。本轮先分析 font-wall subpixel，再实验 multicol multi-row，**均无 yield**（前者分析低 yield，后者 A/B net-negative 回退）。
