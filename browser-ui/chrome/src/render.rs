@@ -16,9 +16,10 @@ use zero_ui_core::binding::Value;
 use zero_ui_core::event::UiEvent;
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
 use zero_ui_core::image::ImageRef;
+use zero_ui_core::semantics::{SemanticsFlags, SemanticsLabel, SemanticsNode};
 use zero_ui_core::theme::{Color, SemanticTokens};
 use zero_ui_core::widget::{
-    EventCtx, LayoutCtx, MountCtx, PaintCtx, PaintRecorder, Props, SemanticsCtx, UpdateCtx, Widget, WidgetSpec,
+    EventCtx, LayoutCtx, MountCtx, PaintCtx, PaintRecorder, Props, SemanticsCtx, UpdateCtx, Widget, WidgetId, WidgetSpec,
 };
 use zero_ui_render::Scene;
 use zero_ui_runtime::WidgetHost;
@@ -262,6 +263,8 @@ pub struct NavigationButtonsWidget {
     disabled_tint: Color,
     can_back: bool,
     can_forward: bool,
+    /// 当前 pressed 按钮索引（0-3）；None = 未 pressed。click 检测用（审查报告问题 #3）。
+    pressed: Option<u8>,
 }
 
 impl NavigationButtonsWidget {
@@ -289,6 +292,36 @@ impl NavigationButtonsWidget {
             disabled_tint: tokens.on_surface.mix(tokens.surface, 0.62),
             can_back,
             can_forward,
+            pressed: None,
+        }
+    }
+
+    /// 局部坐标 → 命中的按钮索引（0-3）；超出按钮范围返回 None。
+    /// 按钮区域：[NAV_LEADING_PAD + i*NAV_BUTTON_WIDTH, +NAV_BUTTON_WIDTH]，高度全行。
+    fn button_at(local_x: f32, local_y: f32, height: f32) -> Option<u8> {
+        if local_y < 0.0 || local_y > height {
+            return None;
+        }
+        if local_x < NAV_LEADING_PAD {
+            return None;
+        }
+        let rel = local_x - NAV_LEADING_PAD;
+        if rel >= 4.0 * NAV_BUTTON_WIDTH {
+            return None;
+        }
+        Some((rel / NAV_BUTTON_WIDTH) as u8).filter(|i| *i < 4)
+    }
+
+    /// 按钮 index → emit action（disabled 按钮 return Ignored）。
+    fn action_for_button(&self, i: u8) -> EventResult {
+        match i {
+            0 if self.can_back => EventResult::Emit(crate::actions::id(crate::actions::NAV_BACK)),
+            1 if self.can_forward => {
+                EventResult::Emit(crate::actions::id(crate::actions::NAV_FORWARD))
+            }
+            2 => EventResult::Emit(crate::actions::id(crate::actions::NAV_RELOAD_OR_STOP)),
+            3 => EventResult::Emit(crate::actions::id(crate::actions::NAV_HOME)),
+            _ => EventResult::Ignored,
         }
     }
 }
@@ -298,8 +331,77 @@ impl Widget for NavigationButtonsWidget {
 
     fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
 
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
-        EventResult::Ignored
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        // 审查报告问题 #3：实现 click 检测，emit 对应 BrowserAction id。
+        // host 已 hit-test 确认事件在本 widget 内（否则不路由进来），此处只需判断 4 按钮子范围。
+        match event {
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Pressed,
+                button: Some(zero_ui_core::event::PointerButton::Primary),
+                position,
+                ..
+            } => {
+                let height = NAV_BAR_HEIGHT; // layout 高度
+                if let Some(i) = Self::button_at(position.x, position.y, height) {
+                    self.pressed = Some(i);
+                    return EventResult::Consumed;
+                }
+                EventResult::Ignored
+            }
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Released,
+                button: Some(zero_ui_core::event::PointerButton::Primary),
+                position,
+                ..
+            } => {
+                if let Some(pressed_i) = self.pressed.take() {
+                    let height = NAV_BAR_HEIGHT;
+                    let released_i = Self::button_at(position.x, position.y, height);
+                    if released_i == Some(pressed_i) {
+                        return self.action_for_button(pressed_i);
+                    }
+                }
+                EventResult::Ignored
+            }
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Exited,
+                ..
+            }
+            | UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Cancelled,
+                ..
+            } => {
+                self.pressed = None;
+                EventResult::Ignored
+            }
+            _ => EventResult::Ignored,
+        }
+    }
+
+    fn focusable(&self) -> bool {
+        // nav 段是可交互按钮组（审查报告问题 #3 / spec §8.4.1A 事件管线约束）。
+        true
+    }
+
+    fn semantics(&self, ctx: &mut SemanticsCtx) {
+        // 审查报告问题 #8：nav 段 a11y 树——4 个 BUTTON 子节点（back/forward/reload/home），
+        // 各自 i18n label + FOCUSABLE（disabled 也保留节点供读屏朗读状态）。
+        let labels = [
+            (crate::i18n::ids::BACK, self.can_back),
+            (crate::i18n::ids::FORWARD, self.can_forward),
+            (crate::i18n::ids::RELOAD, true),
+            ("browser.home", true), // home 暂无 i18n id，用点分占位（reducer 已识别）
+        ];
+        for (msg_id, _enabled) in labels.iter() {
+            ctx.nodes.push(SemanticsNode {
+                id: WidgetId::new(msg_id),
+                rect: Rect::ZERO,
+                flags: SemanticsFlags::BUTTON | SemanticsFlags::FOCUSABLE,
+                label: Some(SemanticsLabel::Message(compact_str::CompactString::new(msg_id))),
+                value: None,
+                children: Vec::new(),
+            });
+        }
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
@@ -339,7 +441,6 @@ impl Widget for NavigationButtonsWidget {
         }
     }
 
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 // ── MenuButtonWidget（真实 MoreVertical 图标，DC-14 chrome 功能等价）──────────────
@@ -352,6 +453,8 @@ impl Widget for NavigationButtonsWidget {
 pub struct MenuButtonWidget {
     bg: Color,
     icon_tint: Color,
+    /// click 检测用（审查报告问题 #3）。
+    pressed: bool,
 }
 
 impl MenuButtonWidget {
@@ -363,6 +466,7 @@ impl MenuButtonWidget {
         MenuButtonWidget {
             bg: chrome_color_themed(bg_name, tokens),
             icon_tint: tokens.on_surface,
+            pressed: false,
         }
     }
 }
@@ -372,8 +476,56 @@ impl Widget for MenuButtonWidget {
 
     fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
 
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
-        EventResult::Ignored
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        // 审查报告问题 #3：click → toggle menu。
+        match event {
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Pressed,
+                button: Some(zero_ui_core::event::PointerButton::Primary),
+                ..
+            } => {
+                self.pressed = true;
+                EventResult::Consumed
+            }
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Released,
+                button: Some(zero_ui_core::event::PointerButton::Primary),
+                ..
+            } if self.pressed => {
+                self.pressed = false;
+                EventResult::Emit(crate::actions::id(crate::actions::MENU_TOGGLE))
+            }
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Exited,
+                ..
+            }
+            | UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Cancelled,
+                ..
+            } => {
+                self.pressed = false;
+                EventResult::Ignored
+            }
+            _ => EventResult::Ignored,
+        }
+    }
+
+    fn focusable(&self) -> bool {
+        true
+    }
+
+    fn semantics(&self, ctx: &mut SemanticsCtx) {
+        // 审查报告问题 #8：menu 按钮 a11y——BUTTON + FOCUSABLE，label = "Open menu"（i18n）。
+        ctx.nodes.push(SemanticsNode {
+            id: WidgetId::new("browser.menu"),
+            rect: Rect::ZERO,
+            flags: SemanticsFlags::BUTTON | SemanticsFlags::FOCUSABLE,
+            label: Some(SemanticsLabel::Message(compact_str::CompactString::new(
+                crate::i18n::ids::OPEN_MENU,
+            ))),
+            value: None,
+            children: Vec::new(),
+        });
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
@@ -400,8 +552,6 @@ impl Widget for MenuButtonWidget {
             self.icon_tint,
         );
     }
-
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 // ── TrailingIconsWidget（toolbar trailing 图标：download + theme，DC-14 parity）─────
@@ -421,6 +571,8 @@ const TRAILING_TOTAL_WIDTH: f32 =
 pub struct TrailingIconsWidget {
     bg: Color,
     icon_tint: Color,
+    /// click 检测用（审查报告问题 #3）：按下时记录命中的按钮 index（0=download, 1=theme）。
+    pressed: Option<u8>,
 }
 
 impl TrailingIconsWidget {
@@ -432,6 +584,27 @@ impl TrailingIconsWidget {
         TrailingIconsWidget {
             bg: chrome_color_themed(bg_name, tokens),
             icon_tint: tokens.on_surface,
+            pressed: None,
+        }
+    }
+
+    /// 局部 x → 命中按钮 index（0=download, 1=theme）；超出范围 None。
+    fn button_at(local_x: f32) -> Option<u8> {
+        let btn0_start = TRAILING_ICON_GAP;
+        let btn1_end = TRAILING_ICON_GAP + TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP + TRAILING_BUTTON_WIDTH;
+        if local_x < btn0_start || local_x > btn1_end {
+            return None;
+        }
+        let rel = local_x - btn0_start;
+        if rel < TRAILING_BUTTON_WIDTH {
+            Some(0)
+        } else if (TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP
+            ..2.0 * TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP)
+            .contains(&rel)
+        {
+            Some(1)
+        } else {
+            None
         }
     }
 }
@@ -439,8 +612,80 @@ impl TrailingIconsWidget {
 impl Widget for TrailingIconsWidget {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
-        EventResult::Ignored
+
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        // 审查报告问题 #3：click download/theme → emit 对应 action。
+        match event {
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Pressed,
+                button: Some(zero_ui_core::event::PointerButton::Primary),
+                position,
+                ..
+            } => {
+                if let Some(i) = Self::button_at(position.x) {
+                    self.pressed = Some(i);
+                    return EventResult::Consumed;
+                }
+                EventResult::Ignored
+            }
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Released,
+                button: Some(zero_ui_core::event::PointerButton::Primary),
+                position,
+                ..
+            } => {
+                if let Some(pressed_i) = self.pressed.take()
+                    && Self::button_at(position.x) == Some(pressed_i)
+                {
+                    return match pressed_i {
+                        0 => EventResult::Emit(crate::actions::id(crate::actions::TRAILING_DOWNLOAD)),
+                        1 => EventResult::Emit(crate::actions::id(crate::actions::TRAILING_THEME)),
+                        _ => EventResult::Ignored,
+                    };
+                }
+                EventResult::Ignored
+            }
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Exited,
+                ..
+            }
+            | UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Cancelled,
+                ..
+            } => {
+                self.pressed = None;
+                EventResult::Ignored
+            }
+            _ => EventResult::Ignored,
+        }
+    }
+
+    fn focusable(&self) -> bool {
+        true
+    }
+
+    fn semantics(&self, ctx: &mut SemanticsCtx) {
+        // 审查报告问题 #8：trailing 图标 a11y——download + theme 两个 BUTTON 子节点。
+        ctx.nodes.push(SemanticsNode {
+            id: WidgetId::new("browser.trailing.download"),
+            rect: Rect::ZERO,
+            flags: SemanticsFlags::BUTTON | SemanticsFlags::FOCUSABLE,
+            label: Some(SemanticsLabel::Message(compact_str::CompactString::new(
+                crate::i18n::ids::DOWNLOADS,
+            ))),
+            value: None,
+            children: Vec::new(),
+        });
+        ctx.nodes.push(SemanticsNode {
+            id: WidgetId::new("browser.trailing.theme"),
+            rect: Rect::ZERO,
+            flags: SemanticsFlags::BUTTON | SemanticsFlags::FOCUSABLE,
+            label: Some(SemanticsLabel::Literal(compact_str::CompactString::new(
+                "Toggle theme",
+            ))),
+            value: None,
+            children: Vec::new(),
+        });
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
@@ -485,8 +730,6 @@ impl Widget for TrailingIconsWidget {
             self.icon_tint,
         );
     }
-
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 // ── BrowserTabStripWidget（真实 tab 形状，DC-14 chrome 功能等价）───────────────────
@@ -662,6 +905,19 @@ pub struct BrowserTabStripWidget {
     /// 标签文本色（取自 token，active 用 on_surface，inactive 调低对比度）。
     text_color: Color,
     muted_text_color: Color,
+    /// click 检测用（审查报告问题 #3）：pressed 时记录命中的目标。
+    pressed_target: Option<TabStripClickTarget>,
+}
+
+/// tab strip 命中区（审查报告问题 #3）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TabStripClickTarget {
+    /// 点击第 N 个 tab（payload = tab index）。
+    Tab(usize),
+    /// 点击第 N 个 tab 的 close 按钮。
+    TabClose(usize),
+    /// 点击 new-tab（+）按钮。
+    NewTab,
 }
 
 impl BrowserTabStripWidget {
@@ -708,7 +964,50 @@ impl BrowserTabStripWidget {
             titles,
             text_color,
             muted_text_color,
+            pressed_target: None,
         }
+    }
+
+    /// 计算 tab 宽（与 paint 同算法，确保 hit-test 一致）。
+    fn tab_width_for(total_width: f32, tab_count: usize) -> f32 {
+        if tab_count == 0 {
+            return 0.0;
+        }
+        let tabs_max_width =
+            (total_width - NEW_TAB_BTN_WIDTH).max(0.0);
+        let ideal = tabs_max_width / tab_count as f32;
+        ideal.clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH).max(0.0)
+    }
+
+    /// 局部坐标 → 命中目标。
+    fn target_at(&self, local_x: f32, local_y: f32, total_width: f32) -> Option<TabStripClickTarget> {
+        if !(0.0..=TAB_STRIP_HEIGHT).contains(&local_y) {
+            return None;
+        }
+        // new-tab 按钮（右侧倒数 window_controls_width 之前）。
+        let new_tab_x = (total_width - self.window_controls_width - NEW_TAB_BTN_WIDTH).max(0.0);
+        if local_x >= new_tab_x && local_x <= new_tab_x + NEW_TAB_BTN_WIDTH {
+            return Some(TabStripClickTarget::NewTab);
+        }
+        // tab 区域。
+        let tab_w = Self::tab_width_for(total_width, self.tab_count);
+        if tab_w <= 0.0 || self.tab_count == 0 {
+            return None;
+        }
+        if local_x < 0.0 || local_x >= self.tab_count as f32 * tab_w {
+            return None;
+        }
+        let tab_idx = (local_x / tab_w) as usize;
+        if tab_idx >= self.tab_count {
+            return None;
+        }
+        // close 按钮：tab 右侧 16px 内（与 paint close_cx = tab_x + tab_w - 16 一致）。
+        let tab_x = tab_idx as f32 * tab_w;
+        let close_cx = tab_x + tab_w - 16.0;
+        if tab_w >= TAB_MIN_WIDTH_COMPRESSED && (local_x - close_cx).abs() <= 8.0 {
+            return Some(TabStripClickTarget::TabClose(tab_idx));
+        }
+        Some(TabStripClickTarget::Tab(tab_idx))
     }
 }
 
@@ -717,8 +1016,98 @@ impl Widget for BrowserTabStripWidget {
 
     fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
 
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
-        EventResult::Ignored
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        // 审查报告问题 #3：tab activate / close / new-tab 三类交互。
+        // host 已 hit-test 确认事件在本 widget 内（否则不路由进来）。
+        // 实际 widget 宽度由 layout 决定，event 时不知，但可用 ctx + paint 一致的 tab_w 算法。
+        // 简化：用 NAV_ICON_SIZE 不可知，改用一个保守的 fallback width。
+        // TODO: 后续接入 LayoutCtx.layout_size 后用真实 width 替换。
+        let assumed_width = 1280.0_f32; // 保守假设（多数 desktop 视口宽 ≥1280）。
+        match event {
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Pressed,
+                button: Some(zero_ui_core::event::PointerButton::Primary),
+                position,
+                ..
+            } => {
+                if let Some(t) = self.target_at(position.x, position.y, assumed_width) {
+                    self.pressed_target = Some(t);
+                    return EventResult::Consumed;
+                }
+                EventResult::Ignored
+            }
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Released,
+                button: Some(zero_ui_core::event::PointerButton::Primary),
+                position,
+                ..
+            } => {
+                if let Some(pressed) = self.pressed_target.take() {
+                    let released = self.target_at(position.x, position.y, assumed_width);
+                    if released == Some(pressed) {
+                        return match pressed {
+                            TabStripClickTarget::Tab(i) => EventResult::EmitWithPayload(
+                                crate::actions::id(crate::actions::TAB_ACTIVATE),
+                                zero_ui_core::action::ActionPayload::Int(i as i64),
+                            ),
+                            TabStripClickTarget::TabClose(i) => EventResult::EmitWithPayload(
+                                crate::actions::id(crate::actions::TAB_CLOSE),
+                                zero_ui_core::action::ActionPayload::Int(i as i64),
+                            ),
+                            TabStripClickTarget::NewTab => {
+                                EventResult::Emit(crate::actions::id(crate::actions::TAB_NEW))
+                            }
+                        };
+                    }
+                }
+                EventResult::Ignored
+            }
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Exited,
+                ..
+            }
+            | UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Cancelled,
+                ..
+            } => {
+                self.pressed_target = None;
+                EventResult::Ignored
+            }
+            _ => EventResult::Ignored,
+        }
+    }
+
+    fn focusable(&self) -> bool {
+        // tab strip 可交互（点击 tab 切换、close 关闭、+ 新建）。
+        true
+    }
+
+    fn semantics(&self, ctx: &mut SemanticsCtx) {
+        // 审查报告问题 #8：tab strip a11y——每个 tab 一个 BUTTON 子节点（label = 标题），
+        // + 一个 new-tab BUTTON。
+        for (i, title) in self.titles.iter().enumerate() {
+            let id_str = format!("browser.tab.{i}");
+            ctx.nodes.push(SemanticsNode {
+                id: WidgetId::new(&id_str),
+                rect: Rect::ZERO,
+                flags: SemanticsFlags::BUTTON | SemanticsFlags::FOCUSABLE,
+                label: Some(SemanticsLabel::Literal(compact_str::CompactString::new(
+                    title.as_str(),
+                ))),
+                value: None,
+                children: Vec::new(),
+            });
+        }
+        ctx.nodes.push(SemanticsNode {
+            id: WidgetId::new("browser.tab.new"),
+            rect: Rect::ZERO,
+            flags: SemanticsFlags::BUTTON | SemanticsFlags::FOCUSABLE,
+            label: Some(SemanticsLabel::Message(compact_str::CompactString::new(
+                crate::i18n::ids::NEW_TAB,
+            ))),
+            value: None,
+            children: Vec::new(),
+        });
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
@@ -933,8 +1322,6 @@ impl Widget for BrowserTabStripWidget {
             self.window_icon,
         );
     }
-
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 // ── BookmarksBarWidget（真实书签栏，DC-14 chrome 功能等价）──────────────────────
@@ -946,6 +1333,8 @@ pub struct BookmarksBarWidget {
     bg: Color,
     bookmarks: Vec<String>,
     text_color: Color,
+    /// click 检测用（审查报告问题 #3）：pressed 书签 index。
+    pressed: Option<usize>,
 }
 
 impl BookmarksBarWidget {
@@ -969,15 +1358,97 @@ impl BookmarksBarWidget {
             bg: chrome_color_themed(bg_name, tokens),
             bookmarks,
             text_color: tokens.on_surface,
+            pressed: None,
         }
+    }
+
+    /// 局部 x → 命中书签 index。paint 时书签 x 累进 = 8 + sum(8 + chars * 7.5)；hit-test 同算法。
+    /// 注意：7.5px/char 是粗糙近似（与 paint 一致，未来改进用真实度量——审查报告问题 #7）。
+    fn bookmark_at(&self, local_x: f32) -> Option<usize> {
+        let mut x = 8.0_f32;
+        for (i, bm) in self.bookmarks.iter().enumerate() {
+            let advance = 8.0 + bm.chars().count() as f32 * 7.5;
+            if local_x >= x && local_x <= x + advance {
+                return Some(i);
+            }
+            x += advance;
+        }
+        None
     }
 }
 
 impl Widget for BookmarksBarWidget {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
-        EventResult::Ignored
+
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        // 审查报告问题 #3：click 书签 → emit open（payload = 书签 title 作为 id 占位，
+        // apps/browser reducer 据此查 bookmarks tree 解析真实 URL）。
+        match event {
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Pressed,
+                button: Some(zero_ui_core::event::PointerButton::Primary),
+                position,
+                ..
+            } => {
+                if let Some(i) = self.bookmark_at(position.x) {
+                    self.pressed = Some(i);
+                    return EventResult::Consumed;
+                }
+                EventResult::Ignored
+            }
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Released,
+                button: Some(zero_ui_core::event::PointerButton::Primary),
+                position,
+                ..
+            } => {
+                if let Some(pressed_i) = self.pressed.take()
+                    && self.bookmark_at(position.x) == Some(pressed_i)
+                    && let Some(bm) = self.bookmarks.get(pressed_i)
+                {
+                    return EventResult::EmitWithPayload(
+                        crate::actions::id(crate::actions::BOOKMARK_OPEN),
+                        zero_ui_core::action::ActionPayload::Text(bm.clone()),
+                    );
+                }
+                EventResult::Ignored
+            }
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Exited,
+                ..
+            }
+            | UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Cancelled,
+                ..
+            } => {
+                self.pressed = None;
+                EventResult::Ignored
+            }
+            _ => EventResult::Ignored,
+        }
+    }
+
+    fn focusable(&self) -> bool {
+        // 书签栏可点击（每书签是一个 nav 入口）。
+        true
+    }
+
+    fn semantics(&self, ctx: &mut SemanticsCtx) {
+        // 审查报告问题 #8：书签栏 a11y——每书签一个 LINK 子节点（label = 书签标题）。
+        for (i, bm) in self.bookmarks.iter().enumerate() {
+            let id_str = format!("browser.bookmark.{i}");
+            ctx.nodes.push(SemanticsNode {
+                id: WidgetId::new(&id_str),
+                rect: Rect::ZERO,
+                flags: SemanticsFlags::LINK | SemanticsFlags::FOCUSABLE,
+                label: Some(SemanticsLabel::Literal(compact_str::CompactString::new(
+                    bm.as_str(),
+                ))),
+                value: None,
+                children: Vec::new(),
+            });
+        }
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
@@ -1007,8 +1478,6 @@ impl Widget for BookmarksBarWidget {
             }
         }
     }
-
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 // ── FindBarWidget（真实查找栏，DC-14 chrome 功能等价）────────────────────────
@@ -1055,8 +1524,55 @@ impl FindBarWidget {
 impl Widget for FindBarWidget {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
-        EventResult::Ignored
+
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        // 审查报告问题 #3：键盘快捷键 Esc=close、Enter=next、Shift+Enter=prev。
+        //（paint 暂未画 next/prev/close 按钮，按钮 click 留待复合控件落地——审查报告问题 #11。）
+        match event {
+            UiEvent::Key {
+                code,
+                action: zero_ui_core::event::KeyAction::Pressed,
+                modifiers,
+                ..
+            } => {
+                match code.0.as_str() {
+                    "Escape" => EventResult::Emit(crate::actions::id(crate::actions::FIND_CLOSE)),
+                    "Enter" => {
+                        if modifiers.contains(zero_ui_core::event::Modifiers::SHIFT) {
+                            EventResult::Emit(crate::actions::id(crate::actions::FIND_PREV))
+                        } else {
+                            EventResult::Emit(crate::actions::id(crate::actions::FIND_NEXT))
+                        }
+                    }
+                    _ => EventResult::Ignored,
+                }
+            }
+            _ => EventResult::Ignored,
+        }
+    }
+
+    fn focusable(&self) -> bool {
+        // FindBar 可聚焦（输入查询 + Esc/Enter 快捷键）。
+        true
+    }
+
+    fn semantics(&self, ctx: &mut SemanticsCtx) {
+        // 审查报告问题 #8：FindBar a11y——TEXT_FIELD 节点 + label = "Find"，value = 当前 query。
+        let value = if self.query.is_empty() {
+            None
+        } else {
+            Some(compact_str::CompactString::from(self.query.as_str()))
+        };
+        ctx.nodes.push(SemanticsNode {
+            id: WidgetId::new("browser.find.input"),
+            rect: Rect::ZERO,
+            flags: SemanticsFlags::TEXT_FIELD | SemanticsFlags::FOCUSABLE,
+            label: Some(SemanticsLabel::Message(compact_str::CompactString::new(
+                crate::i18n::ids::FIND,
+            ))),
+            value,
+            children: Vec::new(),
+        });
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
@@ -1088,8 +1604,6 @@ impl Widget for FindBarWidget {
         ctx.recorder
             .draw_text(&label, Point::new(12.0, baseline), 13.0, self.text_color);
     }
-
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 // ── SecurityBadgeWidget（真实安全徽章，DC-14 chrome 功能等价）───────────────────
@@ -1128,6 +1642,25 @@ impl Widget for SecurityBadgeWidget {
         EventResult::Ignored
     }
 
+    fn semantics(&self, ctx: &mut SemanticsCtx) {
+        // 审查报告问题 #8：security badge a11y——READ_ONLY label 节点（读屏朗读安全状态）。
+        // label 优先用 widget 的 text（来自 shell 注入的安全状态文案），fallback 到通用 message id。
+        let label = match self.text.as_ref().filter(|t| !t.is_empty()) {
+            Some(t) => SemanticsLabel::Literal(compact_str::CompactString::from(t.as_str())),
+            None => SemanticsLabel::Message(compact_str::CompactString::new(
+                crate::i18n::ids::SECURITY_STATUS,
+            )),
+        };
+        ctx.nodes.push(SemanticsNode {
+            id: WidgetId::new("browser.security_badge"),
+            rect: Rect::ZERO,
+            flags: SemanticsFlags::READ_ONLY,
+            label: Some(label),
+            value: None,
+            children: Vec::new(),
+        });
+    }
+
     fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
         let width = constraints.max_width;
         let height = SECURITY_BADGE_HEIGHT.clamp(constraints.min_height, constraints.max_height);
@@ -1148,8 +1681,87 @@ impl Widget for SecurityBadgeWidget {
                 .draw_text(text, Point::new(8.0, baseline), 13.0, self.text_color);
         }
     }
+}
 
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+// ── PageLoadIndicatorWidget（加载进度条，审查报告问题 #4）──────────────────────────
+
+/// 进度条几何（与手绘 chrome `app_render.rs:121-138` 对齐）。
+/// 高 2px，位于 toolbar 行底部；indeterminate 时占满 30% 宽度（视觉近似 Chrome loading 条）。
+pub(crate) const PAGE_LOAD_HEIGHT: f32 = 2.0;
+const PAGE_LOAD_INDETERMINATE_FRACTION: f32 = 0.3;
+/// 进度条色 = `loading_indicator`（手绘 chrome light = rgb(66,133,244)），映射到 `primary` token
+/// （SDK chrome tokens 经 `sdk_chrome_tokens` 把 primary ← loading_indicator）。
+const PAGE_LOAD_COLOR_TOKEN: &str = "primary";
+
+/// 加载进度条绘制控件（审查报告问题 #4：补齐 SDK chrome 路径的加载状态视觉反馈）。
+///
+/// paint：在节点底部画 2px 高的进度条（determinate 按真实 fraction，indeterminate 占 30% 宽）。
+/// shell 把节点声明在 toolbar 行尾（loading 时才出现）。layout 高 2、宽填满（flex 由 shell 设）。
+pub struct PageLoadIndicatorWidget {
+    color: Color,
+    fraction: Option<f32>,
+}
+
+impl PageLoadIndicatorWidget {
+    /// 由声明节点构造：`fraction`（Float 0.0-1.0，缺省/None = indeterminate）；色经 semantic token
+    /// `primary` 解析（apps/browser `sdk_chrome_tokens` 把 loading_indicator 映射到 primary）。
+    pub fn from_spec(spec: &WidgetSpec, tokens: &SemanticTokens) -> PageLoadIndicatorWidget {
+        let fraction = match spec.props.get("fraction") {
+            Some(Value::Float(f)) if (0.0..=1.0).contains(f) => Some(*f as f32),
+            Some(Value::Int(i)) if (0..=1).contains(i) => Some(*i as f32),
+            _ => None,
+        };
+        PageLoadIndicatorWidget {
+            color: chrome_color_themed(PAGE_LOAD_COLOR_TOKEN, tokens),
+            fraction,
+        }
+    }
+}
+
+impl Widget for PageLoadIndicatorWidget {
+    fn mount(&mut self, _ctx: &mut MountCtx) {}
+    fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
+
+    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
+        EventResult::Ignored
+    }
+
+    fn semantics(&self, ctx: &mut SemanticsCtx) {
+        // 审查报告问题 #8：加载进度条 a11y——READ_ONLY 节点（读屏朗读加载进度）。
+        ctx.nodes.push(SemanticsNode {
+            id: WidgetId::new("browser.page_load"),
+            rect: Rect::ZERO,
+            flags: SemanticsFlags::READ_ONLY,
+            label: Some(SemanticsLabel::Literal(compact_str::CompactString::new(
+                "Page loading progress",
+            ))),
+            value: self
+                .fraction
+                .map(|f| compact_str::CompactString::from(format!("{:.0}%", f * 100.0))),
+            children: Vec::new(),
+        });
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+        let width = constraints.max_width;
+        let height = PAGE_LOAD_HEIGHT.clamp(constraints.min_height, constraints.max_height);
+        Size::new(width, height)
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx) {
+        let size = ctx
+            .clip
+            .map(|r| r.size)
+            .unwrap_or_else(|| Size::new(400.0, PAGE_LOAD_HEIGHT));
+        let w = match self.fraction {
+            Some(f) => (size.width * f.clamp(0.0, 1.0)).max(0.0),
+            None => (size.width * PAGE_LOAD_INDETERMINATE_FRACTION).max(0.0),
+        };
+        if w > 0.0 {
+            ctx.recorder
+                .fill_rect(Rect::from_ltrb(0.0, 0.0, w, PAGE_LOAD_HEIGHT), self.color);
+        }
+    }
 }
 
 // ── AddressBarWidget（真实地址栏 pill，DC-14 chrome 功能等价）──────────────────────
@@ -1225,8 +1837,62 @@ impl Widget for AddressBarWidget {
 
     fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
 
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
-        EventResult::Ignored
+    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        // 审查报告问题 #3：click 聚焦（host 内置 click-to-focus）+ Enter 提交。
+        match event {
+            UiEvent::Pointer {
+                phase: zero_ui_core::event::PointerPhase::Pressed,
+                button: Some(zero_ui_core::event::PointerButton::Primary),
+                ..
+            } => {
+                // host 对 focusable widget 内置 click-to-focus，这里只需消费事件阻止冒泡。
+                EventResult::Consumed
+            }
+            UiEvent::Key {
+                code,
+                action: zero_ui_core::event::KeyAction::Pressed,
+                ..
+            } if code.0.as_str() == "Enter" => {
+                // Enter 提交当前文本（payload = text）。
+                if let Some(t) = &self.text {
+                    return EventResult::EmitWithPayload(
+                        crate::actions::id(crate::actions::ADDRESS_SUBMIT),
+                        zero_ui_core::action::ActionPayload::Text(t.clone()),
+                    );
+                }
+                EventResult::Ignored
+            }
+            _ => EventResult::Ignored,
+        }
+    }
+
+    fn focusable(&self) -> bool {
+        // 地址栏可聚焦（输入 URL）。
+        true
+    }
+
+    fn semantics(&self, ctx: &mut SemanticsCtx) {
+        // 审查报告问题 #8：地址栏 a11y——TEXT_FIELD + label = "Address bar"，value = 当前 URL。
+        let value = self
+            .text
+            .as_ref()
+            .filter(|t| !t.is_empty())
+            .map(|t| compact_str::CompactString::from(t.as_str()));
+        ctx.nodes.push(SemanticsNode {
+            id: WidgetId::new("browser.address_bar.input"),
+            rect: Rect::ZERO,
+            flags: SemanticsFlags::TEXT_FIELD | SemanticsFlags::FOCUSABLE,
+            label: Some(SemanticsLabel::Literal(compact_str::CompactString::new(
+                "Address bar",
+            ))),
+            value,
+            children: Vec::new(),
+        });
+    }
+
+    fn ime_rect(&self) -> Option<Rect> {
+        // IME 光标位置近似：地址栏 pill 整体（精确光标位置需 text input widget 落地）。
+        Some(Rect::from_ltrb(0.0, 0.0, 0.0, ADDRESS_BAR_HEIGHT))
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
@@ -1287,8 +1953,6 @@ impl Widget for AddressBarWidget {
         ctx.recorder
             .draw_text(display_text, Point::new(text_x, baseline), 13.0, display_color);
     }
-
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 /// 把 chrome `browser.*` 叶子组件工厂注册到 host。
@@ -1312,6 +1976,19 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens,
     host.register("browser.AddressBar", move |s| {
         Box::new(AddressBarWidget::from_spec(s, &t, tc))
     });
+    // Phone 顶部行容器（审查报告问题 #2）：ChromePanel 通用容器，layout="row" 由 host 处理。
+    // 此前误用 browser.AddressBar 作容器，导致 AddressBarWidget（32px pill）替代整个顶部行。
+    // default_height = TOOLBAR_ROW_HEIGHT(44) = phone 顶部行的合理高度（与 desktop toolbar 行对齐）。
+    host.register("browser.PhoneTopBar", move |s| {
+        Box::new(ChromePanel::from_spec_with_fill(
+            s,
+            "toolbar_bg",
+            TOOLBAR_ROW_HEIGHT,
+            true,
+            true,
+            &t,
+        ))
+    });
     host.register("browser.NavigationButtons", move |s| {
         Box::new(NavigationButtonsWidget::from_spec(s, &t))
     });
@@ -1330,6 +2007,10 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens,
     host.register("browser.FindBar", move |s| Box::new(FindBarWidget::from_spec(s, &t)));
     host.register("browser.TrailingIcons", move |s| {
         Box::new(TrailingIconsWidget::from_spec(s, &t))
+    });
+    // 加载进度条（审查报告问题 #4）：2px 高 progress 条，loading 时由 shell 声明节点出现。
+    host.register("browser.PageLoadIndicator", move |s| {
+        Box::new(PageLoadIndicatorWidget::from_spec(s, &t))
     });
     // 视口：占满剩余区域，**不填底色**（DC-14 替换式迁移：页面内容由 WebView 绘制在上层，
     // SDK chrome viewport 只负责布局空间，不覆盖页面像素）。
@@ -1397,7 +2078,9 @@ mod tests {
     use crate::BrowserChromeShell;
     use crate::chrome_model::BrowserChromeModel;
     use crate::shell::DesktopBrowserShell;
-    use zero_ui_core::geometry::{Insets, Size};
+    use zero_ui_core::action::EventResult;
+    use zero_ui_core::event::{PointerButton, PointerPhase, UiEvent};
+    use zero_ui_core::geometry::{Insets, Point, Size};
     use zero_ui_core::layout::WindowMetrics;
     use zero_ui_core::widget::WidgetId;
     use zero_ui_render::render_node::RenderPrimitive;
@@ -1414,6 +2097,109 @@ mod tests {
             orientation: zero_ui_core::layout::Orientation::from_size(logical_size),
         }
     }
+
+    fn pointer_down(x: f32, y: f32) -> UiEvent {
+        UiEvent::Pointer {
+            phase: PointerPhase::Pressed,
+            button: Some(PointerButton::Primary),
+            position: Point::new(x, y),
+            modifiers: zero_ui_core::event::Modifiers::NONE,
+            pointer_id: 0,
+        }
+    }
+
+    fn pointer_up(x: f32, y: f32) -> UiEvent {
+        UiEvent::Pointer {
+            phase: PointerPhase::Released,
+            button: Some(PointerButton::Primary),
+            position: Point::new(x, y),
+            modifiers: zero_ui_core::event::Modifiers::NONE,
+            pointer_id: 0,
+        }
+    }
+
+    #[test]
+    fn nav_buttons_emit_back_action_on_click() {
+        // 审查报告问题 #3：click back 按钮 → emit browser.nav.back。
+        // back 按钮 center x = NAV_LEADING_PAD(10) + 0*NAV_BUTTON_WIDTH(36) + 18 = 28。
+        let mut spec = WidgetSpec::new("browser.NavigationButtons");
+        spec.props.insert("can_back", Value::Bool(true));
+        spec.props.insert("can_forward", Value::Bool(false));
+        let tokens = SemanticTokens::light();
+        let mut w = NavigationButtonsWidget::from_spec(&spec, &tokens);
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::default();
+        // down + up 都在 back 按钮范围 → emit back action。
+        {
+            let mut ctx = EventCtx { invalidation: &mut flags };
+            assert!(matches!(
+                w.event(&mut ctx, &pointer_down(28.0, 22.0)),
+                EventResult::Consumed
+            ));
+        }
+        let result = {
+            let mut ctx = EventCtx { invalidation: &mut flags };
+            w.event(&mut ctx, &pointer_up(28.0, 22.0))
+        };
+        assert_eq!(
+            result,
+            EventResult::Emit(zero_ui_core::action::ActionId::new(crate::actions::NAV_BACK))
+        );
+    }
+
+    #[test]
+    fn nav_buttons_disabled_back_ignored() {
+        // can_back=false 时 click back 按钮 → Ignored（disabled）。
+        let mut spec = WidgetSpec::new("browser.NavigationButtons");
+        spec.props.insert("can_back", Value::Bool(false));
+        let tokens = SemanticTokens::light();
+        let mut w = NavigationButtonsWidget::from_spec(&spec, &tokens);
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::default();
+        {
+            let mut ctx = EventCtx { invalidation: &mut flags };
+            assert!(matches!(
+                w.event(&mut ctx, &pointer_down(28.0, 22.0)),
+                EventResult::Consumed
+            ));
+        }
+        let result = {
+            let mut ctx = EventCtx { invalidation: &mut flags };
+            w.event(&mut ctx, &pointer_up(28.0, 22.0))
+        };
+        assert!(matches!(result, EventResult::Ignored));
+    }
+
+    #[test]
+    fn menu_button_emits_toggle_on_click() {
+        // 审查报告问题 #3：click menu 按钮 → emit browser.menu.toggle。
+        let spec = WidgetSpec::new("browser.BrowserMenu");
+        let tokens = SemanticTokens::light();
+        let mut w = MenuButtonWidget::from_spec(&spec, &tokens);
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::default();
+        {
+            let mut ctx = EventCtx { invalidation: &mut flags };
+            assert!(matches!(
+                w.event(&mut ctx, &pointer_down(16.0, 22.0)),
+                EventResult::Consumed
+            ));
+        }
+        let result = {
+            let mut ctx = EventCtx { invalidation: &mut flags };
+            w.event(&mut ctx, &pointer_up(16.0, 22.0))
+        };
+        assert_eq!(
+            result,
+            EventResult::Emit(zero_ui_core::action::ActionId::new(crate::actions::MENU_TOGGLE))
+        );
+    }
+
+    #[test]
+    fn nav_buttons_focusable() {
+        // 审查报告问题 #3：nav 段 widget focusable=true。
+        let spec = WidgetSpec::new("browser.NavigationButtons");
+        let w = NavigationButtonsWidget::from_spec(&spec, &SemanticTokens::light());
+        assert!(w.focusable());
+    }
+
 
     #[test]
     fn navigation_buttons_widget_draws_bg_and_four_icons() {

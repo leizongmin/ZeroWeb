@@ -61,9 +61,9 @@ pub fn render_chrome_via_sdk(
 
 /// 同 [`render_chrome_via_sdk`]，但额外返回 SDK chrome 布局后的 viewport（页面内容区）矩形。
 ///
-/// **替换式迁移协调**（DC-14）：SDK chrome 拥有自己的布局（toolbar/tab/bookmarks/viewport 高度
-/// 由 SDK shell 决定，与 apps/browser 手绘 chrome 几何不同——desktop chrome top ≈ 96 vs 手绘
-/// ≈ 112-140）。浏览器替换式迁移须把页面内容定位到 SDK chrome 的 viewport rect（而非手绘 chrome
+/// **替换式迁移协调**（DC-14）：SDK chrome 拥有自己的布局（tab_strip/toolbar/bookmarks/viewport
+/// 高度由 SDK shell 决定，与 apps/browser 手绘 chrome 几何不同——desktop chrome top ≈ 84-112
+/// vs 手绘 ≈ 84-112）。浏览器替换式迁移须把页面内容定位到 SDK chrome 的 viewport rect（而非手绘 chrome
 /// 的 `chrome_top`），否则页面与 SDK chrome 错位。本函数暴露该 rect，使浏览器能查询 SDK chrome
 /// 的内容区。SDK chrome 拥有布局、浏览器适配——这是「浏览器迁移为 SDK 宿主」的正确方向。
 ///
@@ -75,7 +75,14 @@ pub fn render_chrome_via_sdk_with_layout(
     tokens: &SemanticTokens,
     backend: Arc<FontdueBackend>,
 ) -> (RenderFoundationBackend, Option<Rect>) {
-    let model = BrowserChromeModel::from_shell(shell);
+    let model = BrowserChromeModel::from_shell_with_window_controls(
+        shell,
+        // 审查报告问题 #5：sdk_render 入口内部仍用 cfg! 默认（向后兼容）；
+        // apps/browser 生产路径若需 Wayland 检测，应直接调
+        // [`BrowserChromeModel::from_shell_with_window_controls`] + 传入真实值，
+        // 再用更细粒度的 SDK 渲染入口（后续接入）。
+        if cfg!(target_os = "windows") { 138.0 } else { 0.0 },
+    );
     let spec = DesktopBrowserShell.build(&model, metrics);
     let mut host = WidgetHost::new();
     // 非 webview 路径（测试 / fallback）：tab 色从 token 近似（生产 webview 路径从 ChromePalette 精确注入）。
@@ -122,7 +129,12 @@ pub fn render_chrome_via_sdk_with_webview_surface(
     image_masks: &[IconMask],
     tab_colors: ChromeTabColors,
 ) -> (RenderFoundationBackend, Option<Rect>) {
-    let model = BrowserChromeModel::from_shell(shell);
+    let model = BrowserChromeModel::from_shell_with_window_controls(
+        shell,
+        // 审查报告问题 #5：同 render_chrome_via_sdk，sdk_render 入口用 cfg! 默认；
+        // 生产 Wayland 检测由调用方在更外层处理。
+        if cfg!(target_os = "windows") { 138.0 } else { 0.0 },
+    );
     let spec = DesktopBrowserShell.build(&model, metrics);
     let mut host = WidgetHost::new();
     register_chrome_factories_with_webview(&mut host, tokens, scheme, tab_colors);
@@ -243,8 +255,9 @@ mod tests {
         assert!(vp.size.width > 0.0 && vp.size.height > 0.0, "viewport 非零");
         assert!(vp.origin.y > 0.0, "viewport 在 chrome 之下（y > 0，顶部留出 chrome）");
         assert!(vp.origin.y < metrics().logical_size.height, "viewport 起点在窗口内");
-        // viewport 顶 = SDK chrome 占用的高度（toolbar+tab+bookmarks）。
-        // desktop shell：toolbar(36) + tab(32) + bookmarks(28) ≈ 96（host 实际布局）。
+        // viewport 顶 = SDK chrome 占用的高度（tab_strip + toolbar_row + bookmarks）。
+        // desktop shell：TAB_STRIP(40) + TOOLBAR_ROW(44) + BOOKMARKS(28) = 112（有书签时）；
+        // 无书签时 84。host 实际布局会据 model.bookmarks_bar_visible 动态变化，断言范围宽容。
         assert!(
             vp.origin.y >= 50.0 && vp.origin.y <= 200.0,
             "viewport top ≈ SDK chrome 高度，got {}",

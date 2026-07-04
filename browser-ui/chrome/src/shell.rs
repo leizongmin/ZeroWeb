@@ -55,6 +55,8 @@ const ID_BOOKMARKS: &str = "bookmarks";
 pub(crate) const ID_VIEWPORT: &str = "viewport";
 const ID_BOTTOM_NAV: &str = "bottom_nav";
 const ID_FIND_BAR: &str = "find_bar";
+/// 页面加载进度条 id（toolbar 行尾，loading 时出现——审查报告问题 #4）。
+const ID_PAGE_LOAD: &str = "page_load";
 
 fn node(component: &str, id: &str) -> WidgetSpec {
     let mut s = WidgetSpec::new(component);
@@ -115,6 +117,27 @@ fn tab_strip_node(id: &str, bg: &str, fill_width: bool, model: &BrowserChromeMod
     s.props.insert("titles", Value::Array(titles));
     s
 }
+
+/// 构造 PageLoadIndicator 声明节点（审查报告问题 #4：补齐 SDK chrome 加载状态）。
+///
+/// 始终构造节点（使 chrome 高度稳定）：`loading=true` 时 widget 据 fraction 画进度条；
+/// `loading=false` 时 fraction=0 → widget paint no-op（占位但不可见）。
+fn page_load_node(id: &str, load: &crate::page_load_indicator::PageLoadIndicator) -> WidgetSpec {
+    let mut s = leaf("browser.PageLoadIndicator", id, "viewport", None);
+    // 透明背景（progress 条由 widget 内部 fill_rect 自己画）；bg=viewport 让它与页面底色融合。
+    s.props.insert(
+        "fraction",
+        match load.fraction {
+            Some(f) => Value::Float(f.clamp(0.0, 1.0) as f64),
+            None if load.loading => Value::Float(PAGE_LOAD_INDETERMINATE_FRACTION as f64),
+            None => Value::Float(0.0),
+        },
+    );
+    s
+}
+
+/// 进度条 indeterminate 占比（与 render.rs PAGE_LOAD_INDETERMINATE_FRACTION 一致）。
+const PAGE_LOAD_INDETERMINATE_FRACTION: f32 = 0.3;
 
 /// 收集声明树中所有稳定 WidgetId（测试用）。
 pub fn collect_widget_ids(spec: &WidgetSpec, out: &mut Vec<String>) {
@@ -193,6 +216,9 @@ impl BrowserChromeShell for DesktopBrowserShell {
         root.children
             .push(tab_strip_node(ID_TAB_STRIP, "tab_strip_bg", true, model));
         root.children.push(toolbar);
+        // 页面加载进度条（审查报告问题 #4）：toolbar 行底沿的 2px 进度条。仅 loading 时 paint
+        //（widget 据 fraction 决定是否画），idle 时 fraction=0 → 不画但保留节点使 chrome 高度稳定。
+        root.children.push(page_load_node(ID_PAGE_LOAD, &model.page_load));
         // bookmarks bar 仅在 `bookmarks_bar_visible`（show_bookmarks_bar 设置 && 有书签）时渲染——
         // 对齐手绘 chrome `bookmarks_bar_visible`：默认 fresh app 无书签 → 不占行，chrome 高 = tab+toolbar。
         // 此前无条件渲染 → SDK chrome 比手绘高 28px，bookmarks 区画 toolbar_bg 覆盖手绘已是页面的位置。
@@ -226,13 +252,14 @@ impl BrowserChromeShell for DesktopBrowserShell {
     fn layout(&self, metrics: &WindowMetrics) -> ShellLayout {
         let inner = inner_rect(metrics);
         // SDK chrome 实际 paint 高度 = TAB_STRIP_HEIGHT(40) + TOOLBAR_ROW_HEIGHT(44) +
-        // BOOKMARKS_BAR_HEIGHT(28) = 112（无书签时 84）。引用 widget 几何常量（pub(crate)）
-        // 保证 ShellLayout 与 SDK 实际布局自洽（审查报告问题 #1）。
+        // PAGE_LOAD_HEIGHT(2) + BOOKMARKS_BAR_HEIGHT(28) = 114（无书签时 86）。引用 widget 几何
+        // 常量（pub(crate)）保证 ShellLayout 与 SDK 实际布局自洽（审查报告问题 #1）。
         //
-        // 注意：与手绘 chrome（`apps/browser/src/layout.rs` `TOOLBAR_HEIGHT=84` 无书签）
-        // 一致——这是替换式迁移的几何基础。
+        // 注意：与手绘 chrome（`apps/browser/src/layout.rs` `TOOLBAR_HEIGHT=84` 无书签）差 +2px
+        //（SDK 多了独立的 page_load 行——审查报告问题 #4 修复带来的视觉反馈，可接受）。
         let top_h = (crate::render::TAB_STRIP_HEIGHT
             + crate::render::TOOLBAR_ROW_HEIGHT
+            + crate::render::PAGE_LOAD_HEIGHT
             + crate::render::BOOKMARKS_BAR_HEIGHT)
             .min((inner.bottom() - inner.top()) * 0.5);
         let top_chrome = Rect::from_ltrb(inner.left(), inner.top(), inner.right(), inner.top() + top_h);
@@ -287,6 +314,8 @@ impl BrowserChromeShell for TabletBrowserShell {
         );
         toolbar.children.push(address);
         root.children.push(toolbar);
+        // 页面加载进度条（审查报告问题 #4）：tablet 同 desktop。
+        root.children.push(page_load_node(ID_PAGE_LOAD, &model.page_load));
         root.children
             .push(tab_strip_node(ID_TAB_STRIP, "tab_strip_bg", false, model));
         let mut viewport = node("browser.PageViewportFrame", ID_VIEWPORT);
@@ -311,9 +340,12 @@ impl BrowserChromeShell for TabletBrowserShell {
 
     fn layout(&self, metrics: &WindowMetrics) -> ShellLayout {
         let inner = inner_rect(metrics);
-        // SDK chrome 实际 paint 高度 = TAB_STRIP_HEIGHT(40) + TOOLBAR_ROW_HEIGHT(44) = 84
-        // （tablet 无 bookmarks bar）。引用 widget 几何常量保证自洽（审查报告问题 #1）。
-        let top_h = (crate::render::TAB_STRIP_HEIGHT + crate::render::TOOLBAR_ROW_HEIGHT)
+        // SDK chrome 实际 paint 高度 = TAB_STRIP_HEIGHT(40) + TOOLBAR_ROW_HEIGHT(44) +
+        // PAGE_LOAD_HEIGHT(2) = 86（tablet 无 bookmarks bar）。引用 widget 几何常量保证自洽
+        //（审查报告问题 #1 + #4）。
+        let top_h = (crate::render::TAB_STRIP_HEIGHT
+            + crate::render::TOOLBAR_ROW_HEIGHT
+            + crate::render::PAGE_LOAD_HEIGHT)
             .min((inner.bottom() - inner.top()) * 0.5);
         let top_chrome = Rect::from_ltrb(inner.left(), inner.top(), inner.right(), inner.top() + top_h);
         let viewport = Rect::from_ltrb(inner.left(), top_chrome.bottom(), inner.right(), inner.bottom());
@@ -338,17 +370,31 @@ impl BrowserChromeShell for PhoneBrowserShell {
 
     fn build(&self, model: &BrowserChromeModel, _metrics: &WindowMetrics) -> WidgetSpec {
         let mut root = node_layout("browser.PhoneBrowserShell", ID_SHELL, "column");
-        // 顶部地址栏（row 容器：自身 toolbar 背景 + URL 文案，内含安全徽章）。
-        let mut top = node_layout("browser.AddressBar", ID_ADDRESS_BAR, "row");
+        // 顶部行（审查报告问题 #2 修复）：使用专用 `browser.PhoneTopBar` 容器（row layout），
+        // 内含 SecurityBadge + AddressBar 两个子节点。此前误用 `browser.AddressBar` 作容器，
+        // 但工厂注册的 AddressBarWidget 是 32px 高的 pill——导致 Phone 顶部行视觉错位。
+        let mut top = node_layout("browser.PhoneTopBar", ID_ADDRESS_BAR, "row");
         top.props.insert("bg", Value::Text("toolbar_bg".into()));
-        top.props.insert("text", Value::Text(model.address_text.clone()));
+        // 左侧 security 徽章（点击展开 site info）。
         top.children.push(leaf(
             "browser.SecurityBadge",
             ID_SECURITY_BADGE,
             crate::render::security_color_name(model.security),
             None,
         ));
+        // 右侧地址栏（flex=1 占满剩余宽，显示 URL）。
+        let mut address = leaf_flex(
+            "browser.AddressBar",
+            "phone_address_input",
+            "address_bar_bg",
+            Some(model.address_text.clone()),
+            1.0,
+        );
+        address.props.insert("fill_width", Value::Bool(true));
+        top.children.push(address);
         root.children.push(top);
+        // 页面加载进度条（审查报告问题 #4）：phone 同 desktop/tablet。
+        root.children.push(page_load_node(ID_PAGE_LOAD, &model.page_load));
         let mut viewport = node("browser.PageViewportFrame", ID_VIEWPORT);
         viewport.props.insert("bg", Value::Text("viewport".into()));
         viewport.props.insert("flex", Value::Float(1.0));
@@ -380,7 +426,10 @@ impl BrowserChromeShell for PhoneBrowserShell {
 
     fn layout(&self, metrics: &WindowMetrics) -> ShellLayout {
         let inner = inner_rect(metrics);
-        let top_h = 48.0_f32.min((inner.bottom() - inner.top()) * 0.4);
+        // SDK chrome 顶部行实际 paint 高度 = PhoneTopBar(TOOLBAR_ROW_HEIGHT 44) +
+        // PAGE_LOAD_HEIGHT(2) = 46（审查报告问题 #1 + #2 修复后自洽）。
+        let top_h = (crate::render::TOOLBAR_ROW_HEIGHT + crate::render::PAGE_LOAD_HEIGHT)
+            .min((inner.bottom() - inner.top()) * 0.4);
         let top_chrome = Rect::from_ltrb(inner.left(), inner.top(), inner.right(), inner.top() + top_h);
 
         // 底部导航栏避开 safe area + 软键盘。
@@ -537,8 +586,9 @@ mod tests {
         );
         // 视口底部 ≤ bottom_chrome 顶部，不被底部栏/键盘遮挡。
         assert!(lay.viewport.bottom() <= lay.bottom_chrome.top() + 0.01);
-        // 视口顶部 = top_chrome 底部（顶部地址栏 48px）。
-        assert!((lay.viewport.top() - 48.0).abs() < 0.01);
+        // 视口顶部 = top_chrome 底部（顶部地址栏行 = TOOLBAR_ROW_HEIGHT(44) + PAGE_LOAD_HEIGHT(2) = 46）。
+        let expected_top = crate::render::TOOLBAR_ROW_HEIGHT + crate::render::PAGE_LOAD_HEIGHT;
+        assert!((lay.viewport.top() - expected_top).abs() < 0.01);
     }
 
     #[test]
@@ -588,8 +638,14 @@ mod tests {
         let m = metrics(1280.0, 800.0, 0.0, 0.0);
         let lay = DesktopBrowserShell.layout(&m);
         assert_eq!(lay.bottom_chrome, Rect::ZERO, "desktop 无底部栏");
-        assert!((lay.top_chrome.bottom() - 104.0).abs() < 0.01);
-        assert!((lay.viewport.top() - 104.0).abs() < 0.01);
+        // SDK chrome 实际高度 = TAB_STRIP(40) + TOOLBAR_ROW(44) + PAGE_LOAD(2) + BOOKMARKS(28) = 114
+        // （审查报告问题 #1 + #4 修复后自洽）。
+        let expected_top = crate::render::TAB_STRIP_HEIGHT
+            + crate::render::TOOLBAR_ROW_HEIGHT
+            + crate::render::PAGE_LOAD_HEIGHT
+            + crate::render::BOOKMARKS_BAR_HEIGHT;
+        assert!((lay.top_chrome.bottom() - expected_top).abs() < 0.01);
+        assert!((lay.viewport.top() - expected_top).abs() < 0.01);
         assert_eq!(lay.viewport.bottom(), 800.0);
     }
 

@@ -9,6 +9,7 @@
 //! M2 已落地 §8.4.1A 全部 12 组件 + desktop/tablet/phone adaptive shell（DC-12）：
 //! [`BrowserChromeModel`]（共享业务模型）+ [`AdaptiveBrowserChrome`]（按 metrics 选 shell）。
 
+pub mod actions;
 pub mod address_bar;
 pub mod bookmarks_bar;
 pub mod browser_action;

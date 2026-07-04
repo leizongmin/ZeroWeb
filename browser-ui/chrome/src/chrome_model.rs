@@ -75,7 +75,27 @@ impl BrowserChromeModel {
     /// - downloads 状态：shell 6 态 → chrome 3 态
     ///   （Pending/Downloading/Paused→InProgress、Completed→Completed、Cancelled/Failed→Cancelled）。
     /// - permissions：browser-shell 当前不追踪 per-site 权限 → 空（DC-13 platform 域后续接入）。
+    ///
+    /// **窗口控制宽度**（审查报告问题 #5）：内部用 `cfg!(target_os = "windows")` 推断，**Wayland
+    /// 不可达**——生产路径（apps/browser）应改用 [`Self::from_shell_with_window_controls`]
+    /// 显式注入真实值（据 `uses_custom_window_controls()` = `is_wayland() || cfg!(windows)`）。
     pub fn from_shell(shell: &BrowserShell) -> BrowserChromeModel {
+        let window_controls_width = if cfg!(target_os = "windows") { 138.0 } else { 0.0 };
+        Self::from_shell_with_window_controls(shell, window_controls_width)
+    }
+
+    /// 同 [`Self::from_shell`]，但显式注入窗口控制按钮区宽度（审查报告问题 #5）。
+    ///
+    /// 生产路径（apps/browser）应调用此方法，传入：
+    /// - Windows / Wayland：`138.0`（3 按钮 × 46px，自定义窗口控制）
+    /// - macOS / X11：`0.0`（系统标题栏，chrome 不画）
+    ///
+    /// `apps/browser` 应通过 `uses_custom_window_controls()`（含 `is_wayland()` 运行时检测）
+    /// 决定值——SDK chrome crate 无法做 Wayland 运行时检测（无 host 环境信息）。
+    pub fn from_shell_with_window_controls(
+        shell: &BrowserShell,
+        window_controls_width: f32,
+    ) -> BrowserChromeModel {
         let mut model = BrowserChromeModel::new();
 
         // tabs + active index（shell 用 TabId，模型用 index）。
@@ -104,6 +124,9 @@ impl BrowserChromeModel {
             model.security = security_from_url(at.url());
             model.page_load = PageLoadIndicator {
                 loading: at.is_loading(),
+                // browser-shell 当前不追踪页面加载进度（只有 bool is_loading），fraction 暂为 None
+                //（indeterminate 进度条）。审查报告问题 #4：browser-shell 扩展 `tab.load_progress()`
+                // 接口后，此处应填充真实 fraction 让 SDK chrome 画确定进度条（对齐手绘 chrome）。
                 fraction: None,
             };
         }
@@ -123,10 +146,9 @@ impl BrowserChromeModel {
         // bookmarks_bar_visible = show_bookmarks_bar 设置 && 有书签（与手绘 chrome 一致）。
         model.bookmarks_bar_visible = shell.settings().show_bookmarks_bar && !model.bookmarks.is_empty();
 
-        // 窗口控制按钮区宽度（DC-14 tab strip parity）：Windows 用自定义控制（手绘
-        // uses_custom_window_controls = is_wayland() || cfg!(windows)；SDK 层 is_wayland 运行时
-        // 不可达，此处取 cfg!(windows)，Wayland 留 follow-up）。3 按钮 × 46px = 138。
-        model.window_controls_width = if cfg!(target_os = "windows") { 138.0 } else { 0.0 };
+        // 窗口控制按钮区宽度由外部注入（审查报告问题 #5）：调用方据
+        // `uses_custom_window_controls()` 决定值（Windows/Wayland=138，macOS/X11=0）。
+        model.window_controls_width = window_controls_width;
 
         // downloads（状态映射见上方约定）。
         model.downloads = shell.downloads().iter().map(map_download).collect();
@@ -147,11 +169,39 @@ impl BrowserChromeModel {
     }
 }
 
-/// 按 URL scheme 派生安全状态（browser-shell 不追踪页面安全，DC-14 seam 暂用此启发式）。
+/// 按 URL scheme 派生安全状态（browser-shell 暂不追踪页面安全，DC-14 seam 用此启发式；
+/// 审查报告问题 #10：改进——区分信任的本机/特殊页面与未知 scheme）。
+///
+/// 当前规则（保守）：
+/// - `https://` → Secure
+/// - `http://` → Insecure（明文）
+/// - `about:`/`chrome:`/`zerobrowser:`/`file:`/`data:` → Secure（本机/特殊页面，信任）
+/// - `ftp://` → Insecure（明文）
+/// - 未知 scheme / None → Insecure（保守：未知按不安全处理，鼓励调用方填真实 URL）
+///
+/// **后续**：browser-shell 应扩展 `tab.security_state()` 接口（由 net/security crate 据证书
+/// 验证 + mixed content 检测 + safe-browsing 填充），`from_shell` 直接读，移除此启发式。
 fn security_from_url(url: Option<&str>) -> SecurityState {
     match url {
-        Some(u) if u.starts_with("http://") => SecurityState::Insecure,
-        _ => SecurityState::Secure,
+        Some(u) => {
+            if u.starts_with("https://") {
+                SecurityState::Secure
+            } else if u.starts_with("http://") || u.starts_with("ftp://") {
+                SecurityState::Insecure
+            } else if u.starts_with("about:")
+                || u.starts_with("chrome:")
+                || u.starts_with("zerobrowser:")
+                || u.starts_with("file:")
+                || u.starts_with("data:")
+            {
+                // 本机/特殊页面：信任（与主流浏览器一致——这些 scheme 不经网络，无 MITM 风险）。
+                SecurityState::Secure
+            } else {
+                // 未知 scheme：保守判 Insecure（鼓励调用方填真实 URL；后续接 browser-shell 真实状态）。
+                SecurityState::Insecure
+            }
+        }
+        None => SecurityState::Secure, // 空 tab（刚启动）→ Secure（避免误导性「不安全」警告）
     }
 }
 
@@ -273,6 +323,32 @@ mod tests {
     }
 
     #[test]
+    fn from_shell_security_state_by_scheme() {
+        // 审查报告问题 #10：security_from_url 改进——区分信任的本机/特殊页面与未知 scheme。
+        let cases = [
+            ("https://example.com", SecurityState::Secure),
+            ("http://example.com", SecurityState::Insecure),
+            ("ftp://example.com", SecurityState::Insecure),
+            ("about:blank", SecurityState::Secure),     // 本机/特殊页面
+            ("chrome://settings", SecurityState::Secure),
+            ("zerobrowser://newtab", SecurityState::Secure),
+            ("file:///home/me/doc.html", SecurityState::Secure),
+            ("data:text/html,hello", SecurityState::Secure),
+            ("weird-scheme://x", SecurityState::Insecure), // 未知 scheme → 保守 Insecure
+        ];
+        for (url, expected) in cases.iter() {
+            let mut shell = BrowserShell::new();
+            shell.new_tab(Some(url));
+            let m = BrowserChromeModel::from_shell(&shell);
+            assert_eq!(
+                m.security, *expected,
+                "URL {url} 应映射为 {:?}，实际 {:?}",
+                expected, m.security
+            );
+        }
+    }
+
+    #[test]
     fn from_shell_bookmarks_and_downloads() {
         let mut shell = BrowserShell::new();
         shell.bookmarks_mut().add("Example", "https://example.com", None);
@@ -307,5 +383,22 @@ mod tests {
         // 未 find_start → is_active=false → model.find None。
         let m = BrowserChromeModel::from_shell(&shell);
         assert!(m.find.is_none());
+    }
+
+    #[test]
+    fn from_shell_with_window_controls_injects_value() {
+        // 审查报告问题 #5：外部注入 window_controls_width 应正确填入 model（Wayland 场景）。
+        let shell = BrowserShell::new();
+        let m = BrowserChromeModel::from_shell_with_window_controls(&shell, 138.0);
+        assert!(
+            (m.window_controls_width - 138.0).abs() < 0.01,
+            "注入值 138 应正确填入"
+        );
+
+        let m2 = BrowserChromeModel::from_shell_with_window_controls(&shell, 0.0);
+        assert!(
+            (m2.window_controls_width - 0.0).abs() < 0.01,
+            "注入值 0（macOS/X11）应正确填入"
+        );
     }
 }
