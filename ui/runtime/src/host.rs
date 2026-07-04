@@ -104,6 +104,11 @@ struct HostNode {
     invalidation: InvalidationFlags,
     epoch: u32,
     focusable: bool,
+    /// 垂直滚动偏移（DC-16 gallery scroll）。仅当 `props["scroll"] == "vertical"` 时生效；
+    /// arrange 阶段按此值上移子节点 y，超出视口的子节点由 paint 阶段的 clip 链自然裁掉。
+    /// content_height 在 measure 后写入（children 主轴尺寸之和），用来钳 scroll_offset 上界。
+    scroll_offset: f32,
+    content_height: f32,
 }
 
 /// Retained widget host —— 三棵树运行态的驱动器。
@@ -503,6 +508,25 @@ impl WidgetHost {
                     self.pending |= InvalidationFlags::NEEDS_PAINT;
                 }
             }
+            UiEvent::Scroll { delta, position, .. } => {
+                // DC-16 gallery scroll：垂直滚动容器消费 wheel 事件。
+                // 找到命中位置最深的可滚动祖先，累加 scroll_offset，并标 NEEDS_LAYOUT 重排。
+                // 若没有可滚动祖先命中，回落到 dispatch_node 让 widget 自行处理。
+                if delta.y != 0.0
+                    && let Some(target_id) = deepest_scroll_vertical_at(root, *position)
+                    && let Some(node) = find_node_mut(root, &target_id)
+                {
+                    let viewport = node.cached_rect.size.height;
+                    let max_scroll = (node.content_height - viewport).max(0.0);
+                    let new_offset = (node.scroll_offset + delta.y).clamp(0.0, max_scroll);
+                    if new_offset != node.scroll_offset {
+                        node.scroll_offset = new_offset;
+                        self.pending |= InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
+                    }
+                    return emitted;
+                }
+                let _ = dispatch_node(root, event, &mut emitted);
+            }
             _ => {
                 // 其它位置事件（移动/释放/滚动）。
                 let handled = dispatch_node(root, event, &mut emitted);
@@ -707,6 +731,27 @@ fn deepest_focusable_at(node: &HostNode, point: Point) -> Option<WidgetId> {
     if node.focusable { Some(node.id.clone()) } else { None }
 }
 
+/// 命中点下最深的「垂直滚动容器」节点 id（DC-16 gallery scroll）。
+///
+/// 遍历顺序：子节点优先（最深最上层先匹配），否则检查本节点是否声明 `scroll=="vertical"`。
+/// 与 `deepest_focusable_at` 不同：滚动容器通常是中间容器节点（如 sidebar Column），
+/// 其内部子节点（按钮/输入框）不需要 focusable 也能让外层滚动。
+fn deepest_scroll_vertical_at(node: &HostNode, point: Point) -> Option<WidgetId> {
+    if !node.cached_rect.contains(point) {
+        return None;
+    }
+    for child in node.children.iter().rev() {
+        if let Some(id) = deepest_scroll_vertical_at(child, point) {
+            return Some(id);
+        }
+    }
+    if is_scroll_vertical(&node.props) {
+        Some(node.id.clone())
+    } else {
+        None
+    }
+}
+
 /// 命中点下最深节点 id（hover 追踪用，不论是否 focusable）。
 ///
 /// 优先返回子节点（最深、最上层优先，倒序），否则本节点。
@@ -737,6 +782,8 @@ fn build_node(spec: &WidgetSpec, registry: &WidgetRegistry, epoch: u32) -> HostN
         invalidation: InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT,
         epoch,
         focusable: false,
+        scroll_offset: 0.0,
+        content_height: 0.0,
     };
     if let Some(mut w) = registry.build(spec) {
         let mut flags = InvalidationFlags::CLEAN;
@@ -832,6 +879,16 @@ fn node_container_kind(node: &HostNode) -> Option<ContainerKind> {
         }
     }
     ContainerKind::from_component(&node.component)
+}
+
+/// 是否为垂直滚动容器（DC-16 gallery scroll）。
+///
+/// 节点声明 `props["scroll"] == "vertical"` 即视为可滚动 Column：
+/// - arrange 阶段按 `scroll_offset` 上移子节点 y
+/// - Wheel 事件命中该节点时累加 scroll_offset（见 `dispatch_node` 后处理）
+/// - paint 阶段 clip 链自然裁掉视口外子节点
+fn is_scroll_vertical(props: &PropsMap) -> bool {
+    matches!(props.get("scroll"), Some(Value::Text(s)) if s == "vertical")
 }
 
 /// 从 props 读 `flex`（Row/Column 主轴弹性权重）。接受 Int/Float，缺省/负值 → 0。
@@ -1048,12 +1105,20 @@ fn measure_linear(node: &mut HostNode, lctx: &mut LayoutCtx, constraints: Constr
 
     // Pass 1：非弹性子节点（贪心，等同历史行为）。
     let mut cursor = 0.0_f32;
+    // DC-16：垂直滚动容器允许子节点溢出视口（content > viewport）。普通容器 `remaining`
+    // 把后续子节点 max_main 收紧到剩余视口空间，会截断溢出内容；对滚动容器须放开为
+    // 无穷大，使每个子节点取固有高度，content 自然超出 viewport。
+    let scroll_overflow = axis == MainAxis::Vertical && is_scroll_vertical(&node.props);
     for i in 0..n {
         if flexes[i] > 0.0 {
             continue;
         }
         let (min_w, max_w, min_h, max_h) = child_constraints_from_props(&node.children[i].props);
-        let remaining = (max_main - cursor).max(0.0);
+        let remaining = if scroll_overflow {
+            f32::MAX
+        } else {
+            (max_main - cursor).max(0.0)
+        };
         let child_c = match axis {
             MainAxis::Horizontal => Constraints {
                 min_width: 0.0,
@@ -1189,10 +1254,19 @@ fn arrange(node: &mut HostNode, origin: Point) {
             // 主轴剩余空间 = 容器主轴 − 子节点尺寸和 − 最小 gap（钳到非负），按 justify-content 分布。
             let content: f32 = node.children.iter().map(|c| c.cached_size.height).sum();
             let gaps_min = gap * n.saturating_sub(1) as f32;
+            // 记录内容高度供 scroll clamp 用（DC-16）。
+            node.content_height = content + gaps_min;
             let extra = (node.cached_size.height - content - gaps_min).max(0.0);
             let (main_offset, between_extra) = main_axis_layout(main, extra, n);
             let spacing = gap + between_extra;
-            let mut y = origin.y + main_offset;
+            // 垂直滚动偏移（DC-16）：仅当 props["scroll"]=="vertical" 时偏移子节点 y。
+            // scroll_offset 已在外部（Wheel dispatch / clamp_scroll）钳到 [0, content-viewport]。
+            let scroll_y = if is_scroll_vertical(&node.props) {
+                node.scroll_offset
+            } else {
+                0.0
+            };
+            let mut y = origin.y + main_offset - scroll_y;
             for child in node.children.iter_mut() {
                 let cx = cross_offset(cross, container_cross, child.cached_size.width);
                 arrange(child, Point::new(origin.x + cx, y));

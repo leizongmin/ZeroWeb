@@ -1907,3 +1907,64 @@ fn cancelled_dispatches_exited_and_clears_last_hovered() {
         "Cancelled 后首次 Moved 不产 Exited（last_hovered=None）"
     );
 }
+
+#[test]
+fn scroll_vertical_offset_shifts_children_and_clamps() {
+    // DC-16：声明 scroll=vertical 的 Column 在收到向下 Wheel 后，
+    // 子节点 y 应当上移（scroll_offset>0），且 offset 被 clamp 到 [0, content-viewport]。
+    let mut host = patch_host();
+    let mut root = WidgetSpec::new("Column");
+    root.id = Some(WidgetId::new("scroller"));
+    root.props.insert("scroll", Value::Text("vertical".into()));
+    for i in 0..4 {
+        let mut child = WidgetSpec::new("Patch");
+        child.id = Some(WidgetId::new(&format!("p{i}")));
+        child.props.insert("color", Value::Text("red".into()));
+        root.children.push(child);
+    }
+    host.set_root(&root);
+    // 视口高度 100，content=4*50=200 → 最大可滚 100。
+    host.layout(Constraints::tight(Size::new(200.0, 100.0)));
+
+    // 初始：p0.y=0, p1.y=50, p2.y=100, p3.y=150（后两个超出视口）。
+    assert_eq!(host.rect_of(&WidgetId::new("p0")).unwrap().origin.y, 0.0);
+    assert_eq!(host.rect_of(&WidgetId::new("p1")).unwrap().origin.y, 50.0);
+
+    // 向下滚 60（delta.y=+60）→ offset=60，所有子节点 y 上移 60。
+    host.dispatch_event(&UiEvent::Scroll {
+        delta: Vec2::new(0.0, 60.0),
+        phase: zero_ui_core::event::ScrollPhase::Discrete,
+        position: Point::new(10.0, 10.0),
+        modifiers: Modifiers::NONE,
+    });
+    host.layout(Constraints::tight(Size::new(200.0, 100.0)));
+    assert_eq!(
+        host.rect_of(&WidgetId::new("p0")).unwrap().origin.y,
+        -60.0,
+        "向下滚 60 后 p0 应上移到 y=-60（超出视口顶部，将被 clip）"
+    );
+    assert_eq!(
+        host.rect_of(&WidgetId::new("p1")).unwrap().origin.y,
+        -10.0,
+        "p1 应上移到 y=-10"
+    );
+    assert_eq!(
+        host.rect_of(&WidgetId::new("p2")).unwrap().origin.y,
+        40.0,
+        "p2 应上移到 y=40（进入视口）"
+    );
+
+    // 越界滚：delta.y=+200，期望 clamp 到 max=100，不超界。
+    host.dispatch_event(&UiEvent::Scroll {
+        delta: Vec2::new(0.0, 200.0),
+        phase: zero_ui_core::event::ScrollPhase::Discrete,
+        position: Point::new(10.0, 10.0),
+        modifiers: Modifiers::NONE,
+    });
+    host.layout(Constraints::tight(Size::new(200.0, 100.0)));
+    assert_eq!(
+        host.rect_of(&WidgetId::new("p3")).unwrap().origin.y,
+        50.0,
+        "越界滚后 offset clamp 到 100，p3 应位于 y=50（content 末尾对齐视口底）"
+    );
+}
