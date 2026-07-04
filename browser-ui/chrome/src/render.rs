@@ -234,6 +234,10 @@ const MENU_BUTTON_WIDTH: f32 = 32.0;
 pub const WC_ICON_CLOSE: ImageRef = ImageRef::new(6);
 /// 窗口控制按钮宽（= apps/browser layout::WINDOW_CONTROL_BTN_WIDTH）。
 const WINDOW_CONTROL_BTN_WIDTH: f32 = 46.0;
+/// toolbar trailing download 图标（Image ID 7）。
+pub const TRAILING_ICON_DOWNLOAD: ImageRef = ImageRef::new(7);
+/// toolbar trailing theme 图标（Image ID 8；用 Star 近似，待 palette SVG）。
+pub const TRAILING_ICON_THEME: ImageRef = ImageRef::new(8);
 /// menu 按钮右侧留白 = ADDRESS_BAR_PADDING(10)：手绘 `menu_btn_x = width - ADDRESS_BAR_PADDING -
 /// btn_w(32) = 1238`，menu [1238,1270] + 右侧 10px padding。控件宽含此留白使 flex-end 摆放时
 /// menu 按钮左缘对齐手绘 1238（图标在按钮 [0,32] 中心 local x=16，trailing [32,42] 为 toolbar_bg）。
@@ -386,6 +390,86 @@ impl Widget for MenuButtonWidget {
         ctx.recorder.draw_image(
             Rect::from_ltrb(x, y, x + icon_extent, y + icon_extent),
             MENU_ICON_MORE,
+            self.icon_tint,
+        );
+    }
+
+    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
+}
+
+// ── TrailingIconsWidget（toolbar trailing 图标：download + theme，DC-14 parity）─────
+
+/// toolbar trailing 图标几何。与手绘 chrome `TOOLBAR_TRAILING_GAP`(8) +
+/// `TOOLBAR_DOWNLOAD_BUTTON_WIDTH`(32) + gap(8) + `TOOLBAR_THEME_BUTTON_WIDTH`(32)
+/// 一致。总宽 = 8 + 32 + 8 + 32 = 80（不含 trailing pad/menu，那些由父布局提供）。
+const TRAILING_ICON_GAP: f32 = 8.0;
+const TRAILING_ICON_SIZE: f32 = 16.0;
+const TRAILING_BUTTON_WIDTH: f32 = 32.0;
+/// trailing 控件总宽 = gap + download(32) + gap + theme(32) = 80。
+const TRAILING_TOTAL_WIDTH: f32 = TRAILING_ICON_GAP + TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP + TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP;
+
+/// toolbar trailing 图标绘制控件：download 图标 + theme 图标（对齐手绘 trailing reserved 区）。
+/// paint 填 toolbar bg + 2 图标（download/theme，各 32px 宽，图标 16px 居中）。
+pub struct TrailingIconsWidget {
+    bg: Color,
+    icon_tint: Color,
+}
+
+impl TrailingIconsWidget {
+    pub fn from_spec(spec: &WidgetSpec, tokens: &SemanticTokens) -> TrailingIconsWidget {
+        let bg_name = match spec.props.get("bg") {
+            Some(Value::Text(s)) => s.as_str(),
+            _ => "chrome",
+        };
+        TrailingIconsWidget {
+            bg: chrome_color_themed(bg_name, tokens),
+            icon_tint: tokens.on_surface,
+        }
+    }
+}
+
+impl Widget for TrailingIconsWidget {
+    fn mount(&mut self, _ctx: &mut MountCtx) {}
+    fn update(&mut self, _ctx: &mut UpdateCtx, _props: &Props) {}
+    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
+        EventResult::Ignored
+    }
+
+    fn layout(&mut self, _ctx: &mut LayoutCtx, constraints: Constraints) -> Size {
+        let width = TRAILING_TOTAL_WIDTH.clamp(constraints.min_width, constraints.max_width);
+        let height = NAV_BAR_HEIGHT.clamp(constraints.min_height, constraints.max_height);
+        Size::new(width, height)
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx) {
+        let size = ctx.clip.map(|r| r.size).unwrap_or_else(|| Size::new(TRAILING_TOTAL_WIDTH, NAV_BAR_HEIGHT));
+        // toolbar bg
+        ctx.recorder.fill_rect(Rect::from_ltrb(0.0, 0.0, size.width, size.height), self.bg);
+        // 2 图标：download + theme，各 32px 宽，图标 16px 居中。
+        let icon_extent = TRAILING_ICON_SIZE.min(TRAILING_BUTTON_WIDTH);
+        let y = ((size.height - icon_extent) / 2.0).max(0.0);
+        // download 图标：在第一个 32px 按钮区中心（gap 后的 [gap, gap+32] 范围）。
+        let btn0_cx = TRAILING_ICON_GAP + TRAILING_BUTTON_WIDTH * 0.5;
+        ctx.recorder.draw_image(
+            Rect::from_ltrb(
+                btn0_cx - icon_extent * 0.5,
+                y,
+                btn0_cx + icon_extent * 0.5,
+                y + icon_extent,
+            ),
+            TRAILING_ICON_DOWNLOAD,
+            self.icon_tint,
+        );
+        // theme 图标：在第二个 32px 按钮区中心。
+        let btn1_cx = TRAILING_ICON_GAP + TRAILING_BUTTON_WIDTH + TRAILING_ICON_GAP + TRAILING_BUTTON_WIDTH * 0.5;
+        ctx.recorder.draw_image(
+            Rect::from_ltrb(
+                btn1_cx - icon_extent * 0.5,
+                y,
+                btn1_cx + icon_extent * 0.5,
+                y + icon_extent,
+            ),
+            TRAILING_ICON_THEME,
             self.icon_tint,
         );
     }
@@ -1171,6 +1255,9 @@ pub fn register_chrome_factories(host: &mut WidgetHost, tokens: &SemanticTokens,
     });
     host.register("browser.FindBar", move |s| {
         Box::new(FindBarWidget::from_spec(s, &t))
+    });
+    host.register("browser.TrailingIcons", move |s| {
+        Box::new(TrailingIconsWidget::from_spec(s, &t))
     });
     // 视口：占满剩余区域，**不填底色**（DC-14 替换式迁移：页面内容由 WebView 绘制在上层，
     // SDK chrome viewport 只负责布局空间，不覆盖页面像素）。

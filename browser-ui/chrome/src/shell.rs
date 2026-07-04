@@ -181,20 +181,10 @@ impl BrowserChromeShell for DesktopBrowserShell {
             Value::Text(crate::render::security_color_name(model.security).into()),
         );
         toolbar.children.push(address);
-        // trailing spacer：手绘 chrome toolbar 在 address pill 右侧还有 download/theme 按钮 +
-        // 间隙（trailing_reserved = padding(10) + gap(8) + download(32) + gap(8) + theme(32) +
-        // gap(8) + menu(32) = 130）。SDK 当前只有 menu(42=32+10pad)，缺 88px → address flex 多 88
-        // → addr-r diff 主因。无注册工厂的空容器节点加 child_min/max 约束占固定 88×44 空间
-        //（host 中 node_container_kind=None + widget=None → fill available 后 clamp 到此约束；
-        // 必须约束 height=44，否则 fill 行为撑高 toolbar→760 → viewport 归零）。
-        {
-            let mut spacer = node("browser.ToolbarSpacer", "toolbar_spacer");
-            spacer.props.insert("min_width", Value::Float(88.0));
-            spacer.props.insert("max_width", Value::Float(88.0));
-            spacer.props.insert("min_height", Value::Float(44.0));
-            spacer.props.insert("max_height", Value::Float(44.0));
-            toolbar.children.push(spacer);
-        }
+        // trailing 图标：download + theme（DC-14 真实图标替换 spacer 占位）。
+        // 总宽 80（gap8+32+gap8+32），对齐手绘 trailing reserved 区（不含 menu 与 trailing pad）。
+        // 此前用 88×44 空容器占位（toolbar 背景无内容 → toolbar sub-zone 最高 diff 源 6.14%）。
+        toolbar.children.push(leaf("browser.TrailingIcons", "toolbar_trailing", "toolbar_bg", None));
         // BrowserMenu：真实图标控件（DC-14）。MoreVertical 图标，42px（含右侧 trailing pad）。
         toolbar
             .children
