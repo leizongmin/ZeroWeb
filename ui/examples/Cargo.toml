@@ -10,6 +10,13 @@ zero-ui-core = { workspace = true }
 zero-ui-render = { workspace = true }
 zero-ui-runtime = { workspace = true }
 zero-ui-widgets = { workspace = true }
+zero-ui-patterns = { workspace = true }
+zero-ui-collections = { workspace = true }
+zero-ui-forms = { workspace = true }
+zero-ui-gestures = { workspace = true }
+zero-ui-animation = { workspace = true }
+zero-ui-navigation = { workspace = true }
+zero-ui-overlay = { workspace = true }
 # counter example 经 WinitDriver 驱动 retained 闭环（DC-2 run-loop 核心端到端证明）。
 zero-ui-adapter-winit = { workspace = true }
 
