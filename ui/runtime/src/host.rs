@@ -67,6 +67,16 @@ pub enum ContainerKind {
     Row,
     /// 叠放（全部置于同一起点，后绘制在上层）。
     Stack,
+    /// 垂直滚动容器（DC-16）。
+    ///
+    /// 与 `Column` 的差异：
+    /// - measure：子节点 max_main 放开为 `f32::MAX`，让 content 自然超出 viewport
+    /// - arrange：按 `HostNode::scroll_offset` 上移子节点 y，超视口部分由 clip 链裁掉
+    /// - 事件：host 收到 Wheel 时累加 `scroll_offset`，clamp 到 `[0, content-viewport]`
+    ///
+    /// 滚动状态（offset / content_height）目前挂在 `HostNode` 上作为 host 级 layout state。
+    /// 未来若需 widget 自管（如编程式 scroll_to），可迁移到独立 `ScrollView` widget。
+    ScrollVertical,
 }
 
 impl ContainerKind {
@@ -76,6 +86,7 @@ impl ContainerKind {
             "Column" => Some(ContainerKind::Column),
             "Row" => Some(ContainerKind::Row),
             "Stack" => Some(ContainerKind::Stack),
+            "ScrollVertical" | "ScrollView" => Some(ContainerKind::ScrollVertical),
             _ => None,
         }
     }
@@ -733,8 +744,8 @@ fn deepest_focusable_at(node: &HostNode, point: Point) -> Option<WidgetId> {
 
 /// 命中点下最深的「垂直滚动容器」节点 id（DC-16 gallery scroll）。
 ///
-/// 遍历顺序：子节点优先（最深最上层先匹配），否则检查本节点是否声明 `scroll=="vertical"`。
-/// 与 `deepest_focusable_at` 不同：滚动容器通常是中间容器节点（如 sidebar Column），
+/// 遍历顺序：子节点优先（最深最上层先匹配），否则检查本节点容器种类。
+/// 与 `deepest_focusable_at` 不同：滚动容器通常是中间容器节点（如 sidebar），
 /// 其内部子节点（按钮/输入框）不需要 focusable 也能让外层滚动。
 fn deepest_scroll_vertical_at(node: &HostNode, point: Point) -> Option<WidgetId> {
     if !node.cached_rect.contains(point) {
@@ -745,7 +756,7 @@ fn deepest_scroll_vertical_at(node: &HostNode, point: Point) -> Option<WidgetId>
             return Some(id);
         }
     }
-    if is_scroll_vertical(&node.props) {
+    if node_container_kind(node) == Some(ContainerKind::ScrollVertical) {
         Some(node.id.clone())
     } else {
         None
@@ -875,15 +886,23 @@ fn node_container_kind(node: &HostNode) -> Option<ContainerKind> {
             "column" | "Column" => return Some(ContainerKind::Column),
             "row" | "Row" => return Some(ContainerKind::Row),
             "stack" | "Stack" => return Some(ContainerKind::Stack),
+            "scroll" | "scroll_vertical" | "ScrollVertical" | "ScrollView" => {
+                return Some(ContainerKind::ScrollVertical);
+            }
             _ => {}
         }
+    }
+    // DC-16 向后兼容：gallery 当前用 `props["scroll"] = "vertical"`（在 Column 上）标记滚动。
+    // 识别此写法时升级为 ScrollVertical 容器（measure/arrange 走独立分支）。
+    if is_scroll_vertical(&node.props) {
+        return Some(ContainerKind::ScrollVertical);
     }
     ContainerKind::from_component(&node.component)
 }
 
-/// 是否为垂直滚动容器（DC-16 gallery scroll）。
+/// 是否为垂直滚动容器（DC-16 gallery scroll，向后兼容 gallery 现有 `scroll=vertical` 写法）。
 ///
-/// 节点声明 `props["scroll"] == "vertical"` 即视为可滚动 Column：
+/// 节点声明 `props["scroll"] == "vertical"` 或显式使用 `ScrollVertical` 容器均视为可滚动：
 /// - arrange 阶段按 `scroll_offset` 上移子节点 y
 /// - Wheel 事件命中该节点时累加 scroll_offset（见 `dispatch_node` 后处理）
 /// - paint 阶段 clip 链自然裁掉视口外子节点
@@ -1108,7 +1127,8 @@ fn measure_linear(node: &mut HostNode, lctx: &mut LayoutCtx, constraints: Constr
     // DC-16：垂直滚动容器允许子节点溢出视口（content > viewport）。普通容器 `remaining`
     // 把后续子节点 max_main 收紧到剩余视口空间，会截断溢出内容；对滚动容器须放开为
     // 无穷大，使每个子节点取固有高度，content 自然超出 viewport。
-    let scroll_overflow = axis == MainAxis::Vertical && is_scroll_vertical(&node.props);
+    let scroll_overflow =
+        axis == MainAxis::Vertical && node_container_kind(node) == Some(ContainerKind::ScrollVertical);
     for i in 0..n {
         if flexes[i] > 0.0 {
             continue;
@@ -1214,6 +1234,12 @@ fn measure(node: &mut HostNode, lctx: &mut LayoutCtx, constraints: Constraints) 
     let size = match node_container_kind(node) {
         Some(ContainerKind::Column) => measure_linear(node, lctx, constraints, MainAxis::Vertical),
         Some(ContainerKind::Row) => measure_linear(node, lctx, constraints, MainAxis::Horizontal),
+        Some(ContainerKind::ScrollVertical) => {
+            // DC-16：滚动容器走 Column measure，但 max_main 放开为 f32::MAX
+            // （见 measure_linear 内 scroll_overflow 分支），让子节点取固有高度，content 自然溢出 viewport。
+            // 容器自身 cached_size.height 仍 = viewport 高度（由 total_main.min(max_main) 钳到）。
+            measure_linear(node, lctx, constraints, MainAxis::Vertical)
+        }
         Some(ContainerKind::Stack) => {
             let mut max_w = 0.0_f32;
             let mut max_h = 0.0_f32;
@@ -1254,19 +1280,32 @@ fn arrange(node: &mut HostNode, origin: Point) {
             // 主轴剩余空间 = 容器主轴 − 子节点尺寸和 − 最小 gap（钳到非负），按 justify-content 分布。
             let content: f32 = node.children.iter().map(|c| c.cached_size.height).sum();
             let gaps_min = gap * n.saturating_sub(1) as f32;
-            // 记录内容高度供 scroll clamp 用（DC-16）。
+            let extra = (node.cached_size.height - content - gaps_min).max(0.0);
+            let (main_offset, between_extra) = main_axis_layout(main, extra, n);
+            let spacing = gap + between_extra;
+            let mut y = origin.y + main_offset;
+            for child in node.children.iter_mut() {
+                let cx = cross_offset(cross, container_cross, child.cached_size.width);
+                arrange(child, Point::new(origin.x + cx, y));
+                y += child.cached_size.height + spacing;
+            }
+        }
+        Some(ContainerKind::ScrollVertical) => {
+            // DC-16：与 Column 同样的堆叠，但按 scroll_offset 上移子节点 y，
+            // 并把 content_height 记入节点供 Wheel dispatch 时 clamp。
+            let gap = gap_from_props(&node.props);
+            let cross = cross_axis_alignment_from_props(&node.props);
+            let main = main_axis_alignment_from_props(&node.props);
+            let container_cross = node.cached_size.width;
+            let n = node.children.len();
+            let content: f32 = node.children.iter().map(|c| c.cached_size.height).sum();
+            let gaps_min = gap * n.saturating_sub(1) as f32;
             node.content_height = content + gaps_min;
             let extra = (node.cached_size.height - content - gaps_min).max(0.0);
             let (main_offset, between_extra) = main_axis_layout(main, extra, n);
             let spacing = gap + between_extra;
-            // 垂直滚动偏移（DC-16）：仅当 props["scroll"]=="vertical" 时偏移子节点 y。
-            // scroll_offset 已在外部（Wheel dispatch / clamp_scroll）钳到 [0, content-viewport]。
-            let scroll_y = if is_scroll_vertical(&node.props) {
-                node.scroll_offset
-            } else {
-                0.0
-            };
-            let mut y = origin.y + main_offset - scroll_y;
+            // scroll_offset 已在 Wheel dispatch 时 clamp 到 [0, content-viewport]。
+            let mut y = origin.y + main_offset - node.scroll_offset;
             for child in node.children.iter_mut() {
                 let cx = cross_offset(cross, container_cross, child.cached_size.width);
                 arrange(child, Point::new(origin.x + cx, y));
