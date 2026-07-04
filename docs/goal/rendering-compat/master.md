@@ -2670,7 +2670,9 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R1025 inline-block 扩展 LANDED（commit d85ed534）**：调查中复现 `<span display:inline-block>text<br>text</span>` w=800（误填满父宽，应 shrink-to-fit ~338）——同 R1024 bug 形态。修复：R1024 leaf gate 加 `|| matches!(computed.display, DisplayValue::InlineBlock)`（content-sized block = flex/grid item OR inline-block）。验证：复现案 800→338 ✓；chromium Oracle 全 dir（css2/css-flexbox/css-grid/css-position/css-text-decor/css-multicol/css-tables）**全 R1024 baseline 零回归**（net-neutral，inline-block+text+br 罕见于 WPT corpus）；welcome 16.57% 不变；1 新单测 test_r1025_inline_block_with_text_and_br_shrink_to_fit；fmt/clippy/make test 全绿。意义：R1024 leaf pattern 扩展到 inline-block，correctness（真实网页 inline-block 含 br/span+a 文本常见），同 R903/R904/R1021 spec-correctness 先例。net-neutral on oracle（无 driving WPT 案）。
 
-**▶ 下会话**：① R1024 leaf pattern 再扩展到 **float / table-cell / auto-abspos** content-sized 上下文（同 bug 形态：block 含文本+inline Element 子 → new_with_children 非 leaf → measure 不触发 → 塌缩/误填满）——逐上下文 gate + A/B（css-tables/css2/css-position）查 yield，紧 gate 守回归；② 备选 multicol Phase 2（多 session 结构性）；③ 备选 font-wall webfont 前置（@font-face 加载，R1006/R1007 已部分）。css-flexbox/grid 近-pass 勿重扫（已证精度 plateau）。inline-block 已 land（d85ed534，net-neutral correctness）。
+**★ R1025 float 扩展 LANDED（commit f111092b）**：同 inline-block bug 形态，`<div float:left>text<br>text</div>` 误填满父宽（800→340）。leaf gate 加 float 条件。net-neutral oracle 全 dir 零回归，correctness。
+
+**▶ 下会话**：① R1024 leaf pattern 残余扩展候选 **table-cell / auto-abspos**（同 bug 形态，但 table-cell 走独立 table auto-layout sizing 须谨慎 A/B，auto-abspos content-sized 须 gate position）——预期 net-neutral（WPT corpus 不驱动），correctness 收益；② 备选 multicol Phase 2（多 session 结构性）；③ 备选 font-wall webfont 前置（@font-face 加载，R1006/R1007 已部分）。css-flexbox/grid 近-pass 勿重扫（已证精度 plateau）。R1024 leaf pattern 已覆盖 flex/grid item（+6 yield）+ inline-block + float（net-neutral correctness）。
 
 ### R1024 ★flex/grid item 含文本+inline Element 子塌缩 w=0 修复 LANDED = css-flexbox Oracle 289→295（+6）+ css-multicol +1 ·零回归·紧 gate（parent-flex/grid）·三方 gate 演进
 
