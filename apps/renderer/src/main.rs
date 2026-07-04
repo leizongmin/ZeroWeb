@@ -1026,13 +1026,17 @@ fn load_system_fonts() -> (FontLoader, Option<u32>, HashMap<String, u32>) {
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     ];
 
-    if let Some((id, path)) = primary_paths.iter().find_map(|path| {
+    if let Some((id, path, data)) = primary_paths.iter().find_map(|path| {
         let data = std::fs::read(path).ok()?;
         let id = loader.load_font(&data).ok()?;
-        Some((id, *path))
+        Some((id, *path, data))
     }) {
         tracing::info!("Renderer primary font: {path} (id={id})");
         primary_font_id = Some(id);
+        // DC-11: 创建共享 FontdueBackend（zero-text-foundation），FontLoader 将
+        // glyph rasterization 委托给共享后端，避免 render-foundation 与
+        // zero-text-foundation 各维护一份字体/字形缓存。
+        loader.init_shared_backend("sans", &data);
         resolver = loader.build_font_resolver();
     }
     (loader, primary_font_id, resolver)
