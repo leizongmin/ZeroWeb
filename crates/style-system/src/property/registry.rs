@@ -71,6 +71,10 @@ impl PropertyRegistry {
             "text-decoration-line" => Some(TextDecorationLine(TextDecorationLineValue::None)),
             "text-decoration-color" => Some(TextDecorationColor(ColorValue::CurrentColor)),
             "text-decoration-style" => Some(TextDecorationStyle(TextDecorationStyleValue::Solid)),
+            // CSS Text Decoration 3 §3.1/§3.2：emphasis-style 与 position 均继承。
+            "text-emphasis-style" => Some(TextEmphasisStyle(TextEmphasisStyleValue::None)),
+            "text-emphasis-position" => Some(TextEmphasisPosition(TextEmphasisPositionValue::OverRight)),
+            // text-emphasis-color 未单独实现（用 text_decoration_color 近似）；shorthand 待补
             "text-transform" => Some(TextTransform(TextTransformValue::None)),
             "letter-spacing" | "word-spacing" => Some(Length(LengthValue::Px(0.0))),
             "white-space" => Some(WhiteSpace(WhiteSpaceValue::Normal)),
@@ -406,6 +410,8 @@ impl PropertyRegistry {
             "text-decoration-line",
             "text-decoration-color",
             "text-decoration-style",
+            "text-emphasis-style",
+            "text-emphasis-position",
             "text-transform",
             "letter-spacing",
             "word-spacing",

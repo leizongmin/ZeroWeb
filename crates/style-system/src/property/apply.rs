@@ -450,6 +450,18 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "text-emphasis-style" => {
+            if let Some(v) = values::parse_text_emphasis_style(value) {
+                style.text_emphasis_style = v;
+                return true;
+            }
+        }
+        "text-emphasis-position" => {
+            if let Some(v) = values::parse_text_emphasis_position(value) {
+                style.text_emphasis_position = v;
+                return true;
+            }
+        }
         "text-transform" => {
             if let Some(v) = parse_text_transform(value) {
                 style.text_transform = v;

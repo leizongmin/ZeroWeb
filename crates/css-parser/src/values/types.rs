@@ -355,6 +355,30 @@ pub enum TextDecorationStyleValue {
     Wavy,
 }
 
+/// CSS text-emphasis-style 值（CSS Text Decoration 3 §3.1）。
+/// 解析后存为标记字符（如 filled dot → '•' U+2022），None = 无标记。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextEmphasisStyleValue {
+    /// none（默认）。
+    None,
+    /// 解析后的标记字符（关键字组合或 `<string>` 首字符）。
+    Char(char),
+}
+
+/// CSS text-emphasis-position 值（CSS Text Decoration 3 §3.2）。
+/// 水平书写模式：over = 文本上方，under = 下方；left/right 仅垂直模式有视觉差异。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextEmphasisPositionValue {
+    /// over right（默认）。
+    OverRight,
+    /// over left。
+    OverLeft,
+    /// under right。
+    UnderRight,
+    /// under left。
+    UnderLeft,
+}
+
 /// CSS text-transform 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum TextTransformValue {

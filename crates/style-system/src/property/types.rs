@@ -7,8 +7,8 @@ pub use zero_css_parser::values::{
     self, AlignmentValue, BoxSizingValue, ClipPathRadius, ColorValue, ColumnCountValue, ColumnWidthValue, ContainValue,
     ContainerTypeValue, ContentValue, CounterActionValue, DisplayValue, FilterValue, FlexDirectionValue, FlexWrapValue,
     FontStyleValue, FontWeightValue, LengthValue, ObjectFitValue, OverflowValue, PolygonFillRule, PositionValue,
-    QuotesValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, VerticalAlignValue,
-    VisibilityValue,
+    QuotesValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue,
+    TextEmphasisPositionValue, TextEmphasisStyleValue, VerticalAlignValue, VisibilityValue,
 };
 
 /// CSS border-style 值。
@@ -1263,6 +1263,10 @@ pub enum PropertyValue {
     TextDecorationColor(ColorValue),
     /// text-decoration-style 值。
     TextDecorationStyle(TextDecorationStyleValue),
+    /// text-emphasis-style 值（CSS Text Decoration 3 §3.1）。
+    TextEmphasisStyle(TextEmphasisStyleValue),
+    /// text-emphasis-position 值（§3.2）。
+    TextEmphasisPosition(TextEmphasisPositionValue),
     /// text-transform 值。
     TextTransform(TextTransformValue),
     /// white-space 值。
