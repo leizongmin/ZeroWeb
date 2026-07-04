@@ -2648,6 +2648,20 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1034 multicol non-spanner multi-row 实验 net-negative 已回退 + font-wall subpixel x 角度分析（fresh 但 WPT yield 低）·零 net 源码·纯调查
+
+承 R1033 CONTINUE（plateau 四轮确证，须 committed 多 session，#1 = font-wall fresh angle = subpixel positioning）。本轮先分析 font-wall subpixel，再实验 multicol multi-row，**均无 yield**（前者分析低 yield，后者 A/B net-negative 回退）。
+
+**① font-wall subpixel x 角度 = fresh 但 WPT yield 低（纯调查）**：CODE 调查证实 ZW 用 `font.rasterize(char, size)`（loader.rs:217，整数位置）无 `rasterize_subpixel`；glyph.x **已是 float 累积**（text.rs:496-510 `char_x += measure_char_for_paint(...)`，paint 期 cpu/mod.rs:457 `gx.round()` 才舍入）→ **无漂移累积**，仅每字 ±0.5px 量化。R834/R836/R849 全是**垂直侧**（baseline/strut/v_offset，已 R953/R990 解决），水平 subpixel x **确实未试**=fresh。**但**：WPT text dir 主体是 Ahem，而 Ahem 被 `rasterize_ahem_glyph`（loader.rs:208-274）特殊化为**完美整数方块**（size.ceil()×size.ceil() 全 255）→ subpixel x 对 Ahem corpus **几乎零收益**；非 Ahem 产品页或受益但 LCD vs 灰度 AA 使 oracle 匹配复杂。**结论**：subpixel x 即使技术成功也基本不动 WPT 通过率，R1033「font-wall 解 text-rendering 全 dir」对 Ahem corpus 不成立。列为低优先（DC-13 产品页价值，非 WPT lever）。
+
+**② multicol non-spanner multi-row 实验（net-negative 已回退）**：转 R1033 #2（span-all-children-height 簇 15-34% 最高 yield）。实现：`assign_children_to_columns_multirow`（overflow 换行非截断末列）+ `position_multicol_children` 加 `row_height` 参数（spanner 路径传 0.0 不变）+ `layout_multicol` gate（sequential_fill && height_limit>0 && total>col_count×height_limit）。3 单测全过 + layout-engine 1019 测零回归。**A/B css-multicol oracle（stash 严格对照）**：目录 130/452 持平；per-case **2 regressed**（nested-past-fragmentation-line 1.77→2.80%、multicol-nested-019 1.76→2.79%，各 +1.03pp）+ **2 improved 无 flip**（spanner-fragmentation-000/002 0.83→0.73%，本就 PASS，噪声级）= **net-NEGATIVE** → 按代码准则回退。
+
+**★ 回归根因（multicol-nested-019 实查）**：外层 columns:2 column-fill:auto height:100px + 内嵌 multicol + orphans/widows/break-before:avoid + 100px green div overflow = **nested multicol + fragmentation** 复杂交互。naive row-wrap（overflow 简单换 row 2）对此**错误**——旧 clip-to-last-column 反而更近正确（chromium nested fragmentation 有 orphans/widows/avoid 规则，非简单 row-wrap）。**无 clean gate 可区分「简单 overflow→multi-row」vs「nested fragmentation→clip」**，须完整 fragmentation 模型。
+
+**★ 真结论**：① 非 spanner multi-row net-negative（触发案全 nested/fragmentation）；② **真 multi-row yield 须 spanner 路径**（span-all-children-height 有 spanner，走 `layout_multicol_with_spanners` 本轮未改）+ 正确 fragmentation 交互（多 session 硬核）；③ font-wall subpixel x fresh 但 WPT yield 低（Ahem 特化）。plateau 五轮确证（R1030-R1034）。详见 [`evidence/r1034-multicol-multirow-fontwall-subpixel-2026-07-05.txt`](./evidence/r1034-multicol-multirow-fontwall-subpixel-2026-07-05.txt)。
+
+**▶ 下会话**：① **multicol multi-row 在 spanner 路径**（`layout_multicol_with_spanners` per-region overflow → 额外列，是 span-all-children-height 簇 15-34% 的真解锁路径，本轮已证须 spanner 侧 + fragmentation 配合）；② R109 vertical block-flow（writing-modes 87% dir，大 yield 大重构）；③ position:relative converter-layer 统一（R1020-cont 证 postprocess 不可解，+12 potential）；④ font-wall 在产品页 DC-13（subpixel x fresh，非 WPT lever）。**勿以「非 spanner multi-row」或「font-wall subpixel x 对 WPT」为名单 session 重试**（已证）。
+
 ### R1033 css-text-decor multi-value + position:relative-table 复核 = 全 font-wall/structural 阻塞·plateau 综合再确证·零源码·纯调查
 
 承 R1032 CONTINUE。本轮复核两个候选，均确证 blocked：
