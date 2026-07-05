@@ -3,6 +3,97 @@
 use crate::font::{FontDesc, FontError, GlyphBitmap};
 use hashbrown::HashMap;
 
+/// FreeType 光栅化路径（`freetype-raster` feature，默认关）。
+///
+/// Phase 2（fontdue→chromium-matching 光栅化替换）的实验通道：用 FreeType
+/// `FT_Render_Glyph`（chromium Linux 同栈）替换 fontdue tight-ink 光栅化。
+/// feature 关时整个模块不编译，CI / 默认构建保持纯 Rust。
+///
+/// GlyphBitmap 坐标约定：paint 经 `glyph_top_left(x, baseline_y, x_offset, y_offset, height)`
+/// = `(x + x_offset, baseline_y − y_offset − height)` 定位位图左上角。FreeType
+/// `bitmap_left`（pen→位图左缘 px）`bitmap_top`（baseline→位图顶 px，向上正）映射：
+/// 位图顶 = baseline − bitmap_top = baseline − y_offset − height ⇒ **y_offset = bitmap_top − height**。
+#[cfg(feature = "freetype-raster")]
+mod freetype_raster {
+    use crate::font::{FontError, GlyphBitmap};
+    use std::cell::OnceCell;
+
+    thread_local! {
+        static FT_LIB: OnceCell<freetype::Library> = const { OnceCell::new() };
+    }
+
+    /// 在线程局部 FreeType Library 上跑一次闭包（懒初始化）。
+    fn with_lib<R>(f: impl FnOnce(&freetype::Library) -> R) -> R {
+        FT_LIB.with(|cell| {
+            let lib = cell.get_or_init(|| {
+                freetype::Library::init().expect("FreeType Library::init failed")
+            });
+            f(lib)
+        })
+    }
+
+    /// 用 FreeType 光栅化单字形 → GlyphBitmap（与 fontdue 路径同坐标约定）。
+    ///
+    /// `font_bytes`：字体 sfnt 字节（来自 FontLoader.font_data）。`size`：字号 px。
+    /// 失败（字形缺失 / FreeType 错误）由调用方回退 fontdue。
+    pub(crate) fn rasterize(
+        font_bytes: &[u8],
+        code_point: char,
+        size: f32,
+    ) -> Result<GlyphBitmap, FontError> {
+        if size <= 0.0 {
+            return Err(FontError::NotFound(format!("non-positive size {size}")));
+        }
+        with_lib(|lib| {
+            let face = lib
+                .new_memory_face2(font_bytes.to_vec(), 0)
+                .map_err(|e| FontError::ParseFailed(format!("FreeType new_memory_face: {e:?}")))?;
+            face.set_char_size((size * 64.0) as isize, (size * 64.0) as isize, 0, 0)
+                .map_err(|e| FontError::ParseFailed(format!("FreeType set_char_size: {e:?}")))?;
+            let idx = face
+                .get_char_index(code_point as usize)
+                .ok_or_else(|| FontError::NotFound(format!("no glyph index for {code_point:?}")))?;
+            face.load_glyph(idx, freetype::face::LoadFlag::DEFAULT)
+                .map_err(|e| FontError::ParseFailed(format!("FreeType load_glyph: {e:?}")))?;
+            let glyph = face.glyph();
+            glyph
+                .render_glyph(freetype::RenderMode::Normal)
+                .map_err(|e| FontError::ParseFailed(format!("FreeType render_glyph: {e:?}")))?;
+            let bitmap = glyph.bitmap();
+            let width = bitmap.width().max(0) as u16;
+            let height = bitmap.rows().max(0) as u16;
+            let pitch = bitmap.pitch().unsigned_abs() as usize;
+            // 灰度位图按行拷贝到紧凑 width×height 缓冲（pitch 可 ≥ width）。
+            let mut data = vec![0u8; width as usize * height as usize];
+            if width > 0 && height > 0 && pitch > 0 {
+                let src = bitmap.buffer();
+                let copy_w = (width as usize).min(pitch).min(src.len());
+                for y in 0..height as usize {
+                    let src_off = y * pitch;
+                    if src_off + copy_w <= src.len() {
+                        let dst_off = y * width as usize;
+                        data[dst_off..dst_off + copy_w]
+                            .copy_from_slice(&src[src_off..src_off + copy_w]);
+                    }
+                }
+            }
+            let x_offset = glyph.bitmap_left() as i16;
+            let top = glyph.bitmap_top();
+            // y_offset = bitmap_top − height（见模块注释坐标推导）。
+            let y_offset = (top - height as i32) as i16;
+            let advance = glyph.advance().x as f64 / 64.0;
+            Ok(GlyphBitmap {
+                data,
+                width,
+                height,
+                x_offset,
+                y_offset,
+                advance: advance as f32,
+            })
+        })
+    }
+}
+
 /// 字体加载器 — 管理字体集合
 pub struct FontLoader {
     /// 已加载的字体（fontdue 实例）
@@ -208,6 +299,16 @@ impl FontLoader {
         if self.ahem_font_id == Some(font_id) && !code_point.is_whitespace() {
             return self.rasterize_ahem_glyph(font_id, code_point, size);
         }
+
+        // Phase 2（freetype-raster feature）：非-Ahem 字形优先 FreeType 光栅化
+        //（chromium Linux 同栈），失败回退 fontdue。feature 关时不编译，走纯 fontdue。
+        #[cfg(feature = "freetype-raster")]
+        if let Some(bytes) = self.font_data.get(&font_id)
+            && let Ok(bm) = freetype_raster::rasterize(bytes, code_point, size)
+        {
+            return Ok(bm);
+        }
+        // FreeType 失败（字形缺失等）→ 回退 fontdue 路径（下方 fontdue 代码）。
 
         let font = self
             .fonts
@@ -519,6 +620,42 @@ mod tests {
         }
         None
     }
+
+    /// Phase 2（`freetype-raster` feature）：FreeType 光栅化路径端到端 + 坐标约定守卫。
+    ///
+    /// 用 bundled Ahem.ttf（WPT 标准方块字体）调 `freetype_raster::rasterize`，
+    /// 断言位图非空 + 尺寸 ≈ font_size（Ahem 方块）+ y_offset = bitmap_top − height
+    /// 约定成立（y_offset 在 [−height, 0] 区间，位图顶在 baseline 上方）。仅 feature 开时编译。
+    #[cfg(feature = "freetype-raster")]
+    #[test]
+    fn freetype_rasterize_ahem_glyph_end_to_end() {
+        // loader.rs 在 crates/render-foundation/src/font/，4 级 .. 回 workspace 根。
+        const AHEM_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+        let bm = freetype_raster::rasterize(AHEM_TTF, 'X', 20.0)
+            .expect("FreeType should rasterize Ahem 'X' @20px");
+        // Ahem 方块：位图非空，宽高 ≈ 20px（FreeType @20px 实测 20×20，A4）。
+        assert!(bm.width > 0 && bm.height > 0, "non-empty bitmap, got {}x{}", bm.width, bm.height);
+        assert!(
+            (bm.width as i32 - 20).abs() <= 1 && (bm.height as i32 - 20).abs() <= 1,
+            "Ahem @20px ≈ 20x20, got {}x{}",
+            bm.width,
+            bm.height
+        );
+        // 坐标约定：y_offset = bitmap_top − height。Ahem 方块顶 ≈ ascent（~16px @20px），
+        // 故 y_offset ≈ 16 − 20 = −4 ± 容差。负值表示位图顶在 baseline 上方。
+        assert!(
+            (-(bm.height as i16)..=0).contains(&bm.y_offset),
+            "y_offset in [-height, 0], got {}",
+            bm.y_offset
+        );
+        // advance ≈ font_size（Ahem 等宽 = em）。
+        assert!(
+            (bm.advance - 20.0).abs() < 2.0,
+            "Ahem advance ≈ 20, got {}",
+            bm.advance
+        );
+    }
+
 
     /// 加载系统字体数据（如果可用）
     fn load_system_font_data() -> Option<Vec<u8>> {
