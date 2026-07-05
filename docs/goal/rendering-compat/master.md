@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1076 column-fill:auto sequential 路径 inline 列溢出 net-negative 已回退·gap 真实（chromium-confirmed）但 gate 须扩展（排除 nested multicol + column-height 语义）方能 net-positive·零 net 源码·纯调查
+
+承 R1075（balance 路径 inline 列溢出 LANDED）。本轮把同一语义扩展到 **column-fill:auto sequential 路径**（`assign_children_to_columns_with_breaking` 同样在 col_count 处 break 丢弃 overflow）。
+
+**gap 真实（chromium-confirmed）**：minimal `<article columns:2 column-fill:auto height:50><div height:200>` → chromium green x=13..207（article 右外侧溢出列），ZW 仅 x=13..107（drop overflow）。证实 sequential 路径同病。
+
+**实现（已回退）**：layout_multicol `sequential_fill && height_limit>0` 分支前置 gate `total > col_count×height_limit && !monolithic && !forced_break` → fire 时用 `assign_children_to_columns_multirow`（顺序填到 height_limit + 超出 push 新列）。minimal 测试 A/B 0.00% 完美匹配 chromium（green x=207）。
+
+**A/B（stash 对照 R1075，ORACLE_DUMP_ALL per-case 452 案）net-negative 已回退**：headline 151→151（Δ0）但**质量净负**——**1 flip PASS**（column-height-011 2.28→0.73）/ **1 flip FAIL**（multicol-nested-028 0.73→1.15）/ **11 worsened ≥+0.3pp**：multicol-nested-column-rule-002 +2.50 / fill-balance-003 +2.09 / column-height-004 +1.25 / column-height-026 +1.04 / multicol-nested-019 +1.03 / nested-past-fragmentation-line +1.03 / column-height-025 +0.83 / multicol-nested-014 +0.72 / multicol-nested-021 +0.52 / column-height-027 +0.52。1 PASS 不抵 1 FAIL + 11 worsened。
+
+**裁决回退**：按 code-guidelines「不做负价值修改」`git checkout` 回退（零 net 源码）。★ gate 须扩展方能 net-positive：① 排除 **nested multicol**（multicol-nested-019/014/021/028 + nested-column-rule-002 + nested-past-fragmentation-line 6 案回归全 nested，加 `!has_nested_multicol` 同 R1035）；② **column-height 语义**（column-height-004/025/026/027 4 案非 nested 仍回归——column-height 属性的列高计算与容器 definite height 不同，gate 误触）；③ fill-balance-003（balance 内嵌 sequential？查）。minimal chromium-confirmed gap 仍为已知 correctness item（spec-correct 但 WPT 驱动案 net-negative）。
+
+**意义**：sequential 路径 inline-overflow gap 确认真实（非 font-wall），但与 nested multicol fragmentation + column-height 语义深度耦合，gate 须三重扩展（nested + column-height + fill-balance）才能净正——多 session 结构性，勿以现 gate 单 session 重试。R1074+R1075（balance 全路径）已 land，sequential 为下一阶段。
+
+**▶ 下会话**：① sequential inline-overflow 须先加 `!has_nested_multicol` 守卫（R1035 先例）+ 查 column-height-004/025/026/027 为何非 nested 仍回归（column-height 属性 vs container height 语义差），两 gate 扩展后再 A/B；② nested-balancing-004（17%，nested fragmentation，多 session）；③ css-multicol 近-pass 138 案 ~1% band = font-wall（FreeType C-dep 用户决策点）。
+
 ### R1075 ★非 spanner balance 路径 inline 列溢出 LANDED = css-multicol Oracle 146→150（+4 net）·4 flip PASS（column-height-008/fill-balance-029/nested-030/restyle-002）·nested-balancing-004 −20pp/002 −11pp 大改善·monolithic 守卫消 overflow-unsplittable 回归·零翻 FAIL
 
 承 R1074（spanner 路径 inline 列溢出 LANDED）。本轮把同一 inline-overflow 语义扩展到 **非 spanner balance 路径**（minimal multicol 同病：height:50 col-count:2 child:200 → ZW 仅渲 article 内 2 列 drop overflow）。
