@@ -2648,6 +2648,28 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1082 ★css-multicol 残余 = 结构性（非 font-wall）三证 + multicol-basic 内容丢失精确诊断 + CI 计费阻塞 freetype 6-target 验证·零 net 功能源码·纯调查（fmt cleanup 已提交 2defd817）
+
+承 R1081（C-dep 用户决策点）。本轮自主验证「multicol 近-pass 是否真 font-wall 主导」——**裁决：推翻长期假设，multicol 残余主导 = 结构性（Phase A inline 列宽测量），font-wall C-dep 对 multicol 仅 +3（非批量 unlock）**。
+
+**证 1：freetype-raster feature A/B（css-multicol 全量 452 案）**：fontdue baseline 155/452 (34%) → `--features zero-render-foundation/freetype-raster` 158/452 (35%)，**NET +3**（css-text R1068 是 +24）。若 multicol 真为 font-wall，freetype 应批量 unlock。实际 +3 = 噪声级。逐案 worst-case（fontdue→freetype）：multicol-basic-001..004 10.91→10.86（−0.05）/ multicol-columns-001..006 簇 9.95→9.95（0.00）/ nested-balancing-004 17.17→17.17（0.00）/ span-all-rule-002 26.25→26.25（0.00）→ 全 worst-case 几乎不动 = 非 font-wall。
+
+**证 2：per-pixel multicol-basic-001 几何重建**：3 inline span（紫/橙/蓝各 28 Ahem-X）在 columns:3 w:360 gap:0。ZW 每色 ≈18 字形（丢 36%），chromium ≈28（精确）；ZW 文本 4 行 y=40–120，chromium 6+ 行 y=72–184；ZW 3 列紧挤 x=8–230，chromium 3 列展开 x=8–320 带 yellow 间隙。
+
+**证 3：MC_DEBUG layout_multicol 结构 dump**：`container_w=360 content_h=140 col_count=3 child_info=[(0,60),(1,60),(2,60)]`，各列一匿名块子元素 visual_height=60（3 行@20px）。但列宽 120px 下每 span 需 6 行=120px → 后 3 行从未计算/存储（非裁剪丢，paint 非 breaking 不裁高 painter/mod.rs:862-863）。
+
+**根因（精确）**：multicol 容器 inline 内容被包成匿名块子元素，各在自身宽（=容器宽 360px）下测 IFC → 3 行。layout_multicol 用此 60px 分配列。paint 在列宽 120px 渲染存储 IFC（360px 算的 3 行），120px 应有的另 3 行不存在。架构事实：`inline_finalization.rs:530-536` multicol 容器永远 early-return（仅试 R900 store_inline_multicol_columns，gate 排除 balance 模式），依赖匿名块子元素各自存（@容器宽非列宽）。R900 gate（line 191-194）：仅 column-fill:auto + available_height>0 + inline-only。multicol-basic-001 是 balance 默认 → 不命中 → 无列宽存储。
+
+**为何 R902「balance 扩展零 yield」（inline_finalization.rs:191 注释）**：R902 试扩 balance，零 oracle-pass yield 回退。推测真因：store_inline_multicol_columns 用 fragment_lines_into_columns + ColumnFillMode::Auto（顺序填满一列再下一列），balance 应均布，顺序填语义错 → 不 flip。R902 量 oracle-count（非 per-pixel delta），可能 per-pixel 改善但未跨 <1% 阈值 → 「零 yield」掩盖机制改善。真修须 balance-aware fragmentation（行均布），非简单去 sequential_fill gate。
+
+**意义（战略纠偏）**：① css-multicol 残余 ≠ font-wall，C-dep 不会 batch unlock 138；② 真 multicol lever = Phase A inline 列宽测量统一（匿名块子元素须列宽测 IFC），多 session（phase-a-IFC-unification-design.md 37KB）；③ font-wall C-dep 价值重估：css-text +24（R1068）+ multicol +3（本证）= 主要收益在文字 dir，布局 dir 受益极小，C-dep 仍值得翻但勿以「batch unlock multicol」为论据；④ CI 计费阻塞（gh run 28754164214：freetype-raster-cross-platform 6-target 全未启动「account payments failed / spending limit」）→ 6-target 验证路径当前不可用，C-dep 决策双重门（policy + CI 验证）均非自主可解。
+
+**门禁**：本轮纯调查（探针加已撤），make test 未重跑（无源码变更）；R1082 fmt cleanup commit 2defd817（loader.rs/apply_advanced.rs/tests/core.rs cargo fmt 对齐，cargo fmt --check 过，pre-commit-guard PASS）。
+
+详见 [`evidence/r1082-multicol-structural-not-fontwall-2026-07-06.txt`](./evidence/r1082-multicol-structural-not-fontwall-2026-07-06.txt)。
+
+**▶ 下会话**：① **Phase A balance-aware 列宽 IFC**——先 per-pixel 重试 R902 balance 扩展（量 delta 非仅 count）验证机制改善，再投资 balance 行均布 fragmentation（潜在 unlock multicol-basic-001..004 + columns 簇）；② font-wall C-dep 用户决策（CI 计费恢复后取 6-target evidence；当前 blocked）；③ positioned-in-multicol 残余（abspos CB 在 multicol 外，R1080 下会话 ①）。
+
 ### R1081 FreeType C-dep CI job 抽独立 workflow（一键 dispatch，不连带全量 CI）+ css-tables/css-flexbox 扫描确认无 clean lever（font-wall/complex）·零 net 功能源码·CI 配置 + 纯调查
 
 承 R1080（multicol positioned-flush LANDED，multicol 可处理机制 +9 net 收官）。本轮 pivot R740 扫其它 dir + 改善 C-dep CI 就绪度。
