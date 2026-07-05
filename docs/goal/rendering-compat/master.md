@@ -2648,6 +2648,26 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1057 display:list-item marker 门控修正（tag→display）REFUTED = CSS2/lists -1（li→ListItem 致 list-item-dynamic-color +0.60 PASS→FAIL）+ 目标簇 list-style-position-applies-to-008/009/010/016/017 delta=0.00（likely R109 anonymous-box mask）·R740 strategy ② clean lever 耗尽第三证·零 net 源码·纯调查
+
+承 R1056 CONTINUE（fresh chr-vs-ZeroWeb per-case scan，R740 strategy ② 找 R689/R716 类 clean correctness lever）。本轮扫 CSS2/lists/colors/values + generated-content（fresh dir），定位 list-style-position-applies-to 簇（5 案 @ 3.37-3.73% identical diff = 单一系统性 cause 候选），**假设「missing marker on `<span display:list-item>`」A/B 证伪，net-negative 已回退**。
+
+**假设**：`paint_list_marker`（text.rs:403）门控 `local_name()=="li"`（tag-name）是 `<li>` UA 默认误设 Block（lib.rs:54，应 ListItem）的 compensating hack → WPT 簇用 `<span display:list-item>` 拿不到 marker = 3.37% diff。
+
+**改动（3 部分已 git stash drop 回退，零 net 源码）**：① lib.rs UA default `"li"` Block→ListItem（CSS §12.5 spec）+ 测试列表移除 li + 新 `test_li_defaults_to_list_item`；② text.rs:403 gate `local_name()=="li"`→`style.display != ListItem`（按 computed display 判定）+ DisplayValue import。converter ListItem→taffy Block（layout 不变）。style-system 测 + clippy 全绿。
+
+**A/B（CSS2/lists 157 案 join）**：CSS2/lists baseline **144 (92.3%)→with 143 (91.7%) = -1 net**。唯一翻转 = `list-item-dynamic-color.html` **PASS→FAIL (0.94→1.54, +0.60)**（li→ListItem 改变 `<li>` marker 渲染）。**目标簇 delta=0.00（精确零）**：list-style-position-applies-to-008/009/010/016/017 (3.37-3.73%) + 015 (1.09%) 全 0.00；list-style-image-004/007 +0.02。
+
+**★ 两路证据证伪「missing marker」假设**：① 目标簇 delta=**0.00 精确零**——marker 若新渲染必有像素变化（6px dot ~41px²），delta=0.00 → `<span display:list-item>` 在 box-tree 中**没带着 ListItem computed display 到达 paint_list_marker**；② list-item-dynamic-color +0.60 证明 fix 生效但**只影响 `<li>`，不影响 `<span>`**。
+
+**★ likely 真因 = R109 §9.2.1.1 anonymous-block mask**：测试结构 `<div display:inline><span display:list-item>>`——inline 父含 block 级子触发 CSS §9.2.1.1 匿名块拆分（R109 territory，同 memory R255 morning-work 4× 高度机制）。ZW 匿名块包装（tree.rs R109）很可能用**父 div 的 node_id/style**（display:inline）包装 span，而非保留 span 自己的 element 身份（display:list-item）→ paint_list_marker 见 div 的 inline → gate 失败 → 无 marker。3.37% 主导 = orange box 几何（margin-left:1in / span vs div sizing）非 marker。与 R1047/R1052 vertical 耦合证 = **同一 R109 架构缺口**。
+
+**裁决**：marker 门控修正对目标簇零效果（R109-blocked），致 `<li>` 副作用 -1。**REFUTED git stash drop 回退**。CSS spec-correct（li→ListItem + display gate）但在 ZW 当前 R109 匿名块架构下不产 yield，须先解 R109。
+
+**R740 strategy ② clean lever 耗尽第三证**（R740+R1053+R1057）：本轮 fresh dir 扫描全部落 multi-session structural——generated-content = R554 pseudo-element gap / CSS2/values units = font-wall（fontdue Ahem advance）/ CSS2/lists marker = **R109 anonymous-block mask（本轮新锁定）** / CSS2/colors = 1 deep fail。**无新 clean single-session lever**。详见 [`evidence/r1057-list-item-marker-gate-refuted-2026-07-05.txt`](./evidence/r1057-list-item-marker-gate-refuted-2026-07-05.txt)。
+
+**▶ 下会话**：① **R109 §9.2.1.1 anonymous block 攻坚**（最高频 unblocker：本轮 list-item + R1047/R1052 vertical + R255 morning-work 4× 全指向它；deadlock 历史但 EV 最高，multi-session）；② Phase-A IFC 单次源统一续（非 font-metric 子任务）；③ fresh dir 续扫 css-fonts/backgrounds borderline（EV 低，三证耗尽）。★勿再：list-item marker gate / `<li>` UA default 单 session lever（R1057 REFUTED R109-blocked）/ 盲扫 top-worst（三证）/ font-wall single-knob（六证）/ vertical 单点 bundle（四证）。
+
 ### R1056 CJK ascent 1.160 wiring 实测 net-negative 已回退 = css-text segment-break -13（13 案 PASS→FAIL 全 CJK borderline）压过 welcome -0.19pp 改善·font-metric single-knob 第六证·零 net 源码·纯调查
 
 承 R1055 CONTINUE ①（水平 CJK font-wall 小切片：wire NotoSansCJK 1.160 metric）。本轮实施 R1055 forecast 的 CJK ascent wiring（`ascent_ratio_lookup` 加 `is_cjk` 分支，CJK 文本 0.928→**1.160** = NotoSansCJK 真实 ascent；新 `text_has_cjk` 检测片段文本），**A/B 硬数据复证 R1055 forecast「CJK 非 WPT high-yield 轨道」，net-negative 已回退**。
