@@ -2648,6 +2648,18 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1053 5 目录 top-worst 扫描（clean lever 耗尽 R740 复证）+ root-abspos sizing 实验 net-flat-to-negative 已 revert·零 net 源码·纯调查
+
+承 R1052 CONTINUE（vertical Slice α / 转非 vertical 轨道）。本轮按 R740 战略转向 ②（直接 chr-vs-ZeroWeb 对比找新 clean lever）扫 css-grid / css-text-decor / css-tables / css-position 4 目录 top-worst，**全部 entangled，clean single-session lever 耗尽复证**；root-abspos 实验 html 几何修对但 body 未 re-layout 故 net-flat-to-negative 已 revert。
+
+**5 目录扫描结论**（top-worst 全 entangled）：css-grid（baseline-synthesized vrl/vlr/srl/slr vertical / replaced %height grid-in-flex complex / table-grid-item JS-dynamic）；css-text-decor（text-decoration thickness/dotted/line 全 font-wall 谱系 R1045 证伪 / text-decoration-inset CSS4 draft）；css-tables（table-cell-width-0 实测 ZW 已正确 w=8 intrinsic，20% diff = 默认字体+border-collapse font-wall/structural / collapsed-border-vertical vertical）；css-position（backdrop structural / dynamic-relayout JS / in-inline R109 / root-element abspos §2）。**R740 复证：clean lever 在已工作目录耗尽**。
+
+**root-abspos sizing 实验**（position-absolute/fixed-root-element-{flex,grid} 4 案 4.46%）：`<html>` 自身 abspos/fixed + 全 inset 应按 §10.3.7/§10.6.4 stretch（border-box = 视口 − insets）。ZW 实测 html h=64（shrinkwrap）w=715（应 530/770）。Fix = `size_root_abspos_to_viewport`（abspos.rs post-processing，仅 root abspos/fixed 时补 width/height，gate 严零 static 影响）。**html 几何修到规范正确（h=530 w=770）**但 **A/B 4.46%→4.52%（+0.06pp net-flat-to-negative）已 revert**：body 未 re-layout（taffy 用旧 html 715 layout body w=689），post-process 改 html 后 body 文本换行用旧 content_width 不重排，残余 diff 抵消 border 修对。**裁决**：post-processing 不足（文本换行依赖 taffy 期 body content_width），须 pre-layout（converter 设 root taffy size）或 two-pass（R695/R1018 基建 set+mark_dirty+recompute），属 taffy 0.7 root quirk 谱系（R123/R500），yield 小（4 案）effort 高 → defer。
+
+**裁决与 forward（战略路径，多 session）**：clean single-session lever 耗尽（R740+R1053 双证）。后续须转结构性多 session：① **taffy 升级 R304**（R304/R849 列 #1 viable lever，解锁 native vertical block-flow 减 R1043/R1052 耦合 + 541 ref + 108 alignment + native float，一次性 unblock 多 manual workaround，EV 最高）；② R109 §9.2.1.1 anonymous block（unlock block-in-inline 簇）；③ Phase-A IFC 统一（行盒度量）。★ 勿再盲扫 top-worst 找 clean single-session lever（双证耗尽）。详见 [`evidence/r1053-scan-root-abspos-investigation-2026-07-05.txt`](./evidence/r1053-scan-root-abspos-investigation-2026-07-05.txt)。
+
+**▶ 下会话**：① taffy 升级 R304 起步（评估 541 ref + 108 alignment + native float 冲突面，列迁移计划，最高 EV 多 session）；② 或 R109 anonymous block 攻坚；③ 或 Phase-A IFC 统一续（baseline 定位 / 字体度量）。
+
 ### R1052 ★vertical IFC container_width=0 根因 = 纠正 R1051 handoff 诊断（axis-swap 已存在）+ vertical 耦合系统三证（单修 inline-flow net -26 已 revert）·零 net 源码·纯调查
 
 承 R1051 CONTINUE（R109 vertical inline Slice 1 实施）。本轮按 handoff §3 试实施 Slice 1，**VIFCDUMP 实证推翻 R1050/R1051 诊断，单点修复 net-negative 已 revert，handoff doc 升级 v1.1**。
