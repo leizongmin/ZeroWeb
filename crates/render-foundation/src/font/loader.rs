@@ -53,6 +53,10 @@ mod freetype_raster {
             let idx = face
                 .get_char_index(code_point as usize)
                 .ok_or_else(|| FontError::NotFound(format!("no glyph index for {code_point:?}")))?;
+            // LoadFlag::DEFAULT（含 TARGET_NORMAL = full hinting）。R1069 A/B 实测（css-text
+            // Oracle 1650 案）：DEFAULT 381 pass > LIGHT(TARGET_LIGHT) 371 > NO_HINTING 357 ≈
+            // fontdue 基线。NOHINT==fontdue 证 fontdue tight-ink 即 unhinted，FreeType full
+            // hinting 向 chromium（hinted）收敛——故 DEFAULT 为最优，勿改 LIGHT/NOHINT。
             face.load_glyph(idx, freetype::face::LoadFlag::DEFAULT)
                 .map_err(|e| FontError::ParseFailed(format!("FreeType load_glyph: {e:?}")))?;
             let glyph = face.glyph();

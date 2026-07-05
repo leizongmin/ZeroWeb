@@ -2648,6 +2648,21 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1069 FreeType hinting A/B（DEFAULT 最优）+ 多 dir yield 测绘 = DEFAULT 381 > LIGHT 371 > NOHINT 357≈fontdue（证 fontdue=unhinted，FreeType full-hint 向 chromium 收敛）+ yield 集中文本 dir（css-text +24 / backgrounds +2 结构性封顶）·DEFAULT 无需再调·零 net 功能源码（+4 行注释）·纯调查
+
+承 R1068 CONTINUE（Phase 2 LANDED feature-gated，续 feature-on 调优 + 多 dir 量化）。本轮 A/B FreeType hinting 模式 + 量化 yield 跨 dir 分布，**DEFAULT 验证为最优，yield 集中文本 dir**。
+
+**Hinting A/B**（css-text Oracle 1650 with-oracle，env `ZW_FT_HINTING` 运行时切，单 build 多 run）：DEFAULT(full hinting TARGET_NORMAL) **oracle-pass 381 / credible 368 / strict 88** > LIGHT(slight TARGET_LIGHT) 371 / 358 / 89 > NOHINT 357 / 344 / 84 ≈ **fontdue 基线 357/344/84**。★ DEFAULT 最优（R1068 选择正确，勿改 LIGHT/NOHINT）。★ NOHINT==fontude 证 **fontdue tight-ink 即 unhinted 光栅化**，FreeType DEFAULT(full hinting) 向 chromium（hinted）收敛——这正是 R1068 +24 的机制。原假设「chromium 用 slight/LIGHT」**refuted**（oracle chromium 实为 full hinting）。
+
+**多 dir yield 测绘**（feature on vs off）：
+- **css-text**（文本 dir）：oracle-pass 357→**381（+24）**，credible 344→368（+24），全 per-dir 零回归（css-text-decor 108→117 / line-breaking 60→67 / white-space 45→48）。welcome −0.28pp（16.57→16.29%）。
+- **CSS2/backgrounds**（布局 dir）：oracle-pass 228→**230（+2）**，strict 0→0（全 228 卡 0.1-1.0% font-wall 带）。★ yield 小因 dir 由结构性 `background-root-*`（41%/40%/35%... background-image/color on root，非指令文本）主导；指令文本 font-wall（R1064 测 1.15%）小，FreeType 修该分量 +2 但结构性 background-root 不动。
+- **模式结论**：FreeType yield **集中在文本 dir**（css-text +24 / text-decor / line-breaking / white-space），**布局 dir 边际**（backgrounds +2，结构性封顶）。font-wall 各 dir 收益按文本占比分配。
+
+**裁决**：① DEFAULT hinting 验证最优（A/B 数据写入 loader.rs 注释，+4 行，零功能改动）——勿再投 hinting 调优；② C 依赖决策 evidence 完备：css-text +24（文本 dir 主收益）+ welcome −0.28pp + 零回归 + DEFAULT 最优；③ yield 天花板 = 文本 dir（css-text 类）+ 产品页 Latin/CJK（welcome/morning，待 morning oracle），布局 dir font-wall 须各自结构性修。**env knob 已移除**（code-guidelines 不留未要求可配置性 + 避免每字形 env::var 热点）。
+
+**▶ 下会话**：① **待用户 C 依赖决策**（翻 default，evidence 完备：+24 css-text / DEFAULT 最优 / 零回归）；② 翻 default 前最高 EV = morning-work CJK 产品页 oracle（CJK 光栅化差 11-16% 最大，须生成 chromium oracle shot via R388 工具链）量化 CJK yield；③ advance/kerning 精度（FreeType FT_Load_Glyph advance vs fontdue，潜在再降文本 dir diff）；④ 布局 dir（backgrounds/borders）font-wall 须各自结构性修（background-root-*），FreeType 非其 lever。
+
 ### R1068 ★Phase 2 FreeType 光栅化路径 LANDED（feature-gated default-off）= css-text Oracle +24 credible pass 零目录回归 + welcome −0.28pp·首 font-wall 正 yield·C 依赖决策升级 evidence-backed
 
 承 R1067 CONTINUE（font-wall 收敛 rasterization-only，Phase 2 = 唯一 lever，待 C 依赖决策）。本轮 **feature-gate FreeType 光栅化路径绕过 C 依赖阻塞**——把 Phase 2 hypothesis 用 A/B 数据验证，C 依赖决策从「推测」升级为「evidence-backed」。
