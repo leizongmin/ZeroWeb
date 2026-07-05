@@ -2648,6 +2648,26 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1085 ★nbsp (U+00A0) 保留修复 LANDED = linebox Oracle +10（line-height-applies-to 簇 10 翻 PASS）+ css-text +1 + writing-modes +3·零 PASS→FAIL·clean win
+
+承 R1084（plateau）。本轮 fresh R740 scan linebox dir（未近期深扫）找到 CSS 语义 bug 并 LANDED——R1082-R1084 三轮调查后首 landed code win。
+
+**bug 发现（per-pixel）**：line-height-applies-to-001..015 簇 7+ 案 4.75% identical。line-height-applies-to-009（`<span style="display:block; background:blue; line-height:2in; width:1in">&nbsp;</span>`）：CHR blue bbox x[8..103] y[50..241]（192px=2in），**ZW blue bbox=None（完全不渲蓝）**。minimal repro 矩阵：line-height:2in + nbsp → 0 blue；line-height:2in + X → 18381 blue @192px；height:2in + nbsp → 18432 blue @192px → bug 仅当「高度来自 line-height」+「内容仅 &nbsp;」时元素塌缩 0。
+
+**根因（CSS Text §4.1.1）**：U+00A0 (NO-BREAK SPACE) 是 **preserved** + **non-breaking**——不可折叠、不可作断行点。ZW 旧实现 `collapse_whitespace`（inline_types.rs:225）用 `ch.is_whitespace()` + `split_into_words`（mod.rs:1920）用 `text.split_whitespace()`，二者含 U+00A0 → nbsp 折成普通空格再被行首尾 trim → 仅含 nbsp 的元素 0 词 0 行盒 0 高 → 无 bg。
+
+**修复（surgical，仅排除 U+00A0）**：`inline_types.rs` 新 `is_collapsible_ws(ch) = ch.is_whitespace() && ch != '\u{00A0}'`（首版 5-char CSS 窄集合回归 css-text 7 案——U+3000 IDEOGRAPHIC SPACE 等浏览器仍按可折叠/可断行；surgical 仅排 U+00A0 是 WPT 实证最优）。`collapse_whitespace` + `split_into_words` default 模式均改用之。+2 单测（nbsp_is_not_collapsible_ws + collapse_whitespace_preserves_nbsp）。
+
+**A/B（stash 对照）**：linebox **121/190→131/190 net +10**（line-height-applies-to-001/002/003/004/007/009/012/013/014/015 全 4.75→0.95 PASS）/ css-text-decor 104→104 net 0 / css-text(excl decor) 248→249 net +1 / css-writing-modes 56→59 net +3。**合计 +14，零 PASS→FAIL**。
+
+**已知 tradeoff（非 flip，仍 FAIL）**：css-text shaping-arabic-diacritics-002 10.81→16.50（+5.69pp）。该 test 明用 &nbsp;（注释「within the width of the NBSP」）+ Arabic 变音。nbsp 保留（CSS 正确）改变其与变音的 non-breaking 连接，但 ZW Arabic shaping 是 per-char（rustybuzz 未接生产，font-feature gap 谱系）→ spec-correct tradeoff，shaping gap 解后该案受益。
+
+**门禁全绿**：make test 45 bin 0 failed（含 2 新 nbsp 单测）/ clippy --workspace --all-targets -D warnings 干净 / cargo fmt 干净 / product-smoke welcome **16.57%（== baseline，DC-13 <20% gate PASS）**。inline/mod.rs 2015 行（pre-existing >2000，本轮 +2 行，未重构——非本修复范围）。
+
+**意义**：★ 纠正 plateau 悲观——R740 fresh scan（linebox，未近期深扫 dir）找到 clean CSS-correctness bug（nbsp 语义）。R1082-R1084 三轮调查后首 landed code win。forward = 继续 fresh scan 其它 under-mined dir（css-writing-modes 近-pass / CSS2 subdir）找同类 CSS 语义 bug。详见 [`evidence/r1085-nbsp-preserve-landed-2026-07-06.txt`](./evidence/r1085-nbsp-preserve-landed-2026-07-06.txt)。
+
+**▶ 下会话**：① 继续 fresh R740 scan（writing-modes 近-pass / CSS2 subdir / css-tables）找 CSS 语义 bug（单位/属性 handling，R689/R716/R1085 类）；② font-wall C-dep 用户决策（CI 计费恢复后）；③ Phase A step-2（多 session）。
+
 ### R1084 font-wall C-dep (freetype-raster) yield 全表测绘完成 = +32（集中 text dir）+ CI 计费仍阻塞·零 net 源码·纯调查
 
 承 R1083（multicol Phase A 死锁确证，pivot）。本轮完成 font-wall C-dep（最高 EV lever）的 yield 全表测绘，为用户决策补全证据。
