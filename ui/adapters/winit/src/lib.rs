@@ -23,4 +23,4 @@ pub use event_map::{
     map_mouse_button, map_mouse_input, map_mouse_wheel, map_pointer_phase, map_touch, map_touch_phase,
     map_window_metrics, to_logical_point, to_logical_size,
 };
-pub use runtime::WinitRuntime;
+pub use runtime::{FontAsset, FontContainer, WinitRuntime};

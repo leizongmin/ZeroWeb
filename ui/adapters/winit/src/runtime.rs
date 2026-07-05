@@ -35,10 +35,37 @@ use crate::event_map::{
 
 type RegisterFn = Box<dyn FnOnce(&mut WidgetHost)>;
 
+/// 字体资源（DC-17 FontConfig API）。
+///
+/// 调用方通过 `WinitRuntime::add_font` 注册字体；run() 启动时按注册顺序加载到
+/// `FontdueBackend`，作为 per-character fallback 链（has_char 顺序匹配）。
+///
+/// - `family`：字体族名（如 "UI" / "CJK"），同时作为 fallback 顺序标识
+/// - `data`：字体原始字节。WOFF 容器会自动解码；TTF/OTF 直送后端
+/// - `container`：声明容器格式，避免自动探测歧义
+#[derive(Clone, Debug)]
+pub struct FontAsset {
+    pub family: &'static str,
+    pub data: &'static [u8],
+    pub container: FontContainer,
+}
+
+/// 字体容器格式（DC-17 FontConfig API）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FontContainer {
+    /// 裸 TTF/OTF 字节，直送后端 `load_family`。
+    Ttf,
+    /// WOFF 容器，需先 `decode_woff` 解包再送后端。
+    Woff,
+}
+
 /// winit 平台运行时（M1 占位）。
 pub struct WinitRuntime {
     system_scheme: ResolvedColorScheme,
     register: Option<RegisterFn>,
+    /// 调用方注册的字体资源列表。空时回落到内置默认（Noto Sans + M+ 1P + Ahem），
+    /// 保持向后兼容（gallery 之外的 example 不需要改）。
+    fonts: Vec<FontAsset>,
 }
 
 impl Default for WinitRuntime {
@@ -46,6 +73,7 @@ impl Default for WinitRuntime {
         WinitRuntime {
             system_scheme: ResolvedColorScheme::Light,
             register: None,
+            fonts: Vec::new(),
         }
     }
 }
@@ -65,6 +93,15 @@ impl WinitRuntime {
     /// 必须在调用 `run()` 前设置；调用后 consume 内部 Option。
     pub fn set_register(&mut self, register: impl FnOnce(&mut WidgetHost) + 'static) {
         self.register = Some(Box::new(register));
+    }
+
+    /// 注册一个字体资源（DC-17 FontConfig API）。
+    ///
+    /// 调用方按 fallback 顺序依次添加（先注册的优先匹配 has_char）。
+    /// 一旦注册任意字体，内置默认字体栈（Noto Sans + M+ 1P + Ahem）不再加载，
+    /// 调用方需自行覆盖所有渲染场景的字符集。
+    pub fn add_font(&mut self, asset: FontAsset) {
+        self.fonts.push(asset);
     }
 
     /// 真实 `EventLoop::run` 的**可测试 setup 核心**（DC-2 终端阻塞壳前置）。
@@ -109,30 +146,17 @@ impl PlatformRuntime for WinitRuntime {
         let app_ptr: *mut dyn UiApp = unsafe { std::mem::transmute::<&mut dyn UiApp, *mut dyn UiApp>(app) };
 
         let mut ui_text_backend = FontdueBackend::new();
-        // 主字体：Noto Sans（拉丁字符覆盖 gallery UI 文案）。WOFF 容器需先解码为 TTF 字节。
-        // 失败时仍加载 Ahem 作为最后 fallback（保证 scene 有 glyph，不至于全帧空白）。
-        let noto = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/noto/noto-sans-v8-latin-regular.woff");
-        match zero_render_foundation::font::decode_woff(noto) {
-            Some(ttf) => match ui_text_backend.load_family("UI", &ttf) {
-                Ok(fid) => eprintln!("[DBG] noto font loaded: id={fid:?}, len={}", ui_text_backend.len()),
-                Err(e) => eprintln!("[DBG] noto font load FAILED: {e:?}"),
-            },
-            None => eprintln!("[DBG] noto woff decode failed"),
-        }
-        // CJK 字体：M+ 1P 覆盖中文/日文/韩文，与 Noto Sans 形成互补的 per-char fallback
-        // （RenderFoundationBackend::draw_text 已实现：每个字符按字体顺序尝试 has_char）。
-        // 不加载此字体时，gallery 切到 zh 后所有中文文案查不到 glyph → 文字消失。
-        let mplus = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/mplus-1p-regular.woff");
-        match zero_render_foundation::font::decode_woff(mplus) {
-            Some(ttf) => match ui_text_backend.load_family("CJK", &ttf) {
-                Ok(fid) => eprintln!("[DBG] mplus font loaded: id={fid:?}, len={}", ui_text_backend.len()),
-                Err(e) => eprintln!("[DBG] mplus font load FAILED: {e:?}"),
-            },
-            None => eprintln!("[DBG] mplus woff decode failed"),
-        }
-        match ui_text_backend.load_family("Ahem", AHEM) {
-            Ok(fid) => eprintln!("[DBG] ahem font loaded: id={fid:?}, len={}", ui_text_backend.len()),
-            Err(e) => eprintln!("[DBG] ahem font load FAILED: {e:?}"),
+        // 字体加载（DC-17 FontConfig API）：
+        // - 若调用方通过 add_font 注册了任意字体 → 仅加载用户列表（调用方负责覆盖字符集）
+        // - 否则回落到内置默认栈：Noto Sans（拉丁） + M+ 1P（CJK） + Ahem（fallback 占位）
+        //   保持向后兼容，gallery 之外的 example 不需要改。
+        let user_fonts = std::mem::take(&mut self.fonts);
+        if !user_fonts.is_empty() {
+            for asset in &user_fonts {
+                load_font_asset(&mut ui_text_backend, asset);
+            }
+        } else {
+            load_default_fonts(&mut ui_text_backend);
         }
         let mut handler = SdkGpuApp {
             window_attrs: Some(window_attrs),
@@ -186,6 +210,56 @@ struct SdkGpuApp {
 
 /// Ahem 测试字体（证明文本渲染的最小字体）。
 const AHEM: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+/// 内置默认字体栈（DC-17：调用方未注册任何字体时使用）。
+///
+/// - Noto Sans（拉丁，gallery UI 文案）
+/// - M+ 1P（CJK，与 Noto Sans 互补 per-char fallback）
+/// - Ahem（最后兜底，保证 scene 有 glyph 不全帧空白）
+///
+/// WOFF 容器先解码为 TTF 字节再送后端 `load_family`。
+fn load_default_fonts(backend: &mut FontdueBackend) {
+    let noto = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/noto/noto-sans-v8-latin-regular.woff");
+    match zero_render_foundation::font::decode_woff(noto) {
+        Some(ttf) => match backend.load_family("UI", &ttf) {
+            Ok(fid) => eprintln!("[DBG] noto font loaded: id={fid:?}, len={}", backend.len()),
+            Err(e) => eprintln!("[DBG] noto font load FAILED: {e:?}"),
+        },
+        None => eprintln!("[DBG] noto woff decode failed"),
+    }
+    let mplus = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/mplus-1p-regular.woff");
+    match zero_render_foundation::font::decode_woff(mplus) {
+        Some(ttf) => match backend.load_family("CJK", &ttf) {
+            Ok(fid) => eprintln!("[DBG] mplus font loaded: id={fid:?}, len={}", backend.len()),
+            Err(e) => eprintln!("[DBG] mplus font load FAILED: {e:?}"),
+        },
+        None => eprintln!("[DBG] mplus woff decode failed"),
+    }
+    match backend.load_family("Ahem", AHEM) {
+        Ok(fid) => eprintln!("[DBG] ahem font loaded: id={fid:?}, len={}", backend.len()),
+        Err(e) => eprintln!("[DBG] ahem font load FAILED: {e:?}"),
+    }
+}
+
+/// 加载调用方注册的字体（DC-17 FontConfig API）。
+///
+/// WOFF 容器自动解码；TTF/OTF 直送后端。失败时 eprintln 警告但不 panic。
+fn load_font_asset(backend: &mut FontdueBackend, asset: &FontAsset) {
+    let bytes: Vec<u8> = match asset.container {
+        FontContainer::Ttf => asset.data.to_vec(),
+        FontContainer::Woff => match zero_render_foundation::font::decode_woff(asset.data) {
+            Some(ttf) => ttf,
+            None => {
+                eprintln!("[DBG] font {} woff decode failed", asset.family);
+                return;
+            }
+        },
+    };
+    match backend.load_family(asset.family, &bytes) {
+        Ok(fid) => eprintln!("[DBG] font {} loaded: id={fid:?}, len={}", asset.family, backend.len()),
+        Err(e) => eprintln!("[DBG] font {} load FAILED: {e:?}", asset.family),
+    }
+}
 
 impl ApplicationHandler<()> for SdkGpuApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -287,14 +361,57 @@ impl ApplicationHandler<()> for SdkGpuApp {
                             let (primitives, mut image_cache) =
                                 std::mem::replace(backend, fresh).into_primitives_and_cache();
 
+                            let fillrects = scene
+                                .entries
+                                .iter()
+                                .filter(|e| {
+                                    matches!(
+                                        &e.primitive,
+                                        zero_ui_render::render_node::RenderPrimitive::FillRect { .. }
+                                    )
+                                })
+                                .count();
+                            let strs = scene
+                                .entries
+                                .iter()
+                                .filter(|e| {
+                                    matches!(&e.primitive, zero_ui_render::render_node::RenderPrimitive::Text { .. })
+                                })
+                                .count();
+                            let imgs = scene
+                                .entries
+                                .iter()
+                                .filter(|e| {
+                                    matches!(&e.primitive, zero_ui_render::render_node::RenderPrimitive::Image { .. })
+                                })
+                                .count();
+                            let strokes = scene
+                                .entries
+                                .iter()
+                                .filter(|e| {
+                                    matches!(
+                                        &e.primitive,
+                                        zero_ui_render::render_node::RenderPrimitive::StrokeRect { .. }
+                                    )
+                                })
+                                .count();
+                            let blobs = scene
+                                .entries
+                                .iter()
+                                .filter(|e| {
+                                    matches!(
+                                        &e.primitive,
+                                        zero_ui_render::render_node::RenderPrimitive::TextBlob { .. }
+                                    )
+                                })
+                                .count();
                             eprintln!(
-                                "[DBG] scene={} fills={} rounded={} images={} glyphs={} clips={}",
+                                "[DBG] scene={} (fr={fillrects} txt={strs} img={imgs} stk={strokes} blob={blobs}) fills={} rounded={} images={} glyphs={}",
                                 scene.entries.len(),
                                 primitives.fills.len(),
                                 primitives.rounded_rects.len(),
                                 primitives.images.len(),
                                 primitives.glyphs.len(),
-                                primitives.clips.len(),
                             );
 
                             gpu.render_full_scene_gpu(

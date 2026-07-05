@@ -6,10 +6,23 @@
 //! 3. 经 RenderFoundationBackend 把 Scene 转换为 RenderPrimitives
 //! 4. 经 GpuRenderer 渲染到窗口 surface
 
+use zero_ui_adapter_winit::{FontAsset, FontContainer};
 use zero_ui_runtime::platform::PlatformRuntime;
 
 fn main() {
     let mut rt = zero_ui_adapter_winit::WinitRuntime::new();
+    // 注册字体（DC-17 FontConfig API）：调用方负责自己 example 的字体资源，
+    // adapter 不再硬编码依赖 wpt-runner 测试目录。注册顺序 = fallback 顺序。
+    rt.add_font(FontAsset {
+        family: "UI",
+        data: include_bytes!("../../../tests/wpt-runner/wpt-data/fonts/noto/noto-sans-v8-latin-regular.woff"),
+        container: FontContainer::Woff,
+    });
+    rt.add_font(FontAsset {
+        family: "CJK",
+        data: include_bytes!("../../../tests/wpt-runner/wpt-data/fonts/mplus-1p-regular.woff"),
+        container: FontContainer::Woff,
+    });
     rt.set_register(|host| {
         zero_ui_examples::gallery::register_gallery_factories(host);
     });
