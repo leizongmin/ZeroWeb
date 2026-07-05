@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1060 Bug 2（case-b block-mixed anon 盒满宽）measure 级修复 REFUTED = taffy 0.7 忽略 measured block leaf 的 measure 返回宽（probe 实测 measure 返 192 但 box 仍 w=100）·box width 源未定位·需 anon-box 重构或 taffy 升级·零 net 源码·纯调查
+
+承 R1059 CONTINUE（Bug 2 攻坚——block-mixed anon 盒 w=文本宽非满 container 宽，entry tree.rs:827 + measure_text_content:868）。本轮实施 measure 级修复 + probe 实证，**REFUTED：taffy 0.7 不用 measure 返回宽给 measured block leaf 赋宽，box w=100 源未定位，需 anon-box 重构**。
+
+**measure 级修复尝试**：`measure_text_content` text-node 分支（inline_finalization.rs:868）`width: known_dimensions.width.unwrap_or(measured_width)` → 加 `available_space.width` Definite 分支（block 上下文用 container 宽，MinContent/MaxContent 保留 measured_width）。逻辑正确（block 应满父宽）。
+
+**R1060DBG probe 实证（anonymous-box-generation-001）**：measure 调用 1 次 `text="Filler Text" known_w=None avail_w=Definite(192.0) measured_w=92.0 -> ret_w=192.0`。**measure 返回 192（修复生效）**。但 LAYOUT_DUMP anon 盒 `w=100` 不变（ neither 192 Definite nor 92 measured）。
+
+**★ taffy 0.7 行为**：`new_leaf_with_context(anon_style, ctx_node)`（tree.rs:832）创建的 measured leaf，taffy **不用 measure 返回的 width** 给 box 赋宽（measure 仅用于 height / intrinsic hint）。extract_layout `width = layout.size.width`（engine.rs:1213）直读 taffy resolved，= 100。**100 源未定位**（非 measured_w=92、非 Definite=192、非 container=192；疑 taffy 0.7 measured-leaf block sizing 内部值或 cache）。
+
+**裁决**：measure 级修复 REFUTED（已 git checkout 回退）。Bug 2 真 fix 须：① anon 盒**重构为非 measured leaf**（new_with_children + 子 IFC 节点，让 taffy block 流满父宽），多 session 架构；② 或 extract_layout 后处理把 anon 盒（fragment_node_ids.is_some）width 设为父 content_width——但 IFC 已在 wrong width(100) 跑，仅改 box width 不 fix text-align:center（须 rerun IFC）；③ 或 taffy R304 升级（已 ruled out vertical 收益，但 measured-leaf block sizing 或修）。**皆多 session / out-of-single-session**。
+
+**意义**：排除「measure 返文本宽是 Bug 2 根因」假设（measure 返 192 但 taffy 忽略）——R1059 的 Bug 2 entry 须 correction（root cause 非 measure_text_content:868，是 taffy 0.7 measured-leaf block sizing）。锁定为 taffy-side，ZW-side measure 修无效。
+
+**▶ 下会话**：① Bug 1（case-a split-span 内块子 3px x-offset，R1059 定位）——span w=6 residual inline 盒来源 + 3px offset，可能在 ZW-side（非 taffy），比 Bug 2 tractable；② 或 pivot 非 R109 角度（box-display borderline 含 containing-block-007/008/010/019/028/030 多案 1.1-1.3%，非 anon-box 簇）；③ Bug 2 留待 taffy 升级或 anon-box 架构重构。★ Bug 2 勿再以 measure_text_content 修（R1060 refuted）。
+
 ### R1059 block-in-inline margin-collapse 簇调查 = margin 已正确折叠（R1058 后）+ 2 R109 anon-box 构造 bug 精确定位（case-a split-span 内块子 3px x-offset / case-b block-mixed anon 盒 w=文本宽非满宽）·多 session structural·零 net 源码·纯调查
 
 承 R1058 CONTINUE（block-in-inline margin-collapse 簇，box-display 10 案 1.0-1.66% flip 候选）。本轮 LAYOUT_DUMP 簇逐案对比 test vs ref，**margin 折叠已正确（R1058 后），残余 diff = 2 个 R109 anon-box 构造 bug，多 session structural，定位精确供后续 session**。
