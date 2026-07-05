@@ -935,11 +935,7 @@ fn test_border_logical_inline_start_horizontal_tb() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "writing-mode", "horizontal-tb"));
     assert!(apply_property_value(&mut style, "border-inline-start-width", "5px"));
-    assert!(apply_property_value(
-        &mut style,
-        "border-inline-start-style",
-        "solid"
-    ));
+    assert!(apply_property_value(&mut style, "border-inline-start-style", "solid"));
     assert_eq!(style.border_left_width, LengthValue::Px(5.0));
     assert_eq!(style.border_left_style, BorderStyleValue::Solid);
 }
@@ -985,11 +981,7 @@ fn test_border_logical_shorthand_inline_start_color() {
     // horizontal-tb + border-inline-start: 2px solid green → border-left-*
     let mut style = ComputedStyle::default();
     // 直接验证 longhand color 路径
-    assert!(apply_property_value(
-        &mut style,
-        "border-inline-start-color",
-        "green"
-    ));
+    assert!(apply_property_value(&mut style, "border-inline-start-color", "green"));
     assert_eq!(style.border_left_color, ColorValue::Rgba(0, 128, 0, 255));
 }
 

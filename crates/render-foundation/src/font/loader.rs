@@ -25,9 +25,7 @@ mod freetype_raster {
     /// 在线程局部 FreeType Library 上跑一次闭包（懒初始化）。
     fn with_lib<R>(f: impl FnOnce(&freetype::Library) -> R) -> R {
         FT_LIB.with(|cell| {
-            let lib = cell.get_or_init(|| {
-                freetype::Library::init().expect("FreeType Library::init failed")
-            });
+            let lib = cell.get_or_init(|| freetype::Library::init().expect("FreeType Library::init failed"));
             f(lib)
         })
     }
@@ -36,11 +34,7 @@ mod freetype_raster {
     ///
     /// `font_bytes`：字体 sfnt 字节（来自 FontLoader.font_data）。`size`：字号 px。
     /// 失败（字形缺失 / FreeType 错误）由调用方回退 fontdue。
-    pub(crate) fn rasterize(
-        font_bytes: &[u8],
-        code_point: char,
-        size: f32,
-    ) -> Result<GlyphBitmap, FontError> {
+    pub(crate) fn rasterize(font_bytes: &[u8], code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
         if size <= 0.0 {
             return Err(FontError::NotFound(format!("non-positive size {size}")));
         }
@@ -76,8 +70,7 @@ mod freetype_raster {
                     let src_off = y * pitch;
                     if src_off + copy_w <= src.len() {
                         let dst_off = y * width as usize;
-                        data[dst_off..dst_off + copy_w]
-                            .copy_from_slice(&src[src_off..src_off + copy_w]);
+                        data[dst_off..dst_off + copy_w].copy_from_slice(&src[src_off..src_off + copy_w]);
                     }
                 }
             }
@@ -635,10 +628,14 @@ mod tests {
     fn freetype_rasterize_ahem_glyph_end_to_end() {
         // loader.rs 在 crates/render-foundation/src/font/，4 级 .. 回 workspace 根。
         const AHEM_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
-        let bm = freetype_raster::rasterize(AHEM_TTF, 'X', 20.0)
-            .expect("FreeType should rasterize Ahem 'X' @20px");
+        let bm = freetype_raster::rasterize(AHEM_TTF, 'X', 20.0).expect("FreeType should rasterize Ahem 'X' @20px");
         // Ahem 方块：位图非空，宽高 ≈ 20px（FreeType @20px 实测 20×20，A4）。
-        assert!(bm.width > 0 && bm.height > 0, "non-empty bitmap, got {}x{}", bm.width, bm.height);
+        assert!(
+            bm.width > 0 && bm.height > 0,
+            "non-empty bitmap, got {}x{}",
+            bm.width,
+            bm.height
+        );
         assert!(
             (bm.width as i32 - 20).abs() <= 1 && (bm.height as i32 - 20).abs() <= 1,
             "Ahem @20px ≈ 20x20, got {}x{}",
@@ -653,13 +650,8 @@ mod tests {
             bm.y_offset
         );
         // advance ≈ font_size（Ahem 等宽 = em）。
-        assert!(
-            (bm.advance - 20.0).abs() < 2.0,
-            "Ahem advance ≈ 20, got {}",
-            bm.advance
-        );
+        assert!((bm.advance - 20.0).abs() < 2.0, "Ahem advance ≈ 20, got {}", bm.advance);
     }
-
 
     /// 加载系统字体数据（如果可用）
     fn load_system_font_data() -> Option<Vec<u8>> {

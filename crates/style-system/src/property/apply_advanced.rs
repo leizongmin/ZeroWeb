@@ -139,8 +139,10 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         //                block-start=left, block-end=right
         // inline 轴的 direction 暂按 ltr（vertical 模式 inline-start=top）；这是
         // logical-props-001 等 vertical-rl 用例的预期。
-        "border-inline-start-width" | "border-inline-end-width"
-        | "border-block-start-width" | "border-block-end-width" => {
+        "border-inline-start-width"
+        | "border-inline-end-width"
+        | "border-block-start-width"
+        | "border-block-end-width" => {
             if let Some(v) = parse_length_or_math(value) {
                 if let LengthValue::Px(px) = v
                     && px < 0.0
@@ -152,16 +154,20 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
-        "border-inline-start-style" | "border-inline-end-style"
-        | "border-block-start-style" | "border-block-end-style" => {
+        "border-inline-start-style"
+        | "border-inline-end-style"
+        | "border-block-start-style"
+        | "border-block-end-style" => {
             if let Some(v) = parse_border_style(value) {
                 let side = logical_border_physical_side(property, &style.writing_mode);
                 set_border_style_field(style, side, v);
                 return true;
             }
         }
-        "border-inline-start-color" | "border-inline-end-color"
-        | "border-block-start-color" | "border-block-end-color" => {
+        "border-inline-start-color"
+        | "border-inline-end-color"
+        | "border-block-start-color"
+        | "border-block-end-color" => {
             if let Some(v) = values::parse_color(value) {
                 let side = logical_border_physical_side(property, &style.writing_mode);
                 set_border_color_field(style, side, v);
@@ -1444,11 +1450,7 @@ fn logical_physical_side(axis_inline: bool, start: bool, wm: &WritingModeValue) 
 ///
 /// 属性名形如 `border-{axis}-{side}-{kind}`，axis ∈ {inline, block}，side ∈ {start, end}。
 fn logical_border_physical_side(property: &str, wm: &WritingModeValue) -> PhysicalSide {
-    logical_physical_side(
-        property.contains("-inline-"),
-        property.contains("-start-"),
-        wm,
-    )
+    logical_physical_side(property.contains("-inline-"), property.contains("-start-"), wm)
 }
 
 fn set_border_width_field(style: &mut ComputedStyle, side: PhysicalSide, v: LengthValue) {
