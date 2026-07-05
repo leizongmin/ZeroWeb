@@ -1,8 +1,12 @@
-//! Gallery 通用 chrome 控件（DC-17 refactor）。
+//! Gallery 通用 chrome 控件（DC-17 refactor / P1-6 主题单源）。
 //!
 //! 这里集中了 sidebar/header/demo pane 用到的「外壳」控件（不参与 DemoPreview 派发）：
 //! - HeaderTitle / HeaderButton / NavItem / NavSearch / GroupHeader / DemoTitle / Spacer
-//! - 共享 helper：theme_from_props / locale_from_props / tokens_for
+//! - 共享 helper：locale_from_props / sync_text / mark_(paint|layout)_if_changed
+//!
+//! 主题色统一从 `PaintCtx.tokens` 取（host 级 `set_tokens` 注入，主题变化时整体重画）；
+//! chrome 控件不再存 theme 字段，也不需要从 props 同步——避免「props.theme → 字段 →
+//! tokens_for → paint」与「host.tokens → paint」双路径不一致。
 //!
 //! 这些控件原本散在 app.rs 中（占 ~500 行），拆出来后 app.rs 只保留 GalleryApp 主体、
 //! DemoPreview dispatcher 和 SourceCode/SourceLabel。
@@ -11,20 +15,12 @@ use zero_ui_core::action::{ActionId, ActionPayload, EventResult};
 use zero_ui_core::binding::Value;
 use zero_ui_core::event::{KeyAction, PointerPhase, UiEvent};
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
-use zero_ui_core::theme::{Color, SemanticTokens};
+use zero_ui_core::theme::Color;
 use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget};
 
-use super::model::{Locale, ThemeKind};
+use super::model::Locale;
 
 // ========== 共享 helper ==========
-
-/// 从 props 解析 theme（缺失或非法时回落 Light，与默认主题 token 一致）。
-pub(crate) fn theme_from_props(props: &Props) -> ThemeKind {
-    match props.get("theme") {
-        Some(Value::Text(s)) => ThemeKind::parse_str(s).unwrap_or(ThemeKind::Light),
-        _ => ThemeKind::Light,
-    }
-}
 
 /// 从 `locale` prop 解析当前语言（非法/缺省回落 En）。
 pub(crate) fn locale_from_props(props: &Props) -> Locale {
@@ -32,25 +28,6 @@ pub(crate) fn locale_from_props(props: &Props) -> Locale {
         Some(Value::Text(s)) => Locale::parse_str(s).unwrap_or(Locale::En),
         _ => Locale::En,
     }
-}
-
-/// 由 ThemeKind 取 semantic token 色板（与 host 持有的 tokens 同口径）。
-pub(crate) fn tokens_for(theme: ThemeKind) -> SemanticTokens {
-    match theme {
-        ThemeKind::Light => SemanticTokens::light(),
-        ThemeKind::Dark => SemanticTokens::dark(),
-    }
-}
-
-/// 便利 helper：从 props 读 theme 写回 `field`，返回是否变化。
-///
-/// 用来减少每个 chrome widget update 中重复的 4 行 `theme_from_props + 比对 + 写字段` 代码。
-/// 调用方负责把变化标到 NEEDS_PAINT（因为同时还可能要看其它字段是否变化）。
-pub(crate) fn sync_theme(props: &Props, field: &mut ThemeKind) -> bool {
-    let new_theme = theme_from_props(props);
-    let changed = new_theme != *field;
-    *field = new_theme;
-    changed
 }
 
 /// 便利 helper：从 props 读文本字段写回 `field`，返回是否变化。
@@ -88,17 +65,15 @@ pub(crate) fn mark_layout_if_changed(ctx: &mut UpdateCtx, changed: bool) {
 /// Header 标题
 pub struct HeaderTitle {
     pub(crate) text: String,
-    pub(crate) theme: ThemeKind,
 }
 
 impl Widget for HeaderTitle {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        // 文本长度决定 layout 宽度 → sync_text 走 layout；theme 仅色变走 paint。
+        // 文本长度决定 layout 宽度 → sync_text 走 layout。
+        // 主题色变走 NEEDS_PAINT 由 host 级 mark 触发（不再存 theme 字段，paint 直接读 ctx.tokens）。
         let text_changed = sync_text(props, "text", &mut self.text);
-        let theme_changed = sync_theme(props, &mut self.theme);
         mark_layout_if_changed(ctx, text_changed);
-        mark_paint_if_changed(ctx, theme_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
         EventResult::Ignored
@@ -108,9 +83,8 @@ impl Widget for HeaderTitle {
         Size::new(w, 40.0_f32.clamp(c.min_height, c.max_height))
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let tokens = tokens_for(self.theme);
         ctx.recorder
-            .draw_text(&self.text, Point::new(12.0, 26.0), 18.0, tokens.on_background);
+            .draw_text(&self.text, Point::new(12.0, 26.0), 18.0, ctx.tokens.on_background);
     }
     fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
@@ -157,19 +131,16 @@ pub struct HeaderButton {
     pub(crate) label: String,
     pub(crate) action: ActionId,
     pub(crate) pressed: bool,
-    pub(crate) theme: ThemeKind,
 }
 
 impl Widget for HeaderButton {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
         let label_changed = sync_text(props, "label", &mut self.label);
-        let theme_changed = sync_theme(props, &mut self.theme);
         if let Some(Value::Text(a)) = props.get("action") {
             self.action = ActionId::new(a);
         }
         mark_layout_if_changed(ctx, label_changed);
-        mark_paint_if_changed(ctx, theme_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         match event {
@@ -198,7 +169,7 @@ impl Widget for HeaderButton {
         )
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let tokens = tokens_for(self.theme);
+        let tokens = ctx.tokens;
         let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(64.0, 32.0));
         let bg = if self.pressed { tokens.primary } else { tokens.surface };
         ctx.recorder.fill_rect(Rect::from_origin_size(Point::ZERO, size), bg);
@@ -230,18 +201,16 @@ pub struct NavItem {
     pub(crate) page_id: String,
     pub(crate) selected: bool,
     pub(crate) pressed: bool,
-    pub(crate) theme: ThemeKind,
 }
 
 impl Widget for NavItem {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
         let label_changed = sync_text(props, "label", &mut self.label);
-        let theme_changed = sync_theme(props, &mut self.theme);
         if let Some(Value::Text(p)) = props.get("page_id") {
             self.page_id = p.clone();
         }
-        let mut paint_changed = theme_changed;
+        let mut paint_changed = false;
         if let Some(Value::Bool(s)) = props.get("selected")
             && *s != self.selected
         {
@@ -279,7 +248,7 @@ impl Widget for NavItem {
         Size::new(w, 32.0_f32.clamp(c.min_height, c.max_height))
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let tokens = tokens_for(self.theme);
+        let tokens = ctx.tokens;
         let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(220.0, 32.0));
         if self.selected {
             let washed = Color::rgb(
@@ -315,18 +284,16 @@ pub struct GroupHeader {
     pub(crate) group: String,
     pub(crate) collapsed: bool,
     pub(crate) pressed: bool,
-    pub(crate) theme: ThemeKind,
 }
 
 impl Widget for GroupHeader {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
         let label_changed = sync_text(props, "label", &mut self.label);
-        let theme_changed = sync_theme(props, &mut self.theme);
         if let Some(Value::Text(g)) = props.get("group") {
             self.group = g.clone();
         }
-        let mut paint_changed = theme_changed;
+        let mut paint_changed = false;
         if let Some(Value::Bool(c)) = props.get("collapsed")
             && *c != self.collapsed
         {
@@ -364,7 +331,7 @@ impl Widget for GroupHeader {
         Size::new(w, 28.0_f32.clamp(c.min_height, c.max_height))
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let tokens = tokens_for(self.theme);
+        let tokens = ctx.tokens;
         let prefix = if self.collapsed { "▸ " } else { "▾ " };
         let display = format!("{}{}", prefix, self.label);
         let fg = if self.pressed {
@@ -389,7 +356,6 @@ impl Widget for GroupHeader {
 /// 导航搜索框
 pub struct NavSearch {
     pub(crate) query: String,
-    pub(crate) theme: ThemeKind,
     pub(crate) locale: Locale,
 }
 
@@ -397,10 +363,10 @@ impl Widget for NavSearch {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
         let new_locale = locale_from_props(props);
-        let mut changed = new_locale != self.locale;
+        let locale_changed = new_locale != self.locale;
         self.locale = new_locale;
-        changed |= sync_theme(props, &mut self.theme) || sync_text(props, "query", &mut self.query);
-        mark_paint_if_changed(ctx, changed);
+        let query_changed = sync_text(props, "query", &mut self.query);
+        mark_paint_if_changed(ctx, locale_changed || query_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         let UiEvent::Key {
@@ -442,7 +408,7 @@ impl Widget for NavSearch {
         Size::new(w, 32.0_f32.clamp(c.min_height, c.max_height))
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let tokens = tokens_for(self.theme);
+        let tokens = ctx.tokens;
         let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(220.0, 32.0));
         let border = Color::rgb(
             tokens.on_background.r * 0.4 + tokens.background.r * 0.6,
@@ -477,15 +443,12 @@ impl Widget for NavSearch {
 pub struct DemoTitle {
     pub(crate) text: String,
     pub(crate) desc: String,
-    pub(crate) theme: ThemeKind,
 }
 
 impl Widget for DemoTitle {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let changed = sync_theme(props, &mut self.theme)
-            || sync_text(props, "text", &mut self.text)
-            || sync_text(props, "desc", &mut self.desc);
+        let changed = sync_text(props, "text", &mut self.text) || sync_text(props, "desc", &mut self.desc);
         mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
@@ -496,7 +459,7 @@ impl Widget for DemoTitle {
         Size::new(c.max_width, h)
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let tokens = tokens_for(self.theme);
+        let tokens = ctx.tokens;
         ctx.recorder
             .draw_text(&self.text, Point::new(16.0, 24.0), 20.0, tokens.on_background);
         let desc_fg = Color::rgb(

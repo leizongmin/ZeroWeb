@@ -12,7 +12,6 @@ use zero_ui_runtime::{UiApp, WidgetHost};
 
 use super::chrome::{
     DemoTitle, GroupHeader, HeaderButton, HeaderTitle, NavItem, NavSearch, Spacer, mark_paint_if_changed, sync_text,
-    sync_theme, tokens_for,
 };
 use super::highlight::{highlight_rust, highlight_yaml, token_color};
 use super::model::{DemoPage, GroupId, Locale, ThemeKind};
@@ -254,6 +253,15 @@ impl UiApp for GalleryApp {
         self.root_spec()
     }
 
+    /// P1-6 主题单源：把 self.theme 映射为 semantic tokens，由 driver 注入 host.set_tokens。
+    /// 控件 paint 直接读 PaintCtx.tokens，无需各自存 theme 字段。
+    fn theme_tokens(&self) -> Option<zero_ui_core::theme::SemanticTokens> {
+        Some(match self.theme {
+            ThemeKind::Light => zero_ui_core::theme::SemanticTokens::light(),
+            ThemeKind::Dark => zero_ui_core::theme::SemanticTokens::dark(),
+        })
+    }
+
     fn dispatch(&mut self, action: &ActionId, payload: Option<ActionPayload>) -> ActionResult {
         match action.0.as_str() {
             "gallery.nav.select" => {
@@ -305,7 +313,6 @@ impl UiApp for GalleryApp {
 /// Demo 预览区
 pub struct DemoPreview {
     page_id: String,
-    theme: ThemeKind,
     /// 内部交互状态：随 page 不同语义不同（如 toggle 的 on/off、button 的 pressed index）。
     /// 用 u64 位掩码：低 8 位用于 toggle on/off 标志位 0..7。
     state: u64,
@@ -314,11 +321,9 @@ pub struct DemoPreview {
 impl Widget for DemoPreview {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        // page_id 决定预览区高度 → layout；theme 仅 paint。
+        // page_id 决定预览区高度 → layout；色变走 NEEDS_PAINT 由 host 级 mark 触发。
         let page_changed = sync_text(props, "page_id", &mut self.page_id);
-        let theme_changed = sync_theme(props, &mut self.theme);
         super::chrome::mark_layout_if_changed(ctx, page_changed);
-        mark_paint_if_changed(ctx, theme_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         // 仅响应在 toggle 预览区内的点击：翻转第 i 位。
@@ -366,7 +371,7 @@ impl Widget for DemoPreview {
         Size::new(c.max_width, h.clamp(c.min_height, c.max_height))
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let tokens = tokens_for(self.theme);
+        let tokens = ctx.tokens;
         let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(400.0, 120.0));
         let frame = Rect::from_origin_size(Point::new(8.0, 4.0), Size::new(size.width - 16.0, size.height - 8.0));
         ctx.recorder.fill_rect(frame, tokens.surface);
@@ -378,7 +383,7 @@ impl Widget for DemoPreview {
         ctx.recorder.stroke_rect(frame, border, 1.0);
 
         match super::preview::painter_for(&self.page_id) {
-            Some(painter) => painter.paint(self.state, &tokens, ctx),
+            Some(painter) => painter.paint(self.state, tokens, ctx),
             None => {
                 // 占位：未实现真实交互预览的页面继续显示 "{page} preview" 文案。
                 let label = format!("{} preview", self.page_id.replace('_', " "));
@@ -407,13 +412,12 @@ fn preview_height_for(page_id: &str) -> f32 {
 /// 源码标签
 pub struct SourceLabel {
     text: String,
-    theme: ThemeKind,
 }
 
 impl Widget for SourceLabel {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let changed = sync_theme(props, &mut self.theme) || sync_text(props, "text", &mut self.text);
+        let changed = sync_text(props, "text", &mut self.text);
         mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
@@ -423,7 +427,7 @@ impl Widget for SourceLabel {
         Size::new(c.max_width, 24.0_f32.clamp(c.min_height, c.max_height))
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let tokens = tokens_for(self.theme);
+        let tokens = ctx.tokens;
         let fg = Color::rgb(
             tokens.on_background.r * 0.6 + tokens.background.r * 0.4,
             tokens.on_background.g * 0.6 + tokens.background.g * 0.4,
@@ -438,18 +442,16 @@ impl Widget for SourceLabel {
 pub struct SourceCode {
     source: String,
     lang: String,
-    theme: ThemeKind,
 }
 
 impl Widget for SourceCode {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        // source 行数决定高度 → layout；lang/theme 仅 paint。
+        // source 行数决定高度 → layout；lang 仅 paint。
         let source_changed = sync_text(props, "source", &mut self.source);
-        let theme_changed = sync_theme(props, &mut self.theme);
         let lang_changed = sync_text(props, "lang", &mut self.lang);
         super::chrome::mark_layout_if_changed(ctx, source_changed);
-        mark_paint_if_changed(ctx, theme_changed || lang_changed);
+        mark_paint_if_changed(ctx, lang_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
         EventResult::Ignored
@@ -461,7 +463,7 @@ impl Widget for SourceCode {
         Size::new(c.max_width, h)
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        let tokens = tokens_for(self.theme);
+        let tokens = ctx.tokens;
         let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(400.0, 100.0));
         // 代码块用比 surface 略亮/略深的"卡片"色：浅色 → 比 surface 略亮，深色 → 比 surface 略深。
         let card = Color::rgb(
@@ -538,12 +540,7 @@ fn bool_prop(spec: &WidgetSpec, key: &str) -> bool {
 
 /// 注册画廊所有自定义控件工厂
 pub fn register_gallery_factories(host: &mut WidgetHost) {
-    host.register("HeaderTitle", |_spec| {
-        Box::new(HeaderTitle {
-            text: String::new(),
-            theme: ThemeKind::Light,
-        })
-    });
+    host.register("HeaderTitle", |_spec| Box::new(HeaderTitle { text: String::new() }));
     host.register("Spacer", |spec| {
         let axis = str_prop(spec, "axis").unwrap_or_else(|| "horizontal".into());
         Box::new(Spacer { axis })
@@ -557,7 +554,6 @@ pub fn register_gallery_factories(host: &mut WidgetHost) {
             label,
             action,
             pressed: false,
-            theme: ThemeKind::Light,
         })
     });
     host.register("NavItem", |spec| {
@@ -569,7 +565,6 @@ pub fn register_gallery_factories(host: &mut WidgetHost) {
             page_id,
             selected,
             pressed: false,
-            theme: ThemeKind::Light,
         })
     });
     host.register("GroupHeader", |spec| {
@@ -581,49 +576,32 @@ pub fn register_gallery_factories(host: &mut WidgetHost) {
             group,
             collapsed,
             pressed: false,
-            theme: ThemeKind::Light,
         })
     });
     host.register("NavSearch", |spec| {
         let query = str_prop(spec, "query").unwrap_or_default();
         Box::new(NavSearch {
             query,
-            theme: ThemeKind::Light,
             locale: Locale::En,
         })
     });
     host.register("DemoTitle", |spec| {
         let text = str_prop(spec, "text").unwrap_or_default();
         let desc = str_prop(spec, "desc").unwrap_or_default();
-        Box::new(DemoTitle {
-            text,
-            desc,
-            theme: ThemeKind::Light,
-        })
+        Box::new(DemoTitle { text, desc })
     });
     host.register("DemoPreview", |spec| {
         let page_id = str_prop(spec, "page_id").unwrap_or_default();
-        Box::new(DemoPreview {
-            page_id,
-            theme: ThemeKind::Light,
-            state: 0,
-        })
+        Box::new(DemoPreview { page_id, state: 0 })
     });
     host.register("SourceLabel", |spec| {
         let text = str_prop(spec, "text").unwrap_or_default();
-        Box::new(SourceLabel {
-            text,
-            theme: ThemeKind::Light,
-        })
+        Box::new(SourceLabel { text })
     });
     host.register("SourceCode", |spec| {
         let source = str_prop(spec, "source").unwrap_or_default();
         let lang = str_prop(spec, "lang").unwrap_or_else(|| "yaml".into());
-        Box::new(SourceCode {
-            source,
-            lang,
-            theme: ThemeKind::Light,
-        })
+        Box::new(SourceCode { source, lang })
     });
 }
 
@@ -939,7 +917,6 @@ mod tests {
             page_id: "toggle".into(),
             selected: false,
             pressed: false,
-            theme: ThemeKind::Light,
         };
         let ev = UiEvent::Pointer {
             phase: PointerPhase::Released,

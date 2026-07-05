@@ -100,6 +100,10 @@ impl<'app> WinitDriver<'app> {
     /// 首帧：reconcile 根声明树（`app.root_spec()`）+ 紧约束布局（窗口尺寸）+ 首次 paint。
     /// 控件工厂必须已注册。调用后 invalidation 清空（`pump_frame` 随后返回 [`Idle`](FrameOutcome::Idle)）。
     pub fn begin(&mut self) {
+        // P1-6 主题单源：app 通过 theme_tokens() 注入 host 级 tokens，控件 paint 直接读 ctx.tokens。
+        if let Some(tokens) = self.app.theme_tokens() {
+            self.host.set_tokens(tokens);
+        }
         let spec = self.app.root_spec();
         self.host.set_root(&spec);
         self.host.layout(Constraints::tight(self.metrics.logical_size));
@@ -122,6 +126,10 @@ impl<'app> WinitDriver<'app> {
             }
         }
         if handled {
+            // P1-6：状态可能含主题切换 → 重新注入 tokens（即便未变也无害，set_tokens 不失效）。
+            if let Some(tokens) = self.app.theme_tokens() {
+                self.host.set_tokens(tokens);
+            }
             // 状态可能变化 → 重建声明树；reconcile 按稳定 WidgetId 复用，廉价。
             let spec = self.app.root_spec();
             self.host.set_root(&spec);
