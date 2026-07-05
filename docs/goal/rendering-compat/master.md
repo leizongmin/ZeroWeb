@@ -2648,6 +2648,18 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1062 R1061 text-align bug 定位 = compute_final 确为 anon 盒建 Center IFC（probe 实测 text_align=Center container_w=192 is_block_level=true，存储无条件）·bug 在 paint 侧（use_stored 不为 anon 触发 或 容器 #div1 自身 IFC 渲染文本 而非 anon 盒）·零 net 源码·纯调查
+
+承 R1061 CONTINUE（probe compute_final 内 anon 盒 text-align 应用）。本轮复加 width fix + R1061DBG probe compute_final，**确证 compute_final 端正确，bug 在 paint 侧**。
+
+**R1061DBG probe 实测**（anonymous-box-generation-001，width fix 复加使 anon 盒 w=192）：compute_final 内 anon 盒 `node_id=Some(NodeId(30v1)) container_w=192.0 text_align=Center style.text_align=Center is_block_level=true`。**compute_final 确为 anon 盒以 Center text-align + 192 宽建 IFC**（resolve_text_align(styles[#div1]) = Center 正确）。存储无条件（inline_finalization.rs:831 `if !lines.is_empty()`，"Filler Text" 非空 → 必存）。
+
+**★ bug 缩窄到 paint 侧**：compute_final 建 + 存 Center IFC，但渲染未居中（diff 仅降 0.07pp 非居中应降 ~0.38pp）。paint use_stored 条件（text.rs:937-938）：`multicol_info.is_none() && inline_layout.is_some() && (inline_layout_width - ifc_width).abs() < 1.0`。anon 盒满足（inline_layout Some + 192=192），use_stored 应 true。**疑点**：① paint 是否对 anon 盒（fragment_node_ids.is_some）跑 paint_text？或跳过？② 容器 #div1 自身也有 IFC（node_id 同 30v1，has_text_children via DOM），paint #div1 时若也渲染其 IFC 文本（left?），可能与 anon 盒 Center IFC 冲突/覆盖（双渲染或 #div1 赢）。text.rs:785 `is_r109_split && fragment_node_ids.is_none` 仅处理 split parent（非 fragment），anon fragment 的 paint 路径未单独审计。
+
+**裁决**：width fix + probe 已 git checkout 回退（零 net 源码）。**bug 精确定位 paint 侧**：compute_final 端 Center IFC 正确存储，paint 端未用（或被容器 IFC 覆盖）。下会话 probe paint_text 对 anon fragment 的调用（box_node.fragment_node_ids.is_some 时 use_stored 是否真触发 + 是否双渲染）。
+
+**▶ 下会话**：① probe paint_text 对 anon fragment：在 text.rs:937-938 print use_stored/inline_layout_width/ifc_width for fragment_node_ids.is_some 盒；若 use_stored=false 找原因，若 true 但仍左对齐则查双渲染（#div1 vs anon）；② 找到 paint bug 后，复加 R1061 width fix + paint fix 同落 → yield anonymous-box-generation-001（+1 box-display，可能 unlock case-b 簇）；③ 若 paint 侧复杂，pivot css-backgrounds/borders fresh dir。★ compute_final 端勿再查（R1062 已证正确）。
+
 ### R1061 anon 盒宽度 postprocess 修复（pre-compute_final）= 盒级生效（100→192）但 oracle net-0（4 dir 1348 案零翻转）+ 目标 1.11→1.04 未 flip（text-align:center 另 bug 阻断）·已回退·待 text-align 修后同落·零 net 源码·纯调查
 
 承 R1060 CONTINUE（Bug 2 = block-mixed anon 盒满宽，R1060 推翻 measure 级修复，留下 postprocess width fix 或 anon-box 重构两条路）。本轮实施 **postprocess width fix（pre-compute_final）**：盒级确生效（anon 盒 100→192），但 **A/B 4 dir 1348 案 net-0 零翻转**，目标案仅 1.11→1.04 未 flip，**根因 = text-align:center 另一独立 bug 阻断**。已回退（net-0 不 land）。
