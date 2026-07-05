@@ -2648,6 +2648,21 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1045 text-decoration-thickness 实现实验 = net -2 回退已回退·装饰管线厚度耦合（font-wall 谱系）·零 net 源码·纯调查
+
+承 R1044 CONTINUE（转 css-text-decor / css-floats-clear 清洁 worst）。本轮实现 `text-decoration-thickness` CSS 属性（原完全不支持：parse/store/apply 全缺，paint 用 hardcoded `font_size * 0.06`），**实测 net -2 回退已回退**。
+
+**实现**（已回退）：types.rs `TextDecorationThicknessValue` enum（Auto/FromFont/Length）+ computed_style 字段 + default_impl + apply.rs parse（auto/from-font/length/percentage）+ registry（parse list + property list）+ effects.rs paint_text_decoration_from_style 用显式厚度（length/percentage 相对 font_size 解析，floor + max(1.0)）。
+
+**A/B（css-text-decor Oracle，10GB test-guard per-proc-mem 避 OOM）**：**108→106（net -2）**。
+- thickness-length-rounding-001/002/min-val 簇（~13%）**未 flip**（残余 = 装饰 y-offset 管线 `font_size*0.15` underline / `*0.35` line-through 启发式 vs chromium 字体度量，font-wall 谱系，非厚度主导）。
+- **2 case 回归**：text-decoration-thickness-overline-001（→7.92%）+ thickness-underline-001（→6.08%）原 PASS 现 FAIL——ZW 装饰渲染（offset/style）**为默认厚度（~1px）校准**，改厚度（显式值）致偏移/视觉与 chr 新不匹配。
+- 厚度逻辑正确（2.3px→floor 2，0.3px→floor 0→max 1），但装饰管线未就绪。
+
+**结论**：`text-decoration-thickness` 单点修复**净负**——装饰线渲染管线（y-offset 启发式 + decoration-style 渲染）当前为默认厚度耦合校准，改厚度触发回归。真修须先统一**装饰 y-offset 从字体度量推导**（同 R990 font-metric 谱系，多 session）。**勿再单点补 text-decoration-thickness**。
+
+**副产物记**：① `make reftest-oracle` 默认 test-guard per-proc-mem=6GB，全 corpus 加载（~10k case）边际超限 OOM；用 `./target/test-guard --per-proc-mem 10 -- cargo run --release --bin zero-wpt-runner -- reftest-oracle <dir>` 提至 10GB（合规，仍经 test-guard 包裹）。② css-text-decor worst 全 font-wall 耦合（thickness/offset/style/dilation），单点 lever 净负，转其它 dir。③ 之前会话「min-val flip」A/B 是 stale binary 假象（cargo stash 后未 rebuild）——教训：stash A/B 须确认 cargo 触发 rebuild（`Finished` 行）。
+
 ### R1044 ★R850 inline CB-height 链 + inline relative % 修复 LANDED = css-position Oracle 55→57（+2 PASS）·零回归·有 net 源码
 
 承 R1043 CONTINUE（多向调查后转 css-writing-modes near-pass / css-position 清洁 lever）。**R1043 vertical-rl converter-reverse 实测推翻**（taffy Block 不支持 bottom-up packing，反转 children order 仍从 x=0 起，无法实现 rl 方向）→ vertical-rl 方向确证 taffy/architecture-gated（R304 / 重实现）。转 css-position worst 扫描定位 **position-relative-001/002（3.64/4.88%）= R850 percent-inset × R109 inline-split 交互**，**+2 net**。
