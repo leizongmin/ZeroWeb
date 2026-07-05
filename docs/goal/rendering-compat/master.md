@@ -2648,7 +2648,21 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
-### R1078 R109 §9.2.1.1 FR-002 评估 = 驱动案 JS-gated（onload insertBlock）+ box-display 近-flip 全 font-wall·FR-002 bg-gap 仅 minor 分量·无 clean 静态 driving case·零 net 源码·纯调查
+### R1078 R109 §9.2.1.1 FR-002 评估 = 驱动案 onload JS 实际工作（R1078 首判「JS-gated」纠正）+ 残余 font-wall Ahem 主导（K->F 21940px）+ FR-002 bg/margin 仅 ~800px·FR-002 不 flip·零 net 源码·纯调查
+
+承 R1077（css-multicol plateau，pivot R109）。本轮评估 R109 FR-002（容器 bg 涂满匿名块/margin 区）。
+
+**★ 纠正首判「JS-gated」**：insert-block-in-inlines-beginning-001 的 `<body onload="insertABlockAtBeginning()">` **实际工作**——reftest render path 的 `apply_scripted_dom_mutations`（reftest_scripts.rs，V8Sandbox + DOM shim + DomMutation 记录 + apply_mutations_to_html）正确执行 onload，记录 6 个 mutation（CreateElement div → AppendChild CreateTextNode → SetAttr class=inserted → **InsertBefore 到 div.container 前 #insertion-point** → SetAttr html class="" 移除 reftest-wait），apply 后 container 1 HTML = `<div class=inserted>Inserted new block</div><span id=insertion-point>Several</span>...`（与 container 2 静态结构一致）。**onload JS 路径（R988 基建）功能完备**，案非 JS-gated。
+
+**残余 6.32% 组成（PIL）**：主导 **K->F 21940px**（ZW Ahem 文本 vs CHR fuchsia bg，即匿名块盒内 "Several inline elements..." 文本 y 定位差，font-wall）+ F->K 2060 + margin/bg 区 ~800px（inserted block margin:1em 0 区 ZW 白 / CHR fuchsia，FR-002 + margin-collapse 语义）。
+
+**裁决**：FR-002（容器 bg 涂满）+ margin-collapse 精度修仅消 ~800px（minor），**不 flip**（font-wall 21000px 主导）。R109 FR-002 非当前 flip lever——① 驱动案 onload JS 工作（纠正 R1078 首判），但残余 font-wall Ahem 主导；② box-display 近-flip（anonymous-box-generation-001 1.11% 等）全 font-wall（font-metric line-height 差）；③ FR-002 bg/margin 是 minor 分量。
+
+**★ rendering-compat 全景 plateau 确认（再证）**：css-multicol（R1074-R1076 +6 net 收官）+ box-display（R109 FR-001 done，FR-002/003 驱动案 onload JS 工作但残余 font-wall）+ 各 dir 近-pass ~1% band 全 font-wall。**最高 EV 下一 lever = font-wall C-dep（FreeType default flip）**：batch unlock css-multicol 138 案 + box-display 近-pass（含 insert-block 等 onload 案，JS 已工作，font-wall 解即 flip）+ css-text/linebox 等。用户决策点（R1072-R1073 evidence 完备 + CI smoke job `freetype-raster-cross-platform` 就绪待 dispatch）。
+
+**▶ 下会话**：① **font-wall C-dep**（最高 EV，用户决策点）——用户 dispatch CI job 验证 6-target 后翻 default，或 rally 据 evidence 建议；② R109 FR-002 bg/margin 精度（font-wall gated，低 EV，可作 spec-correctness 随手修但非 flip lever）；③ 结构性 nested multicol fragmentation（nested-balancing-004 17%，多 session）。
+
+### R1077 column-wrap 解析评估 = LOW-EV（所有驱动案 nested/complex，0 flip 可期）+ R1075 2 worsened 非 column-wrap 亦非 tractable·column-wrap:wrap 垂直换行 chromium-confirmed·零 net 源码·纯调查
 
 承 R1077（css-multicol plateau，pivot R109）。本轮评估 R109 FR-002（容器 bg 涂满匿名块/margin 区），**裁决：驱动案 JS-gated，无 clean 静态 driving case，FR-002 非 flip lever**。
 
