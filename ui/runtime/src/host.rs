@@ -831,27 +831,73 @@ fn reconcile_node(node: &mut HostNode, spec: &WidgetSpec, registry: &WidgetRegis
                 },
                 &spec.props,
             );
-            node.invalidation |= flags;
+            // P0-1：widget 自己在 update 里决定是否 NEEDS_LAYOUT（如 label 变长、size prop 变）。
+            // 框架不再粗暴标 NEEDS_LAYOUT——只把 widget 报告的 invalidation 累加。
+            // NEEDS_PAINT 始终标记（props 变化至少要重画），即便 widget 忘记标。
+            node.invalidation |= flags | InvalidationFlags::NEEDS_PAINT;
         }
         node.props = spec.props.clone();
-        // props 变化可能改尺寸（如 label 变长）→ 标记 layout。
-        node.invalidation |= InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
     }
     reconcile_children(&mut node.children, &spec.children, registry, epoch);
 }
 
 fn reconcile_children(existing: &mut Vec<HostNode>, new_specs: &[WidgetSpec], registry: &WidgetRegistry, epoch: u32) {
+    // P0-1 key 化复用：按 WidgetId 跨位置匹配，避免列表前部插入/删除导致后续同 id 节点全部重建
+    // （状态丢失：焦点 / 文本光标 / 滚动位置）。
+    //
+    // 算法：
+    // 1. 把 existing 包装成 Vec<Option<HostNode>>，便于「按 id 查并 take」。
+    // 2. 第一遍：建立 id -> slot index 的索引（仅 id 非匿名节点入索引）。
+    // 3. 第二遍：对每个 new_spec：
+    //    - 有 id 且在索引命中 → take 该 slot 复用，标记 slot 已用。
+    //    - 否则尝试按位置（existing[i]）匹配（保留无 id 子节点按 index 复用的历史行为）。
+    //    - 都不命中 → build 新节点。
+    // 4. 已被 take 的 slot 在第二遍按位置匹配时跳过。
+    let mut slots: Vec<Option<HostNode>> = existing.drain(..).map(Some).collect();
+
+    // id -> slot index（多 slot 同 id 取第一个，与历史「按位置首个匹配」语义最近）。
+    let mut id_index: hashbrown::HashMap<CompactString, usize> = hashbrown::HashMap::with_capacity(slots.len());
+    for (i, s) in slots.iter().enumerate() {
+        if let Some(node) = s
+            && node.id.0 != "__anonymous__"
+        {
+            id_index.entry(node.id.0.clone()).or_insert(i);
+        }
+    }
+
+    let mut taken: Vec<bool> = vec![false; slots.len()];
     let mut next: Vec<HostNode> = Vec::with_capacity(new_specs.len());
     for (i, spec) in new_specs.iter().enumerate() {
-        let reuse = existing.get(i).is_some_and(|e| same_node(e, spec));
-        if reuse {
-            // 复用：把既有实例整块移出（保留 widget 实例 + 临时状态），再对齐其 props/children。
-            let mut el = std::mem::take(&mut existing[i]);
+        // 优先：按 id 命中（跨位置）。
+        let reuse_slot: Option<usize> = match &spec.id {
+            Some(id) if id.0 != "__anonymous__" => id_index.get(&id.0).copied(),
+            _ => None,
+        };
+        if let Some(slot_idx) = reuse_slot
+            && !taken[slot_idx]
+            && let Some(node) = &slots[slot_idx]
+            && same_node(node, spec)
+        {
+            let mut el = slots[slot_idx].take().unwrap();
+            taken[slot_idx] = true;
             reconcile_node(&mut el, spec, registry, epoch);
             next.push(el);
-        } else {
-            next.push(build_node(spec, registry, epoch));
+            continue;
         }
+        // 回落：按位置匹配（无 id 子节点 / id 未命中场景）。
+        if i < slots.len()
+            && !taken[i]
+            && let Some(Some(node)) = slots.get(i)
+            && same_node(node, spec)
+        {
+            let mut el = slots[i].take().unwrap();
+            taken[i] = true;
+            reconcile_node(&mut el, spec, registry, epoch);
+            next.push(el);
+            continue;
+        }
+        // 都不命中 → 新建。
+        next.push(build_node(spec, registry, epoch));
     }
     *existing = next;
 }

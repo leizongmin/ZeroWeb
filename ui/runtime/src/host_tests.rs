@@ -274,6 +274,77 @@ fn rebuild_with_stable_widget_id_reuses_instance() {
 }
 
 #[test]
+fn reconcile_reuses_by_widget_id_across_position() {
+    // P0-1 回归守卫：列表前部插入新节点不应使后续同 id 节点重建。
+    // 旧实现按 index 复用 → 在前部插入会让后续同 id 节点全部重建（状态丢失）；
+    // key 化复用按 id 跨位置匹配 → 后续同 id 节点保留 epoch。
+    let mut host = patch_host();
+    let mut root = WidgetSpec::new("Column");
+    root.id = Some(WidgetId::new("root"));
+    root.children.push(patch("red", "a", "app.a"));
+    root.children.push(patch("blue", "b", "app.b"));
+    host.set_root(&root);
+    assert_eq!(host.creation_epoch(&WidgetId::new("a")), Some(1));
+    assert_eq!(host.creation_epoch(&WidgetId::new("b")), Some(1));
+
+    // 在最前面插入 "x"，a/b 后移 → 旧按 index 实现会让 a 退化成 x（component 相同但 id 不同 → 重建）、
+    // b 退化成 a；key 化实现按 id 命中，a/b 都保留。
+    let mut root2 = WidgetSpec::new("Column");
+    root2.id = Some(WidgetId::new("root"));
+    root2.children.push(patch("red", "x", "app.x"));
+    root2.children.push(patch("red", "a", "app.a"));
+    root2.children.push(patch("blue", "b", "app.b"));
+    host.set_root(&root2);
+
+    assert_eq!(
+        host.creation_epoch(&WidgetId::new("a")),
+        Some(1),
+        "P0-1 key 化复用：a 跨位置后移应保留 epoch"
+    );
+    assert_eq!(
+        host.creation_epoch(&WidgetId::new("b")),
+        Some(1),
+        "P0-1 key 化复用：b 跨位置后移应保留 epoch"
+    );
+    assert_eq!(
+        host.creation_epoch(&WidgetId::new("x")),
+        Some(2),
+        "新节点 x 取当前 epoch"
+    );
+}
+
+#[test]
+fn reconcile_reuses_by_widget_id_on_removal() {
+    // P0-1 回归守卫：列表前部删除节点不应使后续同 id 节点重建。
+    let mut host = patch_host();
+    let mut root = WidgetSpec::new("Column");
+    root.id = Some(WidgetId::new("root"));
+    root.children.push(patch("red", "x", "app.x"));
+    root.children.push(patch("red", "a", "app.a"));
+    root.children.push(patch("blue", "b", "app.b"));
+    host.set_root(&root);
+
+    // 删除 x：a/b 前移；旧按 index 实现会让 a 复用 x 槽位（id 不匹配 → 重建），
+    // key 化实现按 id 命中槽位 → a/b 保留。
+    let mut root2 = WidgetSpec::new("Column");
+    root2.id = Some(WidgetId::new("root"));
+    root2.children.push(patch("red", "a", "app.a"));
+    root2.children.push(patch("blue", "b", "app.b"));
+    host.set_root(&root2);
+
+    assert_eq!(
+        host.creation_epoch(&WidgetId::new("a")),
+        Some(1),
+        "P0-1 key 化复用：a 前移应保留 epoch"
+    );
+    assert_eq!(
+        host.creation_epoch(&WidgetId::new("b")),
+        Some(1),
+        "P0-1 key 化复用：b 前移应保留 epoch"
+    );
+}
+
+#[test]
 fn rebuild_changing_component_type_recreates_node() {
     let mut host = patch_host();
     let mut root = WidgetSpec::new("Column");

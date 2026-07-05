@@ -72,6 +72,17 @@ pub(crate) fn mark_paint_if_changed(ctx: &mut UpdateCtx, changed: bool) {
     }
 }
 
+/// 便利 helper：变化时同时标记 NEEDS_LAYOUT + NEEDS_PAINT。
+///
+/// 用于 layout 依赖该字段的场景（如 chrome widget 的 label 文本长度决定按钮宽度）。
+/// 标 NEEDS_LAYOUT 会连带上溯重算父级布局。
+pub(crate) fn mark_layout_if_changed(ctx: &mut UpdateCtx, changed: bool) {
+    if changed {
+        *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_LAYOUT
+            | zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
+    }
+}
+
 // ========== HeaderTitle ==========
 
 /// Header 标题
@@ -83,8 +94,11 @@ pub struct HeaderTitle {
 impl Widget for HeaderTitle {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let changed = sync_theme(props, &mut self.theme) || sync_text(props, "text", &mut self.text);
-        mark_paint_if_changed(ctx, changed);
+        // 文本长度决定 layout 宽度 → sync_text 走 layout；theme 仅色变走 paint。
+        let text_changed = sync_text(props, "text", &mut self.text);
+        let theme_changed = sync_theme(props, &mut self.theme);
+        mark_layout_if_changed(ctx, text_changed);
+        mark_paint_if_changed(ctx, theme_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
         EventResult::Ignored
@@ -149,11 +163,13 @@ pub struct HeaderButton {
 impl Widget for HeaderButton {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let changed = sync_theme(props, &mut self.theme) || sync_text(props, "label", &mut self.label);
+        let label_changed = sync_text(props, "label", &mut self.label);
+        let theme_changed = sync_theme(props, &mut self.theme);
         if let Some(Value::Text(a)) = props.get("action") {
             self.action = ActionId::new(a);
         }
-        mark_paint_if_changed(ctx, changed);
+        mark_layout_if_changed(ctx, label_changed);
+        mark_paint_if_changed(ctx, theme_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         match event {
@@ -220,17 +236,20 @@ pub struct NavItem {
 impl Widget for NavItem {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let mut changed = sync_theme(props, &mut self.theme) || sync_text(props, "label", &mut self.label);
+        let label_changed = sync_text(props, "label", &mut self.label);
+        let theme_changed = sync_theme(props, &mut self.theme);
         if let Some(Value::Text(p)) = props.get("page_id") {
             self.page_id = p.clone();
         }
+        let mut paint_changed = theme_changed;
         if let Some(Value::Bool(s)) = props.get("selected")
             && *s != self.selected
         {
             self.selected = *s;
-            changed = true;
+            paint_changed = true;
         }
-        mark_paint_if_changed(ctx, changed);
+        mark_layout_if_changed(ctx, label_changed);
+        mark_paint_if_changed(ctx, paint_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         match event {
@@ -302,17 +321,20 @@ pub struct GroupHeader {
 impl Widget for GroupHeader {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let mut changed = sync_theme(props, &mut self.theme) || sync_text(props, "label", &mut self.label);
+        let label_changed = sync_text(props, "label", &mut self.label);
+        let theme_changed = sync_theme(props, &mut self.theme);
         if let Some(Value::Text(g)) = props.get("group") {
             self.group = g.clone();
         }
+        let mut paint_changed = theme_changed;
         if let Some(Value::Bool(c)) = props.get("collapsed")
             && *c != self.collapsed
         {
             self.collapsed = *c;
-            changed = true;
+            paint_changed = true;
         }
-        mark_paint_if_changed(ctx, changed);
+        mark_layout_if_changed(ctx, label_changed);
+        mark_paint_if_changed(ctx, paint_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         match event {

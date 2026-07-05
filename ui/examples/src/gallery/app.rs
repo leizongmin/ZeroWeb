@@ -314,8 +314,11 @@ pub struct DemoPreview {
 impl Widget for DemoPreview {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let changed = sync_theme(props, &mut self.theme) || sync_text(props, "page_id", &mut self.page_id);
-        mark_paint_if_changed(ctx, changed);
+        // page_id 决定预览区高度 → layout；theme 仅 paint。
+        let page_changed = sync_text(props, "page_id", &mut self.page_id);
+        let theme_changed = sync_theme(props, &mut self.theme);
+        super::chrome::mark_layout_if_changed(ctx, page_changed);
+        mark_paint_if_changed(ctx, theme_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         // 仅响应在 toggle 预览区内的点击：翻转第 i 位。
@@ -441,10 +444,12 @@ pub struct SourceCode {
 impl Widget for SourceCode {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let changed = sync_theme(props, &mut self.theme)
-            || sync_text(props, "source", &mut self.source)
-            || sync_text(props, "lang", &mut self.lang);
-        mark_paint_if_changed(ctx, changed);
+        // source 行数决定高度 → layout；lang/theme 仅 paint。
+        let source_changed = sync_text(props, "source", &mut self.source);
+        let theme_changed = sync_theme(props, &mut self.theme);
+        let lang_changed = sync_text(props, "lang", &mut self.lang);
+        super::chrome::mark_layout_if_changed(ctx, source_changed);
+        mark_paint_if_changed(ctx, theme_changed || lang_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
         EventResult::Ignored
