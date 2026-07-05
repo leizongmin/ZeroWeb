@@ -1076,12 +1076,13 @@ pub(super) fn apply_block_relative_percent_insets(
             cb_h
         };
 
-        // 应用本盒 Percent inset（block-level relative，非 abspos/fixed）。
+        // 应用本盒 Percent inset（relative，非 abspos/fixed；block-level **和** inline）。
         // ★ 仅 top/bottom%（垂直轴）——R850 实证 taffy 0.7 已应用 left/right%（水平轴），
         // 此处再应用会 double-count 致 left-103/104/113、right-103/104、relpos-calcs-003/004/005
         // 回归（0.46%→4.28%）。taffy 仅丢弃 top/bottom%（R715 实证），故本 pass 只补垂直轴。
+        // ★ R1044：移除 is_block_level 门控——inline relative（如 R109-split span）的 top/bottom %
+        // 同样被 taffy 丢弃，须一并补（position-relative-001：inline span top:100% 未应用）。
         if b.is_relative
-            && b.is_block_level
             && !b.is_absolute
             && !b.is_fixed
             && let Some(style) = b.node_id.and_then(|id| styles.get(&id))
