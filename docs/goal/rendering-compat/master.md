@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1052 ★vertical IFC container_width=0 根因 = 纠正 R1051 handoff 诊断（axis-swap 已存在）+ vertical 耦合系统三证（单修 inline-flow net -26 已 revert）·零 net 源码·纯调查
+
+承 R1051 CONTINUE（R109 vertical inline Slice 1 实施）。本轮按 handoff §3 试实施 Slice 1，**VIFCDUMP 实证推翻 R1050/R1051 诊断，单点修复 net-negative 已 revert，handoff doc 升级 v1.1**。
+
+**★ 纠正 R1050/R1051 诊断**：R1050 EMPHDBG 测 006d chars x=8,24,40,56,72 递增 → R1051 handoff 断言「IFC 缺轴交换（current_x/current_y 未互换），须新建双模式 char 推进」。**本轮 VIFCDUMP 实证推翻**：轴交换代码**早已存在且正确**（commit 942a2948，2026-06-09，`break_items_into_columns` mod.rs:1450 字符沿 y 推进 / 列沿 x 推进；paint `char_advance_is_y` text.rs:1392-1450 也对）。**真根因 = vertical IFC 的 `container_width=0.0` → max_depth=0**：`max_depth = self.container_width`（mod.rs:1452），而 container_width 取 `root.content_width`（inline_finalization.rs:619）/ `box_node.content_height`（painter/text.rs:797）= 元素水平 block 尺寸，vertical-lr auto 时=0 → `current_depth + word_height > 0` 恒真 → **每字符触发列断 → 每字符各占一列沿 x 排列 → chars 横向排列**。vertical 应取 `content_height`（竖直 inline 尺寸 = 字符向下推进可用深度）。R1050 EMPHDBG 的 x 递增是 max_depth=0 副产物，非缺轴交换。
+
+**修复实验（已 revert）**：Fix A = container_width WM-aware（2 处：compute_final + paint Path B，vertical 取 content_height / horizontal 取 content_width，gate 隔离 horizontal 字节一致）；Fix B = trailing-space 裁剪（split_into_words mod.rs:1983-1987 为非末词加 trailing space 与注释「CJK 不带尾部空格」矛盾，vertical 下 word_height 虚高 fs+space_w 致列断提前；break_items_into_columns 词循环头 trim）。Fix A+B 实测 006d chars 几何**完全规范正确**（col0 run0..4 x=0 常量，y=0,16,32,48,64 连续 fs 间隔，单列）。
+
+**★ A/B = net-negative 已 revert**：css-text-decor **108→86（Fix A，-22）→ 82（Fix A+B，-26）**；css-writing-modes 56→56（net-0，block-flow R1043 主导，line-box-direction-vlr-014 修后仍 86.86%）；006d 单案 1.00%→1.01%（持平）。即便 006d 字符几何规范正确，oracle 仍 net -26。
+
+**★ 裁决：vertical 渲染 = 耦合系统（R1047/R1050/R1052 三证）**。单修 inline-flow 致输出**既不同于旧错误布局、又不同于 chromium**（block-flow R1043 容器定位错 + line-height:5 vertical 列宽未传 col_width=16 应 80 + emphasis `!char_advance_is_y` 门控跳过 vertical 装饰全缺 + paint Path B 空-styles），故净负。三证（R1047 sibling-push / R1050 vertical emphasis / R1052 vertical inline-flow）一致：**vertical 子系统单点修复 net-negative，须多层同步修**。
+
+**意义**：R1052 真价值 = ① 纠正 handoff 诊断（轴交换已存在，真根因 container_width=0，后续勿再「新建双模式 char 推进」）；② 锁定精确靶点（§2 Fix A+B + line-height vertical 列宽 + block-flow R1043 + emphasis re-enable，四层同改）；③ 耦合系统三证裁决；④ VIFCDUMP 探针代码（evidence §6）作 vertical IFC 调决定性工具。handoff doc 升级 v1.1（§0/§2/§3/§4/§6 全面纠正）。详见 [`evidence/r1052-vertical-ifc-container-width-zero-2026-07-05.txt`](./evidence/r1052-vertical-ifc-container-width-zero-2026-07-05.txt)。
+
+**▶ 下会话**：① vertical 多层同步（Slice α：container_width fix + block-flow R1043 converter 层镜像 + line-height vertical 列宽 + emphasis re-enable，四层同改 A/B 守 net-0/正）—— 最高 yield 轨道但多 session；② 或 taffy 升级（R304）减 block-flow 耦合；③ R702 margin-collapse-through（em-inherit 11%，yield 小）；④ font-wall per-font 度量（R887）。**勿再单点修 vertical 任一子层**（三证 net-negative）。
+
 ### R1051 R702 margin-collapse-through 调查 = taffy collapse-through 深 bug·ruled out 单 session·+ R109 vertical inline handoff doc（最高 yield 多 session 轨道蓝图）·零 net 源码·纯调查
 
 承 R1050 CONTINUE（R109 vertical inline / R702 / font-wall）。本轮 LAYOUT_DUMP 调查 R702 + 写 R109 vertical inline 实施 handoff，**结论：R702 单 session ruled out，R109 handoff doc 落地供后续 session 实施**。
