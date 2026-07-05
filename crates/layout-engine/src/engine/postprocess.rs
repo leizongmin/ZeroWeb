@@ -1062,10 +1062,19 @@ pub(super) fn apply_block_relative_percent_insets(
     fn walk(b: &mut LayoutBox, cb_h: Option<f32>, styles: &HashMap<NodeId, ComputedStyle>) {
         // top/bottom % 的 CB 高须明确：仅 style.height==Px 视为明确（常见 definite case，
         // 如 R711 anchor #parent height:1in）。Auto/Percent 高→top/bottom % 不解析。
-        let my_content_h = b
-            .node_id
-            .and_then(|id| styles.get(&id))
-            .and_then(|s| matches!(s.height, LengthValue::Px(_)).then(|| b.content_height));
+        // ★ inline 元素（is_block_level=false）不为其 block 后代建立 containing block——block
+        // 后代的 CB 跳过 inline 继承祖父级 block container（CSS §9.2.1.1 / §10.1）。故 inline
+        // 元素的 my_content_h（传给子代作 cb_h）须**透传**自身继承到的 cb_h，而非按自身
+        // auto height 归 None。否则 inline span（auto h）包 block-level relative 子时，子的
+        // top/bottom % 永远 None 不解析（position-relative-002/005：green div top:-100% 应解
+        // 析到祖父 red div 的 100px 却得 None）。block-level 元素仍按自身 height==Px 判定。
+        let my_content_h = if b.is_block_level {
+            b.node_id
+                .and_then(|id| styles.get(&id))
+                .and_then(|s| matches!(s.height, LengthValue::Px(_)).then(|| b.content_height))
+        } else {
+            cb_h
+        };
 
         // 应用本盒 Percent inset（block-level relative，非 abspos/fixed）。
         // ★ 仅 top/bottom%（垂直轴）——R850 实证 taffy 0.7 已应用 left/right%（水平轴），

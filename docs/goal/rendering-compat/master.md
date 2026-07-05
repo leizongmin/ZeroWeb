@@ -2648,6 +2648,27 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1044 ★R850 inline-pass-through 修复 LANDED = css-position Oracle 55→56（+1 PASS）·inline 不建立 CB for block 后代·零回归·有 net 源码
+
+承 R1043 CONTINUE（多向调查后转 css-writing-modes near-pass / css-position 清洁 lever）。**R1043 vertical-rl converter-reverse 实测推翻**（taffy Block 不支持 bottom-up packing，反转 children order 仍从 x=0 起，无法实现 rl 方向）→ vertical-rl 方向确证 taffy/architecture-gated（R304 / 重实现）。转 css-position worst 扫描定位 **position-relative-002（4.88%）= R850 percent-inset + R109 inline-split 交互**，**+1 net**。
+
+**根因（LAYOUT_DUMP + R850_DBG walk 实证）**：`position-relative-002` = `div(red,h:100px) > span(relative,top:100/left:100) > div(green,relative,top:-100%/left:-100%)`。green div 是 block-level relative，其 `top:-100%` 应解析到 **CB 高度**。CSS §9.2.1.1/§10.1：inline 元素（span）**不**为其 block 后代建立 containing block——green div 的 CB 跳过 span 继承祖父 red div（h:100px definite）。但 R850 `apply_block_relative_percent_insets`（postprocess.rs:1062）的 walk 用 `style.height==Px` 判定 my_content_h，**inline span（auto height）的 my_content_h=None 截断了 CB-height 链** → green div 收到 cb_h=None → `top:-100%` 不解析（dy=None），green 停在 span 内容位置（abs_y=151），未覆盖 red（abs_y=51）。`left:-100%` 工作（taffy 0.7 水平 % 已应用，R850 实证）→ 仅垂直轴坏。
+
+**修复（postprocess.rs:1065-1079）**：`my_content_h` 分支——block-level 元素仍按 `style.height==Px → Some(content_height)` 判定（保持 R850 原 +10 case 行为）；**inline 元素（`is_block_level=false`）透传继承到的 `cb_h`**（inline 不建立 CB for block 后代，block 后代的 CB 跳过它继承祖父级）。纯加性 if/else 分支，inline 路径替换原 `None`。
+
+**验证（chromium Oracle + stash A/B 多 dir）**：
+- **css-position**：55→56（**+1 PASS**）；position-relative-002 **4.88%→0.73% PASS**（green top:-100% 解析到 red 100px → abs_y 151→51 覆盖 red）。position-relative-005（4.88% 持平）= JS-driven（`<script>` 设 height:100px），非静态可修，独立。position-relative-001（3.64%）base/fixed 同值 = pre-existing 非回归。
+- **CSS2/positioning**：296→296（R850 原 R711 +10 cluster 全保，零回归）。
+- **CSS2/normal-flow**：604→604（零回归）。**CSS2/visuren**：25→25（零回归）。
+- **product-smoke welcome (DC-13)**：16.57% 不变（< 20% gate PASS）。
+- engine/layout-engine 全绿；clippy -D warnings 干净；fmt 干净。
+
+**1 新单测**（intrinsic_two_pass_tests.rs）：`test_r1044_inline_passes_through_cb_height_for_relative_percent`（`div(h:100)>span(relative)>div(relative;top:-100%)` → 断言 green.y < -50，即 top:-100% 解析到祖父 100px 偏移 -100；旧实现 inline 截断 cb_h → green.y≈0）。
+
+**意义**：补全 R850 percent-inset 在 inline-split（R109）上下文的 CB-height 链。CSS §9.2.1.1/§10.1「inline 不为 block 后代建立 CB」原则在 ZW 首次显式接线（R850 原仅处理纯 block 链）。修复极窄（仅 inline 中介 + definite 祖父 + block-level relative 子 + top/bottom % 的组合），R850 原 cluster 字节同（不可回归）。**css-writing-modes vertical-rl 方向 converter-reverse 实测推翻**（taffy Block 不支持 reverse packing）记此，vertical-rl 方向 lever 仍 taffy/architecture-gated（R304）。详见 [`evidence/r1044-r850-inline-pass-through-landed-2026-07-05.txt`](./evidence/r1044-r850-inline-pass-through-landed-2026-07-05.txt)。
+
+**▶ 下会话**：① 继续扫 css-position 残余 worst（position-absolute-semi-replaced-stretch-input/other 21/13% replaced-stretch 簇；position-absolute-in-inline-006 5.1% R109；position-relative-001 3.64% 近-pass）；② 或转 css-writing-modes 近-pass（bidi 簇 ~1.3% / sizing-orthog 1.08% / horizontal-rule-vrl 1.04%）逐案 per-pixel（非 rl 方向细节）；③ R109 vertical-rl 方向仍 multi-session（converter-reverse ruled out，须 taffy 升级 R304 或 layout 期镜像）。
+
 ### R1043 R109 vertical block-flow 调查 = 纠正「children 垂直堆叠」误判（block flow 实横向）+ rl/lr 方向 bug + postprocess mirror net-negative 已回退·零 net 源码·转 converter 层
 
 承 R1042 CONTINUE（R109 vertical block-flow dedicated）。本轮纠正上会话误判 + 实验 mirror，**结论：block flow 已横向（正确），真 bug = rl/lr 方向不区分，postprocess 不可解须 converter**。
