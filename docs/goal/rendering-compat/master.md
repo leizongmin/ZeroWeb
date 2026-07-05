@@ -2648,6 +2648,18 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1081 FreeType C-dep CI job 抽独立 workflow（一键 dispatch，不连带全量 CI）+ css-tables/css-flexbox 扫描确认无 clean lever（font-wall/complex）·零 net 功能源码·CI 配置 + 纯调查
+
+承 R1080（multicol positioned-flush LANDED，multicol 可处理机制 +9 net 收官）。本轮 pivot R740 扫其它 dir + 改善 C-dep CI 就绪度。
+
+**css-tables / css-flexbox 扫描（R740 策略）**：css-tables 仅 3 案 >5%（table-cell-width-0 20% R109 territory / baseline-vertical 12% font-wall / row-group-order 5%）。css-flexbox 295/497（59.4%）top-worst：flex-flow-001/002 23%（12+ flex-flow 变体矩阵）/ flex-abspos-inset-nested 19%（R850 territory）/ writing-mode 11% 簇（R114）/ 等。**minimal 实测确认 ZW flex 机制全工作**：flex-direction:row-reverse ✓（B,G,R 视觉序）、column ✓（R,G,B 垂直序）、flex-wrap ✓（B 换行 row2）、flex-flow shorthand 已解析（shorthand/mod.rs:215）。故 flexbox top-worst 全 font-wall（Ahem/sans-serif 文本）或 complex（abspos-nested），无 clean 机制 lever。
+
+**FreeType C-dep CI job 抽独立 workflow（R1081）**：R1073 把 freetype-raster-cross-platform job 嵌在 ci.yml（dispatch ci.yml 连带跑全量 build-and-test+reftest+benchmarks 三 job，非「一键」轻量）。本轮抽成独立 `.github/workflows/freetype-raster-cross-platform.yml`（仅 workflow_dispatch，6-target matrix，continue-on-error，仅 check zero-render-foundation --features freetype-raster），ci.yml 恢复三主 job（build-and-test/reftest/benchmarks）。两 YAML 合法（python yaml 解析 OK）。→ C-dep 决策的 6-target 编译验证现可 `gh workflow run freetype-raster-cross-platform` 独立轻量 dispatch（不浪费全量 CI 配额）。
+
+**裁决**：C-dep（最高 EV lever）evidence 完备（R1068 +24 css-text / R1071 CI de-risk bundled / R1073 job），CI 就绪（R1081 独立 dispatchable），用户决策点。自主侧 rendering-compat 全景 plateau 再证：css-multicol（R1074-R1076+R1080 +9 net 收官）+ css-tables（R109/font-wall）+ css-flexbox（font-wall/complex）+ box-display（R109 FR-002 font-wall）。**clean single-session 机制 lever 跨 dir 穷尽**——残余 = font-wall C-dep（用户决策）+ 多 session 结构性（Phase A IFC inline 跨列 deadlock / nested fragmentation / R109 FR-002/003）。
+
+**▶ 下会话**：① **font-wall C-dep 用户决策**（dispatch freetype-raster-cross-platform workflow → 6-target 编译结果 → 全绿则翻 crates/render-foundation/Cargo.toml default=["freetype-raster"]，batch unlock css-multicol 近-pass 138 + box-display + css-text + linebox font-wall band）；② Phase A IFC inline 跨列（已知 deadlock，多 session）；③ nested multicol fragmentation（nested-balancing-004 17%）；④ R109 FR-002/003（font-wall gated）。clean single-session lever 跨 dir 穷尽，forward = C-dep 用户决策 或 多 session 结构性。
+
 ### R1080 ★multicol 列子元素 positioned 后代本地 flush+clip LANDED = css-multicol Oracle 151→154（+3 net）·multicol-overflow-clip-positioned 16→0 PASS·paint-containment-001/oof-nested 各 PASS·scroll-content −3.6pp·零回归（消 R1079 over-render 12 worsened）
 
 承 R1079（multicol 列子元素 positioned 后代 drop bug 定位 + 简单 collection 修复 over-render 已回退，须 clip-context flush）。本轮实现**本地 flush + 列子元素 overflow box clip**，clean win。
