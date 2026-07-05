@@ -126,7 +126,7 @@ impl Default for ComputedStyle {
             flex_basis: FlexBasisValue::Auto,
             gap: LengthValue::Px(0.0),
             row_gap: LengthValue::Px(0.0),
-            column_gap: LengthValue::Px(0.0),
+            column_gap: LengthValue::Auto, // R1040: column-gap 初始值 normal（multicol=1em, flex/grid=0）
             order: 0,
 
             // Grid

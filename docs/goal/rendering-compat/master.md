@@ -2648,6 +2648,24 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1040 ★column-gap:normal 默认值修复 LANDED = css-multicol Oracle 140→146（+6 PASS）·per-pixel x 带定位·累计 css-multicol +16
+
+承 R1039 CONTINUE（002 残余 4.49%）。本轮 **per-pixel x 带对比**定位 column-gap 默认值 bug，**+6 net**。
+
+**per-pixel x 带定位**：002 post-R1039 y 带 diff 颜色匹配（ZW=CHR），转 x 带分析 y=55-70（block1 bg）。x[200-216]：**ZW=(255,255,0) yellow（block1）vs CHR=(144,238,144) lightgreen（article bg）**。真因：002 未指定 column-gap，CSS Multicol §4.1 初始值 = `normal`（=1em≈16px）。CHR col宽=(400-16)/2=192 + gap[205:221] 显 article bg。**ZW `default_impl.rs:129 column_gap: LengthValue::Px(0.0)` 错误**（应 normal）→ col宽=200 gap=0，block1 覆盖 gap 区。
+
+**探针确认 yield**：强制 multicol gap=1em（所有案）net -25（6 flip/31 regress）——证实 6 案未设 column-gap 想要 1em，proper fix（仅未设案 → 1em）预期 +6。
+
+**实现（LengthValue::Auto 作 normal sentinel）**：gap 不接受 auto，故 Auto 作 normal 专用 sentinel（无冲突）。① default_impl column_gap: Auto（原 Px(0.0)）；② multicol compute_column_info `if Auto → font_size_px(1em) else length_to_px`（显式 column-gap:0 的 Px(0.0) 与 Auto 区分清晰）；③ converter convert_length_to_lp(Auto) 已返 0——flex/grid normal=0 无需改。**显式 column-gap:0 与 normal(Auto) 不冲突**。
+
+**A/B（stash 对照 R1039 140/452）**：**146/452（+6 net）**。**5 flip**（multicol-clip-scrolled-content-001 1.08→0.88 ★修 R1039 回归 + multicol-fill-auto-block-children-003 + multicol-rule-nested-balancing-001/003 + nested-floated-multicol-with-monolithic-child）。**0 回归**。002 4.49→3.99（残余 = text glyph font-wall，layout 全对）。flex/grid 无回归（css-flexbox 295、css-grid 20 同 baseline）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（style-system column_gap 测全过 + layout-engine 1021）/ **product-smoke welcome 16.57% < 20%** ✓。21 multicol 测全过。
+
+**意义**：CSS Multicol §4.1 column-gap 初始值 normal（=1em）正确实现（default_impl Auto sentinel + multicol 解析 normal=1em + flex/grid 经 convert_length_to_lp(Auto) 保 normal=0）。per-pixel x 带对比定位。**累计 R1035(+1)+R1037(+4)+R1038(+1)+R1039(+4)+R1040(+6) = css-multicol 130→146（+16）五连 landed win**。002 layout 全对（残余 3.99% font-wall）。详见 [`evidence/r1040-column-gap-normal-default-landed-2026-07-05.txt`](./evidence/r1040-column-gap-normal-default-landed-2026-07-05.txt)。
+
+**▶ 下会话**：① **002 残余 3.99% = font-wall**（layout 全对，R1034 font-wall 结论）——multicol 簇 002/004a/004b/006/003 layout 已尽，残余全 font-wall text glyph，须 font-wall 解除（多 session，per R1034）；② multicol 其它 dir fresh worst 扫（column-gap 修复后可能新近-pass 案）；③ **转 R109 vertical / position:relative / font-wall 换方向**（multicol 五连 +16 后 layout 侧近尽，font-wall 是下个 pervasive blocker）。column-gap:normal 对 row-gap（flex/grid）的 normal 默认 row_gap 仍 Px(0.0) 但 flex/grid normal=0 已正确，无 yield 缺口。
+
 ### R1039 ★multicol column fragment slice clip LANDED = css-multicol Oracle 136→140（+4 PASS）·per-pixel 定位 paint clip 根因·修 002 block1 覆盖 spanner·累计 css-multicol +10
 
 承 R1038 CONTINUE（目标簇 002 残余 8.56%）。本轮 **per-pixel y 带对比定位** paint clip 系统根因，**+4 net**。
