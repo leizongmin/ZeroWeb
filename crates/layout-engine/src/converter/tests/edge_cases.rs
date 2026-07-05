@@ -271,6 +271,61 @@ fn test_parse_single_track_empty_string() {
     assert_eq!(result, taffy::style::TrackSizingFunction::AUTO);
 }
 
+// ── R1058：display:inline 垂直 margin 归零（CSS §8.3）──
+
+/// R1058：非替换 inline 元素（display:inline）的垂直 margin 必须归零——CSS §8.3 规定
+/// 非替换 inline 元素的 margin-top/bottom 无布局效果。旧实现把 inline 的垂直 margin
+/// 原样喂给 taffy，致 block-in-inline-vertical-margins-on-span-ignored（span mt/bt:50
+/// 错误推开块子间距）。水平 margin 保留（inline 水平 margin 有效）。
+#[test]
+fn test_r1058_inline_vertical_margin_zeroed() {
+    use taffy::style::LengthPercentageAuto;
+    let mut style = ComputedStyle::default();
+    style.display = DisplayValue::Inline;
+    style.margin_top = LengthValue::Px(50.0);
+    style.margin_bottom = LengthValue::Px(50.0);
+    style.margin_left = LengthValue::Px(10.0);
+    style.margin_right = LengthValue::Px(20.0);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    // 垂直 margin 归零（§8.3）
+    assert!(
+        matches!(taffy_style.margin.top, LengthPercentageAuto::Length(0.0)),
+        "display:inline 的 margin-top 应回零（§8.3），实测 {:?}",
+        taffy_style.margin.top
+    );
+    assert!(
+        matches!(taffy_style.margin.bottom, LengthPercentageAuto::Length(0.0)),
+        "display:inline 的 margin-bottom 应回零（§8.3），实测 {:?}",
+        taffy_style.margin.bottom
+    );
+    // 水平 margin 保留
+    assert!(
+        matches!(taffy_style.margin.left, LengthPercentageAuto::Length(10.0)),
+        "display:inline 的 margin-left 应保留 10px，实测 {:?}",
+        taffy_style.margin.left
+    );
+    assert!(
+        matches!(taffy_style.margin.right, LengthPercentageAuto::Length(20.0)),
+        "display:inline 的 margin-right 应保留 20px，实测 {:?}",
+        taffy_style.margin.right
+    );
+}
+
+/// R1058 对照：display:block 的垂直 margin 保留（非 inline，§8.3 不适用）。
+#[test]
+fn test_r1058_block_vertical_margin_preserved() {
+    use taffy::style::LengthPercentageAuto;
+    let mut style = ComputedStyle::default();
+    style.display = DisplayValue::Block;
+    style.margin_top = LengthValue::Px(50.0);
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert!(
+        matches!(taffy_style.margin.top, LengthPercentageAuto::Length(50.0)),
+        "display:block 的 margin-top 应保留 50px，实测 {:?}",
+        taffy_style.margin.top
+    );
+}
+
 // ── convert_display 边界条件 ──
 
 /// 测试 convert_display：InlineBlock 映射为 Block。

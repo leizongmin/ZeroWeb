@@ -128,6 +128,8 @@ fn test_convert_size_auto() {
 #[test]
 fn test_convert_margin_padding_border() {
     let mut style = ComputedStyle::default();
+    // R1058：测垂直 margin 机制须用 block 上下文（display 默认 Inline，§8.3 垂直 margin 归零）。
+    style.display = DisplayValue::Block;
     style.margin_top = LengthValue::Px(10.0);
     style.margin_right = LengthValue::Px(20.0);
     style.margin_bottom = LengthValue::Px(10.0);

@@ -2648,6 +2648,26 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1058 ★CSS §8.3 display:inline 垂直 margin 归零 LANDED = box-display +1（block-in-inline-vertical-margins-on-span-ignored 1.82→0.70 PASS）零回归（margin-padding-clear/normal-flow/linebox net-0 + welcome 不变）·converter 上游修复·R109 Phase-0 附带 yield·有 net 源码
+
+承 R1057 CONTINUE（R109 §9.2.1.1 anonymous block Phase-0 攻坚）。本轮 R109 Phase-0 map（FR-001 已 landed postprocess.rs:610，剩 FR-002/003 + margin-collapse 多 session），map 中定位 box-display borderline 簇 `block-in-inline-*-margin*` 真根因（converter §8.3 缺失），**A/B 确证 clean +1 零回归 LANDED，R1051-R1057 七轮 docs-only 后首个 code LANDED**。
+
+**定位（LAYOUT_DUMP + R1058DBG 探针）**：`block-in-inline-vertical-margins-on-span-ignored`（1.82%）= `<span mt/bt:50><div></div></span><div>` 两绿块应相邻（span 垂直 margin §8.3 ignored）。LAYOUT_DUMP `span.span mt=50 dmt=50` + `div.sibling abs_y=155`（应 ~105，50px gap）。R1058DBG 探针确认 `is_inline_r109=true`（span R109-split）。
+
+**假设 1（tree.rs anon_style margin 泄漏）REFUTED**：tree.rs:839 inline-split 的 anon_style 经 `computed_style_to_taffy(&computed)` 继承 split inline 全 computed（含 margin），仅清零 inset。改 `anon_style.margin = Rect::zero()`——**A/B ZERO-EFFECT**（span.span mt=50 不变，box-display 38→38），证明 anon 盒 margin 非 span mt=50 来源。
+
+**真根因 = converter 上游**：`computed_style_to_taffy`（converter/mod.rs:117）把 `style.margin_top/bottom` 原样转 taffy Style margin，不区分 display。span computed display=Inline（CSS 初始值），margin-top:50 喂给 taffy → span taffy 节点 + 继承 computed 的 anon 盒都 margin-top=50 → layout.margin.top=50。CSS §8.3：**非替换 inline 元素垂直 margin 无布局效果**（chromium 同行为）。
+
+**改动（converter/mod.rs:117 margin 分支）**：`display:Inline`（非替换 inline；替换 inline 如 img UA 默认 InlineBlock 不在列）→ `margin.top = margin.bottom = Length(0.0)`；`margin.left/right` 保留（inline 水平 margin 有效，IFC 内 inline 片段承担）；其他 display 不变。9 单测（2 新 R1058 + 7 既有 margin 测加 `display:Block` 上下文——`ComputedStyle::default().display=Inline`，旧测隐式假设 block）。
+
+**A/B（stash 重建 baseline，release）**：① **CSS2/box-display 38 (31.7%)→39 (32.5%) = +1**（121 案 join：FAIL->PASS=1 / PASS->FAIL=0；唯一翻转 = 目标案 1.82→0.70 PASS，div.sibling abs_y 155→71 gap 消除）；② **CSS2/margin-padding-clear（R743/R744 风险 dir）310→310 net-0**；③ CSS2/normal-flow 604→604 net-0；④ CSS2/linebox 121→121 net-0；⑤ welcome product-smoke 16.57%→16.57% 不变（无 inline 垂直 margin）。**零回归**。
+
+**为何零回归**：§8.3 是 chromium 同行为（非替换 inline 垂直 margin 无效果），旧 ZW 错误应用 → 向 chromium 收敛 = 净正或中性。converter 上游修覆盖 span 节点 + anon 盒（都经 computed_style_to_taffy），故假设 1 的 anon 单点修冗余。详见 [`evidence/r1058-inline-vertical-margin-zeroed-boxdisplay-plus1-2026-07-05.txt`](./evidence/r1058-inline-vertical-margin-zeroed-boxdisplay-plus1-2026-07-05.txt)。
+
+**意义**：R109 Phase-0 附带 yield——map 中定位的 box-display borderline 簇真根因（converter §8.3 缺失）= 独立 clean lever，不依赖 R109 FR-002/003 多 session。converter §8.3 inline 垂直 margin 归零是 foundational correctness，为后续 R109 FR-002（bg）+ block-in-inline margin-collapse 簇（multiple-block-in-inlines-margins-collapse 1.05% / block-in-inline-margins-collapse-with-trailing-block 1.11% 等 10 案 1.0-1.15%）提供正确基底。★R1058 证明 R109 Phase-0 map + 精准定位仍能在多 session 结构性任务中产 single-session clean yield（区别 R1056/R1057 net-negative/no-op）。
+
+**▶ 下会话**：① R109 FR-002（匿名块盒区容器 bg 涂布，paint 侧，R1058 已清 inline margin 基底）；② block-in-inline margin-collapse 簇（10 案 1.0-1.15% flip 候选，R1058 后可能 unlock）；③ R109 FR-003（split inline border 归属，case-a inline 级）。
+
 ### R1057 display:list-item marker 门控修正（tag→display）REFUTED = CSS2/lists -1（li→ListItem 致 list-item-dynamic-color +0.60 PASS→FAIL）+ 目标簇 list-style-position-applies-to-008/009/010/016/017 delta=0.00（likely R109 anonymous-box mask）·R740 strategy ② clean lever 耗尽第三证·零 net 源码·纯调查
 
 承 R1056 CONTINUE（fresh chr-vs-ZeroWeb per-case scan，R740 strategy ② 找 R689/R716 类 clean correctness lever）。本轮扫 CSS2/lists/colors/values + generated-content（fresh dir），定位 list-style-position-applies-to 簇（5 案 @ 3.37-3.73% identical diff = 单一系统性 cause 候选），**假设「missing marker on `<span display:list-item>`」A/B 证伪，net-negative 已回退**。

@@ -565,6 +565,8 @@ fn test_convert_padding_em_rem() {
 /// 测试 margin 使用 Vw/Vh 单位。
 fn test_convert_margin_viewport_units() {
     let mut style = ComputedStyle::default();
+    // R1058：测垂直 margin 机制须用 block 上下文（display 默认 Inline，§8.3 垂直 margin 归零）。
+    style.display = DisplayValue::Block;
     style.margin_top = LengthValue::Vw(5.0);
     style.margin_bottom = LengthValue::Vh(2.5);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
