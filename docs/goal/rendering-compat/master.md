@@ -2648,6 +2648,24 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1059 block-in-inline margin-collapse 簇调查 = margin 已正确折叠（R1058 后）+ 2 R109 anon-box 构造 bug 精确定位（case-a split-span 内块子 3px x-offset / case-b block-mixed anon 盒 w=文本宽非满宽）·多 session structural·零 net 源码·纯调查
+
+承 R1058 CONTINUE（block-in-inline margin-collapse 簇，box-display 10 案 1.0-1.66% flip 候选）。本轮 LAYOUT_DUMP 簇逐案对比 test vs ref，**margin 折叠已正确（R1058 后），残余 diff = 2 个 R109 anon-box 构造 bug，多 session structural，定位精确供后续 session**。
+
+**margin 已正确**：multiple-block-in-inlines-margins-collapse（1.05%）LAYOUT_DUMP 实测 a/b/c（mb=40/mt=30/mt=50）gap = **40px / 50px 精确**（max 折叠对），与 ref flat-block 一致。R1058（inline 垂直 margin 归零）已清 margin 输入，折叠逻辑本身正确。
+
+**★ Bug 1（case-a split-span 内块子 3px x-offset）**：block-in-inline-margins-collapse-with-trailing-block（1.11%）LAYOUT_DUMP：`span abs_y=44 x=8 w=6`（R109 split parent，w=6 bogus 空inline 盒）→ 子 `div.first x=11 w=100`，而 span 外兄弟 `div.second x=8 w=100`。**split-span 内块子 x 偏移 +3px**（= span w=6 / 2，疑似 anon 盒居中于 span 的 residual inline 盒 w=6，或 half-leading）。case-a 簇多案同 pattern（multiple-block-in-inlines / nested-spans-with-block / block-in-inline-followed-by-*）。spec 预期 anon 盒是 block-level 满 container 宽 @ content edge（x=8），非偏移。
+
+**★ Bug 2（case-b block-mixed anon 盒 w=文本宽非满宽）**：anonymous-box-generation-001（1.11%）LAYOUT_DUMP：`#div1 w=192` 子 anon 盒（包裹 "Filler Text"）`w=100`（应满 container 192）→ text-align:center 无法居中（文本左对齐于 100px 盒）。block-mixed anon 盒经 `Style::default() + display:Block + new_leaf_with_context(measure)`（tree.rs:827），taffy 应 block 满宽但 measure callback 似覆盖为文本宽。case-b 簇 anon 盒应 block-level 满 container 宽。
+
+**裁决**：2 bug 都在 R109 anon-box 构造/定位（tree.rs:824-855 区）+ taffy measure 交互，**多 session structural**（R109 spec FR-002/003 territory）。margin collapse 本身（§8.3.1）已正确，残余是 anon-box 几何（width/position），非 margin 逻辑。本 session 不强修（A/B 回归风险高，需 coordinated anon-box width/position 重构）。
+
+**精确 handoff**：① Bug 1 fix 入口 = tree.rs inline-split 分支（:834-855），anon 盒 x-position 须 = 父 container content edge（非 span inline 盒偏移）；span residual inline 盒 w=6 须查源（IFC 空 inline 盒？）；② Bug 2 fix 入口 = tree.rs:827 `is_block_mixed` anon_style，确保 taffy block 满宽（可能须禁 measure 改用 content_size 或显式 width=auto 满 container）；③ A/B 守 margin-padding-clear（R743/R744 回归风险 dir）。
+
+**意义**：R1058 后 margin 输入正确，本 round 排除「margin 折叠逻辑错」假设（已正确），锁定残余 = anon-box 几何（width/position），为后续 R109 FR-002（bg 涂布依赖 anon 盒满宽）+ FR-003（border 归属）提供精确靶点。box-display 簇 10 案 1.0-1.66% flip 须 Bug 1/2 任一修才 unlock。
+
+**▶ 下会话**：① Bug 2（case-b anon 盒满宽）攻坚——entry 已锁定 tree.rs:827，A/B 守 margin-padding-clear；② 或 Bug 1（case-a 3px offset）——须先查 span w=6 来源；③ 或转 R109 FR-002（bg 涂布）/ FR-003（border 归属）多 session slice。
+
 ### R1058 ★CSS §8.3 display:inline 垂直 margin 归零 LANDED = box-display +1（block-in-inline-vertical-margins-on-span-ignored 1.82→0.70 PASS）零回归（margin-padding-clear/normal-flow/linebox net-0 + welcome 不变）·converter 上游修复·R109 Phase-0 附带 yield·有 net 源码
 
 承 R1057 CONTINUE（R109 §9.2.1.1 anonymous block Phase-0 攻坚）。本轮 R109 Phase-0 map（FR-001 已 landed postprocess.rs:610，剩 FR-002/003 + margin-collapse 多 session），map 中定位 box-display borderline 簇 `block-in-inline-*-margin*` 真根因（converter §8.3 缺失），**A/B 确证 clean +1 零回归 LANDED，R1051-R1057 七轮 docs-only 后首个 code LANDED**。
