@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1079 multicol 列子元素 positioned 后代 drop bug 定位 + collection 修复 over-render 已回退·须 clip-context flush（多 session）·零 net 源码·纯调查
+
+承 R1078（plateau，寻 fresh 结构 lever）。本轮 PIL 定位 multicol-overflow-clip-positioned（16%）= **position:relative 内容在 multicol 列子元素（overflow:hidden）内完全 drop**，根因 + 修复方向明确但须 clip-context（多 session）。
+
+**bug 隔离（minimal repro）**：`columns:2 > div(overflow:hidden,h:200) > div(bg:blue,h:800,position:relative)` → ZW 渲 **0 blue**（全丢）；position:static 同结构 → 38400 blue（正确）；无 multicol 同结构 → 160000 blue（渲染，over-clip 另一 pre-existing bug）。即 **multicol + 列子元素 + positioned 后代 = drop**。
+
+**根因（paint/painter/mod.rs collect_positioned_descendants line 184-186）**：multicol 列子元素（column_span_offsets 非空）被 `continue` 跳过（交 multicol 循环绘制）。但其 positioned 后代（blue, position:relative）须由**外层 scope** 收集 flush——列子元素自身非 scope（overflow:hidden 不建 SC, creates_stacking_context 仅 positioned+z-index/opacity<1, engine.rs:1206），paint_node(列子元素) 的 steps 3/4/5 排除 positioned 子（line 777 `!is_positioned_child`），steps 2/6/7 仅 scope 跑（line 762/784/794 `if is_scope`）→ positioned 后代**无人收集 flush = drop**。无 multicol 时外层 root scope 经 collect_positioned_descendants 递归进列子元素收集 blue flush（line 209），故工作。
+
+**修复实验（已回退）**：collect_positioned_descendants line 184-186 改 `continue` 为 `collect_positioned_descendants(child, ...) + continue`（递归收集列子元素的 positioned 后代）。**A/B（stash 对照 R1076）net +1（151→152）但质量净负**：1 flip PASS（oof-nested-in-single-column 1.73→0.73）/ 0 flip FAIL / **12 worsened**：multicol-overflow-clip-positioned **+15.36**（blue 现 over-render 未裁剪到 overflow:hidden 200px）/ multicol-scroll-content +6.09 / multicol-nested-032/033 / abspos-containing-block-outside-spanner / abspos-autopos-contained-by-viewport / abspos-multicol-in-second-outer-clipped / fixed-in-nested-multicol-with-transform / fixedpos-static-pos-with-viewport-001/002/003。收集的 positioned 后代经外层 scope flush **未带列子元素的 overflow/column clip** → over-render。
+
+**裁决回退**：按 code-guidelines 回退（1 PASS 不抵 12 worsened 含 +15pp）。★ 正确修复须 positioned 后代 flush 时**继承列子元素的 clip context**（overflow:hidden + column clip），即 flush 不能简单交外层 scope，须在列子元素的 clip 栈内 flush——深 paint 架构改（positioned flush 携带 clip context），多 session 结构性。
+
+**意义**：定位 multicol 列子元素 positioned 后代 drop 真 bug（paint deferral + multicol 交互），修复方向明确（collect + clip-context flush）但非单 session。+ oof-nested-in-single-column 证实机制（positioned 后代收集后正确渲染当无 overflow 裁剪需求）。multicol-overflow-clip-positioned（16%）+ multicol-scroll-content + 9 abspos/fixed-in-multicol 案 = positioned-in-multicol-column 簇，待 clip-context flush 多 session 解。
+
+**▶ 下会话**：① **positioned-in-multicol-column clip-context flush**（多 session 结构性——flush 携带列子元素 overflow+column clip，解 overflow-clip-positioned 16% + scroll-content + abspos/fixed-in-multicol 簇）；② font-wall C-dep（最高 EV，用户决策点）；③ nested multicol fragmentation（nested-balancing-004 17%）。
+
 ### R1078 R109 §9.2.1.1 FR-002 评估 = 驱动案 onload JS 实际工作（R1078 首判「JS-gated」纠正）+ 残余 font-wall Ahem 主导（K->F 21940px）+ FR-002 bg/margin 仅 ~800px·FR-002 不 flip·零 net 源码·纯调查
 
 承 R1077（css-multicol plateau，pivot R109）。本轮评估 R109 FR-002（容器 bg 涂满匿名块/margin 区）。
