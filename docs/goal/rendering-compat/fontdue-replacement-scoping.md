@@ -1,11 +1,11 @@
 # Scoping：fontdue → chromium-matching 字体光栅化替换
 
-**版本**：v0.3（Phase 0 empirical prototype 完成：A1+A4 验证，Phase 1/2 可分步独立，待用户 C 依赖决策）
+**版本**：v0.4（Phase 1 metric coherence A/B 实测 NET-NEUTRAL → **refuted/移除**；font-wall 收敛为 Phase 2 rasterization-only；待用户 C 依赖决策）
 **日期**：2026-07-06
-**作者**：AI Assistant（rally R1064-R1066）
-**状态**：scoping + Phase 0 web + empirical（rally 自主模式；假设 A1/A4 已验证；待用户 C 依赖决策）
+**作者**：AI Assistant（rally R1064-R1067）
+**状态**：scoping + Phase 0 web + empirical + Phase 1 refuted（rally 自主模式；A1/A4 已验证；Phase 1 已证伪；待用户 C 依赖决策启动 Phase 2）
 
-> 本 doc 把 R1056（CJK ascent 第六证）+ R876（fontdue tight-ink 三方补偿）+ R1064（font-wall 笼罩 CSS2 测试四证穷尽）收敛为可实施的多会话计划前置 scoping。R1064 确证：rendering-compat clean single-session lever 已穷尽，残余失败 100% 受阻于 fontdue≠chromium 字体墙。
+> 本 doc 把 R1056（CJK ascent 第六证）+ R876（fontdue tight-ink 三方补偿）+ R1064（font-wall 笼罩 CSS2 测试四证穷尽）+ R1067（Phase 1 metric swap 第七证 net-neutral）收敛为可实施的多会话计划前置 scoping。R1064 确证 clean single-session lever 已穷尽；R1067 证 metric-source swap（Phase 1）无 yield → 残余 font-wall 100% 受阻于 rasterization（Phase 2，须 C 依赖）。
 
 ---
 
@@ -128,9 +128,9 @@ FreeType 光栅化。详见 §6 开放问题 1。
 
 | 切片 | 内容 | 验证 | 会话估算 |
 |---|---|---|---|
-| **Phase 0**（research）✅ web 部分完成 | ~~对比三候选~~ → freetype-rs 定为唯一 chromium 匹配候选（§3.2 实证）。**剩余**：empirical prototype（在 ZeroWeb fontdue 调用点接 freetype-rs，对 Ahem + DejaVuSans + NotoSansCJK 同字形渲染 chromium vs freetype-rs，像素 diff 验证 A1 像素级匹配） | freetype-rs 像素 diff 数据（验证 A1）+ hinting/subpixel/gamma 配置对齐 chromium | 1 session（待 C 依赖决策后） |
-| **Phase 1**（from_bytes + line_metrics） | 替换 from_bytes + line_metrics_full（最小 slice，光栅化仍用 fontdue），度量管线 coherence（layout strut + paint v_offset + half-leading 三方同改，R848 路线图） | welcome/morning/linebox/css-text A/B + Ahem WPT 零回归 | 2-3 session |
-| **Phase 2**（rasterize） | 替换 rasterize_glyph（非 Ahem）+ rasterize_ahem_glyph（Ahem），paint 字形定位协调 | 全 CSS2 oracle A/B + product-smoke <20% | 2-3 session |
+| **Phase 0**（research）✅ 完成 | ~~对比三候选~~ → freetype-rs 定为唯一 chromium 匹配候选（§3.2 实证）。**empirical prototype**（R1066，/tmp/fontcmp）验证 A1（freetype-rs per-glyph ≠ fontdue，向 chromium 收敛）+ A4（Ahem ≈ identical） | freetype-rs 像素 diff 数据（A1）+ Ahem 零回归（A4） | ✅ done |
+| **Phase 1**（metric coherence）❌ **refuted R1067** | ~~替换 line_metrics_full + 度量管线 coherence（R848 三方同改）~~。**A/B 实测 NET-NEUTRAL**：non-Ahem ascent 0.928→0.95（fontdue→FreeType DejaVu 真值），welcome −0.09pp（噪声）+ css-text oracle pass-count 字节同（357/357）+ 全 per-dir identical。metric source 不影响 oracle（ZW pipeline compensating offsets 吸收 2.4% nudge）。**第 7 证**（承 R834/R836/R849/R875/R1052/R1056）。详见 [`evidence/r1067-phase1-metric-swap-net-neutral-2026-07-06.txt`](./evidence/r1067-phase1-metric-swap-net-neutral-2026-07-06.txt) | — | ❌ closed（无 yield） |
+| **Phase 2**（rasterize 替换）★ **唯一有 yield 潜力的 font-wall lever** | 替换 rasterize_glyph（非 Ahem）+ rasterize_ahem_glyph（Ahem），paint 字形定位协调。font-wall（css21 指令文本 = DejaVu rasterization 27-30% / welcome-morning Latin+CJK 11-30%）100% 受阻于此 | 全 CSS2 oracle A/B + product-smoke <20% | 2-3 session（须 C 依赖决策） |
 | **Phase 3**（清理） | 移除 fontdue 依赖，文档更新 | cargo build --workspace 绿 + clippy | 1 session |
 
 ---
@@ -155,6 +155,7 @@ FreeType 光栅化。详见 §6 开放问题 1。
 
 ## 7. 下一步
 
-- **若用户确认启动**：Phase 0 lei-deep-research（候选对比 + prototype 像素 diff）→ Phase 1 RFC（lei-spec-rfc 完整 RFC）。
-- **若用户调整优先级**：本 scoping 入 archive，转其他目标。
-- **当前 rally 状态**：rendering-compat clean single-session lever 四证穷尽，font-wall 结构性平台期，须用户决策方向。
+- **Phase 1（metric coherence）已 R1067 关闭**（A/B net-neutral，第 7 证）。font-wall metric 分量无可修路径。
+- **Phase 2（rasterize 替换）是唯一有 yield 潜力的 font-wall lever**，须用户 C 依赖决策（accept freetype-rs/FreeType 2，CI 三平台）。R1067 已将 C 依赖决策从「Phase 1 可绕过」升级为「font-wall 唯一解锁器」——决策紧迫度上升。
+- **若用户暂不决策 C 依赖**：rendering-compat 转**非 font-wall 结构性 lever**（multicol Phase 2 column-fragmentation 有 spec，R109 case-a taffy-blocked，Phase A IFC 多会话），font-wall 维持 plateau。
+- **当前 rally 状态**：Phase 0 done + Phase 1 refuted + clean single-session lever 四证穷尽 + font-wall metric/line-height 几何全证毕（Ahem line-height=1.0 R759 LANDED / non-Ahem 1.2 = chromium DejaVu asc−desc / ascent swap net-neutral）。残余 font-wall = rasterization only（Phase 2）。

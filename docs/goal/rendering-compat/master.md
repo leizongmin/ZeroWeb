@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1067 Phase 1（fontdue 度量 → FreeType 度量 swap）A/B 实测 NET-NEUTRAL = 第 7 证（metric-source swap 无 yield）+ R1066「Ahem font-wall=度量」refuted（16px 度量差为 FreeType 舍入伪影，真值 fontdue=FreeType=0.8）+ font-wall 收敛 rasterization-only（Phase 2 唯一 lever）·已回退·零 net 源码·纯调查
+
+承 R1066 CONTINUE（Phase 1 度量 coherence，R848 三方同改用 FreeType 真实度量）。本轮扩展 fontcmp prototype（dump fontdue hlm + freetype size_metrics 跨 16/20/40px）精确测绘度量源 + A/B 实测 non-Ahem ascent 0.928→0.95，**Phase 1 refuted（第 7 证），font-wall 收敛 rasterization-only**。
+
+**度量源精确测绘**（关键纠正 R1066）：多 size 测绘证 FreeType `size_metrics` @16px 为 fixed-point 舍入偏低——DejaVu 真值 0.95（20/40px）/ Ahem 真值 **0.80**（20/40px，与 fontdue 一致；16px 0.8125 是舍入伪影）/ CJK 1.175-1.20。**R1066「Ahem 16px 12.80 vs 13.00」暗含度量差被证伪**——Ahem fontdue 与 FreeType 度量实际一致（0.8）。
+
+**A/B 实验**（`ascent_ratio_lookup` 非-Ahem 0.928→0.95，单行改动，仅 R848 三方之第一方 layout strut）：welcome 16.57→16.48%（−0.09pp 噪声）；css-text oracle-pass 357==357 / credible 344==344 / strict 84→85（+1 噪声）/ 全 per-dir（css-text-decor 108/242、white-space 45/395、line-breaking 60/127、text-align 12/73、letter-spacing 5/32、text-indent 14/25、word-break 8/87）**identical**。**裁决 NET-NEUTRAL，已回退**。
+
+**★ 7th proof + Phase 1 关闭**：metric source（fontdue 0.928 vs FreeType 0.95）不影响 oracle——ZW pipeline compensating offsets（paint v_offset=fs + height−0.8·fs + half-leading）吸收 2.4% ascent nudge，阈值未翻。承 R834/R836/R849/R875/R1052/R1056 六证，本轮第七证：metric **源** swap（非数值调）亦 net-neutral。font-metric 任何单维度改动（数值/源/单点）在 ZW 当前 pipeline 均无正 yield。**Phase 1 关闭，勿再投入 metric swap**。
+
+**★ font-wall 收敛 rasterization-only**：① Ahem-font WPT 残余几何全证毕——line-height:normal Ahem=1.0 LANDED（R759 `AHEM_LINE_HEIGHT_RATIO`），non-Ahem=1.2 = chromium DejaVu（FreeType asc−desc @20px = 24.0 = 1.2em exact），ascent swap net-neutral；② css21 指令文本 / welcome-morning Latin+CJK font-wall = **DejaVu/CJK rasterization 差**（A1：'a'/'g' per-glyph 27-30%），非度量（本证）非光栅化无关（A4 仅限 Ahem）。**残余 font-wall 100% = rasterization（Phase 2，须 C 依赖）**。
+
+**裁决**：scoping doc 升 v0.4（Phase 1 移除/refuted，Phase 2 = 唯一 font-wall lever）。C 依赖决策从「Phase 1 可绕过」升级为「font-wall 唯一解锁器」——决策紧迫度上升。详见 [`evidence/r1067-phase1-metric-swap-net-neutral-2026-07-06.txt`](./evidence/r1067-phase1-metric-swap-net-neutral-2026-07-06.txt)。
+
+**▶ 下会话**：① **待用户 C 依赖决策**启动 Phase 2（rasterize 替换 freetype-rs，唯一 font-wall yield lever）；② 决策前 rendering-compat 转**非 font-wall 结构性 lever**（multicol Phase 2 column-fragmentation 有 spec / R109 case-a taffy-blocked / Phase A IFC 多会话）；③ 勿再投 font-wall metric/line-height 几何（Ahem/non-Ahem/ascent/line-height-ratio 全证毕，rasterization-only）。
+
 ### R1066 fontdue vs freetype-rs 光栅化 prototype = A1+A4 验证（freetype-rs per-glyph ≠ fontdue：Latin 3-30% / CJK 11-16% mean|Δ|，向 chromium 收敛；Ahem ≈ identical 20px 0.0000 无回归）+ Ahem WPT font-wall = 度量非光栅化（细分）+ Phase 1/2 可分步独立·零 net 源码·纯调查
 
 承 R1065 CONTINUE（Phase 0 empirical prototype）。本轮 standalone cargo 项目（/tmp/fontcmp，fontdue 0.9 + freetype-rs 0.38，链系统 libfreetype.so.6）实测 fontdue vs FreeType per-glyph + 度量 diff，**验证假设 A1+A4，refine Phase 1/2 计划**。
