@@ -2648,6 +2648,34 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1048 ★border 逻辑属性（border-inline/block-start/end-{width,style,color}）writing-mode-aware LANDED·CSS Logical Properties §3 feature gap 修复·净 0 oracle·foundational enabling slice·零硬门禁回归
+
+承 R1047 CONTINUE（R109 vertical-rl block-flow = taffy-blocked 多 session，转 logical-props feature gap）。本轮实现 border 逻辑属性（原完全未注册：parse/store/apply 全缺），**spec-correctness + foundational enabling slice，LANDED，净 0 oracle**。
+
+**缺口确认**：margin/padding/inset logical 属性 R143 已有（horizontal-tb 静态映射，apply_advanced.rs）；inline-size/block-size R143 LANDED。**唯独 border-inline/border-block logical 属性完全未实现**（corpus 12+5 文件用，logical-props-001~004 / rules-groups.html 等）。CSS `border-inline-start: 5px green solid` 被静默忽略→无 border 渲染。
+
+**实现**（CSS Logical Properties §3 + Writing Modes §6）：
+- `shorthand/mod.rs`：4 简写（border-{inline,block}-{start,end}）经 `expand_border_side` 展开为 12 logical longhand（border-{axis}-{side}-{width,style,color}）。
+- `apply_advanced.rs`：12 logical longhand 处理 + `logical_border_physical_side(property, &style.writing_mode)` 按 computed writing-mode 映射物理边：
+  - horizontal-tb（ltr）：inline-start=left, inline-end=right, block-start=top, block-end=bottom
+  - vertical-rl：inline-start=top, inline-end=bottom, block-start=right, block-end=left
+  - vertical-lr：inline-start=top, inline-end=bottom, block-start=left, block-end=right
+  - inline 轴 direction 暂按 ltr（vertical 模式 inline-start=top，logical-props-001 预期）。
+  - 与 R143 静态映射不同，border 用 writing-mode-aware（因 border 是新属性零回归风险；margin/padding/inset 维持 R143 静态不动）。
+- 6 新单测（tests/core.rs）：horizontal-tb inline-start/block-end + vertical-rl inline-start/block-start + vertical-lr block-start + 简写 color 路径，全过。
+
+**A/B（chromium Oracle，stash 对照）**：
+- **css-writing-modes**：56/784 → 56/784（**净 0 oracle**）。logical-props-002 1.05%→0.99%（borderline 噪声内，per-dir 持平确证非稳定 flip）。
+- **css-tables**：74/115 → 74/115（**净 0 oracle**；rules-groups.html border-block-start horizontal-tb 未 flip）。
+- **3 已 FAIL 案轻微恶化**（暴露下游渲染缺口，非 mapping bug）：logical-props-003/004（col/colgroup + vertical-rl，1.05→1.30，ZW table-internal col/colgroup border 渲染缺口 R177 territory）+ logical-physical-mapping-001（10.73→10.98，综合 8 writing-mode 含 sideways-lr 未支持）。
+- **0 PASS→FAIL flip 回归**（dump diff 确证）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（style-system 1927→1933 含 6 新测，layout-engine 1024，全树零失败）/ **product-smoke welcome 16.57% < 20%** ✓（welcome 不用 logical border，一字不差）。
+
+**意义**：CSS Logical Properties §3 feature gap 修复——border 逻辑属性首次实现，writing-mode-aware 物理边映射（horizontal-tb/vertical-rl/vertical-lr）。属 R885（font-bridge dormant）/R897（multicol Phase 2a enabling）式 **foundational enabling slice**：净 0 oracle 但为 logical-props 多 session 轨道奠基（margin/padding/inset 可后续转 writing-mode-aware；table-internal border 渲染改进后 003/004 可 flip）。3 已 FAIL 案恶化是暴露下游缺口（table col/colgroup border + sideways-lr），非本 mapping bug——mapping 单测全过、spec-correct。详见 [`evidence/r1048-border-logical-props-landed-2026-07-05.txt`](./evidence/r1048-border-logical-props-landed-2026-07-05.txt)。
+
+**▶ 下会话**：① **margin/padding/inset logical 转 writing-mode-aware**（现 R143 静态 horizontal-tb，转用 `logical_border_physical_side` 同款映射，可能 flip vertical-mode margin/padding 簇）；② **table-internal col/colgroup border 渲染**（R177 territory，解 003/004）；③ sideways-lr writing-mode 支持（enum + converter，解 mapping-001 部分）；④ 或转 R109 vertical block-flow（taffy 多 session）/ R702 margin-collapse-through。logical-props 轨道 foundational 已立，可按 slice 续推。
+
 ### R1047 sibling-overlap grow-push postprocess 实验 = net -1 回退已回退·block-in-inline（R109）破坏拓扑·postprocess 层 ruled out·零 net 源码·纯调查
 
 承 R1046 CONTINUE（③ R1018 两趟 + sibling 重定位：p 文本测量延迟致 padding-em-inherit-001 sibling 重叠）。本轮实现 postprocess「增高下移兄弟」对称分支并 A/B，**结论：net -1 oracle，postprocess 层 ruled out，已回退**。

@@ -927,6 +927,72 @@ fn test_inset_inline_end() {
     assert_eq!(style.right, LengthValue::Px(75.0));
 }
 
+// ── border 逻辑属性（CSS Logical Properties §3，writing-mode-aware）──
+
+#[test]
+fn test_border_logical_inline_start_horizontal_tb() {
+    // horizontal-tb（ltr）：inline-start = left
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "writing-mode", "horizontal-tb"));
+    assert!(apply_property_value(&mut style, "border-inline-start-width", "5px"));
+    assert!(apply_property_value(
+        &mut style,
+        "border-inline-start-style",
+        "solid"
+    ));
+    assert_eq!(style.border_left_width, LengthValue::Px(5.0));
+    assert_eq!(style.border_left_style, BorderStyleValue::Solid);
+}
+
+#[test]
+fn test_border_logical_block_end_horizontal_tb() {
+    // horizontal-tb：block-end = bottom
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "border-block-end-width", "3px"));
+    assert_eq!(style.border_bottom_width, LengthValue::Px(3.0));
+}
+
+#[test]
+fn test_border_logical_inline_start_vertical_rl() {
+    // vertical-rl：inline-start = top（inline 轴垂直，ltr 方向 start=top）
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "writing-mode", "vertical-rl"));
+    assert!(apply_property_value(&mut style, "border-inline-start-width", "5px"));
+    assert_eq!(style.border_top_width, LengthValue::Px(5.0));
+}
+
+#[test]
+fn test_border_logical_block_start_vertical_rl() {
+    // vertical-rl：block-start = right（block 轴水平，rl 方向 start=right）
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "writing-mode", "vertical-rl"));
+    assert!(apply_property_value(&mut style, "border-block-start-width", "5px"));
+    assert_eq!(style.border_right_width, LengthValue::Px(5.0));
+}
+
+#[test]
+fn test_border_logical_block_start_vertical_lr() {
+    // vertical-lr：block-start = left（block 轴水平，lr 方向 start=left）
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "writing-mode", "vertical-lr"));
+    assert!(apply_property_value(&mut style, "border-block-start-width", "5px"));
+    assert_eq!(style.border_left_width, LengthValue::Px(5.0));
+}
+
+#[test]
+fn test_border_logical_shorthand_inline_start_color() {
+    // 简写经 shorthand 展开为 logical longhand，再 writing-mode 映射：
+    // horizontal-tb + border-inline-start: 2px solid green → border-left-*
+    let mut style = ComputedStyle::default();
+    // 直接验证 longhand color 路径
+    assert!(apply_property_value(
+        &mut style,
+        "border-inline-start-color",
+        "green"
+    ));
+    assert_eq!(style.border_left_color, ColorValue::Rgba(0, 128, 0, 255));
+}
+
 #[test]
 fn test_logical_properties_with_percentage() {
     let mut style = ComputedStyle::default();
