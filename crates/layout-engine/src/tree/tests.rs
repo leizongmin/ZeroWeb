@@ -315,6 +315,7 @@ fn test_build_with_explicit_auto_margin() {
     doc.append_child(html, div).unwrap();
 
     let mut style = ComputedStyle::default();
+    style.display = DisplayValue::Block; // R1058：测垂直 margin 须 block（默认 Inline §8.3 垂直 margin 归零）
     style.margin_top = LengthValue::Auto;
     style.margin_right = LengthValue::Auto;
     let mut styles = HashMap::new();
@@ -484,6 +485,7 @@ fn test_build_with_padding_border_margin() {
 
     let mut styles = HashMap::new();
     let mut div_style = ComputedStyle::default();
+    div_style.display = DisplayValue::Block; // R1058：测垂直 margin 须 block（默认 Inline §8.3 垂直 margin 归零）
     div_style.padding_top = LengthValue::Px(10.0);
     div_style.border_top_width = LengthValue::Px(2.0);
     // border-style=Solid 方能使 border-width 进入布局盒（CSS §8.5.3：style=none→width=0）

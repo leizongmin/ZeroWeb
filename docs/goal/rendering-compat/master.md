@@ -2648,6 +2648,202 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1067 Phase 1（fontdue 度量 → FreeType 度量 swap）A/B 实测 NET-NEUTRAL = 第 7 证（metric-source swap 无 yield）+ R1066「Ahem font-wall=度量」refuted（16px 度量差为 FreeType 舍入伪影，真值 fontdue=FreeType=0.8）+ font-wall 收敛 rasterization-only（Phase 2 唯一 lever）·已回退·零 net 源码·纯调查
+
+承 R1066 CONTINUE（Phase 1 度量 coherence，R848 三方同改用 FreeType 真实度量）。本轮扩展 fontcmp prototype（dump fontdue hlm + freetype size_metrics 跨 16/20/40px）精确测绘度量源 + A/B 实测 non-Ahem ascent 0.928→0.95，**Phase 1 refuted（第 7 证），font-wall 收敛 rasterization-only**。
+
+**度量源精确测绘**（关键纠正 R1066）：多 size 测绘证 FreeType `size_metrics` @16px 为 fixed-point 舍入偏低——DejaVu 真值 0.95（20/40px）/ Ahem 真值 **0.80**（20/40px，与 fontdue 一致；16px 0.8125 是舍入伪影）/ CJK 1.175-1.20。**R1066「Ahem 16px 12.80 vs 13.00」暗含度量差被证伪**——Ahem fontdue 与 FreeType 度量实际一致（0.8）。
+
+**A/B 实验**（`ascent_ratio_lookup` 非-Ahem 0.928→0.95，单行改动，仅 R848 三方之第一方 layout strut）：welcome 16.57→16.48%（−0.09pp 噪声）；css-text oracle-pass 357==357 / credible 344==344 / strict 84→85（+1 噪声）/ 全 per-dir（css-text-decor 108/242、white-space 45/395、line-breaking 60/127、text-align 12/73、letter-spacing 5/32、text-indent 14/25、word-break 8/87）**identical**。**裁决 NET-NEUTRAL，已回退**。
+
+**★ 7th proof + Phase 1 关闭**：metric source（fontdue 0.928 vs FreeType 0.95）不影响 oracle——ZW pipeline compensating offsets（paint v_offset=fs + height−0.8·fs + half-leading）吸收 2.4% ascent nudge，阈值未翻。承 R834/R836/R849/R875/R1052/R1056 六证，本轮第七证：metric **源** swap（非数值调）亦 net-neutral。font-metric 任何单维度改动（数值/源/单点）在 ZW 当前 pipeline 均无正 yield。**Phase 1 关闭，勿再投入 metric swap**。
+
+**★ font-wall 收敛 rasterization-only**：① Ahem-font WPT 残余几何全证毕——line-height:normal Ahem=1.0 LANDED（R759 `AHEM_LINE_HEIGHT_RATIO`），non-Ahem=1.2 = chromium DejaVu（FreeType asc−desc @20px = 24.0 = 1.2em exact），ascent swap net-neutral；② css21 指令文本 / welcome-morning Latin+CJK font-wall = **DejaVu/CJK rasterization 差**（A1：'a'/'g' per-glyph 27-30%），非度量（本证）非光栅化无关（A4 仅限 Ahem）。**残余 font-wall 100% = rasterization（Phase 2，须 C 依赖）**。
+
+**裁决**：scoping doc 升 v0.4（Phase 1 移除/refuted，Phase 2 = 唯一 font-wall lever）。C 依赖决策从「Phase 1 可绕过」升级为「font-wall 唯一解锁器」——决策紧迫度上升。详见 [`evidence/r1067-phase1-metric-swap-net-neutral-2026-07-06.txt`](./evidence/r1067-phase1-metric-swap-net-neutral-2026-07-06.txt)。
+
+**▶ 下会话**：① **待用户 C 依赖决策**启动 Phase 2（rasterize 替换 freetype-rs，唯一 font-wall yield lever）；② 决策前 rendering-compat 转**非 font-wall 结构性 lever**（multicol Phase 2 column-fragmentation 有 spec / R109 case-a taffy-blocked / Phase A IFC 多会话）；③ 勿再投 font-wall metric/line-height 几何（Ahem/non-Ahem/ascent/line-height-ratio 全证毕，rasterization-only）。
+
+### R1066 fontdue vs freetype-rs 光栅化 prototype = A1+A4 验证（freetype-rs per-glyph ≠ fontdue：Latin 3-30% / CJK 11-16% mean|Δ|，向 chromium 收敛；Ahem ≈ identical 20px 0.0000 无回归）+ Ahem WPT font-wall = 度量非光栅化（细分）+ Phase 1/2 可分步独立·零 net 源码·纯调查
+
+承 R1065 CONTINUE（Phase 0 empirical prototype）。本轮 standalone cargo 项目（/tmp/fontcmp，fontdue 0.9 + freetype-rs 0.38，链系统 libfreetype.so.6）实测 fontdue vs FreeType per-glyph + 度量 diff，**验证假设 A1+A4，refine Phase 1/2 计划**。
+
+**A1 验证（freetype-rs ≠ fontdue）**：DejaVuSans 'a'@20px mean|Δ|/255=**0.2992 (30%)** / 'g'@20px 0.2701 (27%) / 'T'@20px 0.0292 (3%)；NotoSansCJK '試'@20px 0.1642 (16%)。fontdue tight-ink vs FreeType FT_Render_Glyph 渲染模型差大（曲线字形 'a'/'g' 差最大）。→ **替换 fontdue→freetype-rs 必显著改 ZW 渲染向 chromium（FreeType）收敛**，font-wall 光栅化分量可解。
+
+**A4 验证（Ahem 不回归）**：Ahem 'X'@20px mean|Δ|=**0.0000 精确一致** / @16px 0.0235 covΔ=0.0000。方块字形 fontdue≈FreeType。→ **Ahem WPT 测试不受光栅化器替换影响**。
+
+**★ 重要细分：Ahem WPT font-wall = 度量非光栅化**。Ahem 光栅化 fontdue≈FreeType identical，但 WPT Ahem 测试仍 1-3% diff（R1064）。故该 diff 来自**度量差**（fontdue asc 14.85 vs FreeType 15.00 @16px DejaVu；Ahem 12.80 vs 13.00；CJK 23.20 vs 24.00）+ IFC 行盒几何，**非光栅化**。→ **WPT（Ahem 主导）修须 Phase 1 度量管线 coherence**（R848 三方同改用 FreeType 真实度量），光栅化替换对 WPT 收益小；**产品页（welcome/morning Latin/CJK）修须 Phase 2 光栅化替换**（光栅化差 11-30% 主导产品 diff）。
+
+**★ Phase 1/2 可分步独立**：Phase 1（度量 coherence，用 FreeType line_metrics 替 fontdue，**fontdue 仍光栅化**，最小 slice 低风险）→ Phase 2（rasterize_glyph 替 freetype-rs FT_Render_Glyph）。降低单步复杂度 + A/B 风险。详见 [`evidence/r1066-fontdue-vs-freetype-prototype-2026-07-06.txt`](./evidence/r1066-fontdue-vs-freetype-prototype-2026-07-06.txt) + scoping doc（待升 v0.3）。
+
+**裁决**：prototype 证 freetype-rs 可用（系统 FreeType 链接成功 + API 工作 + per-glyph diff 实证）。Phase 0 完成。**待用户 C 依赖决策**（R1064 飞书通知 3 开放问题）启动 Phase 1（度量 coherence 最小 slice，不须替换光栅化器，fontdue 仍光栅化，A/B 守 Ahem WPT + welcome/morning/linebox oracle）。
+
+**▶ 下会话**：① **待用户决策**启动 Phase 1（度量 coherence，R848 三方同改：layout strut_ascent + paint v_offset −real_ascent + half-leading (lh−(asc−desc))/2，用 FreeType line_metrics 替 fontdue，fontdue 仍光栅化）；② 或自主起 Phase 1（决策独立——度量用 FreeType 真值是 correctness，C 依赖仅在 Phase 2 光栅化替换时引入，Phase 1 仅读 FreeType 度量须 freetype-rs 依赖但可不进 CI）；③ rendering-compat clean lever 四证穷尽，fontdue 替换（Phase 1 度量 + Phase 2 光栅化）是唯一 unblocker。
+
+### R1065 fontdue→chromium 替换 Phase 0 web research = freetype-rs 定为唯一 chromium 像素匹配候选（chromium Linux 链 Chrome→Skia→FreeType 实证）+ swash 误归类纠正（shaping 非光栅化）+ 纯 Rust 候选不像素匹配 chromium·scoping doc v0.2·零 net 源码·纯调查
+
+承 R1064 CONTINUE（fontdue 替换 Phase 0 research，rally 自主推进不阻塞用户决策）。本轮 web research（WebSearch）对比 fontdue 替换候选，**freetype-rs 定为唯一理论 chromium 像素匹配候选，scoping doc 升 v0.2**。
+
+**chromium Linux 字体管线实证**（Skia 官方 + SO + chromium blog）：**Chrome → Skia → FreeType**。Skia 在 Linux 把字体解析/光栅化（FT_Render_Glyph + hinting + AA）委托 FreeType，Skia 维护 glyph cache + 合成。新兴 Fontations（Rust）仅做**解析**，光栅化仍 FreeType。→ **chromium 最终光栅化 = FreeType（Linux）**。
+
+**★ 候选裁决（§3.2）**：① **`freetype-rs`**（C 绑定 FreeType 2 + FT_Render_Glyph）= **唯一理论像素级匹配 chromium 候选**（同栈 FreeType，验证假设 A1）；② ~~`swash`~~ **误归类纠正**——swash 是 **shaping 库**（HarfBuzz 风格复杂脚本整形）非光栅化器，不能替 fontdue rasterize（可作 ZW shaping 缺口独立 lever，当前非阻塞）；③ **`ab_glyph`**（纯 Rust）无 hinting/LCD subpixel，光栅化模型 ≠ chromium，**不像素匹配**（同 fontdue tight-ink 谱系，换不解决 font-wall）；④ Pathfinder/font-rs（GPU）模型不同 + 须 GPU 集成。
+
+**★ 核心权衡（须用户决策，已在 R1064 飞书通知）**：fontdue 替换 = **accept FreeType C 依赖**（chromium Linux 像素级匹配，unblock font-wall）vs **保持纯 Rust**（ab_glyph/fontdue 同谱系，font-wall 不可解）。**无中间方案**——纯 Rust 无法匹配 chromium FreeType 光栅化（tight-ink vs FT_Render_Glyph 模型差）。
+
+**Phase 0 web 部分完成**（§4 表）：剩 empirical prototype（接 freetype-rs 到 ZW fontdue 调用点，对 Ahem + DejaVuSans + NotoSansCJK 同字形渲染 chromium vs freetype-rs，像素 diff 验证 A1 像素级匹配 + hinting/subpixel/gamma 配置对齐），**待用户 C 依赖决策后**。详见 [`fontdue-replacement-scoping.md`](./fontdue-replacement-scoping.md) v0.2。
+
+**▶ 下会话**：① **待用户 C 依赖决策**（R1064 飞书通知 3 开放问题）—— accept freetype-rs C 依赖启动 empirical prototype / Phase 1 RFC，或调整优先级；② 决策前可自主做 empirical prototype（验证 A1，C 依赖 prototype 在 dev 环境不影响 CI 决策）；③ rendering-compat clean single-session lever 四证穷尽，font-wall 结构性平台期，fontdue 替换是唯一 unblocker。
+
+### R1064 css-backgrounds/borders fresh dir 扫描 = 簇全 font-wall（1.15% background-001-022 + 1.46% 026-053 + 3.10% border-top-width-012-078 identical diff = "Filler Text" 指令文本 fontdue≠chromium 渲染）+ negative border-width 处理已正确（apply.rs:225 reject）·clean lever 穷尽第四证（R740/R1053/R1057/R1063/R1064）·零 net 源码·纯调查
+
+承 R1063 CONTINUE（pivot css-backgrounds/borders fresh dir）。本轮扫 CSS2/backgrounds (228/339=67.3%) + CSS2/borders (399/506=78.9%) + css-fonts (98/287=34.8%) borderline 簇，**全部簇 = font-wall（指令文本 fontdue≠chromium），clean lever 穷尽第四证**。
+
+**簇全 font-wall（identical diff = 同指令文本）**：① **CSS2/backgrounds**：background-001/002/006/007/008/009/010/014/018/022 + background-color-175 全 **1.15%** exact（~10 案同 `<p>Test passes if...</p>` + 全宽 green div，layout diff=0，1.15% 纯 = 指令文本 fontdue 渲染）；background-026/029/038/041/050/053 全 **1.46%** exact（~6 案同结构）；② **CSS2/borders**：border-top-width-{012,023,034,045,056,067,078} 全 **3.10%** exact（7 案 `border-top-width: -X` 变体，同 "Filler Text" 文本）；border-bottom-width 同簇 **3.26%**；border-*-width-applies-to-001-004 **3.21%**。
+
+**★ negative border-width 处理已正确**（非 bug）：border-top-width-012 测 `#span1 { border-top-width: -1pt }`（应 §8.5.1 reject → initial medium 3px）vs span2 medium。ZW `apply.rs:225` 已 `if let Px(px) = v && px < 0 { return false }`（reject → 保 medium initial）。LAYOUT_DUMP span1 h=22 ≈ span2 h=23（border 都 3px）。**3.10% = "Filler Text" font-wall 非 border bug**。
+
+**★ font-wall baseline 量化**：WPT css21 测试标准化 `<p>Test passes if...</p>` 指令文本，fontdue vs chromium 字形渲染差贡献 ~1-3% diff baseline，**笼罩全 CSS2 测试**。case 须 layout diff > ~0.5% 才有 fix 后越过 font-wall <1% 阈值的可能。backgrounds/borders 簇 layout diff≈0（纯 background/border 渲染正确），故全卡 font-wall。R1058（inline vmargin）yield 因 layout diff=1.12% 足够大（fix 后 0.70% < 1% 越过 font-wall 0.7% baseline）。
+
+**裁决**：css-backgrounds/borders clean single-session lever 穷尽（簇全 font-wall），**clean lever 穷尽第四证**（R740 doc-scan + R1053 5-dir scan + R1057 list-item + R1063 box-display + R1064 backgrounds/borders）。rendering-compat 目标**结构性平台期确认**：clean lever 耗尽，残余失败 100% fontdue≠chromium 字体墙（backgrounds/borders/box-display/text/text-decor/writing-modes 簇）+ R109 结构性（box-display case-a/case-b）+ vertical（R1043/R1052）+ multicol（Phase 2）。R1058（inline 垂直 margin）是 R1057-R1064 七轮唯一 code yield。
+
+**▶ 下会话战略**：clean single-session lever 已四证穷尽，**进一步推进须转 multi-session 架构 lever**：① **fontdue → chromium-matching rasterizer 替换**（最高 EV，unblock backgrounds/borders/box-display/text/text-decor/font-wall 簇；fontdue API surface = render-foundation/src/font/ FontLoader，`from_bytes`/`rasterize`/`horizontal_line_metrics`；候选 FreeType (freetype-rs, chromium Linux 同栈) / swash / ab_glyph；须 lei-spec-rfc 起 RFC 定迁移路径 + 切片）；② R109 case-a 3px offset（taffy measured-leaf，须 anon-box 重构 new_with_children）；③ Phase-A IFC 单次源统一（非 font-metric 子任务，六证 ruled out font-metric）。★ 勿再盲扫 fresh dir 找 clean single-session lever（四证耗尽，font-wall baseline 笼罩）。
+
+### R1063 paint 双渲染 probe + case-b 容器抑制修复 = 确证双渲染但抑制致 normal-flow -29 回归 + box-display case-b 簇终裁 font-blocked（1.04% 残余 = 字体/精度 非 anon-box）·已回退·box-display 簇穷尽·零 net 源码·纯调查
+
+承 R1062 CONTINUE（probe paint_text anon fragment）。本轮复加 width fix + R1063DBG probe paint_text，**确证 case-b 双渲染**（#div1 容器 + anon fragment 共 node_id 都渲染文本），实施容器抑制修复，**A/B 揭示 box-display font-blocked + 抑制致 normal-flow -29 回归，已回退，box-display 簇穷尽**。
+
+**R1063DBG probe 实证双渲染**（anonymous-box-generation-001）：paint_text 对 node_id=30v1(#div1) 调 2 次：① 容器（fragment=false, has_anon_child=true, content_w=192）；② anon fragment（fragment=true, content_w=192）。**两者都渲染 "Filler Text"**（inline_layout=false 走 Path B）。双渲染 = case-b 容器自身 IFC + anon fragment IFC 共渲染同文本。
+
+**★ 容器抑制修复**（text.rs:785 后加）：`fragment_node_ids.is_none() && children.iter().any(|c| c.fragment_node_ids.is_some())` → return（case-b 容器文本在 anon fragment，不自身渲染）。逻辑 spec-correct（§9.2.1.1 block-mixed inline 文本全在 anon 盒）。
+
+**A/B（width fix + 抑制）**：① **CSS2/box-display 39→39（net-0）**——anonymous-box-generation-001 仍 1.04%（width fix 已让双渲染都 @x=50 居中重叠，抑制其一无可视变化；1.04% 残余 = `<p>` 文本 + "Filler Text" fontdue vs chromium + blue stripe AA = **font/precision 非 anon-box**）；② **CSS2/normal-flow 604→575（-29 回归 ❌）**——抑制过宽，normal-flow 多案合法容器（含 anon fragment 子但须自身渲染文本）被误抑。
+
+**裁决：box-display case-b 簇终裁 font-blocked，box-display 簇穷尽**。① 双渲染抑制 spec-correct 但 **normal-flow -29 回归**（过宽，须窄化到真 case-b 容器，但 normal-flow 合法 case 难区分）→ 回退；② width fix + 抑制对 box-display **net-0**（target 1.11→1.04 后续 font 残余不可越 <1%）→ 无 yield；③ **1.04% = font/precision**（双渲染对齐 x=50 后残余纯字体），box-display case-b 非 anon-box 可产 lever。git checkout 回退 width fix + 抑制（零 net 源码）。
+
+**box-display R109 簇 5 轮（R1059-R1063）收官**：R1058（inline 垂直 margin）= 唯一 clean yield（+1）；R1059 定位 2 bug；R1060 Bug 2 measure refuted（taffy）；R1061 width fix net-0；R1062 paint-side；R1063 双渲染抑制回归 + font-blocked 终裁。**剩余 box-display 1-1.6% 簇 = font-wall（fontdue 字体度量/AA）+ R109 case-a 3px offset（taffy measured-leaf）+ case-b 1.04%（font）**，皆非单 session clean lever。
+
+**▶ 下会话**：box-display 簇穷尽，**pivot 必要**：① css-backgrounds / css-borders fresh dir 扫 borderline 簇（R740 strategy ②，未扫过）；② css-tables top-worst 复审（R177 territory，可能漂移出新 lever）；③ 或转 Phase-A IFC 单次源统一续（非 font-metric 子任务）；④ R109 case-a 3px offset（span w=6 taffy measured-leaf，与 case-b 同 taffy quirk，taffy-blocked）。★ box-display case-b 勿再投（font-blocked + 抑制回归，R1063 终裁）。
+
+### R1062 R1061 text-align bug 定位 = compute_final 确为 anon 盒建 Center IFC（probe 实测 text_align=Center container_w=192 is_block_level=true，存储无条件）·bug 在 paint 侧（use_stored 不为 anon 触发 或 容器 #div1 自身 IFC 渲染文本 而非 anon 盒）·零 net 源码·纯调查
+
+承 R1061 CONTINUE（probe compute_final 内 anon 盒 text-align 应用）。本轮复加 width fix + R1061DBG probe compute_final，**确证 compute_final 端正确，bug 在 paint 侧**。
+
+**R1061DBG probe 实测**（anonymous-box-generation-001，width fix 复加使 anon 盒 w=192）：compute_final 内 anon 盒 `node_id=Some(NodeId(30v1)) container_w=192.0 text_align=Center style.text_align=Center is_block_level=true`。**compute_final 确为 anon 盒以 Center text-align + 192 宽建 IFC**（resolve_text_align(styles[#div1]) = Center 正确）。存储无条件（inline_finalization.rs:831 `if !lines.is_empty()`，"Filler Text" 非空 → 必存）。
+
+**★ bug 缩窄到 paint 侧**：compute_final 建 + 存 Center IFC，但渲染未居中（diff 仅降 0.07pp 非居中应降 ~0.38pp）。paint use_stored 条件（text.rs:937-938）：`multicol_info.is_none() && inline_layout.is_some() && (inline_layout_width - ifc_width).abs() < 1.0`。anon 盒满足（inline_layout Some + 192=192），use_stored 应 true。**疑点**：① paint 是否对 anon 盒（fragment_node_ids.is_some）跑 paint_text？或跳过？② 容器 #div1 自身也有 IFC（node_id 同 30v1，has_text_children via DOM），paint #div1 时若也渲染其 IFC 文本（left?），可能与 anon 盒 Center IFC 冲突/覆盖（双渲染或 #div1 赢）。text.rs:785 `is_r109_split && fragment_node_ids.is_none` 仅处理 split parent（非 fragment），anon fragment 的 paint 路径未单独审计。
+
+**裁决**：width fix + probe 已 git checkout 回退（零 net 源码）。**bug 精确定位 paint 侧**：compute_final 端 Center IFC 正确存储，paint 端未用（或被容器 IFC 覆盖）。下会话 probe paint_text 对 anon fragment 的调用（box_node.fragment_node_ids.is_some 时 use_stored 是否真触发 + 是否双渲染）。
+
+**▶ 下会话**：① probe paint_text 对 anon fragment：在 text.rs:937-938 print use_stored/inline_layout_width/ifc_width for fragment_node_ids.is_some 盒；若 use_stored=false 找原因，若 true 但仍左对齐则查双渲染（#div1 vs anon）；② 找到 paint bug 后，复加 R1061 width fix + paint fix 同落 → yield anonymous-box-generation-001（+1 box-display，可能 unlock case-b 簇）；③ 若 paint 侧复杂，pivot css-backgrounds/borders fresh dir。★ compute_final 端勿再查（R1062 已证正确）。
+
+### R1061 anon 盒宽度 postprocess 修复（pre-compute_final）= 盒级生效（100→192）但 oracle net-0（4 dir 1348 案零翻转）+ 目标 1.11→1.04 未 flip（text-align:center 另 bug 阻断）·已回退·待 text-align 修后同落·零 net 源码·纯调查
+
+承 R1060 CONTINUE（Bug 2 = block-mixed anon 盒满宽，R1060 推翻 measure 级修复，留下 postprocess width fix 或 anon-box 重构两条路）。本轮实施 **postprocess width fix（pre-compute_final）**：盒级确生效（anon 盒 100→192），但 **A/B 4 dir 1348 案 net-0 零翻转**，目标案仅 1.11→1.04 未 flip，**根因 = text-align:center 另一独立 bug 阻断**。已回退（net-0 不 land）。
+
+**改动（已 git checkout 回退，零 net 源码）**：① `postprocess.rs::fix_r109_anon_block_widths`（新函数，先序遍历，anon 盒（fragment_node_ids.is_some）width/content_width = 父 content_width，CSS §9.3.1 block 满父宽）；② `engine.rs:424` 在 `compute_final_inline_layouts` **之前**调用（关键：compute_final 以 root.content_width 重建 IFC，inline_finalization.rs:619，故 pre-compute_final 修正宽度使 IFC 在正确宽下重建）。
+
+**A/B（stash baseline，4 dir）**：CSS2/box-display 39→39（net-0）/ css-flexbox 295→295（net-0）/ css-grid 20→20（net-0）/ CSS2/margin-padding-clear 310→310（net-0）。**1348 案零翻转（PASS->FAIL=0，FAIL->PASS=0）**。welcome product-smoke 16.57% 不变。
+
+**★ 盒级生效但未 yield**：anonymous-box-generation-001 LAYOUT_DUMP `div（anon）w=100 → w=192`（block-mixed anon 盒确满 container 192 宽，CSS §9.3.1 spec-correct）。目标案 1.11%→1.04%（仅 -0.07pp，未 flip <1.0%）。**text-align:center 未生效**——"Filler Text" 应居中（192 宽内 (192-92)/2=50 居中位），实际仍左对齐（diff 仅降 0.07pp，若居中应降 ~0.2pp+）。
+
+**根因定位**：compute_final_inline_layouts **确为 anon 盒跑**（`is_block_level || is_anon_fragment`=true，engine.rs:1193 实证；node_id=#div1 有 text-align:center style；has_text_children=true），IFC 应在 192 宽以 center 重建。但实测文本未居中 → **text-align 在 IFC 重建时未正确应用**（独立 bug，非 width）。可能：① anon 盒 node_id 映射（taffy_to_dom）非 #div1 而是别的（text 节点？）致 style 查询拿错 text-align；② resolve_text_align 在 anon 路径读错 style；③ IFC 重建用了 measure-time 缓存非新 build。**须下会话 probe 定位**（compute_final 内 print text_align + node_id for anon 盒）。
+
+**裁决**：postprocess width fix net-0（零翻转）+ text-align blocker → **git checkout 回退**。width fix 本身 spec-correct（§9.3.1 block 满父宽）且盒级确生效，但 **text-align 不修则 anon 盒满宽无可视 yield**（文本仍左对齐于满宽盒，diff 不变）。两 fix 须同落（width + text-align）才 yield 目标案。★R1060「须 anon-box 重构或 taffy 升级」**部分纠正**：postprocess width fix 可绕 taffy（pre-compute_final），不必重构；真阻断 = text-align 应用 bug。
+
+**▶ 下会话**：① R1061 width fix 复加 + probe compute_final 内 anon 盒 text-align 应用（node_id 映射？resolve_text_align 路径？）→ 修 text-align → 两 fix 同落 yield 目标案（anonymous-box-generation-001 +1，可能 unlock case-b 簇）；② 或 pivot 非 R109 角度（box-display containing-block 簇已证 ZW 正确 1.1-1.6% precision 噪声，非 lever；css-backgrounds/borders fresh dir 待扫）。
+
+### R1060 Bug 2（case-b block-mixed anon 盒满宽）measure 级修复 REFUTED = taffy 0.7 忽略 measured block leaf 的 measure 返回宽（probe 实测 measure 返 192 但 box 仍 w=100）·box width 源未定位·需 anon-box 重构或 taffy 升级·零 net 源码·纯调查
+
+承 R1059 CONTINUE（Bug 2 攻坚——block-mixed anon 盒 w=文本宽非满 container 宽，entry tree.rs:827 + measure_text_content:868）。本轮实施 measure 级修复 + probe 实证，**REFUTED：taffy 0.7 不用 measure 返回宽给 measured block leaf 赋宽，box w=100 源未定位，需 anon-box 重构**。
+
+**measure 级修复尝试**：`measure_text_content` text-node 分支（inline_finalization.rs:868）`width: known_dimensions.width.unwrap_or(measured_width)` → 加 `available_space.width` Definite 分支（block 上下文用 container 宽，MinContent/MaxContent 保留 measured_width）。逻辑正确（block 应满父宽）。
+
+**R1060DBG probe 实证（anonymous-box-generation-001）**：measure 调用 1 次 `text="Filler Text" known_w=None avail_w=Definite(192.0) measured_w=92.0 -> ret_w=192.0`。**measure 返回 192（修复生效）**。但 LAYOUT_DUMP anon 盒 `w=100` 不变（ neither 192 Definite nor 92 measured）。
+
+**★ taffy 0.7 行为**：`new_leaf_with_context(anon_style, ctx_node)`（tree.rs:832）创建的 measured leaf，taffy **不用 measure 返回的 width** 给 box 赋宽（measure 仅用于 height / intrinsic hint）。extract_layout `width = layout.size.width`（engine.rs:1213）直读 taffy resolved，= 100。**100 源未定位**（非 measured_w=92、非 Definite=192、非 container=192；疑 taffy 0.7 measured-leaf block sizing 内部值或 cache）。
+
+**裁决**：measure 级修复 REFUTED（已 git checkout 回退）。Bug 2 真 fix 须：① anon 盒**重构为非 measured leaf**（new_with_children + 子 IFC 节点，让 taffy block 流满父宽），多 session 架构；② 或 extract_layout 后处理把 anon 盒（fragment_node_ids.is_some）width 设为父 content_width——但 IFC 已在 wrong width(100) 跑，仅改 box width 不 fix text-align:center（须 rerun IFC）；③ 或 taffy R304 升级（已 ruled out vertical 收益，但 measured-leaf block sizing 或修）。**皆多 session / out-of-single-session**。
+
+**意义**：排除「measure 返文本宽是 Bug 2 根因」假设（measure 返 192 但 taffy 忽略）——R1059 的 Bug 2 entry 须 correction（root cause 非 measure_text_content:868，是 taffy 0.7 measured-leaf block sizing）。锁定为 taffy-side，ZW-side measure 修无效。
+
+**▶ 下会话**：① Bug 1（case-a split-span 内块子 3px x-offset，R1059 定位）——span w=6 residual inline 盒来源 + 3px offset，可能在 ZW-side（非 taffy），比 Bug 2 tractable；② 或 pivot 非 R109 角度（box-display borderline 含 containing-block-007/008/010/019/028/030 多案 1.1-1.3%，非 anon-box 簇）；③ Bug 2 留待 taffy 升级或 anon-box 架构重构。★ Bug 2 勿再以 measure_text_content 修（R1060 refuted）。
+
+### R1059 block-in-inline margin-collapse 簇调查 = margin 已正确折叠（R1058 后）+ 2 R109 anon-box 构造 bug 精确定位（case-a split-span 内块子 3px x-offset / case-b block-mixed anon 盒 w=文本宽非满宽）·多 session structural·零 net 源码·纯调查
+
+承 R1058 CONTINUE（block-in-inline margin-collapse 簇，box-display 10 案 1.0-1.66% flip 候选）。本轮 LAYOUT_DUMP 簇逐案对比 test vs ref，**margin 折叠已正确（R1058 后），残余 diff = 2 个 R109 anon-box 构造 bug，多 session structural，定位精确供后续 session**。
+
+**margin 已正确**：multiple-block-in-inlines-margins-collapse（1.05%）LAYOUT_DUMP 实测 a/b/c（mb=40/mt=30/mt=50）gap = **40px / 50px 精确**（max 折叠对），与 ref flat-block 一致。R1058（inline 垂直 margin 归零）已清 margin 输入，折叠逻辑本身正确。
+
+**★ Bug 1（case-a split-span 内块子 3px x-offset）**：block-in-inline-margins-collapse-with-trailing-block（1.11%）LAYOUT_DUMP：`span abs_y=44 x=8 w=6`（R109 split parent，w=6 bogus 空inline 盒）→ 子 `div.first x=11 w=100`，而 span 外兄弟 `div.second x=8 w=100`。**split-span 内块子 x 偏移 +3px**（= span w=6 / 2，疑似 anon 盒居中于 span 的 residual inline 盒 w=6，或 half-leading）。case-a 簇多案同 pattern（multiple-block-in-inlines / nested-spans-with-block / block-in-inline-followed-by-*）。spec 预期 anon 盒是 block-level 满 container 宽 @ content edge（x=8），非偏移。
+
+**★ Bug 2（case-b block-mixed anon 盒 w=文本宽非满宽）**：anonymous-box-generation-001（1.11%）LAYOUT_DUMP：`#div1 w=192` 子 anon 盒（包裹 "Filler Text"）`w=100`（应满 container 192）→ text-align:center 无法居中（文本左对齐于 100px 盒）。block-mixed anon 盒经 `Style::default() + display:Block + new_leaf_with_context(measure)`（tree.rs:827），taffy 应 block 满宽但 measure callback 似覆盖为文本宽。case-b 簇 anon 盒应 block-level 满 container 宽。
+
+**裁决**：2 bug 都在 R109 anon-box 构造/定位（tree.rs:824-855 区）+ taffy measure 交互，**多 session structural**（R109 spec FR-002/003 territory）。margin collapse 本身（§8.3.1）已正确，残余是 anon-box 几何（width/position），非 margin 逻辑。本 session 不强修（A/B 回归风险高，需 coordinated anon-box width/position 重构）。
+
+**精确 handoff**：① Bug 1 fix 入口 = tree.rs inline-split 分支（:834-855），anon 盒 x-position 须 = 父 container content edge（非 span inline 盒偏移）；span residual inline 盒 w=6 须查源（IFC 空 inline 盒？）；② Bug 2 fix 入口 = tree.rs:827 `is_block_mixed` anon_style，确保 taffy block 满宽（可能须禁 measure 改用 content_size 或显式 width=auto 满 container）；③ A/B 守 margin-padding-clear（R743/R744 回归风险 dir）。
+
+**意义**：R1058 后 margin 输入正确，本 round 排除「margin 折叠逻辑错」假设（已正确），锁定残余 = anon-box 几何（width/position），为后续 R109 FR-002（bg 涂布依赖 anon 盒满宽）+ FR-003（border 归属）提供精确靶点。box-display 簇 10 案 1.0-1.66% flip 须 Bug 1/2 任一修才 unlock。
+
+**▶ 下会话**：① Bug 2（case-b anon 盒满宽）攻坚——entry 已锁定 tree.rs:827，A/B 守 margin-padding-clear；② 或 Bug 1（case-a 3px offset）——须先查 span w=6 来源；③ 或转 R109 FR-002（bg 涂布）/ FR-003（border 归属）多 session slice。
+
+### R1058 ★CSS §8.3 display:inline 垂直 margin 归零 LANDED = box-display +1（block-in-inline-vertical-margins-on-span-ignored 1.82→0.70 PASS）零回归（margin-padding-clear/normal-flow/linebox net-0 + welcome 不变）·converter 上游修复·R109 Phase-0 附带 yield·有 net 源码
+
+承 R1057 CONTINUE（R109 §9.2.1.1 anonymous block Phase-0 攻坚）。本轮 R109 Phase-0 map（FR-001 已 landed postprocess.rs:610，剩 FR-002/003 + margin-collapse 多 session），map 中定位 box-display borderline 簇 `block-in-inline-*-margin*` 真根因（converter §8.3 缺失），**A/B 确证 clean +1 零回归 LANDED，R1051-R1057 七轮 docs-only 后首个 code LANDED**。
+
+**定位（LAYOUT_DUMP + R1058DBG 探针）**：`block-in-inline-vertical-margins-on-span-ignored`（1.82%）= `<span mt/bt:50><div></div></span><div>` 两绿块应相邻（span 垂直 margin §8.3 ignored）。LAYOUT_DUMP `span.span mt=50 dmt=50` + `div.sibling abs_y=155`（应 ~105，50px gap）。R1058DBG 探针确认 `is_inline_r109=true`（span R109-split）。
+
+**假设 1（tree.rs anon_style margin 泄漏）REFUTED**：tree.rs:839 inline-split 的 anon_style 经 `computed_style_to_taffy(&computed)` 继承 split inline 全 computed（含 margin），仅清零 inset。改 `anon_style.margin = Rect::zero()`——**A/B ZERO-EFFECT**（span.span mt=50 不变，box-display 38→38），证明 anon 盒 margin 非 span mt=50 来源。
+
+**真根因 = converter 上游**：`computed_style_to_taffy`（converter/mod.rs:117）把 `style.margin_top/bottom` 原样转 taffy Style margin，不区分 display。span computed display=Inline（CSS 初始值），margin-top:50 喂给 taffy → span taffy 节点 + 继承 computed 的 anon 盒都 margin-top=50 → layout.margin.top=50。CSS §8.3：**非替换 inline 元素垂直 margin 无布局效果**（chromium 同行为）。
+
+**改动（converter/mod.rs:117 margin 分支）**：`display:Inline`（非替换 inline；替换 inline 如 img UA 默认 InlineBlock 不在列）→ `margin.top = margin.bottom = Length(0.0)`；`margin.left/right` 保留（inline 水平 margin 有效，IFC 内 inline 片段承担）；其他 display 不变。9 单测（2 新 R1058 + 7 既有 margin 测加 `display:Block` 上下文——`ComputedStyle::default().display=Inline`，旧测隐式假设 block）。
+
+**A/B（stash 重建 baseline，release）**：① **CSS2/box-display 38 (31.7%)→39 (32.5%) = +1**（121 案 join：FAIL->PASS=1 / PASS->FAIL=0；唯一翻转 = 目标案 1.82→0.70 PASS，div.sibling abs_y 155→71 gap 消除）；② **CSS2/margin-padding-clear（R743/R744 风险 dir）310→310 net-0**；③ CSS2/normal-flow 604→604 net-0；④ CSS2/linebox 121→121 net-0；⑤ welcome product-smoke 16.57%→16.57% 不变（无 inline 垂直 margin）。**零回归**。
+
+**为何零回归**：§8.3 是 chromium 同行为（非替换 inline 垂直 margin 无效果），旧 ZW 错误应用 → 向 chromium 收敛 = 净正或中性。converter 上游修覆盖 span 节点 + anon 盒（都经 computed_style_to_taffy），故假设 1 的 anon 单点修冗余。详见 [`evidence/r1058-inline-vertical-margin-zeroed-boxdisplay-plus1-2026-07-05.txt`](./evidence/r1058-inline-vertical-margin-zeroed-boxdisplay-plus1-2026-07-05.txt)。
+
+**意义**：R109 Phase-0 附带 yield——map 中定位的 box-display borderline 簇真根因（converter §8.3 缺失）= 独立 clean lever，不依赖 R109 FR-002/003 多 session。converter §8.3 inline 垂直 margin 归零是 foundational correctness，为后续 R109 FR-002（bg）+ block-in-inline margin-collapse 簇（multiple-block-in-inlines-margins-collapse 1.05% / block-in-inline-margins-collapse-with-trailing-block 1.11% 等 10 案 1.0-1.15%）提供正确基底。★R1058 证明 R109 Phase-0 map + 精准定位仍能在多 session 结构性任务中产 single-session clean yield（区别 R1056/R1057 net-negative/no-op）。
+
+**▶ 下会话**：① R109 FR-002（匿名块盒区容器 bg 涂布，paint 侧，R1058 已清 inline margin 基底）；② block-in-inline margin-collapse 簇（10 案 1.0-1.15% flip 候选，R1058 后可能 unlock）；③ R109 FR-003（split inline border 归属，case-a inline 级）。
+
+### R1057 display:list-item marker 门控修正（tag→display）REFUTED = CSS2/lists -1（li→ListItem 致 list-item-dynamic-color +0.60 PASS→FAIL）+ 目标簇 list-style-position-applies-to-008/009/010/016/017 delta=0.00（likely R109 anonymous-box mask）·R740 strategy ② clean lever 耗尽第三证·零 net 源码·纯调查
+
+承 R1056 CONTINUE（fresh chr-vs-ZeroWeb per-case scan，R740 strategy ② 找 R689/R716 类 clean correctness lever）。本轮扫 CSS2/lists/colors/values + generated-content（fresh dir），定位 list-style-position-applies-to 簇（5 案 @ 3.37-3.73% identical diff = 单一系统性 cause 候选），**假设「missing marker on `<span display:list-item>`」A/B 证伪，net-negative 已回退**。
+
+**假设**：`paint_list_marker`（text.rs:403）门控 `local_name()=="li"`（tag-name）是 `<li>` UA 默认误设 Block（lib.rs:54，应 ListItem）的 compensating hack → WPT 簇用 `<span display:list-item>` 拿不到 marker = 3.37% diff。
+
+**改动（3 部分已 git stash drop 回退，零 net 源码）**：① lib.rs UA default `"li"` Block→ListItem（CSS §12.5 spec）+ 测试列表移除 li + 新 `test_li_defaults_to_list_item`；② text.rs:403 gate `local_name()=="li"`→`style.display != ListItem`（按 computed display 判定）+ DisplayValue import。converter ListItem→taffy Block（layout 不变）。style-system 测 + clippy 全绿。
+
+**A/B（CSS2/lists 157 案 join）**：CSS2/lists baseline **144 (92.3%)→with 143 (91.7%) = -1 net**。唯一翻转 = `list-item-dynamic-color.html` **PASS→FAIL (0.94→1.54, +0.60)**（li→ListItem 改变 `<li>` marker 渲染）。**目标簇 delta=0.00（精确零）**：list-style-position-applies-to-008/009/010/016/017 (3.37-3.73%) + 015 (1.09%) 全 0.00；list-style-image-004/007 +0.02。
+
+**★ 两路证据证伪「missing marker」假设**：① 目标簇 delta=**0.00 精确零**——marker 若新渲染必有像素变化（6px dot ~41px²），delta=0.00 → `<span display:list-item>` 在 box-tree 中**没带着 ListItem computed display 到达 paint_list_marker**；② list-item-dynamic-color +0.60 证明 fix 生效但**只影响 `<li>`，不影响 `<span>`**。
+
+**★ likely 真因 = R109 §9.2.1.1 anonymous-block mask**：测试结构 `<div display:inline><span display:list-item>>`——inline 父含 block 级子触发 CSS §9.2.1.1 匿名块拆分（R109 territory，同 memory R255 morning-work 4× 高度机制）。ZW 匿名块包装（tree.rs R109）很可能用**父 div 的 node_id/style**（display:inline）包装 span，而非保留 span 自己的 element 身份（display:list-item）→ paint_list_marker 见 div 的 inline → gate 失败 → 无 marker。3.37% 主导 = orange box 几何（margin-left:1in / span vs div sizing）非 marker。与 R1047/R1052 vertical 耦合证 = **同一 R109 架构缺口**。
+
+**裁决**：marker 门控修正对目标簇零效果（R109-blocked），致 `<li>` 副作用 -1。**REFUTED git stash drop 回退**。CSS spec-correct（li→ListItem + display gate）但在 ZW 当前 R109 匿名块架构下不产 yield，须先解 R109。
+
+**R740 strategy ② clean lever 耗尽第三证**（R740+R1053+R1057）：本轮 fresh dir 扫描全部落 multi-session structural——generated-content = R554 pseudo-element gap / CSS2/values units = font-wall（fontdue Ahem advance）/ CSS2/lists marker = **R109 anonymous-block mask（本轮新锁定）** / CSS2/colors = 1 deep fail。**无新 clean single-session lever**。详见 [`evidence/r1057-list-item-marker-gate-refuted-2026-07-05.txt`](./evidence/r1057-list-item-marker-gate-refuted-2026-07-05.txt)。
+
+**▶ 下会话**：① **R109 §9.2.1.1 anonymous block 攻坚**（最高频 unblocker：本轮 list-item + R1047/R1052 vertical + R255 morning-work 4× 全指向它；deadlock 历史但 EV 最高，multi-session）；② Phase-A IFC 单次源统一续（非 font-metric 子任务）；③ fresh dir 续扫 css-fonts/backgrounds borderline（EV 低，三证耗尽）。★勿再：list-item marker gate / `<li>` UA default 单 session lever（R1057 REFUTED R109-blocked）/ 盲扫 top-worst（三证）/ font-wall single-knob（六证）/ vertical 单点 bundle（四证）。
+
+### R1056 CJK ascent 1.160 wiring 实测 net-negative 已回退 = css-text segment-break -13（13 案 PASS→FAIL 全 CJK borderline）压过 welcome -0.19pp 改善·font-metric single-knob 第六证·零 net 源码·纯调查
+
+承 R1055 CONTINUE ①（水平 CJK font-wall 小切片：wire NotoSansCJK 1.160 metric）。本轮实施 R1055 forecast 的 CJK ascent wiring（`ascent_ratio_lookup` 加 `is_cjk` 分支，CJK 文本 0.928→**1.160** = NotoSansCJK 真实 ascent；新 `text_has_cjk` 检测片段文本），**A/B 硬数据复证 R1055 forecast「CJK 非 WPT high-yield 轨道」，net-negative 已回退**。
+
+**改动（已 git stash drop 回退，零 net 源码）**：`inline/mod.rs` `ascent_ratio_lookup(overrides, node_id, is_ahem, is_cjk)` 加第 4 参 + CJK 分支（Ahem→0.8 优先 / 非-Ahem+CJK→1.160 / 非-Ahem+Latin→0.928）；`apply_vertical_alignment` 两处调 `text_has_cjk(&r.text)`（strut dominant mod.rs:1718 + per-run mod.rs:1749）；`ascent_ratio_for` dormant 传 false。新单测 `test_r1056_cjk_ascent_ratio_branch`（CJK 1.160 / Latin 0.928 / Ahem 优先 / text_has_cjk 6 区块）。layout-engine lib 70 测全绿 + clippy 干净。
+
+**A/B（stash 重建 baseline，release 构建）**：① **product-smoke welcome（84 CJK UI 标签）**：baseline **16.57%**（79545px，与 R1055 记录精确匹配）→ with R1056 **16.38%**（78628px）= **-0.19pp 改善**（确定性像素位移，CJK 1.160 更近 chromium）；② **css-text-decor oracle**：108/242→108/242 **net-0**；③ **css-text oracle**：**357 (21.6%)→344 (20.8%) = -13 净回归** ❌。
+
+**★ ORACLE_DUMP_ALL 逐案 A/B（1651 案 join）定位 -13 全在 `css/css-text/line-breaking/segment-break-transformation-rules-*`**（CJK 段分隔符变换规则测试），FAIL→PASS 0 案。**13 案全 borderline**（base 0.89-0.98% → with 1.09-1.22%，delta +0.18~0.24pp）：OLD 0.928 让这些 CJK 用例勉强 <1% oracle-pass，NEW 1.160 推过 1% 阈值 → PASS→FAIL。**非阈值噪声散布**（13 案全在同一 CJK 子簇 = 真实 CJK 几何信号）。
+
+**裁决：net-negative 回退**。trade-off = WPT css-text **-13**（CJK segment-break）+ css-text-decor net-0 / welcome **-0.19pp** 改善。WPT pass-count 是主验收口径（DC-14），product-smoke 是回归门禁非 yield 指标；-13 WPT 换 -0.19pp product-smoke = 净负。**R1056 git stash drop 回退**。
+
+**★ font-metric single-knob net-negative 第六证**（R834 strut 0.8→0.928 welcome +0.07pp / R836 Path B +1.12pp / R849 全链 / R875 / R1052 vertical -26 / **R1056 CJK 1.160 css-text -13**）。机制一致：**fontdue≠Skia 行级累积**——「spec-correct real metric」（1.160 NotoSansCJK 真值）反把 borderline CJK 用例推离 oracle，因 surrounding pipeline（fontdue raster y_offset / half-leading）未 coherence 对齐 chromium。OLD 0.928（实为 DejaVuSans Latin 度量，非 CJK 真值）碰巧在 CJK segment-break 用例更近 oracle（compensating 近似）。
+
+**R1055 forecast 硬复证**：welcome 改善（-0.19pp）= R1055 预测的 product-smoke yield；css-text -13 = R1055 预测的「WPT pass-count 非 high yield」；segment-break 簇 = R1056 新锁定的「CJK-ascent 敏感 WPT 子簇」。**真修复须全 pipeline coherence**（R848 路线图：layout strut 用真实 per-font metric + paint v_offset −real_ascent + half-leading (lh−(asc−desc))/2 + **fontdue→chromium-matching rasterizer**）；无 rasterizer 替换，任一 layout-side CJK metric 改动对 WPT CJK 簇 net-negative。详见 [`evidence/r1056-cjk-ascent-1160-net-negative-revert-2026-07-05.txt`](./evidence/r1056-cjk-ascent-1160-net-negative-revert-2026-07-05.txt)。
+
+**▶ 下会话**：① R109 §9.2.1.1 anonymous block 攻坚（unblock block-in-inline 簇）；② Phase-A IFC 单次源统一续（layout IFC==paint IFC，非 font-metric 子任务）；③ taffy maintainability 升级（R304 vertical 收益已 ruled out）；④ product-smoke morning/wintertc 作 CJK 验收口径（须先 fontdue 替换）。★勿再：盲扫 top-worst / vertical 单点或 bundle / taffy R304 vertical / font-wall Latin / **CJK ascent single-knob（R1056 第六证）**。
+
 ### R1055 font-wall 实测 = Latin ruled out（DejaVuSans=0.928 匹配 R990）+ CJK 潜在 yield（NotoSansCJK=1.160 vs 0.928，受限）+ welcome 16.57% 非字体度量·零 net 源码·纯调查
 
 承 R1054 CONTINUE（font-wall R887 攻坚起步）。本轮 fontdue line_metrics_full 实测字体度量，**font-wall Latin ruled out，CJK yield 受限，font-wall 非 WPT pass-count 高 yield 轨道**。
