@@ -993,6 +993,51 @@ fn test_border_logical_shorthand_inline_start_color() {
     assert_eq!(style.border_left_color, ColorValue::Rgba(0, 128, 0, 255));
 }
 
+// ── margin/padding/inset 逻辑属性 writing-mode-aware（R1049）──
+// horizontal-tb 字节同 R143 静态；vertical-rl/lr 映射到正确物理边。
+
+#[test]
+fn test_margin_logical_wm_aware_horizontal_tb() {
+    // horizontal-tb：与 R143 静态字节一致
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "writing-mode", "horizontal-tb"));
+    assert!(apply_property_value(&mut style, "margin-block-start", "10px"));
+    assert!(apply_property_value(&mut style, "margin-inline-end", "20px"));
+    assert_eq!(style.margin_top, LengthValue::Px(10.0));
+    assert_eq!(style.margin_right, LengthValue::Px(20.0));
+}
+
+#[test]
+fn test_margin_logical_wm_aware_vertical_rl() {
+    // vertical-rl：block-start=right, inline-end=bottom
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "writing-mode", "vertical-rl"));
+    assert!(apply_property_value(&mut style, "margin-block-start", "10px"));
+    assert!(apply_property_value(&mut style, "margin-inline-end", "20px"));
+    assert_eq!(style.margin_right, LengthValue::Px(10.0));
+    assert_eq!(style.margin_bottom, LengthValue::Px(20.0));
+}
+
+#[test]
+fn test_padding_logical_wm_aware_vertical_lr() {
+    // vertical-lr：block-start=left, inline-start=top
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "writing-mode", "vertical-lr"));
+    assert!(apply_property_value(&mut style, "padding-block-start", "8px"));
+    assert!(apply_property_value(&mut style, "padding-inline-start", "5px"));
+    assert_eq!(style.padding_left, LengthValue::Px(8.0));
+    assert_eq!(style.padding_top, LengthValue::Px(5.0));
+}
+
+#[test]
+fn test_inset_logical_wm_aware_vertical_rl() {
+    // vertical-rl：block-end=left
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "writing-mode", "vertical-rl"));
+    assert!(apply_property_value(&mut style, "inset-block-end", "30px"));
+    assert_eq!(style.left, LengthValue::Px(30.0));
+}
+
 #[test]
 fn test_logical_properties_with_percentage() {
     let mut style = ComputedStyle::default();
