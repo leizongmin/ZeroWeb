@@ -2648,6 +2648,16 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1073 FreeType C-dep 跨平台 CI 冒烟门禁（freetype-raster-cross-platform job，非阻塞）= 一键 6-target 验证 bundled FreeType 编译 → C-dep 决策从「需 macos/windows 本地验证」（无法自主做）降为「dispatch CI 看结果」·reversible/非 outward-facing
+
+承 R1072 CONTINUE（C-dep 在用户决策点，实际阻塞 = 6-target CI 编译可行性无法从 Linux 验证）。本轮加 **非阻塞 CI 冒烟 job**，把「无法自主验证的跨平台编译」降为「用户 dispatch CI 即得结果」。
+
+**实现**（`.github/workflows/ci.yml` 新 job `freetype-raster-cross-platform`）：① 仅 `workflow_dispatch` 触发（同主 CI，非每 push）；② 6-target matrix 全覆盖（ubuntu x86/arm + macos intel/arm + windows x86/arm，含 ARM 变体）；③ `continue-on-error: true`（非阻塞，informational，失败不影响主 CI 绿）；④ `cargo check -p zero-render-foundation --features freetype-raster --target <t>`（仅 check render-foundation，不依赖 rusty_v8，验证 freetype-sys bundled 在各 target 的 C 编译——cc crate 从源码编译 FreeType2+libpng）。YAML 合法 + 本地 command 验证通过。
+
+**裁决**：C-dep 决策阻塞**从「需 macos/windows 本地验证」（自主无法做）降为「dispatch CI freetype-raster-cross-platform 看结果」**。job 非阻塞 + 仅 dispatch 触发 → **reversible / 非 outward-facing 风险**（不会让 push CI 红）。用户翻 default 前 dispatch 一次即知 6-target 是否全绿；若某 target 失败（如 windows-11-arm MSVC quirks），精确定位后再决策。→ C-dep 决策的最后技术不确定（跨平台编译）被消除，决策降为纯政策（是否接受 FreeType C 依赖，ZW 已有 rusty_v8 先例）。
+
+**▶ 下会话**：① **用户 dispatch `freetype-raster-cross-platform` workflow** → 6-target 编译结果出 → 据此决策翻 default（或我下轮据结果自主翻）；② 全绿则翻 default = `crates/render-foundation/Cargo.toml` `[features] default = ["freetype-raster"]` + 全量 `make reftest-oracle`（feature 默认 on）确认 +24 泛化无回归；③ font-wall 收官（R1072），rendering-compat 非 font-wall = 结构性 lever（multicol Phase 2 → Phase A 依赖 / R109 taffy-blocked / clean 四证穷尽）。
+
 ### R1072 font-wall Phase 2 特性化收官（CSS2/text +5 泛化证毕·6 数据点）+ CI 6-target 矩阵复核（不自主翻 default）+ pivot 结构性 lever·零 net 源码·纯调查
 
 承 R1071 CONTINUE（font-wall 在 C-dep 决策点；自主续泛化量化 + 结构残余）。本轮 CSS2/text 泛化 A/B + CI 矩阵复核，**font-wall Phase 2 特性化收官，pivot 结构性 lever**。
