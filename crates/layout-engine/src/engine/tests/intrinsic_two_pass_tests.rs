@@ -328,6 +328,39 @@ fn test_r711_relative_percent_bottom_inset_applied() {
     );
 }
 
+/// R1044：inline 元素不为其 block 后代建立 containing block——block 后代的 CB 跳过 inline
+/// 继承祖父级 block container（CSS §9.2.1.1 / §10.1）。故 inline span（auto height）包
+/// block-level relative 子时，子的 top/bottom % 应解析到祖父 definite-CB 的高度，而非被
+/// inline 的 auto height 截断为 None。复刻 position-relative-002：
+/// `div(h:100) > span(position:relative) > div(position:relative;top:-100%;h:100)`。
+/// green div 的 top:-100% 应解析到祖父 div 的 100px → 向上偏移 100（覆盖 red div）。
+#[test]
+fn test_r1044_inline_passes_through_cb_height_for_relative_percent() {
+    let html = r#"<html><body style="margin:0">
+        <div id="red" style="width:100px;height:100px;background:red">
+          <span id="span" style="position:relative;top:100px;left:100px">
+            <div id="green" style="width:100px;height:100px;background:green;position:relative;top:-100%;left:-100%"></div>
+          </span>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let green = find("green", &doc, &result.root).expect("green box");
+    // green top:-100% 应解析到祖父 red 的 100px → green.y（相对父 span 内容盒）≈ -100。
+    // 旧实现 inline span 的 auto height 截断 cb_h → green.top:-100% 不解析 → green.y ≈ 0。
+    assert!(
+        green.y < -50.0,
+        "green div top:-100% should resolve against grandparent red div height (100px), shifting \
+         green.y by ~-100; got green.y={} (inline span was breaking the CB-height chain, leaving \
+         top:-100% unresolved → green.y would be ~0)",
+        green.y
+    );
+}
+
 /// CSS §8.3.1：min-height 溢出型块阻止末子 margin collapse-through 穿透父底部。
 ///
 /// 复刻 margin-collapse-min-height-001 结构。规范：min-height 把 parent 撑到
