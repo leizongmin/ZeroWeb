@@ -2648,6 +2648,18 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1046 css-tables / CSS2 margin-padding-clear 候选调查 = 全结构性（table-text-height R109 / margin-collapse R702 / sibling-overlap）·零 net 源码·纯调查
+
+承 R1045 CONTINUE（转 CSS2/margin-padding-clear / table-cell-overflow 清洁 worst）。本轮调查 3 个候选，**结论：全结构性，无单点 clean win**。
+
+**① table-cell-overflow-explicit-height-001/002（3.87%，2 case）= R109 非 cap**：测试 `td{height:20px;overflow:hidden}` 含 300px 子。**纠正「cell 应 cap 到 20px」假设**——chromium oracle 实测 td cyan border y=11-338（**grew to fit 300px div**），即 chromium 走 CSS 2.1「cell height=min，cell 增长含内容，overflow:hidden 无 overflow 可裁」路径，**不 cap**。ZW 原 grow 行为正确。实现 cell-height cap 实验（`position_cells` line 1219 overflow!=visible + Px height → cap）实测 css-tables **+0 case flip + divergence 升**（cap 后 ZW td=24 vs CHR td=327，差更大）已回退。真 3.87% 差 = td 高 304（ZW）vs 327（CHR）= **div 后 inline 文本 "Can you see this text?" 高度未计入**（cell_content_height sum children，文本匿名块高度 ~16px 缺，R109 §9.2.1.1 territory）。engine.rs:1150 已有 Mozilla bug 1880550 注释（overflow 映射对 cell 工作），但 cell grow 优先（CSS 2.1）。
+
+**② margin-em-inherit-001（11.25%）= margin-collapse R702（非 em-inherit）**：`#parent{font-size:28px;margin:2em}` → 56px，`#child{font-size:40px;margin:inherit}` → 应继承 computed 56px。LAYOUT_DUMP 实测 **child margin-top=56 ✓（em-inherit 工作正确）**。真 11.25% 差 = body abs_y=56（应 16）= parent margin-top 56 **全折叠上提到 body**（绕过 intervening p 的 margin 分布），margin-collapse-through 链 bug，**R702 territory**（collapse-through + intervening sibling 的 margin 分布，doc 标「类 R680 R109 同族」）。
+
+**③ padding-em-inherit-001（11.17%）= sibling overlap（非 em-inherit）**：`#parent{padding:2em}#child{padding:inherit}`。LAYOUT_DUMP child padding-top=48 ✓（em-inherit 正确）。但 **grand-parent abs_y=16 与 p abs_y=16 重叠**（siblings 同 y）+ body h=244=grand-parent h（**p 的 40px 高度未计入 body content height**）→ render 实测 green box y=16-159（ZW）vs y=72-325（CHR），**ZW green 与 p 文本重叠**。最小复现（body>p+div）**不重叠**→ 非通用 sibling bug，特定于嵌套 img+padding 结构，根因疑似 **p 的文本高度 taffy 测量为 0、post-process 补 h=40 但未重定位 sibling/grand-parent**（R1018/R695 两趟 + sibling 重定位谱系）。
+
+**结论**：css-tables / CSS2 margin-padding-clear worst 全结构性（R109 匿名块文本高度 / R702 margin-collapse / taffy 文本测量延迟致 sibling 错位）。em-inherit + em 单位解析本身**全对**（child 继承 computed px，非 re-resolve）。clean single-session win 谱系确尽（与 R1042/R1045 一致）。forward = ① R109 匿名块文本高度（cell_content_height 缺文本，多 session）；② R702 margin-collapse-through 链（intervening sibling 分布）；③ R1018 两趟 + sibling 重定位（p 文本测量延迟）。
+
 ### R1045 text-decoration-thickness 实现实验 = net -2 回退已回退·装饰管线厚度耦合（font-wall 谱系）·零 net 源码·纯调查
 
 承 R1044 CONTINUE（转 css-text-decor / css-floats-clear 清洁 worst）。本轮实现 `text-decoration-thickness` CSS 属性（原完全不支持：parse/store/apply 全缺，paint 用 hardcoded `font_size * 0.06`），**实测 net -2 回退已回退**。
