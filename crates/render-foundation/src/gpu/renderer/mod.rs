@@ -685,7 +685,6 @@ impl GpuRenderer {
         let (width, height) = self.surface_size;
 
         if self.present_suspended {
-            eprintln!("[DBG-RF] present_suspended=true, skipping frame");
             return;
         }
 
@@ -701,14 +700,6 @@ impl GpuRenderer {
         let grad_resources = self.prepare_gradient_resources(&primitives.gradients, scale);
         // 5. Images（预创建纹理和绑定组）
         let img_resources = self.prepare_image_resources(&primitives.images, image_cache, scale);
-        eprintln!(
-            "[DBG-RF] surface_size=({width}x{height}) present_suspended={} images={}/{} img_resources={} fills={}",
-            self.present_suspended,
-            primitives.images.len(),
-            primitives.images.len(),
-            img_resources.len(),
-            primitives.fills.len(),
-        );
         // 6-8. Strokes + PathFills + PathStrokes
         let stroke_verts = self.collect_stroke_vertices(&primitives.strokes, scale);
         let path_fill_verts = self.collect_path_fill_vertices(&primitives.path_fills, scale);
@@ -748,12 +739,8 @@ impl GpuRenderer {
         // 获取渲染目标
         let target = match self.acquire_render_target(width, height) {
             Some(target) => target,
-            None => {
-                eprintln!("[DBG-RF] acquire_render_target returned None");
-                return;
-            }
+            None => return,
         };
-        eprintln!("[DBG-RF] acquire_render_target OK, starting render pass");
         let view = target.view();
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -825,7 +812,6 @@ impl GpuRenderer {
             self.apply_transform_filters_headless(width, height, &transforms, scale);
         }
 
-        eprintln!("[DBG-RF] submitting and presenting");
         target.present(&device);
     }
 
