@@ -96,14 +96,25 @@ fn sidebar_scroll_offset_shifts_children_and_clamps() {
 fn demo_preview_renders_non_trivial_content_for_each_page() {
     // P3-2 回归测试：早期 bug 是 DemoPreview 只画一行文字，没画实际组件内容。
     // 这里遍历几个代表性页面，断言切换后预览区 scene 图元数 > 1（至少有背景 + 内容）。
-    for page_id in ["button", "toggle", "badge", "tabs", "i18n_demo", "theme_demo"] {
+    //
+    // P2-11 真控件化后：button/toggle/text_input 改用真控件子树（各自 source id 前缀），
+    // 其余页面仍走旧 DemoPreview painter 架构（统一 "demo_preview" 前缀）。
+    for (page_id, source_prefix) in [
+        ("button", "demo_btn_"),
+        ("toggle", "demo_toggle_"),
+        ("text_input", "demo_text_"),
+        ("badge", "demo_preview"),
+        ("tabs", "demo_preview"),
+        ("i18n_demo", "demo_preview"),
+        ("theme_demo", "demo_preview"),
+    ] {
         let mut app = GalleryApp::new();
         app.current_page = page_id.into();
         let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
         register_gallery_factories(driver.host_mut());
         driver.begin();
         let scene = driver.host().scene();
-        let entry_count = count_demo_preview_entries(scene, page_id);
+        let entry_count = count_demo_preview_entries(scene, source_prefix);
         assert!(
             entry_count >= 2,
             "page={page_id} 预览区图元数应 ≥ 2（背景 + 内容），实际 {entry_count}；可能回归到「只画一行文字」"
@@ -111,12 +122,12 @@ fn demo_preview_renders_non_trivial_content_for_each_page() {
     }
 }
 
-fn count_demo_preview_entries(scene: &Scene, _page_id: &str) -> usize {
-    // DemoPreview 的 source id 形如 "demo_preview"。统计该 source 的图元。
+fn count_demo_preview_entries(scene: &Scene, source_prefix: &str) -> usize {
+    // 按传入 source 前缀统计该 demo 的图元。
     scene
         .entries
         .iter()
-        .filter(|e| e.source.0.starts_with("demo_preview"))
+        .filter(|e| e.source.0.starts_with(source_prefix))
         .count()
 }
 
@@ -188,6 +199,91 @@ fn fill_colors(scene: &Scene) -> std::collections::HashSet<[u8; 4]> {
             _ => None,
         })
         .collect()
+}
+
+// ── P2-11 真控件交互回归 ──────────────────────────────────────────────────
+
+#[test]
+fn click_button_in_demo_area_updates_state() {
+    // 验证 button demo 中点击 "Default" 按钮后 demo_button_pressed 变为 1。
+    let mut app = GalleryApp::new();
+    app.current_page = "button".into();
+    {
+        let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+        register_gallery_factories(driver.host_mut());
+        driver.begin();
+
+        let rect = driver
+            .host()
+            .rect_of(&WidgetId::new("demo_btn_1"))
+            .expect("demo_btn_1 must be laid out");
+        let center = Point::new(
+            rect.origin.x + rect.size.width / 2.0,
+            rect.origin.y + rect.size.height / 2.0,
+        );
+        driver.pump_event(&pointer(PointerPhase::Pressed, center));
+        driver.pump_event(&pointer(PointerPhase::Released, center));
+        driver.pump_frame();
+    }
+    assert_eq!(
+        app.demo_button_pressed, 1,
+        "点击 Default 按钮后 demo_button_pressed 应为 1"
+    );
+}
+
+#[test]
+fn click_toggle_in_demo_area_updates_bitmask() {
+    // 验证 toggle demo 中点击第 0 个 toggle 后 demo_toggle_state 第 0 位翻转。
+    let mut app = GalleryApp::new();
+    app.current_page = "toggle".into();
+    let initial = app.demo_toggle_state;
+    {
+        let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+        register_gallery_factories(driver.host_mut());
+        driver.begin();
+
+        let rect = driver
+            .host()
+            .rect_of(&WidgetId::new("demo_toggle_0"))
+            .expect("demo_toggle_0 must be laid out");
+        let center = Point::new(
+            rect.origin.x + rect.size.width / 2.0,
+            rect.origin.y + rect.size.height / 2.0,
+        );
+        driver.pump_event(&pointer(PointerPhase::Pressed, center));
+        driver.pump_event(&pointer(PointerPhase::Released, center));
+        driver.pump_frame();
+    }
+    assert_eq!(app.demo_toggle_state, initial ^ 0b001, "点击 toggle 0 后第 0 位应翻转");
+}
+
+#[test]
+fn disabled_button_does_not_emit_action() {
+    // 验证 disabled 按钮（index 2）点击后 demo_button_pressed 不变。
+    let mut app = GalleryApp::new();
+    app.current_page = "button".into();
+    app.demo_button_pressed = 0;
+    {
+        let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+        register_gallery_factories(driver.host_mut());
+        driver.begin();
+
+        let rect = driver
+            .host()
+            .rect_of(&WidgetId::new("demo_btn_3"))
+            .expect("demo_btn_3 must be laid out");
+        let center = Point::new(
+            rect.origin.x + rect.size.width / 2.0,
+            rect.origin.y + rect.size.height / 2.0,
+        );
+        driver.pump_event(&pointer(PointerPhase::Pressed, center));
+        driver.pump_event(&pointer(PointerPhase::Released, center));
+        driver.pump_frame();
+    }
+    assert_eq!(
+        app.demo_button_pressed, 0,
+        "Disabled 按钮不应触发 action；demo_button_pressed 应保持 0"
+    );
 }
 
 // 防止未使用 Rect 导入告警（在某些 toolchain 上 rect_of 返回值用到 Rect）。

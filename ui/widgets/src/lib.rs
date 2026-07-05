@@ -31,5 +31,5 @@ pub use button::{Button, ButtonSpec};
 pub use icon_button::IconButton;
 pub use menu::{ContextMenu, Menu, MenuItem};
 pub use scrollbar::{ScrollBarGeometry, ScrollOrientation, layout_scrollbar};
-pub use text_input::TextInputState;
-pub use toggle::Toggle;
+pub use text_input::{ACTION_TEXT_CHANGED, TextInputState, TextInputWidget};
+pub use toggle::{Toggle, ToggleSpec, ToggleWidget};

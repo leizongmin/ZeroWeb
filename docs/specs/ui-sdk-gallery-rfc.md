@@ -443,6 +443,41 @@ release 也刷屏，无法按级别过滤；违反 AGENTS.md 「用 tracing 替�
   （结构化字段 `family` / `id` / `loaded` / `error`）。
 - 每帧 scene 统计：`tracing::trace!`（默认不输出，开发期 `RUST_LOG=trace` 看）。
 
+#### P2-11 Gallery 核心控件真控件化（button / toggle / text_input）
+
+**问题**：用户反馈「gallery 演示的组件大多不能交互，点击按钮没反应，鼠标悬停无变化」。
+根因：`DemoPreview` 是单个 retained widget，用 `PreviewPainter` 函数把所有 demo 内容**画**出来——
+那些「按钮」「输入框」只是像素图，不是 `HostNode` 树中的真 `Widget` 实例，因此收不到 pointer/key 事件，
+也没有 hover/pressed/focus 状态。同时 `ui/widgets` crate 里除 `Button` 外，`Toggle` / `TextInput`
+等只是数据模型，根本未实现 `Widget` trait。
+
+**修复（分批，本批只做 3 个核心控件）**：
+
+1. **补全 Widget 实现**（`ui/widgets`）：
+   - `Toggle`：保留旧数据模型（`permission_prompt` 等仍用），新增 `ToggleSpec`（props）+ `ToggleWidget`
+     （完整 Widget：mount/update/event/layout/paint/semantics/focusable）。受控模式从 `props.checked`
+     同步状态；点击 emit `spec.action`，应用回写。
+   - `TextInput`：保留 `TextInputState`（纯数据），新增 `TextInputWidget`（键盘/点击/聚焦/caret/IME rect）。
+     键盘事件改变文本时 emit `ACTION_TEXT_CHANGED` + payload，应用回写 `props.text`。
+2. **Gallery demo 子树重构**（`ui/examples/src/gallery/app.rs`）：
+   - 新增 `GalleryApp::build_demo_preview(page)` 按 `page.id` 分发：
+     `button` / `toggle` / `text_input` 构建真控件子树（Button × 3 / ToggleWidget × 3 / TextInputWidget × 1 + 镜像），
+     其余 page 暂时回落到旧 `DemoPreview` painter（后续按同模式逐个迁移）。
+   - `GalleryApp` 新增 `demo_button_pressed` / `demo_toggle_state` / `demo_text_input` 字段，
+     `dispatch` 新增 6 个 button/toggle action + 1 个 text_changed action。
+3. **工厂注册**：`register_gallery_factories` 注册 `"Button"` / `"ToggleWidget"` / `"TextInputWidget"`
+   从 `WidgetSpec.props` 抽取 label/action/enabled/checked/text/placeholder 构造实例。
+4. **回归测试**（`ui/examples/tests/gallery_retained.rs`）：
+   - `demo_preview_renders_non_trivial_content_for_each_page` 按页面适配 source 前缀。
+   - 新增 `click_button_in_demo_area_updates_state` / `click_toggle_in_demo_area_updates_bitmask` /
+     `disabled_button_does_not_emit_action`，验证 host → widget → action → reducer → props 回流完整闭环。
+
+**影响面**：
+- 旧 `DemoPreview` + `PreviewPainter` 架构**保留**（其它 demo 仍依赖），后续按相同模式逐步迁移，
+  本批不动其它 demo。
+- `zero_ui_widgets` 公共 API 新增 `ToggleSpec` / `ToggleWidget` / `TextInputWidget` / `ACTION_TEXT_CHANGED`；
+  旧 `Toggle` 数据模型保持向后兼容（`permission_prompt` 不受影响）。
+
 ### 9.4 影响面汇总
 
 - 新增 crate 内模块：`ui/core/prop_keys.rs`、`ui/runtime/src/host/{reconcile,layout,paint,event,semantics}.rs`。
