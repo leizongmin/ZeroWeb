@@ -2648,6 +2648,27 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1049 margin/padding/inset 逻辑属性 writing-mode-aware LANDED·logical-props 轨道 slice ②·零回归（horizontal-tb 字节一致）·净 0 oracle·unified PhysicalSide helper
+
+承 R1048 CONTINUE（logical-props 轨道 slice ②：margin/padding/inset 转 WM-aware / sideways-lr / table col-border）。本轮把 margin/padding/inset 逻辑属性从 R143 静态 horizontal-tb 映射升级为 **writing-mode-aware**，**零回归 LANDED**。
+
+**实现**（CSS Logical Properties §1 + Writing Modes §6）：
+- `apply_advanced.rs`：把 12 个 margin/padding/inset logical longhand arm（原 R143 静态 `style.margin_top = v` 等）改为调用新 helper `apply_logical_{margin,padding,inset}(style, axis_inline, start, value)`，内部按 `logical_physical_side(axis_inline, start, &style.writing_mode)` 映射物理边。
+- **重构 R1048 helper**：`BorderSide` → `PhysicalSide`（通用），抽出 `logical_physical_side(axis_inline, start, wm)` 公共映射器；`logical_border_physical_side` 改为薄封装（解析属性名 → 调 `logical_physical_side`）。border margin padding inset 4 组共用一套映射。
+- 4 新单测（tests/core.rs）：horizontal-tb 字节一致 + vertical-rl margin（block-start=right/inline-end=bottom）+ vertical-lr padding（block-start=left/inline-start=top）+ vertical-rl inset（block-end=left），全过。
+
+**A/B（chromium Oracle，stash 对照 + ORACLE_DUMP_ALL 全 case diff）**：
+- **css-writing-modes**：56/784 → 56/784（**净 0 oracle，0 PASS→FAIL 回归** dump diff 确证）。logical-props-002 1.050→0.990（borderline 1% 阈值噪声内，非稳定 flip）。
+- **css-tables**：74/115 → 74/115（持平）。
+- **css/CSS2/normal-flow**：604/746 → 604/746（**horizontal-tb 字节一致零回归确认**）。
+- **0 PASS→FAIL flip 回归**（writing-modes 全 182 案 with-oracle dump diff 确证）；vertical-mode 不 flip 因 R109 taffy-blocked（margin 映射现在正确，但整体 vertical 渲染缺口更大）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（style-system 1933→1937 +4 新测，全树零失败）/ **product-smoke welcome 16.57% < 20%** ✓（一字不差）。
+
+**意义**：logical-props 轨道 slice ②——margin/padding/inset 逻辑属性 WM-aware 化，**比 R1048 更干净**（R1048 有 3 案轻微恶化暴露下游 table col/colgroup 缺口；R1049 零恶化，纯 correctness 改进）。`PhysicalSide` + `logical_physical_side` 统一 4 组逻辑属性映射，为后续 slice（sideways-lr / table-internal border / R109 vertical 解锁后的 vertical-mode flip）奠基。horizontal-tb 下 WM-aware 输出与 R143 静态字节一致（block-start→top 等），故零回归；vertical-mode 映射现在正确但 R109-blocked 暂不 flip。详见 [`evidence/r1049-margin-padding-inset-wm-aware-landed-2026-07-05.txt`](./evidence/r1049-margin-padding-inset-wm-aware-landed-2026-07-05.txt)。
+
+**▶ 下会话**：logical-props 轨道 slice ①（border）②（margin/padding/inset）均 LANDED WM-aware，轨道 foundational 已近完整。续推：① **inline-size/block-size 转 WM-aware**（R143 静态，同样可 WM-aware 化，horizontal-tb 字节一致）；② **sideways-lr writing-mode 支持**（enum + converter `apply_vertical_writing_mode` 加 SidewaysLr 变体）；③ **table-internal col/colgroup border 渲染**（R177 territory，解 R1048 的 003/004 恶化）；④ 或转 R109 vertical block-flow（taffy 多 session）/ R702 margin-collapse-through。logical-props WM-aware 化主体已尽，下 slice 转 sideways-lr 或换轨。
+
 ### R1048 ★border 逻辑属性（border-inline/block-start/end-{width,style,color}）writing-mode-aware LANDED·CSS Logical Properties §3 feature gap 修复·净 0 oracle·foundational enabling slice·零硬门禁回归
 
 承 R1047 CONTINUE（R109 vertical-rl block-flow = taffy-blocked 多 session，转 logical-props feature gap）。本轮实现 border 逻辑属性（原完全未注册：parse/store/apply 全缺），**spec-correctness + foundational enabling slice，LANDED，净 0 oracle**。
