@@ -2648,6 +2648,24 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1056 CJK ascent 1.160 wiring 实测 net-negative 已回退 = css-text segment-break -13（13 案 PASS→FAIL 全 CJK borderline）压过 welcome -0.19pp 改善·font-metric single-knob 第六证·零 net 源码·纯调查
+
+承 R1055 CONTINUE ①（水平 CJK font-wall 小切片：wire NotoSansCJK 1.160 metric）。本轮实施 R1055 forecast 的 CJK ascent wiring（`ascent_ratio_lookup` 加 `is_cjk` 分支，CJK 文本 0.928→**1.160** = NotoSansCJK 真实 ascent；新 `text_has_cjk` 检测片段文本），**A/B 硬数据复证 R1055 forecast「CJK 非 WPT high-yield 轨道」，net-negative 已回退**。
+
+**改动（已 git stash drop 回退，零 net 源码）**：`inline/mod.rs` `ascent_ratio_lookup(overrides, node_id, is_ahem, is_cjk)` 加第 4 参 + CJK 分支（Ahem→0.8 优先 / 非-Ahem+CJK→1.160 / 非-Ahem+Latin→0.928）；`apply_vertical_alignment` 两处调 `text_has_cjk(&r.text)`（strut dominant mod.rs:1718 + per-run mod.rs:1749）；`ascent_ratio_for` dormant 传 false。新单测 `test_r1056_cjk_ascent_ratio_branch`（CJK 1.160 / Latin 0.928 / Ahem 优先 / text_has_cjk 6 区块）。layout-engine lib 70 测全绿 + clippy 干净。
+
+**A/B（stash 重建 baseline，release 构建）**：① **product-smoke welcome（84 CJK UI 标签）**：baseline **16.57%**（79545px，与 R1055 记录精确匹配）→ with R1056 **16.38%**（78628px）= **-0.19pp 改善**（确定性像素位移，CJK 1.160 更近 chromium）；② **css-text-decor oracle**：108/242→108/242 **net-0**；③ **css-text oracle**：**357 (21.6%)→344 (20.8%) = -13 净回归** ❌。
+
+**★ ORACLE_DUMP_ALL 逐案 A/B（1651 案 join）定位 -13 全在 `css/css-text/line-breaking/segment-break-transformation-rules-*`**（CJK 段分隔符变换规则测试），FAIL→PASS 0 案。**13 案全 borderline**（base 0.89-0.98% → with 1.09-1.22%，delta +0.18~0.24pp）：OLD 0.928 让这些 CJK 用例勉强 <1% oracle-pass，NEW 1.160 推过 1% 阈值 → PASS→FAIL。**非阈值噪声散布**（13 案全在同一 CJK 子簇 = 真实 CJK 几何信号）。
+
+**裁决：net-negative 回退**。trade-off = WPT css-text **-13**（CJK segment-break）+ css-text-decor net-0 / welcome **-0.19pp** 改善。WPT pass-count 是主验收口径（DC-14），product-smoke 是回归门禁非 yield 指标；-13 WPT 换 -0.19pp product-smoke = 净负。**R1056 git stash drop 回退**。
+
+**★ font-metric single-knob net-negative 第六证**（R834 strut 0.8→0.928 welcome +0.07pp / R836 Path B +1.12pp / R849 全链 / R875 / R1052 vertical -26 / **R1056 CJK 1.160 css-text -13**）。机制一致：**fontdue≠Skia 行级累积**——「spec-correct real metric」（1.160 NotoSansCJK 真值）反把 borderline CJK 用例推离 oracle，因 surrounding pipeline（fontdue raster y_offset / half-leading）未 coherence 对齐 chromium。OLD 0.928（实为 DejaVuSans Latin 度量，非 CJK 真值）碰巧在 CJK segment-break 用例更近 oracle（compensating 近似）。
+
+**R1055 forecast 硬复证**：welcome 改善（-0.19pp）= R1055 预测的 product-smoke yield；css-text -13 = R1055 预测的「WPT pass-count 非 high yield」；segment-break 簇 = R1056 新锁定的「CJK-ascent 敏感 WPT 子簇」。**真修复须全 pipeline coherence**（R848 路线图：layout strut 用真实 per-font metric + paint v_offset −real_ascent + half-leading (lh−(asc−desc))/2 + **fontdue→chromium-matching rasterizer**）；无 rasterizer 替换，任一 layout-side CJK metric 改动对 WPT CJK 簇 net-negative。详见 [`evidence/r1056-cjk-ascent-1160-net-negative-revert-2026-07-05.txt`](./evidence/r1056-cjk-ascent-1160-net-negative-revert-2026-07-05.txt)。
+
+**▶ 下会话**：① R109 §9.2.1.1 anonymous block 攻坚（unblock block-in-inline 簇）；② Phase-A IFC 单次源统一续（layout IFC==paint IFC，非 font-metric 子任务）；③ taffy maintainability 升级（R304 vertical 收益已 ruled out）；④ product-smoke morning/wintertc 作 CJK 验收口径（须先 fontdue 替换）。★勿再：盲扫 top-worst / vertical 单点或 bundle / taffy R304 vertical / font-wall Latin / **CJK ascent single-knob（R1056 第六证）**。
+
 ### R1055 font-wall 实测 = Latin ruled out（DejaVuSans=0.928 匹配 R990）+ CJK 潜在 yield（NotoSansCJK=1.160 vs 0.928，受限）+ welcome 16.57% 非字体度量·零 net 源码·纯调查
 
 承 R1054 CONTINUE（font-wall R887 攻坚起步）。本轮 fontdue line_metrics_full 实测字体度量，**font-wall Latin ruled out，CJK yield 受限，font-wall 非 WPT pass-count 高 yield 轨道**。
