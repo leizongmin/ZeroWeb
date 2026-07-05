@@ -2648,6 +2648,29 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1051 R702 margin-collapse-through 调查 = taffy collapse-through 深 bug·ruled out 单 session·+ R109 vertical inline handoff doc（最高 yield 多 session 轨道蓝图）·零 net 源码·纯调查
+
+承 R1050 CONTINUE（R109 vertical inline / R702 / font-wall）。本轮 LAYOUT_DUMP 调查 R702 + 写 R109 vertical inline 实施 handoff，**结论：R702 单 session ruled out，R109 handoff doc 落地供后续 session 实施**。
+
+**R702 margin-collapse-through 调查**（`margin-em-inherit-001` 11.25%）：LAYOUT_DUMP 实测 ZW 渲染：
+```
+html   abs_y=0   h=280
+body   abs_y=56  h=196  mt=56  dmt=8    ← body effective mt=56（应 16）
+  p    abs_y=56  h=40   mt=16           ← p 与 body 同 y（重叠）
+  div(gp) abs_y=56 mt=56                ← grand-parent 同 y
+```
+ref 渲染：body abs_y=16 mt=16（正常）。**根因**：`#parent` margin-top 56 经无 border/padding 的 `#grand-parent` **collapse-through** 上提，ZW/taffy 把 max(body 8, p 16, #parent-through-gp 56) = 56 **全应用到 body**，忽略 `p` 元素 content 应作为 separator 阻断 collapse 链（CSS2 §8.3.1：adjoining margins collapse，但 p 的 in-flow content 使 p 顶/底 margin 不再 adjoining，#parent mt 应与 p_mb 折叠 max(56,16)=56 落在 p 与 gp 之间，非上提到 body 顶）。**裁决**：taffy 0.7 CollapsibleMarginSet「intervening content blocks collapse-through」逻辑不完整，深 margin 算法，ZW postprocess 重分布 collapse margin 风险高（R1047 sibling-push 同族 net-negative 先例），**单 session ruled out**。yield 小（em-inherit 簇 ~3 案）。
+
+**R109 vertical inline 实施 handoff doc LANDED**（[`vertical-inline-layout-handoff.md`](./vertical-inline-layout-handoff.md)）：承接 R1050 根因（IFC `current_x` 水平推进 vertical 文本），产多 session 实施蓝图：
+- **问题**：IFC（mod.rs:973+）`current_x += char_width` 水平推进每字符，vertical-rl/lr 应 `current_y += char_height` 垂直推进（chars 同 x 列、y 递增），line-break = column-break。
+- **影响**：vertical 子域全 R109-blocked（emphasis/ruby/text-decor/bidi-vertical + css-writing-modes ~250 vertical 案 86-87%），解锁 yield **当前 corpus 最高**（潜在 flip ~30-80 案）。
+- **实施路径**：IFC 双模式（horizontal `current_x`/`current_y` ↔ vertical 轴交换），paint `char_advance_is_y` 已存在协调。Slice 1 = 纯 CJK 单列无 float/ib 紧 gate（net-0 守 horizontal-tb 字节一致），Slice 2+ = word-wrap/float/ib/Latin advance/text-orientation 逐项扩展。
+- **风险**：taffy 0.7 vertical BLOCK flow 方向（R1043 rl packing）仍 taffy-blocked，本 handoff 只解 inline flow（char 推进），两层独立可分步；paint Path B 空-styles（R890）须协调；line-height/baseline 三方同改（R834 单点 net-negative 先例）。
+
+**意义**：R1050 根因 → R1051 实施蓝图，R109 vertical inline 轨道从「诊断」进入「可实施」阶段。后续 session 可按 handoff §3 Slice 序起步（首 slice 纯 CJK 单列 gate，net-0 守回归）。**勿再以 vertical 子域为独立 lever**（须先 R109 vertical inline 解锁）。
+
+**▶ 下会话**：① **R109 vertical inline Slice 1**（按 handoff，IFC `if self.is_vertical` 纯 CJK 单列分支，net-0 守 horizontal-tb，1 个 vertical 用例 frag 几何对）——最高 yield 轨道首切片；② 或 R702 多 session 起步（须 taffy collapse-through 重设计，yield 小不优先）；③ font-wall per-font 度量（R887 provider wiring 多 session）。
+
 ### R1050 text-emphasis 简写 LANDED（net-0 correctness）+ 垂直 emphasis net -8 回退已 ruled out·★R109 vertical inline 布局根因（IFC 水平布局 vertical 文本）·vertical-mode emphasis 簇 ruled out
 
 承 R1049 CONTINUE（logical-props WM-aware 主体已尽，转更高 yield 轨道或 sideways-lr）。本轮扫描近失簇定位 text-emphasis-position-property-{003,005,006}-{d,e,f,g}（~12 案 1.00-1.02%，vertical-lr），**调查发现 R109 vertical inline 布局深层根因，LANDED 简写 correctness fix，垂直 emphasis ruled out**。
