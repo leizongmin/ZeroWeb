@@ -2648,6 +2648,31 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1084 font-wall C-dep (freetype-raster) yield 全表测绘完成 = +32（集中 text dir）+ CI 计费仍阻塞·零 net 源码·纯调查
+
+承 R1083（multicol Phase A 死锁确证，pivot）。本轮完成 font-wall C-dep（最高 EV lever）的 yield 全表测绘，为用户决策补全证据。
+
+**A/B 测绘（4 dir，fontdue default vs --features freetype-raster，z_vs_chr<1%）**：
+| dir | fontdue→freetype | net | 分母 |
+|-----|------------------|-----|------|
+| css-text | 248→263 | **+15** | 1408 |
+| css-text-decor | 104→117 | **+13** | 242 |
+| css-fonts | 98→99 | **+1** | 282 |
+| css-multicol | 155→158 | **+3** | 452（R1082） |
+| **合计** | | **+32** | 2384 |
+
+★ css-text 现测 +15（R1068 曾报 +24，不同 tree/oracle 状态）。yield **集中 text dir**（css-text+decor = +28 / +32 = 88%）。css-fonts +1（font-features/variant 89 例 = feature gap rustybuzz 未接生产，非光栅化）；css-multicol +3（R1082 证结构性 Phase A，非光栅化）。layout dir（position/tables/CSS2）预期 ~0（layout diff 非光栅化）。
+
+**裁决**：C-dep yield = **moderate（~+32），非 transformative 批量 unlock**。aggregate ~10k 案 +32 ≈ +0.3pp。仍值得翻（css-text/decor +28 实在，strict 真通过率提升更高），但**勿以「batch unlock 大量 dir」为论据**。决策阻塞仍是：① policy（FreeType C 依赖，rusty_v8 先例）；② 跨平台编译验证（**CI billing 仍阻塞**——gh run 28755337078 6-target 全未启动「payments failed / spending limit」，R1082 报告的 billing 阻塞未解）。
+
+**★ 战略**：rendering-compat 自主 plateau 再证——clean lever 尽（pending-clean-levers R740 实证）+ font-wall C-dep moderate yield blocked + 结构性 Phase A 多 session。R1082-R1084 三轮调查闭环：multicol Phase A 死锁（R1082/R1083）+ C-dep yield 全表 moderate（R1084）。
+
+详见 [`evidence/r1084-freetype-cdep-yield-table-2026-07-06.txt`](./evidence/r1084-freetype-cdep-yield-table-2026-07-06.txt)。
+
+**门禁**：纯调查（feature default-off，零 net 源码），make test 未跑。tree clean。
+
+**▶ 下会话**：① **font-wall C-dep 用户决策**（CI billing 恢复后 dispatch workflow 取 6-target，全绿翻 default 落地 ~+32）；② **Phase A step-2 narrow slice**（R1083 确证 multicol-basic + welcome/morning 共同根 = paint Path B empty-styles 重跑度量偏差；照 R890 store_font_sizes override 模式，fragile-balance 风险须 narrow A/B）；③ fresh R740 找新 simple handling bug（R739-R840 已穷尽，低 EV）。
+
 ### R1083 multicol balance-inline 深挖：探针推翻「block children 绕过」首判（children 实 inline-level，paint-side fire）+ option A 复活 store 路径负面结果（11.24% 反退）+ 确证 Phase A 死锁·零 net 源码·纯调查
 
 承 R1082 CONTINUE（Phase A balance-aware 列宽 IFC，先 per-pixel 重试 R902 balance 扩展）。本轮深挖 multicol-basic-001 残余机制，**option A 复活 store 路径实测负面（11.24% 反退），确证残余 = Phase A 死锁**。
