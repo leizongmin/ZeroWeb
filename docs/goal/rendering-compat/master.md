@@ -2648,6 +2648,26 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1074 ★multicol inline（水平向右）列溢出 LANDED = css-multicol Oracle 145→146（+1 net）·span-all-children-height-002 3.99→0.29 PASS·003 17.26→1.03（-16pp 近 flip）·零回归·纠正 R1035「垂直 multi-row」误模型
+
+承 R1039 CONTINUE（span-all-children-height 簇残余，记录为「multi-row+breaking 协同精度，多 session」）。本轮 per-pixel 定位证伪 R1039 归因，**真根因 = overflow 方向**：chromium 把超出 col_count×列高的内容放到 **inline 方向（容器右外侧）**，ZW 旧 multi-row 模型放到下方再被 R1039 slice-clip 隐藏 → 内容丢失。
+
+**驱动案 multicol-span-all-children-height-002**（article column-count:2 height:200 + spanner + block2 height:100%=200px）：region1（spanner 下剩 50px）block2 应以 50px 列高拆 4 列（2 in-article + **2 右溢出**，同 y 单行）。ZW 修复前 R1035 multi-row 把 col2/col3 放下方行 y=213-263，R1039 slice-clip 隐藏 → block2[100:200] 丢失（pixel diff 主导 `.->Y` 17750 px @ x=429-620/637-799 article 右外侧，z_vs_chr 3.99%）。
+
+**per-pixel 定位**（product-smoke + PIL）：dense x-scan 示列结构同（双黄），precise transition `. -> Y` 17750 px 全集中 article 右外侧 → CHR 渲 4 列右溢，ZW 不渲。minimal multicol（无 spanner，height:50 col-count:2 child:200）同病（ZW yellow 仅 x=13-412，右侧 0 列）→ 通用 inline-overflow 缺口非 spanner 特有。
+
+**关键发现**：`assign_children_to_columns_multirow` **已**支持列数增长超 col_count（advance_col! push 新列），4 片段几何正确。bug 纯在定位：`position_multicol_children` 用 row_height>0 时 col_in_row=col_idx%col_count（wrap，垂直堆叠）；row_height=0 时 col_in_row=col_idx（单调递增，inline 向右）。
+
+**修复**（`crates/layout-engine/src/multicol.rs`，1 行净 + 注释 + 1 单测）：`layout_multicol_with_spanners` multirow 分支 assign 仍以 region_available 作 max_col_height（列高，block2→4×50px 片段不变），**定位传 row_height=0.0**（旧 region_available）→ 溢出列落 col_idx×(col_w+gap) 的 x（容器右外侧），同 y_base 单行；region_height=max 片段高=50px（block 方向不增高）。CSS Multicol：definite 高度容器内容超 col_count×列高时额外 column box 在 inline 方向溢出——本修复对齐此语义。
+
+**A/B（stash 严格对照，ORACLE_DUMP_ALL per-case 452 案）**：baseline（当前 tree）= **145/452**（注：R1039 记 140，tree 已漂移 +5）→ with-change **146/452（net +1）**。**1 flip to PASS**：002 **3.99→0.29**；**0 flip to FAIL**；**1 improved**：003 **17.26→1.03（-16.23pp 近 flip）**；**0 worsened ≥0.5pp**。★ 零回归。
+
+**门禁全绿**：multicol 单测 25 pass（含新 `test_position_multicol_inline_overflow_row_height_zero`）/ make test 全 workspace 45 binary 0 failed / clippy --workspace --all-targets -D warnings 干净 / cargo fmt 干净 / **product-smoke welcome 16.57%（< 20% gate，== baseline 不变）** / multicol.rs 1277 行（<2000）。
+
+**意义**：纠正 R1035「multi-row 垂直溢出」误模型（标准 multicol 列恒 inline，多行只由 column-span:all 区域分割产生，overflow 列走 inline 方向非下方）。关闭 002（PASS）+ 003 大改善。累计 css-multicol R1027-R1039 + R1074 持续产出。详见 [`evidence/r1074-multicol-inline-overflow-landed-2026-07-06.txt`](./evidence/r1074-multicol-inline-overflow-landed-2026-07-06.txt)。
+
+**▶ 下会话**：① 003 残余 1.03% 近 flip（逐案 LAYOUT_DUMP 查结构 vs font-wall）；② 004a/004b/006/007 簇（仍 FAIL，R1039 标 nested 结构稍紧）是否同类 inline-overflow 可改善；③ inline-overflow 模型扩展到非 spanner balance 路径（minimal multicol 同病，潜在多 case）；④ font-wall C-dep（用户决策，002 残余 0.29% 文本字形亦待其解锁）。
+
 ### R1073 FreeType C-dep 跨平台 CI 冒烟门禁（freetype-raster-cross-platform job，非阻塞）= 一键 6-target 验证 bundled FreeType 编译 → C-dep 决策从「需 macos/windows 本地验证」（无法自主做）降为「dispatch CI 看结果」·reversible/非 outward-facing
 
 承 R1072 CONTINUE（C-dep 在用户决策点，实际阻塞 = 6-target CI 编译可行性无法从 Linux 验证）。本轮加 **非阻塞 CI 冒烟 job**，把「无法自主验证的跨平台编译」降为「用户 dispatch CI 即得结果」。

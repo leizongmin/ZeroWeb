@@ -431,9 +431,17 @@ fn layout_multicol_with_spanners(
             && !has_nested_multicol;
 
         let (assignments, row_height) = if use_multirow {
+            // R1074：overflow 列走 **inline 方向**（水平向右），非垂直 multi-row。
+            // assign 仍以 region_available 作列高（max_col_height）把超高子元素拆成 50px 片段，
+            // 但定位传 row_height=0.0 → position_multicol_children 把超出 col_count 的列放在
+            // col_idx ≥ col_count 的 x（容器右外侧），同 y_base 单行，而非堆到下方行。
+            // CSS Multicol：definite 高度容器内容超 col_count×列高时，额外 column box 在 inline
+            // 方向溢出（向右），不增加 block 方向高度。修 span-all-children-height-002：block2
+            // 4 列（2 in-article + 2 右溢出）匹配 chromium；旧 multi-row 把第 2 行放到容器下方再被
+            // R1039 slice-clip 隐藏 → block2[100:200] 丢失（z_vs_chr 3.99%）。
             (
                 assign_children_to_columns_multirow(&region_child_info, col_count, region_available),
-                region_available,
+                0.0,
             )
         } else if region_child_info.is_empty() {
             (vec![Vec::new(); col_count.max(1)], 0.0)
@@ -1086,6 +1094,60 @@ mod tests {
         // 两子元素都分配到唯一列（clip），不应 panic
         assert!(cols[0].iter().any(|f| f.child_idx == 0));
         assert!(cols[0].iter().any(|f| f.child_idx == 1));
+    }
+
+    /// R1074：inline 方向列溢出定位。definite 高度 multicol 内容超 col_count×列高时，
+    /// 额外 column box 应在 inline 方向（向右）溢出，而非堆到下方行。`position_multicol_children`
+    /// 传 row_height=0.0 时，col_idx ≥ col_count 的溢出列 col_x 单调递增（col_idx×(col_w+gap)），
+    /// 落到容器右外侧；同 y_base 单行。对应 multicol-span-all-children-height-002（block2 4 列：
+    /// 2 in-article + 2 右溢出）匹配 chromium（z_vs_chr 3.99%→0.29%）。
+    #[test]
+    fn test_position_multicol_inline_overflow_row_height_zero() {
+        use crate::types::LayoutBox;
+        // 2 列 × 列宽 100 + gap 10；单个超高子元素被 multirow assign 拆成 4 片（4 列）。
+        let info = ColumnInfo {
+            count: 2,
+            column_width: 100.0,
+            gap: 10.0,
+            sequential_fill: false,
+        };
+        let mut container = LayoutBox::default();
+        container.content_width = 210.0;
+        container.children = vec![LayoutBox::default()];
+        // 4 列每列一片（child 0 的 4 个 50px 片段），模拟 multirow assign 输出。
+        let assignments: Vec<Vec<ColumnFragment>> = (0..4)
+            .map(|off| {
+                vec![ColumnFragment {
+                    child_idx: 0,
+                    fragment_y_offset: off as f32 * 50.0,
+                    visual_height: 50.0,
+                }]
+            })
+            .collect();
+
+        let region_height = position_multicol_children(&mut container, &assignments, &info, 0.0, 0.0);
+        // 行高 50（单行），未向下堆叠。
+        assert!(
+            (region_height - 50.0).abs() < 0.01,
+            "single inline row, region_height=50"
+        );
+
+        let offsets = &container.children[0].column_span_offsets;
+        assert_eq!(offsets.len(), 4, "4 fragments (one per column incl. 2 overflow)");
+        // tuple = (child_x, child_y, col_x, col_w, col_top, col_h)；col_x = col_idx×(col_w+gap)。
+        // 溢出列 col2/col3 落到 220/330（容器右外侧），非 wrap 回 0/110。
+        let col_xs: Vec<f32> = offsets.iter().map(|t| t.2).collect();
+        assert!((col_xs[0] - 0.0).abs() < 0.01, "col0 x=0");
+        assert!((col_xs[1] - 110.0).abs() < 0.01, "col1 x=110");
+        assert!(
+            (col_xs[2] - 220.0).abs() < 0.01,
+            "col2 (overflow) x=220 inline, not wrapped"
+        );
+        assert!((col_xs[3] - 330.0).abs() < 0.01, "col3 (overflow) x=330 inline");
+        // 所有片段同 y_base（单行），col_top=0（非跨行下移）。
+        for t in offsets {
+            assert!((t.4 - 0.0).abs() < 0.01, "col_top=0 (inline, no row stacking)");
+        }
     }
 
     /// R1035：multi-row 列模型。3 列 × 100px 高度，5 个 100px 子元素 → 总 500 > 3×100=300，
