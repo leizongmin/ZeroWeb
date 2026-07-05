@@ -13,9 +13,7 @@ use zero_ui_core::event::UiEvent;
 use zero_ui_core::geometry::{Constraints, Point, Size};
 use zero_ui_core::invalidation::InvalidationFlags;
 use zero_ui_core::theme::Color;
-use zero_ui_core::widget::{
-    EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget, WidgetId, WidgetSpec,
-};
+use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, UpdateCtx, Widget, WidgetId, WidgetSpec};
 use zero_ui_runtime::{EmittedAction, UiApp, WidgetHost};
 use zero_ui_widgets::button::{Button, ButtonSpec};
 
@@ -69,8 +67,6 @@ impl Widget for Label {
         ctx.recorder
             .draw_text(&self.text, Point::new(0.0, 18.0), 16.0, Color::rgb(0.1, 0.1, 0.1));
     }
-
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 // ---------------- 应用状态 + reducer + 声明树 ----------------

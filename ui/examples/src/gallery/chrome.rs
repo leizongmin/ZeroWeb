@@ -17,7 +17,7 @@ use zero_ui_core::event::{KeyAction, PointerPhase, UiEvent};
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
 use zero_ui_core::prop_keys;
 use zero_ui_core::theme::Color;
-use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget};
+use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, UpdateCtx, Widget};
 
 use super::model::Locale;
 
@@ -91,7 +91,6 @@ impl Widget for HeaderTitle {
         ctx.recorder
             .draw_text(&self.text, Point::new(12.0, 26.0), 18.0, ctx.tokens.on_background);
     }
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 // ========== Spacer ==========
@@ -126,7 +125,6 @@ impl Widget for Spacer {
         }
     }
     fn paint(&mut self, _ctx: &mut PaintCtx) {}
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 // ========== HeaderButton ==========
@@ -192,7 +190,6 @@ impl Widget for HeaderButton {
         };
         ctx.recorder.draw_text(&self.label, Point::new(12.0, 22.0), 14.0, on_bg);
     }
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
     fn focusable(&self) -> bool {
         true
     }
@@ -274,7 +271,6 @@ impl Widget for NavItem {
         ctx.recorder
             .draw_text(&self.label, Point::new(16.0, 22.0), 14.0, tokens.on_surface);
     }
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
     fn focusable(&self) -> bool {
         true
     }
@@ -350,7 +346,6 @@ impl Widget for GroupHeader {
         };
         ctx.recorder.draw_text(&display, Point::new(8.0, 18.0), 12.0, fg);
     }
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
     fn focusable(&self) -> bool {
         true
     }
@@ -436,7 +431,6 @@ impl Widget for NavSearch {
         );
         ctx.recorder.draw_text(&display, Point::new(8.0, 22.0), 13.0, fg);
     }
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
     fn focusable(&self) -> bool {
         true
     }
@@ -476,5 +470,4 @@ impl Widget for DemoTitle {
         ctx.recorder
             .draw_text(&self.desc, Point::new(16.0, 46.0), 13.0, desc_fg);
     }
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }

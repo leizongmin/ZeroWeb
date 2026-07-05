@@ -35,8 +35,8 @@ use zero_ui_core::widget::{ComponentType, EventCtx, LayoutCtx, Widget, WidgetId,
 use zero_ui_gestures::{Gesture, GestureArena, PointerEvent};
 
 use event::{
-    collect_emit, collect_focusables, deepest_focusable_at, deepest_node_at, deepest_scroll_vertical_at, dispatch_node,
-    dispatch_to_widget, find_epoch, find_node, find_node_mut, find_rect,
+    collect_emit, collect_focusables, deepest_node_at, deepest_scroll_vertical_at, dispatch_node,
+    dispatch_pressed_with_focus, dispatch_to_widget, find_epoch, find_node, find_node_mut, find_rect,
 };
 use paint::paint_node;
 use reconcile::{build_node, reconcile_node};
@@ -472,11 +472,11 @@ impl WidgetHost {
             }
             UiEvent::Pointer {
                 phase: PointerPhase::Pressed,
-                position,
+                position: _,
                 ..
             } => {
-                let target = deepest_focusable_at(root, *position);
-                let handled = dispatch_node(root, event, &mut emitted);
+                // P2-7：合并 hit-test + focus 收集为单次遍历（dispatch_pressed_with_focus）。
+                let (handled, target) = dispatch_pressed_with_focus(root, event, &mut emitted);
                 if let Some(id) = target
                     && self.focused.as_ref() != Some(&id)
                 {

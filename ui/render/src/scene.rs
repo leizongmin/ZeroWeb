@@ -35,10 +35,29 @@ impl Scene {
         self.entries.extend(other.entries.iter().cloned());
     }
 
+    /// P2-8 优化：消费 `other` 的 entries、整体平移 `offset` 后并入 `self`。
+    ///
+    /// 替代旧路径 `scene.push(other.translated(off).entries.into_iter())`，避免对每个 entry
+    /// 做一次 `primitive.clone()` + `source.clone()`（retained host paint 每帧每个节点都走这条路径）。
+    /// `other.entries` 经 `into_iter` 直接消费，`RenderPrimitive::translate(self, ..)` 也已消费 self。
+    pub fn extend_translated(&mut self, other: Scene, offset: Vec2) {
+        for e in other.entries {
+            self.entries.push(SceneEntry {
+                source: e.source,
+                clip: e.clip.map(|c| c.translate(offset.x, offset.y)),
+                primitive: e.primitive.translate(offset),
+            });
+        }
+    }
+
     /// 返回一份所有图元沿向量平移后的场景（clip 也同步平移）。
     ///
     /// retained host paint 遍历用：每个 widget 以局部坐标 paint 进自己的 SceneRecorder，
     /// host 按节点绝对 origin 平移后并入全局 Scene。
+    ///
+    /// **注**：此方法 clone 所有 entries（包括 `RenderPrimitive` 内 String 等）。
+    /// 性能敏感路径（每帧每个节点）应改用 [`Scene::extend_translated`]，它消费 self，
+    /// 避免 clone。保留本方法用于需要保留原 Scene 的合成场景（overlay / 测试）。
     pub fn translated(&self, offset: Vec2) -> Scene {
         Scene {
             entries: self
@@ -108,6 +127,41 @@ mod tests {
         match &scene.entries[0].primitive {
             RenderPrimitive::FillRect { rect, .. } => {
                 assert_eq!(*rect, Rect::from_ltrb(0.0, 0.0, 10.0, 10.0));
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn extend_translated_equivalent_to_translated_then_push() {
+        // P2-8：extend_translated 应与 translated().entries.iter().push 等价，
+        // 但消费 other.entries 避免 clone（性能改进，行为不变）。
+        let mut local = Scene::new();
+        local.push(SceneEntry {
+            source: WidgetId::new("a"),
+            clip: Some(Rect::from_ltrb(0.0, 0.0, 5.0, 5.0)),
+            primitive: RenderPrimitive::FillRect {
+                rect: Rect::from_ltrb(0.0, 0.0, 5.0, 5.0),
+                color: Color::BLACK,
+                rounding: Rounding::ZERO,
+            },
+        });
+
+        let mut via_ext = Scene::new();
+        via_ext.extend_translated(local.clone(), Vec2::new(10.0, 20.0));
+
+        let mut via_old = Scene::new();
+        for e in local.translated(Vec2::new(10.0, 20.0)).entries {
+            via_old.push(e);
+        }
+
+        assert_eq!(via_ext.entries.len(), via_old.entries.len());
+        assert_eq!(via_ext.entries[0].source, via_old.entries[0].source);
+        assert_eq!(via_ext.entries[0].clip, via_old.entries[0].clip);
+        match (&via_ext.entries[0].primitive, &via_old.entries[0].primitive) {
+            (RenderPrimitive::FillRect { rect: r1, .. }, RenderPrimitive::FillRect { rect: r2, .. }) => {
+                assert_eq!(r1, r2);
+                assert_eq!(*r1, Rect::from_ltrb(10.0, 20.0, 15.0, 25.0));
             }
             _ => unreachable!(),
         }

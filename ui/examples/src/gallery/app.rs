@@ -5,9 +5,7 @@ use zero_ui_core::binding::Value;
 use zero_ui_core::event::{PointerPhase, UiEvent};
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
 use zero_ui_core::theme::Color;
-use zero_ui_core::widget::{
-    EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget, WidgetId, WidgetSpec,
-};
+use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, UpdateCtx, Widget, WidgetId, WidgetSpec};
 use zero_ui_runtime::{UiApp, WidgetHost};
 
 use super::chrome::{
@@ -392,7 +390,6 @@ impl Widget for DemoPreview {
             }
         }
     }
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 // 保留 layout height 表的常量映射，供未来按 page 元数据驱动布局。
@@ -435,7 +432,6 @@ impl Widget for SourceLabel {
         );
         ctx.recorder.draw_text(&self.text, Point::new(12.0, 16.0), 12.0, fg);
     }
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 /// 语法高亮源码展示
@@ -519,7 +515,6 @@ impl Widget for SourceCode {
             }
         }
     }
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 // ========== Factory Registration ==========

@@ -59,19 +59,6 @@ pub(super) fn find_epoch(node: &HostNode, id: &WidgetId) -> Option<u32> {
     node.children.iter().find_map(|c| find_epoch(c, id))
 }
 
-/// 命中点下最深的 focusable 节点 id（click-to-focus 用，DC-8 phase-2）。
-pub(super) fn deepest_focusable_at(node: &HostNode, point: Point) -> Option<WidgetId> {
-    if !node.cached_rect.contains(point) {
-        return None;
-    }
-    for child in node.children.iter().rev() {
-        if let Some(id) = deepest_focusable_at(child, point) {
-            return Some(id);
-        }
-    }
-    if node.focusable { Some(node.id.clone()) } else { None }
-}
-
 /// 命中点下最深的「垂直滚动容器」节点 id（DC-16 gallery scroll）。
 pub(super) fn deepest_scroll_vertical_at(node: &HostNode, point: Point) -> Option<WidgetId> {
     if !node.cached_rect.contains(point) {
@@ -146,14 +133,44 @@ pub(super) fn dispatch_to_widget(
 }
 
 pub(super) fn dispatch_node(node: &mut HostNode, event: &UiEvent, emitted: &mut Vec<EmittedAction>) -> bool {
+    dispatch_node_inner(node, event, emitted, None)
+}
+
+/// Pressed 事件的合并遍历：一次递归同时完成 hit-test 派发 + 收集命中链路上最深的
+/// focusable 节点（click-to-focus 用，DC-8 phase-2）。
+///
+/// P2-7 优化：避免 Pressed 时跑两次全树遍历（`deepest_focusable_at` + `dispatch_node`）。
+/// 返回 `(handled, focus_target)`。
+pub(super) fn dispatch_pressed_with_focus(
+    node: &mut HostNode,
+    event: &UiEvent,
+    emitted: &mut Vec<EmittedAction>,
+) -> (bool, Option<WidgetId>) {
+    let mut focus_target: Option<WidgetId> = None;
+    let handled = dispatch_node_inner(node, event, emitted, Some(&mut focus_target));
+    (handled, focus_target)
+}
+
+fn dispatch_node_inner(
+    node: &mut HostNode,
+    event: &UiEvent,
+    emitted: &mut Vec<EmittedAction>,
+    mut focus_target: Option<&mut Option<WidgetId>>,
+) -> bool {
     let Some(abs_pos) = event.position() else {
         return false;
     };
     if !node.cached_rect.contains(abs_pos) {
         return false;
     }
+    // 命中本节点：若是 focusable，作为候选（更深的子节点会覆盖此值）。
+    if let Some(out) = focus_target.as_deref_mut()
+        && node.focusable
+    {
+        *out = Some(node.id.clone());
+    }
     for child in node.children.iter_mut().rev() {
-        if dispatch_node(child, event, emitted) {
+        if dispatch_node_inner(child, event, emitted, focus_target.as_deref_mut()) {
             return true;
         }
     }

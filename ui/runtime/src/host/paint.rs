@@ -72,9 +72,8 @@ pub(super) fn paint_node(
         w.paint(&mut ctx);
         let local = rec.finish();
         let abs_offset = Vec2::new(node.cached_rect.origin.x, node.cached_rect.origin.y);
-        for entry in local.translated(abs_offset).entries {
-            scene.push(entry);
-        }
+        // P2-8：消费 local.entries，避免每个 primitive + source 都 clone 一次。
+        scene.extend_translated(local, abs_offset);
     }
     for child in node.children.iter_mut() {
         paint_node(child, scene, own_clip, tokens, font_metrics);

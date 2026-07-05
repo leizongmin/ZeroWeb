@@ -458,7 +458,6 @@ impl Widget for Fill {
         ctx.recorder
             .fill_rect(Rect::from_origin_size(Point::ZERO, self.size), self.color);
     }
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 fn fill_host() -> WidgetHost {
@@ -1861,7 +1860,6 @@ impl Widget for Recorder {
         Size::new(50.0, 50.0).clamp(constraints)
     }
     fn paint(&mut self, _ctx: &mut PaintCtx) {}
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 /// 构造 recorder host + 取出 log 引用。

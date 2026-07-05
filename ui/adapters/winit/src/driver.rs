@@ -178,7 +178,7 @@ mod tests {
     use zero_ui_core::geometry::{Point, Rect, Size};
     use zero_ui_core::theme::Color;
     use zero_ui_core::widget::{
-        EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget, WidgetId, WidgetSpec,
+        EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, UpdateCtx, Widget, WidgetId, WidgetSpec,
     };
 
     // ---- 最小可交互控件：ClickBox（按下/抬起在其矩形内 → emit 一个 action） ----
@@ -213,7 +213,6 @@ mod tests {
                 Color::rgb(0.2, 0.4, 0.6),
             );
         }
-        fn semantics(&self, _ctx: &mut SemanticsCtx) {}
         fn focusable(&self) -> bool {
             true
         }

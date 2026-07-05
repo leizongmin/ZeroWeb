@@ -515,7 +515,7 @@ mod tests {
     use zero_ui_core::layout::WindowMetrics;
     use zero_ui_core::theme::Color;
     use zero_ui_core::widget::{
-        EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget, WidgetId, WidgetSpec,
+        EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, UpdateCtx, Widget, WidgetId, WidgetSpec,
     };
 
     #[test]
@@ -577,7 +577,6 @@ mod tests {
             ctx.recorder
                 .fill_rect(Rect::from_ltrb(0.0, 0.0, 100.0, 40.0), Color::rgb(0.3, 0.5, 0.7));
         }
-        fn semantics(&self, _ctx: &mut SemanticsCtx) {}
         fn focusable(&self) -> bool {
             true
         }

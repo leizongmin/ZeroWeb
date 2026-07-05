@@ -12,9 +12,7 @@ use zero_ui_core::binding::Value;
 use zero_ui_core::event::{KeyAction, UiEvent};
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
 use zero_ui_core::theme::Color;
-use zero_ui_core::widget::{
-    EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget, WidgetId, WidgetSpec,
-};
+use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, UpdateCtx, Widget, WidgetId, WidgetSpec};
 use zero_ui_runtime::{EmittedAction, UiApp, WidgetHost};
 
 /// form 字段编辑 action（payload = 字段新值）。
@@ -129,8 +127,6 @@ impl Widget for TextField {
         };
         ctx.recorder.draw_text(&display, Point::new(6.0, 22.0), 14.0, color);
     }
-
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 
     fn focusable(&self) -> bool {
         true

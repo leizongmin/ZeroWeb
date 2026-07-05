@@ -661,7 +661,7 @@ mod adapter_runtime_integration {
     use zero_ui_core::geometry::{Constraints, Size};
     use zero_ui_core::layout::WindowMetrics;
     use zero_ui_core::widget::{
-        EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget, WidgetId, WidgetSpec,
+        EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, UpdateCtx, Widget, WidgetId, WidgetSpec,
     };
     use zero_ui_runtime::{EmittedAction, UiApp, WidgetHost};
 
@@ -687,7 +687,6 @@ mod adapter_runtime_integration {
             Size::new(100.0, 40.0)
         }
         fn paint(&mut self, _ctx: &mut PaintCtx) {}
-        fn semantics(&self, _ctx: &mut SemanticsCtx) {}
         fn focusable(&self) -> bool {
             true
         }

@@ -203,8 +203,6 @@ impl Widget for ChromePanel {
                 .draw_text(text, Point::new(6.0, baseline), 14.0, self.text_color);
         }
     }
-
-    fn semantics(&self, _ctx: &mut SemanticsCtx) {}
 }
 
 // ── NavigationButtonsWidget（真实图标，DC-14 chrome 功能等价）──────────────────────
