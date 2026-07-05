@@ -2648,6 +2648,26 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1083 multicol balance-inline 深挖：探针推翻「block children 绕过」首判（children 实 inline-level，paint-side fire）+ option A 复活 store 路径负面结果（11.24% 反退）+ 确证 Phase A 死锁·零 net 源码·纯调查
+
+承 R1082 CONTINUE（Phase A balance-aware 列宽 IFC，先 per-pixel 重试 R902 balance 扩展）。本轮深挖 multicol-basic-001 残余机制，**option A 复活 store 路径实测负面（11.24% 反退），确证残余 = Phase A 死锁**。
+
+**实验 1（放宽 store gate，env-gated MULTICOL_BALANCE_INLINE）**：store_inline_multicol_columns 放宽（balance + DOM-based has_block_child + distribute_lines_balanced）。MC_DEBUG 实测 store 成功存 21 行 @120px。但 diff 10.91%→10.91% 不变 → store 是死代码。
+
+**实验 2（paint_text use_stored 探针，决定性）**：text.rs:938 探针实测 `multicol_info=true ifc_w=120 width_matches=false use_stored=false`。★ **推翻首轮「block children 绕过 paint」假设**——children 是 **inline-level**（非 block-mapped），has_in_flow_children=false（text.rs:807）→ multicol_info=Some（paint-side **正常 fire**），ifc_width=120。store 死代码双因：(a) multicol_info.is_some()（use_stored 要求 is_none()）；(b) width 不匹配（store 设 360，paint 用 120）。渲染由 paint-side 主导（重跑 IFC @120px + line.y/target_h balanced 分布 text.rs:1132-1181）。
+
+**实验 3（option A 复活 store，env-gated，已 revert）**：① store 放宽 gate；② store inline_layout_width=col_width（balance）/content_width（auto）；③ text.rs:938 use_stored 去 multicol_info.is_none()。A/B multicol-basic-001：**10.91%→11.24%（+0.33pp 反退）**。→ 即使 store 正确算 21 行 @120px 且被 paint 消费，输出仍 11% 错。**复活 store 路径非 lever，rule out**。
+
+**结论（honest）**：multicol-basic-001 残余 = Phase A inline ownership / 行盒分布 accuracy（distribute_lines_balanced ceil-split vs chromium balancing + line-height/font-metric + inline ownership 双绘协调）。非单 session 可解。R1082/R1083 两轮深挖确证 multicol balance-inline 残余属 Phase A 死锁 territory（同 R125/R198/R890 empty-styles 谱系）。
+
+**★ 战略**：multicol 单 session 杠杆确尽（R1074-R1080 已收 +9 net；R1082 证残余结构性非 font-wall；R1083 option A 复活 store rule out + 确证 Phase A 死锁）。下会话应 **pivot**——非 multicol 角度，或 accept plateau 等 font-wall C-dep（CI 计费恢复后用户决策）。勿再投 multicol-basic balance-inline 单 session（option A/B 均 Phase A 谱系，empty-styles 重跑度量偏差是根）。
+
+详见 [`evidence/r1083-multicol-paint-bypass-2026-07-06.txt`](./evidence/r1083-multicol-paint-bypass-2026-07-06.txt)。
+
+**门禁**：纯调查（实验+探针 default-off revert），零 net 源码，make test 未跑。tree clean。
+
+**▶ 下会话**：① **pivot 出 multicol**——R1081 已证 css-tables/css-flexbox clean lever 穷尽，转其它面（如 box-display R109 FR-002/003 font-wall gated / writing-modes / 产品 smoke fixture 健康）；② font-wall C-dep 用户决策（CI 计费恢复后取 6-target evidence；当前 blocked）；③ 若重启 multicol，须 Phase A empty-styles 重跑度量统一（R890 store_font_sizes override 模式，多 session），非单点 gate 改。
+
 ### R1082 ★css-multicol 残余 = 结构性（非 font-wall）三证 + multicol-basic 内容丢失精确诊断 + CI 计费阻塞 freetype 6-target 验证·零 net 功能源码·纯调查（fmt cleanup 已提交 2defd817）
 
 承 R1081（C-dep 用户决策点）。本轮自主验证「multicol 近-pass 是否真 font-wall 主导」——**裁决：推翻长期假设，multicol 残余主导 = 结构性（Phase A inline 列宽测量），font-wall C-dep 对 multicol 仅 +3（非批量 unlock）**。
