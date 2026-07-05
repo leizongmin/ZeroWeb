@@ -2648,6 +2648,26 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1070 morning-work CJK oracle 工具 + FreeType CJK yield A/B = morning 58.15→58.06%（−0.09pp 边际，结构主导 58% diff）+ product-oracle-shot.mjs 可复用工具·yield 天花板证毕（FreeType 收益 ∝ 光栅化分量占比）·零 net 功能源码·纯调查+工具
+
+承 R1069 CONTINUE（morning-work CJK oracle 量化，CJK 光栅化差 11-16% 最大）。本轮新建产品页 oracle 工具 + 生成 morning chromium oracle + A/B，**yield 天花板证毕**。
+
+**工具**（`tests/wpt-runner/scripts/product-oracle-shot.mjs`，复用 chromium-oracle-shot.mjs 的 HTTP-server 模式，面向任意产品 fixture）：`--root <dir> --html <rel> --out <png> [--width 800 --height 600 --selector <css> --wait 300]`。内嵌静态 server（R388 http:// 取代 file://，@font-face 本地字体 + 相对资源正确解析）+ headless chromium（`--font-render-hinting=none` 与 product-smoke ZW 侧一致）+ img.decode 等待（R745 race 修复）+ 外部 CDN（ads/disqus/googletag）任其超时失败（仅本地内容入 oracle）。生成 `evidence/product-static/morning-chromium.png`（800×600，gitignored）。
+
+**morning A/B**（CJK 产品页，leizongmin blog，body NotoSansCJK）：feature-off **58.15%** → feature-on **58.06%（−0.09pp 边际）**。★ morning 58% diff **结构主导**（layout/栏目/images/sidebar/@font-face FiraCode webfont/外部脚本失败），CJK 文本光栅化仅小分量——FreeType 改该分量 −0.09pp 但结构性不动（同 backgrounds +2 模式）。
+
+**★ yield 天花板证毕**（FreeType 收益 ∝ 各 dir/page 的**光栅化分量**占总 diff 的占比）：
+| dir/page | feature-off | feature-on | Δ | 解释 |
+|---|---|---|---|---|
+| css-text（文本 dir） | credible 344 | 368 | **+24** | 光栅化 = 主 diff 分量（layout 正确）→ 大 yield |
+| welcome（Latin 产品） | 16.57% | 16.29% | −0.28pp | 文本占可观 + 部分 layout |
+| backgrounds（布局 dir） | credible 228 | 230 | +2 | 结构性 background-root-* 主导 |
+| morning（CJK 产品） | 58.15% | 58.06% | −0.09pp | 58% 结构主导，CJK 光栅化小分量 |
+
+**裁决**：FreeType yield **不是银弹**——文本 dir（layout 正确、光栅化主导）大 yield（css-text +24），结构复杂 dir/page 边际（backgrounds/morning 结构主导）。C 依赖决策 evidence 完备且**诚实**：① 文本 dir 类收益真实（css-text +24 零回归，预期 css-text-decor/linebox/text-transform 等文本 dir 同类）；② 产品页收益小（welcome −0.28pp / morning −0.09pp，受限于结构 diff 主导）；③ DEFAULT hinting 最优（R1069）。翻 default 收益 = 文本 dir oracle 一致率显著提升 + 产品页小幅改善；非银弹，font-wall 的结构分量须各自修。
+
+**▶ 下会话**：① **待用户 C 依赖决策**（evidence 完备 + 诚实，yield ∝ 光栅化分量）；② 翻 default 前/后可扩文本 dir A/B（linebox/text-decor/css21-text 验证 +24 类收益泛化）；③ 产品页残余（welcome 16% / morning 58%）须结构性修（layout/栏目/img/@font-face webfont 加载），FreeType 非其 lever；④ product-oracle-shot.mjs 可复用（任一产品 fixture oracle，DC-13 扩 fixture 基础设施）。
+
 ### R1069 FreeType hinting A/B（DEFAULT 最优）+ 多 dir yield 测绘 = DEFAULT 381 > LIGHT 371 > NOHINT 357≈fontdue（证 fontdue=unhinted，FreeType full-hint 向 chromium 收敛）+ yield 集中文本 dir（css-text +24 / backgrounds +2 结构性封顶）·DEFAULT 无需再调·零 net 功能源码（+4 行注释）·纯调查
 
 承 R1068 CONTINUE（Phase 2 LANDED feature-gated，续 feature-on 调优 + 多 dir 量化）。本轮 A/B FreeType hinting 模式 + 量化 yield 跨 dir 分布，**DEFAULT 验证为最优，yield 集中文本 dir**。
