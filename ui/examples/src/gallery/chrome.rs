@@ -78,9 +78,13 @@ impl Widget for HeaderTitle {
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
         EventResult::Ignored
     }
-    fn layout(&mut self, _ctx: &mut LayoutCtx, c: Constraints) -> Size {
-        let w = (self.text.chars().count() as f32 * 9.0).clamp(c.min_width, c.max_width);
-        Size::new(w, 40.0_f32.clamp(c.min_height, c.max_height))
+    fn layout(&mut self, ctx: &mut LayoutCtx, c: Constraints) -> Size {
+        // P1-5：经 LayoutCtx.measure_text 算文本宽度（无注入 backend 时回落 heuristic）。
+        let w = ctx.measure_text(&self.text, 18.0).width + 24.0;
+        Size::new(
+            w.clamp(c.min_width, c.max_width),
+            40.0_f32.clamp(c.min_height, c.max_height),
+        )
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
         ctx.recorder

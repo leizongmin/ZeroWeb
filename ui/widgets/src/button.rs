@@ -413,13 +413,21 @@ mod tests {
         let mut btn = Button::new(ButtonSpec::new("OK", "app.confirm"));
         // "OK" 期望 32×32；tight 50×20 → clamp 到 50×20。
         let tight = btn.layout(
-            &mut LayoutCtx { scale_factor: 1.0 },
+            &mut LayoutCtx {
+                scale_factor: 1.0,
+                text_measure: None,
+                font_metrics: None,
+            },
             Constraints::tight(Size::new(50.0, 20.0)),
         );
         assert_eq!((tight.width, tight.height), (50.0, 20.0));
         // loose 200×200 → 期望尺寸不被裁剪。
         let loose = btn.layout(
-            &mut LayoutCtx { scale_factor: 1.0 },
+            &mut LayoutCtx {
+                scale_factor: 1.0,
+                text_measure: None,
+                font_metrics: None,
+            },
             Constraints::loose(Size::new(200.0, 200.0)),
         );
         assert_eq!((loose.width, loose.height), (32.0, 32.0));
@@ -447,7 +455,11 @@ mod tests {
         // 长标签（>10 字符 → 宽度 >96）此前背景被截断为 96px，右侧透明。
         let mut btn = Button::new(ButtonSpec::new("Save Settings Now", "app.save"));
         let size = btn.layout(
-            &mut LayoutCtx { scale_factor: 1.0 },
+            &mut LayoutCtx {
+                scale_factor: 1.0,
+                text_measure: None,
+                font_metrics: None,
+            },
             Constraints::loose(Size::new(400.0, 400.0)),
         );
         // 标签 17 字符 → 期望宽 17×8+16 = 152。
@@ -478,7 +490,11 @@ mod tests {
         // "保存" = 2 字符 / 6 字节 → 宽度应为 2×8+16=32，而非 6×8+16=64。
         let mut btn = Button::new(ButtonSpec::new("保存", "app.save"));
         let size = btn.layout(
-            &mut LayoutCtx { scale_factor: 1.0 },
+            &mut LayoutCtx {
+                scale_factor: 1.0,
+                text_measure: None,
+                font_metrics: None,
+            },
             Constraints::loose(Size::new(400.0, 400.0)),
         );
         assert!(

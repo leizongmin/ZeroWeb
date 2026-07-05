@@ -166,6 +166,10 @@ pub struct WidgetHost {
     last_hovered: Option<WidgetId>,
     /// 可供 widgets 查询的实时字体度量 `(ascent, descent)`（DC-11 text path 统一）。
     font_metrics: Option<(f32, f32)>,
+    /// 文本度量后端（P1-5）：由 driver 从 FontdueBackend 注入，layout 时放进 LayoutCtx。
+    /// 让 widget 在 layout 阶段调 [`LayoutCtx::measure_text`](zero_ui_core::widget::LayoutCtx::measure_text)
+    /// 拿到真实文本宽度，替代 `chars * 9` 估算。
+    text_measure: Option<Box<dyn zero_ui_core::widget::TextMeasure>>,
 }
 
 impl Default for WidgetHost {
@@ -186,6 +190,7 @@ impl Default for WidgetHost {
             gesture_clock: 0,
             last_hovered: None,
             font_metrics: None,
+            text_measure: None,
         }
     }
 }
@@ -212,6 +217,13 @@ impl WidgetHost {
     /// 设置实时字体度量 `(ascent, descent)`，由应用层从共享 `FontdueBackend` 查询后注入。
     pub fn set_font_metrics(&mut self, ascent: f32, descent: f32) {
         self.font_metrics = Some((ascent, descent));
+    }
+
+    /// 注入文本度量后端（P1-5）：layout 时放进 `LayoutCtx.text_measure`，让 widget
+    /// 在 layout 阶段调 [`LayoutCtx::measure_text`](zero_ui_core::widget::LayoutCtx::measure_text)
+    /// 拿到真实文本宽度。
+    pub fn set_text_measure(&mut self, tm: Box<dyn zero_ui_core::widget::TextMeasure>) {
+        self.text_measure = Some(tm);
     }
 
     /// 用新声明树 reconcile：按 `WidgetId` + `ComponentType` 复用既有 widget 实例（保留临时状态），
@@ -310,12 +322,24 @@ impl WidgetHost {
 
     /// 两遍布局：measure + arrange。返回根尺寸。
     pub fn layout(&mut self, constraints: Constraints) -> Size {
-        let Some(root) = self.root.as_mut() else {
-            return Size::ZERO;
+        // P1-5：先 take text_measure，避免与 &mut self.root 冲突（layout 完放回）。
+        let tm = self.text_measure.take();
+        let tm_ref: Option<&dyn zero_ui_core::widget::TextMeasure> = tm.as_ref().map(|b| b.as_ref());
+        let size = {
+            let Some(root) = self.root.as_mut() else {
+                self.text_measure = tm;
+                return Size::ZERO;
+            };
+            let mut lctx = LayoutCtx {
+                scale_factor: 1.0,
+                text_measure: tm_ref,
+                font_metrics: self.font_metrics,
+            };
+            let size = measure(root, &mut lctx, constraints);
+            arrange(root, Point::ZERO);
+            size
         };
-        let mut lctx = LayoutCtx { scale_factor: 1.0 };
-        let size = measure(root, &mut lctx, constraints);
-        arrange(root, Point::ZERO);
+        self.text_measure = tm;
         self.pending.remove(InvalidationFlags::NEEDS_LAYOUT);
         size
     }

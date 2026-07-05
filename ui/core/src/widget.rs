@@ -197,9 +197,56 @@ pub struct EventCtx<'a> {
     pub invalidation: &'a mut InvalidationFlags,
 }
 
+/// 文本度量结果（由 [`TextMeasure::measure`] 返回）。
+///
+/// `width` = 行盒内容宽度（首字符起点到末字符 advance 末端），`height` = 行盒高度
+/// （= ascent + descent，不含行间距——由调用方按 `line_height = height * 1.2` 等放大）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TextSize {
+    pub width: f32,
+    pub height: f32,
+}
+
+/// 文本度量接口（P1-5）：让 widget 在 layout 阶段拿到真实字体度量，替代 `chars * 9` 估算。
+///
+/// 由宿主（WinitRuntime 等）实现并通过 [`WidgetHost::set_text_measure`] 注入；host 在 layout
+/// 时把 `&dyn TextMeasure` 放进 [`LayoutCtx::text_measure`]，控件调
+/// [`LayoutCtx::measure_text`] 即可。
+///
+/// 未注入时（默认）`measure_text` 回落到基于 `font_metrics` 的 heuristic：每字符宽 ≈
+/// `0.5 * font_size`，行高 = `font_size * 1.2`（与历史 `chars * 9` 同量级误差）。
+pub trait TextMeasure {
+    fn measure(&self, text: &str, font_size: f32) -> TextSize;
+}
+
 /// layout 上下文。
-pub struct LayoutCtx {
+pub struct LayoutCtx<'a> {
     pub scale_factor: f32,
+    /// 实时字体度量（DC-11 / P1-5）。`None` 时 [`measure_text`](Self::measure_text)
+    /// 回落到 heuristic；`Some` 时调用方提供的 backend（如 FontdueBackend）算精确宽度。
+    pub text_measure: Option<&'a dyn TextMeasure>,
+    /// 字体度量 `(ascent, descent)`，DC-11 引入；用于 heuristic 行高与基线对齐。
+    pub font_metrics: Option<(f32, f32)>,
+}
+
+impl<'a> LayoutCtx<'a> {
+    /// 测量文本尺寸：优先用注入的 [`TextMeasure`]，回落到 heuristic（`chars * 0.5 * font_size`）。
+    ///
+    /// 与 paint 阶段 [`PaintCtx::line_metrics`](crate::widget::PaintCtx::line_metrics) 同口径，
+    /// 确保 layout 算的宽高与 paint 的字面位一致——避免「layout 估 100px，paint 实际 90px」错位。
+    pub fn measure_text(&self, text: &str, font_size: f32) -> TextSize {
+        if let Some(tm) = self.text_measure {
+            return tm.measure(text, font_size);
+        }
+        // Heuristic 回落：与历史 chrome widget `chars * 9` 同量级。
+        let chars = text.chars().count() as f32;
+        let width = chars * font_size * 0.5;
+        let (ascent, descent) = self.font_metrics.unwrap_or((font_size * 0.8, font_size * 0.2));
+        TextSize {
+            width,
+            height: ascent + descent,
+        }
+    }
 }
 
 /// semantics 上下文（a11y 树构建器）。
@@ -310,5 +357,45 @@ mod tests {
         assert!(spec.control.visible_when.is_none());
         assert!(spec.control.enabled_when.is_none());
         assert!(spec.control.for_each.is_none());
+    }
+
+    #[test]
+    fn measure_text_heuristic_without_backend() {
+        // P1-5：无 text_measure 注入时回落 heuristic —— 至少要有合理量级，不 panic。
+        let ctx = LayoutCtx {
+            scale_factor: 1.0,
+            text_measure: None,
+            font_metrics: None,
+        };
+        let s = ctx.measure_text("hello", 16.0);
+        assert!(s.width > 0.0, "heuristic 宽度应非负");
+        assert!(s.height > 0.0, "heuristic 高度应非负");
+        // 5 字符 * 16px * 0.5 = 40.0
+        assert!(
+            (s.width - 40.0).abs() < 0.01,
+            "5 字符 heuristic 宽度约 40px，got {}",
+            s.width
+        );
+    }
+
+    #[test]
+    fn measure_text_uses_injected_backend() {
+        struct Fixed;
+        impl TextMeasure for Fixed {
+            fn measure(&self, _text: &str, font_size: f32) -> TextSize {
+                TextSize {
+                    width: 100.0,
+                    height: font_size,
+                }
+            }
+        }
+        let ctx = LayoutCtx {
+            scale_factor: 1.0,
+            text_measure: Some(&Fixed),
+            font_metrics: None,
+        };
+        let s = ctx.measure_text("anything", 12.0);
+        assert_eq!(s.width, 100.0, "注入 backend 应优先");
+        assert_eq!(s.height, 12.0);
     }
 }
