@@ -2648,6 +2648,20 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1055 font-wall 实测 = Latin ruled out（DejaVuSans=0.928 匹配 R990）+ CJK 潜在 yield（NotoSansCJK=1.160 vs 0.928，受限）+ welcome 16.57% 非字体度量·零 net 源码·纯调查
+
+承 R1054 CONTINUE（font-wall R887 攻坚起步）。本轮 fontdue line_metrics_full 实测字体度量，**font-wall Latin ruled out，CJK yield 受限，font-wall 非 WPT pass-count 高 yield 轨道**。
+
+**★ font-wall Latin ruled out**：DejaVuSans.ttf（welcome/morning 的 sans-serif 实际字体）ascent=14.852@16 → ratio=0.9282，descent=-0.2358，line_gap=0。R990 的 0.928 常数（非-Ahem ascent ratio）= DejaVuSans 真实度量，**精确到 4 位小数匹配**。→ wiring FontMetricProvider（Phase A §12.6 step-2）对 Latin **零收益**（0.928 已真值）。R631 字体选择 0% + 本轮度量匹配 = font-wall Latin 双重 ruled out。
+
+**★ CJK 潜在 yield（受限）**：NotoSansCJK-Regular.ttc ascent=18.560@16 → ratio=1.1600，descent=-0.2880，line_gap=0。vs R990 常数 0.928 **偏差 25%**（CJK 字体典型 ascent>1.0em 含 ruby 空间）。ZW 对 CJK 用 0.928（应 ~1.160）→ strut baseline 偏低 0.232·fs/行。**但 yield 受限**：CJK-重 WPT 用例多 vertical-blocked（R1054）；morning.work 是 product-smoke 非 WPT-count；R631 未测 metric 变化（只测 matching），1.160 vs 0.928 是未测独立变量。font-wall CJK = 限于水平 CJK + product-smoke，**非 WPT pass-count 高 yield 轨道**。
+
+**welcome 16.57% diff 非字体度量**：UI diff vision tool 报告「严重字符间距破坏」（ZeroBrowser→"Zer oBr owser"）——**纠偏**：welcome.html 故意用 letter-spacing 0.1em/0.05em/0.08em（line 48/57/90），vision tool 误读 letter-spacing 为「断字」，非真 bug。16.57% 残余 = letter-spacing 像素精度 + fontdue vs chromium AA + 行盒亚像素（非字体度量，DejaVuSans 匹配）。
+
+**战略裁决**：font-wall 双重 ruled out for Latin；CJK 25% 度量偏差但 yield 受限（vertical-blocked + product-smoke 非 WPT-count）。**font-wall 非 WPT pass-count 高 yield 轨道，暂缓**。整体 plateau 复盘（R1051-R1055 五轮 docs-only）：clean lever 耗尽（R740+R1053）/ vertical blocked（R1052+R1054 四证）/ taffy ruled out（R1054）/ font-wall ruled out 或受限（R1055）。剩余推进面：R109 anonymous block（deadlock 历史）/ Phase-A IFC 统一续（baseline 像素精确）/ 水平 CJK font-wall 小切片（1.160 wiring，yield 受限）。★勿再：盲扫 top-worst / vertical 单点或 bundle / taffy R304 / font-wall Latin。详见 [`evidence/r1055-font-wall-dejavu-ruled-out-cjk-potential-2026-07-05.txt`](./evidence/r1055-font-wall-dejavu-ruled-out-cjk-potential-2026-07-05.txt)。
+
+**▶ 下会话**：① 水平 CJK font-wall 小切片（wire NotoSansCJK 1.160 metric，A/B 水平 CJK 用例 + morning product-smoke，受限 yield 但可尝试）；② 或 R109 anonymous block 攻坚；③ 或 Phase-A IFC 统一续；④ 或重新评估 product-smoke morning/wintertc fixture 作验收口径（CJK font-wall 在产品验收面有意义）。
+
 ### R1054 vertical 完整 bundle（spec-correct）net -28 已 revert + taffy R304 ruled out（不支持 writing-mode）·零 net 源码·纯调查
 
 承 R1053 CONTINUE（taffy R304 评估起步）。本轮 web research 推翻 taffy R304 前提，转 vertical 完整 bundle 实验，**spec-correct 仍 net -28（4 证）已 revert**。
