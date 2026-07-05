@@ -2648,6 +2648,24 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1086 word-spacing 前导间隙修复 LANDED = CSS2/text +1 + css-text +1·28 案改善·零 PASS→FAIL·CSS correctness（cluster font-wall 主导故 flip 少）
+
+承 R1085（fresh R740 scan 路线继续）。本轮 scan CSS2/text 找到 word-spacing 簇（1.13% × 17）+ white-space-processing 簇，深挖 word-spacing 定位真 bug。
+
+**bug 发现**：CSS2/text word-spacing-007/008/.../080 簇 1.13% × 17。minimal repro（`<div style="font:16px/1em Ahem; word-spacing:96px">x x</div>` + Ahem）：ZW 第二 x @x=40（应 @136），black width 48（应 144）→ word-spacing 完全不作用于 glyph 位。
+
+**根因（mod.rs break_into_lines 词循环）**：旧实现 `word_width += run.word_spacing`（word_idx>0）把 word_spacing 计入 word_width。fragment.x = current_x（置位**前**值），current_x 在置位后才 += word_width。故 word_spacing 仅推进 current_x 给**下一**词，**本词** glyph 位（fragment.x）不含 gap → 第二词 glyph 落在无 gap 处。
+
+**修复（lead_gap 模型）**：word_spacing 改作非首词的**前导间隙**——置位前 `current_x += lead_gap`（word_idx>0 且非行首词），word_width 回归纯内容宽。fit-check 含 lead_gap，换行后 lead_gap=0（行首词无 gap）。+1 单测 `test_r1086_word_spacing_applied_to_position`（gap >= 110px，含 96px word_spacing）。
+
+**A/B（stash 对照）**：minimal repro 修复后 black width 144（第二 x @136 ✓）。CSS2/text **212→213 net +1**（word-spacing-justify-001 1.03→0.75 PASS）/ css-text 249→250 net +1 / linebox 131→131 net 0 / product-smoke welcome **16.57% 不变**。**零 PASS→FAIL**。28 案改善 >0.3pp（word-spacing 簇 1.13→1.03，未 flip——cluster 余 1.03% 为 instruction 文本 font-wall 主导，C-dep 解后当批量 flip）。
+
+**门禁全绿**：make test 45 bin 0 failed（含新 r1086 单测）/ clippy --workspace --all-targets -D warnings 干净 / cargo fmt 干净 / welcome 16.57%（DC-13 <20% PASS）。inline/mod.rs 2024 行（pre-existing >2000，本轮 +9 行，未重构）。
+
+**意义**：CSS correctness 修复（word_spacing 位 bug 真，minimal repro 实证）。yield 低（+2）因 cluster 余量 font-wall 主导（近-pass band），与 R1084 C-dep 互补——C-dep 解后 word-spacing 簇 + line-height-applies-to 残余当批量 flip。R1085/R1086 两连 clean code win 证 fresh R740 scan（under-mined dir）+ identical-delta cluster 方法有效。详见 [`evidence/r1086-word-spacing-lead-gap-landed-2026-07-06.txt`](./evidence/r1086-word-spacing-lead-gap-landed-2026-07-06.txt)。
+
+**▶ 下会话**：① 继续 fresh R740 scan CSS2/box + CSS2/visuren + CSS2/normal-flow（box-model/visual-formatting 基础，可能有 R689/R716/R1085 类单位/属性 handling bug）；② C-dep 用户决策（CI 计费恢复后，word-spacing + line-height-applies-to 簇批量 flip）；③ letter-spacing-applies-to / white-space-processing 簇（CSS2/text，1-2%，可能 font-wall 或边界 handling，低 EV）。
+
 ### R1085 ★nbsp (U+00A0) 保留修复 LANDED = linebox Oracle +10（line-height-applies-to 簇 10 翻 PASS）+ css-text +1 + writing-modes +3·零 PASS→FAIL·clean win
 
 承 R1084（plateau）。本轮 fresh R740 scan linebox dir（未近期深扫）找到 CSS 语义 bug 并 LANDED——R1082-R1084 三轮调查后首 landed code win。
