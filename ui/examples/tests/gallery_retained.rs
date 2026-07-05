@@ -95,18 +95,37 @@ fn sidebar_scroll_offset_shifts_children_and_clamps() {
 #[test]
 fn demo_preview_renders_non_trivial_content_for_each_page() {
     // P3-2 回归测试：早期 bug 是 DemoPreview 只画一行文字，没画实际组件内容。
-    // 这里遍历几个代表性页面，断言切换后预览区 scene 图元数 > 1（至少有背景 + 内容）。
+    // 遍历代表性页面，断言 demo 区有 ≥ 2 个图元（背景 + 内容）。
     //
-    // P2-11 真控件化后：button/toggle/text_input 改用真控件子树（各自 source id 前缀），
-    // 其余页面仍走旧 DemoPreview painter 架构（统一 "demo_preview" 前缀）。
-    for (page_id, source_prefix) in [
-        ("button", "demo_btn_"),
-        ("toggle", "demo_toggle_"),
-        ("text_input", "demo_text_"),
-        ("badge", "demo_preview"),
-        ("tabs", "demo_preview"),
-        ("i18n_demo", "demo_preview"),
-        ("theme_demo", "demo_preview"),
+    // P2-12 起所有 demo 都改用真控件子树，source id 形如 "demo_btn_1" / "demo_toggle_0" /
+    // "demo_text_input" 等。统一以 "demo_" 前缀统计。
+    for page_id in [
+        "button",
+        "toggle",
+        "text_input",
+        "icon_button",
+        "badge",
+        "progress",
+        "tabs",
+        "tooltip",
+        "list_view",
+        "menu",
+        "search_field",
+        "status_bubble",
+        "toolbar",
+        "popover",
+        "popup",
+        "data_list",
+        "command_palette",
+        "dialog_scaffold",
+        "form_demo",
+        "gesture_demo",
+        "animation_demo",
+        "collection_demo",
+        "theme_demo",
+        "i18n_demo",
+        "dsl_demo",
+        "nav_demo",
     ] {
         let mut app = GalleryApp::new();
         app.current_page = page_id.into();
@@ -114,21 +133,17 @@ fn demo_preview_renders_non_trivial_content_for_each_page() {
         register_gallery_factories(driver.host_mut());
         driver.begin();
         let scene = driver.host().scene();
-        let entry_count = count_demo_preview_entries(scene, source_prefix);
+        let entry_count = count_demo_entries(scene);
         assert!(
             entry_count >= 2,
-            "page={page_id} 预览区图元数应 ≥ 2（背景 + 内容），实际 {entry_count}；可能回归到「只画一行文字」"
+            "page={page_id} demo 区图元数应 >= 2 (background + content), got {entry_count}; 可能回归到「只画一行文字」"
         );
     }
 }
 
-fn count_demo_preview_entries(scene: &Scene, source_prefix: &str) -> usize {
-    // 按传入 source 前缀统计该 demo 的图元。
-    scene
-        .entries
-        .iter()
-        .filter(|e| e.source.0.starts_with(source_prefix))
-        .count()
+fn count_demo_entries(scene: &Scene) -> usize {
+    // 统计 demo 区所有 source id 以 "demo_" 开头的图元（覆盖所有 page 的真控件子树）。
+    scene.entries.iter().filter(|e| e.source.0.starts_with("demo_")).count()
 }
 
 #[test]
@@ -284,6 +299,137 @@ fn disabled_button_does_not_emit_action() {
         app.demo_button_pressed, 0,
         "Disabled 按钮不应触发 action；demo_button_pressed 应保持 0"
     );
+}
+
+// ── P2-12 扩展：更多 demo page 的交互回归 ────────────────────────────────────
+
+#[test]
+fn click_tab_updates_selected_index() {
+    // 验证 tabs demo 中点击第 2 个 tab button 后 demo_button_pressed == 2。
+    let mut app = GalleryApp::new();
+    app.current_page = "tabs".into();
+    {
+        let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+        register_gallery_factories(driver.host_mut());
+        driver.begin();
+
+        let rect = driver
+            .host()
+            .rect_of(&WidgetId::new("demo_tab_1"))
+            .expect("demo_tab_1 must be laid out");
+        let center = Point::new(
+            rect.origin.x + rect.size.width / 2.0,
+            rect.origin.y + rect.size.height / 2.0,
+        );
+        driver.pump_event(&pointer(PointerPhase::Pressed, center));
+        driver.pump_event(&pointer(PointerPhase::Released, center));
+        driver.pump_frame();
+    }
+    assert_eq!(app.demo_button_pressed, 2, "点击 tab 1 后 selected index 应为 2");
+}
+
+#[test]
+fn click_popover_trigger_toggles_open_state() {
+    // 验证 popover trigger 按钮点击后切换 open 状态。
+    let mut app = GalleryApp::new();
+    app.current_page = "popover".into();
+    assert_eq!(app.demo_button_pressed, 0, "初始状态应为 0（关闭）");
+    {
+        let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+        register_gallery_factories(driver.host_mut());
+        driver.begin();
+        let rect = driver
+            .host()
+            .rect_of(&WidgetId::new("demo_popover_trigger"))
+            .expect("demo_popover_trigger must be laid out");
+        let center = Point::new(
+            rect.origin.x + rect.size.width / 2.0,
+            rect.origin.y + rect.size.height / 2.0,
+        );
+        driver.pump_event(&pointer(PointerPhase::Pressed, center));
+        driver.pump_event(&pointer(PointerPhase::Released, center));
+        driver.pump_frame();
+    }
+    assert_eq!(app.demo_button_pressed, 1, "点击 trigger 后应打开（=1）");
+}
+
+#[test]
+fn text_input_in_search_field_updates_state() {
+    // 验证 search_field demo 中的 TextInput 接收键盘事件后 demo_text_input 更新。
+    let mut app = GalleryApp::new();
+    app.current_page = "search_field".into();
+    {
+        let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+        register_gallery_factories(driver.host_mut());
+        driver.begin();
+
+        // 点击输入框聚焦。
+        let rect = driver
+            .host()
+            .rect_of(&WidgetId::new("demo_search_input"))
+            .expect("demo_search_input must be laid out");
+        let center = Point::new(
+            rect.origin.x + rect.size.width / 2.0,
+            rect.origin.y + rect.size.height / 2.0,
+        );
+        driver.pump_event(&pointer(PointerPhase::Pressed, center));
+        driver.pump_event(&pointer(PointerPhase::Released, center));
+
+        // 键入 "abc"。
+        for ch in ['a', 'b', 'c'] {
+            driver.pump_event(&UiEvent::Key {
+                code: zero_ui_core::event::KeyCode::new("KeyA"),
+                action: zero_ui_core::event::KeyAction::Pressed,
+                modifiers: zero_ui_core::event::Modifiers::NONE,
+                text: Some(ch.to_string()),
+            });
+        }
+        driver.pump_frame();
+    }
+    assert_eq!(app.demo_text_input, "abc", "键入 abc 后 demo_text_input 应为 'abc'");
+}
+
+#[test]
+fn all_pages_render_without_panic() {
+    // P2-12 回归：所有 page 都能正确构建 + paint（不 panic）。
+    // 这是兜底测试——确保新增 demo builder 没有破坏其它 page。
+    for page_id in [
+        "button",
+        "toggle",
+        "text_input",
+        "icon_button",
+        "badge",
+        "progress",
+        "tabs",
+        "tooltip",
+        "list_view",
+        "menu",
+        "search_field",
+        "status_bubble",
+        "toolbar",
+        "popover",
+        "popup",
+        "data_list",
+        "command_palette",
+        "dialog_scaffold",
+        "form_demo",
+        "gesture_demo",
+        "animation_demo",
+        "collection_demo",
+        "theme_demo",
+        "i18n_demo",
+        "dsl_demo",
+        "nav_demo",
+    ] {
+        let mut app = GalleryApp::new();
+        app.current_page = page_id.into();
+        let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+        register_gallery_factories(driver.host_mut());
+        driver.begin();
+        // 再 pump 一帧确保 layout + paint 完整执行。
+        driver.pump_frame();
+        // 不 panic 即通过。
+    }
 }
 
 // 防止未使用 Rect 导入告警（在某些 toolchain 上 rect_of 返回值用到 Rect）。

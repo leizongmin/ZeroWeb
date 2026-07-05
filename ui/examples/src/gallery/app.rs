@@ -247,114 +247,8 @@ impl GalleryApp {
         col
     }
 
-    /// 构建 demo 预览区——按 page_id 分发。
-    ///
-    /// P2-11 真控件化：button / toggle / text_input 改用 widgets crate 的真 Widget
-    /// （Button / ToggleWidget / TextInputWidget），事件回路接入 host → 应用 reducer。
-    /// 其它 demo 暂时回落到旧 DemoPreview painter 架构，后续按同样模式逐个迁移。
-    fn build_demo_preview(&self, page: &'static DemoPage) -> WidgetSpec {
-        match page.id {
-            "button" => self.build_button_demo(),
-            "toggle" => self.build_toggle_demo(),
-            "text_input" => self.build_text_input_demo(),
-            _ => {
-                // 回落：旧 DemoPreview 单 widget + painter 架构。
-                let mut preview = WidgetSpec::new("DemoPreview");
-                preview.props.insert("theme", Value::Text(self.theme.as_str().into()));
-                preview.props.insert("page_id", Value::Text(page.id.into()));
-                preview
-            }
-        }
-    }
-
-    /// Button demo：3 个真 Button（Default / Pressed indicator / Disabled）。
-    /// 点击前两个 → 更新 `demo_button_pressed`，第 3 个 disabled。
-    /// 视觉反馈：被点的按钮文案变为 "[clicked]"。
-    fn build_button_demo(&self) -> WidgetSpec {
-        let mut row = WidgetSpec::new("Row");
-        row.props.insert("gap", Value::Float(12.0));
-        row.props.insert("cross_axis_align", Value::Text("center".into()));
-
-        let labels: [&str; 3] = [
-            if self.demo_button_pressed == 1 {
-                "Clicked!"
-            } else {
-                "Default"
-            },
-            if self.demo_button_pressed == 2 {
-                "Clicked!"
-            } else {
-                "Secondary"
-            },
-            "Disabled",
-        ];
-        for (i, label) in labels.iter().enumerate() {
-            let mut btn = WidgetSpec::new("Button");
-            btn.id = Some(WidgetId::new(&format!("demo_btn_{}", i + 1)));
-            btn.props.insert("label", Value::Text((*label).into()));
-            btn.props
-                .insert("action", Value::Text(format!("gallery.demo.button_click.{}", i + 1)));
-            btn.props.insert("enabled", Value::Bool(i < 2));
-            row.children.push(btn);
-        }
-        row
-    }
-
-    /// Toggle demo：3 个真 ToggleWidget（前两个可点，第 3 个 disabled）。
-    /// 第 i 个 on/off = demo_toggle_state 的第 i 位。
-    fn build_toggle_demo(&self) -> WidgetSpec {
-        let mut col = WidgetSpec::new("Column");
-        col.props.insert("gap", Value::Float(8.0));
-
-        let labels = ["Enable notifications", "Dark mode", "Disabled option"];
-        for (i, label) in labels.iter().enumerate() {
-            let mut row = WidgetSpec::new("Row");
-            row.id = Some(WidgetId::new(&format!("demo_toggle_row_{}", i)));
-            row.props.insert("gap", Value::Float(12.0));
-            row.props.insert("cross_axis_align", Value::Text("center".into()));
-
-            let mut toggle = WidgetSpec::new("ToggleWidget");
-            toggle.id = Some(WidgetId::new(&format!("demo_toggle_{}", i)));
-            toggle
-                .props
-                .insert("checked", Value::Bool((self.demo_toggle_state & (1 << i)) != 0));
-            toggle
-                .props
-                .insert("action", Value::Text(format!("gallery.demo.toggle.{}", i)));
-            toggle.props.insert("label", Value::Text((*label).into()));
-            toggle.props.insert("enabled", Value::Bool(i < 2));
-            row.children.push(toggle);
-            col.children.push(row);
-        }
-        col
-    }
-
-    /// TextInput demo：1 个真 TextInputWidget + 实时显示当前文本。
-    fn build_text_input_demo(&self) -> WidgetSpec {
-        let mut col = WidgetSpec::new("Column");
-        col.props.insert("gap", Value::Float(8.0));
-
-        let mut input = WidgetSpec::new("TextInputWidget");
-        input.id = Some(WidgetId::new("demo_text_input"));
-        input.props.insert("text", Value::Text(self.demo_text_input.clone()));
-        input
-            .props
-            .insert("placeholder", Value::Text("Type something...".into()));
-        col.children.push(input);
-
-        // 镜像显示：实时展示用户输入。
-        let mut mirror_label = WidgetSpec::new("SourceLabel");
-        mirror_label.id = Some(WidgetId::new("demo_text_mirror"));
-        let display = if self.demo_text_input.is_empty() {
-            "(empty)".to_string()
-        } else {
-            format!("You typed: {}", self.demo_text_input)
-        };
-        mirror_label.props.insert("text", Value::Text(display));
-        col.children.push(mirror_label);
-
-        col
-    }
+    // build_demo_preview / build_button_demo / build_toggle_demo / build_text_input_demo
+    // 及所有其它 page demo builder 实现已迁移到 demo_builders.rs（P2-11/P2-12 真控件化扩展）。
 }
 
 impl Default for GalleryApp {
@@ -447,7 +341,7 @@ impl UiApp for GalleryApp {
                 self.demo_toggle_state ^= 1 << 2;
                 ActionResult::Handled
             }
-            "gallery.demo.text_changed" => {
+            "gallery.demo.text_changed" | "text_input.changed" => {
                 if let Some(ActionPayload::Text(t)) = &payload {
                     self.demo_text_input = t.clone();
                 }

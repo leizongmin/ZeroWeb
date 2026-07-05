@@ -5,6 +5,7 @@
 
 pub mod app;
 pub mod chrome;
+pub mod demo_builders;
 pub mod highlight;
 pub mod model;
 pub mod pages;

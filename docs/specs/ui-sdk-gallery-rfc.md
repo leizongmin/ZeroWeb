@@ -478,6 +478,73 @@ release 也刷屏，无法按级别过滤；违反 AGENTS.md 「用 tracing 替�
 - `zero_ui_widgets` 公共 API 新增 `ToggleSpec` / `ToggleWidget` / `TextInputWidget` / `ACTION_TEXT_CHANGED`；
   旧 `Toggle` 数据模型保持向后兼容（`permission_prompt` 不受影响）。
 
+#### P2-12 所有剩余 demo 真控件化（25 个 page 全部接入）
+
+**问题**：P2-11 只完成 3 个核心控件（button / toggle / text_input），其余 25 个 page 仍走旧
+`DemoPreview` painter 架构——所有 demo 内容仍是「画」出来的，无法交互。
+
+**修复策略（实用主义分层）**：
+
+把所有剩余 demo 改用 `Column` / `Row` 容器 + 已有真控件（`Button` / `ToggleWidget` / `TextInputWidget`）
+组合，让交互通过 host → widget → action → reducer → props 完整闭环。视觉为主、交互价值低的 demo
+（badge / progress / tooltip / status_bubble 等）通过点击 `Button` 切换展示状态（如 progress +/-%、
+badge 计数 +1）来体现「可交互」。
+
+**实现要点**：
+
+1. **新文件** `ui/examples/src/gallery/demo_builders.rs`（~580 行）：
+   - 把所有 `build_<page>_demo` 方法集中到独立的 `impl GalleryApp` 扩展块，避免 `app.rs` 超 2000 行
+     （AGENTS.md 文件大小准则）。
+   - `build_demo_preview(page)` 按 `page.id` 分发到 26 个具体 builder（widgets × 15 + patterns × 6 +
+     forms/gestures/animation/collection × 4 + theme/i18n/dsl/nav × 4）。
+   - 共享辅助 `themed_container(kind, id)`：构造带 theme prop 的容器，减少重复。
+2. **`app.rs` 清理**：删除原 `build_demo_preview` / `build_button_demo` / `build_toggle_demo` /
+   `build_text_input_demo`（已迁出）。
+3. **dispatch 扩展**：`"text_input.changed"` action（来自 `TextInputWidget`）也写入
+   `demo_text_input`，让所有 page 的 TextInputWidget 共享同一 reducer 通道。
+
+**每个 demo 的交互模式**：
+
+| page | 交互 |
+|------|------|
+| icon_button | 4 个 Button（图标用 ASCII 字符），点击高亮当前选中 |
+| badge | Inbox Button + 计数 label，点击 +1（capped 99） |
+| progress | +/- Button 控制 ASCII 进度条百分比 |
+| tabs | 3 个 tab Button，点击切换 selected 内容 |
+| tooltip | Button 切换提示 label 显示/隐藏（无真 hover，但可演示交互） |
+| list_view | 5 个 row Button，点击标记选中（▶ 标记） |
+| menu | 垂直 Button 菜单项，点击高亮 |
+| search_field | TextInput + 实时 suggestion 列表 |
+| status_bubble | Button 轮换 3 个 status（ok/!/x） |
+| toolbar | 4 个 Button，点击高亮 |
+| popover | trigger Button 切换浮动内容 |
+| popup | trigger + OK / Cancel Buttons |
+| data_list | TextInput + Add Button + 8 行 toggle bitmask 显示 |
+| command_palette | TextInput + 过滤后的命令列表 |
+| dialog_scaffold | trigger + Confirm / Cancel |
+| form_demo | TextInput + Toggle + Submit Button |
+| gesture_demo | 3 个 Button（Tap / Double tap / Long press） |
+| animation_demo | 4 个 Button 切换状态 label |
+| collection_demo | 8 个 Toggle + 选中计数 |
+| theme_demo | 当前主题 label + Toggle theme Button（接 gallery.theme.toggle） |
+| i18n_demo | 本地化文案 + Toggle language Button（接 gallery.locale.toggle） |
+| dsl_demo | 静态 YAML 展示 + Apply Button |
+| nav_demo | Back / Forward / Home Buttons，点击标记当前 |
+
+**回归测试**（`ui/examples/tests/gallery_retained.rs`）：
+- `demo_preview_renders_non_trivial_content_for_each_page` 重写：覆盖全部 26 个 page，统一用
+  `demo_` 前缀统计图元数 ≥ 2。
+- 新增 `click_tab_updates_selected_index`、`click_popover_trigger_toggles_open_state`、
+  `text_input_in_search_field_updates_state`。
+- 新增兜底 `all_pages_render_without_panic`：遍历所有 26 个 page 完整 begin + pump_frame，确保
+  新增 builder 不会破坏其它 page。
+
+**保留与后续**：
+- 旧 `DemoPreview` + `PreviewPainter` 架构保留在 `preview/` 目录（不再被 build_demo_preview 调用，
+  但代码未删除——便于回退或作为视觉参考）。后续可清理。
+- 视觉精度让位于交互完整性：旧 painter 用 GPU primitives 画出彩色像素，新实现用真控件 + SourceLabel
+  （文本 widget）+ ASCII 字符表达状态，外观简化但全部可点。
+
 ### 9.4 影响面汇总
 
 - 新增 crate 内模块：`ui/core/prop_keys.rs`、`ui/runtime/src/host/{reconcile,layout,paint,event,semantics}.rs`。
