@@ -1365,7 +1365,17 @@ fn paint_node(
     tokens: &zero_ui_core::theme::SemanticTokens,
     font_metrics: Option<(f32, f32)>,
 ) {
-    let own_clip = parent_clip.and_then(|pc| pc.intersect(node.cached_rect));
+    // 视口外 early-out（P3-1）：节点完全在 parent_clip 之外时跳过整个子树。
+    // 对滚动 / 长列表场景能显著减少 paint 调用——离屏的 chrome 子树整棵剪掉，
+    // 不再走 widget.paint() → SceneRecorder 收集 → translated() 拼接路径。
+    // parent_clip 为 None（无裁剪信息，理论上仅 root 之前）时不剪。
+    let own_clip = match parent_clip {
+        Some(pc) => match pc.intersect(node.cached_rect) {
+            Some(c) => Some(c),
+            None => return,
+        },
+        None => None,
+    };
     // 容器节点底色：无 widget 的容器（layout=column/row/stack）若声明 `bg` prop（**token 名**，
     // 如 "surface"/"background"），先铺底色再画子节点（子节点 paint 在上）。这闭合 SDK chrome
     // 容器（如 ToolbarRow）圆角/间隙透出帧白底的问题（DC-14 toolbar parity）——手绘 chrome 先铺

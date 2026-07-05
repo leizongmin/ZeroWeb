@@ -1968,3 +1968,46 @@ fn scroll_vertical_offset_shifts_children_and_clamps() {
         "越界滚后 offset clamp 到 100，p3 应位于 y=50（content 末尾对齐视口底）"
     );
 }
+
+#[test]
+fn paint_node_skips_subtree_outside_viewport() {
+    // P3-1：滚动到中间时，离屏子节点的整棵子树应被 paint_node early-out 跳过。
+    // 验证：滚到 offset=60（p0 在 y=-60..-10，完全在视口 [0,100] 之外）后，
+    // scene 中 p0 的 fill_rect 应不存在（否则它会画到视口外、被 SceneRecorder clip 丢弃，
+    // 但仍然走了 widget.paint() 全路径）。early-out 让它根本不进 paint 调用。
+    let mut host = patch_host();
+    let mut root = WidgetSpec::new("Column");
+    root.id = Some(WidgetId::new("scroller"));
+    root.props.insert("scroll", Value::Text("vertical".into()));
+    for i in 0..4 {
+        let mut child = WidgetSpec::new("Patch");
+        child.id = Some(WidgetId::new(&format!("p{i}")));
+        child.props.insert("color", Value::Text("red".into()));
+        root.children.push(child);
+    }
+    host.set_root(&root);
+    host.layout(Constraints::tight(Size::new(200.0, 100.0)));
+
+    // 向下滚 60：p0 上移到 y=-60..-10（完全在视口 [0,100] 之外）。
+    host.dispatch_event(&UiEvent::Scroll {
+        delta: Vec2::new(0.0, 60.0),
+        phase: zero_ui_core::event::ScrollPhase::Discrete,
+        position: Point::new(10.0, 10.0),
+        modifiers: Modifiers::NONE,
+    });
+    host.layout(Constraints::tight(Size::new(200.0, 100.0)));
+
+    let scene = host.paint().clone();
+    let f = fills(&scene);
+    // p1（y=-10..40）部分在视口内；p2/p3 完全在视口内；p0 完全离屏。
+    // 视口内的 3 个应当画，p0 不画 → scene 里有 3 个 fill，没有 rect 在 (-60,-10) 的那一个。
+    assert_eq!(
+        f.len(),
+        3,
+        "p0 完全在视口外，应被 early-out 跳过；剩下 p1/p2/p3 共 3 个 fill"
+    );
+    assert!(
+        !f.iter().any(|(r, _)| (r.origin.y - (-60.0)).abs() < 0.01),
+        "scene 中不应包含 p0 的 fill_rect（y=-60）"
+    );
+}
