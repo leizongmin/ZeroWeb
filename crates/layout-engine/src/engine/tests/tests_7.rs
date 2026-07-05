@@ -92,6 +92,7 @@ fn test_negative_margin_overlap() {
     styles.insert(box1, s1);
 
     let mut s2 = ComputedStyle::default();
+    s2.display = DisplayValue::Block; // R1058：测垂直 margin 须 block（默认 Inline §8.3 垂直 margin 归零）
     s2.width = LengthValue::Px(100.0);
     s2.height = LengthValue::Px(50.0);
     s2.margin_top = LengthValue::Px(-20.0);
@@ -355,6 +356,7 @@ fn test_layout_box_outer_area() {
 
     let mut styles = HashMap::new();
     let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Block; // R1058：测垂直 margin 须 block（默认 Inline §8.3 垂直 margin 归零）
     s.width = LengthValue::Px(100.0);
     s.height = LengthValue::Px(50.0);
     s.margin_top = LengthValue::Px(10.0);

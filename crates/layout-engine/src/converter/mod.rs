@@ -117,11 +117,27 @@ pub fn computed_style_to_taffy(
         margin: if is_table_internal {
             taffy::geometry::Rect::zero()
         } else {
+            // R1058 CSS §8.3：非替换 inline 元素（display:inline）的垂直 margin 无效果
+            //（不影响行盒高度/布局）。替换 inline（img 等）UA 默认 InlineBlock 不在此列。
+            // 旧实现把 inline 的 margin-top/bottom 原样喂给 taffy，致 inline 的垂直 margin
+            // 错误生效（block-in-inline-vertical-margins-on-span-ignored：span mt/bt:50
+            // 错误推开块子间距；split inline 的匿名块盒经 computed_style_to_taffy 继承同 bug）。
+            // 水平 margin 保留（inline 水平 margin 有效，作用于 IFC 内 inline 片段）。
+            let inline_vmargin_zero = matches!(style.display, DisplayValue::Inline);
+            let zero = taffy::style::LengthPercentageAuto::Length(0.0);
             taffy::geometry::Rect {
                 left: convert_length_to_lpa(&style.margin_left, is_float, vw, vh),
                 right: convert_length_to_lpa(&style.margin_right, is_float, vw, vh),
-                top: convert_length_to_lpa(&style.margin_top, false, vw, vh),
-                bottom: convert_length_to_lpa(&style.margin_bottom, false, vw, vh),
+                top: if inline_vmargin_zero {
+                    zero
+                } else {
+                    convert_length_to_lpa(&style.margin_top, false, vw, vh)
+                },
+                bottom: if inline_vmargin_zero {
+                    zero
+                } else {
+                    convert_length_to_lpa(&style.margin_bottom, false, vw, vh)
+                },
             }
         },
         padding: if is_table_internal {
@@ -1673,6 +1689,8 @@ mod inline_tests {
     #[test]
     fn test_computed_style_margin_percentage() {
         let mut style = ComputedStyle::default();
+        // R1058：测垂直 margin 机制须用 block 上下文（display 默认 Inline，§8.3 垂直 margin 归零）。
+        style.display = DisplayValue::Block;
         style.margin_bottom = LengthValue::Percentage(25.0);
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.margin.bottom, taffy::style::LengthPercentageAuto::Percent(0.25));
