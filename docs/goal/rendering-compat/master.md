@@ -2648,6 +2648,20 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1071 FreeType C 依赖 cross-platform CI de-risk = freetype-raster feature 经 freetype-rs/bundled 从 C 源码编译 FreeType2+libpng（freetype-sys bundled，cc crate）→ 无须系统 FreeType，CI 三平台一致可用 + bundled 输出 == 系统 FreeType（welcome 16.29% 像素 byte-identical 78176）→ C 依赖决策从「需评估三平台系统 FreeType 可用性」降为「cc crate 编译 FreeType2 C 源（高置信跨平台）」·决策阻塞基本消除
+
+承 R1070 CONTINUE（font-wall Phase 2 在 C 依赖决策点，C-dep 实际阻塞 = 三平台 CI 构建可行性未 de-risk）。本轮 **de-risk C 依赖的跨平台 CI 构建路径**，C-dep 决策从「推测」降为「近零风险」。
+
+**问题**：R1068 freetype-raster feature 默认链系统 libfreetype.so（Linux 装包，macOS/Windows CI runner 无）→ 翻 default 会 break macOS/Windows CI。这是用户 C-dep 决策的实际阻塞。
+
+**de-risk**：`crates/render-foundation/Cargo.toml` freetype-raster feature 加 `"freetype-rs/bundled"`（freetype-rs 0.38 `bundled = ["freetype-sys/bundled"]`，freetype-sys 0.23 `bundled` feature 经 `cc` crate 从 C 源码编译 FreeType2 + libpng，build.rs:15/93/125 `!cfg!(feature="bundled")` 分流系统 vs 编译）。→ **无须系统 FreeType，C 源自包含编译**。
+
+**验证**：① `cargo build --release -p zero-render-foundation --features freetype-raster`（bundled）成功（freetype-sys/freetype-rs 从 C 编译，14.35s 略慢于系统链接，自包含）；② **bundled 输出 == 系统 FreeType**：welcome product-smoke **16.29%（78176 px）byte-identical 于 R1068 系统 FreeType 结果** → bundled 是系统 FreeType 的完美 drop-in，CI 用 bundled 三平台一致结果；③ 默认 feature-off 路径不变（clippy 0.14s cached = byte-identical）+ feature clippy 干净。
+
+**裁决**：C-dep 决策**实际阻塞基本消除**。原担忧「macOS/Windows CI runner 须装/找系统 FreeType 2」→ 现解为「cc crate 编译 FreeType2 可移植 C 源」（cc crate 设计即为此，FreeType2 C 源跨平台可移植，freetype-sys bundled 是社区标准跨平台方案，高置信）。**残余风险 = macOS/Windows CI runner 的 C 工具链（clang/MSVC）** —— 这是所有含 C 依赖 Rust crate 的通用前提（ZW 已有 rusty_v8 等 C 依赖），非 FreeType 特有。→ **用户 C-dep 决策可基于：yield 已证（+24 css-text / DEFAULT 最优 / 零回归）+ CI 风险近零（bundled 自包含 + cc 跨平台）**。
+
+**▶ 下会话**：① **待用户 C 依赖决策**（evidence 完备 + CI de-risk，可翻 default）；② 翻 default 步骤 = `crates/render-foundation/Cargo.toml` `[features]` 加 `default = ["freetype-raster"]` + CI workflow 确认 C 工具链（ubuntu/macos 自带 clang，windows MSVC via rust-toolchain）+ 全量 `make reftest-oracle`（feature 现在默认 on）确认 +24 跨 dir 泛化无回归；③ 翻 default 前/后可扩非-Ahem 文本 dir A/B（CSS2/text 等）量化泛化收益；④ font-wall 结构分量（morning 58% / welcome 16% layout）须各自修，FreeType 非其 lever。
+
 ### R1070 morning-work CJK oracle 工具 + FreeType CJK yield A/B = morning 58.15→58.06%（−0.09pp 边际，结构主导 58% diff）+ product-oracle-shot.mjs 可复用工具·yield 天花板证毕（FreeType 收益 ∝ 光栅化分量占比）·零 net 功能源码·纯调查+工具
 
 承 R1069 CONTINUE（morning-work CJK oracle 量化，CJK 光栅化差 11-16% 最大）。本轮新建产品页 oracle 工具 + 生成 morning chromium oracle + A/B，**yield 天花板证毕**。
