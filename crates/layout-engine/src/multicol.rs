@@ -33,7 +33,7 @@ use zero_style_system::property::types::{
     BreakValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue,
 };
 
-use crate::types::LayoutBox;
+use crate::types::{LayoutBox, OverflowClip};
 
 /// 列分配中的一个片段。
 ///
@@ -327,18 +327,41 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
         // 这自然实现均衡分布，无需人工设置 target_height。
         // R1037：balance-breaking 仅在容器有 definite 高度时启用（避 zero-height 容器
         // 误触——zero-height-002 height:0 容器 + explicit 子，breaking 强回归 +5.51pp）。
-        let explicit_for_break: &[bool] = if container.content_height > 0.0 {
-            &explicit_height
+        //
+        // R1075：definite 高度 balance 容器内容超 col_count×列高时，走 **inline 列溢出**
+        //（chromium 实测确认：列高 cap 在容器高度，超出内容生成额外 column box 溢出到
+        // 容器右外侧，非向下堆叠/丢弃）。用 assign_children_to_columns_multirow（以
+        // container_height 作 max_col_height 把内容拆成列高片段，超出 col_count 自动 push
+        // 新列）替代 balanced（balanced 在 col_count 处 break 丢弃 overflow）。定位仍
+        // row_height=0（下方 position_multicol_children 调用），溢出列落 col_idx×(col_w+gap)
+        // 的 x（容器右外侧）。同 R1074 spanner 路径的 inline-overflow 语义。
+        let total_child_height: f32 = child_info.iter().map(|&(_, h)| h).sum();
+        let col_height = container.content_height;
+        // monolithic（overflow≠visible）子元素不可分（CSS Fragmentation）——multirow 会拆分
+        // 超高子元素，对 monolithic（如 overflow-unsplittable 的 overflow:scroll 滚动容器）是错的；
+        // 有 monolithic 子元素时退回 balanced（balanced 的 R1037 gate 不拆 auto-height/monolithic）。
+        let has_monolithic_child = child_info.iter().any(|&(idx, _)| {
+            let c = &container.children[idx];
+            c.overflow_x != OverflowClip::Visible || c.overflow_y != OverflowClip::Visible
+        });
+        let overflow_inline =
+            col_height > 0.0 && !has_monolithic_child && total_child_height > info.count as f32 * col_height + 1.0;
+        if overflow_inline {
+            assign_children_to_columns_multirow(&child_info, info.count, col_height)
         } else {
-            &[]
-        };
-        assign_children_to_columns_balanced(
-            &child_info,
-            info.count,
-            &forced_breaks,
-            &forced_breaks_after,
-            explicit_for_break,
-        )
+            let explicit_for_break: &[bool] = if container.content_height > 0.0 {
+                &explicit_height
+            } else {
+                &[]
+            };
+            assign_children_to_columns_balanced(
+                &child_info,
+                info.count,
+                &forced_breaks,
+                &forced_breaks_after,
+                explicit_for_break,
+            )
+        }
     };
 
     // 定位子元素（y_base=0：单区域，整个 multicol 内容在一行列内）
