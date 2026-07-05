@@ -11,7 +11,8 @@ use zero_ui_core::widget::{
 use zero_ui_runtime::{UiApp, WidgetHost};
 
 use super::chrome::{
-    DemoTitle, GroupHeader, HeaderButton, HeaderTitle, NavItem, NavSearch, Spacer, theme_from_props, tokens_for,
+    DemoTitle, GroupHeader, HeaderButton, HeaderTitle, NavItem, NavSearch, Spacer, mark_paint_if_changed, sync_text,
+    sync_theme, tokens_for,
 };
 use super::highlight::{highlight_rust, highlight_yaml, token_color};
 use super::model::{DemoPage, GroupId, Locale, ThemeKind};
@@ -313,18 +314,8 @@ pub struct DemoPreview {
 impl Widget for DemoPreview {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let new_theme = theme_from_props(props);
-        let mut changed = new_theme != self.theme;
-        self.theme = new_theme;
-        if let Some(Value::Text(p)) = props.get("page_id")
-            && p != &self.page_id
-        {
-            self.page_id = p.clone();
-            changed = true;
-        }
-        if changed {
-            *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
-        }
+        let changed = sync_theme(props, &mut self.theme) || sync_text(props, "page_id", &mut self.page_id);
+        mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         // 仅响应在 toggle 预览区内的点击：翻转第 i 位。
@@ -419,18 +410,8 @@ pub struct SourceLabel {
 impl Widget for SourceLabel {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let new_theme = theme_from_props(props);
-        let mut changed = new_theme != self.theme;
-        self.theme = new_theme;
-        if let Some(Value::Text(t)) = props.get("text")
-            && t != &self.text
-        {
-            self.text = t.clone();
-            changed = true;
-        }
-        if changed {
-            *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
-        }
+        let changed = sync_theme(props, &mut self.theme) || sync_text(props, "text", &mut self.text);
+        mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
         EventResult::Ignored
@@ -460,24 +441,10 @@ pub struct SourceCode {
 impl Widget for SourceCode {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let new_theme = theme_from_props(props);
-        let mut changed = new_theme != self.theme;
-        self.theme = new_theme;
-        if let Some(Value::Text(s)) = props.get("source")
-            && s != &self.source
-        {
-            self.source = s.clone();
-            changed = true;
-        }
-        if let Some(Value::Text(l)) = props.get("lang")
-            && l != &self.lang
-        {
-            self.lang = l.clone();
-            changed = true;
-        }
-        if changed {
-            *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
-        }
+        let changed = sync_theme(props, &mut self.theme)
+            || sync_text(props, "source", &mut self.source)
+            || sync_text(props, "lang", &mut self.lang);
+        mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
         EventResult::Ignored

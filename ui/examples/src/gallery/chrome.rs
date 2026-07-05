@@ -42,6 +42,36 @@ pub(crate) fn tokens_for(theme: ThemeKind) -> SemanticTokens {
     }
 }
 
+/// 便利 helper：从 props 读 theme 写回 `field`，返回是否变化。
+///
+/// 用来减少每个 chrome widget update 中重复的 4 行 `theme_from_props + 比对 + 写字段` 代码。
+/// 调用方负责把变化标到 NEEDS_PAINT（因为同时还可能要看其它字段是否变化）。
+pub(crate) fn sync_theme(props: &Props, field: &mut ThemeKind) -> bool {
+    let new_theme = theme_from_props(props);
+    let changed = new_theme != *field;
+    *field = new_theme;
+    changed
+}
+
+/// 便利 helper：从 props 读文本字段写回 `field`，返回是否变化。
+pub(crate) fn sync_text(props: &Props, key: &str, field: &mut String) -> bool {
+    if let Some(Value::Text(s)) = props.get(key)
+        && s != field
+    {
+        *field = s.clone();
+        true
+    } else {
+        false
+    }
+}
+
+/// 便利 helper：变化时标记 NEEDS_PAINT（多 helper 结果合并）。
+pub(crate) fn mark_paint_if_changed(ctx: &mut UpdateCtx, changed: bool) {
+    if changed {
+        *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
+    }
+}
+
 // ========== HeaderTitle ==========
 
 /// Header 标题
@@ -53,21 +83,8 @@ pub struct HeaderTitle {
 impl Widget for HeaderTitle {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let new_theme = theme_from_props(props);
-        let mut changed = false;
-        if new_theme != self.theme {
-            self.theme = new_theme;
-            changed = true;
-        }
-        if let Some(Value::Text(t)) = props.get("text")
-            && t != &self.text
-        {
-            self.text = t.clone();
-            changed = true;
-        }
-        if changed {
-            *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
-        }
+        let changed = sync_theme(props, &mut self.theme) || sync_text(props, "text", &mut self.text);
+        mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
         EventResult::Ignored
@@ -132,21 +149,11 @@ pub struct HeaderButton {
 impl Widget for HeaderButton {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let new_theme = theme_from_props(props);
-        let mut changed = new_theme != self.theme;
-        self.theme = new_theme;
-        if let Some(Value::Text(l)) = props.get("label")
-            && l != &self.label
-        {
-            self.label = l.clone();
-            changed = true;
-        }
+        let changed = sync_theme(props, &mut self.theme) || sync_text(props, "label", &mut self.label);
         if let Some(Value::Text(a)) = props.get("action") {
             self.action = ActionId::new(a);
         }
-        if changed {
-            *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
-        }
+        mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         match event {
@@ -213,15 +220,7 @@ pub struct NavItem {
 impl Widget for NavItem {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let new_theme = theme_from_props(props);
-        let mut changed = new_theme != self.theme;
-        self.theme = new_theme;
-        if let Some(Value::Text(l)) = props.get("label")
-            && l != &self.label
-        {
-            self.label = l.clone();
-            changed = true;
-        }
+        let mut changed = sync_theme(props, &mut self.theme) || sync_text(props, "label", &mut self.label);
         if let Some(Value::Text(p)) = props.get("page_id") {
             self.page_id = p.clone();
         }
@@ -231,9 +230,7 @@ impl Widget for NavItem {
             self.selected = *s;
             changed = true;
         }
-        if changed {
-            *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
-        }
+        mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         match event {
@@ -305,15 +302,7 @@ pub struct GroupHeader {
 impl Widget for GroupHeader {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let new_theme = theme_from_props(props);
-        let mut changed = new_theme != self.theme;
-        self.theme = new_theme;
-        if let Some(Value::Text(l)) = props.get("label")
-            && l != &self.label
-        {
-            self.label = l.clone();
-            changed = true;
-        }
+        let mut changed = sync_theme(props, &mut self.theme) || sync_text(props, "label", &mut self.label);
         if let Some(Value::Text(g)) = props.get("group") {
             self.group = g.clone();
         }
@@ -323,9 +312,7 @@ impl Widget for GroupHeader {
             self.collapsed = *c;
             changed = true;
         }
-        if changed {
-            *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
-        }
+        mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         match event {
@@ -387,20 +374,11 @@ pub struct NavSearch {
 impl Widget for NavSearch {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let new_theme = theme_from_props(props);
         let new_locale = locale_from_props(props);
-        let mut changed = new_theme != self.theme || new_locale != self.locale;
-        self.theme = new_theme;
+        let mut changed = new_locale != self.locale;
         self.locale = new_locale;
-        if let Some(Value::Text(q)) = props.get("query")
-            && q != &self.query
-        {
-            self.query = q.clone();
-            changed = true;
-        }
-        if changed {
-            *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
-        }
+        changed |= sync_theme(props, &mut self.theme) || sync_text(props, "query", &mut self.query);
+        mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         let UiEvent::Key {
@@ -483,24 +461,10 @@ pub struct DemoTitle {
 impl Widget for DemoTitle {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let new_theme = theme_from_props(props);
-        let mut changed = new_theme != self.theme;
-        self.theme = new_theme;
-        if let Some(Value::Text(t)) = props.get("text")
-            && t != &self.text
-        {
-            self.text = t.clone();
-            changed = true;
-        }
-        if let Some(Value::Text(d)) = props.get("desc")
-            && d != &self.desc
-        {
-            self.desc = d.clone();
-            changed = true;
-        }
-        if changed {
-            *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
-        }
+        let changed = sync_theme(props, &mut self.theme)
+            || sync_text(props, "text", &mut self.text)
+            || sync_text(props, "desc", &mut self.desc);
+        mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
         EventResult::Ignored
