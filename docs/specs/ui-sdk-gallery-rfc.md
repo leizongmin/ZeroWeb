@@ -322,4 +322,139 @@ Step 12: SourcePanel widget
 
 ---
 
+## 9. 架构优化记录（2026-07-05）
+
+第一版 gallery 落地后，针对 ui-sdk 设计层面做了一轮优先级排序的架构优化。
+全部已实现并通过测试。
+
+### 9.1 P0 级（影响正确性）
+
+#### P0-1 reconcile key 化（`WidgetId` 复用）
+
+**问题**：早期 `reconcile_children` 按下标匹配新旧子节点，列表头插/删导致后续节点全部重建，
+内部状态丢失（toggle、input focus 等）。
+
+**修复**：`reconcile::reconcile_children` 改用 `HashMap<WidgetId, usize>` 做键映射，
+新 spec 按稳定 `WidgetId` 在旧 children 中查找复用 `HostNode`（保留 `creation_epoch`
+和内部状态）；不匹配的旧节点丢弃，新 spec 构造新节点。配套：
+- `reconcile_node` 不再无脑 `NEEDS_LAYOUT`，改为聚合 `Widget::update` 上报的 invalidation
+  + 永远 `NEEDS_PAINT`，让控件自己决定 layout 是否需要。
+- chrome widget 引入 `mark_layout_if_changed` / `mark_paint_if_changed` helper 区分两类失效。
+
+**测试**：`reconcile_reuses_by_widget_id_across_position` /
+`reconcile_reuses_by_widget_id_on_removal` 验证头插/头删后尾部 keyed 节点的
+`creation_epoch` 不变。
+
+#### P0-2 `host.rs` 拆模块
+
+**问题**：`host.rs` 单文件逼近 2000 行上限，难维护。
+
+**修复**：按职责拆为 5 个 `pub(super)` 子模块（host.rs 只保留公开 API + 编排）：
+- `host/reconcile.rs`：声明树 → HostNode 树构建与 reconcile
+- `host/layout.rs`：measure / arrange 两遍
+- `host/paint.rs`：SceneRecorder 遍历
+- `host/event.rs`：命中 / 派发 / 焦点 / 滚动
+- `host/semantics.rs`：a11y 树构建
+
+### 9.2 P1 级（架构清晰度）
+
+#### P1-6 主题单源（`PaintCtx.tokens` 注入）
+
+**问题**：主题色此前有两条并行路径——host 持有 tokens（paint 时注入 PaintCtx）+ chrome widget
+自己存 `theme: ThemeKind` 字段在 paint 中 `tokens_for(self.theme)`。两条路径靠每个 widget
+update 里 `sync_theme(props, &mut self.theme)` 同步，易漏写或漂移。
+
+**修复**：
+- `UiApp` trait 加可选方法 `theme_tokens(&self) -> Option<SemanticTokens>`（默认 None，向后兼容）。
+- `WinitDriver::begin` / `pump_event`（handled 后）调 `app.theme_tokens()`，Some 则 `host.set_tokens`。
+- `GalleryApp` 实现 `theme_tokens`，按 `self.theme` 映射 light/dark。
+- 删除 `HeaderTitle` / `HeaderButton` / `NavItem` / `NavSearch` / `GroupHeader` / `DemoTitle` /
+  `DemoPreview` / `SourceLabel` / `SourceCode` 的 `theme` 字段；paint 直接用 `ctx.tokens`。
+- 删除不再使用的 `theme_from_props` / `tokens_for` / `sync_theme` helper。
+
+#### P1-5 `LayoutCtx::measure_text` 暴露
+
+**问题**：widget layout 阶段无法拿到真实文本宽度，只能用 `chars * 9` 硬编码估算。
+
+**修复**：
+- 新增 trait `TextMeasure`（`measure(&self, text, font_size) -> TextSize`）+ `TextSize` struct。
+- `LayoutCtx` 加 `text_measure: Option<&dyn TextMeasure>` + `font_metrics` 字段，并加
+  `measure_text(text, font_size)` 方法（无注入时回落 `chars * 0.5 * font_size` heuristic）。
+- `WidgetHost` 加 `text_measure: Option<Box<dyn TextMeasure>>` + `set_text_measure` 方法；
+  layout 时 take 出来放进 LayoutCtx（避免与 `&mut self.root` 借用冲突），结束后放回。
+- 试点改造 `HeaderTitle.layout` 用 `ctx.measure_text` 替代 `chars * 9`。其它 chrome widget
+  保留硬编码，等 FontdueBackend 适配 TextMeasure 后续一次性切换（接口已就绪）。
+
+#### P1-3 prop_keys 常量化
+
+**问题**：`PropsMap` 是 `HashMap<String, Value>`，key 字符串散落各处易拼错（`"lable"` vs `"label"`）。
+
+**修复**：新增 `ui/core/prop_keys.rs` 集中标准 prop key 常量（TEXT / LABEL / THEME / LAYOUT /
+GAP / FLEX / SELECTED / COLLAPSED / ...）。chrome / app / host/layout / host/paint 所有
+`props.get("xxx")` 改用 `props.get(prop_keys::XXX)`。业务 crate 自定义 key 由业务层自己定义。
+
+#### P1-4 容器协议显式化
+
+**问题**：`node_container_kind` 此前有 3 个识别路径——`props["layout"]`、
+`props["scroll"] = "vertical"`（gallery 旧写法）、组件名。同一种容器多种声明方式增加
+认知负担与不一致风险。
+
+**修复**：收敛为**单一来源**——`layout` prop 或内置容器组件名，二者等价。废弃
+`props["scroll"] = "vertical"` 写法（删除 `is_scroll_vertical` helper）；测试改用
+`layout = "scroll_vertical"` 新写法。
+
+### 9.3 P2 级（性能与简洁性）
+
+#### P2-7 dispatch_pressed_with_focus 合并遍历
+
+**问题**：Pressed 事件中 `deepest_focusable_at` + `dispatch_node` 是两次独立全树遍历。
+
+**修复**：新增 `dispatch_pressed_with_focus(node, event, emitted) -> (handled, Option<WidgetId>)`
+一次递归同时完成 hit-test 派发与最深 focusable 收集。`dispatch_node_inner` 加可选形参
+`focus_target: Option<&mut Option<WidgetId>>`，None 时等价旧行为。删除 `deepest_focusable_at`
+helper，host.rs Pressed 分支改用合并函数。
+
+#### P2-8 `Scene::extend_translated` 避免 clone
+
+**问题**：retained host paint 每帧每个节点都走 `for e in local.translated(off).entries { push(e) }`，
+对每个 entry 做 `primitive.clone() + source.clone()`（含 String 等）。
+
+**修复**：新增 `Scene::extend_translated(&mut self, other: Scene, offset: Vec2)` 消费
+`other.entries` 并整体平移后并入 self，`RenderPrimitive::translate(self, ..)` 已消费 self，
+全程零 clone。paint_node 改用 `extend_translated`（hot path）。保留 `translated(&self)`
+用于需要保留原 Scene 的合成场景（overlay / 测试）。
+
+#### P2-9 `Widget::semantics` 默认空实现
+
+**问题**：`fn semantics(&self, ctx: &mut SemanticsCtx);` 必须实现，每个 chrome/装饰性 widget
+都被迫写空 stub。
+
+**修复**：trait 默认 `fn semantics(&self, _ctx: &mut SemanticsCtx) {}`。删除全工程 12 处空实现
+（chrome.rs / app.rs / counter.rs / form.rs / browser-ui/render.rs / host_tests.rs /
+driver.rs / runtime.rs / event_map.rs 等），同步清理 unused 的 `SemanticsCtx` import。
+
+#### P2-10 字体加载失败不再 `eprintln!`
+
+**问题**：winit runtime 在字体加载（默认栈 + 用户注册）和每帧 scene 统计处用 `[DBG]` eprintln，
+release 也刷屏，无法按级别过滤；违反 AGENTS.md 「用 tracing 替代 println!」准则。
+
+**修复**：
+- `load_default_fonts` / `load_font_asset`：成功 `tracing::debug!`，失败/解码失败 `tracing::warn!`
+  （结构化字段 `family` / `id` / `loaded` / `error`）。
+- 每帧 scene 统计：`tracing::trace!`（默认不输出，开发期 `RUST_LOG=trace` 看）。
+
+### 9.4 影响面汇总
+
+- 新增 crate 内模块：`ui/core/prop_keys.rs`、`ui/runtime/src/host/{reconcile,layout,paint,event,semantics}.rs`。
+- trait 扩展：`UiApp::theme_tokens`、`TextMeasure`、`LayoutCtx::measure_text`、
+  `Widget::semantics` 默认实现、`WidgetHost::set_text_measure`。
+- 删除冗余：chrome widget 的 `theme` 字段、`tokens_for` / `sync_theme` / `theme_from_props`
+  helper、`is_scroll_vertical` helper、`deepest_focusable_at` helper、12 处空 `semantics` 实现、
+  字体加载的 `eprintln!`。
+- 行为契约：`props["scroll"] = "vertical"` 写法废弃（改用 `layout = "scroll_vertical"`）。
+- 测试覆盖：新增 keyed reconcile × 2、`measure_text` heuristic + 注入 backend × 2、
+  `extend_translated` 等价性 × 1；现有测试全绿。
+
+---
+
 *RFC 结束。上一段落：Spec（需求规格），当前段落：RFC（技术设计），下一段落：实施交接（逐步骤指令）。*
