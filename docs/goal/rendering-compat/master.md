@@ -2648,6 +2648,28 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1072 font-wall Phase 2 特性化收官（CSS2/text +5 泛化证毕·6 数据点）+ CI 6-target 矩阵复核（不自主翻 default）+ pivot 结构性 lever·零 net 源码·纯调查
+
+承 R1071 CONTINUE（font-wall 在 C-dep 决策点；自主续泛化量化 + 结构残余）。本轮 CSS2/text 泛化 A/B + CI 矩阵复核，**font-wall Phase 2 特性化收官，pivot 结构性 lever**。
+
+**CSS2/text 泛化 A/B**（408 案，css21 text dir，区别 css-text）：feature-off credible 205 / oracle-pass 212 / strict 18 → feature-on credible **210（+5）** / oracle-pass 217 / strict 18。★ yield 小因 dir 由结构性 white-space/bidi 主导（worst：white-space-collapsing-bidi-002 40.7% / white-space-mixed-001 37% / word-spacing-characters-001 33% / white-space-normal-001/002 28.5%——全 white-space 处理结构性，FreeType on barely move 28.56→28.50 证非字体）。FreeType 修该 dir 小文本光栅化分量 +5。
+
+**★ font-wall Phase 2 特性化收官（6 数据点 yield map 完备）**：
+| dir/page | feature-off | feature-on | Δ | 主导分量 |
+|---|---|---|---|---|
+| css-text | credible 344 | 368 | **+24** | 光栅化（文本 dir） |
+| css-text-decor（css-text 内） | 108/242 | 117/242 | +9 | 光栅化 |
+| CSS2/text | credible 205 | 210 | +5 | white-space 结构 + 小光栅化 |
+| CSS2/backgrounds | credible 228 | 230 | +2 | background-root 结构 |
+| welcome | 16.57% | 16.29% | −0.28pp | 文本 + 部分 layout |
+| morning | 58.15% | 58.06% | −0.09pp | 58% 结构主导 |
+
+**CI 6-target 矩阵复核**：`.github/workflows/ci.yml` matrix = ubuntu-latest / ubuntu-24.04-arm / macos-15-intel / macos-latest / windows-latest / windows-11-arm（6 target，含 ARM Linux/Windows）。翻 default 须 freetype-sys bundled 在 6 target 全编译——**无法从 Linux 验证 macos/windows 特别是 windows-11-arm**，自主翻 default 风险（CI red 影响全项目）超可接受阈值。**裁决：不自主翻 default，C-dep 留用户决策**（6-target CI 风险是合理 user-gate，非 rally 应绕过的多会话执行阻塞）。
+
+**裁决 + pivot**：font-wall Phase 2 **特性化收官**（yield 已证 + DEFAULT 最优 + 零回归 + CI de-risk bundled + 6 数据点 yield map）。C-dep 在用户决策点（evidence 完备 + 诚实）。rendering-compat 非 font-wall 路径 = **结构性 lever**（clean single-session 四证穷尽 + 产品页结构深查 plateau）：multicol Phase 2（有 spec，R1027/R1028 续）/ R109 case-a（taffy-blocked）/ Phase A IFC（多 session）/ white-space 结构（CSS2/text worst 簇）。
+
+**▶ 下会话**：① C-dep 用户决策（翻 default，6-target CI；可先在 CI 加 freetype-sys bundled 冒烟 build 验证 6 target 再翻）；② **pivot 结构性 lever**——首推 multicol Phase 2 第一切片（读 multicol-phase2-unified-column-flow-spec.md 定可独立首切，R1027/R1028 已续 column-span/break-after）或 white-space 结构（CSS2/text white-space-normal-001/002 28.5% 定位是否可独立修）；③ font-wall 已收官勿再投 A/B（6 数据点 pattern 确凿）。
+
 ### R1071 FreeType C 依赖 cross-platform CI de-risk = freetype-raster feature 经 freetype-rs/bundled 从 C 源码编译 FreeType2+libpng（freetype-sys bundled，cc crate）→ 无须系统 FreeType，CI 三平台一致可用 + bundled 输出 == 系统 FreeType（welcome 16.29% 像素 byte-identical 78176）→ C 依赖决策从「需评估三平台系统 FreeType 可用性」降为「cc crate 编译 FreeType2 C 源（高置信跨平台）」·决策阻塞基本消除
 
 承 R1070 CONTINUE（font-wall Phase 2 在 C 依赖决策点，C-dep 实际阻塞 = 三平台 CI 构建可行性未 de-risk）。本轮 **de-risk C 依赖的跨平台 CI 构建路径**，C-dep 决策从「推测」降为「近零风险」。
