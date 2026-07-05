@@ -129,6 +129,43 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
             specificity,
         ),
 
+        // ── border 逻辑属性简写（CSS Logical Properties §3）──
+        // 展开为 logical longhand（border-{axis}-{side}-{width,style,color}），由
+        // apply_advanced 按元素 computed writing-mode 映射到物理边。简写层不感知元素
+        // 上下文，故只拆分组件、不做 logical→物理映射。
+        "border-inline-start" => expand_border_side(
+            value,
+            "border-inline-start-width",
+            "border-inline-start-style",
+            "border-inline-start-color",
+            important,
+            specificity,
+        ),
+        "border-inline-end" => expand_border_side(
+            value,
+            "border-inline-end-width",
+            "border-inline-end-style",
+            "border-inline-end-color",
+            important,
+            specificity,
+        ),
+        "border-block-start" => expand_border_side(
+            value,
+            "border-block-start-width",
+            "border-block-start-style",
+            "border-block-start-color",
+            important,
+            specificity,
+        ),
+        "border-block-end" => expand_border_side(
+            value,
+            "border-block-end-width",
+            "border-block-end-style",
+            "border-block-end-color",
+            important,
+            specificity,
+        ),
+
         // ── border 全写 ──
         "border" => expand_border_all(value, important, specificity),
 

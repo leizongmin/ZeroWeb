@@ -184,6 +184,47 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
 
+        // ── border 逻辑属性 longhand（CSS Logical Properties §3 + Writing Modes §6）──
+        // border-inline-start / border-block-end 等简写经 shorthand 模块展开为这些
+        // logical longhand。此处按元素 computed writing-mode 映射到物理边。
+        //   horizontal-tb（ltr）：inline-start=left, inline-end=right,
+        //                        block-start=top, block-end=bottom
+        //   vertical-rl：inline-start=top, inline-end=bottom,
+        //                block-start=right, block-end=left
+        //   vertical-lr：inline-start=top, inline-end=bottom,
+        //                block-start=left, block-end=right
+        // inline 轴的 direction 暂按 ltr（vertical 模式 inline-start=top）；这是
+        // logical-props-001 等 vertical-rl 用例的预期。
+        "border-inline-start-width" | "border-inline-end-width"
+        | "border-block-start-width" | "border-block-end-width" => {
+            if let Some(v) = parse_length_or_math(value) {
+                if let LengthValue::Px(px) = v
+                    && px < 0.0
+                {
+                    return false;
+                }
+                let side = logical_border_physical_side(property, &style.writing_mode);
+                set_border_width_field(style, side, v);
+                return true;
+            }
+        }
+        "border-inline-start-style" | "border-inline-end-style"
+        | "border-block-start-style" | "border-block-end-style" => {
+            if let Some(v) = parse_border_style(value) {
+                let side = logical_border_physical_side(property, &style.writing_mode);
+                set_border_style_field(style, side, v);
+                return true;
+            }
+        }
+        "border-inline-start-color" | "border-inline-end-color"
+        | "border-block-start-color" | "border-block-end-color" => {
+            if let Some(v) = values::parse_color(value) {
+                let side = logical_border_physical_side(property, &style.writing_mode);
+                set_border_color_field(style, side, v);
+                return true;
+            }
+        }
+
         // ── Animation 属性 ──
         "animation-name" => {
             // animation-name: none 表示无动画，结果为空列表
@@ -1401,4 +1442,74 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         _ => {}
     }
     false
+}
+
+// ── border 逻辑属性辅助（CSS Logical Properties §3 + Writing Modes §6）──
+
+/// border 物理边标签。
+#[derive(Clone, Copy)]
+enum BorderSide {
+    Top,
+    Right,
+    Bottom,
+    Left,
+}
+
+/// 按 logical 属性名（如 `border-inline-start-width`）与元素 writing-mode 解析物理边。
+///
+/// 属性名形如 `border-{axis}-{side}-{kind}`，axis ∈ {inline, block}，side ∈ {start, end}。
+/// inline 轴的 direction 暂按 ltr（vertical 模式 inline-start = top）。
+fn logical_border_physical_side(property: &str, wm: &WritingModeValue) -> BorderSide {
+    let inline = property.contains("-inline-");
+    let start = property.contains("-start-");
+    match (inline, start) {
+        // inline 轴：horizontal-tb 水平（start=left/end=right），vertical 垂直（start=top/end=bottom）
+        (true, true) => match wm {
+            WritingModeValue::HorizontalTb => BorderSide::Left,
+            _ => BorderSide::Top,
+        },
+        (true, false) => match wm {
+            WritingModeValue::HorizontalTb => BorderSide::Right,
+            _ => BorderSide::Bottom,
+        },
+        // block 轴：horizontal-tb 垂直（start=top/end=bottom）；
+        // vertical-rl 水平 start=right/end=left；vertical-lr 水平 start=left/end=right
+        (false, true) => match wm {
+            WritingModeValue::HorizontalTb => BorderSide::Top,
+            WritingModeValue::VerticalRl => BorderSide::Right,
+            WritingModeValue::VerticalLr => BorderSide::Left,
+        },
+        (false, false) => match wm {
+            WritingModeValue::HorizontalTb => BorderSide::Bottom,
+            WritingModeValue::VerticalRl => BorderSide::Left,
+            WritingModeValue::VerticalLr => BorderSide::Right,
+        },
+    }
+}
+
+fn set_border_width_field(style: &mut ComputedStyle, side: BorderSide, v: LengthValue) {
+    match side {
+        BorderSide::Top => style.border_top_width = v,
+        BorderSide::Right => style.border_right_width = v,
+        BorderSide::Bottom => style.border_bottom_width = v,
+        BorderSide::Left => style.border_left_width = v,
+    }
+}
+
+fn set_border_style_field(style: &mut ComputedStyle, side: BorderSide, v: BorderStyleValue) {
+    match side {
+        BorderSide::Top => style.border_top_style = v,
+        BorderSide::Right => style.border_right_style = v,
+        BorderSide::Bottom => style.border_bottom_style = v,
+        BorderSide::Left => style.border_left_style = v,
+    }
+}
+
+fn set_border_color_field(style: &mut ComputedStyle, side: BorderSide, v: ColorValue) {
+    match side {
+        BorderSide::Top => style.border_top_color = v,
+        BorderSide::Right => style.border_right_color = v,
+        BorderSide::Bottom => style.border_bottom_color = v,
+        BorderSide::Left => style.border_left_color = v,
+    }
 }
