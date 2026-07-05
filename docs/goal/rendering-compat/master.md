@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1043 R109 vertical block-flow 调查 = 纠正「children 垂直堆叠」误判（block flow 实横向）+ rl/lr 方向 bug + postprocess mirror net-negative 已回退·零 net 源码·转 converter 层
+
+承 R1042 CONTINUE（R109 vertical block-flow dedicated）。本轮纠正上会话误判 + 实验 mirror，**结论：block flow 已横向（正确），真 bug = rl/lr 方向不区分，postprocess 不可解须 converter**。
+
+**★ 纠正上会话「vertical 下 children 仍垂直堆叠」假设（错误）**：最小测试 vertical-rl 容器 + 2 block 子（50×50）LAYOUT_DUMP：a@x=8, b@x=58（**同 y=8，不同 x = 横向并排**）。ZW converter `apply_vertical_writing_mode`（tree.rs:666）轴交换 + engine.rs:1232 un-swap 使 vertical block 流**已横向**（正确）。上会话假设错误。
+
+**★ 真因 = rl/lr 方向不区分**：vertical-lr 测试同 a@x=8 b@x=58（identical to vertical-rl）。vertical-rl 应 a 在右（block 流右→左），vertical-lr 应 a 在左（左→右）。ZW 对 rl/lr **同样处理**（都左→右）。`apply_vertical_writing_mode`（converter/mod.rs:232）对 rl/lr 同样 swap（Column→Row），不镜像。inline_finalization 有 is_vertical_rtl（line 671/940/1099/1221）处理 inline 方向，但 **block 流方向未镜像**。
+
+**postprocess mirror 实验（net-negative 已回退）**：实现 `mirror_vertical_rl_block_children`（postprocess.rs，VerticalRl 容器 in-flow block 子 `x = content_w - x - width`）。**A/B v1 net -1**（2 flip: caption-side-vrl-002/float-vrl-006；3 regress: float-clear-vrl-006/008 + margin-collapse-vrl-034）。v2（排除 float）**net -2**（丢 float-vrl flip，float-clear 仍回归）。**根因**：postprocess 镜像无法更新 float exclusion / margin-collapse 状态——clear/collapse 须在 layout 期内知晓方向。postprocess fundamentally flawed。
+
+**结论**：rl/lr 方向修复须 **converter/taffy 层**（让 taffy 知道 rl 反向，float-clear/margin-collapse 自然正确），非 postprocess 镜像。**R109 vertical block-flow 确证 multi-session**（converter `apply_vertical_writing_mode` 须传 rl 信号 + taffy 反向布局，或 layout 期镜像）。
+
+**未解**：vertical-rl 多 block 容器方向错（首子在左应右）。单 block 容器无影响（inline 方向 rl/lr 同）→ 近-pass 多 1-3% 残余非此 bug 主导（其它 writing-mode 细节：text baseline / glyph rotation / logical props）。
+
+**▶ 下会话**：① **R109 vertical-rl converter 层**（多 session——apply_vertical_writing_mode 接收 rl 信号，taffy 反向布局或 layout 期内镜像使 float-clear/margin-collapse 正确，首 slice gate 紧到纯 block 无 float/margin）；② **css-writing-modes 近-pass 残余**多非 rl 方向（text baseline / glyph / logical props），逐案 per-pixel；③ 或转 position:relative converter（+12 entangled）/ font-wall。R109 postprocess 已 ruled out。
+
 ### R1042 position:relative + css-tables + css-writing-modes 三 dir 调查 = 全 multi-session 结构性·系统 quick-win 已尽·零源码·纯调查
 
 承 R1041 CONTINUE（转 position:relative converter）。本轮调查三方向，**结论：系统 quick-win 已尽，残余全 multi-session 结构性**。
