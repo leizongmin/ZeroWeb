@@ -2648,6 +2648,29 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1050 text-emphasis 简写 LANDED（net-0 correctness）+ 垂直 emphasis net -8 回退已 ruled out·★R109 vertical inline 布局根因（IFC 水平布局 vertical 文本）·vertical-mode emphasis 簇 ruled out
+
+承 R1049 CONTINUE（logical-props WM-aware 主体已尽，转更高 yield 轨道或 sideways-lr）。本轮扫描近失簇定位 text-emphasis-position-property-{003,005,006}-{d,e,f,g}（~12 案 1.00-1.02%，vertical-lr），**调查发现 R109 vertical inline 布局深层根因，LANDED 简写 correctness fix，垂直 emphasis ruled out**。
+
+**近失簇扫描**（css-text/fonts/text-decor [1.0%,1.5%]）：text-emphasis-position d/e/f/g 簇（vertical-lr，1.00-1.02%）最大；bidi-007 簇全变体同%（bidi-normal=isolate=embed=1.31%，证共享 baseline 非 bidi 算法 bug）；vertical-align-baseline（font-wall R990 territory）；inline-size/block-size 已隐式 WM-aware（converter swap，apply.rs:122 注释，slice ③ ruled out double-swap）。
+
+**缺口 1 — `text-emphasis` 简写完全未展开**（R1021 只实现 longhand text-emphasis-style/position）：corpus `text-emphasis: circle` 被静默忽略→text-emphasis-style=None→无 mark。本轮 LANDED `expand_text_emphasis`（shorthand/mod.rs）：`<style> || <color>`，color token 剥离（ZW 暂未存储 text-emphasis-color），剩余拼回 style。3 单测（style-only / filled circle red 剥 color / string "*"）。
+
+**缺口 2 — 垂直 emphasis 位置（R1021 line 1494 `!char_advance_is_y` 跳过垂直）**：实现 R1050 垂直 emphasis 块（mark 绘字符左/右侧按 position 含 Left/Right）。**A/B 决定性 net -8**：css-text-decor 108→100（8 案 PASS→FAIL）。EMPHDBG 揭示根因——**已回退**。
+
+**★ R109 vertical inline 布局深层根因**（比 R1043 block-flow 方向更深）：EMPHDBG 实测 006d（vertical-lr）chars x=8,24,40,56,72（**x 每字符递增 Δ16=fs**），y=67,83,99,115,131（**y 也递增**）。即 ZW 的 IFC 对 vertical-lr 文本**水平布局**（chars 左→右排列，仅旋转 glyph 90°），而非规范要求的**垂直布局**（chars 上→下，同 x 列，y 递增）。故：
+- 垂直 emphasis mark 即使按垂直语义定位，底层文本位置错（水平），mark 也错位 → 净负。
+- text-emphasis-position vertical 簇（d/e/f/g 1.00-1.02%）非 emphasis-position bug，是 R109 vertical inline 布局缺口主导（残余 CJK font 噪声 + vertical 布局错）。
+- 与 R1043「taffy Block 无方向 packing」互补：**block-flow 方向（R1043）+ inline-flow 方向（R1050）双层 vertical 缺口**，均 taffy 0.7 / IFC 架构限制，须 layout 重构或 taffy 升级（R304 多 session）。
+
+**A/B**：仅简写展开 = **net 0 oracle**（css-text-decor 108/242、css-writing-modes 56/784 持平），**0 PASS→FAIL 回归**（dump diff 确证）。简写展开是 correctness fix（水平案经 R1021 正确渲染 mark；vertical 案因 R109 布局错 mark 位置也错，但 site 2 `!char_advance_is_y` 门控跳过故 vertical 不渲染 mark→无 vertical 回归）。垂直 emphasis 块 = net -8 已回退。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（style-system +3 新简写测，全树零失败）/ **product-smoke welcome 16.57% < 20%** ✓。
+
+**意义**：text-emphasis 简写 LANDED 是 correctness 修复（CSS Text Decoration 3 §3.1 简写原完全未处理，net-0 因 corpus emphasis 测试多 CJK 主导 diff）。R1050 真价值 = **R109 vertical inline 布局根因定位**（IFC 水平布局 vertical 文本，chars x 递增），为未来 R109 vertical 解锁轨道提供精确靶点（须 IFC 支持垂直字符推进，非仅旋转）。vertical-mode emphasis/ruby/text-decor 簇全部 R109-blocked，勿再以这些为 lever。详见 [`evidence/r1050-text-emphasis-shorthand-vertical-ruled-out-2026-07-05.txt`](./evidence/r1050-text-emphasis-shorthand-vertical-ruled-out-2026-07-05.txt)。
+
+**▶ 下会话**：① R109 vertical inline 布局是新定位的高 yield 多 session 轨道（IFC 支持垂直字符推进，chars 同 x 列 y 递增；解锁后 vertical-mode 全簇 emphasis/ruby/text-decor/writing-modes flip）；② 或 R702 margin-collapse-through（em-inherit 11% 真布局 bug）；③ 或 font-wall per-font 度量（R887 provider wiring）。vertical-mode 子域（emphasis/ruby/bidi-vertical）已 ruled out 非独立 lever，须 R109 vertical inline 解锁。
+
 ### R1049 margin/padding/inset 逻辑属性 writing-mode-aware LANDED·logical-props 轨道 slice ②·零回归（horizontal-tb 字节一致）·净 0 oracle·unified PhysicalSide helper
 
 承 R1048 CONTINUE（logical-props 轨道 slice ②：margin/padding/inset 转 WM-aware / sideways-lr / table col-border）。本轮把 margin/padding/inset 逻辑属性从 R143 静态 horizontal-tb 映射升级为 **writing-mode-aware**，**零回归 LANDED**。

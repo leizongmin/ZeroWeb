@@ -508,3 +508,30 @@ fn test_border_shorthand_order_independent() {
     assert_eq!(result[1].1, "solid"); // style
     assert_eq!(result[2].1, "red"); // color
 }
+
+#[test]
+fn test_text_emphasis_shorthand_style_only() {
+    // text-emphasis: circle → text-emphasis-style: circle
+    let result = expand_one("text-emphasis", "circle", false, (0, 0, 1));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].0, "text-emphasis-style");
+    assert_eq!(result[0].1, "circle");
+}
+
+#[test]
+fn test_text_emphasis_shorthand_strips_color() {
+    // text-emphasis: filled circle red → style: "filled circle"（color 剥离，ZW 暂未存储）
+    let result = expand_one("text-emphasis", "filled circle red", false, (0, 0, 1));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].0, "text-emphasis-style");
+    assert_eq!(result[0].1, "filled circle");
+}
+
+#[test]
+fn test_text_emphasis_shorthand_string() {
+    // text-emphasis: "*" → style: "*"（自定义字符）
+    let result = expand_one("text-emphasis", "\"*\"", false, (0, 0, 1));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].0, "text-emphasis-style");
+    assert_eq!(result[0].1, "\"*\"");
+}
