@@ -361,6 +361,38 @@ fn test_r1044_inline_passes_through_cb_height_for_relative_percent() {
     );
 }
 
+/// R1044b：inline-level `position:relative` 的 top/bottom % 同样须解析（taffy 0.7 丢弃，
+/// R850 原仅门控 block-level）。复刻 position-relative-001：
+/// `div(h:100) > span(relative;top:100%;left:100%) > div(relative;top:-100px)`。
+/// span 的 top:100% 应解析到 CB（red div）100px → span abs_y 下移 100；green（top:-100px）
+/// 落回 red 位置（覆盖）。旧实现 inline 跳过 → span top:100% 不应用 → green 在 red 上方。
+#[test]
+fn test_r1044b_inline_relative_percent_inset_applied() {
+    let html = r#"<html><body style="margin:0">
+        <div id="red" style="width:100px;height:100px;background:red">
+          <span id="span" style="position:relative;top:100%;left:100%">
+            <div id="green" style="width:100px;height:100px;background:green;position:relative;top:-100px;left:-100px"></div>
+          </span>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let span = find("span", &doc, &result.root).expect("span box");
+    // span top:100% 应解析到 red div 100px → span.y（相对父 red 内容盒）≈ 100。
+    // 旧实现 inline 跳过 R850 → span.top:100% 不应用 → span.y ≈ 0。
+    assert!(
+        span.y > 50.0,
+        "inline span top:100% should resolve against red div height (100px), shifting span.y by \
+         ~100; got span.y={} (R850 was skipping inline-level relative, leaving top:100% \
+         unresolved → span.y would be ~0)",
+        span.y
+    );
+}
+
 /// CSS §8.3.1：min-height 溢出型块阻止末子 margin collapse-through 穿透父底部。
 ///
 /// 复刻 margin-collapse-min-height-001 结构。规范：min-height 把 parent 撑到
