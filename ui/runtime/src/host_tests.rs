@@ -1985,12 +1985,14 @@ fn cancelled_dispatches_exited_and_clears_last_hovered() {
 
 #[test]
 fn scroll_vertical_offset_shifts_children_and_clamps() {
-    // DC-16：声明 scroll=vertical 的 Column 在收到向下 Wheel 后，
+    // DC-16：声明 layout=scroll_vertical 的 Column 在收到向下 Wheel 后，
     // 子节点 y 应当上移（scroll_offset>0），且 offset 被 clamp 到 [0, content-viewport]。
+    // P1-4：容器协议显式化——用 layout=scroll_vertical 替代已废弃的 scroll=vertical 写法。
     let mut host = patch_host();
     let mut root = WidgetSpec::new("Column");
     root.id = Some(WidgetId::new("scroller"));
-    root.props.insert("scroll", Value::Text("vertical".into()));
+    root.props
+        .insert(zero_ui_core::prop_keys::LAYOUT, Value::Text("scroll_vertical".into()));
     for i in 0..4 {
         let mut child = WidgetSpec::new("Patch");
         child.id = Some(WidgetId::new(&format!("p{i}")));
@@ -2053,7 +2055,8 @@ fn paint_node_skips_subtree_outside_viewport() {
     let mut host = patch_host();
     let mut root = WidgetSpec::new("Column");
     root.id = Some(WidgetId::new("scroller"));
-    root.props.insert("scroll", Value::Text("vertical".into()));
+    root.props
+        .insert(zero_ui_core::prop_keys::LAYOUT, Value::Text("scroll_vertical".into()));
     for i in 0..4 {
         let mut child = WidgetSpec::new("Patch");
         child.id = Some(WidgetId::new(&format!("p{i}")));

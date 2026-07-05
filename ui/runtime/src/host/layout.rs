@@ -19,11 +19,16 @@ fn gap_from_props(props: &PropsMap) -> f32 {
     }
 }
 
-/// 节点的容器布局种类：优先读 `props.layout`（`"column"`/`"row"`/`"stack"`，大小写不敏感），
-/// 否则按组件名识别内置容器（`Column`/`Row`/`Stack`）。
+/// 节点的容器布局种类：优先读 `props.layout`（`"column"`/`"row"`/`"stack"`/
+/// `"scroll_vertical"`，大小写不敏感），否则按组件名识别内置容器
+/// （`Column`/`Row`/`Stack`/`ScrollVertical`）。
 ///
-/// 让任意组件名（如 `browser.DesktopBrowserShell`、`browser.ToolbarRow`）经 props 声明为容器，
+/// P1-4 容器协议显式化：**单一来源**——`layout` prop 或内置容器组件名，二者等价。
+/// 让任意组件名（如 `browser.DesktopBrowserShell`、`browser.ToolbarRow`）经 props 声明容器种类，
 /// 无需 host 硬编码 chrome/业务组件名 —— 保持 host 浏览器无关。
+///
+/// **已废弃**：早期 gallery 在 Column 上写 `props["scroll"] = "vertical"` 标记滚动。
+/// 请改用 `layout = "scroll_vertical"` 或直接用 `ScrollVertical` 组件。
 pub(super) fn node_container_kind(node: &HostNode) -> Option<ContainerKind> {
     if let Some(Value::Text(s)) = node.props.get(prop_keys::LAYOUT) {
         match s.as_str() {
@@ -36,17 +41,7 @@ pub(super) fn node_container_kind(node: &HostNode) -> Option<ContainerKind> {
             _ => {}
         }
     }
-    // DC-16 向后兼容：gallery 当前用 `props["scroll"] = "vertical"`（在 Column 上）标记滚动。
-    // 识别此写法时升级为 ScrollVertical 容器（measure/arrange 走独立分支）。
-    if is_scroll_vertical(&node.props) {
-        return Some(ContainerKind::ScrollVertical);
-    }
     ContainerKind::from_component(&node.component)
-}
-
-/// 是否为垂直滚动容器（DC-16 gallery scroll，向后兼容 gallery 现有 `scroll=vertical` 写法）。
-fn is_scroll_vertical(props: &PropsMap) -> bool {
-    matches!(props.get(prop_keys::SCROLL), Some(Value::Text(s)) if s == "vertical")
 }
 
 /// 从 props 读 `flex`（Row/Column 主轴弹性权重）。接受 Int/Float，缺省/负值 → 0。
