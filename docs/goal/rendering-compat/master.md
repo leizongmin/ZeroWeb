@@ -2648,6 +2648,24 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1075 ★非 spanner balance 路径 inline 列溢出 LANDED = css-multicol Oracle 146→150（+4 net）·4 flip PASS（column-height-008/fill-balance-029/nested-030/restyle-002）·nested-balancing-004 −20pp/002 −11pp 大改善·monolithic 守卫消 overflow-unsplittable 回归·零翻 FAIL
+
+承 R1074（spanner 路径 inline 列溢出 LANDED）。本轮把同一 inline-overflow 语义扩展到 **非 spanner balance 路径**（minimal multicol 同病：height:50 col-count:2 child:200 → ZW 仅渲 article 内 2 列 drop overflow）。
+
+**chromium 确认**（product-oracle-shot.mjs + /usr/bin/chromium）：minimal `<article columns:2 width:400 height:50><div height:200>` → chromium yellow x=13..799（article 右外侧 2 溢出列）→ 非 spanner balance 亦走 inline 溢出（列高 cap 容器高度，超出内容生成额外 column box 向右）。
+
+**修复**（`crates/layout-engine/src/multicol.rs` layout_multicol balance 分支）：旧 balanced target=total/col_count 在 col_count 处 break 丢弃 overflow。R1075 前置 gate `total > col_count×container_height && content_height>0 && !has_monolithic_child` → fire 时改用 `assign_children_to_columns_multirow(child_info, col_count, container_height)`（以 container_height 作 max_col_height 拆片段，超 col_count 自动 push 新列），定位走既有 row_height=0（inline 向右）。gate 不 fire 时字节同。
+
+**★ monolithic 守卫（关键）**：overflow≠visible 子元素不可分（CSS Fragmentation）。multirow 拆分超高子元素对 monolithic（overflow-unsplittable 的 overflow:scroll+200px 孙）错。`has_monolithic_child` 查 `children[idx].overflow_x/y != OverflowClip::Visible`，有 monolithic 子退回 balanced（R1037 gate 不拆 auto-height/monolithic）。
+
+**A/B（stash 严格对照，ORACLE_DUMP_ALL per-case 452 案）**：baseline（R1074）146/452 → **150/452（net +4；headline 151/452 33.4%）**。**4 flip PASS**：column-height-008/fill-balance-029(2.80→0.73)/nested-030(2.79→0.73)/span-all-restyle-002(1.11→0.93)。**0 flip FAIL**（monolithic guard 消 overflow-unsplittable-001/002 回归）。**4 improved 仍 FAIL**：rule-nested-balancing-004 **37.67→17.17(-20.5pp)**/002 15.10→4.10(-11pp)/span-all-children-height-007 6.41→3.25/with-custom-layout 3.57→2.39。**2 worsened 非 flip 小**：column-height-003 +0.84/span-all-children-height-010 +0.61（仍 FAIL）。
+
+**门禁全绿**：2 新 R1075 单测（r1075_non_spanner_balance_inline_overflow + r1075_monolithic_child_not_split）+ R1074 单测 + 25 multicol 测全过 / **make test 全 workspace 45 binary 0 failed** / clippy --workspace --all-targets -D warnings 干净 / cargo fmt 干净 / **product-smoke welcome 16.57%（<20% gate 不变）** / multicol.rs 1308 行 / r717 测 490 行（均 <2000）。
+
+**意义**：R1074（spanner）+ R1075（非 spanner balance）合覆盖 multicol inline 列溢出全路径，纠正旧模型（balanced break 丢弃 / multirow 向下堆叠）→ chromium 对齐（列恒 inline，overflow 向右）。累计 R1074+R1075：css-multicol **145→150（+5 net）**。monolithic 守卫示范 inline-overflow 拆分须尊重 CSS Fragmentation 不可分。详见 [`evidence/r1075-non-spanner-inline-overflow-landed-2026-07-06.txt`](./evidence/r1075-non-spanner-inline-overflow-landed-2026-07-06.txt)。
+
+**▶ 下会话**：① 2 小 worsened（column-height-003 / span-all-children-height-010）逐案查精度；② nested-balancing-004 残余 17%（inline-overflow 已 -20pp，残余 column-rule 交互/nested 结构）深挖；③ css-multicol 近-pass 138 案 ~1% band = font-wall（FreeType C-dep 解锁后批量 flip，用户决策点）；④ inline-overflow 扩展到 column-fill:auto sequential 路径（如有同类 drop）。
+
 ### R1074 ★multicol inline（水平向右）列溢出 LANDED = css-multicol Oracle 145→146（+1 net）·span-all-children-height-002 3.99→0.29 PASS·003 17.26→1.03（-16pp 近 flip）·零回归·纠正 R1035「垂直 multi-row」误模型
 
 承 R1039 CONTINUE（span-all-children-height 簇残余，记录为「multi-row+breaking 协同精度，多 session」）。本轮 per-pixel 定位证伪 R1039 归因，**真根因 = overflow 方向**：chromium 把超出 col_count×列高的内容放到 **inline 方向（容器右外侧）**，ZW 旧 multi-row 模型放到下方再被 R1039 slice-clip 隐藏 → 内容丢失。
