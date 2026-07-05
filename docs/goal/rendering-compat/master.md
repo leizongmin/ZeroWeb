@@ -2648,6 +2648,20 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1087 fresh R740 scan 三 dir（CSS2/box + margin-padding-clear + css-text-decor）= 无 clean cluster win·cluster 全 font-wall/JS/rendering-precision·零 net 源码·纯调查
+
+承 R1086（fresh scan 路线）。本轮 scan 3 dir 找 R1085/R1086 类 CSS 语义 cluster bug，**均无 clean win**——R1085/R1086 是该方法的仅有两 hit（line-height-applies-to + word-spacing），余 dir cluster 性质不同。
+
+**CSS2/box（128 案，45 pass）**：top-worst 全 insert/delete-inline-in-blocks-* / insert-block-in-blocks-*（23-43%）= **JS DOM mutation 测试**（ZW harness 跑 JS 但不反映 DOM 变更到 layout，R888 谱系）+ 匿名块 R109。cluster（3.78% × 4, 3.74% × 3）同 JS-driven。非 clean lever。
+
+**CSS2/margin-padding-clear（682 案，309 pass）**：巨 cluster **1.33% × 126**（margin-bottom-004/005/.../028...）+ 1.15% × 63（margin-right-*）+ 1.21% × 27（*-applies-to-*）。per-pixel margin-bottom-004：diff = instruction 文本 font-wall（y=18-33 gray AA）+ 1px border 下移（border 本身 blue/orange 触碰正确）→ **cluster font-wall 主导**（非 margin bug），C-dep 解后批量 flip。top-worst margin-collapse-106/112/155/038（18-24%）= R702 collapse-through 结构性；margin-em-inherit-001（11.25% oracle / 21.12% product-smoke 差异待查）= em+inherit+collapse 复杂个案，ZW green bbox 完全错位，非单点。
+
+**css-text-decor（242 案，104 pass）**：top-worst text-decoration-thickness-length-rounding / dotted / inset-025（13-15%）= **rendering precision**（厚度取整/点线光栅，font-wall 谱系）。cluster（text-emphasis-position × 5, skip-spaces × 4, 1-3%）= vertical-mode / feature gap，非 clean handling bug。
+
+**裁决**：R1085/R1086 fresh-scan + identical-delta cluster 方法的 clean hit 已尽（line-height-applies-to + word-spacing 是仅有的两个 CSS-属性 handling cluster）。余 dir cluster 性质：font-wall（margin-padding-clear 1.33% × 126，C-dep）+ JS DOM mutation（box）+ rendering precision（decor）+ structural（margin-collapse R702）。fresh scan 收益递减。
+
+**▶ 下会话**：① font-wall C-dep 用户决策（CI 计费恢复后，margin-padding-clear 1.33% × 126 + line-height-applies-to 残余 + word-spacing 簇批量 flip——C-dep 是这些 font-wall cluster 的真正解锁）；② Phase A step-2（多 session，empty-styles 重跑度量统一）；③ 若重启 fresh scan，转 CSS2/visuren + normal-flow + selectors（未扫，但 cluster 性质可能同 font-wall）；④ 勿再扫已 ruled-out dir（box JS / mpc font-wall / decor precision）。
+
 ### R1086 word-spacing 前导间隙修复 LANDED = CSS2/text +1 + css-text +1·28 案改善·零 PASS→FAIL·CSS correctness（cluster font-wall 主导故 flip 少）
 
 承 R1085（fresh R740 scan 路线继续）。本轮 scan CSS2/text 找到 word-spacing 簇（1.13% × 17）+ white-space-processing 簇，深挖 word-spacing 定位真 bug。
