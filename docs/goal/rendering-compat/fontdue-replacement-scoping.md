@@ -1,9 +1,9 @@
 # Scoping：fontdue → chromium-matching 字体光栅化替换
 
-**版本**：v0.2（Phase 0 web research 完成：freetype-rs 定为唯一 chromium 匹配候选；待用户 C 依赖决策 + lei-spec-rfc 完整 RFC）
+**版本**：v0.3（Phase 0 empirical prototype 完成：A1+A4 验证，Phase 1/2 可分步独立，待用户 C 依赖决策）
 **日期**：2026-07-06
-**作者**：AI Assistant（rally R1064-R1065）
-**状态**：scoping + Phase 0 research（rally 自主模式；假设显式标注；待用户 C 依赖决策）
+**作者**：AI Assistant（rally R1064-R1066）
+**状态**：scoping + Phase 0 web + empirical（rally 自主模式；假设 A1/A4 已验证；待用户 C 依赖决策）
 
 > 本 doc 把 R1056（CJK ascent 第六证）+ R876（fontdue tight-ink 三方补偿）+ R1064（font-wall 笼罩 CSS2 测试四证穷尽）收敛为可实施的多会话计划前置 scoping。R1064 确证：rendering-compat clean single-session lever 已穷尽，残余失败 100% 受阻于 fontdue≠chromium 字体墙。
 

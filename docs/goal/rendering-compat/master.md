@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1066 fontdue vs freetype-rs 光栅化 prototype = A1+A4 验证（freetype-rs per-glyph ≠ fontdue：Latin 3-30% / CJK 11-16% mean|Δ|，向 chromium 收敛；Ahem ≈ identical 20px 0.0000 无回归）+ Ahem WPT font-wall = 度量非光栅化（细分）+ Phase 1/2 可分步独立·零 net 源码·纯调查
+
+承 R1065 CONTINUE（Phase 0 empirical prototype）。本轮 standalone cargo 项目（/tmp/fontcmp，fontdue 0.9 + freetype-rs 0.38，链系统 libfreetype.so.6）实测 fontdue vs FreeType per-glyph + 度量 diff，**验证假设 A1+A4，refine Phase 1/2 计划**。
+
+**A1 验证（freetype-rs ≠ fontdue）**：DejaVuSans 'a'@20px mean|Δ|/255=**0.2992 (30%)** / 'g'@20px 0.2701 (27%) / 'T'@20px 0.0292 (3%)；NotoSansCJK '試'@20px 0.1642 (16%)。fontdue tight-ink vs FreeType FT_Render_Glyph 渲染模型差大（曲线字形 'a'/'g' 差最大）。→ **替换 fontdue→freetype-rs 必显著改 ZW 渲染向 chromium（FreeType）收敛**，font-wall 光栅化分量可解。
+
+**A4 验证（Ahem 不回归）**：Ahem 'X'@20px mean|Δ|=**0.0000 精确一致** / @16px 0.0235 covΔ=0.0000。方块字形 fontdue≈FreeType。→ **Ahem WPT 测试不受光栅化器替换影响**。
+
+**★ 重要细分：Ahem WPT font-wall = 度量非光栅化**。Ahem 光栅化 fontdue≈FreeType identical，但 WPT Ahem 测试仍 1-3% diff（R1064）。故该 diff 来自**度量差**（fontdue asc 14.85 vs FreeType 15.00 @16px DejaVu；Ahem 12.80 vs 13.00；CJK 23.20 vs 24.00）+ IFC 行盒几何，**非光栅化**。→ **WPT（Ahem 主导）修须 Phase 1 度量管线 coherence**（R848 三方同改用 FreeType 真实度量），光栅化替换对 WPT 收益小；**产品页（welcome/morning Latin/CJK）修须 Phase 2 光栅化替换**（光栅化差 11-30% 主导产品 diff）。
+
+**★ Phase 1/2 可分步独立**：Phase 1（度量 coherence，用 FreeType line_metrics 替 fontdue，**fontdue 仍光栅化**，最小 slice 低风险）→ Phase 2（rasterize_glyph 替 freetype-rs FT_Render_Glyph）。降低单步复杂度 + A/B 风险。详见 [`evidence/r1066-fontdue-vs-freetype-prototype-2026-07-06.txt`](./evidence/r1066-fontdue-vs-freetype-prototype-2026-07-06.txt) + scoping doc（待升 v0.3）。
+
+**裁决**：prototype 证 freetype-rs 可用（系统 FreeType 链接成功 + API 工作 + per-glyph diff 实证）。Phase 0 完成。**待用户 C 依赖决策**（R1064 飞书通知 3 开放问题）启动 Phase 1（度量 coherence 最小 slice，不须替换光栅化器，fontdue 仍光栅化，A/B 守 Ahem WPT + welcome/morning/linebox oracle）。
+
+**▶ 下会话**：① **待用户决策**启动 Phase 1（度量 coherence，R848 三方同改：layout strut_ascent + paint v_offset −real_ascent + half-leading (lh−(asc−desc))/2，用 FreeType line_metrics 替 fontdue，fontdue 仍光栅化）；② 或自主起 Phase 1（决策独立——度量用 FreeType 真值是 correctness，C 依赖仅在 Phase 2 光栅化替换时引入，Phase 1 仅读 FreeType 度量须 freetype-rs 依赖但可不进 CI）；③ rendering-compat clean lever 四证穷尽，fontdue 替换（Phase 1 度量 + Phase 2 光栅化）是唯一 unblocker。
+
 ### R1065 fontdue→chromium 替换 Phase 0 web research = freetype-rs 定为唯一 chromium 像素匹配候选（chromium Linux 链 Chrome→Skia→FreeType 实证）+ swash 误归类纠正（shaping 非光栅化）+ 纯 Rust 候选不像素匹配 chromium·scoping doc v0.2·零 net 源码·纯调查
 
 承 R1064 CONTINUE（fontdue 替换 Phase 0 research，rally 自主推进不阻塞用户决策）。本轮 web research（WebSearch）对比 fontdue 替换候选，**freetype-rs 定为唯一理论 chromium 像素匹配候选，scoping doc 升 v0.2**。
