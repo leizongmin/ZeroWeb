@@ -304,13 +304,45 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
     // 根据 column-fill 模式分配子元素到各列
     let assignments = if info.sequential_fill && height_limit > 0.0 {
         // column-fill: auto — 顺序填充，考虑列高限制（column breaking）
-        assign_children_to_columns_with_breaking(
-            &child_info,
-            info.count,
-            height_limit,
-            &forced_breaks,
-            &forced_breaks_after,
-        )
+        //
+        // R1076：definite 高度 + 内容超 col_count×列高时走 **inline 列溢出**（chromium 实测确认：
+        // column-wrap:auto 默认下，列高 cap 容器高度，超出内容向右生成额外 column box，非丢弃）。
+        // 用 assign_children_to_columns_multirow（以 height_limit 作 max_col_height 顺序填，超 col_count
+        // 自动 push 新列）。gate 排除：① monolithic（不可分，同 R1075）；② forced breaks
+        //（break-before/after:column 须 _with_breaking 尊重，multirow 不消费）；③ **nested multicol**
+        //（子元素自身 column-count/width → nested fragmentation 须独立模型，同 R1035 守卫）。
+        // 注：column-wrap:wrap（css-multicol-2 draft，ZW 未解析）的垂直换行语义不被本 gate 覆盖，
+        // 这类案（column-height-004/025/026/027）仍 FAIL（unsupported feature，非本路径可解）。
+        let total_child_height_seq: f32 = child_info.iter().map(|&(_, h)| h).sum();
+        let has_monolithic_child_seq = child_info.iter().any(|&(idx, _)| {
+            let c = &container.children[idx];
+            c.overflow_x != OverflowClip::Visible || c.overflow_y != OverflowClip::Visible
+        });
+        let has_forced_break = forced_breaks.iter().any(|&b| b) || forced_breaks_after.iter().any(|&b| b);
+        let has_nested_multicol_seq = child_info.iter().any(|&(idx, _)| {
+            container.children[idx]
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| {
+                    matches!(s.column_count, ColumnCountComputedValue::Number(_))
+                        || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
+                })
+        });
+        if total_child_height_seq > info.count as f32 * height_limit + 1.0
+            && !has_monolithic_child_seq
+            && !has_forced_break
+            && !has_nested_multicol_seq
+        {
+            assign_children_to_columns_multirow(&child_info, info.count, height_limit)
+        } else {
+            assign_children_to_columns_with_breaking(
+                &child_info,
+                info.count,
+                height_limit,
+                &forced_breaks,
+                &forced_breaks_after,
+            )
+        }
     } else if info.sequential_fill {
         // column-fill: auto 但无明确高度限制
         assign_children_to_columns_sequential(
