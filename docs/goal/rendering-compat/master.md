@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1061 anon 盒宽度 postprocess 修复（pre-compute_final）= 盒级生效（100→192）但 oracle net-0（4 dir 1348 案零翻转）+ 目标 1.11→1.04 未 flip（text-align:center 另 bug 阻断）·已回退·待 text-align 修后同落·零 net 源码·纯调查
+
+承 R1060 CONTINUE（Bug 2 = block-mixed anon 盒满宽，R1060 推翻 measure 级修复，留下 postprocess width fix 或 anon-box 重构两条路）。本轮实施 **postprocess width fix（pre-compute_final）**：盒级确生效（anon 盒 100→192），但 **A/B 4 dir 1348 案 net-0 零翻转**，目标案仅 1.11→1.04 未 flip，**根因 = text-align:center 另一独立 bug 阻断**。已回退（net-0 不 land）。
+
+**改动（已 git checkout 回退，零 net 源码）**：① `postprocess.rs::fix_r109_anon_block_widths`（新函数，先序遍历，anon 盒（fragment_node_ids.is_some）width/content_width = 父 content_width，CSS §9.3.1 block 满父宽）；② `engine.rs:424` 在 `compute_final_inline_layouts` **之前**调用（关键：compute_final 以 root.content_width 重建 IFC，inline_finalization.rs:619，故 pre-compute_final 修正宽度使 IFC 在正确宽下重建）。
+
+**A/B（stash baseline，4 dir）**：CSS2/box-display 39→39（net-0）/ css-flexbox 295→295（net-0）/ css-grid 20→20（net-0）/ CSS2/margin-padding-clear 310→310（net-0）。**1348 案零翻转（PASS->FAIL=0，FAIL->PASS=0）**。welcome product-smoke 16.57% 不变。
+
+**★ 盒级生效但未 yield**：anonymous-box-generation-001 LAYOUT_DUMP `div（anon）w=100 → w=192`（block-mixed anon 盒确满 container 192 宽，CSS §9.3.1 spec-correct）。目标案 1.11%→1.04%（仅 -0.07pp，未 flip <1.0%）。**text-align:center 未生效**——"Filler Text" 应居中（192 宽内 (192-92)/2=50 居中位），实际仍左对齐（diff 仅降 0.07pp，若居中应降 ~0.2pp+）。
+
+**根因定位**：compute_final_inline_layouts **确为 anon 盒跑**（`is_block_level || is_anon_fragment`=true，engine.rs:1193 实证；node_id=#div1 有 text-align:center style；has_text_children=true），IFC 应在 192 宽以 center 重建。但实测文本未居中 → **text-align 在 IFC 重建时未正确应用**（独立 bug，非 width）。可能：① anon 盒 node_id 映射（taffy_to_dom）非 #div1 而是别的（text 节点？）致 style 查询拿错 text-align；② resolve_text_align 在 anon 路径读错 style；③ IFC 重建用了 measure-time 缓存非新 build。**须下会话 probe 定位**（compute_final 内 print text_align + node_id for anon 盒）。
+
+**裁决**：postprocess width fix net-0（零翻转）+ text-align blocker → **git checkout 回退**。width fix 本身 spec-correct（§9.3.1 block 满父宽）且盒级确生效，但 **text-align 不修则 anon 盒满宽无可视 yield**（文本仍左对齐于满宽盒，diff 不变）。两 fix 须同落（width + text-align）才 yield 目标案。★R1060「须 anon-box 重构或 taffy 升级」**部分纠正**：postprocess width fix 可绕 taffy（pre-compute_final），不必重构；真阻断 = text-align 应用 bug。
+
+**▶ 下会话**：① R1061 width fix 复加 + probe compute_final 内 anon 盒 text-align 应用（node_id 映射？resolve_text_align 路径？）→ 修 text-align → 两 fix 同落 yield 目标案（anonymous-box-generation-001 +1，可能 unlock case-b 簇）；② 或 pivot 非 R109 角度（box-display containing-block 簇已证 ZW 正确 1.1-1.6% precision 噪声，非 lever；css-backgrounds/borders fresh dir 待扫）。
+
 ### R1060 Bug 2（case-b block-mixed anon 盒满宽）measure 级修复 REFUTED = taffy 0.7 忽略 measured block leaf 的 measure 返回宽（probe 实测 measure 返 192 但 box 仍 w=100）·box width 源未定位·需 anon-box 重构或 taffy 升级·零 net 源码·纯调查
 
 承 R1059 CONTINUE（Bug 2 攻坚——block-mixed anon 盒 w=文本宽非满 container 宽，entry tree.rs:827 + measure_text_content:868）。本轮实施 measure 级修复 + probe 实证，**REFUTED：taffy 0.7 不用 measure 返回宽给 measured block leaf 赋宽，box w=100 源未定位，需 anon-box 重构**。
