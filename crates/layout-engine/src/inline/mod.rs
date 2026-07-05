@@ -1915,9 +1915,10 @@ impl InlineFormattingContext {
             }
             result
         } else {
-            // 标准 normal 模式：按空白分割，CJK 字符每个单独作为"单词"
+            // 标准 normal 模式：按可折叠白空格分割（R1085：is_collapsible_ws 排除 U+00A0 nbsp，
+            // 保 non-breaking；split_whitespace 含 nbsp 致 nbsp-only 元素 0 行盒）。
             let mut result = Vec::new();
-            for word in text.split_whitespace() {
+            for word in text.split(is_collapsible_ws).filter(|s| !s.is_empty()) {
                 // 检查单词中是否包含 CJK / R645 SEA 词典分词文字
                 let has_cjk = word.chars().any(is_per_char_break_script);
                 if has_cjk && self.word_break != WordBreakMode::KeepAll {

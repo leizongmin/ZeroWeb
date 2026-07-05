@@ -222,7 +222,7 @@ pub(crate) fn collapse_whitespace(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut last_was_space = false;
     for ch in text.chars() {
-        if ch.is_whitespace() {
+        if is_collapsible_ws(ch) {
             if !last_was_space {
                 result.push(' ');
                 last_was_space = true;
@@ -233,6 +233,18 @@ pub(crate) fn collapse_whitespace(text: &str) -> String {
         }
     }
     result
+}
+
+/// CSS Text: U+00A0 (NO-BREAK SPACE) 是 **preserved** 且 **non-breaking**——不可折叠、
+/// 不可作断行点（名如其意「no-break」）。其他 Unicode White_Space（含 U+3000 IDEOGRAPHIC
+/// SPACE 等）按既有行为折叠/断行（WPT 实证：5-char 窄集合回归 css-text break-spaces/control-chars/
+/// shaping-arabic 等 7 案）。
+///
+/// 本函数 = Rust `is_whitespace` 排除 U+00A0，用于 collapse + 断行判定。
+/// 旧实现 `is_whitespace()` / `split_whitespace()` 含 U+00A0 → `&nbsp;` 被折叠为普通空格再被
+/// 行首尾 trim → 仅含 `&nbsp;` 的元素塌缩为 0 行盒（`line-height-applies-to` 簇 4.75%）。
+pub(crate) fn is_collapsible_ws(ch: char) -> bool {
+    ch.is_whitespace() && ch != '\u{00A0}'
 }
 
 /// CSS word-break 行为 — 控制单词内的断行规则。
@@ -261,4 +273,33 @@ pub struct FloatExclusion {
     pub width: f32,
     /// 浮动方向：true = 左浮动，false = 右浮动。
     pub is_left: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R1085：U+00A0 (NO-BREAK SPACE) 是 preserved + non-breaking，不可折叠。
+    /// 旧实现 `char::is_whitespace()` 含 U+00A0 → 仅含 `&nbsp;` 的元素塌缩为 0 行盒
+    ///（line-height-applies-to 簇）。本测试守此 CSS 语义。
+    #[test]
+    fn nbsp_is_not_collapsible_ws() {
+        assert!(!is_collapsible_ws('\u{00A0}'), "U+00A0 must not be collapsible");
+        // 标准 CSS 白空格仍可折叠。
+        for ch in [' ', '\t', '\n', '\x0C', '\r'] {
+            assert!(is_collapsible_ws(ch), "{:?} should be collapsible", ch);
+        }
+        // 其他 Unicode 空白（U+3000 等）按既有行为仍可折叠（WPT 实证：窄集合回归 css-text）。
+        assert!(is_collapsible_ws('\u{3000}'), "U+3000 keeps broad-whitespace behavior");
+    }
+
+    #[test]
+    fn collapse_whitespace_preserves_nbsp() {
+        // 单独 nbsp 不应折叠为普通空格再被行首尾 trim 掉。
+        assert_eq!(collapse_whitespace("\u{00A0}"), "\u{00A0}");
+        // nbsp 与普通空格混合：普通空格折叠，nbsp 保留。
+        assert_eq!(collapse_whitespace("a  \u{00A0}  b"), "a \u{00A0} b");
+        // 连续 nbsp 全保留（非折叠）。
+        assert_eq!(collapse_whitespace("\u{00A0}\u{00A0}"), "\u{00A0}\u{00A0}");
+    }
 }
