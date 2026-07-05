@@ -2648,6 +2648,24 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1042 position:relative + css-tables + css-writing-modes 三 dir 调查 = 全 multi-session 结构性·系统 quick-win 已尽·零源码·纯调查
+
+承 R1041 CONTINUE（转 position:relative converter）。本轮调查三方向，**结论：系统 quick-win 已尽，残余全 multi-session 结构性**。
+
+**① position:relative converter-layer（+12 potential）**：找到 table.rs 独立机制——table.rs:1108/1128-1129（row）、1178（cell）、1553（row_group）对 table-internal relative 元素**直接**应用 relative inset 到 x/y（`row_box.x = row_rel_dx`），独立于 taffy。R1020-cont postprocess `propagate_relative_cb_offset_to_abspos` 对此 double-apply。**但 R1020-cont A/B 0 improved**（即使 div 测 spec-correct y=100 也未更好匹配 chr）→ 不止 table double-apply，div 路径 position-relative-004 亦回归。**真统一须 converter/taffy 层**（div 用 taffy abspos 解 pre-inset CB；table 用 table.rs）——多 session entangled（R98/R123/R500 谱系）。**defer**。
+
+**② css-tables 近-pass（74/115，25 近-pass）**：subpixel-collapsed-borders（subpixel 精度）、colspan-004（R177 结构）、border-collapse-empty-cell（R1026 font-wall）、th-text-align（ZW 有 th→center UA hint line 471/732，非缺失）、row-margin-border-padding（R1026 双层归零已做）。**CSS 默认值全对**（border_collapse:Separate / empty_cells:Show / table_layout:Auto / caption_side:Top / vertical_align:Baseline）——无 R1040 同款默认值 bug。无 obvious 系统布局修，近-pass 多为精度/结构/font-wall。
+
+**③ css-writing-modes 近-pass（56/784 = 7%，376 近-pass）**：250 vertical（R109 blocked）+ 126 非垂直但 writing-mode-dependent（logical-props border/margin/padding/inset 逻辑属性 + sizing-orthog + baseline-orthogonal）。**逻辑属性（border-inline-start 等）registry 完全未注册**（feature gap），但映射依赖 writing-mode（horizontal-tb 简单 1:1，vertical-rl/lr 复杂依赖 text-orientation），WPT corpus 多用 vertical 测映射 → 非 single-session slice。converter 仅有 `apply_vertical_writing_mode`（swap width/height for logical SIZE，line 232-277）。
+
+**战略结论**：跨 multicol（done +16）/ position:relative / css-tables / css-writing-modes，**系统 quick-win（per-pixel → 默认值/spec 修）已尽**。残余 forward motion 全 multi-session 结构性：
+1. **R109 vertical block-flow**（css-writing-modes 87% dir，~30+ potential，大重构）
+2. **逻辑属性完整实现**（border/margin/padding/inset inline/block → 物理，依赖 writing-mode 映射，css-writing-modes logical-props 簇 + 多 dir 受益）
+3. **position:relative converter 统一**（+12，div+table 双 abspos 路径，entangled）
+4. **font-wall 解除**（pervasive text glyph，Ahem subpixel + 真实字体光栅，R1034 结论）
+
+**▶ 下会话**：选 1 个 dedicated multi-session 推进：① **R109 vertical block-flow**（最高 yield ~30+，css-writing-modes 7%→大幅提升；首做 vertical block-flow 方向实现，children 在 vertical mode 横向堆叠）；② **逻辑属性完整实现**（logical-props 簇 + 跨 dir，writing-mode 映射表）；③ position:relative converter（+12 entangled）；④ font-wall。**单 session 系统快赢已尽，须 committed 多 session**。
+
 ### R1041 multicol 近-pass 残余调查 = 渲染精度（subpixel AA）非 layout·arc 已尽·零源码·转 position:relative
 
 承 R1040 CONTINUE（multicol layout 已尽，扫近-pass 或转方向）。本轮调查 css-multicol 180 个近-pass 案（1.0-3.0%）残余成因，**结论：渲染精度非 layout，arc 已尽**。
