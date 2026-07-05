@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1054 vertical 完整 bundle（spec-correct）net -28 已 revert + taffy R304 ruled out（不支持 writing-mode）·零 net 源码·纯调查
+
+承 R1053 CONTINUE（taffy R304 评估起步）。本轮 web research 推翻 taffy R304 前提，转 vertical 完整 bundle 实验，**spec-correct 仍 net -28（4 证）已 revert**。
+
+**★ taffy R304 ruled out**：R1053 CONTINUE 推荐 taffy 升级作 vertical unblocker（基于 memory R304/R849 旧评估）。web research 实证 taffy（所有版本含 0.11）**不支持 writing-mode / vertical text**（maintainer Issue #308 视作「ergonomic 改进」未实现；taffy 把 text layout 全委托宿主 MeasureFunc Issue #216）。→ taffy 升级**不解锁 R1043/R1052 vertical block-flow**，memory R304/R849 评估过时。升级仅余 maintainability / minor grid-flex fix 收益，vs 590 refs + 4 major breaking + 全布局回归风险，**ROI 不成立 indefinitely defer**。
+
+**vertical 完整 bundle 实验**（R1052 Slice α 四层：A container_width WM-aware + B trailing-space 裁剪 + C line-height vertical col-width [store_font_sizes_from_ifc vertical frag.line-height 在 frag.width 非 frag.height] + D vertical emphasis re-enable [painter/text.rs char_advance_is_y 分支 mark 左/右侧垂直居中]）。EMPHDBG 实证 **bundle 字符几何 + mark 位置 spec-correct**（006d 試 mark_x=0 char@base_x=8 mark_y=55 char_pos=67 left=true，mark 左置垂直居中 ✓；col_width 经 C = 80 修前 16）。
+
+**A/B = net -28**：css-text-decor 108→82（-26 PASS→FAIL）；css-writing-modes 56→54（-2，比 A+B alone net-0 还差 2）。即加 C+D（line-height+emphasis，全 spec-correct）仍 net -28，EMPHDBG 确证 D 渲染且位置规范正确。
+
+**★ 裁决：vertical 即使 spec-correct 仍 net-negative（R1047/R1050/R1052/R1054 四证）**。根因 = vertical 须 near-perfect 才 net-positive：① vrl block-flow mirror（R1043）仍缺（vrl 用例 86-87% 未修，bundle 只解 vlr）；② 小用例（emphasis 簇）oracle diff 由残余不完美（CJK fontdue advance、mark 像素精确位、subpixel）主导——OLD 错误水平布局「紧凑」偶然近 oracle <1% pass，NEW spec-correct 垂直因残余不完美推过 1% 阈值 → PASS→FAIL；③ OLD「错但近」反比 NEW「对但不完美」更近 oracle。vertical 子系统**单点、多点、全 spec-correct bundle 均 net-negative**，须 (a) vrl mirror + (b) CJK 字体度量精确 font-wall + (c) mark 像素精确位**全满足**才可能 net-0/正。当前均缺，vertical track **genuinely blocked**。
+
+**forward**：① font-wall 攻坚（R887 per-font 度量，独立于 vertical，解 product-smoke + 多 font-wall 用例）；② R109 anonymous block 攻坚；③ Phase-A IFC 统一续；④ vertical 暂搁置（blocked 4 证，除非 vrl mirror + font-wall 同解）。★勿再：盲扫 top-worst（双证耗尽）/ vertical 单点或 bundle（4 证 net-negative）/ taffy R304（ruled out 不支持 writing-mode）。详见 [`evidence/r1054-vertical-bundle-taffy-ruled-out-2026-07-05.txt`](./evidence/r1054-vertical-bundle-taffy-ruled-out-2026-07-05.txt)。
+
+**▶ 下会话**：① font-wall per-font 度量（R887 provider wiring，多 session，独立于 vertical）；② 或 R109 anonymous block 攻坚；③ 或 Phase-A IFC 统一续。
+
 ### R1053 5 目录 top-worst 扫描（clean lever 耗尽 R740 复证）+ root-abspos sizing 实验 net-flat-to-negative 已 revert·零 net 源码·纯调查
 
 承 R1052 CONTINUE（vertical Slice α / 转非 vertical 轨道）。本轮按 R740 战略转向 ②（直接 chr-vs-ZeroWeb 对比找新 clean lever）扫 css-grid / css-text-decor / css-tables / css-position 4 目录 top-worst，**全部 entangled，clean single-session lever 耗尽复证**；root-abspos 实验 html 几何修对但 body 未 re-layout 故 net-flat-to-negative 已 revert。
