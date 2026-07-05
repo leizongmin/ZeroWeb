@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1041 multicol 近-pass 残余调查 = 渲染精度（subpixel AA）非 layout·arc 已尽·零源码·转 position:relative
+
+承 R1040 CONTINUE（multicol layout 已尽，扫近-pass 或转方向）。本轮调查 css-multicol 180 个近-pass 案（1.0-3.0%）残余成因，**结论：渲染精度非 layout，arc 已尽**。
+
+**180 近-pass 案分类**：采样结构分类——① 基础 multicol（multicol-rule-003/height-001/gap-large-002 等）；② 不支持特性（column-height-012 用 column-height、column-height-020 用 column-wrap:wrap——multicol-2 草案 ZW 未支持）；③ font-wall text。
+
+**Per-pixel 验证（2 案确认渲染精度）**：
+- **multicol-rule-003**（1.13%，column-count:4 + column-gap:1em + column-rule:1em + `font:1.25em/1 Ahem`）：rule_x 公式验算正确（col0[0,60] gap[60,80] rule 居中 ✓），残余在 border/rule 边缘 AA + Ahem 方块 subpixel 定位（颜色匹配 ZW=CHR blue/gray，diff 在边缘）。
+- **multicol-height-001**（1.13%，column-fill:auto + height:8em + `font:1.25em/1 Ahem`）：y 带残余 ~80px/带 baseline（全白匹配），y[16-32] 顶缘 1594px——Ahem 方块 subpixel AA（ZW 整数方块 vs CHR Ahem.ttf AA 边）。
+
+**结论**：multicol 近-pass 残余 = subpixel AA（Ahem 边 + rule/border 边），非 layout bug。R1035-R1040 五轮已尽 big systematic layout wins（+16）。进一步 multicol 需渲染精度/font-wall（多 session，R1034 结论）。
+
+**★ position:relative converter-layer 评估（下会话 lever）**：R1020-cont 证 postprocess 路径失败（table path 有独立 abspos 机制，postprocess double-apply；div path baseline abs@50 错应 100）。converter-layer 是未试路径，须统一两条 abspos 路径（div + table），entangled（R98/R123/R500 谱系）。+12 potential（position:relative-table 簇 6 + text-decoration-thickness 簇 6）。多 session。
+
+**▶ 下会话**：① **position:relative converter-layer**（+12 potential，下会话 dedicated——先 LAYOUT_DUMP 固化 div vs table 双路径 abspos 机制差异，设计 converter 统一，首 slice gate 紧到非 table）；② 或 **R109 vertical block-flow**（css-writing-modes 87% dir，大 yield 大重构多 session）；③ font-wall 解除（pervasive，Ahem subpixel + 真实字体光栅，多 session）。multicol arc +16 done，转方向。
+
 ### R1040 ★column-gap:normal 默认值修复 LANDED = css-multicol Oracle 140→146（+6 PASS）·per-pixel x 带定位·累计 css-multicol +16
 
 承 R1039 CONTINUE（002 残余 4.49%）。本轮 **per-pixel x 带对比**定位 column-gap 默认值 bug，**+6 net**。
