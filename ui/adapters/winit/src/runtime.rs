@@ -222,42 +222,43 @@ fn load_default_fonts(backend: &mut FontdueBackend) {
     let noto = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/noto/noto-sans-v8-latin-regular.woff");
     match zero_render_foundation::font::decode_woff(noto) {
         Some(ttf) => match backend.load_family("UI", &ttf) {
-            Ok(fid) => eprintln!("[DBG] noto font loaded: id={fid:?}, len={}", backend.len()),
-            Err(e) => eprintln!("[DBG] noto font load FAILED: {e:?}"),
+            Ok(fid) => tracing::debug!(family = "UI", id = ?fid, loaded = backend.len(), "default font loaded"),
+            Err(e) => tracing::warn!(family = "UI", error = ?e, "default font load failed"),
         },
-        None => eprintln!("[DBG] noto woff decode failed"),
+        None => tracing::warn!(family = "UI", "default font woff decode failed"),
     }
     let mplus = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/mplus-1p-regular.woff");
     match zero_render_foundation::font::decode_woff(mplus) {
         Some(ttf) => match backend.load_family("CJK", &ttf) {
-            Ok(fid) => eprintln!("[DBG] mplus font loaded: id={fid:?}, len={}", backend.len()),
-            Err(e) => eprintln!("[DBG] mplus font load FAILED: {e:?}"),
+            Ok(fid) => tracing::debug!(family = "CJK", id = ?fid, loaded = backend.len(), "default font loaded"),
+            Err(e) => tracing::warn!(family = "CJK", error = ?e, "default font load failed"),
         },
-        None => eprintln!("[DBG] mplus woff decode failed"),
+        None => tracing::warn!(family = "CJK", "default font woff decode failed"),
     }
     match backend.load_family("Ahem", AHEM) {
-        Ok(fid) => eprintln!("[DBG] ahem font loaded: id={fid:?}, len={}", backend.len()),
-        Err(e) => eprintln!("[DBG] ahem font load FAILED: {e:?}"),
+        Ok(fid) => tracing::debug!(family = "Ahem", id = ?fid, loaded = backend.len(), "default font loaded"),
+        Err(e) => tracing::warn!(family = "Ahem", error = ?e, "default font load failed"),
     }
 }
 
 /// 加载调用方注册的字体（DC-17 FontConfig API）。
 ///
-/// WOFF 容器自动解码；TTF/OTF 直送后端。失败时 eprintln 警告但不 panic。
+/// WOFF 容器自动解码；TTF/OTF 直送后端。失败时 tracing::warn 警告但不 panic
+/// （P2-10：原 eprintln! 改为结构化日志，便于 release 关闭 / 开发期 RUST_LOG=debug 看明细）。
 fn load_font_asset(backend: &mut FontdueBackend, asset: &FontAsset) {
     let bytes: Vec<u8> = match asset.container {
         FontContainer::Ttf => asset.data.to_vec(),
         FontContainer::Woff => match zero_render_foundation::font::decode_woff(asset.data) {
             Some(ttf) => ttf,
             None => {
-                eprintln!("[DBG] font {} woff decode failed", asset.family);
+                tracing::warn!(family = %asset.family, "registered font woff decode failed");
                 return;
             }
         },
     };
     match backend.load_family(asset.family, &bytes) {
-        Ok(fid) => eprintln!("[DBG] font {} loaded: id={fid:?}, len={}", asset.family, backend.len()),
-        Err(e) => eprintln!("[DBG] font {} load FAILED: {e:?}", asset.family),
+        Ok(fid) => tracing::debug!(family = %asset.family, id = ?fid, loaded = backend.len(), "registered font loaded"),
+        Err(e) => tracing::warn!(family = %asset.family, error = ?e, "registered font load failed"),
     }
 }
 
@@ -405,13 +406,18 @@ impl ApplicationHandler<()> for SdkGpuApp {
                                     )
                                 })
                                 .count();
-                            eprintln!(
-                                "[DBG] scene={} (fr={fillrects} txt={strs} img={imgs} stk={strokes} blob={blobs}) fills={} rounded={} images={} glyphs={}",
-                                scene.entries.len(),
-                                primitives.fills.len(),
-                                primitives.rounded_rects.len(),
-                                primitives.images.len(),
-                                primitives.glyphs.len(),
+                            tracing::trace!(
+                                scene_entries = scene.entries.len(),
+                                fillrects,
+                                strs,
+                                imgs,
+                                strokes,
+                                blobs,
+                                primitives_fills = primitives.fills.len(),
+                                primitives_rounded = primitives.rounded_rects.len(),
+                                primitives_images = primitives.images.len(),
+                                primitives_glyphs = primitives.glyphs.len(),
+                                "render scene stats"
                             );
 
                             gpu.render_full_scene_gpu(
