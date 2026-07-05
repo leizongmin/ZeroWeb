@@ -870,6 +870,36 @@ impl Painter {
                     let frag_offset_y = frag_abs_y - child.y;
                     self.paint_node(child, styles, frag_offset_x, frag_offset_y, doc, false);
 
+                    // R1080：flush 列子元素的 positioned 后代（本地，带 clip context）。
+                    // collect_positioned_descendants（line 184）对 multicol 列子元素 skip 交本循环；
+                    // 列子元素自身多非 scope（overflow:hidden 不建 SC），其 positioned 后代
+                    //（如 position:relative/abspos 子元素）原本被 drop（multicol-overflow-clip-positioned
+                    // 蓝块完全不渲染）。在此本地收集 + flush，并裁到列子元素的 overflow padding box
+                    //（修 R1079 简单 collection 的 over-render——flush 须带列子元素 clip）。
+                    let mut local_positioned: Vec<DeferredPositioned> = Vec::new();
+                    collect_positioned_descendants(child, frag_abs_x, frag_abs_y, styles, &mut local_positioned);
+                    if !local_positioned.is_empty() {
+                        let counts_before_local = PrimitiveCounts::snapshot(&self.primitives);
+                        for item in &local_positioned {
+                            let off_x = item.abs_x - item.node.x;
+                            let off_y = item.abs_y - item.node.y;
+                            self.paint_node(item.node, styles, off_x, off_y, doc, false);
+                        }
+                        if compute_needs_clip(child, styles) {
+                            let child_clip = Rect::new(
+                                frag_abs_x + child.border_left,
+                                frag_abs_y + child.border_top,
+                                child.padding_left + child.content_width + child.padding_right,
+                                child.padding_top + child.content_height + child.padding_bottom,
+                            );
+                            super::helpers::clip_all_primitives_to_rect(
+                                &mut self.primitives,
+                                &counts_before_local,
+                                &child_clip,
+                            );
+                        }
+                    }
+
                     super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_frag, &clip_rect);
                 }
             }

@@ -340,6 +340,30 @@ fn test_painter_color_value_transparent() {
     assert_eq!(color.a, 0);
 }
 
+/// R1080：multicol 列子元素（overflow:hidden）内的 position:relative 后代必须渲染
+///（修 collect_positioned_descendants 跳过列子元素致其后代 positioned drop 的 bug——
+/// multicol-overflow-clip-positioned 蓝块完全不渲染）。本地 flush + clip 到列子元素 overflow box。
+#[test]
+fn r1080_multicol_column_positioned_descendant_not_dropped() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(400.0, 400.0);
+    let html = "<html><body style=\"margin:0\"><div style=\"columns:2\">\
+                <div style=\"height:200px; overflow:hidden\">\
+                <div style=\"height:800px; background:blue; position:relative\"></div>\
+                </div></div></body></html>";
+    let result = pipeline.render_html(html, "");
+    let has_blue = result
+        .primitives
+        .fills
+        .iter()
+        .any(|f| f.color.b > 150 && f.color.r < 100 && f.color.g < 100);
+    assert!(
+        has_blue,
+        "R1080: position:relative blue in overflow:hidden multicol column should render (was dropped), got {} fills",
+        result.primitives.fills.len()
+    );
+}
+
 /// 测试命名颜色转换（red, blue, black, white）。
 #[test]
 fn test_painter_color_value_named() {
