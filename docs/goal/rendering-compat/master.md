@@ -2648,6 +2648,34 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1088 ★::first-letter 端到端实现正确但 Phase A 度量门控 net-negative（-7 selectors）·fresh scan 最大 lever（436 案）定位·已回退·零源码
+
+承 R1087（fresh scan 收益递减）。本轮扫未扫 dir（visuren + selectors）+ 深挖发现并实现 ::first-letter（fresh scan 第三轮唯一定位到的 clean CSS-语义 lever，亦项目最大 autonomous lever），A/B net-negative 已回退。
+
+**fresh scan visuren + selectors**：visuren 25/34（73.5%）top-worst 全结构定位（position-absolute-%-inherit 11% / anonymous-boxes / fixed+static-CB），无 R1085 类语义 cluster。selectors 299/542（55%）ORACLE_DUMP_ALL 全量 identical-delta cluster：lang-pseudoclass 11.33%×2 / attribute-value 1.35%×3 / class-selector-012 14.73% **全 font-wall 或已正确实现**（:lang matches_lang + class_list split_whitespace + [attr~=] split_whitespace 均已实现；diff = green-text 渲染）。唯一定位 **::first-letter-punctuation-* 簇 ~300 案 @ ~0.95-1.13%**。
+
+**::first-letter lever 量化**：全 wpt-data **959** first-letter/first-line 测试文件（933 在 selectors）；oracle-covered **518**（436 first-letter，仅 11 PASS）。**远超 C-dep（+32）**——若批量 flip 是项目最大 autonomous yield。
+
+**根因**：::first-letter / :first-letter 仅 css-parser 解析（parser.rs:333），下游完全未实现——matcher PseudoElement(_)=>false（正确），style-system lib.rs:180-210 仅计算 ::before/::after（"first-letter" 从未传入），::first-letter 规则级联后被丢弃 → 块首字母从未按伪样式渲染（diff = 未样式化首字母 ~1%）。
+
+**架构（合成 inline 元素，复用 infra 零 paint 改动）**：R554 教训（::before inject 文本节点 + collect_inline_items 查 parent → 伪 color 不生效，painter/text.rs:1174 owner=parent）。改用合成 inline ELEMENT：inject 把首字母包成 `<zw-first-letter>`（display:inline，伪样式）+ 文本子节点，插为块首子节点。collect_inline_items 对 inline 元素读自身样式（mod.rs:860）→ 伪 font 度量；paint owner=合成元素（text.rs:1174）→ 伪 color。**零 collect_inline_items / paint 改动**。
+
+**实现（4 文件，已回退，存档 evidence/r1088）**：computed_style.rs 加 first_letter_pseudo 字段 + default_impl.rs None + lib.rs compute（pseudo_name="first-letter"，color/font-size 差异门控）+ pipeline.rs inject_first_letter_nodes（is_first_letter_punct ASCII+Unicode P* 近似 + split_first_letter_unit CSS §5.12.1 前导标点+首字母+尾部标点 + 块级容器首直接文本子节点提取 + 合成元素 + set_text_content 去 unit）。端到端正确（提取 `/T/` ✓ 验证）。
+
+**A/B（selectors 全量 542）**：299/55%→292/54% **NET -7**（FAIL→PASS=0 / PASS→FAIL=7）。49 案 >0.01pp 变化：14 improved / 35 worsened。7 PASS→FAIL 全 first-letter-punctuation-*（0.98-0.99%→1.00-1.03%，+0.01~0.04pp 跨 1%）。**实现正确但应用 36px/line-height:2 首字母 run 改变首行行盒高，ZW line-box 度量与 chromium 微差→级联 +0.02~0.04pp，近-pass 推过 1%**。
+
+**★ Phase A 度量门控（核心发现）**：::first-letter 与 linebox-metric-unification-rfc（R813）Phase 3 同类——inline run 的 font-size/line-height 改变首行行盒高时，ZW strut/half-leading/ascent 与 chromium 不一致（R814 A2 已证 vertical-align 簇连单行 line-box 高都算错）。::first-letter 暴露同一度量缺口。**Phase A line-box 度量统一解前，::first-letter net-negative（度量级联 > color 匹配收益）**。
+
+**裁决**：按协议（count net-negative→revert）`git checkout` 4 文件回退，零源码，cargo check 绿。实现存档 evidence（Phase A 度量统一后 5 分钟重应用 + 重 A/B，line-box 度量精确后 color 匹配收益应压过级联，批量 flip 436 案）。
+
+**意义**：fresh scan 第三轮确证 plateau 深度——除 R1085/R1086 两 clean hit 外，visuren（结构）/ selectors（font-wall + ::first-letter）均无 clean single-session win。**★::first-letter（最大 lever 436 案）端到端正确但 Phase A 度量门控 → autonomous plateau 再证：clean lever 与最大 lever 均收敛到 Phase A line-box 度量统一。Phase A 是 universal gate。** fresh scan 已穷尽（visuren/selectors/box/mpc/decor/text/linebox 全扫尽），勿再扫。
+
+详见 [`evidence/r1088-first-letter-phaseA-gate-2026-07-06.txt`](./evidence/r1088-first-letter-phaseA-gate-2026-07-06.txt)。
+
+**门禁**：纯调查 + 实验（已回退），零 net 源码，make test 未跑（无源码变更）。tree clean，cargo check 绿。
+
+**▶ 下会话**：① **Phase A line-box 度量统一**（linebox-metric-unification-rfc Phase 3 = 解 per-fragment valign-aware baseline_y + strut/half-leading 冲突，多 session，是 universal gate）；② 度量统一后重应用 ::first-letter（evidence/r1088 存档），批量 flip 436 案；③ font-wall C-dep 用户决策（CI 计费恢复）；④ 勿再 fresh scan（全扫尽）。
+
 ### R1087 fresh R740 scan 三 dir（CSS2/box + margin-padding-clear + css-text-decor）= 无 clean cluster win·cluster 全 font-wall/JS/rendering-precision·零 net 源码·纯调查
 
 承 R1086（fresh scan 路线）。本轮 scan 3 dir 找 R1085/R1086 类 CSS 语义 cluster bug，**均无 clean win**——R1085/R1086 是该方法的仅有两 hit（line-height-applies-to + word-spacing），余 dir cluster 性质不同。
