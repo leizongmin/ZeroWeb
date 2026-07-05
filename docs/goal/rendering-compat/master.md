@@ -2648,6 +2648,25 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1077 column-wrap 解析评估 = LOW-EV（所有驱动案 nested/complex，0 flip 可期）+ R1075 2 worsened 非 column-wrap 亦非 tractable·column-wrap:wrap 垂直换行 chromium-confirmed·零 net 源码·纯调查
+
+承 R1076（▶ 下会话列 column-wrap 解析为候选）。本轮评估 column-wrap 解析的 yield，**裁决 LOW-EV，勿作下 lever**。
+
+**column-wrap:wrap 垂直换行 chromium-confirmed**：minimal `<article columns:2 column-fill:auto column-wrap:wrap height:60><div height:200>` → chromium green **下溢**（article 下 4000px，0 右溢出），ZW（R1076 inline-overflow）green **右溢**（article 右 4000px，0 下溢）。证实 column-wrap:wrap 改 overflow 方向（inline→block）。
+
+**★ 所有 column-wrap:wrap 驱动案均 nested/complex（0 flip 可期）**：
+- column-height-004/025/026/027（R1076 worsened 1.96→3.21 等）：**全 nested multicol**（inner multicol column-height + column-wrap:wrap + absolute overlays）+ column-height（ZW 亦未解析）。仅 column-wrap 解析不 flip（须 nested fragmentation + column-height + overlay 三者同修）。
+- column-height-003（R1075 worsened 1.54→2.38）：column-wrap:wrap + absolute overlay，同病。
+即 column-wrap 解析本身（4-5 文件：parser + ComputedStyle + apply + registry + layout）对 WPT 通过率 **0 flip**（驱动案全卡在更深的 nested/column-height/overlay）。
+
+**R1075 2 worsened 复核（非 column-wrap，亦非 tractable）**：
+- column-height-003：column-wrap:wrap（上）。
+- multicol-span-all-children-height-010（1.75→2.36）：columns:10 + nested span + column-span:all negative-margin + orphans/widows + 10 inline-block —— 10 列复杂布局，R1075 inline-overflow 与 10 列协同偏差，非单点可修。
+
+**裁决**：column-wrap 解析 LOW-EV（0 flip），**勿作下 lever**。可选 cleanup：解析 column-wrap 仅用于 R1075/R1076 gate detect-and-skip（column-wrap:wrap 案退回 drop-overflow 即 pre-R1075 值，消 ~5pp 小回归，但案仍 FAIL，0 flip，borderline 不做）。css-multicol 经 R1074-R1076（+6 net）三路径 inline-overflow 全 land，残余 = nested fragmentation（nested-balancing-004 17% 多 session）/ font-wall（138 案 ~1% band，FreeType C-dep 用户决策点）/ draft feature（column-wrap/column-height css-multicol-2，全 nested 卡深）。
+
+**▶ 下会话**：css-multicol 暂 plateau（R1074-R1076 +6 net 收官），**pivot R109 §9.2.1.1 匿名块**（central 结构性 lever，FR-001 done，剩 FR-002 容器 bg 涂满 / FR-003 split inline border 归属，有 spec）或 font-wall C-dep（用户决策点）。勿投 column-wrap 单 session（LOW-EV）。
+
 ### R1076 ★column-fill:auto sequential 路径 inline 列溢出 LANDED（+!has_nested_multicol 守卫）= css-multicol Oracle 150→151（+1 net）·column-height-011 2.28→0.73 PASS（column-wrap:auto 默认）·0 翻 FAIL·1 worsened（column-wrap:wrap unsupported feature 仍 FAIL）·承 R1076v1 net-negative 回退后 gate 扩展
 
 承 R1076v1（sequential inline-overflow net-negative 回退，gate 须扩展）。本轮加 `!has_nested_multicol` 守卫（R1035 先例）消 6 nested 回归 + nested-028 翻 FAIL，**v2 LANDED**。
