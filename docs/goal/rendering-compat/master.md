@@ -2648,6 +2648,26 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1047 sibling-overlap grow-push postprocess 实验 = net -1 回退已回退·block-in-inline（R109）破坏拓扑·postprocess 层 ruled out·零 net 源码·纯调查
+
+承 R1046 CONTINUE（③ R1018 两趟 + sibling 重定位：p 文本测量延迟致 padding-em-inherit-001 sibling 重叠）。本轮实现 postprocess「增高下移兄弟」对称分支并 A/B，**结论：net -1 oracle，postprocess 层 ruled out，已回退**。
+
+**实现（已回退）**：`inline_finalization.rs::remeasure_inline_only_containers` 递归循环已有「收缩分支」（inline-only 容器收缩后把后续兄弟上移），本轮加对称「增高分支」——子块因 DOM 文本被 IFC 重测增高（taffy 原 content_height≈0）后，按 `grow_delta` 把后续普通流兄弟下移。门控演进：① 宽松 gate `old_content_height<1.0`；② DOM-text gate（加 `node_id` 有 Text 子）；③ 紧 gate（镜像 `needs_dom_text_remeasure` 全条件）。
+
+**A/B（chromium Oracle，stash 对照）**：
+- **驱动簇改善（未 flip）**：padding-em-inherit-001 **11.17→4.80%**、margin-em-inherit-001 11.25→跌出 top-15（<4.8%）、padding-percentage-inherit-001 7.47→跌出 top-15。3 案均 -6pp+，sibling 重叠 bug 确被修（单测 `test_r1047_text_block_grow_pushes_sibling_down` 验证 sibling.y ≥ p.y+p.height 不再重叠）。
+- **零 oracle flip**：3 案均未跨 1%（残余 = R702 margin-collapse-through，多 session）。
+- **回归（决定性）**：**css/CSS2/normal-flow 604→603（-1 oracle）**。ORACLE_DUMP_ALL 全 case diff 精确定位**唯一 PASS→FAIL flip = `block-in-inline-margins-003.html` 0.050%→2.870%（+2.82pp）**，另有 block-in-inline-first-line-001 2.58→3.14、block-in-inline-remove-006 0.60→0.67 等 block-in-inline 簇小幅恶化。
+- 三种 gate（宽松 / DOM-text / 紧）**均 -1**——回归案有 DOM text，gate 收紧到 `needs_dom_text_remeasure` 全条件则同时破坏驱动案（`<p>` 含 `<br>`，br 是 inline LayoutBox 子违「仅 abs/fixed 子」）。**无 clean gate 可区分驱动案与回归案**。
+
+**根因（postprocess fundamentally flawed for R109）**：block-in-inline-margins-003 属 R109 §9.2.1.1 insert-block-in-inlines 簇（R928-R935 已证 Phase A 结构性）——inline 容器被 block 子分裂为匿名块盒，sibling 拓扑与普通 block 容器不同。postprocess sibling-push 假设的「后续普通流兄弟」在 R109 匿名块盒上下文下语义错误，强行下移破坏布局。**与 R1043「postprocess mirror 无法更新 float-exclusion/margin-collapse 状态，fundamentally flawed」同族裁决**：postprocess 层对涉及 R109/float/margin-collapse 的 sibling 重定位系统性不可解。
+
+**结论**：R1046 ③「sibling overlap = p 文本测量延迟」在 postprocess 层 **ruled out**（与 R1046① R109 匿名块文本高度 / ② R702 margin-collapse-through 同列多 session 结构性）。clean single-session win 谱系再确尽。forward = ① R109 匿名块文本高度须 layout 期 cell_content_height 计入文本（多 session）；② R702 margin-collapse-through 链（intervening sibling 分布）；③ 任何 sibling 重定位须在 layout 期内（taffy/converter 层，非 postprocess）知晓 R109/float/margin-collapse 状态。详见 evidence [`evidence/r1047-sibling-grow-push-reverted-2026-07-05.txt`](./evidence/r1047-sibling-grow-push-reverted-2026-07-05.txt)。
+
+**★ 跨目录近失扫描（为下轮定位，read-only）**：[1.0%,2.5%] 带 flip 候选——css/CSS2/normal-flow：min/max-height-047/058 簇（1.04-1.05%，4 案，mm 单位亚像素疑似 font-wall 谱系，非 clean layout）；block-formatting-contexts-011（1.13%）；block-replaced-height-001（1.14%）。css-flexbox：flexbox-writing-mode-slr/srl-rtl（1.00%，writing-mode 谱系）；flex-inline.html（1.04%）。css-position：position-relative-table-{tbody,tfoot,thead}-{left,top}-absolute-child 簇（1.32%，5+ 案，R1042 table.rs 独立 abspos 机制 entangled 多 session）；position-absolute-center-001（1.14%）。多为 font-wall 亚像素或已知结构性，无 obvious clean 单点。
+
+**▶ 下会话**：clean single-session lever 谱系跨 10+ dir 穷尽（R1042/R1046/R1047 三连再证），forward motion 全 multi-session 结构性——按 R1042「跨会话架构任务」序选 1 dedicated 推进：① **R109 vertical block-flow**（css-writing-modes 87% 失败 dir，~30+ potential，converter `apply_vertical_writing_mode` 接 rl 信号 + taffy 反向布局，R1043 postprocess-mirror 已 ruled out）；② **R702 margin-collapse-through 链**（intervening sibling margin 分布，padding/margin-em-inherit 簇受益）；③ **逻辑属性完整实现**（border/margin/padding/inset inline/block→物理，writing-mode 映射，registry 全未注册 feature gap）；④ font-wall 解除（per-font 真实度量，R887 provider wiring）。每条均多 session，rally 可续跑承接，非人工阻塞。
+
 ### R1046 css-tables / CSS2 margin-padding-clear 候选调查 = 全结构性（table-text-height R109 / margin-collapse R702 / sibling-overlap）·零 net 源码·纯调查
 
 承 R1045 CONTINUE（转 CSS2/margin-padding-clear / table-cell-overflow 清洁 worst）。本轮调查 3 个候选，**结论：全结构性，无单点 clean win**。
