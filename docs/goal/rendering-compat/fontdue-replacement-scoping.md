@@ -1,9 +1,9 @@
 # Scoping：fontdue → chromium-matching 字体光栅化替换
 
-**版本**：v0.1（scoping，待 lei-spec-rfc 升级为完整 RFC + lei-deep-research 候选对比）
+**版本**：v0.2（Phase 0 web research 完成：freetype-rs 定为唯一 chromium 匹配候选；待用户 C 依赖决策 + lei-spec-rfc 完整 RFC）
 **日期**：2026-07-06
-**作者**：AI Assistant（rally R1064）
-**状态**：scoping 草稿（rally 自主模式；假设显式标注；待用户确认范围/优先级）
+**作者**：AI Assistant（rally R1064-R1065）
+**状态**：scoping + Phase 0 research（rally 自主模式；假设显式标注；待用户 C 依赖决策）
 
 > 本 doc 把 R1056（CJK ascent 第六证）+ R876（fontdue tight-ink 三方补偿）+ R1064（font-wall 笼罩 CSS2 测试四证穷尽）收敛为可实施的多会话计划前置 scoping。R1064 确证：rendering-compat clean single-session lever 已穷尽，残余失败 100% 受阻于 fontdue≠chromium 字体墙。
 
@@ -89,15 +89,38 @@ case 须 layout diff > ~0.5% 才有 fix 后越过 font-wall <1% 阈值的可能�
 
 ---
 
-## 3. 候选方案对比（待 lei-deep-research 实证）
+## 3. 候选方案对比（Phase 0 web research 实证，2026-07-06）
 
-| 候选 | 类型 | chromium 一致度（理论） | C 依赖 | 维护度 | 风险 |
+### 3.1 chromium Linux 字体管线（实证）
+
+Web research 确证 chromium Linux 字体渲染链：**Chrome → Skia → FreeType**。Skia 负责所有图形
+（含文本），在 Linux 把字体文件解析/光栅化委托给 **FreeType**（FT_Render_Glyph，含 hinting +
+AA），Skia 维护 glyph cache + 合成。Hinting/subpixel/gamma 可调（chromium 用特定值，曾被指
+gamma 偏旧）。新兴：chromium 正集成 **Fontations**（Rust）做字体**解析**，但光栅化仍走 Skia
+CPU rasterizer（即 FreeType）。
+
+→ **关键结论**：chromium 的最终光栅化 = FreeType（Linux）。故 ZW 用 `freetype-rs`（绑定同一
+FreeType 2 + FT_Render_Glyph）理论上 **per-glyph bitmap 像素级匹配 chromium**（前提：相同
+hinting style / subpixel / gamma 设置）。这验证假设 A1。
+
+### 3.2 候选对比（修正后）
+
+| 候选 | 类型 | chromium 一致度 | C 依赖 | 维护度 | 风险 |
 |---|---|---|---|---|---|
-| **`freetype-rs`**（绑定 FreeType 2） | C 绑定 | ★★★★★（Linux 同栈 FreeType + Skia 光栅化模型） | 是（FreeType 2，跨平台） | 高（FreeType 工业标准） | C 依赖构建复杂度（CI 三平台）；macOS/Windows chromium 用原生后端非纯 FreeType，仍可能差 |
-| **`swash`** | 纯 Rust | ★★★☆（待测；font-kitin/CosmicText 用） | 否 | 中（CosmicsText 生态） | 光栅化模型可能与 Skia 差；CJK shaping 支持有限 |
-| **`ab_glyph`** | 纯 Rust | ★★☆（API 简洁但光栅化简单） | 否 | 高 | 光栅化精度低（无 hinting/AA 精细控制）；可能不如 fontdue |
+| **`freetype-rs`**（绑定 FreeType 2） | C 绑定 | ★★★★★（Linux 同栈 FreeType FT_Render_Glyph，理论像素级匹配；验证 A1） | 是（FreeType 2，Linux 系统装 / macOS/Windows vendored via `bundled` feature） | 高（FreeType 工业标准） | C 依赖 CI 三平台构建（vcpkg/bundled）；macOS/Windows chromium 用 CoreText/DirectWrite+Skia 非纯 FreeType，跨平台仍差（建议 Linux 优先） |
+| ~~`swash`~~ | 纯 Rust | — | 否 | — | **误归类（Phase 0 纠正）**：swash 是 **shaping 库**（HarfBuzz 风格复杂脚本整形），非光栅化器；不能替 fontdue rasterize。可作 shaping 后续独立 lever（ZW 无 shaping） |
+| **`ab_glyph`** | 纯 Rust | ★☆（无 hinting/LCD subpixel，光栅化模型与 chromium 差异大；不像素匹配） | 否 | 高 | 光栅化精度低于 FreeType；换它对 font-wall 改善有限（同纯 Rust tight-ink 谱系） |
+| **Pathfinder / font-rs**（Raph Levien） | 纯 Rust + GPU | ★★☆（GPU 路径渲染，质量高但与 chromium CPU FreeType 模型不同） | 否（GPU） | 中 | 须 GPU 集成；CPU 模式成熟度待查；偏离 ZW 当前 CPU 光栅化架构 |
 
-**推荐评审顺序**：① freetype-rs（最高一致度，验证 A1 是否成立）→ ② swash（若 freetype-rs C 依赖被拒）→ ③ ab_glyph（兜底）。
+**★ Phase 0 裁决：`freetype-rs` 是唯一理论像素级匹配 chromium 的候选**（Linux 同栈 FreeType）。
+纯 Rust 候选（ab_glyph/Pathfinder）光栅化模型 ≠ chromium FreeType，无法像素匹配（同 fontdue
+tight-ink 谱系，换不解决 font-wall）。→ **fontdue 替换 = 接受 freetype-rs C 依赖，否则不替换**。
+
+### 3.3 用户决策（须确认，已在 R1064 飞书通知）
+
+**核心权衡**：accept FreeType C 依赖（chromium Linux 像素级匹配，unblock font-wall）vs 保持
+纯 Rust（ab_glyph/fontdue 同谱系，font-wall 不可解）。无中间方案——纯 Rust 无法匹配 chromium
+FreeType 光栅化。详见 §6 开放问题 1。
 
 ---
 
@@ -105,7 +128,7 @@ case 须 layout diff > ~0.5% 才有 fix 后越过 font-wall <1% 阈值的可能�
 
 | 切片 | 内容 | 验证 | 会话估算 |
 |---|---|---|---|
-| **Phase 0**（research） | lei-deep-research 对比三候选：在 ZeroWeb fontdue 调用点 prototype，对 Ahem + DejaVuSans + NotoSansCJK 同字形渲染 chromium vs 候选，像素 diff 排序，定首选 | 候选选定 + 像素 diff 数据 | 1-2 session |
+| **Phase 0**（research）✅ web 部分完成 | ~~对比三候选~~ → freetype-rs 定为唯一 chromium 匹配候选（§3.2 实证）。**剩余**：empirical prototype（在 ZeroWeb fontdue 调用点接 freetype-rs，对 Ahem + DejaVuSans + NotoSansCJK 同字形渲染 chromium vs freetype-rs，像素 diff 验证 A1 像素级匹配） | freetype-rs 像素 diff 数据（验证 A1）+ hinting/subpixel/gamma 配置对齐 chromium | 1 session（待 C 依赖决策后） |
 | **Phase 1**（from_bytes + line_metrics） | 替换 from_bytes + line_metrics_full（最小 slice，光栅化仍用 fontdue），度量管线 coherence（layout strut + paint v_offset + half-leading 三方同改，R848 路线图） | welcome/morning/linebox/css-text A/B + Ahem WPT 零回归 | 2-3 session |
 | **Phase 2**（rasterize） | 替换 rasterize_glyph（非 Ahem）+ rasterize_ahem_glyph（Ahem），paint 字形定位协调 | 全 CSS2 oracle A/B + product-smoke <20% | 2-3 session |
 | **Phase 3**（清理） | 移除 fontdue 依赖，文档更新 | cargo build --workspace 绿 + clippy | 1 session |

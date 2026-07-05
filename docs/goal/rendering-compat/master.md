@@ -2648,6 +2648,20 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1065 fontdue→chromium 替换 Phase 0 web research = freetype-rs 定为唯一 chromium 像素匹配候选（chromium Linux 链 Chrome→Skia→FreeType 实证）+ swash 误归类纠正（shaping 非光栅化）+ 纯 Rust 候选不像素匹配 chromium·scoping doc v0.2·零 net 源码·纯调查
+
+承 R1064 CONTINUE（fontdue 替换 Phase 0 research，rally 自主推进不阻塞用户决策）。本轮 web research（WebSearch）对比 fontdue 替换候选，**freetype-rs 定为唯一理论 chromium 像素匹配候选，scoping doc 升 v0.2**。
+
+**chromium Linux 字体管线实证**（Skia 官方 + SO + chromium blog）：**Chrome → Skia → FreeType**。Skia 在 Linux 把字体解析/光栅化（FT_Render_Glyph + hinting + AA）委托 FreeType，Skia 维护 glyph cache + 合成。新兴 Fontations（Rust）仅做**解析**，光栅化仍 FreeType。→ **chromium 最终光栅化 = FreeType（Linux）**。
+
+**★ 候选裁决（§3.2）**：① **`freetype-rs`**（C 绑定 FreeType 2 + FT_Render_Glyph）= **唯一理论像素级匹配 chromium 候选**（同栈 FreeType，验证假设 A1）；② ~~`swash`~~ **误归类纠正**——swash 是 **shaping 库**（HarfBuzz 风格复杂脚本整形）非光栅化器，不能替 fontdue rasterize（可作 ZW shaping 缺口独立 lever，当前非阻塞）；③ **`ab_glyph`**（纯 Rust）无 hinting/LCD subpixel，光栅化模型 ≠ chromium，**不像素匹配**（同 fontdue tight-ink 谱系，换不解决 font-wall）；④ Pathfinder/font-rs（GPU）模型不同 + 须 GPU 集成。
+
+**★ 核心权衡（须用户决策，已在 R1064 飞书通知）**：fontdue 替换 = **accept FreeType C 依赖**（chromium Linux 像素级匹配，unblock font-wall）vs **保持纯 Rust**（ab_glyph/fontdue 同谱系，font-wall 不可解）。**无中间方案**——纯 Rust 无法匹配 chromium FreeType 光栅化（tight-ink vs FT_Render_Glyph 模型差）。
+
+**Phase 0 web 部分完成**（§4 表）：剩 empirical prototype（接 freetype-rs 到 ZW fontdue 调用点，对 Ahem + DejaVuSans + NotoSansCJK 同字形渲染 chromium vs freetype-rs，像素 diff 验证 A1 像素级匹配 + hinting/subpixel/gamma 配置对齐），**待用户 C 依赖决策后**。详见 [`fontdue-replacement-scoping.md`](./fontdue-replacement-scoping.md) v0.2。
+
+**▶ 下会话**：① **待用户 C 依赖决策**（R1064 飞书通知 3 开放问题）—— accept freetype-rs C 依赖启动 empirical prototype / Phase 1 RFC，或调整优先级；② 决策前可自主做 empirical prototype（验证 A1，C 依赖 prototype 在 dev 环境不影响 CI 决策）；③ rendering-compat clean single-session lever 四证穷尽，font-wall 结构性平台期，fontdue 替换是唯一 unblocker。
+
 ### R1064 css-backgrounds/borders fresh dir 扫描 = 簇全 font-wall（1.15% background-001-022 + 1.46% 026-053 + 3.10% border-top-width-012-078 identical diff = "Filler Text" 指令文本 fontdue≠chromium 渲染）+ negative border-width 处理已正确（apply.rs:225 reject）·clean lever 穷尽第四证（R740/R1053/R1057/R1063/R1064）·零 net 源码·纯调查
 
 承 R1063 CONTINUE（pivot css-backgrounds/borders fresh dir）。本轮扫 CSS2/backgrounds (228/339=67.3%) + CSS2/borders (399/506=78.9%) + css-fonts (98/287=34.8%) borderline 簇，**全部簇 = font-wall（指令文本 fontdue≠chromium），clean lever 穷尽第四证**。
