@@ -139,7 +139,14 @@ pub(crate) fn compute_column_info(style: &ComputedStyle, container_width: f32) -
         LengthValue::Px(v) => *v as f32,
         _ => 16.0, // computed font_size 应为 Px；防御性回退
     };
-    let gap = length_to_px(&style.column_gap, container_width, font_size_px);
+    // R1040：column-gap 初始值 = normal（CSS Multicol §4.1），对 multicol 解析为 1em。
+    // default_impl 用 LengthValue::Auto 作 normal sentinel（gap 不接受 auto，无冲突）。
+    // 显式 column-gap:<length> 或 column-gap:0 尊重原值。
+    let gap = if matches!(style.column_gap, LengthValue::Auto) {
+        font_size_px // normal → 1em
+    } else {
+        length_to_px(&style.column_gap, container_width, font_size_px)
+    };
     let sequential_fill = matches!(style.column_fill, ColumnFillComputedValue::Auto);
 
     // CSS Multi-column spec: column-width 是最小列宽（理想宽度）
