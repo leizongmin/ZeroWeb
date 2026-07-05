@@ -2648,6 +2648,20 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1068 ★Phase 2 FreeType 光栅化路径 LANDED（feature-gated default-off）= css-text Oracle +24 credible pass 零目录回归 + welcome −0.28pp·首 font-wall 正 yield·C 依赖决策升级 evidence-backed
+
+承 R1067 CONTINUE（font-wall 收敛 rasterization-only，Phase 2 = 唯一 lever，待 C 依赖决策）。本轮 **feature-gate FreeType 光栅化路径绕过 C 依赖阻塞**——把 Phase 2 hypothesis 用 A/B 数据验证，C 依赖决策从「推测」升级为「evidence-backed」。
+
+**实现**（`freetype-raster` feature，default-off）：① `crates/render-foundation/Cargo.toml` 加 `freetype-rs = { version="0.38", optional=true }` + `[features] freetype-raster=["dep:freetype-rs"]`；② `font/loader.rs` 加 `freetype_raster` 模块（thread_local FreeType Library + `rasterize(font_bytes, ch, size)→GlyphBitmap`），坐标约定 `x_offset=bitmap_left` / `y_offset=bitmap_top−height`（推导自 `glyph_top_left`），灰度位图按 pitch→紧凑 width×height；③ `rasterize_glyph` 非-Ahem 路径 `#[cfg(feature)]` 优先 FreeType，失败回退 fontdue；④ Ahem 路径不变（A4：Ahem fontdue≈FreeType，保留 rasterize_ahem_glyph 方块特判）。feature-off 整模块不编译 → CI / 默认构建纯 Rust 不变。
+
+**A/B（feature on vs off，同一 tree）**：welcome product-smoke **16.57%→16.29%（−0.28pp）**；css-text Oracle（1650 with-oracle 案）**oracle-pass 357→381（+24）/ credible 344→368（+24）/ strict 84→88（+4）/ 近似 272→293（+21）**，**全 per-dir 零回归**（css-text-decor 108→117 +9 / line-breaking 60→67 +7 / white-space 45→48 +3 / word-break 8→10 +2 / text-transform 7→8 / hyphens 9→10 / word-spacing 2→3 / 余持恒）。★ 与 R1067 Phase 1 metric swap（net-neutral）正反对——**font-wall 光栅化分量真实可解**，FreeType FT_Render_Glyph（chromium Linux 同栈）向 chromium 收敛。
+
+**门禁全绿**：make test 45 bin ok 0 failed（feature-off 默认路径零变化）；clippy `--features freetype-raster --all-targets -D warnings` 干净（let-chain 折叠 + f32 非否定比较 + 去 i32 冗余 cast 三修）；默认 `clippy --workspace --all-targets -D warnings` 干净；新 `freetype_rasterize_ahem_glyph_end_to_end` cfg-gated 测试 PASS（Ahem 'X'@20px 20×20 + y_offset∈[−h,0] + advance≈20，坐标约定守卫）。loader.rs 1305→1442 行（<2000）。
+
+**裁决**：Phase 2 hypothesis **VALIDATED**（+24 css-text 零回归，首 font-wall 正 yield）。feature-gate 使 C 依赖决策**解耦**——default-off 落地经验证的基础设施（不阻塞 CI，纯 Rust 默认路径不变），用户决策 = 「翻 default 启用 CI 三平台 FreeType」。C 依赖决策从 R1064「推测需 accept」升级为「**evidence-backed：+24 css-text 零回归证明 FreeType 光栅化收益真实**」。
+
+**▶ 下会话**：① **待用户 C 依赖决策**（翻 default：CI ubuntu/macos/windows 须 FreeType 2；Linux 系统装 / macOS/Windows vendored via freetype-sys bundled feature）——收益已证；② 翻 default 前可继续 feature-on 调优（FreeType hinting/subpixel 对齐 chromium 具体设置，潜在再降 diff；advance/kerning 精度；paint 侧 v_offset 与 FreeType 度量 coherence）；③ R1067 Phase 1（metric）已 closed，font-wall 唯一 lever = Phase 2（本轮 LANDED feature-gated）。
+
 ### R1067 Phase 1（fontdue 度量 → FreeType 度量 swap）A/B 实测 NET-NEUTRAL = 第 7 证（metric-source swap 无 yield）+ R1066「Ahem font-wall=度量」refuted（16px 度量差为 FreeType 舍入伪影，真值 fontdue=FreeType=0.8）+ font-wall 收敛 rasterization-only（Phase 2 唯一 lever）·已回退·零 net 源码·纯调查
 
 承 R1066 CONTINUE（Phase 1 度量 coherence，R848 三方同改用 FreeType 真实度量）。本轮扩展 fontcmp prototype（dump fontdue hlm + freetype size_metrics 跨 16/20/40px）精确测绘度量源 + A/B 实测 non-Ahem ascent 0.928→0.95，**Phase 1 refuted（第 7 证），font-wall 收敛 rasterization-only**。
