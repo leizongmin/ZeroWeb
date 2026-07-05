@@ -15,6 +15,7 @@ use zero_ui_core::action::{ActionId, ActionPayload, EventResult};
 use zero_ui_core::binding::Value;
 use zero_ui_core::event::{KeyAction, PointerPhase, UiEvent};
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
+use zero_ui_core::prop_keys;
 use zero_ui_core::theme::Color;
 use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget};
 
@@ -24,7 +25,7 @@ use super::model::Locale;
 
 /// 从 `locale` prop 解析当前语言（非法/缺省回落 En）。
 pub(crate) fn locale_from_props(props: &Props) -> Locale {
-    match props.get("locale") {
+    match props.get(prop_keys::LOCALE) {
         Some(Value::Text(s)) => Locale::parse_str(s).unwrap_or(Locale::En),
         _ => Locale::En,
     }
@@ -72,7 +73,7 @@ impl Widget for HeaderTitle {
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
         // 文本长度决定 layout 宽度 → sync_text 走 layout。
         // 主题色变走 NEEDS_PAINT 由 host 级 mark 触发（不再存 theme 字段，paint 直接读 ctx.tokens）。
-        let text_changed = sync_text(props, "text", &mut self.text);
+        let text_changed = sync_text(props, prop_keys::TEXT, &mut self.text);
         mark_layout_if_changed(ctx, text_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
@@ -108,7 +109,7 @@ pub struct Spacer {
 impl Widget for Spacer {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        if let Some(Value::Text(a)) = props.get("axis")
+        if let Some(Value::Text(a)) = props.get(prop_keys::AXIS)
             && a != &self.axis
         {
             self.axis = a.clone();
@@ -140,8 +141,8 @@ pub struct HeaderButton {
 impl Widget for HeaderButton {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let label_changed = sync_text(props, "label", &mut self.label);
-        if let Some(Value::Text(a)) = props.get("action") {
+        let label_changed = sync_text(props, prop_keys::LABEL, &mut self.label);
+        if let Some(Value::Text(a)) = props.get(prop_keys::ACTION) {
             self.action = ActionId::new(a);
         }
         mark_layout_if_changed(ctx, label_changed);
@@ -210,12 +211,12 @@ pub struct NavItem {
 impl Widget for NavItem {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let label_changed = sync_text(props, "label", &mut self.label);
-        if let Some(Value::Text(p)) = props.get("page_id") {
+        let label_changed = sync_text(props, prop_keys::LABEL, &mut self.label);
+        if let Some(Value::Text(p)) = props.get(prop_keys::PAGE_ID) {
             self.page_id = p.clone();
         }
         let mut paint_changed = false;
-        if let Some(Value::Bool(s)) = props.get("selected")
+        if let Some(Value::Bool(s)) = props.get(prop_keys::SELECTED)
             && *s != self.selected
         {
             self.selected = *s;
@@ -293,12 +294,12 @@ pub struct GroupHeader {
 impl Widget for GroupHeader {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let label_changed = sync_text(props, "label", &mut self.label);
-        if let Some(Value::Text(g)) = props.get("group") {
+        let label_changed = sync_text(props, prop_keys::LABEL, &mut self.label);
+        if let Some(Value::Text(g)) = props.get(prop_keys::GROUP) {
             self.group = g.clone();
         }
         let mut paint_changed = false;
-        if let Some(Value::Bool(c)) = props.get("collapsed")
+        if let Some(Value::Bool(c)) = props.get(prop_keys::COLLAPSED)
             && *c != self.collapsed
         {
             self.collapsed = *c;
@@ -369,7 +370,7 @@ impl Widget for NavSearch {
         let new_locale = locale_from_props(props);
         let locale_changed = new_locale != self.locale;
         self.locale = new_locale;
-        let query_changed = sync_text(props, "query", &mut self.query);
+        let query_changed = sync_text(props, prop_keys::QUERY, &mut self.query);
         mark_paint_if_changed(ctx, locale_changed || query_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
@@ -452,7 +453,8 @@ pub struct DemoTitle {
 impl Widget for DemoTitle {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let changed = sync_text(props, "text", &mut self.text) || sync_text(props, "desc", &mut self.desc);
+        let changed =
+            sync_text(props, prop_keys::TEXT, &mut self.text) || sync_text(props, prop_keys::DESC, &mut self.desc);
         mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {

@@ -7,6 +7,7 @@
 
 use zero_ui_core::binding::Value;
 use zero_ui_core::geometry::{Rect, Vec2};
+use zero_ui_core::prop_keys;
 use zero_ui_core::widget::{PaintCtx, WidgetId};
 use zero_ui_render::{RenderPrimitive, Scene, SceneEntry, SceneRecorder};
 
@@ -43,7 +44,7 @@ pub(super) fn paint_node(
     // 容器节点底色：无 widget 的容器（layout=column/row/stack）若声明 `bg` prop（**token 名**，
     // 如 "surface"/"background"），先铺底色再画子节点。
     if node.widget.is_none()
-        && let Some(Value::Text(token)) = node.props.get("bg")
+        && let Some(Value::Text(token)) = node.props.get(prop_keys::BG)
         && let Some(color) = tokens.color_for(token)
     {
         scene.push(SceneEntry {

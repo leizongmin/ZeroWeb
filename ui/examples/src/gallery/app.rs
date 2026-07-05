@@ -322,7 +322,7 @@ impl Widget for DemoPreview {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
         // page_id 决定预览区高度 → layout；色变走 NEEDS_PAINT 由 host 级 mark 触发。
-        let page_changed = sync_text(props, "page_id", &mut self.page_id);
+        let page_changed = sync_text(props, zero_ui_core::prop_keys::PAGE_ID, &mut self.page_id);
         super::chrome::mark_layout_if_changed(ctx, page_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
@@ -417,7 +417,7 @@ pub struct SourceLabel {
 impl Widget for SourceLabel {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let changed = sync_text(props, "text", &mut self.text);
+        let changed = sync_text(props, zero_ui_core::prop_keys::TEXT, &mut self.text);
         mark_paint_if_changed(ctx, changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
@@ -448,8 +448,8 @@ impl Widget for SourceCode {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
         // source 行数决定高度 → layout；lang 仅 paint。
-        let source_changed = sync_text(props, "source", &mut self.source);
-        let lang_changed = sync_text(props, "lang", &mut self.lang);
+        let source_changed = sync_text(props, zero_ui_core::prop_keys::SOURCE, &mut self.source);
+        let lang_changed = sync_text(props, zero_ui_core::prop_keys::LANG, &mut self.lang);
         super::chrome::mark_layout_if_changed(ctx, source_changed);
         mark_paint_if_changed(ctx, lang_changed);
     }

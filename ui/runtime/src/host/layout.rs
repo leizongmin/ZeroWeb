@@ -5,13 +5,14 @@
 
 use zero_ui_core::binding::{PropsMap, Value};
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
+use zero_ui_core::prop_keys;
 use zero_ui_core::widget::LayoutCtx;
 
 use super::{ContainerKind, HostNode};
 
 /// 从 props 读 `gap`（Column/Row 主轴间距）。接受 Int/Float，缺省 0。
 fn gap_from_props(props: &PropsMap) -> f32 {
-    match props.get("gap") {
+    match props.get(prop_keys::GAP) {
         Some(Value::Float(f)) => *f as f32,
         Some(Value::Int(i)) => *i as f32,
         _ => 0.0,
@@ -24,7 +25,7 @@ fn gap_from_props(props: &PropsMap) -> f32 {
 /// 让任意组件名（如 `browser.DesktopBrowserShell`、`browser.ToolbarRow`）经 props 声明为容器，
 /// 无需 host 硬编码 chrome/业务组件名 —— 保持 host 浏览器无关。
 pub(super) fn node_container_kind(node: &HostNode) -> Option<ContainerKind> {
-    if let Some(Value::Text(s)) = node.props.get("layout") {
+    if let Some(Value::Text(s)) = node.props.get(prop_keys::LAYOUT) {
         match s.as_str() {
             "column" | "Column" => return Some(ContainerKind::Column),
             "row" | "Row" => return Some(ContainerKind::Row),
@@ -45,12 +46,12 @@ pub(super) fn node_container_kind(node: &HostNode) -> Option<ContainerKind> {
 
 /// 是否为垂直滚动容器（DC-16 gallery scroll，向后兼容 gallery 现有 `scroll=vertical` 写法）。
 fn is_scroll_vertical(props: &PropsMap) -> bool {
-    matches!(props.get("scroll"), Some(Value::Text(s)) if s == "vertical")
+    matches!(props.get(prop_keys::SCROLL), Some(Value::Text(s)) if s == "vertical")
 }
 
 /// 从 props 读 `flex`（Row/Column 主轴弹性权重）。接受 Int/Float，缺省/负值 → 0。
 fn flex_from_props(props: &PropsMap) -> f32 {
-    match props.get("flex") {
+    match props.get(prop_keys::FLEX) {
         Some(Value::Float(f)) => (*f as f32).max(0.0),
         Some(Value::Int(i)) => (*i as f32).max(0.0),
         _ => 0.0,
@@ -68,10 +69,10 @@ fn float_from_props(props: &PropsMap, key: &str, default: f32) -> f32 {
 
 /// 从子节点 props 读取 min/max 约束（缺省：min = 0, max = f32::MAX，即不约束）。
 fn child_constraints_from_props(props: &PropsMap) -> (f32, f32, f32, f32) {
-    let min_w = float_from_props(props, "min_width", 0.0).max(0.0);
-    let max_w = float_from_props(props, "max_width", f32::MAX).max(min_w);
-    let min_h = float_from_props(props, "min_height", 0.0).max(0.0);
-    let max_h = float_from_props(props, "max_height", f32::MAX).max(min_h);
+    let min_w = float_from_props(props, prop_keys::MIN_WIDTH, 0.0).max(0.0);
+    let max_w = float_from_props(props, prop_keys::MAX_WIDTH, f32::MAX).max(min_w);
+    let min_h = float_from_props(props, prop_keys::MIN_HEIGHT, 0.0).max(0.0);
+    let max_h = float_from_props(props, prop_keys::MAX_HEIGHT, f32::MAX).max(min_h);
     (min_w, max_w, min_h, max_h)
 }
 
@@ -85,7 +86,7 @@ fn clamp_size(s: Size, min_w: f32, max_w: f32, min_h: f32, max_h: f32) -> Size {
 ///
 /// 缺省 [`CrossAxisAlignment::Start`]（向后兼容历史顶/左对齐行为）。
 fn cross_axis_alignment_from_props(props: &PropsMap) -> CrossAxisAlignment {
-    if let Some(Value::Text(s)) = props.get("cross_axis_align") {
+    if let Some(Value::Text(s)) = props.get(prop_keys::CROSS_AXIS_ALIGN) {
         match s.to_ascii_lowercase().as_str() {
             "center" => return CrossAxisAlignment::Center,
             "end" | "bottom" | "right" => return CrossAxisAlignment::End,
@@ -103,7 +104,7 @@ fn cross_axis_alignment_from_props(props: &PropsMap) -> CrossAxisAlignment {
 /// 缺省 [`MainAxisAlignment::Start`]（向后兼容历史左/顶打包行为）。需容器主轴有剩余空间才生效
 /// （fill-sizing 或父 tight/exact 约束）；弹性子节点消费剩余空间时主轴对齐无可见效果。
 fn main_axis_alignment_from_props(props: &PropsMap) -> MainAxisAlignment {
-    if let Some(Value::Text(s)) = props.get("main_axis_align") {
+    if let Some(Value::Text(s)) = props.get(prop_keys::MAIN_AXIS_ALIGN) {
         let norm: String = s
             .chars()
             .filter(|c| *c != '-' && *c != '_')
