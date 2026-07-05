@@ -14,3 +14,4 @@ pub mod gallery;
 
 pub use counter::{CounterApp, Label, register_counter_factories};
 pub use form::{FormApp, TextField, register_form_factories};
+pub use gallery::{GalleryApp, register_gallery_factories};
