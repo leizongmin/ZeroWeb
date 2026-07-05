@@ -2648,6 +2648,440 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1046 css-tables / CSS2 margin-padding-clear 候选调查 = 全结构性（table-text-height R109 / margin-collapse R702 / sibling-overlap）·零 net 源码·纯调查
+
+承 R1045 CONTINUE（转 CSS2/margin-padding-clear / table-cell-overflow 清洁 worst）。本轮调查 3 个候选，**结论：全结构性，无单点 clean win**。
+
+**① table-cell-overflow-explicit-height-001/002（3.87%，2 case）= R109 非 cap**：测试 `td{height:20px;overflow:hidden}` 含 300px 子。**纠正「cell 应 cap 到 20px」假设**——chromium oracle 实测 td cyan border y=11-338（**grew to fit 300px div**），即 chromium 走 CSS 2.1「cell height=min，cell 增长含内容，overflow:hidden 无 overflow 可裁」路径，**不 cap**。ZW 原 grow 行为正确。实现 cell-height cap 实验（`position_cells` line 1219 overflow!=visible + Px height → cap）实测 css-tables **+0 case flip + divergence 升**（cap 后 ZW td=24 vs CHR td=327，差更大）已回退。真 3.87% 差 = td 高 304（ZW）vs 327（CHR）= **div 后 inline 文本 "Can you see this text?" 高度未计入**（cell_content_height sum children，文本匿名块高度 ~16px 缺，R109 §9.2.1.1 territory）。engine.rs:1150 已有 Mozilla bug 1880550 注释（overflow 映射对 cell 工作），但 cell grow 优先（CSS 2.1）。
+
+**② margin-em-inherit-001（11.25%）= margin-collapse R702（非 em-inherit）**：`#parent{font-size:28px;margin:2em}` → 56px，`#child{font-size:40px;margin:inherit}` → 应继承 computed 56px。LAYOUT_DUMP 实测 **child margin-top=56 ✓（em-inherit 工作正确）**。真 11.25% 差 = body abs_y=56（应 16）= parent margin-top 56 **全折叠上提到 body**（绕过 intervening p 的 margin 分布），margin-collapse-through 链 bug，**R702 territory**（collapse-through + intervening sibling 的 margin 分布，doc 标「类 R680 R109 同族」）。
+
+**③ padding-em-inherit-001（11.17%）= sibling overlap（非 em-inherit）**：`#parent{padding:2em}#child{padding:inherit}`。LAYOUT_DUMP child padding-top=48 ✓（em-inherit 正确）。但 **grand-parent abs_y=16 与 p abs_y=16 重叠**（siblings 同 y）+ body h=244=grand-parent h（**p 的 40px 高度未计入 body content height**）→ render 实测 green box y=16-159（ZW）vs y=72-325（CHR），**ZW green 与 p 文本重叠**。最小复现（body>p+div）**不重叠**→ 非通用 sibling bug，特定于嵌套 img+padding 结构，根因疑似 **p 的文本高度 taffy 测量为 0、post-process 补 h=40 但未重定位 sibling/grand-parent**（R1018/R695 两趟 + sibling 重定位谱系）。
+
+**结论**：css-tables / CSS2 margin-padding-clear worst 全结构性（R109 匿名块文本高度 / R702 margin-collapse / taffy 文本测量延迟致 sibling 错位）。em-inherit + em 单位解析本身**全对**（child 继承 computed px，非 re-resolve）。clean single-session win 谱系确尽（与 R1042/R1045 一致）。forward = ① R109 匿名块文本高度（cell_content_height 缺文本，多 session）；② R702 margin-collapse-through 链（intervening sibling 分布）；③ R1018 两趟 + sibling 重定位（p 文本测量延迟）。
+
+### R1045 text-decoration-thickness 实现实验 = net -2 回退已回退·装饰管线厚度耦合（font-wall 谱系）·零 net 源码·纯调查
+
+承 R1044 CONTINUE（转 css-text-decor / css-floats-clear 清洁 worst）。本轮实现 `text-decoration-thickness` CSS 属性（原完全不支持：parse/store/apply 全缺，paint 用 hardcoded `font_size * 0.06`），**实测 net -2 回退已回退**。
+
+**实现**（已回退）：types.rs `TextDecorationThicknessValue` enum（Auto/FromFont/Length）+ computed_style 字段 + default_impl + apply.rs parse（auto/from-font/length/percentage）+ registry（parse list + property list）+ effects.rs paint_text_decoration_from_style 用显式厚度（length/percentage 相对 font_size 解析，floor + max(1.0)）。
+
+**A/B（css-text-decor Oracle，10GB test-guard per-proc-mem 避 OOM）**：**108→106（net -2）**。
+- thickness-length-rounding-001/002/min-val 簇（~13%）**未 flip**（残余 = 装饰 y-offset 管线 `font_size*0.15` underline / `*0.35` line-through 启发式 vs chromium 字体度量，font-wall 谱系，非厚度主导）。
+- **2 case 回归**：text-decoration-thickness-overline-001（→7.92%）+ thickness-underline-001（→6.08%）原 PASS 现 FAIL——ZW 装饰渲染（offset/style）**为默认厚度（~1px）校准**，改厚度（显式值）致偏移/视觉与 chr 新不匹配。
+- 厚度逻辑正确（2.3px→floor 2，0.3px→floor 0→max 1），但装饰管线未就绪。
+
+**结论**：`text-decoration-thickness` 单点修复**净负**——装饰线渲染管线（y-offset 启发式 + decoration-style 渲染）当前为默认厚度耦合校准，改厚度触发回归。真修须先统一**装饰 y-offset 从字体度量推导**（同 R990 font-metric 谱系，多 session）。**勿再单点补 text-decoration-thickness**。
+
+**副产物记**：① `make reftest-oracle` 默认 test-guard per-proc-mem=6GB，全 corpus 加载（~10k case）边际超限 OOM；用 `./target/test-guard --per-proc-mem 10 -- cargo run --release --bin zero-wpt-runner -- reftest-oracle <dir>` 提至 10GB（合规，仍经 test-guard 包裹）。② css-text-decor worst 全 font-wall 耦合（thickness/offset/style/dilation），单点 lever 净负，转其它 dir。③ 之前会话「min-val flip」A/B 是 stale binary 假象（cargo stash 后未 rebuild）——教训：stash A/B 须确认 cargo 触发 rebuild（`Finished` 行）。
+
+### R1044 ★R850 inline CB-height 链 + inline relative % 修复 LANDED = css-position Oracle 55→57（+2 PASS）·零回归·有 net 源码
+
+承 R1043 CONTINUE（多向调查后转 css-writing-modes near-pass / css-position 清洁 lever）。**R1043 vertical-rl converter-reverse 实测推翻**（taffy Block 不支持 bottom-up packing，反转 children order 仍从 x=0 起，无法实现 rl 方向）→ vertical-rl 方向确证 taffy/architecture-gated（R304 / 重实现）。转 css-position worst 扫描定位 **position-relative-001/002（3.64/4.88%）= R850 percent-inset × R109 inline-split 交互**，**+2 net**。
+
+**根因 A — inline 截断 CB-height 链（position-relative-002）**：`div(red,h:100px) > span(relative,top:100/left:100) > div(green,relative,top:-100%/left:-100%)`。green 是 block-level relative，`top:-100%` 应解析到 CB 高度。CSS §9.2.1.1/§10.1：inline span **不**为 block 后代建立 CB → green 的 CB 跳过 span 继承 red div（100px）。但 R850 walk 用 `style.height==Px` 判 my_content_h，**inline span（auto h）的 None 截断了 CB-height 链** → green 收到 cb_h=None → top:-100% 不解析（green abs_y=151 未覆盖 red@51）。
+
+**根因 B — inline relative top/bottom % 未应用（position-relative-001）**：`div(red) > span(relative,top:100%/left:100%) > div(green,top:-100px)`。span 的 `top:100%` 应解析到 red 100px。taffy 0.7 丢弃 top/bottom %（R715），R850 补 block-level 但**门控 `is_block_level`** → inline span 跳过 → top:100% 不应用（span abs_y 不变，green 落 red 上方 -49）。`left:100%` 工作（taffy 应用水平 %）→ 仅垂直轴坏。
+
+**修复（postprocess.rs::apply_block_relative_percent_insets）**：
+- 修复 A：`my_content_h` 分支——block-level 按 `style.height==Px → Some(content_height)`；**inline（is_block_level=false）透传继承到的 cb_h**（inline 不建立 CB for block 后代）。
+- 修复 B：应用门控**移除 `is_block_level`**——inline relative 的 top/bottom % 同样补（taffy 对 inline/block 都丢垂直 %）。仅 top/bottom %（垂直轴）；水平 % 仍由 taffy（不 double-count）。
+
+**验证（chromium Oracle + stash A/B 多 dir）**：
+- **css-position**：55→57（**+2 PASS**）；position-relative-002 **4.88%→0.73%**，position-relative-001 **3.64%→0.73%**。position-relative-005（4.88% 持平）= JS-driven（`<script>` 设 height），独立。
+- **CSS2/positioning**：296→296（R850 原 R711 +10 cluster 全保，零回归）。
+- **CSS2/normal-flow**：604→604 / **CSS2/visuren**：25→25 / **CSS2/floats**：117→117（零回归）。
+- **product-smoke welcome (DC-13)**：16.57% 不变（< 20% gate PASS）。
+- engine 1022/0 + layout-engine 全绿；clippy -D warnings 干净；fmt 干净。
+
+**2 新单测**（intrinsic_two_pass_tests.rs）：`test_r1044_inline_passes_through_cb_height_for_relative_percent`（修复 A：green top:-100% 解析到祖父）+ `test_r1044b_inline_relative_percent_inset_applied`（修复 B：inline span top:100% 应用）。
+
+**意义**：补全 R850 percent-inset 在 inline-split（R109）上下文的两层缺口（CB-height 链 + inline 应用门控）。CSS §9.2.1.1/§10.1「inline 不为 block 后代建立 CB」+「inline relative 也应解析 top/bottom %」原则在 ZW 首次显式接线（R850 原仅处理纯 block 链）。block-level 路径字节同 R850（不可回归）。**css-writing-modes vertical-rl converter-reverse 实测推翻**（taffy Block 不支持 reverse packing）记此，vertical-rl 方向 lever 仍 taffy/architecture-gated（R304）。**position-absolute/fixed-root-element-{flex,grid}（4 case @ 4.46%）= `border:5px dashed` + root abspos inset-sizing**：root inset-sizing 修对（html 770×530）但 dashed border 模式是 CSS implementation-defined（各浏览器 dash length 不同），oracle 永远 ~4.5% 不可 flip，记此避免重试。详见 [`evidence/r1044-r850-inline-pass-through-landed-2026-07-05.txt`](./evidence/r1044-r850-inline-pass-through-landed-2026-07-05.txt)。
+
+**▶ 下会话**：① 继续扫 css-position 残余 worst（position-absolute-semi-replaced-stretch-input/other 21/13% replaced-stretch 簇；position-absolute-in-inline-006 5.1% R109；hypothetical-dynamic-change 4.17% JS）；② 或转 css-writing-modes 近-pass（bidi 簇 ~1.3% / sizing-orthog 1.08% / horizontal-rule-vrl 1.04%）逐案 per-pixel（非 rl 方向细节）；③ R109 vertical-rl 方向仍 multi-session（converter-reverse ruled out，须 taffy 升级 R304 或 layout 期镜像）。
+
+### R1043 R109 vertical block-flow 调查 = 纠正「children 垂直堆叠」误判（block flow 实横向）+ rl/lr 方向 bug + postprocess mirror net-negative 已回退·零 net 源码·转 converter 层
+
+承 R1042 CONTINUE（R109 vertical block-flow dedicated）。本轮纠正上会话误判 + 实验 mirror，**结论：block flow 已横向（正确），真 bug = rl/lr 方向不区分，postprocess 不可解须 converter**。
+
+**★ 纠正上会话「vertical 下 children 仍垂直堆叠」假设（错误）**：最小测试 vertical-rl 容器 + 2 block 子（50×50）LAYOUT_DUMP：a@x=8, b@x=58（**同 y=8，不同 x = 横向并排**）。ZW converter `apply_vertical_writing_mode`（tree.rs:666）轴交换 + engine.rs:1232 un-swap 使 vertical block 流**已横向**（正确）。上会话假设错误。
+
+**★ 真因 = rl/lr 方向不区分**：vertical-lr 测试同 a@x=8 b@x=58（identical to vertical-rl）。vertical-rl 应 a 在右（block 流右→左），vertical-lr 应 a 在左（左→右）。ZW 对 rl/lr **同样处理**（都左→右）。`apply_vertical_writing_mode`（converter/mod.rs:232）对 rl/lr 同样 swap（Column→Row），不镜像。inline_finalization 有 is_vertical_rtl（line 671/940/1099/1221）处理 inline 方向，但 **block 流方向未镜像**。
+
+**postprocess mirror 实验（net-negative 已回退）**：实现 `mirror_vertical_rl_block_children`（postprocess.rs，VerticalRl 容器 in-flow block 子 `x = content_w - x - width`）。**A/B v1 net -1**（2 flip: caption-side-vrl-002/float-vrl-006；3 regress: float-clear-vrl-006/008 + margin-collapse-vrl-034）。v2（排除 float）**net -2**（丢 float-vrl flip，float-clear 仍回归）。**根因**：postprocess 镜像无法更新 float exclusion / margin-collapse 状态——clear/collapse 须在 layout 期内知晓方向。postprocess fundamentally flawed。
+
+**结论**：rl/lr 方向修复须 **converter/taffy 层**（让 taffy 知道 rl 反向，float-clear/margin-collapse 自然正确），非 postprocess 镜像。**R109 vertical block-flow 确证 multi-session**（converter `apply_vertical_writing_mode` 须传 rl 信号 + taffy 反向布局，或 layout 期镜像）。
+
+**未解**：vertical-rl 多 block 容器方向错（首子在左应右）。单 block 容器无影响（inline 方向 rl/lr 同）→ 近-pass 多 1-3% 残余非此 bug 主导（其它 writing-mode 细节：text baseline / glyph rotation / logical props）。
+
+**▶ 下会话**：① **R109 vertical-rl converter 层**（多 session——apply_vertical_writing_mode 接收 rl 信号，taffy 反向布局或 layout 期内镜像使 float-clear/margin-collapse 正确，首 slice gate 紧到纯 block 无 float/margin）；② **css-writing-modes 近-pass 残余**多非 rl 方向（text baseline / glyph / logical props），逐案 per-pixel；③ 或转 position:relative converter（+12 entangled）/ font-wall。R109 postprocess 已 ruled out。
+
+### R1042 position:relative + css-tables + css-writing-modes 三 dir 调查 = 全 multi-session 结构性·系统 quick-win 已尽·零源码·纯调查
+
+承 R1041 CONTINUE（转 position:relative converter）。本轮调查三方向，**结论：系统 quick-win 已尽，残余全 multi-session 结构性**。
+
+**① position:relative converter-layer（+12 potential）**：找到 table.rs 独立机制——table.rs:1108/1128-1129（row）、1178（cell）、1553（row_group）对 table-internal relative 元素**直接**应用 relative inset 到 x/y（`row_box.x = row_rel_dx`），独立于 taffy。R1020-cont postprocess `propagate_relative_cb_offset_to_abspos` 对此 double-apply。**但 R1020-cont A/B 0 improved**（即使 div 测 spec-correct y=100 也未更好匹配 chr）→ 不止 table double-apply，div 路径 position-relative-004 亦回归。**真统一须 converter/taffy 层**（div 用 taffy abspos 解 pre-inset CB；table 用 table.rs）——多 session entangled（R98/R123/R500 谱系）。**defer**。
+
+**② css-tables 近-pass（74/115，25 近-pass）**：subpixel-collapsed-borders（subpixel 精度）、colspan-004（R177 结构）、border-collapse-empty-cell（R1026 font-wall）、th-text-align（ZW 有 th→center UA hint line 471/732，非缺失）、row-margin-border-padding（R1026 双层归零已做）。**CSS 默认值全对**（border_collapse:Separate / empty_cells:Show / table_layout:Auto / caption_side:Top / vertical_align:Baseline）——无 R1040 同款默认值 bug。无 obvious 系统布局修，近-pass 多为精度/结构/font-wall。
+
+**③ css-writing-modes 近-pass（56/784 = 7%，376 近-pass）**：250 vertical（R109 blocked）+ 126 非垂直但 writing-mode-dependent（logical-props border/margin/padding/inset 逻辑属性 + sizing-orthog + baseline-orthogonal）。**逻辑属性（border-inline-start 等）registry 完全未注册**（feature gap），但映射依赖 writing-mode（horizontal-tb 简单 1:1，vertical-rl/lr 复杂依赖 text-orientation），WPT corpus 多用 vertical 测映射 → 非 single-session slice。converter 仅有 `apply_vertical_writing_mode`（swap width/height for logical SIZE，line 232-277）。
+
+**战略结论**：跨 multicol（done +16）/ position:relative / css-tables / css-writing-modes，**系统 quick-win（per-pixel → 默认值/spec 修）已尽**。残余 forward motion 全 multi-session 结构性：
+1. **R109 vertical block-flow**（css-writing-modes 87% dir，~30+ potential，大重构）
+2. **逻辑属性完整实现**（border/margin/padding/inset inline/block → 物理，依赖 writing-mode 映射，css-writing-modes logical-props 簇 + 多 dir 受益）
+3. **position:relative converter 统一**（+12，div+table 双 abspos 路径，entangled）
+4. **font-wall 解除**（pervasive text glyph，Ahem subpixel + 真实字体光栅，R1034 结论）
+
+**▶ 下会话**：选 1 个 dedicated multi-session 推进：① **R109 vertical block-flow**（最高 yield ~30+，css-writing-modes 7%→大幅提升；首做 vertical block-flow 方向实现，children 在 vertical mode 横向堆叠）；② **逻辑属性完整实现**（logical-props 簇 + 跨 dir，writing-mode 映射表）；③ position:relative converter（+12 entangled）；④ font-wall。**单 session 系统快赢已尽，须 committed 多 session**。
+
+### R1041 multicol 近-pass 残余调查 = 渲染精度（subpixel AA）非 layout·arc 已尽·零源码·转 position:relative
+
+承 R1040 CONTINUE（multicol layout 已尽，扫近-pass 或转方向）。本轮调查 css-multicol 180 个近-pass 案（1.0-3.0%）残余成因，**结论：渲染精度非 layout，arc 已尽**。
+
+**180 近-pass 案分类**：采样结构分类——① 基础 multicol（multicol-rule-003/height-001/gap-large-002 等）；② 不支持特性（column-height-012 用 column-height、column-height-020 用 column-wrap:wrap——multicol-2 草案 ZW 未支持）；③ font-wall text。
+
+**Per-pixel 验证（2 案确认渲染精度）**：
+- **multicol-rule-003**（1.13%，column-count:4 + column-gap:1em + column-rule:1em + `font:1.25em/1 Ahem`）：rule_x 公式验算正确（col0[0,60] gap[60,80] rule 居中 ✓），残余在 border/rule 边缘 AA + Ahem 方块 subpixel 定位（颜色匹配 ZW=CHR blue/gray，diff 在边缘）。
+- **multicol-height-001**（1.13%，column-fill:auto + height:8em + `font:1.25em/1 Ahem`）：y 带残余 ~80px/带 baseline（全白匹配），y[16-32] 顶缘 1594px——Ahem 方块 subpixel AA（ZW 整数方块 vs CHR Ahem.ttf AA 边）。
+
+**结论**：multicol 近-pass 残余 = subpixel AA（Ahem 边 + rule/border 边），非 layout bug。R1035-R1040 五轮已尽 big systematic layout wins（+16）。进一步 multicol 需渲染精度/font-wall（多 session，R1034 结论）。
+
+**★ position:relative converter-layer 评估（下会话 lever）**：R1020-cont 证 postprocess 路径失败（table path 有独立 abspos 机制，postprocess double-apply；div path baseline abs@50 错应 100）。converter-layer 是未试路径，须统一两条 abspos 路径（div + table），entangled（R98/R123/R500 谱系）。+12 potential（position:relative-table 簇 6 + text-decoration-thickness 簇 6）。多 session。
+
+**▶ 下会话**：① **position:relative converter-layer**（+12 potential，下会话 dedicated——先 LAYOUT_DUMP 固化 div vs table 双路径 abspos 机制差异，设计 converter 统一，首 slice gate 紧到非 table）；② 或 **R109 vertical block-flow**（css-writing-modes 87% dir，大 yield 大重构多 session）；③ font-wall 解除（pervasive，Ahem subpixel + 真实字体光栅，多 session）。multicol arc +16 done，转方向。
+
+### R1040 ★column-gap:normal 默认值修复 LANDED = css-multicol Oracle 140→146（+6 PASS）·per-pixel x 带定位·累计 css-multicol +16
+
+承 R1039 CONTINUE（002 残余 4.49%）。本轮 **per-pixel x 带对比**定位 column-gap 默认值 bug，**+6 net**。
+
+**per-pixel x 带定位**：002 post-R1039 y 带 diff 颜色匹配（ZW=CHR），转 x 带分析 y=55-70（block1 bg）。x[200-216]：**ZW=(255,255,0) yellow（block1）vs CHR=(144,238,144) lightgreen（article bg）**。真因：002 未指定 column-gap，CSS Multicol §4.1 初始值 = `normal`（=1em≈16px）。CHR col宽=(400-16)/2=192 + gap[205:221] 显 article bg。**ZW `default_impl.rs:129 column_gap: LengthValue::Px(0.0)` 错误**（应 normal）→ col宽=200 gap=0，block1 覆盖 gap 区。
+
+**探针确认 yield**：强制 multicol gap=1em（所有案）net -25（6 flip/31 regress）——证实 6 案未设 column-gap 想要 1em，proper fix（仅未设案 → 1em）预期 +6。
+
+**实现（LengthValue::Auto 作 normal sentinel）**：gap 不接受 auto，故 Auto 作 normal 专用 sentinel（无冲突）。① default_impl column_gap: Auto（原 Px(0.0)）；② multicol compute_column_info `if Auto → font_size_px(1em) else length_to_px`（显式 column-gap:0 的 Px(0.0) 与 Auto 区分清晰）；③ converter convert_length_to_lp(Auto) 已返 0——flex/grid normal=0 无需改。**显式 column-gap:0 与 normal(Auto) 不冲突**。
+
+**A/B（stash 对照 R1039 140/452）**：**146/452（+6 net）**。**5 flip**（multicol-clip-scrolled-content-001 1.08→0.88 ★修 R1039 回归 + multicol-fill-auto-block-children-003 + multicol-rule-nested-balancing-001/003 + nested-floated-multicol-with-monolithic-child）。**0 回归**。002 4.49→3.99（残余 = text glyph font-wall，layout 全对）。flex/grid 无回归（css-flexbox 295、css-grid 20 同 baseline）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（style-system column_gap 测全过 + layout-engine 1021）/ **product-smoke welcome 16.57% < 20%** ✓。21 multicol 测全过。
+
+**意义**：CSS Multicol §4.1 column-gap 初始值 normal（=1em）正确实现（default_impl Auto sentinel + multicol 解析 normal=1em + flex/grid 经 convert_length_to_lp(Auto) 保 normal=0）。per-pixel x 带对比定位。**累计 R1035(+1)+R1037(+4)+R1038(+1)+R1039(+4)+R1040(+6) = css-multicol 130→146（+16）五连 landed win**。002 layout 全对（残余 3.99% font-wall）。详见 [`evidence/r1040-column-gap-normal-default-landed-2026-07-05.txt`](./evidence/r1040-column-gap-normal-default-landed-2026-07-05.txt)。
+
+**▶ 下会话**：① **002 残余 3.99% = font-wall**（layout 全对，R1034 font-wall 结论）——multicol 簇 002/004a/004b/006/003 layout 已尽，残余全 font-wall text glyph，须 font-wall 解除（多 session，per R1034）；② multicol 其它 dir fresh worst 扫（column-gap 修复后可能新近-pass 案）；③ **转 R109 vertical / position:relative / font-wall 换方向**（multicol 五连 +16 后 layout 侧近尽，font-wall 是下个 pervasive blocker）。column-gap:normal 对 row-gap（flex/grid）的 normal 默认 row_gap 仍 Px(0.0) 但 flex/grid normal=0 已正确，无 yield 缺口。
+
+### R1039 ★multicol column fragment slice clip LANDED = css-multicol Oracle 136→140（+4 PASS）·per-pixel 定位 paint clip 根因·修 002 block1 覆盖 spanner·累计 css-multicol +10
+
+承 R1038 CONTINUE（目标簇 002 残余 8.56%）。本轮 **per-pixel y 带对比定位** paint clip 系统根因，**+4 net**。
+
+**per-pixel 定位**：product-smoke 渲 002 → PIL per-10px y 带对比 chr oracle。y[110-160]（spanner 区）**ZW=(255,255,0) 黄 vs CHR=(173,216,230) lightblue**（3900 px/band 大 diff）。真因：block1（R1037 balance-breaking 跨 2 列各 100px）paint `clip_h = box_node.content_height`（容器 200）未裁到 slice 100px，block1 全 200px 渲染覆盖 spanner 区。前轮 paint clip 探针（clip_h+1000）证伪是因为方向错（应**收紧**到 slice 非放宽）。
+
+**实现（column_span_offsets 4-tuple → 6-tuple + paint slice ∩ container clip）**：① types/mod.rs 扩存 `(child_x, child_y, col_x, col_w, col_top, col_h)`，col_top=y_offset（片段列顶），col_h=visual_height（slice 高）；② multicol.rs push 扩展；③ paint mod.rs:840 breaking 片段 clip 从 `(content_y, container_h)` 改 `(content_y+col_top, col_h ∩ container)`——`col_top>=container_h` 跳过（multi-row overflow row，chromium 裁剪 multicol 列溢出），`effective_h=col_h.min(container_h-col_top)`。
+
+**★ clip 演进**：v1（slice 仅）139/452(+3) 但 003 17.88→**31.12(+13pp)**——block2 overflow row 被显示（chromium 裁剪）；v2（slice ∩ container，overflow row 跳过）**140/452(+4)** + 002 8.56→**4.49** + 003 恢复 17.92 ✓；v3（+1px tolerance）同 v2，tolerance 无效（回归结构性）→ 回 v2。
+
+**A/B（stash 对照 R1038 136/452）**：**140/452（+4 net）**。**7 flip**（multicol-contained-absolute 8.50→0.33 大改善 + change-fragmentainer-size/column-wrap-no-constraints/fill-balance-018/spanner-fragmentation-012/span-all-020/column-height-017）。**3 borderline 回归**（column-height-020 0.98→1.13、nested-023 0.99→1.24、spanner-fragmentation-004 0.73→1.33，结构性）。**002 驱动案 8.56→4.49（接近 flip）**，007 6.85→6.39。004a/004b/006 略恶化（仍 FAIL，slice clip 对 nested 结构稍紧）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0** / **product-smoke welcome 16.57% < 20%** ✓。21 multicol 测全过。
+
+**意义**：per-pixel y 带对比定位 paint clip 系统根因（breaking 片段未裁到 slice），column_span_offsets 扩存 + slice ∩ container clip 修复。002 驱动案 8.56→4.49 接近 flip。**累计 R1035(+1)+R1037(+4)+R1038(+1)+R1039(+4) = css-multicol 130→140（+10）四连 landed win**，彻底打破 R1030-R1034 五轮 plateau。详见 [`evidence/r1039-fragment-slice-clip-landed-2026-07-05.txt`](./evidence/r1039-fragment-slice-clip-landed-2026-07-05.txt)。
+
+**▶ 下会话**：① **002 残余 4.49% 接近 flip** + 004a/004b/006/003 簇残余——slice clip 对 nested 结构稍紧，逐案 LAYOUT_DUMP 查 col_top/col_h 精度 + 对比 ref 像素带；② 3 borderline 回归（column-height-020/nested-023/spanner-fragmentation-004）查是否可微调；③ 或转 R109 vertical / position:relative 换方向（multicol 四连 +10 后可换）。
+
+### R1038 ★spanner balance-breaking region_idx gate LANDED = css-multicol Oracle 135→136（+1 PASS）·修 R1037 no-balancing 回归·累计 css-multicol +6
+
+承 R1037 CONTINUE（目标簇残余深挖 + 2 小回归）。本轮先探目标簇 002 残余（paint clip 放大探针证伪——clip 正确，002 8.56→18.98 更差），转修 R1037 确定回归 no-balancing。
+
+**002 残余调查（探针证伪）**：LAYOUT_DUMP 确认 block1 现 split（spanner abs_y 213→113，region0=100px ✓）。假设 multi-row overflow row 被 paint clip 裁剪——`mod.rs:849` breaking fragment `clip_h=box_node.content_height`。**探针放大 clip_h+1000 → 002 8.56→18.98（更差！）证伪**：clip 正确（隐藏溢出内容），残余**不在** paint clip，在 multi-row+breaking 协同精度（region_available/fragment_y_offset/row_height 交互，多 session）。
+
+**★ 修 R1037 no-balancing-after-column-span 回归**：结构 = column-fill:**auto** + column-span:all + 内容在 spanner 后。assert：auto 模式 spanner **之后**不应 balance。R1037 spanner 路径 region_explicit 对 auto 模式也触发 balance-breaking（误）。**修**：region_explicit gate 加 `|| region_idx == 0`——region 0（spanner 前）保留 breaking（always-balancing-before-column-span 案），region>0（spanner 后）+ auto 禁 breaking。
+
+**Gate 演进**：v1（`!sequential_fill`）136/452(+1) 但 always-balancing-before 2.81→3.84(+1.03 仍 FAIL，过宽禁了 region 0 breaking) → v2（`!sequential_fill || region_idx==0`）136/452(+1) + always-balancing 不再恶化。chromium auto+spanner 语义：spanner 前 balance（region 0）/ 后 sequential（region>0）。
+
+**A/B（stash 对照 R1037 135/452）**：**136/452（+1 net）**。**1 flip**：no-balancing-after-column-span 1.77→0.73（修 R1037 回归）。噪声 column-height-029 +0.05（仍 FAIL）。6 flip + 目标簇 + always-balancing 全保持。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0** / **product-smoke welcome 16.57% < 20%** ✓。21 multicol 测全过。
+
+**意义**：修 R1037 no-balancing 回归，css-multicol 135→136。gate 精细化（region_idx 区分 spanner 前后）匹配 chromium auto+spanner 语义。**累计 R1035(+1)+R1037(+4)+R1038(+1) = css-multicol 130→136（+6）**，三连 landed win。详见 [`evidence/r1038-no-balancing-after-span-fix-2026-07-05.txt`](./evidence/r1038-no-balancing-after-span-fix-2026-07-05.txt)。
+
+**▶ 下会话**：① **目标簇 002/007/013 残余**——paint clip 探针证伪，残余在 multi-row+breaking 协同精度，须 LAYOUT_DUMP 逐 fragment 查位置 + ref PNG 像素带对比定位（多 session，但 007 6.85%/013 1.23% 接近 flip，EV 高）；② clip-scrolled-content-001（R1037 残余 +0.21 小回归）；③ 或转 R109 vertical / position:relative 其它结构性（multicol 三连 +6 后可换方向）。
+
+### R1037 ★balance-mode column-breaking + explicit-height gate LANDED = css-multicol Oracle 131→135（+4 PASS）·目标簇 span-all-children-height 大改善·2 小回归·纠正 R1036「avoid 前置」误判
+
+承 R1036（通用 balance-breaking net -12 回退）。本轮找到正确 gate，转 **net +4**。
+
+**R1036 误判纠正**：回归案 break-inside:avoid 全 0（含 overflow-unsplittable）→ avoid 非前置。读结构：overflow-unsplittable-001 = `overflow:scroll + height:auto`（monolithic 滚动容器）；span-all-children-height-004a = `height:200px`（explicit length）。**真区分器 = explicit height**（CSS Fragmentation monolithic 元素 overflow≠visible/scroll/auto-height 不可分）。
+
+**实现（crates/layout-engine/src/multicol.rs）**：① `is_explicit_height(style)` helper（height 非 Auto/Calc/FitContent/MinContent/MaxContent）；② `assign_children_to_columns_balanced` 加 `explicit_height: &[bool]` 5th 参数，R1036 breaking 分支 gate on `is_explicit && child > target && target > 0`；③ 两 caller（非 spanner + spanner）从 styles 算 explicit_height；④ **zero-height 守卫**：`container.content_height > 0.0` 才传非空（避 zero-height 容器误触）；⑤ 8 既有测试加 `&[]`，2 新 R1037 单测（explicit split / auto no-break）。
+
+**A/B（stash 严格对照，baseline 131/452）**：v1（explicit-height gate）134/452（+3，仍含 zero-height-002 0.91→6.42 强回归）→ v2（+ zero-height 守卫）**135/452（+4）**。**6 flip**（column-height-020/fill-balance-005/030/nested-023/031/spanner-fragmentation-005）。**2 小回归**（clip-scrolled-content 0.93→1.14 +0.21pp、no-balancing-after-column-span 0.73→1.77 +1.04pp 语义）。explicit-height gate 消 R1036 的 15 个回归 + zero-height 守卫再消 zero-height-002 = R1036 18 回归 → R1037 仅 2 小回归。
+
+**★ 目标簇 span-all-children-height 改善（R1035 multirow + R1037 breaking 协同）**：002 **26.76→8.56（-18pp）**、007 16.28→6.85（-9.4pp 接近 flip）、004a 30→18、004b 28→19、003 23→18、006 22→15、013 1.91→1.23（接近）、001 0.72→0.40（PASS 改善）。多数仍 FAIL（残余 = multi-row+breaking 协同精度 + region 高度交互）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（workspace 零失败，layout-engine 1021 测 +2 R1037）/ **product-smoke welcome 16.57% < 20% gate** ✓。21 multicol 测全过（2 新 R1037）。
+
+**意义**：R1036 通用 breaking + explicit-height gate（CSS Fragmentation monolithic gate）+ zero-height 守卫，转 net -12 → **net +4**。继 R1035（+1）后第二个 landed multicol win，**累计 R1035+R1037 = css-multicol 130→135（+5）**。纠正 R1036「break-inside:avoid 是前置」误判（回归案 avoid 全 0，真前置 = monolithic/explicit-height gate）。详见 [`evidence/r1037-balance-breaking-explicit-gate-landed-2026-07-05.txt`](./evidence/r1037-balance-breaking-explicit-gate-landed-2026-07-05.txt)。
+
+**▶ 下会话**：① **目标簇残余深挖**——002/007/013 接近 flip（<2%），查 multi-row+breaking 协同精度（002 region leftover 与 breaking 片段边界交互）+ region 高度计算；② 2 小回归（clip-scrolled-content 滚动容器 / no-balancing-after-span 语义）逐案查；③ 或转 R109 vertical / position:relative 其它结构性。css-multicol 累计 +5，仍可继续挖（目标簇接近 flip）。
+
+### R1036 balance-mode column-breaking 通用应用 net -12 已回退·目标簇大改善但 18 回归·真前置 = break-inside:avoid plumbing·零 net 源码·纯调查
+
+承 R1035 CONTINUE（span-all-children-height-002 真前置 = balance-mode column-breaking，LAYOUT_DUMP 证 block1 200px 应拆 2 列各 100px 让 region0=100px 留 room 给 region1 multirow）。本轮实现 + A/B，**net -12 回退**。
+
+**实现（已回退）**：`assign_children_to_columns_balanced` 加 oversized 分支——child > target_height 时按 target 边界跨列拆分（复用 fragment_y_offset/visual_height）。3 单测 + 19 multicol 测全过。
+
+**A/B（stash 严格对照）**：css-multicol **131→119（-12 net）**。**6 flip**（column-height-020/fill-balance-005/030/nested-023/031/spanner-fragmentation-005）。**18 regress**（overflow-unsplittable-001/002/003 强回归 0.16-0.92→2.08-2.65 = **break-inside:avoid 未尊重**、span-all-dynamic-add 6+ 案、span-all-006/007/008、no-balancing-after-column-span、multicol-zero-height-002 0.91→6.42）。**目标簇大改善（仍 FAIL）**：span-all-children-height-002 **26.76→8.56（-18pp 驱动案）**、004a 30→18、span-all-rule-001 17→1.25、rule-nested-balancing-003 20→4。
+
+**★ gate 探索均失败**：① percentage-height gate——目标案 002 有 height:% 但同簇 004a/006/007 多无 percentage，非通用签名；② spanner-only gate——18 回归中 ~12 是 spanner 案（span-all-dynamic-add/006/007/008/no-balancing-after-column-span），spanner-only 不能救回。无 clean gate 区分目标 vs 回归。
+
+**★ 真前置（多 session）**：① **break-inside:avoid plumbing**——overflow-unsplittable 簇强回归明示须尊重 break-inside:avoid（ZW 现 break-inside layout 全无消费，R1027 标死值仅 paint 指示器）；balanced assign 须接收 break-inside 信号，oversized avoid 子不拆。② spanner dynamic 案（span-all-dynamic-add 6+ + span-all-006/007/008）逐案查结构。③ zero-height / target_height=0 守卫。
+
+**意义**：通用 balance-breaking net -12（6 flip/18 regress）。目标簇 + 6 flip 证机制正确，但 break-inside:avoid 未尊重 + spanner dynamic + edge 致回归。**真解锁 = break-inside:avoid plumbing（独立多 session slice）+ balanced enable_breaking flag**。R1035 multirow 基础设施已 land，balance-breaking 是其天然放大器但须先解 break-inside:avoid。详见 [`evidence/r1036-balance-breaking-net-negative-2026-07-05.txt`](./evidence/r1036-balance-breaking-net-negative-2026-07-05.txt)。
+
+**▶ 下会话**：① **break-inside:avoid layout plumbing**（独立多 session——break_inside 现 layout 全无消费，须传入 balanced assign + with_breaking，overflow-unsplittable 簇 + dynamic-change-inside-break-inside-avoid 受益，是 R1036 balance-breaking 的前置 + 独立 spec-correctness lever）；② 解 break-inside:avoid 后重试 balance-breaking（带 enable_breaking flag + avoid 守卫，预期 net 正——目标簇 + 6 flip 保，overflow-unsplittable 等 avoid 回归消失）；③ 或转 R109 vertical / position:relative 其它结构性。**勿以「通用 balance-breaking 无 gate」单 session 重试**（已证 net -12）。
+
+### R1035 ★multicol spanner 路径 multi-row 列模型 LANDED = css-multicol Oracle 130→131（+1 PASS）+ 2 大改善·零回归·plateau 五轮后首个 landed code win
+
+承 R1034 CONTINUE（multicol multi-row 须在 spanner 路径做，R1034 非 spanner 实验 net-negative 回退）。本轮精准在 `layout_multicol_with_spanners` 加 per-region overflow → multi-row，**clean win**。
+
+**驱动案（multicol-span-all-children-height-002）**：article column-count:2 height:200px（definite，balance）+ spanner(height:25%) + block2(height:100%=200px)。region1（spanner 下方）仅剩 50px leftover，block2(200px) overflow → 应 4 列=2 行×2 列各 50px。缺失机制 = `region_available = container_height − y_base`（每区域 leftover 高度）。
+
+**实现（crates/layout-engine/src/multicol.rs）**：① 新增 `assign_children_to_columns_multirow`（overflow 换行非截断末列，含跨行 breaking）；② `position_multicol_children` 加 `row_height: f32` 参数（row=col_idx/col_count, y=y_base+row×row_height；非 spanner 调用者传 0.0 不变）；③ `layout_multicol_with_spanners` 区域循环加 multirow gate：`region_available=(content_height-y_base).max(0)`，`use_multirow = !empty && !sequential_fill && region_available>0 && total>col_count×region_available+1 && !has_nested_multicol`。
+
+**★ Gate 演进（关键）**：v1（无 `!sequential_fill`）A/B +1 但 fill-auto-block-children-002 +0.12pp 回归（auto+spanner 下 multirow 语义偏差）；v2（加 balance-only gate）+1 保持 + 回归消除；`!has_nested_multicol` 守卫避 R1034 multicol-nested-019 谱系。
+
+**验证（chromium Oracle + stash 严格 A/B）**：css-multicol **130→131（+1 net）**。**1 flip**：multicol-span-all-012 1.65→**0.88% PASS**。**2 大改善（仍 FAIL）**：span-all-children-height-003 34.08→23.59%（-10.49pp）、-007 19.78→16.28%（-3.50pp）。**0 回归**。3 新 R1035 multirow 单测 + 19 multicol 测全过。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（workspace 零失败）/ **product-smoke welcome 16.57% < 20% gate** ✓（welcome 无 multicol 零影响）。
+
+**未解（下会话 lever）**：① **span-all-children-height-002（驱动案）26.76% 未变**——LAYOUT_DUMP 实测证 **block2 h=200px（percentage 解析正确）**，真前置 = **balance 模式须对超 target 的单 child 做 column-breaking**：block1(200px) balance 应拆 2 列各 100px（region0=100px），但 ZW balanced 把单超 target child 整体留 col0（region0=200px 占满），y_base 推进到 250 → region_available=200−250<0 → multirow gate 不 fire。**R1035 旧「percentage-height 失败」hypothesis 已 dump 推翻**。修 balance-mode column-breaking（单 child>target 时跨列拆分，复用 with_breaking fragment 机制）可望翻 002 + 004a/004b/006 = 独立高价值 lever，是 R1035 multirow 的天然放大器。② 003/007 改善但残余（同 balance-breaking 精度 + column-rule 交互）。③ auto+spanner sequential row-fill（fill-auto-block-children 簇）多 session。
+
+**意义**：R1029 后、R1030-R1034 五轮 plateau 后首个 landed code win。证实「spanner 路径 + 紧 gate（balance-only + definite 高 + 无 nested multicol）」是 multicol multi-row 可产方向（纠正 R1034「multi-row 全 ruled out」——仅非 spanner ruled out，spanner 路径可产）。span-all-children-height 簇首次实质进展。详见 [`evidence/r1035-spanner-multirow-landed-2026-07-05.txt`](./evidence/r1035-spanner-multirow-landed-2026-07-05.txt)。
+
+**▶ 下会话**：① **balance-mode column-breaking**（`assign_children_to_columns_balanced` 单 child 超 target 时跨列拆分，复用 with_breaking fragment；是 002 + 004a/004b/006 的真前置 + R1035 multirow 天然放大器；风险=影响全 balanced multicol，须全 css-multicol A/B 守回归）；② 003/007 残余深挖；③ auto+spanner sequential row-fill（独立多 session）。**勿以「percentage-height-against-multicol」为名重试**（已 dump 证 block2 h=200 正确）。
+
+### R1034 multicol non-spanner multi-row 实验 net-negative 已回退 + font-wall subpixel x 角度分析（fresh 但 WPT yield 低）·零 net 源码·纯调查
+
+承 R1033 CONTINUE（plateau 四轮确证，须 committed 多 session，#1 = font-wall fresh angle = subpixel positioning）。本轮先分析 font-wall subpixel，再实验 multicol multi-row，**均无 yield**（前者分析低 yield，后者 A/B net-negative 回退）。
+
+**① font-wall subpixel x 角度 = fresh 但 WPT yield 低（纯调查）**：CODE 调查证实 ZW 用 `font.rasterize(char, size)`（loader.rs:217，整数位置）无 `rasterize_subpixel`；glyph.x **已是 float 累积**（text.rs:496-510 `char_x += measure_char_for_paint(...)`，paint 期 cpu/mod.rs:457 `gx.round()` 才舍入）→ **无漂移累积**，仅每字 ±0.5px 量化。R834/R836/R849 全是**垂直侧**（baseline/strut/v_offset，已 R953/R990 解决），水平 subpixel x **确实未试**=fresh。**但**：WPT text dir 主体是 Ahem，而 Ahem 被 `rasterize_ahem_glyph`（loader.rs:208-274）特殊化为**完美整数方块**（size.ceil()×size.ceil() 全 255）→ subpixel x 对 Ahem corpus **几乎零收益**；非 Ahem 产品页或受益但 LCD vs 灰度 AA 使 oracle 匹配复杂。**结论**：subpixel x 即使技术成功也基本不动 WPT 通过率，R1033「font-wall 解 text-rendering 全 dir」对 Ahem corpus 不成立。列为低优先（DC-13 产品页价值，非 WPT lever）。
+
+**② multicol non-spanner multi-row 实验（net-negative 已回退）**：转 R1033 #2（span-all-children-height 簇 15-34% 最高 yield）。实现：`assign_children_to_columns_multirow`（overflow 换行非截断末列）+ `position_multicol_children` 加 `row_height` 参数（spanner 路径传 0.0 不变）+ `layout_multicol` gate（sequential_fill && height_limit>0 && total>col_count×height_limit）。3 单测全过 + layout-engine 1019 测零回归。**A/B css-multicol oracle（stash 严格对照）**：目录 130/452 持平；per-case **2 regressed**（nested-past-fragmentation-line 1.77→2.80%、multicol-nested-019 1.76→2.79%，各 +1.03pp）+ **2 improved 无 flip**（spanner-fragmentation-000/002 0.83→0.73%，本就 PASS，噪声级）= **net-NEGATIVE** → 按代码准则回退。
+
+**★ 回归根因（multicol-nested-019 实查）**：外层 columns:2 column-fill:auto height:100px + 内嵌 multicol + orphans/widows/break-before:avoid + 100px green div overflow = **nested multicol + fragmentation** 复杂交互。naive row-wrap（overflow 简单换 row 2）对此**错误**——旧 clip-to-last-column 反而更近正确（chromium nested fragmentation 有 orphans/widows/avoid 规则，非简单 row-wrap）。**无 clean gate 可区分「简单 overflow→multi-row」vs「nested fragmentation→clip」**，须完整 fragmentation 模型。
+
+**★ 真结论**：① 非 spanner multi-row net-negative（触发案全 nested/fragmentation）；② **真 multi-row yield 须 spanner 路径**（span-all-children-height 有 spanner，走 `layout_multicol_with_spanners` 本轮未改）+ 正确 fragmentation 交互（多 session 硬核）；③ font-wall subpixel x fresh 但 WPT yield 低（Ahem 特化）。plateau 五轮确证（R1030-R1034）。详见 [`evidence/r1034-multicol-multirow-fontwall-subpixel-2026-07-05.txt`](./evidence/r1034-multicol-multirow-fontwall-subpixel-2026-07-05.txt)。
+
+**▶ 下会话**：① **multicol multi-row 在 spanner 路径**（`layout_multicol_with_spanners` per-region overflow → 额外列，是 span-all-children-height 簇 15-34% 的真解锁路径，本轮已证须 spanner 侧 + fragmentation 配合）；② R109 vertical block-flow（writing-modes 87% dir，大 yield 大重构）；③ position:relative converter-layer 统一（R1020-cont 证 postprocess 不可解，+12 potential）；④ font-wall 在产品页 DC-13（subpixel x fresh，非 WPT lever）。**勿以「非 spanner multi-row」或「font-wall subpixel x 对 WPT」为名单 session 重试**（已证）。
+
+### R1033 css-text-decor multi-value + position:relative-table 复核 = 全 font-wall/structural 阻塞·plateau 综合再确证·零源码·纯调查
+
+承 R1032 CONTINUE。本轮复核两个候选，均确证 blocked：
+
+**css-text-decor text-decoration-line multi-value（63 文件 grep，R724 标 single-value enum）**：text-decoration-line.html（11%）测 multi-line + cascade/!important/blink（entangled）。near-pass 多值案（text-decoration-style-multiple 0.96%、shorthands 0.61-1.79%、underline-offset-overline 1.02%）**全 font-wall 阻**——装饰线 y 位置跟随 baseline（fontdue vs chromium baseline 度量），multi-line 支持只改「画几条线」不改线位置 → 实现后仍 +0（同 thickness R875/R914/R1020-cont 3× net-negative 谱系）。enum→bitset 重构（~30 match sites）+ paint multi-line = 中 effort，**yield +0 不 justified**。裁决：不实现（font-wall 阻 flip）。
+
+**css-position position-relative-table 簇（8 案 ~1.32%，R1020-cont target）**：apply_relative_offsets（postprocess.rs:994）已递归应用到 table-internal 盒（含 tbody/tr/td），relative offset MOSTLY 生效（1.32% 残余非 offset 全缺）。R1020-cont global postprocess fix overshoot（table.rs 已接近正确），1.32% 残余 = table 路径 abspos/relative 定位精度，**structurally entangled**（须 converter/taffy 层统一非 postprocess，多 session）。再确证 R1020-cont 结论。
+
+**plateau 综合再确证（R1030-R1033 四轮）**：跨 multicol / css-text-decor / css-fonts / css-values / css-writing-modes / css-position / css-tables / css-flexbox / css-grid **全 WPT reftest dir**，单 session clean lever 已尽。残余 forward motion 全多 session 结构性：
+- **font-wall**（text-rendering 全 dir 主体 blocker）：R953 baseline_offset（+102）+ R990 ascent 0.928（+138）已尽 metric/positioning 侧；残余 = glyph raster accumulation（R388 单 glyph ≈chr 但累积发散）+ advance width（R375b accurate net-negative）= 硬核多 session（fontdue→chromium 光栅协调或 FreeType 替换）。
+- **R109 vertical block-flow**（css-writing-modes 87% + text-emphasis-position vertical）：结构性多 session。
+- **multicol Phase 2 multi-row**（span-all-children-height + span-all-rule + nested-balancing）：结构性多 session。
+- **position:relative offset**（structurally entangled，R1020-cont 证 postprocess 不可解）：多 session。
+- **feature gaps**（text-decoration-inset/thickness CSS4 + 表单控件 + ::backdrop + scroll-container）。
+
+**▶ 下会话**：plateau 已四轮确证，**勿再扫找 clean lever**（边际为零）。须 committed dedicated 多 session：① **font-wall glyph raster accumulation**（最高价值，解 text-rendering 全 dir——但 R834/R836/R849 多轮 net-negative，须 fresh angle 如 paint-side per-glyph subpixel positioning 或 fontdue raster hinting）；② multicol multi-row 模型；③ R109 vertical block-flow；④ position:relative converter-layer 统一。**选一 dedicated 推进，单 session 不求完成，求可验证的 incremental slice**（避免 R376 dormant WIP：每个 slice 须独立 yield 或 net-neutral correctness）。
+
+### R1032 css-fonts font-size-adjust 簇 Phase 0 + Ahem slice 实现 A/B（+0，font-wall 阻 flip）已回退·机制确证·零 net 源码·纯调查
+
+承 R1031 CONTINUE 转 font-wall per-font ascent，转 probe css-fonts（fresh oracle 98/287 34.8%）。定位最高密度簇 **font-size-adjust**（40 文件，7+ top-worst 13-34%），**完全未实现**（css-parser/style/layout/engine 全零命中）。
+
+**Phase 0 机制确证**：CSS Fonts §9.4 `font-size-adjust: <number>` → `used_font_size = font_size × (number / font_aspect)`，aspect = font x-height/em。基础单数语法 18 文件 + 高级两值（ch-width 等 CSS4）10 文件。006/007/008 PASS 是因测「无效值（%）须忽略」——ZW ignore-all 巧合匹配（正确实现也忽略无效值→无回归风险）。font-size-adjust-001-ref 实证 formula：`font:40px/40px Ahem; font-size-adjust:0.9` → ref `font-size:45px`，即 0.9/0.8×40=45（aspect=0.8 = R547 ex-height）。
+
+**Ahem slice 实现 A/B（已回退）**：完整 plumbed（types/computed_style/default/registry 4处+is_inherited/apply/inherit/lib.rs 应用，aspect=0.8 hardcoded for Ahem）。**A/B css-fonts 全量**：001 **2.01→1.81**、002 **4.25→1.25**（改善但**均未 flip <1%**），005/014/units-001 不变（非 Ahem 或高级），006/007/008 持平 0.73（无回归）。**oracle 98→98（+0 net，0 regression）**。
+
+**★ +0 根因 = font-wall**：formula 正确（45px = ref），aspect 0.8 正确（R547），调整已应用（diff 减），但**残余 1.25-1.81% = 调整后尺寸的 glyph 渲染精度**（ZW is_ahem synthetic / fontdue 光栅 vs chromium Ahem.ttf at 45px/10px）——同 R388/R631 font-wall。aspect 调精也无效（45px 已精确，残余在 glyph 光栅非 size 计算）。
+
+**裁决（回退）**：+0 oracle + hardcoded magic constant（0.8，不泛化非 Ahem）+ font-wall 阻 flip = 按 code-guidelines「不做零价值修改 / 不做推测性开发」**回退全部实现**（7 文件 git checkout）。真实现须 ① R887 font-metric provider（real fontdue aspect via `font.metrics('x', px).bounds.height / px`，替代 hardcoded 0.8，泛化所有字体）；② font-wall 解除（glyph 光栅对齐，多 session）。两者皆多 session，premature 单做。
+
+**意义**：font-size-adjust 是 css-fonts 最高密度簇（40 文件），机制/formula 完全确证（45px ref 实证），但**同 css-text/-decor = font-wall gated**——font-wall 是 text-rendering 全 dir（css-fonts/-text/-text-decor）的 pervasive blocker。再确证 R1031 结论：单 session clean lever 全尽，#1 multi-session lever = font-wall（R887 provider + glyph 光栅对齐）。
+
+**▶ 下会话**：font-size-adjust 机制已确证（formula + 45px ref），R887 font-metric provider 落地后可一次性实现（real aspect + 全字体泛化）。但 font-wall glyph 光栅对齐仍可能阻 flip（须 fontdue→chromium 光栅协调，R834/R836/R849 多轮证 net-negative）。建议：① font-wall 是 pervasive blocker，dedicated session 攻 R887 provider + glyph 光栅（最高价值，解 text-rendering 全 dir）；② 或转 multicol multi-row / R109 vertical / position:relative（其它多 session 结构性，非 font-wall）。font-size-adjust 勿以 hardcoded aspect 单 session 重试（已证 +0）。
+
+### R1031 多 dir 复核确认单 session clean lever 全尽·multicol balance-breaking + css-text-decor thickness 均结构性/已 ruled-out·零源码·纯调查
+
+承 R1030 CONTINUE 转 balance-mode column-breaking。本轮多 dir 复核找 clean lever，**结论：单 session clean lever 全尽**。
+
+**balance-mode column-breaking 复核（纠正 R1030「相对窄前置」）**：R1030 称 balance-breaking 是 span-all-children-height 的「相对窄前置」。本轮 probe 其驱动案 multicol-fill-balance-030（1.14%）= **nested multicol + column-fill:auto + break-before:column + 百分比宽 + overflow**（外 columns:2 column-fill:auto 内嵌 columns:2，子含 break-before:column + 50%宽 180/250px 高）——非简单 balance 单案，是 nested+overflow 结构性。balance-breaking 单做不 flip 这些案（需 nested multicol + multi-row 模型）。**R1030「相对窄」纠正为「同 multi-row 结构性」**。
+
+**css-text-decor 复核（fresh oracle 108/242 45%）**：① **text-decoration-thickness（3× ruled-out 再确证）**——paint effects.rs:213 硬编码 `line_width=(font_size*0.06).max(1.0)`，属性零消费；但 R875/R914/R1020-cont 三轮实现均 net-negative（diff 由 table 边框 / font-wall / position:relative offset bug 主导非 thickness）→ **勿再以 thickness 为 lever**。② css-text-decor near-pass 1-3.5% 带 = **text-emphasis-position-property 簇（12+ 案 1.0-1.02%，全 vertical-lr/rl writing-mode 驱动，blocked by R109 vertical block-flow）** + text-emphasis-ruby（1.11-1.19%，ruby+emphasis 交互）+ text-underline-offset（1.02-1.09%，position:relative bug blocked，R1020-cont 回退）。**全 vertical-writing-mode / font-wall / position:relative blocked，无 clean lever**。
+
+**css-values**：0 reftest oracle（testharness JS 单测，非 reftest dir），不可 oracle 测。
+
+**战略结论（再确证 R882/R999/R1026 plateau）**：跨 multicol / css-text-decor / css-values / css-writing-modes / css-tables / css-flexbox / css-grid 全 WPT reftest dir，**单 session clean lever 已尽**。残余 forward motion 全在多 session 结构性：
+1. **font-wall**（Phase A IFC font-metric 统一 / per-font ascent provider R887 5-layer / webfont 加载）——解 css-text + css-text-decor + welcome/morning 主体 diff。
+2. **R109 §9.2.1.1 匿名块 + vertical block-flow**——解 css-writing-modes 87% 簇 + text-emphasis-position vertical 簇。
+3. **multicol Phase 2 multi-row column 模型**——解 span-all-children-height + span-all-rule + nested-balancing 簇。
+4. **position:relative offset bug（structurally entangled）**——R1020-cont 证 postprocess 不可解，须 converter/taffy 层统一；解 +12 potential。
+5. **feature gaps**（text-decoration-inset CSS4 draft / 表单控件 / ::backdrop / scroll-container）。
+
+**▶ 下会话**：单 session clean lever 已尽，**须 committed 多 session 结构性**。推荐优先级：① **font-wall per-font ascent provider R887**（最高价值——解多 dir 主体 diff，welcome/morning + css-text + css-text-decor；前置 = webfont 加载已 wired（R1027-cont 确证），R990 常数 0.928 已证机制，per-font 增量；5-layer plumbing 多 session 但首层（fontdue ascent → FontLoader → layout）可单 session probe）；② multicol multi-row 模型 dedicated session；③ R109 vertical block-flow dedicated session。**勿再扫近 pass 找 clean lever**（全 blocked）。
+
+### R1030 span-all-children-height 簇 Phase 0 探测 = multi-row column model + overflow columns（多 session 结构性，纠正「row-fill」诊断）·零源码·纯调查
+
+承 R1029 CONTINUE 转 column-fill:auto + spanner row-fill 模型。本轮 Phase 0 探测 span-all-children-height 簇（002/003/004a/004b/006/007 @ 20-34%）真机制。
+
+**关键发现**：此簇非上会话推测的「row-fill 模型」单点，而是 **multi-row column model + overflow columns + 百分比高度** 三层耦合：
+- **multicol-span-all-children-height-002** 驱动案注释明示：「Column container has only 25% height left, so **two extra overflow columns are created. Total 4 columns, each 50px**」——block2（height:100%）在 spanner 下方的剩余高度不够，**创建溢出列**，形成 2 行 × 2 列的 column grid。
+- **001**（0.72% PASS）：单 spanner + 百分比高度，R1028 balanced-per-region 巧合通过。
+- **005/008**（1.03-1.04%）：nested multicol + multi-spanner + column-fill:auto，结构复杂非单点。
+- **balance-mode column-breaking**：block1（100px）需跨列拆分以均衡（chromium 行为），ZW balanced 不拆分单 block（block 整体入 col0）→ region 高度错。
+
+**CSS 规范根源**：CSS Multicol §3 与 CSS Fragmentation 的 multi-row column 模型——column-fill:auto + 明确高度时，内容溢出末列会创建新行（multi-row），spanner 在行间断开。这是 taffy 不支持、须自建 row-column grid 的硬核结构性，与 R383 Phase 2 同级。
+
+**裁决**：span-all-children-height 簇 = 多 session 结构性（multi-row + overflow + 百分比 + balance-breaking 四层），**非单 session slice 可产**。下会话勿以「row-fill 单点」重试。真解锁须 dedicated session 实现 multi-row column 模型（row-column grid + overflow column 创建 + spanner row 断开），或先做 balance-mode column-breaking（block 跨列拆分以均衡）这个相对窄的前置。
+
+**multicol near-pass 复核**（1-3% 带）：count-non-integer/negative（1.0-1.17%）= Ahem font-wall（parser 已正确拒负值）；gap-negative/large（1.07-1.18%）= Ahem；baseline-001/004/006（1.02-1.03%）= multicol baseline；column-height-012/multicol-height-001/rule-003（1.13%）= Ahem 精度；intrinsic-size-001（1.14%）= R1020 谱系；fill-balance-030（1.14%）= balance。**全 Ahem font-wall 或已 ruled-out 谱系，无新 clean lever**。
+
+**战略**：css-multicol Oracle 130/452（28.8%）残余 worst 全结构性（multi-row / nested-balancing / breaking / paged / subpixel）。单 session clean lever 在 multicol 已尽（R1027 break-after +1、R1028 column-span:all +8、R1029 rule-split foundational 是本窗口期）。forward = ① multi-row column 模型（多 session 硬核，最高 yield——span-all-children-height + span-all-rule 簇）；② balance-mode column-breaking（前置，相对窄）；③ 转 font-wall webfont per-font 或 writing-modes vertical（同多 session）。
+
+**▶ 下会话**：① **balance-mode column-breaking**（assign_children_to_columns_balanced 对单 child 超过 target_height 时跨列拆分，复用 with_breaking 的 fragment 机制）——这是 span-all-children-height 001/002 + balance 簇的前置，相对窄可单 session probe；② 备选 multi-row column 模型 dedicated session（硬核多 session）；③ 备选转 font-wall/writing-modes。css-multicol near-pass 勿重扫（全 Ahem/ruled-out）。
+
+### R1029 column-rule 在 spanner 处分段（CSS §6.1）LANDED·net-neutral oracle·spec-correctness·foundational
+
+承 R1028-cont CONTINUE 转 column-rule-spanner。CSS Multicol §6.1：column-span:all spanner 使 column-rule 在 spanner 处中断。R1028 spanner 布局后 paint_column_rules 仍画整条 rule（穿过 spanner）。
+
+**实现**（paint/painter/text.rs::paint_column_rules）：① 检测直接子元素 spanner（in-flow + column_span_offsets.is_empty()【R1028 清空，非 spanner 列子元素被填充】+ width >= content_w-1.0【spanner 全宽，列子元素 narrow 到 col_w】）；② 收集 spanner Y 区间；③ 把 rule 的 [0, content_h] 按 spanner 区间分段（区间减法）；④ 每条列 rule 按 segments 循环绘制（Solid/Dotted/Dashed/_ 四 style）。**非 spanner 容器 → spanner_ranges 空 → segments = [(0, content_h)] 单段，行为不变（零回归 gate）。**
+
+**验证**：css-multicol Oracle **130 → 130（0 net）**——multicol-span-all-rule-001 17.30%/rule-002 25.65%/rule-nested-balancing-002/003/004 全 diff 不变。**rule 分段正确但 yield 零**——这些案 diff 由 layout 主导（balanced 模式不拆分单 block 跨列，需 column-fill:auto + spanner row-fill 模型，多 session）。rule-through-spanner 是这些案的小部分。0 regression（column-rule 仅 css-multicol 用）；welcome 16.57% 不变；engine 1179 测 0 failed。
+
+**意义**：spec-correctness（CSS §6.1 rule 中断）正确实现，net-neutral on oracle 但 **foundational**——一旦 column-fill:auto + spanner row-fill 模型实现，rule 部分自动正确无需再改 paint。gate 严格（非 spanner 容器零行为变化）低风险。详见 [`evidence/r1029-column-rule-spanner-split-2026-07-05.txt`](./evidence/r1029-column-rule-spanner-split-2026-07-05.txt)。
+
+**▶ 下会话**：R1029 yield 零，真 yield 解锁需 column-fill:auto + spanner row-fill 模型（span-all-children-height 簇 15-30% + span-all-rule 簇，多 session 结构性，是 R1028 column-span:all 基础上的下一阶）。或转其它结构性 dir（writing-modes vertical block-flow / font-wall webfont per-font）。
+
+### R1028-cont ★spanner width 不强制（尊 taffy auto-stretch / 显式 width）= nested-with-padding-and-spanner 回归修复 + Oracle 129→130（+1）
+
+承 R1028。R1028 初版 `if spanner.width < full_width { spanner.width = full_width }` 误覆盖显式 width spanner（nested-with-padding-and-spanner 的 `width:100px; column-span:all`），致 0.73→3.86% 回归。CSS §6.1：column-span:all 使 spanner containing block 全宽，但 spanner 自身显式 width 须尊重。taffy 已按 block 子规则把 auto 宽拉伸到容器 content_width，故 width 不须强制——移除 override block。
+
+**验证**：nested-with-padding-and-spanner 3.86→0.73% PASS（回归修复）；r1028 单测 release 通过（auto-width spanner 仍全宽 ~400，证 taffy 拉伸有效）；css-multicol Oracle 129→130（+1）；welcome 16.57% 不变；engine/style/layout release 测全 0 failed。
+
+**★ 本会话累计 css-multicol Oracle 120→130（+10 net）**：R1027 break-after:column（+1）+ R1028 column-span:all（+8）+ R1028-cont width fix（+1）。column-span:all 攻克 css-multicol 最大结构性缺口，spanner-fragmentation 簇整体翻 PASS，是 R990 后 multicol 最大单 session yield。
+
+**⚠️ debug-link 预存基础设施问题（wgpu_core debug-info 溢出 lld 32-bit offset）**：layout-engine 测试 binary 链接 wgpu_core（经 render-foundation 依赖），其 debug-info 超 rust-lld 32-bit 偏移上限。**clean R1027-cont（stash 本会话变更）同样链接失败**——预存非本变更引起。临时解法：`RUSTFLAGS="-C debuginfo=1" cargo test` 可链接（debuginfo=1 仅行号）。release 测试全绿不受影响。须后续单独修：`[profile.test] debug=1` 或 layout-engine 解耦 render-foundation 依赖。
+
+### R1028 ★column-span:all spanner 布局 LANDED = css-multicol Oracle 121→129（+8 net）·spanner-fragmentation 簇翻 PASS·Phase 2 第一步
+
+承 R1027 CONTINUE 转向 multicol Phase 2 第一阶：column-span:all。此前完全未实现（css-parser/style-system/layout 全无消费，intrinsic_sizing 用 leaf-guard proxy 近似），185 css-multicol 文件用 column-span:all = css-multicol 最大结构性缺口。
+
+**Phase 0 de-risk**：~10 个 "spanner" 案当前 PASS，核查发现这些案的 column-span:all 元素是 NESTED（非 multicol 直接子，如 spanner-in-opacity 在 opacity div 内）→ column-span:all 仅作用于直接子 → nested 案不受影响，回归风险可控。
+
+**实现**（crates/style-system + crates/layout-engine/src/multicol.rs）：
+- style-system（mirror column-fill plumbing）：types.rs `ColumnSpanComputedValue { None, All }` + ColumnSpan 变体；computed_style.rs `column_span` 字段；default_impl None；registry initial + known list（★中途误删 object-fit 已修）；apply_advanced parse none/all；inherit.rs inherit+reset 分支（非继承属性）。
+- multicol.rs：① `layout_multicol` 收集期检测 `has_spanner`（直接子 column-span:all），有则分支到 `layout_multicol_with_spanners`（原单区域路径零回归）；② `position_multicol_children` 加 `y_base` 参数 + 返回 region_height（单区域调用传 0.0，行为不变）；③ `layout_multicol_with_spanners` 划分 regions（spanner 作边界，N spanner → N+1 区域）→ 每区域 balanced 分配 → 逐区域定位（y_base 累加）→ spanner 全宽插入（width=content_width，column_span_offsets.clear 正常 block 渲染）。
+
+**限制（R1028 初版）**：每区域 balanced（多数 span-all 用 column-fill:balance 默认）；column-fill:auto + spanner 的 sequential row-fill 暂不支持（更复杂 multi-column row 模型，多 session）。
+
+**验证（chromium Oracle + 三态门禁）**：**css-multicol Oracle 121→129（+8 net）**——9 newly PASS（**spanner-fragmentation-000/001/002/003/004/006/007 簇** + replaced-content-spanner-auto-width + column-height-019），1 regression（nested-with-padding-and-spanner 0.73→3.86%，nested+padding 复杂案，gate 演进可后续修）。top-worst 改善：multicol-span-all-rule-002 28.73→25.65%；column-balancing-paged 81.18→77.32%。welcome 16.57% 不变（<20% gate，无 multicol）。1 新单测 r1028_column_span_all_spanner_is_full_width + 19 既有 multicol 测全绿（position 签名变更零回归）；engine 1179 / layout-engine 1927 / style-system 1016 全 0 failed。
+
+**★ zero-browser bin suite OOM（test-guard 6GB/8GB per-proc）= PRE-EXISTING**：stash 本变更后 clean R1027-cont 同样 OOM 6.3GB。zero-browser 无 multicol 测试，非本变更引起。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / 受影响 crate make test 全绿。
+
+**意义**：攻克 css-multicol 最大结构性缺口（column-span:all），实现 spanner region-split 基础。+8 oracle pass 是 R990（+138）后单轮最大 multicol yield，spanner-fragmentation 簇整体翻 PASS。详见 [`evidence/r1028-column-span-all-2026-07-05.txt`](./evidence/r1028-column-span-all-2026-07-05.txt)。
+
+**▶ 下会话**：R1028 残余 ① nested-with-padding-and-spanner 回归（gate 收紧 nested 守卫，或 spanner 在 nested multicol 内的边界处理）；② span-all-children-height 簇（15-30%，需 column-fill:auto + spanner row-fill 模型，多 session）；③ multicol-span-all-rule（列 rule 在 spanner 处中断）。或转其它结构性 dir（writing-modes vertical / font-wall webfont）。column-span:all 基础已落地，可作 children-height/rule 扩展前置。
+
+### R1027 ★break-after:column 死值消费（R903 mirror）LANDED = multicol-break-000 PASS（1.12→0.81%）·css-multicol Oracle 120→121（+1）零回归·spec-correctness
+
+承 R1026 后续扫 multicol 近-pass（26.5% baseline）。复查 §9.7 dead-value 簇发现 `break_after` 仅在 paint/effects_indicators.rs 画调试指示器时读，**layout 侧从未消费**——与 R903 前的 `break_before` 完全对称的死值（R513 §9.7 扫描遗漏项）。CSS Fragmentation §3.3：`break-after: column` = 放置完当前子元素后强制推进到下一列。
+
+**实现**（crates/layout-engine/src/multicol.rs，mirror R903）：① 收集期加 `forced_breaks_after: Vec<bool>`（`style.break_after ∈ {Column, Page}`）；② 三 assignment 函数（balanced/with_breaking/sequential）签名加 `forced_breaks_after`，每个在放置完子元素 i（含其全部 breaking 片段）后 gate `if forced_breaks_after[i] && current_col + 1 < col_count { advance }`。末列守卫防越界 + 不创建尾随空列（与 R903 break-before 的 `current_col_height > 0.0` 前导空列守卫互补）。
+
+**验证（chromium Oracle + 三态门禁）**：multicol-break-000.xht（`div > div { break-after: column }`）**1.12%→0.81% PASS**（flipped，★纠正首轮「balanced 巧合覆盖」推测——break-after 确为必需）；spanner-fragmentation-012 2.02→1.5%（FAIL 内改善）；**css-multicol Oracle 120→121（+1）零新翻 FAIL**（top-15 worst 完全一致）；column-wrap-no-constraints-002 1.02→1.76%（FAIL 内恶化，该测试用 `column-wrap:wrap` css-multicol-2 草案特性 ZW 不支持，根本性 unsupported，恶化是更正确 break-after 在不支持 row-wrap 下的副作用非真回归）；welcome <20% gate（multicol-only，零影响）。3 新 R1027 单测（break-after balanced/breaking/last-col-noop）+ 9 既有 R903 测更新签名；19 multicol 测全绿。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / make test ✓（workspace 零失败）。
+
+**意义**：关闭 break-after:column 死值（R513 §9.7 遗漏，R903 break-before 对称项）。R903-R907 multicol spec-correctness 簇续延。yield 小（+1）但 dead-value→consumed 真实 spec-correctness，同 R903/R1021 先例。详见 [`evidence/r1027-break-after-column-2026-07-05.txt`](./evidence/r1027-break-after-column-2026-07-05.txt)。
+
+**▶ 下会话**：css-multicol 余下 worst 全结构性（span-all-children-height 需 column-span:all 解析 + Phase 2 rebalancing / nested-balancing / breaking / paged）。forward = ① multicol Phase 2（多 session，column-span:all 解析是前置）；② css-writing-modes vertical block-flow（R109 §9.2.1.1 + vertical flow，本会话 oracle 实测 7% top-worst 全 87% vertical block-flow 结构性）；③ font-wall per-font line-height（须 webfont/font-metric provider）。break-after 死值扫描方法可外推到其它属性（page-break-after legacy alias 等，预期零 yield 因 ZW 不做 paged media）。
+
+**★ break-inside:avoid 死值复核（同 R1027 谱系，已 ruled out）**：break_inside 在 layout 全无消费（仅 paint 指示器），23 multicol 文件用 break-inside:avoid。看似同 break-before/after 死值杠杆，**实测非 clean lever**：① break-inside:avoid 仅在 with_breaking 的 `else`（child_height > max_col_height 拆分）分支有意义；② 驱动案 multicol-br-inside-avoidcolumn-001（200px 子 / 300px 列高）走 `else if`（整体移动不拆分）分支，**根本不经拆分路径**——残差是 overflow 放置（avoid 子溢出末列被 overflow:hidden 裁剪的边界 diff），非拆分 bug；③ multicol-nested-008/022（100px 子 / 100px 列高）也走 else if（==max_col_height），非拆分；④ 多数 break-inside:avoid 案（balance-break-avoidance-000/001、multicol-nested-027/028 等）已 0.73% PASS（balanced 不拆分）。结论：break-inside:avoid 消费仅在「子严格高于列高 + avoid」罕见场景有效（corpus 极少），且改 with_breaking 风险高，yield 窄。**勿以「同 break-before/after 死值」为名单点重试**——已 ruled out。
+
+### R1026 css-tables 近-pass 残余扫描 + table-cell leaf 扩展（net-neutral）+ 空 cell strut 实验（net-negative，font-wall）·零源码 net·纯调查
+
+承 R1025 后扫 css-tables（64.3% baseline）近-pass 残余找下一 lever。**结论：css-tables 近-pass 残余 = 精度 / 空 cell 渲染（font-wall 阻塞），无 clean 单会话 lever**。
+
+**table-cell leaf 扩展实验（net-neutral 已回退）**：R1024 leaf pattern 扩展到 table-cell（`|| matches!(computed.display, DisplayValue::TableCell)`）——table-cell 含文本+br 同 bug 形态。A/B css-tables **74→74 持平**（net-neutral），welcome 16.57% 不变。table-cell 走独立 table auto-layout sizing，leaf 测量不影响列宽分配 → 无 yield。已回退（table 布局风险 + net-neutral，按 code-guidelines 不做零价值修改）。
+
+**★ 空 cell strut 实验（net-negative 已回退，font-wall 阻塞）**：css-tables **46 文件含空单元格** `<td></td>`（cluster）。空 cell 实测 ZW h=6（仅 border，0 内容）vs chromium h~25（cell strut = 一行 line-height）。CSS §17.5.3 空 cell 应有 strut（虚拟行盒）。实施：measure_text_content 空 cell（display:TableCell + 无 inline 内容）返回 height = line-height（resolve_font_metrics[1]）。**A/B net 负**：css-tables **74→73（-1）**，row-margin-border-padding 1.47→1.68、row-group 1.47→1.71（**变差**）。根因：ZW line-height:normal = **1.2×fs**（NORMAL_LINE_HEIGHT_RATIO），chromium 空 cell strut = 字体固有 line-height（DejaVuSans ~**1.16×fs**）→ ZW strut 偏高 → 空 cell 过高 → diff 增。**这是 R989/R990 font-wall**（line-height:normal 常数 1.2 vs 字体固有，R989 证 1.15 对 welcome net 负、1.2 corpus 最优）。空 cell strut 受同一 font-wall 阻塞，非单 session 修。已回退。
+
+**row-margin-border-padding 实查**：ZW dark=4607 vs CHR=8204（缺 ~12/16 空 cell 表的 border，空 cell 塌缩致表不可见）。证实空 cell strut 缺口，但修受 font-wall 阻。
+
+**意义（负面结果）**：css-tables 近-pass 残余**确证无 clean 单会话 lever**（table-cell leaf net-neutral，空 cell strut 受 font-wall 阻）。46 空 cell 案的 yield 阻塞 = line-height:normal 常数 1.2 vs 字体固有 1.16（R989 font-wall，corpus 最优 1.2 已尽）。下会话**勿以空 cell strut 重试**（font-wall，须 per-font line-height 多 session）。
+
+**战略**：R1024 leaf pattern 扩展已尽（flex/grid +6 yield，inline-block/float/table-cell 全 net-neutral correctness）。forward 转向 (a) multicol Phase 2（多 session 结构性）；(b) font-wall per-font line-height（须 webfont 前置或 font-metric provider）；(c) 其它 dir（css-writing-modes 7% 结构性 / css-fonts 35% rustybuzz）。css-tables + css-flexbox + css-grid 近-pass 勿重扫（全精度/font-wall/结构性 plateau）。
+
+**▶ 下会话**：① multicol Phase 2（多 session 结构性，css-multicol 26.5% 唯一非 font-wall 阻塞的近-pass dir）；② css-writing-modes 扫 top-worst 找非 vertical-rl-clearance 的可翻案（7% baseline，R164 vertical-rl clearance 死锁勿重试，但 writing-mode-011/012 等其它簇可能）；③ font-wall per-font line-height（须 webfont/font-metric provider，R1004 dormant 基建）。table-cell leaf / 空 cell strut / R1024 leaf 残余扩展勿重试（已证 net-neutral/negative）。
+
+### R1025 css-flexbox/grid 近-pass 残余扫描 = 精度/结构性 plateau 确认 + ★inline-block 含文本+br 误填满父宽修复 LANDED（R1024 leaf pattern 扩展到 inline-block）·net-neutral oracle·correctness
+
+承 R1024 后扫 css-flexbox + css-grid 近-pass 残余找下一 lever。**结论：两 dir 近-pass 残余 = 精度（text/color 1-2px）/结构性 plateau，无 clean 单会话 lever**。调查中定位 inline-block 同 bug 形态并修复 LANDED（commit d85ed534）。
+
+**css-flexbox 残余复核（post-R1024 59.4%）**：
+- **row-reverse 簇**（flexbox_direction-row-reverse 14.5% / flex-direction-row-reverse 11.6%）：LAYOUT_DUMP 实测 **item 顺序正确反转**（`<span>first..forth</span>` 渲染 x=647/487/327/167，从右起 pack = row-reverse 正确语义）。非 order bug，残差 = 颜色（red/green bg）+ 精度。
+- **flex-flow-001/002**（23%）：4 方向（row/row-reverse/column/column-reverse）+ wrap 变体，dump 实测**全方向正确**。残差 = 60×60 容器内 4 item shrink 精度（28px→15px）+ 小数字「1-4」渲染 + 多容器累积。
+- **flex-0-0-0 簇**（1.31% ×6+）：`flex: 0 0 0%` item 实测 w=26/27/44/35（= min-content，min-width:auto floor）**正确**（chromium 同）。残差 = text/color 精度。
+- **near-miss 1.0-1.3%**（align-self/baseline/overflow-padding 等）：全精度，无 clean lever。
+
+**css-grid 残余复核（post-R1024 40.8%）**：
+- top-worst 全 R999 已定性结构性（replaced-element-in-grid-nested-in-flex 33.9% / table-grid-item-dynamic 25.8% / grid-container-baseline-synthesized 16-17% ×4 / nested-grid-item-block-size 13.76%）。
+- near-miss 1.0-1.6%：anonymous-grid-items-001（1.08%）= **纯文本 grid item**（`<div grid>anonymous item</div>`），本就走 leaf+has_inline_content 正确路径（非 R1024 bug）。残差 = 精度。
+
+**rootpos br 诊断纠正（R1025 纠正 R1024-cont）**：R1024-cont 称「has_inline_content 把 br 测单行高度 → body 高度 = 单行 → 文本溢出」**错误**。复查 measure_text_content：Element-with-inline-content 路径（inline_finalization.rs:914+）**用 IFC 测量**，IFC 识 `<br>` 强制换行 → body 高度正确（多行）。rootpos 残差（4.52%）真因 = body 作 flex item 在 stretched html 内的 main-axis 分配 + 文本定位 diff（flex-basis:auto 在 stretched container 内的 grow/shrink 与 chromium 不同），结构性。已纠正 ruled-out 条目。
+
+**意义（负面结果·有价值）**：css-flexbox + css-grid 近-pass 残余**确证无 clean 单会话 lever**（row-reverse/flex-flow/flex-basis/anonymous-item 全部功能正确，残差全精度/结构性）。下会话**勿重扫此两 dir top-worst**（边际已尽，同 R996-R999 五 dir 穷尽结论的扩展确认）。R1024 是此两 dir 最后一个 clean win（anonymous-flex-item 塌缩）。
+
+**战略**：forward motion 转向 (a) 多 session 结构性（multicol Phase 2 / grid-baseline-synthesis / replaced-element-in-grid-nested-in-flex 三层）；(b) font-wall（per-font ascent，须 @font-face webfont 前置）；(c) R1024 leaf 测量扩展到 inline-block/float/table-cell 等其它 content-sized 上下文（同 bug 形态，但需逐上下文 gate + A/B，潜在 css-tables/css2 yield）。
+
+**★ R1025 inline-block 扩展 LANDED（commit d85ed534）**：调查中复现 `<span display:inline-block>text<br>text</span>` w=800（误填满父宽，应 shrink-to-fit ~338）——同 R1024 bug 形态。修复：R1024 leaf gate 加 `|| matches!(computed.display, DisplayValue::InlineBlock)`（content-sized block = flex/grid item OR inline-block）。验证：复现案 800→338 ✓；chromium Oracle 全 dir（css2/css-flexbox/css-grid/css-position/css-text-decor/css-multicol/css-tables）**全 R1024 baseline 零回归**（net-neutral，inline-block+text+br 罕见于 WPT corpus）；welcome 16.57% 不变；1 新单测 test_r1025_inline_block_with_text_and_br_shrink_to_fit；fmt/clippy/make test 全绿。意义：R1024 leaf pattern 扩展到 inline-block，correctness（真实网页 inline-block 含 br/span+a 文本常见），同 R903/R904/R1021 spec-correctness 先例。net-neutral on oracle（无 driving WPT 案）。
+
+**★ R1025 float 扩展 LANDED（commit f111092b）**：同 inline-block bug 形态，`<div float:left>text<br>text</div>` 误填满父宽（800→340）。leaf gate 加 float 条件。net-neutral oracle 全 dir 零回归，correctness。
+
+**▶ 下会话**：① R1024 leaf pattern 残余扩展候选 **table-cell / auto-abspos**（同 bug 形态，但 table-cell 走独立 table auto-layout sizing 须谨慎 A/B，auto-abspos content-sized 须 gate position）——预期 net-neutral（WPT corpus 不驱动），correctness 收益；② 备选 multicol Phase 2（多 session 结构性）；③ 备选 font-wall webfont 前置（@font-face 加载，R1006/R1007 已部分）。css-flexbox/grid 近-pass 勿重扫（已证精度 plateau）。R1024 leaf pattern 已覆盖 flex/grid item（+6 yield）+ inline-block + float（net-neutral correctness）。
+
+### R1024 ★flex/grid item 含文本+inline Element 子塌缩 w=0 修复 LANDED = css-flexbox Oracle 289→295（+6）+ css-multicol +1 ·零回归·紧 gate（parent-flex/grid）·三方 gate 演进
+
+承 R1023b 精确根因（block flex item 含文本+Element 子如 `<br>` 塌缩 w=0）。本轮 Phase 0 验证高度耦合 + 三轮 gate 演进 + LANDED。
+
+**Phase 0 高度耦合验证（决定安全性）**：`remeasure_text_with_float_exclusions`（inline_finalization.rs:1129）对 block content_height 是 **max/overwrite-if-larger**（`if text_height > content_height { content_height = text_height; height += diff }`，非 add）。但「文本 leaf 作 block 子」会**破坏 inline flow**（每文本 run 成独立 block 行，普通 mixed 块高度膨胀）——实验粗 gate（全 mixed 块作 leaf）welcome **16.57→29.36% 回归**（已回退）。结论：文本 leaf 作 block 子是错的（破坏 inline flow），正确做法是「整 inline 内容作一个 IFC 单位测量」。
+
+**正确修复（紧 gate）**：build_subtree 默认 block 路径（tree.rs:871 else 分支），当容器**同时**满足：
+1. **父为 flex/grid 容器**（`is_flex_grid_item`，content-sized item）——fill-width block（multicol 容器、普通 div）不入此路径。
+2. **全子为 inline 级**（文本 + display:Inline 元素如 br/span/a，无 block/inline-block/img 等需独立 taffy 子树的子）。
+3. **各 inline Element 子无 Element 子**——含 Element 后代（如 span 内嵌 abspos/block）的 inline 须保留 taffy 子树，否则 abspos-in-inline 簇的 span 内 abspos 失去 CB。
+→ 整容器作 **leaf**（context=dom_id），measure 回调经 `has_inline_content` 把全部 inline 文本作一个 IFC 单位测量，intrinsic 宽含文本。
+
+**Gate 三轮演进（关键决策审计）**：
+- **粗 gate**（全 mixed 块 + 全 inline 子）：welcome -0.17pp 改善，但 **css-position -3**（abspos-in-inline：span 含 abspos 子，span 丢 taffy 子树 → abspos 失 CB）+ **css-multicol -6**（multicol 容器被 leaf 化破坏列分布）。
+- **中 gate**（粗 gate + inline Element 无 Element 子）：修 css-position -3（abspos-in-inline span 保 CB），但 css-multicol 仍 -6（multicol 容器仍被 leaf 化）。
+- **终 gate**（中 gate + parent-flex/grid）：仅 flex/grid item 走 leaf 路径，fill-width block（multicol/普通 div）完全不变 → **全 dir 零回归**。
+
+**改动**（commit ba7cc0be）：
+- `tree.rs`：新 `is_flex_grid_item(doc, styles, dom_id)` 辅助 + 默认 block 路径加 R1024 leaf gate（has_text_child && has_element_child && all_inline && is_flex_grid_item）。
+- `anonymous_flex_item_tests.rs`：`test_r1024_flex_item_with_text_and_br_not_collapse`（`<div flex><div id=item>text<br>text</div></div>` → item w>100，证不塌缩）。
+
+**验证（chromium Oracle + 三态门禁）**：
+- **css-flexbox Oracle 289→295（+6 零回归）**——anonymous-flex-item-001~006（0.89-0.91% 翻 PASS，直接对应本 bug：flex item 含 inline 文本）+ align-self-001~013 簇（0.73% 改善）+ aspect-ratio-intrinsic-011 等。
+- **css-multicol 119→120（+1 零回归）**。
+- css-position 55 / css-text-decor 108 / css-tables 74 / css2 9 / css-grid 20 **全 baseline 零回归**。
+- welcome 16.57% 不变（<20% gate ✓）。
+- per-case A/B 见 [`evidence/r1024-flex-item-text-collapse-fix-2026-07-04.txt`](./evidence/r1024-flex-item-text-collapse-fix-2026-07-04.txt)。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（workspace 零失败，layout-engine +1 R1024 测）/ product-smoke welcome 16.57% < 20% ✓。
+
+**意义**：R1023b 定位的「block flex item 含文本+inline Element 子塌缩 w=0」bug **修复**——CSS Flexbox §4 inline 子应作 IFC 单位测量（非每文本 run 独立 block 行）。anonymous-flex-item 簇 + align-self 簇受益。紧 gate（parent-flex/grid）保证只修 content-sized item，不波及 fill-width block（multicol/普通 div），全 dir 零回归。R1023「flex+text per-word」误判经 R1023b 纠正后，本轮完成真正修复。
+
+**★ rootpos 4 案（position-{absolute,fixed}-root-element-{flex,grid}）**：body 现作 flex item leaf（w 正确），但 root-abspos stretch（R1023 已测绘，dormant）未启 → html 仍 shrinkwrap → rootpos 未翻。下会话 root-abspos stretch + 本修复合做可望翻 rootpos 4 案（root-abspos 此前 net-negative 是因 body 塌缩，现 body 已修）。
+
+**▶ 下会话**：① root-abspos stretch 重试**已做仍 net-negative**（4.05→4.52%，body br 多行高度未解，见 ruled-out），第三次回退——rootpos 真前置 = has_inline_content 的 height 须识 `<br>` 强制换行（leaf 测量按 br 分段累加），独立多 session；② 备选其它 css-flexbox 残余（59.4% baseline 后续 lever，扫 top-worst）；③ 备选 css-multicol Phase 2 / per-font ascent（webfont 前置）等结构性。R1024 已 land（css-flexbox +6 零回归），forward motion 转 css-flexbox 残余或其它近-pass dir 扫描。
+
 ### R1023 per-font ascent（mono）re-confirm R1005 + root-element abspos stretch 实验 net-negative 已回退·flex+匿名文本 per-word 堆叠 bug 定位（root-abspos 前置阻塞）·零源码 net·纯调查
 
 承 R1021/R1022 后转 css-position 4 案簇 root-element abspos（4.05% twin）。本轮先验证 per-font ascent 对 monospace 是否 lever，再试 root-abspos stretch fix。
@@ -2662,7 +3096,15 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **门禁**：本轮纯调查 + 实验（已回退），make test 未跑（零 net 源码，dev build 通过）。css-position oracle A/B 4 案数据已采（4.05→4.76 证 net 负）。
 
-**▶ 下会话**：① **flex+匿名文本 per-word 堆叠**（独立高 EV lever）——定位 build_layout_tree / R109 §9.2.1.1 匿名块生成对 flex 容器的处理：flex 容器的直接 inline 文本子应包成一个匿名 block flex item（非每词一项）。修后 flex+text 页面（含 root-abspos 4 案 + 产品页 flex nav）受益。② root-abspos stretch（dormant，须 flex-text 修复合做）。③ 备选 R1020 ruled-out 结构性。per-font ascent 已闭（monospace = sans = 0.928）。
+**★ R1023b 纠正（per-word 堆叠结论错误，真根因 = block flex item 含文本子时 w=0）**：R1023 上文「flex+匿名文本 per-word 堆叠 bug」**归因错误**——`<div style="display:flex">The quick brown fox...</div>`（单文本子）实测**正确渲染**（text 包成 1 个匿名 flex item，正常换行，非 per-word）。LAYOUT_DUMP 复测驱动案 rootpos 真因：`<html display:flex>` 的子是 `<body>`（**Element flex item，display:block**），body 的子 = 文本 + `<br>` + `<br>` + 文本。**block 容器默认 build 路径（tree.rs:876）只处理 Element 子，跳过文本节点** → body 的 taffy 子树 = [br, br]（文本被丢），body 成 `new_with_children`（非 leaf）→ measure 回调**不触发** → body intrinsic width = 仅 br 贡献 = 0 → body w=0 → 文本 wrap 到 ~0 宽度垂直堆叠。独立验证：`<div class=flex><div class=item>text<br><br>text</div></div>` → div.item **w=2**（塌缩）；同结构去 `<br>` → div.item w=342（正确，纯文本时成 leaf + measure has_inline_content 触发）。
+
+  **精确机制**：block flex item（auto 宽）的 intrinsic 宽来自 taffy 子树测量。纯文本子时 item 成 leaf（context=dom_id），measure_text_content 的 has_inline_content 分支测文本宽 → 正确。但**有 Element 子（如 br）时 item 成 new_with_children 非 leaf**，measure 不触发；而默认 block build 路径不收文本节点 → 文本不进 taffy 子树 → item intrinsic = Element 子之和（br=0）→ 塌缩。**触发条件**：flex/grid item 是 block 容器 + 含文本子 + 含至少一个 Element 子（br/span/a 等任意 inline Element）。
+
+  **影响范围（诚实·小于 R1023 误判的「广泛」）**：仅 flex/grid item 是 block 容器且**同时**含文本子 + inline Element 子时触发。纯文本 flex item（常见，如 flex nav 直接文本）**不受影响**（leaf + has_inline_content 正确）。驱动案：rootpos 4 案（body 含 text+br）+ 任何 flex item 内有 `<br>` 或 inline 元素混文本的场景（罕见于真实网页主导航，多见于测试页）。
+
+  **修复风险（非单 session clean）**：候选修复「block 容器 build 路径也收文本子作 anon taffy leaf（类 flex 路径 tree.rs:732）」——但 taffy 会把文本 leaf 当 block 子垂直堆叠，**block 容器高度可能 double-count**（taffy 算一份 + paint IFC 又算一份），回归风险高（影响所有 block 容器高度）。正确修复须 (a) 仅对 flex/grid item 的 block 子收文本 leaf + 守卫不 double-count 高度，或 (b) 启用 R109 §9.2.1.1 匿名块包裹（gated，已知有回归）。多 session。root-abspos 须与此合做。
+
+**▶ 下会话**：① **block flex item 含文本+Element 子塌缩 w=0** 修复（精确机制如上）——首做 Phase 0 确认修复方案不 double-count 高度（可能须仅对 flex/grid parent 的 block 子启用，或 anon leaf 高度置 0 让 paint IFC 独占高度），A/B rootpos 4 案 + 全量 oracle 零回归。② root-abspos stretch（R1023 已测绘，dormant）须与此合做才 net-positive。③ 备选 R1020 ruled-out 结构性。per-font ascent 已闭（monospace = sans = 0.928）。
 
 ### R1022 <ruby> 渲染最小实现 LANDED·rb inline + rt zero-width annotation 上移·net-neutral oracle（108/242 持平，font-wall 阻塞 yield）·零回归·spec-correctness
 
@@ -3346,7 +3788,7 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 ### 已 ruled out（勿以单会话重试）
 
-near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / **column-aware IFC Phase 1（pure-inline balance 明确高度）(R381)**：执行 column-aware-IFC-spec.md §10 gate「假设 A1」，扫描全 16 css-multicol 失败案结构（height/column-fill/blockchildren），**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）——每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套；spec 自身协议「A1 不存在→紧急停止转 Phase 2」生效，Phase 1 零杠杆关闭，真实 multicol lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）/ baseline-export 3 机制(R266–R316) / **advance-width(R225–R375b) definitive 关闭**：R375 hand-crafted DejaVu 表 morning 16.41→19.14% + R375b fontdue-actual advance（临时加 fontdue dep+缓存 Font+metrics.advance_width）16.41→19.08%，双 variant 均退步；fontdue-actual（最后未测变体）亦证伪。根因：accurate DejaVuSans advance 使换行偏离 chromium（system-ui≠DejaVuSans 或换行算法不同），0.55 启发式碰巧更近。advance-width 非 morning cascade 根因/ blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304) / inline-flex·inline-grid width:auto shrink-to-fit（R370：probe 实证 inline-flex width:auto 同 inline-block 拉伸到满宽 800，是真 bug，但**零杠杆**——全 48 失败案 + product-smoke fixture 均不用 inline-flex/inline-grid width:auto；fix 需 flex_row_intrinsic_width（非 box_content_max_width，flex row 须求和 block 子元素非取 max），复杂且无 reftest/smoke 收益，按 code-guidelines「不做零价值修改」不修，勿再以单会话重试）/ **percent max-width/min-height/min-width clamping（R119 analog，doc-agent 复核 ~0 yield，闭）**：engine.rs:1408 仅 `clamp_percentage_max_height`，无 max-width/min 平行函数——但 max-width-091(percent)✓ + min-height-091/092(percent)✓ 均 PASS（block width 定值→taffy 直接钳；min-height 是测量期 floor 非 content re-clamp）；R119 缺口唯一 max-height-specific（auto-height 内容测量 re-clamp），已修即完整 percent-clamp，无平行 lever，勿以 R119 类比重扫 / **intrinsic-keyword sizing（max-content/min-content/fit-content，R97 谱系，doc-agent 复核 = 非 clean 单会话 lever）**：121 测试文件用此三关键字，但**全集中在 taffy-blocked 上下文**（css-multicol/tables/flexbox intrinsic-size/table-intrinsic-size/flex-item-*-content），CSS2 block/inline-block 上下文**仅 1 案且为 crash-test**（inline-negative-margin-minmax-crash-001，非 sizing-correctness）→ memory「block/inline-block 可独立做」slice **无 dedicated driving test**（~0 可测 yield）；max-content/min-content parse_basic.rs 解析但 resolve 丢信号→0（R97/max-content memory），修复须保留信号+shrink-to-fit 触发，grid/flex/multicol/table 受 taffy 容器不 shrink 阻塞 = 多会话/结构性，勿以单会话重扫。 / **NBSP/Unicode-space collapse (R651 read-only 复核·非 lever)**：`collapse_whitespace`（inline/mod.rs:231）用 Rust `char::is_whitespace()` 折叠 NBSP(U+00A0)/U+3000 等，违反 CSS Text 3 §4.1.1（仅 TAB/LF/FF/CR/space 可折叠）——真 correctness bug，但 collapse 上下文（normal/nowrap/pre-line）**无 reftest 覆盖**（white-space-collapse-001 是 testharness JS `assert_equals(offsetWidth)` 测，非 reftest）；NBSP reftests（white-space-pre-031/032/034/035）全在 `pre` 上下文（preserve 路径不经 collapse）实测 PASS @2.64%。无 driving reftest → 非 lever（product-smoke 影响 negligible，NBSP 罕见于 fixture），defer；R647 category (b) 的 NBSP 角度据此关闭。 / **per-font ascent wiring for monospace（R1023 re-confirm R1005）**：fontdue 0.9.3 实测 DejaVuSans ascent/fs=0.9282，**DejaVuSansMono ascent/fs=0.9282（完全相同）**——R990 is_ahem-gated 常数 0.928（派生自 DejaVuSans）**对 monospace 也精确正确**（css-text-decor 簇用 `font: monospace`，行盒 ascent 已被覆盖）。R1005「per-font wiring 当前零 yield（ZW 只加载 DejaVuSans/Ahem，ascent 均已被 R990 常数覆盖）」结论**对 monospace 角度再确认**。per-font ascent wiring（R1004 step-2）须等 @font-face webfont 加载真起效（non-DejaVuSans 容器字体）才有 yield，premature 勿投入。 / **root-element abspos stretch（R1023）net-negative without concurrent flex-text fix**：css-position 4 案簇 position-{absolute,fixed}-root-element-{flex,grid}（均 4.05%）= 根 `<html>` position:absolute/fixed + 全 length inset + auto 尺寸，taffy 对 root 不应用 abspos stretch（root 无 CB）→ ZW shrinkwrap 到文本。实施 `apply_root_position_stretch`（engine.rs，gate：仅根 + abspos/fixed + 全 Px inset + auto 尺寸 + HorizontalTb → 设 Relative + 定值 size viewport−insets + left/top 偏移）**结构正确**（border 正确填充视口）。但 A/B **net 负**：4 案 4.05%→4.76%（border 增益被 flex+匿名文本 per-word 堆叠 diff 反超）——根 `<html>` display:flex 的直接文本子在 ZW 每个 **word** 当独立 flex item（CSS 应为每 contiguous text run 一个匿名 flex item），文本垂直 per-word 堆叠。**该 flex+text bug 是 root-abspos yield 的前置阻塞**，且影响所有 flex 容器直接文本子（广泛），独立多 session lever。已回退 root-abspos fix；root-abspos 须与 flex+匿名文本项修复合做才 net-positive。
+near-pass(R307) / POLLUTED hunt 三趟复核 R299–R309 + R311 + R329 / fresh-xval(R311) / Phase A 4 路 font_size(R125–R206) / multicol paint 侧(R157–R317) / balance 二分(R199–R322) / column-aware IFC 纯 inline(R319) / **column-aware IFC Phase 1（pure-inline balance 明确高度）(R381)**：执行 column-aware-IFC-spec.md §10 gate「假设 A1」，扫描全 16 css-multicol 失败案结构（height/column-fill/blockchildren），**0/16 匹配** Phase-1 目标（单层+balance+明确高度+纯 inline）——每案或有 block 子元素、或 height:auto、或 column-fill:auto、或 breaking/嵌套；spec 自身协议「A1 不存在→紧急停止转 Phase 2」生效，Phase 1 零杠杆关闭，真实 multicol lever = Phase 2（嵌套/breaking/混合碎片化，多会话硬核）/ baseline-export 3 机制(R266–R316) / **advance-width(R225–R375b) definitive 关闭**：R375 hand-crafted DejaVu 表 morning 16.41→19.14% + R375b fontdue-actual advance（临时加 fontdue dep+缓存 Font+metrics.advance_width）16.41→19.08%，双 variant 均退步；fontdue-actual（最后未测变体）亦证伪。根因：accurate DejaVuSans advance 使换行偏离 chromium（system-ui≠DejaVuSans 或换行算法不同），0.55 启发式碰巧更近。advance-width 非 morning cascade 根因/ blend post-process(R278) / font-weight -Bold(R229b) / taffy 升级(R304) / inline-flex·inline-grid width:auto shrink-to-fit（R370：probe 实证 inline-flex width:auto 同 inline-block 拉伸到满宽 800，是真 bug，但**零杠杆**——全 48 失败案 + product-smoke fixture 均不用 inline-flex/inline-grid width:auto；fix 需 flex_row_intrinsic_width（非 box_content_max_width，flex row 须求和 block 子元素非取 max），复杂且无 reftest/smoke 收益，按 code-guidelines「不做零价值修改」不修，勿再以单会话重试）/ **percent max-width/min-height/min-width clamping（R119 analog，doc-agent 复核 ~0 yield，闭）**：engine.rs:1408 仅 `clamp_percentage_max_height`，无 max-width/min 平行函数——但 max-width-091(percent)✓ + min-height-091/092(percent)✓ 均 PASS（block width 定值→taffy 直接钳；min-height 是测量期 floor 非 content re-clamp）；R119 缺口唯一 max-height-specific（auto-height 内容测量 re-clamp），已修即完整 percent-clamp，无平行 lever，勿以 R119 类比重扫 / **intrinsic-keyword sizing（max-content/min-content/fit-content，R97 谱系，doc-agent 复核 = 非 clean 单会话 lever）**：121 测试文件用此三关键字，但**全集中在 taffy-blocked 上下文**（css-multicol/tables/flexbox intrinsic-size/table-intrinsic-size/flex-item-*-content），CSS2 block/inline-block 上下文**仅 1 案且为 crash-test**（inline-negative-margin-minmax-crash-001，非 sizing-correctness）→ memory「block/inline-block 可独立做」slice **无 dedicated driving test**（~0 可测 yield）；max-content/min-content parse_basic.rs 解析但 resolve 丢信号→0（R97/max-content memory），修复须保留信号+shrink-to-fit 触发，grid/flex/multicol/table 受 taffy 容器不 shrink 阻塞 = 多会话/结构性，勿以单会话重扫。 / **NBSP/Unicode-space collapse (R651 read-only 复核·非 lever)**：`collapse_whitespace`（inline/mod.rs:231）用 Rust `char::is_whitespace()` 折叠 NBSP(U+00A0)/U+3000 等，违反 CSS Text 3 §4.1.1（仅 TAB/LF/FF/CR/space 可折叠）——真 correctness bug，但 collapse 上下文（normal/nowrap/pre-line）**无 reftest 覆盖**（white-space-collapse-001 是 testharness JS `assert_equals(offsetWidth)` 测，非 reftest）；NBSP reftests（white-space-pre-031/032/034/035）全在 `pre` 上下文（preserve 路径不经 collapse）实测 PASS @2.64%。无 driving reftest → 非 lever（product-smoke 影响 negligible，NBSP 罕见于 fixture），defer；R647 category (b) 的 NBSP 角度据此关闭。 / **per-font ascent wiring for monospace（R1023 re-confirm R1005）**：fontdue 0.9.3 实测 DejaVuSans ascent/fs=0.9282，**DejaVuSansMono ascent/fs=0.9282（完全相同）**——R990 is_ahem-gated 常数 0.928（派生自 DejaVuSans）**对 monospace 也精确正确**（css-text-decor 簇用 `font: monospace`，行盒 ascent 已被覆盖）。R1005「per-font wiring 当前零 yield（ZW 只加载 DejaVuSans/Ahem，ascent 均已被 R990 常数覆盖）」结论**对 monospace 角度再确认**。per-font ascent wiring（R1004 step-2）须等 @font-face webfont 加载真起效（non-DejaVuSans 容器字体）才有 yield，premature 勿投入。 / **root-element abspos stretch（R1023）net-negative without concurrent flex-item-text fix**：css-position 4 案簇 position-{absolute,fixed}-root-element-{flex,grid}（均 4.05%）= 根 `<html>` position:absolute/fixed + 全 length inset + auto 尺寸，taffy 对 root 不应用 abspos stretch（root 无 CB）→ ZW shrinkwrap 到文本。实施 `apply_root_position_stretch`（engine.rs，gate：仅根 + abspos/fixed + 全 Px inset + auto 尺寸 + HorizontalTb → 设 Relative + 定值 size viewport−insets + left/top 偏移）**结构正确**（border 正确填充视口）。但 A/B **net 负**：4 案 4.05%→4.76%（border 增益被 body 塌缩 diff 反超）——body 是 html 的 Element flex item，含文本 + `<br>` 子。**真根因（R1023b 纠正，非原「flex+text per-word」）**：block 容器默认 build 路径（tree.rs:876）只收 Element 子、跳过文本节点 → block flex item 含 Element 子（br）时成 `new_with_children` 非 leaf → measure 不触发 → intrinsic width = Element 子之和（br=0）→ w=0 → 文本 wrap 到 ~0 宽垂直堆叠。纯文本 flex item（无 Element 子）成 leaf + has_inline_content 正确测量（不受影响）。**该「block flex item 含文本+Element 子塌缩」是 root-abspos yield 的前置阻塞**，仅影响 flex/grid item 是 block 容器且同时含文本 + inline Element 子的场景（罕见于真实网页主导航，驱动案为 rootpos 4 案 body 含 text+br）。已回退 root-abspos fix；root-abspos 须与该塌缩修复合做才 net-positive（修复须守卫不 double-count 高度，多 session）。 / **root-element abspos stretch R1024 重试仍 net-negative（body flex-item sizing 未解）**：R1024 已修 body 塌缩（body 作 flex item leaf，w 正确），重试 root-abspos stretch（R1023 dormant fix）—— 4 案 **4.05%→4.52%（+0.47pp net 负）**，仍 net-negative，已回退。**R1025 纠正**（原「has_inline_content 把 br 测单行高度」**错误**——measure_text_content 的 Element-with-inline-content 路径用 IFC 测量，IFC **识 `<br>` 强制换行**，body 高度正确）：rootpos 残差 = body 作 flex item 在 stretched html 内的 main-axis 分配 + 文本定位 diff（chromium 对 body flex-basis:auto 在 stretched html 内的 grow/shrink 与 ZW 不同），非 br 多行问题。body 现已正确测量（leaf + IFC），rootpos 残差是 flex-item-in-stretched-container 的 main-size 算法差异，结构性多 session。root-abspos 第三次回退，勿以「body 已修」或「br 多行」重试。
 
 > **R512（2026-06-23，read-only 再验证）**：全目录 self 通过率再核实与基线一致（tables 77/112、text-decor 244/250、grid 31/48、fonts 282/284、backgrounds ~82%、box-display ~50%、box ~48%、cascade ~97.4%、values 65.4%）。新增两条 ruled-out 机制：① **负值拒绝（numbers-units-006）须 cascade-level 校验**——★ **SUPERSEDED by R513c（commit 0b11a12d）**：cascade-level 版本已 LANDED + 独立验证（numbers-units-006 1.92%→0.00% PASS，values +1 零回归），即本条所述「须 cascade-level」的 clean slice 已落地（见顶部 R513c 条）；下列原机制分析仍准确——`cascade.rs:140` max_by_key 选单一 winner，`height:1in;height:-1px` 中 -1px 后声明 order 高 → winner=-1px，1in 被整体丢弃；apply-time 拒绝只回退到 initial（Auto→0）而非恢复 1in，与应用 -1px（taffy 钳 0）对无内容 div 同给 0 高故 diff 不变（R512 实验已回退）。CSS 合法性须在选 winner 时判定——此即 R513c 实现，负值族现全闭。② **ex 单位（units-002/003/004）须 font metric**——parse_basic.rs 无 `ex` 分支（声明被丢），但 units-004 需 Ahem 实际 x-height（0.8em）；style-system resolve_length 无字体访问，0.5em fallback 永久不过 units-004，勿以 0.5em 投。★ **〔已推进·见顶部 R544/R547〕**：R544 LANDED ex→Em 常数（先用 0.5em），**R547 修正为 0.8em（Ahem 实测 x-height，反推自 units-004/numbers-units-012）过 units-004（values +1）**；但 font-metric 管线仍未接（resolve_length 仍无字体访问），0.8em 是 **Ahem 专用常数**——真字体 ex 仍近似，R512 本条「须 font metric」的深层判断仍成立（fontdue 度量接入 = 多会话 lever）。另确认上轮 Phase-A 方向 = R506 已裁定的 R247 deadlock 同墙，勿以单会话重试。详见 [`evidence/r512-plateau-verification-2026-06-23.txt`](./evidence/r512-plateau-verification-2026-06-23.txt)。
 

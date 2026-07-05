@@ -409,6 +409,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.column_fill = parent.column_fill.clone();
             true
         }
+        "column-span" => {
+            child.column_span = parent.column_span.clone();
+            true
+        }
         // counters
         "counter-reset" => {
             child.counter_reset = parent.counter_reset.clone();
@@ -1134,6 +1138,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "column-fill" => {
             style.column_fill = default_style.column_fill;
+            true
+        }
+        "column-span" => {
+            style.column_span = default_style.column_span;
             true
         }
         // Object Fit / Filter

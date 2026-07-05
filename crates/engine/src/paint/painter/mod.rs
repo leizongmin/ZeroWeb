@@ -820,8 +820,8 @@ impl Painter {
                     .iter()
                     .find_map(|c| {
                         if c.column_span_offsets.len() >= 2 {
-                            let (first_x, _, _, first_w) = c.column_span_offsets[0];
-                            let (second_x, _, _, _) = c.column_span_offsets[1];
+                            let (first_x, _, _, first_w, _, _) = c.column_span_offsets[0];
+                            let (second_x, _, _, _, _, _) = c.column_span_offsets[1];
                             Some(second_x - first_x - first_w)
                         } else {
                             None
@@ -837,21 +837,32 @@ impl Painter {
 
                 let is_breaking = child.column_span_offsets.len() > 1;
 
-                for &(frag_x, frag_y, col_x, col_w) in &child.column_span_offsets {
+                for &(frag_x, frag_y, col_x, col_w, col_top, col_h) in &child.column_span_offsets {
                     let frag_abs_x = content_x + frag_x;
                     let frag_abs_y = content_y + frag_y;
 
                     // 裁剪区域：列宽 + 右半间隙，允许内容延伸到间隙
-                    // 对于 breaking 子元素，还裁剪到列高度
+                    // R1039：breaking 子元素裁剪到 fragment slice 垂直范围 [col_top, col_top+col_h]，
+                    // 而非容器全高——修 balance-breaking/multi-row 片段全高覆盖 spanner/邻区
+                    //（span-all-children-height-002 block1 全 200px 覆盖 spanner）。
+                    // col_top 是片段在列内的起始 y（容器内容相对），col_h 是 slice 高。
                     let clip_w = col_w + gap / 2.0;
-                    let clip_h = if is_breaking {
-                        // breaking 子元素裁剪到列高度，显示对应片段
-                        box_node.content_height
+                    let (clip_y, clip_h) = if is_breaking {
+                        // R1039：breaking 片段裁到 slice [col_top, col_top+col_h] ∩ 容器
+                        // [0, content_height]。col_top >= 容器高 = overflow row（multi-row 溢出
+                        // 容器），chromium 裁剪 multicol 列溢出（002 block2 row1 y[220-260]
+                        // CHR white 不显示），跳过该片段。
+                        let container_h = box_node.content_height;
+                        if col_top >= container_h {
+                            continue;
+                        }
+                        let effective_h = col_h.min(container_h - col_top).max(1.0);
+                        (content_y + col_top, effective_h)
                     } else {
-                        // 非 breaking 子元素不裁剪高度
-                        box_node.content_height + 1000.0 // 足够大的值
+                        // 非 breaking 子元素不裁剪高度（保留原行为）
+                        (content_y, box_node.content_height + 1000.0)
                     };
-                    let clip_rect = Rect::new(content_x + col_x, content_y, clip_w, clip_h);
+                    let clip_rect = Rect::new(content_x + col_x, clip_y, clip_w, clip_h);
 
                     let counts_before_frag = PrimitiveCounts::snapshot(&self.primitives);
 

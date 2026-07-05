@@ -441,3 +441,125 @@ fn find_box(root: &LayoutBox, node_id: zero_dom::NodeId) -> Option<(f32, f32)> {
     }
     None
 }
+
+/// R1024：flex item（block 容器）含文本 + inline Element 子（`<br>`）时不应塌缩 w=0。
+///
+/// `<div style="display:flex"><div class=item>The quick brown fox<br>jumps</div></div>`
+/// 此前：默认 block build 路径只收 Element 子 → item 成 new_with_children([br]) 非 leaf →
+/// measure 不触发 → intrinsic 宽 = br(0) = 0 → 文本 wrap 到 ~0 宽垂直堆叠。
+/// 修复：flex/grid item 的全 inline 子 block 作 leaf（context=dom_id），measure 经
+/// has_inline_content 把文本作一个 IFC 单位测量 → item 宽 = 文本宽（非零）。
+#[test]
+fn test_r1024_flex_item_with_text_and_br_not_collapse() {
+    let html = r#"<html><body style="margin:0"><div style="display:flex">
+        <div id="item">The quick brown fox jumps<br>over the lazy dog</div>
+    </div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let item_id = doc
+        .query_selector(doc.root(), "#item")
+        .or_else(|| {
+            // 回退：按 id 属性手动查找
+            let mut stack = vec![doc.root()];
+            while let Some(nid) = stack.pop() {
+                if let Some(n) = doc.get(nid) {
+                    if let zero_dom::NodeKind::Element(e) = &n.kind {
+                        if e.get_attribute("id").as_deref() == Some("item") {
+                            return Some(nid);
+                        }
+                    }
+                    stack.extend(doc.child_nodes(nid));
+                }
+            }
+            None
+        })
+        .expect("item element found");
+    let (w, _h) = find_box(&result.root, item_id).expect("item box found");
+    assert!(
+        w > 100.0,
+        "R1024: flex item with text+br should have non-zero width (text width), got w={w}; \
+         was 0 before fix (block build path skipped text children → new_with_children non-leaf → measure not fired)"
+    );
+}
+
+/// R1025：inline-block 含文本 + inline Element 子（`<br>`）应 shrink-to-fit，不应填满父宽。
+///
+/// `<span style="display:inline-block">text<br>text</span>` 此前：默认 block build 路径只收
+/// Element 子 → inline-block 成 new_with_children([br]) 非 leaf → measure 不触发 → 误填满父宽
+///（w=800）。修复：inline-block（content-sized）的全 inline 子作 leaf，measure 经 has_inline_content
+/// 测文本宽 → shrink-to-fit（w=文本宽）。
+#[test]
+fn test_r1025_inline_block_with_text_and_br_shrink_to_fit() {
+    let html = r#"<html><body style="margin:0"><span id="ib" style="display:inline-block">The quick brown fox<br>jumps over the lazy dog</span></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let ib_id = doc
+        .query_selector(doc.root(), "#ib")
+        .or_else(|| {
+            let mut stack = vec![doc.root()];
+            while let Some(nid) = stack.pop() {
+                if let Some(n) = doc.get(nid) {
+                    if let zero_dom::NodeKind::Element(e) = &n.kind {
+                        if e.get_attribute("id").as_deref() == Some("ib") {
+                            return Some(nid);
+                        }
+                    }
+                    stack.extend(doc.child_nodes(nid));
+                }
+            }
+            None
+        })
+        .expect("ib element found");
+    let (w, _h) = find_box(&result.root, ib_id).expect("ib box found");
+    assert!(
+        w < 400.0,
+        "R1025: inline-block with text+br should shrink-to-fit (w<400, text width), got w={w}; \
+         was 800 before fix (filled parent — block build path skipped text → new_with_children non-leaf → measure not fired)"
+    );
+}
+
+/// R1025：float 含文本 + inline Element 子（`<br>`）应 shrink-to-fit，不应填满父宽。
+/// 同 inline-block bug 形态，R1024 leaf pattern 扩展到 float（content-sized）。
+#[test]
+fn test_r1025_float_with_text_and_br_shrink_to_fit() {
+    let html = r#"<html><body style="margin:0"><div id="fl" style="float:left">The quick brown fox<br>jumps over the lazy dog</div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let fl_id = doc
+        .query_selector(doc.root(), "#fl")
+        .or_else(|| {
+            let mut stack = vec![doc.root()];
+            while let Some(nid) = stack.pop() {
+                if let Some(n) = doc.get(nid) {
+                    if let zero_dom::NodeKind::Element(e) = &n.kind {
+                        if e.get_attribute("id").as_deref() == Some("fl") {
+                            return Some(nid);
+                        }
+                    }
+                    stack.extend(doc.child_nodes(nid));
+                }
+            }
+            None
+        })
+        .expect("fl element found");
+    let (w, _h) = find_box(&result.root, fl_id).expect("fl box found");
+    assert!(
+        w < 400.0,
+        "R1025: float with text+br should shrink-to-fit (w<400), got w={w}; was 800 before fix"
+    );
+}

@@ -226,6 +226,7 @@ impl PropertyRegistry {
             "column-count" => Some(ColumnCount(ColumnCountComputedValue::Auto)),
             "column-width" => Some(ColumnWidth(ColumnWidthComputedValue::Auto)),
             "column-fill" => Some(ColumnFill(ColumnFillComputedValue::Balance)),
+            "column-span" => Some(ColumnSpan(ColumnSpanComputedValue::None)),
 
             // Object Fit / Filter
             "object-fit" => Some(ObjectFit(ObjectFitComputedValue::Fill)),
@@ -528,6 +529,7 @@ impl PropertyRegistry {
             "column-count",
             "column-width",
             "column-fill",
+            "column-span",
             "object-fit",
             "filter",
             "column-rule-color",

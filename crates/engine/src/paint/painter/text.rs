@@ -237,6 +237,37 @@ impl super::Painter {
             return;
         }
 
+        // R1029：column-span:all spanner 使 column-rule 在 spanner 处中断（CSS Multicol §6.1）。
+        // 检测直接子元素中的 spanner（in-flow + column_span_offsets 被清空 + 全宽——非 spanner
+        // 的列子元素被 position_multicol_children narrow 到 col_w 且 column_span_offsets 非空），
+        // 把 rule 的 [0, content_h] Y 范围按 spanner Y 区间分段，每段独立绘制。
+        // 非 spanner 容器 → spanner_ranges 空 → segments = [(0, content_h)] → 行为不变（零回归）。
+        let spanner_ranges: Vec<(f32, f32)> = box_node
+            .children
+            .iter()
+            .filter(|c| !c.is_absolute && !c.is_fixed && c.column_span_offsets.is_empty() && c.width >= content_w - 1.0)
+            .map(|c| (c.y, c.y + c.height))
+            .collect();
+        let mut segments: Vec<(f32, f32)> = vec![(0.0, content_h)];
+        for &(s_start, s_end) in &spanner_ranges {
+            let mut next = Vec::new();
+            for (seg_start, seg_end) in segments {
+                if s_end <= seg_start || s_start >= seg_end {
+                    // spanner 与 segment 无重叠，保留整段。
+                    next.push((seg_start, seg_end));
+                } else {
+                    // 重叠：保留 spanner 之前/之后的剩余部分。
+                    if s_start > seg_start {
+                        next.push((seg_start, s_start));
+                    }
+                    if s_end < seg_end {
+                        next.push((s_end, seg_end));
+                    }
+                }
+            }
+            segments = next;
+        }
+
         for i in 1..count {
             // CSS Multi-column §5.2：列分隔线仅在两列都有内容时绘制。
             // 如果容器有子元素，检查第 i 列和第 i+1 列是否有内容；
@@ -257,38 +288,47 @@ impl super::Painter {
 
             let rule_x = content_x + i as f32 * col_w + (i as f32 - 0.5) * gap - rule_w / 2.0;
             let rule_x = rule_x.max(content_x);
-            match style.column_rule_style {
-                ColumnRuleStyleComputedValue::Solid => {
-                    self.primitives
-                        .add_fill(Rect::new(rule_x, content_y, rule_w, content_h), rule_color);
+            // R1029：按 spanner 分段绘制 column-rule（非 spanner 容器 segments 只有一段 [0, content_h]，
+            // 与原行为一致）。
+            for &(seg_start, seg_end) in &segments {
+                let seg_h = seg_end - seg_start;
+                if seg_h <= 0.5 {
+                    continue;
                 }
-                ColumnRuleStyleComputedValue::Dotted => {
-                    self.primitives.add_stroke(StrokePrimitive {
-                        x1: rule_x + rule_w / 2.0,
-                        y1: content_y,
-                        x2: rule_x + rule_w / 2.0,
-                        y2: content_y + content_h,
-                        width: rule_w,
-                        color: rule_color,
-                        style: zero_render_foundation::primitive::LineStyle::Dotted,
-                        cap: LineCap::Round,
-                    });
-                }
-                ColumnRuleStyleComputedValue::Dashed => {
-                    self.primitives.add_stroke(StrokePrimitive {
-                        x1: rule_x + rule_w / 2.0,
-                        y1: content_y,
-                        x2: rule_x + rule_w / 2.0,
-                        y2: content_y + content_h,
-                        width: rule_w,
-                        color: rule_color,
-                        style: zero_render_foundation::primitive::LineStyle::Dashed,
-                        cap: LineCap::Square,
-                    });
-                }
-                _ => {
-                    self.primitives
-                        .add_fill(Rect::new(rule_x, content_y, rule_w, content_h), rule_color);
+                let seg_y = content_y + seg_start;
+                match style.column_rule_style {
+                    ColumnRuleStyleComputedValue::Solid => {
+                        self.primitives
+                            .add_fill(Rect::new(rule_x, seg_y, rule_w, seg_h), rule_color);
+                    }
+                    ColumnRuleStyleComputedValue::Dotted => {
+                        self.primitives.add_stroke(StrokePrimitive {
+                            x1: rule_x + rule_w / 2.0,
+                            y1: seg_y,
+                            x2: rule_x + rule_w / 2.0,
+                            y2: seg_y + seg_h,
+                            width: rule_w,
+                            color: rule_color,
+                            style: zero_render_foundation::primitive::LineStyle::Dotted,
+                            cap: LineCap::Round,
+                        });
+                    }
+                    ColumnRuleStyleComputedValue::Dashed => {
+                        self.primitives.add_stroke(StrokePrimitive {
+                            x1: rule_x + rule_w / 2.0,
+                            y1: seg_y,
+                            x2: rule_x + rule_w / 2.0,
+                            y2: seg_y + seg_h,
+                            width: rule_w,
+                            color: rule_color,
+                            style: zero_render_foundation::primitive::LineStyle::Dashed,
+                            cap: LineCap::Square,
+                        });
+                    }
+                    _ => {
+                        self.primitives
+                            .add_fill(Rect::new(rule_x, seg_y, rule_w, seg_h), rule_color);
+                    }
                 }
             }
         }
