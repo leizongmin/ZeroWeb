@@ -129,6 +129,43 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
             specificity,
         ),
 
+        // ── border 逻辑属性简写（CSS Logical Properties §3）──
+        // 展开为 logical longhand（border-{axis}-{side}-{width,style,color}），由
+        // apply_advanced 按元素 computed writing-mode 映射到物理边。简写层不感知元素
+        // 上下文，故只拆分组件、不做 logical→物理映射。
+        "border-inline-start" => expand_border_side(
+            value,
+            "border-inline-start-width",
+            "border-inline-start-style",
+            "border-inline-start-color",
+            important,
+            specificity,
+        ),
+        "border-inline-end" => expand_border_side(
+            value,
+            "border-inline-end-width",
+            "border-inline-end-style",
+            "border-inline-end-color",
+            important,
+            specificity,
+        ),
+        "border-block-start" => expand_border_side(
+            value,
+            "border-block-start-width",
+            "border-block-start-style",
+            "border-block-start-color",
+            important,
+            specificity,
+        ),
+        "border-block-end" => expand_border_side(
+            value,
+            "border-block-end-width",
+            "border-block-end-style",
+            "border-block-end-color",
+            important,
+            specificity,
+        ),
+
         // ── border 全写 ──
         "border" => expand_border_all(value, important, specificity),
 
@@ -257,6 +294,11 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
 
         // ── text-decoration 简写 ──
         "text-decoration" => expand_text_decoration(value, important, specificity),
+
+        // ── text-emphasis 简写（CSS Text Decoration 3 §3.1）──
+        // text-emphasis: <text-emphasis-style> || <text-emphasis-color>
+        // text-emphasis-color 暂未在 ComputedStyle 存储，故仅展开 style（剥离 color token）。
+        "text-emphasis" => expand_text_emphasis(value, important, specificity),
 
         // ── list-style 简写 ──
         "list-style" => expand_list_style(value, important, specificity),
@@ -1695,6 +1737,35 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
         mk("text-decoration-style", &dec_style),
         mk("text-decoration-color", &color),
     ]
+}
+
+/// 展开 text-emphasis 简写（CSS Text Decoration 3 §3.1）。
+///
+/// `text-emphasis: <text-emphasis-style> || <text-emphasis-color>`
+/// text-emphasis-color 暂未在 ComputedStyle 存储，故仅展开 style（剥离 color token，
+/// 剩余 token 拼回作为 style 值，支持 `circle`、`filled circle`、`"*"` 等形式）。
+fn expand_text_emphasis(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    // CSS-wide keywords：透传到 style longhand
+    if value == "inherit" || value == "initial" || value == "unset" {
+        return vec![mk("text-emphasis-style", value)];
+    }
+
+    let toks = zero_css_parser::values::split_paren_aware_tokens(value);
+    let mut style_parts: Vec<String> = Vec::new();
+    for tok in &toks {
+        if looks_like_color(tok) {
+            // text-emphasis-color（ZW 暂未存储，剥离）
+            continue;
+        }
+        style_parts.push(tok.clone());
+    }
+    if style_parts.is_empty() {
+        return vec![];
+    }
+    vec![mk("text-emphasis-style", &style_parts.join(" "))]
 }
 
 #[cfg(test)]

@@ -2648,6 +2648,179 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1055 font-wall 实测 = Latin ruled out（DejaVuSans=0.928 匹配 R990）+ CJK 潜在 yield（NotoSansCJK=1.160 vs 0.928，受限）+ welcome 16.57% 非字体度量·零 net 源码·纯调查
+
+承 R1054 CONTINUE（font-wall R887 攻坚起步）。本轮 fontdue line_metrics_full 实测字体度量，**font-wall Latin ruled out，CJK yield 受限，font-wall 非 WPT pass-count 高 yield 轨道**。
+
+**★ font-wall Latin ruled out**：DejaVuSans.ttf（welcome/morning 的 sans-serif 实际字体）ascent=14.852@16 → ratio=0.9282，descent=-0.2358，line_gap=0。R990 的 0.928 常数（非-Ahem ascent ratio）= DejaVuSans 真实度量，**精确到 4 位小数匹配**。→ wiring FontMetricProvider（Phase A §12.6 step-2）对 Latin **零收益**（0.928 已真值）。R631 字体选择 0% + 本轮度量匹配 = font-wall Latin 双重 ruled out。
+
+**★ CJK 潜在 yield（受限）**：NotoSansCJK-Regular.ttc ascent=18.560@16 → ratio=1.1600，descent=-0.2880，line_gap=0。vs R990 常数 0.928 **偏差 25%**（CJK 字体典型 ascent>1.0em 含 ruby 空间）。ZW 对 CJK 用 0.928（应 ~1.160）→ strut baseline 偏低 0.232·fs/行。**但 yield 受限**：CJK-重 WPT 用例多 vertical-blocked（R1054）；morning.work 是 product-smoke 非 WPT-count；R631 未测 metric 变化（只测 matching），1.160 vs 0.928 是未测独立变量。font-wall CJK = 限于水平 CJK + product-smoke，**非 WPT pass-count 高 yield 轨道**。
+
+**welcome 16.57% diff 非字体度量**：UI diff vision tool 报告「严重字符间距破坏」（ZeroBrowser→"Zer oBr owser"）——**纠偏**：welcome.html 故意用 letter-spacing 0.1em/0.05em/0.08em（line 48/57/90），vision tool 误读 letter-spacing 为「断字」，非真 bug。16.57% 残余 = letter-spacing 像素精度 + fontdue vs chromium AA + 行盒亚像素（非字体度量，DejaVuSans 匹配）。
+
+**战略裁决**：font-wall 双重 ruled out for Latin；CJK 25% 度量偏差但 yield 受限（vertical-blocked + product-smoke 非 WPT-count）。**font-wall 非 WPT pass-count 高 yield 轨道，暂缓**。整体 plateau 复盘（R1051-R1055 五轮 docs-only）：clean lever 耗尽（R740+R1053）/ vertical blocked（R1052+R1054 四证）/ taffy ruled out（R1054）/ font-wall ruled out 或受限（R1055）。剩余推进面：R109 anonymous block（deadlock 历史）/ Phase-A IFC 统一续（baseline 像素精确）/ 水平 CJK font-wall 小切片（1.160 wiring，yield 受限）。★勿再：盲扫 top-worst / vertical 单点或 bundle / taffy R304 / font-wall Latin。详见 [`evidence/r1055-font-wall-dejavu-ruled-out-cjk-potential-2026-07-05.txt`](./evidence/r1055-font-wall-dejavu-ruled-out-cjk-potential-2026-07-05.txt)。
+
+**▶ 下会话**：① 水平 CJK font-wall 小切片（wire NotoSansCJK 1.160 metric，A/B 水平 CJK 用例 + morning product-smoke，受限 yield 但可尝试）；② 或 R109 anonymous block 攻坚；③ 或 Phase-A IFC 统一续；④ 或重新评估 product-smoke morning/wintertc fixture 作验收口径（CJK font-wall 在产品验收面有意义）。
+
+### R1054 vertical 完整 bundle（spec-correct）net -28 已 revert + taffy R304 ruled out（不支持 writing-mode）·零 net 源码·纯调查
+
+承 R1053 CONTINUE（taffy R304 评估起步）。本轮 web research 推翻 taffy R304 前提，转 vertical 完整 bundle 实验，**spec-correct 仍 net -28（4 证）已 revert**。
+
+**★ taffy R304 ruled out**：R1053 CONTINUE 推荐 taffy 升级作 vertical unblocker（基于 memory R304/R849 旧评估）。web research 实证 taffy（所有版本含 0.11）**不支持 writing-mode / vertical text**（maintainer Issue #308 视作「ergonomic 改进」未实现；taffy 把 text layout 全委托宿主 MeasureFunc Issue #216）。→ taffy 升级**不解锁 R1043/R1052 vertical block-flow**，memory R304/R849 评估过时。升级仅余 maintainability / minor grid-flex fix 收益，vs 590 refs + 4 major breaking + 全布局回归风险，**ROI 不成立 indefinitely defer**。
+
+**vertical 完整 bundle 实验**（R1052 Slice α 四层：A container_width WM-aware + B trailing-space 裁剪 + C line-height vertical col-width [store_font_sizes_from_ifc vertical frag.line-height 在 frag.width 非 frag.height] + D vertical emphasis re-enable [painter/text.rs char_advance_is_y 分支 mark 左/右侧垂直居中]）。EMPHDBG 实证 **bundle 字符几何 + mark 位置 spec-correct**（006d 試 mark_x=0 char@base_x=8 mark_y=55 char_pos=67 left=true，mark 左置垂直居中 ✓；col_width 经 C = 80 修前 16）。
+
+**A/B = net -28**：css-text-decor 108→82（-26 PASS→FAIL）；css-writing-modes 56→54（-2，比 A+B alone net-0 还差 2）。即加 C+D（line-height+emphasis，全 spec-correct）仍 net -28，EMPHDBG 确证 D 渲染且位置规范正确。
+
+**★ 裁决：vertical 即使 spec-correct 仍 net-negative（R1047/R1050/R1052/R1054 四证）**。根因 = vertical 须 near-perfect 才 net-positive：① vrl block-flow mirror（R1043）仍缺（vrl 用例 86-87% 未修，bundle 只解 vlr）；② 小用例（emphasis 簇）oracle diff 由残余不完美（CJK fontdue advance、mark 像素精确位、subpixel）主导——OLD 错误水平布局「紧凑」偶然近 oracle <1% pass，NEW spec-correct 垂直因残余不完美推过 1% 阈值 → PASS→FAIL；③ OLD「错但近」反比 NEW「对但不完美」更近 oracle。vertical 子系统**单点、多点、全 spec-correct bundle 均 net-negative**，须 (a) vrl mirror + (b) CJK 字体度量精确 font-wall + (c) mark 像素精确位**全满足**才可能 net-0/正。当前均缺，vertical track **genuinely blocked**。
+
+**forward**：① font-wall 攻坚（R887 per-font 度量，独立于 vertical，解 product-smoke + 多 font-wall 用例）；② R109 anonymous block 攻坚；③ Phase-A IFC 统一续；④ vertical 暂搁置（blocked 4 证，除非 vrl mirror + font-wall 同解）。★勿再：盲扫 top-worst（双证耗尽）/ vertical 单点或 bundle（4 证 net-negative）/ taffy R304（ruled out 不支持 writing-mode）。详见 [`evidence/r1054-vertical-bundle-taffy-ruled-out-2026-07-05.txt`](./evidence/r1054-vertical-bundle-taffy-ruled-out-2026-07-05.txt)。
+
+**▶ 下会话**：① font-wall per-font 度量（R887 provider wiring，多 session，独立于 vertical）；② 或 R109 anonymous block 攻坚；③ 或 Phase-A IFC 统一续。
+
+### R1053 5 目录 top-worst 扫描（clean lever 耗尽 R740 复证）+ root-abspos sizing 实验 net-flat-to-negative 已 revert·零 net 源码·纯调查
+
+承 R1052 CONTINUE（vertical Slice α / 转非 vertical 轨道）。本轮按 R740 战略转向 ②（直接 chr-vs-ZeroWeb 对比找新 clean lever）扫 css-grid / css-text-decor / css-tables / css-position 4 目录 top-worst，**全部 entangled，clean single-session lever 耗尽复证**；root-abspos 实验 html 几何修对但 body 未 re-layout 故 net-flat-to-negative 已 revert。
+
+**5 目录扫描结论**（top-worst 全 entangled）：css-grid（baseline-synthesized vrl/vlr/srl/slr vertical / replaced %height grid-in-flex complex / table-grid-item JS-dynamic）；css-text-decor（text-decoration thickness/dotted/line 全 font-wall 谱系 R1045 证伪 / text-decoration-inset CSS4 draft）；css-tables（table-cell-width-0 实测 ZW 已正确 w=8 intrinsic，20% diff = 默认字体+border-collapse font-wall/structural / collapsed-border-vertical vertical）；css-position（backdrop structural / dynamic-relayout JS / in-inline R109 / root-element abspos §2）。**R740 复证：clean lever 在已工作目录耗尽**。
+
+**root-abspos sizing 实验**（position-absolute/fixed-root-element-{flex,grid} 4 案 4.46%）：`<html>` 自身 abspos/fixed + 全 inset 应按 §10.3.7/§10.6.4 stretch（border-box = 视口 − insets）。ZW 实测 html h=64（shrinkwrap）w=715（应 530/770）。Fix = `size_root_abspos_to_viewport`（abspos.rs post-processing，仅 root abspos/fixed 时补 width/height，gate 严零 static 影响）。**html 几何修到规范正确（h=530 w=770）**但 **A/B 4.46%→4.52%（+0.06pp net-flat-to-negative）已 revert**：body 未 re-layout（taffy 用旧 html 715 layout body w=689），post-process 改 html 后 body 文本换行用旧 content_width 不重排，残余 diff 抵消 border 修对。**裁决**：post-processing 不足（文本换行依赖 taffy 期 body content_width），须 pre-layout（converter 设 root taffy size）或 two-pass（R695/R1018 基建 set+mark_dirty+recompute），属 taffy 0.7 root quirk 谱系（R123/R500），yield 小（4 案）effort 高 → defer。
+
+**裁决与 forward（战略路径，多 session）**：clean single-session lever 耗尽（R740+R1053 双证）。后续须转结构性多 session：① **taffy 升级 R304**（R304/R849 列 #1 viable lever，解锁 native vertical block-flow 减 R1043/R1052 耦合 + 541 ref + 108 alignment + native float，一次性 unblock 多 manual workaround，EV 最高）；② R109 §9.2.1.1 anonymous block（unlock block-in-inline 簇）；③ Phase-A IFC 统一（行盒度量）。★ 勿再盲扫 top-worst 找 clean single-session lever（双证耗尽）。详见 [`evidence/r1053-scan-root-abspos-investigation-2026-07-05.txt`](./evidence/r1053-scan-root-abspos-investigation-2026-07-05.txt)。
+
+**▶ 下会话**：① taffy 升级 R304 起步（评估 541 ref + 108 alignment + native float 冲突面，列迁移计划，最高 EV 多 session）；② 或 R109 anonymous block 攻坚；③ 或 Phase-A IFC 统一续（baseline 定位 / 字体度量）。
+
+### R1052 ★vertical IFC container_width=0 根因 = 纠正 R1051 handoff 诊断（axis-swap 已存在）+ vertical 耦合系统三证（单修 inline-flow net -26 已 revert）·零 net 源码·纯调查
+
+承 R1051 CONTINUE（R109 vertical inline Slice 1 实施）。本轮按 handoff §3 试实施 Slice 1，**VIFCDUMP 实证推翻 R1050/R1051 诊断，单点修复 net-negative 已 revert，handoff doc 升级 v1.1**。
+
+**★ 纠正 R1050/R1051 诊断**：R1050 EMPHDBG 测 006d chars x=8,24,40,56,72 递增 → R1051 handoff 断言「IFC 缺轴交换（current_x/current_y 未互换），须新建双模式 char 推进」。**本轮 VIFCDUMP 实证推翻**：轴交换代码**早已存在且正确**（commit 942a2948，2026-06-09，`break_items_into_columns` mod.rs:1450 字符沿 y 推进 / 列沿 x 推进；paint `char_advance_is_y` text.rs:1392-1450 也对）。**真根因 = vertical IFC 的 `container_width=0.0` → max_depth=0**：`max_depth = self.container_width`（mod.rs:1452），而 container_width 取 `root.content_width`（inline_finalization.rs:619）/ `box_node.content_height`（painter/text.rs:797）= 元素水平 block 尺寸，vertical-lr auto 时=0 → `current_depth + word_height > 0` 恒真 → **每字符触发列断 → 每字符各占一列沿 x 排列 → chars 横向排列**。vertical 应取 `content_height`（竖直 inline 尺寸 = 字符向下推进可用深度）。R1050 EMPHDBG 的 x 递增是 max_depth=0 副产物，非缺轴交换。
+
+**修复实验（已 revert）**：Fix A = container_width WM-aware（2 处：compute_final + paint Path B，vertical 取 content_height / horizontal 取 content_width，gate 隔离 horizontal 字节一致）；Fix B = trailing-space 裁剪（split_into_words mod.rs:1983-1987 为非末词加 trailing space 与注释「CJK 不带尾部空格」矛盾，vertical 下 word_height 虚高 fs+space_w 致列断提前；break_items_into_columns 词循环头 trim）。Fix A+B 实测 006d chars 几何**完全规范正确**（col0 run0..4 x=0 常量，y=0,16,32,48,64 连续 fs 间隔，单列）。
+
+**★ A/B = net-negative 已 revert**：css-text-decor **108→86（Fix A，-22）→ 82（Fix A+B，-26）**；css-writing-modes 56→56（net-0，block-flow R1043 主导，line-box-direction-vlr-014 修后仍 86.86%）；006d 单案 1.00%→1.01%（持平）。即便 006d 字符几何规范正确，oracle 仍 net -26。
+
+**★ 裁决：vertical 渲染 = 耦合系统（R1047/R1050/R1052 三证）**。单修 inline-flow 致输出**既不同于旧错误布局、又不同于 chromium**（block-flow R1043 容器定位错 + line-height:5 vertical 列宽未传 col_width=16 应 80 + emphasis `!char_advance_is_y` 门控跳过 vertical 装饰全缺 + paint Path B 空-styles），故净负。三证（R1047 sibling-push / R1050 vertical emphasis / R1052 vertical inline-flow）一致：**vertical 子系统单点修复 net-negative，须多层同步修**。
+
+**意义**：R1052 真价值 = ① 纠正 handoff 诊断（轴交换已存在，真根因 container_width=0，后续勿再「新建双模式 char 推进」）；② 锁定精确靶点（§2 Fix A+B + line-height vertical 列宽 + block-flow R1043 + emphasis re-enable，四层同改）；③ 耦合系统三证裁决；④ VIFCDUMP 探针代码（evidence §6）作 vertical IFC 调决定性工具。handoff doc 升级 v1.1（§0/§2/§3/§4/§6 全面纠正）。详见 [`evidence/r1052-vertical-ifc-container-width-zero-2026-07-05.txt`](./evidence/r1052-vertical-ifc-container-width-zero-2026-07-05.txt)。
+
+**▶ 下会话**：① vertical 多层同步（Slice α：container_width fix + block-flow R1043 converter 层镜像 + line-height vertical 列宽 + emphasis re-enable，四层同改 A/B 守 net-0/正）—— 最高 yield 轨道但多 session；② 或 taffy 升级（R304）减 block-flow 耦合；③ R702 margin-collapse-through（em-inherit 11%，yield 小）；④ font-wall per-font 度量（R887）。**勿再单点修 vertical 任一子层**（三证 net-negative）。
+
+### R1051 R702 margin-collapse-through 调查 = taffy collapse-through 深 bug·ruled out 单 session·+ R109 vertical inline handoff doc（最高 yield 多 session 轨道蓝图）·零 net 源码·纯调查
+
+承 R1050 CONTINUE（R109 vertical inline / R702 / font-wall）。本轮 LAYOUT_DUMP 调查 R702 + 写 R109 vertical inline 实施 handoff，**结论：R702 单 session ruled out，R109 handoff doc 落地供后续 session 实施**。
+
+**R702 margin-collapse-through 调查**（`margin-em-inherit-001` 11.25%）：LAYOUT_DUMP 实测 ZW 渲染：
+```
+html   abs_y=0   h=280
+body   abs_y=56  h=196  mt=56  dmt=8    ← body effective mt=56（应 16）
+  p    abs_y=56  h=40   mt=16           ← p 与 body 同 y（重叠）
+  div(gp) abs_y=56 mt=56                ← grand-parent 同 y
+```
+ref 渲染：body abs_y=16 mt=16（正常）。**根因**：`#parent` margin-top 56 经无 border/padding 的 `#grand-parent` **collapse-through** 上提，ZW/taffy 把 max(body 8, p 16, #parent-through-gp 56) = 56 **全应用到 body**，忽略 `p` 元素 content 应作为 separator 阻断 collapse 链（CSS2 §8.3.1：adjoining margins collapse，但 p 的 in-flow content 使 p 顶/底 margin 不再 adjoining，#parent mt 应与 p_mb 折叠 max(56,16)=56 落在 p 与 gp 之间，非上提到 body 顶）。**裁决**：taffy 0.7 CollapsibleMarginSet「intervening content blocks collapse-through」逻辑不完整，深 margin 算法，ZW postprocess 重分布 collapse margin 风险高（R1047 sibling-push 同族 net-negative 先例），**单 session ruled out**。yield 小（em-inherit 簇 ~3 案）。
+
+**R109 vertical inline 实施 handoff doc LANDED**（[`vertical-inline-layout-handoff.md`](./vertical-inline-layout-handoff.md)）：承接 R1050 根因（IFC `current_x` 水平推进 vertical 文本），产多 session 实施蓝图：
+- **问题**：IFC（mod.rs:973+）`current_x += char_width` 水平推进每字符，vertical-rl/lr 应 `current_y += char_height` 垂直推进（chars 同 x 列、y 递增），line-break = column-break。
+- **影响**：vertical 子域全 R109-blocked（emphasis/ruby/text-decor/bidi-vertical + css-writing-modes ~250 vertical 案 86-87%），解锁 yield **当前 corpus 最高**（潜在 flip ~30-80 案）。
+- **实施路径**：IFC 双模式（horizontal `current_x`/`current_y` ↔ vertical 轴交换），paint `char_advance_is_y` 已存在协调。Slice 1 = 纯 CJK 单列无 float/ib 紧 gate（net-0 守 horizontal-tb 字节一致），Slice 2+ = word-wrap/float/ib/Latin advance/text-orientation 逐项扩展。
+- **风险**：taffy 0.7 vertical BLOCK flow 方向（R1043 rl packing）仍 taffy-blocked，本 handoff 只解 inline flow（char 推进），两层独立可分步；paint Path B 空-styles（R890）须协调；line-height/baseline 三方同改（R834 单点 net-negative 先例）。
+
+**意义**：R1050 根因 → R1051 实施蓝图，R109 vertical inline 轨道从「诊断」进入「可实施」阶段。后续 session 可按 handoff §3 Slice 序起步（首 slice 纯 CJK 单列 gate，net-0 守回归）。**勿再以 vertical 子域为独立 lever**（须先 R109 vertical inline 解锁）。
+
+**▶ 下会话**：① **R109 vertical inline Slice 1**（按 handoff，IFC `if self.is_vertical` 纯 CJK 单列分支，net-0 守 horizontal-tb，1 个 vertical 用例 frag 几何对）——最高 yield 轨道首切片；② 或 R702 多 session 起步（须 taffy collapse-through 重设计，yield 小不优先）；③ font-wall per-font 度量（R887 provider wiring 多 session）。
+
+### R1050 text-emphasis 简写 LANDED（net-0 correctness）+ 垂直 emphasis net -8 回退已 ruled out·★R109 vertical inline 布局根因（IFC 水平布局 vertical 文本）·vertical-mode emphasis 簇 ruled out
+
+承 R1049 CONTINUE（logical-props WM-aware 主体已尽，转更高 yield 轨道或 sideways-lr）。本轮扫描近失簇定位 text-emphasis-position-property-{003,005,006}-{d,e,f,g}（~12 案 1.00-1.02%，vertical-lr），**调查发现 R109 vertical inline 布局深层根因，LANDED 简写 correctness fix，垂直 emphasis ruled out**。
+
+**近失簇扫描**（css-text/fonts/text-decor [1.0%,1.5%]）：text-emphasis-position d/e/f/g 簇（vertical-lr，1.00-1.02%）最大；bidi-007 簇全变体同%（bidi-normal=isolate=embed=1.31%，证共享 baseline 非 bidi 算法 bug）；vertical-align-baseline（font-wall R990 territory）；inline-size/block-size 已隐式 WM-aware（converter swap，apply.rs:122 注释，slice ③ ruled out double-swap）。
+
+**缺口 1 — `text-emphasis` 简写完全未展开**（R1021 只实现 longhand text-emphasis-style/position）：corpus `text-emphasis: circle` 被静默忽略→text-emphasis-style=None→无 mark。本轮 LANDED `expand_text_emphasis`（shorthand/mod.rs）：`<style> || <color>`，color token 剥离（ZW 暂未存储 text-emphasis-color），剩余拼回 style。3 单测（style-only / filled circle red 剥 color / string "*"）。
+
+**缺口 2 — 垂直 emphasis 位置（R1021 line 1494 `!char_advance_is_y` 跳过垂直）**：实现 R1050 垂直 emphasis 块（mark 绘字符左/右侧按 position 含 Left/Right）。**A/B 决定性 net -8**：css-text-decor 108→100（8 案 PASS→FAIL）。EMPHDBG 揭示根因——**已回退**。
+
+**★ R109 vertical inline 布局深层根因**（比 R1043 block-flow 方向更深）：EMPHDBG 实测 006d（vertical-lr）chars x=8,24,40,56,72（**x 每字符递增 Δ16=fs**），y=67,83,99,115,131（**y 也递增**）。即 ZW 的 IFC 对 vertical-lr 文本**水平布局**（chars 左→右排列，仅旋转 glyph 90°），而非规范要求的**垂直布局**（chars 上→下，同 x 列，y 递增）。故：
+- 垂直 emphasis mark 即使按垂直语义定位，底层文本位置错（水平），mark 也错位 → 净负。
+- text-emphasis-position vertical 簇（d/e/f/g 1.00-1.02%）非 emphasis-position bug，是 R109 vertical inline 布局缺口主导（残余 CJK font 噪声 + vertical 布局错）。
+- 与 R1043「taffy Block 无方向 packing」互补：**block-flow 方向（R1043）+ inline-flow 方向（R1050）双层 vertical 缺口**，均 taffy 0.7 / IFC 架构限制，须 layout 重构或 taffy 升级（R304 多 session）。
+
+**A/B**：仅简写展开 = **net 0 oracle**（css-text-decor 108/242、css-writing-modes 56/784 持平），**0 PASS→FAIL 回归**（dump diff 确证）。简写展开是 correctness fix（水平案经 R1021 正确渲染 mark；vertical 案因 R109 布局错 mark 位置也错，但 site 2 `!char_advance_is_y` 门控跳过故 vertical 不渲染 mark→无 vertical 回归）。垂直 emphasis 块 = net -8 已回退。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（style-system +3 新简写测，全树零失败）/ **product-smoke welcome 16.57% < 20%** ✓。
+
+**意义**：text-emphasis 简写 LANDED 是 correctness 修复（CSS Text Decoration 3 §3.1 简写原完全未处理，net-0 因 corpus emphasis 测试多 CJK 主导 diff）。R1050 真价值 = **R109 vertical inline 布局根因定位**（IFC 水平布局 vertical 文本，chars x 递增），为未来 R109 vertical 解锁轨道提供精确靶点（须 IFC 支持垂直字符推进，非仅旋转）。vertical-mode emphasis/ruby/text-decor 簇全部 R109-blocked，勿再以这些为 lever。详见 [`evidence/r1050-text-emphasis-shorthand-vertical-ruled-out-2026-07-05.txt`](./evidence/r1050-text-emphasis-shorthand-vertical-ruled-out-2026-07-05.txt)。
+
+**▶ 下会话**：① R109 vertical inline 布局是新定位的高 yield 多 session 轨道（IFC 支持垂直字符推进，chars 同 x 列 y 递增；解锁后 vertical-mode 全簇 emphasis/ruby/text-decor/writing-modes flip）；② 或 R702 margin-collapse-through（em-inherit 11% 真布局 bug）；③ 或 font-wall per-font 度量（R887 provider wiring）。vertical-mode 子域（emphasis/ruby/bidi-vertical）已 ruled out 非独立 lever，须 R109 vertical inline 解锁。
+
+### R1049 margin/padding/inset 逻辑属性 writing-mode-aware LANDED·logical-props 轨道 slice ②·零回归（horizontal-tb 字节一致）·净 0 oracle·unified PhysicalSide helper
+
+承 R1048 CONTINUE（logical-props 轨道 slice ②：margin/padding/inset 转 WM-aware / sideways-lr / table col-border）。本轮把 margin/padding/inset 逻辑属性从 R143 静态 horizontal-tb 映射升级为 **writing-mode-aware**，**零回归 LANDED**。
+
+**实现**（CSS Logical Properties §1 + Writing Modes §6）：
+- `apply_advanced.rs`：把 12 个 margin/padding/inset logical longhand arm（原 R143 静态 `style.margin_top = v` 等）改为调用新 helper `apply_logical_{margin,padding,inset}(style, axis_inline, start, value)`，内部按 `logical_physical_side(axis_inline, start, &style.writing_mode)` 映射物理边。
+- **重构 R1048 helper**：`BorderSide` → `PhysicalSide`（通用），抽出 `logical_physical_side(axis_inline, start, wm)` 公共映射器；`logical_border_physical_side` 改为薄封装（解析属性名 → 调 `logical_physical_side`）。border margin padding inset 4 组共用一套映射。
+- 4 新单测（tests/core.rs）：horizontal-tb 字节一致 + vertical-rl margin（block-start=right/inline-end=bottom）+ vertical-lr padding（block-start=left/inline-start=top）+ vertical-rl inset（block-end=left），全过。
+
+**A/B（chromium Oracle，stash 对照 + ORACLE_DUMP_ALL 全 case diff）**：
+- **css-writing-modes**：56/784 → 56/784（**净 0 oracle，0 PASS→FAIL 回归** dump diff 确证）。logical-props-002 1.050→0.990（borderline 1% 阈值噪声内，非稳定 flip）。
+- **css-tables**：74/115 → 74/115（持平）。
+- **css/CSS2/normal-flow**：604/746 → 604/746（**horizontal-tb 字节一致零回归确认**）。
+- **0 PASS→FAIL flip 回归**（writing-modes 全 182 案 with-oracle dump diff 确证）；vertical-mode 不 flip 因 R109 taffy-blocked（margin 映射现在正确，但整体 vertical 渲染缺口更大）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（style-system 1933→1937 +4 新测，全树零失败）/ **product-smoke welcome 16.57% < 20%** ✓（一字不差）。
+
+**意义**：logical-props 轨道 slice ②——margin/padding/inset 逻辑属性 WM-aware 化，**比 R1048 更干净**（R1048 有 3 案轻微恶化暴露下游 table col/colgroup 缺口；R1049 零恶化，纯 correctness 改进）。`PhysicalSide` + `logical_physical_side` 统一 4 组逻辑属性映射，为后续 slice（sideways-lr / table-internal border / R109 vertical 解锁后的 vertical-mode flip）奠基。horizontal-tb 下 WM-aware 输出与 R143 静态字节一致（block-start→top 等），故零回归；vertical-mode 映射现在正确但 R109-blocked 暂不 flip。详见 [`evidence/r1049-margin-padding-inset-wm-aware-landed-2026-07-05.txt`](./evidence/r1049-margin-padding-inset-wm-aware-landed-2026-07-05.txt)。
+
+**▶ 下会话**：logical-props 轨道 slice ①（border）②（margin/padding/inset）均 LANDED WM-aware，轨道 foundational 已近完整。续推：① **inline-size/block-size 转 WM-aware**（R143 静态，同样可 WM-aware 化，horizontal-tb 字节一致）；② **sideways-lr writing-mode 支持**（enum + converter `apply_vertical_writing_mode` 加 SidewaysLr 变体）；③ **table-internal col/colgroup border 渲染**（R177 territory，解 R1048 的 003/004 恶化）；④ 或转 R109 vertical block-flow（taffy 多 session）/ R702 margin-collapse-through。logical-props WM-aware 化主体已尽，下 slice 转 sideways-lr 或换轨。
+
+### R1048 ★border 逻辑属性（border-inline/block-start/end-{width,style,color}）writing-mode-aware LANDED·CSS Logical Properties §3 feature gap 修复·净 0 oracle·foundational enabling slice·零硬门禁回归
+
+承 R1047 CONTINUE（R109 vertical-rl block-flow = taffy-blocked 多 session，转 logical-props feature gap）。本轮实现 border 逻辑属性（原完全未注册：parse/store/apply 全缺），**spec-correctness + foundational enabling slice，LANDED，净 0 oracle**。
+
+**缺口确认**：margin/padding/inset logical 属性 R143 已有（horizontal-tb 静态映射，apply_advanced.rs）；inline-size/block-size R143 LANDED。**唯独 border-inline/border-block logical 属性完全未实现**（corpus 12+5 文件用，logical-props-001~004 / rules-groups.html 等）。CSS `border-inline-start: 5px green solid` 被静默忽略→无 border 渲染。
+
+**实现**（CSS Logical Properties §3 + Writing Modes §6）：
+- `shorthand/mod.rs`：4 简写（border-{inline,block}-{start,end}）经 `expand_border_side` 展开为 12 logical longhand（border-{axis}-{side}-{width,style,color}）。
+- `apply_advanced.rs`：12 logical longhand 处理 + `logical_border_physical_side(property, &style.writing_mode)` 按 computed writing-mode 映射物理边：
+  - horizontal-tb（ltr）：inline-start=left, inline-end=right, block-start=top, block-end=bottom
+  - vertical-rl：inline-start=top, inline-end=bottom, block-start=right, block-end=left
+  - vertical-lr：inline-start=top, inline-end=bottom, block-start=left, block-end=right
+  - inline 轴 direction 暂按 ltr（vertical 模式 inline-start=top，logical-props-001 预期）。
+  - 与 R143 静态映射不同，border 用 writing-mode-aware（因 border 是新属性零回归风险；margin/padding/inset 维持 R143 静态不动）。
+- 6 新单测（tests/core.rs）：horizontal-tb inline-start/block-end + vertical-rl inline-start/block-start + vertical-lr block-start + 简写 color 路径，全过。
+
+**A/B（chromium Oracle，stash 对照）**：
+- **css-writing-modes**：56/784 → 56/784（**净 0 oracle**）。logical-props-002 1.05%→0.99%（borderline 噪声内，per-dir 持平确证非稳定 flip）。
+- **css-tables**：74/115 → 74/115（**净 0 oracle**；rules-groups.html border-block-start horizontal-tb 未 flip）。
+- **3 已 FAIL 案轻微恶化**（暴露下游渲染缺口，非 mapping bug）：logical-props-003/004（col/colgroup + vertical-rl，1.05→1.30，ZW table-internal col/colgroup border 渲染缺口 R177 territory）+ logical-physical-mapping-001（10.73→10.98，综合 8 writing-mode 含 sideways-lr 未支持）。
+- **0 PASS→FAIL flip 回归**（dump diff 确证）。
+
+**门禁全绿**：fmt ✓ / clippy --workspace --all-targets -D warnings ✓ / **make test exit 0**（style-system 1927→1933 含 6 新测，layout-engine 1024，全树零失败）/ **product-smoke welcome 16.57% < 20%** ✓（welcome 不用 logical border，一字不差）。
+
+**意义**：CSS Logical Properties §3 feature gap 修复——border 逻辑属性首次实现，writing-mode-aware 物理边映射（horizontal-tb/vertical-rl/vertical-lr）。属 R885（font-bridge dormant）/R897（multicol Phase 2a enabling）式 **foundational enabling slice**：净 0 oracle 但为 logical-props 多 session 轨道奠基（margin/padding/inset 可后续转 writing-mode-aware；table-internal border 渲染改进后 003/004 可 flip）。3 已 FAIL 案恶化是暴露下游缺口（table col/colgroup border + sideways-lr），非本 mapping bug——mapping 单测全过、spec-correct。详见 [`evidence/r1048-border-logical-props-landed-2026-07-05.txt`](./evidence/r1048-border-logical-props-landed-2026-07-05.txt)。
+
+**▶ 下会话**：① **margin/padding/inset logical 转 writing-mode-aware**（现 R143 静态 horizontal-tb，转用 `logical_border_physical_side` 同款映射，可能 flip vertical-mode margin/padding 簇）；② **table-internal col/colgroup border 渲染**（R177 territory，解 003/004）；③ sideways-lr writing-mode 支持（enum + converter，解 mapping-001 部分）；④ 或转 R109 vertical block-flow（taffy 多 session）/ R702 margin-collapse-through。logical-props 轨道 foundational 已立，可按 slice 续推。
+
+### R1047 sibling-overlap grow-push postprocess 实验 = net -1 回退已回退·block-in-inline（R109）破坏拓扑·postprocess 层 ruled out·零 net 源码·纯调查
+
+承 R1046 CONTINUE（③ R1018 两趟 + sibling 重定位：p 文本测量延迟致 padding-em-inherit-001 sibling 重叠）。本轮实现 postprocess「增高下移兄弟」对称分支并 A/B，**结论：net -1 oracle，postprocess 层 ruled out，已回退**。
+
+**实现（已回退）**：`inline_finalization.rs::remeasure_inline_only_containers` 递归循环已有「收缩分支」（inline-only 容器收缩后把后续兄弟上移），本轮加对称「增高分支」——子块因 DOM 文本被 IFC 重测增高（taffy 原 content_height≈0）后，按 `grow_delta` 把后续普通流兄弟下移。门控演进：① 宽松 gate `old_content_height<1.0`；② DOM-text gate（加 `node_id` 有 Text 子）；③ 紧 gate（镜像 `needs_dom_text_remeasure` 全条件）。
+
+**A/B（chromium Oracle，stash 对照）**：
+- **驱动簇改善（未 flip）**：padding-em-inherit-001 **11.17→4.80%**、margin-em-inherit-001 11.25→跌出 top-15（<4.8%）、padding-percentage-inherit-001 7.47→跌出 top-15。3 案均 -6pp+，sibling 重叠 bug 确被修（单测 `test_r1047_text_block_grow_pushes_sibling_down` 验证 sibling.y ≥ p.y+p.height 不再重叠）。
+- **零 oracle flip**：3 案均未跨 1%（残余 = R702 margin-collapse-through，多 session）。
+- **回归（决定性）**：**css/CSS2/normal-flow 604→603（-1 oracle）**。ORACLE_DUMP_ALL 全 case diff 精确定位**唯一 PASS→FAIL flip = `block-in-inline-margins-003.html` 0.050%→2.870%（+2.82pp）**，另有 block-in-inline-first-line-001 2.58→3.14、block-in-inline-remove-006 0.60→0.67 等 block-in-inline 簇小幅恶化。
+- 三种 gate（宽松 / DOM-text / 紧）**均 -1**——回归案有 DOM text，gate 收紧到 `needs_dom_text_remeasure` 全条件则同时破坏驱动案（`<p>` 含 `<br>`，br 是 inline LayoutBox 子违「仅 abs/fixed 子」）。**无 clean gate 可区分驱动案与回归案**。
+
+**根因（postprocess fundamentally flawed for R109）**：block-in-inline-margins-003 属 R109 §9.2.1.1 insert-block-in-inlines 簇（R928-R935 已证 Phase A 结构性）——inline 容器被 block 子分裂为匿名块盒，sibling 拓扑与普通 block 容器不同。postprocess sibling-push 假设的「后续普通流兄弟」在 R109 匿名块盒上下文下语义错误，强行下移破坏布局。**与 R1043「postprocess mirror 无法更新 float-exclusion/margin-collapse 状态，fundamentally flawed」同族裁决**：postprocess 层对涉及 R109/float/margin-collapse 的 sibling 重定位系统性不可解。
+
+**结论**：R1046 ③「sibling overlap = p 文本测量延迟」在 postprocess 层 **ruled out**（与 R1046① R109 匿名块文本高度 / ② R702 margin-collapse-through 同列多 session 结构性）。clean single-session win 谱系再确尽。forward = ① R109 匿名块文本高度须 layout 期 cell_content_height 计入文本（多 session）；② R702 margin-collapse-through 链（intervening sibling 分布）；③ 任何 sibling 重定位须在 layout 期内（taffy/converter 层，非 postprocess）知晓 R109/float/margin-collapse 状态。详见 evidence [`evidence/r1047-sibling-grow-push-reverted-2026-07-05.txt`](./evidence/r1047-sibling-grow-push-reverted-2026-07-05.txt)。
+
+**★ 跨目录近失扫描（为下轮定位，read-only）**：[1.0%,2.5%] 带 flip 候选——css/CSS2/normal-flow：min/max-height-047/058 簇（1.04-1.05%，4 案，mm 单位亚像素疑似 font-wall 谱系，非 clean layout）；block-formatting-contexts-011（1.13%）；block-replaced-height-001（1.14%）。css-flexbox：flexbox-writing-mode-slr/srl-rtl（1.00%，writing-mode 谱系）；flex-inline.html（1.04%）。css-position：position-relative-table-{tbody,tfoot,thead}-{left,top}-absolute-child 簇（1.32%，5+ 案，R1042 table.rs 独立 abspos 机制 entangled 多 session）；position-absolute-center-001（1.14%）。多为 font-wall 亚像素或已知结构性，无 obvious clean 单点。
+
+**▶ 下会话**：clean single-session lever 谱系跨 10+ dir 穷尽（R1042/R1046/R1047 三连再证），forward motion 全 multi-session 结构性——按 R1042「跨会话架构任务」序选 1 dedicated 推进：① **R109 vertical block-flow**（css-writing-modes 87% 失败 dir，~30+ potential，converter `apply_vertical_writing_mode` 接 rl 信号 + taffy 反向布局，R1043 postprocess-mirror 已 ruled out）；② **R702 margin-collapse-through 链**（intervening sibling margin 分布，padding/margin-em-inherit 簇受益）；③ **逻辑属性完整实现**（border/margin/padding/inset inline/block→物理，writing-mode 映射，registry 全未注册 feature gap）；④ font-wall 解除（per-font 真实度量，R887 provider wiring）。每条均多 session，rally 可续跑承接，非人工阻塞。
+
 ### R1046 css-tables / CSS2 margin-padding-clear 候选调查 = 全结构性（table-text-height R109 / margin-collapse R702 / sibling-overlap）·零 net 源码·纯调查
 
 承 R1045 CONTINUE（转 CSS2/margin-padding-clear / table-cell-overflow 清洁 worst）。本轮调查 3 个候选，**结论：全结构性，无单点 clean win**。

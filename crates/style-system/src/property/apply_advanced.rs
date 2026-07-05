@@ -110,76 +110,61 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
 
         // ── 逻辑属性 ──
-        // margin-block-start → margin-top (horizontal writing-mode 映射)
-        "margin-block-start" => {
+        // margin/padding/inset 的 inline/block × start/end 逻辑属性，按元素 computed
+        // writing-mode 映射物理边（CSS Logical Properties §1 + Writing Modes §6）。
+        // R143 起支持，R1049 由静态 horizontal-tb 升级为 writing-mode-aware：horizontal-tb
+        // 下与原静态映射字节一致（零回归），vertical-rl/lr 下映射到正确物理边。
+        // inline 轴 direction 暂按 ltr（vertical 模式 inline-start=top）。
+        "margin-block-start" => return apply_logical_margin(style, false, true, value),
+        "margin-block-end" => return apply_logical_margin(style, false, false, value),
+        "margin-inline-start" => return apply_logical_margin(style, true, true, value),
+        "margin-inline-end" => return apply_logical_margin(style, true, false, value),
+        "padding-block-start" => return apply_logical_padding(style, false, true, value),
+        "padding-block-end" => return apply_logical_padding(style, false, false, value),
+        "padding-inline-start" => return apply_logical_padding(style, true, true, value),
+        "padding-inline-end" => return apply_logical_padding(style, true, false, value),
+        "inset-block-start" => return apply_logical_inset(style, false, true, value),
+        "inset-block-end" => return apply_logical_inset(style, false, false, value),
+        "inset-inline-start" => return apply_logical_inset(style, true, true, value),
+        "inset-inline-end" => return apply_logical_inset(style, true, false, value),
+
+        // ── border 逻辑属性 longhand（CSS Logical Properties §3 + Writing Modes §6）──
+        // border-inline-start / border-block-end 等简写经 shorthand 模块展开为这些
+        // logical longhand。此处按元素 computed writing-mode 映射到物理边。
+        //   horizontal-tb（ltr）：inline-start=left, inline-end=right,
+        //                        block-start=top, block-end=bottom
+        //   vertical-rl：inline-start=top, inline-end=bottom,
+        //                block-start=right, block-end=left
+        //   vertical-lr：inline-start=top, inline-end=bottom,
+        //                block-start=left, block-end=right
+        // inline 轴的 direction 暂按 ltr（vertical 模式 inline-start=top）；这是
+        // logical-props-001 等 vertical-rl 用例的预期。
+        "border-inline-start-width" | "border-inline-end-width"
+        | "border-block-start-width" | "border-block-end-width" => {
             if let Some(v) = parse_length_or_math(value) {
-                style.margin_top = v;
+                if let LengthValue::Px(px) = v
+                    && px < 0.0
+                {
+                    return false;
+                }
+                let side = logical_border_physical_side(property, &style.writing_mode);
+                set_border_width_field(style, side, v);
                 return true;
             }
         }
-        "margin-block-end" => {
-            if let Some(v) = parse_length_or_math(value) {
-                style.margin_bottom = v;
+        "border-inline-start-style" | "border-inline-end-style"
+        | "border-block-start-style" | "border-block-end-style" => {
+            if let Some(v) = parse_border_style(value) {
+                let side = logical_border_physical_side(property, &style.writing_mode);
+                set_border_style_field(style, side, v);
                 return true;
             }
         }
-        "margin-inline-start" => {
-            if let Some(v) = parse_length_or_math(value) {
-                style.margin_left = v;
-                return true;
-            }
-        }
-        "margin-inline-end" => {
-            if let Some(v) = parse_length_or_math(value) {
-                style.margin_right = v;
-                return true;
-            }
-        }
-        "padding-block-start" => {
-            if let Some(v) = parse_length_or_math(value) {
-                style.padding_top = v;
-                return true;
-            }
-        }
-        "padding-block-end" => {
-            if let Some(v) = parse_length_or_math(value) {
-                style.padding_bottom = v;
-                return true;
-            }
-        }
-        "padding-inline-start" => {
-            if let Some(v) = parse_length_or_math(value) {
-                style.padding_left = v;
-                return true;
-            }
-        }
-        "padding-inline-end" => {
-            if let Some(v) = parse_length_or_math(value) {
-                style.padding_right = v;
-                return true;
-            }
-        }
-        "inset-block-start" => {
-            if let Some(v) = parse_length_or_math(value) {
-                style.top = v;
-                return true;
-            }
-        }
-        "inset-block-end" => {
-            if let Some(v) = parse_length_or_math(value) {
-                style.bottom = v;
-                return true;
-            }
-        }
-        "inset-inline-start" => {
-            if let Some(v) = parse_length_or_math(value) {
-                style.left = v;
-                return true;
-            }
-        }
-        "inset-inline-end" => {
-            if let Some(v) = parse_length_or_math(value) {
-                style.right = v;
+        "border-inline-start-color" | "border-inline-end-color"
+        | "border-block-start-color" | "border-block-end-color" => {
+            if let Some(v) = values::parse_color(value) {
+                let side = logical_border_physical_side(property, &style.writing_mode);
+                set_border_color_field(style, side, v);
                 return true;
             }
         }
@@ -1399,6 +1384,143 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         _ => {}
+    }
+    false
+}
+
+// ── border 逻辑属性辅助（CSS Logical Properties §3 + Writing Modes §6）──
+
+// ── 逻辑属性辅助（CSS Logical Properties §1/§3 + Writing Modes §6）──
+// margin / padding / inset / border 的 inline/block × start/end 逻辑属性共用此映射。
+
+/// 物理边标签（top/right/bottom/left）。
+#[derive(Clone, Copy)]
+enum PhysicalSide {
+    Top,
+    Right,
+    Bottom,
+    Left,
+}
+
+/// 按 logical 轴 + 起/止 + 元素 writing-mode 解析物理边。
+///
+/// - `axis_inline=true` 表示 inline 轴（inline-start/inline-end），`false` 表示 block 轴。
+/// - `start=true` 表示 start 侧，`false` 表示 end 侧。
+/// - inline 轴 direction 暂按 ltr（vertical 模式 inline-start=top）。
+///
+/// 映射（CSS Writing Modes §6）：
+///   horizontal-tb：inline-start=left, inline-end=right, block-start=top, block-end=bottom
+///   vertical-rl：  inline-start=top,  inline-end=bottom, block-start=right, block-end=left
+///   vertical-lr：  inline-start=top,  inline-end=bottom, block-start=left, block-end=right
+fn logical_physical_side(axis_inline: bool, start: bool, wm: &WritingModeValue) -> PhysicalSide {
+    use PhysicalSide as P;
+    use WritingModeValue as Wm;
+    match (axis_inline, start) {
+        // inline 轴：horizontal-tb 水平（start=left/end=right），vertical 垂直（start=top/end=bottom）
+        (true, true) => match wm {
+            Wm::HorizontalTb => P::Left,
+            _ => P::Top,
+        },
+        (true, false) => match wm {
+            Wm::HorizontalTb => P::Right,
+            _ => P::Bottom,
+        },
+        // block 轴：horizontal-tb 垂直（start=top/end=bottom）；
+        // vertical-rl 水平 start=right/end=left；vertical-lr 水平 start=left/end=right
+        (false, true) => match wm {
+            Wm::HorizontalTb => P::Top,
+            Wm::VerticalRl => P::Right,
+            Wm::VerticalLr => P::Left,
+        },
+        (false, false) => match wm {
+            Wm::HorizontalTb => P::Bottom,
+            Wm::VerticalRl => P::Left,
+            Wm::VerticalLr => P::Right,
+        },
+    }
+}
+
+/// 按 logical 属性名（如 `border-inline-start-width`）与元素 writing-mode 解析物理边。
+///
+/// 属性名形如 `border-{axis}-{side}-{kind}`，axis ∈ {inline, block}，side ∈ {start, end}。
+fn logical_border_physical_side(property: &str, wm: &WritingModeValue) -> PhysicalSide {
+    logical_physical_side(
+        property.contains("-inline-"),
+        property.contains("-start-"),
+        wm,
+    )
+}
+
+fn set_border_width_field(style: &mut ComputedStyle, side: PhysicalSide, v: LengthValue) {
+    match side {
+        PhysicalSide::Top => style.border_top_width = v,
+        PhysicalSide::Right => style.border_right_width = v,
+        PhysicalSide::Bottom => style.border_bottom_width = v,
+        PhysicalSide::Left => style.border_left_width = v,
+    }
+}
+
+fn set_border_style_field(style: &mut ComputedStyle, side: PhysicalSide, v: BorderStyleValue) {
+    match side {
+        PhysicalSide::Top => style.border_top_style = v,
+        PhysicalSide::Right => style.border_right_style = v,
+        PhysicalSide::Bottom => style.border_bottom_style = v,
+        PhysicalSide::Left => style.border_left_style = v,
+    }
+}
+
+fn set_border_color_field(style: &mut ComputedStyle, side: PhysicalSide, v: ColorValue) {
+    match side {
+        PhysicalSide::Top => style.border_top_color = v,
+        PhysicalSide::Right => style.border_right_color = v,
+        PhysicalSide::Bottom => style.border_bottom_color = v,
+        PhysicalSide::Left => style.border_left_color = v,
+    }
+}
+
+// ── margin / padding / inset 逻辑属性应用（R1049：writing-mode-aware）──
+
+/// 应用 logical margin（margin-block-start 等）。horizontal-tb 下与原 R143 静态映射字节一致。
+fn apply_logical_margin(style: &mut ComputedStyle, axis_inline: bool, start: bool, value: &str) -> bool {
+    if let Some(v) = parse_length_or_math(value) {
+        let side = logical_physical_side(axis_inline, start, &style.writing_mode);
+        match side {
+            PhysicalSide::Top => style.margin_top = v,
+            PhysicalSide::Right => style.margin_right = v,
+            PhysicalSide::Bottom => style.margin_bottom = v,
+            PhysicalSide::Left => style.margin_left = v,
+        }
+        return true;
+    }
+    false
+}
+
+/// 应用 logical padding。horizontal-tb 下与原 R143 静态映射字节一致。
+fn apply_logical_padding(style: &mut ComputedStyle, axis_inline: bool, start: bool, value: &str) -> bool {
+    if let Some(v) = parse_length_or_math(value) {
+        let side = logical_physical_side(axis_inline, start, &style.writing_mode);
+        match side {
+            PhysicalSide::Top => style.padding_top = v,
+            PhysicalSide::Right => style.padding_right = v,
+            PhysicalSide::Bottom => style.padding_bottom = v,
+            PhysicalSide::Left => style.padding_left = v,
+        }
+        return true;
+    }
+    false
+}
+
+/// 应用 logical inset（inset-block-start 等）。horizontal-tb 下与原 R143 静态映射字节一致。
+fn apply_logical_inset(style: &mut ComputedStyle, axis_inline: bool, start: bool, value: &str) -> bool {
+    if let Some(v) = parse_length_or_math(value) {
+        let side = logical_physical_side(axis_inline, start, &style.writing_mode);
+        match side {
+            PhysicalSide::Top => style.top = v,
+            PhysicalSide::Right => style.right = v,
+            PhysicalSide::Bottom => style.bottom = v,
+            PhysicalSide::Left => style.left = v,
+        }
+        return true;
     }
     false
 }
