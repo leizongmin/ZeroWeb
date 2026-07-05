@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1063 paint 双渲染 probe + case-b 容器抑制修复 = 确证双渲染但抑制致 normal-flow -29 回归 + box-display case-b 簇终裁 font-blocked（1.04% 残余 = 字体/精度 非 anon-box）·已回退·box-display 簇穷尽·零 net 源码·纯调查
+
+承 R1062 CONTINUE（probe paint_text anon fragment）。本轮复加 width fix + R1063DBG probe paint_text，**确证 case-b 双渲染**（#div1 容器 + anon fragment 共 node_id 都渲染文本），实施容器抑制修复，**A/B 揭示 box-display font-blocked + 抑制致 normal-flow -29 回归，已回退，box-display 簇穷尽**。
+
+**R1063DBG probe 实证双渲染**（anonymous-box-generation-001）：paint_text 对 node_id=30v1(#div1) 调 2 次：① 容器（fragment=false, has_anon_child=true, content_w=192）；② anon fragment（fragment=true, content_w=192）。**两者都渲染 "Filler Text"**（inline_layout=false 走 Path B）。双渲染 = case-b 容器自身 IFC + anon fragment IFC 共渲染同文本。
+
+**★ 容器抑制修复**（text.rs:785 后加）：`fragment_node_ids.is_none() && children.iter().any(|c| c.fragment_node_ids.is_some())` → return（case-b 容器文本在 anon fragment，不自身渲染）。逻辑 spec-correct（§9.2.1.1 block-mixed inline 文本全在 anon 盒）。
+
+**A/B（width fix + 抑制）**：① **CSS2/box-display 39→39（net-0）**——anonymous-box-generation-001 仍 1.04%（width fix 已让双渲染都 @x=50 居中重叠，抑制其一无可视变化；1.04% 残余 = `<p>` 文本 + "Filler Text" fontdue vs chromium + blue stripe AA = **font/precision 非 anon-box**）；② **CSS2/normal-flow 604→575（-29 回归 ❌）**——抑制过宽，normal-flow 多案合法容器（含 anon fragment 子但须自身渲染文本）被误抑。
+
+**裁决：box-display case-b 簇终裁 font-blocked，box-display 簇穷尽**。① 双渲染抑制 spec-correct 但 **normal-flow -29 回归**（过宽，须窄化到真 case-b 容器，但 normal-flow 合法 case 难区分）→ 回退；② width fix + 抑制对 box-display **net-0**（target 1.11→1.04 后续 font 残余不可越 <1%）→ 无 yield；③ **1.04% = font/precision**（双渲染对齐 x=50 后残余纯字体），box-display case-b 非 anon-box 可产 lever。git checkout 回退 width fix + 抑制（零 net 源码）。
+
+**box-display R109 簇 5 轮（R1059-R1063）收官**：R1058（inline 垂直 margin）= 唯一 clean yield（+1）；R1059 定位 2 bug；R1060 Bug 2 measure refuted（taffy）；R1061 width fix net-0；R1062 paint-side；R1063 双渲染抑制回归 + font-blocked 终裁。**剩余 box-display 1-1.6% 簇 = font-wall（fontdue 字体度量/AA）+ R109 case-a 3px offset（taffy measured-leaf）+ case-b 1.04%（font）**，皆非单 session clean lever。
+
+**▶ 下会话**：box-display 簇穷尽，**pivot 必要**：① css-backgrounds / css-borders fresh dir 扫 borderline 簇（R740 strategy ②，未扫过）；② css-tables top-worst 复审（R177 territory，可能漂移出新 lever）；③ 或转 Phase-A IFC 单次源统一续（非 font-metric 子任务）；④ R109 case-a 3px offset（span w=6 taffy measured-leaf，与 case-b 同 taffy quirk，taffy-blocked）。★ box-display case-b 勿再投（font-blocked + 抑制回归，R1063 终裁）。
+
 ### R1062 R1061 text-align bug 定位 = compute_final 确为 anon 盒建 Center IFC（probe 实测 text_align=Center container_w=192 is_block_level=true，存储无条件）·bug 在 paint 侧（use_stored 不为 anon 触发 或 容器 #div1 自身 IFC 渲染文本 而非 anon 盒）·零 net 源码·纯调查
 
 承 R1061 CONTINUE（probe compute_final 内 anon 盒 text-align 应用）。本轮复加 width fix + R1061DBG probe compute_final，**确证 compute_final 端正确，bug 在 paint 侧**。
