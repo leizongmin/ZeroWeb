@@ -2648,6 +2648,22 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1089 ::first-letter color-only 变体 = net count-neutral（299→299）·oracle 确定性验证（A/B 可信）·::first-letter 三变体穷尽确证 Phase A 门控·已回退·零源码
+
+承 R1088（::first-letter 全量应用 net-negative -7，line-box 度量级联）。本轮试 color-only 变体——合成元素 color 取伪样式，font_size/line_height/font_family/font_weight/font_style/letter_spacing/word_spacing **全部重置为元素自身值** → 零布局级联（R1088 -7 根因消除），仅 color 等 paint-only 生效。
+
+**A/B（selectors 全量 542）**：299/55% → 299/55% **NET count-neutral**（FAIL→PASS=0 / PASS→FAIL=0）。49 案 >0.01pp：11 improved（全 first-letter，color match 工作）/ 12 worsened（含 first-line-pseudo-013/014 + selectors-parsing-001 + class-selector-009/010/011 **均无 ::first-letter 规则**，grep 确认）。
+
+**★ oracle 确定性验证（A/B 方法论可信度）**：reverted 后重跑 baseline selectors oracle，与上次 session baseline 逐案对比 = **0 案 ≥0.01pp 差异** → oracle **完全确定性**（HashMap RandomState 未致 layout/paint 顺序漂移）。故 R1089 的 12 worsened 是**真实**副作用（非噪声）= 我的 `first_letter.color != elem_style.color` 门控对**无 ::first-letter 规则但 color 经选择器设置的元素**误触发（伪 compute color 与 elem color 微差，疑 quirks 调整 / currentColor 解析差异；compute_element_style_internal line 558 已证继承 parent_style，但 apply_quirks_mode_adjustments line 579 对 pseudo 可能分歧）。即使用正信号门控（collect_pseudo_declarations 非空）修复副作用，11 improved 仍**零 count flip**（color match 太小，size/line-height 不匹配主导 diff）。
+
+**结论（::first-letter 三变体穷尽）**：full = net -7（36px/line-height:2 cascade）/ color-only = count-neutral（color match 不足 flip）/ 加正信号门控 = 仍 ~0 flip。**::first-letter（项目最大 autonomous lever，436 案）确证完全 Phase A line-box 度量门控**——color 单维不足以跨阈值，须 Phase A 度量统一后 font-size 全量应用（color+size+line-height 三维同匹配）才 flip。R1088 evidence 存档的合成 inline 元素实现 + 本轮 color-only 度量重置 = Phase A 后重应用的完整方案。
+
+**意义**：autonomous plateau 三重确证——clean lever（R1085/R1086）+ 最大 lever（::first-letter 三变体）+ C-dep（user-blocked）均收敛到 Phase A line-box 度量统一。**Phase A 是唯一未试通的 universal gate**（R817 Ahem-gated baseline_y +45 是 Phase A 唯一成功 narrow slice 先例）。oracle 确定性 = A/B 方法论可信，历史 yield 结论（R1085 +14 / R1086 +2 / R1088 -7）可靠。
+
+**裁决**：按协议（无 count yield → revert）git checkout 4 文件回退，零源码，cargo check 绿。
+
+**▶ 下会话**：① **Phase A line-box 度量统一 narrow slice**（照 R817 Ahem-gated 先例，找下一个安全子集存 baseline_y + paint Path A 消费；linebox-metric-unification-rfc Phase 3 的 per-fragment valign-aware baseline_y 是 universal gate）；② Phase A 度量统一后重应用 ::first-letter（R1088 evidence + R1089 color-only 度量重置方案），批量 flip 436 案；③ font-wall C-dep 用户决策（CI 计费恢复）；④ 勿再试 ::first-letter 单变体（三变体穷尽，Phase A 前无 yield）。
+
 ### R1088 ★::first-letter 端到端实现正确但 Phase A 度量门控 net-negative（-7 selectors）·fresh scan 最大 lever（436 案）定位·已回退·零源码
 
 承 R1087（fresh scan 收益递减）。本轮扫未扫 dir（visuren + selectors）+ 深挖发现并实现 ::first-letter（fresh scan 第三轮唯一定位到的 clean CSS-语义 lever，亦项目最大 autonomous lever），A/B net-negative 已回退。
