@@ -1932,3 +1932,38 @@ fn test_r1099_subtree_has_text_decoration() {
         "子树无装饰应返回 false"
     );
 }
+
+/// R1100 Slice α-2 验证：vertical-mode 下 col_width（= line.height）是否 = line-height × fs。
+/// R1052 VIFCDUMP（pre-α-1 tree）实测 col_width=16（应 80，line-height:5 × fs16）。
+/// 本测验证 current tree（post-α-1）run.line_height → col_width 链路是否正确。
+#[test]
+fn test_r1100_alpha2_vertical_line_height_column_width() {
+    use zero_dom::parse_html;
+    use zero_style_system::WritingModeValue;
+    use zero_style_system::property::types::LineHeightValue;
+
+    let doc = parse_html("<div>AAAAA</div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let div = doc.first_child(body).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut div_style = ComputedStyle::default();
+    div_style.writing_mode = WritingModeValue::VerticalRl;
+    div_style.font_size = LengthValue::Px(16.0);
+    div_style.line_height = LineHeightValue::Number(5.0); // line-height:5 → 80px
+    styles.insert(div, div_style);
+
+    // vertical: container_width 模拟 α-1 的 content_height（200px 可用深度）。
+    let mut ctx = InlineFormattingContext::new(200.0).with_vertical(true);
+    ctx.layout(&doc, div, &styles);
+
+    assert!(!ctx.lines.is_empty(), "vertical IFC 应产出至少一列");
+    let col_width = ctx.lines[0].height;
+    assert!(
+        (col_width - 80.0).abs() < 1.0,
+        "vertical 列宽（line.height）应为 line-height:5 × fs16 = 80，实际 {} \
+         （若 =16 则 line-height 未传 vertical 列宽，α-2 须修）",
+        col_width
+    );
+}
