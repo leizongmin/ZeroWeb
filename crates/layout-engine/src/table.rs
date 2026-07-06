@@ -1386,17 +1386,34 @@ fn grow_vrl_cell_block_extent(
     if cell_h_scaled <= 0.0 {
         return cb.width;
     }
-    // 文本像素高（垂直单列高度）≈ 非空白 char 数 × fs（Ahem 精确，变宽近似）。
-    let char_count = cb
+    // 列数 N 按 **word-based 贪心 packing** 计（非连续 char 数）。IFC 实际换行按 word
+    //（break opportunity = 空白除 nbsp U+00A0）；R1131 原 char 公式低估列数（如 4 word
+    // 各 1 列，char 公式给 3 列）→ cell 过窄 → wrap 列溢出（row-progression 残余）。
+    // 每 word 高 = char 数（含 nbsp，nbsp 渲染）× fs；贪心 pack 到 cell_h_scaled 满即换列。
+    let n = cb
         .node_id
         .and_then(|id| doc.text_content(id))
-        .map(|t| t.chars().filter(|c| !c.is_whitespace()).count() as f32)
-        .unwrap_or(0.0);
-    let text_extent = char_count * fs;
-    if text_extent <= 0.0 {
-        return cb.width;
-    }
-    let n = (text_extent / cell_h_scaled).ceil().max(1.0);
+        .map(|t| {
+            // word = 按 break-opportunity 空白分割（nbsp U+00A0 不分割，留在 word 内）。
+            let words = t.split(|c: char| c.is_whitespace() && c != '\u{00A0}');
+            let mut cols = 1usize;
+            let mut col_h = 0.0f32;
+            for word in words {
+                let wc = word.chars().count() as f32;
+                if wc == 0.0 {
+                    continue;
+                }
+                let word_h = wc * fs;
+                if col_h + word_h > cell_h_scaled && col_h > 0.0 {
+                    cols += 1;
+                    col_h = word_h;
+                } else {
+                    col_h += word_h;
+                }
+            }
+            cols.max(1) as f32
+        })
+        .unwrap_or(1.0);
     (n * fs).max(cb.width)
 }
 
