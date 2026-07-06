@@ -1,0 +1,15 @@
+fix(ui-sdk): P1-3/5/6/9 文本换行+chrome hover+dialog 按钮去重+group toggle 中文
+
+P1-3: Text widget 支持自动换行（按 max_width word-wrap）+ \n 硬换行。
+      layout 阶段用 measure_text 计算行，存 self.laid_lines；paint 直接用。
+      CJK 字符可任意位置断行，拉丁文按空格分词。PaintCtx 新增 measure_text 方法。
+
+P1-5: HeaderButton/NavItem/GroupHeader 加 hover 态（Moved→hover=true，Exited→reset）。
+      paint 在 hover 时画轻微高亮背景（surface + on_background 8% 混合），
+      NavItem 四态优先级：selected > pressed > hover > default。
+
+P1-6: popup/dialog_scaffold demo 主树去掉 OK/Cancel 按钮（与 overlay 重复，
+      且 modal barrier 下主树按钮不可点）。主树只保留触发按钮 + 说明文字。
+
+P1-9: gallery group toggle 用 GroupId::name_en() 稳定字符串标识，
+      替代 format!("{:?}") Debug 格式（中文环境 Debug 仍输出英文 enum 名但耦合实现细节）。

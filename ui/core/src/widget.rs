@@ -200,6 +200,15 @@ impl<'a> PaintCtx<'a> {
     pub fn request_frame(&self) {
         self.frame_requests.set(self.frame_requests.get().saturating_add(1));
     }
+
+    /// P1-3：测量文本宽度（委托给 PaintRecorder::measure_text）。
+    ///
+    /// 供 widget 在 paint 阶段算对齐偏移（如 Text widget 的 center/right 对齐）。
+    /// 返回 TextSize（与 LayoutCtx::measure_text 同结构）。
+    pub fn measure_text(&mut self, text: &str, font_size: f32) -> TextSize {
+        let w = self.recorder.measure_text(text, font_size);
+        TextSize { width: w, height: font_size }
+    }
 }
 
 /// mount 上下文（首次实例化）。

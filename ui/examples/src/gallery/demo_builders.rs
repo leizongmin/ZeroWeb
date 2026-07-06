@@ -720,28 +720,18 @@ impl GalleryApp {
             .insert("action", Value::Text("gallery.demo.button_click.1".into()));
         col.children.push(trigger);
 
-        if open {
-            let mut row = self.themed_container("Row", "demo_popup_actions");
-            row.props.insert("gap", Value::Float(8.0));
-            let mut ok = WidgetSpec::new("Button");
-            ok.id = Some(WidgetId::new("demo_popup_ok"));
-            ok.props.insert("label", Value::Text("OK".into()));
-            ok.props
-                .insert("action", Value::Text("gallery.demo.button_click.2".into()));
-            row.children.push(ok);
-
-            let mut cancel = WidgetSpec::new("Button");
-            cancel.id = Some(WidgetId::new("demo_popup_cancel"));
-            cancel.props.insert("label", Value::Text("Cancel".into()));
-            cancel
-                .props
-                .insert("variant", Value::Text("neutral".into()));
-            cancel
-                .props
-                .insert("action", Value::Text("gallery.demo.button_click.3".into()));
-            row.children.push(cancel);
-            col.children.push(row);
-        }
+        // P1-6 修复：OK/Cancel 只在 overlay（build_popup_overlay）中渲染，
+        // 主树不放（避免重复 + modal barrier 下主树按钮不可点）。
+        let mut hint = WidgetSpec::new("Text");
+        hint.id = Some(WidgetId::new("demo_popup_hint"));
+        hint.props.insert(
+            "text",
+            Value::Text(
+                "Click trigger to toggle modal popup. OK/Cancel buttons appear in the overlay."
+                    .into(),
+            ),
+        );
+        col.children.push(hint);
         col
     }
 
@@ -866,7 +856,7 @@ impl GalleryApp {
         col
     }
 
-    /// DialogScaffold: trigger + inner dialog body with OK / Cancel.
+    /// DialogScaffold: trigger only (dialog body + OK/Cancel in overlay).
     fn build_dialog_scaffold_demo(&self) -> WidgetSpec {
         let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_dialog_col");
@@ -884,33 +874,14 @@ impl GalleryApp {
             .insert("action", Value::Text("gallery.demo.button_click.1".into()));
         col.children.push(trigger);
 
-        if open {
-            let mut body = WidgetSpec::new("Text");
-            body.id = Some(WidgetId::new("demo_dialog_body"));
-            body.props.insert("text", Value::Text("Are you sure?".into()));
-            col.children.push(body);
-
-            let mut row = self.themed_container("Row", "demo_dialog_actions");
-            row.props.insert("gap", Value::Float(8.0));
-            let mut ok = WidgetSpec::new("Button");
-            ok.id = Some(WidgetId::new("demo_dialog_ok"));
-            ok.props.insert("label", Value::Text("Confirm".into()));
-            ok.props
-                .insert("action", Value::Text("gallery.demo.button_click.2".into()));
-            row.children.push(ok);
-
-            let mut cancel = WidgetSpec::new("Button");
-            cancel.id = Some(WidgetId::new("demo_dialog_cancel"));
-            cancel.props.insert("label", Value::Text("Cancel".into()));
-            cancel
-                .props
-                .insert("variant", Value::Text("neutral".into()));
-            cancel
-                .props
-                .insert("action", Value::Text("gallery.demo.button_click.3".into()));
-            row.children.push(cancel);
-            col.children.push(row);
-        }
+        // P1-6 修复：dialog body + OK/Cancel 只在 overlay（build_dialog_overlay）。
+        let mut hint = WidgetSpec::new("Text");
+        hint.id = Some(WidgetId::new("demo_dialog_hint"));
+        hint.props.insert(
+            "text",
+            Value::Text("Click trigger to toggle modal dialog. Content appears in the overlay.".into()),
+        );
+        col.children.push(hint);
         col
     }
 

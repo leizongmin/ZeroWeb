@@ -196,9 +196,10 @@ impl GalleryApp {
                     .props
                     .insert("label", Value::Text(page.group.name_for(self.locale).into()));
                 group_header.props.insert("collapsed", Value::Bool(is_collapsed));
+                // P1-9 修复：用 name_en() 稳定字符串标识（替代 Debug 格式），中文环境也工作。
                 group_header
                     .props
-                    .insert("group", Value::Text(format!("{:?}", page.group)));
+                    .insert("group", Value::Text(page.group.name_en().into()));
                 col.children.push(group_header);
 
                 if !is_collapsed {
@@ -528,9 +529,9 @@ impl UiApp for GalleryApp {
             }
             "gallery.group.toggle" => {
                 if let Some(ActionPayload::Text(group)) = &payload {
-                    // Parse group name from Debug format
+                    // P1-9 修复：用 name_en() 稳定字符串匹配（替代 Debug 格式），中文环境也工作。
                     if let Some(g) = ALL_PAGES.iter().find_map(|p| {
-                        if format!("{:?}", p.group) == *group {
+                        if p.group.name_en() == group.as_str() {
                             Some(p.group)
                         } else {
                             None

@@ -34,7 +34,7 @@ pub enum TextAlign {
 
 /// 通用文本 widget。
 ///
-/// 显示一行文本；多行用 `\n` 分隔会在 paint 时按行渲染（无自动换行）。
+/// 显示文本，支持自动换行（按 `max_width` word-wrap）和 `\n` 硬换行。
 /// 不响应事件。
 pub struct Text {
     /// `text` prop：要显示的内容。
@@ -49,6 +49,9 @@ pub struct Text {
     bold: bool,
     /// 上次 layout 算出的尺寸。
     size: Size,
+    /// P1-3：layout 阶段计算好的行列表（已 word-wrap + 按硬换行分割），paint 直接用。
+    /// 避免 paint 阶段没有 text_measure 的问题。
+    laid_lines: Vec<String>,
 }
 
 impl Default for Text {
@@ -66,6 +69,7 @@ impl Text {
             align: TextAlign::Left,
             bold: false,
             size: Size::new(0.0, 20.0),
+            laid_lines: Vec::new(),
         }
     }
 }
@@ -134,13 +138,60 @@ impl Widget for Text {
         EventResult::Ignored
     }
 
-    fn layout(&mut self, _ctx: &mut LayoutCtx, c: Constraints) -> Size {
-        // 高度 = 行数 × line_height（size * 1.4）；宽度吃满 max（文本宽度由 paint 自适应）。
+    fn layout(&mut self, ctx: &mut LayoutCtx, c: Constraints) -> Size {
+        // P1-3：自动换行。按 max_width 用 measure_text 计算 word-wrap，
+        // 同时保留 \n 硬换行。结果存 self.laid_lines 供 paint 使用。
         let line_h = self.size_px * 1.4;
-        let lines = self.text.lines().count().max(1) as f32;
-        let h = (lines * line_h).clamp(c.min_height, c.max_height);
+        let max_w = c.max_width;
+        let mut lines: Vec<String> = Vec::new();
+        for hard_line in self.text.split('\n') {
+            if hard_line.is_empty() {
+                lines.push(String::new());
+                continue;
+            }
+            // 简单 word-wrap：按空格分词，累加直到超 max_w。
+            // CJK 无空格分隔 → 按字符回退（每个 CJK 字符可单独成行）。
+            let mut cur = String::new();
+            let mut cur_w = 0.0_f32;
+            for token in tokenize_line(hard_line) {
+                let token_w = ctx.measure_text(&token, self.size_px).width;
+                if cur.is_empty() {
+                    // 单个 token 就超宽：硬切（按字符）。
+                    if token_w > max_w && token.chars().count() > 1 {
+                        for ch in token.chars() {
+                            let ch_w = ctx.measure_text(&ch.to_string(), self.size_px).width;
+                            if !cur.is_empty() && cur_w + ch_w > max_w {
+                                lines.push(std::mem::take(&mut cur));
+                                cur_w = 0.0;
+                            }
+                            cur.push(ch);
+                            cur_w += ch_w;
+                        }
+                        continue;
+                    }
+                    cur.push_str(&token);
+                    cur_w = token_w;
+                } else if cur_w + token_w > max_w {
+                    lines.push(std::mem::take(&mut cur));
+                    cur = token;
+                    cur_w = token_w;
+                } else {
+                    cur.push_str(&token);
+                    cur_w += token_w;
+                }
+            }
+            if !cur.is_empty() {
+                lines.push(cur);
+            }
+        }
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+        let line_count = lines.len().max(1) as f32;
+        let h = (line_count * line_h).clamp(c.min_height, c.max_height);
         let w = c.max_width;
         self.size = Size::new(w, h);
+        self.laid_lines = lines;
         self.size
     }
 
@@ -151,11 +202,11 @@ impl Widget for Text {
         let size_px = if self.bold { self.size_px + 1.0 } else { self.size_px };
         let line_h = self.size_px * 1.4;
         let ascent = size_px * 0.92;
-        // 多行渲染：按 `\n` 分割，每行 baseline = (i+1) * line_h - descent。
-        for (i, line) in self.text.lines().enumerate() {
+        // P1-3：用 layout 算好的 laid_lines（已 word-wrap）。
+        for (i, line) in self.laid_lines.iter().enumerate() {
             let baseline_y = (i as f32 + 1.0) * line_h - (line_h - ascent);
-            // 水平对齐：估算文本宽度（char_w * char_count）。
-            let text_w = line.chars().count() as f32 * (size_px * 0.6);
+            // 水平对齐：用真实 measure_text 算宽度（layout 算过，paint 复算保持一致）。
+            let text_w = ctx.measure_text(line, size_px).width;
             let x = match self.align {
                 TextAlign::Left => 0.0,
                 TextAlign::Center => ((self.size.width - text_w) / 2.0).max(0.0),
@@ -175,6 +226,34 @@ impl Widget for Text {
             children: Vec::new(),
         });
     }
+}
+
+/// P1-3：把一行文本切成 word-wrap 友好的 token（保留空格）。
+///
+/// 拉丁文按空格分词；CJK 字符（每个字独立）作为独立 token，可在任意位置断行。
+fn tokenize_line(line: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut buf = String::new();
+    for ch in line.chars() {
+        let is_cjk = matches!(ch as u32, 0x3000..=0x9FFF | 0xAC00..=0xD7AF | 0xFF00..=0xFFEF);
+        if is_cjk {
+            if !buf.is_empty() {
+                tokens.push(std::mem::take(&mut buf));
+            }
+            tokens.push(ch.to_string());
+        } else if ch == ' ' {
+            if !buf.is_empty() {
+                tokens.push(std::mem::take(&mut buf));
+            }
+            tokens.push(" ".to_string());
+        } else {
+            buf.push(ch);
+        }
+    }
+    if !buf.is_empty() {
+        tokens.push(buf);
+    }
+    tokens
 }
 
 /// 与 Icon / ColoredBox 一致的命名预设解析。

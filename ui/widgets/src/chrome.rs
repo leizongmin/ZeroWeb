@@ -138,6 +138,8 @@ pub struct HeaderButton {
     pub(crate) label: String,
     pub(crate) action: ActionId,
     pub(crate) pressed: bool,
+    /// P1-5：hover 态（鼠标悬停时背景变化）。
+    pub(crate) hover: bool,
 }
 
 impl Default for HeaderButton {
@@ -152,6 +154,7 @@ impl HeaderButton {
             label: String::new(),
             action: ActionId::new("noop"),
             pressed: false,
+            hover: false,
         }
     }
 }
@@ -181,6 +184,24 @@ impl Widget for HeaderButton {
                 self.pressed = false;
                 EventResult::Emit(self.action.clone())
             }
+            // P1-5：hover 态。
+            UiEvent::Pointer {
+                phase: PointerPhase::Moved,
+                ..
+            } => {
+                if !self.hover {
+                    self.hover = true;
+                }
+                EventResult::Consumed
+            }
+            UiEvent::Pointer {
+                phase: PointerPhase::Exited,
+                ..
+            } => {
+                self.hover = false;
+                self.pressed = false;
+                EventResult::Consumed
+            }
             _ => EventResult::Ignored,
         }
     }
@@ -194,7 +215,19 @@ impl Widget for HeaderButton {
     fn paint(&mut self, ctx: &mut PaintCtx) {
         let tokens = ctx.tokens;
         let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(64.0, 32.0));
-        let bg = if self.pressed { tokens.primary } else { tokens.surface };
+        // P1-5：pressed > hover > default 三态背景。
+        let bg = if self.pressed {
+            tokens.primary
+        } else if self.hover {
+            // hover：surface 与 on_background 8% 混合（轻微高亮）。
+            Color::rgb(
+                tokens.surface.r * 0.92 + tokens.on_background.r * 0.08,
+                tokens.surface.g * 0.92 + tokens.on_background.g * 0.08,
+                tokens.surface.b * 0.92 + tokens.on_background.b * 0.08,
+            )
+        } else {
+            tokens.surface
+        };
         ctx.recorder.fill_rect(Rect::from_origin_size(Point::ZERO, size), bg);
         let border = Color::rgb(
             tokens.on_background.r * 0.3 + tokens.surface.r * 0.7,
@@ -226,6 +259,8 @@ pub struct NavItem {
     pub(crate) action: ActionId,
     pub(crate) selected: bool,
     pub(crate) pressed: bool,
+    /// P1-5：hover 态。
+    pub(crate) hover: bool,
 }
 
 impl Default for NavItem {
@@ -242,6 +277,7 @@ impl NavItem {
             action: ActionId::new("nav.select"),
             selected: false,
             pressed: false,
+            hover: false,
         }
     }
 }
@@ -285,6 +321,22 @@ impl Widget for NavItem {
                     ActionPayload::Text(self.page_id.clone()),
                 )
             }
+            // P1-5：hover 态。
+            UiEvent::Pointer {
+                phase: PointerPhase::Moved,
+                ..
+            } => {
+                self.hover = true;
+                EventResult::Consumed
+            }
+            UiEvent::Pointer {
+                phase: PointerPhase::Exited,
+                ..
+            } => {
+                self.hover = false;
+                self.pressed = false;
+                EventResult::Consumed
+            }
             _ => EventResult::Ignored,
         }
     }
@@ -296,6 +348,7 @@ impl Widget for NavItem {
     fn paint(&mut self, ctx: &mut PaintCtx) {
         let tokens = ctx.tokens;
         let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(220.0, 32.0));
+        // P1-5：selected > pressed > hover > default 四态背景。
         if self.selected {
             let washed = Color::rgb(
                 tokens.primary.r * 0.35 + tokens.surface.r * 0.65,
@@ -304,10 +357,20 @@ impl Widget for NavItem {
             );
             ctx.recorder
                 .fill_rect(Rect::from_origin_size(Point::ZERO, size), washed);
-        }
-        if self.pressed {
+        } else if self.pressed {
             ctx.recorder
                 .fill_rect(Rect::from_origin_size(Point::ZERO, size), tokens.primary);
+        } else if self.hover {
+            // hover：surface 与 on_background 8% 混合。
+            let hov = Color::rgb(
+                tokens.surface.r * 0.92 + tokens.on_background.r * 0.08,
+                tokens.surface.g * 0.92 + tokens.on_background.g * 0.08,
+                tokens.surface.b * 0.92 + tokens.on_background.b * 0.08,
+            );
+            ctx.recorder
+                .fill_rect(Rect::from_origin_size(Point::ZERO, size), hov);
+        }
+        if self.pressed && !self.selected {
             ctx.recorder
                 .draw_text(&self.label, Point::new(16.0, 22.0), 14.0, tokens.on_primary);
             return;
@@ -331,6 +394,8 @@ pub struct GroupHeader {
     pub(crate) action: ActionId,
     pub(crate) collapsed: bool,
     pub(crate) pressed: bool,
+    /// P1-5：hover 态。
+    pub(crate) hover: bool,
 }
 
 impl Default for GroupHeader {
@@ -347,6 +412,7 @@ impl GroupHeader {
             action: ActionId::new("group.toggle"),
             collapsed: false,
             pressed: false,
+            hover: false,
         }
     }
 }
@@ -390,6 +456,22 @@ impl Widget for GroupHeader {
                     ActionPayload::Text(self.group.clone()),
                 )
             }
+            // P1-5：hover 态。
+            UiEvent::Pointer {
+                phase: PointerPhase::Moved,
+                ..
+            } => {
+                self.hover = true;
+                EventResult::Consumed
+            }
+            UiEvent::Pointer {
+                phase: PointerPhase::Exited,
+                ..
+            } => {
+                self.hover = false;
+                self.pressed = false;
+                EventResult::Consumed
+            }
             _ => EventResult::Ignored,
         }
     }
@@ -400,10 +482,21 @@ impl Widget for GroupHeader {
     }
     fn paint(&mut self, ctx: &mut PaintCtx) {
         let tokens = ctx.tokens;
+        let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(220.0, 28.0));
+        // P1-5：hover 背景。
+        if self.hover || self.pressed {
+            let hov = Color::rgb(
+                tokens.surface.r * 0.92 + tokens.on_background.r * 0.08,
+                tokens.surface.g * 0.92 + tokens.on_background.g * 0.08,
+                tokens.surface.b * 0.92 + tokens.on_background.b * 0.08,
+            );
+            ctx.recorder
+                .fill_rect(Rect::from_origin_size(Point::ZERO, size), hov);
+        }
         let prefix = if self.collapsed { "▸ " } else { "▾ " };
         let display = format!("{}{}", prefix, self.label);
-        let fg = if self.pressed {
-            tokens.primary
+        let fg = if self.pressed || self.hover {
+            tokens.on_background
         } else {
             Color::rgb(
                 tokens.on_background.r * 0.6 + tokens.surface.r * 0.4,
