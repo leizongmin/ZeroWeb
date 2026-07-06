@@ -124,7 +124,7 @@ jobs:
           cp target/${{ matrix.target }}/release/zero-browser${{ matrix.ext }} dist/
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: weekly-${{ matrix.artifact }}
           path: dist/

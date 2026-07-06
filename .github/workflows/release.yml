@@ -158,7 +158,7 @@ jobs:
           EOF
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: dist/
@@ -240,7 +240,7 @@ jobs:
           rm -rf "$DEBROOT"
 
       - name: Upload .deb
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zero-browser-linux-${{ matrix.arch }}-deb
           path: dist/*.deb
@@ -308,7 +308,7 @@ jobs:
           fi
 
       - name: Upload .app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zero-browser-macos-${{ matrix.arch }}-app
           path: dist/ZeroBrowser.app
