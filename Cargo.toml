@@ -81,7 +81,7 @@ hyper = "1"
 reqwest = "0.12"
 
 # HTML 解析
-html5ever = "0.29"
+html5ever = "0.39"
 
 # 布局
 taffy = "0.7"
