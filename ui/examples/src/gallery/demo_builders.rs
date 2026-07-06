@@ -137,7 +137,7 @@ impl GalleryApp {
             .insert("placeholder", Value::Text("Type something...".into()));
         col.children.push(input);
 
-        let mut mirror = WidgetSpec::new("SourceLabel");
+        let mut mirror = WidgetSpec::new("Text");
         mirror.id = Some(WidgetId::new("demo_text_mirror"));
         let display = if st.text.is_empty() {
             "(empty)".to_string()
@@ -195,7 +195,7 @@ impl GalleryApp {
         }
         col.children.push(row);
 
-        let mut hint = WidgetSpec::new("SourceLabel");
+        let mut hint = WidgetSpec::new("Text");
         hint.id = Some(WidgetId::new("demo_icon_hint"));
         hint.props
             .insert("text", Value::Text(format!("Last clicked: #{}", st.pressed)));
@@ -241,13 +241,13 @@ impl GalleryApp {
             .insert("label", Value::Text(format!("Unread: {}", display)));
         row.children.push(badge_dot);
 
-        let mut badge_label = WidgetSpec::new("SourceLabel");
+        let mut badge_label = WidgetSpec::new("Text");
         badge_label.id = Some(WidgetId::new("demo_badge_count"));
         badge_label.props.insert("text", Value::Text(display));
         row.children.push(badge_label);
 
         col.children.push(row);
-        let mut hint = WidgetSpec::new("SourceLabel");
+        let mut hint = WidgetSpec::new("Text");
         hint.id = Some(WidgetId::new("demo_badge_hint"));
         hint.props
             .insert("text", Value::Text("Click Inbox to +1 unread (capped at 99)".into()));
@@ -288,7 +288,7 @@ impl GalleryApp {
         col.children.push(bar_row);
 
         // 百分比标签
-        let mut pct_label = WidgetSpec::new("SourceLabel");
+        let mut pct_label = WidgetSpec::new("Text");
         pct_label.id = Some(WidgetId::new("demo_progress_label"));
         pct_label.props.insert("text", Value::Text(format!("{}%", pct)));
         col.children.push(pct_label);
@@ -361,7 +361,7 @@ impl GalleryApp {
             "Privacy: cookies, tracking, permissions.",
             "Security: HTTPS-only, certificate exceptions.",
         ];
-        let mut body = WidgetSpec::new("SourceLabel");
+        let mut body = WidgetSpec::new("Text");
         body.id = Some(WidgetId::new("demo_tab_content"));
         body.props.insert("text", Value::Text(contents[selected].into()));
         col.children.push(body);
@@ -386,7 +386,7 @@ impl GalleryApp {
         col.children.push(btn);
 
         // 提示文字（常驻）：解释 tooltip 行为，让用户知道要 hover。
-        let mut hint = WidgetSpec::new("SourceLabel");
+        let mut hint = WidgetSpec::new("Text");
         hint.id = Some(WidgetId::new("demo_tooltip_hint"));
         hint.props.insert(
             "text",
@@ -548,13 +548,13 @@ impl GalleryApp {
             .filter(|c| c.starts_with(query.as_str()))
             .collect();
         if query.is_empty() {
-            let mut hint = WidgetSpec::new("SourceLabel");
+            let mut hint = WidgetSpec::new("Text");
             hint.id = Some(WidgetId::new("demo_search_hint"));
             hint.props
                 .insert("text", Value::Text("(type to filter suggestions)".into()));
             col.children.push(hint);
         } else if matches.is_empty() {
-            let mut no_match = WidgetSpec::new("SourceLabel");
+            let mut no_match = WidgetSpec::new("Text");
             no_match.id = Some(WidgetId::new("demo_search_no_match"));
             no_match.props
                 .insert("text", Value::Text("No match".into()));
@@ -619,7 +619,7 @@ impl GalleryApp {
         dot.props.insert("label", Value::Text(label_text.into()));
         row.children.push(dot);
 
-        let mut label = WidgetSpec::new("SourceLabel");
+        let mut label = WidgetSpec::new("Text");
         label.id = Some(WidgetId::new("demo_status_label"));
         label.props.insert("text", Value::Text(label_text.into()));
         row.children.push(label);
@@ -692,7 +692,7 @@ impl GalleryApp {
         col.children.push(trigger);
 
         if open {
-            let mut content = WidgetSpec::new("SourceLabel");
+            let mut content = WidgetSpec::new("Text");
             content.id = Some(WidgetId::new("demo_popover_content"));
             content
                 .props
@@ -858,7 +858,7 @@ impl GalleryApp {
         col.children.push(list_col);
 
         if filtered.is_empty() {
-            let mut empty = WidgetSpec::new("SourceLabel");
+            let mut empty = WidgetSpec::new("Text");
             empty.id = Some(WidgetId::new("demo_cmd_empty"));
             empty.props.insert("text", Value::Text("(no match)".into()));
             col.children.push(empty);
@@ -885,7 +885,7 @@ impl GalleryApp {
         col.children.push(trigger);
 
         if open {
-            let mut body = WidgetSpec::new("SourceLabel");
+            let mut body = WidgetSpec::new("Text");
             body.id = Some(WidgetId::new("demo_dialog_body"));
             body.props.insert("text", Value::Text("Are you sure?".into()));
             col.children.push(body);
@@ -1030,7 +1030,7 @@ impl GalleryApp {
         indicator.props.insert("label", Value::Text(state_name.into()));
         col.children.push(indicator);
 
-        let mut state_label = WidgetSpec::new("SourceLabel");
+        let mut state_label = WidgetSpec::new("Text");
         state_label.id = Some(WidgetId::new("demo_anim_state"));
         state_label
             .props
@@ -1063,7 +1063,7 @@ impl GalleryApp {
         let mut col = self.themed_container("Column", "demo_collection_col");
         col.props.insert("gap", Value::Float(8.0));
 
-        let mut summary = WidgetSpec::new("SourceLabel");
+        let mut summary = WidgetSpec::new("Text");
         summary.id = Some(WidgetId::new("demo_collection_summary"));
         let count = st.toggles.count_ones();
         summary
@@ -1097,7 +1097,7 @@ impl GalleryApp {
             crate::gallery::model::ThemeKind::Light => "Light",
             crate::gallery::model::ThemeKind::Dark => "Dark",
         };
-        let mut cur = WidgetSpec::new("SourceLabel");
+        let mut cur = WidgetSpec::new("Text");
         cur.id = Some(WidgetId::new("demo_theme_cur"));
         cur.props
             .insert("text", Value::Text(format!("Current theme: {}", current)));
@@ -1122,7 +1122,7 @@ impl GalleryApp {
             crate::gallery::model::Locale::En => "Hello, world!",
             crate::gallery::model::Locale::Zh => "Hello, world! (zh)",
         };
-        let mut label = WidgetSpec::new("SourceLabel");
+        let mut label = WidgetSpec::new("Text");
         label.id = Some(WidgetId::new("demo_i18n_text"));
         label.props.insert("text", Value::Text(hello.into()));
         col.children.push(label);
@@ -1142,7 +1142,7 @@ impl GalleryApp {
         let mut col = self.themed_container("Column", "demo_dsl_col");
         col.props.insert("gap", Value::Float(8.0));
 
-        let mut label = WidgetSpec::new("SourceLabel");
+        let mut label = WidgetSpec::new("Text");
         label.id = Some(WidgetId::new("demo_dsl_text"));
         label.props.insert(
             "text",
@@ -1207,7 +1207,7 @@ impl GalleryApp {
         }
         col.children.push(row);
 
-        let mut state = WidgetSpec::new("SourceLabel");
+        let mut state = WidgetSpec::new("Text");
         state.id = Some(WidgetId::new("demo_nav_state"));
         state.props.insert(
             "text",

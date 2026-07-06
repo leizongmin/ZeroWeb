@@ -1,17 +1,10 @@
 use std::collections::HashSet;
 
-use zero_ui_core::action::{ActionId, ActionPayload, ActionResult, EventResult};
+use zero_ui_core::action::{ActionId, ActionPayload, ActionResult};
 use zero_ui_core::binding::Value;
-use zero_ui_core::event::UiEvent;
-use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
-use zero_ui_core::theme::Color;
-use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, UpdateCtx, Widget, WidgetId, WidgetSpec};
+use zero_ui_core::widget::{WidgetId, WidgetSpec};
 use zero_ui_runtime::{UiApp, WidgetHost};
 
-use super::chrome::{
-    DemoTitle, GroupHeader, HeaderButton, HeaderTitle, NavItem, NavSearch, Spacer, mark_paint_if_changed, sync_text,
-};
-use super::highlight::{highlight_rust, highlight_yaml, token_color};
 use super::model::{DemoPage, GroupId, Locale, ThemeKind};
 use super::pages::ALL_PAGES;
 
@@ -173,7 +166,10 @@ impl GalleryApp {
             .insert("theme", Value::Text(self.theme.as_str().into()));
         search_box
             .props
-            .insert("locale", Value::Text(self.locale.as_str().into()));
+            .insert("action", Value::Text("gallery.search".into()));
+        search_box
+            .props
+            .insert("placeholder", Value::Text(self.locale.search_placeholder().into()));
         search_box.props.insert("query", Value::Text(self.search_query.clone()));
         col.children.push(search_box);
 
@@ -191,6 +187,9 @@ impl GalleryApp {
                     .insert("theme", Value::Text(self.theme.as_str().into()));
                 group_header
                     .props
+                    .insert("action", Value::Text("gallery.group.toggle".into()));
+                group_header
+                    .props
                     .insert("label", Value::Text(page.group.name_for(self.locale).into()));
                 group_header.props.insert("collapsed", Value::Bool(is_collapsed));
                 group_header
@@ -203,6 +202,8 @@ impl GalleryApp {
                         let mut nav = WidgetSpec::new("NavItem");
                         nav.id = Some(WidgetId::new(&format!("nav_{}", p.id)));
                         nav.props.insert("theme", Value::Text(self.theme.as_str().into()));
+                        nav.props
+                            .insert("action", Value::Text("gallery.nav.select".into()));
                         nav.props.insert("label", Value::Text(p.title_for(self.locale).into()));
                         nav.props.insert("page_id", Value::Text(p.id.into()));
                         nav.props
@@ -237,7 +238,7 @@ impl GalleryApp {
             preview.id = Some(WidgetId::new("demo_preview"));
             col.children.push(preview);
 
-            let mut dsl_label = WidgetSpec::new("SourceLabel");
+            let mut dsl_label = WidgetSpec::new("Text");
             dsl_label.id = Some(WidgetId::new("dsl_label"));
             dsl_label.props.insert("theme", Value::Text(self.theme.as_str().into()));
             dsl_label
@@ -245,14 +246,14 @@ impl GalleryApp {
                 .insert("text", Value::Text(self.locale.dsl_label().into()));
             col.children.push(dsl_label);
 
-            let mut dsl_src = WidgetSpec::new("SourceCode");
+            let mut dsl_src = WidgetSpec::new("CodeBlock");
             dsl_src.id = Some(WidgetId::new("dsl_source"));
             dsl_src.props.insert("theme", Value::Text(self.theme.as_str().into()));
             dsl_src.props.insert("source", Value::Text(page.source_dsl.into()));
             dsl_src.props.insert("lang", Value::Text("yaml".into()));
             col.children.push(dsl_src);
 
-            let mut rust_label = WidgetSpec::new("SourceLabel");
+            let mut rust_label = WidgetSpec::new("Text");
             rust_label.id = Some(WidgetId::new("rust_label"));
             rust_label
                 .props
@@ -262,7 +263,7 @@ impl GalleryApp {
                 .insert("text", Value::Text(self.locale.rust_label().into()));
             col.children.push(rust_label);
 
-            let mut rust_src = WidgetSpec::new("SourceCode");
+            let mut rust_src = WidgetSpec::new("CodeBlock");
             rust_src.id = Some(WidgetId::new("rust_source"));
             rust_src.props.insert("theme", Value::Text(self.theme.as_str().into()));
             rust_src.props.insert("source", Value::Text(page.source_rust.into()));
@@ -294,7 +295,7 @@ impl GalleryApp {
         bg.props.insert("label", Value::Text("Popover overlay".into()));
         col.children.push(bg);
 
-        let mut content = WidgetSpec::new("SourceLabel");
+        let mut content = WidgetSpec::new("Text");
         content.id = Some(WidgetId::new("demo_overlay_text"));
         content
             .props
@@ -319,12 +320,12 @@ impl GalleryApp {
         col.id = Some(WidgetId::new("demo_overlay_root"));
         col.props.insert("gap", Value::Float(8.0));
 
-        let mut title = WidgetSpec::new("SourceLabel");
+        let mut title = WidgetSpec::new("Text");
         title.id = Some(WidgetId::new("demo_overlay_title"));
         title.props.insert("text", Value::Text("Popup (modal)".into()));
         col.children.push(title);
 
-        let mut body = WidgetSpec::new("SourceLabel");
+        let mut body = WidgetSpec::new("Text");
         body.id = Some(WidgetId::new("demo_overlay_body"));
         body.props.insert(
             "text",
@@ -371,7 +372,7 @@ impl GalleryApp {
         bg.props.insert("label", Value::Text("Dialog".into()));
         col.children.push(bg);
 
-        let mut body = WidgetSpec::new("SourceLabel");
+        let mut body = WidgetSpec::new("Text");
         body.id = Some(WidgetId::new("demo_overlay_body"));
         body.props.insert("text", Value::Text("Are you sure? (modal dialog)".into()));
         col.children.push(body);
@@ -432,7 +433,7 @@ impl GalleryApp {
         icon.props.insert("label", Value::Text("Info".into()));
         row.children.push(icon);
 
-        let mut text = WidgetSpec::new("SourceLabel");
+        let mut text = WidgetSpec::new("Text");
         text.id = Some(WidgetId::new("demo_overlay_text"));
         text.props.insert(
             "text",
@@ -589,117 +590,6 @@ impl UiApp for GalleryApp {
     }
 }
 
-/// 源码标签
-pub struct SourceLabel {
-    text: String,
-}
-
-impl Widget for SourceLabel {
-    fn mount(&mut self, _ctx: &mut MountCtx) {}
-    fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let changed = sync_text(props, zero_ui_core::prop_keys::TEXT, &mut self.text);
-        mark_paint_if_changed(ctx, changed);
-    }
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
-        EventResult::Ignored
-    }
-    fn layout(&mut self, _ctx: &mut LayoutCtx, c: Constraints) -> Size {
-        Size::new(c.max_width, 24.0_f32.clamp(c.min_height, c.max_height))
-    }
-    fn paint(&mut self, ctx: &mut PaintCtx) {
-        let tokens = ctx.tokens;
-        let fg = Color::rgb(
-            tokens.on_background.r * 0.6 + tokens.background.r * 0.4,
-            tokens.on_background.g * 0.6 + tokens.background.g * 0.4,
-            tokens.on_background.b * 0.6 + tokens.background.b * 0.4,
-        );
-        ctx.recorder.draw_text(&self.text, Point::new(12.0, 16.0), 12.0, fg);
-    }
-}
-
-/// 语法高亮源码展示
-pub struct SourceCode {
-    source: String,
-    lang: String,
-}
-
-impl Widget for SourceCode {
-    fn mount(&mut self, _ctx: &mut MountCtx) {}
-    fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        // source 行数决定高度 → layout；lang 仅 paint。
-        let source_changed = sync_text(props, zero_ui_core::prop_keys::SOURCE, &mut self.source);
-        let lang_changed = sync_text(props, zero_ui_core::prop_keys::LANG, &mut self.lang);
-        super::chrome::mark_layout_if_changed(ctx, source_changed);
-        mark_paint_if_changed(ctx, lang_changed);
-    }
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
-        EventResult::Ignored
-    }
-    fn layout(&mut self, _ctx: &mut LayoutCtx, c: Constraints) -> Size {
-        let line_h = 16.0;
-        let lines = self.source.lines().count() as f32;
-        let h = (lines * line_h).clamp(c.min_height, c.max_height).max(40.0);
-        Size::new(c.max_width, h)
-    }
-    fn paint(&mut self, ctx: &mut PaintCtx) {
-        let tokens = ctx.tokens;
-        let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(400.0, 100.0));
-        // 代码块用比 surface 略亮/略深的"卡片"色：浅色 → 比 surface 略亮，深色 → 比 surface 略深。
-        let card = Color::rgb(
-            tokens.surface.r * 0.97 + tokens.background.r * 0.03,
-            tokens.surface.g * 0.97 + tokens.background.g * 0.03,
-            tokens.surface.b * 0.97 + tokens.background.b * 0.03,
-        );
-        ctx.recorder.fill_rect(
-            Rect::from_origin_size(Point::new(8.0, 0.0), Size::new(size.width - 16.0, size.height)),
-            card,
-        );
-        // 语法高亮 token 渲染：把 token_color 的 (r,g,b) 与 on_surface 文本色做混合，
-        // 保证 dark 主题下不至于太亮、light 主题下不至于太暗。
-        let base = tokens.on_background;
-        let mix = |c: (f32, f32, f32)| {
-            Color::rgb(
-                c.0 * 0.85 + base.r * 0.15,
-                c.1 * 0.85 + base.g * 0.15,
-                c.2 * 0.85 + base.b * 0.15,
-            )
-        };
-        let code_tokens = match self.lang.as_str() {
-            "yaml" => highlight_yaml(&self.source),
-            "rust" => highlight_rust(&self.source),
-            _ => vec![(&self.source as &str, "default")],
-        };
-        // 按字符遍历，遇换行重置 x；同色段累计成字符串，整段一次 draw_text 调用——
-        // 让 fontdue 内部按真实 advance 绘制字符（避免每字符硬编码 7.2px 导致
-        // 窄字符间距过大、宽字符/中文重叠的问题）。
-        //
-        // 段间 x 推进通过 `PaintRecorder::measure_text` 查询（DC-17）。
-        // SceneRecorder 的默认实现按字符 Unicode 属性精确估算（ASCII/CJK/标点各异），
-        // 比 `ascii_count * 6.6 + cjk * 12.0` 估算误差更小。
-        let mut x = 16.0_f32;
-        let mut y = 14.0_f32;
-        let line_h = 16.0_f32;
-        for (text, kind) in &code_tokens {
-            let color = mix(token_color(kind));
-            // 把 token 内按行切分：每行单独画（同色段不跨行）。
-            let mut first_segment = true;
-            for segment in text.split('\n') {
-                if !first_segment {
-                    // 遇到 '\n'：换行。
-                    x = 16.0;
-                    y += line_h;
-                }
-                first_segment = false;
-                if segment.is_empty() {
-                    continue;
-                }
-                ctx.recorder.draw_text(segment, Point::new(x, y), 12.0, color);
-                x += ctx.recorder.measure_text(segment, 12.0);
-            }
-        }
-    }
-}
-
 // ========== Factory Registration ==========
 
 fn str_prop(spec: &WidgetSpec, key: &str) -> Option<String> {
@@ -709,76 +599,25 @@ fn str_prop(spec: &WidgetSpec, key: &str) -> Option<String> {
     }
 }
 
-fn bool_prop(spec: &WidgetSpec, key: &str) -> bool {
-    match spec.props.get(key) {
-        Some(Value::Bool(b)) => *b,
-        _ => false,
-    }
-}
 
-/// 注册画廊所有自定义控件工厂
+/// 注册画廊所有控件工厂（P3-6-5：全部改用 ui-sdk widgets crate，不再有 gallery 内部组件）。
 pub fn register_gallery_factories(host: &mut WidgetHost) {
-    host.register("HeaderTitle", |_spec| Box::new(HeaderTitle { text: String::new() }));
-    host.register("Spacer", |spec| {
-        let axis = str_prop(spec, "axis").unwrap_or_else(|| "horizontal".into());
-        Box::new(Spacer { axis })
-    });
-    host.register("HeaderButton", |spec| {
-        let label = str_prop(spec, "label").unwrap_or_default();
-        let action = str_prop(spec, "action")
-            .map(|a| ActionId::new(&a))
-            .unwrap_or_else(|| ActionId::new("noop"));
-        Box::new(HeaderButton {
-            label,
-            action,
-            pressed: false,
-        })
-    });
-    host.register("NavItem", |spec| {
-        let label = str_prop(spec, "label").unwrap_or_default();
-        let page_id = str_prop(spec, "page_id").unwrap_or_default();
-        let selected = bool_prop(spec, "selected");
-        Box::new(NavItem {
-            label,
-            page_id,
-            selected,
-            pressed: false,
-        })
-    });
-    host.register("GroupHeader", |spec| {
-        let label = str_prop(spec, "label").unwrap_or_default();
-        let group = str_prop(spec, "group").unwrap_or_default();
-        let collapsed = bool_prop(spec, "collapsed");
-        Box::new(GroupHeader {
-            label,
-            group,
-            collapsed,
-            pressed: false,
-        })
-    });
-    host.register("NavSearch", |spec| {
-        let query = str_prop(spec, "query").unwrap_or_default();
-        Box::new(NavSearch {
-            query,
-            locale: Locale::En,
-        })
-    });
-    host.register("DemoTitle", |spec| {
-        let text = str_prop(spec, "text").unwrap_or_default();
-        let desc = str_prop(spec, "desc").unwrap_or_default();
-        Box::new(DemoTitle { text, desc })
-    });
-    host.register("SourceLabel", |spec| {
-        let text = str_prop(spec, "text").unwrap_or_default();
-        Box::new(SourceLabel { text })
-    });
+    // ── chrome（来自 widgets crate，P3-6-3/4 提升）──────────────────────────
+    host.register("HeaderTitle", |_spec| Box::new(zero_ui_widgets::HeaderTitle::new()));
+    host.register("Spacer", |_spec| Box::new(zero_ui_widgets::Spacer::new()));
+    host.register("HeaderButton", |_spec| Box::new(zero_ui_widgets::HeaderButton::new()));
+    host.register("NavItem", |_spec| Box::new(zero_ui_widgets::NavItem::new()));
+    host.register("GroupHeader", |_spec| Box::new(zero_ui_widgets::GroupHeader::new()));
+    host.register("NavSearch", |_spec| Box::new(zero_ui_widgets::NavSearch::new()));
+    host.register("DemoTitle", |_spec| Box::new(zero_ui_widgets::DemoTitle::new()));
+
+    // ── 文本/代码（来自 widgets crate，P3-6-1/2 提升）─────────────────────────
+    host.register("Text", |_spec| Box::new(zero_ui_widgets::Text::new()));
+    host.register("CodeBlock", |_spec| Box::new(zero_ui_widgets::CodeBlock::new()));
+
+    // ── 视觉辅助（来自 widgets crate，P3-4-2）───────────────────────────────
     host.register("ColoredBox", |_spec| Box::new(zero_ui_widgets::ColoredBox::new()));
     host.register("Icon", |_spec| Box::new(zero_ui_widgets::Icon::new()));
-    host.register("SourceCode", |spec| {
-        let source = str_prop(spec, "source").unwrap_or_default();
-        let lang = str_prop(spec, "lang").unwrap_or_else(|| "yaml".into());
-        Box::new(SourceCode { source, lang })
-    });
 
     // ── 真控件（来自 widgets crate，P2-11 真控件化）──────────────────────────
     host.register("Button", |spec| {
@@ -830,7 +669,9 @@ pub fn register_gallery_factories(host: &mut WidgetHost) {
 mod tests {
     use super::*;
     use zero_ui_adapter_winit::WinitDriver;
+    use zero_ui_core::event::UiEvent;
     use zero_ui_core::layout::WindowMetrics;
+    use zero_ui_core::widget::Widget;
 
     fn setup_gallery() -> GalleryApp {
         let mut app = GalleryApp::new();
@@ -1133,26 +974,32 @@ mod tests {
 
     #[test]
     fn nav_item_emits_correct_action() {
-        let mut nav = NavItem {
-            label: "Toggle".into(),
-            page_id: "toggle".into(),
-            selected: false,
-            pressed: false,
-        };
+        // P3-6-5：NavItem 现在来自 widgets crate，通过 action prop 接收业务 action 名。
+        let mut nav = zero_ui_widgets::NavItem::new();
+        let mut props = zero_ui_core::widget::Props::new();
+        props.insert("label", Value::Text("Toggle".into()));
+        props.insert("page_id", Value::Text("toggle".into()));
+        props.insert("action", Value::Text("gallery.nav.select".into()));
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
+        nav.update(
+            &mut zero_ui_core::widget::UpdateCtx {
+                invalidation: &mut flags,
+            },
+            &props,
+        );
         let ev = UiEvent::Pointer {
             phase: zero_ui_core::event::PointerPhase::Released,
             button: Some(zero_ui_core::event::PointerButton::Primary),
-            position: Point::new(10.0, 10.0),
+            position: zero_ui_core::geometry::Point::new(10.0, 10.0),
             modifiers: zero_ui_core::event::Modifiers::NONE,
             pointer_id: 0,
         };
-        let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
-        let mut ctx = EventCtx {
+        let mut ctx = zero_ui_core::widget::EventCtx {
             invalidation: &mut flags,
         };
         let result = nav.event(&mut ctx, &ev);
         match result {
-            EventResult::EmitWithPayload(a, ActionPayload::Text(p)) => {
+            zero_ui_core::action::EventResult::EmitWithPayload(a, ActionPayload::Text(p)) => {
                 assert_eq!(a.0.as_str(), "gallery.nav.select");
                 assert_eq!(p.as_str(), "toggle");
             }

@@ -14,7 +14,10 @@
 
 pub mod badge;
 pub mod button;
+pub mod chrome;
+pub mod code_block;
 pub mod colored_box;
+pub mod highlight;
 pub mod icon;
 pub mod icon_button;
 pub mod list_view;
@@ -24,16 +27,20 @@ pub mod popup;
 pub mod progress;
 pub mod scrollbar;
 pub mod tabs;
+pub mod text;
 pub mod text_input;
 pub mod toggle;
 pub mod toolbar;
 pub mod tooltip;
 
 pub use button::{Button, ButtonSpec, ButtonVariant};
+pub use chrome::{DemoTitle, GroupHeader, HeaderButton, HeaderTitle, NavItem, NavSearch, Spacer};
+pub use code_block::CodeBlock;
 pub use colored_box::ColoredBox;
 pub use icon::{Icon, IconKind};
 pub use icon_button::IconButton;
 pub use menu::{ContextMenu, Menu, MenuItem};
 pub use scrollbar::{ScrollBarGeometry, ScrollOrientation, layout_scrollbar};
+pub use text::{Text, TextAlign};
 pub use text_input::{ACTION_TEXT_CHANGED, TextInputState, TextInputWidget};
 pub use toggle::{Toggle, ToggleSpec, ToggleWidget};

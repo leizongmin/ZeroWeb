@@ -825,4 +825,76 @@ tabs/list_view/menu 用 `> Label` / `[X]` ASCII 前缀标记选中，本身在�
 
 ---
 
+### 9.6 P3-6 组件来源统一（gallery 所有组件都由 ui-sdk 提供）
+
+**问题**：P3-5 完成后，gallery 仍有 4 类「非 ui-sdk」组件混用：
+
+1. **`SourceLabel`**（gallery 内部，26 处使用）：简单灰色文本，名义上是「源码标签」实际承担通用文本展示职责。
+2. **`SourceCode`**（gallery 内部，2 处使用）：带语法高亮的代码块，本质是通用代码展示控件。
+3. **chrome 组件**（gallery 内部 `chrome.rs`，7 个）：HeaderTitle / Spacer / HeaderButton / NavItem / GroupHeader / NavSearch / DemoTitle —— 名义上是 gallery 专用，但实际是任何应用都需要的通用外壳控件。
+4. **`highlight.rs`**（gallery 内部）：YAML/Rust 语法高亮词法分析 + 颜色映射，是 CodeBlock 的实现细节。
+
+**目标**：让 gallery 所有 `WidgetSpec::new(...)` 用的组件名都来自 ui-sdk widgets crate，消除「gallery 内部组件」概念。
+
+#### 9.6.1 新增 widget（ui-sdk widgets crate）
+
+| 新 widget | 文件 | 替代 | 说明 |
+|---|---|---|---|
+| `Text` | `ui/widgets/src/text.rs` | `SourceLabel` | 通用文本：支持 `size`/`color`/`align`/`weight` props，命名预设色（primary/on_surface/muted/success/warning/danger）+ `#rrggbb`。多行按 `\n` 分行渲染。默认 14px、on_surface、左对齐。 |
+| `CodeBlock` | `ui/widgets/src/code_block.rs` | `SourceCode` | 通用代码块：`source` + `lang`（yaml/rust）props，卡片背景 + 语法高亮 token 渲染 + `measure_text` 推进 x。 |
+| `HeaderTitle` / `Spacer` / `HeaderButton` / `NavItem` / `GroupHeader` / `NavSearch` / `DemoTitle` | `ui/widgets/src/chrome.rs` | gallery chrome.rs 同名 | 应用层通用 chrome 控件。**关键解耦**：业务 action 通过 prop 注入（`action="gallery.nav.select"`），不内部硬编码。`NavSearch.placeholder` 也改为 prop（应用层负责 i18n）。 |
+| `highlight` 模块 | `ui/widgets/src/highlight.rs` | gallery highlight.rs | YAML/Rust 词法分析 + token 颜色映射，作为 CodeBlock 的实现细节。 |
+
+#### 9.6.2 chrome 组件解耦设计
+
+旧 chrome 组件有 3 处业务硬编码：
+
+| 旧硬编码 | 新设计 |
+|---|---|
+| `NavItem` 内部 `ActionId::new("gallery.nav.select")` | `action` prop（默认 `"nav.select"`），gallery 在 spec 里显式传 `"gallery.nav.select"` |
+| `GroupHeader` 内部 `ActionId::new("gallery.group.toggle")` | `action` prop（默认 `"group.toggle"`），gallery 显式传 |
+| `NavSearch` 内部硬编码 `Locale` 枚举 + `search_placeholder()` | `placeholder` prop（默认 `"Search..."`），gallery 用 `self.locale.search_placeholder()` 计算后传入 |
+| `NavSearch` 内部 `ActionId::new("gallery.search")` | `action` prop（默认 `"search"`），gallery 显式传 |
+
+这样 chrome 组件完全通用化：任何应用都能用，业务 action 名由调用方决定。
+
+#### 9.6.3 gallery 全量替换
+
+| 改动点 | 数量 | 新行为 |
+|---|---|---|
+| `WidgetSpec::new("SourceLabel")` → `"Text"` | 7 处（app.rs）+ 19 处（demo_builders.rs）= **26 处** | 走 ui-sdk Text widget |
+| `WidgetSpec::new("SourceCode")` → `"CodeBlock"` | 2 处（app.rs） | 走 ui-sdk CodeBlock widget |
+| `register_gallery_factories` 重写 | 1 个函数 | chrome + Text + CodeBlock 工厂全部 `Box::new(zero_ui_widgets::XxxWidget::new())`，不再构造内部 struct |
+| NavItem/GroupHeader/NavSearch spec 加 `action` prop | 3 处 | 业务 action 名通过 prop 注入 |
+| NavSearch spec 加 `placeholder` prop | 1 处 | 多语言 placeholder 由 gallery 计算后传入 |
+| 删除 `gallery/chrome.rs` | 425 行 | 完全移除，改用 widgets crate |
+| 删除 `gallery/highlight.rs` | 317 行 | 完全移除，改用 widgets crate |
+| 删除 `gallery/app.rs` 内 SourceLabel/SourceCode struct 定义 | ~110 行 | 完全移除 |
+| 删除 `mod.rs` 中 `pub mod chrome; pub mod highlight;` | 2 行 | 模块不再存在 |
+
+#### 9.6.4 全面 paint 审查
+
+对 widgets crate 全部 widget 文件做 paint 实现审查：
+
+| 分类 | 文件 | 数量 |
+|---|---|---|
+| **真实渲染**（Widget::paint 画可见内容） | button, chrome（除 Spacer）, code_block, colored_box, icon, scrollbar, text, text_input, toggle | 9 |
+| **空渲染**（合理：纯占位） | chrome 的 Spacer | 1 |
+| **纯数据模型/props**（无 Widget impl，渲染由组合层完成） | badge, icon_button, list_view, menu, popover, popup, progress, tabs, toolbar, tooltip | 10 |
+
+**关键确认**：gallery 注册的 14 个组件（HeaderTitle/Spacer/HeaderButton/NavItem/GroupHeader/NavSearch/DemoTitle/Text/CodeBlock/ColoredBox/Icon/Button/ToggleWidget/TextInputWidget）**全部都是已实现 Widget trait 的真实渲染组件**。那些纯数据模型（Badge/Menu/Tabs 等）gallery 是通过组合（ColoredBox + Text + Button）来表现的，符合「数据模型 + 组合渲染」的设计模式。
+
+#### 9.6.5 影响面汇总
+
+| 维度 | 改动 |
+|---|---|
+| ui-sdk widgets crate 新增 | 3 个 widget（Text/CodeBlock）+ 7 个 chrome widget + highlight 模块 = **10 个新文件** |
+| ui-sdk widgets crate 新增代码 | ~1400 行（text 280 + code_block 170 + chrome 530 + highlight 230 + 测试） |
+| gallery 删除代码 | chrome.rs 425 + highlight.rs 317 + app.rs SourceLabel/SourceCode ~110 = **~850 行** |
+| gallery 净变化 | -850 + 全量替换 28 处 spec 名 + factory 重写 |
+| 测试 | widgets crate 新增 8 个（text 5 + code_block 3）；examples 48 个全过；clippy 干净 |
+| 设计原则确立 | gallery 不再有任何「内部组件」，所有可见控件都来自 ui-sdk |
+
+---
+
 *RFC 结束。上一段落：Spec（需求规格），当前段落：RFC（技术设计），下一段落：实施交接（逐步骤指令）。*

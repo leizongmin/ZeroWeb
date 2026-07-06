@@ -1,37 +1,27 @@
-//! Gallery 通用 chrome 控件（DC-17 refactor / P1-6 主题单源）。
+//! Chrome widgets — 应用外壳通用控件（P3-6-3/4，从 gallery chrome 提升到 ui-sdk）。
 //!
-//! 这里集中了 sidebar/header/demo pane 用到的「外壳」控件（不参与 DemoPreview 派发）：
-//! - HeaderTitle / HeaderButton / NavItem / NavSearch / GroupHeader / DemoTitle / Spacer
-//! - 共享 helper：locale_from_props / sync_text / mark_(paint|layout)_if_changed
+//! 提供 7 个应用层常用 chrome 控件，全部浏览器/业务无关：
+//! - [`HeaderTitle`]：应用顶部大标题
+//! - [`HeaderButton`]：顶部操作按钮（语言/主题切换等）
+//! - [`NavItem`]：侧栏导航项（selected 高亮 + 点击 emit `nav.select` action）
+//! - [`NavSearch`]：侧栏搜索框（key 输入 + placeholder）
+//! - [`GroupHeader`]：分组标题（折叠/展开 + 点击 emit `group.toggle` action）
+//! - [`DemoTitle`]：内容区标题 + 描述
+//! - [`Spacer`]：弹性占位
 //!
-//! 主题色统一从 `PaintCtx.tokens` 取（host 级 `set_tokens` 注入，主题变化时整体重画）；
-//! chrome 控件不再存 theme 字段，也不需要从 props 同步——避免「props.theme → 字段 →
-//! tokens_for → paint」与「host.tokens → paint」双路径不一致。
-//!
-//! 这些控件原本散在 app.rs 中（占 ~500 行），拆出来后 app.rs 只保留 GalleryApp 主体、
-//! DemoPreview dispatcher 和 SourceCode/SourceLabel。
+//! 主题色统一从 `PaintCtx.tokens` 取（不存 theme 字段）；action 通过 prop 注入（解耦业务）。
 
 use zero_ui_core::action::{ActionId, ActionPayload, EventResult};
 use zero_ui_core::binding::Value;
 use zero_ui_core::event::{KeyAction, PointerPhase, UiEvent};
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
+use zero_ui_core::invalidation::InvalidationFlags;
 use zero_ui_core::prop_keys;
 use zero_ui_core::theme::Color;
 use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, UpdateCtx, Widget};
 
-use super::model::Locale;
-
 // ========== 共享 helper ==========
 
-/// 从 `locale` prop 解析当前语言（非法/缺省回落 En）。
-pub(crate) fn locale_from_props(props: &Props) -> Locale {
-    match props.get(prop_keys::LOCALE) {
-        Some(Value::Text(s)) => Locale::parse_str(s).unwrap_or(Locale::En),
-        _ => Locale::En,
-    }
-}
-
-/// 便利 helper：从 props 读文本字段写回 `field`，返回是否变化。
 pub(crate) fn sync_text(props: &Props, key: &str, field: &mut String) -> bool {
     if let Some(Value::Text(s)) = props.get(key)
         && s != field
@@ -43,36 +33,40 @@ pub(crate) fn sync_text(props: &Props, key: &str, field: &mut String) -> bool {
     }
 }
 
-/// 便利 helper：变化时标记 NEEDS_PAINT（多 helper 结果合并）。
 pub(crate) fn mark_paint_if_changed(ctx: &mut UpdateCtx, changed: bool) {
     if changed {
-        *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
+        *ctx.invalidation |= InvalidationFlags::NEEDS_PAINT;
     }
 }
 
-/// 便利 helper：变化时同时标记 NEEDS_LAYOUT + NEEDS_PAINT。
-///
-/// 用于 layout 依赖该字段的场景（如 chrome widget 的 label 文本长度决定按钮宽度）。
-/// 标 NEEDS_LAYOUT 会连带上溯重算父级布局。
 pub(crate) fn mark_layout_if_changed(ctx: &mut UpdateCtx, changed: bool) {
     if changed {
-        *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_LAYOUT
-            | zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;
+        *ctx.invalidation |= InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
     }
 }
 
 // ========== HeaderTitle ==========
 
-/// Header 标题
+/// 应用顶部大标题。
 pub struct HeaderTitle {
     pub(crate) text: String,
+}
+
+impl Default for HeaderTitle {
+    fn default() -> Self {
+        HeaderTitle::new()
+    }
+}
+
+impl HeaderTitle {
+    pub fn new() -> HeaderTitle {
+        HeaderTitle { text: String::new() }
+    }
 }
 
 impl Widget for HeaderTitle {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        // 文本长度决定 layout 宽度 → sync_text 走 layout。
-        // 主题色变走 NEEDS_PAINT 由 host 级 mark 触发（不再存 theme 字段，paint 直接读 ctx.tokens）。
         let text_changed = sync_text(props, prop_keys::TEXT, &mut self.text);
         mark_layout_if_changed(ctx, text_changed);
     }
@@ -80,7 +74,6 @@ impl Widget for HeaderTitle {
         EventResult::Ignored
     }
     fn layout(&mut self, ctx: &mut LayoutCtx, c: Constraints) -> Size {
-        // P1-5：经 LayoutCtx.measure_text 算文本宽度（无注入 backend 时回落 heuristic）。
         let w = ctx.measure_text(&self.text, 18.0).width + 24.0;
         Size::new(
             w.clamp(c.min_width, c.max_width),
@@ -96,13 +89,22 @@ impl Widget for HeaderTitle {
 // ========== Spacer ==========
 
 /// 弹性占位（与 `flex: 1` prop 配合吃剩余主轴空间）。
-///
-/// 由于 layout 引擎不会把 clamp 后的尺寸写回子节点 `cached_size`（仅用于父级排列），
-/// Spacer 必须自己控制返回的尺寸：仅吃主轴、cross 维度返回 0，避免把父容器
-/// 的 cross（常常是窗口另一维）拉满导致兄弟容器被挤出视口。
-/// `axis` prop 标识所在容器（"horizontal"=Row / "vertical"=Column）。
 pub struct Spacer {
     pub(crate) axis: String,
+}
+
+impl Default for Spacer {
+    fn default() -> Self {
+        Spacer::new()
+    }
+}
+
+impl Spacer {
+    pub fn new() -> Spacer {
+        Spacer {
+            axis: String::from("horizontal"),
+        }
+    }
 }
 
 impl Widget for Spacer {
@@ -112,7 +114,7 @@ impl Widget for Spacer {
             && a != &self.axis
         {
             self.axis = a.clone();
-            *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_LAYOUT;
+            *ctx.invalidation |= InvalidationFlags::NEEDS_LAYOUT;
         }
     }
     fn event(&mut self, _ctx: &mut EventCtx, _event: &UiEvent) -> EventResult {
@@ -129,11 +131,29 @@ impl Widget for Spacer {
 
 // ========== HeaderButton ==========
 
-/// Header 按钮（语言/主题切换等）
+/// 顶部操作按钮（语言/主题切换等）。
+///
+/// 点击 emit `action` prop 指定的 action（默认 "noop"）。
 pub struct HeaderButton {
     pub(crate) label: String,
     pub(crate) action: ActionId,
     pub(crate) pressed: bool,
+}
+
+impl Default for HeaderButton {
+    fn default() -> Self {
+        HeaderButton::new()
+    }
+}
+
+impl HeaderButton {
+    pub fn new() -> HeaderButton {
+        HeaderButton {
+            label: String::new(),
+            action: ActionId::new("noop"),
+            pressed: false,
+        }
+    }
 }
 
 impl Widget for HeaderButton {
@@ -197,12 +217,33 @@ impl Widget for HeaderButton {
 
 // ========== NavItem ==========
 
-/// 导航项
+/// 侧栏导航项。
+///
+/// `action` prop 指定点击 emit 的 action（默认 "nav.select"）；payload 是 `page_id` prop。
 pub struct NavItem {
     pub(crate) label: String,
     pub(crate) page_id: String,
+    pub(crate) action: ActionId,
     pub(crate) selected: bool,
     pub(crate) pressed: bool,
+}
+
+impl Default for NavItem {
+    fn default() -> Self {
+        NavItem::new()
+    }
+}
+
+impl NavItem {
+    pub fn new() -> NavItem {
+        NavItem {
+            label: String::new(),
+            page_id: String::new(),
+            action: ActionId::new("nav.select"),
+            selected: false,
+            pressed: false,
+        }
+    }
 }
 
 impl Widget for NavItem {
@@ -211,6 +252,9 @@ impl Widget for NavItem {
         let label_changed = sync_text(props, prop_keys::LABEL, &mut self.label);
         if let Some(Value::Text(p)) = props.get(prop_keys::PAGE_ID) {
             self.page_id = p.clone();
+        }
+        if let Some(Value::Text(a)) = props.get(prop_keys::ACTION) {
+            self.action = ActionId::new(a);
         }
         let mut paint_changed = false;
         if let Some(Value::Bool(s)) = props.get(prop_keys::SELECTED)
@@ -237,7 +281,7 @@ impl Widget for NavItem {
             } => {
                 self.pressed = false;
                 EventResult::EmitWithPayload(
-                    ActionId::new("gallery.nav.select"),
+                    self.action.clone(),
                     ActionPayload::Text(self.page_id.clone()),
                 )
             }
@@ -278,13 +322,33 @@ impl Widget for NavItem {
 
 // ========== GroupHeader ==========
 
-/// 分组标题
+/// 分组标题（折叠/展开）。
+///
+/// `action` prop 指定点击 emit 的 action（默认 "group.toggle"）；payload 是 `group` prop。
 pub struct GroupHeader {
     pub(crate) label: String,
-    /// 序列化进 action payload 的 group 标识（与 dispatch 端的 `{:?}` 解析对应）。
     pub(crate) group: String,
+    pub(crate) action: ActionId,
     pub(crate) collapsed: bool,
     pub(crate) pressed: bool,
+}
+
+impl Default for GroupHeader {
+    fn default() -> Self {
+        GroupHeader::new()
+    }
+}
+
+impl GroupHeader {
+    pub fn new() -> GroupHeader {
+        GroupHeader {
+            label: String::new(),
+            group: String::new(),
+            action: ActionId::new("group.toggle"),
+            collapsed: false,
+            pressed: false,
+        }
+    }
 }
 
 impl Widget for GroupHeader {
@@ -293,6 +357,9 @@ impl Widget for GroupHeader {
         let label_changed = sync_text(props, prop_keys::LABEL, &mut self.label);
         if let Some(Value::Text(g)) = props.get(prop_keys::GROUP) {
             self.group = g.clone();
+        }
+        if let Some(Value::Text(a)) = props.get(prop_keys::ACTION) {
+            self.action = ActionId::new(a);
         }
         let mut paint_changed = false;
         if let Some(Value::Bool(c)) = props.get(prop_keys::COLLAPSED)
@@ -319,7 +386,7 @@ impl Widget for GroupHeader {
             } => {
                 self.pressed = false;
                 EventResult::EmitWithPayload(
-                    ActionId::new("gallery.group.toggle"),
+                    self.action.clone(),
                     ActionPayload::Text(self.group.clone()),
                 )
             }
@@ -353,20 +420,41 @@ impl Widget for GroupHeader {
 
 // ========== NavSearch ==========
 
-/// 导航搜索框
+/// 侧栏搜索框。
+///
+/// `placeholder` prop 指定空查询时的占位文字（应用层负责 i18n）。
+/// `action` prop 指定 keypress emit 的 action（默认 "search"）；payload 是当前 query。
 pub struct NavSearch {
     pub(crate) query: String,
-    pub(crate) locale: Locale,
+    pub(crate) placeholder: String,
+    pub(crate) action: ActionId,
+}
+
+impl Default for NavSearch {
+    fn default() -> Self {
+        NavSearch::new()
+    }
+}
+
+impl NavSearch {
+    pub fn new() -> NavSearch {
+        NavSearch {
+            query: String::new(),
+            placeholder: String::from("Search..."),
+            action: ActionId::new("search"),
+        }
+    }
 }
 
 impl Widget for NavSearch {
     fn mount(&mut self, _ctx: &mut MountCtx) {}
     fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        let new_locale = locale_from_props(props);
-        let locale_changed = new_locale != self.locale;
-        self.locale = new_locale;
         let query_changed = sync_text(props, prop_keys::QUERY, &mut self.query);
-        mark_paint_if_changed(ctx, locale_changed || query_changed);
+        let placeholder_changed = sync_text(props, "placeholder", &mut self.placeholder);
+        if let Some(Value::Text(a)) = props.get(prop_keys::ACTION) {
+            self.action = ActionId::new(a);
+        }
+        mark_paint_if_changed(ctx, query_changed || placeholder_changed);
     }
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         let UiEvent::Key {
@@ -382,13 +470,13 @@ impl Widget for NavSearch {
             "Backspace" => {
                 let mut q = self.query.clone();
                 q.pop();
-                EventResult::EmitWithPayload(ActionId::new("gallery.search"), ActionPayload::Text(q))
+                EventResult::EmitWithPayload(self.action.clone(), ActionPayload::Text(q))
             }
             "Enter" | "Escape" => {
                 if self.query.is_empty() {
                     EventResult::Ignored
                 } else {
-                    EventResult::EmitWithPayload(ActionId::new("gallery.search"), ActionPayload::Text(String::new()))
+                    EventResult::EmitWithPayload(self.action.clone(), ActionPayload::Text(String::new()))
                 }
             }
             _ => match text {
@@ -397,7 +485,7 @@ impl Widget for NavSearch {
                         return EventResult::Ignored;
                     }
                     let q = format!("{}{}", self.query, ch);
-                    EventResult::EmitWithPayload(ActionId::new("gallery.search"), ActionPayload::Text(q))
+                    EventResult::EmitWithPayload(self.action.clone(), ActionPayload::Text(q))
                 }
                 None => EventResult::Ignored,
             },
@@ -420,7 +508,7 @@ impl Widget for NavSearch {
         ctx.recorder
             .stroke_rect(Rect::from_origin_size(Point::ZERO, size), border, 1.0);
         let display = if self.query.is_empty() {
-            self.locale.search_placeholder().to_string()
+            self.placeholder.clone()
         } else {
             format!("🔍 {}", self.query)
         };
@@ -438,10 +526,25 @@ impl Widget for NavSearch {
 
 // ========== DemoTitle ==========
 
-/// Demo 标题区域
+/// 内容区标题 + 描述。
 pub struct DemoTitle {
     pub(crate) text: String,
     pub(crate) desc: String,
+}
+
+impl Default for DemoTitle {
+    fn default() -> Self {
+        DemoTitle::new()
+    }
+}
+
+impl DemoTitle {
+    pub fn new() -> DemoTitle {
+        DemoTitle {
+            text: String::new(),
+            desc: String::new(),
+        }
+    }
 }
 
 impl Widget for DemoTitle {
