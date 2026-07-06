@@ -2648,6 +2648,32 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1090 Phase A line-box 度量统一 Phase 3（store-gate 移除 + paint 公式扩展）definitive net-negative（linebox -1 / css-text -14 / css-text-decor -14）·确证 Phase A 非-Ahem = fontdue tight-ink = font-wall = C-dep 根 unlock·已回退·零源码
+
+承 R1089（::first-letter 三变体穷尽 Phase A 门控）。本轮直接攻 Phase A line-box 度量统一 Phase 3（linebox-metric-unification-rfc 的 blocked phase），definitive 实验确证其 net-negative + 根因 = fontdue tight-ink（font-wall 谱系），C-dep 是真正 root unlock。
+
+**Phase 3 阻塞点定位**：compute_final_inline_layouts（inline_finalization.rs:776）`if !is_pure_ahem || ...return` 把 valign-aware baseline_y 存储（R822）门控到 pure-Ahem 容器。R817/R822 只对 Ahem 工作 = 此门控。移除门控让非-Ahem 走 Path A（stored）替代 Path B（重跑）= Phase 3 核心。
+
+**实验 1（store-gate 移除 only，env STORE_NON_AHEM）**：linebox **131→84 = -47**。非-Ahem Path A 存了 fragments 但 paint R817 公式仍只对 is_ahem_font（text.rs:1570）→ 非-Ahem fragment 用旧 `v_offset=font_size` 启发式定位 stored 位置 → mismatch 大回归。
+
+**实验 2（combined：store-gate 移除 + paint 公式扩展 `baseline_y_abs - 0.928·fs - frag.y` for non-Ahem，env 同）**：
+| dir | baseline | combined | net |
+|-----|----------|----------|-----|
+| linebox | 131 | 130 | **-1**（paint 公式恢复 Ahem-heavy，-47→-1）|
+| css-text | 359 | 345 | **-14** |
+| css-text-decor | 108 | 94 | **-14** |
+非-Ahem 0.928·fs 定位对 fontdue tight-ink 字形错（bitmap 是 tight-ink H=30 vs metric ascent 37，R876 谱系）→ text dir 回归。**合计 -29，definitive net-negative**。
+
+**★ 核心结论：Phase A 非-Ahem = font-wall = C-dep root unlock**。Phase 3（非-Ahem Path A + paint 公式）net-negative 根因 = fontdue tight-ink 光栅化（bitmap 不带 metric ascent），与 font-wall（R388 fontdue≈chromium 光栅但 line-metric 偏差 + R876 tight-ink）同根。FreeType（C-dep）提供 proper font ascent metric（非 tight-ink），是 font-wall（+32 已测）**和** Phase A 非-Ahem line-box 度量的共同 root unlock。R1088/R1089（::first-letter）+ R1090（Phase 3）三独立角度收敛：**C-dep 是唯一能 batch unlock 的杠杆，当前 user-blocked（CI 计费 + policy）**。
+
+**★ CI 计费仍 blocked**：本轮 dispatch freetype-raster-cross-platform workflow（run 28760051180），6-target 全 failure（payments/spending limit 未解）。C-dep 决策双重门（policy + CI cross-platform 验证）均非自主可解。
+
+**裁决**：按协议（count net-negative→revert）git checkout 2 文件回退（inline_finalization.rs + painter/text.rs），零源码，cargo check 绿。
+
+**意义**：Phase A line-box 度量统一 Phase 3 definitive 穷尽（store-only -47 / combined -29 均负，根因 fontdue tight-ink）。autonomous plateau 四重确证（fresh scan + ::first-letter 三变体 + Phase 3 + C-dep blocked）均收敛 C-dep root unlock。**forward = C-dep 用户决策（解 CI 计费 + 批准 policy）= 唯一自主不可解的 lever**；Phase A 非-Ahem 须 C-dep 后才有意义（FreeType metric 替 fontdue tight-ink）。勿再试 Phase 3 非-Ahem（fontdue tight-ink 墙，三变体穷尽）。
+
+**▶ 下会话**：① **C-dep 用户决策**（CI 计费恢复 + policy 批准 → 翻 freetype-raster default → +32 font-wall + 解锁 Phase A 非-Ahem 重试）；② C-dep 落地后重试 Phase 3 combined（FreeType metric 应使非-Ahem 0.928·fs 定位正确，linebox vertical-align 簇 + 非-Ahem 文本批量 flip）；③ C-dep 落地后重应用 ::first-letter（R1088 evidence）；④ 勿再试 Phase 3 非-Ahem / ::first-letter（fontdue tight-ink 墙，须 C-dep 先行）。
+
 ### R1089 ::first-letter color-only 变体 = net count-neutral（299→299）·oracle 确定性验证（A/B 可信）·::first-letter 三变体穷尽确证 Phase A 门控·已回退·零源码
 
 承 R1088（::first-letter 全量应用 net-negative -7，line-box 度量级联）。本轮试 color-only 变体——合成元素 color 取伪样式，font_size/line_height/font_family/font_weight/font_style/letter_spacing/word_spacing **全部重置为元素自身值** → 零布局级联（R1088 -7 根因消除），仅 color 等 paint-only 生效。
