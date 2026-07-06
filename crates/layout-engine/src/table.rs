@@ -1450,7 +1450,7 @@ fn position_cells_vertical(
         .enumerate()
         .map(|(i, _)| if i > 0 { spacing_y } else { 0.0 })
         .sum::<f32>();
-    let table_block_extent: f32 = row_block_sizes.iter().sum::<f32>() + block_gaps_total + 2.0 * perim_block;
+    let mut table_block_extent: f32 = row_block_sizes.iter().sum::<f32>() + block_gaps_total + 2.0 * perim_block;
 
     // 「直接 cell 的匿名行 = table 自身」标志（避免覆盖 table 盒自身几何）。
     let table_is_display_table = table_box
@@ -1575,6 +1575,36 @@ fn position_cells_vertical(
         }
     }
 
+    // α-4b-4 caption-side 逻辑 block 轴定位：vertical 表的 caption-side 映射到 block 轴（x），
+    // caption 应在 block-start 或 block-end 侧（非物理 top/bottom——R1110b「physical bottom=y 末端」
+    // 假设 net-negative 已回退）。CSS writing-modes §7.4：caption-side:top=block-start，
+    // caption-side:bottom=block-end；vertical-rl block-start=右 / block-end=左，
+    // vertical-lr block-start=左 / block-end=右。
+    //
+    // caption 当前由 taffy 放在 table content 起点（x=0，与行重叠）。对「caption 应在右侧」的案
+    //（vrl+top / vlr+bottom），把 caption 移到行右侧（rows_block_extent）。「caption 应在左侧」
+    // 的案（vrl+bottom / vlr+top）caption 已在正确侧 x=0，无须移动（且 WPT 该簇 td 透明，
+    // 行位无关视觉）。仅移动 caption-at-right 即可覆盖该簇结构性发散。
+    use zero_style_system::property::CaptionSideValue;
+    let rows_block_extent_before_caption = table_block_extent; // caption 调整前的 block 跨度
+    let mut caption_w_right = 0.0f32;
+    for child in &mut table_box.children {
+        let Some(cid) = child.node_id else { continue };
+        let Some(cs) = styles.get(&cid) else { continue };
+        if cs.display != DisplayValue::TableCaption {
+            continue;
+        }
+        let side_bottom = cs.caption_side == CaptionSideValue::Bottom;
+        // caption_at_right：vrl+top（block-start=右）/ vlr+bottom（block-end=右）。
+        let caption_at_right = if is_rl { !side_bottom } else { side_bottom };
+        if caption_at_right {
+            child.x = rows_block_extent_before_caption; // 移到行右侧（相对 table content box）
+            caption_w_right = caption_w_right.max(child.width);
+        }
+    }
+    // 表 block 跨度计入右侧 caption 占的额外 x 空间。
+    table_block_extent += caption_w_right;
+
     // 表自身尺寸：content_width（block, x）与 content_height（inline, y）更新为转置值。
     table_box.content_width = table_block_extent;
     table_box.content_height = row_inline_extent;
@@ -1593,10 +1623,9 @@ fn position_cells_vertical(
     // 行组位置更新（与 horizontal 路径对称）。
     update_row_group_positions(table_box, grid, styles);
 
-    // 注：caption-side 在 vertical WM 下的语义（物理 top/bottom vs 逻辑 block-start/end）
-    // 是 α-4b-4 的 TBD——「physical bottom = y 末端」假设实测 net-negative（破 1 案，
-    // caption-side-vlr-005 未改善且 -1 pass），已回退。vertical 表 caption 定位须按
-    // 逻辑 block 轴（block-end = vertical-rl 左 / vertical-lr 右）处理，留 α-4b-4。
+    // 注：caption-side vertical 逻辑 block 轴定位已在本函数上方「α-4b-4」块实现（caption-at-right
+    // 移到行右侧）。残余：caption-side-vrl-002/004 的 1.73% 非 caption 位（box 已在正确侧），
+    // 是 vertical-rl 文本绘制偏离 box（R1050 vrl paint bug），须 vertical IFC paint 修（多 session）。
 }
 
 /// 应用 min-height/max-height/min-width/max-width 约束到 table 容器。

@@ -493,3 +493,81 @@ fn test_r1112_vertical_table_height_distributed_to_cells() {
         t.content_height
     );
 }
+
+/// R1117 α-4b-4 回归：vertical 表 caption-side 沿逻辑 block 轴（x）定位。
+/// caption-side:top = block-start（vrl 右 / vlr 左），caption-side:bottom = block-end（vrl 左 / vlr 右）。
+/// 本测覆盖「caption-at-right」两案：vrl+top（block-start=右）+ vlr+bottom（block-end=右），
+/// caption 应在 cell 右侧（caption.x > cell.x），旧实现 caption 与 cell 重叠同 x。
+fn run_r1117(wm: &str, side: &str) -> (f32, f32, f32) {
+    let html = format!(
+        r#"<html><body style="margin:0">
+      <table style="writing-mode:{}; border-spacing:0; caption-side:{}; font:20px/1 Ahem">
+        <caption>CA</caption>
+        <tr><td>T</td></tr>
+      </table>
+    </body></html>"#,
+        wm, side
+    );
+    let doc = zero_dom::parse_html(&html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(b: &'a LayoutBox, doc: &Document, want: &str) -> Option<&'a LayoutBox> {
+        let tag = b.node_id.and_then(|nid| doc.get(nid)).and_then(|n| match &n.kind {
+            zero_dom::NodeKind::Element(e) => Some(e.local_name().to_string()),
+            _ => None,
+        });
+        if tag.as_deref() == Some(want) {
+            return Some(b);
+        }
+        for c in &b.children {
+            if let Some(t) = find(c, doc, want) {
+                return Some(t);
+            }
+        }
+        None
+    }
+    let cap = find(&result.root, &doc, "caption").expect("caption");
+    let td = find(&result.root, &doc, "td").expect("td");
+    let table = find(&result.root, &doc, "table").expect("table");
+    (cap.x, td.x, table.content_width)
+}
+
+#[test]
+fn test_r1117_vrl_caption_top_on_right_of_cells() {
+    // caption-side:top + vertical-rl → block-start = 右 → caption 在 cell 右侧。
+    let (cap_x, td_x, _tw) = run_r1117("vertical-rl", "top");
+    assert!(
+        cap_x > td_x,
+        "vrl caption-side:top: caption.x={} should be > td.x={} (caption at block-start=right)",
+        cap_x,
+        td_x
+    );
+}
+
+#[test]
+fn test_r1117_vlr_caption_bottom_on_right_of_cells() {
+    // caption-side:bottom + vertical-lr → block-end = 右 → caption 在 cell 右侧。
+    let (cap_x, td_x, _tw) = run_r1117("vertical-lr", "bottom");
+    assert!(
+        cap_x > td_x,
+        "vlr caption-side:bottom: caption.x={} should be > td.x={} (caption at block-end=right)",
+        cap_x,
+        td_x
+    );
+}
+
+#[test]
+fn test_r1117_vrl_caption_bottom_kept_on_left() {
+    // caption-side:bottom + vertical-rl → block-end = 左 → caption 留在 cell 左侧（x=0），
+    // 不被 caption-at-right 分支移动。
+    let (cap_x, td_x, _tw) = run_r1117("vertical-rl", "bottom");
+    assert!(
+        cap_x <= td_x,
+        "vrl caption-side:bottom: caption.x={} should be <= td.x={} (caption stays at block-end=left)",
+        cap_x,
+        td_x
+    );
+}
