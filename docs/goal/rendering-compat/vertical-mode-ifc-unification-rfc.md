@@ -137,6 +137,7 @@ vertical inline 布局缺失致以下子域**全部 R109-blocked**（详见 hand
 - **预期**：css-writing-modes line-height-NNN vertical 案列宽正确化。
 - **门禁**：A/B `DIR=css-writing-modes`。net ≥0（α-1 已 gate 装饰，无 Layer 4 干扰）→ LAND。
 - **依赖**：α-1（chars 须先垂直推进，列宽才有意义）。
+- **★ R1101 verified-unnecessary，skip**：新单测 `test_r1100_alpha2_vertical_line_height_column_width`（vertical-rl + line-height:5 + fs16 → 断言 `ctx.lines[0].height` = col_width = 80）**PASS**——post-α-1 tree `resolve_font_metrics`（text_metrics.rs:197 `Number(n) => fs×n`）→ `run.line_height` → `break_items_into_columns` `col_width = run.line_height`（mod.rs:1481/1525/1568）链路**已正确**。R1052「col_width=16」是 pre-α-1 stale 观测（彼时 container_width=0 致 break 异常），post-α-1 不复现。**α-2 无需实施**，单测留作回归守卫。
 
 ### 4.3 Slice α-3 — Layer 4 vertical 装饰坐标 re-enable（依赖 α-1）
 
