@@ -784,6 +784,19 @@ pub(crate) fn compute_final_inline_layouts(
         .with_tab_size(tab_size_px)
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl)
+        .with_block_extent(
+            if is_vertical
+                && root.node_id.is_some_and(|id| {
+                    styles
+                        .get(&id)
+                        .is_some_and(|s| matches!(s.display, DisplayValue::TableCaption))
+                })
+            {
+                root.content_width
+            } else {
+                container_width
+            },
+        )
         .with_font_size_overrides(parent_font_sizes)
         .with_is_ahem_overrides(parent_is_ahem)
         .with_letter_spacing_overrides(parent_letter_spacing)

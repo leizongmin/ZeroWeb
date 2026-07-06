@@ -571,3 +571,64 @@ fn test_r1117_vrl_caption_bottom_kept_on_left() {
         td_x
     );
 }
+
+/// R1122 回归：vertical-rl 表 caption 的 vrl 列 x 用 block_extent(content_width)，非
+/// container_width(=content_height，inline 深度)。旧实现在 caption content_height 暴涨(784)
+/// 时把单列推到 col.y=734 → paint off-screen → caption 文本完全不绘制（caption-side-vrl
+/// NO green）。修后单列 col.y=0 → 文本在 content_x 正确绘制。
+/// 本测验：caption 的 stored IFC 首 fragment x ≈ 0（相对 content box），非 ~734。
+#[test]
+fn test_r1122_vrl_caption_column_x_uses_block_extent() {
+    let html = r#"<html><body style="margin:0">
+      <table style="writing-mode:vertical-rl; border-spacing:0; caption-side:top; font:50px/1 Ahem">
+        <caption>CA</caption>
+        <tr><td>T</td><td>D</td></tr>
+      </table>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(b: &'a LayoutBox, doc: &Document, want: &str) -> Option<&'a LayoutBox> {
+        let tag = b.node_id.and_then(|nid| doc.get(nid)).and_then(|n| match &n.kind {
+            zero_dom::NodeKind::Element(e) => Some(e.local_name().to_string()),
+            _ => None,
+        });
+        if tag.as_deref() == Some(want) {
+            return Some(b);
+        }
+        for c in &b.children {
+            if let Some(t) = find(c, doc, want) {
+                return Some(t);
+            }
+        }
+        None
+    }
+    let cap = find(&result.root, &doc, "caption").expect("caption");
+    eprintln!(
+        "R1122 caption: w={:.1} h={:.1} cw={:.1} ch={:.1} il={}",
+        cap.width, cap.height, cap.content_width, cap.content_height,
+        cap.inline_layout.as_ref().map(|l| l.len()).unwrap_or(0)
+    );
+    if let Some(lines) = &cap.inline_layout {
+        for (i, l) in lines.iter().enumerate().take(3) {
+            eprintln!("R1122 line[{}] y={:.1} frags={}", i, l.y, l.fragments.len());
+            for f in &l.fragments {
+                eprintln!("R1122   frag x={:.1}", f.x);
+            }
+        }
+    }
+    // 断言：首 fragment x < content_width（在 content box 内），旧 bug 会是 ~container_width(784)-col。
+    if let Some(lines) = &cap.inline_layout
+        && let Some(first) = lines.first()
+        && let Some(frag) = first.fragments.first()
+    {
+        assert!(
+            frag.x < cap.content_width + 1.0,
+            "R1122: vrl caption fragment x={} should be within content box (< cw={}), old bug put it off-screen at ~container_width-col",
+            frag.x, cap.content_width
+        );
+    }
+}
