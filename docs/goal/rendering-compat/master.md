@@ -2648,6 +2648,27 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1092 abspos §10.3.7 cluster 探针确证 = 几何正确·2.89% 是 instruction 文本 font-wall·最后「非 font-wall candidate」亦 font-wall·plateau definitive 完成·零 net 源码
+
+承 R1091（positioning abspos §10.3.7 cluster 2.89%×10 是 EV 最高残余 candidate，Ahem 用例疑非 font-wall）。本轮加临时探针（env ABSPOS_PROBE，递归打印 abspos 子元素 geom + 计算 inset/margin）确证根因。
+
+**探针结果（3 案代表簇）**：
+| case | 几何 | 计算 inset/margin | 裁决 |
+|------|------|-------------------|------|
+| width-001（全 auto）| x=3 y=3 w=100 h=100 | left/right/top/bottom/width/height 全 auto | ✓ 静态位 + shrink-to-fit 100px Ahem X 正确 |
+| width-004（auto-margin，全 inset fixed）| x=103 w=100 | left=100 right=100 width=100 mleft/mright auto | ✓ over-constrained 忽略 right + margin=0，x=100+3border 正确 |
+| height-002（全 auto）| x=3 y=3 w=100 h=100 | 全 auto | ✓ 同 width-001 |
+
+**三案 abspos 几何全部正确**——ZW（taffy 0.7 + ZW postprocess）正确处理 §10.3.7 static-position + shrink-to-fit + auto-margin solve + over-constrained（之前疑「无 horizontal abspos solver」= 误判，taffy 已覆盖）。**2.89% diff = instruction 文本 font-wall**（"Test passes if a filled blue square is in the upper-left corner..." 长 instruction @ 默认非-Ahem 字体），非 abspos bug。
+
+**★ 裁决：abspos §10.3.7 cluster 非 lever，是 font-wall**。R1091 标「最高 EV 残余 candidate」推翻。**fresh scan 全 dir 所有 cluster 现均确证 font-wall 或 user-blocked**——R1085/R1086 是仅有的两 clean hit（linebox/text），其余 linebox-applies-to / margin-padding-clear ×126 / bottom ×62 / lang / attr / class / abspos instruction 全 font-wall（near-pass band），结构性簇（§9.7 布局 / §10.3.5 float 宽 / R109 vertical / multicol）多 session。**autonomous plateau definitive 完成**。
+
+**★ C-dep 价值上修**：探针证 abspos 几何正确→C-dep（font-wall root unlock）除 R1084 测的 +32 外，还批量 flip 所有 font-wall instruction cluster（margin-padding-clear ×126 + abspos instruction + bottom ×62 + linebox-applies-to 残余 + lang/attr/class green-text + word-spacing 簇残余 等），**实际 yield 远超 +32**（粗估 +200~400 案 near-pass band 批量翻 strict/loose）。C-dep 是 font-wall plateau 的唯一 batch unlock，仍 user-blocked（CI 计费 6-target 全 failure + policy）。
+
+**门禁**：纯调查（探针加已撤），零 net 源码，make test 未跑。tree clean，cargo check 绿。
+
+**▶ 下会话**：① **C-dep 用户决策**（CI 计费 + policy → 翻 freetype-raster default → font-wall batch unlock +200~400 案 + 解锁 Phase A/::first-letter）；② C-dep 仍 blocked 时，残余 autonomous 仅深结构性多 session（R109 FR-002/003 / float §10.3.5 / multicol nested）低 EV；③ 勿再 fresh scan / 探针 abspos（plateau definitive，全 cluster font-wall/结构性）。
+
 ### R1091 positioning + floats/floats-clear fresh scan = cluster 全 font-wall / 深结构性·plateau 扩展确证·零 net 源码·纯调查
 
 承 R1090（autonomous plateau 四重确证 C-dep root unlock）。本轮扫未深扫 dir（CSS2/positioning 578 PNG + CSS2/floats/floats-clear 合 314 PNG）找非 font-wall clean lever（R1085/R1086 类）。
