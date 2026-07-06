@@ -12,6 +12,8 @@ use zero_ui_core::geometry::{Point, Rect, Vec2};
 use zero_ui_core::layout::WindowMetrics;
 use zero_ui_core::widget::WidgetId;
 use zero_ui_examples::{GalleryApp, register_gallery_factories};
+use zero_ui_runtime::UiApp;
+use zero_ui_widgets::ACTION_TEXT_CHANGED;
 use zero_ui_render::Scene;
 use zero_ui_render::render_node::RenderPrimitive;
 
@@ -481,6 +483,135 @@ fn all_pages_render_without_panic() {
 // 防止未使用 Rect 导入告警（在某些 toolchain 上 rect_of 返回值用到 Rect）。
 #[allow(dead_code)]
 fn _rect_unused(_: Rect) {}
+
+// ── P3-5 视觉精度收尾测试 ────────────────────────────────────────────────
+
+#[test]
+fn list_view_selected_row_has_check_icon() {
+    // P3-5-2：list_view 选中项前应有 check Icon（替代 ASCII "> "）。
+    let mut app = GalleryApp::new();
+    app.current_page = "list_view".into();
+    // 选中第 2 项（pressed==2 → selected=1）。
+    UiApp::dispatch(
+        &mut app,
+        &zero_ui_core::action::ActionId::new("gallery.demo.button_click.2"),
+        None,
+    );
+    let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+    register_gallery_factories(driver.host_mut());
+    driver.begin();
+    assert!(
+        driver
+            .host()
+            .rect_of(&WidgetId::new("demo_list_check_1"))
+            .is_some(),
+        "选中项 1 应有 check Icon"
+    );
+    // 未选中项不应有 check Icon（只有 spacer）。
+    assert!(
+        driver
+            .host()
+            .rect_of(&WidgetId::new("demo_list_check_0"))
+            .is_none(),
+        "未选中项 0 不应有 check Icon"
+    );
+}
+
+#[test]
+fn menu_selected_item_has_check_icon() {
+    // P3-5-2：menu 选中项前应有 check Icon。
+    let mut app = GalleryApp::new();
+    app.current_page = "menu".into();
+    UiApp::dispatch(
+        &mut app,
+        &zero_ui_core::action::ActionId::new("gallery.demo.button_click.2"),
+        None,
+    );
+    let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+    register_gallery_factories(driver.host_mut());
+    driver.begin();
+    assert!(
+        driver
+            .host()
+            .rect_of(&WidgetId::new("demo_menu_check_save"))
+            .is_some(),
+        "选中项 save 应有 check Icon"
+    );
+}
+
+#[test]
+fn tabs_selected_tab_has_check_icon() {
+    // P3-5-2：tabs 选中 tab 前应有 check Icon。
+    let mut app = GalleryApp::new();
+    app.current_page = "tabs".into();
+    UiApp::dispatch(
+        &mut app,
+        &zero_ui_core::action::ActionId::new("gallery.demo.button_click.2"),
+        None,
+    );
+    let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+    register_gallery_factories(driver.host_mut());
+    driver.begin();
+    // pressed==2 → selected=1。
+    assert!(
+        driver
+            .host()
+            .rect_of(&WidgetId::new("demo_tab_check_1"))
+            .is_some(),
+        "选中 tab 1 应有 check Icon"
+    );
+}
+
+#[test]
+fn search_field_has_search_icon_and_suggestions_are_buttons() {
+    // P3-5-3：search_field 输入框前应有 search Icon；建议应是 Button 行而非纯文本。
+    let mut app = GalleryApp::new();
+    app.current_page = "search_field".into();
+    // 输入 "b" → 匹配 button。
+    UiApp::dispatch(
+        &mut app,
+        &zero_ui_core::action::ActionId::new(ACTION_TEXT_CHANGED),
+        Some(zero_ui_core::action::ActionPayload::Text("b".into())),
+    );
+    let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+    register_gallery_factories(driver.host_mut());
+    driver.begin();
+    assert!(
+        driver
+            .host()
+            .rect_of(&WidgetId::new("demo_search_icon"))
+            .is_some(),
+        "search Icon 应存在"
+    );
+    assert!(
+        driver
+            .host()
+            .rect_of(&WidgetId::new("demo_search_item_0"))
+            .is_some(),
+        "建议项 0 应是 Button（demo_search_item_0）"
+    );
+}
+
+#[test]
+fn tooltip_demo_uses_overlay_not_inline_bubble() {
+    // P3-5-1：tooltip hover 触发时应用 overlay 而非线性 bubble。
+    let mut app = GalleryApp::new();
+    app.current_page = "tooltip".into();
+    // 先 hover enter → pressed==1。
+    UiApp::dispatch(
+        &mut app,
+        &zero_ui_core::action::ActionId::new("gallery.demo.hover"),
+        Some(zero_ui_core::action::ActionPayload::Text("enter".into())),
+    );
+    let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+    register_gallery_factories(driver.host_mut());
+    driver.begin();
+    driver.pump_frame();
+    assert!(
+        driver.host().has_overlay_visual(),
+        "hover 后 tooltip overlay 应出现"
+    );
+}
 
 // ── P3-4 新能力回归测试 ──────────────────────────────────────────────────
 

@@ -321,18 +321,24 @@ impl GalleryApp {
 
         let mut row = self.themed_container("Row", "demo_tabs_row");
         row.props.insert("gap", Value::Float(4.0));
+        row.props
+            .insert("cross_axis_align", Value::Text("center".into()));
         let tabs = ["General", "Privacy", "Security"];
         let selected = (st.pressed as usize).saturating_sub(1).min(2);
         for (i, label) in tabs.iter().enumerate() {
+            // P3-5-2：选中 tab 前加 check Icon（替代 ASCII "> "）。
+            if i == selected {
+                let mut check = WidgetSpec::new("Icon");
+                check.id = Some(WidgetId::new(&format!("demo_tab_check_{}", i)));
+                check.props.insert("name", Value::Text("check".into()));
+                check.props.insert("size", Value::Float(16.0));
+                check.props.insert("color", Value::Text("primary".into()));
+                check.props.insert("label", Value::Text("Active tab".into()));
+                row.children.push(check);
+            }
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_tab_{}", i)));
-            let display = if i == selected {
-                format!("> {} (active)", label)
-            } else {
-                (*label).to_string()
-            };
-            btn.props.insert("label", Value::Text(display));
-            // P3-2：选中态用更深的背景色（variant=Selected），非选中用中性。
+            btn.props.insert("label", Value::Text((*label).to_string()));
             btn.props.insert(
                 "variant",
                 Value::Text(
@@ -364,11 +370,11 @@ impl GalleryApp {
 
     /// Tooltip: hover over button shows hint label; leave hides it (真 hover)。
     fn build_tooltip_demo(&self) -> WidgetSpec {
-        let st = self.current_demo_read();
+        // P3-5-1：tooltip 改用真浮层（host.overlay_root），不再线性追加 bubble。
+        // 这里只画触发按钮；bubble 由 GalleryApp::overlay() + build_tooltip_overlay() 提供。
         let mut col = self.themed_container("Column", "demo_tooltip_col");
         col.props.insert("gap", Value::Float(8.0));
 
-        let show_tip = st.pressed == 1;
         let mut btn = WidgetSpec::new("Button");
         btn.id = Some(WidgetId::new("demo_tooltip_btn"));
         btn.props.insert("label", Value::Text("Hover me".into()));
@@ -379,37 +385,18 @@ impl GalleryApp {
             .insert("hover_action", Value::Text("gallery.demo.hover".into()));
         col.children.push(btn);
 
-        if show_tip {
-            // P3-2：把 tooltip 文字包在 ColoredBox 里，模拟浮动卡片（深色背景 + 浅色字）。
-            // ColoredBox 不渲染文字，所以用一个内嵌的 SourceLabel；外层 ColoredBox 提供"卡片"色块。
-            let mut bubble = self.themed_container("Row", "demo_tooltip_bubble");
-            bubble.props.insert("gap", Value::Float(8.0));
-            bubble.props.insert("cross_axis_align", Value::Text("center".into()));
-
-            let mut bg = WidgetSpec::new("ColoredBox");
-            bg.id = Some(WidgetId::new("demo_tooltip_bg"));
-            bg.props.insert("color", Value::Text("muted".into()));
-            bg.props.insert("width", Value::Float(280.0));
-            bg.props.insert("height", Value::Float(32.0));
-            bg.props.insert(
-                "label",
-                Value::Text("Helpful hint: this is a tooltip-like bubble.".into()),
-            );
-            bubble.children.push(bg);
-
-            let mut tip = WidgetSpec::new("SourceLabel");
-            tip.id = Some(WidgetId::new("demo_tooltip_text"));
-            tip.props.insert(
-                "text",
-                Value::Text("Helpful hint: this is a tooltip-like bubble.".into()),
-            );
-            bubble.children.push(tip);
-            col.children.push(bubble);
-        }
+        // 提示文字（常驻）：解释 tooltip 行为，让用户知道要 hover。
+        let mut hint = WidgetSpec::new("SourceLabel");
+        hint.id = Some(WidgetId::new("demo_tooltip_hint"));
+        hint.props.insert(
+            "text",
+            Value::Text("Hover the button → a tooltip floats above (real overlay, not inline).".into()),
+        );
+        col.children.push(hint);
         col
     }
 
-    /// ListView: 5 selectable rows; click selects and marks row with >.
+    /// ListView: 5 selectable rows; selected row prefixed with check Icon.
     fn build_list_view_demo(&self) -> WidgetSpec {
         let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_list_col");
@@ -418,12 +405,33 @@ impl GalleryApp {
         for i in 0..5usize {
             let mut row = self.themed_container("Row", &format!("demo_list_row_{}", i));
             row.props.insert("gap", Value::Float(8.0));
+            row.props
+                .insert("cross_axis_align", Value::Text("center".into()));
+
+            // P3-5-2：选中项前加 check Icon（替代 ASCII "> "）。
+            if i == selected {
+                let mut check = WidgetSpec::new("Icon");
+                check.id = Some(WidgetId::new(&format!("demo_list_check_{}", i)));
+                check.props.insert("name", Value::Text("check".into()));
+                check.props.insert("size", Value::Float(16.0));
+                check.props.insert("color", Value::Text("primary".into()));
+                check.props.insert("label", Value::Text("Selected".into()));
+                row.children.push(check);
+            } else {
+                // 未选中留空位（保持宽度一致，避免选中切换时跳变）。
+                let mut spacer = WidgetSpec::new("ColoredBox");
+                spacer.id = Some(WidgetId::new(&format!("demo_list_spacer_{}", i)));
+                spacer.props.insert("color", Value::Text("muted".into()));
+                spacer.props.insert("width", Value::Float(16.0));
+                spacer.props.insert("height", Value::Float(16.0));
+                // 透明色块（muted 但实际不渲染影响视觉——保留占位宽度）。
+                row.children.push(spacer);
+            }
 
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_list_item_{}", i)));
-            let marker = if i == selected { "> " } else { "  " };
             btn.props
-                .insert("label", Value::Text(format!("{}Item {}", marker, i + 1)));
+                .insert("label", Value::Text(format!("Item {}", i + 1)));
             btn.props.insert(
                 "variant",
                 Value::Text(
@@ -443,7 +451,7 @@ impl GalleryApp {
         col
     }
 
-    /// Menu: vertical items; click highlights selected.
+    /// Menu: vertical items; selected item prefixed with check Icon.
     fn build_menu_demo(&self) -> WidgetSpec {
         let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_menu_col");
@@ -456,14 +464,32 @@ impl GalleryApp {
         ];
         let selected = st.pressed;
         for (label, name, idx) in items.iter() {
+            let mut row = self.themed_container("Row", &format!("demo_menu_row_{}", name));
+            row.props.insert("gap", Value::Float(8.0));
+            row.props
+                .insert("cross_axis_align", Value::Text("center".into()));
+
+            // P3-5-2：选中项前加 check Icon（替代 ASCII "> "）。
+            if *idx == selected {
+                let mut check = WidgetSpec::new("Icon");
+                check.id = Some(WidgetId::new(&format!("demo_menu_check_{}", name)));
+                check.props.insert("name", Value::Text("check".into()));
+                check.props.insert("size", Value::Float(16.0));
+                check.props.insert("color", Value::Text("primary".into()));
+                check.props.insert("label", Value::Text("Selected".into()));
+                row.children.push(check);
+            } else {
+                let mut spacer = WidgetSpec::new("ColoredBox");
+                spacer.id = Some(WidgetId::new(&format!("demo_menu_spacer_{}", name)));
+                spacer.props.insert("color", Value::Text("muted".into()));
+                spacer.props.insert("width", Value::Float(16.0));
+                spacer.props.insert("height", Value::Float(16.0));
+                row.children.push(spacer);
+            }
+
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_menu_{}", name)));
-            let display = if *idx == selected {
-                format!("> {}", label)
-            } else {
-                (*label).to_string()
-            };
-            btn.props.insert("label", Value::Text(display));
+            btn.props.insert("label", Value::Text((*label).to_string()));
             btn.props.insert(
                 "variant",
                 Value::Text(
@@ -477,7 +503,8 @@ impl GalleryApp {
             );
             btn.props
                 .insert("action", Value::Text(format!("gallery.demo.button_click.{}", idx)));
-            col.children.push(btn);
+            row.children.push(btn);
+            col.children.push(row);
         }
         col
     }
@@ -488,16 +515,31 @@ impl GalleryApp {
         let mut col = self.themed_container("Column", "demo_search_col");
         col.props.insert("gap", Value::Float(8.0));
 
+        // 搜索输入框 + search Icon 前缀（更像真实搜索框）。
+        let mut input_row = self.themed_container("Row", "demo_search_input_row");
+        input_row.props.insert("gap", Value::Float(8.0));
+        input_row
+            .props
+            .insert("cross_axis_align", Value::Text("center".into()));
+
+        let mut search_icon = WidgetSpec::new("Icon");
+        search_icon.id = Some(WidgetId::new("demo_search_icon"));
+        search_icon.props.insert("name", Value::Text("search".into()));
+        search_icon.props.insert("size", Value::Float(20.0));
+        search_icon.props.insert("color", Value::Text("muted".into()));
+        search_icon.props.insert("label", Value::Text("Search".into()));
+        input_row.children.push(search_icon);
+
         let mut input = WidgetSpec::new("TextInputWidget");
         input.id = Some(WidgetId::new("demo_search_input"));
         input.props.insert("text", Value::Text(st.text.clone()));
         input
             .props
             .insert("placeholder", Value::Text("Search components...".into()));
-        col.children.push(input);
+        input_row.children.push(input);
+        col.children.push(input_row);
 
-        let mut result = WidgetSpec::new("SourceLabel");
-        result.id = Some(WidgetId::new("demo_search_result"));
+        // P3-5-3：建议列表用真 Button 行（替代纯文本 SourceLabel），每行配 check Icon。
         let query = st.text.trim().to_lowercase();
         let candidates = ["button", "toggle", "text_input", "menu", "tabs"];
         let matches: Vec<&str> = candidates
@@ -505,17 +547,47 @@ impl GalleryApp {
             .copied()
             .filter(|c| c.starts_with(query.as_str()))
             .collect();
-        let display = if query.is_empty() {
-            "(type to filter)".to_string()
+        if query.is_empty() {
+            let mut hint = WidgetSpec::new("SourceLabel");
+            hint.id = Some(WidgetId::new("demo_search_hint"));
+            hint.props
+                .insert("text", Value::Text("(type to filter suggestions)".into()));
+            col.children.push(hint);
         } else if matches.is_empty() {
-            "No match".to_string()
+            let mut no_match = WidgetSpec::new("SourceLabel");
+            no_match.id = Some(WidgetId::new("demo_search_no_match"));
+            no_match.props
+                .insert("text", Value::Text("No match".into()));
+            col.children.push(no_match);
         } else {
-            matches.join(", ")
-        };
-        result
-            .props
-            .insert("text", Value::Text(format!("Suggestions: {}", display)));
-        col.children.push(result);
+            // 每个建议一行：check Icon + Button（点击选中）。
+            for (i, candidate) in matches.iter().enumerate() {
+                let mut row = self.themed_container("Row", &format!("demo_search_row_{}", i));
+                row.props.insert("gap", Value::Float(8.0));
+                row.props
+                    .insert("cross_axis_align", Value::Text("center".into()));
+
+                let mut check = WidgetSpec::new("Icon");
+                check.id = Some(WidgetId::new(&format!("demo_search_check_{}", i)));
+                check.props.insert("name", Value::Text("check".into()));
+                check.props.insert("size", Value::Float(14.0));
+                check.props.insert("color", Value::Text("primary".into()));
+                check.props.insert("label", Value::Text("Suggestion".into()));
+                row.children.push(check);
+
+                let mut btn = WidgetSpec::new("Button");
+                btn.id = Some(WidgetId::new(&format!("demo_search_item_{}", i)));
+                btn.props.insert("label", Value::Text((*candidate).to_string()));
+                btn.props
+                    .insert("variant", Value::Text("neutral".into()));
+                btn.props.insert(
+                    "action",
+                    Value::Text(format!("gallery.demo.button_click.{}", i + 1)),
+                );
+                row.children.push(btn);
+                col.children.push(row);
+            }
+        }
         col
     }
 

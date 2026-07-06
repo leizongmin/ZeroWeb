@@ -785,4 +785,44 @@ tabs/list_view/menu 用 `> Label` / `[X]` ASCII 前缀标记选中，本身在�
 
 ---
 
+### 9.5 P3-5 视觉精度收尾（tooltip 真浮层 + 选中标记 Icon 化）
+
+**触发**：P3-4 完成后复查发现仍有 4 处"半真"残留：
+1. tooltip 还在用线性排版（hover 时把按钮挤下去），没用 overlay。
+2. list_view / menu / tabs 的选中标记还在用 `> ` ASCII 前缀。
+3. search_field 建议列表用纯文本 SourceLabel，没有真 Button + Icon。
+
+#### 9.5.1 tooltip 真浮层化
+
+- `build_tooltip_demo` 移除内联 bubble（ColoredBox + SourceLabel），只保留触发按钮 + 说明文字。
+- `GalleryApp::overlay()` 加 `"tooltip"` 分支，hover 触发时返回 `OverlayEntry::tooltip`（锚定 + OutsideClick dismiss）。
+- 新增 `build_tooltip_overlay()`：深色胶囊背景（radius=12）+ info Icon + 一行文字。
+- **行为差异**：hover 按钮时 tooltip 真正浮在主树之上（不再挤压按钮），点外部自动 dismiss。
+
+#### 9.5.2 选中标记用真 Icon（check）替代 ASCII `>`
+
+3 个 demo 统一改造：
+- **list_view**：选中项前加 `Icon(check, primary, 16px)`；未选中项留 16×16 muted spacer（保持宽度一致，避免选中切换时跳变）。
+- **menu**：同 list_view 模式（check Icon + spacer）。
+- **tabs**：选中 tab 前加 check Icon（不加 spacer，tabs 横排不需要对齐）。
+
+#### 9.5.3 search_field 真建议列表
+
+- 输入框前加 `Icon(search, muted, 20px)`（更像真实搜索框）。
+- 建议从纯文本 `SourceLabel` 改为每行 `Icon(check) + Button(neutral)`：
+  - 空查询 → 显示 `(type to filter suggestions)` 提示。
+  - 无匹配 → 显示 `No match`。
+  - 有匹配 → 每个候选一行，可点击选中。
+
+#### 9.5.4 测试覆盖
+
+新增 5 个回归测试（gallery_retained.rs，从 21 → 26）：
+- `list_view_selected_row_has_check_icon`：选中项有 check Icon，未选中无。
+- `menu_selected_item_has_check_icon`：选中项有 check Icon。
+- `tabs_selected_tab_has_check_icon`：选中 tab 有 check Icon。
+- `search_field_has_search_icon_and_suggestions_are_buttons`：search Icon 存在 + 建议是 Button。
+- `tooltip_demo_uses_overlay_not_inline_bubble`：hover 后有 overlay 视觉子树。
+
+---
+
 *RFC 结束。上一段落：Spec（需求规格），当前段落：RFC（技术设计），下一段落：实施交接（逐步骤指令）。*

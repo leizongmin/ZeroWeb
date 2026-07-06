@@ -401,6 +401,46 @@ impl GalleryApp {
         col.children.push(row);
         col
     }
+
+    /// P3-5-1：tooltip 浮层视觉子树。
+    ///
+    /// 设计：深色背景胶囊（radius=12）+ 信息 Icon + 一行文字。
+    /// 视觉上像真实 tooltip（小卡片浮在触发元素上方）。
+    fn build_tooltip_overlay(&self) -> WidgetSpec {
+        let mut row = WidgetSpec::new("Row");
+        row.id = Some(WidgetId::new("demo_overlay_root"));
+        row.props.insert("gap", Value::Float(8.0));
+        row.props
+            .insert("cross_axis_align", Value::Text("center".into()));
+
+        // 深色胶囊背景（radius=12 让边缘圆润）。
+        let mut bg = WidgetSpec::new("ColoredBox");
+        bg.id = Some(WidgetId::new("demo_overlay_bg"));
+        bg.props.insert("color", Value::Text("muted".into()));
+        bg.props.insert("width", Value::Float(320.0));
+        bg.props.insert("height", Value::Float(36.0));
+        bg.props.insert("radius", Value::Float(12.0));
+        bg.props.insert("label", Value::Text("Tooltip".into()));
+        row.children.push(bg);
+
+        // 信息 Icon（左前缀，让 tooltip 视觉更专业）。
+        let mut icon = WidgetSpec::new("Icon");
+        icon.id = Some(WidgetId::new("demo_overlay_icon"));
+        icon.props.insert("name", Value::Text("info".into()));
+        icon.props.insert("size", Value::Float(16.0));
+        icon.props.insert("color", Value::Text("primary".into()));
+        icon.props.insert("label", Value::Text("Info".into()));
+        row.children.push(icon);
+
+        let mut text = WidgetSpec::new("SourceLabel");
+        text.id = Some(WidgetId::new("demo_overlay_text"));
+        text.props.insert(
+            "text",
+            Value::Text("Helpful hint: tooltip floats above (real overlay).".into()),
+        );
+        row.children.push(text);
+        row
+    }
 }
 
 impl Default for GalleryApp {
@@ -423,13 +463,14 @@ impl UiApp for GalleryApp {
         })
     }
 
-    /// P3-4-3：popover/popup/dialog_scaffold 三个 demo 在打开时返回真浮动层。
+    /// P3-4-3：popover/popup/dialog_scaffold/tooltip 四个 demo 在打开时返回真浮动层。
     ///
     /// - popover：OutsideClick dismiss（点外部关）
     /// - popup：modal barrier（屏蔽主树事件）+ Escape dismiss
     /// - dialog_scaffold：modal barrier + Escape dismiss
+    /// - tooltip：锚定 OutsideClick dismiss（hover 触发，离开/hover 别处自动关）
     ///
-    /// 浮层视觉 spec 由 build_overlay_spec 按 current_page 构造；host 把它 paint 在主树之上。
+    /// 浮层视觉 spec 由 build_*_overlay 按 current_page 构造；host 把它 paint 在主树之上。
     fn overlay(&self) -> Option<(zero_ui_overlay::OverlayEntry, Option<WidgetSpec>)> {
         let st = self.current_demo_read();
         let open = st.pressed == 1;
@@ -448,6 +489,10 @@ impl UiApp for GalleryApp {
             "dialog_scaffold" => (
                 zero_ui_overlay::OverlayEntry::modal("demo_overlay"),
                 self.build_dialog_overlay(),
+            ),
+            "tooltip" => (
+                zero_ui_overlay::OverlayEntry::tooltip("demo_overlay", zero_ui_core::geometry::Rect::ZERO),
+                self.build_tooltip_overlay(),
             ),
             _ => return None,
         };
