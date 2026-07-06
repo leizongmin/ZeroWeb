@@ -454,3 +454,42 @@ fn test_r1108_horizontal_tb_table_unchanged_by_wm_gate() {
     assert!(ay < dy, "horizontal-tb: rows stack along y (Ay={} < Dy={})", ay, dy);
     assert!(ax < bx, "horizontal-tb: cells stack along x (Ax={} < Bx={})", ax, bx);
 }
+
+/// R1112 α-4b-4 回归：vertical-rl 表 height 属性被应用（row_extras 沿 y 分配到 cell）。
+/// height:7em=140px，3 cell 沿 y，base ~60px → 各 cell 应 +~27px 使表高 ≈140px。
+#[test]
+fn test_r1112_vertical_table_height_distributed_to_cells() {
+    let html = r#"<html><body style="margin:0">
+      <table style="writing-mode:vertical-rl; border-spacing:0; height:7em; font:20px/1 Ahem">
+        <tr><td>A</td><td>B</td><td>C</td></tr>
+      </table>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find_table<'a>(b: &'a LayoutBox, doc: &Document) -> Option<&'a LayoutBox> {
+        let tag = b.node_id.and_then(|nid| doc.get(nid)).and_then(|n| match &n.kind {
+            zero_dom::NodeKind::Element(e) => Some(e.local_name().to_string()),
+            _ => None,
+        });
+        if tag.as_deref() == Some("table") {
+            return Some(b);
+        }
+        for c in &b.children {
+            if let Some(t) = find_table(c, doc) {
+                return Some(t);
+            }
+        }
+        None
+    }
+    let t = find_table(&result.root, &doc).expect("table");
+    // height:7em × 20px = 140px。content_height 应接近 140（旧实现 60，未分配）。
+    assert!(
+        t.content_height > 120.0,
+        "vertical table height:7em should distribute to ~140px content_height, got {} (old: 60, no row_extras)",
+        t.content_height
+    );
+}

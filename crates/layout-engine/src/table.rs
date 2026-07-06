@@ -1360,7 +1360,47 @@ fn position_cells_vertical(
     } else {
         0.0
     };
-    let row_inline_extent: f32 = col_widths.iter().sum::<f32>() + inline_gaps + 2.0 * perim_inline;
+    let base_inline_extent: f32 = col_widths.iter().sum::<f32>() + inline_gaps + 2.0 * perim_inline;
+
+    // α-4b-4 row_extras（TBD-4）：vertical 表的 `height` 属性是物理 y = inline 跨度
+    //（horizontal 的 height 是 block 跨度，沿 y 分配到行；vertical 的 height 沿 y 分配到
+    // cell）。若 style.height > base_inline_extent，把超额均分到各列（cell y 高），
+    // 使表填满指定高度（如 row-progression-vrl-002 height:7em=140px，base=60 → 各列+27px）。
+    // 仅处理 Px（% 随 WM 语义复杂，defer）；min/max clamp 同 horizontal。
+    let target_inline: f32 = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .and_then(|s| {
+            use zero_css_parser::values::LengthValue;
+            let h_px = match &s.height {
+                LengthValue::Px(v) => Some(*v as f32),
+                _ => None,
+            };
+            let mn_px = match &s.min_height {
+                LengthValue::Px(v) => Some(*v as f32),
+                _ => None,
+            };
+            let mx_px = match &s.max_height {
+                LengthValue::Px(v) if *v != f64::INFINITY => Some(*v as f32),
+                _ => None,
+            };
+            let mut t = h_px;
+            if let Some(mx) = mx_px {
+                t = t.map(|v| v.min(mx));
+            }
+            if let Some(mn) = mn_px {
+                t = t.map(|v| v.max(mn));
+            }
+            // height:auto 时仅 min-height 作下限（同 horizontal apply_table_size_constraints）。
+            t.or(mn_px)
+        })
+        .unwrap_or(base_inline_extent);
+    let col_extra: f32 = if n_cols > 0 && target_inline > base_inline_extent {
+        (target_inline - 2.0 * perim_inline - inline_gaps - col_widths.iter().sum::<f32>()) / n_cols as f32
+    } else {
+        0.0
+    };
+    let row_inline_extent: f32 = base_inline_extent + n_cols as f32 * col_extra;
 
     // 先算每行的 block 尺寸（x 宽 = 该行 cell 内容宽最大值）。
     // extract_layout 已对 vertical 容器的 cell 盒做了 size 轴交换，cell.width 是
@@ -1471,6 +1511,9 @@ fn position_cells_vertical(
             if spanned_non_collapsed > 1 {
                 cell_h += (spanned_non_collapsed - 1) as f32 * spacing_x;
             }
+            // α-4b-4 row_extras：把 table height 超额均分到各列，colspan cell 按
+            // 跨的非折叠列数累计 col_extra（与它占据的 y 槽位数成正比）。
+            cell_h += col_extra * spanned_non_collapsed as f32;
 
             // cell 自身 relative inset。
             let (cell_rel_dx, cell_rel_dy) = if cell_box.is_relative {
