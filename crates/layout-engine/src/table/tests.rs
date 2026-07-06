@@ -894,7 +894,7 @@ fn test_r1131_grow_vrl_cell_block_extent() {
     let mut doc = Document::new();
     let root = doc.root();
     let cell_id = doc.create_element("td");
-    let text_id = doc.create_text_node("AAAAA");
+    let text_id = doc.create_text_node("AA BB CC DD");
     let _ = doc.append_child(root, cell_id);
     let _ = doc.append_child(cell_id, text_id);
 
@@ -936,12 +936,13 @@ fn test_r1131_grow_vrl_cell_block_extent() {
     let w = grow_vrl_cell_block_extent(&cb, &cell_rs, &col_widths, Some(0.25), 0.0, &grid, &styles, &doc);
     assert_eq!(w, 40.0, "rowspan>1 gated → cb.width");
 
-    // 3. Some scale + text → 增长。text_extent = 5×20 = 100；cell_h_scaled = 100×0.25 = 25；
-    //    N = ceil(100/25) = 4；grown = 4×20 = 80。
+    // 3. Some scale + multi-word text → word-based packing 增长。text "AA BB CC DD"
+    //    = 4 words × 2 char × 20 = 40/word；cell_h_scaled = col_widths[0]×0.25 = 100×0.25 = 25。
+    //    每 word 40 > 25 故每 word 一列 → N=4；grown = 4×20 = 80。
     let w = grow_vrl_cell_block_extent(&cb, &cell, &col_widths, Some(0.25), 0.0, &grid, &styles, &doc);
     assert!(
         (w - 80.0).abs() < 0.01,
-        "scale 0.25 + 5-char → N=4 cols ×20 = 80, got {}",
+        "scale 0.25 + 4-word (each 40>cell_h 25) → N=4 cols ×20 = 80, got {}",
         w
     );
     assert!(w > cb.width, "grown > original width");
