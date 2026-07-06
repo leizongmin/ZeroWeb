@@ -1474,11 +1474,13 @@ fn position_cells_vertical(
     } else {
         0.0
     };
-    // α-4b-6 vrl-only cap spike：vertical-**rl** 表 height 作 inline 约束，base>target 时等比缩小
-    // col_widths 触发 IFC wrap。原 spike 对 vlr 也 cap 致 net-negative（vlr-003/009 回归）；
-    // 本轮收窄到 vrl-only（cap 改善案 vrl-002/004，回归案全 vlr）。vlr 保留 height-as-minimum。
+    // α-4b-6 cap：vertical 表 height 作 inline 约束，base>target 时等比缩小 col_widths
+    // 触发 IFC wrap。R1114 原 vrl-only（vlr cap 致 vlr-003/009 回归），但**彼时 pre-R1131
+    // 无 cell.width 增长**——cap 触发 wrap 后 cell 盒不增长，wrap 列溢出 → 回归。
+    // post-R1131（grow_vrl_cell_block_extent 增长 cell.width 容纳 wrap 列），vlr cap 应同 vrl
+    // 安全。R1132 实验：扩 cap 到 vlr（is_rl gate 移除），验 vlr row-progression 是否改善。
     let col_sum: f32 = col_widths.iter().sum();
-    let vrl_cap_scale: Option<f32> = if is_rl && target_inline < base_inline_extent && col_sum > 0.0 {
+    let vrl_cap_scale: Option<f32> = if target_inline < base_inline_extent && col_sum > 0.0 {
         Some((target_inline - 2.0 * perim_inline - inline_gaps) / col_sum)
     } else {
         None
