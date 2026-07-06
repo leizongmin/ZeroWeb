@@ -1089,6 +1089,21 @@ impl super::Painter {
                     .with_tab_size(tab_size_px)
                     .with_vertical(is_vertical)
                     .with_vertical_rtl(is_vertical_rtl)
+                    .with_block_extent(
+                        if is_vertical
+                            && styles.is_some_and(|s| {
+                                box_node.node_id.is_some_and(|id| {
+                                    s.get(&id).is_some_and(|st| {
+                                        matches!(st.display, zero_css_parser::values::DisplayValue::TableCaption)
+                                    })
+                                })
+                            })
+                        {
+                            box_node.content_width
+                        } else {
+                            container_width
+                        },
+                    )
                     .with_font_size_overrides(parent_font_sizes)
                     .with_is_ahem_overrides(parent_is_ahem)
                     .with_letter_spacing_overrides(parent_letter_spacing)

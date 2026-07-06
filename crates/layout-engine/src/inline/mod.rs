@@ -82,6 +82,14 @@ pub struct InlineFormattingContext {
     /// 仅当 vertical=true 时有效。当为 true 时，第一列在右侧，
     /// 后续列向左推进。fragment 的 x 坐标会相应镜像。
     pub vertical_rtl: bool,
+    /// 垂直模式下容器的 **block 轴 extent**（= content_width，x 方向跨度）。
+    ///
+    /// R1122：`break_items_into_columns` 的 vrl 列 x 定位须用 block 轴 extent（列沿 x 排列
+    /// 的可用宽度），**非 `container_width`**（vertical 下 = content_height，是 inline 深度/y 轴，
+    /// 量纲错）。旧实现误用 container_width 致单列 caption col.y=784-50=734 → paint off-screen
+    /// → caption-side-vrl 文本完全不绘制（R1120）。本字段由 compute_final/paint 在 vertical 时
+    /// 设为 content_width；默认 = container_width（horizontal / 未设 caller 零回归）。
+    pub block_extent: f32,
     /// inline-block 元素的预计算尺寸（来自 LayoutBox / taffy 布局结果）。
     ///
     /// 当 CSS 属性 width/height 为 Auto 时，inline-block 的尺寸由其内容决定，
@@ -211,6 +219,7 @@ impl InlineFormattingContext {
             lines: Vec::new(),
             vertical: false,
             vertical_rtl: false,
+            block_extent: container_width,
             inline_block_sizes: HashMap::new(),
             default_font_metrics: None,
             container_font_size: DEFAULT_FONT_SIZE,
@@ -256,6 +265,13 @@ impl InlineFormattingContext {
     /// 仅当 vertical=true 时有效。
     pub fn with_vertical_rtl(mut self, rtl: bool) -> Self {
         self.vertical_rtl = rtl;
+        self
+    }
+
+    /// 设置垂直模式容器的 block 轴 extent（content_width）。仅 vertical 时消费
+    ///（break_items_into_columns vrl 列 x）。见 `block_extent` 字段文档（R1122）。
+    pub fn with_block_extent(mut self, extent: f32) -> Self {
+        self.block_extent = extent;
         self
     }
 
@@ -1657,8 +1673,13 @@ impl InlineFormattingContext {
         // 计算每列的 x 坐标（沿 x 轴排列）
         // 垂直模式中 LineBox.y 表示 x 坐标，LineBox.height 表示列宽
         if self.vertical_rtl {
-            // vertical-rl：第一列在右侧，后续列向左排列
-            let mut x = self.container_width; // 从容器右端开始
+            // vertical-rl：第一列在右侧，后续列向左排列。
+            // ★ R1122：从 block 轴 extent（content_width）开始递减，**非 container_width**。
+            // container_width 在 vertical = content_height（inline 深度/y 轴），用它当 block 右端
+            // 致单列 col 落到 x=container_width-col_w（caption 784-50=734），paint off-screen，
+            // caption-side-vrl 文本完全不绘制（R1120）。block_extent 是真实 block 轴（x）跨度，
+            // caption content_width=50 → col 0 → paint content_x+0 正确。
+            let mut x = self.block_extent; // 从 block 轴右端开始
             for col in &mut self.lines {
                 x -= col.height; // col.height 在垂直模式表示列宽
                 col.y = x;
