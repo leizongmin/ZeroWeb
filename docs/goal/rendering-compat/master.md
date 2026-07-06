@@ -2648,6 +2648,35 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1093 ::before/::after color 修复（R554-separable）= 0 yield（无 WPT 案用 colored ::before text）·autonomous plateau exhaustive 完成·已回退·零 net 源码
+
+承 R1092（autonomous plateau definitive，C-dep=root unlock）。本轮试最后一个非 C-dep/Phase-A 的 tractable candidate：R554 ::before/::after 伪元素 color bug（inject_pseudo_text_nodes 存伪样式于文本节点 NodeId，但 collect_inline_items 读父 + paint owner_id 取父 → 伪 color 丢失）。R554 net-negative 是 content-list/counter，基础 color 修复疑可分离。
+
+**实现（3 文件，已回退）**：painter/text.rs render_fragment! macro（line 1355）+ multicol 分支（line 1174）owner_id 对文本节点优先取自身 NodeId 样式 + inline/mod.rs collect_inline_items（line 581）`styles.get(&child_id).or_else(parent)` 使伪 font-metrics/color 生效。
+
+**A/B（generated-content 全量 227）**：92/227 → 92/227 **NET 0**。逐案 top-15 全 **+0.00**（before-after-table-parts 93.36 / content-177 7.09 / before-after-display-types 6.89 / content-173 6.38 等全不变）。
+
+**根因（0 yield）**：grep 确证 generated-content **无任何 case 用 `content: "非空字符串"` + color**（全用空 content / visual styling bg+border，无 colored ::before text）；welcome.html 亦无 ::before。故 color 修复虽 CSS-correct（零回归）但**无 case 触发**，reftest + product-smoke 双 0 yield。
+
+**裁决**：按协议（0 yield + unexercised → revert）git checkout 3 文件回退，零源码，cargo check 绿。修复存档于此（未来 WPT/产品页加 colored ::before text 时可重应用，e.g. FontAwesome ::before 图标）。
+
+**★ autonomous plateau exhaustive 完成（8 session R1085-R1093 穷尽）**：
+| 维度 | 状态 |
+|------|------|
+| fresh scan 全 10 dir | 全 cluster font-wall 或深结构性（R1087-R1092） |
+| ::first-letter（436 案）| Phase-A 门控（full/color-only/+门控 三变体 net-neg/0，R1088/R1089）|
+| Phase A line-box Phase 3 | C-dep 门控（fontdue tight-ink，combined -29，R1090）|
+| abspos §10.3.7（10 案）| 探针确证几何正确，是 instruction font-wall（R1092）|
+| float §10.3.5 / R109 / multicol | 深结构性 / Phase-A deadlock |
+| ::before color（R554-separable）| 0 yield（无 case 触发，本轮）|
+| C-dep（FreeType）| user-blocked（CI billing 6-target 全 failure + policy）|
+
+**所有 autonomous reftest-yield lever 穷尽**。C-dep（价值上修 +200~400，R1092）= font-wall plateau 唯一 batch unlock，仍 user-blocked。forward = **C-dep 用户决策**（CI 计费恢复 + policy 批准 → 翻 freetype-raster default）。
+
+**门禁**：纯调查（修复加已撤），零 net 源码，make test 未跑。tree clean，cargo check 绿。
+
+**▶ 下会话**：C-dep 用户决策 = 唯一 lever；autonomous 侧无 yield（plateau exhaustive）。若用户解 CI 计费 + 批 policy，翻 default → +200~400 font-wall batch unlock + 解锁 Phase A/::first-letter 重试。
+
 ### R1092 abspos §10.3.7 cluster 探针确证 = 几何正确·2.89% 是 instruction 文本 font-wall·最后「非 font-wall candidate」亦 font-wall·plateau definitive 完成·零 net 源码
 
 承 R1091（positioning abspos §10.3.7 cluster 2.89%×10 是 EV 最高残余 candidate，Ahem 用例疑非 font-wall）。本轮加临时探针（env ABSPOS_PROBE，递归打印 abspos 子元素 geom + 计算 inset/margin）确证根因。
