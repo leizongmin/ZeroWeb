@@ -128,7 +128,15 @@
 
 > 本节为 doc-maintenance 轮的**浓缩结论**，置于控制面板顶部便于检索。逐轮详细记录见顶部 round-detail（R491–R511）与文末「最近轮次详细记录」指针；更早轮次归档见 [`archive/`](./archive/)（R484–R490 伪元素线、R342c–R480 DC-14 导入 era、R314–R334、R307–R313、R305–R306、R304、R303、R142–R302、R23–R139、R11–R20）。
 
-**核心结论（2026-06-23 更新，分两阶段）**：
+**核心结论（2026-07-06 更新，折叠 R990–R1093；分两阶段 + 一个 user-blocked C-dep 决策）**：
+
+> **★ 2026-07-06 追加（R990–R1093：font-wall 首次突破 + FreeType C-dep root unlock + plateau definitive；本块 supersede 下方 R660–R668「font-wall 彻底定性为永久 plateau」结论）**：
+> 1. **font-wall 不再是「永久 plateau」**：R990（★★★ `apply_vertical_alignment` is_ahem-gated ascent ratio，non-Ahem 0.8→0.928）LANDED，全量 oracle **4530→4668（+138 pass）** = font-wall 首次实质突破；R1068（★ `freetype-raster` feature，Phase 2 FreeType 光栅化替 fontdue）LANDED **feature-gated default-off**，css-text Oracle **+24 credible**（357→381）+ welcome −0.28pp = 首个 font-wall 正 yield（C 依赖证据）。R1066–R1071 跨平台 de-risk 完成（cc crate 编译 FreeType2 C 源，三平台一致）。
+> 2. **Phase A 非-Ahem = fontdue tight-ink = font-wall = C-dep 共同 root（R1088–R1090 三证）**：::first-letter 端到端实现正确但度量门控 −7（R1088）/ Phase 3 line-box store-gate+paint 公式扩展 linebox −1·css-text −14·css-text-decor −14（R1090）/ ::first-letter color-only net count-neutral（R1089）三变体均 net-negative **直到 C-dep 解锁**——确证 font-wall 是 Phase A 非-Ahem 路径的共同 root，单 session 不可绕过。
+> 3. **★ 当前唯一 user-blocked 卡点 = FreeType C-dep 翻 default**：技术已验证（yield 全表测绘 +32，集中 text dir，R1084；R1092 价值上修 +200~400 batch unlock），但 **default 翻转被 CI 计费（6-target matrix 全 failure）+ policy 阻塞**，需用户决策。**翻 default 即同时解锁 font-wall + Phase A 非-Ahem + ::first-letter 三组阻塞**。
+> 4. **其余 clean wins（已 LANDED）**：R1085 nbsp(U+00A0) 保留（linebox +10/css-text +1/writing-modes +3）/ R1086 word-spacing 前导间隙（CSS2/text +1/css-text +1）/ multicol R1028–R1080 累计 +~20（column-span:all spanner +8、column-gap:normal +6、fragment clip +4、inline 列溢出 +3、positioned 后代 flush+clip +3）/ border+margin/padding/inset 逻辑属性 WM-aware（R1048–R1049）/ R1058 inline 垂直 margin 归零。
+> 5. **plateau definitive（R1091–R1093）**：positioning + floats/floats-clear + abspos §10.3.7 + CSS2/box + margin-padding-clear + css-text-decor fresh scan 全目录确证——残余 100% font-wall / 深结构性（R109 §9.2.1.1 / multicol Phase 2 / baseline-export / writing-mode 垂直），autonomous plateau exhaustive 完成。逐轮详记见 [`archive/rounds-r894-r990-multicol-harness-r109-aspect-era.md`](./archive/rounds-r894-r990-multicol-harness-r109-aspect-era.md) + [`archive/rounds-r991-r1093-multicol-spanner-freetype-firstletter-era.md`](./archive/rounds-r991-r1093-multicol-spanner-freetype-firstletter-era.md)。
+
 
 > **★ 2026-06-26 追加（R660–R668 doc-accuracy arc + M7 闭环 + font-wall 彻底定性；supersede 下方 R519-era 收敛叙述）**：
 > 1. **M7（渲染器图元覆盖）已完成**：DC-8 CPU 13/13 + DC-9 GPU 13/13 + DC-10 浏览器消费全 13 字段，均附 framebuffer 像素断言单测（R660–R666）。原 goal doc「P0 致命未起步」描述已纠正（M7 milestone section 已收口）。
@@ -465,10 +473,11 @@
 
 ## 已知关键缺口（当前活跃）
 
-> 下表仅列**尚未解决**的缺口，与 R305–R323 plateau 框架对齐（剩余 forward motion 全部是跨会话架构任务，见顶部「综合裁决」）。**已完成项**（Float/Table/Multicol 布局算法、OpenType shaping、BiDi、CJK 换行、justify、quirks mode、CPU/GPU/浏览器图元覆盖、外部 stylesheet、图片子资源/ImageCache、margin 折叠、BFC 检测+margin 隔离、`<img>` intrinsic sizing + object-fit）见「里程碑完成状态」「当前状态概览」，不再在此重复列。
+> 下表仅列**尚未解决**的缺口，与 R305–R323 plateau 框架 + 顶部「综合裁决」R990–R1093 块对齐（剩余 forward motion = 一个 user-blocked C-dep 决策 + 跨会话架构任务）。**已完成项**（Float/Table/Multicol 布局算法、OpenType shaping、BiDi、CJK 换行、justify、quirks mode、CPU/GPU/浏览器图元覆盖、外部 stylesheet、图片子资源/ImageCache、margin 折叠、BFC 检测+margin 隔离、`<img>` intrinsic sizing + object-fit）见「里程碑完成状态」「当前状态概览」，不再在此重复列。
 
-| 缺口 | 影响范围 | 优先级 | 解锁路径（均为跨会话架构任务） |
+| 缺口 | 影响范围 | 优先级 | 解锁路径 |
 |------|----------|--------|------|
+| **FreeType C-dep 翻 default（font-wall root unlock）** | font-wall + Phase A 非-Ahem + ::first-letter（R990 +138 oracle / R1068 css-text +24 feature-gated 已证） | **P0 · user-blocked** | `freetype-raster` feature R1068 已 LANDED default-off；**卡在 CI 计费（6-target matrix failure）+ policy**，需用户决策翻 default。翻即解锁三组阻塞（+200~400 batch yield，R1092 测绘）。技术 de-risk 完成（R1066–R1071 跨平台 cc crate 编译 FreeType2） |
 | **Paint IFC / taffy-IFC 架构分裂** | large-font（ifc-008/009/011）+ welcome/morning 文本度量残余（self-source 失败主因） | **P0** | Phase A IFC 统一：baseline-resolved 单一权威行盒（[`phase-a-IFC-unification-design.md`](./phase-a-IFC-unification-design.md)；墙②③ R125–R213 六轮死锁 + R306 几何基线证伪） |
 | Multicol column breaking / 嵌套碎片化 | css-multicol 失败聚类（结构性） | P1 | Phase 2 嵌套 multicol fragmentation（layout 侧 column-aware IFC；paint 侧 R157/R198/R203/R122/R317 五轮证 net-negative 死路） |
 | Multicol / flexbox baseline-export | baseline-000~008 + flexbox-baseline（~10+ 案） | P1 | taffy 0.8+ `baseline_overrides`（R304 DEFER 升级）或自建 inline-level-box baseline 合成（R266/R313/R316 三机制穷尽，须 layout 侧注入） |
@@ -608,6 +617,7 @@
 
 ### 跨会话续跑入口
 
+- [ ] **★ #1 = FreeType C-dep 翻 default（user-decision，非技术卡点）**：`freetype-raster` feature R1068 已 LANDED default-off（css-text +24 credible、welcome −0.28pp 实测），R1066–R1071 跨平台 de-risk 完成。技术侧无阻塞；**待用户就 CI 计费（6-target matrix）+ policy 做决策**。翻 default 即解锁 font-wall + Phase A 非-Ahem + ::first-letter 三组阻塞（详见顶部综合裁决 R990–R1093 块 + [`archive/rounds-r991-r1093-multicol-spanner-freetype-firstletter-era.md`](./archive/rounds-r991-r1093-multicol-spanner-freetype-firstletter-era.md)）。
 - [ ] **按 rally 续跑协议推进结构性 plateau**：7-目录全量 self 1148/2032=56.5% / oracle 629/1726=36.4%（grid/position/tables/flexbox/multicol/text-decor/fonts）+ 456/518 loose（含子集）/ 295/490 strict（pre-grid-expand）/ ~42% Oracle（broad, pre-grid-expand）是诚实基线。剩余提升需 Phase A IFC 统一 / Phase 2 嵌套 multicol / baseline 合成 或 taffy 升级，均为跨会话工程；这不是人工授权卡点，后续 session 应通过更新 `master.md` 记录阶段事实，并在未完成时输出 `CONTINUE: <下一步>` 传递执行意图。**★ R626-R627 状态更新（2026-06-25）**：(1) DC-14 分母全量去子集化已 10/10 目录完成（含 writing-modes/css-text/CSS2）；(2) stale-oracle 债清偿（R626b/c/d：flexbox/fonts/multicol/writing-modes oracle 重抓 post-R601，CSS2 staleness 低影响 ~0.2% 保留）；fresh-oracle chr<1% 准确数：flexbox 47.7% / fonts 34.4% / multicol 23.2%（R626d）；(3) **font_size 线 R627 定论关闭**——3 个 seam（inline_layout 门控 R84/R355 / gate-entry R125/R198/R205 / font_size-value 存储 R627）全 net-negative，根因 = layout-IFC vs paint-IFC **双路径重跑发散**（paint 带 overrides 重跑必与 layout 行断分歧，pre-wrap 宽度敏感实证 -15）；真修复 = Phase A IFC **统一**（paint 复用 layout 单次结果），但**又被 estimate-vs-fontdue 墙阻塞**（layout 用 estimate_char_width，paint 用 fontdue，非-Ahem 二者不一致；advance-width 统一 R225/R320 亦 net-negative）。**故 control-chars/large-font(非-Ahem)/welcome-morning 文本度量残余 = estimate-vs-fontdue 架构性**，须跨会话字体度量统一（非单 session）。**裁决**：单 session clean lever 谱系穷尽，forward motion 全部进入 rally 可续跑的架构任务（Phase A IFC 统一 + estimate-vs-fontdue 字体度量统一 / multicol fragmentation / baseline-export / font-features rustybuzz 同源）。
 
 ### 跨会话架构任务（按依赖序）
