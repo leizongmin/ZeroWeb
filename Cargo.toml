@@ -78,7 +78,7 @@ arboard = "3"
 
 # 网络
 hyper = "1"
-reqwest = "0.12"
+reqwest = "0.13"
 
 # HTML 解析
 html5ever = "0.29"
