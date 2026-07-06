@@ -609,7 +609,10 @@ fn test_r1122_vrl_caption_column_x_uses_block_extent() {
     let cap = find(&result.root, &doc, "caption").expect("caption");
     eprintln!(
         "R1122 caption: w={:.1} h={:.1} cw={:.1} ch={:.1} il={}",
-        cap.width, cap.height, cap.content_width, cap.content_height,
+        cap.width,
+        cap.height,
+        cap.content_width,
+        cap.content_height,
         cap.inline_layout.as_ref().map(|l| l.len()).unwrap_or(0)
     );
     if let Some(lines) = &cap.inline_layout {
@@ -628,7 +631,8 @@ fn test_r1122_vrl_caption_column_x_uses_block_extent() {
         assert!(
             frag.x < cap.content_width + 1.0,
             "R1122: vrl caption fragment x={} should be within content box (< cw={}), old bug put it off-screen at ~container_width-col",
-            frag.x, cap.content_width
+            frag.x,
+            cap.content_width
         );
     }
 }
