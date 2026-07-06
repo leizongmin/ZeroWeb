@@ -1107,12 +1107,18 @@ impl InlineFormattingContext {
 
                         // 基础宽度 + letter-spacing（仅基于内容字符，不含尾部空格）
                         let content_char_count = content_word.chars().count();
-                        let mut word_width = estimate_string_width(content_word, run.font_size, run.is_ahem_font)
+                        let word_width = estimate_string_width(content_word, run.font_size, run.is_ahem_font)
                             + run.letter_spacing * content_char_count as f32;
-                        // 非首个单词：追加 word-spacing（单词间间距）
-                        if word_idx > 0 {
-                            word_width += run.word_spacing;
-                        }
+                        // R1086：word-spacing 作为词间前导间隙（CSS：词与词之间的额外间距）。
+                        // 旧实现把 word_spacing 计入 word_width → fragment.x（=current_x，置位前）
+                        // 不含 gap，仅推进 current_x 给下一词，致本词 glyph 位缺 gap
+                        //（word-spacing-007 第二 x @x=40，应 @136）。现改为置位前把 gap 加到
+                        // current_x。行首词（word_idx==0 或换行后 runs 空）无前导 gap。
+                        let mut lead_gap = if word_idx > 0 && !current_line.runs.is_empty() {
+                            run.word_spacing
+                        } else {
+                            0.0
+                        };
 
                         // 计算当前行的有效可用宽度（扣除浮动排除区域）
                         let est_height = if current_line.height > 0.0 {
@@ -1127,9 +1133,9 @@ impl InlineFormattingContext {
                             current_x = left_offset;
                         }
 
-                        // 检查当前行是否放得下（使用有效可用宽度）
+                        // 检查当前行是否放得下（含前导 word-spacing gap）
                         if !self.no_wrap
-                            && current_x + word_width > left_offset + avail_width
+                            && current_x + lead_gap + word_width > left_offset + avail_width
                             && !current_line.runs.is_empty()
                         {
                             // 当前行放不下，开始新行
@@ -1146,7 +1152,10 @@ impl InlineFormattingContext {
                             // 新行重新计算浮动偏移
                             let (new_left, _) = self.effective_content_area(current_y, run.box_height());
                             current_x = new_left;
+                            lead_gap = 0.0; // 行首词无前导 gap
                         }
+                        // 应用前导 gap 到 current_x（本词 glyph 位 = current_x，含 gap）
+                        current_x += lead_gap;
 
                         // 计算当前有效宽度（可能在换行后更新）
                         let (_, avail_w) =
@@ -1915,9 +1924,10 @@ impl InlineFormattingContext {
             }
             result
         } else {
-            // 标准 normal 模式：按空白分割，CJK 字符每个单独作为"单词"
+            // 标准 normal 模式：按可折叠白空格分割（R1085：is_collapsible_ws 排除 U+00A0 nbsp，
+            // 保 non-breaking；split_whitespace 含 nbsp 致 nbsp-only 元素 0 行盒）。
             let mut result = Vec::new();
-            for word in text.split_whitespace() {
+            for word in text.split(is_collapsible_ws).filter(|s| !s.is_empty()) {
                 // 检查单词中是否包含 CJK / R645 SEA 词典分词文字
                 let has_cjk = word.chars().any(is_per_char_break_script);
                 if has_cjk && self.word_break != WordBreakMode::KeepAll {

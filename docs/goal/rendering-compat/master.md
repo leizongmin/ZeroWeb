@@ -2648,6 +2648,511 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1093 ::before/::after color 修复（R554-separable）= 0 yield（无 WPT 案用 colored ::before text）·autonomous plateau exhaustive 完成·已回退·零 net 源码
+
+承 R1092（autonomous plateau definitive，C-dep=root unlock）。本轮试最后一个非 C-dep/Phase-A 的 tractable candidate：R554 ::before/::after 伪元素 color bug（inject_pseudo_text_nodes 存伪样式于文本节点 NodeId，但 collect_inline_items 读父 + paint owner_id 取父 → 伪 color 丢失）。R554 net-negative 是 content-list/counter，基础 color 修复疑可分离。
+
+**实现（3 文件，已回退）**：painter/text.rs render_fragment! macro（line 1355）+ multicol 分支（line 1174）owner_id 对文本节点优先取自身 NodeId 样式 + inline/mod.rs collect_inline_items（line 581）`styles.get(&child_id).or_else(parent)` 使伪 font-metrics/color 生效。
+
+**A/B（generated-content 全量 227）**：92/227 → 92/227 **NET 0**。逐案 top-15 全 **+0.00**（before-after-table-parts 93.36 / content-177 7.09 / before-after-display-types 6.89 / content-173 6.38 等全不变）。
+
+**根因（0 yield）**：grep 确证 generated-content **无任何 case 用 `content: "非空字符串"` + color**（全用空 content / visual styling bg+border，无 colored ::before text）；welcome.html 亦无 ::before。故 color 修复虽 CSS-correct（零回归）但**无 case 触发**，reftest + product-smoke 双 0 yield。
+
+**裁决**：按协议（0 yield + unexercised → revert）git checkout 3 文件回退，零源码，cargo check 绿。修复存档于此（未来 WPT/产品页加 colored ::before text 时可重应用，e.g. FontAwesome ::before 图标）。
+
+**★ autonomous plateau exhaustive 完成（8 session R1085-R1093 穷尽）**：
+| 维度 | 状态 |
+|------|------|
+| fresh scan 全 10 dir | 全 cluster font-wall 或深结构性（R1087-R1092） |
+| ::first-letter（436 案）| Phase-A 门控（full/color-only/+门控 三变体 net-neg/0，R1088/R1089）|
+| Phase A line-box Phase 3 | C-dep 门控（fontdue tight-ink，combined -29，R1090）|
+| abspos §10.3.7（10 案）| 探针确证几何正确，是 instruction font-wall（R1092）|
+| float §10.3.5 / R109 / multicol | 深结构性 / Phase-A deadlock |
+| ::before color（R554-separable）| 0 yield（无 case 触发，本轮）|
+| C-dep（FreeType）| user-blocked（CI billing 6-target 全 failure + policy）|
+
+**所有 autonomous reftest-yield lever 穷尽**。C-dep（价值上修 +200~400，R1092）= font-wall plateau 唯一 batch unlock，仍 user-blocked。forward = **C-dep 用户决策**（CI 计费恢复 + policy 批准 → 翻 freetype-raster default）。
+
+**门禁**：纯调查（修复加已撤），零 net 源码，make test 未跑。tree clean，cargo check 绿。
+
+**▶ 下会话**：C-dep 用户决策 = 唯一 lever；autonomous 侧无 yield（plateau exhaustive）。若用户解 CI 计费 + 批 policy，翻 default → +200~400 font-wall batch unlock + 解锁 Phase A/::first-letter 重试。
+
+### R1092 abspos §10.3.7 cluster 探针确证 = 几何正确·2.89% 是 instruction 文本 font-wall·最后「非 font-wall candidate」亦 font-wall·plateau definitive 完成·零 net 源码
+
+承 R1091（positioning abspos §10.3.7 cluster 2.89%×10 是 EV 最高残余 candidate，Ahem 用例疑非 font-wall）。本轮加临时探针（env ABSPOS_PROBE，递归打印 abspos 子元素 geom + 计算 inset/margin）确证根因。
+
+**探针结果（3 案代表簇）**：
+| case | 几何 | 计算 inset/margin | 裁决 |
+|------|------|-------------------|------|
+| width-001（全 auto）| x=3 y=3 w=100 h=100 | left/right/top/bottom/width/height 全 auto | ✓ 静态位 + shrink-to-fit 100px Ahem X 正确 |
+| width-004（auto-margin，全 inset fixed）| x=103 w=100 | left=100 right=100 width=100 mleft/mright auto | ✓ over-constrained 忽略 right + margin=0，x=100+3border 正确 |
+| height-002（全 auto）| x=3 y=3 w=100 h=100 | 全 auto | ✓ 同 width-001 |
+
+**三案 abspos 几何全部正确**——ZW（taffy 0.7 + ZW postprocess）正确处理 §10.3.7 static-position + shrink-to-fit + auto-margin solve + over-constrained（之前疑「无 horizontal abspos solver」= 误判，taffy 已覆盖）。**2.89% diff = instruction 文本 font-wall**（"Test passes if a filled blue square is in the upper-left corner..." 长 instruction @ 默认非-Ahem 字体），非 abspos bug。
+
+**★ 裁决：abspos §10.3.7 cluster 非 lever，是 font-wall**。R1091 标「最高 EV 残余 candidate」推翻。**fresh scan 全 dir 所有 cluster 现均确证 font-wall 或 user-blocked**——R1085/R1086 是仅有的两 clean hit（linebox/text），其余 linebox-applies-to / margin-padding-clear ×126 / bottom ×62 / lang / attr / class / abspos instruction 全 font-wall（near-pass band），结构性簇（§9.7 布局 / §10.3.5 float 宽 / R109 vertical / multicol）多 session。**autonomous plateau definitive 完成**。
+
+**★ C-dep 价值上修**：探针证 abspos 几何正确→C-dep（font-wall root unlock）除 R1084 测的 +32 外，还批量 flip 所有 font-wall instruction cluster（margin-padding-clear ×126 + abspos instruction + bottom ×62 + linebox-applies-to 残余 + lang/attr/class green-text + word-spacing 簇残余 等），**实际 yield 远超 +32**（粗估 +200~400 案 near-pass band 批量翻 strict/loose）。C-dep 是 font-wall plateau 的唯一 batch unlock，仍 user-blocked（CI 计费 6-target 全 failure + policy）。
+
+**门禁**：纯调查（探针加已撤），零 net 源码，make test 未跑。tree clean，cargo check 绿。
+
+**▶ 下会话**：① **C-dep 用户决策**（CI 计费 + policy → 翻 freetype-raster default → font-wall batch unlock +200~400 案 + 解锁 Phase A/::first-letter）；② C-dep 仍 blocked 时，残余 autonomous 仅深结构性多 session（R109 FR-002/003 / float §10.3.5 / multicol nested）低 EV；③ 勿再 fresh scan / 探针 abspos（plateau definitive，全 cluster font-wall/结构性）。
+
+### R1091 positioning + floats/floats-clear fresh scan = cluster 全 font-wall / 深结构性·plateau 扩展确证·零 net 源码·纯调查
+
+承 R1090（autonomous plateau 四重确证 C-dep root unlock）。本轮扫未深扫 dir（CSS2/positioning 578 PNG + CSS2/floats/floats-clear 合 314 PNG）找非 font-wall clean lever（R1085/R1086 类）。
+
+**CSS2/positioning 300/578 (57.3%)**：identical-delta cluster 全 font-wall 或深结构性——
+- 1.33% × 62（bottom-004 簇）= `bottom:-0px; position:relative`（无实际 offset），diff = instruction 文本 font-wall（同 R1087 margin-padding-clear 1.33% × 126 谱系）。
+- 0.85% × 66（position-relative-014）/ 0.89% × 38（right-offset）/ 0.69% × 36（abspos-overflow）/ 0.41% × 24（left-019）= 同 font-wall。
+- 2.89% × 10（absolute-non-replaced-width/height）= **Ahem**（非 font-wall）测 abspos 全 auto offset/margin + auto width/height（§10.3.7 static-position + shrink-to-fit）；grep 无 ZW abspos auto-margin 代码 = 疑 abspos auto-sizing 真缺口，但 §10.3.7 深（R500/R324 谱系），10 案 EV 中。
+
+**CSS2/floats + floats-clear 117/314 (37.3%)**：低通过率，小 cluster（4-5 案）高 delta——
+- 4.74% × 5（float-applies-to-001a 等）= `display:table-row-group; float:right`。**§9.7 调整已存在**（style-system/lib.rs:573-589，table-internal→block when floated，曾修 float-applies-to-012）→ 4.74% 非 §9.7 缺口而是**布局侧**（floated ex-table-row-group 定位），深结构性。
+- 5.22% × 5（float-non-replaced-width-008）/ 1.77% × 4（-002）= float 非替换宽度（§10.3.5），R1019/R180 shrink-to-fit 谱系，结构性。
+- 4.17% × 4（floats-placement-vertical）/ 2.91% × 4（adjacent-floats）/ 2.77% × 4（margin-collapse-033）= 深结构性。
+
+**裁决**：fresh scan 第五轮（linebox/text/box/mpc/decor/visuren/selectors/positioning/floats/floats-clear 全扫尽）确证 plateau 扩展——除 R1085/R1086 两 clean hit 外，所有 dir 的 identical-delta cluster 全 font-wall（near-pass band）或深结构性（§9.7 布局 / §10.3.5 float 宽 / §10.3.7 abspos auto / R109 vertical）。**clean single-session CSS-语义 lever 跨全 dir 穷尽**。positioning abspos §10.3.7（10 案 Ahem）是最高 EV 残余 candidate，但 §10.3.7 深（多 session）。
+
+**★ 战略**：autonomous plateau 五重确证（fresh scan 全 dir + ::first-letter 三变体 + Phase 3 + C-dep blocked + 本轮 positioning/floats）。**C-dep（FreeType）= 唯一 root unlock**（font-wall + Phase A + ::first-letter 共同根），仍 user-blocked（CI 计费 6-target 全 failure + policy）。残余 autonomous lever 仅深结构性多 session（abspos §10.3.7 10 案 / float §10.3.5 / R109 FR-002/003）。
+
+**门禁**：纯调查，零 net 源码，make test 未跑。tree clean。
+
+**▶ 下会话**：① **C-dep 用户决策**（CI 计费 + policy → 翻 freetype-raster default → +32 font-wall + 解锁 Phase A/::first-letter 重试）；② 若 C-dep 仍 blocked，abspos §10.3.7（positioning 10 案 Ahem）是 EV 最高残余——per-pixel 探针确证 abspos auto-sizing 缺口后尝试（多 session，§10.3.7 static-position + shrink-to-fit）；③ 勿再 fresh scan（全 dir 扫尽，cluster 全 font-wall/结构性）。
+
+### R1090 Phase A line-box 度量统一 Phase 3（store-gate 移除 + paint 公式扩展）definitive net-negative（linebox -1 / css-text -14 / css-text-decor -14）·确证 Phase A 非-Ahem = fontdue tight-ink = font-wall = C-dep 根 unlock·已回退·零源码
+
+承 R1089（::first-letter 三变体穷尽 Phase A 门控）。本轮直接攻 Phase A line-box 度量统一 Phase 3（linebox-metric-unification-rfc 的 blocked phase），definitive 实验确证其 net-negative + 根因 = fontdue tight-ink（font-wall 谱系），C-dep 是真正 root unlock。
+
+**Phase 3 阻塞点定位**：compute_final_inline_layouts（inline_finalization.rs:776）`if !is_pure_ahem || ...return` 把 valign-aware baseline_y 存储（R822）门控到 pure-Ahem 容器。R817/R822 只对 Ahem 工作 = 此门控。移除门控让非-Ahem 走 Path A（stored）替代 Path B（重跑）= Phase 3 核心。
+
+**实验 1（store-gate 移除 only，env STORE_NON_AHEM）**：linebox **131→84 = -47**。非-Ahem Path A 存了 fragments 但 paint R817 公式仍只对 is_ahem_font（text.rs:1570）→ 非-Ahem fragment 用旧 `v_offset=font_size` 启发式定位 stored 位置 → mismatch 大回归。
+
+**实验 2（combined：store-gate 移除 + paint 公式扩展 `baseline_y_abs - 0.928·fs - frag.y` for non-Ahem，env 同）**：
+| dir | baseline | combined | net |
+|-----|----------|----------|-----|
+| linebox | 131 | 130 | **-1**（paint 公式恢复 Ahem-heavy，-47→-1）|
+| css-text | 359 | 345 | **-14** |
+| css-text-decor | 108 | 94 | **-14** |
+非-Ahem 0.928·fs 定位对 fontdue tight-ink 字形错（bitmap 是 tight-ink H=30 vs metric ascent 37，R876 谱系）→ text dir 回归。**合计 -29，definitive net-negative**。
+
+**★ 核心结论：Phase A 非-Ahem = font-wall = C-dep root unlock**。Phase 3（非-Ahem Path A + paint 公式）net-negative 根因 = fontdue tight-ink 光栅化（bitmap 不带 metric ascent），与 font-wall（R388 fontdue≈chromium 光栅但 line-metric 偏差 + R876 tight-ink）同根。FreeType（C-dep）提供 proper font ascent metric（非 tight-ink），是 font-wall（+32 已测）**和** Phase A 非-Ahem line-box 度量的共同 root unlock。R1088/R1089（::first-letter）+ R1090（Phase 3）三独立角度收敛：**C-dep 是唯一能 batch unlock 的杠杆，当前 user-blocked（CI 计费 + policy）**。
+
+**★ CI 计费仍 blocked**：本轮 dispatch freetype-raster-cross-platform workflow（run 28760051180），6-target 全 failure（payments/spending limit 未解）。C-dep 决策双重门（policy + CI cross-platform 验证）均非自主可解。
+
+**裁决**：按协议（count net-negative→revert）git checkout 2 文件回退（inline_finalization.rs + painter/text.rs），零源码，cargo check 绿。
+
+**意义**：Phase A line-box 度量统一 Phase 3 definitive 穷尽（store-only -47 / combined -29 均负，根因 fontdue tight-ink）。autonomous plateau 四重确证（fresh scan + ::first-letter 三变体 + Phase 3 + C-dep blocked）均收敛 C-dep root unlock。**forward = C-dep 用户决策（解 CI 计费 + 批准 policy）= 唯一自主不可解的 lever**；Phase A 非-Ahem 须 C-dep 后才有意义（FreeType metric 替 fontdue tight-ink）。勿再试 Phase 3 非-Ahem（fontdue tight-ink 墙，三变体穷尽）。
+
+**▶ 下会话**：① **C-dep 用户决策**（CI 计费恢复 + policy 批准 → 翻 freetype-raster default → +32 font-wall + 解锁 Phase A 非-Ahem 重试）；② C-dep 落地后重试 Phase 3 combined（FreeType metric 应使非-Ahem 0.928·fs 定位正确，linebox vertical-align 簇 + 非-Ahem 文本批量 flip）；③ C-dep 落地后重应用 ::first-letter（R1088 evidence）；④ 勿再试 Phase 3 非-Ahem / ::first-letter（fontdue tight-ink 墙，须 C-dep 先行）。
+
+### R1089 ::first-letter color-only 变体 = net count-neutral（299→299）·oracle 确定性验证（A/B 可信）·::first-letter 三变体穷尽确证 Phase A 门控·已回退·零源码
+
+承 R1088（::first-letter 全量应用 net-negative -7，line-box 度量级联）。本轮试 color-only 变体——合成元素 color 取伪样式，font_size/line_height/font_family/font_weight/font_style/letter_spacing/word_spacing **全部重置为元素自身值** → 零布局级联（R1088 -7 根因消除），仅 color 等 paint-only 生效。
+
+**A/B（selectors 全量 542）**：299/55% → 299/55% **NET count-neutral**（FAIL→PASS=0 / PASS→FAIL=0）。49 案 >0.01pp：11 improved（全 first-letter，color match 工作）/ 12 worsened（含 first-line-pseudo-013/014 + selectors-parsing-001 + class-selector-009/010/011 **均无 ::first-letter 规则**，grep 确认）。
+
+**★ oracle 确定性验证（A/B 方法论可信度）**：reverted 后重跑 baseline selectors oracle，与上次 session baseline 逐案对比 = **0 案 ≥0.01pp 差异** → oracle **完全确定性**（HashMap RandomState 未致 layout/paint 顺序漂移）。故 R1089 的 12 worsened 是**真实**副作用（非噪声）= 我的 `first_letter.color != elem_style.color` 门控对**无 ::first-letter 规则但 color 经选择器设置的元素**误触发（伪 compute color 与 elem color 微差，疑 quirks 调整 / currentColor 解析差异；compute_element_style_internal line 558 已证继承 parent_style，但 apply_quirks_mode_adjustments line 579 对 pseudo 可能分歧）。即使用正信号门控（collect_pseudo_declarations 非空）修复副作用，11 improved 仍**零 count flip**（color match 太小，size/line-height 不匹配主导 diff）。
+
+**结论（::first-letter 三变体穷尽）**：full = net -7（36px/line-height:2 cascade）/ color-only = count-neutral（color match 不足 flip）/ 加正信号门控 = 仍 ~0 flip。**::first-letter（项目最大 autonomous lever，436 案）确证完全 Phase A line-box 度量门控**——color 单维不足以跨阈值，须 Phase A 度量统一后 font-size 全量应用（color+size+line-height 三维同匹配）才 flip。R1088 evidence 存档的合成 inline 元素实现 + 本轮 color-only 度量重置 = Phase A 后重应用的完整方案。
+
+**意义**：autonomous plateau 三重确证——clean lever（R1085/R1086）+ 最大 lever（::first-letter 三变体）+ C-dep（user-blocked）均收敛到 Phase A line-box 度量统一。**Phase A 是唯一未试通的 universal gate**（R817 Ahem-gated baseline_y +45 是 Phase A 唯一成功 narrow slice 先例）。oracle 确定性 = A/B 方法论可信，历史 yield 结论（R1085 +14 / R1086 +2 / R1088 -7）可靠。
+
+**裁决**：按协议（无 count yield → revert）git checkout 4 文件回退，零源码，cargo check 绿。
+
+**▶ 下会话**：① **Phase A line-box 度量统一 narrow slice**（照 R817 Ahem-gated 先例，找下一个安全子集存 baseline_y + paint Path A 消费；linebox-metric-unification-rfc Phase 3 的 per-fragment valign-aware baseline_y 是 universal gate）；② Phase A 度量统一后重应用 ::first-letter（R1088 evidence + R1089 color-only 度量重置方案），批量 flip 436 案；③ font-wall C-dep 用户决策（CI 计费恢复）；④ 勿再试 ::first-letter 单变体（三变体穷尽，Phase A 前无 yield）。
+
+### R1088 ★::first-letter 端到端实现正确但 Phase A 度量门控 net-negative（-7 selectors）·fresh scan 最大 lever（436 案）定位·已回退·零源码
+
+承 R1087（fresh scan 收益递减）。本轮扫未扫 dir（visuren + selectors）+ 深挖发现并实现 ::first-letter（fresh scan 第三轮唯一定位到的 clean CSS-语义 lever，亦项目最大 autonomous lever），A/B net-negative 已回退。
+
+**fresh scan visuren + selectors**：visuren 25/34（73.5%）top-worst 全结构定位（position-absolute-%-inherit 11% / anonymous-boxes / fixed+static-CB），无 R1085 类语义 cluster。selectors 299/542（55%）ORACLE_DUMP_ALL 全量 identical-delta cluster：lang-pseudoclass 11.33%×2 / attribute-value 1.35%×3 / class-selector-012 14.73% **全 font-wall 或已正确实现**（:lang matches_lang + class_list split_whitespace + [attr~=] split_whitespace 均已实现；diff = green-text 渲染）。唯一定位 **::first-letter-punctuation-* 簇 ~300 案 @ ~0.95-1.13%**。
+
+**::first-letter lever 量化**：全 wpt-data **959** first-letter/first-line 测试文件（933 在 selectors）；oracle-covered **518**（436 first-letter，仅 11 PASS）。**远超 C-dep（+32）**——若批量 flip 是项目最大 autonomous yield。
+
+**根因**：::first-letter / :first-letter 仅 css-parser 解析（parser.rs:333），下游完全未实现——matcher PseudoElement(_)=>false（正确），style-system lib.rs:180-210 仅计算 ::before/::after（"first-letter" 从未传入），::first-letter 规则级联后被丢弃 → 块首字母从未按伪样式渲染（diff = 未样式化首字母 ~1%）。
+
+**架构（合成 inline 元素，复用 infra 零 paint 改动）**：R554 教训（::before inject 文本节点 + collect_inline_items 查 parent → 伪 color 不生效，painter/text.rs:1174 owner=parent）。改用合成 inline ELEMENT：inject 把首字母包成 `<zw-first-letter>`（display:inline，伪样式）+ 文本子节点，插为块首子节点。collect_inline_items 对 inline 元素读自身样式（mod.rs:860）→ 伪 font 度量；paint owner=合成元素（text.rs:1174）→ 伪 color。**零 collect_inline_items / paint 改动**。
+
+**实现（4 文件，已回退，存档 evidence/r1088）**：computed_style.rs 加 first_letter_pseudo 字段 + default_impl.rs None + lib.rs compute（pseudo_name="first-letter"，color/font-size 差异门控）+ pipeline.rs inject_first_letter_nodes（is_first_letter_punct ASCII+Unicode P* 近似 + split_first_letter_unit CSS §5.12.1 前导标点+首字母+尾部标点 + 块级容器首直接文本子节点提取 + 合成元素 + set_text_content 去 unit）。端到端正确（提取 `/T/` ✓ 验证）。
+
+**A/B（selectors 全量 542）**：299/55%→292/54% **NET -7**（FAIL→PASS=0 / PASS→FAIL=7）。49 案 >0.01pp 变化：14 improved / 35 worsened。7 PASS→FAIL 全 first-letter-punctuation-*（0.98-0.99%→1.00-1.03%，+0.01~0.04pp 跨 1%）。**实现正确但应用 36px/line-height:2 首字母 run 改变首行行盒高，ZW line-box 度量与 chromium 微差→级联 +0.02~0.04pp，近-pass 推过 1%**。
+
+**★ Phase A 度量门控（核心发现）**：::first-letter 与 linebox-metric-unification-rfc（R813）Phase 3 同类——inline run 的 font-size/line-height 改变首行行盒高时，ZW strut/half-leading/ascent 与 chromium 不一致（R814 A2 已证 vertical-align 簇连单行 line-box 高都算错）。::first-letter 暴露同一度量缺口。**Phase A line-box 度量统一解前，::first-letter net-negative（度量级联 > color 匹配收益）**。
+
+**裁决**：按协议（count net-negative→revert）`git checkout` 4 文件回退，零源码，cargo check 绿。实现存档 evidence（Phase A 度量统一后 5 分钟重应用 + 重 A/B，line-box 度量精确后 color 匹配收益应压过级联，批量 flip 436 案）。
+
+**意义**：fresh scan 第三轮确证 plateau 深度——除 R1085/R1086 两 clean hit 外，visuren（结构）/ selectors（font-wall + ::first-letter）均无 clean single-session win。**★::first-letter（最大 lever 436 案）端到端正确但 Phase A 度量门控 → autonomous plateau 再证：clean lever 与最大 lever 均收敛到 Phase A line-box 度量统一。Phase A 是 universal gate。** fresh scan 已穷尽（visuren/selectors/box/mpc/decor/text/linebox 全扫尽），勿再扫。
+
+详见 [`evidence/r1088-first-letter-phaseA-gate-2026-07-06.txt`](./evidence/r1088-first-letter-phaseA-gate-2026-07-06.txt)。
+
+**门禁**：纯调查 + 实验（已回退），零 net 源码，make test 未跑（无源码变更）。tree clean，cargo check 绿。
+
+**▶ 下会话**：① **Phase A line-box 度量统一**（linebox-metric-unification-rfc Phase 3 = 解 per-fragment valign-aware baseline_y + strut/half-leading 冲突，多 session，是 universal gate）；② 度量统一后重应用 ::first-letter（evidence/r1088 存档），批量 flip 436 案；③ font-wall C-dep 用户决策（CI 计费恢复）；④ 勿再 fresh scan（全扫尽）。
+
+### R1087 fresh R740 scan 三 dir（CSS2/box + margin-padding-clear + css-text-decor）= 无 clean cluster win·cluster 全 font-wall/JS/rendering-precision·零 net 源码·纯调查
+
+承 R1086（fresh scan 路线）。本轮 scan 3 dir 找 R1085/R1086 类 CSS 语义 cluster bug，**均无 clean win**——R1085/R1086 是该方法的仅有两 hit（line-height-applies-to + word-spacing），余 dir cluster 性质不同。
+
+**CSS2/box（128 案，45 pass）**：top-worst 全 insert/delete-inline-in-blocks-* / insert-block-in-blocks-*（23-43%）= **JS DOM mutation 测试**（ZW harness 跑 JS 但不反映 DOM 变更到 layout，R888 谱系）+ 匿名块 R109。cluster（3.78% × 4, 3.74% × 3）同 JS-driven。非 clean lever。
+
+**CSS2/margin-padding-clear（682 案，309 pass）**：巨 cluster **1.33% × 126**（margin-bottom-004/005/.../028...）+ 1.15% × 63（margin-right-*）+ 1.21% × 27（*-applies-to-*）。per-pixel margin-bottom-004：diff = instruction 文本 font-wall（y=18-33 gray AA）+ 1px border 下移（border 本身 blue/orange 触碰正确）→ **cluster font-wall 主导**（非 margin bug），C-dep 解后批量 flip。top-worst margin-collapse-106/112/155/038（18-24%）= R702 collapse-through 结构性；margin-em-inherit-001（11.25% oracle / 21.12% product-smoke 差异待查）= em+inherit+collapse 复杂个案，ZW green bbox 完全错位，非单点。
+
+**css-text-decor（242 案，104 pass）**：top-worst text-decoration-thickness-length-rounding / dotted / inset-025（13-15%）= **rendering precision**（厚度取整/点线光栅，font-wall 谱系）。cluster（text-emphasis-position × 5, skip-spaces × 4, 1-3%）= vertical-mode / feature gap，非 clean handling bug。
+
+**裁决**：R1085/R1086 fresh-scan + identical-delta cluster 方法的 clean hit 已尽（line-height-applies-to + word-spacing 是仅有的两个 CSS-属性 handling cluster）。余 dir cluster 性质：font-wall（margin-padding-clear 1.33% × 126，C-dep）+ JS DOM mutation（box）+ rendering precision（decor）+ structural（margin-collapse R702）。fresh scan 收益递减。
+
+**▶ 下会话**：① font-wall C-dep 用户决策（CI 计费恢复后，margin-padding-clear 1.33% × 126 + line-height-applies-to 残余 + word-spacing 簇批量 flip——C-dep 是这些 font-wall cluster 的真正解锁）；② Phase A step-2（多 session，empty-styles 重跑度量统一）；③ 若重启 fresh scan，转 CSS2/visuren + normal-flow + selectors（未扫，但 cluster 性质可能同 font-wall）；④ 勿再扫已 ruled-out dir（box JS / mpc font-wall / decor precision）。
+
+### R1086 word-spacing 前导间隙修复 LANDED = CSS2/text +1 + css-text +1·28 案改善·零 PASS→FAIL·CSS correctness（cluster font-wall 主导故 flip 少）
+
+承 R1085（fresh R740 scan 路线继续）。本轮 scan CSS2/text 找到 word-spacing 簇（1.13% × 17）+ white-space-processing 簇，深挖 word-spacing 定位真 bug。
+
+**bug 发现**：CSS2/text word-spacing-007/008/.../080 簇 1.13% × 17。minimal repro（`<div style="font:16px/1em Ahem; word-spacing:96px">x x</div>` + Ahem）：ZW 第二 x @x=40（应 @136），black width 48（应 144）→ word-spacing 完全不作用于 glyph 位。
+
+**根因（mod.rs break_into_lines 词循环）**：旧实现 `word_width += run.word_spacing`（word_idx>0）把 word_spacing 计入 word_width。fragment.x = current_x（置位**前**值），current_x 在置位后才 += word_width。故 word_spacing 仅推进 current_x 给**下一**词，**本词** glyph 位（fragment.x）不含 gap → 第二词 glyph 落在无 gap 处。
+
+**修复（lead_gap 模型）**：word_spacing 改作非首词的**前导间隙**——置位前 `current_x += lead_gap`（word_idx>0 且非行首词），word_width 回归纯内容宽。fit-check 含 lead_gap，换行后 lead_gap=0（行首词无 gap）。+1 单测 `test_r1086_word_spacing_applied_to_position`（gap >= 110px，含 96px word_spacing）。
+
+**A/B（stash 对照）**：minimal repro 修复后 black width 144（第二 x @136 ✓）。CSS2/text **212→213 net +1**（word-spacing-justify-001 1.03→0.75 PASS）/ css-text 249→250 net +1 / linebox 131→131 net 0 / product-smoke welcome **16.57% 不变**。**零 PASS→FAIL**。28 案改善 >0.3pp（word-spacing 簇 1.13→1.03，未 flip——cluster 余 1.03% 为 instruction 文本 font-wall 主导，C-dep 解后当批量 flip）。
+
+**门禁全绿**：make test 45 bin 0 failed（含新 r1086 单测）/ clippy --workspace --all-targets -D warnings 干净 / cargo fmt 干净 / welcome 16.57%（DC-13 <20% PASS）。inline/mod.rs 2024 行（pre-existing >2000，本轮 +9 行，未重构）。
+
+**意义**：CSS correctness 修复（word_spacing 位 bug 真，minimal repro 实证）。yield 低（+2）因 cluster 余量 font-wall 主导（近-pass band），与 R1084 C-dep 互补——C-dep 解后 word-spacing 簇 + line-height-applies-to 残余当批量 flip。R1085/R1086 两连 clean code win 证 fresh R740 scan（under-mined dir）+ identical-delta cluster 方法有效。详见 [`evidence/r1086-word-spacing-lead-gap-landed-2026-07-06.txt`](./evidence/r1086-word-spacing-lead-gap-landed-2026-07-06.txt)。
+
+**▶ 下会话**：① 继续 fresh R740 scan CSS2/box + CSS2/visuren + CSS2/normal-flow（box-model/visual-formatting 基础，可能有 R689/R716/R1085 类单位/属性 handling bug）；② C-dep 用户决策（CI 计费恢复后，word-spacing + line-height-applies-to 簇批量 flip）；③ letter-spacing-applies-to / white-space-processing 簇（CSS2/text，1-2%，可能 font-wall 或边界 handling，低 EV）。
+
+### R1085 ★nbsp (U+00A0) 保留修复 LANDED = linebox Oracle +10（line-height-applies-to 簇 10 翻 PASS）+ css-text +1 + writing-modes +3·零 PASS→FAIL·clean win
+
+承 R1084（plateau）。本轮 fresh R740 scan linebox dir（未近期深扫）找到 CSS 语义 bug 并 LANDED——R1082-R1084 三轮调查后首 landed code win。
+
+**bug 发现（per-pixel）**：line-height-applies-to-001..015 簇 7+ 案 4.75% identical。line-height-applies-to-009（`<span style="display:block; background:blue; line-height:2in; width:1in">&nbsp;</span>`）：CHR blue bbox x[8..103] y[50..241]（192px=2in），**ZW blue bbox=None（完全不渲蓝）**。minimal repro 矩阵：line-height:2in + nbsp → 0 blue；line-height:2in + X → 18381 blue @192px；height:2in + nbsp → 18432 blue @192px → bug 仅当「高度来自 line-height」+「内容仅 &nbsp;」时元素塌缩 0。
+
+**根因（CSS Text §4.1.1）**：U+00A0 (NO-BREAK SPACE) 是 **preserved** + **non-breaking**——不可折叠、不可作断行点。ZW 旧实现 `collapse_whitespace`（inline_types.rs:225）用 `ch.is_whitespace()` + `split_into_words`（mod.rs:1920）用 `text.split_whitespace()`，二者含 U+00A0 → nbsp 折成普通空格再被行首尾 trim → 仅含 nbsp 的元素 0 词 0 行盒 0 高 → 无 bg。
+
+**修复（surgical，仅排除 U+00A0）**：`inline_types.rs` 新 `is_collapsible_ws(ch) = ch.is_whitespace() && ch != '\u{00A0}'`（首版 5-char CSS 窄集合回归 css-text 7 案——U+3000 IDEOGRAPHIC SPACE 等浏览器仍按可折叠/可断行；surgical 仅排 U+00A0 是 WPT 实证最优）。`collapse_whitespace` + `split_into_words` default 模式均改用之。+2 单测（nbsp_is_not_collapsible_ws + collapse_whitespace_preserves_nbsp）。
+
+**A/B（stash 对照）**：linebox **121/190→131/190 net +10**（line-height-applies-to-001/002/003/004/007/009/012/013/014/015 全 4.75→0.95 PASS）/ css-text-decor 104→104 net 0 / css-text(excl decor) 248→249 net +1 / css-writing-modes 56→59 net +3。**合计 +14，零 PASS→FAIL**。
+
+**已知 tradeoff（非 flip，仍 FAIL）**：css-text shaping-arabic-diacritics-002 10.81→16.50（+5.69pp）。该 test 明用 &nbsp;（注释「within the width of the NBSP」）+ Arabic 变音。nbsp 保留（CSS 正确）改变其与变音的 non-breaking 连接，但 ZW Arabic shaping 是 per-char（rustybuzz 未接生产，font-feature gap 谱系）→ spec-correct tradeoff，shaping gap 解后该案受益。
+
+**门禁全绿**：make test 45 bin 0 failed（含 2 新 nbsp 单测）/ clippy --workspace --all-targets -D warnings 干净 / cargo fmt 干净 / product-smoke welcome **16.57%（== baseline，DC-13 <20% gate PASS）**。inline/mod.rs 2015 行（pre-existing >2000，本轮 +2 行，未重构——非本修复范围）。
+
+**意义**：★ 纠正 plateau 悲观——R740 fresh scan（linebox，未近期深扫 dir）找到 clean CSS-correctness bug（nbsp 语义）。R1082-R1084 三轮调查后首 landed code win。forward = 继续 fresh scan 其它 under-mined dir（css-writing-modes 近-pass / CSS2 subdir）找同类 CSS 语义 bug。详见 [`evidence/r1085-nbsp-preserve-landed-2026-07-06.txt`](./evidence/r1085-nbsp-preserve-landed-2026-07-06.txt)。
+
+**▶ 下会话**：① 继续 fresh R740 scan（writing-modes 近-pass / CSS2 subdir / css-tables）找 CSS 语义 bug（单位/属性 handling，R689/R716/R1085 类）；② font-wall C-dep 用户决策（CI 计费恢复后）；③ Phase A step-2（多 session）。
+
+### R1084 font-wall C-dep (freetype-raster) yield 全表测绘完成 = +32（集中 text dir）+ CI 计费仍阻塞·零 net 源码·纯调查
+
+承 R1083（multicol Phase A 死锁确证，pivot）。本轮完成 font-wall C-dep（最高 EV lever）的 yield 全表测绘，为用户决策补全证据。
+
+**A/B 测绘（4 dir，fontdue default vs --features freetype-raster，z_vs_chr<1%）**：
+| dir | fontdue→freetype | net | 分母 |
+|-----|------------------|-----|------|
+| css-text | 248→263 | **+15** | 1408 |
+| css-text-decor | 104→117 | **+13** | 242 |
+| css-fonts | 98→99 | **+1** | 282 |
+| css-multicol | 155→158 | **+3** | 452（R1082） |
+| **合计** | | **+32** | 2384 |
+
+★ css-text 现测 +15（R1068 曾报 +24，不同 tree/oracle 状态）。yield **集中 text dir**（css-text+decor = +28 / +32 = 88%）。css-fonts +1（font-features/variant 89 例 = feature gap rustybuzz 未接生产，非光栅化）；css-multicol +3（R1082 证结构性 Phase A，非光栅化）。layout dir（position/tables/CSS2）预期 ~0（layout diff 非光栅化）。
+
+**裁决**：C-dep yield = **moderate（~+32），非 transformative 批量 unlock**。aggregate ~10k 案 +32 ≈ +0.3pp。仍值得翻（css-text/decor +28 实在，strict 真通过率提升更高），但**勿以「batch unlock 大量 dir」为论据**。决策阻塞仍是：① policy（FreeType C 依赖，rusty_v8 先例）；② 跨平台编译验证（**CI billing 仍阻塞**——gh run 28755337078 6-target 全未启动「payments failed / spending limit」，R1082 报告的 billing 阻塞未解）。
+
+**★ 战略**：rendering-compat 自主 plateau 再证——clean lever 尽（pending-clean-levers R740 实证）+ font-wall C-dep moderate yield blocked + 结构性 Phase A 多 session。R1082-R1084 三轮调查闭环：multicol Phase A 死锁（R1082/R1083）+ C-dep yield 全表 moderate（R1084）。
+
+详见 [`evidence/r1084-freetype-cdep-yield-table-2026-07-06.txt`](./evidence/r1084-freetype-cdep-yield-table-2026-07-06.txt)。
+
+**门禁**：纯调查（feature default-off，零 net 源码），make test 未跑。tree clean。
+
+**▶ 下会话**：① **font-wall C-dep 用户决策**（CI billing 恢复后 dispatch workflow 取 6-target，全绿翻 default 落地 ~+32）；② **Phase A step-2 narrow slice**（R1083 确证 multicol-basic + welcome/morning 共同根 = paint Path B empty-styles 重跑度量偏差；照 R890 store_font_sizes override 模式，fragile-balance 风险须 narrow A/B）；③ fresh R740 找新 simple handling bug（R739-R840 已穷尽，低 EV）。
+
+### R1083 multicol balance-inline 深挖：探针推翻「block children 绕过」首判（children 实 inline-level，paint-side fire）+ option A 复活 store 路径负面结果（11.24% 反退）+ 确证 Phase A 死锁·零 net 源码·纯调查
+
+承 R1082 CONTINUE（Phase A balance-aware 列宽 IFC，先 per-pixel 重试 R902 balance 扩展）。本轮深挖 multicol-basic-001 残余机制，**option A 复活 store 路径实测负面（11.24% 反退），确证残余 = Phase A 死锁**。
+
+**实验 1（放宽 store gate，env-gated MULTICOL_BALANCE_INLINE）**：store_inline_multicol_columns 放宽（balance + DOM-based has_block_child + distribute_lines_balanced）。MC_DEBUG 实测 store 成功存 21 行 @120px。但 diff 10.91%→10.91% 不变 → store 是死代码。
+
+**实验 2（paint_text use_stored 探针，决定性）**：text.rs:938 探针实测 `multicol_info=true ifc_w=120 width_matches=false use_stored=false`。★ **推翻首轮「block children 绕过 paint」假设**——children 是 **inline-level**（非 block-mapped），has_in_flow_children=false（text.rs:807）→ multicol_info=Some（paint-side **正常 fire**），ifc_width=120。store 死代码双因：(a) multicol_info.is_some()（use_stored 要求 is_none()）；(b) width 不匹配（store 设 360，paint 用 120）。渲染由 paint-side 主导（重跑 IFC @120px + line.y/target_h balanced 分布 text.rs:1132-1181）。
+
+**实验 3（option A 复活 store，env-gated，已 revert）**：① store 放宽 gate；② store inline_layout_width=col_width（balance）/content_width（auto）；③ text.rs:938 use_stored 去 multicol_info.is_none()。A/B multicol-basic-001：**10.91%→11.24%（+0.33pp 反退）**。→ 即使 store 正确算 21 行 @120px 且被 paint 消费，输出仍 11% 错。**复活 store 路径非 lever，rule out**。
+
+**结论（honest）**：multicol-basic-001 残余 = Phase A inline ownership / 行盒分布 accuracy（distribute_lines_balanced ceil-split vs chromium balancing + line-height/font-metric + inline ownership 双绘协调）。非单 session 可解。R1082/R1083 两轮深挖确证 multicol balance-inline 残余属 Phase A 死锁 territory（同 R125/R198/R890 empty-styles 谱系）。
+
+**★ 战略**：multicol 单 session 杠杆确尽（R1074-R1080 已收 +9 net；R1082 证残余结构性非 font-wall；R1083 option A 复活 store rule out + 确证 Phase A 死锁）。下会话应 **pivot**——非 multicol 角度，或 accept plateau 等 font-wall C-dep（CI 计费恢复后用户决策）。勿再投 multicol-basic balance-inline 单 session（option A/B 均 Phase A 谱系，empty-styles 重跑度量偏差是根）。
+
+详见 [`evidence/r1083-multicol-paint-bypass-2026-07-06.txt`](./evidence/r1083-multicol-paint-bypass-2026-07-06.txt)。
+
+**门禁**：纯调查（实验+探针 default-off revert），零 net 源码，make test 未跑。tree clean。
+
+**▶ 下会话**：① **pivot 出 multicol**——R1081 已证 css-tables/css-flexbox clean lever 穷尽，转其它面（如 box-display R109 FR-002/003 font-wall gated / writing-modes / 产品 smoke fixture 健康）；② font-wall C-dep 用户决策（CI 计费恢复后取 6-target evidence；当前 blocked）；③ 若重启 multicol，须 Phase A empty-styles 重跑度量统一（R890 store_font_sizes override 模式，多 session），非单点 gate 改。
+
+### R1082 ★css-multicol 残余 = 结构性（非 font-wall）三证 + multicol-basic 内容丢失精确诊断 + CI 计费阻塞 freetype 6-target 验证·零 net 功能源码·纯调查（fmt cleanup 已提交 2defd817）
+
+承 R1081（C-dep 用户决策点）。本轮自主验证「multicol 近-pass 是否真 font-wall 主导」——**裁决：推翻长期假设，multicol 残余主导 = 结构性（Phase A inline 列宽测量），font-wall C-dep 对 multicol 仅 +3（非批量 unlock）**。
+
+**证 1：freetype-raster feature A/B（css-multicol 全量 452 案）**：fontdue baseline 155/452 (34%) → `--features zero-render-foundation/freetype-raster` 158/452 (35%)，**NET +3**（css-text R1068 是 +24）。若 multicol 真为 font-wall，freetype 应批量 unlock。实际 +3 = 噪声级。逐案 worst-case（fontdue→freetype）：multicol-basic-001..004 10.91→10.86（−0.05）/ multicol-columns-001..006 簇 9.95→9.95（0.00）/ nested-balancing-004 17.17→17.17（0.00）/ span-all-rule-002 26.25→26.25（0.00）→ 全 worst-case 几乎不动 = 非 font-wall。
+
+**证 2：per-pixel multicol-basic-001 几何重建**：3 inline span（紫/橙/蓝各 28 Ahem-X）在 columns:3 w:360 gap:0。ZW 每色 ≈18 字形（丢 36%），chromium ≈28（精确）；ZW 文本 4 行 y=40–120，chromium 6+ 行 y=72–184；ZW 3 列紧挤 x=8–230，chromium 3 列展开 x=8–320 带 yellow 间隙。
+
+**证 3：MC_DEBUG layout_multicol 结构 dump**：`container_w=360 content_h=140 col_count=3 child_info=[(0,60),(1,60),(2,60)]`，各列一匿名块子元素 visual_height=60（3 行@20px）。但列宽 120px 下每 span 需 6 行=120px → 后 3 行从未计算/存储（非裁剪丢，paint 非 breaking 不裁高 painter/mod.rs:862-863）。
+
+**根因（精确）**：multicol 容器 inline 内容被包成匿名块子元素，各在自身宽（=容器宽 360px）下测 IFC → 3 行。layout_multicol 用此 60px 分配列。paint 在列宽 120px 渲染存储 IFC（360px 算的 3 行），120px 应有的另 3 行不存在。架构事实：`inline_finalization.rs:530-536` multicol 容器永远 early-return（仅试 R900 store_inline_multicol_columns，gate 排除 balance 模式），依赖匿名块子元素各自存（@容器宽非列宽）。R900 gate（line 191-194）：仅 column-fill:auto + available_height>0 + inline-only。multicol-basic-001 是 balance 默认 → 不命中 → 无列宽存储。
+
+**为何 R902「balance 扩展零 yield」（inline_finalization.rs:191 注释）**：R902 试扩 balance，零 oracle-pass yield 回退。推测真因：store_inline_multicol_columns 用 fragment_lines_into_columns + ColumnFillMode::Auto（顺序填满一列再下一列），balance 应均布，顺序填语义错 → 不 flip。R902 量 oracle-count（非 per-pixel delta），可能 per-pixel 改善但未跨 <1% 阈值 → 「零 yield」掩盖机制改善。真修须 balance-aware fragmentation（行均布），非简单去 sequential_fill gate。
+
+**意义（战略纠偏）**：① css-multicol 残余 ≠ font-wall，C-dep 不会 batch unlock 138；② 真 multicol lever = Phase A inline 列宽测量统一（匿名块子元素须列宽测 IFC），多 session（phase-a-IFC-unification-design.md 37KB）；③ font-wall C-dep 价值重估：css-text +24（R1068）+ multicol +3（本证）= 主要收益在文字 dir，布局 dir 受益极小，C-dep 仍值得翻但勿以「batch unlock multicol」为论据；④ CI 计费阻塞（gh run 28754164214：freetype-raster-cross-platform 6-target 全未启动「account payments failed / spending limit」）→ 6-target 验证路径当前不可用，C-dep 决策双重门（policy + CI 验证）均非自主可解。
+
+**门禁**：本轮纯调查（探针加已撤），make test 未重跑（无源码变更）；R1082 fmt cleanup commit 2defd817（loader.rs/apply_advanced.rs/tests/core.rs cargo fmt 对齐，cargo fmt --check 过，pre-commit-guard PASS）。
+
+详见 [`evidence/r1082-multicol-structural-not-fontwall-2026-07-06.txt`](./evidence/r1082-multicol-structural-not-fontwall-2026-07-06.txt)。
+
+**▶ 下会话**：① **Phase A balance-aware 列宽 IFC**——先 per-pixel 重试 R902 balance 扩展（量 delta 非仅 count）验证机制改善，再投资 balance 行均布 fragmentation（潜在 unlock multicol-basic-001..004 + columns 簇）；② font-wall C-dep 用户决策（CI 计费恢复后取 6-target evidence；当前 blocked）；③ positioned-in-multicol 残余（abspos CB 在 multicol 外，R1080 下会话 ①）。
+
+### R1081 FreeType C-dep CI job 抽独立 workflow（一键 dispatch，不连带全量 CI）+ css-tables/css-flexbox 扫描确认无 clean lever（font-wall/complex）·零 net 功能源码·CI 配置 + 纯调查
+
+承 R1080（multicol positioned-flush LANDED，multicol 可处理机制 +9 net 收官）。本轮 pivot R740 扫其它 dir + 改善 C-dep CI 就绪度。
+
+**css-tables / css-flexbox 扫描（R740 策略）**：css-tables 仅 3 案 >5%（table-cell-width-0 20% R109 territory / baseline-vertical 12% font-wall / row-group-order 5%）。css-flexbox 295/497（59.4%）top-worst：flex-flow-001/002 23%（12+ flex-flow 变体矩阵）/ flex-abspos-inset-nested 19%（R850 territory）/ writing-mode 11% 簇（R114）/ 等。**minimal 实测确认 ZW flex 机制全工作**：flex-direction:row-reverse ✓（B,G,R 视觉序）、column ✓（R,G,B 垂直序）、flex-wrap ✓（B 换行 row2）、flex-flow shorthand 已解析（shorthand/mod.rs:215）。故 flexbox top-worst 全 font-wall（Ahem/sans-serif 文本）或 complex（abspos-nested），无 clean 机制 lever。
+
+**FreeType C-dep CI job 抽独立 workflow（R1081）**：R1073 把 freetype-raster-cross-platform job 嵌在 ci.yml（dispatch ci.yml 连带跑全量 build-and-test+reftest+benchmarks 三 job，非「一键」轻量）。本轮抽成独立 `.github/workflows/freetype-raster-cross-platform.yml`（仅 workflow_dispatch，6-target matrix，continue-on-error，仅 check zero-render-foundation --features freetype-raster），ci.yml 恢复三主 job（build-and-test/reftest/benchmarks）。两 YAML 合法（python yaml 解析 OK）。→ C-dep 决策的 6-target 编译验证现可 `gh workflow run freetype-raster-cross-platform` 独立轻量 dispatch（不浪费全量 CI 配额）。
+
+**裁决**：C-dep（最高 EV lever）evidence 完备（R1068 +24 css-text / R1071 CI de-risk bundled / R1073 job），CI 就绪（R1081 独立 dispatchable），用户决策点。自主侧 rendering-compat 全景 plateau 再证：css-multicol（R1074-R1076+R1080 +9 net 收官）+ css-tables（R109/font-wall）+ css-flexbox（font-wall/complex）+ box-display（R109 FR-002 font-wall）。**clean single-session 机制 lever 跨 dir 穷尽**——残余 = font-wall C-dep（用户决策）+ 多 session 结构性（Phase A IFC inline 跨列 deadlock / nested fragmentation / R109 FR-002/003）。
+
+**▶ 下会话**：① **font-wall C-dep 用户决策**（dispatch freetype-raster-cross-platform workflow → 6-target 编译结果 → 全绿则翻 crates/render-foundation/Cargo.toml default=["freetype-raster"]，batch unlock css-multicol 近-pass 138 + box-display + css-text + linebox font-wall band）；② Phase A IFC inline 跨列（已知 deadlock，多 session）；③ nested multicol fragmentation（nested-balancing-004 17%）；④ R109 FR-002/003（font-wall gated）。clean single-session lever 跨 dir 穷尽，forward = C-dep 用户决策 或 多 session 结构性。
+
+### R1080 ★multicol 列子元素 positioned 后代本地 flush+clip LANDED = css-multicol Oracle 151→154（+3 net）·multicol-overflow-clip-positioned 16→0 PASS·paint-containment-001/oof-nested 各 PASS·scroll-content −3.6pp·零回归（消 R1079 over-render 12 worsened）
+
+承 R1079（multicol 列子元素 positioned 后代 drop bug 定位 + 简单 collection 修复 over-render 已回退，须 clip-context flush）。本轮实现**本地 flush + 列子元素 overflow box clip**，clean win。
+
+**驱动案 multicol-overflow-clip-positioned（16%）**：`columns:2 > div(h:200,overflow:hidden) > div(bg:blue,h:800,position:relative)`。修复前 0 blue（position:relative 后代 drop）；R1079 简单 collection → over-render 800px（16→31%更差）；R1080 blue 渲 + 裁到列子元素 overflow box → **0.00% PASS**。
+
+**修复**（paint/painter/mod.rs multicol 列循环）：每个列子元素（column_span_offsets 非空）每个片段，paint_node(child) 后：① collect_positioned_descendants(child) 收集列子元素的 positioned 后代；② 本地 flush（paint_node 每个后代）；③ 若列子元素 overflow≠visible，**裁到列子元素 padding box**（Rect(frag_abs+border, padding+content+padding)，同 paint_node needs_clip 公式）；④ 既有的列 clip（counts_before_frag..列宽+gap/2）。★ 外层 collect_positioned_descendants 仍 skip 列子元素（line 184）→ 无 double-paint + 无外层 over-render。clip-context：本地 flush 带 (a) 列子元素 overflow 裁 + (b) 列裁。
+
+**A/B（stash 对照 R1076，ORACLE_DUMP_ALL per-case 452 案）**：baseline(R1076) 151/452 → **154/452（net +3；headline 155 34.3%）**。**3 flip PASS**：multicol-overflow-clip-positioned **16.00→0.00** / paint-containment-001 **2.79→0.73** / oof-nested-in-single-column **1.73→0.73**。**0 flip FAIL**。**1 improved**：multicol-scroll-content **7.81→4.17(-3.64pp)**。**0 worsened ≥0.5pp**。★ 零回归——R1079 简单 collection 的 12 worsened（overflow-clip-positioned +15 / scroll-content +6 / 9 abspos/fixed-in-multicol）经 clip-context flush 全消（abspos/fixed 案本地 flush+列 clip 后 unchanged/improved）。
+
+**门禁全绿**：1 新 R1080 单测（r1080_multicol_column_positioned_descendant_not_dropped，pipeline 渲 minimal case 断言 blue fill 存在）/ multicol 26 + paint 630 测全过 / **make test 全 workspace 45 binary 0 failed** / clippy --workspace --all-targets -D warnings 干净 / cargo fmt 干净 / **product-smoke welcome 16.57%（<20% gate 不变）**。
+
+**意义**：解 R1079 定位的 multicol 列子元素 positioned 后代 drop 真 bug（clip-context flush 方案，纠正 R1079 简单 collection over-render）。multicol positioned-in-column 簇（overflow-clip-positioned/paint-containment/oof-nested/scroll-content）解锁。paint-deferral + multicol + overflow 三方交互的 clip-context 模型建立。累计 css-multicol R1074(002)+R1075(balance)+R1076(sequential)+R1080(positioned-flush)：Oracle **145→154（+9 net）**。详见 [`evidence/r1080-multicol-positioned-flush-clip-landed-2026-07-06.txt`](./evidence/r1080-multicol-positioned-flush-clip-landed-2026-07-06.txt)。
+
+**▶ 下会话**：① positioned-in-multicol 残余（abspos/fixed CB 在 multicol 外的案，如 abspos-containing-block-outside-spanner，本地 flush+列 clip 或须 CB-aware）；② font-wall C-dep（最高 EV，用户决策点）；③ nested multicol fragmentation（nested-balancing-004 17%）。
+
+### R1079 multicol 列子元素 positioned 后代 drop bug 定位 + collection 修复 over-render 已回退·须 clip-context flush（多 session）·零 net 源码·纯调查
+
+承 R1078（plateau，寻 fresh 结构 lever）。本轮 PIL 定位 multicol-overflow-clip-positioned（16%）= **position:relative 内容在 multicol 列子元素（overflow:hidden）内完全 drop**，根因 + 修复方向明确但须 clip-context（多 session）。
+
+**bug 隔离（minimal repro）**：`columns:2 > div(overflow:hidden,h:200) > div(bg:blue,h:800,position:relative)` → ZW 渲 **0 blue**（全丢）；position:static 同结构 → 38400 blue（正确）；无 multicol 同结构 → 160000 blue（渲染，over-clip 另一 pre-existing bug）。即 **multicol + 列子元素 + positioned 后代 = drop**。
+
+**根因（paint/painter/mod.rs collect_positioned_descendants line 184-186）**：multicol 列子元素（column_span_offsets 非空）被 `continue` 跳过（交 multicol 循环绘制）。但其 positioned 后代（blue, position:relative）须由**外层 scope** 收集 flush——列子元素自身非 scope（overflow:hidden 不建 SC, creates_stacking_context 仅 positioned+z-index/opacity<1, engine.rs:1206），paint_node(列子元素) 的 steps 3/4/5 排除 positioned 子（line 777 `!is_positioned_child`），steps 2/6/7 仅 scope 跑（line 762/784/794 `if is_scope`）→ positioned 后代**无人收集 flush = drop**。无 multicol 时外层 root scope 经 collect_positioned_descendants 递归进列子元素收集 blue flush（line 209），故工作。
+
+**修复实验（已回退）**：collect_positioned_descendants line 184-186 改 `continue` 为 `collect_positioned_descendants(child, ...) + continue`（递归收集列子元素的 positioned 后代）。**A/B（stash 对照 R1076）net +1（151→152）但质量净负**：1 flip PASS（oof-nested-in-single-column 1.73→0.73）/ 0 flip FAIL / **12 worsened**：multicol-overflow-clip-positioned **+15.36**（blue 现 over-render 未裁剪到 overflow:hidden 200px）/ multicol-scroll-content +6.09 / multicol-nested-032/033 / abspos-containing-block-outside-spanner / abspos-autopos-contained-by-viewport / abspos-multicol-in-second-outer-clipped / fixed-in-nested-multicol-with-transform / fixedpos-static-pos-with-viewport-001/002/003。收集的 positioned 后代经外层 scope flush **未带列子元素的 overflow/column clip** → over-render。
+
+**裁决回退**：按 code-guidelines 回退（1 PASS 不抵 12 worsened 含 +15pp）。★ 正确修复须 positioned 后代 flush 时**继承列子元素的 clip context**（overflow:hidden + column clip），即 flush 不能简单交外层 scope，须在列子元素的 clip 栈内 flush——深 paint 架构改（positioned flush 携带 clip context），多 session 结构性。
+
+**意义**：定位 multicol 列子元素 positioned 后代 drop 真 bug（paint deferral + multicol 交互），修复方向明确（collect + clip-context flush）但非单 session。+ oof-nested-in-single-column 证实机制（positioned 后代收集后正确渲染当无 overflow 裁剪需求）。multicol-overflow-clip-positioned（16%）+ multicol-scroll-content + 9 abspos/fixed-in-multicol 案 = positioned-in-multicol-column 簇，待 clip-context flush 多 session 解。
+
+**▶ 下会话**：① **positioned-in-multicol-column clip-context flush**（多 session 结构性——flush 携带列子元素 overflow+column clip，解 overflow-clip-positioned 16% + scroll-content + abspos/fixed-in-multicol 簇）；② font-wall C-dep（最高 EV，用户决策点）；③ nested multicol fragmentation（nested-balancing-004 17%）。
+
+### R1078 R109 §9.2.1.1 FR-002 评估 = 驱动案 onload JS 实际工作（R1078 首判「JS-gated」纠正）+ 残余 font-wall Ahem 主导（K->F 21940px）+ FR-002 bg/margin 仅 ~800px·FR-002 不 flip·零 net 源码·纯调查
+
+承 R1077（css-multicol plateau，pivot R109）。本轮评估 R109 FR-002（容器 bg 涂满匿名块/margin 区）。
+
+**★ 纠正首判「JS-gated」**：insert-block-in-inlines-beginning-001 的 `<body onload="insertABlockAtBeginning()">` **实际工作**——reftest render path 的 `apply_scripted_dom_mutations`（reftest_scripts.rs，V8Sandbox + DOM shim + DomMutation 记录 + apply_mutations_to_html）正确执行 onload，记录 6 个 mutation（CreateElement div → AppendChild CreateTextNode → SetAttr class=inserted → **InsertBefore 到 div.container 前 #insertion-point** → SetAttr html class="" 移除 reftest-wait），apply 后 container 1 HTML = `<div class=inserted>Inserted new block</div><span id=insertion-point>Several</span>...`（与 container 2 静态结构一致）。**onload JS 路径（R988 基建）功能完备**，案非 JS-gated。
+
+**残余 6.32% 组成（PIL）**：主导 **K->F 21940px**（ZW Ahem 文本 vs CHR fuchsia bg，即匿名块盒内 "Several inline elements..." 文本 y 定位差，font-wall）+ F->K 2060 + margin/bg 区 ~800px（inserted block margin:1em 0 区 ZW 白 / CHR fuchsia，FR-002 + margin-collapse 语义）。
+
+**裁决**：FR-002（容器 bg 涂满）+ margin-collapse 精度修仅消 ~800px（minor），**不 flip**（font-wall 21000px 主导）。R109 FR-002 非当前 flip lever——① 驱动案 onload JS 工作（纠正 R1078 首判），但残余 font-wall Ahem 主导；② box-display 近-flip（anonymous-box-generation-001 1.11% 等）全 font-wall（font-metric line-height 差）；③ FR-002 bg/margin 是 minor 分量。
+
+**★ rendering-compat 全景 plateau 确认（再证）**：css-multicol（R1074-R1076 +6 net 收官）+ box-display（R109 FR-001 done，FR-002/003 驱动案 onload JS 工作但残余 font-wall）+ 各 dir 近-pass ~1% band 全 font-wall。**最高 EV 下一 lever = font-wall C-dep（FreeType default flip）**：batch unlock css-multicol 138 案 + box-display 近-pass（含 insert-block 等 onload 案，JS 已工作，font-wall 解即 flip）+ css-text/linebox 等。用户决策点（R1072-R1073 evidence 完备 + CI smoke job `freetype-raster-cross-platform` 就绪待 dispatch）。
+
+**▶ 下会话**：① **font-wall C-dep**（最高 EV，用户决策点）——用户 dispatch CI job 验证 6-target 后翻 default，或 rally 据 evidence 建议；② R109 FR-002 bg/margin 精度（font-wall gated，低 EV，可作 spec-correctness 随手修但非 flip lever）；③ 结构性 nested multicol fragmentation（nested-balancing-004 17%，多 session）。
+
+### R1077 column-wrap 解析评估 = LOW-EV（所有驱动案 nested/complex，0 flip 可期）+ R1075 2 worsened 非 column-wrap 亦非 tractable·column-wrap:wrap 垂直换行 chromium-confirmed·零 net 源码·纯调查
+
+承 R1077（css-multicol plateau，pivot R109）。本轮评估 R109 FR-002（容器 bg 涂满匿名块/margin 区），**裁决：驱动案 JS-gated，无 clean 静态 driving case，FR-002 非 flip lever**。
+
+**主驱动案 insert-block-in-inlines-beginning-001（6.32%）= JS-gated**：`<body onload="insertABlockAtBeginning()">` + `class="reftest-wait"` —— chromium onload 把 `<div class=inserted>` 插入第一 container 的 inline 前（触发匿名块盒生成）。ZW 不执行 onload JS（reftest-wait/onload 是已知 feature gap）→ 第一 container 渲为纯 inline（无 inserted block），与 CHR（有 block）结构性错位。PIL 实测 6.32% 残差主导 = **K->F 21940px**（ZW 文本 vs CHR fuchsia bg，即 JS-mismatch 致首 container 文本在错 y）；FR-002 bg-gap（inserted block margin 区 ZW 白 / CHR fuchsia）仅 ~800px（minor）。FR-002 完修亦不 flip（JS-mismatch 主导）。
+
+**box-display 近-flip 案全 font-wall**：anonymous-box-generation-001（1.11%，静态 case-b 但容器**无 bg**）残差 = 文本定位 + 2px blue stripe 偏移（ZW blue y=70 vs CHR y=68，font-metric line-height 差，font-wall），非 bg-gap。block-in-inline-001/002（10.55%，case-a split inline border FR-003）、box-generation-002（7.99%）同 font-wall 主导。
+
+**裁决**：R109 FR-002（容器 bg 涂满）非当前 flip lever——① 主驱动案 JS-gated（须先 onload/reftest-wait JS 执行，独立 feature 多 session）；② 静态 case-b 近-flip 全 font-wall（Ahem metric，FreeType C-dep）；③ FR-002 bg-gap 本身是 minor 分量。FR-003（split inline border）同受 font-wall 主导（block-in-inline-001/002 10.55% 非 border 单点）。
+
+**★ rendering-compat 全景 plateau 确认**：css-multicol（R1074-R1076 +6 net 收官）+ box-display（R109 FR-001 done，FR-002/003 驱动案 JS-gated/font-wall）+ 各 dir 近-pass ~1% band 全 font-wall。**最高 EV 下一 lever = font-wall C-dep（FreeType default flip）**：batch unlock css-multicol 138 案 + box-display 近-pass + css-text/linebox 等（R1068 +24 css-text 实证），用户决策点（R1072-R1073 evidence 完备 + CI smoke job `freetype-raster-cross-platform` 就绪待 dispatch）。
+
+**▶ 下会话**：① **font-wall C-dep**（最高 EV，用户决策点）——用户 dispatch CI job 验证 6-target 后翻 default，或 rally 自主据 evidence 建议；② **JS 执行 feature**（onload/reftest-wait，独立多 session，unlock insert-block-in-inlines 等多案）；③ R109 FR-003 block-in-inline border（font-wall gated，低 EV）；④ 结构性 nested multicol fragmentation（nested-balancing-004 17%，多 session）。勿单 session 投 R109 FR-002（驱动案 JS-gated）。
+
+### R1077 column-wrap 解析评估 = LOW-EV（所有驱动案 nested/complex，0 flip 可期）+ R1075 2 worsened 非 column-wrap 亦非 tractable·column-wrap:wrap 垂直换行 chromium-confirmed·零 net 源码·纯调查
+
+承 R1076（▶ 下会话列 column-wrap 解析为候选）。本轮评估 column-wrap 解析的 yield，**裁决 LOW-EV，勿作下 lever**。
+
+**column-wrap:wrap 垂直换行 chromium-confirmed**：minimal `<article columns:2 column-fill:auto column-wrap:wrap height:60><div height:200>` → chromium green **下溢**（article 下 4000px，0 右溢出），ZW（R1076 inline-overflow）green **右溢**（article 右 4000px，0 下溢）。证实 column-wrap:wrap 改 overflow 方向（inline→block）。
+
+**★ 所有 column-wrap:wrap 驱动案均 nested/complex（0 flip 可期）**：
+- column-height-004/025/026/027（R1076 worsened 1.96→3.21 等）：**全 nested multicol**（inner multicol column-height + column-wrap:wrap + absolute overlays）+ column-height（ZW 亦未解析）。仅 column-wrap 解析不 flip（须 nested fragmentation + column-height + overlay 三者同修）。
+- column-height-003（R1075 worsened 1.54→2.38）：column-wrap:wrap + absolute overlay，同病。
+即 column-wrap 解析本身（4-5 文件：parser + ComputedStyle + apply + registry + layout）对 WPT 通过率 **0 flip**（驱动案全卡在更深的 nested/column-height/overlay）。
+
+**R1075 2 worsened 复核（非 column-wrap，亦非 tractable）**：
+- column-height-003：column-wrap:wrap（上）。
+- multicol-span-all-children-height-010（1.75→2.36）：columns:10 + nested span + column-span:all negative-margin + orphans/widows + 10 inline-block —— 10 列复杂布局，R1075 inline-overflow 与 10 列协同偏差，非单点可修。
+
+**裁决**：column-wrap 解析 LOW-EV（0 flip），**勿作下 lever**。可选 cleanup：解析 column-wrap 仅用于 R1075/R1076 gate detect-and-skip（column-wrap:wrap 案退回 drop-overflow 即 pre-R1075 值，消 ~5pp 小回归，但案仍 FAIL，0 flip，borderline 不做）。css-multicol 经 R1074-R1076（+6 net）三路径 inline-overflow 全 land，残余 = nested fragmentation（nested-balancing-004 17% 多 session）/ font-wall（138 案 ~1% band，FreeType C-dep 用户决策点）/ draft feature（column-wrap/column-height css-multicol-2，全 nested 卡深）。
+
+**▶ 下会话**：css-multicol 暂 plateau（R1074-R1076 +6 net 收官），**pivot R109 §9.2.1.1 匿名块**（central 结构性 lever，FR-001 done，剩 FR-002 容器 bg 涂满 / FR-003 split inline border 归属，有 spec）或 font-wall C-dep（用户决策点）。勿投 column-wrap 单 session（LOW-EV）。
+
+### R1076 ★column-fill:auto sequential 路径 inline 列溢出 LANDED（+!has_nested_multicol 守卫）= css-multicol Oracle 150→151（+1 net）·column-height-011 2.28→0.73 PASS（column-wrap:auto 默认）·0 翻 FAIL·1 worsened（column-wrap:wrap unsupported feature 仍 FAIL）·承 R1076v1 net-negative 回退后 gate 扩展
+
+承 R1076v1（sequential inline-overflow net-negative 回退，gate 须扩展）。本轮加 `!has_nested_multicol` 守卫（R1035 先例）消 6 nested 回归 + nested-028 翻 FAIL，**v2 LANDED**。
+
+**gap 真实（chromium-confirmed）**：minimal `<article columns:1 column-fill:auto height:100><div height:200>` → chromium green x=13..207（右外侧溢出列），ZW 仅 x=13..107（drop overflow）。`assign_children_to_columns_with_breaking` 在 col_count 处 break 丢弃 overflow（同 R1075 balance 前病）。
+
+**v1 回退根因精确定位**：① **nested multicol**（multicol-nested-019/014/021/028 + nested-column-rule-002 + nested-past-fragmentation-line 6 案 + nested-028 翻 FAIL）——子元素自身 column-count/width，nested fragmentation 须独立模型；② **column-wrap:wrap**（column-height-004/025/026/027 4 案）——ZW 未解析 column-wrap（css-multicol-2 draft），垂直换行语义不覆盖；③ column-height-004/025/026/027 实为 column-wrap:wrap（grep 确认 2 mentions 各），非 nested 但属 unsupported feature（ZW 不可解，gate 跳过无意义）。fill-balance-003 经 `!has_nested_multicol` 守卫后亦消（其含 nested sequential 子）。
+
+**实现（v2 LANDED）**：layout_multicol `sequential_fill && height_limit>0` 分支前置 gate `total > col_count×height_limit && !monolithic && !forced_break && !has_nested_multicol` → fire 时用 `assign_children_to_columns_multirow`（以 height_limit 顺序填 + 超出 push 新列）。has_nested_multicol 查子元素 column_count=Number/column_width=Length（同 R1035 spanner 路径）。minimal 测试 A/B 0.00% 完美匹配 chromium。
+
+**A/B（stash 对照 R1075，ORACLE_DUMP_ALL per-case 452 案）**：baseline(R1075) 150/452 → **151/452（net +1；headline 152 33.6%）**。**1 flip PASS**：column-height-011 **2.28→0.73**（column-wrap:auto 默认 inline 溢出）。**0 flip FAIL**（nested-028 守卫消）。**0 improved 非 flip**。**1 worsened 非 flip**：column-height-004 1.96→3.21（+1.25，column-wrap:wrap unsupported feature，仍 FAIL——ZW 不解析 column-wrap，垂直换行不可实现，本路径不可解，记录待 column-wrap 解析支持）。
+
+**门禁全绿**：2 新 R1076 单测（r1076_sequential_fill_auto_inline_overflow + r1076_nested_multicol_child_guarded_sequential，后者断言 nested 子不产生 col_x>0 inline 溢出）+ R1074/R1075 单测 + 25 multicol 测全过 / **make test 全 workspace 45 binary 0 failed** / clippy --workspace --all-targets -D warnings 干净 / cargo fmt 干净 / **product-smoke welcome 16.57%（<20% gate 不变）** / multicol.rs 1370 行（<2000）。
+
+**意义**：R1074（spanner）+ R1075（非 spanner balance）+ R1076（非 spanner sequential）三路径 inline 列溢出全 land，累计 css-multicol **145→151（+6 net）**。sequential 路径守卫演进示范：nested multicol 须独立 fragmentation 模型（同 R1035 spanner 路径先例），inline-overflow 不越界。column-wrap:wrap（unsupported）残余为 column-wrap 解析多 session lever。
+
+**▶ 下会话**：① column-wrap 解析支持（css-multicol-2 draft）→ column-height-004/025/026/027 等垂直换行案可修（独立 feature lever）；② nested-balancing-004（17%，nested fragmentation，多 session）；③ css-multicol 近-pass 138 案 ~1% band = font-wall（FreeType C-dep 用户决策点，解锁批量 flip）；④ 2 小 R1075 worsened（column-height-003 / span-all-children-height-010）逐案精度。
+
+### R1075 ★非 spanner balance 路径 inline 列溢出 LANDED = css-multicol Oracle 146→150（+4 net）·4 flip PASS（column-height-008/fill-balance-029/nested-030/restyle-002）·nested-balancing-004 −20pp/002 −11pp 大改善·monolithic 守卫消 overflow-unsplittable 回归·零翻 FAIL
+
+### R1075 ★非 spanner balance 路径 inline 列溢出 LANDED = css-multicol Oracle 146→150（+4 net）·4 flip PASS（column-height-008/fill-balance-029/nested-030/restyle-002）·nested-balancing-004 −20pp/002 −11pp 大改善·monolithic 守卫消 overflow-unsplittable 回归·零翻 FAIL
+
+承 R1074（spanner 路径 inline 列溢出 LANDED）。本轮把同一 inline-overflow 语义扩展到 **非 spanner balance 路径**（minimal multicol 同病：height:50 col-count:2 child:200 → ZW 仅渲 article 内 2 列 drop overflow）。
+
+**chromium 确认**（product-oracle-shot.mjs + /usr/bin/chromium）：minimal `<article columns:2 width:400 height:50><div height:200>` → chromium yellow x=13..799（article 右外侧 2 溢出列）→ 非 spanner balance 亦走 inline 溢出（列高 cap 容器高度，超出内容生成额外 column box 向右）。
+
+**修复**（`crates/layout-engine/src/multicol.rs` layout_multicol balance 分支）：旧 balanced target=total/col_count 在 col_count 处 break 丢弃 overflow。R1075 前置 gate `total > col_count×container_height && content_height>0 && !has_monolithic_child` → fire 时改用 `assign_children_to_columns_multirow(child_info, col_count, container_height)`（以 container_height 作 max_col_height 拆片段，超 col_count 自动 push 新列），定位走既有 row_height=0（inline 向右）。gate 不 fire 时字节同。
+
+**★ monolithic 守卫（关键）**：overflow≠visible 子元素不可分（CSS Fragmentation）。multirow 拆分超高子元素对 monolithic（overflow-unsplittable 的 overflow:scroll+200px 孙）错。`has_monolithic_child` 查 `children[idx].overflow_x/y != OverflowClip::Visible`，有 monolithic 子退回 balanced（R1037 gate 不拆 auto-height/monolithic）。
+
+**A/B（stash 严格对照，ORACLE_DUMP_ALL per-case 452 案）**：baseline（R1074）146/452 → **150/452（net +4；headline 151/452 33.4%）**。**4 flip PASS**：column-height-008/fill-balance-029(2.80→0.73)/nested-030(2.79→0.73)/span-all-restyle-002(1.11→0.93)。**0 flip FAIL**（monolithic guard 消 overflow-unsplittable-001/002 回归）。**4 improved 仍 FAIL**：rule-nested-balancing-004 **37.67→17.17(-20.5pp)**/002 15.10→4.10(-11pp)/span-all-children-height-007 6.41→3.25/with-custom-layout 3.57→2.39。**2 worsened 非 flip 小**：column-height-003 +0.84/span-all-children-height-010 +0.61（仍 FAIL）。
+
+**门禁全绿**：2 新 R1075 单测（r1075_non_spanner_balance_inline_overflow + r1075_monolithic_child_not_split）+ R1074 单测 + 25 multicol 测全过 / **make test 全 workspace 45 binary 0 failed** / clippy --workspace --all-targets -D warnings 干净 / cargo fmt 干净 / **product-smoke welcome 16.57%（<20% gate 不变）** / multicol.rs 1308 行 / r717 测 490 行（均 <2000）。
+
+**意义**：R1074（spanner）+ R1075（非 spanner balance）合覆盖 multicol inline 列溢出全路径，纠正旧模型（balanced break 丢弃 / multirow 向下堆叠）→ chromium 对齐（列恒 inline，overflow 向右）。累计 R1074+R1075：css-multicol **145→150（+5 net）**。monolithic 守卫示范 inline-overflow 拆分须尊重 CSS Fragmentation 不可分。详见 [`evidence/r1075-non-spanner-inline-overflow-landed-2026-07-06.txt`](./evidence/r1075-non-spanner-inline-overflow-landed-2026-07-06.txt)。
+
+**▶ 下会话**：① 2 小 worsened（column-height-003 / span-all-children-height-010）逐案查精度；② nested-balancing-004 残余 17%（inline-overflow 已 -20pp，残余 column-rule 交互/nested 结构）深挖；③ css-multicol 近-pass 138 案 ~1% band = font-wall（FreeType C-dep 解锁后批量 flip，用户决策点）；④ inline-overflow 扩展到 column-fill:auto sequential 路径（如有同类 drop）。
+
+### R1074 ★multicol inline（水平向右）列溢出 LANDED = css-multicol Oracle 145→146（+1 net）·span-all-children-height-002 3.99→0.29 PASS·003 17.26→1.03（-16pp 近 flip）·零回归·纠正 R1035「垂直 multi-row」误模型
+
+承 R1039 CONTINUE（span-all-children-height 簇残余，记录为「multi-row+breaking 协同精度，多 session」）。本轮 per-pixel 定位证伪 R1039 归因，**真根因 = overflow 方向**：chromium 把超出 col_count×列高的内容放到 **inline 方向（容器右外侧）**，ZW 旧 multi-row 模型放到下方再被 R1039 slice-clip 隐藏 → 内容丢失。
+
+**驱动案 multicol-span-all-children-height-002**（article column-count:2 height:200 + spanner + block2 height:100%=200px）：region1（spanner 下剩 50px）block2 应以 50px 列高拆 4 列（2 in-article + **2 右溢出**，同 y 单行）。ZW 修复前 R1035 multi-row 把 col2/col3 放下方行 y=213-263，R1039 slice-clip 隐藏 → block2[100:200] 丢失（pixel diff 主导 `.->Y` 17750 px @ x=429-620/637-799 article 右外侧，z_vs_chr 3.99%）。
+
+**per-pixel 定位**（product-smoke + PIL）：dense x-scan 示列结构同（双黄），precise transition `. -> Y` 17750 px 全集中 article 右外侧 → CHR 渲 4 列右溢，ZW 不渲。minimal multicol（无 spanner，height:50 col-count:2 child:200）同病（ZW yellow 仅 x=13-412，右侧 0 列）→ 通用 inline-overflow 缺口非 spanner 特有。
+
+**关键发现**：`assign_children_to_columns_multirow` **已**支持列数增长超 col_count（advance_col! push 新列），4 片段几何正确。bug 纯在定位：`position_multicol_children` 用 row_height>0 时 col_in_row=col_idx%col_count（wrap，垂直堆叠）；row_height=0 时 col_in_row=col_idx（单调递增，inline 向右）。
+
+**修复**（`crates/layout-engine/src/multicol.rs`，1 行净 + 注释 + 1 单测）：`layout_multicol_with_spanners` multirow 分支 assign 仍以 region_available 作 max_col_height（列高，block2→4×50px 片段不变），**定位传 row_height=0.0**（旧 region_available）→ 溢出列落 col_idx×(col_w+gap) 的 x（容器右外侧），同 y_base 单行；region_height=max 片段高=50px（block 方向不增高）。CSS Multicol：definite 高度容器内容超 col_count×列高时额外 column box 在 inline 方向溢出——本修复对齐此语义。
+
+**A/B（stash 严格对照，ORACLE_DUMP_ALL per-case 452 案）**：baseline（当前 tree）= **145/452**（注：R1039 记 140，tree 已漂移 +5）→ with-change **146/452（net +1）**。**1 flip to PASS**：002 **3.99→0.29**；**0 flip to FAIL**；**1 improved**：003 **17.26→1.03（-16.23pp 近 flip）**；**0 worsened ≥0.5pp**。★ 零回归。
+
+**门禁全绿**：multicol 单测 25 pass（含新 `test_position_multicol_inline_overflow_row_height_zero`）/ make test 全 workspace 45 binary 0 failed / clippy --workspace --all-targets -D warnings 干净 / cargo fmt 干净 / **product-smoke welcome 16.57%（< 20% gate，== baseline 不变）** / multicol.rs 1277 行（<2000）。
+
+**意义**：纠正 R1035「multi-row 垂直溢出」误模型（标准 multicol 列恒 inline，多行只由 column-span:all 区域分割产生，overflow 列走 inline 方向非下方）。关闭 002（PASS）+ 003 大改善。累计 css-multicol R1027-R1039 + R1074 持续产出。详见 [`evidence/r1074-multicol-inline-overflow-landed-2026-07-06.txt`](./evidence/r1074-multicol-inline-overflow-landed-2026-07-06.txt)。
+
+**▶ 下会话**：① 003 残余 1.03% 近 flip（逐案 LAYOUT_DUMP 查结构 vs font-wall）；② 004a/004b/006/007 簇（仍 FAIL，R1039 标 nested 结构稍紧）是否同类 inline-overflow 可改善；③ inline-overflow 模型扩展到非 spanner balance 路径（minimal multicol 同病，潜在多 case）；④ font-wall C-dep（用户决策，002 残余 0.29% 文本字形亦待其解锁）。
+
+### R1073 FreeType C-dep 跨平台 CI 冒烟门禁（freetype-raster-cross-platform job，非阻塞）= 一键 6-target 验证 bundled FreeType 编译 → C-dep 决策从「需 macos/windows 本地验证」（无法自主做）降为「dispatch CI 看结果」·reversible/非 outward-facing
+
+承 R1072 CONTINUE（C-dep 在用户决策点，实际阻塞 = 6-target CI 编译可行性无法从 Linux 验证）。本轮加 **非阻塞 CI 冒烟 job**，把「无法自主验证的跨平台编译」降为「用户 dispatch CI 即得结果」。
+
+**实现**（`.github/workflows/ci.yml` 新 job `freetype-raster-cross-platform`）：① 仅 `workflow_dispatch` 触发（同主 CI，非每 push）；② 6-target matrix 全覆盖（ubuntu x86/arm + macos intel/arm + windows x86/arm，含 ARM 变体）；③ `continue-on-error: true`（非阻塞，informational，失败不影响主 CI 绿）；④ `cargo check -p zero-render-foundation --features freetype-raster --target <t>`（仅 check render-foundation，不依赖 rusty_v8，验证 freetype-sys bundled 在各 target 的 C 编译——cc crate 从源码编译 FreeType2+libpng）。YAML 合法 + 本地 command 验证通过。
+
+**裁决**：C-dep 决策阻塞**从「需 macos/windows 本地验证」（自主无法做）降为「dispatch CI freetype-raster-cross-platform 看结果」**。job 非阻塞 + 仅 dispatch 触发 → **reversible / 非 outward-facing 风险**（不会让 push CI 红）。用户翻 default 前 dispatch 一次即知 6-target 是否全绿；若某 target 失败（如 windows-11-arm MSVC quirks），精确定位后再决策。→ C-dep 决策的最后技术不确定（跨平台编译）被消除，决策降为纯政策（是否接受 FreeType C 依赖，ZW 已有 rusty_v8 先例）。
+
+**▶ 下会话**：① **用户 dispatch `freetype-raster-cross-platform` workflow** → 6-target 编译结果出 → 据此决策翻 default（或我下轮据结果自主翻）；② 全绿则翻 default = `crates/render-foundation/Cargo.toml` `[features] default = ["freetype-raster"]` + 全量 `make reftest-oracle`（feature 默认 on）确认 +24 泛化无回归；③ font-wall 收官（R1072），rendering-compat 非 font-wall = 结构性 lever（multicol Phase 2 → Phase A 依赖 / R109 taffy-blocked / clean 四证穷尽）。
+
+### R1072 font-wall Phase 2 特性化收官（CSS2/text +5 泛化证毕·6 数据点）+ CI 6-target 矩阵复核（不自主翻 default）+ pivot 结构性 lever·零 net 源码·纯调查
+
+承 R1071 CONTINUE（font-wall 在 C-dep 决策点；自主续泛化量化 + 结构残余）。本轮 CSS2/text 泛化 A/B + CI 矩阵复核，**font-wall Phase 2 特性化收官，pivot 结构性 lever**。
+
+**CSS2/text 泛化 A/B**（408 案，css21 text dir，区别 css-text）：feature-off credible 205 / oracle-pass 212 / strict 18 → feature-on credible **210（+5）** / oracle-pass 217 / strict 18。★ yield 小因 dir 由结构性 white-space/bidi 主导（worst：white-space-collapsing-bidi-002 40.7% / white-space-mixed-001 37% / word-spacing-characters-001 33% / white-space-normal-001/002 28.5%——全 white-space 处理结构性，FreeType on barely move 28.56→28.50 证非字体）。FreeType 修该 dir 小文本光栅化分量 +5。
+
+**★ font-wall Phase 2 特性化收官（6 数据点 yield map 完备）**：
+| dir/page | feature-off | feature-on | Δ | 主导分量 |
+|---|---|---|---|---|
+| css-text | credible 344 | 368 | **+24** | 光栅化（文本 dir） |
+| css-text-decor（css-text 内） | 108/242 | 117/242 | +9 | 光栅化 |
+| CSS2/text | credible 205 | 210 | +5 | white-space 结构 + 小光栅化 |
+| CSS2/backgrounds | credible 228 | 230 | +2 | background-root 结构 |
+| welcome | 16.57% | 16.29% | −0.28pp | 文本 + 部分 layout |
+| morning | 58.15% | 58.06% | −0.09pp | 58% 结构主导 |
+
+**CI 6-target 矩阵复核**：`.github/workflows/ci.yml` matrix = ubuntu-latest / ubuntu-24.04-arm / macos-15-intel / macos-latest / windows-latest / windows-11-arm（6 target，含 ARM Linux/Windows）。翻 default 须 freetype-sys bundled 在 6 target 全编译——**无法从 Linux 验证 macos/windows 特别是 windows-11-arm**，自主翻 default 风险（CI red 影响全项目）超可接受阈值。**裁决：不自主翻 default，C-dep 留用户决策**（6-target CI 风险是合理 user-gate，非 rally 应绕过的多会话执行阻塞）。
+
+**裁决 + pivot**：font-wall Phase 2 **特性化收官**（yield 已证 + DEFAULT 最优 + 零回归 + CI de-risk bundled + 6 数据点 yield map）。C-dep 在用户决策点（evidence 完备 + 诚实）。rendering-compat 非 font-wall 路径 = **结构性 lever**（clean single-session 四证穷尽 + 产品页结构深查 plateau）：multicol Phase 2（有 spec，R1027/R1028 续）/ R109 case-a（taffy-blocked）/ Phase A IFC（多 session）/ white-space 结构（CSS2/text worst 簇）。
+
+**▶ 下会话**：① C-dep 用户决策（翻 default，6-target CI；可先在 CI 加 freetype-sys bundled 冒烟 build 验证 6 target 再翻）；② **pivot 结构性 lever**——首推 multicol Phase 2 第一切片（读 multicol-phase2-unified-column-flow-spec.md 定可独立首切，R1027/R1028 已续 column-span/break-after）或 white-space 结构（CSS2/text white-space-normal-001/002 28.5% 定位是否可独立修）；③ font-wall 已收官勿再投 A/B（6 数据点 pattern 确凿）。
+
+### R1071 FreeType C 依赖 cross-platform CI de-risk = freetype-raster feature 经 freetype-rs/bundled 从 C 源码编译 FreeType2+libpng（freetype-sys bundled，cc crate）→ 无须系统 FreeType，CI 三平台一致可用 + bundled 输出 == 系统 FreeType（welcome 16.29% 像素 byte-identical 78176）→ C 依赖决策从「需评估三平台系统 FreeType 可用性」降为「cc crate 编译 FreeType2 C 源（高置信跨平台）」·决策阻塞基本消除
+
+承 R1070 CONTINUE（font-wall Phase 2 在 C 依赖决策点，C-dep 实际阻塞 = 三平台 CI 构建可行性未 de-risk）。本轮 **de-risk C 依赖的跨平台 CI 构建路径**，C-dep 决策从「推测」降为「近零风险」。
+
+**问题**：R1068 freetype-raster feature 默认链系统 libfreetype.so（Linux 装包，macOS/Windows CI runner 无）→ 翻 default 会 break macOS/Windows CI。这是用户 C-dep 决策的实际阻塞。
+
+**de-risk**：`crates/render-foundation/Cargo.toml` freetype-raster feature 加 `"freetype-rs/bundled"`（freetype-rs 0.38 `bundled = ["freetype-sys/bundled"]`，freetype-sys 0.23 `bundled` feature 经 `cc` crate 从 C 源码编译 FreeType2 + libpng，build.rs:15/93/125 `!cfg!(feature="bundled")` 分流系统 vs 编译）。→ **无须系统 FreeType，C 源自包含编译**。
+
+**验证**：① `cargo build --release -p zero-render-foundation --features freetype-raster`（bundled）成功（freetype-sys/freetype-rs 从 C 编译，14.35s 略慢于系统链接，自包含）；② **bundled 输出 == 系统 FreeType**：welcome product-smoke **16.29%（78176 px）byte-identical 于 R1068 系统 FreeType 结果** → bundled 是系统 FreeType 的完美 drop-in，CI 用 bundled 三平台一致结果；③ 默认 feature-off 路径不变（clippy 0.14s cached = byte-identical）+ feature clippy 干净。
+
+**裁决**：C-dep 决策**实际阻塞基本消除**。原担忧「macOS/Windows CI runner 须装/找系统 FreeType 2」→ 现解为「cc crate 编译 FreeType2 可移植 C 源」（cc crate 设计即为此，FreeType2 C 源跨平台可移植，freetype-sys bundled 是社区标准跨平台方案，高置信）。**残余风险 = macOS/Windows CI runner 的 C 工具链（clang/MSVC）** —— 这是所有含 C 依赖 Rust crate 的通用前提（ZW 已有 rusty_v8 等 C 依赖），非 FreeType 特有。→ **用户 C-dep 决策可基于：yield 已证（+24 css-text / DEFAULT 最优 / 零回归）+ CI 风险近零（bundled 自包含 + cc 跨平台）**。
+
+**▶ 下会话**：① **待用户 C 依赖决策**（evidence 完备 + CI de-risk，可翻 default）；② 翻 default 步骤 = `crates/render-foundation/Cargo.toml` `[features]` 加 `default = ["freetype-raster"]` + CI workflow 确认 C 工具链（ubuntu/macos 自带 clang，windows MSVC via rust-toolchain）+ 全量 `make reftest-oracle`（feature 现在默认 on）确认 +24 跨 dir 泛化无回归；③ 翻 default 前/后可扩非-Ahem 文本 dir A/B（CSS2/text 等）量化泛化收益；④ font-wall 结构分量（morning 58% / welcome 16% layout）须各自修，FreeType 非其 lever。
+
+### R1070 morning-work CJK oracle 工具 + FreeType CJK yield A/B = morning 58.15→58.06%（−0.09pp 边际，结构主导 58% diff）+ product-oracle-shot.mjs 可复用工具·yield 天花板证毕（FreeType 收益 ∝ 光栅化分量占比）·零 net 功能源码·纯调查+工具
+
+承 R1069 CONTINUE（morning-work CJK oracle 量化，CJK 光栅化差 11-16% 最大）。本轮新建产品页 oracle 工具 + 生成 morning chromium oracle + A/B，**yield 天花板证毕**。
+
+**工具**（`tests/wpt-runner/scripts/product-oracle-shot.mjs`，复用 chromium-oracle-shot.mjs 的 HTTP-server 模式，面向任意产品 fixture）：`--root <dir> --html <rel> --out <png> [--width 800 --height 600 --selector <css> --wait 300]`。内嵌静态 server（R388 http:// 取代 file://，@font-face 本地字体 + 相对资源正确解析）+ headless chromium（`--font-render-hinting=none` 与 product-smoke ZW 侧一致）+ img.decode 等待（R745 race 修复）+ 外部 CDN（ads/disqus/googletag）任其超时失败（仅本地内容入 oracle）。生成 `evidence/product-static/morning-chromium.png`（800×600，gitignored）。
+
+**morning A/B**（CJK 产品页，leizongmin blog，body NotoSansCJK）：feature-off **58.15%** → feature-on **58.06%（−0.09pp 边际）**。★ morning 58% diff **结构主导**（layout/栏目/images/sidebar/@font-face FiraCode webfont/外部脚本失败），CJK 文本光栅化仅小分量——FreeType 改该分量 −0.09pp 但结构性不动（同 backgrounds +2 模式）。
+
+**★ yield 天花板证毕**（FreeType 收益 ∝ 各 dir/page 的**光栅化分量**占总 diff 的占比）：
+| dir/page | feature-off | feature-on | Δ | 解释 |
+|---|---|---|---|---|
+| css-text（文本 dir） | credible 344 | 368 | **+24** | 光栅化 = 主 diff 分量（layout 正确）→ 大 yield |
+| welcome（Latin 产品） | 16.57% | 16.29% | −0.28pp | 文本占可观 + 部分 layout |
+| backgrounds（布局 dir） | credible 228 | 230 | +2 | 结构性 background-root-* 主导 |
+| morning（CJK 产品） | 58.15% | 58.06% | −0.09pp | 58% 结构主导，CJK 光栅化小分量 |
+
+**裁决**：FreeType yield **不是银弹**——文本 dir（layout 正确、光栅化主导）大 yield（css-text +24），结构复杂 dir/page 边际（backgrounds/morning 结构主导）。C 依赖决策 evidence 完备且**诚实**：① 文本 dir 类收益真实（css-text +24 零回归，预期 css-text-decor/linebox/text-transform 等文本 dir 同类）；② 产品页收益小（welcome −0.28pp / morning −0.09pp，受限于结构 diff 主导）；③ DEFAULT hinting 最优（R1069）。翻 default 收益 = 文本 dir oracle 一致率显著提升 + 产品页小幅改善；非银弹，font-wall 的结构分量须各自修。
+
+**▶ 下会话**：① **待用户 C 依赖决策**（evidence 完备 + 诚实，yield ∝ 光栅化分量）；② 翻 default 前/后可扩文本 dir A/B（linebox/text-decor/css21-text 验证 +24 类收益泛化）；③ 产品页残余（welcome 16% / morning 58%）须结构性修（layout/栏目/img/@font-face webfont 加载），FreeType 非其 lever；④ product-oracle-shot.mjs 可复用（任一产品 fixture oracle，DC-13 扩 fixture 基础设施）。
+
+### R1069 FreeType hinting A/B（DEFAULT 最优）+ 多 dir yield 测绘 = DEFAULT 381 > LIGHT 371 > NOHINT 357≈fontdue（证 fontdue=unhinted，FreeType full-hint 向 chromium 收敛）+ yield 集中文本 dir（css-text +24 / backgrounds +2 结构性封顶）·DEFAULT 无需再调·零 net 功能源码（+4 行注释）·纯调查
+
+承 R1068 CONTINUE（Phase 2 LANDED feature-gated，续 feature-on 调优 + 多 dir 量化）。本轮 A/B FreeType hinting 模式 + 量化 yield 跨 dir 分布，**DEFAULT 验证为最优，yield 集中文本 dir**。
+
+**Hinting A/B**（css-text Oracle 1650 with-oracle，env `ZW_FT_HINTING` 运行时切，单 build 多 run）：DEFAULT(full hinting TARGET_NORMAL) **oracle-pass 381 / credible 368 / strict 88** > LIGHT(slight TARGET_LIGHT) 371 / 358 / 89 > NOHINT 357 / 344 / 84 ≈ **fontdue 基线 357/344/84**。★ DEFAULT 最优（R1068 选择正确，勿改 LIGHT/NOHINT）。★ NOHINT==fontude 证 **fontdue tight-ink 即 unhinted 光栅化**，FreeType DEFAULT(full hinting) 向 chromium（hinted）收敛——这正是 R1068 +24 的机制。原假设「chromium 用 slight/LIGHT」**refuted**（oracle chromium 实为 full hinting）。
+
+**多 dir yield 测绘**（feature on vs off）：
+- **css-text**（文本 dir）：oracle-pass 357→**381（+24）**，credible 344→368（+24），全 per-dir 零回归（css-text-decor 108→117 / line-breaking 60→67 / white-space 45→48）。welcome −0.28pp（16.57→16.29%）。
+- **CSS2/backgrounds**（布局 dir）：oracle-pass 228→**230（+2）**，strict 0→0（全 228 卡 0.1-1.0% font-wall 带）。★ yield 小因 dir 由结构性 `background-root-*`（41%/40%/35%... background-image/color on root，非指令文本）主导；指令文本 font-wall（R1064 测 1.15%）小，FreeType 修该分量 +2 但结构性 background-root 不动。
+- **模式结论**：FreeType yield **集中在文本 dir**（css-text +24 / text-decor / line-breaking / white-space），**布局 dir 边际**（backgrounds +2，结构性封顶）。font-wall 各 dir 收益按文本占比分配。
+
+**裁决**：① DEFAULT hinting 验证最优（A/B 数据写入 loader.rs 注释，+4 行，零功能改动）——勿再投 hinting 调优；② C 依赖决策 evidence 完备：css-text +24（文本 dir 主收益）+ welcome −0.28pp + 零回归 + DEFAULT 最优；③ yield 天花板 = 文本 dir（css-text 类）+ 产品页 Latin/CJK（welcome/morning，待 morning oracle），布局 dir font-wall 须各自结构性修。**env knob 已移除**（code-guidelines 不留未要求可配置性 + 避免每字形 env::var 热点）。
+
+**▶ 下会话**：① **待用户 C 依赖决策**（翻 default，evidence 完备：+24 css-text / DEFAULT 最优 / 零回归）；② 翻 default 前最高 EV = morning-work CJK 产品页 oracle（CJK 光栅化差 11-16% 最大，须生成 chromium oracle shot via R388 工具链）量化 CJK yield；③ advance/kerning 精度（FreeType FT_Load_Glyph advance vs fontdue，潜在再降文本 dir diff）；④ 布局 dir（backgrounds/borders）font-wall 须各自结构性修（background-root-*），FreeType 非其 lever。
+
+### R1068 ★Phase 2 FreeType 光栅化路径 LANDED（feature-gated default-off）= css-text Oracle +24 credible pass 零目录回归 + welcome −0.28pp·首 font-wall 正 yield·C 依赖决策升级 evidence-backed
+
+承 R1067 CONTINUE（font-wall 收敛 rasterization-only，Phase 2 = 唯一 lever，待 C 依赖决策）。本轮 **feature-gate FreeType 光栅化路径绕过 C 依赖阻塞**——把 Phase 2 hypothesis 用 A/B 数据验证，C 依赖决策从「推测」升级为「evidence-backed」。
+
+**实现**（`freetype-raster` feature，default-off）：① `crates/render-foundation/Cargo.toml` 加 `freetype-rs = { version="0.38", optional=true }` + `[features] freetype-raster=["dep:freetype-rs"]`；② `font/loader.rs` 加 `freetype_raster` 模块（thread_local FreeType Library + `rasterize(font_bytes, ch, size)→GlyphBitmap`），坐标约定 `x_offset=bitmap_left` / `y_offset=bitmap_top−height`（推导自 `glyph_top_left`），灰度位图按 pitch→紧凑 width×height；③ `rasterize_glyph` 非-Ahem 路径 `#[cfg(feature)]` 优先 FreeType，失败回退 fontdue；④ Ahem 路径不变（A4：Ahem fontdue≈FreeType，保留 rasterize_ahem_glyph 方块特判）。feature-off 整模块不编译 → CI / 默认构建纯 Rust 不变。
+
+**A/B（feature on vs off，同一 tree）**：welcome product-smoke **16.57%→16.29%（−0.28pp）**；css-text Oracle（1650 with-oracle 案）**oracle-pass 357→381（+24）/ credible 344→368（+24）/ strict 84→88（+4）/ 近似 272→293（+21）**，**全 per-dir 零回归**（css-text-decor 108→117 +9 / line-breaking 60→67 +7 / white-space 45→48 +3 / word-break 8→10 +2 / text-transform 7→8 / hyphens 9→10 / word-spacing 2→3 / 余持恒）。★ 与 R1067 Phase 1 metric swap（net-neutral）正反对——**font-wall 光栅化分量真实可解**，FreeType FT_Render_Glyph（chromium Linux 同栈）向 chromium 收敛。
+
+**门禁全绿**：make test 45 bin ok 0 failed（feature-off 默认路径零变化）；clippy `--features freetype-raster --all-targets -D warnings` 干净（let-chain 折叠 + f32 非否定比较 + 去 i32 冗余 cast 三修）；默认 `clippy --workspace --all-targets -D warnings` 干净；新 `freetype_rasterize_ahem_glyph_end_to_end` cfg-gated 测试 PASS（Ahem 'X'@20px 20×20 + y_offset∈[−h,0] + advance≈20，坐标约定守卫）。loader.rs 1305→1442 行（<2000）。
+
+**裁决**：Phase 2 hypothesis **VALIDATED**（+24 css-text 零回归，首 font-wall 正 yield）。feature-gate 使 C 依赖决策**解耦**——default-off 落地经验证的基础设施（不阻塞 CI，纯 Rust 默认路径不变），用户决策 = 「翻 default 启用 CI 三平台 FreeType」。C 依赖决策从 R1064「推测需 accept」升级为「**evidence-backed：+24 css-text 零回归证明 FreeType 光栅化收益真实**」。
+
+**▶ 下会话**：① **待用户 C 依赖决策**（翻 default：CI ubuntu/macos/windows 须 FreeType 2；Linux 系统装 / macOS/Windows vendored via freetype-sys bundled feature）——收益已证；② 翻 default 前可继续 feature-on 调优（FreeType hinting/subpixel 对齐 chromium 具体设置，潜在再降 diff；advance/kerning 精度；paint 侧 v_offset 与 FreeType 度量 coherence）；③ R1067 Phase 1（metric）已 closed，font-wall 唯一 lever = Phase 2（本轮 LANDED feature-gated）。
+
 ### R1067 Phase 1（fontdue 度量 → FreeType 度量 swap）A/B 实测 NET-NEUTRAL = 第 7 证（metric-source swap 无 yield）+ R1066「Ahem font-wall=度量」refuted（16px 度量差为 FreeType 舍入伪影，真值 fontdue=FreeType=0.8）+ font-wall 收敛 rasterization-only（Phase 2 唯一 lever）·已回退·零 net 源码·纯调查
 
 承 R1066 CONTINUE（Phase 1 度量 coherence，R848 三方同改用 FreeType 真实度量）。本轮扩展 fontcmp prototype（dump fontdue hlm + freetype size_metrics 跨 16/20/40px）精确测绘度量源 + A/B 实测 non-Ahem ascent 0.928→0.95，**Phase 1 refuted（第 7 证），font-wall 收敛 rasterization-only**。

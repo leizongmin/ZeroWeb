@@ -23,6 +23,18 @@ fn find_box(root: &LayoutBox, node_id: NodeId) -> Option<(f32, f32)> {
     None
 }
 
+/// 在布局树中查找指定 DOM NodeId 的 LayoutBox 引用（供检查 column_span_offsets 等）。
+fn find_box_ref(root: &LayoutBox, node_id: NodeId) -> Option<&LayoutBox> {
+    let mut stack = vec![root];
+    while let Some(b) = stack.pop() {
+        if b.node_id == Some(node_id) {
+            return Some(b);
+        }
+        stack.extend(b.children.iter());
+    }
+    None
+}
+
 /// R717 驱动案：flex column + ratio-only SVG img（ratio 2:1）→ width 拉伸 800、height=400。
 #[test]
 fn r717_flex_column_ratio_only_img_derives_height() {
@@ -409,5 +421,135 @@ fn r1015_block_flex_column_auto_width_no_shrink() {
     assert!(
         cw >= 700.0,
         "R1015: block flex column auto width 应保持拉满（≥700），不 shrink，got {cw}"
+    );
+}
+
+/// R1075：非 spanner balance 多列容器（definite 高度 + 内容超 col_count×列高）走 **inline
+/// 列溢出**——列高 cap 在容器高度，超出内容生成额外 column box 溢出到容器右外侧（chromium
+/// 实测确认）。columns:2 height:50 width:100 + 单个 200px 子 → 4 列各 50px（2 in-container +
+/// 2 右溢出），column_span_offsets 4 片段，col_x 单调递增 0/50/100/150（gap 0, col_w 50）。
+/// 纠正旧 balanced 在 col_count 处 break 丢弃 overflow（minimal multicol 同病）。
+#[test]
+fn r1075_non_spanner_balance_inline_overflow() {
+    let html = r#"<html><body style="margin:0">
+<div id="mc" style="columns:2; column-gap:0; width:100px; height:50px; background:green">
+  <div id="child" style="height:200px; background:yellow"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let divs = doc.get_elements_by_tag_name("div");
+    let child_id = divs.into_iter().nth(1).expect("child div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let child_box = find_box_ref(&result.root, child_id).expect("child box found");
+    assert_eq!(
+        child_box.column_span_offsets.len(),
+        4,
+        "R1075: 200px child in 2-col×50px → 4 inline-overflow columns (2 in-container + 2 right)"
+    );
+    let xs: Vec<f32> = child_box.column_span_offsets.iter().map(|t| t.2).collect();
+    assert!(
+        (xs[0] - 0.0).abs() < 1.0
+            && (xs[1] - 50.0).abs() < 1.0
+            && (xs[2] - 100.0).abs() < 1.0
+            && (xs[3] - 150.0).abs() < 1.0,
+        "R1075: inline-overflow col_x 单调递增 0/50/100/150（向右溢出），got {xs:?}"
+    );
+}
+
+/// R1075 守卫：monolithic（overflow≠visible）子元素不可分——不应触发 inline 列溢出拆分。
+/// overflow-unsplittable-001 谱系：columns:2 height:100 + overflow:scroll 子（含 200px 孙）→
+/// monolithic 子保持整体（balanced 路径，不拆），column_span_offsets 仅 1 片段（不跨列拆分）。
+#[test]
+fn r1075_monolithic_child_not_split_by_inline_overflow() {
+    let html = r#"<html><body style="margin:0">
+<div style="columns:2; column-gap:0; width:100px; height:100px; background:green">
+  <div id="scroll" style="overflow:scroll; width:50px; background:blue">
+    <div style="height:200px;"></div>
+  </div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let scroll_id = doc.get_element_by_id("scroll").expect("scroll div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let scroll_box = find_box_ref(&result.root, scroll_id).expect("scroll box found");
+    // monolithic 子不拆分——column_span_offsets ≤ 1（不跨列），避免 R1075 误拆 overflow:scroll。
+    assert!(
+        scroll_box.column_span_offsets.len() <= 1,
+        "R1075 guard: monolithic (overflow:scroll) 子不应被 inline-overflow 拆分，got {} 片段",
+        scroll_box.column_span_offsets.len()
+    );
+}
+
+/// R1076：column-fill:auto + definite 高度 + 内容超 col_count×列高 → **inline 列溢出**
+///（chromium 实测确认，column-wrap:auto 默认）。columns:1 column-fill:auto height:100 +
+/// 单个 200px 子 → 2 列各 100px（col0 in-container + col1 右溢出），column_span_offsets
+/// 2 片段，col_x 递增 0/100（width 100, gap 0）。
+#[test]
+fn r1076_sequential_fill_auto_inline_overflow() {
+    let html = r#"<html><body style="margin:0">
+<div id="mc" style="columns:1; column-fill:auto; column-gap:0; width:100px; height:100px; background:green">
+  <div id="child" style="height:200px; background:yellow"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let divs = doc.get_elements_by_tag_name("div");
+    let child_id = divs.into_iter().nth(1).expect("child div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let child_box = find_box_ref(&result.root, child_id).expect("child box found");
+    assert_eq!(
+        child_box.column_span_offsets.len(),
+        2,
+        "R1076: 200px child in column-fill:auto 1-col×100px → 2 inline columns (1 in-container + 1 right)"
+    );
+    let xs: Vec<f32> = child_box.column_span_offsets.iter().map(|t| t.2).collect();
+    assert!(
+        (xs[0] - 0.0).abs() < 1.0 && (xs[1] - 100.0).abs() < 1.0,
+        "R1076: inline-overflow col_x 0/100（向右溢出），got {xs:?}"
+    );
+}
+
+/// R1076 守卫：nested multicol 子元素不触发 sequential inline-overflow（nested fragmentation
+/// 须独立模型，同 R1035 守卫）。outer columns:1 column-fill:auto height:100 + inner columns:1
+///（nested）+ child 200 → gate 跳过（has_nested_multicol），用 _with_breaking（不 push 溢出列），
+/// inner 子的 column_span_offsets 不应 ≥ 2 片段（未 inline 拆分）。
+#[test]
+fn r1076_nested_multicol_child_guarded_sequential() {
+    let html = r#"<html><body style="margin:0">
+<div style="columns:1; column-fill:auto; column-gap:0; width:100px; height:100px; background:green">
+  <div id="inner" style="columns:1; height:200px; background:yellow">
+    <div style="height:200px;"></div>
+  </div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let inner_id = doc.get_element_by_id("inner").expect("inner div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, std::collections::HashMap::new(), HashMap::new());
+    let inner_box = find_box_ref(&result.root, inner_id).expect("inner box found");
+    // nested multicol 子被 guard 排除 → 不走 R1076 inline-overflow（不同 x 的溢出列）。
+    // _with_breaking 可能仍**同列**拆分（col_x 都=0），但不应产生 col_x>0 的 inline 溢出列。
+    let max_col_x = inner_box
+        .column_span_offsets
+        .iter()
+        .map(|t| t.2)
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_col_x < 1.0,
+        "R1076 guard: nested multicol 子不应 inline-overflow（所有片段 col_x 应=0），got max col_x={max_col_x}"
     );
 }

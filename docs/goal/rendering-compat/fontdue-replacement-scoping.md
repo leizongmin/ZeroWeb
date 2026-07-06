@@ -1,11 +1,11 @@
 # Scoping：fontdue → chromium-matching 字体光栅化替换
 
-**版本**：v0.4（Phase 1 metric coherence A/B 实测 NET-NEUTRAL → **refuted/移除**；font-wall 收敛为 Phase 2 rasterization-only；待用户 C 依赖决策）
+**版本**：v0.5（Phase 2 FreeType 光栅化路径 LANDED feature-gated default-off = +24 css-text Oracle 零回归 VALIDATED；C 依赖决策升级 evidence-backed）
 **日期**：2026-07-06
-**作者**：AI Assistant（rally R1064-R1067）
-**状态**：scoping + Phase 0 web + empirical + Phase 1 refuted（rally 自主模式；A1/A4 已验证；Phase 1 已证伪；待用户 C 依赖决策启动 Phase 2）
+**作者**：AI Assistant（rally R1064-R1068）
+**状态**：scoping + Phase 0 done + Phase 1 refuted + Phase 2 LANDED（feature-gated，待用户翻 default 决策）
 
-> 本 doc 把 R1056（CJK ascent 第六证）+ R876（fontdue tight-ink 三方补偿）+ R1064（font-wall 笼罩 CSS2 测试四证穷尽）+ R1067（Phase 1 metric swap 第七证 net-neutral）收敛为可实施的多会话计划前置 scoping。R1064 确证 clean single-session lever 已穷尽；R1067 证 metric-source swap（Phase 1）无 yield → 残余 font-wall 100% 受阻于 rasterization（Phase 2，须 C 依赖）。
+> 本 doc 把 R1056（CJK ascent 第六证）+ R876（fontdue tight-ink 三方补偿）+ R1064（font-wall 四证穷尽）+ R1067（Phase 1 metric swap 第七证 net-neutral）+ **R1068（Phase 2 FreeType LANDED +24 css-text VALIDATED）**收敛为可实施计划。R1064 确证 clean single-session lever 已穷尽；R1067 证 metric swap 无 yield；**R1068 证光栅化替换真实 yield（+24 css-text 零回归），feature-gate 绕过 C 依赖阻塞**。
 
 ---
 
@@ -130,7 +130,7 @@ FreeType 光栅化。详见 §6 开放问题 1。
 |---|---|---|---|
 | **Phase 0**（research）✅ 完成 | ~~对比三候选~~ → freetype-rs 定为唯一 chromium 匹配候选（§3.2 实证）。**empirical prototype**（R1066，/tmp/fontcmp）验证 A1（freetype-rs per-glyph ≠ fontdue，向 chromium 收敛）+ A4（Ahem ≈ identical） | freetype-rs 像素 diff 数据（A1）+ Ahem 零回归（A4） | ✅ done |
 | **Phase 1**（metric coherence）❌ **refuted R1067** | ~~替换 line_metrics_full + 度量管线 coherence（R848 三方同改）~~。**A/B 实测 NET-NEUTRAL**：non-Ahem ascent 0.928→0.95（fontdue→FreeType DejaVu 真值），welcome −0.09pp（噪声）+ css-text oracle pass-count 字节同（357/357）+ 全 per-dir identical。metric source 不影响 oracle（ZW pipeline compensating offsets 吸收 2.4% nudge）。**第 7 证**（承 R834/R836/R849/R875/R1052/R1056）。详见 [`evidence/r1067-phase1-metric-swap-net-neutral-2026-07-06.txt`](./evidence/r1067-phase1-metric-swap-net-neutral-2026-07-06.txt) | — | ❌ closed（无 yield） |
-| **Phase 2**（rasterize 替换）★ **唯一有 yield 潜力的 font-wall lever** | 替换 rasterize_glyph（非 Ahem）+ rasterize_ahem_glyph（Ahem），paint 字形定位协调。font-wall（css21 指令文本 = DejaVu rasterization 27-30% / welcome-morning Latin+CJK 11-30%）100% 受阻于此 | 全 CSS2 oracle A/B + product-smoke <20% | 2-3 session（须 C 依赖决策） |
+| **Phase 2**（rasterize 替换）★ **LANDED R1068 feature-gated default-off，VALIDATED** | `rasterize_glyph` 非-Ahem 路径 FreeType `FT_Render_Glyph` 替 fontdue（`freetype-raster` feature，default-off CI 不受影响）。Ahem 路径不变（A4）。**A/B VALIDATED**：welcome −0.28pp + css-text Oracle **+24 credible pass 零目录回归**（css-text-decor +9 / line-breaking +7 / white-space +3 / word-break +2）。 | make test 全绿（feature-off 不变）+ clippy 干净（feature on/off）+ cfg-gated 单测 + scoped oracle A/B | ✅ LANDED（待用户翻 default 决策） |
 | **Phase 3**（清理） | 移除 fontdue 依赖，文档更新 | cargo build --workspace 绿 + clippy | 1 session |
 
 ---

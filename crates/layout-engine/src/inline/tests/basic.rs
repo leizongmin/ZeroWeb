@@ -69,6 +69,40 @@ fn test_empty_text_no_lines() {
     assert!(fragments.is_empty());
 }
 
+/// R1086: word-spacing 作为词间前导间隙——非首词的 fragment.x 必须含 word_spacing gap。
+/// 旧实现把 word_spacing 计入 word_width → 仅推进 current_x 给下一词，本词 fragment.x 缺 gap
+///（word-spacing-007 第二 x 落在无 gap 处）。Ahem 'x'=16px、space=16px、word_spacing=96px
+/// → 第二词应在 16(x)+16(space)+96(ws)=128px。
+#[test]
+fn test_r1086_word_spacing_applied_to_position() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let runs = vec![TextRun {
+        text: "x x".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 96.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: true,
+    }];
+    ctx.break_into_lines(runs);
+    assert_eq!(ctx.lines.len(), 1, "应在单行");
+    assert_eq!(ctx.lines[0].runs.len(), 2, "两个单词");
+    let gap = ctx.lines[0].runs[1].x - ctx.lines[0].runs[0].x;
+    // 第二词位移 = 首词宽(16) + 空格(16) + word_spacing(96) = 128；旧 bug 下 ~32（无 gap）。
+    assert!(
+        gap >= 110.0,
+        "word_spacing 应作前导间隙，gap={gap} 应 ~128（含 96px word_spacing）"
+    );
+}
+
 /// 测试短文本放入单行。
 #[test]
 fn test_single_line() {
