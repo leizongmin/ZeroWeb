@@ -1335,12 +1335,12 @@ fn position_cells_vertical(
     spacing_y: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
-    // α-4b-1 gate：有 colspan/rowspan 时回退到 horizontal 路径（避免错误转置）。
-    let has_complex_span = grid
-        .rows
-        .iter()
-        .any(|r| r.cells.iter().any(|c| c.colspan > 1 || c.rowspan > 1));
-    if has_complex_span {
+    // α-4b-2 gate：colspan 已支持（cell.height = Σ col_widths[col_start..col_end]）；
+    // rowspan>1 仍回退 horizontal（transposed 轴跨行占位须 TBD-2：TableGrid rowspan 表示）。
+    let has_rowspan = grid.rows.iter().any(|r| r.cells.iter().any(|c| c.rowspan > 1));
+    if has_rowspan {
+        // rowspan 在 transposed 轴（cell 沿 x 占多槽）须跨行占位逻辑（TBD-2：TableGrid
+        // rowspan 表示），α-4b-2 暂回退到 horizontal，避免错误转置。
         position_cells(table_box, grid, col_widths, spacing_x, spacing_y, styles);
         return;
     }
@@ -1458,13 +1458,22 @@ fn position_cells_vertical(
                 continue;
             };
 
-            // cell 在 inline 轴（y）的尺寸 = 对应列宽（colspan=1 时单列）。
-            let col_idx = cell.col_start;
-            let cell_h = if col_idx < col_widths.len() {
-                col_widths[col_idx]
-            } else {
-                0.0
-            };
+            // cell 在 inline 轴（y）的尺寸 = 跨的列宽之和（colspan>1 时多列）。
+            // vertical 下「列」是 inline 轴（y）槽位，colspan 跨多列 → cell 占多段 y。
+            let mut cell_h = 0.0f32;
+            let mut spanned_non_collapsed = 0usize;
+            for col in cell.col_start..cell.col_end {
+                if col < col_widths.len() {
+                    cell_h += col_widths[col];
+                    if !(grid.collapsed_cols.get(col).copied().unwrap_or(false)) {
+                        spanned_non_collapsed += 1;
+                    }
+                }
+            }
+            // 相邻非折叠列间加 spacing（沿 y）。
+            if spanned_non_collapsed > 1 {
+                cell_h += (spanned_non_collapsed - 1) as f32 * spacing_x;
+            }
 
             // cell 自身 relative inset。
             let (cell_rel_dx, cell_rel_dy) = if cell_box.is_relative {
