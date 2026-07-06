@@ -47,8 +47,28 @@ type RegisterFn = Box<dyn FnOnce(&mut WidgetHost)>;
 #[derive(Clone, Debug)]
 pub struct FontAsset {
     pub family: &'static str,
-    pub data: &'static [u8],
+    pub data: std::borrow::Cow<'static, [u8]>,
     pub container: FontContainer,
+}
+
+impl FontAsset {
+    /// 从静态字节构造（include_bytes! 路径）。
+    pub fn static_bytes(family: &'static str, data: &'static [u8], container: FontContainer) -> FontAsset {
+        FontAsset {
+            family,
+            data: std::borrow::Cow::Borrowed(data),
+            container,
+        }
+    }
+
+    /// 从运行时读取的字节构造（系统字体文件 `std::fs::read`）。
+    pub fn owned(family: &'static str, data: Vec<u8>, container: FontContainer) -> FontAsset {
+        FontAsset {
+            family,
+            data: std::borrow::Cow::Owned(data),
+            container,
+        }
+    }
 }
 
 /// 字体容器格式（DC-17 FontConfig API）。
@@ -249,7 +269,7 @@ fn load_default_fonts(backend: &mut FontdueBackend) {
 fn load_font_asset(backend: &mut FontdueBackend, asset: &FontAsset) {
     let bytes: Vec<u8> = match asset.container {
         FontContainer::Ttf => asset.data.to_vec(),
-        FontContainer::Woff => match zero_render_foundation::font::decode_woff(asset.data) {
+        FontContainer::Woff => match zero_render_foundation::font::decode_woff(&asset.data) {
             Some(ttf) => ttf,
             None => {
                 tracing::warn!(family = %asset.family, "registered font woff decode failed");

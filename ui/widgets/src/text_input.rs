@@ -19,13 +19,19 @@ use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, Seman
 pub const ACTION_TEXT_CHANGED: &str = "text_input.changed";
 
 /// TextInput 的 retained 编辑状态（无 Widget 依赖，可独立使用）。
+///
+/// 选区模型：`cursor` + `anchor`（与浏览器地址栏 `apps/browser/src/text_input.rs` 一致）。
+/// - `cursor == anchor`：collapsed caret（无选区）。
+/// - `cursor != anchor`：有选区，选区 = `[min(cursor,anchor), max(cursor,anchor)]`。
+///
+/// 字节偏移（非 char 索引），与 `String::replace_range` 直接兼容。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextInputState {
     pub text: String,
-    /// 光标字节偏移（= 选区锚点）。
+    /// 光标字节偏移（编辑插入点 / 选区活动端）。
     pub cursor: usize,
-    /// 选区（起止字节偏移）；None = 无选区（collapsed caret）。
-    pub selection: Option<(usize, usize)>,
+    /// 选区锚点字节偏移（选区另一端；= cursor 表示无选区）。
+    pub anchor: usize,
 }
 
 impl TextInputState {
@@ -33,7 +39,7 @@ impl TextInputState {
         TextInputState {
             text: String::new(),
             cursor: 0,
-            selection: None,
+            anchor: 0,
         }
     }
 
@@ -41,7 +47,7 @@ impl TextInputState {
         TextInputState {
             text: text.to_string(),
             cursor: text.len(),
-            selection: None,
+            anchor: text.len(),
         }
     }
 
@@ -49,32 +55,70 @@ impl TextInputState {
         c.min(self.text.len())
     }
 
+    /// 是否有选区（cursor != anchor）。
+    pub fn has_selection(&self) -> bool {
+        self.cursor != self.anchor
+    }
+
+    /// 选区字节范围 `(min, max)`。无选区时返回 collapsed `(cursor, cursor)`。
+    pub fn selection_range(&self) -> (usize, usize) {
+        if self.cursor <= self.anchor {
+            (self.cursor, self.anchor)
+        } else {
+            (self.anchor, self.cursor)
+        }
+    }
+
+    /// 选中文本（无选区返回空串）。
+    pub fn selected_text(&self) -> &str {
+        if !self.has_selection() {
+            return "";
+        }
+        let (lo, hi) = self.selection_range();
+        &self.text[lo..hi]
+    }
+
+    /// 全选：anchor=0，cursor=末尾。
+    pub fn select_all(&mut self) {
+        self.anchor = 0;
+        self.cursor = self.text.len();
+    }
+
+    /// 设置光标位置。`extend=true` 时移动 cursor 但保留 anchor（拖拽选择）；
+    /// `extend=false` 时 cursor 与 anchor 一起移动（取消选区）。
+    pub fn set_cursor(&mut self, byte_idx: usize, extend: bool) {
+        let i = self.clamp_cursor(byte_idx);
+        self.cursor = i;
+        if !extend {
+            self.anchor = i;
+        }
+    }
+
     /// 在光标处插入文本（替换当前选区）。
     pub fn insert(&mut self, s: &str) {
-        if let Some((start, end)) = self.selection {
-            let (lo, hi) = (start.min(end), start.max(end));
+        if self.has_selection() {
+            let (lo, hi) = self.selection_range();
             self.text.replace_range(lo..hi, s);
             self.cursor = lo + s.len();
         } else {
             self.text.insert_str(self.cursor, s);
             self.cursor += s.len();
         }
-        self.selection = None;
+        self.anchor = self.cursor;
     }
 
-    /// 向前删除（backspace）。
+    /// 向前删除（backspace）。有选区时删选区；无选区删前一字符。
     pub fn backspace(&mut self) {
-        if let Some((start, end)) = self.selection {
-            let (lo, hi) = (start.min(end), start.max(end));
+        if self.has_selection() {
+            let (lo, hi) = self.selection_range();
             self.text.replace_range(lo..hi, "");
             self.cursor = lo;
-            self.selection = None;
+            self.anchor = self.cursor;
             return;
         }
         if self.cursor == 0 {
             return;
         }
-        // 退到前一个字符边界。
         let prev = self.text[..self.cursor]
             .char_indices()
             .last()
@@ -82,10 +126,11 @@ impl TextInputState {
             .unwrap_or(0);
         self.text.replace_range(prev..self.cursor, "");
         self.cursor = prev;
+        self.anchor = self.cursor;
     }
 
-    /// 移动光标（dir = -1/1）。
-    pub fn move_cursor(&mut self, dir: i32) {
+    /// 移动光标（dir = -1/1）。`extend=true` 保留 anchor（Shift+方向键扩展选区）。
+    pub fn move_cursor(&mut self, dir: i32, extend: bool) {
         if dir < 0 {
             self.cursor = self.text[..self.cursor]
                 .char_indices()
@@ -95,7 +140,38 @@ impl TextInputState {
         } else if let Some((_, ch)) = self.text[self.cursor..].char_indices().next() {
             self.cursor += ch.len_utf8();
         }
-        self.selection = None;
+        if !extend {
+            self.anchor = self.cursor;
+        }
+    }
+
+    /// 双击选词：选中包含 `byte_idx` 的单词（alphanumeric / _ / - / . / / 视为词字符）。
+    /// 与浏览器地址栏 `select_word_at` 同口径。
+    pub fn select_word_at(&mut self, byte_idx: usize) {
+        let chars: Vec<(usize, char)> = self.text.char_indices().collect();
+        if chars.is_empty() {
+            return;
+        }
+        // 把字节偏移转 char 索引：找到第一个 char 起始字节 > byte_idx 的位置，
+        // 然后回退一个 = 点击落点对应的 char。
+        // 用 > 而非 >=：byte_idx 正好落在字符边界时，position 跳过该字符，
+        // saturating_sub 后正好回到该字符（边界点击取当前字符而非前一字符）。
+        let char_idx = chars
+            .iter()
+            .position(|(b, _)| *b > byte_idx)
+            .unwrap_or(chars.len());
+        let idx = char_idx.saturating_sub(1).min(chars.len().saturating_sub(1));
+        let mut start = idx;
+        let mut end = (idx + 1).min(chars.len());
+        while start > 0 && is_word_char(chars[start - 1].1) {
+            start -= 1;
+        }
+        while end < chars.len() && is_word_char(chars[end].1) {
+            end += 1;
+        }
+        // anchor = chars[start] 字节偏移；cursor = chars[end] 字节偏移（end==len 时为 text.len()）。
+        self.anchor = chars.get(start).map(|(b, _)| *b).unwrap_or(0);
+        self.cursor = chars.get(end).map(|(b, _)| *b).unwrap_or(self.text.len());
     }
 
     /// 由 caret 字节偏移推算的 IME 光标屏幕 rect（启发式 8px/char；widget 层用真实度量覆盖）。
@@ -109,6 +185,11 @@ impl TextInputState {
             origin.bottom(),
         )
     }
+}
+
+/// 词字符判定（与浏览器 `is_word_char` 同口径）。
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || c == '/'
 }
 
 /// TextInput Widget 实例。
@@ -131,6 +212,11 @@ pub struct TextInputWidget {
     char_x: Vec<f32>,
     /// 上次 paint 的文本（用于检测 char_x 是否需要重建）。
     painted_text: String,
+    /// 拖拽选择中（鼠标按住拖动时移动 cursor 但保留 anchor）。
+    dragging: bool,
+    /// 上次点击的 (Instant, x, y) 用于双击检测（None = 无上次点击或已过期）。
+    last_click: Option<std::time::Instant>,
+    last_click_pos: (f32, f32),
 }
 
 impl TextInputWidget {
@@ -143,6 +229,9 @@ impl TextInputWidget {
             hover: false,
             char_x: vec![8.0],
             painted_text: String::new(),
+            dragging: false,
+            last_click: None,
+            last_click_pos: (0.0, 0.0),
         }
     }
 
@@ -249,22 +338,57 @@ impl Widget for TextInputWidget {
 
     fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
         match event {
-            UiEvent::Pointer { phase, position, .. } => {
+            UiEvent::Pointer { phase, position, modifiers, .. } => {
                 use zero_ui_core::event::PointerPhase;
                 match phase {
                     PointerPhase::Moved => {
                         self.hover = true;
+                        // 拖拽选择中：移动 cursor 但保留 anchor（extend=true）。
+                        if self.dragging {
+                            let idx = self.cursor_from_x(position.x);
+                            self.state.set_cursor(idx, true);
+                            return EventResult::Consumed;
+                        }
                         EventResult::Consumed
                     }
                     PointerPhase::Pressed => {
-                        // CJK 修复：用缓存的 char_x 反推字符边界（不再用 8px/char 启发式）。
-                        // 若 char_x 还未对齐当前 text（首次点击），退到末尾。
-                        self.state.cursor = self.cursor_from_x(position.x);
-                        self.state.selection = None;
+                        // 双击检测：上次点击 < 500ms 且位移 < 5px → 双击选词。
+                        // 与浏览器地址栏 TAB_BAR_DOUBLE_CLICK_INTERVAL 同口径。
+                        let now = std::time::Instant::now();
+                        let is_double = self
+                            .last_click
+                            .map(|t| {
+                                now.duration_since(t).as_millis() < 500
+                                    && (position.x - self.last_click_pos.0).abs() < 5.0
+                                    && (position.y - self.last_click_pos.1).abs() < 5.0
+                            })
+                            .unwrap_or(false);
+
+                        if is_double {
+                            // 双击：选词，取消 drag（双击不进入拖拽）。
+                            let idx = self.cursor_from_x(position.x);
+                            self.state.select_word_at(idx);
+                            self.dragging = false;
+                            self.last_click = None; // 三击重新开始
+                        } else {
+                            // 单击：定位光标。Shift+单击 = 扩展选区（保留 anchor）。
+                            let idx = self.cursor_from_x(position.x);
+                            let extend = modifiers.contains(zero_ui_core::event::Modifiers::SHIFT);
+                            self.state.set_cursor(idx, extend);
+                            self.dragging = true;
+                            self.last_click = Some(now);
+                            self.last_click_pos = (position.x, position.y);
+                        }
+                        EventResult::Consumed
+                    }
+                    PointerPhase::Released => {
+                        // 释放鼠标：结束拖拽。
+                        self.dragging = false;
                         EventResult::Consumed
                     }
                     PointerPhase::Exited => {
                         self.hover = false;
+                        self.dragging = false;
                         EventResult::Consumed
                     }
                     _ => EventResult::Ignored,
@@ -276,6 +400,7 @@ impl Widget for TextInputWidget {
             }
             UiEvent::Focus(zero_ui_core::event::FocusEvent::Lost) => {
                 self.focused = false;
+                self.dragging = false;
                 EventResult::Consumed
             }
             UiEvent::Ime(ime) => {
@@ -307,49 +432,51 @@ impl Widget for TextInputWidget {
                 modifiers,
             } => {
                 // P1-3：按住键重复输入——KeyAction::Repeat 与 Pressed 同样处理。
-                // winit 在用户按住键时先发 Pressed，之后每帧发 Repeat（OS 重复速率）。
                 if !matches!(action, KeyAction::Pressed | KeyAction::Repeat) {
                     return EventResult::Ignored;
                 }
                 let old_text = self.state.text.clone();
-                // P1-5：Ctrl+A 全选、Ctrl+C 复制、Ctrl+V 粘贴、Ctrl+X 剪切。
-                // 剪贴板经 host 抽象（widget 不直接依赖 arboard，DC-1 浏览器无关约束）。
-                // 当前阶段：Ctrl+A 全选（不需剪贴板），Ctrl+C/V/X 标记 selection（剪贴板后续接入）。
+                let shift = modifiers.contains(zero_ui_core::event::Modifiers::SHIFT);
+                // P1-5：Ctrl+A/C/V/X 快捷键。
+                // **键码契约**：winit `Key::Character("a")` → `KeyCode("a")`（小写字面值，
+                // 不是 "KeyA"）。Ctrl 组合时 winit 传小写字面值，与浏览器 `app_input.rs`
+                // `"t" | "T"` 匹配方式一致。大小写都匹配以兼容 CapsLock。
                 if modifiers.contains(zero_ui_core::event::Modifiers::CONTROL) {
-                    match code.0.as_str() {
-                        "KeyA" => {
-                            // 全选：selection = (0, len)，cursor 移到末尾。
-                            let len = self.state.text.len();
-                            self.state.selection = Some((0, len));
-                            self.state.cursor = len;
+                    let key_lower = code.0.to_ascii_lowercase();
+                    match key_lower.as_str() {
+                        "a" => {
+                            self.state.select_all();
                             return EventResult::Consumed;
                         }
-                        "KeyC" | "KeyX" => {
-                            // 复制/剪切：emit clipboard action（host 负责真剪贴板）。
-                            // 有 selection 时复制选区，否则复制整行（单行=全文）。
-                            let payload = if let Some((s, e)) = self.state.selection {
-                                let (lo, hi) = (s.min(e), s.max(e));
-                                self.state.text[lo..hi].to_string()
+                        "c" => {
+                            let payload = if self.state.has_selection() {
+                                self.state.selected_text().to_string()
                             } else {
                                 self.state.text.clone()
                             };
-                            if code.0.as_str() == "KeyX" && self.state.selection.is_some() {
-                                // 剪切：删除选区。
-                                if let Some((s, e)) = self.state.selection {
-                                    let (lo, hi) = (s.min(e), s.max(e));
-                                    self.state.text.replace_range(lo..hi, "");
-                                    self.state.cursor = lo;
-                                    self.state.selection = None;
-                                }
+                            return EventResult::EmitWithPayload(
+                                ActionId::new("text_input.clipboard_copy"),
+                                zero_ui_core::action::ActionPayload::Text(payload),
+                            );
+                        }
+                        "x" => {
+                            let payload = if self.state.has_selection() {
+                                self.state.selected_text().to_string()
+                            } else {
+                                self.state.text.clone()
+                            };
+                            if self.state.has_selection() {
+                                let (lo, hi) = self.state.selection_range();
+                                self.state.text.replace_range(lo..hi, "");
+                                self.state.cursor = lo;
+                                self.state.anchor = lo;
                             }
                             return EventResult::EmitWithPayload(
                                 ActionId::new("text_input.clipboard_copy"),
                                 zero_ui_core::action::ActionPayload::Text(payload),
                             );
                         }
-                        "KeyV" => {
-                            // 粘贴：emit clipboard_paste 请求 action。
-                            // host 负责读系统剪贴板并回填 text prop（受控同步）。
+                        "v" => {
                             return EventResult::Emit(ActionId::new("text_input.clipboard_paste"));
                         }
                         _ => {} // 其它 Ctrl 组合键不在此处理。
@@ -357,12 +484,9 @@ impl Widget for TextInputWidget {
                 }
                 match code.0.as_str() {
                     "Backspace" => self.state.backspace(),
-                    "ArrowLeft" => self.state.move_cursor(-1),
-                    "ArrowRight" => self.state.move_cursor(1),
-                    "Enter" => {
-                        // Enter 视为提交，不再插入换行（单行输入框语义）。
-                        return EventResult::Consumed;
-                    }
+                    "ArrowLeft" => self.state.move_cursor(-1, shift),
+                    "ArrowRight" => self.state.move_cursor(1, shift),
+                    "Enter" => return EventResult::Consumed,
                     "Escape" => return EventResult::Consumed,
                     _ => {
                         if let Some(ch) = text
@@ -374,13 +498,14 @@ impl Widget for TextInputWidget {
                         }
                     }
                 }
-                // 文本若有变化 → emit text_changed action（应用回写或更新业务状态）。
+                // 文本变化或选区变化 → 需要 repaint。文本变化 emit text_changed。
                 if self.state.text != old_text {
                     EventResult::EmitWithPayload(
                         ActionId::new(ACTION_TEXT_CHANGED),
                         zero_ui_core::action::ActionPayload::Text(self.state.text.clone()),
                     )
                 } else {
+                    // 选区变化或纯 caret 移动 → 重画但不 emit。
                     EventResult::Consumed
                 }
             }
@@ -436,27 +561,59 @@ impl Widget for TextInputWidget {
         } else {
             self.text_color(tokens)
         };
-        let baseline = (self.size.height + 14.0) * 0.5;
-        ctx.recorder.draw_text(&display, Point::new(8.0, baseline), 14.0, fg);
 
-        // CJK 修复：用真实字体度量重建字符 x 偏移表，供 caret 绘制和 click 定位复用。
+        // CJK 修复：用真实字体度量重建字符 x 偏移表，供 caret/选区/click 定位复用。
         // 只对 state.text 缓存（placeholder 不需要 caret）。
         if !self.state.text.is_empty() {
             self.rebuild_char_x(ctx, 14.0, &self.state.text.clone());
         }
 
-        // caret（仅聚焦时画，500ms 周期闪烁）。
-        // P1-4：用 now_ms 算闪烁相位，闪烁周期内调 request_frame 触发下一帧重 paint。
-        if self.focused {
+        // P1-4：选区高亮（在文本之前画，文本叠在上层）。
+        // 选区色 = primary 与 surface 混合的半透明（与浏览器地址栏 selection 背景 同口径）。
+        if self.state.has_selection() && !self.state.text.is_empty() {
+            let (lo, hi) = self.state.selection_range();
+            // 字节偏移 → char 索引 → char_x 索引。
+            let lo_char = self.state.text[..lo].chars().count();
+            let hi_char = self.state.text[..hi].chars().count();
+            let x_start = self
+                .char_x
+                .get(lo_char)
+                .copied()
+                .unwrap_or_else(|| self.char_x.first().copied().unwrap_or(8.0));
+            let x_end = self
+                .char_x
+                .get(hi_char)
+                .copied()
+                .unwrap_or_else(|| self.char_x.last().copied().unwrap_or(8.0));
+            let sel_rect = Rect::from_ltrb(
+                x_start,
+                4.0,
+                x_end.max(x_start + 1.0),
+                self.size.height - 4.0,
+            );
+            let sel_color = Color::rgba(
+                tokens.primary.r * 0.7 + tokens.surface.r * 0.3,
+                tokens.primary.g * 0.7 + tokens.surface.g * 0.3,
+                tokens.primary.b * 0.7 + tokens.surface.b * 0.3,
+                0.35,
+            );
+            ctx.recorder.fill_rect(sel_rect, sel_color);
+        }
+
+        let baseline = (self.size.height + 14.0) * 0.5;
+        ctx.recorder.draw_text(&display, Point::new(8.0, baseline), 14.0, fg);
+
+        // caret（仅聚焦且无选区时画——有选区时光标隐藏，与浏览器地址栏一致）。
+        // 500ms 周期闪烁，闪烁周期内调 request_frame 触发下一帧重 paint。
+        if self.focused && !self.state.has_selection() {
             let caret_visible = match ctx.now_ms {
                 Some(ms) => {
                     // 1068ms 周期：534ms 显 + 534ms 隐（避免与帧率整除导致卡死）。
                     let phase = (ms % 1068) < 534;
-                    // 闪烁需持续重 paint：request_frame 让 host 调度下一帧。
                     ctx.request_frame();
                     phase
                 }
-                None => true, // 无时钟：常亮（不闪）。
+                None => true,
             };
             if caret_visible {
                 ctx.recorder.fill_rect(self.caret_rect(), tokens.primary);
@@ -495,10 +652,10 @@ mod tests {
         st.insert("abc");
         assert_eq!(st.text, "abc");
         assert_eq!(st.cursor, 3);
-        st.move_cursor(-1);
+        st.move_cursor(-1, false);
         st.insert("X");
         assert_eq!(st.text, "abXc");
-        st.move_cursor(1);
+        st.move_cursor(1, false);
         st.backspace();
         assert_eq!(st.text, "abX");
     }
@@ -507,11 +664,14 @@ mod tests {
     fn replace_selection() {
         let mut st = TextInputState::empty();
         st.insert("hello");
-        st.selection = Some((1, 4)); // "ell"
+        // 选区 "ell"：anchor=1, cursor=4。
+        st.anchor = 1;
+        st.cursor = 4;
         st.insert("EL");
         assert_eq!(st.text, "hELo");
         assert_eq!(st.cursor, 3);
-        assert_eq!(st.selection, None);
+        assert_eq!(st.anchor, 3);
+        assert!(!st.has_selection());
     }
 
     #[test]
@@ -585,7 +745,6 @@ mod tests {
     }
 
     /// P1-3 回归：KeyAction::Repeat 必须与 Pressed 同样插入字符（按住键重复输入）。
-    /// 之前 event 只匹配 Pressed，Repeat 落到 _ 被吞。
     #[test]
     fn key_repeat_inserts_character() {
         let mut w = TextInputWidget::new();
@@ -594,14 +753,14 @@ mod tests {
         let mut ec = EventCtx { invalidation: &mut flags };
         // 第一次 Pressed
         let _ = w.event(&mut ec, &UiEvent::Key {
-            code: zero_ui_core::event::KeyCode::new("KeyA"),
+            code: zero_ui_core::event::KeyCode::new("a"),
             action: KeyAction::Pressed,
             modifiers: zero_ui_core::event::Modifiers::NONE,
             text: Some("a".into()),
         });
         // 后续 Repeat（用户按住键）
         let _ = w.event(&mut ec, &UiEvent::Key {
-            code: zero_ui_core::event::KeyCode::new("KeyA"),
+            code: zero_ui_core::event::KeyCode::new("a"),
             action: KeyAction::Repeat,
             modifiers: zero_ui_core::event::Modifiers::NONE,
             text: Some("a".into()),
@@ -610,24 +769,26 @@ mod tests {
         assert_eq!(w.state.text, "aa", "Pressed + Repeat 应各插一次字符");
     }
 
-    /// P1-5 回归：Ctrl+A 全选。selection = (0, len)，cursor = len。
+    /// P1-5 回归：Ctrl+A 全选。anchor=0，cursor=len。
+    /// **键码契约**：winit Character("a") → KeyCode("a")（小写字面值），不是 "KeyA"。
     #[test]
     fn ctrl_a_selects_all() {
         let mut w = TextInputWidget::new();
         w.focused = true;
         w.state.text = "hello".into();
         w.state.cursor = 2;
+        w.state.anchor = 2;
         let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
         let mut ec = EventCtx { invalidation: &mut flags };
         let res = w.event(&mut ec, &UiEvent::Key {
-            code: zero_ui_core::event::KeyCode::new("KeyA"),
+            code: zero_ui_core::event::KeyCode::new("a"),
             action: KeyAction::Pressed,
             modifiers: zero_ui_core::event::Modifiers::CONTROL,
             text: Some("a".into()),
         });
-        assert_eq!(w.state.selection, Some((0, 5)), "Ctrl+A 应全选 [0,5]");
-        assert_eq!(w.state.cursor, 5, "Ctrl+A 后 cursor 移到末尾");
-        // 全选不 emit text_changed（文本未变），返回 Consumed。
+        assert_eq!(w.state.anchor, 0, "Ctrl+A 应 anchor=0");
+        assert_eq!(w.state.cursor, 5, "Ctrl+A 后 cursor=末尾");
+        assert!(w.state.has_selection(), "Ctrl+A 后应有选区");
         assert!(matches!(res, EventResult::Consumed), "全选不应 emit");
     }
 
@@ -637,11 +798,13 @@ mod tests {
         let mut w = TextInputWidget::new();
         w.focused = true;
         w.state.text = "hello".into();
-        w.state.selection = Some((1, 4)); // "ell"
+        // 选区 "ell"：anchor=1, cursor=4。
+        w.state.anchor = 1;
+        w.state.cursor = 4;
         let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
         let mut ec = EventCtx { invalidation: &mut flags };
         let res = w.event(&mut ec, &UiEvent::Key {
-            code: zero_ui_core::event::KeyCode::new("KeyC"),
+            code: zero_ui_core::event::KeyCode::new("c"),
             action: KeyAction::Pressed,
             modifiers: zero_ui_core::event::Modifiers::CONTROL,
             text: None,
@@ -655,7 +818,7 @@ mod tests {
         }
         // 复制不修改文本/选区。
         assert_eq!(w.state.text, "hello");
-        assert_eq!(w.state.selection, Some((1, 4)));
+        assert!(w.state.has_selection());
     }
 
     /// P1-5 回归：Ctrl+X 剪切——既 emit 复制 action，又删除选区。
@@ -664,11 +827,12 @@ mod tests {
         let mut w = TextInputWidget::new();
         w.focused = true;
         w.state.text = "hello".into();
-        w.state.selection = Some((1, 4)); // "ell"
+        w.state.anchor = 1;
+        w.state.cursor = 4; // "ell"
         let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
         let mut ec = EventCtx { invalidation: &mut flags };
         let res = w.event(&mut ec, &UiEvent::Key {
-            code: zero_ui_core::event::KeyCode::new("KeyX"),
+            code: zero_ui_core::event::KeyCode::new("x"),
             action: KeyAction::Pressed,
             modifiers: zero_ui_core::event::Modifiers::CONTROL,
             text: None,
@@ -677,10 +841,11 @@ mod tests {
             EventResult::EmitWithPayload(_, ActionPayload::Text(t)) => assert_eq!(t, "ell"),
             other => panic!("期望 EmitWithPayload，实际 {other:?}"),
         }
-        // 剪切后文本只剩 "ho"，cursor=1，selection=None。
+        // 剪切后文本只剩 "ho"，cursor=1，anchor=1（无选区）。
         assert_eq!(w.state.text, "ho");
         assert_eq!(w.state.cursor, 1);
-        assert_eq!(w.state.selection, None);
+        assert_eq!(w.state.anchor, 1);
+        assert!(!w.state.has_selection());
     }
 
     /// P1-5 回归：Ctrl+V emit clipboard_paste 请求（host 回填）。
@@ -689,10 +854,12 @@ mod tests {
         let mut w = TextInputWidget::new();
         w.focused = true;
         w.state.text = "abc".into();
+        w.state.cursor = 3;
+        w.state.anchor = 3;
         let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
         let mut ec = EventCtx { invalidation: &mut flags };
         let res = w.event(&mut ec, &UiEvent::Key {
-            code: zero_ui_core::event::KeyCode::new("KeyV"),
+            code: zero_ui_core::event::KeyCode::new("v"),
             action: KeyAction::Pressed,
             modifiers: zero_ui_core::event::Modifiers::CONTROL,
             text: None,
@@ -703,5 +870,71 @@ mod tests {
         }
         // 粘贴请求本身不修改文本（等 host 读剪贴板后回填 text prop）。
         assert_eq!(w.state.text, "abc");
+    }
+
+    /// P1-3 回归：Shift+方向键扩展选区（anchor 不动，cursor 移动）。
+    #[test]
+    fn shift_arrow_extends_selection() {
+        let mut st = TextInputState::from_text("hello");
+        st.cursor = 3; // 在 "llo" 第二个 l 后
+        st.anchor = 3;
+        // Shift+Left：cursor 左移，anchor 不动 → 产生选区。
+        st.move_cursor(-1, true);
+        assert_eq!(st.cursor, 2);
+        assert_eq!(st.anchor, 3, "Shift+Left 应保留 anchor");
+        assert!(st.has_selection());
+        assert_eq!(st.selected_text(), "l");
+        // Shift+Right 再回：cursor 右移到 3，与 anchor 重合 → 选区消失。
+        st.move_cursor(1, true);
+        assert_eq!(st.cursor, 3);
+        assert!(!st.has_selection());
+    }
+
+    /// P1-3 回归：select_word_at 双击选词（与浏览器地址栏同口径）。
+    #[test]
+    fn select_word_at_picks_word() {
+        let mut st = TextInputState::from_text("hello world");
+        // 点击落在 "world" 的 'o' 字节偏移（"hello " = 6 字节 + 'w'=1 + 'o'=1 = 8）。
+        st.select_word_at(8);
+        assert_eq!(st.selected_text(), "world");
+    }
+
+    /// P1-3 回归：select_word_at 对 CJK 字符串，连续汉字视为一词（与浏览器一致）。
+    #[test]
+    fn select_word_at_single_cjk_char() {
+        let mut st = TextInputState::from_text("你好");
+        // 点击第一个字"你"（字节偏移 0）。
+        st.select_word_at(0);
+        // CJK 字符 is_alphanumeric()=true，连续汉字合并为"一词"（浏览器行为）。
+        assert_eq!(st.selected_text(), "你好");
+    }
+
+    /// P1-3 回归：select_word_at 在 CJK + 空格 + CJK 场景按词分隔。
+    #[test]
+    fn select_word_at_cjk_with_space() {
+        let mut st = TextInputState::from_text("你好 世界");
+        // 点击"世界"区域（字节偏移 = "你好 " = 7 字节，落在 '世' 上）。
+        st.select_word_at(7);
+        assert_eq!(st.selected_text(), "世界");
+    }
+
+    /// P1-5 回归：Ctrl+A 大小写兼容（CapsLock 时 winit 传 "A" 大写）。
+    #[test]
+    fn ctrl_a_case_insensitive() {
+        let mut w = TextInputWidget::new();
+        w.focused = true;
+        w.state.text = "hello".into();
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
+        let mut ec = EventCtx { invalidation: &mut flags };
+        // 大写 "A"（CapsLock 或 Shift+Ctrl+A）
+        let _ = w.event(&mut ec, &UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("A"),
+            action: KeyAction::Pressed,
+            modifiers: zero_ui_core::event::Modifiers::CONTROL,
+            text: Some("a".into()),
+        });
+        assert_eq!(w.state.anchor, 0, "Ctrl+A 大写也应全选");
+        assert_eq!(w.state.cursor, 5);
+        assert!(w.state.has_selection());
     }
 }
