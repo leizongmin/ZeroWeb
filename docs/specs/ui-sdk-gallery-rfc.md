@@ -895,6 +895,129 @@ tabs/list_view/menu 用 `> Label` / `[X]` ASCII 前缀标记选中，本身在�
 | 测试 | widgets crate 新增 8 个（text 5 + code_block 3）；examples 48 个全过；clippy 干净 |
 | 设计原则确立 | gallery 不再有任何「内部组件」，所有可见控件都来自 ui-sdk |
 
+
+## 9.7 P3-7 + P0/P1 批量修复（用户反馈轮次）
+
+本节记录一次以"用户反馈 6 项 + 内部审计 P0/P1"为驱动的批量修复。修复覆盖字体度量、
+触摸、滚动条、暗色主题、TextInput 光标、overlay 定位、文本换行、chrome hover 态等。
+
+### 9.7.1 字体度量注入（P3-7，根因修复）
+
+**问题**：`WidgetHost` 的 `measure_text` 默认实现是字符宽度累加估算（`char_width_estimate`），
+layout 阶段算的宽度与 paint 阶段真实 advance 不一致。表现为：
+- 中文渲染字间距乱（U-4）
+- CodeBlock 语法高亮关键字染色错（U-6，paint 按 measure 推进 x 但 measure 估错）
+- Button/Toggle/NavItem 宽度对 CJK 标签不准（P1-4）
+
+**修复**：winit runtime 在 `SdkGpuApp::resumed` 把 `FontdueBackend` 包装成 `FontdueTextMeasure`，
+注入 `WidgetHost::set_text_measure`。所有 widget 的 layout 阶段 `ctx.measure_text` 走真实
+fontdue advance，paint 阶段 `PaintRecorder::draw_text` 也走同一 backend。
+
+新增 API：
+- `FontdueBackend::family_names()` / `family_covers_char()` — 支持 per-character fallback
+- `FontdueTextMeasure` — 实现 `TextMeasure` trait，按字体分段累加宽度
+- `LayoutCtx::measure_text` 已存在；新增 `PaintCtx::measure_text`（委托 PaintRecorder）
+
+### 9.7.2 触摸支持（U-2）
+
+**问题**：winit runtime 只处理 `CursorMoved` / `MouseInput` / `MouseWheel`，触摸屏的
+`WindowEvent::Touch` 被默认 `_ => {}` 吃掉，所有 widget 不支持触摸操作。
+
+**修复**：在 `window_event` 加 `WindowEvent::Touch` 分支，用已有的 `event_map::map_touch`
+把触摸事件转 `UiEvent::Pointer`（`TouchPhase::Started` → `PointerPhase::Pressed` + Primary 按钮）。
+
+### 9.7.3 ScrollVertical 滚动条（U-3）
+
+**问题**：`ScrollVertical` 容器支持滚动但不画 scrollbar，用户无法知道是否还有未展示内容。
+
+**修复**：`host::paint::paint_node` 末尾新增 `paint_scrollbar`：
+- 节点是 `ScrollVertical` 容器 + `content_height > viewport` 时画 thumb
+- thumb 高度 = `viewport² / content`（最小 24px），位置按 `scroll_offset / max_scroll` 比例
+- thumb 颜色 = `on_background` 50% 透明，宽度 6px，距右边缘 2px，圆角 3px
+- 新增 `prop_keys::SHOW_SCROLLBAR`（默认 true，设 false 关闭）
+
+### 9.7.4 暗色主题配色（U-5）
+
+**问题**：gallery 根容器、sidebar、demo_area 都没设 `bg` prop，暗色主题下透明，配色不一致。
+
+**修复**：`root_spec` 加 `bg = "background"`，`build_sidebar` 加 `bg = "surface"`，
+`build_demo_area` 加 `bg = "background"`。
+
+### 9.7.5 TextInput 光标（U-1，与 P3-7 协同）
+
+**问题**：点击 TextInput 后无光标，无法输入。
+
+**根因**：`WidgetHost::dispatch_event` 的 Pressed 分支只设 `self.focused`，不派发
+`Focus(Gained)` event。TextInput 的 `focused` 字段永远 false → 不画 caret。
+
+**修复**：Pressed 分支 + Tab 分支都派发 Focus event（旧焦点 Lost，新焦点 Gained）。
+Tab 处理重构：提前到 `root` 借用之前做 `focus_next`，记录 `(old, new)` id，
+root 借用后派发 focus event（避免 borrow checker 冲突）。
+
+### 9.7.6 Overlay 锚点定位（P0-1 + P1-7）
+
+**问题**：popover/tooltip 用 `Rect::ZERO` 作为 anchor；outside-click 误关 overlay 内容。
+
+**修复**：
+1. `OverlayEntry` 新增 `anchor_widget: Option<WidgetId>` + `with_anchor_widget` 构造器。
+   host layout 时优先用 `rect_of(anchor_widget)` 解析真实屏幕 rect。
+2. gallery popover/tooltip 用触发按钮 id 作为 anchor_widget。
+3. host layout overlay 时根据 anchor + overlay 尺寸 + viewport 自动选择上方/下方放置。
+4. outside-click 判断前先检查点是否在 `overlay_root.cached_rect` 内（P1-7）。
+
+### 9.7.7 Text 自动换行（P1-3）
+
+**问题**：Text widget 只按 `\n` 分行，长文本溢出容器宽度。
+
+**修复**：layout 阶段按 `max_width` 用 `ctx.measure_text` 做 word-wrap（拉丁文按空格分词，
+CJK 每字可独立断行），结果存 `self.laid_lines`。paint 用 `laid_lines` + `PaintCtx::measure_text`。
+
+### 9.7.8 Chrome hover 态（P1-5）
+
+**问题**：HeaderButton/NavItem/GroupHeader 只有 pressed 态，无 hover 反馈。
+
+**修复**：三个 widget 都加 `hover: bool` 字段。Moved → hover=true，Exited → reset。
+paint 在 hover 时画轻微高亮背景（surface 92% + on_background 8%）。
+NavItem 四态优先级：selected > pressed > hover > default。
+
+### 9.7.9 Dialog/Popup 按钮去重（P1-6）
+
+**问题**：popup/dialog_scaffold demo 主树和 overlay 都有 OK/Cancel 按钮，重复且主树按钮不可点。
+
+**修复**：主树只保留触发按钮 + 说明文字；OK/Cancel 只在 overlay。
+
+### 9.7.10 Group toggle 中文（P1-9）
+
+**问题**：group toggle 用 `format!("{:?}", page.group)` Debug 格式作为标识，脆弱。
+
+**修复**：用 `GroupId::name_en()` 稳定字符串标识（如 "Widgets"/"Forms"）。
+
+### 9.7.11 其它 P0 修复
+
+- **P0-2**：`button_click` slot 硬上限 `n <= 4` 改为 `(1..=16).contains(&n)`。
+- **P0-3**：`Toggle::update` 只在 label 真变化时标 `NEEDS_LAYOUT`。
+
+### 9.7.12 推后项
+
+以下问题经评估当前视觉/功能可接受，推后处理：
+- **P1-1**：8 个 skeleton widget（Badge/Popover/Popup/Tooltip/Tabs/Menu/Toolbar/IconButton）
+  暂未 impl Widget，但 demo 用 ColoredBox+Text+Button 拼装，视觉真实。
+- **P1-2**：demo 拼装组件问题依赖 P1-1。
+- **P1-8**：animation demo 用 `ColoredBox pulse` 近似动画，未用 Tween/Spring。
+
+### 9.7.13 影响范围
+
+| 模块 | 变更 |
+|---|---|
+| `foundation/text` | `FontdueBackend` 新增 `family_names` / `family_covers_char` |
+| `ui/core` | `PaintCtx::measure_text`；`prop_keys::SHOW_SCROLLBAR` |
+| `ui/overlay` | `OverlayEntry::anchor_widget` + `with_anchor_widget` |
+| `ui/runtime` | host layout overlay 锚点；outside-click 修复；focus event 派发；paint scrollbar |
+| `ui/adapters/winit` | runtime 注入 FontdueTextMeasure；`WindowEvent::Touch` 处理 |
+| `ui/widgets` | Text 自动换行；chrome hover 态；Toggle P0-3 |
+| `ui/examples` | gallery bg token；group toggle name_en；popup/dialog 按钮去重；P0-2 |
+
+
 ---
 
 *RFC 结束。上一段落：Spec（需求规格），当前段落：RFC（技术设计），下一段落：实施交接（逐步骤指令）。*
