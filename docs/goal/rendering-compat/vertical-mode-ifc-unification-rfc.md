@@ -183,7 +183,11 @@ vertical inline 布局缺失致以下子域**全部 R109-blocked**（详见 hand
 
 **Open Question（TBD-1）**：taffy 0.7 布局后，子元素 x 坐标是否可在不重跑 taffy 的前提下按 WM 反转？若不可（float/abspos CB 绑定 x），α-4 须 taffy 升级（§4.6 备选）。须 α-4 session 先做 spike：minimal vertical-rl 容器 + 测 mirror 注入点是否破坏 float case。
 
-**裁决**：α-4 是本 RFC 最高不确定切片。建议实施序：α-1 → α-2 → α-3 → α-4 spike（判断 converter-mirror 可行性）→ 若可行 α-4 实施 / 若不可行 转 taffy 升级 §4.6。
+**★ R1103 spike 完成（TBD-1 resolved：formula 可行，但注入点须 final-pass）**：
+- **可行性 YES**：LAYOUT_DUMP 实测 vertical-rl 块子当前左到右（A x=8 / B x=28），规范应右到左。mirror 公式 `child.x = width - child.x - child.width`（border-box 空间）手算正确（A 0→20 / B 20→0）。
+- **vertical-lr 已正确**：converter+extract_layout 轴交换给 vertical-lr 左到右块流（符合规范），仅 vertical-rl 需 mirror。
+- **float/margin-collapse 风险低**：mirror 是纯位置变换（非重定位），float 后处理更早完成（无冲突），区别于 R1043 postprocess mirror 独立 pass 丢状态。
+- **★ 注入点 refined——extract_layout 过早**：在 engine.rs:1302（HorizontalTb children 调整旁）加 VerticalRl mirror 分支后，外 div width 40→784（content-based block-size 变 full-width）。根因：extract_layout 在 apply_intrinsic_content_sizing / remeasure 等多次重算 pass 中反复调用，输出 mirror 被下游 size-recompute 读到（mirrored 子 x → max right edge → width=784）。**裁决：mirror 须放 compute 流程末尾 final pass（所有 set_style+mark_dirty 重算 + postprocess 之后），或 taffy 级变换**，不能放 extract_layout。下会话 α-4 实施 = engine.rs compute 末尾加 vertical-rl mirror pass。
 
 ---
 
