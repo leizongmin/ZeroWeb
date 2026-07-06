@@ -119,7 +119,9 @@ vertical inline 布局缺失致以下子域**全部 R109-blocked**（详见 hand
 
 每切片**独立 A/B 门禁**：`make reftest-oracle DIR=<scoped>` 看 net oracle-pass 变化 + `make product-smoke`（welcome <20%）+ self-source 不降 + horizontal-tb 字节一致。**net-0/正即留，net-负即回退并记 evidence**。切片间有依赖（未协调层须显式 gate 回避）。
 
-依赖图：`α-1 (Layer1) → α-3 (Layer4) / α-2 (Layer3) → α-5 (解 gate)；α-4 (Layer2) ∥ α-1（独立但建议 α-1 后）`。
+依赖图：`α-1 (Layer1) → α-2 (Layer3, done) → α-4 (Layer2) → α-3 (Layer4) → α-5 (解 gate)`。
+
+> **★ R1102 依赖修订**：原序 α-1→α-2→α-3→α-4 被 α-3 实测 net-negative -26 推翻。vertical 文本列流向（Layer 2 block-flow，α-4）是其他层的几何基线——在错的 block-flow 上修 Layer 4 装饰只会更远离 chromium（α-3 实测 css-text-decor 108→82）。**修订：α-4（block-flow）须先于 α-3（装饰）**。详见 master.md R1102。
 
 ### 4.1 Slice α-1 — Layer 1 container_width WM-aware（decoration-gate 探针）
 
@@ -146,6 +148,7 @@ vertical inline 布局缺失致以下子域**全部 R109-blocked**（详见 hand
 - **预期**：css-text-decor vertical 案 + text-emphasis-position 003/005/006 簇解锁（R1052 -26 的反向修复）。
 - **门禁**：A/B `DIR=css/css-text-decor` + css-text-decor 子目录。net ≥0（与 α-1 bundle 后应恢复 α-1 gate out 的案）→ LAND。
 - **依赖**：α-1（chars 须垂直推进，装饰坐标基于字符位置）。建议 α-1 gate 案在此切片后解除（α-5）。
+- **★ R1102 修订：α-3 依赖 α-4 先行**。α-3 单独实施（vertical emphasis + 收窄 α-1 gate）A/B css-text-decor 108→82（**-26 net-negative**）。根因：vertical 列流向（Layer 2 block-flow，α-4 未修）是装饰坐标的几何基线；在错的列流上正确放置 emphasis → 比 chromium 更远。**α-3 须在 α-4（block-flow mirror）之后**。原"α-1 gate 案在 α-3 后解除"推迟到 α-4+α-3 都 done。
 
 ### 4.4 Slice α-4 — Layer 2 converter-layer block-flow mirror（依赖 α-1，最难）
 
