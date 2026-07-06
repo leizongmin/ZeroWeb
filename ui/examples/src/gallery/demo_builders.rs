@@ -175,10 +175,8 @@ impl GalleryApp {
             icon.props.insert("name", Value::Text((*icon_name).into()));
             icon.props.insert("size", Value::Float(24.0));
             // 选中态用 primary 色，未选中用 muted；让 icon 视觉强化与按钮 hover 联动。
-            icon.props.insert(
-                "color",
-                Value::Text(if active { "primary" } else { "muted" }.into()),
-            );
+            icon.props
+                .insert("color", Value::Text(if active { "primary" } else { "muted" }.into()));
             icon.props.insert("label", Value::Text((*name).into()));
             row.children.push(icon);
 
@@ -321,8 +319,7 @@ impl GalleryApp {
 
         let mut row = self.themed_container("Row", "demo_tabs_row");
         row.props.insert("gap", Value::Float(4.0));
-        row.props
-            .insert("cross_axis_align", Value::Text("center".into()));
+        row.props.insert("cross_axis_align", Value::Text("center".into()));
         let tabs = ["General", "Privacy", "Security"];
         let selected = (st.pressed as usize).saturating_sub(1).min(2);
         for (i, label) in tabs.iter().enumerate() {
@@ -341,14 +338,7 @@ impl GalleryApp {
             btn.props.insert("label", Value::Text((*label).to_string()));
             btn.props.insert(
                 "variant",
-                Value::Text(
-                    if i == selected {
-                        "selected"
-                    } else {
-                        "neutral"
-                    }
-                    .into(),
-                ),
+                Value::Text(if i == selected { "selected" } else { "neutral" }.into()),
             );
             btn.props
                 .insert("action", Value::Text(format!("gallery.demo.button_click.{}", i + 1)));
@@ -405,8 +395,7 @@ impl GalleryApp {
         for i in 0..5usize {
             let mut row = self.themed_container("Row", &format!("demo_list_row_{}", i));
             row.props.insert("gap", Value::Float(8.0));
-            row.props
-                .insert("cross_axis_align", Value::Text("center".into()));
+            row.props.insert("cross_axis_align", Value::Text("center".into()));
 
             // P3-5-2：选中项前加 check Icon（替代 ASCII "> "）。
             if i == selected {
@@ -430,18 +419,10 @@ impl GalleryApp {
 
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_list_item_{}", i)));
-            btn.props
-                .insert("label", Value::Text(format!("Item {}", i + 1)));
+            btn.props.insert("label", Value::Text(format!("Item {}", i + 1)));
             btn.props.insert(
                 "variant",
-                Value::Text(
-                    if i == selected {
-                        "selected"
-                    } else {
-                        "neutral"
-                    }
-                    .into(),
-                ),
+                Value::Text(if i == selected { "selected" } else { "neutral" }.into()),
             );
             btn.props
                 .insert("action", Value::Text(format!("gallery.demo.button_click.{}", i + 1)));
@@ -466,8 +447,7 @@ impl GalleryApp {
         for (label, name, idx) in items.iter() {
             let mut row = self.themed_container("Row", &format!("demo_menu_row_{}", name));
             row.props.insert("gap", Value::Float(8.0));
-            row.props
-                .insert("cross_axis_align", Value::Text("center".into()));
+            row.props.insert("cross_axis_align", Value::Text("center".into()));
 
             // P3-5-2：选中项前加 check Icon（替代 ASCII "> "）。
             if *idx == selected {
@@ -492,14 +472,7 @@ impl GalleryApp {
             btn.props.insert("label", Value::Text((*label).to_string()));
             btn.props.insert(
                 "variant",
-                Value::Text(
-                    if *idx == selected {
-                        "selected"
-                    } else {
-                        "neutral"
-                    }
-                    .into(),
-                ),
+                Value::Text(if *idx == selected { "selected" } else { "neutral" }.into()),
             );
             btn.props
                 .insert("action", Value::Text(format!("gallery.demo.button_click.{}", idx)));
@@ -518,9 +491,7 @@ impl GalleryApp {
         // 搜索输入框 + search Icon 前缀（更像真实搜索框）。
         let mut input_row = self.themed_container("Row", "demo_search_input_row");
         input_row.props.insert("gap", Value::Float(8.0));
-        input_row
-            .props
-            .insert("cross_axis_align", Value::Text("center".into()));
+        input_row.props.insert("cross_axis_align", Value::Text("center".into()));
 
         let mut search_icon = WidgetSpec::new("Icon");
         search_icon.id = Some(WidgetId::new("demo_search_icon"));
@@ -556,16 +527,14 @@ impl GalleryApp {
         } else if matches.is_empty() {
             let mut no_match = WidgetSpec::new("Text");
             no_match.id = Some(WidgetId::new("demo_search_no_match"));
-            no_match.props
-                .insert("text", Value::Text("No match".into()));
+            no_match.props.insert("text", Value::Text("No match".into()));
             col.children.push(no_match);
         } else {
             // 每个建议一行：check Icon + Button（点击选中）。
             for (i, candidate) in matches.iter().enumerate() {
                 let mut row = self.themed_container("Row", &format!("demo_search_row_{}", i));
                 row.props.insert("gap", Value::Float(8.0));
-                row.props
-                    .insert("cross_axis_align", Value::Text("center".into()));
+                row.props.insert("cross_axis_align", Value::Text("center".into()));
 
                 let mut check = WidgetSpec::new("Icon");
                 check.id = Some(WidgetId::new(&format!("demo_search_check_{}", i)));
@@ -578,12 +547,9 @@ impl GalleryApp {
                 let mut btn = WidgetSpec::new("Button");
                 btn.id = Some(WidgetId::new(&format!("demo_search_item_{}", i)));
                 btn.props.insert("label", Value::Text((*candidate).to_string()));
+                btn.props.insert("variant", Value::Text("neutral".into()));
                 btn.props
-                    .insert("variant", Value::Text("neutral".into()));
-                btn.props.insert(
-                    "action",
-                    Value::Text(format!("gallery.demo.button_click.{}", i + 1)),
-                );
+                    .insert("action", Value::Text(format!("gallery.demo.button_click.{}", i + 1)));
                 row.children.push(btn);
                 col.children.push(row);
             }
@@ -652,10 +618,8 @@ impl GalleryApp {
             icon.id = Some(WidgetId::new(&format!("demo_toolbar_glyph_{}", idx)));
             icon.props.insert("name", Value::Text((*icon_name).into()));
             icon.props.insert("size", Value::Float(20.0));
-            icon.props.insert(
-                "color",
-                Value::Text(if active { "primary" } else { "muted" }.into()),
-            );
+            icon.props
+                .insert("color", Value::Text(if active { "primary" } else { "muted" }.into()));
             icon.props.insert("label", Value::Text((*label).into()));
             row.children.push(icon);
 
@@ -726,10 +690,7 @@ impl GalleryApp {
         hint.id = Some(WidgetId::new("demo_popup_hint"));
         hint.props.insert(
             "text",
-            Value::Text(
-                "Click trigger to toggle modal popup. OK/Cancel buttons appear in the overlay."
-                    .into(),
-            ),
+            Value::Text("Click trigger to toggle modal popup. OK/Cancel buttons appear in the overlay.".into()),
         );
         col.children.push(hint);
         col
@@ -769,9 +730,7 @@ impl GalleryApp {
             toggle
                 .props
                 .insert("action", Value::Text(format!("gallery.demo.toggle.{}", i)));
-            toggle
-                .props
-                .insert("label", Value::Text(format!("Item {}", i + 1)));
+            toggle.props.insert("label", Value::Text(format!("Item {}", i + 1)));
             toggle.props.insert("enabled", Value::Bool(true));
             list_col.children.push(toggle);
         }
@@ -942,10 +901,9 @@ impl GalleryApp {
 
             let mut marker = WidgetSpec::new("ColoredBox");
             marker.id = Some(WidgetId::new(&format!("demo_gesture_marker_{}", i)));
-            marker.props.insert(
-                "color",
-                Value::Text(if active { "primary" } else { "muted" }.into()),
-            );
+            marker
+                .props
+                .insert("color", Value::Text(if active { "primary" } else { "muted" }.into()));
             marker.props.insert("width", Value::Float(8.0));
             marker.props.insert("height", Value::Float(20.0));
             marker.props.insert("label", Value::Text((*label).into()));
@@ -1140,21 +1098,15 @@ impl GalleryApp {
         let mut row = self.themed_container("Row", "demo_nav_row");
         row.props.insert("gap", Value::Float(4.0));
         row.props.insert("cross_axis_align", Value::Text("center".into()));
-        let items = [
-            ("back", "Back", 1u32),
-            ("forward", "Forward", 2),
-            ("home", "Home", 3),
-        ];
+        let items = [("back", "Back", 1u32), ("forward", "Forward", 2), ("home", "Home", 3)];
         for (icon_name, label, idx) in items.iter() {
             let active = *idx == st.pressed;
             let mut icon = WidgetSpec::new("Icon");
             icon.id = Some(WidgetId::new(&format!("demo_nav_marker_{}", idx)));
             icon.props.insert("name", Value::Text((*icon_name).into()));
             icon.props.insert("size", Value::Float(20.0));
-            icon.props.insert(
-                "color",
-                Value::Text(if active { "primary" } else { "muted" }.into()),
-            );
+            icon.props
+                .insert("color", Value::Text(if active { "primary" } else { "muted" }.into()));
             icon.props.insert("label", Value::Text((*label).into()));
             row.children.push(icon);
 

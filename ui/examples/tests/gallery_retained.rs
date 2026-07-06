@@ -12,10 +12,10 @@ use zero_ui_core::geometry::{Point, Rect, Vec2};
 use zero_ui_core::layout::WindowMetrics;
 use zero_ui_core::widget::WidgetId;
 use zero_ui_examples::{GalleryApp, register_gallery_factories};
-use zero_ui_runtime::UiApp;
-use zero_ui_widgets::ACTION_TEXT_CHANGED;
 use zero_ui_render::Scene;
 use zero_ui_render::render_node::RenderPrimitive;
+use zero_ui_runtime::UiApp;
+use zero_ui_widgets::ACTION_TEXT_CHANGED;
 
 fn pointer(phase: PointerPhase, position: Point) -> UiEvent {
     UiEvent::Pointer {
@@ -438,6 +438,66 @@ fn text_input_in_search_field_updates_state() {
 }
 
 #[test]
+fn text_input_ime_commit_inserts_cjk_text() {
+    // CJK 输入端到端回归（第三轮用户反馈核心 bug）：
+    // 验证 driver.pump_event(UiEvent::Ime(Commit)) 经 host.dispatch_event
+    // 真正路由到 focused TextInput 并更新 state.text。
+    //
+    // 历史根因（三层断点）：
+    // 1. winit runtime 未调 set_ime_allowed(true) → IME 事件根本不产生
+    // 2. host.dispatch_event 没有 UiEvent::Ime 分支 → 事件被 _ => {} 吞掉
+    // 3. TextInput event 未处理 UiEvent::Ime → 即使收到也不插入
+    // 本测试覆盖第 2、3 层（第 1 层是 winit 平台行为，需手动验证）。
+    let mut app = GalleryApp::new();
+    app.current_page = "search_field".into();
+    {
+        let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+        register_gallery_factories(driver.host_mut());
+        driver.begin();
+
+        // 点击输入框聚焦。
+        let rect = driver
+            .host()
+            .rect_of(&WidgetId::new("demo_search_input"))
+            .expect("demo_search_input must be laid out");
+        let center = Point::new(
+            rect.origin.x + rect.size.width / 2.0,
+            rect.origin.y + rect.size.height / 2.0,
+        );
+        driver.pump_event(&pointer(PointerPhase::Pressed, center));
+        driver.pump_event(&pointer(PointerPhase::Released, center));
+
+        // 模拟 IME 提交中文 "你好"（两次 Commit，模拟逐字输入）。
+        driver.pump_event(&UiEvent::Ime(zero_ui_core::event::ImeEvent::Commit("你".into())));
+        driver.pump_event(&UiEvent::Ime(zero_ui_core::event::ImeEvent::Commit("好".into())));
+        driver.pump_frame();
+    }
+    assert_eq!(
+        app.current_demo_read().text,
+        "你好",
+        "IME Commit 应插入中文到 TextInput"
+    );
+}
+
+#[test]
+fn text_input_ime_commit_requires_focus() {
+    // 守卫：未聚焦的 TextInput 不应接收 IME 事件（IME 语义=插入到当前焦点）。
+    // 若 host 错误地把 Ime 广播到所有节点，本测试会失败。
+    let mut app = GalleryApp::new();
+    app.current_page = "search_field".into();
+    {
+        let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+        register_gallery_factories(driver.host_mut());
+        driver.begin();
+
+        // 不点击聚焦，直接发 IME Commit → 不应进入 TextInput。
+        driver.pump_event(&UiEvent::Ime(zero_ui_core::event::ImeEvent::Commit("你".into())));
+        driver.pump_frame();
+    }
+    assert_eq!(app.current_demo_read().text, "", "未聚焦时 IME Commit 不应修改 text");
+}
+
+#[test]
 fn all_pages_render_without_panic() {
     // P2-12 回归：所有 page 都能正确构建 + paint（不 panic）。
     // 这是兜底测试——确保新增 demo builder 没有破坏其它 page。
@@ -501,18 +561,12 @@ fn list_view_selected_row_has_check_icon() {
     register_gallery_factories(driver.host_mut());
     driver.begin();
     assert!(
-        driver
-            .host()
-            .rect_of(&WidgetId::new("demo_list_check_1"))
-            .is_some(),
+        driver.host().rect_of(&WidgetId::new("demo_list_check_1")).is_some(),
         "选中项 1 应有 check Icon"
     );
     // 未选中项不应有 check Icon（只有 spacer）。
     assert!(
-        driver
-            .host()
-            .rect_of(&WidgetId::new("demo_list_check_0"))
-            .is_none(),
+        driver.host().rect_of(&WidgetId::new("demo_list_check_0")).is_none(),
         "未选中项 0 不应有 check Icon"
     );
 }
@@ -531,10 +585,7 @@ fn menu_selected_item_has_check_icon() {
     register_gallery_factories(driver.host_mut());
     driver.begin();
     assert!(
-        driver
-            .host()
-            .rect_of(&WidgetId::new("demo_menu_check_save"))
-            .is_some(),
+        driver.host().rect_of(&WidgetId::new("demo_menu_check_save")).is_some(),
         "选中项 save 应有 check Icon"
     );
 }
@@ -554,10 +605,7 @@ fn tabs_selected_tab_has_check_icon() {
     driver.begin();
     // pressed==2 → selected=1。
     assert!(
-        driver
-            .host()
-            .rect_of(&WidgetId::new("demo_tab_check_1"))
-            .is_some(),
+        driver.host().rect_of(&WidgetId::new("demo_tab_check_1")).is_some(),
         "选中 tab 1 应有 check Icon"
     );
 }
@@ -577,17 +625,11 @@ fn search_field_has_search_icon_and_suggestions_are_buttons() {
     register_gallery_factories(driver.host_mut());
     driver.begin();
     assert!(
-        driver
-            .host()
-            .rect_of(&WidgetId::new("demo_search_icon"))
-            .is_some(),
+        driver.host().rect_of(&WidgetId::new("demo_search_icon")).is_some(),
         "search Icon 应存在"
     );
     assert!(
-        driver
-            .host()
-            .rect_of(&WidgetId::new("demo_search_item_0"))
-            .is_some(),
+        driver.host().rect_of(&WidgetId::new("demo_search_item_0")).is_some(),
         "建议项 0 应是 Button（demo_search_item_0）"
     );
 }
@@ -607,10 +649,7 @@ fn tooltip_demo_uses_overlay_not_inline_bubble() {
     register_gallery_factories(driver.host_mut());
     driver.begin();
     driver.pump_frame();
-    assert!(
-        driver.host().has_overlay_visual(),
-        "hover 后 tooltip overlay 应出现"
-    );
+    assert!(driver.host().has_overlay_visual(), "hover 后 tooltip overlay 应出现");
 }
 
 // ── P3-4 新能力回归测试 ──────────────────────────────────────────────────
@@ -658,10 +697,7 @@ fn popover_demo_creates_overlay_when_open() {
     register_gallery_factories(driver.host_mut());
     driver.begin();
     // 默认 pressed==0 → 无 overlay。
-    assert!(
-        !driver.host().has_overlay_visual(),
-        "默认状态无 overlay"
-    );
+    assert!(!driver.host().has_overlay_visual(), "默认状态无 overlay");
     // 点击打开按钮（slot 1）→ pressed==1 → overlay 出现。
     driver.pump_event(&UiEvent::Pointer {
         phase: zero_ui_core::event::PointerPhase::Pressed,
@@ -754,10 +790,18 @@ fn command_palette_renders_per_item_buttons_with_markers() {
     let mut found_buttons = 0;
     let mut found_markers = 0;
     for i in 0..5 {
-        if driver.host().rect_of(&WidgetId::new(&format!("demo_cmd_item_{}", i))).is_some() {
+        if driver
+            .host()
+            .rect_of(&WidgetId::new(&format!("demo_cmd_item_{}", i)))
+            .is_some()
+        {
             found_buttons += 1;
         }
-        if driver.host().rect_of(&WidgetId::new(&format!("demo_cmd_marker_{}", i))).is_some() {
+        if driver
+            .host()
+            .rect_of(&WidgetId::new(&format!("demo_cmd_marker_{}", i)))
+            .is_some()
+        {
             found_markers += 1;
         }
     }

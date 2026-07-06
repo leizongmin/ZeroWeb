@@ -198,8 +198,7 @@ impl Widget for Button {
         // P3-4-1：圆角背景 + 真文本 label（之前只画 fill_rect 背景，label 全靠 semantics 传）。
         let rect = Rect::from_ltrb(0.0, 0.0, self.size.width, self.size.height);
         // 6px 圆角，视觉更接近真实按钮；disabled/hover 不改圆角，只改颜色。
-        ctx.recorder
-            .fill_rounded_rect(rect, 6.0, self.background(ctx.tokens));
+        ctx.recorder.fill_rounded_rect(rect, 6.0, self.background(ctx.tokens));
         // label 文本：14px，垂直居中（baseline ≈ height/2 + 5）；水平居中近似用 padding/2。
         // 颜色按 variant 选反色（on_primary）或 on_surface（neutral）。
         let fg = self.foreground_color(ctx.tokens);
@@ -703,11 +702,7 @@ mod tests {
             "paint 应产出 1 个 fill_rounded_rect（背景）"
         );
         assert_eq!(rec.rounded_fills[0].1, 6.0, "圆角半径应为 6");
-        assert_eq!(
-            rec.texts.len(),
-            1,
-            "paint 应产出 1 个 draw_text（label）"
-        );
+        assert_eq!(rec.texts.len(), 1, "paint 应产出 1 个 draw_text（label）");
         assert_eq!(rec.texts[0].0, "Save", "draw_text 文本应是 label");
         assert_eq!(rec.texts[0].2, 14.0, "字号 14");
     }

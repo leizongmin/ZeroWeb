@@ -207,7 +207,10 @@ impl<'a> PaintCtx<'a> {
     /// 返回 TextSize（与 LayoutCtx::measure_text 同结构）。
     pub fn measure_text(&mut self, text: &str, font_size: f32) -> TextSize {
         let w = self.recorder.measure_text(text, font_size);
-        TextSize { width: w, height: font_size }
+        TextSize {
+            width: w,
+            height: font_size,
+        }
     }
 }
 

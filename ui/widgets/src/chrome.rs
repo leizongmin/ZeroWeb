@@ -316,10 +316,7 @@ impl Widget for NavItem {
                 ..
             } => {
                 self.pressed = false;
-                EventResult::EmitWithPayload(
-                    self.action.clone(),
-                    ActionPayload::Text(self.page_id.clone()),
-                )
+                EventResult::EmitWithPayload(self.action.clone(), ActionPayload::Text(self.page_id.clone()))
             }
             // P1-5：hover 态。
             UiEvent::Pointer {
@@ -367,8 +364,7 @@ impl Widget for NavItem {
                 tokens.surface.g * 0.92 + tokens.on_background.g * 0.08,
                 tokens.surface.b * 0.92 + tokens.on_background.b * 0.08,
             );
-            ctx.recorder
-                .fill_rect(Rect::from_origin_size(Point::ZERO, size), hov);
+            ctx.recorder.fill_rect(Rect::from_origin_size(Point::ZERO, size), hov);
         }
         if self.pressed && !self.selected {
             ctx.recorder
@@ -451,10 +447,7 @@ impl Widget for GroupHeader {
                 ..
             } => {
                 self.pressed = false;
-                EventResult::EmitWithPayload(
-                    self.action.clone(),
-                    ActionPayload::Text(self.group.clone()),
-                )
+                EventResult::EmitWithPayload(self.action.clone(), ActionPayload::Text(self.group.clone()))
             }
             // P1-5：hover 态。
             UiEvent::Pointer {
@@ -490,8 +483,7 @@ impl Widget for GroupHeader {
                 tokens.surface.g * 0.92 + tokens.on_background.g * 0.08,
                 tokens.surface.b * 0.92 + tokens.on_background.b * 0.08,
             );
-            ctx.recorder
-                .fill_rect(Rect::from_origin_size(Point::ZERO, size), hov);
+            ctx.recorder.fill_rect(Rect::from_origin_size(Point::ZERO, size), hov);
         }
         let prefix = if self.collapsed { "▸ " } else { "▾ " };
         let display = format!("{}{}", prefix, self.label);
@@ -521,6 +513,12 @@ pub struct NavSearch {
     pub(crate) query: String,
     pub(crate) placeholder: String,
     pub(crate) action: ActionId,
+    /// U3-3 修复：追踪 focus/hover 状态，focused 时显示 caret（与 TextInput 一致）。
+    pub(crate) focused: bool,
+    pub(crate) hover: bool,
+    /// CJK 修复：缓存每个字符边界对应的累计 x 偏移（含起始 8.0 padding）。
+    /// `char_x[i]` = query 前 i 个字符累计像素宽度 + 8.0。长度 = chars + 1。
+    pub(crate) char_x: Vec<f32>,
 }
 
 impl Default for NavSearch {
@@ -535,7 +533,23 @@ impl NavSearch {
             query: String::new(),
             placeholder: String::from("Search..."),
             action: ActionId::new("search"),
+            focused: false,
+            hover: false,
+            char_x: vec![8.0],
         }
+    }
+
+    /// 用 measure_text 重建 char_x 缓存（paint 阶段调用）。
+    fn rebuild_char_x(&mut self, ctx: &mut PaintCtx, font_size: f32) {
+        let mut xs = Vec::with_capacity(self.query.chars().count() + 1);
+        xs.push(8.0);
+        let mut buf = String::new();
+        for ch in self.query.chars() {
+            buf.push(ch);
+            let w = ctx.measure_text(&buf, font_size).width;
+            xs.push(8.0 + w);
+        }
+        self.char_x = xs;
     }
 }
 
@@ -549,7 +563,52 @@ impl Widget for NavSearch {
         }
         mark_paint_if_changed(ctx, query_changed || placeholder_changed);
     }
-    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+    fn event(&mut self, ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
+        // U3-3：focus/hover 与 TextInput 同口径。
+        match event {
+            UiEvent::Focus(zero_ui_core::event::FocusEvent::Gained) => {
+                self.focused = true;
+                *ctx.invalidation |= InvalidationFlags::NEEDS_PAINT;
+                return EventResult::Consumed;
+            }
+            UiEvent::Focus(zero_ui_core::event::FocusEvent::Lost) => {
+                self.focused = false;
+                *ctx.invalidation |= InvalidationFlags::NEEDS_PAINT;
+                return EventResult::Consumed;
+            }
+            UiEvent::Pointer { phase, position, .. } => match phase {
+                PointerPhase::Moved => {
+                    if !self.hover {
+                        self.hover = true;
+                        *ctx.invalidation |= InvalidationFlags::NEEDS_PAINT;
+                    }
+                    return EventResult::Consumed;
+                }
+                PointerPhase::Pressed => {
+                    // CJK 修复：点击定位不适用 NavSearch（受控单 query，caret 永远在末尾）。
+                    // 忽略点击位置，仅消费事件让 host 给 focus。
+                    let _ = position;
+                    return EventResult::Consumed;
+                }
+                PointerPhase::Exited => {
+                    self.hover = false;
+                    *ctx.invalidation |= InvalidationFlags::NEEDS_PAINT;
+                    return EventResult::Consumed;
+                }
+                _ => {}
+            },
+            UiEvent::Ime(ime) => {
+                // CJK 输入修复：IME Commit 把合成完成的文本追加到 query（受控 emit）。
+                if let zero_ui_core::event::ImeEvent::Commit(s) = ime
+                    && !s.is_empty()
+                {
+                    let q = format!("{}{}", self.query, s);
+                    return EventResult::EmitWithPayload(self.action.clone(), ActionPayload::Text(q));
+                }
+                return EventResult::Consumed;
+            }
+            _ => {}
+        }
         let UiEvent::Key {
             code,
             action: KeyAction::Pressed,
@@ -591,26 +650,52 @@ impl Widget for NavSearch {
     fn paint(&mut self, ctx: &mut PaintCtx) {
         let tokens = ctx.tokens;
         let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(220.0, 32.0));
-        let border = Color::rgb(
-            tokens.on_background.r * 0.4 + tokens.background.r * 0.6,
-            tokens.on_background.g * 0.4 + tokens.background.g * 0.6,
-            tokens.on_background.b * 0.4 + tokens.background.b * 0.6,
-        );
+        // U3-3：focused 用 primary 高亮，hover 用次级色，否则中性边框（与 TextInput 一致）。
+        let border = if self.focused {
+            tokens.primary
+        } else if self.hover {
+            tokens.primary.mix(tokens.surface, 0.4)
+        } else {
+            tokens.on_background.mix(tokens.background, 0.6)
+        };
         ctx.recorder
             .fill_rect(Rect::from_origin_size(Point::ZERO, size), tokens.background);
-        ctx.recorder
-            .stroke_rect(Rect::from_origin_size(Point::ZERO, size), border, 1.0);
+        ctx.recorder.stroke_rect(
+            Rect::from_origin_size(Point::ZERO, size),
+            border,
+            if self.focused { 2.0 } else { 1.0 },
+        );
+        // CJK 修复：去掉 "🔍 " 前缀（emoji 宽度不固定，让 caret 计算更复杂）。
+        // 搜索框语义：query 即显示文本，空时显 placeholder。
         let display = if self.query.is_empty() {
             self.placeholder.clone()
         } else {
-            format!("🔍 {}", self.query)
+            self.query.clone()
         };
-        let fg = Color::rgb(
-            tokens.on_background.r * 0.5 + tokens.background.r * 0.5,
-            tokens.on_background.g * 0.5 + tokens.background.g * 0.5,
-            tokens.on_background.b * 0.5 + tokens.background.b * 0.5,
-        );
-        ctx.recorder.draw_text(&display, Point::new(8.0, 22.0), 13.0, fg);
+        let fg = if self.query.is_empty() {
+            tokens.on_background.mix(tokens.background, 0.5)
+        } else {
+            tokens.on_background
+        };
+        let text_x = 8.0;
+        ctx.recorder.draw_text(&display, Point::new(text_x, 22.0), 13.0, fg);
+        // CJK 修复：用真实字体度量重建 query 的 char_x（仅在 query 非空时）。
+        if !self.query.is_empty() {
+            self.rebuild_char_x(ctx, 13.0);
+        }
+        // U3-3：focused 时显示 caret（与 TextInput 一致）。caret 始终在 query 末尾
+        // （NavSearch 是受控追加型，无中间编辑）。
+        if self.focused {
+            let caret_x = if self.query.is_empty() {
+                text_x
+            } else {
+                *self.char_x.last().unwrap_or(&text_x)
+            };
+            ctx.recorder.fill_rect(
+                Rect::from_origin_size(Point::new(caret_x, 8.0), Size::new(1.5, 16.0)),
+                tokens.primary,
+            );
+        }
     }
     fn focusable(&self) -> bool {
         true
@@ -665,5 +750,70 @@ impl Widget for DemoTitle {
         );
         ctx.recorder
             .draw_text(&self.desc, Point::new(16.0, 46.0), 13.0, desc_fg);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// U3-3 回归：NavSearch 收到 Focus(Gained) 后进入 focused 状态，且标记 NEEDS_PAINT。
+    #[test]
+    fn nav_search_focus_sets_focused_and_marks_paint() {
+        let mut w = NavSearch::new();
+        let mut flags = InvalidationFlags::CLEAN;
+        let mut ec = EventCtx {
+            invalidation: &mut flags,
+        };
+        let res = w.event(&mut ec, &UiEvent::Focus(zero_ui_core::event::FocusEvent::Gained));
+        assert!(matches!(res, EventResult::Consumed));
+        assert!(w.focused, "Focus(Gained) 应进入 focused 态");
+        assert!(
+            flags.contains(InvalidationFlags::NEEDS_PAINT),
+            "Focus(Gained) 应标记 NEEDS_PAINT"
+        );
+    }
+
+    /// U3-3 回归：NavSearch focused 后，输入字符 emit 带 query 的 action。
+    /// （键盘事件转发到 host 后，TextInput / NavSearch 才能真正输入——U1-2/U3-3 的根因。）
+    #[test]
+    fn nav_search_emits_query_on_keypress_when_focused() {
+        let mut w = NavSearch::new();
+        w.focused = true;
+        let mut flags = InvalidationFlags::CLEAN;
+        let mut ec = EventCtx {
+            invalidation: &mut flags,
+        };
+        let ev = UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("KeyA"),
+            action: KeyAction::Pressed,
+            modifiers: zero_ui_core::event::Modifiers::NONE,
+            text: Some("a".into()),
+        };
+        let res = w.event(&mut ec, &ev);
+        match res {
+            EventResult::EmitWithPayload(_, ActionPayload::Text(q)) => assert_eq!(q, "a"),
+            other => panic!("期望 EmitWithPayload，实际 {other:?}"),
+        }
+    }
+
+    /// CJK 输入回归：NavSearch focused 后 IME Commit("搜") 把中文追加到 query 并 emit。
+    #[test]
+    fn nav_search_ime_commit_appends_cjk_to_query() {
+        let mut w = NavSearch::new();
+        w.focused = true;
+        w.query = "ab".into();
+        let mut flags = InvalidationFlags::CLEAN;
+        let mut ec = EventCtx {
+            invalidation: &mut flags,
+        };
+        let res = w.event(
+            &mut ec,
+            &UiEvent::Ime(zero_ui_core::event::ImeEvent::Commit("搜".into())),
+        );
+        match res {
+            EventResult::EmitWithPayload(_, ActionPayload::Text(q)) => assert_eq!(q, "ab搜"),
+            other => panic!("期望 EmitWithPayload，实际 {other:?}"),
+        }
     }
 }

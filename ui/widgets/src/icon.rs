@@ -202,7 +202,9 @@ impl Widget for Icon {
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx, c: Constraints) -> Size {
-        let s = self.size_px.clamp(c.min_width.min(c.min_height), c.max_width.min(c.max_height));
+        let s = self
+            .size_px
+            .clamp(c.min_width.min(c.min_height), c.max_width.min(c.max_height));
         self.size = Size::new(s, s);
         self.size
     }

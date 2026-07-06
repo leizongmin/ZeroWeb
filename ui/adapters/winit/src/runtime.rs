@@ -30,8 +30,8 @@ use zero_ui_runtime::platform::{PlatformRuntime, RuntimeError, UiResult, WindowI
 
 use crate::driver::WinitDriver;
 use crate::event_map::{
-    map_cursor_moved, map_mouse_input, map_mouse_wheel, map_touch, map_window_metrics, to_logical_point,
-    to_logical_size,
+    map_cursor_moved, map_ime, map_key_event, map_mouse_input, map_mouse_wheel, map_touch, map_window_metrics,
+    to_logical_point, to_logical_size,
 };
 
 type RegisterFn = Box<dyn FnOnce(&mut WidgetHost)>;
@@ -319,6 +319,12 @@ impl ApplicationHandler<()> for SdkGpuApp {
             self.rf_backend = Some(backend);
 
             self.window = Some(window);
+            // P0-2 (CJK 修复)：启用 IME 事件。winit 0.30 文档明确要求必须调
+            // `set_ime_allowed(true)`，否则 WindowEvent::Ime 永远不会被发送——
+            // 即使我们在 window_event 里加了 Ime 分支也收不到。这是中文输入的硬前提。
+            if let Some(ref w) = self.window {
+                w.set_ime_allowed(true);
+            }
             self.needs_render = true;
         }
     }
@@ -492,6 +498,27 @@ impl ApplicationHandler<()> for SdkGpuApp {
                         sf,
                         zero_ui_core::event::Modifiers::NONE,
                     ));
+                    self.needs_render = true;
+                    if let Some(ref window) = self.window {
+                        window.request_redraw();
+                    }
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                // U1-2/U3-3 根因修复：键盘事件转发到 host，TextInput/NavSearch 才能输入。
+                // 之前 runtime 只处理鼠标/触摸/滚轮，键盘事件被默认 `_ => {}` 吃掉。
+                if let Some(ref mut driver) = self.driver {
+                    driver.pump_event(&map_key_event(&event, zero_ui_core::event::Modifiers::NONE));
+                    self.needs_render = true;
+                    if let Some(ref window) = self.window {
+                        window.request_redraw();
+                    }
+                }
+            }
+            WindowEvent::Ime(ime) => {
+                // IME（中文/日文等复合输入）转发到 host。
+                if let Some(ref mut driver) = self.driver {
+                    driver.pump_event(&map_ime(ime));
                     self.needs_render = true;
                     if let Some(ref window) = self.window {
                         window.request_redraw();

@@ -1017,6 +1017,360 @@ NavItem 四态优先级：selected > pressed > hover > default。
 | `ui/widgets` | Text 自动换行；chrome hover 态；Toggle P0-3 |
 | `ui/examples` | gallery bg token；group toggle name_en；popup/dialog 按钮去重；P0-2 |
 
+## 9.8 U1-2 / U3-2 / U3-3 第二轮用户反馈修复
+
+### 9.8.1 问题与根因
+
+第二轮用户反馈聚焦 3 个仍未根治的输入/视觉问题：
+
+1. **U1-2**：TextInput 能见光标，但实际无法输入字符。
+2. **U3-2**：左侧栏列表滚动条呈纯黑色，疑似 GPU/CPU 渲染差异。
+3. **U3-3**：左侧栏顶部 NavSearch 搜索框点击无光标、无法输入。
+
+### 9.8.2 根因分析
+
+#### U1-2 / U3-3 同根因：键盘事件未进入 host
+
+`ui/adapters/winit/src/runtime.rs` 的 `window_event` 派发分支只处理了
+`CursorMoved` / `MouseInput` / `MouseWheel` / `Touch` / `ScaleFactorChanged` / `Focused`，
+**完全缺失 `WindowEvent::KeyboardInput` 和 `WindowEvent::Ime` 分支**——
+键盘事件被默认 `_ => {}` 吃掉，根本没进入 `driver.pump_event`，
+host 自然收不到 `UiEvent::Key`，TextInput/NavSearch 的 `event()` 永远不被触发。
+
+这解释了为什么：
+- 测试代码里 Tab/Esc/Arrow 能工作（测试直接 `host.dispatch_event(UiEvent::Key{..})`，
+  绕过 winit runtime）；
+- 实际运行的 gallery 里所有键盘输入都无效（包括 Esc 关 overlay、Tab 切焦点、
+  TextInput/NavSearch 输入）。
+
+光标能显示是因为 P3-7 已经让 host 在 pointer Pressed 时派发 `Focus(Gained)`，
+TextInput 据此画 caret——但光标后面的输入链路是断的。
+
+#### U3-2：`Color::rgba` alpha 范围错用
+
+`ui/runtime/src/host/paint.rs::paint_scrollbar` 计算 thumb 颜色时写：
+```rust
+let c = tokens.on_background;
+let thumb_color = Color::rgba(c.r, c.g, c.b, 0.5 * 255.0);
+```
+
+`Color::rgba` 的 alpha 参数是 `[0,1]` 浮点（与 r/g/b 同口径），
+但 `0.5 * 255.0 = 127.5` 被钳到 1.0 → **完全不透明的纯色**。
+- light 主题：`on_background = BLACK` → 纯黑滚动条（用户看到的现象）。
+- dark 主题：`on_background = (0.92, …)` → 接近纯白。
+
+「GPU/CPU 差异」实为错觉，是 alpha 通道溢出导致的纯色填充。
+webview 此前修复 `sdk_scrollbar.rs` 用的是 `ScrollBarStyle::from_tokens`，
+公式为 `on_surface.mix(surface, 0.5)`——host scrollbar 应与之同口径。
+
+### 9.8.3 修复方案
+
+#### 修复 1：runtime 转发键盘与 IME 事件（U1-2 / U3-3）
+
+在 `runtime.rs` 增加 `WindowEvent::KeyboardInput` 和 `WindowEvent::Ime` 分支：
+
+```rust
+WindowEvent::KeyboardInput { event, .. } => {
+    if let Some(ref mut driver) = self.driver {
+        driver.pump_event(&map_key_event(&event, Modifiers::NONE));
+        self.needs_render = true;
+        if let Some(ref window) = self.window { window.request_redraw(); }
+    }
+}
+WindowEvent::Ime(ime) => {
+    if let Some(ref mut driver) = self.driver {
+        driver.pump_event(&map_ime(ime));
+        self.needs_render = true;
+        if let Some(ref window) = self.window { window.request_redraw(); }
+    }
+}
+```
+
+导入补全 `map_key_event`、`map_ime`。这是本轮最关键修复——之前所有键盘交互都是哑的。
+
+#### 修复 2：scrollbar 颜色与 SDK `ScrollBarStyle` 同口径（U3-2）
+
+把 `paint_scrollbar` 的 thumb 色改为 `on_surface.mix(surface, 0.5)`，
+与 `ui/widgets/src/scrollbar.rs::ScrollBarStyle::from_tokens` 完全一致：
+
+```rust
+// 之前（bug）：Color::rgba(c.r, c.g, c.b, 0.5 * 255.0)  // alpha 127.5 → 钳 1.0 → 纯色
+let thumb_color = tokens.on_surface.mix(tokens.surface, 0.5);
+```
+
+light 主题得到中灰 thumb、dark 主题得到浅灰 thumb，自动适应明暗；
+不再有纯黑/纯白异常。runtime 不依赖 widgets crate（避免循环依赖），
+所以直接内联同一公式，不引入 `ScrollBarStyle`。
+
+#### 修复 3：NavSearch 显示 caret + hover 反馈（U3-3）
+
+`NavSearch` 之前 `focusable() = true` 但 paint 不画 caret、event 不追踪 focus，
+所以点击后看似「死」的。修复：
+
+- 新增 `focused: bool` / `hover: bool` 字段；
+- event 处理 `Focus(Gained/Lost)` 和 `Pointer(Moved/Exited)`，标记 `NEEDS_PAINT`；
+- paint 时 focused 用 `tokens.primary` 高亮边框（与 TextInput 一致）；
+- focused 时在 display 文本末尾画 caret（`FillRect` 1.5×16，`tokens.primary`）；
+- hover 时边框用 `primary.mix(surface, 0.4)` 次级高亮。
+
+注：NavSearch 与 TextInput 是两个独立 widget——TextInput 是受控文本编辑
+（内部 `TextInputState`、IME、选区），NavSearch 是搜索框（受控 query prop + emit action）。
+两者各自维护 caret，不共享实现。本轮先做最小修复让 NavSearch 视觉对齐 TextInput，
+后续若需 IME/选区支持可考虑让 NavSearch 内部组合 TextInput（参考 AddressBar 模式）。
+
+### 9.8.4 回归测试
+
+`ui/widgets/src/chrome.rs` 新增测试模块：
+
+- `nav_search_focus_sets_focused_and_marks_paint`：Focus(Gained) 后 focused=true 且 NEEDS_PAINT。
+- `nav_search_emits_query_on_keypress_when_focused`：focused 后 Key(Pressed, text="a") emit
+  `ActionPayload::Text("a")`——直接覆盖 U1-2/U3-3 的功能契约。
+
+runtime 键盘转发因依赖 winit `KeyEvent`（`pub(crate)` 字段无法在仓外构造），
+由 `event_map::map_key_event` 既有单测覆盖，不在本节重复。
+
+### 9.8.5 影响范围
+
+| 模块 | 变更 |
+|---|---|
+| `ui/adapters/winit` | runtime 新增 `KeyboardInput` / `Ime` 分支；导入 `map_key_event` / `map_ime` |
+| `ui/runtime` | `paint_scrollbar` thumb 色改用 `on_surface.mix(surface, 0.5)` |
+| `ui/widgets` | `NavSearch` 加 focus/hover 字段、event、caret 绘制；新增 chrome 测试模块 |
+
+## 9.9 CJK 输入与光标精确定位（第三轮用户反馈）
+
+### 9.9.1 问题
+
+第三轮反馈聚焦 CJK 输入与光标几何：
+
+1. **CJK 无法输入**：TextInput 不支持中文输入（仅 ASCII 通过 `Key.text` 工作）。
+2. **TextInput 光标位置不对**：caret 偏离实际文本位置，点击定位也偏。
+3. **NavSearch 更严重**：同上，且之前 `🔍 ` emoji 前缀让计算雪上加霜。
+
+### 9.9.2 根因
+
+#### CJK 无法输入：未处理 IME Commit
+
+中文/日文等复合输入走 IME 路径：用户按键后 IME 先做合成（preedit），
+完成后通过 `UiEvent::Ime(ImeEvent::Commit(text))` 一次性提交整段文本。
+TextInput 的 `event()` 只 match `UiEvent::Key`，**完全忽略 `UiEvent::Ime`**——
+IME 提交的中文被丢弃，所以无法输入。
+
+`Key.text` 仅承载 ASCII 直接字符（winit 的 `text_with_modifiers` 路径），
+CJK 不走这条路。这是 IME 与 bare key 的本质区别。
+
+#### 光标位置错：硬编码 `char_w = 8.0` 假设 ASCII 等宽
+
+`TextInputWidget::caret_rect` 和 click-to-position 都用 `8.0 px/char` 启发式：
+```rust
+let char_count = self.state.text[..cursor].chars().count();
+let x = 8.0 + char_count as f32 * 8.0;  // ← 每个 char 都算 8px
+```
+
+这对中文是错的：一个汉字是 1 个 `char` 但视觉宽度约 14-16px（14px 字号）。
+结果：输入「你好」后 caret 计算位置 ≈ 8 + 2×8 = 24px，实际文本宽 ≈ 32px，
+**caret 落在文字中间**。NavSearch 用 `7px/char` + `🔍 ` emoji 前缀（emoji 宽度不固定）
+让问题更严重。
+
+#### ime_caret_rect 同样错
+
+`TextInputState::ime_caret_rect` 也用 `8px/char`，导致 IME 候选窗口位置偏离
+（中文输入时候选框出现在错误位置）。
+
+### 9.9.3 修复方案
+
+#### 修复 1：TextInput 处理 `UiEvent::Ime(Commit)`（CJK 输入）
+
+`event()` 新增 `UiEvent::Ime` 分支，处理 `ImeEvent::Commit(s)`：
+```rust
+UiEvent::Ime(ime) => match ime {
+    ImeEvent::Commit(s) => {
+        let old_text = self.state.text.clone();
+        if !s.is_empty() { self.state.insert(s); }
+        if self.state.text != old_text {
+            EventResult::EmitWithPayload(ACTION_TEXT_CHANGED, Text(self.state.text.clone()))
+        } else { EventResult::Consumed }
+    }
+    _ => EventResult::Consumed,  // Preedit/Enabled/Disabled 暂不处理
+}
+```
+
+`state.insert(s)` 已是 UTF-8 边界安全的（用 `String::insert_str`），光标自动推进
+到字节偏移 `cursor + s.len()`。中文「你」3 字节、「好」3 字节，连续 Commit 累积正确。
+
+#### 修复 2：TextInput 用 `measure_text` 缓存字符 x 偏移（caret 几何）
+
+新增字段：
+```rust
+char_x: Vec<f32>,       // char_x[i] = 前 i 字符累计像素宽 + padding 8.0
+painted_text: String,   // 缓存对应的 text（用于判断是否需重建）
+```
+
+paint 阶段重建缓存：
+```rust
+fn rebuild_char_x(&mut self, ctx: &mut PaintCtx, font_size: f32, display: &str) {
+    let mut xs = vec![8.0];  // 左 padding
+    let mut buf = String::new();
+    for ch in display.chars() {
+        buf.push(ch);
+        let w = ctx.measure_text(&buf, font_size).width;  // 累计宽度
+        xs.push(8.0 + w);
+    }
+    self.char_x = xs;
+    self.painted_text = display.to_string();
+}
+```
+
+`caret_rect` 与 click-to-position 改用缓存：
+```rust
+fn caret_rect(&self) -> Rect {
+    let char_idx = self.state.text[..cursor].chars().count();
+    let x = self.char_x.get(char_idx).copied().unwrap_or(8.0);  // 真实度量
+    Rect::from_origin_size(Point::new(x, 4.0), Size::new(2.0, height - 8.0))
+}
+
+fn cursor_from_x(&self, x: f32) -> usize {
+    // 线性扫 char_x 找 <= x 的最大索引（最近字符边界），转字节偏移
+    ...
+}
+```
+
+中文「你好」：`measure_text("你")` ≈ 15px，`measure_text("你好")` ≈ 30px，
+caret 在「好」之后落在 x ≈ 38px（8+30），与视觉对齐。
+
+#### 修复 3：NavSearch 同样缓存 + IME，移除 `🔍 ` 前缀
+
+- 同 TextInput 加 `char_x` 缓存，paint 时 `rebuild_char_x` 用真实度量；
+- event 加 `UiEvent::Ime(Commit)` 分支，中文追加到 query 并 emit；
+- 移除 `format!("🔍 {}", query)` 的 emoji 前缀——emoji 宽度不固定（≈2 char 宽），
+  让 `char_count * 7.0` 启发式失效，且搜索框惯例是 query 即显示文本；
+- caret 始终在 query 末尾（NavSearch 是受控追加型，无中间编辑位置）。
+
+#### 修复 4：`TextInputState::ime_caret_rect` 保持启发式
+
+`TextInputState` 是纯数据（无 widget 上下文、无 measure），无法访问 `PaintCtx`。
+其 `ime_caret_rect` 保留 `8px/char` 启发式作为 M1 路径——widget 层的
+`TextInputWidget::ime_rect()` 返回 `caret_rect()`（用真实度量），host 优先用 widget
+的 `ime_rect()`，state 方法仅作 fallback。
+
+### 9.9.4 回归测试
+
+`ui/widgets/src/text_input.rs` 新增：
+
+- `ime_commit_inserts_cjk_text`：IME Commit("你") → text="你"，cursor=3（字节），emit。
+- `ime_commit_appends_multiple_cjk`：连续 Commit("你")、Commit("好") → text="你好"，cursor=6。
+- `cursor_from_x_returns_end_when_cache_empty`：首次点击缓存为空时退到末尾。
+
+`ui/widgets/src/chrome.rs` 新增：
+
+- `nav_search_ime_commit_appends_cjk_to_query`：query="ab" + IME Commit("搜") → emit "ab搜"。
+
+### 9.9.5 影响范围
+
+| 模块 | 变更 |
+|---|---|
+| `ui/widgets/text_input` | event 加 `UiEvent::Ime(Commit)`；`char_x` 缓存 + `rebuild_char_x`；`caret_rect` / `cursor_from_x` 用真实度量 |
+| `ui/widgets/chrome` | `NavSearch` 加 `char_x` 缓存 + IME Commit；移除 `🔍 ` 前缀；caret 用 `char_x.last()` |
+
+### 9.9.6 后续可演进项
+
+- IME Preedit 合成预览浮层（当前仅 Commit，合成中不显示候选文本）；
+- NavSearch 内部组合 `TextInputWidget`（统一 IME/选区/光标实现，参考 `AddressBar` 模式）；
+- `char_x` 缓存用二分查找加速（当前线性扫描，文本短无性能问题）。
+
+## 9.10 CJK 输入仍未工作 —— 三层断点根因复盘（第四轮）
+
+### 9.10.1 问题与教训
+
+9.9 章节声称修复了 CJK 输入，但用户实测「还是一个屌样」——中文依然无法输入。
+**根本教训**：9.9 的修复建立在**未经验证的假设**上，只改了 widget 层（接收端），
+却没验证中间层（host 派发）和入口层（winit 启用）是否真的把事件送达。
+
+### 9.10.2 三层断点根因（用 deep-debug 时序重建还原）
+
+事件链路应有 4 层，9.9 只修了第 4 层，前 3 层全断：
+
+| 层 | 职责 | 9.9 状态 | 实际行为 |
+|---|---|---|---|
+| L1 winit 平台 | `WindowEvent::Ime` 产生 | runtime 加了转发分支 | ❌ **未调 `set_ime_allowed(true)`，winit 不发 Ime 事件** |
+| L2 runtime 转发 | `WindowEvent::Ime → UiEvent::Ime` | ✅ 已加 | （L1 没事件可转，此层空转） |
+| L3 host 派发 | `UiEvent::Ime → focused widget` | ❌ **dispatch_event 无 Ime 分支，事件被 `_ => {}` 吞** | 即使 L1/L2 工作，事件也到不了 widget |
+| L4 TextInput event | 处理 `UiEvent::Ime(Commit)` | ✅ 已加 | （L3 没派发，永远收不到） |
+
+#### 关键文档证据
+
+winit 0.30 `event.rs:226` 注释（`Ime` 变体上方）：
+> **Note:** You have to explicitly enable this event using `Window::set_ime_allowed`.
+
+全仓搜索 `set_ime_allowed` 在 `ui/` 下**零调用**——`set_ime_area` 是空实现。
+即从未启用过 IME，winit 0.30 平台层根本不产生 `WindowEvent::Ime`。
+
+#### 既有测试为何没发现
+
+`text_input_in_search_field_updates_state`（gallery_retained.rs）用
+`driver.pump_event(UiEvent::Key{..})` 直接注入 UiEvent，**绕过了 L1（winit）和 L2（runtime 转发）**，
+只测了 L3+L4。所以 ASCII 输入测试通过 ≠ winit 运行时键盘/IME 真的工作。
+
+这是典型的「测试覆盖了错误抽象层」盲区：单测全绿，集成测试也绿，但真实运行环境断链。
+
+### 9.10.3 修复方案
+
+#### 修复 1（L1）：runtime 启用 IME
+
+`ui/adapters/winit/src/runtime.rs::resumed` 在 window 创建后立刻调：
+
+```rust
+self.window = Some(window);
+if let Some(ref w) = self.window {
+    w.set_ime_allowed(true);  // P0-2：winit 0.30 硬要求，否则 Ime 事件不产生
+}
+```
+
+#### 修复 2（L3）：host.dispatch_event 加 Ime 分支
+
+`ui/runtime/src/host.rs::dispatch_event` 把 Key 分支扩展为 `Key | Ime` 共用同一派发路径：
+
+```rust
+UiEvent::Key { .. } | UiEvent::Ime(_) => {
+    // 都派发到 focused widget（IME 语义=插入到当前焦点控件）
+    if let Some(focused) = self.focused.clone()
+        && let Some(node) = find_node_mut(root, &focused)
+        && let Some(w) = node.widget.as_mut()
+    { ... w.event(...) ... }
+}
+```
+
+L4（TextInput event 处理 Ime）在 9.9 已就位，现在前两层打通后真正生效。
+
+### 9.10.4 端到端回归测试（覆盖正确抽象层）
+
+新增 2 个测试在 `ui/examples/tests/gallery_retained.rs`，**用 driver.pump_event
+注入 `UiEvent::Ime(Commit)`，覆盖 L2+L3+L4**（L1 是 winit 平台行为，需手动验证）：
+
+- `text_input_ime_commit_inserts_cjk_text`：聚焦后 IME Commit("你")、Commit("好") →
+  `current_demo.text == "你好"`。这是 9.9 应该写但没写的测试——若当时写了，
+  会立即发现 L3 host 派发断链。
+- `text_input_ime_commit_requires_focus`：未聚焦时 IME Commit 不应修改 text
+  （守卫：Ime 是 focused-only 语义，不应广播）。
+
+### 9.10.5 流程教训
+
+1. **「修复完成」前必须端到端验证**：单测覆盖错误抽象层会给出虚假信心。
+   本次教训——9.9 只在 widget 单测里直接调 `event()`，没经过 host 派发，
+   所以 host 派发断链没被发现。
+2. **RTFM（读官方文档）**：winit 0.30 的 IME 启用要求写在枚举变体注释里，
+   不读源码就漏掉。新平台 API 必须先确认「事件产生的前置条件」。
+3. **用户反馈是最终验证**：「还是一个屌样」是真实的运行时反馈，比所有单测更可信。
+   不要用单测绿来反驳用户实测。
+
+### 9.10.6 影响范围
+
+| 模块 | 变更 |
+|---|---|
+| `ui/adapters/winit` | `resumed` 调 `window.set_ime_allowed(true)` |
+| `ui/runtime` | `dispatch_event` 把 `UiEvent::Ime` 纳入 focused-widget 派发路径 |
+| `ui/examples` | 新增 2 个 IME 端到端测试（focused/unfocused 两种场景） |
+
 
 ---
 

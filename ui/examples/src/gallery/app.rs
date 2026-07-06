@@ -168,9 +168,7 @@ impl GalleryApp {
         search_box
             .props
             .insert("theme", Value::Text(self.theme.as_str().into()));
-        search_box
-            .props
-            .insert("action", Value::Text("gallery.search".into()));
+        search_box.props.insert("action", Value::Text("gallery.search".into()));
         search_box
             .props
             .insert("placeholder", Value::Text(self.locale.search_placeholder().into()));
@@ -207,8 +205,7 @@ impl GalleryApp {
                         let mut nav = WidgetSpec::new("NavItem");
                         nav.id = Some(WidgetId::new(&format!("nav_{}", p.id)));
                         nav.props.insert("theme", Value::Text(self.theme.as_str().into()));
-                        nav.props
-                            .insert("action", Value::Text("gallery.nav.select".into()));
+                        nav.props.insert("action", Value::Text("gallery.nav.select".into()));
                         nav.props.insert("label", Value::Text(p.title_for(self.locale).into()));
                         nav.props.insert("page_id", Value::Text(p.id.into()));
                         nav.props
@@ -304,17 +301,16 @@ impl GalleryApp {
 
         let mut content = WidgetSpec::new("Text");
         content.id = Some(WidgetId::new("demo_overlay_text"));
-        content
-            .props
-            .insert("text", Value::Text("Popover: floats above other content (real overlay).".into()));
+        content.props.insert(
+            "text",
+            Value::Text("Popover: floats above other content (real overlay).".into()),
+        );
         col.children.push(content);
 
         let mut dismiss_hint = WidgetSpec::new("Button");
         dismiss_hint.id = Some(WidgetId::new("demo_overlay_dismiss"));
         dismiss_hint.props.insert("label", Value::Text("Close".into()));
-        dismiss_hint
-            .props
-            .insert("variant", Value::Text("neutral".into()));
+        dismiss_hint.props.insert("variant", Value::Text("neutral".into()));
         dismiss_hint
             .props
             .insert("action", Value::Text("gallery.demo.button_click.1".into()));
@@ -354,9 +350,7 @@ impl GalleryApp {
         let mut cancel = WidgetSpec::new("Button");
         cancel.id = Some(WidgetId::new("demo_overlay_cancel"));
         cancel.props.insert("label", Value::Text("Cancel".into()));
-        cancel
-            .props
-            .insert("variant", Value::Text("neutral".into()));
+        cancel.props.insert("variant", Value::Text("neutral".into()));
         cancel
             .props
             .insert("action", Value::Text("gallery.demo.button_click.3".into()));
@@ -381,7 +375,8 @@ impl GalleryApp {
 
         let mut body = WidgetSpec::new("Text");
         body.id = Some(WidgetId::new("demo_overlay_body"));
-        body.props.insert("text", Value::Text("Are you sure? (modal dialog)".into()));
+        body.props
+            .insert("text", Value::Text("Are you sure? (modal dialog)".into()));
         col.children.push(body);
 
         let mut row = WidgetSpec::new("Row");
@@ -399,9 +394,7 @@ impl GalleryApp {
         let mut cancel = WidgetSpec::new("Button");
         cancel.id = Some(WidgetId::new("demo_overlay_cancel"));
         cancel.props.insert("label", Value::Text("Cancel".into()));
-        cancel
-            .props
-            .insert("variant", Value::Text("neutral".into()));
+        cancel.props.insert("variant", Value::Text("neutral".into()));
         cancel
             .props
             .insert("action", Value::Text("gallery.demo.button_click.3".into()));
@@ -418,8 +411,7 @@ impl GalleryApp {
         let mut row = WidgetSpec::new("Row");
         row.id = Some(WidgetId::new("demo_overlay_root"));
         row.props.insert("gap", Value::Float(8.0));
-        row.props
-            .insert("cross_axis_align", Value::Text("center".into()));
+        row.props.insert("cross_axis_align", Value::Text("center".into()));
 
         // 深色胶囊背景（radius=12 让边缘圆润）。
         let mut bg = WidgetSpec::new("ColoredBox");
@@ -608,7 +600,6 @@ fn str_prop(spec: &WidgetSpec, key: &str) -> Option<String> {
         _ => None,
     }
 }
-
 
 /// 注册画廊所有控件工厂（P3-6-5：全部改用 ui-sdk widgets crate，不再有 gallery 内部组件）。
 pub fn register_gallery_factories(host: &mut WidgetHost) {

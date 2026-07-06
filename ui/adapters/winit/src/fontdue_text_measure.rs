@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use zero_text_foundation::{FontdueBackend, FontRequest, TextDirection, TextMeasureInput, TextMeasurer};
+use zero_text_foundation::{FontRequest, FontdueBackend, TextDirection, TextMeasureInput, TextMeasurer};
 use zero_ui_core::widget::{TextMeasure, TextSize};
 
 /// 包裹 `FontdueBackend` 实现 UI core 的 `TextMeasure`，带 per-character fallback。
@@ -95,7 +95,9 @@ impl FontdueTextMeasure {
         if text.is_empty() {
             return 0.0;
         }
-        let req = self.request_for_family(family).unwrap_or_else(|| FontRequest::new("UI"));
+        let req = self
+            .request_for_family(family)
+            .unwrap_or_else(|| FontRequest::new("UI"));
         let input = TextMeasureInput {
             text: text.into(),
             font_request: req,
@@ -193,11 +195,7 @@ mod tests {
         // 而非被拉丁字体估成 0.6 * size。
         let tm = FontdueTextMeasure::new(backend_with_fonts());
         let s = tm.measure("组件", 14.0);
-        assert!(
-            s.width >= 14.0,
-            "CJK 宽度应 ≥ 一个字宽 (14px), got {}",
-            s.width
-        );
+        assert!(s.width >= 14.0, "CJK 宽度应 ≥ 一个字宽 (14px), got {}", s.width);
     }
 
     #[test]
@@ -232,10 +230,7 @@ mod tests {
         // UI (Noto Sans latin) 覆盖 ASCII。
         assert!(b.family_covers_char("UI", 'a'), "UI 应覆盖 ASCII 'a'");
         // UI 不应覆盖中文。
-        assert!(
-            !b.family_covers_char("UI", '中'),
-            "UI (latin) 不应覆盖中文 '中'"
-        );
+        assert!(!b.family_covers_char("UI", '中'), "UI (latin) 不应覆盖中文 '中'");
     }
 
     #[test]

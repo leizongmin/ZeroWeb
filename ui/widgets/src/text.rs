@@ -345,7 +345,10 @@ mod tests {
     fn resolve_color_named_presets() {
         let tokens = zero_ui_core::theme::SemanticTokens::light();
         assert_eq!(resolve_text_color(&Some("primary".into()), &tokens), tokens.primary);
-        assert_eq!(resolve_text_color(&Some("on_surface".into()), &tokens), tokens.on_surface);
+        assert_eq!(
+            resolve_text_color(&Some("on_surface".into()), &tokens),
+            tokens.on_surface
+        );
         // muted 应是混合灰。
         let muted = resolve_text_color(&Some("muted".into()), &tokens);
         assert_ne!(muted, tokens.on_surface);

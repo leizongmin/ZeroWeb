@@ -364,9 +364,7 @@ impl WidgetHost {
             .overlay
             .top()
             .map(|e| (e.anchor_widget.clone(), e.anchor))
-            .and_then(|(wid, fallback)| {
-                wid.and_then(|w| self.rect_of(&w)).or(fallback)
-            });
+            .and_then(|(wid, fallback)| wid.and_then(|w| self.rect_of(&w)).or(fallback));
         // P3-4-3：overlay 子树也 layout（用同一 viewport 约束）。
         // P0-1 修复：根据 overlay entry 的 anchor 决定 overlay_root 的 arrange 位置。
         //   - popover/tooltip（有 anchor）：放在 anchor 矩形下方（或上方若空间不够）。
@@ -477,8 +475,7 @@ impl WidgetHost {
             if !dismissed.is_empty() {
                 // 清掉被 dismiss 的 overlay 视觉子树。
                 self.overlay_root = None;
-                self.pending |=
-                    InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
+                self.pending |= InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
                 // outside-click 触发的 dismiss 视为"消费"该点击，不再冒泡到下层。
                 return emitted;
             }
@@ -490,8 +487,7 @@ impl WidgetHost {
             let dismissed = self.overlay.dismiss_on_escape();
             if !dismissed.is_empty() {
                 self.overlay_root = None;
-                self.pending |=
-                    InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
+                self.pending |= InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
                 return emitted;
             }
         }
@@ -530,7 +526,12 @@ impl WidgetHost {
         // P3-7/U1：Tab 键焦点切换提前到 root 借用之前做（focus_next 需 &mut self），
         // 派发 Focus event 延迟到 root 借用之后（需要 root 走树）。
         let mut pending_focus_change: Option<(Option<WidgetId>, Option<WidgetId>)> = None;
-        if let UiEvent::Key { code, action: key_action, modifiers, .. } = event
+        if let UiEvent::Key {
+            code,
+            action: key_action,
+            modifiers,
+            ..
+        } = event
             && code.0.as_str() == "Tab"
             && matches!(key_action, zero_ui_core::event::KeyAction::Pressed)
             && !overlay_blocked_main
@@ -560,7 +561,7 @@ impl WidgetHost {
             if let Some(new_id) = new {
                 dispatch_focus_event(root, &new_id, UiEvent::Focus(zero_ui_core::event::FocusEvent::Gained));
             }
-            return emitted;  // Tab 键消费，不继续派发
+            return emitted; // Tab 键消费，不继续派发
         }
         // P3-4-4：modal barrier / outside-click dismiss 已消费事件 → 主树不路由。
         if overlay_blocked_main {
@@ -599,7 +600,10 @@ impl WidgetHost {
             }
         }
         match event {
-            UiEvent::Key { .. } => {
+            UiEvent::Key { .. } | UiEvent::Ime(_) => {
+                // P0-1 (CJK 修复)：Key 与 Ime 都派发到 focused widget。
+                // 之前只有 Key 分支，UiEvent::Ime 落到末尾 `_ => {}` 被吞，IME Commit 永远到不了 TextInput。
+                // Ime 走与 Key 完全相同的路径（focused-only），因为 IME 输入语义就是"插入到当前焦点控件"。
                 if let Some(focused) = self.focused.clone()
                     && let Some(node) = find_node_mut(root, &focused)
                     && let Some(w) = node.widget.as_mut()
@@ -793,11 +797,7 @@ impl WidgetHost {
     ///
     /// `spec` = 浮层内容（dialog body / popover card / tooltip bubble 等）。
     /// 传 `None` 表示只注册 entry 不更新视觉子树（例如外部已通过主 root 管理视觉）。
-    pub fn show_overlay(
-        &mut self,
-        entry: zero_ui_overlay::OverlayEntry,
-        spec: Option<WidgetSpec>,
-    ) -> WidgetId {
+    pub fn show_overlay(&mut self, entry: zero_ui_overlay::OverlayEntry, spec: Option<WidgetSpec>) -> WidgetId {
         let id = entry.id.clone();
         self.overlay.show(entry);
         if let Some(spec) = spec {

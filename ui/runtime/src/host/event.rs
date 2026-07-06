@@ -142,7 +142,12 @@ pub(super) fn dispatch_focus_event(root: &mut HostNode, target: &WidgetId, event
         && let Some(w) = node.widget.as_mut()
     {
         let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
-        let _ = w.event(&mut EventCtx { invalidation: &mut flags }, &event);
+        let _ = w.event(
+            &mut EventCtx {
+                invalidation: &mut flags,
+            },
+            &event,
+        );
         node.invalidation |= flags;
     }
 }

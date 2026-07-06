@@ -98,7 +98,7 @@ impl TextInputState {
         self.selection = None;
     }
 
-    /// 由 caret 字节偏移推算的 IME 光标屏幕 rect（M1：等宽启发式；M2 用真实 shaped metrics）。
+    /// 由 caret 字节偏移推算的 IME 光标屏幕 rect（启发式 8px/char；widget 层用真实度量覆盖）。
     pub fn ime_caret_rect(&self, origin: Rect) -> Rect {
         let char_w = 8.0_f32;
         let char_count = self.text[..self.clamp_cursor(self.cursor)].chars().count();
@@ -124,6 +124,13 @@ pub struct TextInputWidget {
     /// 是否聚焦（由 host 焦点系统驱动：focused 节点 paint caret）。
     focused: bool,
     hover: bool,
+    /// CJK/IME 修复：缓存每个字符边界对应的累计 x 偏移（含起始 0.0）。
+    /// `char_x[i]` = text 前 i 个字符的累计像素宽度（左侧 padding 8.0 已加）。
+    /// 由 paint 阶段用 measure_text 实测；event（点击定位）复用。
+    /// 长度 = chars count + 1；首元素 = 8.0（padding）。
+    char_x: Vec<f32>,
+    /// 上次 paint 的文本（用于检测 char_x 是否需要重建）。
+    painted_text: String,
 }
 
 impl TextInputWidget {
@@ -134,6 +141,8 @@ impl TextInputWidget {
             size: Size::new(200.0, 28.0),
             focused: false,
             hover: false,
+            char_x: vec![8.0],
+            painted_text: String::new(),
         }
     }
 
@@ -154,14 +163,59 @@ impl TextInputWidget {
         tokens.on_surface
     }
 
-    /// caret 垂直条 rect（基于上次 paint 的 size 与 state.cursor）。
+    /// caret 垂直条 rect（基于缓存 char_x 与 state.cursor）。
+    /// 若 char_x 尚未对齐当前 text（首次 paint 前），回落到末尾。
     fn caret_rect(&self) -> Rect {
-        let char_w = 8.0_f32;
-        let char_count = self.state.text[..self.state.cursor.min(self.state.text.len())]
+        let char_idx = self.state.text[..self.state.cursor.min(self.state.text.len())]
             .chars()
             .count();
-        let x = 8.0 + char_count as f32 * char_w;
+        let x = if char_idx < self.char_x.len() {
+            self.char_x[char_idx]
+        } else {
+            *self.char_x.last().unwrap_or(&8.0)
+        };
         Rect::from_origin_size(Point::new(x, 4.0), Size::new(2.0, self.size.height - 8.0))
+    }
+
+    /// 由 x 坐标反推光标字节偏移（点击定位）。基于缓存 char_x 二分查找最近的边界。
+    fn cursor_from_x(&self, x: f32) -> usize {
+        if self.char_x.len() <= 1 || self.painted_text.is_empty() {
+            return 0;
+        }
+        // 找到 char_x 中 <= x 的最大索引（最近边界）。
+        let mut best_idx = 0usize;
+        for (i, &cx) in self.char_x.iter().enumerate() {
+            if cx <= x {
+                best_idx = i;
+            } else {
+                break;
+            }
+        }
+        // best_idx 是字符边界索引（0..=chars_count），转字节偏移。
+        self.painted_text
+            .char_indices()
+            .nth(best_idx)
+            .map(|(b, _)| b)
+            .unwrap_or_else(|| self.painted_text.len())
+    }
+
+    /// 用 measure_text 重建 char_x 缓存（paint 阶段调用）。
+    fn rebuild_char_x(&mut self, ctx: &mut PaintCtx, font_size: f32, display: &str) {
+        // 注意：display 可能是 placeholder（空 text 时），但 caret 只在非空时显示，
+        // 所以只在 display == state.text 时缓存才有意义。
+        if display == self.state.text && display == self.painted_text {
+            return; // 已缓存且一致。
+        }
+        let mut xs = Vec::with_capacity(display.chars().count() + 1);
+        xs.push(8.0); // 左 padding
+        let mut buf = String::new();
+        for ch in display.chars() {
+            buf.push(ch);
+            let w = ctx.measure_text(&buf, font_size).width;
+            xs.push(8.0 + w);
+        }
+        self.char_x = xs;
+        self.painted_text = display.to_string();
     }
 }
 
@@ -203,18 +257,9 @@ impl Widget for TextInputWidget {
                         EventResult::Consumed
                     }
                     PointerPhase::Pressed => {
-                        // 点击定位光标：按 x 反推字符偏移（启发式 8px/char）。
-                        let char_w = 8.0_f32;
-                        let x_in = (position.x - 8.0).max(0.0);
-                        let idx_bytes: usize = self
-                            .state
-                            .text
-                            .char_indices()
-                            .take((x_in / char_w).round() as usize)
-                            .last()
-                            .map(|(i, _)| i)
-                            .unwrap_or(0);
-                        self.state.cursor = idx_bytes;
+                        // CJK 修复：用缓存的 char_x 反推字符边界（不再用 8px/char 启发式）。
+                        // 若 char_x 还未对齐当前 text（首次点击），退到末尾。
+                        self.state.cursor = self.cursor_from_x(position.x);
                         self.state.selection = None;
                         EventResult::Consumed
                     }
@@ -232,6 +277,28 @@ impl Widget for TextInputWidget {
             UiEvent::Focus(zero_ui_core::event::FocusEvent::Lost) => {
                 self.focused = false;
                 EventResult::Consumed
+            }
+            UiEvent::Ime(ime) => {
+                // CJK 输入修复：IME Commit 把合成完成的文本插入到光标位置。
+                // 中文/日文等复合输入走这条路径，不走 Key.text。
+                match ime {
+                    zero_ui_core::event::ImeEvent::Commit(s) => {
+                        let old_text = self.state.text.clone();
+                        if !s.is_empty() {
+                            self.state.insert(s);
+                        }
+                        if self.state.text != old_text {
+                            EventResult::EmitWithPayload(
+                                ActionId::new(ACTION_TEXT_CHANGED),
+                                zero_ui_core::action::ActionPayload::Text(self.state.text.clone()),
+                            )
+                        } else {
+                            EventResult::Consumed
+                        }
+                    }
+                    // Preedit/Enabled/Disabled 暂不处理（M2：合成预览浮层）。
+                    _ => EventResult::Consumed,
+                }
             }
             UiEvent::Key {
                 action: KeyAction::Pressed,
@@ -324,6 +391,12 @@ impl Widget for TextInputWidget {
         let baseline = (self.size.height + 14.0) * 0.5;
         ctx.recorder.draw_text(&display, Point::new(8.0, baseline), 14.0, fg);
 
+        // CJK 修复：用真实字体度量重建字符 x 偏移表，供 caret 绘制和 click 定位复用。
+        // 只对 state.text 缓存（placeholder 不需要 caret）。
+        if !self.state.text.is_empty() {
+            self.rebuild_char_x(ctx, 14.0, &self.state.text.clone());
+        }
+
         // caret（仅聚焦时画）。
         if self.focused {
             ctx.recorder.fill_rect(self.caret_rect(), tokens.primary);
@@ -353,6 +426,7 @@ impl Widget for TextInputWidget {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zero_ui_core::action::ActionPayload;
 
     #[test]
     fn insert_move_backspace() {
@@ -394,5 +468,58 @@ mod tests {
         let w = TextInputWidget::new();
         assert!(w.focusable());
         assert!(w.ime_rect().is_some());
+    }
+
+    /// CJK 输入回归：IME Commit("你") 把中文插入到光标位置，emit 带 text 的 action。
+    #[test]
+    fn ime_commit_inserts_cjk_text() {
+        let mut w = TextInputWidget::new();
+        w.focused = true;
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
+        let mut ec = EventCtx {
+            invalidation: &mut flags,
+        };
+        let res = w.event(
+            &mut ec,
+            &UiEvent::Ime(zero_ui_core::event::ImeEvent::Commit("你".into())),
+        );
+        match res {
+            EventResult::EmitWithPayload(_, ActionPayload::Text(t)) => {
+                assert_eq!(t, "你");
+                assert_eq!(w.state.text, "你");
+                // 字节偏移 = 3（"你" 是 3 字节 UTF-8），但 char count = 1。
+                assert_eq!(w.state.cursor, 3);
+            }
+            other => panic!("期望 EmitWithPayload，实际 {other:?}"),
+        }
+    }
+
+    /// CJK 输入回归：IME Commit 多次追加，文本累积正确。
+    #[test]
+    fn ime_commit_appends_multiple_cjk() {
+        let mut w = TextInputWidget::new();
+        w.focused = true;
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
+        let mut ec = EventCtx {
+            invalidation: &mut flags,
+        };
+        let _ = w.event(
+            &mut ec,
+            &UiEvent::Ime(zero_ui_core::event::ImeEvent::Commit("你".into())),
+        );
+        let _ = w.event(
+            &mut ec,
+            &UiEvent::Ime(zero_ui_core::event::ImeEvent::Commit("好".into())),
+        );
+        assert_eq!(w.state.text, "你好");
+        assert_eq!(w.state.cursor, 6); // 两个汉字 = 6 字节
+    }
+
+    /// char_x 缓存：cursor_from_x 在空缓存时退到末尾（首次点击场景）。
+    #[test]
+    fn cursor_from_x_returns_end_when_cache_empty() {
+        let w = TextInputWidget::new();
+        // 默认 char_x = [8.0]，text 空 → 退到 len()=0。
+        assert_eq!(w.cursor_from_x(50.0), 0);
     }
 }

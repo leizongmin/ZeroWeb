@@ -124,9 +124,12 @@ fn paint_scrollbar(
         zero_ui_core::geometry::Point::new(thumb_x, thumb_y),
         zero_ui_core::geometry::Size::new(6.0, thumb_h),
     );
-    // thumb 颜色：on_background 50% 透明。
-    let c = tokens.on_background;
-    let thumb_color = zero_ui_core::theme::Color::rgba(c.r, c.g, c.b, 0.5 * 255.0);
+    // U3-2 修复：thumb 颜色与 SDK ScrollBarStyle::from_tokens 同口径
+    // （on_surface.mix(surface, 0.5)，light→深 thumb 浅 track，dark→浅 thumb 深 track，
+    // 自动适应明暗主题）。之前用 `Color::rgba(c.r,c.g,c.b, 0.5*255.0)` 是 bug：
+    // Color::rgba 的 alpha 是 0..1 范围，0.5*255=127.5 被钳到 1.0 → 完全不透明的纯黑
+    // （light 主题）/ 纯白（dark 主题），看似「纯黑滚动条」。
+    let thumb_color = tokens.on_surface.mix(tokens.surface, 0.5);
     scene.push(SceneEntry {
         source: WidgetId::new(node.id.0.as_str()),
         clip: parent_clip,
