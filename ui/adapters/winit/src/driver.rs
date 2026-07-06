@@ -145,6 +145,29 @@ impl<'app> WinitDriver<'app> {
     /// 真实 run loop 每帧（vsync / `request_redraw`）调用；无失效时为 [`Idle`](FrameOutcome::Idle)
     /// （不重绘，省 CPU）。重绘后 [`host`](Self::host)`.scene()` 可取回新 Scene 喂给渲染桥。
     pub fn pump_frame(&mut self) -> FrameOutcome {
+        // P3-4-3：每次 pump 前同步 overlay（app.overlay() 可能因 dispatch 改变）。
+        // 简化策略：app 每帧声明完整 overlay 状态；host 据此 show/dismiss。
+        // 当前实现：若 app 声明 overlay 而 host 当前无 → show；app 无声明而 host 有 → dismiss。
+        let app_overlay = self.app.overlay();
+        let host_has_overlay = self.host.has_overlay_visual();
+        match (app_overlay.is_some(), host_has_overlay) {
+            (true, false) => {
+                if let Some((entry, spec)) = app_overlay {
+                    self.host.show_overlay(entry, spec);
+                }
+            }
+            (false, true) => {
+                // app 不再声明 overlay → 全部 dismiss。
+                let ids: Vec<_> = self.host.overlay().entries.iter().map(|e| e.id.clone()).collect();
+                for id in ids {
+                    self.host.dismiss_overlay(&id);
+                }
+            }
+            _ => {}
+        }
+        // P3-4-5：推进动画时钟（16ms ≈ 60fps）。
+        self.host.advance_clock(16);
+
         // 先捕获是否需要 paint（requires_paint 含 NEEDS_LAYOUT）：layout() 会清除 NEEDS_LAYOUT，
         // 若之后再读 needs_paint()，单独的 NEEDS_LAYOUT（无 NEEDS_PAINT 位，经 host.mark 可达）
         // 会被误判为无需 paint → 几何已变但 scene 不刷新。故先捕获决策。

@@ -156,6 +156,18 @@ pub struct PaintCtx<'a> {
     /// 由 `WidgetHost` 从关联的 `FontdueBackend` 查询后注入。`None` 时
     /// [`line_metrics`](Self::line_metrics) 回落回 heuristic 默认值。
     pub font_metrics: Option<(f32, f32)>,
+    /// P3-4-5：动画当前时间（毫秒，自 host 启动）。
+    ///
+    /// widget paint 时据此采样 `Tween`/`Spring`；若动画未完成，调
+    /// [`request_frame`](Self::request_frame) 让 host 调度下一帧重 paint。
+    /// `None` 表示无动画时钟（host 未注入），widget 应直接画终态。
+    pub now_ms: Option<i64>,
+    /// P3-4-5：动画"请求下一帧"计数。
+    ///
+    /// widget 在 paint 中调 `request_frame` 把此计数 +1；host paint 完读计数，
+    /// 非 0 则调度下一帧。`Cell` 让 widget 在 `&self` 上下文（paint 借 `&mut recorder`）
+    /// 也能递增。
+    pub frame_requests: &'a std::cell::Cell<u64>,
 }
 
 impl<'a> PaintCtx<'a> {
@@ -178,6 +190,15 @@ impl<'a> PaintCtx<'a> {
             Some((ascent_ratio, descent_ratio)) => (ascent_ratio * font_size, descent_ratio * font_size),
             None => (font_size * 0.92, -(font_size * 0.23)),
         }
+    }
+
+    /// P3-4-5：声明动画需要下一帧。
+    ///
+    /// widget 在 paint 中检测到动画未完成（`Tween::is_done` 返回 false）时调用。
+    /// host paint 完会读 `frame_requests` 计数；非 0 表示需要继续驱动（外部 driver
+    /// 应继续 pump_frame）。
+    pub fn request_frame(&self) {
+        self.frame_requests.set(self.frame_requests.get().saturating_add(1));
     }
 }
 

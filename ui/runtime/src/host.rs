@@ -170,6 +170,20 @@ pub struct WidgetHost {
     /// 让 widget 在 layout 阶段调 [`LayoutCtx::measure_text`](zero_ui_core::widget::LayoutCtx::measure_text)
     /// 拿到真实文本宽度，替代 `chars * 9` 估算。
     text_measure: Option<Box<dyn zero_ui_core::widget::TextMeasure>>,
+    /// P3-4-3：浮层管理（modal/popover/tooltip/sheet + dismiss 策略）。
+    /// 应用层通过 [`Self::show_overlay`] / [`Self::dismiss_overlay`] 维护。
+    overlay: zero_ui_overlay::OverlayHost,
+    /// P3-4-3：浮层视觉子树（独立于主 root；paint 时主树完成后再 paint 此树并 append 到 scene，
+    /// 确保浮层视觉在主树之上）。每个 OverlayEntry 对应一个 widget 子树，按 id 索引。
+    /// 简化方案：当前只支持单个 overlay 子树（最上层 entry）；多 entry 嵌套后续扩展。
+    overlay_root: Option<HostNode>,
+    /// P3-4-3：overlay 子树是否需要 reconcile（应用层 set_overlay_spec 后置 true）。
+    overlay_dirty: bool,
+    /// P3-4-5：动画时钟（毫秒，自 host 启动）。driver 在 pump_frame 时推进。
+    animation_now_ms: i64,
+    /// P3-4-5：上次 paint 期间 widget 累计的 request_frame 调用数。
+    /// 非 0 表示有未完成动画，driver 应继续 pump_frame。
+    last_frame_requests: u64,
 }
 
 impl Default for WidgetHost {
@@ -191,6 +205,11 @@ impl Default for WidgetHost {
             last_hovered: None,
             font_metrics: None,
             text_measure: None,
+            overlay: zero_ui_overlay::OverlayHost::new(),
+            overlay_root: None,
+            overlay_dirty: false,
+            animation_now_ms: 0,
+            last_frame_requests: 0,
         }
     }
 }
@@ -339,6 +358,16 @@ impl WidgetHost {
             arrange(root, Point::ZERO);
             size
         };
+        // P3-4-3：overlay 子树也 layout（用同一 viewport 约束；锚定由 widget 内部处理）。
+        if let Some(overlay_root) = self.overlay_root.as_mut() {
+            let mut lctx = LayoutCtx {
+                scale_factor: 1.0,
+                text_measure: tm_ref,
+                font_metrics: self.font_metrics,
+            };
+            measure(overlay_root, &mut lctx, constraints);
+            arrange(overlay_root, Point::ZERO);
+        }
         self.text_measure = tm;
         self.pending.remove(InvalidationFlags::NEEDS_LAYOUT);
         size
@@ -347,10 +376,35 @@ impl WidgetHost {
     /// 遍历 widget 实例树 paint 进全局 `Scene`。
     pub fn paint(&mut self) -> &zero_ui_render::Scene {
         self.scene = zero_ui_render::Scene::new();
+        // P3-4-5：每帧重置 frame_requests 计数；widget paint 时若调 ctx.request_frame()
+        // 会把此 Cell 递增。paint 完读值决定是否需要下一帧。
+        let frame_requests_cell = std::cell::Cell::new(0u64);
         if let Some(root) = self.root.as_mut() {
             let viewport = Some(root.cached_rect);
-            paint_node(root, &mut self.scene, viewport, &self.tokens, self.font_metrics);
+            paint_node(
+                root,
+                &mut self.scene,
+                viewport,
+                &self.tokens,
+                self.font_metrics,
+                Some(self.animation_now_ms),
+                &frame_requests_cell,
+            );
         }
+        // P3-4-3：overlay 子树 paint 在主树之后（append 到 scene = 视觉在上层）。
+        if let Some(overlay_root) = self.overlay_root.as_mut() {
+            let viewport = overlay_root.cached_rect;
+            paint_node(
+                overlay_root,
+                &mut self.scene,
+                Some(viewport),
+                &self.tokens,
+                self.font_metrics,
+                Some(self.animation_now_ms),
+                &frame_requests_cell,
+            );
+        }
+        self.last_frame_requests = frame_requests_cell.get();
         self.pending = InvalidationFlags::CLEAN;
         &self.scene
     }
@@ -370,6 +424,40 @@ impl WidgetHost {
     /// 派发输入事件：位置事件（指针/滚动）走 hit-test + 冒泡；键盘事件走焦点路由（DC-8）。
     pub fn dispatch_event(&mut self, event: &UiEvent) -> Vec<EmittedAction> {
         let mut emitted = Vec::new();
+        // P3-4-4：overlay 优先吃事件。
+        // - outside-click（Pressed 落在所有 popover 锚定矩形之外）→ dismiss 最上层候选
+        // - Escape 键 → dismiss 最上层 escape-able entry
+        // - modal barrier 存在时 → 主树事件路由完全屏蔽（点哪都不命中下层）
+        if let UiEvent::Pointer {
+            phase: PointerPhase::Pressed,
+            position,
+            ..
+        } = event
+        {
+            let dismissed = self.overlay.dismiss_on_outside_click(*position);
+            if !dismissed.is_empty() {
+                // 清掉被 dismiss 的 overlay 视觉子树。
+                self.overlay_root = None;
+                self.pending |=
+                    InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
+                // outside-click 触发的 dismiss 视为"消费"该点击，不再冒泡到下层。
+                return emitted;
+            }
+        }
+        if let UiEvent::Key { code, action, .. } = event
+            && code.0.as_str() == "Escape"
+            && matches!(action, zero_ui_core::event::KeyAction::Pressed)
+        {
+            let dismissed = self.overlay.dismiss_on_escape();
+            if !dismissed.is_empty() {
+                self.overlay_root = None;
+                self.pending |=
+                    InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
+                return emitted;
+            }
+        }
+        // modal barrier：主树完全不接收任何事件。
+        let overlay_blocked_main = self.has_modal();
         // DC-15 opt-in 手势 arena。
         if self.gesture_arena.is_some() {
             let recognized = if let UiEvent::Pointer {
@@ -403,6 +491,10 @@ impl WidgetHost {
         let Some(root) = self.root.as_mut() else {
             return emitted;
         };
+        // P3-4-4：modal barrier / outside-click dismiss 已消费事件 → 主树不路由。
+        if overlay_blocked_main {
+            return emitted;
+        }
         // F1 hover 追踪：在 Pressed/Moved 时检测悬停节点变化，合成为离开的 `Exited` 事件。
         if let UiEvent::Pointer { phase, position, .. } = event {
             match phase {
@@ -626,6 +718,80 @@ impl WidgetHost {
             build_semantics(child, self.focused.as_ref(), &mut s.children);
         }
         Some(s)
+    }
+
+    // ── P3-4-3/4 浮层 API ──────────────────────────────────────────────────
+
+    /// 浮层管理器不可变借用（应用层查询 has_modal / top_id 等）。
+    pub fn overlay(&self) -> &zero_ui_overlay::OverlayHost {
+        &self.overlay
+    }
+
+    /// 显示一个浮层：注册 entry 到 OverlayHost，并（可选）设置该浮层的视觉子树 spec。
+    ///
+    /// `spec` = 浮层内容（dialog body / popover card / tooltip bubble 等）。
+    /// 传 `None` 表示只注册 entry 不更新视觉子树（例如外部已通过主 root 管理视觉）。
+    pub fn show_overlay(
+        &mut self,
+        entry: zero_ui_overlay::OverlayEntry,
+        spec: Option<WidgetSpec>,
+    ) -> WidgetId {
+        let id = entry.id.clone();
+        self.overlay.show(entry);
+        if let Some(spec) = spec {
+            self.epoch = self.epoch.wrapping_add(1);
+            match &mut self.overlay_root {
+                Some(root) => reconcile_node(root, &spec, &self.registry, self.epoch),
+                None => self.overlay_root = Some(build_node(&spec, &self.registry, self.epoch)),
+            }
+            self.overlay_dirty = false;
+            self.pending |= InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
+        }
+        id
+    }
+
+    /// 移除一个浮层（按 id）。若当前 overlay_root 对应被移除的 entry，清空 overlay_root。
+    pub fn dismiss_overlay(&mut self, id: &WidgetId) -> bool {
+        let removed = self.overlay.dismiss(id);
+        if removed {
+            // 简化方案：单 overlay_root，任何 dismiss 都清空视觉子树（应用层若有多 entry 应重新 show 剩余）。
+            self.overlay_root = None;
+            self.pending |= InvalidationFlags::NEEDS_LAYOUT | InvalidationFlags::NEEDS_PAINT;
+        }
+        removed
+    }
+
+    /// overlay 子树是否参与 layout/paint。
+    pub fn has_overlay_visual(&self) -> bool {
+        self.overlay_root.is_some()
+    }
+
+    /// 当前是否存在任意 modal barrier 浮层（事件路由屏蔽下层）。
+    pub fn has_modal(&self) -> bool {
+        self.overlay.has_modal()
+    }
+
+    /// 浮层根节点 rect（layout 后可用；用于 a11y / hit-test 上界）。
+    pub fn overlay_rect(&self) -> Option<Rect> {
+        self.overlay_root.as_ref().map(|n| n.cached_rect)
+    }
+
+    // ── P3-4-5 动画时钟 API ────────────────────────────────────────────────
+
+    /// 推进动画时钟（毫秒）。driver 在每 frame 调用，传入距上帧的 delta。
+    pub fn advance_clock(&mut self, delta_ms: i64) {
+        self.animation_now_ms = self.animation_now_ms.saturating_add(delta_ms);
+    }
+
+    /// 当前动画时间（毫秒）。widget 在 layout/paint 中可读此值采样 Tween。
+    pub fn animation_now_ms(&self) -> i64 {
+        self.animation_now_ms
+    }
+
+    /// 是否有 widget 在上次 paint 中请求了下一帧（即动画未完成）。
+    /// driver 据此决定是否继续 pump_frame。
+    pub fn has_pending_animation(&self) -> bool {
+        self.last_frame_requests > 0
     }
 }
 

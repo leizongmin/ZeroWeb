@@ -192,6 +192,8 @@ mod tests {
             offset: Vec2::ZERO,
             tokens: &zero_ui_core::theme::SemanticTokens::light(),
             font_metrics: None,
+            now_ms: None,
+            frame_requests: &std::cell::Cell::new(0),
         };
         w.paint(&mut ctx);
         let scene = rec.finish();

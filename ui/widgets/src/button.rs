@@ -5,7 +5,7 @@
 
 use zero_ui_core::action::{ActionId, EventResult};
 use zero_ui_core::event::{PointerButton, PointerPhase, UiEvent};
-use zero_ui_core::geometry::{Constraints, Rect, Size};
+use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
 use zero_ui_core::semantics::{SemanticsFlags, SemanticsLabel, SemanticsNode};
 use zero_ui_core::theme::{Color, SemanticTokens};
 use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget};
@@ -103,6 +103,18 @@ impl Button {
         }
     }
 
+    /// P3-4-1：按钮前景文字色（按 variant + enabled 状态）。
+    fn foreground_color(&self, tokens: &SemanticTokens) -> Color {
+        if !self.spec.enabled {
+            return tokens.on_surface.mix(tokens.surface, 0.55);
+        }
+        match self.spec.variant {
+            // 主色/选中态背景较深 → 用 on_primary 反色
+            ButtonVariant::Primary | ButtonVariant::Selected => tokens.on_primary,
+            // 中性态背景 = surface → 用 on_surface
+            ButtonVariant::Neutral => tokens.on_surface,
+        }
+    }
 }
 
 impl Widget for Button {
@@ -183,12 +195,20 @@ impl Widget for Button {
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx) {
-        // 填满 layout 算出的节点矩形（DC-7：用缓存 size，避免硬编码 96 截断长标签背景）。
-        // 文本绘制在 M2 接 text foundation 后补。
-        ctx.recorder.fill_rect(
-            Rect::from_ltrb(0.0, 0.0, self.size.width, self.size.height),
-            self.background(ctx.tokens),
-        );
+        // P3-4-1：圆角背景 + 真文本 label（之前只画 fill_rect 背景，label 全靠 semantics 传）。
+        let rect = Rect::from_ltrb(0.0, 0.0, self.size.width, self.size.height);
+        // 6px 圆角，视觉更接近真实按钮；disabled/hover 不改圆角，只改颜色。
+        ctx.recorder
+            .fill_rounded_rect(rect, 6.0, self.background(ctx.tokens));
+        // label 文本：14px，垂直居中（baseline ≈ height/2 + 5）；水平居中近似用 padding/2。
+        // 颜色按 variant 选反色（on_primary）或 on_surface（neutral）。
+        let fg = self.foreground_color(ctx.tokens);
+        let baseline = self.size.height * 0.5 + 5.0;
+        // 水平居中近似：估算文本宽度（char_w * len），居中起点 = (width - text_w) / 2。
+        let text_w = self.spec.label.chars().count() as f32 * 8.0;
+        let x = ((self.size.width - text_w) / 2.0).max(4.0);
+        ctx.recorder
+            .draw_text(&self.spec.label, Point::new(x, baseline), 14.0, fg);
     }
 
     fn semantics(&self, ctx: &mut SemanticsCtx) {
@@ -265,6 +285,8 @@ mod tests {
             offset: Vec2::ZERO,
             tokens,
             font_metrics: None,
+            now_ms: None,
+            frame_requests: &std::cell::Cell::new(0),
         };
         btn.paint(&mut ctx);
         assert_eq!(rec.fills.len(), 1);
@@ -522,6 +544,8 @@ mod tests {
             offset: Vec2::ZERO,
             tokens: &tokens,
             font_metrics: None,
+            now_ms: None,
+            frame_requests: &std::cell::Cell::new(0),
         };
         btn.paint(&mut ctx);
         assert_eq!(rec.fills.len(), 1);
@@ -628,5 +652,63 @@ mod tests {
             }
             _ => panic!("expected EmitWithPayload Text(\"leave\"), got {:?}", res),
         }
+    }
+
+    // ── P3-4-1：paint 应同时产出圆角背景 + 文本 ────────────────────────────
+
+    /// Recorder 同时记录 fill_rounded_rect + draw_text 调用（验证 paint 完整）。
+    #[derive(Default)]
+    struct FullRecorder {
+        rounded_fills: Vec<(Rect, f32, Color)>,
+        texts: Vec<(String, Point, f32, Color)>,
+    }
+    impl PaintRecorder for FullRecorder {
+        fn fill_rect(&mut self, rect: Rect, color: Color) {
+            // 默认实现会把 fill_rounded_rect fallback 到这里；测试不应触发。
+            let _ = (rect, color);
+        }
+        fn fill_rounded_rect(&mut self, rect: Rect, radius: f32, color: Color) {
+            self.rounded_fills.push((rect, radius, color));
+        }
+        fn stroke_rect(&mut self, _rect: Rect, _color: Color, _stroke_width: f32) {}
+        fn draw_text(&mut self, text: &str, position: Point, size_px: f32, color: Color) {
+            self.texts.push((text.to_string(), position, size_px, color));
+        }
+        fn draw_external_surface(&mut self, _rect: Rect, _surface_id: u64) {}
+        fn draw_image(&mut self, _rect: Rect, _image_ref: zero_ui_core::image::ImageRef, _tint: Color) {}
+    }
+
+    #[test]
+    fn paint_emits_rounded_background_and_label_text() {
+        // P3-4-1 回归：paint 必须同时产出 fill_rounded_rect（背景）和 draw_text（label）。
+        // 之前 bug：paint 只画 fill_rect 背景，label 全靠 semantics 传，视觉上看不到文字。
+        let mut btn = Button::new(ButtonSpec::new("Save", "app.save"));
+        // 给一个尺寸（layout 后才会 paint）。
+        btn.size = Size::new(64.0, 32.0);
+        let tokens = SemanticTokens::light();
+        let mut rec = FullRecorder::default();
+        let mut ctx = PaintCtx {
+            recorder: &mut rec,
+            clip: None,
+            offset: Vec2::ZERO,
+            tokens: &tokens,
+            font_metrics: None,
+            now_ms: None,
+            frame_requests: &std::cell::Cell::new(0),
+        };
+        btn.paint(&mut ctx);
+        assert_eq!(
+            rec.rounded_fills.len(),
+            1,
+            "paint 应产出 1 个 fill_rounded_rect（背景）"
+        );
+        assert_eq!(rec.rounded_fills[0].1, 6.0, "圆角半径应为 6");
+        assert_eq!(
+            rec.texts.len(),
+            1,
+            "paint 应产出 1 个 draw_text（label）"
+        );
+        assert_eq!(rec.texts[0].0, "Save", "draw_text 文本应是 label");
+        assert_eq!(rec.texts[0].2, 14.0, "字号 14");
     }
 }

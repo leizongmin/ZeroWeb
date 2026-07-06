@@ -275,6 +275,132 @@ impl GalleryApp {
 
     // build_demo_preview / build_button_demo / build_toggle_demo / build_text_input_demo
     // 及所有其它 page demo builder 实现已迁移到 demo_builders.rs（P2-11/P2-12 真控件化扩展）。
+
+    // ── P3-4-3 浮层视觉子树（popover/popup/dialog_scaffold）─────────────────
+    // 这些独立于 demo_builders.rs，因为它们由 host.overlay_root paint（在主树之上），
+    // 而非主 demo_preview 子树。每个返回带背景色块（muted）+ 内容的 Column。
+
+    fn build_popover_overlay(&self) -> WidgetSpec {
+        let mut col = WidgetSpec::new("Column");
+        col.id = Some(WidgetId::new("demo_overlay_root"));
+        col.props.insert("gap", Value::Float(8.0));
+        // 背景色块（muted）作为卡片视觉。
+        let mut bg = WidgetSpec::new("ColoredBox");
+        bg.id = Some(WidgetId::new("demo_overlay_bg"));
+        bg.props.insert("color", Value::Text("muted".into()));
+        bg.props.insert("width", Value::Float(280.0));
+        bg.props.insert("height", Value::Float(60.0));
+        bg.props.insert("radius", Value::Float(8.0));
+        bg.props.insert("label", Value::Text("Popover overlay".into()));
+        col.children.push(bg);
+
+        let mut content = WidgetSpec::new("SourceLabel");
+        content.id = Some(WidgetId::new("demo_overlay_text"));
+        content
+            .props
+            .insert("text", Value::Text("Popover: floats above other content (real overlay).".into()));
+        col.children.push(content);
+
+        let mut dismiss_hint = WidgetSpec::new("Button");
+        dismiss_hint.id = Some(WidgetId::new("demo_overlay_dismiss"));
+        dismiss_hint.props.insert("label", Value::Text("Close".into()));
+        dismiss_hint
+            .props
+            .insert("variant", Value::Text("neutral".into()));
+        dismiss_hint
+            .props
+            .insert("action", Value::Text("gallery.demo.button_click.1".into()));
+        col.children.push(dismiss_hint);
+        col
+    }
+
+    fn build_popup_overlay(&self) -> WidgetSpec {
+        let mut col = WidgetSpec::new("Column");
+        col.id = Some(WidgetId::new("demo_overlay_root"));
+        col.props.insert("gap", Value::Float(8.0));
+
+        let mut title = WidgetSpec::new("SourceLabel");
+        title.id = Some(WidgetId::new("demo_overlay_title"));
+        title.props.insert("text", Value::Text("Popup (modal)".into()));
+        col.children.push(title);
+
+        let mut body = WidgetSpec::new("SourceLabel");
+        body.id = Some(WidgetId::new("demo_overlay_body"));
+        body.props.insert(
+            "text",
+            Value::Text("Click outside or press Escape to dismiss (modal barrier active).".into()),
+        );
+        col.children.push(body);
+
+        let mut row = WidgetSpec::new("Row");
+        row.id = Some(WidgetId::new("demo_overlay_actions"));
+        row.props.insert("gap", Value::Float(8.0));
+
+        let mut ok = WidgetSpec::new("Button");
+        ok.id = Some(WidgetId::new("demo_overlay_ok"));
+        ok.props.insert("label", Value::Text("OK".into()));
+        ok.props
+            .insert("action", Value::Text("gallery.demo.button_click.2".into()));
+        row.children.push(ok);
+
+        let mut cancel = WidgetSpec::new("Button");
+        cancel.id = Some(WidgetId::new("demo_overlay_cancel"));
+        cancel.props.insert("label", Value::Text("Cancel".into()));
+        cancel
+            .props
+            .insert("variant", Value::Text("neutral".into()));
+        cancel
+            .props
+            .insert("action", Value::Text("gallery.demo.button_click.3".into()));
+        row.children.push(cancel);
+        col.children.push(row);
+        col
+    }
+
+    fn build_dialog_overlay(&self) -> WidgetSpec {
+        let mut col = WidgetSpec::new("Column");
+        col.id = Some(WidgetId::new("demo_overlay_root"));
+        col.props.insert("gap", Value::Float(8.0));
+
+        let mut bg = WidgetSpec::new("ColoredBox");
+        bg.id = Some(WidgetId::new("demo_overlay_bg"));
+        bg.props.insert("color", Value::Text("muted".into()));
+        bg.props.insert("width", Value::Float(320.0));
+        bg.props.insert("height", Value::Float(120.0));
+        bg.props.insert("radius", Value::Float(8.0));
+        bg.props.insert("label", Value::Text("Dialog".into()));
+        col.children.push(bg);
+
+        let mut body = WidgetSpec::new("SourceLabel");
+        body.id = Some(WidgetId::new("demo_overlay_body"));
+        body.props.insert("text", Value::Text("Are you sure? (modal dialog)".into()));
+        col.children.push(body);
+
+        let mut row = WidgetSpec::new("Row");
+        row.id = Some(WidgetId::new("demo_overlay_actions"));
+        row.props.insert("gap", Value::Float(8.0));
+
+        let mut confirm = WidgetSpec::new("Button");
+        confirm.id = Some(WidgetId::new("demo_overlay_confirm"));
+        confirm.props.insert("label", Value::Text("Confirm".into()));
+        confirm
+            .props
+            .insert("action", Value::Text("gallery.demo.button_click.2".into()));
+        row.children.push(confirm);
+
+        let mut cancel = WidgetSpec::new("Button");
+        cancel.id = Some(WidgetId::new("demo_overlay_cancel"));
+        cancel.props.insert("label", Value::Text("Cancel".into()));
+        cancel
+            .props
+            .insert("variant", Value::Text("neutral".into()));
+        cancel
+            .props
+            .insert("action", Value::Text("gallery.demo.button_click.3".into()));
+        row.children.push(cancel);
+        col.children.push(row);
+        col
+    }
 }
 
 impl Default for GalleryApp {
@@ -295,6 +421,37 @@ impl UiApp for GalleryApp {
             ThemeKind::Light => zero_ui_core::theme::SemanticTokens::light(),
             ThemeKind::Dark => zero_ui_core::theme::SemanticTokens::dark(),
         })
+    }
+
+    /// P3-4-3：popover/popup/dialog_scaffold 三个 demo 在打开时返回真浮动层。
+    ///
+    /// - popover：OutsideClick dismiss（点外部关）
+    /// - popup：modal barrier（屏蔽主树事件）+ Escape dismiss
+    /// - dialog_scaffold：modal barrier + Escape dismiss
+    ///
+    /// 浮层视觉 spec 由 build_overlay_spec 按 current_page 构造；host 把它 paint 在主树之上。
+    fn overlay(&self) -> Option<(zero_ui_overlay::OverlayEntry, Option<WidgetSpec>)> {
+        let st = self.current_demo_read();
+        let open = st.pressed == 1;
+        if !open {
+            return None;
+        }
+        let (entry, spec) = match self.current_page.as_str() {
+            "popover" => (
+                zero_ui_overlay::OverlayEntry::popover("demo_overlay", zero_ui_core::geometry::Rect::ZERO),
+                self.build_popover_overlay(),
+            ),
+            "popup" => (
+                zero_ui_overlay::OverlayEntry::modal("demo_overlay"),
+                self.build_popup_overlay(),
+            ),
+            "dialog_scaffold" => (
+                zero_ui_overlay::OverlayEntry::modal("demo_overlay"),
+                self.build_dialog_overlay(),
+            ),
+            _ => return None,
+        };
+        Some((entry, Some(spec)))
     }
 
     fn dispatch(&mut self, action: &ActionId, payload: Option<ActionPayload>) -> ActionResult {
@@ -571,6 +728,7 @@ pub fn register_gallery_factories(host: &mut WidgetHost) {
         Box::new(SourceLabel { text })
     });
     host.register("ColoredBox", |_spec| Box::new(zero_ui_widgets::ColoredBox::new()));
+    host.register("Icon", |_spec| Box::new(zero_ui_widgets::Icon::new()));
     host.register("SourceCode", |spec| {
         let source = str_prop(spec, "source").unwrap_or_default();
         let lang = str_prop(spec, "lang").unwrap_or_else(|| "yaml".into());

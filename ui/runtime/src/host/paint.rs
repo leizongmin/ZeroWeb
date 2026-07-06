@@ -32,6 +32,8 @@ pub(super) fn paint_node(
     parent_clip: Option<Rect>,
     tokens: &zero_ui_core::theme::SemanticTokens,
     font_metrics: Option<(f32, f32)>,
+    now_ms: Option<i64>,
+    frame_requests: &std::cell::Cell<u64>,
 ) {
     // 视口外 early-out（P3-1）：节点完全在 parent_clip 之外时跳过整个子树。
     let own_clip = match parent_clip {
@@ -68,6 +70,8 @@ pub(super) fn paint_node(
             offset: Vec2::ZERO,
             tokens,
             font_metrics,
+            now_ms,
+            frame_requests,
         };
         w.paint(&mut ctx);
         let local = rec.finish();
@@ -76,6 +80,6 @@ pub(super) fn paint_node(
         scene.extend_translated(local, abs_offset);
     }
     for child in node.children.iter_mut() {
-        paint_node(child, scene, own_clip, tokens, font_metrics);
+        paint_node(child, scene, own_clip, tokens, font_metrics, now_ms, frame_requests);
     }
 }

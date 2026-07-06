@@ -24,6 +24,11 @@ pub struct ColoredBox {
     width: f32,
     /// `height` prop：固定高度（>0 时优先），否则默认 24。
     height: f32,
+    /// `radius` prop：圆角半径（默认 0 = 直角；>0 圆角，让 badge/dot 看起来更真实）。
+    radius: f32,
+    /// `pulse` prop：true 时让颜色按 sin(now_ms) 轻微振荡（animation_demo 用）。
+    /// 需要 host 注入 now_ms；未注入则忽略。
+    pulse: bool,
     /// 上次 layout 算出的尺寸；paint 据此填充（paint 不接收 size）。
     size: Size,
     /// 可选 a11y 标签（用于屏幕阅读器，不影响视觉）。
@@ -36,6 +41,8 @@ impl ColoredBox {
             color_raw: "muted".into(),
             width: 0.0,
             height: 0.0,
+            radius: 0.0,
+            pulse: false,
             size: Size::new(64.0, 24.0),
             label: String::new(),
         }
@@ -74,6 +81,19 @@ impl Widget for ColoredBox {
                 *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_LAYOUT;
             }
         }
+        if let Some(zero_ui_core::binding::Value::Float(r)) = props.get("radius") {
+            let r = *r as f32;
+            if r != self.radius {
+                self.radius = r;
+                changed = true;
+            }
+        }
+        if let Some(zero_ui_core::binding::Value::Bool(p)) = props.get("pulse")
+            && *p != self.pulse
+        {
+            self.pulse = *p;
+            changed = true;
+        }
         if let Some(zero_ui_core::binding::Value::Text(label)) = props.get("label")
             && label != &self.label
         {
@@ -107,8 +127,28 @@ impl Widget for ColoredBox {
         let tokens = ctx.tokens;
         let size = ctx.clip.map(|r| r.size).unwrap_or(self.size);
         let rect = Rect::from_origin_size(zero_ui_core::geometry::Point::ZERO, size);
-        let color = resolve_color(&self.color_raw, tokens);
-        ctx.recorder.fill_rect(rect, color);
+        let mut color = resolve_color(&self.color_raw, tokens);
+        // P3-4-5：pulse 模式下让明度按 sin(now_ms / 600) 振荡 ±15%（连续动画）。
+        // 需要外部 driver 推进 clock；若 now_ms 为 None（无动画时钟），直接画静态色。
+        if self.pulse
+            && let Some(now) = ctx.now_ms
+        {
+            let phase = (now as f32 / 600.0).sin(); // -1..1
+            let lighten = 0.15 * phase;
+            color = if lighten >= 0.0 {
+                color.lighten(lighten)
+            } else {
+                color.darken(-lighten)
+            };
+            // 声明需要下一帧（动画未完成——永远不完成，直到 pulse=false）。
+            ctx.request_frame();
+        }
+        // P3-4-1：radius>0 用 fill_rounded_rect，让徽标/状态点变圆形/胶囊。
+        if self.radius > 0.0 {
+            ctx.recorder.fill_rounded_rect(rect, self.radius, color);
+        } else {
+            ctx.recorder.fill_rect(rect, color);
+        }
     }
 
     fn semantics(&self, ctx: &mut SemanticsCtx) {

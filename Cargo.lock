@@ -6320,6 +6320,7 @@ dependencies = [
  "zero-ui-core",
  "zero-ui-gestures",
  "zero-ui-i18n",
+ "zero-ui-overlay",
  "zero-ui-render",
 ]
 

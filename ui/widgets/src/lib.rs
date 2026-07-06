@@ -15,6 +15,7 @@
 pub mod badge;
 pub mod button;
 pub mod colored_box;
+pub mod icon;
 pub mod icon_button;
 pub mod list_view;
 pub mod menu;
@@ -30,6 +31,7 @@ pub mod tooltip;
 
 pub use button::{Button, ButtonSpec, ButtonVariant};
 pub use colored_box::ColoredBox;
+pub use icon::{Icon, IconKind};
 pub use icon_button::IconButton;
 pub use menu::{ContextMenu, Menu, MenuItem};
 pub use scrollbar::{ScrollBarGeometry, ScrollOrientation, layout_scrollbar};

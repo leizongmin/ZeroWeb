@@ -5,6 +5,7 @@
 use zero_ui_core::action::{ActionId, ActionPayload, ActionResult};
 use zero_ui_core::theme::SemanticTokens;
 use zero_ui_core::widget::WidgetSpec;
+use zero_ui_overlay::OverlayEntry;
 
 /// 宿主应用 trait（spec IF-006）。
 pub trait UiApp {
@@ -20,6 +21,19 @@ pub trait UiApp {
     /// 让控件 paint 经 `PaintCtx.tokens` 消费，无需各自存 theme 字段。
     /// 返回 `None`（默认）则保持 host 当前 tokens 不变，向后兼容无主题概念的 example。
     fn theme_tokens(&self) -> Option<SemanticTokens> {
+        None
+    }
+
+    /// P3-4-3：当前活动浮层（如果有）。
+    ///
+    /// 返回 `(OverlayEntry, Option<WidgetSpec>)`：entry 描述浮层语义（modal/popover/tooltip
+    /// + dismiss 策略 + focus trap），spec 是浮层视觉子树。
+    ///
+    /// driver 在每次 pump 帧时调此方法；返回 `Some` 则调 `host.show_overlay`，
+    /// 返回 `None` 则保持无浮层（或显式 dismiss）。
+    ///
+    /// 默认实现返回 `None`（app 无浮层概念）。
+    fn overlay(&self) -> Option<(OverlayEntry, Option<WidgetSpec>)> {
         None
     }
 }

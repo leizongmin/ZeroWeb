@@ -671,4 +671,118 @@ tabs/list_view/menu 用 `> Label` / `[X]` ASCII 前缀标记选中，本身在�
 
 ---
 
+### 9.4 P3-4 底层渲染 API 扩展（圆角 + 真文本 + 真图标 + 真浮层 + 真动画）
+
+**触发**：用户反馈 "gallery 好像还不是所有组件都是真实的啊"。深挖后发现"占位感"来自 5 个底层能力缺失：
+
+1. **圆角缺失**：Button paint 只 `fill_rect`，ColoredBox 不支持 radius → 所有按钮/徽标都是直角方块。
+2. **真文本缺失**：Button paint **不画 label**（注释说"M2 后补"）→ 按钮上看不到文字，全靠 semantics 传。
+3. **真图标缺失**：icon_button / toolbar / nav_demo 用 ASCII 字符（`<` `>` `R` `X`）当图标。
+4. **真浮层缺失**：popover / popup / dialog_scaffold 是线性排版的子树，不真正浮在主树之上；outside-click / escape / modal barrier 都没接。
+5. **真动画缺失**：animation_demo 的 indicator 是离散状态切换，没有连续时间插值。
+
+**关键发现**：`zero-ui-overlay`（OverlayHost 完整实现）和 `zero-ui-animation`（AnimationClock + Tween + Spring + FakeClock）**早已实现但从未被 WidgetHost 集成**——只是"挂着没用"。所以本批次主要是**接线**而非重写。
+
+#### 9.4.1 视觉基础：Button/ColoredBox paint 接入圆角 + 真文本
+
+- **Button.paint**：从只 `fill_rect` 升级为 `fill_rounded_rect(6px)` + `draw_text(label)`。
+  - 新增 `foreground_color(tokens)` 方法（按 variant + enabled 选 `on_primary` / `on_surface`）。
+  - label 字号 14px，垂直居中（baseline = `height/2 + 5`），水平居中近似（`(width - text_w)/2`）。
+- **ColoredBox**：新增 `radius` prop（`radius > 0` → `fill_rounded_rect`，否则 `fill_rect`）。
+- **回归测试**：`paint_emits_rounded_background_and_label_text`（FullRecorder 同时验证 fill_rounded_rect + draw_text）。
+
+#### 9.4.2 视觉基础：新增 Icon widget + 内置 20 个 Unicode 图标
+
+**设计权衡**：选 Unicode 符号而非 SVG path。原因：
+- `PaintRecorder` 当前没有 `draw_path` / `draw_svg` API；扩展它需要改 `ui/render` + `ui/core` trait + 后端实现，工程量大。
+- Unicode 几何符号（← → ✕ ✓ ☰ ⚙ ⚠ ★ ♥ ⌘ ▶ ⏸ ⏹ ⏭ ⏮ 🔍 🏠 ✉ 🕐 ℹ）已被字体栈支持，**零扩展成本**，gallery 与外部宿主零依赖开箱即用。
+- 字符选型基于 Unicode 1.1-7.0 几何符号区段，覆盖主流字体（Segoe UI / SF Pro / Noto Sans）。
+
+**API**：
+- `IconKind` 枚举（20 个 variant）+ `glyph()` 返回 Unicode 字符 + `from_name(&str)` 解析 prop。
+- `Icon` widget：props `name` / `size`（默认 20）/ `color`（命名预设或 `#rrggbb`，默认 `on_surface`）/ `label`（a11y）。
+- paint：`draw_text(glyph, baseline = height*0.5 + size*0.35, size_px, tint)`。
+- 不响应事件（纯视觉）；交互由 sibling Button 承担。
+
+**测试**：`glyph_nonempty_for_all_variants` / `from_name_roundtrip` / `from_name_unknown_falls_back_to_info` / `size_prop_drives_layout_square`。
+
+#### 9.4.3 + 9.4.4 浮层：WidgetHost 集成 OverlayHost
+
+**接线**（已实现的 `zero-ui-overlay::OverlayHost` 接入 `WidgetHost`）：
+- `WidgetHost` 新增字段：`overlay: OverlayHost` + `overlay_root: Option<HostNode>` + `overlay_dirty: bool`。
+- `runtime/Cargo.toml` 加 `zero-ui-overlay` 依赖。
+- **paint 分层**：`paint()` 主树完成后 paint `overlay_root` 并 append 到同一 `Scene`（overlay 在后 = 视觉在上层）。
+- **layout 同步**：`layout()` 主树 layout 后用同一 viewport 约束 layout overlay 子树。
+- **公开 API**：`show_overlay(entry, spec)` / `dismiss_overlay(id)` / `has_modal()` / `overlay()` / `overlay_rect()`。
+
+**事件路由（P3-4-4）**：`dispatch_event` 在主树路由前先处理 overlay：
+- **outside-click**：`Pressed` 落在所有 popover 锚定矩形之外 → `overlay.dismiss_on_outside_click(point)` dismiss 最上层候选；返回非空即消费该点击（不冒泡到下层）。
+- **Escape**：`overlay.dismiss_on_escape()` dismiss 最上层 escape-able entry。
+- **modal barrier**：`has_modal() == true` → 主树完全不接收任何事件（点哪都不命中下层）。
+
+**UiApp trait 扩展**：新增默认方法 `overlay() -> Option<(OverlayEntry, Option<WidgetSpec>)>`。driver 在 `pump_frame` 开头同步：app 声明 overlay 而 host 无 → show；app 无声明而 host 有 → dismiss。
+
+**GalleryApp 接入**：popover / popup / dialog_scaffold 三个 demo 在 `pressed == 1`（打开）时返回真浮动层：
+- popover → `OverlayEntry::popover` + OutsideClick dismiss + 内容卡片（ColoredBox bg + SourceLabel + Close button）
+- popup → `OverlayEntry::modal` + Escape dismiss + OK/Cancel buttons
+- dialog_scaffold → `OverlayEntry::modal` + Escape dismiss + Confirm/Cancel buttons
+
+#### 9.4.5 动画：host 每 frame tick AnimationClock
+
+**接线**（已实现的 `zero-ui-animation::AnimationClock` 接入 `WidgetHost`）：
+- `PaintCtx` 新增 `now_ms: Option<i64>` + `frame_requests: &'a Cell<u64>` 字段。
+- `PaintCtx::request_frame()` 方法：递增 `frame_requests` Cell（让 widget 在 `&self` 上下文也能调）。
+- `WidgetHost` 新增 `animation_now_ms: i64` + `last_frame_requests: u64` 字段。
+- `paint_node` 签名扩展：传入 `now_ms` + `frame_requests` Cell。
+- `paint()` 每帧重置 Cell 为 0，paint 完读值存 `last_frame_requests`。
+- **driver 接入**：`pump_frame` 开头调 `host.advance_clock(16)`（≈60fps）。
+- **公开 API**：`advance_clock(delta_ms)` / `animation_now_ms()` / `has_pending_animation()`。
+
+**ColoredBox 接入 pulse**：新增 `pulse: bool` prop。paint 时若 `pulse && ctx.now_ms.is_some()`：
+- `phase = sin(now_ms / 600)` → `lighten(0.15 * phase)` 或 `darken(-0.15 * phase)`（颜色明度连续振荡 ±15%）。
+- 调 `ctx.request_frame()` 声明需要下一帧（永续动画，直到 `pulse = false`）。
+
+**GalleryApp 接入**：animation_demo 的 indicator ColoredBox 启用 `pulse = true`，让所有状态都有连续色变（验证完整动画环路：driver tick → host now_ms → widget sample → request_frame → driver 续帧）。
+
+#### 9.4.6 Gallery 全 demo 接入清单
+
+| Demo | 改动 |
+|---|---|
+| button | paint 自动圆角 + label（无需改 demo） |
+| badge | ColoredBox `radius=10` → 胶囊形徽标 |
+| status_bubble | ColoredBox `radius=8` → 正圆状态点 |
+| progress | filled + track 都 `radius=6` |
+| icon_button | ASCII `<` `>` `R` `X` → 真 Icon widget（back/forward/play/close） |
+| toolbar | ASCII → Icon widget（back/forward/play/home） |
+| nav_demo | ColoredBox marker → Icon widget（back/forward/home） |
+| popover | 线性排版 → host.show_overlay 真浮动 + outside-click dismiss |
+| popup | 线性排版 → host.show_overlay modal + Escape dismiss |
+| dialog_scaffold | 线性排版 → host.show_overlay modal + Escape dismiss |
+| animation_demo | 离散状态 → ColoredBox `pulse=true` 连续色变动画 |
+
+#### 9.4.7 测试覆盖
+
+新增 5 个回归测试（gallery_retained.rs，从 16 → 21）：
+- `toolbar_uses_real_icon_widgets`：验证 `demo_toolbar_glyph_{1..4}` Icon widget 存在。
+- `nav_demo_uses_real_icon_widgets`：验证 `demo_nav_marker_{1..3}` Icon widget 存在。
+- `popover_demo_creates_overlay_when_open`：验证 popover 打开时 overlay 视觉子树出现。
+- `animation_demo_indicator_has_pulse_enabled`：验证 pulse indicator 触发 `has_pending_animation`。
+- `modal_popup_blocks_main_tree_pointer_events`：验证 modal barrier 屏蔽主树事件路由。
+
+新增 1 个 widget 测试（button.rs）：
+- `paint_emits_rounded_background_and_label_text`：FullRecorder 验证 paint 同时产出 fill_rounded_rect + draw_text。
+
+新增 4 个 icon 测试（icon.rs）：glyph 非空 / from_name 往返 / unknown fallback / size prop 驱动 layout。
+
+**核心 crate 测试全绿**（276 通过，0 失败）：zero-ui-core 17 + zero-ui-render 57 + zero-ui-runtime 87+3 + zero-ui-widgets 62 + zero-ui-overlay 19 + zero-ui-animation 10 + zero-ui-examples 21。
+
+#### 9.4.8 设计决策记录
+
+- **为什么 Icon 用 Unicode 而非 SVG**：PaintRecorder 无 draw_path API；扩展成本高；Unicode 已覆盖 90% 常用图标且零依赖。未来若需 SVG，可在 Icon 加 `glyph_kind: GlyphSource::Unicode | Svg(AssetId)` 字段扩展。
+- **为什么 overlay 用独立 overlay_root 而非主树 z-order**：独立子树让 overlay 的 layout/paint/reconcile 与主树解耦，modal barrier 只需"主树跳过"一行判断；z-order 方案需要重排整个 paint 顺序，侵入性更大。
+- **为什么动画用 Cell 而非 `&mut`**：paint 借 `&mut recorder`，若 frame_requests 也 `&mut` 会与 recorder 借用冲突。Cell 让 widget 在 `&self` 上下文（paint 借 `&mut recorder`）也能递增计数，符合 paint 方法签名约束。
+- **为什么 pulse 是永续动画**：用于验证完整动画环路（driver tick → widget sample → request_frame → driver 续帧）。真实业务动画（如 Tween 250ms 过渡）会在 `is_done` 后停止 request_frame，自动停止续帧。
+
+---
+
 *RFC 结束。上一段落：Spec（需求规格），当前段落：RFC（技术设计），下一段落：实施交接（逐步骤指令）。*

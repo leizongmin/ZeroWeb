@@ -150,7 +150,7 @@ impl GalleryApp {
         col
     }
 
-    /// 4 IconButtons; last-clicked highlighted with ColoredBox marker.
+    /// 4 IconButtons; last-clicked highlighted with ColoredBox marker + real Icon glyph.
     fn build_icon_button_demo(&self) -> WidgetSpec {
         let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_icon_col");
@@ -160,25 +160,31 @@ impl GalleryApp {
         row.props.insert("gap", Value::Float(12.0));
         row.props.insert("cross_axis_align", Value::Text("center".into()));
 
-        let icons = [("Back", "<"), ("Fwd", ">"), ("Reload", "R"), ("Close", "X")];
-        for (name, glyph) in icons.iter() {
+        // P3-4-6：用真 Icon widget（Unicode glyph）替代 ASCII 字符。
+        let icons = [
+            ("Back", "back"),
+            ("Fwd", "forward"),
+            ("Reload", "play"),
+            ("Close", "close"),
+        ];
+        for (name, icon_name) in icons.iter() {
             let pos = icons.iter().position(|(n, _)| n == name).unwrap();
             let active = (pos as u32 + 1) == st.pressed;
-            // P3-3：选中态用 primary 色方块做图标视觉强化，未选中 muted。
-            let mut icon_box = WidgetSpec::new("ColoredBox");
-            icon_box.id = Some(WidgetId::new(&format!("demo_icon_glyph_{}", name)));
-            icon_box.props.insert(
+            let mut icon = WidgetSpec::new("Icon");
+            icon.id = Some(WidgetId::new(&format!("demo_icon_glyph_{}", name)));
+            icon.props.insert("name", Value::Text((*icon_name).into()));
+            icon.props.insert("size", Value::Float(24.0));
+            // 选中态用 primary 色，未选中用 muted；让 icon 视觉强化与按钮 hover 联动。
+            icon.props.insert(
                 "color",
                 Value::Text(if active { "primary" } else { "muted" }.into()),
             );
-            icon_box.props.insert("width", Value::Float(24.0));
-            icon_box.props.insert("height", Value::Float(24.0));
-            icon_box.props.insert("label", Value::Text((*name).into()));
-            row.children.push(icon_box);
+            icon.props.insert("label", Value::Text((*name).into()));
+            row.children.push(icon);
 
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_icon_btn_{}", name)));
-            btn.props.insert("label", Value::Text((*glyph).to_string()));
+            btn.props.insert("label", Value::Text((*name).to_string()));
             btn.props.insert(
                 "variant",
                 Value::Text(if active { "selected" } else { "neutral" }.into()),
@@ -221,13 +227,15 @@ impl GalleryApp {
             .insert("action", Value::Text("gallery.demo.button_click.1".into()));
         row.children.push(inc_btn);
 
-        // 真彩色徽标：ColoredBox + 内嵌 SourceLabel 文本（数字）。
+        // 真彩色徽标：ColoredBox（radius 让它变成胶囊形）+ 内嵌 SourceLabel 文本（数字）。
         let badge_w = if count >= 99 { 36.0 } else { 24.0 };
         let mut badge_dot = WidgetSpec::new("ColoredBox");
         badge_dot.id = Some(WidgetId::new("demo_badge_dot"));
         badge_dot.props.insert("color", Value::Text("danger".into()));
         badge_dot.props.insert("width", Value::Float(badge_w));
         badge_dot.props.insert("height", Value::Float(20.0));
+        // P3-4-6：radius = height/2 让徽标变成胶囊形（圆角全覆盖）。
+        badge_dot.props.insert("radius", Value::Float(10.0));
         badge_dot
             .props
             .insert("label", Value::Text(format!("Unread: {}", display)));
@@ -266,12 +274,15 @@ impl GalleryApp {
         filled.props.insert("color", Value::Text("primary".into()));
         filled.props.insert("label", Value::Text(format!("{}%", pct)));
         filled.props.insert("width", Value::Float((filled_w.max(2.0)) as f64));
+        // P3-4-6：进度条圆角（与按钮一致的 6px）。
+        filled.props.insert("radius", Value::Float(6.0));
         bar_row.children.push(filled);
         if track_w > 0.0 {
             let mut track = WidgetSpec::new("ColoredBox");
             track.id = Some(WidgetId::new("demo_progress_track"));
             track.props.insert("color", Value::Text("muted".into()));
             track.props.insert("width", Value::Float(track_w as f64));
+            track.props.insert("radius", Value::Float(6.0));
             bar_row.children.push(track);
         }
         col.children.push(bar_row);
@@ -525,12 +536,14 @@ impl GalleryApp {
         row.props.insert("gap", Value::Float(8.0));
         row.props.insert("cross_axis_align", Value::Text("center".into()));
 
-        // 真彩色圆点（用窄 ColoredBox 模拟）。
+        // 真彩色圆点（窄 ColoredBox + radius = 一半宽度变正圆）。
         let mut dot = WidgetSpec::new("ColoredBox");
         dot.id = Some(WidgetId::new("demo_status_dot"));
         dot.props.insert("color", Value::Text(color_name.into()));
         dot.props.insert("width", Value::Float(16.0));
         dot.props.insert("height", Value::Float(16.0));
+        // P3-4-6：radius = 8（宽高一半）让色块变成正圆状态点。
+        dot.props.insert("radius", Value::Float(8.0));
         dot.props.insert("label", Value::Text(label_text.into()));
         row.children.push(dot);
 
@@ -549,29 +562,34 @@ impl GalleryApp {
         col
     }
 
-    /// Toolbar: horizontal Buttons with ColoredBox icon markers; last-clicked highlighted.
+    /// Toolbar: horizontal Buttons with real Icon markers; last-clicked highlighted.
     fn build_toolbar_demo(&self) -> WidgetSpec {
         let st = self.current_demo_read();
         let mut row = self.themed_container("Row", "demo_toolbar_row");
         row.props.insert("gap", Value::Float(4.0));
         row.props.insert("cross_axis_align", Value::Text("center".into()));
-        let actions = [("<", "Back", 1u32), (">", "Forward", 2), ("R", "Reload", 3), ("H", "Home", 4)];
-        for (icon, name, idx) in actions.iter() {
+        let actions = [
+            ("back", "Back", 1u32),
+            ("forward", "Forward", 2),
+            ("play", "Reload", 3),
+            ("home", "Home", 4),
+        ];
+        for (icon_name, label, idx) in actions.iter() {
             let active = *idx == st.pressed;
-            let mut icon_box = WidgetSpec::new("ColoredBox");
-            icon_box.id = Some(WidgetId::new(&format!("demo_toolbar_glyph_{}", idx)));
-            icon_box.props.insert(
+            let mut icon = WidgetSpec::new("Icon");
+            icon.id = Some(WidgetId::new(&format!("demo_toolbar_glyph_{}", idx)));
+            icon.props.insert("name", Value::Text((*icon_name).into()));
+            icon.props.insert("size", Value::Float(20.0));
+            icon.props.insert(
                 "color",
                 Value::Text(if active { "primary" } else { "muted" }.into()),
             );
-            icon_box.props.insert("width", Value::Float(20.0));
-            icon_box.props.insert("height", Value::Float(20.0));
-            icon_box.props.insert("label", Value::Text((*name).into()));
-            row.children.push(icon_box);
+            icon.props.insert("label", Value::Text((*label).into()));
+            row.children.push(icon);
 
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_toolbar_{}", idx)));
-            btn.props.insert("label", Value::Text((*icon).to_string()));
+            btn.props.insert("label", Value::Text((*label).to_string()));
             btn.props.insert(
                 "variant",
                 Value::Text(if active { "selected" } else { "neutral" }.into()),
@@ -933,6 +951,10 @@ impl GalleryApp {
         indicator.props.insert("color", Value::Text(color.into()));
         indicator.props.insert("width", Value::Float(width as f64));
         indicator.props.insert("height", Value::Float(24.0));
+        indicator.props.insert("radius", Value::Float(6.0));
+        // P3-4-5：所有状态都启用 pulse，让颜色明度连续振荡——验证 host 每 frame 推进 clock
+        // + widget 用 ctx.request_frame() 拉下一帧的完整动画环路。
+        indicator.props.insert("pulse", Value::Bool(true));
         indicator.props.insert("label", Value::Text(state_name.into()));
         col.children.push(indicator);
 
@@ -1075,19 +1097,23 @@ impl GalleryApp {
         let mut row = self.themed_container("Row", "demo_nav_row");
         row.props.insert("gap", Value::Float(4.0));
         row.props.insert("cross_axis_align", Value::Text("center".into()));
-        let items = [("< Back", "Back", 1u32), ("> Forward", "Forward", 2), ("H Home", "Home", 3)];
-        for (label, name, idx) in items.iter() {
+        let items = [
+            ("back", "Back", 1u32),
+            ("forward", "Forward", 2),
+            ("home", "Home", 3),
+        ];
+        for (icon_name, label, idx) in items.iter() {
             let active = *idx == st.pressed;
-            let mut marker = WidgetSpec::new("ColoredBox");
-            marker.id = Some(WidgetId::new(&format!("demo_nav_marker_{}", idx)));
-            marker.props.insert(
+            let mut icon = WidgetSpec::new("Icon");
+            icon.id = Some(WidgetId::new(&format!("demo_nav_marker_{}", idx)));
+            icon.props.insert("name", Value::Text((*icon_name).into()));
+            icon.props.insert("size", Value::Float(20.0));
+            icon.props.insert(
                 "color",
                 Value::Text(if active { "primary" } else { "muted" }.into()),
             );
-            marker.props.insert("width", Value::Float(8.0));
-            marker.props.insert("height", Value::Float(24.0));
-            marker.props.insert("label", Value::Text((*name).into()));
-            row.children.push(marker);
+            icon.props.insert("label", Value::Text((*label).into()));
+            row.children.push(icon);
 
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_nav_{}", idx)));
