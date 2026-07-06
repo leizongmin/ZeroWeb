@@ -1530,6 +1530,11 @@ fn position_cells_vertical(
 
     // 行组位置更新（与 horizontal 路径对称）。
     update_row_group_positions(table_box, grid, styles);
+
+    // 注：caption-side 在 vertical WM 下的语义（物理 top/bottom vs 逻辑 block-start/end）
+    // 是 α-4b-4 的 TBD——「physical bottom = y 末端」假设实测 net-negative（破 1 案，
+    // caption-side-vlr-005 未改善且 -1 pass），已回退。vertical 表 caption 定位须按
+    // 逻辑 block 轴（block-end = vertical-rl 左 / vertical-lr 右）处理，留 α-4b-4。
 }
 
 /// 应用 min-height/max-height/min-width/max-width 约束到 table 容器。
