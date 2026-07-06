@@ -358,7 +358,19 @@ impl WidgetHost {
             arrange(root, Point::ZERO);
             size
         };
-        // P3-4-3：overlay 子树也 layout（用同一 viewport 约束；锚定由 widget 内部处理）。
+        // P0-1：先解析 overlay anchor（避免与 overlay_root 可变借冲突）。
+        // 优先 anchor_widget（host rect_of 真实 rect），否则 anchor（绝对 rect）。
+        let overlay_anchor = self
+            .overlay
+            .top()
+            .map(|e| (e.anchor_widget.clone(), e.anchor))
+            .and_then(|(wid, fallback)| {
+                wid.and_then(|w| self.rect_of(&w)).or(fallback)
+            });
+        // P3-4-3：overlay 子树也 layout（用同一 viewport 约束）。
+        // P0-1 修复：根据 overlay entry 的 anchor 决定 overlay_root 的 arrange 位置。
+        //   - popover/tooltip（有 anchor）：放在 anchor 矩形下方（或上方若空间不够）。
+        //   - modal/sheet（anchor = None）：居中（由 widget 自身 flex 处理，这里用 ZERO）。
         if let Some(overlay_root) = self.overlay_root.as_mut() {
             let mut lctx = LayoutCtx {
                 scale_factor: 1.0,
@@ -366,7 +378,23 @@ impl WidgetHost {
                 font_metrics: self.font_metrics,
             };
             measure(overlay_root, &mut lctx, constraints);
-            arrange(overlay_root, Point::ZERO);
+            let origin = overlay_anchor
+                .map(|a| {
+                    let ow = overlay_root.cached_rect.size.width;
+                    let oh = overlay_root.cached_rect.size.height;
+                    let vh = constraints.max_height;
+                    let below_y = a.bottom();
+                    let above_y = (a.top() - oh).max(0.0);
+                    let y = if below_y + oh > vh && above_y + oh <= vh {
+                        above_y
+                    } else {
+                        below_y
+                    };
+                    let x = a.left().min(constraints.max_width - ow).max(0.0);
+                    Point::new(x, y)
+                })
+                .unwrap_or(Point::ZERO);
+            arrange(overlay_root, origin);
         }
         self.text_measure = tm;
         self.pending.remove(InvalidationFlags::NEEDS_LAYOUT);
@@ -434,7 +462,18 @@ impl WidgetHost {
             ..
         } = event
         {
-            let dismissed = self.overlay.dismiss_on_outside_click(*position);
+            // P1-7 修复：overlay 自身视觉（overlay_root rect）内的点击不算"外部点击"。
+            // overlay.dismiss_on_outside_click 只看 anchor rect，会误判 overlay 内容点击为外部。
+            let in_overlay_visual = self
+                .overlay_root
+                .as_ref()
+                .map(|n| n.cached_rect.contains(*position))
+                .unwrap_or(false);
+            let dismissed = if in_overlay_visual {
+                Vec::new()
+            } else {
+                self.overlay.dismiss_on_outside_click(*position)
+            };
             if !dismissed.is_empty() {
                 // 清掉被 dismiss 的 overlay 视觉子树。
                 self.overlay_root = None;

@@ -2076,11 +2076,13 @@ fn paint_node_skips_subtree_outside_viewport() {
     let scene = host.paint().clone();
     let f = fills(&scene);
     // p1（y=-10..40）部分在视口内；p2/p3 完全在视口内；p0 完全离屏。
-    // 视口内的 3 个应当画，p0 不画 → scene 里有 3 个 fill，没有 rect 在 (-60,-10) 的那一个。
+    // 视口内的 3 个应当画，p0 不画 → scene 里有 3 个 widget fill。
+    // U-3：ScrollVertical 容器额外画 1 个 scrollbar fill（content=200 > viewport=100），
+    // 总共 4 个 fill。
     assert_eq!(
         f.len(),
-        3,
-        "p0 完全在视口外，应被 early-out 跳过；剩下 p1/p2/p3 共 3 个 fill"
+        4,
+        "p0 完全在视口外，应被 early-out 跳过；剩下 p1/p2/p3 共 3 个 fill + 1 个 scrollbar"
     );
     assert!(
         !f.iter().any(|(r, _)| (r.origin.y - (-60.0)).abs() < 0.01),

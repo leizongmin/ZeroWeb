@@ -44,6 +44,12 @@ pub struct OverlayEntry {
     pub id: OverlayId,
     /// 锚定区域（popover 的浮层矩形）；`None` = 居中/全屏 modal（覆盖整屏，outside-click 永不命中）。
     pub anchor: Option<Rect>,
+    /// P0-1：锚定 widget id（运行时由 host 解析为 rect 覆盖 `anchor`）。
+    ///
+    /// 当应用层不知道触发按钮的绝对 rect（通常是这种情况）时，设置此项；
+    /// host 在 layout overlay 时调 `rect_of(anchor_widget)` 解析为真实屏幕 rect，
+    /// 覆盖 `anchor` 字段（若两者都设，优先 `anchor_widget`）。
+    pub anchor_widget: Option<WidgetId>,
     /// 是否捕获焦点（modal/sheet/dialog → true，供 host 绑 FocusScope trap）。
     pub trap_focus: bool,
     /// 是否为 modal barrier（屏蔽下层事件路由；host 据此 stop hit-test 冒泡到更低层）。
@@ -58,6 +64,7 @@ impl OverlayEntry {
         OverlayEntry {
             id: WidgetId::new(id),
             anchor: Some(anchor),
+            anchor_widget: None,
             trap_focus: false,
             modal: false,
             dismiss: DismissPolicy::OutsideClick,
@@ -69,6 +76,7 @@ impl OverlayEntry {
         OverlayEntry {
             id: WidgetId::new(id),
             anchor: None,
+            anchor_widget: None,
             trap_focus: true,
             modal: true,
             dismiss: DismissPolicy::Escape,
@@ -80,6 +88,7 @@ impl OverlayEntry {
         OverlayEntry {
             id: WidgetId::new(id),
             anchor: Some(anchor),
+            anchor_widget: None,
             trap_focus: false,
             modal: false,
             dismiss: DismissPolicy::OutsideClick,
@@ -91,10 +100,17 @@ impl OverlayEntry {
         OverlayEntry {
             id: WidgetId::new(id),
             anchor: None,
+            anchor_widget: None,
             trap_focus: true,
             modal: true,
             dismiss: DismissPolicy::Any,
         }
+    }
+
+    /// P0-1：设置 `anchor_widget`（host 解析为真实 rect，覆盖 `anchor`）。
+    pub fn with_anchor_widget(mut self, widget_id: &str) -> Self {
+        self.anchor_widget = Some(WidgetId::new(widget_id));
+        self
     }
 }
 

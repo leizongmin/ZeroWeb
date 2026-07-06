@@ -486,7 +486,8 @@ impl UiApp for GalleryApp {
         }
         let (entry, spec) = match self.current_page.as_str() {
             "popover" => (
-                zero_ui_overlay::OverlayEntry::popover("demo_overlay", zero_ui_core::geometry::Rect::ZERO),
+                zero_ui_overlay::OverlayEntry::popover("demo_overlay", zero_ui_core::geometry::Rect::ZERO)
+                    .with_anchor_widget("demo_popover_trigger"),
                 self.build_popover_overlay(),
             ),
             "popup" => (
@@ -498,7 +499,8 @@ impl UiApp for GalleryApp {
                 self.build_dialog_overlay(),
             ),
             "tooltip" => (
-                zero_ui_overlay::OverlayEntry::tooltip("demo_overlay", zero_ui_core::geometry::Rect::ZERO),
+                zero_ui_overlay::OverlayEntry::tooltip("demo_overlay", zero_ui_core::geometry::Rect::ZERO)
+                    .with_anchor_widget("demo_tooltip_btn"),
                 self.build_tooltip_overlay(),
             ),
             _ => return None,
