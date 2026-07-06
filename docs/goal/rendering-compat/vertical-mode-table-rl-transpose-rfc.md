@@ -131,12 +131,13 @@ cell 沿 y 迭代（两方向相同）：起始 `cell_y = perimeter_y`，每 cel
 
 ### 4.1 Slice α-4b-1 — 简单 vertical-rl/lr 表轴转置（无 colspan、border-spacing:0）
 
+- **★ R1108 LANDED**（commit pending）：`position_cells_vertical`（table.rs，~165 行）+ `layout_table` WM 分派 + 3 单测。A/B css-writing-modes（784 案全量对账）：pass 60→60 net-0；**24 案改善**（4 目标案 row-progression-vrl-002/008 + vlr-003/009 **83%→27%（-54~-57pp）**+ 20 bonus 案 border-conflict-element / contiguous-floated-table / border-spacing vertical 变体连带改善）；1 案轻微回归 caption-side-vlr-005 +1.04pp（α-4b-4 deferred）；**horizontal-tb 表零回归**。门禁全绿（fmt/clippy --workspace/make test/product-smoke 16.57%）。详见 [`evidence/r1108-vertical-mode-alpha4b1-landed-2026-07-06.txt`](./evidence/r1108-vertical-mode-alpha4b1-landed-2026-07-06.txt)。TBD-1 resolved：cell.width 经 extract_layout 轴交换后确为转置后 x 宽（取行内 max 作列 x 宽，A/B 验证几何正确）。
 - **范围**：`position_cells` 加 vertical-rl/lr 分支。处理**简单表**：无 colspan/rowspan（所有 cell.col_start+1 == cell.col_end）、`border-spacing: 0`（spacing_x = spacing_y = 0，回避轴互换语义 TBD）、row_extras 暂按横向均分（vertical 表 height 属性 → x 方向行展开）。
 - **轴映射**：按 §2.1-2.3。行沿 x（rl 右到左 / lr 左到右），cell 沿 y 顶到底。`col_widths[i]` → cell 沿 y 高贡献；行宽 = max(cell 内容宽)；cell 高 = 对应 col_width。
 - **文件**：`crates/layout-engine/src/table.rs`（`position_cells:931` 加 WM 分支）。
-- **预期**：row-progression-vrl-002/004/006/008 + vlr-003/005/007/009 共 8 案，z_vs_chr% 从 80-87% 显著下降（目标 <1% 翻 pass，或至少大幅改善）；horizontal-tb 表零回归。
+- **预期**：row-progression-vrl-002/004/006/008 + vlr-003/005/007/009 共 8 案，z_vs_chr% 从 80-87% 显著下降（目标 <1% 翻 pass，或至少大幅改善）；horizontal-tb 表零回归。**★ 实测**：4 simple 案（002/008/vlr-003/009）-55pp 巨幅改善；4 span 案（004/006/vlr-005/007 因 colspan/rowspan gate 回退）留 α-4b-2。
 - **门禁**：A/B `make reftest-oracle DIR=css-writing-modes`（看 row-progression 簇 + 全目录 net）+ `make product-smoke`（welcome <20%）+ horizontal-tb 表 byte-diff（采样 css-tables 目录确认 0 字节漂移）。
-- **风险**：① row_extras（table height 在 vertical 下应展开 inline 方向 = y，非 block 方向 = x）可能须特殊处理——α-4b-1 先按「不展开」(row_extras=0) 实测，若 table height 强制 inline 轴展开则 α-4b-4 处理。② cell 内容宽度（cell.width 沿 x）计算依赖 taffy 给 cell 盒的 width——converter 已轴交换 cell 盒 size，故 cell.width 应已是转置后的 x 宽，须 LAYOUT_DUMP 确认（TBD-1）。
+- **风险**：① row_extras（table height 在 vertical 下应展开 inline 方向 = y，非 block 方向 = x）可能须特殊处理——α-4b-1 先按「不展开」(row_extras=0) 实测，若 table height 强制 inline 轴展开则 α-4b-4 处理。② cell 内容宽度（cell.width 沿 x）计算依赖 taffy 给 cell 盒的 width——converter 已轴交换 cell 盒 size，故 cell.width 应已是转置后的 x 宽，须 LAYOUT_DUMP 确认（TBD-1）。**★ TBD-1 resolved（R1108）**。
 - **依赖**：无前置（α-1 已 LANDED，container 坐标系已 vertical-aware；本切片是 table 内部独立缺口）。
 
 ### 4.2 Slice α-4b-2 — colspan/rowspan 在 transposed 轴（依赖 α-4b-1）
@@ -324,3 +325,4 @@ baseline = pre-slice HEAD；treatment = 切片改动。`ORACLE_DUMP_ALL=1 make r
 | 版本 | 日期 | 变更内容 |
 |---|---|---|
 | v0.1 | 2026-07-06 (R1107) | 首版草案：轴语义定义（§2）+ 多 session 切片计划（α-4b-1..5）+ colspan/spacing 转置设计（§5）+ 方案 A/B 推荐 + 验证门禁 + 实施交接。替代父 RFC §4.4 α-4 generic mirror（R1103-R1105 证伪）。 |
+| v0.2 | 2026-07-06 (R1108) | α-4b-1 LANDED 标记：§4.1 加实测结果（24 案改善 / 4 目标案 -55pp / 1 deferred 回归 / horizontal-tb 零回归）+ TBD-1 resolved（cell.width 经 extract_layout 轴交换后确为转置后 x 宽）。 |

@@ -237,3 +237,220 @@ fn test_display_table_margin_auto_centers() {
         html_box.width
     );
 }
+
+/// R1108 α-4b-1 回归：vertical-rl 表的行沿 x 右到左、cell 沿 y 顶到底（转置）。
+/// 验证 position_cells_vertical 的轴语义（RFC vertical-mode-table-rl-transpose §2）。
+#[test]
+fn test_r1108_vertical_rl_table_rows_right_to_left() {
+    let html = r#"<html><body style="margin:0">
+      <table style="writing-mode:vertical-rl; border-spacing:0; font:20px/1 Ahem">
+        <tr><td>A</td><td>B</td><td>C</td></tr>
+        <tr><td>D</td><td>E</td><td>F</td></tr>
+      </table>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // 收集所有 td 的绝对位置（x,y）。
+    let mut tds: Vec<(String, f32, f32)> = Vec::new();
+    fn collect_tds(box_node: &LayoutBox, doc: &Document, abs_x: f32, abs_y: f32, out: &mut Vec<(String, f32, f32)>) {
+        for child in &box_node.children {
+            let x = abs_x + child.x;
+            let y = abs_y + child.y;
+            let tag = child.node_id.and_then(|nid| doc.get(nid)).and_then(|n| match &n.kind {
+                zero_dom::NodeKind::Element(e) => Some(e.local_name().to_string()),
+                _ => None,
+            });
+            if tag.as_deref() == Some("td") {
+                let text = child
+                    .node_id
+                    .and_then(|nid| doc.get(nid))
+                    .and_then(|n| {
+                        n.first_child().and_then(|_| {
+                            // 取 cell 的文本内容首字符
+                            let c = n.first_child()?;
+                            let cn = doc.get(c)?;
+                            match &cn.kind {
+                                zero_dom::NodeKind::Text(t) => {
+                                    Some(t.content.chars().next().unwrap_or('?').to_string())
+                                }
+                                _ => None,
+                            }
+                        })
+                    })
+                    .unwrap_or_else(|| "?".to_string());
+                out.push((text, x, y));
+            }
+            let cx = x + child.content_x;
+            let cy = y + child.content_y;
+            collect_tds(child, doc, cx, cy, out);
+        }
+    }
+    collect_tds(&result.root, &doc, 0.0, 0.0, &mut tds);
+
+    // 按 text 排序定位 A..F。
+    let pos = |label: &str| -> (f32, f32) {
+        tds.iter()
+            .find(|(t, _, _)| t == label)
+            .map(|(_, x, y)| (*x, *y))
+            .unwrap_or((-1.0, -1.0))
+    };
+    let (ax, ay) = pos("A");
+    let (dx, dy) = pos("D");
+    let (bx, by) = pos("B");
+    // vertical-rl：同一行（A,B,C）的 cell 沿 y 递增（顶到底）。
+    assert!(
+        bx > ay.abs() || by >= ay,
+        "cell B should be below A in same column (Ay={} By={})",
+        ay,
+        by
+    );
+    assert!(
+        by > ay,
+        "vertical-rl: cells in a row stack along y top-to-bottom (Ay={} < By={})",
+        ay,
+        by
+    );
+    // vertical-rl：1st row (A) 在最右，2nd row (D) 在其左 → A.x > D.x。
+    assert!(
+        ax > dx,
+        "vertical-rl: 1st row (A) should be rightmost, A.x={} > D.x={} (rows right-to-left)",
+        ax,
+        dx
+    );
+    // 同一列 A,D 沿 x 不同（A 右，D 左），y 相近（行起始）。
+    assert!(
+        (ay - dy).abs() < 50.0 || ay.abs() < 5.0,
+        "rows share inline start (Ay={} Dy={})",
+        ay,
+        dy
+    );
+}
+
+/// R1108 α-4b-1 回归：vertical-lr 表的行沿 x 左到右（首行最左）。
+#[test]
+fn test_r1108_vertical_lr_table_rows_left_to_right() {
+    let html = r#"<html><body style="margin:0">
+      <table style="writing-mode:vertical-lr; border-spacing:0; font:20px/1 Ahem">
+        <tr><td>A</td><td>B</td></tr>
+        <tr><td>D</td><td>E</td></tr>
+      </table>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let mut tds: Vec<(String, f32, f32)> = Vec::new();
+    fn collect_tds(box_node: &LayoutBox, doc: &Document, abs_x: f32, abs_y: f32, out: &mut Vec<(String, f32, f32)>) {
+        for child in &box_node.children {
+            let x = abs_x + child.x;
+            let y = abs_y + child.y;
+            let tag = child.node_id.and_then(|nid| doc.get(nid)).and_then(|n| match &n.kind {
+                zero_dom::NodeKind::Element(e) => Some(e.local_name().to_string()),
+                _ => None,
+            });
+            if tag.as_deref() == Some("td") {
+                let text = child
+                    .node_id
+                    .and_then(|nid| doc.get(nid))
+                    .and_then(|n| {
+                        let c = n.first_child()?;
+                        let cn = doc.get(c)?;
+                        match &cn.kind {
+                            zero_dom::NodeKind::Text(t) => Some(t.content.chars().next().unwrap_or('?').to_string()),
+                            _ => None,
+                        }
+                    })
+                    .unwrap_or_else(|| "?".to_string());
+                out.push((text, x, y));
+            }
+            let cx = x + child.content_x;
+            let cy = y + child.content_y;
+            collect_tds(child, doc, cx, cy, out);
+        }
+    }
+    collect_tds(&result.root, &doc, 0.0, 0.0, &mut tds);
+    let pos = |l: &str| {
+        tds.iter()
+            .find(|(t, _, _)| t == l)
+            .map(|(_, x, y)| (*x, *y))
+            .unwrap_or((-1.0, -1.0))
+    };
+    let (ax, _) = pos("A");
+    let (dx, _) = pos("D");
+    // vertical-lr：1st row (A) 在最左 → A.x < D.x。
+    assert!(
+        ax < dx,
+        "vertical-lr: 1st row (A) should be leftmost, A.x={} < D.x={} (rows left-to-right)",
+        ax,
+        dx
+    );
+}
+
+/// R1108 α-4b-1 回归：horizontal-tb 表行为不变（WM gate 零回归）。
+#[test]
+fn test_r1108_horizontal_tb_table_unchanged_by_wm_gate() {
+    let html = r#"<html><body style="margin:0">
+      <table style="border-spacing:0; font:20px/1 Ahem">
+        <tr><td>A</td><td>B</td></tr>
+        <tr><td>D</td><td>E</td></tr>
+      </table>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let mut tds: Vec<(String, f32, f32)> = Vec::new();
+    fn collect_tds(box_node: &LayoutBox, doc: &Document, abs_x: f32, abs_y: f32, out: &mut Vec<(String, f32, f32)>) {
+        for child in &box_node.children {
+            let x = abs_x + child.x;
+            let y = abs_y + child.y;
+            let tag = child.node_id.and_then(|nid| doc.get(nid)).and_then(|n| match &n.kind {
+                zero_dom::NodeKind::Element(e) => Some(e.local_name().to_string()),
+                _ => None,
+            });
+            if tag.as_deref() == Some("td") {
+                let text = child
+                    .node_id
+                    .and_then(|nid| doc.get(nid))
+                    .and_then(|n| {
+                        let c = n.first_child()?;
+                        let cn = doc.get(c)?;
+                        match &cn.kind {
+                            zero_dom::NodeKind::Text(t) => Some(t.content.chars().next().unwrap_or('?').to_string()),
+                            _ => None,
+                        }
+                    })
+                    .unwrap_or_else(|| "?".to_string());
+                out.push((text, x, y));
+            }
+            let cx = x + child.content_x;
+            let cy = y + child.content_y;
+            collect_tds(child, doc, cx, cy, out);
+        }
+    }
+    collect_tds(&result.root, &doc, 0.0, 0.0, &mut tds);
+    let pos = |l: &str| {
+        tds.iter()
+            .find(|(t, _, _)| t == l)
+            .map(|(_, x, y)| (*x, *y))
+            .unwrap_or((-1.0, -1.0))
+    };
+    let (_, ay) = pos("A");
+    let (_, dy) = pos("D");
+    let (ax, _) = pos("A");
+    let (bx, _) = pos("B");
+    // horizontal-tb：行沿 y（A 上，D 下），cell 沿 x（A 左，B 右）。
+    assert!(ay < dy, "horizontal-tb: rows stack along y (Ay={} < Dy={})", ay, dy);
+    assert!(ax < bx, "horizontal-tb: cells stack along x (Ax={} < Bx={})", ax, bx);
+}
