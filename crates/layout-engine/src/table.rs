@@ -232,7 +232,16 @@ fn layout_table(table_box: &mut LayoutBox, doc: &zero_dom::Document, styles: &Ha
     let col_widths = compute_column_widths(table_box, &grid, styles, doc);
 
     // 3. 定位单元格
-    position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
+    // α-4b-1：vertical-rl/lr 表走转置路径（行沿 x、cell 沿 y），
+    // horizontal-tb 走原路径（WM gate，字节一致零回归）。
+    if matches!(
+        table_box.writing_mode,
+        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+    ) {
+        position_cells_vertical(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
+    } else {
+        position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
+    }
 
     // R767: 列定尺寸后，cell content（width:auto block 子树）仍为 taffy 初始（body 宽）
     // 布局宽度，约束到 cell content width（仅 max-content 装得下的非 wrapping 内容安全；
@@ -1304,6 +1313,217 @@ fn position_cells(
             child.y = row_y;
         }
     }
+}
+
+/// α-4b-1（RFC `vertical-mode-table-rl-transpose-rfc.md` §4.1）：对 `writing-mode:
+/// vertical-rl/lr` 的表，把行/cell 定位从 horizontal-tb **转置** 到 vertical——
+/// 行沿 x（vertical-rl 右到左 / vertical-lr 左到右），cell 沿 y 顶到底。
+///
+/// `col_widths`（逻辑列宽，WM-agnostic）映射为 cell 的 y 高度；行的 x 宽 = 该行
+/// cell 内容宽的最大值。WM gate：仅 vertical-rl/lr 触发，horizontal-tb 走原
+/// `position_cells`（字节一致零回归）。
+///
+/// **α-4b-1 范围**：简单表（无 colspan/rowspan）+ border-spacing 轴互换。
+/// 有 colspan/rowspan 时回退到 `position_cells`（旧行为），留给 α-4b-2。
+/// row-extras（table height 展开）/ vertical-align / caption-side 在转置轴的
+/// 处理留给 α-4b-4。
+fn position_cells_vertical(
+    table_box: &mut LayoutBox,
+    grid: &TableGrid,
+    col_widths: &[f32],
+    spacing_x: f32,
+    spacing_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    // α-4b-1 gate：有 colspan/rowspan 时回退到 horizontal 路径（避免错误转置）。
+    let has_complex_span = grid
+        .rows
+        .iter()
+        .any(|r| r.cells.iter().any(|c| c.colspan > 1 || c.rowspan > 1));
+    if has_complex_span {
+        position_cells(table_box, grid, col_widths, spacing_x, spacing_y, styles);
+        return;
+    }
+
+    let is_rl = matches!(table_box.writing_mode, WritingModeValue::VerticalRl);
+
+    // 转置 spacing：vertical 下 spacing_x（inline 轴）→ y 方向（cell 间），
+    // spacing_y（block 轴）→ x 方向（行间）。周界 spacing 同步轴换。
+    let separated = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Separate));
+    let (perim_block, perim_inline) = if separated { (spacing_y, spacing_x) } else { (0.0, 0.0) };
+
+    // 表 inline 跨度（沿 y）= Σ col_widths + cell 间 gap + 上下周界。
+    // 这是每行（垂直列）的 y 高度。
+    let n_cols = col_widths.len();
+    let inline_gaps = if n_cols > 1 {
+        (n_cols - 1) as f32 * spacing_x
+    } else {
+        0.0
+    };
+    let row_inline_extent: f32 = col_widths.iter().sum::<f32>() + inline_gaps + 2.0 * perim_inline;
+
+    // 先算每行的 block 尺寸（x 宽 = 该行 cell 内容宽最大值）。
+    // extract_layout 已对 vertical 容器的 cell 盒做了 size 轴交换，cell.width 是
+    // 转置后的 x 宽；取行内最大作为该垂直列的 x 宽。
+    let row_block_sizes: Vec<f32> = grid
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(row_idx, row)| {
+            if grid.collapsed_rows.get(row_idx).copied().unwrap_or(false) {
+                return 0.0;
+            }
+            let mut max_w = 0.0f32;
+            if let Some(rb) = get_row_box(table_box, row) {
+                for cell in &row.cells {
+                    let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
+                        rb.children.get(rg_idx).and_then(|rg| rg.children.get(cell.child_index))
+                    } else {
+                        rb.children.get(cell.child_index)
+                    };
+                    if let Some(cb) = cell_box {
+                        max_w = max_w.max(cb.width);
+                    }
+                }
+            }
+            max_w
+        })
+        .collect();
+
+    // 表 block 跨度（沿 x）= Σ row_block_sizes + 行间 gap + 左右周界。
+    let block_gaps_total: f32 = grid
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(i, _)| if i > 0 { spacing_y } else { 0.0 })
+        .sum::<f32>();
+    let table_block_extent: f32 = row_block_sizes.iter().sum::<f32>() + block_gaps_total + 2.0 * perim_block;
+
+    // 「直接 cell 的匿名行 = table 自身」标志（避免覆盖 table 盒自身几何）。
+    let table_is_display_table = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable));
+
+    // 行沿 x 迭代：vertical-rl 从右到左（首行最右），vertical-lr 从左到右（首行最左）。
+    let mut cur_block = perim_block; // vertical-lr 起始
+    for (row_idx, row) in grid.rows.iter().enumerate() {
+        let row_collapsed = grid.collapsed_rows.get(row_idx).copied().unwrap_or(false);
+        let row_block_size = row_block_sizes[row_idx];
+
+        // 行的 x 位置（相对 table content box）。
+        let row_x = if is_rl {
+            // vertical-rl：首行在最右。cur_block 从右缘递减。
+            table_block_extent - cur_block - row_block_size
+        } else {
+            // vertical-lr：首行在最左。cur_block 从左缘递增。
+            cur_block
+        };
+
+        // 设置行盒：宽 = 该列 x 宽，高 = inline 跨度（行铺满表高）。
+        let row_box = get_row_box_mut(table_box, row);
+        if let Some(row_box) = row_box {
+            // 行自身 relative inset（沿 x/y，vertical 下 inset 语义已由 converter 交换）。
+            let (row_rel_dx, row_rel_dy) = if row_box.is_relative {
+                (
+                    resolve_length_inset(row_box, styles, true),
+                    resolve_length_inset(row_box, styles, false),
+                )
+            } else {
+                (0.0, 0.0)
+            };
+            let is_direct_cell_row = row.is_anonymous && row.row_group_index.is_none() && table_is_display_table;
+            if !is_direct_cell_row {
+                row_box.x = row_x + row_rel_dx;
+                row_box.y = row_rel_dy;
+                row_box.width = row_block_size;
+                row_box.height = row_inline_extent;
+            }
+        }
+
+        // cell 沿 y 迭代：起始 y = 上周界，每个 cell 后 += col_width + cell_gap。
+        let mut cell_y = perim_inline;
+        for cell in &row.cells {
+            let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
+                get_row_box_mut(table_box, row)
+                    .and_then(|rb| rb.children.get_mut(rg_idx))
+                    .and_then(|rg| rg.children.get_mut(cell.child_index))
+            } else {
+                get_row_box_mut(table_box, row).and_then(|rb| rb.children.get_mut(cell.child_index))
+            };
+            let Some(cell_box) = cell_box else {
+                continue;
+            };
+
+            // cell 在 inline 轴（y）的尺寸 = 对应列宽（colspan=1 时单列）。
+            let col_idx = cell.col_start;
+            let cell_h = if col_idx < col_widths.len() {
+                col_widths[col_idx]
+            } else {
+                0.0
+            };
+
+            // cell 自身 relative inset。
+            let (cell_rel_dx, cell_rel_dy) = if cell_box.is_relative {
+                (
+                    resolve_length_inset(cell_box, styles, true),
+                    resolve_length_inset(cell_box, styles, false),
+                )
+            } else {
+                (0.0, 0.0)
+            };
+
+            cell_box.x = cell_rel_dx; // cell 沿 x 相对行起点（=0），行已定位
+            cell_box.y = cell_y + cell_rel_dy;
+            cell_box.width = row_block_size; // cell 铺满列 x 宽
+            cell_box.height = cell_h; // cell 沿 y 高 = 列宽
+
+            // 同步 content_width/height（paint 用）。
+            cell_box.content_width = (cell_box.width
+                - cell_box.border_left
+                - cell_box.border_right
+                - cell_box.padding_left
+                - cell_box.padding_right)
+                .max(0.0);
+            cell_box.content_height = (cell_box.height
+                - cell_box.border_top
+                - cell_box.border_bottom
+                - cell_box.padding_top
+                - cell_box.padding_bottom)
+                .max(0.0);
+
+            // cell 推进（沿 y）。折叠列不推进。
+            let is_in_collapsed_col = cell.col_start < grid.collapsed_cols.len() && grid.collapsed_cols[cell.col_start];
+            if !is_in_collapsed_col {
+                cell_y += cell_h + spacing_x;
+            }
+        }
+
+        if !row_collapsed {
+            cur_block += row_block_size + spacing_y;
+        }
+    }
+
+    // 表自身尺寸：content_width（block, x）与 content_height（inline, y）更新为转置值。
+    table_box.content_width = table_block_extent;
+    table_box.content_height = row_inline_extent;
+    // border-box width/height 同步（含 border+padding）。
+    table_box.width = table_block_extent
+        + table_box.border_left
+        + table_box.border_right
+        + table_box.padding_left
+        + table_box.padding_right;
+    table_box.height = row_inline_extent
+        + table_box.border_top
+        + table_box.border_bottom
+        + table_box.padding_top
+        + table_box.padding_bottom;
+
+    // 行组位置更新（与 horizontal 路径对称）。
+    update_row_group_positions(table_box, grid, styles);
 }
 
 /// 应用 min-height/max-height/min-width/max-width 约束到 table 容器。
