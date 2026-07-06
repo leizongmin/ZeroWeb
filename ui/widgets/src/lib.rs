@@ -28,7 +28,7 @@ pub mod toggle;
 pub mod toolbar;
 pub mod tooltip;
 
-pub use button::{Button, ButtonSpec};
+pub use button::{Button, ButtonSpec, ButtonVariant};
 pub use colored_box::ColoredBox;
 pub use icon_button::IconButton;
 pub use menu::{ContextMenu, Menu, MenuItem};

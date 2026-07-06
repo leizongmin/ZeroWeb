@@ -585,11 +585,17 @@ pub fn register_gallery_factories(host: &mut WidgetHost) {
             .unwrap_or_else(|| ActionId::new("noop"));
         let enabled = !matches!(spec.props.get("enabled"), Some(Value::Bool(false)));
         let hover_action = str_prop(spec, "hover_action").map(|a| ActionId::new(&a));
+        let variant = match str_prop(spec, "variant").as_deref() {
+            Some("neutral") => zero_ui_widgets::ButtonVariant::Neutral,
+            Some("selected") => zero_ui_widgets::ButtonVariant::Selected,
+            _ => zero_ui_widgets::ButtonVariant::Primary,
+        };
         Box::new(zero_ui_widgets::Button::new(zero_ui_widgets::ButtonSpec {
             label,
             action,
             enabled,
             hover_action,
+            variant,
         }))
     });
     host.register("ToggleWidget", |spec| {

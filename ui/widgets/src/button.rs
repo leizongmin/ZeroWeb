@@ -10,6 +10,18 @@ use zero_ui_core::semantics::{SemanticsFlags, SemanticsLabel, SemanticsNode};
 use zero_ui_core::theme::{Color, SemanticTokens};
 use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, SemanticsCtx, UpdateCtx, Widget};
 
+/// 按钮视觉变体（P3-2：让选中态/主按钮用不同背景色，避免 demo 用文本前缀表达高亮）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ButtonVariant {
+    /// 默认主色按钮（primary 背景）。
+    #[default]
+    Primary,
+    /// 中性背景按钮（surface + on_surface 文字），用于次要操作。
+    Neutral,
+    /// 选中态（用更深的背景或加 indicator），用于 tabs/list/menu 的当前选中项。
+    Selected,
+}
+
 /// 按钮声明。
 #[derive(Debug, Clone)]
 pub struct ButtonSpec {
@@ -19,6 +31,8 @@ pub struct ButtonSpec {
     /// P2-14：hover 进入/离开时 emit 此 action，payload = "enter" / "leave"。
     /// `None` 表示不 emit（默认）。用于 tooltip / hover preview 等场景。
     pub hover_action: Option<ActionId>,
+    /// P3-2：视觉变体。默认 Primary。demo 可设 Selected 表达当前选中项。
+    pub variant: ButtonVariant,
 }
 
 impl ButtonSpec {
@@ -28,12 +42,19 @@ impl ButtonSpec {
             action: ActionId::new(action),
             enabled: true,
             hover_action: None,
+            variant: ButtonVariant::Primary,
         }
     }
 
     /// 设置 hover action（hover 进入/离开时 emit，payload = "enter"/"leave"）。
     pub fn with_hover_action(mut self, action: &str) -> ButtonSpec {
         self.hover_action = Some(ActionId::new(action));
+        self
+    }
+
+    /// 设置视觉变体（P3-2）。
+    pub fn with_variant(mut self, variant: ButtonVariant) -> ButtonSpec {
+        self.variant = variant;
         self
     }
 }
@@ -60,23 +81,28 @@ impl Button {
 
     /// 按钮背景色（DC-5：从 semantic token 派生，不硬编码浏览器色值）。
     ///
-    /// - default = `primary`
-    /// - hover = `primary.lighten(0.12)`（变亮，交互态；WCAG 对瞬态放宽）
-    /// - pressed = `primary.darken(0.12)`（变暗）
-    /// - disabled = `on_surface` 与 `surface` 中和的中性灰（WCAG 豁免禁用态，仍 token 派生）
+    /// - Primary default = `primary`，hover 变亮，pressed 变暗
+    /// - Neutral default = `surface_variant`（中性背景），文字用 `on_surface`
+    /// - Selected default = `primary.darken(0.18)`（更深），表示选中态
+    /// - disabled 任何变体都退化为中性灰
     fn background(&self, tokens: &SemanticTokens) -> Color {
         if !self.spec.enabled {
             return tokens.on_surface.mix(tokens.surface, 0.55);
         }
-        let primary = tokens.primary;
+        let base = match self.spec.variant {
+            ButtonVariant::Primary => tokens.primary,
+            ButtonVariant::Neutral => tokens.surface,
+            ButtonVariant::Selected => tokens.primary.darken(0.18),
+        };
         if self.pressed {
-            primary.darken(0.12)
+            base.darken(0.12)
         } else if self.hover {
-            primary.lighten(0.12)
+            base.lighten(0.12)
         } else {
-            primary
+            base
         }
     }
+
 }
 
 impl Widget for Button {

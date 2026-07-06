@@ -189,6 +189,7 @@ pub fn register_counter_factories(host: &mut WidgetHost) {
             action,
             enabled,
             hover_action: None,
+            variant: zero_ui_widgets::ButtonVariant::Primary,
         }))
     });
 }

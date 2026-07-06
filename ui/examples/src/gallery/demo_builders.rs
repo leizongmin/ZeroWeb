@@ -310,6 +310,18 @@ impl GalleryApp {
                 (*label).to_string()
             };
             btn.props.insert("label", Value::Text(display));
+            // P3-2：选中态用更深的背景色（variant=Selected），非选中用中性。
+            btn.props.insert(
+                "variant",
+                Value::Text(
+                    if i == selected {
+                        "selected"
+                    } else {
+                        "neutral"
+                    }
+                    .into(),
+                ),
+            );
             btn.props
                 .insert("action", Value::Text(format!("gallery.demo.button_click.{}", i + 1)));
             row.children.push(btn);
@@ -346,13 +358,31 @@ impl GalleryApp {
         col.children.push(btn);
 
         if show_tip {
+            // P3-2：把 tooltip 文字包在 ColoredBox 里，模拟浮动卡片（深色背景 + 浅色字）。
+            // ColoredBox 不渲染文字，所以用一个内嵌的 SourceLabel；外层 ColoredBox 提供"卡片"色块。
+            let mut bubble = self.themed_container("Row", "demo_tooltip_bubble");
+            bubble.props.insert("gap", Value::Float(8.0));
+            bubble.props.insert("cross_axis_align", Value::Text("center".into()));
+
+            let mut bg = WidgetSpec::new("ColoredBox");
+            bg.id = Some(WidgetId::new("demo_tooltip_bg"));
+            bg.props.insert("color", Value::Text("muted".into()));
+            bg.props.insert("width", Value::Float(280.0));
+            bg.props.insert("height", Value::Float(32.0));
+            bg.props.insert(
+                "label",
+                Value::Text("Helpful hint: this is a tooltip-like bubble.".into()),
+            );
+            bubble.children.push(bg);
+
             let mut tip = WidgetSpec::new("SourceLabel");
             tip.id = Some(WidgetId::new("demo_tooltip_text"));
             tip.props.insert(
                 "text",
                 Value::Text("Helpful hint: this is a tooltip-like bubble.".into()),
             );
-            col.children.push(tip);
+            bubble.children.push(tip);
+            col.children.push(bubble);
         }
         col
     }
@@ -372,6 +402,17 @@ impl GalleryApp {
             let marker = if i == selected { "> " } else { "  " };
             btn.props
                 .insert("label", Value::Text(format!("{}Item {}", marker, i + 1)));
+            btn.props.insert(
+                "variant",
+                Value::Text(
+                    if i == selected {
+                        "selected"
+                    } else {
+                        "neutral"
+                    }
+                    .into(),
+                ),
+            );
             btn.props
                 .insert("action", Value::Text(format!("gallery.demo.button_click.{}", i + 1)));
             row.children.push(btn);
@@ -401,6 +442,17 @@ impl GalleryApp {
                 (*label).to_string()
             };
             btn.props.insert("label", Value::Text(display));
+            btn.props.insert(
+                "variant",
+                Value::Text(
+                    if *idx == selected {
+                        "selected"
+                    } else {
+                        "neutral"
+                    }
+                    .into(),
+                ),
+            );
             btn.props
                 .insert("action", Value::Text(format!("gallery.demo.button_click.{}", idx)));
             col.children.push(btn);
@@ -573,6 +625,9 @@ impl GalleryApp {
             cancel.props.insert("label", Value::Text("Cancel".into()));
             cancel
                 .props
+                .insert("variant", Value::Text("neutral".into()));
+            cancel
+                .props
                 .insert("action", Value::Text("gallery.demo.button_click.3".into()));
             row.children.push(cancel);
             col.children.push(row);
@@ -699,6 +754,9 @@ impl GalleryApp {
             let mut cancel = WidgetSpec::new("Button");
             cancel.id = Some(WidgetId::new("demo_dialog_cancel"));
             cancel.props.insert("label", Value::Text("Cancel".into()));
+            cancel
+                .props
+                .insert("variant", Value::Text("neutral".into()));
             cancel
                 .props
                 .insert("action", Value::Text("gallery.demo.button_click.3".into()));

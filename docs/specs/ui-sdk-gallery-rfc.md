@@ -599,6 +599,35 @@ collection_demo 的 8 个 toggle 复用 toggle.0/1/2 action 也是同类问题�
 
 **影响面**：纯删除死代码，无行为变化。
 
+### 9.3-bis P3 视觉精度收尾（ButtonVariant 接入 + dead method 清理）
+
+**问题**：另一会话在 `ButtonSpec` 加了 `variant: ButtonVariant` 字段（Primary / Neutral / Selected 三档，paint 时分别用 primary / 中性 surface / primary.darken(0.18) 背景），但
+1. `gallery/app.rs` 的 Button 工厂与 `counter.rs` 未传 `variant`，编译失败（`E0063 missing field`）；
+2. `ButtonVariant` 没在 `ui/widgets` lib.rs 公开导出，外部无法引用；
+3. `Button::foreground` 辅助方法（按 variant 算文字色）定义了却没被 paint 调用（注释"等 M2 接 text foundation 后补"），clippy `dead_code` 直接 fail。
+
+**修复**：
+- `ui/widgets/src/lib.rs`：`pub use button::{Button, ButtonSpec, ButtonVariant};`
+- `ui/examples/src/gallery/app.rs` Button 工厂：从 `variant` prop 字符串解析（`neutral` / `selected` / 其他→Primary），让 demo 声明侧能直接用 prop 切换视觉档位。
+- `ui/examples/src/counter.rs`：补 `variant: Primary`（counter 用主操作语义）。
+- `ui/widgets/src/button.rs`：删除未被调用的 `foreground` 方法（保留 `background`，paint 真正在用）。注释里 "等 M2 接 text foundation 后补" 是推测性开发产物——真到了 M2 再按当时的 Color API 写。
+- demo 视觉精度升级（在 `demo_builders.rs` 给"选中态"和"次操作"按钮声明 `variant`）：
+  - `tabs`：选中 tab `variant=selected`（深色背景），其他 `variant=neutral`；
+  - `list_view`：选中行 Selected，其他 Neutral；
+  - `menu`：选中项 Selected，其他 Neutral；
+  - `popup` Cancel 按钮 Neutral（OK 仍是 Primary，主次操作视觉分离）；
+  - `dialog_scaffold` Cancel 按钮 Neutral。
+
+**为何不全量替换 `>` 文本前缀为视觉标记**：
+tabs/list_view/menu 用 `> Label` / `[X]` ASCII 前缀标记选中，本身在单色文本渲染下足够清晰；
+新增的 `variant=selected` 是**补充**而非替换——选中态现在同时有文本前缀（语义提示）和深色背景（视觉强化），无障碍层面更稳。强行删除前缀会让屏幕阅读器用户丢失选中提示，得不偿失。
+
+**影响面**：
+- 编译恢复（gallery + counter）；
+- clippy `-D warnings` 通过；
+- 12 个 gallery 测试 + 57 个 widget 测试全绿；
+- demo 视觉层面，选中态/主次操作有真实颜色区分。
+
 ### 9.4 影响面汇总
 
 - 新增 crate 内模块：`ui/core/prop_keys.rs`、`ui/runtime/src/host/{reconcile,layout,paint,event,semantics}.rs`。
