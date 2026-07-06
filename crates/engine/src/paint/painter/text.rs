@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use crate::measure_char_for_paint;
 use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, ListStyleTypeValue};
 use zero_dom::{Document, NodeId, NodeKind};
+use zero_layout_engine::inline_finalization::subtree_has_text_decoration;
 use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, TextAlign, WordBreakMode};
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
@@ -794,7 +795,25 @@ impl super::Painter {
                 return;
             }
 
-            let container_width = box_node.content_width;
+            // R1099 Slice α-1（vertical-mode IFC 四层协调）：container_width WM-aware。
+            // vertical-rl/lr 下 IFC 重跑须与 layout 侧（inline_finalization.rs）同取 content_height
+            //（竖直 inline 尺寸 = 字符向下推进可用深度），非 content_width。horizontal-tb 零回归。
+            // decoration-gate（TBD-2）：vertical 容器子树有 text-decoration/emphasis 时保持
+            // content_width（旧行为），回避 Layer 4 装饰坐标耦合（α-3 未实施）。
+            let is_vertical_wm = matches!(
+                style.writing_mode,
+                zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
+            );
+            let vertical_decoration_free = styles.is_some_and(|s| {
+                box_node
+                    .node_id
+                    .is_some_and(|id| !subtree_has_text_decoration(doc, s, id))
+            });
+            let container_width = if is_vertical_wm && vertical_decoration_free {
+                box_node.content_height
+            } else {
+                box_node.content_width
+            };
 
             // 检测是否为多列容器（无块级子元素但有 inline 内容）
             // 如果是，使用列宽创建 IFC，并在渲染时将行分配到各列。
