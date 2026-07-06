@@ -1897,3 +1897,38 @@ fn r822_linebox_grows_for_valign_extension() {
         ctx2.lines[0].height
     );
 }
+
+/// R1099 Slice α-1：`subtree_has_text_decoration` decoration-gate 正确性。
+/// gate 决定 vertical 容器是否应用 container_width WM-aware fix（回避 Layer 4 装饰耦合）。
+#[test]
+fn test_r1099_subtree_has_text_decoration() {
+    use crate::inline_finalization::subtree_has_text_decoration;
+    use zero_dom::parse_html;
+    use zero_style_system::property::types::TextDecorationLineValue;
+
+    // 子树有 text-decoration（descendant span 设 underline）
+    let doc = parse_html("<div><p>text</p></div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let div = doc.first_child(body).unwrap();
+    let p = doc.first_child(div).unwrap();
+    let mut styles = HashMap::new();
+    let mut p_style = ComputedStyle::default();
+    p_style.text_decoration_line = TextDecorationLineValue::Underline;
+    styles.insert(p, p_style);
+    assert!(
+        subtree_has_text_decoration(&doc, &styles, div),
+        "子树含 underline 应返回 true"
+    );
+
+    // 子树无任何 text-decoration/emphasis
+    let doc2 = parse_html("<div><p>text</p></div>");
+    let html2 = doc2.first_child(doc2.root()).unwrap();
+    let body2 = doc2.last_child(html2).unwrap();
+    let div2 = doc2.first_child(body2).unwrap();
+    let styles2 = HashMap::new(); // 全 default（text_decoration_line = None）
+    assert!(
+        !subtree_has_text_decoration(&doc2, &styles2, div2),
+        "子树无装饰应返回 false"
+    );
+}
