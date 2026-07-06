@@ -170,6 +170,27 @@ impl FontdueBackend {
             .unwrap_or(false)
     }
 
+    /// 返回已加载字体的 family 名列表（按加载顺序，即 fallback 优先级）。
+    ///
+    /// 供适配器（如 UI SDK 的 `FontdueTextMeasure`）构建 per-character fallback：
+    /// 对每个字符按此顺序查找首个 `has_char` 的字体，保证 CJK 等非主族字符也能被
+    /// 正确度量，而非全部用 primary 字体产生 .notdef（P3-7 修复中文间距乱）。
+    pub fn family_names(&self) -> Vec<String> {
+        self.fonts.iter().map(|f| f.family.0.clone()).collect()
+    }
+
+    /// 查询字符是否被某个 family 覆盖（按 family 名查找字体）。
+    ///
+    /// 适配器用它实现 per-character fallback：遍历 `family_names()`，对每个字符
+    /// 找首个 `family_covers_char` 返回 true 的字体。
+    pub fn family_covers_char(&self, family: &str, ch: char) -> bool {
+        self.fonts
+            .iter()
+            .find(|f| f.family.0.eq_ignore_ascii_case(family))
+            .map(|f| f.font.lookup_glyph_index(ch) != 0)
+            .unwrap_or(false)
+    }
+
     /// 按 [`FontRequest`] 的候选族顺序匹配首个已加载字体；无精确匹配时回退到首个已加载字体。
     fn best_match(&self, request: &FontRequest) -> Option<&LoadedFont> {
         for fam in &request.families {

@@ -30,7 +30,8 @@ use zero_ui_runtime::platform::{PlatformRuntime, RuntimeError, UiResult, WindowI
 
 use crate::driver::WinitDriver;
 use crate::event_map::{
-    map_cursor_moved, map_mouse_input, map_mouse_wheel, map_window_metrics, to_logical_point, to_logical_size,
+    map_cursor_moved, map_mouse_input, map_mouse_wheel, map_touch, map_window_metrics, to_logical_point,
+    to_logical_size,
 };
 
 type RegisterFn = Box<dyn FnOnce(&mut WidgetHost)>;
@@ -296,6 +297,15 @@ impl ApplicationHandler<()> for SdkGpuApp {
             if let Some(register) = self.register.take() {
                 register(driver.host_mut());
             }
+            // P3-7 核心修复：把 FontdueBackend 注入 WidgetHost，让所有 widget 的
+            // layout/paint 都用真实字体度量（修复中文间距乱、关键字染色错、按钮截断等）。
+            {
+                let measurer = crate::FontdueTextMeasure::new(self.text_backend.clone());
+                if let Some((ascent_ratio, descent_ratio)) = measurer.line_metrics_ratio(12.0) {
+                    driver.host_mut().set_font_metrics(ascent_ratio, descent_ratio);
+                }
+                driver.host_mut().set_text_measure(Box::new(measurer));
+            }
             driver.begin();
             self.driver = Some(driver);
 
@@ -465,6 +475,23 @@ impl ApplicationHandler<()> for SdkGpuApp {
                 if let Some(ref mut driver) = self.driver {
                     let pt = to_logical_point(PhysicalPosition::new(self.cursor_pos.0, self.cursor_pos.1), sf);
                     driver.pump_event(&map_mouse_wheel(delta, sf, pt, zero_ui_core::event::Modifiers::NONE));
+                    self.needs_render = true;
+                    if let Some(ref window) = self.window {
+                        window.request_redraw();
+                    }
+                }
+            }
+            WindowEvent::Touch(touch) => {
+                // U-2 修复：触摸事件转 Pointer 事件，让所有 widget 都支持触摸（tap/drag/scroll）。
+                // 触摸 Started = Primary 按键 Pressed（等同鼠标左键，供 click-to-focus）。
+                if let Some(ref mut driver) = self.driver {
+                    driver.pump_event(&map_touch(
+                        touch.phase,
+                        touch.location,
+                        touch.id as u32,
+                        sf,
+                        zero_ui_core::event::Modifiers::NONE,
+                    ));
                     self.needs_render = true;
                     if let Some(ref window) = self.window {
                         window.request_redraw();

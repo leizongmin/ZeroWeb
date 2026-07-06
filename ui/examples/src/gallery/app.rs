@@ -84,6 +84,8 @@ impl GalleryApp {
         let mut root = WidgetSpec::new("Column");
         root.id = Some(WidgetId::new("gallery_root"));
         root.props.insert("theme", Value::Text(self.theme.as_str().into()));
+        // U-5 修复：根容器铺 background 底色，暗色主题下不透明、配色一致。
+        root.props.insert("bg", Value::Text("background".into()));
 
         // Header bar
         root.children.push(self.build_header());
@@ -155,6 +157,8 @@ impl GalleryApp {
         let mut col = WidgetSpec::new("ScrollVertical");
         col.id = Some(WidgetId::new("sidebar"));
         col.props.insert("theme", Value::Text(self.theme.as_str().into()));
+        // U-5：侧边栏用 surface 底色（与主区背景区分）。
+        col.props.insert("bg", Value::Text("surface".into()));
         // 垂直滚动容器（DC-16）：内容超出视口时 host 按 scroll_offset 偏移子节点 y，
         // 并通过 clip 链裁掉视口外的部分。Wheel 事件命中 sidebar 时累加 scroll_offset。
 
@@ -221,6 +225,8 @@ impl GalleryApp {
         let mut col = WidgetSpec::new("Column");
         col.id = Some(WidgetId::new("demo_area"));
         col.props.insert("theme", Value::Text(self.theme.as_str().into()));
+        // U-5：主预览区铺 background 底色。
+        col.props.insert("bg", Value::Text("background".into()));
 
         if let Some(page) = self.current_page_info() {
             let mut title = WidgetSpec::new("DemoTitle");
@@ -547,10 +553,11 @@ impl UiApp for GalleryApp {
             // P2-13 namespace 化：所有 demo action 写入"当前 page"的 state，
             // 切到其它 page 时不会污染。button_click.N / toggle.N 用同一个 pressed/toggles 字段。
             s if s.starts_with("gallery.demo.button_click.") => {
+                // P0-2 修复：去掉 n <= 4 硬上限，支持 list_view/command_palette 多项。
                 if let Some(n) = s
                     .strip_prefix("gallery.demo.button_click.")
                     .and_then(|t| t.parse::<u32>().ok())
-                    && n <= 4
+                    && n >= 1 && n <= 16
                 {
                     self.current_demo().pressed = n;
                 }

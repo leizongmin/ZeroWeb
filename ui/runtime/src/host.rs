@@ -35,7 +35,7 @@ use zero_ui_core::widget::{ComponentType, EventCtx, LayoutCtx, Widget, WidgetId,
 use zero_ui_gestures::{Gesture, GestureArena, PointerEvent};
 
 use event::{
-    collect_emit, collect_focusables, deepest_node_at, deepest_scroll_vertical_at, dispatch_node,
+    collect_emit, collect_focusables, deepest_node_at, deepest_scroll_vertical_at, dispatch_focus_event, dispatch_node,
     dispatch_pressed_with_focus, dispatch_to_widget, find_epoch, find_node, find_node_mut, find_rect,
 };
 use paint::paint_node;
@@ -488,9 +488,41 @@ impl WidgetHost {
                 self.pending |= InvalidationFlags::NEEDS_PAINT;
             }
         }
+        // P3-7/U1：Tab 键焦点切换提前到 root 借用之前做（focus_next 需 &mut self），
+        // 派发 Focus event 延迟到 root 借用之后（需要 root 走树）。
+        let mut pending_focus_change: Option<(Option<WidgetId>, Option<WidgetId>)> = None;
+        if let UiEvent::Key { code, action: key_action, modifiers, .. } = event
+            && code.0.as_str() == "Tab"
+            && matches!(key_action, zero_ui_core::event::KeyAction::Pressed)
+            && !overlay_blocked_main
+        {
+            let dir = if modifiers.contains(zero_ui_core::event::Modifiers::SHIFT) {
+                FocusDirection::Backward
+            } else {
+                FocusDirection::Forward
+            };
+            let old = self.focused.clone();
+            self.focus_next(dir);
+            self.pending |= InvalidationFlags::NEEDS_PAINT;
+            if self.focused != old {
+                pending_focus_change = Some((old, self.focused.clone()));
+            }
+            // Tab 键消费事件，提前 return（但先派发 focus event）
+        }
+
         let Some(root) = self.root.as_mut() else {
             return emitted;
         };
+        // P3-7/U1：派发延迟的 Focus event（Tab 切换产生）。
+        if let Some((old, new)) = pending_focus_change.take() {
+            if let Some(old_id) = old {
+                dispatch_focus_event(root, &old_id, UiEvent::Focus(zero_ui_core::event::FocusEvent::Lost));
+            }
+            if let Some(new_id) = new {
+                dispatch_focus_event(root, &new_id, UiEvent::Focus(zero_ui_core::event::FocusEvent::Gained));
+            }
+            return emitted;  // Tab 键消费，不继续派发
+        }
         // P3-4-4：modal barrier / outside-click dismiss 已消费事件 → 主树不路由。
         if overlay_blocked_main {
             return emitted;
@@ -528,22 +560,7 @@ impl WidgetHost {
             }
         }
         match event {
-            UiEvent::Key {
-                code,
-                action: key_action,
-                modifiers,
-                ..
-            } => {
-                if code.0.as_str() == "Tab" && matches!(key_action, zero_ui_core::event::KeyAction::Pressed) {
-                    let dir = if modifiers.contains(zero_ui_core::event::Modifiers::SHIFT) {
-                        FocusDirection::Backward
-                    } else {
-                        FocusDirection::Forward
-                    };
-                    self.focus_next(dir);
-                    self.pending |= InvalidationFlags::NEEDS_PAINT;
-                    return emitted;
-                }
+            UiEvent::Key { .. } => {
                 if let Some(focused) = self.focused.clone()
                     && let Some(node) = find_node_mut(root, &focused)
                     && let Some(w) = node.widget.as_mut()
@@ -572,8 +589,14 @@ impl WidgetHost {
                 if let Some(id) = target
                     && self.focused.as_ref() != Some(&id)
                 {
-                    self.focused = Some(id);
+                    let old = self.focused.clone();
+                    self.focused = Some(id.clone());
                     self.pending |= InvalidationFlags::NEEDS_PAINT;
+                    // P3-7/U1：派发 Focus event，让 TextInput 显示光标。
+                    if let Some(old_id) = old {
+                        dispatch_focus_event(root, &old_id, UiEvent::Focus(zero_ui_core::event::FocusEvent::Lost));
+                    }
+                    dispatch_focus_event(root, &id, UiEvent::Focus(zero_ui_core::event::FocusEvent::Gained));
                 }
                 if handled {
                     self.pending |= InvalidationFlags::NEEDS_PAINT;

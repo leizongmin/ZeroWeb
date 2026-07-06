@@ -15,6 +15,7 @@
 
 pub mod driver;
 pub mod event_map;
+pub mod fontdue_text_measure;
 pub mod runtime;
 
 pub use driver::{EventOutcome, FrameOutcome, WinitDriver};
@@ -23,4 +24,5 @@ pub use event_map::{
     map_mouse_button, map_mouse_input, map_mouse_wheel, map_pointer_phase, map_touch, map_touch_phase,
     map_window_metrics, to_logical_point, to_logical_size,
 };
+pub use fontdue_text_measure::FontdueTextMeasure;
 pub use runtime::{FontAsset, FontContainer, WinitRuntime};

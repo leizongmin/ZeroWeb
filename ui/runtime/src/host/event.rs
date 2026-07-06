@@ -132,6 +132,21 @@ pub(super) fn dispatch_to_widget(
     }
 }
 
+/// 按 id 直接派发 Focus 事件给目标 widget（P3-7/U1 修复：点击聚焦时光标可见）。
+///
+/// 焦点变化时由 `dispatch_event` 的 Pressed 分支调用：旧焦点收 `Focus(Lost)`，
+/// 新焦点收 `Focus(Gained)`。widget（如 TextInput）据此切换 `focused` 字段，
+/// 决定是否画 caret。
+pub(super) fn dispatch_focus_event(root: &mut HostNode, target: &WidgetId, event: UiEvent) {
+    if let Some(node) = find_node_mut(root, target)
+        && let Some(w) = node.widget.as_mut()
+    {
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
+        let _ = w.event(&mut EventCtx { invalidation: &mut flags }, &event);
+        node.invalidation |= flags;
+    }
+}
+
 pub(super) fn dispatch_node(node: &mut HostNode, event: &UiEvent, emitted: &mut Vec<EmittedAction>) -> bool {
     dispatch_node_inner(node, event, emitted, None)
 }

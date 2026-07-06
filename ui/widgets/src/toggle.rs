@@ -142,9 +142,11 @@ impl Widget for ToggleWidget {
             paint_changed = true;
         }
         if let Some(zero_ui_core::binding::Value::Text(l)) = props.get("label") {
-            self.spec.label = Some(l.clone());
-            // 标签变化可能影响 layout 宽度（label + track）。
-            *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_LAYOUT;
+            // P0-3 修复：只在 label 真变化时 clone + 标 layout，避免每帧无意义重排。
+            if self.spec.label.as_deref() != Some(l.as_str()) {
+                self.spec.label = Some(l.clone());
+                *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_LAYOUT;
+            }
         }
         if paint_changed {
             *ctx.invalidation |= zero_ui_core::invalidation::InvalidationFlags::NEEDS_PAINT;

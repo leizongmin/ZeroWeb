@@ -51,6 +51,8 @@ pub const MAIN_AXIS_ALIGN: &str = "main_axis_align";
 pub const CROSS_AXIS_ALIGN: &str = "cross_axis_align";
 /// 滚动方向（向后兼容 gallery 旧写法 `scroll=vertical`，新代码用 layout=scroll_vertical）。
 pub const SCROLL: &str = "scroll";
+/// 是否显示 scrollbar（ScrollVertical 容器；默认 true，设 false 关闭）。
+pub const SHOW_SCROLLBAR: &str = "show_scrollbar";
 
 // ---- 尺寸约束（子节点 props 覆盖父级 constraint）----
 pub const MIN_WIDTH: &str = "min_width";

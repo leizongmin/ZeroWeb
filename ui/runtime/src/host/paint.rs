@@ -82,4 +82,58 @@ pub(super) fn paint_node(
     for child in node.children.iter_mut() {
         paint_node(child, scene, own_clip, tokens, font_metrics, now_ms, frame_requests);
     }
+    // U-3：ScrollVertical 容器画可选 scrollbar（content > viewport 时）。
+    // 默认显示；prop `show_scrollbar = false` 可关闭。
+    paint_scrollbar(node, scene, own_clip, tokens);
+}
+
+/// 为 ScrollVertical 容器节点画竖直 scrollbar（thumb 比例反映 scroll 进度）。
+///
+/// 仅当 `content_height > viewport_height` 且未显式关闭时绘制。thumb 颜色取
+/// `on_background` 的半透明，track 不画（避免视觉负担）。宽度 6px，距右边缘 2px。
+fn paint_scrollbar(
+    node: &HostNode,
+    scene: &mut Scene,
+    parent_clip: Option<Rect>,
+    tokens: &zero_ui_core::theme::SemanticTokens,
+) {
+    // 是否是 ScrollVertical 容器。
+    let is_scroll = super::layout::node_container_kind(node)
+        .map(|k| matches!(k, super::ContainerKind::ScrollVertical))
+        .unwrap_or(false);
+    if !is_scroll {
+        return;
+    }
+    // prop show_scrollbar = false → 关闭。
+    if let Some(Value::Bool(false)) = node.props.get(prop_keys::SHOW_SCROLLBAR) {
+        return;
+    }
+    let viewport = node.cached_rect.size.height;
+    let content = node.content_height;
+    if content <= viewport + 1.0 {
+        return; // 内容不超出，不画。
+    }
+    let max_scroll = (content - viewport).max(1.0);
+    let ratio = node.scroll_offset / max_scroll;
+    // thumb 高度 = viewport * (viewport/content)，最小 24px。
+    let thumb_h = (viewport * viewport / content).max(24.0).min(viewport);
+    let track_h = viewport - thumb_h;
+    let thumb_y = node.cached_rect.origin.y + ratio * track_h;
+    let thumb_x = node.cached_rect.origin.x + node.cached_rect.size.width - 8.0;
+    let thumb_rect = Rect::from_origin_size(
+        zero_ui_core::geometry::Point::new(thumb_x, thumb_y),
+        zero_ui_core::geometry::Size::new(6.0, thumb_h),
+    );
+    // thumb 颜色：on_background 50% 透明。
+    let c = tokens.on_background;
+    let thumb_color = zero_ui_core::theme::Color::rgba(c.r, c.g, c.b, 0.5 * 255.0);
+    scene.push(SceneEntry {
+        source: WidgetId::new(node.id.0.as_str()),
+        clip: parent_clip,
+        primitive: RenderPrimitive::FillRect {
+            rect: thumb_rect,
+            color: thumb_color,
+            rounding: zero_ui_core::geometry::Rounding::all(3.0),
+        },
+    });
 }
