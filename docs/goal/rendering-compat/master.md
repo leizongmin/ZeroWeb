@@ -2648,6 +2648,28 @@ app_input.rs 降至 **1686 行**（-1224 net）；app.rs 加 2 行 `include!`（
 
 **★ R990 余波 line-height:normal 1.15 实验 REFUTED（1.2 已是 corpus 最优）**：试把 R990 同模式应用到 `NORMAL_LINE_HEIGHT_RATIO`（text_metrics.rs:154，非-Ahem line-height:normal 用）——1.2→1.15（DejaVuSans hhea 推导值 ~1.16）。**A/B NET 负**：welcome **16.57%→17.67%（+1.10pp 显著回归）**+ morning-work 13.77→13.78%（持平）+ css-text 355→359（+4，远小于 welcome 回归）。已 `git checkout` 回退。**结论**：1.2 **已是 corpus/product 字体（system-ui/DejaVuSans）的最优值**——chromium 在本环境的 system-ui line-height:normal ≈ 1.2，非启发式巧合。**R990 ascent（0.8→0.928）是唯一可产的 font-metric 常数 lever**（ascent 是 0.8 = Ahem 专用常数，真字体 0.928 差 16%；line-height:normal 1.2 恰好匹配系统字体）。**勿再调 NORMAL_LINE_HEIGHT_RATIO**（1.2 已验，1.15 net 负）。font-wall 经 R990 + 本轮 line-height + R989 site-3 三轮余波**确已尽 layout-side font-metric 常数 lever**，forward = per-font 真实度量（须 R887 provider wiring 多 session）或转 R717/R370 非 font 角度。
 
+### R1091 positioning + floats/floats-clear fresh scan = cluster 全 font-wall / 深结构性·plateau 扩展确证·零 net 源码·纯调查
+
+承 R1090（autonomous plateau 四重确证 C-dep root unlock）。本轮扫未深扫 dir（CSS2/positioning 578 PNG + CSS2/floats/floats-clear 合 314 PNG）找非 font-wall clean lever（R1085/R1086 类）。
+
+**CSS2/positioning 300/578 (57.3%)**：identical-delta cluster 全 font-wall 或深结构性——
+- 1.33% × 62（bottom-004 簇）= `bottom:-0px; position:relative`（无实际 offset），diff = instruction 文本 font-wall（同 R1087 margin-padding-clear 1.33% × 126 谱系）。
+- 0.85% × 66（position-relative-014）/ 0.89% × 38（right-offset）/ 0.69% × 36（abspos-overflow）/ 0.41% × 24（left-019）= 同 font-wall。
+- 2.89% × 10（absolute-non-replaced-width/height）= **Ahem**（非 font-wall）测 abspos 全 auto offset/margin + auto width/height（§10.3.7 static-position + shrink-to-fit）；grep 无 ZW abspos auto-margin 代码 = 疑 abspos auto-sizing 真缺口，但 §10.3.7 深（R500/R324 谱系），10 案 EV 中。
+
+**CSS2/floats + floats-clear 117/314 (37.3%)**：低通过率，小 cluster（4-5 案）高 delta——
+- 4.74% × 5（float-applies-to-001a 等）= `display:table-row-group; float:right`。**§9.7 调整已存在**（style-system/lib.rs:573-589，table-internal→block when floated，曾修 float-applies-to-012）→ 4.74% 非 §9.7 缺口而是**布局侧**（floated ex-table-row-group 定位），深结构性。
+- 5.22% × 5（float-non-replaced-width-008）/ 1.77% × 4（-002）= float 非替换宽度（§10.3.5），R1019/R180 shrink-to-fit 谱系，结构性。
+- 4.17% × 4（floats-placement-vertical）/ 2.91% × 4（adjacent-floats）/ 2.77% × 4（margin-collapse-033）= 深结构性。
+
+**裁决**：fresh scan 第五轮（linebox/text/box/mpc/decor/visuren/selectors/positioning/floats/floats-clear 全扫尽）确证 plateau 扩展——除 R1085/R1086 两 clean hit 外，所有 dir 的 identical-delta cluster 全 font-wall（near-pass band）或深结构性（§9.7 布局 / §10.3.5 float 宽 / §10.3.7 abspos auto / R109 vertical）。**clean single-session CSS-语义 lever 跨全 dir 穷尽**。positioning abspos §10.3.7（10 案 Ahem）是最高 EV 残余 candidate，但 §10.3.7 深（多 session）。
+
+**★ 战略**：autonomous plateau 五重确证（fresh scan 全 dir + ::first-letter 三变体 + Phase 3 + C-dep blocked + 本轮 positioning/floats）。**C-dep（FreeType）= 唯一 root unlock**（font-wall + Phase A + ::first-letter 共同根），仍 user-blocked（CI 计费 6-target 全 failure + policy）。残余 autonomous lever 仅深结构性多 session（abspos §10.3.7 10 案 / float §10.3.5 / R109 FR-002/003）。
+
+**门禁**：纯调查，零 net 源码，make test 未跑。tree clean。
+
+**▶ 下会话**：① **C-dep 用户决策**（CI 计费 + policy → 翻 freetype-raster default → +32 font-wall + 解锁 Phase A/::first-letter 重试）；② 若 C-dep 仍 blocked，abspos §10.3.7（positioning 10 案 Ahem）是 EV 最高残余——per-pixel 探针确证 abspos auto-sizing 缺口后尝试（多 session，§10.3.7 static-position + shrink-to-fit）；③ 勿再 fresh scan（全 dir 扫尽，cluster 全 font-wall/结构性）。
+
 ### R1090 Phase A line-box 度量统一 Phase 3（store-gate 移除 + paint 公式扩展）definitive net-negative（linebox -1 / css-text -14 / css-text-decor -14）·确证 Phase A 非-Ahem = fontdue tight-ink = font-wall = C-dep 根 unlock·已回退·零源码
 
 承 R1089（::first-letter 三变体穷尽 Phase A 门控）。本轮直接攻 Phase A line-box 度量统一 Phase 3（linebox-metric-unification-rfc 的 blocked phase），definitive 实验确证其 net-negative + 根因 = fontdue tight-ink（font-wall 谱系），C-dep 是真正 root unlock。
