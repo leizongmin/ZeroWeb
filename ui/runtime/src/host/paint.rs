@@ -8,11 +8,20 @@
 use zero_ui_core::binding::Value;
 use zero_ui_core::geometry::{Rect, Vec2};
 use zero_ui_core::prop_keys;
-use zero_ui_core::widget::{PaintCtx, WidgetId};
+use zero_ui_core::theme::SemanticTokens;
+use zero_ui_core::widget::{PaintCtx, TextMeasure, WidgetId};
 use zero_ui_render::{RenderPrimitive, Scene, SceneEntry, SceneRecorder};
 
 use super::HostNode;
 
+/// paint 阶段从 host 注入到 widget 树的环境参数（聚合以避免 paint_node 8+ 参数）。
+pub(super) struct PaintEnv<'a> {
+    pub tokens: &'a SemanticTokens,
+    pub font_metrics: Option<(f32, f32)>,
+    pub now_ms: Option<i64>,
+    pub frame_requests: &'a std::cell::Cell<u64>,
+    pub text_measure: Option<&'a dyn TextMeasure>,
+}
 /// 递归遍历 widget 实例树，paint 进全局 `Scene`。
 ///
 /// # Clip 链契约
@@ -30,10 +39,7 @@ pub(super) fn paint_node(
     node: &mut HostNode,
     scene: &mut Scene,
     parent_clip: Option<Rect>,
-    tokens: &zero_ui_core::theme::SemanticTokens,
-    font_metrics: Option<(f32, f32)>,
-    now_ms: Option<i64>,
-    frame_requests: &std::cell::Cell<u64>,
+    env: &PaintEnv,
 ) {
     // 视口外 early-out（P3-1）：节点完全在 parent_clip 之外时跳过整个子树。
     let own_clip = match parent_clip {
@@ -47,7 +53,7 @@ pub(super) fn paint_node(
     // 如 "surface"/"background"），先铺底色再画子节点。
     if node.widget.is_none()
         && let Some(Value::Text(token)) = node.props.get(prop_keys::BG)
-        && let Some(color) = tokens.color_for(token)
+        && let Some(color) = env.tokens.color_for(token)
     {
         scene.push(SceneEntry {
             source: WidgetId::new(node.id.0.as_str()),
@@ -68,10 +74,11 @@ pub(super) fn paint_node(
             recorder: &mut rec,
             clip: local_clip,
             offset: Vec2::ZERO,
-            tokens,
-            font_metrics,
-            now_ms,
-            frame_requests,
+            tokens: env.tokens,
+            font_metrics: env.font_metrics,
+            now_ms: env.now_ms,
+            frame_requests: env.frame_requests,
+            text_measure: env.text_measure,
         };
         w.paint(&mut ctx);
         let local = rec.finish();
@@ -80,11 +87,11 @@ pub(super) fn paint_node(
         scene.extend_translated(local, abs_offset);
     }
     for child in node.children.iter_mut() {
-        paint_node(child, scene, own_clip, tokens, font_metrics, now_ms, frame_requests);
+        paint_node(child, scene, own_clip, env);
     }
     // U-3：ScrollVertical 容器画可选 scrollbar（content > viewport 时）。
     // 默认显示；prop `show_scrollbar = false` 可关闭。
-    paint_scrollbar(node, scene, own_clip, tokens);
+    paint_scrollbar(node, scene, own_clip, env.tokens);
 }
 
 /// 为 ScrollVertical 容器节点画竖直 scrollbar（thumb 比例反映 scroll 进度）。

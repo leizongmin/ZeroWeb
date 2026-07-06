@@ -168,6 +168,17 @@ pub struct PaintCtx<'a> {
     /// 非 0 则调度下一帧。`Cell` 让 widget 在 `&self` 上下文（paint 借 `&mut recorder`）
     /// 也能递增。
     pub frame_requests: &'a std::cell::Cell<u64>,
+    /// P1-1 修复：paint 阶段文本度量后端（与 LayoutCtx.text_measure 对称）。
+    ///
+    /// **根因**：之前 PaintCtx::measure_text 委托 PaintRecorder::measure_text，
+    /// 后者走 trait 默认的 `char_width_estimate`（ASCII ~6.6px、CJK ~12px 估算），
+    /// 但实际渲染由 RenderFoundationBackend::draw_text 用真实 fontdue advance
+    /// （ASCII ~7.5px）。measure 与 draw 不同源 → TextInput caret 位置漂移、
+    /// 中文间隔长短不一（用户反馈：光标空出一段，输入越长偏移越大）。
+    ///
+    /// 注入真实 TextMeasure 后，paint 阶段 measure 与 draw 同源（都来自 FontdueBackend），
+    /// 光标几何与文字位置一致。`None` 时回落到 recorder 的默认估算（向后兼容）。
+    pub text_measure: Option<&'a dyn TextMeasure>,
 }
 
 impl<'a> PaintCtx<'a> {
@@ -205,7 +216,13 @@ impl<'a> PaintCtx<'a> {
     ///
     /// 供 widget 在 paint 阶段算对齐偏移（如 Text widget 的 center/right 对齐）。
     /// 返回 TextSize（与 LayoutCtx::measure_text 同结构）。
+    ///
+    /// P1-1：优先用 host 注入的 `text_measure`（FontdueBackend），与 draw_text 同源；
+    /// 未注入时回落到 recorder 的默认估算（向后兼容测试 mock）。
     pub fn measure_text(&mut self, text: &str, font_size: f32) -> TextSize {
+        if let Some(tm) = self.text_measure {
+            return tm.measure(text, font_size);
+        }
         let w = self.recorder.measure_text(text, font_size);
         TextSize {
             width: w,

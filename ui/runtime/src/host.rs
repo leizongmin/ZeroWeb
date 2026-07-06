@@ -405,31 +405,26 @@ impl WidgetHost {
         // P3-4-5：每帧重置 frame_requests 计数；widget paint 时若调 ctx.request_frame()
         // 会把此 Cell 递增。paint 完读值决定是否需要下一帧。
         let frame_requests_cell = std::cell::Cell::new(0u64);
+        // P1-1：take text_measure，避免与 &mut self.root 冲突（与 layout 同模式）。
+        let tm = self.text_measure.take();
+        let tm_ref: Option<&dyn zero_ui_core::widget::TextMeasure> = tm.as_ref().map(|b| b.as_ref());
+        let env = paint::PaintEnv {
+            tokens: &self.tokens,
+            font_metrics: self.font_metrics,
+            now_ms: Some(self.animation_now_ms),
+            frame_requests: &frame_requests_cell,
+            text_measure: tm_ref,
+        };
         if let Some(root) = self.root.as_mut() {
             let viewport = Some(root.cached_rect);
-            paint_node(
-                root,
-                &mut self.scene,
-                viewport,
-                &self.tokens,
-                self.font_metrics,
-                Some(self.animation_now_ms),
-                &frame_requests_cell,
-            );
+            paint_node(root, &mut self.scene, viewport, &env);
         }
         // P3-4-3：overlay 子树 paint 在主树之后（append 到 scene = 视觉在上层）。
         if let Some(overlay_root) = self.overlay_root.as_mut() {
             let viewport = overlay_root.cached_rect;
-            paint_node(
-                overlay_root,
-                &mut self.scene,
-                Some(viewport),
-                &self.tokens,
-                self.font_metrics,
-                Some(self.animation_now_ms),
-                &frame_requests_cell,
-            );
+            paint_node(overlay_root, &mut self.scene, Some(viewport), &env);
         }
+        self.text_measure = tm;
         self.last_frame_requests = frame_requests_cell.get();
         self.pending = InvalidationFlags::CLEAN;
         &self.scene

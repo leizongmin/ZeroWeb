@@ -611,13 +611,17 @@ impl Widget for NavSearch {
         }
         let UiEvent::Key {
             code,
-            action: KeyAction::Pressed,
+            action,
             text,
             ..
         } = event
         else {
             return EventResult::Ignored;
         };
+        // P1-3：接受 Repeat（按住键重复输入），与 Pressed 同路径。
+        if !matches!(action, KeyAction::Pressed | KeyAction::Repeat) {
+            return EventResult::Ignored;
+        }
         match code.0.as_str() {
             "Backspace" => {
                 let mut q = self.query.clone();
@@ -685,16 +689,27 @@ impl Widget for NavSearch {
         }
         // U3-3：focused 时显示 caret（与 TextInput 一致）。caret 始终在 query 末尾
         // （NavSearch 是受控追加型，无中间编辑）。
+        // P1-4：500ms 周期闪烁（与 TextInput 同周期）。
         if self.focused {
-            let caret_x = if self.query.is_empty() {
-                text_x
-            } else {
-                *self.char_x.last().unwrap_or(&text_x)
+            let caret_visible = match ctx.now_ms {
+                Some(ms) => {
+                    let phase = (ms % 1068) < 534;
+                    ctx.request_frame();
+                    phase
+                }
+                None => true,
             };
-            ctx.recorder.fill_rect(
-                Rect::from_origin_size(Point::new(caret_x, 8.0), Size::new(1.5, 16.0)),
-                tokens.primary,
-            );
+            if caret_visible {
+                let caret_x = if self.query.is_empty() {
+                    text_x
+                } else {
+                    *self.char_x.last().unwrap_or(&text_x)
+                };
+                ctx.recorder.fill_rect(
+                    Rect::from_origin_size(Point::new(caret_x, 8.0), Size::new(1.5, 16.0)),
+                    tokens.primary,
+                );
+            }
         }
     }
     fn focusable(&self) -> bool {

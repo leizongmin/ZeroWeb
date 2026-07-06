@@ -1375,3 +1375,145 @@ L4（TextInput event 处理 Ime）在 9.9 已就位，现在前两层打通后�
 ---
 
 *RFC 结束。上一段落：Spec（需求规格），当前段落：RFC（技术设计），下一段落：实施交接（逐步骤指令）。*
+
+
+---
+
+## 9.11 TextInput 视觉/交互完整化（第五轮：measure 与 draw 同源）
+
+### 9.11.1 问题与背景
+
+第四轮（9.10）让中文输入终于能工作了，但用户反馈 TextInput 仍有 5 个具体问题：
+
+1. **光标位置还是不对**：不是在最后一个字符后面，而是空出来一段；输入越长偏移越大
+2. **中文渲染间距不对**：间隔长短不一
+3. **按住键不支持重复输入**
+4. **不支持 Ctrl+A/C/V 等快捷键**
+5. **光标不会闪烁**
+
+用户明确质问：「你再好好看看原本浏览器自绘的地址栏怎么实现的，跟现在 textinput 的差异到底在哪！明明有已经实现好的参考，为何反反复复踩坑」。
+
+### 9.11.2 根因：measure 与 draw 用了两套不同源的字体度量
+
+deep-debug 调研结论：浏览器地址栏 `apps/browser/src/text_input.rs` + `app_render_address.rs` 用**同一 `font_loader.measure_advance`** 贯通 measure / draw / hit-test 三处；gallery 的 `ui/widgets/src/text_input.rs` 三处分叉：
+
+| 路径 | 实现 | 度量源 |
+|------|------|--------|
+| `ctx.measure_text`（paint 阶段算 char_x 缓存） | `PaintCtx::measure_text` → `PaintRecorder::measure_text` | **trait 默认 `char_width_estimate`**（ASCII ~6.6px、CJK ~12px 估算） |
+| `RenderPrimitive::Text` 实际渲染 | `RenderFoundationBackend::draw_text` | **真实 fontdue `bmp.advance / scale`**（ASCII ~7.5px） |
+| `LayoutCtx::measure_text`（layout 阶段） | host 注入的 `FontdueTextMeasure` | 真实 fontdue |
+
+**问题 1+2 的总根因**：measure 用估算，draw 用真实 advance，每字符差 ~0.9px 累积。输入越长，caret 与文字末尾的漂移越大；中文更严重（估算 12px vs 真实 14-15px），所以「中文间隔长短不一」。
+
+这解释了为什么 9.9 的 `char_x` 缓存方案理论上对，但实测仍偏移——缓存的是错误源（估算）的累加，而非真实 advance。
+
+### 9.11.3 修复方案
+
+#### 修复 1（P1-1+P1-2，根因）：PaintCtx 持有真实 TextMeasure
+
+与 `LayoutCtx.text_measure` 完全对称的设计——`PaintCtx` 新增 `text_measure: Option<&'a dyn TextMeasure>` 字段：
+
+```rust
+pub struct PaintCtx<'a> {
+    // ... 既有字段 ...
+    pub text_measure: Option<&'a dyn TextMeasure>,
+}
+
+impl<'a> PaintCtx<'a> {
+    pub fn measure_text(&mut self, text: &str, font_size: f32) -> TextSize {
+        if let Some(tm) = self.text_measure {
+            return tm.measure(text, font_size);  // 真实 fontdue
+        }
+        // 回落：recorder 默认估算（测试 mock 兼容）
+        let w = self.recorder.measure_text(text, font_size);
+        TextSize { width: w, height: font_size }
+    }
+}
+```
+
+`host.paint` 与 `host.layout` 一样 take/put `self.text_measure`，经 `PaintEnv` 聚合结构（避免 paint_node 9 参数超 clippy 阈值）下传到每个 widget 的 PaintCtx。
+
+修完后，TextInput/NavSearch 的 `rebuild_char_x` 拿到的就是真实 advance 累加，caret 与文字末尾精确对齐。
+
+#### 修复 2（P1-3）：KeyAction::Repeat 与 Pressed 同路径
+
+```rust
+UiEvent::Key { action, code, text, modifiers } => {
+    if !matches!(action, KeyAction::Pressed | KeyAction::Repeat) {
+        return EventResult::Ignored;
+    }
+    // ... 同一处理路径 ...
+}
+```
+
+winit 在用户按住键时先发 Pressed，之后按 OS 重复速率发 Repeat。之前只匹配 Pressed，Repeat 落 `_ => Ignored` 被吞，所以「按住键不支持一直输入」。NavSearch 同样修复。
+
+#### 修复 3（P1-4）：caret 闪烁
+
+paint 阶段用 `ctx.now_ms` 算 1068ms 周期（534ms 显 + 534ms 隐，避开帧率整除卡死），闪烁时调 `ctx.request_frame()` 让 host 调度下一帧重 paint：
+
+```rust
+if self.focused {
+    let caret_visible = match ctx.now_ms {
+        Some(ms) => {
+            let phase = (ms % 1068) < 534;
+            ctx.request_frame();  // 持续重 paint
+            phase
+        }
+        None => true,  // 无时钟：常亮
+    };
+    if caret_visible {
+        ctx.recorder.fill_rect(self.caret_rect(), tokens.primary);
+    }
+}
+```
+
+NavSearch 同样接入闪烁。
+
+#### 修复 4（P1-5）：Ctrl+A/C/V/X 快捷键
+
+UiEvent::Key 已带 `modifiers` 字段（`Modifiers::CONTROL` 等），widget 层直接处理：
+
+- **Ctrl+A**：`selection = Some((0, len))`，cursor = len（不需剪贴板）
+- **Ctrl+C**：emit `text_input.clipboard_copy` action，payload = 选区或全文（host 读 action 后写系统剪贴板）
+- **Ctrl+X**：emit clipboard_copy + 删除选区
+- **Ctrl+V**：emit `text_input.clipboard_paste` 请求 action（host 读系统剪贴板后回填 text prop，受控同步）
+
+**为什么不直接调 arboard**：DC-1 浏览器无关约束——`ui/widgets` 不能直接依赖剪贴板 crate（否则非浏览器宿主用 ui-sdk 时被强绑 arboard）。剪贴板是 host 抽象能力，widget 只 emit 语义 action，host 决定怎么实现。
+
+当前阶段：widget 层契约已就位，host 端的 clipboard action 处理是后续接入项（gallery demo 目前不接系统剪贴板，行为是 emit + log）。
+
+### 9.11.4 回归测试
+
+`ui/widgets/src/text_input.rs` 新增 5 个测试：
+
+| 测试 | 覆盖 |
+|------|------|
+| `key_repeat_inserts_character` | P1-3：Pressed + Repeat 各插一次字符 |
+| `ctrl_a_selects_all` | P1-5：Ctrl+A 全选，selection=(0,len)，cursor=len |
+| `ctrl_c_emits_clipboard_copy` | P1-5：Ctrl+C emit clipboard_copy action，payload=选区 |
+| `ctrl_x_cuts_selection` | P1-5：Ctrl+X emit copy + 删除选区 |
+| `ctrl_v_emits_paste_request` | P1-5：Ctrl+V emit clipboard_paste 请求 |
+
+P1-1 的根因（paint 阶段 measure 与 draw 同源）由既有 `rebuild_char_x` + 端到端 gallery 测试隐式覆盖——如果 paint 阶段 measure 仍是估算，gallery 实跑时 caret 会漂移，但单测无法捕获（单测 PaintCtx 无注入 TextMeasure，走估算回落）。这是已知测试盲区，端到端视觉验证补齐。
+
+### 9.11.5 影响范围
+
+| 模块 | 变更 |
+|------|------|
+| `ui/core/src/widget.rs` | `PaintCtx` 加 `text_measure` 字段；`measure_text` 优先用注入 backend |
+| `ui/runtime/src/host/paint.rs` | 新增 `PaintEnv` 聚合结构；`paint_node` 改 4 参数 |
+| `ui/runtime/src/host.rs` | `paint` take/put text_measure，构造 PaintEnv 下传 |
+| `ui/widgets/src/text_input.rs` | event 加 Repeat + Ctrl+A/C/V/X；paint 加 caret 闪烁 |
+| `ui/widgets/src/chrome.rs` | NavSearch 同步 Repeat + caret 闪烁 |
+| `ui/widgets/src/button.rs`、`ui/adapters/webview/src/webview_widget.rs` | 测试构造 PaintCtx 补 `text_measure: None` |
+
+### 9.11.6 流程教训（继 9.10 之后）
+
+**「修复完成」前必须验证 measure/draw 同源**：TextInput 这种「度量与渲染分离」的组件，任何"光标位置不对"类反馈都应第一时间检查 measure 路径与 draw 路径是否用同一字体后端。9.9 写了 `char_x` 缓存方案但没验证 measure 源，导致缓存的是错误数据——典型的"对的方法喂错的数据"。
+
+浏览器地址栏的实现已经有现成参考（`apps/browser/src/text_input.rs`），其核心设计就是「同一 font_loader 贯通 measure/draw/hit-test」。用户质问"为何反反复复踩坑"是对的——应该在做 gallery TextInput 之初就对照浏览器地址栏的字体度量同源约束，而不是在第五轮反馈才补上。
+
+---
+
+*RFC 状态：上一阶段：Spec（需求冻结）；当前阶段：RFC（设计确认）；下一阶段：实施（编码指令）。*

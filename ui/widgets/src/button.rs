@@ -286,6 +286,7 @@ mod tests {
             font_metrics: None,
             now_ms: None,
             frame_requests: &std::cell::Cell::new(0),
+            text_measure: None,
         };
         btn.paint(&mut ctx);
         assert_eq!(rec.fills.len(), 1);
@@ -545,6 +546,7 @@ mod tests {
             font_metrics: None,
             now_ms: None,
             frame_requests: &std::cell::Cell::new(0),
+            text_measure: None,
         };
         btn.paint(&mut ctx);
         assert_eq!(rec.fills.len(), 1);
@@ -694,6 +696,7 @@ mod tests {
             font_metrics: None,
             now_ms: None,
             frame_requests: &std::cell::Cell::new(0),
+            text_measure: None,
         };
         btn.paint(&mut ctx);
         assert_eq!(

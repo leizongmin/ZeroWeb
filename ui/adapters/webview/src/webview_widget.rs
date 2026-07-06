@@ -194,6 +194,7 @@ mod tests {
             font_metrics: None,
             now_ms: None,
             frame_requests: &std::cell::Cell::new(0),
+            text_measure: None,
         };
         w.paint(&mut ctx);
         let scene = rec.finish();

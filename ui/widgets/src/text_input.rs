@@ -301,12 +301,60 @@ impl Widget for TextInputWidget {
                 }
             }
             UiEvent::Key {
-                action: KeyAction::Pressed,
+                action,
                 code,
                 text,
-                ..
+                modifiers,
             } => {
+                // P1-3：按住键重复输入——KeyAction::Repeat 与 Pressed 同样处理。
+                // winit 在用户按住键时先发 Pressed，之后每帧发 Repeat（OS 重复速率）。
+                if !matches!(action, KeyAction::Pressed | KeyAction::Repeat) {
+                    return EventResult::Ignored;
+                }
                 let old_text = self.state.text.clone();
+                // P1-5：Ctrl+A 全选、Ctrl+C 复制、Ctrl+V 粘贴、Ctrl+X 剪切。
+                // 剪贴板经 host 抽象（widget 不直接依赖 arboard，DC-1 浏览器无关约束）。
+                // 当前阶段：Ctrl+A 全选（不需剪贴板），Ctrl+C/V/X 标记 selection（剪贴板后续接入）。
+                if modifiers.contains(zero_ui_core::event::Modifiers::CONTROL) {
+                    match code.0.as_str() {
+                        "KeyA" => {
+                            // 全选：selection = (0, len)，cursor 移到末尾。
+                            let len = self.state.text.len();
+                            self.state.selection = Some((0, len));
+                            self.state.cursor = len;
+                            return EventResult::Consumed;
+                        }
+                        "KeyC" | "KeyX" => {
+                            // 复制/剪切：emit clipboard action（host 负责真剪贴板）。
+                            // 有 selection 时复制选区，否则复制整行（单行=全文）。
+                            let payload = if let Some((s, e)) = self.state.selection {
+                                let (lo, hi) = (s.min(e), s.max(e));
+                                self.state.text[lo..hi].to_string()
+                            } else {
+                                self.state.text.clone()
+                            };
+                            if code.0.as_str() == "KeyX" && self.state.selection.is_some() {
+                                // 剪切：删除选区。
+                                if let Some((s, e)) = self.state.selection {
+                                    let (lo, hi) = (s.min(e), s.max(e));
+                                    self.state.text.replace_range(lo..hi, "");
+                                    self.state.cursor = lo;
+                                    self.state.selection = None;
+                                }
+                            }
+                            return EventResult::EmitWithPayload(
+                                ActionId::new("text_input.clipboard_copy"),
+                                zero_ui_core::action::ActionPayload::Text(payload),
+                            );
+                        }
+                        "KeyV" => {
+                            // 粘贴：emit clipboard_paste 请求 action。
+                            // host 负责读系统剪贴板并回填 text prop（受控同步）。
+                            return EventResult::Emit(ActionId::new("text_input.clipboard_paste"));
+                        }
+                        _ => {} // 其它 Ctrl 组合键不在此处理。
+                    }
+                }
                 match code.0.as_str() {
                     "Backspace" => self.state.backspace(),
                     "ArrowLeft" => self.state.move_cursor(-1),
@@ -397,9 +445,22 @@ impl Widget for TextInputWidget {
             self.rebuild_char_x(ctx, 14.0, &self.state.text.clone());
         }
 
-        // caret（仅聚焦时画）。
+        // caret（仅聚焦时画，500ms 周期闪烁）。
+        // P1-4：用 now_ms 算闪烁相位，闪烁周期内调 request_frame 触发下一帧重 paint。
         if self.focused {
-            ctx.recorder.fill_rect(self.caret_rect(), tokens.primary);
+            let caret_visible = match ctx.now_ms {
+                Some(ms) => {
+                    // 1068ms 周期：534ms 显 + 534ms 隐（避免与帧率整除导致卡死）。
+                    let phase = (ms % 1068) < 534;
+                    // 闪烁需持续重 paint：request_frame 让 host 调度下一帧。
+                    ctx.request_frame();
+                    phase
+                }
+                None => true, // 无时钟：常亮（不闪）。
+            };
+            if caret_visible {
+                ctx.recorder.fill_rect(self.caret_rect(), tokens.primary);
+            }
         }
     }
 
@@ -521,5 +582,126 @@ mod tests {
         let w = TextInputWidget::new();
         // 默认 char_x = [8.0]，text 空 → 退到 len()=0。
         assert_eq!(w.cursor_from_x(50.0), 0);
+    }
+
+    /// P1-3 回归：KeyAction::Repeat 必须与 Pressed 同样插入字符（按住键重复输入）。
+    /// 之前 event 只匹配 Pressed，Repeat 落到 _ 被吞。
+    #[test]
+    fn key_repeat_inserts_character() {
+        let mut w = TextInputWidget::new();
+        w.focused = true;
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
+        let mut ec = EventCtx { invalidation: &mut flags };
+        // 第一次 Pressed
+        let _ = w.event(&mut ec, &UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("KeyA"),
+            action: KeyAction::Pressed,
+            modifiers: zero_ui_core::event::Modifiers::NONE,
+            text: Some("a".into()),
+        });
+        // 后续 Repeat（用户按住键）
+        let _ = w.event(&mut ec, &UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("KeyA"),
+            action: KeyAction::Repeat,
+            modifiers: zero_ui_core::event::Modifiers::NONE,
+            text: Some("a".into()),
+        });
+        // 应该插入了 2 个 a
+        assert_eq!(w.state.text, "aa", "Pressed + Repeat 应各插一次字符");
+    }
+
+    /// P1-5 回归：Ctrl+A 全选。selection = (0, len)，cursor = len。
+    #[test]
+    fn ctrl_a_selects_all() {
+        let mut w = TextInputWidget::new();
+        w.focused = true;
+        w.state.text = "hello".into();
+        w.state.cursor = 2;
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
+        let mut ec = EventCtx { invalidation: &mut flags };
+        let res = w.event(&mut ec, &UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("KeyA"),
+            action: KeyAction::Pressed,
+            modifiers: zero_ui_core::event::Modifiers::CONTROL,
+            text: Some("a".into()),
+        });
+        assert_eq!(w.state.selection, Some((0, 5)), "Ctrl+A 应全选 [0,5]");
+        assert_eq!(w.state.cursor, 5, "Ctrl+A 后 cursor 移到末尾");
+        // 全选不 emit text_changed（文本未变），返回 Consumed。
+        assert!(matches!(res, EventResult::Consumed), "全选不应 emit");
+    }
+
+    /// P1-5 回归：Ctrl+C 复制选区文本（emit clipboard_copy action）。
+    #[test]
+    fn ctrl_c_emits_clipboard_copy() {
+        let mut w = TextInputWidget::new();
+        w.focused = true;
+        w.state.text = "hello".into();
+        w.state.selection = Some((1, 4)); // "ell"
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
+        let mut ec = EventCtx { invalidation: &mut flags };
+        let res = w.event(&mut ec, &UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("KeyC"),
+            action: KeyAction::Pressed,
+            modifiers: zero_ui_core::event::Modifiers::CONTROL,
+            text: None,
+        });
+        match res {
+            EventResult::EmitWithPayload(id, ActionPayload::Text(t)) => {
+                assert_eq!(t, "ell", "Ctrl+C 应复制选区内容");
+                assert_eq!(id.0.as_str(), "text_input.clipboard_copy");
+            }
+            other => panic!("期望 EmitWithPayload(clipboard_copy)，实际 {other:?}"),
+        }
+        // 复制不修改文本/选区。
+        assert_eq!(w.state.text, "hello");
+        assert_eq!(w.state.selection, Some((1, 4)));
+    }
+
+    /// P1-5 回归：Ctrl+X 剪切——既 emit 复制 action，又删除选区。
+    #[test]
+    fn ctrl_x_cuts_selection() {
+        let mut w = TextInputWidget::new();
+        w.focused = true;
+        w.state.text = "hello".into();
+        w.state.selection = Some((1, 4)); // "ell"
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
+        let mut ec = EventCtx { invalidation: &mut flags };
+        let res = w.event(&mut ec, &UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("KeyX"),
+            action: KeyAction::Pressed,
+            modifiers: zero_ui_core::event::Modifiers::CONTROL,
+            text: None,
+        });
+        match res {
+            EventResult::EmitWithPayload(_, ActionPayload::Text(t)) => assert_eq!(t, "ell"),
+            other => panic!("期望 EmitWithPayload，实际 {other:?}"),
+        }
+        // 剪切后文本只剩 "ho"，cursor=1，selection=None。
+        assert_eq!(w.state.text, "ho");
+        assert_eq!(w.state.cursor, 1);
+        assert_eq!(w.state.selection, None);
+    }
+
+    /// P1-5 回归：Ctrl+V emit clipboard_paste 请求（host 回填）。
+    #[test]
+    fn ctrl_v_emits_paste_request() {
+        let mut w = TextInputWidget::new();
+        w.focused = true;
+        w.state.text = "abc".into();
+        let mut flags = zero_ui_core::invalidation::InvalidationFlags::CLEAN;
+        let mut ec = EventCtx { invalidation: &mut flags };
+        let res = w.event(&mut ec, &UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("KeyV"),
+            action: KeyAction::Pressed,
+            modifiers: zero_ui_core::event::Modifiers::CONTROL,
+            text: None,
+        });
+        match res {
+            EventResult::Emit(id) => assert_eq!(id.0.as_str(), "text_input.clipboard_paste"),
+            other => panic!("期望 Emit(clipboard_paste)，实际 {other:?}"),
+        }
+        // 粘贴请求本身不修改文本（等 host 读剪贴板后回填 text prop）。
+        assert_eq!(w.state.text, "abc");
     }
 }
