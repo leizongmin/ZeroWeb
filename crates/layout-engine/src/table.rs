@@ -238,7 +238,7 @@ fn layout_table(table_box: &mut LayoutBox, doc: &zero_dom::Document, styles: &Ha
         table_box.writing_mode,
         WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
     ) {
-        position_cells_vertical(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
+        position_cells_vertical(table_box, &grid, &col_widths, spacing_x, spacing_y, styles, doc);
     } else {
         position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
     }
@@ -1327,6 +1327,79 @@ fn position_cells(
 /// 有 colspan/rowspan 时回退到 `position_cells`（旧行为），留给 α-4b-2。
 /// row-extras（table height 展开）/ vertical-align / caption-side 在转置轴的
 /// 处理留给 α-4b-4。
+/// R1131 slice 3：vrl_cap_scale 触发时增长 cell 的 block extent（x 宽）以容纳 IFC wrap 列数。
+///
+/// vrl 表 inline extent 被 cap（vrl_cap_scale）→ 文本强制 wrap 成 N 列沿 block 轴（x）排。
+/// 旧 cell.width（taffy 原值，~单字符宽）不足以容纳 N 列，wrap 列溢出 cell 盒 →
+/// row-progression-vrl 簇残余 11-13%。本函数按 N = ceil(文本像素高 / cell_h_scaled)
+/// 增长 cell.width = N × fs。
+///
+/// **post-R1100 重试**：R1116 试 area-conservation 增长 0-flip，因彼时 vertical IFC
+/// container_width=0（R1050）致文本不 wrap；R1100（α-1）修 IFC container_width WM-aware
+/// 后文本能 wrap，故 cell.width 增长方有意义。
+///
+/// **gate**：rowspan>1 跳过（ZW rowspan partial，避 vrl-006 回归，R1110 先例）；
+/// vrl_cap_scale 仅 vrl 触发故天然 vrl-only（避 vlr Path A/B 发散，R1119）。
+#[allow(clippy::too_many_arguments)]
+fn grow_vrl_cell_block_extent(
+    cb: &LayoutBox,
+    cell: &TableCell,
+    col_widths: &[f32],
+    vrl_cap_scale: Option<f32>,
+    spacing_x: f32,
+    grid: &TableGrid,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) -> f32 {
+    let Some(scale) = vrl_cap_scale else {
+        return cb.width;
+    };
+    // rowspan gate
+    if cell.rowspan > 1 {
+        return cb.width;
+    }
+    let fs = cb
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .map(|s| match s.font_size {
+            zero_css_parser::values::LengthValue::Px(v) => v as f32,
+            _ => 16.0,
+        })
+        .unwrap_or(16.0);
+    if fs <= 0.0 || scale <= 0.0 {
+        return cb.width;
+    }
+    // cell_h_scaled：cell 的 inline extent（y）经 cap 后 = Σ(col_widths[col]×scale) + colspan gap。
+    let mut cell_h_scaled = 0.0f32;
+    let mut spanned_non_collapsed = 0usize;
+    for col in cell.col_start..cell.col_end {
+        if col < col_widths.len() {
+            cell_h_scaled += col_widths[col] * scale;
+            if !grid.collapsed_cols.get(col).copied().unwrap_or(false) {
+                spanned_non_collapsed += 1;
+            }
+        }
+    }
+    if spanned_non_collapsed > 1 {
+        cell_h_scaled += (spanned_non_collapsed - 1) as f32 * spacing_x;
+    }
+    if cell_h_scaled <= 0.0 {
+        return cb.width;
+    }
+    // 文本像素高（垂直单列高度）≈ 非空白 char 数 × fs（Ahem 精确，变宽近似）。
+    let char_count = cb
+        .node_id
+        .and_then(|id| doc.text_content(id))
+        .map(|t| t.chars().filter(|c| !c.is_whitespace()).count() as f32)
+        .unwrap_or(0.0);
+    let text_extent = char_count * fs;
+    if text_extent <= 0.0 {
+        return cb.width;
+    }
+    let n = (text_extent / cell_h_scaled).ceil().max(1.0);
+    (n * fs).max(cb.width)
+}
+
 fn position_cells_vertical(
     table_box: &mut LayoutBox,
     grid: &TableGrid,
@@ -1334,6 +1407,7 @@ fn position_cells_vertical(
     spacing_x: f32,
     spacing_y: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
 ) {
     // α-4b-2：colspan 已支持（cell.height = Σ col_widths[col_start..col_end]）。
     // rowspan>1：build_grid 不跟踪 rowspan 占位（orphan_col_cursor 每行重置），
@@ -1418,6 +1492,15 @@ fn position_cells_vertical(
     // 先算每行的 block 尺寸（x 宽 = 该行 cell 内容宽最大值）。
     // extract_layout 已对 vertical 容器的 cell 盒做了 size 轴交换，cell.width 是
     // 转置后的 x 宽；取行内最大作为该垂直列的 x 宽。
+    //
+    // R1131 slice 3：vrl_cap_scale 触发时（inline extent 被 cap → 文本强制 wrap 成多列），
+    // cell 的 block extent（x 宽）须同步增长以容纳 wrap 列数。旧实现 cell.width 保持
+    // taffy 原值（~单字符宽），wrap 列溢出 cell 盒。R1116 曾试 area-conservation 增长但
+    // 0-flip（**彼时 pre-R1100，vertical IFC container_width=0 致文本不 wrap**）；post-R1100
+    // IFC wrap 已修，故重试。N 列 = ceil(文本像素高 / cell_h_scaled)；文本高用 DOM char 数
+    // × fs（Ahem 精确，变宽近似）—col_widths 是 WM-agnostic 水平测量（R1112）不能直接用。
+    // rowspan cell 跳过（ZW rowspan 本就 partial，R1110 先例；避 vrl-006 回归）。仅 vrl
+    //（vrl_cap_scale 仅 vrl 触发，故天然 vrl-only gate）。
     let row_block_sizes: Vec<f32> = grid
         .rows
         .iter()
@@ -1434,9 +1517,10 @@ fn position_cells_vertical(
                     } else {
                         rb.children.get(cell.child_index)
                     };
-                    if let Some(cb) = cell_box {
-                        max_w = max_w.max(cb.width);
-                    }
+                    let Some(cb) = cell_box else { continue };
+                    let w =
+                        grow_vrl_cell_block_extent(cb, cell, col_widths, vrl_cap_scale, spacing_x, grid, styles, doc);
+                    max_w = max_w.max(w);
                 }
             }
             max_w

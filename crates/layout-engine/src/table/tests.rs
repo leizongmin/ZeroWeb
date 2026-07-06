@@ -883,3 +883,66 @@ fn test_r702_cell_intrinsic_uses_max_content_not_whitespace_charcount() {
         intrinsic
     );
 }
+
+/// R1131 slice 3：grow_vrl_cell_block_extent 单测。
+/// 验证 None scale / rowspan gate / Some scale + text → N×fs 增长 三条路径。
+#[test]
+fn test_r1131_grow_vrl_cell_block_extent() {
+    use zero_css_parser::values::LengthValue;
+
+    // doc：cell 元素 + 文本 "AAAAA"（5 非空白 char）
+    let mut doc = Document::new();
+    let root = doc.root();
+    let cell_id = doc.create_element("td");
+    let text_id = doc.create_text_node("AAAAA");
+    let _ = doc.append_child(root, cell_id);
+    let _ = doc.append_child(cell_id, text_id);
+
+    // styles：cell font_size = 20px
+    let mut styles = HashMap::new();
+    let mut cs = ComputedStyle::default();
+    cs.font_size = LengthValue::Px(20.0);
+    styles.insert(cell_id, cs);
+
+    // cb：width=40（taffy 原单字符宽），node_id=cell_id
+    let mut cb = LayoutBox::default();
+    cb.node_id = Some(cell_id);
+    cb.width = 40.0;
+
+    // cell：colspan=1, col [0,1)
+    let cell = TableCell {
+        child_index: 0,
+        colspan: 1,
+        rowspan: 1,
+        col_start: 0,
+        col_end: 1,
+        parent_rg_idx: None,
+    };
+    let grid = TableGrid {
+        rows: vec![],
+        col_count: 1,
+        collapsed_cols: vec![],
+        collapsed_rows: vec![],
+    };
+    let col_widths = [100.0_f32];
+
+    // 1. None scale → cb.width
+    let w = grow_vrl_cell_block_extent(&cb, &cell, &col_widths, None, 0.0, &grid, &styles, &doc);
+    assert_eq!(w, 40.0, "None scale returns cb.width");
+
+    // 2. rowspan>1 → cb.width（gate，避 vrl-006 回归）
+    let mut cell_rs = cell.clone();
+    cell_rs.rowspan = 2;
+    let w = grow_vrl_cell_block_extent(&cb, &cell_rs, &col_widths, Some(0.25), 0.0, &grid, &styles, &doc);
+    assert_eq!(w, 40.0, "rowspan>1 gated → cb.width");
+
+    // 3. Some scale + text → 增长。text_extent = 5×20 = 100；cell_h_scaled = 100×0.25 = 25；
+    //    N = ceil(100/25) = 4；grown = 4×20 = 80。
+    let w = grow_vrl_cell_block_extent(&cb, &cell, &col_widths, Some(0.25), 0.0, &grid, &styles, &doc);
+    assert!(
+        (w - 80.0).abs() < 0.01,
+        "scale 0.25 + 5-char → N=4 cols ×20 = 80, got {}",
+        w
+    );
+    assert!(w > cb.width, "grown > original width");
+}
