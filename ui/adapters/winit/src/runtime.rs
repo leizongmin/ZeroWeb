@@ -30,8 +30,8 @@ use zero_ui_runtime::platform::{PlatformRuntime, RuntimeError, UiResult, WindowI
 
 use crate::driver::WinitDriver;
 use crate::event_map::{
-    map_cursor_moved, map_ime, map_key_event, map_mouse_input, map_mouse_wheel, map_touch, map_window_metrics,
-    to_logical_point, to_logical_size,
+    map_cursor_moved, map_ime, map_key_event, map_modifiers, map_mouse_input, map_mouse_wheel, map_touch,
+    map_window_metrics, to_logical_point, to_logical_size,
 };
 
 type RegisterFn = Box<dyn FnOnce(&mut WidgetHost)>;
@@ -193,6 +193,7 @@ impl PlatformRuntime for WinitRuntime {
             font_loader: FontLoader::new(),
             glyph_cache: GlyphCache::new(1024),
             needs_render: true,
+            modifiers: zero_ui_core::event::Modifiers::NONE,
         };
 
         event_loop
@@ -227,6 +228,10 @@ struct SdkGpuApp {
     font_loader: FontLoader,
     glyph_cache: GlyphCache,
     needs_render: bool,
+    /// **P1-5 修复**：当前修饰键状态。winit `WindowEvent::KeyboardInput` 不携带 modifiers，
+    /// 必须从独立的 `WindowEvent::ModifiersChanged` 追踪。之前转发键盘事件时硬编码
+    /// `Modifiers::NONE`，导致 Ctrl+A/C/V/X 永远拿不到 Ctrl 状态，被当普通字符插入。
+    modifiers: zero_ui_core::event::Modifiers,
 }
 
 /// Ahem 测试字体（证明文本渲染的最小字体）。
@@ -524,11 +529,18 @@ impl ApplicationHandler<()> for SdkGpuApp {
                     }
                 }
             }
+            WindowEvent::ModifiersChanged(mods) => {
+                // P1-5 修复：追踪修饰键状态。winit KeyboardInput 不携带 modifiers，
+                // 必须从独立的 ModifiersChanged 事件维护当前态，否则 Ctrl+A 等快捷键
+                // 永远拿不到 Ctrl 状态。
+                self.modifiers = map_modifiers(mods);
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 // U1-2/U3-3 根因修复：键盘事件转发到 host，TextInput/NavSearch 才能输入。
                 // 之前 runtime 只处理鼠标/触摸/滚轮，键盘事件被默认 `_ => {}` 吃掉。
+                // P1-5：modifiers 从 ModifiersChanged 追踪（不再硬编码 NONE）。
                 if let Some(ref mut driver) = self.driver {
-                    driver.pump_event(&map_key_event(&event, zero_ui_core::event::Modifiers::NONE));
+                    driver.pump_event(&map_key_event(&event, self.modifiers));
                     self.needs_render = true;
                     if let Some(ref window) = self.window {
                         window.request_redraw();

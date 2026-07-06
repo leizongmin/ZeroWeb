@@ -438,6 +438,24 @@ mod tests {
         assert_eq!(key_text(None), None);
     }
 
+    /// **P1-5 回归**：Ctrl+A 的 modifiers 必须从独立 ModifiersChanged 事件追踪，
+    /// 不能硬编码 NONE。本测锁定 map_modifiers 正确把 winit CONTROL 状态翻成
+    /// UI Modifiers::CONTROL —— 这是 Ctrl 快捷键链路的第一环，任何回归都会让
+    /// TextInput 拿不到 Ctrl 状态而把 "a" 当普通字符插入。
+    #[test]
+    fn modifiers_ctrl_state_maps_for_shortcut_chain() {
+        let state = winit::keyboard::ModifiersState::CONTROL;
+        let mods: winit::event::Modifiers = state.into();
+        let ui = map_modifiers(mods);
+        assert!(ui.contains(Modifiers::CONTROL), "Ctrl 状态必须映射到 UI Modifiers::CONTROL");
+        assert!(!ui.contains(Modifiers::SHIFT));
+        // SHIFT + CONTROL 组合（Ctrl+Shift+T 等浏览器快捷键场景）
+        let combo = winit::keyboard::ModifiersState::CONTROL | winit::keyboard::ModifiersState::SHIFT;
+        let ui_combo = map_modifiers(combo.into());
+        assert!(ui_combo.contains(Modifiers::CONTROL));
+        assert!(ui_combo.contains(Modifiers::SHIFT));
+    }
+
     // ---- 指针 ----
 
     #[test]

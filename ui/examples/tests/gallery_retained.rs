@@ -497,6 +497,66 @@ fn text_input_ime_commit_requires_focus() {
     assert_eq!(app.current_demo_read().text, "", "未聚焦时 IME Commit 不应修改 text");
 }
 
+/// **P1-5 回归（端到端）**：Ctrl+A 全选必须工作。
+/// 历史根因：runtime.rs 转发 KeyboardInput 时硬编码 `Modifiers::NONE`，
+/// 从未追踪 ModifiersChanged 事件，导致 Ctrl 状态永远丢失，Ctrl+A 掉到默认
+/// 分支被当字符 'a' 插入。本测试在 driver 层注入带 CONTROL 的 Key 事件，
+/// 验证 host → TextInput 链路正确识别 Ctrl 并触发全选（而非插入字符）。
+#[test]
+fn text_input_ctrl_a_selects_all_end_to_end() {
+    let mut app = GalleryApp::new();
+    app.current_page = "search_field".into();
+    {
+        let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+        register_gallery_factories(driver.host_mut());
+        driver.begin();
+
+        // 点击聚焦 + 先键入 "hello"。
+        let rect = driver
+            .host()
+            .rect_of(&WidgetId::new("demo_search_input"))
+            .expect("demo_search_input must be laid out");
+        let center = Point::new(
+            rect.origin.x + rect.size.width / 2.0,
+            rect.origin.y + rect.size.height / 2.0,
+        );
+        driver.pump_event(&pointer(PointerPhase::Pressed, center));
+        driver.pump_event(&pointer(PointerPhase::Released, center));
+        for ch in ['h', 'e', 'l', 'l', 'o'] {
+            driver.pump_event(&UiEvent::Key {
+                code: zero_ui_core::event::KeyCode::new(&ch.to_string()),
+                action: zero_ui_core::event::KeyAction::Pressed,
+                modifiers: zero_ui_core::event::Modifiers::NONE,
+                text: Some(ch.to_string()),
+            });
+        }
+
+        // Ctrl+A：modifiers 必须带 CONTROL，code 是小写字面值 "a"（winit 真实映射）。
+        // 若 host 没把 modifiers 透传到 widget，会掉默认分支再插一个 'a' → "helloa"。
+        driver.pump_event(&UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("a"),
+            action: zero_ui_core::event::KeyAction::Pressed,
+            modifiers: zero_ui_core::event::Modifiers::CONTROL,
+            text: Some("a".into()),
+        });
+        driver.pump_frame();
+
+        // 全选后再键入 'X' 应替换选区（选区存在时 insert 删除选区）。
+        driver.pump_event(&UiEvent::Key {
+            code: zero_ui_core::event::KeyCode::new("x"),
+            action: zero_ui_core::event::KeyAction::Pressed,
+            modifiers: zero_ui_core::event::Modifiers::NONE,
+            text: Some("X".into()),
+        });
+        driver.pump_frame();
+    }
+    assert_eq!(
+        app.current_demo_read().text,
+        "X",
+        "Ctrl+A 全选后键入 'X' 应替换选区（'hello' → 'X'），而非追加"
+    );
+}
+
 #[test]
 fn all_pages_render_without_panic() {
     // P2-12 回归：所有 page 都能正确构建 + paint（不 panic）。
