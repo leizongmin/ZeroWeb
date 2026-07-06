@@ -1897,3 +1897,73 @@ fn r822_linebox_grows_for_valign_extension() {
         ctx2.lines[0].height
     );
 }
+
+/// R1099 Slice α-1：`subtree_has_text_decoration` decoration-gate 正确性。
+/// gate 决定 vertical 容器是否应用 container_width WM-aware fix（回避 Layer 4 装饰耦合）。
+#[test]
+fn test_r1099_subtree_has_text_decoration() {
+    use crate::inline_finalization::subtree_has_text_decoration;
+    use zero_dom::parse_html;
+    use zero_style_system::property::types::TextDecorationLineValue;
+
+    // 子树有 text-decoration（descendant span 设 underline）
+    let doc = parse_html("<div><p>text</p></div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let div = doc.first_child(body).unwrap();
+    let p = doc.first_child(div).unwrap();
+    let mut styles = HashMap::new();
+    let mut p_style = ComputedStyle::default();
+    p_style.text_decoration_line = TextDecorationLineValue::Underline;
+    styles.insert(p, p_style);
+    assert!(
+        subtree_has_text_decoration(&doc, &styles, div),
+        "子树含 underline 应返回 true"
+    );
+
+    // 子树无任何 text-decoration/emphasis
+    let doc2 = parse_html("<div><p>text</p></div>");
+    let html2 = doc2.first_child(doc2.root()).unwrap();
+    let body2 = doc2.last_child(html2).unwrap();
+    let div2 = doc2.first_child(body2).unwrap();
+    let styles2 = HashMap::new(); // 全 default（text_decoration_line = None）
+    assert!(
+        !subtree_has_text_decoration(&doc2, &styles2, div2),
+        "子树无装饰应返回 false"
+    );
+}
+
+/// R1100 Slice α-2 验证：vertical-mode 下 col_width（= line.height）是否 = line-height × fs。
+/// R1052 VIFCDUMP（pre-α-1 tree）实测 col_width=16（应 80，line-height:5 × fs16）。
+/// 本测验证 current tree（post-α-1）run.line_height → col_width 链路是否正确。
+#[test]
+fn test_r1100_alpha2_vertical_line_height_column_width() {
+    use zero_dom::parse_html;
+    use zero_style_system::WritingModeValue;
+    use zero_style_system::property::types::LineHeightValue;
+
+    let doc = parse_html("<div>AAAAA</div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let div = doc.first_child(body).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut div_style = ComputedStyle::default();
+    div_style.writing_mode = WritingModeValue::VerticalRl;
+    div_style.font_size = LengthValue::Px(16.0);
+    div_style.line_height = LineHeightValue::Number(5.0); // line-height:5 → 80px
+    styles.insert(div, div_style);
+
+    // vertical: container_width 模拟 α-1 的 content_height（200px 可用深度）。
+    let mut ctx = InlineFormattingContext::new(200.0).with_vertical(true);
+    ctx.layout(&doc, div, &styles);
+
+    assert!(!ctx.lines.is_empty(), "vertical IFC 应产出至少一列");
+    let col_width = ctx.lines[0].height;
+    assert!(
+        (col_width - 80.0).abs() < 1.0,
+        "vertical 列宽（line.height）应为 line-height:5 × fs16 = 80，实际 {} \
+         （若 =16 则 line-height 未传 vertical 列宽，α-2 须修）",
+        col_width
+    );
+}

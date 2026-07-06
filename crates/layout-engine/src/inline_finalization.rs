@@ -14,6 +14,35 @@ use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign};
 use crate::types::LayoutBox;
 use zero_style_system::WritingModeValue;
 
+/// R1099 Slice α-1 decoration-gate：vertical 容器子树是否含 text-decoration 或
+/// text-emphasis（非 None）。
+///
+/// 用于 `container_width` WM-aware fix 的 gate——回避 Layer 4 装饰坐标耦合：
+/// α-3（vertical 装饰坐标 re-enable）未实施前，vertical 装饰仍按水平绘制，
+/// 若此时 container_width fix 让 vertical 文本列化（chars 同 x 列、y 递增），
+/// 装饰仍水平绘制 → mismatch，css-text-decor -22 回归（R1099 A/B 实测）。
+/// 有装饰的 vertical 容器保持 `content_width`（旧行为），等 α-3 后解除 gate。
+///
+/// 递归扫描 `root_id` 子树所有元素的 `text_decoration_line` / `text_emphasis_style`。
+pub fn subtree_has_text_decoration(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, root_id: NodeId) -> bool {
+    use zero_style_system::property::types::{TextDecorationLineValue, TextEmphasisStyleValue};
+    fn scan(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, id: NodeId) -> bool {
+        if let Some(s) = styles.get(&id)
+            && (!matches!(s.text_decoration_line, TextDecorationLineValue::None)
+                || !matches!(s.text_emphasis_style, TextEmphasisStyleValue::None))
+        {
+            return true;
+        }
+        for child_id in doc.child_nodes(id) {
+            if scan(doc, styles, child_id) {
+                return true;
+            }
+        }
+        false
+    }
+    scan(doc, styles, root_id)
+}
+
 /// 解析 `text-indent` 为像素值（CSS §10.3.1）。
 ///
 /// 支持 Px / Em（× font_size）/ Percentage（× container_width）。其他单位回退 0。
@@ -616,7 +645,25 @@ pub(crate) fn compute_final_inline_layouts(
     use zero_css_parser::values::LengthValue;
     use zero_style_system::property::types::{OverflowWrapValue, WhiteSpaceValue, WordBreakValue};
 
-    let container_width = root.content_width;
+    // R1099 Slice α-1（vertical-mode IFC 四层协调）：container_width WM-aware。
+    // vertical-rl/lr 下 IFC 的 `max_depth = self.container_width`（break_items_into_columns）
+    // 表示字符向下推进的可用深度，须取竖直 inline 尺寸（content_height），非水平 block 尺寸
+    //（content_width，vertical auto 容器常为 0 → max_depth=0 → 每字符一列横向排列，R1052 根因）。
+    // horizontal-tb 取 content_width，字节一致零回归（WM gate 隔离）。
+    let is_vertical_wm = matches!(
+        root.writing_mode,
+        zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
+    );
+    // decoration-gate（TBD-2）：vertical 容器子树有 text-decoration/emphasis 时
+    // 保持 content_width（旧行为），回避 Layer 4 装饰坐标耦合（α-3 未实施）。
+    let vertical_decoration_free = root
+        .node_id
+        .is_some_and(|id| !subtree_has_text_decoration(doc, styles, id));
+    let container_width = if is_vertical_wm && vertical_decoration_free {
+        root.content_height
+    } else {
+        root.content_width
+    };
 
     // 解析 CSS 属性（与 paint_text 相同的配置）
     let break_word = matches!(
