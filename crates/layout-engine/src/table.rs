@@ -1400,12 +1400,20 @@ fn position_cells_vertical(
     } else {
         0.0
     };
-    // 注：α-4b-6 spike 试过「vertical height = inline 约束，base>target 时等比缩小 col_widths
-    // 触发 IFC wrap」——实测 net-negative（pass 61→60，logical-props-003 1.05→1.42 翻出 pass，
-    // vlr-003/009 +0.4~0.6pp 回归），IFC 未充分 wrap 致 cap 损益不对称。已回退。真修须 cell
-    // 内容垂直 re-layout（IFC 用 table height/n_cols 作 container 真正 wrap + cell.width 扩展
-    // 容纳 wrap 列），多 session 深改，留 α-4b-6 proper。
-    let row_inline_extent: f32 = base_inline_extent + n_cols as f32 * col_extra;
+    // α-4b-6 vrl-only cap spike：vertical-**rl** 表 height 作 inline 约束，base>target 时等比缩小
+    // col_widths 触发 IFC wrap。原 spike 对 vlr 也 cap 致 net-negative（vlr-003/009 回归）；
+    // 本轮收窄到 vrl-only（cap 改善案 vrl-002/004，回归案全 vlr）。vlr 保留 height-as-minimum。
+    let col_sum: f32 = col_widths.iter().sum();
+    let vrl_cap_scale: Option<f32> = if is_rl && target_inline < base_inline_extent && col_sum > 0.0 {
+        Some((target_inline - 2.0 * perim_inline - inline_gaps) / col_sum)
+    } else {
+        None
+    };
+    let row_inline_extent: f32 = if let Some(scale) = vrl_cap_scale {
+        col_sum * scale + inline_gaps + 2.0 * perim_inline
+    } else {
+        base_inline_extent + n_cols as f32 * col_extra
+    };
 
     // 先算每行的 block 尺寸（x 宽 = 该行 cell 内容宽最大值）。
     // extract_layout 已对 vertical 容器的 cell 盒做了 size 轴交换，cell.width 是
@@ -1502,11 +1510,17 @@ fn position_cells_vertical(
 
             // cell 在 inline 轴（y）的尺寸 = 跨的列宽之和（colspan>1 时多列）。
             // vertical 下「列」是 inline 轴（y）槽位，colspan 跨多列 → cell 占多段 y。
+            // α-4b-6：vrl-only cap 触发时按 scale 缩小（base>height 的 vertical-rl 表）；
+            // 否则用原 col_widths，row_extras 的 col_extra 在下方统一加。
             let mut cell_h = 0.0f32;
             let mut spanned_non_collapsed = 0usize;
             for col in cell.col_start..cell.col_end {
                 if col < col_widths.len() {
-                    cell_h += col_widths[col];
+                    cell_h += if let Some(scale) = vrl_cap_scale {
+                        col_widths[col] * scale
+                    } else {
+                        col_widths[col]
+                    };
                     if !(grid.collapsed_cols.get(col).copied().unwrap_or(false)) {
                         spanned_non_collapsed += 1;
                     }
