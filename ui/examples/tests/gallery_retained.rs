@@ -481,3 +481,88 @@ fn all_pages_render_without_panic() {
 // 防止未使用 Rect 导入告警（在某些 toolchain 上 rect_of 返回值用到 Rect）。
 #[allow(dead_code)]
 fn _rect_unused(_: Rect) {}
+
+// ── P3-3 真视觉回归：data_list / command_palette / icon_button / animation ─────
+
+#[test]
+fn data_list_renders_per_item_toggles_not_single_label() {
+    // P3-3 回归：早期 data_list 用单个 SourceLabel 拼 8 行文本。
+    // 现在每个 item 是独立 ToggleWidget，应有 demo_data_list_t_0..7。
+    let mut app = GalleryApp::new();
+    app.current_page = "data_list".into();
+    let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+    register_gallery_factories(driver.host_mut());
+    driver.begin();
+
+    for i in 0..8 {
+        let id = WidgetId::new(&format!("demo_data_list_t_{}", i));
+        assert!(
+            driver.host().rect_of(&id).is_some(),
+            "demo_data_list_t_{i} 应被 layout（应是独立 ToggleWidget 节点，而不是 SourceLabel 拼接）"
+        );
+    }
+}
+
+#[test]
+fn command_palette_renders_per_item_buttons_with_markers() {
+    // P3-3 回归：早期 command_palette 用 SourceLabel 拼 > cmd 列表。
+    // 现在前 5 项是 Button + ColoredBox marker。
+    let mut app = GalleryApp::new();
+    app.current_page = "command_palette".into();
+    let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+    register_gallery_factories(driver.host_mut());
+    driver.begin();
+
+    // 至少前 5 个命令的 button + marker 应被 layout。
+    let mut found_buttons = 0;
+    let mut found_markers = 0;
+    for i in 0..5 {
+        if driver.host().rect_of(&WidgetId::new(&format!("demo_cmd_item_{}", i))).is_some() {
+            found_buttons += 1;
+        }
+        if driver.host().rect_of(&WidgetId::new(&format!("demo_cmd_marker_{}", i))).is_some() {
+            found_markers += 1;
+        }
+    }
+    assert!(
+        found_buttons >= 1,
+        "command_palette 应至少有 1 个 demo_cmd_item_* Button（不再是纯 SourceLabel）"
+    );
+    assert!(
+        found_markers >= 1,
+        "command_palette 应至少有 1 个 demo_cmd_marker_* ColoredBox"
+    );
+}
+
+#[test]
+fn icon_button_has_coloredbox_markers() {
+    // P3-3 回归：icon_button 现在每个 icon 配 ColoredBox 标记，不再仅 ASCII 字符。
+    let mut app = GalleryApp::new();
+    app.current_page = "icon_button".into();
+    let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+    register_gallery_factories(driver.host_mut());
+    driver.begin();
+
+    for name in ["Back", "Fwd", "Reload", "Close"] {
+        let id = WidgetId::new(&format!("demo_icon_glyph_{}", name));
+        assert!(
+            driver.host().rect_of(&id).is_some(),
+            "demo_icon_glyph_{name} 应存在（ColoredBox 图标标记）"
+        );
+    }
+}
+
+#[test]
+fn animation_demo_has_coloredbox_indicator() {
+    // P3-3 回归：animation 现在用 ColoredBox indicator 显示状态，不再纯文本。
+    let mut app = GalleryApp::new();
+    app.current_page = "animation_demo".into();
+    let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+    register_gallery_factories(driver.host_mut());
+    driver.begin();
+
+    assert!(
+        driver.host().rect_of(&WidgetId::new("demo_anim_indicator")).is_some(),
+        "demo_anim_indicator ColoredBox 应存在"
+    );
+}

@@ -150,7 +150,7 @@ impl GalleryApp {
         col
     }
 
-    /// 4 IconButtons; last-clicked highlighted.
+    /// 4 IconButtons; last-clicked highlighted with ColoredBox marker.
     fn build_icon_button_demo(&self) -> WidgetSpec {
         let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_icon_col");
@@ -164,14 +164,25 @@ impl GalleryApp {
         for (name, glyph) in icons.iter() {
             let pos = icons.iter().position(|(n, _)| n == name).unwrap();
             let active = (pos as u32 + 1) == st.pressed;
-            let label = if active {
-                format!("[{}]", glyph)
-            } else {
-                (*glyph).to_string()
-            };
+            // P3-3：选中态用 primary 色方块做图标视觉强化，未选中 muted。
+            let mut icon_box = WidgetSpec::new("ColoredBox");
+            icon_box.id = Some(WidgetId::new(&format!("demo_icon_glyph_{}", name)));
+            icon_box.props.insert(
+                "color",
+                Value::Text(if active { "primary" } else { "muted" }.into()),
+            );
+            icon_box.props.insert("width", Value::Float(24.0));
+            icon_box.props.insert("height", Value::Float(24.0));
+            icon_box.props.insert("label", Value::Text((*name).into()));
+            row.children.push(icon_box);
+
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_icon_btn_{}", name)));
-            btn.props.insert("label", Value::Text(label));
+            btn.props.insert("label", Value::Text((*glyph).to_string()));
+            btn.props.insert(
+                "variant",
+                Value::Text(if active { "selected" } else { "neutral" }.into()),
+            );
             btn.props
                 .insert("action", Value::Text(format!("gallery.demo.button_click.{}", pos + 1)));
             row.children.push(btn);
@@ -538,23 +549,32 @@ impl GalleryApp {
         col
     }
 
-    /// Toolbar: horizontal Buttons; last-clicked highlighted.
+    /// Toolbar: horizontal Buttons with ColoredBox icon markers; last-clicked highlighted.
     fn build_toolbar_demo(&self) -> WidgetSpec {
         let st = self.current_demo_read();
         let mut row = self.themed_container("Row", "demo_toolbar_row");
         row.props.insert("gap", Value::Float(4.0));
-        let actions = [("<", 1u32), (">", 2), ("R", 3), ("H", 4)];
-        for (icon, idx) in actions.iter() {
+        row.props.insert("cross_axis_align", Value::Text("center".into()));
+        let actions = [("<", "Back", 1u32), (">", "Forward", 2), ("R", "Reload", 3), ("H", "Home", 4)];
+        for (icon, name, idx) in actions.iter() {
+            let active = *idx == st.pressed;
+            let mut icon_box = WidgetSpec::new("ColoredBox");
+            icon_box.id = Some(WidgetId::new(&format!("demo_toolbar_glyph_{}", idx)));
+            icon_box.props.insert(
+                "color",
+                Value::Text(if active { "primary" } else { "muted" }.into()),
+            );
+            icon_box.props.insert("width", Value::Float(20.0));
+            icon_box.props.insert("height", Value::Float(20.0));
+            icon_box.props.insert("label", Value::Text((*name).into()));
+            row.children.push(icon_box);
+
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_toolbar_{}", idx)));
-            let active = *idx == st.pressed;
+            btn.props.insert("label", Value::Text((*icon).to_string()));
             btn.props.insert(
-                "label",
-                Value::Text(if active {
-                    format!("[{}]", icon)
-                } else {
-                    (*icon).to_string()
-                }),
+                "variant",
+                Value::Text(if active { "selected" } else { "neutral" }.into()),
             );
             btn.props
                 .insert("action", Value::Text(format!("gallery.demo.button_click.{}", idx)));
@@ -659,15 +679,23 @@ impl GalleryApp {
         row.children.push(add);
         col.children.push(row);
 
-        let mut list = WidgetSpec::new("SourceLabel");
-        list.id = Some(WidgetId::new("demo_data_list_view"));
-        let mut lines = Vec::new();
+        let mut list_col = self.themed_container("Column", "demo_data_list_items");
+        list_col.props.insert("gap", Value::Float(4.0));
         for i in 0..8 {
             let on = (st.toggles & (1 << i)) != 0;
-            lines.push(format!("Item {}: {}", i + 1, if on { "[on]" } else { "[ ]" }));
+            let mut toggle = WidgetSpec::new("ToggleWidget");
+            toggle.id = Some(WidgetId::new(&format!("demo_data_list_t_{}", i)));
+            toggle.props.insert("checked", Value::Bool(on));
+            toggle
+                .props
+                .insert("action", Value::Text(format!("gallery.demo.toggle.{}", i)));
+            toggle
+                .props
+                .insert("label", Value::Text(format!("Item {}", i + 1)));
+            toggle.props.insert("enabled", Value::Bool(true));
+            list_col.children.push(toggle);
         }
-        list.props.insert("text", Value::Text(lines.join("\n")));
-        col.children.push(list);
+        col.children.push(list_col);
         col
     }
 
@@ -701,20 +729,50 @@ impl GalleryApp {
         } else {
             cmds.iter().copied().filter(|c| c.contains(q.as_str())).collect()
         };
-        let mut result = WidgetSpec::new("SourceLabel");
-        result.id = Some(WidgetId::new("demo_cmd_result"));
-        let display = if filtered.is_empty() {
-            "(no match)".to_string()
-        } else {
-            filtered
-                .iter()
-                .take(5)
-                .map(|c| format!("> {}", c))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        result.props.insert("text", Value::Text(display));
-        col.children.push(result);
+
+        let mut list_col = self.themed_container("Column", "demo_cmd_list");
+        list_col.props.insert("gap", Value::Float(4.0));
+        // 选中索引：用 pressed 表示（点 button i 会触发 gallery.demo.button_click.{i+1}，pressed=i+1）。
+        let selected = st.pressed.saturating_sub(1) as usize;
+        for (i, cmd) in filtered.iter().take(5).enumerate() {
+            let mut row = self.themed_container("Row", &format!("demo_cmd_row_{}", i));
+            row.props.insert("gap", Value::Float(8.0));
+            row.props.insert("cross_axis_align", Value::Text("center".into()));
+
+            // 选中项前加 primary 色块，未选中加 muted 色块作为视觉 marker。
+            let mut marker = WidgetSpec::new("ColoredBox");
+            marker.id = Some(WidgetId::new(&format!("demo_cmd_marker_{}", i)));
+            marker.props.insert(
+                "color",
+                Value::Text(if i == selected { "primary" } else { "muted" }.into()),
+            );
+            marker.props.insert("width", Value::Float(8.0));
+            marker.props.insert("height", Value::Float(16.0));
+            marker.props.insert("label", Value::Text((*cmd).into()));
+            row.children.push(marker);
+
+            let mut btn = WidgetSpec::new("Button");
+            btn.id = Some(WidgetId::new(&format!("demo_cmd_item_{}", i)));
+            btn.props.insert("label", Value::Text((*cmd).to_string()));
+            btn.props.insert(
+                "variant",
+                Value::Text(if i == selected { "selected" } else { "neutral" }.into()),
+            );
+            // 命令索引复用 button_click slot 1..5；filtered 内容是动态的，dispatch 只记位置。
+            btn.props
+                .insert("action", Value::Text(format!("gallery.demo.button_click.{}", i + 1)));
+            row.children.push(btn);
+
+            list_col.children.push(row);
+        }
+        col.children.push(list_col);
+
+        if filtered.is_empty() {
+            let mut empty = WidgetSpec::new("SourceLabel");
+            empty.id = Some(WidgetId::new("demo_cmd_empty"));
+            empty.props.insert("text", Value::Text("(no match)".into()));
+            col.children.push(empty);
+        }
         col
     }
 
@@ -808,7 +866,7 @@ impl GalleryApp {
         col
     }
 
-    /// Gesture: Buttons for Tap / Double-tap / Long press.
+    /// Gesture: Buttons for Tap / Double-tap / Long press with ColoredBox active marker.
     fn build_gesture_demo(&self) -> WidgetSpec {
         let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_gesture_col");
@@ -816,9 +874,24 @@ impl GalleryApp {
 
         let labels = ["Tap", "Double tap", "Long press"];
         for (i, label) in labels.iter().enumerate() {
+            let active = (i + 1) as u32 == st.pressed;
+            let mut row = self.themed_container("Row", &format!("demo_gesture_row_{}", i));
+            row.props.insert("gap", Value::Float(8.0));
+            row.props.insert("cross_axis_align", Value::Text("center".into()));
+
+            let mut marker = WidgetSpec::new("ColoredBox");
+            marker.id = Some(WidgetId::new(&format!("demo_gesture_marker_{}", i)));
+            marker.props.insert(
+                "color",
+                Value::Text(if active { "primary" } else { "muted" }.into()),
+            );
+            marker.props.insert("width", Value::Float(8.0));
+            marker.props.insert("height", Value::Float(20.0));
+            marker.props.insert("label", Value::Text((*label).into()));
+            row.children.push(marker);
+
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_gesture_{}", i)));
-            let active = (i + 1) as u32 == st.pressed;
             btn.props.insert(
                 "label",
                 Value::Text(if active {
@@ -827,34 +900,61 @@ impl GalleryApp {
                     (*label).to_string()
                 }),
             );
+            btn.props.insert(
+                "variant",
+                Value::Text(if active { "selected" } else { "neutral" }.into()),
+            );
             btn.props
                 .insert("action", Value::Text(format!("gallery.demo.button_click.{}", i + 1)));
-            col.children.push(btn);
+            row.children.push(btn);
+            col.children.push(row);
         }
         col
     }
 
-    /// Animation: Buttons to switch state label.
+    /// Animation: Buttons to switch a ColoredBox "indicator" (color + width varies by state).
+    /// 注：真动画需要 render-foundation 时间线 API；这里用"状态切换"演示视觉变化。
     fn build_animation_demo(&self) -> WidgetSpec {
         let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_anim_col");
         col.props.insert("gap", Value::Float(8.0));
 
-        let states = ["Idle", "Fade in", "Slide", "Spin"];
+        let states = [
+            ("Idle", "muted", 60.0_f32),
+            ("Fade in", "primary", 120.0),
+            ("Slide", "success", 180.0),
+            ("Spin", "warning", 240.0),
+        ];
         let cur = (st.pressed as usize).min(states.len() - 1);
-        let mut label = WidgetSpec::new("SourceLabel");
-        label.id = Some(WidgetId::new("demo_anim_state"));
-        label
+        let (state_name, color, width) = states[cur];
+
+        let mut indicator = WidgetSpec::new("ColoredBox");
+        indicator.id = Some(WidgetId::new("demo_anim_indicator"));
+        indicator.props.insert("color", Value::Text(color.into()));
+        indicator.props.insert("width", Value::Float(width as f64));
+        indicator.props.insert("height", Value::Float(24.0));
+        indicator.props.insert("label", Value::Text(state_name.into()));
+        col.children.push(indicator);
+
+        let mut state_label = WidgetSpec::new("SourceLabel");
+        state_label.id = Some(WidgetId::new("demo_anim_state"));
+        state_label
             .props
-            .insert("text", Value::Text(format!("State: {}", states[cur])));
-        col.children.push(label);
+            .insert("text", Value::Text(format!("State: {}", state_name)));
+        col.children.push(state_label);
 
         let mut row = self.themed_container("Row", "demo_anim_row");
         row.props.insert("gap", Value::Float(4.0));
         for (i, name) in states.iter().enumerate() {
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_anim_btn_{}", i)));
-            btn.props.insert("label", Value::Text((*name).into()));
+            btn.props.insert("label", Value::Text(name.0.into()));
+            btn.props.insert(
+                "variant",
+                Value::Text(if i == cur { "selected" } else { "neutral" }.into()),
+            );
+            // button_click slot 从 1 开始（0 用于"无选择"），dispatch 处 0 不计数。
+            // 这里用 i (0-based) 作 slot 是与现有 animation demo 一致：pressed==0 → Idle。
             btn.props
                 .insert("action", Value::Text(format!("gallery.demo.button_click.{}", i)));
             row.children.push(btn);
@@ -974,11 +1074,23 @@ impl GalleryApp {
 
         let mut row = self.themed_container("Row", "demo_nav_row");
         row.props.insert("gap", Value::Float(4.0));
-        let items = [("< Back", 1u32), ("> Forward", 2), ("H Home", 3)];
-        for (label, idx) in items.iter() {
+        row.props.insert("cross_axis_align", Value::Text("center".into()));
+        let items = [("< Back", "Back", 1u32), ("> Forward", "Forward", 2), ("H Home", "Home", 3)];
+        for (label, name, idx) in items.iter() {
+            let active = *idx == st.pressed;
+            let mut marker = WidgetSpec::new("ColoredBox");
+            marker.id = Some(WidgetId::new(&format!("demo_nav_marker_{}", idx)));
+            marker.props.insert(
+                "color",
+                Value::Text(if active { "primary" } else { "muted" }.into()),
+            );
+            marker.props.insert("width", Value::Float(8.0));
+            marker.props.insert("height", Value::Float(24.0));
+            marker.props.insert("label", Value::Text((*name).into()));
+            row.children.push(marker);
+
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_nav_{}", idx)));
-            let active = *idx == st.pressed;
             btn.props.insert(
                 "label",
                 Value::Text(if active {
@@ -986,6 +1098,10 @@ impl GalleryApp {
                 } else {
                     (*label).to_string()
                 }),
+            );
+            btn.props.insert(
+                "variant",
+                Value::Text(if active { "selected" } else { "neutral" }.into()),
             );
             btn.props
                 .insert("action", Value::Text(format!("gallery.demo.button_click.{}", idx)));

@@ -628,6 +628,35 @@ tabs/list_view/menu 用 `> Label` / `[X]` ASCII 前缀标记选中，本身在�
 - 12 个 gallery 测试 + 57 个 widget 测试全绿；
 - demo 视觉层面，选中态/主次操作有真实颜色区分。
 
+### 9.3-ter P3-3 真视觉回归（B 档 demo 全部用 ColoredBox 替换 ASCII 占位）
+
+**问题**：P3-2 之后，B 档（真控件 + 伪内容/伪视觉）的 demo 仍有"用 `SourceLabel` 拼接列表"或"用 ASCII 字符 `>` / `[X]` 表达图标"的占位表达，视觉上像演示而非真实组件。
+
+**修复范围**（7 个 demo）：
+
+| demo | 改动前 | 改动后 |
+|---|---|---|
+| `data_list` | 8 行列表用 1 个 `SourceLabel` 拼接 | 8 个独立 `ToggleWidget` 子树（每项可单独交互） |
+| `command_palette` | 命令列表用 1 个 `SourceLabel` 拼 `> cmd` | 5 行 Button + ColoredBox marker，选中 variant=selected |
+| `icon_button` | 图标用 `<`/`>`/`R`/`X` ASCII + `[X]` 选中标记 | 每个 icon 配 24x24 `ColoredBox` 色块（选中 primary，未选中 muted） |
+| `toolbar` | 同 icon_button 用 ASCII | 4 个 ColoredBox icon marker + 选中态 variant=selected |
+| `nav_demo` | `< Back`/`> Forward` 文字 | 每项前加 8x24 ColoredBox marker，选中 primary |
+| `animation_demo` | 纯 SourceLabel "State: X" | ColoredBox indicator（按 state 切颜色+宽度：Idle→muted/60, Fade→primary/120, Slide→success/180, Spin→warning/240） |
+| `gesture_demo` | 纯 Button 列表 | 每项加 ColoredBox 高亮条 + 选中 variant=selected |
+
+**不变的部分（仍属受限边界）**：
+- **真图标**（SVG/字体 glyph）：`PaintCtx` 当前只有 `fill_rect`，无法渲染字形。ColoredBox 是当前能做的最高视觉表达。
+- **真浮动层**（popover/popup/dialog）：host runtime 无 overlay / z-index 系统，弹层仍是线性排版。
+- **真动画**：render-foundation 无时间线/插值 API，indicator 颜色切换是离散的。
+
+**测试**：
+- 新增 4 个回归测试（`data_list_renders_per_item_toggles_not_single_label`、
+  `command_palette_renders_per_item_buttons_with_markers`、
+  `icon_button_has_coloredbox_markers`、`animation_demo_has_coloredbox_indicator`）。
+- 总计 16 个 gallery 测试全绿，clippy clean。
+
+**影响面**：demo 视觉表达升级，所有"伪内容"占位都改成真 widget 子树 + ColoredBox 视觉强化。
+
 ### 9.4 影响面汇总
 
 - 新增 crate 内模块：`ui/core/prop_keys.rs`、`ui/runtime/src/host/{reconcile,layout,paint,event,semantics}.rs`。
