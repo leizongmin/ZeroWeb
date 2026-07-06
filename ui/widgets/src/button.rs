@@ -16,6 +16,9 @@ pub struct ButtonSpec {
     pub label: String,
     pub action: ActionId,
     pub enabled: bool,
+    /// P2-14：hover 进入/离开时 emit 此 action，payload = "enter" / "leave"。
+    /// `None` 表示不 emit（默认）。用于 tooltip / hover preview 等场景。
+    pub hover_action: Option<ActionId>,
 }
 
 impl ButtonSpec {
@@ -24,7 +27,14 @@ impl ButtonSpec {
             label: label.to_string(),
             action: ActionId::new(action),
             enabled: true,
+            hover_action: None,
         }
+    }
+
+    /// 设置 hover action（hover 进入/离开时 emit，payload = "enter"/"leave"）。
+    pub fn with_hover_action(mut self, action: &str) -> ButtonSpec {
+        self.hover_action = Some(ActionId::new(action));
+        self
     }
 }
 
@@ -92,7 +102,14 @@ impl Widget for Button {
         }
         match phase {
             PointerPhase::Moved => {
+                let was_hover = self.hover;
                 self.hover = true;
+                if !was_hover && let Some(hover_action) = self.spec.hover_action.clone() {
+                    return EventResult::EmitWithPayload(
+                        hover_action,
+                        zero_ui_core::action::ActionPayload::Text("enter".into()),
+                    );
+                }
                 EventResult::Consumed
             }
             PointerPhase::Pressed if matches!(button, Some(PointerButton::Primary)) => {
@@ -109,8 +126,15 @@ impl Widget for Button {
                 }
             }
             PointerPhase::Exited => {
+                let was_hover = self.hover;
                 self.pressed = false;
                 self.hover = false;
+                if was_hover && let Some(hover_action) = self.spec.hover_action.clone() {
+                    return EventResult::EmitWithPayload(
+                        hover_action,
+                        zero_ui_core::action::ActionPayload::Text("leave".into()),
+                    );
+                }
                 EventResult::Consumed
             }
             _ => EventResult::Ignored,
@@ -531,5 +555,52 @@ mod tests {
             !matches!(res, EventResult::Emit(_)),
             "Exited clears pressed → release should not emit"
         );
+    }
+
+    #[test]
+    fn hover_action_emits_enter_and_leave() {
+        // P2-14：hover_action 在 enter (Moved after no hover) 时 emit payload "enter"，
+        // 在 Exited 时 emit payload "leave"。重复 Moved 不重复 emit。
+        let spec = ButtonSpec::new("Tip", "app.tip").with_hover_action("app.hover");
+        let mut btn = Button::new(spec);
+        let mut inval = InvalidationFlags::CLEAN;
+        let mut ctx = EventCtx {
+            invalidation: &mut inval,
+        };
+
+        let moved = UiEvent::Pointer {
+            phase: PointerPhase::Moved,
+            button: None,
+            position: Point::new(1.0, 1.0),
+            modifiers: Modifiers::NONE,
+            pointer_id: 0,
+        };
+        let res = btn.event(&mut ctx, &moved);
+        match res {
+            EventResult::EmitWithPayload(_, zero_ui_core::action::ActionPayload::Text(s)) => {
+                assert_eq!(s, "enter", "first Moved should emit hover enter");
+            }
+            _ => panic!("expected EmitWithPayload Text(\"enter\"), got {:?}", res),
+        }
+
+        // 重复 Moved 不再 emit（已 hover）。
+        let res = btn.event(&mut ctx, &moved);
+        assert!(matches!(res, EventResult::Consumed), "repeat Moved should not re-emit");
+
+        // Exited emit leave。
+        let exited = UiEvent::Pointer {
+            phase: PointerPhase::Exited,
+            button: None,
+            position: Point::ZERO,
+            modifiers: Modifiers::NONE,
+            pointer_id: 0,
+        };
+        let res = btn.event(&mut ctx, &exited);
+        match res {
+            EventResult::EmitWithPayload(_, zero_ui_core::action::ActionPayload::Text(s)) => {
+                assert_eq!(s, "leave", "Exited should emit hover leave");
+            }
+            _ => panic!("expected EmitWithPayload Text(\"leave\"), got {:?}", res),
+        }
     }
 }

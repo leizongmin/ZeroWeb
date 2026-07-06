@@ -316,9 +316,9 @@ Step 12: SourcePanel widget
 
 | 项 | 状态 | 处理方式 |
 |----|------|----------|
-| 搜索过滤导航列表 | 待设计 | UI 的 SearchField 未暴露 filter callback；可用 dispatch + 手动过滤实现 |
-| 导航分组折叠 | 待验证 | 看 ListView 是否支持分组头点击折叠 |
-| 统一的 dark/light 色板 | 已有 | `zero-ui-core` 的 `SemanticTokens` 已提供 |
+| 搜索过滤导航列表 | ✅ 已实现 | `GalleryApp::filtered_pages` 按 `search_query` 缩小返回集；dispatch 收到 `gallery.search` 更新 query（见 `search_query_filters_pages` 测试） |
+| 导航分组折叠 | ✅ 已实现 | `collapsed_groups: HashSet<GroupId>` + `gallery.group.toggle` action；sidebar 按 `is_collapsed` 折叠组内子项（见 `group_toggle_collapses_pages` 测试） |
+| 统一的 dark/light 色板 | ✅ 已有 | `zero-ui-core` 的 `SemanticTokens` 已提供 |
 
 ---
 
@@ -544,6 +544,60 @@ badge 计数 +1）来体现「可交互」。
   但代码未删除——便于回退或作为视觉参考）。后续可清理。
 - 视觉精度让位于交互完整性：旧 painter 用 GPU primitives 画出彩色像素，新实现用真控件 + SourceLabel
   （文本 widget）+ ASCII 字符表达状态，外观简化但全部可点。
+
+#### P2-13 Demo state namespace 化（按 page 隔离）
+
+**问题**：P2-12 全部 demo 共用 `demo_button_pressed / demo_toggle_state / demo_text_input` 三个字段，
+切换 page 时各 demo 的状态会互相污染（例如 button demo 点到 #2，切到 tabs demo 看到 tab #2 被选中）。
+collection_demo 的 8 个 toggle 复用 toggle.0/1/2 action 也是同类问题的表现。
+
+**修复**：
+
+1. `GalleryApp.demo_states: HashMap<page_id, DemoState>` 取代原来的三个扁平字段。
+2. `DemoState { pressed: u32, toggles: u8, text: String }` 单结构按 page 隔离。
+3. 访问器：`current_demo(&mut self)` / `current_demo_read(&self)` 自动按 `current_page` 取对应 state，
+   切 page 时互不干扰；未访问过的 page 返回 `Default::default()`。
+4. `dispatch` 改成 namespace 前缀匹配（`s if s.starts_with("gallery.demo.button_click.")` 等），
+   上限提升到 button 1..=4 / toggle 0..8，覆盖 collection_demo 的 8 个 toggle。
+5. 所有 `build_*_demo` 改用 `self.current_demo_read()` 读取状态。
+
+**影响面**：
+- `GalleryApp` 公共字段类型变了（`demo_button_pressed` 等扁平字段移除）——属于内部 state，外部不依赖。
+- dispatch action 名字不变，只是 reducer 写入位置按 page 路由。
+
+#### P2-14 Button hover_action（tooltip 真 hover 联动）
+
+**问题**：P2-12 的 tooltip demo 只能"点击切换"，不是真正的 hover 提示，违反 tooltip 语义。
+根因：Button 只在 click 时 emit action，没有 hover 进入/离开事件。
+
+**修复**：
+
+1. `ButtonSpec` 新增 `hover_action: Option<ActionId>`（默认 `None` 不 emit）。
+2. `Button::event`：
+   - `PointerPhase::Moved` 且 `was_hover == false` → emit `hover_action` + payload `"enter"`。
+   - `PointerPhase::Exited` 且 `was_hover == true` → emit `hover_action` + payload `"leave"`。
+   - 重复 `Moved`（已 hover）不重复 emit。
+3. `gallery.demo.hover` action：dispatch 把 `enter`/`leave` 写入 `current_demo().pressed = 1/0`。
+4. tooltip demo 的 Button 用 `hover_action = "gallery.demo.hover"`，hover 进入 → 显示提示，
+   离开 → 隐藏。回归测试 `hover_tooltip_button_emits_enter_action` 验证 enter 路径。
+
+**影响面**：
+- `ButtonSpec` 公共 API 加字段（`hover_action`），向后兼容（默认 `None`）。
+- `with_hover_action(&str)` builder 方法。
+- `zero_ui_widgets::Button` 单元测试 + `gallery_retained` 集成测试覆盖。
+
+#### P2-15 死代码清理（P2-12 留下的 preview/ 目录）
+
+**问题**：P2-12 把所有 demo 改用真控件子树后，旧的 `DemoPreview` widget + `preview/*.rs` 8 个 painter 文件
+（~1000 行）不再被任何调用方引用，但当时为了"便于回退"保留了。P2-13 进一步把 `DemoPreview` widget 定义
+也从 `app.rs` 删除了。
+
+**修复**：
+- 删除整个 `ui/examples/src/gallery/preview/` 目录（9 个文件）。
+- `mod.rs` 不再声明 `pub mod preview`。
+- `register_gallery_factories` 不再注册 `DemoPreview` 工厂（P2-13 已删 widget 定义，工厂本就无效）。
+
+**影响面**：纯删除死代码，无行为变化。
 
 ### 9.4 影响面汇总
 

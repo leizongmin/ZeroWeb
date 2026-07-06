@@ -1,10 +1,11 @@
-//! Demo area real-widget subtree builders (P2-11 / P2-12 widget migration).
+//! Demo area real-widget subtree builders (P2-11 / P2-12 / P2-13).
 //!
 //! Hosts `impl GalleryApp` extension block with one `build_<page>_demo` per page id.
 //! Each demo is composed of Column/Row containers + real widgets (Button / ToggleWidget /
 //! TextInputWidget) so the host -> widget -> action -> reducer -> props loop is real.
 //!
-//! Note: this file is just an `impl GalleryApp` extension block; all methods belong to `GalleryApp`.
+//! P2-13 namespace-ization: each demo reads/writes state via `self.current_demo_read()` /
+//! `self.current_demo()` which key on `current_page`, so cross-page state pollution is impossible.
 
 use zero_ui_core::binding::Value;
 use zero_ui_core::widget::{WidgetId, WidgetSpec};
@@ -14,8 +15,6 @@ use crate::gallery::model::DemoPage;
 
 impl GalleryApp {
     /// Dispatch demo preview subtree by page id.
-    ///
-    /// Since P2-11 each demo is progressively migrated to real-widget subtrees.
     pub(crate) fn build_demo_preview(&self, page: &'static DemoPage) -> WidgetSpec {
         match page.id {
             // widgets
@@ -56,11 +55,11 @@ impl GalleryApp {
     }
 
     fn build_fallback_preview(&self, page: &'static DemoPage) -> WidgetSpec {
-        let mut preview = WidgetSpec::new("DemoPreview");
-        preview.id = Some(WidgetId::new("demo_preview"));
-        preview.props.insert("theme", Value::Text(self.theme.as_str().into()));
-        preview.props.insert("page_id", Value::Text(page.id.into()));
-        preview
+        let mut label = self.themed_container("Column", "demo_fallback");
+        label
+            .props
+            .insert("text", Value::Text(format!("(no demo builder for page: {})", page.id)));
+        label
     }
 
     fn themed_container(&self, kind: &str, id: &str) -> WidgetSpec {
@@ -70,25 +69,18 @@ impl GalleryApp {
         c
     }
 
-    // ?? widgets group ???????????????????????????????????????????????????????
+    // ── widgets group ───────────────────────────────────────────────────────
 
-    /// 3 Buttons: Default / Secondary / Disabled. Clicks 1/2 update demo_button_pressed.
+    /// 3 Buttons: Default / Secondary / Disabled. Clicks 1/2 update pressed.
     fn build_button_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut row = self.themed_container("Row", "demo_button_row");
         row.props.insert("gap", Value::Float(12.0));
         row.props.insert("cross_axis_align", Value::Text("center".into()));
 
         let labels: [&str; 3] = [
-            if self.demo_button_pressed == 1 {
-                "Clicked!"
-            } else {
-                "Default"
-            },
-            if self.demo_button_pressed == 2 {
-                "Clicked!"
-            } else {
-                "Secondary"
-            },
+            if st.pressed == 1 { "Clicked!" } else { "Default" },
+            if st.pressed == 2 { "Clicked!" } else { "Secondary" },
             "Disabled",
         ];
         for (i, label) in labels.iter().enumerate() {
@@ -103,8 +95,9 @@ impl GalleryApp {
         row
     }
 
-    /// 3 Toggles: first two interactive, third disabled. Bit i of demo_toggle_state.
+    /// 3 Toggles: first two interactive, third disabled. Bit i of toggles.
     fn build_toggle_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_toggle_col");
         col.props.insert("gap", Value::Float(8.0));
 
@@ -118,7 +111,7 @@ impl GalleryApp {
             toggle.id = Some(WidgetId::new(&format!("demo_toggle_{}", i)));
             toggle
                 .props
-                .insert("checked", Value::Bool((self.demo_toggle_state & (1 << i)) != 0));
+                .insert("checked", Value::Bool((st.toggles & (1 << i)) != 0));
             toggle
                 .props
                 .insert("action", Value::Text(format!("gallery.demo.toggle.{}", i)));
@@ -132,12 +125,13 @@ impl GalleryApp {
 
     /// TextInput + live mirror of current text.
     fn build_text_input_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_text_col");
         col.props.insert("gap", Value::Float(8.0));
 
         let mut input = WidgetSpec::new("TextInputWidget");
         input.id = Some(WidgetId::new("demo_text_input"));
-        input.props.insert("text", Value::Text(self.demo_text_input.clone()));
+        input.props.insert("text", Value::Text(st.text.clone()));
         input
             .props
             .insert("placeholder", Value::Text("Type something...".into()));
@@ -145,10 +139,10 @@ impl GalleryApp {
 
         let mut mirror = WidgetSpec::new("SourceLabel");
         mirror.id = Some(WidgetId::new("demo_text_mirror"));
-        let display = if self.demo_text_input.is_empty() {
+        let display = if st.text.is_empty() {
             "(empty)".to_string()
         } else {
-            format!("You typed: {}", self.demo_text_input)
+            format!("You typed: {}", st.text)
         };
         mirror.props.insert("text", Value::Text(display));
         col.children.push(mirror);
@@ -156,8 +150,9 @@ impl GalleryApp {
         col
     }
 
-    /// 4 IconButtons (unicode glyphs as icons); last-clicked is highlighted.
+    /// 4 IconButtons; last-clicked highlighted.
     fn build_icon_button_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_icon_col");
         col.props.insert("gap", Value::Float(8.0));
 
@@ -168,7 +163,7 @@ impl GalleryApp {
         let icons = [("Back", "<"), ("Fwd", ">"), ("Reload", "R"), ("Close", "X")];
         for (name, glyph) in icons.iter() {
             let pos = icons.iter().position(|(n, _)| n == name).unwrap();
-            let active = (pos as u32 + 1) == self.demo_button_pressed;
+            let active = (pos as u32 + 1) == st.pressed;
             let label = if active {
                 format!("[{}]", glyph)
             } else {
@@ -185,27 +180,26 @@ impl GalleryApp {
 
         let mut hint = WidgetSpec::new("SourceLabel");
         hint.id = Some(WidgetId::new("demo_icon_hint"));
-        hint.props.insert(
-            "text",
-            Value::Text(format!("Last clicked: #{}", self.demo_button_pressed)),
-        );
+        hint.props
+            .insert("text", Value::Text(format!("Last clicked: #{}", st.pressed)));
         col.children.push(hint);
         col
     }
 
-    /// Badge: Inbox Button + count label; each click +1 unread (capped at 99).
+    /// Badge: Inbox Button + 真彩色 ColoredBox 徽标（danger 色块包数字）。
     fn build_badge_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_badge_col");
         col.props.insert("gap", Value::Float(8.0));
 
-        let count = self.demo_button_pressed.min(99);
+        let count = st.pressed.min(99);
         let display = if count >= 99 {
             "99+".to_string()
         } else {
             count.to_string()
         };
         let mut row = self.themed_container("Row", "demo_badge_row");
-        row.props.insert("gap", Value::Float(12.0));
+        row.props.insert("gap", Value::Float(8.0));
         row.props.insert("cross_axis_align", Value::Text("center".into()));
 
         let mut inc_btn = WidgetSpec::new("Button");
@@ -216,10 +210,22 @@ impl GalleryApp {
             .insert("action", Value::Text("gallery.demo.button_click.1".into()));
         row.children.push(inc_btn);
 
-        let mut badge = WidgetSpec::new("SourceLabel");
-        badge.id = Some(WidgetId::new("demo_badge_count"));
-        badge.props.insert("text", Value::Text(format!("Unread: {}", display)));
-        row.children.push(badge);
+        // 真彩色徽标：ColoredBox + 内嵌 SourceLabel 文本（数字）。
+        let badge_w = if count >= 99 { 36.0 } else { 24.0 };
+        let mut badge_dot = WidgetSpec::new("ColoredBox");
+        badge_dot.id = Some(WidgetId::new("demo_badge_dot"));
+        badge_dot.props.insert("color", Value::Text("danger".into()));
+        badge_dot.props.insert("width", Value::Float(badge_w));
+        badge_dot.props.insert("height", Value::Float(20.0));
+        badge_dot
+            .props
+            .insert("label", Value::Text(format!("Unread: {}", display)));
+        row.children.push(badge_dot);
+
+        let mut badge_label = WidgetSpec::new("SourceLabel");
+        badge_label.id = Some(WidgetId::new("demo_badge_count"));
+        badge_label.props.insert("text", Value::Text(display));
+        row.children.push(badge_label);
 
         col.children.push(row);
         let mut hint = WidgetSpec::new("SourceLabel");
@@ -230,18 +236,40 @@ impl GalleryApp {
         col
     }
 
-    /// Progress: ASCII bar driven by demo_button_pressed; +/- buttons adjust by 10%.
+    /// Progress: 真彩色进度条（filled ColoredBox + track ColoredBox）+ +/- 按钮。
     fn build_progress_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_progress_col");
         col.props.insert("gap", Value::Float(8.0));
 
-        let pct = (self.demo_button_pressed * 10).min(100);
-        let filled = (pct / 10) as usize;
-        let bar_text = format!("[{}{}] {}%", "#".repeat(filled), "_".repeat(10 - filled), pct);
-        let mut bar = WidgetSpec::new("SourceLabel");
-        bar.id = Some(WidgetId::new("demo_progress_bar"));
-        bar.props.insert("text", Value::Text(bar_text));
-        col.children.push(bar);
+        let pct = (st.pressed * 10).min(100);
+        // 进度条：用 Row 容纳 filled 段（primary 色）+ track 段（muted 色）。
+        let mut bar_row = self.themed_container("Row", "demo_progress_bar");
+        bar_row.props.insert("gap", Value::Float(0.0));
+        // filled 段：宽度按 pct 比例（用 max_width 约束近似；这里用固定 200px 总宽）。
+        let total_w = 200.0_f32;
+        let filled_w = total_w * (pct as f32) / 100.0;
+        let track_w = total_w - filled_w;
+        let mut filled = WidgetSpec::new("ColoredBox");
+        filled.id = Some(WidgetId::new("demo_progress_filled"));
+        filled.props.insert("color", Value::Text("primary".into()));
+        filled.props.insert("label", Value::Text(format!("{}%", pct)));
+        filled.props.insert("width", Value::Float((filled_w.max(2.0)) as f64));
+        bar_row.children.push(filled);
+        if track_w > 0.0 {
+            let mut track = WidgetSpec::new("ColoredBox");
+            track.id = Some(WidgetId::new("demo_progress_track"));
+            track.props.insert("color", Value::Text("muted".into()));
+            track.props.insert("width", Value::Float(track_w as f64));
+            bar_row.children.push(track);
+        }
+        col.children.push(bar_row);
+
+        // 百分比标签
+        let mut pct_label = WidgetSpec::new("SourceLabel");
+        pct_label.id = Some(WidgetId::new("demo_progress_label"));
+        pct_label.props.insert("text", Value::Text(format!("{}%", pct)));
+        col.children.push(pct_label);
 
         let mut row = self.themed_container("Row", "demo_progress_row");
         row.props.insert("gap", Value::Float(12.0));
@@ -265,13 +293,14 @@ impl GalleryApp {
 
     /// Tabs: 3 tab buttons + content panel driven by selected index.
     fn build_tabs_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_tabs_col");
         col.props.insert("gap", Value::Float(8.0));
 
         let mut row = self.themed_container("Row", "demo_tabs_row");
         row.props.insert("gap", Value::Float(4.0));
         let tabs = ["General", "Privacy", "Security"];
-        let selected = (self.demo_button_pressed as usize).saturating_sub(1).min(2);
+        let selected = (st.pressed as usize).saturating_sub(1).min(2);
         for (i, label) in tabs.iter().enumerate() {
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_tab_{}", i)));
@@ -299,20 +328,21 @@ impl GalleryApp {
         col
     }
 
-    /// Tooltip: Button toggles a hint label visibility (no real hover yet).
+    /// Tooltip: hover over button shows hint label; leave hides it (真 hover)。
     fn build_tooltip_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_tooltip_col");
         col.props.insert("gap", Value::Float(8.0));
 
-        let show_tip = self.demo_button_pressed == 1;
+        let show_tip = st.pressed == 1;
         let mut btn = WidgetSpec::new("Button");
         btn.id = Some(WidgetId::new("demo_tooltip_btn"));
-        btn.props.insert(
-            "label",
-            Value::Text(if show_tip { "Hide tip" } else { "Show tip" }.into()),
-        );
+        btn.props.insert("label", Value::Text("Hover me".into()));
         btn.props
             .insert("action", Value::Text("gallery.demo.button_click.1".into()));
+        // P2-14：用真 hover_action 替代 click toggle。
+        btn.props
+            .insert("hover_action", Value::Text("gallery.demo.hover".into()));
         col.children.push(btn);
 
         if show_tip {
@@ -329,9 +359,10 @@ impl GalleryApp {
 
     /// ListView: 5 selectable rows; click selects and marks row with >.
     fn build_list_view_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_list_col");
         col.props.insert("gap", Value::Float(4.0));
-        let selected = (self.demo_button_pressed as usize).saturating_sub(1).min(4);
+        let selected = (st.pressed as usize).saturating_sub(1).min(4);
         for i in 0..5usize {
             let mut row = self.themed_container("Row", &format!("demo_list_row_{}", i));
             row.props.insert("gap", Value::Float(8.0));
@@ -351,6 +382,7 @@ impl GalleryApp {
 
     /// Menu: vertical items; click highlights selected.
     fn build_menu_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_menu_col");
         col.props.insert("gap", Value::Float(4.0));
         let items = [
@@ -359,7 +391,7 @@ impl GalleryApp {
             ("Save As...", "save_as", 3),
             ("Exit", "exit", 4),
         ];
-        let selected = self.demo_button_pressed;
+        let selected = st.pressed;
         for (label, name, idx) in items.iter() {
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_menu_{}", name)));
@@ -378,12 +410,13 @@ impl GalleryApp {
 
     /// SearchField: TextInput + live suggestion list.
     fn build_search_field_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_search_col");
         col.props.insert("gap", Value::Float(8.0));
 
         let mut input = WidgetSpec::new("TextInputWidget");
         input.id = Some(WidgetId::new("demo_search_input"));
-        input.props.insert("text", Value::Text(self.demo_text_input.clone()));
+        input.props.insert("text", Value::Text(st.text.clone()));
         input
             .props
             .insert("placeholder", Value::Text("Search components...".into()));
@@ -391,7 +424,7 @@ impl GalleryApp {
 
         let mut result = WidgetSpec::new("SourceLabel");
         result.id = Some(WidgetId::new("demo_search_result"));
-        let query = self.demo_text_input.trim().to_lowercase();
+        let query = st.text.trim().to_lowercase();
         let candidates = ["button", "toggle", "text_input", "menu", "tabs"];
         let matches: Vec<&str> = candidates
             .iter()
@@ -412,19 +445,37 @@ impl GalleryApp {
         col
     }
 
-    /// StatusBubble: cycle through 3 statuses via button.
+    /// StatusBubble: ColoredBox 状态色块（success/warning/danger）+ cycle button。
     fn build_status_bubble_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_status_col");
         col.props.insert("gap", Value::Float(8.0));
 
-        let states = ["[ok] Saved", "[!] Pending", "[x] Failed"];
-        let idx = (self.demo_button_pressed as usize).saturating_sub(1) % states.len();
-        let text = states[idx];
+        let (color_name, label_text) = match (st.pressed as usize).saturating_sub(1) % 3 {
+            0 => ("success", "Saved"),
+            1 => ("warning", "Pending"),
+            2 => ("danger", "Failed"),
+            _ => unreachable!(),
+        };
+
+        let mut row = self.themed_container("Row", "demo_status_dot_row");
+        row.props.insert("gap", Value::Float(8.0));
+        row.props.insert("cross_axis_align", Value::Text("center".into()));
+
+        // 真彩色圆点（用窄 ColoredBox 模拟）。
+        let mut dot = WidgetSpec::new("ColoredBox");
+        dot.id = Some(WidgetId::new("demo_status_dot"));
+        dot.props.insert("color", Value::Text(color_name.into()));
+        dot.props.insert("width", Value::Float(16.0));
+        dot.props.insert("height", Value::Float(16.0));
+        dot.props.insert("label", Value::Text(label_text.into()));
+        row.children.push(dot);
 
         let mut label = WidgetSpec::new("SourceLabel");
         label.id = Some(WidgetId::new("demo_status_label"));
-        label.props.insert("text", Value::Text(text.into()));
-        col.children.push(label);
+        label.props.insert("text", Value::Text(label_text.into()));
+        row.children.push(label);
+        col.children.push(row);
 
         let mut next = WidgetSpec::new("Button");
         next.id = Some(WidgetId::new("demo_status_next"));
@@ -435,15 +486,16 @@ impl GalleryApp {
         col
     }
 
-    /// Toolbar: horizontal Buttons (Back/Forward/Reload/Home); last-clicked highlighted.
+    /// Toolbar: horizontal Buttons; last-clicked highlighted.
     fn build_toolbar_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut row = self.themed_container("Row", "demo_toolbar_row");
         row.props.insert("gap", Value::Float(4.0));
         let actions = [("<", 1u32), (">", 2), ("R", 3), ("H", 4)];
         for (icon, idx) in actions.iter() {
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_toolbar_{}", idx)));
-            let active = *idx == self.demo_button_pressed;
+            let active = *idx == st.pressed;
             btn.props.insert(
                 "label",
                 Value::Text(if active {
@@ -461,10 +513,11 @@ impl GalleryApp {
 
     /// Popover: trigger Button toggles a floating content block.
     fn build_popover_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_popover_col");
         col.props.insert("gap", Value::Float(8.0));
 
-        let open = self.demo_button_pressed == 1;
+        let open = st.pressed == 1;
         let mut trigger = WidgetSpec::new("Button");
         trigger.id = Some(WidgetId::new("demo_popover_trigger"));
         trigger.props.insert(
@@ -489,10 +542,11 @@ impl GalleryApp {
 
     /// Popup: trigger + OK / Cancel buttons (modal-like).
     fn build_popup_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_popup_col");
         col.props.insert("gap", Value::Float(8.0));
 
-        let open = self.demo_button_pressed == 1;
+        let open = st.pressed == 1;
         let mut trigger = WidgetSpec::new("Button");
         trigger.id = Some(WidgetId::new("demo_popup_trigger"));
         trigger.props.insert(
@@ -526,10 +580,11 @@ impl GalleryApp {
         col
     }
 
-    // ?? patterns group ??????????????????????????????????????????????????????
+    // ── patterns group ──────────────────────────────────────────────────────
 
     /// DataList: TextInput + Add button + 8-row state (toggle bitmask).
     fn build_data_list_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_data_list_col");
         col.props.insert("gap", Value::Float(8.0));
 
@@ -537,7 +592,7 @@ impl GalleryApp {
         row.props.insert("gap", Value::Float(8.0));
         let mut input = WidgetSpec::new("TextInputWidget");
         input.id = Some(WidgetId::new("demo_data_list_input"));
-        input.props.insert("text", Value::Text(self.demo_text_input.clone()));
+        input.props.insert("text", Value::Text(st.text.clone()));
         input.props.insert("placeholder", Value::Text("New item...".into()));
         row.children.push(input);
 
@@ -553,7 +608,7 @@ impl GalleryApp {
         list.id = Some(WidgetId::new("demo_data_list_view"));
         let mut lines = Vec::new();
         for i in 0..8 {
-            let on = (self.demo_toggle_state & (1 << i)) != 0;
+            let on = (st.toggles & (1 << i)) != 0;
             lines.push(format!("Item {}: {}", i + 1, if on { "[on]" } else { "[ ]" }));
         }
         list.props.insert("text", Value::Text(lines.join("\n")));
@@ -563,12 +618,13 @@ impl GalleryApp {
 
     /// CommandPalette: TextInput + filtered command list.
     fn build_command_palette_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_cmd_palette_col");
         col.props.insert("gap", Value::Float(8.0));
 
         let mut input = WidgetSpec::new("TextInputWidget");
         input.id = Some(WidgetId::new("demo_cmd_input"));
-        input.props.insert("text", Value::Text(self.demo_text_input.clone()));
+        input.props.insert("text", Value::Text(st.text.clone()));
         input
             .props
             .insert("placeholder", Value::Text("Type a command...".into()));
@@ -584,7 +640,7 @@ impl GalleryApp {
             "open settings",
             "quit",
         ];
-        let q = self.demo_text_input.trim().to_lowercase();
+        let q = st.text.trim().to_lowercase();
         let filtered: Vec<&str> = if q.is_empty() {
             cmds.to_vec()
         } else {
@@ -609,10 +665,11 @@ impl GalleryApp {
 
     /// DialogScaffold: trigger + inner dialog body with OK / Cancel.
     fn build_dialog_scaffold_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_dialog_col");
         col.props.insert("gap", Value::Float(8.0));
 
-        let open = self.demo_button_pressed == 1;
+        let open = st.pressed == 1;
         let mut trigger = WidgetSpec::new("Button");
         trigger.id = Some(WidgetId::new("demo_dialog_trigger"));
         trigger.props.insert(
@@ -651,26 +708,23 @@ impl GalleryApp {
         col
     }
 
-    // ?? forms / gestures / animation / collections ????????????????????????
+    // ── forms / gestures / animation / collections ────────────────────────
 
     /// Form: name TextInput + subscribe Toggle + Submit Button.
     fn build_form_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_form_col");
         col.props.insert("gap", Value::Float(12.0));
 
         let mut name_input = WidgetSpec::new("TextInputWidget");
         name_input.id = Some(WidgetId::new("demo_form_name"));
-        name_input
-            .props
-            .insert("text", Value::Text(self.demo_text_input.clone()));
+        name_input.props.insert("text", Value::Text(st.text.clone()));
         name_input.props.insert("placeholder", Value::Text("Your name".into()));
         col.children.push(name_input);
 
         let mut sub_toggle = WidgetSpec::new("ToggleWidget");
         sub_toggle.id = Some(WidgetId::new("demo_form_subscribe"));
-        sub_toggle
-            .props
-            .insert("checked", Value::Bool((self.demo_toggle_state & 1) != 0));
+        sub_toggle.props.insert("checked", Value::Bool((st.toggles & 1) != 0));
         sub_toggle
             .props
             .insert("action", Value::Text("gallery.demo.toggle.0".into()));
@@ -683,7 +737,7 @@ impl GalleryApp {
         submit.id = Some(WidgetId::new("demo_form_submit"));
         submit.props.insert(
             "label",
-            Value::Text(if self.demo_button_pressed == 1 {
+            Value::Text(if st.pressed == 1 {
                 "Submitted!".into()
             } else {
                 "Submit".into()
@@ -696,8 +750,9 @@ impl GalleryApp {
         col
     }
 
-    /// Gesture: Buttons for Tap / Double-tap / Long press; click marks current.
+    /// Gesture: Buttons for Tap / Double-tap / Long press.
     fn build_gesture_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_gesture_col");
         col.props.insert("gap", Value::Float(8.0));
 
@@ -705,7 +760,7 @@ impl GalleryApp {
         for (i, label) in labels.iter().enumerate() {
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_gesture_{}", i)));
-            let active = (i + 1) as u32 == self.demo_button_pressed;
+            let active = (i + 1) as u32 == st.pressed;
             btn.props.insert(
                 "label",
                 Value::Text(if active {
@@ -723,11 +778,12 @@ impl GalleryApp {
 
     /// Animation: Buttons to switch state label.
     fn build_animation_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_anim_col");
         col.props.insert("gap", Value::Float(8.0));
 
         let states = ["Idle", "Fade in", "Slide", "Spin"];
-        let cur = (self.demo_button_pressed as usize).min(states.len() - 1);
+        let cur = (st.pressed as usize).min(states.len() - 1);
         let mut label = WidgetSpec::new("SourceLabel");
         label.id = Some(WidgetId::new("demo_anim_state"));
         label
@@ -749,14 +805,15 @@ impl GalleryApp {
         col
     }
 
-    /// Collection: 8 Toggles + count summary.
+    /// Collection: 8 Toggles + count summary. Each toggle has its own action 0..7.
     fn build_collection_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_collection_col");
         col.props.insert("gap", Value::Float(8.0));
 
         let mut summary = WidgetSpec::new("SourceLabel");
         summary.id = Some(WidgetId::new("demo_collection_summary"));
-        let count = self.demo_toggle_state.count_ones();
+        let count = st.toggles.count_ones();
         summary
             .props
             .insert("text", Value::Text(format!("Selected items: {}/8", count)));
@@ -767,19 +824,17 @@ impl GalleryApp {
             toggle.id = Some(WidgetId::new(&format!("demo_collection_t_{}", i)));
             toggle
                 .props
-                .insert("checked", Value::Bool((self.demo_toggle_state & (1 << i)) != 0));
-            // Note: only toggle.0/1/2 actions exist in dispatch; toggles 3..7 reuse them,
-            // so toggling those will affect lower bits. Acceptable for a demo.
+                .insert("checked", Value::Bool((st.toggles & (1 << i)) != 0));
             toggle
                 .props
-                .insert("action", Value::Text(format!("gallery.demo.toggle.{}", i % 3)));
+                .insert("action", Value::Text(format!("gallery.demo.toggle.{}", i)));
             toggle.props.insert("label", Value::Text(format!("Item {}", i + 1)));
             col.children.push(toggle);
         }
         col
     }
 
-    // ?? theme / i18n / dsl / nav ??????????????????????????????????????????
+    // ── theme / i18n / dsl / nav ──────────────────────────────────────────
 
     /// Theme: shows current theme + Button that triggers gallery.theme.toggle.
     fn build_theme_demo(&self) -> WidgetSpec {
@@ -855,6 +910,7 @@ impl GalleryApp {
 
     /// Nav: Buttons for Back / Forward / Home; current selection highlighted.
     fn build_nav_demo(&self) -> WidgetSpec {
+        let st = self.current_demo_read();
         let mut col = self.themed_container("Column", "demo_nav_col");
         col.props.insert("gap", Value::Float(8.0));
 
@@ -864,7 +920,7 @@ impl GalleryApp {
         for (label, idx) in items.iter() {
             let mut btn = WidgetSpec::new("Button");
             btn.id = Some(WidgetId::new(&format!("demo_nav_{}", idx)));
-            let active = *idx == self.demo_button_pressed;
+            let active = *idx == st.pressed;
             btn.props.insert(
                 "label",
                 Value::Text(if active {
@@ -885,7 +941,7 @@ impl GalleryApp {
             "text",
             Value::Text(format!(
                 "Current: {}",
-                match self.demo_button_pressed {
+                match st.pressed {
                     1 => "Back",
                     2 => "Forward",
                     3 => "Home",

@@ -184,6 +184,11 @@ pub fn register_counter_factories(host: &mut WidgetHost) {
         let label = str_prop(spec, "label").unwrap_or_default();
         let action = ActionId::new(&str_prop(spec, "action").unwrap_or_else(|| "noop".into()));
         let enabled = !matches!(spec.props.get("enabled"), Some(Value::Bool(false)));
-        Box::new(Button::new(ButtonSpec { label, action, enabled }))
+        Box::new(Button::new(ButtonSpec {
+            label,
+            action,
+            enabled,
+            hover_action: None,
+        }))
     });
 }

@@ -9,6 +9,6 @@ pub mod demo_builders;
 pub mod highlight;
 pub mod model;
 pub mod pages;
-pub mod preview;
 
+pub use app::DemoState;
 pub use app::{GalleryApp, register_gallery_factories};

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use zero_ui_core::action::{ActionId, ActionPayload, ActionResult, EventResult};
 use zero_ui_core::binding::Value;
-use zero_ui_core::event::{PointerPhase, UiEvent};
+use zero_ui_core::event::UiEvent;
 use zero_ui_core::geometry::{Constraints, Point, Rect, Size};
 use zero_ui_core::theme::Color;
 use zero_ui_core::widget::{EventCtx, LayoutCtx, MountCtx, PaintCtx, Props, UpdateCtx, Widget, WidgetId, WidgetSpec};
@@ -22,13 +22,27 @@ pub struct GalleryApp {
     pub theme: ThemeKind,
     pub collapsed_groups: HashSet<GroupId>,
     pub search_query: String,
-    /// Demo 内部状态（按 page 隔离）。
-    /// - button：低 4 位 = 各按钮最近一次 pressed 索引（0=未点，1/2/3=对应按钮）
-    /// - toggle：低 3 位 = 3 个 toggle 的 on/off
-    /// - text_input：String 是输入框当前文本
-    pub demo_button_pressed: u32,
-    pub demo_toggle_state: u8,
-    pub demo_text_input: String,
+    /// Demo 内部状态（按 page 隔离，P2-13 namespace 化）。
+    /// key = page_id，value = 该 page 的 demo state。切 page 时互不干扰。
+    pub demo_states: std::collections::HashMap<String, DemoState>,
+}
+
+/// 单个 page 的 demo state。
+/// 不同 page 复用同一结构，按需使用各字段（语义由 page 决定）。
+#[derive(Debug, Clone, Default)]
+pub struct DemoState {
+    /// button-like 索引（最近一次点击的按钮编号；0=未点）。
+    pub pressed: u32,
+    /// toggle 位掩码（最多 8 位）。
+    pub toggles: u8,
+    /// 文本输入当前内容。
+    pub text: String,
+}
+
+impl DemoState {
+    pub fn for_page<'a>(app: &'a mut GalleryApp, page: &str) -> &'a mut DemoState {
+        app.demo_states.entry(page.to_string()).or_default()
+    }
 }
 
 impl GalleryApp {
@@ -39,10 +53,22 @@ impl GalleryApp {
             theme: ThemeKind::Light,
             collapsed_groups: HashSet::new(),
             search_query: String::new(),
-            demo_button_pressed: 0,
-            demo_toggle_state: 0b001, // 第一个默认 on
-            demo_text_input: String::new(),
+            demo_states: std::collections::HashMap::new(),
         }
+    }
+
+    /// 获取当前 page 的 demo state（按 page 隔离，避免跨 page 误染）。
+    pub fn current_demo(&mut self) -> &mut DemoState {
+        let page = self.current_page.clone();
+        DemoState::for_page(self, &page)
+    }
+
+    /// 只读访问当前 page 的 demo state。
+    pub fn current_demo_read(&self) -> DemoState {
+        self.demo_states
+            .get(self.current_page.as_str())
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn current_page_info(&self) -> Option<&'static DemoPage> {
@@ -315,138 +341,49 @@ impl UiApp for GalleryApp {
                 ActionResult::Handled
             }
             // ── Demo 内部 actions（真控件 emit）──────────────────────────────────
-            // Button demo：3 个独立按钮，各自 emit 唯一 action。
-            "gallery.demo.button_click.1" => {
-                self.demo_button_pressed = 1;
+            // P2-13 namespace 化：所有 demo action 写入"当前 page"的 state，
+            // 切到其它 page 时不会污染。button_click.N / toggle.N 用同一个 pressed/toggles 字段。
+            s if s.starts_with("gallery.demo.button_click.") => {
+                if let Some(n) = s
+                    .strip_prefix("gallery.demo.button_click.")
+                    .and_then(|t| t.parse::<u32>().ok())
+                    && n <= 4
+                {
+                    self.current_demo().pressed = n;
+                }
                 ActionResult::Handled
             }
-            "gallery.demo.button_click.2" => {
-                self.demo_button_pressed = 2;
-                ActionResult::Handled
-            }
-            "gallery.demo.button_click.3" => {
-                self.demo_button_pressed = 3;
-                ActionResult::Handled
-            }
-            // Toggle demo：每个 toggle emit 自己的 action。
-            "gallery.demo.toggle.0" => {
-                self.demo_toggle_state ^= 1 << 0;
-                ActionResult::Handled
-            }
-            "gallery.demo.toggle.1" => {
-                self.demo_toggle_state ^= 1 << 1;
-                ActionResult::Handled
-            }
-            "gallery.demo.toggle.2" => {
-                self.demo_toggle_state ^= 1 << 2;
+            s if s.starts_with("gallery.demo.toggle.") => {
+                if let Some(i) = s
+                    .strip_prefix("gallery.demo.toggle.")
+                    .and_then(|t| t.parse::<u32>().ok())
+                    && i < 8
+                {
+                    self.current_demo().toggles ^= 1 << i;
+                }
                 ActionResult::Handled
             }
             "gallery.demo.text_changed" | "text_input.changed" => {
                 if let Some(ActionPayload::Text(t)) = &payload {
-                    self.demo_text_input = t.clone();
+                    self.current_demo().text = t.clone();
+                }
+                ActionResult::Handled
+            }
+            // P2-14：Button hover_action 触发，payload = "enter" / "leave"。
+            "gallery.demo.hover" => {
+                match payload {
+                    Some(ActionPayload::Text(s)) if s == "enter" => {
+                        self.current_demo().pressed = 1;
+                    }
+                    Some(ActionPayload::Text(s)) if s == "leave" => {
+                        self.current_demo().pressed = 0;
+                    }
+                    _ => {}
                 }
                 ActionResult::Handled
             }
             _ => ActionResult::UnknownAction(action.clone()),
         }
-    }
-}
-
-/// Demo 预览区
-pub struct DemoPreview {
-    page_id: String,
-    /// 内部交互状态：随 page 不同语义不同（如 toggle 的 on/off、button 的 pressed index）。
-    /// 用 u64 位掩码：低 8 位用于 toggle on/off 标志位 0..7。
-    state: u64,
-}
-
-impl Widget for DemoPreview {
-    fn mount(&mut self, _ctx: &mut MountCtx) {}
-    fn update(&mut self, ctx: &mut UpdateCtx, props: &Props) {
-        // page_id 决定预览区高度 → layout；色变走 NEEDS_PAINT 由 host 级 mark 触发。
-        let page_changed = sync_text(props, zero_ui_core::prop_keys::PAGE_ID, &mut self.page_id);
-        super::chrome::mark_layout_if_changed(ctx, page_changed);
-    }
-    fn event(&mut self, _ctx: &mut EventCtx, event: &UiEvent) -> EventResult {
-        // 仅响应在 toggle 预览区内的点击：翻转第 i 位。
-        let UiEvent::Pointer {
-            phase: PointerPhase::Released,
-            position,
-            ..
-        } = event
-        else {
-            return EventResult::Ignored;
-        };
-        if self.page_id == "toggle" {
-            // 3 个 toggle，y 区间分别为 [20,60] / [60,100] / [100,140]。
-            let x = position.x;
-            let y = position.y;
-            if (40.0..=200.0).contains(&x) {
-                let y_ranges: [(usize, f32, f32); 3] = [(0, 20.0, 60.0), (1, 60.0, 100.0), (2, 100.0, 140.0)];
-                for (i, y_lo, y_hi) in y_ranges {
-                    if y >= y_lo && y < y_hi {
-                        // 第 2 个 (i=2) 视为 disabled 不可点。
-                        if i == 2 {
-                            return EventResult::Consumed;
-                        }
-                        self.state ^= 1 << i;
-                        return EventResult::Consumed;
-                    }
-                }
-            }
-            EventResult::Ignored
-        } else {
-            let _ = position;
-            EventResult::Ignored
-        }
-    }
-    fn layout(&mut self, _ctx: &mut LayoutCtx, c: Constraints) -> Size {
-        // 不同 demo 高度不同：交互/多行示例需要更多垂直空间。
-        let h: f32 = match self.page_id.as_str() {
-            "toggle" | "button" | "theme_demo" | "list_view" | "menu" | "data_list" | "form_demo" | "gesture_demo"
-            | "animation_demo" | "collection_demo" | "dialog_scaffold" | "nav_demo" | "command_palette" | "tab_bar"
-            | "popover" | "popup" | "toolbar" => 200.0,
-            "badge" | "progress" | "text_input" | "tabs" | "tooltip" | "icon_button" | "search_field"
-            | "status_bubble" | "i18n_demo" | "dsl_demo" => 140.0,
-            _ => 120.0,
-        };
-        Size::new(c.max_width, h.clamp(c.min_height, c.max_height))
-    }
-    fn paint(&mut self, ctx: &mut PaintCtx) {
-        let tokens = ctx.tokens;
-        let size = ctx.clip.map(|r| r.size).unwrap_or(Size::new(400.0, 120.0));
-        let frame = Rect::from_origin_size(Point::new(8.0, 4.0), Size::new(size.width - 16.0, size.height - 8.0));
-        ctx.recorder.fill_rect(frame, tokens.surface);
-        let border = Color::rgb(
-            tokens.on_background.r * 0.3 + tokens.surface.r * 0.7,
-            tokens.on_background.g * 0.3 + tokens.surface.g * 0.7,
-            tokens.on_background.b * 0.3 + tokens.surface.b * 0.7,
-        );
-        ctx.recorder.stroke_rect(frame, border, 1.0);
-
-        match super::preview::painter_for(&self.page_id) {
-            Some(painter) => painter.paint(self.state, tokens, ctx),
-            None => {
-                // 占位：未实现真实交互预览的页面继续显示 "{page} preview" 文案。
-                let label = format!("{} preview", self.page_id.replace('_', " "));
-                ctx.recorder
-                    .draw_text(&label, Point::new(20.0, 30.0), 14.0, tokens.on_surface);
-            }
-        }
-    }
-}
-
-// 保留 layout height 表的常量映射，供未来按 page 元数据驱动布局。
-// 注：当前 layout 内联了 match，未直接复用此 fn，但保留可读性 / 未来重构。
-#[allow(dead_code)]
-fn preview_height_for(page_id: &str) -> f32 {
-    match page_id {
-        "toggle" | "button" | "theme_demo" | "list_view" | "menu" | "data_list" | "form_demo" | "gesture_demo"
-        | "animation_demo" | "collection_demo" | "dialog_scaffold" | "nav_demo" | "command_palette" | "tab_bar"
-        | "popover" | "popup" | "toolbar" => 200.0,
-        "badge" | "progress" | "text_input" | "tabs" | "tooltip" | "icon_button" | "search_field" | "status_bubble"
-        | "i18n_demo" | "dsl_demo" => 140.0,
-        _ => 120.0,
     }
 }
 
@@ -629,14 +566,11 @@ pub fn register_gallery_factories(host: &mut WidgetHost) {
         let desc = str_prop(spec, "desc").unwrap_or_default();
         Box::new(DemoTitle { text, desc })
     });
-    host.register("DemoPreview", |spec| {
-        let page_id = str_prop(spec, "page_id").unwrap_or_default();
-        Box::new(DemoPreview { page_id, state: 0 })
-    });
     host.register("SourceLabel", |spec| {
         let text = str_prop(spec, "text").unwrap_or_default();
         Box::new(SourceLabel { text })
     });
+    host.register("ColoredBox", |_spec| Box::new(zero_ui_widgets::ColoredBox::new()));
     host.register("SourceCode", |spec| {
         let source = str_prop(spec, "source").unwrap_or_default();
         let lang = str_prop(spec, "lang").unwrap_or_else(|| "yaml".into());
@@ -650,10 +584,12 @@ pub fn register_gallery_factories(host: &mut WidgetHost) {
             .map(|a| ActionId::new(&a))
             .unwrap_or_else(|| ActionId::new("noop"));
         let enabled = !matches!(spec.props.get("enabled"), Some(Value::Bool(false)));
+        let hover_action = str_prop(spec, "hover_action").map(|a| ActionId::new(&a));
         Box::new(zero_ui_widgets::Button::new(zero_ui_widgets::ButtonSpec {
             label,
             action,
             enabled,
+            hover_action,
         }))
     });
     host.register("ToggleWidget", |spec| {
@@ -995,7 +931,7 @@ mod tests {
             pressed: false,
         };
         let ev = UiEvent::Pointer {
-            phase: PointerPhase::Released,
+            phase: zero_ui_core::event::PointerPhase::Released,
             button: Some(zero_ui_core::event::PointerButton::Primary),
             position: Point::new(10.0, 10.0),
             modifiers: zero_ui_core::event::Modifiers::NONE,

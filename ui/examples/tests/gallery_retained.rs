@@ -220,7 +220,7 @@ fn fill_colors(scene: &Scene) -> std::collections::HashSet<[u8; 4]> {
 
 #[test]
 fn click_button_in_demo_area_updates_state() {
-    // 验证 button demo 中点击 "Default" 按钮后 demo_button_pressed 变为 1。
+    // 验证 button demo 中点击 "Default" 按钮后 demo pressed 变为 1。
     let mut app = GalleryApp::new();
     app.current_page = "button".into();
     {
@@ -241,17 +241,18 @@ fn click_button_in_demo_area_updates_state() {
         driver.pump_frame();
     }
     assert_eq!(
-        app.demo_button_pressed, 1,
-        "点击 Default 按钮后 demo_button_pressed 应为 1"
+        app.current_demo_read().pressed,
+        1,
+        "clicking Default should set pressed to 1"
     );
 }
 
 #[test]
 fn click_toggle_in_demo_area_updates_bitmask() {
-    // 验证 toggle demo 中点击第 0 个 toggle 后 demo_toggle_state 第 0 位翻转。
+    // 验证 toggle demo 中点击第 0 个 toggle 后 toggle state 第 0 位翻转。
     let mut app = GalleryApp::new();
     app.current_page = "toggle".into();
-    let initial = app.demo_toggle_state;
+    let initial = app.current_demo_read().toggles;
     {
         let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
         register_gallery_factories(driver.host_mut());
@@ -269,15 +270,19 @@ fn click_toggle_in_demo_area_updates_bitmask() {
         driver.pump_event(&pointer(PointerPhase::Released, center));
         driver.pump_frame();
     }
-    assert_eq!(app.demo_toggle_state, initial ^ 0b001, "点击 toggle 0 后第 0 位应翻转");
+    assert_eq!(
+        app.current_demo_read().toggles,
+        initial ^ 0b001,
+        "clicking toggle 0 should flip bit 0"
+    );
 }
 
 #[test]
 fn disabled_button_does_not_emit_action() {
-    // 验证 disabled 按钮（index 2）点击后 demo_button_pressed 不变。
+    // 验证 disabled 按钮（index 2）点击后 pressed 不变。
     let mut app = GalleryApp::new();
     app.current_page = "button".into();
-    app.demo_button_pressed = 0;
+    app.current_demo().pressed = 0;
     {
         let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
         register_gallery_factories(driver.host_mut());
@@ -296,8 +301,9 @@ fn disabled_button_does_not_emit_action() {
         driver.pump_frame();
     }
     assert_eq!(
-        app.demo_button_pressed, 0,
-        "Disabled 按钮不应触发 action；demo_button_pressed 应保持 0"
+        app.current_demo_read().pressed,
+        0,
+        "disabled button should not emit action; pressed stays 0"
     );
 }
 
@@ -305,7 +311,7 @@ fn disabled_button_does_not_emit_action() {
 
 #[test]
 fn click_tab_updates_selected_index() {
-    // 验证 tabs demo 中点击第 2 个 tab button 后 demo_button_pressed == 2。
+    // 验证 tabs demo 中点击第 2 个 tab button 后 pressed == 2。
     let mut app = GalleryApp::new();
     app.current_page = "tabs".into();
     {
@@ -325,7 +331,11 @@ fn click_tab_updates_selected_index() {
         driver.pump_event(&pointer(PointerPhase::Released, center));
         driver.pump_frame();
     }
-    assert_eq!(app.demo_button_pressed, 2, "点击 tab 1 后 selected index 应为 2");
+    assert_eq!(
+        app.current_demo_read().pressed,
+        2,
+        "clicking tab 1 should set selected index to 2"
+    );
 }
 
 #[test]
@@ -333,7 +343,7 @@ fn click_popover_trigger_toggles_open_state() {
     // 验证 popover trigger 按钮点击后切换 open 状态。
     let mut app = GalleryApp::new();
     app.current_page = "popover".into();
-    assert_eq!(app.demo_button_pressed, 0, "初始状态应为 0（关闭）");
+    assert_eq!(app.current_demo_read().pressed, 0, "initial state should be 0 (closed)");
     {
         let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
         register_gallery_factories(driver.host_mut());
@@ -350,12 +360,44 @@ fn click_popover_trigger_toggles_open_state() {
         driver.pump_event(&pointer(PointerPhase::Released, center));
         driver.pump_frame();
     }
-    assert_eq!(app.demo_button_pressed, 1, "点击 trigger 后应打开（=1）");
+    assert_eq!(app.current_demo_read().pressed, 1, "clicking trigger should open (=1)");
+}
+
+#[test]
+fn hover_tooltip_button_emits_enter_action() {
+    // P2-14：验证 Button hover_action 在 enter 时 emit，tooltip demo 真 hover 联动。
+    // leave 行为已在 zero-ui-widgets button 测试里覆盖。
+    let mut app = GalleryApp::new();
+    app.current_page = "tooltip".into();
+    assert_eq!(app.current_demo_read().pressed, 0, "initial: no hover");
+
+    {
+        let mut driver = WinitDriver::new(&mut app, WindowMetrics::desktop());
+        register_gallery_factories(driver.host_mut());
+        driver.begin();
+        let rect = driver
+            .host()
+            .rect_of(&WidgetId::new("demo_tooltip_btn"))
+            .expect("demo_tooltip_btn must be laid out");
+        let center = Point::new(
+            rect.origin.x + rect.size.width / 2.0,
+            rect.origin.y + rect.size.height / 2.0,
+        );
+        driver.pump_event(&UiEvent::Pointer {
+            phase: PointerPhase::Moved,
+            button: None,
+            position: center,
+            modifiers: zero_ui_core::event::Modifiers::NONE,
+            pointer_id: 0,
+        });
+        driver.pump_frame();
+    }
+    assert_eq!(app.current_demo_read().pressed, 1, "hover enter should set pressed=1");
 }
 
 #[test]
 fn text_input_in_search_field_updates_state() {
-    // 验证 search_field demo 中的 TextInput 接收键盘事件后 demo_text_input 更新。
+    // 验证 search_field demo 中的 TextInput 接收键盘事件后 text 更新。
     let mut app = GalleryApp::new();
     app.current_page = "search_field".into();
     {
@@ -386,7 +428,11 @@ fn text_input_in_search_field_updates_state() {
         }
         driver.pump_frame();
     }
-    assert_eq!(app.demo_text_input, "abc", "键入 abc 后 demo_text_input 应为 'abc'");
+    assert_eq!(
+        app.current_demo_read().text,
+        "abc",
+        "typing 'abc' should set text to 'abc'"
+    );
 }
 
 #[test]
