@@ -79,11 +79,11 @@ impl FontdueTextMeasure {
         let mut out: Vec<(String, String)> = Vec::new();
         for ch in text.chars() {
             let fam = self.family_for_char(ch).unwrap_or("").to_string();
-            if let Some(last) = out.last_mut() {
-                if last.0 == fam {
-                    last.1.push(ch);
-                    continue;
-                }
+            if let Some(last) = out.last_mut()
+                && last.0 == fam
+            {
+                last.1.push(ch);
+                continue;
             }
             out.push((fam, ch.to_string()));
         }

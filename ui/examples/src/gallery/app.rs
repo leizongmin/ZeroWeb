@@ -560,7 +560,7 @@ impl UiApp for GalleryApp {
                 if let Some(n) = s
                     .strip_prefix("gallery.demo.button_click.")
                     .and_then(|t| t.parse::<u32>().ok())
-                    && n >= 1 && n <= 16
+                    && (1..=16).contains(&n)
                 {
                     self.current_demo().pressed = n;
                 }
