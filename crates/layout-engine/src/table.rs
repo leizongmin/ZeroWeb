@@ -1400,6 +1400,11 @@ fn position_cells_vertical(
     } else {
         0.0
     };
+    // 注：α-4b-6 spike 试过「vertical height = inline 约束，base>target 时等比缩小 col_widths
+    // 触发 IFC wrap」——实测 net-negative（pass 61→60，logical-props-003 1.05→1.42 翻出 pass，
+    // vlr-003/009 +0.4~0.6pp 回归），IFC 未充分 wrap 致 cap 损益不对称。已回退。真修须 cell
+    // 内容垂直 re-layout（IFC 用 table height/n_cols 作 container 真正 wrap + cell.width 扩展
+    // 容纳 wrap 列），多 session 深改，留 α-4b-6 proper。
     let row_inline_extent: f32 = base_inline_extent + n_cols as f32 * col_extra;
 
     // 先算每行的 block 尺寸（x 宽 = 该行 cell 内容宽最大值）。
