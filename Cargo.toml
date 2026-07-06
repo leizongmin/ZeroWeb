@@ -94,7 +94,7 @@ wasmtime = { version = "36", default-features = false }
 wasmi = "0.40"
 
 # 基准测试
-criterion = "0.5"
+criterion = "0.8"
 
 # 测试工具
 serial_test = "3"
