@@ -15,7 +15,7 @@ bincode = "1"
 # 注意：`CreateJobObjectW` 签名引用 `SECURITY_ATTRIBUTES`，windows-sys 0.59 把它 cfg-gate
 # 在 `Win32_Security` feature 上（即使我们传 null），必须一并启用。
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = [
+windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_System_JobObjects",

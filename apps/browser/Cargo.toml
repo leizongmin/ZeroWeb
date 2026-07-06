@@ -47,7 +47,7 @@ serial_test = { workspace = true }
 # Windows：注册 SetConsoleCtrlHandler，让 Ctrl+C 走 shutdown_child_processes
 # 而不是被默认 handler 直接 TerminateProcess（跳过 Drop，孤儿 renderer 锁住 exe）。
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Console"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
 
 # Windows：构建时把 .ico 嵌入 .exe 资源（Explorer / 任务栏显示应用图标）
 [target.'cfg(windows)'.build-dependencies]
