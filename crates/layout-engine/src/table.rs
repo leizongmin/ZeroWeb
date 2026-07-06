@@ -1335,16 +1335,13 @@ fn position_cells_vertical(
     spacing_y: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
-    // α-4b-2 gate：colspan 已支持（cell.height = Σ col_widths[col_start..col_end]）；
-    // rowspan>1 仍回退 horizontal（transposed 轴跨行占位须 TBD-2：TableGrid rowspan 表示）。
-    let has_rowspan = grid.rows.iter().any(|r| r.cells.iter().any(|c| c.rowspan > 1));
-    if has_rowspan {
-        // rowspan 在 transposed 轴（cell 沿 x 占多槽）须跨行占位逻辑（TBD-2：TableGrid
-        // rowspan 表示），α-4b-2 暂回退到 horizontal，避免错误转置。
-        position_cells(table_box, grid, col_widths, spacing_x, spacing_y, styles);
-        return;
-    }
-
+    // α-4b-2：colspan 已支持（cell.height = Σ col_widths[col_start..col_end]）。
+    // rowspan>1：build_grid 不跟踪 rowspan 占位（orphan_col_cursor 每行重置），
+    // horizontal position_cells 也不做 rowspan 跨行（cell 仅取首行 row_height）——
+    // 即 ZW 的 rowspan 支持本就是 partial（列分配正确、跨行高度不延展）。
+    // 故 vertical 路径对 rowspan cell 按单行 x 宽处理（与 horizontal 同局限），
+    // 不再回退——转置结构正确（行沿 x、cell 沿 y）比 horizontal fallback（87% 发散）
+    // 显著更接近 chromium。
     let is_rl = matches!(table_box.writing_mode, WritingModeValue::VerticalRl);
 
     // 转置 spacing：vertical 下 spacing_x（inline 轴）→ y 方向（cell 间），
