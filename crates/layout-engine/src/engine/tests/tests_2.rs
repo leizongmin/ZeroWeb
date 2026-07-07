@@ -1095,6 +1095,17 @@ fn test_root_absolute_all_insets_stretch_to_viewport() {
         "root width 应 stretch 到 770（viewport 800 - inset 10/20），实际 {}",
         result.root.width
     );
+    // 位置：root CB 原点 = 视口 (0,0)，left/top Px → 绝对坐标。
+    assert!(
+        (result.root.x - 10.0).abs() < 1.0,
+        "root x 应 = left = 10，实际 {}",
+        result.root.x
+    );
+    assert!(
+        (result.root.y - 30.0).abs() < 1.0,
+        "root y 应 = top = 30，实际 {}",
+        result.root.y
+    );
 }
 
 /// Grid 使用 repeat(auto-fill, ...) 模板 — 验证 grid template 解析不 panic，
