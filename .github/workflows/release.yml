@@ -60,22 +60,32 @@ jobs:
             target: x86_64-unknown-linux-gnu
             artifact: zero-browser-linux-x86_64
             ext: ''
+            features: ''
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             artifact: zero-browser-linux-aarch64
             ext: ''
+            features: ''
           - os: macos-15-intel
             target: x86_64-apple-darwin
             artifact: zero-browser-macos-x86_64
             ext: ''
+            features: ''
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: zero-browser-macos-aarch64
             ext: ''
+            features: ''
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: zero-browser-windows-x86_64
             ext: '.exe'
+            features: ''
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            artifact: zero-browser-windows-aarch64
+            ext: '.exe'
+            features: '--no-default-features --features quickjs'
 
     steps:
       - uses: actions/checkout@v7
@@ -120,18 +130,19 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev libxcb-xfixes0-dev libxkbcommon-dev libfontconfig1-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev mesa-vulkan-drivers
 
       - name: Download rusty_v8 archive
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && matrix.features == ''
         shell: bash
         run: RUSTY_V8_TARGET=${{ matrix.target }} bash scripts/download-rusty-v8.sh
 
       - name: Configure rusty_v8 archive on Windows
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.features == ''
         shell: bash
         run: |
           echo "RUSTY_V8_ARCHIVE=https://github.com/denoland/rusty_v8/releases/download/v${RUSTY_V8_VERSION}/rusty_v8_release_${{ matrix.target }}.lib" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=-C link-arg=advapi32.lib" >> "$GITHUB_ENV"
 
       - name: Build release
-        run: cargo build --release --bin zero-browser --target ${{ matrix.target }}
+        run: cargo ${{ matrix.features }} build --release --bin zero-browser --target ${{ matrix.target }}
 
       - name: Strip binary (Linux/macOS)
         if: runner.os != 'Windows'
@@ -352,3 +363,4 @@ jobs:
             artifacts/zero-browser-macos-x86_64-app/**
             artifacts/zero-browser-macos-aarch64-app/**
             artifacts/zero-browser-windows-x86_64/*
+            artifacts/zero-browser-windows-aarch64/*

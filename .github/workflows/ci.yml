@@ -35,31 +35,43 @@ jobs:
             target: x86_64-unknown-linux-gnu
             v8_runtime: true
             release_build: true
+            features: ''
+          - name: linux-x86_64-quickjs
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            v8_runtime: false
+            release_build: false
+            features: '--no-default-features --features quickjs'
           - name: linux-aarch64
             os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             v8_runtime: true
             release_build: true
+            features: ''
           - name: macos-x86_64
             os: macos-15-intel
             target: x86_64-apple-darwin
             v8_runtime: true
             release_build: true
+            features: ''
           - name: macos-aarch64
             os: macos-latest
             target: aarch64-apple-darwin
             v8_runtime: true
             release_build: true
+            features: ''
           - name: windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
             v8_runtime: true
             release_build: true
+            features: ''
           - name: windows-aarch64
             os: windows-11-arm
             target: aarch64-pc-windows-msvc
             v8_runtime: false
             release_build: false
+            features: '--no-default-features --features quickjs'
 
     steps:
       - uses: actions/checkout@v7
@@ -105,12 +117,12 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev libxcb-xfixes0-dev libxkbcommon-dev libfontconfig1-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev mesa-vulkan-drivers
 
       - name: Download rusty_v8 archive
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && matrix.v8_runtime != false
         shell: bash
         run: RUSTY_V8_TARGET=${{ matrix.target }} bash scripts/download-rusty-v8.sh
 
       - name: Configure rusty_v8 archive on Windows
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.v8_runtime != false
         shell: bash
         run: |
           echo "RUSTY_V8_ARCHIVE=https://github.com/denoland/rusty_v8/releases/download/v${RUSTY_V8_VERSION}/rusty_v8_release_${{ matrix.target }}.lib" >> "$GITHUB_ENV"
@@ -121,17 +133,17 @@ jobs:
 
       - name: Check workspace (V8-free targets only; V8 targets are fully checked by clippy)
         if: matrix.v8_runtime == false
-        run: cargo check --workspace --target ${{ matrix.target }}
+        run: cargo ${{ matrix.features }} check --workspace --target ${{ matrix.target }}
 
       - name: Run clippy
         if: matrix.v8_runtime != false
-        run: cargo clippy --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
+        run: cargo ${{ matrix.features }} clippy --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
 
       - name: Run clippy without V8-backed targets
         if: matrix.v8_runtime == false
         shell: bash
         run: |
-          cargo clippy \
+          cargo ${{ matrix.features }} clippy \
             -p zero-dom \
             -p zero-css-parser \
             -p zero-style-system \
@@ -153,7 +165,7 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: |
-          cargo test \
+          cargo ${{ matrix.features }} test \
             -p zero-dom \
             -p zero-css-parser \
             -p zero-style-system \
@@ -174,7 +186,7 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: |
-          cargo test \
+          cargo ${{ matrix.features }} test \
             -p zero-script-sandbox \
             -p zero-webview \
             --target ${{ matrix.target }} -- --test-threads=2
@@ -184,7 +196,7 @@ jobs:
         timeout-minutes: 40
         shell: bash
         run: |
-          cargo test \
+          cargo ${{ matrix.features }} test \
             -p zero-browser \
             -p zero-renderer \
             -p zero-webview-demo \
@@ -195,7 +207,7 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: |
-          RUST_BACKTRACE=1 cargo test \
+          RUST_BACKTRACE=1 cargo ${{ matrix.features }} test \
             -p zero-integration-tests \
             -p zero-wpt-runner \
             --target ${{ matrix.target }} -- --test-threads=1
@@ -204,22 +216,37 @@ jobs:
         timeout-minutes: 10
         shell: bash
         run: |
-          cargo test -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=2
+          cargo ${{ matrix.features }} test -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=2
 
       - name: Note unsupported V8 runtime tests
         if: matrix.v8_runtime == false
         run: |
-          echo "Skipping V8-backed tests for ${{ matrix.target }} because rusty_v8 ${env:RUSTY_V8_VERSION} does not publish a Windows ARM64 native archive."
+          echo "Skipping V8-backed tests for ${{ matrix.target }} (using QuickJS runtime instead)."
+
+      - name: Run QuickJS-backed tests
+        if: matrix.v8_runtime == false
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          cargo ${{ matrix.features }} test \
+            -p zero-script-sandbox \
+            -p zero-webview \
+            -p zero-browser \
+            -p zero-renderer \
+            -p zero-webview-demo \
+            -p zero-integration-tests \
+            -p zero-wpt-runner \
+            --target ${{ matrix.target }} -- --test-threads=2
 
       - name: Build release
         if: matrix.release_build != false && github.event_name == 'workflow_dispatch' && inputs.run_release_builds == true
         timeout-minutes: 20
-        run: cargo build --release --workspace --target ${{ matrix.target }}
+        run: cargo ${{ matrix.features }} build --release --workspace --target ${{ matrix.target }}
 
       - name: Note unsupported release build
         if: matrix.release_build == false && github.event_name == 'workflow_dispatch' && inputs.run_release_builds == true
         run: |
-          echo "Skipping release build for ${{ matrix.target }} because rusty_v8 ${env:RUSTY_V8_VERSION} does not publish a Windows ARM64 native archive."
+          echo "Skipping release build for ${{ matrix.target }} (QuickJS runtime build, V8 release builds use v8_runtime=true)."
 
   reftest:
     runs-on: ubuntu-latest
