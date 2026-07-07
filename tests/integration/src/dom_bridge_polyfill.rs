@@ -3,11 +3,16 @@
 //! 通过 V8 引擎实际执行 polyfill 代码，验证 JS 侧 DOM API 的运行时行为。
 
 use zero_engine::dom_bridge::generate_dom_api_polyfill;
-use zero_script_sandbox::V8Sandbox;
 
 /// 辅助：在 V8 中执行 polyfill + 测试代码，返回原始结果字符串。
 fn eval_polyfill(test_code: &str) -> String {
-    let mut sandbox = V8Sandbox::new().expect("V8 init");
+    #[cfg(feature = "v8")]
+    let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
+        Box::new(zero_script_sandbox::V8Sandbox::new().expect("V8 init"));
+    #[cfg(feature = "quickjs")]
+    let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
+        Box::new(zero_script_sandbox::QuickJSSandbox::new().expect("QuickJS init"));
+
     let polyfill = generate_dom_api_polyfill();
     let full_code = format!("{polyfill}\n{test_code}");
     let result = sandbox.execute(&full_code).expect("execute");

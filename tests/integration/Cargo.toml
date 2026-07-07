@@ -20,9 +20,14 @@ zero-canvas = { workspace = true }
 zero-wasm-sandbox = { workspace = true }
 zero-webview = { workspace = true }
 zero-render-foundation = { workspace = true }
-zero-script-sandbox = { workspace = true }
+zero-script-sandbox = { workspace = true, default-features = false }
 zero-browser-shell = { workspace = true }
 serde_json = { workspace = true }
+
+[features]
+default = ["v8"]
+v8 = ["zero-engine/v8", "zero-webview/v8", "zero-script-sandbox/v8", "zero-page-runtime/v8", "zero-browser-shell/v8"]
+quickjs = ["zero-engine/quickjs", "zero-webview/quickjs", "zero-script-sandbox/quickjs", "zero-page-runtime/quickjs", "zero-browser-shell/quickjs"]
 
 [dev-dependencies]
 wat = "1"

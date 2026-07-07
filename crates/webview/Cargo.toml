@@ -22,6 +22,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 
+[features]
+default = ["v8"]
+v8 = ["zero-engine/v8", "zero-page-runtime/v8", "zero-script-sandbox/v8"]
+quickjs = ["zero-engine/quickjs", "zero-page-runtime/quickjs", "zero-script-sandbox/quickjs"]
+
 [dev-dependencies]
 criterion = { workspace = true }
 png = "0.17"

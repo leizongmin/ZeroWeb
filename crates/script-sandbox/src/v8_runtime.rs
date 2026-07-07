@@ -144,14 +144,12 @@ impl V8Sandbox {
     /// 回调闭包存入线程局部注册表（返回索引），`execute` 时按索引挂到当前 Context 的
     /// 全局对象。参数按字符串数组传入，返回字符串写入 JS 调用结果。
     /// 无 `register_callback` 调用时行为完全同今（零回归）。须在 `execute` 之前调用。
-    pub fn register_callback<F>(&mut self, name: &str, callback: F)
-    where
-        F: Fn(&[String]) -> String + Send + Sync + 'static,
-    {
+    pub fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
+        let cb: HostCallback = Arc::from(callback);
         let idx = HOST_CALLBACKS.with(|cbs| {
             let mut cbs = cbs.borrow_mut();
             let idx = cbs.len();
-            cbs.push(Arc::new(callback));
+            cbs.push(cb);
             idx
         });
         self.callbacks.push((name.to_string(), idx));
@@ -440,6 +438,27 @@ impl V8Sandbox {
                     .map(|s| s.to_rust_string_lossy(scope))
                     .unwrap_or_default()
             })
+    }
+}
+
+impl crate::Sandbox for V8Sandbox {
+    fn execute(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
+        V8Sandbox::execute(self, code)
+    }
+    fn execute_json(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
+        V8Sandbox::execute_json(self, code)
+    }
+    fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
+        V8Sandbox::register_callback(self, name, callback)
+    }
+    fn set_timeout_ms(&mut self, timeout_ms: u64) {
+        V8Sandbox::set_timeout_ms(self, timeout_ms)
+    }
+    fn reset_context(&mut self) {
+        V8Sandbox::reset_context(self)
+    }
+    fn config(&self) -> &SandboxConfig {
+        &self.config
     }
 }
 

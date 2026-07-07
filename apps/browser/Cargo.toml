@@ -9,11 +9,11 @@ license.workspace = true
 name = "zero-browser"
 path = "src/main.rs"
 
-# 开发构建保留控制台子系统（tracing 日志可见、Ctrl+C 终止）；
-# 打包构建不启用该 feature，默认走 GUI 子系统（双击 .exe 不弹黑窗）。
 [features]
-default = []
+default = ["windows-console", "v8"]
 windows-console = []
+v8 = ["zero-engine/v8", "zero-webview/v8", "zero-script-sandbox/v8", "zero-page-runtime/v8", "zero-browser-shell/v8"]
+quickjs = ["zero-engine/quickjs", "zero-webview/quickjs", "zero-script-sandbox/quickjs", "zero-page-runtime/quickjs", "zero-browser-shell/quickjs"]
 
 [dependencies]
 zero-browser-shell = { workspace = true }
@@ -23,7 +23,7 @@ zero-host-runtime = { workspace = true }
 zero-render-foundation = { workspace = true }
 zero-engine = { workspace = true }
 zero-protocol = { workspace = true }
-zero-script-sandbox = { workspace = true }
+zero-script-sandbox = { workspace = true, default-features = false }
 zero-net = { workspace = true }
 zero-security = { workspace = true }
 zero-storage = { workspace = true }

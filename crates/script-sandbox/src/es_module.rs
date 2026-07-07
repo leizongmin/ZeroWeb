@@ -75,23 +75,33 @@ pub struct EsModuleSandbox {
     /// 模块注册表。
     registry: ModuleRegistry,
     /// V8 沙箱（用于执行转换后的代码）。
-    sandbox: crate::V8Sandbox,
+    sandbox: Box<dyn crate::Sandbox>,
 }
 
 impl EsModuleSandbox {
     /// 创建新的 ES Module 沙箱。
     pub fn new() -> Result<Self, ScriptError> {
+        #[cfg(feature = "v8")]
+        let sandbox: Box<dyn crate::Sandbox> = Box::new(crate::V8Sandbox::new()?);
+        #[cfg(feature = "quickjs")]
+        let sandbox: Box<dyn crate::Sandbox> = Box::new(crate::QuickJSSandbox::new()?);
+
         Ok(Self {
             registry: ModuleRegistry::new(),
-            sandbox: crate::V8Sandbox::new()?,
+            sandbox,
         })
     }
 
     /// 使用自定义配置创建 ES Module 沙箱。
     pub fn with_config(config: SandboxConfig) -> Result<Self, ScriptError> {
+        #[cfg(feature = "v8")]
+        let sandbox: Box<dyn crate::Sandbox> = Box::new(crate::V8Sandbox::with_config(config)?);
+        #[cfg(feature = "quickjs")]
+        let sandbox: Box<dyn crate::Sandbox> = Box::new(crate::QuickJSSandbox::with_config(config)?);
+
         Ok(Self {
             registry: ModuleRegistry::new(),
-            sandbox: crate::V8Sandbox::with_config(config)?,
+            sandbox,
         })
     }
 

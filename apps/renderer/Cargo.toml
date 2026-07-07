@@ -21,8 +21,13 @@ zero-style-system = { workspace = true }
 zero-layout-engine = { workspace = true }
 zero-net = { workspace = true }
 zero-storage = { workspace = true }
-zero-script-sandbox = { workspace = true }
+zero-script-sandbox = { workspace = true, default-features = false }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[features]
+default = ["v8"]
+v8 = ["zero-script-sandbox/v8"]
+quickjs = ["zero-script-sandbox/quickjs"]

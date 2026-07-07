@@ -5,6 +5,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["v8"]
+v8 = ["zero-script-sandbox/v8"]
+quickjs = ["zero-script-sandbox/quickjs"]
+
 [dependencies]
 zero-dom = { workspace = true }
 zero-css-parser = { workspace = true }

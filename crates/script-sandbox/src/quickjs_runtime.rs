@@ -3,7 +3,12 @@
 //! 封装 rquickjs，提供轻量级 JavaScript 脚本执行沙箱。
 //! QuickJS 是一个小巧且可嵌入的 JS 引擎，支持 ES2023 规范的大部分特性。
 
+use std::sync::Arc;
+
 use crate::{SandboxConfig, ScriptError, ScriptResult};
+
+/// 宿主回调类型（与 V8Sandbox 的 HostCallback 一致）。
+type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync>;
 
 /// QuickJS 脚本沙箱 — 封装一个 QuickJS Runtime 和 Context。
 ///
@@ -11,14 +16,20 @@ use crate::{SandboxConfig, ScriptError, ScriptResult};
 ///
 /// - QuickJS 是解释器，V8 是 JIT 编译器，性能差异显著
 /// - QuickJS 体积小（约 700KB），适合嵌入式场景
-/// - 两者提供相同的 [`execute()`]/[`execute_json()`] 接口
+/// - 两者提供相同的 [`execute()`]/[`execute_json()`]/[`register_callback()`] 接口
 ///
 /// # 线程安全
 ///
 /// QuickJS Runtime 不是线程安全的。每个线程应创建独立的沙箱实例。
+///
+/// # 回调注册
+///
+/// `register_callback` 存储回调列表，每次 `execute` 新建 Context 时重挂到全局对象
+/// （QuickJS 每次 execute 独立 Context，与 V8 持久化 Context 语义不同）。
 pub struct QuickJSSandbox {
     runtime: rquickjs::Runtime,
     config: SandboxConfig,
+    callbacks: Vec<(String, HostCallback)>,
 }
 
 impl QuickJSSandbox {
@@ -39,7 +50,11 @@ impl QuickJSSandbox {
             runtime.set_memory_limit(config.heap_limit);
         }
 
-        Ok(Self { runtime, config })
+        Ok(Self {
+            runtime,
+            config,
+            callbacks: Vec::new(),
+        })
     }
 
     /// 执行 JavaScript 代码并返回字符串结果。
@@ -61,6 +76,7 @@ impl QuickJSSandbox {
                 .map_err(|e| ScriptError::EngineUnavailable(format!("failed to create context: {e}")))?;
 
             ctx.with(|ctx| {
+                self.install_callbacks(&ctx);
                 let result: rquickjs::String = ctx.eval(wrapped).map_err(|e| {
                     let msg = format!("{e}");
                     if msg.contains("SyntaxError") || msg.contains("syntax error") {
@@ -112,6 +128,7 @@ impl QuickJSSandbox {
                 .map_err(|e| ScriptError::EngineUnavailable(format!("failed to create context: {e}")))?;
 
             ctx.with(|ctx| {
+                self.install_callbacks(&ctx);
                 let result: rquickjs::String = ctx.eval(wrapped).map_err(|e| {
                     let msg = format!("{e}");
                     if msg.contains("SyntaxError") || msg.contains("syntax error") {
@@ -149,6 +166,59 @@ impl QuickJSSandbox {
     pub fn config(&self) -> &SandboxConfig {
         &self.config
     }
+
+    /// 注册宿主回调，挂为全局函数 `name`（与 V8Sandbox::register_callback 语义一致）。
+    ///
+    /// 回调存入列表，每次 `execute` 新建 Context 时重挂到全局对象。
+    pub fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
+        let cb: HostCallback = Arc::from(callback);
+        self.callbacks.push((name.to_string(), cb));
+    }
+
+    /// 设置脚本执行超时（毫秒），0 表示无超时。
+    pub fn set_timeout_ms(&mut self, timeout_ms: u64) {
+        self.config.timeout_ms = timeout_ms;
+    }
+
+    /// 重置上下文（QuickJS 每次 execute 独立 Context，此方法清空回调列表）。
+    pub fn reset_context(&mut self) {
+        self.callbacks.clear();
+    }
+
+    /// 将已注册的回调重挂到当前 Context 的全局对象（每次 execute 前调用）。
+    fn install_callbacks(&self, ctx: &rquickjs::Ctx) {
+        let globals = ctx.globals();
+        for (name, cb) in &self.callbacks {
+            let cb = Arc::clone(cb);
+            let func = rquickjs::Function::new(ctx.clone(), move |args: rquickjs::function::Rest<String>| -> String {
+                cb(&args.0)
+            });
+            if let Ok(f) = func {
+                let _ = globals.set(name.as_str(), f);
+            }
+        }
+    }
+}
+
+impl crate::Sandbox for QuickJSSandbox {
+    fn execute(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
+        QuickJSSandbox::execute(self, code)
+    }
+    fn execute_json(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
+        QuickJSSandbox::execute_json(self, code)
+    }
+    fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
+        QuickJSSandbox::register_callback(self, name, callback)
+    }
+    fn set_timeout_ms(&mut self, timeout_ms: u64) {
+        QuickJSSandbox::set_timeout_ms(self, timeout_ms)
+    }
+    fn reset_context(&mut self) {
+        QuickJSSandbox::reset_context(self)
+    }
+    fn config(&self) -> &SandboxConfig {
+        &self.config
+    }
 }
 
 impl Default for QuickJSSandbox {
@@ -173,6 +243,7 @@ mod tests {
         let config = SandboxConfig {
             heap_limit: 1024 * 1024,
             timeout_ms: 5000,
+            persistent_context: false,
         };
         let sandbox = QuickJSSandbox::with_config(config).unwrap();
         assert_eq!(sandbox.config().heap_limit, 1024 * 1024);

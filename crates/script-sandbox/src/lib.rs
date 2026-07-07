@@ -15,7 +15,10 @@ mod v8_runtime;
 #[cfg(feature = "v8")]
 mod worker;
 
-#[cfg(feature = "v8")]
+#[cfg(feature = "quickjs")]
+mod quickjs_worker;
+
+#[cfg(any(feature = "v8", feature = "quickjs"))]
 mod es_module;
 
 #[cfg(feature = "v8")]
@@ -24,13 +27,16 @@ pub use v8_runtime::*;
 #[cfg(feature = "v8")]
 pub use worker::*;
 
-#[cfg(feature = "v8")]
+#[cfg(feature = "quickjs")]
+pub use quickjs_worker::*;
+
+#[cfg(any(feature = "v8", feature = "quickjs"))]
 pub use es_module::*;
 
-#[cfg(all(feature = "quickjs", not(feature = "v8")))]
+#[cfg(feature = "quickjs")]
 mod quickjs_runtime;
 
-#[cfg(all(feature = "quickjs", not(feature = "v8")))]
+#[cfg(feature = "quickjs")]
 pub use quickjs_runtime::*;
 
 /// 脚本执行错误类型。
@@ -80,6 +86,26 @@ pub struct SandboxConfig {
     ///
     /// 注意：启用后多次 execute 之间的 JS 状态不再隔离（变量会保留）。
     pub persistent_context: bool,
+}
+
+/// 脚本沙箱抽象 trait — `V8Sandbox` 和 `QuickJSSandbox` 都实现。
+///
+/// 调用方用 `Box<dyn Sandbox>` 持有引擎无关的沙箱实例（cfg 选 V8/QuickJS）。
+/// `register_callback` 用 `Box<dyn Fn>`（非泛型）以支持 trait object 动态分发。
+pub trait Sandbox {
+    /// 执行 JavaScript 代码，返回字符串结果。
+    fn execute(&mut self, code: &str) -> Result<ScriptResult, ScriptError>;
+    /// 执行 JavaScript 代码，返回 JSON 字符串结果（`JSON.stringify` 包装）。
+    fn execute_json(&mut self, code: &str) -> Result<ScriptResult, ScriptError>;
+    /// 注册宿主回调，挂为全局函数 `name`（JS 调 `name(...)` 触发 Rust 闭包）。
+    /// 须在 `execute` 之前调用。回调参数为 JS 参数的字符串数组，返回字符串。
+    fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>);
+    /// 设置脚本执行超时（毫秒），0 表示无超时。
+    fn set_timeout_ms(&mut self, timeout_ms: u64);
+    /// 重置上下文（清空 JS 状态）。
+    fn reset_context(&mut self);
+    /// 返回沙箱配置的引用。
+    fn config(&self) -> &SandboxConfig;
 }
 
 #[cfg(not(any(feature = "v8", feature = "quickjs")))]

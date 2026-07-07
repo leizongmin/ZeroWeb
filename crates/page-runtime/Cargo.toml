@@ -5,6 +5,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["v8"]
+v8 = ["zero-engine/v8"]
+quickjs = ["zero-engine/quickjs"]
+
 [dependencies]
 zero-engine = { workspace = true }
 zero-render-foundation = { workspace = true }

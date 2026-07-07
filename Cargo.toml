@@ -116,7 +116,7 @@ zero-dom = { path = "crates/dom" }
 zero-css-parser = { path = "crates/css-parser" }
 zero-style-system = { path = "crates/style-system" }
 zero-layout-engine = { path = "crates/layout-engine" }
-zero-engine = { path = "crates/engine" }
+zero-engine = { path = "crates/engine", default-features = false }
 zero-canvas = { path = "crates/canvas" }
 zero-render-foundation = { path = "crates/render-foundation" }
 zero-host-runtime = { path = "crates/host-runtime" }
@@ -124,11 +124,11 @@ zero-net = { path = "crates/net" }
 zero-security = { path = "crates/security" }
 zero-storage = { path = "crates/storage" }
 zero-protocol = { path = "crates/protocol" }
-zero-script-sandbox = { path = "crates/script-sandbox" }
+zero-script-sandbox = { path = "crates/script-sandbox", default-features = false }
 zero-wasm-sandbox = { path = "crates/wasm-sandbox" }
-zero-page-runtime = { path = "crates/page-runtime" }
-zero-webview = { path = "crates/webview" }
-zero-browser-shell = { path = "crates/browser-shell" }
+zero-page-runtime = { path = "crates/page-runtime", default-features = false }
+zero-webview = { path = "crates/webview", default-features = false }
+zero-browser-shell = { path = "crates/browser-shell", default-features = false }
 
 # 本地 taffy 补丁：添加 cached_baselines() 访问器以提取 flex 容器基线
 [patch.crates-io]

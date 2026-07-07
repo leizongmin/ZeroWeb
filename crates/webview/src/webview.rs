@@ -105,7 +105,7 @@ pub struct WebView {
     /// HTTP 客户端。
     http_client: HttpClient,
     /// 进程内 JavaScript 沙箱（`external_script` 为 None 时使用）。
-    js_sandbox: Option<zero_script_sandbox::V8Sandbox>,
+    js_sandbox: Option<Box<dyn zero_script_sandbox::Sandbox>>,
     /// 外部 JS 执行器（专用 JS 线程）。
     external_script: Option<ExternalScriptExecutor>,
     /// 当前 URL。
@@ -164,10 +164,17 @@ impl WebView {
                 persistent_context: true,
                 ..Default::default()
             };
-            Some(
+            #[cfg(feature = "v8")]
+            let sandbox: Box<dyn zero_script_sandbox::Sandbox> = Box::new(
                 zero_script_sandbox::V8Sandbox::with_config(js_config)
                     .expect("V8 sandbox initialization should succeed"),
-            )
+            );
+            #[cfg(feature = "quickjs")]
+            let sandbox: Box<dyn zero_script_sandbox::Sandbox> = Box::new(
+                zero_script_sandbox::QuickJSSandbox::with_config(js_config)
+                    .expect("QuickJS sandbox initialization should succeed"),
+            );
+            Some(sandbox)
         };
         Self {
             config,

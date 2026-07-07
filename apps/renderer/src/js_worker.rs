@@ -146,7 +146,12 @@ fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::M
         timeout_ms: TAB_JS_EXEC_TIMEOUT_MS,
         ..Default::default()
     };
-    let mut sandbox = V8Sandbox::with_config(js_config).expect("V8 sandbox init");
+    #[cfg(feature = "v8")]
+    let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
+        Box::new(V8Sandbox::with_config(js_config).expect("V8 sandbox init"));
+    #[cfg(feature = "quickjs")]
+    let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
+        Box::new(zero_script_sandbox::QuickJSSandbox::with_config(js_config).expect("QuickJS sandbox init"));
     let dom_html: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
     let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
@@ -186,7 +191,7 @@ fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::M
 }
 
 fn execute_module_in_sandbox(
-    sandbox: &mut V8Sandbox,
+    sandbox: &mut dyn zero_script_sandbox::Sandbox,
     source: &str,
     url: &str,
     deps: &[(String, String)],
@@ -201,7 +206,7 @@ fn execute_module_in_sandbox(
     sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string())
 }
 
-fn register_module_compile_callback(sandbox: &mut V8Sandbox) {
+fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandbox) {
     // 动态 `import()` 仍直连网络；静态模块依赖由主线程 prefetch + collect_module_deps 经 IPC 加载。
     let http = zero_net::client::HttpClient::new();
     let runtime_iifes: Arc<std::sync::Mutex<HashMap<String, String>>> = Arc::new(std::sync::Mutex::new(HashMap::new()));
