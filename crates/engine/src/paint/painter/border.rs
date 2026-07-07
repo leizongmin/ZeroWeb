@@ -424,6 +424,21 @@ impl super::Painter {
         }
     }
 
+/// R1141：dashed/dotted border 用 StrokePrimitive（线居中）绘制，但 border 应在 border-box
+/// 内侧（同 Solid 的 fill rect 语义）。返回使 stroke 中心从「边界线」移到「内侧填充区中心」
+/// 的偏移：horizontal（top/bottom）→ y += thickness/2；vertical 左边框 → x += thickness/2；
+/// vertical 右边框（extend_left）→ x -= thickness/2。
+fn stroke_inward_offset(spec: &BorderEdgeSpec) -> (f32, f32) {
+    let half = spec.thickness / 2.0;
+    if spec.is_horizontal {
+        (0.0, half)
+    } else if spec.extend_left {
+        (-half, 0.0)
+    } else {
+        (half, 0.0)
+    }
+}
+
     /// 绘制单条边框（根据 border-style 生成合适的图元）。
     pub(super) fn paint_border_edge(
         &mut self,
@@ -439,11 +454,18 @@ impl super::Painter {
                 self.primitives.add_fill(self.border_fill_rect(spec), render_color);
             }
             BorderStyleValue::Dotted => {
+                // R1141：stroke 默认以线为中心（width 两侧各半），但 border 应在 border-box
+                // 内侧（同 Solid 的 border_fill_rect：从 y1/x1 向厚度方向延伸）。offset stroke
+                // 中心 inward 使 dashed/dotted 与 solid 定位一致：horizontal → y += thickness/2；
+                // vertical extend_left（右边框）→ x -= thickness/2；vertical else（左边框）→ x += thickness/2。
+                // 旧未 offset 致 dashed/dotted border 半宽溢出 border-box（top border y=30 w5
+                // 居中 y[27.5,32.5] 而非内侧 y[30,35]，position-*-root-element dashed border -3px 偏移）。
+                let (dx, dy) = Self::stroke_inward_offset(spec);
                 self.primitives.add_stroke(StrokePrimitive {
-                    x1: spec.x1,
-                    y1: spec.y1,
-                    x2: spec.x2,
-                    y2: spec.y2,
+                    x1: spec.x1 + dx,
+                    y1: spec.y1 + dy,
+                    x2: spec.x2 + dx,
+                    y2: spec.y2 + dy,
                     width: spec.thickness,
                     color: render_color,
                     style: LineStyle::Dotted,
@@ -451,11 +473,12 @@ impl super::Painter {
                 });
             }
             BorderStyleValue::Dashed => {
+                let (dx, dy) = Self::stroke_inward_offset(spec);
                 self.primitives.add_stroke(StrokePrimitive {
-                    x1: spec.x1,
-                    y1: spec.y1,
-                    x2: spec.x2,
-                    y2: spec.y2,
+                    x1: spec.x1 + dx,
+                    y1: spec.y1 + dy,
+                    x2: spec.x2 + dx,
+                    y2: spec.y2 + dy,
                     width: spec.thickness,
                     color: render_color,
                     style: LineStyle::Dashed,
