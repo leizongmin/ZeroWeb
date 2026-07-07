@@ -728,7 +728,11 @@ impl InlineFormattingContext {
                                 if matches!(s.width, LengthValue::Auto | LengthValue::Percentage(_)) && w <= 0.0 {
                                     w = lw;
                                 }
-                                if matches!(s.height, LengthValue::Auto | LengthValue::Percentage(_)) && h <= 0.0 {
+                                // R1147：height 回退不限 Auto/Pct——height:0 显式（如 border-top-width
+                                // 撑高的空 inline-block，border-*-width-072/073）的 h=0 也会降级零宽。
+                                // lh 由 ib_sizes 的 R1147 ib_h 逻辑给（空→border-box，有内容→content_height），
+                                // 故 h<=0 一律用 lh 安全（非空显式 height>0 不触发）。
+                                if h <= 0.0 {
                                     h = lh;
                                 }
                             }

@@ -115,16 +115,21 @@ pub(super) fn adjust_inline_block_positions(
             let child = &root.children[idx];
             let node_id = child.node_id?;
             let style = styles.get(&node_id)?;
+            // R1147：除 Auto/Pct 外，empty InlineBlock（content_height≈0 但 border 撑出视觉高度）
+            // 也须入 ib_sizes——height:0 显式 + border（border-*-width-072/073）的 content_height=0，
+            // IFC 会降级零宽。下方 ib_h 逻辑给 border-box height。
+            let is_inline_block = matches!(style.display, DisplayValue::InlineBlock);
+            let empty_with_visual_h = is_inline_block && child.content_height.abs() < 1.0 && child.height.abs() >= 1.0;
             let needs_fallback = matches!(style.width, LengthValue::Auto | LengthValue::Percentage(_))
-                || matches!(style.height, LengthValue::Auto | LengthValue::Percentage(_));
+                || matches!(style.height, LengthValue::Auto | LengthValue::Percentage(_))
+                || empty_with_visual_h;
             if !needs_fallback {
                 return None;
             }
             // R1147：empty inline-block（content_height≈0，如 border-top-width 撑高但无内容）
-            // 会被 IFC 降级为零宽 TextRun → 后续 inline 重叠（border-{top,bottom}-width-061/062
-            // 簇）。仅 InlineBlock + 空时用 border-box height（含 border）；InlineTable 有独立
-            // table 布局尺寸，用 border-box 反回归（border-*-width-applies-to-014，A/B 实测）。
-            let is_inline_block = matches!(style.display, DisplayValue::InlineBlock);
+            // 会被 IFC 降级为零宽 TextRun → 后续 inline 重叠（border-{top,bottom}-width-061/062/
+            // 072/073 簇）。仅 InlineBlock + 空时用 border-box height（含 border）；InlineTable 有
+            // 独立 table 布局尺寸，用 border-box 反回归（border-*-width-applies-to-014，A/B 实测）。
             let ib_h = if is_inline_block && child.content_height.abs() < 1.0 {
                 child.height
             } else {
