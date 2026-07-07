@@ -1059,6 +1059,44 @@ fn test_absolute_position_all_insets() {
     );
 }
 
+/// R1139：root 元素（html）自身 `position:absolute` + 全长度 inset + auto 尺寸应 stretch 到
+/// viewport 减 inset（CB = initial containing block = 视口）。旧实现 root height 塌缩到内容
+/// （position-absolute-root-element-{flex,grid} 4 案 height ~65 ≠ 应 530）。本测试验 root
+/// 自身（非子元素）abspos stretch。
+#[test]
+fn test_root_absolute_all_insets_stretch_to_viewport() {
+    let (doc, body) = make_doc_with_body();
+    let html = doc.parent_node(body).expect("body 应有 html 父节点");
+
+    let mut styles = std::collections::HashMap::new();
+    let mut html_style = zero_style_system::ComputedStyle::default();
+    html_style.position = PositionValue::Absolute;
+    html_style.top = LengthValue::Px(30.0);
+    html_style.bottom = LengthValue::Px(40.0);
+    html_style.left = LengthValue::Px(10.0);
+    html_style.right = LengthValue::Px(20.0);
+    // width/height auto → 应 stretch
+    styles.insert(html, html_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // root LayoutBox = html 元素自身
+    assert!(result.root.is_absolute, "root html 应标记为 abspos");
+    // height stretch：600 - 30(top) - 40(bottom) = 530
+    assert!(
+        (result.root.height - 530.0).abs() < 1.0,
+        "root height 应 stretch 到 530（viewport 600 - inset 30/40），实际 {}",
+        result.root.height
+    );
+    // width stretch：800 - 10(left) - 20(right) = 770
+    assert!(
+        (result.root.width - 770.0).abs() < 1.0,
+        "root width 应 stretch 到 770（viewport 800 - inset 10/20），实际 {}",
+        result.root.width
+    );
+}
+
 /// Grid 使用 repeat(auto-fill, ...) 模板 — 验证 grid template 解析不 panic，
 /// 且 auto-fill 降级为单列时子元素布局正确。
 #[test]
