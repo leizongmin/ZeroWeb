@@ -42,7 +42,7 @@
 | M9 | Canvas 与存储 | `✅ 已完成` | Canvas 2D、localStorage、sessionStorage、IndexedDB、Cache API、Service Worker registry 基础已在仓库中 |
 | M10 | WebView API 与自动化基础 | `✅ 已完成` | 已有可嵌入 API、导航加载、测试和 headless/自动化相关基础，但还会继续演进 |
 | M11 | 浏览器产品层 | `🚧 进行中` | `browser-shell`、标签页、地址栏、历史、书签、下载、设置等基础逐步落地；真实窗口/GPU/display 产品验收仍需补齐 |
-| M12 | Render compatibility / render-compact | `🚧 进行中` | 当前主线；目标是把 WPT/CSSWG reftest（harness 已执行测试页 setup 脚本后再截图，覆盖靠脚本构造内容的用例）、真实静态页截图对比、外部 CSS、图片资源、layout/paint/glyph 一致性补到可验收 |
+| M12 | Render compatibility / render-compact | `🚧 进行中` | 当前主线；以 WPT/CSSWG reftest 对齐 Chromium，并以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源 reftest 存在假通过）；harness 已执行测试页 setup 脚本后再截图，覆盖靠脚本构造内容的用例；外部 CSS、图片资源、SVG 栅格化、产品静态页门禁已落地；当前真一致率距 95% 仍有结构性缺口（字体度量、vertical writing modes、multicol 等），CSS2 / Flexbox / Grid / 布局缺口持续修复 |
 | M13 | 完整 JS/DOM API 兼容性 | `⏳ 计划中` | render-compact 验收后推进；目标是从基础 DOM bridge 扩展到更完整的 Web API、事件循环、DOM/CSSOM 操作和真实页面脚本行为 |
 | M14 | Canvas / WebGL / WebGPU | `⏳ 计划中` | Canvas 2D 继续补全后，逐步进入 Khronos WebGL CTS 和 GPUWeb WebGPU CTS；不作为 render-compact 的阻塞项 |
 | M15 | SVG 文档与内联 SVG DOM 渲染 | `⏳ 计划中` | render-compact 只要求 SVG 作为图片资源栅格化；完整 SVG 文档、内联 SVG DOM、样式和交互放到后续阶段 |
