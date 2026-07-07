@@ -11,6 +11,7 @@ mod final_coverage;
 mod integration;
 mod more_coverage;
 mod uncovered_paths;
+#[cfg(feature = "v8")]
 mod wasm_bridge;
 mod webview_coverage_final;
 mod worker_integration;

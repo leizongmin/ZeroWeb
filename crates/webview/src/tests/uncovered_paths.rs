@@ -102,6 +102,7 @@ fn test_execute_script_invalid_input_error() {
 }
 
 #[test]
+#[cfg(feature = "v8")]
 fn test_execute_script_compile_error() {
     let mut wv = WebView::new(WebViewConfig::default());
 

@@ -97,6 +97,7 @@ fn test_execute_script_very_long_script() {
 }
 
 #[test]
+#[cfg(feature = "v8")]
 fn test_execute_script_with_unicode() {
     let mut wv = WebView::new(WebViewConfig::default());
     let script = "console.log('你好，世界！🌍');";
@@ -116,6 +117,7 @@ fn test_execute_script_with_special_chars() {
 }
 
 #[test]
+#[cfg(feature = "v8")]
 fn test_execute_script_multiple_calls() {
     let mut wv = WebView::new(WebViewConfig::default());
     // 多次调用 execute_script

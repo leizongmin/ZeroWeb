@@ -1414,6 +1414,7 @@ fn test_webview_inject_css_cumulative() {
 
 /// 测试 execute_script 编译错误返回正确错误类型。
 #[test]
+#[cfg(feature = "v8")]
 fn test_webview_execute_script_compile_error() {
     let mut wv = WebView::new(WebViewConfig::default());
     let result = wv.execute_script("function { invalid syntax");
