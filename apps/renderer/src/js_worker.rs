@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use zero_engine::{DomMutation, generate_js_dom_shim, register_dom_callbacks};
 use zero_script_sandbox::{
-    ModuleRegistry, SandboxConfig, V8Sandbox, build_module_runtime_prelude, compile_dependency_iife,
-    compile_module_script, extract_module_import_specifiers,
+    ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
+    extract_module_import_specifiers,
 };
 
 const TAB_JS_EXEC_TIMEOUT_MS: u64 = 15_000;
@@ -148,14 +148,14 @@ fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::M
     };
     #[cfg(feature = "v8")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
-        Box::new(V8Sandbox::with_config(js_config).expect("V8 sandbox init"));
+        Box::new(zero_script_sandbox::V8Sandbox::with_config(js_config).expect("V8 sandbox init"));
     #[cfg(feature = "quickjs")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         Box::new(zero_script_sandbox::QuickJSSandbox::with_config(js_config).expect("QuickJS sandbox init"));
     let dom_html: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
     let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
-    register_module_compile_callback(&mut sandbox);
+    register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url);
+    register_module_compile_callback(&mut *sandbox);
     let shim = generate_js_dom_shim();
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
@@ -174,7 +174,7 @@ fn js_worker_main(cmd_rx: Receiver<JsWorkerCommand>, mutations: Arc<std::sync::M
                 deps,
                 reply,
             } => {
-                let result = execute_module_in_sandbox(&mut sandbox, &source, &url, &deps);
+                let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps);
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot { html, url } => {
@@ -211,57 +211,60 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
     let http = zero_net::client::HttpClient::new();
     let runtime_iifes: Arc<std::sync::Mutex<HashMap<String, String>>> = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
-    sandbox.register_callback("__zw_compile_module", move |args| {
-        if args.is_empty() {
-            return String::new();
-        }
-        let spec = &args[0];
-        let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
-        let url = zero_engine::resolve_document_url(parent, spec);
-
-        if let Ok(cache) = runtime_iifes.lock() {
-            if let Some(iife) = cache.get(&url) {
-                return iife.clone();
-            }
-            if let Some(iife) = cache.get(spec) {
-                return iife.clone();
-            }
-        }
-
-        let fetch = |u: &str| -> Result<String, String> {
-            http.get(u)
-                .map(|r| String::from_utf8_lossy(&r.body).into_owned())
-                .map_err(|e| e.to_string())
-        };
-
-        let mut registry = HashMap::new();
-        let src = match fetch(&url) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::warn!("fetch module {url}: {e}");
+    sandbox.register_callback(
+        "__zw_compile_module",
+        Box::new(move |args| {
+            if args.is_empty() {
                 return String::new();
             }
-        };
-        if let Err(e) = collect_module_deps(&fetch, &url, &src, &mut registry) {
-            tracing::warn!("module deps {url}: {e}");
-            return String::new();
-        }
-        let mut reg = ModuleRegistry::new();
-        for (spec, body) in &registry {
-            reg.register(spec, body);
-        }
-        let iife = match compile_dependency_iife(&url, &reg) {
-            Ok(i) => i,
-            Err(e) => {
-                tracing::warn!("compile module {url}: {e}");
+            let spec = &args[0];
+            let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
+            let url = zero_engine::resolve_document_url(parent, spec);
+
+            if let Ok(cache) = runtime_iifes.lock() {
+                if let Some(iife) = cache.get(&url) {
+                    return iife.clone();
+                }
+                if let Some(iife) = cache.get(spec) {
+                    return iife.clone();
+                }
+            }
+
+            let fetch = |u: &str| -> Result<String, String> {
+                http.get(u)
+                    .map(|r| String::from_utf8_lossy(&r.body).into_owned())
+                    .map_err(|e| e.to_string())
+            };
+
+            let mut registry = HashMap::new();
+            let src = match fetch(&url) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!("fetch module {url}: {e}");
+                    return String::new();
+                }
+            };
+            if let Err(e) = collect_module_deps(&fetch, &url, &src, &mut registry) {
+                tracing::warn!("module deps {url}: {e}");
                 return String::new();
             }
-        };
-        if let Ok(mut cache) = runtime_iifes.lock() {
-            cache.insert(url, iife.clone());
-        }
-        iife
-    });
+            let mut reg = ModuleRegistry::new();
+            for (spec, body) in &registry {
+                reg.register(spec, body);
+            }
+            let iife = match compile_dependency_iife(&url, &reg) {
+                Ok(i) => i,
+                Err(e) => {
+                    tracing::warn!("compile module {url}: {e}");
+                    return String::new();
+                }
+            };
+            if let Ok(mut cache) = runtime_iifes.lock() {
+                cache.insert(url, iife.clone());
+            }
+            iife
+        }),
+    );
 }
 
 /// 递归抓取模块依赖图（specifier URL → 源码）。
