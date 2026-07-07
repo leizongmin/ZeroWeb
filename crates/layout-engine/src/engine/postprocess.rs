@@ -120,7 +120,17 @@ pub(super) fn adjust_inline_block_positions(
             if !needs_fallback {
                 return None;
             }
-            Some((node_id, (child.content_width, child.content_height)))
+            // R1147：empty inline-block（content_height≈0，如 border-top-width 撑高但无内容）
+            // 会被 IFC 降级为零宽 TextRun → 后续 inline 重叠（border-{top,bottom}-width-061/062
+            // 簇）。仅 InlineBlock + 空时用 border-box height（含 border）；InlineTable 有独立
+            // table 布局尺寸，用 border-box 反回归（border-*-width-applies-to-014，A/B 实测）。
+            let is_inline_block = matches!(style.display, DisplayValue::InlineBlock);
+            let ib_h = if is_inline_block && child.content_height.abs() < 1.0 {
+                child.height
+            } else {
+                child.content_height
+            };
+            Some((node_id, (child.content_width, ib_h)))
         })
         .collect();
 
