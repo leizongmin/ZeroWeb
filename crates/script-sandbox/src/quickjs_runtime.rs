@@ -170,6 +170,7 @@ impl QuickJSSandbox {
     /// 注册宿主回调，挂为全局函数 `name`（与 V8Sandbox::register_callback 语义一致）。
     ///
     /// 回调存入列表，每次 `execute` 新建 Context 时重挂到全局对象。
+    #[allow(clippy::type_complexity)]
     pub fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
         let cb: HostCallback = Arc::from(callback);
         self.callbacks.push((name.to_string(), cb));

@@ -99,6 +99,7 @@ pub trait Sandbox {
     fn execute_json(&mut self, code: &str) -> Result<ScriptResult, ScriptError>;
     /// 注册宿主回调，挂为全局函数 `name`（JS 调 `name(...)` 触发 Rust 闭包）。
     /// 须在 `execute` 之前调用。回调参数为 JS 参数的字符串数组，返回字符串。
+    #[allow(clippy::type_complexity)]
     fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>);
     /// 设置脚本执行超时（毫秒），0 表示无超时。
     fn set_timeout_ms(&mut self, timeout_ms: u64);

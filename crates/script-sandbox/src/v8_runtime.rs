@@ -144,6 +144,7 @@ impl V8Sandbox {
     /// 回调闭包存入线程局部注册表（返回索引），`execute` 时按索引挂到当前 Context 的
     /// 全局对象。参数按字符串数组传入，返回字符串写入 JS 调用结果。
     /// 无 `register_callback` 调用时行为完全同今（零回归）。须在 `execute` 之前调用。
+    #[allow(clippy::type_complexity)]
     pub fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
         let cb: HostCallback = Arc::from(callback);
         let idx = HOST_CALLBACKS.with(|cbs| {
