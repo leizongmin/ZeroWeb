@@ -273,6 +273,9 @@ pub(super) fn adjust_absolute_pct_to_viewport(
 /// 仅处理 fixed（CB=视口无条件已知，零位置风险——位置已由 adjust_fixed_to_viewport
 /// 修正）。不处理 absolute（CB=positioned 祖先，layout 后方知；历史
 /// adjust_absolute_to_initial_containing_block 同调 auto 宽高致多回归故禁用）。
+/// R1139：root 元素自身 abspos/fixed 的全-inset stretch 在本函数之外（见
+/// [`stretch_root_abspos_to_viewport`]），因本函数只递归 `box_node.children`，
+/// root 自身（无父）不被触。
 pub(super) fn stretch_fixed_to_viewport_size(
     box_node: &mut LayoutBox,
     viewport_width: f32,
@@ -306,6 +309,54 @@ pub(super) fn stretch_fixed_to_viewport_size(
             }
         }
         stretch_fixed_to_viewport_size(child, viewport_width, viewport_height, styles);
+    }
+}
+
+/// R1139：root 元素自身 `position:absolute`/`fixed` + 全长度 inset + auto 尺寸的 stretch
+/// 后处理（CSS §10.3.18 / §10.6.4）。root 元素的 CB = initial containing block（视口）。
+///
+/// [`stretch_fixed_to_viewport_size`] 只递归 `box_node.children`，root 自身（LayoutBox 树
+/// 顶层、无父）不被触；且历史 absolute stretch 被禁用（CB=positioned 祖先，layout 后方知，
+/// 同调 auto 宽高致回归）。但**root 元素自身** abspos/fixed 的 CB 恒为视口（与 fixed 同语义），
+/// stretch 安全——`position-{absolute,fixed}-root-element-{flex,grid}` 4 案（html root 全
+/// inset，应 stretch 到视口减 inset，旧实现 height 塌缩到内容 ~65px ≠ 应 530px，diff 4.46%）。
+///
+/// 仅处理 root 自身（gated `is_absolute || is_fixed`），全长度 inset + auto 尺寸时 stretch；
+/// 位置（x/y）按 left/top inset 设（CB 原点 = 视口 0,0）。非 abspos/fixed root 零影响。
+pub(super) fn stretch_root_abspos_to_viewport(
+    root: &mut LayoutBox,
+    viewport_width: f32,
+    viewport_height: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    use zero_css_parser::values::LengthValue;
+    if !(root.is_absolute || root.is_fixed) {
+        return;
+    }
+    let Some(style) = root.node_id.and_then(|nid| styles.get(&nid)) else {
+        return;
+    };
+    // 位置：root CB 原点 = 视口 (0,0)，left/top Px → 绝对坐标。
+    if let LengthValue::Px(left) = &style.left {
+        root.x = *left as f32;
+    }
+    if let LengthValue::Px(top) = &style.top {
+        root.y = *top as f32;
+    }
+    // 尺寸 stretch：auto + 全长度对边 inset → viewport - inset（§10.3.18/§10.6.4）。
+    if matches!(style.width, LengthValue::Auto)
+        && let (LengthValue::Px(left), LengthValue::Px(right)) = (&style.left, &style.right)
+    {
+        root.width = (viewport_width - (*left as f32) - (*right as f32)).max(0.0);
+        let pb = root.padding_left + root.padding_right + root.border_left + root.border_right;
+        root.content_width = (root.width - pb).max(0.0);
+    }
+    if matches!(style.height, LengthValue::Auto)
+        && let (LengthValue::Px(top), LengthValue::Px(bottom)) = (&style.top, &style.bottom)
+    {
+        root.height = (viewport_height - (*top as f32) - (*bottom as f32)).max(0.0);
+        let pb = root.padding_top + root.padding_bottom + root.border_top + root.border_bottom;
+        root.content_height = (root.height - pb).max(0.0);
     }
 }
 

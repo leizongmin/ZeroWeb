@@ -392,6 +392,11 @@ impl LayoutEngine {
         // fixed 元素 CB=视口；taffy 按 positioned 祖先 stretch 致尺寸不足。仅修 fixed
         // （位置已由 4. adjust_fixed_to_viewport 修正），不动 absolute 避旧回归。
         stretch_fixed_to_viewport_size(&mut root_box, self.viewport_width, self.viewport_height, styles);
+        // 11.6a R1139：root 元素**自身** abspos/fixed + 全 inset + auto 尺寸 → stretch to
+        // viewport。stretch_fixed_to_viewport_size 只递归 children 不触 root 自身；root abspos
+        // CB=视口（同 fixed 语义）stretch 安全。position-{absolute,fixed}-root-element-{flex,grid}
+        // 4 案（html 全 inset，旧 height 塌缩到内容 ~65px ≠ 应 530px）。
+        stretch_root_abspos_to_viewport(&mut root_box, self.viewport_width, self.viewport_height, styles);
 
         // 11.7 后处理：containing block = 根（positioned root）的 abspos 按根 padding-box
         // 重解析（CSS §10.1.2/§10.3.18/§10.6.4）。taffy 0.7 root quirk：根作 positioned
