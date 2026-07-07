@@ -10,4 +10,5 @@ mod incremental_layout;
 mod render;
 mod shadow_outline;
 mod text_layout;
+#[cfg(feature = "v8")]
 mod wasm_bridge;
