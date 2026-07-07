@@ -259,3 +259,81 @@ fn test_backfill_does_not_shift_abspos_sibling() {
         "abspos sibling not shifted"
     );
 }
+
+#[test]
+fn test_backfill_container_grows_for_r109_split_child() {
+    // ② R1164：auto-height 容器，直系子是 R109 拆分 inline 父盒（is_r109_split=true，
+    //    fragment_node_ids=None）而非匿名块。taffy 欠计 split 子盒高度（content_height=20
+    //    应 60），但 split 子盒自身高度已正确（60，无 ① 增长 → descendant_growth=0），
+    //    且无匿名块直接子（has_anon_child=false）——旧 gate（has_anon_child||descendant_growth）
+    //    不触发致容器残留矮 + bg 露白（block-in-inline-relpos-001，2.56→0.97% 实证）。
+    //    新 gate has_r109_split_child 触发 max-bottom 重算 → 容器长到 60。welcome 无 R109
+    //    split 故零回归（区别 R1163 broad「全容器」gate 致 welcome +12.57pp 回归）。
+    let mut container = LayoutBox::default();
+    let cid = fresh_id();
+    container.node_id = Some(cid);
+    container.content_height = 20.0;
+    container.height = 20.0;
+    container.is_block_level = true;
+
+    let mut split_inline = LayoutBox::default();
+    split_inline.is_r109_split = true; // R109 拆分 inline 父盒（非匿名块）
+    split_inline.fragment_node_ids = None; // 父盒非片段
+    split_inline.y = 0.0;
+    split_inline.content_height = 60.0; // 已正确（自身不增长 → descendant_growth=0）
+    split_inline.height = 60.0;
+    split_inline.is_block_level = true;
+    container.children.push(split_inline);
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.height = LengthValue::Auto;
+    styles.insert(cid, s);
+
+    let _ = backfill_r109_anon_block_heights(&mut container, &styles);
+
+    assert!(
+        (container.content_height - 60.0).abs() < 0.01,
+        "container grows to fit R109 split child: got {}",
+        container.content_height
+    );
+    assert!(
+        (container.height - 60.0).abs() < 0.01,
+        "container height grows: got {}",
+        container.height
+    );
+}
+
+#[test]
+fn test_backfill_no_growth_for_normal_container_without_r109() {
+    // ② 守卫：普通 auto-height 容器（无匿名块子 / 无 R109 split 子 / 无后代增长）不触发
+    //    max-bottom 重算 —— 即便某 in-flow 子盒 y+height 恰 > 容器 content_height（如负 margin
+    //    /margin-collapse-through 的合法情形），也不强扩。这是 narrow gate 的安全性核心：
+    //    避免 R1163 broad gate 在 welcome 上 +12.57pp 回归。
+    let mut container = LayoutBox::default();
+    let cid = fresh_id();
+    container.node_id = Some(cid);
+    container.content_height = 20.0;
+    container.height = 20.0;
+    container.is_block_level = true;
+
+    let mut normal_child = LayoutBox::default();
+    normal_child.y = 0.0;
+    normal_child.content_height = 60.0; // y+height=60 > 容器 20，但无 R109 标记
+    normal_child.height = 60.0;
+    normal_child.is_block_level = true;
+    container.children.push(normal_child);
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.height = LengthValue::Auto;
+    styles.insert(cid, s);
+
+    let _ = backfill_r109_anon_block_heights(&mut container, &styles);
+
+    assert!(
+        (container.content_height - 20.0).abs() < 0.01,
+        "normal container without R109 split child is NOT grown: got {}",
+        container.content_height
+    );
+}

@@ -676,11 +676,16 @@ pub(super) fn backfill_r109_anon_block_heights(
             box_node.height += grew;
         }
     }
-    // ② auto-height 容器，含匿名块子或后代增长 → 重算 content_height = max in-flow 非 float
-    //   子盒 border-box 底（仅增大）。max-bottom（CSS §10.6.3）覆盖「anon 自身欠计」+「容器未
-    //   把已正确 anon 计入」两种。仅增大守卫避负 margin/margin 折叠误收缩（同 R699 策略）。
+    // ② auto-height 容器，含匿名块子 / R109 拆分 inline 子 / 后代增长 → 重算 content_height
+    //   = max in-flow 非 float 子盒 border-box 底（仅增大）。max-bottom（CSS §10.6.3）覆盖
+    //   「anon 自身欠计」+「容器未把已正确 anon 计入」+「R109 split inline 子盒（is_r109_split）
+    //   自身高度已被 ①/② 修对但容器 taffy 测高仍欠计」三种。仅增大守卫避负 margin/margin
+    //   折叠误收缩（同 R699 策略）。has_r109_split_child 守 narrow：仅含 R109 拆分 inline 直接
+    //   子的容器受影响（welcome 无 R109 split，零回归；区别 R1163 broad「全容器」gate 致 welcome
+    //   +12.57pp 回归）。
     let has_anon_child = box_node.children.iter().any(|c| c.fragment_node_ids.is_some());
-    if auto_h && (has_anon_child || descendant_growth > 0.0) {
+    let has_r109_split_child = box_node.children.iter().any(|c| c.is_r109_split);
+    if auto_h && (has_anon_child || has_r109_split_child || descendant_growth > 0.0) {
         let max_bottom = box_node
             .children
             .iter()
