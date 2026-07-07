@@ -247,8 +247,8 @@ fn test_resolve_font_metrics_line_height_em_fallback() {
 
     let (font_size, line_height) = resolve_font_metrics(Some(&style));
     assert!((font_size - 20.0).abs() < 0.01, "font_size 应为 20.0，实际 {font_size}");
-    // Em 长度回退到 font_size * 1.2 = 24.0
-    let expected = 20.0 * 1.2;
+    // Em 长度回退到 font_size * 1.164 = 23.28
+    let expected = 20.0 * 1.164;
     assert!(
         (line_height - expected).abs() < 0.01,
         "line_height 应回退到 {}，实际 {}",
@@ -270,10 +270,10 @@ fn test_resolve_font_metrics_non_px_font_size() {
         (font_size - 16.0).abs() < 0.01,
         "非 Px font_size 应回退到 16.0，实际 {font_size}"
     );
-    // line_height = 16.0 * 1.2 = 19.2
+    // line_height = 16.0 * 1.164 = 18.624
     assert!(
-        (line_height - 19.2).abs() < 0.01,
-        "line_height 应为 19.2，实际 {line_height}"
+        (line_height - 18.624).abs() < 0.01,
+        "line_height 应为 18.624，实际 {line_height}"
     );
 }
 

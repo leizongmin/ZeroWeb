@@ -1469,7 +1469,10 @@ impl super::Painter {
                                     .text_node_line_heights
                                     .get(&$frag_nid)
                                     .copied()
-                                    .unwrap_or($frag_fs * 1.2);
+                                    // 与 layout `NORMAL_LINE_HEIGHT_RATIO`（1.164 = chromium
+                                    // DejaVu line-height:normal 真值，R1174）保持一致；仅在
+                                    // `text_node_line_heights` 缺该 fragment 时作回退。
+                                    .unwrap_or($frag_fs * 1.164);
                                 self.primitives.add_fill(
                                     Rect::new(frag_base_x, content_y + $frag_y + ty, text_width, line_h),
                                     color_value_to_render(&owner_style.background_color),

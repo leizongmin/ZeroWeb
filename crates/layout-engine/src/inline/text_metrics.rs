@@ -150,31 +150,39 @@ pub(crate) fn estimate_string_width(text: &str, font_size: f32, is_ahem: bool) -
     text.chars().map(|c| estimate_char_width(c, font_size, is_ahem)).sum()
 }
 
-/// 默认行高倍数（用于 line-height: normal）。
-pub(crate) const NORMAL_LINE_HEIGHT_RATIO: f32 = 1.2;
+/// 默认行高倍数（用于 line-height: normal，非 Ahem 字体）。
+///
+/// **= chromium 对 DejaVu Sans 的真实 line-height:normal（R1174 三栈源码逆向）**：
+/// chromium（Linux/Skia/FreeType）对未设 `OS/2.fsSelection` bit 7（useTypoMetrics）的字体
+/// 走 hhea 度量分支——DejaVu Sans 恰未设该位，hhea `ascent=1901 / descent=-483 / lineGap=0`，
+/// `upem=2048` → `(1901+483)/2048 = 1.164`（hhea lineGap=0 故无 leading）。FreeType
+/// `sfobjs.c` + Skia `SkFontHost_FreeType.cpp` + Blink `font_metrics.h` 三栈确定性算术，
+/// 详见 `docs/goal/rendering-compat/research-chromium-lineheight-normal-formula-2026-07-08.md`。
+/// fontdue 实测同值（`line_metrics_full` line_gap=0，ascent−descent=1.1641）。
+///
+/// ZeroWeb 此前用 1.2（误以为是 chromium 近似），R1174 证 1.164 才是真值。oracle A/B
+/// 实测 css/CSS2/normal-flow 607→612（+5 真实 chromium-oracle 翻转），故改用 1.164。
+/// welcome product-smoke 因字体不匹配（chromium 用系统字体，ZW 用 DejaVu）+0.68pp
+/// （16.29→16.97%，仍 < 20% DC-13 gate），属可接受代价（字体匹配是 R631 独立多会话）。
+pub(crate) const NORMAL_LINE_HEIGHT_RATIO: f32 = 1.164;
 
 /// Ahem 字体（WPT 标准测试字体）line-height:normal 的实际度量比率。
 ///
-/// Chromium 对 line-height:normal 使用字体实际 OS/2 度量（ascent - descent + line_gap）。
-/// fontdue 实测 Ahem.ttf：ascent=800 / descent=-200 / line_gap=0 / units_per_em=1000
-/// → (ascent - descent) / upem = 1.0（度量探针见
-/// `docs/goal/rendering-compat/evidence/r759-font-metric-line-height-2026-06-28.txt`）。
-/// ZeroWeb 此前对所有字体统一用 [`NORMAL_LINE_HEIGHT_RATIO`]（1.2），致 line-height:normal
-/// 的 Ahem 文本行盒比 Chromium 高 20%，多行 Ahem reftest（不显式声明 line-height 者）
-/// Y 坐标累积发散。此处按字体实际度量修正，与 `estimate_char_width` 对 Ahem
-/// 等宽=font_size 的既有特判一致。非 Ahem 字体仍用 1.2（其度量需 FontLoader 跨 crate
-/// plumbing，且字体匹配与 chromium 的差异是正交问题，留作后续增量）。
+/// Chromium 对 line-height:normal 使用字体实际度量。fontdue 实测 Ahem.ttf：
+/// ascent=800 / descent=-200 / line_gap=0 / units_per_em=1000 → 1.0
+/// （度量探针见 `docs/goal/rendering-compat/evidence/r759-font-metric-line-height-2026-06-28.txt`）。
+/// 与 `estimate_char_width` 对 Ahem 等宽=font_size 的既有特判一致。
 pub(crate) const AHEM_LINE_HEIGHT_RATIO: f32 = 1.0;
 
 /// 从 ComputedStyle 中解析 font-size 和 line-height。
 ///
 /// - `font_size` 从 `ComputedStyle::font_size` 中提取（已解析为 Px）。
 /// - `line_height` 根据 `LineHeightValue` 计算：
-///   - `Normal` → font_size × 度量比率（Ahem=1.0，其余=1.2）
+///   - `Normal` → font_size × 度量比率（Ahem=1.0，其余=1.164）
 ///   - `Number(n)` → font_size × n
 ///   - `Length(Px(v))` → v
 ///
-/// 当 style 为 None 时（节点没有样式），返回默认值 16.0 / 19.2。
+/// 当 style 为 None 时（节点没有样式），返回默认值 16.0 / 18.624（16 × 1.164）。
 pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
     let font_size = match style {
         Some(s) => match &s.font_size {
@@ -184,8 +192,9 @@ pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
         None => DEFAULT_FONT_SIZE,
     };
 
-    // line-height:normal 用字体实际度量：Ahem=1.0（见 AHEM_LINE_HEIGHT_RATIO），其余 1.2。
-    // 无样式（None）时无法判定字体，回退 1.2。
+    // line-height:normal 用字体实际度量：Ahem=1.0（见 AHEM_LINE_HEIGHT_RATIO），其余 1.164
+    // （DejaVu hhea = chromium 真值，见 NORMAL_LINE_HEIGHT_RATIO 注释）。无样式（None）时
+    // 无法判定字体，回退 1.164。
     let normal_ratio = match style {
         Some(s) if s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")) => AHEM_LINE_HEIGHT_RATIO,
         _ => NORMAL_LINE_HEIGHT_RATIO,

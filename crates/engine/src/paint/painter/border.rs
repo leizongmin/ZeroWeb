@@ -424,20 +424,20 @@ impl super::Painter {
         }
     }
 
-/// R1141：dashed/dotted border 用 StrokePrimitive（线居中）绘制，但 border 应在 border-box
-/// 内侧（同 Solid 的 fill rect 语义）。返回使 stroke 中心从「边界线」移到「内侧填充区中心」
-/// 的偏移：horizontal（top/bottom）→ y += thickness/2；vertical 左边框 → x += thickness/2；
-/// vertical 右边框（extend_left）→ x -= thickness/2。
-fn stroke_inward_offset(spec: &BorderEdgeSpec) -> (f32, f32) {
-    let half = spec.thickness / 2.0;
-    if spec.is_horizontal {
-        (0.0, half)
-    } else if spec.extend_left {
-        (-half, 0.0)
-    } else {
-        (half, 0.0)
+    /// R1141：dashed/dotted border 用 StrokePrimitive（线居中）绘制，但 border 应在 border-box
+    /// 内侧（同 Solid 的 fill rect 语义）。返回使 stroke 中心从「边界线」移到「内侧填充区中心」
+    /// 的偏移：horizontal（top/bottom）→ y += thickness/2；vertical 左边框 → x += thickness/2；
+    /// vertical 右边框（extend_left）→ x -= thickness/2。
+    fn stroke_inward_offset(spec: &BorderEdgeSpec) -> (f32, f32) {
+        let half = spec.thickness / 2.0;
+        if spec.is_horizontal {
+            (0.0, half)
+        } else if spec.extend_left {
+            (-half, 0.0)
+        } else {
+            (half, 0.0)
+        }
     }
-}
 
     /// 绘制单条边框（根据 border-style 生成合适的图元）。
     pub(super) fn paint_border_edge(

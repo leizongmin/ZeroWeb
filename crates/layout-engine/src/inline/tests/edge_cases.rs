@@ -541,7 +541,7 @@ fn test_resolve_font_metrics_large_font_size() {
     style.font_size = LengthValue::Px(10000.0);
     let (font_size, line_height) = resolve_font_metrics(Some(&style));
     assert!((font_size - 10000.0).abs() < 0.01);
-    let expected_lh = 10000.0 * 1.2;
+    let expected_lh = 10000.0 * 1.164;
     assert!(
         (line_height - expected_lh).abs() < 0.01,
         "line_height 应为 {}，实际 {}",

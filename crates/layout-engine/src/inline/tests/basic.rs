@@ -1178,8 +1178,8 @@ fn test_resolve_font_metrics_no_style() {
         "默认 font_size 应为 16.0，实际 {font_size}"
     );
     assert!(
-        (line_height - 19.2).abs() < 0.01,
-        "默认 line_height 应为 16.0 * 1.2 = 19.2，实际 {line_height}"
+        (line_height - 18.624).abs() < 0.01,
+        "默认 line_height 应为 16.0 * 1.164 = 18.624，实际 {line_height}"
     );
 }
 
@@ -1191,9 +1191,9 @@ fn test_resolve_font_metrics_with_font_size() {
 
     let (font_size, line_height) = resolve_font_metrics(Some(&style));
     assert!((font_size - 24.0).abs() < 0.01, "font_size 应为 24.0，实际 {font_size}");
-    // line-height: Normal → 24.0 * 1.2 = 28.8
+    // line-height: Normal → 24.0 * 1.164 = 27.936
     assert!(
-        (line_height - 28.8).abs() < 0.01,
+        (line_height - 27.936).abs() < 0.01,
         "line_height 应为 28.8，实际 {line_height}"
     );
 }
@@ -1238,8 +1238,8 @@ fn test_resolve_font_metrics_line_height_normal() {
     let (font_size, line_height) = resolve_font_metrics(Some(&style));
     assert!((font_size - 32.0).abs() < 0.01);
     assert!(
-        (line_height - 38.4).abs() < 0.01,
-        "line_height 应为 32.0 * 1.2 = 38.4，实际 {line_height}"
+        (line_height - 37.248).abs() < 0.01,
+        "line_height 应为 32.0 * 1.164 = 37.248，实际 {line_height}"
     );
 }
 
@@ -1409,11 +1409,11 @@ fn test_layout_no_style_fallback() {
         );
     }
 
-    // 行盒高度应为 16.0 * 1.2 = 19.2
+    // 行盒高度应为 16.0 * 1.164 = 18.624
     for line in &ctx.lines {
         assert!(
-            (line.height - 19.2).abs() < 0.01,
-            "无样式时行盒高度应为 19.2，实际 {}",
+            (line.height - 18.624).abs() < 0.01,
+            "无样式时行盒高度应为 18.624，实际 {}",
             line.height
         );
     }
