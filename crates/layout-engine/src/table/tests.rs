@@ -925,21 +925,24 @@ fn test_r1131_grow_vrl_cell_block_extent() {
         collapsed_rows: vec![],
     };
     let col_widths = [100.0_f32];
+    // R1146：新签名取 final_col_widths（已含 cap 分布）+ cap_fired: bool，不再内部 ×scale。
+    // 模拟 vrl_cap_scale=0.25 后的 final_col_widths（100×0.25=25）。
+    let scaled = [25.0_f32];
 
-    // 1. None scale → cb.width
-    let w = grow_vrl_cell_block_extent(&cb, &cell, &col_widths, None, 0.0, &grid, &styles, &doc);
-    assert_eq!(w, 40.0, "None scale returns cb.width");
+    // 1. cap_fired=false → cb.width
+    let w = grow_vrl_cell_block_extent(&cb, &cell, &col_widths, false, 0.0, &grid, &styles, &doc);
+    assert_eq!(w, 40.0, "cap_fired=false returns cb.width");
 
     // 2. rowspan>1 → cb.width（gate，避 vrl-006 回归）
     let mut cell_rs = cell.clone();
     cell_rs.rowspan = 2;
-    let w = grow_vrl_cell_block_extent(&cb, &cell_rs, &col_widths, Some(0.25), 0.0, &grid, &styles, &doc);
+    let w = grow_vrl_cell_block_extent(&cb, &cell_rs, &scaled, true, 0.0, &grid, &styles, &doc);
     assert_eq!(w, 40.0, "rowspan>1 gated → cb.width");
 
-    // 3. Some scale + multi-word text → word-based packing 增长。text "AA BB CC DD"
-    //    = 4 words × 2 char × 20 = 40/word；cell_h_scaled = col_widths[0]×0.25 = 100×0.25 = 25。
+    // 3. cap_fired=true + multi-word text → word-based packing 增长。text "AA BB CC DD"
+    //    = 4 words × 2 char × 20 = 40/word；cell_h_scaled = final_col_widths[0] = 25。
     //    每 word 40 > 25 故每 word 一列 → N=4；grown = 4×20 = 80。
-    let w = grow_vrl_cell_block_extent(&cb, &cell, &col_widths, Some(0.25), 0.0, &grid, &styles, &doc);
+    let w = grow_vrl_cell_block_extent(&cb, &cell, &scaled, true, 0.0, &grid, &styles, &doc);
     assert!(
         (w - 80.0).abs() < 0.01,
         "scale 0.25 + 4-word (each 40>cell_h 25) → N=4 cols ×20 = 80, got {}",

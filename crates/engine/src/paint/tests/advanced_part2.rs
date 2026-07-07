@@ -1033,7 +1033,7 @@ fn test_paint_dashed_border_stroke_inward_offset() {
             "top stroke y1 不应仍为边界线 30（须 inward offset 到 32.5）"
         );
         assert!(
-            !((s.x1 - 10.0).abs() < 0.01 && !is_horizontal),
+            (s.x1 - 10.0).abs() >= 0.01 || is_horizontal,
             "left stroke x1 不应仍为边界线 10（须 inward offset 到 12.5）"
         );
     }

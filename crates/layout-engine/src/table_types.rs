@@ -393,3 +393,164 @@ pub(crate) fn collect_text_length(box_node: &LayoutBox, doc: &zero_dom::Document
     }
     len
 }
+
+/// R1146：计算 vertical 表每列的 min-content（最长不可断 word 的宽度）。
+///
+/// CSS §17.5.2.2 auto table layout：列宽下限 = min-content。word 按普通空白断
+/// （space/tab/newline），nbsp（U+00A0）是非断空白，留在 word 内参与宽度。每 word 宽 =
+/// char 数（含 nbsp，Ahem 下每 glyph = fs；变宽字体近似 0.6×fs）× char_width。colspan>1
+/// 的 cell 不贡献 min-content floor（其最长 word 应由多列合计承载，保守跳过避免过估每列）。
+pub(crate) fn compute_col_min_content(
+    table_box: &LayoutBox,
+    grid: &TableGrid,
+    n_cols: usize,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) -> Vec<f32> {
+    let mut min_content = vec![0.0f32; n_cols];
+    for row in &grid.rows {
+        let Some(rb) = get_row_box(table_box, row) else {
+            continue;
+        };
+        for cell in &row.cells {
+            if cell.colspan != 1 {
+                continue;
+            }
+            let cb = if let Some(rg_idx) = cell.parent_rg_idx {
+                rb.children.get(rg_idx).and_then(|rg| rg.children.get(cell.child_index))
+            } else {
+                rb.children.get(cell.child_index)
+            };
+            let Some(cb) = cb else { continue };
+            let Some(nid) = cb.node_id else { continue };
+            let Some(text) = doc.text_content(nid) else { continue };
+            let (fs, ahem) = styles
+                .get(&nid)
+                .map(|s| {
+                    let fs = match &s.font_size {
+                        zero_css_parser::values::LengthValue::Px(v) => *v as f32,
+                        _ => 16.0,
+                    };
+                    (fs, s.font_family.iter().any(|f| f.contains("Ahem")))
+                })
+                .unwrap_or((16.0, false));
+            let cw = if ahem { fs } else { fs * 0.6 };
+            if cw <= 0.0 {
+                continue;
+            }
+            // word = 按 break-opportunity 空白分割（nbsp U+00A0 留 word 内）。
+            let longest = text
+                .split(|c: char| c.is_whitespace() && c != '\u{00A0}')
+                .map(|w| w.chars().count() as f32 * cw)
+                .fold(0.0f32, f32::max);
+            if cell.col_start < n_cols {
+                min_content[cell.col_start] = min_content[cell.col_start].max(longest);
+            }
+        }
+    }
+    min_content
+}
+
+/// α-4b-1（RFC `vertical-mode-table-rl-transpose-rfc.md` §4.1）：对 `writing-mode:
+/// vertical-rl/lr` 的表，把行/cell 定位从 horizontal-tb **转置** 到 vertical——
+/// 行沿 x（vertical-rl 右到左 / vertical-lr 左到右），cell 沿 y 顶到底。
+///
+/// `col_widths`（逻辑列宽，WM-agnostic）映射为 cell 的 y 高度；行的 x 宽 = 该行
+/// cell 内容宽的最大值。WM gate：仅 vertical-rl/lr 触发，horizontal-tb 走原
+/// `position_cells`（字节一致零回归）。
+///
+/// **α-4b-1 范围**：简单表（无 colspan/rowspan）+ border-spacing 轴互换。
+/// 有 colspan/rowspan 时回退到 `position_cells`（旧行为），留给 α-4b-2。
+/// row-extras（table height 展开）/ vertical-align / caption-side 在转置轴的
+/// 处理留给 α-4b-4。
+/// R1131 slice 3：vrl_cap_scale 触发时增长 cell 的 block extent（x 宽）以容纳 IFC wrap 列数。
+///
+/// vrl 表 inline extent 被 cap（vrl_cap_scale）→ 文本强制 wrap 成 N 列沿 block 轴（x）排。
+/// 旧 cell.width（taffy 原值，~单字符宽）不足以容纳 N 列，wrap 列溢出 cell 盒 →
+/// row-progression-vrl 簇残余 11-13%。本函数按 N = ceil(文本像素高 / cell_h_scaled)
+/// 增长 cell.width = N × fs。
+///
+/// **post-R1100 重试**：R1116 试 area-conservation 增长 0-flip，因彼时 vertical IFC
+/// container_width=0（R1050）致文本不 wrap；R1100（α-1）修 IFC container_width WM-aware
+/// 后文本能 wrap，故 cell.width 增长方有意义。
+///
+/// **gate**：rowspan>1 跳过（ZW rowspan partial，避 vrl-006 回归，R1110 先例）；
+/// vrl_cap_scale 仅 vrl 触发故天然 vrl-only（避 vlr Path A/B 发散，R1119）。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn grow_vrl_cell_block_extent(
+    cb: &LayoutBox,
+    cell: &TableCell,
+    final_col_widths: &[f32],
+    cap_fired: bool,
+    spacing_x: f32,
+    grid: &TableGrid,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) -> f32 {
+    // cap 未触发（表 inline extent 未超 target）→ cell.width 保持 taffy 原值。
+    if !cap_fired {
+        return cb.width;
+    }
+    // rowspan gate
+    if cell.rowspan > 1 {
+        return cb.width;
+    }
+    let fs = cb
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .map(|s| match s.font_size {
+            zero_css_parser::values::LengthValue::Px(v) => v as f32,
+            _ => 16.0,
+        })
+        .unwrap_or(16.0);
+    if fs <= 0.0 {
+        return cb.width;
+    }
+    // cell_h_scaled：cell 的 inline extent（y）= Σ final_col_widths[col] + colspan gap。
+    // R1146：final_col_widths 已含 min-content floor（CSS auto-layout 分布），不再 ×scale。
+    let mut cell_h_scaled = 0.0f32;
+    let mut spanned_non_collapsed = 0usize;
+    for col in cell.col_start..cell.col_end {
+        if col < final_col_widths.len() {
+            cell_h_scaled += final_col_widths[col];
+            if !grid.collapsed_cols.get(col).copied().unwrap_or(false) {
+                spanned_non_collapsed += 1;
+            }
+        }
+    }
+    if spanned_non_collapsed > 1 {
+        cell_h_scaled += (spanned_non_collapsed - 1) as f32 * spacing_x;
+    }
+    if cell_h_scaled <= 0.0 {
+        return cb.width;
+    }
+    // 列数 N 按 **word-based 贪心 packing** 计（非连续 char 数）。IFC 实际换行按 word
+    //（break opportunity = 空白除 nbsp U+00A0）；R1131 原 char 公式低估列数（如 4 word
+    // 各 1 列，char 公式给 3 列）→ cell 过窄 → wrap 列溢出（row-progression 残余）。
+    // 每 word 高 = char 数（含 nbsp，nbsp 渲染）× fs；贪心 pack 到 cell_h_scaled 满即换列。
+    let n = cb
+        .node_id
+        .and_then(|id| doc.text_content(id))
+        .map(|t| {
+            // word = 按 break-opportunity 空白分割（nbsp U+00A0 不分割，留在 word 内）。
+            let words = t.split(|c: char| c.is_whitespace() && c != '\u{00A0}');
+            let mut cols = 1usize;
+            let mut col_h = 0.0f32;
+            for word in words {
+                let wc = word.chars().count() as f32;
+                if wc == 0.0 {
+                    continue;
+                }
+                let word_h = wc * fs;
+                if col_h + word_h > cell_h_scaled && col_h > 0.0 {
+                    cols += 1;
+                    col_h = word_h;
+                } else {
+                    col_h += word_h;
+                }
+            }
+            cols.max(1) as f32
+        })
+        .unwrap_or(1.0);
+    (n * fs).max(cb.width)
+}
