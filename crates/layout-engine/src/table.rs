@@ -1315,108 +1315,6 @@ fn position_cells(
     }
 }
 
-/// α-4b-1（RFC `vertical-mode-table-rl-transpose-rfc.md` §4.1）：对 `writing-mode:
-/// vertical-rl/lr` 的表，把行/cell 定位从 horizontal-tb **转置** 到 vertical——
-/// 行沿 x（vertical-rl 右到左 / vertical-lr 左到右），cell 沿 y 顶到底。
-///
-/// `col_widths`（逻辑列宽，WM-agnostic）映射为 cell 的 y 高度；行的 x 宽 = 该行
-/// cell 内容宽的最大值。WM gate：仅 vertical-rl/lr 触发，horizontal-tb 走原
-/// `position_cells`（字节一致零回归）。
-///
-/// **α-4b-1 范围**：简单表（无 colspan/rowspan）+ border-spacing 轴互换。
-/// 有 colspan/rowspan 时回退到 `position_cells`（旧行为），留给 α-4b-2。
-/// row-extras（table height 展开）/ vertical-align / caption-side 在转置轴的
-/// 处理留给 α-4b-4。
-/// R1131 slice 3：vrl_cap_scale 触发时增长 cell 的 block extent（x 宽）以容纳 IFC wrap 列数。
-///
-/// vrl 表 inline extent 被 cap（vrl_cap_scale）→ 文本强制 wrap 成 N 列沿 block 轴（x）排。
-/// 旧 cell.width（taffy 原值，~单字符宽）不足以容纳 N 列，wrap 列溢出 cell 盒 →
-/// row-progression-vrl 簇残余 11-13%。本函数按 N = ceil(文本像素高 / cell_h_scaled)
-/// 增长 cell.width = N × fs。
-///
-/// **post-R1100 重试**：R1116 试 area-conservation 增长 0-flip，因彼时 vertical IFC
-/// container_width=0（R1050）致文本不 wrap；R1100（α-1）修 IFC container_width WM-aware
-/// 后文本能 wrap，故 cell.width 增长方有意义。
-///
-/// **gate**：rowspan>1 跳过（ZW rowspan partial，避 vrl-006 回归，R1110 先例）；
-/// vrl_cap_scale 仅 vrl 触发故天然 vrl-only（避 vlr Path A/B 发散，R1119）。
-#[allow(clippy::too_many_arguments)]
-fn grow_vrl_cell_block_extent(
-    cb: &LayoutBox,
-    cell: &TableCell,
-    col_widths: &[f32],
-    vrl_cap_scale: Option<f32>,
-    spacing_x: f32,
-    grid: &TableGrid,
-    styles: &HashMap<NodeId, ComputedStyle>,
-    doc: &zero_dom::Document,
-) -> f32 {
-    let Some(scale) = vrl_cap_scale else {
-        return cb.width;
-    };
-    // rowspan gate
-    if cell.rowspan > 1 {
-        return cb.width;
-    }
-    let fs = cb
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .map(|s| match s.font_size {
-            zero_css_parser::values::LengthValue::Px(v) => v as f32,
-            _ => 16.0,
-        })
-        .unwrap_or(16.0);
-    if fs <= 0.0 || scale <= 0.0 {
-        return cb.width;
-    }
-    // cell_h_scaled：cell 的 inline extent（y）经 cap 后 = Σ(col_widths[col]×scale) + colspan gap。
-    let mut cell_h_scaled = 0.0f32;
-    let mut spanned_non_collapsed = 0usize;
-    for col in cell.col_start..cell.col_end {
-        if col < col_widths.len() {
-            cell_h_scaled += col_widths[col] * scale;
-            if !grid.collapsed_cols.get(col).copied().unwrap_or(false) {
-                spanned_non_collapsed += 1;
-            }
-        }
-    }
-    if spanned_non_collapsed > 1 {
-        cell_h_scaled += (spanned_non_collapsed - 1) as f32 * spacing_x;
-    }
-    if cell_h_scaled <= 0.0 {
-        return cb.width;
-    }
-    // 列数 N 按 **word-based 贪心 packing** 计（非连续 char 数）。IFC 实际换行按 word
-    //（break opportunity = 空白除 nbsp U+00A0）；R1131 原 char 公式低估列数（如 4 word
-    // 各 1 列，char 公式给 3 列）→ cell 过窄 → wrap 列溢出（row-progression 残余）。
-    // 每 word 高 = char 数（含 nbsp，nbsp 渲染）× fs；贪心 pack 到 cell_h_scaled 满即换列。
-    let n = cb
-        .node_id
-        .and_then(|id| doc.text_content(id))
-        .map(|t| {
-            // word = 按 break-opportunity 空白分割（nbsp U+00A0 不分割，留在 word 内）。
-            let words = t.split(|c: char| c.is_whitespace() && c != '\u{00A0}');
-            let mut cols = 1usize;
-            let mut col_h = 0.0f32;
-            for word in words {
-                let wc = word.chars().count() as f32;
-                if wc == 0.0 {
-                    continue;
-                }
-                let word_h = wc * fs;
-                if col_h + word_h > cell_h_scaled && col_h > 0.0 {
-                    cols += 1;
-                    col_h = word_h;
-                } else {
-                    col_h += word_h;
-                }
-            }
-            cols.max(1) as f32
-        })
-        .unwrap_or(1.0);
-    (n * fs).max(cb.width)
-}
-
 fn position_cells_vertical(
     table_box: &mut LayoutBox,
     grid: &TableGrid,
@@ -1508,6 +1406,56 @@ fn position_cells_vertical(
         base_inline_extent + n_cols as f32 * col_extra
     };
 
+    // R1146：CSS §17.5.2.2 auto-layout 列宽分布。vrl_cap_scale 触发（target < max-content 和）
+    // 时，旧实现按 max-content **比例** 缩放 col_widths，违反「列宽 ≥ min-content」——实测
+    // row-progression-vrl-002 col_widths=[280,200,240] 比例缩放到 [54.4,38.9,46.7]，而每列
+    // min-content（最长 word）=[60,40,40]，cell0/cell1 **低于自身 min-content**（54.4<60,
+    // 38.9<40）→ "DDD"/"EE" 等最长 word 溢出列、被迫多 wrap 一列 → 表过宽，离 chromium 更远。
+    // 正确算法（CSS auto table layout）：min_sum ≤ avail < max_sum 时每列 = min + 剩余按
+    // (max-min) 比例分；avail ≤ min_sum 时每列 = min_content（内容溢出，CSS 允许）。
+    // ★关键：floor 须在 vrl_cap_scale **之后**应用（col_widths 进此函数时是 max-content 全宽
+    // [280,200,240]，远 > min-content，在 compute_column_widths 加 floor 永不绑定——R1145 实验
+    // 因此零效果）。avail_for_cols = target 减周界与列间 gap。
+    let cap_fired = vrl_cap_scale.is_some();
+    let avail_for_cols = (target_inline - 2.0 * perim_inline - inline_gaps).max(0.0);
+    // R1146 实测：min-content floor 一致改善 4 个 vrl row-progression 案（-0.06~-0.33pp），
+    // 但**一致恶化 4 个 vlr 案**（+0.06~+0.37pp）——vlr 有 Path A/B 发散（R1119），其
+    // compensating-error 被正确化 min-content floor 破坏。故 floor 仅 vrl 应用；vlr 保
+    // 留旧比例缩放（col_widths×scale）。horizontal 不受影响（cap_fired 仅 vertical 触发）。
+    let scale_val = vrl_cap_scale.unwrap_or(1.0);
+    let final_col_widths: Vec<f32> = if cap_fired && is_rl {
+        let min_content = compute_col_min_content(table_box, grid, n_cols, styles, doc);
+        let min_sum: f32 = min_content.iter().sum();
+        if col_sum <= avail_for_cols {
+            // 理论上 cap 不会在此条件触发，保守返回原值。
+            col_widths.to_vec()
+        } else if avail_for_cols >= min_sum {
+            // min_sum ≤ avail < max_sum：每列保 min-content，剩余按 (max-min) 比例分配。
+            let excess = avail_for_cols - min_sum;
+            let denom: f32 = (0..n_cols).map(|i| (col_widths[i] - min_content[i]).max(0.0)).sum();
+            col_widths
+                .iter()
+                .enumerate()
+                .map(|(i, &mx)| {
+                    let mn = min_content[i];
+                    if denom > 0.0 {
+                        mn + excess * ((mx - mn).max(0.0) / denom)
+                    } else {
+                        mn
+                    }
+                })
+                .collect()
+        } else {
+            // avail < min_sum：每列取 min-content（内容溢出）。
+            min_content
+        }
+    } else if cap_fired {
+        // vlr：保留旧比例缩放（min-content floor 反致 vlr Path A/B 发散恶化）。
+        col_widths.iter().map(|w| w * scale_val).collect()
+    } else {
+        col_widths.to_vec()
+    };
+
     // 先算每行的 block 尺寸（x 宽 = 该行 cell 内容宽最大值）。
     // extract_layout 已对 vertical 容器的 cell 盒做了 size 轴交换，cell.width 是
     // 转置后的 x 宽；取行内最大作为该垂直列的 x 宽。
@@ -1537,8 +1485,16 @@ fn position_cells_vertical(
                         rb.children.get(cell.child_index)
                     };
                     let Some(cb) = cell_box else { continue };
-                    let w =
-                        grow_vrl_cell_block_extent(cb, cell, col_widths, vrl_cap_scale, spacing_x, grid, styles, doc);
+                    let w = grow_vrl_cell_block_extent(
+                        cb,
+                        cell,
+                        &final_col_widths,
+                        cap_fired,
+                        spacing_x,
+                        grid,
+                        styles,
+                        doc,
+                    );
                     max_w = max_w.max(w);
                 }
             }
@@ -1613,17 +1569,13 @@ fn position_cells_vertical(
 
             // cell 在 inline 轴（y）的尺寸 = 跨的列宽之和（colspan>1 时多列）。
             // vertical 下「列」是 inline 轴（y）槽位，colspan 跨多列 → cell 占多段 y。
-            // α-4b-6：vrl-only cap 触发时按 scale 缩小（base>height 的 vertical-rl 表）；
-            // 否则用原 col_widths，row_extras 的 col_extra 在下方统一加。
+            // R1146：用 final_col_widths（cap 触发时已按 CSS auto-layout 分布含 min-content floor；
+            // 未触发时 == col_widths）。row_extras 的 col_extra 在下方统一加。
             let mut cell_h = 0.0f32;
             let mut spanned_non_collapsed = 0usize;
             for col in cell.col_start..cell.col_end {
-                if col < col_widths.len() {
-                    cell_h += if let Some(scale) = vrl_cap_scale {
-                        col_widths[col] * scale
-                    } else {
-                        col_widths[col]
-                    };
+                if col < final_col_widths.len() {
+                    cell_h += final_col_widths[col];
                     if !(grid.collapsed_cols.get(col).copied().unwrap_or(false)) {
                         spanned_non_collapsed += 1;
                     }
