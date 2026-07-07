@@ -350,6 +350,40 @@ pub(crate) fn compute_cell_intrinsic_width(
         return char_width * text_len as f32 + padding;
     }
 
+    // R1153：无直接文本也无直接显式宽子元素时，用递归 max-content 捕获**嵌套**显式宽后代。
+    // compute_cell_intrinsic_width 的直接子元素循环只看一层，会漏测 td > div > div{width:100px}
+    // 这类嵌套结构（c5503-mrgn-b-000 td.control：直接子 .teal/.aqua 无显式宽，但孙 .blank
+    // 有 width:100px → control 列应 ~100px，旧实现回落 char_width+padding=9.6 致表塌缩）。
+    // box_content_max_width 递归 block 子 + 叶盒显式宽，返回 border-box（含 cell padding+border）。
+    // ★ gated：仅当 cell 直接子元素**全为 block 级**时采用。含 inline 直接子元素的 cell
+    // 走此回退路径时，inline 子（如 span 含 block canvas）的 width 不可靠（R109 inline-
+    // containing-block 纠缠），递归会过测致 percent-height-replaced-in-percent-cell-004
+    // 表爆炸（3.38→88%）。全 block 子（c5503 .teal/.aqua div）递归可靠。
+    let all_block_children = cell_box.children.iter().all(|c| {
+        if c.is_absolute || c.is_fixed {
+            return true;
+        }
+        c.node_id
+            .and_then(|id| styles.get(&id))
+            .map(|s| {
+                !matches!(
+                    s.display,
+                    DisplayValue::Inline
+                        | DisplayValue::InlineBlock
+                        | DisplayValue::InlineFlex
+                        | DisplayValue::InlineGrid
+                        | DisplayValue::InlineTable
+                )
+            })
+            .unwrap_or(true)
+    });
+    if all_block_children {
+        let recursed = crate::intrinsic_sizing::box_content_max_width(cell_box, doc, styles);
+        if recursed > char_width + padding {
+            return recursed;
+        }
+    }
+
     char_width + padding
 }
 

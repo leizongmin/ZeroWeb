@@ -79,6 +79,7 @@ mod coverage;
 mod intrinsic_two_pass_tests;
 mod r1001_table_cell_direct_text_tests;
 mod r109_backfill_tests;
+mod r1153_table_cell_nested_explicit_width_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
