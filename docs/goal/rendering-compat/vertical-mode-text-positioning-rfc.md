@@ -141,3 +141,78 @@ R1116–R1120 七轮调查锁定 vertical-rl/lr 文本定位是 **4 层耦合系
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-07-07 | 初始：综合 R1116-R1120，定义 4 切片协调重写 |
+| v0.2 | 2026-07-08 | 增补 §7：R1135/R1136 实验证伪 + 新 Bug E（R1050 根因）+ 切片修正 |
+
+---
+
+## 7. v0.2 增补（R1135/R1136 实验证伪 + 新 Bug E）
+
+R1121 后 R1134-R1136 三轮在 v0.1 切片 1-4 框架下做了进一步实证，得到 **3 条「已证伪勿重试」+ 1 个新 bug**，本节固化以避后续 session 重复探索。
+
+### 7.1 已证伪勿重试（proven dead ends）
+
+| 轮 | 尝试 | 结果 | 裁决 |
+|---|---|---|---|
+| R1135 | **R1112 col_width override**（compute_column_widths WM-aware：vertical cell col_width 读 height 非 width + 空 cell intrinsic 返 padding） | net-0 不 flip；border-spacing-vrl-002/vlr-003 反 3.23→4.07% 恶化 | **勿重试**：spec-correct col_width（height:0.5em=10）反比 spec-wrong（width:1em=20）离 chromium 更远 → **chromium 用 `width` 非 spec-mapped `height` 作 vertical table cell 列尺寸维度**（实现 quirk，与 CSS writing-modes §7.2 dimension mapping 相悖）。即 ZW 现有 WM-agnostic 读 width 的行为**已匹配 chromium**，勿改。 |
+| R1136 | **R1050 单层修**（painter/text.rs is_table_cell gate 传真实 styles → cell IFC fs=16→20 ahem）+ block_extent gate 扩 TableCell | **net-negative −2**（css-writing-modes 64→62/784）；全部 8 row-progression 案恶化（7-9%→8-10%） | **勿单层重试**：fs=20 正确化破坏 compensating-errors（旧 fs=16 错误度量偶然压成 2 列，恰比正确 fs=20 的 4 列更接近 chromium）。须配合 cell inline-extent 分布修（见 §7.3）。 |
+| R1116/R1118/R1119 | cell.width 面积守恒扩展 / stored IFC / vlr 复核 | net-negative/0-flip（v0.1 §2 已列） | **勿重试**（v0.1 五证 + R1135/R1136 两证 = 七证）：单层修必 net-negative。 |
+
+### 7.2 新 Bug E — Path B 空 styles → cell fs=16 默认（R1050 决定性根因）
+
+R1136 用 R1050DBG 探针实测 row-progression-vrl-002 cell 的 painted IFC：**fs=16 ahem=false**（应 fs=20 ahem=true，继承 body `font:20px/1 Ahem`）。
+
+**根因链**：
+1. table cell 无 stored IFC（compute_final gate `!is_block_level && !is_table_internal_with_text` 跳过 TableCell）。
+2. 故 `store_font_sizes_from_ifc`（inline_finalization.rs:330）不为 cell 调用 → `text_node_font_sizes`/`text_node_is_ahem` 未填充。
+3. paint Path B（painter/text.rs:1119）`ctx.layout(doc, node_id, &HashMap::new())` 传**空 styles**。
+4. collect_inline_items（inline/mod.rs:598-619）`style.is_some()` 不命中 → default_font_metrics = (16, 16×1.2) → cell 文本按错误度量 wrap。
+
+**与 v0.1 Bug D 的关系**：Bug E 是 Bug D（Path A/B 发散）的**具体机制**——Path B 空 styles 是发散点。v0.1 切片 4「Path A/B 统一」的真正修法 = 给 Path B 的 cell 传真实 styles（或等效 override）。
+
+**为什么单修 Bug E 是 net-negative（R1136 −2）**：fs=16 错误度量是 cell inline-extent 分布错（v0.1 Bug A 谱，cell extent 54.4 偏小）的**补偿因子**——fs=16 把词高压到使 2 列 pack 匹配 chromium 的「更大 extent + fs=20」2 列 pack。修 E（fs 正确化）破坏补偿 → 暴露 extent 分布 mismatch → 4 列发散更远。
+
+### 7.3 对 v0.1 切片计划的修正
+
+| v0.1 切片 | v0.2 修正 |
+|---|---|
+| 切片 3（cell width/wrap 两趟） | **删除「col_width 改垂直测量」子任务**（R1135 证 chromium 用 width-like，ZW 现状已对）。cell extent 分布 lever 转为「cell inline-extent 对齐 chromium 实际值」（须测 chromium oracle 几何，TBD-5）。 |
+| 切片 4（Path A/B 统一） | **具体化为 Bug E 修**：painter/text.rs:1119 给 cell 传真实 styles（is_table_cell gate）。但**必须与 cell extent 分布修（切片 3 修正后）同提交**，否则 net-negative（R1136）。 |
+| 新 TBD-5 | cell inline-extent 实测 chromium 值：用 oracle PNG 测 row-progression-vrl-002 各 cell 的 y-extent，确定 chromium 分布算法（非 char-proportional？）。阻塞切片 3+4 同修。 |
+
+### 7.4 修正后的依赖图
+
+```
+切片 1（content_height bloat，Bug A）  ── 前置
+   │
+   ├─> 切片 2（column-x block_extent，Bug B）── 解 caption-side-vrl
+   │
+   └─> 切片 3'（cell extent 对齐 chromium + TBD-5 实测）┐
+                                                      ├─ 同提交 ─> 切片 4'（Bug E：Path B 真实 styles）── 解 row-progression
+```
+
+**关键约束**：切片 3' + 切片 4' **必须同提交**（compensating-errors，单提必 net-negative，R1136 −2 证）。这是 v0.2 最重要的修正——v0.1 把它们当独立切片，R1136 证不可独立。
+
+### 7.5 下一步具体行动（TBD-5 先行）
+
+1. **TBD-5（实测 chromium cell extent）**：对 row-progression-vrl-002 oracle PNG，测 4 行 × 3 cell 各 cell 的 yellow text y-range，反推 chromium cell inline-extent 分布。判 chromium 是否 char-proportional / even / 其他。
+2. 据 TBD-5 结果设计切片 3'（cell extent 分布对齐）。
+3. 切片 3' + 切片 4'（Bug E）同提交 A/B 门禁。
+
+### 7.6 TBD-5 实测结果（2026-07-08）
+
+oracle PNG（chromium）像素分析（Python PIL，blue/yellow 像素 bbox + yellow 密度按 20px x-bucket）：
+
+| 渲染 | table x-extent | table y-extent |
+|---|---|---|
+| **chromium oracle** | **~420px**（x[8,427]） | ~180px（y[8,187]） |
+| ZW baseline（fs=16，2 sub-col/cell） | ~154px（4 行 × 2 × 19.2） | — |
+| ZW R1136 fix（fs=20，4 sub-col/cell） | ~320px（4 行 × 4 × 20） | — |
+
+**关键发现**：
+- chromium table x=420 **比 ZW baseline(154) 和 fs=20 fix(320) 都宽** → chromium cell 文本 wrap 成**更多** sub-column（非我先前推断的「更少列」）。
+- 但 R1136 fs=20 fix（320，离 420 更近）的 diff% 反 **更差**（8.36 vs baseline 7.46）。
+- **结论**：row-progression 残余**非 table gross 宽度**问题（fs=20 已把宽度拉近），而是**文本定位精度**——具体字符落在哪个 sub-column 的精确位置发散。即 Bug B（column-x 量纲）+ Bug E（fs）修对 gross 几何后，残余是 fine-grained glyph 放置（须切片 2 column-x block_extent + 切片 4' Bug E + cell extent 精确分布同修）。
+- chromium y=180（非 height:7em=140）→ 暗示 cell 文本 overflow 表高 或 height 解释不同（TBD-5a：核 chromium 是否让 cell 内容溢出 140，影响 cell extent 算法）。
+
+**修正 TBD-5**：chromium 非简单「更少列」；须逐字符匹配 chromium glyph 位置（dump ZW fs=20 每字符 x/y vs chromium oracle yellow 质心），定位发散层（column-x？word 内 char advance？）。多 session。
+
