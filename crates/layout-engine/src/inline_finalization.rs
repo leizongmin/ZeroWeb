@@ -1146,7 +1146,14 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 })
                 .filter_map(|c| {
                     let node_id = c.node_id?;
-                    Some((node_id, (c.content_width, c.content_height)))
+                    // R1147：empty inline-block（content_height≈0）用 border-box height
+                    //（含 border），避免 IFC 降级零宽（见 postprocess.rs 同改）。
+                    let ib_h = if c.content_height.abs() < 1.0 {
+                        c.height
+                    } else {
+                        c.content_height
+                    };
+                    Some((node_id, (c.content_width, ib_h)))
                 })
                 .collect();
 
@@ -1295,7 +1302,13 @@ pub(crate) fn remeasure_inline_only_containers(
             })
             .filter_map(|c| {
                 let node_id = c.node_id?;
-                Some((node_id, (c.content_width, c.content_height)))
+                // R1147：empty inline-block 用 border-box height（见 postprocess.rs）。
+                let ib_h = if c.content_height.abs() < 1.0 {
+                    c.height
+                } else {
+                    c.content_height
+                };
+                Some((node_id, (c.content_width, ib_h)))
             })
             .collect();
         let ib_sizes_for_mc = ib_sizes.clone();
