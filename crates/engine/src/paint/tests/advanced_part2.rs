@@ -976,6 +976,71 @@ fn test_paint_border_separate_full_thickness() {
     }
 }
 
+/// R1141：dashed/dotted border 用 StrokePrimitive 绘制时，stroke 须 inward offset 使其落在
+/// border-box 内侧（同 Solid 的 fill rect 语义），而非以边界线为中心半宽溢出。
+///
+/// 构造 box at (10,30) 770×530，5px Dashed 四边框，验证各边 stroke 的 x1/y1 已按 thickness/2
+/// inward offset（top/bottom: y+=2.5；left: x+=2.5；right: x-=2.5）。旧未 offset 致 stroke
+/// 居中边界线，半宽溢出 border-box（position-*-root-element dashed border -3px 偏移）。
+#[test]
+fn test_paint_dashed_border_stroke_inward_offset() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    // box at (10,30) 770×530，5px 边框
+    let layout = make_box_with_border(Some(elem), 10.0, 30.0, 770.0, 530.0, 5.0, 5.0, 5.0, 5.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.border_top_style = BorderStyleValue::Dashed;
+    style.border_right_style = BorderStyleValue::Dashed;
+    style.border_bottom_style = BorderStyleValue::Dashed;
+    style.border_left_style = BorderStyleValue::Dashed;
+    style.border_top_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.border_right_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.border_bottom_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.border_left_color = ColorValue::Rgba(0, 0, 0, 255);
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let strokes = painter.primitives();
+    assert_eq!(strokes.strokes.len(), 4, "四边框应产生 4 个 stroke");
+    // thickness/2 = 2.5。各边 stroke 起点应 inward offset：
+    //   top（水平）: y1 = 30 + 2.5 = 32.5
+    //   bottom（水平）: y1 = (30+530-5) + 2.5 = 557.5
+    //   left（垂直）: x1 = 10 + 2.5 = 12.5
+    //   right（垂直 extend_left）: x1 = (10+770) - 2.5 = 777.5
+    let mut found_top = false;
+    let mut found_left = false;
+    for s in &strokes.strokes {
+        let is_horizontal = (s.y1 - s.y2).abs() < 0.01;
+        if is_horizontal {
+            // top: y≈32.5；bottom: y≈557.5
+            if (s.y1 - 32.5).abs() < 0.01 {
+                found_top = true;
+            }
+        } else {
+            // left: x≈12.5；right: x≈777.5
+            if (s.x1 - 12.5).abs() < 0.01 {
+                found_left = true;
+            }
+        }
+        // 旧（未 offset）top stroke y1=30 / left x1=10；断言这些不应出现（已 offset）
+        assert!(
+            !((s.y1 - 30.0).abs() < 0.01 && is_horizontal),
+            "top stroke y1 不应仍为边界线 30（须 inward offset 到 32.5）"
+        );
+        assert!(
+            !((s.x1 - 10.0).abs() < 0.01 && !is_horizontal),
+            "left stroke x1 不应仍为边界线 10（须 inward offset 到 12.5）"
+        );
+    }
+    assert!(found_top, "应找到 top stroke y1=32.5（inward offset）");
+    assert!(found_left, "应找到 left stroke x1=12.5（inward offset）");
+}
+
 // ============================================================
 // contain:paint 触发裁剪
 // ============================================================
