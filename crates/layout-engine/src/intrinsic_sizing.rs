@@ -58,7 +58,14 @@ pub(crate) fn box_content_max_width(
             })
             .unwrap_or(false);
         let outer_w = child.width + child.margin_left + child.margin_right;
-        if is_inline_level {
+        // R1165：R109 §9.2.1.1 拆分 inline 父盒（is_r109_split，display:Inline 但已被拆成
+        // 匿名块片段）的 max-content 须递归测其匿名块子（真实文本内容），而非用其
+        // post-taffy 拉伸的 child.width。否则 table auto-layout 测含 split inline 的 cell
+        // 时读到拉伸宽（td/table 链全宽）→ 表爆炸（block-in-inline-001：td 777px 应 ~50px，
+        // R109=off 表 shrink-to-fit 93px ≈ oracle；R109=on 表 777px）。narrow gate：仅
+        // is_r109_split 父盒（fragment_node_ids=None）递归，普通 inline 不变。
+        let is_split_wrapper = child.is_r109_split && child.fragment_node_ids.is_none();
+        if is_inline_level && !is_split_wrapper {
             inline_sum += outer_w.max(0.0);
         } else {
             block_max = block_max.max(box_content_max_width(child, doc, styles));
@@ -802,5 +809,62 @@ mod tests {
         let html = r#"<html><body style="margin:0"><div id="c" style="display:flex"></div></body></html>"#;
         let w = compute_intrinsic(html, "c");
         assert!(w.is_none(), "empty flex container should return None");
+    }
+
+    /// R1165：取一个有效 NodeId（经 Document）。
+    fn fresh_id_boxcw() -> zero_dom::NodeId {
+        zero_dom::Document::new().create_element("div")
+    }
+
+    #[test]
+    fn test_box_content_max_width_r109_split_wrapper_recurse_not_stretched() {
+        // R1165：含 R109 拆分 inline 父盒（is_r109_split=true, display:Inline,
+        // fragment_node_ids=None）的容器的 max-content 须递归测其匿名块子（真实内容 ~50），
+        // 而非用 split 父盒 post-taffy 拉伸的 width（777，table auto-layout 链全宽）。
+        // 复现 block-in-inline-001：td > span.inline(is_r109_split, w=777 stretched) >
+        // [anon(Line1,w=50), block(Line2,w=50), anon(Line3,w=50)]。修前测 777（表爆炸），
+        // 修后测 50（表 shrink-to-fit）。普通 inline（非 split）仍用拉伸宽（回归守卫）。
+        use zero_css_parser::values::{DisplayValue, LengthValue};
+        use zero_style_system::ComputedStyle;
+        let wrapper_id = fresh_id_boxcw();
+        let anon1_id = fresh_id_boxcw();
+        let blk_id = fresh_id_boxcw();
+        let anon2_id = fresh_id_boxcw();
+
+        let mut wrapper = LayoutBox::default();
+        wrapper.node_id = Some(wrapper_id);
+        wrapper.is_r109_split = true; // R109 拆分 inline 父盒
+        wrapper.fragment_node_ids = None; // 父盒非片段
+        wrapper.width = 777.0; // post-taffy 拉伸宽（bug 源）
+
+        for cid in [anon1_id, blk_id, anon2_id] {
+            let mut anon = LayoutBox::default();
+            anon.node_id = Some(cid);
+            anon.is_block_level = true;
+            anon.width = 50.0; // 真实内容宽（显式 width 叶盒）
+            wrapper.children.push(anon);
+        }
+
+        let mut container = LayoutBox::default();
+        container.children.push(wrapper);
+
+        let mut styles = std::collections::HashMap::new();
+        let mut inline_style = ComputedStyle::default();
+        inline_style.display = DisplayValue::Inline; // split 父盒 display 仍是 Inline
+        styles.insert(wrapper_id, inline_style);
+        for cid in [anon1_id, blk_id, anon2_id] {
+            let mut s = ComputedStyle::default();
+            s.display = DisplayValue::Block;
+            s.width = LengthValue::Px(50.0); // 显式宽叶盒
+            styles.insert(cid, s);
+        }
+        let doc = zero_dom::Document::new();
+
+        let w = box_content_max_width(&container, &doc, &styles);
+        assert!(
+            (w - 50.0).abs() < 1.0,
+            "R109 split wrapper: recurse into anon children (~50), not stretched width (777); got {}",
+            w
+        );
     }
 }
