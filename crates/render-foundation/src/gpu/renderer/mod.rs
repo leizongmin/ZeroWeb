@@ -141,12 +141,23 @@ impl GpuRenderer {
             ..Default::default()
         });
 
+        // 优先请求软件 fallback adapter（Linux lavapipe/LLVMpipe，输出确定性利于测试）；
+        // 无软件 fallback 的平台（macOS 无 software Metal、部分 Windows CI）回退到真实 GPU adapter。
+        // 历史：单用 force_fallback_adapter:true 在 macOS CI（2026-06-15 迁移 macOS 26 后）返回 None，
+        // 致 54 个 gpu::renderer::tests panic、main CI 红逾月（2026-05-30 后全 failure）。
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),
             force_fallback_adapter: true,
             compatible_surface: None,
         }))
-        .ok_or("无法获取 wgpu 适配器")?;
+        .or_else(|| {
+            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::LowPower,
+                force_fallback_adapter: false,
+                compatible_surface: None,
+            }))
+        })
+        .ok_or("无法获取 wgpu 适配器（软件 fallback 与真实 GPU 均不可用）")?;
 
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
