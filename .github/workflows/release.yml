@@ -142,7 +142,7 @@ jobs:
           echo "RUSTFLAGS=-C link-arg=advapi32.lib" >> "$GITHUB_ENV"
 
       - name: Build release
-        run: cargo ${{ matrix.features }} build --release --bin zero-browser --target ${{ matrix.target }}
+        run: cargo build ${{ matrix.features }} --release --bin zero-browser --target ${{ matrix.target }}
 
       - name: Strip binary (Linux/macOS)
         if: runner.os != 'Windows'

@@ -133,17 +133,17 @@ jobs:
 
       - name: Check workspace (V8-free targets only; V8 targets are fully checked by clippy)
         if: matrix.v8_runtime == false
-        run: cargo ${{ matrix.features }} check --workspace --target ${{ matrix.target }}
+        run: cargo check ${{ matrix.features }} --workspace --target ${{ matrix.target }}
 
       - name: Run clippy
         if: matrix.v8_runtime != false
-        run: cargo ${{ matrix.features }} clippy --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
+        run: cargo clippy ${{ matrix.features }} --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
 
       - name: Run clippy without V8-backed targets
         if: matrix.v8_runtime == false
         shell: bash
         run: |
-          cargo ${{ matrix.features }} clippy \
+          cargo clippy ${{ matrix.features }} \
             -p zero-dom \
             -p zero-css-parser \
             -p zero-style-system \
@@ -165,7 +165,7 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: |
-          cargo ${{ matrix.features }} test \
+          cargo test ${{ matrix.features }} \
             -p zero-dom \
             -p zero-css-parser \
             -p zero-style-system \
@@ -179,35 +179,35 @@ jobs:
             -p zero-protocol \
             -p zero-wasm-sandbox \
             -p zero-page-runtime \
-            --target ${{ matrix.target }} -- --test-threads=2
+            --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Run V8-backed core tests
         if: matrix.v8_runtime != false
         timeout-minutes: 20
         shell: bash
         run: |
-          cargo ${{ matrix.features }} test \
+          cargo test ${{ matrix.features }} \
             -p zero-script-sandbox \
             -p zero-webview \
-            --target ${{ matrix.target }} -- --test-threads=2
+            --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Run app tests
         if: matrix.v8_runtime != false
         timeout-minutes: 40
         shell: bash
         run: |
-          cargo ${{ matrix.features }} test \
+          cargo test ${{ matrix.features }} \
             -p zero-browser \
             -p zero-renderer \
             -p zero-webview-demo \
-            --target ${{ matrix.target }} -- --test-threads=2
+            --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Run integration and WPT runner tests
         if: matrix.v8_runtime != false
         timeout-minutes: 20
         shell: bash
         run: |
-          RUST_BACKTRACE=1 cargo ${{ matrix.features }} test \
+          RUST_BACKTRACE=1 cargo test ${{ matrix.features }} \
             -p zero-integration-tests \
             -p zero-wpt-runner \
             --target ${{ matrix.target }} -- --test-threads=1
@@ -216,7 +216,7 @@ jobs:
         timeout-minutes: 10
         shell: bash
         run: |
-          cargo ${{ matrix.features }} test -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=2
+          cargo test ${{ matrix.features }} -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Note unsupported V8 runtime tests
         if: matrix.v8_runtime == false
@@ -228,7 +228,7 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: |
-          cargo ${{ matrix.features }} test \
+          cargo test ${{ matrix.features }} \
             -p zero-script-sandbox \
             -p zero-webview \
             -p zero-browser \
@@ -236,12 +236,12 @@ jobs:
             -p zero-webview-demo \
             -p zero-integration-tests \
             -p zero-wpt-runner \
-            --target ${{ matrix.target }} -- --test-threads=2
+            --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Build release
         if: matrix.release_build != false && github.event_name == 'workflow_dispatch' && inputs.run_release_builds == true
         timeout-minutes: 20
-        run: cargo ${{ matrix.features }} build --release --workspace --target ${{ matrix.target }}
+        run: cargo build ${{ matrix.features }} --release --workspace --target ${{ matrix.target }}
 
       - name: Note unsupported release build
         if: matrix.release_build == false && github.event_name == 'workflow_dispatch' && inputs.run_release_builds == true
