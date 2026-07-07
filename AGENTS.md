@@ -221,6 +221,14 @@ tests/
 - 裁决为 **BLOCK** 时，输出发现报告并等待用户确认或修复后重新扫描
 - 用户明确要求跳过时可豁免
 
+### 提交前质量门禁
+
+执行 `git commit` 前，必须先在本地跑通 `cargo fmt` 和 `cargo clippy`，禁止跳过：
+- `cargo fmt --all -- --check` 必须无 diff（有 diff 先 `cargo fmt --all` 修复再提交）
+- `cargo clippy --workspace --all-targets -- -D warnings` 必须无 warning/error（CI 用 `-D warnings` 强制，本地须同等严格）
+- 若默认 feature（v8）因环境（如缺 rusty_v8 预编译库）无法本地编译，至少在能编译的 feature 下跑 clippy（如 `--no-default-features --features quickjs`），并在提交说明中注明覆盖范围
+- 原因：CI 用 `-D warnings`，本地不跑会让 clippy warning（如 `type_complexity`）在 CI 变 error 才暴露，浪费 CI 往返。本仓曾因本地未跑 clippy 导致 `register_callback` 的 `Box<dyn Fn>` 触发 `type_complexity`，全平台 CI 失败一轮
+
 ## 无人值守运行安全
 
 在无人值守场景（rally 循环、CI、长时间自动执行）下跑测试或构建命令时，**必须**用「内存上限 + 墙钟超时」包裹器包裹，禁止裸跑原始测试/构建命令（如 `cargo test`、`npm test`、`pytest`、`go test`、`make` 等）。

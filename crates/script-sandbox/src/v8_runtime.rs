@@ -559,7 +559,10 @@ mod tests {
     #[test]
     fn test_register_callback_invoked_from_js() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.register_callback("__zw_test", |args| format!("echo:{}:{}", args.len(), args.join("|")));
+        sandbox.register_callback(
+            "__zw_test",
+            Box::new(|args| format!("echo:{}:{}", args.len(), args.join("|"))),
+        );
         // JS 调用宿主回调，返回值成为脚本结果。
         let result = sandbox.execute("__zw_test('a', 'bb')").unwrap();
         assert_eq!(result.value, "echo:2:a|bb");
@@ -573,7 +576,7 @@ mod tests {
             ..Default::default()
         };
         let mut sandbox = V8Sandbox::with_config(config).unwrap();
-        sandbox.register_callback("__zw_greet", |args| format!("hi {}", args[0]));
+        sandbox.register_callback("__zw_greet", Box::new(|args| format!("hi {}", args[0])));
         let r1 = sandbox.execute("__zw_greet('world')").unwrap();
         assert_eq!(r1.value, "hi world");
         // 第二次 execute 复用缓存 Context，回调仍可用。
