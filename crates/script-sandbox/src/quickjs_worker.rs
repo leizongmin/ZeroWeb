@@ -18,6 +18,7 @@ enum WorkerCommand {
 
 /// Worker 线程发往主线程的消息。
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum WorkerEvent {
     /// Worker 发送消息到主线程（onmessage）。
     Message(String),
@@ -29,9 +30,13 @@ pub enum WorkerEvent {
 
 /// Worker 生命周期状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum WorkerState {
+    /// Worker 已创建，正在初始化。
     Initializing,
+    /// Worker 正在运行，可以接收消息。
     Running,
+    /// Worker 已终止。
     Terminated,
 }
 

@@ -20,7 +20,7 @@ pub(super) fn apply_scripted_dom_mutations(html: &str, base_dir: Option<&Path>) 
 
     use std::sync::Arc;
     use std::sync::Mutex;
-    use zero_script_sandbox::{SandboxConfig, V8Sandbox};
+    use zero_script_sandbox::SandboxConfig;
 
     let config = SandboxConfig {
         // DOM-mutating reftest 脚本通常很短；与既有 reftest JS 超时一致。
@@ -28,14 +28,22 @@ pub(super) fn apply_scripted_dom_mutations(html: &str, base_dir: Option<&Path>) 
         persistent_context: true,
         ..Default::default()
     };
-    let Ok(mut sandbox) = V8Sandbox::with_config(config) else {
-        return html.to_string();
+    #[cfg(feature = "v8")]
+    let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> = match zero_script_sandbox::V8Sandbox::with_config(config) {
+        Ok(s) => Box::new(s),
+        Err(_) => return html.to_string(),
     };
+    #[cfg(feature = "quickjs")]
+    let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
+        match zero_script_sandbox::QuickJSSandbox::with_config(config) {
+            Ok(s) => Box::new(s),
+            Err(_) => return html.to_string(),
+        };
 
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(html.to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(String::from("about:blank")));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url);
 
     if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
         eprintln!("  [reftest JS] DOM shim init warning: {e}");
