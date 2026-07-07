@@ -198,7 +198,7 @@ jobs:
           RUST_BACKTRACE=1 cargo test \
             -p zero-integration-tests \
             -p zero-wpt-runner \
-            --target ${{ matrix.target }} -- --test-threads=1 --no-capture
+            --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Run render CPU tests
         timeout-minutes: 10
