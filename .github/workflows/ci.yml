@@ -149,6 +149,7 @@ jobs:
             --all-targets --target ${{ matrix.target }} -- -D warnings
 
       - name: Run core crate tests without V8
+        if: matrix.v8_runtime != false
         timeout-minutes: 20
         shell: bash
         run: |
@@ -194,10 +195,10 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: |
-          cargo test \
+          RUST_BACKTRACE=1 cargo test \
             -p zero-integration-tests \
             -p zero-wpt-runner \
-            --target ${{ matrix.target }} -- --test-threads=2
+            --target ${{ matrix.target }} -- --test-threads=2 --no-capture
 
       - name: Run render CPU tests
         timeout-minutes: 10

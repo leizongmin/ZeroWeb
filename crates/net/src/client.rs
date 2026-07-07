@@ -1281,10 +1281,9 @@ mod integration_tests {
             let _ = stream.flush();
         });
 
-        // timeout_secs=0 创建客户端，reqwest 的 Duration::from_secs(0) 表示无等待
-        // 在 mock 服务器快速响应的情况下应能收到 200，
-        // 但如果响应稍慢也可能超时——两种结果均可接受。
-        let client = HttpClient::with_config(0, 5);
+        // timeout_secs=1：reqwest 的 Duration::from_secs(0) 在部分平台（macos）
+        // 当作"无 timeout"导致挂起，用 1s 保证确定行为；mock 快速响应应 1s 内返回 200。
+        let client = HttpClient::with_config(1, 5);
         let result = client.send(HttpRequest::get(&url));
         match result {
             Ok(resp) => {
