@@ -23,16 +23,19 @@ serde = { workspace = true }
 parking_lot = { workspace = true }
 pollster = { workspace = true }
 winit = { workspace = true }
-# FreeType（chromium Linux 同栈光栅化器）——可选，仅 `freetype-raster` feature 启用。
-# 默认关：CI / 默认构建保持纯 Rust（fontdue 光栅化）。feature 开时本地 A/B 验证
-# Phase 2（fontdue→FreeType 光栅化替换）的 font-wall 收敛收益（R1066-R1067 scoping）。
-# 详见 docs/goal/rendering-compat/fontdue-replacement-scoping.md（v0.4）。
+# FreeType（chromium Linux 同栈光栅化器）——经 `freetype-raster` feature 启用（R1159 起为 default）。
+# 默认构建即编译 FreeType2 C 源（`freetype-rs/bundled`），非-Ahem 字形优先 FreeType 光栅化。
+# 全 corpus oracle 实测 +232 零回归（R1094 A/B）。需纯 Rust 构建用 `--no-default-features`。
+# 详见 docs/goal/rendering-compat/fontdue-replacement-scoping.md。
 freetype-rs = { version = "0.38", optional = true }
 
 [features]
-# 启用 FreeType 光栅化路径（`rasterize_glyph` 的 fontdue→FreeType 替换）。default 关。
-# 经 `freetype-rs/bundled` 从 C 源码编译 FreeType2 + libpng（freetype-sys `bundled`），
-# 无须系统 FreeType → CI 三平台（ubuntu/macos/windows）一致可用（R1071 de-risk 验证）。
+# FreeType 光栅化路径（`rasterize_glyph` 的 fontdue→FreeType 替换）。
+# default 开（R1159 翻默认）：非-Ahem 字形优先 FreeType 光栅化（chromium Linux 同栈），
+# 全 corpus oracle 实测 +232 零回归（R1094 A/B）。经 `freetype-rs/bundled` 从 C 源码编译
+# FreeType2 + libpng（freetype-sys `bundled`），无须系统 FreeType → CI 三平台一致可用
+# （R1071 de-risk 验证 6-target matrix）。需纯 Rust 构建时：`--no-default-features`。
+default = ["freetype-raster"]
 freetype-raster = ["dep:freetype-rs", "freetype-rs/bundled"]
 
 [dev-dependencies]

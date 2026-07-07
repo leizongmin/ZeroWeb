@@ -103,7 +103,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 在 Linux 和 macOS 上，构建前需先下载 `rusty_v8` 预构建产物：`make setup-rusty-v8`（缓存到 `${XDG_CACHE_HOME:-$HOME/.cache}/zero-web/rusty_v8`）。推荐用 `make build` 或 `make browser`，会自动执行该步骤。Windows 需在本地环境里设置 `RUSTY_V8_ARCHIVE` 为 release `.lib` 的 URL。
 
-可选启用 `freetype-raster` feature（默认关闭，带 FreeType2 C 依赖）可在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，提升与 Chromium 的字体度量一致性：`cargo build -p zero-render-foundation --features freetype-raster`。该路径仍在验证中，默认 CI 保持纯 Rust 构建。
+`freetype-raster` feature（R1159 起为 default-on）在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，提升与 Chromium 的字体度量一致性；全 corpus oracle 实测 +232 零回归（R1094 A/B）。默认构建经 `freetype-rs/bundled` 从 C 源码编译 FreeType2，无须系统 FreeType。需纯 Rust 构建时：`cargo build --no-default-features -p zero-render-foundation`（下游 crate 同理加 `--no-default-features`）。
 
 ### 3. 运行本地入口
 

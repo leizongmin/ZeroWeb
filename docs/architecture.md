@@ -53,7 +53,7 @@
 
 | Crate | 作用 |
 |-------|------|
-| `crates/render-foundation` | GPU/CPU 渲染、字体栈（默认 fontdue；可选 `freetype-raster` feature 在非 Ahem 路径用 FreeType 光栅化，提升与 Chromium 的字体度量一致性）、图片缓存 + GC、裁剪 / scissor、图元基础设施 |
+| `crates/render-foundation` | GPU/CPU 渲染、字体栈（fontdue + `freetype-raster` feature default-on：非 Ahem 路径用 FreeType 光栅化，提升与 Chromium 字体度量一致性；R1094 实测全 corpus oracle +232 零回归）、图片缓存 + GC、裁剪 / scissor、图元基础设施 |
 | `crates/host-runtime` | 平台窗口、事件循环、surface 生命周期、输入事件（鼠标 / 键盘 / 触摸 / IME） |
 | `crates/net` | HTTP/HTTPS、URL、导航历史、Cookie、WebSocket（tungstenite）、HTTP 响应缓存 |
 | `crates/security` | 同源策略、CORS、CSP（含 `script-src-attr` / `unsafe-eval` / `wasm-unsafe-eval` / `strict-dynamic` 等完整指令）、HSTS 预加载、混合内容阻止 / 升级、权限模型、站点隔离、COOP/COEP，统一收敛到 `SecurityContext` 门面 |
