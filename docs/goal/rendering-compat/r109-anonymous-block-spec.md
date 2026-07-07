@@ -11,7 +11,9 @@
 
 ## 0. 执行摘要
 
-- **一句话目标**：让 §9.2.1.1 匿名块盒（inline 被块子元素拆分 / block 容器混合 inline+block 子元素）在生成后正确参与容器测高、bg 涂满、border 归属，消除 insert-block-in-inlines / margin-collapse-101 等簇的 ~20% 结构性 diff。
+> **🔧 R1162（2026-07-08）re-scope**：原头号目标 `insert-block-in-inlines-{beginning,middle,end}-001` 簇经核验**全 JS-driven**（`class="reftest-wait"` + `appendChild` script，flags "ahem dom"）——FR-002/FR-003 paint 修复**不会 flip 这些 case**（属 JS-DOM-bridge 范畴，非 R109 匿名块 paint 问题）。spec 的 yield 前提需修正：**R109 FR-002/FR-003 的真目标 = 静态 block-in-inline near-pass 簇**（box-display 8+ 案 1-3%：`block-in-inline-with-padded-parent`(2.88%)、`block-in-inline-relpos-001/002`(2.56/2.20%)、`block-in-inline-margin-collapses-through-intervening-float`(2.40)、`block-in-inline-margin-collapses-through-multiple-floats`(2.25)、`block-in-inline-negative-margin-with-intervening-float`(2.11)、`three-block-in-inlines-cascading-margins`(2.14)、`block-in-inline-margin-with-line-break-then-block-in-inline`(1.86) 等）。这些是静态 R109 §9.2.1.1 case（flags "ahem" 无 JS），FR-002/FR-003 可 flip。原 insert-block-in-inlines 簇（end 18.71% / middle 16.84% / beginning 6.29%）降级为 JS-DOM-bridge 后续工作。
+
+- **一句话目标**：让 §9.2.1.1 匿名块盒（inline 被块子元素拆分 / block 容器混合 inline+block 子元素）在生成后正确参与容器测高、bg 涂满、border 归属，消除 **静态 block-in-inline near-pass 簇**（R1162 re-scope 自原 insert-block-in-inlines / margin-collapse-101）的 ~2-10% 结构性 diff。
 - **本期范围**：仅 R109 匿名块盒的**生成后处理**（高度回填 + 容器 bg 涂满 + border 归属协调），不改触发门控逻辑、不重写 IFC、不动 font 度量。
 - **明确排除**：font-engine / Phase A 行盒度量统一（welcome/morning 16–17%，独立多会话）；multicol Phase 2；taffy 升级（R304）。
 - **核心约束**：① 必须保持 R109 ON 的 net +5（box-display 32 vs OFF 27，R936 实测）；② 不得回归 margin-collapse-101 / inline-box-001 / multicol-block-no-clip-001（R743/R744 历史）；③ 改动经 `make reftest-oracle` + `make product-smoke` A/B 零回归。
