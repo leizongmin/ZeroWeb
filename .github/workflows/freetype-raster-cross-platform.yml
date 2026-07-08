@@ -58,7 +58,14 @@ jobs:
           $triplet = if ('${{ matrix.target }}' -match 'aarch64') { 'arm64-windows-static-md' } else { 'x64-windows-static-md' }
           Write-Host "Installing zlib:$triplet via vcpkg..."
           vcpkg install zlib --triplet $triplet
-          Write-Host "vcpkg zlib installation complete"
+          $vcpkgInclude = "C:\vcpkg\installed\$triplet\include"
+          $vcpkgLib = "C:\vcpkg\installed\$triplet\lib"
+          # CFLAGS: cc crate appends to compiler command line (bypasses its own include logic)
+          "CFLAGS=-I$vcpkgInclude" >> $env:GITHUB_ENV
+          # INCLUDE/LIB: MSVC cl.exe also reads these directly
+          "INCLUDE=$vcpkgInclude;$env:INCLUDE" >> $env:GITHUB_ENV
+          "LIB=$vcpkgLib;$env:LIB" >> $env:GITHUB_ENV
+          Write-Host "vcpkg zlib installed, CFLAGS/INCLUDE/LIB set to $vcpkgInclude"
 
       # 仅 check zero-render-foundation（不依赖 rusty_v8），验证 freetype-sys bundled
       # 在各 target 的 C 编译（cc crate 从源码编译 FreeType2+libpng）。

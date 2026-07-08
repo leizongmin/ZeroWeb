@@ -147,7 +147,12 @@ jobs:
           $triplet = if ('${{ matrix.target }}' -match 'aarch64') { 'arm64-windows-static-md' } else { 'x64-windows-static-md' }
           Write-Host "Installing zlib:$triplet via vcpkg..."
           vcpkg install zlib --triplet $triplet
-          Write-Host "vcpkg zlib installation complete"
+          $vcpkgInclude = "C:\vcpkg\installed\$triplet\include"
+          $vcpkgLib = "C:\vcpkg\installed\$triplet\lib"
+          "CFLAGS=-I$vcpkgInclude" >> $env:GITHUB_ENV
+          "INCLUDE=$vcpkgInclude;$env:INCLUDE" >> $env:GITHUB_ENV
+          "LIB=$vcpkgLib;$env:LIB" >> $env:GITHUB_ENV
+          Write-Host "vcpkg zlib installed, CFLAGS/INCLUDE/LIB set to $vcpkgInclude"
 
       - name: Build release
         run: cargo build ${{ matrix.features }} --release --bin zero-browser --target ${{ matrix.target }}
