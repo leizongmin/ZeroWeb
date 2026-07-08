@@ -78,13 +78,15 @@ jobs:
             echo "ERROR: freetype-sys-0.23.0.crate not found in cache"
             exit 1
           fi
-          echo "Patching $CRATE_FILE: replacing filter_neon.S with empty file"
-          # cygpath 是 MSYS2/Git Bash 的路径转换工具，比 sed 可靠得多
+          echo "Patching $CRATE_FILE: removing filter_neon.S from build.rs"
+          # filter_neon.S 是 ARM NEON 汇编，MSVC cl.exe 不识别 .S 文件（需 armasm64.exe）。
+          # 同目录 filter_neon_intrinsics.c 提供等价 C intrinsics 实现。
+          # 直接修改 build.rs 删除 .S 引用，更可靠。
           MSYS2_CRATE=$(cygpath -u "$CRATE_FILE")
           TMPDIR=$(mktemp -d)
           tar xzf "$MSYS2_CRATE" -C "$TMPDIR"
-          find "$TMPDIR" -name "filter_neon.S" -exec sh -c 'echo > "$1"' _ {} \;
-          (cd "$TMPDIR" && find . -type f -name '*.cargo-checksum.json' -delete && find . -type f -exec sha256sum {} \; | sort -k 2 > .cargo-checksum.json)
+          find "$TMPDIR" -name "build.rs" -exec sed -i '/filter_neon\.S/d' {} \;
+          (cd "$TMPDIR/freetype-sys-0.23.0" && rm -f .cargo-checksum.json && find . -type f -exec sha256sum {} \; | sort -k 2 > .cargo-checksum.json)
           tar czf "$MSYS2_CRATE" -C "$TMPDIR" freetype-sys-0.23.0
           rm -rf "$TMPDIR"
           rm -rf $(find "$CARGO_HOME/registry/src" -name "freetype-sys-0.23.0" -type d 2>/dev/null)
