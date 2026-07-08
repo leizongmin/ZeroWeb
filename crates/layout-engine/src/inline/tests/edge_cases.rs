@@ -460,7 +460,7 @@ fn test_consecutive_whitespace_runs_collapse() {
 #[test]
 fn test_split_into_words_single_word() {
     let ctx = InlineFormattingContext::new(800.0);
-    let words = ctx.split_into_words("Hello");
+    let words = ctx.split_into_words("Hello", false);
     assert_eq!(words.len(), 1);
     assert_eq!(words[0], "Hello");
 }
@@ -469,7 +469,7 @@ fn test_split_into_words_single_word() {
 #[test]
 fn test_split_into_words_whitespace_only() {
     let ctx = InlineFormattingContext::new(800.0);
-    let words = ctx.split_into_words("   ");
+    let words = ctx.split_into_words("   ", false);
     assert!(words.is_empty(), "仅空白字符不应产生单词");
 }
 
@@ -719,7 +719,7 @@ fn test_white_space_default_equals_normal() {
 #[test]
 fn test_split_into_words_preserve_whitespace() {
     let ctx = InlineFormattingContext::new(200.0).with_preserve_whitespace(true);
-    let words = ctx.split_into_words("hello  world");
+    let words = ctx.split_into_words("hello  world", false);
     // 在保留模式下，多空格应该被保留
     let joined: String = words.join("");
     assert!(joined.contains("hello"), "应包含 hello");
@@ -730,7 +730,7 @@ fn test_split_into_words_preserve_whitespace() {
 #[test]
 fn test_split_into_words_normal_collapses() {
     let ctx = InlineFormattingContext::new(200.0);
-    let words = ctx.split_into_words("hello  world");
+    let words = ctx.split_into_words("hello  world", false);
     // 普通模式：split_whitespace 折叠多空格
     assert_eq!(words.len(), 2, "普通模式应折叠空白为 2 个单词");
     assert_eq!(words[0], "hello ");

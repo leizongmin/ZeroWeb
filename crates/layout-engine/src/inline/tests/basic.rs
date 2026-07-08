@@ -5,7 +5,7 @@ use super::super::*;
 #[test]
 fn test_split_into_words() {
     let ctx = InlineFormattingContext::new(800.0);
-    let words = ctx.split_into_words("Hello World Foo");
+    let words = ctx.split_into_words("Hello World Foo", false);
     assert_eq!(words.len(), 3);
     assert_eq!(words[0], "Hello ");
 }
@@ -35,13 +35,38 @@ fn test_r645_sea_word_script_classification() {
 fn test_r645_sea_text_per_char_break() {
     let ctx = InlineFormattingContext::new(96.0); // 6em 容器
     // 3 个 Thai 字符（无空格）——normal 模式应拆成 3 个独立单词（每个 1 字符）
-    let words = ctx.split_into_words("\u{0E21}\u{0E19}\u{0E38}");
+    let words = ctx.split_into_words("\u{0E21}\u{0E19}\u{0E38}", false);
     assert_eq!(words.len(), 3, "SEA 文本应按字符拆为独立断行点");
     for w in &words {
         // 每个单词恰好 1 个非空白字符（末尾可能带词间距空格，同 test_split_into_words）
         let non_ws: Vec<char> = w.chars().filter(|c| !c.is_whitespace()).collect();
         assert_eq!(non_ws.len(), 1, "每个 SEA 单词为单字符：{w:?}");
     }
+}
+
+/// R1214：is_ahem（cjk_contiguous）时 CJK per-char 拆分不加词间空格（连续）。
+/// 旧 post-loop 给同一 step-1 词内 CJK per-char 也加 1em 词间距 → Ahem CJK 2em 发散
+///（text-autospace ideograph-numeric/alpha-001）。修复后 is_ahem=true 时 CJK 连续
+///（1em == chromium Ahem），仅 step-1 词之间（真实空格处）加空格。is_ahem=false 保留
+/// 旧词间空格（advance-wall：estimate 1em ≠ real font，非-Ahem 连续致 welcome +7.39pp）。
+#[test]
+fn test_r1214_cjk_per_char_contiguous_when_ahem() {
+    let ctx = InlineFormattingContext::new(800.0);
+    // is_ahem=true：同一 step-1 词内 CJK per-char 连续无词间空格
+    let words = ctx.split_into_words("4水水", true);
+    assert_eq!(words, vec!["4".to_string(), "水".to_string(), "水".to_string()]);
+    // 真实空格处仍加尾部空格（word-spacing advance）
+    let words2 = ctx.split_into_words("hello 水", true);
+    assert_eq!(words2, vec!["hello ".to_string(), "水".to_string()]);
+    // CJK-Latin-CJK 交替（无空格）→ 全连续
+    let words3 = ctx.split_into_words("水4水", true);
+    assert_eq!(words3, vec!["水".to_string(), "4".to_string(), "水".to_string()]);
+    // 真实空格分隔的两个 CJK 词：第一个词末尾加空格
+    let words4 = ctx.split_into_words("水 水", true);
+    assert_eq!(words4, vec!["水 ".to_string(), "水".to_string()]);
+    // is_ahem=false：保留旧词间空格（CJK per-char 也加尾部空格，避免 advance-wall 回归）
+    let words5 = ctx.split_into_words("4水水", false);
+    assert_eq!(words5, vec!["4 ".to_string(), "水 ".to_string(), "水".to_string()]);
 }
 
 /// 测试空文本不产生行盒。

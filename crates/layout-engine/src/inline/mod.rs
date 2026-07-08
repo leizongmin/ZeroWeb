@@ -1020,7 +1020,7 @@ impl InlineFormattingContext {
                     // 应用 BiDi 重排序（RTL 文本需要视觉顺序）
                     let visual_text = bidi_reorder(&run.text);
                     // 按字符类别逐字符估算宽度，替代统一 0.6 倍近似
-                    let words = self.split_into_words(&visual_text);
+                    let words = self.split_into_words(&visual_text, run.is_ahem_font);
 
                     // 空 inline 元素：文本为空但 line-height + padding + border 仍需贡献到行盒高度
                     if words.is_empty() && run.text.is_empty() {
@@ -1499,7 +1499,7 @@ impl InlineFormattingContext {
             match item {
                 InlineItem::Text(run) => {
                     let visual_text = bidi_reorder(&run.text);
-                    let words = self.split_into_words(&visual_text);
+                    let words = self.split_into_words(&visual_text, run.is_ahem_font);
 
                     // 空 inline 元素
                     if words.is_empty() && run.text.is_empty() {
@@ -1879,7 +1879,7 @@ impl InlineFormattingContext {
     /// - `keep-all` 模式：CJK 文本不按字符拆分，而是保持为连续的"单词"。
     /// - 默认模式：按空白字符分割，每个单词追加尾部空格。
     ///   CJK 字符每个单独作为一个"单词"（CSS 规范要求 normal 模式下 CJK 允许任意断行）。
-    fn split_into_words(&self, text: &str) -> Vec<String> {
+    fn split_into_words(&self, text: &str, is_ahem: bool) -> Vec<String> {
         // word-break: keep-all — CJK 字符不被视为断行点，
         // 将连续的 CJK 文本保持为一个单词（类似拉丁文本的行为）
         if self.word_break == WordBreakMode::KeepAll {
@@ -1956,8 +1956,17 @@ impl InlineFormattingContext {
         } else {
             // 标准 normal 模式：按可折叠白空格分割（R1085：is_collapsible_ws 排除 U+00A0 nbsp，
             // 保 non-breaking；split_whitespace 含 nbsp 致 nbsp-only 元素 0 行盒）。
+            // R1214：is_ahem（cjk_contiguous）时 CJK per-char 连续无词间空格——Ahem 精确
+            // 1em == chromium Ahem 1em，修 text-autospace ideograph-numeric/alpha-001 2em 发散
+            // （旧 post-loop 给同一 step-1 词内 CJK per-char 也加 1em 词间距 → 2em）。非-Ahem 保留
+            // 旧词间空格：estimate 1em ≠ chromium real font，CJK reflow 发散（welcome +7.39pp
+            // 回归），须 advance-wall 解后才可对非-Ahem 启用连续。A/B 实测 +2 strict（11→13
+            // oracle-pass / 4→6 strict，零 PASS→FAIL）。
+            let cjk_contiguous = is_ahem;
             let mut result = Vec::new();
-            for word in text.split(is_collapsible_ws).filter(|s| !s.is_empty()) {
+            let words: Vec<&str> = text.split(is_collapsible_ws).filter(|s| !s.is_empty()).collect();
+            for (word_idx, word) in words.iter().enumerate() {
+                let is_last_step1 = word_idx + 1 == words.len();
                 // 检查单词中是否包含 CJK / R645 SEA 词典分词文字
                 let has_cjk = word.chars().any(is_per_char_break_script);
                 if has_cjk && self.word_break != WordBreakMode::KeepAll {
@@ -1965,9 +1974,13 @@ impl InlineFormattingContext {
                     let mut current_latin = String::new();
                     for ch in word.chars() {
                         if is_per_char_break_script(ch) {
-                            // 先推入累积的拉丁字符
+                            // 先推入累积的拉丁字符（cjk_contiguous 时不加尾部空格——连续）
                             if !current_latin.is_empty() {
-                                result.push(format!("{current_latin} "));
+                                if cjk_contiguous {
+                                    result.push(current_latin.clone());
+                                } else {
+                                    result.push(format!("{current_latin} "));
+                                }
                                 current_latin.clear();
                             }
                             // CJK / R645 SEA 字符单独作为"单词"（不带尾部空格，不需要词间距）
@@ -1982,13 +1995,23 @@ impl InlineFormattingContext {
                 } else {
                     result.push(word.to_string());
                 }
+                // cjk_contiguous：仅 step-1 词之间（原文本真实空格处）加尾部空格作 word-spacing
+                if cjk_contiguous && !is_last_step1 {
+                    let needs_space = result.last().is_some_and(|last| !last.ends_with(' '));
+                    if needs_space {
+                        if let Some(last) = result.last_mut() {
+                            last.push(' ');
+                        }
+                    }
+                }
             }
-            // 为非末尾单词添加尾部空格（表示词间距 advance width）
-            // 最后一个单词不加——它后面没有下一个单词，不应有额外间隙
-            let len = result.len();
-            for (i, item) in result.iter_mut().enumerate() {
-                if i < len - 1 && !item.ends_with(' ') {
-                    item.push(' ');
+            // 非-cjk_contiguous：保留旧 post-loop（给所有非末尾 result 词加尾部空格）
+            if !cjk_contiguous {
+                let len = result.len();
+                for (i, item) in result.iter_mut().enumerate() {
+                    if i < len - 1 && !item.ends_with(' ') {
+                        item.push(' ');
+                    }
                 }
             }
             result
