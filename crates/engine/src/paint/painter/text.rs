@@ -779,6 +779,10 @@ impl super::Painter {
         let (tx, ty) = super::super::helpers::apply_transform_offset(style, abs_x, abs_y);
 
         let default_font_id = self.resolve_font_id(&style.font_family, &style.font_weight);
+        // R1224：Ahem font_id 供 inline 元素字体≠容器时字形位图用（如 <span font:Ahem> 在
+        // default div 内）。render_fragment macro 按 owner（片段父元素）font_family 选
+        // frag_font_id——is_ahem 片段用 ahem_font_id 出 Ahem 方块，非 is_ahem 用 default。
+        let ahem_font_id = self.resolve_font_id(&["Ahem".to_string()], &style.font_weight);
 
         if let (Some(doc), Some(node_id)) = (doc, box_node.node_id) {
             // R109 §9.2.1.1：被 in-flow block 子元素拆分的 inline 父盒自身不渲染文本——
@@ -1410,6 +1414,17 @@ impl super::Painter {
 
                             // R1021：text-emphasis 取自片段 owner 样式（<span> 上设）。
                             let owner_style_opt = styles.and_then(|s| s.get(&owner_id));
+                            // R1224：按片段 owner（父元素）font_family 选 font_id——inline 元素
+                            // 字体≠容器时（如 span Ahem in default div）字形位图用 owner 字体
+                            // 而非容器 default_font_id。owner_style_opt 缺省（Path B 空 styles）
+                            // 回退 default_font_id（零回归）。
+                            let frag_font_id = if owner_style_opt.is_some_and(|s| {
+                                s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"))
+                            }) {
+                                ahem_font_id
+                            } else {
+                                default_font_id
+                            };
                             let emphasis_mark: Option<char> =
                                 owner_style_opt.and_then(|s| match s.text_emphasis_style {
                                     TextEmphasisStyleValue::Char(c) => Some(c),
@@ -1494,7 +1509,7 @@ impl super::Painter {
                                         font_size: $frag_fs,
                                         color: shadow_color,
                                         glyph_id: ch as u32,
-                                        font_id: default_font_id,
+                                        font_id: frag_font_id,
                                         bitmap_width: None,
                                         bitmap_height: None,
                                         rotation,
@@ -1507,7 +1522,7 @@ impl super::Painter {
                                     font_size: $frag_fs,
                                     color: frag_color,
                                     glyph_id: ch as u32,
-                                    font_id: default_font_id,
+                                    font_id: frag_font_id,
                                     bitmap_width: None,
                                     bitmap_height: None,
                                     rotation,
@@ -1549,7 +1564,7 @@ impl super::Painter {
                                         font_size: mark_fs,
                                         color: frag_color,
                                         glyph_id: mark_ch as u32,
-                                        font_id: default_font_id,
+                                        font_id: frag_font_id,
                                         bitmap_width: None,
                                         bitmap_height: None,
                                         rotation,
@@ -1573,7 +1588,7 @@ impl super::Painter {
                                         font_size: rt_fs,
                                         color: frag_color,
                                         glyph_id: rt_ch as u32,
-                                        font_id: default_font_id,
+                                        font_id: frag_font_id,
                                         bitmap_width: None,
                                         bitmap_height: None,
                                         rotation,
