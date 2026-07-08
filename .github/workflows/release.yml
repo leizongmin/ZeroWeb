@@ -81,12 +81,6 @@ jobs:
             artifact: zero-browser-windows-x86_64
             ext: '.exe'
             features: ''
-          - os: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            artifact: zero-browser-windows-aarch64
-            ext: '.exe'
-            features: '--no-default-features --features quickjs'
-
     steps:
       - uses: actions/checkout@v7
         with:
@@ -363,4 +357,3 @@ jobs:
             artifacts/zero-browser-macos-x86_64-app/**
             artifacts/zero-browser-macos-aarch64-app/**
             artifacts/zero-browser-windows-x86_64/*
-            artifacts/zero-browser-windows-aarch64/*

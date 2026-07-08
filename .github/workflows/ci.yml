@@ -66,13 +66,6 @@ jobs:
             v8_runtime: true
             release_build: true
             features: ''
-          - name: windows-aarch64
-            os: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            v8_runtime: false
-            release_build: false
-            features: '--no-default-features --features quickjs'
-
     steps:
       - uses: actions/checkout@v7
         with:
