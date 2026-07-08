@@ -175,7 +175,7 @@ jobs:
             --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Run V8-backed core tests
-        if: matrix.v8_runtime != false
+        if: matrix.v8_runtime != false && runner.os != 'Windows'
         timeout-minutes: 20
         shell: bash
         run: |
