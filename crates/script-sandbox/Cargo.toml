@@ -21,6 +21,7 @@ optional = true
 [dependencies.rquickjs]
 version = "0.7"
 optional = true
+features = ["bindgen"]
 
 [dev-dependencies]
 criterion = { workspace = true }
