@@ -576,14 +576,23 @@ fn is_border_style_keyword(s: &str) -> bool {
 }
 
 /// 检查字符串是否看起来像长度值。
+///
+/// 单位后缀集须与 live `parse_length`（css-parser values/types.rs）保持一致，
+/// 否则 border/outline 简写中的长度 token 会落回 medium/0 默认值
+/// （R1231：缺 `ex` 致 `border-bottom: 6ex solid black` 丢 6ex → medium 3px，
+/// top-091/092/bottom-091/092 簇 15-16% diff）。`%` 不列入——border-width/outline-width
+/// 不接受百分比，`border: 5%` 应判非法落回默认（与 parse_length 接受 % 但 border-width
+/// 拒绝无关）。`Q` 单位大小写敏感（CSS 规范 `Q`）。
 fn looks_like_length(s: &str) -> bool {
     s.ends_with("px")
         || s.ends_with("em")
+        || s.ends_with("ex")
         || s.ends_with("rem")
         || s.ends_with("pt")
         || s.ends_with("pc")
         || s.ends_with("cm")
         || s.ends_with("mm")
+        || s.ends_with("Q")
         || s.ends_with("in")
         || s.ends_with("vw")
         || s.ends_with("vh")

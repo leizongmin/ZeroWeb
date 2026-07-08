@@ -470,10 +470,14 @@ fn test_is_border_style_keyword() {
 fn test_looks_like_length() {
     assert!(looks_like_length("10px"));
     assert!(looks_like_length("1.5em"));
+    assert!(looks_like_length("6ex"));
+    assert!(looks_like_length("1Q"));
     assert!(looks_like_length("0"));
     assert!(looks_like_length("thin"));
     assert!(!looks_like_length("solid"));
     assert!(!looks_like_length("red"));
+    // % 不算 length——border-width/outline-width 不接受百分比
+    assert!(!looks_like_length("50%"));
 }
 
 #[test]
