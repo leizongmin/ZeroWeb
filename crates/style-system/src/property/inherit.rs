@@ -31,6 +31,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.line_height = parent.line_height.clone();
             true
         }
+        "font-size-adjust" => {
+            child.font_size_adjust = parent.font_size_adjust.clone();
+            true
+        }
         "text-align" => {
             child.text_align = parent.text_align.clone();
             true
@@ -656,6 +660,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "line-height" => {
             style.line_height = default_style.line_height;
+            true
+        }
+        "font-size-adjust" => {
+            style.font_size_adjust = default_style.font_size_adjust;
             true
         }
         // 文本

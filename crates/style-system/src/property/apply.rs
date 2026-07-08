@@ -414,6 +414,12 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "font-size-adjust" => {
+            if let Some(v) = parse_font_size_adjust(value) {
+                style.font_size_adjust = v;
+                return true;
+            }
+        }
         "text-align" => {
             if let Some(v) = parse_text_align(value) {
                 style.text_align = v;

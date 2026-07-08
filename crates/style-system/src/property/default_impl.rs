@@ -82,6 +82,7 @@ impl Default for ComputedStyle {
             font_weight: FontWeightValue::Normal,
             font_style: FontStyleValue::Normal,
             line_height: LineHeightValue::Normal,
+            font_size_adjust: FontSizeAdjustValue::None,
 
             // 文本
             text_align: TextAlignValue::Start,
