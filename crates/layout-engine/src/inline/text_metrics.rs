@@ -183,6 +183,18 @@ pub(crate) const NORMAL_LINE_HEIGHT_RATIO: f32 = 1.164;
 /// 与 `estimate_char_width` 对 Ahem 等宽=font_size 的既有特判一致。
 pub(crate) const AHEM_LINE_HEIGHT_RATIO: f32 = 1.0;
 
+/// Ahem 字体的 font-size-adjust aspect value（CSS Fonts 3 §3.6：= x-height / em）。
+///
+/// **= chromium 用的 OS/2 `sxHeight / units_per_em`**（不是 'x' glyph ink——Ahem 的 'x'
+/// glyph 填满 em-box 故 ink=1.0，但 OS/2 sxHeight=800/upem=1000=0.8）。实证：font-size-adjust-001
+/// `font:40px Ahem; font-size-adjust:0.9` → chromium adjusted = **45px** = `40×0.9/0.8`，
+/// 与 ref `font-size-adjust-001-ref.html` 的 `#test{font-size:45px}` 精确一致。
+///
+/// **R1192 is_ahem-gated narrow apply**：font-size-adjust 仅对 Ahem 字体 apply（aspect 0.8
+/// 常数，R990/R1175 is_ahem-gated 谱系）。非 Ahem 字体的 aspect 须 OS/2 sxHeight 派生 +
+/// font 接入 layout（同 Phase A 字体度量架构 gap），留 Slice 3+。
+pub(crate) const AHEM_FONT_SIZE_ADJUST_ASPECT: f32 = 0.8;
+
 /// 从 ComputedStyle 中解析 font-size 和 line-height。
 ///
 /// - `font_size` 从 `ComputedStyle::font_size` 中提取（已解析为 Px）。
@@ -221,13 +233,30 @@ pub fn resolve_font_metrics_with_provider(
     style: Option<&ComputedStyle>,
     provider: Option<&crate::inline::FontMetricProviderHandle>,
 ) -> (f32, f32) {
-    let font_size = match style {
+    let mut font_size = match style {
         Some(s) => match &s.font_size {
             LengthValue::Px(v) => *v as f32,
             _ => DEFAULT_FONT_SIZE,
         },
         None => DEFAULT_FONT_SIZE,
     };
+
+    // R1192 font-size-adjust apply（is_ahem-gated narrow slice）：
+    // CSS Fonts 3 §3.6：adjusted_size = font_size × adjust_value / aspect，aspect = x-height/em。
+    // chromium 用 OS/2 sxHeight 作 aspect 源（Ahem = 0.8，见 AHEM_FONT_SIZE_ADJUST_ASPECT）。
+    // fontdue 不暴露 OS/2 sxHeight，且 'x' glyph ink 对 Ahem=1.0（≠ chromium 0.8），故仅对
+    // Ahem apply（known aspect 常数，R990/R1175 is_ahem-gated 谱系）。非 Ahem 字体 aspect 未知
+    // （须 OS/2 sxHeight 派生 + font 接入 layout，同 Phase A 字体度量架构 gap）→ 暂不 apply
+    // （Slice 3+）。adjusted font_size 经 line-height + advance + paint 全链路传播（resolve 返回值
+    // 被 TextRun.font_size / frag.height / store_font_sizes 消费）。
+    if let Some(s) = style
+        && let zero_style_system::FontSizeAdjustValue::Number(adj) = s.font_size_adjust
+    {
+        let is_ahem = s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"));
+        if is_ahem && AHEM_FONT_SIZE_ADJUST_ASPECT > 0.0 {
+            font_size = font_size * (adj as f32) / AHEM_FONT_SIZE_ADJUST_ASPECT;
+        }
+    }
 
     // line-height:normal 的回退比率：Ahem=1.0（见 AHEM_LINE_HEIGHT_RATIO），其余 1.164
     // （DejaVu hhea = chromium 真值，见 NORMAL_LINE_HEIGHT_RATIO 注释）。provider 缺省或

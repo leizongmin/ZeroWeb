@@ -262,6 +262,71 @@ mod tests {
         s
     }
 
+    // ── R1192 font-size-adjust is_ahem-gated apply 测试 ────────────────────
+
+    /// font-size-adjust:0.9 + Ahem → adjusted font_size = 40 × 0.9 / 0.8 = 45
+    /// （chromium OS/2 sxHeight=800/upem=1000=0.8；ref font-size-adjust-001 adjusted=45px）。
+    /// AHEM_FONT_SIZE_ADJUST_ASPECT=0.8。证 apply 触发 + 公式正确。
+    #[test]
+    fn resolve_font_metrics_font_size_adjust_ahem_scales() {
+        use zero_css_parser::values::LengthValue;
+        use zero_style_system::ComputedStyle;
+        let mut s = ComputedStyle::default();
+        s.font_family = vec!["Ahem".to_string()];
+        s.font_size = LengthValue::Px(40.0);
+        s.line_height = zero_style_system::LineHeightValue::Normal;
+        s.font_size_adjust = zero_style_system::FontSizeAdjustValue::Number(0.9);
+        let (fs, _lh) = super::super::resolve_font_metrics_with_provider(Some(&s), None);
+        assert!(
+            (fs - 45.0).abs() < 1e-3,
+            "Ahem font-size-adjust:0.9 @40px → 45px (40×0.9/0.8), got {fs}"
+        );
+    }
+
+    /// font-size-adjust < aspect（0.2 < 0.8）→ adjusted < font_size（font-size-adjust-002：
+    /// blue < orange）。40 × 0.2 / 0.8 = 10。
+    #[test]
+    fn resolve_font_metrics_font_size_adjust_ahem_smaller() {
+        use zero_css_parser::values::LengthValue;
+        use zero_style_system::ComputedStyle;
+        let mut s = ComputedStyle::default();
+        s.font_family = vec!["Ahem".to_string()];
+        s.font_size = LengthValue::Px(40.0);
+        s.line_height = zero_style_system::LineHeightValue::Normal;
+        s.font_size_adjust = zero_style_system::FontSizeAdjustValue::Number(0.2);
+        let (fs, _lh) = super::super::resolve_font_metrics_with_provider(Some(&s), None);
+        assert!(
+            (fs - 10.0).abs() < 1e-3,
+            "Ahem font-size-adjust:0.2 @40px → 10px (40×0.2/0.8), got {fs}"
+        );
+    }
+
+    /// 非 Ahem 字体：font-size-adjust 暂不 apply（aspect 未知，Slice 3）→ font_size 不变。
+    #[test]
+    fn resolve_font_metrics_font_size_adjust_non_ahem_no_apply() {
+        use zero_css_parser::values::LengthValue;
+        use zero_style_system::ComputedStyle;
+        let mut s = ComputedStyle::default();
+        s.font_family = vec!["DejaVu".to_string()];
+        s.font_size = LengthValue::Px(40.0);
+        s.line_height = zero_style_system::LineHeightValue::Normal;
+        s.font_size_adjust = zero_style_system::FontSizeAdjustValue::Number(0.9);
+        let (fs, _lh) = super::super::resolve_font_metrics_with_provider(Some(&s), None);
+        assert!(
+            (fs - 40.0).abs() < 1e-3,
+            "non-Ahem font-size-adjust should NOT apply (Slice 3), got {fs}"
+        );
+    }
+
+    /// font-size-adjust: None（默认）→ 不调整，font_size 不变。
+    #[test]
+    fn resolve_font_metrics_font_size_adjust_none_no_change() {
+        let s = normal_style("Ahem", 40.0);
+        // normal_style 默认 font_size_adjust = None
+        let (fs, _lh) = super::super::resolve_font_metrics_with_provider(Some(&s), None);
+        assert!((fs - 40.0).abs() < 1e-3, "font-size-adjust:None → no change, got {fs}");
+    }
+
     /// provider 存在并解析字体时，line-height:normal 用 per-font 真实度量
     /// （`ascent − descent + line_gap`），**而非** DejaVu 常数 1.164。
     /// 选 distinctive 比率 0.9（≠1.0 Ahem、≠1.164 DejaVu）以证明 provider 路径被走。
