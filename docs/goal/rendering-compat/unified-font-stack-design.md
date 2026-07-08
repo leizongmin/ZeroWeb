@@ -1,0 +1,112 @@
+# 设计：Unified Font Stack（fontdue+启发式 → chromium 对齐字体栈）
+
+**版本**：v0.1（rally 自主模式，scoping）
+**日期**：2026-07-08
+**作者**：AI Assistant（rendering-compat rally）
+**状态**：scoping 文档（bounded rally exhausted 后的唯一 forward path；multi-month 架构投资）
+**模式**：rally-pattern 设计文档（非 lei-spec-rfc skill —— 该 skill 需用户确认，与无人值守 rally 协议冲突；同 multicol Phase 2 spec 先例）
+**关联**：master.md R1174/R1175/R1180/R1181；[`research-chromium-lineheight-normal-formula-2026-07-08.md`](./research-chromium-lineheight-normal-formula-2026-07-08.md)；[`research-font-backend-freetype-metric-consolidation-2026-07-08.md`](./research-font-backend-freetype-metric-consolidation-2026-07-08.md)
+
+---
+
+## 0. 执行摘要
+
+> **为什么是这个**：bounded 增量 rally 已 exhausted（R1180/R1181 hard plateau definitive）。剩余 corpus gap（实际 ~45-48% oracle → 95% 目标）**主导 = font-wall**：ZW 字体栈（fontdue 加载 DejaVu + 启发式 advance 0.6 + 常数度量）≠ chromium 字体栈（fontconfig → NotoSansCJK + 实际 advance + per-font hhea 度量）。R1175（line-height 1.164）+ R990（ascent 0.928）+ R1159（FreeType raster）对齐了 DejaVu 的常数度量，但 **font-mismatch（ZW=DejaVu, chromium=NotoSansCJK）+ advance 启发式（0.6 vs 实际）** 两层未解，是 advance-wall / Phase A core / welcome 16.97% 的共同 root。
+
+- **一句话目标**：把 ZW 字体栈从「fontdue 加载 DejaVu + 启发式 advance + 常数度量」统一到「chromium 对齐：fontconfig 字体发现 + per-font hhea 度量 + 实际 advance in layout」，消除 font-mismatch + advance-wall。
+- **为什么 multi-month**：font-swap alone 经 R1180 实测 +1 css-fonts（~neutral，line-height 常数 confound）→ 须全栈（字体加载 + per-font 度量 + advance）协同才 yield，无 narrow yielding slice（区别 R885/R900 dormant-enabling 模式）。
+- **核心约束**：① 零回归（每 slice env-gated + A/B 守 welcome <20% + corpus oracle 不降）；② chromium-Oracle z_vs_chr 门禁；③ 单 `.rs` ≤2000 行；④ test-guard 包裹。
+
+---
+
+## 1. 根因（一手事实，R1174/R1175/R1180 确证）
+
+| 层 | ZW 现状 | chromium 实际 | gap 后果 |
+|----|---------|--------------|---------|
+| 字体发现 | 硬编码路径加载 DejaVuSans + Ahem；sans-serif→DejaVu（loader.rs:246 sans_names 首选） | fontconfig 解析 sans-serif→NotoSansCJK SC（`fc-match sans-serif` 实测） | **font-mismatch**：welcome/corpus 非-Ahem 文本 ZW=DejaVu, chromium=NotoSansCJK，字形/度量不同 |
+| 度量（line-height/ascent） | 常数（R1175 line-height 1.164 = DejaVu hhea；R990 ascent 0.928） | per-font hhea（DejaVu 1.164, NotoSans 不同） | font-swap 后 line-height 常数 confound（R1180：NotoSans 按 DejaVu 1.164 渲染 → +1 非 en masse） |
+| advance（layout 换行） | `estimate_char_width` 启发式（非-Ahem Latin 0.6×fs） | 实际 advance（FreeType/HarfBuzz hmtx） | **advance-wall**（R627）：换行决策 ≠ chromium → 行数差 → 垂直累积偏移（welcome/morning 主因，R804 PIL 实测） |
+| 光栅 | FreeType per-glyph（R1159 default-on）+ fontdue 回退 | FreeType/Skia per-glyph | 已对齐（R1159 +232） |
+
+**关键证伪链**（为何 narrow 失败）：
+- R225/R375：accurate DejaVu advance in layout → net-negative（DejaVu advance ≠ chromium NotoSansCJK 行数）。
+- R803：font-swap NotoSansCJK（TTC）on welcome → -0.06pp（advance 未变，仅字形）。
+- R1180：font-swap NotoSans on corpus → +1 css-fonts（line-height 常数 confound）。
+- R627/R890：per-font metric 经 override-map wiring → no-op（paint Path B 空 styles gate）。
+- → 三层（字体 + 度量 + advance）**须协同**，单层 zero-yield。
+
+---
+
+## 2. 目标组件（4 层，按依赖序）
+
+### C1：字体发现对齐 fontconfig
+- **现状**：硬编码 DejaVu/Ahem 路径（reftest_fonts.rs:22, renderer main.rs:1024）。
+- **目标**：fontconfig-style 发现——枚举系统字体，按 CSS font-family 优先级匹配 chromium 同款（sans-serif→NotoSansCJK 或系统默认 sans）。
+- **TTC 支持**：NotoSansCJK 是 .ttc（多 face），fontdue `from_bytes` 不支持 → 须 TTC 首选 face 提取器（R803 `extract_ttc_first_face` 已证技术可行，revert 非技术原因）。
+- **范围**：~150 行（TTC 提取 + 字体发现枚举 + family 匹配）。
+
+### C2：font-bridge 真触达 layout（per-font 度量）
+- **现状**：R885 font-bridge（`FontMetricProvider` trait + IFC `font_metric_provider` 字段）dormant（R1005 零生产读取；R890 wiring no-op，paint Path B 空 styles gate）。
+- **目标**：font-bridge 经 `store_font_sizes_from_ifc` override-map 模式（line_heights 字段已存 frag.height）真触达 layout + paint，使 line-height/ascent per-font（DejaVu 1.164/0.928，NotoSans 其本值）。
+- **关键**：R890 发现的 bypass = `store_font_sizes_from_ifc`（inline_finalization.rs:330）已存 `text_node_line_heights`（per-frag height）；须让 layout IFC 用 font-bridge 算 per-font line-height（替 resolve_font_metrics 常数），存入 override-map，paint 消费。
+- **范围**：~5 站点（compute_final_inline_layouts）wiring + override-map populate/consume，~200 行。
+
+### C3：实际 advance in layout（替 0.6 启发式）
+- **现状**：`estimate_char_width`（text_metrics.rs:40-58）启发式 0.6×fs（非-Ahem Latin）。
+- **目标**：layout 换行用 fontdue/FreeType 实际 advance（hmtx），与 paint 同源。
+- **风险**：R225/R375 证 accurate DejaVu advance net-negative（DejaVu ≠ chromium）；**仅当 C1（font=chromium 同款）+ C2（per-font 度量）协同后**，实际 advance 才匹配 chromium 行数。
+- **范围**：advance-width plumbing（R223 trait seam 已有），~150 行 + 严格 A/B（advance 是换行决策，blast radius 大）。
+
+### C4：FreeType per-font face cache（性能 + 度量同源）
+- **现状**：FreeType per-glyph `new_memory_face2`（loader.rs:43，慢，无度量提取）。
+- **目标**：per-font_id `Face` 缓存，供 raster + 度量（C2）共用。
+- **范围**：~80 行（Face 缓存 + metrics 提取 ascender/descender/height）。
+
+---
+
+## 3. 分阶段计划（narrow slices + gates，每 slice env-gated 零回归）
+
+> **原则**：每 slice **dormant-enabling**（默认关，零回归）或 **A/B net-positive 才留**。区别 R885/R900——本栈组件**单独 zero-yield**，须 C1+C2 协同首 yield（R1180 实证）。
+
+### Phase U1：C1+C2 协同首 yield（font-swap + per-font 度量）
+- **slice U1a**（dormant）：C1 TTC 提取器（R803 恢复）+ NotoSansCJK 加载 + fontconfig-style 发现（env `ZW_FONTCONFIG=1`）。
+- **slice U1b**（dormant）：C2 font-bridge override-map 完整 wiring（compute_final_inline_layouts 5 站点 + paint 消费，绕空 styles）。
+- **slice U1c**（A/B，首 yield 测试）：U1a+U1b 启用 → sans-serif→NotoSansCJK + per-font line-height（NotoSans 本值，解 R1180 confound）+ advance 仍 0.6 → A/B corpus oracle + welcome。
+  - **判定**：若 net-positive（>R1180 的 +1）→ font-swap + per-font 度量 yield（advance 非必需），留；若 ~neutral → 须 C3 advance 协同。
+
+### Phase U2：C3 实际 advance（解 advance-wall）
+- **前提**：U1 yield（font=chromium 同款）后，accurate advance 才匹配 chromium 行数（R225/R375 DejaVu-only 反例不再适用）。
+- **slice U2a**（A/B）：advance 改 fontdue/FreeType hmtx，env-gated → A/B corpus + welcome。
+- **判定**：net-positive → 解 advance-wall，welcome/morning 行数对齐；net-negative → advance 仍非 root（须再查）。
+
+### Phase U3：C4 per-font face cache（性能 + 收尾）
+- **slice U3a**：C4 Face 缓存（raster + 度量共用），性能 + 度量同源收尾。
+
+---
+
+## 4. 风险
+
+| 风险 | 缓解 |
+|------|------|
+| Multi-month（无 narrow yielding slice） | 每 slice env-gated + A/B；U1c 是首 yield 决策点（若 ~neutral 须重评） |
+| advance blast radius（换行决策全局影响） | U2a env-gated + 严格 A/B 守 welcome + corpus；R225/R375 先例 |
+| fontconfig 跨平台差异（macOS/Windows） | C1 env-gated，默认关（CI 纯 Rust 不受影响）；fontconfig 仅 Linux |
+| fontdue FreeType 度量不一致 | C4 per-font Face 缓存使 raster + 度量同源（FreeType） |
+| R890 wiring no-op 重现 | U1b 用 store_font_sizes_from_ifc override-map bypass（R890 已识别） |
+
+---
+
+## 5. 第一步（下会话）
+
+**slice U1a**：恢复 R803 TTC 提取器（`extract_ttc_first_face`）+ 加载 NotoSansCJK-Regular.ttc + fontconfig-style 字体发现，env `ZW_FONTCONFIG=1` 默认关，dormant 零回归（单测证 TTC 提取 + 加载）。**不与 C2 协同不 yield**（R803/R1180 实证），故 U1a 单独是 enabling infra，须待 U1b+U1c 协同首 yield。
+
+**slice U1b**（U1a 后）：font-bridge override-map 完整 wiring（compute_final_inline_layouts 5 站点 populate + paint 消费），env-gated，dormant。
+
+**slice U1c**（U1a+U1b 后，首 yield A/B）：启用 font-swap + per-font 度量，A/B corpus + welcome，**net-positive 才留**（>R1180 +1）。
+
+---
+
+## 6. 何时止步（kill conditions）
+
+- **U1c ~neutral**（≤ +3 corpus）+ U2a net-negative → font-stack 非 root，rally 真维护态（R1180/R1181 plateau 终局）。
+- **U1c net-positive** → 本栈是 forward，按 Phase U2/U3 推进。
