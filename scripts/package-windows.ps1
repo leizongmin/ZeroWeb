@@ -50,6 +50,22 @@ Write-Host "[INFO] ZeroBrowser v$Version Windows 打包" -ForegroundColor Green
 
 # 编译（browser 与 renderer 须在同一输出目录，供多进程 spawn）
 Write-Host "[INFO] 编译 release 二进制..." -ForegroundColor Green
+
+if ($env:CFLAGS -notmatch "zlib") {
+    $zlibPaths = @(
+        "C:\Strawberry\c\include",
+        "C:\Program Files\Git\mingw64\include",
+        "C:\vcpkg\installed\x64-windows-static-md\include"
+    )
+    foreach ($p in $zlibPaths) {
+        if (Test-Path "$p\zlib.h") {
+            $env:CFLAGS = "-I$p $env:CFLAGS".Trim()
+            Write-Host "[INFO] auto-detected zlib.h at $p"
+            break
+        }
+    }
+}
+
 Push-Location $ProjectRoot
 cargo build --release -p zero-browser -p zero-renderer
 Pop-Location

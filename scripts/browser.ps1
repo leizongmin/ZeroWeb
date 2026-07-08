@@ -30,6 +30,26 @@ try {
     }
 
     Write-Host "ZeroBrowser: building zero-browser and zero-renderer (release)..."
+
+    # 确保 freetype-sys 编译 libpng 时能找到 zlib.h。Windows 上 cc crate 传递
+    # 的相对路径 -I "libz-sys/src/zlib" 可能无法正确解析，通过 CFLAGS 提供系统
+    # zlib 头文件路径作为 fallback（Strawberry Perl 自带 zlib）。
+    # 规范不再要求手动设置环境变量。
+    if ($env:CFLAGS -notmatch "zlib") {
+        $zlibPaths = @(
+            "C:\Strawberry\c\include",
+            "C:\Program Files\Git\mingw64\include",
+            "C:\vcpkg\installed\x64-windows-static-md\include"
+        )
+        foreach ($p in $zlibPaths) {
+            if (Test-Path "$p\zlib.h") {
+                $env:CFLAGS = "-I$p $env:CFLAGS".Trim()
+                Write-Host "  (auto-detected zlib.h at $p)"
+                break
+            }
+        }
+    }
+
     # 启用 windows-console feature：让 zero-browser 走 console 子系统，
     # tracing 日志输出到当前控制台、Ctrl+C 可终止；打包构建默认 GUI 子系统。
     cargo build --release -p zero-browser -p zero-renderer --features zero-browser/windows-console
