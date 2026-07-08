@@ -85,6 +85,11 @@ jobs:
             artifact: zero-browser-windows-x86_64
             ext: '.exe'
             features: ''
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            artifact: zero-browser-windows-aarch64
+            ext: '.exe'
+            features: '--no-default-features --features quickjs'
     steps:
       - uses: actions/checkout@v7
 
@@ -130,6 +135,19 @@ jobs:
         run: |
           echo "RUSTY_V8_ARCHIVE=https://github.com/denoland/rusty_v8/releases/download/v${RUSTY_V8_VERSION}/rusty_v8_release_${{ matrix.target }}.lib" >> "$GITHUB_ENV"
           echo "RUSTFLAGS=-C link-arg=advapi32.lib" >> "$GITHUB_ENV"
+
+      - name: Add Git zlib to MSVC include path (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $gitMingw = 'C:\Program Files\Git\mingw64'
+          if (Test-Path "$gitMingw\include\zlib.h") {
+            "INCLUDE=$gitMingw\include;$env:INCLUDE" >> $env:GITHUB_ENV
+            "LIB=$gitMingw\lib;$env:LIB" >> $env:GITHUB_ENV
+            Write-Host "Added Git mingw64 zlib to INCLUDE/LIB"
+          } else {
+            Write-Host "Git mingw64 zlib not found at expected path"
+          }
 
       - name: Build release binary
         run: cargo build ${{ matrix.features }} --release --bin zero-browser --target ${{ matrix.target }}
