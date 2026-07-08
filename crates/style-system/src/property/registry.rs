@@ -82,6 +82,7 @@ impl PropertyRegistry {
             "text-overflow" => Some(TextOverflow(TextOverflowValue::Clip)),
             "vertical-align" => Some(VerticalAlign(VerticalAlignValue::Baseline)),
             "word-break" => Some(WordBreak(WordBreakValue::Normal)),
+            "text-autospace" => Some(TextAutospace(TextAutospaceValue::NoAutospace)),
             "text-indent" => Some(TextIndent(LengthValue::Px(0.0))),
             "table-layout" => Some(TableLayout(TableLayoutValue::Auto)),
             "caption-side" => Some(CaptionSide(CaptionSideValue::Top)),
@@ -332,6 +333,7 @@ impl PropertyRegistry {
                 | "word-spacing"
                 | "white-space"
                 | "word-break"
+                | "text-autospace"
                 | "visibility"
                 | "cursor"
                 | "text-indent"
@@ -423,6 +425,7 @@ impl PropertyRegistry {
             "text-overflow",
             "vertical-align",
             "word-break",
+            "text-autospace",
             "flex-direction",
             "flex-wrap",
             "justify-content",

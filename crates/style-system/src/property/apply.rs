@@ -498,6 +498,12 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "text-autospace" => {
+            if let Some(v) = parse_text_autospace(value) {
+                style.text_autospace = v;
+                return true;
+            }
+        }
         "line-break" => {
             if let Some(v) = parse_line_break(value) {
                 style.line_break = v;

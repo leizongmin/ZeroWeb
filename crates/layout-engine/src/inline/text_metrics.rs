@@ -6,7 +6,7 @@
 //! font-metrics 解析（resolve_font_metrics）、inline-block 尺寸解析、BiDi 重排序。
 
 use zero_css_parser::values::LengthValue;
-use zero_style_system::ComputedStyle;
+use zero_style_system::{ComputedStyle, TextAutospaceValue};
 // 经 `pub use text_metrics::*`（inline/mod.rs）再导出，供 inline/tests 子模块经 glob 访问。
 pub use zero_style_system::LineHeightValue;
 
@@ -133,6 +133,73 @@ pub(crate) fn is_sea_word_script(c: char) -> bool {
 /// 集中此判定避免 3 处调用点重复 `is_cjk_character(ch) || is_sea_word_script(ch)`。
 pub(crate) fn is_per_char_break_script(c: char) -> bool {
     is_cjk_character(c) || is_sea_word_script(c)
+}
+
+/// R1215：判断字符是否为 text-autospace 的「表意文字」（CSS Text 4 §8）。
+///
+/// 比 [`is_cjk_character`] **窄**：排除 CJK 标点/符号区（U+3000..=U+303F，含 。、）
+/// 与全角形式区（U+FF00..=U+FFEF，含 ！，），这些是标点不是表意文字，不应触发
+/// ideograph-alpha/numeric 自动间距。仅保留 Han + 平假名 + 片假名 + 韩文音节。
+pub(crate) fn is_autospace_ideograph(c: char) -> bool {
+    matches!(
+        c,
+        '\u{4E00}'..='\u{9FFF}'   // CJK Unified Ideographs
+        | '\u{3400}'..='\u{4DBF}' // CJK Ext A
+        | '\u{F900}'..='\u{FAFF}' // CJK Compat Ideographs
+        | '\u{3040}'..='\u{309F}' // 平假名
+        | '\u{30A0}'..='\u{30FF}' // 片假名
+        | '\u{AC00}'..='\u{D7AF}' // 韩文音节
+    )
+}
+
+/// R1215：text-autospace 字符类别（CSS Text 4 §8）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AutospaceCategory {
+    /// CJK 表意文字（Han/假名/韩文）。
+    Ideograph,
+    /// ASCII 字母。
+    Letter,
+    /// ASCII 数字。
+    Numeric,
+    /// 标点、空格、其他。
+    Other,
+}
+
+/// R1215：判定单个字符的 text-autospace 类别。
+pub(crate) fn char_autospace_category(c: char) -> AutospaceCategory {
+    if c.is_ascii_digit() {
+        AutospaceCategory::Numeric
+    } else if c.is_ascii_alphabetic() {
+        AutospaceCategory::Letter
+    } else if is_autospace_ideograph(c) {
+        AutospaceCategory::Ideograph
+    } else {
+        AutospaceCategory::Other
+    }
+}
+
+/// R1215：计算两相邻字符间的 text-autospace 间距（px）。
+///
+/// 仅在 ideograph↔letter（ideograph-alpha）或 ideograph↔numeric（ideograph-numeric）
+/// 类别边界、且对应规则启用时返回 `0.125 × font_size`；否则 0。标点/空格类别（Other）
+/// 不触发任何间距。
+pub(crate) fn autospace_gap_for(prev_ch: char, curr_ch: char, rules: TextAutospaceValue, font_size: f32) -> f32 {
+    const GAP_EM: f32 = 0.125;
+    let p = char_autospace_category(prev_ch);
+    let c = char_autospace_category(curr_ch);
+    if rules.ideograph_alpha_active()
+        && ((p == AutospaceCategory::Ideograph && c == AutospaceCategory::Letter)
+            || (p == AutospaceCategory::Letter && c == AutospaceCategory::Ideograph))
+    {
+        return GAP_EM * font_size;
+    }
+    if rules.ideograph_numeric_active()
+        && ((p == AutospaceCategory::Ideograph && c == AutospaceCategory::Numeric)
+            || (p == AutospaceCategory::Numeric && c == AutospaceCategory::Ideograph))
+    {
+        return GAP_EM * font_size;
+    }
+    0.0
 }
 
 /// 判断字符是否为 emoji 或常见符号（非 CJK）。

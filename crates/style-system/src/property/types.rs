@@ -235,6 +235,38 @@ pub enum WordBreakValue {
     BreakWord,
 }
 
+/// CSS text-autospace 值（CSS Text 4 §8 自动间距）。
+///
+/// 在表意文字（CJK Han）与字母/数字的类别边界插入 0.125em 间距。
+/// `normal`/`auto` 启用 ideograph-alpha + ideograph-numeric 两者；
+/// `no-autospace` 关闭；`ideograph-alpha`/`ideograph-numeric` 单独启用。
+/// 默认 `NoAutospace`（保守，匹配 ZW 历史行为；显式声明才生效）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TextAutospaceValue {
+    /// normal：ideograph-alpha + ideograph-numeric。
+    Normal,
+    /// auto：实现定义，按 normal 处理。
+    Auto,
+    /// no-autospace：关闭自动间距。
+    NoAutospace,
+    /// ideograph-alpha：表意文字与字母间插入间距。
+    IdeographAlpha,
+    /// ideograph-numeric：表意文字与数字间插入间距。
+    IdeographNumeric,
+}
+
+impl TextAutospaceValue {
+    /// ideograph-alpha 规则是否生效。
+    pub fn ideograph_alpha_active(&self) -> bool {
+        matches!(self, Self::Normal | Self::Auto | Self::IdeographAlpha)
+    }
+
+    /// ideograph-numeric 规则是否生效。
+    pub fn ideograph_numeric_active(&self) -> bool {
+        matches!(self, Self::Normal | Self::Auto | Self::IdeographNumeric)
+    }
+}
+
 /// CSS line-break 值（CSS Text 3 §5.3）。
 ///
 /// `Anywhere` 在每个排版字符处创建换行机会（覆盖 GL/JW/ZJW 禁则），
@@ -1340,6 +1372,8 @@ pub enum PropertyValue {
     VerticalAlign(VerticalAlignValue),
     /// word-break 值。
     WordBreak(WordBreakValue),
+    /// text-autospace 值。
+    TextAutospace(TextAutospaceValue),
     /// writing-mode 值。
     WritingMode(WritingModeValue),
     /// text-indent 值。

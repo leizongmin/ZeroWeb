@@ -270,6 +270,35 @@ pub fn parse_word_break(value: &str) -> Option<WordBreakValue> {
     }
 }
 
+/// 解析 CSS text-autospace 值（CSS Text 4 §8）。
+///
+/// 支持单值（normal/auto/no-autospace/ideograph-alpha/ideograph-numeric）；
+/// 空格分隔的 `ideograph-alpha ideograph-numeric` 组合按 `normal` 处理（两者皆启）。
+pub fn parse_text_autospace(value: &str) -> Option<TextAutospaceValue> {
+    let lower = value.trim().to_ascii_lowercase();
+    match lower.as_str() {
+        "normal" => Some(TextAutospaceValue::Normal),
+        "auto" => Some(TextAutospaceValue::Auto),
+        "no-autospace" => Some(TextAutospaceValue::NoAutospace),
+        "ideograph-alpha" => Some(TextAutospaceValue::IdeographAlpha),
+        "ideograph-numeric" => Some(TextAutospaceValue::IdeographNumeric),
+        _ => {
+            // 组合：同时含 ideograph-alpha 与 ideograph-numeric → normal
+            let has_alpha = lower.contains("ideograph-alpha");
+            let has_numeric = lower.contains("ideograph-numeric");
+            if has_alpha && has_numeric {
+                Some(TextAutospaceValue::Normal)
+            } else if has_alpha {
+                Some(TextAutospaceValue::IdeographAlpha)
+            } else if has_numeric {
+                Some(TextAutospaceValue::IdeographNumeric)
+            } else {
+                None
+            }
+        }
+    }
+}
+
 /// 解析 CSS line-break 值（CSS Text 3 §5.3）。
 pub fn parse_line_break(value: &str) -> Option<LineBreakValue> {
     match value.trim() {

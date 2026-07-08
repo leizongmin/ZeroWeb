@@ -35,7 +35,7 @@ use zero_css_parser::values::{DisplayValue, LengthValue, OverflowValue, Vertical
 
 use zero_dom::{Document, NodeId, NodeKind};
 
-use zero_style_system::{ComputedStyle, TextTransformValue};
+use zero_style_system::{ComputedStyle, TextAutospaceValue, TextTransformValue};
 
 /// 读取已解析的 LengthValue（Px）为 f32，非 Px（Auto/Percentage/Calc…）返回 0。
 /// 用于 inline-block margin 读取（margin 已在 compute_style 解析为 Px）。
@@ -63,6 +63,9 @@ pub struct InlineFormattingContext {
     pub preserve_whitespace: bool,
     /// CSS word-break 行为。
     pub word_break: WordBreakMode,
+    /// CSS text-autospace 行为（CSS Text 4 §8，表意文字与字母/数字间 0.125em 间距）。
+    /// IFC 级（容器样式），默认 `NoAutospace`（零回归）。
+    pub text_autospace: TextAutospaceValue,
     /// 首行文本缩进（CSS text-indent，px）。仅影响第一行的起始 x 坐标。
     pub text_indent: f32,
     /// CSS tab-size（px）— 制表符展开宽度。默认 8 个空格宽度。
@@ -213,6 +216,7 @@ impl InlineFormattingContext {
             no_wrap: false,
             preserve_whitespace: false,
             word_break: WordBreakMode::default(),
+            text_autospace: TextAutospaceValue::NoAutospace,
             text_indent: 0.0,
             tab_size: DEFAULT_TAB_SIZE,
             float_exclusions: Vec::new(),
@@ -425,6 +429,12 @@ impl InlineFormattingContext {
     /// 设置 word-break 行为。
     pub fn with_word_break(mut self, mode: WordBreakMode) -> Self {
         self.word_break = mode;
+        self
+    }
+
+    /// 设置 text-autospace 行为（CSS Text 4 §8）。
+    pub fn with_text_autospace(mut self, value: TextAutospaceValue) -> Self {
+        self.text_autospace = value;
         self
     }
 
@@ -1139,8 +1149,22 @@ impl InlineFormattingContext {
                         // 不含 gap，仅推进 current_x 给下一词，致本词 glyph 位缺 gap
                         //（word-spacing-007 第二 x @x=40，应 @136）。现改为置位前把 gap 加到
                         // current_x。行首词（word_idx==0 或换行后 runs 空）无前导 gap。
+                        // R1215：text-autospace——相邻词（上一词不以空白结尾）在 ideograph↔letter
+                        // /numeric 类别边界额外插 0.125em 前导 gap（CSS Text 4 §8）。
+                        let autospace_gap = if word_idx > 0 && !current_line.runs.is_empty() {
+                            let prev_last = words.get(word_idx - 1).and_then(|w| w.chars().last());
+                            let curr_first = content_word.chars().next();
+                            match (prev_last, curr_first) {
+                                (Some(pc), Some(cc)) if !pc.is_whitespace() => {
+                                    autospace_gap_for(pc, cc, self.text_autospace, run.font_size)
+                                }
+                                _ => 0.0,
+                            }
+                        } else {
+                            0.0
+                        };
                         let mut lead_gap = if word_idx > 0 && !current_line.runs.is_empty() {
-                            run.word_spacing
+                            run.word_spacing + autospace_gap
                         } else {
                             0.0
                         };

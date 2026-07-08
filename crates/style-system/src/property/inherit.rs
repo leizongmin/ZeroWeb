@@ -67,6 +67,11 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.word_break = parent.word_break.clone();
             true
         }
+        "text-autospace" => {
+            // text-autospace 是继承属性（CSS Text 4 §8）。
+            child.text_autospace = parent.text_autospace;
+            true
+        }
         "line-break" => {
             // line-break 是继承属性（CSS Text 3 §5.3）。
             child.line_break = parent.line_break.clone();
@@ -713,6 +718,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "word-break" => {
             style.word_break = default_style.word_break;
+            true
+        }
+        "text-autospace" => {
+            style.text_autospace = default_style.text_autospace;
             true
         }
         "line-break" => {

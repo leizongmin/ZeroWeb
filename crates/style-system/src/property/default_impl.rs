@@ -99,6 +99,7 @@ impl Default for ComputedStyle {
             text_overflow: TextOverflowValue::Clip,
             vertical_align: VerticalAlignValue::Baseline,
             word_break: WordBreakValue::Normal,
+            text_autospace: TextAutospaceValue::NoAutospace,
             line_break: LineBreakValue::Auto,
             text_indent: LengthValue::Px(0.0),
             resize: ResizeValue::None,

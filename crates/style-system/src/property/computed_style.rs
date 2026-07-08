@@ -152,6 +152,8 @@ pub struct ComputedStyle {
     pub vertical_align: VerticalAlignValue,
     /// word-break 属性。
     pub word_break: WordBreakValue,
+    /// text-autospace 属性（CSS Text 4 §8，表意文字与字母/数字间 0.125em 间距）。
+    pub text_autospace: TextAutospaceValue,
     /// line-break 属性（CSS Text 3 §5.3，CJK 换行严格度）。
     pub line_break: LineBreakValue,
     /// text-indent 属性。

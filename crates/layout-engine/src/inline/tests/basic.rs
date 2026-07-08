@@ -1,5 +1,6 @@
 // Auto-generated test file — split from layout-engine/inline.rs
 use super::super::*;
+use zero_style_system::TextAutospaceValue;
 
 /// 测试文本分割为单词。
 #[test]
@@ -67,6 +68,119 @@ fn test_r1214_cjk_per_char_contiguous_when_ahem() {
     // is_ahem=false：保留旧词间空格（CJK per-char 也加尾部空格，避免 advance-wall 回归）
     let words5 = ctx.split_into_words("4水水", false);
     assert_eq!(words5, vec!["4 ".to_string(), "水 ".to_string(), "水".to_string()]);
+}
+
+/// R1215：text-autospace 字符类别判定。
+#[test]
+fn test_r1215_char_autospace_category() {
+    assert_eq!(char_autospace_category('国'), AutospaceCategory::Ideograph);
+    assert_eq!(char_autospace_category('水'), AutospaceCategory::Ideograph);
+    assert_eq!(char_autospace_category('X'), AutospaceCategory::Letter);
+    assert_eq!(char_autospace_category('a'), AutospaceCategory::Letter);
+    assert_eq!(char_autospace_category('4'), AutospaceCategory::Numeric);
+    assert_eq!(char_autospace_category('0'), AutospaceCategory::Numeric);
+    // 标点。不在 ideograph 类别（不触发 autospacing）
+    assert_eq!(char_autospace_category('。'), AutospaceCategory::Other);
+    assert_eq!(char_autospace_category(' '), AutospaceCategory::Other);
+    assert_eq!(char_autospace_category('、'), AutospaceCategory::Other);
+}
+
+/// R1215：autospace_gap_for 在 ideograph↔letter/numeric 边界返回 0.125em，标点/同类别返回 0。
+#[test]
+fn test_r1215_autospace_gap_for_boundaries() {
+    let fs = 40.0;
+    let normal = TextAutospaceValue::Normal;
+    let none = TextAutospaceValue::NoAutospace;
+    let alpha_only = TextAutospaceValue::IdeographAlpha;
+    let numeric_only = TextAutospaceValue::IdeographNumeric;
+    // ideograph-alpha（Normal 启用）：国→X / X→国 = 5px
+    assert!((autospace_gap_for('国', 'X', normal, fs) - 5.0).abs() < 0.01);
+    assert!((autospace_gap_for('X', '国', normal, fs) - 5.0).abs() < 0.01);
+    // ideograph-numeric（Normal 启用）：4→水 / 水→4 = 5px
+    assert!((autospace_gap_for('4', '水', normal, fs) - 5.0).abs() < 0.01);
+    assert!((autospace_gap_for('水', '4', normal, fs) - 5.0).abs() < 0.01);
+    // 同类别（国→国）、标点边界（。→X / X→。）：0
+    assert!((autospace_gap_for('国', '国', normal, fs)).abs() < 0.01);
+    assert!((autospace_gap_for('。', 'X', normal, fs)).abs() < 0.01);
+    assert!((autospace_gap_for('X', '。', normal, fs)).abs() < 0.01);
+    // NoAutospace：全 0
+    assert!((autospace_gap_for('国', 'X', none, fs)).abs() < 0.01);
+    // ideograph-alpha only：国→4 = 0（numeric 未启），国→X = 5
+    assert!((autospace_gap_for('国', '4', alpha_only, fs)).abs() < 0.01);
+    assert!((autospace_gap_for('国', 'X', alpha_only, fs) - 5.0).abs() < 0.01);
+    // ideograph-numeric only：国→X = 0（alpha 未启），国→4 = 5
+    assert!((autospace_gap_for('国', 'X', numeric_only, fs)).abs() < 0.01);
+    assert!((autospace_gap_for('国', '4', numeric_only, fs) - 5.0).abs() < 0.01);
+}
+
+/// R1215：text-autospace: normal 在 "国国XX国" 的 ideograph↔letter 边界插 0.125em 间隙。
+/// "国国XX国" is_ahem → R1214 split ["国","国","XX","国"] contiguous；normal → 国→XX 与
+/// XX→国 各插 5px（0.125em@40px）。期望 frag x：国@0, 国@40, XX@85, 国@170。
+#[test]
+fn test_r1215_text_autospace_normal_applies_gaps() {
+    let mut ctx = InlineFormattingContext::new(800.0).with_text_autospace(TextAutospaceValue::Normal);
+    let runs = vec![TextRun {
+        text: "国国XX国".to_string(),
+        node_id: NodeId::default(),
+        font_size: 40.0,
+        line_height: 40.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: true,
+    }];
+    ctx.break_into_lines(runs);
+    let frags = ctx.all_fragments();
+    assert_eq!(frags.len(), 4, "4 fragments: 国 国 XX 国");
+    // 国@0, 国@40（CJK-CJK 无 gap）
+    assert!((frags[0].x - 0.0).abs() < 0.5, "frag0 国 @0, got {}", frags[0].x);
+    assert!((frags[1].x - 40.0).abs() < 0.5, "frag1 国 @40, got {}", frags[1].x);
+    // XX@85（国@40 + 国宽 40 + 5px autospacing）
+    assert!((frags[2].x - 85.0).abs() < 0.5, "frag2 XX @85, got {}", frags[2].x);
+    // 国@170（XX@85 + XX宽 80 + 5px autospacing）
+    assert!((frags[3].x - 170.0).abs() < 0.5, "frag3 国 @170, got {}", frags[3].x);
+}
+
+/// R1215：text-autospace: no-autospace（默认）不插间隙——"国国XX国" 连续 1em（R1214 行为不变）。
+#[test]
+fn test_r1215_text_autospace_no_autospace_no_gap() {
+    let mut ctx = InlineFormattingContext::new(800.0).with_text_autospace(TextAutospaceValue::NoAutospace);
+    let runs = vec![TextRun {
+        text: "国国XX国".to_string(),
+        node_id: NodeId::default(),
+        font_size: 40.0,
+        line_height: 40.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: true,
+    }];
+    ctx.break_into_lines(runs);
+    let frags = ctx.all_fragments();
+    assert_eq!(frags.len(), 4);
+    // 无 autospacing：国@0, 国@40, XX@80, 国@160（纯 1em 连续）
+    assert!(
+        (frags[2].x - 80.0).abs() < 0.5,
+        "frag2 XX @80 (no gap), got {}",
+        frags[2].x
+    );
+    assert!(
+        (frags[3].x - 160.0).abs() < 0.5,
+        "frag3 国 @160 (no gap), got {}",
+        frags[3].x
+    );
 }
 
 /// 测试空文本不产生行盒。

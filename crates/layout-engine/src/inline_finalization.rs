@@ -780,6 +780,7 @@ pub(crate) fn compute_final_inline_layouts(
         .with_no_wrap(no_wrap)
         .with_preserve_whitespace(preserve_whitespace)
         .with_word_break(word_break_mode)
+        .with_text_autospace(style.text_autospace)
         .with_text_indent(text_indent_px)
         .with_tab_size(tab_size_px)
         .with_vertical(is_vertical)
