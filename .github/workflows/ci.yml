@@ -229,7 +229,7 @@ jobs:
         timeout-minutes: 10
         shell: bash
         run: |
-          cargo test -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=1
+          cargo test ${{ matrix.features }} -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Note unsupported V8 runtime tests
         if: matrix.v8_runtime == false
