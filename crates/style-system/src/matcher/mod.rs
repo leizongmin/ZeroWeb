@@ -187,14 +187,26 @@ fn matches_attribute(doc: &Document, element: NodeId, attr: &AttributeSelector) 
         None => return false,
     };
 
+    // CSS 属性值选择器在 HTML 中对 ASCII 大小写不敏感（CSS-Selectors §6.3：HTML 文档属性
+    // 值匹配 ASCII case-insensitive；`[attr="val" i]` 显式标记仅对 Level 4 语法生效，但
+    // HTML 默认即不敏感）。WPT attribute-value-selector-007 assert：`[lang="es"]` 应匹配
+    // `lang="ES"`。对全匹配器统一 to_ascii_lowercase 后比较（XML 文档应大小写敏感，但 ZW
+    // reftest corpus 全 HTML；若未来接 XML 须按文档类型分发）。
+    let value_lower = value.to_ascii_lowercase();
     match &attr.matcher {
         AttributeMatcher::Exists => true,
-        AttributeMatcher::Exact(v) => &value == v,
-        AttributeMatcher::Includes(v) => value.split_whitespace().any(|part| part == v),
-        AttributeMatcher::DashMatch(v) => value == *v || value.starts_with(&format!("{v}-")),
-        AttributeMatcher::Prefix(v) => value.starts_with(v),
-        AttributeMatcher::Suffix(v) => value.ends_with(v),
-        AttributeMatcher::Substring(v) => value.contains(v),
+        AttributeMatcher::Exact(v) => value_lower == v.to_ascii_lowercase(),
+        AttributeMatcher::Includes(v) => {
+            let vl = v.to_ascii_lowercase();
+            value.split_whitespace().any(|part| part.to_ascii_lowercase() == vl)
+        }
+        AttributeMatcher::DashMatch(v) => {
+            let vl = v.to_ascii_lowercase();
+            value_lower == vl || value_lower.starts_with(&format!("{vl}-"))
+        }
+        AttributeMatcher::Prefix(v) => value_lower.starts_with(&v.to_ascii_lowercase()),
+        AttributeMatcher::Suffix(v) => value_lower.ends_with(&v.to_ascii_lowercase()),
+        AttributeMatcher::Substring(v) => value_lower.contains(&v.to_ascii_lowercase()),
     }
 }
 

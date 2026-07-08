@@ -743,6 +743,44 @@ fn test_attribute_dash_match() {
 }
 
 #[test]
+fn test_attribute_exact_match_case_insensitive_html() {
+    // CSS-Selectors §6.3：HTML 文档中属性值选择器对 ASCII 大小写不敏感。
+    // WPT attribute-value-selector-007 assert：`[lang="es"]` 应匹配 `lang="ES"`。
+    let (mut doc, nodes) = make_nested_dom();
+    let child1 = nodes[2]; // span
+    doc.set_attribute(child1, "lang", "ES");
+
+    let mk = |matcher: AttributeMatcher| Selector {
+        complex: ComplexSelector {
+            parts: vec![(
+                CompoundSelector {
+                    type_selector: None,
+                    subclass_selectors: vec![SubclassSelector::Attribute(AttributeSelector {
+                        name: "lang".to_string(),
+                        matcher,
+                    })],
+                },
+                None,
+            )],
+        },
+    };
+    assert!(
+        matches_selector(&doc, child1, &mk(AttributeMatcher::Exact("es".to_string()))),
+        "[lang=\"es\"] should match lang=\"ES\" (ASCII case-insensitive in HTML)"
+    );
+    assert!(
+        matches_selector(&doc, child1, &mk(AttributeMatcher::DashMatch("es".to_string()))),
+        "[lang|=\"es\"] should match lang=\"ES\" (case-insensitive dash-match)"
+    );
+    // 大小写不敏感但仍要求精确匹配（不含前缀语义）：es-MX 不匹配 [lang=\"es\"] Exact
+    doc.set_attribute(child1, "lang", "es-MX");
+    assert!(
+        !matches_selector(&doc, child1, &mk(AttributeMatcher::Exact("es".to_string()))),
+        "[lang=\"es\"] Exact must not match lang=\"es-MX\" (exact, no prefix)"
+    );
+}
+
+#[test]
 fn test_attribute_prefix_match() {
     let (mut doc, nodes) = make_nested_dom();
     let child1 = nodes[2];
