@@ -13,6 +13,35 @@ use zero_style_system::ComputedStyle;
 
 use crate::types::LayoutBox;
 
+/// R1227：abspos/fixed 百分比尺寸（`width`/`height: %`）按 CB 重解析为 border-box +
+/// content 一对值。
+///
+/// `LayoutBox.width`/`height` 是 **border-box**（taffy `layout.size` 语义，见
+/// engine.rs extract_layout）。CSS `width:%` 对 content-box 指 **content**、对
+/// border-box 指 **border-box**。故 content-box 须 `border-box = content + border`，
+/// border-box 直接用。`content_*` 同步重算防 taffy 按「错误 CB」（静态父）解析后陈旧。
+///
+/// 修 abspos-containing-block-initial-009e/009f（body abspos `width:50%` + `border:10px`
+/// 旧渲 border-box 400 而非 420——旧代码把 `%` 当 border-box 丢 border 调整）。
+fn resolve_abspos_pct(
+    pct: f32,
+    cb_size: f32,
+    border_a: f32,
+    border_b: f32,
+    padding_a: f32,
+    padding_b: f32,
+    is_border_box: bool,
+) -> (f32, f32) {
+    let resolved = pct / 100.0 * cb_size;
+    let border_box = if is_border_box {
+        resolved
+    } else {
+        resolved + border_a + border_b
+    };
+    let content = (border_box - border_a - border_b - padding_a - padding_b).max(0.0);
+    (border_box, content)
+}
+
 /// 递归调整 fixed 定位元素的坐标为视口相对。
 ///
 /// taffy 将 `position: fixed` 当作 `absolute` 处理，坐标是相对于包含块的。
@@ -141,12 +170,35 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             // 二者相等，行为不变（R98/R872 测试均 borderless CB 故此前未暴露）。
             let parent_content_origin_x = current_content_origin_x + box_node.border_left + box_node.padding_left;
             let parent_content_origin_y = current_content_origin_y + box_node.border_top + box_node.padding_top;
-            // 仅当 width 为百分比时按视口重解析
+            // 仅当 width 为百分比时按视口重解析。R1227：box-sizing 感知（content-box
+            // 须加 border），见 resolve_abspos_pct。
             if let LengthValue::Percentage(p) = &style.width {
-                child.width = *p as f32 / 100.0 * viewport_width;
+                let is_bb = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
+                let (w, cw) = resolve_abspos_pct(
+                    *p as f32,
+                    viewport_width,
+                    child.border_left,
+                    child.border_right,
+                    child.padding_left,
+                    child.padding_right,
+                    is_bb,
+                );
+                child.width = w;
+                child.content_width = cw;
             }
             if let LengthValue::Percentage(p) = &style.height {
-                child.height = *p as f32 / 100.0 * viewport_height;
+                let is_bb = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
+                let (h, ch) = resolve_abspos_pct(
+                    *p as f32,
+                    viewport_height,
+                    child.border_top,
+                    child.border_bottom,
+                    child.padding_top,
+                    child.padding_bottom,
+                    is_bb,
+                );
+                child.height = h;
+                child.content_height = ch;
             }
             // auto 尺寸 + 全长度 inset → stretch（CSS §10.3.18 / §10.6.4，仅非替换）。
             // 仅当 left+right（或 top+bottom）均为长度且尺寸为 auto 时按视口 CB
@@ -300,12 +352,35 @@ pub(super) fn stretch_fixed_to_viewport_size(
                 child.width = (viewport_width - (*left as f32) - (*right as f32)).max(0.0);
             }
             // 百分比尺寸：fixed 的 CB 恒为视口（CSS §10.1），百分比相对视口解析。
-            // taffy 按 positioned 祖先解析（如 body CB），此处按视口重算。
+            // taffy 按 positioned 祖先解析（如 body CB），此处按视口重算。R1227：box-sizing
+            // 感知（content-box 须加 border），见 resolve_abspos_pct。
             if let LengthValue::Percentage(p) = &style.height {
-                child.height = (*p as f32 / 100.0) * viewport_height;
+                let is_bb = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
+                let (h, ch) = resolve_abspos_pct(
+                    *p as f32,
+                    viewport_height,
+                    child.border_top,
+                    child.border_bottom,
+                    child.padding_top,
+                    child.padding_bottom,
+                    is_bb,
+                );
+                child.height = h;
+                child.content_height = ch;
             }
             if let LengthValue::Percentage(p) = &style.width {
-                child.width = (*p as f32 / 100.0) * viewport_width;
+                let is_bb = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
+                let (w, cw) = resolve_abspos_pct(
+                    *p as f32,
+                    viewport_width,
+                    child.border_left,
+                    child.border_right,
+                    child.padding_left,
+                    child.padding_right,
+                    is_bb,
+                );
+                child.width = w;
+                child.content_width = cw;
             }
         }
         stretch_fixed_to_viewport_size(child, viewport_width, viewport_height, styles);
@@ -391,12 +466,35 @@ pub(super) fn resolve_abspos_against_root_cb(
             && nearest_pos_ancestor_is_root
             && let Some(style) = child.node_id.and_then(|nid| styles.get(&nid))
         {
-            // 百分比尺寸：相对根 padding-box（CB）
+            // 百分比尺寸：相对根 padding-box（CB）。R1227：box-sizing 感知（content-box
+            // 须加 border），见 resolve_abspos_pct。
             if let LengthValue::Percentage(p) = &style.width {
-                child.width = *p as f32 / 100.0 * cb_width;
+                let is_bb = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
+                let (w, cw) = resolve_abspos_pct(
+                    *p as f32,
+                    cb_width,
+                    child.border_left,
+                    child.border_right,
+                    child.padding_left,
+                    child.padding_right,
+                    is_bb,
+                );
+                child.width = w;
+                child.content_width = cw;
             }
             if let LengthValue::Percentage(p) = &style.height {
-                child.height = *p as f32 / 100.0 * cb_height;
+                let is_bb = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
+                let (h, ch) = resolve_abspos_pct(
+                    *p as f32,
+                    cb_height,
+                    child.border_top,
+                    child.border_bottom,
+                    child.padding_top,
+                    child.padding_bottom,
+                    is_bb,
+                );
+                child.height = h;
+                child.content_height = ch;
             }
             // auto 尺寸 + 全长度 inset → stretch（§10.3.18/§10.6.4，仅非替换）
             if matches!(style.width, LengthValue::Auto)

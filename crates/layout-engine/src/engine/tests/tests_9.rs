@@ -644,6 +644,98 @@ fn test_adjust_absolute_length_top_to_viewport() {
     );
 }
 
+/// R1227：abspos（无 positioned 祖先，CB=viewport）`width:%`/`height:%` + border 须按
+/// box-sizing 解析。content-box（默认）下 `width:50%` 指 content，border-box = content +
+/// border；旧代码把 `%` 当 border-box 丢 border 致 border-box 偏小（abspos-containing-
+/// block-initial-009e/009f：body abspos width:50% + border:10px 旧渲 400 非 420）。
+#[test]
+fn test_adjust_absolute_pct_box_sizing_border() {
+    use std::collections::HashMap;
+    use zero_css_parser::values::{BoxSizingValue, LengthValue};
+    let (_doc, key_id) = make_doc_with_body();
+
+    let abs_child = LayoutBox {
+        node_id: Some(key_id),
+        x: 50.0,
+        y: 50.0,
+        width: 0.0,
+        height: 0.0,
+        // taffy 已填的 border（10px 四边）—— postprocess 在 extract 后运行
+        border_left: 10.0,
+        border_right: 10.0,
+        border_top: 10.0,
+        border_bottom: 10.0,
+        is_absolute: true,
+        ..Default::default()
+    };
+    let body = LayoutBox {
+        node_id: None,
+        width: 800.0,
+        height: 600.0,
+        children: vec![abs_child],
+        ..Default::default()
+    };
+    let mut root = LayoutBox {
+        children: vec![body],
+        ..Default::default()
+    };
+
+    let mut style = ComputedStyle::default();
+    style.width = LengthValue::Percentage(50.0);
+    style.height = LengthValue::Percentage(50.0);
+    style.box_sizing = BoxSizingValue::ContentBox; // 默认：width:% 指 content
+    let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+    styles.insert(key_id, style);
+
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false);
+
+    let abs = &root.children[0].children[0];
+    // content-box：content = 50%×800 = 400，border-box = 400 + 10+10 = 420
+    assert!(
+        (abs.width - 420.0).abs() < 0.001,
+        "content-box width:50% + border 10px → border-box 420，实际 {}",
+        abs.width
+    );
+    assert!(
+        (abs.content_width - 400.0).abs() < 0.001,
+        "content_width 应为 400（420 − 20 border），实际 {}",
+        abs.content_width
+    );
+    // height:50% → content 300，border-box 320
+    assert!(
+        (abs.height - 320.0).abs() < 0.001,
+        "content-box height:50% + border 10px → border-box 320，实际 {}",
+        abs.height
+    );
+    assert!(
+        (abs.content_height - 300.0).abs() < 0.001,
+        "content_height 应为 300（320 − 20 border），实际 {}",
+        abs.content_height
+    );
+
+    // border-box：width:% 指 border-box 直接，content = border-box − border
+    let mut style = ComputedStyle::default();
+    style.width = LengthValue::Percentage(50.0);
+    style.height = LengthValue::Percentage(50.0);
+    style.box_sizing = BoxSizingValue::BorderBox;
+    styles.insert(key_id, style);
+    // 重置初值
+    root.children[0].children[0].width = 0.0;
+    root.children[0].children[0].height = 0.0;
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false);
+    let abs = &root.children[0].children[0];
+    assert!(
+        (abs.width - 400.0).abs() < 0.001,
+        "border-box width:50% → border-box 400，实际 {}",
+        abs.width
+    );
+    assert!(
+        (abs.content_width - 380.0).abs() < 0.001,
+        "border-box content_width 应为 380（400 − 20 border），实际 {}",
+        abs.content_width
+    );
+}
+
 /// 测试 §10.3.7：abspos（无 positioned 祖先，CB=viewport）width:auto + left+right +
 /// max-width 时，max-width 钳制填满宽，两侧 auto-margin 居中（对应 WPT
 /// absolute-non-replaced-width-025）。taffy 0.7 不钳 abspos inset-fill 宽。
