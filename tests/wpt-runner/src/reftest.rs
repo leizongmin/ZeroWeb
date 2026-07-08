@@ -856,7 +856,7 @@ pub fn render_to_framebuffer_gpu_with_base(
     render_to_framebuffer_with_base(html, css, config, base_dir)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "v8"))]
 mod tests {
     use super::*;
 
