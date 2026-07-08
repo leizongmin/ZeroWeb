@@ -164,6 +164,15 @@ pub(crate) fn estimate_string_width(text: &str, font_size: f32, is_ahem: bool) -
 /// 实测 css/CSS2/normal-flow 607→612（+5 真实 chromium-oracle 翻转），故改用 1.164。
 /// welcome product-smoke 因字体不匹配（chromium 用系统字体，ZW 用 DejaVu）+0.68pp
 /// （16.29→16.97%，仍 < 20% DC-13 gate），属可接受代价（字体匹配是 R631 独立多会话）。
+///
+/// **R1185 A/B 复核**：测 chromium **generic** sans-serif/serif line-height:normal = 1.150
+/// （puppeteer 实测，Blink 内部 generic 默认，非 resolved 字体度量；区别于 explicit
+/// DejaVu 1.170 / NotoSans 1.360 / NotoSansCJK 1.450）。A/B 1.164→1.150 = css-text-decor
+/// 118→120 (+2 oracle) BUT welcome 16.97→17.36% (+0.39pp 回归, 81433→83347 px) + normal-flow
+/// 612→612 (neutral)。trade 效率 0.195 pp/flip **差于** R1175 的 1.164 (0.136 pp/flip) →
+/// **1.164 仍是全局最优**，1.150 refuted 已回退。关键结论：chromium line-height:normal
+/// 区分 generic (~1.15) vs explicit (字体 hhea)，fontdue hhea 对 explicit 精确匹配 chromium
+/// （证 unified-font-stack C2 须区分 generic/explicit，naive font-swap 必 diverge）。
 pub(crate) const NORMAL_LINE_HEIGHT_RATIO: f32 = 1.164;
 
 /// Ahem 字体（WPT 标准测试字体）line-height:normal 的实际度量比率。

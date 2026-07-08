@@ -11,10 +11,12 @@
 
 ## 0. 执行摘要
 
-> **为什么是这个**：bounded 增量 rally 已 exhausted（R1180/R1181 hard plateau definitive）。剩余 corpus gap（实际 ~45-48% oracle → 95% 目标）**主导 = font-wall**：ZW 字体栈（fontdue 加载 DejaVu + 启发式 advance 0.6 + 常数度量）≠ chromium 字体栈（fontconfig → NotoSansCJK + 实际 advance + per-font hhea 度量）。R1175（line-height 1.164）+ R990（ascent 0.928）+ R1159（FreeType raster）对齐了 DejaVu 的常数度量，但 **font-mismatch（ZW=DejaVu, chromium=NotoSansCJK）+ advance 启发式（0.6 vs 实际）** 两层未解，是 advance-wall / Phase A core / welcome 16.97% 的共同 root。
+> **⚠️ R1185 重大修正（reframe C1/C2）**：puppeteer 直测 chromium line-height:normal 揭示 **generic vs explicit family 区分**——generic sans-serif/serif = **1.150**（Blink 内部默认，非 resolved 字体度量；fc-match→NotoSansCJK 但 generic 渲染 1.15 ≠ NotoSansCJK explicit 1.45，像素指纹独立）/ explicit DejaVu 1.170 / NotoSans 1.360 / NotoSansCJK 1.450。fontdue hhea 对 **explicit** 字体精确匹配 chromium（DejaVu 1.1641 / NotoSans 1.3620 / NotoSansCJK 1.4480，探针实证），但 **generic family 走 Blink 默认 ~1.15**。**★ refute 原 C1 naive font-swap**：corpus 非-Ahem 多用 generic sans-serif（chromium 1.15），ZW font-swap→NotoSans + per-font hhea 1.36 必与 chromium generic 1.15 diverge（+18% 行高，灾难）。**★ refute 1.150 常数 A/B**：1.164→1.150 = css-text-decor +2 / normal-flow neutral / **welcome +0.39pp 回归**（81433→83347 px，trade 0.195 pp/flip 差于 R1175 的 1.164 0.136 pp/flip）→ **1.164 仍是全局最优**（介于 generic 1.15 与 per-font explicit 之间）。**修正后真路径**：C2' = per-font 度量须**区分 generic（~1.15 Blink 默认）vs explicit（fontdue hhea）**——替代原 C1 naive font-swap。font-wall line-height 常数 lever 收官（headroom 极小）。详见 master.md R1185 + [`evidence/r1185-chromium-generic-vs-explicit-lineheight-2026-07-08.txt`](./evidence/r1185-chromium-generic-vs-explicit-lineheight-2026-07-08.txt)。
 
-- **一句话目标**：把 ZW 字体栈从「fontdue 加载 DejaVu + 启发式 advance + 常数度量」统一到「chromium 对齐：fontconfig 字体发现 + per-font hhea 度量 + 实际 advance in layout」，消除 font-mismatch + advance-wall。
-- **为什么 multi-month**：font-swap alone 经 R1180 实测 +1 css-fonts（~neutral，line-height 常数 confound）→ 须全栈（字体加载 + per-font 度量 + advance）协同才 yield，无 narrow yielding slice（区别 R885/R900 dormant-enabling 模式）。
+> **为什么是这个**：bounded 增量 rally 已 exhausted（S1180/R1181 hard plateau definitive）。剩余 corpus gap（实际 ~45-48% oracle → 95% 目标）**主导 = font-wall**：ZW 字体栈（fontdue 加载 DejaVu + 启发式 advance 0.6 + 常数度量）≠ chromium 字体栈。R1175（line-height 1.164）+ R990（ascent 0.928）+ R1159（FreeType raster）对齐了 DejaVu 的常数度量，但 **advance 启发式（0.6 vs 实际）+ generic/explicit 度量区分** 两层未解，是 advance-wall / Phase A core / welcome 16.97% 的共同 root。
+
+- **一句话目标（R1185 修正）**：把 ZW 字体栈统一到「chromium 对齐：per-font 度量**区分 generic（~1.15）vs explicit（fontdue hhea）** + 实际 advance in layout」，消除 advance-wall。**font-swap 非目标**（R1185 refute：generic family chromium 不用 resolved 字体度量）。
+- **为什么 multi-month**：font-swap alone 经 R1180 实测 +1（~neutral）+ R1185 进一步 refute（generic/explicit 度量区分使 font-swap 反向）→ 须 per-font 度量 + generic/explicit 区分 + advance 协同才 yield，无 narrow yielding slice。
 - **核心约束**：① 零回归（每 slice env-gated + A/B 守 welcome <20% + corpus oracle 不降）；② chromium-Oracle z_vs_chr 门禁；③ 单 `.rs` ≤2000 行；④ test-guard 包裹。
 
 ---
