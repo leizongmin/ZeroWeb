@@ -173,7 +173,7 @@ jobs:
           tar xzf "$MSYS2_CRATE" -C "$TMPDIR"
           find "$TMPDIR" -name "filter_neon.S" -exec sh -c 'echo > "$1"' _ {} \;
           (cd "$TMPDIR" && find . -type f -name '*.cargo-checksum.json' -delete && find . -type f -exec sha256sum {} \; | sort -k 2 > .cargo-checksum.json)
-          tar czf "$MSYS2_CRATE" -C "$TMPDIR" .
+          tar czf "$MSYS2_CRATE" -C "$TMPDIR" freetype-sys-0.23.0
           rm -rf "$TMPDIR"
           rm -rf $(find "$CARGO_HOME/registry/src" -name "freetype-sys-0.23.0" -type d 2>/dev/null)
           echo "Patch applied."

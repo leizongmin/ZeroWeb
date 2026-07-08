@@ -195,7 +195,7 @@ jobs:
           find "$TMPDIR" -name "filter_neon.S" -exec sh -c 'echo > "$1"' _ {} \;
           # 更新 checksum manifest 防止 cargo 拒绝打补丁后的 crate
           (cd "$TMPDIR" && find . -type f -name '*.cargo-checksum.json' -delete && find . -type f -exec sha256sum {} \; | sort -k 2 > .cargo-checksum.json)
-          tar czf "$MSYS2_CRATE" -C "$TMPDIR" .
+          tar czf "$MSYS2_CRATE" -C "$TMPDIR" freetype-sys-0.23.0
           rm -rf "$TMPDIR"
           # 清除已解压的旧源码，确保 cargo 从补丁后的 .crate 重新解压
           rm -rf $(find "$CARGO_HOME/registry/src" -name "freetype-sys-0.23.0" -type d 2>/dev/null)
