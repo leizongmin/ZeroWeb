@@ -1,5 +1,7 @@
 # ZeroWeb
 
+<img src="./banner.svg" alt="ZeroWeb" width="100%">
+
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-experimental-brown.svg)](#当前状态)

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="100%" font-family="ui-sans-serif, system-ui, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4f6f8"/>
+      <stop offset="100%" stop-color="#e8eaed"/>
+    </linearGradient>
+    <linearGradient id="hero4" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4285f4"/>
+      <stop offset="33%" stop-color="#34a853"/>
+      <stop offset="66%" stop-color="#fbbc04"/>
+      <stop offset="100%" stop-color="#ea4335"/>
+    </linearGradient>
+    <filter id="soft"><feGaussianBlur stdDeviation="26"/></filter>
+  </defs>
+
+  <!-- B1 背景：中性灰渐变 + 四角四色柔光 -->
+  <rect width="1200" height="400" fill="url(#bg)"/>
+  <circle cx="180" cy="110" r="130" fill="#4285f4" opacity="0.1" filter="url(#soft)"/>
+  <circle cx="1020" cy="110" r="130" fill="#34a853" opacity="0.1" filter="url(#soft)"/>
+  <circle cx="220" cy="330" r="130" fill="#fbbc04" opacity="0.08" filter="url(#soft)"/>
+  <circle cx="1000" cy="330" r="130" fill="#ea4335" opacity="0.08" filter="url(#soft)"/>
+
+  <!-- B2 排版：icon 左中 -->
+  <g transform="translate(300 200) scale(0.35)">
+    <path d="M 0 -256 A 256 256 0 0 1 221.7 128 L 0 0 Z" fill="#4a9eff"/>
+    <path d="M 221.7 128 A 256 256 0 0 1 -221.7 128 L 0 0 Z" fill="#14b8a6"/>
+    <path d="M -221.7 128 A 256 256 0 0 1 0 -256 L 0 0 Z" fill="#1e4fd0"/>
+    <circle r="100" fill="#ffffff"/>
+    <circle r="76" fill="#1858c8"/>
+  </g>
+
+  <!-- 文字右 -->
+  <text x="430" y="195" font-size="64" font-weight="700" letter-spacing="-1">
+    <tspan fill="#1a73e8">Zero</tspan><tspan fill="#202124">Web</tspan>
+  </text>
+  <text x="433" y="223" font-size="16" font-weight="500" fill="#5f6368">A from-scratch browser engine in Rust</text>
+  <text x="433" y="246" font-size="13" font-weight="400" fill="#80868b">DOM · CSSOM · Style · Layout · Paint · Composite</text>
+
+  <rect x="0" y="394" width="1200" height="6" fill="url(#hero4)"/>
+</svg>
