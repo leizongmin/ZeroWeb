@@ -596,7 +596,10 @@ impl InlineFormattingContext {
                             let parent_id = doc.parent_node(child_id);
                             let style = parent_id.and_then(|pid| styles.get(&pid));
                             let (font_size, line_height) = if style.is_some() {
-                                resolve_font_metrics(style)
+                                // U1b：layout IFC（有真实 styles）首消费 font_metric_provider，
+                                // 使 line-height:normal 用 per-font 真实度量。provider 缺省
+                                // （生产默认 None）时逐字节等价于 resolve_font_metrics。
+                                resolve_font_metrics_with_provider(style, self.font_metric_provider.as_ref())
                             } else if let Some(pid) = parent_id {
                                 // paint IFC 传入空 styles：使用 layout IFC 存储的 font_size 覆盖
                                 // 替代 16px 默认值，使字符宽度和行高计算更准确
@@ -879,7 +882,9 @@ impl InlineFormattingContext {
                         let trimmed = collapse_whitespace(&text);
                         let style = styles.get(&child_id);
                         let (font_size, line_height) = if style.is_some() {
-                            resolve_font_metrics(style)
+                            // U1b：layout IFC（有真实 styles）首消费 font_metric_provider
+                            // （per-font line-height）。provider 缺省时等价于 resolve_font_metrics。
+                            resolve_font_metrics_with_provider(style, self.font_metric_provider.as_ref())
                         } else if let Some(&(fs, lh)) = self.inline_element_metrics.get(&child_id) {
                             // paint IFC（空 styles）：使用 layout IFC 存储的 (font_size, line_height)
                             // 这仅影响行盒高度（垂直定位），不影响行断。

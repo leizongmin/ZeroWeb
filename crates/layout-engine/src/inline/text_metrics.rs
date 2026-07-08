@@ -183,7 +183,35 @@ pub(crate) const AHEM_LINE_HEIGHT_RATIO: f32 = 1.0;
 ///   - `Length(Px(v))` → v
 ///
 /// 当 style 为 None 时（节点没有样式），返回默认值 16.0 / 18.624（16 × 1.164）。
+///
+/// 不带 font-metric provider：`line-height:normal` 永远走常数比率（`NORMAL_LINE_HEIGHT_RATIO` /
+/// `AHEM_LINE_HEIGHT_RATIO`）。需要 per-font 真实度量时调用
+/// [`resolve_font_metrics_with_provider`]。
 pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
+    resolve_font_metrics_with_provider(style, None)
+}
+
+/// U1b（unified font stack）：带 font-metric provider 的 font-size / line-height 解析。
+///
+/// 与 [`resolve_font_metrics`] 的唯一区别：当 `line-height:normal` 且 `provider` 为 `Some`
+/// 并能解析该 `font-family` 时，用字体真实行度量（`ascent − descent + line_gap`，已按
+/// `font_size` 缩放为 px）替代常数比率。provider 为 `None` 或无法解析（字体未加载）时，
+/// **逐字节等价于** [`resolve_font_metrics`]（回退 Ahem 1.0 / 非-Ahem 1.164 常数）。
+///
+/// 这是 unified font stack 的「首消费者」：R885 font-bridge（`FontMetricProvider` trait +
+/// IFC `font_metric_provider` 字段）此前 0 生产读取；本函数在 layout IFC 行盒高度计算处
+/// 首次消费 provider，使 per-font line-height 经既有 override-map 链路（
+/// `frag.height` → `store_font_sizes_from_ifc` → `text_node_line_heights` → paint Path B
+/// `with_line_height_overrides`）触达 paint，绕过 R890 发现的「paint Path B 空 styles」阻塞。
+///
+/// **dormant**：生产 IFC 的 `font_metric_provider` 默认 `None`（R885），故本函数在生产中
+/// 逐字节等价于旧路径 = 零回归。须待 U1b-wiring（FontLoader → RenderPipeline →
+/// LayoutEngine → IFC 5 层接线）注入真实 provider 后方生效（解 R1180 font-swap line-height
+/// confound 的前置）。详见 `docs/goal/rendering-compat/unified-font-stack-design.md`。
+pub fn resolve_font_metrics_with_provider(
+    style: Option<&ComputedStyle>,
+    provider: Option<&crate::inline::FontMetricProviderHandle>,
+) -> (f32, f32) {
     let font_size = match style {
         Some(s) => match &s.font_size {
             LengthValue::Px(v) => *v as f32,
@@ -192,9 +220,9 @@ pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
         None => DEFAULT_FONT_SIZE,
     };
 
-    // line-height:normal 用字体实际度量：Ahem=1.0（见 AHEM_LINE_HEIGHT_RATIO），其余 1.164
-    // （DejaVu hhea = chromium 真值，见 NORMAL_LINE_HEIGHT_RATIO 注释）。无样式（None）时
-    // 无法判定字体，回退 1.164。
+    // line-height:normal 的回退比率：Ahem=1.0（见 AHEM_LINE_HEIGHT_RATIO），其余 1.164
+    // （DejaVu hhea = chromium 真值，见 NORMAL_LINE_HEIGHT_RATIO 注释）。provider 缺省或
+    // 无法解析字体时用此值。无样式（None）时无法判定字体，回退 1.164。
     let normal_ratio = match style {
         Some(s) if s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")) => AHEM_LINE_HEIGHT_RATIO,
         _ => NORMAL_LINE_HEIGHT_RATIO,
@@ -202,7 +230,7 @@ pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
 
     let line_height = match style {
         Some(s) => match &s.line_height {
-            LineHeightValue::Normal => font_size * normal_ratio,
+            LineHeightValue::Normal => resolve_normal_line_height(s, font_size, normal_ratio, provider),
             LineHeightValue::Number(n) => font_size * (*n as f32),
             LineHeightValue::Length(LengthValue::Px(v)) => *v as f32,
             // 其他长度类型（em/rem 等）在 resolve 阶段应已转换为 Px，
@@ -213,6 +241,27 @@ pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
     };
 
     (font_size, line_height)
+}
+
+/// `line-height:normal` 的 per-font 解析（U1b）。
+///
+/// provider 存在且解析到字体时返回 `ascent − descent + line_gap`（px，与 chromium
+/// `line-height:normal` 计算一致）；否则回退 `font_size × fallback_ratio`（Ahem 1.0 /
+/// 非-Ahem 1.164），与 R1175 落地的常数行为逐字节一致。
+fn resolve_normal_line_height(
+    style: &ComputedStyle,
+    font_size: f32,
+    fallback_ratio: f32,
+    provider: Option<&crate::inline::FontMetricProviderHandle>,
+) -> f32 {
+    if let Some(p) = provider
+        && let Some(m) = p.line_metrics(&style.font_family, font_size)
+    {
+        // fontdue/chromium 约定：ascent 正、descent 负、line_gap 通常 0 或小正值。
+        // line-height:normal = ascent − descent + line_gap（见 font_metrics.rs 注释）。
+        return m.ascent - m.descent + m.line_gap;
+    }
+    font_size * fallback_ratio
 }
 
 /// 从 CSS LengthValue 解析 inline-block 元素的尺寸（宽度或高度）。

@@ -69,9 +69,10 @@
 > **原则**：每 slice **dormant-enabling**（默认关，零回归）或 **A/B net-positive 才留**。区别 R885/R900——本栈组件**单独 zero-yield**，须 C1+C2 协同首 yield（R1180 实证）。
 
 ### Phase U1：C1+C2 协同首 yield（font-swap + per-font 度量）
-- **slice U1a**（dormant）：C1 TTC 提取器（R803 恢复）+ NotoSansCJK 加载 + fontconfig-style 发现（env `ZW_FONTCONFIG=1`）。
-- **slice U1b**（dormant）：C2 font-bridge override-map 完整 wiring（compute_final_inline_layouts 5 站点 + paint 消费，绕空 styles）。
-- **slice U1c**（A/B，首 yield 测试）：U1a+U1b 启用 → sans-serif→NotoSansCJK + per-font line-height（NotoSans 本值，解 R1180 confound）+ advance 仍 0.6 → A/B corpus oracle + welcome。
+- **slice U1a**（dormant，低优先）：C1 TTC 提取器（R803 恢复）+ NotoSansCJK 加载 + fontconfig-style 发现（env `ZW_FONTCONFIG=1`）。**R1182 重排**：Latin 用 NotoSans-Regular.ttf 单 .ttf（无须 TTC），welcome font-swap -0.06pp（R803）→ U1a TTC 仅 CJK 后续，低优先。
+- **slice U1b-core**（✅ LANDED R1184，dormant）：C2 首消费者——`resolve_font_metrics_with_provider` 在 layout IFC 2 调用点（text_metrics.rs + inline/mod.rs:602/887）消费 `font_metric_provider`，使 line-height:normal 用 per-font `ascent−descent+line_gap`。**关键洞察**：line-height override-map bypass 链路（`store_font_sizes_from_ifc` → `text_node_line_heights` → paint `with_line_height_overrides`）已完整存在，本 slice 仅改 line-height 源，per-font 值经既有链路自动触达 paint，绕 R890 空 styles 阻塞。provider None（生产默认）逐字节等价 `resolve_font_metrics` = 零回归（单测 `assert_eq!` + make test 12212/0 + product-smoke welcome 81433 px 精确一致 R1175）。4 新单测证 provider 被咨询。
+- **slice U1b-wiring**（dormant，下一会话）：5 层 FontLoader 接线（app 创建 → WebView/RenderPipeline → LayoutEngine::set_font_metric_provider → compute_with_img_sizes → compute_final_inline_layouts 5 IFC 站点 `.with_font_metric_provider`）。R887 测绘路径，R889/R890 实验 revert clean。注入后 U1b-core 自动激活（per-font line-height 经既有 override-map 链路生效）。
+- **slice U1c**（A/B，首 yield 测试）：U1b-wiring + font-swap（NotoSans-Regular.ttf + env `ZW_SANS_NOTO` resolve sans-serif→NotoSans）→ sans-serif→NotoSans + per-font line-height（NotoSans 本值，解 R1180 confound）+ advance 仍 0.6 → A/B corpus oracle（css-fonts/css-text）+ welcome。
   - **判定**：若 net-positive（>R1180 的 +1）→ font-swap + per-font 度量 yield（advance 非必需），留；若 ~neutral → 须 C3 advance 协同。
 
 ### Phase U2：C3 实际 advance（解 advance-wall）
@@ -98,11 +99,11 @@
 
 ## 5. 第一步（下会话）
 
-**slice U1a**：恢复 R803 TTC 提取器（`extract_ttc_first_face`）+ 加载 NotoSansCJK-Regular.ttc + fontconfig-style 字体发现，env `ZW_FONTCONFIG=1` 默认关，dormant 零回归（单测证 TTC 提取 + 加载）。**不与 C2 协同不 yield**（R803/R1180 实证），故 U1a 单独是 enabling infra，须待 U1b+U1c 协同首 yield。
+**slice U1b-core**（✅ LANDED R1184，2026-07-08）：font-bridge 首消费者（`resolve_font_metrics_with_provider` + layout IFC 2 调用点 + 4 单测），dormant 零回归。详见 [`evidence/r1184-u1b-core-per-font-lineheight-first-consumer-2026-07-08.txt`](./evidence/r1184-u1b-core-per-font-lineheight-first-consumer-2026-07-08.txt)。
 
-**slice U1b**（U1a 后）：font-bridge override-map 完整 wiring（compute_final_inline_layouts 5 站点 populate + paint 消费），env-gated，dormant。
+**slice U1b-wiring**（下一会话）：5 层 FontLoader 接线（R887 测绘/R889/R890 revert clean），注入 provider 后 U1b-core 自动激活。**单独不可验证 yield**（须 U1c font-swap 协同）。
 
-**slice U1c**（U1a+U1b 后，首 yield A/B）：启用 font-swap + per-font 度量，A/B corpus + welcome，**net-positive 才留**（>R1180 +1）。
+**slice U1c**（U1b-wiring + font-swap，首 yield A/B）：恢复 R1180 NotoSans-Regular.ttf 加载 + env `ZW_SANS_NOTO`，A/B corpus oracle（css-fonts/css-text）+ welcome，**net-positive 才留**（>R1180 +1）。
 
 ---
 

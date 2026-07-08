@@ -225,4 +225,129 @@ mod tests {
             m.ascent
         );
     }
+
+    // ── U1b：resolve_font_metrics_with_provider 首消费者测试 ────────────────
+
+    /// 桩 provider：返回固定的 per-em 行度量（已按 size 缩放为 px），或 `None`（模拟
+    /// 字体未加载）。用于证明 `resolve_font_metrics_with_provider` 在 provider 存在时
+    /// 真正咨询了字体度量，而非静默回退常数。
+    struct MockMetricProvider {
+        ascent_per_em: f32,
+        descent_per_em: f32,
+        line_gap_per_em: f32,
+        resolve: bool,
+    }
+
+    impl FontMetricProvider for MockMetricProvider {
+        fn line_metrics(&self, _font_family: &[String], size: f32) -> Option<LineMetrics> {
+            if !self.resolve {
+                return None;
+            }
+            Some(LineMetrics {
+                ascent: self.ascent_per_em * size,
+                descent: self.descent_per_em * size,
+                line_gap: self.line_gap_per_em * size,
+            })
+        }
+    }
+
+    /// 构造一个 line-height:normal + 给定 font-family/font-size 的 ComputedStyle。
+    fn normal_style(family: &str, size_px: f32) -> zero_style_system::ComputedStyle {
+        use zero_css_parser::values::LengthValue;
+        use zero_style_system::ComputedStyle;
+        let mut s = ComputedStyle::default();
+        s.font_family = vec![family.to_string()];
+        s.font_size = LengthValue::Px(size_px as f64);
+        s.line_height = zero_style_system::LineHeightValue::Normal;
+        s
+    }
+
+    /// provider 存在并解析字体时，line-height:normal 用 per-font 真实度量
+    /// （`ascent − descent + line_gap`），**而非** DejaVu 常数 1.164。
+    /// 选 distinctive 比率 0.9（≠1.0 Ahem、≠1.164 DejaVu）以证明 provider 路径被走。
+    #[test]
+    fn resolve_font_metrics_with_provider_uses_per_font_metric() {
+        let style = normal_style("TestFont", 20.0);
+        // ascent=0.6em / descent=-0.2em / line_gap=0.1em → ratio = 0.9
+        let provider = MockMetricProvider {
+            ascent_per_em: 0.6,
+            descent_per_em: -0.2,
+            line_gap_per_em: 0.1,
+            resolve: true,
+        };
+        let handle = FontMetricProviderHandle(Rc::new(provider));
+        let (fs, lh) = super::super::resolve_font_metrics_with_provider(Some(&style), Some(&handle));
+        assert!((fs - 20.0).abs() < 1e-6, "font_size unchanged, got {fs}");
+        // per-font line-height = 20 × (0.6 + 0.2 + 0.1) = 18.0
+        assert!(
+            (lh - 18.0).abs() < 1e-3,
+            "line-height should be per-font 18.0 (0.9·fs), got {lh}"
+        );
+        // 关键：不等于常数回退 20×1.164=23.28
+        assert!(
+            (lh - 20.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).abs() > 0.1,
+            "per-font path must differ from constant fallback"
+        );
+    }
+
+    /// provider 为 `None` 时逐字节等价于 `resolve_font_metrics`（常数回退）。
+    /// 这是生产零回归保证：IFC `font_metric_provider` 默认 None。
+    #[test]
+    fn resolve_font_metrics_with_provider_none_is_byte_identical() {
+        let style = normal_style("DejaVuLike", 20.0);
+        let without = super::super::resolve_font_metrics(Some(&style));
+        let with_none = super::super::resolve_font_metrics_with_provider(Some(&style), None);
+        assert_eq!(without, with_none, "provider=None must equal resolve_font_metrics");
+        // 非-Ahem Normal 回退 1.164
+        assert!(
+            (with_none.1 - 20.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).abs() < 1e-3,
+            "fallback ratio = NORMAL_LINE_HEIGHT_RATIO, got {}",
+            with_none.1
+        );
+    }
+
+    /// provider 存在但无法解析字体（`None`）时回退常数（与无 provider 相同）。
+    #[test]
+    fn resolve_font_metrics_with_provider_unresolved_falls_back() {
+        let style = normal_style("MissingFont", 16.0);
+        let provider = MockMetricProvider {
+            ascent_per_em: 0.6,
+            descent_per_em: -0.2,
+            line_gap_per_em: 0.1,
+            resolve: false, // 模拟字体未加载
+        };
+        let handle = FontMetricProviderHandle(Rc::new(provider));
+        let (fs, lh) = super::super::resolve_font_metrics_with_provider(Some(&style), Some(&handle));
+        assert!((fs - 16.0).abs() < 1e-6);
+        // 回退常数 1.164，非 per-font 0.9
+        assert!(
+            (lh - 16.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).abs() < 1e-3,
+            "unresolved provider must fall back to constant, got {lh}"
+        );
+    }
+
+    /// Ahem 字体：provider 解析时返回 per-font 1.0（与 AHEM_LINE_HEIGHT_RATIO 一致），
+    /// 证明 provider 对 Ahem 也被咨询（结果恰好等于常数，但路径被走）。
+    #[test]
+    fn resolve_font_metrics_with_provider_ahem_per_font() {
+        use zero_css_parser::values::LengthValue;
+        use zero_style_system::ComputedStyle;
+        let mut s = ComputedStyle::default();
+        s.font_family = vec!["Ahem".to_string()];
+        s.font_size = LengthValue::Px(40.0);
+        s.line_height = zero_style_system::LineHeightValue::Normal;
+        // Ahem 真实度量：ascent=0.8em / descent=-0.2em / line_gap=0 → 1.0
+        let provider = MockMetricProvider {
+            ascent_per_em: 0.8,
+            descent_per_em: -0.2,
+            line_gap_per_em: 0.0,
+            resolve: true,
+        };
+        let handle = FontMetricProviderHandle(Rc::new(provider));
+        let (_, lh) = super::super::resolve_font_metrics_with_provider(Some(&s), Some(&handle));
+        assert!(
+            (lh - 40.0).abs() < 1e-3,
+            "Ahem per-font line-height = 1.0·fs = 40, got {lh}"
+        );
+    }
 }
