@@ -51,18 +51,14 @@ jobs:
           restore-keys: |
             ft-raster-${{ runner.os }}-${{ matrix.target }}-cargo-
 
-      - name: Add Git zlib to MSVC include path (Windows)
+      - name: Install zlib via vcpkg (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $gitMingw = 'C:\Program Files\Git\mingw64'
-          if (Test-Path "$gitMingw\include\zlib.h") {
-            "INCLUDE=$gitMingw\include;$env:INCLUDE" >> $env:GITHUB_ENV
-            "LIB=$gitMingw\lib;$env:LIB" >> $env:GITHUB_ENV
-            Write-Host "Added Git mingw64 zlib to INCLUDE/LIB"
-          } else {
-            Write-Host "Git mingw64 zlib not found at expected path"
-          }
+          $triplet = if ('${{ matrix.target }}' -match 'aarch64') { 'arm64-windows-static-md' } else { 'x64-windows-static-md' }
+          Write-Host "Installing zlib:$triplet via vcpkg..."
+          vcpkg install zlib --triplet $triplet
+          Write-Host "vcpkg zlib installation complete"
 
       # 仅 check zero-render-foundation（不依赖 rusty_v8），验证 freetype-sys bundled
       # 在各 target 的 C 编译（cc crate 从源码编译 FreeType2+libpng）。
