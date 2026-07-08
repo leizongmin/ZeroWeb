@@ -174,6 +174,36 @@ jobs:
         if: matrix.v8_runtime == false && matrix.name != 'windows-aarch64'
         run: cargo check ${{ matrix.features }} --workspace --target ${{ matrix.target }}
 
+      - name: Patch freetype-sys filter_neon.S for MSVC (windows-aarch64)
+        if: matrix.name == 'windows-aarch64'
+        shell: bash
+        run: |
+          # filer_neon.S 是 ARM NEON 手写汇编，MSVC cl.exe 无法编译 .S 文件。
+          # 同目录的 filter_neon_intrinsics.c 提供等价 C intrinsics 实现。
+          # 将 .S 替换为空文件，让链接通过，功能由 .c 版本提供。
+          set -e
+          cargo fetch --target ${{ matrix.target }}
+          CRATE_FILE=$(find "$CARGO_HOME/registry/cache" -name "freetype-sys-0.23.0.crate" 2>/dev/null | head -1)
+          if [ -z "$CRATE_FILE" ]; then
+            echo "ERROR: freetype-sys-0.23.0.crate not found in cache"
+            exit 1
+          fi
+          echo "Patching $CRATE_FILE: replacing filter_neon.S with empty file"
+          TMPDIR=$(mktemp -d)
+          tar xzf "$CRATE_FILE" -C "$TMPDIR"
+          find "$TMPDIR" -name "filter_neon.S" -exec sh -c 'echo > "$1"' _ {} \;
+          # 更新 checksum manifest 防止 cargo 拒绝打补丁后的 crate
+          (cd "$TMPDIR" && find . -type f -name '*.cargo-checksum.json' -delete && find . -type f -exec sha256sum {} \; | sort -k 2 > .cargo-checksum.json)
+          tar czf "$CRATE_FILE" -C "$TMPDIR" .
+          rm -rf "$TMPDIR"
+          # 清除已解压的旧源码，确保 cargo 从补丁后的 .crate 重新解压
+          rm -rf $(find "$CARGO_HOME/registry/src" -name "freetype-sys-0.23.0" -type d 2>/dev/null)
+          echo "Patch applied."
+
+      - name: Check workspace (V8-free targets only; V8 targets are fully checked by clippy)
+        if: matrix.v8_runtime == false && matrix.name != 'windows-aarch64'
+        run: cargo check ${{ matrix.features }} --workspace --target ${{ matrix.target }}
+
       - name: Check workspace (windows-aarch64 — known freetype-sys NEON issue)
         if: matrix.name == 'windows-aarch64'
         continue-on-error: true

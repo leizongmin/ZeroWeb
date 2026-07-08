@@ -152,6 +152,27 @@ jobs:
           "LIB=$vcpkgLib;$env:LIB" >> $env:GITHUB_ENV
           Write-Host "vcpkg zlib installed, CFLAGS/INCLUDE/LIB set to $vcpkgInclude"
 
+      - name: Patch freetype-sys filter_neon.S for MSVC (windows-aarch64)
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: bash
+        run: |
+          set -e
+          cargo fetch --target ${{ matrix.target }}
+          CRATE_FILE=$(find "$CARGO_HOME/registry/cache" -name "freetype-sys-0.23.0.crate" 2>/dev/null | head -1)
+          if [ -z "$CRATE_FILE" ]; then
+            echo "ERROR: freetype-sys-0.23.0.crate not found in cache"
+            exit 1
+          fi
+          echo "Patching $CRATE_FILE: replacing filter_neon.S with empty file"
+          TMPDIR=$(mktemp -d)
+          tar xzf "$CRATE_FILE" -C "$TMPDIR"
+          find "$TMPDIR" -name "filter_neon.S" -exec sh -c 'echo > "$1"' _ {} \;
+          (cd "$TMPDIR" && find . -type f -name '*.cargo-checksum.json' -delete && find . -type f -exec sha256sum {} \; | sort -k 2 > .cargo-checksum.json)
+          tar czf "$CRATE_FILE" -C "$TMPDIR" .
+          rm -rf "$TMPDIR"
+          rm -rf $(find "$CARGO_HOME/registry/src" -name "freetype-sys-0.23.0" -type d 2>/dev/null)
+          echo "Patch applied."
+
       - name: Build release binary
         run: cargo build ${{ matrix.features }} --release --bin zero-browser --target ${{ matrix.target }}
 
