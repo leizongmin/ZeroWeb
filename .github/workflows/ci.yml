@@ -109,6 +109,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev libxcb-xfixes0-dev libxkbcommon-dev libfontconfig1-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev mesa-vulkan-drivers
 
+      - name: Install Windows zlib
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          case "${{ matrix.target }}" in
+            aarch64-pc-windows-msvc) tp=arm64-windows-static-md ;;
+            *) tp=x64-windows-static-md ;;
+          esac
+          vcpkg install zlib --triplet "$tp"
+          tp_underscore="${tp//-/_}"
+          echo "INCLUDE=$INCLUDE;C:/vcpkg/installed/$tp/include" >> "$GITHUB_ENV"
+          echo "LIB=$LIB;C:/vcpkg/installed/$tp/lib" >> "$GITHUB_ENV"
+
       - name: Download rusty_v8 archive
         if: runner.os != 'Windows' && matrix.v8_runtime != false
         shell: bash
