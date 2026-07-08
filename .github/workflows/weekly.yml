@@ -164,7 +164,7 @@ jobs:
             exit 1
           fi
           echo "Patching $CRATE_FILE: replacing filter_neon.S with empty file"
-          MSYS2_CRATE=$(echo "$CRATE_FILE" | sed 's|^\([A-Z]\):|/\1|' | tr '\\' '/')
+          MSYS2_CRATE=$(cygpath -u "$CRATE_FILE")
           TMPDIR=$(mktemp -d)
           tar xzf "$MSYS2_CRATE" -C "$TMPDIR"
           find "$TMPDIR" -name "filter_neon.S" -exec sh -c 'echo > "$1"' _ {} \;
