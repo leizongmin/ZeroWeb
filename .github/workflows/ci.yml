@@ -229,7 +229,11 @@ jobs:
         timeout-minutes: 10
         shell: bash
         run: |
-          cargo test ${{ matrix.features }} -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=1
+          # Strip "--features quickjs": zero-render-foundation 没有 quickjs feature，
+          # QuickJS 构建只需 --no-default-features 跳过 freetype-raster
+          RENDER_FEATURES="${{ matrix.features }}"
+          RENDER_FEATURES="${RENDER_FEATURES//--features quickjs/}"
+          cargo test $RENDER_FEATURES -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }} -- --test-threads=1
 
       - name: Note unsupported V8 runtime tests
         if: matrix.v8_runtime == false
