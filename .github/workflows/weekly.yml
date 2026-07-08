@@ -54,6 +54,8 @@ jobs:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    # windows-aarch64: freetype-sys NEON 汇编问题（已知上游 bug），不阻塞 weekly
+    continue-on-error: ${{ matrix.target == 'aarch64-pc-windows-msvc' }}
     permissions:
       contents: read
     strategy:
