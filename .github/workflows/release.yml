@@ -156,6 +156,27 @@ jobs:
           "LIB=$vcpkgLib;$env:LIB" >> $env:GITHUB_ENV
           Write-Host "vcpkg zlib installed, CFLAGS/INCLUDE/LIB set to $vcpkgInclude"
 
+      - name: Configure MSVC include paths for clang/bindgen (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath 2>$null
+          if (-not $vsPath) { $vsPath = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise" }
+          Write-Host "VS installation: $vsPath"
+          $msvcVer = Get-ChildItem "$vsPath\VC\Tools\MSVC" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $sdkVer = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory | Where-Object { $_.Name -match '^10\.' } | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          if ($msvcVer -and $sdkVer) {
+            $msvcInc = "$vsPath\VC\Tools\MSVC\$($msvcVer.Name)\include"
+            $sdkUcrt = "${env:ProgramFiles(x86)}\Windows Kits\10\Include\$($sdkVer.Name)\ucrt"
+            $sdkUm = "${env:ProgramFiles(x86)}\Windows Kits\10\Include\$($sdkVer.Name)\um"
+            $sdkShared = "${env:ProgramFiles(x86)}\Windows Kits\10\Include\$($sdkVer.Name)\shared"
+            $clangArgs = "-isystem`"$msvcInc`" -isystem`"$sdkUcrt`" -isystem`"$sdkUm`" -isystem`"$sdkShared`""
+            "BINDGEN_EXTRA_CLANG_ARGS=$clangArgs" >> $env:GITHUB_ENV
+            Write-Host "BINDGEN_EXTRA_CLANG_ARGS=$clangArgs"
+          } else {
+            Write-Host "WARNING: could not locate MSVC/SDK include paths"
+          }
+
       - name: Patch freetype-sys filter_neon.S for MSVC (windows-aarch64)
         if: matrix.target == 'aarch64-pc-windows-msvc'
         shell: bash
