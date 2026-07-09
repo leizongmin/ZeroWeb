@@ -53,18 +53,23 @@ ZW layout-engine 对 taffy 的依赖面（grep `crates/layout-engine/src/` + `ap
 
 ---
 
-## 2. taffy 0.7 → 0.11 主要 API 变化（**假设——待 worktree Phase 1 实测验证**）
+## 2. taffy 0.7 → 0.11 主要 API 变化（**R1248 CHANGELOG 实测验证**）
 
-> ⚠️ 以下 0.11 API 细节基于 taffy 公开演进的一般认知，**未在 worktree 实测**。按 spec-lint「外部事实保守化」，均标 **A-待验证**，落地 Phase 1 须以实际 compile error 为准。
+> ✅ R1248 已读 taffy 官方 CHANGELOG（https://github.com/DioxusLabs/taffy/blob/main/CHANGELOG.md）验证 0.8→0.11 逐版本 breaking change。以下为 CHANGELOG-verified 事实（仍须 Phase 1 worktree compile error 终验具体签名，但 breaking 域已确认）。
 
-| 域 | 0.7.7（当前） | 0.11（假设 A-待验证） | 影响 |
-|----|--------------|----------------------|------|
-| Tree 类型 | `TaffyTree`（已用此名） | `TaffyTree<E>` 泛型（Measure error 类型） | new_leaf/set_measure 签名 |
-| NodeId | `taffy::node::Node`（已 usize-like） | 泛型 `NodeId` 或默认 | 多处类型标注 |
-| compute | `compute_layout(id, AvailableSpace)` | `compute_layout_with_measure(id, space, measure)` 或 trait-based | engine.rs compute 调用点 |
-| Measure | `MeasureFunc`（Box<dyn Fn>） | 泛型 `Measure` trait / closure | measure_text 19 call |
-| Style | 字段大部分保留 | 部分枚举重构（Position/Display/Dimension） | converter 511 call（主成本） |
-| baseline | 无输入 API（须 cached_baselines patch） | **可能有 native `baseline_overrides` 输入 + Layout.baseline**（A-待验证） | patch 决策 + R1169 unblock |
+| 版本 | breaking change（CHANGELOG 实证） | ZW 影响 |
+|------|----------------------------------|---------|
+| **0.8.0** | **calc() 支持**：size 类型（`LengthPercentage`/`LengthPercentageAuto`/`Dimension`/`MinTrackSizingFunction`/`MaxTrackSizingFunction`）从 enum 改为 **tagged pointer**（`*const ()` + low 3 bits tag）；`LayoutPartialTree::resolve_calc_value` 新 trait | **converter 511 call 主成本**——所有 size 类型构造改 tagged pointer；converter/mod.rs `LengthValue::Px(v) as f32` → 需 0.8 构造器 |
+| **0.9.0** | **`Style` 泛型化** over `CheapCloneStr`（grid named lines/areas）；`TrackSizingFunction`→`GridTemplateComponent` 重命名；`NonRepeatedTrackSizingFunction`→`TrackSizingFunction`；grid low-level API 大改 generic | converter `taffy::Style::default()` → `Style::<CheapCloneStr>` 泛型标注；grid 模块（table.rs grid_areas）适配 |
+| **0.10.0** | **原生 `float`/`clear` 支持**（`FloatContext`+`BlockContext`，feature `float_layout`）+ **`direction`（RTL）**；cache `set`/`get` API 改取 `&LayoutInput`（#933）；`TaffyTree::write_tree`（#925）；CSS `FromStr` 解析（`parse` feature） | **★ 潜在 ZW `float_positioning.rs` 替代**（R129/R1242 float-shrink + R895 float 定位 + adjust_float_positions ~540 行后处理可能由 0.10 原生 float/clear 替代/简化——但 ZW float 后处理含大量 fixup 须逐项验证不回归）；cache API 改 &LayoutInput 影响增量布局 cached_state |
+| **0.11.0** | **safe alignment**：alignment 类型（`AlignContent`/`JustifyContent`/`AlignItems`/`JustifyItems`/`AlignSelf`/`JustifySelf`）改为 struct（`AlignmentKeyword`+`AlignmentSafety`），enum 变体→关联常量（`AlignContent::Start`→`AlignContent::START`）；MSRV 1.71 | converter alignment 构造点（`AlignItems`/`JustifyContent` 等）全改关联常量 |
+| **baseline** | **0.8-0.11 CHANGELOG 未提及 native `baseline_overrides` 输入或 `Layout.baseline` export 新增** | **★ cached_baselines patch 须 re-apply 到 0.11 源**（R1169 unblock 不成立——0.11 无 native baseline input；patch 是 ZW 对 0.7 的本地补丁 engine.rs:625，迁移须 re-apply） |
+
+**★ R1248 关键结论**：
+1. **迁移成本远超原估**：0.8 tagged pointer（size 类型全改）+ 0.9 Style 泛型（converter 主成本）+ 0.11 alignment struct = 三大 breaking 域，converter 511 call + grid 模块 + alignment 构造全须适配。原「tree ops ~120 / Style 511 / measure 19」估偏低（未含 0.8 tagged pointer + 0.9 Style 泛型的连锁重构）。
+2. **0.10 原生 float/clear 是潜在大收益**：可替代/简化 ZW `float_positioning.rs`（~540 行后处理：R129/R1242 shrink + R895 定位 + clear + BFC float containment），但须逐项验证 ZW fixup 不丢失（R145/R895/R129 等多轮 fix）。
+3. **cached_baselines patch 须 re-apply**（0.11 无 native baseline input，R1169 unblock 不成立）。
+4. **MSRV 1.71**（ZW MSRV 1.85，满足）。
 
 ---
 
