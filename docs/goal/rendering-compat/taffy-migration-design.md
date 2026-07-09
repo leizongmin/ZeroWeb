@@ -2,7 +2,7 @@
 
 **版本**：v0.1（草稿，read-only 设计产出）
 **日期**：2026-07-08（R1204）
-**状态**：草稿（rally 模式；**fork A 未授权**——本文档为 R304 DEFER + R1203 strategic fork A 的实施前设计，待用户 go-ahead worktree 后执行）
+**状态**：✅ **R1251 用户已授权 go-ahead**（全量升级 **0.12.1** + native float 迁移；spec-rfc 探测实测完成，见 §8）；M1 在 worktree 推进中。本文档为 R304 DEFER + R1203 strategic fork A 的实施设计。
 **关联**：`docs/goal/rendering-compat/master.md` R1203（strategic fork）；R304 taffy upgrade DEFERRED（archive）；R1187 forward 决策树；R1169 baseline-export taffy-0.8-gated
 **驱动数据**：vendored taffy **0.7.7**（`crates/taffy-local`）+ 自定义 `cached_baselines()` patch；595 call site；10-dir broad aggregate 51.3%（R1202）；残余 flex/grid/multicol-baseline gap 被 0.7.7 无 baseline_overrides 输入 API 阻塞（R1169）
 
@@ -143,3 +143,50 @@ ZW layout-engine 对 taffy 的依赖面（grep `crates/layout-engine/src/` + `ap
 | 版本 | 日期 | 变更 |
 |------|------|------|
 | v0.1 | 2026-07-08（R1204） | 初始设计（R304 DEFER + R1203 fork A 实施前；surface map grep 实证 + 分阶段计划） |
+| v0.2 | 2026-07-09（R1251） | 用户授权 go-ahead；目标 0.11→**0.12.1**；spec-rfc 探测实测（§8）：0.8.3 编译 77 错误（64 机械变体→函数）+ cached_baselines 多条目 cache 发现；taffy-0.12-upgrade-rfc.md 已并入本表（R1247 判 spec-rfc 冗余，独有数据合并于此）|
+
+---
+
+## 8. R1251 更新：spec-rfc 探测实测 + 用户决策
+
+> 用户授权 go-ahead（全量升级 0.12.1 + native float 迁移）。本节合并 spec-rfc 独有数据（探测实测 + cached_baselines de-risk），supersede §2/§3 的「待验证」项。探测 evidence：[`evidence/r1251-taffy-08-probe-2026-07-09.txt`](./evidence/r1251-taffy-08-probe-2026-07-09.txt)。
+
+### 8.1 用户决策（supersede §0/§6 的 fork A 待授权状态）
+- **目标版本**：0.11 → **0.12.1**（最新稳定；0.12.1 含 cache bugfix + Block align-content，优于 0.11）。
+- **策略**：全量升级（非 fork-patch；用户选定）。
+- **native float**：启用 0.10 `float_layout` + 迁移/收敛 ZW `float_positioning.rs` 后处理（用户选定；R1249 评估 0.10 原生 float 覆盖 ZW 大部分核心——float 定位/clear/BFC/shrink-to-fit；ZW-specific fixups 须逐项 A/B）。
+- **cached_baselines**：re-apply patch（0.11/0.12.1 无 native baseline input，§2 已证）。
+
+### 8.2 Phase 1 编译探测实测（0.8.3，supersede §2「A-待验证」）
+方法：临时改 crates.io taffy 0.8.3（un-patch + `taffy="0.8"`），`cargo build -p zero-layout-engine`。
+**结果：77 编译错误，~64 机械变体→函数**，rustc 自动给修复建议（`Dimension::Length(x)`→`Dimension::length(x)`）：
+- `Dimension` Length/Auto/Percent 变体→函数：35 处
+- `LengthPercentage`/`LengthPercentageAuto` 变体→函数：~23 处
+- `Min/MaxTrackSizingFunction` 变体→函数：~14 处
+- `from_flex` API 变化（track sizing）：3 处（§2 未列的小补充）
+- `cached_baselines` 缺失：1 处（engine.rs:627，预期，crates.io 0.8.3 无 ZW patch）
+
+**受影响文件**：converter/mod.rs **53/77**（如 §1.2 预测的主战场）+ tree.rs 14 + engine.rs 10。
+**结论**：0.8.0 breaking = 纯机械 rename，1 session 可修完。§2「迁移成本远超原估」判断的三大 breaking 域中，0.8 tagged pointer 域已被实测为机械。0.9 Style 泛型 + 0.11 alignment 待各自 Phase 实测。
+
+### 8.3 ★ cached_baselines patch de-risk（supersede §1.4/§3 Phase 5「re-apply」表述）
+0.8.3 源码实测：cache 结构与 0.7.7 **不同**——
+- 0.7.7 patch：`cached_baselines(&self)` 无参，读单条目 `entry.content.first_baselines`。
+- 0.8.3：`Cache` **多条目键控**，`get(known_dimensions, available_space, run_mode)->Option<LayoutOutput>`（cache.rs:111）。无参 accessor 不再适用。
+- `LayoutOutput.first_baselines` pub（0.8.3 layout.rs:168 / 0.12.1 同）；公开 `Layout`（order/location/size）**不含** first_baselines → 仍需 cache patch。
+
+**M1 patch 方案（b，推荐）**：在 `final_layout` 提交时（taffy_tree.rs:264 `final_layout` 路径）单独存 first_baselines 到 NodeData 新字段——避开多条目键控歧义。每版本（0.8.3/0.9/0.10/0.11/0.12.1）cache 结构可能再变，patch 须每阶段重新验证。
+
+### 8.4 TBD 终验（spec-rfc 核实，supersede §2 baseline 行「未提及」）
+- **baseline_overrides**：✅ 不存在（CHANGELOG 0.8–0.12 无 + Style 无 baseline 字段 + LayoutOutput.first_baselines 是输出）。R1169「0.8+ unblock baseline-export」**不成立**——baseline-export 走自建 first-baseline 独立路径。
+- **sticky/fixed**：✅ 0.12 仍不支持（Position enum 仅 Relative/Absolute）。保留 ZW 后处理。
+- **MSRV**：0.10/0.11/0.12 = 1.71 < ZW 1.85 ✅。
+- **Style !Sync（0.8 tagged pointer）**：✅ ZW 全 codebase 无 static/LazyLock 持 Style，零影响。
+- **order**：✅ taffy 原生支持（Layout.order:u32）；`sort_children_by_css_order` 是 ZW converter 漏传 order 的补丁，非 taffy 限制——可独立于升级先修。
+
+### 8.5 M1 执行（worktree 推进）
+1. worktree re-vendor taffy 0.8.3 源到 `crates/taffy-local`。
+2. cached_baselines patch 方案 (b)（final_layout 提交时存 first_baselines）。
+3. 修 76 机械变体→函数（converter 53 + tree 14 + engine 9）+ 3 from_flex。
+4. `cargo build -p zero-layout-engine` → 0 errors（M1 code-complete）。
+5. A/B：10-dir oracle（基线 R1243/R1250）+ product-smoke，net≥0 即留。
