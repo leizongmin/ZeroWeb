@@ -123,29 +123,23 @@ fn test_parse_single_auto_track_minmax() {
 /// 测试 parse_min_track：零百分比。
 #[test]
 fn test_parse_min_track_zero_percent() {
-    use taffy::style::MinTrackSizingFunction;
     let result = parse_min_track("0%");
-    assert!(matches!(result, MinTrackSizingFunction::Fixed(_)));
+    assert!(!result.is_auto());
 }
 
 /// 测试 parse_min_track：小数像素值。
 #[test]
 fn test_parse_min_track_fractional_px() {
-    use taffy::style::MinTrackSizingFunction;
     let result = parse_min_track("0.5px");
-    assert!(matches!(result, MinTrackSizingFunction::Fixed(_)));
+    assert!(!result.is_auto());
 }
 
 /// 测试 parse_min_track：fr 后缀不被 min 接受（应回退到 Auto）。
 #[test]
 fn test_parse_min_track_fr_fallback_to_auto() {
-    use taffy::style::MinTrackSizingFunction;
     let result = parse_min_track("1fr");
     // fr 不在 parse_min_track 的匹配规则中，应回退到 Auto
-    assert!(
-        matches!(result, MinTrackSizingFunction::Auto),
-        "min 不支持 fr，应回退到 Auto"
-    );
+    assert!(result.is_auto(), "min 不支持 fr，应回退到 Auto");
 }
 
 // ── parse_max_track 边界条件 ──
@@ -153,17 +147,15 @@ fn test_parse_min_track_fr_fallback_to_auto() {
 /// 测试 parse_max_track：纯数字（无单位）。
 #[test]
 fn test_parse_max_track_bare_number() {
-    use taffy::style::MaxTrackSizingFunction;
     let result = parse_max_track("300");
-    assert!(matches!(result, MaxTrackSizingFunction::Fixed(_)));
+    assert!(!result.is_auto());
 }
 
 /// 测试 parse_max_track：零 fr 值。
 #[test]
 fn test_parse_max_track_zero_fr() {
-    use taffy::style::MaxTrackSizingFunction;
     let result = parse_max_track("0fr");
-    assert!(matches!(result, MaxTrackSizingFunction::Fraction(_)));
+    assert!(result.is_fr());
 }
 
 // ── parse_minmax_as_non_repeated 边界条件 ──
@@ -173,7 +165,7 @@ fn test_parse_max_track_zero_fr() {
 fn test_parse_minmax_as_non_repeated_empty() {
     assert_eq!(
         parse_minmax_as_non_repeated(""),
-        taffy::style::NonRepeatedTrackSizingFunction::AUTO
+        taffy::style::TrackSizingFunction::AUTO
     );
 }
 
@@ -182,7 +174,7 @@ fn test_parse_minmax_as_non_repeated_empty() {
 fn test_parse_minmax_as_non_repeated_whitespace_only() {
     assert_eq!(
         parse_minmax_as_non_repeated("   "),
-        taffy::style::NonRepeatedTrackSizingFunction::AUTO
+        taffy::style::TrackSizingFunction::AUTO
     );
 }
 
@@ -214,7 +206,7 @@ fn test_parse_repeat_invalid_count() {
     let result = parse_repeat("abc, 100px");
     // 无效次数应产生单个 AUTO
     assert_eq!(result.len(), 1);
-    assert_eq!(result[0], taffy::style::TrackSizingFunction::AUTO);
+    assert_eq!(result[0], taffy::style::TrackSizingFunction::AUTO.into());
 }
 
 /// 测试 parse_repeat：零次重复返回空列表。
@@ -261,14 +253,14 @@ fn test_parse_grid_auto_tracks_whitespace_string() {
 #[test]
 fn test_parse_single_track_invalid_string() {
     let result = parse_single_track("not-a-track-value");
-    assert_eq!(result, taffy::style::TrackSizingFunction::AUTO);
+    assert_eq!(result, taffy::style::TrackSizingFunction::AUTO.into());
 }
 
 /// 测试 parse_single_track：空字符串回退到 AUTO。
 #[test]
 fn test_parse_single_track_empty_string() {
     let result = parse_single_track("");
-    assert_eq!(result, taffy::style::TrackSizingFunction::AUTO);
+    assert_eq!(result, taffy::style::TrackSizingFunction::AUTO.into());
 }
 
 // ── R1058：display:inline 垂直 margin 归零（CSS §8.3）──
@@ -279,7 +271,6 @@ fn test_parse_single_track_empty_string() {
 /// 错误推开块子间距）。水平 margin 保留（inline 水平 margin 有效）。
 #[test]
 fn test_r1058_inline_vertical_margin_zeroed() {
-    use taffy::style::LengthPercentageAuto;
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::Inline;
     style.margin_top = LengthValue::Px(50.0);
@@ -289,23 +280,23 @@ fn test_r1058_inline_vertical_margin_zeroed() {
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     // 垂直 margin 归零（§8.3）
     assert!(
-        matches!(taffy_style.margin.top, LengthPercentageAuto::Length(0.0)),
+        (!taffy_style.margin.top.is_auto() && taffy_style.margin.top.into_raw().value() == 0.0),
         "display:inline 的 margin-top 应回零（§8.3），实测 {:?}",
         taffy_style.margin.top
     );
     assert!(
-        matches!(taffy_style.margin.bottom, LengthPercentageAuto::Length(0.0)),
+        (!taffy_style.margin.bottom.is_auto() && taffy_style.margin.bottom.into_raw().value() == 0.0),
         "display:inline 的 margin-bottom 应回零（§8.3），实测 {:?}",
         taffy_style.margin.bottom
     );
     // 水平 margin 保留
     assert!(
-        matches!(taffy_style.margin.left, LengthPercentageAuto::Length(10.0)),
+        (!taffy_style.margin.left.is_auto() && taffy_style.margin.left.into_raw().value() == 10.0),
         "display:inline 的 margin-left 应保留 10px，实测 {:?}",
         taffy_style.margin.left
     );
     assert!(
-        matches!(taffy_style.margin.right, LengthPercentageAuto::Length(20.0)),
+        (!taffy_style.margin.right.is_auto() && taffy_style.margin.right.into_raw().value() == 20.0),
         "display:inline 的 margin-right 应保留 20px，实测 {:?}",
         taffy_style.margin.right
     );
@@ -314,13 +305,12 @@ fn test_r1058_inline_vertical_margin_zeroed() {
 /// R1058 对照：display:block 的垂直 margin 保留（非 inline，§8.3 不适用）。
 #[test]
 fn test_r1058_block_vertical_margin_preserved() {
-    use taffy::style::LengthPercentageAuto;
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::Block;
     style.margin_top = LengthValue::Px(50.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert!(
-        matches!(taffy_style.margin.top, LengthPercentageAuto::Length(50.0)),
+        (!taffy_style.margin.top.is_auto() && taffy_style.margin.top.into_raw().value() == 50.0),
         "display:block 的 margin-top 应保留 50px，实测 {:?}",
         taffy_style.margin.top
     );
@@ -438,11 +428,11 @@ fn test_parse_minmax_auto_fr() {
 fn test_convert_length_to_lp_min_max_content() {
     assert_eq!(
         convert_length_to_lp(&LengthValue::MinContent, 800.0, 600.0),
-        taffy::style::LengthPercentage::Length(0.0)
+        taffy::style::LengthPercentage::length(0.0)
     );
     assert_eq!(
         convert_length_to_lp(&LengthValue::MaxContent, 800.0, 600.0),
-        taffy::style::LengthPercentage::Length(0.0)
+        taffy::style::LengthPercentage::length(0.0)
     );
 }
 
@@ -453,11 +443,11 @@ fn test_convert_length_to_lp_min_max_content() {
 fn test_convert_length_to_lpa_min_max_content() {
     assert_eq!(
         convert_length_to_lpa(&LengthValue::MinContent, false, 800.0, 600.0),
-        taffy::style::LengthPercentageAuto::Length(0.0)
+        taffy::style::LengthPercentageAuto::length(0.0)
     );
     assert_eq!(
         convert_length_to_lpa(&LengthValue::MaxContent, false, 800.0, 600.0),
-        taffy::style::LengthPercentageAuto::Length(0.0)
+        taffy::style::LengthPercentageAuto::length(0.0)
     );
 }
 
@@ -467,7 +457,7 @@ fn test_convert_length_to_lpa_min_max_content() {
 #[test]
 fn test_convert_flex_basis_auto_length() {
     let result = convert_flex_basis(&FlexBasisValue::Length(LengthValue::Auto), 800.0, 600.0);
-    assert_eq!(result, taffy::style::Dimension::Auto);
+    assert_eq!(result, taffy::style::Dimension::auto());
 }
 
 // ── convert_display 未覆盖的变体测试 ──
@@ -516,40 +506,40 @@ fn test_convert_length_to_dimension_uncovered_variants() {
     // Viewport units
     assert_eq!(
         convert_length_to_dimension(&LengthValue::Vh(50.0), 800.0, 600.0),
-        taffy::style::Dimension::Length(300.0)
+        taffy::style::Dimension::length(300.0)
     );
     assert_eq!(
         convert_length_to_dimension(&LengthValue::Vw(25.0), 800.0, 600.0),
-        taffy::style::Dimension::Length(200.0)
+        taffy::style::Dimension::length(200.0)
     );
     assert_eq!(
         convert_length_to_dimension(&LengthValue::Vmin(10.0), 800.0, 600.0),
-        taffy::style::Dimension::Length(60.0)
+        taffy::style::Dimension::length(60.0)
     );
     assert_eq!(
         convert_length_to_dimension(&LengthValue::Vmax(20.0), 800.0, 600.0),
-        taffy::style::Dimension::Length(160.0)
+        taffy::style::Dimension::length(160.0)
     );
     assert_eq!(
         convert_length_to_dimension(&LengthValue::Ch(8.0), 800.0, 600.0),
-        taffy::style::Dimension::Length(8.0)
+        taffy::style::Dimension::length(8.0)
     );
 
     // FitContent 内部转换
     let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(100.0)));
     assert_eq!(
         convert_length_to_dimension(&fit_content, 800.0, 600.0),
-        taffy::style::Dimension::Length(100.0)
+        taffy::style::Dimension::length(100.0)
     );
 
     // MinContent/MaxContent 塌缩为 0（信号保留到 layout-engine 两趟测量解析）
     assert_eq!(
         convert_length_to_dimension(&LengthValue::MinContent, 800.0, 600.0),
-        taffy::style::Dimension::Length(0.0)
+        taffy::style::Dimension::length(0.0)
     );
     assert_eq!(
         convert_length_to_dimension(&LengthValue::MaxContent, 800.0, 600.0),
-        taffy::style::Dimension::Length(0.0)
+        taffy::style::Dimension::length(0.0)
     );
 
     // Calc 映射为 0
@@ -559,7 +549,7 @@ fn test_convert_length_to_dimension_uncovered_variants() {
             800.0,
             600.0
         ),
-        taffy::style::Dimension::Length(0.0)
+        taffy::style::Dimension::length(0.0)
     );
 }
 
@@ -572,34 +562,34 @@ fn test_convert_max_length_to_dimension_uncovered_variants() {
     // Infinity 映射为 Auto
     assert_eq!(
         convert_max_length_to_dimension(&LengthValue::Px(f64::INFINITY), 800.0, 600.0),
-        taffy::style::Dimension::Auto
+        taffy::style::Dimension::auto()
     );
 
     // Viewport units
     assert_eq!(
         convert_max_length_to_dimension(&LengthValue::Vh(50.0), 800.0, 600.0),
-        taffy::style::Dimension::Length(300.0)
+        taffy::style::Dimension::length(300.0)
     );
     assert_eq!(
         convert_max_length_to_dimension(&LengthValue::Vw(25.0), 800.0, 600.0),
-        taffy::style::Dimension::Length(200.0)
+        taffy::style::Dimension::length(200.0)
     );
 
     // FitContent 内部转换
     let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(200.0)));
     assert_eq!(
         convert_max_length_to_dimension(&fit_content, 800.0, 600.0),
-        taffy::style::Dimension::Length(200.0)
+        taffy::style::Dimension::length(200.0)
     );
 
     // MinContent/MaxContent 映射为 Auto
     assert_eq!(
         convert_max_length_to_dimension(&LengthValue::MinContent, 800.0, 600.0),
-        taffy::style::Dimension::Auto
+        taffy::style::Dimension::auto()
     );
     assert_eq!(
         convert_max_length_to_dimension(&LengthValue::MaxContent, 800.0, 600.0),
-        taffy::style::Dimension::Auto
+        taffy::style::Dimension::auto()
     );
 }
 
@@ -612,28 +602,28 @@ fn test_convert_length_to_lp_uncovered_variants() {
     // Viewport units
     assert_eq!(
         convert_length_to_lp(&LengthValue::Vh(50.0), 800.0, 600.0),
-        taffy::style::LengthPercentage::Length(300.0)
+        taffy::style::LengthPercentage::length(300.0)
     );
     assert_eq!(
         convert_length_to_lp(&LengthValue::Vw(25.0), 800.0, 600.0),
-        taffy::style::LengthPercentage::Length(200.0)
+        taffy::style::LengthPercentage::length(200.0)
     );
 
     // FitContent 内部转换
     let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(100.0)));
     assert_eq!(
         convert_length_to_lp(&fit_content, 800.0, 600.0),
-        taffy::style::LengthPercentage::Length(100.0)
+        taffy::style::LengthPercentage::length(100.0)
     );
 
     // MinContent/MaxContent 映射为 0
     assert_eq!(
         convert_length_to_lp(&LengthValue::MinContent, 800.0, 600.0),
-        taffy::style::LengthPercentage::Length(0.0)
+        taffy::style::LengthPercentage::length(0.0)
     );
     assert_eq!(
         convert_length_to_lp(&LengthValue::MaxContent, 800.0, 600.0),
-        taffy::style::LengthPercentage::Length(0.0)
+        taffy::style::LengthPercentage::length(0.0)
     );
 
     // Calc 映射为 0
@@ -643,7 +633,7 @@ fn test_convert_length_to_lp_uncovered_variants() {
             800.0,
             600.0
         ),
-        taffy::style::LengthPercentage::Length(0.0)
+        taffy::style::LengthPercentage::length(0.0)
     );
 }
 
@@ -654,28 +644,28 @@ fn test_convert_length_to_lpa_uncovered_variants() {
     // Viewport units
     assert_eq!(
         convert_length_to_lpa(&LengthValue::Vh(50.0), false, 800.0, 600.0),
-        taffy::style::LengthPercentageAuto::Length(300.0)
+        taffy::style::LengthPercentageAuto::length(300.0)
     );
     assert_eq!(
         convert_length_to_lpa(&LengthValue::Vw(25.0), false, 800.0, 600.0),
-        taffy::style::LengthPercentageAuto::Length(200.0)
+        taffy::style::LengthPercentageAuto::length(200.0)
     );
 
     // FitContent 内部转换
     let fit_content = LengthValue::FitContent(Box::new(LengthValue::Px(100.0)));
     assert_eq!(
         convert_length_to_lpa(&fit_content, false, 800.0, 600.0),
-        taffy::style::LengthPercentageAuto::Length(100.0)
+        taffy::style::LengthPercentageAuto::length(100.0)
     );
 
     // MinContent/MaxContent 映射为 0
     assert_eq!(
         convert_length_to_lpa(&LengthValue::MinContent, false, 800.0, 600.0),
-        taffy::style::LengthPercentageAuto::Length(0.0)
+        taffy::style::LengthPercentageAuto::length(0.0)
     );
     assert_eq!(
         convert_length_to_lpa(&LengthValue::MaxContent, false, 800.0, 600.0),
-        taffy::style::LengthPercentageAuto::Length(0.0)
+        taffy::style::LengthPercentageAuto::length(0.0)
     );
 
     // Calc 映射为 0
@@ -686,7 +676,7 @@ fn test_convert_length_to_lpa_uncovered_variants() {
             800.0,
             600.0
         ),
-        taffy::style::LengthPercentageAuto::Length(0.0)
+        taffy::style::LengthPercentageAuto::length(0.0)
     );
 }
 
@@ -756,50 +746,39 @@ fn test_parse_grid_tracks_none_value() {
 /// 测试 parse_grid_tracks：repeat with auto-fill。
 #[test]
 fn test_parse_grid_tracks_repeat_auto_fill() {
-    use taffy::style::GridTrackRepetition;
+    use taffy::style::RepetitionCount;
 
     let tracks = parse_grid_tracks(&Some("repeat(auto-fill, 200px)".to_string()));
     assert_eq!(tracks.len(), 1);
     match &tracks[0] {
-        taffy::style::TrackSizingFunction::Repeat(rep, inner) => {
-            assert_eq!(*rep, GridTrackRepetition::AutoFill);
-            assert_eq!(inner.len(), 1);
-            assert_eq!(
-                inner[0],
-                taffy::style::NonRepeatedTrackSizingFunction::from_length(200.0)
-            );
+        taffy::style::GridTemplateComponent::Repeat(rep) => {
+            assert_eq!(rep.count, RepetitionCount::AutoFill);
+            assert_eq!(rep.tracks.len(), 1);
+            assert_eq!(rep.tracks[0], taffy::style::TrackSizingFunction::from_length(200.0));
         }
-        _ => panic!("Expected TrackSizingFunction::Repeat"),
+        _ => panic!("Expected GridTemplateComponent::Repeat"),
     }
 }
 
 /// 测试 parse_grid_tracks：repeat with auto-fit。
 #[test]
 fn test_parse_grid_tracks_repeat_auto_fit() {
-    use taffy::style::GridTrackRepetition;
+    use taffy::style::RepetitionCount;
 
     let tracks = parse_grid_tracks(&Some("repeat(auto-fit, minmax(100px, 1fr))".to_string()));
     assert_eq!(tracks.len(), 1);
     match &tracks[0] {
-        taffy::style::TrackSizingFunction::Repeat(rep, inner) => {
-            assert_eq!(*rep, GridTrackRepetition::AutoFit);
-            assert_eq!(inner.len(), 1);
-            let nr = &inner[0];
-            // NonRepeatedTrackSizingFunction is MinMax<Min, Max>
-            match nr.min {
-                taffy::style::MinTrackSizingFunction::Fixed(lp) => {
-                    assert_eq!(lp, taffy::style::LengthPercentage::Length(100.0));
-                }
-                _ => panic!("Expected Fixed(100px)"),
-            }
-            match nr.max {
-                taffy::style::MaxTrackSizingFunction::Fraction(f) => {
-                    assert_eq!(f, 1.0);
-                }
-                _ => panic!("Expected Fraction(1fr)"),
-            }
+        taffy::style::GridTemplateComponent::Repeat(rep) => {
+            assert_eq!(rep.count, RepetitionCount::AutoFit);
+            assert_eq!(rep.tracks.len(), 1);
+            let nr = &rep.tracks[0];
+            // TrackSizingFunction is MinMax<Min, Max>（0.9.2 opaque struct，用 accessor 断言）
+            assert!(!nr.min.is_auto(), "Expected Fixed(100px)");
+            assert_eq!(nr.min.into_raw().value(), 100.0);
+            assert!(nr.max.is_fr(), "Expected Fraction(1fr)");
+            assert_eq!(nr.max.into_raw().value(), 1.0);
         }
-        _ => panic!("Expected TrackSizingFunction::Repeat"),
+        _ => panic!("Expected GridTemplateComponent::Repeat"),
     }
 }
 

@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-taffy = { workspace = true }
+taffy = { workspace = true, features = ["float_layout"] }
 zero-dom = { workspace = true }
 zero-style-system = { workspace = true }
 zero-css-parser = { workspace = true }

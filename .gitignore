@@ -58,7 +58,7 @@ coverage_report/
 
 # Node (chromium screenshot Oracle tooling, DC-14)
 # chromium Oracle 截图产物（可由 chromium-oracle-shot.mjs 重新生成，不入库）
-tests/wpt-runner/oracle-shots/
+tests/wpt-runner/oracle-shots
 node_modules/
 
 .local/
@@ -73,4 +73,4 @@ product-smoke-cpu.png
 docs/goal/rendering-compat/evidence/
 
 # WPT reftest 数据（上游 web-platform-tests/wpt 子集，~19952 文件，按需 make fetch-wpt-data 拉取）
-tests/wpt-runner/wpt-data/
+tests/wpt-runner/wpt-data

@@ -733,7 +733,7 @@ impl LayoutEngine {
                     && let Some(&taffy_id) = dom_to_taffy.get(&id)
                     && let Ok(mut style) = taffy_tree.style(taffy_id).cloned()
                 {
-                    style.size.width = taffy::style::Dimension::Auto;
+                    style.size.width = taffy::style::Dimension::auto();
                     let _ = taffy_tree.set_style(taffy_id, style);
                     let _ = taffy_tree.mark_dirty(taffy_id);
                     changed = true;
@@ -752,7 +752,7 @@ impl LayoutEngine {
                 continue;
             };
             if let Ok(mut style) = taffy_tree.style(taffy_id).cloned() {
-                style.size.width = taffy::style::Dimension::Length(intrinsic);
+                style.size.width = taffy::style::Dimension::length(intrinsic);
                 let _ = taffy_tree.set_style(taffy_id, style);
                 let _ = taffy_tree.mark_dirty(taffy_id);
                 changed = true;
@@ -845,9 +845,9 @@ impl LayoutEngine {
                     // 仅当 cross 已解析（>0）且 main 与推导值显著不同（collapsed 或不一致）时改写。
                     if cross_resolved > 0.0 && (main_resolved - expected_main).abs() > 0.5 {
                         if is_column {
-                            st.size.height = taffy::style::Dimension::Length(expected_main.max(0.5));
+                            st.size.height = taffy::style::Dimension::length(expected_main.max(0.5));
                         } else {
-                            st.size.width = taffy::style::Dimension::Length(expected_main.max(0.5));
+                            st.size.width = taffy::style::Dimension::length(expected_main.max(0.5));
                         }
                         let _ = taffy_tree.set_style(tid, st);
                         let _ = taffy_tree.mark_dirty(tid);
@@ -924,7 +924,7 @@ impl LayoutEngine {
                                     && let Some(&tid) = dom_to_taffy.get(&id)
                                     && let Ok(mut st) = taffy_tree.style(tid).cloned()
                                 {
-                                    st.size.height = taffy::style::Dimension::Auto;
+                                    st.size.height = taffy::style::Dimension::auto();
                                     // 替换元素补设固有绝对尺寸：taffy 需要绝对值才能
                                     // 在两侧 auto 时定尺寸（aspect_ratio 只够推导比例）。
                                     if b.is_replaced
@@ -933,9 +933,9 @@ impl LayoutEngine {
                                         let iw = iw.max(1.0);
                                         let ih = ih.max(1.0);
                                         if matches!(s.width, LengthValue::Auto) {
-                                            st.size.width = taffy::style::Dimension::Length(iw);
+                                            st.size.width = taffy::style::Dimension::length(iw);
                                         }
-                                        st.size.height = taffy::style::Dimension::Length(ih);
+                                        st.size.height = taffy::style::Dimension::length(ih);
                                         if st.aspect_ratio.is_none() {
                                             st.aspect_ratio = Some(iw / ih);
                                         }
@@ -1050,10 +1050,10 @@ impl LayoutEngine {
                 {
                     let resolve = |v: &LengthValue| match v {
                         LengthValue::Percentage(p) => {
-                            taffy::style::LengthPercentage::Length((*p as f32 / 100.0 * parent_content_width).max(0.0))
+                            taffy::style::LengthPercentage::length((*p as f32 / 100.0 * parent_content_width).max(0.0))
                         }
                         // 其它值保持原 taffy 值（converter 已转换）；此处只覆盖百分比。
-                        _ => taffy::style::LengthPercentage::Length(0.0),
+                        _ => taffy::style::LengthPercentage::length(0.0),
                     };
                     // 仅改写为百分比的边，其余保留 taffy 已转换值。
                     if let LengthValue::Percentage(_) = s.padding_top {

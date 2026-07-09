@@ -41,19 +41,19 @@ fn test_convert_length_em_rem_vw_vh() {
     let mut style = ComputedStyle::default();
     style.width = LengthValue::Em(16.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(16.0));
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::length(16.0));
 
     style.width = LengthValue::Rem(12.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(12.0));
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::length(12.0));
 
     style.width = LengthValue::Vw(50.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(400.0));
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::length(400.0));
 
     style.width = LengthValue::Vh(25.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(150.0));
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::length(150.0));
 }
 
 /// 测试 Vmin、Vmax、Ch 单位转换：viewport 单位解析为视口相对像素。
@@ -62,15 +62,15 @@ fn test_convert_length_vmin_vmax_ch() {
     let mut style = ComputedStyle::default();
     style.width = LengthValue::Vmin(10.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(60.0));
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::length(60.0));
 
     style.width = LengthValue::Vmax(20.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(160.0));
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::length(160.0));
 
     style.width = LengthValue::Ch(8.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(8.0));
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::length(8.0));
 }
 
 /// 测试 LengthValue::Calc 在所有转换函数中映射为 length(0.0)。
@@ -82,25 +82,25 @@ fn test_convert_length_calc_fallback() {
     // convert_length_to_dimension
     assert_eq!(
         convert_length_to_dimension(&calc, 800.0, 600.0),
-        taffy::style::Dimension::Length(0.0)
+        taffy::style::Dimension::length(0.0)
     );
 
     // convert_max_length_to_dimension
     assert_eq!(
         convert_max_length_to_dimension(&calc, 800.0, 600.0),
-        taffy::style::Dimension::Length(0.0)
+        taffy::style::Dimension::length(0.0)
     );
 
     // convert_length_to_lp
     assert_eq!(
         convert_length_to_lp(&calc, 800.0, 600.0),
-        taffy::style::LengthPercentage::Length(0.0)
+        taffy::style::LengthPercentage::length(0.0)
     );
 
     // convert_length_to_lpa
     assert_eq!(
         convert_length_to_lpa(&calc, false, 800.0, 600.0),
-        taffy::style::LengthPercentageAuto::Length(0.0)
+        taffy::style::LengthPercentageAuto::length(0.0)
     );
 }
 
@@ -119,14 +119,14 @@ fn test_convert_length_to_lpa_calc_percentage() {
 
     assert_eq!(
         convert_length_to_lpa(&calc, false, 800.0, 600.0),
-        taffy::style::LengthPercentageAuto::Percent(0.5)
+        taffy::style::LengthPercentageAuto::percent(0.5)
     );
 
     // 纯百分比 calc(75%) → Percent(0.75)
     let calc75 = LengthValue::Calc(Box::new(CalcExpr::Length(LengthValue::Percentage(75.0))));
     assert_eq!(
         convert_length_to_lpa(&calc75, false, 800.0, 600.0),
-        taffy::style::LengthPercentageAuto::Percent(0.75)
+        taffy::style::LengthPercentageAuto::percent(0.75)
     );
 }
 
@@ -143,16 +143,16 @@ fn test_convert_max_length_and_lp_calc_percentage() {
         Box::new(CalcExpr::Length(LengthValue::Px(0.0))),
     )));
 
-    // max-width/max-height：Dimension::Percent(0.6)
+    // max-width/max-height：Dimension::percent(0.6)
     assert_eq!(
         convert_max_length_to_dimension(&calc, 800.0, 600.0),
-        taffy::style::Dimension::Percent(0.6)
+        taffy::style::Dimension::percent(0.6)
     );
 
-    // padding/border/gap：LengthPercentage::Percent(0.6)
+    // padding/border/gap：LengthPercentage::percent(0.6)
     assert_eq!(
         convert_length_to_lp(&calc, 800.0, 600.0),
-        taffy::style::LengthPercentage::Percent(0.6)
+        taffy::style::LengthPercentage::percent(0.6)
     );
 }
 
@@ -163,8 +163,8 @@ fn test_convert_max_length_infinity() {
     style.max_width = LengthValue::Px(f64::INFINITY);
     style.max_height = LengthValue::Px(f64::INFINITY);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Auto);
-    assert_eq!(taffy_style.max_size.height, taffy::style::Dimension::Auto);
+    assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::auto());
+    assert_eq!(taffy_style.max_size.height, taffy::style::Dimension::auto());
 }
 
 /// 测试 max-width 的 Px 和 Percentage 值转换。
@@ -173,11 +173,11 @@ fn test_convert_max_length_px_percentage() {
     let mut style = ComputedStyle::default();
     style.max_width = LengthValue::Px(500.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Length(500.0));
+    assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::length(500.0));
 
     style.max_width = LengthValue::Percentage(80.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Percent(0.8));
+    assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::percent(0.8));
 }
 
 /// 测试 FlexWrap::WrapReverse 映射为 taffy::FlexWrap::WrapReverse。
@@ -195,35 +195,35 @@ fn test_convert_flex_basis_content() {
     let mut style = ComputedStyle::default();
     style.flex_basis = FlexBasisValue::Content;
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::Auto);
+    assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::auto());
 }
 
 /// 测试 Auto 在 convert_length_to_lp 中映射为 length(0.0)。
 #[test]
 fn test_convert_length_to_lp_auto() {
     let result = convert_length_to_lp(&LengthValue::Auto, 800.0, 600.0);
-    assert_eq!(result, taffy::style::LengthPercentage::Length(0.0));
+    assert_eq!(result, taffy::style::LengthPercentage::length(0.0));
 }
 
 /// 测试 Percentage 在 convert_length_to_lp 中转换为 Percent。
 #[test]
 fn test_convert_length_to_lp_percentage() {
     let result = convert_length_to_lp(&LengthValue::Percentage(33.0), 800.0, 600.0);
-    assert_eq!(result, taffy::style::LengthPercentage::Percent(0.33));
+    assert_eq!(result, taffy::style::LengthPercentage::percent(0.33));
 }
 
-/// 测试 Auto 在 convert_length_to_lpa 中映射为 LengthPercentageAuto::Auto。
+/// 测试 Auto 在 convert_length_to_lpa 中映射为 LengthPercentageAuto::auto()。
 #[test]
 fn test_convert_length_to_lpa_auto() {
     let result = convert_length_to_lpa(&LengthValue::Auto, false, 800.0, 600.0);
-    assert_eq!(result, taffy::style::LengthPercentageAuto::Auto);
+    assert_eq!(result, taffy::style::LengthPercentageAuto::auto());
 }
 
 /// 测试 Percentage 在 convert_length_to_lpa 中转换为 Percent。
 #[test]
 fn test_convert_length_to_lpa_percentage() {
     let result = convert_length_to_lpa(&LengthValue::Percentage(60.0), false, 800.0, 600.0);
-    assert_eq!(result, taffy::style::LengthPercentageAuto::Percent(0.6));
+    assert_eq!(result, taffy::style::LengthPercentageAuto::percent(0.6));
 }
 
 /// 测试 align_content 的所有变体转换。
@@ -321,7 +321,7 @@ fn test_tokenized_track_list_nested_parens() {
 fn test_parse_minmax_as_non_repeated_malformed() {
     // 只有一个参数（缺少逗号分隔的第二部分），应返回 AUTO
     let result = parse_minmax_as_non_repeated("100px");
-    assert_eq!(result, taffy::style::NonRepeatedTrackSizingFunction::AUTO);
+    assert_eq!(result, taffy::style::TrackSizingFunction::AUTO);
 }
 
 /// 测试 resolve_named_area 对未知 which 参数返回 Auto。
@@ -471,7 +471,7 @@ fn test_parse_grid_tracks_percentage_values() {
     // 验证每个轨道都是 Single 变体（不是 Repeat）
     for (i, track) in tracks.iter().enumerate() {
         assert!(
-            matches!(track, taffy::style::TrackSizingFunction::Single(_)),
+            matches!(track, taffy::style::GridTemplateComponent::Single(_)),
             "第 {} 个轨道应为 Single 变体",
             i
         );
@@ -538,7 +538,7 @@ fn test_convert_max_length_dimension_units() {
     let mut style = ComputedStyle::default();
     style.max_width = LengthValue::Em(10.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Length(10.0));
+    assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::length(10.0));
 }
 
 #[test]
@@ -547,7 +547,7 @@ fn test_convert_max_height_percentage() {
     let mut style = ComputedStyle::default();
     style.max_height = LengthValue::Percentage(50.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.max_size.height, taffy::style::Dimension::Percent(0.5));
+    assert_eq!(taffy_style.max_size.height, taffy::style::Dimension::percent(0.5));
 }
 
 #[test]
@@ -557,8 +557,8 @@ fn test_convert_padding_em_rem() {
     style.padding_left = LengthValue::Em(2.0);
     style.padding_right = LengthValue::Rem(1.5);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.padding.left, taffy::style::LengthPercentage::Length(2.0));
-    assert_eq!(taffy_style.padding.right, taffy::style::LengthPercentage::Length(1.5));
+    assert_eq!(taffy_style.padding.left, taffy::style::LengthPercentage::length(2.0));
+    assert_eq!(taffy_style.padding.right, taffy::style::LengthPercentage::length(1.5));
 }
 
 #[test]
@@ -571,10 +571,10 @@ fn test_convert_margin_viewport_units() {
     style.margin_bottom = LengthValue::Vh(2.5);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     // 5vw = 5 * 800/100 = 40.0; 2.5vh = 2.5 * 600/100 = 15.0
-    assert_eq!(taffy_style.margin.top, taffy::style::LengthPercentageAuto::Length(40.0));
+    assert_eq!(taffy_style.margin.top, taffy::style::LengthPercentageAuto::length(40.0));
     assert_eq!(
         taffy_style.margin.bottom,
-        taffy::style::LengthPercentageAuto::Length(15.0)
+        taffy::style::LengthPercentageAuto::length(15.0)
     );
 }
 
@@ -587,7 +587,7 @@ fn test_convert_gap_viewport_units() {
     style.column_gap = LengthValue::Vmax(1.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     // 2vmin = 2 * min(800,600)/100 = 12.0
-    assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(12.0));
+    assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::length(12.0));
 }
 
 #[test]
@@ -611,7 +611,7 @@ fn test_convert_flex_basis_length_em() {
     style.display = DisplayValue::Flex;
     style.flex_basis = FlexBasisValue::Length(LengthValue::Em(3.0));
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::Length(3.0));
+    assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::length(3.0));
 }
 
 #[test]
@@ -643,8 +643,8 @@ fn test_convert_min_max_width_ch_unit() {
     style.min_width = LengthValue::Ch(4.0);
     style.max_width = LengthValue::Ch(40.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.min_size.width, taffy::style::Dimension::Length(4.0));
-    assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::Length(40.0));
+    assert_eq!(taffy_style.min_size.width, taffy::style::Dimension::length(4.0));
+    assert_eq!(taffy_style.max_size.width, taffy::style::Dimension::length(40.0));
 }
 
 // ── 内部解析函数边界条件测试 ──
@@ -696,7 +696,7 @@ fn test_tokenize_track_list_deeply_nested() {
 #[test]
 fn test_parse_single_auto_track_auto() {
     let result = parse_single_auto_track("auto");
-    assert_eq!(result, taffy::style::NonRepeatedTrackSizingFunction::AUTO);
+    assert_eq!(result, taffy::style::TrackSizingFunction::AUTO);
 }
 
 /// 测试 parse_single_auto_track：fr 值返回弹性轨道。
@@ -724,7 +724,7 @@ fn test_parse_single_auto_track_percent() {
 #[test]
 fn test_parse_single_auto_track_invalid() {
     let result = parse_single_auto_track("invalid");
-    assert_eq!(result, taffy::style::NonRepeatedTrackSizingFunction::AUTO);
+    assert_eq!(result, taffy::style::TrackSizingFunction::AUTO);
 }
 
 /// 测试 parse_min_track：auto 返回 Auto。
@@ -732,31 +732,28 @@ fn test_parse_single_auto_track_invalid() {
 fn test_parse_min_track_auto() {
     use taffy::style::MinTrackSizingFunction;
     let result = parse_min_track("auto");
-    assert_eq!(result, MinTrackSizingFunction::Auto);
+    assert_eq!(result, MinTrackSizingFunction::auto());
 }
 
 /// 测试 parse_min_track：px 值返回 Fixed(Length)。
 #[test]
 fn test_parse_min_track_px() {
-    use taffy::style::MinTrackSizingFunction;
     let result = parse_min_track("50px");
-    assert!(matches!(result, MinTrackSizingFunction::Fixed(_)));
+    assert!(!result.is_auto());
 }
 
 /// 测试 parse_min_track：百分比值返回 Fixed(Percent)。
 #[test]
 fn test_parse_min_track_percent() {
-    use taffy::style::MinTrackSizingFunction;
     let result = parse_min_track("25%");
-    assert!(matches!(result, MinTrackSizingFunction::Fixed(_)));
+    assert!(!result.is_auto());
 }
 
 /// 测试 parse_min_track：纯数字返回 Fixed(Length)。
 #[test]
 fn test_parse_min_track_numeric() {
-    use taffy::style::MinTrackSizingFunction;
     let result = parse_min_track("100");
-    assert!(matches!(result, MinTrackSizingFunction::Fixed(_)));
+    assert!(!result.is_auto());
 }
 
 /// 测试 parse_min_track：无效值回退到 Auto。
@@ -764,7 +761,7 @@ fn test_parse_min_track_numeric() {
 fn test_parse_min_track_invalid() {
     use taffy::style::MinTrackSizingFunction;
     let result = parse_min_track("abc");
-    assert_eq!(result, MinTrackSizingFunction::Auto);
+    assert_eq!(result, MinTrackSizingFunction::auto());
 }
 
 /// 测试 parse_max_track：auto 返回 Auto。
@@ -772,31 +769,28 @@ fn test_parse_min_track_invalid() {
 fn test_parse_max_track_auto() {
     use taffy::style::MaxTrackSizingFunction;
     let result = parse_max_track("auto");
-    assert_eq!(result, MaxTrackSizingFunction::Auto);
+    assert_eq!(result, MaxTrackSizingFunction::auto());
 }
 
 /// 测试 parse_max_track：fr 值返回 Fraction。
 #[test]
 fn test_parse_max_track_fr() {
-    use taffy::style::MaxTrackSizingFunction;
     let result = parse_max_track("1fr");
-    assert!(matches!(result, MaxTrackSizingFunction::Fraction(_)));
+    assert!(result.is_fr());
 }
 
 /// 测试 parse_max_track：px 值返回 Fixed(Length)。
 #[test]
 fn test_parse_max_track_px() {
-    use taffy::style::MaxTrackSizingFunction;
     let result = parse_max_track("200px");
-    assert!(matches!(result, MaxTrackSizingFunction::Fixed(_)));
+    assert!(!result.is_auto());
 }
 
 /// 测试 parse_max_track：百分比值返回 Fixed(Percent)。
 #[test]
 fn test_parse_max_track_percent() {
-    use taffy::style::MaxTrackSizingFunction;
     let result = parse_max_track("75%");
-    assert!(matches!(result, MaxTrackSizingFunction::Fixed(_)));
+    assert!(!result.is_auto());
 }
 
 /// 测试 parse_max_track：无效值回退到 Auto。
@@ -804,7 +798,7 @@ fn test_parse_max_track_percent() {
 fn test_parse_max_track_invalid() {
     use taffy::style::MaxTrackSizingFunction;
     let result = parse_max_track("??");
-    assert_eq!(result, MaxTrackSizingFunction::Auto);
+    assert_eq!(result, MaxTrackSizingFunction::auto());
 }
 
 /// 测试 parse_minmax_as_non_repeated：合法的 minmax(auto, 1fr) 组合。
@@ -825,7 +819,7 @@ fn test_parse_minmax_as_non_repeated_px_auto() {
 #[test]
 fn test_parse_minmax_as_non_repeated_too_many_parts() {
     let result = parse_minmax_as_non_repeated("10px, 20px, 30px");
-    assert_eq!(result, taffy::style::NonRepeatedTrackSizingFunction::AUTO);
+    assert_eq!(result, taffy::style::TrackSizingFunction::AUTO);
 }
 
 /// 测试 parse_grid_auto_tracks：None 值返回空列表。

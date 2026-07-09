@@ -35,10 +35,10 @@
 //! ### TraversePartialTree and TraverseTree
 //! These traits are Taffy's abstraction for downward tree traversal:
 //!  - [`TraversePartialTree`] allows access to a single container node, and it's immediate children. This is the only "traverse" trait that is required
-//!     for use of Taffy's core layout algorithms (flexbox, grid, etc).
+//!    for use of Taffy's core layout algorithms (flexbox, grid, etc).
 //!  - [`TraverseTree`] is a marker trait which uses the same API signature as `TraversePartialTree`, but extends it with a guarantee that the child/children methods can be used to recurse
-//!     infinitely down the tree. It is required by the `RoundTree` and
-//!     the `PrintTree` traits.
+//!    infinitely down the tree. It is required by the `RoundTree` and
+//!    the `PrintTree` traits.
 //! ```rust
 //! # use taffy::*;
 //! pub trait TraversePartialTree {
@@ -103,7 +103,7 @@
 //! # use taffy::*;
 //! pub trait RoundTree: TraverseTree {
 //!     /// Get the node's unrounded layout
-//!     fn get_unrounded_layout(&self, node_id: NodeId) -> &Layout;
+//!     fn get_unrounded_layout(&self, node_id: NodeId) -> Layout;
 //!     /// Get a reference to the node's final layout
 //!     fn set_final_layout(&mut self, node_id: NodeId, layout: &Layout);
 //! }
@@ -122,7 +122,7 @@
 //!     /// Get a debug label for the node (typically the type of node: flexbox, grid, text, image, etc)
 //!     fn get_debug_label(&self, node_id: NodeId) -> &'static str;
 //!     /// Get a reference to the node's final layout
-//!     fn get_final_layout(&self, node_id: NodeId) -> &Layout;
+//!     fn get_final_layout(&self, node_id: NodeId) -> Layout;
 //! }
 //! ```
 //!
@@ -135,8 +135,9 @@ use crate::style::{AvailableSpace, CoreStyle};
 use crate::style::{FlexboxContainerStyle, FlexboxItemStyle};
 #[cfg(feature = "grid")]
 use crate::style::{GridContainerStyle, GridItemStyle};
+use crate::CheapCloneStr;
 #[cfg(feature = "block_layout")]
-use crate::{BlockContainerStyle, BlockItemStyle};
+use crate::{BlockContainerStyle, BlockContext, BlockItemStyle};
 
 #[cfg(all(feature = "grid", feature = "detailed_layout_info"))]
 use crate::compute::grid::DetailedGridInfo;
@@ -173,12 +174,24 @@ pub trait TraverseTree: TraversePartialTree {}
 pub trait LayoutPartialTree: TraversePartialTree {
     /// The style type representing the core container styles that all containers should have
     /// Used when laying out the root node of a tree
-    type CoreContainerStyle<'a>: CoreStyle
+    type CoreContainerStyle<'a>: CoreStyle<CustomIdent = Self::CustomIdent>
     where
         Self: 'a;
 
+    /// String type for representing "custom identifiers" (for example, named grid lines or areas)
+    /// If you are unsure what to use here then consider `Arc<str>`.
+    type CustomIdent: CheapCloneStr;
+
     /// Get core style
     fn get_core_container_style(&self, node_id: NodeId) -> Self::CoreContainerStyle<'_>;
+
+    /// Resolve calc value
+    #[inline(always)]
+    fn resolve_calc_value(&self, val: *const (), basis: f32) -> f32 {
+        let _ = val;
+        let _ = basis;
+        0.0
+    }
 
     /// Set the node's unrounded layout
     fn set_unrounded_layout(&mut self, node_id: NodeId, layout: &Layout);
@@ -192,23 +205,10 @@ pub trait LayoutPartialTree: TraversePartialTree {
 /// The `Cache` struct implements a per-node cache that is compatible with this trait.
 pub trait CacheTree {
     /// Try to retrieve a cached result from the cache
-    fn cache_get(
-        &self,
-        node_id: NodeId,
-        known_dimensions: Size<Option<f32>>,
-        available_space: Size<AvailableSpace>,
-        run_mode: RunMode,
-    ) -> Option<LayoutOutput>;
+    fn cache_get(&self, node_id: NodeId, input: &LayoutInput) -> Option<LayoutOutput>;
 
     /// Store a computed size in the cache
-    fn cache_store(
-        &mut self,
-        node_id: NodeId,
-        known_dimensions: Size<Option<f32>>,
-        available_space: Size<AvailableSpace>,
-        run_mode: RunMode,
-        layout_output: LayoutOutput,
-    );
+    fn cache_store(&mut self, node_id: NodeId, input: &LayoutInput, layout_output: LayoutOutput);
 
     /// Clear all cache entries for the node
     fn cache_clear(&mut self, node_id: NodeId);
@@ -220,7 +220,7 @@ pub trait CacheTree {
 /// As indicated by it's dependence on `TraverseTree`, it required full recursive access to the tree.
 pub trait RoundTree: TraverseTree {
     /// Get the node's unrounded layout
-    fn get_unrounded_layout(&self, node_id: NodeId) -> &Layout;
+    fn get_unrounded_layout(&self, node_id: NodeId) -> Layout;
     /// Get a reference to the node's final layout
     fn set_final_layout(&mut self, node_id: NodeId, layout: &Layout);
 }
@@ -232,7 +232,7 @@ pub trait PrintTree: TraverseTree {
     /// Get a debug label for the node (typically the type of node: flexbox, grid, text, image, etc)
     fn get_debug_label(&self, node_id: NodeId) -> &'static str;
     /// Get a reference to the node's final layout
-    fn get_final_layout(&self, node_id: NodeId) -> &Layout;
+    fn get_final_layout(&self, node_id: NodeId) -> Layout;
 }
 
 #[cfg(feature = "flexbox")]
@@ -258,12 +258,12 @@ pub trait LayoutFlexboxContainer: LayoutPartialTree {
 /// Extends [`LayoutPartialTree`] with getters for the styles required for CSS Grid layout
 pub trait LayoutGridContainer: LayoutPartialTree {
     /// The style type representing the CSS Grid container's styles
-    type GridContainerStyle<'a>: GridContainerStyle
+    type GridContainerStyle<'a>: GridContainerStyle<CustomIdent = Self::CustomIdent>
     where
         Self: 'a;
 
     /// The style type representing each CSS Grid item's styles
-    type GridItemStyle<'a>: GridItemStyle
+    type GridItemStyle<'a>: GridItemStyle<CustomIdent = Self::CustomIdent>
     where
         Self: 'a;
 
@@ -300,6 +300,18 @@ pub trait LayoutBlockContainer: LayoutPartialTree {
 
     /// Get the child's styles
     fn get_block_child_style(&self, child_node_id: NodeId) -> Self::BlockItemStyle<'_>;
+
+    /// Compute the specified node's size or full layout given the specified constraints
+    #[cfg(feature = "block_layout")]
+    fn compute_block_child_layout(
+        &mut self,
+        node_id: NodeId,
+        inputs: LayoutInput,
+        block_ctx: Option<&mut BlockContext<'_>>,
+    ) -> LayoutOutput {
+        let _ = block_ctx;
+        self.compute_child_layout(node_id, inputs)
+    }
 }
 
 // --- PRIVATE TRAITS
@@ -336,6 +348,33 @@ pub(crate) trait LayoutPartialTreeExt: LayoutPartialTree {
         .get_abs(axis)
     }
 
+    /// Compute the size of the node given the specified constraints
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    fn measure_child_size_both(
+        &mut self,
+        node_id: NodeId,
+        known_dimensions: Size<Option<f32>>,
+        parent_size: Size<Option<f32>>,
+        available_space: Size<AvailableSpace>,
+        sizing_mode: SizingMode,
+        vertical_margins_are_collapsible: Line<bool>,
+    ) -> Size<f32> {
+        self.compute_child_layout(
+            node_id,
+            LayoutInput {
+                known_dimensions,
+                parent_size,
+                available_space,
+                sizing_mode,
+                axis: RequestedAxis::Both,
+                run_mode: RunMode::ComputeSize,
+                vertical_margins_are_collapsible,
+            },
+        )
+        .size
+    }
+
     /// Perform a full layout on the node given the specified constraints
     #[inline(always)]
     fn perform_child_layout(
@@ -359,6 +398,20 @@ pub(crate) trait LayoutPartialTreeExt: LayoutPartialTree {
                 vertical_margins_are_collapsible,
             },
         )
+    }
+
+    /// Alias to `resolve_calc_value` with a shorter function name
+    #[inline(always)]
+    #[cfg(feature = "calc")]
+    fn calc(&self, val: *const (), basis: f32) -> f32 {
+        self.resolve_calc_value(val, basis)
+    }
+
+    /// Alias to `resolve_calc_value` with a shorter function name
+    #[inline(always)]
+    #[cfg(not(feature = "calc"))]
+    fn calc(&self, _val: *const (), _basis: f32) -> f32 {
+        0.0
     }
 }
 

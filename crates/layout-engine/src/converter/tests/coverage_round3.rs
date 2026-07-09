@@ -10,7 +10,7 @@ fn test_convert_length_ch_unit() {
         ..ComputedStyle::default()
     };
     let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(result.size.width, taffy::style::Dimension::Length(2.5));
+    assert_eq!(result.size.width, taffy::style::Dimension::length(2.5));
 }
 
 #[test]
@@ -22,8 +22,8 @@ fn test_convert_length_to_lp_vmax_and_ch() {
     };
     let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
     // 5vmax = 5 * max(800,600)/100 = 40.0; ch 单位保持原值
-    assert_eq!(result.padding.top, taffy::style::LengthPercentage::Length(40.0));
-    assert_eq!(result.padding.left, taffy::style::LengthPercentage::Length(1.5));
+    assert_eq!(result.padding.top, taffy::style::LengthPercentage::length(40.0));
+    assert_eq!(result.padding.left, taffy::style::LengthPercentage::length(1.5));
 }
 
 #[test]
@@ -36,9 +36,9 @@ fn test_convert_length_to_lpa_rem_and_vh() {
         ..ComputedStyle::default()
     };
     let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::Length(1.5));
+    assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::length(1.5));
     // 10vh = 10 * 600/100 = 60.0
-    assert_eq!(result.inset.right, taffy::style::LengthPercentageAuto::Length(60.0));
+    assert_eq!(result.inset.right, taffy::style::LengthPercentageAuto::length(60.0));
 }
 
 #[test]
@@ -53,9 +53,9 @@ fn test_convert_length_to_lpa_vmin_vmax_ch() {
     };
     let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
     // 3vmin = 3 * min(800,600)/100 = 18.0; 7vmax = 7 * 800/100 = 56.0
-    assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::Length(18.0));
-    assert_eq!(result.inset.top, taffy::style::LengthPercentageAuto::Length(56.0));
-    assert_eq!(result.inset.right, taffy::style::LengthPercentageAuto::Length(0.5));
+    assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::length(18.0));
+    assert_eq!(result.inset.top, taffy::style::LengthPercentageAuto::length(56.0));
+    assert_eq!(result.inset.right, taffy::style::LengthPercentageAuto::length(0.5));
 }
 
 #[test]
@@ -69,10 +69,10 @@ fn test_static_position_ignores_inset() {
         ..ComputedStyle::default()
     };
     let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(result.inset.top, taffy::style::LengthPercentageAuto::Auto);
-    assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::Auto);
-    assert_eq!(result.inset.right, taffy::style::LengthPercentageAuto::Auto);
-    assert_eq!(result.inset.bottom, taffy::style::LengthPercentageAuto::Auto);
+    assert_eq!(result.inset.top, taffy::style::LengthPercentageAuto::auto());
+    assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::auto());
+    assert_eq!(result.inset.right, taffy::style::LengthPercentageAuto::auto());
+    assert_eq!(result.inset.bottom, taffy::style::LengthPercentageAuto::auto());
 }
 
 #[test]
@@ -140,9 +140,9 @@ fn test_resolve_named_area_no_map() {
 #[test]
 fn test_parse_single_track_min_max_content() {
     let track = parse_single_track("min-content");
-    assert!(matches!(track, taffy::style::TrackSizingFunction::Single(_)));
+    assert!(matches!(track, taffy::style::GridTemplateComponent::Single(_)));
     let track = parse_single_track("max-content");
-    assert!(matches!(track, taffy::style::TrackSizingFunction::Single(_)));
+    assert!(matches!(track, taffy::style::GridTemplateComponent::Single(_)));
 }
 
 #[test]
@@ -157,8 +157,8 @@ fn test_parse_repeat_auto_fill() {
     let track_def = "repeat(auto-fill, 200px)";
     let tracks = parse_grid_tracks(&Some(track_def.to_string()));
     assert_eq!(tracks.len(), 1);
-    if let taffy::style::TrackSizingFunction::Repeat(repetition, _) = &tracks[0] {
-        assert_eq!(repetition, &taffy::style::GridTrackRepetition::AutoFill);
+    if let taffy::style::GridTemplateComponent::Repeat(repetition) = &tracks[0] {
+        assert_eq!(repetition.count, taffy::style::RepetitionCount::AutoFill);
     } else {
         panic!("Expected Repeat");
     }
@@ -169,8 +169,8 @@ fn test_parse_repeat_auto_fit() {
     let track_def = "repeat(auto-fit, 1fr minmax(100px, 1fr))";
     let tracks = parse_grid_tracks(&Some(track_def.to_string()));
     assert_eq!(tracks.len(), 1);
-    if let taffy::style::TrackSizingFunction::Repeat(repetition, _) = &tracks[0] {
-        assert_eq!(repetition, &taffy::style::GridTrackRepetition::AutoFit);
+    if let taffy::style::GridTemplateComponent::Repeat(repetition) = &tracks[0] {
+        assert_eq!(repetition.count, taffy::style::RepetitionCount::AutoFit);
     } else {
         panic!("Expected Repeat");
     }
@@ -179,10 +179,10 @@ fn test_parse_repeat_auto_fit() {
 #[test]
 fn test_minmax_parsing_complex() {
     let track = parse_single_track("minmax(min-content, max-content)");
-    if let taffy::style::TrackSizingFunction::Single(taffy::geometry::MinMax { min, max }) = track {
-        assert!(matches!(min, taffy::style::MinTrackSizingFunction::Auto));
-        assert!(matches!(max, taffy::style::MaxTrackSizingFunction::Auto));
+    if let taffy::style::GridTemplateComponent::Single(taffy::geometry::MinMax { min, max }) = track {
+        assert!(min.is_auto());
+        assert!(max.is_auto());
     } else {
-        panic!("Expected TrackSizingFunction::Single");
+        panic!("Expected GridTemplateComponent::Single");
     }
 }

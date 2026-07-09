@@ -86,8 +86,8 @@ fn test_convert_position_fixed() {
         "position:fixed should map to taffy Absolute"
     );
     // inset 应正确传递
-    assert_eq!(taffy_style.inset.top, taffy::style::LengthPercentageAuto::Length(10.0));
-    assert_eq!(taffy_style.inset.left, taffy::style::LengthPercentageAuto::Length(20.0));
+    assert_eq!(taffy_style.inset.top, taffy::style::LengthPercentageAuto::length(10.0));
+    assert_eq!(taffy_style.inset.left, taffy::style::LengthPercentageAuto::length(20.0));
 }
 
 /// 测试 position: sticky 映射为 taffy Relative（保持正常流）。
@@ -111,8 +111,8 @@ fn test_convert_size_px() {
     style.width = LengthValue::Px(200.0);
     style.height = LengthValue::Px(100.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Length(200.0));
-    assert_eq!(taffy_style.size.height, taffy::style::Dimension::Length(100.0));
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::length(200.0));
+    assert_eq!(taffy_style.size.height, taffy::style::Dimension::length(100.0));
 }
 
 /// 测试 size auto 转换（Px(0.0) 表示 auto）。
@@ -120,8 +120,8 @@ fn test_convert_size_px() {
 fn test_convert_size_auto() {
     let style = ComputedStyle::default();
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Auto);
-    assert_eq!(taffy_style.size.height, taffy::style::Dimension::Auto);
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::auto());
+    assert_eq!(taffy_style.size.height, taffy::style::Dimension::auto());
 }
 
 /// 测试 margin/padding/border 转换。
@@ -148,13 +148,13 @@ fn test_convert_margin_padding_border() {
     style.border_bottom_style = zero_style_system::BorderStyleValue::Solid;
     style.border_left_style = zero_style_system::BorderStyleValue::Solid;
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.margin.top, taffy::style::LengthPercentageAuto::Length(10.0));
+    assert_eq!(taffy_style.margin.top, taffy::style::LengthPercentageAuto::length(10.0));
     assert_eq!(
         taffy_style.margin.left,
-        taffy::style::LengthPercentageAuto::Length(20.0)
+        taffy::style::LengthPercentageAuto::length(20.0)
     );
-    assert_eq!(taffy_style.padding.top, taffy::style::LengthPercentage::Length(5.0));
-    assert_eq!(taffy_style.border.top, taffy::style::LengthPercentage::Length(1.0));
+    assert_eq!(taffy_style.padding.top, taffy::style::LengthPercentage::length(5.0));
+    assert_eq!(taffy_style.border.top, taffy::style::LengthPercentage::length(1.0));
 }
 
 /// 测试 flex 相关属性转换。
@@ -172,7 +172,7 @@ fn test_convert_flex_properties() {
     assert_eq!(taffy_style.flex_wrap, taffy::style::FlexWrap::Wrap);
     assert!((taffy_style.flex_grow - 2.0).abs() < 0.001);
     assert!((taffy_style.flex_shrink - 0.5).abs() < 0.001);
-    assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::Length(100.0));
+    assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::length(100.0));
 }
 
 /// 测试对齐属性转换。
@@ -194,15 +194,15 @@ fn test_convert_gap() {
     let mut style = ComputedStyle::default();
     style.gap = LengthValue::Px(10.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::Length(10.0));
+    assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::length(10.0));
     // row_gap 未设置时回退到 gap 简写（CSS 规范：gap: 10px 等价于 row-gap: 10px column-gap: 10px）
-    assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(10.0));
+    assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::length(10.0));
 
     // 设置不同的 row-gap 时，使用显式值而非 gap 回退
     style.row_gap = LengthValue::Px(20.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::Length(10.0));
-    assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(20.0));
+    assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::length(10.0));
+    assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::length(20.0));
 }
 
 /// 测试 overflow 转换。
@@ -226,16 +226,16 @@ fn test_convert_absolute_position_inset() {
     style.bottom = LengthValue::Px(30.0);
     style.left = LengthValue::Px(40.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.inset.top, taffy::style::LengthPercentageAuto::Length(10.0));
+    assert_eq!(taffy_style.inset.top, taffy::style::LengthPercentageAuto::length(10.0));
     assert_eq!(
         taffy_style.inset.right,
-        taffy::style::LengthPercentageAuto::Length(20.0)
+        taffy::style::LengthPercentageAuto::length(20.0)
     );
     assert_eq!(
         taffy_style.inset.bottom,
-        taffy::style::LengthPercentageAuto::Length(30.0)
+        taffy::style::LengthPercentageAuto::length(30.0)
     );
-    assert_eq!(taffy_style.inset.left, taffy::style::LengthPercentageAuto::Length(40.0));
+    assert_eq!(taffy_style.inset.left, taffy::style::LengthPercentageAuto::length(40.0));
 }
 
 /// 测试 box-sizing 转换。
@@ -285,8 +285,8 @@ fn test_convert_row_gap() {
     style.gap = LengthValue::Px(10.0);
     style.row_gap = LengthValue::Px(20.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::Length(10.0));
-    assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::Length(20.0));
+    assert_eq!(taffy_style.gap.width, taffy::style::LengthPercentage::length(10.0));
+    assert_eq!(taffy_style.gap.height, taffy::style::LengthPercentage::length(20.0));
 }
 
 /// 测试 grid-column/row 转换。
@@ -343,14 +343,14 @@ fn test_parse_grid_tracks_repeat_fixed() {
 /// 测试 repeat() auto-fill/auto-fit 生成 Repeat 变体（非展开）。
 #[test]
 fn test_parse_grid_tracks_repeat_auto_fill() {
-    use taffy::style::GridTrackRepetition;
+    use taffy::style::RepetitionCount;
 
     let tracks = parse_grid_tracks(&Some("repeat(auto-fill, 200px)".to_string()));
     assert_eq!(tracks.len(), 1);
     assert!(
         matches!(
             &tracks[0],
-            taffy::style::TrackSizingFunction::Repeat(GridTrackRepetition::AutoFill, _)
+            taffy::style::GridTemplateComponent::Repeat(rep) if rep.count == RepetitionCount::AutoFill
         ),
         "auto-fill 应生成 Repeat 变体"
     );
@@ -360,7 +360,7 @@ fn test_parse_grid_tracks_repeat_auto_fill() {
     assert!(
         matches!(
             &tracks[0],
-            taffy::style::TrackSizingFunction::Repeat(GridTrackRepetition::AutoFit, _)
+            taffy::style::GridTemplateComponent::Repeat(rep) if rep.count == RepetitionCount::AutoFit
         ),
         "auto-fit 应生成 Repeat 变体"
     );
@@ -670,14 +670,14 @@ fn test_float_in_mixed_layout_context() {
 /// min 侧为 auto，max 侧为 1fr，验证解析不 panic 且生成 Repeat 变体。
 #[test]
 fn test_parse_repeat_auto_fill_minmax_auto() {
-    use taffy::style::GridTrackRepetition;
+    use taffy::style::RepetitionCount;
 
     let tracks = parse_grid_tracks(&Some("repeat(auto-fill, minmax(auto, 1fr))".to_string()));
     assert_eq!(tracks.len(), 1);
     assert!(
         matches!(
             &tracks[0],
-            taffy::style::TrackSizingFunction::Repeat(GridTrackRepetition::AutoFill, _)
+            taffy::style::GridTemplateComponent::Repeat(rep) if rep.count == RepetitionCount::AutoFill
         ),
         "auto-fill + minmax(auto, 1fr) 应生成 Repeat 变体"
     );
@@ -742,16 +742,16 @@ fn test_all_four_inset_values() {
     style.bottom = LengthValue::Px(30.0);
     style.left = LengthValue::Px(40.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.inset.top, taffy::style::LengthPercentageAuto::Length(10.0));
+    assert_eq!(taffy_style.inset.top, taffy::style::LengthPercentageAuto::length(10.0));
     assert_eq!(
         taffy_style.inset.right,
-        taffy::style::LengthPercentageAuto::Length(20.0)
+        taffy::style::LengthPercentageAuto::length(20.0)
     );
     assert_eq!(
         taffy_style.inset.bottom,
-        taffy::style::LengthPercentageAuto::Length(30.0)
+        taffy::style::LengthPercentageAuto::length(30.0)
     );
-    assert_eq!(taffy_style.inset.left, taffy::style::LengthPercentageAuto::Length(40.0));
+    assert_eq!(taffy_style.inset.left, taffy::style::LengthPercentageAuto::length(40.0));
 }
 
 /// 测试 flex-basis: 0 转换
@@ -761,7 +761,7 @@ fn test_flex_basis_zero() {
     let mut style = ComputedStyle::default();
     style.flex_basis = FlexBasisValue::Length(LengthValue::Px(0.0));
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::Length(0.0));
+    assert_eq!(taffy_style.flex_basis, taffy::style::Dimension::length(0.0));
 }
 
 /// 测试 percentage 宽高转换
@@ -772,8 +772,8 @@ fn test_percentage_size_conversion() {
     style.width = LengthValue::Percentage(50.0);
     style.height = LengthValue::Percentage(75.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.size.width, taffy::style::Dimension::Percent(0.5));
-    assert_eq!(taffy_style.size.height, taffy::style::Dimension::Percent(0.75));
+    assert_eq!(taffy_style.size.width, taffy::style::Dimension::percent(0.5));
+    assert_eq!(taffy_style.size.height, taffy::style::Dimension::percent(0.75));
 }
 
 // ── 边界条件测试（第二批）──

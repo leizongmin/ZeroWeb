@@ -256,8 +256,8 @@ fn apply_replaced_element_sizing(
             // 无条件设为 HTML 属性值，致 <canvas width=10 height=10 style="height:100%">
             // 的 width 仍为 HTML 值 10（应按 1:1 比例从 height 100px 推导为 100px）。
             if css_w_auto && css_h_auto {
-                taffy_style.size.width = taffy::style::Dimension::Length(w);
-                taffy_style.size.height = taffy::style::Dimension::Length(h);
+                taffy_style.size.width = taffy::style::Dimension::length(w);
+                taffy_style.size.height = taffy::style::Dimension::length(h);
             }
             // 一侧 auto、一侧显式：不设 auto 侧尺寸，taffy 按 aspect_ratio 推导
         }
@@ -266,20 +266,20 @@ fn apply_replaced_element_sizing(
             if computed.aspect_ratio.is_none() {
                 // 无 aspect_ratio 也无 height，使用固定宽度
                 if matches!(computed.width, LengthValue::Auto) {
-                    taffy_style.size.width = taffy::style::Dimension::Length(w.max(1.0));
+                    taffy_style.size.width = taffy::style::Dimension::length(w.max(1.0));
                 }
             } else if matches!(computed.width, LengthValue::Auto) {
-                taffy_style.size.width = taffy::style::Dimension::Length(w.max(1.0));
+                taffy_style.size.width = taffy::style::Dimension::length(w.max(1.0));
             }
         }
         (None, Some(h)) if h > 0.0 => {
             // 仅有 height：设置高度，宽度由 aspect_ratio 推导
             if computed.aspect_ratio.is_none() {
                 if matches!(computed.height, LengthValue::Auto) {
-                    taffy_style.size.height = taffy::style::Dimension::Length(h.max(1.0));
+                    taffy_style.size.height = taffy::style::Dimension::length(h.max(1.0));
                 }
             } else if matches!(computed.height, LengthValue::Auto) {
-                taffy_style.size.height = taffy::style::Dimension::Length(h.max(1.0));
+                taffy_style.size.height = taffy::style::Dimension::length(h.max(1.0));
             }
         }
         _ => {
@@ -308,20 +308,20 @@ fn apply_replaced_element_sizing(
                 // 被算成 440×(8/16)=220 而非 440×2=880（nested-grid-item-block-size-001 64% diff）。
                 let eff_ratio = computed.aspect_ratio.unwrap_or(w / h); // width/height
                 if width_auto && height_auto {
-                    taffy_style.size.width = taffy::style::Dimension::Length(w);
-                    taffy_style.size.height = taffy::style::Dimension::Length(h);
+                    taffy_style.size.width = taffy::style::Dimension::length(w);
+                    taffy_style.size.height = taffy::style::Dimension::length(h);
                 } else if !width_auto
                     && height_auto
                     && let LengthValue::Px(cw) = &computed.width
                 {
                     // width 显式，height auto：height = cw / eff_ratio
-                    taffy_style.size.height = taffy::style::Dimension::Length(((*cw as f32) / eff_ratio).max(0.5));
+                    taffy_style.size.height = taffy::style::Dimension::length(((*cw as f32) / eff_ratio).max(0.5));
                 } else if width_auto
                     && !height_auto
                     && let LengthValue::Px(ch) = &computed.height
                 {
                     // height 显式，width auto：width = ch * eff_ratio
-                    taffy_style.size.width = taffy::style::Dimension::Length(((*ch as f32) * eff_ratio).max(0.5));
+                    taffy_style.size.width = taffy::style::Dimension::length(((*ch as f32) * eff_ratio).max(0.5));
                 }
                 // 两侧都显式：由 converter 从 CSS 处理，不干预
             }
@@ -347,12 +347,12 @@ fn apply_replaced_element_sizing(
                     && height_auto
                     && let LengthValue::Px(cw) = &computed.width
                 {
-                    taffy_style.size.height = taffy::style::Dimension::Length(((*cw as f32) / eff_ratio).max(0.5));
+                    taffy_style.size.height = taffy::style::Dimension::length(((*cw as f32) / eff_ratio).max(0.5));
                 } else if width_auto
                     && !height_auto
                     && let LengthValue::Px(ch) = &computed.height
                 {
-                    taffy_style.size.width = taffy::style::Dimension::Length(((*ch as f32) * eff_ratio).max(0.5));
+                    taffy_style.size.width = taffy::style::Dimension::length(((*ch as f32) * eff_ratio).max(0.5));
                 }
                 // 两侧都 auto：不设 size，仅 aspect_ratio——flex transferred-size 由
                 // apply_flex_transferred_min_size 推导；非 flex 块上下文 ZW 暂未实现 300×150 默认，
@@ -418,8 +418,13 @@ fn apply_flex_transferred_min_size(
         parent_style.flex_direction,
         FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
     );
-    // 父容器的明确 cross size（Px）。仅 Px 算「明确」；百分比/auto 不算（无法解 transferred）。
-    let cross = if is_column {
+    // §4.5 transferred-size-suggestion 需 item 有明确 cross size。两种来源（容器优先，最小化回归）：
+    //  (a) 容器明确 cross（Px）+ item align-stretch → item cross = 容器 cross（原有逻辑）。
+    //  (b) item 自身明确 cross（img height:50px）——0.8.3 taffy 不再原生兜底 auto-cross 容器
+    //      case（width:0 / auto-height 容器，#819 leaf available_space 变化），须 ZW 覆盖。
+    //      cross 须取 min/max 钳制后的 used size（flex-minimum-width-flex-items-012：
+    //      height:2000 + max-height:50 → used cross=50，transferred=100，非 2000×ratio）。
+    let container_cross = if is_column {
         match &parent_style.width {
             LengthValue::Px(v) => Some(*v as f32),
             _ => None,
@@ -430,30 +435,64 @@ fn apply_flex_transferred_min_size(
             _ => None,
         }
     };
-    let cross = match cross {
-        Some(c) if c > 0.0 => c,
-        _ => return,
+    let (cross, from_item_cross) = match container_cross {
+        Some(c) if c > 0.0 => (c, false),
+        _ => {
+            let item_cross_specified = if is_column {
+                match &computed.width {
+                    LengthValue::Px(v) => Some(*v as f32),
+                    _ => None,
+                }
+            } else {
+                match &computed.height {
+                    LengthValue::Px(v) => Some(*v as f32),
+                    _ => None,
+                }
+            };
+            let item_max_cross = if is_column {
+                match &computed.max_width {
+                    LengthValue::Px(v) => Some(*v as f32),
+                    _ => None,
+                }
+            } else {
+                match &computed.max_height {
+                    LengthValue::Px(v) => Some(*v as f32),
+                    _ => None,
+                }
+            };
+            // used cross = min(specified, max)（§4.5 transferred 基于 used cross，非 specified）
+            let item_cross = match (item_cross_specified, item_max_cross) {
+                (Some(spec), Some(max)) => Some(spec.min(max)),
+                (spec, None) => spec,
+                _ => None,
+            };
+            match item_cross {
+                Some(c) if c > 0.0 => (c, true),
+                _ => return,
+            }
+        }
     };
-    // §4.5：transferred-size-suggestion 仅当 item 的 cross size「明确」（即被 align-stretch
-    // 拉到容器 cross size）时成立。item 有 auto cross-margin（margin:auto 居中而非拉伸）
-    // 或显式非 stretch 的 align-self（center/flex-start/...）时 cross size 不等于容器
-    // cross → 跳过（auto-margins-002 回归：img margin:auto + max-width，transferred 会
-    // 与 max 冲突；flex-aspect-ratio-img-column-012：align-items:flex-start 非拉伸）。
-    // row cross=height→margin-top/bottom；column cross=width→margin-left/right。
-    let (cross_margin_a, cross_margin_b) = if is_column {
-        (&computed.margin_left, &computed.margin_right)
-    } else {
-        (&computed.margin_top, &computed.margin_bottom)
-    };
-    if matches!(cross_margin_a, LengthValue::Auto) || matches!(cross_margin_b, LengthValue::Auto) {
-        return;
-    }
-    use zero_css_parser::values::AlignmentValue;
-    match computed.align_self {
-        // Auto（继承容器，默认 stretch）/ Stretch → item 被拉伸，cross size = 容器 cross
-        AlignmentValue::Auto | AlignmentValue::Stretch => {}
-        // 显式 center/flex-start/flex-end/baseline/start/end/space-* → 不拉伸，跳过
-        _ => return,
+    // 仅 case (a)（容器 cross 来源）须确认 item 被 align-stretch（cross = 容器 cross）。
+    // case (b) item 自身 cross 已明确，align-self 不影响其 cross size，跳过 stretch 校验。
+    if !from_item_cross {
+        // item 有 auto cross-margin（margin:auto 居中而非拉伸）或显式非 stretch align-self
+        // 时 cross size ≠ 容器 cross → 跳过（auto-margins-002 / flex-aspect-ratio-img-column-012）。
+        // row cross=height→margin-top/bottom；column cross=width→margin-left/right。
+        let (cross_margin_a, cross_margin_b) = if is_column {
+            (&computed.margin_left, &computed.margin_right)
+        } else {
+            (&computed.margin_top, &computed.margin_bottom)
+        };
+        if matches!(cross_margin_a, LengthValue::Auto) || matches!(cross_margin_b, LengthValue::Auto) {
+            return;
+        }
+        use zero_css_parser::values::AlignmentValue;
+        match computed.align_self {
+            // Auto（继承容器，默认 stretch）/ Stretch → item 被拉伸，cross size = 容器 cross
+            AlignmentValue::Auto | AlignmentValue::Stretch => {}
+            // 显式 center/flex-start/flex-end/baseline/start/end/space-* → 不拉伸，跳过
+            _ => return,
+        }
     }
     // transferred main size：row → cross_h × ratio(w/h)；column → cross_w / ratio。
     // transferred 须基于 item 的 **content-box** cross size（扣除 item cross 方向 padding），
@@ -503,9 +542,9 @@ fn apply_flex_transferred_min_size(
     }
     if auto_min > 0.0 && auto_min.is_finite() {
         if is_column {
-            taffy_style.min_size.height = taffy::style::Dimension::Length(auto_min);
+            taffy_style.min_size.height = taffy::style::Dimension::length(auto_min);
         } else {
-            taffy_style.min_size.width = taffy::style::Dimension::Length(auto_min);
+            taffy_style.min_size.width = taffy::style::Dimension::length(auto_min);
         }
     }
 }

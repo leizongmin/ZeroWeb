@@ -60,12 +60,16 @@
 // document the feature flags for the crate by extracting the comments from Cargo.toml
 #![cfg_attr(feature = "document-features", doc = document_features::document_features!())]
 // annotate items with their required features (gated by docsrs flag as this requires the nightly toolchain)
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(unsafe_code)]
-#![forbid(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(clippy::missing_docs_in_private_items)]
+// Disable "unused_x" warnings when default features aren't enabled.
+#![cfg_attr(not(feature = "default"), allow(dead_code))]
+#![cfg_attr(not(feature = "default"), allow(unused_imports))]
+#![cfg_attr(not(feature = "default"), allow(unused_variables))]
+#![cfg_attr(not(feature = "default"), allow(unused_mut))]
 
 // We always need std for the tests
 // See <https://github.com/la10736/rstest/issues/149#issuecomment-1156402989>
@@ -119,6 +123,10 @@ pub use crate::tree::TaffyTree;
 #[doc(inline)]
 pub use crate::util::print_tree;
 
+#[cfg(feature = "parse")]
+pub use parse::{ParseError, ParseResult};
+
+pub use crate::compute::*;
 pub use crate::geometry::*;
 pub use crate::style::*;
 pub use crate::tree::*;

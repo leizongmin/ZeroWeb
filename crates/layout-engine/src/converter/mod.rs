@@ -61,6 +61,18 @@ pub fn computed_style_to_taffy(
 
     taffy::Style {
         display: convert_display(&style.display),
+        // M3 step(b) 试：native float 激活，但保留 ZW adjust_float_positions（覆盖 native 定位）
+        float: match style.float {
+            FloatValue::Left | FloatValue::InlineStart => taffy::style::Float::Left,
+            FloatValue::Right | FloatValue::InlineEnd => taffy::style::Float::Right,
+            _ => taffy::style::Float::None,
+        },
+        clear: match style.clear {
+            ClearValue::Left | ClearValue::InlineStart => taffy::style::Clear::Left,
+            ClearValue::Right | ClearValue::InlineEnd => taffy::style::Clear::Right,
+            ClearValue::Both => taffy::style::Clear::Both,
+            _ => taffy::style::Clear::None,
+        },
         box_sizing: convert_box_sizing(&style.box_sizing),
         overflow: taffy::geometry::Point {
             x: convert_overflow(&style.overflow_x),
@@ -76,10 +88,10 @@ pub fn computed_style_to_taffy(
             // static 定位：inset 全 Auto，taffy（Relative + Auto inset）不偏移，
             // 与 static 正常流语义一致（R689）。
             taffy::geometry::Rect {
-                left: taffy::style::LengthPercentageAuto::Auto,
-                right: taffy::style::LengthPercentageAuto::Auto,
-                top: taffy::style::LengthPercentageAuto::Auto,
-                bottom: taffy::style::LengthPercentageAuto::Auto,
+                left: taffy::style::LengthPercentageAuto::auto(),
+                right: taffy::style::LengthPercentageAuto::auto(),
+                top: taffy::style::LengthPercentageAuto::auto(),
+                bottom: taffy::style::LengthPercentageAuto::auto(),
             }
         } else {
             taffy::geometry::Rect {
@@ -100,7 +112,7 @@ pub fn computed_style_to_taffy(
             height: if matches!(style.display, DisplayValue::Flex | DisplayValue::InlineFlex)
                 && matches!(style.height, LengthValue::MaxContent | LengthValue::MinContent)
             {
-                taffy::style::Dimension::Auto
+                taffy::style::Dimension::auto()
             } else {
                 convert_length_to_dimension(&style.height, vw, vh)
             },
@@ -124,7 +136,7 @@ pub fn computed_style_to_taffy(
             // 错误推开块子间距；split inline 的匿名块盒经 computed_style_to_taffy 继承同 bug）。
             // 水平 margin 保留（inline 水平 margin 有效，作用于 IFC 内 inline 片段）。
             let inline_vmargin_zero = matches!(style.display, DisplayValue::Inline);
-            let zero = taffy::style::LengthPercentageAuto::Length(0.0);
+            let zero = taffy::style::LengthPercentageAuto::length(0.0);
             taffy::geometry::Rect {
                 left: convert_length_to_lpa(&style.margin_left, is_float, vw, vh),
                 right: convert_length_to_lpa(&style.margin_right, is_float, vw, vh),
@@ -179,7 +191,7 @@ pub fn computed_style_to_taffy(
             // column-gap 长写属性优先；若未设置（0px），回退到 gap 简写
             width: {
                 let col = convert_length_to_lp(&style.column_gap, vw, vh);
-                if col == taffy::style::LengthPercentage::Length(0.0) {
+                if col == taffy::style::LengthPercentage::length(0.0) {
                     convert_length_to_lp(&style.gap, vw, vh)
                 } else {
                     col
@@ -188,7 +200,7 @@ pub fn computed_style_to_taffy(
             // row-gap 长写属性优先；若未设置（0px），回退到 gap 简写
             height: {
                 let row = convert_length_to_lp(&style.row_gap, vw, vh);
-                if row == taffy::style::LengthPercentage::Length(0.0) {
+                if row == taffy::style::LengthPercentage::length(0.0) {
                     convert_length_to_lp(&style.gap, vw, vh)
                 } else {
                     row
@@ -220,7 +232,7 @@ pub fn computed_style_to_taffy(
         flex_wrap: convert_flex_wrap(&style.flex_wrap),
         flex_basis: if collapsed {
             // visibility:collapse 的 flex item 主尺寸归零（strut）。
-            taffy::style::Dimension::Length(0.0)
+            taffy::style::Dimension::length(0.0)
         } else {
             convert_flex_basis(&style.flex_basis, vw, vh)
         },
@@ -410,13 +422,13 @@ fn convert_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taffy::
         LengthValue::Em(v) => length(*v as f32),
         LengthValue::Rem(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
-        LengthValue::Percentage(v) => taffy::style::Dimension::Percent((*v / 100.0) as f32),
-        LengthValue::Auto => taffy::style::Dimension::Auto,
+        LengthValue::Percentage(v) => taffy::style::Dimension::percent((*v / 100.0) as f32),
+        LengthValue::Auto => taffy::style::Dimension::auto(),
         // Calc 表达式：尝试提取简单的 P% ± Npx 模式，转为百分比。
         // calc(100% - 6px) → Percent(1.0)。精确的 px 偏移量在布局后处理中处理。
         LengthValue::Calc(expr) => {
             if let Some(pct) = extract_calc_percentage(expr) {
-                taffy::style::Dimension::Percent(pct as f32 / 100.0)
+                taffy::style::Dimension::percent(pct as f32 / 100.0)
             } else {
                 length(0.0)
             }
@@ -429,7 +441,7 @@ fn convert_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taffy::
         // 违反 max-content/min-content 的 shrink-to-fit 语义（R181c 实测 net -5）。
         LengthValue::MinContent | LengthValue::MaxContent => length(0.0),
         // viewport 单位已在上方 resolve_viewport_px 处理
-        _ => taffy::style::Dimension::Auto,
+        _ => taffy::style::Dimension::auto(),
     }
 }
 
@@ -444,7 +456,7 @@ fn convert_max_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taf
         LengthValue::Px(v) => {
             let v = *v as f32;
             if v.is_infinite() {
-                taffy::style::Dimension::Auto
+                taffy::style::Dimension::auto()
             } else {
                 length(v)
             }
@@ -452,20 +464,20 @@ fn convert_max_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taf
         LengthValue::Em(v) => length(*v as f32),
         LengthValue::Rem(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
-        LengthValue::Percentage(v) => taffy::style::Dimension::Percent((*v / 100.0) as f32),
-        LengthValue::Auto => taffy::style::Dimension::Auto,
+        LengthValue::Percentage(v) => taffy::style::Dimension::percent((*v / 100.0) as f32),
+        LengthValue::Auto => taffy::style::Dimension::auto(),
         // Calc 表达式：提取百分比部分（与 convert_length_to_dimension 一致），
         // 非百分比 calc 回退 0.0。此前 calc() 被静默丢弃为 0.0（max-width/max-height 失效）。
         LengthValue::Calc(expr) => {
             if let Some(pct) = extract_calc_percentage(expr) {
-                taffy::style::Dimension::Percent(pct as f32 / 100.0)
+                taffy::style::Dimension::percent(pct as f32 / 100.0)
             } else {
                 length(0.0)
             }
         }
         LengthValue::FitContent(inner) => convert_max_length_to_dimension(inner, vw, vh),
-        LengthValue::MinContent | LengthValue::MaxContent => taffy::style::Dimension::Auto,
-        _ => taffy::style::Dimension::Auto,
+        LengthValue::MinContent | LengthValue::MaxContent => taffy::style::Dimension::auto(),
+        _ => taffy::style::Dimension::auto(),
     }
 }
 
@@ -481,13 +493,13 @@ fn convert_length_to_lp(value: &LengthValue, vw: f32, vh: f32) -> taffy::style::
         LengthValue::Em(v) => length(*v as f32),
         LengthValue::Rem(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
-        LengthValue::Percentage(v) => taffy::style::LengthPercentage::Percent((*v / 100.0) as f32),
+        LengthValue::Percentage(v) => taffy::style::LengthPercentage::percent((*v / 100.0) as f32),
         LengthValue::Auto => length(0.0), // 不接受 auto 的属性，auto 视为 0
         // Calc 表达式：提取百分比部分（与 convert_length_to_dimension 一致），
         // 非百分比 calc 回退 0.0。此前 calc() 被静默丢弃为 0.0（padding/border/gap 失效）。
         LengthValue::Calc(expr) => {
             if let Some(pct) = extract_calc_percentage(expr) {
-                taffy::style::LengthPercentage::Percent(pct as f32 / 100.0)
+                taffy::style::LengthPercentage::percent(pct as f32 / 100.0)
             } else {
                 length(0.0)
             }
@@ -516,12 +528,12 @@ fn convert_length_to_lpa(
         LengthValue::Em(v) => length(*v as f32),
         LengthValue::Rem(v) => length(*v as f32),
         LengthValue::Ch(v) => length(*v as f32),
-        LengthValue::Percentage(v) => taffy::style::LengthPercentageAuto::Percent((*v / 100.0) as f32),
+        LengthValue::Percentage(v) => taffy::style::LengthPercentageAuto::percent((*v / 100.0) as f32),
         LengthValue::Auto => {
             if resolve_auto_as_zero {
                 length(0.0)
             } else {
-                taffy::style::LengthPercentageAuto::Auto
+                taffy::style::LengthPercentageAuto::auto()
             }
         }
         // Calc 表达式：提取 P% ± Npx 的百分比部分（与 convert_length_to_dimension 一致）。
@@ -529,7 +541,7 @@ fn convert_length_to_lpa(
         // 此前 margin/inset 的 calc() 被静默丢弃为 0.0（grid-calc-margin 等用例）。
         LengthValue::Calc(expr) => {
             if let Some(pct) = extract_calc_percentage(expr) {
-                taffy::style::LengthPercentageAuto::Percent(pct as f32 / 100.0)
+                taffy::style::LengthPercentageAuto::percent(pct as f32 / 100.0)
             } else {
                 length(0.0)
             }
@@ -562,8 +574,8 @@ fn convert_flex_wrap(value: &FlexWrapValue) -> taffy::style::FlexWrap {
 /// 转换 flex-basis 属性。
 fn convert_flex_basis(value: &FlexBasisValue, vw: f32, vh: f32) -> taffy::style::Dimension {
     match value {
-        FlexBasisValue::Auto => taffy::style::Dimension::Auto,
-        FlexBasisValue::Content => taffy::style::Dimension::Auto, // taffy 无 content，映射为 Auto
+        FlexBasisValue::Auto => taffy::style::Dimension::auto(),
+        FlexBasisValue::Content => taffy::style::Dimension::auto(), // taffy 无 content，映射为 Auto
         FlexBasisValue::Length(lv) => convert_length_to_dimension(lv, vw, vh),
     }
 }
@@ -678,7 +690,7 @@ fn convert_justify_self(value: &JustifySelfValue) -> Option<taffy::style::AlignS
 /// - `minmax(100px, 1fr)` — 最小最大
 /// - `repeat(3, 100px)` — 重复
 /// - `repeat(auto-fill, 200px)` — 自动填充（传递给 taffy 原生 auto-fill）
-fn parse_grid_tracks(value: &Option<String>) -> Vec<taffy::style::TrackSizingFunction> {
+fn parse_grid_tracks(value: &Option<String>) -> Vec<taffy::style::GridTemplateComponent<String>> {
     let Some(value) = value else {
         return vec![];
     };
@@ -741,78 +753,76 @@ fn tokenize_track_list(value: &str) -> Vec<String> {
 /// 对于 auto-fill/auto-fit，生成 `TrackSizingFunction::Repeat` 变体，
 /// 利用 taffy 原生的 auto-fill 支持，根据容器宽度自动计算轨道数量。
 /// 对于固定次数，直接展开为对应数量的轨道。
-fn parse_repeat(inner: &str) -> Vec<taffy::style::TrackSizingFunction> {
-    use taffy::style::GridTrackRepetition;
+fn parse_repeat(inner: &str) -> Vec<taffy::style::GridTemplateComponent<String>> {
+    use taffy::style::{GridTemplateComponent, GridTemplateRepetition, RepetitionCount, TrackSizingFunction};
 
     // 找到第一个不在括号内的逗号
     let comma_pos = find_top_level_comma(inner);
     let Some(comma_pos) = comma_pos else {
-        return vec![taffy::style::TrackSizingFunction::AUTO];
+        return vec![TrackSizingFunction::AUTO.into()];
     };
 
     let count_str = inner[..comma_pos].trim();
     let track_list_str = inner[comma_pos + 1..].trim();
 
-    // 解析内部 track 列表为 NonRepeatedTrackSizingFunction
+    // 解析内部 track 列表为 TrackSizingFunction（非重复型，0.9.2 = MinMax）
     let inner_tokens = tokenize_track_list(track_list_str);
-    let inner_tracks: Vec<taffy::style::NonRepeatedTrackSizingFunction> = inner_tokens
+    let inner_tracks: Vec<TrackSizingFunction> = inner_tokens
         .iter()
         .map(|t| parse_single_track_as_non_repeated(t))
         .collect();
 
     if count_str.eq_ignore_ascii_case("auto-fill") {
         // 传递给 taffy 原生 auto-fill，自动根据容器宽度计算轨道数量
-        return vec![taffy::style::TrackSizingFunction::Repeat(
-            GridTrackRepetition::AutoFill,
-            inner_tracks,
-        )];
+        return vec![GridTemplateComponent::Repeat(GridTemplateRepetition {
+            count: RepetitionCount::AutoFill,
+            tracks: inner_tracks,
+            line_names: vec![],
+        })];
     }
 
     if count_str.eq_ignore_ascii_case("auto-fit") {
         // 传递给 taffy 原生 auto-fit
-        return vec![taffy::style::TrackSizingFunction::Repeat(
-            GridTrackRepetition::AutoFit,
-            inner_tracks,
-        )];
+        return vec![GridTemplateComponent::Repeat(GridTemplateRepetition {
+            count: RepetitionCount::AutoFit,
+            tracks: inner_tracks,
+            line_names: vec![],
+        })];
     }
 
     // 固定次数：展开为对应数量的轨道
     let Ok(count) = count_str.parse::<usize>() else {
-        return vec![taffy::style::TrackSizingFunction::AUTO];
+        return vec![TrackSizingFunction::AUTO.into()];
     };
 
     let mut result = Vec::with_capacity(count * inner_tracks.len());
     for _ in 0..count {
-        result.extend(
-            inner_tracks
-                .iter()
-                .map(|t| taffy::style::TrackSizingFunction::Single(*t)),
-        );
+        result.extend(inner_tracks.iter().map(|t| GridTemplateComponent::Single(*t)));
     }
 
     result
 }
 
-/// 将单个 track 值解析为 NonRepeatedTrackSizingFunction。
+/// 将单个 track 值解析为 TrackSizingFunction。
 ///
 /// 用于 repeat() 内部轨道列表的解析。
-fn parse_single_track_as_non_repeated(s: &str) -> taffy::style::NonRepeatedTrackSizingFunction {
-    use taffy::style::NonRepeatedTrackSizingFunction;
+fn parse_single_track_as_non_repeated(s: &str) -> taffy::style::TrackSizingFunction {
+    use taffy::style::TrackSizingFunction;
 
     let s = s.trim();
 
     if s.eq_ignore_ascii_case("auto") {
-        return NonRepeatedTrackSizingFunction::AUTO;
+        return TrackSizingFunction::AUTO;
     }
     if s.ends_with("fr")
         && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>()
     {
-        return NonRepeatedTrackSizingFunction::from_flex(flex);
+        return TrackSizingFunction::from_fr(flex);
     }
     if s.ends_with('%')
         && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
     {
-        return NonRepeatedTrackSizingFunction::from_percent(pct / 100.0);
+        return TrackSizingFunction::from_percent(pct / 100.0);
     }
     if s.starts_with("minmax(") && s.ends_with(')') {
         return parse_minmax_as_non_repeated(&s[7..s.len() - 1]);
@@ -820,23 +830,27 @@ fn parse_single_track_as_non_repeated(s: &str) -> taffy::style::NonRepeatedTrack
     // fit-content() 函数
     if s.starts_with("fit-content(") && s.ends_with(')') {
         let inner = &s["fit-content(".len()..s.len() - 1];
-        if let Some(arg) = parse_length_percentage(inner.trim()) {
-            return NonRepeatedTrackSizingFunction {
-                min: taffy::style::MinTrackSizingFunction::Auto,
-                max: taffy::style::MaxTrackSizingFunction::FitContent(arg),
+        if let Some((val, is_pct)) = parse_length_percentage(inner.trim()) {
+            return TrackSizingFunction {
+                min: taffy::style::MinTrackSizingFunction::auto(),
+                max: if is_pct {
+                    taffy::style::MaxTrackSizingFunction::fit_content_percent(val)
+                } else {
+                    taffy::style::MaxTrackSizingFunction::fit_content_px(val)
+                },
             };
         }
     }
     if s.ends_with("px")
         && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
     {
-        return NonRepeatedTrackSizingFunction::from_length(px);
+        return TrackSizingFunction::from_length(px);
     }
     if let Ok(px) = s.parse::<f32>() {
-        return NonRepeatedTrackSizingFunction::from_length(px);
+        return TrackSizingFunction::from_length(px);
     }
 
-    NonRepeatedTrackSizingFunction::AUTO
+    TrackSizingFunction::AUTO
 }
 
 /// 找到字符串中第一个不在括号内的逗号位置。
@@ -853,11 +867,11 @@ fn find_top_level_comma(s: &str) -> Option<usize> {
     None
 }
 
-/// 解析 grid-auto-rows/columns 的 track 定义为 NonRepeatedTrackSizingFunction 列表。
+/// 解析 grid-auto-rows/columns 的 track 定义为 TrackSizingFunction 列表。
 ///
-/// 与 parse_grid_tracks 类似，但返回 NonRepeatedTrackSizingFunction
+/// 与 parse_grid_tracks 类似，但返回 TrackSizingFunction
 /// （不包含 repeat 变体），用于 taffy 的 grid_auto_rows/grid_auto_columns 字段。
-fn parse_grid_auto_tracks(value: &Option<String>) -> Vec<taffy::style::NonRepeatedTrackSizingFunction> {
+fn parse_grid_auto_tracks(value: &Option<String>) -> Vec<taffy::style::TrackSizingFunction> {
     let Some(value) = value else {
         return vec![];
     };
@@ -869,55 +883,8 @@ fn parse_grid_auto_tracks(value: &Option<String>) -> Vec<taffy::style::NonRepeat
         .collect()
 }
 
-/// 解析单个 NonRepeatedTrackSizingFunction 值。
-fn parse_single_auto_track(s: &str) -> taffy::style::NonRepeatedTrackSizingFunction {
-    use taffy::style::NonRepeatedTrackSizingFunction;
-
-    let s = s.trim();
-
-    if s.eq_ignore_ascii_case("auto") {
-        return NonRepeatedTrackSizingFunction::AUTO;
-    }
-    if s.ends_with("fr")
-        && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>()
-    {
-        return NonRepeatedTrackSizingFunction::from_flex(flex);
-    }
-    if s.ends_with('%')
-        && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
-    {
-        return NonRepeatedTrackSizingFunction::from_percent(pct / 100.0);
-    }
-    if s.starts_with("minmax(") && s.ends_with(')') {
-        return parse_minmax_as_non_repeated(&s[7..s.len() - 1]);
-    }
-    if s.ends_with("px")
-        && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
-    {
-        return NonRepeatedTrackSizingFunction::from_length(px);
-    }
-    if let Ok(px) = s.parse::<f32>() {
-        return NonRepeatedTrackSizingFunction::from_length(px);
-    }
-
-    NonRepeatedTrackSizingFunction::AUTO
-}
-
-/// 解析 minmax() 函数内部，返回 NonRepeatedTrackSizingFunction。
-fn parse_minmax_as_non_repeated(inner: &str) -> taffy::style::NonRepeatedTrackSizingFunction {
-    let parts: Vec<&str> = inner.split(',').collect();
-    if parts.len() != 2 {
-        return taffy::style::NonRepeatedTrackSizingFunction::AUTO;
-    }
-
-    let min = parse_min_track(parts[0].trim());
-    let max = parse_max_track(parts[1].trim());
-
-    taffy::geometry::MinMax { min, max }
-}
-
-/// 解析单个 grid track 值。
-fn parse_single_track(s: &str) -> taffy::style::TrackSizingFunction {
+/// 解析单个 TrackSizingFunction 值。
+fn parse_single_auto_track(s: &str) -> taffy::style::TrackSizingFunction {
     use taffy::style::TrackSizingFunction;
 
     let s = s.trim();
@@ -928,7 +895,7 @@ fn parse_single_track(s: &str) -> taffy::style::TrackSizingFunction {
     if s.ends_with("fr")
         && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>()
     {
-        return TrackSizingFunction::from_flex(flex);
+        return TrackSizingFunction::from_fr(flex);
     }
     if s.ends_with('%')
         && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
@@ -936,15 +903,66 @@ fn parse_single_track(s: &str) -> taffy::style::TrackSizingFunction {
         return TrackSizingFunction::from_percent(pct / 100.0);
     }
     if s.starts_with("minmax(") && s.ends_with(')') {
-        return parse_minmax(&s[7..s.len() - 1]);
+        return parse_minmax_as_non_repeated(&s[7..s.len() - 1]);
+    }
+    if s.ends_with("px")
+        && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
+    {
+        return TrackSizingFunction::from_length(px);
+    }
+    if let Ok(px) = s.parse::<f32>() {
+        return TrackSizingFunction::from_length(px);
+    }
+
+    TrackSizingFunction::AUTO
+}
+
+/// 解析 minmax() 函数内部，返回 TrackSizingFunction。
+fn parse_minmax_as_non_repeated(inner: &str) -> taffy::style::TrackSizingFunction {
+    let parts: Vec<&str> = inner.split(',').collect();
+    if parts.len() != 2 {
+        return taffy::style::TrackSizingFunction::AUTO;
+    }
+
+    let min = parse_min_track(parts[0].trim());
+    let max = parse_max_track(parts[1].trim());
+
+    taffy::geometry::MinMax { min, max }
+}
+
+/// 解析单个 grid track 值。
+fn parse_single_track(s: &str) -> taffy::style::GridTemplateComponent<String> {
+    use taffy::style::TrackSizingFunction;
+
+    let s = s.trim();
+
+    if s.eq_ignore_ascii_case("auto") {
+        return TrackSizingFunction::AUTO.into();
+    }
+    if s.ends_with("fr")
+        && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>()
+    {
+        return TrackSizingFunction::from_fr(flex).into();
+    }
+    if s.ends_with('%')
+        && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
+    {
+        return TrackSizingFunction::from_percent(pct / 100.0).into();
+    }
+    if s.starts_with("minmax(") && s.ends_with(')') {
+        return parse_minmax(&s[7..s.len() - 1]).into();
     }
     // fit-content() 函数：映射为 taffy 的 FitContent 轨道尺寸
     if s.starts_with("fit-content(") && s.ends_with(')') {
         let inner = &s["fit-content(".len()..s.len() - 1];
-        if let Some(arg) = parse_length_percentage(inner.trim()) {
-            return taffy::style::TrackSizingFunction::Single(taffy::geometry::MinMax {
-                min: taffy::style::MinTrackSizingFunction::Auto,
-                max: taffy::style::MaxTrackSizingFunction::FitContent(arg),
+        if let Some((val, is_pct)) = parse_length_percentage(inner.trim()) {
+            return taffy::style::GridTemplateComponent::Single(taffy::geometry::MinMax {
+                min: taffy::style::MinTrackSizingFunction::auto(),
+                max: if is_pct {
+                    taffy::style::MaxTrackSizingFunction::fit_content_percent(val)
+                } else {
+                    taffy::style::MaxTrackSizingFunction::fit_content_px(val)
+                },
             });
         }
     }
@@ -952,35 +970,33 @@ fn parse_single_track(s: &str) -> taffy::style::TrackSizingFunction {
     if s.ends_with("px")
         && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
     {
-        return TrackSizingFunction::from_length(px);
+        return TrackSizingFunction::from_length(px).into();
     }
     if let Ok(px) = s.parse::<f32>() {
-        return TrackSizingFunction::from_length(px);
+        return TrackSizingFunction::from_length(px).into();
     }
 
     // 无法解析，默认 auto
-    TrackSizingFunction::AUTO
+    TrackSizingFunction::AUTO.into()
 }
 
-/// 解析 minmax() 函数内部。
-/// 解析长度或百分比为 taffy LengthPercentage。
+/// 解析长度或百分比，返回 (值, 是否百分比)。
 ///
-/// 支持 px、em、rem、%、纯数字（视为 px）。
-fn parse_length_percentage(s: &str) -> Option<taffy::style::LengthPercentage> {
-    use taffy::style::LengthPercentage;
+/// 支持 px、%、纯数字（视为 px）。供 fit-content 轨道尺寸用（0.8.3 fit_content_px/percent 取 f32）。
+fn parse_length_percentage(s: &str) -> Option<(f32, bool)> {
     let s = s.trim();
     if s.ends_with("px")
         && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
     {
-        return Some(LengthPercentage::Length(px));
+        return Some((px, false));
     }
     if s.ends_with('%')
         && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
     {
-        return Some(LengthPercentage::Percent(pct / 100.0));
+        return Some((pct / 100.0, true));
     }
     if let Ok(px) = s.parse::<f32>() {
-        return Some(LengthPercentage::Length(px));
+        return Some((px, false));
     }
     None
 }
@@ -994,7 +1010,7 @@ fn parse_minmax(inner: &str) -> taffy::style::TrackSizingFunction {
     let min = parse_min_track(parts[0].trim());
     let max = parse_max_track(parts[1].trim());
 
-    taffy::style::TrackSizingFunction::Single(taffy::geometry::MinMax { min, max })
+    taffy::geometry::MinMax { min, max }
 }
 
 /// 解析 minmax 的最小值。
@@ -1004,23 +1020,23 @@ fn parse_min_track(s: &str) -> taffy::style::MinTrackSizingFunction {
     use taffy::style::MinTrackSizingFunction;
 
     if s.eq_ignore_ascii_case("auto") {
-        return MinTrackSizingFunction::Auto;
+        return MinTrackSizingFunction::auto();
     }
     if s.ends_with('%')
         && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
     {
-        return MinTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Percent(pct / 100.0));
+        return MinTrackSizingFunction::percent(pct / 100.0);
     }
     if s.ends_with("px")
         && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
     {
-        return MinTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Length(px));
+        return MinTrackSizingFunction::length(px);
     }
     if let Ok(px) = s.parse::<f32>() {
-        return MinTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Length(px));
+        return MinTrackSizingFunction::length(px);
     }
 
-    MinTrackSizingFunction::Auto
+    MinTrackSizingFunction::auto()
 }
 
 /// 解析 minmax 的最大值。
@@ -1030,28 +1046,28 @@ fn parse_max_track(s: &str) -> taffy::style::MaxTrackSizingFunction {
     use taffy::style::MaxTrackSizingFunction;
 
     if s.eq_ignore_ascii_case("auto") {
-        return MaxTrackSizingFunction::Auto;
+        return MaxTrackSizingFunction::auto();
     }
     if s.ends_with("fr")
         && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>()
     {
-        return MaxTrackSizingFunction::Fraction(flex);
+        return MaxTrackSizingFunction::from_fr(flex);
     }
     if s.ends_with('%')
         && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
     {
-        return MaxTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Percent(pct / 100.0));
+        return MaxTrackSizingFunction::percent(pct / 100.0);
     }
     if s.ends_with("px")
         && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
     {
-        return MaxTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Length(px));
+        return MaxTrackSizingFunction::length(px);
     }
     if let Ok(px) = s.parse::<f32>() {
-        return MaxTrackSizingFunction::Fixed(taffy::style::LengthPercentage::Length(px));
+        return MaxTrackSizingFunction::length(px);
     }
 
-    MaxTrackSizingFunction::Auto
+    MaxTrackSizingFunction::auto()
 }
 
 /// 转换 grid-auto-flow 值。
@@ -1323,8 +1339,8 @@ mod inline_tests {
         style.left = LengthValue::Px(20.0);
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.position, taffy::style::Position::Relative);
-        assert_eq!(result.inset.top, taffy::style::LengthPercentageAuto::Length(10.0));
-        assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::Length(20.0));
+        assert_eq!(result.inset.top, taffy::style::LengthPercentageAuto::length(10.0));
+        assert_eq!(result.inset.left, taffy::style::LengthPercentageAuto::length(20.0));
     }
 
     #[test]
@@ -1351,10 +1367,10 @@ mod inline_tests {
         style.padding_bottom = LengthValue::Px(30.0);
         style.padding_left = LengthValue::Px(40.0);
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.padding.top, taffy::style::LengthPercentage::Length(10.0));
-        assert_eq!(result.padding.right, taffy::style::LengthPercentage::Length(20.0));
-        assert_eq!(result.padding.bottom, taffy::style::LengthPercentage::Length(30.0));
-        assert_eq!(result.padding.left, taffy::style::LengthPercentage::Length(40.0));
+        assert_eq!(result.padding.top, taffy::style::LengthPercentage::length(10.0));
+        assert_eq!(result.padding.right, taffy::style::LengthPercentage::length(20.0));
+        assert_eq!(result.padding.bottom, taffy::style::LengthPercentage::length(30.0));
+        assert_eq!(result.padding.left, taffy::style::LengthPercentage::length(40.0));
     }
 
     #[test]
@@ -1363,8 +1379,8 @@ mod inline_tests {
         style.margin_left = LengthValue::Auto;
         style.margin_right = LengthValue::Auto;
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.margin.left, taffy::style::LengthPercentageAuto::Auto);
-        assert_eq!(result.margin.right, taffy::style::LengthPercentageAuto::Auto);
+        assert_eq!(result.margin.left, taffy::style::LengthPercentageAuto::auto());
+        assert_eq!(result.margin.right, taffy::style::LengthPercentageAuto::auto());
     }
 
     #[test]
@@ -1373,8 +1389,8 @@ mod inline_tests {
         style.width = LengthValue::Percentage(50.0);
         style.height = LengthValue::Percentage(75.0);
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.size.width, taffy::style::Dimension::Percent(0.5));
-        assert_eq!(result.size.height, taffy::style::Dimension::Percent(0.75));
+        assert_eq!(result.size.width, taffy::style::Dimension::percent(0.5));
+        assert_eq!(result.size.height, taffy::style::Dimension::percent(0.75));
     }
 
     #[test]
@@ -1383,8 +1399,8 @@ mod inline_tests {
         style.width = LengthValue::Auto;
         style.height = LengthValue::Auto;
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.size.width, taffy::style::Dimension::Auto);
-        assert_eq!(result.size.height, taffy::style::Dimension::Auto);
+        assert_eq!(result.size.width, taffy::style::Dimension::auto());
+        assert_eq!(result.size.height, taffy::style::Dimension::auto());
     }
 
     #[test]
@@ -1393,8 +1409,8 @@ mod inline_tests {
         style.min_width = LengthValue::Px(100.0);
         style.max_width = LengthValue::Px(500.0);
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.min_size.width, taffy::style::Dimension::Length(100.0));
-        assert_eq!(result.max_size.width, taffy::style::Dimension::Length(500.0));
+        assert_eq!(result.min_size.width, taffy::style::Dimension::length(100.0));
+        assert_eq!(result.max_size.width, taffy::style::Dimension::length(500.0));
     }
 
     #[test]
@@ -1430,7 +1446,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.flex_basis = FlexBasisValue::Auto;
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.flex_basis, taffy::style::Dimension::Auto);
+        assert_eq!(result.flex_basis, taffy::style::Dimension::auto());
     }
 
     #[test]
@@ -1438,7 +1454,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.flex_basis = FlexBasisValue::Length(LengthValue::Px(200.0));
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.flex_basis, taffy::style::Dimension::Length(200.0));
+        assert_eq!(result.flex_basis, taffy::style::Dimension::length(200.0));
     }
 
     #[test]
@@ -1452,7 +1468,7 @@ mod inline_tests {
         style.flex_grow = 1.0;
         style.flex_shrink = 1.0;
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.flex_basis, taffy::style::Dimension::Length(0.0));
+        assert_eq!(result.flex_basis, taffy::style::Dimension::length(0.0));
         assert_eq!(result.flex_grow, 0.0);
         assert_eq!(result.flex_shrink, 0.0);
     }
@@ -1464,7 +1480,7 @@ mod inline_tests {
         style.flex_basis = FlexBasisValue::Length(LengthValue::Px(200.0));
         style.flex_grow = 2.0;
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.flex_basis, taffy::style::Dimension::Length(200.0));
+        assert_eq!(result.flex_basis, taffy::style::Dimension::length(200.0));
         assert_eq!(result.flex_grow, 2.0);
     }
 
@@ -1490,8 +1506,8 @@ mod inline_tests {
         style.gap = LengthValue::Px(20.0); // gap.width = style.gap
         style.row_gap = LengthValue::Px(10.0); // gap.height = style.row_gap
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.gap.width, taffy::style::LengthPercentage::Length(20.0));
-        assert_eq!(result.gap.height, taffy::style::LengthPercentage::Length(10.0));
+        assert_eq!(result.gap.width, taffy::style::LengthPercentage::length(20.0));
+        assert_eq!(result.gap.height, taffy::style::LengthPercentage::length(10.0));
     }
 
     #[test]
@@ -1670,10 +1686,10 @@ mod inline_tests {
         style.border_bottom_style = BorderStyleValue::Solid;
         style.border_left_style = BorderStyleValue::Solid;
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.border.top, taffy::style::LengthPercentage::Length(1.0));
-        assert_eq!(result.border.right, taffy::style::LengthPercentage::Length(2.0));
-        assert_eq!(result.border.bottom, taffy::style::LengthPercentage::Length(3.0));
-        assert_eq!(result.border.left, taffy::style::LengthPercentage::Length(4.0));
+        assert_eq!(result.border.top, taffy::style::LengthPercentage::length(1.0));
+        assert_eq!(result.border.right, taffy::style::LengthPercentage::length(2.0));
+        assert_eq!(result.border.bottom, taffy::style::LengthPercentage::length(3.0));
+        assert_eq!(result.border.left, taffy::style::LengthPercentage::length(4.0));
     }
 
     // ── ComputedStyle with percentage padding/margin ────────────────────
@@ -1683,7 +1699,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.padding_top = LengthValue::Percentage(10.0);
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.padding.top, taffy::style::LengthPercentage::Percent(0.1));
+        assert_eq!(result.padding.top, taffy::style::LengthPercentage::percent(0.1));
     }
 
     #[test]
@@ -1693,6 +1709,6 @@ mod inline_tests {
         style.display = DisplayValue::Block;
         style.margin_bottom = LengthValue::Percentage(25.0);
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.margin.bottom, taffy::style::LengthPercentageAuto::Percent(0.25));
+        assert_eq!(result.margin.bottom, taffy::style::LengthPercentageAuto::percent(0.25));
     }
 }

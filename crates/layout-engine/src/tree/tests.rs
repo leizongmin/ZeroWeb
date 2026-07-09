@@ -298,7 +298,7 @@ fn test_build_with_auto_margins() {
     let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
     let style = taffy_tree.style(div_taffy).unwrap();
     // 默认 margin 是 Px(0.0)，转换为 Length(0.0)
-    assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::Length(0.0));
+    assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::length(0.0));
 }
 
 /// 测试 margin: auto 正确传递。
@@ -331,8 +331,8 @@ fn test_build_with_explicit_auto_margin() {
     );
     let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
     let style = taffy_tree.style(div_taffy).unwrap();
-    assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::Auto);
-    assert_eq!(style.margin.right, taffy::style::LengthPercentageAuto::Auto);
+    assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::auto());
+    assert_eq!(style.margin.right, taffy::style::LengthPercentageAuto::auto());
 }
 
 /// 测试百分比 width 正确传递。
@@ -363,7 +363,7 @@ fn test_build_with_percentage_width() {
     );
     let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
     let style = taffy_tree.style(div_taffy).unwrap();
-    assert_eq!(style.size.width, taffy::style::Dimension::Percent(0.5));
+    assert_eq!(style.size.width, taffy::style::Dimension::percent(0.5));
 }
 
 /// 测试空文档。
@@ -470,7 +470,7 @@ fn test_build_with_gap() {
     );
     let flex_taffy = find_taffy_for_dom(&taffy_to_dom, flex);
     let style = taffy_tree.style(flex_taffy).unwrap();
-    assert_eq!(style.gap.width, taffy::style::LengthPercentage::Length(10.0));
+    assert_eq!(style.gap.width, taffy::style::LengthPercentage::length(10.0));
 }
 
 /// 测试带 padding/border/margin。
@@ -503,9 +503,9 @@ fn test_build_with_padding_border_margin() {
     );
     let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
     let style = taffy_tree.style(div_taffy).unwrap();
-    assert_eq!(style.padding.top, taffy::style::LengthPercentage::Length(10.0));
-    assert_eq!(style.border.top, taffy::style::LengthPercentage::Length(2.0));
-    assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::Length(5.0));
+    assert_eq!(style.padding.top, taffy::style::LengthPercentage::length(10.0));
+    assert_eq!(style.border.top, taffy::style::LengthPercentage::length(2.0));
+    assert_eq!(style.margin.top, taffy::style::LengthPercentageAuto::length(5.0));
 }
 
 /// 测试带 min/max size。
@@ -534,8 +534,8 @@ fn test_build_with_min_max_size() {
     );
     let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
     let style = taffy_tree.style(div_taffy).unwrap();
-    assert_eq!(style.min_size.width, taffy::style::Dimension::Length(50.0));
-    assert_eq!(style.max_size.width, taffy::style::Dimension::Length(500.0));
+    assert_eq!(style.min_size.width, taffy::style::Dimension::length(50.0));
+    assert_eq!(style.max_size.width, taffy::style::Dimension::length(500.0));
 }
 
 // -- 边界条件测试 --
@@ -691,10 +691,10 @@ fn test_build_with_min_max_constraints() {
     );
     let div_taffy = find_taffy_for_dom(&taffy_to_dom, div);
     let style = taffy_tree.style(div_taffy).unwrap();
-    assert_eq!(style.min_size.width, taffy::style::Dimension::Length(50.0));
-    assert_eq!(style.max_size.width, taffy::style::Dimension::Length(500.0));
-    assert_eq!(style.min_size.height, taffy::style::Dimension::Length(30.0));
-    assert_eq!(style.max_size.height, taffy::style::Dimension::Length(300.0));
+    assert_eq!(style.min_size.width, taffy::style::Dimension::length(50.0));
+    assert_eq!(style.max_size.width, taffy::style::Dimension::length(500.0));
+    assert_eq!(style.min_size.height, taffy::style::Dimension::length(30.0));
+    assert_eq!(style.max_size.height, taffy::style::Dimension::length(300.0));
 }
 
 // -- DOM 树构建边界条件测试 --
@@ -1323,9 +1323,9 @@ fn test_build_with_row_gap_only() {
     let flex_taffy = find_taffy_for_dom(&taffy_to_dom, flex);
     let style = taffy_tree.style(flex_taffy).unwrap();
     // gap.width（column-gap）应为默认 0.0
-    assert_eq!(style.gap.width, taffy::style::LengthPercentage::Length(0.0));
+    assert_eq!(style.gap.width, taffy::style::LengthPercentage::length(0.0));
     // gap.height（row-gap）应为 15.0
-    assert_eq!(style.gap.height, taffy::style::LengthPercentage::Length(15.0));
+    assert_eq!(style.gap.height, taffy::style::LengthPercentage::length(15.0));
 }
 
 /// 测试 grid 容器子元素全部使用 Span 放置时的布局树构建。

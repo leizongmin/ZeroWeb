@@ -109,7 +109,7 @@ impl TryFrom<RequestedAxis> for AbsoluteAxis {
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct LayoutInput {
-    /// Whether we only need to know the Node's size, or whe
+    /// Whether we only need to know the Node's size, or whether we need to perform a full layout
     pub run_mode: RunMode,
     /// Whether a Node's style sizes should be taken into account or ignored
     pub sizing_mode: SizingMode,
@@ -209,12 +209,12 @@ impl LayoutOutput {
         }
     }
 
-    /// Construct a SizeBaselinesAndMargins from just the container and content sizes
+    /// Construct a `LayoutOutput` from just the container and content sizes
     pub fn from_sizes(size: Size<f32>, content_size: Size<f32>) -> Self {
         Self::from_sizes_and_baselines(size, content_size, Point::NONE)
     }
 
-    /// Construct a SizeBaselinesAndMargins from just the container's size.
+    /// Construct a `LayoutOutput` from just the container's size.
     pub fn from_outer_size(size: Size<f32>) -> Self {
         Self::from_sizes(size, Size::zero())
     }
