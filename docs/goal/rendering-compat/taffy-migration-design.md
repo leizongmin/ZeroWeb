@@ -67,7 +67,7 @@ ZW layout-engine 对 taffy 的依赖面（grep `crates/layout-engine/src/` + `ap
 
 **★ R1248 关键结论**：
 1. **迁移成本远超原估**：0.8 tagged pointer（size 类型全改）+ 0.9 Style 泛型（converter 主成本）+ 0.11 alignment struct = 三大 breaking 域，converter 511 call + grid 模块 + alignment 构造全须适配。原「tree ops ~120 / Style 511 / measure 19」估偏低（未含 0.8 tagged pointer + 0.9 Style 泛型的连锁重构）。
-2. **0.10 原生 float/clear 是潜在大收益**：可替代/简化 ZW `float_positioning.rs`（~540 行后处理：R129/R1242 shrink + R895 定位 + clear + BFC float containment），但须逐项验证 ZW fixup 不丢失（R145/R895/R129 等多轮 fix）。
+2. **0.10 原生 float/clear 是潜在大收益**（R1249 doc-assessed）：可替代/简化 ZW `float_positioning.rs`（~540 行后处理）。R1249 zread taffy 文档评估：0.10 `float_layout` feature（FloatContext+BlockContext+Clear）**覆盖 ZW 大部分核心**——float 定位（R895）/ clear（R145）/ BFC containment / **shrink-to-fit（R129/R1242，文档明示 floated descendants 容器）/ exclude_floats_from_non_bfc**。ZW-specific fixups（R1042 sibling-push + R142 vertical + R180 inline-block shrink）须逐项 A/B 验证是否 obsolete 或须保留。迁移后 ~540 行可大幅简化（可能减半+），加强 fork go-ahead 案例。
 3. **cached_baselines patch 须 re-apply**（0.11 无 native baseline input，R1169 unblock 不成立）。
 4. **MSRV 1.71**（ZW MSRV 1.85，满足）。
 
