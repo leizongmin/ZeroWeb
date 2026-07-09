@@ -80,10 +80,15 @@ const { port } = srv.address();
 const base = `http://127.0.0.1:${port}`;
 
 const puppeteer = await import('puppeteer-core');
-const browser = await puppeteer.default.launch({
-  headless: true, executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-  args: ['--no-sandbox', '--disable-setuid-sandbox'],
-});
+// M3: headless chromium 在 WSL2（无 /dev/dri + chromium 150）渲染 SIGTRAP。
+// 用 ORACLE_CDP_URL 连接预启动的非 headless chromium（GUI 渲染路径，--user-data-dir 独立
+// profile + --remote-debugging-port + --ozone-platform=x11），绕过 headless 崩溃。
+const browser = process.env.ORACLE_CDP_URL
+  ? await puppeteer.default.connect({ browserURL: process.env.ORACLE_CDP_URL })
+  : await puppeteer.default.launch({
+      headless: true, executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
 
 let totalOk = 0, totalFail = 0;
 for (const cat of categories) {
