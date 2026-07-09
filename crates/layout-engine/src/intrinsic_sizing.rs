@@ -228,7 +228,7 @@ pub(crate) fn block_max_content_width(
 /// 遍历 DOM 后代收集全部文本（`Document::text_content`），按 CSS 白空格折叠规则折叠后，
 /// 用元素 font 度量逐字符累加宽度（复用 IFC 的 `estimate_char_width`：Ahem 等宽=font_size，
 /// 其它字体按字符近似宽）。仅 max-content（假设不换行）；min-content（最宽词）独立子问题。
-fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
     let text = doc.text_content(node_id).unwrap_or_default();
     let collapsed = crate::inline::collapse_whitespace(&text);
     if collapsed.is_empty() {

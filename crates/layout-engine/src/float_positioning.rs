@@ -5,8 +5,8 @@
 //! 垂直书写模式块收缩、inline-block shrink-to-fit、匿名 table 根标记。
 
 use std::collections::HashMap;
-use zero_css_parser::values::{ColorValue, DisplayValue, FlexDirectionValue, LengthValue};
-use zero_dom::NodeId;
+use zero_css_parser::values::{ColorValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue};
+use zero_dom::{Document, NodeId};
 use zero_style_system::{ComputedStyle, WritingModeValue};
 
 use crate::types::LayoutBox;
@@ -26,6 +26,56 @@ use crate::types::LayoutBox;
 pub(crate) fn adjust_float_positions(box_node: &mut LayoutBox) {
     let content_abs_y = box_node.y + box_node.content_y;
     adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0);
+}
+
+/// 纯文本 float shrink-to-fit（CSS §10.3.5）预补 pass。
+///
+/// `adjust_float_positions` 的收缩分支仅处理含 block 级 / replaced 子元素的 float
+/// （`content_child_widths`）；**纯文本 float**（无 block/replaced 子，仅直接文本）保持
+/// taffy 全宽——旧注释「shrink-to-fit 需 IFC 测量，留后续」。本 pass 用
+/// `text_content_max_width` 测量纯文本 float 的 max-content 宽度并收缩（仅当窄于 taffy
+/// 宽度），修 `font-size: 0` float 未收缩（应 0 宽，font-size-zero-3）+ 短文本 float 撑满
+/// 全宽。须在 `adjust_float_positions` **之前**运行，使后续 float 定位 / 排斥用收缩后宽度。
+pub(crate) fn shrink_pure_text_floats(
+    box_node: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    // 先递归子树（深度优先），使嵌套容器内的 float 也被处理。
+    for child in &mut box_node.children {
+        shrink_pure_text_floats(child, doc, styles);
+    }
+    // 仅处理 width:auto 的 float（非替换）。非 auto 宽度 / 非 float / replaced 由别处处理。
+    if !box_node.declared_width_auto || matches!(box_node.float, FloatValue::None) || box_node.is_replaced {
+        return;
+    }
+    // 仅水平书写模式：text_content_max_width 度量水平文本宽，垂直模式的 float 其 inline 轴
+    // 为垂直（block-size），物理 width 语义不同，由 shrink_vertical_blocks_to_content 独立处理。
+    // 不 gate 会致 hyphens-vertical-* 垂直 float 误收缩（±0.04pp 噪声 flip）。
+    if !matches!(box_node.writing_mode, WritingModeValue::HorizontalTb) {
+        return;
+    }
+    // 已有 block 级 / replaced 子元素的 float 由 adjust_float_positions 收缩分支处理，
+    // 此处不重复（避免双重 shrink / 与 block 子宽度冲突）。
+    let has_block_or_replaced = box_node
+        .children
+        .iter()
+        .any(|c| !c.is_absolute && !c.is_fixed && (c.is_block_level || c.is_replaced));
+    if has_block_or_replaced {
+        return;
+    }
+    // 纯文本 float：用 text_content_max_width 测 max-content（font-size:0 → 0，无文本 → 0）。
+    let Some(dom_id) = box_node.node_id else {
+        return;
+    };
+    let text_max_w = crate::intrinsic_sizing::text_content_max_width(dom_id, doc, styles);
+    let shrink_border_box =
+        text_max_w + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+    // 仅当内容确实更窄时才收缩（对内容更宽或显式宽度为 no-op）。
+    if shrink_border_box < box_node.width {
+        box_node.width = shrink_border_box;
+        box_node.content_width = text_max_w;
+    }
 }
 
 /// 垂直书写模式下 width:auto 块级元素收缩到内容（CSS §10.3.3 + CSS Writing Modes §7.1）。
