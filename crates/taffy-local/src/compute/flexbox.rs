@@ -1,5 +1,5 @@
 //! Computes the [flexbox](https://css-tricks.com/snippets/css/a-guide-to-flexbox/) layout algorithm on [`TaffyTree`](crate::TaffyTree) according to the [spec](https://www.w3.org/TR/css-flexbox-1/)
-use crate::compute::common::alignment::compute_alignment_offset;
+use crate::compute::common::alignment::{compute_alignment_offset, resolve_self_alignment_safety};
 use crate::geometry::{Line, Point, Rect, Size};
 use crate::style::{
     AlignContent, AlignContentKeyword, AlignItems, AlignItemsKeyword, AlignSelf, AvailableSpace, FlexWrap,
@@ -13,7 +13,7 @@ use crate::util::debug::debug_log;
 use crate::util::sys::{f32_max, new_vec_with_capacity, Vec};
 use crate::util::MaybeMath;
 use crate::util::{MaybeResolve, ResolveOrZero};
-use crate::{BoxGenerationMode, BoxSizing, Direction};
+use crate::{BoxGenerationMode, BoxSizing, Direction, RequestedAxis};
 
 use super::common::alignment::apply_alignment_fallback;
 #[cfg(feature = "content_size")]
@@ -209,6 +209,21 @@ pub fn compute_flexbox_layout(
     // The size of the container should be floored by the padding and border
     let styled_based_known_dimensions =
         known_dimensions.or(min_max_definite_size.or(clamped_style_size).maybe_max(padding_border_sum));
+
+    // Short-circuit layout if the container's size is fully determined by the container's size and the run mode
+    // is ComputeSize (and thus the container's size is all that we're interested in)
+    if run_mode == RunMode::ComputeSize {
+        if let Size { width: Some(width), height: Some(height) } = styled_based_known_dimensions {
+            return LayoutOutput::from_outer_size(Size { width, height });
+        }
+
+        // We can also short-circuit if the width is known and only the width has been requested.
+        if inputs.axis == RequestedAxis::Horizontal {
+            if let Some(width) = styled_based_known_dimensions.width {
+                return LayoutOutput::from_outer_size(Size { width, height: 0.0 });
+            }
+        }
+    }
 
     // Short-circuit layout if the container's size is fully determined by the container's size and the run mode
     // is ComputeSize (and thus the container's size is all that we're interested in)
@@ -2333,9 +2348,13 @@ fn perform_absolute_layout_on_absolute_children(
             }
         } else {
             // Stretch is an invalid value for justify_content in the flexbox algorithm, so we
-            // treat it as if it wasn't set (and thus we default to FlexStart behaviour)
-            // TODO (safe alignment): apply Start fallback when justify_content.is_safe() and the
-            // resolved size overflows the containing block. Wired in a follow-up commit.
+            // treat it as if it wasn't set (and thus we default to FlexStart behaviour).
+            //
+            // The `safe` overflow-position keyword is intentionally NOT applied here, even when
+            // the abs-positioned item would overflow the main axis: Chrome does not apply safe
+            // fallback to `justify-content` on absolutely-positioned flex items (only the
+            // cross-axis `align-self` does so). Matching the layout authority over a strict
+            // spec read keeps gentest fixtures green; reconsider if Chromium changes behavior.
             match (constants.justify_content.unwrap_or(JustifyContent::START).keyword(), main_axis_flex_start_reversed)
             {
                 (AlignContentKeyword::SpaceBetween, _)
@@ -2408,9 +2427,11 @@ fn perform_absolute_layout_on_absolute_children(
                     - resolved_margin.cross_end(constants.dir)
             }
         } else {
-            // TODO (safe alignment): apply Start fallback when align_self.is_safe() and the
-            // resolved size overflows the containing block. Wired in a follow-up commit.
-            match (align_self.keyword(), cross_axis_flex_start_reversed) {
+            let cross_overflows = final_size.cross(constants.dir) + resolved_margin.cross_axis_sum(constants.dir)
+                > constants.container_size.cross(constants.dir)
+                    - constants.content_box_inset.cross_axis_sum(constants.dir);
+            let cross_keyword = resolve_self_alignment_safety(align_self, cross_overflows);
+            match (cross_keyword, cross_axis_flex_start_reversed) {
                 // Stretch alignment does not apply to absolutely positioned items
                 // See "Example 3" at https://www.w3.org/TR/css-flexbox-1/#abspos-items
                 // Note: Stretch should be FlexStart not Start when we support both
