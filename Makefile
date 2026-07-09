@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle product-smoke product-smoke-legacy
+.PHONY: setup-rusty-v8 fetch-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 test reftest reftest-oracle capture-oracle product-smoke product-smoke-legacy
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -76,6 +76,15 @@ reftest: fetch-wpt-data target/test-guard
 #       make reftest-oracle DIR=css-grid ORACLE_PASS_RATIO=0.005   调严判定阈值
 reftest-oracle: fetch-wpt-data target/test-guard
 	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- reftest-oracle $(DIR)
+
+# DC-14 oracle-shots 抓取（R1253）：WSL2 + chromium 150 headless 渲染 SIGTRAP，用非 headless
+# chromium（GUI 渲染路径）+ CDP。抓完后 oracle-shots 存 tests/wpt-runner/oracle-shots/，
+# 再 make reftest-oracle DIR=... 跑 A/B（reftest-oracle 读存 PNG，不需 chromium）。
+# 用法: make capture-oracle DIR=css/css-flexbox
+#       make capture-oracle DIR=css/css-flexbox EXTRA="--skip-existing"
+#       多目录: ./scripts/run-oracle-capture.sh --category css/css-flexbox --category css/css-grid
+capture-oracle: fetch-wpt-data
+	./scripts/run-oracle-capture.sh --category $(DIR) $(EXTRA)
 
 # 产品静态页 product-smoke 回归门禁（DC-13）：渲染 welcome.html vs chromium Oracle，
 # diff > 阈值则失败（退出 2）。捕获产品可见回归——如 R428 min-size:auto 致
