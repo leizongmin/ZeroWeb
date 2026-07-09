@@ -687,18 +687,18 @@ fn test_convert_length_to_lpa_uncovered_variants() {
 fn test_convert_alignment_to_align_items_uncovered_variants() {
     assert_eq!(
         convert_alignment_to_align_items(&AlignmentValue::Baseline),
-        Some(taffy::style::AlignItems::Baseline)
+        Some(taffy::style::AlignItems::BASELINE)
     );
     assert_eq!(convert_alignment_to_align_items(&AlignmentValue::SpaceBetween), None);
     assert_eq!(convert_alignment_to_align_items(&AlignmentValue::SpaceAround), None);
     assert_eq!(convert_alignment_to_align_items(&AlignmentValue::SpaceEvenly), None);
     assert_eq!(
         convert_alignment_to_align_items(&AlignmentValue::Start),
-        Some(taffy::style::AlignItems::Start)
+        Some(taffy::style::AlignItems::START)
     );
     assert_eq!(
         convert_alignment_to_align_items(&AlignmentValue::End),
-        Some(taffy::style::AlignItems::End)
+        Some(taffy::style::AlignItems::END)
     );
 }
 
@@ -707,15 +707,15 @@ fn test_convert_alignment_to_align_items_uncovered_variants() {
 fn test_convert_alignment_to_justify_content_uncovered_variants() {
     assert_eq!(
         convert_alignment_to_justify_content(&AlignmentValue::Start),
-        Some(taffy::style::JustifyContent::Start)
+        Some(taffy::style::JustifyContent::START)
     );
     assert_eq!(
         convert_alignment_to_justify_content(&AlignmentValue::End),
-        Some(taffy::style::JustifyContent::End)
+        Some(taffy::style::JustifyContent::END)
     );
     assert_eq!(
         convert_alignment_to_justify_content(&AlignmentValue::Stretch),
-        Some(taffy::style::JustifyContent::Stretch)
+        Some(taffy::style::JustifyContent::STRETCH)
     );
     assert_eq!(convert_alignment_to_justify_content(&AlignmentValue::Baseline), None);
 }
@@ -726,11 +726,11 @@ fn test_convert_align_content_start_end() {
     use zero_style_system::AlignContentValue;
     assert_eq!(
         convert_align_content(&AlignContentValue::Start),
-        Some(taffy::style::AlignContent::Start)
+        Some(taffy::style::AlignContent::START)
     );
     assert_eq!(
         convert_align_content(&AlignContentValue::End),
-        Some(taffy::style::AlignContent::End)
+        Some(taffy::style::AlignContent::END)
     );
 }
 

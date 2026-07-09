@@ -584,13 +584,13 @@ fn convert_flex_basis(value: &FlexBasisValue, vw: f32, vh: f32) -> taffy::style:
 fn convert_alignment_to_align_items(value: &AlignmentValue) -> Option<taffy::style::AlignItems> {
     match value {
         AlignmentValue::Auto => None, // align-items 不使用 auto
-        AlignmentValue::FlexStart => Some(taffy::style::AlignItems::FlexStart),
-        AlignmentValue::FlexEnd => Some(taffy::style::AlignItems::FlexEnd),
-        AlignmentValue::Center => Some(taffy::style::AlignItems::Center),
-        AlignmentValue::Stretch => Some(taffy::style::AlignItems::Stretch),
-        AlignmentValue::Baseline => Some(taffy::style::AlignItems::Baseline),
-        AlignmentValue::Start => Some(taffy::style::AlignItems::Start),
-        AlignmentValue::End => Some(taffy::style::AlignItems::End),
+        AlignmentValue::FlexStart => Some(taffy::style::AlignItems::FLEX_START),
+        AlignmentValue::FlexEnd => Some(taffy::style::AlignItems::FLEX_END),
+        AlignmentValue::Center => Some(taffy::style::AlignItems::CENTER),
+        AlignmentValue::Stretch => Some(taffy::style::AlignItems::STRETCH),
+        AlignmentValue::Baseline => Some(taffy::style::AlignItems::BASELINE),
+        AlignmentValue::Start => Some(taffy::style::AlignItems::START),
+        AlignmentValue::End => Some(taffy::style::AlignItems::END),
         // space-between, space-around, space-evenly 不适用于 align-items
         AlignmentValue::SpaceBetween | AlignmentValue::SpaceAround | AlignmentValue::SpaceEvenly => None,
     }
@@ -601,13 +601,13 @@ fn convert_alignment_to_align_self(value: &AlignmentValue) -> Option<taffy::styl
     // AlignSelf 是 AlignItems 的 type alias
     match value {
         AlignmentValue::Auto => None, // 继承容器 align-items
-        AlignmentValue::FlexStart => Some(taffy::style::AlignSelf::FlexStart),
-        AlignmentValue::FlexEnd => Some(taffy::style::AlignSelf::FlexEnd),
-        AlignmentValue::Center => Some(taffy::style::AlignSelf::Center),
-        AlignmentValue::Stretch => Some(taffy::style::AlignSelf::Stretch),
-        AlignmentValue::Baseline => Some(taffy::style::AlignSelf::Baseline),
-        AlignmentValue::Start => Some(taffy::style::AlignSelf::Start),
-        AlignmentValue::End => Some(taffy::style::AlignSelf::End),
+        AlignmentValue::FlexStart => Some(taffy::style::AlignSelf::FLEX_START),
+        AlignmentValue::FlexEnd => Some(taffy::style::AlignSelf::FLEX_END),
+        AlignmentValue::Center => Some(taffy::style::AlignSelf::CENTER),
+        AlignmentValue::Stretch => Some(taffy::style::AlignSelf::STRETCH),
+        AlignmentValue::Baseline => Some(taffy::style::AlignSelf::BASELINE),
+        AlignmentValue::Start => Some(taffy::style::AlignSelf::START),
+        AlignmentValue::End => Some(taffy::style::AlignSelf::END),
         AlignmentValue::SpaceBetween | AlignmentValue::SpaceAround | AlignmentValue::SpaceEvenly => None,
     }
 }
@@ -616,15 +616,15 @@ fn convert_alignment_to_align_self(value: &AlignmentValue) -> Option<taffy::styl
 fn convert_alignment_to_justify_content(value: &AlignmentValue) -> Option<taffy::style::JustifyContent> {
     match value {
         AlignmentValue::Auto => None, // auto 不适用于 justify-content
-        AlignmentValue::FlexStart => Some(taffy::style::JustifyContent::FlexStart),
-        AlignmentValue::FlexEnd => Some(taffy::style::JustifyContent::FlexEnd),
-        AlignmentValue::Center => Some(taffy::style::JustifyContent::Center),
-        AlignmentValue::SpaceBetween => Some(taffy::style::JustifyContent::SpaceBetween),
-        AlignmentValue::SpaceAround => Some(taffy::style::JustifyContent::SpaceAround),
-        AlignmentValue::SpaceEvenly => Some(taffy::style::JustifyContent::SpaceEvenly),
-        AlignmentValue::Start => Some(taffy::style::JustifyContent::Start),
-        AlignmentValue::End => Some(taffy::style::JustifyContent::End),
-        AlignmentValue::Stretch => Some(taffy::style::JustifyContent::Stretch),
+        AlignmentValue::FlexStart => Some(taffy::style::JustifyContent::FLEX_START),
+        AlignmentValue::FlexEnd => Some(taffy::style::JustifyContent::FLEX_END),
+        AlignmentValue::Center => Some(taffy::style::JustifyContent::CENTER),
+        AlignmentValue::SpaceBetween => Some(taffy::style::JustifyContent::SPACE_BETWEEN),
+        AlignmentValue::SpaceAround => Some(taffy::style::JustifyContent::SPACE_AROUND),
+        AlignmentValue::SpaceEvenly => Some(taffy::style::JustifyContent::SPACE_EVENLY),
+        AlignmentValue::Start => Some(taffy::style::JustifyContent::START),
+        AlignmentValue::End => Some(taffy::style::JustifyContent::END),
+        AlignmentValue::Stretch => Some(taffy::style::JustifyContent::STRETCH),
         AlignmentValue::Baseline => None, // baseline 不适用于 justify-content
     }
 }
@@ -637,14 +637,14 @@ fn convert_align_content(value: &AlignContentValue) -> Option<taffy::style::Alig
     match value {
         AlignContentValue::Auto => None,
         AlignContentValue::Normal => None,
-        AlignContentValue::Start => Some(taffy::style::AlignContent::Start),
-        AlignContentValue::End => Some(taffy::style::AlignContent::End),
-        AlignContentValue::Center => Some(taffy::style::AlignContent::Center),
-        AlignContentValue::Stretch => Some(taffy::style::AlignContent::Stretch),
+        AlignContentValue::Start => Some(taffy::style::AlignContent::START),
+        AlignContentValue::End => Some(taffy::style::AlignContent::END),
+        AlignContentValue::Center => Some(taffy::style::AlignContent::CENTER),
+        AlignContentValue::Stretch => Some(taffy::style::AlignContent::STRETCH),
         AlignContentValue::Baseline => None,
-        AlignContentValue::SpaceBetween => Some(taffy::style::AlignContent::SpaceBetween),
-        AlignContentValue::SpaceAround => Some(taffy::style::AlignContent::SpaceAround),
-        AlignContentValue::SpaceEvenly => Some(taffy::style::AlignContent::SpaceEvenly),
+        AlignContentValue::SpaceBetween => Some(taffy::style::AlignContent::SPACE_BETWEEN),
+        AlignContentValue::SpaceAround => Some(taffy::style::AlignContent::SPACE_AROUND),
+        AlignContentValue::SpaceEvenly => Some(taffy::style::AlignContent::SPACE_EVENLY),
     }
 }
 
@@ -656,11 +656,11 @@ fn convert_justify_items(value: &JustifyItemsValue) -> Option<taffy::style::Alig
     match value {
         JustifyItemsValue::Auto => None,
         JustifyItemsValue::Normal => None,
-        JustifyItemsValue::Start => Some(taffy::style::AlignItems::Start),
-        JustifyItemsValue::End => Some(taffy::style::AlignItems::End),
-        JustifyItemsValue::Center => Some(taffy::style::AlignItems::Center),
-        JustifyItemsValue::Stretch => Some(taffy::style::AlignItems::Stretch),
-        JustifyItemsValue::Baseline => Some(taffy::style::AlignItems::Baseline),
+        JustifyItemsValue::Start => Some(taffy::style::AlignItems::START),
+        JustifyItemsValue::End => Some(taffy::style::AlignItems::END),
+        JustifyItemsValue::Center => Some(taffy::style::AlignItems::CENTER),
+        JustifyItemsValue::Stretch => Some(taffy::style::AlignItems::STRETCH),
+        JustifyItemsValue::Baseline => Some(taffy::style::AlignItems::BASELINE),
     }
 }
 
@@ -672,11 +672,11 @@ fn convert_justify_self(value: &JustifySelfValue) -> Option<taffy::style::AlignS
     match value {
         JustifySelfValue::Auto => None,
         JustifySelfValue::Normal => None,
-        JustifySelfValue::Start => Some(taffy::style::AlignSelf::Start),
-        JustifySelfValue::End => Some(taffy::style::AlignSelf::End),
-        JustifySelfValue::Center => Some(taffy::style::AlignSelf::Center),
-        JustifySelfValue::Stretch => Some(taffy::style::AlignSelf::Stretch),
-        JustifySelfValue::Baseline => Some(taffy::style::AlignSelf::Baseline),
+        JustifySelfValue::Start => Some(taffy::style::AlignSelf::START),
+        JustifySelfValue::End => Some(taffy::style::AlignSelf::END),
+        JustifySelfValue::Center => Some(taffy::style::AlignSelf::CENTER),
+        JustifySelfValue::Stretch => Some(taffy::style::AlignSelf::STRETCH),
+        JustifySelfValue::Baseline => Some(taffy::style::AlignSelf::BASELINE),
     }
 }
 
@@ -1489,7 +1489,7 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.align_items = AlignmentValue::Center;
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.align_items, Some(taffy::style::AlignItems::Center));
+        assert_eq!(result.align_items, Some(taffy::style::AlignItems::CENTER));
     }
 
     #[test]
@@ -1497,7 +1497,10 @@ mod inline_tests {
         let mut style = ComputedStyle::default();
         style.justify_content = AlignmentValue::SpaceBetween;
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-        assert_eq!(result.justify_content, Some(taffy::style::JustifyContent::SpaceBetween));
+        assert_eq!(
+            result.justify_content,
+            Some(taffy::style::JustifyContent::SPACE_BETWEEN)
+        );
     }
 
     #[test]

@@ -183,9 +183,9 @@ fn test_convert_alignment() {
     style.align_items = AlignmentValue::FlexEnd;
     style.align_self = AlignmentValue::Baseline;
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(taffy_style.justify_content, Some(taffy::style::JustifyContent::Center));
-    assert_eq!(taffy_style.align_items, Some(taffy::style::AlignItems::FlexEnd));
-    assert_eq!(taffy_style.align_self, Some(taffy::style::AlignSelf::Baseline));
+    assert_eq!(taffy_style.justify_content, Some(taffy::style::JustifyContent::CENTER));
+    assert_eq!(taffy_style.align_items, Some(taffy::style::AlignItems::FLEX_END));
+    assert_eq!(taffy_style.align_self, Some(taffy::style::AlignSelf::BASELINE));
 }
 
 /// 测试 gap 转换（column-gap 和 row-gap 独立）。

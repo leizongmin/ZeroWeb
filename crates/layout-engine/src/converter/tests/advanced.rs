@@ -235,20 +235,20 @@ fn test_convert_alignment_align_content() {
     let cases: Vec<(AlignContentValue, Option<taffy::style::AlignContent>)> = vec![
         (
             AlignContentValue::SpaceBetween,
-            Some(taffy::style::AlignContent::SpaceBetween),
+            Some(taffy::style::AlignContent::SPACE_BETWEEN),
         ),
         (
             AlignContentValue::SpaceAround,
-            Some(taffy::style::AlignContent::SpaceAround),
+            Some(taffy::style::AlignContent::SPACE_AROUND),
         ),
         (
             AlignContentValue::SpaceEvenly,
-            Some(taffy::style::AlignContent::SpaceEvenly),
+            Some(taffy::style::AlignContent::SPACE_EVENLY),
         ),
-        (AlignContentValue::Stretch, Some(taffy::style::AlignContent::Stretch)),
-        (AlignContentValue::Center, Some(taffy::style::AlignContent::Center)),
-        (AlignContentValue::Start, Some(taffy::style::AlignContent::Start)),
-        (AlignContentValue::End, Some(taffy::style::AlignContent::End)),
+        (AlignContentValue::Stretch, Some(taffy::style::AlignContent::STRETCH)),
+        (AlignContentValue::Center, Some(taffy::style::AlignContent::CENTER)),
+        (AlignContentValue::Start, Some(taffy::style::AlignContent::START)),
+        (AlignContentValue::End, Some(taffy::style::AlignContent::END)),
         (AlignContentValue::Normal, None),
         (AlignContentValue::Auto, None),
     ];
@@ -266,19 +266,19 @@ fn test_convert_alignment_justify_content_variants() {
     let cases: Vec<(AlignmentValue, Option<taffy::style::JustifyContent>)> = vec![
         (
             AlignmentValue::SpaceBetween,
-            Some(taffy::style::JustifyContent::SpaceBetween),
+            Some(taffy::style::JustifyContent::SPACE_BETWEEN),
         ),
         (
             AlignmentValue::SpaceAround,
-            Some(taffy::style::JustifyContent::SpaceAround),
+            Some(taffy::style::JustifyContent::SPACE_AROUND),
         ),
         (
             AlignmentValue::SpaceEvenly,
-            Some(taffy::style::JustifyContent::SpaceEvenly),
+            Some(taffy::style::JustifyContent::SPACE_EVENLY),
         ),
-        (AlignmentValue::Start, Some(taffy::style::JustifyContent::Start)),
-        (AlignmentValue::End, Some(taffy::style::JustifyContent::End)),
-        (AlignmentValue::Stretch, Some(taffy::style::JustifyContent::Stretch)),
+        (AlignmentValue::Start, Some(taffy::style::JustifyContent::START)),
+        (AlignmentValue::End, Some(taffy::style::JustifyContent::END)),
+        (AlignmentValue::Stretch, Some(taffy::style::JustifyContent::STRETCH)),
     ];
     for (value, expected) in cases {
         let mut style = ComputedStyle::default();
@@ -292,12 +292,12 @@ fn test_convert_alignment_justify_content_variants() {
 #[test]
 fn test_convert_alignment_align_self_variants() {
     let cases: Vec<(AlignmentValue, Option<taffy::style::AlignSelf>)> = vec![
-        (AlignmentValue::FlexStart, Some(taffy::style::AlignSelf::FlexStart)),
-        (AlignmentValue::FlexEnd, Some(taffy::style::AlignSelf::FlexEnd)),
-        (AlignmentValue::Center, Some(taffy::style::AlignSelf::Center)),
-        (AlignmentValue::Stretch, Some(taffy::style::AlignSelf::Stretch)),
-        (AlignmentValue::Start, Some(taffy::style::AlignSelf::Start)),
-        (AlignmentValue::End, Some(taffy::style::AlignSelf::End)),
+        (AlignmentValue::FlexStart, Some(taffy::style::AlignSelf::FLEX_START)),
+        (AlignmentValue::FlexEnd, Some(taffy::style::AlignSelf::FLEX_END)),
+        (AlignmentValue::Center, Some(taffy::style::AlignSelf::CENTER)),
+        (AlignmentValue::Stretch, Some(taffy::style::AlignSelf::STRETCH)),
+        (AlignmentValue::Start, Some(taffy::style::AlignSelf::START)),
+        (AlignmentValue::End, Some(taffy::style::AlignSelf::END)),
     ];
     for (value, expected) in cases {
         let mut style = ComputedStyle::default();

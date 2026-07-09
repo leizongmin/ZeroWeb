@@ -110,7 +110,7 @@ struct NodeData {
     /// The cached results of the layout computation
     pub(crate) cache: Cache,
 
-    /// ZW patch: 缓存的 first_baselines（cache_store(PerformLayout) 时存，供 ZW cached_baselines() 读）
+    /// ZW patch: 缓存 first_baselines（cache_store(PerformLayout) 时存）
     pub(crate) cached_first_baselines: Option<crate::geometry::Point<Option<f32>>>,
 
     /// The computation result from layout algorithm
@@ -219,7 +219,6 @@ impl<NodeContext> CacheTree for TaffyTree<NodeContext> {
     }
 
     fn cache_store(&mut self, node_id: NodeId, input: &LayoutInput, layout_output: LayoutOutput) {
-        // ZW patch: PerformLayout 时缓存 first_baselines 到 NodeData
         if input.run_mode == RunMode::PerformLayout {
             self.nodes[node_id.into()].cached_first_baselines = Some(layout_output.first_baselines);
         }
@@ -860,8 +859,7 @@ impl<NodeContext> TaffyTree<NodeContext> {
             Ok(&self.nodes[node.into()].unrounded_layout)
         }
     }
-
-    /// ZW patch: 从缓存提取该节点 PerformLayout 的 first_baselines（供 ZW 提取 flex/grid 容器基线）。
+    /// ZW patch: 从缓存提取 first_baselines。
     #[must_use]
     pub fn cached_baselines(&self, node: NodeId) -> Option<crate::geometry::Point<Option<f32>>> {
         self.nodes.get(node.into()).and_then(|nd| nd.cached_first_baselines)
