@@ -38,13 +38,16 @@ ZW bug 经 4 轮 hands-on（R1270-R1274）定位为**五方耦合系统**，单�
 
 > **铁律**：不允许单方 patch 上 default（R1272/R1273 实证 net-negative）。每 Phase 须 `ZW_*` env-gated 同码 A/B（floats-clear + welcome 守零回归），全绿且 net ≥0 才能 default-on。
 
-### Phase 1（首落地）：paint_text 跳过 pure-inline 子直属文本（①'）
+### Phase 1（首落地）：paint_text 跳过 pure-inline 子直属文本（①'）—— ★ R1276 证伪（no-op）
 
-- **触点**：`crates/engine/src/paint/painter/mod.rs:507/706` `paint_text(box_node, ...)` 调用点。
-- **改法**：`paint_text` 入口加守卫——若 `box_node` 的 CSS `display==Inline`（`is_block_level=false`）**且** 其文本已参与父 IFC（父容器 `compute_final` 存了 `inline_layout`），则跳过直属文本绘制（避免与父 IFC 双绘 / 错位 x=8）。
-- **风险**：须精确判定「文本已参与父 IFC」——不是所有 inline 元素都如此（如 inline-block 自有 IFC）。守卫条件 = `display:Inline`（非 inline-block/flex/grid）且父有 stored inline_layout。
-- **A/B**：`ZW_PAINT_SKIP_INLINE=1`，floats-clear + welcome + css-text。
-- **为什么先做 ①'**：不依赖 ②/④，零布局变更（paint-only），最低风险；单独验证「文本经父 IFC 渲染」是否正确（floats-006 的 X 是否落到 div1 IFC 位）。若 ①' 单独把 floats-006 的 X 修对（在 baseline float 位 rel_y=100 下 X 仍错，但验证 paint 路径正确），为 ② 解锁。
+- **R1276 A/B 实证**：paint_text 入口守卫（`ZW_PAINT_SKIP_INLINE=1`，is_block_level=false 跳过）
+  对 floats-006 **零效果**（11.54%==11.54%），floats-clear **84==84 完全一致**，welcome 81456→81427
+  （0.01pp 噪声）。**①'（paint_text 双绘）非真实机制**——paint_text 对 pure-inline box 本就不绘文本
+  （X 已由父 IFC 渲染）。设计文档原 Phase 1 作废。
+- **★ 模型收窄**：floats-006 真实 lever = **②（float 位置）+ ④（height）**，③ IFC exclusion **已正确**
+  （仅被 ④ height 塌缩干扰 IFC 计算架空）。**① convert_display + ①' paint_text 均非直接 lever**
+  （① 是根因架构但 ②④ 可绕过；①' 证伪）。R1275 五方 → **三方（②④③）**。
+- **新 Phase 1**：trace ④（height 塌缩源）——见下方 Phase 3（升为新首落地）。
 
 ### Phase 2：float_positioning inline 级不推进 flow_bottom（②，复用 R1272 代码）
 
@@ -52,11 +55,14 @@ ZW bug 经 4 轮 hands-on（R1270-R1274）定位为**五方耦合系统**，单�
 - **前置**：Phase 1 已落地（①'），否则 ② 单独 net -3（R1272 实证）。
 - **A/B**：`ZW_FLOAT_LIFT_INLINE=1`（与 Phase1 `ZW_PAINT_SKIP_INLINE=1` 同时 on），floats-clear ≥0 + floats-006 flip。
 
-### Phase 3：height 塌缩源定位 + 修复（④）
+### Phase 3：height 塌缩源定位 + 修复（④）—— ★ R1276 升为新首落地
 
 - **触点**：trace div1.height 在 ② 应用后由 200→100 的具体 post-process（prevent_collapse_through_min_height / clamp_percentage_max_height / backfill_r109_anon_block_heights / compute_final_inline_layouts 之一），加守卫跳过 definite-height 容器。
-- **方法**：② 应用时在 engine.rs 各 post-process 入口插 div1.height 探针，二分定位塌缩点。
-- **A/B**：Phase1+2+3 同时 on，floats-006 应 flip（<1%）+ floats-clear ≥0 + welcome 守门禁。
+- **方法**：② 应用时（`ZW_FLOAT_LIFT_INLINE=1`）在 engine.rs 各 post-process 入口插 div1.height 探针，二分定位塌缩点。exclude_floats 已排除（postprocess.rs:587 已守卫 is_auto_height）。
+- **★ 为何升为首落地（R1276）**：①' 证伪后，floats-006 = ②+④。② 单独 4.79%（非 flip）因 ④ 塌缩
+  干扰 IFC exclusion；② 单独 floats-clear -3 疑亦含 ④ 塌缩副作用（待证）。先 trace+修 ④，再 ②+④
+  联合 A/B，可能 net ≥0（若 -3 主因是 ④）。
+- **A/B**：②+④ 同时 on，floats-006 应 flip（<1%）+ floats-clear ≥0 + welcome 守门禁。
 
 ### Phase 4（可选/defer）：convert_display span-fold（①，最深）
 
@@ -115,3 +121,4 @@ ZW bug 经 4 轮 hands-on（R1270-R1274）定位为**五方耦合系统**，单�
 | 版本 | 日期 | 变更 |
 |------|------|------|
 | v1.0 | 2026-07-10 (R1275) | 初始：R1270-R1274 五轮实证 → 五方耦合定位 + 分阶段协调计划 |
+| v1.1 | 2026-07-10 (R1276) | Phase 1（①' paint_text）A/B 证伪（no-op：floats-clear 84==84）→ 模型收窄五方→三方（②④③，①' 非机制，③ 已正确被 ④ 架空）；Phase 3（④ height trace）升为新首落地 |
