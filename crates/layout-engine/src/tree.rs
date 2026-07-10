@@ -662,6 +662,40 @@ fn build_subtree(
     // 转换为 taffy 样式（传入父级区域映射）
     let mut taffy_style = computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
 
+    // R1284：`<br>` 经 convert_display 映射为 taffy Block leaf（无内容 → height 0）。
+    // 当 br 处于 block 兄弟之间（如 `<div/><br><div/>`），它作为 direct block 子渲染
+    // 0px 高（chromium ~line-height），致后续块累积垂直错位（table-cell-width-0 等）。
+    // CSS §10.8.1：空 line box 仍含 strut（容器 line-height）。给 br 的 taffy min-height
+    // 设 line-height strut，使其占一行高。
+    // **仅当 br 有 block-level in-flow 同胞时应用**——否则 br 在 inline 内容中（如
+    // `<p>a<br>b</p>`）由父 IFC 的 InlineItem::Br 处理，加 min-height 会双计（taffy 子 +
+    // IFC 行）致回归（css-text -7 实证）。kill-switch `ZW_BR_LINEHEIGHT=0`（default-on）。
+    if std::env::var("ZW_BR_LINEHEIGHT").as_deref() != Ok("0")
+        && doc.get(dom_id).is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br")))
+        && doc.parent_node(dom_id).is_some_and(|pid| {
+            doc.child_nodes(pid).iter().any(|&s| {
+                use zero_css_parser::values::DisplayValue;
+                s != dom_id
+                    && styles.get(&s).is_some_and(|st| {
+                        matches!(
+                            st.display,
+                            DisplayValue::Block
+                                | DisplayValue::Flex
+                                | DisplayValue::Grid
+                                | DisplayValue::Table
+                                | DisplayValue::ListItem
+                                | DisplayValue::FlowRoot
+                        )
+                    })
+            })
+        })
+    {
+        let (_fs, lh) = crate::inline::resolve_font_metrics(Some(&computed));
+        if lh > 0.0 {
+            taffy_style.min_size.height = taffy::style::Dimension::length(lh);
+        }
+    }
+
     // 替换元素固有尺寸：检测 <img> 元素并注入 HTML 属性中的 width/height，
     // 无属性时回退到解码后的固有尺寸（img_intrinsic_sizes）
     apply_replaced_element_sizing(
