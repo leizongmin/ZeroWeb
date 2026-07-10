@@ -17,8 +17,11 @@ set -euo pipefail
 PORT="${ORACLE_CDP_PORT:-9227}"
 CHROME="${PUPPETEER_EXECUTABLE_PATH:-/usr/bin/chromium}"
 TMP="${TMPDIR:-/tmp}"
-USER_DATA="$TMP/zeroweb-chrome-oracle"
-LOG="$TMP/zeroweb-chrome-oracle.log"
+# user-data-dir / log 按 PORT 隔离：同一 profile 同时只能有一个 chromium 持有（ProfileLock），
+# 并行多实例（不同 ORACLE_CDP_PORT）必须各自独立 profile，否则后续实例报
+# "Opening in existing browser session" 直接退出。串行单实例行为不变。
+USER_DATA="${ORACLE_USER_DATA:-$TMP/zeroweb-chrome-oracle-$PORT}"
+LOG="${ORACLE_LOG:-$TMP/zeroweb-chrome-oracle-$PORT.log}"
 export DISPLAY="${DISPLAY:-:0}"
 
 # 若已有 chromium 在该端口跑（复用），则不重启

@@ -210,7 +210,12 @@ impl FloatContext {
         if !old_segment.y.contains(&divide_at_y) || old_segment.y.start == divide_at_y {
             debug_log!("old_segment", dbg:&mut *old_segment);
             debug_log!("divide_at_y", dbg:divide_at_y);
-            assert!(old_segment.y.contains(&divide_at_y) && old_segment.y.start != divide_at_y);
+            // R1254: 上游 taffy 0.12.1 此处为 `assert!(contains && start != divide_at_y)`（M3 native
+            // float 引入）。ZW 某些 float 几何违例即 panic，连累整个渲染进程（reftest-oracle 退出
+            // 101 / 浏览器崩溃）。防御：divide_at_y 不在 (start, end) 开区间时 subdivide 会产生空/
+            // 反转段，直接跳过（float inset 后续作用于整段，轻微几何偏差远优于 panic）。
+            // 实证触发：css/CSS2/borders/border-conflict-style-107.html（end_y 恰落段起点）。
+            return;
         }
         old_segment.y.end = divide_at_y;
 
