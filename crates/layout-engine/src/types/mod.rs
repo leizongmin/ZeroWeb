@@ -81,6 +81,15 @@ pub struct LayoutBox {
     /// 但 CSS §10.3.5 规定浮动非替换元素 width:auto 应 shrink-to-fit 到内容。
     /// 此标记让 float 后处理识别 width:auto 的 float 并收缩到内容宽度。
     pub declared_width_auto: bool,
+    /// `height:auto` 标记（R1277 ④）：是否 computed height 为 Auto。
+    ///
+    /// float 后处理中「非 BFC 容器内容高度收缩」须仅对 auto-height 容器生效——
+    /// 显式高度（definite height）容器不应被 float 重定位后的 content_bottom 重算
+    /// 收缩（CSS §10.5：显式高度的 used height 即显式值，内容溢出/不足不改变高度）。
+    /// 旧实现对显式高度容器也收缩，致 floats-006 `#div1{height:200px}` 在 float
+    /// 上提后 content_bottom 降到 100 而被错误塌缩到 100（R1273 实证）。此标记让
+    /// 收缩守卫跳过 definite-height 容器。
+    pub declared_height_auto: bool,
     /// 子布局盒。
     pub children: Vec<LayoutBox>,
     /// 是否为绝对定位。
@@ -336,6 +345,7 @@ impl Default for LayoutBox {
             margin_left: 0.0,
             declared_margin_top: 0.0,
             declared_width_auto: false,
+            declared_height_auto: false,
             children: Vec::new(),
             is_absolute: false,
             is_replaced: false,

@@ -281,6 +281,15 @@ pub(crate) fn adjust_float_positions_with_context(
     use zero_css_parser::values::ClearValue;
     use zero_css_parser::values::FloatValue;
 
+    // R1277 ②：inline 级子（is_block_level=false，如 `<span>` display:inline）不推进
+    // flow_bottom——CSS §9.5.1 仅 block-level 前置内容约束 float 的 outer top 边。
+    // 旧实现把 inline→taffy::Block 映射的 span 当 block 累入 flow_bottom，致后续 float
+    // 被推到 inline 内容之下（floats-006 float 落 rel_y=100 而非 0）。须与 ④（显式高度
+    // 守卫）协调上 default：② 单独 net -3 floats-clear（R1272），②+④ 同码 A/B 全 10 dir
+    // NET 0 + floats-006 11.54→4.79（R1277）。env `ZW_FLOAT_LIFT_INLINE=0` 可关闭
+    //（kill-switch，default-on；与 ④ 绑定，单独关闭会重现 -3）。
+    let lift_inline = std::env::var("ZW_FLOAT_LIFT_INLINE").as_deref() != Ok("0");
+
     // 容器的内容区域宽度
     let container_width = box_node.content_width;
 
@@ -374,21 +383,25 @@ pub(crate) fn adjust_float_positions_with_context(
             // margin-top 上浮到父容器外，子元素位于 content 原点，不计入 flow_bottom。
             let parent_collapses_first = first_in_flow && content_y_offset == 0.0;
             first_in_flow = false;
-            // 独立计算正常流位置：使用 margin 折叠
-            if crate::margin_collapse::is_empty_block(child) {
-                let collapsed_self_margin =
-                    crate::margin_collapse::collapse_two_margins(child.margin_top, child.margin_bottom);
-                last_flow_mb = crate::margin_collapse::collapse_two_margins(last_flow_mb, collapsed_self_margin);
-            } else {
-                let collapsed_margin = if parent_collapses_first {
-                    0.0
+            // R1277 ②：inline 级子（is_block_level=false）不推进 flow_bottom——
+            // CSS §9.5.1 仅 block-level 前置内容约束 float 的 outer top。
+            if !lift_inline || child.is_block_level {
+                // 独立计算正常流位置：使用 margin 折叠
+                if crate::margin_collapse::is_empty_block(child) {
+                    let collapsed_self_margin =
+                        crate::margin_collapse::collapse_two_margins(child.margin_top, child.margin_bottom);
+                    last_flow_mb = crate::margin_collapse::collapse_two_margins(last_flow_mb, collapsed_self_margin);
                 } else {
-                    crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top)
-                };
-                let child_y = flow_bottom + collapsed_margin;
-                let child_border_bottom = child_y + child.height;
-                flow_bottom = child_border_bottom;
-                last_flow_mb = child.margin_bottom;
+                    let collapsed_margin = if parent_collapses_first {
+                        0.0
+                    } else {
+                        crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top)
+                    };
+                    let child_y = flow_bottom + collapsed_margin;
+                    let child_border_bottom = child_y + child.height;
+                    flow_bottom = child_border_bottom;
+                    last_flow_mb = child.margin_bottom;
+                }
             }
             // 处理非 float 元素的 clear 属性（延迟到第二阶段）
             if matches!(child.float, FloatValue::None) {
@@ -613,7 +626,12 @@ pub(crate) fn adjust_float_positions_with_context(
                 if float_y_offset > 0.0 {
                     child.y -= float_y_offset;
                 }
-                flow_bottom = flow_bottom.max(child.y - content_y_offset + child.height);
+                // R1277 ②：inline 级子不推进 flow_bottom（CSS §9.5.1 仅 block-level
+                // 前置内容约束 float 顶边）。否则 lifted float 后的 inline 内容会把
+                // 后续 float 再度推下。
+                if !lift_inline {
+                    flow_bottom = flow_bottom.max(child.y - content_y_offset + child.height);
+                }
                 continue;
             }
 
@@ -778,28 +796,41 @@ pub(crate) fn adjust_float_positions_with_context(
             }
         } else {
             // 非 BFC 容器：浮动元素不贡献高度，收缩容器
-            let content_bottom =
-                box_node
-                    .children
-                    .iter()
-                    .filter(|c| !c.is_absolute && !c.is_fixed)
-                    .fold(0.0f32, |max_y, c| {
-                        let bottom = c.y + c.height + c.margin_bottom;
-                        max_y.max(bottom)
-                    });
-            let content_height = content_bottom.max(0.0);
-            // 如果内容区域实际高度小于 taffy 计算的高度，收缩容器
-            if content_height < box_node.content_height {
-                box_node.content_height = content_height;
-                // 更新总高度（包含 padding + border）
-                let new_total = content_height
-                    + box_node.padding_top
-                    + box_node.padding_bottom
-                    + box_node.border_top
-                    + box_node.border_bottom;
-                // 仅当新高度更小时才更新（不扩大容器）
-                if new_total < box_node.height {
-                    box_node.height = new_total;
+            //
+            // R1277 ④：显式高度（definite height）容器不应被收缩。CSS §10.5：显式高度的
+            // used height 即显式值，float 重定位后 content_bottom 下降（如 floats-006 float
+            // 上提后 content_bottom 100 < height 200）不应改变容器高度——内容仅溢出/不足。
+            // 旧实现无此守卫，致 `#div1{height:200px}` 在 float 上提后被错误塌缩到 100
+            //（R1273 实证，R1277 经 DIV1_TRACE 二分定位塌缩源=本函数 L779 非 BFC 收缩路径，
+            // 非 exclude_floats_from_non_bfc_auto_height）。env `ZW_FLOAT_RESPECT_HEIGHT=0`
+            // 可关闭（kill-switch，default-on；同 R109_BACKFILL 约定）。
+            let respect_explicit_height = std::env::var("ZW_FLOAT_RESPECT_HEIGHT").as_deref() != Ok("0");
+            if respect_explicit_height && !box_node.declared_height_auto {
+                // 显式高度容器：跳过收缩（CSS §10.5 used height = 显式值）。
+            } else {
+                let content_bottom =
+                    box_node
+                        .children
+                        .iter()
+                        .filter(|c| !c.is_absolute && !c.is_fixed)
+                        .fold(0.0f32, |max_y, c| {
+                            let bottom = c.y + c.height + c.margin_bottom;
+                            max_y.max(bottom)
+                        });
+                let content_height = content_bottom.max(0.0);
+                // 如果内容区域实际高度小于 taffy 计算的高度，收缩容器
+                if content_height < box_node.content_height {
+                    box_node.content_height = content_height;
+                    // 更新总高度（包含 padding + border）
+                    let new_total = content_height
+                        + box_node.padding_top
+                        + box_node.padding_bottom
+                        + box_node.border_top
+                        + box_node.border_bottom;
+                    // 仅当新高度更小时才更新（不扩大容器）
+                    if new_total < box_node.height {
+                        box_node.height = new_total;
+                    }
                 }
             }
         }

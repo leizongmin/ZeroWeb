@@ -1273,6 +1273,9 @@ impl LayoutEngine {
         //（仅水平书写模式）供 float 后处理收缩宽度。
         let declared_width_auto = matches!(parent_writing_mode, WritingModeValue::HorizontalTb)
             && computed.is_some_and(|c| matches!(c.width, zero_css_parser::values::LengthValue::Auto));
+        // R1277 ④：记录 height:auto 供 float 后处理收缩守卫（显式高度容器不被收缩）。
+        let declared_height_auto =
+            computed.is_some_and(|c| matches!(c.height, zero_css_parser::values::LengthValue::Auto));
 
         // 计算内容区域
         let content_x = border_left + padding_left;
@@ -1347,6 +1350,7 @@ impl LayoutEngine {
             margin_left,
             declared_margin_top,
             declared_width_auto,
+            declared_height_auto,
             children: children_boxes,
             is_absolute,
             is_replaced,

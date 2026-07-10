@@ -1,7 +1,7 @@
 # Inline-Box-Model + Float 统一设计（R109 / floats-006 架构 RFC）
 
-**日期**：2026-07-10（R1275，承接 R1270-R1274 五轮 hands-on 实证）
-**状态**：设计文档（read-only，本轮不落地代码）
+**日期**：2026-07-10（R1275，承接 R1270-R1274 五轮 hands-on 实证）；v1.2（R1277，Phase 2+3 LANDED）
+**状态**：Phase 2（②）+ Phase 3（④）LANDED default-on（R1277，kill-switch 保留）；Phase 4（①）defer
 **关联**：与 [`phase-a-IFC-unification-design.md`](./phase-a-IFC-unification-design.md)（R306，IFC 三路径统一 / large-font bug）**正交**——本文档覆盖 inline→block 映射 + float 定位 + height + IFC exclusion + paint text **五方耦合**，后者覆盖 layout/paint IFC 字体一致性。
 
 ---
@@ -49,20 +49,18 @@ ZW bug 经 4 轮 hands-on（R1270-R1274）定位为**五方耦合系统**，单�
   （① 是根因架构但 ②④ 可绕过；①' 证伪）。R1275 五方 → **三方（②④③）**。
 - **新 Phase 1**：trace ④（height 塌缩源）——见下方 Phase 3（升为新首落地）。
 
-### Phase 2：float_positioning inline 级不推进 flow_bottom（②，复用 R1272 代码）
+### Phase 2：float_positioning inline 级不推进 flow_bottom（②）—— ★ R1277 LANDED default-on
 
-- **触点**：`float_positioning.rs` `adjust_float_positions_with_context` Phase1（L372 条件）+ Phase2（L646 flow_bottom 更新），加 `lift_inline` gate（R1272 已实现代码，git 历史可复用）。
-- **前置**：Phase 1 已落地（①'），否则 ② 单独 net -3（R1272 实证）。
-- **A/B**：`ZW_FLOAT_LIFT_INLINE=1`（与 Phase1 `ZW_PAINT_SKIP_INLINE=1` 同时 on），floats-clear ≥0 + floats-006 flip。
+- **触点**：`float_positioning.rs` `adjust_float_positions_with_context` Phase1（L383 条件）+ Phase2（L626 flow_bottom 更新），`lift_inline` gate（`ZW_FLOAT_LIFT_INLINE`，default-on，kill-switch `=0`）。
+- **R1277 A/B 实证**：②（与 ④ 同 on）floats-clear **84==84 NET 0**，floats-006 **11.54→4.79**（-6.75pp，未 flip），floats-030 **11.15→5.81**（-5.34pp），floats 46==46 / normal-flow 612==612 / welcome 81456==81456 字节一致。**纯改善零回归**。
+- **★ R1273「② 单独 floats-clear -3」SUPERSEDED**：当前代码（taffy 0.12.1 迁移 R1253 M3 之后）② 单独（④ off）floats-clear 84==84 NET 0（非 -3）。R1273 -3 已不重现。
 
-### Phase 3：height 塌缩源定位 + 修复（④）—— ★ R1276 升为新首落地
+### Phase 3：height 塌缩源定位 + 修复（④）—— ★ R1277 LANDED default-on
 
-- **触点**：trace div1.height 在 ② 应用后由 200→100 的具体 post-process（prevent_collapse_through_min_height / clamp_percentage_max_height / backfill_r109_anon_block_heights / compute_final_inline_layouts 之一），加守卫跳过 definite-height 容器。
-- **方法**：② 应用时（`ZW_FLOAT_LIFT_INLINE=1`）在 engine.rs 各 post-process 入口插 div1.height 探针，二分定位塌缩点。exclude_floats 已排除（postprocess.rs:587 已守卫 is_auto_height）。
-- **★ 为何升为首落地（R1276）**：①' 证伪后，floats-006 = ②+④。② 单独 4.79%（非 flip）因 ④ 塌缩
-  干扰 IFC exclusion；② 单独 floats-clear -3 疑亦含 ④ 塌缩副作用（待证）。先 trace+修 ④，再 ②+④
-  联合 A/B，可能 net ≥0（若 -3 主因是 ④）。
-- **A/B**：②+④ 同时 on，floats-006 应 flip（<1%）+ floats-clear ≥0 + welcome 守门禁。
+- **触点**：`float_positioning.rs` 非 BFC 收缩路径（L796）加 `respect_explicit_height && !declared_height_auto` 守卫跳过 definite-height 容器；`declared_height_auto` 字段（types/mod.rs LayoutBox + engine.rs L1276 从 computed.height==Auto 填充）。
+- **R1277 trace 结论**：R1273 推断塌缩源 = `exclude_floats_from_non_bfc_auto_height`（R1274 证伪：已 is_auto_height 守卫）；**真源 = `adjust_float_positions_with_context` 内部非 BFC content_bottom 收缩路径**（float_positioning.rs:779），④ 守卫修复之。
+- **R1277 A/B 实证**：④ 与 ② 同 on，全 dir NET 0（见 Phase 2）。**④ 在 floats-006 corpus 上 no-op**（div1 无装饰，height 200 vs 塌缩不可见；4.79% 残余全来自 orange X paint 位置 = ① 缺口）；**但 ④ load-bearing**（单元测试 `test_float_lift_keeps_explicit_height_container`：④ off → div1.height 塌缩 panic，④ on → 200 ✓），修复真实 CSS §10.5 违规，未来有装饰的 explicit-height+float 容器/产品页受益。
+- **★ Phase 3「floats-006 flip (<1%)」目标未达成**：②+④ 改善 floats-006 至 4.79% 但未 flip。残余 = R1270 ① convert_display（span-fold），须 Phase 4（多 session 高风险）。
 
 ### Phase 4（可选/defer）：convert_display span-fold（①，最深）
 
@@ -122,3 +120,4 @@ ZW bug 经 4 轮 hands-on（R1270-R1274）定位为**五方耦合系统**，单�
 |------|------|------|
 | v1.0 | 2026-07-10 (R1275) | 初始：R1270-R1274 五轮实证 → 五方耦合定位 + 分阶段协调计划 |
 | v1.1 | 2026-07-10 (R1276) | Phase 1（①' paint_text）A/B 证伪（no-op：floats-clear 84==84）→ 模型收窄五方→三方（②④③，①' 非机制，③ 已正确被 ④ 架空）；Phase 3（④ height trace）升为新首落地 |
+| v1.2 | 2026-07-11 (R1277) | Phase 2（②）+ Phase 3（④）**LANDED default-on**（kill-switch 保留）：floats-006 11.54→4.79 / floats-030 11.15→5.81，全 dir NET 0 零回归；R1273「② 单独 -3」SUPERSEDED（②单独今 NET 0）；④ corpus no-op 但 unit-test load-bearing（CSS §10.5 正确性）；floats-006 未 flip（4.79% 残余 = ① Phase 4 defer） |
