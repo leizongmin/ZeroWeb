@@ -18,7 +18,21 @@ pub(super) fn create_font_loader() -> FontLoader {
     let mut loader = FontLoader::new();
     let mut fallback_ids: Vec<u32> = Vec::new();
 
-    // 系统字体路径（Linux 常见路径）
+    // R1259：先加载 Liberation Serif 作为 FontId(0)（initial font-family 的解析目标）。
+    // 原因：chromium 的 initial font-family 为 "Times New Roman"，经 fontconfig 在本环境
+    // 解析为 Liberation Serif（fc-match "Times New Roman" → LiberationSerif-Regular.ttf，
+    // Times-metric-compatible serif，细字干）。ZeroWeb 旧版 FontId(0)=DejaVuSans（sans 宽字干），
+    // 致无显式 font-family 的描述性文本（WPT reftest 的 <p> 指示文本）用 DejaVuSans 渲染，
+    // 而 chromium 用 Liberation Serif，产生纯字体匹配差异（R1257 证 float-width cluster 的
+    // 4.85% diff 全在此 <p> 文本，非布局 bug）。R1257 试 NotoSansCJK（sans，错方向）net -1pp；
+    // Liberation Serif（serif，CHR 真实默认）是正确匹配。Ahem 测试元素显式 font-family:Ahem
+    // 不受影响；sans-serif/serif 显式声明经 build_font_resolver 仍各自映射，不受影响。
+    let primary_serif_path = "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf";
+    if let Ok(data) = std::fs::read(primary_serif_path) {
+        let _ = loader.load_font(&data);
+    }
+
+    // 系统字体路径（Linux 常见路径）作回退
     let system_font_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
@@ -28,8 +42,12 @@ pub(super) fn create_font_loader() -> FontLoader {
     ];
 
     for path in &system_font_paths {
-        if let Ok(data) = std::fs::read(path) {
-            let _ = loader.load_font(&data);
+        if let Ok(data) = std::fs::read(path)
+            && let Ok(id) = loader.load_font(&data)
+            && fallback_ids.is_empty()
+        {
+            // 第一个成功加载的系统字体（DejaVuSans）加入回退链，供主字体缺字形时回退
+            fallback_ids.push(id);
         }
     }
 
