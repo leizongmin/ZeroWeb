@@ -62,10 +62,14 @@ ZW bug 经 4 轮 hands-on（R1270-R1274）定位为**五方耦合系统**，单�
 - **R1277 A/B 实证**：④ 与 ② 同 on，全 dir NET 0（见 Phase 2）。**④ 在 floats-006 corpus 上 no-op**（div1 无装饰，height 200 vs 塌缩不可见；4.79% 残余全来自 orange X paint 位置 = ① 缺口）；**但 ④ load-bearing**（单元测试 `test_float_lift_keeps_explicit_height_container`：④ off → div1.height 塌缩 panic，④ on → 200 ✓），修复真实 CSS §10.5 违规，未来有装饰的 explicit-height+float 容器/产品页受益。
 - **★ Phase 3「floats-006 flip (<1%)」目标未达成**：②+④ 改善 floats-006 至 4.79% 但未 flip。残余 = R1270 ① convert_display（span-fold），须 Phase 4（多 session 高风险）。
 
-### Phase 4（可选/defer）：convert_display span-fold（①，最深）
+### Phase 4（可选/defer）：convert_display span-fold（①，最深）—— ★ R1278 definitively 定位为 floats-006 残余唯一解
 
-- **触点**：`converter/mod.rs:329` + `tree.rs build_subtree`——pure-inline-leaf 不生成 taffy block 节点，文本注入父 IFC。
-- **风险最高**：破大量 inline→block 依赖（R255 morning.work）。仅在 Phase1-3 不足以解 floats-006 或整簇时才做。多 session。
+- **触点**：`converter/mod.rs:329` `DisplayValue::Inline => taffy::Block` + `tree.rs build_subtree:630`——build_subtree 对每个元素（含 display:inline）创 taffy 节点；span1 → taffy Block → 自身匿名 IFC（无父 float exclusion）→ X 绘于 x=8（与 float 重叠）。
+- **R1278 reconcile R1276/R1272**：X **不**经 paint_text（直属文本）绘（故 R1276 paint_text skip 守卫 no-op，瞄准错误路径）——X 经 **span 自身匿名 IFC 的 inline content** 绘。残余 lever **不在 paint 层**（R1276 ①' 证伪正确），在 **convert_display 映射层**。
+- **fold 机制**：pure-inline-leaf（display:inline + 无 block-level 子元素）**不**创 taffy 节点，其文本 fold 入父 IFC（div1 的 IFC，已具备 float exclusion R1270 ③）→ X reflow 到 x=208（float-excluded 位）。
+- **非 trivial**：须 build_subtree 控制流重构（检测 pure-inline-leaf + 文本贡献父 IFC 而非新建节点），非 convert_display 单点。R1270 已探 has_block_elem 角度（whitespace 文本节点干扰，PHASEA_STORE_EXT 假线索）。
+- **风险最高**：破 R255 morning.work 等 inline→block 依赖（UA block 标签缺漏曾致 4× 高度放大）。须 env-gated（`ZW_INLINE_FOLD=1`）+ 全量 A/B（floats-clear/normal-flow/welcome）+ morning.work product-smoke-legacy 回归门禁。多 session。
+- **A/B 目标**：floats-006 flip（<1%）+ floats-clear ≥0 + normal-flow ≥0 + welcome 守门禁 + morning.work 零回归。
 
 ---
 
@@ -121,3 +125,4 @@ ZW bug 经 4 轮 hands-on（R1270-R1274）定位为**五方耦合系统**，单�
 | v1.0 | 2026-07-10 (R1275) | 初始：R1270-R1274 五轮实证 → 五方耦合定位 + 分阶段协调计划 |
 | v1.1 | 2026-07-10 (R1276) | Phase 1（①' paint_text）A/B 证伪（no-op：floats-clear 84==84）→ 模型收窄五方→三方（②④③，①' 非机制，③ 已正确被 ④ 架空）；Phase 3（④ height trace）升为新首落地 |
 | v1.2 | 2026-07-11 (R1277) | Phase 2（②）+ Phase 3（④）**LANDED default-on**（kill-switch 保留）：floats-006 11.54→4.79 / floats-030 11.15→5.81，全 dir NET 0 零回归；R1273「② 单独 -3」SUPERSEDED（②单独今 NET 0）；④ corpus no-op 但 unit-test load-bearing（CSS §10.5 正确性）；floats-006 未 flip（4.79% 残余 = ① Phase 4 defer） |
+| v1.3 | 2026-07-11 (R1278) | Phase 4 definitively 定位为 floats-006 残余唯一解（reconcile R1276/R1272：X 经 span 匿名 IFC 非 paint_text 绘，lever 在 convert_display 映射层非 paint 层）；②+④ 已正确把 blue float 移到 top-LEFT，残余纯 orange X 位置；fold 须 build_subtree 重构（多 session，env-gated ZW_INLINE_FOLD + morning.work 门禁） |
