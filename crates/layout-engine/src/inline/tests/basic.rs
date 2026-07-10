@@ -134,6 +134,7 @@ fn test_r1215_text_autospace_normal_applies_gaps() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: true,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     let frags = ctx.all_fragments();
@@ -166,6 +167,7 @@ fn test_r1215_text_autospace_no_autospace_no_gap() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: true,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     let frags = ctx.all_fragments();
@@ -202,6 +204,7 @@ fn test_empty_text_no_lines() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     let fragments: Vec<_> = ctx.all_fragments();
@@ -230,6 +233,7 @@ fn test_r1086_word_spacing_applied_to_position() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: true,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     assert_eq!(ctx.lines.len(), 1, "应在单行");
@@ -261,6 +265,7 @@ fn test_single_line() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     assert_eq!(ctx.lines.len(), 1, "短文本应在单行中");
@@ -288,6 +293,7 @@ fn test_line_breaking() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     assert!(ctx.lines.len() > 1, "长文本应产生多行，实际 {} 行", ctx.lines.len());
@@ -312,6 +318,7 @@ fn test_line_y_positions() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     for i in 1..ctx.lines.len() {
@@ -342,6 +349,7 @@ fn test_total_height() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     let expected = ctx.lines.len() as f32 * 24.0;
@@ -372,6 +380,7 @@ fn test_all_fragments() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     let fragments = ctx.all_fragments();
@@ -397,6 +406,7 @@ fn test_fragment_x_positions() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     for line in &ctx.lines {
@@ -429,6 +439,7 @@ fn test_multiple_runs_same_line() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
         TextRun {
             text: "World".to_string(),
@@ -445,6 +456,7 @@ fn test_multiple_runs_same_line() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
     ];
     ctx.break_into_lines(runs);
@@ -532,6 +544,7 @@ fn test_very_long_single_word_overflow() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -598,6 +611,7 @@ fn test_line_height_calculation() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx24.break_into_lines(runs_24);
 
@@ -618,6 +632,7 @@ fn test_line_height_calculation() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx32.break_into_lines(runs_32);
 
@@ -652,6 +667,7 @@ fn test_line_height_accumulation() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -699,6 +715,7 @@ fn test_multiple_font_sizes_same_line() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
         TextRun {
             text: "Large".to_string(),
@@ -715,6 +732,7 @@ fn test_multiple_font_sizes_same_line() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
         TextRun {
             text: "Medium".to_string(),
@@ -731,6 +749,7 @@ fn test_multiple_font_sizes_same_line() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
     ];
     ctx.break_into_lines(runs);
@@ -777,6 +796,7 @@ fn test_font_size_affects_width() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
         TextRun {
             text: "Word".to_string(),
@@ -793,6 +813,7 @@ fn test_font_size_affects_width() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
     ];
     ctx.break_into_lines(runs);
@@ -825,6 +846,7 @@ fn test_multiple_runs_wrap_across_lines() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
         TextRun {
             text: "gamma delta".to_string(),
@@ -841,6 +863,7 @@ fn test_multiple_runs_wrap_across_lines() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
     ];
     ctx.break_into_lines(runs);
@@ -883,6 +906,7 @@ fn test_fragment_node_ids_preserved() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
         TextRun {
             text: "Second".to_string(),
@@ -899,6 +923,7 @@ fn test_fragment_node_ids_preserved() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
     ];
     ctx.break_into_lines(runs);
@@ -930,6 +955,7 @@ fn test_zero_container_width() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -974,6 +1000,7 @@ fn test_text_align_center() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -1009,6 +1036,7 @@ fn test_text_align_right() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -1042,6 +1070,7 @@ fn test_text_align_left_no_offset() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -1074,6 +1103,7 @@ fn test_text_align_justify_distributes_space() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -1113,6 +1143,7 @@ fn test_text_align_justify_last_line_not_stretched() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -1148,6 +1179,7 @@ fn test_text_align_center_multiline() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -1187,6 +1219,7 @@ fn test_text_align_right_multiline() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -1223,6 +1256,7 @@ fn test_text_align_justify_single_fragment_line() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     // 不应 panic
@@ -1248,6 +1282,7 @@ fn test_text_align_does_not_affect_total_height() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
 
     let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
@@ -1286,6 +1321,7 @@ fn test_text_align_does_not_change_line_count() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
 
     let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
@@ -1611,6 +1647,7 @@ fn test_mixed_inline_block_content_boundary() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
         TextRun {
             text: "delta epsilon".to_string(),
@@ -1627,6 +1664,7 @@ fn test_mixed_inline_block_content_boundary() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         },
     ];
     ctx.break_into_lines(runs);
@@ -1670,6 +1708,7 @@ fn test_text_with_explicit_line_breaks() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -1706,6 +1745,7 @@ fn test_whitespace_nowrap_behavior() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -1748,6 +1788,7 @@ fn test_very_long_word_without_break_opportunity() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -1784,6 +1825,7 @@ fn test_vertical_align_top_in_line() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -1816,6 +1858,7 @@ fn test_vertical_align_bottom_in_line() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
 

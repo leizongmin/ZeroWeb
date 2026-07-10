@@ -175,6 +175,12 @@ pub struct InlineFormattingContext {
     /// `Some` = 注入 `FontLoader`-backed 真实度量，供 Phase A step-2 在 strut baseline /
     /// half-leading 计算中消费（替换 `0.8`）。step-1 仅持有该字段、不读取 → 行为不变。
     pub font_metric_provider: Option<FontMetricProviderHandle>,
+    /// 字符 advance 宽度源（C3 advance plumbing，R2 dormant）。
+    ///
+    /// `None`（默认）= 4 个 in-IFC 度量点回退 `EstimateAdvance`（= `estimate_char_width`
+    /// 启发式，字节等价，零回归）。`Some` = 注入 `FontLoader`-backed 真实 advance（R3），
+    /// 度量点改读 hmtx 真实 advance，与 paint 同源（解 advance-wall / R1264 layout 残余）。
+    pub advance_source: Option<AdvanceSourceHandle>,
     /// 逐文本节点的真实 ascent ratio 覆盖（key = 文本片段 NodeId）。
     ///
     /// **Phase A §12.6 step-2 bypass 基础设施（dormant，零回归）**：R890 实证
@@ -236,6 +242,7 @@ impl InlineFormattingContext {
             margin_overrides: HashMap::new(),
             fragment_node_ids: None,
             font_metric_provider: None,
+            advance_source: None,
             ascent_ratio_overrides: HashMap::new(),
             text_transform_overrides: HashMap::new(),
             column_fragmentation: None,
@@ -303,6 +310,47 @@ impl InlineFormattingContext {
     pub fn with_font_metric_provider(mut self, provider: Rc<dyn FontMetricProvider>) -> Self {
         self.font_metric_provider = Some(FontMetricProviderHandle(provider));
         self
+    }
+
+    /// 注入字符 advance 宽度源（`FontLoader`-backed 真实 hmtx advance）。
+    ///
+    /// **C3 advance plumbing（R2 dormant）**：本方法仅设置字段。默认（未调用）=
+    /// `advance_source = None`，4 个 in-IFC 度量点（`inline/mod.rs` 空格/字符定位）
+    /// 回退 `EstimateAdvance` = `estimate_char_width` 启发式，行为不变（零回归）。
+    /// `zero-engine` 注入 `FontLoader`-backed 实现后，度量点经
+    /// `AdvanceSourceHandle::measure` 读真实 advance。
+    pub fn with_advance_source(mut self, source: Rc<dyn AdvanceSource>) -> Self {
+        self.advance_source = Some(AdvanceSourceHandle(source));
+        self
+    }
+
+    /// 测量单字符 advance 宽度（C3 advance plumbing，R2 dormant）。
+    ///
+    /// 注入源时经 `AdvanceSourceHandle`（真实 hmtx），否则回退 `estimate_char_width`
+    /// 启发式（字节等价，零回归）。in-IFC 度量点（`break_items_into_lines` /
+    /// `break_items_into_columns` 的空格与字符定位）统一经本方法，使 advance 源
+    /// 可在不改度量点的前提下切换。
+    fn advance_of(&self, ch: char, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
+        match &self.advance_source {
+            Some(src) => src.measure(ch, font_id, font_size, is_ahem),
+            None => estimate_char_width(ch, font_size, is_ahem),
+        }
+    }
+
+    /// 测量整段文本的 advance 宽度（C3 advance plumbing，R2 dormant）。
+    ///
+    /// 注入源时逐字符经 `advance_of`（真实 hmtx）；否则直接委托 `estimate_string_width`
+    /// （字节等价，零回归，且保持该函数生产活跃）。换行决策的 word_width
+    /// （`break_items_into_lines`）/ word_height（列模式）经本方法，使 advance 源真正
+    /// 驱动换行点（advance-wall / R1264 layout 残余的 root）。
+    fn advance_string_width(&self, text: &str, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
+        match &self.advance_source {
+            Some(_) => text
+                .chars()
+                .map(|c| self.advance_of(c, font_id, font_size, is_ahem))
+                .sum(),
+            None => estimate_string_width(text, font_size, is_ahem),
+        }
     }
 
     /// 注入逐文本节点真实 ascent ratio 覆盖（Phase A §12.6 step-2 bypass，dormant）。
@@ -684,6 +732,7 @@ impl InlineFormattingContext {
                                 border_top: 0.0,
                                 border_bottom: 0.0,
                                 is_ahem_font,
+                                font_id: None,
                             }));
                         }
                     }
@@ -954,6 +1003,7 @@ impl InlineFormattingContext {
                                 border_top,
                                 border_bottom,
                                 is_ahem_font,
+                                font_id: None,
                             }));
                         } else {
                             // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
@@ -973,6 +1023,7 @@ impl InlineFormattingContext {
                                 border_top,
                                 border_bottom,
                                 is_ahem_font,
+                                font_id: None,
                             }));
                         }
                     }
@@ -1074,7 +1125,7 @@ impl InlineFormattingContext {
                     // 连续纯空白 run 折叠为单个空格（last_was_collapsible_ws）。
                     if words.is_empty() {
                         if !current_line.runs.is_empty() && !last_was_collapsible_ws {
-                            current_x += estimate_char_width(' ', run.font_size, run.is_ahem_font);
+                            current_x += self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font);
                             last_was_collapsible_ws = true;
                         }
                         continue;
@@ -1094,7 +1145,7 @@ impl InlineFormattingContext {
                             let trimmed = word.trim_end_matches(' ');
                             let space_count = word.len() - trimmed.len();
                             let space_w =
-                                estimate_char_width(' ', run.font_size, run.is_ahem_font) * space_count as f32;
+                                self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font) * space_count as f32;
                             (trimmed, space_w)
                         } else {
                             (word.as_str(), 0.0f32)
@@ -1142,8 +1193,9 @@ impl InlineFormattingContext {
 
                         // 基础宽度 + letter-spacing（仅基于内容字符，不含尾部空格）
                         let content_char_count = content_word.chars().count();
-                        let word_width = estimate_string_width(content_word, run.font_size, run.is_ahem_font)
-                            + run.letter_spacing * content_char_count as f32;
+                        let word_width =
+                            self.advance_string_width(content_word, run.font_id, run.font_size, run.is_ahem_font)
+                                + run.letter_spacing * content_char_count as f32;
                         // R1086：word-spacing 作为词间前导间隙（CSS：词与词之间的额外间距）。
                         // 旧实现把 word_spacing 计入 word_width → fragment.x（=current_x，置位前）
                         // 不含 gap，仅推进 current_x 给下一词，致本词 glyph 位缺 gap
@@ -1221,8 +1273,8 @@ impl InlineFormattingContext {
                             let mut partial_x = current_x;
 
                             for (ci, ch) in chars.iter().enumerate() {
-                                let ch_width =
-                                    estimate_char_width(*ch, run.font_size, run.is_ahem_font) + run.letter_spacing;
+                                let ch_width = self.advance_of(*ch, run.font_id, run.font_size, run.is_ahem_font)
+                                    + run.letter_spacing;
 
                                 let (_, avail) =
                                     self.effective_content_area(current_y, current_line.height.max(run.box_height()));
@@ -1544,8 +1596,9 @@ impl InlineFormattingContext {
                     for (word_idx, word) in words.iter().enumerate() {
                         let char_count = word.chars().count();
                         // 垂直模式下，单词的"高度" = 水平模式的宽度
-                        let mut word_height = estimate_string_width(word, run.font_size, run.is_ahem_font)
-                            + run.letter_spacing * char_count as f32;
+                        let mut word_height =
+                            self.advance_string_width(word, run.font_id, run.font_size, run.is_ahem_font)
+                                + run.letter_spacing * char_count as f32;
                         if word_idx > 0 {
                             word_height += run.word_spacing;
                         }
@@ -1576,8 +1629,8 @@ impl InlineFormattingContext {
                             let mut partial_depth = current_depth;
 
                             for (ci, ch) in chars.iter().enumerate() {
-                                let ch_height =
-                                    estimate_char_width(*ch, run.font_size, run.is_ahem_font) + run.letter_spacing;
+                                let ch_height = self.advance_of(*ch, run.font_id, run.font_size, run.is_ahem_font)
+                                    + run.letter_spacing;
 
                                 if partial_depth + ch_height > max_depth && ci > 0 {
                                     self.lines.push(current_column);

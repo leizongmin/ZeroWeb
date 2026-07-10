@@ -184,6 +184,7 @@ fn test_negative_container_width_no_panic() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     // 不应 panic
     ctx.break_into_lines(runs);
@@ -210,6 +211,7 @@ fn test_very_narrow_container_single_char_per_line() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     // 极窄容器中每个单词应单独一行
@@ -257,6 +259,7 @@ fn test_zero_width_inline_block() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -286,6 +289,7 @@ fn test_zero_height_inline_block() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
             width: 50.0,
@@ -362,6 +366,7 @@ fn space_run() -> TextRun {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }
 }
 
@@ -569,6 +574,7 @@ fn make_run(text: &str) -> TextRun {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }
 }
 
@@ -856,6 +862,7 @@ fn test_vertical_single_column() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     // 短文本应在单列中
@@ -898,6 +905,7 @@ fn test_vertical_column_breaking() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: true,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     // 应产生多列（max_depth=50px，每个字符 16px，第 4 个字符开始换列）
@@ -923,6 +931,7 @@ fn test_vertical_columns_advance_along_x() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: true,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     // 列的 y 值（实际是 x 坐标）应递增
@@ -957,6 +966,7 @@ fn test_vertical_fragment_width_is_line_height() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     let frags: Vec<_> = ctx.all_fragments();
@@ -989,6 +999,7 @@ fn test_vertical_br_forces_new_column() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         }),
         InlineItem::Br,
         InlineItem::Text(TextRun {
@@ -1006,6 +1017,7 @@ fn test_vertical_br_forces_new_column() {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -1031,6 +1043,7 @@ fn test_horizontal_mode_unaffected_by_vertical_impl() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     }];
     ctx.break_into_lines(runs);
     assert_eq!(ctx.lines.len(), 1, "水平模式：短文本应在单行中");
@@ -1060,6 +1073,7 @@ fn test_empty_inline_element_applies_margin_right() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     };
     let text_run = TextRun {
         text: "after".to_string(),
@@ -1076,6 +1090,7 @@ fn test_empty_inline_element_applies_margin_right() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     };
     let items = vec![InlineItem::Text(empty_run), InlineItem::Text(text_run)];
     ctx.break_items_into_lines(items);
@@ -1279,6 +1294,77 @@ fn test_estimate_advance_matches_estimate_char_width() {
     assert!((with_id - no_id).abs() < 1e-6, "EstimateAdvance 应忽略 font_id");
 }
 
+// ── C3 advance plumbing（R2 dormant seam）：IFC.advance_source 注入与消费 ──
+
+/// 测试用桩 advance 源：所有非-Ahem 字符返回 `font_size × multiplier`（multiplier 远
+/// 大于 estimate 的 0.55），用于证明 IFC 度量点确实经 `advance_of` 消费注入的源。
+struct WideAdvance(f32);
+impl AdvanceSource for WideAdvance {
+    fn measure(&self, _ch: char, _font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
+        if is_ahem { font_size } else { font_size * self.0 }
+    }
+}
+
+/// 默认 IFC.advance_source = None（零回归：度量点回退 estimate_char_width）。
+#[test]
+fn ifc_advance_source_defaults_none() {
+    let ctx = InlineFormattingContext::new(100.0);
+    assert!(
+        ctx.advance_source.is_none(),
+        "IFC must default to advance_source = None (estimate path active = zero-regression)"
+    );
+}
+
+/// 注入 advance 源后，IFC 换行决策必须消费它（proof-of-seam）。
+///
+/// 容器宽 80px、字号 10px、文本 "aa aa"（两词 + 空格）：
+/// - 默认（estimate 0.55）：'a'=5.5px，整行 ~24.5px < 80 → 1 行。
+/// - 注入 WideAdvance(2.0)：'a'=20px，整行 40+20+40=100px > 80 → 换行 ≥2 行。
+#[test]
+fn ifc_advance_source_injected_is_consulted_in_wrapping() {
+    let make_ctx = |source: Option<Rc<dyn AdvanceSource>>| {
+        let mut ctx = InlineFormattingContext::new(80.0);
+        if let Some(s) = source {
+            ctx = ctx.with_advance_source(s);
+        }
+        let items = vec![InlineItem::Text(TextRun {
+            text: "aa aa".to_string(),
+            node_id: NodeId::default(),
+            font_size: 10.0,
+            line_height: 10.0,
+            vertical_align: VerticalAlignValue::Baseline,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
+            margin_left: 0.0,
+            margin_right: 0.0,
+            padding_top: 0.0,
+            padding_bottom: 0.0,
+            border_top: 0.0,
+            border_bottom: 0.0,
+            is_ahem_font: false,
+            font_id: None,
+        })];
+        ctx.break_items_into_lines(items);
+        ctx
+    };
+
+    // 默认 estimate：文本一行放得下。
+    let default_ctx = make_ctx(None);
+    assert_eq!(
+        default_ctx.lines.len(),
+        1,
+        "estimate (0.55): \"aa aa\" ~24.5px < 80px fits one line"
+    );
+
+    // 注入 WideAdvance(2.0)：每字符 20px，整行 100px > 80px → 换行。
+    let wide: Rc<dyn AdvanceSource> = Rc::new(WideAdvance(2.0));
+    let wide_ctx = make_ctx(Some(wide));
+    assert!(
+        wide_ctx.lines.len() > 1,
+        "injected WideAdvance(2.0): \"aa aa\" 100px > 80px must wrap (advance_of consulted)"
+    );
+}
+
 // ── R990：apply_vertical_alignment 的 ascent ratio 按 is_ahem 区分 ──
 
 /// 构造单文本运行 IFC（line-height:1，即 line_height == font_size，half-leading=0），
@@ -1300,6 +1386,7 @@ fn build_single_text_line(is_ahem: bool) -> InlineFormattingContext {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: is_ahem,
+        font_id: None,
     })];
     ctx.break_items_into_lines(items);
     ctx
@@ -1360,6 +1447,7 @@ fn test_r1004_ascent_ratio_override_supersedes_r990_constant() {
         border_top: 0.0,
         border_bottom: 0.0,
         is_ahem_font: false,
+        font_id: None,
     })];
     ctx.break_items_into_lines(items);
     assert_eq!(ctx.lines.len(), 1);

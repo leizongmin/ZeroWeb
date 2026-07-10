@@ -58,6 +58,13 @@ pub struct TextRun {
     pub border_bottom: f32,
     /// 是否使用 Ahem 字体（所有字符宽度等于 font_size）。
     pub is_ahem_font: bool,
+    /// 解析后的字体 id（CSS font-family → FontLoader id）。
+    ///
+    /// **C3 advance plumbing（R2 dormant）**：供 `AdvanceSource::measure` 查询真实
+    /// 字符 advance（替 `estimate_char_width` 启发式）。`None` = 未知（构造处尚未接线），
+    /// `EstimateAdvance` 忽略本字段回退启发式 = 零回归；`FontLoader`-backed 实现启用后
+    /// 按本字段查 hmtx 真实 advance。见 `advance-width-plumbing-design.md` R2-R3。
+    pub font_id: Option<u32>,
 }
 
 impl TextRun {
@@ -86,6 +93,7 @@ impl TextRun {
             border_top: 0.0,
             border_bottom: 0.0,
             is_ahem_font: false,
+            font_id: None,
         }
     }
 

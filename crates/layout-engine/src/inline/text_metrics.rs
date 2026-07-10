@@ -5,6 +5,8 @@
 //! AdvanceSource trait + EstimateAdvance 默认实现、CJK/emoji 字符分类、
 //! font-metrics 解析（resolve_font_metrics）、inline-block 尺寸解析、BiDi 重排序。
 
+use std::rc::Rc;
+
 use zero_css_parser::values::LengthValue;
 use zero_style_system::{ComputedStyle, TextAutospaceValue};
 // 经 `pub use text_metrics::*`（inline/mod.rs）再导出，供 inline/tests 子模块经 glob 访问。
@@ -80,6 +82,34 @@ pub struct EstimateAdvance;
 impl AdvanceSource for EstimateAdvance {
     fn measure(&self, ch: char, _font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
         estimate_char_width(ch, font_size, is_ahem)
+    }
+}
+
+/// 持有 `AdvanceSource` 的 trait 对象句柄（C3 advance plumbing，R2 dormant）。
+///
+/// 镜像 `FontMetricProviderHandle`（font_metrics.rs）：单独 newtype 因
+/// `InlineFormattingContext` derive `Debug` 而 `dyn AdvanceSource` 非自动 `Debug`。
+/// 内部 `Rc` 允许 engine 与 IFC 共享同一源而不引入生命周期参数。
+///
+/// **零回归**：IFC 默认 `advance_source = None`，4 个 in-IFC 度量点回退
+/// `EstimateAdvance`（= `estimate_char_width`，字节等价）。`zero-engine` 注入
+/// `FontLoader`-backed 实现后（R3），度量点改读真实 advance。
+#[derive(Clone)]
+pub struct AdvanceSourceHandle(pub(crate) Rc<dyn AdvanceSource>);
+
+impl std::fmt::Debug for AdvanceSourceHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AdvanceSourceHandle").finish_non_exhaustive()
+    }
+}
+
+impl AdvanceSourceHandle {
+    /// 经由内部源测量单字符 advance。
+    ///
+    /// IFC 度量点（`inline/mod.rs` 4 站点）调用本方法；`None` 时调用方回退
+    /// `EstimateAdvance`（零回归）。
+    pub fn measure(&self, ch: char, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
+        self.0.measure(ch, font_id, font_size, is_ahem)
     }
 }
 
