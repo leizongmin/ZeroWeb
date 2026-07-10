@@ -242,8 +242,12 @@ impl FontLoader {
         let default_id = 0u32;
 
         // 通用字体族别名映射
-        // sans-serif → 尝试匹配 DejaVu Sans / Liberation Sans / 其他 Sans 字体
-        let sans_names = ["DejaVu Sans", "Liberation Sans", "Arial", "Helvetica", "Noto Sans"];
+        // R1263：Liberation Sans 优先——chromium 的 sans-serif 默认 "Arial" → fontconfig
+        // → Liberation Sans（同 initial/serif → "Times New Roman" → LiberationSerif 谱系，R1259）。
+        // 旧序 DejaVu Sans 首位致 sans-serif→DejaVuSans（≠ CHR Liberation Sans）font-wall
+        //（welcome.html 用 sans-serif 故受影响）。R631 测 NotoSansCJK（fontconfig "sans-serif" 错）
+        // zero change 被 fallback 失效；LiberationSans（"Arial" 真实匹配）是正确字体。
+        let sans_names = ["Liberation Sans", "DejaVu Sans", "Arial", "Helvetica", "Noto Sans"];
         let serif_names = [
             "DejaVu Serif",
             "Liberation Serif",
