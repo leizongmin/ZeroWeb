@@ -834,7 +834,14 @@ pub(crate) fn compute_final_inline_layouts(
     store_font_sizes_from_ifc(&inline_ctx, root, doc, styles);
     let is_pure_ahem = style.font_family.len() == 1 && style.font_family[0].eq_ignore_ascii_case("Ahem");
     let is_floated = !matches!(style.float, FloatValue::None);
-    if !is_pure_ahem || (is_floated && inline_ctx.lines.len() > 1) {
+    // R1280：含 float 子的容器（[inline 内容 + float] 模式，如 floats-006 的 div1）须存 IFC，
+    // 让 paint 走 Path A（真实 styles → 折叠 inline 子用其真实字体度量 + is_ahem_font=true →
+    // render v_offset is_ahem 分支正确）。Path B（override maps）对折叠 inline 元素的 is_ahem
+    // 不传播 + baseline_offset 非 is_ahem-aware，致混合字体（default 容器 + Ahem span）glyph
+    // 位错（floats-006 残余 4.04%）。kill-switch `ZW_FLOAT_INLINE_PAINT=0` 关闭（default-on）。
+    let has_float_exclusions = !own_floats.is_empty();
+    let allow_non_ahem_store = has_float_exclusions && std::env::var("ZW_FLOAT_INLINE_PAINT").as_deref() != Ok("0");
+    if (!is_pure_ahem && !allow_non_ahem_store) || (is_floated && inline_ctx.lines.len() > 1) {
         return;
     }
 

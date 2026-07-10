@@ -1969,9 +1969,26 @@ pub(super) fn has_direct_paintable_text(
         let child_displays: Vec<Option<&DisplayValue>> =
             child_ids.iter().map(|c| styles.get(c).map(|s| &s.display)).collect();
         let has_inline_elem = child_displays.iter().any(|d| d.is_some_and(is_inline_display));
-        let has_block_elem = child_displays
-            .iter()
-            .any(|d| d.is_some_and(|dd| !is_inline_display(dd)));
+        // R1280：float 子元素是 out-of-flow（CSS §9.5），不属于 in-flow block 内容。
+        // 含 [inline 文本 + float] 的容器其 inline 内容仍经 IFC 排版并绕 float 流动。
+        // 旧实现把 blockified float（display:Block + float≠none）误计为 block-level →
+        // 此处返回 false → 容器 paint_text 早退 → inline 元素文本（floats-006 的 <span>X</span>）
+        // 经 span 自身 Path B 在非 float-excluded 位渲染。float 子不计为 block，让容器 paint_text
+        // 跑（Path A 存储见 inline_finalization，或 Path B collect_float_exclusions），IFC 正确绕
+        // float，并经 painted_inline_nodes 自动抑制 inline 子 Path B（避免双绘）。
+        // kill-switch `ZW_FLOAT_INLINE_PAINT=0` 回退旧行为（default-on，全 dir A/B net 0 零回归）。
+        let float_not_block = std::env::var("ZW_FLOAT_INLINE_PAINT").as_deref() != Ok("0");
+        let has_block_elem = if float_not_block {
+            child_ids.iter().any(|c| {
+                styles.get(c).is_some_and(|s| {
+                    !is_inline_display(&s.display) && matches!(s.float, zero_css_parser::values::FloatValue::None)
+                })
+            })
+        } else {
+            child_displays
+                .iter()
+                .any(|d| d.is_some_and(|dd| !is_inline_display(dd)))
+        };
         // inline-level 子元素须为叶文本容器（无元素子节点），排除 block-in-inline（R109 碎片化）。
         let inline_children_have_elem = child_ids.iter().any(|c| {
             styles.get(c).is_some_and(|s| is_inline_display(&s.display))
