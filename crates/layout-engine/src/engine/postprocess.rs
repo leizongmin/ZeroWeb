@@ -1078,23 +1078,42 @@ pub(super) fn apply_block_relative_percent_insets(
     styles: &HashMap<NodeId, ComputedStyle>,
     viewport_height: f32,
 ) {
-    use zero_css_parser::values::LengthValue;
-    fn walk(b: &mut LayoutBox, cb_h: Option<f32>, styles: &HashMap<NodeId, ComputedStyle>) {
-        // top/bottom % 的 CB 高须明确：仅 style.height==Px 视为明确（常见 definite case，
-        // 如 R711 anchor #parent height:1in）。Auto/Percent 高→top/bottom % 不解析。
-        // ★ inline 元素（is_block_level=false）不为其 block 后代建立 containing block——block
-        // 后代的 CB 跳过 inline 继承祖父级 block container（CSS §9.2.1.1 / §10.1）。故 inline
-        // 元素的 my_content_h（传给子代作 cb_h）须**透传**自身继承到的 cb_h，而非按自身
-        // auto height 归 None。否则 inline span（auto h）包 block-level relative 子时，子的
-        // top/bottom % 永远 None 不解析（position-relative-002/005：green div top:-100% 应解
-        // 析到祖父 red div 的 100px 却得 None）。block-level 元素仍按自身 height==Px 判定。
+    use zero_css_parser::values::{DisplayValue, LengthValue};
+    fn walk(b: &mut LayoutBox, cb_h: Option<f32>, parent_is_grid: bool, styles: &HashMap<NodeId, ComputedStyle>) {
+        // top/bottom % 的 CB 高须**明确（definite）**——css-position-3 §relpos-insets：
+        // "a relative-positioned element inset doesn't resolve against an indefinite size"
+        //（position-relative-006：parent 仅有 min-height 无 height → indefinite → top:-10000%
+        // 不解析）。R711 原仅 style.height==Px 视为 definite，漏掉 R1293 实证的 grid item
+        // stretch-definite：grid item（style.height==Auto）在定高 grid 容器中经默认
+        // align/justify-items:stretch 拉伸到定值 track，其高度 definite（relative-grandchild：
+        // grid item auto-h 拉到 100px，孙 div top:-100% 应解析到 -100px；R711 严格 gate 把
+        // auto-h grid item 判 None → 不解析 → 红可见）。
+        //
+        // R1293 gate（block-level）：
+        //   definite = style.height==Px
+        //              OR (style.height==Auto AND parent_is_grid AND cb_h.is_some())
+        // cb_h.is_some() 已编码「父 grid 容器高度 definite」（grid 容器的 my_content_h）。
+        // auto-height 普通 block 容器（position-relative-006）parent_is_grid=false → indefinite
+        // → 不解析（与 chromium 一致）。inline 元素透传 cb_h（R1044 谱系）。
+        // kill-switch `ZW_RELPOS_PCT_AUTO_CB=0`（default-on）回退 R711 严格 gate（仅 ==Px）。
+        let strict_r711 = std::env::var("ZW_RELPOS_PCT_AUTO_CB").as_deref() == Ok("0");
+        let style = b.node_id.and_then(|id| styles.get(&id));
+        let height_definite = if strict_r711 {
+            style.is_some_and(|s| matches!(s.height, LengthValue::Px(_)))
+        } else {
+            style.is_some_and(|s| match s.height {
+                LengthValue::Px(_) => true,
+                LengthValue::Auto => parent_is_grid && cb_h.is_some(),
+                _ => false,
+            })
+        };
         let my_content_h = if b.is_block_level {
-            b.node_id
-                .and_then(|id| styles.get(&id))
-                .and_then(|s| matches!(s.height, LengthValue::Px(_)).then(|| b.content_height))
+            height_definite.then_some(b.content_height)
         } else {
             cb_h
         };
+        // 本盒是否 grid 容器（传给子代作 parent_is_grid）。
+        let my_is_grid = style.is_some_and(|s| matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid));
 
         // 应用本盒 Percent inset（relative，非 abspos/fixed；block-level **和** inline）。
         // ★ 仅 top/bottom%（垂直轴）——R850 实证 taffy 0.7 已应用 left/right%（水平轴），
@@ -1105,7 +1124,7 @@ pub(super) fn apply_block_relative_percent_insets(
         if b.is_relative
             && !b.is_absolute
             && !b.is_fixed
-            && let Some(style) = b.node_id.and_then(|id| styles.get(&id))
+            && let Some(style) = style
         {
             // CSS §9.4.3：top 优先（否则 bottom，正值向上）。
             let dy = match &style.top {
@@ -1121,11 +1140,11 @@ pub(super) fn apply_block_relative_percent_insets(
         }
 
         for child in &mut b.children {
-            walk(child, my_content_h, styles);
+            walk(child, my_content_h, my_is_grid, styles);
         }
     }
-    // 根的 CB = 视口（ICB）。
-    walk(box_node, Some(viewport_height), styles);
+    // 根的 CB = 视口（ICB）；根无 grid 父。
+    walk(box_node, Some(viewport_height), false, styles);
 }
 
 /// 将 OverflowValue 转换为 OverflowClip。

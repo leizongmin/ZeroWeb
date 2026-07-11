@@ -361,6 +361,72 @@ fn test_r1044_inline_passes_through_cb_height_for_relative_percent() {
     );
 }
 
+/// R1293：grid/flex item（style.height==Auto）经 stretch 拉伸到定值 track 后，其
+/// relative 后代的 top/bottom % 应解析到该 **post-layout content_height**（非 None）。
+/// 复刻 relative-grandchild：`grid(h:100) > div(auto-h grid item) > div(relative;top:-100%;h:100)`。
+/// green 的 top:-100% 应解析到 grid item 的最终 content_height（100px）→ 向上偏移 100
+/// 覆盖 red div。旧 R711 严格 gate（仅 style.height==Px 视为明确）把 auto-h grid item
+/// 判 None → green top:-100% 不解析 → green.y ≈ 0（red 未被覆盖）。
+/// kill-switch `ZW_RELPOS_PCT_AUTO_CB=0` 回退 R711 严格 gate（证 load-bearing）。
+#[test]
+fn test_r1293_relative_percent_resolves_against_stretched_grid_item_cb() {
+    let html = r#"<html><body style="margin:0">
+        <div id="red" style="width:100px;height:100px;background:red"></div>
+        <div id="grid" style="display:grid;width:100px;height:100px">
+          <div id="item">
+            <div id="green" style="position:relative;height:100px;background:green;top:-100%"></div>
+          </div>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let green = find("green", &doc, &result.root).expect("green box");
+    // grid item auto-h 经 stretch 拉到 100px → green top:-100% 解析到 -100 → green.y（相对
+    // 父 item 内容盒）≈ -100。旧 R711 严格 gate（auto-h→None）→ green.y ≈ 0（不偏移）。
+    assert!(
+        green.y < -50.0,
+        "green top:-100% should resolve against the stretched grid item's content_height (100px), \
+         shifting green.y by ~-100; got green.y={} (old R711 strict gate treated the auto-height \
+         grid item as indefinite CB → top:-100% unresolved → green.y would be ~0)",
+        green.y
+    );
+}
+
+/// R1293 反例（css-position-3 §relpos-insets）：auto-height **block** 容器（无 height，
+/// 仅 min-height 或纯 content-derived）的 relative 后代 top/bottom % **不应**解析——CB 高
+/// indefinite。复刻 position-relative-006：`div(min-height:100px; 无 height) > green(top:-10000%;h:100)`。
+/// green top:-10000% 不应解析（若解析则 green 飞出视口、red 露出）。R1293 精确 gate 区分
+/// grid-stretch-definite（解析）vs auto-block-indefinite（不解析）；naive「用 content_height」
+/// 会让此案错误解析 → position-relative-006 回归（0.63→2.71%）。default-on green.y 不偏移。
+#[test]
+fn test_r1293_relative_percent_not_resolved_against_indefinite_block_cb() {
+    let html = r#"<html><body style="margin:0">
+        <div id="red" style="width:100px;min-height:100px;background:red">
+          <div id="green" style="width:100px;height:100px;background:green;top:-10000%;position:relative"></div>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let green = find("green", &doc, &result.root).expect("green box");
+    // indefinite CB（auto+min-height，非 grid/flex stretch）→ top:-10000% 不解析 → green.y ≈ 0
+    //（覆盖 red）。naive content_height gate 会解析 → green.y ≈ -10000（飞出）。
+    assert!(
+        green.y.abs() < 50.0,
+        "green top:-10000% must NOT resolve against indefinite (auto+min-height) block CB; \
+         green.y should stay ~0 (covering red); got green.y={} (naive content_height gate would \
+         resolve → green.y ≈ -10000, regressing position-relative-006)",
+        green.y
+    );
+}
+
 /// R1044b：inline-level `position:relative` 的 top/bottom % 同样须解析（taffy 0.7 丢弃，
 /// R850 原仅门控 block-level）。复刻 position-relative-001：
 /// `div(h:100) > span(relative;top:100%;left:100%) > div(relative;top:-100px)`。
