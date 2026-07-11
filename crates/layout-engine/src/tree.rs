@@ -671,7 +671,9 @@ fn build_subtree(
     // `<p>a<br>b</p>`）由父 IFC 的 InlineItem::Br 处理，加 min-height 会双计（taffy 子 +
     // IFC 行）致回归（css-text -7 实证）。kill-switch `ZW_BR_LINEHEIGHT=0`（default-on）。
     if std::env::var("ZW_BR_LINEHEIGHT").as_deref() != Ok("0")
-        && doc.get(dom_id).is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br")))
+        && doc
+            .get(dom_id)
+            .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br")))
         && doc.parent_node(dom_id).is_some_and(|pid| {
             doc.child_nodes(pid).iter().any(|&s| {
                 use zero_css_parser::values::DisplayValue;

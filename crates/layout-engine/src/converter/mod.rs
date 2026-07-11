@@ -184,7 +184,7 @@ pub fn computed_style_to_taffy(
         align_items: convert_alignment_to_align_items(&style.align_items),
         align_self: convert_alignment_to_align_self(&style.align_self),
         align_content: convert_align_content(&style.align_content),
-        justify_content: convert_alignment_to_justify_content(&style.justify_content),
+        justify_content: grid_justify_content(&style.justify_content, &style.display),
         justify_items: convert_justify_items(&style.justify_items),
         justify_self: convert_justify_self(&style.justify_self),
         gap: taffy::geometry::Size {
@@ -626,6 +626,35 @@ fn convert_alignment_to_justify_content(value: &AlignmentValue) -> Option<taffy:
         AlignmentValue::End => Some(taffy::style::JustifyContent::END),
         AlignmentValue::Stretch => Some(taffy::style::JustifyContent::STRETCH),
         AlignmentValue::Baseline => None, // baseline 不适用于 justify-content
+    }
+}
+
+/// `justify-content` 转换 + CSS Grid 默认值修正。
+///
+/// CSS Box Alignment §8.5：justify-content 的初始值 `normal` 在 **grid 容器**上行为等同
+/// `stretch`（css-grid-2 §2.2 隐式 track 填充容器）；在 flex 容器上等同 `flex-start`。
+/// ZW 的 `AlignmentValue` 不建模 `normal`，`default_impl` 用 `FlexStart` 作 `normal` 的
+/// 代理（对 flex 正确）。但 `FlexStart` 经 `convert_alignment_to_justify_content` 映射到
+/// `Some(FLEX_START)`，对 grid 容器**丢失了 stretch 语义** → 定宽 grid 容器中
+/// max-content=0 的隐式 auto 列不吸收剩余空间 → 空 grid item 宽度=0、背景不绘制
+/// （grid-calc-margin 实证：ZW 全白 0px vs chromium 20000px）。
+///
+/// 此处对 grid 容器把默认代理 `FlexStart`（= normal）改写为 `STRETCH`。仅
+/// `display:Grid/InlineGrid` 生效；flex 默认 `flex-start` 不受影响（css-align §8.5 对 flex
+/// 的 normal = flex-start，FlexStart 已正确）。作者显式声明的 justify-content
+/// （start/end/center/space-*）不被覆盖。全 css-grid corpus 0 案显式 justify-content
+/// （grep 实证），故 FlexStart→STRETCH 对 grid 无回归风险。
+///
+/// kill-switch `ZW_GRID_JUSTIFY_STRETCH=0`（default-on）。
+fn grid_justify_content(value: &AlignmentValue, display: &DisplayValue) -> Option<taffy::style::JustifyContent> {
+    let jc = convert_alignment_to_justify_content(value);
+    if matches!(value, AlignmentValue::FlexStart)
+        && matches!(display, DisplayValue::Grid | DisplayValue::InlineGrid)
+        && std::env::var("ZW_GRID_JUSTIFY_STRETCH").as_deref() != Ok("0")
+    {
+        Some(taffy::style::JustifyContent::STRETCH)
+    } else {
+        jc
     }
 }
 

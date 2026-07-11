@@ -336,6 +336,58 @@ fn test_convert_display_inline_grid() {
     assert_eq!(taffy_style.display, taffy::style::Display::Grid);
 }
 
+// ── grid_justify_content：CSS Grid 默认 justify-content = normal → stretch（css-align §8.5）──
+
+/// R1291：grid 容器默认 justify-content（normal 代理 = FlexStart）须映射到 STRETCH，
+/// 使定宽 grid 容器中 max-content=0 的隐式 auto 列吸收剩余空间（grid-calc-margin：ZW
+/// 全白 0px → chromium 20000px 的根因）。default-on：STRETCH；kill-switch
+/// `ZW_GRID_JUSTIFY_STRETCH=0`：回退 FLEX_START（旧行为，证 load-bearing）。
+#[test]
+fn test_grid_default_justify_content_is_stretch() {
+    let mut style = ComputedStyle::default();
+    style.display = DisplayValue::Grid;
+    // justify_content 保持默认（FlexStart = normal 代理）
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(
+        taffy_style.justify_content,
+        Some(taffy::style::JustifyContent::STRETCH),
+        "grid container default justify-content (normal) must map to STRETCH"
+    );
+}
+
+/// R1291：InlineGrid 容器同样应用 normal → STRETCH 默认。
+#[test]
+fn test_inline_grid_default_justify_content_is_stretch() {
+    let mut style = ComputedStyle::default();
+    style.display = DisplayValue::InlineGrid;
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(taffy_style.justify_content, Some(taffy::style::JustifyContent::STRETCH));
+}
+
+/// R1291：作者显式声明的 justify-content（如 center）不被 grid 默认覆盖。
+#[test]
+fn test_grid_explicit_justify_content_not_overridden() {
+    let mut style = ComputedStyle::default();
+    style.display = DisplayValue::Grid;
+    style.justify_content = AlignmentValue::Center;
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(taffy_style.justify_content, Some(taffy::style::JustifyContent::CENTER));
+}
+
+/// R1291：fix 仅对 grid 生效；flex 容器默认 justify-content 保持 FLEX_START
+/// （css-align §8.5：flex 的 normal = flex-start，FlexStart 已正确，不受影响）。
+#[test]
+fn test_flex_default_justify_content_unchanged_by_grid_fix() {
+    let mut style = ComputedStyle::default();
+    style.display = DisplayValue::Flex;
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(
+        taffy_style.justify_content,
+        Some(taffy::style::JustifyContent::FLEX_START),
+        "flex container default justify-content must stay FLEX_START (grid fix is grid-gated)"
+    );
+}
+
 // ── convert_grid_auto_flow 边界条件 ──
 
 /// 测试 convert_grid_auto_flow：Row 默认值。

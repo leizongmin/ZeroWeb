@@ -1434,9 +1434,7 @@ impl InlineFormattingContext {
                     // est_height 已是 strut（default_line_height）；非空行（含文本，height>0）
                     // 不受影响。与 R1285（br 在 block 间的 taffy min-height）正交——本处管
                     // br 在 IFC 内（p>br 等）的空行。kill-switch `ZW_BR_IFC_LINE=0`（default-on）。
-                    if current_line.height <= 0.0
-                        && std::env::var("ZW_BR_IFC_LINE").as_deref() != Ok("0")
-                    {
+                    if current_line.height <= 0.0 && std::env::var("ZW_BR_IFC_LINE").as_deref() != Ok("0") {
                         current_line.height = est_height;
                     }
                     self.lines.push(current_line);
