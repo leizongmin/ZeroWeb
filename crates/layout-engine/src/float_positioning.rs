@@ -853,57 +853,64 @@ pub(crate) fn adjust_float_positions_with_context(
             let respect_explicit_height = std::env::var("ZW_FLOAT_RESPECT_HEIGHT").as_deref() != Ok("0");
             if respect_explicit_height && !box_node.declared_height_auto {
                 // 显式高度容器：跳过收缩（CSS §10.5 used height = 显式值）。
-            } else if had_empty_clearance {
-                // R1317 §8.3.1 containment：本容器内有正 clearance 被应用 → cleared
-                // 元素的 collapse-through 折叠链**不与父 bottom margin 折叠**（留父内）。
-                // 父 content_height =（最后建立流位置的子 border-box 底边）
-                //                  +（trailing 折叠链 − clearance 消耗的 margin-top）。
-                // flow_bottom/last_flow_mb/clearance_consumed_mt 由子循环维护（content-relative）。
-                // 例 margin-collapse-clear-012：flow_bottom=100（cleared 空块 border-box 底）
-                // + (last_flow_mb=140 − consumed=40) = 200 = 100(float) + 100(contained excess)。
-                //
-                // R1322：clearance_active 标记 containment 适用（无论扩张），供 sibling-shift。
-                box_node.clearance_active = true;
-                let contained_chain = (last_flow_mb - clearance_consumed_mt).max(0.0);
-                let content_height = (flow_bottom + contained_chain).max(0.0);
-                if content_height > box_node.content_height {
-                    box_node.content_height = content_height;
-                    let new_total = content_height
-                        + box_node.padding_top
-                        + box_node.padding_bottom
-                        + box_node.border_top
-                        + box_node.border_bottom;
-                    if new_total > box_node.height {
-                        box_node.height = new_total;
-                    }
-                    // ★ 仅当 containment 实际扩张了 auto-height 容器高度时才标记 had_clearance
-                    //（排除 height:6em 等显式高度容器——containment 未触，不应触发后续
-                    // exclude_floats 跳过 / sibling-shift，避 margin-collapse-027 回归）。
-                    box_node.had_clearance = true;
-                }
             } else {
-                let content_bottom =
-                    box_node
-                        .children
-                        .iter()
-                        .filter(|c| !c.is_absolute && !c.is_fixed)
-                        .fold(0.0f32, |max_y, c| {
-                            let bottom = c.y + c.height + c.margin_bottom;
-                            max_y.max(bottom)
-                        });
-                let content_height = content_bottom.max(0.0);
-                // 如果内容区域实际高度小于 taffy 计算的高度，收缩容器
-                if content_height < box_node.content_height {
-                    box_node.content_height = content_height;
-                    // 更新总高度（包含 padding + border）
-                    let new_total = content_height
-                        + box_node.padding_top
-                        + box_node.padding_bottom
-                        + box_node.border_top
-                        + box_node.border_bottom;
-                    // 仅当新高度更小时才更新（不扩大容器）
-                    if new_total < box_node.height {
-                        box_node.height = new_total;
+                // R1323 §8.3.1：auto-height 非 BFC + clear 子（进入此块即有 float 上下文）
+                // → clearance_active。覆盖非空 cleared（margin-collapse-clear-015：clear-left
+                // 有子，empty-gate 排除 containment math 但仍须 sibling-shift）+ negative clearance
+                //（hypothetical>clear_bottom，clearance 仍 stop collapse per 014 assert）。
+                // sibling-shift leak 公式按 declared_margin_bottom 自门控（027 #div2 declared mb 安全）。
+                let has_clear_child = box_node.children.iter().any(|c| {
+                    !matches!(
+                        c.clear,
+                        ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd
+                    )
+                });
+                if has_clear_child {
+                    box_node.clearance_active = true;
+                }
+                if had_empty_clearance {
+                    // R1317 §8.3.1 containment（empty cleared）：trailing collapse-through 链留父内。
+                    // 父 content_height =（最后建立流位置子 border-box 底）+（trailing 链 − consumed mt）。
+                    // 例 012：flow_bottom=100 + (last_flow_mb=140 − consumed=40) = 200。
+                    let contained_chain = (last_flow_mb - clearance_consumed_mt).max(0.0);
+                    let content_height = (flow_bottom + contained_chain).max(0.0);
+                    if content_height > box_node.content_height {
+                        box_node.content_height = content_height;
+                        let new_total = content_height
+                            + box_node.padding_top
+                            + box_node.padding_bottom
+                            + box_node.border_top
+                            + box_node.border_bottom;
+                        if new_total > box_node.height {
+                            box_node.height = new_total;
+                        }
+                        // 仅当 containment 实际扩张时才标记 had_clearance（exclude_floats 跳过用）。
+                        box_node.had_clearance = true;
+                    }
+                } else {
+                    let content_bottom =
+                        box_node
+                            .children
+                            .iter()
+                            .filter(|c| !c.is_absolute && !c.is_fixed)
+                            .fold(0.0f32, |max_y, c| {
+                                let bottom = c.y + c.height + c.margin_bottom;
+                                max_y.max(bottom)
+                            });
+                    let content_height = content_bottom.max(0.0);
+                    // 如果内容区域实际高度小于 taffy 计算的高度，收缩容器
+                    if content_height < box_node.content_height {
+                        box_node.content_height = content_height;
+                        // 更新总高度（包含 padding + border）
+                        let new_total = content_height
+                            + box_node.padding_top
+                            + box_node.padding_bottom
+                            + box_node.border_top
+                            + box_node.border_bottom;
+                        // 仅当新高度更小时才更新（不扩大容器）
+                        if new_total < box_node.height {
+                            box_node.height = new_total;
+                        }
                     }
                 }
             }
