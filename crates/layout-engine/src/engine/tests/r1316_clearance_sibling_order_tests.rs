@@ -202,3 +202,53 @@ fn test_clearance_containment_parent_height_includes_chain() {
         parent.content_height
     );
 }
+
+/// R1319 §8.3.1 sibling-shift：012 结构 + 后续兄弟（#next-yellow）。containment 已把
+/// cleared 链含入 #parent-lime content_height(200)，但 taffy 此前按「泄漏的 mb」把
+/// #next-yellow 定位偏低。sibling-shift pass 须上移后续兄弟至 parent border-box 底边。
+///
+/// 旧实现（无 sibling-shift）：#next-yellow @281（parent 底 201 + 泄漏 80）。
+#[test]
+fn test_sibling_shift_after_clearance_containment() {
+    let html = r#"<html><body style="margin:0">
+      <div id="parent" style="border-top:1px solid black;width:50%">
+        <div id="float-left" style="float:left;height:100px;width:100px"></div>
+        <div id="clear-left" style="clear:left;margin-top:40px;margin-bottom:80px"></div>
+        <div id="following-sibling" style="margin-bottom:140px"></div>
+      </div>
+      <div id="next-sibling" style="height:60px"></div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let parent = find_clear_parent(&result.root).expect("should find #parent");
+    // #next-sibling = #parent 之后的实心块（h=60），递归查找。
+    fn find_by_height(root: &LayoutBox, h: f32) -> Option<&LayoutBox> {
+        if (root.height - h).abs() < 1.0 && matches!(root.float, FloatValue::None) && root.is_block_level {
+            return Some(root);
+        }
+        for child in &root.children {
+            if let Some(f) = find_by_height(child, h) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let next = find_by_height(&result.root, 60.0).expect("should find #next-sibling (h=60)");
+
+    // parent border-box 底边（abs）。#next-sibling（mt=0）须紧跟其后，无泄漏间隙。
+    let parent_bottom = parent.y + parent.height;
+    let gap = next.y - parent_bottom;
+    assert!(
+        gap.abs() < 2.0,
+        "next-sibling must sit right after contained parent border-box bottom (no leaked margin); \
+         parent_bottom={} next.y={} gap={} (R1319 sibling-shift regression: leak not removed)",
+        parent_bottom,
+        next.y,
+        gap
+    );
+}

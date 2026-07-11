@@ -630,6 +630,67 @@ pub(super) fn exclude_floats_from_non_bfc_auto_height(
     }
 }
 
+/// R1319 §8.3.1 containment 兄弟位移：`adjust_float_positions` 的 containment 已把 cleared
+/// 元素的 trailing collapse-through 链含入其 content_height（不泄漏到自身 margin_bottom）。
+/// 但 taffy 在 containment 之前已按「泄漏的 mb」定位了后续兄弟，致后续兄弟偏低（如
+/// margin-collapse-clear-012 的 #next-yellow 实测 @281 应 @201，泄漏 ~80px）。
+///
+/// 本 pass 后序遍历：对每个 `had_clearance` 子（containment 容器），把其**后续 in-flow
+/// 兄弟**上移「泄漏量」=（首后续兄弟 y − contained border-box bottom − 首后续兄弟 mt），
+/// 并把等量高度从本容器扣除（delta 经返回值向祖先传播，祖先同步缩高 + 后续兄弟上移）。
+/// 镜像 R109 backfill 的 cumulative_shift 模式（方向相反：缩高而非增高）。
+///
+/// 返回本 box 的高度缩减量（供父盒累加缩高 + 位移后续兄弟）。
+pub(super) fn shift_siblings_after_clearance_containment(box_node: &mut LayoutBox) -> f32 {
+    use zero_css_parser::values::FloatValue;
+    let mut child_reduction: f32 = 0.0; // 子树总缩减（用于本盒缩高）
+    let mut cumulative_shift: f32 = 0.0; // 缩减子的后续兄弟须上移
+    for child in &mut box_node.children {
+        if cumulative_shift > 0.0 && !child.is_absolute && !child.is_fixed && matches!(child.float, FloatValue::None) {
+            child.y -= cumulative_shift;
+        }
+        let cr = shift_siblings_after_clearance_containment(child);
+        if cr > 0.0 && !child.is_absolute && !child.is_fixed {
+            cumulative_shift += cr;
+            child_reduction += cr;
+        }
+    }
+    // 本层 contained-leak：找 had_clearance 子，位移其后续 in-flow 兄弟。
+    let mut leak: f32 = 0.0;
+    let mut contained_bottom: Option<f32> = None;
+    for child in &mut box_node.children {
+        let skip = child.is_absolute || child.is_fixed || !matches!(child.float, FloatValue::None);
+        if skip {
+            continue;
+        }
+        match contained_bottom {
+            None => {
+                if child.had_clearance {
+                    contained_bottom = Some(child.y + child.height);
+                }
+            }
+            Some(cb) => {
+                // 首个后续兄弟确定泄漏量（contained mb 应为 0，期望位置 = bottom + mt）。
+                if leak == 0.0 {
+                    let expected = cb + child.margin_top;
+                    if child.y > expected + 0.5 {
+                        leak = child.y - expected;
+                    }
+                }
+                if leak > 0.0 {
+                    child.y -= leak;
+                }
+            }
+        }
+    }
+    let total = child_reduction + leak;
+    if total > 0.0 {
+        box_node.content_height = (box_node.content_height - total).max(0.0);
+        box_node.height = (box_node.height - total).max(0.0);
+    }
+    total
+}
+
 /// R109 §9.2.1.1 匿名块盒高度回填（spec FR-001，env R109_BACKFILL 默认开）。
 ///
 /// compute_final_inline_layouts 存了 inline_layout 但不回填 box height；taffy 经

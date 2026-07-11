@@ -326,6 +326,12 @@ impl LayoutEngine {
         // 之后（float 位置已定）自底向上重算。
         exclude_floats_from_non_bfc_auto_height(&mut root_box, styles);
 
+        // 5.2a 后处理（R1319 §8.3.1 containment 兄弟位移）：clearance containment 已把
+        // cleared 元素的 trailing collapse-through 链含入其 content_height，但 taffy 此前已
+        // 按「泄漏的 mb」定位后续兄弟（偏低）。位移后续兄弟 + 祖先缩高（delta 传播）。
+        // 修复 margin-collapse-clear-012/013 的 #next-yellow 定位。
+        shift_siblings_after_clearance_containment(&mut root_box);
+
         // 5.3 后处理（CSS §8.3.1）：min-height 溢出型块阻止末子 margin collapse-through
         // 穿透父底部。taffy 0.7 CollapsibleMarginSet 未实现此 min-height 细节，须后处理
         // 剥离穿透 margin 并上移后续兄弟（margin-collapse-min-height-001/002 簇）。

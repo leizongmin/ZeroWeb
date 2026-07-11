@@ -873,6 +873,10 @@ pub(crate) fn adjust_float_positions_with_context(
                     if new_total > box_node.height {
                         box_node.height = new_total;
                     }
+                    // ★ 仅当 containment 实际扩张了 auto-height 容器高度时才标记 had_clearance
+                    //（排除 height:6em 等显式高度容器——containment 未触，不应触发后续
+                    // exclude_floats 跳过 / sibling-shift，避 margin-collapse-027 回归）。
+                    box_node.had_clearance = true;
                 }
             } else {
                 let content_bottom =
@@ -903,10 +907,9 @@ pub(crate) fn adjust_float_positions_with_context(
         }
     }
 
-    // R1318：把 had_empty_clearance 写到 box，供后续 exclude_floats_from_non_bfc_auto_height
-    // 跳过收缩（containment 已确定容器高度，不应被 float 排除路径覆盖）。仅 empty-block
-    // clearance 才写 true（非空 cleared 不触 containment，exclude_floats 正常收缩）。
-    box_node.had_clearance = had_empty_clearance;
+    // R1318/R1319：had_clearance 仅在上方 containment 分支实际扩张 auto-height 容器时置 true
+    //（非显式高度、且确有 empty-block clearance）。供 exclude_floats 跳过收缩 + sibling-shift
+    // 位移后续兄弟。box_node.had_clearance 默认 false（literal/Default 初始化）。
 
     // 递归处理子容器
     for (idx, child) in box_node.children.iter_mut().enumerate() {
