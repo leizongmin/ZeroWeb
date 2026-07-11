@@ -252,3 +252,58 @@ fn test_sibling_shift_after_clearance_containment() {
         gap
     );
 }
+
+/// R1322 §8.3.1 negative-clearance 与 declared-mb-preserved sibling-shift（margin-
+/// collapse-clear-014 谱系）。结构：parent（auto-height，无 border-top）含 aqua(h60,mb40)、
+/// float(100)、cleared 空块（mt120，负 clearance）、后续 sibling。cleared 的 trailing 链应
+/// contained（不泄漏到 parent bottom），sibling 紧跟 parent border-box 底。
+///
+/// 旧实现（R1319）：parent.had_clearance=false（containment 未扩张）→ sibling-shift 不火
+/// → sibling 偏低（泄漏）。R1322：clearance_active 触发 sibling-shift。
+#[test]
+fn test_negative_clearance_sibling_shift_preserves_declared_mb() {
+    let html = r#"<html><body style="margin:0">
+      <div id="parent" style="width:50%">
+        <div style="height:60px;margin-bottom:40px"></div>
+        <div style="float:left;height:100px;width:100px"></div>
+        <div style="clear:left;margin-top:120px"></div>
+      </div>
+      <div id="next-sibling" style="height:60px"></div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let parent = find_clear_parent(&result.root).expect("should find #parent");
+    // #next-sibling = h=60 块，且**不在** contained parent 子树内（排除 aqua h=60）。
+    fn find_h60_outside<'a>(root: &'a LayoutBox, skip: &LayoutBox) -> Option<&'a LayoutBox> {
+        if std::ptr::eq(root, skip) {
+            return None; // 不进入 contained parent 子树（排除其内的 aqua h=60）
+        }
+        if (root.height - 60.0).abs() < 1.0 && matches!(root.float, FloatValue::None) && root.is_block_level {
+            return Some(root);
+        }
+        for c in &root.children {
+            if let Some(f) = find_h60_outside(c, skip) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let next = find_h60_outside(&result.root, parent).expect("should find #next-sibling (h=60)");
+
+    // parent（declared mb=0）的 trailing 链 contained → next 紧跟 parent border-box bottom。
+    let parent_bottom = parent.y + parent.height;
+    let gap = next.y - parent_bottom;
+    assert!(
+        gap.abs() < 2.0,
+        "next-sibling after negative-clearance contained parent must sit at parent bottom \
+         (leaked chain removed); parent_bottom={} next.y={} gap={} (R1322 regression)",
+        parent_bottom,
+        next.y,
+        gap
+    );
+}

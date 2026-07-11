@@ -861,6 +861,9 @@ pub(crate) fn adjust_float_positions_with_context(
                 // flow_bottom/last_flow_mb/clearance_consumed_mt 由子循环维护（content-relative）。
                 // 例 margin-collapse-clear-012：flow_bottom=100（cleared 空块 border-box 底）
                 // + (last_flow_mb=140 − consumed=40) = 200 = 100(float) + 100(contained excess)。
+                //
+                // R1322：clearance_active 标记 containment 适用（无论扩张），供 sibling-shift。
+                box_node.clearance_active = true;
                 let contained_chain = (last_flow_mb - clearance_consumed_mt).max(0.0);
                 let content_height = (flow_bottom + contained_chain).max(0.0);
                 if content_height > box_node.content_height {

@@ -655,9 +655,13 @@ pub(super) fn shift_siblings_after_clearance_containment(box_node: &mut LayoutBo
             child_reduction += cr;
         }
     }
-    // 本层 contained-leak：找 had_clearance 子，位移其后续 in-flow 兄弟。
+    // 本层 contained-leak：找 clearance_active 子，位移其后续 in-flow 兄弟。
+    // R1322：用 clearance_active（containment 适用，无论扩张）触发——014 containment
+    // 未扩张（parent 已 200）但仍须 sibling-shift。配合 contained 的 declared_margin_bottom
+    // 区分泄漏 trailing 链（应移除）vs 容器自身 declared mb（应保留，避 027 #div2 回归）。
     let mut leak: f32 = 0.0;
     let mut contained_bottom: Option<f32> = None;
+    let mut contained_declared_mb: f32 = 0.0;
     for child in &mut box_node.children {
         let skip = child.is_absolute || child.is_fixed || !matches!(child.float, FloatValue::None);
         if skip {
@@ -665,14 +669,18 @@ pub(super) fn shift_siblings_after_clearance_containment(box_node: &mut LayoutBo
         }
         match contained_bottom {
             None => {
-                if child.had_clearance {
+                if child.clearance_active {
                     contained_bottom = Some(child.y + child.height);
+                    contained_declared_mb = child.declared_margin_bottom;
                 }
             }
             Some(cb) => {
-                // 首个后续兄弟确定泄漏量（contained mb 应为 0，期望位置 = bottom + mt）。
+                // 首个后续兄弟确定泄漏量。期望位置 = bottom + collapse(declared_mb, mt)
+                //（declared mb 是合法的，应保留；仅泄漏的 trailing 链部分须移除）。
                 if leak == 0.0 {
-                    let expected = cb + child.margin_top;
+                    let legitimate =
+                        crate::margin_collapse::collapse_two_margins(contained_declared_mb, child.margin_top);
+                    let expected = cb + legitimate;
                     if child.y > expected + 0.5 {
                         leak = child.y - expected;
                     }

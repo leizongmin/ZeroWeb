@@ -1281,6 +1281,18 @@ impl LayoutEngine {
         } else {
             margin_top
         };
+        // R1321：declared_margin_bottom 镜像 declared_margin_top，供 §8.3.1 sibling-shift
+        // 区分泄漏 trailing 链 vs 容器自身 declared margin-bottom（margin-collapse-027 #div2）。
+        let declared_margin_bottom = if matches!(parent_writing_mode, WritingModeValue::HorizontalTb) {
+            computed
+                .and_then(|c| match &c.margin_bottom {
+                    zero_css_parser::values::LengthValue::Px(v) => Some(*v as f32),
+                    _ => None,
+                })
+                .unwrap_or(margin_bottom)
+        } else {
+            margin_bottom
+        };
         // CSS §10.3.5：width:auto 的浮动元素应 shrink-to-fit。记录 width:auto 标记
         //（仅水平书写模式）供 float 后处理收缩宽度。
         let declared_width_auto = matches!(parent_writing_mode, WritingModeValue::HorizontalTb)
@@ -1361,6 +1373,7 @@ impl LayoutEngine {
             margin_bottom,
             margin_left,
             declared_margin_top,
+            declared_margin_bottom,
             declared_width_auto,
             declared_height_auto,
             children: children_boxes,
@@ -1380,6 +1393,7 @@ impl LayoutEngine {
             is_multicol,
             is_layout_container,
             had_clearance: false,
+            clearance_active: false,
             is_anon_table_root: false,
             column_gap: 0.0,
             is_block_level,

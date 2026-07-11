@@ -75,6 +75,11 @@ pub struct LayoutBox {
     /// 容器 margin 误折叠（CSS §8.3.1：float 的 margin 不折叠）。
     /// 非 Px 长度（Percent/Auto）或垂直书写模式下回退为 `margin_top`（不触发修正）。
     pub declared_margin_top: f32,
+    /// 计算样式声明的 margin-bottom（已解析为 px）。R1321：供 §8.3.1 containment
+    /// sibling-shift 区分「泄漏的 trailing 折叠链」（应移除）vs「容器自身 declared
+    /// margin-bottom」（合法，应保留）——如 margin-collapse-027 的 #div2{margin-bottom:2em}
+    /// 不应被 sibling-shift 当泄漏移除。非 Px / 垂直模式回退为 `margin_bottom`。
+    pub declared_margin_bottom: f32,
     /// 计算样式的 width 是否为 auto（用于 float shrink-to-fit 修正）。
     ///
     /// taffy 把 float 当作普通 block，width:auto 的 float 会被填满可用宽度，
@@ -142,6 +147,14 @@ pub struct LayoutBox {
     /// trailing 折叠链留父内（contained），容器高度已由 containment 计算确定，不应被
     /// 「float 不计高度」路径覆盖。
     pub had_clearance: bool,
+    /// R1321/R1322 §8.3.1 containment-applies 标志：本容器是否进入 containment 分支
+    ///（auto-height 非 BFC + empty cleared block），**无论是否扩张高度**。区别于
+    /// `had_clearance`（仅扩张时置 true，供 exclude_floats 跳过）；`clearance_active`
+    /// 供 sibling-shift 位移后续兄弟——即使未扩张（如 margin-collapse-clear-014：
+    /// parent 已 200，containment 算出亦 200），cleared trailing 链仍不应泄漏到父
+    /// margin_bottom → sibling-shift 仍须火。配合 declared_margin_bottom 区分泄漏 vs
+    /// declared mb（避 margin-collapse-027 #div2{margin-bottom:2em} 回归）。
+    pub clearance_active: bool,
     /// 是否为「孤立 table-internal 元素」（display:table-row-group/table-row/table-cell 等，
     /// 且父元素非 table/table-internal）——CSS Tables §2.4 应为其生成匿名 table 包装盒。
     /// 此标记让该元素在 establishes_bfc 中被视为匿名 table（建立 BFC，隔离 margin 折叠
@@ -350,6 +363,7 @@ impl Default for LayoutBox {
             margin_bottom: 0.0,
             margin_left: 0.0,
             declared_margin_top: 0.0,
+            declared_margin_bottom: 0.0,
             declared_width_auto: false,
             declared_height_auto: false,
             children: Vec::new(),
@@ -369,6 +383,7 @@ impl Default for LayoutBox {
             is_multicol: false,
             is_layout_container: false,
             had_clearance: false,
+            clearance_active: false,
             is_anon_table_root: false,
             column_gap: 0.0,
             is_block_level: false,
