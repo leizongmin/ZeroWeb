@@ -31,7 +31,7 @@ pub use column_fragmentation_flow::*;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use zero_css_parser::values::{DisplayValue, LengthValue, OverflowValue, VerticalAlignValue};
+use zero_css_parser::values::{DisplayValue, LengthValue, OverflowValue, PositionValue, VerticalAlignValue};
 
 use zero_dom::{Document, NodeId, NodeKind};
 
@@ -743,12 +743,30 @@ impl InlineFormattingContext {
                             continue;
                         }
 
+                        // CSS2 §9.4.3/§9.7：position:absolute/fixed 元素脱离常规流（含
+                        // 行内流），不参与 IFC 行盒——由 abspos pass 独立定位/绘制。旧实现
+                        // 把它们当 inline 盒收入 IFC，其全高撑大行盒 max_ascent，错位
+                        // baseline-对齐的 inline-block（vertical-align-baseline-004a 的
+                        // position:absolute ruler img 撑大行盒致 inline-block 下移 ~51px）。
+                        // float 不在此跳过（由 float exclusion 路径单独 shaping 行盒）。
+                        // kill-switch ZW_IFC_SKIP_OOF=0 关闭（回退旧行为：OOF 元素留入 IFC）。
+                        // 仅 horizontal 模式跳过：vertical-rl 的 abspos shrink-to-fit 尺寸依赖
+                        // IFC 内测量（writing_mode_tests），且 vertical 是 R1043 已知结构性缺口。
+                        let style = styles.get(&child_id);
+                        if !self.vertical
+                            && std::env::var("ZW_IFC_SKIP_OOF").as_deref() != Ok("0")
+                            && style.is_some_and(|s| {
+                                matches!(s.position, PositionValue::Absolute | PositionValue::Fixed)
+                            })
+                        {
+                            continue;
+                        }
+
                         // CSS 2.1 §9.2.1.1 匿名块盒生成：
                         // 当 inline 元素包含 block-level 子元素时，inline 元素
                         // 被拆分为匿名块盒。这里简化处理：如果子元素是 block-level
                         // display，强制换行（与 <br> 类似），跳过其文本内容。
                         // block-level 子元素由 taffy 正常布局为独立的块盒。
-                        let style = styles.get(&child_id);
                         let is_block_level = style.is_some_and(|s| {
                             matches!(
                                 s.display,
@@ -768,7 +786,6 @@ impl InlineFormattingContext {
 
                         // 检查该元素是否为原子行内级盒（inline-block / inline-flex / inline-grid / inline-table）。
                         // 这些元素参与行内格式化上下文，作为不可拆分的原子盒。
-                        let style = styles.get(&child_id);
                         let is_inline_block = style.is_some_and(|s| {
                             matches!(
                                 s.display,
