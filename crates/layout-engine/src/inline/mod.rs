@@ -755,9 +755,8 @@ impl InlineFormattingContext {
                         let style = styles.get(&child_id);
                         if !self.vertical
                             && std::env::var("ZW_IFC_SKIP_OOF").as_deref() != Ok("0")
-                            && style.is_some_and(|s| {
-                                matches!(s.position, PositionValue::Absolute | PositionValue::Fixed)
-                            })
+                            && style
+                                .is_some_and(|s| matches!(s.position, PositionValue::Absolute | PositionValue::Fixed))
                         {
                             continue;
                         }

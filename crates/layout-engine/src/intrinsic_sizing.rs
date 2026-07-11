@@ -66,14 +66,40 @@ pub(crate) fn box_content_max_width(
         // is_r109_split 父盒（fragment_node_ids=None）递归，普通 inline 不变。
         let is_split_wrapper = child.is_r109_split && child.fragment_node_ids.is_none();
         if is_inline_level && !is_split_wrapper {
-            inline_sum += outer_w.max(0.0);
+            // R1298：空 inline 元素（display:Inline，无元素子且无非空白文本，如 `<span></span>`）
+            // 对父盒 max-content 宽贡献 0（无内容即零宽 inline 盒）。ZeroWeb 把 inline 映射为
+            // taffy Block 拉伸到容器宽（R109/inline-stretch 已知多 session 缺口），空 inline 的
+            // child.width 会被记成容器宽（如 200），若直接累入 inline_sum 会让含「空 inline +
+            // block 子」的 inline-block（inline-block-baseline-015：`<span></span>` + 绿块）
+            // 测得 intrinsic=容器宽 → shrink-to-fit 不触发 → 宽=容器 → 在 IFC 行中挤不下兄弟
+            // → 换行错位。此处对**空 display:Inline** 贡献 0，绕过拉伸伪影（CSS 正确：空 inline
+            // 盒零宽）。仅限 display:Inline：inline-block/inline-flex 等有自身盒模型（显式宽或
+            // 独立 shrink-to-fit），child.width 真实有效（height-computed-001 的空 inline-block
+            // 子 span[width:70px] 须贡献 70px，误判空会塌缩容器宽致回归）。
+            let empty_inline = std::env::var("ZW_EMPTY_INLINE_WIDTH").as_deref() != Ok("0")
+                && child
+                    .node_id
+                    .and_then(|cid| styles.get(&cid))
+                    .is_some_and(|s| matches!(s.display, DisplayValue::Inline))
+                && child.node_id.is_some_and(|cid| {
+                    doc.child_nodes(cid).iter().all(|&gc| match doc.get(gc) {
+                        Some(n) => match &n.kind {
+                            zero_dom::NodeKind::Text(t) => t.content.trim().is_empty(),
+                            zero_dom::NodeKind::Element(_) => false,
+                            _ => true, // 注释/doctype 等不计为内容
+                        },
+                        None => true,
+                    })
+                });
+            if !empty_inline {
+                inline_sum += outer_w.max(0.0);
+            }
         } else {
             block_max = block_max.max(box_content_max_width(child, doc, styles));
         }
     }
 
     let children_inner = inline_sum.max(block_max);
-
     // 叶盒回退：无有效子元素贡献时，用自身显式 Px width（content-box 语义）。
     // 显式 width 的叶盒（如 `<div style="width:50px">`）其 max-content 即该宽度。
     let own_explicit = box_node
@@ -809,6 +835,83 @@ mod tests {
         let html = r#"<html><body style="margin:0"><div id="c" style="display:flex"></div></body></html>"#;
         let w = compute_intrinsic(html, "c");
         assert!(w.is_none(), "empty flex container should return None");
+    }
+
+    /// R1298：含「空 display:Inline 子 + block 子」的 inline-block 的 max-content 宽
+    /// 应取 block 子宽（100），而非被空 inline 的 taffy 拉伸宽（容器宽）撑大。
+    /// 修前：空 `<span></span>` 被拉伸到容器宽，inline_sum 累入 → intrinsic=容器宽
+    /// → shrink-to-fit 不触发 → inline-block 宽=容器（inline-block-baseline-015 换行错位）。
+    /// 修后：空 display:Inline 贡献 0 → intrinsic=100。
+    #[test]
+    fn test_empty_inline_child_does_not_stretch_max_content() {
+        // inline-block(id=t) 宽 600 容器内：`<span></span>`（空 inline，会被 taffy 拉伸）
+        // + `<div style="width:100px">`（block 子）。max-content 应 = 100。
+        let html = r#"<html><body style="margin:0">
+          <div style="width:600px">
+            <div id="t" style="display:inline-block">
+              <span></span>
+              <div style="width:100px;height:50px"></div>
+            </div>
+          </div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let target = find("t", &doc, &result.root).expect("inline-block target found");
+        let w = box_content_max_width(target, &doc, &styles);
+        assert!(
+            (w - 100.0).abs() < 1.0,
+            "R1298: empty inline child must contribute 0; expected ~100 (block child), got {w}"
+        );
+    }
+
+    /// R1298：空 inline-**block**（display:InlineBlock，有显式宽）不可误判为「空 inline」
+    /// 贡献 0——height-computed-001 的 `<span[display:inline-block][width:70px]>` 须贡献 70。
+    #[test]
+    fn test_empty_inline_block_with_explicit_width_still_contributes() {
+        let html = r#"<html><body style="margin:0">
+          <div style="width:600px">
+            <div id="t" style="display:inline-block">
+              <span style="display:inline-block;width:70px"></span>
+              <span style="display:inline-block;width:70px"></span>
+            </div>
+          </div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let target = find("t", &doc, &result.root).expect("inline-block target found");
+        let w = box_content_max_width(target, &doc, &styles);
+        assert!(
+            (w - 140.0).abs() < 1.0,
+            "R1298 guard: empty inline-block[70px] children must contribute; expected ~140, got {w}"
+        );
     }
 
     /// R1165：取一个有效 NodeId（经 Document）。
