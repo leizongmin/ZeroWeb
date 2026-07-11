@@ -633,6 +633,7 @@ pub(crate) fn paint_cull_viewport(
 ///
 /// 复用全部既有机制（文本测量、匿名盒包裹、绘制）——伪元素合成节点即普通文本子节点。
 pub(crate) fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<NodeId, ComputedStyle>) {
+    use zero_css_parser::values::{DisplayValue, FloatValue, PositionValue};
     use zero_style_system::property::types::ContentComputedValue;
 
     // 先收集待注入项，避免在遍历 styles 时变更它。
@@ -668,20 +669,37 @@ pub(crate) fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<
         // content 字段对文本节点测量无意义（测量读 doc 文本）；清为 Normal 防止下游
         // 把合成文本节点误当伪元素再处理。
         pseudo_style.content = ContentComputedValue::Normal;
-        let text_id = doc.create_text_node(&text);
-        styles.insert(text_id, pseudo_style);
+        // R1307：需要独立盒的伪元素（position != static / float != none / display != inline）
+        // 且 content 为空（content:""）→ 创建 ELEMENT 节点（zw-pseudo），让 build_layout_tree
+        // 产出正确的 positioned/floated/block 盒。旧 text-node 注入只把 content 作 inline 文本
+        // 渲染，忽略伪元素上的 position/float/display/width/height（before-after-positioned-
+        // 002/003/004：content:"" + position:fixed/absolute/relative + width/height → 应是
+        // 50×100 盒而非空 inline 文本）。非空 content 或 inline-static 伪元素仍走 text-node
+        // 路径（保留 102 通过的 generated-content 案 + 不触 content-list 多 token，避 R554
+        // net-negative）。kill-switch ZW_PSEUDO_BOX=0。
+        let needs_box = std::env::var("ZW_PSEUDO_BOX").as_deref() != Ok("0")
+            && text.is_empty()
+            && (pseudo_style.position != PositionValue::Static
+                || pseudo_style.float != FloatValue::None
+                || pseudo_style.display != DisplayValue::Inline);
+        let new_id = if needs_box {
+            doc.create_element("zw-pseudo")
+        } else {
+            doc.create_text_node(&text)
+        };
+        styles.insert(new_id, pseudo_style);
         let inserted = if is_before {
             // before：插为首个子节点（content 渲染在元素内容之前）。
             match doc.get(parent).and_then(|n| n.children.first().copied()) {
-                Some(fc) => doc.insert_before(parent, text_id, fc).is_ok(),
-                None => doc.append_child(parent, text_id).is_ok(),
+                Some(fc) => doc.insert_before(parent, new_id, fc).is_ok(),
+                None => doc.append_child(parent, new_id).is_ok(),
             }
         } else {
-            doc.append_child(parent, text_id).is_ok()
+            doc.append_child(parent, new_id).is_ok()
         };
         if !inserted {
             // 插入失败（如 parent 不存在）则回滚 styles 条目，避免悬空引用。
-            styles.remove(&text_id);
+            styles.remove(&new_id);
         }
     }
 }
@@ -1007,6 +1025,45 @@ mod pseudo_tests {
             doc.get(second.unwrap()).map(|n| &n.kind),
             Some(zero_dom::NodeKind::Text(_))
         ));
+    }
+
+    /// R1307：需要独立盒的伪元素（position != static / float / display != inline）且
+    /// content 为空（content:""）→ 注入 ELEMENT 节点（zw-pseudo），让 build_layout_tree
+    /// 产出 positioned/floated/block 盒。旧路径注入 text node，忽略 position/float/display/
+    /// width/height（before-after-positioned-002/003/004）。default-on PASS / kill=0 回退
+    /// text node（首个子为 Text）。load-bearing：守护 element-node 路径。
+    #[test]
+    fn inject_positioned_empty_pseudo_as_element_node() {
+        use zero_css_parser::values::PositionValue;
+        let html = r#"<html><body><div>X</div></body></html>"#;
+        let mut doc = zero_dom::parse_html(html);
+        let div = find_element(&doc, doc.root(), "div").expect("div 存在");
+        let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+        let mut div_style = ComputedStyle::default();
+        div_style.before_pseudo = Some(Box::new(ComputedStyle {
+            content: ContentComputedValue::String(String::new()),
+            position: PositionValue::Absolute,
+            ..ComputedStyle::default()
+        }));
+        styles.insert(div, div_style);
+
+        inject_pseudo_text_nodes(&mut doc, &mut styles);
+
+        let first_child = doc
+            .get(div)
+            .and_then(|n| n.children.first().copied())
+            .expect("有子节点");
+        // R1307 default-on：positioned empty-content 伪元素 = ELEMENT 节点（非 text）。
+        match &doc.get(first_child).unwrap().kind {
+            zero_dom::NodeKind::Element(_) => {}
+            other => panic!("R1307: positioned empty-content 伪元素应为 ELEMENT 节点，实际 {other:?}"),
+        }
+        let inj_style = styles.get(&first_child).expect("注入元素有样式");
+        assert_eq!(
+            inj_style.position,
+            PositionValue::Absolute,
+            "zw-pseudo 元素须携带 position:absolute"
+        );
     }
 
     /// `inject_pseudo_text_nodes`：::after 追加为末子节点；content:none 不注入。
