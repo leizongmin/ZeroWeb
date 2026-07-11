@@ -167,3 +167,38 @@ fn test_cleared_empty_block_advances_flow_for_next_solid_sibling() {
         clear_rel_y
     );
 }
+
+/// R1318 §8.3.1 containment：012 完整结构（非 BFC 父 + float + cleared 空块 +
+/// 空 following），父 content_height 须含 clearance-contained margin chain。
+///
+/// 期望（WPT 012 注释）：#parent-lime = 200 = 100(float) + (140-40)(contained excess)。
+/// clearance=60（float_bottom 100 − hypothetical mt 40）；clear-left margin-top(40)
+/// 被 clearance 消耗；following margin-bottom(140) 折叠链 excess=140-40=100 留父内。
+///
+/// 旧实现（无 containment）：父 content_height ≈ 102（margin 泄漏出父 bottom）。
+#[test]
+fn test_clearance_containment_parent_height_includes_chain() {
+    let html = r#"<html><body style="margin:0">
+      <div id="parent" style="border-top:1px solid black;width:50%">
+        <div id="float-left" style="float:left;height:100px;width:100px"></div>
+        <div id="clear-left" style="clear:left;margin-top:40px;margin-bottom:80px"></div>
+        <div id="following-sibling" style="margin-bottom:140px"></div>
+      </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let parent = find_clear_parent(&result.root).expect("should find #parent");
+    // ★ R1318 load-bearing：父 content_height ≈ 200（含 contained chain），
+    // 而非泄漏后的 ~102。容差 ±2px（含 taffy 边界像素舍入）。
+    assert!(
+        (parent.content_height - 200.0).abs() < 2.0,
+        "parent content_height must contain clearance-broken collapse-through chain; \
+         expected ~200 (100 float + (140-40) contained), got {}",
+        parent.content_height
+    );
+}

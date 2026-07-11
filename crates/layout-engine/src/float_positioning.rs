@@ -550,15 +550,27 @@ pub(crate) fn adjust_float_positions_with_context(
     let mut child_float_contexts: Vec<(f32, f32)> =
         vec![(inherited_left_bottom, inherited_right_bottom); box_node.children.len()];
 
+    // R1316/R1317：以下流追踪变量在子循环（has_active_float_context 块）内维护，
+    // 并被后面的容器高度 containment 计算（§8.3.1）读取，故声明在函数级。
+    let mut flow_bottom = 0.0f32; // 上一个非 float 流内元素的 border-bottom（content-relative）
+    let mut last_flow_mb = 0.0f32; // 上一个非 float 流内元素的 margin-bottom（折叠链）
+    // R1316：一旦本容器内任一 in-flow 子被应用了正 clearance，taffy 的布局
+    // 即与正确流位置发散（taffy 不建模 clearance）。此后所有非 clear 块级
+    // 兄弟须以 flow_bottom 为权威基准重定位，而非沿用 taffy 的（错误）位置。
+    let mut had_clearance = false;
+    // R1318 §8.3.1 containment：是否有**空块**（collapse-through）被应用了正 clearance。
+    // containment 公式（flow_bottom + chain − consumed mt）仅对 empty cleared block
+    // 验证正确（margin-collapse-clear-012/013、margin-collapse-033/034/035 谱系）；
+    // 非空 cleared（如 replaced element）的 containment 几何不同，本轮不处理（避回归）。
+    let mut had_empty_clearance = false;
+    // R1317 §8.3.1 containment：被 clearance「消耗」的 cleared 元素 margin-top
+    // 累积（每个正 clearance 子贡献其 margin_top）。计算 contained parent height
+    // 时须从 trailing 折叠链中扣除，避免 clearance-absorbed margin 双计。
+    let mut clearance_consumed_mt = 0.0f32;
+
     if has_active_float_context {
         let mut float_y_offset = 0.0f32;
         // 追踪正常流内容的位置，用于 clearance 假设位置计算
-        let mut flow_bottom = 0.0f32; // 上一个非 float 流内元素的 border-bottom
-        let mut last_flow_mb = 0.0f32; // 上一个非 float 流内元素的 margin-bottom
-        // R1316：一旦本容器内任一 in-flow 子被应用了正 clearance，taffy 的布局
-        // 即与正确流位置发散（taffy 不建模 clearance）。此后所有非 clear 块级
-        // 兄弟须以 flow_bottom 为权威基准重定位，而非沿用 taffy 的（错误）位置。
-        let mut had_clearance = false;
         let mut active_left_float_bottom = inherited_left_bottom;
         let mut active_right_float_bottom = inherited_right_bottom;
 
@@ -676,6 +688,15 @@ pub(crate) fn adjust_float_positions_with_context(
                         // collapse-through（§8.3.1），它建立流位置，且其后所有兄弟
                         // 须以 flow_bottom 重定位（taffy 未知 clearance）。
                         clearance_applied = true;
+                        // R1318 §8.3.1 containment：clearance 「消耗」了空 cleared 块的 margin-top
+                        //（hypothetical 用它定位，clearance 填充余下到 clear_bottom 的间隙）。
+                        // 计算 contained parent height 时须从 trailing 折叠链扣除，避免双计。
+                        // 仅对 empty cleared block（collapse-through）—— 非空 cleared（replaced
+                        // 等）containment 几何不同，本轮不触（避 clear-on-replaced-element 回归）。
+                        if crate::margin_collapse::is_empty_block(child) {
+                            clearance_consumed_mt += child.margin_top;
+                            had_empty_clearance = true;
+                        }
                     } else if (clear_bottom - hypothetical_y).abs() < 0.001 {
                         // 零 clearance（hypothetical_y ≈ clear_bottom）：
                         // CSS 2.1 §9.5.2：clearance 引入后，位置 = hypothetical + clearance。
@@ -832,6 +853,27 @@ pub(crate) fn adjust_float_positions_with_context(
             let respect_explicit_height = std::env::var("ZW_FLOAT_RESPECT_HEIGHT").as_deref() != Ok("0");
             if respect_explicit_height && !box_node.declared_height_auto {
                 // 显式高度容器：跳过收缩（CSS §10.5 used height = 显式值）。
+            } else if had_empty_clearance {
+                // R1317 §8.3.1 containment：本容器内有正 clearance 被应用 → cleared
+                // 元素的 collapse-through 折叠链**不与父 bottom margin 折叠**（留父内）。
+                // 父 content_height =（最后建立流位置的子 border-box 底边）
+                //                  +（trailing 折叠链 − clearance 消耗的 margin-top）。
+                // flow_bottom/last_flow_mb/clearance_consumed_mt 由子循环维护（content-relative）。
+                // 例 margin-collapse-clear-012：flow_bottom=100（cleared 空块 border-box 底）
+                // + (last_flow_mb=140 − consumed=40) = 200 = 100(float) + 100(contained excess)。
+                let contained_chain = (last_flow_mb - clearance_consumed_mt).max(0.0);
+                let content_height = (flow_bottom + contained_chain).max(0.0);
+                if content_height > box_node.content_height {
+                    box_node.content_height = content_height;
+                    let new_total = content_height
+                        + box_node.padding_top
+                        + box_node.padding_bottom
+                        + box_node.border_top
+                        + box_node.border_bottom;
+                    if new_total > box_node.height {
+                        box_node.height = new_total;
+                    }
+                }
             } else {
                 let content_bottom =
                     box_node
@@ -860,6 +902,11 @@ pub(crate) fn adjust_float_positions_with_context(
             }
         }
     }
+
+    // R1318：把 had_empty_clearance 写到 box，供后续 exclude_floats_from_non_bfc_auto_height
+    // 跳过收缩（containment 已确定容器高度，不应被 float 排除路径覆盖）。仅 empty-block
+    // clearance 才写 true（非空 cleared 不触 containment，exclude_floats 正常收缩）。
+    box_node.had_clearance = had_empty_clearance;
 
     // 递归处理子容器
     for (idx, child) in box_node.children.iter_mut().enumerate() {

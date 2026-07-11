@@ -136,6 +136,12 @@ pub struct LayoutBox {
     /// 布局容器建立 BFC（CSS Flexbox §3, CSS Grid §3），
     /// 其子元素由各自的布局算法定位，不走 IFC。
     pub is_layout_container: bool,
+    /// R1318 §8.3.1 containment 标志：本容器的 in-flow 子中是否有**空块**（collapse-through）
+    /// 被应用了正 clearance。由 `adjust_float_positions` 设置（仅空块 cleared）；
+    /// `exclude_floats_from_non_bfc_auto_height` 据此跳过收缩——clearance 破坏 collapse-through，
+    /// trailing 折叠链留父内（contained），容器高度已由 containment 计算确定，不应被
+    /// 「float 不计高度」路径覆盖。
+    pub had_clearance: bool,
     /// 是否为「孤立 table-internal 元素」（display:table-row-group/table-row/table-cell 等，
     /// 且父元素非 table/table-internal）——CSS Tables §2.4 应为其生成匿名 table 包装盒。
     /// 此标记让该元素在 establishes_bfc 中被视为匿名 table（建立 BFC，隔离 margin 折叠
@@ -362,6 +368,7 @@ impl Default for LayoutBox {
             is_flow_root: false,
             is_multicol: false,
             is_layout_container: false,
+            had_clearance: false,
             is_anon_table_root: false,
             column_gap: 0.0,
             is_block_level: false,

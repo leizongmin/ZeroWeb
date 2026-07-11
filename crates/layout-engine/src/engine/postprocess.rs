@@ -612,6 +612,14 @@ pub(super) fn exclude_floats_from_non_bfc_auto_height(
     if !has_float_child {
         return;
     }
+    // R1318 §8.3.1 containment：本容器有正 clearance 被应用 → cleared 元素的 collapse-
+    // through 链不与父 bottom 折叠（留父内）。容器高度已由 adjust_float_positions 的
+    // containment 计算确定（flow_bottom + contained chain），此处「float 不计高度」的
+    // max(child.y+h) 收缩会误覆盖 contained 高度（如 margin-collapse-clear-012 应 200
+    // 被收缩成 181）。跳过，让 containment 值生效。
+    if box_node.had_clearance {
+        return;
+    }
     // 无 in-flow 子元素 → 0；否则 in-flow border-box 底边最大值。
     let new_content_h = if has_in_flow { extent.max(0.0) } else { 0.0 };
     let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;

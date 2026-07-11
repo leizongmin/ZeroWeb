@@ -1373,6 +1373,7 @@ impl LayoutEngine {
             is_flow_root,
             is_multicol,
             is_layout_container,
+            had_clearance: false,
             is_anon_table_root: false,
             column_gap: 0.0,
             is_block_level,
