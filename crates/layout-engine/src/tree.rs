@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use taffy::prelude::*;
-use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue};
+use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, PositionValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, WritingModeValue};
 
@@ -14,6 +14,79 @@ use crate::inline_block_split::{
     InlineBlockSegment, block_container_has_mixed_content, compute_block_container_split, compute_inline_block_split,
     inline_has_block_child, is_whitespace_only_inline_segment,
 };
+
+/// R1311b：判断 `<br>` 元素是否处于「纯 inline 上下文」——br 且无 block-level in-flow
+/// 同胞。此类 br 由父容器 IFC 作 InlineItem::Br 处理（inline/mod.rs:741），不需要独立
+/// taffy 节点。display 判定与 R1285 一致。
+fn br_is_inline_only(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, id: NodeId) -> bool {
+    let is_br = doc
+        .get(id)
+        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br")));
+    if !is_br {
+        return false;
+    }
+    let Some(pid) = doc.parent_node(id) else {
+        return true;
+    };
+    !doc.child_nodes(pid).iter().any(|&s| {
+        s != id
+            && styles.get(&s).is_some_and(|st| {
+                matches!(
+                    st.display,
+                    DisplayValue::Block
+                        | DisplayValue::Flex
+                        | DisplayValue::Grid
+                        | DisplayValue::Table
+                        | DisplayValue::ListItem
+                        | DisplayValue::FlowRoot
+                )
+            })
+    })
+}
+
+/// R1311b：判断 br 的父块在其容器中是否有「后续 **in-flow** 元素兄弟」——即 br 父块
+/// 不是其容器的最后一个 in-flow 子元素。这是 br-as-taffy-node 致父块测 0 高、后续
+/// 兄弟错位重叠 bug 的**精确触发条件**（末子 br 父块无后续兄弟可错位）。仅在此时跳过
+/// br 的 taffy 节点（让父块成 leaf 由 IFC 测高修正兄弟定位），可避免对末子 br 父块
+/// 做 leaf 转换引发容器高度连锁重排（welcome p.tagline 是末子 → 豁免 → welcome 字节
+/// 一致）。OOF（abspos/fixed）后续兄弟不算（它们不参与常规流，不被父块 0 高错位）。
+fn br_parent_has_following_inflow_sibling(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    br_id: NodeId,
+) -> bool {
+    let pid = match doc.parent_node(br_id) {
+        Some(p) => p,
+        None => return false,
+    };
+    let gpid = match doc.parent_node(pid) {
+        Some(gp) => gp,
+        None => return false,
+    };
+    let mut after = false;
+    for &s in &doc.child_nodes(gpid) {
+        if s == pid {
+            after = true;
+            continue;
+        }
+        if !after {
+            continue;
+        }
+        if let Some(node) = doc.get(s)
+            && matches!(&node.kind, NodeKind::Element(_))
+            && let Some(st) = styles.get(&s)
+        {
+            if matches!(st.display, DisplayValue::None | DisplayValue::Contents) {
+                continue;
+            }
+            // in-flow = 非 abspos/fixed（OOF 兄弟不被父块 0 高错位，不算触发条件）
+            if !matches!(st.position, PositionValue::Absolute | PositionValue::Fixed) {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 /// R109 §9.2.1.1 生产端接线（匿名块生成 + fragment border）默认**启用**——经全量
 /// reftest（+2 零回归：inline-box-001 / block-in-inline-align-001）+ 全量 make test
@@ -1010,6 +1083,21 @@ fn build_subtree(
                     for &child_dom in &children_dom {
                         let child_data = doc.get(child_dom);
                         if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
+                            // R1311b：纯 inline 上下文的 `<br>`（无 block 同胞）且其父块有后续
+                            // in-flow 兄弟（即重叠 bug 的精确触发条件）时，跳过 br 的 taffy 节点
+                            // 让父 IFC 作 InlineItem::Br 处理。否则 br 作 0 高 Block leaf 使父块成
+                            // new_with_children，taffy 按子 br=0 定父高、忽略 IFC measure 回调，
+                            // 后续兄弟 margin-collapse-through 落父顶重叠（anonymous-boxes-001b /
+                            // position-absolute-percentage-inherit-001）。末子 br 父块无后续兄弟，
+                            // 跳过无益反引发容器高度连锁重排（welcome p.tagline），故要求「有后续
+                            // in-flow 兄弟」精确 gate。br-between-blocks（R1285 strut）仍建节点。
+                            // kill-switch ZW_BR_INLINE_NO_NODE=0 关闭（重建 br 节点=旧行为）。
+                            if std::env::var("ZW_BR_INLINE_NO_NODE").as_deref() != Ok("0")
+                                && br_is_inline_only(doc, styles, child_dom)
+                                && br_parent_has_following_inflow_sibling(doc, styles, child_dom)
+                            {
+                                continue;
+                            }
                             let order = styles.get(&child_dom).map_or(0, |s| s.order);
                             children_with_order.push((child_dom, order));
                         }
