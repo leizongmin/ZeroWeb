@@ -156,8 +156,13 @@ pub(super) fn adjust_absolute_pct_to_viewport(
         || box_node.is_sticky;
 
     for child in &mut box_node.children {
-        if child.is_absolute
-            && !child_has_positioned_ancestor
+        // R1308：fixed 元素 CB 恒为视口（CSS §10.1），其 inset/百分比应恒对视口解析
+        //（同 absolute-no-positioned-ancestor 路径）。旧 gate 仅 is_absolute，致
+        // `position:fixed + bottom:0` 不解析 bottom（盒落视口顶外 abs_y=-height 而非视口底）。
+        // kill-switch ZW_FIXED_INSET=0 回退（仅 absolute）。
+        let is_abs_viewport_cb = child.is_absolute && !child_has_positioned_ancestor;
+        let is_fixed_cb = child.is_fixed && std::env::var("ZW_FIXED_INSET").as_deref() != Ok("0");
+        if (is_abs_viewport_cb || is_fixed_cb)
             && let Some(style) = child.node_id.and_then(|node_id| styles.get(&node_id))
         {
             // R880：`current_content_origin_x/y` 是父盒（box_node）的 **border-box**

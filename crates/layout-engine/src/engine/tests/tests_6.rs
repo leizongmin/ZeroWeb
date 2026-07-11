@@ -935,6 +935,42 @@ fn test_layout_fixed_position_elements() {
 }
 
 #[test]
+fn test_fixed_bottom_inset_resolves_to_viewport_bottom() {
+    // R1308：position:fixed + bottom:0 应把盒底对齐视口底（abs_y + height ≈ viewport_height），
+    // 而非落视口顶外（旧 bug：adjust_absolute_pct_to_viewport gate 仅 is_absolute 排除 is_fixed，
+    // bottom 不解析 → 盒 abs_y=-height）。kill-switch ZW_FIXED_INSET=0 回退（fb.y 错为负/零）。
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let fixed = doc.create_element("div");
+    doc.set_attribute(fixed, "class", "f");
+    doc.append_child(body, fixed).unwrap();
+
+    let css = r#".f { position: fixed; bottom: 0; right: 0; width: 200px; height: 100px; }"#;
+    let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+    let mut sys = zero_style_system::StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let fb = find_child_by_node_id(&result.root, fixed).expect("fixed box");
+    assert!(fb.is_fixed, "应标记 is_fixed");
+    assert!((fb.height - 100.0).abs() < 1.0, "height 应 100，got {}", fb.height);
+    // R1308 fixed+bottom：fb.y 经 inset 解析后应使盒落在视口底区（target abs_y=500，
+    // parent content 相对 fb.y ≈ 500 - parent_origin），远大于 0；旧 bug fb.y 为负。
+    // 宽松断言 fb.y > 100（区分旧 bug 的负值/零），default-on PASS / kill=0 FAIL。
+    assert!(
+        fb.y > 100.0,
+        "R1308: fixed+bottom box.y 应指向视口底（>100），旧 bug 为负/零；got {}",
+        fb.y
+    );
+}
+
+#[test]
 fn test_layout_display_none_present() {
     let mut doc = Document::new();
     let root = doc.root();
