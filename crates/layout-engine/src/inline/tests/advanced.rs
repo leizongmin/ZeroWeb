@@ -1377,9 +1377,16 @@ fn test_multiple_br_elements() {
         );
     }
 
-    // 所有行高度应为 0（无内容）
+    // R1286：空 Br 行须有 strut 高度（line-height，CSS §10.8.1）——空 line box 仍含 strut，
+    // 非内容高度 0。旧行为（height=0）致 `<p><br></p>` 等塌缩（chromium 给一行 line-height）。
+    // default_line_height=20（NORMAL 行高近似）。
     for (i, line) in ctx.lines.iter().enumerate() {
-        assert!(line.height.abs() < 0.01, "第 {} 行高度应为 0，实际 {}", i, line.height);
+        assert!(
+            line.height > 10.0,
+            "第 {} 行（空 Br）应有 strut 高度，实际 {}",
+            i,
+            line.height
+        );
     }
 }
 
