@@ -650,3 +650,32 @@ fn test_root_abspos_inset_positions_border_box() {
         result.root.y
     );
 }
+
+/// R1304：`width:min-content` 的 block 容器应收缩到其 min-content 宽度，而非塌缩为 0
+///（converter MinContent→length(0)；R1018 intrinsic gate 旧仅放行 MaxContent，MinContent
+/// block 被跳过 → 塌缩）。R1304 扩 gate 经 block_max_content_width 测（固定宽/原子内容
+/// min==max 精确命中 table-intrinsic-size 簇；文本内容 overestimate 最宽词但优于 0）。
+/// kill-switch ZW_MINCONTENT_BLOCK=0 回退旧行为（本测试 default-on PASS / kill=0 FAIL）。
+#[test]
+fn test_block_width_min_content_sized_to_intrinsic() {
+    // block(width:min-content) > 固定宽 100px 子。min-content = max-content = 100px。
+    let html = r#"<html><body style="margin:0">
+          <div id="t" style="width:min-content">
+            <div style="width:100px;height:50px"></div>
+          </div>
+        </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let t = find("t", &doc, &result.root).expect("block #t");
+    // 不应塌缩（<10）也不应填满视口（>400）；应在 ~100px（固定宽子 min==max）。
+    assert!(
+        (t.width - 100.0).abs() < 5.0,
+        "width:min-content block should size to intrinsic (~100px, fixed-width child), \
+         not collapse to 0 (got w={}); R1304 min-content block gate",
+        t.width
+    );
+}

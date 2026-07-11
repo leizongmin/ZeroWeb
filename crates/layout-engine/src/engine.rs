@@ -699,8 +699,14 @@ impl LayoutEngine {
                 continue;
             }
             // R1018：block-level 仅在 width:MaxContent 或 auto-float 时触发（bare fit-content 经
-            // parser 映射 MaxContent；MinContent 需独立 min-content 测量，暂不支持）。
-            if is_block && !matches!(s.width, LengthValue::MaxContent) && !is_auto_float {
+            // parser 映射 MaxContent）。
+            // R1304：block + MinContent 经 block_max_content_width 测（max-content 近似——固定宽/
+            // 原子内容（img/固定宽子）min==max 正确；文本内容 overestimate 最宽词但远优于 0 塌缩；
+            // true min-content 最宽词测量独立子问题，见 intrinsic_sizing.rs:29）。table-intrinsic-size
+            // 簇（固定宽 .content 子）min==max 精确命中。kill-switch ZW_MINCONTENT_BLOCK=0 回退旧行为。
+            let mincontent_block = std::env::var("ZW_MINCONTENT_BLOCK").as_deref() != Ok("0")
+                && matches!(s.width, LengthValue::MinContent);
+            if is_block && !matches!(s.width, LengthValue::MaxContent) && !mincontent_block && !is_auto_float {
                 continue;
             }
             // R1018：block-level 用 block_max_content_width（对 flex/grid 子分发到专用 intrinsic）。
@@ -729,7 +735,7 @@ impl LayoutEngine {
             // multicol + aspect-ratio 子回归）。fill（父宽）比 collapse 更接近 fit-content 语义。
             if intrinsic <= 1.0 {
                 if is_block
-                    && matches!(s.width, LengthValue::MaxContent)
+                    && (matches!(s.width, LengthValue::MaxContent) || mincontent_block)
                     && let Some(&taffy_id) = dom_to_taffy.get(&id)
                     && let Ok(mut style) = taffy_tree.style(taffy_id).cloned()
                 {
