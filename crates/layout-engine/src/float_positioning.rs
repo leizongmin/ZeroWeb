@@ -555,6 +555,10 @@ pub(crate) fn adjust_float_positions_with_context(
         // 追踪正常流内容的位置，用于 clearance 假设位置计算
         let mut flow_bottom = 0.0f32; // 上一个非 float 流内元素的 border-bottom
         let mut last_flow_mb = 0.0f32; // 上一个非 float 流内元素的 margin-bottom
+        // R1316：一旦本容器内任一 in-flow 子被应用了正 clearance，taffy 的布局
+        // 即与正确流位置发散（taffy 不建模 clearance）。此后所有非 clear 块级
+        // 兄弟须以 flow_bottom 为权威基准重定位，而非沿用 taffy 的（错误）位置。
+        let mut had_clearance = false;
         let mut active_left_float_bottom = inherited_left_bottom;
         let mut active_right_float_bottom = inherited_right_bottom;
 
@@ -645,6 +649,8 @@ pub(crate) fn adjust_float_positions_with_context(
             // 3. 如果 clearance > 0：元素推到 clear_bottom
             // 4. 如果 clearance == 0：clear 仍阻止 margin 折叠
             //    元素放在 flow_bottom + margin_top（不折叠）
+            // R1316：本子是否被应用了正 clearance（破坏 collapse-through）。
+            let mut clearance_applied = false;
             match child.clear {
                 ClearValue::Left | ClearValue::Right | ClearValue::Both => {
                     let clear_bottom = match child.clear {
@@ -666,6 +672,10 @@ pub(crate) fn adjust_float_positions_with_context(
                         // 当元素自身 margin-top 足够大时，即使不折叠也已在浮动之下
                         let uncollapsed_pos = flow_bottom + child.margin_top;
                         child.y = content_y_offset + clear_bottom.max(uncollapsed_pos);
+                        // R1316 defect ①/②：正 clearance 被应用 → 该子的 margin 不再
+                        // collapse-through（§8.3.1），它建立流位置，且其后所有兄弟
+                        // 须以 flow_bottom 重定位（taffy 未知 clearance）。
+                        clearance_applied = true;
                     } else if (clear_bottom - hypothetical_y).abs() < 0.001 {
                         // 零 clearance（hypothetical_y ≈ clear_bottom）：
                         // CSS 2.1 §9.5.2：clearance 引入后，位置 = hypothetical + clearance。
@@ -681,13 +691,21 @@ pub(crate) fn adjust_float_positions_with_context(
                         child.y = content_y_offset + hypothetical_y;
                     }
                     float_y_offset = (original_taffy_y - child.y).max(0.0);
+                    // R1316 defect ①：正 clearance 使流发散，标记后续兄弟须重定位。
+                    if clearance_applied {
+                        had_clearance = true;
+                    }
                 }
                 ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd => {
                     // 非 clear 的普通元素：使用独立的 flow_bottom 追踪计算正确位置
                     // 简单的 child.y -= float_y_offset 无法正确处理 margin 折叠，
                     // 因为 taffy 将 float 当作 block 排列，其 margin 折叠方式
                     // 与 float 不存在时的折叠方式不同。
-                    if float_y_offset > 0.0 {
+                    //
+                    // R1316 defect ①：除残留 float 空间（float_y_offset>0）外，
+                    // 若本容器此前出现过正 clearance（had_clearance），taffy 对本
+                    // 子的定位同样不可信 —— 须以 flow_bottom 重定位。
+                    if float_y_offset > 0.0 || had_clearance {
                         // CSS 2.1：非 clear 元素的位置 = 正常流位置（假设 float 不存在）
                         let collapsed_margin =
                             crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
@@ -701,7 +719,14 @@ pub(crate) fn adjust_float_positions_with_context(
 
             // 空块自身的上下 margin 会自折叠，并继续传递给后继兄弟；
             // 它自身不应把 flow_bottom 往下推进一段“实心高度”。
-            if crate::margin_collapse::is_empty_block(child) {
+            //
+            // R1316 defect ②：但被应用了正 clearance 的元素（即便高度为 0）破坏
+            // collapse-through（§8.3.1）—— 它建立流位置，flow_bottom 须推进到其
+            // border-box 底边，其 margin-bottom 不再 collapse-through 传给后继。
+            // 否则 cleared 空块之后的首个兄弟会用陈旧的 flow_bottom 定位，违反
+            // DOM 顺序（出现在 cleared 元素之前）。
+            let establishes_flow_position = !crate::margin_collapse::is_empty_block(child) || clearance_applied;
+            if !establishes_flow_position {
                 let collapsed_self_margin =
                     crate::margin_collapse::collapse_two_margins(child.margin_top, child.margin_bottom);
                 last_flow_mb = crate::margin_collapse::collapse_two_margins(last_flow_mb, collapsed_self_margin);
