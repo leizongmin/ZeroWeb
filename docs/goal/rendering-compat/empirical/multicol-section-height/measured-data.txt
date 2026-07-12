@@ -1,29 +1,43 @@
 EMPIRICAL MULTICOL SECTION-HEIGHT GROUND TRUTH (chromium 150, 2026-07-12)
-variants: article{column-count:N width:400} > container{height:H} > block1/span1/block2/span2/block3
-blocks: width100 distinct colors (R/L/B), spans: column-span:all height50 (Y), container bg: magenta
+structure: article{column-count:N width:400} > container{height:H bg:magenta}
+           > block1(R)/span1(Y)/block2(L)/span2(Y)/block3(B); blocks width100, spans col-span:all h50
 
---- variant-A-H450-b200-c2: container rendered height = 350px ---
-  col0 (x=50): R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
-  col1 (x=250): R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
+--- variant-A-H450-b200-c2: container rendered = 350px ---
+  col0: R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
+  col1: R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
 
---- variant-B-H350-b200-c2: container rendered height = 250px ---
-  col0 (x=50): R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
-  col1 (x=250): R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
+--- variant-B-H350-b200-c2: container rendered = 250px ---
+  col0: R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
+  col1: R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
 
---- variant-C-H550-b200-c2: container rendered height = 400px ---
-  col0 (x=50): R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
-  col1 (x=250): R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
+--- variant-C-H550-b200-c2: container rendered = 400px ---
+  col0: R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
+  col1: R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
 
---- variant-D-H450-b100-c2: container rendered height = 325px ---
-  col0 (x=50): R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) B[200-300](h100) M[300-325](h25)
-  col1 (x=250): R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) M[200-325](h125)
+--- variant-D-H450-b100-c2: container rendered = 325px ---
+  col0: R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) B[200-300](h100) M[300-325](h25)
+  col1: R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) M[200-325](h125)
 
---- variant-E-H450-b400-c2: container rendered height = 300px ---
-  col0 (x=50): R[0-200](h200) Y[200-250](h50) L[250-450](h200) Y[450-500](h50) B[500-700](h200)
-  col1 (x=250): R[0-200](h200) Y[200-250](h50) L[250-450](h200) Y[450-500](h50) B[500-700](h200)
+--- variant-E-H450-b400-c2: container rendered = 300px ---
+  col0: R[0-200](h200) Y[200-250](h50) L[250-450](h200) Y[450-500](h50) B[500-700](h200)
+  col1: R[0-200](h200) Y[200-250](h50) L[250-450](h200) Y[450-500](h50) B[500-700](h200)
 
---- variant-F-H450-b200-c3: container rendered height = 283px ---
-  col0 (x=50): R[0-67](h67) Y[67-117](h50) L[117-183](h66) Y[183-233](h50) B[233-300](h67)
-  col1 (x=180): R[0-67](h67) Y[67-117](h50) L[117-183](h66) Y[183-233](h50) B[233-300](h67)
-  col2 (x=320): R[0-67](h67) Y[67-117](h50) L[117-183](h66) Y[183-233](h50) B[233-300](h67)
+--- variant-F-H450-b200-c3: container rendered = 283px ---
+  col0: R[0-67](h67) Y[67-117](h50) L[117-183](h66) Y[183-233](h50) B[233-300](h67)
+  col1: R[0-67](h67) Y[67-117](h50) L[117-183](h66) Y[183-233](h50) B[233-300](h67)
+  col2: R[0-67](h67) Y[67-117](h50) L[117-183](h66) Y[183-233](h50) B[233-300](h67)
 
+--- variant-J-H350-b100-c2: container rendered = 275px ---
+  col0: R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) B[200-275](h75)
+  col1: R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) B[200-225](h25) M[225-275](h50)
+
+--- variant-K-H250-b100-c2: container rendered = 250px ---
+  col0: R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) B[200-250](h50)
+  col1: R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) B[200-250](h50)
+
+=== REGION-c (last region, block3) MODEL: available A = H - (a+b) - 2*span ===
+  block3=100, N=2 cols:
+  A=250 (H450): col0=100,col1=0  -> content(100)<=A, fills col0 fully, NO balance
+  A=150 (H350): col0=75, col1=25  -> content>A/2, spills; region height=A/2=75
+  A=50  (H250): col0=50, col1=50  -> content(100)>A, FORCED to balance, region=A=50
+==> last region: balances (content/N each) when content>A; else sequential fill capped at A

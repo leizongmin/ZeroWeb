@@ -15,15 +15,23 @@
   内被拉到 784px 满宽 + 块级堆叠（inline-box-model/R109 结构缺口），非 clean lever。
   pre-wrap-align 簇 = R1338 已闭（ch C-dep + font-wall）。R1337 forward #3 关闭。
 - **★ R1348 empirical multicol 测量基础设施 LANDED（L3 解锁路径）**：R1344/R1345 推荐
-  落地——product-oracle-shot.mjs CDP-connect（WSL2 兼容）+ 6 受控变体（distinct-color，
-  `docs/goal/rendering-compat/empirical/multicol-section-height/`）+ PIL measured-data.txt。
+  落地——product-oracle-shot.mjs CDP-connect（WSL2 兼容）+ 8 受控变体（distinct-color，
+  `docs/goal/rendering-compat/empirical/multicol-section-height/`）+ chromium oracle PNG +
+  PIL measured-data.txt。
   ★ **纠正 R1345 误读**：004a region c 实测 = **100/100 balanced**（非 R1345 称的「50px
   first-col」；004a 测试注释本身也不符 chromium 实际）。4 条 reliable 算法事实：
   (1) wrapper 显式 H ≠ 渲染高度（实测 < H）；(2) block balance 仅当 content > per-region
   available；(3) 末 region overflow（E：container 300 但 block3 到 y=700）；(4) 非末 region
   总 balance。**multicol 嵌套 spanner 从「blind net-negative 风险」升级为「empirical-grounded
-  实现就绪」**。待补 4-6 变体钉死 per-region available 公式 → 据 empirical 模型重写
-  try_layout_nested_spanner。详见 [`evidence/r1348-empirical-multicol-infra-groundtruth-2026-07-12.txt`](./evidence/r1348-empirical-multicol-infra-groundtruth-2026-07-12.txt)。
+  实现就绪」**。
+  ★ **R1348b region-c（末 region）模型钉死**（J/K 变体，b=100 变 H）：末 region available
+  A = H − (a+b) − 2×span。block3=100 over 2 cols：A=250(H450)→100/0（content≤A，填 col0 不
+  balance）；A=150(H350)→75/25（spill，region=A/2）；A=50(H250)→50/50（content>A，forced
+  balance，region=A）。**末 region：content>A 时 balance 成 content/N；否则按 A 顺序填 col0 再
+  col1**。剩 per-region a/b available 分配（equal? greedy?）+ container 总高公式待最后钉。
+  下一步：补 a/b 分配变体 → 据 empirical 模型重写 try_layout_nested_spanner（紧 gate + 全量
+  chromium A/B）。详见 [`evidence/r1348-empirical-multicol-infra-groundtruth-2026-07-12.txt`](./evidence/r1348-empirical-multicol-infra-groundtruth-2026-07-12.txt)
+  + `empirical/multicol-section-height/measured-data.txt`。
 
 ---
 
