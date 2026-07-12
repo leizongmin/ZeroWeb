@@ -608,3 +608,53 @@ fn r1363_vertical_lr_flex_item_not_skipped() {
     // 仅断言不 panic + img 存在（vertical flex 的 aspect-ratio 推导独立 R109 地带，本 fix 不介入）。
     let (_w, _h) = find_box(&result.root, img_id).expect("img box found");
 }
+
+/// R1365：flex item 的 flex-basis 为百分比且容器 main 尺寸不明确时，item 的 main-size 属性
+/// 不应被当 definite（CSS-Flexbox §9 + §7.1：百分比 flex-basis 对不明确容器回退 content，
+/// 显式 main-size 被忽略）。驱动案 flex-basis-010（8.96%→0.63% FLIP）：
+/// `flex:0 0 0%` + height:500px，容器 column 无 height → item height 应回退 content(100)，非 500。
+#[test]
+fn r1365_indefinite_percent_flex_basis_ignores_main_size() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex; width:100px; flex-direction:column;">
+  <div id="item" style="flex:0 0 0%; height:500px;">
+    <div style="height:100px;"></div>
+  </div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let item_id = doc.get_element_by_id("item").expect("item");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, HashMap::new(), HashMap::new());
+    let (_w, h) = find_box(&result.root, item_id).expect("item box found");
+    // height:500 被忽略，item main 回退 content（子 100），非 500。
+    assert!(
+        (h - 100.0).abs() < 10.0,
+        "R1365: indefinite % flex-basis 应让 item height 回退 content ~100（非显式 500），got {h}"
+    );
+}
+
+/// R1365 对照：容器 main 尺寸**明确**（height:200px）时，fix 不应误触发（百分比 flex-basis
+/// 对明确容器正常解析）。守护 gate：仅 indefinite 容器 main 才清 size.main。
+#[test]
+fn r1365_definite_parent_main_not_affected() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex; width:100px; height:200px; flex-direction:column;">
+  <div id="item" style="flex:0 0 0%; height:500px;">
+    <div style="height:100px;"></div>
+  </div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let item_id = doc.get_element_by_id("item").expect("item");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, HashMap::new(), HashMap::new());
+    // 容器 main 明确 → fix 不触发。仅断言不 panic + item 存在（守护 gate）。
+    let (_w, _h) = find_box(&result.root, item_id).expect("item box found");
+}

@@ -815,6 +815,41 @@ fn build_subtree(
         &ctx.img_intrinsic_ratios,
     );
 
+    // R1365：flex item 的 flex-basis 为百分比且容器 main 尺寸不明确时，item 的 main-size
+    // 属性（height/width）不应被当 definite（CSS-Flexbox §9 + §7.1：百分比 flex-basis 对不明确
+    // 容器回退到 content，显式 main-size 属性被忽略）。converter 已从 main-size 属性设了 definite
+    // size.main，致 taffy 优先用它（如 flex-basis-010：height:500 被用，应回退 content 100）。
+    // 修复：百分比 flex-basis + 容器 main 不明确（auto）→ 把 item 的 size.main 改 auto。
+    // 仅水平书写模式（vertical 主/交叉轴互换）。
+    {
+        use zero_css_parser::values::{DisplayValue, FlexDirectionValue};
+        use zero_style_system::property::types::{FlexBasisValue, WritingModeValue};
+        if matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
+            && let Some(parent_id) = doc.parent_node(dom_id)
+            && let Some(ps) = styles.get(&parent_id)
+            && matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+        {
+            let is_column = matches!(
+                ps.flex_direction,
+                FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+            );
+            let basis_is_percentage = matches!(computed.flex_basis, FlexBasisValue::Length(LengthValue::Percentage(_)));
+            // 容器 main 尺寸不明确：column→height auto，row→width auto。
+            let parent_main_indefinite = if is_column {
+                matches!(ps.height, LengthValue::Auto)
+            } else {
+                matches!(ps.width, LengthValue::Auto)
+            };
+            if basis_is_percentage && parent_main_indefinite {
+                if is_column {
+                    taffy_style.size.height = taffy::style::Dimension::auto();
+                } else {
+                    taffy_style.size.width = taffy::style::Dimension::auto();
+                }
+            }
+        }
+    }
+
     // 多列容器：设置 overflow: Hidden 阻止 taffy 内部的父子 margin 折叠。
     // CSS Multi-column Layout Module §2 规定多列容器建立 BFC。
     // taffy 的 is_scroll_container() 仅对 Hidden/Scroll 返回 true，Clip 不会阻止折叠。
