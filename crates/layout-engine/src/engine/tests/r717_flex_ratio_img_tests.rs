@@ -658,3 +658,57 @@ fn r1365_definite_parent_main_not_affected() {
     // 容器 main 明确 → fix 不触发。仅断言不 panic + item 存在（守护 gate）。
     let (_w, _h) = find_box(&result.root, item_id).expect("item box found");
 }
+
+/// R1366：flex item aspect-ratio main 按容器 stretched cross 推导 + 同步设 cross。
+/// 驱动案 flex-aspect-ratio-img-row-006（6.78%→0.53% FLIP）：img 固有 200x200 + width/height
+/// auto + 容器 150×100 + flex-shrink:0 → main(width)=容器 cross(100)×ratio(1)=100，
+/// cross(height)=100。tree.rs 预设 size=固有 200x200 definite 阻挡推导，R1366 fixup 覆盖。
+#[test]
+fn r1366_flex_item_aspect_ratio_main_from_stretched_cross() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex; width:150px; height:100px;">
+  <img id="img" src="200x200-green.png" style="min-width:0px; flex-shrink:0;">
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let mut sizes = HashMap::new();
+    sizes.insert(img_id, (200.0_f32, 200.0_f32));
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, sizes, HashMap::new());
+    let (w, h) = find_box(&result.root, img_id).expect("img box found");
+    // main(width) 按容器 cross(100)×ratio(1)=100；cross(height)=100（非固有 200）。
+    assert!(
+        (w - 100.0).abs() < 8.0,
+        "R1366: img width 应按容器 stretched cross 推 = 100，got {w}"
+    );
+    assert!(
+        (h - 100.0).abs() < 8.0,
+        "R1366: img height 应 = 100（非固有 200），got {h}"
+    );
+}
+
+/// R1366 对照：item cross 轴**有 padding** 时，cross=parent_cross 不精确（content-box != border-box），
+/// 故 cross-fix 跳过（守 padding-001 baseline，避免 R1364 v1 的 flip-fail 回归）。main 推导仍可触发。
+#[test]
+fn r1366_padded_item_cross_fix_skipped() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex; width:150px; height:100px;">
+  <img id="img" src="200x200-green.png" style="min-width:0px; flex-shrink:0; padding-top:10px; padding-bottom:10px;">
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let mut sizes = HashMap::new();
+    sizes.insert(img_id, (200.0_f32, 200.0_f32));
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, sizes, HashMap::new());
+    // 有 padding → cross-fix 跳过（不强制 cross=parent_cross）。仅断言不 panic + img 存在（守护 gate）。
+    let (_w, _h) = find_box(&result.root, img_id).expect("img box found");
+}

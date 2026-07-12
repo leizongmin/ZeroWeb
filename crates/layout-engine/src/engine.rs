@@ -788,6 +788,17 @@ impl LayoutEngine {
     /// 或 cross / ratio（column）推导 main 尺寸，改写 taffy `size.main = Length(...)` 并
     /// mark_dirty，由调用方重跑 taffy。仅水平书写模式；仅当 cross>0 且 main 与推导值显著
     /// 不同时触发。leaf 限制避免误覆盖有文本/子内容决定 main 的 flex item。
+    /// R1364：判断长度值是否为「零-ish」（Auto 或 Px(0)）。用于 flex item cross 轴
+    /// padding/border 是否为零的守卫——cross=parent_cross 仅在无 padding/border 时精确。
+    fn is_zeroish_len(v: &LengthValue) -> bool {
+        match v {
+            LengthValue::Auto => true,
+            LengthValue::Px(x) => *x == 0.0,
+            _ => false,
+        }
+    }
+
+    /// R1366 v2：flex item aspect-ratio main 按容器 stretched cross 推导（row-006）。
     fn apply_flex_aspect_ratio_item_size(
         taffy_tree: &mut TaffyTree<NodeId>,
         root: &LayoutBox,
@@ -849,6 +860,32 @@ impl LayoutEngine {
                     } else {
                         (b.width, b.height)
                     };
+                    // R1364：若 item cross 为 CSS-auto 且 flex 容器 cross 为 definite，用容器
+                    // cross（将被 align-items:stretch 拉伸到的值）推 main，而非 b 的固有/预算 cross。
+                    // 驱动 flex-aspect-ratio-img-row-006：img 固有 200x200 + width/height auto +
+                    // 容器 height:100 → main(width) 应 = 100×ratio(1)=100，非固有 200×1=200。
+                    // 仅 item cross CSS-auto（未显式指定，将被 stretch）+ 容器 cross Px 时覆盖。
+                    let item_cross_is_auto = if is_column {
+                        matches!(item_style.width, LengthValue::Auto)
+                    } else {
+                        matches!(item_style.height, LengthValue::Auto)
+                    };
+                    let parent_cross_definite = if is_column {
+                        matches!(ps.width, LengthValue::Px(_)).then(|| match ps.width {
+                            LengthValue::Px(v) => v as f32,
+                            _ => 0.0,
+                        })
+                    } else {
+                        matches!(ps.height, LengthValue::Px(_)).then(|| match ps.height {
+                            LengthValue::Px(v) => v as f32,
+                            _ => 0.0,
+                        })
+                    };
+                    let cross_resolved = if item_cross_is_auto {
+                        parent_cross_definite.unwrap_or(cross_resolved)
+                    } else {
+                        cross_resolved
+                    };
                     let expected_main = if is_column {
                         cross_resolved / ratio
                     } else {
@@ -860,6 +897,27 @@ impl LayoutEngine {
                             st.size.height = taffy::style::Dimension::length(expected_main.max(0.5));
                         } else {
                             st.size.width = taffy::style::Dimension::length(expected_main.max(0.5));
+                        }
+                        // R1364：同步把 cross 设为容器 cross（stretch 目标值）。**仅当 item cross 轴
+                        // 无 padding** 时（cross=parent_cross 精确；border-style:none 不渲染故 border-width
+                        // 默认值不影响）——否则 cross 须减 padding（naive parent_cross 致 padding-001 回归）。
+                        // row-006（img 无 padding）满足；padding-001（有 padding）跳过守 baseline。
+                        let cross_has_no_box = if is_column {
+                            LayoutEngine::is_zeroish_len(&item_style.padding_left)
+                                && LayoutEngine::is_zeroish_len(&item_style.padding_right)
+                        } else {
+                            LayoutEngine::is_zeroish_len(&item_style.padding_top)
+                                && LayoutEngine::is_zeroish_len(&item_style.padding_bottom)
+                        };
+                        if item_cross_is_auto
+                            && cross_has_no_box
+                            && let Some(pc) = parent_cross_definite
+                        {
+                            if is_column {
+                                st.size.width = taffy::style::Dimension::length(pc.max(0.5));
+                            } else {
+                                st.size.height = taffy::style::Dimension::length(pc.max(0.5));
+                            }
                         }
                         let _ = taffy_tree.set_style(tid, st);
                         let _ = taffy_tree.mark_dirty(tid);
