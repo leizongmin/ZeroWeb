@@ -550,6 +550,61 @@ fn r1076_nested_multicol_child_guarded_sequential() {
         .fold(0.0_f32, f32::max);
     assert!(
         max_col_x < 1.0,
-        "R1076 guard: nested multicol 子不应 inline-overflow（所有片段 col_x 应=0），got max col_x={max_col_x}"
+        "R1076 guard: nested multicol 子不应 inline-overflow（所有片段 col_x 应=0），got max_col_x={max_col_x}"
     );
+}
+
+/// R1363：flex row item（替换 img + 显式 width + aspect-ratio）的 main 被 min-size:auto 钳制时，
+/// cross（height）须按**钳制后** main 推导，非按显式（未钳制）width 预推。
+/// 驱动案 flex-minimum-width-flex-items-013（9.98%→0.63% FLIP）：
+/// `<img style="width:999px">` 固有 300x150，flex width:0 height:50 → min 钳 width 到 100，
+/// height 应 = 100/2 = 50（非 999/2 = 500）。tree.rs 预推 height 会设 definite 500 阻止 flex 重推。
+#[test]
+fn r1363_flex_row_item_aspect_ratio_cross_from_clamped_main() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex; width:0px; height:50px;">
+  <img id="img" src="300x150.png" style="width:999px;">
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let mut sizes = HashMap::new();
+    sizes.insert(img_id, (300.0_f32, 150.0_f32));
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, sizes, HashMap::new());
+    let (w, h) = find_box(&result.root, img_id).expect("img box found");
+    // width 被 min-size:auto 钳到 100；height 须按钳制后 width / ratio(2) = 50（非 999/2=500）。
+    assert!(
+        (w - 100.0).abs() < 5.0,
+        "R1363: img width 应被 min-size 钳到 ~100，got {w}"
+    );
+    assert!(
+        (h - 50.0).abs() < 5.0,
+        "R1363: img height 应按钳制后 width 推导 = 50（非显式 999/2=500），got {h}"
+    );
+}
+
+/// R1363 对照：vertical-lr flex 容器内的 img 不应触发跳过（主/交叉轴互换，推导不同），
+/// 保持旧行为避免 vert-lr 回归（flex-aspect-ratio-img-vert-lr）。
+#[test]
+fn r1363_vertical_lr_flex_item_not_skipped() {
+    let html = r#"<html><body style="margin:0">
+<div style="display:flex; writing-mode:vertical-lr;">
+  <img id="img" src="300x150.png" style="width:999px;">
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let mut sizes = HashMap::new();
+    sizes.insert(img_id, (300.0_f32, 150.0_f32));
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, sizes, HashMap::new());
+    // 仅断言不 panic + img 存在（vertical flex 的 aspect-ratio 推导独立 R109 地带，本 fix 不介入）。
+    let (_w, _h) = find_box(&result.root, img_id).expect("img box found");
 }

@@ -273,6 +273,25 @@ fn apply_replaced_element_sizing(
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     img_intrinsic_ratios: &HashMap<NodeId, f32>,
 ) {
+    // R1363：判定本替换元素是否为 flex 容器的直接子（flex item），及主轴方向。
+    // 用于 cross-size 推导门控（见下方 width 显式/height auto 分支）。仅水平书写模式
+    //（vertical 模式主/交叉轴互换，aspect-ratio 推导不同，跳过会致 vert-lr 回归）。
+    use zero_css_parser::values::{DisplayValue, FlexDirectionValue};
+    use zero_style_system::property::types::WritingModeValue;
+    let (is_flex_row_item, is_flex_col_item) = match doc.parent_node(dom_id).and_then(|p| styles.get(&p)) {
+        Some(ps)
+            if matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                && matches!(ps.writing_mode, WritingModeValue::HorizontalTb) =>
+        {
+            let row = matches!(
+                ps.flex_direction,
+                FlexDirectionValue::Row | FlexDirectionValue::RowReverse
+            );
+            (row, !row)
+        }
+        _ => (false, false),
+    };
+
     // 仅处理有 DOM 关联的元素
     let node_data = match doc.get(dom_id) {
         Some(n) => n,
@@ -388,13 +407,26 @@ fn apply_replaced_element_sizing(
                     && let LengthValue::Px(cw) = &computed.width
                 {
                     // width 显式，height auto：height = cw / eff_ratio
-                    taffy_style.size.height = taffy::style::Dimension::length(((*cw as f32) / eff_ratio).max(0.5));
+                    // R1363：flex row item 的 main(width) 可能被 min-size:auto 钳制（如
+                    // flex-minimum-width-flex-items-013：width:999 → min 钳到 100）。此处用未钳制
+                    // 的 cw(999) 预推 height=500 会设为 definite，致 taffy 不再按钳制后 main 重推，
+                    // 且不 stretch 到容器 cross。跳过（留 height auto + aspect_ratio），让 taffy 按
+                    // 最终（钳制后）main 推 cross（100/2=50）。仅 flex row + 有 aspect_ratio 时跳过。
+                    let skip_for_flex_row = is_flex_row_item && taffy_style.aspect_ratio.is_some();
+                    if !skip_for_flex_row {
+                        taffy_style.size.height = taffy::style::Dimension::length(((*cw as f32) / eff_ratio).max(0.5));
+                    }
                 } else if width_auto
                     && !height_auto
                     && let LengthValue::Px(ch) = &computed.height
                 {
                     // height 显式，width auto：width = ch * eff_ratio
-                    taffy_style.size.width = taffy::style::Dimension::length(((*ch as f32) * eff_ratio).max(0.5));
+                    // R1363 对称：flex column item 的 main(height) 可能被 min-size:auto 钳制，
+                    // 跳过预推 width（留 auto + aspect_ratio），让 taffy 按钳制后 main 推 cross。
+                    let skip_for_flex_col = is_flex_col_item && taffy_style.aspect_ratio.is_some();
+                    if !skip_for_flex_col {
+                        taffy_style.size.width = taffy::style::Dimension::length(((*ch as f32) * eff_ratio).max(0.5));
+                    }
                 }
                 // 两侧都显式：由 converter 从 CSS 处理，不干预
             }
