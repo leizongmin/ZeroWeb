@@ -547,6 +547,15 @@ fn try_layout_nested_spanner(
             })
             .fold(0.0_f32, f32::max);
         if content_extent > 0.0 && content_extent < container.content_height {
+            // R1360：wrapper box height/content_height = content_extent（非 R1357 的 effective）。
+            // painter column loop 把 breaking 子（block3）裁到 `container_h = wrapper.content_height`；
+            // 若留 CSS 值（004b=350），block3（col_top=300,ch=100）被裁到 [300,350]=50px（abs 358），
+            // CHR 应到 404（full overflow）。改 content_height=content_extent（400）使 block3 full 渲。
+            // bg 由 R1359 regions（effective）独立处理，wrapper box 高 = content_extent 不影响 bg
+            //（regions 用 capped_h，非 wrapper.height）。004a 不受影响（content_extent 400 >= block3 需求）。
+            let wrapper = &mut container.children[wrapper_idx];
+            wrapper.height = content_extent;
+            wrapper.content_height = content_extent;
             container.content_height = content_extent;
             container.height = content_extent;
         }
