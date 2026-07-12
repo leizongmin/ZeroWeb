@@ -251,6 +251,39 @@ fn compute_single_column_width(container_width: f32, count: usize, gap: f32) -> 
     ((container_width - total_gap) / count as f32).max(0.0)
 }
 
+/// R1340：检测一个盒的**后代**（非自身）中是否存在 column-span:all 元素。
+///
+/// multicol 容器的**直接子** spanner 由 `layout_multicol` 主循环检测并经
+/// `layout_multicol_with_spanners` 处理（R1028）。嵌套 spanner（multicol >
+/// 非 multicol wrapper > ... > spanner）目前未实现 fragmentation（R1336 诊断）。
+/// 本函数 DFS 检测此类嵌套 spanner，是 wrapper-fragmentation 的检测基础
+/// （当前仅用于量化日志，见 `layout_multicol` 的 ZW_MULTICOL_DEBUG_NESTED）。
+///
+/// 注意：检查的是后代（不含 `box_node` 自身），故对 multicol 的直接子调用时，
+/// 返回 true 表示该子内部含 spanner 后代（即嵌套 spanner 场景）。
+fn has_descendant_spanner(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    for c in &box_node.children {
+        if c.is_absolute || c.is_fixed {
+            continue;
+        }
+        let style = c.node_id.and_then(|id| styles.get(&id));
+        let is_spanner = style.is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
+        if is_spanner {
+            return true;
+        }
+        // 不下钻嵌套 multicol 容器：其内部 spanner 属于该嵌套 multicol（由其自身
+        // layout_multicol 处理），非外层 wrapper-fragmentation 场景。
+        let is_nested_multicol = style.is_some_and(|s| {
+            matches!(s.column_count, ColumnCountComputedValue::Number(_))
+                || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
+        });
+        if !is_nested_multicol && has_descendant_spanner(c, styles) {
+            return true;
+        }
+    }
+    false
+}
+
 /// 对单个 multicol 容器执行布局。
 ///
 /// 算法：
@@ -261,6 +294,30 @@ fn compute_single_column_width(container_width: f32, count: usize, gap: f32) -> 
 fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMap<NodeId, ComputedStyle>) {
     if container.children.is_empty() || info.count == 0 {
         return;
+    }
+
+    // R1340：嵌套 spanner 检测（multicol wrapper-fragmentation 基础）。
+    // layout_multicol 主循环只检测直接子 column-span:all；嵌套 spanner（multicol >
+    // 非 multicol wrapper > spanner）当前未实现 fragmentation（R1336 诊断：wrapper 被
+    // 当单个非 spanner 子整体平衡）。此处仅检测 + 量化日志（env ZW_MULTICOL_DEBUG_NESTED），
+    // 不改变行为（log-only，零回归）。fragmentation 实现是后续多 session 架构工作。
+    if std::env::var("ZW_MULTICOL_DEBUG_NESTED").is_ok() {
+        for c in &container.children {
+            if c.is_absolute || c.is_fixed {
+                continue;
+            }
+            let self_spanner = c
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
+            if !self_spanner && has_descendant_spanner(c, styles) {
+                eprintln!(
+                    "R1340 nested-spanner detected: multicol child node={:?} contains \
+                     column-span:all descendant (fragmentation not yet implemented)",
+                    c.node_id
+                );
+            }
+        }
     }
 
     // 收集非 absolute/fixed 的子元素索引、高度，以及 break-before/after:column 标志
