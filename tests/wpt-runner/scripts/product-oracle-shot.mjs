@@ -87,11 +87,24 @@ async function main() {
   // chromium 默认 font-render-hinting（与既有 welcome/WPT oracle 一致——R1069 证
   // full-hinting 匹配）。不传 --font-render-hinting=none（否则 oracle 与 ZW FreeType
   // DEFAULT hinted 路径不一致）。
-  const browser = await puppeteer.launch({
-    executablePath: CHROMIUM,
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-gpu'],
-  });
+  // WSL2 兼容（R1348）：若 ORACLE_CDP_URL 已设（run-oracle-capture.sh 启动的非 headless
+  // chromium），经 CDP 连接复用——headless 'new' 在 WSL2 + chromium 150 渲染 SIGTRAP
+  //（见 run-oracle-capture.sh）。共享浏览器只 disconnect 不 close。
+  const cdpUrl = process.env.ORACLE_CDP_URL;
+  let browser;
+  let shouldCloseBrowser;
+  if (cdpUrl) {
+    const ver = await fetch(`${cdpUrl}/json/version`).then((r) => r.json());
+    browser = await puppeteer.connect({ browserWSEndpoint: ver.webSocketDebuggerUrl });
+    shouldCloseBrowser = false;
+  } else {
+    browser = await puppeteer.launch({
+      executablePath: CHROMIUM,
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-gpu'],
+    });
+    shouldCloseBrowser = true;
+  }
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: opts.width, height: opts.height, deviceScaleFactor: 1 });
@@ -120,7 +133,11 @@ async function main() {
     }
     console.log(`wrote oracle: ${opts.out} (${opts.width}x${opts.height})`);
   } finally {
-    await browser.close();
+    if (shouldCloseBrowser) {
+      await browser.close();
+    } else {
+      browser.disconnect();
+    }
     await server.close();
   }
 }

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>empirical multicol section-height A: H=450 blocks=200x3 spans=50x2 col-count=2</title>
+<style>
+  article {
+    column-count: 2;
+    width: 400px;
+    column-gap: 0;
+    background-color: white;
+  }
+  div.container {
+    height: 450px;
+    background-color: magenta;
+  }
+  div.block {
+    width: 100px;
+    background-color: red;
+  }
+  div.b2 { background-color: lime; }
+  div.b3 { background-color: blue; }
+  div.column-span {
+    column-span: all;
+    height: 50px;
+    background-color: yellow;
+  }
+  /* 每个 block 固定高度，便于 PIL 度量列高分布 */
+  .h200 { height: 200px; }
+  .h100 { height: 100px; }
+  .h400 { height: 400px; }
+  body { margin: 0; }
+</style>
+</head>
+<body>
+<article>
+  <div class="container">
+    <div class="block h200">1</div>
+    <div class="column-span">span1</div>
+    <div class="block b2 h200">2</div>
+    <div class="column-span">span2</div>
+    <div class="block b3 h200">3</div>
+  </div>
+</article>
+</body>
+</html>

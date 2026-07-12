@@ -1,8 +1,29 @@
 # 渲染兼容性 rally — 多 session 架构 roadmap（plateau 后攻击计划）
 
-**日期**: 2026-07-12（R1311-R1315 收敛后）
+**日期**: 2026-07-12（R1311-R1315 收敛后；R1346-R1348 更新）
 **状态**: plateau firm，aggregate chromium-oracle ~55%（DC-2~5 目标 ≥95% 远未达）
 **目的**: 单 session clean lever 穷尽后，剩余 yield 全在多 session 架构 / C-dep。本文档汇总各 lever 的 blocker / 可行性 / yield / 攻击顺序，供后续 session 增量推进。
+
+---
+
+## R1346-R1348 更新（2026-07-12 同日续）
+
+- **R1346 border-conflict §17.6.2.1 ruled out**：算法已实现（table_borders.rs），tiebreak
+  + currentColor 真 bug 定位，但修复 0 flip（001a-001e diff 主导 = Ahem 文本 + swatch 图像，
+  非 border 颜色）+ 001e 微退 → 全 revert。R1337 forward #2 关闭。
+- **R1347 white-space -052 簇 = Phase A 阻塞**：LAYOUT_DUMP 实证 `<span inline>` 在 inline-block
+  内被拉到 784px 满宽 + 块级堆叠（inline-box-model/R109 结构缺口），非 clean lever。
+  pre-wrap-align 簇 = R1338 已闭（ch C-dep + font-wall）。R1337 forward #3 关闭。
+- **★ R1348 empirical multicol 测量基础设施 LANDED（L3 解锁路径）**：R1344/R1345 推荐
+  落地——product-oracle-shot.mjs CDP-connect（WSL2 兼容）+ 6 受控变体（distinct-color，
+  `docs/goal/rendering-compat/empirical/multicol-section-height/`）+ PIL measured-data.txt。
+  ★ **纠正 R1345 误读**：004a region c 实测 = **100/100 balanced**（非 R1345 称的「50px
+  first-col」；004a 测试注释本身也不符 chromium 实际）。4 条 reliable 算法事实：
+  (1) wrapper 显式 H ≠ 渲染高度（实测 < H）；(2) block balance 仅当 content > per-region
+  available；(3) 末 region overflow（E：container 300 但 block3 到 y=700）；(4) 非末 region
+  总 balance。**multicol 嵌套 spanner 从「blind net-negative 风险」升级为「empirical-grounded
+  实现就绪」**。待补 4-6 变体钉死 per-region available 公式 → 据 empirical 模型重写
+  try_layout_nested_spanner。详见 [`evidence/r1348-empirical-multicol-infra-groundtruth-2026-07-12.txt`](./evidence/r1348-empirical-multicol-infra-groundtruth-2026-07-12.txt)。
 
 ---
 
