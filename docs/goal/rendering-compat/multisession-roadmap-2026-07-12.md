@@ -1,8 +1,32 @@
 # 渲染兼容性 rally — 多 session 架构 roadmap（plateau 后攻击计划）
 
-**日期**: 2026-07-12（R1311-R1315 收敛后；R1346-R1348c 更新）
+**日期**: 2026-07-12（R1311-R1315 收敛后；R1346-R1349 更新）
 **状态**: plateau firm，aggregate chromium-oracle ~55%（DC-2~5 目标 ≥95% 远未达）
 **目的**: 单 session clean lever 穷尽后，剩余 yield 全在多 session 架构 / C-dep。本文档汇总各 lever 的 blocker / 可行性 / yield / 攻击顺序，供后续 session 增量推进。
+
+---
+
+## R1349 更新（2026-07-12，multicol 源码 blocked + L2 floats-clear 审计）
+
+- **multicol Phase 1 源码访问 blocked（4 路）**：mcp__zread（仅 design doc 摘要）/
+  raw.githubusercontent（404）/ googlesource format=TEXT（fetch 损坏）/ R1348d research agent
+  （auth-limited）。Phase 1 须先解源码访问（git sparse-clone chromium 或 source.chromium.org
+  web 读）或据 12 empirical 点逆向迭代 balancer。
+- **★ L2 §8.3.1 工作已兑现**：margin-collapse-clear **012/013/014/015/016/017 全 < 1% PASS**
+  （012/013/014=0.61, 015=0.69, 016=0.87, 017=0.83）——R1317-R1332 clearance positioning +
+  containment + sibling-shift + 016 has-floats gate 收口主簇。
+- **L2 floats-clear 残余（214 案 94 pass 43.9%）分类**：
+  (a) **adjoining-float 簇（4 案 4.79-9.98%）= nested-float clearance 结构缺口**——float 嵌在
+      wrapper（container > wrapper > float），ZW `has_active_float_context`/float_geometries 仅
+      收集**直接** float 子，嵌套 float 不被 clearance 见 → clear:left 失效，margin-top:400 被
+      当实空间涂（实测 39900 红 px）。修须递归收集非 BFC 后代 float bottom（结构改动，影响全
+      float 案，高回归风险，非单 session）。
+  (b) **float-width 簇（007/009-012 ~4.64%, 008/009 6.07%）= font-wall**——PIL 实测 green 像素
+      ZW=CHR=10800 完全一致（shrink-to-fit 几何正确），diff = 黑 Ahem 文本 stripe。非 lever。
+  (c) margin-collapse-12x/16x（5-7%）= float+clear+border 结构性 clearance 变体。
+- **裁决**：R1346/R1347/R1348c/R1349 四证 clean single-session lever 穷尽。残余全 multi-session
+  架构（multicol balancing 移植 / nested-float clearance / Phase A / bidi）或 C-dep（user-blocked）。
+  详见 [`evidence/r1349-l2-floats-clear-audit-2026-07-12.txt`](./evidence/r1349-l2-floats-clear-audit-2026-07-12.txt)。
 
 ---
 
