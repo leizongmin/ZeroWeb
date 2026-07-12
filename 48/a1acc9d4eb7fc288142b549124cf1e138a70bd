@@ -1,0 +1,66 @@
+AGENTS.md
+  s_129d8db521ba79::t_981992fbf36866 242-271 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a53c02c362fb5dae43fa25b","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[242,271]}]}]}
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "48a1acc9d4eb7fc288142b549124cf1e138a70bd",
+  "prompts": {},
+  "sessions": {
+    "s_129d8db521ba79": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a44eb1c990f69ae2456ac86",
+        "model": "gpt-5.5__dev"
+      },
+      "human_author": "LEI Zongmin <leizongmin@gmail.com>"
+    }
+  },
+  "attestation_metadata": {
+    "AGENTS.md": [
+      {
+        "hash": "s_129d8db521ba79::t_981992fbf36866",
+        "line_ranges": [
+          {
+            "Range": [
+              242,
+              271
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a53c02c362fb5dae43fa25b",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  242,
+                  271
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "remote_transcripts": {
+    "s_129d8db521ba79": {
+      "tool": "trae",
+      "conversation_id": "6a44eb1c990f69ae2456ac86",
+      "session_id": "6a44eb1c990f69ae2456ac86",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_129d8db521ba79::t_981992fbf36866": {
+      "tool": "trae",
+      "conversation_id": "6a44eb1c990f69ae2456ac86",
+      "session_id": "6a44eb1c990f69ae2456ac86",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    }
+  }
+}
