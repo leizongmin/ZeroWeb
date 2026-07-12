@@ -897,7 +897,12 @@ pub(crate) fn adjust_float_positions_with_context(
                                 let bottom = c.y + c.height + c.margin_bottom;
                                 max_y.max(bottom)
                             });
-                    let content_height = content_bottom.max(0.0);
+                    // R1324：content_bottom 为 border-box 相对（c.y 含 content_y_offset =
+                    // border_top + padding_top），须换算为 content 相对后再赋 content_height
+                    //（后者不含 border/padding）。否则带 border-top/padding-top 的容器
+                    //（margin-collapse-clear-015 border-top:1px）content_height 会多算一段
+                    // content_y_offset，容器偏高 → 后续 in-flow 兄弟整体下移（015 残余 1px）。
+                    let content_height = (content_bottom - content_y_offset).max(0.0);
                     // 如果内容区域实际高度小于 taffy 计算的高度，收缩容器
                     if content_height < box_node.content_height {
                         box_node.content_height = content_height;
