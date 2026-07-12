@@ -1490,6 +1490,34 @@ impl InlineFormattingContext {
         self.apply_vertical_alignment();
     }
 
+    /// 计算行尾「悬挂」空白的总宽度（CSS Text §3.1.4 phase II）。
+    ///
+    /// pre-wrap 下，行尾的保留空格应 *hang*——它仍被绘制，但在计算 text-align
+    /// 对齐偏移时不计入行宽（这样 Right/Center/Justify 按可见内容对齐，空白
+    /// 自然挂到行内容区右缘之外）。从末片段向前累加：
+    /// - 纯空格片段（split_into_words preserve 模式下的独立 " "）→ 贡献整宽；
+    /// - 混合片段以空格结尾 → 贡献尾部连续空格的 advance（近似），停止；
+    /// - 片段不以空格结尾 → 停止。
+    fn trailing_hang_width(&self, runs: &[TextFragment]) -> f32 {
+        let mut total = 0.0;
+        for frag in runs.iter().rev() {
+            let chars: Vec<char> = frag.text.chars().collect();
+            if chars.is_empty() {
+                continue;
+            }
+            let trailing = chars.iter().rev().take_while(|&&c| c == ' ').count();
+            if trailing == chars.len() {
+                total += frag.width;
+            } else if trailing > 0 {
+                total += trailing as f32 * self.advance_of(' ', None, frag.font_size, frag.is_ahem);
+                break;
+            } else {
+                break;
+            }
+        }
+        total
+    }
+
     /// 根据当前 text_align 设置，调整每行中片段的 x 坐标。
     ///
     /// - Left: 不做调整（默认行为）。
@@ -1501,12 +1529,25 @@ impl InlineFormattingContext {
             return;
         }
 
+        // R1338：pre-wrap 行尾保留空格 hang（default-on，kill-switch ZW_PREWRAP_HANG=0 关闭）。
+        let hang_prewrap = self.preserve_whitespace && std::env::var("ZW_PREWRAP_HANG").as_deref() != Ok("0");
+
         // 预计算每行的有效内容区域（避免在 iter_mut 中借用 self）
         let line_areas: Vec<(f32, f32)> = self
             .lines
             .iter()
             .map(|line| self.effective_content_area(line.y, line.height))
             .collect();
+
+        // R1338：预计算每行行尾悬挂空白宽度（pre-wrap），避免在 iter_mut 中借用 self。
+        let hang_widths: Vec<f32> = if hang_prewrap {
+            self.lines
+                .iter()
+                .map(|line| self.trailing_hang_width(&line.runs))
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         let last_idx = self.lines.len() - 1;
         for (i, line) in self.lines.iter_mut().enumerate() {
@@ -1515,7 +1556,10 @@ impl InlineFormattingContext {
             }
 
             // 计算行内内容的总宽度（最后一个片段的右边界）
-            let content_width = line.runs.last().map(|r| r.x + r.width).unwrap_or(0.0);
+            // R1338：pre-wrap 扣除行尾悬挂空白，使对齐按可见内容计算。
+            let raw_right = line.runs.last().map(|r| r.x + r.width).unwrap_or(0.0);
+            let hang = if hang_prewrap { hang_widths[i] } else { 0.0 };
+            let content_width = (raw_right - hang).max(0.0);
 
             // 使用预计算的有效可用宽度
             let (left_offset, avail_width) = line_areas[i];
@@ -2018,28 +2062,32 @@ impl InlineFormattingContext {
                     continue;
                 }
                 // 在保留空白模式下，按连续空格切分，保留空格作为独立"单词"
-                // 制表符展开为 tab_size 个空格
+                // 制表符展开为 tab_size 个空格。
+                // R1338：词本身**不带尾部空格**——词间间距完全由独立的 " " 片段承载
+                //（这样多空格序列 "a  b" 才能正确保留为两个空格）。旧实现给每个词追加
+                // `format!("{current_word} ")` 尾随空格 + 又 push 独立 " " → 词间双空格，
+                // 致 pre-wrap 换行点偏早 + 行宽虚高（pre-wrap-align-* 失败根因）。
                 let mut current_word = String::new();
                 for ch in segment.chars() {
                     if ch == '\t' {
                         // 制表符展开为 tab_size 个空格
                         if !current_word.is_empty() {
-                            result.push(format!("{current_word} "));
+                            result.push(current_word.clone());
                             current_word.clear();
                         }
                         let tab_spaces = " ".repeat(self.tab_size.max(1.0) as usize);
                         result.push(tab_spaces);
                     } else if ch == ' ' {
                         if !current_word.is_empty() {
-                            result.push(format!("{current_word} "));
+                            result.push(current_word.clone());
                             current_word.clear();
                         }
-                        // 空格也作为独立片段以保留空白
+                        // 空格也作为独立片段以保留空白（承载词间间距与多空格序列）
                         result.push(" ".to_string());
                     } else if is_per_char_break_script(ch) {
                         // CJK / R645 SEA 词典分词文字单独作为一个单词
                         if !current_word.is_empty() {
-                            result.push(format!("{current_word} "));
+                            result.push(current_word.clone());
                             current_word.clear();
                         }
                         result.push(ch.to_string());
@@ -2048,7 +2096,9 @@ impl InlineFormattingContext {
                     }
                 }
                 if !current_word.is_empty() {
-                    result.push(format!("{current_word} "));
+                    // 段末词不带尾部空格：源行以换行符（强制断行）或文本结尾收尾，
+                    // 行尾空白由 phase II 的 hanging 处理，无需在此追加。
+                    result.push(current_word.clone());
                 }
             }
             if result.is_empty() {

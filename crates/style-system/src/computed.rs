@@ -44,7 +44,9 @@ pub fn resolve_length(
             v * vw.max(vh) / 100.0
         }
         LengthValue::Ch(v) => {
-            // 近似：1ch ≈ 0.5em
+            // 近似：1ch ≈ 0.5em（真实 1ch = '0' 字形 advance，须 font-stack C-dep；
+            // Ahem/monospace 真 ch=1.0em，0.5em 对 Ahem 偏小致 pre-wrap-align 等容器宽度偏窄，
+            // 但全局改 1.0em 净 −7 非-Ahem ch 案，故保留 0.5em 默认——见 R1338 evidence）
             v * font_size * 0.5
         }
         // 百分比值不在此处解析，由布局引擎根据容器尺寸处理

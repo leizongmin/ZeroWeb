@@ -658,6 +658,91 @@ fn test_white_space_pre_wrap_preserves_and_wraps() {
     assert!(all_text.contains("  "), "pre-wrap 模式应保留多空格");
 }
 
+/// R1338：pre-wrap 词间应为**单**空格（非双空格）。
+///
+/// 回归用例：`split_into_words` 的 preserve 分支旧实现给每个词追加 `format!("{w} ")`
+/// 尾随空格 + 又 push 独立 " " → 词间双空格。修复后词不带尾随空格，间距完全由独立
+/// " " 片段承载。Ahem 20px：`a` 与 `b` 之间的水平间距应 = 1 个空格宽（20px），非 40px。
+#[test]
+fn r1338_prewrap_single_interword_space() {
+    let run = TextRun {
+        text: "a b".to_string(),
+        node_id: NodeId::default(),
+        font_size: 20.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: true,
+        font_id: None,
+    };
+    let mut ctx = InlineFormattingContext::new(800.0).with_preserve_whitespace(true);
+    ctx.break_into_lines(vec![run]);
+    let line = &ctx.lines[0];
+    // 找到 "a" 与 "b" 片段
+    let a = line.runs.iter().find(|r| r.text == "a").expect("a 片段");
+    let b = line.runs.iter().find(|r| r.text == "b").expect("b 片段");
+    let gap = b.x - (a.x + a.width);
+    assert!(
+        (gap - 20.0).abs() < 0.5,
+        "pre-wrap 词间应为单空格 (20px)，实际 gap={gap:.1}（双空格 bug 回归？）"
+    );
+}
+
+/// R1338：pre-wrap + text-align:right 下行尾保留空格应 "hang"（CSS Text §3.1.4 phase II）。
+///
+/// 复现 pre-wrap-align-right-001：Ahem 20px，容器 15ch=300px，pre-wrap，right 对齐。
+/// 内容 "one two three four five" 在 300px 内换行：行 0 = "one two three" + 换行点
+/// 尾随空格。期望：可见内容（"three" 右缘）贴容器右缘（x≈300），尾随空格 hang 到
+/// 行缘外（x≥300）。旧实现把尾随空格计入 content_width → 内容整体左移 1 空格。
+#[test]
+fn r1338_prewrap_right_align_trailing_space_hangs() {
+    let run = TextRun {
+        text: "one two three four five".to_string(),
+        node_id: NodeId::default(),
+        font_size: 20.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: true,
+        font_id: None,
+    };
+    let mut ctx = InlineFormattingContext::new(300.0)
+        .with_preserve_whitespace(true)
+        .with_text_align(TextAlign::Right);
+    ctx.break_into_lines(vec![run]);
+    // 行 0 应包含 "three"（换行点在 three 之后）
+    let line0 = &ctx.lines[0];
+    let three = line0.runs.iter().find(|r| r.text == "three").expect("行 0 应含 three");
+    // 可见内容右缘应贴容器右缘（300），误差 < 半个 Ahem 像素
+    let three_right = three.x + three.width;
+    assert!(
+        (three_right - 300.0).abs() < 0.5,
+        "right-align 后 'three' 右缘应=300（hang），实际={three_right:.1}（尾随空格未 hang）"
+    );
+    // 行 0 末片段应为尾随空格，且其 x ≥ 300（hang 到行缘外）
+    let last = line0.runs.last().expect("行 0 应有片段");
+    assert!(
+        last.text.trim().is_empty() && last.x >= 299.5,
+        "行 0 末应为悬挂空格 x≥300，实际 text={:?} x={:.1}",
+        last.text,
+        last.x
+    );
+}
+
 /// 测试 white-space: pre / pre-wrap 下显式换行符 `\n` 强制换行。
 ///
 /// 回归用例：`split_into_words` 在 preserve_whitespace 模式下为每个 `\n`
