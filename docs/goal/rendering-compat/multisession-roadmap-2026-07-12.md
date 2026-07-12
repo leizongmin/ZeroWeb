@@ -1,6 +1,6 @@
 # 渲染兼容性 rally — 多 session 架构 roadmap（plateau 后攻击计划）
 
-**日期**: 2026-07-12（R1311-R1315 收敛后；R1346-R1348 更新）
+**日期**: 2026-07-12（R1311-R1315 收敛后；R1346-R1348c 更新）
 **状态**: plateau firm，aggregate chromium-oracle ~55%（DC-2~5 目标 ≥95% 远未达）
 **目的**: 单 session clean lever 穷尽后，剩余 yield 全在多 session 架构 / C-dep。本文档汇总各 lever 的 blocker / 可行性 / yield / 攻击顺序，供后续 session 增量推进。
 
@@ -32,6 +32,21 @@
   下一步：补 a/b 分配变体 → 据 empirical 模型重写 try_layout_nested_spanner（紧 gate + 全量
   chromium A/B）。详见 [`evidence/r1348-empirical-multicol-infra-groundtruth-2026-07-12.txt`](./evidence/r1348-empirical-multicol-infra-groundtruth-2026-07-12.txt)
   + `empirical/multicol-section-height/measured-data.txt`。
+- **★ R1348c multicol 嵌套 spanner = LayoutNG balancing 移植（multi-session 定性）**：补 4
+  基础变体（M/N = 0-span 单 block 基线；L/O = 1-span 双 block），共 **12 变体 PIL ground
+  truth**。决定性发现：**container 渲染高度 = Σ region_heights + spans，无 closed-form**——
+  每 region 高度是 chromium LayoutNG multicol balancing（binary search 列高 + fragmentation）
+  的输出。列填充模式：定 definite-H + 无 span → content<<H 时 auto/sequential（M: 200/0），
+  边界 balance（N: 100/100）；有 span → 各 region balance 到 content/N，末 region 进 binary
+  search（L block200 A=300 → 125/75；O block200 A=200 → 100/100；同 block 不同 A 不同 split，
+  无 clean formula）。**裁决：正确实现 = 移植 chromium LayoutNG balancing 算法（multi-session
+  porting）**；R1341 content-driven +3 flip 是现实近似 yield，精确匹配（~40+ flip + 004a/004b
+  残余 19%）须完整 balancing 移植。★ empirical 解除 R1344/R1345 understanding block（ground
+  truth 可靠，纠正 R1345 误读），implementation 是 well-scoped porting 任务。详见
+  [`evidence/r1348c-multicol-balancing-layoutng-port-2026-07-12.txt`](./evidence/r1348c-multicol-balancing-layoutng-port-2026-07-12.txt)
+  + `empirical/multicol-section-height/measured-data.txt`（12 变体 + findings）。
+
+---
 
 ---
 

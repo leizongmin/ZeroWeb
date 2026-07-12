@@ -1,43 +1,66 @@
-EMPIRICAL MULTICOL SECTION-HEIGHT GROUND TRUTH (chromium 150, 2026-07-12)
-structure: article{column-count:N width:400} > container{height:H bg:magenta}
-           > block1(R)/span1(Y)/block2(L)/span2(Y)/block3(B); blocks width100, spans col-span:all h50
+EMPIRICAL MULTICOL SECTION-HEIGHT GROUND TRUTH (chromium 150, 2026-07-12, 12 variants)
+structure: article{column-count:N width:400} > container{height:H bg:magenta} > blocks(spans)
+blocks width100 distinct colors (R/L/B), spans column-span:all h50 (Y). body margin:0.
 
---- variant-A-H450-b200-c2: container rendered = 350px ---
+variant-A-H450-b200-c2 [2span 3xblock200]: container rendered = 350px
   col0: R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
   col1: R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
 
---- variant-B-H350-b200-c2: container rendered = 250px ---
+variant-B-H350-b200-c2 [2span 3xblock200]: container rendered = 250px
   col0: R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
   col1: R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
 
---- variant-C-H550-b200-c2: container rendered = 400px ---
+variant-C-H550-b200-c2 [2span 3xblock200]: container rendered = 400px
   col0: R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
   col1: R[0-100](h100) Y[100-150](h50) L[150-250](h100) Y[250-300](h50) B[300-400](h100)
 
---- variant-D-H450-b100-c2: container rendered = 325px ---
+variant-D-H450-b100-c2 [2span 3xblock100]: container rendered = 325px
   col0: R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) B[200-300](h100) M[300-325](h25)
   col1: R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) M[200-325](h125)
 
---- variant-E-H450-b400-c2: container rendered = 300px ---
+variant-E-H450-b400-c2 [2span 3xblock400]: container rendered = 300px
   col0: R[0-200](h200) Y[200-250](h50) L[250-450](h200) Y[450-500](h50) B[500-700](h200)
   col1: R[0-200](h200) Y[200-250](h50) L[250-450](h200) Y[450-500](h50) B[500-700](h200)
 
---- variant-F-H450-b200-c3: container rendered = 283px ---
+variant-F-H450-b200-c3 [2span 3xblock200 3col]: container rendered = 283px
   col0: R[0-67](h67) Y[67-117](h50) L[117-183](h66) Y[183-233](h50) B[233-300](h67)
   col1: R[0-67](h67) Y[67-117](h50) L[117-183](h66) Y[183-233](h50) B[233-300](h67)
   col2: R[0-67](h67) Y[67-117](h50) L[117-183](h66) Y[183-233](h50) B[233-300](h67)
 
---- variant-J-H350-b100-c2: container rendered = 275px ---
+variant-J-H350-b100-c2 [2span 3xblock100]: container rendered = 275px
   col0: R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) B[200-275](h75)
   col1: R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) B[200-225](h25) M[225-275](h50)
 
---- variant-K-H250-b100-c2: container rendered = 250px ---
+variant-K-H250-b100-c2 [2span 3xblock100]: container rendered = 250px
   col0: R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) B[200-250](h50)
   col1: R[0-50](h50) Y[50-100](h50) L[100-150](h50) Y[150-200](h50) B[200-250](h50)
 
-=== REGION-c (last region, block3) MODEL: available A = H - (a+b) - 2*span ===
-  block3=100, N=2 cols:
-  A=250 (H450): col0=100,col1=0  -> content(100)<=A, fills col0 fully, NO balance
-  A=150 (H350): col0=75, col1=25  -> content>A/2, spills; region height=A/2=75
-  A=50  (H250): col0=50, col1=50  -> content(100)>A, FORCED to balance, region=A=50
-==> last region: balances (content/N each) when content>A; else sequential fill capped at A
+variant-L-H450-b200-1span-c2 [1span 2xblock200]: container rendered = 275px
+  col0: R[0-100](h100) Y[100-150](h50) L[150-275](h125)
+  col1: R[0-100](h100) Y[100-150](h50) L[150-225](h75) M[225-275](h50)
+
+variant-O-H350-b200-1span-c2 [1span 2xblock200]: container rendered = 250px
+  col0: R[0-100](h100) Y[100-150](h50) L[150-250](h100)
+  col1: R[0-100](h100) Y[100-150](h50) L[150-250](h100)
+
+variant-M-H450-b200-nospan-c2 [0span 1xblock200]: container rendered = 225px
+  col0: R[0-200](h200) M[200-225](h25)
+  col1: M[0-225](h225)
+
+variant-N-H200-b200-nospan-c2 [0span 1xblock200 H=block]: container rendered = 100px
+  col0: R[0-100](h100)
+  col1: R[0-100](h100)
+
+======================================================================
+ALGORITHM FINDINGS (R1348c, 2026-07-12):
+1. container rendered height = sum(region_heights) + spans. NO closed-form;
+   each region_height is the OUTPUT of chromium LayoutNG multicol balancing.
+2. column-fill mode: definite-H + no-span -> auto/sequential when content<<H
+   (M: col0=200,col1=0); balances at boundary (N: 100/100). With spans, each
+   region balances (indefinite region height from container budget).
+3. region splits are LayoutNG binary-search results, not clean formulas
+   (L last region: 125/75; O last region: 100/100 — both block200, differ by H).
+4. => nested-spanner correct impl = PORT chromium LayoutNG balancing algorithm
+   (binary search column height per region + fragmentation). Multi-session.
+   R1341 content-driven (+3 flip) is the realistic approximation yield;
+   exact match needs the full balancing port.

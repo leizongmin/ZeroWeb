@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>empirical multicol O: H=350 block1(200)+span(50)+block2(200), 1 span, col-count=2</title>
+<style>
+  article { column-count: 2; width: 400px; column-gap: 0; background-color: white; }
+  div.container { height: 350px; background-color: magenta; }
+  div.block { width: 100px; background-color: red; height: 200px; }
+  div.b2 { background-color: lime; }
+  div.column-span { column-span: all; height: 50px; background-color: yellow; }
+  body { margin: 0; }
+</style>
+</head>
+<body>
+<article>
+  <div class="container">
+    <div class="block">1</div>
+    <div class="column-span">span1</div>
+    <div class="block b2">2</div>
+  </div>
+</article>
+</body>
+</html>
