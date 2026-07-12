@@ -1391,6 +1391,7 @@ impl LayoutEngine {
             scroll_y: 0.0,
             is_flow_root,
             is_multicol,
+            is_nested_spanner_wrapper: false,
             is_layout_container,
             had_clearance: false,
             clearance_active: false,

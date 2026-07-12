@@ -284,6 +284,26 @@ fn has_descendant_spanner(box_node: &LayoutBox, styles: &HashMap<NodeId, Compute
     false
 }
 
+/// R1352：检测一个盒的**直接子**（非后代）中是否存在 column-span:all 元素（in-flow）。
+///
+/// 与 `has_descendant_spanner` 区别：仅查一层直接子，不下钻。用于 R1341
+/// `try_layout_nested_spanner` 的 gate——仅当 spanner 是 wrapper 的**直接子**时才触发
+/// synthetic 碎片化，因为 painter 的 nested-spanner-wrapper 列循环（`paint_as_multicol`）
+/// 把 wrapper 直接子当列片段绘；spanner 嵌在更深层（如 `wrapper > div > div(spanner)`）
+/// 时 painter 找不到直接子 spanner 全宽插入 → 渲染错（R1351
+/// remove-transform-descendant-becomes-spanner 回归）。tight gate 把这类 deep-nesting
+/// 案留给后续多会话，先正确处理 direct-child-spanner（004a/004b 结构）。
+fn has_direct_spanner_child(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    box_node.children.iter().any(|c| {
+        if c.is_absolute || c.is_fixed {
+            return false;
+        }
+        c.node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All))
+    })
+}
+
 /// R1341：嵌套 spanner wrapper-fragmentation（首版：synthetic-container + 位置回填）。
 ///
 /// 当 multicol 容器的**非 spanner 直接子**（wrapper）含 column-span:all 后代时，wrapper
@@ -408,14 +428,22 @@ fn try_layout_nested_spanner(
 
     // 回填位置到真实 wrapper 子（补偿 wrapper 偏移 dx/dy）。
     let wrapper = &mut container.children[wrapper_idx];
+    // R1352：painter 列循环（paint_as_multicol）+ column_span_offsets 传播**仅当 spanner 是
+    // wrapper 的直接子**时启用。direct-child-spanner（004a/004b 结构）painter 能把直接子当列
+    // 片段正确绘；deep-nesting（spanner 是孙辈，如 remove-transform-descendant 的 #elm>div>div）
+    // painter 找不到直接子 spanner 全宽插入 → 渲染错。故 deep-nesting 走 baseline 路径（仅
+    // x/y 回填，不设 flag、不传 cso），保留 R1341 的 0.63% 行为；direct-child 才启用 R1343
+    // painter-core 改进。
+    let enable_painter_core = has_direct_spanner_child(wrapper, styles);
+    wrapper.is_nested_spanner_wrapper = enable_painter_core;
     for (synth_i, &real_i) in eff_indices.iter().enumerate() {
-        let (sx, sy, sw, is_spanner) = {
+        let (sx, sy, sw, is_spanner, cso) = {
             let s = &synth.children[synth_i];
             let is_spanner = s
                 .node_id
                 .and_then(|id| styles.get(&id))
                 .is_some_and(|st| matches!(st.column_span, ColumnSpanComputedValue::All));
-            (s.x, s.y, s.width, is_spanner)
+            (s.x, s.y, s.width, is_spanner, s.column_span_offsets.clone())
         };
         let r = &mut wrapper.children[real_i];
         r.x = sx - dx;
@@ -425,7 +453,18 @@ fn try_layout_nested_spanner(
             // 按 block 渲染（同 layout_multicol_with_spanners line 597）。
             r.width = sw;
             r.column_span_offsets.clear();
+        } else if enable_painter_core {
+            // R1352 R1343：breaking 子（跨列拆分的 block）须把 synthetic 算出的
+            // column_span_offsets 传播给真实 wrapper 子，否则 painter 只绘首片段（col0）。
+            // 坐标：wrapper 经 R1341 no_box gate（无 border/padding），synthetic 为 article
+            // clone；片段位置按 wrapper 偏移 (-dx/-dy) 平移到 wrapper-content 系（与
+            // r.x = sx - dx 同变换）；col_w/col_h 不变。
+            r.column_span_offsets = cso
+                .iter()
+                .map(|&(fx, fy, cx, cw, ct, ch)| (fx - dx, fy - dy, cx - dx, cw, ct - dy, ch))
+                .collect();
         }
+        // else（deep-nesting, !enable_painter_core）：保留 baseline——仅 x/y 回填，不动 cso。
     }
     true
 }
@@ -1553,5 +1592,82 @@ mod tests {
         assert_eq!(cols.len(), 2);
         assert!(cols[0].iter().any(|f| f.child_idx == 0));
         assert!(cols[1].iter().any(|f| f.child_idx == 1));
+    }
+
+    /// R1352：`has_descendant_spanner`（DFS 后代）vs `has_direct_spanner_child`（仅直接子）
+    /// 的关键语义差异——这是 R1352 修复 remove-transform-descendant 回归的 gate 核心。
+    ///
+    /// - **direct-child spanner**（004a/004b 结构：wrapper > spanner）：两函数都 true，
+    ///   `enable_painter_core` = true，painter 跑列循环 + cso 传播 → block 分布修对。
+    /// - **grandchild spanner**（remove-transform：wrapper > div > div(spanner)）：descendant
+    ///   = true（仍触发 try_layout_nested_spanner 做 baseline x/y 回填），但 direct-child =
+    ///   false → `enable_painter_core` = false → 不设 flag、不传 cso、painter 不跑列循环 →
+    ///   保留 R1341 baseline 0.63%（避 painter 误处理 deep-nesting spanner 的回归）。
+    #[test]
+    fn test_r1352_direct_vs_descendant_spanner_gate() {
+        use zero_dom::Document;
+        let mut doc = Document::new();
+        // 分配 distinct NodeId（slotmap 保证唯一）。
+        let wrapper_id = doc.create_element("div");
+        let child_id = doc.create_element("div");
+        let grandchild_id = doc.create_element("div");
+        let spanner_id = doc.create_element("div");
+
+        // 场景 1：grandchild spanner（remove-transform 结构 wrapper > child > grandchild-spanner）。
+        let mut style_spanner = ComputedStyle::default();
+        style_spanner.column_span = ColumnSpanComputedValue::All;
+        let styles_deep = HashMap::from([(grandchild_id, style_spanner)]);
+        let mut child = LayoutBox {
+            node_id: Some(child_id),
+            ..Default::default()
+        };
+        child.children.push(LayoutBox {
+            node_id: Some(grandchild_id),
+            ..Default::default()
+        });
+        let mut wrapper = LayoutBox {
+            node_id: Some(wrapper_id),
+            ..Default::default()
+        };
+        wrapper.children.push(child);
+        // descendant gate 命中（spanner 是后代）→ try_layout_nested_spanner 仍触发做 x/y 回填。
+        assert!(
+            has_descendant_spanner(&wrapper, &styles_deep),
+            "descendant gate must fire for grandchild spanner (baseline x/y backfill)"
+        );
+        // direct-child gate 不命中（spanner 非直接子）→ enable_painter_core=false，避 painter 回归。
+        assert!(
+            !has_direct_spanner_child(&wrapper, &styles_deep),
+            "direct-child gate must NOT fire for grandchild spanner (R1352 regression fix)"
+        );
+
+        // 场景 2：direct-child spanner（004a 结构 wrapper > spanner）。两 gate 都命中。
+        let styles_direct = HashMap::from([(spanner_id, {
+            let mut s = ComputedStyle::default();
+            s.column_span = ColumnSpanComputedValue::All;
+            s
+        })]);
+        let mut wrapper2 = LayoutBox {
+            node_id: Some(wrapper_id),
+            ..Default::default()
+        };
+        wrapper2.children.push(LayoutBox {
+            node_id: Some(spanner_id),
+            ..Default::default()
+        });
+        assert!(
+            has_descendant_spanner(&wrapper2, &styles_direct),
+            "descendant gate must fire for direct-child spanner"
+        );
+        assert!(
+            has_direct_spanner_child(&wrapper2, &styles_direct),
+            "direct-child gate must fire for direct-child spanner (004a/004b case)"
+        );
+
+        // 场景 3：无 spanner → 两 gate 都 false。
+        let wrapper3 = LayoutBox::default();
+        let empty_styles = HashMap::new();
+        assert!(!has_descendant_spanner(&wrapper3, &empty_styles));
+        assert!(!has_direct_spanner_child(&wrapper3, &empty_styles));
     }
 }

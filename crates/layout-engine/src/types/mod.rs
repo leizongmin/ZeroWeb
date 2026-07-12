@@ -137,6 +137,13 @@ pub struct LayoutBox {
     /// 是否为多列容器（column-count 或 column-width 非 auto）。
     /// 多列容器建立 BFC，阻止与子元素的 margin 折叠（CSS §2）。
     pub is_multicol: bool,
+    /// R1352 R1343：本盒是否为 **nested-spanner wrapper**——非 multicol 容器，但 R1341
+    /// `try_layout_nested_spanner` 已把其 in-flow 子作为 multicol 列片段重定位（设了
+    /// `column_span_offsets`）。painter 据此对该 wrapper 跑列循环（按 `column_span_offsets`
+    /// 逐片段绘其子），使 depth-2 breaking 子（跨列拆分的 block）能分布于各列而非只绘 col0。
+    /// 精确 gate（仅 R1341 wrapper），排除普通 multicol breaking 子路径（避 deep-nesting
+    /// regression，R1351 remove-transform-descendant 用 any_child_has_cso 误触）。
+    pub is_nested_spanner_wrapper: bool,
     /// 是否为布局容器（flex/grid/table）。
     /// 布局容器建立 BFC（CSS Flexbox §3, CSS Grid §3），
     /// 其子元素由各自的布局算法定位，不走 IFC。
@@ -381,6 +388,7 @@ impl Default for LayoutBox {
             scroll_y: 0.0,
             is_flow_root: false,
             is_multicol: false,
+            is_nested_spanner_wrapper: false,
             is_layout_container: false,
             had_clearance: false,
             clearance_active: false,

@@ -736,6 +736,10 @@ impl Painter {
         // 此处对「非 positioned 的 overflow 元素」把 abspos/fixed 子元素移到 overflow
         // 裁剪之后绘制（positioned overflow 元素保持原行为，避免 z-order 回归）。
         let is_multicol = box_node.is_multicol;
+        // R1352 R1343：nested-spanner wrapper（R1341 标 is_nested_spanner_wrapper）须按
+        // multicol 方式绘其子（breaking 子按 column_span_offsets 逐片段绘）。精确 flag gate
+        //（仅 R1341 wrapper），区别于 R1351 any_child_has_cso（误触 deep-nesting regression）。
+        let paint_as_multicol = is_multicol || box_node.is_nested_spanner_wrapper;
         let self_positioned = box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky;
         let defer_abspos = needs_clip && !self_positioned && !is_multicol;
 
@@ -772,7 +776,7 @@ impl Painter {
 
         // steps 3/4/5：in-flow / float（仅非 positioned 子元素；positioned 由 scope flush 处理）
         for child_idx in ordered_child_indices(&box_node.children, |child| {
-            (!is_multicol || child.column_span_offsets.is_empty())
+            (!paint_as_multicol || child.column_span_offsets.is_empty())
                 && (!defer_abspos || (!child.is_absolute && !child.is_fixed))
                 && !is_positioned_child(child)
         }) {
@@ -806,7 +810,8 @@ impl Painter {
         // 每个子元素在分配到的列位置渲染，裁剪到「列宽度 + 右半间隙」范围，
         // 允许内容延伸到列间隙但不进入相邻列。
         // 对于 column breaking 的子元素（多个片段），每个片段额外裁剪到列高。
-        if is_multicol {
+        // R1352：paint_as_multicol 覆盖 nested-spanner wrapper（is_nested_spanner_wrapper）。
+        if paint_as_multicol {
             let content_x = abs_x + box_node.border_left + box_node.padding_left;
             let content_y = abs_y + box_node.border_top + box_node.padding_top;
 
