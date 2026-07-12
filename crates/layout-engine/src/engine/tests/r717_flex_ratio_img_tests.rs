@@ -712,3 +712,53 @@ fn r1366_padded_item_cross_fix_skipped() {
     // 有 padding → cross-fix 跳过（不强制 cross=parent_cross）。仅断言不 panic + img 存在（守护 gate）。
     let (_w, _h) = find_box(&result.root, img_id).expect("img box found");
 }
+
+/// R1369：definite-width BFC（如 flex 容器）与 float 垂直重叠且 overflow 容器（不 fit beside）
+/// 时，应推到 float 下方（CSS §9.5：BFC border-box 不重叠 float；definite 宽度保持不 shrink）。
+/// 驱动案 flexbox_fbfc（14.38%→1.38%，geometry 修正；残余 1.38% = `<p>`/内文 font-wall）：
+/// `<div float:left width:150>` + `<div flex width:480>`（容器宽 600，150+480>600 不 fit）。
+/// 旧 ZW 把 flex 推到 float 右 x=150 并 shrink-to-fit（错）；taffy 0.12 native float 也推到
+/// x=150。R1369 在 ZW 后处理 exclusion 的 `avoidance_x > child.x` **之外**做 fit-check，
+/// 把 definite-width overflow BFC 推到 float 下方（y=float_bottom，x 回 margin_left）。
+#[test]
+fn r1369_definite_bfc_overflow_float_goes_below() {
+    let html = r#"<html><body style="margin:0; width:600px;">
+<div id="float" style="background:blue; width:150px; float:left; height:40px;"></div>
+<div id="flex" style="background:yellow; width:480px; display:flex;">
+  <div style="background:pink; height:40px;"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(600.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let flex_id = doc.get_element_by_id("flex").expect("flex");
+    let mut engine = LayoutEngine::new(600.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, HashMap::new(), HashMap::new());
+    let (fx, fy, fw) = {
+        let mut stack = vec![&result.root];
+        let mut r = None;
+        while let Some(b) = stack.pop() {
+            if b.node_id == Some(flex_id) {
+                r = Some((b.x, b.y, b.width));
+                break;
+            }
+            stack.extend(b.children.iter());
+        }
+        r.expect("flex box")
+    };
+    // flex(480) 不 fit beside float(150)（150+480>600）→ 推到 float 下方：x=0（回 margin_left），
+    // y=40（float_bottom），width=480 保持（非 shrink 到 450）。
+    assert!(
+        (fx - 0.0).abs() < 2.0,
+        "R1369: definite-width BFC overflow float 应回 x=0（非停留 float 右 x=150），got fx={fx}"
+    );
+    assert!(
+        (fy - 40.0).abs() < 2.0,
+        "R1369: BFC 应推到 float 下方 y=40（float_bottom），got fy={fy}"
+    );
+    assert!(
+        (fw - 480.0).abs() < 2.0,
+        "R1369: BFC 宽度应保持 480（非 shrink 到 450），got fw={fw}"
+    );
+}

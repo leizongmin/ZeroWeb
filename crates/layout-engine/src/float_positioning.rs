@@ -596,6 +596,17 @@ pub(crate) fn adjust_float_positions_with_context(
             })
             .collect();
 
+        // R1369：预计算每个子是否有「后续 in-flow block 同胞」（definite-width BFC 推到 float
+        // 下方时，若有后续 block 同胞会留空隙/错位 → 仅无后续同胞时才安全推下）。
+        let n_children = box_node.children.len();
+        let has_following_block_sibling: Vec<bool> = (0..n_children)
+            .map(|i| {
+                box_node.children[i + 1..]
+                    .iter()
+                    .any(|s| s.is_block_level && !s.is_absolute && !s.is_fixed && matches!(s.float, FloatValue::None))
+            })
+            .collect();
+
         for (idx, child) in box_node.children.iter_mut().enumerate() {
             child_float_contexts[idx] = (active_left_float_bottom, active_right_float_bottom);
             if child.is_absolute || child.is_fixed {
@@ -782,7 +793,24 @@ pub(crate) fn adjust_float_positions_with_context(
                             // 左浮动：将 BFC 元素推到浮动元素的 margin-box 右侧
                             // float_x 是边框盒左边，加上边框宽度和右 margin
                             let avoidance_x = float_x + float_border_w + float_margin_r;
-                            if avoidance_x > child.x {
+                            // R1369：definite-width BFC（width 未填满容器）若 overflow 容器
+                            //（child.x + width > container_width），应推到 float 下方（CSS §9.5：
+                            // BFC border-box 不重叠 float；definite 宽度保持不 shrink）。
+                            // **关键**：taffy 0.12 native float 可能已把 BFC 推到 float 右
+                            //（child.x == avoidance_x），故本检查须在 `avoidance_x > child.x`
+                            // 之外做（否则 taffy 已推时整块 skip）。auto-width BFC（填满容器）
+                            // 仍走 shrink-to-fit（else 分支）。仅无后续 in-flow block 同胞时推下。
+                            let overflows = child.x + child.width > container_width + 0.5;
+                            let is_definite_width = child.width < container_width - 0.5;
+                            if overflows && is_definite_width && !has_following_block_sibling[idx] {
+                                if float_bottom > child.y {
+                                    child.y = float_bottom;
+                                }
+                                // 回正常流位置（taffy float push 前）：block border-box 左 =
+                                // 父 content-box 左 + margin_left（child.x 相对父 content-box）。
+                                child.x = child.margin_left;
+                            } else if avoidance_x > child.x {
+                                // taffy 未推 → ZW 推到 float 右 + shrink-to-fit（原行为）
                                 child.x = avoidance_x;
                                 // 缩小宽度以不超出容器
                                 let max_width = container_width - child.x;
