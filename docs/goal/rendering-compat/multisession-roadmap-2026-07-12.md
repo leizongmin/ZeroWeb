@@ -45,6 +45,16 @@
   truth 可靠，纠正 R1345 误读），implementation 是 well-scoped porting 任务。详见
   [`evidence/r1348c-multicol-balancing-layoutng-port-2026-07-12.txt`](./evidence/r1348c-multicol-balancing-layoutng-port-2026-07-12.txt)
   + `empirical/multicol-section-height/measured-data.txt`（12 变体 + findings）。
+- **R1348d LayoutNG balancing research（chromium 设计文档 + spec，源码 zread 受 auth 限）**：
+  research agent 确认算法为**迭代 balancing**（初猜 content/N，按 overflow/space-shortage
+  迭代精化，非 closed-form），证 R1348c 结论。★ **关键可实施 insight**：核心是 **column-fill
+  auto vs balance 切换**——definite height + content fit 进更少列 → auto（顺序填 col0）；
+  auto-height 或 content 溢出 → balance（迭代均分）。flow-thread 模型（单条带 layout → 列
+  映射）。Phase 1 实现起点：port 迭代 balancing（input: content items + available + N →
+  output: column_height + per-col 分配）+ auto/balance 切换，dead 模块 + 单测对 12 empirical
+  点验证（D 100/0 auto / J 75/25 binary-search / K 50/50 balance-force / L 125/75）。chromium
+  源码 `third_party/blink/renderer/core/layout/ng/multicol/ng_*_layout_algorithm.cc` 须手工读
+  （zread 受 auth 限，下 session 可 git clone chromium 局部读或 WebSearch 精确片段）。
 
 ---
 
