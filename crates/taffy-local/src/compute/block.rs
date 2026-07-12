@@ -1015,7 +1015,18 @@ fn perform_final_layout_on_in_flow_children(
             };
 
             #[cfg(feature = "float_layout")]
-            let float_or_not_clear = item.float.is_floated() || item.clear == Clear::None;
+            let float_or_not_clear = {
+                // R1331 CSS §8.3.1 fix: it is *clearance* (not the `clear` property itself)
+                // that prevents margin collapse-through. A cleared element in a BFC with NO
+                // floats at all has no clearance applied and collapses through normally. The
+                // old `item.clear == Clear::None` gate wrongly blocked collapse-through for
+                // every cleared element (e.g. margin-collapse-clear-016: clear:both with no
+                // float should collapse through → parent height 100 not 200). Gate on
+                // `!has_floats()` (truly no floats in the BFC) — NOT `clear_pos <= 0.0`,
+                // which misfires for zero-extent floats (0×1 float bottom = 0; that gate
+                // wrongly treated margin-collapse-033/034/035 as no-float and regressed them).
+                item.float.is_floated() || item.clear == Clear::None || !block_ctx.has_floats()
+            };
             #[cfg(not(feature = "float_layout"))]
             let float_or_not_clear = true;
 
