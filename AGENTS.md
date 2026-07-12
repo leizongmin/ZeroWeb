@@ -239,6 +239,36 @@ tests/
 
 > 本仓库已选定入口与阈值，见 [`docs/rally/run-rules.md`](docs/rally/run-rules.md)（`make test` / `make reftest`，经 `scripts/test-guard.rs` 包裹）与 [`docs/rally/oom-guard.md`](docs/rally/oom-guard.md)。
 
+## 经验沉淀
+
+在日常排查问题、修复 bug 以及开发新功能的过程中，如果发现了可积累的技术经验（如踩坑根因、平台差异、性能优化手段、可复用代码模式等），应主动将经验总结并保存到 `docs/learnings/` 目录下，供后续查阅参考。
+
+### 触发场景
+
+满足以下任一条件时，应主动沉淀经验：
+- 经过深入排查才定位的 bug 根因及修复方案
+- 平台/环境相关的坑点
+- 可复用的代码模式或最佳实践
+- 性能优化的有效手段
+- 工具链/构建系统的使用技巧
+
+### 不触发场景
+
+以下情况不需要沉淀：
+- 简单的拼写错误或语法修复
+- 仅服务于当前一次性任务的临时方案
+- 属于 agent 行为规则的内容（应走 `lei-self-evolution` 流程，写入 `AGENTS.md` / `TOOLS.md` / `MEMORY.md`）
+
+### 产出位置
+
+经验文件统一放在 `docs/learnings/` 目录下，按类型分目录：
+- `docs/learnings/bugs/` — 踩坑记录（根因 + 修复 + 如何避免）
+- `docs/learnings/patterns/` — 可复用代码模式、最佳实践
+- `docs/learnings/platform/` — 平台相关经验
+- `docs/learnings/performance/` — 性能优化经验
+
+每条经验一个 `.md` 文件，文件名简洁描述主题（如 `wsl-clipboard-empty.md`）。文件内容应包含：日期、相关模块、问题描述、根因分析、解决方案。
+
 ## 自进化（Self-Evolution）
 
 当发现**可复用、长期有效、可执行**的经验（agent 行为规则、协作方式、工作流、工具坑点、用户偏好等），应通过自进化流程将其固化为长期规则，而非只在本次对话内解决。完整流程见 `lei-self-evolution` skill，以下为本仓必须遵守的边界。
