@@ -284,6 +284,169 @@ fn has_descendant_spanner(box_node: &LayoutBox, styles: &HashMap<NodeId, Compute
     false
 }
 
+/// R1341：嵌套 spanner wrapper-fragmentation（首版：synthetic-container + 位置回填）。
+///
+/// 当 multicol 容器的**非 spanner 直接子**（wrapper）含 column-span:all 后代时，wrapper
+/// 应被「碎片化」——其内容参与 multicol 列流，spanner 跨全宽（CSS Multicol §6.1）。
+/// R1336 诊断 ZW 当前把 wrapper 当单个非 spanner 子整体平衡（嵌套 spanner 不检测）。
+///
+/// **首版（gate 紧）**：仅当 wrapper 是容器的**唯一 in-flow 直接子**。建 synthetic
+/// container（clone article，children 替换为 wrapper 的 in-flow 子 clone），跑现有
+/// `layout_multicol_with_spanners`（区域分割 + 列平衡 + spanner 全宽插入），再把位置
+/// 回填到真实 wrapper 子（补偿 wrapper 偏移 dx=wrapper.x+content_x）。spanner 子宽设为
+/// article content_width（taffy 未在 article 全宽拉伸过）。
+///
+/// **已知局限**：wrapper 背景不分列铺（painter 侧 bg 仍按 wrapper 单盒涂）→ bg-less
+/// wrapper 案可 flip；含 bg 案（如 004a pink）残余 bg diff，须后续 painter region 分段。
+/// 多 wrapper / wrapper 非唯一子 / 深层嵌套未处理（gate 排除）。
+///
+/// 返回 true 表示已处理（`layout_multicol` 跳过常规路径）。
+/// kill-switch default-on（`ZW_MULTICOL_NESTED_SPANNER=0` 关闭回退常规行为）。
+fn try_layout_nested_spanner(
+    container: &mut LayoutBox,
+    info: &ColumnInfo,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> bool {
+    if std::env::var("ZW_MULTICOL_NESTED_SPANNER").as_deref() == Ok("0") {
+        return false;
+    }
+    // R1341 gate：fragmentation 仅 2+ 列（1 列无须碎片化；multicol-span-all-children-height-008
+    // column-count:1 回归）+ balance 模式（sequential fill + spanner 未支持，同 R1028/R1035
+    // balance-only；multicol-span-all-017/parallel-flow-after-spanner-001 回归）。
+    if info.count < 2 || info.sequential_fill {
+        return false;
+    }
+    // gate：唯一 in-flow 直接子。
+    let in_flow: Vec<usize> = container
+        .children
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| !c.is_absolute && !c.is_fixed)
+        .map(|(i, _)| i)
+        .collect();
+    if in_flow.len() != 1 {
+        return false;
+    }
+    let wrapper_idx = in_flow[0];
+    // 收集 wrapper 信息（作用域隔离借用）：含嵌套 spanner？in-flow 子 idx？偏移？
+    let nested: Option<(Vec<usize>, f32, f32)> = {
+        let wrapper = &container.children[wrapper_idx];
+        let ws = wrapper.node_id.and_then(|id| styles.get(&id));
+        let wrapper_is_spanner = ws.is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
+        // wrapper 自身是 multicol 容器（nested multicol）→ 其后代 spanner 属于该嵌套
+        // multicol（由其自身 layout_multicol 处理），非外层 wrapper-fragmentation 场景。
+        // 否则会误把嵌套 multicol 的 spanner 提升到外层（spanner-fragmentation-* 回归）。
+        let wrapper_is_multicol = ws.is_some_and(|s| {
+            matches!(s.column_count, ColumnCountComputedValue::Number(_))
+                || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
+        });
+        // R1341 回归规避（synthetic 碎片化是首版，无 bg/border 分列铺，须排除会回归的 wrapper）：
+        // - clean_block：block-level 且非 R109 split（避 inline span wrapper 如 parallel-flow，
+        //   span 含 block 子被 R109 拆成匿名块，synthetic clone 破坏其拓扑）。
+        // - no_box：无 border/padding（避 styled wrapper 如 008 border:20px；bg/border 须分列铺，
+        //   首版未实现，styled wrapper 现有整体渲染更接近 chromium）。
+        // - no_transform：wrapper 无 transform（transform 内 column-span:all 非真 spanner，
+        //   CSS Multicol：transform 建立-containing-block 中和 spanner，避 multicol-span-all-017）。
+        let clean_block = wrapper.is_block_level && !wrapper.is_r109_split;
+        let no_box = wrapper.border_top < 1.0
+            && wrapper.border_bottom < 1.0
+            && wrapper.border_left < 1.0
+            && wrapper.border_right < 1.0
+            && wrapper.padding_top < 1.0
+            && wrapper.padding_bottom < 1.0;
+        let no_transform = ws.is_some_and(|s| matches!(s.transform, zero_css_parser::values::TransformValue::None));
+        if wrapper_is_spanner
+            || wrapper_is_multicol
+            || !has_descendant_spanner(wrapper, styles)
+            || has_abspos_descendant(wrapper)
+            || !clean_block
+            || !no_box
+            || !no_transform
+        {
+            None
+        } else {
+            let eff: Vec<usize> = wrapper
+                .children
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| !c.is_absolute && !c.is_fixed)
+                .map(|(i, _)| i)
+                .collect();
+            if eff.is_empty() {
+                None
+            } else {
+                Some((eff, wrapper.x + wrapper.content_x, wrapper.y + wrapper.content_y))
+            }
+        }
+    };
+    let (eff_indices, dx, dy) = match nested {
+        Some(x) => x,
+        None => return false,
+    };
+
+    // 建 synthetic：clone container，children 替换为 wrapper in-flow 子 clone；
+    // spanner 子宽设为 container content_width（全宽）。
+    let article_cw = container.content_width;
+    let mut synth = container.clone();
+    synth.children = eff_indices
+        .iter()
+        .map(|&i| {
+            let mut c = container.children[wrapper_idx].children[i].clone();
+            let is_spanner = c
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
+            if is_spanner {
+                c.width = article_cw;
+            }
+            c
+        })
+        .collect();
+
+    // 跑现有 spanner 布局（synthetic 上：区域分割 + 列平衡 + spanner 全宽插入）。
+    layout_multicol_with_spanners(&mut synth, info, styles);
+
+    // 回填位置到真实 wrapper 子（补偿 wrapper 偏移 dx/dy）。
+    let wrapper = &mut container.children[wrapper_idx];
+    for (synth_i, &real_i) in eff_indices.iter().enumerate() {
+        let (sx, sy, sw, is_spanner) = {
+            let s = &synth.children[synth_i];
+            let is_spanner = s
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|st| matches!(st.column_span, ColumnSpanComputedValue::All));
+            (s.x, s.y, s.width, is_spanner)
+        };
+        let r = &mut wrapper.children[real_i];
+        r.x = sx - dx;
+        r.y = sy - dy;
+        if is_spanner {
+            // spanner 脱离列流：宽设为 article 全宽（synthetic 已算），清 column_span_offsets
+            // 按 block 渲染（同 layout_multicol_with_spanners line 597）。
+            r.width = sw;
+            r.column_span_offsets.clear();
+        }
+    }
+    true
+}
+
+/// R1341：检测一个盒的后代中是否存在 absolute/fixed 元素。
+///
+/// nested-spanner synthetic-container 碎片化会 clone wrapper 的子树；若含 abspos/fixed
+/// 后代，clone 会重复定位/破坏 containing-block 关系（abspos-containing-block-outside-
+/// spanner 回归）。此类 wrapper 跳过碎片化。
+fn has_abspos_descendant(box_node: &LayoutBox) -> bool {
+    for c in &box_node.children {
+        if c.is_absolute || c.is_fixed {
+            return true;
+        }
+        if has_abspos_descendant(c) {
+            return true;
+        }
+    }
+    false
+}
+
 /// 对单个 multicol 容器执行布局。
 ///
 /// 算法：
@@ -312,12 +475,17 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
                 .is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
             if !self_spanner && has_descendant_spanner(c, styles) {
                 eprintln!(
-                    "R1340 nested-spanner detected: multicol child node={:?} contains \
-                     column-span:all descendant (fragmentation not yet implemented)",
+                    "R1341 nested-spanner detected: multicol child node={:?} contains \
+                     column-span:all descendant (handled by try_layout_nested_spanner if gate passes)",
                     c.node_id
                 );
             }
         }
+    }
+
+    // R1341：嵌套 spanner wrapper-fragmentation（synthetic-container 首版）。命中则跳过常规路径。
+    if try_layout_nested_spanner(container, info, styles) {
+        return;
     }
 
     // 收集非 absolute/fixed 的子元素索引、高度，以及 break-before/after:column 标志
