@@ -501,9 +501,26 @@ fn try_layout_nested_spanner(
         let last_balanced = section_content.last().map(|&h| h / col_count).unwrap_or(0.0);
         let c = last_balanced.min((wrapper.height - total_balanced - spans_total).max(0.0));
         let effective = (total_balanced - last_balanced) + c + spans_total;
-        if effective > 0.0 && effective < wrapper.height {
+        let capped_h = if effective > 0.0 && effective < wrapper.height {
             wrapper.height = effective;
+            effective
+        } else {
+            wrapper.height
+        };
+        // R1359：per-column bg regions。末列 height = capped_h − c（block3 overflow 致末列容器
+        // 只覆盖到内容止点，col1 section c 应露 article bg），其余列 = capped_h（全高）。PIL
+        // 实证 004a：col0 pink 到 358（350 全高）+ col1 到 308（300，缺末段 c=50）。
+        let n = info.count;
+        let cw = info.column_width;
+        let gap = info.gap;
+        let last_h = (capped_h - c).max(0.0);
+        let mut regions = Vec::with_capacity(n);
+        for i in 0..n {
+            let offset = i as f32 * (cw + gap);
+            let h = if i + 1 < n { capped_h } else { last_h };
+            regions.push((offset, cw, h));
         }
+        wrapper.nested_spanner_col_bg = regions;
     }
 
     // R1358：article（container/multicol 容器）content_height = 真实内容 extent（含 block3

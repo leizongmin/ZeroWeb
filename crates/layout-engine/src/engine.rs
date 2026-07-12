@@ -1392,6 +1392,7 @@ impl LayoutEngine {
             is_flow_root,
             is_multicol,
             is_nested_spanner_wrapper: false,
+            nested_spanner_col_bg: Vec::new(),
             is_layout_container,
             had_clearance: false,
             clearance_active: false,

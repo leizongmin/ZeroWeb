@@ -144,6 +144,14 @@ pub struct LayoutBox {
     /// 精确 gate（仅 R1341 wrapper），排除普通 multicol breaking 子路径（避 deep-nesting
     /// regression，R1351 remove-transform-descendant 用 any_child_has_cso 误触）。
     pub is_nested_spanner_wrapper: bool,
+    /// R1359：nested-spanner wrapper 的**按列背景区域**（非空时 paint_background 按此分段涂 bg
+    /// 而非整宽单 rect）。每元组 `(x_offset, width, height)`——box-content 系内该列的 bg 区域。
+    /// 关键：末列 height = effective − last_section_squeeze（block3 overflow 致末列容器只覆盖到
+    /// 其内容止点，非全高；col1 section c 应露 article bg），其余列 height = effective（全高）。
+    /// PIL 实证（004a）：chromium col0 pink 到 358（全高 350）+ col1 pink 到 308（300，缺 c），
+    /// col1 section c + 16px gap = article green。ZW 原 bg 整宽 [8,408] 全涂致 gap + col1-c over-render。
+    /// 空串 = 走普通整宽 bg（非 nested-spanner wrapper 或 1 列）。
+    pub nested_spanner_col_bg: Vec<(f32, f32, f32)>,
     /// 是否为布局容器（flex/grid/table）。
     /// 布局容器建立 BFC（CSS Flexbox §3, CSS Grid §3），
     /// 其子元素由各自的布局算法定位，不走 IFC。
@@ -389,6 +397,7 @@ impl Default for LayoutBox {
             is_flow_root: false,
             is_multicol: false,
             is_nested_spanner_wrapper: false,
+            nested_spanner_col_bg: Vec::new(),
             is_layout_container: false,
             had_clearance: false,
             clearance_active: false,

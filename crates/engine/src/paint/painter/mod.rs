@@ -1506,6 +1506,20 @@ impl Painter {
             }
         };
 
+        // R1359：nested-spanner wrapper 按列区域涂 bg（排除列间隙 + 末列末段 section）。
+        // PIL 实证（004a）：wrapper bg 整宽涂覆盖 16px gap（应露 article green）+ 末列 section c
+        // （block3 overflow 应露 article green）。改为逐列 fill：col0..col_{n-2} 全高，末列 capped_h−c。
+        // 仅无圆角（radii.is_zero）走分段；有圆角回落正常单 rounded_rect（此类 wrapper 经 no_box
+        // gate 无 border，圆角罕见）。wrapper 经 no_box gate 无 border/padding，region offset 直接从
+        // abs_x（box origin = content origin）起。
+        if box_node.is_nested_spanner_wrapper && !box_node.nested_spanner_col_bg.is_empty() && radii.is_zero() {
+            let bg = color_value_to_render(&style.background_color);
+            for &(offset, rw, rh) in &box_node.nested_spanner_col_bg {
+                self.primitives.add_fill(Rect::new(abs_x + offset, abs_y, rw, rh), bg);
+            }
+            return;
+        }
+
         if radii.is_zero() {
             // 无圆角：简单矩形填充
             self.primitives.add_fill(
