@@ -26,6 +26,8 @@ pub mod inline_finalization;
 pub mod intrinsic_sizing;
 pub mod margin_collapse;
 pub mod multicol;
+#[allow(dead_code)] // R1350 Phase 1 dormant：empirical balancing 模型，Phase 2 wiring 待定
+pub mod multicol_balancing;
 pub mod r109;
 pub mod table;
 pub mod table_borders;
