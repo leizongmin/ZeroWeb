@@ -1,6 +1,6 @@
 # 渲染兼容性 rally — 多 session 架构 roadmap（plateau 后攻击计划）
 
-**日期**: 2026-07-12（R1311-R1315 收敛后；R1346-R1349 更新）
+**日期**: 2026-07-12（R1311-R1315 收敛后；R1346-R1350 更新）
 **状态**: plateau firm，aggregate chromium-oracle ~55%（DC-2~5 目标 ≥95% 远未达）
 **目的**: 单 session clean lever 穷尽后，剩余 yield 全在多 session 架构 / C-dep。本文档汇总各 lever 的 blocker / 可行性 / yield / 攻击顺序，供后续 session 增量推进。
 
@@ -27,6 +27,29 @@
 - **裁决**：R1346/R1347/R1348c/R1349 四证 clean single-session lever 穷尽。残余全 multi-session
   架构（multicol balancing 移植 / nested-float clearance / Phase A / bidi）或 C-dep（user-blocked）。
   详见 [`evidence/r1349-l2-floats-clear-audit-2026-07-12.txt`](./evidence/r1349-l2-floats-clear-audit-2026-07-12.txt)。
+
+---
+
+## R1350 更新（2026-07-12，★ multicol balancing 模型突破 + Phase 1 模块 LANDED）
+
+- **★ multicol balancing 模型推导成功（11/12 验证 + 004a）**：重新据 12 empirical 点推导，
+  得 closed-form per-region 模型（R1348c 曾判定「无 closed-form」，本轮纠正）：
+  - 非末 region：列高 = `ceil(content/N)`，内容均匀分片（A/D/F 的 a/b）。
+  - 末 region：`content > available` → forced balance（列高 `ceil(content/N)`，溢出，A/K/E/004a）；
+    否则列高 = `available/N`，col0=min(content,h)、col1=min(rem,h)（D/J/O）。
+  - **11/12 匹配**（仅 1-span 末区域 L 型 C=200/A=300 → 模型 150/50 vs chromium 125/75，
+    LayoutNG binary-search split，未解 outlier，测试标 documented）。**004a（2-span 目标案）匹配**。
+- **★ R1350 Phase 1 dormant 模块 LANDED（commit 4e9edd1a）**：
+  `crates/layout-engine/src/multicol_balancing.rs` = `RegionBalance` +
+  `balance_nonlast_region` + `balance_last_region` + 4 单测（7-case empirical 验证 + 非末
+  content/N + num_cols=0 守卫 + L-outlier documented）。`#[allow(dead_code)]` Phase 2 wiring
+  待定（R885 font-bridge 模式）。fmt/clippy `-D warnings`/make test 全绿（+4 测试，零回归）。
+- **未解（Phase 2 阻塞）**：容器总高 overflow 案（emergent LayoutNG row-height；简单 overflow
+  ≈ H−spans 如 004a=350/B=250，但复杂案 variant E a/b 自身溢出不符）。+ painter bg 分段
+  （004a 残余 19% = pink bg 未按 region 分布，R1342 net-negative precedent）。
+- **forward**：Phase 2 = (1) 钉死 container 高（须 LayoutNG 源码或更多变体）；(2) wire
+  `balance_last_region` 进 try_layout_nested_spanner（替 / 补 R1035 multirow，紧 gate +
+  全量 A/B）；(3) painter bg per-region（依赖 region geometry）。目标兑现 ~40+ flip 潜力。
 
 ---
 
