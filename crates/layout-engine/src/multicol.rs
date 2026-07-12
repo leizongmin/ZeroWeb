@@ -510,6 +510,9 @@ fn try_layout_nested_spanner(
         // R1359：per-column bg regions。末列 height = capped_h − c（block3 overflow 致末列容器
         // 只覆盖到内容止点，col1 section c 应露 article bg），其余列 = capped_h（全高）。PIL
         // 实证 004a：col0 pink 到 358（350 全高）+ col1 到 308（300，缺末段 c=50）。
+        // 注：c=0 case（004b）末列真值 = block2-col1 end（sequential 50px 致 col1 pink 到 208），
+        // 非 capped_h−c（300）亦非 first_section（100，R1361 试过太短）。须 column-breaking 算法
+        // （block2-col1 = 50 vs ZW balance 100）才能算出，当前 R1035 unsolved，c=0 残余接受。
         let n = info.count;
         let cw = info.column_width;
         let gap = info.gap;
