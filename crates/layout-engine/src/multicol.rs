@@ -466,6 +466,75 @@ fn try_layout_nested_spanner(
         }
         // else（deep-nesting, !enable_painter_core）：保留 baseline——仅 x/y 回填，不动 cso。
     }
+
+    // R1357：cap wrapper effective height（chromium "just enough" allocation）。
+    // PIL 实证（004a/004b）：chromium 把 definite-height wrapper 的显式高分配给 span 分割的
+    // sections，末 section 取 squeeze 值 `c = min(last_balanced, max(0, container − total_balanced − spans))`
+    // 致 wrapper effective < CSS explicit（004a 450→350, 004b 350→300）。ZW 用 CSS explicit 全涂
+    // bg 致 pink over-render（004a 12.76% / 004b 14.68% 残余主因）。此处 post-backfill 改
+    // wrapper.height = effective 使 painter bg 止于正确高。gated to enable_painter_core（同 R1352
+    // direct-child-spanner）+ 2+ 列 + **wrapper 显式 definite height**（排除 column-height-013 等
+    // auto-height / Level-2 column-height 案——其 wrapper 无显式高，公式误 cap 致 pass→fail 回归）。
+    // 安全：span-all-children-height family 13/14 案现全 FAIL，无 flip 可失；全量 A/B 守回归。
+    let wrapper_definite_h = wrapper
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.height, LengthValue::Px(_)));
+    if enable_painter_core && info.count >= 2 && wrapper_definite_h {
+        let col_count = info.count as f32;
+        let mut section_content: Vec<f32> = vec![0.0];
+        let mut spans_total = 0.0_f32;
+        for &ci in &eff_indices {
+            let child = &wrapper.children[ci];
+            let is_span = child
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
+            if is_span {
+                spans_total += child.height;
+                section_content.push(0.0);
+            } else {
+                *section_content.last_mut().unwrap() += child.height;
+            }
+        }
+        let total_balanced: f32 = section_content.iter().map(|&h| h / col_count).sum();
+        let last_balanced = section_content.last().map(|&h| h / col_count).unwrap_or(0.0);
+        let c = last_balanced.min((wrapper.height - total_balanced - spans_total).max(0.0));
+        let effective = (total_balanced - last_balanced) + c + spans_total;
+        if effective > 0.0 && effective < wrapper.height {
+            wrapper.height = effective;
+        }
+    }
+
+    // R1358：article（container/multicol 容器）content_height = 真实内容 extent（含 block3
+    // overflow 到 article bg）。R1355 实证：仅 cap wrapper pink 不 flip（article green 仍
+    // over-render 500 vs CHR 407）；须双 cap。container.content_height（taffy 算=500，wrap
+    // wrapper CSS 450）改 = synth 实际内容 extent（max fragment end，block3 overflow 止点），
+    // 使 article bg（lightgreen）止于内容（~407）非 CSS wrap（500）。clipping 用 container_h
+    // 但 content_extent = max fragment end 故无内容被裁（定义上无内容超出）。gated 同 R1357。
+    // 注意：breaking 子用 cso 片段范围（ct+ch）非 child.y+height（后者含全 content extent 200
+    // 致 overestimate 700 > 500，guard 不 fire）；span 子 cso 空，用 y+height。
+    if wrapper_definite_h {
+        let content_extent: f32 = synth
+            .children
+            .iter()
+            .map(|c| {
+                if c.column_span_offsets.is_empty() {
+                    c.y + c.height
+                } else {
+                    c.column_span_offsets
+                        .iter()
+                        .map(|&(_, _, _, _, ct, ch)| ct + ch)
+                        .fold(0.0_f32, f32::max)
+                }
+            })
+            .fold(0.0_f32, f32::max);
+        if content_extent > 0.0 && content_extent < container.content_height {
+            container.content_height = content_extent;
+            container.height = content_extent;
+        }
+    }
+
     true
 }
 
