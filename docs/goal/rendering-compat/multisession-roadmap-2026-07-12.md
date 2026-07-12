@@ -1,6 +1,6 @@
 # 渲染兼容性 rally — 多 session 架构 roadmap（plateau 后攻击计划）
 
-**日期**: 2026-07-12（R1311-R1315 收敛后；R1346-R1350 更新）
+**日期**: 2026-07-12（R1311-R1315 收敛后；R1346-R1351 更新）
 **状态**: plateau firm，aggregate chromium-oracle ~55%（DC-2~5 目标 ≥95% 远未达）
 **目的**: 单 session clean lever 穷尽后，剩余 yield 全在多 session 架构 / C-dep。本文档汇总各 lever 的 blocker / 可行性 / yield / 攻击顺序，供后续 session 增量推进。
 
@@ -50,6 +50,29 @@
 - **forward**：Phase 2 = (1) 钉死 container 高（须 LayoutNG 源码或更多变体）；(2) wire
   `balance_last_region` 进 try_layout_nested_spanner（替 / 补 R1035 multirow，紧 gate +
   全量 A/B）；(3) painter bg per-region（依赖 region geometry）。目标兑现 ~40+ flip 潜力。
+
+---
+
+## R1351 更新（2026-07-13，multicol 004a 残余诊断 + painter-core 实验 net -1 REVERTED）
+
+- **★ 004a 残余精确诊断 = R1343 painter-core**：PIL 实测 ZW blocks（yellow）单列 x[8,107]
+  vs CHR 双列 x[8,315]。根因：blocks 是 breaking 子（200px 在 ~150px region 须跨列拆分），
+  position_multicol_children 在 synthetic 上**正确**设了 column_span_offsets，但 R1341 backfill
+  只复制 x/y 不复制 cso + painter column loop（`if is_multicol`）仅对 multicol 容器触发 →
+  depth-2 breaking 子只绘首片段（col0）。
+- **★ painter-core 实验（ATTEMPTED，net -1 flip，REVERTED）**：实现 R1343 三部分（backfill
+  复制 cso + painter `paint_as_multicol = is_multicol || any_child_has_cso` + normal paint 排除），
+  css-multicol 452 案 A/B：004a 19.01→**12.76**%（-6.25pp，block 双列分布**修对** yellow 59272≈CHR
+  59255）/ 004b 18.84→14.68%（-4.16pp）/ remove-transform-descendant-becomes-spanner 0.63→1.84%
+ （+1.21pp，pass→fail，deep-nesting spanner regression）/ **NET 155→154 (-1 flip)** → 全 revert。
+- **★ painter column-loop 扩展 + cso 传播验证工作**（004a block 双列分布对）= R1343 实证突破。
+  残余 = pink bg 容器高（ZW 80000 vs CHR 41400，container height 未解）致 004a/004b 未 flip。
+- **forward（重试须三件套，net ≥ 0 才留）**：(1) 用 `is_nested_spanner_wrapper` flag 替
+  `any_child_has_cso` gate（精确锁 R1341 wrapper，排除 deep-nesting normal-multicol 路径，解
+  regression）；(2) 修 container height（pink bg 残余）使 004a/004b flip；(3) 全量 A/B 守 net ≥ 0。
+  详见 [`evidence/r1351-004a-painter-core-diagnosis-2026-07-13.txt`](./evidence/r1351-004a-painter-core-diagnosis-2026-07-13.txt)。
+- css-grid fresh 扫描（49 案 55.1%）：synthesized-baseline 簇（~16%）= vertical-modes（R109-
+  blocked）；table-grid-item-dynamic（JS+table sizing）；无 clean single-session lever。
 
 ---
 
