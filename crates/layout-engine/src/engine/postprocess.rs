@@ -912,6 +912,113 @@ pub(super) fn in_flow_content_extent(box_node: &LayoutBox) -> f32 {
     extent
 }
 
+/// R1371：abspos flex 容器内替换 flex item 的 cross-stretch + transferred-size 后处理。
+///
+/// **根因**：abspos 元素（`position:absolute` + `top`+`bottom` Px）的 definite height
+/// 由 taffy 0.12 在 content layout **之后**解析（或由 ZW abspos postprocess 设入），
+/// 故 taffy 跑 flex item 布局时容器 cross（horizontal-tb 下=height）仍为 auto（indefinite）
+/// → 替换 item 既不 align-items:stretch（cross），transferred-size（main 从 cross×ratio）
+/// 也不 fire（R1366 gate 要求容器 cross Px）。驱动案 css-flexbox/flex-abspos-inset-nested-002
+/// （19.27%）：`.inner-flex{display:flex;position:absolute;top:0;bottom:0}` 内 `<img>`(1x1)
+/// 应被 stretch 到容器高 300，再按 aspect-ratio(1:1) transferred 到 main 300 → 300×300；
+/// 旧实现 img=1×1（全未发生）。
+///
+/// **本 pass**：后序遍历，对匹配 gate 的 abspos flex 容器，重 stretch 其直接替换 item
+/// 的 cross，并按固有宽高比推 main。**紧 gate** 仅覆盖安全子集，blast radius 小：
+/// 容器须 abspos + flex/inline-flex + horizontal-tb + flex-direction row + CSS height Auto
+/// （高度确来自 abspos stretch 而非 CSS） + top/bottom 均 Px + align-items 为 Stretch/Auto
+/// （默认）；item 须 replaced + 有 intrinsic + width/height 均 Auto（无 definite 尺寸）。
+pub(super) fn restretch_abspos_flex_replaced_items(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    img_sizes: &HashMap<NodeId, (f32, f32)>,
+) {
+    use zero_style_system::WritingModeValue;
+
+    // 先递归子元素（后序：本 pass 只读父级 ComputedStyle + 直接子级几何，不依赖子级已修正，
+    // 但递归保证整树处理）。
+    for child in box_node.children.iter_mut() {
+        restretch_abspos_flex_replaced_items(child, styles, img_sizes);
+    }
+
+    // gate：本节点是否为「abspos stretch 出 definite height 的 flex 容器」。
+    let style = match box_node.node_id.and_then(|id| styles.get(&id)) {
+        Some(s) => s,
+        None => return,
+    };
+    if !box_node.is_absolute {
+        return;
+    }
+    if !matches!(style.display, DisplayValue::Flex | DisplayValue::InlineFlex) {
+        return;
+    }
+    // horizontal-tb 下 cross = height；vertical 模式主/交叉轴互换（R109 territory），跳过。
+    if !matches!(style.writing_mode, WritingModeValue::HorizontalTb) {
+        return;
+    }
+    // 仅 row：cross = height（abspos top/bottom 拉伸的轴）。column 时 height 是 main，另案。
+    if !matches!(style.flex_direction, FlexDirectionValue::Row) {
+        return;
+    }
+    // 容器 CSS height 须 Auto（300 来自 abspos stretch，非 CSS）；否则 taffy 已用 definite
+    // cross stretch 过 item。
+    if !matches!(style.height, LengthValue::Auto) {
+        return;
+    }
+    // top/bottom 均 Px：abspos 双轴 inset stretch 的来源。
+    if !matches!((&style.top, &style.bottom), (LengthValue::Px(_), LengthValue::Px(_))) {
+        return;
+    }
+    // align-items 须为 stretch 语义（默认 Stretch；Auto 同）；FlexStart/Center/等不 stretch。
+    if !matches!(style.align_items, AlignmentValue::Stretch | AlignmentValue::Auto) {
+        return;
+    }
+
+    // 容器 cross 内容高（border-box height 减 padding+border）。
+    let container_cross = (box_node.height
+        - box_node.padding_top
+        - box_node.padding_bottom
+        - box_node.border_top
+        - box_node.border_bottom)
+        .max(0.0);
+
+    // 对每个直接子（flex item）：替换元素 + 有 intrinsic + width/height Auto → stretch + transfer。
+    for item in box_node.children.iter_mut() {
+        if !item.is_replaced || item.is_absolute || item.is_fixed {
+            continue;
+        }
+        if !matches!(item.float, FloatValue::None) {
+            continue;
+        }
+        let Some(id) = item.node_id else {
+            continue;
+        };
+        let Some(&(iw, ih)) = img_sizes.get(&id) else {
+            continue;
+        };
+        // item 尺寸须 Auto（无 definite CSS 尺寸，才会 stretch/transfer）。
+        let item_style = match styles.get(&id) {
+            Some(s) => s,
+            None => continue,
+        };
+        if !matches!(item_style.width, LengthValue::Auto) || !matches!(item_style.height, LengthValue::Auto) {
+            continue;
+        }
+        // cross-stretch：item cross（height）= 容器 cross − item margin。
+        let item_cross = (container_cross - item.margin_top - item.margin_bottom).max(0.0);
+        item.height = item_cross;
+        item.content_height =
+            (item_cross - item.padding_top - item.padding_bottom - item.border_top - item.border_bottom).max(0.0);
+        // transferred-size（R1015/R1017/R1366 谱系）：main（width）= cross × intrinsic ratio。
+        if ih > 0.0 {
+            let item_main = (item_cross * (iw / ih)).max(0.0);
+            item.width = item_main;
+            item.content_width =
+                (item_main - item.padding_left - item.padding_right - item.border_left - item.border_right).max(0.0);
+        }
+    }
+}
+
 /// 自上而下收紧百分比 max-height。
 ///
 /// `cb_content_height` 为父级（包含块）的**明确**内容高度；为 `None` 表示父级高度

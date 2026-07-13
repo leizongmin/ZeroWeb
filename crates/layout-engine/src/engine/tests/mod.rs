@@ -86,6 +86,8 @@ mod r1280_float_inline_paint_tests;
 mod r1285_br_between_blocks_tests;
 mod r1311_br_inline_no_node_tests;
 mod r1316_clearance_sibling_order_tests;
+#[cfg(test)]
+mod r1371_abspos_flex_stretch_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

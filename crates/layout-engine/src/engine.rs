@@ -431,6 +431,15 @@ impl LayoutEngine {
             );
         }
 
+        // 11.8 后处理（R1371）：abspos flex 容器（top+bottom 拉出 definite height）内替换
+        // flex item 的 cross-stretch + transferred-size。taffy 在 content layout 后才解析
+        // abspos 容器高度，item 布局时容器 cross 仍 indefinite → 不 stretch。env
+        // ZW_ABSPOS_FLEX_RESTRETCH=0 可关闭（kill-switch，default-on）。
+        let abspos_flex_restretch = std::env::var("ZW_ABSPOS_FLEX_RESTRETCH").as_deref() != Ok("0");
+        if abspos_flex_restretch {
+            restretch_abspos_flex_replaced_items(&mut root_box, styles, &intrinsic_for_r695);
+        }
+
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
