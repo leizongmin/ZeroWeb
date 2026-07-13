@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::DisplayValue;
+use zero_css_parser::values::{DisplayValue, FloatValue};
 
 use zero_dom::NodeId;
 
@@ -188,6 +188,14 @@ pub(crate) fn build_row(child_idx: usize, row_box: &LayoutBox, doc: &zero_dom::D
     let mut col_cursor = 0usize;
 
     for (cell_idx, cell_child) in row_box.children.iter().enumerate() {
+        // CSS 2.1 §9.7 + §9.5：floated / 绝对定位子元素脱离正常流，不参与 table grid。
+        // 典型场景 float-applies-to-007：`display:table-cell` + `float:right` 经 §9.7 块化为
+        // Block+float，此时它不再是 table cell，而应作为浮动块布局（脱离 table-row 流）。
+        // 旧实现把所有 table-row 子元素无条件当 cell 收集，致块化后的浮动 cell 仍被当 cell
+        // 撑满行宽（ZW 784px 应 96px 浮右）。此处跳过 out-of-flow 子，让它走浮动布局路径。
+        if !matches!(cell_child.float, FloatValue::None) || cell_child.is_absolute || cell_child.is_fixed {
+            continue;
+        }
         let colspan = get_colspan(cell_child, doc);
         let rowspan = get_rowspan(cell_child, doc);
         let col_start = col_cursor;
@@ -587,4 +595,54 @@ pub(crate) fn grow_vrl_cell_block_extent(
         })
         .unwrap_or(1.0);
     (n * fs).max(cb.width)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// build_row 须跳过 out-of-flow（floated / 绝对定位）子元素——它们经 §9.7 块化后
+    /// 脱离 table-row 流，不应被当 cell 收集。float-applies-to-007 回归保护。
+    #[test]
+    fn build_row_skips_floated_children() {
+        let doc = zero_dom::Document::new();
+        // 行内 3 个子：正常 cell / floated cell / 绝对定位 cell
+        let row_box = LayoutBox {
+            children: vec![
+                LayoutBox { ..LayoutBox::default() },
+                LayoutBox {
+                    float: FloatValue::Right,
+                    ..LayoutBox::default()
+                },
+                LayoutBox {
+                    is_absolute: true,
+                    ..LayoutBox::default()
+                },
+            ],
+            ..LayoutBox::default()
+        };
+        let row = build_row(0, &row_box, &doc);
+        // 仅第 1 个（in-flow）子被收集为 cell；floated 与 abspos 被跳过
+        assert_eq!(row.cells.len(), 1);
+        assert_eq!(row.cells[0].child_index, 0);
+        assert_eq!(row.cells[0].colspan, 1);
+    }
+
+    /// 正常 in-flow 子元素（含 is_fixed=false、float=None）应全部收集为 cell。
+    #[test]
+    fn build_row_collects_all_inflow_children() {
+        let doc = zero_dom::Document::new();
+        let row_box = LayoutBox {
+            children: vec![
+                LayoutBox { ..LayoutBox::default() },
+                LayoutBox { ..LayoutBox::default() },
+                LayoutBox { ..LayoutBox::default() },
+            ],
+            ..LayoutBox::default()
+        };
+        let row = build_row(0, &row_box, &doc);
+        assert_eq!(row.cells.len(), 3);
+        // col_end 累计：每个 colspan=1 → 1,2,3
+        assert_eq!(row.cells[2].col_end, 3);
+    }
 }
