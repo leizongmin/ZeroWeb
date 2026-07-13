@@ -98,6 +98,8 @@ mod r1390_table_cell_bfc_float_tests;
 mod r1393_adjoining_float_clearance_tests;
 #[cfg(test)]
 mod r1398_abspos_cb_border_tests;
+#[cfg(test)]
+mod r1404_aspect_ratio_flex_stretch_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

@@ -964,11 +964,13 @@ pub(super) fn in_flow_content_extent(box_node: &LayoutBox) -> f32 {
 /// 应被 stretch 到容器高 300，再按 aspect-ratio(1:1) transferred 到 main 300 → 300×300；
 /// 旧实现 img=1×1（全未发生）。
 ///
-/// **本 pass**：后序遍历，对匹配 gate 的 abspos flex 容器，重 stretch 其直接替换 item
-/// 的 cross，并按固有宽高比推 main。**紧 gate** 仅覆盖安全子集，blast radius 小：
-/// 容器须 abspos + flex/inline-flex + horizontal-tb + flex-direction row + CSS height Auto
-/// （高度确来自 abspos stretch 而非 CSS） + top/bottom 均 Px + align-items 为 Stretch/Auto
-/// （默认）；item 须 replaced + 有 intrinsic + width/height 均 Auto（无 definite 尺寸）。
+/// **本 pass**：后序遍历，对匹配 gate 的「cross(height) definite」row flex 容器，重 stretch
+/// 其直接替换 item 的 cross，并按固有宽高比推 main。**紧 gate** 仅覆盖安全子集：
+/// 容器须 flex/inline-flex + horizontal-tb + flex-direction row + CSS height Auto + align-items
+/// 为 Stretch/Auto（默认）；definite cross 来源二选一——(a) **R1371 abspos**：容器 abspos +
+/// top/bottom 均 Px（高度来自 inset stretch）；(b) **R1404 aspect-ratio**：容器有 aspect-ratio
+/// + width Px（高度 = width/ratio 派生 definite，env `ZW_ASPECT_RATIO_FLEX_STRETCH=0` 关闭）。
+/// item 须 replaced + 有 intrinsic + width/height 均 Auto（无 definite 尺寸）。
 pub(super) fn restretch_abspos_flex_replaced_items(
     box_node: &mut LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
@@ -982,14 +984,12 @@ pub(super) fn restretch_abspos_flex_replaced_items(
         restretch_abspos_flex_replaced_items(child, styles, img_sizes);
     }
 
-    // gate：本节点是否为「abspos stretch 出 definite height 的 flex 容器」。
+    // gate：本节点是否为「cross(height) definite 的 row flex 容器」。R1371：abspos top+bottom
+    // 拉伸出 definite height；R1404 扩 aspect-ratio（width/ratio 派生 definite height）。
     let style = match box_node.node_id.and_then(|id| styles.get(&id)) {
         Some(s) => s,
         None => return,
     };
-    if !box_node.is_absolute {
-        return;
-    }
     if !matches!(style.display, DisplayValue::Flex | DisplayValue::InlineFlex) {
         return;
     }
@@ -997,17 +997,22 @@ pub(super) fn restretch_abspos_flex_replaced_items(
     if !matches!(style.writing_mode, WritingModeValue::HorizontalTb) {
         return;
     }
-    // 仅 row：cross = height（abspos top/bottom 拉伸的轴）。column 时 height 是 main，另案。
+    // 仅 row：cross = height。column 时 height 是 main，另案。
     if !matches!(style.flex_direction, FlexDirectionValue::Row) {
         return;
     }
-    // 容器 CSS height 须 Auto（300 来自 abspos stretch，非 CSS）；否则 taffy 已用 definite
-    // cross stretch 过 item。
+    // 容器 CSS height 须 Auto（definite 值来自 abspos-stretch 或 aspect-ratio，非 CSS height）；
+    // 否则 taffy 已用 definite cross stretch 过 item。
     if !matches!(style.height, LengthValue::Auto) {
         return;
     }
-    // top/bottom 均 Px：abspos 双轴 inset stretch 的来源。
-    if !matches!((&style.top, &style.bottom), (LengthValue::Px(_), LengthValue::Px(_))) {
+    // definite cross 来源：(a) abspos top+bottom 双轴 inset stretch；(b) R1404 aspect-ratio。
+    let abspos_stretch =
+        box_node.is_absolute && matches!((&style.top, &style.bottom), (LengthValue::Px(_), LengthValue::Px(_)));
+    let aspect_ratio_stretch = std::env::var("ZW_ASPECT_RATIO_FLEX_STRETCH").as_deref() != Ok("0")
+        && style.aspect_ratio.is_some()
+        && matches!(style.width, LengthValue::Px(_));
+    if !abspos_stretch && !aspect_ratio_stretch {
         return;
     }
     // align-items 须为 stretch 语义（默认 Stretch；Auto 同）；FlexStart/Center/等不 stretch。
