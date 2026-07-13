@@ -380,6 +380,9 @@ impl LayoutEngine {
         // 仅对 inline-level relative 元素应用偏移，避免 block-level 元素双重偏移。
         apply_relative_offsets_inline(&mut root_box, styles);
 
+        // R1398：修正 abspos CB-border 偏移（taffy 把 positioned 祖先 border 计入 abspos loc）。
+        fix_abspos_cb_border(&mut root_box, styles);
+
         // 11.5 后处理：修正没有 positioned ancestor 的 absolute 元素的**百分比**
         // inset 与尺寸。
         // CSS 2.1 §10.1：absolute 元素无 positioned ancestor 时，containing block 是

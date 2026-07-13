@@ -1732,8 +1732,9 @@ fn test_absolute_stretch_in_inline_block_container() {
     container_style.border_right_width = LengthValue::Px(3.0);
     container_style.border_bottom_width = LengthValue::Px(3.0);
     container_style.border_left_width = LengthValue::Px(3.0);
-    // border-style=Solid 方能使 border-width 进入布局盒（CSS §8.5.3：style=none→width=0），
-    // 容器 border 才会偏移 absolute 子元素位置（border 3 + inset 3 = 6）
+    // border-style=Solid 方能使 border-width 进入布局盒（CSS §8.5.3：style=none→width=0）。
+    // 容器 border 触发 R1398 fix_abspos_cb_border：abspos 的 CB 是 padding box（§10.1.4），
+    // border>0 时本 fix 从 abspos loc 减去祖先 border（border:0 时无偏移、fix 不触发）。
     container_style.border_top_style = zero_style_system::BorderStyleValue::Solid;
     container_style.border_right_style = zero_style_system::BorderStyleValue::Solid;
     container_style.border_bottom_style = zero_style_system::BorderStyleValue::Solid;
@@ -1766,29 +1767,31 @@ fn test_absolute_stretch_in_inline_block_container() {
     // 容器信息
     let container_box = find_child_by_node_id(&result.root, container).expect("container 应找到");
 
-    // 位置应包含容器 border 偏移 + inset 偏移：
-    // taffy location = left(3) + margin_left(0) + area_offset(border_left=3) = 6
+    // 位置：CSS §10.1.4 abspos 的 CB 是 positioned 祖先的 **padding box**，
+    // 故 left/top=3px 直接相对 padding box，不应叠加祖先 border。
+    // （R1398 前 taffy 0.12 错把祖先 border 计入 loc → x/y=6；fix_abspos_cb_border 修正为 3。）
     assert!(
-        (abs_box.x - 6.0).abs() < 1.0,
-        "absolute x 应约 6（border 3 + inset 3），实际 {}",
+        (abs_box.x - 3.0).abs() < 1.0,
+        "absolute x 应约 3（padding-box CB，不含祖先 border），实际 {}",
         abs_box.x
     );
     assert!(
-        (abs_box.y - 6.0).abs() < 1.0,
-        "absolute y 应约 6（border 3 + inset 3），实际 {}",
+        (abs_box.y - 3.0).abs() < 1.0,
+        "absolute y 应约 3（padding-box CB，不含祖先 border），实际 {}",
         abs_box.y
     );
 
-    // 预期宽度 = container_content_w - left(3) - right(3) = 150 - 6 = 144
-    // 预期高度 = container_content_h - top(3) - bottom(3) = 100 - 6 = 94
+    // 拉伸尺寸：taffy 0.12 对 abspos stretch 仍按 border-box CB 计算（独立于 R1398 的
+    // loc 修正），故 width=150-6=144、height=100-6=94（spec padding-box CB 应为 138/88，
+    // 系 taffy 另一独立 CB 缺口，非 R1398 范围）。此处刻画 taffy 当前 stretch 行为。
     assert!(
         (abs_box.width - 144.0).abs() < 2.0,
-        "absolute 宽度应约 144px（拉伸填满），实际 {}",
+        "absolute 宽度应约 144px（taffy stretch），实际 {}",
         abs_box.width
     );
     assert!(
         (abs_box.height - 94.0).abs() < 2.0,
-        "absolute 高度应约 94px（拉伸填满），实际 {}",
+        "absolute 高度应约 94px（taffy stretch），实际 {}",
         abs_box.height
     );
 

@@ -637,6 +637,43 @@ pub(super) fn exclude_floats_from_non_bfc_auto_height(
 ///
 /// 本 pass 后序遍历：对每个 `had_clearance` 子（containment 容器），把其**后续 in-flow
 /// 兄弟**上移「泄漏量」=（首后续兄弟 y − contained border-box bottom − 首后续兄弟 mt），
+/// R1398：修正 abspos 元素的 CB-border 偏移。
+///
+/// CSS §10.1.4：abspos 的 containing block 是最近 positioned 祖先的 **padding box**。
+/// 但 taffy 0.12 把祖先 **border** 计入 abspos 的 location（loc.x = inset + 祖先 border，
+/// 实测 semi-replaced-stretch-button：loc.x=6 = inset 3 + cb border 3，应 3）→ abspos 元素
+/// 整体偏移祖先 border 宽度。border:0 时无偏移故此前未暴露。
+///
+/// 本 pass 对**直接 abspos 子**（其 CB 即本盒，本盒须为 positioned）减去本盒 border_left/top。
+/// 深层 abspos（box-tree 父 ≠ positioned 祖先）不在本 pass 处理范围（须 positioned 祖先追踪，
+/// 留多 session）。env `ZW_ABSPOS_CB_BORDER=0` 关闭（kill-switch，default-on）。
+pub(super) fn fix_abspos_cb_border(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    use zero_css_parser::values::PositionValue;
+    // 本盒是否为 positioned（是其直接 abspos 子的 CB）
+    let root_positioned = root.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+        matches!(
+            s.position,
+            PositionValue::Relative | PositionValue::Absolute | PositionValue::Fixed
+        )
+    });
+    if root_positioned && std::env::var("ZW_ABSPOS_CB_BORDER").as_deref() != Ok("0") {
+        let bl = root.border_left;
+        let bt = root.border_top;
+        if bl > 0.0 || bt > 0.0 {
+            for child in &mut root.children {
+                if child.is_absolute || child.is_fixed {
+                    child.x -= bl;
+                    child.y -= bt;
+                }
+            }
+        }
+    }
+    // 递归（深层 positioned 祖先各自处理其直接 abspos 子）
+    for child in &mut root.children {
+        fix_abspos_cb_border(child, styles);
+    }
+}
+
 /// 并把等量高度从本容器扣除（delta 经返回值向祖先传播，祖先同步缩高 + 后续兄弟上移）。
 /// 镜像 R109 backfill 的 cumulative_shift 模式（方向相反：缩高而非增高）。
 ///
