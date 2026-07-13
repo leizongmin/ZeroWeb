@@ -8,8 +8,8 @@ use zero_css_parser::values::{
     LengthValue, OverflowValue, PositionValue,
 };
 use zero_style_system::{
-    AlignContentValue, BorderStyleValue, ComputedStyle, FlexBasisValue, GridAutoFlowValue, GridLineValue,
-    JustifyItemsValue, JustifySelfValue,
+    AlignContentValue, BorderCollapseValue, BorderStyleValue, ComputedStyle, FlexBasisValue, GridAutoFlowValue,
+    GridLineValue, JustifyItemsValue, JustifySelfValue,
 };
 
 use taffy::prelude::*;
@@ -54,6 +54,14 @@ pub fn computed_style_to_taffy(
             | DisplayValue::TableFooterGroup
             | DisplayValue::TableRow
     );
+
+    // CSS 2.1 §17.6.2（collapsing border model）：border-collapse:collapse 时 table 元素的
+    // padding 不应用（「In this model, the [table's] padding is not applied」）。ZW 此前对
+    // display:table 的 padding 照常解析，致 collapsing-border-model-011/013 渲染 300×300
+    // （应 100×100，100px padding 被错误计入）。仅 table 盒本身（display:table/inline-table），
+    // 单元格 padding 不受影响（§17.5：cell padding 始终应用）。
+    let is_collapsed_table = matches!(style.display, DisplayValue::Table | DisplayValue::InlineTable)
+        && matches!(style.border_collapse, BorderCollapseValue::Collapse);
 
     // CSS Position §6（css-position-1）：inset 属性（top/right/bottom/left）仅对
     // 非 static 定位元素生效。static 元素的 inset 必须忽略（R689）。
@@ -152,7 +160,7 @@ pub fn computed_style_to_taffy(
                 },
             }
         },
-        padding: if is_table_internal {
+        padding: if is_table_internal || is_collapsed_table {
             taffy::geometry::Rect::zero()
         } else {
             taffy::geometry::Rect {
@@ -1400,6 +1408,36 @@ mod inline_tests {
         assert_eq!(result.padding.right, taffy::style::LengthPercentage::length(20.0));
         assert_eq!(result.padding.bottom, taffy::style::LengthPercentage::length(30.0));
         assert_eq!(result.padding.left, taffy::style::LengthPercentage::length(40.0));
+    }
+
+    #[test]
+    fn test_table_padding_zeroed_in_border_collapse() {
+        // CSS 2.1 §17.6.2：border-collapse:collapse 模式下 table 盒的 padding 不应用。
+        // display:table + border-collapse:collapse → padding 归零（不论显式 padding 多大）。
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Table;
+        style.border_collapse = BorderCollapseValue::Collapse;
+        style.padding_top = LengthValue::Px(100.0);
+        style.padding_right = LengthValue::Px(100.0);
+        style.padding_bottom = LengthValue::Px(100.0);
+        style.padding_left = LengthValue::Px(100.0);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
+        let zero = taffy::style::LengthPercentage::length(0.0);
+        assert_eq!(result.padding.top, zero);
+        assert_eq!(result.padding.right, zero);
+        assert_eq!(result.padding.bottom, zero);
+        assert_eq!(result.padding.left, zero);
+    }
+
+    #[test]
+    fn test_table_padding_kept_in_border_separate() {
+        // border-collapse:separate（默认）→ table padding 正常应用（§17.5：仅 collapse 模式禁用 table padding）。
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Table;
+        // border_collapse 默认 Separate
+        style.padding_top = LengthValue::Px(10.0);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
+        assert_eq!(result.padding.top, taffy::style::LengthPercentage::length(10.0));
     }
 
     #[test]
