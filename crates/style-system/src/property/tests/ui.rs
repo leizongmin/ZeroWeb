@@ -986,13 +986,19 @@ fn test_apply_align_content_keywords() {
     assert_eq!(style.align_content, AlignContentValue::SpaceEvenly);
     assert!(apply_property_value(&mut style, "align-content", "center"));
     assert_eq!(style.align_content, AlignContentValue::Center);
+    // R1412：flex-start/flex-end 此前未解析（fall through → 默认 Normal），现映射
+    // Start/End（horizontal-tb 下 flex-start=end of block axis 等价 start/end）。
+    assert!(apply_property_value(&mut style, "align-content", "flex-start"));
+    assert_eq!(style.align_content, AlignContentValue::Start);
+    assert!(apply_property_value(&mut style, "align-content", "flex-end"));
+    assert_eq!(style.align_content, AlignContentValue::End);
 }
 
 /// 验证 align-content 对无效值返回 false。
 #[test]
 fn test_apply_align_content_invalid() {
     let mut style = ComputedStyle::default();
-    assert!(!apply_property_value(&mut style, "align-content", "flex-start"));
+    assert!(!apply_property_value(&mut style, "align-content", "bogus-value"));
 }
 
 /// 验证 empty-cells 的 apply_property_value 正确解析 show/hide。

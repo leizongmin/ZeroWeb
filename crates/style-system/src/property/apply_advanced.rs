@@ -1354,6 +1354,13 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 "normal" => AlignContentValue::Normal,
                 "start" => AlignContentValue::Start,
                 "end" => AlignContentValue::End,
+                // R1412：flex-start/flex-end 此前未解析（fall through → return false →
+                // 默认 Normal → taffy 默认 flex-start pack），致 align-content:flex-end 被
+                // 当作 flex-start（lines 在顶不在底）。CSS css-align-3：flex 容器的 block 轴
+                // 上 flex-start/flex-end 等价 start/end（horizontal-tb 下）。vertical/RTL 差异
+                // 属 R109 territory。驱动 css-flexbox/flex-align-content-end 簇。
+                "flex-start" => AlignContentValue::Start,
+                "flex-end" => AlignContentValue::End,
                 "center" => AlignContentValue::Center,
                 "stretch" => AlignContentValue::Stretch,
                 "baseline" => AlignContentValue::Baseline,
