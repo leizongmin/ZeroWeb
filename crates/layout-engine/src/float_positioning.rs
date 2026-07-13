@@ -829,6 +829,64 @@ pub(crate) fn adjust_float_positions_with_context(
                 }
             }
         }
+    } else if content_y_offset == 0.0 && std::env::var("ZW_CLEAR_NO_FLOAT_CONTEXT").as_deref() != Ok("0") {
+        // R1389：has_active_float_context=false（容器无直接 float 子，且 inherited float
+        // bottom 已 clamp 到 0 = 容器已在所有祖先 float 下方）时，clear 子元素**无浮动可清除**。
+        // 但 taffy 0.12 仍基于同 BFC 的祖先 float 对 clear 子误 apply clearance，把 clear 子
+        // 推到其 flow 位置之下并膨胀容器高度（no-clearance-due-to-large-margin：red h=83 应 20，
+        // clear 在 red 底部而非顶部）。此处对窄情形（容器无 border-top/padding-top + 唯一 in-flow
+        // block 子为 clear 元素 + auto-height）将 clear 子重定位到容器 content top（其 margin-top
+        // 经无 border/padding-top 的容器折叠穿出，位置本应如此），并按 in-flow 子 border-box 收缩
+        // 容器高度。env `ZW_CLEAR_NO_FLOAT_CONTEXT=0` 关闭（kill-switch，default-on）。
+        let clear_idx = box_node.children.iter().position(|c| {
+            !c.is_absolute
+                && !c.is_fixed
+                && c.is_block_level
+                && !matches!(
+                    c.clear,
+                    ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd
+                )
+        });
+        if let Some(idx) = clear_idx {
+            // clear 子须为唯一 in-flow block 子（无其它 block 兄弟），避免重定位影响兄弟流位置
+            //（多 block 兄弟情形须完整 flow 跟踪，留多 session）。
+            let in_flow_block_count = box_node
+                .children
+                .iter()
+                .filter(|c| !c.is_absolute && !c.is_fixed && c.is_block_level)
+                .count();
+            if in_flow_block_count == 1 {
+                let respect_explicit_height = std::env::var("ZW_FLOAT_RESPECT_HEIGHT").as_deref() != Ok("0");
+                let auto_height = !respect_explicit_height || box_node.declared_height_auto;
+                if auto_height {
+                    // 重定位 clear 子到 content top（margin-top 折叠穿出容器，border-top 落在
+                    // 容器 content 原点；content_y_offset 此分支恒为 0）。
+                    box_node.children[idx].y = content_y_offset;
+                    // 按 in-flow 子 border-box 收缩容器（clear 的 margin-top 不计入高度）。
+                    let content_bottom =
+                        box_node
+                            .children
+                            .iter()
+                            .filter(|c| !c.is_absolute && !c.is_fixed)
+                            .fold(0.0f32, |max_y, c| {
+                                let bottom = c.y + c.height + c.margin_bottom;
+                                max_y.max(bottom)
+                            });
+                    let new_content_height = (content_bottom - content_y_offset).max(0.0);
+                    if new_content_height < box_node.content_height {
+                        box_node.content_height = new_content_height;
+                        let new_total = new_content_height
+                            + box_node.padding_top
+                            + box_node.padding_bottom
+                            + box_node.border_top
+                            + box_node.border_bottom;
+                        if new_total < box_node.height {
+                            box_node.height = new_total;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // 调整容器高度：

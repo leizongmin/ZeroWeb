@@ -90,6 +90,8 @@ mod r1316_clearance_sibling_order_tests;
 mod r1371_abspos_flex_stretch_tests;
 #[cfg(test)]
 mod r1382_float_anon_table_tests;
+#[cfg(test)]
+mod r1389_clear_no_float_context_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
