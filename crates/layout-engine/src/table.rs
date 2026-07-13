@@ -979,6 +979,30 @@ fn compute_column_widths(
     col_max_widths
 }
 
+/// R1390：table-cell 建立 BFC（CSS §9.4.1），其高度须包含浮动子（§10.6.7：
+/// 高度 ≥ 浮动子外底边）。浮动子经 adjust_float_positions 重定位后与 in-flow
+/// 内容并排（非垂直堆叠），故不能把浮动子高度计入 sum（会双计，如
+/// floats-wrap-bfc-001：float 100 + BFC 50 = 150，应 max(100,50)=100）。
+/// 此处把 in-flow 子（sum，垂直堆叠）与浮动子（max 外底边，BFC 包含）分离，
+/// 取两者 max。返回该单元格「BFC 包含浮动后」的内容高度下限。
+fn cell_float_aware_content_height(cell_box: &LayoutBox) -> f32 {
+    let in_flow_height: f32 = cell_box
+        .children
+        .iter()
+        .filter(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
+        .map(|c| c.height + c.margin_top + c.margin_bottom)
+        .sum();
+    let float_bottom: f32 = cell_box
+        .children
+        .iter()
+        .filter(|c| !matches!(c.float, FloatValue::None))
+        .fold(0.0f32, |max_y, c| {
+            // c.y 相对 cell border-box（adjust_float_positions 已重定位）。
+            max_y.max(c.y + c.height + c.margin_bottom)
+        });
+    in_flow_height.max(float_bottom)
+}
+
 /// 根据 grid 结构和列宽定位每个单元格。
 fn position_cells(
     table_box: &mut LayoutBox,
@@ -1140,7 +1164,12 @@ fn position_cells(
                     row_box.children.get(cell.child_index)
                 };
                 if let Some(cell_box) = cell_box {
-                    row_height = row_height.max(cell_box.height);
+                    // R1390：须取 max(taffy 高, BFC 包含浮动后的内容高度)，否则
+                    // 含浮动子的单元格（如 floats-wrap-bfc-001）行高不反映浮动，
+                    // 导致 table 高度 < 单元格 BFC 高度（td 溢出不可见）。
+                    row_height = row_height
+                        .max(cell_box.height)
+                        .max(cell_float_aware_content_height(cell_box));
                 }
             }
             // 空行（单元格无内容）高度为 0——chromium 对空 cell 渲染 0px
@@ -1263,11 +1292,8 @@ fn position_cells(
             // CSS 2.1 规定即使设置了 overflow:hidden，表格单元格仍然必须增长以包含内容。
             // 取 max(行高, 单元格内容的累积高度)。
             // 注意：正常流子元素是垂直堆叠的，应使用 sum 而非 max。
-            let cell_content_height: f32 = cell_box
-                .children
-                .iter()
-                .map(|c| c.height + c.margin_top + c.margin_bottom)
-                .sum();
+            // R1390：BFC 包含浮动后的内容高度（见 cell_float_aware_content_height）。
+            let cell_content_height: f32 = cell_float_aware_content_height(cell_box);
             let cell_height = row_height.max(cell_content_height);
             cell_box.height = cell_height;
             // 同步更新 content_height，确保 overflow 裁剪使用增长后的高度
