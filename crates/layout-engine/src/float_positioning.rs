@@ -806,6 +806,9 @@ pub(crate) fn adjust_float_positions_with_context(
                             ClearValue::Right => nested_right_bottom,
                             _ => nested_left_bottom.max(nested_right_bottom),
                         };
+                        // adjoining 信号：clear 清除的是「嵌套在非 BFC 后代中的浮动」
+                        //（clear_bottom 由 nested_bottom 决定）。direct-float 变体（new-fc 谱系）
+                        // 用 clear_bottom>flow_bottom 信号会过冲（4 案回归），故仅 gate 嵌套浮动。
                         let adjoining = std::env::var("ZW_ADJOINING_FLOAT_CLEARANCE").as_deref() != Ok("0")
                             && nested_for_side > 0.0
                             && (clear_bottom - nested_for_side).abs() < 0.5;
