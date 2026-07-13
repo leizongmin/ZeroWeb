@@ -495,6 +495,44 @@ impl StyleSystem {
                     ua_decl_inputs.push(("border-style".to_string(), "inset".to_string(), false, (0, 0, 0), None));
                     ua_decl_inputs.push(("border-width".to_string(), "1px".to_string(), false, (0, 0, 0), None));
                 }
+                // R1396：表单控件默认外观（Chromium UA html.css）。旧实现把 button/input 渲成
+                // 纯文本（无 bg/border/padding），legacy 表单页不可读。此处补 ButtonFace 近似灰
+                // bg + 边框 + padding 使控件可见（产品验收口径「结构不崩、核心语义可见」）。
+                // 精确像素匹配系统色 ButtonFace/Canvas 须系统色支持（后续），当前用近似 hex。
+                "button" => {
+                    ua_decl_inputs.push((
+                        "background-color".to_string(),
+                        "#d4d4d4".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    ua_decl_inputs.push((
+                        "border".to_string(),
+                        "1px solid #767676".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    ua_decl_inputs.push(("padding".to_string(), "1px 6px".to_string(), false, (0, 0, 0), None));
+                }
+                "input" | "select" | "textarea" => {
+                    ua_decl_inputs.push((
+                        "background-color".to_string(),
+                        "white".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    ua_decl_inputs.push((
+                        "border".to_string(),
+                        "1px solid #767676".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    ua_decl_inputs.push(("padding".to_string(), "2px".to_string(), false, (0, 0, 0), None));
+                }
                 _ => {}
             }
         }
