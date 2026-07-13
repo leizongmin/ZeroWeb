@@ -272,6 +272,47 @@ pub(crate) fn mark_anonymous_table_roots(
     }
 }
 
+/// R1392：递归收集非 BFC 后代中的浮动元素外底边（content-relative 到外层容器）。
+///
+/// CSS §9.5：clear 须清除同 BFC 上下文内的所有浮动。ZW 的 `active_left/right_float_bottom`
+/// 仅收集**直接** float 子，嵌套在非 BFC 后代中的 float 对后续 clear 兄弟不可见 →
+/// clear 失效（adjoining-float-before-clearance：float 嵌在 wrapper 内，clear:left 看不到它）。
+/// BFC 后代建立独立浮动上下文（其内 float 不外溢），递归在 BFC 边界停止。
+///
+/// `child_border_y` = child 的 border-box 顶，相对外层 border-box（累加祖先 y）。
+/// `outer_content_y_offset` = 外层 border→content 偏移，用于换算 content-relative。
+fn nested_float_bottoms(child: &LayoutBox, child_border_y: f32, outer_content_y_offset: f32) -> (f32, f32) {
+    use zero_css_parser::values::FloatValue;
+    let mut left = 0.0f32;
+    let mut right = 0.0f32;
+    for c in &child.children {
+        if c.is_absolute || c.is_fixed {
+            continue;
+        }
+        // c.y 相对 child 的 border-box 原点；累加到外层 border-relative。
+        let c_border_y = child_border_y + c.y;
+        if !matches!(c.float, FloatValue::None) {
+            let bottom = c_border_y - outer_content_y_offset + c.height + c.margin_bottom;
+            match c.float {
+                FloatValue::Left => left = left.max(bottom),
+                FloatValue::Right => right = right.max(bottom),
+                _ => {}
+            }
+        } else if !crate::margin_collapse::establishes_bfc(c) {
+            // 非 BFC 后代：其内浮动与外层同 BFC，继续递归收集。
+            let (l, r) = nested_float_bottoms(c, c_border_y, outer_content_y_offset);
+            if l > left {
+                left = l;
+            }
+            if r > right {
+                right = r;
+            }
+        }
+        // BFC 后代：独立浮动上下文，停止递归。
+    }
+    (left, right)
+}
+
 pub(crate) fn adjust_float_positions_with_context(
     box_node: &mut LayoutBox,
     box_content_abs_y: f32,
@@ -547,6 +588,35 @@ pub(crate) fn adjust_float_positions_with_context(
     // 需将其水平位置偏移到浮动元素旁边。
     let has_active_float_context =
         !float_taffy_y.is_empty() || inherited_left_bottom > 0.0 || inherited_right_bottom > 0.0;
+    // R1393：adjoining-float 吸收是否在本容器触发（触发后须跑 containment 收缩容器高度，
+    // 否则被吸收的 margin 仍留在容器高度里显红）。函数级——在 if has_active_float_context
+    // 块内设置，containment gate（块外）读取。
+    let mut ran_adjoining_clearance = false;
+    // R1393：adjoining-float——容器无直接 float 子，但非 BFC 后代内嵌套 float + 有 clear 子时，
+    // 须走主 clearance 路径（else 分支 R1389 按「无 float context」处理，clear 看不到嵌套
+    // 浮动）。窄 gate：仅同时有 clear 子 + 嵌套浮动才扩 has_active_float_context，避免影响
+    // 普通容器。env `ZW_ADJOINING_FLOAT_CLEARANCE=0` 关闭（kill-switch，default-on）。
+    let has_active_float_context = has_active_float_context
+        || (std::env::var("ZW_ADJOINING_FLOAT_CLEARANCE").as_deref() != Ok("0")
+            && box_node.children.iter().any(|c| {
+                c.is_block_level
+                    && !c.is_absolute
+                    && !c.is_fixed
+                    && !matches!(
+                        c.clear,
+                        ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd
+                    )
+            })
+            && box_node.children.iter().any(|c| {
+                !c.is_absolute
+                    && !c.is_fixed
+                    && matches!(c.float, FloatValue::None)
+                    && !crate::margin_collapse::establishes_bfc(c)
+                    && {
+                        let (nl, nr) = nested_float_bottoms(c, 0.0, 0.0);
+                        nl > 0.0 || nr > 0.0
+                    }
+            }));
     let mut child_float_contexts: Vec<(f32, f32)> =
         vec![(inherited_left_bottom, inherited_right_bottom); box_node.children.len()];
 
@@ -573,6 +643,11 @@ pub(crate) fn adjust_float_positions_with_context(
         // 追踪正常流内容的位置，用于 clearance 假设位置计算
         let mut active_left_float_bottom = inherited_left_bottom;
         let mut active_right_float_bottom = inherited_right_bottom;
+        // R1393：追踪来自「非 BFC 后代嵌套浮动」的底边（区别于直接 float 子），用于
+        // adjoining-float 吸收判定——clear 清除的是嵌套浮动时，其 margin 经 wrapper 与该
+        // 浮动 adjoining（§8.3.1+§9.5.2），须吸收而非正常折叠。
+        let mut nested_left_bottom: f32 = 0.0;
+        let mut nested_right_bottom: f32 = 0.0;
 
         // 收集浮动元素的几何信息，用于 BFC 排斥计算
         // 使用实际坐标（Phase 1 已完成定位），避免重复计算
@@ -718,9 +793,30 @@ pub(crate) fn adjust_float_positions_with_context(
                         // 但视觉位置与假设位置相同。
                         child.y = content_y_offset + hypothetical_y;
                     } else {
-                        // hypothetical_y > clear_bottom：元素已过浮动，
-                        // 无需 clearance，margin 正常折叠。
-                        child.y = content_y_offset + hypothetical_y;
+                        // hypothetical_y > clear_bottom：元素（含 margin）已过浮动。
+                        // R1393 adjoining-float 吸收：若 clear 清除的是「嵌套在非 BFC 后代中的
+                        // 浮动」（clear_bottom 由 nested_bottom 决定），则 clear 的 margin 经
+                        // 该 wrapper 与浮动 adjoining（§8.3.1+§9.5.2）——须 apply clearance 把
+                        // clear 定到 clear_bottom 并吸收 margin，否则 margin 把 clear 推到
+                        // hypothetical 留下红间隙（adjoining-float-before-clearance：clear mt:400
+                        // 应落 float 底 50 而非 450）。须配合 R1392 nested-float 可见性。
+                        // env `ZW_ADJOINING_FLOAT_CLEARANCE=0` 关闭（kill-switch，default-on）。
+                        let nested_for_side = match child.clear {
+                            ClearValue::Left => nested_left_bottom,
+                            ClearValue::Right => nested_right_bottom,
+                            _ => nested_left_bottom.max(nested_right_bottom),
+                        };
+                        let adjoining = std::env::var("ZW_ADJOINING_FLOAT_CLEARANCE").as_deref() != Ok("0")
+                            && nested_for_side > 0.0
+                            && (clear_bottom - nested_for_side).abs() < 0.5;
+                        if adjoining {
+                            child.y = content_y_offset + clear_bottom;
+                            clearance_applied = true;
+                            ran_adjoining_clearance = true;
+                        } else {
+                            // 普通情形：margin 正常折叠，clear 留在 hypothetical。
+                            child.y = content_y_offset + hypothetical_y;
+                        }
                     }
                     float_y_offset = (original_taffy_y - child.y).max(0.0);
                     // R1316 defect ①：正 clearance 使流发散，标记后续兄弟须重定位。
@@ -828,6 +924,33 @@ pub(crate) fn adjust_float_positions_with_context(
                     }
                 }
             }
+
+            // R1392：nested-float clearance——非 BFC 子内的嵌套浮动须对后续 clear 兄弟可见
+            //（§9.5：clear 清除同 BFC 上下文内所有浮动）。ZW 的 active_*_float_bottom 仅收集
+            // 直接 float 子，嵌套在非 BFC wrapper 内的 float（adjoining-float-before-clearance）
+            // 对 clear 不可见。此处在子定位完成后扫描其非 BFC 后代的浮动底边，并入追踪。
+            // env `ZW_NESTED_FLOAT_CLEARANCE=0` 关闭（kill-switch，default-on）。
+            if std::env::var("ZW_NESTED_FLOAT_CLEARANCE").as_deref() != Ok("0")
+                && !child.is_absolute
+                && !child.is_fixed
+                && matches!(child.float, FloatValue::None)
+                && !crate::margin_collapse::establishes_bfc(child)
+            {
+                let cy = child.y;
+                let (nl, nr) = nested_float_bottoms(child, cy, content_y_offset);
+                if nl > 0.0 {
+                    nested_left_bottom = nested_left_bottom.max(nl);
+                }
+                if nr > 0.0 {
+                    nested_right_bottom = nested_right_bottom.max(nr);
+                }
+                if nl > active_left_float_bottom {
+                    active_left_float_bottom = nl;
+                }
+                if nr > active_right_float_bottom {
+                    active_right_float_bottom = nr;
+                }
+            }
         }
     } else if content_y_offset == 0.0 && std::env::var("ZW_CLEAR_NO_FLOAT_CONTEXT").as_deref() != Ok("0") {
         // R1389：has_active_float_context=false（容器无直接 float 子，且 inherited float
@@ -897,7 +1020,7 @@ pub(crate) fn adjust_float_positions_with_context(
     // 注意：子元素的 x/y 坐标是相对于父元素 content area 的，
     // 所以 content_bottom 也是相对于 content area 顶部的。
     // 不需要减去 content_y（那是相对于自身 border-box 的局部偏移，不含位置量）。
-    if !float_taffy_y.is_empty() {
+    if !float_taffy_y.is_empty() || ran_adjoining_clearance {
         let establishes_bfc = crate::margin_collapse::establishes_bfc(box_node);
         // 多列容器虽然建立 BFC（阻止 margin 折叠），
         // 但其内容通过列分布，不应使用 BFC 的浮动包含高度逻辑。

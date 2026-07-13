@@ -94,6 +94,8 @@ mod r1382_float_anon_table_tests;
 mod r1389_clear_no_float_context_tests;
 #[cfg(test)]
 mod r1390_table_cell_bfc_float_tests;
+#[cfg(test)]
+mod r1393_adjoining_float_clearance_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
