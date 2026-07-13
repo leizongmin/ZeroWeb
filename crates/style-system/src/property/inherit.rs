@@ -692,6 +692,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.text_decoration_style = default_style.text_decoration_style;
             true
         }
+        "text-decoration-thickness" => {
+            style.text_decoration_thickness = default_style.text_decoration_thickness.clone();
+            true
+        }
         "text-emphasis-style" => {
             style.text_emphasis_style = default_style.text_emphasis_style.clone();
             true

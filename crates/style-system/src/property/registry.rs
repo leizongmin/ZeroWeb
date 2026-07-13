@@ -72,6 +72,7 @@ impl PropertyRegistry {
             "text-decoration-line" => Some(TextDecorationLine(TextDecorationLineValue::None)),
             "text-decoration-color" => Some(TextDecorationColor(ColorValue::CurrentColor)),
             "text-decoration-style" => Some(TextDecorationStyle(TextDecorationStyleValue::Solid)),
+            "text-decoration-thickness" => Some(TextDecorationThickness(TextDecorationThicknessValue::Auto)),
             // CSS Text Decoration 3 §3.1/§3.2：emphasis-style 与 position 均继承。
             "text-emphasis-style" => Some(TextEmphasisStyle(TextEmphasisStyleValue::None)),
             "text-emphasis-position" => Some(TextEmphasisPosition(TextEmphasisPositionValue::OverRight)),
@@ -416,6 +417,7 @@ impl PropertyRegistry {
             "text-decoration-line",
             "text-decoration-color",
             "text-decoration-style",
+            "text-decoration-thickness",
             "text-emphasis-style",
             "text-emphasis-position",
             "text-transform",

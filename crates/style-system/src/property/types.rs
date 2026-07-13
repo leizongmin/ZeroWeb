@@ -146,6 +146,15 @@ pub enum TextDecorationStyleValue {
     Wavy,
 }
 
+/// CSS text-decoration-thickness 值（CSS Text Decoration 4 §2.3）。R1402。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextDecorationThicknessValue {
+    /// auto（默认）/ from-font：用字体度量厚度（ZW 近似 font_size×0.06）。
+    Auto,
+    /// 明确长度（px）。
+    Length(f64),
+}
+
 /// CSS text-transform 值。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextTransformValue {
@@ -1312,6 +1321,8 @@ pub enum PropertyValue {
     TextDecorationColor(ColorValue),
     /// text-decoration-style 值。
     TextDecorationStyle(TextDecorationStyleValue),
+    /// text-decoration-thickness 值（CSS Text Decoration 4 §2.3）。R1402。
+    TextDecorationThickness(TextDecorationThicknessValue),
     /// text-emphasis-style 值（CSS Text Decoration 3 §3.1）。
     TextEmphasisStyle(TextEmphasisStyleValue),
     /// text-emphasis-position 值（§3.2）。

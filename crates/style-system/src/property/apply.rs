@@ -456,6 +456,19 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "text-decoration-thickness" => {
+            if let Some(v) = values::parse_text_decoration_thickness(value) {
+                style.text_decoration_thickness = match v {
+                    values::TextDecorationThicknessValue::Auto | values::TextDecorationThicknessValue::FromFont => {
+                        super::types::TextDecorationThicknessValue::Auto
+                    }
+                    values::TextDecorationThicknessValue::Length(n) => {
+                        super::types::TextDecorationThicknessValue::Length(n)
+                    }
+                };
+                return true;
+            }
+        }
         "text-emphasis-style" => {
             if let Some(v) = values::parse_text_emphasis_style(value) {
                 style.text_emphasis_style = v;

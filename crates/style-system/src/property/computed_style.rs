@@ -134,6 +134,8 @@ pub struct ComputedStyle {
     pub text_decoration_color: ColorValue,
     /// text-decoration-style 属性（不继承）。
     pub text_decoration_style: TextDecorationStyleValue,
+    /// text-decoration-thickness 属性（CSS Text Decoration 4 §2.3，不继承）。R1402。
+    pub text_decoration_thickness: TextDecorationThicknessValue,
     /// text-emphasis-style 属性（CSS Text Decoration 3 §3.1，继承）。
     pub text_emphasis_style: TextEmphasisStyleValue,
     /// text-emphasis-position 属性（§3.2，继承）。默认 OverRight。

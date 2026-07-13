@@ -210,7 +210,13 @@ impl super::Painter {
             color_value_to_render(&style.text_decoration_color)
         };
 
-        let line_width = (font_size * 0.06).max(1.0);
+        // R1402：text-decoration-thickness 显式长度覆盖默认厚度。
+        // 长度按 device px 向下取整（chromium 行为，text-decoration-thickness-length-rounding：
+        // 2.3px→2px）。auto/from-font 保留字体度量近似（font_size×0.06，min 1px）。
+        let line_width = match style.text_decoration_thickness {
+            zero_style_system::TextDecorationThicknessValue::Length(n) => (n as f32).floor().max(1.0),
+            zero_style_system::TextDecorationThicknessValue::Auto => (font_size * 0.06).max(1.0),
+        };
 
         self.paint_decoration_line(base_x, y, total_width, line_width, color, &style.text_decoration_style);
     }

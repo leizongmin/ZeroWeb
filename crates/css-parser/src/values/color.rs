@@ -664,6 +664,22 @@ pub fn parse_text_decoration_style(value: &str) -> Option<TextDecorationStyleVal
     }
 }
 
+/// 解析 CSS text-decoration-thickness 值（CSS Text Decoration 4 §2.3）。R1402。
+///
+/// 支持 `auto` / `from-font` 关键字与 `<length>`（如 `2px`）。em/rem/% 须 computed 层
+/// 字号上下文，指定值层仅认 Px（driver test text-decoration-thickness-length-rounding 用 px）。
+pub fn parse_text_decoration_thickness(value: &str) -> Option<TextDecorationThicknessValue> {
+    let v = value.trim();
+    match v.to_ascii_lowercase().as_str() {
+        "auto" => Some(TextDecorationThicknessValue::Auto),
+        "from-font" => Some(TextDecorationThicknessValue::FromFont),
+        _ => match parse_length(v) {
+            Some(LengthValue::Px(n)) => Some(TextDecorationThicknessValue::Length(n)),
+            _ => None,
+        },
+    }
+}
+
 /// 解析 CSS text-emphasis-style 值（CSS Text Decoration 3 §3.1）。
 /// `none` | [ [ filled | open ] || [ dot | circle | double-circle | triangle | sesame ] ] | <string>
 /// 关键字组合解析为对应标记字符（filled dot → '•' 等）；<string> 取首字符。

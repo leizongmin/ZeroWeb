@@ -204,6 +204,48 @@ fn parse_container_type_invalid() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
+/// R1402：应用 text-decoration-thickness（CSS Text Decoration 4 §2.3）。
+fn apply_text_decoration_thickness() {
+    use crate::TextDecorationThicknessValue;
+    let mut style = ComputedStyle::default();
+    // 默认 auto
+    assert_eq!(style.text_decoration_thickness, TextDecorationThicknessValue::Auto);
+    // length 2px → Length(2.0)
+    assert!(crate::property::apply::apply_property_value(
+        &mut style,
+        "text-decoration-thickness",
+        "2px"
+    ));
+    assert_eq!(
+        style.text_decoration_thickness,
+        TextDecorationThicknessValue::Length(2.0)
+    );
+    // 2.3px → Length(2.3)（floor 发生在 paint 层 device-px 取整）
+    assert!(crate::property::apply::apply_property_value(
+        &mut style,
+        "text-decoration-thickness",
+        "2.3px"
+    ));
+    assert_eq!(
+        style.text_decoration_thickness,
+        TextDecorationThicknessValue::Length(2.3)
+    );
+    // auto 关键字
+    assert!(crate::property::apply::apply_property_value(
+        &mut style,
+        "text-decoration-thickness",
+        "auto"
+    ));
+    assert_eq!(style.text_decoration_thickness, TextDecorationThicknessValue::Auto);
+    // 非法值不应用（返回 false）
+    assert!(!crate::property::apply::apply_property_value(
+        &mut style,
+        "text-decoration-thickness",
+        "bogus"
+    ));
+}
+
+#[test]
 /// 应用 max-width: none
 fn apply_max_width_none() {
     let mut style = ComputedStyle::default();

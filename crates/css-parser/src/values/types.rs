@@ -355,6 +355,17 @@ pub enum TextDecorationStyleValue {
     Wavy,
 }
 
+/// CSS text-decoration-thickness 值（CSS Text Decoration 4 §2.3）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextDecorationThicknessValue {
+    /// auto（默认）：由字体度量决定厚度。
+    Auto,
+    /// from-font：显式从字体度量取 underline 厚度（ZW 无字体度量，回退 auto）。
+    FromFont,
+    /// 明确长度（px/em 等已解析为 px）。R1402：仅 length 值覆盖默认厚度。
+    Length(f64),
+}
+
 /// CSS text-emphasis-style 值（CSS Text Decoration 3 §3.1）。
 /// 解析后存为标记字符（如 filled dot → '•' U+2022），None = 无标记。
 #[derive(Debug, Clone, PartialEq, Eq)]
