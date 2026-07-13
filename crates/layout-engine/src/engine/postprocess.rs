@@ -970,6 +970,7 @@ pub(super) fn in_flow_content_extent(box_node: &LayoutBox) -> f32 {
 /// 为 Stretch/Auto（默认）；definite cross 来源二选一——(a) **R1371 abspos**：容器 abspos +
 /// top/bottom 均 Px（高度来自 inset stretch）；(b) **R1404 aspect-ratio**：容器有 aspect-ratio
 /// + width Px（高度 = width/ratio 派生 definite，env `ZW_ASPECT_RATIO_FLEX_STRETCH=0` 关闭）。
+///
 /// item 须 replaced + 有 intrinsic + width/height 均 Auto（无 definite 尺寸）。
 pub(super) fn restretch_abspos_flex_replaced_items(
     box_node: &mut LayoutBox,
@@ -1061,6 +1062,103 @@ pub(super) fn restretch_abspos_flex_replaced_items(
             item.width = item_main;
             item.content_width =
                 (item_main - item.padding_left - item.padding_right - item.border_left - item.border_right).max(0.0);
+        }
+    }
+}
+
+/// R1411：column-flex **非 stretch** 替换 item 的 main（height）修正。
+///
+/// **根因**：taffy 对 column flex 替换 item 的 main-size aspect-ratio 推导用 flex-line cross
+/// （容器宽）而非 item 自身 cross，且替换 item 经 `new_leaf_with_context`（measure 节点）使
+/// post-hoc taffy style 覆盖无效（measure 返回 0×0，taffy 用 available_space → 容器宽/ratio）。
+/// 结果 item.height = 容器宽 / ratio 而非 item.width / ratio。驱动案
+/// `flex-aspect-ratio-img-column-007`：`.flex{width:200;flex-direction:column;align-items:flex-start}`
+/// 内 `<img>`(20×50, min-width:20%=40) 应 40×100（cross=40, main=40/(20/50)=100），taffy 给
+/// 200/0.4=500（5× 过高）。
+///
+/// **本 pass**（LayoutBox 层 postprocess，绕过 taffy）：对 column/column-reverse flex 容器中
+/// **非 stretch**（item 有效 align-self/align-items 非 Stretch/Auto）的替换 item，按 item 自身
+/// 已解析 cross（width）× 固有 (ih/iw) 修正 main（height）。kill-switch `ZW_FLEX_COL_ASPECT_MAIN`。
+pub(super) fn fix_column_flex_nonstretch_replaced_main(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    img_sizes: &HashMap<NodeId, (f32, f32)>,
+) {
+    use zero_style_system::WritingModeValue;
+
+    for child in box_node.children.iter_mut() {
+        fix_column_flex_nonstretch_replaced_main(child, styles, img_sizes);
+    }
+
+    if std::env::var("ZW_FLEX_COL_ASPECT_MAIN").as_deref() == Ok("0") {
+        return;
+    }
+    let style = match box_node.node_id.and_then(|id| styles.get(&id)) {
+        Some(s) => s,
+        None => return,
+    };
+    if !matches!(style.display, DisplayValue::Flex | DisplayValue::InlineFlex) {
+        return;
+    }
+    if !matches!(style.writing_mode, WritingModeValue::HorizontalTb) {
+        return;
+    }
+    // column/column-reverse：main = height，cross = width（row 由 restretch_abspos_flex 处理）。
+    if !matches!(
+        style.flex_direction,
+        FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+    ) {
+        return;
+    }
+    // 容器须有 definite cross（width Px）。
+    if !matches!(style.width, LengthValue::Px(_)) {
+        return;
+    }
+
+    for item in box_node.children.iter_mut() {
+        if !item.is_replaced || item.is_absolute || item.is_fixed {
+            continue;
+        }
+        if !matches!(item.float, FloatValue::None) {
+            continue;
+        }
+        let Some(id) = item.node_id else {
+            continue;
+        };
+        let Some(&(iw, ih)) = img_sizes.get(&id) else {
+            continue;
+        };
+        if iw <= 0.0 || ih <= 0.0 {
+            continue;
+        }
+        let item_style = match styles.get(&id) {
+            Some(s) => s,
+            None => continue,
+        };
+        // item 尺寸 Auto（无 definite CSS 尺寸，taffy 才会用 aspect-ratio 推导出错）。
+        if !matches!(item_style.width, LengthValue::Auto) || !matches!(item_style.height, LengthValue::Auto) {
+            continue;
+        }
+        // 仅非 stretch：stretch 时 cross 由 align-items 拉到容器，main 另案（restretch 谱系）。
+        let eff_align = if matches!(item_style.align_self, AlignmentValue::Auto) {
+            &style.align_items
+        } else {
+            &item_style.align_self
+        };
+        if matches!(eff_align, AlignmentValue::Stretch | AlignmentValue::Auto) {
+            continue;
+        }
+        // item cross（width）须已解析 > 0（由 min-width/content 经 taffy 给出）。
+        if item.width <= 0.0 {
+            continue;
+        }
+        // main（height）= cross × (ih/iw)（固有高宽比）。仅当与 taffy 算出的 main 显著不同时修正。
+        let expected_main = (item.width * (ih / iw)).max(0.0);
+        if (item.height - expected_main).abs() > 0.5 {
+            item.height = expected_main;
+            item.content_height =
+                (expected_main - item.padding_top - item.padding_bottom - item.border_top - item.border_bottom)
+                    .max(0.0);
         }
     }
 }

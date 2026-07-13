@@ -442,6 +442,8 @@ impl LayoutEngine {
         if abspos_flex_restretch {
             restretch_abspos_flex_replaced_items(&mut root_box, styles, &intrinsic_for_r695);
         }
+        // R1411：column-flex 非 stretch 替换 item main（height）修正（绕过 taffy，LayoutBox 层）。
+        fix_column_flex_nonstretch_replaced_main(&mut root_box, styles, &intrinsic_for_r695);
 
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
