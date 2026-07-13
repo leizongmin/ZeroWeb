@@ -165,6 +165,57 @@ fn is_invalid_negative_length(property: &str, value: &str) -> bool {
     }
 }
 
+/// 「有限关键字值」属性：值空间为固定关键词集合，`parse_X` 返回 `None` 即确定非法
+/// （CSS 规范：值无法解析时整条声明作为解析错误丢弃）。
+///
+/// 这些属性的 `parse_X` 函数是权威整串匹配，且与 `apply.rs` 调用的是**同一个**函数
+/// （均经 `zero_css_parser::values::parse_X`，定义于 `values/color.rs`）——故
+/// `parse_X` 接受的值 `apply` 必能消费，`parse_X` 拒绝的 `apply` 必拒绝，零
+/// false-positive。长度/颜色/简写属性值空间开放，不在此列。
+const ENUM_KEYWORD_PROPS: &[&str] = &[
+    "display",
+    "position",
+    "float",
+    "clear",
+    "overflow",
+    "overflow-x",
+    "overflow-y",
+    "visibility",
+    "box-sizing",
+    "flex-direction",
+    "flex-wrap",
+];
+
+/// 判定一条声明是否为「有限关键字值属性的非法值」（级联时应按未声明处理）。
+///
+/// 与 `is_invalid_negative_length` 同理：在 apply 阶段拒绝太晚——cascade 已丢弃较低
+/// 优先级的合法回退声明。例 `display: flex inline-flex`（无效双值）应回退到 UA 默认
+/// `block`（保留已级联值），而非重置为初值 `inline`（CSS error-handling：非法声明
+/// 忽略）。驱动案 css-flexbox/flexbox_display（19.99% diff）。无合法回退时属性不进入
+/// 级联结果→初值/继承，与旧行为一致。
+fn is_invalid_enum_value(property: &str, value: &str) -> bool {
+    use zero_css_parser::values::{
+        parse_box_sizing, parse_clear, parse_display, parse_flex_direction, parse_flex_wrap, parse_float,
+        parse_overflow, parse_position, parse_visibility,
+    };
+    if !ENUM_KEYWORD_PROPS.contains(&property) {
+        return false;
+    }
+    let v = value.trim();
+    match property {
+        "display" => parse_display(v).is_none(),
+        "position" => parse_position(v).is_none(),
+        "float" => parse_float(v).is_none(),
+        "clear" => parse_clear(v).is_none(),
+        "overflow" | "overflow-x" | "overflow-y" => parse_overflow(v).is_none(),
+        "visibility" => parse_visibility(v).is_none(),
+        "box-sizing" => parse_box_sizing(v).is_none(),
+        "flex-direction" => parse_flex_direction(v).is_none(),
+        "flex-wrap" => parse_flex_wrap(v).is_none(),
+        _ => false,
+    }
+}
+
 /// 级联算法。
 ///
 /// 接收一组级联声明，按属性名分组后，为每个属性选择优先级最高的声明。
@@ -182,13 +233,14 @@ pub fn cascade(declarations: Vec<CascadedDeclaration>) -> HashMap<String, String
     let mut result = HashMap::new();
 
     for (property, decls) in by_property {
-        // CSS 规范：非法声明（如盒模型尺寸属性的负长度）在级联时即按未声明处理，
-        // 故较低优先级的合法声明可胜出。仅选最高优先级的合法声明；若该属性全部声明
-        // 均非法（全为负值等），属性不进入级联结果，回退到初始值（width/height→auto、
-        // max-*→none 等，由 default_impl 提供，均为 CSS 规范初始值）。
+        // CSS 规范：非法声明（盒模型尺寸属性的负长度，或有限关键字值属性的非法值）
+        // 在级联时即按未声明处理，故较低优先级的合法声明可胜出。仅选最高优先级的合法
+        // 声明；若该属性全部声明均非法（全为负值/全为无法解析的关键字值等），属性不
+        // 进入级联结果，回退到初始值（width/height→auto、max-*→none、display→inline 等，
+        // 由 default_impl 提供，均为 CSS 规范初始值）。
         let winner = decls
             .iter()
-            .filter(|d| !is_invalid_negative_length(&property, &d.value))
+            .filter(|d| !is_invalid_negative_length(&property, &d.value) && !is_invalid_enum_value(&property, &d.value))
             .max_by_key(|d| d.order.clone());
         if let Some(w) = winner {
             result.insert(property, w.value.clone());
@@ -372,6 +424,96 @@ mod tests {
 
         let result = cascade(decls);
         assert_eq!(result.get("margin-top"), Some(&"-5px".to_string()));
+    }
+
+    #[test]
+    fn test_cascade_skips_invalid_enum_with_valid_fallback() {
+        // CSS error-handling：display 无效值（如 `flex inline-flex` 双值、`bogus`、
+        // `flex extra junk` 尾部垃圾）整条声明丢弃，较低优先级合法声明胜出。
+        // 驱动案 css-flexbox/flexbox_display：UA `display:block` (0,0,0) 应胜过作者
+        // `display: flex inline-flex` (0,0,1) 的非法声明（旧实现重置为初值 inline）。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "display".to_string(),
+                value: "block".to_string(),
+                order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "display".to_string(),
+                value: "flex inline-flex".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        let result = cascade(decls);
+        assert_eq!(result.get("display"), Some(&"block".to_string()));
+    }
+
+    #[test]
+    fn test_cascade_sole_invalid_enum_rejected_to_initial() {
+        // 仅有非法 enum 声明 → 属性不进入级联结果（display 回退初值 inline）。
+        let decls = vec![CascadedDeclaration {
+            property: "display".to_string(),
+            value: "bogus".to_string(),
+            order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+        }];
+        let result = cascade(decls);
+        assert!(result.get("display").is_none());
+    }
+
+    #[test]
+    fn test_cascade_invalid_enum_variants_and_other_props() {
+        // 有效值+尾部垃圾（`flex extra junk`）整条声明丢弃 → 回退 UA block。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "display".to_string(),
+                value: "block".to_string(),
+                order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "display".to_string(),
+                value: "flex extra junk".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        assert_eq!(cascade(decls).get("display"), Some(&"block".to_string()));
+
+        // 其它 enum 属性同理：position 无效值回退 UA static。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "position".to_string(),
+                value: "static".to_string(),
+                order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "position".to_string(),
+                value: "definitely-not-a-position".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+        ];
+        assert_eq!(cascade(decls).get("position"), Some(&"static".to_string()));
+
+        // 有效 enum 值不被误拒（display:flex、float:left、overflow:hidden 均保留）。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "display".to_string(),
+                value: "flex".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false),
+            },
+            CascadedDeclaration {
+                property: "float".to_string(),
+                value: "left".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false),
+            },
+            CascadedDeclaration {
+                property: "overflow".to_string(),
+                value: "hidden".to_string(),
+                order: CascadeOrder::new(Origin::Author, None, (0, 0, 1), 2, false),
+            },
+        ];
+        let result = cascade(decls);
+        assert_eq!(result.get("display"), Some(&"flex".to_string()));
+        assert_eq!(result.get("float"), Some(&"left".to_string()));
+        assert_eq!(result.get("overflow"), Some(&"hidden".to_string()));
     }
 
     #[test]
