@@ -258,7 +258,10 @@ impl PropertyRegistry {
 
             // Background Image / Position / Repeat / Size / Attachment / Clip / Origin
             "background-image" => Some(BackgroundImage(BackgroundImageComputedValue::None)),
-            "background-position" => Some(BackgroundPosition(BackgroundPositionComputedValue::Percent(0.0))),
+            "background-position" => Some(BackgroundPosition(BackgroundPositionComputedValue::TwoValue(
+                Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+                Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+            ))),
             "background-repeat" => Some(BackgroundRepeat(BackgroundRepeatComputedValue::Repeat)),
             "background-size" => Some(BackgroundSize(BackgroundSizeComputedValue::Auto)),
             "background-attachment" => Some(BackgroundAttachment(BackgroundAttachmentComputedValue::Scroll)),

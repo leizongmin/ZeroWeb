@@ -13,6 +13,17 @@ use zero_css_parser::values;
 /// 处理 Transforms、Transitions、Animations、Scroll Snap、Container、
 /// Counter、Content、Break、Column、Appearance 等高级属性。
 /// 返回 true 表示成功设置。
+/// R1417：把 background-position 的长度值（任意单位）解析为 px。
+/// em/rem/ex/ch 按元素 font-size 解析；vh/vw/vmin/vmax 按 viewport（apply 无 viewport
+/// 上下文，传 None 用 resolve_length 默认，vh/vw 在 bg-position 极罕见）。
+fn resolve_bg_pos_length(lv: zero_css_parser::values::LengthValue, style: &ComputedStyle) -> f32 {
+    let fs = match &style.font_size {
+        zero_css_parser::values::LengthValue::Px(v) => *v,
+        _ => 16.0,
+    };
+    crate::computed::resolve_length(&lv, fs, None, None) as f32
+}
+
 pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, value: &str) -> bool {
     let value = value.trim();
     match property {
@@ -1023,8 +1034,8 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                     zero_css_parser::values::BackgroundPositionValue::Right => BackgroundPositionComputedValue::Right,
                     zero_css_parser::values::BackgroundPositionValue::Top => BackgroundPositionComputedValue::Top,
                     zero_css_parser::values::BackgroundPositionValue::Bottom => BackgroundPositionComputedValue::Bottom,
-                    zero_css_parser::values::BackgroundPositionValue::Length(px) => {
-                        BackgroundPositionComputedValue::Length(px)
+                    zero_css_parser::values::BackgroundPositionValue::Length(lv) => {
+                        BackgroundPositionComputedValue::Length(resolve_bg_pos_length(lv, style))
                     }
                     zero_css_parser::values::BackgroundPositionValue::Percent(pct) => {
                         BackgroundPositionComputedValue::Percent(pct)
@@ -1046,8 +1057,8 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                             zero_css_parser::values::BackgroundPositionValue::Bottom => {
                                 BackgroundPositionComputedValue::Bottom
                             }
-                            zero_css_parser::values::BackgroundPositionValue::Length(px) => {
-                                BackgroundPositionComputedValue::Length(px)
+                            zero_css_parser::values::BackgroundPositionValue::Length(lv) => {
+                                BackgroundPositionComputedValue::Length(resolve_bg_pos_length(lv, style))
                             }
                             zero_css_parser::values::BackgroundPositionValue::Percent(pct) => {
                                 BackgroundPositionComputedValue::Percent(pct)
@@ -1070,8 +1081,8 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                             zero_css_parser::values::BackgroundPositionValue::Bottom => {
                                 BackgroundPositionComputedValue::Bottom
                             }
-                            zero_css_parser::values::BackgroundPositionValue::Length(px) => {
-                                BackgroundPositionComputedValue::Length(px)
+                            zero_css_parser::values::BackgroundPositionValue::Length(lv) => {
+                                BackgroundPositionComputedValue::Length(resolve_bg_pos_length(lv, style))
                             }
                             zero_css_parser::values::BackgroundPositionValue::Percent(pct) => {
                                 BackgroundPositionComputedValue::Percent(pct)

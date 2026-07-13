@@ -1479,6 +1479,33 @@ fn test_apply_property_background_position_length() {
     assert_eq!(style.background_position, BackgroundPositionComputedValue::Length(10.0));
 }
 
+/// R1417：em/rem 单位 background-position 此前被 parser 拒绝（仅匹配 LengthValue::Px），
+/// 现保留 LengthValue 经 apply 按 font-size 解析为 px。默认 font-size=16px → 2em=32px。
+#[test]
+fn test_apply_property_background_position_em_resolves_to_px() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "background-position", "2em"));
+    assert_eq!(style.background_position, BackgroundPositionComputedValue::Length(32.0));
+    // -0em（负零 em，驱动案 background-position-076）应解析为 0px。
+    let mut style2 = ComputedStyle::default();
+    assert!(apply_property_value(&mut style2, "background-position", "-0em"));
+    assert_eq!(style2.background_position, BackgroundPositionComputedValue::Length(0.0));
+}
+
+/// R1417：默认 background-position 应为 0% 0%（top-left，CSS initial），非单值（旧实现
+/// 经 resolve_background_position 单值规则把垂直 default 到 center）。
+#[test]
+fn test_apply_property_background_position_default_is_zero_zero() {
+    let style = ComputedStyle::default();
+    match style.background_position {
+        BackgroundPositionComputedValue::TwoValue(ref h, ref v) => {
+            assert_eq!(**h, BackgroundPositionComputedValue::Percent(0.0));
+            assert_eq!(**v, BackgroundPositionComputedValue::Percent(0.0));
+        }
+        ref other => panic!("default background-position 应为 TwoValue(0%,0%), got {other:?}"),
+    }
+}
+
 #[test]
 fn test_apply_property_background_position_two_values() {
     let mut style = ComputedStyle::default();
@@ -1515,7 +1542,14 @@ fn test_background_position_initial_value() {
     let mut style = ComputedStyle::default();
     style.background_position = BackgroundPositionComputedValue::Center;
     assert!(apply_initial_value(&mut style, "background-position"));
-    assert_eq!(style.background_position, BackgroundPositionComputedValue::Percent(0.0));
+    // R1417：CSS initial = 0% 0%（top-left，双值），非单值 Percent(0.0)。
+    assert_eq!(
+        style.background_position,
+        BackgroundPositionComputedValue::TwoValue(
+            Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+            Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+        )
+    );
 }
 
 // ── background-repeat 属性测试 ──

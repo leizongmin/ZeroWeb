@@ -647,11 +647,21 @@ fn test_parse_background_position_percent() {
 fn test_parse_background_position_length() {
     assert_eq!(
         parse_background_position("10px"),
-        Some(BackgroundPositionValue::Length(10.0))
+        Some(BackgroundPositionValue::Length(LengthValue::Px(10.0)))
     );
     assert_eq!(
         parse_background_position("0px"),
-        Some(BackgroundPositionValue::Length(0.0))
+        Some(BackgroundPositionValue::Length(LengthValue::Px(0.0)))
+    );
+    // R1417：em/rem/ex 等相对单位此前被拒（parse_length 返回 Em/Rem，旧 Length(f32) 仅匹配
+    // Px），现保留 LengthValue 供 style-system apply 按 font-size 解析。
+    assert_eq!(
+        parse_background_position("-0em"),
+        Some(BackgroundPositionValue::Length(LengthValue::Em(0.0)))
+    );
+    assert_eq!(
+        parse_background_position("2em"),
+        Some(BackgroundPositionValue::Length(LengthValue::Em(2.0)))
     );
 }
 

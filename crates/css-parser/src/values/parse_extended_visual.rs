@@ -615,8 +615,11 @@ pub enum BackgroundPositionValue {
     Top,
     /// bottom。
     Bottom,
-    /// 长度值（如 10px）。
-    Length(f32),
+    /// 长度值（任意单位，px/em/rem/ex/vh/vw 等；em/rem 等相对单位在 style-system apply
+    /// 时按元素 font-size/viewport 解析为 px）。R1417：此前仅 px（Length(f32)），致
+    /// `background-position: <em/rem/ex>` 解析失败（parse_length 返回 Em/Rem 而非 Px，
+    /// `if let LengthValue::Px` 不匹配 → None）。
+    Length(LengthValue),
     /// 百分比值（如 50%）。
     Percent(f32),
     /// 两个值组合（水平 垂直）。
@@ -663,12 +666,32 @@ pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue>
         return Some(BackgroundPositionValue::Percent(pct));
     }
 
-    // 单个长度值
-    if let Some(LengthValue::Px(px)) = parse_length(&lower) {
-        return Some(BackgroundPositionValue::Length(px as f32));
+    // 单个长度值（R1417：接受任意单位——px/em/rem/ex/vh/vw/ch 等；em/rem 等相对单位
+    // 在 style-system apply 时解析为 px）。排除 auto/min-content/max-content/fit-content
+    // （非 bg-position 合法长度）与百分比（已在上方处理）。
+    if let Some(lv) = parse_length(&lower)
+        && is_background_position_length(&lv)
+    {
+        return Some(BackgroundPositionValue::Length(lv));
     }
 
     None
+}
+
+/// 判断 LengthValue 是否为 background-position 合法的长度（px/em/rem/ex/vh/vw/vmin/vmax/ch）。
+/// 排除 auto/min-content/max-content/fit-content/percentage/calc（非长度或已单独处理）。
+fn is_background_position_length(lv: &LengthValue) -> bool {
+    matches!(
+        lv,
+        LengthValue::Px(_)
+            | LengthValue::Em(_)
+            | LengthValue::Rem(_)
+            | LengthValue::Vh(_)
+            | LengthValue::Vw(_)
+            | LengthValue::Vmin(_)
+            | LengthValue::Vmax(_)
+            | LengthValue::Ch(_)
+    )
 }
 
 /// 解析 background-position 的单个分量。
@@ -683,8 +706,10 @@ fn parse_position_component(s: &str) -> Option<BackgroundPositionValue> {
             if s.ends_with('%') {
                 let pct: f32 = s.trim_end_matches('%').parse().ok()?;
                 Some(BackgroundPositionValue::Percent(pct))
-            } else if let Some(LengthValue::Px(px)) = parse_length(s) {
-                Some(BackgroundPositionValue::Length(px as f32))
+            } else if let Some(lv) = parse_length(s)
+                && is_background_position_length(&lv)
+            {
+                Some(BackgroundPositionValue::Length(lv))
             } else {
                 None
             }
