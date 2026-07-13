@@ -647,6 +647,10 @@ pub(super) fn exclude_floats_from_non_bfc_auto_height(
 /// 本 pass 对**直接 abspos 子**（其 CB 即本盒，本盒须为 positioned）减去本盒 border_left/top。
 /// 深层 abspos（box-tree 父 ≠ positioned 祖先）不在本 pass 处理范围（须 positioned 祖先追踪，
 /// 留多 session）。env `ZW_ABSPOS_CB_BORDER=0` 关闭（kill-switch，default-on）。
+///
+/// 注：仅修 loc。abspos stretch 尺寸（width/height:auto + 双向 inset）虽同源（taffy 按
+/// border-box CB 多算 border），但 R1399 A/B 证 chromium 对真实 form-control 案也按 border-box
+/// stretch（spec-purist padding-box 修正反致 semi-replaced-input/other 微退），故不改。
 pub(super) fn fix_abspos_cb_border(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     use zero_css_parser::values::PositionValue;
     // 本盒是否为 positioned（是其直接 abspos 子的 CB）

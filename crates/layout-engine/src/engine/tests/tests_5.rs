@@ -1781,17 +1781,18 @@ fn test_absolute_stretch_in_inline_block_container() {
         abs_box.y
     );
 
-    // 拉伸尺寸：taffy 0.12 对 abspos stretch 仍按 border-box CB 计算（独立于 R1398 的
-    // loc 修正），故 width=150-6=144、height=100-6=94（spec padding-box CB 应为 138/88，
-    // 系 taffy 另一独立 CB 缺口，非 R1398 范围）。此处刻画 taffy 当前 stretch 行为。
+    // 拉伸尺寸：taffy 0.12 对 abspos stretch 按 border-box CB 计算（width=150-6=144、
+    // height=100-6=94）。R1399 试按 spec padding-box CB 修正为 138/88，但 A/B 证 chromium
+    // 对真实 form-control 案也按 border-box stretch（spec 修正反致 semi-replaced 微退），
+    // 故 R1399 revert，此处刻画 taffy/chromium 一致的 border-box stretch 行为。
     assert!(
         (abs_box.width - 144.0).abs() < 2.0,
-        "absolute 宽度应约 144px（taffy stretch），实际 {}",
+        "absolute 宽度应约 144px（border-box CB stretch），实际 {}",
         abs_box.width
     );
     assert!(
         (abs_box.height - 94.0).abs() < 2.0,
-        "absolute 高度应约 94px（taffy stretch），实际 {}",
+        "absolute 高度应约 94px（border-box CB stretch），实际 {}",
         abs_box.height
     );
 
