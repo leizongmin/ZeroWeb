@@ -21,8 +21,8 @@
 现在最值得继续往前推的几件事：
 
 - 当前优先完成 `rendering-compat` / render-compact 验收，把静态 CSS-heavy 页面渲染拉到可验证的 Chromium 参考水平；通过率以 Chromium Oracle 像素对比（`make reftest-oracle`）为诚实度量，同源自渲染 reftest 仅作自一致性参考
-- 外部样式表加载、图片子资源与 `ImageCache`、SVG 作为图片资源的栅格化、产品静态页截图门禁（`make product-smoke` / `make product-smoke-legacy`）均已落地；FreeType 字体光栅化（`freetype-raster` 默认开启）落地后 broad 一致率（chr<1%）从 ~36% 跃升至 ~51%（CSS2 65.6% / flexbox 60.0% / tables 64.3%，R1200-R1202 fresh baseline），但 strict 像素级仍受 font-raster 残余噪声约束、处 plateau；残余缺口集中在 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export（taffy 0.7 gate）等结构性方向
-- 后续 forward lever 多为多会话架构级：Phase A IFC 统一（解 layout/paint dual-path）、taffy 0.7→0.11 迁移（unblock baseline-export + flex/grid intrinsic，build-breaking、worktree-gated、需单独决策，设计文档见 `docs/goal/rendering-compat/taffy-migration-design.md`）、2em layout dual-path；短期内仍持续修 CSS2 / Flexbox / Grid / Multicol 等可单点修复的渲染缺口
+- 外部样式表加载、图片子资源与 `ImageCache`、SVG 作为图片资源的栅格化、产品静态页截图门禁（`make product-smoke` / `make product-smoke-legacy`）均已落地；FreeType 字体光栅化（`freetype-raster` 默认开启）落地后 broad 一致率（chr<1%）从 ~36% 跃升至约 55%（normal-flow 82% / flexbox 61% / grid 55% / position 54% / text-decor 50% / multicol 34%，R1337 fresh 全量 oracle baseline，2026-07-12；之后多轮持续 +N），但 strict 像素级仍受 font-raster 残余噪声约束、处 plateau；残余缺口集中在 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export（flex/grid/multicol-baseline 合成）等结构性方向
+- taffy 已从 vendored 0.7.7 升级到 0.12.1（`baseline_overrides` 输入 API 解锁，原「taffy 0.7→0.11 迁移」lever 已完成；设计记录见 `docs/goal/rendering-compat/taffy-migration-design.md`）；后续 forward lever 多为多会话架构级：Phase A IFC 统一（解 layout/paint dual-path）、baseline-export 合成（flex/grid/multicol-baseline）、multicol 碎片化、2em layout dual-path；短期内仍持续修 CSS2 / Flexbox / Grid / Multicol 等可单点修复的渲染缺口
 - 用真实静态页面暴露缺口：`apps/browser/assets/welcome.html`、`morning.work` 文章页、`wintertc.org` 首页
 - 短期内把 HTML 3.2/4 + CSS1/2 常见静态文档（presentational hints、UA 默认样式、基础表格 / 列表 / 链接颜色）提升为高优先级推进面，配套 `legacy-html` 产品 smoke 与 `make product-smoke-legacy` 回归门禁；不替代 WPT / DC-14 长期目标
 - `browser-shell` 已有基础骨架，后续重点是把产品层和 WebView/渲染管线的真实验收打通
@@ -43,7 +43,7 @@
 | M9 | Canvas 与存储 | `✅ 已完成` | Canvas 2D、localStorage、sessionStorage、IndexedDB、Cache API、Service Worker registry 基础已在仓库中 |
 | M10 | WebView API 与自动化基础 | `✅ 已完成` | 已有可嵌入 API、导航加载、测试和 headless/自动化相关基础，但还会继续演进 |
 | M11 | 浏览器产品层 | `🚧 进行中` | `browser-shell`、标签页、地址栏、历史、书签、下载、设置等基础逐步落地；真实窗口/GPU/display 产品验收仍需补齐 |
-| M12 | Render compatibility / render-compact | `🚧 进行中` | 当前主线；以 WPT/CSSWG reftest 对齐 Chromium，并以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源 reftest 存在假通过）；harness 已执行测试页 setup 脚本后再截图，覆盖靠脚本构造内容的用例；外部 CSS、图片资源、SVG 栅格化、产品静态页门禁已落地；FreeType 字体光栅化（`freetype-raster` 默认开启）落地后 broad 一致率（chr<1%）从 ~36% 跃升至 ~51%（R1200-R1202 fresh 10-dir baseline），但 strict 像素级仍受 font-raster 残余噪声约束、处 plateau；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export（taffy 0.7 gate）等结构性问题，下一批 forward lever（Phase A IFC 统一、taffy 0.7→0.11 迁移、2em layout dual-path）多为多会话架构级 |
+| M12 | Render compatibility / render-compact | `🚧 进行中` | 当前主线；以 WPT/CSSWG reftest 对齐 Chromium，并以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源 reftest 存在假通过）；harness 已执行测试页 setup 脚本后再截图，覆盖靠脚本构造内容的用例；外部 CSS、图片资源、SVG 栅格化、产品静态页门禁已落地；FreeType 字体光栅化（`freetype-raster` 默认开启）落地后 broad 一致率（chr<1%）从 ~36% 跃升至约 55%（R1337 fresh 全量 oracle baseline，2026-07-12），但 strict 像素级仍受 font-raster 残余噪声约束、处 plateau；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export（flex/grid/multicol-baseline 合成）等结构性问题，下一批 forward lever（Phase A IFC 统一、baseline-export、multicol 碎片化、2em layout dual-path）多为多会话架构级（taffy 已升级到 0.12.1，baseline_overrides gate 解除） |
 | M13 | 完整 JS/DOM API 兼容性 | `⏳ 计划中` | render-compact 验收后推进；目标是从基础 DOM bridge 扩展到更完整的 Web API、事件循环、DOM/CSSOM 操作和真实页面脚本行为 |
 | M14 | Canvas / WebGL / WebGPU | `⏳ 计划中` | Canvas 2D 继续补全后，逐步进入 Khronos WebGL CTS 和 GPUWeb WebGPU CTS；不作为 render-compact 的阻塞项 |
 | M15 | SVG 文档与内联 SVG DOM 渲染 | `⏳ 计划中` | render-compact 只要求 SVG 作为图片资源栅格化；完整 SVG 文档、内联 SVG DOM、样式和交互放到后续阶段 |
@@ -79,7 +79,7 @@
 如果按当前仓库状态往下走，顺序大致会是：
 
 1. 完成 render-compact 验收：WPT/CSSWG reftest、静态产品页、真实静态文章页、图片密集首页都要能和 Chromium 做稳定截图对比。
-2. 收敛 ZeroBrowser glyph 后处理与 layout/paint/glyph 度量一致性（外部 stylesheet、图片子资源/`ImageCache`、SVG 作为图片资源的栅格化均已贯通；`freetype-raster` 默认开启已把 broad 一致率（chr<1%）拉到 ~51%，静态页当前差异主要来自行盒与字体度量的 strict 像素级残余噪声，而非资源加载）。
+2. 收敛 ZeroBrowser glyph 后处理与 layout/paint/glyph 度量一致性（外部 stylesheet、图片子资源/`ImageCache`、SVG 作为图片资源的栅格化均已贯通；`freetype-raster` 默认开启已把 broad 一致率（chr<1%）拉到约 55%（R1337 fresh baseline），静态页当前差异主要来自行盒与字体度量的 strict 像素级残余噪声，而非资源加载）。
 3. 统一 inline formatting、layout IFC 和 paint IFC 的权威结果，解决文本串联、重叠、标题误拆行和正文压缩。
 4. 搭出 `browser-shell` 最小可用骨架，让浏览器产品层真正出现。
 5. render-compact 验收后，把 Test262、WPT testharness、WebDriver wdspec、WebGL CTS、WebGPU CTS、WebAssembly spec tests 等行业测试按阶段接入。

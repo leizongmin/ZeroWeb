@@ -53,7 +53,7 @@
 
 | Crate | 作用 |
 |-------|------|
-| `crates/render-foundation` | GPU/CPU 渲染、字体栈（fontdue + `freetype-raster` feature default-on：非 Ahem 路径用 FreeType 光栅化，提升与 Chromium 字体度量一致性；R1094 实测全 corpus oracle +232 零回归，落地后 broad 一致率 chr<1% 从 ~36% 跃升至 ~51%，R1200-R1202 fresh 10-dir baseline）、图片缓存 + GC、裁剪 / scissor、图元基础设施 |
+| `crates/render-foundation` | GPU/CPU 渲染、字体栈（fontdue + `freetype-raster` feature default-on：非 Ahem 路径用 FreeType 光栅化，提升与 Chromium 字体度量一致性；R1094 实测全 corpus oracle +232 零回归，落地后 broad 一致率 chr<1% 从 ~36% 跃升至约 55%，R1337 fresh 全量 oracle baseline 2026-07-12）、图片缓存 + GC、裁剪 / scissor、图元基础设施 |
 | `crates/host-runtime` | 平台窗口、事件循环、surface 生命周期、输入事件（鼠标 / 键盘 / 触摸 / IME） |
 | `crates/net` | HTTP/HTTPS、URL、导航历史、Cookie、WebSocket（tungstenite）、HTTP 响应缓存 |
 | `crates/security` | 同源策略、CORS、CSP（含 `script-src-attr` / `unsafe-eval` / `wasm-unsafe-eval` / `strict-dynamic` 等完整指令）、HSTS 预加载、混合内容阻止 / 升级、权限模型、站点隔离、COOP/COEP，统一收敛到 `SecurityContext` 门面 |
@@ -63,7 +63,7 @@
 | `crates/script-sandbox` | 页面脚本 / 扩展脚本运行时：V8（rusty_v8）/ QuickJS feature gate，含 Isolate / Context 管理、持久化 Context 复用、Dedicated Worker、ES Modules、错误处理与超时 |
 | `crates/page-runtime` | WPT / TabWorker / `zero-renderer` 三条页面路径共享的页面运行时契约（`PageLoadHost` / `AsyncFetchHost` / `BlockingFetchHost` 等），让 in-process（webview）和 IPC（renderer）两种宿主复用同一套分阶段页面加载逻辑 |
 
-> 另有 `crates/taffy-local`，它是 taffy 0.7 的本地 `[patch.crates-io]` 补丁（补充 `cached_baselines()` 等访问器），不是普通业务 crate。
+> 另有 `crates/taffy-local`，它是 taffy 0.12 的本地 `[patch.crates-io]` 补丁（仓库已从 vendored 0.7.7 升级到 0.12.1，本地补丁仍补充 `cached_baselines()` 等访问器），不是普通业务 crate。
 
 ### 测试基础设施
 
@@ -98,7 +98,7 @@
 
 - **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、wasm-sandbox、script-sandbox、page-runtime、webview 都有可运行代码和对应测试。
 - **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）已打通，但产品形态、稳定性和真实站点兼容性仍在推进。
-- **当前主线**: 渲染兼容性（WPT / CSSWG reftest 对齐 Chromium）持续修复 CSS2 / Flexbox / Grid / Multicol / Writing Modes 等缺口；以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量，`freetype-raster` 默认开启已把 broad 一致率（chr<1%）从 ~36% 拉到 ~51%（R1200-R1202 fresh 10-dir baseline），但 strict 像素级仍受 font-raster 残余噪声约束、处 plateau；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export（taffy 0.7 gate）等结构性问题，下一批 forward lever（Phase A IFC 统一、taffy 0.7→0.11 迁移、2em layout dual-path）多为多会话架构级；完整 Web API 与真实网站交互兼容性是后续阶段。
+- **当前主线**: 渲染兼容性（WPT / CSSWG reftest 对齐 Chromium）持续修复 CSS2 / Flexbox / Grid / Multicol / Writing Modes 等缺口；以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量，`freetype-raster` 默认开启已把 broad 一致率（chr<1%）从 ~36% 拉到约 55%（R1337 fresh 全量 oracle baseline，2026-07-12），但 strict 像素级仍受 font-raster 残余噪声约束、处 plateau；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export（flex/grid/multicol-baseline 合成）等结构性问题，下一批 forward lever（Phase A IFC 统一、baseline-export、multicol 碎片化、2em layout dual-path）多为多会话架构级（taffy 已升级到 0.12.1，baseline_overrides gate 解除）；完整 Web API 与真实网站交互兼容性是后续阶段。
 
 所以今天的 ZeroWeb 是一个内核已成形、产品层在打磨的浏览器工作区，但还不是一个做完的浏览器产品。
 

@@ -43,7 +43,7 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 | `ZeroWebView` | 已有稳定嵌入 API、可运行 demo，以及跨 crate 和产品层 smoke 测试；Service Worker、WASM 桥接与 `SecurityContext` 安全检查等页面级能力已接入其中 |
 | 浏览器应用 | `zero-browser`、`browser-shell` 和 `zero-renderer` 已打通桌面入口、多进程链路、headless 调试与跨平台打包（Linux / macOS / Windows）+ CI 发布工作流；整体仍处于实验阶段 |
 | 页面 JavaScript | `script-sandbox` 已提供 V8/QuickJS feature gate（含 V8 持久化 Context 复用）、Web Worker、ES Modules，以及 WebAssembly JS API 到 `wasm-sandbox` 的自动桥接；完整 Web API 和站点兼容性仍在推进 |
-| 渲染兼容性（当前主线） | 以 WPT/CSSWG reftest 对齐 Chromium 为验证标准，并以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源自渲染 reftest 仅作自一致性参考，存在假通过）；已有 WPT runner（reftest harness 会先执行测试页 setup 脚本——DOM 变更、`requestAnimationFrame` / `takeScreenshot` / `getBoundingClientRect` 等——再做像素对比，覆盖靠脚本构造内容的用例）、真实静态页截图对比和真实站点 smoke；CSS 全面渲染集成（100+ 属性）、增量布局与渲染管线优化（填充批处理 + 视口剔除 + draw call 统计）已落地；FreeType 字体光栅化（`freetype-raster` 默认开启）落地后 broad 一致率（chr<1%）从 ~36% 跃升至 ~51%（CSS2 65.6% / flexbox 60.0% / tables 64.3% / position 58.8% / grid 40.8%，R1200-R1202 fresh 10-dir baseline），但 strict 像素级通过率仍受 font-raster 残余噪声压在个位数 plateau；残余缺口集中在 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export（taffy 0.7 gate）等结构性方向，下一批 forward lever（Phase A IFC 统一、taffy 0.7→0.11 迁移、2em layout dual-path）多为多会话架构级，需逐项推进 |
+| 渲染兼容性（当前主线） | 以 WPT/CSSWG reftest 对齐 Chromium 为验证标准，并以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源自渲染 reftest 仅作自一致性参考，存在假通过）；已有 WPT runner（reftest harness 会先执行测试页 setup 脚本——DOM 变更、`requestAnimationFrame` / `takeScreenshot` / `getBoundingClientRect` 等——再做像素对比，覆盖靠脚本构造内容的用例）、真实静态页截图对比和真实站点 smoke；CSS 全面渲染集成（100+ 属性）、增量布局与渲染管线优化（填充批处理 + 视口剔除 + draw call 统计）已落地；FreeType 字体光栅化（`freetype-raster` 默认开启）落地后 broad 一致率（chr<1%）从 ~36% 跃升至约 55%（normal-flow 82% / flexbox 61% / grid 55% / position 54% / text-decor 50% / multicol 34%，R1337 fresh 全量 oracle baseline，2026-07-12；之后 float-clear / abspos CB / flex aspect-ratio 等簇多轮持续 +N），但 strict 像素级通过率仍受 font-raster 残余噪声压在个位数 plateau；残余缺口集中在 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export（flex/grid/multicol-baseline 合成）等结构性方向，下一批 forward lever（Phase A IFC 统一、baseline-export、multicol 碎片化、vertical writing modes 等）多为多会话架构级，需逐项推进（taffy 已从 0.7 升级到 0.12.1，baseline_overrides gate 解除） |
 | 安全与可访问性 | CSP 完整实现、HSTS 预加载、混合内容阻止 / 升级、权限模型与站点隔离已落地并统一接入 `SecurityContext`；可访问性基础（`FocusManager` Tab 导航 + ARIA）已起步 |
 | 项目定位 | 适合学习、研究、工程探索，不适合直接当成生产浏览器 |
 
@@ -105,7 +105,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 在 Linux 和 macOS 上，构建前需先下载 `rusty_v8` 预构建产物：`make setup-rusty-v8`（缓存到 `${XDG_CACHE_HOME:-$HOME/.cache}/zero-web/rusty_v8`）。推荐用 `make build` 或 `make browser`，会自动执行该步骤。Windows 需在本地环境里设置 `RUSTY_V8_ARCHIVE` 为 release `.lib` 的 URL。
 
-`freetype-raster` feature（R1159 起为 default-on）在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，提升与 Chromium 的字体度量一致性；全 corpus oracle 实测 +232 零回归（R1094 A/B），落地后 broad 一致率（chr<1%）从 ~36% 跃升至 ~51%（R1200-R1202 fresh 10-dir baseline），但 strict 像素级仍受 font-raster 残余噪声约束。默认构建经 `freetype-rs/bundled` 从 C 源码编译 FreeType2，无须系统 FreeType。需纯 Rust 构建时：`cargo build --no-default-features -p zero-render-foundation`（下游 crate 同理加 `--no-default-features`）。
+`freetype-raster` feature（R1159 起为 default-on）在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，提升与 Chromium 的字体度量一致性；全 corpus oracle 实测 +232 零回归（R1094 A/B），落地后 broad 一致率（chr<1%）从 ~36% 跃升至约 55%（R1337 fresh 全量 oracle baseline，2026-07-12），但 strict 像素级仍受 font-raster 残余噪声约束。默认构建经 `freetype-rs/bundled` 从 C 源码编译 FreeType2，无须系统 FreeType。需纯 Rust 构建时：`cargo build --no-default-features -p zero-render-foundation`（下游 crate 同理加 `--no-default-features`）。
 
 ### 3. 运行本地入口
 
