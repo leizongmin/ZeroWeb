@@ -70,10 +70,19 @@ fn adjust_table_layout_inner(
             adjust_table_layout_inner(child, doc, styles, true);
         }
     } else {
+        // R1382：子元素是否「在 table 结构内」取决于父元素（root）本身是否构成
+        // table 结构——root 为 Table/InlineTable/table-internal 时维持，否则（如块化的
+        // Block、普通 block）打断。修正 float-applies-to-001~004：#test 由 table-row-group
+        // 经 §9.7 块化为 Block+float，其 .row 子若沿用从 #table 继承的 inside_table=true，
+        // 会被误判「在表内」而不触发 §17.2.1.1 匿名 table 包装，致 cell 垂直堆叠、表宽塌缩。
+        let root_is_table_structure = matches!(display, Some(DisplayValue::Table | DisplayValue::InlineTable))
+            || display.as_ref().is_some_and(is_table_internal);
+        let child_in_table = inside_table && root_is_table_structure;
+
         let mut idx = 0usize;
         while idx < root.children.len() {
             let child_display = get_display(&root.children[idx], styles);
-            let child_is_orphan_internal = !inside_table && child_display.as_ref().is_some_and(is_table_internal);
+            let child_is_orphan_internal = !child_in_table && child_display.as_ref().is_some_and(is_table_internal);
             let child_is_real_table =
                 child_display == Some(DisplayValue::Table) || child_display == Some(DisplayValue::InlineTable);
 
@@ -83,7 +92,7 @@ fn adjust_table_layout_inner(
                 let run_start = idx;
                 while idx < root.children.len() {
                     let d = get_display(&root.children[idx], styles);
-                    if !inside_table && d.as_ref().is_some_and(is_table_internal) {
+                    if !child_in_table && d.as_ref().is_some_and(is_table_internal) {
                         idx += 1;
                     } else {
                         break;
@@ -112,7 +121,7 @@ fn adjust_table_layout_inner(
                 }
                 idx += 1;
             } else {
-                adjust_table_layout_inner(&mut root.children[idx], doc, styles, inside_table);
+                adjust_table_layout_inner(&mut root.children[idx], doc, styles, child_in_table);
                 idx += 1;
             }
         }
@@ -176,6 +185,40 @@ fn merge_orphan_table_run(
         root.height += delta;
         let pb = root.padding_top + root.padding_bottom + root.border_top + root.border_bottom;
         root.content_height = (root.height - pb).max(0.0);
+    }
+    // 6. R1382：浮动父块（如 §9.7 块化后的 table-row-group+float #test）的
+    //    shrink-to-fit 宽/高须反映匿名 table 真实尺寸。adjust_table_layout 在
+    //    adjust_float_positions 之后运行，浮动定位用的是 taffy 对堆叠 cell 的偏窄
+    //    测量，此处把匿名 table 尺寸回填父块并重定位（右浮动保持右缘，左浮动保持
+    //    左缘）。仅 horizontal-tb；vertical 模式轴交换另议。注意：adjust_float_positions
+    //    会把布局容器直接子的 box.float 清零，故 float 取自样式（权威源）。
+    let root_style_float = root
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .map(|s| s.float.clone())
+        .unwrap_or(FloatValue::None);
+    if matches!(root.writing_mode, WritingModeValue::HorizontalTb) && !matches!(root_style_float, FloatValue::None) {
+        let anon_cw = root.children[widx].content_width;
+        let anon_h = root.children[widx].height;
+        let pb_w = root.padding_left + root.padding_right + root.border_left + root.border_right;
+        let pb_h = root.padding_top + root.padding_bottom + root.border_top + root.border_bottom;
+        let new_content_w = root.content_width.max(anon_cw);
+        let new_content_h = root.content_height.max(anon_h);
+        if new_content_w > root.content_width + 0.01 {
+            if matches!(root_style_float, FloatValue::Right) {
+                // 右浮动保持右缘不变。
+                let right_edge = root.x + root.width;
+                root.width = new_content_w + pb_w;
+                root.x = right_edge - root.width;
+            } else {
+                root.width = new_content_w + pb_w;
+            }
+            root.content_width = new_content_w;
+        }
+        if new_content_h > root.content_height + 0.01 {
+            root.height = new_content_h + pb_h;
+            root.content_height = new_content_h;
+        }
     }
     widx
 }
@@ -1696,62 +1739,83 @@ fn apply_table_size_constraints(
 ) {
     use zero_css_parser::values::LengthValue;
 
-    let Some(node_id) = table_box.node_id else {
-        return;
-    };
-    let Some(style) = styles.get(&node_id) else {
-        return;
-    };
+    // R1382：匿名 table 包装盒（merge_orphan_table_run 生成，无 node_id）无样式，
+    // 旧实现在此 early-return，致其尺寸永不更新为 intrinsic（cell 已按 grid 定位到
+    // col_sum 跨度，但表盒 width/height 留 inherited 值）。float-applies-to-001~004
+    // 的 #test（块化 row-group+float）内匿名表因此报 48×0 而非 96×96。匿名表无
+    // border/padding/spacing/min-max，直接按 intrinsic 落尺寸。
+    let style = table_box.node_id.and_then(|id| styles.get(&id));
 
-    // 计算表格内容的固有宽度（所有列宽 + spacing）
-    let spacing_x = style.border_spacing.horizontal;
     let total_col_width: f32 = col_widths.iter().sum();
-    let spacing_total_x = if col_widths.len() > 1 {
-        (col_widths.len() - 1) as f32 * spacing_x
-    } else {
-        0.0
-    };
-    // §17.6.1 周界 spacing：左右各 spacing_x，仅 separated 模式。intrinsic_height 已含
-    // 上下周界（position_cells 的 row_y 起始 = perimeter_y，循环每行 +spacing_y 自然
-    // 产生顶部+底部周界，collapsed 行跳过 spacing 故不破坏周界语义）。
-    let perimeter_x = if matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate) {
-        spacing_x
-    } else {
-        0.0
-    };
-    let intrinsic_width = total_col_width + spacing_total_x + 2.0 * perimeter_x;
     let intrinsic_height = total_row_height;
+
+    let (intrinsic_width, is_border_box, padding_border_w, padding_border_h, border_collapse) = match style {
+        Some(style) => {
+            // 计算表格内容的固有宽度（所有列宽 + spacing）
+            let spacing_x = style.border_spacing.horizontal;
+            let spacing_total_x = if col_widths.len() > 1 {
+                (col_widths.len() - 1) as f32 * spacing_x
+            } else {
+                0.0
+            };
+            // §17.6.1 周界 spacing：左右各 spacing_x，仅 separated 模式。intrinsic_height 已含
+            // 上下周界（position_cells 的 row_y 起始 = perimeter_y，循环每行 +spacing_y 自然
+            // 产生顶部+底部周界，collapsed 行跳过 spacing 故不破坏周界语义）。
+            let perimeter_x = if matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate) {
+                spacing_x
+            } else {
+                0.0
+            };
+            let intrinsic_width = total_col_width + spacing_total_x + 2.0 * perimeter_x;
+            let is_border_box = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
+            let padding_border_w =
+                table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;
+            let padding_border_h =
+                table_box.padding_top + table_box.padding_bottom + table_box.border_top + table_box.border_bottom;
+            (
+                intrinsic_width,
+                is_border_box,
+                padding_border_w,
+                padding_border_h,
+                style.border_collapse.clone(),
+            )
+        }
+        None => (
+            total_col_width,
+            false,
+            0.0,
+            0.0,
+            zero_style_system::BorderCollapseValue::Separate,
+        ),
+    };
 
     // CSS 表格的 min/max 约束应用：
     // - min-height/max-height 始终作用于 border-box（CSS Tables §table-wrapper-box）
     // - min-width/max-width 根据 box-sizing 决定参照盒
-    let is_border_box = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
-    let padding_border_w =
-        table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;
-    let padding_border_h =
-        table_box.padding_top + table_box.padding_bottom + table_box.border_top + table_box.border_bottom;
 
     // 应用 min-width / max-width（根据 box-sizing）
     let mut final_width = intrinsic_width;
-    if let LengthValue::Px(v) = &style.min_width {
-        let min_w = *v as f32;
-        let min_content = if is_border_box {
-            (min_w - padding_border_w).max(0.0)
-        } else {
-            min_w
-        };
-        final_width = final_width.max(min_content);
-    }
-    if let LengthValue::Px(v) = &style.max_width
-        && *v != f64::INFINITY
-    {
-        let max_w = *v as f32;
-        let max_content = if is_border_box {
-            (max_w - padding_border_w).max(0.0)
-        } else {
-            max_w
-        };
-        final_width = final_width.min(max_content);
+    if let Some(style) = style {
+        if let LengthValue::Px(v) = &style.min_width {
+            let min_w = *v as f32;
+            let min_content = if is_border_box {
+                (min_w - padding_border_w).max(0.0)
+            } else {
+                min_w
+            };
+            final_width = final_width.max(min_content);
+        }
+        if let LengthValue::Px(v) = &style.max_width
+            && *v != f64::INFINITY
+        {
+            let max_w = *v as f32;
+            let max_content = if is_border_box {
+                (max_w - padding_border_w).max(0.0)
+            } else {
+                max_w
+            };
+            final_width = final_width.min(max_content);
+        }
     }
 
     // 应用 min-height / max-height（始终 border-box，与 min-height-table 测试一致）
@@ -1759,15 +1823,17 @@ fn apply_table_size_constraints(
     // 注意：即使 box-sizing: content-box，min/max-height 对表格仍按 border-box 解释，
     // 因为 min-height-table WPT 测试验证了这一行为。
     let mut final_height = intrinsic_height;
-    if let LengthValue::Px(v) = &style.min_height {
-        let min_content = (*v as f32 - padding_border_h).max(0.0);
-        final_height = final_height.max(min_content);
-    }
-    if let LengthValue::Px(v) = &style.max_height
-        && *v != f64::INFINITY
-    {
-        let max_content = (*v as f32 - padding_border_h).max(0.0);
-        final_height = final_height.min(max_content);
+    if let Some(style) = style {
+        if let LengthValue::Px(v) = &style.min_height {
+            let min_content = (*v as f32 - padding_border_h).max(0.0);
+            final_height = final_height.max(min_content);
+        }
+        if let LengthValue::Px(v) = &style.max_height
+            && *v != f64::INFINITY
+        {
+            let max_content = (*v as f32 - padding_border_h).max(0.0);
+            final_height = final_height.min(max_content);
+        }
     }
 
     // 更新 table 容器尺寸
@@ -1783,7 +1849,7 @@ fn apply_table_size_constraints(
     // 高扣 (顶 cell.bt + 底 cell.bb)——分别匹配列宽半 border / 行高整 border 的算法。
     let mut edge_w = 0.0_f32;
     let mut edge_h = 0.0_f32;
-    if matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Collapse) && !grid.rows.is_empty() {
+    if matches!(border_collapse, zero_style_system::BorderCollapseValue::Collapse) && !grid.rows.is_empty() {
         let last_col = grid.col_count;
         // 左/右边缘 cell（col_start==0 / col_end==col_count）的 border_left/right
         for row in &grid.rows {
