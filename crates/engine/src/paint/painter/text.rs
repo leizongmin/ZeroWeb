@@ -140,6 +140,23 @@ fn compute_multicol_info_for_paint(
     }
 }
 
+/// R1424：multicol balance 列高 target_h（ceil(行数/列数) × 平均行高）。
+///
+/// 使各列填到 `ceil(N/C)` 行（front-loaded，末列收尾），匹配 chromium LayoutNG balancing
+/// （如 44 行/6 列 → ceil=8 行/列 → 8,8,8,8,8,4）。旧 `total_height/col_count`（=7.33 行）
+/// 给 8,7,8,7,7,7（更均匀但非 chromium）。仅当行数不能整除列数时二者不同（整除时 ceil=N/C
+/// 等价）。非均匀行高用平均行高近似。
+fn multicol_balance_target_height(num_lines: usize, col_count: usize, total_height: f32) -> f32 {
+    if num_lines > 0 && col_count > 0 {
+        let lines_per_col = num_lines.div_ceil(col_count) as f32;
+        lines_per_col * (total_height / num_lines as f32)
+    } else if col_count > 0 {
+        total_height / col_count as f32
+    } else {
+        total_height
+    }
+}
+
 /// R1022：收集 `<ruby>` owner 的 `<rt>` 后代文本作 annotation。
 ///
 /// 返回非空白字符序列（rt 标记逐字符配对 rb 文本，paint 期上移到 rb 之上）。
@@ -1155,7 +1172,9 @@ impl super::Painter {
                 if let Some(ref mc) = multicol_info {
                     // 多列布局：遍历行（带 line.y），将行分配到各列
                     let total_height: f32 = inline_ctx.lines.iter().map(|l| l.height).sum();
-                    let target_h = total_height / mc.col_count as f32;
+                    let num_lines = inline_ctx.lines.len();
+                    // R1424：target_h 按 ceil(行数/列数) × 平均行高（front-loaded，匹配 chromium）。
+                    let target_h = multicol_balance_target_height(num_lines, mc.col_count, total_height);
 
                     // 预计算每列首行 y，用于把每列内容 rebase 到列内 y=0。
                     // 旧实现 col_start_y = col_idx * target_h，当 target_h 不是行高整数倍时
@@ -2146,5 +2165,55 @@ mod r841_tests {
         assert!(!ahem_uses_embox_position(80.0, 40.0), "lh:2 不应启用");
         // lh:0.5（<fs）也不启用
         assert!(!ahem_uses_embox_position(10.0, 20.0), "lh:0.5 不应启用");
+    }
+}
+
+#[cfg(test)]
+mod r1424_tests {
+    use super::multicol_balance_target_height;
+
+    /// R1424：ceil(行数/列数) × 平均行高 → front-loaded 分布（匹配 chromium）。
+    /// 驱动案 multicol-columns-001（44 行/6 列，Ahem 20px/行，total 880）：旧 total/col_count
+    /// =146.67（7.33 行）→ 8,7,8,7,7,7；新 ceil(44/6)*20=160（8 行）→ 8,8,8,8,8,4（chromium）。
+    #[test]
+    fn r1424_target_height_ceil_front_loads() {
+        // 44 行/6 列/total 880 → ceil(44/6)=8 行 × 20px = 160（非 880/6=146.67）。
+        assert!(
+            (multicol_balance_target_height(44, 6, 880.0) - 160.0).abs() < 0.01,
+            "44 行/6 列应 front-load 到 8 行/列（target_h=160），匹配 chromium"
+        );
+        // 44 行/4 列 → ceil(44/4)=11 × 20 = 220。
+        assert!(
+            (multicol_balance_target_height(44, 4, 880.0) - 220.0).abs() < 0.01,
+            "44 行/4 列应 11 行/列（target_h=220）"
+        );
+    }
+
+    /// 整除时 ceil(N/C)=N/C，target_h 与旧 total/col_count 等价（无变化，零回归基线）。
+    #[test]
+    fn r1424_target_height_exact_division_unchanged() {
+        // 48 行/6 列/total 960 → ceil(48/6)=8 × 20 = 160 == 960/6=160。
+        assert!(
+            (multicol_balance_target_height(48, 6, 960.0) - 160.0).abs() < 0.01,
+            "整除时 target_h 应与 total/col_count 等价（160）"
+        );
+        // 100 行/4 列/total 400 → ceil(100/4)=25 × 4 = 100 == 400/4=100。
+        assert!(
+            (multicol_balance_target_height(100, 4, 400.0) - 100.0).abs() < 0.01,
+            "整除时无 ceil 差异"
+        );
+    }
+
+    /// 边界：0 行回退 total/col_count；col_count=0 回退 total（防 div-by-zero）。
+    #[test]
+    fn r1424_target_height_edge_cases() {
+        assert!(
+            (multicol_balance_target_height(0, 6, 880.0) - (880.0 / 6.0)).abs() < 0.01,
+            "0 行回退 total/col_count"
+        );
+        assert!(
+            (multicol_balance_target_height(44, 0, 880.0) - 880.0).abs() < 0.01,
+            "col_count=0 回退 total（防 panic）"
+        );
     }
 }
