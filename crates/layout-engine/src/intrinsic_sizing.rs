@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::{BoxSizingValue, DisplayValue, FlexDirectionValue, LengthValue};
 use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
-use zero_style_system::property::types::FlexBasisValue;
+use zero_style_system::property::types::{ColumnSpanComputedValue, FlexBasisValue};
 
 use crate::types::LayoutBox;
 
@@ -141,6 +141,12 @@ pub(crate) fn block_max_content_width(
 ) -> f32 {
     let mut inline_sum = 0.0f32;
     let mut block_max = 0.0f32;
+    // R1431 L3②：spanner-aware multicol intrinsic sizing 须区分 spanner / 非 spanner block 子。
+    // `nonspanner_block_max` = 非 column-span:all block 子 intrinsic max（multicol 列内容宽）；
+    // `spanner_max` = column-span:all 子 intrinsic max（spanner 跨全宽驱动宽度）。`block_max`
+    //（含 spanner）保留供非 multicol `children_inner`（spanner 对普通 block 容器即普通子）。
+    let mut nonspanner_block_max = 0.0f32;
+    let mut spanner_max = 0.0f32;
     let mut has_in_flow_child = false;
 
     for child in &box_node.children {
@@ -167,6 +173,8 @@ pub(crate) fn block_max_content_width(
             inline_sum += (child.width + child.margin_left + child.margin_right).max(0.0);
             continue;
         }
+        let is_spanner = child_style
+            .is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
         // block-level 子：若是 flex/grid 容器，dispatch 到专用 intrinsic 函数（R1018 关键）。
         let child_intrinsic = child_style
             .map(|s| match s.display {
@@ -187,7 +195,13 @@ pub(crate) fn block_max_content_width(
                 _ => box_content_max_width(child, doc, styles),
             })
             .unwrap_or_else(|| box_content_max_width(child, doc, styles));
-        block_max = block_max.max(child_intrinsic + child.margin_left + child.margin_right);
+        let with_margins = child_intrinsic + child.margin_left + child.margin_right;
+        block_max = block_max.max(with_margins);
+        if is_spanner {
+            spanner_max = spanner_max.max(with_margins);
+        } else {
+            nonspanner_block_max = nonspanner_block_max.max(with_margins);
+        }
     }
 
     let children_inner = inline_sum.max(block_max);
@@ -214,38 +228,50 @@ pub(crate) fn block_max_content_width(
 
     let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
 
-    // R1020：multicol 容器（column-count:N）shrink-to-fit intrinsic = N × column_content + (N-1) × gap，
-    // **仅当所有 in-flow 子都是 leaf（无元素子）**——驱动案 change-intrinsic-width（columns:2 +
-    // 2 个 50px leaf 子 → 100）、intrinsic-width-change-column-count（columns:4 + 25px leaf → 100）。
-    // column-span:all 子（含嵌套元素，intrinsic-size-002/003/004）跨全宽不应乘 N——其有元素子，
-    // 守卫跳过，回落 max（span:all content = 全宽）。
-    // R1430 A/B：试加 column_span 真值守卫（column-span 已解析）排除 text-only spanner，
-    // net-0 flip（170→170）但 multicol-width-004 3.91→4.09 微回归（width-005 7.43→7.28 改善，
-    // 均仍 fail）→ wash，revert。spanner intrinsic 须配合 L3 spanner-aware sizing（②③）整体解。
-    let col_count = box_node
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .and_then(|s| match s.column_count {
-            zero_style_system::ColumnCountComputedValue::Number(n) => Some(n as usize),
-            _ => None,
-        });
-    if let Some(n) = col_count
-        && n >= 2
-        && box_node
+    // R1431 L3②：spanner-aware multicol intrinsic sizing（替 R1020 proxy）。
+    // CSS Multicol §3.4 + §6.1：multicol 容器 max-content 宽 = max(column-driven, spanner-driven)。
+    //   N            = column-count:Number(n) ? n : 1            // col-width-only → shrink-to-fit 下 1 列
+    //   col_content  = column-width:Length(w) ? w : nonspanner_block_max   // col-width 设定则子溢出
+    //   column_driven = N × col_content + (N-1) × gap
+    //   spanner_driven = spanner_max                            // column-span:all 子跨全宽
+    // 6 case 验证见 docs/goal/rendering-compat/spanner-aware-multicol-intrinsic-sizing.md。
+    // R1020 proxy 两处错：① col-width 不参与（col-width-only 走 inner+frame 用 max 子宽）；
+    // ② spanner 被 N× 误放大。本算法解两处。
+    let mc_style = box_node.node_id.and_then(|id| styles.get(&id));
+    let col_count_n = mc_style.and_then(|s| match s.column_count {
+        zero_style_system::ColumnCountComputedValue::Number(n) => Some(n as usize),
+        _ => None,
+    });
+    let col_width_set = mc_style.and_then(|s| match &s.column_width {
+        zero_style_system::ColumnWidthComputedValue::Length(LengthValue::Px(w)) => Some(*w as f32),
+        _ => None,
+    });
+    if col_count_n.is_some() || col_width_set.is_some() {
+        // 仅当所有 in-flow 子 leaf（无元素孙）时应用 spanner-aware 算法——leaf 保证无**嵌套** spanner
+        //（spanner 须在元素孙辈以下），N×column_driven 安全。非 leaf 子（含嵌套 spanner，如
+        // intrinsic-size-003 div>div>div>column-span:all）破坏列流成 region，N× 不适用 → 回落 inner+frame
+        //（intrinsic-size-003 旧 inner+frame=100 恰正确）。此 leaf 守卫 = R1020 原「无元素孙」判定。
+        let no_nested_spanner = box_node
             .children
             .iter()
             .filter(|c| !c.is_absolute && !c.is_fixed)
-            .all(|c| c.children.iter().all(|gc| gc.is_absolute || gc.is_fixed))
-    {
-        let gap_px = box_node
-            .node_id
-            .and_then(|id| styles.get(&id))
-            .and_then(|s| match &s.column_gap {
-                LengthValue::Px(v) => Some(*v as f32),
-                _ => None,
-            })
-            .unwrap_or(0.0);
-        return (n as f32) * inner + ((n - 1) as f32) * gap_px + frame;
+            .all(|c| c.children.iter().all(|gc| gc.is_absolute || gc.is_fixed));
+        if no_nested_spanner {
+            let n = col_count_n.unwrap_or(1).max(1);
+            let gap_px = mc_style
+                .and_then(|s| match &s.column_gap {
+                    LengthValue::Px(g) => Some(*g as f32),
+                    _ => None,
+                })
+                .unwrap_or(0.0);
+            // col_content：col-width 设定则用之（子溢出，不撑宽 multicol），否则取最宽非 spanner 子 intrinsic。
+            let col_content = col_width_set.unwrap_or(nonspanner_block_max);
+            let column_driven = n as f32 * col_content + (n as f32 - 1.0) * gap_px;
+            // multicol intrinsic = max(column-driven, spanner-driven)。非 spanner 子是列内容（fit 或溢出），
+            // 不额外撑宽（不加 .max(inner)——否则 col-width 案中宽于列的 block 会错误撑宽，如 width-005 case 1）。
+            let mc_inner = column_driven.max(spanner_max);
+            return mc_inner + frame;
+        }
     }
 
     inner + frame
@@ -678,6 +704,120 @@ mod tests {
         }
         let target = find(target_id, &doc, &result.root)?;
         grid_intrinsic_width(target, &doc, &styles)
+    }
+
+    /// 用 DOM 解析真实 HTML，验证 block 容器（含 multicol）的 `block_max_content_width`。
+    /// 复用 find 逻辑，目标盒调 `block_max_content_width`（multicol spanner-aware 路径）。
+    fn compute_block_max_content(html: &str, target_id: &str) -> Option<f32> {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let target = find(target_id, &doc, &result.root)?;
+        Some(block_max_content_width(target, &doc, &styles))
+    }
+
+    // ── R1431 L3② spanner-aware multicol intrinsic sizing（multicol-width-005 6 case）──
+
+    /// case 1：column-width:80px + block(100px) + spanner(50px) → 80（col-width 设定，
+    /// 宽于列的 block 溢出不撑宽；spanner 50 < 80）。N=1（count auto）。
+    #[test]
+    fn multicol_intrinsic_column_width_caps_overflowing_block() {
+        let html = r#"<html><body style="margin:0">
+          <article id="m" style="column-width:80px;column-gap:10px">
+            <div style="width:100px">block1</div>
+            <div style="column-span:all;width:50px">spanner</div>
+          </article>
+        </body></html>"#;
+        let w = compute_block_max_content(html, "m").expect("multicol intrinsic");
+        // col-width 80 → content 80，frame=0（article 无 border/padding）→ 80。
+        assert!((w - 80.0).abs() < 1.0, "case1: col-width:80 caps block100 → 80, got {}", w);
+    }
+
+    /// case 3：column-width:120px + spanner(150px) → 150（spanner 宽于 col-width 驱动）。
+    #[test]
+    fn multicol_intrinsic_spanner_wider_than_column_width_drives() {
+        let html = r#"<html><body style="margin:0">
+          <article id="m" style="column-width:120px;column-gap:10px">
+            <div style="width:100px">block1</div>
+            <div style="column-span:all;width:150px">spanner</div>
+          </article>
+        </body></html>"#;
+        let w = compute_block_max_content(html, "m").expect("multicol intrinsic");
+        assert!((w - 150.0).abs() < 1.0, "case3: spanner150 > col-width120 → 150, got {}", w);
+    }
+
+    /// case 4：column-count:2 + block(100px) + spanner(narrow) → 2×100+10=210（N×非 spanner 子）。
+    #[test]
+    fn multicol_intrinsic_column_count_times_nonspanner_child() {
+        let html = r#"<html><body style="margin:0">
+          <article id="m" style="column-count:2;column-gap:10px">
+            <div style="width:100px">block1</div>
+            <div style="column-span:all">spanner</div>
+          </article>
+        </body></html>"#;
+        let w = compute_block_max_content(html, "m").expect("multicol intrinsic");
+        // 2×100(block) + 1×10(gap) = 210。spanner 文本窄不计。
+        assert!((w - 210.0).abs() < 2.0, "case4: 2×100+10=210, got {}", w);
+    }
+
+    /// case 6：column-count:2 + block(100px) + spanner(250px) → 250（spanner 跨全宽不被 N×）。
+    /// ★ 关键：旧 R1020 proxy 把 spanner 计入 children_inner 再 N× → 2×250=500（ZW 实测 514）。
+    #[test]
+    fn multicol_intrinsic_spanner_not_multiplied_by_column_count() {
+        let html = r#"<html><body style="margin:0">
+          <article id="m" style="column-count:2;column-gap:10px">
+            <div style="width:100px">block1</div>
+            <div style="column-span:all;width:250px">spanner</div>
+          </article>
+        </body></html>"#;
+        let w = compute_block_max_content(html, "m").expect("multicol intrinsic");
+        // column_driven=2×100+10=210，spanner_driven=250 → max=250。
+        assert!((w - 250.0).abs() < 2.0, "case6: spanner250 not N× → 250, got {}", w);
+    }
+
+    /// case 5：column-count:2 + column-width:110px + block(100px) → 2×110+10=230
+    ///（col-width 设定 → col_content=110 > block100）。
+    #[test]
+    fn multicol_intrinsic_column_width_overrides_block_when_set_with_count() {
+        let html = r#"<html><body style="margin:0">
+          <article id="m" style="column-count:2;column-width:110px;column-gap:10px">
+            <div style="width:100px">block1</div>
+            <div style="column-span:all">spanner</div>
+          </article>
+        </body></html>"#;
+        let w = compute_block_max_content(html, "m").expect("multicol intrinsic");
+        assert!((w - 230.0).abs() < 2.0, "case5: 2×110+10=230, got {}", w);
+    }
+
+    /// 嵌套 spanner（intrinsic-size-003：div>div>div>column-span:all）leaf 守卫拦截：
+    /// 非 leaf 子（含元素孙）→ 不应用 N×column_driven，回落 inner+frame（spanner 嵌套破坏列流）。
+    /// 验证不被错误放大（旧 proxy 拦截，新算法也须 leaf 守卫拦截）。
+    #[test]
+    fn multicol_intrinsic_nested_spanner_leaf_guard_no_multiply() {
+        let html = r#"<html><body style="margin:0">
+          <article id="m" style="column-count:3">
+            <div><div><div>
+              <div style="column-span:all"><div style="width:100px"></div></div>
+            </div></div></div>
+          </article>
+        </body></html>"#;
+        let w = compute_block_max_content(html, "m").expect("multicol intrinsic");
+        // 嵌套 spanner → leaf 守卫失败 → 回落 inner+frame。inner = wrapper intrinsic ≈ 100（含 spanner 100 子）。
+        // 不应被 3× 放大到 ~300。
+        assert!(w < 150.0, "nested spanner: leaf guard must prevent 3× multiply, got {}", w);
     }
 
     #[test]
