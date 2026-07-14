@@ -93,6 +93,61 @@ pub fn fragment_lines_into_columns(lines: &[LineBox], ctx: &ColumnFragmentationC
     assignments
 }
 
+/// 把行盒按列高预算顺序填列，**超出 `col_count` 时创建溢出列**（column-fill:auto + 明确高度）。
+///
+/// 与 [`fragment_lines_into_columns`]（余量留末列）互补：当内容填满全部 `col_count` 列后仍
+/// 溢出时，本函数**继续创建新列**（`col_count+1`, `col_count+2`, …），每列同样受 budget
+/// 约束。CSS Multicol §8.2：column-fill:auto + 固定 column-count + 内容溢出 → 溢出列在
+/// multicol 容器内容边外水平延伸（overflow），column-rule 在每个间隙（含溢出间隙）绘制。
+///
+/// 返回 `(assignments, total_column_count)`。`total_column_count` ≥ `col_count`；仅当某行
+/// 落入 `col_count` 或更后的列时才 > `col_count`。回退条件同 `fragment_lines_into_columns`
+///（`col_count == 0` / `col_filled_heights.len() != col_count` / budget `None` 或 ≤ 0）
+/// → 返回 `(空 Vec, 0)`。
+///
+/// **整行不裁断 + 不无限新建**：单行高于 budget（无法放入任何空列）时，留在当前列（与
+/// `fragment_lines_into_columns` 单行超高留末列语义一致），不无限创建空溢出列。
+pub fn fragment_lines_into_columns_overflow(
+    lines: &[LineBox],
+    ctx: &ColumnFragmentationContext,
+) -> (Vec<ColumnLineAssignment>, usize) {
+    // 回退：列数 / 已占高度长度不匹配 → 空分配（调用方回退非碎片化）。
+    if ctx.col_count == 0 || ctx.col_filled_heights.len() != ctx.col_count {
+        return (Vec::new(), 0);
+    }
+    // 回退：仅 column-fill:auto + 明确正高度走本路径。
+    let budget = match ctx.available_height {
+        Some(h) if h > 0.0 => h,
+        _ => return (Vec::new(), 0),
+    };
+
+    let mut col_heights = ctx.col_filled_heights.clone();
+    let mut col_idx = 0usize;
+    let mut assignments = Vec::with_capacity(lines.len());
+
+    for (i, line) in lines.iter().enumerate() {
+        // 整行不裁断：当前列放不下整行 → 推进下一列。首 col_count 列内跳过已满列；已超出
+        // col_count 时，当前（溢出）列满即新建一列。前提：该行能在空列放下（line.height ≤
+        // budget）——否则单行超高会无限新建空列，故留在当前列。
+        while col_heights[col_idx] + line.height > budget + HEIGHT_EPS && line.height <= budget + HEIGHT_EPS {
+            if col_idx + 1 >= col_heights.len() {
+                // 当前列是末列（含已建溢出列）且放不下 → 新建一列。
+                col_heights.push(0.0);
+            }
+            col_idx += 1;
+        }
+        let y_in_column = col_heights[col_idx];
+        assignments.push(ColumnLineAssignment {
+            line_idx: i,
+            column: col_idx,
+            y_in_column,
+        });
+        col_heights[col_idx] += line.height;
+    }
+
+    (assignments, col_heights.len())
+}
+
 /// 把 IFC 行盒按**文档序均衡**分配到列（column-fill:balance 的 inline 分布）。
 ///
 /// 与 `fragment_lines_into_columns`（auto，按列高 budget 顺序填）互补：balance 无单列
@@ -386,5 +441,113 @@ mod tests {
     fn balance_zero_cols_or_empty_returns_empty() {
         assert!(distribute_lines_balanced(&[line(20.0)], 0).is_empty());
         assert!(distribute_lines_balanced(&[], 3).is_empty());
+    }
+
+    // ── R1429 fragment_lines_into_columns_overflow（溢出列创建）──
+
+    /// 内容填满 2 列后溢出 → 创建第 3 列（溢出列）。5 行 h=20，budget=40，col_count=2：
+    /// col0 收 2 行（40），col1 收 2 行（40），第 5 行溢出 → 新建 col2 收之。total=3。
+    #[test]
+    fn overflow_creates_extra_column_when_content_exceeds_column_count() {
+        let lines = vec![line(20.0); 5];
+        let ctx = ctx_auto(2, 40.0);
+        let (a, total) = fragment_lines_into_columns_overflow(&lines, &ctx);
+        assert_eq!(total, 3, "5 行 ×20 over 2 列 budget 40 → 3 列（含 1 溢出列）");
+        assert_eq!(a.len(), 5);
+        // col0: line0(y0) line1(y20)；col1: line2(y0) line3(y20)；col2(溢出): line4(y0)
+        assert_eq!(a[0].column, 0);
+        assert_eq!(a[0].y_in_column, 0.0);
+        assert_eq!(a[1].column, 0);
+        assert_eq!(a[1].y_in_column, 20.0);
+        assert_eq!(a[2].column, 1);
+        assert_eq!(a[2].y_in_column, 0.0);
+        assert_eq!(a[3].column, 1);
+        assert_eq!(a[3].y_in_column, 20.0);
+        assert_eq!(a[4].column, 2, "第 5 行落入溢出列 col2");
+        assert_eq!(a[4].y_in_column, 0.0);
+    }
+
+    /// 内容恰好填满 col_count 列（无溢出）→ total == col_count（不创建溢出列）。
+    /// 4 行 h=20，budget=40，col_count=2 → col0/col1 各 2 行，total=2。
+    #[test]
+    fn overflow_exact_fit_creates_no_extra_column() {
+        let lines = vec![line(20.0); 4];
+        let ctx = ctx_auto(2, 40.0);
+        let (a, total) = fragment_lines_into_columns_overflow(&lines, &ctx);
+        assert_eq!(total, 2, "恰好填满 2 列 → 无溢出列");
+        assert_eq!(a[2].column, 1);
+        assert_eq!(a[3].column, 1);
+    }
+
+    /// 单行高于 budget（无法放入空列）→ 留在当前列，不无限新建空溢出列。
+    /// 3 行 [100, 20, 20]，budget=30，col_count=2：line0(100>30) 留 col0；line1/line2
+    /// → col0 满（0+20>30? 否，留 col0... 实际 col0=100 后 line1 100+20>30 推进 col1）。
+    /// 关键断言：total 有界（不无限增长），line0 不触发新建。
+    #[test]
+    fn overflow_single_oversized_line_does_not_create_infinite_columns() {
+        let lines = vec![line(100.0), line(20.0), line(20.0)];
+        let ctx = ctx_auto(2, 30.0);
+        let (a, total) = fragment_lines_into_columns_overflow(&lines, &ctx);
+        // line0=100 > budget=30 → 留 col0（不新建）。line1: col0 100+20>30 且 20≤30 → 推 col1。
+        // line2: col1 20+20>30 且 20≤30 → col1 是末列 → 新建 col2。
+        assert_eq!(a[0].column, 0, "单行超高 line0 留 col0");
+        assert!(total <= 3, "total 有界（{}），不无限新建", total);
+    }
+
+    /// 多重溢出：内容远超 col_count → 创建多个溢出列。9 行 h=20，budget=20，col_count=2
+    /// → 每列 1 行，9 行需 9 列（col0..col8，7 个溢出列）。total=9。
+    #[test]
+    fn overflow_creates_multiple_extra_columns() {
+        let lines = vec![line(20.0); 9];
+        let ctx = ctx_auto(2, 20.0);
+        let (a, total) = fragment_lines_into_columns_overflow(&lines, &ctx);
+        assert_eq!(total, 9, "9 行每列 1 行 → 9 列（含 7 溢出列）");
+        assert_eq!(a.len(), 9);
+        assert_eq!(a[8].column, 8);
+        assert_eq!(a[8].y_in_column, 0.0);
+    }
+
+    /// 回退（与 fragment_lines_into_columns 一致）：col_count==0 / 长度不符 / budget None 或 ≤0
+    /// → 空 Vec + total 0。
+    #[test]
+    fn overflow_fallbacks_return_empty_and_zero_total() {
+        let good = ctx_auto(2, 40.0);
+        // col_count 0
+        let ctx0 = ColumnFragmentationContext {
+            col_count: 0,
+            col_width: 0.0,
+            col_gap: 0.0,
+            available_height: Some(40.0),
+            col_filled_heights: Vec::new(),
+            fill_mode: ColumnFillMode::Auto,
+        };
+        let (a, t) = fragment_lines_into_columns_overflow(&[line(20.0)], &ctx0);
+        assert!(a.is_empty() && t == 0);
+        // 长度不符
+        let ctx_bad = ColumnFragmentationContext {
+            col_count: 2,
+            col_width: 0.0,
+            col_gap: 0.0,
+            available_height: Some(40.0),
+            col_filled_heights: vec![0.0],
+            fill_mode: ColumnFillMode::Auto,
+        };
+        let (a, t) = fragment_lines_into_columns_overflow(&[line(20.0)], &ctx_bad);
+        assert!(a.is_empty() && t == 0);
+        // budget None
+        let ctx_none = ColumnFragmentationContext {
+            col_count: 2,
+            col_width: 0.0,
+            col_gap: 0.0,
+            available_height: None,
+            col_filled_heights: vec![0.0, 0.0],
+            fill_mode: ColumnFillMode::Auto,
+        };
+        let (a, t) = fragment_lines_into_columns_overflow(&[line(20.0)], &ctx_none);
+        assert!(a.is_empty() && t == 0);
+        // good ctx 非 0（4 行 h=20，budget=40，2 列恰好填满 → total=2 无溢出）
+        let four: Vec<LineBox> = vec![line(20.0), line(20.0), line(20.0), line(20.0)];
+        let (_a, t) = fragment_lines_into_columns_overflow(&four, &good);
+        assert_eq!(t, 2);
     }
 }

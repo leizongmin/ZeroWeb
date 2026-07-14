@@ -254,6 +254,11 @@ impl super::Painter {
         if col_w <= 0.0 {
             return;
         }
+        // R1429：column-fill:auto + 明确高度 + inline 内容溢出时，layout 侧（store_inline_multicol_columns）
+        // 创建了溢出列（实际列数 > style column-count，存于 multicol_overflow_column_count）。column-rule
+        // 须在每个间隙（含溢出间隙）绘制——CSS Multicol §8.2：溢出列在容器内容边外水平延伸。
+        // col_w 仍按 style count 计算（溢出列保持原列宽），仅循环范围扩到 actual_count。
+        let actual_count = box_node.multicol_overflow_column_count.unwrap_or(count);
 
         // R1029：column-span:all spanner 使 column-rule 在 spanner 处中断（CSS Multicol §6.1）。
         // 检测直接子元素中的 spanner（in-flow + column_span_offsets 被清空 + 全宽——非 spanner
@@ -286,7 +291,7 @@ impl super::Painter {
             segments = next;
         }
 
-        for i in 1..count {
+        for i in 1..actual_count {
             // CSS Multi-column §5.2：列分隔线仅在两列都有内容时绘制。
             // 如果容器有子元素，检查第 i 列和第 i+1 列是否有内容；
             // 如果容器没有子元素（单元测试场景），默认绘制所有分隔线。

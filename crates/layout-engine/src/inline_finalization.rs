@@ -191,9 +191,8 @@ pub(crate) fn store_inline_layout_results(
 }
 
 /// R900：env `MULTICOL_COLUMN_FRAG` 门控——为 inline-only `column-fill:auto` + 明确高度
-/// multicol 容器按列宽重排 IFC、`fragment_lines_into_columns` 分布行盒到列、重定位后存入
-/// `inline_layout`，使 paint `use_stored` 按列渲染（**无 paint 改动**，绕过 R157/R198/R203/R317
-/// paint 侧 4 轮证伪）。
+/// multicol 容器按列宽重排 IFC、`fragment_lines_into_columns_overflow` 分布行盒到列（溢出时
+/// 创建溢出列，R1429）、重定位后存入 `inline_layout`，使 paint `use_stored` 按列渲染。
 ///
 /// 返回 `true` 表示已存储列分布行盒（调用方早返回）；`false` 表示非目标结构（调用方走默认路径）。
 ///
@@ -206,7 +205,7 @@ fn store_inline_multicol_columns(
     styles: &HashMap<NodeId, ComputedStyle>,
 ) -> bool {
     use crate::inline::{
-        ColumnFillMode, ColumnFragmentationContext, InlineFormattingContext, fragment_lines_into_columns,
+        ColumnFillMode, ColumnFragmentationContext, InlineFormattingContext, fragment_lines_into_columns_overflow,
     };
 
     let node_id = match root.node_id {
@@ -263,7 +262,9 @@ fn store_inline_multicol_columns(
     if available_height <= 0.0 {
         return false;
     }
-    // 分布行盒到列（整行不裁断，列高 respected，余量留末列）
+    // 分布行盒到列（整行不裁断，列高 respected）。R1429：用 overflow 变体——内容溢出
+    // column-count 时创建溢出列（CSS Multicol §8.2：column-fill:auto + 定高 + 溢出 →
+    // 溢出列在容器内容边外水平延伸，column-rule 在每个间隙绘制）。
     let ctx = ColumnFragmentationContext {
         col_count: info.count,
         col_width: info.column_width,
@@ -272,7 +273,7 @@ fn store_inline_multicol_columns(
         col_filled_heights: vec![0.0; info.count],
         fill_mode: ColumnFillMode::Auto,
     };
-    let assignments = fragment_lines_into_columns(&col_ctx.lines, &ctx);
+    let (assignments, total_col_count) = fragment_lines_into_columns_overflow(&col_ctx.lines, &ctx);
     if assignments.is_empty() {
         return false;
     }
@@ -314,8 +315,9 @@ fn store_inline_multicol_columns(
     }
     // R905：max-height 容器（height:auto）的 content_height 来自全宽 IFC（偏小），分布后须用
     // 最高列累计高度修正容器高度（否则下方行盒被容器高度裁剪不可见）。
+    // R1429：col_heights 须按 total_col_count（含溢出列）开长，否则 a.column ≥ info.count 越界。
     if from_max_height {
-        let mut col_heights = vec![0.0f32; info.count];
+        let mut col_heights = vec![0.0f32; total_col_count];
         for a in &assignments {
             let line_h = col_ctx.lines[a.line_idx].height;
             col_heights[a.column] = col_heights[a.column].max(a.y_in_column + line_h);
@@ -326,6 +328,11 @@ fn store_inline_multicol_columns(
             root.content_height = tallest;
             root.height += delta;
         }
+    }
+    // R1429：内容溢出 column-count → 存实际列数（含溢出列），供 paint_column_rules 在每个
+    // 间隙（含溢出间隙）绘制 column-rule。仅溢出时置 Some（无溢出 None → paint 用 style count，零回归）。
+    if total_col_count > info.count {
+        root.multicol_overflow_column_count = Some(total_col_count as u32);
     }
     root.inline_layout = Some(stored);
     // inline_layout_width = 容器内容宽（使 paint width_matches → use_stored=true，按列渲染）

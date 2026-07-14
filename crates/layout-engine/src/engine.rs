@@ -1463,6 +1463,7 @@ impl LayoutEngine {
             scroll_y: 0.0,
             is_flow_root,
             is_multicol,
+            multicol_overflow_column_count: None,
             is_nested_spanner_wrapper: false,
             nested_spanner_col_bg: Vec::new(),
             is_layout_container,
