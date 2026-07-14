@@ -392,3 +392,38 @@ fn r1447_tab_at_stop_boundary_advances_full_unit() {
         x_pos
     );
 }
+
+/// R1449：零宽格式字符（joiner 类）advance 恒为 0（CSS 语义覆盖字体 advance，Ahem 亦然）。
+///
+/// ZWNJ U+200C / ZWJ U+200D / WJ U+2060 / ZWNBSP U+FEFF 均零宽。旧实现把它们当普通字符
+///（Ahem=font_size）→ 含 ZWJ 的 shaping / white-space-vs-joiners 文本宽度虚高。
+#[test]
+fn r1449_zero_width_joiners_have_zero_advance() {
+    for ch in ['\u{200C}', '\u{200D}', '\u{2060}', '\u{FEFF}'] {
+        assert_eq!(estimate_char_width(ch, 20.0, true), 0.0, "R1449: {ch:?} 应零宽（Ahem）");
+        assert_eq!(
+            estimate_char_width(ch, 20.0, false),
+            0.0,
+            "R1449: {ch:?} 应零宽（非 Ahem）"
+        );
+    }
+}
+
+/// R1449：ZWSP U+200B 在 pre-wrap（preserve）模式下是**零宽断行机会**（CSS Text 3 §5.4）。
+///
+/// 驱动案 css-text letter-spacing 簇 + pre-wrap ZWSP 案。旧实现把 U+200B 当普通字符留词内
+///（无断行机会，且 normal 模式宽度虚高）。修复：preserve 模式 split 在 U+200B 处断词并丢弃
+///（零宽、不插空格）。本测试 load-bearing：容器宽 40px（2 Ahem 字符），"aa\u{200B}bb"
+/// 应断成 ["aa","bb"]，"bb" 换到第 2 行；无修复则 U+200B 留词内成 100px 单词溢出 1 行。
+#[test]
+fn r1449_zwsp_is_break_opportunity_in_preserve_mode() {
+    let mut ctx = InlineFormattingContext::new(40.0).with_preserve_whitespace(true);
+    let mut run = TextRun::simple("aa\u{200B}bb".to_string(), NodeId::default(), 20.0, 20.0, VA::Baseline);
+    run.is_ahem_font = true;
+    ctx.break_into_lines(vec![run]);
+    assert!(
+        ctx.lines.len() >= 2,
+        "R1449: ZWSP U+200B 应在 pre-wrap 产生断行机会（aa | bb），got {} 行",
+        ctx.lines.len()
+    );
+}

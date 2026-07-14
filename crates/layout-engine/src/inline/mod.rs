@@ -2130,6 +2130,15 @@ impl InlineFormattingContext {
                             current_word.clear();
                         }
                         result.push(ch.to_string());
+                    } else if ch == '\u{200B}' {
+                        // R1449：ZWSP U+200B 是零宽断行机会（CSS Text 3 §5.4）——在此断词
+                        //（产生换行机会），但不插入可见空格（零宽、不可见）。U+200B 本身丢弃。
+                        // 与空格不同：空格作独立 " " 片段承载词间间距；ZWSP 零宽无间距。
+                        // 例 "xx\u{200B}x" → ["xx","x"]，break_items_into_lines 可在两者间断行。
+                        if !current_word.is_empty() {
+                            result.push(current_word.clone());
+                            current_word.clear();
+                        }
                     } else {
                         current_word.push(ch);
                     }

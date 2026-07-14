@@ -33,6 +33,15 @@ pub(crate) const DEFAULT_FONT_SIZE: f32 = 16.0;
 /// 同源对齐。真实修复须完整接入 FontLoader（R223 plumbing R2-R5，layout+paint+intrinsic
 /// 三处同源替换 + font_id 解析），而非单点改 estimate_char_width。证据见 master.md R224。
 pub fn estimate_char_width(c: char, font_size: f32, is_ahem: bool) -> f32 {
+    // R1449：零宽格式字符宽度恒为 0（与字体无关，CSS 语义覆盖字体 advance）。
+    // ZWNJ U+200C / ZWJ U+200D / WJ U+2060 / ZWNBSP U+FEFF 均零宽（joiner 类，shaping/
+    // white-space-vs-joiners 用 ZWJ；实测零宽 +0 flip 改善无回归）。
+    // 注：ZWSP U+200B 亦零宽，但其零宽在 **normal 模式**会触发 seg-break-transformation-018
+    // 回归（ZW seg-break 变换 bug，20px U+200B 反而更近 oracle）——故 U+200B 零宽仅经
+    // preserve 模式 split_into_words 的断词丢弃路径实现（见 mod.rs），normal 模式暂不零宽。
+    if matches!(c, '\u{200C}' | '\u{200D}' | '\u{2060}' | '\u{FEFF}') {
+        return 0.0;
+    }
     if is_ahem {
         // Ahem 字体：所有字符（包括空格）宽度等于 font_size
         return font_size;
