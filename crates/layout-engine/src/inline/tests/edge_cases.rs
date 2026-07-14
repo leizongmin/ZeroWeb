@@ -1032,6 +1032,51 @@ fn test_vertical_columns_advance_along_x() {
     }
 }
 
+/// R1456：垂直模式下 `all_fragments_with_line_y` 的片段 y 必须是列内深度（run.y），
+/// **不可**加 line.y。垂直模式 line.y 是**列 x 坐标**（break_items_into_columns /
+/// break_into_lines 的 vertical 轴交换把列 x 存进 line.y），已在 run.x（= 列 x）中体现。
+/// 旧实现 `run.y + line_y` 把列 x（如 764）误加到深度（0）→ frag_y=764 → 文本推到
+/// viewport 外（block-flow-direction-vrl-011 全 0 可见）。WM gate：vertical 不加 line.y。
+#[test]
+fn test_r1456_vertical_fragment_y_is_depth_not_column_x() {
+    let mut ctx = InlineFormattingContext::new(50.0)
+        .with_vertical(true)
+        .with_break_word(true);
+    let runs = vec![TextRun {
+        text: "AAAAAAAAAA".to_string(), // 10 chars × 16px = 160px depth > 50 max_depth → 多列
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: true,
+        font_id: None,
+    }];
+    ctx.break_into_lines(runs);
+    // 须多列且存在 line.y>0 的列（line.y = 列 x），否则无法暴露「加 line.y」bug。
+    assert!(ctx.lines.len() > 1, "须多列");
+    assert!(ctx.lines.iter().any(|l| l.y > 0.0), "须有 line.y>0 的列（列 x 非零）");
+    let with_line_y = ctx.all_fragments_with_line_y();
+    let plain = ctx.all_fragments();
+    assert_eq!(with_line_y.len(), plain.len());
+    // 垂直模式：line.y（列 x）不可加到片段 y → 两路径 y 必须相等（= 列内深度 run.y）。
+    // 旧实现（run.y+line_y）会使 with_line_y.y 比 plain.y 大 line.y → 断言失败。
+    for (w, p) in with_line_y.iter().zip(plain.iter()) {
+        assert_eq!(
+            w.y, p.y,
+            "垂直模式片段 y 应=深度(run.y)，不加 line.y（列 x）：with_line_y.y={} plain.y={}",
+            w.y, p.y
+        );
+    }
+}
+
 /// 测试垂直模式下片段的 width 等于 line-height（列宽）。
 #[test]
 fn test_vertical_fragment_width_is_line_height() {

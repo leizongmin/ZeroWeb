@@ -2246,9 +2246,14 @@ impl InlineFormattingContext {
             .iter()
             .flat_map(|line| {
                 let line_y = line.y;
+                // R1456：垂直模式下 line.y 是**列 x 坐标**（break_items_into_columns
+                // vertical_rtl 轴交换把列 x 存进 col.y/line.y），已在 run.x（= 列 x）中体现，
+                // 不可再加到片段 y（深度 = run.y）。与 painter/text.rs:1015 stored 路径同修。
+                // horizontal 仍 run.y + line_y（line.y 是行盒 y 偏移）。WM gate 零回归。
+                let vert_y = self.vertical;
                 line.runs.iter().map(move |run| TextFragment {
                     x: run.x,
-                    y: run.y + line_y,
+                    y: if vert_y { run.y } else { run.y + line_y },
                     width: run.width,
                     height: run.height,
                     text: run.text.clone(),

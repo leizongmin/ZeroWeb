@@ -1012,8 +1012,18 @@ impl super::Painter {
                         line.fragments.iter().filter_map(move |f| {
                             f.node_id.map(|nid| PaintFragment {
                                 x: f.x,
-                                y: line_y + f.y,
-                                baseline_y_abs: line_y + f.baseline_y,
+                                // R1456：垂直模式下 line.y 是**列 x 坐标**（mod.rs:1884
+                                // vertical_rtl 轴交换把列 x 存进 col.y/line.y），已在 f.x（= run.x
+                                // = 列 x）中体现，**不可**再加到片段 y（深度）。旧行为 line_y+f.y
+                                // 把列 x（如 764）误加到深度（0）→ frag_y=764 → 文本推到 viewport
+                                // 外（vrl-011 等全 0 可见）。horizontal 仍 line_y+f.y（line.y 是行盒
+                                // y 偏移，R355）。WM gate 零回归。
+                                y: if is_vertical { f.y } else { line_y + f.y },
+                                baseline_y_abs: if is_vertical {
+                                    f.baseline_y
+                                } else {
+                                    line_y + f.baseline_y
+                                },
                                 height: f.height,
                                 font_size: f.font_size,
                                 is_ahem: f.is_ahem,
