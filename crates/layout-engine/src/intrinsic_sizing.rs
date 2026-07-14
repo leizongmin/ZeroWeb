@@ -173,8 +173,7 @@ pub(crate) fn block_max_content_width(
             inline_sum += (child.width + child.margin_left + child.margin_right).max(0.0);
             continue;
         }
-        let is_spanner = child_style
-            .is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
+        let is_spanner = child_style.is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
         // block-level 子：若是 flex/grid 容器，dispatch 到专用 intrinsic 函数（R1018 关键）。
         let child_intrinsic = child_style
             .map(|s| match s.display {
@@ -743,7 +742,11 @@ mod tests {
         </body></html>"#;
         let w = compute_block_max_content(html, "m").expect("multicol intrinsic");
         // col-width 80 → content 80，frame=0（article 无 border/padding）→ 80。
-        assert!((w - 80.0).abs() < 1.0, "case1: col-width:80 caps block100 → 80, got {}", w);
+        assert!(
+            (w - 80.0).abs() < 1.0,
+            "case1: col-width:80 caps block100 → 80, got {}",
+            w
+        );
     }
 
     /// case 3：column-width:120px + spanner(150px) → 150（spanner 宽于 col-width 驱动）。
@@ -756,7 +759,11 @@ mod tests {
           </article>
         </body></html>"#;
         let w = compute_block_max_content(html, "m").expect("multicol intrinsic");
-        assert!((w - 150.0).abs() < 1.0, "case3: spanner150 > col-width120 → 150, got {}", w);
+        assert!(
+            (w - 150.0).abs() < 1.0,
+            "case3: spanner150 > col-width120 → 150, got {}",
+            w
+        );
     }
 
     /// case 4：column-count:2 + block(100px) + spanner(narrow) → 2×100+10=210（N×非 spanner 子）。
@@ -817,7 +824,11 @@ mod tests {
         let w = compute_block_max_content(html, "m").expect("multicol intrinsic");
         // 嵌套 spanner → leaf 守卫失败 → 回落 inner+frame。inner = wrapper intrinsic ≈ 100（含 spanner 100 子）。
         // 不应被 3× 放大到 ~300。
-        assert!(w < 150.0, "nested spanner: leaf guard must prevent 3× multiply, got {}", w);
+        assert!(
+            w < 150.0,
+            "nested spanner: leaf guard must prevent 3× multiply, got {}",
+            w
+        );
     }
 
     #[test]
@@ -1110,6 +1121,41 @@ mod tests {
             (w - 50.0).abs() < 1.0,
             "R109 split wrapper: recurse into anon children (~50), not stretched width (777); got {}",
             w
+        );
+    }
+
+    // ── R1433 layout-time multicol balance height（multicol-rule-001 等）──
+
+    /// balance multicol 容器（columns:2 + "1<br>2"）经 measure_text_content layout-time
+    /// 返回均衡列高（ceil(L/N)×行高 = 1 行 = 20px），而非全宽 IFC 全高（2 行 = 40px）。
+    /// 驱动案 multicol-rule-001（3.86→0.77 flip）。text-only（br 允许）+ overflow:visible + deterministic。
+    #[test]
+    fn multicol_balance_height_layout_time() {
+        let html = r#"<html><body style="margin:0">
+          <div id="m" style="columns:2;column-gap:0;font:20px/1 Ahem">1<br>2</div>
+        </body></html>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let div = find("m", &doc, &result.root).expect("multicol div");
+        // 2 行 "1"/"2" 均衡到 2 列 → 1 行/列 = 20px（非未均衡的 40px）
+        assert!(
+            (div.content_height - 20.0).abs() < 1.0,
+            "layout-time balance height: expected ~20 (1 line/col), got {}",
+            div.content_height
         );
     }
 }

@@ -1083,9 +1083,58 @@ pub(crate) fn measure_text_content(
         .map(|fragment| fragment.x + fragment.width)
         .fold(0.0_f32, f32::max);
 
+    let full_total = inline_ctx.total_height();
+    // R1433：layout-time balance 高度——balance multicol 容器在 taffy 测量期就返回均衡列高
+    //（ceil(L/N)×行高），而非全宽 IFC 全高。避 R1432/R1432b post-remeasure sibling-shift 级联
+    //（layout-time taffy 从源头定高，无 post-hoc 修正）。严格 gate：① balance（balance_column_geometry）；
+    // ② text-only（DOM 无元素子）；③ deterministic（列宽 IFC 行数 == 全宽行数，内容不在列宽换行）；
+    // ④ overflow:visible（clip 容器平衡语义不同，R1432b clip-001 pass→fail 实证）。
+    let balanced_height = {
+        let style = styles.get(&dom_id);
+        let mut h = full_total;
+        if let Some(s) = style
+            && let Some((cw, cols)) = crate::multicol::balance_column_geometry(s, width)
+            && cw > 0.0
+            && cols >= 2
+            && matches!(s.overflow_y, zero_style_system::property::types::OverflowValue::Visible)
+        {
+            let text_only = doc.child_nodes(dom_id).iter().all(|c| {
+                // 允许文本节点 + 行内元素（br=行内换行、span 等=文本流一部分）；
+                // 排除 block-level 元素子（独立列项，balance 行公式不适用）。
+                if let Some(node) = doc.get(*c)
+                    && let NodeKind::Element(e) = &node.kind
+                {
+                    if e.local_name().eq_ignore_ascii_case("br") {
+                        return true;
+                    }
+                    let cs = styles.get(c);
+                    return cs.is_some_and(|s| {
+                        matches!(
+                            s.display,
+                            zero_style_system::property::types::DisplayValue::Inline
+                                | zero_style_system::property::types::DisplayValue::InlineBlock
+                        )
+                    });
+                }
+                true
+            });
+            if text_only {
+                let mut col_ctx = InlineFormattingContext::new(cw).with_no_wrap(no_wrap);
+                col_ctx.layout(doc, dom_id, styles);
+                let cn = col_ctx.lines.len();
+                let ct = col_ctx.total_height();
+                // deterministic：列宽不换行（行数 == 全宽）才用均衡高，否则 font-sensitive off-by-one。
+                if cn > 0 && cn == inline_ctx.lines.len() {
+                    h = cn.div_ceil(cols) as f32 * (ct / cn as f32);
+                }
+            }
+        }
+        h
+    };
+
     Size {
         width: known_dimensions.width.unwrap_or(measured_width),
-        height: known_dimensions.height.unwrap_or(inline_ctx.total_height()),
+        height: known_dimensions.height.unwrap_or(balanced_height),
     }
 }
 
