@@ -427,3 +427,56 @@ fn r1449_zwsp_is_break_opportunity_in_preserve_mode() {
         ctx.lines.len()
     );
 }
+
+/// R1450：letter-spacing 不跨空格应用（CSS Text 3 §9.2 "not at start/end of line"，
+/// 且空格分隔的词间不加 ls）。
+///
+/// 驱动案 css-text letter-spacing-200/201/203/204。旧实现 ls×count 每词多算一个尾随 ls
+/// → "1 2" 单字符词也加 ls → test 比 no-ls ref 宽。修复 ls×(count-1)（词内相邻字母间）
+/// + adjacent_ls（无空格相邻字母间，break-all/CJK）。
+#[test]
+fn r1450_letter_spacing_not_applied_across_space() {
+    // "1 2" ls:1em Ahem 20px，preserve：["1"," ","2"]。
+    // "1"(20) + " "(20) = 40，"2" @ 40（ls 不跨空格）。旧实现 "1" 尾随 ls → "1" 宽 40，"2" @ 60。
+    let mut ctx = InlineFormattingContext::new(800.0).with_preserve_whitespace(true);
+    let mut run = TextRun::simple("1 2".to_string(), NodeId::default(), 20.0, 20.0, VA::Baseline);
+    run.is_ahem_font = true;
+    run.letter_spacing = 20.0; // 1em
+    ctx.break_into_lines(vec![run]);
+    let two = ctx.lines[0]
+        .runs
+        .iter()
+        .find(|r| r.text.contains('2'))
+        .expect("'2' 片段");
+    assert!(
+        (two.x - 40.0).abs() < 1.0,
+        "R1450: '2' 应在 x=40（ls 不跨空格，单字符词无 ls），实际 {:.1}（旧实现 ls×count → @60）",
+        two.x
+    );
+}
+
+/// R1450：letter-spacing 在相邻字母（无空格词界）间仍应用——CJK per-char 分词
+///（split_into_words 把每个 CJK 字符分为独立词），adjacent_ls 补回 ls×(count-1) 去掉的
+/// 词间 ls，避免 CJK 回归。
+#[test]
+fn r1450_letter_spacing_between_adjacent_cjk_preserved() {
+    // "三三"（CJK）→ split → ["三","三"]（两独立词，无空格）。ls 应在两者间应用。
+    // 第一 "三"(20) + adjacent_ls(20) = 40，第二 "三" @ 40。
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let mut run = TextRun::simple("三三".to_string(), NodeId::default(), 20.0, 20.0, VA::Baseline);
+    run.is_ahem_font = true;
+    run.letter_spacing = 20.0;
+    ctx.break_into_lines(vec![run]);
+    // 找第二个 "三" 片段（x>0 的那个）。
+    let san2 = ctx.lines[0]
+        .runs
+        .iter()
+        .filter(|r| r.text.contains('三'))
+        .nth(1)
+        .expect("应有第二个 '三' 片段");
+    assert!(
+        (san2.x - 40.0).abs() < 1.0,
+        "R1450: 相邻 CJK 字符间应保留 ls，第二个 '三' @ 40，实际 {:.1}",
+        san2.x
+    );
+}

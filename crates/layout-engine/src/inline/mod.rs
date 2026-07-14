@@ -1244,9 +1244,14 @@ impl InlineFormattingContext {
 
                         // 基础宽度 + letter-spacing（仅基于内容字符，不含尾部空格）
                         let content_char_count = content_word.chars().count();
+                        // R1450：letter-spacing 只在**相邻字母间**应用（词内 count-1 个间距），
+                        // 不在词尾（行末/空格前）应用（CSS Text 3 §9.2 "not at start/end of
+                        // line"，且不跨空格）。旧实现 ls×count 每词多算一个尾随 ls → "1 2" 单字
+                        // 词也加 ls，致 letter-spacing-200/201 test 比 no-ls ref 宽。
+                        // 词间相邻字母（break-all/CJK 无空格相邻）的 ls 经下方 adjacent_ls 前导补回。
                         let word_width =
                             self.advance_string_width(content_word, run.font_id, run.font_size, run.is_ahem_font)
-                                + run.letter_spacing * content_char_count as f32;
+                                + run.letter_spacing * content_char_count.saturating_sub(1) as f32;
                         // R1086：word-spacing 作为词间前导间隙（CSS：词与词之间的额外间距）。
                         // 旧实现把 word_spacing 计入 word_width → fragment.x（=current_x，置位前）
                         // 不含 gap，仅推进 current_x 给下一词，致本词 glyph 位缺 gap
@@ -1254,20 +1259,24 @@ impl InlineFormattingContext {
                         // current_x。行首词（word_idx==0 或换行后 runs 空）无前导 gap。
                         // R1215：text-autospace——相邻词（上一词不以空白结尾）在 ideograph↔letter
                         // /numeric 类别边界额外插 0.125em 前导 gap（CSS Text 4 §8）。
-                        let autospace_gap = if word_idx > 0 && !current_line.runs.is_empty() {
+                        // R1450：adjacent_ls——前一词以字母结尾（无空格相隔，preserve 空格段/
+                        // normal 尾随空格都会让 prev_last 为空白）且本词以字母开头时，补一个 ls
+                        // 作两相邻字母间的间距（break-all/CJK 单字词相邻场景）。空格分隔的词不触发。
+                        let (autospace_gap, adjacent_ls) = if word_idx > 0 && !current_line.runs.is_empty() {
                             let prev_last = words.get(word_idx - 1).and_then(|w| w.chars().last());
                             let curr_first = content_word.chars().next();
                             match (prev_last, curr_first) {
-                                (Some(pc), Some(cc)) if !pc.is_whitespace() => {
-                                    autospace_gap_for(pc, cc, self.text_autospace, run.font_size)
-                                }
-                                _ => 0.0,
+                                (Some(pc), Some(cc)) if !pc.is_whitespace() && !cc.is_whitespace() => (
+                                    autospace_gap_for(pc, cc, self.text_autospace, run.font_size),
+                                    run.letter_spacing,
+                                ),
+                                _ => (0.0, 0.0),
                             }
                         } else {
-                            0.0
+                            (0.0, 0.0)
                         };
                         let mut lead_gap = if word_idx > 0 && !current_line.runs.is_empty() {
-                            run.word_spacing + autospace_gap
+                            run.word_spacing + autospace_gap + adjacent_ls
                         } else {
                             0.0
                         };
