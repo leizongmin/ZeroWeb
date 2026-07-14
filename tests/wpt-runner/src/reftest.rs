@@ -462,7 +462,7 @@ pub fn render_to_framebuffer_with_base(
 
     // 先构建图像缓存，提取固有尺寸供 paint 阶段使用
     let mut image_cache = build_image_cache(html, base_dir);
-    let (image_sizes, image_ratios) = extract_image_metrics(&mut image_cache, html);
+    let (image_sizes, image_ratios, image_no_ratio) = extract_image_metrics(&mut image_cache, html);
 
     let combined_css = merge_page_css(html, css, base_dir);
 
@@ -470,6 +470,7 @@ pub fn render_to_framebuffer_with_base(
     pipeline.set_skip_indicators(true);
     pipeline.set_image_sizes(image_sizes);
     pipeline.set_image_ratios(image_ratios);
+    pipeline.set_image_no_ratio(image_no_ratio);
 
     // 构建字体查找表（在 render_html 之前，以便 Painter 解析 CSS font-family）
     let mut font_loader = create_font_loader();
@@ -559,7 +560,7 @@ pub fn render_via_webview_to_framebuffer_with_base(
     let html: &str = &mutated_html;
 
     let mut image_cache = build_image_cache(html, base_dir);
-    let (image_sizes, image_ratios) = extract_image_metrics(&mut image_cache, html);
+    let (image_sizes, image_ratios, image_no_ratio) = extract_image_metrics(&mut image_cache, html);
     let combined_css = merge_page_css(html, css, base_dir);
 
     let mut font_loader = create_font_loader();
@@ -576,6 +577,7 @@ pub fn render_via_webview_to_framebuffer_with_base(
     webview.set_font_resolver(font_resolver);
     webview.set_image_sizes(image_sizes);
     webview.set_image_ratios(image_ratios);
+    webview.set_image_no_ratio(image_no_ratio);
     let result = webview.load_html(
         html,
         if combined_css.is_empty() {

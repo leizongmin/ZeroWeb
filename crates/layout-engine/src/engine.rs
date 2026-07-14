@@ -125,6 +125,22 @@ impl LayoutEngine {
         img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
         img_intrinsic_ratios: HashMap<NodeId, f32>,
     ) -> LayoutResult {
+        self.compute_with_img_intrinsic(doc, styles, img_intrinsic_sizes, img_intrinsic_ratios, HashMap::new())
+    }
+
+    /// 与 `compute_with_img_sizes` 相同，但额外注入 no-ratio `<img>` 信号（CSS §10.3.2）。
+    ///
+    /// `img_intrinsic_no_ratio` 为既无确定固有尺寸也无固有宽高比的 SVG（width/height
+    /// 非双绝对且无 viewBox）的真实固有维（各 Option，缺失维 None）。布局对这类 `<img>`
+    /// 不设 aspect_ratio，缺失维按 default object size（宽 300 / 高 150）回退。
+    pub fn compute_with_img_intrinsic(
+        &mut self,
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
+        img_intrinsic_ratios: HashMap<NodeId, f32>,
+        img_intrinsic_no_ratio: HashMap<NodeId, (Option<f32>, Option<f32>)>,
+    ) -> LayoutResult {
         // R695 复用副本：build_layout_tree_with_r109 按值取走 img_intrinsic_sizes，
         // 此处保留一份供 apply_indefinite_percent_height_to_auto 为替换元素补设固有尺寸。
         let intrinsic_for_r695 = img_intrinsic_sizes.clone();
@@ -136,6 +152,7 @@ impl LayoutEngine {
             self.viewport_height,
             img_intrinsic_sizes,
             img_intrinsic_ratios,
+            img_intrinsic_no_ratio,
         );
 
         // 构建 dom→taffy 反向映射

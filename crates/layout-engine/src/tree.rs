@@ -129,6 +129,11 @@ struct BuildContext {
     /// 仅 %-dim / viewBox-only SVG 出现：这些图像无确定固有尺寸，仅有 viewBox 宽高比。
     /// 当 `<img>` 无 width/height 属性且无确定固有尺寸时，仅设 aspect_ratio（不设 size）。
     img_intrinsic_ratios: HashMap<NodeId, f32>,
+    /// `<img>` 元素的 no-ratio 信号（DOM NodeId → (真实固有宽, 真实固有高)，各 Option）。
+    /// 仅 no-ratio SVG 出现（CSS §10.3.2）：width/height 非双绝对且无 viewBox，既无确定
+    /// 固有尺寸也无固有宽高比。值为真实固有维（仅 abs 属性存在的维，缺失维 None）；
+    /// 当 `<img>` 无 width/height 属性时按 default object size sizing（不设 aspect_ratio）。
+    img_intrinsic_no_ratio: HashMap<NodeId, (Option<f32>, Option<f32>)>,
     /// R109 接线产物（仅 R109_WIRE=1 时填充）。
     r109: R109Wiring,
 }
@@ -142,6 +147,7 @@ impl BuildContext {
             taffy_to_dom: HashMap::new(),
             img_intrinsic_sizes: HashMap::new(),
             img_intrinsic_ratios: HashMap::new(),
+            img_intrinsic_no_ratio: HashMap::new(),
             r109: R109Wiring::default(),
         }
     }
@@ -174,6 +180,7 @@ pub fn build_layout_tree(
         viewport_height,
         img_intrinsic_sizes,
         img_intrinsic_ratios,
+        HashMap::new(),
     );
     (taffy, root_id, taffy_to_dom)
 }
@@ -187,6 +194,7 @@ pub(crate) fn build_layout_tree_with_r109(
     viewport_height: f32,
     img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
     img_intrinsic_ratios: HashMap<NodeId, f32>,
+    img_intrinsic_no_ratio: HashMap<NodeId, (Option<f32>, Option<f32>)>,
 ) -> (
     TaffyTree<NodeId>,
     taffy::NodeId,
@@ -196,6 +204,7 @@ pub(crate) fn build_layout_tree_with_r109(
     let mut ctx = BuildContext::new();
     ctx.img_intrinsic_sizes = img_intrinsic_sizes;
     ctx.img_intrinsic_ratios = img_intrinsic_ratios;
+    ctx.img_intrinsic_no_ratio = img_intrinsic_no_ratio;
 
     // 找到第一个元素节点作为根（通常是 document > html）
     let root = doc.root();
@@ -264,6 +273,7 @@ fn find_first_element(doc: &Document, node: NodeId) -> NodeId {
 /// 当 CSS width/height 为 auto 时，使用 HTML 属性值作为固有尺寸。
 /// 对于 `<img>` 元素，从 `width`/`height` HTML 属性读取尺寸，
 /// 并通过 taffy 的 `aspect_ratio` 和尺寸约束传递给布局引擎。
+#[allow(clippy::too_many_arguments)]
 fn apply_replaced_element_sizing(
     taffy_style: &mut taffy::Style,
     computed: &ComputedStyle,
@@ -272,6 +282,7 @@ fn apply_replaced_element_sizing(
     dom_id: NodeId,
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     img_intrinsic_ratios: &HashMap<NodeId, f32>,
+    img_intrinsic_no_ratio: &HashMap<NodeId, (Option<f32>, Option<f32>)>,
 ) {
     // R1363：判定本替换元素是否为 flex 容器的直接子（flex item），及主轴方向。
     // 用于 cross-size 推导门控（见下方 width 显式/height auto 分支）。仅水平书写模式
@@ -375,9 +386,33 @@ fn apply_replaced_element_sizing(
             }
         }
         _ => {
-            // 无 HTML 属性：回退到解码后的固有尺寸（img_intrinsic_sizes）。
-            // CSS 规范：替换元素无显式尺寸时使用固有尺寸（intrinsic size）。
-            if let Some(&(w, h)) = img_intrinsic_sizes.get(&dom_id) {
+            // 无 HTML 属性：按解码信号分派。no-ratio / both-abs-sizes / ratio-only 三者互斥
+            //（一张图只命中其一；no-ratio 图虽也留在 image_sizes 供背景图读 pixmap 尺寸，
+            // 但此处先命中 no_ratio 即跳过 sizes 的 aspect_ratio 逻辑）。
+            //
+            // no-ratio SVG（CSS §10.3.2）：既无确定固有尺寸也无固有宽高比（width/height
+            // 非双绝对且无 viewBox）。usvg 对缺失维的默认值非真实固有尺寸，故**不设
+            // aspect_ratio**——auto 侧用真实固有维（若有），否则 default object size
+            //（宽 300 / 高 150）。显式 CSS 侧由 converter 处理，min/max 由 taffy 钳制。
+            // 驱动案：visudet replaced-elements-{height-20,width-40,max-height-20,max-width-40}。
+            if let Some(&(w_opt, h_opt)) = img_intrinsic_no_ratio.get(&dom_id) {
+                let width_auto = matches!(computed.width, LengthValue::Auto);
+                let height_auto = matches!(computed.height, LengthValue::Auto);
+                // 不设 aspect_ratio（no-ratio）
+                if width_auto && height_auto {
+                    taffy_style.size.width = taffy::style::Dimension::length(w_opt.unwrap_or(300.0).max(0.5));
+                    taffy_style.size.height = taffy::style::Dimension::length(h_opt.unwrap_or(150.0).max(0.5));
+                } else if !width_auto && height_auto {
+                    // width 显式，height auto → 用真实固有高或 default 150
+                    taffy_style.size.height = taffy::style::Dimension::length(h_opt.unwrap_or(150.0).max(0.5));
+                } else if width_auto && !height_auto {
+                    // height 显式，width auto → 用真实固有宽或 default 300
+                    taffy_style.size.width = taffy::style::Dimension::length(w_opt.unwrap_or(300.0).max(0.5));
+                }
+                // 两侧都显式：由 converter 处理，不干预
+            } else if let Some(&(w, h)) = img_intrinsic_sizes.get(&dom_id) {
+                // both-abs SVG / PNG / JPEG：真固有尺寸（pixmap w/h 有效）。CSS 规范：
+                // 替换元素无显式尺寸时使用固有尺寸（intrinsic size）。
                 let w = w.max(1.0);
                 let h = h.max(1.0);
                 let width_auto = matches!(computed.width, LengthValue::Auto);
@@ -813,6 +848,7 @@ fn build_subtree(
         dom_id,
         &ctx.img_intrinsic_sizes,
         &ctx.img_intrinsic_ratios,
+        &ctx.img_intrinsic_no_ratio,
     );
 
     // R1365：flex item 的 flex-basis 为百分比且容器 main 尺寸不明确时，item 的 main-size

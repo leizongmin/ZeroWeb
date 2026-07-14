@@ -498,22 +498,28 @@ fn parse_hex_color(hex: &str) -> Option<[u8; 4]> {
     }
 }
 
-/// 从 ImageCache 中提取所有图像的固有尺寸与 ratio-only 信号。
+/// 从 ImageCache 中提取所有图像的固有尺寸、ratio-only 与 no-ratio 信号。
 ///
 /// 遍历 HTML 中的所有图片 URL，查找缓存中对应的 ImageData，返回：
 /// - `image_sizes`（url_hash → (width, height)）：用于 background-size: auto 计算，
 ///   以及有确定固有尺寸的 `<img>`（PNG/JPEG/绝对尺寸 SVG）替换元素 sizing。
 /// - `image_ratios`（url_hash → width/height 比）：仅 %-dim / viewBox-only SVG（CSS §10.3.2），
 ///   无确定固有尺寸、仅有 viewBox 宽高比，布局仅设 aspect_ratio。
+/// - `image_no_ratio`（url_hash → (真实固有宽, 真实固有高)）：仅 no-ratio SVG（CSS §10.3.2），
+///   width/height 非双绝对且无 viewBox，布局不设 aspect_ratio、缺失维按 default object size。
+///   no-ratio 图亦保留在 `image_sizes` 供背景图 background-size:auto 读 pixmap 尺寸。
+#[allow(clippy::type_complexity)]
 pub(super) fn extract_image_metrics(
     image_cache: &mut ImageCache,
     html: &str,
 ) -> (
     std::collections::HashMap<u64, (f32, f32)>,
     std::collections::HashMap<u64, f32>,
+    std::collections::HashMap<u64, (Option<f32>, Option<f32>)>,
 ) {
     let mut sizes = std::collections::HashMap::new();
     let mut ratios = std::collections::HashMap::new();
+    let mut no_ratio = std::collections::HashMap::new();
 
     let mut all_urls = extract_img_srcs(html);
     all_urls.extend(extract_css_urls(html));
@@ -529,17 +535,21 @@ pub(super) fn extract_image_metrics(
             } else {
                 let s = data.size();
                 sizes.insert(key.0, (s.width, s.height));
+                // no-ratio SVG（CSS §10.3.2）：额外进 no_ratio（真实固有维），布局不设 aspect_ratio。
+                if let Some(dims) = data.no_ratio_intrinsic() {
+                    no_ratio.insert(key.0, dims);
+                }
             }
         }
     }
 
-    (sizes, ratios)
+    (sizes, ratios, no_ratio)
 }
 
-/// 从 ImageCache 中提取所有图像的固有尺寸（仅 sizes，无 ratios）。
+/// 从 ImageCache 中提取所有图像的固有尺寸（仅 sizes，无 ratios/no_ratio）。
 ///
 /// 保留给仅需 background-size: auto 的旧调用点；`<img>` 替换元素 sizing 须改用
-/// `extract_image_metrics` 以同时获得 ratio-only 信号。
+/// `extract_image_metrics` 以同时获得 ratio-only / no-ratio 信号。
 pub(super) fn extract_image_sizes(
     image_cache: &mut ImageCache,
     html: &str,

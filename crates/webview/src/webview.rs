@@ -143,6 +143,10 @@ pub struct WebView {
     /// ratio-only 图片信号（url hash → width/height 比，CSS §10.3.2 仅 SVG 出现）。
     /// %-dim / viewBox-only SVG 无确定固有尺寸、仅有 viewBox 宽高比，布局仅设 aspect_ratio。
     cached_image_ratios: HashMap<u64, f32>,
+    /// no-ratio 图片信号（url hash → (真实固有宽, 真实固有高)，各 Option，CSS §10.3.2 仅 SVG）。
+    /// width/height 非双绝对且无 viewBox 的 SVG 既无确定固有尺寸也无固有宽高比，布局不设
+    /// aspect_ratio，缺失维按 default object size（宽 300 / 高 150）回退。
+    cached_image_no_ratio: HashMap<u64, (Option<f32>, Option<f32>)>,
     /// CSS font-family → font_id，供 paint 解析 font-weight 粗体 face。
     font_resolver: std::collections::HashMap<String, u32>,
     /// 用户颜色方案偏好。
@@ -197,6 +201,7 @@ impl WebView {
             image_cache: ImageCache::default(),
             cached_image_sizes: HashMap::new(),
             cached_image_ratios: HashMap::new(),
+            cached_image_no_ratio: HashMap::new(),
             font_resolver: HashMap::new(),
             prefers_color_scheme: PrefersColorSchemeValue::Light,
             security_context: SecurityContext::new(),
@@ -244,11 +249,13 @@ impl WebView {
     fn prepare_page_subresources(&mut self, html: &str, page_url: &str) -> String {
         self.pipeline.set_document_url(Some(page_url));
         let external_css = self.resolve_external_css(html, page_url);
-        let (image_sizes, image_ratios) = self.fetch_image_subresources(html, page_url);
+        let (image_sizes, image_ratios, image_no_ratio) = self.fetch_image_subresources(html, page_url);
         self.cached_image_sizes = image_sizes.clone();
         self.cached_image_ratios = image_ratios.clone();
+        self.cached_image_no_ratio = image_no_ratio.clone();
         self.pipeline.set_image_sizes(image_sizes);
         self.pipeline.set_image_ratios(image_ratios);
+        self.pipeline.set_image_no_ratio(image_no_ratio);
         external_css
     }
 
@@ -260,6 +267,9 @@ impl WebView {
         }
         if !self.cached_image_ratios.is_empty() {
             self.pipeline.set_image_ratios(self.cached_image_ratios.clone());
+        }
+        if !self.cached_image_no_ratio.is_empty() {
+            self.pipeline.set_image_no_ratio(self.cached_image_no_ratio.clone());
         }
     }
 
@@ -283,11 +293,13 @@ impl WebView {
     pub fn reload_html_after_script(&mut self, html: &str) -> WebViewRenderResult {
         self.cached_html = html.to_string();
         if let Some(page_url) = self.current_url.clone() {
-            let (image_sizes, image_ratios) = self.fetch_image_subresources(html, &page_url);
+            let (image_sizes, image_ratios, image_no_ratio) = self.fetch_image_subresources(html, &page_url);
             self.cached_image_sizes = image_sizes.clone();
             self.cached_image_ratios = image_ratios.clone();
+            self.cached_image_no_ratio = image_no_ratio.clone();
             self.pipeline.set_image_sizes(image_sizes);
             self.pipeline.set_image_ratios(image_ratios);
+            self.pipeline.set_image_no_ratio(image_no_ratio);
         }
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
@@ -355,16 +367,22 @@ impl WebView {
     /// 及渲染器查找一致），并返回 `image_sizes`（url hash → (w,h)）供 pipeline 对无
     /// width/height 属性的 `<img>` 注入固有尺寸（DC-11 替换元素固有尺寸）。
     /// `data:` URI 暂不支持（跳过）；抓取/解码失败仅 warn 不阻断（宽松降级）。
+    #[allow(clippy::type_complexity)]
     fn fetch_image_subresources(
         &mut self,
         html: &str,
         base_url: &str,
-    ) -> (HashMap<u64, (f32, f32)>, HashMap<u64, f32>) {
+    ) -> (
+        HashMap<u64, (f32, f32)>,
+        HashMap<u64, f32>,
+        HashMap<u64, (Option<f32>, Option<f32>)>,
+    ) {
         let srcs = extract_img_srcs(html);
         let mut image_sizes = HashMap::new();
         let mut image_ratios = HashMap::new();
+        let mut image_no_ratio = HashMap::new();
         if srcs.is_empty() {
-            return (image_sizes, image_ratios);
+            return (image_sizes, image_ratios, image_no_ratio);
         }
         let base = url::Url::parse(base_url).ok();
         for src in &srcs {
@@ -394,16 +412,21 @@ impl WebView {
             let key = ImageKey::new(key_hash);
             // R717：ratio-only SVG（%-dim / viewBox-only）无确定固有尺寸，仅有 viewBox 比——
             // 进 image_ratios，**不**进 image_sizes（任何确定 size 都会被 taffy 当作固有高度，
-            // 阻止 flex ratio-derivation）。其余图像走 image_sizes 正常固有尺寸路径。
+            // 阻止 flex ratio-derivation）。no-ratio SVG（CSS §10.3.2，width/height 非双绝对且
+            // 无 viewBox）进 image_no_ratio（真实固有维，布局不设 aspect_ratio）——亦保留在
+            // image_sizes 供背景图 background-size:auto 读 pixmap 尺寸。其余图像走 image_sizes。
             if let Some(ratio) = img.intrinsic_ratio() {
                 image_ratios.insert(key_hash, ratio);
             } else {
                 let (w, h) = (img.width as f32, img.height as f32);
                 image_sizes.insert(key_hash, (w, h));
+                if let Some(dims) = img.no_ratio_intrinsic() {
+                    image_no_ratio.insert(key_hash, dims);
+                }
             }
             self.image_cache.insert_with_key(key, img);
         }
-        (image_sizes, image_ratios)
+        (image_sizes, image_ratios, image_no_ratio)
     }
 
     /// 获取已解码图片子资源缓存的可变引用，供下游渲染器绘制时消费。
@@ -677,6 +700,7 @@ impl WebView {
         self.cached_css.clear();
         self.cached_image_sizes.clear();
         self.cached_image_ratios.clear();
+        self.cached_image_no_ratio.clear();
         self.image_cache.clear();
         self.current_url = Some(page_url.to_string());
         self.loading = true;
@@ -733,6 +757,17 @@ impl WebView {
         &self.cached_image_ratios
     }
 
+    /// 更新 no-ratio 图片信号并同步到 pipeline（CSS §10.3.2，仅 no-ratio SVG 出现）。
+    pub fn set_image_no_ratio(&mut self, no_ratio: HashMap<u64, (Option<f32>, Option<f32>)>) {
+        self.cached_image_no_ratio = no_ratio.clone();
+        self.pipeline.set_image_no_ratio(no_ratio);
+    }
+
+    /// 获取已抓取图片的 no-ratio 信号快照（供增量加载合并）。
+    pub fn cached_image_no_ratio(&self) -> &HashMap<u64, (Option<f32>, Option<f32>)> {
+        &self.cached_image_no_ratio
+    }
+
     /// 获取当前 URL。
     pub fn url(&self) -> Option<&str> {
         self.current_url.as_deref()
@@ -774,6 +809,7 @@ impl WebView {
         let doc_url = self.current_url.clone();
         let image_sizes = self.cached_image_sizes.clone();
         let image_ratios = self.cached_image_ratios.clone();
+        let image_no_ratio = self.cached_image_no_ratio.clone();
         self.config.width = width;
         self.config.height = height;
         self.pipeline = RenderPipeline::new(width as f32, height as f32);
@@ -784,6 +820,9 @@ impl WebView {
         }
         if !image_ratios.is_empty() {
             self.pipeline.set_image_ratios(image_ratios);
+        }
+        if !image_no_ratio.is_empty() {
+            self.pipeline.set_image_no_ratio(image_no_ratio);
         }
         self.pipeline.set_font_resolver(self.font_resolver.clone());
     }

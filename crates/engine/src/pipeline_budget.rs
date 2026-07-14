@@ -125,11 +125,14 @@ impl RenderPipeline {
                     let start = Instant::now();
                     let img_sizes = self.build_img_intrinsic_sizes(doc);
                     let img_ratios = self.build_img_intrinsic_ratios(doc);
-                    session.layout_result =
-                        Some(
-                            self.layout_engine
-                                .compute_with_img_sizes(doc, &session.styles, img_sizes, img_ratios),
-                        );
+                    let img_no_ratio = self.build_img_intrinsic_no_ratio(doc);
+                    session.layout_result = Some(self.layout_engine.compute_with_img_intrinsic(
+                        doc,
+                        &session.styles,
+                        img_sizes,
+                        img_ratios,
+                        img_no_ratio,
+                    ));
                     session.timings.layout_ms = start.elapsed().as_secs_f64() * 1000.0;
                     session.step = BudgetStep::Paint;
                 }
@@ -201,9 +204,14 @@ impl RenderPipeline {
 
         let layout_start = Instant::now();
         let img_sizes = self.build_img_intrinsic_sizes(&doc);
-        let layout_result =
-            self.layout_engine
-                .compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
+        let img_no_ratio = self.build_img_intrinsic_no_ratio(&doc);
+        let layout_result = self.layout_engine.compute_with_img_intrinsic(
+            &doc,
+            &styles,
+            img_sizes,
+            std::collections::HashMap::new(),
+            img_no_ratio,
+        );
         let layout_ms = layout_start.elapsed().as_secs_f64() * 1000.0;
 
         let paint_start = Instant::now();

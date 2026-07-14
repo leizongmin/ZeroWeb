@@ -745,6 +745,124 @@ fn test_img_css_aspect_ratio_overrides_intrinsic_ratio_width_explicit() {
     );
 }
 
+/// R1437 no-ratio 替换元素尺寸（CSS §10.3.2）：width-only no-ratio SVG（`width="50"` 无
+/// height/viewBox）+ CSS `height:20px width:auto` → width 须用真实固有宽 50（非按 usvg
+/// 默认 h=100 算出的 50/100=0.5 比例推导为 20×0.5=10）。驱动案：visudet
+/// replaced-elements-height-20（width-50-no-ratio.svg）。
+#[test]
+fn test_img_no_ratio_width_only_height_explicit() {
+    let (mut doc, body) = make_doc_with_body();
+    let img = doc.create_element("img");
+    doc.append_child(body, img).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Block;
+    s.height = LengthValue::Px(20.0); // height 显式，width auto
+    styles.insert(img, s);
+
+    // no-ratio 信号：真实固有宽 50，无固有高（usvg 默认 h=100 不真实）。
+    // 同时入 sizes（pixmap 50×100，供背景图），但 no-ratio 优先消费。
+    let mut sizes = HashMap::new();
+    sizes.insert(img, (50.0_f32, 100.0_f32));
+    let mut no_ratio = HashMap::new();
+    no_ratio.insert(img, (Some(50.0_f32), None));
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_intrinsic(&doc, &styles, sizes, std::collections::HashMap::new(), no_ratio);
+
+    let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+    // height 显式 20；width auto 须用真实固有宽 50（旧实现按 bogus ratio 0.5 推导 = 10）。
+    assert!(
+        (img_box.height - 20.0).abs() < 2.0,
+        "img height should be ~20 (CSS explicit), got {}",
+        img_box.height
+    );
+    assert!(
+        (img_box.width - 50.0).abs() < 2.0,
+        "img width should be ~50 (no-ratio intrinsic width), got {}; \
+         bug = used bogus 50/100 ratio → 10",
+        img_box.width
+    );
+}
+
+/// R1437 no-ratio：height-only no-ratio SVG（`height="25"`）+ CSS `width:40px height:auto`
+/// → height 须用真实固有高 25（驱动案：visudet replaced-elements-width-40 height-25-no-ratio）。
+#[test]
+fn test_img_no_ratio_height_only_width_explicit() {
+    let (mut doc, body) = make_doc_with_body();
+    let img = doc.create_element("img");
+    doc.append_child(body, img).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Block;
+    s.width = LengthValue::Px(40.0); // width 显式，height auto
+    styles.insert(img, s);
+
+    let mut no_ratio = HashMap::new();
+    no_ratio.insert(img, (None, Some(25.0_f32)));
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_intrinsic(
+        &doc,
+        &styles,
+        HashMap::new(),
+        std::collections::HashMap::new(),
+        no_ratio,
+    );
+
+    let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+    assert!(
+        (img_box.width - 40.0).abs() < 2.0,
+        "width ~40 (CSS), got {}",
+        img_box.width
+    );
+    assert!(
+        (img_box.height - 25.0).abs() < 2.0,
+        "img height should be ~25 (no-ratio intrinsic height), got {}",
+        img_box.height
+    );
+}
+
+/// R1437 no-ratio：零固有维 no-ratio SVG（无 width/height/viewBox）+ width/height 均 auto
+/// → 须用 default object size 300×150（驱动案：visudet replaced-elements-all-auto no-ratio.svg）。
+#[test]
+fn test_img_no_ratio_no_dims_all_auto_default_object_size() {
+    let (mut doc, body) = make_doc_with_body();
+    let img = doc.create_element("img");
+    doc.append_child(body, img).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Block; // width/height 均 auto
+    styles.insert(img, s);
+
+    let mut no_ratio = HashMap::new();
+    no_ratio.insert(img, (None, None));
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_intrinsic(
+        &doc,
+        &styles,
+        HashMap::new(),
+        std::collections::HashMap::new(),
+        no_ratio,
+    );
+
+    let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+    assert!(
+        (img_box.width - 300.0).abs() < 2.0,
+        "img width should be ~300 (default object size), got {}",
+        img_box.width
+    );
+    assert!(
+        (img_box.height - 150.0).abs() < 2.0,
+        "img height should be ~150 (default object size), got {}",
+        img_box.height
+    );
+}
+
 /// 测试 inline-only 容器收缩后，后续普通流兄弟应同步上移。
 #[test]
 fn test_inline_only_container_shrink_reflows_following_sibling() {

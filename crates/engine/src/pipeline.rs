@@ -50,6 +50,13 @@ pub struct RenderPipeline {
     /// 仅有 viewBox 宽高比。布局须以 ratio-only 处理（不设确定 size，仅设 aspect_ratio），
     /// 让 taffy/flex 按上下文 ratio-derive。由调用方从解码后的 ImageCache 填充。
     pub(crate) image_ratios: HashMap<u64, f32>,
+    /// no-ratio 图像信号（image_key hash → (真实固有宽, 真实固有高)，各 Option）。
+    ///
+    /// 仅 no-ratio SVG 出现（CSS §10.3.2）：width/height 非双绝对且无 viewBox，既无确定
+    /// 固有尺寸也无固有宽高比。usvg 对缺失维的默认值非真实固有尺寸。值为真实固有维
+    ///（仅 abs 属性存在的维，缺失维 None）；布局须**不设 aspect_ratio**，缺失维按
+    /// default object size（宽 300 / 高 150）回退。由调用方从解码后的 ImageCache 填充。
+    pub(crate) image_no_ratio: HashMap<u64, (Option<f32>, Option<f32>)>,
     /// CSS font-family 查找表（字体族名 → FontId）。
     pub(crate) font_resolver: HashMap<String, u32>,
     /// 当前文档 URL（用于解析相对 `<img src>` 与 image_sizes 键）。
@@ -109,6 +116,7 @@ impl RenderPipeline {
             skip_indicators: false,
             image_sizes: HashMap::new(),
             image_ratios: HashMap::new(),
+            image_no_ratio: HashMap::new(),
             font_resolver: HashMap::new(),
             document_url: None,
         }
@@ -148,6 +156,15 @@ impl RenderPipeline {
         self.image_ratios = ratios;
     }
 
+    /// 设置 no-ratio 图像信号缓存（CSS §10.3.2，仅 no-ratio SVG 出现）。
+    ///
+    /// 键为图像 URL 的 hash 值，值为 (真实固有宽, 真实固有高)（各 Option，缺失维 None）。
+    /// 这些 SVG 既无确定固有尺寸也无固有宽高比，布局须不设 aspect_ratio、缺失维按
+    /// default object size（宽 300 / 高 150）回退。
+    pub fn set_image_no_ratio(&mut self, no_ratio: HashMap<u64, (Option<f32>, Option<f32>)>) {
+        self.image_no_ratio = no_ratio;
+    }
+
     /// 从 `self.image_sizes`（按 URL hash 索引）解析出 `<img>` 元素的解码固有尺寸，
     /// 按 DOM NodeId 索引返回，供布局引擎对无 width/height 属性的 `<img>` 注入固有尺寸。
     ///
@@ -176,6 +193,22 @@ impl RenderPipeline {
                 let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
                 if let Some(&ratio) = self.image_ratios.get(&key) {
                     map.insert(img_id, ratio);
+                }
+            }
+        }
+        map
+    }
+
+    /// 从 `self.image_no_ratio`（按 URL hash 索引）解析出 `<img>` 元素的 no-ratio 信号，
+    /// 按 DOM NodeId 索引返回，供布局引擎对无 width/height 属性、无确定固有尺寸且无
+    /// 固有宽高比的 `<img>`（no-ratio SVG）按 CSS §10.3.2 default object size sizing。
+    pub(crate) fn build_img_intrinsic_no_ratio(&self, doc: &Document) -> HashMap<NodeId, (Option<f32>, Option<f32>)> {
+        let mut map = HashMap::new();
+        for img_id in doc.get_elements_by_tag_name("img") {
+            if let Some(src) = doc.get_attribute(img_id, "src") {
+                let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
+                if let Some(&dims) = self.image_no_ratio.get(&key) {
+                    map.insert(img_id, dims);
                 }
             }
         }
@@ -278,9 +311,10 @@ impl RenderPipeline {
         let layout_start = Instant::now();
         let img_sizes = self.build_img_intrinsic_sizes(&doc);
         let img_ratios = self.build_img_intrinsic_ratios(&doc);
-        let layout_result = self
-            .layout_engine
-            .compute_with_img_sizes(&doc, &styles, img_sizes, img_ratios);
+        let img_no_ratio = self.build_img_intrinsic_no_ratio(&doc);
+        let layout_result =
+            self.layout_engine
+                .compute_with_img_intrinsic(&doc, &styles, img_sizes, img_ratios, img_no_ratio);
         let layout_ms = layout_start.elapsed().as_secs_f64() * 1000.0;
 
         // 7. 生成绘制命令
@@ -386,9 +420,10 @@ impl RenderPipeline {
         let layout_start = Instant::now();
         let img_sizes = self.build_img_intrinsic_sizes(&doc);
         let img_ratios = self.build_img_intrinsic_ratios(&doc);
-        let layout_result = self
-            .layout_engine
-            .compute_with_img_sizes(&doc, &styles, img_sizes, img_ratios);
+        let img_no_ratio = self.build_img_intrinsic_no_ratio(&doc);
+        let layout_result =
+            self.layout_engine
+                .compute_with_img_intrinsic(&doc, &styles, img_sizes, img_ratios, img_no_ratio);
         let layout_ms = layout_start.elapsed().as_secs_f64() * 1000.0;
 
         // 5. 生成绘制命令
@@ -452,9 +487,10 @@ impl RenderPipeline {
         // 计算布局
         let img_sizes = self.build_img_intrinsic_sizes(doc);
         let img_ratios = self.build_img_intrinsic_ratios(doc);
-        let layout_result = self
-            .layout_engine
-            .compute_with_img_sizes(doc, &styles, img_sizes, img_ratios);
+        let img_no_ratio = self.build_img_intrinsic_no_ratio(doc);
+        let layout_result =
+            self.layout_engine
+                .compute_with_img_intrinsic(doc, &styles, img_sizes, img_ratios, img_no_ratio);
 
         // 生成绘制命令
         let mut painter = Painter::new();
@@ -531,9 +567,10 @@ impl RenderPipeline {
         // 计算布局
         let img_sizes = self.build_img_intrinsic_sizes(doc);
         let img_ratios = self.build_img_intrinsic_ratios(doc);
-        let layout_result = self
-            .layout_engine
-            .compute_with_img_sizes(doc, &styles, img_sizes, img_ratios);
+        let img_no_ratio = self.build_img_intrinsic_no_ratio(doc);
+        let layout_result =
+            self.layout_engine
+                .compute_with_img_intrinsic(doc, &styles, img_sizes, img_ratios, img_no_ratio);
         self.cached_layout = Some(LayoutResult {
             root: layout_result.root.clone(),
             viewport_width: layout_result.viewport_width,
