@@ -218,8 +218,10 @@ pub(crate) fn block_max_content_width(
     // **仅当所有 in-flow 子都是 leaf（无元素子）**——驱动案 change-intrinsic-width（columns:2 +
     // 2 个 50px leaf 子 → 100）、intrinsic-width-change-column-count（columns:4 + 25px leaf → 100）。
     // column-span:all 子（含嵌套元素，intrinsic-size-002/003/004）跨全宽不应乘 N——其有元素子，
-    // 守卫跳过，回落 max（span:all content = 全宽）。ZW 暂未解析 column-span，用「子是否 leaf」
-    // 作代理判定（span:all 通常含嵌套结构）。
+    // 守卫跳过，回落 max（span:all content = 全宽）。
+    // R1430 A/B：试加 column_span 真值守卫（column-span 已解析）排除 text-only spanner，
+    // net-0 flip（170→170）但 multicol-width-004 3.91→4.09 微回归（width-005 7.43→7.28 改善，
+    // 均仍 fail）→ wash，revert。spanner intrinsic 须配合 L3 spanner-aware sizing（②③）整体解。
     let col_count = box_node
         .node_id
         .and_then(|id| styles.get(&id))
