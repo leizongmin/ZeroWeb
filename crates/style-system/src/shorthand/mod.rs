@@ -1318,11 +1318,23 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
             }
         }
         2 => {
-            // 双值：CSS 规范允许任意顺序，自动检测哪个是 count（整数）哪个是 width（长度）
-            let (count_val, width_val) = if parts[0].parse::<u32>().is_ok() || parts[0] == "auto" {
+            // 双值：CSS Multicol §3.4 `columns: <column-width> || <column-count>`，顺序无关。
+            // 消歧规则：整数 → column-count；长度 → column-width；auto 填余下槽位。
+            // R1425 修复：旧逻辑 `parts[0]=="auto"` 把 auto 当 count 指示，致 `auto 6` 误解析为
+            // column-count:auto + column-width:6（应 column-count:6 + column-width:auto），使
+            // `columns: auto N` 案（如 multicol-columns-007）列数变 auto → 退回 column-width 驱动。
+            let p0_int = parts[0].parse::<u32>().is_ok();
+            let p1_int = parts[1].parse::<u32>().is_ok();
+            let (count_val, width_val) = if p0_int {
                 (parts[0], parts[1])
-            } else {
+            } else if p1_int {
                 (parts[1], parts[0])
+            } else if looks_like_length(parts[0]) {
+                // parts[0] 是长度 → width，parts[1]（auto 或长度）→ count
+                (parts[1], parts[0])
+            } else {
+                // parts[0] 非 int/length（即 auto）→ count，parts[1] → width
+                (parts[0], parts[1])
             };
             // 验证两个值都有效：count 必须是整数/auto，width 必须是长度/auto
             if is_valid_column_count(count_val) && is_valid_column_width(width_val) {

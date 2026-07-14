@@ -33,6 +33,54 @@ fn test_columns_width_only() {
     assert_eq!(result[1].1, "200px");
 }
 
+// ── R1425：columns 双值 auto/integer 消歧（CSS Multicol §3.4）──
+
+#[test]
+/// R1425：`auto 6` → column-count=6, column-width=auto（整数=count, auto=width）。
+/// 旧实现误解析为 column-count:auto + column-width:6（parts[0]=="auto" 被当 count 指示），
+/// 致 multicol-columns-007 列数变 auto 退回 column-width 驱动，paint multicol 路径不命中。
+fn r1425_columns_auto_then_integer() {
+    let result = expand_one("columns", "auto 6", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "column-count");
+    assert_eq!(result[0].1, "6", "auto 6: 整数 6 应为 column-count");
+    assert_eq!(result[1].0, "column-width");
+    assert_eq!(result[1].1, "auto", "auto 6: auto 应为 column-width");
+}
+
+#[test]
+/// R1425：`6 auto` → column-count=6, column-width=auto（顺序无关，整数总为 count）。
+fn r1425_columns_integer_then_auto() {
+    let result = expand_one("columns", "6 auto", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "column-count");
+    assert_eq!(result[0].1, "6");
+    assert_eq!(result[1].0, "column-width");
+    assert_eq!(result[1].1, "auto");
+}
+
+#[test]
+/// R1425：`100px auto` → column-count=auto, column-width=100px（长度=width, auto=count）。
+fn r1425_columns_length_then_auto() {
+    let result = expand_one("columns", "100px auto", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "column-count");
+    assert_eq!(result[0].1, "auto", "100px auto: auto 应为 column-count");
+    assert_eq!(result[1].0, "column-width");
+    assert_eq!(result[1].1, "100px", "100px auto: 100px 应为 column-width");
+}
+
+#[test]
+/// R1425：`auto 100px` → column-count=auto, column-width=100px（与上一测试互逆，顺序无关）。
+fn r1425_columns_auto_then_length() {
+    let result = expand_one("columns", "auto 100px", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "column-count");
+    assert_eq!(result[0].1, "auto");
+    assert_eq!(result[1].0, "column-width");
+    assert_eq!(result[1].1, "100px");
+}
+
 // ── column-rule 简写测试 ──
 
 #[test]
