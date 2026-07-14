@@ -217,23 +217,14 @@ fn store_inline_multicol_columns(
         Some(s) => s,
         None => return false,
     };
-    // 仅 column-fill:auto + 列数≥2（balance inline 扩展经 R902 A/B 测零 oracle-pass yield，回退）
+    // column-fill:auto 或 balance + 列数≥2。
+    // R1423：balance 也进入本函数以填充 text_node_is_ahem 等（paint 侧重跑 IFC 需要），
+    // 但不为 balance 存列分布——paint 对 balance 用自己的 multicol_info 重跑（use_stored=false），
+    // 存了也被忽略，且 R902/R1422 证 balance 存列布局 net-negative。仅 auto 存列分布。
     let info = match crate::multicol::compute_column_info(style, root.content_width) {
-        Some(i) if i.sequential_fill && i.count >= 2 => i,
+        Some(i) if i.count >= 2 => i,
         _ => return false,
     };
-    // 列高预算：明确 height 优先，否则 max-height，最后回退 content_height。
-    // R905：max-height 容器（height:auto）的 content_height 来自全宽 IFC（偏小，列更窄→更多行），
-    // 须用 max-height 作 budget；分布后再修正容器高度。columnfill-auto-max-height-001：
-    // max-height:100px 但 content_height=50（全宽 2 行），列宽（100px）下应为 4 行=100px。
-    let (available_height, from_max_height) = match (&style.height, &style.max_height) {
-        (LengthValue::Px(h), _) => (*h as f32, false),
-        (_, LengthValue::Px(m)) => (*m as f32, true),
-        _ => (root.content_height, false),
-    };
-    if available_height <= 0.0 {
-        return false;
-    }
     // inline-only：无 in-flow block-level 子（block 子走 multicol.rs assign_children 路径）
     let has_block_child = root
         .children
@@ -246,6 +237,30 @@ fn store_inline_multicol_columns(
     let mut col_ctx = InlineFormattingContext::new(info.column_width);
     col_ctx.layout(doc, node_id, styles);
     if col_ctx.lines.is_empty() {
+        return false;
+    }
+    // R1423：填充 text_node_is_ahem / font_sizes / letter_spacing / line_heights 等度量，
+    // 供 paint 侧重跑 IFC（balance 模式 multicol_info 路径，use_stored=false）获得正确字体
+    // 度量。此前 multicol 早返回跳过 store_font_sizes_from_ifc → text_node_is_ahem 空 →
+    // paint IFC is_ahem=false（Ahem 'x' 估 11px 应 20px）→ 列宽下少换行 → 列欠填
+    // （multicol-columns-001 仅渲染 42% 文本，22 行应 44）。auto 模式 use_stored=true
+    // 走存布局路径，本填充对其无影响（无消耗）。
+    store_font_sizes_from_ifc(&col_ctx, root, doc, styles);
+    // balance 模式：度量已填，不存列分布，让 paint 用正确度量重跑（avoid R902/R1422 回归）。
+    if !info.sequential_fill {
+        return false;
+    }
+    // auto 模式：列高预算 + 顺序填列 + 存列分布。
+    // 列高预算：明确 height 优先，否则 max-height，最后回退 content_height。
+    // R905：max-height 容器（height:auto）的 content_height 来自全宽 IFC（偏小，列更窄→更多行），
+    // 须用 max-height 作 budget；分布后再修正容器高度。columnfill-auto-max-height-001：
+    // max-height:100px 但 content_height=50（全宽 2 行），列宽（100px）下应为 4 行=100px。
+    let (available_height, from_max_height) = match (&style.height, &style.max_height) {
+        (LengthValue::Px(h), _) => (*h as f32, false),
+        (_, LengthValue::Px(m)) => (*m as f32, true),
+        _ => (root.content_height, false),
+    };
+    if available_height <= 0.0 {
         return false;
     }
     // 分布行盒到列（整行不裁断，列高 respected，余量留末列）

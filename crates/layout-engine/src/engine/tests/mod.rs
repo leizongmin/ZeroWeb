@@ -104,6 +104,7 @@ mod r1404_aspect_ratio_flex_stretch_tests;
 mod r1411_column_flex_aspect_main_tests;
 #[cfg(test)]
 mod r1412_align_content_flex_end_tests;
+mod r1423_multicol_balance_text_node_is_ahem_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
