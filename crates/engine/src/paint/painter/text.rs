@@ -805,6 +805,16 @@ impl super::Painter {
         // default div 内）。render_fragment macro 按 owner（片段父元素）font_family 选
         // frag_font_id——is_ahem 片段用 ahem_font_id 出 Ahem 方块，非 is_ahem 用 default。
         let ahem_font_id = self.resolve_font_id(&["Ahem".to_string()], &style.font_weight);
+        // R1464：per-fragment font_id（key = 文本节点 NodeId）。Path B 空 styles 无
+        // per-fragment font-family，旧实现 glyph 全用 default_font_id（容器字体）→ 非-Ahem
+        // webfont/跨字体 inline 用错字体。据布局存的 text_node_font_families 解析每个文本
+        // 节点的 FontId；宏 frag_font_id 据此选字体（无则 default_font_id，零回归）。
+        // 放函数作用域（default_font_id 旁）供所有 render_fragment 调用可见。
+        let text_node_font_ids: HashMap<zero_dom::NodeId, zero_render_foundation::primitive::FontId> = box_node
+            .text_node_font_families
+            .iter()
+            .map(|(&tn, fam)| (tn, self.resolve_font_id(fam, &style.font_weight)))
+            .collect();
 
         if let (Some(doc), Some(node_id)) = (doc, box_node.node_id) {
             // R109 §9.2.1.1：被 in-flow block 子元素拆分的 inline 父盒自身不渲染文本——
@@ -1458,12 +1468,19 @@ impl super::Painter {
                             // 字体≠容器时（如 span Ahem in default div）字形位图用 owner 字体
                             // 而非容器 default_font_id。owner_style_opt 缺省（Path B 空 styles）
                             // 回退 default_font_id（零回归）。
+                            // R1464：Path B 空 styles 时 owner_style_opt=None，旧实现非-Ahem 片段
+                            // 全回落 default_font_id（容器字体）→ 非-Ahem webfont/跨字体 inline 用错
+                            // 字体。改为查 text_node_font_ids（layout 存的 per-fragment font_family
+                            // 解析结果），无则 default_font_id（零回归）。
                             let frag_font_id = if owner_style_opt.is_some_and(|s| {
                                 s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"))
                             }) {
                                 ahem_font_id
                             } else {
-                                default_font_id
+                                text_node_font_ids
+                                    .get(&$frag_nid)
+                                    .copied()
+                                    .unwrap_or(default_font_id)
                             };
                             let emphasis_mark: Option<char> =
                                 owner_style_opt.and_then(|s| match s.text_emphasis_style {

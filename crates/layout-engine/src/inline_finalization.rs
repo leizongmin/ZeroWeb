@@ -358,6 +358,22 @@ pub(crate) fn store_font_sizes_from_ifc(
     for line in &inline_ctx.lines {
         for frag in &line.runs {
             box_node.text_node_font_sizes.insert(frag.node_id, frag.font_size);
+            // R1464：per-fragment font-family（key = frag.node_id，element 或 text node）。
+            // owner 元素 = frag.node_id（若 element）或其父（若 text node）。Path B 空 styles
+            // 无 per-fragment font-family → 非-Ahem webfont/跨字体 inline 回落容器字体。
+            let font_owner = if doc
+                .get(frag.node_id)
+                .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+            {
+                Some(frag.node_id)
+            } else {
+                doc.parent_node(frag.node_id)
+            };
+            let family = font_owner
+                .and_then(|oid| styles.get(&oid))
+                .map(|s| s.font_family.clone())
+                .unwrap_or_default();
+            box_node.text_node_font_families.insert(frag.node_id, family);
             box_node.text_node_is_ahem.insert(frag.node_id, frag.is_ahem);
             box_node
                 .text_node_letter_spacing

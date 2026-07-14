@@ -279,6 +279,11 @@ pub struct LayoutBox {
     /// 据此构造 `text_transform_overrides`（re-key 到父元素），让 `collect_inline_items`
     /// 在空 styles 下也能应用 transform。空 map（默认）= None = 原文，零回归。
     pub text_node_text_transform: HashMap<NodeId, zero_style_system::TextTransformValue>,
+    /// R1464：文本节点的 font-family 映射（key = 文本节点 NodeId，value = 父元素的
+    /// font_family 列表）。paint Path B 空 styles 下无法读 per-fragment font-family，
+    /// 导致非-Ahem webfont/跨字体 inline 全回落容器字体（R1464 root cause）。layout 期
+    /// 存父元素 font_family，paint 据此解析 per-fragment FontId。
+    pub text_node_font_families: HashMap<NodeId, Vec<String>>,
     /// 内联元素的 (font_size, line_height) 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// 与 text_node_font_sizes/line_heights 不同，此映射以元素自身的 NodeId 为键，
@@ -426,6 +431,7 @@ impl Default for LayoutBox {
             text_node_letter_spacing: HashMap::new(),
             text_node_line_heights: HashMap::new(),
             text_node_text_transform: HashMap::new(),
+            text_node_font_families: HashMap::new(),
             inline_element_metrics: HashMap::new(),
             inline_element_margins: HashMap::new(),
             taffy_baseline: None,
