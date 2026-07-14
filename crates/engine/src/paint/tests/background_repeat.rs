@@ -391,3 +391,60 @@ fn test_background_repeat_zero_container() {
     let prims = painter.primitives();
     assert_eq!(prims.images.len(), 0, "零尺寸容器不应生成 tile");
 }
+
+/// R1428：canvas 传播背景图 anchor（根元素盒偏移）应平移 positioned 位置。
+///
+/// CSS §14.2.3：根背景传播到画布时，背景图 positioning area = 根元素盒（含 margin 偏移），
+/// painting area = 画布。修复前 paint_bg_image_in_origin 把 origin 同时当锚和绘制区，canvas
+/// 调用传 (0,0) 致锚定画布左上（background-root-002 html margin:1in 时绿条 y=0 应 y=96）。
+/// 修复：加 anchor_x/y 参数，positioned = origin + offset + anchor；canvas 传根盒 layout.x/y。
+/// 本测试直接调 paint_bg_image_in_origin 验证 anchor 平移 gradient primitive 位置。
+#[test]
+fn r1428_canvas_bg_image_anchor_shifts_gradient_position() {
+    use zero_css_parser::values::{GradientColorStop, GradientDirection, GradientValue, LinearGradient};
+    let mk_style = || {
+        let mut style = ComputedStyle::default();
+        style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+            LinearGradient {
+                direction: GradientDirection::Angle(90.0),
+                stops: vec![
+                    GradientColorStop {
+                        color: ColorValue::Rgba(255, 0, 0, 255),
+                        position: Some(LengthValue::Px(0.0)),
+                    },
+                    GradientColorStop {
+                        color: ColorValue::Rgba(0, 0, 255, 255),
+                        position: Some(LengthValue::Px(100.0)),
+                    },
+                ],
+                repeating: false,
+            },
+        ))];
+        style.color = ColorValue::CurrentColor;
+        style
+    };
+
+    // anchor=(50,50)（canvas 根盒偏移）：positioned = origin(0) + offset(0,bg-pos 默认) + anchor(50) = 50。
+    let mut p1 = Painter::new();
+    p1.paint_bg_image_in_origin(0.0, 0.0, 100.0, 100.0, &mk_style(), 50.0, 50.0);
+    let g1 = &p1.primitives().gradients;
+    assert!(g1.len() >= 1, "R1428: anchor 测试应生成 gradient primitive");
+    assert!(
+        (g1[0].rect.left() - 50.0).abs() < 0.5 && (g1[0].rect.top() - 50.0).abs() < 0.5,
+        "R1428: anchor=(50,50) 应把 gradient 平移到 (50,50)，got ({}, {})",
+        g1[0].rect.left(),
+        g1[0].rect.top()
+    );
+
+    // anchor=(0,0)（正常元素）：positioned = 0。
+    let mut p0 = Painter::new();
+    p0.paint_bg_image_in_origin(0.0, 0.0, 100.0, 100.0, &mk_style(), 0.0, 0.0);
+    let g0 = &p0.primitives().gradients;
+    assert!(g0.len() >= 1);
+    assert!(
+        (g0[0].rect.left() - 0.0).abs() < 0.5 && (g0[0].rect.top() - 0.0).abs() < 0.5,
+        "R1428: anchor=(0,0) gradient 应在 (0,0)，got ({}, {})",
+        g0[0].rect.left(),
+        g0[0].rect.top()
+    );
+}

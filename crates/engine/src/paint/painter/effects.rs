@@ -90,20 +90,22 @@ impl super::Painter {
             ),
         };
 
-        self.paint_bg_image_in_origin(origin_x, origin_y, origin_w, origin_h, style);
+        self.paint_bg_image_in_origin(origin_x, origin_y, origin_w, origin_h, style, 0.0, 0.0);
     }
 
     /// 在指定 origin 矩形内绘制 background-image（含多图层逆序、size/position/repeat 解析、
     /// 平铺裁剪）。元素背景由 `paint_background_image` 计算 origin（按 background-origin）
     /// 后调用本函数；画布背景传播（CSS §14.2：body/html 背景传播到画布）直接以视口
     /// (0,0,vw,vh) 为 origin 调用本函数，使背景图像平铺整个画布。
-    pub(super) fn paint_bg_image_in_origin(
+    pub(crate) fn paint_bg_image_in_origin(
         &mut self,
         origin_x: f32,
         origin_y: f32,
         origin_w: f32,
         origin_h: f32,
         style: &ComputedStyle,
+        anchor_x: f32,
+        anchor_y: f32,
     ) {
         use zero_render_foundation::image_cache::ImageKey;
         use zero_render_foundation::primitive::ImagePrimitive;
@@ -127,8 +129,11 @@ impl super::Painter {
         let (offset_x, offset_y) =
             resolve_background_position(&style.background_position, origin_w, origin_h, sized_w, sized_h);
 
-        let positioned_x = origin_x + offset_x;
-        let positioned_y = origin_y + offset_y;
+        // positioned = 定位区域 origin + bg-position offset + anchor 偏移。
+        // R1428：anchor 用于 canvas 传播（CSS §14.2.3 根背景传播到画布时，positioning area =
+        // 根元素盒含 margin 偏移，painting area = 画布）；正常元素 anchor=0（positioned=origin+offset）。
+        let positioned_x = origin_x + offset_x + anchor_x;
+        let positioned_y = origin_y + offset_y + anchor_y;
 
         // CSS 规范：多图层逆序渲染（最后一层在最底，第一层在最上）
         for layer in style.background_image.iter().rev() {

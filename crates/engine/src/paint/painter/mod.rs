@@ -350,9 +350,11 @@ impl Painter {
                         color_value_to_render(&ps.background_color),
                     );
                 }
-                // 画布背景图像：以视口 (0,0,vw,vh) 为 origin 平铺（CSS §14.2：传播的
-                // 背景图像 anchored 相对根元素盒 = 画布）。
-                self.paint_bg_image_in_origin(0.0, 0.0, self.viewport_w, self.viewport_h, ps);
+                // 画布背景图像：painting area = 画布 (0,0,vw,vh)；positioning area = 根元素盒
+                // （CSS §14.2.3：根背景传播到画布时图像定位相对根元素盒，含根 margin 偏移）。
+                // R1428：anchor = 根元素（html）盒位置 layout.x/y，使背景图随根 margin 偏移定位
+                // （修 background-root-002：html margin:1in 时绿条应 y=96 非 y=0）。
+                self.paint_bg_image_in_origin(0.0, 0.0, self.viewport_w, self.viewport_h, ps, layout.x, layout.y);
             }
         }
         // R639：预扫描布局树填充 NodeId→height 索引，供 render_fragment 宏查 owner inline
