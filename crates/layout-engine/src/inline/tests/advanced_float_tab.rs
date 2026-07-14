@@ -339,3 +339,56 @@ fn test_tab_size_zero_fallback() {
         ctx.lines[0].runs.len()
     );
 }
+
+/// R1447：pre-wrap 制表符按 tab stop 推进（CSS Text 3 §4.1.3），非固定 tab_size 空格。
+///
+/// 驱动案 css-text/pre-wrap-tab-* + text-align-justify-tabs-*。旧实现把 `\t` 展开为
+/// `tab_size` 个空格（固定宽度），仅在光标恰处 tab stop 边界时正确；否则过度推进
+///（如 "abc\tx" 在 60px 处，旧实现 tab=8 空格=160px → x @ 220，应 @ 160）。
+/// 修复：`\t` 推进到下一个 `tab_size` 倍数（相对内容盒起点）。本测试 load-bearing。
+#[test]
+fn r1447_tab_advances_to_next_tab_stop() {
+    // Ahem 20px：每字符（含空格）= 20px。tab-size:8 → tab stop 每 160px（0/160/320…）。
+    // "abc\tx"：abc=60px，tab 推进到下一个 stop 160（advance 100），x 落在 160。
+    let mut ctx = InlineFormattingContext::new(800.0)
+        .with_preserve_whitespace(true)
+        .with_tab_size(8.0);
+    let mut run = TextRun::simple("abc\tx".to_string(), NodeId::default(), 20.0, 20.0, VA::Baseline);
+    run.is_ahem_font = true;
+    ctx.break_into_lines(vec![run]);
+
+    assert!(!ctx.lines.is_empty(), "应产出至少一行");
+    let x_frag = ctx.lines[0].runs.iter().find(|r| r.text.contains('x'));
+    let x_pos = x_frag.expect("应含 'x' 片段").x;
+    assert!(
+        (x_pos - 160.0).abs() < 1.0,
+        "R1447: pre-wrap tab 应推进到 tab stop（tab-size:8 × 20px = 160），'x' 应在 x≈160，\
+         实际 {:.1}（修复前 bug：tab 展开为固定 8 空格 → 'x' @ 220）",
+        x_pos
+    );
+}
+
+/// R1447：光标恰在 tab stop 边界时，tab 推进整整一个 tab_unit（不原地不动）。
+#[test]
+fn r1447_tab_at_stop_boundary_advances_full_unit() {
+    // "aaaaaaaa\t"：8 个 a（Ahem 20px）= 160px = 恰好一个 tab stop。tab 应推进到 320（+160），
+    // 而非停留在 160。验证 floor(160/160)+1 = 2 → next_stop = 320。
+    let mut ctx = InlineFormattingContext::new(800.0)
+        .with_preserve_whitespace(true)
+        .with_tab_size(8.0);
+    let mut run = TextRun::simple("aaaaaaaa\tx".to_string(), NodeId::default(), 20.0, 20.0, VA::Baseline);
+    run.is_ahem_font = true;
+    ctx.break_into_lines(vec![run]);
+
+    let x_pos = ctx.lines[0]
+        .runs
+        .iter()
+        .find(|r| r.text.contains('x'))
+        .map(|r| r.x)
+        .expect("应含 'x' 片段");
+    assert!(
+        (x_pos - 320.0).abs() < 1.0,
+        "R1447: 光标在 tab stop 边界（160）时，tab 应推进整整一个 unit 到 320，实际 {:.1}",
+        x_pos
+    );
+}

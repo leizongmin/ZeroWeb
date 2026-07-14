@@ -1167,6 +1167,41 @@ impl InlineFormattingContext {
                             (word.as_str(), 0.0f32)
                         };
 
+                        // R1447：制表符（preserve 模式保留为 "\t" 片段）按 tab stop 推进
+                        //（CSS Text 3 §4.1.3）——下一个 tab_size 倍数，非固定 tab_size 空格。
+                        // tab stop 相对内容盒起点（0）；current_x 已含 text-indent/float/前置词宽，
+                        // 故直接用作行内位置。tab 是空白：无 word-spacing/autospace 前导 gap，
+                        // 贡献行高，渲染为不可见（空文本片段，宽度由 current_x 序列消费）。
+                        if self.preserve_whitespace && content_word == "\t" {
+                            let space_advance = self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font);
+                            let tab_unit = self.tab_size.max(1.0) * space_advance;
+                            let pos = current_x;
+                            let next_stop = ((pos / tab_unit).floor() + 1.0) * tab_unit;
+                            let tab_advance = (next_stop - pos).max(space_advance);
+                            if run.line_height > current_line.height {
+                                current_line.height = run.line_height;
+                            }
+                            current_line.runs.push(crate::inline::TextFragment {
+                                x: current_x,
+                                y: 0.0,
+                                width: tab_advance,
+                                height: run.line_height,
+                                text: String::new(),
+                                node_id: run.node_id,
+                                font_size: run.font_size,
+                                vertical_align: run.vertical_align.clone(),
+                                is_ahem: run.is_ahem_font,
+                                letter_spacing: 0.0,
+                                margin_left: 0.0,
+                                margin_right: 0.0,
+                                margin_top: 0.0,
+                                baseline: run.font_size,
+                            });
+                            current_x += tab_advance;
+                            last_was_collapsible_ws = false;
+                            continue;
+                        }
+
                         // CSS 2.1 §16.6.1：行首空格不渲染。
                         // 当前行首的第一个词如果以空格开头，去除前导空格。
                         let content_word = if current_line.runs.is_empty()
@@ -2070,13 +2105,17 @@ impl InlineFormattingContext {
                 let mut current_word = String::new();
                 for ch in segment.chars() {
                     if ch == '\t' {
-                        // 制表符展开为 tab_size 个空格
+                        // R1447：保留制表符为独立 "\t" 片段（不展开为固定 tab_size 空格），
+                        // 由 break_items_into_lines 按 tab stop（CSS Text 3 §4.1.3）推进到
+                        // 下一个 tab_size 倍数。旧实现展开为 tab_size 空格 → 固定宽度，
+                        // 仅在光标恰处于 tab stop 边界时正确，否则过度推进（如 "a b c\t"
+                        // 在 6 字符处应进到 8，旧实现进到 14）→ text-align-justify-tabs /
+                        // pre-wrap-tab / tab-position 簇失败。
                         if !current_word.is_empty() {
                             result.push(current_word.clone());
                             current_word.clear();
                         }
-                        let tab_spaces = " ".repeat(self.tab_size.max(1.0) as usize);
-                        result.push(tab_spaces);
+                        result.push("\t".to_string());
                     } else if ch == ' ' {
                         if !current_word.is_empty() {
                             result.push(current_word.clone());
