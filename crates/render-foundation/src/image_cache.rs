@@ -45,6 +45,10 @@ pub struct ImageData {
     /// 属性存在的维，缺失维为 `None`）；布局须**不设 aspect_ratio**，按 CSS §10.3.2
     /// default object size（宽 300 / 高 150）回退。PNG/JPEG/both-abs/ratio-only SVG 为 `None`。
     no_ratio: Option<(Option<f32>, Option<f32>)>,
+    /// 计算的真实固有尺寸（CSS §10.3.2）：一维 abs + 另一维缺失 + viewBox 宽高比时，
+    /// usvg 对缺失维用原始 viewBox 值（pixmap bogus），须按 abs 维 × ratio 计算。`Some((w,h))`
+    /// 覆盖 pixmap 用于 image_sizes（aspect_ratio 由 w/h 推导）。仅该类 SVG 出现；其余为 `None`。
+    computed_intrinsic: Option<(f32, f32)>,
 }
 
 impl ImageData {
@@ -77,6 +81,7 @@ impl ImageData {
             solid_color,
             intrinsic_ratio: None,
             no_ratio: None,
+            computed_intrinsic: None,
         })
     }
 
@@ -90,6 +95,7 @@ impl ImageData {
             solid_color: Some([0, 0, 0, 0]),
             intrinsic_ratio: None,
             no_ratio: None,
+            computed_intrinsic: None,
         }
     }
 
@@ -141,6 +147,13 @@ impl ImageData {
     /// default object size（宽 300 / 高 150）回退。`None` 表示非 no-ratio（走 sizes/ratios 路径）。
     pub fn no_ratio_intrinsic(&self) -> Option<(Option<f32>, Option<f32>)> {
         self.no_ratio
+    }
+
+    /// 计算的真实固有尺寸（CSS §10.3.2）：`Some((w, h))` 表示此 SVG 为「一维 abs + 另一维
+    /// 缺失 + viewBox」类，usvg pixmap 对缺失维用原始 viewBox 值（bogus），须用此计算值
+    ///（abs × ratio）覆盖 pixmap 用于 image_sizes。`None` 表示 pixmap 尺寸有效。
+    pub fn computed_intrinsic(&self) -> Option<(f32, f32)> {
+        self.computed_intrinsic
     }
 
     /// 字节大小估算
@@ -482,6 +495,9 @@ pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         SvgIntrinsicKind::RatioOnly(ratio) => data.intrinsic_ratio = Some(ratio),
         // no-ratio → 设 no_ratio（真实固有维，缺失维 None；走 image_no_ratio）
         SvgIntrinsicKind::NoRatio { width, height } => data.no_ratio = Some((width, height)),
+        // 一维 abs + 另一维缺失 + viewBox → usvg pixmap 对缺失维用原始 viewBox 值（bogus），
+        // 须用计算的真实固有尺寸覆盖 pixmap（走 image_sizes，aspect_ratio 由 w/h 推导）。
+        SvgIntrinsicKind::ComputedIntrinsic(w, h) => data.computed_intrinsic = Some((w, h)),
     }
     Ok(data)
 }
@@ -496,6 +512,11 @@ enum SvgIntrinsicKind {
     /// 非双绝对 + 无 viewBox → 无固有宽高比；`width`/`height` 为真实固有维（仅 abs 属性
     /// 存在的维，缺失维 `None`）。usvg 对缺失维的默认值非真实固有尺寸，不可用于比例推导。
     NoRatio { width: Option<f32>, height: Option<f32> },
+    /// 一维 abs + 另一维**缺失** + viewBox 宽高比 → 有可计算的真实固有尺寸（abs 维 × ratio）。
+    /// usvg 对缺失维用原始 viewBox 值（pixmap bogus，如 `height="25" viewBox 1000×500` →
+    /// pixmap (1000,25) 应 (50,25)），故携带计算值 `(w, h)` 覆盖 pixmap（走 image_sizes）。
+    /// 仅「另一维缺失」触发（百分比维存在时仍 RatioOnly，避 flex ratio-derivation 回归）。
+    ComputedIntrinsic(f32, f32),
 }
 
 /// 解析 SVG `<svg>` 根元素属性，分类其固有尺寸类型（CSS §10.3.2）。
@@ -504,6 +525,8 @@ enum SvgIntrinsicKind {
 /// - `RatioOnly(ratio)`：非双绝对且 viewBox 提供有效宽高比（ratio = viewBox_w / viewBox_h）。
 /// - `NoRatio { width, height }`：非双绝对且无可用 viewBox 比；`width`/`height` 为 abs 属性
 ///   存在维的真实值（缺失维 `None`）。
+/// - `ComputedIntrinsic(w, h)`：一维 abs + 另一维缺失 + viewBox 比 → 计算的真实固有尺寸
+///   （abs × ratio），覆盖 usvg bogus pixmap。
 fn svg_intrinsic_kind(bytes: &[u8]) -> SvgIntrinsicKind {
     let Ok(s) = std::str::from_utf8(bytes) else {
         return SvgIntrinsicKind::NoRatio {
@@ -541,10 +564,25 @@ fn svg_intrinsic_kind(bytes: &[u8]) -> SvgIntrinsicKind {
     if let Some(vb) = viewbox {
         let nums: Vec<&str> = vb.split([' ', ',']).filter(|t| !t.is_empty()).collect();
         if nums.len() == 4
-            && let (Ok(w), Ok(h)) = (nums[2].parse::<f32>(), nums[3].parse::<f32>())
-            && h > 0.0
+            && let (Ok(vw), Ok(vh)) = (nums[2].parse::<f32>(), nums[3].parse::<f32>())
+            && vh > 0.0
         {
-            return SvgIntrinsicKind::RatioOnly(w / h);
+            let ratio = vw / vh;
+            // 一维 abs + 另一维**缺失** + viewBox → 计算真实固有尺寸（usvg pixmap 对缺失维
+            // 用原始 viewBox 值，bogus）。如 `height="25" viewBox 1000×500`（ratio 2）→ (50,25)。
+            // 仅「另一维属性缺失」触发；若另一维是百分比（属性存在），仍 RatioOnly（避 flex
+            // ratio-derivation 回归，mixed-percent 案保持 R717 行为）。
+            if let Some(h) = h_val
+                && width.is_none()
+            {
+                return SvgIntrinsicKind::ComputedIntrinsic(h * ratio, h);
+            }
+            if let Some(w) = w_val
+                && height.is_none()
+            {
+                return SvgIntrinsicKind::ComputedIntrinsic(w, w / ratio);
+            }
+            return SvgIntrinsicKind::RatioOnly(ratio);
         }
     }
     // 非双绝对 + 无可用 viewBox → no-ratio（真实固有维 = abs 属性存在维）
@@ -827,6 +865,33 @@ mod decode_tests {
         );
     }
 
+    /// R1438：height abs + width 缺失 + viewBox → ComputedIntrinsic（abs×ratio）。
+    /// 驱动案：visudet height-25-ratio-2.svg（height="25" viewBox 1000×500，ratio 2 → (50,25)）。
+    #[test]
+    fn svg_kind_height_abs_viewbox_computed_intrinsic() {
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1000 500\" height=\"25\" preserveAspectRatio=\"none\">\
+                   <rect fill=\"fuchsia\" width=\"1000\" height=\"500\"/></svg>";
+        assert_eq!(svg_intrinsic_kind(svg), SvgIntrinsicKind::ComputedIntrinsic(50.0, 25.0));
+    }
+
+    /// R1438：width abs + height 缺失 + viewBox → ComputedIntrinsic（abs, abs/ratio）。
+    /// 驱动案：visudet width-50-ratio-2.svg（width="50" viewBox 1000×500，ratio 2 → (50,25)）。
+    #[test]
+    fn svg_kind_width_abs_viewbox_computed_intrinsic() {
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1000 500\" width=\"50\" preserveAspectRatio=\"none\">\
+                   <rect fill=\"silver\" width=\"1000\" height=\"500\"/></svg>";
+        assert_eq!(svg_intrinsic_kind(svg), SvgIntrinsicKind::ComputedIntrinsic(50.0, 25.0));
+    }
+
+    /// R1438 gate：一维 abs + 另一维**百分比**（属性存在）+ viewBox → 仍 RatioOnly
+    ///（不触发 ComputedIntrinsic，避 flex ratio-derivation 回归；mixed-percent 保持 R717）。
+    #[test]
+    fn svg_kind_mixed_percent_abs_viewbox_still_ratio_only() {
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"50\" viewBox=\"0 0 200 100\">\
+                   <rect width=\"200\" height=\"100\" fill=\"green\"/></svg>";
+        assert_eq!(svg_intrinsic_kind(svg), SvgIntrinsicKind::RatioOnly(2.0));
+    }
+
     /// 端到端：百分比 SVG 经 decode 后 intrinsic_ratio 字段被填充。
     #[test]
     fn decode_svg_percent_dims_sets_intrinsic_ratio() {
@@ -1041,6 +1106,7 @@ mod tests {
             solid_color: None,
             intrinsic_ratio: None,
             no_ratio: None,
+            computed_intrinsic: None,
         };
         assert_eq!(img.get_pixel(0, 0), [0, 0, 0, 0]);
     }

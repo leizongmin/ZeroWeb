@@ -418,7 +418,11 @@ impl WebView {
             if let Some(ratio) = img.intrinsic_ratio() {
                 image_ratios.insert(key_hash, ratio);
             } else {
-                let (w, h) = (img.width as f32, img.height as f32);
+                // R1438：一维 abs + 另一维缺失 + viewBox 的 SVG，usvg pixmap 对缺失维用原始
+                // viewBox 值（bogus），须用计算的 computed_intrinsic 覆盖 pixmap 用于 image_sizes。
+                let (w, h) = img
+                    .computed_intrinsic()
+                    .unwrap_or((img.width as f32, img.height as f32));
                 image_sizes.insert(key_hash, (w, h));
                 if let Some(dims) = img.no_ratio_intrinsic() {
                     image_no_ratio.insert(key_hash, dims);

@@ -533,8 +533,12 @@ pub(super) fn extract_image_metrics(
             if let Some(ratio) = data.intrinsic_ratio() {
                 ratios.insert(key.0, ratio);
             } else {
-                let s = data.size();
-                sizes.insert(key.0, (s.width, s.height));
+                // R1438：一维 abs + 另一维缺失 + viewBox 的 SVG，usvg pixmap 对缺失维用原始
+                // viewBox 值（bogus），须用计算的 computed_intrinsic 覆盖 pixmap 用于 sizes。
+                let (w, h) = data
+                    .computed_intrinsic()
+                    .unwrap_or_else(|| (data.size().width, data.size().height));
+                sizes.insert(key.0, (w, h));
                 // no-ratio SVG（CSS §10.3.2）：额外进 no_ratio（真实固有维），布局不设 aspect_ratio。
                 if let Some(dims) = data.no_ratio_intrinsic() {
                     no_ratio.insert(key.0, dims);
