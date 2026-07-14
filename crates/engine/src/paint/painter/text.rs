@@ -1057,10 +1057,16 @@ impl super::Painter {
                     .text_node_is_ahem
                     .iter()
                     .filter_map(|(&tn, &is_ahem)| {
-                        if !is_text(tn) {
-                            return None;
+                        if is_text(tn) {
+                            // 文本节点：键改写为其父元素（直接文本路径）。
+                            doc.parent_node(tn).map(|pid| (pid, is_ahem))
+                        } else {
+                            // 已是元素（如 multicol col_ctx 把 inline 元素文本扁平化为
+                            // node_id=元素 的片段）：键即元素自身（paint IFC flatten 路径
+                            // 按 child_id=元素 查询）。R1446：multicol-basic span 文本经
+                            // flatten 收集，is_ahem 须能传到 paint IFC 测宽。
+                            Some((tn, is_ahem))
                         }
-                        doc.parent_node(tn).map(|pid| (pid, is_ahem))
                     })
                     .collect();
 

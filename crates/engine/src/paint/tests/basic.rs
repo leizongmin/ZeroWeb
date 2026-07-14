@@ -364,6 +364,51 @@ fn r1080_multicol_column_positioned_descendant_not_dropped() {
     );
 }
 
+/// R1446：multicol 容器内 **inline 元素（`<span>`）** 的 Ahem 文本须按列宽换行填满列。
+///
+/// 驱动案 css-multicol/multicol-basic-001（`column-count:3` + 3 个 `<span>` 各含 7 个 Ahem
+/// 单词）。R1423 修复了**直接文本** multicol 的 is_ahem 传递，但 span 文本走 IFC 的
+/// `collect_inline_items` **flatten 路径**（`doc.text_content` 扁平化，node_id=元素）。该路径下
+/// col_ctx（layout 期，真实 styles）记录 `text_node_is_ahem[span]=true`（元素键），但 paint 期
+/// `parent_is_ahem` 构造用 `is_text(tn)` 过滤把元素键丢弃 → 覆盖映射空；且 paint IFC flatten 路径
+/// `is_ahem_font` 仅读 `style`（空 → false），无 override 回退。后果：paint IFC 把 Ahem 字符估宽
+/// 当 11px（应 20px）→ 少换行 → 列欠填（11 行应 21）。
+///
+/// R1446 两处修复：① flatten 路径 `is_ahem_font` 加 override 回退；② `parent_is_ahem` 构造
+/// 对元素键映射到自身（不过滤）。本测试 load-bearing：无修复时 paint IFC is_ahem=false →
+/// 字符估宽偏小 → 少换行 → 列欠填（y 行数少）。
+#[test]
+fn r1446_multicol_span_ahem_text_fills_columns() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(400.0, 400.0);
+    // column-count:2 → col_w=120（240/2, gap0）。span 含 12 个 Ahem 单词（20px/1）。
+    // 修复后（is_ahem 传到 paint IFC）："XXXX"=80px → 1 词/行 → 12 行 → 6 行/列
+    //   （y=0,20,40,60,80,100 → 两列 rebase 后去重 6 个 y 行）。
+    // 修复前（is_ahem=false，估宽≈11px）："XXXX XXXX"≈99px<120 → 2 词/行 → 6 行 → 3 行/列
+    //   （y=0,20,40 → 去重 3 个 y 行）。
+    let html = "<html><body style=\"margin:0\">\
+                <div style=\"column-count:2; column-gap:0; width:240px; font:20px/1 Ahem\">\
+                <span>XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX</span>\
+                </div></body></html>";
+    let result = pipeline.render_html(html, "");
+    // 仅统计 Ahem 尺寸（font_size≈20）字形，按行盒顶 y 分桶（两列 rebase 后 y 重叠）。
+    let y_rows: std::collections::BTreeSet<i32> = result
+        .primitives
+        .glyphs
+        .iter()
+        .filter(|g| (g.font_size - 20.0).abs() < 1.0)
+        .map(|g| (g.y + 0.5) as i32)
+        .collect();
+    assert!(
+        y_rows.len() >= 5,
+        "R1446: multicol 内 span(Ahem) 文本应按列宽换行填满列（is_ahem 传到 paint IFC），\
+         期望 ≥5 个 y 行（6 行/列去重），got {} 行 {:?}（修复前 bug：paint IFC is_ahem=false \
+         → 字符估宽偏小 → 少换行 → 列欠填）",
+        y_rows.len(),
+        y_rows
+    );
+}
+
 /// 测试命名颜色转换（red, blue, black, white）。
 #[test]
 fn test_painter_color_value_named() {
