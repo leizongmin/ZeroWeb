@@ -1503,20 +1503,82 @@ impl super::Painter {
                                 && owner_h > $frag_fs * 1.5
                                 && let Some(owner_style) = styles.and_then(|s| s.get(&owner_id))
                                 && matches!(owner_style.display, zero_css_parser::values::DisplayValue::Inline)
-                                && owner_style.background_color != ColorValue::Transparent
                             {
-                                let line_h = box_node
-                                    .text_node_line_heights
-                                    .get(&$frag_nid)
-                                    .copied()
-                                    // 与 layout `NORMAL_LINE_HEIGHT_RATIO`（1.164 = chromium
-                                    // DejaVu line-height:normal 真值，R1174）保持一致；仅在
-                                    // `text_node_line_heights` 缺该 fragment 时作回退。
-                                    .unwrap_or($frag_fs * 1.164);
-                                self.primitives.add_fill(
-                                    Rect::new(frag_base_x, content_y + $frag_y + ty, text_width, line_h),
-                                    color_value_to_render(&owner_style.background_color),
-                                );
+                                // R1442：inline padding/border 不入 line box 高度（CSS §10.8.1）但渲染于
+                                // inline box 之外，可上溢/下溢覆盖邻接 line box（border-padding-bleed
+                                // driving test）。R1441 定位旧 bg 用 `frag.y`（字形 run 顶 = line.y + f.y，
+                                // f.y = baseline_y − line_h）非 line box top，偏移 ~ascent。has_bleed 时改用
+                                // `frag.y + baseline_offset`（= glyph 顶 = line box top，Ahem lh:1 em-box）
+                                // + 外延 padding+border；并 per-fragment 绘 border-top/bottom（003 border-only）。
+                                // gate 不变（仍多行 owner_h>1.5·fs）→ 不触 single-line，避 R638 双计；
+                                // bg-only 多行无 padding/border（R639）保持旧 frag.y 位不变。
+                                let px_of = |lv: &LengthValue| match lv {
+                                    LengthValue::Px(v) => *v as f32,
+                                    _ => 0.0,
+                                };
+                                let bt_w = if matches!(
+                                    owner_style.border_top_style,
+                                    zero_style_system::property::types::BorderStyleValue::None
+                                ) {
+                                    0.0
+                                } else {
+                                    px_of(&owner_style.border_top_width)
+                                };
+                                let bb_w = if matches!(
+                                    owner_style.border_bottom_style,
+                                    zero_style_system::property::types::BorderStyleValue::None
+                                ) {
+                                    0.0
+                                } else {
+                                    px_of(&owner_style.border_bottom_width)
+                                };
+                                let pad_top = px_of(&owner_style.padding_top);
+                                let pad_bot = px_of(&owner_style.padding_bottom);
+                                let has_bg = owner_style.background_color != ColorValue::Transparent;
+                                let has_bleed = pad_top > 0.0 || pad_bot > 0.0 || bt_w > 0.0 || bb_w > 0.0;
+                                if has_bg || has_bleed {
+                                    let line_h = box_node
+                                        .text_node_line_heights
+                                        .get(&$frag_nid)
+                                        .copied()
+                                        .unwrap_or($frag_fs * 1.164);
+                                    let line_top = content_y + $frag_y + $baseline_offset + ty;
+                                    let bleed_top = pad_top + bt_w;
+                                    let bleed_bot = pad_bot + bb_w;
+                                    // bg（has_bg 时）：has_bleed 外延对齐 line box 边，否则 R639 旧位（frag.y）。
+                                    if has_bg {
+                                        let (bg_y, bg_h) = if has_bleed {
+                                            (line_top - bleed_top, line_h + bleed_top + bleed_bot)
+                                        } else {
+                                            (content_y + $frag_y + ty, line_h)
+                                        };
+                                        self.primitives.add_fill(
+                                            Rect::new(frag_base_x, bg_y, text_width, bg_h),
+                                            color_value_to_render(&owner_style.background_color),
+                                        );
+                                    }
+                                    // per-fragment border-top/bottom（外延到 line box 之外覆盖邻接行）。
+                                    if bt_w > 0.0 {
+                                        let c = if matches!(owner_style.border_top_color, ColorValue::CurrentColor) {
+                                            frag_color
+                                        } else {
+                                            color_value_to_render(&owner_style.border_top_color)
+                                        };
+                                        self.primitives
+                                            .add_fill(Rect::new(frag_base_x, line_top - bt_w, text_width, bt_w), c);
+                                    }
+                                    if bb_w > 0.0 {
+                                        let c = if matches!(owner_style.border_bottom_color, ColorValue::CurrentColor) {
+                                            frag_color
+                                        } else {
+                                            color_value_to_render(&owner_style.border_bottom_color)
+                                        };
+                                        self.primitives.add_fill(
+                                            Rect::new(frag_base_x, line_top + line_h + pad_bot, text_width, bb_w),
+                                            c,
+                                        );
+                                    }
+                                }
                             }
 
                             for (char_idx, ch) in transformed.chars().enumerate() {
