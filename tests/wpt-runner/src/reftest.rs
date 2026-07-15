@@ -916,6 +916,46 @@ pub fn count_boxes_by_class(
     count
 }
 
+/// DC-13 line 323/324：估算带指定 class 的首个盒的**行数**（行数断言用，如「标题不拆行」/
+///「tagline 保持 2 行」）。
+///
+/// 行数 = `content_height / per_line_height`，其中 `per_line_height` 取该盒 IFC 存储的
+/// `text_node_line_heights`（store_font_sizes_from_ifc 存的**单行**片段高度，= 1 行高度）。
+/// content_height = 行盒高度之和 = 行数 × 单行高度，故比值即行数。无存储度量（如非 IFC owner
+/// 或无文本）返回 None（调用方跳过）。`.round()` 容忍亚像素；阈值 ±0.5 判定。
+pub fn count_lines_for_class(
+    root: &zero_layout_engine::types::LayoutBox,
+    labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+    class: &str,
+) -> Option<usize> {
+    fn find<'a>(
+        b: &'a zero_layout_engine::types::LayoutBox,
+        class: &str,
+        labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+    ) -> Option<&'a zero_layout_engine::types::LayoutBox> {
+        if let Some(id) = b.node_id
+            && let Some(label) = labels.get(&id)
+            && label.split('.').skip(1).any(|c| c == class)
+        {
+            return Some(b);
+        }
+        for child in &b.children {
+            if let Some(found) = find(child, class, labels) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    let b = find(root, class, labels)?;
+    // 取首个 text_node_line_heights 作单行高度（同一 IFC 内文本行高一致）。
+    let per_line = b.text_node_line_heights.values().next().copied()?;
+    if per_line <= 0.0 {
+        return None;
+    }
+    let content_h = b.content_height.max(0.0);
+    Some((content_h / per_line).round() as usize)
+}
+
 /// 两轴对齐矩形 `(x, y, w, h)` 的交集面积（无交集返回 0）。
 fn rect_overlap_area(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> f32 {
     let (ax, ay, aw, ah) = a;
@@ -1183,6 +1223,28 @@ mod tests {
             count_boxes_by_class(&root, &labels, "nope"),
             0,
             "absent class must count 0"
+        );
+    }
+
+    #[test]
+    fn test_count_lines_for_class() {
+        // title = 1 line；tagline = 2 lines（<br> 强制断行）；验证 content_height / line_height 行数估算。
+        let html = "<html><body style=\"margin:0\">\
+            <h1 class=\"title\">ZeroBrowser</h1>\
+            <p class=\"tagline\">line one<br>line two</p>\
+            </body></html>";
+        let config = ReftestConfig::default();
+        let (_fb, root) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let labels = collect_dom_labels(html);
+        assert_eq!(
+            count_lines_for_class(&root, &labels, "title"),
+            Some(1),
+            "title (single word) must be 1 line"
+        );
+        assert_eq!(
+            count_lines_for_class(&root, &labels, "tagline"),
+            Some(2),
+            "tagline (<br>) must be 2 lines"
         );
     }
 

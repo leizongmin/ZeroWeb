@@ -201,6 +201,9 @@ fn cmd_product_smoke(args: &[String]) {
     // DC-13 line 322：「四个 feature card」/「四个 nav button」等元素计数断言（可重复）。
     // 格式 `<class>:<min-count>`（如 `card:4`）；按 collect_dom_labels 的 tag.class 标签匹配。
     let mut expect_classes: Vec<(String, usize)> = Vec::new();
+    // DC-13 line 323/324：行数断言（可重复）。「标题不拆行」/「tagline 保持 2 行」等；
+    // 格式 `<class>:<line-count>`，经 content_height / line_height 估算（无度量则跳过）。
+    let mut expect_lines: Vec<(String, usize)> = Vec::new();
 
     let mut i = 0;
     while i < args.len() {
@@ -262,6 +265,21 @@ fn cmd_product_smoke(args: &[String]) {
                     }
                 }
             }
+            "--expect-lines" => {
+                // --expect-lines <class>:<line-count>（可重复），行数断言。
+                i += 1;
+                if i < args.len() {
+                    if let Some((class, n)) = args[i].rsplit_once(':') {
+                        if let Ok(lines) = n.parse::<usize>() {
+                            expect_lines.push((class.to_string(), lines));
+                        } else {
+                            eprintln!("Warning: --expect-lines count not a number: {}", args[i]);
+                        }
+                    } else {
+                        eprintln!("Warning: --expect-lines expects <class>:<count>, got {}", args[i]);
+                    }
+                }
+            }
             s if !s.starts_with('-') && html_path.is_none() => {
                 html_path = Some(s.to_string());
             }
@@ -297,7 +315,7 @@ fn cmd_product_smoke(args: &[String]) {
     );
     // DC-13 结构检查（--struct-check / --expect-class）需 layout 树，仅 engine-direct 路径暴露；
     // via_webview 路径无 layout 访问，结构检查静默跳过。
-    let need_layout = struct_check || !expect_classes.is_empty();
+    let need_layout = struct_check || !expect_classes.is_empty() || !expect_lines.is_empty();
     let (fb, layout_root) = if via_webview {
         (
             reftest::render_via_webview_to_framebuffer_with_base(&html, "", &config, base),
@@ -372,6 +390,14 @@ fn cmd_product_smoke(args: &[String]) {
                 issues.push(format!("class .{class}: {count} boxes (expected >= {min})"));
             }
         }
+        // 行数断言（DC-13「标题不拆行」/「tagline 保持 2 行」等）。
+        for (class, want) in &expect_lines {
+            match reftest::count_lines_for_class(&root, &labels, class) {
+                Some(got) if got == *want => {}
+                Some(got) => issues.push(format!("class .{class}: {got} lines (expected {want})")),
+                None => eprintln!("Warning: --expect-lines .{class}: no line metric (skip)"),
+            }
+        }
         if issues.is_empty() {
             let overlap_note = if struct_check { " + sibling-overlap" } else { "" };
             let count_note = if expect_classes.is_empty() {
@@ -386,7 +412,19 @@ fn cmd_product_smoke(args: &[String]) {
                         .join(",")
                 )
             };
-            println!("product-smoke struct-check: PASS (0 issues{overlap_note}{count_note})");
+            let lines_note = if expect_lines.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " + lines[{}]",
+                    expect_lines
+                        .iter()
+                        .map(|(c, n)| format!(".{c}={n}"))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )
+            };
+            println!("product-smoke struct-check: PASS (0 issues{overlap_note}{count_note}{lines_note})");
         } else {
             println!("product-smoke struct-check: FAIL ({} issue(s))", issues.len());
             for iss in &issues {
