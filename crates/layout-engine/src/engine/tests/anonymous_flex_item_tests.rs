@@ -720,3 +720,45 @@ fn test_shift_siblings_after_ifc_grow_flex_sibling_shifts() {
         p.height
     );
 }
+
+/// R1505：`display:inline-block`（非 floated）的 `is_block_level=false`（engine.rs:1293 仅
+/// floated inline-block 标 block_level），故旧 `is_shiftable_next` 首个 guard（`c.is_block_level`）
+/// 把它整体排除——`<p>`（Block，含 inline `<a>` → IFC remeasure 长高）后续 inline-block 兄弟
+/// 未下移而重叠（inline-block-non-replaced-width-003/004：`<div style="display:inline-block">`
+/// 定位 y=36 重叠 `<p>` 16..72，struct-sweep 抓到 4320px²）。shiftee 角色放宽含 InlineBlock
+/// （prev 角色仍排除，避 height 误估）后 inline-block 整盒随前序 block 长高下移。本测试验证
+/// 后续 inline-block `<div>` 不再与 `<p>` 重叠（ib.y >= p.y + p.height）。
+#[test]
+fn test_shift_siblings_after_ifc_grow_inline_block_sibling_shifts() {
+    let html = r##"<html><body style="margin:0;font:20px/1 Ahem">
+      <p id="p">XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX <a href="#">link</a> YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY</p>
+      <div id="ib" style="display:inline-block"><span>ib</span></div>
+    </body></html>"##;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(200.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(200.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+    let p = find("p", &doc, &result.root).expect("p");
+    let ib = find("ib", &doc, &result.root).expect("inline-block div");
+    assert!(
+        ib.y + 0.5 >= p.y + p.height,
+        "R1505: inline-block div (y={}) must be below <p> bottom ({} = y {} + h {}), \
+         not overlapping (shiftable-next inline-block gate regression)",
+        ib.y,
+        p.y + p.height,
+        p.y,
+        p.height
+    );
+}

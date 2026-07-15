@@ -791,10 +791,26 @@ pub(super) fn shift_siblings_after_ifc_grow(
     // 误估（R1500 实测 css-flexbox -7 net-negative 即此）。split 后 flex/grid 仅作 shiftee，
     // 解 morning @320 `<article>`(Block 长高) 重叠后续 disqus-side `<div>`(Flex) 108px。
     let is_shiftable_next = |c: &LayoutBox| {
-        if !(c.node_id.is_some() && c.is_block_level && !c.is_r109_split) {
+        let nid = match c.node_id {
+            Some(n) => n,
+            None => return false,
+        };
+        if c.is_r109_split {
             return false;
         }
-        styles.get(&c.node_id.unwrap()).is_some_and(|s| {
+        // R1505：inline-block（非 floated）的 is_block_level=false（engine.rs:1293 仅 floated
+        // inline-block 标 block_level），但它在 block 流中作兄弟整盒下移同样安全（内部 IFC 与
+        // 容器 y 无关）。inline-block-non-replaced-width-003/004：taffy 低估前置 `<p>`（plain
+        // 文本块）致 inline-block `<div>` 定位过高（y=36 重叠 p 16..72），IFC remeasure 长高 p
+        // 后须下移 div。故 shiftee 角色放宽含 InlineBlock（prev 角色仍用 is_plain_real_block，
+        // 不以 inline-block 作 prev 锚——避 height 误估）。
+        let is_inline_block = styles
+            .get(&nid)
+            .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock));
+        if !(c.is_block_level || is_inline_block) {
+            return false;
+        }
+        styles.get(&nid).is_some_and(|s| {
             matches!(
                 s.display,
                 DisplayValue::Block
@@ -807,6 +823,7 @@ pub(super) fn shift_siblings_after_ifc_grow(
                     | DisplayValue::InlineFlex
                     | DisplayValue::Grid
                     | DisplayValue::InlineGrid
+                    | DisplayValue::InlineBlock
             )
         })
     };
