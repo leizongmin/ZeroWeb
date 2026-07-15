@@ -201,23 +201,31 @@ jobs:
           echo "Patch applied."
 
       - name: Build release
-        run: cargo build ${{ matrix.features }} --release --bin zero-browser --target ${{ matrix.target }}
+        run: cargo build ${{ matrix.features }} --release --bin zero-browser --bin zero-renderer --target ${{ matrix.target }}
 
-      - name: Strip binary (Linux/macOS)
+      - name: Strip binaries (Linux/macOS)
         if: runner.os != 'Windows'
-        run: strip target/${{ matrix.target }}/release/zero-browser${{ matrix.ext }}
+        run: |
+          strip target/${{ matrix.target }}/release/zero-browser${{ matrix.ext }}
+          strip target/${{ matrix.target }}/release/zero-renderer${{ matrix.ext }}
 
       - name: Create output directory
         shell: bash
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/zero-browser${{ matrix.ext }} dist/
+          cp target/${{ matrix.target }}/release/zero-renderer${{ matrix.ext }} dist/
 
       - name: Create README for distribution
         shell: bash
         run: |
           cat > dist/README.txt << 'EOF'
           ZeroBrowser — A cross-platform browser built with Rust
+
+          This archive contains two executables that MUST stay in the same
+          directory:
+          - zero-browser   — main browser process (UI, tabs, network)
+          - zero-renderer  — render subprocess (spawned by zero-browser)
 
           Usage:
             ./zero-browser [URL]              Open URL
@@ -259,8 +267,10 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist/
 
-      - name: Make binary executable
-        run: chmod +x dist/zero-browser
+      - name: Make binaries executable
+        run: |
+          chmod +x dist/zero-browser
+          chmod +x dist/zero-renderer
 
       - name: Build .deb package
         run: |
@@ -269,8 +279,8 @@ jobs:
           DEBROOT="zero-browser_${VERSION}_${{ matrix.arch }}"
           mkdir -p "$DEBROOT/DEBIAN" "$DEBROOT/usr/bin" "$DEBROOT/usr/share/applications"
           mkdir -p "$DEBROOT/usr/share/icons/hicolor/scalable/apps"
-          cp dist/zero-browser "$DEBROOT/usr/bin/"
-          chmod 755 "$DEBROOT/usr/bin/zero-browser"
+          cp dist/zero-browser dist/zero-renderer "$DEBROOT/usr/bin/"
+          chmod 755 "$DEBROOT/usr/bin/zero-browser" "$DEBROOT/usr/bin/zero-renderer"
 
           # 应用图标（SVG + 已生成的 PNG 各尺寸）
           cp apps/browser/assets/app-icon.svg "$DEBROOT/usr/share/icons/hicolor/scalable/apps/zero-browser.svg"
@@ -345,12 +355,15 @@ jobs:
 
       - name: Build .app bundle
         run: |
-          chmod +x dist/zero-browser
+          chmod +x dist/zero-browser dist/zero-renderer
           VERSION="${{ github.event.release.tag_name }}"
           VERSION="${VERSION#v}"
           APP="dist/ZeroBrowser.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          # 主进程可执行文件名按 Info.plist 约定是 ZeroBrowser；renderer 保持原名，
+          # 与主进程同目录（Contents/MacOS），便于 process_backend 的同目录查找逻辑命中。
           cp dist/zero-browser "$APP/Contents/MacOS/ZeroBrowser"
+          cp dist/zero-renderer "$APP/Contents/MacOS/zero-renderer"
 
           cat > "$APP/Contents/Info.plist" << EOF
           <?xml version="1.0" encoding="UTF-8"?>

@@ -195,14 +195,15 @@ jobs:
           rm -rf $(find "$CARGO_HOME/registry/src" -name "freetype-sys-0.23.0" -type d 2>/dev/null)
           echo "Patch applied."
 
-      - name: Build release binary
-        run: cargo build ${{ matrix.features }} --release --bin zero-browser --target ${{ matrix.target }}
+      - name: Build release binaries
+        run: cargo build ${{ matrix.features }} --release --bin zero-browser --bin zero-renderer --target ${{ matrix.target }}
 
       - name: Create output directory
         shell: bash
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/zero-browser${{ matrix.ext }} dist/
+          cp target/${{ matrix.target }}/release/zero-renderer${{ matrix.ext }} dist/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -261,6 +262,10 @@ jobs:
           name: Weekly Build ${{ steps.tag.outputs.name }}
           body: |
             Automated weekly build of `main` (${{ github.sha }}).
+
+            Each zip contains **both** `zero-browser` and `zero-renderer` —
+            keep them in the same directory after extracting (the browser
+            spawns the renderer as a subprocess).
 
             Pick the zip matching your platform:
             - `zero-browser-linux-x86_64.zip` — Linux x86_64
