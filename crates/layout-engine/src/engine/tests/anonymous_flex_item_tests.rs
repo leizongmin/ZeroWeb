@@ -680,3 +680,43 @@ fn test_shift_siblings_after_ifc_grow_table_sibling_no_overlap() {
         p.height
     );
 }
+
+/// R1502：split gate——Flex 容器作**next 兄弟**（shiftee）应随前序 block 长高下移，但**不作 prev**
+///（is_plain_real_block 仍排除 Flex）。R1500 实测把 Flex 加进 is_plain_real_block（prev+next 都含）
+/// 致 css-flexbox -7 net-negative（Flex 作 prev 时 height 与 item grow/stretch 交互致 prev_bottom 误估）；
+/// split 后 Flex 仅作 shiftee 解 morning @320 `<article>`(Block 长高) 重叠 disqus-side `<div>`(Flex)。
+/// 本测试：`<p>`(Block, 含 inline `<a>` → IFC 长高) 后续 `<div style="display:flex">` 须下移不重叠。
+#[test]
+fn test_shift_siblings_after_ifc_grow_flex_sibling_shifts() {
+    let html = r##"<html><body style="margin:0;font:20px/1 Ahem">
+      <p id="p">XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX <a href="#">link</a> YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY</p>
+      <div id="f" style="display:flex"><span>item</span></div>
+    </body></html>"##;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(200.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(200.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+    let p = find("p", &doc, &result.root).expect("p");
+    let f = find("f", &doc, &result.root).expect("flex div");
+    assert!(
+        f.y + 0.5 >= p.y + p.height,
+        "R1502: flex div (y={}) must be below <p> bottom ({} = y {} + h {}), \
+         not overlapping (split-gate flex-as-next regression)",
+        f.y,
+        p.y + p.height,
+        p.y,
+        p.height
+    );
+}

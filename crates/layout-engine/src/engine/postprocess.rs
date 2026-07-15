@@ -785,6 +785,31 @@ pub(super) fn shift_siblings_after_ifc_grow(
             )
         })
     };
+    // R1502：可被下移的「next 兄弟」——比 is_plain_real_block 多含 Flex/Grid。flex/grid 容器整盒
+    // 随前序块长高而下移是正确的（内部弹性/网格布局与容器 y 无关），但**不作 prev**（is_plain_real_block
+    // 仍排除 Flex/Grid）：flex/grid 容器作 prev 时其 height 与 item grow/stretch 交互致 prev_bottom
+    // 误估（R1500 实测 css-flexbox -7 net-negative 即此）。split 后 flex/grid 仅作 shiftee，
+    // 解 morning @320 `<article>`(Block 长高) 重叠后续 disqus-side `<div>`(Flex) 108px。
+    let is_shiftable_next = |c: &LayoutBox| {
+        if !(c.node_id.is_some() && c.is_block_level && !c.is_r109_split) {
+            return false;
+        }
+        styles.get(&c.node_id.unwrap()).is_some_and(|s| {
+            matches!(
+                s.display,
+                DisplayValue::Block
+                    | DisplayValue::Flow
+                    | DisplayValue::FlowRoot
+                    | DisplayValue::ListItem
+                    | DisplayValue::Table
+                    | DisplayValue::InlineTable
+                    | DisplayValue::Flex
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::Grid
+                    | DisplayValue::InlineGrid
+            )
+        })
+    };
     // 当前盒自身是否为 multicol 容器。
     let self_is_multicol = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
         !matches!(s.column_count, ColumnCountComputedValue::Auto)
@@ -833,7 +858,9 @@ pub(super) fn shift_siblings_after_ifc_grow(
             // 检测与前一个真实元素 block 兄弟的重叠（remeasure 长高致）。
             // 排除负 margin（prev.mb<0 或 child.mt<0）——负 margin 合法地把后续兄弟拉上
             // 重叠（test_block_negative_margin_*），非 R1492 长高重叠，不应下移。
-            if prev_plain && is_plain_real_block(child) && prev_margin_bottom >= 0.0 && child.margin_top >= 0.0 {
+            // R1502：next 用 is_shiftable_next（含 Flex/Grid 作 shiftee），prev 仍用
+            // is_plain_real_block（Flex/Grid 不作 prev，避 height 误估回归）。
+            if prev_plain && is_shiftable_next(child) && prev_margin_bottom >= 0.0 && child.margin_top >= 0.0 {
                 if let Some(pb) = prev_bottom
                     && child.y < pb - 0.5
                 {
