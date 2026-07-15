@@ -375,12 +375,24 @@ fn try_layout_nested_spanner(
             && wrapper.padding_top < 1.0
             && wrapper.padding_bottom < 1.0;
         let no_transform = ws.is_some_and(|s| matches!(s.transform, zero_css_parser::values::TransformValue::None));
+        // R1473 step1（RFC bordered-wrapper-multicol-fragmentation）：允许 bordered wrapper 进
+        // synthetic fragmentation（使 column-span:all spanner 跨全宽 + 内容拆 region）。仅 no-box
+        // fast-path 之外的 bordered 备选：须 direct-child-spanner（painter-core 路径，cso 传播）+
+        // border 各侧 < 阈值（避过厚 border 几何）。A/B（css-multicol 177→177 零回归，006 17.75→
+        // 10.07%）。border-skip（painter 侧）= step2 未实现，本步 border 仍全周绘（006 残余 =
+        // border 全周 + R1357 c=0 column-breaking）。kill-switch `ZW_BORDERED_FRAG=0`。
+        let bordered_frag = std::env::var("ZW_BORDERED_FRAG").as_deref() != Ok("0")
+            && has_direct_spanner_child(wrapper, styles)
+            && wrapper.border_top < 40.0
+            && wrapper.border_bottom < 40.0
+            && wrapper.border_left < 40.0
+            && wrapper.border_right < 40.0;
         if wrapper_is_spanner
             || wrapper_is_multicol
             || !has_descendant_spanner(wrapper, styles)
             || has_abspos_descendant(wrapper)
             || !clean_block
-            || !no_box
+            || !(no_box || bordered_frag)
             || !no_transform
         {
             None
