@@ -180,7 +180,18 @@ pub(crate) fn shrink_inline_blocks_to_content(
                 // 多 item flex-row 的 main-axis 求和语义此处用 max 近似（单 item 等价；多 item
                 // 罕见且满宽→max 仍优于 784px 拉伸）。
                 DisplayValue::InlineBlock | DisplayValue::InlineFlex | DisplayValue::InlineGrid => true,
-                DisplayValue::Inline => s.background_color != ColorValue::Transparent,
+                DisplayValue::Inline => {
+                    // R372：带非默认 background 的 inline shrink-to-fit。R1480（R109 增量）：
+                    // 带 border 的 inline（如 WPT border-width-applies-to-008：display:inline +
+                    // border-width:90px）亦应 shrink——否则 inline→taffy::Block 拉满宽，border
+                    // 画在满宽 box（应 content-width = 内容 + 左右 border）。
+                    let has_bg = s.background_color != ColorValue::Transparent;
+                    let has_border = matches!(&s.border_top_width, LengthValue::Px(v) if *v > 0.0)
+                        || matches!(&s.border_bottom_width, LengthValue::Px(v) if *v > 0.0)
+                        || matches!(&s.border_left_width, LengthValue::Px(v) if *v > 0.0)
+                        || matches!(&s.border_right_width, LengthValue::Px(v) if *v > 0.0);
+                    has_bg || has_border
+                }
                 _ => false,
             })
         });

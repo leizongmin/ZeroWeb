@@ -200,6 +200,41 @@ fn test_inline_block_text_content_shrink_to_fit() {
     );
 }
 
+/// R1480（R109 inline-box-model 增量 2）：`display:inline` 且带 **border** 的元素也应
+/// shrink-to-fit（R372 此前仅对带 background 的 inline 触发）。旧 bug：inline→taffy::Block
+/// 拉满宽，带 border 的 inline（如 WPT border-width-applies-to-008）border 画在满宽 box
+/// （应 content-width = 内容 + 左右 border）。修：is_shrinkable 对 inline 触发条件加 border。
+#[test]
+fn test_inline_with_border_shrinks_to_content() {
+    // `<span display:inline border:20px>XX</span>` Ahem 40px → 文本宽 80 + 左右 border 各 20
+    // = 120，应收缩到 ~120 而非填满 800px 视口（满宽 border）。
+    let html = r#"<html><body style="margin:0;font:40px/1 Ahem">
+      <span id="s" style="display:inline;border:20px solid black">XX</span>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+    let s = find("s", &doc, &result.root).expect("inline #s");
+    assert!(
+        s.width < 300.0,
+        "display:inline with border should shrink-to-fit (content ~120px), not fill available with full-width border (got w={})",
+        s.width
+    );
+}
+
 /// 回归（R372）：`display:inline` 且带非默认 background 的元素（如 morning.work
 /// `.item-tag` 徽章 span）也应 shrink-to-fit。旧 bug：ZeroWeb 把 inline 映射为 taffy
 /// Block，拉到容器满宽（满宽色条）；此处按 intrinsic 内容宽收缩（仅 width 维度，
