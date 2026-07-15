@@ -95,7 +95,7 @@ WELCOME_HTML := apps/browser/assets/welcome.html
 WELCOME_ORACLE := docs/goal/rendering-compat/evidence/product-static/welcome-chromium.png
 product-smoke: target/test-guard
 	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke $(WELCOME_HTML) --oracle $(WELCOME_ORACLE) --max-diff $(or $(MAX_DIFF),20) --struct-check --expect-class card:4 --expect-lines title:1 --expect-lines tagline:2
-	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke apps/browser/assets/wintertc/index.html --base-dir apps/browser/assets/wintertc --struct-check
+	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke apps/browser/assets/wintertc/index.html --base-dir apps/browser/assets/wintertc --struct-check --expect-class bg-orange-500:4
 	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke apps/browser/assets/morning-work/article.html --base-dir apps/browser/assets/morning-work --struct-check
 
 # Legacy Static Web smoke（DC-13，goal rendering-compat.md line 316）：跑 20 页
