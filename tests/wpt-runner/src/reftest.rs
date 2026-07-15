@@ -456,6 +456,19 @@ pub fn render_to_framebuffer_with_base(
     config: &ReftestConfig,
     base_dir: Option<&Path>,
 ) -> FrameBuffer {
+    render_to_framebuffer_with_layout_with_base(html, css, config, base_dir).0
+}
+
+/// 同 [`render_to_framebuffer_with_base`]，但额外返回布局树根（DC-13 结构检查用）。
+///
+/// `RenderResult.layout.root` 在 `render_full_scene`（仅借 `result.primitives`）后移出，
+/// 供 product-smoke 结构自动检查（如兄弟盒重叠检测）遍历。Framebuffer 渲染不受影响。
+pub fn render_to_framebuffer_with_layout_with_base(
+    html: &str,
+    css: &str,
+    config: &ReftestConfig,
+    base_dir: Option<&Path>,
+) -> (FrameBuffer, zero_layout_engine::types::LayoutBox) {
     // 执行页面 <script>（含 DOM 变更），把 JS 后的最终 HTML 用于后续渲染。
     let mutated_html = apply_scripted_dom_mutations(html, base_dir);
     let html: &str = &mutated_html;
@@ -523,7 +536,7 @@ pub fn render_to_framebuffer_with_base(
     let mut glyph_cache = GlyphCache::new(1024);
 
     // 使用已构建的图像缓存（包含固有尺寸信息）
-    render_full_scene(
+    let fb = render_full_scene(
         config.viewport_width,
         config.viewport_height,
         config.scale_factor,
@@ -535,7 +548,9 @@ pub fn render_to_framebuffer_with_base(
         &[],
         &[],
         &[],
-    )
+    );
+    // render_full_scene 仅借 result.primitives（借用已结束）；移出 layout 根供结构检查。
+    (fb, result.layout.root)
 }
 
 /// DC-13 line 321：通过 `zero-webview` 稳定嵌入边界渲染 HTML 到 FrameBuffer。
@@ -734,13 +749,15 @@ fn webview_reftest_matches_engine_direct_with_linked_css() {
 /// 重新解析 HTML 以建立 `NodeId → (tag, class)` 映射，然后递归遍历 `LayoutBox`，
 /// 累加父级内容区偏移得到绝对坐标，打印每个盒子的 margin-top、padding-top、
 /// 绝对 y 与高度。用于定位产品 smoke 的垂直偏移来源（如 welcome 36px）。
-fn dump_layout_tree(root: &zero_layout_engine::types::LayoutBox, html: &str) {
+/// 解析 HTML，BFS 遍历 DOM 收集每个元素的 `tag.class` 标签（NodeId → label）。
+///
+/// 供 [`dump_layout_tree`]（LAYOUT_DUMP 诊断）与 [`check_sibling_overlaps`]（DC-13 结构检查）
+/// 共享——结构检查报告需可读标签定位退化元素。无 class 元素用 tag 名，多 class 用 `.` 连接。
+pub fn collect_dom_labels(html: &str) -> std::collections::HashMap<zero_dom::NodeId, String> {
     use std::collections::HashMap;
-    use zero_dom::{NodeId, NodeKind, parse_html};
-
+    use zero_dom::{NodeKind, parse_html};
     let doc = parse_html(html);
-    let mut id_label: HashMap<NodeId, String> = HashMap::new();
-    // BFS 遍历 DOM 收集每个元素的 tag.class 标签。
+    let mut id_label: HashMap<zero_dom::NodeId, String> = HashMap::new();
     let mut queue = vec![doc.root()];
     while let Some(id) = queue.pop() {
         if let Some(node) = doc.get(id) {
@@ -759,6 +776,13 @@ fn dump_layout_tree(root: &zero_layout_engine::types::LayoutBox, html: &str) {
             }
         }
     }
+    id_label
+}
+
+fn dump_layout_tree(root: &zero_layout_engine::types::LayoutBox, html: &str) {
+    use std::collections::HashMap;
+    use zero_dom::NodeId;
+    let id_label = collect_dom_labels(html);
 
     eprintln!("=== LAYOUT_DUMP (abs_y / height / margin-top / padding-top) ===");
     fn walk(
@@ -795,6 +819,77 @@ fn dump_layout_tree(root: &zero_layout_engine::types::LayoutBox, html: &str) {
         }
     }
     walk(root, 0.0, 0.0, 0, &id_label);
+}
+
+/// DC-13 line 322-326：检测布局树中**同父兄弟盒** border-box 重叠（产品可见排版退化回归门）。
+///
+/// 正常流（block/flex/grid/float）同父兄弟盒不应重叠；重叠面积 > 阈值（忽略负 margin 等微叠）
+/// 表示布局 breakage（abspos 错位、margin 折叠异常、IFC/匿名盒错排等）。返回问题描述列表
+/// （空 = 结构通过）。与像素 diff 门禁互补：像素 diff 量化整体差距，本检查定位**结构性**
+/// 退化（即使像素差小，兄弟盒重叠也是用户可见 bug）。`labels` 为 node_id→tag.class（诊断用）。
+pub fn check_sibling_overlaps(
+    root: &zero_layout_engine::types::LayoutBox,
+    labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+) -> Vec<String> {
+    // 忽略 < 50px² 的微小叠（负 margin、亚像素边界）；仅报显著结构重叠。
+    const MIN_OVERLAP_PX: f32 = 50.0;
+    let mut issues = Vec::new();
+    fn label_of(
+        b: &zero_layout_engine::types::LayoutBox,
+        labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+    ) -> String {
+        b.node_id
+            .and_then(|id| labels.get(&id).cloned())
+            .unwrap_or_else(|| "(anon)".to_string())
+    }
+    fn walk(
+        b: &zero_layout_engine::types::LayoutBox,
+        off_x: f32,
+        off_y: f32,
+        labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+        issues: &mut Vec<String>,
+    ) {
+        let abs_x = off_x + b.x;
+        let abs_y = off_y + b.y;
+        let child_off_x = abs_x + b.padding_left + b.border_left;
+        let child_off_y = abs_y + b.padding_top + b.border_top;
+        let n = b.children.len();
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let (ci, cj) = (&b.children[i], &b.children[j]);
+                // 跳过无可见尺寸的盒（纯结构包裹 / 零尺寸匿名盒）
+                if ci.width < 2.0 || ci.height < 2.0 || cj.width < 2.0 || cj.height < 2.0 {
+                    continue;
+                }
+                let ov = rect_overlap_area(
+                    (child_off_x + ci.x, child_off_y + ci.y, ci.width, ci.height),
+                    (child_off_x + cj.x, child_off_y + cj.y, cj.width, cj.height),
+                );
+                if ov > MIN_OVERLAP_PX {
+                    issues.push(format!(
+                        "sibling overlap {:.0}px²: [{}] & [{}]",
+                        ov,
+                        label_of(ci, labels),
+                        label_of(cj, labels)
+                    ));
+                }
+            }
+        }
+        for child in &b.children {
+            walk(child, child_off_x, child_off_y, labels, issues);
+        }
+    }
+    walk(root, 0.0, 0.0, labels, &mut issues);
+    issues
+}
+
+/// 两轴对齐矩形 `(x, y, w, h)` 的交集面积（无交集返回 0）。
+fn rect_overlap_area(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> f32 {
+    let (ax, ay, aw, ah) = a;
+    let (bx, by, bw, bh) = b;
+    let w = ((ax + aw).min(bx + bw) - ax.max(bx)).max(0.0);
+    let h = ((ay + ah).min(by + bh) - ay.max(by)).max(0.0);
+    w * h
 }
 
 /// 将单个 ImagePrimitive 渲染到帧缓冲。
@@ -988,6 +1083,44 @@ mod tests {
             result.passed,
             "Different pages should pass mismatch: {}",
             result.message
+        );
+    }
+
+    #[test]
+    fn test_struct_check_detects_sibling_overlap() {
+        // 两个 abspos 兄弟盒重叠（50,50 偏移，100×100 → 50×50=2500px² 交集）须被检出。
+        let html = "<html><body style=\"margin:0\">\
+            <div style=\"position:absolute;left:0;top:0;width:100px;height:100px;background:red\"></div>\
+            <div style=\"position:absolute;left:50px;top:50px;width:100px;height:100px;background:blue\"></div>\
+            </body></html>";
+        let config = ReftestConfig::default();
+        let (_fb, root) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let labels = collect_dom_labels(html);
+        let issues = check_sibling_overlaps(&root, &labels);
+        assert!(
+            !issues.is_empty(),
+            "overlapping abspos siblings must be flagged, got {issues:?}"
+        );
+        assert!(
+            issues.iter().any(|s| s.contains("overlap")),
+            "issue must mention overlap: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn test_struct_check_passes_stacked_blocks() {
+        // 两个垂直堆叠的 block 兄弟盒（正常流，无重叠）须通过。
+        let html = "<html><body style=\"margin:0\">\
+            <div style=\"width:100px;height:100px;background:red\"></div>\
+            <div style=\"width:100px;height:100px;background:blue\"></div>\
+            </body></html>";
+        let config = ReftestConfig::default();
+        let (_fb, root) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let labels = collect_dom_labels(html);
+        let issues = check_sibling_overlaps(&root, &labels);
+        assert!(
+            issues.is_empty(),
+            "stacked block siblings must not flag overlap: {issues:?}"
         );
     }
 

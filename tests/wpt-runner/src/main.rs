@@ -195,6 +195,9 @@ fn cmd_product_smoke(args: &[String]) {
     // DC-13 line 321：经 zero-webview 嵌入边界渲染（对照 engine-direct 默认路径），
     // 验证产品层与 WebView 层不互相掩盖问题。仅自包含 fixture（无外链资源）适用。
     let mut via_webview = false;
+    // DC-13 line 322-326：结构自动检查（同父兄弟盒 border-box 重叠 = 产品可见排版退化）。
+    // 仅 engine-direct 路径（render_to_framebuffer_with_layout_with_base 暴露 layout 树）。
+    let mut struct_check = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -238,6 +241,9 @@ fn cmd_product_smoke(args: &[String]) {
             "--via-webview" => {
                 via_webview = true;
             }
+            "--struct-check" => {
+                struct_check = true;
+            }
             s if !s.starts_with('-') && html_path.is_none() => {
                 html_path = Some(s.to_string());
             }
@@ -271,10 +277,18 @@ fn cmd_product_smoke(args: &[String]) {
         "product-smoke: rendering {html_path} ({}x{}, base_dir={:?}, via_webview={})",
         width, height, base, via_webview
     );
-    let fb = if via_webview {
-        reftest::render_via_webview_to_framebuffer_with_base(&html, "", &config, base)
+    // DC-13 结构检查（--struct-check）需 layout 树，仅 engine-direct 路径暴露；
+    // via_webview 路径无 layout 访问，struct_check 静默跳过。
+    let (fb, layout_root) = if via_webview {
+        (
+            reftest::render_via_webview_to_framebuffer_with_base(&html, "", &config, base),
+            None,
+        )
+    } else if struct_check {
+        let (fb, root) = reftest::render_to_framebuffer_with_layout_with_base(&html, "", &config, base);
+        (fb, Some(root))
     } else {
-        reftest::render_to_framebuffer_with_base(&html, "", &config, base)
+        (reftest::render_to_framebuffer_with_base(&html, "", &config, base), None)
     };
 
     let out_path = out.as_deref().unwrap_or("product-smoke-cpu.png");
@@ -319,6 +333,27 @@ fn cmd_product_smoke(args: &[String]) {
                 eprintln!("Error loading oracle {oracle_path}: {e}");
                 std::process::exit(1);
             }
+        }
+    }
+
+    // DC-13 line 322-326：结构自动检查（同父兄弟盒 border-box 重叠）。仅 engine-direct
+    // 路径（--struct-check 且非 --via-webview）执行；与像素 diff 门禁互补——像素 diff 量化
+    // 整体差距，本检查定位结构性退化（兄弟盒重叠 = 用户可见排版 breakage，即使像素差小）。
+    // 退出码 3（区别于像素 diff 门禁的 2 与参数错误的 1）。
+    if let Some(root) = layout_root {
+        let labels = reftest::collect_dom_labels(&html);
+        let issues = reftest::check_sibling_overlaps(&root, &labels);
+        if issues.is_empty() {
+            println!("product-smoke struct-check: PASS (0 sibling overlaps > 50px²)");
+        } else {
+            println!(
+                "product-smoke struct-check: FAIL ({} sibling overlap(s) > 50px²)",
+                issues.len()
+            );
+            for iss in &issues {
+                println!("  - {iss}");
+            }
+            std::process::exit(3);
         }
     }
 }
