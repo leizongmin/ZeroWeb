@@ -70,7 +70,7 @@
 | Path | 作用 |
 |------|------|
 | `tests/integration` | 跨 crate 集成测试（DOM Bridge polyfill、多进程架构、安全管线、真实网站兼容性、产品层 smoke 等） |
-| `tests/wpt-runner` | Web Platform Tests / reftest / 兼容性基础设施（按分类通过率报告、Chromium Oracle 像素对比）；reftest harness 会执行测试页 setup 脚本（DOM 变更、`requestAnimationFrame` / `takeScreenshot` / `getBoundingClientRect` 等）后再截图对比，覆盖靠脚本构造内容的用例 |
+| `tests/wpt-runner` | Web Platform Tests / reftest / 兼容性基础设施（按分类通过率报告、Chromium Oracle 像素对比）；reftest harness 会执行测试页 setup 脚本（DOM 变更、`requestAnimationFrame` / `takeScreenshot` / `getBoundingClientRect` 等）后再截图对比，覆盖靠脚本构造内容的用例；`product-smoke --struct-check` 另提供结构性回归门（兄弟盒重叠检测 + `--expect-class` 元素计数 + `--expect-lines` 行数断言，R1489-R1491），与像素 diff 门互补 |
 | `tests/benchmarks` | benchmark 结果产物（不是 workspace member） |
 
 > 另有 `tools/icon-gen`（`zero-icon-gen`），它是开发工具而非业务 crate：从源 SVG 生成 Linux / Windows / macOS 三端图标资产（PNG / ICO / macOS iconset / 运行时窗口 RGBA），不随发布产物分发。
@@ -98,7 +98,7 @@
 
 - **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、wasm-sandbox、script-sandbox、page-runtime、webview 都有可运行代码和对应测试。
 - **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）已打通，但产品形态、稳定性和真实站点兼容性仍在推进。
-- **当前主线**: 渲染兼容性（WPT / CSSWG reftest 对齐 Chromium）持续修复 CSS2 / Flexbox / Grid / Multicol / Writing Modes 等缺口；以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量，`freetype-raster` 默认开启已把 broad 一致率（chr<1%）从 ~36% 拉到约 55%（R1337 fresh 全量 oracle baseline，2026-07-12），但 strict 像素级仍受 font-raster 残余噪声约束、处 plateau；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export（flex/grid/multicol-baseline 合成）等结构性问题，下一批 forward lever（Phase A IFC 统一、baseline-export、multicol 碎片化、2em layout dual-path）多为多会话架构级（taffy 已升级到 0.12.1，baseline_overrides gate 解除）；完整 Web API 与真实网站交互兼容性是后续阶段。
+- **当前主线**: 渲染兼容性（WPT / CSSWG reftest 对齐 Chromium）持续修复 CSS2 / Flexbox / Grid / Multicol / Writing Modes 等缺口；以 Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量，`freetype-raster` 默认开启已把 broad 一致率（chr<1%）从 ~36% 拉到约 55%（R1337 fresh 全量 oracle baseline，2026-07-12），但 strict 像素级仍受 font-raster 残余噪声约束、处 plateau；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block、baseline-export（flex/grid/multicol-baseline 合成）等结构性问题；可单点修复的 sizing lever 已基本收敛、broad 处 plateau，forward lever 实测多为 net-negative（Phase A IFC 统一激活 -7 R1487 / Phase-4 plain-block leaf -10 revert R1494），已 landed 的小幅增量集中在 R109 inline-box-model（R1479/R1480 +12 oracle flip）与 DC-13 结构性产品 smoke 门禁（R1489-R1491），下一方向为 post-process sibling-shift（修 R1492 R109 容器测高低估 bug，env-gated、in-flight）与 font-stack 替换（user-gated，唯一解 font-wall）（taffy 已升级到 0.12.1，baseline_overrides gate 解除）；完整 Web API 与真实网站交互兼容性是后续阶段。
 
 所以今天的 ZeroWeb 是一个内核已成形、产品层在打磨的浏览器工作区，但还不是一个做完的浏览器产品。
 
