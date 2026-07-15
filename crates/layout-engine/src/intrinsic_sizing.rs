@@ -91,7 +91,24 @@ pub(crate) fn box_content_max_width(
                         None => true,
                     })
                 });
-            if !empty_inline {
+            if empty_inline {
+                // R1298：空 display:Inline 贡献 0（见上方注释）。
+            } else if std::env::var("ZW_INLINE_INTRINSIC_CONTENT").as_deref() != Ok("0")
+                && child
+                    .node_id
+                    .and_then(|cid| styles.get(&cid))
+                    .is_some_and(|s| matches!(s.display, DisplayValue::Inline))
+            {
+                // R1479（R109 inline-box-model 首增量，kill-switch 默认关）：display:Inline
+                // 子（非空、非 r109_split）按 **content-width 递归测量**，替代被 taffy Block
+                // 拉伸到满宽的 outer_w。ZeroWeb 把 inline→taffy::Block（converter:337）致 inline
+                // 子 child.width=容器宽，累入父 inline_sum 让含 inline 子的 inline-block 测得
+                // intrinsic≥容器宽 → shrink-to-fit 不触发 → 满宽（vertical-align-122 的 8 个
+                // wrapper 渲成单一满宽黑块的根因）。递归测真实内容宽（文本/嵌套 inline）让父正确
+                // shrink。仅 display:Inline：inline-block/flex/grid 有自身盒模型，outer_w 真实有效
+                //（height-computed-001 等），不走此路。default-off 待全量 A/B 验证 net≥0。
+                inline_sum += box_content_max_width(child, doc, styles).max(0.0);
+            } else {
                 inline_sum += outer_w.max(0.0);
             }
         } else {
