@@ -33,11 +33,14 @@
 ### 当前真实 lever（R1496 视角，按 yield × 可行性）
 
 1. **font-wall C-dep 解锁（user-gated）** — 数百案（最大簇），等用户决策。**主指标唯一根本路径**。
-2. **multicol balancing Phase 2** — wire R1350 dormant `multicol_balancing.rs`（`balance_last/nonlast_region`，
-   11/12 empirical 验证）进 `try_layout_nested_spanner`；目标 multicol-span-all-children-height-004a/004b
-   等残余（~40+ flip 潜力，roadmap R1348c/R1350）。须 LayoutNG balancing 移植精度 + 紧 gate + 全量 A/B
-   守 net ≥ 0（R1351 painter-core 尝试 net -1 已 revert，retry 须三件套：`is_nested_spanner_wrapper` flag
-   + container height + A/B）。多 session。
+2. **multicol column-breaking R1035**（multicol nested-spanner wrapper 工作已 R1352-R1361 完成：
+   R1359 FLIP 004a PASS、R1360 004b→1.51%；R1350 dormant `multicol_balancing.rs` 功能已被 R1357-R1360
+   region_available 路径覆盖，无须再 wire）。**残余 multicol 前沿 = column-breaking**（004b 1.51% 残余 +
+   multicol-breaking-004/nobackground-004 ~9%）：overflow block 须跨列拆分（block2-col1=50 sequential
+   vs 100 balance），R1352-R1361 九轮深调后定性 deferred——属 R1035 multi-session 高风险（影响 all
+   multicol balance），须 RFC + 紧 gate + 全量 A/B。其余 multicol top fail = font-wall（column-rule
+   subpixel）/ @media print OOS / JS-dynamic / nested+margin 结构性 / form-control，均非 clean lever。
+   css-multicol 171/452 (37.8%)。
 3. **DC-11 host-layer** — overflow:scroll 真滚动容器（交互滚动，静态 clip 已工作）/ position:sticky 动态
    （静态已按 relative 渲染）/ scroll-snap。需 browser/display 验证环境，非纯 headless reftest 可验。
    注：css-overflow / position:sticky 在当前 oracle corpus 无独立 shot（0 case），无法 reftest A/B。
