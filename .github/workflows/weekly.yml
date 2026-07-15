@@ -210,3 +210,65 @@ jobs:
           name: weekly-${{ matrix.artifact }}
           path: dist/
           retention-days: 7
+
+  release:
+    name: Publish weekly release
+    needs: build
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Compute weekly tag (UTC date)
+        id: tag
+        shell: bash
+        run: echo "name=weekly-$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: weekly-*
+          path: artifacts/
+
+      - name: Repackage each platform as a zip
+        shell: bash
+        run: |
+          set -e
+          mkdir -p release
+          for dir in artifacts/weekly-*/; do
+            name=$(basename "$dir")
+            (cd "$dir" && zip -r "../../release/${name}.zip" .)
+          done
+          echo "--- release/ ---"
+          ls -la release/
+
+      - name: Generate SHA256 checksums
+        shell: bash
+        run: |
+          cd release
+          find . -type f -print0 | sort -z | xargs -0 sha256sum > ../SHA256SUMS.txt
+          mv ../SHA256SUMS.txt .
+          cat SHA256SUMS.txt
+
+      - name: Create weekly release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: Weekly Build ${{ steps.tag.outputs.name }}
+          body: |
+            Automated weekly build of `main` (${{ github.sha }}).
+
+            Pick the zip matching your platform:
+            - `zero-browser-linux-x86_64.zip` — Linux x86_64
+            - `zero-browser-linux-aarch64.zip` — Linux ARM64
+            - `zero-browser-macos-x86_64.zip` — macOS Intel
+            - `zero-browser-macos-aarch64.zip` — macOS Apple Silicon
+            - `zero-browser-windows-x86_64.zip` — Windows x86_64
+            - `zero-browser-windows-aarch64.zip` — Windows ARM64 (QuickJS build; may fail due to upstream freetype-sys issue)
+
+            See `SHA256SUMS.txt` for checksums.
+          prerelease: true
+          files: |
+            release/*.zip
+            release/SHA256SUMS.txt
