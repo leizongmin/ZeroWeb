@@ -316,16 +316,23 @@ fn cmd_product_smoke(args: &[String]) {
     // DC-13 结构检查（--struct-check / --expect-class）需 layout 树，仅 engine-direct 路径暴露；
     // via_webview 路径无 layout 访问，结构检查静默跳过。
     let need_layout = struct_check || !expect_classes.is_empty() || !expect_lines.is_empty();
-    let (fb, layout_root) = if via_webview {
+    // layout_html = render_html 实际解析的 HTML（经 script DOM 变更后的 mutated_html）。
+    // 结构检查须用它建 labels（node_id 与 layout 树一致），否则真元素误标 "(anon)"。
+    let (fb, layout_root, layout_html) = if via_webview {
         (
             reftest::render_via_webview_to_framebuffer_with_base(&html, "", &config, base),
             None,
+            html.clone(),
         )
     } else if need_layout {
-        let (fb, root) = reftest::render_to_framebuffer_with_layout_with_base(&html, "", &config, base);
-        (fb, Some(root))
+        let (fb, root, rendered_html) = reftest::render_to_framebuffer_with_layout_with_base(&html, "", &config, base);
+        (fb, Some(root), rendered_html)
     } else {
-        (reftest::render_to_framebuffer_with_base(&html, "", &config, base), None)
+        (
+            reftest::render_to_framebuffer_with_base(&html, "", &config, base),
+            None,
+            html.clone(),
+        )
     };
 
     let out_path = out.as_deref().unwrap_or("product-smoke-cpu.png");
@@ -378,7 +385,7 @@ fn cmd_product_smoke(args: &[String]) {
     // 像素 diff 量化整体差距，本检查定位结构性退化（兄弟盒重叠 / 卡片按钮塌缩 = 用户可见
     // 排版 breakage，即使像素差小）。退出码 3（区别于像素 diff 门禁的 2 与参数错误的 1）。
     if let Some(root) = layout_root {
-        let labels = reftest::collect_dom_labels(&html);
+        let labels = reftest::collect_dom_labels(&layout_html);
         let mut issues: Vec<String> = Vec::new();
         if struct_check {
             issues.extend(reftest::check_sibling_overlaps(&root, &labels));

@@ -468,7 +468,7 @@ pub fn render_to_framebuffer_with_layout_with_base(
     css: &str,
     config: &ReftestConfig,
     base_dir: Option<&Path>,
-) -> (FrameBuffer, zero_layout_engine::types::LayoutBox) {
+) -> (FrameBuffer, zero_layout_engine::types::LayoutBox, String) {
     // 执行页面 <script>（含 DOM 变更），把 JS 后的最终 HTML 用于后续渲染。
     let mutated_html = apply_scripted_dom_mutations(html, base_dir);
     let html: &str = &mutated_html;
@@ -550,7 +550,11 @@ pub fn render_to_framebuffer_with_layout_with_base(
         &[],
     );
     // render_full_scene 仅借 result.primitives（借用已结束）；移出 layout 根供结构检查。
-    (fb, result.layout.root)
+    // 一并返回 mutated_html（render_html 实际解析的 HTML，经 script DOM 变更后可能与调用方传入
+    // 的原 html 不同）——DC-13 结构检查须用它建 labels，否则 layout 树 node_id 与 collect_dom_labels
+    //（解析原 html）不匹配 → 真元素误标 "(anon)"（R1499：morning disqus loadDisqus() appendChild
+    // 致 mutated_html 与原 html 不同，p/table 误标 anon）。
+    (fb, result.layout.root, mutated_html)
 }
 
 /// DC-13 line 321：通过 `zero-webview` 稳定嵌入边界渲染 HTML 到 FrameBuffer。
@@ -1177,7 +1181,7 @@ mod tests {
             <div style=\"position:absolute;left:50px;top:50px;width:100px;height:100px;background:blue\"></div>\
             </body></html>";
         let config = ReftestConfig::default();
-        let (_fb, root) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
         let labels = collect_dom_labels(html);
         let issues = check_sibling_overlaps(&root, &labels);
         assert!(
@@ -1198,7 +1202,7 @@ mod tests {
             <div style=\"width:100px;height:100px;background:blue\"></div>\
             </body></html>";
         let config = ReftestConfig::default();
-        let (_fb, root) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
         let labels = collect_dom_labels(html);
         let issues = check_sibling_overlaps(&root, &labels);
         assert!(
@@ -1217,7 +1221,7 @@ mod tests {
             <div class=\"card\">d</div>\
             </body></html>";
         let config = ReftestConfig::default();
-        let (_fb, root) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
         let labels = collect_dom_labels(html);
         assert_eq!(
             count_boxes_by_class(&root, &labels, "card"),
@@ -1244,7 +1248,7 @@ mod tests {
             <p class=\"tagline\">line one<br>line two</p>\
             </body></html>";
         let config = ReftestConfig::default();
-        let (_fb, root) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
         let labels = collect_dom_labels(html);
         assert_eq!(
             count_lines_for_class(&root, &labels, "title"),
