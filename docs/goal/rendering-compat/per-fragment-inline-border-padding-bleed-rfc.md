@@ -2,8 +2,8 @@
 
 **版本**：v1.0
 **日期**：2026-07-15
-**状态**：草稿（待实施，承接 R1439 linebox 深挖）
-**关联**：[`no-ratio-replaced-sizing-rfc.md`](./no-ratio-replaced-sizing-rfc.md)（R1437/1438 SVG-sizing 收口后下一 Phase A 目标）
+**状态**：⚠️ **VERIFIED STALE（2026-07-16 / R1508）—— 勿再投入**。R1442 已落地 per-fragment bg/border 外延几何（text.rs:1540-1614），多行 gate 已通过（border-padding-bleed-001 PIL 实测 **0 red px**，bleed 正确覆盖前行）。残余 0.78% **非 gate 问题 = font-wall C-dep**：BLEEDDBG 探针实测 `line_h=40`（resolve_font_metrics Number(1.0)=font_size 干净）但 `line_top=90.624`（非 90.0）——绿矩形 `[50.624,130.624)` 光栅成 81 行 vs chromium `[50,130)` 80 行，多出的 y=130 行即此 diff。0.624px 偏移 = 测试页顶部**非 Ahem `<p>` 指令文本** `line-height:normal`（ZW 1.164 比率 vs chromium 真值）把整个 `<div>` 下移 0.624px。= **R1155 font-wall**（默认字体 `<p>` 指令文本 floor），C-dep user-gated。本 RFC §1.1「单行 span 不画 bg」前提**已被 R1442 推翻**（gate 已通过），relax-gate 提议是 no-op。关闭。
+**关联**：[`no-ratio-replaced-sizing-rfc.md`](./no-ratio-replaced-sizing-rfc.md)（R1437/1438 SVG-sizing 收口后下一 Phase A 目标）；font-wall 谱系见 master.md R1067/R1088/R1155
 
 ---
 
