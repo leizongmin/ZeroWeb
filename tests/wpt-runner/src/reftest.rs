@@ -883,6 +883,39 @@ pub fn check_sibling_overlaps(
     issues
 }
 
+/// DC-13 line 322：统计布局树中带指定 class 的盒数（结构计数断言用）。
+///
+/// `labels`（[`collect_dom_labels`] 产出）格式为 `tag.class1.class2`；本函数按 `.` 拆分后
+/// 跳过 tag、**精确匹配** class（`.card` 不误匹配 `.card-sub`，避免子串假阳性）。用于
+/// 检测结构塌缩（如 welcome 须有 4 个 `.card`，丢失/塌缩会被检出）。
+pub fn count_boxes_by_class(
+    root: &zero_layout_engine::types::LayoutBox,
+    labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+    class: &str,
+) -> usize {
+    let mut count = 0usize;
+    fn walk(
+        b: &zero_layout_engine::types::LayoutBox,
+        class: &str,
+        labels: &std::collections::HashMap<zero_dom::NodeId, String>,
+        count: &mut usize,
+    ) {
+        if let Some(id) = b.node_id
+            && let Some(label) = labels.get(&id)
+        {
+            // label = "tag.class1.class2"；跳过首段 tag，精确匹配 class token。
+            if label.split('.').skip(1).any(|c| c == class) {
+                *count += 1;
+            }
+        }
+        for child in &b.children {
+            walk(child, class, labels, count);
+        }
+    }
+    walk(root, class, labels, &mut count);
+    count
+}
+
 /// 两轴对齐矩形 `(x, y, w, h)` 的交集面积（无交集返回 0）。
 fn rect_overlap_area(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> f32 {
     let (ax, ay, aw, ah) = a;
@@ -1121,6 +1154,35 @@ mod tests {
         assert!(
             issues.is_empty(),
             "stacked block siblings must not flag overlap: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn test_count_boxes_by_class_exact_match() {
+        // 4 个 .card + 2 个 .card-sub（须精确匹配，card-sub 不计入 card）。
+        let html = "<html><body>\
+            <div class=\"card\"><p class=\"card-sub\">a</p></div>\
+            <div class=\"card\"><p class=\"card-sub\">b</p></div>\
+            <div class=\"card\">c</div>\
+            <div class=\"card\">d</div>\
+            </body></html>";
+        let config = ReftestConfig::default();
+        let (_fb, root) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
+        let labels = collect_dom_labels(html);
+        assert_eq!(
+            count_boxes_by_class(&root, &labels, "card"),
+            4,
+            "exact .card count must be 4 (not counting .card-sub)"
+        );
+        assert_eq!(
+            count_boxes_by_class(&root, &labels, "card-sub"),
+            2,
+            ".card-sub count must be 2"
+        );
+        assert_eq!(
+            count_boxes_by_class(&root, &labels, "nope"),
+            0,
+            "absent class must count 0"
         );
     }
 

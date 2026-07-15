@@ -198,6 +198,9 @@ fn cmd_product_smoke(args: &[String]) {
     // DC-13 line 322-326：结构自动检查（同父兄弟盒 border-box 重叠 = 产品可见排版退化）。
     // 仅 engine-direct 路径（render_to_framebuffer_with_layout_with_base 暴露 layout 树）。
     let mut struct_check = false;
+    // DC-13 line 322：「四个 feature card」/「四个 nav button」等元素计数断言（可重复）。
+    // 格式 `<class>:<min-count>`（如 `card:4`）；按 collect_dom_labels 的 tag.class 标签匹配。
+    let mut expect_classes: Vec<(String, usize)> = Vec::new();
 
     let mut i = 0;
     while i < args.len() {
@@ -244,6 +247,21 @@ fn cmd_product_smoke(args: &[String]) {
             "--struct-check" => {
                 struct_check = true;
             }
+            "--expect-class" => {
+                // --expect-class <class>:<min-count>（可重复），结构计数断言。
+                i += 1;
+                if i < args.len() {
+                    if let Some((class, n)) = args[i].rsplit_once(':') {
+                        if let Ok(min) = n.parse::<usize>() {
+                            expect_classes.push((class.to_string(), min));
+                        } else {
+                            eprintln!("Warning: --expect-class count not a number: {}", args[i]);
+                        }
+                    } else {
+                        eprintln!("Warning: --expect-class expects <class>:<count>, got {}", args[i]);
+                    }
+                }
+            }
             s if !s.starts_with('-') && html_path.is_none() => {
                 html_path = Some(s.to_string());
             }
@@ -277,14 +295,15 @@ fn cmd_product_smoke(args: &[String]) {
         "product-smoke: rendering {html_path} ({}x{}, base_dir={:?}, via_webview={})",
         width, height, base, via_webview
     );
-    // DC-13 结构检查（--struct-check）需 layout 树，仅 engine-direct 路径暴露；
-    // via_webview 路径无 layout 访问，struct_check 静默跳过。
+    // DC-13 结构检查（--struct-check / --expect-class）需 layout 树，仅 engine-direct 路径暴露；
+    // via_webview 路径无 layout 访问，结构检查静默跳过。
+    let need_layout = struct_check || !expect_classes.is_empty();
     let (fb, layout_root) = if via_webview {
         (
             reftest::render_via_webview_to_framebuffer_with_base(&html, "", &config, base),
             None,
         )
-    } else if struct_check {
+    } else if need_layout {
         let (fb, root) = reftest::render_to_framebuffer_with_layout_with_base(&html, "", &config, base);
         (fb, Some(root))
     } else {
@@ -336,20 +355,40 @@ fn cmd_product_smoke(args: &[String]) {
         }
     }
 
-    // DC-13 line 322-326：结构自动检查（同父兄弟盒 border-box 重叠）。仅 engine-direct
-    // 路径（--struct-check 且非 --via-webview）执行；与像素 diff 门禁互补——像素 diff 量化
-    // 整体差距，本检查定位结构性退化（兄弟盒重叠 = 用户可见排版 breakage，即使像素差小）。
-    // 退出码 3（区别于像素 diff 门禁的 2 与参数错误的 1）。
+    // DC-13 line 322-326：结构自动检查（兄弟盒重叠 + 元素计数），仅 engine-direct 路径
+    //（--struct-check / --expect-class 且非 --via-webview）执行。与像素 diff 门禁互补——
+    // 像素 diff 量化整体差距，本检查定位结构性退化（兄弟盒重叠 / 卡片按钮塌缩 = 用户可见
+    // 排版 breakage，即使像素差小）。退出码 3（区别于像素 diff 门禁的 2 与参数错误的 1）。
     if let Some(root) = layout_root {
         let labels = reftest::collect_dom_labels(&html);
-        let issues = reftest::check_sibling_overlaps(&root, &labels);
+        let mut issues: Vec<String> = Vec::new();
+        if struct_check {
+            issues.extend(reftest::check_sibling_overlaps(&root, &labels));
+        }
+        // 元素计数断言（DC-13「四个 feature card」/「四个 nav button」等）。
+        for (class, min) in &expect_classes {
+            let count = reftest::count_boxes_by_class(&root, &labels, class);
+            if count < *min {
+                issues.push(format!("class .{class}: {count} boxes (expected >= {min})"));
+            }
+        }
         if issues.is_empty() {
-            println!("product-smoke struct-check: PASS (0 sibling overlaps > 50px²)");
+            let overlap_note = if struct_check { " + sibling-overlap" } else { "" };
+            let count_note = if expect_classes.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " + count[{}]",
+                    expect_classes
+                        .iter()
+                        .map(|(c, n)| format!(".{c}={n}"))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )
+            };
+            println!("product-smoke struct-check: PASS (0 issues{overlap_note}{count_note})");
         } else {
-            println!(
-                "product-smoke struct-check: FAIL ({} sibling overlap(s) > 50px²)",
-                issues.len()
-            );
+            println!("product-smoke struct-check: FAIL ({} issue(s))", issues.len());
             for iss in &issues {
                 println!("  - {iss}");
             }
