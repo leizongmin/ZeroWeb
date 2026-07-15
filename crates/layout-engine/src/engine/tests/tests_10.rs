@@ -863,6 +863,45 @@ fn test_img_no_ratio_no_dims_all_auto_default_object_size() {
     );
 }
 
+/// R1468 ratio-only 替换元素默认对象尺寸（CSS §10.3.2）：仅有宽高比、无确定固有尺寸的 SVG
+///（viewBox-only）+ width/height 均 auto 的**非 flex**上下文 → width 用默认对象宽 300，
+/// height 由 aspect_ratio 推导（=300/ratio）。旧实现 ratio-only 不设 size（0 宽）。
+/// 驱动案：visudet/normal-flow replaced-elements-{all-auto,min-width-40}（ratio-2.svg）。
+/// flex 上下文须保留无确定 size（transferred-size ratio-derivation，R980/R991/R992），故仅
+/// 非 flex 设默认对象宽——flex gate 由 apply_replaced_element_sizing 的 is_flex_*_item 守卫。
+#[test]
+fn test_img_ratio_only_all_auto_default_object_size() {
+    let (mut doc, body) = make_doc_with_body();
+    let img = doc.create_element("img");
+    doc.append_child(body, img).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Block; // 非 flex 上下文；width/height 均 auto
+    styles.insert(img, s);
+
+    // ratio-only 信号：仅有宽高比 2.0（viewBox-only SVG），无确定固有尺寸。
+    let mut ratios = HashMap::new();
+    ratios.insert(img, 2.0_f32);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_intrinsic(&doc, &styles, HashMap::new(), ratios, HashMap::new());
+
+    let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+    // width 须用默认对象宽 300；height 由 ratio 2.0 推导 = 300/2 = 150。
+    assert!(
+        (img_box.width - 300.0).abs() < 2.0,
+        "img width should be ~300 (CSS §10.3.2 default object size), got {}; \
+         bug = ratio-only SVG had no size → 0",
+        img_box.width
+    );
+    assert!(
+        (img_box.height - 150.0).abs() < 2.0,
+        "img height should be ~150 (300 / ratio 2.0), got {}",
+        img_box.height
+    );
+}
+
 /// 测试 inline-only 容器收缩后，后续普通流兄弟应同步上移。
 #[test]
 fn test_inline_only_container_shrink_reflows_following_sibling() {

@@ -493,10 +493,17 @@ fn apply_replaced_element_sizing(
                     && let LengthValue::Px(ch) = &computed.height
                 {
                     taffy_style.size.width = taffy::style::Dimension::length(((*ch as f32) * eff_ratio).max(0.5));
+                } else if width_auto && height_auto && !is_flex_row_item && !is_flex_col_item {
+                    // CSS §10.3.2 默认对象尺寸：ratio-only SVG（无确定固有尺寸，仅有宽高比）
+                    // 在 width/height 均 auto 的**非 flex**上下文中，使用默认对象宽 300px，
+                    // height 由 aspect_ratio 推导（=300/ratio）。flex 上下文必须保留无确定 size
+                    //（definite size 会阻止 taffy 的 transferred-size ratio-derivation，
+                    // R980/R991/R992 三证）。修复 visudet/normal-flow replaced-elements 簇中
+                    // ratio-only 图片无 size（0 宽）的缺口。min/max-width 由 taffy 钳制。
+                    taffy_style.size.width = taffy::style::Dimension::length(300.0);
                 }
-                // 两侧都 auto：不设 size，仅 aspect_ratio——flex transferred-size 由
-                // apply_flex_transferred_min_size 推导；非 flex 块上下文 ZW 暂未实现 300×150 默认，
-                // 但此前该 img 同样无任何 size（ratio-only SVG 从不在 image_sizes 中），不构成回归。
+                // flex + 两侧 auto：不设 size，仅 aspect_ratio——transferred-size 由
+                // apply_flex_transferred_min_size 推导。
             }
         }
     }
