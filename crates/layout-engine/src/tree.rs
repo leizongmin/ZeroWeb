@@ -1180,30 +1180,17 @@ fn build_subtree(
                         _ => true,
                     }
                 });
-                // R1492：env `ZW_PLAIN_INLINE_LEAF=1` 扩 leaf-path 到 plain block（Block display
-                // 且非 multicol）。修 R1492 实证 bug：plain block（如 wintertc 的 <p>）含文本 +
-                // inline 元素子（<a>/<span>）时，inline 子被建为 taffy block 子 → 容器 non-leaf →
-                // taffy 仅按 inline 子定容器高（丢文本高度）→ 父低估容器 → 后续兄弟重叠。
-                // ⚠ Phase 4（R109 inline-ownership）：扩 leaf 后 inline 子回流父 IFC（非独立 box），
-                // 致 R1480 结构测试（span 独立 box）fail + welcome +0.19pp——须 oracle A/B（+9 flip
-                // 保持？）+ 测试更新，多 session。default-off 待严 A/B（当前 OFF = R1492 bug 仍在）。
-                let plain_leaf_eligible = std::env::var("ZW_PLAIN_INLINE_LEAF").as_deref() == Ok("1")
-                    && matches!(computed.display, DisplayValue::Block)
-                    && matches!(
-                        computed.column_count,
-                        zero_style_system::property::types::ColumnCountComputedValue::Auto
-                    )
-                    && matches!(
-                        computed.column_width,
-                        zero_style_system::property::types::ColumnWidthComputedValue::Auto
-                    );
+                // R1492/R1494：plain-block leaf-path 扩展（Phase-4 inline-ownership）已证伪并 revert。
+                // 实测 ZW_PLAIN_INLINE_LEAF=1 borders oracle 411→401（-10），inline 子回流父 IFC 比
+                // R1480 shrink（inline→独立 box 收缩）更偏离 chromium——Phase 4 非 R1492 正解。
+                // R1492（plain block + inline 子 → measure 低估 → 兄弟重叠）须 measure/post-process 侧
+                // 修（保 inline 子为独立 box，修正容器高 + 移后续兄弟），见 master.md R1494 forward。
                 if has_text_child
                     && has_element_child
                     && all_inline
                     && (is_flex_grid_item(doc, styles, dom_id)
                         || matches!(computed.display, DisplayValue::InlineBlock)
-                        || !matches!(computed.float, FloatValue::None)
-                        || plain_leaf_eligible)
+                        || !matches!(computed.float, FloatValue::None))
                 {
                     // R1024/R1025：content-sized block（flex/grid item / inline-block / float）的全 inline 子
                     // 作 leaf——让 measure 经 has_inline_content 把全部 inline 文本作一个 IFC 单位测量，
