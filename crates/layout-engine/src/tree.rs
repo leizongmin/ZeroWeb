@@ -1164,24 +1164,46 @@ fn build_subtree(
                             // R1024：inline 元素还须「无 Element 子」——含 Element 后代（如 span 内
                             // 嵌 abspos/block）的 inline 须保留 taffy 子树，否则其后代被丢出 taffy 树
                             //（abspos-in-inline 簇 regression：span 内 abspos 失去 CB）。
-                            let is_inline = styles
-                                .get(&c)
-                                .is_some_and(|s| matches!(s.display, DisplayValue::Inline));
+                            // R1492：**自身** position:absolute/fixed 的 inline 元素亦须保留 taffy 节点
+                            //（OO-flow 定位，不能流入父 IFC）——否则 leaf-path 把它丢出 taffy 树
+                            //（hit_test_absolute_positioned_link 回归：div 内 abspos <a> 被 leaf 吞）。
+                            let cs = styles.get(&c);
+                            let is_inline = cs.is_some_and(|s| matches!(s.display, DisplayValue::Inline));
+                            let not_ooflow = cs
+                                .is_some_and(|s| !matches!(s.position, PositionValue::Absolute | PositionValue::Fixed));
                             let no_elem_child = !doc
                                 .child_nodes(c)
                                 .iter()
                                 .any(|&gc| doc.get(gc).is_some_and(|gn| matches!(&gn.kind, NodeKind::Element(_))));
-                            is_inline && no_elem_child
+                            is_inline && not_ooflow && no_elem_child
                         }
                         _ => true,
                     }
                 });
+                // R1492：env `ZW_PLAIN_INLINE_LEAF=1` 扩 leaf-path 到 plain block（Block display
+                // 且非 multicol）。修 R1492 实证 bug：plain block（如 wintertc 的 <p>）含文本 +
+                // inline 元素子（<a>/<span>）时，inline 子被建为 taffy block 子 → 容器 non-leaf →
+                // taffy 仅按 inline 子定容器高（丢文本高度）→ 父低估容器 → 后续兄弟重叠。
+                // ⚠ Phase 4（R109 inline-ownership）：扩 leaf 后 inline 子回流父 IFC（非独立 box），
+                // 致 R1480 结构测试（span 独立 box）fail + welcome +0.19pp——须 oracle A/B（+9 flip
+                // 保持？）+ 测试更新，多 session。default-off 待严 A/B（当前 OFF = R1492 bug 仍在）。
+                let plain_leaf_eligible = std::env::var("ZW_PLAIN_INLINE_LEAF").as_deref() == Ok("1")
+                    && matches!(computed.display, DisplayValue::Block)
+                    && matches!(
+                        computed.column_count,
+                        zero_style_system::property::types::ColumnCountComputedValue::Auto
+                    )
+                    && matches!(
+                        computed.column_width,
+                        zero_style_system::property::types::ColumnWidthComputedValue::Auto
+                    );
                 if has_text_child
                     && has_element_child
                     && all_inline
                     && (is_flex_grid_item(doc, styles, dom_id)
                         || matches!(computed.display, DisplayValue::InlineBlock)
-                        || !matches!(computed.float, FloatValue::None))
+                        || !matches!(computed.float, FloatValue::None)
+                        || plain_leaf_eligible)
                 {
                     // R1024/R1025：content-sized block（flex/grid item / inline-block / float）的全 inline 子
                     // 作 leaf——让 measure 经 has_inline_content 把全部 inline 文本作一个 IFC 单位测量，
