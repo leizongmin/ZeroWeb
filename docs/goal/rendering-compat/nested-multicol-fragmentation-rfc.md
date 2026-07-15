@@ -1,9 +1,9 @@
 # RFC（rally-pattern 设计草案）：nested multicol fragmentation（内层 multicol 跨外层列碎片化）
 
-**版本**：v0.1
-**日期**：2026-07-16（R1509）
+**版本**：v0.2
+**日期**：2026-07-16（R1509 设计 / R1511 精确化 / **R1512 实施→net-negative→REVERT**）
 **模式**：**rally-pattern 设计文档**（非 `lei-spec-rfc` skill —— 该 skill 需用户确认，与无人值守 rally CONTINUE/DONE/BLOCK 协议冲突；见 master.md R896 + `multicol-phase2-column-fragmentation-context.md` 同款约定）
-**状态**：分析 + 架构提案；待多 session 分阶段实施
+**状态**：⚠️ **R1512 实施 Stage1+2 → PIL 证结构正确 → oracle NET-NEGATIVE → REVERTED。font-wall-entangled，非 clean lever**。结构修复（flow-thread 2 子列 + clone border）PIL 实测正确（2 子列匹配 CHR、border y=108-132 完全对），但 oracle 004 9.58→12.61 全 background 案恶化——因 font-wall 文本宽（ZW sans-serif "AAAAA"=44 vs CHR 56px）+ 缺 column-rule（blue/fuchsia）主导 diff，结构正确无法克服。**结论：须等 font-wall C-dep 解锁或与 column-rule paint 合并修才可能 net-positive；勿再单试结构修复**。详见 master.md R1512。
 **目标案**：`multicol-breaking-001/002/003/004/005/006` + `multicol-breaking-nobackground-{000..005}`（13 案，oracle 3.16-9.58%，css-multicol 唯一剩余 reftest-validatable lever）
 **关联**：
 - [`multicol-fragmentation-design.md`](./multicol-fragmentation-design.md) §R201（三 blocker A/B/C，2026-06-17 dump 实测）
