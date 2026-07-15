@@ -374,7 +374,12 @@ fn test_layout_box_outer_area() {
 }
 
 /// 测试空 inline 元素的 line-height 贡献到容器高度。
-/// CSS 2.1 规范要求空 inline 元素的 line-height + padding + border 贡献到行盒高度。
+/// CSS 2.1 §9.4.2 + WPT empty-inline-001：仅含「裸空 inline 元素」（无文本、无 atomic、
+/// 无 padding/border/margin）的行盒为**零高**——裸空 span 的 line-height **不**贡献到
+/// 行盒高度。故 `<div><span style="line-height:5"></span></div>`（span 独占一行、无其他
+/// 显著内容）的容器 content_height == 0（chromium 同此）。
+/// 注：若同行有其他显著内容（文本/atomic/带几何空 inline），裸空 inline 的 line-height
+/// 仍正常贡献（见 empty-inline-003）。
 #[test]
 fn test_empty_inline_line_height_contribution() {
     let (mut doc, body) = make_doc_with_body();
@@ -392,7 +397,7 @@ fn test_empty_inline_line_height_contribution() {
     container_style.width = LengthValue::Px(200.0);
     styles.insert(container, container_style);
 
-    // Span: display inline, line-height: 5 (unitless)
+    // Span: display inline, line-height: 5 (unitless) —— 裸空 inline（无 padding/border/margin）
     let mut span_style = ComputedStyle::default();
     span_style.display = DisplayValue::Inline;
     span_style.line_height = zero_style_system::property::types::LineHeightValue::Number(5.0);
@@ -402,24 +407,11 @@ fn test_empty_inline_line_height_contribution() {
     let result = engine.compute(&doc, &styles);
 
     let container_box = find_child_by_node_id(&result.root, container).expect("container");
-    eprintln!(
-        "container: height={}, content_height={}, num_children={}",
-        container_box.height,
-        container_box.content_height,
-        container_box.children.len()
-    );
-    for (i, c) in container_box.children.iter().enumerate() {
-        eprintln!(
-            "  child[{}]: is_block_level={}, height={}, content_height={}",
-            i, c.is_block_level, c.height, c.content_height
-        );
-    }
 
-    // Empty span with line-height:5 should contribute to container height
-    // Default font-size = 16px, so line-height = 80px
-    assert!(
-        container_box.content_height > 0.0,
-        "Container should have non-zero height from empty inline's line-height, got {}",
+    // 裸空 span 独占行 → 零高 line box → 容器 content_height == 0
+    assert_eq!(
+        container_box.content_height, 0.0,
+        "Bare empty inline alone should create a zero-height line box (content_height==0), got {}",
         container_box.content_height
     );
 }

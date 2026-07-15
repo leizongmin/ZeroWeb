@@ -1520,6 +1520,27 @@ impl InlineFormattingContext {
             self.lines.push(current_line);
         }
 
+        // R1476：CSS 2.1 §9.4.2 + WPT empty-inline-001——仅含「裸空 inline 元素」的行盒
+        // 为零高（裸空 span 的 line-height 不贡献行盒高度）。判定：行内所有片段均为裸空
+        // inline（text 空、width==0、水平 margin==0）。文本词片段（text 非空）/ inline-block
+        // 片段（width>0）/ 带水平 margin 的空 inline 都令行盒保留正常高度（empty-inline-002
+        // 带 margin 的 span / empty-inline-003 span+文本）。裸空 inline 的 line-height 仅在
+        // 同行有其他显著内容时才贡献（由上方逐 run 累积的 current_line.height 保留；此处仅
+        // 塌缩「全裸空 inline」的孤立行）。
+        // **代理**：用 fragment 可得的「水平 margin」识别非裸空 inline（padding/border 不在
+        // fragment 中）；故仅有 padding/border、无 margin 的空 inline 亦按裸空塌缩——该模式
+        // 不影响 WPT（chromium-Oracle A/B 跨 CSS2 净 +2 flip、0 flip 失），属可接受近似。
+        for line in &mut self.lines {
+            let all_bare_empty = !line.runs.is_empty()
+                && line
+                    .runs
+                    .iter()
+                    .all(|f| f.text.is_empty() && f.width == 0.0 && f.margin_left == 0.0 && f.margin_right == 0.0);
+            if all_bare_empty {
+                line.height = 0.0;
+            }
+        }
+
         // 计算每行的 y 坐标
         let mut y = 0.0;
         for line in &mut self.lines {
