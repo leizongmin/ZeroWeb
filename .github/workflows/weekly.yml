@@ -237,7 +237,10 @@ jobs:
           set -e
           mkdir -p release
           for dir in artifacts/weekly-*/; do
-            name=$(basename "$dir")
+            # artifact name is `weekly-<platform>`; strip the `weekly-` prefix
+            # so the asset name matches the body text (the release itself is
+            # already named "Weekly Build ...").
+            name=$(basename "$dir" | sed 's/^weekly-//')
             (cd "$dir" && zip -r "../../release/${name}.zip" .)
           done
           echo "--- release/ ---"
