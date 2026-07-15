@@ -61,6 +61,21 @@ inner `height:300`（非 auto）→ `height_auto=false` → gate 不触 → inne
 
 `painter/text.rs` column-rule 内容检测只查 `child.x` 主位置；被碎片化的 inner 只在 outer col0 有主 x → 其余 outer 列误判「无内容」漏画 blue rule。fuchsia rule（inner 自身）因 inner 子列未计算而全漏。
 
+### 2.4 ★ R1509 NESTEDMCDBG 探针精确实测（修正 §2.2 "从不计算"）
+
+探针打点 `store_inline_multicol_columns`（`inline_finalization.rs:202`）入口，实测 004：
+```
+NESTEDMCDBG node=NodeId(32v1) content_width=188 col_count=2 col_width=86 seq=false children=16   # inner
+NESTEDMCDBG node=NodeId(30v1) content_width=800 col_count=4 col_width=188 seq=true  children=1    # outer
+```
+**关键修正**：inner 的 2 子列布局**确被计算**（`compute_column_info` 出 col_count=2/col_width=86，col_ctx IFC 跑了），且在**正确宽度**（content_width=188 = outer 列宽，非全宽 800——说明 `position_multicol_children` 宽度约束已在 inline_finalization 前生效）。但 `store_inline_multicol_columns:249 if !info.sequential_fill { return false; }`——inner 是 balance（seq=false）→ **计算后即丢弃**，不存 2 子列分布；paint `is_balance_mode && height_auto` gate（height:300 非 auto）又不补算 → inner 最终按**单列**渲染。
+
+**两条 net-negative 先例须同时绕开**：
+- **store 侧**：R902/R1422 证 balance multicol **存**列布局 net-negative（top-level balance paint 自路径已工作，存了被忽略/双计）。nested 例外须精确锁「被外层碎片化的 inner」而非所有 balance。
+- **paint 侧**：R1351 证 painter cso 传播 net-negative（gate 过宽卷入 deep-nesting）。
+
+**Stage 1 精确化**：nested-only 信号 = 「inner `is_multicol` && balance && 有 explicit height && 其 layout 父是 multicol」。检测时机问题：`store_inline_multicol_columns` 在 inline_finalization 递归中按节点调用，**无 parent 上下文**——须预扫一遍树标记 `is_nested_multicol_child` flag（LayoutBox 新字段），或 inline_finalization 改传 parent。这是 Stage 1 第一个 wiring 决策。
+
 ---
 
 ## 3. 为何 R1351 painter-core net-negative（不重蹈）
