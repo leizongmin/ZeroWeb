@@ -97,29 +97,36 @@ R1351 实现「backfill 复制 cso + painter `paint_as_multicol = is_multicol ||
 - 该片对应的 inner 2 子列布局（文本行分配到 2 子列，受限该片范围）；
 - clone 装饰（border-bottom 等）该片是否触底绘制。
 
-### 4.2 layout 侧（multicol.rs）
+### 4.2 ★ R1511 探针实测修正：layout 侧已够，缺口在 paint 侧（new paint path）
 
-`assign_children_to_columns_with_breaking` 检测到子是 multicol（既有 `has_nested_multicol_seq` 信号已计算）时，**不**当原子块，而是：
-1. 先对 inner 做其自身 multicol 布局（2 子列，full content）—— 复用 `store_inline_multicol_columns` 的 IFC + `fragment_lines_into_columns_overflow`；
-2. 按 outer `height_limit` 把 inner 的全布局垂直切成 N 片（N = outer 列数或 ceil(inner_h/height_limit)）；
-3. 每片存为 outer 一列的子内容（含 inner 2 子列几何 + clone 装饰标志）。
+**实测结论**（engine.rs pass 顺序：step 9 `adjust_multicol_layout` 在 step 12 `compute_final_inline_layouts` 之前）：
+- inner 的 column_span_offsets（outer 碎片化结果）**已在 store_inline_multicol_columns 调用时可用** → nested 检测信号 = `root.is_multicol && !root.column_span_offsets.is_empty()`（无须新字段/预扫，修正 §2.4「须预扫树」）。
+- inner 的 2 子列 IFC（col_ctx，col_width=86）也已计算（§2.4）。
+- **故 layout 侧无须改动**——inner 的 line 流 + outer 碎片几何都已就位。
 
-### 4.3 paint 侧（painter/text.rs + mod.rs）
+**★ 关键阻断 = paint 侧现有 shift+clip breaking 无法渲染 2-subcols/fragment**：
+`position_multicol_children` 对每个碎片存 `(child_x, child_y, col_x, col_w, col_top, col_h)`，paint（mod.rs:847-910）按 `frag_offset_y = frag_abs_y − child.y`（child_y 对非首片为负，如 col1 = 0−125 = −125）渲染**整个 child** 再 y-clip 到 `[col_top, col_top+col_h]`。此「整体位移 + 垂直裁剪」模型假定 child 是**单一纵列**；若 inner 行落 2 个 x 位置（2 子列），位移后 y-clip 会把整片裁空（行落在 y[0,100] 位移到 content_y−125..−25，clip [0,125] 落空）。**故「只改 store」行不通**——须 paint 侧识别 nested-multicol 碎片并按「该片 2 子列 + clone 装饰」独立渲染（R1351 painter-side 领域，须精确 gate 避 net-negative）。
 
-消费 layout 存的 per-fragment 几何：
-- 每片在外层列位置渲染 inner 2 子列文本（横向偏移到对应 outer 列）；
-- `box-decoration-break:clone`：每片底画 inner border-bottom（green）+ 片间 fuchsia rule；
-- outer blue column-rule：碎片化子按片范围计入「有内容」判定（修 blocker C）。
+### 4.3 正确算法（R1511 从 ref 推导，flow-thread 模型）
+
+ref 实测（004）：outer col0 = inner subcol0(AAAAA-EEEEE 5行) + subcol1(FFFFF-JJJJJ 5行) + clone border-bottom@y100；outer col1 = subcol0(KKKKK-NNNNN 4行) + subcol1(OOOOO-QQQQQ 3行) + clone border。→ **不是切片**（slice 把 340px 单列切 3×125 错），**是 flow-thread 分配**：
+1. inner 行流（17行，line_h=20，col_width=86）。
+2. 每 outer 列容量 = `2 × floor((col_h − clone_border_bottom) / line_h)`（004: 2×floor((125−25)/20)=2×5=10 行/outer 列）。
+3. 行流按 10/outer 列分块，每块拆 2 子列（前 ceil(N/2) 进 subcol0，余进 subcol1）。
+4. 每 outer 列：subcol0 行 x=frag_x，subcol1 行 x=frag_x + (col_w/2 + ... 实测 subcol 间距)，y=行内序×line_h；底画 clone border-bottom（green）。
+5. outer blue column-rule + inner fuchsia rule 按碎片范围绘。
+
+**实现位置**：新 paint 分支（mod.rs paint_as_multicol loop 内，gate `child.is_multicol && child.column_span_offsets.len()>1`），对每个 outer 碎片调上述分配渲染 inner 行 + clone 装饰。行流来源：layout 侧 store 一个 inner 的 line 列表（新增字段或复用 inline_layout 紧凑存）。
 
 ---
 
 ## 5. 分阶段实施（每 stage net ≥ 0 才进下一）
 
-### Stage 1（enabling，narrowest）：inner 子列几何按 outer 列高切片计算 + 存 layout
-- 范围：仅 outer `column-fill:auto` + 定高 + 唯一 in-flow 子且该子是 multicol（`column-count/width`）+ inner `column-fill:auto`（sequential，先避 balance 二级搜索）+ inner 无 spanner/abspos 子。
-- 产出：inner 全布局 → 切 N 片 → 存 per-fragment 几何（文本行 + 子列 x 偏移 + 片顶/底 y）。paint 暂只绘首片文本（验证几何方向）。
-- 验收：004 文本不再垂直溢出（y cap ≤ 125），每 outer 列出现 2 子列文本跨度（PIL 核 x-span 数 3→6）；A/B css-multicol net ≥ 0。
-- env gate：`ZW_NESTED_MULTICOL_FRAG`（default-off，A/B 证 net≥0 后 default-on）。
+### Stage 1（enabling，narrowest）：nested-multicol 碎片 new paint path（行流分配 + 2 子列）
+- 范围：outer `column-fill:auto` + 定高 + 唯一 in-flow 子且该子是 multicol（`column-count:2`）+ inner inline-only（无 block 子）+ inner 无 spanner/abspos 子。
+- 产出：layout 侧 store inner 行流（col_ctx.lines 紧凑转存 LayoutBox 新字段 `nested_mc_lines`）；paint 新分支按 §4.3 flow-thread 分配渲染每 outer 碎片（先文本 + 2 子列，clone 装饰/rule 留 Stage 2）。
+- 验收：004 文本不再单列（PIL 核每 outer 列 2 子列 span，x-span 数 3→6），y cap 在列高内；A/B css-multicol net ≥ 0（守 004a/004b spanner 族 + multicol-fill-auto-001 sentinel）。
+- env gate：`ZW_NESTED_MULTICOL_FRAG`（default-off，A/B 证 net≥0 后 default-on）。**精确 gate（避 R1351）**：仅 `child.is_multicol && child.column_span_offsets.len()>1`（被外层碎片化的 inner），不触 deep-nesting normal-multicol。
 
 ### Stage 2：paint 全片 + clone 装饰 + fuchsia rule
 - 每片绘 inner 2 子列文本 + border-bottom（clone）+ fuchsia column-rule。
