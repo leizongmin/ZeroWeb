@@ -867,11 +867,14 @@ pub fn check_sibling_overlaps(
                 if ci.width < 2.0 || ci.height < 2.0 || cj.width < 2.0 || cj.height < 2.0 {
                     continue;
                 }
-                let ov = rect_overlap_area(
+                let (ov, ov_h) = rect_overlap_area(
                     (child_off_x + ci.x, child_off_y + ci.y, ci.width, ci.height),
                     (child_off_x + cj.x, child_off_y + cj.y, cj.width, cj.height),
                 );
-                if ov > MIN_OVERLAP_PX {
+                // R1503：跳过「宽而薄」的亚像素 sliver——重叠高 ≤ 2px 但面积超阈（如 morning @320
+                // 相邻行 `<code>` 1px×149=149px²，IFC baseline/line-height 舍入噪声）非真结构重叠。
+                // 真 overlap（如 article/disqus 108px 高）远超此。area 阈值单独会被宽 sliver 绕过。
+                if ov > MIN_OVERLAP_PX && ov_h > 2.0 {
                     issues.push(format!(
                         "sibling overlap {:.0}px²: [{}] @({:.0},{:.0},{:.0}x{:.0}) & [{}] @({:.0},{:.0},{:.0}x{:.0})",
                         ov,
@@ -971,12 +974,13 @@ pub fn count_lines_for_class(
 }
 
 /// 两轴对齐矩形 `(x, y, w, h)` 的交集面积（无交集返回 0）。
-fn rect_overlap_area(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> f32 {
+/// 返回 (重叠面积, 重叠高度)。重叠高度供调用方过滤「宽而薄」的亚像素 sliver（R1503）。
+fn rect_overlap_area(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> (f32, f32) {
     let (ax, ay, aw, ah) = a;
     let (bx, by, bw, bh) = b;
     let w = ((ax + aw).min(bx + bw) - ax.max(bx)).max(0.0);
     let h = ((ay + ah).min(by + bh) - ay.max(by)).max(0.0);
-    w * h
+    (w * h, h)
 }
 
 /// 将单个 ImagePrimitive 渲染到帧缓冲。
