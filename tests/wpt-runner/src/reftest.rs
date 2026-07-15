@@ -867,6 +867,23 @@ pub fn check_sibling_overlaps(
                 if ci.width < 2.0 || ci.height < 2.0 || cj.width < 2.0 || cj.height < 2.0 {
                     continue;
                 }
+                // R1504：跳过 positioned（abspos/fixed/relative）或 float 盒对——它们**按设计**重叠
+                //（relative offset / abspos 定位 / float exclusion 都是合法叠加，reftest red/green
+                // 覆盖、z-order、paint-order 测试大量用之）。flag 这些是噪声非 bug。仅报**普通块流**
+                // 兄弟的非预期重叠（如 R1492 长高重叠）。须任一为 positioned/float 即跳过该对。
+                if ci.is_absolute
+                    || ci.is_fixed
+                    || ci.is_relative
+                    || ci.is_sticky
+                    || !matches!(ci.float, zero_css_parser::values::FloatValue::None)
+                    || cj.is_absolute
+                    || cj.is_fixed
+                    || cj.is_relative
+                    || cj.is_sticky
+                    || !matches!(cj.float, zero_css_parser::values::FloatValue::None)
+                {
+                    continue;
+                }
                 let (ov, ov_h) = rect_overlap_area(
                     (child_off_x + ci.x, child_off_y + ci.y, ci.width, ci.height),
                     (child_off_x + cj.x, child_off_y + cj.y, cj.width, cj.height),
@@ -1179,10 +1196,12 @@ mod tests {
 
     #[test]
     fn test_struct_check_detects_sibling_overlap() {
-        // 两个 abspos 兄弟盒重叠（50,50 偏移，100×100 → 50×50=2500px² 交集）须被检出。
+        // 两个**普通块流**兄弟盒经负 margin 重叠（第二个 margin-top:-50px 拉 50px，100×50=5000px²
+        // 交集）须被检出。R1504：positioned（abspos/relative/fixed）/float 盒按设计重叠已被排除，
+        // 故测试改用 normal-block 重叠（真 bug 模式，如 R1492 长高重叠）。
         let html = "<html><body style=\"margin:0\">\
-            <div style=\"position:absolute;left:0;top:0;width:100px;height:100px;background:red\"></div>\
-            <div style=\"position:absolute;left:50px;top:50px;width:100px;height:100px;background:blue\"></div>\
+            <div style=\"width:100px;height:100px;background:red\"></div>\
+            <div style=\"width:100px;height:100px;margin-top:-50px;background:blue\"></div>\
             </body></html>";
         let config = ReftestConfig::default();
         let (_fb, root, _) = render_to_framebuffer_with_layout_with_base(html, "", &config, None);
@@ -1190,7 +1209,7 @@ mod tests {
         let issues = check_sibling_overlaps(&root, &labels);
         assert!(
             !issues.is_empty(),
-            "overlapping abspos siblings must be flagged, got {issues:?}"
+            "overlapping normal-block siblings must be flagged, got {issues:?}"
         );
         assert!(
             issues.iter().any(|s| s.contains("overlap")),

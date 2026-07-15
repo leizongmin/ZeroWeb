@@ -32,6 +32,7 @@ Commands:
   reftest           Run WPT reftest suite (rendering comparison tests)
   reftest-upstream  Run upstream WPT reftest files from wpt-data/
   reftest-oracle [filter]  DC-14: render upstream test pages vs chromium oracle-shots (true pass-rate)
+  struct-sweep [filter]   DC-13: sibling-overlap struct-check sweep over upstream test pages
   product-smoke <html>  Render a product static fixture to CPU PNG (DC-13)
                        (--base-dir, --oracle <png>, --out <png>, --max-diff <pct>)
 
@@ -165,6 +166,7 @@ fn main() {
         "reftest" => cmd_reftest(&options, filter.as_deref()),
         "reftest-upstream" => cmd_reftest_upstream(&options, filter.as_deref()),
         "reftest-oracle" => cmd_reftest_oracle(&options, filter.as_deref()),
+        "struct-sweep" => cmd_struct_sweep(&options, filter.as_deref()),
         "--help" | "-h" => print_usage(),
         _ => {
             eprintln!("Unknown command: {command}");
@@ -1109,6 +1111,85 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         eprintln!("    {}/{} ({:.0}%)  {}", p, t, r, dir);
     }
     let _ = no_oracle; // 已在报告中输出
+}
+
+/// `struct-sweep [filter]` 子命令（R1504）— DC-13 结构检查 corpus sweep。
+///
+/// 对上游 WPT reftest 的 test 页（经 script DOM 变更后的 mutated_html）渲染并跑
+/// `check_sibling_overlaps`，报告有兄弟盒重叠的 case（按总重叠面积降序 top-N）。
+/// 用途：把 product-smoke struct-check（R1489-R1503 在 welcome/wintertc/morning 找到
+/// R1492/R1498 等真 bug）系统化扩展到 corpus，hunt 更多 R1492-class 真 layout bug。
+///
+/// 用法：zero-wpt-runner struct-sweep [filter]   （filter = case.id 子串，如 "normal-flow"）
+fn cmd_struct_sweep(options: &CliOptions, filter: Option<&str>) {
+    use reftest::ReftestConfig;
+    let wpt_data_dir = match &options.wpt_data {
+        Some(p) => std::path::PathBuf::from(p),
+        None => std::path::PathBuf::from("tests/wpt-runner/wpt-data"),
+    };
+    if !wpt_data_dir.is_dir() {
+        eprintln!("Error: wpt-data directory not found: {}", wpt_data_dir.display());
+        std::process::exit(1);
+    }
+    let file_cases = wpt_file_loader::load_file_reftests(&wpt_data_dir);
+    let filtered: Vec<&wpt_file_loader::FileReftestCase> = file_cases
+        .iter()
+        .filter(|c| filter.is_none_or(|f| c.id.contains(f)))
+        .collect();
+    eprintln!("struct-sweep: {} cases (filter={:?})", filtered.len(), filter);
+    let jobs = effective_jobs(options);
+    // (id, total_overlap_px², top_issue_string)
+    let results: Vec<(String, f32, String)> = parallel_map(&filtered, jobs, |case| {
+        let config = ReftestConfig {
+            viewport_width: options.viewport_width as u32,
+            viewport_height: options.viewport_height as u32,
+            ..Default::default()
+        };
+        let (_fb, root, rendered_html) = reftest::render_to_framebuffer_with_layout_with_base(
+            &case.test_html,
+            "",
+            &config,
+            case.base_dir.as_deref(),
+        );
+        let labels = reftest::collect_dom_labels(&rendered_html);
+        let issues = reftest::check_sibling_overlaps(&root, &labels);
+        if issues.is_empty() {
+            (case.id.clone(), 0.0, String::new())
+        } else {
+            // 提取每个 issue 的面积（"overlap {N}px²"）求和，取最大 issue 作样本。
+            let mut total = 0.0f32;
+            let mut top = String::new();
+            let mut top_a = 0.0f32;
+            for s in &issues {
+                let a = s
+                    .split("overlap")
+                    .nth(1)
+                    .and_then(|t| t.split("px²").next())
+                    .and_then(|t| t.trim().parse::<f32>().ok())
+                    .unwrap_or(0.0);
+                total += a;
+                if a > top_a {
+                    top_a = a;
+                    top = s.clone();
+                }
+            }
+            (case.id.clone(), total, top)
+        }
+    });
+    let mut flagged: Vec<&(String, f32, String)> = results.iter().filter(|r| r.1 > 0.0).collect();
+    flagged.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let total_cases = results.len();
+    let clean = total_cases - flagged.len();
+    eprintln!(
+        "\n═══════════════════════════════════════════════\n  struct-sweep: {} cases, {} clean, {} with sibling-overlap (top {} shown)\n═══════════════════════════════════════════════",
+        total_cases,
+        clean,
+        flagged.len(),
+        flagged.len().min(30)
+    );
+    for (id, total, top) in flagged.iter().take(30) {
+        eprintln!("  {:.0}px²  {}  | {}", total, id, top);
+    }
 }
 
 /// 格式化 reftest 报告（文本格式）。
