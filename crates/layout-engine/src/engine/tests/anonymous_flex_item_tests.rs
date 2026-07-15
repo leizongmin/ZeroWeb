@@ -598,3 +598,43 @@ fn test_r1025_float_with_text_and_br_shrink_to_fit() {
         "R1025: float with text+br should shrink-to-fit (w<400), got w={w}; was 800 before fix"
     );
 }
+
+/// R1495：plain block（`<p>`）含文本 + inline 元素子（`<a>`）时，taffy 把 `<a>` 作 block 子
+/// 致 `<p>` non-leaf，taffy 仅按 `<a>` 定 `<p>` 高（丢多行文本高度）→ remeasure 长高后后续
+/// 兄弟 `<div>` 仍定位在旧 taffy 高处 → 重叠。`shift_siblings_after_ifc_grow` post-process
+/// 下移后续兄弟。本测试验证后续 `<div>` 不再与 `<p>` 重叠（div.y >= p.y + p.height）。
+#[test]
+fn test_shift_siblings_after_ifc_grow_no_overlap() {
+    let html = r##"<html><body style="margin:0;font:20px/1 Ahem">
+      <p id="p">XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX <a href="#">link</a> YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY</p>
+      <div id="f">follow</div>
+    </body></html>"##;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+    let p = find("p", &doc, &result.root).expect("p");
+    let f = find("f", &doc, &result.root).expect("follow div");
+    // 同父（body）下，后续兄弟 div 的 y 须 >= p 底边（y+height），不重叠。
+    assert!(
+        f.y + 0.5 >= p.y + p.height,
+        "R1495: follow div (y={}) must be below <p> bottom ({} = y {} + h {}), \
+         not overlapping (shift_siblings_after_ifc_grow regression)",
+        f.y,
+        p.y + p.height,
+        p.y,
+        p.height
+    );
+}

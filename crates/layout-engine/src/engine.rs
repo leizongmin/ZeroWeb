@@ -477,6 +477,16 @@ impl LayoutEngine {
             backfill_r109_anon_block_heights(&mut root_box, styles);
         }
 
+        // R1492/R1495：plain block + inline 子 → compute_final/remeasure 长高 box height 后，
+        // 后续 in-flow 兄弟仍定位在旧 taffy 高处致重叠（wintertc `<p>` vs `<div>`）。须在
+        // compute_final + backfill（高修正完成）之后跑。default-on（A/B NET 0 borders/normal-flow/
+        // tables/flexbox/multicol + welcome 稳定 + wintertc/morning 重叠解 + make test 绿）；
+        // multicol 子树全程禁用位移（inside_multicol 祖先上下文，避 column side-by-side 误判）。
+        // kill-switch =0 关闭。
+        if std::env::var("ZW_IFC_GROW_SHIFT").as_deref() != Ok("0") {
+            shift_siblings_after_ifc_grow(&mut root_box, styles, false);
+        }
+
         // 12.5 后处理：修正 calc(P% ± Npx) 尺寸。
         // taffy 不支持 calc 表达式，convert 层将 calc(100% - 6px) 近似为 Percent(1.0)。
         // 此步骤根据实际百分比计算值和 px 偏移量修正最终尺寸。

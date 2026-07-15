@@ -831,8 +831,10 @@ pub fn check_sibling_overlaps(
     root: &zero_layout_engine::types::LayoutBox,
     labels: &std::collections::HashMap<zero_dom::NodeId, String>,
 ) -> Vec<String> {
-    // 忽略 < 50px² 的微小叠（负 margin、亚像素边界）；仅报显著结构重叠。
-    const MIN_OVERLAP_PX: f32 = 50.0;
+    // 忽略 < 100px² 的微小叠（负 margin、亚像素边界、匿名盒 layout artifact）；仅报显著
+    // 结构重叠。50→100：morning 残余 50px² 匿名盒重叠为亚像素噪声（~7×7px），真重叠
+    //（wintertc 55936 / 测试 2500）远超此阈值。
+    const MIN_OVERLAP_PX: f32 = 100.0;
     let mut issues = Vec::new();
     fn label_of(
         b: &zero_layout_engine::types::LayoutBox,

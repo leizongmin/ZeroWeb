@@ -740,6 +740,113 @@ pub(super) fn shift_siblings_after_clearance_containment(box_node: &mut LayoutBo
     total
 }
 
+/// R1492/R1495：修正「plain block + inline 元素子 → remeasure_inline_only_containers
+/// 长高后后续兄弟未下移」致重叠（wintertc `<p>` 长高后 `<div>` 兄弟仍定位在旧 taffy 高处）。
+///
+/// 遍历 in-flow block 兄弟链，若前一个**真实元素 block**（node_id Some + is_block_level +
+/// !is_r109_split）的底边（y+height）超过当前兄弟的顶边（重叠 >0.5px），下移当前及后续 in-flow
+/// 兄弟（累计位移），并扩 auto-height 父容器高。**限制真实元素 block** 避 R1047
+/// block-in-inline-margins-003 回归（R109 匿名块/split 拓扑——匿名块 node_id None 或
+/// is_r109_split，跳过不位移）。
+///
+/// `inside_multicol`：任一祖先是否为 multicol 容器（column-count/column-width 非 auto）。
+/// multicol 容器的子元素按列并排（side-by-side）非垂直堆叠——无论是 multicol 容器自身、
+/// 其内的匿名列盒（无 style，默认按 block-flow），还是列盒内的普通 block，其子元素位置都由
+/// 列碎片化决定，「prev.bottom > next.y」恒成立（同一起点 y）→ 误判重叠把列内容下移整列高
+/// → 断列布局（css-multicol oracle -6 回归，2026-07-16 A/B 实测；含 column-span 切分的
+/// multicol-span-all-children-height-004a/004b）。故一旦进入 multicol 子树，全程禁用位移。
+/// env kill-switch `ZW_IFC_GROW_SHIFT=0` 关闭（default-on）。
+pub(super) fn shift_siblings_after_ifc_grow(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inside_multicol: bool,
+) {
+    use zero_css_parser::values::{DisplayValue, FloatValue};
+    use zero_style_system::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue};
+    // 真实元素 + block-level + 非 R109-split + display 为 block-flow（排除 table/flex/grid
+    // 子——其布局非垂直块流，shift 误触致 tables -2 边际回归）。
+    let is_plain_real_block = |c: &LayoutBox| {
+        if !(c.node_id.is_some() && c.is_block_level && !c.is_r109_split) {
+            return false;
+        }
+        styles.get(&c.node_id.unwrap()).is_some_and(|s| {
+            matches!(
+                s.display,
+                DisplayValue::Block | DisplayValue::Flow | DisplayValue::FlowRoot | DisplayValue::ListItem
+            )
+        })
+    };
+    // 当前盒自身是否为 multicol 容器。
+    let self_is_multicol = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+        !matches!(s.column_count, ColumnCountComputedValue::Auto)
+            || !matches!(s.column_width, ColumnWidthComputedValue::Auto)
+    });
+    // 子树进入 multicol：祖先或自身任一为 multicol → 后代禁用位移。
+    let children_inside_multicol = inside_multicol || self_is_multicol;
+    // 仅对 block-flow 容器（Block/Flow/FlowRoot/ListItem）位移子——flex/grid/table 子是 2D/
+    // 表布局定位，非垂直块流，「prev.bottom > next.y」对同行异列项误判重叠（welcome div.cards
+    // grid 2×2 同行 card 误触 +184px over-shift）。匿名/无 style 容器按 block-flow 处理。
+    // 排除 multicol 容器自身（self_is_multicol）及任何 multicol 后代（inside_multicol）。
+    let shift_active = !children_inside_multicol
+        && box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(|s| {
+                matches!(
+                    s.display,
+                    DisplayValue::Block | DisplayValue::Flow | DisplayValue::FlowRoot | DisplayValue::ListItem
+                )
+            })
+            .unwrap_or(true);
+    let mut cumulative_shift: f32 = 0.0;
+    let mut prev_bottom: Option<f32> = None;
+    let mut prev_plain = false;
+    let mut prev_margin_bottom: f32 = 0.0;
+    let auto_parent_height = box_node.declared_height_auto;
+    for child in &mut box_node.children {
+        // 排除 OOF（abspos/fixed）+ float + relative/sticky（flow 位特殊，偏移保留，
+        // 不应被 R1492 长高 shift 移动——test_relative_position_preserves_flow_space）。
+        let skip = child.is_absolute
+            || child.is_fixed
+            || child.is_relative
+            || child.is_sticky
+            || !matches!(child.float, FloatValue::None);
+        if skip {
+            // 仍下钻（子可能是 block-flow 容器）。
+            shift_siblings_after_ifc_grow(child, styles, children_inside_multicol);
+            continue;
+        }
+        if shift_active {
+            // 应用已累积位移（cascade 到所有后续 in-flow 兄弟）。
+            if cumulative_shift > 0.0 {
+                child.y += cumulative_shift;
+            }
+            // 检测与前一个真实元素 block 兄弟的重叠（remeasure 长高致）。
+            // 排除负 margin（prev.mb<0 或 child.mt<0）——负 margin 合法地把后续兄弟拉上
+            // 重叠（test_block_negative_margin_*），非 R1492 长高重叠，不应下移。
+            if prev_plain && is_plain_real_block(child) && prev_margin_bottom >= 0.0 && child.margin_top >= 0.0 {
+                if let Some(pb) = prev_bottom
+                    && child.y < pb - 0.5
+                {
+                    let overlap = pb - child.y;
+                    cumulative_shift += overlap;
+                    child.y += overlap;
+                }
+            }
+        }
+        shift_siblings_after_ifc_grow(child, styles, children_inside_multicol);
+        if shift_active {
+            prev_bottom = Some(child.y + child.height);
+            prev_plain = is_plain_real_block(child);
+            prev_margin_bottom = child.margin_bottom;
+        }
+    }
+    if cumulative_shift > 0.0 && auto_parent_height {
+        box_node.content_height += cumulative_shift;
+        box_node.height += cumulative_shift;
+    }
+}
+
 /// R109 §9.2.1.1 匿名块盒高度回填（spec FR-001，env R109_BACKFILL 默认开）。
 ///
 /// compute_final_inline_layouts 存了 inline_layout 但不回填 box height；taffy 经
