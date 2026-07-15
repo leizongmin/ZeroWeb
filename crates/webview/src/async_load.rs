@@ -436,18 +436,22 @@ impl AsyncPageLoad {
         }
         let mut sizes: HashMap<u64, (f32, f32)> = webview.cached_image_sizes().clone();
         let mut ratios: HashMap<u64, f32> = webview.cached_image_ratios().clone();
+        let mut no_ratio: HashMap<u64, (Option<f32>, Option<f32>)> = webview.cached_image_no_ratio().clone();
         self.lazy_img_pending.retain(|(url, key, rx)| {
             if let Ok(result) = rx.try_recv() {
                 match result {
                     Ok(bytes) => {
                         if let Ok(img) = decode_image_bytes(&bytes) {
-                            // R717：ratio-only SVG 进 ratios、不进 sizes（避免确定 size 阻止 ratio-derivation）。
+                            // 非 BothAbs SVG 进 no_ratio（default object size sizing）；其余进 sizes。
                             let intrinsic_ratio = img.intrinsic_ratio();
                             if let Some(r) = intrinsic_ratio {
                                 ratios.insert(*key, r);
                             } else {
                                 let (w, h) = (img.width as f32, img.height as f32);
                                 sizes.insert(*key, (w, h));
+                                if let Some(dims) = img.no_ratio_intrinsic() {
+                                    no_ratio.insert(*key, dims);
+                                }
                             }
                             webview.image_cache().insert_with_key(ImageKey::new(*key), img);
                         }
@@ -467,6 +471,9 @@ impl AsyncPageLoad {
         if !ratios.is_empty() {
             webview.set_image_ratios(ratios);
         }
+        if !no_ratio.is_empty() {
+            webview.set_image_no_ratio(no_ratio);
+        }
         if self.lazy_img_pending.is_empty() {
             let _ = self.advance_render(webview, budget_ms);
         }
@@ -478,17 +485,21 @@ impl AsyncPageLoad {
         }
         let mut sizes: HashMap<u64, (f32, f32)> = webview.cached_image_sizes().clone();
         let mut ratios: HashMap<u64, f32> = webview.cached_image_ratios().clone();
+        let mut no_ratio: HashMap<u64, (Option<f32>, Option<f32>)> = webview.cached_image_no_ratio().clone();
         self.img_pending.retain(|(url, key, rx)| {
             if let Ok(result) = rx.try_recv() {
                 match result {
                     Ok(bytes) => match decode_image_bytes(&bytes) {
                         Ok(img) => {
-                            // R717：ratio-only SVG 进 ratios、不进 sizes。
+                            // 非 BothAbs SVG 进 no_ratio（default object size sizing）；其余进 sizes。
                             if let Some(r) = img.intrinsic_ratio() {
                                 ratios.insert(*key, r);
                             } else {
                                 let (w, h) = (img.width as f32, img.height as f32);
                                 sizes.insert(*key, (w, h));
+                                if let Some(dims) = img.no_ratio_intrinsic() {
+                                    no_ratio.insert(*key, dims);
+                                }
                             }
                             webview.image_cache().insert_with_key(ImageKey::new(*key), img);
                         }
@@ -507,6 +518,9 @@ impl AsyncPageLoad {
         }
         if !ratios.is_empty() {
             webview.set_image_ratios(ratios);
+        }
+        if !no_ratio.is_empty() {
+            webview.set_image_no_ratio(no_ratio);
         }
         if *changed && self.stage == PageLoadStage::FetchingImages {
             let remaining = self.img_pending.len();

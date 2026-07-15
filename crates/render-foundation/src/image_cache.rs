@@ -488,16 +488,30 @@ pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
     let rgba = pixmap.take();
     let mut data = ImageData::from_rgba(rgba, w, h)?;
+    // ★ chromium 实测（visudet replaced-elements 簇 4 变体 × 7 SVG + css-flexbox
+    // aspect-ratio-intrinsic-size-007，2026-07-15）：
+    // - **INLINE `<img>`**（CSS2 §10.3.2）：非 BothAbs SVG 一律按 **default object size 300×150**
+    //   sizing，**不**对显式 CSS 维应用 viewBox 宽高比（height-25-ratio-2.svg 配 width:40 → 40×150
+    //   非 40×20）。仅 width+height 双绝对属性提供真固有尺寸 + ratio。
+    // - **FLEX item**（flexbox §9.2.4 transferred-size）：ratio-only / 单 abs 维+viewBox SVG **保留**
+    //   viewBox 宽高比（aspect-ratio-intrinsic-007：large-green-rectangle.svg 配 flex column →
+    //   784×392，width stretch + height=width/ratio）。
+    // 故 viewBox 比（RatioOnly / ComputedIntrinsic）仍走 intrinsic_ratio（flex transferred-size 用），
+    // 但布局层对 INLINE 不应用该比（tree.rs branch 3 inline 分支用 default object size）。
+    // NoRatio（无 viewBox）→ no_ratio(None,None)（inline default object size，无 ratio）。
+    // （纠正 R1438「单 abs 维+viewBox → computed intrinsic 进 image_sizes」——inline 方向远离 chromium。）
     match svg_intrinsic_kind(bytes) {
         // 双绝对 → 真固有尺寸（pixmap w/h 有效，走 image_sizes；两信号均 None）
         SvgIntrinsicKind::BothAbs => {}
-        // ratio-only → 设 intrinsic_ratio（走 image_ratios）
+        // viewBox 比（无 abs 维 / 单 abs 维）：保留 ratio 供 flex transferred-size；inline 由
+        // 布局层 default object size 处理（不应用此 ratio）。
         SvgIntrinsicKind::RatioOnly(ratio) => data.intrinsic_ratio = Some(ratio),
-        // no-ratio → 设 no_ratio（真实固有维，缺失维 None；走 image_no_ratio）
-        SvgIntrinsicKind::NoRatio { width, height } => data.no_ratio = Some((width, height)),
-        // 一维 abs + 另一维缺失 + viewBox → usvg pixmap 对缺失维用原始 viewBox 值（bogus），
-        // 须用计算的真实固有尺寸覆盖 pixmap（走 image_sizes，aspect_ratio 由 w/h 推导）。
-        SvgIntrinsicKind::ComputedIntrinsic(w, h) => data.computed_intrinsic = Some((w, h)),
+        SvgIntrinsicKind::ComputedIntrinsic(cw, ch) if ch > 0.0 => {
+            data.intrinsic_ratio = Some(cw / ch);
+        }
+        // 无 viewBox 比：default object size，无 ratio。
+        SvgIntrinsicKind::ComputedIntrinsic(_, _) => {}
+        SvgIntrinsicKind::NoRatio { .. } => data.no_ratio = Some((None, None)),
     }
     Ok(data)
 }
@@ -892,9 +906,10 @@ mod decode_tests {
         assert_eq!(svg_intrinsic_kind(svg), SvgIntrinsicKind::RatioOnly(2.0));
     }
 
-    /// 端到端：百分比 SVG 经 decode 后 intrinsic_ratio 字段被填充。
+    /// 端到端：百分比维 + viewBox SVG（RatioOnly）经 decode 保留 intrinsic_ratio（供 flex
+    /// transferred-size；INLINE 由布局层 default object size 处理，不应用此 ratio）。
     #[test]
-    fn decode_svg_percent_dims_sets_intrinsic_ratio() {
+    fn decode_svg_percent_dims_keeps_intrinsic_ratio() {
         let svg =
             b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\" viewBox=\"0 0 7500 3750\">\
                    <rect width=\"7500\" height=\"3750\" fill=\"green\"/></svg>";
@@ -903,14 +918,26 @@ mod decode_tests {
         assert_eq!(img.no_ratio_intrinsic(), None);
     }
 
-    /// 端到端：width-only no-ratio SVG 经 decode 后 no_ratio 字段被填充（intrinsic_ratio 仍 None）。
+    /// 端到端：width-only no-ratio SVG 经 decode 后归入 no_ratio(None,None)（chromium 忽略
+    /// 单 abs 维，按 default object size sizing）。
     #[test]
     fn decode_svg_width_only_no_ratio_sets_field() {
         let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" preserveAspectRatio=\"none\">\
                    <rect fill=\"orange\" width=\"100%\" height=\"100%\"/></svg>";
         let img = decode_svg_bytes(svg).expect("SVG rasterize should succeed");
         assert_eq!(img.intrinsic_ratio(), None);
-        assert_eq!(img.no_ratio_intrinsic(), Some((Some(50.0), None)));
+        assert_eq!(img.no_ratio_intrinsic(), Some((None, None)));
+    }
+
+    /// 端到端：双绝对 SVG（width+height 均 abs）经 decode 后**不**进 no_ratio（走 image_sizes
+    /// 固有尺寸路径），intrinsic_ratio/no_ratio 均 None。
+    #[test]
+    fn decode_svg_both_abs_not_no_ratio() {
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"25\" preserveAspectRatio=\"none\">\
+                   <rect fill=\"black\" width=\"100%\" height=\"100%\"/></svg>";
+        let img = decode_svg_bytes(svg).expect("SVG rasterize should succeed");
+        assert_eq!(img.intrinsic_ratio(), None);
+        assert_eq!(img.no_ratio_intrinsic(), None);
     }
 }
 

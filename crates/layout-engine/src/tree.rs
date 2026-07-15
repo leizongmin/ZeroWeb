@@ -465,45 +465,47 @@ fn apply_replaced_element_sizing(
                 }
                 // 两侧都显式：由 converter 从 CSS 处理，不干预
             }
-            // R717 ratio-only SVG（%-dim / viewBox-only，CSS §10.3.2）：无确定固有尺寸，
-            // 仅有 viewBox 宽高比。设 aspect_ratio，让 taffy/flex 按上下文 ratio-derive
-            // （flex column width 拉伸 → height = width / ratio）。
-            //
-            // ★ 关键：**不**设确定 size——任何确定 intrinsic size 都会被 taffy 当作固有高度，
-            // 阻止 ratio-derivation（R980/R991/R992 三次 decode-level definite-size 尝试均因此失败）。
-            // 显式 CSS 一侧时按比例推导另一侧（与 Some((w,h)) 分支同型，eff_ratio 用 ratio）。
-            // intrinsic_sizes 与 intrinsic_ratios 互斥（一张图只在一个 map 中），故此处独立 if
-            // 而非 else——仅当无 HTML 属性、无解码固有尺寸、且有 ratio 信号时触发。
+            // ratio-only / computed-intrinsic SVG（viewBox 宽高比，无确定固有尺寸）。
+            // ★ chromium 实测（2026-07-15，visudet replaced-elements 4 变体 + css-flexbox
+            // aspect-ratio-intrinsic-007）：viewBox 宽高比 **仅 FLEX transferred-size 用**；
+            // **INLINE `<img>`**（CSS2 §10.3.2）不应用 viewBox 比，按 default object size 300×150
+            // sizing（height-25-ratio-2.svg 配 width:40 → 40×150，非 40×20）。故按上下文分派：
             if let Some(&ratio) = img_intrinsic_ratios.get(&dom_id)
                 && ratio > 0.0
             {
                 let width_auto = matches!(computed.width, LengthValue::Auto);
                 let height_auto = matches!(computed.height, LengthValue::Auto);
-                if computed.aspect_ratio.is_none() && (width_auto || height_auto) {
-                    taffy_style.aspect_ratio = Some(ratio);
+                if is_flex_row_item || is_flex_col_item {
+                    // FLEX：保留 ratio 供 transferred-size（aspect-ratio-intrinsic-007：flex column
+                    // → 784×392，cross stretch + main=width/ratio）。★ 不设确定 size——definite size
+                    // 阻止 taffy transferred-size ratio-derivation（R980/R991/R992 三证）。
+                    if computed.aspect_ratio.is_none() && (width_auto || height_auto) {
+                        taffy_style.aspect_ratio = Some(ratio);
+                    }
+                    let eff_ratio = computed.aspect_ratio.unwrap_or(ratio);
+                    if !width_auto
+                        && height_auto
+                        && let LengthValue::Px(cw) = &computed.width
+                    {
+                        taffy_style.size.height = taffy::style::Dimension::length(((*cw as f32) / eff_ratio).max(0.5));
+                    } else if width_auto
+                        && !height_auto
+                        && let LengthValue::Px(ch) = &computed.height
+                    {
+                        taffy_style.size.width = taffy::style::Dimension::length(((*ch as f32) * eff_ratio).max(0.5));
+                    }
+                    // both-auto flex：不设确定 size，仅 aspect_ratio（transferred-size 由 taffy 推）。
+                } else {
+                    // INLINE（非 flex）：chromium default object size，**不**应用 viewBox 比。
+                    // 显式 CSS 侧由 converter 处理，auto 侧用 default（宽 300 / 高 150）。
+                    if width_auto {
+                        taffy_style.size.width = taffy::style::Dimension::length(300.0);
+                    }
+                    if height_auto {
+                        taffy_style.size.height = taffy::style::Dimension::length(150.0);
+                    }
+                    // 不设 aspect_ratio（chromium inline 不应用 viewBox 比）。
                 }
-                let eff_ratio = computed.aspect_ratio.unwrap_or(ratio);
-                if !width_auto
-                    && height_auto
-                    && let LengthValue::Px(cw) = &computed.width
-                {
-                    taffy_style.size.height = taffy::style::Dimension::length(((*cw as f32) / eff_ratio).max(0.5));
-                } else if width_auto
-                    && !height_auto
-                    && let LengthValue::Px(ch) = &computed.height
-                {
-                    taffy_style.size.width = taffy::style::Dimension::length(((*ch as f32) * eff_ratio).max(0.5));
-                } else if width_auto && height_auto && !is_flex_row_item && !is_flex_col_item {
-                    // CSS §10.3.2 默认对象尺寸：ratio-only SVG（无确定固有尺寸，仅有宽高比）
-                    // 在 width/height 均 auto 的**非 flex**上下文中，使用默认对象宽 300px，
-                    // height 由 aspect_ratio 推导（=300/ratio）。flex 上下文必须保留无确定 size
-                    //（definite size 会阻止 taffy 的 transferred-size ratio-derivation，
-                    // R980/R991/R992 三证）。修复 visudet/normal-flow replaced-elements 簇中
-                    // ratio-only 图片无 size（0 宽）的缺口。min/max-width 由 taffy 钳制。
-                    taffy_style.size.width = taffy::style::Dimension::length(300.0);
-                }
-                // flex + 两侧 auto：不设 size，仅 aspect_ratio——transferred-size 由
-                // apply_flex_transferred_min_size 推导。
             }
         }
     }
