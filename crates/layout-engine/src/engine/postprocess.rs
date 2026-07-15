@@ -763,8 +763,12 @@ pub(super) fn shift_siblings_after_ifc_grow(
 ) {
     use zero_css_parser::values::{DisplayValue, FloatValue};
     use zero_style_system::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue};
-    // 真实元素 + block-level + 非 R109-split + display 为 block-flow（排除 table/flex/grid
-    // 子——其布局非垂直块流，shift 误触致 tables -2 边际回归）。
+    // 真实元素 + block-level + 非 R109-split + display 为参与垂直块流的盒型。Block/Flow/FlowRoot/
+    // ListItem 是普通块流盒；Table/InlineTable 是块级（inline-table 视 block-level 标志），其整盒
+    // 随前序兄弟长高而下移是正确的（内部行/列布局与 y 无关，安全）——R1498 修：morning @375
+    // `<p>`(Block, IFC remeasure 长高) 重叠后续 `<table>`(Table) 14px，旧 gate 排除 Table 致漏移。
+    // 仍排除 Flex/Grid：其子是 2D 定位（同行异列项「prev.bottom > next.y」误判，welcome cards
+    // grid 2×2 +184px over-shift 先例），且 flex/grid 容器作兄弟须独立 A/B（本次范围外）。
     let is_plain_real_block = |c: &LayoutBox| {
         if !(c.node_id.is_some() && c.is_block_level && !c.is_r109_split) {
             return false;
@@ -772,7 +776,12 @@ pub(super) fn shift_siblings_after_ifc_grow(
         styles.get(&c.node_id.unwrap()).is_some_and(|s| {
             matches!(
                 s.display,
-                DisplayValue::Block | DisplayValue::Flow | DisplayValue::FlowRoot | DisplayValue::ListItem
+                DisplayValue::Block
+                    | DisplayValue::Flow
+                    | DisplayValue::FlowRoot
+                    | DisplayValue::ListItem
+                    | DisplayValue::Table
+                    | DisplayValue::InlineTable
             )
         })
     };

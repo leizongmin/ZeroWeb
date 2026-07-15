@@ -869,10 +869,18 @@ pub fn check_sibling_overlaps(
                 );
                 if ov > MIN_OVERLAP_PX {
                     issues.push(format!(
-                        "sibling overlap {:.0}px²: [{}] & [{}]",
+                        "sibling overlap {:.0}px²: [{}] @({:.0},{:.0},{:.0}x{:.0}) & [{}] @({:.0},{:.0},{:.0}x{:.0})",
                         ov,
                         label_of(ci, labels),
-                        label_of(cj, labels)
+                        child_off_x + ci.x,
+                        child_off_y + ci.y,
+                        ci.width,
+                        ci.height,
+                        label_of(cj, labels),
+                        child_off_x + cj.x,
+                        child_off_y + cj.y,
+                        cj.width,
+                        cj.height
                     ));
                 }
             }

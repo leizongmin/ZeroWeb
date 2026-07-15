@@ -638,3 +638,45 @@ fn test_shift_siblings_after_ifc_grow_no_overlap() {
         p.height
     );
 }
+
+/// R1498：R1495 的 `is_plain_real_block` 旧 display gate（Block/Flow/FlowRoot/ListItem）排除
+/// `display:table`，致 `<p>`（Block，IFC remeasure 长高）后续 `<table>` 兄弟未下移而重叠
+///（morning @375 `<p>` vs `<table>` 14px 重叠，struct-check 抓到）。gate 扩 Table/InlineTable
+/// 后 table 整盒随前序兄弟长高下移（内部行/列布局与 y 无关，安全）。本测试验证后续
+/// `<table>` 不再与 `<p>` 重叠（table.y >= p.y + p.height）。
+#[test]
+fn test_shift_siblings_after_ifc_grow_table_sibling_no_overlap() {
+    // 窄 viewport（200）逼 `<p>` 长文本换行多行（IFC remeasure 长高），inline `<a>` 致
+    // `<p>` non-leaf（taffy 仅按 `<a>` 估高，丢多行文本高）→ 后续 `<table>` 重叠。
+    let html = r##"<html><body style="margin:0;font:20px/1 Ahem">
+      <p id="p">XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX <a href="#">link</a> YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY</p>
+      <table id="t"><tr><td>cell</td></tr></table>
+    </body></html>"##;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(200.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(200.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+    let p = find("p", &doc, &result.root).expect("p");
+    let t = find("t", &doc, &result.root).expect("table");
+    assert!(
+        t.y + 0.5 >= p.y + p.height,
+        "R1498: table (y={}) must be below <p> bottom ({} = y {} + h {}), \
+         not overlapping (table-sibling shift gate regression)",
+        t.y,
+        p.y + p.height,
+        p.y,
+        p.height
+    );
+}
