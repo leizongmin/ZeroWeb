@@ -1,8 +1,54 @@
 # 渲染兼容性 rally — 多 session 架构 roadmap（plateau 后攻击计划）
 
-**日期**: 2026-07-12（R1311-R1315 收敛后；R1346-R1351 更新）
+**日期**: 2026-07-12（R1311-R1315 收敛后；R1346-R1351 更新）；**R1496 校准 2026-07-16**
 **状态**: plateau firm，aggregate chromium-oracle ~55%（DC-2~5 目标 ≥95% 远未达）
 **目的**: 单 session clean lever 穷尽后，剩余 yield 全在多 session 架构 / C-dep。本文档汇总各 lever 的 blocker / 可行性 / yield / 攻击顺序，供后续 session 增量推进。
+
+---
+
+## R1496 校准更新（2026-07-16，roadmap 过时纠正）
+
+> 本文档下方「剩余 lever 清单」写于 R1311-R1351（2026-07-12/13）。R1317-R1495 期间多 lever 已兑现，
+> 下方原描述过时。**读下方各 lever 前先读本节**，避免重复尝试已完成工作。
+
+- **L2 margin-collapse-clear §8.3.1 = ✅ DONE**（R1317-R1332 收口）：012/013/014/015/016/017
+  全 < 1% PASS（见上方 R1349 更新 line 15-17）。下方「L2」节描述的 blocker 已不成立。
+- **L3 column-span:all = ①② DONE，③ open**：
+  - ① parse：`column-span` 已解析入 `ComputedStyle.column_span`（`apply_advanced.rs:778`，
+    `ColumnSpanComputedValue::None|All`）。
+  - ② spanner-aware intrinsic sizing：**R1431 LANDED**（`intrinsic_sizing.rs:247`，替 R1020 proxy；
+    区分 spanner/non-spanner block 子，6 case 验证，doc
+    `spanner-aware-multicol-intrinsic-sizing.md`）。
+  - ③ column-span **layout / fragmentation**（spanner 拆列流）= 仍 open，属 multicol balancing 谱系
+    （见下方「当前真实 lever」multicol Phase 2）。
+- **R1489-R1495 期间新增进展（DC-13 结构门 + R1492 真 bug）**：DC-13 product-smoke 结构自动检查
+  （sibling-overlap R1489 + element-count R1490 + line-count R1491）+ wintertc/morning 入门禁；
+  **R1492 真 R109 bug 发现并修**（plain block + inline 元素子 → taffy 仅按 inline 子定块高 → compute_final
+  长高后后续兄弟重叠）→ **R1495 post-process `shift_siblings_after_ifc_grow` LANDED**（default-on，
+  oracle A/B 五目录 NET 0；`inside_multicol` 祖先 gate 排除 multicol 子树）。详见 master.md R1489-R1495。
+- **font-wall 主指标阻塞 = 仍 user-gated**（L1 C-dep）：R1068 FreeType 已 default-on，剩完整 font-stack
+  （HarfBuzz/Skia coherence）+ Phase A line-box metric + ::first-letter，受 CI 计费 6-target 全失败 +
+  policy 约束，agent 无法单方面推进。
+
+### 当前真实 lever（R1496 视角，按 yield × 可行性）
+
+1. **font-wall C-dep 解锁（user-gated）** — 数百案（最大簇），等用户决策。**主指标唯一根本路径**。
+2. **multicol balancing Phase 2** — wire R1350 dormant `multicol_balancing.rs`（`balance_last/nonlast_region`，
+   11/12 empirical 验证）进 `try_layout_nested_spanner`；目标 multicol-span-all-children-height-004a/004b
+   等残余（~40+ flip 潜力，roadmap R1348c/R1350）。须 LayoutNG balancing 移植精度 + 紧 gate + 全量 A/B
+   守 net ≥ 0（R1351 painter-core 尝试 net -1 已 revert，retry 须三件套：`is_nested_spanner_wrapper` flag
+   + container height + A/B）。多 session。
+3. **DC-11 host-layer** — overflow:scroll 真滚动容器（交互滚动，静态 clip 已工作）/ position:sticky 动态
+   （静态已按 relative 渲染）/ scroll-snap。需 browser/display 验证环境，非纯 headless reftest 可验。
+   注：css-overflow / position:sticky 在当前 oracle corpus 无独立 shot（0 case），无法 reftest A/B。
+4. **DC-13 扩展**（diminishing）：narrow viewport 结构检查、更多产品 fixture struct-check（morning inline
+   badge 受 R109 限 0 box，须先 R109/Phase A）。
+
+### 单 session clean lever = conclusive 穷尽（重申）
+
+跨全 14 dir 五证（R1305/R1306/R1310/R1312/R1315）+ R1481-R1488 八连 0-yield。R1489-R1495 的进展全在
+**DC-13 结构门 + struct-check 抓 R1492-class 真 layout bug**（非 oracle 扫描），续此路径偶有真 yield
+（struct-check on 新 fixture 抓 overlap 类 bug），但期望低、非主指标路径。
 
 ---
 
