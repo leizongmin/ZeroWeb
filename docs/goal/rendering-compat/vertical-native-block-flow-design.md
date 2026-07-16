@@ -1,5 +1,14 @@
 # Vertical native block-flow — rally-pattern 设计（R1544，2026-07-16）
 
+> **★ Phase 2 layout-time LANDED R1586（2026-07-17）**：真正的 layout-time 两阶段（非
+> postprocess）default-on。第一趟 taffy 后把 vertical 容器 Auto 维度的正确 content-size
+>（width=Σ 子宽）喂回 taffy style.size + mark_dirty，engine 重跑 → 父级按正确 container
+> width re-layout（解 R1545 postprocess width-set 不传播的缺口）。css-writing-modes
+> reftest-oracle 全量 A/B **net +2（134→136）**，19 改善 / 1 小回归 / 跨目录零影响。推翻
+> R1547「two-pass yield≈0」——width 传播 yield≠0（height 维度回归须 scoping）。height-set
+> 经 A/B 实测对 float/auto-height-inline-block 回归，独立 env `ZW_VERTICAL_BLOCK_FLOW_HEIGHT=1`
+> default-off。详见 [`evidence/r1586-vertical-block-flow-layout-time-landed-2026-07-17.txt`](./evidence/r1586-vertical-block-flow-layout-time-landed-2026-07-17.txt)。
+>
 > **★ Phase 2 LANDED R1545（2026-07-16）**：postprocess 接线 default-on，
 > writing-modes reftest-oracle 全量 A/B **net +1**（91/784 vs 90/784）+ 14 大改善 / 0 大
 > 回归 + Σ −422pp；V2/V3 ground truth 像素级匹配 chromium。详见

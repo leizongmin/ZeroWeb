@@ -134,29 +134,148 @@ pub fn apply_vertical_block_flow(root: &mut LayoutBox, styles: &HashMap<NodeId, 
     apply_inner(root, styles, &WritingModeValue::HorizontalTb);
 }
 
-fn apply_inner(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, parent_wm: &WritingModeValue) {
-    // 先递归子（用本盒 wm 作子父 wm），再处理本盒——自底向上。
-    let own_wm = b.writing_mode.clone();
-    for child in &mut b.children {
-        apply_inner(child, styles, &own_wm);
+/// R1544 Phase 2 layout-time 两阶段 content-size 传播：第一趟 taffy 布局后，对 vertical
+/// 容器（gate 同 [`apply_vertical_block_flow`]）用 [`compute_vertical_block_flow`] 算正确
+/// content-size（width=Σ 子宽 / height=max 子高），把 **Auto** 维度的 taffy `style.size`
+/// 改为 Length + mark_dirty，由 engine 重跑 taffy → 父级按正确 container size re-layout。
+///
+/// **与 postprocess（[`apply_vertical_block_flow`]）的区别 / 互补**：postprocess 仅改物理
+/// width（HorizontalTb 块父中不传播），**不碰 height**（避 R1542 高度传播 net-negative 墙）。
+/// 本 layout-time pass 把正确 size 喂回 taffy，让父级 re-layout 时按正确 container height
+/// 定位后续 in-flow 兄弟 / sizing 自身——**解 R1545 forward 残余的 height 传播**（taffy 按
+/// vertical-stack 算 container height=Σ 子高，应为 max）。子位置仍由 postprocess 在重提取
+/// 后重定位（taffy 仍按 vertical-stack 排子，位置错误）。
+///
+/// **安全性**：仅覆盖 **Auto** 维度（`style.width/height == Auto`）。definite 维度
+///（如 `height:8em`）已正确，覆盖会破坏（vrl-013 inline-block height:8em 实证）。HorizontalTb
+/// 块父中 width 传播为 benign（同 postprocess）；height 经 taffy 重跑正确传播到父 content_height。
+///
+/// **A/B 实测（css-writing-modes reftest-oracle 784 案）**：width-only（height-set 关）+ 排除
+/// float 容器 = **net +2（134→136 chr<1%）**，19 改善 / 1 小回归（vrl-011 +1.85pp，与改善案
+/// vrl-012 结构同体，疑噪声）。大改善 = line-box-direction/block-flow-direction-vrl/vlr 簇
+///（−13~−22pp，多案 flip 到 pass）+ percent-padding 簇（−6pp×4）。height-set（`ZW_VERTICAL_BLOCK_FLOW_HEIGHT=1`）
+/// 对 float 容器（vlr-008 +12.86pp）与 auto-height inline-block（orthogonal +6~8pp）回归，故
+/// **default-off**。
+///
+/// env `ZW_VERTICAL_BLOCK_FLOW_LAYOUT` **default-on**（`=0` kill-switch）；height-set 独立 env
+/// `ZW_VERTICAL_BLOCK_FLOW_HEIGHT=1`（default-off，A/B 实测回归）。
+pub fn apply_vertical_block_flow_sizing(
+    taffy_tree: &mut taffy::TaffyTree<NodeId>,
+    root: &LayoutBox,
+    dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> bool {
+    if std::env::var("ZW_VERTICAL_BLOCK_FLOW_LAYOUT").as_deref() == Ok("0") {
+        return false;
     }
+    let height_enabled = std::env::var("ZW_VERTICAL_BLOCK_FLOW_HEIGHT").as_deref() == Ok("1");
+    apply_vertical_block_flow_sizing_inner(taffy_tree, root, dom_to_taffy, styles, height_enabled)
+}
 
+/// env-free 核心（供单测直接调用，避免 set_var 在并行测试中的竞态）。
+/// `height_enabled` 控制 height-set（实测对 float/auto-height inline-block 回归，故独立门控）。
+fn apply_vertical_block_flow_sizing_inner(
+    taffy_tree: &mut taffy::TaffyTree<NodeId>,
+    root: &LayoutBox,
+    dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    height_enabled: bool,
+) -> bool {
+    let mut changed = false;
+    // 自顶向下遍历，跟踪 parent_wm（root 父 = HorizontalTb 视口）。
+    let mut stack: Vec<(&LayoutBox, WritingModeValue)> = vec![(root, WritingModeValue::HorizontalTb)];
+    while let Some((b, parent_wm)) = stack.pop() {
+        let own_wm = b.writing_mode.clone();
+        for child in &b.children {
+            stack.push((child, own_wm.clone()));
+        }
+        let Some(block_indices) = vertical_block_child_indices(b, styles, &parent_wm) else {
+            continue;
+        };
+        // 排除 float 容器：float 有自有 shrink-to-fit 宽度算法（§10.3.5），taffy 重跑强制宽度
+        // 破坏 float 流定位（§9.5）——block-flow-direction-vlr-007/008 float 容器各
+        // +1.97/+12.86pp 回归实证。postprocess（apply_vertical_block_flow）仍处理 float 容器
+        // width（final 期，无重跑，R1545 net+1 不变）。
+        if !matches!(b.float, FloatValue::None) {
+            continue;
+        }
+        let outer_sizes: Vec<(f32, f32)> = block_indices
+            .iter()
+            .map(|&i| {
+                let c = &b.children[i];
+                (
+                    c.width + c.margin_left + c.margin_right,
+                    c.height + c.margin_top + c.margin_bottom,
+                )
+            })
+            .collect();
+        let layout = compute_vertical_block_flow(&outer_sizes, b.writing_mode.clone(), 0.0);
+        let Some(id) = b.node_id else { continue };
+        let Some(&taffy_id) = dom_to_taffy.get(&id) else {
+            continue;
+        };
+        let Some(s) = styles.get(&id) else { continue };
+        let Ok(mut style) = taffy_tree.style(taffy_id).cloned() else {
+            continue;
+        };
+        let frame_w = b.border_left + b.border_right + b.padding_left + b.padding_right;
+        let frame_h = b.border_top + b.border_bottom + b.padding_top + b.padding_bottom;
+        let new_w = layout.content_width + frame_w;
+        let new_h = layout.content_height + frame_h;
+        // 仅覆盖 Auto 维度（definite 已正确）；仅在显著不同时 set（避 float 抖动）。
+        let width_auto = matches!(s.width, LengthValue::Auto);
+        let height_auto = matches!(s.height, LengthValue::Auto);
+        let width_diff = width_auto && (new_w - b.width).abs() > 0.5;
+        // height-set 经 A/B 实测对 float 容器（vlr-008 +12.61pp）与 auto-height inline-block
+        // 容器（orthogonal-vrl/vlr +6~8pp）回归——height 传播破坏 float 流（§9.5）/ inline-block
+        // sizing。故 height-set 独立 env（default-off）；width-only 是安全基线（width 传播 benign，
+        // 同 R1545 postprocess 但经 taffy 重跑解 vertical-in-vertical）。
+        let height_diff = height_enabled && height_auto && (new_h - b.height).abs() > 0.5;
+        if width_diff {
+            style.size.width = taffy::style::Dimension::length(new_w);
+        }
+        if height_diff {
+            style.size.height = taffy::style::Dimension::length(new_h);
+        }
+        if width_diff || height_diff {
+            let _ = taffy_tree.set_style(taffy_id, style);
+            let _ = taffy_tree.mark_dirty(taffy_id);
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// R1545 gate（共享）：判定一个容器是否可做 native vertical block-flow，返回其
+/// block-level in-flow 子的 DOM 序索引（≥2）。`None` = gate 不通过。
+///
+/// 复用于 postprocess 子重定位（[`apply_inner`]）与 layout-time 两阶段 sizing
+///（engine `apply_vertical_block_flow_sizing`），保证两条路径 gate 一致。
+///
+/// gate（每条均有 per-case A/B measured 回归实证）：
+/// 1. 容器 `writing-mode` ∈ {VerticalRl, VerticalLr}；父 `writing-mode` == HorizontalTb
+///    （HorizontalTb 块父中改容器物理 width 不传播——postprocess 安全性论证；
+///    layout-time sizing 经 taffy 重跑解 height 传播）。
+/// 2. 容器非 abspos/fixed（§10.3.7 shrink-to-fit 自有尺寸；vrl-009 +23.60pp 回归）。
+/// 3. 容器非 table/table-internal（table step 8 自有算法；vlr-018/020 +5.83pp 回归）。
+/// 4. ≥2 个 block-level in-flow 子（display:Block，排除 abspos/fixed/float/
+///    table/flex/grid/multicol 子树）。
+/// 5. 无 Percentage margin 子（§7.2 dimensional-mapping 独立缺口；vrl-004/006 +8pp 回归）。
+pub fn vertical_block_child_indices(
+    b: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    parent_wm: &WritingModeValue,
+) -> Option<Vec<usize>> {
     let is_vertical = matches!(
         b.writing_mode,
         WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
     );
-    // gate：父须 HorizontalTb（保证改容器物理 width 不传播，见上文安全性论证）。
     if !is_vertical || !matches!(parent_wm, WritingModeValue::HorizontalTb) {
-        return;
+        return None;
     }
-    // gate：排除 abspos/fixed **容器**（CSS §10.3.7 shrink-to-fit 自有尺寸算法，
-    // block-flow-direction-vrl-009 回归 +23.60pp 实证）。
     if b.is_absolute || b.is_fixed {
-        return;
+        return None;
     }
-    // gate：排除 table/table-internal **容器**（table 布局 step 8 自有算法，本 pass
-    // 在其后跑会覆写；block-flow-direction-vlr-018 table-cell / vlr-020 table-caption
-    // 各回归 +5.83pp 实证）。
     let container_is_table = b.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
         matches!(
             s.display,
@@ -173,11 +292,8 @@ fn apply_inner(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, paren
         )
     });
     if container_is_table {
-        return;
+        return None;
     }
-
-    // 收集 block-level in-flow 子索引（排除 abspos/fixed/float；仅 display:Block，
-    // 排除 table/flex/grid/multicol 等复杂子树——v1 紧 gate）。
     let block_indices: Vec<usize> = b
         .children
         .iter()
@@ -192,10 +308,6 @@ fn apply_inner(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, paren
         })
         .map(|(i, _)| i)
         .collect();
-    // 任一 block 子带 **Percentage margin** → 跳过整个容器：vertical-WM 下百分比 margin
-    // 按 inline-size 解析属 §7.2 dimensional-mapping 独立缺口，本 pass 的 Σ（基于已解析
-    // 物理 margin）对 percent-margin 容器失准；混合子（部分 px 部分 pct）不可只重定位
-    // px 子（会忽略 DOM 序中 pct 子的位置）。percent-margin-vrl-004/006 各 +8pp 回归实证。
     let any_pct_margin = block_indices.iter().any(|&i| {
         b.children[i].node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
             matches!(s.margin_left, LengthValue::Percentage(_))
@@ -205,12 +317,24 @@ fn apply_inner(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, paren
         })
     });
     if any_pct_margin {
-        return;
+        return None;
     }
-    // 仅 ≥2 个 block 子时介入（<2 无 block-flow 方向问题，避免误移单子）。
     if block_indices.len() < 2 {
-        return;
+        return None;
     }
+    Some(block_indices)
+}
+
+fn apply_inner(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, parent_wm: &WritingModeValue) {
+    // 先递归子（用本盒 wm 作子父 wm），再处理本盒——自底向上。
+    let own_wm = b.writing_mode.clone();
+    for child in &mut b.children {
+        apply_inner(child, styles, &own_wm);
+    }
+
+    let Some(block_indices) = vertical_block_child_indices(b, styles, parent_wm) else {
+        return;
+    };
 
     // 各子 outer (width, height) = border-box + margin（DOM 序）。
     let outer_sizes: Vec<(f32, f32)> = block_indices
@@ -485,5 +609,151 @@ mod tests {
         // 容器未被重定位（B2 保留错误的「对角」初值 x=50，width 不变）。
         assert_eq!(container.children[1].x, 50.0, "percent-margin 容器不应被重定位");
         assert_eq!(container.width, 800.0, "percent-margin 容器 width 不变");
+    }
+
+    // ── Phase 2 layout-time sizing（apply_vertical_block_flow_sizing_inner）测试 ──
+    // 验证两阶段 sizing 把 vertical 容器的 Auto 维度喂回 taffy（width=Σ / height=max），
+    // 且尊重 definite 维度（不覆盖 height:8em 等）。
+
+    use taffy::TaffyTree;
+
+    /// sizing 测试夹具：taffy 树 + LayoutBox + dom_to_taffy + styles + container NodeId。
+    struct SizingFixture {
+        taffy: TaffyTree<zero_dom::NodeId>,
+        container: LayoutBox,
+        dom_to_taffy: HashMap<zero_dom::NodeId, taffy::NodeId>,
+        styles: HashMap<zero_dom::NodeId, ComputedStyle>,
+        container_id: zero_dom::NodeId,
+    }
+
+    /// 构造 taffy 树 + LayoutBox + dom_to_taffy，模拟 vertical-rl 容器（width/height Auto）
+    /// 含 2 个 50×150 block 子（border 2px 左右）。container_style_height 控制 height 维度。
+    fn build_sizing_fixture(wm: WritingModeValue, container_height: LengthValue) -> SizingFixture {
+        let mut doc = Document::new();
+        let container_id = doc.create_element("div");
+        let b1 = doc.create_element("div");
+        let b2 = doc.create_element("div");
+
+        let mut styles = HashMap::new();
+        let mut cs = ComputedStyle::default();
+        cs.display = DisplayValue::Block;
+        cs.writing_mode = wm.clone();
+        cs.width = LengthValue::Auto;
+        cs.height = container_height;
+        styles.insert(container_id, cs);
+        let mut bs = ComputedStyle::default();
+        bs.display = DisplayValue::Block;
+        bs.width = LengthValue::Px(50.0);
+        bs.height = LengthValue::Px(150.0);
+        styles.insert(b1, bs.clone());
+        styles.insert(b2, bs);
+
+        // taffy 树：2 leaf 子 + 1 容器（with_children）。
+        let mut taffy_tree: TaffyTree<zero_dom::NodeId> = TaffyTree::new();
+        let b1_t = taffy_tree.new_leaf_with_context(taffy::Style::default(), b1).unwrap();
+        let b2_t = taffy_tree.new_leaf_with_context(taffy::Style::default(), b2).unwrap();
+        let container_t = taffy_tree
+            .new_with_children(taffy::Style::default(), &[b1_t, b2_t])
+            .unwrap();
+        let mut dom_to_taffy = HashMap::new();
+        dom_to_taffy.insert(container_id, container_t);
+        dom_to_taffy.insert(b1, b1_t);
+        dom_to_taffy.insert(b2, b2_t);
+
+        // LayoutBox 树（模拟第一趟 taffy：容器 800 宽 / Σ=300 高堆叠，子 50×150）。
+        let mut container = LayoutBox::default();
+        container.node_id = Some(container_id);
+        container.writing_mode = wm;
+        container.border_left = 2.0;
+        container.border_right = 2.0;
+        container.width = 800.0;
+        container.height = 300.0; // taffy vertical-stack Σ
+        container.content_width = 796.0;
+        for id in [b1, b2] {
+            let mut child = LayoutBox::default();
+            child.node_id = Some(id);
+            child.writing_mode = WritingModeValue::HorizontalTb;
+            child.width = 50.0;
+            child.height = 150.0;
+            container.children.push(child);
+        }
+
+        SizingFixture {
+            taffy: taffy_tree,
+            container,
+            dom_to_taffy,
+            styles,
+            container_id,
+        }
+    }
+
+    /// Auto w/h + height_enabled：sizing 把容器 width→Σ(100)+frame(4)=104、
+    /// height→max(150)+frame(0)=150 喂回 taffy。
+    #[test]
+    fn test_sizing_sets_auto_dimensions() {
+        let mut f = build_sizing_fixture(WritingModeValue::VerticalRl, LengthValue::Auto);
+        let changed =
+            apply_vertical_block_flow_sizing_inner(&mut f.taffy, &f.container, &f.dom_to_taffy, &f.styles, true);
+        assert!(changed, "Auto 容器应触发 sizing");
+        let size = f.taffy.style(f.dom_to_taffy[&f.container_id]).unwrap().size;
+        // Dimension 是 newtype struct，用相等比较（length/auto 构造子）。
+        assert_eq!(
+            size.width,
+            taffy::style::Dimension::length(104.0),
+            "width 应=Σ(100)+frame(4)=104"
+        );
+        assert_eq!(
+            size.height,
+            taffy::style::Dimension::length(150.0),
+            "height 应=max(150)+frame(0)=150"
+        );
+    }
+
+    /// definite height（height:8em→Px）：sizing **不覆盖** height（保留 definite），仅覆盖 width。
+    #[test]
+    fn test_sizing_respects_definite_height() {
+        let mut f = build_sizing_fixture(WritingModeValue::VerticalRl, LengthValue::Px(80.0));
+        let changed =
+            apply_vertical_block_flow_sizing_inner(&mut f.taffy, &f.container, &f.dom_to_taffy, &f.styles, true);
+        assert!(changed, "width Auto 仍应触发 sizing");
+        let size = f.taffy.style(f.dom_to_taffy[&f.container_id]).unwrap().size;
+        // width 被设为 Σ+frame；height 保持 Auto（definite Px 不覆盖）。
+        assert_eq!(size.width, taffy::style::Dimension::length(104.0), "width 应≈104");
+        assert_eq!(
+            size.height,
+            taffy::style::Dimension::auto(),
+            "definite height 不应被覆盖（应保持 Auto 由 taffy 按 definite style 解析）"
+        );
+    }
+
+    /// height_enabled=false（default）：width-only，不设 height（避 float/inline-block 回归）。
+    #[test]
+    fn test_sizing_width_only_when_height_disabled() {
+        let mut f = build_sizing_fixture(WritingModeValue::VerticalRl, LengthValue::Auto);
+        let changed =
+            apply_vertical_block_flow_sizing_inner(&mut f.taffy, &f.container, &f.dom_to_taffy, &f.styles, false);
+        assert!(changed, "width Auto 应触发 sizing");
+        let size = f.taffy.style(f.dom_to_taffy[&f.container_id]).unwrap().size;
+        assert_eq!(size.width, taffy::style::Dimension::length(104.0), "width 应≈104");
+        assert_eq!(
+            size.height,
+            taffy::style::Dimension::auto(),
+            "height_disabled 时 height 保持 Auto"
+        );
+    }
+
+    /// env kill-switch：`ZW_VERTICAL_BLOCK_FLOW_LAYOUT=0` 禁用 sizing（default-on，=0 关闭）。
+    #[test]
+    fn test_sizing_env_kill_switch() {
+        // env 操作在 edition 2024 为 unsafe。SAFETY: 测试串行段，set 后立即读。
+        unsafe {
+            std::env::set_var("ZW_VERTICAL_BLOCK_FLOW_LAYOUT", "0");
+        }
+        let mut f = build_sizing_fixture(WritingModeValue::VerticalRl, LengthValue::Auto);
+        let changed = apply_vertical_block_flow_sizing(&mut f.taffy, &f.container, &f.dom_to_taffy, &f.styles);
+        assert!(!changed, "kill-switch=0 时不应触发 sizing");
+        unsafe {
+            std::env::remove_var("ZW_VERTICAL_BLOCK_FLOW_LAYOUT");
+        }
     }
 }

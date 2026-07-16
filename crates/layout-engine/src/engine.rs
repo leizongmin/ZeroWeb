@@ -222,7 +222,20 @@ impl LayoutEngine {
         // 百分比 height 的页面失效。改为先求值再合并，确保四趟都执行。
         let changed_intrinsic =
             Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc);
-        if changed_r695 || changed_pct_padding || changed_ratio_img || changed_intrinsic {
+        // R1544 Phase 2 layout-time（两阶段 content-size 传播）：vertical 容器把 Auto 维度
+        // 的正确 content-size（Σ 子宽 / max 子高）喂回 taffy + mark_dirty，让父级 re-layout
+        // 时按正确 container width 传播——解 R1545 postprocess width-set 不传播的缺口（经 taffy
+        // 重跑解 vertical-in-vertical）。A/B 实测 css-writing-modes net +2（width-only，
+        // 排除 float 容器；height-set 独立 env default-off 因回归）。
+        // env ZW_VERTICAL_BLOCK_FLOW_LAYOUT default-on（`=0` kill-switch）；子位置仍由
+        // step 12.7 postprocess（apply_vertical_block_flow）重定位。
+        let changed_vertical = crate::vertical_block_flow::apply_vertical_block_flow_sizing(
+            &mut taffy_tree,
+            &root_box,
+            &dom_to_taffy,
+            styles,
+        );
+        if changed_r695 || changed_pct_padding || changed_ratio_img || changed_intrinsic || changed_vertical {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
             let available_space = taffy::geometry::Size {
                 width: AvailableSpace::Definite(self.viewport_width),
@@ -530,8 +543,9 @@ impl LayoutEngine {
         //（shift_siblings_after_ifc_grow 会把 vertical 容器内并排子误当垂直堆叠兄弟下移，
         // 实测 V2 把 B2 下移 150px）；本 pass 收尾重定位，确保子位置最终正确。
         // 仅改物理 width（HorizontalTb 块父中不传播）+ 子位置，不动物理 height
-        //（避 R1542 高度传播 net-negative 墙）。env ZW_VERTICAL_BLOCK_FLOW=1 启用
-        //（default-off，A/B 实验期）。
+        //（避 R1542 高度传播 net-negative 墙；height 传播由 step 3.x layout-time
+        // apply_vertical_block_flow_sizing 经 taffy 重跑解，env ZW_VERTICAL_BLOCK_FLOW_LAYOUT）。
+        // env ZW_VERTICAL_BLOCK_FLOW default-on（`=0` kill-switch）。
         crate::vertical_block_flow::apply_vertical_block_flow(&mut root_box, styles);
 
         // 诊断（不改变布局）：对 shrink-to-fit 候选容器（inline-flex/inline-grid/float:flex/
