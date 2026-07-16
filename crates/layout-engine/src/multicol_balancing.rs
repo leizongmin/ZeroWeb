@@ -27,6 +27,29 @@
 //! 是 chromium LayoutNG row-height 算法的输出（非 closed-form）：简单 overflow 案近似
 //! `H − spans`（variant A=350、B=250），但复杂案（variant E，a/b 自身溢出）不符。此部分待
 //! LayoutNG 源码访问或更多变体后补（见 roadmap R1348d/R1349）。
+//!
+//! ## R1532：LayoutNG 列平衡算法（Chromium multicol 设计文档实证）
+//!
+//! Chromium 的列平衡是**迭代 min-space-shortage** 算法（非 closed-form，证 R1348c 结论）。
+//! 源自 Chromium 设计文档 Multi-column layout §Column balancing：触发条件 = column height
+//! 不能从 CSS 推导（height:auto / column-fill:balance（initial）/ 列行后跟 column-span:all）。
+//!
+//! 算法步骤：
+//! 1. 不带列断地 layout flow thread（单条带），测总高 `H_total`。
+//! 2. 初始列高 `h = H_total / num_cols`。
+//! 3. 带 implicit breaks 重新 layout flow thread（列边界插 pagination strut），数产生的列数。
+//! 4. 若列数 > num_cols，`h += minimum space shortage`，重复 step 3。
+//! 5. 列数 ≤ num_cols 时 `h` 即最优列高。
+//!
+//! **minimum space shortage** = 上次 layout pass 中，在某 break 点处「再多 N px 就不会 break」
+//! 的最小 N（即各换列点 `(当前列已填 + 待放项) − h` 的最小值）。
+//!
+//! **对本 port 的意义**：nested-spanner 的 region 平衡可用此迭代算法（每 region 独立平衡，
+//! span 作 forced break 分割 region）。当前 dormant 模块的 closed-form（`balance_last_region`
+//! forced-balance 分支）是该迭代的近似；L-outlier（A vs L 同 local 参数不同 chromium 结果：
+//! 100/100 vs 125/75）等 case 须用真迭代（min-space-shortage 收敛）而非 closed-form——这证实
+//! R1348c「local closed-form 可证伪不充分」。完整实现 = fragmentation-aware 迭代平衡
+//!（block 跨列拆分 + pagination strut），多 session（见 master.md R1532 forward）。
 
 /// 单个 region 的列平衡结果。
 #[derive(Clone, Debug, PartialEq)]
