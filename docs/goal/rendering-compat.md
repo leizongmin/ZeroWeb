@@ -64,7 +64,7 @@
 |------|----------|------|
 | WPT reftest 基础设施 | 导入上游 WPT reftest、解析 test list（含 fuzzy 注解）、截图对比、通过率报告、CI 集成 | **扩展**现有 `tests/wpt-runner/src/reftest.rs` 和 `manifest.rs`，不重写 |
 | Chromium 参考截图 | 自动化 headless Chromium（Puppeteer/Playwright）截图工具链 | 作为 M1 基础设施的一部分构建，零手动操作 |
-| Reftest 分类容差 | 布局类 reftest（不含文字渲染）用严格容差；文字类 reftest 用宽松容差；WPT fuzzy 注解按 test 覆盖 | 解决 fontdue vs Skia 字体像素差异问题 |
+| Reftest 分类容差 | 布局类 reftest（不含文字渲染）用严格容差；文字类 reftest 用宽松容差；WPT fuzzy 注解按 test 覆盖 | 解决字体光栅化 / 度量与 Chromium 差异导致的像素噪声；当前瓶颈应按实际字体栈、光栅化器和行级度量差异拆解 |
 | WPT fuzzy 注解支持 | 解析上游 WPT MANIFEST.json 中每个 reftest 的 `fuzzy()` 元数据，并应用到像素对比 | 上游 reftest 自带容差声明，必须遵守 |
 | Viewport 对齐 | ZeroWeb 和 Chromium 截图必须在相同 viewport 尺寸下捕获（默认 800×600，可配置） | viewport 不同则对比无意义 |
 | JS 执行支持 | Reftest harness 在截图前执行页面 JavaScript（通过现有 `script-sandbox` V8 runtime） | 很多 WPT CSS reftest 依赖 JS 动态设置条件 |
@@ -76,10 +76,10 @@
 | 图片子资源与替换元素 | WebView/Browser URL 导航必须抓取 `<img src>`、CSS `url()`、favicon/metadata 中实际参与渲染的图片资源，支持 PNG/JPEG/WebP 基础解码和 SVG 栅格化，并把解码后的像素数据通过 `ImageCache` 传给 CPU/GPU renderer | `https://wintertc.org/` 主要内容依赖 SVG/PNG Logo；**已实现**（R318 实测）：`fetch_image_subresources` 抓取+解码（PNG/JPEG/SVG via resvg），`image_cache` 传 renderer，WinterTC logo 全部正确渲染。残余缺口 = WebP 解码未接入、CSS `url()` 背景图未抓取 |
 | Flexbox 渲染 | 所有 flex 属性的正确布局和绘制 | 已有 taffy 支撑，主要验证 + 修复边界 case |
 | Grid 渲染 | 所有 grid 属性的正确布局和绘制 | 已有 taffy 支撑，主要验证 + 修复边界 case |
-| Float 布局 | 完整的 float 布局算法，float exclusion、clear、BFC 触发 | 当前仅有 inline context 的 float exclusion zone，无原生 float layout |
-| Table 布局 | 完整的 table layout 算法，table-layout: auto/fixed、border-collapse、spanning | 当前属性已存储但无专用布局算法 |
-| Multi-column 布局 | column-count/column-width 的实际列排布、column-rule、column-span | 当前属性已存储但无列布局算法 |
-| 文字排版 | OpenType shaping（liga/kern/features）、BiDi 算法、CJK 排版优化、text-align justify、word-break/overflow-wrap、writing-mode、vertical text | 当前 fontdue 仅做简单 character-to-glyph 映射 |
+| Float 布局 | 完整的 float 布局算法，float exclusion、clear、BFC 触发 | ✅ 核心 float 定位、clear、float containment 与 inline exclusion 已实现（见 R895 / DC-11）；残余按 CSS2 float reftest 边缘 case、table+float、margin-collapse 等具体簇处理，不再作为“无原生 float layout”缺口 |
+| Table 布局 | 完整的 table layout 算法，table-layout: auto/fixed、border-collapse、spanning | ✅ 表格网格构建、auto table layout、colspan、border-spacing、匿名表格盒已实现；残余以 border-collapse、vertical writing-mode table、table+float 等边缘结构性 case 为主 |
+| Multi-column 布局 | column-count/column-width 的实际列排布、column-rule、column-span | ✅ column-count/column-width、column-gap 和基础列分配已实现；残余重点是 nested multicol、column-span、fragmentation / balancing 与 LayoutNG 对齐 |
+| 文字排版 | OpenType shaping（liga/kern/features）、BiDi 算法、CJK 排版优化、text-align justify、word-break/overflow-wrap、writing-mode、vertical text | ✅ 已集成 rustybuzz OpenType shaping、unicode-bidi BiDi 和 CJK line-breaking；残余重点是字体光栅化/度量保真、vertical writing-mode、justify/word-break 等高级行为 |
 | Position 定位 | absolute/relative/fixed/sticky 的精确坐标计算 | fixed/sticky 当前有简化处理 |
 | Reftest 验证 | CPU 软件渲染模式 + GPU 渲染模式的截图对比 | 两种模式都需通过 |
 | 产品静态页面视觉 smoke | `apps/browser/assets/welcome.html` 等内置静态页面、录制的真实静态文章页和图片密集静态站点必须通过 ZeroBrowser/WebView 路径与 Chromium 参考截图对比 | WPT 子集通过不能替代用户可见产品页验收；静态页无 JS 仍错位说明基础排版/绘制链路未达标 |
@@ -100,7 +100,7 @@
 | BFC（Block Formatting Context） | `overflow: hidden/auto/scroll`、`display: flow-root`、浮动等正确创建 BFC，隔离浮动和 margin 折叠 | 部分实现：BFC **margin 隔离**已工作（R323 实测 `overflow:hidden` 子元素 margin 不与父折叠）；`display:flow-root`/`is_layout_container` 标志已落地（R127 float-container margin-uncollapse 修复）。浮动包含（float containment）部分由 taffy + R129 float shrink-to-fit 覆盖 |
 | 替换元素布局 | `<img>`、`<video>`、`<iframe>`、`<canvas>` 的固有尺寸计算和 `object-fit` | ✅ **已实现**（`apply_replaced_element_sizing` 三来源：HTML `width`/`height` 属性、SVG data URI、解码固有尺寸；R325 修 CSS §10 两侧显式尺寸不强制固有宽高比；`compute_object_fit_rect` 全 5 值；R318 图片数据端到端贯通）。`<video>`/`<iframe>`/`<canvas>` 固有尺寸仍按默认，非 reftest 杠杆 |
 | 滚动容器 | `overflow: scroll/auto` 的可滚动容器，滚动偏移的正确应用 | 当前滚动偏移仅在浏览器层通过 `scroll_y` 手动偏移，无真正的滚动容器 |
-| text-shadow | 文字阴影（offset + blur + color） | paint 阶段未生成 text-shadow 图元 |
+| text-shadow | 文字阴影（offset + blur + color） | ✅ 已实现 text-shadow paint 图元生成与渲染（见 DC-12）；残余只按具体 reftest 回归处理 |
 | 多背景图层 | `background-image` 多层叠加渲染 | ✅ **已实现**：painter/effects.rs:134 遍历 `background_image` 全图层 `.rev()` 叠加渲染 + test_paint_multiple_overlapping_backgrounds；原「仅渲染第一个」已过时 |
 | clip-path | CSS clip-path（circle、ellipse、polygon、inset） | ✅ **已实现（M9）**：painter/effects_indicators.rs + helpers.rs 全形状裁剪（原「仅生成指示器」描述已过时） |
 | backdrop-filter | 元素背后内容的滤镜效果 | ✅ **已实现（M9，R894 实测验证）**：painter/effects.rs，blur 效果正确限定在元素盒内（原「完全未实现」描述已过时） |
@@ -122,9 +122,11 @@
 - **原则**：最小化新依赖引入
 - **许可证**：如果必须引入新 crate，仅接受 MIT / Apache-2.0 / BSD 许可证
 - **评估标准**：新依赖必须论证"不引入则无法达成 reftest 目标"的必要性
-- **已知可能需要的新依赖**：
-  - 文字排版 shaping：可能需要 `rustybuzz`（MIT）替代 fontdue 的简单 glyph 映射
-  - BiDi 算法：可能需要 `unicode-bidi`（MIT/Apache-2.0）或 `icu_normalizer`
+- **Taffy 迁移裁决（2026-07-16）**：用户已裁决 `taffy 0.7 → 新版 taffy` 应尽早推进，取消旧记录中的“暂缓/未决”状态。迁移不是一次性大爆炸升级，必须先设计并拆分为可回退切片，重点核查 `computed_style_to_taffy()` 适配层、baseline、intrinsic sizing、flex/grid/table/multicol、margin collapse、abspos/fixed/sticky 等行为差异；每个切片都必须用 Chromium oracle reftest、产品 smoke 和现有单测做 A/B，确认 net≥0 且无关键产品回归后才能落地。
+- **默认决策边界（2026-07-16）**：为避免执行中反复请求人工决策，以下事项默认已批准继续推进：兼容许可证下的字体/光栅化/shaping C/C++ 依赖调研与小切片试验；R1035/LayoutNG 的本地源码、sparse checkout 或人工片段路线；vertical writing-mode 的 native/scoped/env-gated 改造；table、multicol、R109、Phase A 等结构性多会话工作。只有以下情况需要重新询问用户：不兼容许可证或闭源商业 SDK、大量磁盘/网络下载且工具审批无法覆盖、改变 Mission/Done Criteria/范围边界、破坏性 git/文件操作。
+- **已知可能需要的新依赖 / 外部组件**：
+  - 字体与光栅化保真：可评估 Skia / HarfBuzz / 系统字体桥等更高保真路线；必须先 RFC + 小切片 A/B，且遵守顶部默认决策边界
+  - BiDi / shaping 现状：`rustybuzz` 与 `unicode-bidi` 已作为当前能力落地，不再作为“待引入”阻塞项；若需 `icu_normalizer` 等扩展，按具体 reftest 缺口论证
   - Chromium 截图：需要 Puppeteer 或 Playwright（通过 Node.js 脚本调用 headless Chromium）
   - WPT 工具：可能需要辅助工具来 fetch/解析上游 WPT 仓库
 - **已有可复用基础设施**（M1 必须**扩展**而非重写）：
@@ -368,7 +370,7 @@
 
 ## Current Proven Baseline
 
-截至 2026-06-06，项目渲染兼容性现状：
+截至 2026-07-16，项目渲染兼容性现状（活跃状态以本节和 `docs/goal/rendering-compat/master.md` 顶部裁决包为准）：
 
 ### 已有能力
 
@@ -401,15 +403,15 @@
 | ~~**外部样式表加载缺失**~~ | **真实静态网页 CSS** | ✅ **已贯通（R213）** | ✅ **已修复**：fetch_url 三条成功路径（SW 拦截 line 396 / HTTP 缓存命中 421 / 正常 fetch 448）现均 `load_html(&html, Some(&external_css))`（非 None）；prepare_page_subresources → resolve_external_css（webview.rs:256）经 extract_stylesheet_hrefs 提取 `<link rel="stylesheet">` + base URL 解析 + 逐个 HTTP 抓取 + 合并注入级联，抓取/解码失败记 `tracing::warn!`（274-276）不阻断（宽松降级）；R213 测试 test_fetch_url_loads_external_stylesheet + ..._missing_does_not_break 覆盖。~~原（已过时）~~： `WebView::fetch_url()` 三条成功路径都会调用 `load_html(&html, None)`；`RenderPipeline::collect_stylesheets()` 只收调用方传入 CSS 和文档内 `<style>`，不抓取 `<link rel="stylesheet">`。morning.work 文章页依赖外链 CSS，当前会静默退化为仅内联样式 |
 | ~~**图片子资源/ImageCache 未贯通**~~ | **Logo/图片密集静态页面** | ✅ **已贯通（R318 实测）** | `<img>` paint 生成 `ImagePrimitive`；`WebView::fetch_image_subresources`（webview.rs:265）在 `fetch_url` 导航三条路径（line 370/395/423）抓取 + 解码 `<img src>`（PNG/JPEG 魔数 + SVG via resvg/tiny-skia），写入 `image_cache`；`app_platform.rs` render_cpu/render_gpu/render_frame 三处传 `Some(&mut webview.image_cache())`（非 None）。**R318 实测**：WinterTC 首页 header logo + 13 个参与方 SVG/PNG logo（alibaba/bytedance/cloudflare/deno/fastly/igalia/netlify/nodejs/shopify/suborbital/vercel/azion/matrix）全部正确渲染（非占位 glyph），产品 smoke diff=13.70%（残余为 system-ui 字体度量/line-height，非图片缺口）。原「传 None / Logo 缺失」描述已过时 |
 | **浏览器层 glyph 重排** | **ZeroBrowser 产品渲染路径** | **P1-严重** | ZeroBrowser 在消费 WebView 图元前会按 baseline 对 glyph 做后处理重排；该逻辑可能破坏 engine 已经计算好的 fragment x 坐标，尤其影响 grid/flex 中同一 baseline 的不同卡片文本 |
-| **真实静态页面 smoke 缺失** | **验收有效性** | **P1-严重** | 当前没有把 `apps/browser/assets/welcome.html`、morning.work 文章页和 WinterTC 图片密集首页这类无页面 JS 的真实静态页面作为 Chromium 截图对比门禁；因此 WPT 子集或内联 reftest 全绿仍可能漏掉用户第一眼可见的错位、正文重叠、tag 串联、表格退化和 Logo 缺失 |
+| ~~**真实静态页面 smoke 缺失**~~ | **验收有效性** | ✅ **已建立产品 smoke 证据链** | `apps/browser/assets/welcome.html`、morning.work、WinterTC、legacy HTML、窄屏等静态页面已进入 `docs/goal/rendering-compat/evidence/product-static/` 证据链，覆盖 Chromium oracle 截图、diff-summary 和多轮根因分析；后续是扩展 viewport / 结构检查 / 回归门禁，不再表述为“没有真实静态页面 smoke” |
 | ~~**Margin 折叠**~~ | CSS 2.1 布局正确性 | ✅ **已实现（R323 实测）** | taffy 0.7 `CollapsibleMarginSet` 内置；R323 探针 6 case（相邻/父子/border 阻断/负 margin/祖父嵌套/BFC 子不折叠）全过 + margin reftest 5/5 全绿。原「完全未实现」描述过时 |
 | ~~**BFC**~~ | 布局隔离 | ✅ **已实现** | `establishes_bfc`（全条件：overflow/float/abspos/flow-root/flex/grid/table/multicol）接线生产；margin 隔离 R323 实测 6 探针全过；`use_bfc_float_containment` 落地 float containment。原「无 BFC 概念，overflow: hidden 不隔离浮动、不阻止 margin 折叠」描述过时 |
 | ~~**替换元素**~~ | 图片/媒体渲染 | ✅ **已实现** | `<img>` 固有尺寸（HTML 属性 + SVG data URI + 解码固有尺寸三来源）已实现；R325 修 CSS §10 两侧显式尺寸不强制固有宽高比（旧 `<img style="width:200px;height:50px">` 被拉成 200×200）；`compute_object_fit_rect` 全 5 值；R318 图片数据端到端贯通。原「无固有尺寸计算，图片无法正确显示」描述过时 |
 | **滚动容器** | 页面滚动 | P1-严重 | overflow: scroll/auto 无真正滚动，长页面无法正确浏览 |
-| Float 布局 | CSS 2.1 核心功能 | P2-中等 | 仅有 inline context 的 float exclusion zone，clear 和 float containment 不完整 |
+| ~~Float 布局~~ | CSS 2.1 核心功能 | ✅ **核心已实现（R895 / DC-11）** | float:left/right 定位、clear、BFC float containment、inline exclusion 已实测；残余按具体 CSS2 float 边缘 case 追踪，不再表述为“仅有 inline context exclusion / clear 不完整” |
 | ~~Position: fixed~~ | 视口定位 | ✅ **R324 已修复** | `adjust_fixed_to_viewport` 改为扣除累积祖先偏移（旧「加上」仅 parent_offset=0 时正确）；fixed 在有偏移 positioned 祖先内也视口相对，与 R98 absolute-viewport 约定一致。新单测 + 8 旧单测更新 + 全量 reftest 零回归 |
 | Position: sticky | 滚动吸附 | P2-中等 | 需 host layer 动态调整，未完整实现 |
-| text-shadow | 文字效果 | P2-中等 | paint 阶段未生成 text-shadow 图元 |
+| ~~text-shadow~~ | 文字效果 | ✅ **已实现（DC-12）** | paint 阶段已生成并渲染 text-shadow 图元；后续只按具体 reftest 回归处理 |
 | ~~多背景图层~~ | 视觉丰富度 | ✅ **已实现** | effects.rs:134 全图层 `.rev()` 叠加（原「仅第一个」已过时） |
 | ~~重复渐变~~ | 视觉丰富度 | ✅ **已实现** | cpu/gradient.rs:28 `if gradient.repeating`（原「未实现」已过时） |
 | ~~clip-path~~ | CSS 裁剪 | ✅ 已实现（M9） | painter/effects_indicators.rs + helpers.rs 全形状裁剪（原「仅生成指示器」已过时） |
@@ -543,14 +545,14 @@
 
 **依赖**：M1 完成
 
-### M4 — Float + Table + Multicol 布局算法实现
+### M4 — Float + Table + Multicol 布局兼容性收敛
 
-**目标**：实现缺失的布局算法（Float、Table、Multi-column），达到各自 reftest 通过率 ≥ 95%（基于上游真实 WPT reftest）。
+**目标**：在已落地 Float、Table、Multi-column 基础算法的前提下，继续修复真实 WPT reftest 暴露的结构性残余，使各自通过率达到 ≥ 95%（基于上游真实 WPT reftest）。
 
 **范围**：
-- 完整 float 布局算法
-- 完整 table layout 算法（table-layout: auto/fixed、border-collapse、spanning）
-- Multi-column 布局算法
+- Float 残余边缘 case（table+float、margin-collapse、BFC containment 等）
+- Table 残余边缘 case（border-collapse、vertical writing-mode table、spanning 深水区等）
+- Multi-column 残余边缘 case（nested multicol、column-span、fragmentation / balancing、LayoutNG 对齐）
 - position: fixed/sticky 的精确实现
 
 **依赖**：M1 完成（M2/M3 可并行）
@@ -560,8 +562,8 @@
 **目标**：实现完整的文字排版能力，达到文字排版 reftest 通过率 ≥ 95%（基于上游真实 WPT reftest）。
 
 **范围**：
-- OpenType shaping（ligatures、kerning、features）— 可能引入 `rustybuzz`
-- BiDi 算法实现 — 可能引入 `unicode-bidi`
+- OpenType shaping（ligatures、kerning、features）— `rustybuzz` 已接入，后续修具体 reftest 缺口
+- BiDi 算法实现 — `unicode-bidi` 已接入，后续修具体 reftest 缺口
 - CJK 排版优化
 - writing-mode: vertical-* 实现
 - text-align: justify 的精确实现
